@@ -52,7 +52,7 @@ FBOV_HEADER = 0x10         # bytes of the 'FBOV' header before overlay data
 class Image(object):
     def __init__(self, exe=EXE, idc=IDC):
         self.data = open(exe, "rb").read()
-        e_cblp, e_cp, e_crlc, e_cparhdr = struct.unpack_from("<HHHH", self.data, 2)
+        e_cparhdr = struct.unpack_from("<H", self.data, 8)[0]
         self.hdr = e_cparhdr * 16
         self.fbov = self.data.find(b"FBOV")
         assert self.fbov > 0, "no Borland overlay section in %s" % exe
@@ -146,7 +146,7 @@ class Image(object):
     def stub_header(self, n):
         s = self.stubs[n]
         off = self.hdr + s[0]
-        magic, memswap, fileofs, codesize, relsize, nentries, prevstub = struct.unpack_from("<HHIHHHH", self.data, off)
+        magic, _memswap, fileofs, codesize, relsize, nentries, _prev = struct.unpack_from("<HHIHHHH", self.data, off)
         assert magic == 0x3FCD, "stub%d has no int 3F header" % n
         return dict(stubfile=off, fileofs=self.ovr_base + fileofs, codesize=codesize,
                     relsize=relsize, nentries=nentries, dosseg=s[2] + DOS_SEG_DELTA)
@@ -250,6 +250,7 @@ class Image(object):
 
     def disasm(self, linear, length):
         seg = self.seg_of(linear)
+        assert seg, "address %X is not in any segment" % linear
         code = self.read(linear, length)
         p = subprocess.run(["ndisasm", "-b", "16", "-o", "0x%x" % (linear - self.base(seg)), "-"],
                            input=code, capture_output=True)
@@ -272,6 +273,7 @@ class Image(object):
     def function_end(self, linear):
         i = bisect.bisect_right(self.sorted_names, linear)
         seg = self.seg_of(linear)
+        assert seg, "address %X is not in any segment" % linear
         while i < len(self.sorted_names):
             nxt = self.sorted_names[i]
             if nxt >= seg[1]:
@@ -344,6 +346,7 @@ def main(argv):
         s = img.seg_of(lin)
         if s and s[3].startswith("stub"):
             lin = img.stub_target(int(s[3][4:]), lin - img.base(s))
+        assert lin is not None, "no overlay function behind that stub entry"
         length = int(argv[3], 16) if len(argv) > 3 else img.function_end(lin) - lin
         print("; %s  length 0x%X" % (img.describe(lin), length))
         print(img.disasm(lin, length))
