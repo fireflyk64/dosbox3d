@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <deque>
+#include <string>
 #include <vector>
 #include "wcnet_events.h"
 #include "wcnet_session.h"
@@ -53,6 +54,31 @@ static GameCall call_of(const code::OverlayFn &fn) {
     return GameCall(fn.stubSeg, fn.stubOff);
 }
 
+// The shooter's locked target (dseg:C284[shooter], 0xff = none) decides
+// whether a missile homes; it is read when the shot is fired.
+static void capture_lock(WeaponFire *fire, int shooter) {
+    Bit8u target = rd8((Bit16u)(ds::missileTarget + shooter));
+    if (target != 0xff) {
+        NetworkShipId t = NetworkShipId::from_local(target);
+        if (!t.is_invalid()) {
+            fire->set_target(t.to_net());
+        }
+    }
+}
+
+static void apply_lock(const WeaponFire &fire, int shooter) {
+    Bit8u target = 0xff;
+    if (fire.has_target()) {
+        if (!g_entityMap || g_entityMap->is_mapped(fire.target())) {
+            int local = NetworkShipId::from_net(fire.target()).to_local();
+            if (local != kInvalidSlot && slot_in_use(local)) {
+                target = (Bit8u)local;
+            }
+        }
+    }
+    wr8((Bit16u)(ds::missileTarget + shooter), target);
+}
+
 // ---------------------------------------------------------------------------
 // Jobs
 
@@ -62,8 +88,8 @@ static GameCall call_of(const code::OverlayFn &fn) {
 class FireJob : public VmJob {
 public:
     enum Mode { BROADCAST, PREDICT, REPLAY };
-    FireJob(Mode mode, const WeaponFire &fire, int localShip, int gun)
-        : mode_(mode), fire_(fire), localShip_(localShip), gun_(gun) {}
+    FireJob(Mode mode, const WeaponFire &fire, int localShip, int gun, bool replayingClientFire = false)
+        : mode_(mode), fire_(fire), localShip_(localShip), gun_(gun), replayingClientFire_(replayingClientFire) {}
 
     virtual bool start() {
         if (localShip_ == kInvalidSlot || !slot_in_use(localShip_)) {
@@ -76,9 +102,13 @@ public:
         }
         before_.take();
         started_ = true;
-        wclog(2, "%s fire: ship %d (net %d) gun %d",
+        if (mode_ == REPLAY || replayingClientFire_) {
+            apply_lock(fire_, localShip_);
+        }
+        wclog(2, "%s fire: ship %d (net %d) gun %d target %s",
               mode_ == PREDICT ? "predict" : (mode_ == REPLAY ? "replay" : "local"),
-              localShip_, fire_.shooter(), gun_);
+              localShip_, fire_.shooter(), gun_,
+              fire_.has_target() ? std::to_string(fire_.target()).c_str() : "none");
         call_of(code::fireGunFromShip).arg((Bit16u)localShip_).arg((Bit16u)gun_).invoke();
         return true;
     }
@@ -125,6 +155,7 @@ private:
     Mode mode_;
     WeaponFire fire_;
     int localShip_, gun_;
+    bool replayingClientFire_;  // server replaying a client's shot: use the client's lock
     SlotSnapshot before_;
     bool started_ = false;
 };
@@ -386,6 +417,7 @@ void on_fire_entry() {
         fire.set_shooter(NetworkShipId::from_local(ship).to_net());
         fire.set_gun_id(gun);
         fire.set_client_seq(g_nextFireSeq++);
+        capture_lock(&fire, ship);
         g_trampoline.enqueue(new FireJob(FireJob::PREDICT, fire, ship, gun));
         g_trampoline.run_instead_of_current_call();
         return;
@@ -397,6 +429,7 @@ void on_fire_entry() {
     WeaponFire fire;
     fire.set_shooter(NetworkShipId::from_local(ship).to_net());
     fire.set_gun_id(gun);
+    capture_lock(&fire, ship);
     g_trampoline.enqueue(new FireJob(FireJob::BROADCAST, fire, ship, gun));
     g_trampoline.run_instead_of_current_call();
 }
@@ -510,7 +543,7 @@ static void enqueue_fire(const WeaponFire &fire) {
     }
     int local = NetworkShipId::from_net(fire.shooter()).to_local();
     FireJob::Mode mode = g_session->is_server() ? FireJob::BROADCAST : FireJob::REPLAY;
-    g_trampoline.enqueue(new FireJob(mode, fire, local, fire.gun_id()));
+    g_trampoline.enqueue(new FireJob(mode, fire, local, fire.gun_id(), g_session->is_server()));
 }
 
 void enqueue_remote_event(const Event &ev) {

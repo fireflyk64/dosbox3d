@@ -251,6 +251,8 @@ class Image(object):
     def disasm(self, linear, length):
         seg = self.seg_of(linear)
         assert seg, "address %X is not in any segment" % linear
+        if linear + length > seg[1]:
+            length = seg[1] - linear  # never read past the segment into the next overlay
         code = self.read(linear, length)
         p = subprocess.run(["ndisasm", "-b", "16", "-o", "0x%x" % (linear - self.base(seg)), "-"],
                            input=code, capture_output=True)

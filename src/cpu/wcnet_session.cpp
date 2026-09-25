@@ -258,10 +258,6 @@ static const char *status_name(int status) {
     return "?";
 }
 
-static bool ending_explodes(int status) {
-    return status == EndDeath || status == EndEject || status == EndExit;
-}
-
 static void handle_incoming_chat(const Chat &chat) {
     std::string formatted = chat.message();
     if (chat.callsign().length() > 1 && chat.callsign() != "BLUEHAIR") {
@@ -630,15 +626,15 @@ private:
 
     void merge_client_frame(RemoteClient *c, const Frame &frame) {
         if (frame.has_player_end()) {
+            // Shared fate: a wing lives and dies together.  Whatever ended
+            // the wingman's mission ends ours too; our mission-end frame then
+            // ends it for every other client.
             int status = frame.player_end().state();
-            wclog(1, "player %d %s; the mission continues without them", c->net, status_name(status));
+            wclog(1, "player %d %s; ending the mission for everyone", c->net, status_name(status));
             c->inMission = false;
             c->leftThisMission = true;
             c->needsMissionStartState = false;
-            if (slot_in_use(c->net)) {
-                enqueue_wingman_lost(c->net, ending_explodes(status));
-                spawns_.remove(c->net);
-            }
+            wr16(ds::missionStatus, (Bit16u)status);
             return;
         }
         if (frame.has_mission_end()) {

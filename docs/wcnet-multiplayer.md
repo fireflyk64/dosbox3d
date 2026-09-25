@@ -61,9 +61,23 @@ extra health" and "wingman explodes" behaviour.
 * Shield recharge (`ovr143:340E`) ticks on `frameCounter % rate`, so two
   machines with different frame phases drift by a point; nothing corrected
   that.
-* A client's death was forwarded as a *shared* mission end, ending the
-  server's mission with `EndDeath` (and the forwarded status was read after
-  it had been zeroed, so a client landing sent `Proceed`).
+* The forwarded mission status was read after it had been zeroed, so a client
+  landing told the server `Proceed`, and a client death reached the server
+  while the client's own game was held in space by the status suppression.
+* **Wingmen going KIA.**  The only write to the pilot-status array
+  (`dseg:C260`) is `ovr144:02E9`, in a routine called solely from
+  `outerSpawnExplosion` (`ovr143:1C37`): a pilot is KIA exactly when a
+  piloted ship explodes.  The NPC-model damage above exploded the other
+  human's ship copy, which is why wingmen came home KIA.  With ownership
+  rules no machine explodes a remote player's ship, so the path is closed.
+* **Missiles not locking for the wingman.**  A missile inherits the shooter's
+  locked target from `dseg:C284[shooter]` at fire time
+  (`ovr143:2C1F`, `fireGunFromShip`).  That byte is written by the shooter's
+  own targeting code, so it only exists on the shooter's machine; the old
+  code fired the client's missiles *on the server* using the server's byte
+  for that slot (no lock), and the server's copy drives the missile.
+  `WeaponFire.target` now carries the lock and the replaying side sets the
+  byte before calling `fireGunFromShip`.
 * The per-instruction hook read ~15 words of guest memory for every emulated
   instruction (`isExecutingOverlay` per hook).
 
@@ -87,11 +101,11 @@ extra health" and "wingman explodes" behaviour.
   AI fire from it; the set-speed AI is skipped as before.
 * Positions of a player's ship come from its owner every frame; the server
   broadcasts all positions.
-* Any ending of a client's own mission (landed, died, ejected, quit) sends
-  `PlayerEnd`; the server removes that slot (with an explosion for death,
-  ejection and quitting, quietly for landing), broadcasts the despawn and
-  continues the mission.  Only the leader's (server's) ending is shared with
-  everyone (`MissionEnd`), so the mission ends when the leader lands or dies.
+* **Shared fate.**  Any player's ending (landed, died, ejected, quit) ends
+  the mission for everyone with that same status.  A client reports its own
+  ending with `PlayerEnd`; the server adopts the status, its main loop exits,
+  and its `MissionEnd` frame carries the status to every other client.
+  Nobody's ship is despawned for this, so no pilot is ever marked KIA by it.
 * Clients fire their own guns immediately (`FireJob::PREDICT`) and tag the
   event with `client_seq`; the server replays it, and the echo lets the client
   map the missile slot instead of firing twice.
@@ -155,7 +169,8 @@ arguments.
 * `ShipHealth` inside `ShipUpdate.health`: shields, shield max, armor
   quadrants, damage points, core HP, hull counter, state byte, gun damage,
   engine flag, gun energy (the arrays are listed in the proto comments).
-* `WeaponFire.client_seq` for predicted client shots.
+* `WeaponFire.client_seq` for predicted client shots, `WeaponFire.target`
+  for the shooter's missile lock.
 * `Frame.player_end` (`PlayerEnd`) for a client leaving the mission.
 
 Old peers are not wire-compatible with these semantics (a client that does
