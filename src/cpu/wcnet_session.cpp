@@ -898,8 +898,11 @@ public:
             return;
         }
         NetworkMessage msg;
-        if (conn_.poll(CAT_CHAT, msg).ok()) {
+        RecvStatus st = conn_.poll(CAT_CHAT, msg);
+        if (st.ok()) {
             handle_incoming_chat(msg.chat());
+        } else if (st.failed()) {
+            drop("the server went away");
         }
     }
 

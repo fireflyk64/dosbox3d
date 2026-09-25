@@ -18,6 +18,7 @@
 #include "wcnet_log.h"
 #include "cpu.h"
 #include "regs.h"
+#include <time.h>
 
 extern std::string incoming_text;
 
@@ -67,10 +68,19 @@ static void build_watch_list() {
 
 bool g_pendingUninit = false;
 
+// (Re)connect when nothing is connected, at most every few seconds so a
+// missing server does not stall every frame with a connect() attempt.
 static void ensure_session() {
-    if (!g_session) {
-        init_network();
+    static time_t lastAttempt = 0;
+    if (g_session) {
+        return;
     }
+    time_t now = time(NULL);
+    if (now - lastAttempt < 5) {
+        return;
+    }
+    lastAttempt = now;
+    init_network();
 }
 
 static void on_after_startup() {
