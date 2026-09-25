@@ -31,10 +31,13 @@ wclobby/src/lib.rs          Rust: tokio thread owning lobbylink's P2PGame
 lobbylink/clients/rust      the lobbylink client (WebSocket signaling + webrtc)
 ```
 
+`lobbylink/` is a git submodule (`git submodule update --init` after a
+fresh clone); this crate depends on its Rust client by path.
 `cargo build --release` in this directory produces
 `target/release/libwclobby.a`; `configure` enables it automatically when
-`cargo` is on the PATH (`--disable-lobbylink` turns it off) and
-`src/Makefile.am` runs cargo as part of `make`.
+`cargo` is on the PATH and the submodule is checked out
+(`--disable-lobbylink` turns it off), and `src/Makefile.am` runs cargo as
+part of `make`.
 
 The Rust side turns lobbylink's single event stream into per-player
 inboxes with blocking receives. On top of each physical WebRTC link it

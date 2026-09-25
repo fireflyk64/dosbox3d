@@ -1,0 +1,3 @@
+[submodule "lobbylink"]
+	path = lobbylink
+	url = git@github.com:danielrh/lobbylink.git

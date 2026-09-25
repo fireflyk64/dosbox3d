@@ -653,6 +653,9 @@ AS_IF([test "x$enable_emscripten" = "xyes"], [enable_lobbylink=no])
 AS_IF([test "x$enable_lobbylink" = "xyes" -a "x$CARGO" = "xno"],
       [AC_MSG_WARN([cargo not found; building without the lobbylink transport])
        enable_lobbylink=no])
+AS_IF([test "x$enable_lobbylink" = "xyes" -a ! -f "$srcdir/lobbylink/clients/rust/Cargo.toml"],
+      [AC_MSG_WARN([lobbylink submodule is not checked out (run: git submodule update --init); building without the lobbylink transport])
+       enable_lobbylink=no])
 AS_IF([test "x$enable_lobbylink" = "xyes"], [
   AC_DEFINE(C_LOBBYLINK, 1)
   AS_CASE([$host],
