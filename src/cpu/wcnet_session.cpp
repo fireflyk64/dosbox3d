@@ -227,6 +227,14 @@ private:
     int framesSince_;
 };
 
+static std::string describe_health(int slot) {
+    ShipHealthState h = read_health(slot);
+    char buf[128];
+    snprintf(buf, sizeof(buf), "shield %d/%d armor %d/%d/%d/%d core %d dmg %d",
+             h.shield[0], h.shield[1], h.armor[0], h.armor[1], h.armor[2], h.armor[3], h.coreHp, h.damagePoints);
+    return buf;
+}
+
 static ShipUpdate *update_for(Frame *frame, int net) {
     for (int i = 0; i < frame->update_size(); i++) {
         if (frame->update(i).has_ship_id() && (int)frame->update(i).ship_id() == net) {
@@ -275,10 +283,11 @@ struct RemoteClient {
     bool needsMissionStartState;
     bool inMission;              // takes part in the frame exchange
     bool leftThisMission;        // died/ejected/exited this mission
+    int skipPendingEvents;       // events already covered by the start state
 
     explicit RemoteClient(int n)
         : net(n), requestedBriefingStart(false), needsMissionStartState(false),
-          inMission(false), leftThisMission(false) {}
+          inMission(false), leftThisMission(false), skipPendingEvents(0) {}
     bool connected() const { return conn.is_open(); }
     void disconnect() {
         conn.close();
@@ -589,6 +598,8 @@ private:
             return false;
         }
         c->inMission = true;
+        // Spawns queued in the pending frame are already in the registry copy.
+        c->skipPendingEvents = pendingFrame_.frame().event_size();
         return true;
     }
 
@@ -705,6 +716,9 @@ private:
     // of after the trampoline.
     void exchange(bool serverOnlyFlush) {
         frameNumber_ += 1;
+        if (frameNumber_ % 300 == 1) {
+            wclog(2, "frame %llu: own health %s", (unsigned long long)frameNumber_, describe_health(kPlayerSlot).c_str());
+        }
         populate_server_frame();
         for (size_t i = 0; i < clients_.size(); i++) {
             RemoteClient *c = clients_[i];
@@ -742,7 +756,20 @@ private:
         sendFrameAtIdle_ = false;
         for (size_t i = 0; i < clients_.size(); i++) {
             RemoteClient *c = clients_[i];
-            if (c->connected() && c->inMission && !c->conn.send(pendingFrame_)) {
+            if (!c->connected() || !c->inMission) {
+                continue;
+            }
+            const NetworkMessage *msg = &pendingFrame_;
+            NetworkMessage trimmed;
+            if (c->skipPendingEvents > 0) {
+                trimmed = pendingFrame_;
+                Frame *f = trimmed.mutable_frame();
+                int skip = c->skipPendingEvents < f->event_size() ? c->skipPendingEvents : f->event_size();
+                f->mutable_event()->DeleteSubrange(0, skip);
+                c->skipPendingEvents = 0;
+                msg = &trimmed;
+            }
+            if (!c->conn.send(*msg)) {
                 wclog(1, "player %d disconnected while sending", c->net);
                 c->disconnect();
             }
@@ -868,6 +895,9 @@ public:
         }
         pendingFrame_.set_epoch(epoch_);
         pendingFrame_.set_frame_number(++frameNumber_);
+        if (frameNumber_ % 300 == 1) {
+            wclog(2, "frame %llu: own health %s", (unsigned long long)frameNumber_, describe_health(kPlayerSlot).c_str());
+        }
         populate_own_update();
         if (!conn_.send(pendingFrame_)) {
             drop("lost the server while sending a frame");

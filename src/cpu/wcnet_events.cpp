@@ -76,6 +76,9 @@ public:
         }
         before_.take();
         started_ = true;
+        wclog(2, "%s fire: ship %d (net %d) gun %d",
+              mode_ == PREDICT ? "predict" : (mode_ == REPLAY ? "replay" : "local"),
+              localShip_, fire_.shooter(), gun_);
         call_of(code::fireGunFromShip).arg((Bit16u)localShip_).arg((Bit16u)gun_).invoke();
         return true;
     }
@@ -212,9 +215,10 @@ public:
             g_session->on_spawned(spawn_);
         } else if (spawn_.has_ship_id() && g_entityMap && slot != kInvalidSlot) {
             g_entityMap->record_spawn(spawn_.ship_id(), slot);
-            if (NetworkShipId::from_net(spawn_.ship_id()).to_local() != slot) {
-                wclog(2, "wanted to spawn net %d as slot %d, game chose %d",
-                      spawn_.ship_id(), NetworkShipId::from_net(spawn_.ship_id()).to_local(), slot);
+            if ((int)spawn_.ship_id() == g_entityMap->own_ship()) {
+                wclog(2, "net %d is us (slot 0); slot %d becomes the server player's ship", spawn_.ship_id(), slot);
+            } else {
+                wclog(2, "net %d -> slot %d", spawn_.ship_id(), slot);
             }
         }
     }
@@ -249,6 +253,9 @@ public:
         return true;
     }
     virtual void finish() {
+        if (!started_) {
+            return;  // nothing was there; nobody needs to hear about it
+        }
         bool explode = d_.has_explode() && d_.explode();
         if (mode_ == BROADCAST || mode_ == WINGMAN_LOST) {
             Event ev;
@@ -257,7 +264,7 @@ public:
             if (!explode) {
                 g_session->on_despawned(d_.ship_id());
             }
-        } else if (started_ && !explode && g_entityMap) {
+        } else if (!explode && g_entityMap) {
             g_entityMap->record_despawn(d_.ship_id());
         }
     }
