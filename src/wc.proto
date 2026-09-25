@@ -35,6 +35,28 @@ message WeaponFire {
         optional uint32 gun_id = 1; // 4 bits
         optional uint32 shooter = 2;
         optional uint32 ship_id = 3; // if missile, which id?
+        // Set by a client that already fired locally (client-side prediction).
+        // The server echoes it back unchanged so the client can recognise its
+        // own shot and only record the missile id mapping instead of firing twice.
+        optional uint32 client_seq = 4;
+}
+
+// Authoritative per-ship health snapshot.  Wing Commander applies damage with
+// two different models depending on the ship slot (slot 0 = the local player,
+// slots 1-9 = NPC), so the owner of a ship replicates the resulting state
+// instead of every machine replaying the hit.  Field comments give the
+// data-segment arrays (see scripts/wcdis.py sym dseg:XXXX).
+message ShipHealth {
+        repeated sint32 shield = 1 [packed=true];      // dseg:C430 curShield[2] (front, rear)
+        repeated sint32 shield_max = 2 [packed=true];  // dseg:C988 shieldMax[2]
+        repeated sint32 armor = 3 [packed=true];       // dseg:C85E armorState[4]
+        optional sint32 damage_points = 4;             // dseg:C17A accumulated hull damage
+        optional uint32 core_hp = 5;                   // dseg:C8B8 core hit points (starts at 4)
+        optional uint32 hull_counter = 6;              // dseg:D22C internal damage counter
+        optional uint32 state_byte = 7;                // dseg:D1A2 ship state
+        optional uint32 gun_damage = 8;                // dseg:BD0E
+        optional uint32 engine_flag = 9;               // dseg:BFD6
+        optional sint32 gun_energy = 10;               // dseg:BE3A
 }
 
 message Spawn {
@@ -53,6 +75,7 @@ message Despawn {
 message ShipUpdate {
         optional uint32 ship_id = 1; // 16 bits
         optional Location loc = 2;
+        optional ShipHealth health = 3; // only from the ship's owner
 }
 
 enum GameState {
@@ -91,10 +114,18 @@ message MissionEnd {
     optional uint32 victory_points_plus_one = 3;
 }
 
+// Client -> server: this player's own mission ended (death or ejection).  The
+// server removes the player's ship and the mission continues for everyone
+// else.  Landing is still a shared mission end and travels in MissionEnd.
+message PlayerEnd {
+    optional GameState state = 1;
+}
+
 message Frame {
     repeated ShipUpdate update = 1; // one update per updated ship
     repeated Event event = 2;
     optional MissionEnd mission_end = 18;
+    optional PlayerEnd player_end = 19;
 }
 
 // Connect -> once per mission
