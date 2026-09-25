@@ -1553,6 +1553,7 @@ bool GFX_StartUpdate(Bit8u * & pixels,Bitu & pitch) {
     return ret;
 }
 bool is_wc_connected();
+void uninit_network();
 extern bool within_briefed_mission;
 extern bool in_space();
 std::string outgoing_prefix = "[Transmit Comms] ";
@@ -3183,6 +3184,8 @@ int main(int argc, char* argv[]) {
 	SDL_ShowCursor(SDL_ENABLE);
 #endif
 
+	// Leave the multiplayer session (frees our lobby slot for a rejoin).
+	uninit_network();
 	SDL_Quit();//Let's hope sdl will quit as well when it catches an exception
 	return 0;
 }

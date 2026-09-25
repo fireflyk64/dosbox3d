@@ -20,12 +20,15 @@
 // Called before every instruction by the normal CPU core.
 void wc_net_check_cpu_hooks();
 
-// Start a server (WCHOST unset) or connect to one (WCHOST set); see NetConfig.
+// Start a server (WCHOST unset) or connect to one (WCHOST set); with WCROOM
+// set, meet the others in a lobbylink room instead.  See NetConfig.
 bool init_network();
 void uninit_network();
 
-// GUI queries (src/gui/sdlmain.cpp).
+// GUI queries (src/gui/sdlmain.cpp) and the WCNET command.
 bool is_wc_connected();
+// "server", "client" or "" when not connected.
+const char *wc_net_role();
 bool in_space();
 extern bool within_briefed_mission;
 void wcnetSendChatMessage(const std::string &msg);

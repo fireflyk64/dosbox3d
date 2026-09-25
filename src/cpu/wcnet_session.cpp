@@ -11,9 +11,16 @@
 #include "wcnet_memory.h"
 #include "wcnet_code.h"
 #include "wcnet_transport.h"
+#include "wcnet_lobby.h"
 #include "wcnet_log.h"
 #include "cpu.h"
 #include "regs.h"
+
+#ifdef C_LOBBYLINK
+// In a lobbylink room player 0 is the server; clients wait this long for the
+// WebRTC connection to it.
+enum { kHostPlayer = 0, kHostWaitMs = 20000 };
+#endif
 
 // Text shown by the GUI overlay while not in space (src/gui/sdlmain.cpp).
 extern std::string incoming_text;
@@ -32,17 +39,31 @@ bool has_started_up = false;
 
 }  // namespace wc
 
+const char *NetConfig::kDefaultLobbyUrl = "https://pqrstuvw.xyz/lobbylink";
+const char *NetConfig::kDefaultPort = "13255";
+
 NetConfig::NetConfig() {
     reset_from_env();
 }
 
 void NetConfig::reset_from_env() {
     reset(getenv("WCHOST"), getenv("WCPORT"));
+    room = getenv("WCROOM");
+    const char *url = getenv("WCLOBBY");
+    lobby_url = (url && url[0]) ? url : kDefaultLobbyUrl;
+    lobby_origin = getenv("WCLOBBY_ORIGIN");
+    const char *relay = getenv("WCLOBBY_RELAY");
+    lobby_relay = relay && relay[0] && relay[0] != '0';
+    const char *players = getenv("WCPLAYERS");
+    lobby_players = players ? atoi(players) : 0;
+    if (lobby_players < 2) {
+        lobby_players = 3;
+    }
 }
 
 void NetConfig::reset(const char *h, const char *p) {
     host = h;
-    portstr = p ? p : "13255";
+    portstr = p ? p : kDefaultPort;
     port = (uint16_t)atoi(portstr);
     if (port < 1024) {
         fprintf(stderr, "You must set the WCPORT and (optionally) WCHOST env variables! Not %s\n", portstr);
@@ -290,24 +311,18 @@ struct RemoteClient {
 
 class ServerSession : public Session {
 public:
-    ServerSession()
-        : listenFd_(-1), epoch_(1), frameNumber_(0), sendFrameAtIdle_(false), ignoreNextFrameTop_(false) {
+    // Takes ownership of the listener.
+    explicit ServerSession(Listener *listener)
+        : listener_(listener), epoch_(1), frameNumber_(0), sendFrameAtIdle_(false), ignoreNextFrameTop_(false) {
         allowedIds_.push_back(1);
         allowedIds_.push_back(3);
         reset_pending_frame();
     }
     ~ServerSession() {
-        if (listenFd_ != -1) {
-            close_socket(listenFd_);
-        }
         for (size_t i = 0; i < clients_.size(); i++) {
             delete clients_[i];
         }
-    }
-
-    bool listen() {
-        listenFd_ = listen_on(net_config.portstr);
-        return listenFd_ != -1;
+        delete listener_;
     }
 
     virtual Role role() const { return ROLE_SERVER; }
@@ -508,16 +523,17 @@ private:
         while (true) {
             bool block = blockIfNone && !any_client_connected();
             if (block) {
-                wclog(1, "waiting for a client to connect on port %s", net_config.portstr);
+                wclog(1, "waiting for a client to connect (%s)", listener_->describe().c_str());
             }
-            int s = accept_connection(listenFd_, block);
-            if (s < 0) {
+            Stream *s = listener_->accept(block);
+            if (!s) {
                 return;
             }
             RemoteClient *c = allocate_client();
             if (!c) {
-                wclog(1, "no free player slot; refusing connection");
-                close_socket(s);
+                wclog(1, "no free player slot; refusing %s", s->describe().c_str());
+                s->close();
+                delete s;
                 return;
             }
             c->conn.adopt(s);
@@ -530,7 +546,7 @@ private:
             c->callsign = msg.connect().callsign();
             c->leftThisMission = false;
             c->missionTreeProgress.clear();
-            wclog(1, "%s connected as player %d", c->callsign.c_str(), c->net);
+            wclog(1, "%s connected as player %d (%s)", c->callsign.c_str(), c->net, c->conn.describe().c_str());
             if (within_briefed_mission) {
                 // Joining a mission in progress: bring them in next frame.
                 c->needsMissionStartState = true;
@@ -750,7 +766,7 @@ private:
         reset_pending_frame();
     }
 
-    int listenFd_;
+    Listener *listener_;
     std::vector<RemoteClient *> clients_;
     std::vector<int> allowedIds_;
     Bit32u epoch_;
@@ -782,13 +798,26 @@ public:
     }
 
     bool connect() {
-        int s = connect_to(net_config.host, net_config.portstr);
-        if (s < 0) {
+        // Hang up any previous connection before opening a new one, so a
+        // lobby stream never attaches to a generation we are about to end.
+        conn_.close();
+        Stream *s = NULL;
+#ifdef C_LOBBYLINK
+        if (g_lobby) {
+            s = g_lobby->open_peer(kHostPlayer, kHostWaitMs);
+        } else
+#endif
+        {
+            s = tcp_connect(net_config.host, net_config.portstr);
+        }
+        if (!s) {
             return false;
         }
         conn_.adopt(s);
         return true;
     }
+
+    std::string where() const { return conn_.describe(); }
 
     virtual Role role() const { return ROLE_CLIENT; }
 
@@ -918,7 +947,7 @@ public:
                 sleep(2);
                 continue;
             }
-            wclog(1, "connected to %s as %s", net_config.host, callsign_.c_str());
+            wclog(1, "connected to %s as %s", conn_.describe().c_str(), callsign_.c_str());
             return;
         }
     }
@@ -1125,31 +1154,58 @@ bool init_network() {
     net_config.reset_from_env();
     uninit_network();
     g_trampoline.set_idle_callback(trampoline_idle);
-    if (net_config.host && net_config.host[0]) {
+    bool client;
+    std::string where;
+    if (net_config.use_lobby()) {
+#ifdef C_LOBBYLINK
+        g_lobby = LobbyHub::join(net_config);
+        if (!g_lobby) {
+            return false;
+        }
+        client = !g_lobby->is_host();
+        where = "room " + g_lobby->code();
+#else
+        wclog(0, "WCROOM is set but this build has no lobbylink support (needs cargo at configure time)");
+        return false;
+#endif
+    } else {
+        client = net_config.host && net_config.host[0];
+        where = client ? std::string(net_config.host) + ":" + net_config.portstr
+                       : std::string("port ") + net_config.portstr;
+    }
+    if (client) {
         ClientSession *c = new ClientSession();
         if (!c->connect()) {
-            wclog(0, "could not connect to %s:%s", net_config.host, net_config.portstr);
+            wclog(0, "could not connect to %s", where.c_str());
             delete c;
+            uninit_network();
             return false;
         }
+        where = c->where();
         g_session = c;
-        fprintf(stderr,
-                "=========================================================\n"
-                "======================== CLIENT =========================\n"
-                "=========================================================\n\n");
     } else {
-        ServerSession *s = new ServerSession();
-        if (!s->listen()) {
-            wclog(0, "could not listen on port %s", net_config.portstr);
-            delete s;
+        Listener *l = NULL;
+#ifdef C_LOBBYLINK
+        if (g_lobby) {
+            l = g_lobby->make_listener();
+        } else
+#endif
+        {
+            l = tcp_listen(net_config.portstr);
+        }
+        if (!l) {
+            wclog(0, "could not listen on %s", where.c_str());
+            uninit_network();
             return false;
         }
-        g_session = s;
-        fprintf(stderr,
-                "=========================================================\n"
-                "=========--------------- SERVER ----------------=========\n"
-                "=========================================================\n\n");
+        where = l->describe();
+        g_session = new ServerSession(l);
     }
+    fprintf(stderr,
+            "=========================================================\n"
+            "  %s  --  %s\n"
+            "=========================================================\n\n",
+            client ? "CLIENT" : "SERVER", where.c_str());
     return true;
 }
 
@@ -1160,10 +1216,24 @@ void uninit_network() {
         g_session = NULL;
         delete s;
     }
+#ifdef C_LOBBYLINK
+    if (g_lobby) {
+        LobbyHub *l = g_lobby;
+        g_lobby = NULL;
+        delete l;
+    }
+#endif
 }
 
 bool is_wc_connected() {
     return g_session != NULL && has_started_up;
+}
+
+const char *wc_net_role() {
+    if (!g_session) {
+        return "";
+    }
+    return g_session->is_server() ? "server" : "client";
 }
 
 bool in_space() {

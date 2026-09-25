@@ -1,0 +1,19 @@
+[package]
+name = "wclobby"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+description = "C ABI over the lobbylink Rust client for DOSBox's Wing Commander multiplayer transport"
+publish = false
+
+[lib]
+name = "wclobby"
+crate-type = ["staticlib"]
+
+[dependencies]
+p2p-lobby-client = { path = "../lobbylink/clients/rust" }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+bytes = "1"
+
+[profile.release]
+debug = false

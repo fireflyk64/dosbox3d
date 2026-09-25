@@ -644,7 +644,27 @@ AC_ARG_WITH([protoc],
     AC_MSG_RESULT([${PROTOC}])
     AS_IF([test "${PROTOC}" == "no"], [AC_MSG_ERROR([protoc not found.])])
 
-AC_CONFIG_FILES([ 
+dnl lobbylink (room code) multiplayer transport: a Rust static library in
+dnl wclobby/, built with cargo.  Off for Emscripten and when cargo is missing.
+AH_TEMPLATE([C_LOBBYLINK],[Define to 1 to enable the lobbylink multiplayer transport])
+AC_ARG_ENABLE(lobbylink,AC_HELP_STRING([--disable-lobbylink],[Disable the lobbylink (room code) multiplayer transport]),,enable_lobbylink=yes)
+AC_PATH_PROG([CARGO], [cargo], [no])
+AS_IF([test "x$enable_emscripten" = "xyes"], [enable_lobbylink=no])
+AS_IF([test "x$enable_lobbylink" = "xyes" -a "x$CARGO" = "xno"],
+      [AC_MSG_WARN([cargo not found; building without the lobbylink transport])
+       enable_lobbylink=no])
+AS_IF([test "x$enable_lobbylink" = "xyes"], [
+  AC_DEFINE(C_LOBBYLINK, 1)
+  AS_CASE([$host],
+    [*-darwin*], [WCLOBBY_LIBS="-framework Security -framework CoreFoundation -framework SystemConfiguration"],
+    [WCLOBBY_LIBS="-lgcc_s -lutil -lrt -lpthread -lm -ldl"])
+  AC_MSG_NOTICE([lobbylink transport enabled (cargo: $CARGO)])
+])
+AM_CONDITIONAL([LOBBYLINK], [test "x$enable_lobbylink" = "xyes"])
+AC_SUBST(CARGO)
+AC_SUBST(WCLOBBY_LIBS)
+
+AC_CONFIG_FILES([
 Makefile
 src/Makefile
 src/cpu/Makefile

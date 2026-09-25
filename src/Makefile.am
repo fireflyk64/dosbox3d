@@ -1,6 +1,6 @@
 AM_CPPFLAGS = -I$(top_srcdir)/include $I$(builddir) $(PROTOBUF_CFLAGS)
 
-SUBDIRS = cpu debug dos fpu gui hardware libs ints misc shell platform 
+SUBDIRS = cpu debug dos fpu gui hardware libs ints misc shell platform
 
 bin_PROGRAMS = dosbox
 
@@ -17,13 +17,31 @@ endif
 dosbox_SOURCES = dosbox.cpp $(builddir)/wc.pb.cc $(ico_stuff)
 dosbox_LDADD = cpu/libcpu.a debug/libdebug.a dos/libdos.a fpu/libfpu.a  hardware/libhardware.a gui/libgui.a \
                ints/libints.a misc/libmisc.a shell/libshell.a hardware/serialport/libserial.a libs/gui_tk/libgui_tk.a $(PROTOBUF_LIBS)
-
+EXTRA_dosbox_DEPENDENCIES =
 
 EXTRA_DIST = winres.rc dosbox.ico wc.proto
 
+# https://stackoverflow.com/questions/1779984/header-dependency-in-automake
+BUILT_SOURCES=version.stamp wc.pb.h
+version.stamp:
+	python version.py ../include/version.h .. $(CXX)
+
+if LOBBYLINK
+# The lobbylink (room code) transport is a Rust static library, see
+# ../wclobby.  cargo rebuilds it when its sources change and leaves the
+# archive untouched otherwise, so dosbox only relinks when it changed.
+WCLOBBY_LIB = $(top_srcdir)/wclobby/target/release/libwclobby.a
+BUILT_SOURCES += wclobby-lib
+wclobby-lib:
+	+cd $(top_srcdir)/wclobby && $(CARGO) build --release
+$(WCLOBBY_LIB): | wclobby-lib
+.PHONY: wclobby-lib
+dosbox_LDADD += $(WCLOBBY_LIB) $(WCLOBBY_LIBS)
+endif
+
 if EMSCRIPTEN_BUILD
 dosbox_LDFLAGS=-s TOTAL_MEMORY=134217728 -s ALLOW_MEMORY_GROWTH=0 --pre-js pre.js
-EXTRA_dosbox_DEPENDENCIES=pre.js
+EXTRA_dosbox_DEPENDENCIES+=pre.js
 CLEANFILES=dosbox.js dosbox.html.mem dosbox.js.orig.js dosbox.js.tmp.js
 if EMTERPRETER
 dosbox_LDFLAGS+=-s EMTERPRETIFY=1 -s EMTERPRETIFY_ASYNC=1 -s EMTERPRETIFY_WHITELIST=@emterpretify.txt
@@ -34,8 +52,3 @@ else
 dosbox_LDFLAGS+=--memory-init-file 0
 endif
 endif
-
-# https://stackoverflow.com/questions/1779984/header-dependency-in-automake
-BUILT_SOURCES=version.stamp wc.pb.h
-version.stamp:
-	python version.py ../include/version.h .. $(CXX)

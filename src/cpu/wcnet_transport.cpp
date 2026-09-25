@@ -29,124 +29,57 @@ const char *message_type_name(const NetworkMessage &msg) {
     return "none";
 }
 
-template <class Fn>
-static ssize_t xfer_all(const Fn &fn, unsigned char *buf, size_t size) {
-    size_t done = 0;
-    while (size) {
-        ssize_t cur = fn(buf, size);
-        if (cur < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            return cur;
-        }
-        if (cur == 0) {
-            return (ssize_t)done;
-        }
-        done += cur;
-        buf += cur;
-        size -= cur;
-    }
-    return (ssize_t)done;
-}
+// ---------------------------------------------------------------------------
+// Connection: protobuf (de)serialization and per-category queues
 
-struct SendFn {
-    int fd;
-    ssize_t operator()(unsigned char *b, size_t n) const { return ::send(fd, b, n, 0); }
-};
-struct RecvFn {
-    int fd;
-    ssize_t operator()(unsigned char *b, size_t n) const { return ::recv(fd, b, n, 0); }
-};
-
-Connection::Connection() : fd_(-1) {}
+Connection::Connection() : stream_(NULL) {}
 Connection::~Connection() { close(); }
 
-void Connection::adopt(int fd) {
+void Connection::adopt(Stream *stream) {
     close();
-    fd_ = fd;
+    stream_ = stream;
 }
 
 void Connection::close() {
     for (int i = 0; i < NUM_CATEGORIES; i++) {
         queues_[i].clear();
     }
-    if (fd_ != -1) {
-        close_socket(fd_);
+    if (stream_) {
+        stream_->close();
+        delete stream_;
+        stream_ = NULL;
     }
-    fd_ = -1;
 }
 
 bool Connection::send(const NetworkMessage &msg) {
-    if (fd_ == -1) {
+    if (!stream_) {
         return false;
     }
     if (wclog_level() >= 3) {
         wclog(3, "SEND %s", msg.DebugString().c_str());
     }
-    std::string out = "XXX";
-    if (!msg.AppendToString(&out)) {
+    std::string out;
+    if (!msg.SerializeToString(&out)) {
         wclog(0, "protobuf serialize failed");
         return false;
     }
-    size_t len = out.length() - 3;
-    if (len == 0 || len >= (1u << 24)) {
-        wclog(0, "protobuf message size %d out of range", (int)len);
+    if (out.empty()) {
+        wclog(0, "refusing to send an empty message");
         return false;
     }
-    out[0] = (char)(len >> 16);
-    out[1] = (char)(len >> 8);
-    out[2] = (char)len;
-    SendFn fn = { fd_ };
-    if (xfer_all(fn, (unsigned char *)&out[0], out.length()) < (ssize_t)out.length()) {
-        perror("wcnet send failed");
-        return false;
-    }
-    return true;
-}
-
-bool Connection::socket_readable() const {
-    fd_set set;
-    FD_ZERO(&set);
-    FD_SET(fd_, &set);
-    struct timeval tv = { 0, 0 };
-    return select(fd_ + 1, &set, NULL, NULL, &tv) > 0;
+    return stream_->send(out);
 }
 
 RecvStatus Connection::read_one(NetworkMessage &msg, bool blocking) {
-    if (fd_ == -1) {
+    if (!stream_) {
         return RecvStatus::STATUS_FAIL;
     }
-    if (!blocking && !socket_readable()) {
-        return RecvStatus::STATUS_NO_DATA;
+    std::string data;
+    RecvStatus st = stream_->recv(data, blocking);
+    if (!st.ok()) {
+        return st;
     }
-    unsigned char lengthData[3];
-    RecvFn fn = { fd_ };
-    ssize_t ret = xfer_all(fn, lengthData, sizeof(lengthData));
-    if (ret < (ssize_t)sizeof(lengthData)) {
-        if (ret < 0) {
-            perror("wcnet recv length failed");
-        } else {
-            wclog(1, "connection closed by peer");
-        }
-        return RecvStatus::STATUS_FAIL;
-    }
-    size_t len = ((size_t)lengthData[0] << 16) | ((size_t)lengthData[1] << 8) | lengthData[2];
-    if (len == 0) {
-        wclog(0, "empty message received");
-        return RecvStatus::STATUS_FAIL;
-    }
-    std::vector<unsigned char> data(len);
-    ret = xfer_all(fn, &data[0], len);
-    if (ret < (ssize_t)len) {
-        if (ret < 0) {
-            perror("wcnet recv data failed");
-        } else {
-            wclog(1, "connection closed by peer mid-message");
-        }
-        return RecvStatus::STATUS_FAIL;
-    }
-    if (!msg.ParseFromArray(&data[0], (int)len)) {
+    if (!msg.ParseFromArray(data.data(), (int)data.size())) {
         wclog(0, "protobuf parse failed");
         return RecvStatus::STATUS_FAIL;
     }
@@ -200,11 +133,170 @@ const NetworkMessage *Connection::peek(MessageCategory cat) const {
     return &queues_[cat].front();
 }
 
-void close_socket(int fd) {
-    ::close(fd);
+// ---------------------------------------------------------------------------
+// TCP: 3-byte big-endian length prefix per message
+
+template <class Fn>
+static ssize_t xfer_all(const Fn &fn, unsigned char *buf, size_t size) {
+    size_t done = 0;
+    while (size) {
+        ssize_t cur = fn(buf, size);
+        if (cur < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return cur;
+        }
+        if (cur == 0) {
+            return (ssize_t)done;
+        }
+        done += cur;
+        buf += cur;
+        size -= cur;
+    }
+    return (ssize_t)done;
 }
 
-int listen_on(const char *portstr) {
+struct SendFn {
+    int fd;
+    ssize_t operator()(unsigned char *b, size_t n) const { return ::send(fd, b, n, 0); }
+};
+struct RecvFn {
+    int fd;
+    ssize_t operator()(unsigned char *b, size_t n) const { return ::recv(fd, b, n, 0); }
+};
+
+static std::string peer_name(int fd) {
+    sockaddr_storage addr;
+    socklen_t len = sizeof(addr);
+    char host[NI_MAXHOST], port[NI_MAXSERV];
+    if (getpeername(fd, (sockaddr *)&addr, &len) == 0 &&
+        getnameinfo((sockaddr *)&addr, len, host, sizeof(host), port, sizeof(port),
+                    NI_NUMERICHOST | NI_NUMERICSERV) == 0) {
+        return std::string("tcp ") + host + ":" + port;
+    }
+    char buf[32];
+    snprintf(buf, sizeof(buf), "tcp fd %d", fd);
+    return buf;
+}
+
+class TcpStream : public Stream {
+public:
+    explicit TcpStream(int fd) : fd_(fd), name_(peer_name(fd)) {}
+    ~TcpStream() { close(); }
+
+    virtual bool is_open() const { return fd_ != -1; }
+
+    virtual void close() {
+        if (fd_ != -1) {
+            ::close(fd_);
+            fd_ = -1;
+        }
+    }
+
+    virtual bool send(const std::string &bytes) {
+        if (fd_ == -1) {
+            return false;
+        }
+        size_t len = bytes.length();
+        if (len == 0 || len >= (1u << 24)) {
+            wclog(0, "message size %d out of range for tcp framing", (int)len);
+            return false;
+        }
+        std::string out;
+        out.reserve(len + 3);
+        out.push_back((char)(len >> 16));
+        out.push_back((char)(len >> 8));
+        out.push_back((char)len);
+        out += bytes;
+        SendFn fn = { fd_ };
+        if (xfer_all(fn, (unsigned char *)&out[0], out.length()) < (ssize_t)out.length()) {
+            perror("wcnet send failed");
+            return false;
+        }
+        return true;
+    }
+
+    virtual RecvStatus recv(std::string &bytes, bool blocking) {
+        if (fd_ == -1) {
+            return RecvStatus::STATUS_FAIL;
+        }
+        if (!blocking && !readable()) {
+            return RecvStatus::STATUS_NO_DATA;
+        }
+        unsigned char lengthData[3];
+        RecvFn fn = { fd_ };
+        ssize_t ret = xfer_all(fn, lengthData, sizeof(lengthData));
+        if (ret < (ssize_t)sizeof(lengthData)) {
+            if (ret < 0) {
+                perror("wcnet recv length failed");
+            } else {
+                wclog(1, "connection closed by peer");
+            }
+            return RecvStatus::STATUS_FAIL;
+        }
+        size_t len = ((size_t)lengthData[0] << 16) | ((size_t)lengthData[1] << 8) | lengthData[2];
+        if (len == 0) {
+            wclog(0, "empty message received");
+            return RecvStatus::STATUS_FAIL;
+        }
+        bytes.resize(len);
+        ret = xfer_all(fn, (unsigned char *)&bytes[0], len);
+        if (ret < (ssize_t)len) {
+            if (ret < 0) {
+                perror("wcnet recv data failed");
+            } else {
+                wclog(1, "connection closed by peer mid-message");
+            }
+            return RecvStatus::STATUS_FAIL;
+        }
+        return RecvStatus::STATUS_OK;
+    }
+
+    virtual std::string describe() const { return name_; }
+
+private:
+    bool readable() const {
+        fd_set set;
+        FD_ZERO(&set);
+        FD_SET(fd_, &set);
+        struct timeval tv = { 0, 0 };
+        return select(fd_ + 1, &set, NULL, NULL, &tv) > 0;
+    }
+
+    int fd_;
+    std::string name_;
+};
+
+class TcpListener : public Listener {
+public:
+    TcpListener(int fd, const std::string &portstr) : fd_(fd), portstr_(portstr) {}
+    ~TcpListener() { ::close(fd_); }
+
+    virtual Stream *accept(bool blocking) {
+        int flags = fcntl(fd_, F_GETFL, 0);
+        fcntl(fd_, F_SETFL, blocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK));
+        sockaddr_storage addr;
+        socklen_t addrlen = sizeof(addr);
+        int s = ::accept(fd_, (sockaddr *)&addr, &addrlen);
+        fcntl(fd_, F_SETFL, flags & ~O_NONBLOCK);
+        if (s < 0) {
+            if (errno != EWOULDBLOCK && errno != EAGAIN) {
+                perror("wcnet accept failed");
+            }
+            return NULL;
+        }
+        return new TcpStream(s);
+    }
+
+    virtual std::string describe() const { return "tcp port " + portstr_; }
+
+private:
+    int fd_;
+    std::string portstr_;
+};
+
+Listener *tcp_listen(const char *portstr) {
     struct addrinfo hints, *res0 = NULL;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = PF_UNSPEC;
@@ -213,7 +305,7 @@ int listen_on(const char *portstr) {
     int err = getaddrinfo(NULL, portstr, &hints, &res0);
     if (err) {
         wclog(0, "getaddrinfo: %s", gai_strerror(err));
-        return -1;
+        return NULL;
     }
     int s = -1;
     for (struct addrinfo *res = res0; res; res = res->ai_next) {
@@ -232,26 +324,13 @@ int listen_on(const char *portstr) {
         break;
     }
     freeaddrinfo(res0);
-    return s;
-}
-
-int accept_connection(int listenFd, bool blocking) {
-    int flags = fcntl(listenFd, F_GETFL, 0);
-    fcntl(listenFd, F_SETFL, blocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK));
-    sockaddr_storage addr;
-    socklen_t addrlen = sizeof(addr);
-    int s = accept(listenFd, (sockaddr *)&addr, &addrlen);
-    fcntl(listenFd, F_SETFL, flags & ~O_NONBLOCK);
     if (s < 0) {
-        if (errno != EWOULDBLOCK && errno != EAGAIN) {
-            perror("wcnet accept failed");
-        }
-        return -1;
+        return NULL;
     }
-    return s;
+    return new TcpListener(s, portstr);
 }
 
-int connect_to(const char *host, const char *portstr) {
+Stream *tcp_connect(const char *host, const char *portstr) {
     struct addrinfo hints, *res0 = NULL;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = PF_UNSPEC;
@@ -259,7 +338,7 @@ int connect_to(const char *host, const char *portstr) {
     int err = getaddrinfo(host, portstr, &hints, &res0);
     if (err) {
         wclog(0, "getaddrinfo %s: %s", host, gai_strerror(err));
-        return -1;
+        return NULL;
     }
     int s = -1;
     for (struct addrinfo *res = res0; res; res = res->ai_next) {
@@ -275,7 +354,10 @@ int connect_to(const char *host, const char *portstr) {
         break;
     }
     freeaddrinfo(res0);
-    return s;
+    if (s < 0) {
+        return NULL;
+    }
+    return new TcpStream(s);
 }
 
 }  // namespace wc

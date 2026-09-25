@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "wc_net.h"
 #include "wcnet_session.h"
 #include "wcnet_events.h"
@@ -67,9 +68,22 @@ static void build_watch_list() {
 
 bool g_pendingUninit = false;
 
+enum { kRetryDelaySeconds = 10 };
+
+// (Re)connect when there is no session.  A failed attempt is not retried
+// for a while: joining a lobby room takes seconds, and this runs at the top
+// of every frame in space.
 static void ensure_session() {
-    if (!g_session) {
-        init_network();
+    static time_t nextAttempt = 0;
+    if (g_session) {
+        return;
+    }
+    time_t now = time(NULL);
+    if (now < nextAttempt) {
+        return;
+    }
+    if (!init_network()) {
+        nextAttempt = now + kRetryDelaySeconds;
     }
 }
 
