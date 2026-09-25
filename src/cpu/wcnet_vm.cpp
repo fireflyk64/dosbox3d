@@ -139,6 +139,10 @@ bool Trampoline::at_hook() {
     return SegValue(cs) == DS && reg_eip == kTrampolineNop;
 }
 
+Bit16u Trampoline::hook_ip() {
+    return kTrampolineNop;
+}
+
 void Trampoline::start_next() {
     while (!jobs_.empty()) {
         current_ = jobs_.front();

@@ -13,6 +13,7 @@
 #ifndef WCNET_MEMORY_H_
 #define WCNET_MEMORY_H_
 
+#include <string>
 #include "dosbox.h"
 #include "mem.h"
 

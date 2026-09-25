@@ -4,7 +4,10 @@ AM_CPPFLAGS = -I$(top_srcdir)/include
 noinst_LIBRARIES = libcpu.a
 libcpu_a_SOURCES = callback.cpp cpu.cpp flags.cpp modrm.cpp modrm.h core_full.cpp instructions.h	\
 		   paging.cpp lazyflags.h core_normal.cpp core_simple.cpp core_prefetch.cpp \
-		   core_dyn_x86.cpp core_dynrec.cpp wc_net.cpp
+		   core_dyn_x86.cpp core_dynrec.cpp \
+		   wc_net.h net_config.h wcnet_memory.h wcnet_memory.cpp wcnet_code.h wcnet_log.h wcnet_log.cpp \
+		   wcnet_vm.h wcnet_vm.cpp wcnet_transport.h wcnet_transport.cpp wcnet_entities.h wcnet_entities.cpp \
+		   wcnet_events.h wcnet_events.cpp wcnet_session.h wcnet_session.cpp wcnet_hooks.cpp
 
 if FUNARRAY_CORE
 PREPROCESSED_FILES = core_simple_fun.ii core_normal_fun.ii core_prefetch_fun.ii

@@ -17,11 +17,11 @@ namespace wc {
 
 class RecvStatus {
 public:
-    enum Type { OK, FAIL, NO_DATA };
-    RecvStatus(Type t = FAIL) : t_(t) {}
-    bool ok() const { return t_ == OK; }
-    bool no_data() const { return t_ == NO_DATA; }
-    bool failed() const { return t_ == FAIL; }
+    enum Type { STATUS_OK, STATUS_FAIL, STATUS_NO_DATA };
+    RecvStatus(Type t = STATUS_FAIL) : t_(t) {}
+    bool ok() const { return t_ == STATUS_OK; }
+    bool no_data() const { return t_ == STATUS_NO_DATA; }
+    bool failed() const { return t_ == STATUS_FAIL; }
 
 private:
     Type t_;

@@ -1,188 +1,33 @@
+/*
+ *  Public interface of the Wing Commander multiplayer layer.
+ *
+ *  The implementation lives in src/cpu/wcnet_*.cpp:
+ *    wcnet_memory     data-segment map and typed accessors
+ *    wcnet_code       code addresses (stubs, overlays, hook points)
+ *    wcnet_vm         running game code (interception, trampoline)
+ *    wcnet_transport  TCP framing and per-category message queues
+ *    wcnet_entities   network id <-> local slot mapping
+ *    wcnet_events     interception and replay of game events
+ *    wcnet_session    server/client sessions and the per-frame exchange
+ *    wcnet_hooks      the per-instruction dispatcher
+ */
 #ifndef WC_NET_H_
 #define WC_NET_H_
+
+#include <string>
 #include "net_config.h"
+
+// Called before every instruction by the normal CPU core.
 void wc_net_check_cpu_hooks();
 
-void process_network(bool ignoreClientUpdate=false);
-void process_damage();
-void process_fire();
+// Start a server (WCHOST unset) or connect to one (WCHOST set); see NetConfig.
+bool init_network();
+void uninit_network();
 
-void go_to_trampoline();
-
-class RecvStatus {
-    enum StatusType {
-        STATUS_FAIL,
-        STATUS_OK,
-        STATUS_NO_DATA
-    };
-    StatusType _status;
-public:
-    static RecvStatus OK() {
-        RecvStatus ret;
-        ret._status = STATUS_OK;
-        return ret;
-    }
-    static RecvStatus FAIL() {
-        RecvStatus ret;
-        ret._status = STATUS_FAIL;
-        return ret;
-    }
-    static RecvStatus FAIL_NO_DATA() {
-        RecvStatus ret;
-        ret._status = STATUS_NO_DATA;
-        return ret;
-    }
-    bool ok() const {
-        return _status == STATUS_OK;
-    }
-    bool no_data() const {
-        return _status == STATUS_NO_DATA;
-    }
-};
-class NetworkShipId {
-    int id;
-
-    static int remap_ship_id(int ship_id, bool to_local);
-
-    explicit NetworkShipId(int id)
-        : id(id) {
-        if (id < 0) {
-            fprintf(stderr, "Negative ship id found %d\n", id);
-            //id = 0x3f;
-        }
-        if (id >= 0x3d) {
-            fprintf(stderr, "Too large ship id found %d\n", id);
-            //id = 0x3f;
-        }
-    }
-
-public:
-
-    static NetworkShipId invalid() {
-        return NetworkShipId(-1);
-    }
-    
-    static NetworkShipId from_local(int id) {
-        return NetworkShipId(remap_ship_id(id, false));
-    }
-
-    static NetworkShipId from_top_level_local(int id) {
-        return from_local(NetworkShipId::getTopLevelParent(id));
-    }
-
-    static int getTopLevelParent(int local_id);
-    
-    static NetworkShipId from_net(int id) {
-        return NetworkShipId(id);
-    }
-
-    static NetworkShipId from_memory_word(int addr) {
-        Bit16u id = -1;
-        mem_readw_checked(addr, &id);
-        return NetworkShipId::from_local(id);
-    }
-
-    static NetworkShipId parent_from_memory_word(int addr) {
-        Bit16u id = -1;
-        mem_readw_checked(addr, &id);
-        return NetworkShipId::from_local(getTopLevelParent(id));
-    }
-
-    bool is_invalid() const {
-        return id < 0 || id >= 0x3d;
-    }
-
-    int to_local() const {
-        return remap_ship_id(id, true);
-    }
-    int to_net() const {
-        return id;
-    }
-
-    bool operator== (const NetworkShipId &other) const {
-        return id == other.id;
-    }
-
-    bool operator!= (const NetworkShipId &other) const {
-        return id != other.id;
-    }
-
-    bool operator< (const NetworkShipId &other) const {
-        return id < other.id;
-    }
-};
-
-enum WcEntityConstants {
-    WCE_PLAYER_ID = 0,
-    WCE_MIN_PERMANENT_ID = 1,
-    WCE_MAX_PERMANENT_ID = 9,
-    WCE_MIN_TEMPORARY_ID = 10,
-    WCE_MAX_TEMPORARY_ID = 0x3c,
-    WCE_CAMERA_ID = 0x3d,
-    WCE_TEMP_VECTOR_ID = 0x3f
-};
-
-#define STATIC_ASSERT(expr, message) do { int STATIC_ASSERTION(int[-!(expr)]); } while(0)
-
-enum {
-    SEG000 = 0x1a2, // ida:000
-    SEG001 = 0x560, // ida:3be
-    SEG002 = 0x78c, // ida:5ea
-    STUB133 = 0x1266, // ida:10C4
-    STUB134 = 0x126a, // ida:10C8
-    STUB140 = 0x12ad, // ida:110B
-    STUB141 = 0x12cc, // ida:112A
-    STUB142 = 0x12d4, // ida:1132
-    STUB143 = 0x12d7,
-    STUB144 = 0x12ed,
-    STUB145 = 0x12f2,
-    STUB146 = 0x12fe,
-    STUB147 = 0x130e,
-    STUB148 = 0x1318,
-    STUB150 = 0x1327,
-    STUB151 = 0x1333,
-    STUB161 = 0x1361, // ida: 11bf
-    STUB162 = 0x1366, // ida: 11c4
-    STUB163 = 0x1370, // ida: 11ce
-    STUB164 = 0x1381, // ida: 11df
-};
-
-enum {
-    DS = 0x13d3,
-    DS_OFF = DS * 0x10,
-    Instr_RETF = 0xCB
-};
-enum DataSegValues {
-    DS_SetSpeed = 0xB9F6,
-    DS_Pos = 0xA9C2,
-    DS_Vel = 0xCAE2,
-    DS_Right = 0xAEB6,
-    DS_Up = 0xB1B6,
-    DS_Forward = 0xB4B6,
-    DS_RandomSeed = 0x7728,
-    DS_loading_wing_commander = 0x0187,
-    DS_error_has_occurred = 0x0395,
-    shellcode_start = DS_error_has_occurred, // 249 bytes
-    DS_tmpvector = DS_loading_wing_commander, // 12 bytes
-    DS_mission_loader = DS_loading_wing_commander + 12, // ???
-    DS_trampoline = DS_loading_wing_commander + 101, // 6 bytes
-    DS_tramp_ret_NOP = DS_trampoline + 3, // NOP instruction we hook into
-    //DS_tmpvector = DS_Pos + (12 * 0x3f)
-    DS_comm_global_txt = 0x8DF8, // 80 bytes
-    comm_global_txt_length = 80,
-    DS_parent_ship = 0xC30E,
-    DS_entity_types = 0xBD1A,
-    DS_entity_allocated = 0xACC4,
-    DS_victoryPoints = 0xC280,
-    DS_statusPilots = 0xc260, // byte array whether pilots are KIA
-    DS_missionId = 0xC255,
-    DS_seriesId = 0xC256,
-    DS_hasLoadedSaveGame = 0x300c,
-    DS_commText = 0x8df8,
-    DS_cullStatus = 0xacc4,
-    DS_commAnimInfo = 0xbe94,
-    DS_vduStatus10 = 0xd236,
-    DS_entitiesToDespawn = 0x6610,
-};
+// GUI queries (src/gui/sdlmain.cpp).
+bool is_wc_connected();
+bool in_space();
+extern bool within_briefed_mission;
+void wcnetSendChatMessage(const std::string &msg);
 
 #endif

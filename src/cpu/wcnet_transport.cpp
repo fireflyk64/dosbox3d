@@ -115,10 +115,10 @@ bool Connection::socket_readable() const {
 
 RecvStatus Connection::read_one(NetworkMessage &msg, bool blocking) {
     if (fd_ == -1) {
-        return RecvStatus::FAIL;
+        return RecvStatus::STATUS_FAIL;
     }
     if (!blocking && !socket_readable()) {
-        return RecvStatus::NO_DATA;
+        return RecvStatus::STATUS_NO_DATA;
     }
     unsigned char lengthData[3];
     RecvFn fn = { fd_ };
@@ -129,12 +129,12 @@ RecvStatus Connection::read_one(NetworkMessage &msg, bool blocking) {
         } else {
             wclog(1, "connection closed by peer");
         }
-        return RecvStatus::FAIL;
+        return RecvStatus::STATUS_FAIL;
     }
     size_t len = ((size_t)lengthData[0] << 16) | ((size_t)lengthData[1] << 8) | lengthData[2];
     if (len == 0) {
         wclog(0, "empty message received");
-        return RecvStatus::FAIL;
+        return RecvStatus::STATUS_FAIL;
     }
     std::vector<unsigned char> data(len);
     ret = xfer_all(fn, &data[0], len);
@@ -144,23 +144,23 @@ RecvStatus Connection::read_one(NetworkMessage &msg, bool blocking) {
         } else {
             wclog(1, "connection closed by peer mid-message");
         }
-        return RecvStatus::FAIL;
+        return RecvStatus::STATUS_FAIL;
     }
     if (!msg.ParseFromArray(&data[0], (int)len)) {
         wclog(0, "protobuf parse failed");
-        return RecvStatus::FAIL;
+        return RecvStatus::STATUS_FAIL;
     }
     if (wclog_level() >= 3) {
         wclog(3, "RECV %s", msg.DebugString().c_str());
     }
-    return RecvStatus::OK;
+    return RecvStatus::STATUS_OK;
 }
 
 RecvStatus Connection::recv(MessageCategory cat, NetworkMessage &msg) {
     if (!queues_[cat].empty()) {
         msg = queues_[cat].front();
         queues_[cat].pop_front();
-        return RecvStatus::OK;
+        return RecvStatus::STATUS_OK;
     }
     while (true) {
         RecvStatus st = read_one(msg, true);
@@ -169,7 +169,7 @@ RecvStatus Connection::recv(MessageCategory cat, NetworkMessage &msg) {
         }
         MessageCategory got = category_of(msg);
         if (got == cat) {
-            return RecvStatus::OK;
+            return RecvStatus::STATUS_OK;
         }
         queues_[got].push_back(msg);
     }
@@ -179,7 +179,7 @@ RecvStatus Connection::poll(MessageCategory cat, NetworkMessage &msg) {
     if (!queues_[cat].empty()) {
         msg = queues_[cat].front();
         queues_[cat].pop_front();
-        return RecvStatus::OK;
+        return RecvStatus::STATUS_OK;
     }
     RecvStatus st = read_one(msg, false);
     if (!st.ok()) {
@@ -187,10 +187,10 @@ RecvStatus Connection::poll(MessageCategory cat, NetworkMessage &msg) {
     }
     MessageCategory got = category_of(msg);
     if (got == cat) {
-        return RecvStatus::OK;
+        return RecvStatus::STATUS_OK;
     }
     queues_[got].push_back(msg);
-    return RecvStatus::NO_DATA;
+    return RecvStatus::STATUS_NO_DATA;
 }
 
 const NetworkMessage *Connection::peek(MessageCategory cat) const {

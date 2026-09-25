@@ -1,3 +1,4 @@
+#include <stdint.h>
 class NetConfig {
 public:
     const char *host;

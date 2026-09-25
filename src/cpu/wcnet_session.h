@@ -13,6 +13,9 @@
  *    resulting health snapshot (ShipHealth) to everyone else, and no machine
  *    ever runs do_damage/despawn against a remote player's ship.
  *  * Positions of a player's ship come from its owner every frame.
+ *  * A client's death, ejection or exit removes its ship from the server's
+ *    mission (with an explosion) and the mission continues for everyone
+ *    else.  Landing is still a shared mission end, as in the original design.
  *
  *  Frame exchange (lockstep, unchanged from the original design)
  *  ---------------------------------------------------------------
@@ -20,19 +23,15 @@
  *  any events, then blocks for the server's frame.  The server blocks for one
  *  message from every client in the mission, merges them, and sends one frame
  *  to each.  Events are replayed through the trampoline before the game
- *  simulates the frame.
+ *  simulates the frame.  The server sends exactly one frame per client
+ *  message, so that the two sides never drift apart in message count.
  */
 #ifndef WCNET_SESSION_H_
 #define WCNET_SESSION_H_
 
-#include <deque>
 #include <string>
-#include <vector>
 #include "dosbox.h"
-#include "net_config.h"
 #include "wcnet_entities.h"
-#include "wcnet_transport.h"
-#include "wcnet_memory.h"
 #include "../wc.pb.h"
 
 namespace wc {
@@ -55,42 +54,37 @@ public:
     // Add an event to the frame that will be sent at the end of this frame's
     // exchange (server: to all clients; client: to the server).
     virtual void queue_outgoing_event(const Event &ev) = 0;
-    // Spawn bookkeeping for late joiners (server only; no-op on clients).
-    virtual void on_spawned(const Spawn &spawn) {}
-    virtual void on_despawned(int net) {}
+    // Spawn bookkeeping for late joiners (server only).
+    virtual void on_spawned(const Spawn &spawn) { (void)spawn; }
+    virtual void on_despawned(int net) { (void)net; }
 
-    // --- lifecycle hooks ----------------------------------------------------
+    // --- lifecycle hooks (see wcnet_hooks.cpp for where each fires) ---------
     virtual void on_mission_starting(int mission, int series) = 0;
-    virtual void on_mission_reset() = 0;         // entities cleared (mission over, ejected, ...)
+    virtual void on_mission_reset() = 0;         // entities cleared (mission over)
     virtual void on_mission_victory_calc() = 0;  // score being computed
     virtual void on_mission_ended() = 0;         // back to the hangar flow
     virtual void on_frame_top() = 0;             // top of the in-flight loop
     virtual void on_async_tick() = 0;            // every ~1000 instructions
     virtual void on_barracks() = 0;              // entering the barracks
-    virtual void on_mission_status_write(int status) = 0;  // dseg:00AE changed locally
-    virtual void on_autopilot_begin(Bit16u camShipType, Bit16u camMode, Bit16u duration) {}
+    virtual void check_mission_status() = 0;     // before the game tests dseg:00AE
+    virtual void on_autopilot_begin(Bit16u camShipType, Bit16u camMode, Bit16u duration) {
+        (void)camShipType; (void)camMode; (void)duration;
+    }
     virtual void on_autopilot_finished() {}
     virtual void on_trampoline_idle() {}
+    virtual bool in_space() const = 0;
 
     virtual void send_chat(const std::string &text) = 0;
-    virtual const std::string &callsign() const = 0;
 };
 
 // The active session, or NULL when not connected.
 extern Session *g_session;
 
-// Program-wide flags shared with the GUI (sdlmain.cpp).
-extern bool within_briefed_mission;
 extern int in_simulation;
 extern bool has_started_up;
 
-bool init_network();
-void uninit_network();
-bool is_wc_connected();
-bool in_space();
-void wcnetSendChatMessage(const std::string &msg);
+// Jump into the campaign at a mission (MIS/SERIES environment variables).
 void run_campaign(int missionId, int seriesId);
-
 // Pilot identity (env WCCALLSIGN / WCLASTNAME override the save game).
 std::string get_callsign();
 std::string get_last_name();

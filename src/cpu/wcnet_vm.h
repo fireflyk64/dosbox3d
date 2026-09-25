@@ -101,6 +101,7 @@ public:
 
     // The NOP hook point.
     static bool at_hook();
+    static Bit16u hook_ip();
 
 private:
     void jump_to_stub();
