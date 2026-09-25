@@ -549,10 +549,12 @@ void enqueue_chat_display(int netShipId, const std::string &callsign, const std:
     g_trampoline.enqueue(new ChatJob(netShipId, formatted));
 }
 
-void enqueue_wingman_lost(int slot) {
+void enqueue_wingman_lost(int slot, bool explode) {
     Despawn d;
     d.set_ship_id(NetworkShipId::from_local(slot).to_net());
-    d.set_explode(1);
+    if (explode) {
+        d.set_explode(1);
+    }
     g_trampoline.enqueue(new DespawnJob(DespawnJob::WINGMAN_LOST, d, slot, kInvalidSlot));
 }
 

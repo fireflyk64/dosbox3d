@@ -258,7 +258,7 @@ static const char *status_name(int status) {
     return "?";
 }
 
-static bool ends_only_this_player(int status) {
+static bool ending_explodes(int status) {
     return status == EndDeath || status == EndEject || status == EndExit;
 }
 
@@ -358,9 +358,9 @@ public:
         frameNumber_ = 0;
         for (size_t i = 0; i < clients_.size(); i++) {
             clients_[i]->leftThisMission = false;
-            clients_[i]->inMission = false;
             clients_[i]->missionTreeProgress.clear();
         }
+        // inMission is cleared when the mission-end frame goes out (flush).
     }
 
     virtual void on_mission_victory_calc() {
@@ -636,7 +636,7 @@ private:
             c->leftThisMission = true;
             c->needsMissionStartState = false;
             if (slot_in_use(c->net)) {
-                enqueue_wingman_lost(c->net);
+                enqueue_wingman_lost(c->net, ending_explodes(status));
                 spawns_.remove(c->net);
             }
             return;
@@ -665,6 +665,7 @@ private:
                 if (parse_health(su.health(), &h)) {
                     write_health(c->net, h);
                     *update_for(pendingFrame_.mutable_frame(), c->net)->mutable_health() = su.health();
+                    wclog(3, "mirrored player %d health: %s", c->net, describe_health(c->net).c_str());
                 }
             }
         }
@@ -772,6 +773,8 @@ private:
             if (!c->conn.send(*msg)) {
                 wclog(1, "player %d disconnected while sending", c->net);
                 c->disconnect();
+            } else if (msg->frame().has_mission_end()) {
+                c->inMission = false;  // they leave the frame loop on this frame
             }
         }
         reset_pending_frame();
@@ -965,26 +968,19 @@ public:
             lastWrittenMissionStatus_ = Proceed;
             return;
         }
-        if (ends_only_this_player(status)) {
-            if (!ownMissionOver_) {
-                ownMissionOver_ = true;
-                wclog(1, "we %s; leaving the mission", status_name(status));
-                NetworkMessage msg;
-                msg.set_epoch(epoch_);
-                msg.set_frame_number(++frameNumber_);
-                msg.mutable_frame()->mutable_player_end()->set_state((GameState)status);
-                conn_.send(msg);
-            }
-            lastWrittenMissionStatus_ = (GameState)status;
-            return;  // let our own game end the mission
+        // Our own ending (landed, died, ejected, quit): tell the server so it
+        // removes our ship, and let our game end the mission for us.  Only
+        // the leader's ending is shared with everyone.
+        if (!ownMissionOver_) {
+            ownMissionOver_ = true;
+            wclog(1, "we %s; leaving the mission", status_name(status));
+            NetworkMessage msg;
+            msg.set_epoch(epoch_);
+            msg.set_frame_number(++frameNumber_);
+            msg.mutable_frame()->mutable_player_end()->set_state((GameState)status);
+            conn_.send(msg);
         }
-        // Landing is shared: hold our game in space until the server ends it.
-        wr16(ds::missionStatus, 0);
-        MissionEnd end;
-        populate_mission_end(&end);
-        end.set_game_update((GameState)status);
-        *pendingFrame_.mutable_frame()->mutable_mission_end() = end;
-        wclog(1, "we %s; asking the server to end the mission", status_name(status));
+        lastWrittenMissionStatus_ = (GameState)status;
     }
 
     virtual void on_trampoline_idle() {
@@ -1000,6 +996,7 @@ public:
             ShipHealthState h;
             if (parse_health(su.health(), &h)) {
                 write_health(slot, h);
+                wclog(3, "mirrored net %d health into slot %d: %s", su.ship_id(), slot, describe_health(slot).c_str());
             }
         }
         pendingHealth_.clear();

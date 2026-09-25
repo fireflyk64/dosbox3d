@@ -62,7 +62,8 @@ extra health" and "wingman explodes" behaviour.
   machines with different frame phases drift by a point; nothing corrected
   that.
 * A client's death was forwarded as a *shared* mission end, ending the
-  server's mission with `EndDeath`.
+  server's mission with `EndDeath` (and the forwarded status was read after
+  it had been zeroed, so a client landing sent `Proceed`).
 * The per-instruction hook read ~15 words of guest memory for every emulated
   instruction (`isExecutingOverlay` per hook).
 
@@ -86,9 +87,11 @@ extra health" and "wingman explodes" behaviour.
   AI fire from it; the set-speed AI is skipped as before.
 * Positions of a player's ship come from its owner every frame; the server
   broadcasts all positions.
-* A client's death, ejection or exit sends `PlayerEnd`; the server explodes
-  that slot (`delayedDespawn(-1, slot)`), broadcasts the despawn and continues
-  the mission.  Landing/carrier endings are still shared (`MissionEnd`).
+* Any ending of a client's own mission (landed, died, ejected, quit) sends
+  `PlayerEnd`; the server removes that slot (with an explosion for death,
+  ejection and quitting, quietly for landing), broadcasts the despawn and
+  continues the mission.  Only the leader's (server's) ending is shared with
+  everyone (`MissionEnd`), so the mission ends when the leader lands or dies.
 * Clients fire their own guns immediately (`FireJob::PREDICT`) and tag the
   event with `client_seq`; the server replays it, and the echo lets the client
   map the missile slot instead of firing twice.
