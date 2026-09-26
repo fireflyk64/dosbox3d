@@ -82,7 +82,7 @@ static const OverlayFn despawn               = { STUB140, 0x01DD, 0x1C16, "despa
 // --- overlay 163: AI -------------------------------------------------------
 static const OverlayFn aiShipThink           = { STUB163, 0x00CA, 0x160E, "ovr163:160E per-frame ship AI (from ovr141:28D0)" };
 // --- overlay 134: VDU / comms ---------------------------------------------
-static const OverlayFn showCommMessage       = { STUB134, 0x025F, 0x33ED, "outerSomeCommThing(msg, ship): shows dseg:8DF8 on the VDU" };
+static const OverlayFn showCommMessage       = { STUB134, 0x025F, 0x33ED, "outerSomeCommThing(ship, msg): msg 0 shows dseg:8DF8 on the VDU" };
 // --- overlay 133: autopilot -----------------------------------------------
 static const OverlayFn autoAnimation         = { STUB133, 0x0025, 0x0000, "autoAnimation(camShipType, camMode, duration)" };
 static const OverlayLoc autoAnimationBody    = { STUB133, 0x002A, 0x0003, "autoAnimation+3 (after push bp/mov bp,sp)" };

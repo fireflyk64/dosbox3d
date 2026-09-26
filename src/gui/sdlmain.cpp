@@ -2312,6 +2312,7 @@ void GFX_HandleVideoResize(int width, int height) {
 
 bool kGlobalKeyDisable = false;
 bool kJustSentMessage = false;
+bool kSwallowOpeningKeyText = false;
 void GFX_Events() {
 	SDL_Event event;
 #if defined (REDUCE_JOYSTICK_POLLING)
@@ -2538,9 +2539,12 @@ void GFX_Events() {
             {
 			void MAPPER_CheckEvent(SDL_Event * event);
             if (is_wc_connected()) {
-                if (event.type == SDL_KEYDOWN && ((within_briefed_mission && event.key.keysym.sym == SDLK_RETURN && event.key.keysym.mod != KMOD_LSHIFT) || event.key.keysym.sym == SDLK_0) && !kGlobalKeyDisable) {
-                    // enter (shift-enter or kp-enter fire missiles)
+                if (event.type == SDL_KEYDOWN && ((within_briefed_mission && event.key.keysym.sym == SDLK_RETURN && !(event.key.keysym.mod & KMOD_SHIFT)) || event.key.keysym.sym == SDLK_0) && !kGlobalKeyDisable) {
+                    // enter opens comms in a mission (shift-enter or kp-enter fire
+                    // missiles); test the shift bits only, mod also carries num/caps lock
                     kGlobalKeyDisable = true;
+                    // the '0' that opens the prompt also arrives as text input
+                    kSwallowOpeningKeyText = event.key.keysym.sym == SDLK_0;
                     outgoing_text = outgoing_prefix;
 #if SDL_VERSION_ATLEAST(2,0,0)
                     SDL_StartTextInput();
@@ -2590,7 +2594,12 @@ void GFX_Events() {
                 };
                 const char *str = asciichar;
 #endif
-                outgoing_text += str;
+                if (kSwallowOpeningKeyText && strcmp(str, "0") == 0) {
+                    kSwallowOpeningKeyText = false;
+                } else {
+                    kSwallowOpeningKeyText = false;
+                    outgoing_text += str;
+                }
             }
             if (event.type == SDL_KEYDOWN && kGlobalKeyDisable && event.key.keysym.sym == SDLK_BACKSPACE) {
                 if (outgoing_text.length() > outgoing_prefix.length()) {

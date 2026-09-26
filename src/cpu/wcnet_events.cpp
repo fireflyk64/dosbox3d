@@ -302,9 +302,18 @@ public:
         if (local == kInvalidSlot) {
             local = kPlayerSlot;
         }
-        write_cstring(ds::commGlobalTxt, 80, text_);
-        call_of(code::showCommMessage).arg(0).arg((Bit16u)local).invoke();
+        // (ship, messageId).  The call sets up the comm display (face,
+        // timer) and copies message 0 -- an empty string, shown as
+        // "(null)" -- into commGlobalTxt; the VDU renders that buffer on
+        // the following frames, so our text has to go in after the call
+        // returns (finish), exactly as the original wc_net.cpp did.  With
+        // the arguments the other way round the game shows message #slot
+        // from ship 0 instead.
+        call_of(code::showCommMessage).arg((Bit16u)local).arg(0).invoke();
         return true;
+    }
+    virtual void finish() {
+        write_cstring(ds::commGlobalTxt, 80, text_);
     }
     virtual const char *describe() const { return "chat"; }
 
