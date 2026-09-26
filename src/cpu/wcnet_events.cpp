@@ -274,10 +274,15 @@ class AutopilotJob : public VmJob {
 public:
     explicit AutopilotJob(const AutoPilotEvent &ape) : ape_(ape) {}
     virtual bool start() {
-        if (ape_.has_finish_camera() && ape_.finish_camera()) {
-            return false;
-        }
-        wclog(2, "replay autopilot camera (%d, %d, %d)", ape_.cam_ship_type(), ape_.cam_mode(), ape_.duration());
+        // The server sends one event when its autopilot camera starts and one
+        // when it finishes.  Both are replayed by calling the game's
+        // autoAnimation: the finish event carries no camera parameters, and
+        // the resulting (0, 0, 0) call is what takes the client out of the
+        // cinematic and back to the cockpit (as the original wc_net.cpp did);
+        // skipping it leaves the client in the letterboxed camera view.
+        bool finish = ape_.has_finish_camera() && ape_.finish_camera();
+        wclog(2, "replay autopilot %s (%d, %d, %d)", finish ? "finish" : "camera",
+              ape_.cam_ship_type(), ape_.cam_mode(), ape_.duration());
         call_of(code::autoAnimation)
             .arg((Bit16u)ape_.cam_ship_type()).arg((Bit16u)ape_.cam_mode()).arg((Bit16u)ape_.duration())
             .invoke();
