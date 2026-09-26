@@ -39,6 +39,9 @@ public:
     int max_players() const { return maxPlayers_; }
     bool is_host() const { return selfId_ == 0; }
     const std::string &code() const { return code_; }
+    // False once the connection to the lobby server is gone: established
+    // peer links keep working, but nobody new can join.
+    bool signaling_alive() const;
 
     // Stream to `player` once its data channel is up (caller owns it).
     // NULL after timeoutMs, or right away when nobody holds that slot.

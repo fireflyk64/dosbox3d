@@ -112,6 +112,8 @@ impl Peer {
 
 struct State {
     closed: bool,
+    /// The signaling WebSocket is up (new players can still join).
+    signaling: bool,
     peers: Vec<Peer>,
 }
 
@@ -289,13 +291,18 @@ fn handle_event(shared: &Shared, ev: Event) {
         Event::PlayerReplaced { player_id } => {
             shared.update(|st| st.player_present(player_id, "was replaced"));
         }
-        Event::PlayerLeft { player_id, reason } => {
-            let why = match reason {
-                PlayerLeftReason::ExplicitLeave => "left the room",
-                PlayerLeftReason::Disconnected => "lost the lobby",
-            };
-            shared.update(|st| st.player_absent(player_id, why));
-        }
+        Event::PlayerLeft { player_id, reason } => match reason {
+            PlayerLeftReason::ExplicitLeave => {
+                shared.update(|st| st.player_absent(player_id, "left the room"));
+            }
+            // Only the player's signaling socket is gone (idle proxy
+            // timeout, laptop lid, ...).  The lobby keeps the slot and the
+            // WebRTC link is unaffected, so the game connection stays up;
+            // if the process really died the link reports failed/closed.
+            PlayerLeftReason::Disconnected => {
+                log(LOG_INFO, format!("player {player_id} lost its lobby connection; game link unaffected"));
+            }
+        },
         Event::Started => log(LOG_EVENT, "room started"),
         Event::PeerState { player_id, state } => {
             log(LOG_EVENT, format!("player {player_id}: peer connection {state}"));
@@ -324,7 +331,8 @@ fn handle_event(shared: &Shared, ev: Event) {
                 log(LOG_ERROR, format!("lobby session over ({code}: {message})"));
                 shared.update(|st| st.close_all());
             } else {
-                log(LOG_ERROR, format!("lobby signaling lost ({code}: {message}); existing links continue"));
+                log(LOG_ERROR, format!("lobby signaling lost ({code}: {message}); existing links continue, nobody new can join"));
+                shared.update(|st| st.signaling = false);
             }
         }
     }
@@ -391,13 +399,16 @@ fn net_thread(
             }
         }
         let _ = tokio::time::timeout(CLOSE_TIMEOUT, game.close()).await;
-        shared.update(|st| st.close_all());
+        shared.update(|st| {
+            st.signaling = false;
+            st.close_all();
+        });
     });
 }
 
 fn spawn_hub(opts: ConnectOptions) -> Result<Hub, String> {
     let shared = Arc::new(Shared {
-        state: Mutex::new(State { closed: false, peers: Vec::new() }),
+        state: Mutex::new(State { closed: false, signaling: true, peers: Vec::new() }),
         cv: Condvar::new(),
     });
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Ready>();
@@ -472,6 +483,7 @@ pub unsafe extern "C" fn wclobby_connect(
         force_relay: o.force_relay != 0,
         origin: c_str(o.origin).map(str::to_string),
         storage_path: c_str(o.token_path).map(std::path::PathBuf::from),
+        disable_keepalive: o.no_keepalive != 0,
         ..Default::default()
     };
     log(LOG_INFO, format!("joining room {code} at {server}"));
@@ -496,6 +508,15 @@ pub struct wclobby_options {
     pub create_max_players: u16,
     pub force_relay: c_int,
     pub token_path: *const c_char,
+    pub no_keepalive: c_int,
+}
+
+/// # Safety
+/// `h` must be a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn wclobby_signaling_alive(h: *const Hub) -> c_int {
+    let st = (*h).shared.lock();
+    (st.signaling && !st.closed) as c_int
 }
 
 /// # Safety

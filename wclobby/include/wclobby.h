@@ -40,6 +40,8 @@ typedef struct wclobby_options {
     uint16_t create_max_players; /* >0: create the room with this many slots if it does not exist */
     int force_relay;             /* non-zero: TURN relay only (for testing) */
     const char *token_path;      /* file for resume-token persistence; NULL = none */
+    int no_keepalive;            /* non-zero: no periodic WebSocket ping on the signaling
+                                    connection (for testing what idle proxies do) */
 } wclobby_options_t;
 
 /* Levels follow wcnet_log.h: 0 errors, 1 lifecycle, 2 per-event, 3 chatter.
@@ -55,6 +57,9 @@ void wclobby_close(wclobby_t *h);
 
 uint16_t wclobby_self_id(const wclobby_t *h);
 uint16_t wclobby_max_players(const wclobby_t *h);
+/* 1 while the signaling connection to the lobby server is up.  Losing it
+ * does not affect established peer links, but nobody new can join. */
+int wclobby_signaling_alive(const wclobby_t *h);
 
 enum {
     WCLOBBY_PEER_ABSENT = 0, /* slot unoccupied */

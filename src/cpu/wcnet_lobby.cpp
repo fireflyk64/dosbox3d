@@ -165,6 +165,10 @@ Listener *LobbyHub::make_listener() {
     return new LobbyListener(h_, code_);
 }
 
+bool LobbyHub::signaling_alive() const {
+    return wclobby_signaling_alive(h_) == 1;
+}
+
 }  // namespace wc
 
 #endif  // C_LOBBYLINK

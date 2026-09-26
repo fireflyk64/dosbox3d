@@ -1236,6 +1236,15 @@ const char *wc_net_role() {
     return g_session->is_server() ? "server" : "client";
 }
 
+const char *wc_net_status_note() {
+#ifdef C_LOBBYLINK
+    if (g_session && g_lobby && !g_lobby->signaling_alive()) {
+        return "The connection to the lobby server was lost: the game goes on, but nobody new can join.";
+    }
+#endif
+    return "";
+}
+
 bool in_space() {
     return g_session != NULL && g_session->in_space();
 }

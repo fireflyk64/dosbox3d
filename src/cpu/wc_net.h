@@ -29,6 +29,8 @@ void uninit_network();
 bool is_wc_connected();
 // "server", "client" or "" when not connected.
 const char *wc_net_role();
+// Something worth telling the player about the connection, or "".
+const char *wc_net_status_note();
 bool in_space();
 extern bool within_briefed_mission;
 void wcnetSendChatMessage(const std::string &msg);

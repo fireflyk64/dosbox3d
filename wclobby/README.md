@@ -48,10 +48,23 @@ changes when the link comes up or dies and when either side hangs up
 generation, which is how the game's connect/accept flow — and reconnects
 after a dropped session — map onto a link that stays up.
 
+Once every peer link is up a game sends nothing over the signaling
+WebSocket, and idle proxies and NATs drop such connections after a few
+minutes. The Rust client therefore pings the lobby server every 25 s
+(`disable_keepalive` / `no_keepalive` turns that off). If the signaling
+connection is lost anyway, established peer links keep working, the
+lobby's "player disconnected" notice about the other side is ignored,
+and only the physical link failing, an explicit leave or a hangup ends a
+game connection; `WCNET STATUS` then notes that nobody new can join.
+
 ## Testing
 
 `ctest/run.sh` builds a local lobby server from `../lobbylink` (needs Go)
 and runs `ctest/wclobby_test.c` against it: join, accept, 500 ordered
 messages, a 300 KB message, hangup, reconnect over the same link, leave.
 `ctest/run.sh https://pqrstuvw.xyz/lobbylink` runs the same test through
-the public server.
+the public server. `wclobby_test ... --soak 480 [--no-keepalive]` idles
+that long after the exchange and then checks that the link (and, with
+the keepalive, the signaling connection) survived; `--client-server URL`
+joins the client through another URL, e.g. a `socat` relay you can kill
+to cut only its signaling connection mid-session.

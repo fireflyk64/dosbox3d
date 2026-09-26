@@ -104,6 +104,9 @@ public:
 		} else if (net_config.use_lobby()) {
 			WriteOut("%s in room %s (lobby server %s).\n",
 			         strcmp(role, "server") == 0 ? "Hosting" : "Joined as a client", net_config.room, net_config.lobby_url);
+			if (wc_net_status_note()[0]) {
+				WriteOut("%s\n", wc_net_status_note());
+			}
 		} else if (strcmp(role, "server") == 0) {
 			WriteOut("Hosting a TCP/IP game on port %s.\n", net_config.portstr);
 		} else {

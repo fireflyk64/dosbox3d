@@ -4,9 +4,12 @@
  *  ordered messages including a large one, then hang up and reconnect over
  *  the same WebRTC link, and finally the client leaves.
  *
- *  Usage: wclobby_test [server] [code] [origin]
+ *  Usage: wclobby_test [server] [code] [origin] [--soak SECONDS] [--no-keepalive]
  *    server  default http://127.0.0.1:8789 (run the lobby with --allow-no-origin)
  *    origin  default "" (no Origin header); pass e.g. https://pqrstuvw.xyz for prod
+ *    --soak  after the exchange, sit idle that long, then check that the
+ *            signaling connections and the peer link survived (what an
+ *            idle proxy or NAT does to a long game)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,14 +37,31 @@ static void step(const char *what) {
 }
 
 int main(int argc, char **argv) {
-    const char *server = argc > 1 ? argv[1] : "http://127.0.0.1:8789";
-    const char *code = argc > 2 ? argv[2] : "WCTEST";
-    const char *origin = argc > 3 ? argv[3] : "";
+    const char *positional[3] = { "http://127.0.0.1:8789", "WCTEST", "" };
+    int npos = 0, soak = 0, no_keepalive = 0;
     char err[256];
     wclobby_buf_t buf;
     uint16_t p = 0;
     uint32_t hgen = 0, cgen = 0;
     int r, i;
+
+    const char *client_server = NULL;
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--soak") == 0 && i + 1 < argc) {
+            soak = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--no-keepalive") == 0) {
+            no_keepalive = 1;
+        } else if (strcmp(argv[i], "--client-server") == 0 && i + 1 < argc) {
+            /* The client joins through this URL instead (e.g. a relay that
+             * can be killed to cut only its signaling connection). */
+            client_server = argv[++i];
+        } else if (npos < 3) {
+            positional[npos++] = argv[i];
+        }
+    }
+    const char *server = positional[0];
+    const char *code = positional[1];
+    const char *origin = positional[2];
 
     wclobby_set_logger(logger);
     wclobby_options_t o;
@@ -50,6 +70,7 @@ int main(int argc, char **argv) {
     o.code = code;
     o.origin = origin;
     o.create_max_players = 3;
+    o.no_keepalive = no_keepalive;
 
     step("host joins (creates the room)");
     wclobby_t *host = wclobby_connect(&o, err, sizeof(err));
@@ -58,7 +79,11 @@ int main(int argc, char **argv) {
     CHECK(wclobby_max_players(host) == 3, "max players %d", wclobby_max_players(host));
 
     step("client joins");
+    if (client_server) {
+        o.server = client_server;
+    }
     wclobby_t *client = wclobby_connect(&o, err, sizeof(err));
+    o.server = server;
     CHECK(client, "client connect: %s", err);
     CHECK(wclobby_self_id(client) == 1, "client got slot %d", wclobby_self_id(client));
 
@@ -108,6 +133,36 @@ int main(int argc, char **argv) {
     }
     CHECK(wclobby_recv(host, 1, hgen, 0, &buf) == 0, "poll after big");
 
+    if (soak > 0) {
+        int elapsed;
+        printf("- idling for %d s (keepalive %s)\n", soak, no_keepalive ? "off" : "on");
+        for (elapsed = 0; elapsed < soak; elapsed += 30) {
+            sleep(soak - elapsed < 30 ? soak - elapsed : 30);
+            printf("  t=%ds signaling host=%d client=%d, link host=%d client=%d\n",
+                   elapsed + 30 < soak ? elapsed + 30 : soak,
+                   wclobby_signaling_alive(host), wclobby_signaling_alive(client),
+                   wclobby_peer_state(host, 1, NULL), wclobby_peer_state(client, 0, NULL));
+            fflush(stdout);
+        }
+        step("after the idle period: the game link still works both ways");
+        CHECK(wclobby_is_open(host, 1, hgen) == 1, "host connection died during the idle period");
+        CHECK(wclobby_is_open(client, 0, cgen) == 1, "client connection died during the idle period");
+        CHECK(wclobby_send(host, 1, hgen, (const uint8_t *)"still", 5) == 0, "send after idle");
+        r = wclobby_recv(client, 0, cgen, 10000, &buf);
+        CHECK(r == 1 && buf.len == 5, "recv after idle: %d", r);
+        wclobby_buf_free(&buf);
+        CHECK(wclobby_send(client, 0, cgen, (const uint8_t *)"there", 5) == 0, "send back after idle");
+        r = wclobby_recv(host, 1, hgen, 10000, &buf);
+        CHECK(r == 1 && buf.len == 5, "recv back after idle: %d", r);
+        wclobby_buf_free(&buf);
+        printf("  signaling after idle: host=%d client=%d\n",
+               wclobby_signaling_alive(host), wclobby_signaling_alive(client));
+        if (!no_keepalive) {
+            CHECK(wclobby_signaling_alive(host) && wclobby_signaling_alive(client),
+                  "signaling dropped despite the keepalive");
+        }
+    }
+
     step("client hangs up; host sees EOF");
     wclobby_hangup(client, 0, cgen);
     CHECK(wclobby_is_open(client, 0, cgen) == 0, "client still open after own hangup");
@@ -136,14 +191,23 @@ int main(int argc, char **argv) {
     r = wclobby_recv(client, 0, cgen, 5000, &buf);
     CHECK(r == -1, "client recv after host hangup: %d", r);
 
-    step("client leaves the room; host sees the slot free up");
-    wclobby_close(client);
-    for (i = 0; i < 100 && wclobby_peer_state(host, 1, NULL) != WCLOBBY_PEER_ABSENT; i++) {
-        usleep(100000);
+    if (client_server || !wclobby_signaling_alive(host) || !wclobby_signaling_alive(client)) {
+        /* Without signaling on both sides the client's leave never reaches
+         * the lobby, or the host never hears about it: the slot stays
+         * occupied until the lobby's claim timeout and the host only learns
+         * of the exit from the peer link going down (ICE consent timeout). */
+        step("client leaves (signaling is gone on one side; the slot stays occupied)");
+        wclobby_close(client);
+    } else {
+        step("client leaves the room; host sees the slot free up");
+        wclobby_close(client);
+        for (i = 0; i < 100 && wclobby_peer_state(host, 1, NULL) != WCLOBBY_PEER_ABSENT; i++) {
+            usleep(100000);
+        }
+        CHECK(wclobby_peer_state(host, 1, NULL) == WCLOBBY_PEER_ABSENT, "client slot still %d",
+              wclobby_peer_state(host, 1, NULL));
+        CHECK(wclobby_open(host, 1, 0, &hgen) == -1, "open to an empty slot should fail at once");
     }
-    CHECK(wclobby_peer_state(host, 1, NULL) == WCLOBBY_PEER_ABSENT, "client slot still %d",
-          wclobby_peer_state(host, 1, NULL));
-    CHECK(wclobby_open(host, 1, 0, &hgen) == -1, "open to an empty slot should fail at once");
 
     step("host leaves");
     wclobby_close(host);
