@@ -398,9 +398,15 @@ public:
         MissionEnd *end = pendingFrame_.mutable_frame()->mutable_mission_end();
         populate_mission_end(end);
         if (status == EndDeath || status == EndCarrier) {
-            // These endings skip the victory computation, so flush now.
+            // These endings skip the victory computation, so flush now and
+            // do the reset that normally runs there: otherwise the epoch,
+            // the spawn registry and the clients' left-this-mission flags
+            // survive into the next mission, the next briefing request is
+            // answered with the old briefing and start state, and the
+            // client waits forever for frames it is no longer part of.
             sendFrameAtIdle_ = true;
             exchange(true);
+            on_mission_reset();
         }
     }
 
@@ -890,6 +896,13 @@ public:
             load_mission_tree_progress(missionTreeProgress_);
             missionTreeProgress_.clear();
         }
+        if (lastWrittenMissionStatus_ == EndDeath || lastWrittenMissionStatus_ == EndCarrier) {
+            // No victory computation after these endings, so reset here
+            // (entity map, health mirror, own-mission-over flag) or the next
+            // mission starts with stale state.
+            on_mission_reset();
+        }
+        lastWrittenMissionStatus_ = Proceed;
     }
 
     virtual void on_frame_top() {
