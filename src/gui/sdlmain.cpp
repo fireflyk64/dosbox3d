@@ -2539,12 +2539,12 @@ void GFX_Events() {
             {
 			void MAPPER_CheckEvent(SDL_Event * event);
             if (is_wc_connected()) {
-                if (event.type == SDL_KEYDOWN && ((within_briefed_mission && event.key.keysym.sym == SDLK_RETURN && !(event.key.keysym.mod & KMOD_SHIFT)) || event.key.keysym.sym == SDLK_0) && !kGlobalKeyDisable) {
-                    // enter opens comms in a mission (shift-enter or kp-enter fire
-                    // missiles); test the shift bits only, mod also carries num/caps lock
+                if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_0 && !kGlobalKeyDisable) {
+                    // '0' opens the comms prompt; Enter stays the game's missile
+                    // key and only sends once the prompt is open
                     kGlobalKeyDisable = true;
                     // the '0' that opens the prompt also arrives as text input
-                    kSwallowOpeningKeyText = event.key.keysym.sym == SDLK_0;
+                    kSwallowOpeningKeyText = true;
                     outgoing_text = outgoing_prefix;
 #if SDL_VERSION_ATLEAST(2,0,0)
                     SDL_StartTextInput();
