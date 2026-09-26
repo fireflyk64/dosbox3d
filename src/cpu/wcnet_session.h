@@ -13,9 +13,10 @@
  *    resulting health snapshot (ShipHealth) to everyone else, and no machine
  *    ever runs do_damage/despawn against a remote player's ship.
  *  * Positions of a player's ship come from its owner every frame.
- *  * A client's death, ejection or exit removes its ship from the server's
- *    mission (with an explosion) and the mission continues for everyone
- *    else.  Landing is still a shared mission end, as in the original design.
+ *  * Shared fate: any player's ending (landed, died, ejected, quit) ends the
+ *    mission for everyone with that same status.  A client reports its own
+ *    ending with PlayerEnd; the server adopts it, and its MissionEnd frame
+ *    carries it to the other clients.
  *
  *  Frame exchange (lockstep, unchanged from the original design)
  *  ---------------------------------------------------------------

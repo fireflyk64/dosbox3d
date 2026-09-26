@@ -248,6 +248,14 @@ private:
     int framesSince_;
 };
 
+static std::string describe_health(int slot) {
+    ShipHealthState h = read_health(slot);
+    char buf[128];
+    snprintf(buf, sizeof(buf), "shield %d/%d armor %d/%d/%d/%d core %d dmg %d",
+             h.shield[0], h.shield[1], h.armor[0], h.armor[1], h.armor[2], h.armor[3], h.coreHp, h.damagePoints);
+    return buf;
+}
+
 static ShipUpdate *update_for(Frame *frame, int net) {
     for (int i = 0; i < frame->update_size(); i++) {
         if (frame->update(i).has_ship_id() && (int)frame->update(i).ship_id() == net) {
@@ -271,10 +279,6 @@ static const char *status_name(int status) {
     return "?";
 }
 
-static bool ends_only_this_player(int status) {
-    return status == EndDeath || status == EndEject || status == EndExit;
-}
-
 static void handle_incoming_chat(const Chat &chat) {
     std::string formatted = chat.message();
     if (chat.callsign().length() > 1 && chat.callsign() != "BLUEHAIR") {
@@ -296,10 +300,11 @@ struct RemoteClient {
     bool needsMissionStartState;
     bool inMission;              // takes part in the frame exchange
     bool leftThisMission;        // died/ejected/exited this mission
+    int skipPendingEvents;       // events already covered by the start state
 
     explicit RemoteClient(int n)
         : net(n), requestedBriefingStart(false), needsMissionStartState(false),
-          inMission(false), leftThisMission(false) {}
+          inMission(false), leftThisMission(false), skipPendingEvents(0) {}
     bool connected() const { return conn.is_open(); }
     void disconnect() {
         conn.close();
@@ -364,9 +369,9 @@ public:
         frameNumber_ = 0;
         for (size_t i = 0; i < clients_.size(); i++) {
             clients_[i]->leftThisMission = false;
-            clients_[i]->inMission = false;
             clients_[i]->missionTreeProgress.clear();
         }
+        // inMission is cleared when the mission-end frame goes out (flush).
     }
 
     virtual void on_mission_victory_calc() {
@@ -605,6 +610,8 @@ private:
             return false;
         }
         c->inMission = true;
+        // Spawns queued in the pending frame are already in the registry copy.
+        c->skipPendingEvents = pendingFrame_.frame().event_size();
         return true;
     }
 
@@ -635,15 +642,15 @@ private:
 
     void merge_client_frame(RemoteClient *c, const Frame &frame) {
         if (frame.has_player_end()) {
+            // Shared fate: a wing lives and dies together.  Whatever ended
+            // the wingman's mission ends ours too; our mission-end frame then
+            // ends it for every other client.
             int status = frame.player_end().state();
-            wclog(1, "player %d %s; the mission continues without them", c->net, status_name(status));
+            wclog(1, "player %d %s; ending the mission for everyone", c->net, status_name(status));
             c->inMission = false;
             c->leftThisMission = true;
             c->needsMissionStartState = false;
-            if (slot_in_use(c->net)) {
-                enqueue_wingman_lost(c->net);
-                spawns_.remove(c->net);
-            }
+            wr16(ds::missionStatus, (Bit16u)status);
             return;
         }
         if (frame.has_mission_end()) {
@@ -670,6 +677,7 @@ private:
                 if (parse_health(su.health(), &h)) {
                     write_health(c->net, h);
                     *update_for(pendingFrame_.mutable_frame(), c->net)->mutable_health() = su.health();
+                    wclog(3, "mirrored player %d health: %s", c->net, describe_health(c->net).c_str());
                 }
             }
         }
@@ -721,6 +729,9 @@ private:
     // of after the trampoline.
     void exchange(bool serverOnlyFlush) {
         frameNumber_ += 1;
+        if (frameNumber_ % 300 == 1) {
+            wclog(2, "frame %llu: own health %s", (unsigned long long)frameNumber_, describe_health(kPlayerSlot).c_str());
+        }
         populate_server_frame();
         for (size_t i = 0; i < clients_.size(); i++) {
             RemoteClient *c = clients_[i];
@@ -758,9 +769,24 @@ private:
         sendFrameAtIdle_ = false;
         for (size_t i = 0; i < clients_.size(); i++) {
             RemoteClient *c = clients_[i];
-            if (c->connected() && c->inMission && !c->conn.send(pendingFrame_)) {
+            if (!c->connected() || !c->inMission) {
+                continue;
+            }
+            const NetworkMessage *msg = &pendingFrame_;
+            NetworkMessage trimmed;
+            if (c->skipPendingEvents > 0) {
+                trimmed = pendingFrame_;
+                Frame *f = trimmed.mutable_frame();
+                int skip = c->skipPendingEvents < f->event_size() ? c->skipPendingEvents : f->event_size();
+                f->mutable_event()->DeleteSubrange(0, skip);
+                c->skipPendingEvents = 0;
+                msg = &trimmed;
+            }
+            if (!c->conn.send(*msg)) {
                 wclog(1, "player %d disconnected while sending", c->net);
                 c->disconnect();
+            } else if (msg->frame().has_mission_end()) {
+                c->inMission = false;  // they leave the frame loop on this frame
             }
         }
         reset_pending_frame();
@@ -897,6 +923,9 @@ public:
         }
         pendingFrame_.set_epoch(epoch_);
         pendingFrame_.set_frame_number(++frameNumber_);
+        if (frameNumber_ % 300 == 1) {
+            wclog(2, "frame %llu: own health %s", (unsigned long long)frameNumber_, describe_health(kPlayerSlot).c_str());
+        }
         populate_own_update();
         if (!conn_.send(pendingFrame_)) {
             drop("lost the server while sending a frame");
@@ -927,8 +956,11 @@ public:
             return;
         }
         NetworkMessage msg;
-        if (conn_.poll(CAT_CHAT, msg).ok()) {
+        RecvStatus st = conn_.poll(CAT_CHAT, msg);
+        if (st.ok()) {
             handle_incoming_chat(msg.chat());
+        } else if (st.failed()) {
+            drop("the server went away");
         }
     }
 
@@ -961,26 +993,19 @@ public:
             lastWrittenMissionStatus_ = Proceed;
             return;
         }
-        if (ends_only_this_player(status)) {
-            if (!ownMissionOver_) {
-                ownMissionOver_ = true;
-                wclog(1, "we %s; leaving the mission", status_name(status));
-                NetworkMessage msg;
-                msg.set_epoch(epoch_);
-                msg.set_frame_number(++frameNumber_);
-                msg.mutable_frame()->mutable_player_end()->set_state((GameState)status);
-                conn_.send(msg);
-            }
-            lastWrittenMissionStatus_ = (GameState)status;
-            return;  // let our own game end the mission
+        // Our own ending (landed, died, ejected, quit): tell the server so it
+        // removes our ship, and let our game end the mission for us.  Only
+        // the leader's ending is shared with everyone.
+        if (!ownMissionOver_) {
+            ownMissionOver_ = true;
+            wclog(1, "we %s; leaving the mission", status_name(status));
+            NetworkMessage msg;
+            msg.set_epoch(epoch_);
+            msg.set_frame_number(++frameNumber_);
+            msg.mutable_frame()->mutable_player_end()->set_state((GameState)status);
+            conn_.send(msg);
         }
-        // Landing is shared: hold our game in space until the server ends it.
-        wr16(ds::missionStatus, 0);
-        MissionEnd end;
-        populate_mission_end(&end);
-        end.set_game_update((GameState)status);
-        *pendingFrame_.mutable_frame()->mutable_mission_end() = end;
-        wclog(1, "we %s; asking the server to end the mission", status_name(status));
+        lastWrittenMissionStatus_ = (GameState)status;
     }
 
     virtual void on_trampoline_idle() {
@@ -996,6 +1021,7 @@ public:
             ShipHealthState h;
             if (parse_health(su.health(), &h)) {
                 write_health(slot, h);
+                wclog(3, "mirrored net %d health into slot %d: %s", su.ship_id(), slot, describe_health(slot).c_str());
             }
         }
         pendingHealth_.clear();

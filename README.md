@@ -1,6 +1,11 @@
 DOSBox ported to Emscripten
 ===========================
 
+This fork also carries a cooperative multiplayer layer for Wing Commander 1;
+see [docs/wcnet-multiplayer.md](docs/wcnet-multiplayer.md) for the design,
+the diagnosis of the damage desync, and `scripts/wcdis.py` for reading the
+game's code with symbols.
+
 About
 -----
 

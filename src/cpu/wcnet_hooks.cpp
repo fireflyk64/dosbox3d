@@ -19,6 +19,9 @@
 #include "wcnet_log.h"
 #include "cpu.h"
 #include "regs.h"
+#include "keyboard.h"
+#include "pic.h"
+#include <time.h>
 
 extern std::string incoming_text;
 
@@ -36,6 +39,41 @@ static int g_asyncCounter = 0;
 static bool g_skipBarracks = false;
 
 static void watch(Bit16u ip) { g_watch[ip] = true; }
+
+// Test aid: with WCNET_AUTOKEYS=1 press Enter every 1.5 s so a headless
+// instance advances through the briefing on its own (scripts/wcnet-smoke.sh).
+static void auto_keys() {
+    static int enabled = -1;
+    static double lastMs = 0;
+    static bool pressed = false;
+    if (enabled < 0) {
+        const char *env = getenv("WCNET_AUTOKEYS");
+        enabled = (env && env[0] && env[0] != '0') ? 1 : 0;
+    }
+    if (!enabled) {
+        return;
+    }
+    static KBD_KEYS key = KBD_enter;
+    static int autopilots = 0;
+    double now = PIC_FullIndex();
+    if (pressed && now - lastMs > 60) {
+        KEYBOARD_AddKey(key, false);
+        pressed = false;
+    } else if (!pressed && now - lastMs > 1500) {
+        bool flying = g_session && g_session->in_space();
+        if (flying && autopilots < 3 && now - lastMs > 8000) {
+            key = KBD_a;  // engage autopilot: the enemies come to us
+            autopilots++;
+        } else if (flying) {
+            return;  // in space: leave the controls alone
+        } else {
+            key = KBD_enter;  // advance the briefing / menus
+        }
+        KEYBOARD_AddKey(key, true);
+        pressed = true;
+        lastMs = now;
+    }
+}
 
 static void build_watch_list() {
     memset(g_watch, 0, sizeof(g_watch));
@@ -68,11 +106,11 @@ static void build_watch_list() {
 
 bool g_pendingUninit = false;
 
-enum { kRetryDelaySeconds = 10 };
+enum { kMinAttemptSpacingSeconds = 5, kRetryDelaySeconds = 10 };
 
-// (Re)connect when there is no session.  A failed attempt is not retried
-// for a while: joining a lobby room takes seconds, and this runs at the top
-// of every frame in space.
+// (Re)connect when there is no session: at most every few seconds, and not
+// for a while after a failed attempt.  A missing TCP server or a lobby join
+// costs real time, and this runs at the top of every frame in space.
 static void ensure_session() {
     static time_t nextAttempt = 0;
     if (g_session) {
@@ -82,6 +120,7 @@ static void ensure_session() {
     if (now < nextAttempt) {
         return;
     }
+    nextAttempt = now + kMinAttemptSpacingSeconds;
     if (!init_network()) {
         nextAttempt = now + kRetryDelaySeconds;
     }
@@ -200,6 +239,7 @@ void wc_net_check_cpu_hooks() {
     using namespace wc;
     if (++g_asyncCounter == 1000) {
         g_asyncCounter = 0;
+        auto_keys();
         if (g_session) {
             g_session->on_async_tick();
         }

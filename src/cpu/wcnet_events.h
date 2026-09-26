@@ -30,8 +30,9 @@ void on_ai_set_speed_entry();     // ovr143:0874
 // Queue trampoline jobs for every event in a received frame.
 void enqueue_remote_event(const Event &ev);
 void enqueue_chat_display(int netShipId, const std::string &callsign, const std::string &text);
-// Server: a client reported its own ship destroyed; blow up its copy here.
-void enqueue_wingman_lost(int slot);
+// Server: a client left the mission; remove its copy here (with an explosion
+// when it died, quietly when it landed).
+void enqueue_wingman_lost(int slot, bool explode);
 
 // Client-side prediction of the local player's own shots.
 struct PendingFire {

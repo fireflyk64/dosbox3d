@@ -39,6 +39,10 @@ message WeaponFire {
         // The server echoes it back unchanged so the client can recognise its
         // own shot and only record the missile id mapping instead of firing twice.
         optional uint32 client_seq = 4;
+        // Network id of the ship the shooter had locked (dseg:C284[shooter])
+        // at the moment of firing; missiles inherit it when spawned, so the
+        // replaying machine sets it before calling fireGunFromShip.
+        optional uint32 target = 5;
 }
 
 // Authoritative per-ship health snapshot.  Wing Commander applies damage with

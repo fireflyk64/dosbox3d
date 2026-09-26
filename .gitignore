@@ -48,3 +48,6 @@ Makefile
 
 *~
 /include/version.h
+
+# Python
+__pycache__/

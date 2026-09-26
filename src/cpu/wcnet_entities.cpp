@@ -83,7 +83,7 @@ void SpawnRegistry::add(const Spawn &spawn) {
 
 void SpawnRegistry::remove(int net) {
     if (spawns_.erase(net) == 0) {
-        wclog(2, "spawn registry has no ship %d to remove", net);
+        wclog(3, "spawn registry has no ship %d to remove (missile or debris)", net);
     }
 }
 
