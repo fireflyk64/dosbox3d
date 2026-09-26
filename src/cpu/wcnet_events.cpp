@@ -248,6 +248,15 @@ public:
             g_entityMap->record_spawn(spawn_.ship_id(), slot);
             if ((int)spawn_.ship_id() == g_entityMap->own_ship()) {
                 wclog(2, "net %d is us (slot 0); slot %d becomes the server player's ship", spawn_.ship_id(), slot);
+                // The mission setup gives the wingman its pilot after the
+                // spawn returns, but on a client that spawn was cancelled and
+                // this replayed one only builds the ship.  Without a pilot
+                // (dseg:D1A2 == 0) the comms code shows "(null)" with a
+                // random face and the talk-to-wingman menu reads garbage.
+                // Both humans are Confed pilots: copy our own byte.
+                Bit8u pilot = rd8((Bit16u)(ds::shipStateByte + kPlayerSlot));
+                wr8((Bit16u)(ds::shipStateByte + slot), pilot);
+                wclog(2, "slot %d gets pilot byte %d like our own ship", slot, pilot);
             } else {
                 wclog(2, "net %d -> slot %d", spawn_.ship_id(), slot);
             }

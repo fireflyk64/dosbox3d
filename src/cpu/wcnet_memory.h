@@ -97,7 +97,9 @@ enum Offsets {
     shieldMax = 0xC988,              // shieldMaxMaybe: word[2] per slot
     shipAiState = 0xCA56,            // [comm6to5+E] word per slot, 9 = dying, 8 = ?, 0xffff
     gVelocityVector = 0xCAE2,        // 3 x int32 per slot
-    shipStateByte = 0xD1A2,          // [vduModeMaybe+2] byte per slot (0xff normal)
+    shipStateByte = 0xD1A2,          // [vduModeMaybe+2] byte per slot: pilot set, 8 = Confed pilot
+                                     // (player and wingman), 0xff = none; the comms code picks
+                                     // the face and name from it (ovr138:0980, ovr140:0020)
     hullCounter = 0xD22C,            // [vduModeMaybe+8C] byte per slot
     vduStatus10WhenPlayerHitsSmth = 0xD236,
     navPointState = 0xD25D,          // 8 x 19 bytes: mission tree progress
