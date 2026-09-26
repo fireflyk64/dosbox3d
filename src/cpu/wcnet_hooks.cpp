@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <time.h>
 #include "wc_net.h"
 #include "wcnet_session.h"
@@ -107,6 +108,48 @@ static void build_watch_list() {
 bool g_pendingUninit = false;
 
 enum { kMinAttemptSpacingSeconds = 5, kRetryDelaySeconds = 10 };
+
+// Debugging aid: writes the game's data segment to WCNET_DUMP_FILE (default
+// wcnet-ds.bin, a counter is appended after the first dump) at the top of
+// in-flight frame WCNET_DUMP_FRAME=<n>, and whenever SIGUSR1 arrives, so two
+// machines' views of the same mission can be diffed.
+static volatile sig_atomic_t g_dumpRequested = 0;
+
+static void on_dump_signal(int) {
+    g_dumpRequested = 1;
+}
+
+static void maybe_dump_data_segment() {
+    static int frame = 0;
+    static int wanted = -1;
+    static int dumps = 0;
+    if (wanted < 0) {
+        const char *env = getenv("WCNET_DUMP_FRAME");
+        wanted = env ? atoi(env) : 0;
+        signal(SIGUSR1, on_dump_signal);
+    }
+    ++frame;
+    if (frame != wanted && !g_dumpRequested) {
+        return;
+    }
+    g_dumpRequested = 0;
+    const char *env = getenv("WCNET_DUMP_FILE");
+    std::string path = env && env[0] ? env : "wcnet-ds.bin";
+    if (dumps++ > 0) {
+        char suffix[16];
+        snprintf(suffix, sizeof(suffix), ".%d", dumps);
+        path += suffix;
+    }
+    FILE *f = fopen(path.c_str(), "wb");
+    if (!f) {
+        return;
+    }
+    for (Bit32u off = 0; off < 0x10000; off++) {
+        fputc(rd8((Bit16u)off), f);
+    }
+    fclose(f);
+    wclog(1, "data segment dumped to %s at frame %d", path.c_str(), frame);
+}
 
 // (Re)connect when there is no session: at most every few seconds, and not
 // for a while after a failed attempt.  A missing TCP server or a lobby join
@@ -226,6 +269,7 @@ static void check_hooks_slow() {
         g_trampoline.on_bounce();
     }
     if (at_location(code::mainLoopTop)) {
+        maybe_dump_data_segment();
         ensure_session();
         if (g_session) {
             g_session->on_frame_top();
