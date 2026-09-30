@@ -21,6 +21,12 @@ const seconds = Number(secondsArg);
 const require = createRequire(path.join(process.env.PLAYWRIGHT_DIR || process.cwd(), "package.json"));
 const { chromium } = require("playwright");
 const chrome = process.env.CHROME || "/usr/bin/google-chrome";
+// GAME_SOURCE=server (default: the page picks this server's wc.tar.gz),
+// zip (GAME_FILE=path to a .zip of the game folder) or gog (GAME_FILE=the
+// GOG installer .exe, unpacked in the browser by innoextract).
+const gameSource = process.env.GAME_SOURCE || "server";
+const gameFile = process.env.GAME_FILE;
+if (gameSource !== "server" && !gameFile) { console.error("GAME_FILE is required for GAME_SOURCE=" + gameSource); process.exit(2); }
 // ROOM fixes the room code and NO_HOST=1 skips the browser host, for the
 // cross-play variant where a native DOSBox hosts (scripts/web-smoke.sh NATIVE_HOST=1).
 const room = process.env.ROOM || "SMOKE-" + Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -52,6 +58,15 @@ async function open(name, callsign) {
   u.searchParams.set("env.WCNET_AUTOKEYS", "1");
   u.searchParams.set("env.WCNET_LOG", "2");
   await page.goto(u.toString());
+  if (gameSource === "server") {
+    await page.waitForFunction(() => document.getElementById("sourceStatus").textContent.startsWith("Ready"), null, { timeout: 60000 });
+  } else {
+    await page.setInputFiles("#gamefile", gameFile);
+    await page.waitForFunction(() => /^(Ready|Could not)/.test(document.getElementById("sourceStatus").textContent), null, { timeout: 300000 });
+  }
+  const src = await page.$eval("#sourceStatus", (el) => el.textContent);
+  console.log(`[${name}] ${src.slice(0, 160)}`);
+  if (!src.startsWith("Ready")) throw new Error("game files not ready: " + src);
   await page.click("#fly");
   return page;
 }

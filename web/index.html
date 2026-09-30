@@ -11,15 +11,27 @@
   main { max-width: 1100px; margin: 0 auto; padding: 16px; }
   h1 { font-size: 18px; margin: 0 0 12px; }
   form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 14px; align-items: end; margin-bottom: 12px; }
-  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9aa3b2; }
+  #setup label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9aa3b2; }
+  [hidden] { display: none !important; }
   input[type=text], input[type=number] { padding: 6px 8px; background: #151922; color: #e8ecf3; border: 1px solid #2a3140; border-radius: 4px; font: inherit; }
-  label.check { flex-direction: row; align-items: center; }
+  #setup label.check { flex-direction: row; align-items: center; }
   button { padding: 8px 14px; background: #2f6fed; color: white; border: 0; border-radius: 4px; font: inherit; font-weight: 600; cursor: pointer; }
   button:disabled { background: #3a4152; cursor: default; }
   #stage { display: flex; flex-wrap: wrap; gap: 12px; }
   #canvas { background: black; width: 640px; height: 400px; image-rendering: pixelated; outline: none; }
   #log { flex: 1 1 320px; min-height: 200px; max-height: 400px; overflow: auto; background: #05070a; border: 1px solid #1d2230; padding: 8px; font: 12px/1.35 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
   #status { margin: 8px 0; color: #9aa3b2; }
+  #source { margin-bottom: 14px; }
+  #dropzone { border: 2px dashed #2f6fed; border-radius: 6px; padding: 12px 14px; background: #10141c; }
+  #dropzone.over { background: #17233a; border-color: #7aa2ff; }
+  #dropzone .pick { display: inline; color: #7aa2ff; cursor: pointer; text-decoration: underline; }
+  #dropzone input[type=file] { display: none; }
+  #sourceStatus { margin: 6px 0; color: #9aa3b2; }
+  #sourceButtons { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  #pickerLabel { color: #9aa3b2; font-size: 13px; }
+  #exePicker { padding: 5px 8px; background: #151922; color: #e8ecf3; border: 1px solid #2a3140; border-radius: 4px; font: inherit; }
+  #sourceButtons button { background: #263048; }
+  code { font-family: ui-monospace, monospace; }
   .hint { color: #7d8797; font-size: 12px; margin: 6px 0 0; }
   kbd { background: #1d2230; padding: 1px 5px; border-radius: 3px; font-family: ui-monospace, monospace; }
 </style>
@@ -27,6 +39,21 @@
 <body>
 <main>
   <h1>Wing Commander — cooperative multiplayer in the browser</h1>
+  <section id="source">
+    <div id="dropzone" tabindex="0">
+      <strong>Bring your own game.</strong> Drop a <b>.zip</b> of your Wing Commander folder, or the GOG installer
+      (<code>setup_wing_commander_*.exe</code>), here, or
+      <label class="pick"><input type="file" id="gamefile" accept=".zip,.exe,application/zip,application/octet-stream"> choose a file</label>.
+      Nothing is uploaded: the files are unpacked and kept in this browser only.
+    </div>
+    <div id="sourceStatus">No game files yet.</div>
+    <div id="sourceButtons">
+      <button type="button" id="useServer" hidden>Use this server's copy</button>
+      <button type="button" id="useSaved" hidden>Use the saved copy</button>
+      <button type="button" id="forget" hidden>Forget the saved copy</button>
+      <label id="pickerLabel" hidden>Unknown game; run <select id="exePicker"></select></label>
+    </div>
+  </section>
   <form id="setup">
     <label>Room code <input type="text" id="room" placeholder="FALCON-7" pattern="[A-Za-z0-9_\-]{4,64}" required></label>
     <label>Callsign <input type="text" id="callsign" placeholder="Maverick"></label>
@@ -35,7 +62,7 @@
     <label>Lobby server <input type="text" id="server" value=""></label>
     <label class="check"><input type="checkbox" id="relay"> Force TURN relay</label>
     <label class="check"><input type="checkbox" id="verbose"> Verbose network log</label>
-    <button type="submit" id="fly">Fly</button>
+    <button type="submit" id="fly" disabled>Fly</button>
   </form>
   <div id="status">Everyone enters the same room code. The first pilot into the room hosts the game; the others fly as wingmen.</div>
   <div id="stage">

@@ -11,6 +11,9 @@
 # build-native/src/dosbox or src/dosbox) hosts through the same lobby with
 # the Rust transport and only the wingman is a browser page: the cross-play
 # check between the two wclobby implementations.
+# GAME_SOURCE=zip GAME_FILE=/path/to/game.zip (or GAME_SOURCE=gog with the
+# GOG installer .exe) makes the pages bring their own game files through
+# the drop zone instead of the server's wc.tar.gz.
 # Logs and screenshots land in $OUT (default /tmp/web-smoke).
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

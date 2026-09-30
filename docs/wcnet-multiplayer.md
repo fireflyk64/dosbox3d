@@ -232,6 +232,12 @@ top-level README for the workflow).  What differs:
   (the browser's renderer) only pushes changed runs, so that table has to
   be right (it was inverted before, which the texture output natively never
   noticed).
+* **The game files come from the player.**  `web/gamefiles.js` unpacks a
+  `.zip` (browser `DecompressionStream`) or an Inno Setup / GOG installer
+  (innoextract compiled to wasm, run in `web/inno-worker.js`), recognises
+  the game by its executable, installs the game directory under `/game` in
+  the memory file system and caches it in IndexedDB.  Only Wing Commander 1
+  gets `WCROOM` (the hooks are for `WC.EXE`); other games run single-player.
 * **Configuration is the environment**, set by `web/wc.js` from the page's
   form (`Module.ENV` in `preRun`): `WCROOM`, `WCLOBBY`, `WCPLAYERS`,
   `WCCALLSIGN`, `WCLASTNAME`, `WCLOBBY_RELAY`, `WCNET_LOG`, plus anything

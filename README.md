@@ -20,18 +20,34 @@ web/serve.py                         # http://localhost:8000/
 
 `scripts/build-web.sh` needs the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html)
 (`emcc` on `PATH`, or `EMSDK=/path/to/emsdk`), cmake, curl, autotools,
-protoc, node/npm and Go is optional (only the smoke test builds a lobby
-server).  It builds protobuf for wasm once (`build-web/deps`), configures
-DOSBox out of tree in `build-web/`, compiles the lobbylink TypeScript client
-and assembles `web/dist/`: `dosbox.js` + `dosbox.wasm`, `p2p-client.js`,
-`index.html`, `wc.js` and `wc.tar.gz` with the game files taken from `./wc`
-(`WCDIR=/path/to/game` to use another copy; only the executables, `.CFG`
-files and `GAMEDAT/` are packaged).
+protoc, node/npm; Go is optional (only the smoke test builds a lobby
+server).  It builds protobuf, liblzma, a few Boost libraries and
+[innoextract](https://constexpr.org/innoextract/) for wasm once
+(`build-web/deps`), configures DOSBox out of tree in `build-web/`, compiles
+the lobbylink TypeScript client and assembles `web/dist/`: `dosbox.js` +
+`dosbox.wasm`, `innoextract.js` + `innoextract.wasm`, `p2p-client.js` and
+the page (`index.html`, `wc.js`, `gamefiles.js`, `inno-worker.js`).  If a
+game directory exists (`./wc`, or `WCDIR=/path/to/game`) its executables,
+`.CFG` files and `GAMEDAT/` are also packaged as `wc.tar.gz`, which the page
+offers as "this server's copy"; that is for private hosting only.
 
-Open the page, enter a room code (the URL then carries it, so send the link
-to your wingmen), a callsign, and press Fly.  The first pilot into the room
-hosts the game; the others fly as wingmen, exactly like `runwc.sh DOSPATH
-room CODE` natively, and native and browser players can share a room.
+**Bring your own game.**  The emulator has nothing to do with the game
+binary: players drop either a `.zip` of their Wing Commander folder or the
+GOG installer (`setup_wing_commander_*.exe`) onto the page.  Nothing is
+uploaded: a zip is unpacked with the browser's `DecompressionStream`, an
+installer is unpacked by innoextract running in a worker (any Inno Setup /
+GOG installer, so this extends to other games), the game is recognised by
+its executable (`web/gamefiles.js` keeps that registry: WC.EXE runs `wc`
+with multiplayer on; WC2.EXE runs `wc2` single-player; anything else offers
+a picker of the DOS executables found), only the game directory is kept,
+and the files are saved in the browser's IndexedDB so the next visit starts
+right away ("Forget the saved copy" removes them).  If unpacking an
+installer fails, the page says so and suggests `innoextract` + zip.
+
+Then enter a room code (the URL then carries it, so send the link to your
+wingmen), a callsign, and press Fly.  The first pilot into the room hosts
+the game; the others fly as wingmen, exactly like `runwc.sh DOSPATH room
+CODE` natively, and native and browser players can share a room.
 
 How it works: the browser build is the same DOSBox and the same `wcnet_*`
 code, compiled with Emscripten and
@@ -61,7 +77,9 @@ and open `http://localhost:8000/?server=http://127.0.0.1:8787`.
 `scripts/web-smoke.sh` does exactly that with two headless Chrome pages
 (host + wingman flying mission 1) and prints both logs;
 `NATIVE_HOST=1 scripts/web-smoke.sh` lets the native build host and a
-browser page join it, the cross-play check.
+browser page join it, the cross-play check; `GAME_SOURCE=zip
+GAME_FILE=game.zip` or `GAME_SOURCE=gog GAME_FILE=setup_wing_commander_*.exe`
+make the pages bring their own game files through the drop zone.
 
 Browser notes: game saves live in the page's memory file system and are
 lost when the tab closes; click the screen to give it the keyboard;
