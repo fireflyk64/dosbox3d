@@ -1,4 +1,4 @@
-#!/usr/bin/python2.7
+#!/usr/bin/env python3
 
 from subprocess import check_output
 from sys import argv
@@ -15,9 +15,9 @@ def git_modified(s):
 def git_rev(path):
     try:
         rev = check_output(['git', '-C', path,  'rev-parse', \
-                           '--verify', '--short', 'HEAD']).splitlines()[0]
+                           '--verify', '--short', 'HEAD']).decode('utf-8', 'replace').splitlines()[0]
 
-        sts = check_output(['git', '-C', path,  'status', '--porcelain'])
+        sts = check_output(['git', '-C', path,  'status', '--porcelain']).decode('utf-8', 'replace')
         if (git_modified(sts)):
             rev += 'M'
 
@@ -30,11 +30,11 @@ def git_rev(path):
 # Ideally having the configure options and compiler flags would be nice.
 def compiler_rev(compiler):
     try:
-        out = check_output([compiler, '--version']).splitlines()[0]
+        out = check_output([compiler, '--version']).decode('utf-8', 'replace').splitlines()[0]
 
         if out.startswith('em'):
             # Assume emscripten
-            m = re.match('^[^)]+\) ([^ ]+) \(commit (.......).*$', out)
+            m = re.match(r'^[^)]+\) ([^ ]+) \((?:commit )?(.......).*$', out)
             rev = 'Emscripten ' + m.group(1) + ' ' + m.group(2)
         else:
             m = re.match('^([^ ]+) .* ([^ ]+)$', out)

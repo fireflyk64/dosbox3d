@@ -33,7 +33,7 @@
 #include <string>
 #include "dosbox.h"
 #include "wcnet_entities.h"
-#include "../wc.pb.h"
+#include "wc.pb.h"
 
 namespace wc {
 

@@ -19,6 +19,7 @@
 #include <stdio.h>
 
 #include "dosbox.h"
+#include "wc_net.h"
 #include "mem.h"
 #include "cpu.h"
 #include "lazyflags.h"
@@ -139,6 +140,9 @@ static INLINE Bit32u Fetchd() {
 
 Bits CPU_Core_Simple_Run(void) {
 	while (CPU_Cycles-->0) {
+		// The Wing Commander multiplayer hooks watch every instruction; the
+		// simple core is the default for the browser build (and core=simple).
+		wc_net_check_cpu_hooks();
 		LOADIP;
 		core.opcode_index=cpu.code.big*0x200;
 		core.prefixes=cpu.code.big;

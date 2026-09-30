@@ -34,7 +34,7 @@
 #endif
 #ifdef EMSCRIPTEN
 #include <emscripten.h>
-#include <html5.h>
+#include <emscripten/html5.h>
 #endif
 
 #include "cross.h"
@@ -1175,7 +1175,7 @@ void GFX_CaptureMouse(void) {
 		} else {
 			//This only raises a request. A callback will notify when pointer
 			// lock starts. The user may need to confirm a browser dialog.
-			emscripten_request_pointerlock(NULL, true);
+			emscripten_request_pointerlock("#canvas", true);
 		}
 	} else {
 		doGFX_CaptureMouse();
@@ -1627,8 +1627,12 @@ void GFX_EndUpdate( const Bit16u *changedLines ) {
             last_outgoing_text_len = outgoing_text.length();
             DrawText(48,48 + 14 + 14, to_write->c_str(), 0x80, textPixels, textPitch);
         }
-        fakeChangedLines[0] = sdl.draw.height;
-        fakeChangedLines[1] = 1;
+        /* The chat overlay may have touched any line, so report the whole
+         * frame as changed: changedLines alternates unchanged/changed run
+         * lengths, starting with the unchanged run.  (The surface output
+         * only pushes the changed runs; the texture output ignores this.) */
+        fakeChangedLines[0] = 0;
+        fakeChangedLines[1] = (Bit16u)sdl.draw.height;
         changedLines = fakeChangedLines;
     }
     Inner_GFX_EndUpdate(changedLines );
@@ -2075,7 +2079,7 @@ static void GUI_StartUp(Section * sec) {
  * The splash screen requires emterpreter sync.
  * Creating a 2D context prevents subsequent creation of a 3D context.
  */
-#if !defined(EMSCRIPTEN) || defined(EMTERPRETER_SYNC)
+#if !defined(EMSCRIPTEN) || defined(EM_ASYNCIFY)
 /* Please leave the Splash screen stuff in working order in DOSBox. We spend a lot of time making DOSBox. */
 	SDL_Surface* splash_surf = NULL;
 #ifdef EMSCRIPTEN
@@ -2128,8 +2132,8 @@ static void GUI_StartUp(Section * sec) {
 				}
 			}
 			if (exit_splash) break;
-#if defined(EMSCRIPTEN) && defined(EMTERPRETER_SYNC)
-			emscripten_sleep_with_yield(1);
+#if defined(EMSCRIPTEN) && defined(EM_ASYNCIFY)
+			emscripten_sleep(1);
 #endif
 
 			if (ct<1) {
@@ -2184,7 +2188,7 @@ static void GUI_StartUp(Section * sec) {
 		delete [] tmpbufp;
 
 	}
-#endif // !defined(EMSCRIPTEN) || defined(EMTERPRETER_SYNC)
+#endif // !defined(EMSCRIPTEN) || defined(EM_ASYNCIFY)
 	/* Get some Event handlers */
 	MAPPER_AddHandler(KillSwitch,MK_f9,MMOD1,"shutdown","ShutDown");
 	MAPPER_AddHandler(CaptureMouse,MK_f10,MMOD1,"capmouse","Cap Mouse");
@@ -2992,7 +2996,7 @@ int main(int argc, char* argv[]) {
 #endif
 
 #ifdef EMSCRIPTEN
-	if (emscripten_set_pointerlockchange_callback(NULL, NULL, true,
+	if (emscripten_set_pointerlockchange_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, NULL, true,
 	                                              em_pointerlock_callback)
 	    == EMSCRIPTEN_RESULT_SUCCESS) {
 		use_capture_callback = true;

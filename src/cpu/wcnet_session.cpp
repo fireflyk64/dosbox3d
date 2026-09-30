@@ -4,6 +4,9 @@
 #include <unistd.h>
 #include <map>
 #include <vector>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include "wc_net.h"
 #include "wcnet_session.h"
 #include "wcnet_events.h"
@@ -38,6 +41,16 @@ bool has_started_up = false;
 // NetConfig
 
 }  // namespace wc
+
+// Pause while retrying a connection.  In the browser the emulator has to
+// yield to the event loop (Asyncify) instead of blocking the page.
+static void pause_ms(int ms) {
+#ifdef __EMSCRIPTEN__
+    emscripten_sleep(ms);
+#else
+    usleep(ms * 1000);
+#endif
+}
 
 const char *NetConfig::kDefaultLobbyUrl = "https://pqrstuvw.xyz/lobbylink";
 const char *NetConfig::kDefaultPort = "13255";
@@ -984,12 +997,12 @@ public:
         for (int attempt = 0; attempt < 10; attempt++) {
             if (!conn_.is_open() && !connect()) {
                 wclog(1, "connect attempt %d failed", attempt + 1);
-                sleep(2);
+                pause_ms(2000);
                 continue;
             }
             if (!hasSentConnect_ && !send_connect()) {
                 conn_.close();
-                sleep(2);
+                pause_ms(2000);
                 continue;
             }
             wclog(1, "connected to %s as %s", conn_.describe().c_str(), callsign_.c_str());
@@ -1208,6 +1221,10 @@ bool init_network() {
         return false;
 #endif
     } else {
+#ifdef __EMSCRIPTEN__
+        wclog(0, "the browser build has no TCP transport: set WCROOM (a room code) to play");
+        return false;
+#endif
         client = net_config.host && net_config.host[0];
         where = client ? std::string(net_config.host) + ":" + net_config.portstr
                        : std::string("port ") + net_config.portstr;

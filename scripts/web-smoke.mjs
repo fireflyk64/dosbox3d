@@ -1,0 +1,87 @@
+// Headless smoke test for the browser build: two Chrome pages meet in a
+// lobbylink room, the first hosts, the second joins as the wingman, both
+// jump straight into a campaign mission and press through the briefing.
+// Driven by scripts/web-smoke.sh, which starts the lobby server and the
+// web server this expects.
+//
+//   node scripts/web-smoke.mjs PAGE_URL LOBBY_URL [seconds] [mission] [series]
+//
+// Playwright is resolved from PLAYWRIGHT_DIR (a directory with
+// node_modules/playwright) and drives the system Google Chrome
+// (CHROME=/path/to/chrome).
+import { createRequire } from "node:module";
+import path from "node:path";
+
+const [pageUrl, lobbyUrl, secondsArg = "90", mission = "1", series = "1"] = process.argv.slice(2);
+if (!pageUrl || !lobbyUrl) {
+  console.error("usage: node web-smoke.mjs PAGE_URL LOBBY_URL [seconds] [mission] [series]");
+  process.exit(2);
+}
+const seconds = Number(secondsArg);
+const require = createRequire(path.join(process.env.PLAYWRIGHT_DIR || process.cwd(), "package.json"));
+const { chromium } = require("playwright");
+const chrome = process.env.CHROME || "/usr/bin/google-chrome";
+// ROOM fixes the room code and NO_HOST=1 skips the browser host, for the
+// cross-play variant where a native DOSBox hosts (scripts/web-smoke.sh NATIVE_HOST=1).
+const room = process.env.ROOM || "SMOKE-" + Math.random().toString(36).slice(2, 8).toUpperCase();
+const noHost = process.env.NO_HOST === "1";
+
+const browser = await chromium.launch({ headless: true, executablePath: chrome,
+  args: ["--no-sandbox", "--autoplay-policy=no-user-gesture-required", "--use-fake-device-for-media-stream"] });
+const logs = { host: [], wing: [] };
+const seen = { host: new Set(), wing: new Set() };
+const milestones = [
+  "joined room", "connected as player", "connected to ", "mission start", "frame 301", "autopilot",
+  "installed", "waiting for", "lost the server", "could not", "failed", "Aborted", "RuntimeError", "unreachable",
+];
+
+async function open(name, callsign) {
+  const page = await browser.newPage();
+  page.on("console", (m) => {
+    const t = m.text();
+    logs[name].push(t);
+    for (const k of milestones) if (t.includes(k) && !seen[name].has(k)) { seen[name].add(k); console.log(`[${name}] ${t.slice(0, 160)}`); }
+  });
+  page.on("pageerror", (e) => console.log(`[${name}] PAGE ERROR: ${e.message}`));
+  const u = new URL(pageUrl);
+  u.searchParams.set("room", room);
+  u.searchParams.set("server", lobbyUrl);
+  u.searchParams.set("callsign", callsign);
+  u.searchParams.set("env.MIS", mission);
+  u.searchParams.set("env.SERIES", series);
+  u.searchParams.set("env.WCNET_AUTOKEYS", "1");
+  u.searchParams.set("env.WCNET_LOG", "2");
+  await page.goto(u.toString());
+  await page.click("#fly");
+  return page;
+}
+
+console.log(`room ${room}, ${seconds}s${noHost ? ", native host" : ""}`);
+let host = null;
+if (!noHost) {
+  host = await open("host", "HOST");
+  await host.waitForFunction(() => /Room .*: joining|Share this page/.test(document.getElementById("status").textContent), null, { timeout: 120000 });
+  // Give the host time to reach the barracks/mission start before the wingman joins.
+  await new Promise((r) => setTimeout(r, 8000));
+}
+const wing = await open("wing", "WINGMAN");
+await new Promise((r) => setTimeout(r, seconds * 1000));
+
+const shot = process.env.SHOT_DIR;
+if (shot) {
+  const fs = await import("node:fs");
+  if (host) await host.screenshot({ path: path.join(shot, "host.png") });
+  await wing.screenshot({ path: path.join(shot, "wing.png") });
+  for (const name of ["host", "wing"]) fs.writeFileSync(path.join(shot, name + ".log"), logs[name].join("\n") + "\n");
+}
+for (const name of host ? ["host", "wing"] : ["wing"]) {
+  console.log(`===== ${name}: last 40 log lines =====`);
+  for (const l of logs[name].slice(-40)) console.log(l.slice(0, 200));
+}
+// Rough throughput: the client logs its health every 300 frames.
+const lastFrame = (lines) => lines.reduce((m, l) => { const f = /frame (\d+): own health/.exec(l); return f ? Math.max(m, Number(f[1])) : m; }, 0);
+console.log(`frames: host reached ${lastFrame(logs.host)}, wingman reached ${lastFrame(logs.wing)} (logged every 300)`);
+await browser.close();
+const ok = (noHost || seen.host.has("connected as player")) && seen.wing.has("connected to ");
+console.log(ok ? (noHost ? "SMOKE OK: the browser wingman connected to the native host" : "SMOKE OK: host accepted the wingman and the wingman connected") : "SMOKE FAILED");
+process.exit(ok ? 0 : 1);

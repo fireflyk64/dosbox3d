@@ -10,6 +10,20 @@
 #include "wcnet_log.h"
 #include "net_config.h"
 
+#ifdef EMSCRIPTEN
+// In the browser the C API is implemented by src/wclobby_web.js, which
+// reads wclobby_options_t and wclobby_buf_t at these wasm32 offsets.
+#include <stddef.h>
+static_assert(offsetof(wclobby_options_t, server) == 0, "wclobby_web.js layout");
+static_assert(offsetof(wclobby_options_t, code) == 4, "wclobby_web.js layout");
+static_assert(offsetof(wclobby_options_t, origin) == 8, "wclobby_web.js layout");
+static_assert(offsetof(wclobby_options_t, create_max_players) == 12, "wclobby_web.js layout");
+static_assert(offsetof(wclobby_options_t, force_relay) == 16, "wclobby_web.js layout");
+static_assert(offsetof(wclobby_options_t, token_path) == 20, "wclobby_web.js layout");
+static_assert(offsetof(wclobby_options_t, no_keepalive) == 24, "wclobby_web.js layout");
+static_assert(offsetof(wclobby_buf_t, len) == 4 && sizeof(wclobby_buf_t) == 8, "wclobby_web.js layout");
+#endif
+
 namespace wc {
 
 LobbyHub *g_lobby = NULL;

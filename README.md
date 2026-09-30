@@ -4,7 +4,75 @@ DOSBox ported to Emscripten
 This fork also carries a cooperative multiplayer layer for Wing Commander 1;
 see [docs/wcnet-multiplayer.md](docs/wcnet-multiplayer.md) for the design,
 the diagnosis of the damage desync, and `scripts/wcdis.py` for reading the
-game's code with symbols.
+game's code with symbols.  It runs natively (TCP or a lobbylink room code,
+see [wclobby/README.md](wclobby/README.md)) and **in a web browser**, where
+the same room codes connect players over WebRTC: see
+"Wing Commander in the browser" below.
+
+Wing Commander in the browser
+-----------------------------
+
+```
+git submodule update --init          # lobbylink (signaling server + browser client)
+scripts/build-web.sh                 # deps, emconfigure, emmake, web/dist
+web/serve.py                         # http://localhost:8000/
+```
+
+`scripts/build-web.sh` needs the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html)
+(`emcc` on `PATH`, or `EMSDK=/path/to/emsdk`), cmake, curl, autotools,
+protoc, node/npm and Go is optional (only the smoke test builds a lobby
+server).  It builds protobuf for wasm once (`build-web/deps`), configures
+DOSBox out of tree in `build-web/`, compiles the lobbylink TypeScript client
+and assembles `web/dist/`: `dosbox.js` + `dosbox.wasm`, `p2p-client.js`,
+`index.html`, `wc.js` and `wc.tar.gz` with the game files taken from `./wc`
+(`WCDIR=/path/to/game` to use another copy; only the executables, `.CFG`
+files and `GAMEDAT/` are packaged).
+
+Open the page, enter a room code (the URL then carries it, so send the link
+to your wingmen), a callsign, and press Fly.  The first pilot into the room
+hosts the game; the others fly as wingmen, exactly like `runwc.sh DOSPATH
+room CODE` natively, and native and browser players can share a room.
+
+How it works: the browser build is the same DOSBox and the same `wcnet_*`
+code, compiled with Emscripten and
+[Asyncify](https://emscripten.org/docs/porting/asyncify.html), so the
+multiplayer transport can block for network data from inside the CPU core
+(the wasm stack is unwound while the page's event loop delivers WebRTC
+messages).  `wclobby/include/wclobby.h`, the C API the transport uses, is
+implemented for the browser by `src/wclobby_web.js` on top of lobbylink's
+browser client (`lobbylink/clients/ts`); natively it is the Rust crate in
+`wclobby/`.  The page passes the client class in as `Module.P2PGame` and the
+WCNET settings as environment variables (`WCROOM`, `WCLOBBY`, `WCPLAYERS`,
+`WCCALLSIGN`, ...; any `?env.NAME=value` in the URL is passed through too,
+e.g. `?env.MIS=1&env.SERIES=1` to jump into a mission).
+
+**Lobby server origin.**  The lobby server checks the page's `Origin`.  The
+public server at `https://pqrstuvw.xyz/lobbylink` only accepts pages served
+from its own host, so either host `web/dist` there (next to the lobby, e.g.
+`https://pqrstuvw.xyz/wc/`) or run your own server with the page's origin
+allowed:
+
+```
+p2p-lobby-server --listen-http 127.0.0.1:8787 --public-url http://127.0.0.1:8787 \
+                 --allowed-origin http://localhost:8000
+```
+
+and open `http://localhost:8000/?server=http://127.0.0.1:8787`.
+`scripts/web-smoke.sh` does exactly that with two headless Chrome pages
+(host + wingman flying mission 1) and prints both logs;
+`NATIVE_HOST=1 scripts/web-smoke.sh` lets the native build host and a
+browser page join it, the cross-play check.
+
+Browser notes: game saves live in the page's memory file system and are
+lost when the tab closes; click the screen to give it the keyboard;
+`Ctrl`+`F10` releases the mouse; sound starts because the Fly button click
+counts as the user gesture browsers require.  The `output=surface`
+renderer and the `simple` CPU core are used (both defaults of the
+Emscripten build; the multiplayer hooks are in that core too).
+`?cmd=ver` (or any DOS command) runs that instead of `wc`, and the emulated
+clock is readable as `DOSBox._wc_web_emulated_ms()` in the console.
+Tested in headless Chrome; Firefox and Safari have the same APIs
+(Asyncify needs no special browser support) but were not tried.
 
 About
 -----

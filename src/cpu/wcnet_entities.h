@@ -17,7 +17,7 @@
 #include <vector>
 #include "dosbox.h"
 #include "wcnet_memory.h"
-#include "../wc.pb.h"
+#include "wc.pb.h"
 
 namespace wc {
 

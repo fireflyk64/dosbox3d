@@ -27,9 +27,18 @@ src/cpu/wcnet_session.cpp   game protocol; unchanged, talks to wc::Connection
 src/cpu/wcnet_transport.*   wc::Stream / wc::Listener abstraction + the TCP one
 src/cpu/wcnet_lobby.*       LobbyStream / LobbyListener / LobbyHub over the C API
 wclobby/include/wclobby.h   the C API
-wclobby/src/lib.rs          Rust: tokio thread owning lobbylink's P2PGame
+wclobby/src/lib.rs          Rust: tokio thread owning lobbylink's P2PGame (native)
+src/wclobby_web.js          JavaScript: the same C API for the Emscripten build,
+                            over lobbylink's browser client (Asyncify suspends
+                            the wasm instead of blocking a thread)
 lobbylink/clients/rust      the lobbylink client (WebSocket signaling + webrtc)
+lobbylink/clients/ts        the browser client used by the web build
 ```
+
+The browser build (`scripts/build-web.sh`, see the top-level README) does
+not use cargo at all: `configure` picks `src/wclobby_web.js` when compiling
+with Emscripten.  Both implementations keep the same generation / hangup
+semantics, so a browser player and a native player can share a room.
 
 `lobbylink/` is a git submodule (`git submodule update --init` after a
 fresh clone); this crate depends on its Rust client by path.

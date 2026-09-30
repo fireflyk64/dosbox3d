@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wing Commander multiplayer in the browser</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0b0d12; color: #d7dbe3; font: 14px/1.4 system-ui, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 14px; align-items: end; margin-bottom: 12px; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9aa3b2; }
+  input[type=text], input[type=number] { padding: 6px 8px; background: #151922; color: #e8ecf3; border: 1px solid #2a3140; border-radius: 4px; font: inherit; }
+  label.check { flex-direction: row; align-items: center; }
+  button { padding: 8px 14px; background: #2f6fed; color: white; border: 0; border-radius: 4px; font: inherit; font-weight: 600; cursor: pointer; }
+  button:disabled { background: #3a4152; cursor: default; }
+  #stage { display: flex; flex-wrap: wrap; gap: 12px; }
+  #canvas { background: black; width: 640px; height: 400px; image-rendering: pixelated; outline: none; }
+  #log { flex: 1 1 320px; min-height: 200px; max-height: 400px; overflow: auto; background: #05070a; border: 1px solid #1d2230; padding: 8px; font: 12px/1.35 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
+  #status { margin: 8px 0; color: #9aa3b2; }
+  .hint { color: #7d8797; font-size: 12px; margin: 6px 0 0; }
+  kbd { background: #1d2230; padding: 1px 5px; border-radius: 3px; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Wing Commander — cooperative multiplayer in the browser</h1>
+  <form id="setup">
+    <label>Room code <input type="text" id="room" placeholder="FALCON-7" pattern="[A-Za-z0-9_\-]{4,64}" required></label>
+    <label>Callsign <input type="text" id="callsign" placeholder="Maverick"></label>
+    <label>Last name <input type="text" id="lastname" placeholder="Blair"></label>
+    <label>Players in room <input type="number" id="players" min="2" max="3" value="3"></label>
+    <label>Lobby server <input type="text" id="server" value=""></label>
+    <label class="check"><input type="checkbox" id="relay"> Force TURN relay</label>
+    <label class="check"><input type="checkbox" id="verbose"> Verbose network log</label>
+    <button type="submit" id="fly">Fly</button>
+  </form>
+  <div id="status">Everyone enters the same room code. The first pilot into the room hosts the game; the others fly as wingmen.</div>
+  <div id="stage">
+    <canvas id="canvas" width="640" height="400" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+    <div id="log"></div>
+  </div>
+  <p class="hint">Click the screen to give it the keyboard. In the barracks press <kbd>0</kbd> to type a chat message; in space <kbd>Enter</kbd> fires missiles. <kbd>Ctrl</kbd>+<kbd>F10</kbd> releases the mouse.</p>
+</main>
+<script type="module" src="wc.js"></script>
+</body>
+</html>

@@ -17,7 +17,7 @@
 
 #include <deque>
 #include <string>
-#include "../wc.pb.h"
+#include "wc.pb.h"
 
 namespace wc {
 

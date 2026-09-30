@@ -13,7 +13,7 @@
 
 #include "dosbox.h"
 #include "wcnet_vm.h"
-#include "../wc.pb.h"
+#include "wc.pb.h"
 
 namespace wc {
 

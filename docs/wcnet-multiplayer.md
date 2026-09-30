@@ -200,6 +200,47 @@ client death (nothing shoots back headless for long enough).
 The default build needs no special flags (`include/setup.h` no longer uses
 dynamic exception specifications); `make -j8` after `./configure`.
 
+## 6a. The browser build
+
+The same code runs in a web browser (`scripts/build-web.sh`, see the
+top-level README for the workflow).  What differs:
+
+* **Blocking becomes suspension.**  Emscripten
+  [Asyncify](https://emscripten.org/docs/porting/asyncify.html) instruments
+  the whole program, so `Connection::recv`, `Listener::accept` and
+  `LobbyHub::join` can wait for the network from inside
+  `CPU_Core_Normal_Run` exactly as they do natively: the wasm stack is
+  unwound, the page's event loop runs (delivering WebRTC and lobby events,
+  keyboard input, audio), and the stack is rewound when the awaited message
+  arrives.  `Normal_Loop` also yields to the browser every ~10 ms
+  (`emscripten_sleep`, `EM_ASYNCIFY` in `src/dosbox.cpp`).
+* **The transport is JavaScript.**  `src/wclobby_web.js` implements the
+  `wclobby.h` C API (the one `wcnet_lobby.cpp` uses) on top of lobbylink's
+  browser client (`lobbylink/clients/ts`), with the same generation /
+  hangup semantics as the Rust crate, so browser and native players can
+  share a room.  Blocking API calls use `Asyncify.handleSleep`; the state
+  machine lives in JS and rewinds the wasm from event handlers only (never
+  from inside a call made by compiled code).
+* **No TCP.**  `init_network` refuses to start without `WCROOM`.  Only the
+  room-code transport exists in a browser.
+* **The simple CPU core runs the hooks too.**  The Emscripten build defaults
+  to `core=simple` (`src/dosbox.cpp`), so `CPU_Core_Simple_Run` calls
+  `wc_net_check_cpu_hooks()` before every instruction exactly like the
+  normal core; the hooks are core-independent.
+* **Frames are pushed as whole-screen updates.**  The chat overlay in
+  `GFX_EndUpdate` reports the entire frame as changed; the surface output
+  (the browser's renderer) only pushes changed runs, so that table has to
+  be right (it was inverted before, which the texture output natively never
+  noticed).
+* **Configuration is the environment**, set by `web/wc.js` from the page's
+  form (`Module.ENV` in `preRun`): `WCROOM`, `WCLOBBY`, `WCPLAYERS`,
+  `WCCALLSIGN`, `WCLASTNAME`, `WCLOBBY_RELAY`, `WCNET_LOG`, plus anything
+  given as `?env.NAME=value` (so `MIS`, `SERIES` and `WCNET_AUTOKEYS` work
+  for testing, as in `scripts/web-smoke.sh`).
+* **The lobby server checks the page's origin**; the public server accepts
+  only its own host.  Serve the page from there or run a lobby server with
+  `--allowed-origin` for the page's origin.
+
 ## 7. Known limitations and follow-ups
 
 * The exchange is still blocking lockstep: both games run at the pace of the

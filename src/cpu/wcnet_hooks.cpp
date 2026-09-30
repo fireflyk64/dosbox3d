@@ -279,6 +279,15 @@ static void check_hooks_slow() {
 
 }  // namespace wc
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+// For the page (web/wc.js): emulated milliseconds so far, to compare the
+// emulation speed with wall-clock time.
+extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_emulated_ms() {
+    return PIC_FullIndex();
+}
+#endif
+
 void wc_net_check_cpu_hooks() {
     using namespace wc;
     if (++g_asyncCounter == 1000) {

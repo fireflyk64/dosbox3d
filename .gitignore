@@ -51,3 +51,8 @@ Makefile
 
 # Python
 __pycache__/
+
+# Browser (Emscripten) build tree and its output
+/build-web/
+/build-native/
+/web/dist/

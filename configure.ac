@@ -20,9 +20,10 @@ dnl AC_CANONICAL_HOST fails to detect Emscripten.
 dnl This contains kludges to make things work.
 AS_IF([test "x$enable_emscripten" = "xyes"],
       [host_alias=none
+       cross_compiling=yes
        : ${CXXFLAGS="-O3"}
        : ${CFLAGS="-O3"}
-       ac_cv_exeext=.html])
+       ac_cv_exeext=.js])
 
 dnl Detect the canonical host and target build environment
 AC_CANONICAL_HOST
@@ -40,6 +41,7 @@ AC_PROG_CXX
 AC_PROG_INSTALL
 AC_PROG_RANLIB
 AM_PROG_AR
+AC_PATH_PROGS([PYTHON], [python3 python], [python3])
 
 dnl This probably needs to be after Automake init
 AM_CONDITIONAL([EMSCRIPTEN_BUILD], [test "x$enable_emscripten" = "xyes"])
@@ -588,21 +590,30 @@ esac
        AC_SUBST(WINDRES)
 
 
-AH_TEMPLATE([EMTERPRETER_SYNC],[Compile for use with Emscripten emterpreter sync.])
+dnl Emscripten Asyncify lets the emulator sleep (yield to the browser) and
+dnl lets the multiplayer transport block for network data from deep inside
+dnl the CPU core, with the C++ code structured exactly as it is natively.
+dnl Without it the browser build cannot run the multiplayer code at all.
+AH_TEMPLATE([EM_ASYNCIFY],[Compile using Emscripten asyncify.])
 AC_ARG_ENABLE(
-  [sync],
-  [AC_HELP_STRING([--disable-sync],
-    [Do not use Emscripten emterpreter sync])],
-  [], [enable_sync=yes])
-AM_CONDITIONAL([EMTERPRETER], [test "x$enable_sync" != "xno"])
+  [asyncify],
+  [AC_HELP_STRING([--disable-asyncify],
+    [Disable Emscripten asyncify])],
+  [], [enable_asyncify=yes])
+AM_CONDITIONAL([ASYNCIFY], [test "x$enable_emscripten" = "xyes" -a "x$enable_asyncify" != "xno"])
 
 # Use of Emscripten-specific compiler flags breaks tests compiled with the
 # host compiler, so those flags are set at the end.
 AS_IF([test "x$enable_emscripten" = "xyes"],[
-  AS_IF([test "x$enable_sync" != "xno"], [AC_DEFINE([EMTERPRETER_SYNC],[1])])
+  dnl Modern emcc only predefines __EMSCRIPTEN__, but this code tests
+  dnl EMSCRIPTEN, often before config.h is included, so it goes on the
+  dnl command line the way old emcc versions had it built in.
+  CXXFLAGS="$CXXFLAGS -DEMSCRIPTEN=1"
+  CFLAGS="$CFLAGS -DEMSCRIPTEN=1"
+  AS_IF([test "x$enable_asyncify" != "xno"], [AC_DEFINE([EM_ASYNCIFY],[1])])
   AS_IF([test "x$with_sdl2" != "xno"],[
     AS_IF([test "x$with_sdl2" = "xyes"],
-      [CXXFLAGS="$CXXFLAGS -s USE_SDL=2"],
+      [CXXFLAGS="$CXXFLAGS -sUSE_SDL=2"],
       [LIBS="$LIBS -L$with_sdl2/build/.libs/ -lSDL2"
        CXXFLAGS="$CXXFLAGS -Wno-warn-absolute-paths -I$with_sdl2/include"
     ])
@@ -644,26 +655,32 @@ AC_ARG_WITH([protoc],
     AC_MSG_RESULT([${PROTOC}])
     AS_IF([test "${PROTOC}" == "no"], [AC_MSG_ERROR([protoc not found.])])
 
-dnl lobbylink (room code) multiplayer transport: a Rust static library in
-dnl wclobby/, built with cargo.  Off for Emscripten and when cargo is missing.
+dnl lobbylink (room code) multiplayer transport.  Natively it is a Rust
+dnl static library in wclobby/ built with cargo; with Emscripten the same C
+dnl API (wclobby/include/wclobby.h) is implemented by src/wclobby_web.js on
+dnl top of lobbylink's browser (TypeScript) client, so cargo is not needed.
 AH_TEMPLATE([C_LOBBYLINK],[Define to 1 to enable the lobbylink multiplayer transport])
 AC_ARG_ENABLE(lobbylink,AC_HELP_STRING([--disable-lobbylink],[Disable the lobbylink (room code) multiplayer transport]),,enable_lobbylink=yes)
 AC_PATH_PROG([CARGO], [cargo], [no])
-AS_IF([test "x$enable_emscripten" = "xyes"], [enable_lobbylink=no])
-AS_IF([test "x$enable_lobbylink" = "xyes" -a "x$CARGO" = "xno"],
+lobbylink_web=no
+AS_IF([test "x$enable_lobbylink" = "xyes" -a "x$enable_emscripten" = "xyes"],
+      [lobbylink_web=yes
+       AC_DEFINE(C_LOBBYLINK, 1)
+       AC_MSG_NOTICE([lobbylink transport enabled (browser: src/wclobby_web.js)])],
+      [test "x$enable_lobbylink" = "xyes" -a "x$CARGO" = "xno"],
       [AC_MSG_WARN([cargo not found; building without the lobbylink transport])
-       enable_lobbylink=no])
-AS_IF([test "x$enable_lobbylink" = "xyes" -a ! -f "$srcdir/lobbylink/clients/rust/Cargo.toml"],
+       enable_lobbylink=no],
+      [test "x$enable_lobbylink" = "xyes" -a ! -f "$srcdir/lobbylink/clients/rust/Cargo.toml"],
       [AC_MSG_WARN([lobbylink submodule is not checked out (run: git submodule update --init); building without the lobbylink transport])
-       enable_lobbylink=no])
-AS_IF([test "x$enable_lobbylink" = "xyes"], [
-  AC_DEFINE(C_LOBBYLINK, 1)
-  AS_CASE([$host],
-    [*-darwin*], [WCLOBBY_LIBS="-framework Security -framework CoreFoundation -framework SystemConfiguration"],
-    [WCLOBBY_LIBS="-lgcc_s -lutil -lrt -lpthread -lm -ldl"])
-  AC_MSG_NOTICE([lobbylink transport enabled (cargo: $CARGO)])
-])
-AM_CONDITIONAL([LOBBYLINK], [test "x$enable_lobbylink" = "xyes"])
+       enable_lobbylink=no],
+      [test "x$enable_lobbylink" = "xyes"],
+      [AC_DEFINE(C_LOBBYLINK, 1)
+       AS_CASE([$host],
+         [*-darwin*], [WCLOBBY_LIBS="-framework Security -framework CoreFoundation -framework SystemConfiguration"],
+         [WCLOBBY_LIBS="-lgcc_s -lutil -lrt -lpthread -lm -ldl"])
+       AC_MSG_NOTICE([lobbylink transport enabled (cargo: $CARGO)])])
+AM_CONDITIONAL([LOBBYLINK], [test "x$enable_lobbylink" = "xyes" -a "x$lobbylink_web" = "xno"])
+AM_CONDITIONAL([LOBBYLINK_WEB], [test "x$lobbylink_web" = "xyes"])
 AC_SUBST(CARGO)
 AC_SUBST(WCLOBBY_LIBS)
 

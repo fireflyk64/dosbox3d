@@ -36,10 +36,10 @@ class Section;
 typedef Bitu (LoopHandler)(void);
 
 void DOSBOX_RunMachine();
-#if defined(EMSCRIPTEN) && defined(EMTERPRETER_SYNC)
-/* This is for cases where RunMachine is called from code not using
- * emterpreter. There, emscripten_sleep() is prohibited and emulation
- * will be aborted with a timeout error if this takes too long.
+#if defined(EMSCRIPTEN) && defined(EM_ASYNCIFY)
+/* This is for cases where RunMachine is called from code that must not
+ * be suspended (Asyncify). There, emscripten_sleep() is prohibited and
+ * emulation will be aborted with a timeout error if this takes too long.
  */
 extern int nosleep_lock;
 static void inline DOSBOX_RunMachineNoSleep() {
