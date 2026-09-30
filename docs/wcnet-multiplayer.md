@@ -186,7 +186,7 @@ shell command still starts/stops the server or connects.  Useful environment:
 | variable | meaning |
 |---|---|
 | `WCNET_LOG=0..3` | log verbosity (1 default; 2 per event; 3 full protocol) |
-| `MIS=<n> SERIES=<n>` | jump straight into a campaign mission |
+| `MIS=<n> SERIES=<n>` | jump straight into a campaign mission (series 1.., mission 0.. within it; setting either variable is enough, so `MIS=0 SERIES=1` forces the first mission) |
 | `WCCALLSIGN`, `WCLASTNAME` | override the pilot identity |
 | `WCNET_AUTOKEYS=1` | test aid: press Enter through the briefing, then `A` (autopilot) once in space |
 
@@ -238,6 +238,12 @@ top-level README for the workflow).  What differs:
   the game by its executable, installs the game directory under `/game` in
   the memory file system and caches it in IndexedDB.  Only Wing Commander 1
   gets `WCROOM` (the hooks are for `WC.EXE`); other games run single-player.
+* **The page joins the room first** (roster, chat, host-driven start) and
+  DOSBox adopts that `P2PGame` (`Module.lobbyGame`) in `wclobby_connect`
+  instead of connecting again, which would supersede the page's session.
+  Lobby chat and presence are reliable messages prefixed with
+  `57 43 4C 01`; a protobuf message never starts with 0x57 (wire type 7),
+  so `wclobby_web.js` drops them before they reach the game.
 * **Configuration is the environment**, set by `web/wc.js` from the page's
   form (`Module.ENV` in `preRun`): `WCROOM`, `WCLOBBY`, `WCPLAYERS`,
   `WCCALLSIGN`, `WCLASTNAME`, `WCLOBBY_RELAY`, `WCNET_LOG`, plus anything

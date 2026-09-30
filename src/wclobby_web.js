@@ -109,9 +109,16 @@ addToLibrary({
       }
       WCLOBBY.notify(hub);
     },
+    // Reliable messages starting with "WCL\x01" belong to the page's lobby
+    // (chat, presence); a protobuf message can never start with 0x57 (wire
+    // type 7), so the game protocol is unaffected.
+    isLobbyMessage(data) {
+      return data.length >= 4 && data[0] === 0x57 && data[1] === 0x43 && data[2] === 0x4c && data[3] === 0x01;
+    },
     deliver(hub, from, data) {
       var p = hub.peers[from];
       if (!p) return;
+      if (WCLOBBY.isLobbyMessage(data)) return;
       if (data.length === 0) {
         // Hangup marker from the peer.
         WCLOBBY.log(p.attached ? 1 : 2, 'player ' + from + ' hung up' + (p.attached ? '' : ' before we accepted'));
@@ -247,6 +254,29 @@ addToLibrary({
       fail('no-client: the page did not provide the lobbylink client (Module.P2PGame)');
       return;
     }
+    var adopt = (game, how) => {
+      var hub = { game: game, code: code, closed: false, signaling: true, peers: [], waiters: [],
+                  notifyPending: false, selfId: game.selfId, maxPlayers: game.maxPlayers, adopted: how === 'adopted' };
+      for (var i = 0; i < game.maxPlayers; i++) hub.peers.push(WCLOBBY.newPeer());
+      game.players.forEach((p) => {
+        if (p.occupied && hub.peers[p.id]) hub.peers[p.id].occupied = true;
+        // A link the page already brought up is live for us as well.
+        if (p.connected && p.id !== game.selfId && hub.peers[p.id] && how === 'adopted') hub.peers[p.id].link = WCLOBBY.LINK_UP;
+      });
+      game.onEvent((ev) => WCLOBBY.handleEvent(hub, ev));
+      var h = WCLOBBY.nextHandle++;
+      WCLOBBY.hubs[h] = hub;
+      WCLOBBY.log(1, how + ' room ' + code + ' as player ' + game.selfId + ' of ' + game.maxPlayers);
+      wakeUp(h);
+    };
+    // The page may already be in the room (its lobby with roster and chat):
+    // use that connection rather than joining twice, which would supersede
+    // the page's session.
+    var live = Module['lobbyGame'];
+    if (live && live.code === code) {
+      adopt(live, 'adopted');
+      return;
+    }
     WCLOBBY.log(1, 'joining room ' + code + ' at ' + server);
     var connectOpts = { server: server, code: code, storage: 'session', storageKey: 'wclobby-' + code };
     if (maxPlayers > 0) {
@@ -254,17 +284,7 @@ addToLibrary({
                              allowReconnect: true, allowReplacement: true };
     }
     if (forceRelay) connectOpts.forceRelay = true;
-    P2PGame.connect(connectOpts).then((game) => {
-      var hub = { game: game, code: code, closed: false, signaling: true, peers: [], waiters: [],
-                  notifyPending: false, selfId: game.selfId, maxPlayers: game.maxPlayers };
-      for (var i = 0; i < game.maxPlayers; i++) hub.peers.push(WCLOBBY.newPeer());
-      game.players.forEach((p) => { if (p.occupied && hub.peers[p.id]) hub.peers[p.id].occupied = true; });
-      game.onEvent((ev) => WCLOBBY.handleEvent(hub, ev));
-      var h = WCLOBBY.nextHandle++;
-      WCLOBBY.hubs[h] = hub;
-      WCLOBBY.log(1, 'joined room ' + code + ' as player ' + game.selfId + ' of ' + game.maxPlayers);
-      wakeUp(h);
-    }, (e) => {
+    P2PGame.connect(connectOpts).then((game) => adopt(game, 'joined'), (e) => {
       fail((e && e.code ? e.code : 'error') + ': ' + (e && e.message ? e.message : String(e)));
     });
   }),
@@ -277,6 +297,7 @@ addToLibrary({
     try { hub.game.close(); } catch (e) { /* already gone */ }
     hub.signaling = false;
     WCLOBBY.closeAll(hub);
+    if (hub.adopted && Module['onLobbyClosed']) setTimeout(() => Module['onLobbyClosed'](), 0);
   },
 
   wclobby_self_id__deps: ['$WCLOBBY'],

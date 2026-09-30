@@ -44,10 +44,31 @@ and the files are saved in the browser's IndexedDB so the next visit starts
 right away ("Forget the saved copy" removes them).  If unpacking an
 installer fails, the page says so and suggests `innoextract` + zip.
 
-Then enter a room code (the URL then carries it, so send the link to your
-wingmen), a callsign, and press Fly.  The first pilot into the room hosts
-the game; the others fly as wingmen, exactly like `runwc.sh DOSPATH room
-CODE` natively, and native and browser players can share a room.
+**The room.**  Enter a room code and a callsign and press Join: the page
+itself joins the lobbylink room (the URL then carries the code, so send the
+link and your wingmen land in the same room), shows who is in it and
+whether their links are up, and has a chat.  Chat and presence travel over
+the same WebRTC links the game will use, as reliable messages tagged with
+a 4-byte prefix that the game protocol never produces, so the transport
+(`src/wclobby_web.js`) filters them out.  The first pilot in is the host;
+its Fly starts the game for everyone in the room (wingmen who already have
+their game files start automatically, the others get a Fly button); a
+wingman can also press Fly on its own, e.g. when the host is already
+flying.  Starting goes full screen (Esc leaves it; the Full screen button
+brings it back), and DOSBox adopts the page's room connection instead of
+joining twice (`Module.lobbyGame`).  Only the canvas receives the
+keyboard, so the chat box stays usable.  Native and browser players can
+share a room, exactly like `runwc.sh DOSPATH room CODE`.
+
+**Which mission.**  The host picks it in the lobby: a system and mission
+of the Vega campaign (everyone then skips the barracks and flies that
+mission from a fresh start, with the callsign and last name entered on the
+page, so no save game is involved and nothing can disagree), or "Campaign",
+the barracks, where the host's save game and walk into the briefing room
+decide and wingmen walk into their own briefing room to receive the host's
+mission.  The choice is shown to the wingmen and travels with the start.
+Natively the same thing is `MIS=<mission> SERIES=<series>` (the game's own
+indices: series 1.., mission 0..).
 
 How it works: the browser build is the same DOSBox and the same `wcnet_*`
 code, compiled with Emscripten and

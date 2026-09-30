@@ -67,6 +67,12 @@ async function open(name, callsign) {
   const src = await page.$eval("#sourceStatus", (el) => el.textContent);
   console.log(`[${name}] ${src.slice(0, 160)}`);
   if (!src.startsWith("Ready")) throw new Error("game files not ready: " + src);
+  // The page joins the room on its own (?room= in the URL); wait for the
+  // roster, say hello in the lobby chat, then fly.
+  await page.waitForFunction(() => !document.getElementById("lobby").hidden && document.getElementById("roster").children.length > 0, null, { timeout: 60000 });
+  await page.fill("#chatInput", `hello from ${callsign}`);
+  await page.press("#chatInput", "Enter");
+  await page.waitForFunction(() => !document.getElementById("fly").disabled, null, { timeout: 30000 });
   await page.click("#fly");
   return page;
 }
@@ -96,7 +102,16 @@ for (const name of host ? ["host", "wing"] : ["wing"]) {
 // Rough throughput: the client logs its health every 300 frames.
 const lastFrame = (lines) => lines.reduce((m, l) => { const f = /frame (\d+): own health/.exec(l); return f ? Math.max(m, Number(f[1])) : m; }, 0);
 console.log(`frames: host reached ${lastFrame(logs.host)}, wingman reached ${lastFrame(logs.wing)} (logged every 300)`);
+// The host is already flying (full screen, page chat out of reach) when the
+// wingman arrives, so the lobby check is: the host's page still received the
+// wingman's chat line, and the wingman saw the host's presence.
+const chatText = async (page) => page ? page.$eval("#chatLog", (el) => el.textContent) : "";
+const chatOk = noHost || ((await chatText(host)).includes("hello from WINGMAN") && /HOST is in the room/.test(await chatText(wing)));
+console.log(`lobby chat and presence delivered: ${chatOk}`);
+for (const [name, page] of [["host", host], ["wing", wing]]) {
+  if (page) console.log(`${name} chat log: ` + (await page.$eval("#chatLog", (el) => el.innerText.replace(/\n+/g, " | "))).slice(0, 400));
+}
 await browser.close();
-const ok = (noHost || seen.host.has("connected as player")) && seen.wing.has("connected to ");
+const ok = (noHost || seen.host.has("connected as player")) && seen.wing.has("connected to ") && (noHost || chatOk);
 console.log(ok ? (noHost ? "SMOKE OK: the browser wingman connected to the native host" : "SMOKE OK: host accepted the wingman and the wingman connected") : "SMOKE FAILED");
 process.exit(ok ? 0 : 1);

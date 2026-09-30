@@ -171,11 +171,18 @@ static void ensure_session() {
 
 static void on_after_startup() {
     has_started_up = true;
+    // MIS / SERIES (the game's own indices: series 1.., mission 0.. within
+    // the series) skip the barracks and fly that mission; setting either is
+    // enough, so MIS=0 SERIES=1 (the first mission) can be asked for too.
     const char *misenv = getenv("MIS");
     const char *serenv = getenv("SERIES");
-    int mission = atoi(misenv ? misenv : "0");
-    int series = atoi(serenv ? serenv : "1");
-    if (mission != 0 || series != 1) {
+    // WCCALLSIGN / WCLASTNAME name the pilot even without a network session
+    // (the briefing would otherwise address the save game's Bluehair).
+    get_callsign();
+    get_last_name();
+    if ((misenv && misenv[0]) || (serenv && serenv[0])) {
+        int mission = atoi(misenv ? misenv : "0");
+        int series = atoi(serenv ? serenv : "1");
         run_campaign(mission, series);
         g_skipBarracks = true;
     }
