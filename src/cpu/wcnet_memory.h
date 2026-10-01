@@ -70,7 +70,8 @@ enum Offsets {
     gPositionVector = 0xA9C2,        // 3 x int32 per slot
     entityCullStatus = 0xACC4,       // word per slot (0x8001 = culled/inactive)
     gOrientationRightVector = 0xAEB6,// 3 x int32 per slot
-    gOrientationUpVector = 0xB1B6,
+    gOrientationUpVector = 0xB1B6,   // named "up", but it points to the bottom of the screen
+                                     // (the carrier moves along it when the nose comes up)
     gOrientationFrontVector = 0xB4B6,
     setSpeed = 0xB9F6,               // [gOrientationFrontVector+540] int32 per slot
     damageProperty = 0xBB8E,         // word per slot: bolt damage / AI timers

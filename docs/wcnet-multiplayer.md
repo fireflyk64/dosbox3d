@@ -230,7 +230,7 @@ shell command still starts/stops the server or connects.  Useful environment:
 | `WCHOSTPILOT=0..7` | on a client: which of the eight named pilots the host's ship appears as (default: the one the server's mission setup gave that slot, i.e. the mission's wingman) |
 | `WCNET_AUTOKEYS=1` | test aid: press Enter through the briefing, then `A` (autopilot) once in space |
 | `WCNET=0` | fly alone: no server, no room, the game's own wingman (a single-player control for experiments) |
-| `WCNET_KEYSCRIPT="8:c,9.5:1,10:@after"` | test aid: once in space, at each emulated second press that key (letter, digit, `enter`, `esc`, `space`, held 150 ms) or, for `@tag`, dump the data segment to `WCNET_DUMP_DIR/tag.bin` and log the comm line, VDU text, mission, pilot bytes and KIA words; `!status=N` ends the mission as the game would (1 landed, 4 died, ...), `!kill=SLOT` destroys a ship on the server through the broadcast path of a real kill, `!poke=HEXOFF:HEXBYTE` writes the data segment, and `wait` holds the script until the next mission's first frame and restarts the clock there; `WCNET_AUTOKEYS` then only handles briefings and debriefings |
+| `WCNET_KEYSCRIPT="8:c,9.5:1,10:@after"` | test aid: once in space, at each emulated second press that key (letter, digit, `enter`, `esc`, `space`, held 150 ms) or, for `@tag`, dump the data segment to `WCNET_DUMP_DIR/tag.bin` and log the comm line, VDU text, mission, pilot bytes and KIA words; `!status=N` ends the mission as the game would (1 landed, 4 died, ...), `!kill=SLOT` destroys a ship on the server through the broadcast path of a real kill, `!poke=HEXOFF:HEXBYTE` writes the data segment, `!mouse=X:Y` puts the mouse pointer at those fractions of its range, `!button=N:1` / `N:0` presses and releases a mouse button, `+key` / `-key` hold and release a key, and `wait` holds the script until the next mission's first frame and restarts the clock there; `WCNET_AUTOKEYS` then only handles briefings and debriefings |
 | `WCNET_SKIPBARRACKS=1` | test aid: never stop in the rec room or the barracks, so a scripted run goes from a debriefing straight to the next briefing |
 | `WCNET_WATCH=C260:16` | debugging aid: log every change of that part of the data segment (hex offset, length) with the address of the instruction after the write |
 | `WCNET_AUDIOLOG=1` | test aid: every 500 ms log each mixer channel's mean level and the number of OPL register writes (stderr, same clock as the key script); `WCNET_WAVE=1` also records the mixed output into DOSBox's capture directory |
@@ -316,6 +316,30 @@ top-level README for the workflow).  What differs:
   when it unlocks.  Where the Keyboard Lock API exists (Chrome, Edge) the
   page also asks for Esc in full screen: a tap reaches the game, holding it
   leaves.
+* **Controllers** (`web/gamepad.js`).  The lobby has a controller picker
+  and a table of buttons and axes; a chosen controller is presented to the
+  game as its mouse and keyboard.  Wing Commander steers by its mouse
+  pointer: it parks the pointer at 318,52 of the 640x200 mouse range (the
+  middle of the cockpit view) and turns towards it, right of the neutral
+  point to turn right, above it to raise the nose (the registry's `pointer`
+  entry).  In flight the sticks set the pointer around that point (left
+  stick turn and pitch, right stick pitch and, through the roll keys, roll;
+  each axis can be inverted and pitch is by default, so pulling back climbs);
+  the pointer is re-sent every 200 ms because the game re-centres it itself.
+  Outside flight the stick moves the pointer like a mouse and the Fire guns
+  button is also the click.  Buttons hold keys: A Space (guns), B Enter
+  (missile), X `T`, Y `W`, L1 `+`, R1 `-`, Back `N`, Start `A`, and the left
+  trigger Tab (afterburner) only past 90% of its travel, releasing below
+  80%.  The page queues keys, the pointer and the click through
+  `wc_web_key`, `wc_web_pointer` and `wc_web_mouse_button`; the emulator
+  applies them in its async tick, and `wc_web_in_flight` tells the page which
+  of the two modes applies.  The choice of controller is per window (session
+  storage, announced to other windows over a `BroadcastChannel` so a
+  controller taken by one window is not picked up by the next); the mapping
+  is shared (local storage).  The page reads the controller from a timer, so
+  a window that is visible but not focused keeps flying: two windows side by
+  side are a split screen.  The DOS game-port joystick is off in this build
+  (`joysticktype=none`), or a gamepad would reach the game twice.
 * **The lobby server checks the page's origin**; the public server accepts
   only its own host.  Serve the page from there or run a lobby server with
   `--allowed-origin` for the page's origin.

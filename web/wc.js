@@ -8,6 +8,7 @@
 // travel as reliable messages tagged with a 4-byte prefix that the game
 // protocol never produces, so the transport filters them out.
 import { P2PGame } from "./p2p-client.js";
+import { initControls } from "./gamepad.js";
 import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles,
          saveGame, loadGames, forgetGame, totalSize, GAMES } from "./gamefiles.js";
 
@@ -673,6 +674,17 @@ async function start(fromGesture) {
     status("Failed to start: " + (e && e.message ? e.message : e));
   }
 }
+
+// -- controllers ---------------------------------------------------------------
+
+// A game controller chosen in this window drives the running game's mouse and
+// keyboard (web/gamepad.js); the registry says where the game's steering
+// pointer rests and how far it reaches.
+initControls({
+  module: () => (running && window.DOSBox) || null,
+  pointer: () => (gameInfo() && gameInfo().pointer) || null,
+  log,
+});
 
 // -- go ------------------------------------------------------------------------
 

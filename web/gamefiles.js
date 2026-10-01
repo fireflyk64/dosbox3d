@@ -14,11 +14,16 @@
 // Optional: `saves`, the files the game keeps its saved games in (relative to
 // the game directory; the page keeps a copy in the browser and offers them as
 // a download), and `cycles`, the emulated CPU speed the game plays well at
-// (DOSBox's default of 3000 is what Ctrl+F11 / Ctrl+F12 adjust).
+// (DOSBox's default of 3000 is what Ctrl+F11 / Ctrl+F12 adjust), and `pointer`,
+// for a controller's stick (web/gamepad.js): where the mouse pointer rests
+// when the game steers by it and how far it reaches, as fractions of the
+// mouse range.  Wing Commander parks the pointer at 318,52 of 640x200 (the
+// middle of the cockpit view) and turns by its distance from there.
 
 export const GAMES = [
   { id: "wc1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
-    saves: ["GAMEDAT/SAVEGAME.WLD"], cycles: 3630 },
+    saves: ["GAMEDAT/SAVEGAME.WLD"], cycles: 3630,
+    pointer: { x: 318 / 639, y: 52 / 199, rx: 318 / 639, ry: 52 / 199 } },
   { id: "wc1sm2", title: "Wing Commander: Secret Missions 2", detect: ["SM2.EXE"], run: "sm2", multiplayer: false, secondary: true },
   { id: "wc2", title: "Wing Commander II", detect: ["WC2.EXE"], run: "wc2", multiplayer: false },
 ];

@@ -177,7 +177,7 @@ say "assembling $OUT"
 mkdir -p "$OUT"
 cp "$BUILD/src/dosbox.js" "$BUILD/src/dosbox.wasm" "$OUT/"
 cp "$TS/dist/index.js" "$OUT/p2p-client.js"
-cp "$ROOT/web/index.html" "$ROOT/web/wc.js" "$ROOT/web/gamefiles.js" "$ROOT/web/inno-worker.js" "$OUT/"
+cp "$ROOT/web/index.html" "$ROOT/web/wc.js" "$ROOT/web/gamefiles.js" "$ROOT/web/gamepad.js" "$ROOT/web/inno-worker.js" "$OUT/"
 if [ -f "$DEPS/inno-build/innoextract.js" ]; then
     cp "$DEPS/inno-build/innoextract.js" "$DEPS/inno-build/innoextract.wasm" "$OUT/"
 else

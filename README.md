@@ -73,6 +73,17 @@ indices: series 1.., mission 0..).  A room is for two pilots unless the host
 asks for a third seat.  When anyone dies, everyone flies that same mission
 again, wherever the campaign had got to.
 
+**Controllers.**  Pick a game controller in the lobby (or press one of its
+buttons while the window has the focus).  It drives the game's mouse and
+keyboard: left stick turns and pitches, right stick pitches and rolls, A
+guns, B missile, X target, Y weapon, L1/R1 speed up/down, Back the
+navigation map, Start the autopilot, and the left trigger, pressed nearly
+all the way, the afterburner.  Pitch is inverted by default (pull back to
+climb); every button and axis can be changed under "Controller buttons and
+axes".  Each browser window has its own controller, so two windows side by
+side make a split screen, with a controller each or a controller in one and
+the keyboard and mouse in the other.
+
 **Save games.**  Saving in a bunk writes the game's save file (all eight
 bunks).  The page keeps a copy in the browser's local storage and puts it
 back at the next visit; "Download save games" gives you the file, and

@@ -811,7 +811,14 @@ void DOSBOX_Init(void) {
 	secprop->AddInitFunction(&MOUSE_Init); //Must be after int10 as it uses CurMode
 	secprop->AddInitFunction(&JOYSTICK_Init);
 	const char* joytypes[] = { "auto", "2axis", "4axis", "4axis_2", "fcs", "ch", "none",0};
+#ifdef EMSCRIPTEN
+	// In the browser a controller reaches the game through the page, as its
+	// mouse and keyboard (web/gamepad.js).  "auto" would also present any
+	// gamepad the browser exposes as a DOS game-port joystick.
+	Pstring = secprop->Add_string("joysticktype",Property::Changeable::WhenIdle,"none");
+#else
 	Pstring = secprop->Add_string("joysticktype",Property::Changeable::WhenIdle,"auto");
+#endif
 	Pstring->Set_values(joytypes);
 	Pstring->Set_help(
 		"Type of joystick to emulate: auto (default), none,\n"

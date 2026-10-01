@@ -32,6 +32,13 @@
   #setup { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 14px; align-items: end; margin-bottom: 10px; }
   #setup label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9aa3b2; }
   #setup label.check { flex-direction: row; align-items: center; }
+  #padDetails { margin-bottom: 10px; }
+  #padDetails summary { cursor: pointer; color: #9aa3b2; }
+  #padMap { border-collapse: collapse; margin: 8px 0; }
+  #padMap td { padding: 3px 12px 3px 0; vertical-align: middle; }
+  #padMap button { padding: 3px 10px; font-weight: 400; }
+  #padMap label.check, #padOptions label { color: #9aa3b2; font-size: 12px; }
+  #padOptions { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
   #lobby { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: 12px; }
   #missionRow { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
   #missionRow label { display: flex; gap: 8px; align-items: center; color: #9aa3b2; font-size: 12px; }
@@ -91,12 +98,25 @@
       <label>Callsign <input type="text" id="callsign" placeholder="Maverick"></label>
       <label>Last name <input type="text" id="lastname" placeholder="Blair"></label>
       <label>Players in room <input type="number" id="players" min="2" max="3" value="2"></label>
+      <label>Controller <select id="padSelect"><option value="none">Keyboard and mouse</option></select></label>
       <label>Lobby server <input type="text" id="server" value=""></label>
       <label class="check"><input type="checkbox" id="relay"> Force TURN relay</label>
       <label class="check"><input type="checkbox" id="verbose"> Verbose network log</label>
       <button type="submit" id="join">Join room</button>
       <button type="button" class="secondary" id="leave" hidden>Leave room</button>
     </form>
+    <details id="padDetails">
+      <summary>Controller buttons and axes</summary>
+      <p class="hint" id="padHint"></p>
+      <table id="padMap"><tbody id="padRows"></tbody></table>
+      <div id="padOptions">
+        <label>Stick sensitivity <input type="range" id="padSensitivity" min="30" max="100" step="5"> <span id="padSensitivityValue"></span></label>
+        <label>Dead zone <input type="range" id="padDeadzone" min="5" max="40" step="1"> <span id="padDeadzoneValue"></span></label>
+        <label>Afterburner when the trigger is past <input type="range" id="padBurner" min="50" max="100" step="5"> <span id="padBurnerValue"></span></label>
+        <button type="button" class="secondary" id="padReset">Reset to the gamepad layout</button>
+      </div>
+      <p class="hint">The controller is the game's mouse and keyboard: the sticks steer (left stick turns and pitches, right stick pitches and rolls), the buttons press the game's keys. In menus and the barracks the left stick moves the pointer and the Fire guns button clicks. Each browser window has its own controller, so two windows side by side make a split screen: one controller each, or a controller in one and the keyboard and mouse in the other.</p>
+    </details>
     <div id="lobby" hidden>
       <div>
         <ul id="roster"></ul>

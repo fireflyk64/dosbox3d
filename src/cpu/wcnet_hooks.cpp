@@ -23,6 +23,7 @@
 #include "cpu.h"
 #include "regs.h"
 #include "keyboard.h"
+#include "mouse.h"
 #include "pic.h"
 #include <time.h>
 
@@ -122,7 +123,10 @@ static void auto_keys() {
 // orders can be diffed, or "!status=<n>", which ends the mission the way the
 // game would (1 landed, 2 ejected, 4 died, 5 quit), "!kill=<slot>", which on
 // the server destroys that ship as a kill by the player would,
-// "!poke=<hex offset>:<hex byte>", which writes the data segment, or "wait", which holds
+// "!poke=<hex offset>:<hex byte>", which writes the data segment,
+// "!mouse=<x>:<y>", which puts the pointer there (fractions of the range),
+// "!button=<n>:<1|0>", which presses or releases a mouse button,
+// "+<key>" / "-<key>", which hold and release a key, or "wait", which holds
 // the script until the next mission reaches its first frame and restarts
 // the clock there.  The clock starts at the first in-flight frame of the
 // first mission and keeps running through debriefings and cutscenes.
@@ -132,9 +136,15 @@ struct ScriptStep {
 };
 
 static KBD_KEYS script_key(const std::string &name) {
-    if (name == "enter") return KBD_enter;
-    if (name == "esc") return KBD_esc;
-    if (name == "space") return KBD_space;
+    static const struct { const char *name; KBD_KEYS key; } kNamed[] = {
+        { "enter", KBD_enter }, { "esc", KBD_esc }, { "space", KBD_space }, { "tab", KBD_tab },
+        { "backspace", KBD_backspace }, { "up", KBD_up }, { "down", KBD_down }, { "left", KBD_left },
+        { "right", KBD_right }, { "comma", KBD_comma }, { "period", KBD_period }, { "equals", KBD_equals },
+        { "minus", KBD_minus },
+    };
+    for (size_t i = 0; i < sizeof(kNamed) / sizeof(kNamed[0]); i++) {
+        if (name == kNamed[i].name) return kNamed[i].key;
+    }
     if (name.size() == 1) {
         char c = name[0];
         static const char kLetters[] = "qwertyuiopasdfghjklzxcvbnm";  // the enum's order
@@ -144,6 +154,16 @@ static KBD_KEYS script_key(const std::string &name) {
         if (c == '0') return KBD_0;
     }
     return KBD_NONE;
+}
+
+// An absolute pointer position, 0..1 across the mouse driver's range (what a
+// controller's stick asks for).  The matching relative motion is reported as
+// well, for programs that read mickeys instead of the position.
+static void set_pointer(double fx, double fy) {
+    static double lastX = 0.5, lastY = 0.5;
+    Mouse_CursorMoved((float)((fx - lastX) * 640.0), (float)((fy - lastY) * 200.0), (float)fx, (float)fy, false);
+    lastX = fx;
+    lastY = fy;
 }
 
 static std::string ds_text(Bit16u off, int max) {
@@ -230,6 +250,24 @@ static void key_script() {
     } else if (item == "wait") {
         wclog(1, "key script %.1fs (t=%.1f): waiting for the next mission", t, now / 1000.0);
         waitingSince = g_flightCount;
+    } else if (item.compare(0, 7, "!mouse=") == 0) {
+        // !mouse=<x>:<y>, fractions of the mouse range (0.5:0.5 is the centre)
+        double fx = atof(item.c_str() + 7);
+        size_t colon = item.find(':');
+        double fy = colon == std::string::npos ? 0.5 : atof(item.c_str() + colon + 1);
+        wclog(2, "key script %.1fs (t=%.1f): pointer to %.2f, %.2f", t, now / 1000.0, fx, fy);
+        set_pointer(fx, fy);
+    } else if (item.compare(0, 8, "!button=") == 0) {
+        // !button=<0 left, 1 right>:<1 down, 0 up>
+        int button = atoi(item.c_str() + 8);
+        size_t colon = item.find(':');
+        bool down = colon != std::string::npos && atoi(item.c_str() + colon + 1) != 0;
+        wclog(2, "key script %.1fs (t=%.1f): mouse button %d %s", t, now / 1000.0, button, down ? "down" : "up");
+        if (down) Mouse_ButtonPressed((Bit8u)button); else Mouse_ButtonReleased((Bit8u)button);
+    } else if (item.size() > 1 && (item[0] == '+' || item[0] == '-') && script_key(item.substr(1)) != KBD_NONE) {
+        // +<key> holds a key down, -<key> lets it go
+        wclog(2, "key script %.1fs (t=%.1f): %s %s", t, now / 1000.0, item[0] == '+' ? "hold" : "release", item.c_str() + 1);
+        KEYBOARD_AddKey(script_key(item.substr(1)), item[0] == '+');
     } else if (item.compare(0, 6, "!poke=") == 0) {
         // !poke=<hex offset>:<hex byte>
         Bit16u off = (Bit16u)strtol(item.c_str() + 6, NULL, 16);
@@ -522,6 +560,63 @@ extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_emulated_ms() {
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_ds_byte(int off) {
     return (off < 0 || off > 0xffff) ? -1 : (int)wc::rd8((Bit16u)off);
 }
+// Input from the page's controller support (web/gamepad.js): a game pad is
+// presented to the game as its mouse (the sticks) and its keyboard (the
+// buttons).  The page calls these between slices of emulation, so they only
+// record what is wanted; the async tick applies it from inside the emulator.
+static_assert(KBD_q == 11 && KBD_a == 21 && KBD_x == 31 && KBD_esc == 49 && KBD_tab == 50 && KBD_enter == 52 &&
+              KBD_space == 53 && KBD_minus == 64 && KBD_equals == 65 && KBD_period == 71 && KBD_comma == 72 &&
+              KBD_right == 86, "web/gamepad.js numbers the keys in this order");
+enum { kWebKeyQueue = 64 };
+static struct { Bit8u key; Bit8u pressed; } g_webKeys[kWebKeyQueue];
+static unsigned g_webKeyHead = 0, g_webKeyTail = 0;
+static double g_webPointerX = 0.5, g_webPointerY = 0.5;
+static bool g_webPointerWanted = false;
+static unsigned g_webButtonsWanted = 0, g_webButtonsDown = 0;
+
+extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_key(int kbd, int pressed) {
+    unsigned next = (g_webKeyHead + 1) % kWebKeyQueue;
+    if (kbd <= KBD_NONE || kbd >= KBD_LAST || next == g_webKeyTail) {
+        return;
+    }
+    g_webKeys[g_webKeyHead].key = (Bit8u)kbd;
+    g_webKeys[g_webKeyHead].pressed = pressed ? 1 : 0;
+    g_webKeyHead = next;
+}
+// The pointer as fractions (0..1) of the mouse driver's range.
+extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_pointer(double fx, double fy) {
+    g_webPointerX = fx < 0 ? 0 : fx > 1 ? 1 : fx;
+    g_webPointerY = fy < 0 ? 0 : fy > 1 ? 1 : fy;
+    g_webPointerWanted = true;
+}
+extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_mouse_button(int button, int pressed) {
+    if (button < 0 || button > 2) {
+        return;
+    }
+    if (pressed) g_webButtonsWanted |= 1u << button; else g_webButtonsWanted &= ~(1u << button);
+}
+// Nonzero while a mission's frame loop runs (flying, autopilot included):
+// the page steers with the stick then, and moves a menu pointer otherwise.
+extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_in_flight() {
+    return wc::in_flight() ? 1 : 0;
+}
+static void web_input_tick() {
+    while (g_webKeyTail != g_webKeyHead) {
+        KEYBOARD_AddKey((KBD_KEYS)g_webKeys[g_webKeyTail].key, g_webKeys[g_webKeyTail].pressed != 0);
+        g_webKeyTail = (g_webKeyTail + 1) % kWebKeyQueue;
+    }
+    if (g_webPointerWanted) {
+        g_webPointerWanted = false;
+        wc::set_pointer(g_webPointerX, g_webPointerY);
+    }
+    for (unsigned b = 0; b < 3; b++) {
+        unsigned bit = 1u << b;
+        if ((g_webButtonsWanted & bit) && !(g_webButtonsDown & bit)) Mouse_ButtonPressed((Bit8u)b);
+        if (!(g_webButtonsWanted & bit) && (g_webButtonsDown & bit)) Mouse_ButtonReleased((Bit8u)b);
+    }
+    g_webButtonsDown = g_webButtonsWanted;
+}
+
 // A short Esc press from the page (its Caps Lock handler): browsers keep the
 // real Esc key for leaving full screen.  Released by the async tick.
 static bool g_escTapWanted = false;
@@ -589,6 +684,7 @@ void wc_net_check_cpu_hooks() {
         key_script();
 #ifdef __EMSCRIPTEN__
         escape_tap();
+        web_input_tick();
 #endif
         if (g_session) {
             g_session->on_async_tick();
