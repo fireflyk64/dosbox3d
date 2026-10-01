@@ -27,6 +27,7 @@
 #include "mapper.h"
 #include "mem.h"
 #include "dbopl.h"
+extern unsigned g_oplWrites;  // WCNET_AUDIOLOG (mixer.cpp): OPL register writes since the last report
 
 namespace OPL2 {
 	#include "opl.cpp"
@@ -442,6 +443,7 @@ void Module::DualWrite( Bit8u index, Bit8u reg, Bit8u val ) {
 
 
 void Module::PortWrite( Bitu port, Bitu val, Bitu iolen ) {
+	g_oplWrites++;
 	//Keep track of last write time
 	lastUsed = PIC_Ticks;
 	//Maybe only enable with a keyon?

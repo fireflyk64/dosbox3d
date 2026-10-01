@@ -497,6 +497,14 @@ static void intercept_despawn(bool explode) {
     if (!is_ship_slot(ship)) {
         return;  // temporary entities are local on every machine
     }
+    if (!slot_in_use(ship)) {
+        // Mission setup despawns every slot to reset its bookkeeping (pilot
+        // 0xff, comm flags, cull status, ...).  Nothing to tell anyone, and
+        // skipping it leaves the unused slots as whatever the last mission
+        // left there -- pilot 0 made them look like extra copies of the
+        // wingman to the comms code.
+        return;
+    }
     if (s->is_remote_player_slot(ship)) {
         return_from_call(0);  // a human's ship only leaves when its owner says so
         return;

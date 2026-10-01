@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <math.h>
+#include <string>
 
 #if defined (WIN32)
 //Midi listing
@@ -99,6 +100,7 @@ MixerChannel * MIXER_AddChannel(MIXER_Handler handler,Bitu freq,const char * nam
 	chan->next=mixer.channels;
 	chan->SetVolume(1,1);
 	chan->enabled=false;
+	chan->energy=0;chan->fed=0;
 	mixer.channels=chan;
 	return chan;
 }
@@ -266,6 +268,7 @@ thestart:
 		freq_index+=freq_add;
 		mixpos&=MIXER_BUFMASK;
 		Bits sample=last[0]+((diff[0]*diff_mul) >> MIXER_SHIFT);
+		energy+=(Bit64u)(sample<0?-sample:sample);fed++;
 		mixer.work[mixpos][0]+=sample*volmul[0];
 		if (stereo) sample=last[1]+((diff[1]*diff_mul) >> MIXER_SHIFT);
 		mixer.work[mixpos][1]+=sample*volmul[1];
@@ -295,6 +298,7 @@ void MixerChannel::AddStretched(Bitu len,Bit16s * data) {
 		freq_index+=temp_add;
 		mixpos&=MIXER_BUFMASK;
 		Bits sample=last[0]+((diff*diff_mul) >> MIXER_SHIFT);
+		energy+=(Bit64u)(sample<0?-sample:sample);fed++;
 		mixer.work[mixpos][0]+=sample*volmul[0];
 		mixer.work[mixpos][1]+=sample*volmul[1];
 		mixpos++;
@@ -369,7 +373,41 @@ static inline bool Mixer_irq_important(void) {
 }
 
 /* Mix a certain amount of new samples */
+unsigned g_oplWrites = 0;  // counted by adlib.cpp
+void CAPTURE_WaveEvent(bool pressed);  // hardware.cpp
+
+// Debugging aid: WCNET_AUDIOLOG=1 logs every channel's activity (mean |sample|
+// and samples fed) each 500 ms of emulated time, to see which sound keeps
+// playing (the wcnet key script logs on the same clock).
+static void MIXER_AudioLog(void) {
+	static int enabled = -1;
+	static double nextMs = 0;
+	if (enabled < 0) {
+		const char *e = getenv("WCNET_AUDIOLOG");
+		enabled = (e && e[0] && e[0] != '0') ? 1 : 0;
+	}
+	if (!enabled) return;
+	static bool capturing = false;
+	if (!capturing && getenv("WCNET_WAVE")) {
+		capturing = true;
+		CAPTURE_WaveEvent(true);  // the mixed output lands in the captures directory
+	}
+	double now = PIC_FullIndex();
+	if (now < nextMs) return;
+	nextMs = now + 500;
+	std::string line;
+	char buf[80];
+	for (MixerChannel *c = mixer.channels; c; c = c->next) {
+		snprintf(buf, sizeof(buf), " %s=%s%u/%u", c->name, c->enabled ? "" : "off:", (unsigned)(c->fed ? c->energy / c->fed : 0), (unsigned)c->fed);
+		line += buf;
+		c->energy = 0; c->fed = 0;
+	}
+	fprintf(stderr, "audio %.1fs opl=%u:%s\n", now / 1000.0, g_oplWrites, line.c_str());
+	g_oplWrites = 0;  // unbuffered, next to wcnet's log
+}
+
 static void MIXER_MixData(Bitu needed) {
+	MIXER_AudioLog();
 	MixerChannel * chan=mixer.channels;
 	while (chan) {
 		chan->Mix(needed);

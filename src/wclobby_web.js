@@ -267,6 +267,13 @@ addToLibrary({
       var h = WCLOBBY.nextHandle++;
       WCLOBBY.hubs[h] = hub;
       WCLOBBY.log(1, how + ' room ' + code + ' as player ' + game.selfId + ' of ' + game.maxPlayers);
+      // Game messages the page received before we existed (a client that
+      // reached its launch first): deliver them now, in order.
+      if (how === 'adopted' && Module['takeLobbyBacklog']) {
+        var backlog = Module['takeLobbyBacklog']() || [];
+        if (backlog.length) WCLOBBY.log(1, backlog.length + ' message(s) arrived before the game was ready');
+        backlog.forEach((m) => WCLOBBY.deliver(hub, m.from, m.data));
+      }
       wakeUp(h);
     };
     // The page may already be in the room (its lobby with roster and chat):

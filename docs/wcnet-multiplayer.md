@@ -97,6 +97,10 @@ extra health" and "wingman explodes" behaviour.
 * **NPC health is also replicated** by the server, applied after the frame's
   events have been replayed, so replay drift (recharge phase, RNG) is
   corrected every frame while cosmetic effects still come from the replay.
+* Mission setup despawns every ship slot before spawning the mission; those
+  calls run locally on every machine (they reset the slot's pilot to 0xff, its
+  comm flags and cull status).  Only despawns of ships that exist are
+  broadcast or, on a client, left to the server.
 * The server skips the AI think function for a human-flown slot and refuses
   AI fire from it; the set-speed AI is skipped as before.
 * Positions of a player's ship come from its owner every frame; the server
@@ -204,6 +208,10 @@ shell command still starts/stops the server or connects.  Useful environment:
 | `WCCALLSIGN`, `WCLASTNAME` | override the pilot identity |
 | `WCHOSTPILOT=0..7` | on a client: which of the eight named pilots the host's ship appears as (default: the one the server's mission setup gave that slot, i.e. the mission's wingman) |
 | `WCNET_AUTOKEYS=1` | test aid: press Enter through the briefing, then `A` (autopilot) once in space |
+| `WCNET=0` | fly alone: no server, no room, the game's own wingman (a single-player control for experiments) |
+| `WCNET_KEYSCRIPT="8:c,9.5:1,10:@after"` | test aid: once in space, at each emulated second press that key (letter, digit, `enter`, `esc`, `space`, held 150 ms) or, for `@tag`, dump the data segment to `WCNET_DUMP_DIR/tag.bin` and log the comm line and VDU text; `WCNET_AUTOKEYS` then only handles the briefing |
+| `WCNET_AUDIOLOG=1` | test aid: every 500 ms log each mixer channel's mean level and the number of OPL register writes (stderr, same clock as the key script); `WCNET_WAVE=1` also records the mixed output into DOSBox's capture directory |
+| `WCNET_DUMP_FRAME=<n>`, `WCNET_DUMP_FILE` | dump the data segment at in-flight frame n (and on SIGUSR1) |
 
 `scripts/wcnet-smoke.sh [seconds] [mission] [series]` starts a headless
 server and client (dummy SDL drivers), lets them fly mission 1 with
@@ -259,6 +267,11 @@ top-level README for the workflow).  What differs:
   Lobby chat and presence are reliable messages prefixed with
   `57 43 4C 01`; a protobuf message never starts with 0x57 (wire type 7),
   so `wclobby_web.js` drops them before they reach the game.
+* **Lobby traffic shares the data channels**: the page's roster, chat and
+  "start" messages begin with `WCL\x01`, which no protobuf message can, and
+  both the browser transport (`src/wclobby_web.js`) and the native one
+  (`src/cpu/wcnet_lobby.cpp`) drop them before the game sees a byte, so a
+  native DOSBox can join a room a browser hosts.
 * **Configuration is the environment**, set by `web/wc.js` from the page's
   form (`Module.ENV` in `preRun`): `WCROOM`, `WCLOBBY`, `WCPLAYERS`,
   `WCCALLSIGN`, `WCLASTNAME`, `WCLOBBY_RELAY`, `WCNET_LOG`, plus anything

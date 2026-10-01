@@ -11,6 +11,8 @@
 #include <string.h>
 #include <signal.h>
 #include <time.h>
+#include <string>
+#include <vector>
 #include "wc_net.h"
 #include "wcnet_session.h"
 #include "wcnet_events.h"
@@ -61,7 +63,10 @@ static void auto_keys() {
         KEYBOARD_AddKey(key, false);
         pressed = false;
     } else if (!pressed && now - lastMs > 1500) {
-        bool flying = g_session && g_session->in_space();
+        bool flying = (g_session && g_session->in_space()) || (rd8(ds::shipStateByte) == 8 && rd8(0xBD1A) != 0);
+        if (flying && getenv("WCNET_KEYSCRIPT")) {
+            return;  // the key script flies this instance
+        }
         if (flying && autopilots < 3 && now - lastMs > 8000) {
             key = KBD_a;  // engage autopilot: the enemies come to us
             autopilots++;
@@ -74,6 +79,118 @@ static void auto_keys() {
         pressed = true;
         lastMs = now;
     }
+}
+
+// Test aid: WCNET_KEYSCRIPT="<t>:<item>,<t>:<item>,..." runs a scripted
+// flight once the player is in space: at <t> emulated seconds after that,
+// <item> is a key to hold for 150 ms (one letter or digit, enter, esc) or
+// "@<tag>", which writes the data segment to WCNET_DUMP_DIR/<tag>.bin and
+// logs the comm line and the VDU text, so two instances' views of the same
+// orders can be diffed (scripts in docs/wcnet-multiplayer.md).
+struct ScriptStep {
+    double at;
+    std::string item;
+};
+
+static KBD_KEYS script_key(const std::string &name) {
+    if (name == "enter") return KBD_enter;
+    if (name == "esc") return KBD_esc;
+    if (name == "space") return KBD_space;
+    if (name.size() == 1) {
+        char c = name[0];
+        static const char kLetters[] = "qwertyuiopasdfghjklzxcvbnm";  // the enum's order
+        const char *p = (c >= 'a' && c <= 'z') ? strchr(kLetters, c) : NULL;
+        if (p) return (KBD_KEYS)(KBD_q + (p - kLetters));
+        if (c >= '1' && c <= '9') return (KBD_KEYS)(KBD_1 + (c - '1'));
+        if (c == '0') return KBD_0;
+    }
+    return KBD_NONE;
+}
+
+static std::string ds_text(Bit16u off, int max) {
+    std::string s;
+    int nuls = 0;
+    for (int i = 0; i < max; i++) {
+        Bit8u c = rd8((Bit16u)(off + i));
+        nuls = c ? 0 : nuls + 1;
+        if (nuls > 2) break;  // the VDU keeps several NUL-separated lines
+        s += !c ? '~' : (c == '\n') ? '|' : (c < 32 || c > 126) ? '.' : (char)c;
+    }
+    return s;
+}
+
+static void key_script() {
+    static int parsed = 0;
+    static std::vector<ScriptStep> steps;
+    static size_t next = 0;
+    static double startMs = -1;
+    static KBD_KEYS held = KBD_NONE;
+    static double releaseAt = 0;
+    if (!parsed) {
+        parsed = 1;
+        const char *env = getenv("WCNET_KEYSCRIPT");
+        std::string all = env ? env : "";
+        size_t pos = 0;
+        while (pos < all.size()) {
+            size_t comma = all.find(',', pos);
+            if (comma == std::string::npos) comma = all.size();
+            std::string tok = all.substr(pos, comma - pos);
+            size_t colon = tok.find(':');
+            if (colon != std::string::npos) {
+                ScriptStep st;
+                st.at = atof(tok.substr(0, colon).c_str());
+                st.item = tok.substr(colon + 1);
+                steps.push_back(st);
+            }
+            pos = comma + 1;
+        }
+        if (!steps.empty()) wclog(1, "key script: %d steps", (int)steps.size());
+    }
+    if (next >= steps.size() && held == KBD_NONE) {
+        return;
+    }
+    double now = PIC_FullIndex();
+    if (held != KBD_NONE) {
+        if (now >= releaseAt) {
+            KEYBOARD_AddKey(held, false);
+            held = KBD_NONE;
+        }
+        return;
+    }
+    if (startMs < 0) {
+        if (rd8(ds::shipStateByte) == 8 && rd8(0xBD1A) != 0) {
+            startMs = now;
+            wclog(1, "key script: in space, clock started (t=%.1f)", now / 1000.0);
+        }
+        return;
+    }
+    if ((now - startMs) / 1000.0 < steps[next].at) {
+        return;
+    }
+    const std::string &item = steps[next].item;
+    double t = (now - startMs) / 1000.0;
+    if (!item.empty() && item[0] == '@') {
+        const char *dir = getenv("WCNET_DUMP_DIR");
+        std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + item.substr(1) + ".bin";
+        FILE *f = fopen(path.c_str(), "wb");
+        if (f) {
+            for (Bit32u off = 0; off < 0x10000; off++) fputc(rd8((Bit16u)off), f);
+            fclose(f);
+        }
+        wclog(1, "key script %.1fs (t=%.1f): dump %s; comm \"%s\"; vdu \"%s\"", t, now / 1000.0, path.c_str(),
+              ds_text(ds::commGlobalTxt, 80).c_str(), ds_text(0x8E4A, 160).c_str());
+    } else {
+        KBD_KEYS k = script_key(item);
+        if (k == KBD_NONE) {
+            wclog(0, "key script: unknown key \"%s\"", item.c_str());
+        } else {
+            wclog(1, "key script %.1fs (t=%.1f): press %s", t, now / 1000.0, item.c_str());
+            KEYBOARD_AddKey(k, true);
+            held = k;
+            releaseAt = now + 150;
+        }
+    }
+    next++;
 }
 
 static void build_watch_list() {
@@ -304,6 +421,7 @@ void wc_net_check_cpu_hooks() {
     if (++g_asyncCounter == 1000) {
         g_asyncCounter = 0;
         auto_keys();
+        key_script();
         if (g_session) {
             g_session->on_async_tick();
         }

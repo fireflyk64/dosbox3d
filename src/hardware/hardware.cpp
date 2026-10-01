@@ -631,7 +631,7 @@ void CAPTURE_AddWave(Bit32u freq, Bit32u len, Bit16s * data) {
 		}
 	}
 }
-static void CAPTURE_WaveEvent(bool pressed) {
+void CAPTURE_WaveEvent(bool pressed) {  // not static: the mixer's WCNET_WAVE aid starts a capture
 	if (!pressed)
 		return;
 	/* Check for previously opened wave file */

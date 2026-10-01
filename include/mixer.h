@@ -85,6 +85,7 @@ public:
 	Bits last[2];
 	const char * name;
 	bool enabled;
+	Bit64u energy; Bitu fed;  // WCNET_AUDIOLOG: |sample| sum and samples since the last report
 	MixerChannel * next;
 };
 

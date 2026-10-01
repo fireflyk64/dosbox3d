@@ -1223,6 +1223,16 @@ static void trampoline_idle() {
 using namespace wc;
 
 bool init_network() {
+    // WCNET=0 flies alone: no server, no room, the game's own wingman.
+    const char *off = getenv("WCNET");
+    if (off && off[0] == '0') {
+        static bool said = false;
+        if (!said) {
+            said = true;
+            wclog(1, "networking disabled (WCNET=0)");
+        }
+        return false;
+    }
     net_config.reset_from_env();
     uninit_network();
     g_trampoline.set_idle_callback(trampoline_idle);

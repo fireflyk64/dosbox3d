@@ -71,18 +71,35 @@ public:
         if (closed_) {
             return RecvStatus::STATUS_FAIL;
         }
-        wclobby_buf_t buf = { NULL, 0 };
-        int r = wclobby_recv(h_, player_, gen_, blocking ? -1 : 0, &buf);
-        if (r == 1) {
-            bytes.assign((const char *)buf.data, buf.len);
-            wclobby_buf_free(&buf);
-            return RecvStatus::STATUS_OK;
+        for (;;) {
+            wclobby_buf_t buf = { NULL, 0 };
+            int r = wclobby_recv(h_, player_, gen_, blocking ? -1 : 0, &buf);
+            if (r == 1) {
+                bool lobby = is_lobby_message(buf.data, buf.len);
+                if (!lobby) {
+                    bytes.assign((const char *)buf.data, buf.len);
+                }
+                wclobby_buf_free(&buf);
+                if (lobby) {
+                    continue;  // the browser page's roster/chat traffic, not ours
+                }
+                return RecvStatus::STATUS_OK;
+            }
+            if (r == 0) {
+                return RecvStatus::STATUS_NO_DATA;
+            }
+            wclog(1, "%s: connection closed", name_.c_str());
+            return RecvStatus::STATUS_FAIL;
         }
-        if (r == 0) {
-            return RecvStatus::STATUS_NO_DATA;
-        }
-        wclog(1, "%s: connection closed", name_.c_str());
-        return RecvStatus::STATUS_FAIL;
+    }
+
+    // The browser page shares the data channel with its lobby (roster, chat,
+    // "start"): those reliable messages start with "WCL\x01", which no
+    // protobuf NetworkMessage can (0x57 would be wire type 7).  The browser
+    // build filters them in src/wclobby_web.js; a native player in a room
+    // hosted by a browser sees them here.
+    static bool is_lobby_message(const uint8_t *data, size_t len) {
+        return len >= 4 && data[0] == 0x57 && data[1] == 0x43 && data[2] == 0x4c && data[3] == 0x01;
     }
 
     virtual std::string describe() const { return name_; }

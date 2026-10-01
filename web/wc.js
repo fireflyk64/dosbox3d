@@ -226,7 +226,11 @@ function renderMission() {
 
 // -- the room ------------------------------------------------------------------
 
-const lobby = { game: null, names: new Map(), links: new Map(), flying: new Set(), unsubscribe: null, mission: null };
+const lobby = { game: null, names: new Map(), links: new Map(), flying: new Set(), unsubscribe: null, mission: null,
+                // game-protocol messages that arrive before DOSBox has adopted this
+                // connection (a wingman faster to the launch than the host), handed
+                // to the transport at adoption so nothing is lost
+                backlog: [] };
 let running = false;
 const myName = () => $("callsign").value.trim() || "Pilot " + (lobby.game ? lobby.game.selfId + 1 : "?");
 const isHost = () => lobby.game && lobby.game.selfId === 0;
@@ -296,7 +300,10 @@ function onLobbyEvent(ev) {
     case "message": {
       if (ev.kind !== "reliable") return;
       const m = decodeLobby(ev.data);
-      if (!m) return; // game protocol: the wasm transport handles it
+      if (!m) { // game protocol: the wasm transport handles it, once it exists
+        if (!lobby.adopted && lobby.backlog.length < 256) lobby.backlog.push({ from: ev.from, data: ev.data });
+        return;
+      }
       if (m.t === "hello") {
         const fresh = lobby.names.get(ev.from) !== m.name;
         lobby.names.set(ev.from, m.name);
@@ -383,7 +390,7 @@ async function joinRoom() {
 function leaveRoom() {
   if (lobby.unsubscribe) lobby.unsubscribe();
   if (lobby.game) { try { lobby.game.close(); } catch (e) { /* gone */ } }
-  lobby.game = null; lobby.unsubscribe = null;
+  lobby.game = null; lobby.unsubscribe = null; lobby.adopted = false; lobby.backlog = [];
   lobby.names.clear(); lobby.links.clear(); lobby.flying.clear();
   $("lobby").hidden = true; $("leave").hidden = true; $("join").disabled = false;
   for (const id of ["room", "players", "server", "relay"]) $(id).disabled = false;
@@ -467,6 +474,7 @@ async function start(fromGesture) {
       canvas,
       P2PGame,
       lobbyGame: lobby.game,          // the transport adopts this connection
+      takeLobbyBacklog: () => { lobby.adopted = true; return lobby.backlog.splice(0); },
       onLobbyClosed: () => { chatLine("The game left the room", "sys"); leaveRoom(); },
       print: log,
       printErr: log,
@@ -485,8 +493,8 @@ async function start(fromGesture) {
     canvas.focus();
     // ?cmd=... runs another DOS command instead of the game (debugging aid).
     const cmd = query.get("cmd") || source.game.run;
-    Module.callMain(["-c", `mount c ${GAME_ROOT}`, "-c", "c:", "-c", cmd]);
     window.DOSBox = Module;
+    Module.callMain(["-c", `mount c ${GAME_ROOT}`, "-c", "c:", "-c", cmd]);
     $("fullscreen").hidden = false;
     if (fromGesture) goFullscreen();
     status(source.game.multiplayer
