@@ -123,6 +123,27 @@ extra health" and "wingman explodes" behaviour.
   ending with `PlayerEnd`; the server adopts the status, its main loop exits,
   and its `MissionEnd` frame carries the status to every other client.
   Nobody's ship is despawned for this, so no pilot is ever marked KIA by it.
+* **After a death the same mission is flown again.**  `runHangarMission`
+  returns nonzero after a landing or an ejection (the game's main loop then
+  calls it again: rec room, barracks, next briefing) and zero after a death,
+  the loss of the carrier or a quit, which sends the main loop back to its
+  title call.  In a forced-mission game (`MIS` / `SERIES`, the lobby's
+  mission menu) that title call is where the hook starts the mission
+  (`afterStartup`), and it now starts the mission most recently flown on that
+  machine rather than the one the session began with; `run_campaign` returns
+  into the main loop's own test (`afterHangarMission`), so the first mission
+  behaves like every later one.  Both machines get there (shared fate), the
+  client asks for the briefing and the server answers when its own restart
+  reaches the mission start.  Before, a death in the first mission dropped
+  into the game's new-game routine, which begins in the simulator, and later
+  deaths restarted the session's first mission.  A game started from the
+  barracks (no forced mission) keeps the original behaviour: back to the
+  title, and the save games.
+* **Funerals.**  The scripts hold a funeral for each named pilot whose word in
+  `dseg:C260` (eight words, `series * 4 + mission` of his death, 0 = alive)
+  names the mission just flown.  Both sides zero all eight at every mission
+  start and end (`liven_everyone`; it used to leave the last two and a half
+  untouched), so nobody is mourned who is alive on another machine.
 * Clients fire their own guns immediately (`FireJob::PREDICT`) and tag the
   event with `client_seq`; the server replays it, and the echo lets the client
   map the missile slot instead of firing twice.
@@ -209,7 +230,9 @@ shell command still starts/stops the server or connects.  Useful environment:
 | `WCHOSTPILOT=0..7` | on a client: which of the eight named pilots the host's ship appears as (default: the one the server's mission setup gave that slot, i.e. the mission's wingman) |
 | `WCNET_AUTOKEYS=1` | test aid: press Enter through the briefing, then `A` (autopilot) once in space |
 | `WCNET=0` | fly alone: no server, no room, the game's own wingman (a single-player control for experiments) |
-| `WCNET_KEYSCRIPT="8:c,9.5:1,10:@after"` | test aid: once in space, at each emulated second press that key (letter, digit, `enter`, `esc`, `space`, held 150 ms) or, for `@tag`, dump the data segment to `WCNET_DUMP_DIR/tag.bin` and log the comm line and VDU text; `WCNET_AUTOKEYS` then only handles the briefing |
+| `WCNET_KEYSCRIPT="8:c,9.5:1,10:@after"` | test aid: once in space, at each emulated second press that key (letter, digit, `enter`, `esc`, `space`, held 150 ms) or, for `@tag`, dump the data segment to `WCNET_DUMP_DIR/tag.bin` and log the comm line, VDU text, mission, pilot bytes and KIA words; `!status=N` ends the mission as the game would (1 landed, 4 died, ...), `!kill=SLOT` destroys a ship on the server through the broadcast path of a real kill, `!poke=HEXOFF:HEXBYTE` writes the data segment, and `wait` holds the script until the next mission's first frame and restarts the clock there; `WCNET_AUTOKEYS` then only handles briefings and debriefings |
+| `WCNET_SKIPBARRACKS=1` | test aid: never stop in the rec room or the barracks, so a scripted run goes from a debriefing straight to the next briefing |
+| `WCNET_WATCH=C260:16` | debugging aid: log every change of that part of the data segment (hex offset, length) with the address of the instruction after the write |
 | `WCNET_AUDIOLOG=1` | test aid: every 500 ms log each mixer channel's mean level and the number of OPL register writes (stderr, same clock as the key script); `WCNET_WAVE=1` also records the mixed output into DOSBox's capture directory |
 | `WCNET_DUMP_FRAME=<n>`, `WCNET_DUMP_FILE` | dump the data segment at in-flight frame n (and on SIGUSR1) |
 
@@ -277,6 +300,22 @@ top-level README for the workflow).  What differs:
   `WCCALLSIGN`, `WCLASTNAME`, `WCLOBBY_RELAY`, `WCNET_LOG`, plus anything
   given as `?env.NAME=value` (so `MIS`, `SERIES` and `WCNET_AUTOKEYS` work
   for testing, as in `scripts/web-smoke.sh`).
+* **Save games.**  A game's registry entry (`web/gamefiles.js`) lists its
+  save files (Wing Commander: `GAMEDAT/SAVEGAME.WLD`, all eight bunks).  The
+  page keeps a copy in local storage, writes it back into the game directory
+  at every start, re-reads the file every few seconds while the game runs and
+  stores it when it changed, offers it as a download, and can restore it from
+  a file of the same size.
+* **Speed.**  The registry also gives the game's `cycles` (3630 for Wing
+  Commander: DOSBox's default of 3000 raised twice with Ctrl+F12), passed as
+  a `cycles=` command before the game starts; `?cycles=N` overrides it.
+* **Caps Lock is Esc.**  Browsers keep Esc for leaving full screen, so the
+  page swallows Caps Lock while the canvas has the keyboard and injects a
+  150 ms Esc press instead (`wc_web_tap_escape`); a lone key-up counts as a
+  tap, because a Mac reports Caps Lock as key-down when it locks and key-up
+  when it unlocks.  Where the Keyboard Lock API exists (Chrome, Edge) the
+  page also asks for Esc in full screen: a tap reaches the game, holding it
+  leaves.
 * **The lobby server checks the page's origin**; the public server accepts
   only its own host.  Serve the page from there or run a lobby server with
   `--allowed-origin` for the page's origin.

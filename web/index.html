@@ -56,6 +56,10 @@
   #stage { display: flex; flex-wrap: wrap; gap: 12px; }
   #canvas { background: black; width: 640px; height: 400px; image-rendering: pixelated; outline: none; }
   #canvas:fullscreen { width: 100vw; height: 100vh; object-fit: contain; }
+  #saveButtons { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  #saveButtons .pick { color: #7aa2ff; cursor: pointer; text-decoration: underline; }
+  #saveButtons input[type=file] { display: none; }
+  #saveStatus { color: #9aa3b2; }
   #log { flex: 1 1 320px; min-height: 200px; max-height: 400px; overflow: auto; background: #05070a; border: 1px solid #1d2230; padding: 8px; font: 12px/1.35 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
 </style>
 </head>
@@ -86,7 +90,7 @@
       <label>Room code <input type="text" id="room" placeholder="FALCON-7" pattern="[A-Za-z0-9_\-]{4,64}" required></label>
       <label>Callsign <input type="text" id="callsign" placeholder="Maverick"></label>
       <label>Last name <input type="text" id="lastname" placeholder="Blair"></label>
-      <label>Players in room <input type="number" id="players" min="2" max="3" value="3"></label>
+      <label>Players in room <input type="number" id="players" min="2" max="3" value="2"></label>
       <label>Lobby server <input type="text" id="server" value=""></label>
       <label class="check"><input type="checkbox" id="relay"> Force TURN relay</label>
       <label class="check"><input type="checkbox" id="verbose"> Verbose network log</label>
@@ -120,7 +124,17 @@
       <canvas id="canvas" width="640" height="400" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
       <div id="log"></div>
     </div>
-    <p class="hint">Click the screen to give it the keyboard; <kbd>Esc</kbd> leaves full screen. In the barracks press <kbd>0</kbd> to type a chat message; in space <kbd>Enter</kbd> fires missiles. <kbd>Ctrl</kbd>+<kbd>F10</kbd> releases the mouse.</p>
+    <p class="hint">Click the screen to give it the keyboard. <kbd>Caps Lock</kbd> is the game's <kbd>Esc</kbd> (it skips cutscenes), because the browser keeps <kbd>Esc</kbd> for leaving full screen; in Chrome and Edge a short tap of <kbd>Esc</kbd> also reaches the game in full screen, and holding it leaves. In the barracks press <kbd>0</kbd> to type a chat message; in space <kbd>Enter</kbd> fires missiles. <kbd>Ctrl</kbd>+<kbd>F10</kbd> releases the mouse.</p>
+  </section>
+
+  <section id="saves" hidden>
+    <h2>Save games</h2>
+    <div id="saveButtons">
+      <button type="button" class="secondary" id="saveDownload">Download save games</button>
+      <label class="pick"><input type="file" id="saveFile"> Restore from a file…</label>
+      <span id="saveStatus"></span>
+    </div>
+    <p class="hint">Saving in a bunk writes the game's save file, which holds all eight bunks. This browser keeps a copy of it and puts it back the next time you play here; the download is your own backup, and can be restored in another browser.</p>
   </section>
 </main>
 <script type="module" src="wc.js"></script>

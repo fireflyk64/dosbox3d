@@ -9,7 +9,7 @@
 // protocol never produces, so the transport filters them out.
 import { P2PGame } from "./p2p-client.js";
 import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles,
-         saveGame, loadGames, forgetGame, totalSize } from "./gamefiles.js";
+         saveGame, loadGames, forgetGame, totalSize, GAMES } from "./gamefiles.js";
 
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
@@ -55,6 +55,7 @@ function setSource(s) {
     sourceStatus(`Ready: ${s.game.title} from ${s.label} (${s.files.length} files, ${mb(totalSize(s.files))}).` +
                  (s.game.multiplayer ? "" : " The multiplayer hooks only exist for Wing Commander 1, so this runs single-player."));
   }
+  describeSaves();
   updateActions();
 }
 
@@ -173,6 +174,134 @@ async function initSources() {
   if (saved.length) $("useSaved").click();
   else if (serverCopy) $("useServer").click();
 }
+
+// -- save games ----------------------------------------------------------------
+
+// A game's registry entry lists the files it keeps its saved games in (Wing
+// Commander: one file holding all eight bunks).  This browser keeps a copy in
+// local storage, keyed by game: it is put back into the game directory at
+// every start and refreshed whenever the running game changes the file.
+const gameInfo = () => (source && GAMES.find((g) => g.id === source.game.id)) || null;
+const saveFiles = () => { const g = gameInfo(); return (g && g.saves) || []; };
+const saveKey = (rel) => `wcsave:${source.game.id}:${rel.toUpperCase()}`;
+const baseName = (p) => p.slice(p.lastIndexOf("/") + 1);
+const sameBytes = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+const saveSeen = new Map();  // file -> its bytes as last seen in the running game
+function saveStatus(text) { $("saveStatus").textContent = text; }
+
+function storedSave(rel) {
+  try {
+    const r = JSON.parse(localStorage.getItem(saveKey(rel)) || "null");
+    return r && r.b64 ? { when: r.when, data: Uint8Array.from(atob(r.b64), (c) => c.charCodeAt(0)) } : null;
+  } catch (e) { return null; }
+}
+function storeSave(rel, data) {
+  try {
+    let bin = "";
+    for (let i = 0; i < data.length; i += 0x8000) bin += String.fromCharCode(...data.subarray(i, i + 0x8000));
+    localStorage.setItem(saveKey(rel), JSON.stringify({ when: Date.now(), b64: btoa(bin) }));
+    return true;
+  } catch (e) {
+    log("save games: this browser would not store the copy: " + (e && e.message ? e.message : e));
+    return false;
+  }
+}
+// DOS names ignore case, the emulator's file system does not: find the file
+// in whatever case the player's copy of the game uses.
+function resolveSave(FS, rel) {
+  const parts = rel.split("/");
+  let dir = GAME_ROOT;
+  for (let i = 0; i < parts.length; i++) {
+    let names;
+    try { names = FS.readdir(dir); } catch (e) { return null; }
+    const hit = names.find((n) => n.toUpperCase() === parts[i].toUpperCase());
+    if (i === parts.length - 1) return { path: `${dir}/${hit || parts[i]}`, exists: !!hit };
+    if (!hit) return null;
+    dir += "/" + hit;
+  }
+  return null;
+}
+function readSave(FS, rel) {
+  const r = resolveSave(FS, rel);
+  if (!r || !r.exists) return null;
+  try { return FS.readFile(r.path); } catch (e) { return null; }
+}
+function writeSave(FS, rel, data) {
+  const r = resolveSave(FS, rel);
+  if (!r) return false;
+  try { FS.writeFile(r.path, data); return true; } catch (e) { return false; }
+}
+const liveFS = () => (running && window.DOSBox && window.DOSBox.FS) || null;
+
+function describeSaves() {
+  const files = saveFiles();
+  $("saves").hidden = files.length === 0;
+  if (!files.length) return;
+  const kept = files.map(storedSave).filter(Boolean);
+  saveStatus(kept.length
+    ? `This browser keeps your save games (last change ${new Date(Math.max(...kept.map((k) => k.when))).toLocaleString()}).`
+    : "No save game of yours is kept here yet: save in a bunk and it will be.");
+}
+// At start: put the kept copies back, and note what the game starts with.
+function restoreSaves(FS) {
+  saveSeen.clear();
+  for (const rel of saveFiles()) {
+    const kept = storedSave(rel);
+    if (kept && writeSave(FS, rel, kept.data)) log(`save games: put back ${baseName(rel)} from ${new Date(kept.when).toLocaleString()}`);
+    const now = readSave(FS, rel);
+    if (now) saveSeen.set(rel, now.slice());
+  }
+}
+// While running: keep a copy whenever the game has changed a save file.
+function keepSaves() {
+  const FS = liveFS();
+  if (!FS) return;
+  for (const rel of saveFiles()) {
+    const now = readSave(FS, rel);
+    const before = saveSeen.get(rel);
+    if (!now || (before && sameBytes(before, now))) continue;
+    saveSeen.set(rel, now.slice());
+    if (storeSave(rel, now)) { log(`save games: kept ${baseName(rel)} in this browser`); describeSaves(); }
+  }
+}
+$("saveDownload").addEventListener("click", () => {
+  let count = 0;
+  for (const rel of saveFiles()) {
+    const FS = liveFS();
+    const kept = storedSave(rel);
+    const pristine = source.files.find((f) => f.path.toUpperCase() === rel.toUpperCase());
+    const data = (FS && readSave(FS, rel)) || (kept && kept.data) || (pristine && pristine.data);
+    if (!data) continue;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([data], { type: "application/octet-stream" }));
+    a.download = baseName(rel);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    count++;
+  }
+  if (!count) saveStatus("Nothing to download: this copy of the game has no save file yet.");
+});
+$("saveFile").addEventListener("change", async (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = "";
+  const files = saveFiles();
+  if (!file || !files.length) return;
+  const rel = files.find((p) => baseName(p).toUpperCase() === file.name.toUpperCase()) || files[0];
+  const data = new Uint8Array(await file.arrayBuffer());
+  const pristine = source.files.find((f) => f.path.toUpperCase() === rel.toUpperCase());
+  if (!data.length || (pristine && data.length !== pristine.data.length)) {
+    saveStatus(`${file.name} is not this game's ${baseName(rel)}: ${data.length} bytes` +
+               (pristine ? `, the game's file has ${pristine.data.length}.` : "."));
+    return;
+  }
+  if (!storeSave(rel, data)) return;
+  const FS = liveFS();
+  if (FS && writeSave(FS, rel, data)) saveSeen.set(rel, data.slice());
+  describeSaves();
+  log(`save games: restored ${baseName(rel)} from ${file.name}` + (FS ? " (the bunks show it the next time you open them)" : ""));
+});
 
 // -- missions ------------------------------------------------------------------
 
@@ -360,7 +489,7 @@ async function joinRoom() {
     const game = await P2PGame.connect({
       server: $("server").value.trim() || DEFAULT_SERVER,
       code,
-      create: { maxPlayers: Math.max(2, Math.min(3, Number($("players").value) || 3)), waitUntilFull: false, allowLateJoin: true, allowReconnect: true, allowReplacement: true },
+      create: { maxPlayers: Math.max(2, Math.min(3, Number($("players").value) || 2)), waitUntilFull: false, allowLateJoin: true, allowReconnect: true, allowReplacement: true },
       storage: "session",
       storageKey: "wclobby-" + code,
       forceRelay: $("relay").checked,
@@ -429,9 +558,39 @@ $("fullscreen").addEventListener("click", () => goFullscreen());
 function goFullscreen() {
   const req = canvas.requestFullscreen || canvas.webkitRequestFullscreen;
   if (!req) return;
+  // Where the browser can (Chrome, Edge), ask for Esc in full screen: a tap
+  // then goes to the game and only holding it leaves full screen.
+  if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(["Escape"]).catch(() => { /* not allowed here */ });
   Promise.resolve(req.call(canvas)).catch(() => { /* needs a click: the button stays */ });
   canvas.focus();
 }
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement && navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock();
+});
+
+// Caps Lock is the game's Esc everywhere: browsers keep Esc for leaving full
+// screen.  The key never reaches the emulator as Caps Lock; instead a short
+// Esc press is injected.  A Mac reports Caps Lock as a key-down when it turns
+// on and a lone key-up when it turns off, so a key-up without a recent
+// key-down counts as a tap as well.
+let capsDownAt = -1e9;
+function capsLockAsEscape(e) {
+  if (e.code !== "CapsLock" || !running) return;
+  if (document.activeElement !== canvas && document.fullscreenElement !== canvas) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  const tap = window.DOSBox && window.DOSBox._wc_web_tap_escape;
+  if (!tap) return;
+  if (e.type === "keydown") {
+    if (e.repeat) return;
+    capsDownAt = performance.now();
+    tap();
+  } else if (performance.now() - capsDownAt > 500) {
+    tap();
+  }
+}
+window.addEventListener("keydown", capsLockAsEscape, true);
+window.addEventListener("keyup", capsLockAsEscape, true);
 
 async function start(fromGesture) {
   if (running) return;
@@ -486,6 +645,8 @@ async function start(fromGesture) {
     status(`Installing ${source.game.title} (${source.files.length} files)…`);
     installFiles(Module.FS, GAME_ROOT, source.files);
     log(`installed ${source.files.length} files of ${source.game.title} under ${GAME_ROOT}`);
+    window.DOSBox = Module;
+    restoreSaves(Module.FS);
 
     sayHello();
     renderRoster(); renderMission();
@@ -493,8 +654,14 @@ async function start(fromGesture) {
     canvas.focus();
     // ?cmd=... runs another DOS command instead of the game (debugging aid).
     const cmd = query.get("cmd") || source.game.run;
-    window.DOSBox = Module;
-    Module.callMain(["-c", `mount c ${GAME_ROOT}`, "-c", "c:", "-c", cmd]);
+    // The emulated CPU speed: the game's own good value (the registry), or
+    // ?cycles=N; Ctrl+F11 / Ctrl+F12 still adjust it while playing.
+    const cycles = Number(query.get("cycles")) || (gameInfo() && gameInfo().cycles) || 0;
+    const args = ["-c", `mount c ${GAME_ROOT}`, "-c", "c:"];
+    if (cycles > 0) args.push("-c", `cycles=${Math.round(cycles)}`);
+    Module.callMain([...args, "-c", cmd]);
+    setInterval(keepSaves, 4000);
+    for (const ev of ["pagehide", "visibilitychange"]) window.addEventListener(ev, keepSaves);
     $("fullscreen").hidden = false;
     if (fromGesture) goFullscreen();
     status(source.game.multiplayer

@@ -43,6 +43,39 @@ static bool g_skipBarracks = false;
 
 static void watch(Bit16u ip) { g_watch[ip] = true; }
 
+// Between "mission about to start" and "mission ended", and once the first
+// in-flight frame has run: what the test aids mean by "in space".  It does
+// not depend on a network session or on stale slot data from the last mission.
+static bool g_inMission = false;
+static bool g_frameSeen = false;
+static int g_flightCount = 0;  // missions that reached their first frame
+static bool in_flight() { return g_inMission && g_frameSeen; }
+
+// The mission most recently started on this machine: after a death the game
+// falls back to its title loop, and a forced-mission game flies it again.
+static bool g_haveLastMission = false;
+static int g_lastMission = 0;
+static int g_lastSeries = 1;
+
+// One line of campaign state for the logs: mission, status, the pilot byte of
+// each ship slot and the eight "killed in mission" words.
+static std::string mission_state_line() {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "mission %d/%d status %d pilots", rd8(ds::currentMission), rd8(ds::currentSeries),
+             rd16(ds::missionStatus));
+    std::string line = buf;
+    for (int slot = 0; slot <= kMaxShipSlot; slot++) {
+        snprintf(buf, sizeof(buf), " %02x", rd8((Bit16u)(ds::shipStateByte + slot)));
+        line += buf;
+    }
+    line += " kia";
+    for (int i = 0; i < 8; i++) {
+        snprintf(buf, sizeof(buf), " %d", rd16((Bit16u)(ds::statusPilots + 2 * i)));
+        line += buf;
+    }
+    return line;
+}
+
 // Test aid: with WCNET_AUTOKEYS=1 press Enter every 1.5 s so a headless
 // instance advances through the briefing on its own (scripts/wcnet-smoke.sh).
 static void auto_keys() {
@@ -63,7 +96,7 @@ static void auto_keys() {
         KEYBOARD_AddKey(key, false);
         pressed = false;
     } else if (!pressed && now - lastMs > 1500) {
-        bool flying = (g_session && g_session->in_space()) || (rd8(ds::shipStateByte) == 8 && rd8(0xBD1A) != 0);
+        bool flying = in_flight();
         if (flying && getenv("WCNET_KEYSCRIPT")) {
             return;  // the key script flies this instance
         }
@@ -86,7 +119,13 @@ static void auto_keys() {
 // <item> is a key to hold for 150 ms (one letter or digit, enter, esc) or
 // "@<tag>", which writes the data segment to WCNET_DUMP_DIR/<tag>.bin and
 // logs the comm line and the VDU text, so two instances' views of the same
-// orders can be diffed (scripts in docs/wcnet-multiplayer.md).
+// orders can be diffed, or "!status=<n>", which ends the mission the way the
+// game would (1 landed, 2 ejected, 4 died, 5 quit), "!kill=<slot>", which on
+// the server destroys that ship as a kill by the player would,
+// "!poke=<hex offset>:<hex byte>", which writes the data segment, or "wait", which holds
+// the script until the next mission reaches its first frame and restarts
+// the clock there.  The clock starts at the first in-flight frame of the
+// first mission and keeps running through debriefings and cutscenes.
 struct ScriptStep {
     double at;
     std::string item;
@@ -157,8 +196,17 @@ static void key_script() {
         }
         return;
     }
+    static int waitingSince = -1;  // flight count when a "wait" item ran
+    if (waitingSince >= 0) {
+        if (g_flightCount == waitingSince || !in_flight()) {
+            return;
+        }
+        waitingSince = -1;
+        startMs = now;
+        wclog(1, "key script: next mission in space, clock restarted (t=%.1f)", now / 1000.0);
+    }
     if (startMs < 0) {
-        if (rd8(ds::shipStateByte) == 8 && rd8(0xBD1A) != 0) {
+        if (in_flight()) {
             startMs = now;
             wclog(1, "key script: in space, clock started (t=%.1f)", now / 1000.0);
         }
@@ -177,8 +225,30 @@ static void key_script() {
             for (Bit32u off = 0; off < 0x10000; off++) fputc(rd8((Bit16u)off), f);
             fclose(f);
         }
-        wclog(1, "key script %.1fs (t=%.1f): dump %s; comm \"%s\"; vdu \"%s\"", t, now / 1000.0, path.c_str(),
-              ds_text(ds::commGlobalTxt, 80).c_str(), ds_text(0x8E4A, 160).c_str());
+        wclog(1, "key script %.1fs (t=%.1f): dump %s; comm \"%s\"; vdu \"%s\"; %s", t, now / 1000.0, path.c_str(),
+              ds_text(ds::commGlobalTxt, 80).c_str(), ds_text(0x8E4A, 160).c_str(), mission_state_line().c_str());
+    } else if (item == "wait") {
+        wclog(1, "key script %.1fs (t=%.1f): waiting for the next mission", t, now / 1000.0);
+        waitingSince = g_flightCount;
+    } else if (item.compare(0, 6, "!poke=") == 0) {
+        // !poke=<hex offset>:<hex byte>
+        Bit16u off = (Bit16u)strtol(item.c_str() + 6, NULL, 16);
+        size_t colon = item.find(':');
+        Bit8u val = colon == std::string::npos ? 0 : (Bit8u)strtol(item.c_str() + colon + 1, NULL, 16);
+        wclog(2, "key script %.1fs (t=%.1f): dseg:%04X = %02x (was %02x)", t, now / 1000.0, off, val, rd8(off));
+        wr8(off, val);
+    } else if (item.compare(0, 6, "!kill=") == 0) {
+        int slot = atoi(item.c_str() + 6);
+        bool server = g_session && g_session->is_server();
+        wclog(1, "key script %.1fs (t=%.1f): kill slot %d (%s); %s", t, now / 1000.0, slot,
+              !server ? "ignored: not the server" : slot_in_use(slot) ? "in use" : "empty", mission_state_line().c_str());
+        if (server && slot_in_use(slot)) {
+            enqueue_test_kill(slot);
+        }
+    } else if (item.compare(0, 8, "!status=") == 0) {
+        int status = atoi(item.c_str() + 8);
+        wclog(1, "key script %.1fs (t=%.1f): mission status %d -> %d", t, now / 1000.0, rd16(ds::missionStatus), status);
+        wr16(ds::missionStatus, (Bit16u)status);
     } else {
         KBD_KEYS k = script_key(item);
         if (k == KBD_NONE) {
@@ -300,9 +370,29 @@ static void on_after_startup() {
     if ((misenv && misenv[0]) || (serenv && serenv[0])) {
         int mission = atoi(misenv ? misenv : "0");
         int series = atoi(serenv ? serenv : "1");
+        if (g_haveLastMission) {
+            // Not the start of the program: the game is back at its title
+            // loop because the last mission ended in a death (or the carrier
+            // was lost, or somebody quit).  Fly that mission again, wherever
+            // the campaign had got to, instead of the one the lobby picked.
+            mission = g_lastMission;
+            series = g_lastSeries;
+            wclog(1, "the last mission did not end with a landing: flying %d/%d again", mission, series);
+        }
         run_campaign(mission, series);
         g_skipBarracks = true;
     }
+}
+
+// WCNET_SKIPBARRACKS=1 (test aid): never stop in the rec room or the
+// barracks, so a scripted run goes from one debriefing to the next briefing.
+static bool always_skip_barracks() {
+    static int always = -1;
+    if (always < 0) {
+        const char *env = getenv("WCNET_SKIPBARRACKS");
+        always = (env && env[0] && env[0] != '0') ? 1 : 0;
+    }
+    return always == 1;
 }
 
 static void on_barracks() {
@@ -310,7 +400,7 @@ static void on_barracks() {
     if (g_session) {
         g_session->on_barracks();
     }
-    if (g_skipBarracks) {
+    if (g_skipBarracks || always_skip_barracks()) {
         g_skipBarracks = false;
         reg_eax = 7;
         reg_eip = 0x1391;  // ovr150: return from enterBarracks
@@ -326,6 +416,13 @@ static void check_hooks_slow() {
         if (g_session) {
             g_session->on_mission_starting(rd8(ds::currentMission), rd8(ds::currentSeries));
         }
+        // After the session: a client flies the mission the server names.
+        g_inMission = true;
+        g_frameSeen = false;
+        g_haveLastMission = true;
+        g_lastMission = rd8(ds::currentMission);
+        g_lastSeries = rd8(ds::currentSeries);
+        wclog(2, "starting: %s", mission_state_line().c_str());
     }
     if (at_location(code::missionVictoryCalc) && g_session) {
         g_session->on_mission_reset();
@@ -371,8 +468,15 @@ static void check_hooks_slow() {
                       at_location(kStatusSetByExitKey))) {
         g_session->check_mission_status();
     }
-    if (at_location(code::missionEnded) && g_session) {
-        g_session->on_mission_ended();
+    if (at_location(code::missionEnded)) {
+        g_inMission = false;
+        wclog(2, "ended: %s", mission_state_line().c_str());
+        if (always_skip_barracks()) {
+            wr16(ds::skipRecRoom, 1);
+        }
+        if (g_session) {
+            g_session->on_mission_ended();
+        }
     }
     if (at_location(code::autopilotKey) && g_session && g_session->is_client()) {
         reg_eip += 5;  // only the server may engage autopilot
@@ -393,6 +497,10 @@ static void check_hooks_slow() {
         g_trampoline.on_bounce();
     }
     if (at_location(code::mainLoopTop)) {
+        if (!g_frameSeen) {
+            g_frameSeen = true;
+            g_flightCount++;
+        }
         maybe_dump_data_segment();
         ensure_session();
         if (g_session) {
@@ -414,14 +522,74 @@ extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_emulated_ms() {
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_ds_byte(int off) {
     return (off < 0 || off > 0xffff) ? -1 : (int)wc::rd8((Bit16u)off);
 }
+// A short Esc press from the page (its Caps Lock handler): browsers keep the
+// real Esc key for leaving full screen.  Released by the async tick.
+static bool g_escTapWanted = false;
+extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_tap_escape() {
+    g_escTapWanted = true;
+}
+static void escape_tap() {
+    static bool held = false;
+    static double releaseAt = 0;
+    double now = PIC_FullIndex();
+    if (held) {
+        if (now >= releaseAt) {
+            KEYBOARD_AddKey(KBD_esc, false);
+            held = false;
+        }
+    } else if (g_escTapWanted) {
+        g_escTapWanted = false;
+        KEYBOARD_AddKey(KBD_esc, true);
+        held = true;
+        releaseAt = now + 150;
+    }
+}
 #endif
+
+// Debugging aid: WCNET_WATCH=<hex offset>:<length> logs every change of that
+// part of the data segment with the instruction that follows the write.
+static void memory_watch() {
+    static int len = -1;
+    static Bit16u off = 0;
+    static Bit8u seen[64];
+    if (len < 0) {
+        const char *env = getenv("WCNET_WATCH");
+        len = 0;
+        if (env && env[0]) {
+            off = (Bit16u)strtol(env, NULL, 16);
+            const char *colon = strchr(env, ':');
+            len = colon ? atoi(colon + 1) : 2;
+            if (len > (int)sizeof(seen)) len = sizeof(seen);
+            for (int i = 0; i < len; i++) seen[i] = wc::rd8((Bit16u)(off + i));
+        }
+    }
+    for (int i = 0; i < len; i++) {
+        Bit8u now = wc::rd8((Bit16u)(off + i));
+        if (now != seen[i]) {
+            ::wclog(0, "watch: dseg:%04X %02x -> %02x before %04X:%04X", off + i, seen[i], now,
+                      (unsigned)SegValue(cs), (unsigned)(reg_eip & 0xffff));
+            seen[i] = now;
+        }
+    }
+}
 
 void wc_net_check_cpu_hooks() {
     using namespace wc;
+    static int watching = -1;
+    if (watching < 0) {
+        const char *env = getenv("WCNET_WATCH");
+        watching = (env && env[0]) ? 1 : 0;
+    }
+    if (watching) {
+        memory_watch();
+    }
     if (++g_asyncCounter == 1000) {
         g_asyncCounter = 0;
         auto_keys();
         key_script();
+#ifdef __EMSCRIPTEN__
+        escape_tap();
+#endif
         if (g_session) {
             g_session->on_async_tick();
         }

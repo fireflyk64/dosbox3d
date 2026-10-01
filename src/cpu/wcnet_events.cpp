@@ -635,6 +635,16 @@ void enqueue_wingman_lost(int slot, bool explode) {
     g_trampoline.enqueue(new DespawnJob(DespawnJob::WINGMAN_LOST, d, slot, kInvalidSlot));
 }
 
+// Test aid (the key script's "!kill=<slot>"): the server destroys a ship as
+// if the player had shot it, through the same broadcast path as a real kill.
+void enqueue_test_kill(int slot) {
+    Despawn d;
+    d.set_ship_id(NetworkShipId::from_local(slot).to_net());
+    d.set_explode(1);
+    d.set_shooter(NetworkShipId::from_local(kPlayerSlot).to_net());
+    g_trampoline.enqueue(new DespawnJob(DespawnJob::BROADCAST, d, slot, kPlayerSlot));
+}
+
 // ---------------------------------------------------------------------------
 // despawn_all_ships: C++ translation of ovr140:1C16 (despawn) for the
 // permanent slots, skipping the capital-ship death animation, used when a

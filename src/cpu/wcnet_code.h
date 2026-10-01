@@ -106,6 +106,7 @@ static const OverlayLoc simulatorEnd         = { STUB162, 0x002A, 0x132C, "simul
 static const RootLoc mainLoopTop             = { SEG001, 0x20E3, "main_loop+9A: top of the in-flight frame loop" };
 static const RootLoc skipOrchestra           = { SEG001, 0x04F2, "possible_main+358: far call we skip (orchestra)" };
 static const RootLoc afterStartup            = { SEG001, 0x0512, "possible_main+378: program started" };
+static const RootLoc afterHangarMission      = { SEG001, 0x0536, "possible_main+39C: runHangarMission returned (nonzero: next mission, zero: back to the title)" };
 static const RootLoc autopilotKey            = { SEG001, 0x1695, "handle_key+12E: autopilot key far call" };
 
 }  // namespace code

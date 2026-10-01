@@ -11,9 +11,14 @@
 // The game registry is the only game-specific knowledge here: a game is
 // recognised by an executable, run by a DOS command, and flagged when the
 // emulator's multiplayer hooks apply to it (Wing Commander 1 only, so far).
+// Optional: `saves`, the files the game keeps its saved games in (relative to
+// the game directory; the page keeps a copy in the browser and offers them as
+// a download), and `cycles`, the emulated CPU speed the game plays well at
+// (DOSBox's default of 3000 is what Ctrl+F11 / Ctrl+F12 adjust).
 
 export const GAMES = [
-  { id: "wc1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true },
+  { id: "wc1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
+    saves: ["GAMEDAT/SAVEGAME.WLD"], cycles: 3630 },
   { id: "wc1sm2", title: "Wing Commander: Secret Missions 2", detect: ["SM2.EXE"], run: "sm2", multiplayer: false, secondary: true },
   { id: "wc2", title: "Wing Commander II", detect: ["WC2.EXE"], run: "wc2", multiplayer: false },
 ];

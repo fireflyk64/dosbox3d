@@ -61,6 +61,7 @@ enum Offsets {
     playerCanBeDamaged = 0x00BA,     // [missionStatus+C]: do_damage ignores slot 0 while zero
     aLoadingWingCom = 0x0187,        // string buffer we reuse as scratch code/data
     aSorryAnErrorHasOccured = 0x0395,// 249 byte string buffer we reuse for shellcode
+    skipRecRoom = 0x3004,            // word: nonzero sends runHangarMission straight to the barracks
     savedGameLoaded = 0x300C,        // has_loaded_game
     randomSeed = 0x7728,
     commGlobalTxt = 0x8DF8,          // 80 bytes shown by the VDU comm display
@@ -84,7 +85,7 @@ enum Offsets {
     damagePoints = 0xC17A,           // [currentNavPoint+2] word per slot, accumulated hull damage
     currentMission = 0xC255,         // byte
     currentSeries = 0xC256,          // byte
-    statusPilots = 0xC260,           // byte array, nonzero = pilot KIA
+    statusPilots = 0xC260,           // word per named pilot (8): 0 = alive, else series * 4 + mission of his death
     victoryPoints = 0xC280,          // word
     missileTarget = 0xC284,          // [currentCampaign+2] byte per slot
     parentShipForShip = 0xC30E,      // byte per slot, 0xff = none

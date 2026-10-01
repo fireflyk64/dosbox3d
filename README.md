@@ -55,7 +55,8 @@ its Fly starts the game for everyone in the room (wingmen who already have
 their game files start automatically, the others get a Fly button); a
 wingman can also press Fly on its own, e.g. when the host is already
 flying.  Starting goes full screen (Esc leaves it; the Full screen button
-brings it back), and DOSBox adopts the page's room connection instead of
+brings it back; Caps Lock is the game's Esc, for skipping cutscenes without
+leaving full screen), and DOSBox adopts the page's room connection instead of
 joining twice (`Module.lobbyGame`).  Only the canvas receives the
 keyboard, so the chat box stays usable.  Native and browser players can
 share a room, exactly like `runwc.sh DOSPATH room CODE`.
@@ -68,7 +69,14 @@ the barracks, where the host's save game and walk into the briefing room
 decide and wingmen walk into their own briefing room to receive the host's
 mission.  The choice is shown to the wingmen and travels with the start.
 Natively the same thing is `MIS=<mission> SERIES=<series>` (the game's own
-indices: series 1.., mission 0..).
+indices: series 1.., mission 0..).  A room is for two pilots unless the host
+asks for a third seat.  When anyone dies, everyone flies that same mission
+again, wherever the campaign had got to.
+
+**Save games.**  Saving in a bunk writes the game's save file (all eight
+bunks).  The page keeps a copy in the browser's local storage and puts it
+back at the next visit; "Download save games" gives you the file, and
+"Restore from a file" takes it back, in any browser.
 
 How it works: the browser build is the same DOSBox and the same `wcnet_*`
 code, compiled with Emscripten and

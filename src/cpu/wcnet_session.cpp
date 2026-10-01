@@ -70,7 +70,7 @@ void NetConfig::reset_from_env() {
     const char *players = getenv("WCPLAYERS");
     lobby_players = players ? atoi(players) : 0;
     if (lobby_players < 2) {
-        lobby_players = 3;
+        lobby_players = 2;  // a leader and a wingman; WCPLAYERS=3 adds a seat
     }
 }
 
@@ -110,10 +110,12 @@ std::string get_callsign() {
 }
 
 // Clear the KIA flags so the debriefing never tells a sob story about a
-// wingman who is in fact alive on another machine.
+// wingman who is in fact alive on another machine.  One word per named pilot
+// (the mission he died in, series * 4 + mission; 0 = alive): the scripts hold
+// a funeral for every pilot whose word names the mission just flown.
 static void liven_everyone() {
     for (int i = 0; i < 8; i++) {
-        wr32((Bit16u)(ds::statusPilots + i), 0);
+        wr16((Bit16u)(ds::statusPilots + 2 * i), 0);
     }
 }
 
@@ -146,8 +148,13 @@ void run_campaign(int missionId, int seriesId) {
     wr8(ds::currentMission, (Bit8u)missionId);
     wr8(ds::currentSeries, (Bit8u)seriesId);
     wr8(ds::savedGameLoaded, 1);
+    // Called at the title call of the game's main loop (afterStartup): run
+    // the hangar mission as that loop's own call would, so its result is
+    // tested the same way every time -- nonzero goes on to the next mission
+    // through the barracks, zero (death, carrier lost, quit) comes back to
+    // afterStartup, which flies the mission again.
     CPU_Push16((Bit16u)SegValue(cs));
-    CPU_Push16((Bit16u)reg_eip + 5);
+    CPU_Push16(code::afterHangarMission.off);
     SegSet16(cs, code::runHangarMission.stubSeg);
     reg_eip = code::runHangarMission.stubOff;
 }

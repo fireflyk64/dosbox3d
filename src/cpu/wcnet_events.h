@@ -33,6 +33,7 @@ void enqueue_chat_display(int netShipId, const std::string &callsign, const std:
 // Server: a client left the mission; remove its copy here (with an explosion
 // when it died, quietly when it landed).
 void enqueue_wingman_lost(int slot, bool explode);
+void enqueue_test_kill(int slot);
 
 // Client-side prediction of the local player's own shots.
 struct PendingFire {

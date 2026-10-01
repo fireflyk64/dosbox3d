@@ -15,7 +15,7 @@ server); the rest join it as clients. Inside DOSBox the equivalent is
 `WCNET ROOM FALCON-7 [server-url]`, and `WCNET STATUS` shows the role.
 
 Environment: `WCROOM` (room code), `WCLOBBY` (lobby server URL, default
-`https://pqrstuvw.xyz/lobbylink`), `WCPLAYERS` (room size, default 3),
+`https://pqrstuvw.xyz/lobbylink`), `WCPLAYERS` (room size, default 2),
 `WCLOBBY_ORIGIN` (Origin header; `""` = none, for a local server started
 with `--allow-no-origin`), `WCLOBBY_RELAY=1` (force the TURN relay),
 `WCNET_LOG=0..3` (verbosity).
