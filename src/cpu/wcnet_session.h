@@ -50,6 +50,8 @@ public:
     // Slot flown by another human on this machine.
     virtual bool is_remote_player_slot(int slot) const = 0;
     bool is_player_slot(int slot) const { return slot == kPlayerSlot || is_remote_player_slot(slot); }
+    // Network ids flown by humans: the host and the two client slots.
+    static bool is_player_net(int net) { return net == 0 || net == 1 || net == 3; }
 
     // --- events -------------------------------------------------------------
     // Add an event to the frame that will be sent at the end of this frame's

@@ -62,7 +62,7 @@ ShipHealthState read_health(int slot) {
     return h;
 }
 
-void write_health(int slot, const ShipHealthState &h) {
+void write_health(int slot, const ShipHealthState &h, bool keepPilot) {
     for (int i = 0; i < 2; i++) {
         wr16((Bit16u)(ds::curShield + 4 * slot + 2 * i), (Bit16u)h.shield[i]);
         wr16((Bit16u)(ds::shieldMax + 4 * slot + 2 * i), (Bit16u)h.shieldMax[i]);
@@ -73,7 +73,9 @@ void write_health(int slot, const ShipHealthState &h) {
     wr16((Bit16u)(ds::damagePoints + 2 * slot), (Bit16u)h.damagePoints);
     wr8((Bit16u)(ds::coreHp + slot), h.coreHp);
     wr8((Bit16u)(ds::hullCounter + slot), h.hullCounter);
-    wr8((Bit16u)(ds::shipStateByte + slot), h.stateByte);
+    if (!keepPilot) {
+        wr8((Bit16u)(ds::shipStateByte + slot), h.stateByte);
+    }
     wr8((Bit16u)(ds::gunDamage + slot), h.gunDamage);
     wr8((Bit16u)(ds::engineFlag + slot), h.engineFlag);
     wr16((Bit16u)(ds::gunEnergy + 2 * slot), (Bit16u)h.gunEnergy);

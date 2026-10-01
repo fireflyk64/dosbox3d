@@ -173,7 +173,9 @@ struct ShipHealthState {
 };
 
 ShipHealthState read_health(int slot);
-void write_health(int slot, const ShipHealthState &h);
+// keepPilot leaves dseg:D1A2 alone: a human's own ship carries 8 (the player)
+// there, which names nobody on the other machine.
+void write_health(int slot, const ShipHealthState &h, bool keepPilot = false);
 
 // Strings ------------------------------------------------------------------
 std::string read_cstring(Bit16u off, Bit16u maxLen);

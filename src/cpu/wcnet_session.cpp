@@ -621,7 +621,9 @@ private:
         }
         const std::map<int, Spawn> &spawns = spawns_.all();
         for (std::map<int, Spawn>::const_iterator it = spawns.begin(); it != spawns.end(); ++it) {
-            *frame->add_event()->mutable_spawn() = it->second;
+            Spawn *sp = frame->add_event()->mutable_spawn();
+            *sp = it->second;
+            stamp_pilot(sp);
         }
         wclog(1, "sending mission start state to player %d (%d ships)", c->net, (int)spawns.size());
         if (!c->conn.send(msg)) {
@@ -694,7 +696,7 @@ private:
             if (su.has_health()) {
                 ShipHealthState h;
                 if (parse_health(su.health(), &h)) {
-                    write_health(c->net, h);
+                    write_health(c->net, h, true);  // our copy keeps the mission's wingman pilot
                     *update_for(pendingFrame_.mutable_frame(), c->net)->mutable_health() = su.health();
                     wclog(3, "mirrored player %d health: %s", c->net, describe_health(c->net).c_str());
                 }
@@ -746,12 +748,30 @@ private:
     // messages are still consumed (to keep the 1:1 message pattern) but only
     // their player_end is honoured, and the frame is sent immediately instead
     // of after the trampoline.
+    // The mission setup writes a ship's pilot (dseg:D1A2) after the spawn
+    // returns, so the byte is only known when the spawn event leaves.
+    void stamp_pilot(Spawn *sp) {
+        if (!sp->has_ship_id()) {
+            return;
+        }
+        int slot = NetworkShipId::from_net(sp->ship_id()).to_local();
+        if (slot_in_use(slot)) {
+            sp->set_pilot(rd8((Bit16u)(ds::shipStateByte + slot)));
+        }
+    }
+
     void exchange(bool serverOnlyFlush) {
         frameNumber_ += 1;
         if (frameNumber_ % 300 == 1) {
             wclog(2, "frame %llu: own health %s", (unsigned long long)frameNumber_, describe_health(kPlayerSlot).c_str());
         }
         populate_server_frame();
+        for (int i = 0; i < pendingFrame_.frame().event_size(); i++) {
+            Event *ev = pendingFrame_.mutable_frame()->mutable_event(i);
+            if (ev->has_spawn()) {
+                stamp_pilot(ev->mutable_spawn());
+            }
+        }
         for (size_t i = 0; i < clients_.size(); i++) {
             RemoteClient *c = clients_[i];
             if (!c->connected()) {
@@ -1046,7 +1066,7 @@ public:
             }
             ShipHealthState h;
             if (parse_health(su.health(), &h)) {
-                write_health(slot, h);
+                write_health(slot, h, is_player_net(su.ship_id()));
                 wclog(3, "mirrored net %d health into slot %d: %s", su.ship_id(), slot, describe_health(slot).c_str());
             }
         }

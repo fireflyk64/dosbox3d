@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <deque>
 #include <string>
 #include <vector>
@@ -246,19 +247,31 @@ public:
             g_session->on_spawned(spawn_);
         } else if (spawn_.has_ship_id() && g_entityMap && slot != kInvalidSlot) {
             g_entityMap->record_spawn(spawn_.ship_id(), slot);
+            // The mission setup gives a ship its pilot (dseg:D1A2) after the
+            // spawn returns; on a client that setup never runs, this replayed
+            // spawn only builds the ship, so the server sends the byte along.
+            // The comms code names and draws the speaker from it and the
+            // talk-to-wingman menu indexes by it, so it must be one of the
+            // eight named pilots (0-7) for the body that stands in for the
+            // host; 8, the player's own value, shows "(null)".
+            int pilot = spawn_.has_pilot() ? (int)spawn_.pilot() : -1;
             if ((int)spawn_.ship_id() == g_entityMap->own_ship()) {
                 wclog(2, "net %d is us (slot 0); slot %d becomes the server player's ship", spawn_.ship_id(), slot);
-                // The mission setup gives the wingman its pilot after the
-                // spawn returns, but on a client that spawn was cancelled and
-                // this replayed one only builds the ship.  Without a pilot
-                // (dseg:D1A2 == 0) the comms code shows "(null)" with a
-                // random face and the talk-to-wingman menu reads garbage.
-                // Both humans are Confed pilots: copy our own byte.
-                Bit8u pilot = rd8((Bit16u)(ds::shipStateByte + kPlayerSlot));
-                wr8((Bit16u)(ds::shipStateByte + slot), pilot);
-                wclog(2, "slot %d gets pilot byte %d like our own ship", slot, pilot);
+                const char *env = getenv("WCHOSTPILOT");  // 0-7: another named pilot for the host
+                if (env && env[0] && atoi(env) >= 0 && atoi(env) <= 7) {
+                    pilot = atoi(env);
+                }
+                if (pilot < 0 || pilot > 7) {
+                    pilot = 0;  // an old server sent nothing usable: the first named pilot
+                }
+                wr8((Bit16u)(ds::shipStateByte + slot), (Bit8u)pilot);
+                wclog(2, "slot %d wears pilot %d for the server player (spawn said %d)", slot, pilot,
+                      spawn_.has_pilot() ? (int)spawn_.pilot() : -1);
             } else {
                 wclog(2, "net %d -> slot %d", spawn_.ship_id(), slot);
+                if (pilot >= 0) {
+                    wr8((Bit16u)(ds::shipStateByte + slot), (Bit8u)pilot);
+                }
             }
         }
     }

@@ -293,6 +293,10 @@ static void check_hooks_slow() {
 extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_emulated_ms() {
     return PIC_FullIndex();
 }
+// One byte of the game's data segment, for checks from the page.
+extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_ds_byte(int off) {
+    return (off < 0 || off > 0xffff) ? -1 : (int)wc::rd8((Bit16u)off);
+}
 #endif
 
 void wc_net_check_cpu_hooks() {

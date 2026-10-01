@@ -68,6 +68,11 @@ message Spawn {
         optional uint32 situation_id = 2;
         optional uint32 ship_id = 3;
         optional fixed32 seed = 5;
+        // dseg:D1A2 of the slot once the mission setup has run: 0-7 one of the
+        // eight named wingmen (name, face, orders menu), 8 the player, 9-12 an
+        // enemy ace.  The replaying side writes it, since the replayed spawn
+        // only builds the ship.
+        optional uint32 pilot = 6;
 }
 
 message Despawn {

@@ -101,6 +101,19 @@ extra health" and "wingman explodes" behaviour.
   AI fire from it; the set-speed AI is skipped as before.
 * Positions of a player's ship come from its owner every frame; the server
   broadcasts all positions.
+* **Pilot identity of a human's ship.**  The comms code names and draws a
+  speaker from the ship's pilot byte (`dseg:D1A2`): 0-7 are the eight named
+  wingmen (name, face, phrase table and the talk-to-wingman menu index), 8 is
+  the player, 9-12 enemy aces.  A player's own ship carries 8, which names
+  nobody on another machine, so health snapshots never overwrite that byte
+  for a human's ship (`write_health(..., keepPilot)`): on the server the
+  client's body keeps the pilot the mission setup gave the wingman slot (the
+  mission's wingman), and the client's body for the host wears the pilot the
+  server reports for that spawn (`Spawn.pilot`, stamped when the spawn event
+  leaves, after the mission setup has run), or `WCHOSTPILOT=0..7` to pick
+  another named pilot.  The replayed spawn of an NPC gets its pilot the same
+  way.  Before this, both machines saw "(null)" with a random face and a
+  garbage orders menu for the other human.
 * **Shared fate.**  Any player's ending (landed, died, ejected, quit) ends
   the mission for everyone with that same status.  A client reports its own
   ending with `PlayerEnd`; the server adopts the status, its main loop exits,
@@ -172,6 +185,7 @@ arguments.
 * `WeaponFire.client_seq` for predicted client shots, `WeaponFire.target`
   for the shooter's missile lock.
 * `Frame.player_end` (`PlayerEnd`) for a client leaving the mission.
+* `Spawn.pilot`: the slot's pilot byte once the mission setup has run.
 
 Old peers are not wire-compatible with these semantics (a client that does
 not replicate health would be trusted as authoritative for a ship it never
@@ -188,6 +202,7 @@ shell command still starts/stops the server or connects.  Useful environment:
 | `WCNET_LOG=0..3` | log verbosity (1 default; 2 per event; 3 full protocol) |
 | `MIS=<n> SERIES=<n>` | jump straight into a campaign mission (series 1.., mission 0.. within it; setting either variable is enough, so `MIS=0 SERIES=1` forces the first mission) |
 | `WCCALLSIGN`, `WCLASTNAME` | override the pilot identity |
+| `WCHOSTPILOT=0..7` | on a client: which of the eight named pilots the host's ship appears as (default: the one the server's mission setup gave that slot, i.e. the mission's wingman) |
 | `WCNET_AUTOKEYS=1` | test aid: press Enter through the briefing, then `A` (autopilot) once in space |
 
 `scripts/wcnet-smoke.sh [seconds] [mission] [series]` starts a headless
