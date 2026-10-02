@@ -16,7 +16,7 @@ GameParams g_params = { 0x40, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39 };
 static const GameParams kWc1Params = { 0x40, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39 };
 // WC2: 70 slots; a mission ship is 0x3c bytes with its class word at +0x15
 // (5 and 6 are fields: ovr116:1D72); nav points are 0x65 bytes
-static const GameParams kWc2Params = { 0x46, 0x3c, 0x15, 2, 5, 6, 0x65, 0 };
+static const GameParams kWc2Params = { 0x46, 0x3c, 0x15, 2, 5, 6, 0x65, 0x51 };
 Bit16u DS = 0;
 PhysPt DS_OFF = 0;
 static Bit16u g_gamePsp = 0;
