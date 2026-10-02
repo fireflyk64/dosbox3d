@@ -9,6 +9,7 @@
 #include "wcnet_session.h"
 #include "wcnet_memory.h"
 #include "wcnet_code.h"
+#include "wcnet_game.h"
 #include "wcnet_log.h"
 #include "cpu.h"
 #include "regs.h"
@@ -331,7 +332,7 @@ public:
                 if (env && env[0] && atoi(env) >= 0 && atoi(env) <= 7) {
                     pilot = atoi(env);
                 }
-                if (pilot < 0 || pilot > 7) {
+                if (is_wc1() && (pilot < 0 || pilot > 7)) {
                     pilot = 0;  // an old server sent nothing usable: the first named pilot
                 }
                 wr8((Bit16u)(ds::shipStateByte + slot), (Bit8u)pilot);
@@ -443,7 +444,9 @@ public:
         return true;
     }
     virtual void finish() {
-        write_cstring(ds::commGlobalTxt, 80, text_);
+        if (ds::known(ds::commGlobalTxt)) {
+            write_cstring(ds::commGlobalTxt, 80, text_);
+        }
     }
     virtual const char *describe() const { return "chat"; }
 
@@ -515,8 +518,8 @@ void enqueue_rocks_change(int mode) {
         return;  // still registered
     }
     int nav = rd16(ds::currentNavPoint);
-    for (int i = 0; i < 10; i++) {
-        int ship = rd16((Bit16u)(ds::navPointTable + 0x4d * nav + 0x39 + 2 * i));
+    for (int i = 0; i < 10 && g_params.navPointShipsOff; i++) {
+        int ship = rd16((Bit16u)(ds::navPointTable + g_params.navPointSize * nav + g_params.navPointShipsOff + 2 * i));
         if (is_field_mission_ship(ship)) {
             g_trampoline.enqueue(new RegisterFieldJob(ship, nav));
         }
@@ -563,10 +566,10 @@ static void report_local_hit(Session *s, int dst, Bit16u quantity, Bit16u vecOff
 
 void on_do_damage_entry() {
     Session *s = g_session;
-    int src = call_arg16(0);
-    int dst = call_arg16(1);
-    Bit16u quantity = call_arg16(2);
-    Bit16u vecOff = call_arg16(3);
+    int src = call_arg16(code::do_damage, 0);
+    int dst = call_arg16(code::do_damage, 1);
+    Bit16u quantity = call_arg16(code::do_damage, 2);
+    Bit16u vecOff = call_arg16(code::do_damage, 3);
     if (dst == kPlayerSlot && src >= 0 && src < kNumSlots && entity_type(src) == ET_ASTEROID && rocks_mode() == ROCKS_SOFT) {
         // Soft rocks: the game's (closing speed)^2 / 2 runs to 1000-3000 for
         // a head-on rock, against a Hornet's 85 of front shield and armor
@@ -577,7 +580,7 @@ void on_do_damage_entry() {
         soft = soft < 1 ? 1 : soft > kSoftRockMost ? (Bit16u)kSoftRockMost : soft;
         wclog(2, "soft rock: %d becomes %d", quantity, soft);
         quantity = soft;
-        set_call_arg16(2, quantity);
+        set_call_arg16(code::do_damage, 2, quantity);
     }
     if (dst == kPlayerSlot && src >= 0 && src < kNumSlots && entity_type(src) != ET_BOLT) {
         // What hit our own ship, other than gunfire (also when flying alone).
@@ -590,7 +593,7 @@ void on_do_damage_entry() {
 
     if (s->is_remote_player_slot(dst)) {
         // Only the owner's machine may damage a human's ship (see session.h).
-        return_from_call(0);
+        return_from_call(code::do_damage, 0);
         return;
     }
     if (replaying() && !g_applyingReport) {
@@ -606,7 +609,7 @@ void on_do_damage_entry() {
         if (quantity != 0 && is_local_hazard(src) && slot_in_use(dst) && entity_type(dst) >= ET_SHIP) {
             report_local_hit(s, dst, quantity, vecOff);
         }
-        return_from_call(0);  // NPC damage is decided by the server
+        return_from_call(code::do_damage, 0);  // NPC damage is decided by the server
         return;
     }
     if (dst == kPlayerSlot) {
@@ -637,11 +640,11 @@ void on_fire_entry() {
     if (!s || replaying()) {
         return;
     }
-    int ship = call_arg16(0);
-    int gun = call_arg16(1);
+    int ship = call_arg16(code::fireGunFromShip, 0);
+    int gun = call_arg16(code::fireGunFromShip, 1);
     if (s->is_client()) {
         if (ship != kPlayerSlot) {
-            return_from_call(0xffff);  // other ships fire through server events
+            return_from_call(code::fireGunFromShip, 0xffff);  // other ships fire through server events
             return;
         }
         WeaponFire fire;
@@ -654,7 +657,7 @@ void on_fire_entry() {
         return;
     }
     if (s->is_remote_player_slot(ship)) {
-        return_from_call(0xffff);  // the AI must not fire a human's ship
+        return_from_call(code::fireGunFromShip, 0xffff);  // the AI must not fire a human's ship
         return;
     }
     WeaponFire fire;
@@ -667,29 +670,29 @@ void on_fire_entry() {
 
 void on_spawn_entry() {
     Session *s = g_session;
-    if (is_field_mission_ship(call_arg16(0)) && !rocks_enabled()) {
-        return_from_call(0xffff);  // rocks are switched off: the nav point has no field
+    if (is_field_mission_ship(call_arg16(code::outerSpawnShipEntity, 0)) && !rocks_enabled()) {
+        return_from_call(code::outerSpawnShipEntity, 0xffff);  // rocks are switched off: the nav point has no field
         return;
     }
     if (!s || replaying()) {
         return;
     }
-    if (is_field_mission_ship(call_arg16(0))) {
+    if (is_field_mission_ship(call_arg16(code::outerSpawnShipEntity, 0))) {
         // Not a ship: the nav point's asteroid or mine field (ovr145:1183
         // only adds it to the field table).  Every machine sets up a nav
         // point for itself when its own player gets there, clearing that
         // table first, so each registers the field here and then keeps its
         // own rocks around its own ship.
-        wclog(2, "mission ship %d is a field: registered locally", call_arg16(0));
+        wclog(2, "mission ship %d is a field: registered locally", call_arg16(code::outerSpawnShipEntity, 0));
         return;
     }
     if (s->is_client()) {
-        return_from_call(0xffff);  // the server decides what exists
+        return_from_call(code::outerSpawnShipEntity, 0xffff);  // the server decides what exists
         return;
     }
     Spawn spawn;
-    spawn.set_mission_ship_id(call_arg16(0));
-    spawn.set_situation_id(call_arg16(1));
+    spawn.set_mission_ship_id(call_arg16(code::outerSpawnShipEntity, 0));
+    spawn.set_situation_id(call_arg16(code::outerSpawnShipEntity, 1));
     spawn.set_seed(rd32(ds::randomSeed));
     g_trampoline.enqueue(new SpawnJob(SpawnJob::BROADCAST, spawn));
     g_trampoline.run_instead_of_current_call();
@@ -700,8 +703,9 @@ static void intercept_despawn(bool explode) {
     if (!s) {
         return;
     }
-    int ship = explode ? call_arg16(1) : call_arg16(0);
-    int src = explode ? call_arg16(0) : kInvalidSlot;
+    const Loc &fn = explode ? code::delayedDespawn : code::despawn;
+    int ship = explode ? call_arg16(fn, 1) : call_arg16(fn, 0);
+    int src = explode ? call_arg16(fn, 0) : kInvalidSlot;
     if (!is_ship_slot(ship)) {
         if (explode && (entity_type(ship) == ET_ASTEROID || entity_type(ship) == ET_MINE)) {
             wclog(2, "%s in slot %d destroyed", entity_type(ship) == ET_ASTEROID ? "rock" : "mine", ship);
@@ -717,7 +721,7 @@ static void intercept_despawn(bool explode) {
         return;
     }
     if (s->is_remote_player_slot(ship)) {
-        return_from_call(0);  // a human's ship only leaves when its owner says so
+        return_from_call(fn, 0);  // a human's ship only leaves when its owner says so
         return;
     }
     if (replaying()) {
@@ -727,7 +731,7 @@ static void intercept_despawn(bool explode) {
         return;  // our own death/landing: the game handles it, mission status tells the others
     }
     if (s->is_client()) {
-        return_from_call(0);
+        return_from_call(fn, 0);
         return;
     }
     Despawn d;
@@ -748,11 +752,14 @@ void on_delayed_despawn_entry() { intercept_despawn(true); }
 
 void on_ai_think_entry() {
     Session *s = g_session;
-    if (!s || !s->is_server()) {
+    // WC.EXE clients let the AI run (the server's positions overwrite what
+    // it does); in WC2 the wingman AI would pull the host's ship into
+    // formation on our own every frame, so there it is off for that ship.
+    if (!s || !(s->is_server() || is_wc2())) {
         return;
     }
-    if (s->is_remote_player_slot(call_arg16(0))) {
-        return_from_call(0);
+    if (s->is_remote_player_slot(call_arg16(code::aiShipThink, 0))) {
+        return_from_call(code::aiShipThink, 0);
     }
 }
 
@@ -761,11 +768,14 @@ void on_ai_set_speed_entry() {
     if (!s) {
         return;
     }
-    int ship = call_arg16(0);
+    int ship = call_arg16(code::aiSetSpeed, 0);
     if (s->is_client() || s->is_remote_player_slot(ship)) {
-        // Jump to the function's early-return label (ovr143:0918) so the AI
-        // cannot change the set speed of a human-flown ship.
-        reg_eip = code::aiSetSpeedReturn.off;
+        // The AI must not change the set speed of a human-flown ship.
+        if (code::aiSetSpeedReturn.known()) {
+            reg_eip = code::aiSetSpeedReturn.off;  // WC.EXE: the function's early-return label (ovr143:0918)
+        } else {
+            return_from_call(code::aiSetSpeed, 0);
+        }
     }
 }
 
@@ -938,7 +948,8 @@ static void despawn_slot_quietly(int slot) {
 }
 
 void despawn_all_ships() {
-    for (int i = 0; i < kMinTempSlot; i++) {
+    // (WC.EXE's arrays; WC2's own mission setup clears its slots.)
+    for (int i = 0; i < kMinTempSlot && is_wc1(); i++) {
         despawn_slot_quietly(i);
     }
 }

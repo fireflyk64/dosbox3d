@@ -386,7 +386,7 @@ static void key_script() {
             fclose(f);
         }
         wclog(1, "key script %.1fs (t=%.1f): dump %s; comm \"%s\"; vdu \"%s\"; %s; %s", t, now / 1000.0, path.c_str(),
-              ds_text(ds::commGlobalTxt, 80).c_str(), ds_text(0x8E4A, 160).c_str(), mission_state_line().c_str(),
+              ds_text(ds::commGlobalTxt, 80).c_str(), is_wc1() ? ds_text(0x8E4A, 160).c_str() : "", mission_state_line().c_str(),
               field_state_line().c_str());
     } else if (item == "wait") {
         wclog(1, "key script %.1fs (t=%.1f): waiting for the next mission", t, now / 1000.0);
@@ -630,6 +630,11 @@ static void check_hooks_slow() {
     }
     if (at_location(code::missionStarting)) {
         ensure_session();
+        if (g_session && !code::enterBarracks.known()) {
+            // WC2 has no barracks hook: this is where a client meets the server.
+            has_started_up = true;
+            g_session->on_barracks();
+        }
         if (g_session) {
             g_session->on_mission_starting(rd8(ds::currentMission), rd8(ds::currentSeries));
         }
@@ -693,6 +698,12 @@ static void check_hooks_slow() {
         }
         if (g_session) {
             g_session->on_mission_ended();
+        }
+        if (g_session && !code::missionVictoryCalc.known()) {
+            // WC2 has no score computation to hang the reset and the last
+            // frame on: do both here.
+            g_session->on_mission_reset();
+            g_session->on_mission_victory_calc();
         }
     }
     if (at_location(code::autopilotKey) && g_session && g_session->is_client()) {
@@ -895,7 +906,5 @@ void wc_net_check_cpu_hooks() {
     if (ip >= 0x10000 || !g_watch[ip]) {
         return;
     }
-    if (is_wc1()) {
-        check_hooks_slow();
-    }
+    check_hooks_slow();
 }

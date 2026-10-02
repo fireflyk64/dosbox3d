@@ -16,6 +16,7 @@
 #include <string>
 #include "dosbox.h"
 #include "mem.h"
+#include "wcnet_game.h"
 
 namespace wc {
 
@@ -25,17 +26,13 @@ namespace wc {
 extern Bit16u DS;
 extern PhysPt DS_OFF;
 
-// Entity slots.  The game keeps 0x40 entity slots; every per-entity array is
-// indexed by slot.  Slot 0 is always the local player.
+// Entity slots.  The game keeps 0x40 entity slots (WC2: 0x46); every
+// per-entity array is indexed by slot.  Slot 0 is always the local player.
 enum Slot {
     kPlayerSlot = 0,
     kMinShipSlot = 1,       // ships, capships and missiles live in 1..9
     kMaxShipSlot = 9,
-    kMinTempSlot = 10,      // bolts, explosions, dust, ... live in 10..0x3c
-    kMaxTempSlot = 0x3c,
-    kCameraSlot = 0x3d,
-    kTempVectorSlot = 0x3f,
-    kNumSlots = 0x40,
+    kMinTempSlot = 10,      // bolts, explosions, dust, ... live from 10 to max_temp_slot()
     kInvalidSlot = 0xffff,
 };
 
@@ -106,6 +103,15 @@ inline Bit16u entity_type(int slot) { return rd16((Bit16u)(ds::maybeEntityType +
 inline bool slot_in_use(int slot) { return entity_type(slot) != ET_NONE; }
 inline int parent_of(int slot) { return rd8((Bit16u)(ds::parentShipForShip + slot)); }
 inline bool is_ship_slot(int slot) { return slot >= kPlayerSlot && slot <= kMaxShipSlot; }
+// The last slots are the game's own: with 0x40 of them (WC.EXE) bolts,
+// explosions, dust... end at 0x3c, the camera is 0x3d and 0x3f is a scratch
+// vector; WC2.EXE has 0x46 and the same three at the end.
+inline int num_slots() { return g_params.slots; }
+inline int max_temp_slot() { return g_params.slots - 4; }
+inline int camera_slot() { return g_params.slots - 3; }
+#define kNumSlots (wc::num_slots())
+#define kMaxTempSlot (wc::max_temp_slot())
+#define kCameraSlot (wc::camera_slot())
 inline bool is_temp_slot(int slot) { return slot >= kMinTempSlot && slot <= kMaxTempSlot; }
 
 // Follow dseg:C30E until a slot is its own parent (or has none); this is what
@@ -121,13 +127,7 @@ int find_bolt_of(int owner);
 // Asteroid and mine fields.  The game keeps at most 20 rocks or mines, placed
 // around slot 0 while it is inside a field (overlay 168), so every machine
 // has its own: they are never replicated, only the damage they do is.
-inline bool is_field_mission_ship(int missionShip) {
-    if (missionShip < 0 || missionShip == kInvalidSlot) {
-        return false;
-    }
-    Bit16u type = rd16((Bit16u)(ds::missionShipTable + 0x2a * missionShip));
-    return type == ST_ASTEROID_FIELD || type == ST_MINE_FIELD;
-}
+bool is_field_mission_ship(int missionShip);
 // True when `slot` is, or descends from, an entity no ship owns (a rock, a
 // mine, the blast of a mine): something that exists on this machine only.
 bool is_local_hazard(int slot);

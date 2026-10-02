@@ -24,6 +24,18 @@ enum GameId {
 extern GameId g_game;
 extern Bit16u g_loadSeg;  // first paragraph of the program image
 
+// Layout facts that differ between the games.
+struct GameParams {
+    int slots;               // entity slots (every per-entity array has this many elements)
+    int missionShipSize;     // bytes per mission ship record (ds::missionShipTable)
+    int missionShipClassOff; // where in it the type/class that marks a field is
+    int missionShipClassSize;
+    int asteroidField, mineField;  // those two values
+    int navPointSize;        // bytes per nav point record (ds::navPointTable)
+    int navPointShipsOff;    // ten mission-ship words in it (0: not located)
+};
+extern GameParams g_params;
+
 inline bool is_wc1() { return g_game == GAME_WC1; }
 inline bool is_wc2() { return g_game == GAME_WC2; }
 const char *game_name();

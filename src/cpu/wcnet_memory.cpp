@@ -1,6 +1,7 @@
 #include <string>
 #include <string.h>
 #include "wcnet_memory.h"
+#include "wcnet_game.h"
 
 namespace wc {
 
@@ -36,6 +37,14 @@ int find_bolt_of(int owner) {
         }
     }
     return -1;
+}
+
+bool is_field_mission_ship(int missionShip) {
+    if (missionShip < 0 || missionShip == kInvalidSlot || !ds::known(ds::missionShipTable)) {
+        return false;
+    }
+    Bit16u type = rd16((Bit16u)(ds::missionShipTable + g_params.missionShipSize * missionShip + g_params.missionShipClassOff));
+    return type == g_params.asteroidField || type == g_params.mineField;
 }
 
 bool is_local_hazard(int slot) {

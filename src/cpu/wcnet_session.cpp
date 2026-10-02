@@ -14,6 +14,7 @@
 #include "wcnet_vm.h"
 #include "wcnet_memory.h"
 #include "wcnet_code.h"
+#include "wcnet_game.h"
 #include "wcnet_transport.h"
 #include "wcnet_lobby.h"
 #include "wcnet_log.h"
@@ -91,6 +92,10 @@ namespace wc {
 // Pilot identity and small game helpers
 
 std::string get_last_name() {
+    if (!ds::known(ds::pilotLastName)) {
+        const char *env = getenv("WCLASTNAME");
+        return env ? env : "";
+    }
     std::string saved = read_cstring(ds::pilotLastName, 14);
     const char *env = getenv("WCLASTNAME");
     if (env && env[0] && saved != env) {
@@ -101,6 +106,10 @@ std::string get_last_name() {
 }
 
 std::string get_callsign() {
+    if (!ds::known(ds::pilotCallsign)) {
+        const char *env = getenv("WCCALLSIGN");
+        return env ? env : "";
+    }
     std::string saved = read_cstring(ds::pilotCallsign, 14);
     const char *env = getenv("WCCALLSIGN");
     if (env && env[0] && saved != env) {
@@ -115,14 +124,18 @@ std::string get_callsign() {
 // (the mission he died in, series * 4 + mission; 0 = alive): the scripts hold
 // a funeral for every pilot whose word names the mission just flown.
 static void liven_everyone() {
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 8 && ds::known(ds::statusPilots); i++) {
         wr16((Bit16u)(ds::statusPilots + 2 * i), 0);
     }
 }
 
 enum { kMissionTreeSize = 8 * 19 };
 
+// (The nav-point progress table is WC.EXE's; WC2's is not mapped yet.)
 static void load_mission_tree_progress(const std::string &data) {
+    if (!is_wc1()) {
+        return;
+    }
     if (data.length() != kMissionTreeSize) {
         wclog(0, "unexpected mission tree length %d", (int)data.length());
         return;
@@ -136,12 +149,15 @@ static void populate_mission_end(MissionEnd *end) {
     end->set_game_update((GameState)rd16(ds::missionStatus));
     std::string *tree = end->mutable_mission_tree_progress();
     tree->clear();
-    for (int i = 0; i < kMissionTreeSize; i++) {
+    for (int i = 0; i < kMissionTreeSize && is_wc1(); i++) {
         tree->push_back((char)rd8((Bit16u)(ds::navPointState + i)));
     }
 }
 
 static void populate_mission_addendum(MissionEnd *end) {
+    if (!ds::known(ds::victoryPoints)) {
+        return;
+    }
     end->set_victory_points_plus_one(1 + (Bit32u)rd16(ds::victoryPoints));
 }
 
@@ -650,6 +666,7 @@ private:
         msg.set_frame_number(frameNumber_);
         Game *game = msg.mutable_game();
         game->set_assigned_player_id(c->net);
+        take_station(c->net);
         Frame *frame = game->mutable_starting_state();
         frame->set_rocks(rocks_mode());
         for (int slot = kPlayerSlot; slot <= kMaxShipSlot; slot++) {
@@ -677,6 +694,34 @@ private:
         // Spawns queued in the pending frame are already in the registry copy.
         c->skipPendingEvents = pendingFrame_.frame().event_size();
         return true;
+    }
+
+    // WC2 spawns a wingman on top of his leader and lets the formation AI
+    // sort it out, and that AI is off for a human's ship: put a ship that
+    // starts inside ours on our left wing instead (where the game's own
+    // formation puts the first wingman: 752 lengths of the right vector).
+    void take_station(int slot) {
+        if (!slot_in_use(slot) || !slot_in_use(kPlayerSlot)) {
+            return;
+        }
+        Vec3 own = read_vec(vec_slot(ds::gPositionVector, kPlayerSlot));
+        Vec3 pos = read_vec(vec_slot(ds::gPositionVector, slot));
+        double dx = (double)pos.x - own.x, dy = (double)pos.y - own.y, dz = (double)pos.z - own.z;
+        double clear = 256.0 * (rd16((Bit16u)(ds::gMaybeShipRadius)) + rd16((Bit16u)(ds::gMaybeShipRadius + 2 * slot)));
+        if (dx * dx + dy * dy + dz * dz > clear * clear) {
+            return;
+        }
+        enum { kAbeam = 752 };
+        Vec3 right = read_vec(vec_slot(ds::gOrientationRightVector, kPlayerSlot));
+        pos.x = own.x - right.x * kAbeam;
+        pos.y = own.y - right.y * kAbeam;
+        pos.z = own.z - right.z * kAbeam;
+        write_vec(vec_slot(ds::gPositionVector, slot), pos);
+        write_vec(vec_slot(ds::gVelocityVector, slot), read_vec(vec_slot(ds::gVelocityVector, kPlayerSlot)));
+        write_vec(vec_slot(ds::gOrientationRightVector, slot), right);
+        write_vec(vec_slot(ds::gOrientationUpVector, slot), read_vec(vec_slot(ds::gOrientationUpVector, kPlayerSlot)));
+        write_vec(vec_slot(ds::gOrientationFrontVector, slot), read_vec(vec_slot(ds::gOrientationFrontVector, kPlayerSlot)));
+        wclog(1, "player %d starts on our left wing", slot);
     }
 
     void reset_pending_frame() {
@@ -974,7 +1019,7 @@ public:
     }
 
     virtual void on_mission_victory_calc() {
-        if (lastVictoryPlusOne_) {
+        if (lastVictoryPlusOne_ && ds::known(ds::victoryPoints)) {
             wr16(ds::victoryPoints, (Bit16u)(lastVictoryPlusOne_ - 1));
             wclog(1, "victory points from server: %d", (int)lastVictoryPlusOne_ - 1);
         }
@@ -1237,14 +1282,21 @@ private:
         }
         for (int i = 0; i < frame.update_size(); i++) {
             const ShipUpdate &su = frame.update(i);
-            if (!su.has_ship_id() || !entities_.is_mapped(su.ship_id())) {
+            if (!su.has_ship_id()) {
                 continue;
             }
-            int slot = entities_.net_to_local(su.ship_id());
+            // Our own ship is slot 0 whatever the map knows yet: the start
+            // state comes before any spawn is replayed, and carries where
+            // the server has our ship (the wingman's place, not the
+            // leader's, where our own mission setup put us).
+            bool own = (int)su.ship_id() == shipNet_;
+            if (!own && !entities_.is_mapped(su.ship_id())) {
+                continue;
+            }
+            int slot = own ? (int)kPlayerSlot : entities_.net_to_local(su.ship_id());
             if (is_temp_slot(slot)) {
                 continue;
             }
-            bool own = (int)su.ship_id() == shipNet_;
             if (su.has_loc() && (!own || applyOwnLocation)) {
                 apply_location(su.loc(), slot);
             }

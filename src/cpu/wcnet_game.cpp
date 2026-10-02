@@ -11,6 +11,12 @@ namespace wc {
 
 GameId g_game = GAME_NONE;
 Bit16u g_loadSeg = 0;
+GameParams g_params = { 0x40, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39 };
+
+static const GameParams kWc1Params = { 0x40, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39 };
+// WC2: 70 slots; a mission ship is 0x3c bytes with its class word at +0x15
+// (5 and 6 are fields: ovr116:1D72); nav points are 0x65 bytes
+static const GameParams kWc2Params = { 0x46, 0x3c, 0x15, 2, 5, 6, 0x65, 0 };
 Bit16u DS = 0;
 PhysPt DS_OFF = 0;
 static Bit16u g_gamePsp = 0;
@@ -113,8 +119,35 @@ static void load_wc1_code() {
     root(autopilotKey, SEG001, 0x1695);                    // handle_key+12E: autopilot key far call
 }
 
-// WC2.EXE: see docs/wc2-port.md for how each was found.
+// WC2.EXE: see docs/wc2-port.md for how each was found (scripts/wcmap.py
+// pairs the functions with WC.EXE's).  Many of them are pascal.
 static void load_wc2_code() {
+    using namespace code;
+    enum { SEG001 = 0x03CA, SEG005 = 0x073C, SEG006 = 0x0BD7, STUB107 = 0x1743, STUB114 = 0x1764, STUB116 = 0x1783,
+           STUB128 = 0x17D6, STUB129 = 0x17DB, STUB134 = 0x1826, STUB141 = 0x1850 };
+    // overlay 114: ships, damage, weapons
+    ovr(do_damage, STUB114, 0x00AC, 0x1128, 4, true);        // do_damage(src, dst, quantity, vec*)
+    ovr(delayedDespawn, STUB114, 0x00B6, 0x2B10, 2, true);   // destroy(src, ship): wrapper of ovr114:2B69
+    ovr(fireGunFromShip, STUB114, 0x0183, 0x3847, 2, true);  // fireGunFromShip(ship, gun)
+    ovr(aiSetSpeed, STUB114, 0x013D, 0x0E5A, 3, true);       // AI set speed (ship, ...)
+    // overlay 116: mission spawning
+    ovr(outerSpawnShipEntity, STUB116, 0x002A, 0x1CED, 2);   // outerSpawnShipEntity(missionShip, navPoint)
+    // root: entities
+    root(despawn, SEG006, 0x1AB7, 1);                        // despawn(ship)
+    // overlay 141: the per-entity AI dispatcher (fighters go on to ovr129:150E,
+    // capital ships to ovr129:1F13, ...)
+    ovr(aiShipThink, STUB141, 0x005C, 0x2CD3, 1);            // entity_ai(slot)
+    // overlay 107: autopilot
+    ovr(autoAnimation, STUB107, 0x0025, 0x0000, 3);          // autoAnimation(camShipType, camMode, duration)
+    // overlay 128: the campaign loop around a flight (ovr128:02CE)
+    ovr(missionStarting, STUB128, 0x0039, 0x0486);           // about to load the mission and fly
+    ovr(missionEnded, STUB128, 0x0039, 0x04C3);              // the flight loop returned
+    // overlay 134: asteroid and mine fields
+    ovr(clearFields, STUB134, 0x004D, 0x01B8);               // remove the current field's rocks or mines
+    // root image: the flight loop (seg001:1BED)
+    root(mainLoopTop, SEG001, 0x1CA3);                       // top of the in-flight frame loop
+    root(statusCheckAfterFrame, SEG001, 0x1CF2);             // cmp missionStatus after the frame
+    root(statusCheckAfterKeys, SEG001, 0x1D07);              // the loop's own test of missionStatus
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +183,7 @@ static void set_game(const KnownGame *game, Bit16u loadSeg, Bit16u psp) {
     DS = game ? (Bit16u)(loadSeg + game->dgroupPara) : 0;
     DS_OFF = (PhysPt)DS * 0x10;
     load_ds(g_game);
+    g_params = g_game == GAME_WC2 ? kWc2Params : kWc1Params;
     clear_code();
     if (g_game == GAME_WC1) {
         load_wc1_code();

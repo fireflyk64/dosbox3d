@@ -9,65 +9,65 @@
  *  names in [brackets] are ours, chosen from the code that uses the array.
  *  Look an offset up with scripts/wcexe.py refs dseg:XXXX.
  */
-WC_DS(missionStatus, 0x00AE, 0x0000)  // 0=flying, 1=landed, 2=ejected, 3=carrier, 4=dead, 5=exit
+WC_DS(missionStatus, 0x00AE, 0x00B0)  // 0=flying, 1=landed, 2=ejected, 3=carrier, 4=dead, 5=exit
 WC_DS(playerCanBeDamaged, 0x00BA, 0x00C0)  // [missionStatus+C]: do_damage ignores slot 0 while zero
-WC_DS(aLoadingWingCom, 0x0187, 0x0000)  // string buffer we reuse as scratch code/data
-WC_DS(aSorryAnErrorHasOccured, 0x0395, 0x0000)  // 249 byte string buffer we reuse for shellcode
+WC_DS(aLoadingWingCom, 0x0187, 0x9FC0)  // string buffer we reuse as scratch code/data
+WC_DS(aSorryAnErrorHasOccured, 0x0395, 0x0380)  // 249 byte string buffer we reuse for shellcode
 WC_DS(skipRecRoom, 0x3004, 0x0000)  // word: nonzero sends runHangarMission straight to the barracks
 WC_DS(savedGameLoaded, 0x300C, 0x0000)  // has_loaded_game
-WC_DS(randomSeed, 0x7728, 0x0000)
+WC_DS(randomSeed, 0x7728, 0xA904)  // state of the lo..hi random generator (WC.EXE seg034:0006); the game has two more
 WC_DS(commGlobalTxt, 0x8DF8, 0x0000)  // 80 bytes shown by the VDU comm display
 WC_DS(pilotLastName, 0x9A42, 0x0000)  // 14 bytes
 WC_DS(pilotCallsign, 0x9A50, 0x0000)  // 14 bytes
-WC_DS(gPositionVector, 0xA9C2, 0x0000)  // 3 x int32 per slot
-WC_DS(entityCullStatus, 0xACC4, 0x0000)  // word per slot: screen x of the last frame's drawing (0x8001 = culled/inactive)
-WC_DS(entityScreenY, 0xAD44, 0x0000)  // [entityScreenY] word per slot: its screen y
-WC_DS(gOrientationRightVector, 0xAEB6, 0x0000)  // 3 x int32 per slot
-WC_DS(gOrientationUpVector, 0xB1B6, 0x0000)  // named "up", but it points to the bottom of the screen
+WC_DS(gPositionVector, 0xA9C2, 0x56FE)  // 3 x int32 per slot
+WC_DS(entityCullStatus, 0xACC4, 0x4768)  // word per slot: screen x of the last frame's drawing (0x8001 = culled/inactive)
+WC_DS(entityScreenY, 0xAD44, 0x47F4)  // [entityScreenY] word per slot: its screen y
+WC_DS(gOrientationRightVector, 0xAEB6, 0x4D26)  // 3 x int32 per slot
+WC_DS(gOrientationUpVector, 0xB1B6, 0x506E)  // named "up", but it points to the bottom of the screen
 // (the carrier moves along it when the nose comes up)
-WC_DS(gOrientationFrontVector, 0xB4B6, 0x0000)
-WC_DS(setSpeed, 0xB9F6, 0x0000)  // [gOrientationFrontVector+540] int32 per slot
-WC_DS(damageProperty, 0xBB8E, 0x0000)  // word per slot: bolt damage / AI timers
-WC_DS(gunDamage, 0xBD0E, 0x0000)  // [damageProperty+180] byte per slot, 0..5
-WC_DS(maybeEntityType, 0xBD1A, 0x0000)  // word per slot, EntityType
-WC_DS(gunEnergy, 0xBE3A, 0x0000)  // [maybeEntityType+120] word per slot, recharges to 100
-WC_DS(speedLo, 0xBE6C, 0x0000)  // [maybeEntityType+152] int32 per slot (lo/hi words)
-WC_DS(commAnimInfo, 0xBE94, 0x0000)  // word per slot (1 = has a pilot that talks)
-WC_DS(engineFlag, 0xBFD6, 0x0000)  // [commAnimInfo+142] byte per slot, 0xff = disabled
-WC_DS(gInstanceShipTypes, 0xBFF8, 0x0000)  // word per slot, index into kShipStats (0x6f bytes each)
-WC_DS(frameCounter, 0xC0B8, 0x0000)  // [gInstanceShipTypes+C0] incremented once per game frame
-WC_DS(damagePoints, 0xC17A, 0x0000)  // [currentNavPoint+2] word per slot, accumulated hull damage
-WC_DS(currentNavPoint, 0xC178, 0x0000)  // word: the nav point the player is at (ovr145:098F sets it up)
-WC_DS(currentMission, 0xC255, 0x0000)  // byte
-WC_DS(currentSeries, 0xC256, 0x0000)  // byte
+WC_DS(gOrientationFrontVector, 0xB4B6, 0x53B6)
+WC_DS(setSpeed, 0xB9F6, 0x5FBE)  // [gOrientationFrontVector+540] int32 per slot
+WC_DS(damageProperty, 0xBB8E, 0x5D8E)  // word per slot: bolt damage / AI timers
+WC_DS(gunDamage, 0xBD0E, 0x67AC)  // [damageProperty+180] byte per slot, 0..5
+WC_DS(maybeEntityType, 0xBD1A, 0x64AA)  // word per slot, EntityType
+WC_DS(gunEnergy, 0xBE3A, 0x66F8)  // [maybeEntityType+120] word per slot, recharges to 100
+WC_DS(speedLo, 0xBE6C, 0x677A)  // [maybeEntityType+152] int32 per slot (lo/hi words)
+WC_DS(commAnimInfo, 0xBE94, 0x672A)  // word per slot (1 = has a pilot that talks)
+WC_DS(engineFlag, 0xBFD6, 0x67B6)  // [commAnimInfo+142] byte per slot, 0xff = disabled
+WC_DS(gInstanceShipTypes, 0xBFF8, 0x641E)  // word per slot, index into kShipStats (0x6f bytes each)
+WC_DS(frameCounter, 0xC0B8, 0x43C3)  // [gInstanceShipTypes+C0] incremented once per game frame
+WC_DS(damagePoints, 0xC17A, 0x6306)  // [currentNavPoint+2] word per slot, accumulated hull damage
+WC_DS(currentNavPoint, 0xC178, 0x441C)  // word: the nav point the player is at (ovr145:098F sets it up)
+WC_DS(currentMission, 0xC255, 0x4681)  // byte (WC2: a word, mission 0.. within the series)
+WC_DS(currentSeries, 0xC256, 0x467F)  // byte (WC2: a word)
 WC_DS(statusPilots, 0xC260, 0x0000)  // word per named pilot (8): 0 = alive, else series * 4 + mission of his death
 WC_DS(victoryPoints, 0xC280, 0x0000)  // word
-WC_DS(missileTarget, 0xC284, 0x0000)  // [currentCampaign+2] byte per slot
-WC_DS(parentShipForShip, 0xC30E, 0x0000)  // byte per slot, 0xff = none
-WC_DS(gMaybeShipRadius, 0xC3B0, 0x0000)  // word per slot
-WC_DS(curShield, 0xC430, 0x0000)  // curShieldMaybe: word[2] per slot (front, rear)
-WC_DS(gShipBoltList, 0xC472, 0x0000)  // 0x33 bytes per slot: count + 10 x 5-byte gun entries
+WC_DS(missileTarget, 0xC284, 0x6FF4)  // [currentCampaign+2] byte per slot
+WC_DS(parentShipForShip, 0xC30E, 0x6392)  // byte per slot, 0xff = none
+WC_DS(gMaybeShipRadius, 0xC3B0, 0x627A)  // word per slot
+WC_DS(curShield, 0xC430, 0x6680)  // curShieldMaybe: word[2] per slot (front, rear)
+WC_DS(gShipBoltList, 0xC472, 0x67D4)  // 0x33 bytes per slot: count + 10 x 5-byte gun entries
 WC_DS(tempVector, 0xC6B2, 0x0000)  // scratch vector used by the game
-WC_DS(armorState, 0xC85E, 0x0000)  // armorStateArray: word[4] per slot (front, rear, left, right)
-WC_DS(coreHp, 0xC8B8, 0x0000)  // [armorStateArray+5A] byte per slot, starts at 4
-WC_DS(shieldMax, 0xC988, 0x0000)  // shieldMaxMaybe: word[2] per slot
-WC_DS(shipAiState, 0xCA56, 0x0000)  // [comm6to5+E] word per slot, 9 = dying, 8 = ?, 0xffff
-WC_DS(gVelocityVector, 0xCAE2, 0x0000)  // 3 x int32 per slot
-WC_DS(shipStateByte, 0xD1A2, 0x0000)  // [vduModeMaybe+2] byte per slot: pilot set, 8 = Confed pilot
+WC_DS(armorState, 0xC85E, 0x66A8)  // armorStateArray: word[4] per slot (front, rear, left, right)
+WC_DS(coreHp, 0xC8B8, 0x6E82)  // [armorStateArray+5A] byte per slot, starts at 4
+WC_DS(shieldMax, 0xC988, 0x6658)  // shieldMaxMaybe: word[2] per slot
+WC_DS(shipAiState, 0xCA56, 0x6752)  // [comm6to5+E] word per slot, 9 = dying, 8 = ?, 0xffff
+WC_DS(gVelocityVector, 0xCAE2, 0x5A46)  // 3 x int32 per slot
+WC_DS(shipStateByte, 0xD1A2, 0x6E8C)  // [vduModeMaybe+2] byte per slot: pilot set, 8 = Confed pilot
 // (player and wingman), 0xff = none; the comms code picks
 // the face and name from it (ovr138:0980, ovr140:0020)
-WC_DS(hullCounter, 0xD22C, 0x0000)  // [vduModeMaybe+8C] byte per slot
-WC_DS(vduStatus10WhenPlayerHitsSmth, 0xD236, 0x0000)
-WC_DS(systemDamage, 0xD24C, 0x0000)  // [systemDamage] byte per system (9): the player's damage levels, 0..4 (ovr134:0DEC)
-WC_DS(cockpitDamage, 0x8CB2, 0x0000)  // [cockpitDamage] word per cockpit instrument (4): 1 = broken (ovr134:325E)
-WC_DS(navPointState, 0xD25D, 0x0000)  // 8 x 19 bytes: mission tree progress
-WC_DS(navPointTable, 0x687C, 0x0000)  // [navPoints] 0x4d bytes per nav point; its mission ships are ten words at +0x39
-WC_DS(missionShipTable, 0x6E80, 0x0000)  // [missionShips] 0x2a bytes per mission ship, word 0 = ship type
-WC_DS(fieldRockTally, 0x39A4, 0x0000)  // [fieldRockTally] word: rocks added minus rocks dropped (not an exact count)
-WC_DS(fieldCount, 0xBFF6, 0x0000)  // [fieldCount] word: fields of the current nav point (max 7)
-WC_DS(currentField, 0xC362, 0x0000)  // [currentField] word: offset of the field the player is in, 0 = none
-WC_DS(fieldTable, 0xCDF6, 0x0000)  // [fieldTable] 0x14 bytes per field: type, position, radius
-WC_DS(entitiesToDespawn, 0x6610, 0x0000)  // 0x14 bytes: the slots of the current field's rocks or mines (0xff = free)
+WC_DS(hullCounter, 0xD22C, 0x67C0)  // [vduModeMaybe+8C] byte per slot
+WC_DS(vduStatus10WhenPlayerHitsSmth, 0xD236, 0x6E96)
+WC_DS(systemDamage, 0xD24C, 0x468D)  // [systemDamage] byte per system (9): the player's damage levels, 0..4 (ovr134:0DEC)
+WC_DS(cockpitDamage, 0x8CB2, 0xB18E)  // [cockpitDamage] word per cockpit instrument (4): 1 = broken (ovr134:325E)
+WC_DS(navPointState, 0xD25D, 0x44F2)  // 8 x 19 bytes: mission tree progress
+WC_DS(navPointTable, 0x687C, 0x71DC)  // [navPoints] 0x4d bytes per nav point; its mission ships are ten words at +0x39
+WC_DS(missionShipTable, 0x6E80, 0x75CE)  // [missionShips] 0x2a bytes per mission ship, word 0 = ship type
+WC_DS(fieldRockTally, 0x39A4, 0x8FB2)  // [fieldRockTally] word: rocks added minus rocks dropped (not an exact count)
+WC_DS(fieldCount, 0xBFF6, 0x4427)  // [fieldCount] word: fields of the current nav point (max 7)
+WC_DS(currentField, 0xC362, 0x44C9)  // [currentField] word: offset of the field the player is in, 0 = none
+WC_DS(fieldTable, 0xCDF6, 0x4429)  // [fieldTable] 0x14 bytes per field: type, position, radius
+WC_DS(entitiesToDespawn, 0x6610, 0x44CD)  // 0x14 bytes: the slots of the current field's rocks or mines (0xff = free)
 WC_DS(entitiesToDespawnTargetA, 0x6626, 0x0000)
-WC_DS(playerTarget, 0x662C, 0x0000)  // [entitiesToDespawn+1C]
-WC_DS(unknown07A6, 0x07A6, 0x0000)
+WC_DS(playerTarget, 0x662C, 0x468B)  // [entitiesToDespawn+1C]
+WC_DS(unknown07A6, 0x07A6, 0x441A)
