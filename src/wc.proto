@@ -152,6 +152,11 @@ message Game {
     optional uint32 mission_id = 1;
     required uint32 assigned_player_id = 2;
     optional Frame starting_state = 3;
+    // What this client is in the mission (Seat in wcnet_session.h): 0 flies
+    // the ship the mission has for a wingman (assigned_player_id is its
+    // slot on the server); 1 a drone, for missions the story flies alone: a
+    // ship that exists on the client's machine only.
+    optional uint32 seat = 4;
 }
 
 message ClientStartMissionReq {

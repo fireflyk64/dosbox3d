@@ -39,6 +39,13 @@ namespace wc {
 
 enum Role { ROLE_SERVER, ROLE_CLIENT };
 
+// What a client is in a mission (Game.seat).
+enum Seat {
+    SEAT_WINGMAN = 0,  // flies the ship the mission has in the wingman's slot
+    SEAT_DRONE = 1,    // a mission the story flies alone: a ship of its own that exists on its
+                       // machine only; nothing sees or hits it and it cannot shoot
+};
+
 class Session {
 public:
     virtual ~Session() {}
@@ -50,6 +57,11 @@ public:
     // Slot flown by another human on this machine.
     virtual bool is_remote_player_slot(int slot) const = 0;
     bool is_player_slot(int slot) const { return slot == kPlayerSlot || is_remote_player_slot(slot); }
+    // This machine's own seat (a server is the leader, never a drone).
+    virtual Seat seat() const { return SEAT_WINGMAN; }
+    bool is_drone() const { return seat() == SEAT_DRONE; }
+    // A drone can ride behind the leader instead of flying itself.
+    virtual void toggle_chase() {}
     // Network ids flown by humans: the host and the two client slots.
     static bool is_player_net(int net) { return net == 0 || net == 1 || net == 3; }
 

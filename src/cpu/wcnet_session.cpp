@@ -347,7 +347,8 @@ static const char *rocks_notice(int mode) {
 // Server
 
 struct RemoteClient {
-    int net;                     // network id == server slot this client flies
+    int net;                     // network id == server slot this client flies (as a wingman)
+    Seat seat;                   // decided with the mission start state
     Connection conn;
     std::string callsign;
     std::string missionTreeProgress;  // reported with a shared mission end
@@ -358,7 +359,7 @@ struct RemoteClient {
     int skipPendingEvents;       // events already covered by the start state
 
     explicit RemoteClient(int n)
-        : net(n), requestedBriefingStart(false), needsMissionStartState(false),
+        : net(n), seat(SEAT_WINGMAN), requestedBriefingStart(false), needsMissionStartState(false),
           inMission(false), leftThisMission(false), skipPendingEvents(0) {}
     bool connected() const { return conn.is_open(); }
     void disconnect() {
@@ -573,7 +574,32 @@ private:
             return NULL;
         }
         RemoteClient *c = clients_[slot];
-        return c->connected() ? c : NULL;
+        return c->connected() && c->seat == SEAT_WINGMAN ? c : NULL;  // a drone has no ship here
+    }
+
+    // What a client is in this mission.  WC.EXE gives every mission a
+    // wingman, and his ship is the client's.  WC2 has missions the story
+    // flies alone: the slot is then empty or something else entirely (the
+    // carrier, a transport to escort), and the client rides along as a
+    // drone.  A wingman there is a fighter in the player's wing list.
+    Seat seat_for(const RemoteClient *c) const {
+        if (!is_wc2() || !ds::known(ds::playerWing)) {
+            return SEAT_WINGMAN;
+        }
+        const char *env = getenv("WCSEAT");
+        if (env && !strcasecmp(env, "drone")) {
+            return SEAT_DRONE;
+        }
+        if (!slot_in_use(c->net) || entity_type(c->net) != ET_SHIP) {
+            return SEAT_DRONE;
+        }
+        Bit16u missionShip = rd16((Bit16u)(ds::slotMissionShip + 2 * c->net));
+        for (int i = 0; i < 8; i++) {
+            if (rd16((Bit16u)(ds::playerWing + 2 * i)) == missionShip) {
+                return SEAT_WINGMAN;
+            }
+        }
+        return SEAT_DRONE;
     }
 
     RemoteClient *allocate_client() {
@@ -666,7 +692,11 @@ private:
         msg.set_frame_number(frameNumber_);
         Game *game = msg.mutable_game();
         game->set_assigned_player_id(c->net);
-        take_station(c->net);
+        c->seat = seat_for(c);
+        game->set_seat(c->seat);
+        if (c->seat == SEAT_WINGMAN) {
+            take_station(c->net);
+        }
         Frame *frame = game->mutable_starting_state();
         frame->set_rocks(rocks_mode());
         for (int slot = kPlayerSlot; slot <= kMaxShipSlot; slot++) {
@@ -685,7 +715,8 @@ private:
             *sp = it->second;
             stamp_pilot(sp);
         }
-        wclog(1, "sending mission start state to player %d (%d ships)", c->net, (int)spawns.size());
+        wclog(1, "sending mission start state to player %d (%s, %d ships)", c->net,
+              c->seat == SEAT_DRONE ? "a drone" : "the wingman", (int)spawns.size());
         if (!c->conn.send(msg)) {
             c->disconnect();
             return false;
@@ -750,6 +781,16 @@ private:
     }
 
     void merge_client_frame(RemoteClient *c, const Frame &frame) {
+        if (c->seat == SEAT_DRONE) {
+            // Nothing a drone does is part of the mission, its ending included.
+            if (frame.has_player_end()) {
+                wclog(1, "player %d (a drone) %s", c->net, status_name(frame.player_end().state()));
+                c->inMission = false;
+                c->leftThisMission = true;
+                c->needsMissionStartState = false;
+            }
+            return;
+        }
         if (frame.has_player_end()) {
             // Shared fate: a wing lives and dies together.  Whatever ended
             // the wingman's mission ends ours too; our mission-end frame then
@@ -951,7 +992,7 @@ extern bool g_pendingUninit;
 class ClientSession : public Session {
 public:
     ClientSession()
-        : shipNet_(0), lastWrittenMissionStatus_(Proceed), lastVictoryPlusOne_(0),
+        : shipNet_(0), seat_(SEAT_WINGMAN), chase_(false), lastWrittenMissionStatus_(Proceed), lastVictoryPlusOne_(0),
           isFresh_(true), hasRestartedMission_(false), hasSentConnect_(false),
           ignoreNextFrameTop_(false), ownMissionOver_(false), dead_(false), epoch_(0), frameNumber_(0) {
         callsign_ = get_callsign();
@@ -996,6 +1037,17 @@ public:
     virtual void request_rocks(int mode) {
         (void)mode;
         show_notice("Only the host can switch asteroids and mines");
+    }
+
+    virtual Seat seat() const { return seat_; }
+
+    virtual void toggle_chase() {
+        if (seat_ != SEAT_DRONE) {
+            show_notice("Only a drone can ride behind the leader");
+            return;
+        }
+        chase_ = !chase_;
+        show_notice(chase_ ? "Drone: riding behind the leader (/chase to fly free)" : "Drone: flying free (/chase to ride behind the leader)");
     }
 
     virtual void on_mission_starting(int mission, int series) {
@@ -1244,17 +1296,52 @@ private:
     void apply_start_state(const NetworkMessage &msg) {
         const Game &game = msg.game();
         shipNet_ = game.assigned_player_id();
-        entities_.set_own_ship(shipNet_);
+        seat_ = game.has_seat() && game.seat() == SEAT_DRONE ? SEAT_DRONE : SEAT_WINGMAN;
+        if (seat_ == SEAT_DRONE) {
+            // No ship of the mission is ours: every spawn of the server's is
+            // another ship here, and the leader's is made first.
+            entities_.set_own_ship(-1);
+            enqueue_host_body();
+            show_notice("This mission is flown alone: you are a drone. Nothing sees or hits you, you have no guns. /chase rides behind the leader");
+        } else {
+            entities_.set_own_ship(shipNet_);
+        }
         if (game.has_starting_state()) {
             apply_frame(game.starting_state(), true);
         }
         epoch_ = msg.epoch();
         frameNumber_ = msg.frame_number();
         isFresh_ = false;
-        wclog(1, "we are player %d; epoch %u frame %llu", shipNet_, epoch_, (unsigned long long)frameNumber_);
+        wclog(1, "we are player %d%s; epoch %u frame %llu", shipNet_, seat_ == SEAT_DRONE ? " (a drone)" : "", epoch_,
+              (unsigned long long)frameNumber_);
+    }
+
+    // A drone has no place in the mission of its own: where the server has
+    // the leader, close behind him.  At the start, after an autopilot
+    // (the leader is somewhere else entirely) and every frame while riding.
+    void follow_leader(const Location &leader) {
+        // In lengths of the orientation vectors.  The "up" vector points
+        // down the screen: this is below the leader, who is then in the
+        // upper half of the canopy, clear of the instrument panel.
+        enum { kBehind = 420, kBelow = 45 };
+        if (!leader.has_pos() || !leader.has_fore() || !leader.has_up()) {
+            return;
+        }
+        Location loc = leader;
+        Vec3 pos = to_vec(leader.pos()), fore = to_vec(leader.fore()), up = to_vec(leader.up());
+        pos.x += up.x * kBelow - fore.x * kBehind;
+        pos.y += up.y * kBelow - fore.y * kBehind;
+        pos.z += up.z * kBelow - fore.z * kBehind;
+        write_vec(vec_slot(ds::gPositionVector, kPlayerSlot), pos);
+        loc.clear_pos();
+        apply_location(loc, kPlayerSlot);
     }
 
     void populate_own_update() {
+        if (seat_ == SEAT_DRONE) {
+            pendingFrame_.mutable_frame();  // an empty frame still goes out: the exchange is one message each way
+            return;
+        }
         ShipUpdate *su = update_for(pendingFrame_.mutable_frame(), shipNet_);
         populate_location(su->mutable_loc(), kPlayerSlot);
         health_.next_frame();
@@ -1289,7 +1376,10 @@ private:
             // state comes before any spawn is replayed, and carries where
             // the server has our ship (the wingman's place, not the
             // leader's, where our own mission setup put us).
-            bool own = (int)su.ship_id() == shipNet_;
+            bool own = seat_ == SEAT_WINGMAN && (int)su.ship_id() == shipNet_;
+            if (seat_ == SEAT_DRONE && su.ship_id() == (Bit32u)kPlayerSlot && su.has_loc() && (applyOwnLocation || chase_)) {
+                follow_leader(su.loc());
+            }
             if (!own && !entities_.is_mapped(su.ship_id())) {
                 continue;
             }
@@ -1311,6 +1401,8 @@ private:
 
     Connection conn_;
     int shipNet_;
+    Seat seat_;
+    bool chase_;  // a drone rides behind the leader
     EntityMap entities_;
     std::string callsign_;
     GameState lastWrittenMissionStatus_;
@@ -1482,6 +1574,12 @@ void wcnetSendChatMessage(const std::string &msg) {
             wc_net_set_rocks(ROCKS_SOFT);
         } else {
             show_notice(std::string(rocks_notice(rocks_mode())) + " (/rocks on, soft, off)");
+        }
+        return;
+    }
+    if (strncasecmp(msg.c_str(), "/chase", 6) == 0) {
+        if (g_session) {
+            g_session->toggle_chase();
         }
         return;
     }

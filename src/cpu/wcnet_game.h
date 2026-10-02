@@ -33,6 +33,7 @@ struct GameParams {
     int asteroidField, mineField;  // those two values
     int navPointSize;        // bytes per nav point record (ds::navPointTable)
     int navPointShipsOff;    // ten mission-ship words in it (0: not located)
+    int missionShipAiOff;    // WC2: the word in a mission ship record that picks its AI (6: the player; 0: not located)
 };
 extern GameParams g_params;
 

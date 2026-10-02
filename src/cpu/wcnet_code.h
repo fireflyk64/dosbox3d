@@ -52,6 +52,7 @@ typedef Loc RootLoc;
     X(autoAnimation) X(autoAnimationBody) X(autopilotFinished) X(autopilotKey) \
     /* briefing, barracks, mission lifecycle, simulator */ \
     X(briefingStarted) X(enterBarracks) X(enterBarracksReturn) X(missionStarting) X(missionVictoryCalc) X(missionEnded) \
+    X(missionStartingDirect) X(missionEndedDirect) \
     X(runHangarMission) X(simulatorStart) X(simulatorEnd) \
     /* asteroid and mine fields */ \
     X(clearFields) \

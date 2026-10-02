@@ -74,6 +74,13 @@ void EntityMap::record_spawn(int net, int slot) {
     }
 }
 
+void EntityMap::map(int net, int slot) {
+    while ((int)netToLocal_.size() <= net) {
+        netToLocal_.push_back(-1);
+    }
+    netToLocal_[net] = slot;
+}
+
 void EntityMap::record_despawn(int net) {
     if (net >= 0 && net < (int)netToLocal_.size() && net != ownShip_ && net != kPlayerSlot) {
         netToLocal_[net] = -1;

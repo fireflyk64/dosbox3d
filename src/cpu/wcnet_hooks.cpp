@@ -259,6 +259,7 @@ static void auto_keys() {
 // "!rocks=<1|0|2>", which switches the asteroid and mine fields (2: soft),
 // "!shot=<name>", which writes the screen to WCNET_DUMP_DIR/<name>.ppm,
 // "!hit=<qty>[:back]", which damages our own ship as a hit from ahead would,
+// "!say=<text>", which sends a comms message or command ("_" for a space),
 // "+<key>" / "-<key>", which hold and release a key, or "wait", which holds
 // the script until the next mission reaches its first frame and restarts
 // the clock there.  The clock starts at the first in-flight frame of the
@@ -453,6 +454,16 @@ static void key_script() {
               rd8(ds::systemDamage + 8), rd16(ds::cockpitDamage), rd16(ds::cockpitDamage + 2), rd16(ds::cockpitDamage + 4),
               rd16(ds::cockpitDamage + 6));
         enqueue_test_hit(qty, back);
+    } else if (item.compare(0, 5, "!say=") == 0) {
+        // !say=<text> is a line typed at the comms prompt ("/chase", "/rocks_off")
+        std::string text = item.substr(5);
+        for (size_t i = 0; i < text.size(); i++) {
+            if (text[i] == '_') {
+                text[i] = ' ';
+            }
+        }
+        wclog(1, "key script %.1fs (t=%.1f): say \"%s\"", t, now / 1000.0, text.c_str());
+        wcnetSendChatMessage(text);
     } else if (item.compare(0, 6, "!shot=") == 0) {
         // !shot=<name> writes the screen to WCNET_DUMP_DIR/<name>.ppm
         const char *dir = getenv("WCNET_DUMP_DIR");
@@ -628,8 +639,16 @@ static void check_hooks_slow() {
     if (at_location(code::briefingStarted)) {
         wclog(2, "briefing animation starting for mission %d/%d", rd8(ds::currentMission), rd8(ds::currentSeries));
     }
-    if (at_location(code::missionStarting)) {
+    bool direct = at_location(code::missionStartingDirect);
+    if (at_location(code::missionStarting) || direct) {
         ensure_session();
+        if (direct && !(g_session && g_session->is_client())) {
+            // WC2's mission test flies what the command line named
+            // (dseg:00D0 mission, 00D2 series), and that is the mission
+            // the clients are told.
+            wr8(ds::currentMission, (Bit8u)rd16(0x00D0));
+            wr8(ds::currentSeries, (Bit8u)rd16(0x00D2));
+        }
         if (g_session && !code::enterBarracks.known()) {
             // WC2 has no barracks hook: this is where a client meets the server.
             has_started_up = true;
@@ -644,6 +663,11 @@ static void check_hooks_slow() {
         g_haveLastMission = true;
         g_lastMission = rd8(ds::currentMission);
         g_lastSeries = rd8(ds::currentSeries);
+        if (direct) {
+            // A client flies the server's mission there too.
+            wr16(0x00D0, rd8(ds::currentMission));
+            wr16(0x00D2, rd8(ds::currentSeries));
+        }
         wclog(2, "starting: %s", mission_state_line().c_str());
     }
     if (at_location(code::missionVictoryCalc) && g_session) {
@@ -690,7 +714,7 @@ static void check_hooks_slow() {
                       at_location(code::statusSetByExitKey))) {
         g_session->check_mission_status();
     }
-    if (at_location(code::missionEnded)) {
+    if (at_location(code::missionEnded) || at_location(code::missionEndedDirect)) {
         g_inMission = false;
         wclog(2, "ended: %s", mission_state_line().c_str());
         if (always_skip_barracks()) {

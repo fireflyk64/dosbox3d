@@ -490,6 +490,56 @@ private:
     int nav_;
 };
 
+// A drone's copy of the server's player.  A wingman gets that body from the
+// spawn of the ship he flies himself (EntityMap::record_spawn); a drone
+// flies nothing the mission knows, so it spawns the mission's player ship a
+// second time.  The game refuses to spawn a mission ship that is already in
+// a slot (ours, slot 0), so the slot's mission ship is hidden for the call;
+// and the record says "flown by the player", which is an error
+// (ovr116:200D) for any slot but 0, so for the call it is an ordinary pilot.
+class HostBodyJob : public VmJob {
+public:
+    virtual bool start() {
+        if (!ds::known(ds::slotMissionShip) || !ds::known(ds::playerMissionShip) || !g_params.missionShipAiOff || !g_entityMap) {
+            return false;
+        }
+        enum { kOrdinaryPilot = 4 };
+        own_ = rd16(ds::slotMissionShip);
+        wr16(ds::slotMissionShip, 0xffff);
+        aiOff_ = (Bit16u)(ds::missionShipTable + g_params.missionShipSize * rd16(ds::playerMissionShip) + g_params.missionShipAiOff);
+        ai_ = rd16(aiOff_);
+        wr16(aiOff_, kOrdinaryPilot);
+        started_ = true;
+        call_of(code::outerSpawnShipEntity).arg(rd16(ds::playerMissionShip)).arg(rd16(ds::currentNavPoint)).invoke();
+        return true;
+    }
+    virtual void finish() {
+        if (!started_) {
+            wclog(0, "this game has no ship for the leader on a drone's machine");
+            return;
+        }
+        wr16(ds::slotMissionShip, own_);
+        wr16(aiOff_, ai_);
+        int slot = (int)(reg_eax & 0xffff);
+        if (slot == kInvalidSlot || !is_ship_slot(slot) || slot == kPlayerSlot || !slot_in_use(slot)) {
+            wclog(0, "no ship for the leader on this machine (slot %d)", slot);
+            return;
+        }
+        g_entityMap->map(kPlayerSlot, slot);
+        wclog(1, "the leader's ship is slot %d here", slot);
+    }
+    virtual const char *describe() const { return "leader's ship"; }
+
+private:
+    bool started_ = false;
+    Bit16u own_ = 0xffff;
+    Bit16u aiOff_ = 0, ai_ = 0;
+};
+
+void enqueue_host_body() {
+    g_trampoline.enqueue(new HostBodyJob());
+}
+
 // Removes this machine's rocks or mines and forgets the nav point's fields.
 class ClearFieldsJob : public VmJob {
 public:
@@ -626,8 +676,9 @@ void on_do_damage_entry() {
         return;
     }
 
-    if (s->is_remote_player_slot(dst)) {
-        // Only the owner's machine may damage a human's ship (see session.h).
+    if (s->is_remote_player_slot(dst) || (dst == kPlayerSlot && s->is_drone())) {
+        // Only the owner's machine may damage a human's ship (see session.h),
+        // and nothing touches a drone.
         return_from_call(code::do_damage, 0);
         return;
     }
@@ -641,7 +692,7 @@ void on_do_damage_entry() {
         if (!is_ship_slot(dst)) {
             return;  // rocks, mines, bolts: every machine has its own
         }
-        if (quantity != 0 && is_local_hazard(src) && slot_in_use(dst) && entity_type(dst) >= ET_SHIP) {
+        if (quantity != 0 && !s->is_drone() && is_local_hazard(src) && slot_in_use(dst) && entity_type(dst) >= ET_SHIP) {
             report_local_hit(s, dst, quantity, vecOff);
         }
         return_from_call(code::do_damage, 0);  // NPC damage is decided by the server
@@ -678,8 +729,8 @@ void on_fire_entry() {
     int ship = call_arg16(code::fireGunFromShip, 0);
     int gun = call_arg16(code::fireGunFromShip, 1);
     if (s->is_client()) {
-        if (ship != kPlayerSlot) {
-            return_from_call(code::fireGunFromShip, 0xffff);  // other ships fire through server events
+        if (ship != kPlayerSlot || s->is_drone()) {
+            return_from_call(code::fireGunFromShip, 0xffff);  // other ships fire through server events; a drone has no guns
             return;
         }
         WeaponFire fire;

@@ -3,6 +3,9 @@
 #include <string>
 #include "wc_net.h"
 #include "wcnet_game.h"
+#include <stdlib.h>
+#include "mem.h"
+#include "regs.h"
 #include "wcnet_memory.h"
 #include "wcnet_code.h"
 #include "wcnet_log.h"
@@ -11,12 +14,12 @@ namespace wc {
 
 GameId g_game = GAME_NONE;
 Bit16u g_loadSeg = 0;
-GameParams g_params = { 0x40, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39 };
+GameParams g_params = { 0x40, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39, 0 };
 
-static const GameParams kWc1Params = { 0x40, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39 };
+static const GameParams kWc1Params = { 0x40, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39, 0 };
 // WC2: 70 slots; a mission ship is 0x3c bytes with its class word at +0x15
 // (5 and 6 are fields: ovr116:1D72); nav points are 0x65 bytes
-static const GameParams kWc2Params = { 0x46, 0x3c, 0x15, 2, 5, 6, 0x65, 0x51 };
+static const GameParams kWc2Params = { 0x46, 0x3c, 0x15, 2, 5, 6, 0x65, 0x51, 0x35 };
 Bit16u DS = 0;
 PhysPt DS_OFF = 0;
 static Bit16u g_gamePsp = 0;
@@ -153,6 +156,10 @@ static void load_wc2_code() {
     root(statusCheckAfterFrame, SEG001, 0x1CF2);             // cmp missionStatus after the frame
     root(statusCheckAfterKeys, SEG001, 0x1D07);              // the loop's own test of missionStatus
     root(autopilotKey, SEG001, 0x1079);                      // handle_key: the autopilot key's far call
+    // root image: "wc2 Origin l s<series> m<mission>" flies one mission with
+    // no story around it (main, seg001:0301)
+    root(missionStartingDirect, SEG001, 0x0330);             // about to load mission [D0] of series [D2]
+    root(missionEndedDirect, SEG001, 0x0349);                // the flight loop returned
 }
 
 // ---------------------------------------------------------------------------
@@ -231,9 +238,49 @@ void game_program_loaded(const char *path, Bit16u loadSeg, Bit16u psp) {
     // Anything else: a child of the game (it stays), or another program.
 }
 
+// What a game that gave up left on the text screen ("Sorry, an error has
+// occurred..."): the only place it says why.
+static void log_text_screen() {
+    if (mem_readb(0x449) > 3) {
+        return;  // not a text mode
+    }
+    for (int row = 0; row < 25; row++) {
+        char line[81];
+        int len = 0;
+        for (int col = 0; col < 80; col++) {
+            Bit8u c = mem_readb(0xB8000 + 2 * (80 * row + col));
+            line[col] = c >= 32 && c < 127 ? (char)c : ' ';
+            if (line[col] != ' ') {
+                len = col + 1;
+            }
+        }
+        line[len] = 0;
+        if (len) {
+            wclog(1, "  screen: %s", line);
+        }
+    }
+}
+
 void game_program_ended(Bit16u psp) {
     if (g_game != GAME_NONE && psp == g_gamePsp) {
         wclog(1, "%s ended", game_name());
+        log_text_screen();
+        if (getenv("WCNET_EXIT_STACK")) {
+            // Debug aid: the stack at exit, as offsets from the load segment
+            // where a word could be a segment of the image (scripts/wcexe.py
+            // segs names them), to find who called the error exit.
+            std::string line;
+            for (int i = 0; i < 160; i++) {
+                char buf[16];
+                snprintf(buf, sizeof(buf), "%04x ", mem_readw(SegPhys(ss) + ((reg_esp + 2 * i) & 0xffff)));
+                line += buf;
+                if (i % 16 == 15) {
+                    wclog(1, "  stack: %s", line.c_str());
+                    line.clear();
+                }
+            }
+            wclog(1, "  load segment %04x cs:ip %04x:%04x", g_loadSeg, SegValue(cs), reg_eip);
+        }
         set_game(NULL, 0, 0);
     }
 }
