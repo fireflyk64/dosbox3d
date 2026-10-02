@@ -135,6 +135,10 @@ message Frame {
     repeated Event event = 2;
     optional MissionEnd mission_end = 18;
     optional PlayerEnd player_end = 19;
+    // Server -> client: whether the mission has its asteroid and mine fields
+    // (1) or not (0).  Sent with the mission start state and when the host
+    // changes it in flight; each machine then removes or restores its own.
+    optional uint32 rocks = 20;
 }
 
 // Connect -> once per mission
@@ -164,6 +168,8 @@ message ServerSendBriefingStart {
     optional uint32 mission_id = 1;
     optional bytes mission_tree_progress = 2;
     optional uint32 series_id = 3;
+    // As Frame.rocks: known before the client sets up its first nav point.
+    optional uint32 rocks = 4;
 }
 message NetworkMessage {
     optional Connect connect = 1;

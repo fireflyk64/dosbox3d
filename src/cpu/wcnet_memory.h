@@ -93,6 +93,7 @@ enum Offsets {
     gInstanceShipTypes = 0xBFF8,     // word per slot, index into kShipStats (0x6f bytes each)
     frameCounter = 0xC0B8,           // [gInstanceShipTypes+C0] incremented once per game frame
     damagePoints = 0xC17A,           // [currentNavPoint+2] word per slot, accumulated hull damage
+    currentNavPoint = 0xC178,        // word: the nav point the player is at (ovr145:098F sets it up)
     currentMission = 0xC255,         // byte
     currentSeries = 0xC256,          // byte
     statusPilots = 0xC260,           // word per named pilot (8): 0 = alive, else series * 4 + mission of his death
@@ -114,7 +115,9 @@ enum Offsets {
     hullCounter = 0xD22C,            // [vduModeMaybe+8C] byte per slot
     vduStatus10WhenPlayerHitsSmth = 0xD236,
     navPointState = 0xD25D,          // 8 x 19 bytes: mission tree progress
+    navPointTable = 0x687C,          // [navPoints] 0x4d bytes per nav point; its mission ships are ten words at +0x39
     missionShipTable = 0x6E80,       // [missionShips] 0x2a bytes per mission ship, word 0 = ship type
+    fieldRockTally = 0x39A4,         // [fieldRockTally] word: rocks added minus rocks dropped (not an exact count)
     fieldCount = 0xBFF6,             // [fieldCount] word: fields of the current nav point (max 7)
     currentField = 0xC362,           // [currentField] word: offset of the field the player is in, 0 = none
     fieldTable = 0xCDF6,             // [fieldTable] 0x14 bytes per field: type, position, radius

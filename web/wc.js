@@ -348,6 +348,8 @@ function renderMission() {
   const sel = $("mission");
   sel.value = missionKey(lobby.mission);
   sel.disabled = !isHost() || running;
+  $("rocks").checked = lobby.rocks;
+  $("rocks").disabled = !isHost();  // the host may switch them while flying too
   $("missionHint").textContent = lobby.mission
     ? `Everyone flies ${missionLabel(lobby.mission)} from a fresh start with the callsigns entered above.`
     : (isHost() ? "The barracks: your save game and your walk to the briefing decide the mission; wingmen must walk into the briefing room too, and get your mission there."
@@ -357,6 +359,8 @@ function renderMission() {
 // -- the room ------------------------------------------------------------------
 
 const lobby = { game: null, names: new Map(), links: new Map(), flying: new Set(), unsubscribe: null, mission: null,
+                // asteroid and mine fields: the host's choice, for everybody
+                rocks: true,
                 // game-protocol messages that arrive before DOSBox has adopted this
                 // connection (a wingman faster to the launch than the host), handed
                 // to the transport at adoption so nothing is lost
@@ -382,7 +386,21 @@ function sendLobby(obj, to) {
   const targets = to != null ? [to] : g.players.filter((p) => p.occupied && p.id !== g.selfId).map((p) => p.id);
   for (const id of targets) g.sendReliable(id, encodeLobby(obj)).catch((e) => log(`lobby: message to player ${id} failed: ${e.message}`));
 }
-const sayHello = (to, reply) => sendLobby({ t: "hello", name: myName(), flying: running, reply: !!reply, mission: isHost() ? missionKey(lobby.mission) : undefined }, to);
+const sayHello = (to, reply) => sendLobby({ t: "hello", name: myName(), flying: running, reply: !!reply,
+  mission: isHost() ? missionKey(lobby.mission) : undefined, rocks: isHost() ? lobby.rocks : undefined }, to);
+
+// Asteroid and mine fields on or off.  The host's page tells the others (for
+// their lobby) and its own running game, which tells every wingman's game.
+const rocksLabel = (on) => `asteroids and mines ${on ? "on" : "off"}`;
+function setRocks(on) {
+  if (!isHost()) { chatLine("Only the host can switch asteroids and mines.", "sys"); renderMission(); return; }
+  if (lobby.rocks === on) return;
+  lobby.rocks = on;
+  renderMission();
+  chatLine(`You switched ${rocksLabel(on)}`, "sys");
+  sayHello();
+  if (running && window.DOSBox && window.DOSBox._wc_web_set_rocks) window.DOSBox._wc_web_set_rocks(on ? 1 : 0);
+}
 
 function chatLine(html, cls) {
   const div = document.createElement("div");
@@ -447,12 +465,18 @@ function onLobbyEvent(ev) {
             renderMission();
           }
         }
+        if (ev.from === 0 && !isHost() && typeof m.rocks === "boolean" && m.rocks !== lobby.rocks) {
+          lobby.rocks = m.rocks;
+          chatLine(`${esc(m.name)} switched ${rocksLabel(m.rocks)}`, "sys");
+          renderMission();
+        }
         if (!m.reply) sayHello(ev.from, true);
         renderRoster(); updateActions();
       } else if (m.t === "chat") {
         chatLine(`<span class="name">${esc(m.name)}:</span> ${esc(m.text)}`);
       } else if (m.t === "start" && ev.from === 0 && !running) {
         lobby.mission = parseMission(m.mission);
+        if (typeof m.rocks === "boolean") lobby.rocks = m.rocks;
         renderMission();
         chatLine(`${esc(lobby.names.get(0) || "The host")} started ${esc(missionLabel(lobby.mission))}`, "sys");
         lobby.flying.add(0); renderRoster();
@@ -505,6 +529,7 @@ async function joinRoom() {
     $("lobby").hidden = false;
     $("leave").hidden = false;
     if (game.selfId === 0) lobby.mission = parseMission(query.get("mission")) || { series: 1, mis: 0 };
+    lobby.rocks = game.selfId === 0 ? query.get("rocks") !== "0" : true;
     renderMission();
     for (const id of ["room", "players", "server", "relay"]) $(id).disabled = true;
     chatLine(`You are ${esc(myName())}, player ${game.selfId + 1} of ${game.maxPlayers} in room ${esc(code)}${game.selfId === 0 ? " (host)" : ""}. Share this page's link.`, "sys");
@@ -535,10 +560,17 @@ $("chatForm").addEventListener("submit", (ev) => {
   const text = $("chatInput").value.trim();
   if (!text || !lobby.game) return;
   $("chatInput").value = "";
+  const cmd = /^\/rocks(?:\s+(on|off))?$/i.exec(text);
+  if (cmd) { // a command, not a message
+    if (cmd[1]) setRocks(cmd[1].toLowerCase() === "on");
+    else chatLine(`${rocksLabel(lobby.rocks)[0].toUpperCase()}${rocksLabel(lobby.rocks).slice(1)}; the host switches them with /rocks on or /rocks off.`, "sys");
+    return;
+  }
   chatLine(`<span class="name">${esc(myName())}:</span> ${esc(text)}`);
   sendLobby({ t: "chat", name: myName(), text });
 });
 $("callsign").addEventListener("change", () => { if (lobby.game) { sayHello(); renderRoster(); } });
+$("rocks").addEventListener("change", () => setRocks($("rocks").checked));
 $("mission").addEventListener("change", () => {
   if (!isHost()) return;
   lobby.mission = parseMission($("mission").value);
@@ -552,7 +584,7 @@ buildMissionMenu();
 
 $("fly").addEventListener("click", () => {
   if (!source || !lobby.game || running) return;
-  if (isHost()) sendLobby({ t: "start", mission: missionKey(lobby.mission) });
+  if (isHost()) sendLobby({ t: "start", mission: missionKey(lobby.mission), rocks: lobby.rocks });
   void start(true);
 });
 $("fullscreen").addEventListener("click", () => goFullscreen());
@@ -617,6 +649,8 @@ async function start(fromGesture) {
     } else {
       log(`${source.game.title}: no multiplayer hooks for this game, running single-player`);
     }
+    // The host's game decides and tells the wingmen's; theirs start the same.
+    if (source.game.multiplayer) env.WCROCKS = lobby.rocks ? "1" : "0";
     if (cfg.callsign) env.WCCALLSIGN = cfg.callsign;
     if (cfg.lastname) env.WCLASTNAME = cfg.lastname;
     if (lobby.mission && source.game.multiplayer) {

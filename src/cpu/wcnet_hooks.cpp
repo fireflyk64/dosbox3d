@@ -242,6 +242,7 @@ static void auto_keys() {
 // "!pos=<x>:<y>:<z>", which moves our own ship, "!face=<slot|npc|rock>",
 // which turns it towards that slot, "!rock=<slot|npc>", which puts one of our
 // field's rocks or mines on that ship (0: dead ahead of our own),
+// "!rocks=<1|0>", which switches the asteroid and mine fields,
 // "+<key>" / "-<key>", which hold and release a key, or "wait", which holds
 // the script until the next mission reaches its first frame and restarts
 // the clock there.  The clock starts at the first in-flight frame of the
@@ -416,6 +417,12 @@ static void key_script() {
             write_vec(vec_slot(ds::gPositionVector, kPlayerSlot), v);
         }
         wclog(1, "key script %.1fs (t=%.1f): own ship at %d, %d, %d", t, now / 1000.0, v.x, v.y, v.z);
+    } else if (item.compare(0, 7, "!rocks=") == 0) {
+        // !rocks=<1|0> switches the asteroid and mine fields, as the host's
+        // lobby option or "/rocks on|off" in the comms prompt does
+        bool on = atoi(item.c_str() + 7) != 0;
+        wclog(1, "key script %.1fs (t=%.1f): rocks %s; %s", t, now / 1000.0, on ? "on" : "off", field_state_line().c_str());
+        wc_net_set_rocks(on);
     } else if (item.compare(0, 6, "!kill=") == 0) {
         int slot = atoi(item.c_str() + 6);
         bool server = g_session && g_session->is_server();
@@ -736,6 +743,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_mouse_button(int button, int pressed
     }
     if (pressed) g_webButtonsWanted |= 1u << button; else g_webButtonsWanted &= ~(1u << button);
 }
+// The host's page switches the asteroid and mine fields (its lobby option).
+static int g_webRocksWanted = -1;
+extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_set_rocks(int on) {
+    g_webRocksWanted = on ? 1 : 0;
+}
+extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_rocks() {
+    return wc_net_rocks() ? 1 : 0;
+}
 // Nonzero while a mission's frame loop runs (flying, autopilot included):
 // the page steers with the stick then, and moves a menu pointer otherwise.
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_in_flight() {
@@ -756,6 +771,10 @@ static void web_input_tick() {
         if (!(g_webButtonsWanted & bit) && (g_webButtonsDown & bit)) Mouse_ButtonReleased((Bit8u)b);
     }
     g_webButtonsDown = g_webButtonsWanted;
+    if (g_webRocksWanted >= 0) {
+        wc_net_set_rocks(g_webRocksWanted == 1);
+        g_webRocksWanted = -1;
+    }
 }
 
 // A short Esc press from the page (its Caps Lock handler): browsers keep the

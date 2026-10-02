@@ -42,6 +42,7 @@ enum Segment {
     STUB162 = 0x1366,
     STUB163 = 0x1370,
     STUB164 = 0x1381,
+    STUB168 = 0x13bd,
 };
 
 // A function that lives in an overlay, identified by its stub thunk.
@@ -101,6 +102,9 @@ static const OverlayFn runHangarMission      = { STUB161, 0x0039, 0x03F4, "runHa
 // --- overlay 162: simulator ---------------------------------------------------
 static const OverlayLoc simulatorStart       = { STUB162, 0x002A, 0x112E, "simulator" };
 static const OverlayLoc simulatorEnd         = { STUB162, 0x002A, 0x132C, "simulator+1FE" };
+
+// --- overlay 168: asteroid and mine fields --------------------------------------
+static const OverlayFn clearFields           = { STUB168, 0x003E, 0x01AE, "ovr168:01AE remove the current field's rocks or mines" };
 
 // --- root image ---------------------------------------------------------------
 static const RootLoc mainLoopTop             = { SEG001, 0x20E3, "main_loop+9A: top of the in-flight frame loop" };

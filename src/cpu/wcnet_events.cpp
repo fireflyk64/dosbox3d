@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <strings.h>
 #include <deque>
 #include <string>
 #include <vector>
@@ -447,6 +449,74 @@ private:
     std::string text_;
 };
 
+// Removes this machine's rocks or mines and forgets the nav point's fields.
+class ClearFieldsJob : public VmJob {
+public:
+    virtual bool start() {
+        call_of(code::clearFields).invoke();
+        return true;
+    }
+    virtual void finish() {
+        wr16(ds::fieldCount, 0);
+        wr16(ds::fieldRockTally, 0);
+    }
+    virtual const char *describe() const { return "clear fields"; }
+};
+
+// Registers one field of the current nav point again (the game's own call;
+// the spawn hook lets it through because it comes from the trampoline).
+class RegisterFieldJob : public VmJob {
+public:
+    RegisterFieldJob(int missionShip, int navPoint) : missionShip_(missionShip), navPoint_(navPoint) {}
+    virtual bool start() {
+        wclog(2, "registering field %d of nav point %d again", missionShip_, navPoint_);
+        call_of(code::outerSpawnShipEntity).arg((Bit16u)missionShip_).arg((Bit16u)navPoint_).invoke();
+        return true;
+    }
+    virtual const char *describe() const { return "register field"; }
+
+private:
+    int missionShip_, navPoint_;
+};
+
+// ---------------------------------------------------------------------------
+// Rocks on or off
+
+static int g_rocksEnabled = -1;  // -1: not yet read from WCROCKS
+
+bool rocks_enabled() {
+    if (g_rocksEnabled < 0) {
+        const char *env = getenv("WCROCKS");
+        g_rocksEnabled = (env && (env[0] == '0' || env[0] == 'n' || env[0] == 'N' || !strcasecmp(env, "off"))) ? 0 : 1;
+    }
+    return g_rocksEnabled == 1;
+}
+
+void set_rocks_flag(bool on) {
+    if (rocks_enabled() != on) {
+        wclog(1, "asteroid and mine fields are %s", on ? "on" : "off");
+    }
+    g_rocksEnabled = on ? 1 : 0;
+}
+
+void enqueue_rocks_change(bool on) {
+    set_rocks_flag(on);
+    if (!on) {
+        g_trampoline.enqueue(new ClearFieldsJob());
+        return;
+    }
+    if (rd16(ds::fieldCount) != 0) {
+        return;  // still registered
+    }
+    int nav = rd16(ds::currentNavPoint);
+    for (int i = 0; i < 10; i++) {
+        int ship = rd16((Bit16u)(ds::navPointTable + 0x4d * nav + 0x39 + 2 * i));
+        if (is_field_mission_ship(ship)) {
+            g_trampoline.enqueue(new RegisterFieldJob(ship, nav));
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Interception
 
@@ -487,13 +557,18 @@ static void report_local_hit(Session *s, int dst, Bit16u quantity, Bit16u vecOff
 
 void on_do_damage_entry() {
     Session *s = g_session;
-    if (!s) {
-        return;
-    }
     int src = call_arg16(0);
     int dst = call_arg16(1);
     Bit16u quantity = call_arg16(2);
     Bit16u vecOff = call_arg16(3);
+    if (dst == kPlayerSlot && src >= 0 && src < kNumSlots && entity_type(src) != ET_BOLT) {
+        // What hit our own ship, other than gunfire (also when flying alone).
+        wclog(2, "our ship is hit by slot %d (type %d, ship type %d) qty %d", src, entity_type(src),
+              rd16((Bit16u)(ds::gInstanceShipTypes + 2 * src)), quantity);
+    }
+    if (!s) {
+        return;
+    }
 
     if (s->is_remote_player_slot(dst)) {
         // Only the owner's machine may damage a human's ship (see session.h).
@@ -574,6 +649,10 @@ void on_fire_entry() {
 
 void on_spawn_entry() {
     Session *s = g_session;
+    if (is_field_mission_ship(call_arg16(0)) && !rocks_enabled()) {
+        return_from_call(0xffff);  // rocks are switched off: the nav point has no field
+        return;
+    }
     if (!s || replaying()) {
         return;
     }

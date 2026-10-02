@@ -132,6 +132,24 @@ extra health" and "wingman explodes" behaviour.
     collision that player watched.
   The server's AI runs where only the host's rocks exist, so an enemy near a
   wingman cannot steer around that wingman's rocks.
+  A rock is as deadly as the game makes it, alone or not: a collision does
+  `(closing speed)^2 / 2` (`ovr141:25AB`, speeds in units per frame, 250 kps
+  being 30), a new rock is given 52 to 75 units (`ovr168:040F`, a table
+  indexed by `dseg:BFF4`: 56 in the Hornet of Enyo) plus up to 15 less a
+  random part, and a Hornet's front shield and armor are 85 together, so one
+  head-on rock (1800 and 2592 were measured, the first with networking off)
+  kills outright.  What multiplayer adds is that both pilots
+  now fly through rocks and either one's death ends the mission for both.
+* **The host can switch the fields off** (`WCROCKS=0`, the lobby's
+  "Asteroids and mines" box, `/rocks off` in the lobby chat or in the comms
+  prompt; `Session::request_rocks`).  Off, the spawn hook answers a field
+  "ship" with no slot on every machine, so a nav point has no field and the
+  autopilot flies through.  The server's choice travels in the briefing
+  message (before a client sets up its first nav point) and in `Frame.rocks`
+  with the start state and whenever it changes in flight; at that frame each
+  machine runs the game's own `ovr168:01AE` to drop its rocks, or registers
+  the current nav point's fields again (`outerSpawnShipEntity` for each field
+  ship of `dseg:C178`'s nav point).
 * A hit or a kill names its shooter only when a ship is behind it; a rock's
   or a mine's slot number means nothing on another machine.
 * The server skips the AI think function for a human-flown slot and refuses
@@ -244,6 +262,8 @@ arguments.
   for the shooter's missile lock.
 * `Frame.player_end` (`PlayerEnd`) for a client leaving the mission.
 * `Spawn.pilot`: the slot's pilot byte once the mission setup has run.
+* `Frame.rocks` and `ServerSendBriefingStart.rocks`: asteroid and mine fields
+  on (1) or off (0), the server's choice.
 * A client's frame may carry `Damage` events as well as `WeaponFire`: hits by
   that client's own rocks or mines on a ship the server owns (no shooter, no
   seed).  The server ignores one that names a human's ship, a missile or an
@@ -265,9 +285,10 @@ shell command still starts/stops the server or connects.  Useful environment:
 | `MIS=<n> SERIES=<n>` | jump straight into a campaign mission (series 1.., mission 0.. within it; setting either variable is enough, so `MIS=0 SERIES=1` forces the first mission) |
 | `WCCALLSIGN`, `WCLASTNAME` | override the pilot identity |
 | `WCHOSTPILOT=0..7` | on a client: which of the eight named pilots the host's ship appears as (default: the one the server's mission setup gave that slot, i.e. the mission's wingman) |
+| `WCROCKS=0` | on the host: fly without asteroid and mine fields (everyone follows the host; `/rocks on` / `/rocks off` in the comms prompt switch it in flight) |
 | `WCNET_AUTOKEYS=1` | test aid: press Enter through the briefing, then `A` (autopilot) once in space |
 | `WCNET=0` | fly alone: no server, no room, the game's own wingman (a single-player control for experiments) |
-| `WCNET_KEYSCRIPT="8:c,9.5:1,10:@after"` | test aid: once in space, at each emulated second press that key (letter, digit, `enter`, `esc`, `space`, held 150 ms) or, for `@tag`, dump the data segment to `WCNET_DUMP_DIR/tag.bin` and log the comm line, VDU text, mission, pilot bytes and KIA words; `!status=N` ends the mission as the game would (1 landed, 4 died, ...), `!kill=SLOT` destroys a ship on the server through the broadcast path of a real kill, `!poke=HEXOFF:HEXBYTE` writes the data segment, `!mouse=X:Y` puts the mouse pointer at those fractions of its range, `!button=N:1` / `N:0` presses and releases a mouse button, `+key` / `-key` hold and release a key, `!pos=X:Y:Z` moves the machine's own ship, `!face=SLOT` turns it towards a slot (`npc`: the first ship no human flies, `rock`: one of its field's rocks), `!rock=SLOT` puts one of its rocks or mines on that ship so the game's collision code finds them touching (`!rock=0`: dead ahead of its own guns instead), and every `@tag` line also lists the field state (`fields N inside|outside rocks <slots>`), and `wait` holds the script until the next mission's first frame and restarts the clock there; `WCNET_AUTOKEYS` then only handles briefings and debriefings |
+| `WCNET_KEYSCRIPT="8:c,9.5:1,10:@after"` | test aid: once in space, at each emulated second press that key (letter, digit, `enter`, `esc`, `space`, held 150 ms) or, for `@tag`, dump the data segment to `WCNET_DUMP_DIR/tag.bin` and log the comm line, VDU text, mission, pilot bytes and KIA words; `!status=N` ends the mission as the game would (1 landed, 4 died, ...), `!kill=SLOT` destroys a ship on the server through the broadcast path of a real kill, `!poke=HEXOFF:HEXBYTE` writes the data segment, `!mouse=X:Y` puts the mouse pointer at those fractions of its range, `!button=N:1` / `N:0` presses and releases a mouse button, `+key` / `-key` hold and release a key, `!pos=X:Y:Z` moves the machine's own ship, `!face=SLOT` turns it towards a slot (`npc`: the first ship no human flies, `rock`: one of its field's rocks), `!rock=SLOT` puts one of its rocks or mines on that ship so the game's collision code finds them touching (`!rock=0`: dead ahead of its own guns instead), `!rocks=1` / `!rocks=0` switches the fields as the host's lobby option does, and every `@tag` line also lists the field state (`fields N inside|outside rocks <slots>`), and `wait` holds the script until the next mission's first frame and restarts the clock there; `WCNET_AUTOKEYS` then only handles briefings and debriefings |
 | `WCNET_SKIPBARRACKS=1` | test aid: never stop in the rec room or the barracks, so a scripted run goes from a debriefing straight to the next briefing |
 | `WCNET_WATCH=C260:16` | debugging aid: log every change of that part of the data segment (hex offset, length) with the address of the instruction after the write |
 | `WCNET_AUDIOLOG=1` | test aid: every 500 ms log each mixer channel's mean level and the number of OPL register writes (stderr, same clock as the key script); `WCNET_WAVE=1` also records the mixed output into DOSBox's capture directory |
@@ -337,6 +358,13 @@ top-level README for the workflow).  What differs:
   `WCCALLSIGN`, `WCLASTNAME`, `WCLOBBY_RELAY`, `WCNET_LOG`, plus anything
   given as `?env.NAME=value` (so `MIS`, `SERIES` and `WCNET_AUTOKEYS` work
   for testing, as in `scripts/web-smoke.sh`).
+* **Asteroids and mines** are the host's lobby option (a box beside the
+  mission menu, `/rocks on` and `/rocks off` in the lobby chat, `?rocks=0` in
+  the host's link).  The page tells the other pages (`rocks` in its `hello`
+  and `start` messages), starts its game with `WCROCKS`, and while flying
+  calls `wc_web_set_rocks`; the host's game then tells every wingman's game
+  through the game protocol.  A page in full screen has no chat: leave full
+  screen, or type `/rocks off` in the game's own comms prompt (`0`).
 * **Save games.**  A game's registry entry (`web/gamefiles.js`) lists its
   save files (Wing Commander: `GAMEDAT/SAVEGAME.WLD`, all eight bunks).  The
   page keeps a copy in local storage, writes it back into the game directory

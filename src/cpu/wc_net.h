@@ -34,5 +34,10 @@ const char *wc_net_status_note();
 bool in_space();
 extern bool within_briefed_mission;
 void wcnetSendChatMessage(const std::string &msg);
+// Asteroid and mine fields, on (the default; WCROCKS=0 starts without) or
+// off.  The host's choice goes to every player; "/rocks on" and "/rocks off"
+// in the comms prompt do the same.
+void wc_net_set_rocks(bool on);
+bool wc_net_rocks();
 
 #endif

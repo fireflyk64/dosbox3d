@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 #include <map>
 #include <vector>
@@ -308,6 +309,23 @@ static void handle_incoming_chat(const Chat &chat) {
     enqueue_chat_display(chat.ship_id(), chat.callsign(), chat.message());
 }
 
+// A line of our own: on the comms display in flight (it runs with the next
+// frame's jobs), on the overlay otherwise.
+static void show_notice(const std::string &text) {
+    if (!within_briefed_mission) {
+        incoming_text = text;
+        return;
+    }
+    Chat chat;
+    chat.set_ship_id(0);
+    chat.set_message(text);
+    handle_incoming_chat(chat);
+}
+
+static const char *rocks_notice(bool on) {
+    return on ? "Asteroids and mines are on" : "Asteroids and mines are off";
+}
+
 // ---------------------------------------------------------------------------
 // Server
 
@@ -338,7 +356,8 @@ class ServerSession : public Session {
 public:
     // Takes ownership of the listener.
     explicit ServerSession(Listener *listener)
-        : listener_(listener), epoch_(1), frameNumber_(0), sendFrameAtIdle_(false), ignoreNextFrameTop_(false) {
+        : listener_(listener), epoch_(1), frameNumber_(0), sendFrameAtIdle_(false), ignoreNextFrameTop_(false),
+          wantRocks_(rocks_enabled()) {
         allowedIds_.push_back(1);
         allowedIds_.push_back(3);
         reset_pending_frame();
@@ -363,8 +382,21 @@ public:
     virtual void on_spawned(const Spawn &spawn) { spawns_.add(spawn); }
     virtual void on_despawned(int net) { spawns_.remove(net); }
 
+    virtual void request_rocks(bool on) {
+        if (on == wantRocks_) {
+            return;
+        }
+        wantRocks_ = on;
+        if (!within_briefed_mission) {
+            set_rocks_flag(on);  // the next mission starts that way
+            show_notice(rocks_notice(on));
+        }
+        // In a mission: exchange() applies it at the top of the next frame.
+    }
+
     virtual void on_mission_starting(int mission, int series) {
         liven_everyone();
+        set_rocks_flag(wantRocks_);
         within_briefed_mission = true;
         MissionEnd end;
         populate_mission_end(&end);
@@ -598,6 +630,7 @@ private:
     bool send_briefing_state(RemoteClient *c) {
         NetworkMessage msg;
         *msg.mutable_briefing_start() = lastBriefing_;
+        msg.mutable_briefing_start()->set_rocks(rocks_enabled() ? 1 : 0);
         msg.set_epoch(epoch_);
         msg.set_frame_number(frameNumber_);
         if (!c->conn.send(msg)) {
@@ -616,6 +649,7 @@ private:
         Game *game = msg.mutable_game();
         game->set_assigned_player_id(c->net);
         Frame *frame = game->mutable_starting_state();
+        frame->set_rocks(rocks_enabled() ? 1 : 0);
         for (int slot = kPlayerSlot; slot <= kMaxShipSlot; slot++) {
             if (!slot_in_use(slot)) {
                 continue;
@@ -803,6 +837,13 @@ private:
         }
         sendFrameAtIdle_ = true;
         accept_clients(true);
+        if (!serverOnlyFlush && wantRocks_ != rocks_enabled()) {
+            // The host switched the rocks: ours go or come back with this
+            // frame's jobs, and every client does the same with its own.
+            enqueue_rocks_change(wantRocks_);
+            pendingFrame_.mutable_frame()->set_rocks(wantRocks_ ? 1 : 0);
+            show_notice(rocks_notice(wantRocks_));
+        }
         if (serverOnlyFlush) {
             flush_outgoing_frame();
         } else {
@@ -852,6 +893,7 @@ private:
     HealthPublisher health_;
     bool sendFrameAtIdle_;
     bool ignoreNextFrameTop_;
+    bool wantRocks_;  // the host's choice; rocks_enabled() follows it at a frame top
 };
 
 // ---------------------------------------------------------------------------
@@ -902,6 +944,11 @@ public:
 
     virtual void queue_outgoing_event(const Event &ev) {
         *pendingFrame_.mutable_frame()->add_event() = ev;
+    }
+
+    virtual void request_rocks(bool on) {
+        (void)on;
+        show_notice("Only the host can switch asteroids and mines");
     }
 
     virtual void on_mission_starting(int mission, int series) {
@@ -1138,6 +1185,9 @@ private:
         epoch_ = msg.epoch();
         frameNumber_ = msg.frame_number();
         const ServerSendBriefingStart &b = msg.briefing_start();
+        if (b.has_rocks()) {
+            set_rocks_flag(b.rocks() != 0);  // before our own nav point setup runs
+        }
         load_mission_tree_progress(b.mission_tree_progress());
         wr8(ds::currentMission, (Bit8u)b.mission_id());
         wr8(ds::currentSeries, (Bit8u)b.series_id());
@@ -1176,6 +1226,12 @@ private:
             missionTreeProgress_ = end.mission_tree_progress();
             lastVictoryPlusOne_ = end.victory_points_plus_one();
             wclog(1, "server ended the mission: %s", status_name(end.game_update()));
+        }
+        if (frame.has_rocks() && (frame.rocks() != 0) != rocks_enabled()) {
+            // The host switched the rocks in flight: the jobs run with this
+            // frame's events.
+            enqueue_rocks_change(frame.rocks() != 0);
+            show_notice(rocks_notice(frame.rocks() != 0));
         }
         for (int i = 0; i < frame.update_size(); i++) {
             const ShipUpdate &su = frame.update(i);
@@ -1345,7 +1401,32 @@ bool in_space() {
     return g_session != NULL && g_session->in_space();
 }
 
+void wc_net_set_rocks(bool on) {
+    if (g_session) {
+        g_session->request_rocks(on);
+    } else {
+        set_rocks_flag(on);  // alone: from the next nav point on
+    }
+}
+
+bool wc_net_rocks() {
+    return rocks_enabled();
+}
+
 void wcnetSendChatMessage(const std::string &msg) {
+    // "/rocks on" and "/rocks off" in the comms prompt are a command, not
+    // a message.
+    if (strncasecmp(msg.c_str(), "/rocks", 6) == 0) {
+        std::string arg = msg.substr(6);
+        size_t first = arg.find_first_not_of(' ');
+        arg = first == std::string::npos ? "" : arg.substr(first);
+        if (!strcasecmp(arg.c_str(), "on") || !strcasecmp(arg.c_str(), "off")) {
+            wc_net_set_rocks(!strcasecmp(arg.c_str(), "on"));
+        } else {
+            show_notice(std::string(rocks_notice(rocks_enabled())) + " (/rocks on, /rocks off)");
+        }
+        return;
+    }
     if (g_session) {
         g_session->send_chat(msg);
     }
