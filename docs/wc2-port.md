@@ -23,8 +23,16 @@ needed: `segNNN` is segment-table index NNN, `stubNNN`/`ovrNNN` an overlay,
 
 A program loaded by DOSBox's shell with nothing else resident starts at
 segment 01A2 (WC1's fixed `DS = 13D3` is 01A2 + 1231).  GOG starts WC2 with
-`loadfix -34`, which moves it; the hooks therefore take the load segment from
-`DOS_Execute` instead of assuming it.
+`loadfix -34`, which moves it (to 0A6E here); the hooks therefore take the
+load segment from `DOS_Execute` instead of assuming it.
+
+**WC2 has to be started that way.**  Loaded at 01A2 it calls through a null
+far pointer in some in-flight scenes and the CPU ends up running the
+interrupt table: the scene after the first autopilot of series 2 mission 1
+(a letterboxed picture of the sun, for ever), the start of 1-2, 5-2, 5-3
+and 10-1 (a black screen).  It happens alone and without the network layer
+as well.  With `loadfix -34 wc2 ...` all of them play.  The page's registry
+entry runs it so; headless runs must too.
 
 WC2 is the same engine grown: `scripts/wcexe.py -e wc2/WC2.EXE match wc/WC.EXE
 <address>` finds the descendants of WC1's functions by instruction shape.
@@ -49,7 +57,7 @@ be damaged" `dseg:00C0`.
 
 ## 2. Running it headless
 
-`wc2 Origin -k l s<series> m<mission>` is the developers' mission test: the
+`loadfix -34 wc2 Origin -k l s<series> m<mission>` is the developers' mission test: the
 cockpit within seconds, no story, and "You have landed." on the DOS screen
 at the end (`seg001:0330` and `0349` are its mission start and end; the
 hooks there do what the campaign loop's do, and a client loads the mission
@@ -219,28 +227,22 @@ Angel, 3 Hobbes, 4 Stingray, 6 Jazz, 9 Doomsday, 11 Shadow, 14 Spirit.
 
 | series | ship | wingman missions | gunner | drone |
 |---|---|---|---|---|
-| 1 | Ferret | 0, 1, 3 (Shadow) | | |
+| 1 | Ferret | 0, 1, 2, 3 (Shadow) | | |
 | 2 | Broadsword (0), Ferret | | 0 | 1, 2, 3 |
 | 3 | Rapier | 0, 1, 2, 3 (Hobbes) | | |
 | 4 | Broadsword | 0, 1, 2 (Doomsday) | 3 | |
-| 5 | Epee | 0, 1 (Spirit) | | 2 |
+| 5 | Epee, Sabre (3) | 0, 1, 3 (Spirit) | | 2 |
 | 6 | Rapier | 0, 1, 2, 3 (Stingray) | | |
 | 7 | Broadsword, Ferret (3) | 0, 1, 2 (Angel) | | 3 |
 | 8 | Sabre | 0, 1 (Jazz) | 2, 3 | |
 | 9 | Ferret, Broadsword (2) | | 2 | 0, 1, 3 |
-| 10 | Broadsword | 0, 2 (Doomsday) | 3 | |
+| 10 | Broadsword | 0, 1, 2 (Doomsday) | 3 | |
 | 11 | Rapier | 0, 1, 2, 3 (Stingray) | | |
 | 12 | Sabre | 0, 1 (Jazz), 3 (Recon's Sabre) | 2 | |
 
-Series 13 and 14 do not exist; 1-2, 5-3 and 10-1 were not in flight at 25 s
-(a scene first).  In the wingman missions of series 4, 7, 8, 10 and 12 the
-second player flies the wingman's own Broadsword or Sabre.
-
-Series 2 mission 1 stops in a letterboxed scene after the first autopilot
-when started in the direct mode (`Origin -k l s2 m1`), alone and without the
-network layer as well: the direct mode does not have what that scene waits
-for.  It is not a multiplayer problem, but it makes that mission useless for
-headless tests.
+Series 13 and 14 do not exist.  In the wingman missions of series 4, 5 (3),
+7, 8, 10 and 12 the second player flies the wingman's own Broadsword or
+Sabre.
 
 ## 5. The story path: barracks, briefing, campaign record
 
@@ -288,7 +290,7 @@ Checked with two headless Chrome pages and a local lobby (the scratch
 mission", both reach the cockpit; in 9/1 the second page is a drone, types
 `0`, `/chase`, Enter and rides behind the leader.
 
-## 7. Finding out why the game quit
+## 7. Finding out why the game quit or hangs
 
 WC2 leaves through `ovr145:0038(message)` (thunk `stub145:0052`, 150 call
 sites): it formats "Sorry, an error has occurred... %03d" and exits.  The
@@ -296,6 +298,11 @@ text is on the DOS screen only, so `game_program_ended` logs the text screen
 when the game ends, and with `WCNET_EXIT_STACK=1` the stack as well: the
 near pointer of the message (`push word 0x7f34`) is on it, and
 `scripts/wcexe.py find` on that push finds the check that failed.
+
+`!where` in a key script logs CS:IP, the bytes there and the far return
+addresses up the BP chain; a few of them a second apart show what a hang is
+(the loadfix crash above showed as `0000:0000` with the interrupt table for
+code).
 
 ## 8. Not done yet
 

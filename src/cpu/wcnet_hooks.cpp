@@ -261,6 +261,7 @@ static void auto_keys() {
 // "!shot=<name>", which writes the screen to WCNET_DUMP_DIR/<name>.ppm,
 // "!hit=<qty>[:back]", which damages our own ship as a hit from ahead would,
 // "!say=<text>", which sends a comms message or command ("_" for a space),
+// "!where", which logs where the program is and who called it,
 // "+<key>" / "-<key>", which hold and release a key, or "wait", which holds
 // the script until the next mission reaches its first frame and restarts
 // the clock there.  The clock starts at the first in-flight frame of the
@@ -458,6 +459,27 @@ static void key_script() {
               rd8(ds::systemDamage + 8), rd16(ds::cockpitDamage), rd16(ds::cockpitDamage + 2), rd16(ds::cockpitDamage + 4),
               rd16(ds::cockpitDamage + 6));
         enqueue_test_hit(qty, back);
+    } else if (item == "!where") {
+        // !where logs where the program is: CS:IP with the bytes there (for
+        // scripts/wcexe.py find) and the far return addresses up the stack
+        char bytes[3 * 16 + 1];
+        for (int i = 0; i < 16; i++) {
+            snprintf(bytes + 3 * i, 4, "%02x ", mem_readb(SegPhys(cs) + ((reg_eip + i) & 0xffff)));
+        }
+        std::string chain;
+        Bit16u bp = (Bit16u)reg_ebp;
+        for (int i = 0; i < 10 && bp; i++) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), " %04x:%04x", mem_readw(SegPhys(ss) + ((bp + 4) & 0xffff)), mem_readw(SegPhys(ss) + ((bp + 2) & 0xffff)));
+            chain += buf;
+            Bit16u next = mem_readw(SegPhys(ss) + bp);
+            if (next <= bp) {
+                break;
+            }
+            bp = next;
+        }
+        wclog(1, "key script %.1fs (t=%.1f): at %04x:%04x (load segment %04x) bytes %s callers%s", t, now / 1000.0,
+              SegValue(cs), (unsigned)reg_eip, g_loadSeg, bytes, chain.c_str());
     } else if (item.compare(0, 5, "!say=") == 0) {
         // !say=<text> is a line typed at the comms prompt ("/chase", "/rocks_off")
         std::string text = item.substr(5);

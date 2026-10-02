@@ -50,21 +50,20 @@ const WC1_SERIES = [
 // the survey).  The note says who the story sends along: the second player
 // flies that wingman's ship.  The story flies the others alone: in a
 // Broadsword or a Sabre the second player is the GUNNER in the leader's
-// turrets, in a ship without turrets a DRONE that rides along; "" is a
-// mission the survey did not reach.
+// turrets, in a ship without turrets a DRONE that rides along.
 const DRONE = "flown alone: the second player is a drone";
 const GUNNER = "flown alone: the second player is the turret gunner";
 const WC2_SERIES = [
-  { series: 1, missions: ["with Shadow", "with Shadow", "", "with Shadow"] },
+  { series: 1, missions: ["with Shadow", "with Shadow", "with Shadow", "with Shadow"] },
   { series: 2, missions: [GUNNER, DRONE, DRONE, DRONE] },
   { series: 3, missions: ["with Hobbes", "with Hobbes", "with Hobbes", "with Hobbes"] },
   { series: 4, missions: ["with Doomsday", "with Doomsday", "with Doomsday", GUNNER] },
-  { series: 5, missions: ["with Spirit", "with Spirit", DRONE, ""] },
+  { series: 5, missions: ["with Spirit", "with Spirit", DRONE, "with Spirit"] },
   { series: 6, missions: ["with Stingray", "with Stingray", "with Stingray", "with Stingray"] },
   { series: 7, missions: ["with Angel", "with Angel", "with Angel", DRONE] },
   { series: 8, missions: ["with Jazz", "with Jazz", GUNNER, GUNNER] },
   { series: 9, missions: [DRONE, DRONE, GUNNER, DRONE] },
-  { series: 10, missions: ["with Doomsday", "", "with Doomsday", GUNNER] },
+  { series: 10, missions: ["with Doomsday", "with Doomsday", "with Doomsday", GUNNER] },
   { series: 11, missions: ["with Stingray", "with Stingray", "with Stingray", "with Stingray"] },
   { series: 12, missions: ["with Jazz", "with Jazz", GUNNER, "with the Sabre escort"] },
 ];
@@ -81,7 +80,11 @@ export const GAMES = [
   // "Origin s<series> m<mission>" on WC2's command line puts the story at
   // that mission and starts in the barracks (a different room from base to
   // base: the door that flies the mission is not always in the same place).
-  { id: "wc2", title: "Wing Commander II", detect: ["WC2.EXE"], run: "wc2", multiplayer: true,
+  // "loadfix -34" is how GOG starts it, and it matters: loaded lower in
+  // memory the game jumps through a null pointer in some in-flight scenes
+  // (after the first autopilot of series 2 mission 2, at the start of
+  // others) and hangs.
+  { id: "wc2", title: "Wing Commander II", detect: ["WC2.EXE"], run: "loadfix -34 wc2", multiplayer: true,
     saves: ["GAMEDAT/SAVEGAME.WC2"], cycles: 8000,
     campaign: { series: WC2_SERIES, missionArgs: (m) => `Origin s${m.series} m${m.mis}`, hints: {
       forced: "Everyone starts in the barracks with the story at that mission: click the door the game calls \"Fly mission\" (point at a door and it is named), and the briefing plays first. In a mission flown alone the second player is the gunner if the ship has turrets (F4 the rear turret, F2 and F3 the side turrets, F1 the pilot's view), and otherwise a drone: nothing sees or hits it and it has no guns; 0, then /chase and Enter, rides behind the leader.",
