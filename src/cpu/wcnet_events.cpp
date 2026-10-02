@@ -19,6 +19,12 @@ enum { kTmpVectorOff = ds::aLoadingWingCom };
 static std::deque<PendingFire> g_pendingFires;
 static Bit32u g_nextFireSeq = 1;
 
+// True while the server runs do_damage for a hit a client reported (one of
+// that client's own rocks or mines against a ship the server owns).  The call
+// comes from the trampoline, but it is the server's own decision and is
+// broadcast like any other.
+static bool g_applyingReport = false;
+
 void reset_pending_fires() {
     g_pendingFires.clear();
 }
@@ -48,6 +54,28 @@ struct SlotSnapshot {
             }
         }
         return -1;
+    }
+};
+
+// Which ships and missiles are on their way out: a ship the game has blown up
+// keeps its slot, in AI state 9, until the explosion is over, and a missile's
+// slot becomes its explosion.
+struct DoomedSnapshot {
+    bool doomed[kMaxShipSlot + 1];
+    bool alive[kMaxShipSlot + 1];
+    static bool is_doomed(int slot) {
+        Bit16u type = entity_type(slot);
+        return type < ET_MISSILE || (type >= ET_SHIP && rd16((Bit16u)(ds::shipAiState + 2 * slot)) == 9);
+    }
+    void take() {
+        for (int i = 0; i <= kMaxShipSlot; i++) {
+            alive[i] = entity_type(i) >= ET_MISSILE;
+            doomed[i] = is_doomed(i);
+        }
+    }
+    // Destroyed since take(): it was a live ship or missile then.
+    bool destroyed_since(int slot) const {
+        return alive[slot] && !doomed[slot] && slot_in_use(slot) && is_doomed(slot);
     }
 };
 
@@ -163,7 +191,12 @@ private:
 
 class DamageJob : public VmJob {
 public:
-    explicit DamageJob(const Damage &dam) : dam_(dam) {}
+    // REPLAY: damage the server decided, replayed on a client.
+    // REPORTED: on the server, a hit a client saw one of its own rocks or
+    // mines do to a ship the server owns; the server applies it and its
+    // do_damage hook broadcasts it (see g_applyingReport).
+    enum Mode { REPLAY, REPORTED };
+    DamageJob(Mode mode, const Damage &dam) : mode_(mode), dam_(dam) {}
     virtual bool start() {
         if (!dam_.has_ship_id()) {
             return false;
@@ -181,8 +214,11 @@ public:
             // Damage to a human's ship is computed on that human's machine.
             return false;
         }
+        if (mode_ == REPORTED && (!is_ship_slot(dstLocal) || entity_type(dstLocal) < ET_SHIP)) {
+            return false;  // only ships take collision or blast damage
+        }
         int srcLocal = kInvalidSlot;
-        if (dam_.has_shooter()) {
+        if (mode_ == REPLAY && dam_.has_shooter()) {
             int shooterLocal = NetworkShipId::from_net(dam_.shooter()).to_local();
             if (shooterLocal != kInvalidSlot) {
                 // The game plays hit sounds/effects only when the source is a
@@ -198,20 +234,49 @@ public:
             pos.z = dam_.pos().z();
         }
         write_vec(kTmpVectorOff, pos);
-        if (dam_.has_seed()) {
+        if (mode_ == REPLAY && dam_.has_seed()) {
             seed_rng(dam_.seed());
         }
-        wclog(2, "replay damage %d -> %d (local %d -> %d) qty %d", dam_.shooter(), dam_.ship_id(), srcLocal, dstLocal, dam_.quantity());
+        if (mode_ == REPORTED) {
+            wclog(2, "reported damage to %d qty %d", dstLocal, dam_.quantity());
+            g_applyingReport = true;
+            before_.take();
+        } else {
+            wclog(2, "replay damage %d -> %d (local %d -> %d) qty %d", dam_.has_shooter() ? (int)dam_.shooter() : -1,
+                  dam_.ship_id(), srcLocal, dstLocal, dam_.quantity());
+        }
         call_of(code::do_damage)
             .arg((Bit16u)srcLocal).arg((Bit16u)dstLocal)
             .arg((Bit16u)dam_.quantity()).arg((Bit16u)kTmpVectorOff)
             .invoke();
         return true;
     }
+    virtual void finish() {
+        if (mode_ != REPORTED || !g_applyingReport) {
+            return;
+        }
+        g_applyingReport = false;
+        // A kill inside that damage (the ship itself, or one caught in its
+        // blast) ran natively, nested in our call: the clients hear of it
+        // here, after the damage.
+        for (int slot = kMinShipSlot; slot <= kMaxShipSlot; slot++) {
+            if (!before_.destroyed_since(slot) || g_session->is_player_slot(slot)) {
+                continue;
+            }
+            wclog(2, "slot %d destroyed by reported damage", slot);
+            Event ev;
+            Despawn *d = ev.mutable_despawn();
+            d->set_ship_id(NetworkShipId::from_local(slot).to_net());
+            d->set_explode(1);
+            g_session->queue_outgoing_event(ev);
+        }
+    }
     virtual const char *describe() const { return "damage"; }
 
 private:
+    Mode mode_;
     Damage dam_;
+    DoomedSnapshot before_;
 };
 
 class SpawnJob : public VmJob {
@@ -389,6 +454,37 @@ static bool replaying() {
     return g_trampoline.is_running();
 }
 
+// The network id of the ship behind a hit or a kill, when a ship is behind
+// it: a rock or a mine belongs to nobody and exists on one machine only, so
+// its slot number means nothing anywhere else.
+static bool ship_behind(int src, int *net) {
+    NetworkShipId shooter = NetworkShipId::from_top_level_local(src);
+    if (shooter.is_invalid() || !is_ship_slot(top_level_parent(src))) {
+        return false;
+    }
+    *net = shooter.to_net();
+    return true;
+}
+
+// Client: one of this machine's own rocks or mines hit a ship the server
+// owns.  The server cannot see that rock, so tell it; the damage comes back
+// with the server's next frame like any other.
+static void report_local_hit(Session *s, int dst, Bit16u quantity, Bit16u vecOff) {
+    if (g_entityMap && !g_entityMap->is_local_mapped(dst)) {
+        return;
+    }
+    Event ev;
+    Damage *dam = ev.mutable_damage();
+    dam->set_ship_id(NetworkShipId::from_local(dst).to_net());
+    dam->set_quantity(quantity);
+    Vec3 v = read_vec(vecOff);
+    dam->mutable_pos()->set_x(v.x);
+    dam->mutable_pos()->set_y(v.y);
+    dam->mutable_pos()->set_z(v.z);
+    wclog(2, "reporting a hit by our own rock or mine on slot %d (net %d) qty %d", dst, dam->ship_id(), quantity);
+    s->queue_outgoing_event(ev);
+}
+
 void on_do_damage_entry() {
     Session *s = g_session;
     if (!s) {
@@ -404,12 +500,18 @@ void on_do_damage_entry() {
         return_from_call(0);
         return;
     }
-    if (replaying()) {
+    if (replaying() && !g_applyingReport) {
         return;  // a replayed event: run natively
     }
     if (s->is_client()) {
         if (dst == kPlayerSlot) {
             return;  // our own ship: the player model runs here and only here
+        }
+        if (!is_ship_slot(dst)) {
+            return;  // rocks, mines, bolts: every machine has its own
+        }
+        if (quantity != 0 && is_local_hazard(src) && slot_in_use(dst) && entity_type(dst) >= ET_SHIP) {
+            report_local_hit(s, dst, quantity, vecOff);
         }
         return_from_call(0);  // NPC damage is decided by the server
         return;
@@ -418,14 +520,14 @@ void on_do_damage_entry() {
         return;  // server's own ship: native, nobody else needs it
     }
     if (!is_ship_slot(dst)) {
-        return;  // missiles/bolts hit: not replicated
+        return;  // rocks, mines, bolts: not replicated
     }
     Event ev;
     Damage *dam = ev.mutable_damage();
     dam->set_ship_id(NetworkShipId::from_local(dst).to_net());
-    NetworkShipId shooter = NetworkShipId::from_top_level_local(src);
-    if (!shooter.is_invalid()) {
-        dam->set_shooter(shooter.to_net());
+    int shooter;
+    if (ship_behind(src, &shooter)) {
+        dam->set_shooter(shooter);
     }
     dam->set_quantity(quantity);
     Vec3 v = read_vec(vecOff);
@@ -475,6 +577,15 @@ void on_spawn_entry() {
     if (!s || replaying()) {
         return;
     }
+    if (is_field_mission_ship(call_arg16(0))) {
+        // Not a ship: the nav point's asteroid or mine field (ovr145:1183
+        // only adds it to the field table).  Every machine sets up a nav
+        // point for itself when its own player gets there, clearing that
+        // table first, so each registers the field here and then keeps its
+        // own rocks around its own ship.
+        wclog(2, "mission ship %d is a field: registered locally", call_arg16(0));
+        return;
+    }
     if (s->is_client()) {
         return_from_call(0xffff);  // the server decides what exists
         return;
@@ -495,6 +606,9 @@ static void intercept_despawn(bool explode) {
     int ship = explode ? call_arg16(1) : call_arg16(0);
     int src = explode ? call_arg16(0) : kInvalidSlot;
     if (!is_ship_slot(ship)) {
+        if (explode && (entity_type(ship) == ET_ASTEROID || entity_type(ship) == ET_MINE)) {
+            wclog(2, "%s in slot %d destroyed", entity_type(ship) == ET_ASTEROID ? "rock" : "mine", ship);
+        }
         return;  // temporary entities are local on every machine
     }
     if (!slot_in_use(ship)) {
@@ -523,9 +637,9 @@ static void intercept_despawn(bool explode) {
     d.set_ship_id(NetworkShipId::from_local(ship).to_net());
     if (explode) {
         d.set_explode(1);
-        NetworkShipId shooter = NetworkShipId::from_top_level_local(src);
-        if (!shooter.is_invalid()) {
-            d.set_shooter(shooter.to_net());
+        int shooter;
+        if (ship_behind(src, &shooter)) {
+            d.set_shooter(shooter);
         }
     }
     g_trampoline.enqueue(new DespawnJob(DespawnJob::BROADCAST, d, ship, src));
@@ -595,7 +709,7 @@ void enqueue_remote_event(const Event &ev) {
         enqueue_fire(ev.fire());
     }
     if (ev.has_damage()) {
-        g_trampoline.enqueue(new DamageJob(ev.damage()));
+        g_trampoline.enqueue(new DamageJob(DamageJob::REPLAY, ev.damage()));
     }
     if (ev.has_spawn()) {
         g_trampoline.enqueue(new SpawnJob(SpawnJob::REPLAY, ev.spawn()));
@@ -616,6 +730,17 @@ void enqueue_remote_event(const Event &ev) {
     if (ev.has_autopiloting()) {
         g_trampoline.enqueue(new AutopilotJob(ev.autopiloting()));
     }
+}
+
+void enqueue_reported_damage(const Damage &reported) {
+    // Only what a collision report needs: no source, no seed of the client's.
+    Damage dam;
+    dam.set_ship_id(reported.ship_id());
+    dam.set_quantity(reported.quantity() & 0xffff);
+    if (reported.has_pos()) {
+        *dam.mutable_pos() = reported.pos();
+    }
+    g_trampoline.enqueue(new DamageJob(DamageJob::REPORTED, dam));
 }
 
 void enqueue_chat_display(int netShipId, const std::string &callsign, const std::string &text) {

@@ -30,6 +30,15 @@ bool EntityMap::is_mapped(int net) const {
     return net >= 0 && net < (int)netToLocal_.size() && netToLocal_[net] != -1;
 }
 
+bool EntityMap::is_local_mapped(int slot) const {
+    for (size_t i = 0; i < netToLocal_.size(); i++) {
+        if (netToLocal_[i] == slot) {
+            return true;
+        }
+    }
+    return false;
+}
+
 int EntityMap::net_to_local(int net) const {
     if (!is_mapped(net)) {
         wclog(2, "net id %d is not mapped to a local slot", net);

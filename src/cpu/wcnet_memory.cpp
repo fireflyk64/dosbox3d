@@ -38,6 +38,14 @@ int find_bolt_of(int owner) {
     return -1;
 }
 
+bool is_local_hazard(int slot) {
+    if (slot < 0 || slot >= kNumSlots) {
+        return false;
+    }
+    int top = top_level_parent(slot);
+    return is_temp_slot(top) && slot_in_use(top);
+}
+
 bool ShipHealthState::operator==(const ShipHealthState &o) const {
     return memcmp(this, &o, sizeof(*this)) == 0;
 }

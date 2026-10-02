@@ -716,8 +716,11 @@ private:
                 *copy.mutable_fire() = ev.fire();
                 copy.mutable_fire()->set_shooter(c->net);
                 enqueue_remote_event(copy);
+            } else if (ev.has_damage()) {
+                // One of that player's own rocks or mines hit a ship of ours.
+                enqueue_reported_damage(ev.damage());
             } else {
-                wclog(2, "ignoring non-fire event from player %d", c->net);
+                wclog(2, "ignoring an event from player %d that is neither fire nor a hit report", c->net);
             }
         }
     }

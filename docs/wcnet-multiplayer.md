@@ -101,6 +101,39 @@ extra health" and "wingman explodes" behaviour.
   calls run locally on every machine (they reset the slot's pilot to 0xff, its
   comm flags and cull status).  Only despawns of ships that exist are
   broadcast or, on a client, left to the server.
+* **Asteroid and mine fields belong to each machine.**  The game never has
+  more than twenty rocks or mines: overlay 168 keeps them around slot 0 while
+  it is inside a field (`ovr168:0B86` tests every 16 frames whether the
+  player is within a field's radius, `ovr168:0AA7` then adds rocks ahead and
+  drops the ones left behind), so there are not enough for two pilots and
+  nothing about them is replicated.  A field is a mission "ship" of type
+  0x16 (asteroids) or 0x17 (mines): `outerSpawnShipEntity` only adds it to
+  the nav point's field table (`ovr145:1183` -> `ovr168:0B40`, table at
+  `dseg:CDF6`, count at `dseg:BFF6`).  Every machine sets a nav point up for
+  itself when its own ship gets there (`seg001:2029`, by distance, calling
+  `ovr145:098F`), which empties that table first, so the spawn hook lets
+  field "ships" through on every machine instead of broadcasting them.
+  Before, a client replayed the server's field spawn and then wiped it with
+  its own nav point setup, whose spawn calls are suppressed: only the host
+  ever saw a rock.  (The server also sent the garbage that call returns in
+  AX as the field's "slot", and stamped a pilot byte from it.)
+  What the rocks do is decided where they are:
+  * a player's shots break that player's own rocks (bolt against rock never
+    goes through `do_damage`: `ovr141:22CD` breaks it one time in three);
+  * a rock or a mine blast hitting the machine's own ship is ordinary local
+    damage to slot 0, replicated as that ship's health;
+  * nothing a machine's rocks do touches another human's ship there;
+  * a client's rock or mine hitting a ship the server owns is *reported*:
+    the client's `do_damage` hook sends a `Damage` event (target, quantity,
+    direction) when the source belongs to no ship, the server applies it
+    with no source (`DamageJob::REPORTED`) and broadcasts it and any kill
+    like its own.  The game only lets a rock it drew that frame hit a ship
+    (`ovr141:2411` removes an unseen one quietly), so a report always is a
+    collision that player watched.
+  The server's AI runs where only the host's rocks exist, so an enemy near a
+  wingman cannot steer around that wingman's rocks.
+* A hit or a kill names its shooter only when a ship is behind it; a rock's
+  or a mine's slot number means nothing on another machine.
 * The server skips the AI think function for a human-flown slot and refuses
   AI fire from it; the set-speed AI is skipped as before.
 * Positions of a player's ship come from its owner every frame; the server
@@ -195,7 +228,7 @@ arguments.
 | `do_damage` | `ovr143:0A99` | damage policy + broadcast |
 | `fireGunFromShip` | `ovr143:2978` | fire policy, prediction, broadcast |
 | `delayedDespawn` / `despawn` | `ovr143:1F15` / `ovr140:1C16` | despawn policy + broadcast |
-| `outerSpawnShipEntity` | `ovr145:115D` | spawn broadcast, slot registry |
+| `outerSpawnShipEntity` | `ovr145:115D` | spawn broadcast, slot registry; asteroid and mine fields run locally |
 | AI think / set speed | `ovr163:160E` / `ovr143:0874` | suppress for human-flown slots |
 | mission starting / ended / score | `ovr161:0470` / `04DD` / `0251` | briefing handshake, mission end sync |
 | main loop top, status checks | `seg001:20E3`, `20F4`, `2108`, `20F2` | frame exchange, client mission-status policy |
@@ -211,6 +244,10 @@ arguments.
   for the shooter's missile lock.
 * `Frame.player_end` (`PlayerEnd`) for a client leaving the mission.
 * `Spawn.pilot`: the slot's pilot byte once the mission setup has run.
+* A client's frame may carry `Damage` events as well as `WeaponFire`: hits by
+  that client's own rocks or mines on a ship the server owns (no shooter, no
+  seed).  The server ignores one that names a human's ship, a missile or an
+  empty slot.
 
 Old peers are not wire-compatible with these semantics (a client that does
 not replicate health would be trusted as authoritative for a ship it never
@@ -230,7 +267,7 @@ shell command still starts/stops the server or connects.  Useful environment:
 | `WCHOSTPILOT=0..7` | on a client: which of the eight named pilots the host's ship appears as (default: the one the server's mission setup gave that slot, i.e. the mission's wingman) |
 | `WCNET_AUTOKEYS=1` | test aid: press Enter through the briefing, then `A` (autopilot) once in space |
 | `WCNET=0` | fly alone: no server, no room, the game's own wingman (a single-player control for experiments) |
-| `WCNET_KEYSCRIPT="8:c,9.5:1,10:@after"` | test aid: once in space, at each emulated second press that key (letter, digit, `enter`, `esc`, `space`, held 150 ms) or, for `@tag`, dump the data segment to `WCNET_DUMP_DIR/tag.bin` and log the comm line, VDU text, mission, pilot bytes and KIA words; `!status=N` ends the mission as the game would (1 landed, 4 died, ...), `!kill=SLOT` destroys a ship on the server through the broadcast path of a real kill, `!poke=HEXOFF:HEXBYTE` writes the data segment, `!mouse=X:Y` puts the mouse pointer at those fractions of its range, `!button=N:1` / `N:0` presses and releases a mouse button, `+key` / `-key` hold and release a key, and `wait` holds the script until the next mission's first frame and restarts the clock there; `WCNET_AUTOKEYS` then only handles briefings and debriefings |
+| `WCNET_KEYSCRIPT="8:c,9.5:1,10:@after"` | test aid: once in space, at each emulated second press that key (letter, digit, `enter`, `esc`, `space`, held 150 ms) or, for `@tag`, dump the data segment to `WCNET_DUMP_DIR/tag.bin` and log the comm line, VDU text, mission, pilot bytes and KIA words; `!status=N` ends the mission as the game would (1 landed, 4 died, ...), `!kill=SLOT` destroys a ship on the server through the broadcast path of a real kill, `!poke=HEXOFF:HEXBYTE` writes the data segment, `!mouse=X:Y` puts the mouse pointer at those fractions of its range, `!button=N:1` / `N:0` presses and releases a mouse button, `+key` / `-key` hold and release a key, `!pos=X:Y:Z` moves the machine's own ship, `!face=SLOT` turns it towards a slot (`npc`: the first ship no human flies, `rock`: one of its field's rocks), `!rock=SLOT` puts one of its rocks or mines on that ship so the game's collision code finds them touching (`!rock=0`: dead ahead of its own guns instead), and every `@tag` line also lists the field state (`fields N inside|outside rocks <slots>`), and `wait` holds the script until the next mission's first frame and restarts the clock there; `WCNET_AUTOKEYS` then only handles briefings and debriefings |
 | `WCNET_SKIPBARRACKS=1` | test aid: never stop in the rec room or the barracks, so a scripted run goes from a debriefing straight to the next briefing |
 | `WCNET_WATCH=C260:16` | debugging aid: log every change of that part of the data segment (hex offset, length) with the address of the instruction after the write |
 | `WCNET_AUDIOLOG=1` | test aid: every 500 ms log each mixer channel's mean level and the number of OPL register writes (stderr, same clock as the key script); `WCNET_WAVE=1` also records the mixed output into DOSBox's capture directory |
@@ -357,6 +394,9 @@ top-level README for the workflow).  What differs:
 * A client that died cannot rejoin the mission in progress; it gets the next
   briefing.
 * Only two client slots (network ids 1 and 3) are allowed, as before.
+* Rocks and mines are per machine (section 2): two pilots in the same field
+  do not see the same rocks, and one can watch the other fly through a rock
+  unharmed.
 * Bolts fired by a remote ship are spawned on the client one frame later
   from the replicated position, so a fast-turning ship's shots can appear
   slightly off.

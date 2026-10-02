@@ -55,6 +55,14 @@ enum EntityType {
     ET_CAPSHIP = 0xd,
 };
 
+// Ship types (dseg:BFF8 gInstanceShipTypes, and word 0 of a mission ship) that
+// are not ships: a mission "ship" of one of these types is an asteroid or
+// mine field (ovr145:1183 registers it with ovr168:0B40 instead of spawning).
+enum FieldShipType {
+    ST_ASTEROID_FIELD = 0x16,
+    ST_MINE_FIELD = 0x17,
+};
+
 namespace ds {
 enum Offsets {
     missionStatus = 0x00AE,          // 0=flying, 1=landed, 2=ejected, 3=carrier, 4=dead, 5=exit
@@ -68,7 +76,8 @@ enum Offsets {
     pilotLastName = 0x9A42,          // 14 bytes
     pilotCallsign = 0x9A50,          // 14 bytes
     gPositionVector = 0xA9C2,        // 3 x int32 per slot
-    entityCullStatus = 0xACC4,       // word per slot (0x8001 = culled/inactive)
+    entityCullStatus = 0xACC4,       // word per slot: screen x of the last frame's drawing (0x8001 = culled/inactive)
+    entityScreenY = 0xAD44,          // [entityScreenY] word per slot: its screen y
     gOrientationRightVector = 0xAEB6,// 3 x int32 per slot
     gOrientationUpVector = 0xB1B6,   // named "up", but it points to the bottom of the screen
                                      // (the carrier moves along it when the nose comes up)
@@ -105,7 +114,11 @@ enum Offsets {
     hullCounter = 0xD22C,            // [vduModeMaybe+8C] byte per slot
     vduStatus10WhenPlayerHitsSmth = 0xD236,
     navPointState = 0xD25D,          // 8 x 19 bytes: mission tree progress
-    entitiesToDespawn = 0x6610,      // 0x14 bytes
+    missionShipTable = 0x6E80,       // [missionShips] 0x2a bytes per mission ship, word 0 = ship type
+    fieldCount = 0xBFF6,             // [fieldCount] word: fields of the current nav point (max 7)
+    currentField = 0xC362,           // [currentField] word: offset of the field the player is in, 0 = none
+    fieldTable = 0xCDF6,             // [fieldTable] 0x14 bytes per field: type, position, radius
+    entitiesToDespawn = 0x6610,      // 0x14 bytes: the slots of the current field's rocks or mines (0xff = free)
     entitiesToDespawnTargetA = 0x6626,
     playerTarget = 0x662C,           // [entitiesToDespawn+1C]
     unknown07A6 = 0x07A6,
@@ -155,6 +168,20 @@ int free_temp_slots();
 
 // Find a live bolt (ET_BOLT) whose top-level parent is `owner`, or -1.
 int find_bolt_of(int owner);
+
+// Asteroid and mine fields.  The game keeps at most 20 rocks or mines, placed
+// around slot 0 while it is inside a field (overlay 168), so every machine
+// has its own: they are never replicated, only the damage they do is.
+inline bool is_field_mission_ship(int missionShip) {
+    if (missionShip < 0 || missionShip == kInvalidSlot) {
+        return false;
+    }
+    Bit16u type = rd16((Bit16u)(ds::missionShipTable + 0x2a * missionShip));
+    return type == ST_ASTEROID_FIELD || type == ST_MINE_FIELD;
+}
+// True when `slot` is, or descends from, an entity no ship owns (a rock, a
+// mine, the blast of a mine): something that exists on this machine only.
+bool is_local_hazard(int slot);
 
 // The game's own view of a ship's damage state; the arrays are listed in the
 // proto comments of ShipHealth.

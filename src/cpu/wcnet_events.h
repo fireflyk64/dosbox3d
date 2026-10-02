@@ -30,6 +30,8 @@ void on_ai_set_speed_entry();     // ovr143:0874
 // Queue trampoline jobs for every event in a received frame.
 void enqueue_remote_event(const Event &ev);
 void enqueue_chat_display(int netShipId, const std::string &callsign, const std::string &text);
+// Server: a client saw one of its own rocks or mines hit a ship of ours.
+void enqueue_reported_damage(const Damage &reported);
 // Server: a client left the mission; remove its copy here (with an explosion
 // when it died, quietly when it landed).
 void enqueue_wingman_lost(int slot, bool explode);

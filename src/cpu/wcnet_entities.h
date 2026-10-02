@@ -56,6 +56,7 @@ public:
     int own_ship() const { return ownShip_; }
 
     bool is_mapped(int net) const;
+    bool is_local_mapped(int slot) const;  // some network id maps to this slot
     int net_to_local(int net) const;   // returns net when unmapped (logged)
     int local_to_net(int slot) const;  // returns slot when unmapped (logged)
 

@@ -11,6 +11,7 @@
 #include <string.h>
 #include <signal.h>
 #include <time.h>
+#include <math.h>
 #include <string>
 #include <vector>
 #include "wc_net.h"
@@ -77,6 +78,118 @@ static std::string mission_state_line() {
     return line;
 }
 
+// The asteroid or mine field around this machine's own ship, for the logs:
+// how many fields the nav point has, whether we are inside one, and the
+// slots of its rocks or mines.
+static std::string field_state_line() {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "fields %d %s rocks", rd16(ds::fieldCount), rd16(ds::currentField) ? "inside" : "outside");
+    std::string line = buf;
+    for (int i = 0; i < 0x14; i++) {
+        int slot = rd8((Bit16u)(ds::entitiesToDespawn + i));
+        if (slot != 0xff && (entity_type(slot) == ET_ASTEROID || entity_type(slot) == ET_MINE)) {
+            snprintf(buf, sizeof(buf), " %d", slot);
+            line += buf;
+        }
+    }
+    return line;
+}
+
+// Test aids for the key script: a ship of the mission that no human flies,
+// our own ship turned to face a slot, and one of our field's rocks (or mines)
+// put on a ship so the game's own collision code finds them touching.
+static int first_npc_ship() {
+    for (int slot = kMinShipSlot; slot <= kMaxShipSlot; slot++) {
+        if (entity_type(slot) == ET_SHIP && !(g_session && g_session->is_remote_player_slot(slot))) {
+            return slot;
+        }
+    }
+    return -1;
+}
+
+static int first_rock() {
+    for (int i = 0; i < 0x14; i++) {
+        int slot = rd8((Bit16u)(ds::entitiesToDespawn + i));
+        if (slot != 0xff && (entity_type(slot) == ET_ASTEROID || entity_type(slot) == ET_MINE)) {
+            return slot;
+        }
+    }
+    return -1;
+}
+
+static int script_slot(const char *arg) {
+    return strcmp(arg, "npc") == 0 ? first_npc_ship() : strcmp(arg, "rock") == 0 ? first_rock() : atoi(arg);
+}
+
+static void face_slot(int target) {
+    double r[3], u[3], f[3], nf[3], nr[3], nu[3];
+    Vec3 own = read_vec(vec_slot(ds::gPositionVector, kPlayerSlot));
+    Vec3 pos = read_vec(vec_slot(ds::gPositionVector, target));
+    Vec3 vr = read_vec(vec_slot(ds::gOrientationRightVector, kPlayerSlot));
+    Vec3 vu = read_vec(vec_slot(ds::gOrientationUpVector, kPlayerSlot));
+    Vec3 vf = read_vec(vec_slot(ds::gOrientationFrontVector, kPlayerSlot));
+    r[0] = vr.x; r[1] = vr.y; r[2] = vr.z;
+    u[0] = vu.x; u[1] = vu.y; u[2] = vu.z;
+    f[0] = vf.x; f[1] = vf.y; f[2] = vf.z;
+    nf[0] = (double)pos.x - own.x; nf[1] = (double)pos.y - own.y; nf[2] = (double)pos.z - own.z;
+    double len = sqrt(nf[0] * nf[0] + nf[1] * nf[1] + nf[2] * nf[2]);
+    if (len < 1) {
+        return;
+    }
+    for (int i = 0; i < 3; i++) nf[i] /= len;
+    // right = up x front, up = front x right, keeping the game's handedness
+    #define WC_CROSS(o, a, b) do { o[0] = a[1] * b[2] - a[2] * b[1]; o[1] = a[2] * b[0] - a[0] * b[2]; o[2] = a[0] * b[1] - a[1] * b[0]; } while (0)
+    double c[3];
+    WC_CROSS(c, r, u);
+    double hand = (c[0] * f[0] + c[1] * f[1] + c[2] * f[2]) < 0 ? -1 : 1;
+    WC_CROSS(nr, u, nf);
+    len = sqrt(nr[0] * nr[0] + nr[1] * nr[1] + nr[2] * nr[2]);
+    if (len < 1) {
+        WC_CROSS(nr, f, nf);
+        len = sqrt(nr[0] * nr[0] + nr[1] * nr[1] + nr[2] * nr[2]);
+        if (len < 1) {
+            return;
+        }
+    }
+    for (int i = 0; i < 3; i++) nr[i] = nr[i] / len * hand;
+    WC_CROSS(nu, nf, nr);
+    for (int i = 0; i < 3; i++) nu[i] *= hand;
+    #undef WC_CROSS
+    Vec3 o;
+    o.x = (Bit32s)lround(nr[0] * 256); o.y = (Bit32s)lround(nr[1] * 256); o.z = (Bit32s)lround(nr[2] * 256);
+    write_vec(vec_slot(ds::gOrientationRightVector, kPlayerSlot), o);
+    o.x = (Bit32s)lround(nu[0] * 256); o.y = (Bit32s)lround(nu[1] * 256); o.z = (Bit32s)lround(nu[2] * 256);
+    write_vec(vec_slot(ds::gOrientationUpVector, kPlayerSlot), o);
+    o.x = (Bit32s)lround(nf[0] * 256); o.y = (Bit32s)lround(nf[1] * 256); o.z = (Bit32s)lround(nf[2] * 256);
+    write_vec(vec_slot(ds::gOrientationFrontVector, kPlayerSlot), o);
+}
+
+// Returns the rock's slot, or -1 when we have none.  With our own ship as
+// the target the rock goes dead ahead of it instead, flying along, so our
+// guns cannot miss it.
+static int rock_onto(int target) {
+    int rock = first_rock();
+    if (rock != -1 && target == kPlayerSlot) {
+        enum { kAhead = 2800 };  // in lengths of the front vector (256): where the two guns' bolts have converged
+        Vec3 p = read_vec(vec_slot(ds::gPositionVector, kPlayerSlot));
+        Vec3 f = read_vec(vec_slot(ds::gOrientationFrontVector, kPlayerSlot));
+        p.x += f.x * kAhead; p.y += f.y * kAhead; p.z += f.z * kAhead;
+        write_vec(vec_slot(ds::gPositionVector, rock), p);
+        write_vec(vec_slot(ds::gVelocityVector, rock), read_vec(vec_slot(ds::gVelocityVector, kPlayerSlot)));
+    } else if (rock != -1) {
+        write_vec(vec_slot(ds::gPositionVector, rock), read_vec(vec_slot(ds::gPositionVector, target)));
+        // coming the other way, so the two meet at twice the ship's speed
+        Vec3 v = read_vec(vec_slot(ds::gVelocityVector, target));
+        v.x = -v.x; v.y = -v.y; v.z = -v.z;
+        write_vec(vec_slot(ds::gVelocityVector, rock), v);
+        // where the last frame drew the ship: the game lets a rock it did not
+        // draw vanish instead of colliding (ovr141:2411)
+        wr16((Bit16u)(ds::entityCullStatus + 2 * rock), rd16((Bit16u)(ds::entityCullStatus + 2 * target)));
+        wr16((Bit16u)(ds::entityScreenY + 2 * rock), rd16((Bit16u)(ds::entityScreenY + 2 * target)));
+    }
+    return rock;
+}
+
 // Test aid: with WCNET_AUTOKEYS=1 press Enter every 1.5 s so a headless
 // instance advances through the briefing on its own (scripts/wcnet-smoke.sh).
 static void auto_keys() {
@@ -126,6 +239,9 @@ static void auto_keys() {
 // "!poke=<hex offset>:<hex byte>", which writes the data segment,
 // "!mouse=<x>:<y>", which puts the pointer there (fractions of the range),
 // "!button=<n>:<1|0>", which presses or releases a mouse button,
+// "!pos=<x>:<y>:<z>", which moves our own ship, "!face=<slot|npc|rock>",
+// which turns it towards that slot, "!rock=<slot|npc>", which puts one of our
+// field's rocks or mines on that ship (0: dead ahead of our own),
 // "+<key>" / "-<key>", which hold and release a key, or "wait", which holds
 // the script until the next mission reaches its first frame and restarts
 // the clock there.  The clock starts at the first in-flight frame of the
@@ -245,8 +361,9 @@ static void key_script() {
             for (Bit32u off = 0; off < 0x10000; off++) fputc(rd8((Bit16u)off), f);
             fclose(f);
         }
-        wclog(1, "key script %.1fs (t=%.1f): dump %s; comm \"%s\"; vdu \"%s\"; %s", t, now / 1000.0, path.c_str(),
-              ds_text(ds::commGlobalTxt, 80).c_str(), ds_text(0x8E4A, 160).c_str(), mission_state_line().c_str());
+        wclog(1, "key script %.1fs (t=%.1f): dump %s; comm \"%s\"; vdu \"%s\"; %s; %s", t, now / 1000.0, path.c_str(),
+              ds_text(ds::commGlobalTxt, 80).c_str(), ds_text(0x8E4A, 160).c_str(), mission_state_line().c_str(),
+              field_state_line().c_str());
     } else if (item == "wait") {
         wclog(1, "key script %.1fs (t=%.1f): waiting for the next mission", t, now / 1000.0);
         waitingSince = g_flightCount;
@@ -275,6 +392,30 @@ static void key_script() {
         Bit8u val = colon == std::string::npos ? 0 : (Bit8u)strtol(item.c_str() + colon + 1, NULL, 16);
         wclog(2, "key script %.1fs (t=%.1f): dseg:%04X = %02x (was %02x)", t, now / 1000.0, off, val, rd8(off));
         wr8(off, val);
+    } else if (item.compare(0, 6, "!face=") == 0 || item.compare(0, 6, "!rock=") == 0) {
+        // !face=<slot|npc|rock> turns our ship towards that slot;
+        // !rock=<slot|npc> puts one of our field's rocks or mines on that
+        // ship, !rock=0 dead ahead of our own
+        int slot = script_slot(item.c_str() + 6);
+        bool face = item[1] == 'f';
+        int rock = -1;
+        if (slot >= 0 && slot < kNumSlots && slot_in_use(slot)) {
+            if (face) face_slot(slot); else rock = rock_onto(slot);
+        }
+        wclog(1, "key script %.1fs (t=%.1f): %s slot %d (%s, drawn at %04x) rock %d; %s", t, now / 1000.0,
+              face ? "face" : "rock onto", slot, slot >= 0 && slot_in_use(slot) ? "in use" : "empty",
+              slot >= 0 ? rd16((Bit16u)(ds::entityCullStatus + 2 * slot)) : 0, rock, field_state_line().c_str());
+    } else if (item.compare(0, 5, "!pos=") == 0) {
+        // !pos=<x>:<y>:<z> moves our own ship there
+        Vec3 v = read_vec(vec_slot(ds::gPositionVector, kPlayerSlot));
+        size_t c1 = item.find(':'), c2 = c1 == std::string::npos ? c1 : item.find(':', c1 + 1);
+        if (c2 != std::string::npos) {
+            v.x = atoi(item.c_str() + 5);
+            v.y = atoi(item.c_str() + c1 + 1);
+            v.z = atoi(item.c_str() + c2 + 1);
+            write_vec(vec_slot(ds::gPositionVector, kPlayerSlot), v);
+        }
+        wclog(1, "key script %.1fs (t=%.1f): own ship at %d, %d, %d", t, now / 1000.0, v.x, v.y, v.z);
     } else if (item.compare(0, 6, "!kill=") == 0) {
         int slot = atoi(item.c_str() + 6);
         bool server = g_session && g_session->is_server();
