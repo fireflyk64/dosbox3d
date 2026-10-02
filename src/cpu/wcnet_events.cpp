@@ -25,6 +25,11 @@ enum { kSoftRockDivisor = 16, kSoftRockMost = 80 };
 static std::deque<PendingFire> g_pendingFires;
 static Bit32u g_nextFireSeq = 1;
 
+// True while a client runs the game's nav point setup for a spawn the server
+// sent (NavSetupJob): the spawns and despawns nested in it are the client's
+// own and are answered as outside a replay (the server decides).
+static bool g_navSetup = false;
+
 // True while the server runs do_damage for a hit a client reported (one of
 // that client's own rocks or mines against a ship the server owns).  The call
 // comes from the trampoline, but it is the server's own decision and is
@@ -308,6 +313,10 @@ public:
     virtual void finish() {
         int slot = (int)(reg_eax & 0xffff);
         wclog(2, "spawn produced slot %d", slot);
+        if (slot != kInvalidSlot && is_ship_slot(slot) && !slot_in_use(slot)) {
+            wclog(0, "spawn of mission ship %d left slot %d empty", spawn_.mission_ship_id(), slot);
+            slot = kInvalidSlot;
+        }
         if (mode_ == BROADCAST) {
             if (slot != kInvalidSlot) {
                 spawn_.set_ship_id(NetworkShipId::from_local(slot).to_net());
@@ -453,6 +462,32 @@ public:
 private:
     int netShip_;
     std::string text_;
+};
+
+// WC2 loads a nav point's ship types when the player gets there
+// (ovr116:1511), and a ship of a type that is not loaded cannot be spawned.
+// The server's spawns for a nav point can reach a client before its own
+// player is near enough (the autopilot's arrival, most of all), so the
+// client sets the nav point up first; its own later check finds it current.
+class NavSetupJob : public VmJob {
+public:
+    explicit NavSetupJob(int nav) : nav_(nav) {}
+    virtual bool start() {
+        if (rd16(ds::currentNavPoint) == nav_) {
+            return false;
+        }
+        wclog(2, "setting up nav point %d for the server's spawns (ours was %d)", nav_, rd16(ds::currentNavPoint));
+        g_navSetup = true;
+        call_of(code::enterNavPoint).arg((Bit16u)nav_).invoke();
+        return true;
+    }
+    virtual void finish() {
+        g_navSetup = false;
+    }
+    virtual const char *describe() const { return "nav setup"; }
+
+private:
+    int nav_;
 };
 
 // Removes this machine's rocks or mines and forgets the nav point's fields.
@@ -674,7 +709,7 @@ void on_spawn_entry() {
         return_from_call(code::outerSpawnShipEntity, 0xffff);  // rocks are switched off: the nav point has no field
         return;
     }
-    if (!s || replaying()) {
+    if (!s || (replaying() && !g_navSetup)) {
         return;
     }
     if (is_field_mission_ship(call_arg16(code::outerSpawnShipEntity, 0))) {
@@ -724,7 +759,7 @@ static void intercept_despawn(bool explode) {
         return_from_call(fn, 0);  // a human's ship only leaves when its owner says so
         return;
     }
-    if (replaying()) {
+    if (replaying() && !g_navSetup) {
         return;
     }
     if (ship == kPlayerSlot) {
@@ -819,6 +854,9 @@ void enqueue_remote_event(const Event &ev) {
         g_trampoline.enqueue(new DamageJob(DamageJob::REPLAY, ev.damage()));
     }
     if (ev.has_spawn()) {
+        if (is_wc2() && g_session->is_client() && ev.spawn().has_situation_id() && ev.spawn().situation_id() != 0xffff) {
+            g_trampoline.enqueue(new NavSetupJob((int)ev.spawn().situation_id()));  // nothing to do when it is current
+        }
         g_trampoline.enqueue(new SpawnJob(SpawnJob::REPLAY, ev.spawn()));
     }
     if (ev.has_despawn() && ev.despawn().has_ship_id()) {

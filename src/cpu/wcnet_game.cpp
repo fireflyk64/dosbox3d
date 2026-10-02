@@ -83,6 +83,7 @@ static void load_wc1_code() {
     ovr(aiSetSpeedReturn, STUB143, 0x010B, 0x0918);        // ship_stats_every_frame+312 (early return)
     // overlay 145: mission spawning
     ovr(outerSpawnShipEntity, STUB145, 0x00B6, 0x115D, 2); // outerSpawnShipEntity(missionShip, situation)
+    ovr(enterNavPoint, STUB145, 0x0075, 0x098F, 1);        // set up a nav point (situation): despawn, fields, spawn
     // overlay 140: entities
     ovr(despawn, STUB140, 0x01DD, 0x1C16, 1);              // despawn(ship)
     // overlay 163: AI
@@ -132,6 +133,7 @@ static void load_wc2_code() {
     ovr(aiSetSpeed, STUB114, 0x013D, 0x0E5A, 3, true);       // AI set speed (ship, ...)
     // overlay 116: mission spawning
     ovr(outerSpawnShipEntity, STUB116, 0x002A, 0x1CED, 2);   // outerSpawnShipEntity(missionShip, navPoint)
+    ovr(enterNavPoint, STUB116, 0x0089, 0x1511, 1);          // set up a nav point: loads its ship types, despawns, spawns
     // root: entities
     root(despawn, SEG006, 0x1AB7, 1);                        // despawn(ship)
     // overlay 141: the per-entity AI dispatcher (fighters go on to ovr129:150E,
@@ -139,6 +141,8 @@ static void load_wc2_code() {
     ovr(aiShipThink, STUB141, 0x005C, 0x2CD3, 1);            // entity_ai(slot)
     // overlay 107: autopilot
     ovr(autoAnimation, STUB107, 0x0025, 0x0000, 3);          // autoAnimation(camShipType, camMode, duration)
+    ovr(autoAnimationBody, STUB107, 0x0025, 0x0003);         // after its push bp / mov bp,sp
+    ovr(autopilotFinished, STUB107, 0x0025, 0x0667);         // ovr107:014C (the autopilot) puts the camera back
     // overlay 128: the campaign loop around a flight (ovr128:02CE)
     ovr(missionStarting, STUB128, 0x0039, 0x0486);           // about to load the mission and fly
     ovr(missionEnded, STUB128, 0x0039, 0x04C3);              // the flight loop returned
@@ -148,6 +152,7 @@ static void load_wc2_code() {
     root(mainLoopTop, SEG001, 0x1CA3);                       // top of the in-flight frame loop
     root(statusCheckAfterFrame, SEG001, 0x1CF2);             // cmp missionStatus after the frame
     root(statusCheckAfterKeys, SEG001, 0x1D07);              // the loop's own test of missionStatus
+    root(autopilotKey, SEG001, 0x1079);                      // handle_key: the autopilot key's far call
 }
 
 // ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@ The games share an engine, relinked and grown.  A function keeps its shape
   scripts/wcmap.py wc/WC.EXE wc2/WC2.EXE funcs  [addr ...]   # where did these functions go (default: all pairs)
   scripts/wcmap.py wc/WC.EXE wc2/WC2.EXE data   [XXXX ...]   # votes for data-segment offsets (default: wcnet_ds.def's)
   scripts/wcmap.py wc/WC.EXE wc2/WC2.EXE def                 # wcnet_ds.def lines with the winning offset and its votes
+  scripts/wcmap.py wc/WC.EXE wc2/WC2.EXE where addr ...      # an instruction inside a function -> its twin
 
 The pairing is cached next to the scratch directory given by $WCMAP_CACHE
 (default /tmp/wcmap-<names>.pickle); delete it after changing this script.
@@ -43,7 +44,9 @@ def functions(x):
             e = starts[i + 1] if i + 1 < len(starts) else len(code)
             if e - s < 12:
                 continue
-            raw = [text for _o, _h, text in x.ndisasm(code[s:e], s)]
+            dis = x.ndisasm(code[s:e], s)
+            raw = [text for _o, _h, text in dis]
+            offs = [o for o, _h, _t in dis]
             toks = []
             for text in raw:
                 t = re.sub(r"0x[0-9a-f]+:(?:word )?0x[0-9a-f]+|word 0x[0-9a-f]+:word 0x[0-9a-f]+", "FAR", text)
@@ -52,7 +55,7 @@ def functions(x):
                 t = re.sub(r"\b(call|jmp short|jmp|j[a-z]+|loop)\s+0x[0-9a-f]+", r"\1 L", t)
                 t = re.sub(r"0x[0-9a-f]{3,}", "N", t)
                 toks.append(t)
-            out.append((seg, s, e, toks, raw))
+            out.append((seg, s, e, toks, raw, offs))
     return out
 
 
@@ -176,6 +179,30 @@ def main(argv):
                 exported = "  thunk stub%s:%04X" % (n[0][3:], e[0]) if e else "  (not exported)"
             print("%s -> %s  %.2f  %d/%d bytes%s" % (xo.label(seg, start), xn.label(n[0], n[1]), score,
                                                     old[i][2] - old[i][1], n[2] - n[1], exported))
+    elif cmd == "where":
+        # an instruction inside a function -> the aligned instruction in the new executable
+        for a in argv[4:]:
+            seg, off = xo.parse(a)
+            start = xo.func_bounds(seg, off)[0]
+            i = next((k for k, f in enumerate(old) if f[0] == seg and f[1] == start), None)
+            if i is None or i not in pairs:
+                print("%s: its function has no confident counterpart" % a)
+                continue
+            j, score = pairs[i]
+            fa, fb = old[i], new[j]
+            sm = difflib.SequenceMatcher(None, fa[3], fb[3], autojunk=False)
+            hit = None
+            for tag, i1, i2, j1, j2 in sm.get_opcodes():
+                for k in range(i1, i2):
+                    if fa[5][k] == off:
+                        hit = (tag, fb[5][j1 + (k - i1)] if tag == "equal" else (fb[5][j1] if j1 < len(fb[5]) else None))
+            if hit is None:
+                print("%s: not an instruction boundary of %s" % (a, xo.fmt(seg, start)))
+            else:
+                print("%s (%s) -> %s%s  [function %s -> %s, %.2f]" % (
+                    a, fa[4][fa[5].index(off)], xn.fmt(fb[0], hit[1]) if hit[1] is not None else "?",
+                    "" if hit[0] == "equal" else "  (near: the instruction itself has no twin)",
+                    xo.fmt(seg, start), xn.fmt(fb[0], fb[1]), score))
     elif cmd in ("data", "def"):
         defs = []
         path = os.path.join(ROOT, "src", "cpu", "wcnet_ds.def")
