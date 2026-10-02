@@ -43,6 +43,8 @@ bool at_location(const code::RootLoc &loc);
 
 // Read the n-th 16-bit argument of the function whose entry we are at.
 Bit16u call_arg16(int n);
+// Replace the n-th argument before the function reads it.
+void set_call_arg16(int n, Bit16u value);
 // Emulate `retf` at a function entry, returning `ax` to the caller.  The
 // caller cleans up the arguments (cdecl), so nothing else is needed.
 void return_from_call(Bit16u ax);

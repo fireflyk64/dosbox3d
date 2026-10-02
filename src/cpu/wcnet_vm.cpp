@@ -59,6 +59,10 @@ Bit16u call_arg16(int n) {
     return mem_readw(DS_OFF + (reg_esp & 0xffff) + 4 + 2 * n);
 }
 
+void set_call_arg16(int n, Bit16u value) {
+    mem_writew(DS_OFF + (reg_esp & 0xffff) + 4 + 2 * n, value);
+}
+
 void return_from_call(Bit16u ax) {
     Bit16u ip = CPU_Pop16();
     Bit16u seg = CPU_Pop16();

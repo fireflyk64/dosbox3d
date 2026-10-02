@@ -36,15 +36,20 @@ void enqueue_reported_damage(const Damage &reported);
 // when it died, quietly when it landed).
 void enqueue_wingman_lost(int slot, bool explode);
 void enqueue_test_kill(int slot);
+// Test aid (the key script's "!hit=<qty>"): our own ship takes that much
+// damage from dead ahead (or from behind), through the game's do_damage.
+void enqueue_test_hit(int quantity, bool fromBehind);
 
 // Asteroid and mine fields can be switched off (the host decides, see
 // Session::request_rocks; WCROCKS=0 starts without them).  The flag is what
 // the spawn hook consults; enqueue_rocks_change also queues the game calls
 // that remove this machine's rocks now, or register the current nav point's
 // fields again, and must be followed by a run of the trampoline.
-bool rocks_enabled();
-void set_rocks_flag(bool on);
-void enqueue_rocks_change(bool on);
+enum RocksMode { ROCKS_OFF = 0, ROCKS_ON = 1, ROCKS_SOFT = 2 };
+int rocks_mode();
+inline bool rocks_enabled() { return rocks_mode() != ROCKS_OFF; }
+void set_rocks_mode(int mode);
+void enqueue_rocks_change(int mode);
 
 // Client-side prediction of the local player's own shots.
 struct PendingFire {

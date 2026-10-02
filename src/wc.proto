@@ -136,8 +136,9 @@ message Frame {
     optional MissionEnd mission_end = 18;
     optional PlayerEnd player_end = 19;
     // Server -> client: whether the mission has its asteroid and mine fields
-    // (1) or not (0).  Sent with the mission start state and when the host
-    // changes it in flight; each machine then removes or restores its own.
+    // (1), not (0), or has them with rocks that do little damage to a
+    // player's own ship (2).  Sent with the mission start state and when the
+    // host changes it in flight; each machine then removes or restores its own.
     optional uint32 rocks = 20;
 }
 

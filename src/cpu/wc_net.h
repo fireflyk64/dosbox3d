@@ -34,10 +34,12 @@ const char *wc_net_status_note();
 bool in_space();
 extern bool within_briefed_mission;
 void wcnetSendChatMessage(const std::string &msg);
-// Asteroid and mine fields, on (the default; WCROCKS=0 starts without) or
-// off.  The host's choice goes to every player; "/rocks on" and "/rocks off"
-// in the comms prompt do the same.
-void wc_net_set_rocks(bool on);
-bool wc_net_rocks();
+// Asteroid and mine fields: 1 on (the default), 0 off (WCROCKS=0), 2 soft
+// (WCROCKS=soft: a rock that hits a player's own ship does a small fraction
+// of the game's damage, so one collision is survivable).  The host's choice
+// goes to every player; "/rocks on", "/rocks soft" and "/rocks off" in the
+// comms prompt do the same.
+void wc_net_set_rocks(int mode);
+int wc_net_rocks();
 
 #endif

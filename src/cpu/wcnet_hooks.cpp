@@ -26,6 +26,7 @@
 #include "keyboard.h"
 #include "mouse.h"
 #include "pic.h"
+#include "vga.h"
 #include <time.h>
 
 extern std::string incoming_text;
@@ -190,6 +191,24 @@ static int rock_onto(int target) {
     return rock;
 }
 
+// Test aid: the game's screen (VGA mode 13h, 320x200, 256 colours) as a PPM
+// file, for runs with no display.
+static bool write_screenshot(const std::string &path) {
+    FILE *f = fopen(path.c_str(), "wb");
+    if (!f) {
+        return false;
+    }
+    fprintf(f, "P6\n320 200\n255\n");
+    for (Bit32u i = 0; i < 320 * 200; i++) {
+        const RGBEntry &c = vga.dac.rgb[mem_readb(0xA0000 + i)];
+        fputc((c.red << 2) | (c.red >> 4), f);
+        fputc((c.green << 2) | (c.green >> 4), f);
+        fputc((c.blue << 2) | (c.blue >> 4), f);
+    }
+    fclose(f);
+    return true;
+}
+
 // Test aid: with WCNET_AUTOKEYS=1 press Enter every 1.5 s so a headless
 // instance advances through the briefing on its own (scripts/wcnet-smoke.sh).
 static void auto_keys() {
@@ -242,7 +261,9 @@ static void auto_keys() {
 // "!pos=<x>:<y>:<z>", which moves our own ship, "!face=<slot|npc|rock>",
 // which turns it towards that slot, "!rock=<slot|npc>", which puts one of our
 // field's rocks or mines on that ship (0: dead ahead of our own),
-// "!rocks=<1|0>", which switches the asteroid and mine fields,
+// "!rocks=<1|0|2>", which switches the asteroid and mine fields (2: soft),
+// "!shot=<name>", which writes the screen to WCNET_DUMP_DIR/<name>.ppm,
+// "!hit=<qty>[:back]", which damages our own ship as a hit from ahead would,
 // "+<key>" / "-<key>", which hold and release a key, or "wait", which holds
 // the script until the next mission reaches its first frame and restarts
 // the clock there.  The clock starts at the first in-flight frame of the
@@ -417,12 +438,32 @@ static void key_script() {
             write_vec(vec_slot(ds::gPositionVector, kPlayerSlot), v);
         }
         wclog(1, "key script %.1fs (t=%.1f): own ship at %d, %d, %d", t, now / 1000.0, v.x, v.y, v.z);
+    } else if (item.compare(0, 5, "!hit=") == 0) {
+        // !hit=<qty>[:back] damages our own ship from dead ahead (or behind)
+        int qty = atoi(item.c_str() + 5);
+        bool back = item.find(":back") != std::string::npos;
+        ShipHealthState h = read_health(kPlayerSlot);
+        wclog(1, "key script %.1fs (t=%.1f): hit our ship with %d from %s; shield %d/%d armor %d/%d/%d/%d core %d; "
+              "systems %d %d %d %d %d %d %d %d %d; cockpit %d %d %d %d", t, now / 1000.0, qty, back ? "behind" : "ahead",
+              h.shield[0], h.shield[1], h.armor[0], h.armor[1], h.armor[2], h.armor[3], h.coreHp,
+              rd8(ds::systemDamage), rd8(ds::systemDamage + 1), rd8(ds::systemDamage + 2), rd8(ds::systemDamage + 3),
+              rd8(ds::systemDamage + 4), rd8(ds::systemDamage + 5), rd8(ds::systemDamage + 6), rd8(ds::systemDamage + 7),
+              rd8(ds::systemDamage + 8), rd16(ds::cockpitDamage), rd16(ds::cockpitDamage + 2), rd16(ds::cockpitDamage + 4),
+              rd16(ds::cockpitDamage + 6));
+        enqueue_test_hit(qty, back);
+    } else if (item.compare(0, 6, "!shot=") == 0) {
+        // !shot=<name> writes the screen to WCNET_DUMP_DIR/<name>.ppm
+        const char *dir = getenv("WCNET_DUMP_DIR");
+        std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + item.substr(6) + ".ppm";
+        wclog(1, "key script %.1fs (t=%.1f): screenshot %s%s", t, now / 1000.0, path.c_str(),
+              write_screenshot(path) ? "" : " failed");
     } else if (item.compare(0, 7, "!rocks=") == 0) {
-        // !rocks=<1|0> switches the asteroid and mine fields, as the host's
-        // lobby option or "/rocks on|off" in the comms prompt does
-        bool on = atoi(item.c_str() + 7) != 0;
-        wclog(1, "key script %.1fs (t=%.1f): rocks %s; %s", t, now / 1000.0, on ? "on" : "off", field_state_line().c_str());
-        wc_net_set_rocks(on);
+        // !rocks=<1|0|2> switches the asteroid and mine fields on, off or
+        // soft, as the host's lobby option or "/rocks ..." in the comms
+        // prompt does
+        int mode = atoi(item.c_str() + 7);
+        wclog(1, "key script %.1fs (t=%.1f): rocks mode %d; %s", t, now / 1000.0, mode, field_state_line().c_str());
+        wc_net_set_rocks(mode);
     } else if (item.compare(0, 6, "!kill=") == 0) {
         int slot = atoi(item.c_str() + 6);
         bool server = g_session && g_session->is_server();
@@ -691,6 +732,9 @@ static void check_hooks_slow() {
         ensure_session();
         if (g_session) {
             g_session->on_frame_top();
+        } else if (g_trampoline.has_pending()) {
+            // Flying alone: nothing else runs the test aids' queued game calls.
+            g_trampoline.run_before_current_instruction();
         }
     }
 }
@@ -745,11 +789,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_mouse_button(int button, int pressed
 }
 // The host's page switches the asteroid and mine fields (its lobby option).
 static int g_webRocksWanted = -1;
-extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_set_rocks(int on) {
-    g_webRocksWanted = on ? 1 : 0;
+extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_set_rocks(int mode) {
+    g_webRocksWanted = mode < 0 ? 0 : mode;
 }
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_rocks() {
-    return wc_net_rocks() ? 1 : 0;
+    return wc_net_rocks();
 }
 // Nonzero while a mission's frame loop runs (flying, autopilot included):
 // the page steers with the stick then, and moves a menu pointer otherwise.
@@ -772,7 +816,7 @@ static void web_input_tick() {
     }
     g_webButtonsDown = g_webButtonsWanted;
     if (g_webRocksWanted >= 0) {
-        wc_net_set_rocks(g_webRocksWanted == 1);
+        wc_net_set_rocks(g_webRocksWanted);
         g_webRocksWanted = -1;
     }
 }

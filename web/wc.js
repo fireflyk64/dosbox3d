@@ -348,7 +348,7 @@ function renderMission() {
   const sel = $("mission");
   sel.value = missionKey(lobby.mission);
   sel.disabled = !isHost() || running;
-  $("rocks").checked = lobby.rocks;
+  $("rocks").value = lobby.rocks;
   $("rocks").disabled = !isHost();  // the host may switch them while flying too
   $("missionHint").textContent = lobby.mission
     ? `Everyone flies ${missionLabel(lobby.mission)} from a fresh start with the callsigns entered above.`
@@ -359,8 +359,9 @@ function renderMission() {
 // -- the room ------------------------------------------------------------------
 
 const lobby = { game: null, names: new Map(), links: new Map(), flying: new Set(), unsubscribe: null, mission: null,
-                // asteroid and mine fields: the host's choice, for everybody
-                rocks: true,
+                // asteroid and mine fields, "on", "soft" (a rock does a
+                // fraction of its damage) or "off": the host's choice, for everybody
+                rocks: "on",
                 // game-protocol messages that arrive before DOSBox has adopted this
                 // connection (a wingman faster to the launch than the host), handed
                 // to the transport at adoption so nothing is lost
@@ -389,17 +390,20 @@ function sendLobby(obj, to) {
 const sayHello = (to, reply) => sendLobby({ t: "hello", name: myName(), flying: running, reply: !!reply,
   mission: isHost() ? missionKey(lobby.mission) : undefined, rocks: isHost() ? lobby.rocks : undefined }, to);
 
-// Asteroid and mine fields on or off.  The host's page tells the others (for
-// their lobby) and its own running game, which tells every wingman's game.
-const rocksLabel = (on) => `asteroids and mines ${on ? "on" : "off"}`;
-function setRocks(on) {
+// Asteroid and mine fields on, soft or off.  The host's page tells the others
+// (for their lobby) and its own running game, which tells every wingman's game.
+const ROCKS = { off: 0, on: 1, soft: 2 };  // the game's numbers (RocksMode)
+const rocksMode = (v) => (Object.prototype.hasOwnProperty.call(ROCKS, v) ? v : "on");
+const rocksLabel = (v) => (v === "soft" ? "asteroids soft (one will not kill you)" : `asteroids and mines ${v}`);
+function setRocks(v) {
   if (!isHost()) { chatLine("Only the host can switch asteroids and mines.", "sys"); renderMission(); return; }
-  if (lobby.rocks === on) return;
-  lobby.rocks = on;
+  v = rocksMode(v);
+  if (lobby.rocks === v) return;
+  lobby.rocks = v;
   renderMission();
-  chatLine(`You switched ${rocksLabel(on)}`, "sys");
+  chatLine(`You switched ${rocksLabel(v)}`, "sys");
   sayHello();
-  if (running && window.DOSBox && window.DOSBox._wc_web_set_rocks) window.DOSBox._wc_web_set_rocks(on ? 1 : 0);
+  if (running && window.DOSBox && window.DOSBox._wc_web_set_rocks) window.DOSBox._wc_web_set_rocks(ROCKS[v]);
 }
 
 function chatLine(html, cls) {
@@ -465,9 +469,9 @@ function onLobbyEvent(ev) {
             renderMission();
           }
         }
-        if (ev.from === 0 && !isHost() && typeof m.rocks === "boolean" && m.rocks !== lobby.rocks) {
-          lobby.rocks = m.rocks;
-          chatLine(`${esc(m.name)} switched ${rocksLabel(m.rocks)}`, "sys");
+        if (ev.from === 0 && !isHost() && typeof m.rocks === "string" && rocksMode(m.rocks) !== lobby.rocks) {
+          lobby.rocks = rocksMode(m.rocks);
+          chatLine(`${esc(m.name)} switched ${rocksLabel(lobby.rocks)}`, "sys");
           renderMission();
         }
         if (!m.reply) sayHello(ev.from, true);
@@ -476,7 +480,7 @@ function onLobbyEvent(ev) {
         chatLine(`<span class="name">${esc(m.name)}:</span> ${esc(m.text)}`);
       } else if (m.t === "start" && ev.from === 0 && !running) {
         lobby.mission = parseMission(m.mission);
-        if (typeof m.rocks === "boolean") lobby.rocks = m.rocks;
+        if (typeof m.rocks === "string") lobby.rocks = rocksMode(m.rocks);
         renderMission();
         chatLine(`${esc(lobby.names.get(0) || "The host")} started ${esc(missionLabel(lobby.mission))}`, "sys");
         lobby.flying.add(0); renderRoster();
@@ -529,7 +533,7 @@ async function joinRoom() {
     $("lobby").hidden = false;
     $("leave").hidden = false;
     if (game.selfId === 0) lobby.mission = parseMission(query.get("mission")) || { series: 1, mis: 0 };
-    lobby.rocks = game.selfId === 0 ? query.get("rocks") !== "0" : true;
+    lobby.rocks = game.selfId === 0 ? rocksMode({ 0: "off", 2: "soft" }[query.get("rocks")] || query.get("rocks")) : "on";
     renderMission();
     for (const id of ["room", "players", "server", "relay"]) $(id).disabled = true;
     chatLine(`You are ${esc(myName())}, player ${game.selfId + 1} of ${game.maxPlayers} in room ${esc(code)}${game.selfId === 0 ? " (host)" : ""}. Share this page's link.`, "sys");
@@ -560,17 +564,17 @@ $("chatForm").addEventListener("submit", (ev) => {
   const text = $("chatInput").value.trim();
   if (!text || !lobby.game) return;
   $("chatInput").value = "";
-  const cmd = /^\/rocks(?:\s+(on|off))?$/i.exec(text);
+  const cmd = /^\/rocks(?:\s+(on|soft|off))?$/i.exec(text);
   if (cmd) { // a command, not a message
-    if (cmd[1]) setRocks(cmd[1].toLowerCase() === "on");
-    else chatLine(`${rocksLabel(lobby.rocks)[0].toUpperCase()}${rocksLabel(lobby.rocks).slice(1)}; the host switches them with /rocks on or /rocks off.`, "sys");
+    if (cmd[1]) setRocks(cmd[1].toLowerCase());
+    else chatLine(`${rocksLabel(lobby.rocks)[0].toUpperCase()}${rocksLabel(lobby.rocks).slice(1)}; the host switches them with /rocks on, /rocks soft or /rocks off.`, "sys");
     return;
   }
   chatLine(`<span class="name">${esc(myName())}:</span> ${esc(text)}`);
   sendLobby({ t: "chat", name: myName(), text });
 });
 $("callsign").addEventListener("change", () => { if (lobby.game) { sayHello(); renderRoster(); } });
-$("rocks").addEventListener("change", () => setRocks($("rocks").checked));
+$("rocks").addEventListener("change", () => setRocks($("rocks").value));
 $("mission").addEventListener("change", () => {
   if (!isHost()) return;
   lobby.mission = parseMission($("mission").value);
@@ -650,7 +654,7 @@ async function start(fromGesture) {
       log(`${source.game.title}: no multiplayer hooks for this game, running single-player`);
     }
     // The host's game decides and tells the wingmen's; theirs start the same.
-    if (source.game.multiplayer) env.WCROCKS = lobby.rocks ? "1" : "0";
+    if (source.game.multiplayer) env.WCROCKS = String(ROCKS[lobby.rocks]);
     if (cfg.callsign) env.WCCALLSIGN = cfg.callsign;
     if (cfg.lastname) env.WCLASTNAME = cfg.lastname;
     if (lobby.mission && source.game.multiplayer) {

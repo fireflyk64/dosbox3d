@@ -18,6 +18,9 @@ namespace wc {
 // Scratch vector inside the data segment for replayed damage positions.
 enum { kTmpVectorOff = ds::aLoadingWingCom };
 
+// Soft rocks (RocksMode): what a rock does to a player's own ship.
+enum { kSoftRockDivisor = 16, kSoftRockMost = 80 };
+
 static std::deque<PendingFire> g_pendingFires;
 static Bit32u g_nextFireSeq = 1;
 
@@ -482,26 +485,29 @@ private:
 // ---------------------------------------------------------------------------
 // Rocks on or off
 
-static int g_rocksEnabled = -1;  // -1: not yet read from WCROCKS
+static int g_rocksMode = -1;  // -1: not yet read from WCROCKS
 
-bool rocks_enabled() {
-    if (g_rocksEnabled < 0) {
+int rocks_mode() {
+    if (g_rocksMode < 0) {
         const char *env = getenv("WCROCKS");
-        g_rocksEnabled = (env && (env[0] == '0' || env[0] == 'n' || env[0] == 'N' || !strcasecmp(env, "off"))) ? 0 : 1;
+        g_rocksMode = !env || !env[0] ? ROCKS_ON
+            : (env[0] == '0' || env[0] == 'n' || env[0] == 'N' || !strcasecmp(env, "off")) ? ROCKS_OFF
+            : (env[0] == '2' || !strcasecmp(env, "soft")) ? ROCKS_SOFT : ROCKS_ON;
     }
-    return g_rocksEnabled == 1;
+    return g_rocksMode;
 }
 
-void set_rocks_flag(bool on) {
-    if (rocks_enabled() != on) {
-        wclog(1, "asteroid and mine fields are %s", on ? "on" : "off");
+void set_rocks_mode(int mode) {
+    mode = mode == ROCKS_OFF ? ROCKS_OFF : mode == ROCKS_SOFT ? ROCKS_SOFT : ROCKS_ON;
+    if (rocks_mode() != mode) {
+        wclog(1, "asteroid and mine fields are %s", mode == ROCKS_OFF ? "off" : mode == ROCKS_SOFT ? "on, rocks soft" : "on");
     }
-    g_rocksEnabled = on ? 1 : 0;
+    g_rocksMode = mode;
 }
 
-void enqueue_rocks_change(bool on) {
-    set_rocks_flag(on);
-    if (!on) {
+void enqueue_rocks_change(int mode) {
+    set_rocks_mode(mode);
+    if (!rocks_enabled()) {
         g_trampoline.enqueue(new ClearFieldsJob());
         return;
     }
@@ -561,6 +567,18 @@ void on_do_damage_entry() {
     int dst = call_arg16(1);
     Bit16u quantity = call_arg16(2);
     Bit16u vecOff = call_arg16(3);
+    if (dst == kPlayerSlot && src >= 0 && src < kNumSlots && entity_type(src) == ET_ASTEROID && rocks_mode() == ROCKS_SOFT) {
+        // Soft rocks: the game's (closing speed)^2 / 2 runs to 1000-3000 for
+        // a head-on rock, against a Hornet's 85 of front shield and armor
+        // (70 on a side).  A sixteenth of it, and never more than 80, takes
+        // the shield and most of the armor but leaves any fresh ship alive
+        // after one rock, wherever it lands.
+        Bit16u soft = (Bit16u)(quantity / kSoftRockDivisor);
+        soft = soft < 1 ? 1 : soft > kSoftRockMost ? (Bit16u)kSoftRockMost : soft;
+        wclog(2, "soft rock: %d becomes %d", quantity, soft);
+        quantity = soft;
+        set_call_arg16(2, quantity);
+    }
     if (dst == kPlayerSlot && src >= 0 && src < kNumSlots && entity_type(src) != ET_BOLT) {
         // What hit our own ship, other than gunfire (also when flying alone).
         wclog(2, "our ship is hit by slot %d (type %d, ship type %d) qty %d", src, entity_type(src),
@@ -847,6 +865,36 @@ void enqueue_test_kill(int slot) {
     d.set_explode(1);
     d.set_shooter(NetworkShipId::from_local(kPlayerSlot).to_net());
     g_trampoline.enqueue(new DespawnJob(DespawnJob::BROADCAST, d, slot, kPlayerSlot));
+}
+
+// Test aid: damage to our own ship as the game would apply it (shield, armor,
+// then the player's own damage model with its cockpit damage).
+class OwnHitJob : public VmJob {
+public:
+    OwnHitJob(int quantity, bool fromBehind) : quantity_(quantity), fromBehind_(fromBehind) {}
+    virtual bool start() {
+        // The vector is the way the blow travels: against our nose for a
+        // hit from ahead (front shield and armor), along it from behind.
+        Vec3 v = read_vec(vec_slot(ds::gOrientationFrontVector, kPlayerSlot));
+        if (!fromBehind_) {
+            v.x = -v.x; v.y = -v.y; v.z = -v.z;
+        }
+        write_vec(kTmpVectorOff, v);
+        call_of(code::do_damage)
+            .arg((Bit16u)kInvalidSlot).arg((Bit16u)kPlayerSlot)
+            .arg((Bit16u)quantity_).arg((Bit16u)kTmpVectorOff)
+            .invoke();
+        return true;
+    }
+    virtual const char *describe() const { return "own hit"; }
+
+private:
+    int quantity_;
+    bool fromBehind_;
+};
+
+void enqueue_test_hit(int quantity, bool fromBehind) {
+    g_trampoline.enqueue(new OwnHitJob(quantity, fromBehind));
 }
 
 // ---------------------------------------------------------------------------

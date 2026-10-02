@@ -114,6 +114,8 @@ enum Offsets {
                                      // the face and name from it (ovr138:0980, ovr140:0020)
     hullCounter = 0xD22C,            // [vduModeMaybe+8C] byte per slot
     vduStatus10WhenPlayerHitsSmth = 0xD236,
+    systemDamage = 0xD24C,           // [systemDamage] byte per system (9): the player's damage levels, 0..4 (ovr134:0DEC)
+    cockpitDamage = 0x8CB2,          // [cockpitDamage] word per cockpit instrument (4): 1 = broken (ovr134:325E)
     navPointState = 0xD25D,          // 8 x 19 bytes: mission tree progress
     navPointTable = 0x687C,          // [navPoints] 0x4d bytes per nav point; its mission ships are ten words at +0x39
     missionShipTable = 0x6E80,       // [missionShips] 0x2a bytes per mission ship, word 0 = ship type

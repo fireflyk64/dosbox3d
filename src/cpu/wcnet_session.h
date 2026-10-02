@@ -79,10 +79,10 @@ public:
 
     virtual void send_chat(const std::string &text) = 0;
 
-    // Switch the asteroid and mine fields on or off for everybody.  Only the
-    // server decides; a client's request just says so.  In flight it takes
-    // effect at the top of the next frame.
-    virtual void request_rocks(bool on) = 0;
+    // Switch the asteroid and mine fields on, off or soft (RocksMode) for
+    // everybody.  Only the server decides; a client's request just says so.
+    // In flight it takes effect at the top of the next frame.
+    virtual void request_rocks(int mode) = 0;
 };
 
 // The active session, or NULL when not connected.
