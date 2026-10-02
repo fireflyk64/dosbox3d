@@ -11,11 +11,9 @@ namespace wc {
 // Scratch areas inside the data segment.  These are string constants the game
 // only uses for error messages, so we can overwrite them with code (CS is set
 // to DS while it runs).
-enum {
-    kShellcodeOff = ds::aSorryAnErrorHasOccured,      // 249 bytes
-    kTrampolineOff = ds::aLoadingWingCom + 101,       // 6 bytes
-    kTrampolineNop = kTrampolineOff + 3,
-};
+static Bit16u shellcode_off() { return ds::aSorryAnErrorHasOccured; }         // 249 bytes
+static Bit16u trampoline_off() { return (Bit16u)(ds::aLoadingWingCom + 101); } // 6 bytes
+static Bit16u trampoline_nop() { return (Bit16u)(trampoline_off() + 3); }
 
 static const Bit8u kTrampolineCode[6] = {
     0x55,       // push bp
@@ -33,24 +31,15 @@ Bit16u overlay_segment(Bit16u stubSeg, Bit16u stubOff) {
     return mem_readw(p + 3);
 }
 
-bool at_function(const code::OverlayFn &fn) {
-    if (reg_eip != fn.ovrOff) {
+bool at(const Loc &loc) {
+    if (!loc.seg || reg_eip != loc.off) {
         return false;
     }
-    Bit16u seg = overlay_segment(fn.stubSeg, fn.stubOff);
-    return seg != 0 && SegValue(cs) == seg;
-}
-
-bool at_location(const code::OverlayLoc &loc) {
-    if (reg_eip != loc.ovrOff) {
-        return false;
+    if (!loc.overlay) {
+        return SegValue(cs) == loc.seg;
     }
-    Bit16u seg = overlay_segment(loc.stubSeg, loc.anyStubOff);
+    Bit16u seg = overlay_segment(loc.seg, loc.stubOff);
     return seg != 0 && SegValue(cs) == seg;
-}
-
-bool at_location(const code::RootLoc &loc) {
-    return reg_eip == loc.off && SegValue(cs) == loc.seg;
 }
 
 Bit16u call_arg16(int n) {
@@ -63,6 +52,19 @@ void set_call_arg16(int n, Bit16u value) {
     mem_writew(DS_OFF + (reg_esp & 0xffff) + 4 + 2 * n, value);
 }
 
+// A pascal function's first argument was pushed first: it is the deepest.
+static int stack_index(const Loc &fn, int n) {
+    return fn.pascal ? fn.nargs - 1 - n : n;
+}
+
+Bit16u call_arg16(const Loc &fn, int n) {
+    return call_arg16(stack_index(fn, n));
+}
+
+void set_call_arg16(const Loc &fn, int n, Bit16u value) {
+    set_call_arg16(stack_index(fn, n), value);
+}
+
 void return_from_call(Bit16u ax) {
     Bit16u ip = CPU_Pop16();
     Bit16u seg = CPU_Pop16();
@@ -71,37 +73,51 @@ void return_from_call(Bit16u ax) {
     reg_eip = ip;
 }
 
+void return_from_call(const Loc &fn, Bit16u ax) {
+    return_from_call(ax);
+    if (fn.pascal) {
+        reg_esp = (reg_esp & ~0xffffu) | ((reg_esp + 2 * fn.nargs) & 0xffff);  // retf n
+    }
+}
+
 void GameCall::invoke() const {
     CPU_Push16((Bit16u)SegValue(cs));
     CPU_Push16((Bit16u)reg_eip);
     std::vector<Bit8u> code;
     code.push_back(0x00);  // keep the reused string NUL terminated
-    code.push_back(0x56);  // push si (preserve callee-saved register)
-    for (size_t i = args_.size(); i-- > 0;) {
-        code.push_back(0xBE);  // mov si, imm16
-        code.push_back((Bit8u)(args_[i] & 0xff));
-        code.push_back((Bit8u)(args_[i] >> 8));
-        code.push_back(0x56);  // push si
+    if (!known_) {
+        // The running game has no such function: return at once.
+        code.push_back(0xCB);  // retf
+    } else {
+        code.push_back(0x56);  // push si (preserve callee-saved register)
+        // cdecl pushes the last argument first; pascal the first.
+        for (size_t k = 0; k < args_.size(); k++) {
+            size_t i = pascal_ ? k : args_.size() - 1 - k;
+            code.push_back(0xBE);  // mov si, imm16
+            code.push_back((Bit8u)(args_[i] & 0xff));
+            code.push_back((Bit8u)(args_[i] >> 8));
+            code.push_back(0x56);  // push si
+        }
+        code.push_back(0x9A);  // call far seg:off
+        code.push_back((Bit8u)(off_ & 0xff));
+        code.push_back((Bit8u)(off_ >> 8));
+        code.push_back((Bit8u)(seg_ & 0xff));
+        code.push_back((Bit8u)(seg_ >> 8));
+        for (size_t i = 0; i < args_.size() && !pascal_; i++) {
+            code.push_back(0x5E);  // pop si (discard argument; a pascal callee did)
+        }
+        code.push_back(0x5E);  // pop si (restore)
+        code.push_back(0xCB);  // retf
     }
-    code.push_back(0x9A);  // call far seg:off
-    code.push_back((Bit8u)(off_ & 0xff));
-    code.push_back((Bit8u)(off_ >> 8));
-    code.push_back((Bit8u)(seg_ & 0xff));
-    code.push_back((Bit8u)(seg_ >> 8));
-    for (size_t i = 0; i < args_.size(); i++) {
-        code.push_back(0x5E);  // pop si (discard argument)
-    }
-    code.push_back(0x5E);  // pop si (restore)
-    code.push_back(0xCB);  // retf
     if (code.size() > 249) {
         wclog(0, "GameCall thunk too large (%d bytes)", (int)code.size());
         return;
     }
     for (size_t i = 0; i < code.size(); i++) {
-        mem_writeb_checked(DS_OFF + kShellcodeOff + i, code[i]);
+        mem_writeb_checked(DS_OFF + shellcode_off() + i, code[i]);
     }
     SegSet16(cs, DS);
-    reg_eip = kShellcodeOff + 1;
+    reg_eip = shellcode_off() + 1;
 }
 
 Trampoline g_trampoline;
@@ -114,10 +130,10 @@ void Trampoline::enqueue(VmJob *job) {
 
 void Trampoline::jump_to_stub() {
     for (size_t i = 0; i < sizeof(kTrampolineCode); i++) {
-        mem_writeb_checked(DS_OFF + kTrampolineOff + i, kTrampolineCode[i]);
+        mem_writeb_checked(DS_OFF + trampoline_off() + i, kTrampolineCode[i]);
     }
     SegSet16(cs, DS);
-    reg_eip = kTrampolineOff;
+    reg_eip = trampoline_off();
     running_ = true;
 }
 
@@ -140,11 +156,11 @@ void Trampoline::run_before_current_instruction() {
 }
 
 bool Trampoline::at_hook() {
-    return SegValue(cs) == DS && reg_eip == kTrampolineNop;
+    return DS != 0 && SegValue(cs) == DS && reg_eip == trampoline_nop();
 }
 
 Bit16u Trampoline::hook_ip() {
-    return kTrampolineNop;
+    return trampoline_nop();
 }
 
 void Trampoline::start_next() {

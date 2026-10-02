@@ -26,6 +26,7 @@
 #include "callback.h"
 #include "debug.h"
 #include "cpu.h"
+#include "../cpu/wc_net.h"
 
 const char * RunningProgram="DOSBOX";
 
@@ -110,6 +111,7 @@ void DOS_Terminate(Bit16u pspseg,bool tsr,Bit8u exitcode) {
 	
 	DOS_PSP curpsp(pspseg);
 	if (pspseg==curpsp.GetParent()) return;
+	wc_net_program_ended(pspseg);
 	/* Free Files owned by process */
 	if (!tsr) curpsp.CloseFiles();
 	
@@ -416,6 +418,8 @@ bool DOS_Execute(char * name,PhysPt block_pt,Bit8u flags) {
 	};
 	CALLBACK_SCF(false);		/* Carry flag cleared for caller if successfull */
 	if (flags==OVERLAY) return true;			/* Everything done for overlays */
+	/* The Wing Commander multiplayer hooks apply to the executables they know */
+	wc_net_program_loaded(name,loadseg,pspseg);
 	RealPt csip,sssp;
 	if (iscom) {
 		csip=RealMake(pspseg,0x100);

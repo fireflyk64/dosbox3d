@@ -16,7 +16,7 @@
 namespace wc {
 
 // Scratch vector inside the data segment for replayed damage positions.
-enum { kTmpVectorOff = ds::aLoadingWingCom };
+#define kTmpVectorOff (ds::aLoadingWingCom)
 
 // Soft rocks (RocksMode): what a rock does to a player's own ship.
 enum { kSoftRockDivisor = 16, kSoftRockMost = 80 };
@@ -84,8 +84,8 @@ struct DoomedSnapshot {
     }
 };
 
-static GameCall call_of(const code::OverlayFn &fn) {
-    return GameCall(fn.stubSeg, fn.stubOff);
+static GameCall call_of(const Loc &fn) {
+    return GameCall(fn);
 }
 
 // The shooter's locked target (dseg:C284[shooter], 0xff = none) decides
@@ -765,7 +765,7 @@ void on_ai_set_speed_entry() {
     if (s->is_client() || s->is_remote_player_slot(ship)) {
         // Jump to the function's early-return label (ovr143:0918) so the AI
         // cannot change the set speed of a human-flown ship.
-        reg_eip = code::aiSetSpeedReturn.ovrOff;
+        reg_eip = code::aiSetSpeedReturn.off;
     }
 }
 

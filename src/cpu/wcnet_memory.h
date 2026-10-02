@@ -7,8 +7,8 @@
  *  Names in [brackets] are ours, chosen from the disassembly of the code that
  *  uses the array (the IDA name for that address is given after it).
  *
- *  The program uses the Borland "compact" convention SS == DS == 13D3, which
- *  is why stack arguments are read through DS_OFF + esp.
+ *  The programs use the Borland "compact" convention SS == DS, which is why
+ *  stack arguments are read through DS_OFF + esp.
  */
 #ifndef WCNET_MEMORY_H_
 #define WCNET_MEMORY_H_
@@ -19,10 +19,11 @@
 
 namespace wc {
 
-enum {
-    DS = 0x13d3,            // data segment (DGROUP) at run time
-    DS_OFF = DS * 0x10,     // linear address of dseg:0000
-};
+// The data segment (DGROUP) of the game that is running and the linear address
+// of its offset 0: WC.EXE loaded first by DOSBox's shell has DS = 13D3.  Zero
+// while no known game runs (wcnet_game.h).
+extern Bit16u DS;
+extern PhysPt DS_OFF;
 
 // Entity slots.  The game keeps 0x40 entity slots; every per-entity array is
 // indexed by slot.  Slot 0 is always the local player.
@@ -64,70 +65,13 @@ enum FieldShipType {
 };
 
 namespace ds {
-enum Offsets {
-    missionStatus = 0x00AE,          // 0=flying, 1=landed, 2=ejected, 3=carrier, 4=dead, 5=exit
-    playerCanBeDamaged = 0x00BA,     // [missionStatus+C]: do_damage ignores slot 0 while zero
-    aLoadingWingCom = 0x0187,        // string buffer we reuse as scratch code/data
-    aSorryAnErrorHasOccured = 0x0395,// 249 byte string buffer we reuse for shellcode
-    skipRecRoom = 0x3004,            // word: nonzero sends runHangarMission straight to the barracks
-    savedGameLoaded = 0x300C,        // has_loaded_game
-    randomSeed = 0x7728,
-    commGlobalTxt = 0x8DF8,          // 80 bytes shown by the VDU comm display
-    pilotLastName = 0x9A42,          // 14 bytes
-    pilotCallsign = 0x9A50,          // 14 bytes
-    gPositionVector = 0xA9C2,        // 3 x int32 per slot
-    entityCullStatus = 0xACC4,       // word per slot: screen x of the last frame's drawing (0x8001 = culled/inactive)
-    entityScreenY = 0xAD44,          // [entityScreenY] word per slot: its screen y
-    gOrientationRightVector = 0xAEB6,// 3 x int32 per slot
-    gOrientationUpVector = 0xB1B6,   // named "up", but it points to the bottom of the screen
-                                     // (the carrier moves along it when the nose comes up)
-    gOrientationFrontVector = 0xB4B6,
-    setSpeed = 0xB9F6,               // [gOrientationFrontVector+540] int32 per slot
-    damageProperty = 0xBB8E,         // word per slot: bolt damage / AI timers
-    gunDamage = 0xBD0E,              // [damageProperty+180] byte per slot, 0..5
-    maybeEntityType = 0xBD1A,        // word per slot, EntityType
-    gunEnergy = 0xBE3A,              // [maybeEntityType+120] word per slot, recharges to 100
-    speedLo = 0xBE6C,                // [maybeEntityType+152] int32 per slot (lo/hi words)
-    commAnimInfo = 0xBE94,           // word per slot (1 = has a pilot that talks)
-    engineFlag = 0xBFD6,             // [commAnimInfo+142] byte per slot, 0xff = disabled
-    gInstanceShipTypes = 0xBFF8,     // word per slot, index into kShipStats (0x6f bytes each)
-    frameCounter = 0xC0B8,           // [gInstanceShipTypes+C0] incremented once per game frame
-    damagePoints = 0xC17A,           // [currentNavPoint+2] word per slot, accumulated hull damage
-    currentNavPoint = 0xC178,        // word: the nav point the player is at (ovr145:098F sets it up)
-    currentMission = 0xC255,         // byte
-    currentSeries = 0xC256,          // byte
-    statusPilots = 0xC260,           // word per named pilot (8): 0 = alive, else series * 4 + mission of his death
-    victoryPoints = 0xC280,          // word
-    missileTarget = 0xC284,          // [currentCampaign+2] byte per slot
-    parentShipForShip = 0xC30E,      // byte per slot, 0xff = none
-    gMaybeShipRadius = 0xC3B0,       // word per slot
-    curShield = 0xC430,              // curShieldMaybe: word[2] per slot (front, rear)
-    gShipBoltList = 0xC472,          // 0x33 bytes per slot: count + 10 x 5-byte gun entries
-    tempVector = 0xC6B2,             // scratch vector used by the game
-    armorState = 0xC85E,             // armorStateArray: word[4] per slot (front, rear, left, right)
-    coreHp = 0xC8B8,                 // [armorStateArray+5A] byte per slot, starts at 4
-    shieldMax = 0xC988,              // shieldMaxMaybe: word[2] per slot
-    shipAiState = 0xCA56,            // [comm6to5+E] word per slot, 9 = dying, 8 = ?, 0xffff
-    gVelocityVector = 0xCAE2,        // 3 x int32 per slot
-    shipStateByte = 0xD1A2,          // [vduModeMaybe+2] byte per slot: pilot set, 8 = Confed pilot
-                                     // (player and wingman), 0xff = none; the comms code picks
-                                     // the face and name from it (ovr138:0980, ovr140:0020)
-    hullCounter = 0xD22C,            // [vduModeMaybe+8C] byte per slot
-    vduStatus10WhenPlayerHitsSmth = 0xD236,
-    systemDamage = 0xD24C,           // [systemDamage] byte per system (9): the player's damage levels, 0..4 (ovr134:0DEC)
-    cockpitDamage = 0x8CB2,          // [cockpitDamage] word per cockpit instrument (4): 1 = broken (ovr134:325E)
-    navPointState = 0xD25D,          // 8 x 19 bytes: mission tree progress
-    navPointTable = 0x687C,          // [navPoints] 0x4d bytes per nav point; its mission ships are ten words at +0x39
-    missionShipTable = 0x6E80,       // [missionShips] 0x2a bytes per mission ship, word 0 = ship type
-    fieldRockTally = 0x39A4,         // [fieldRockTally] word: rocks added minus rocks dropped (not an exact count)
-    fieldCount = 0xBFF6,             // [fieldCount] word: fields of the current nav point (max 7)
-    currentField = 0xC362,           // [currentField] word: offset of the field the player is in, 0 = none
-    fieldTable = 0xCDF6,             // [fieldTable] 0x14 bytes per field: type, position, radius
-    entitiesToDespawn = 0x6610,      // 0x14 bytes: the slots of the current field's rocks or mines (0xff = free)
-    entitiesToDespawnTargetA = 0x6626,
-    playerTarget = 0x662C,           // [entitiesToDespawn+1C]
-    unknown07A6 = 0x07A6,
-};
+// One variable per line of wcnet_ds.def, holding the offset in the game that
+// is running (wcnet_game.cpp loads them); 0 = that game has no such thing, or
+// it is not located yet.
+#define WC_DS(name, wc1, wc2) extern Bit16u name;
+#include "wcnet_ds.def"
+#undef WC_DS
+inline bool known(Bit16u offset) { return offset != 0; }
 }  // namespace ds
 
 struct Vec3 {

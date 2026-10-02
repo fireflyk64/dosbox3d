@@ -2,6 +2,7 @@
  *  Public interface of the Wing Commander multiplayer layer.
  *
  *  The implementation lives in src/cpu/wcnet_*.cpp:
+ *    wcnet_game       which executable is running, and its address tables
  *    wcnet_memory     data-segment map and typed accessors
  *    wcnet_code       code addresses (stubs, overlays, hook points)
  *    wcnet_vm         running game code (interception, trampoline)
@@ -15,10 +16,17 @@
 #define WC_NET_H_
 
 #include <string>
+#include "dosbox.h"
 #include "net_config.h"
 
 // Called before every instruction by the normal CPU core.
 void wc_net_check_cpu_hooks();
+
+// Called by DOS when it has loaded a program (its path, the first paragraph
+// of the image, its PSP) and when a process ends: the hooks only apply to
+// the executables they know, wherever DOS put them.
+void wc_net_program_loaded(const char *path, Bit16u loadSeg, Bit16u psp);
+void wc_net_program_ended(Bit16u psp);
 
 // Start a server (WCHOST unset) or connect to one (WCHOST set); with WCROOM
 // set, meet the others in a lobbylink room instead.  See NetConfig.

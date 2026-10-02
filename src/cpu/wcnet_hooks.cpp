@@ -20,6 +20,7 @@
 #include "wcnet_vm.h"
 #include "wcnet_memory.h"
 #include "wcnet_code.h"
+#include "wcnet_game.h"
 #include "wcnet_log.h"
 #include "cpu.h"
 #include "regs.h"
@@ -32,12 +33,6 @@
 extern std::string incoming_text;
 
 namespace wc {
-
-// The instructions the main loop uses to test dseg:00AE; we look at the
-// status right before each so a client can hold its own mission open.
-static const code::RootLoc kStatusCheckAfterKeys = { code::SEG001, 0x20F4, "main_loop+AB: cmp missionStatus after handle_key" };
-static const code::RootLoc kStatusCheckAfterFrame = { code::SEG001, 0x2108, "main_loop+BF: cmp missionStatus after the frame" };
-static const code::RootLoc kStatusSetByExitKey = { code::SEG001, 0x20F2, "main_loop+A9: after missionStatus = EndExit" };
 
 static bool g_watch[0x10000];
 static bool g_watchReady = false;
@@ -364,9 +359,16 @@ static void key_script() {
         wclog(1, "key script: next mission in space, clock restarted (t=%.1f)", now / 1000.0);
     }
     if (startMs < 0) {
-        if (in_flight()) {
+        // WCNET_KEYSCRIPT_FROM=boot starts the clock with the program instead
+        // of in space (for menus, cutscenes and games the hooks do not know).
+        static int fromBoot = -1;
+        if (fromBoot < 0) {
+            const char *from = getenv("WCNET_KEYSCRIPT_FROM");
+            fromBoot = from && !strcmp(from, "boot") ? 1 : 0;
+        }
+        if (fromBoot || in_flight()) {
             startMs = now;
-            wclog(1, "key script: in space, clock started (t=%.1f)", now / 1000.0);
+            wclog(1, "key script: %s, clock started (t=%.1f)", fromBoot ? "from boot" : "in space", now / 1000.0);
         }
         return;
     }
@@ -490,33 +492,21 @@ static void key_script() {
     next++;
 }
 
+// Every place the dispatcher looks at, as a bitmap over IP: built for the
+// game that is running, empty while none is.
 static void build_watch_list() {
     memset(g_watch, 0, sizeof(g_watch));
-    watch(code::briefingStarted.ovrOff);
-    watch(code::missionStarting.ovrOff);
-    watch(code::missionVictoryCalc.ovrOff);
-    watch(code::missionEnded.ovrOff);
-    watch(code::simulatorStart.ovrOff);
-    watch(code::simulatorEnd.ovrOff);
-    watch(code::do_damage.ovrOff);
-    watch(code::fireGunFromShip.ovrOff);
-    watch(code::delayedDespawn.ovrOff);
-    watch(code::outerSpawnShipEntity.ovrOff);
-    watch(code::despawn.ovrOff);
-    watch(code::aiShipThink.ovrOff);
-    watch(code::aiSetSpeed.ovrOff);
-    watch(code::enterBarracks.ovrOff);
-    watch(code::autoAnimationBody.ovrOff);
-    watch(code::autopilotFinished.ovrOff);
-    watch(code::skipOrchestra.off);
-    watch(code::afterStartup.off);
-    watch(code::autopilotKey.off);
-    watch(code::mainLoopTop.off);
-    watch(kStatusCheckAfterKeys.off);
-    watch(kStatusCheckAfterFrame.off);
-    watch(kStatusSetByExitKey.off);
-    watch(Trampoline::hook_ip());
+#define X(name) if (code::name.known()) watch(code::name.off);
+    WC_CODE_LIST(X)
+#undef X
+    if (g_game != GAME_NONE) {
+        watch(Trampoline::hook_ip());
+    }
     g_watchReady = true;
+}
+
+void hooks_game_changed() {
+    g_watchReady = false;
 }
 
 bool g_pendingUninit = false;
@@ -630,7 +620,7 @@ static void on_barracks() {
     if (g_skipBarracks || always_skip_barracks()) {
         g_skipBarracks = false;
         reg_eax = 7;
-        reg_eip = 0x1391;  // ovr150: return from enterBarracks
+        reg_eip = code::enterBarracksReturn.off;  // ovr150: return from enterBarracks
     }
 }
 
@@ -691,8 +681,8 @@ static void check_hooks_slow() {
         has_started_up = true;
         reg_eip += 5;
     }
-    if (g_session && (at_location(kStatusCheckAfterKeys) || at_location(kStatusCheckAfterFrame) ||
-                      at_location(kStatusSetByExitKey))) {
+    if (g_session && (at_location(code::statusCheckAfterKeys) || at_location(code::statusCheckAfterFrame) ||
+                      at_location(code::statusSetByExitKey))) {
         g_session->check_mission_status();
     }
     if (at_location(code::missionEnded)) {
@@ -905,5 +895,7 @@ void wc_net_check_cpu_hooks() {
     if (ip >= 0x10000 || !g_watch[ip]) {
         return;
     }
-    check_hooks_slow();
+    if (is_wc1()) {
+        check_hooks_slow();
+    }
 }

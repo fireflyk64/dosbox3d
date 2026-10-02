@@ -35,19 +35,27 @@ namespace wc {
 // overlay is not loaded (the thunk still reads `int 3F`).
 Bit16u overlay_segment(Bit16u stubSeg, Bit16u stubOff);
 
-// True when CS:IP is exactly the entry of `fn`.
-bool at_function(const code::OverlayFn &fn);
-// True when CS:IP is the given location inside an overlay.
-bool at_location(const code::OverlayLoc &loc);
-bool at_location(const code::RootLoc &loc);
+// True when CS:IP is exactly that place (a function's entry, or an
+// instruction), in an overlay or in the root image.  Never for a place the
+// running game does not have.
+bool at(const Loc &loc);
+inline bool at_function(const Loc &fn) { return at(fn); }
+inline bool at_location(const Loc &loc) { return at(loc); }
 
-// Read the n-th 16-bit argument of the function whose entry we are at.
+// Read the n-th 16-bit argument (as the function declares them) of the
+// function whose entry we are at.  Without a function: cdecl, which is every
+// WC.EXE function; with one, its own convention (WC2.EXE has pascal ones,
+// whose first argument is the deepest on the stack).
 Bit16u call_arg16(int n);
+Bit16u call_arg16(const Loc &fn, int n);
 // Replace the n-th argument before the function reads it.
 void set_call_arg16(int n, Bit16u value);
-// Emulate `retf` at a function entry, returning `ax` to the caller.  The
-// caller cleans up the arguments (cdecl), so nothing else is needed.
+void set_call_arg16(const Loc &fn, int n, Bit16u value);
+// Emulate the function's return at its entry, returning `ax` to the caller.
+// A cdecl caller cleans up the arguments itself; for a pascal function its
+// arguments are popped here.
 void return_from_call(Bit16u ax);
+void return_from_call(const Loc &fn, Bit16u ax);
 
 // --- invoking game code -----------------------------------------------------
 
@@ -57,12 +65,18 @@ void return_from_call(Bit16u ax);
 // (in practice: the trampoline NOP).
 class GameCall {
 public:
-    GameCall(Bit16u seg, Bit16u off) : seg_(seg), off_(off) {}
+    // A known function, with its convention (an overlay function is called
+    // through its thunk).
+    explicit GameCall(const Loc &fn)
+        : seg_(fn.seg), off_(fn.overlay ? fn.stubOff : fn.off), pascal_(fn.pascal != 0), known_(fn.known()) {}
+    GameCall(Bit16u seg, Bit16u off) : seg_(seg), off_(off), pascal_(false), known_(true) {}
+    // Arguments in the order the function declares them.
     GameCall &arg(Bit16u v) { args_.push_back(v); return *this; }
     void invoke() const;
 
 private:
     Bit16u seg_, off_;
+    bool pascal_, known_;
     std::vector<Bit16u> args_;
 };
 

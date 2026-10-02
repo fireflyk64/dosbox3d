@@ -156,7 +156,7 @@ void run_campaign(int missionId, int seriesId) {
     // afterStartup, which flies the mission again.
     CPU_Push16((Bit16u)SegValue(cs));
     CPU_Push16(code::afterHangarMission.off);
-    SegSet16(cs, code::runHangarMission.stubSeg);
+    SegSet16(cs, code::runHangarMission.seg);
     reg_eip = code::runHangarMission.stubOff;
 }
 
