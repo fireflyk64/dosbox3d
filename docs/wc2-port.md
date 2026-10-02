@@ -62,6 +62,54 @@ The key script works without the WC1 hooks when `WCNET_KEYSCRIPT_FROM=boot`
 starts its clock with the program; `!shot=` screenshots work in any mode 13h
 screen.
 
+## 3. What works (two native instances, `wc2 Origin -k s1 m0`)
+
+Stage 1 to 4 of the plan below, for a mission the story flies with a wingman:
+
+* **Tables.**  `src/cpu/wcnet_ds.def` has a WC2 column; `scripts/wcmap.py
+  wc/WC.EXE wc2/WC2.EXE data` produced most of it by pairing functions and
+  voting on the addresses in aligned instructions (`funcs` and `where` do the
+  same for code), checked against memory dumps taken in flight.  70 entity
+  slots (WC1: 64): right, up, front, position and velocity vectors are five
+  consecutive arrays at `dseg:4D26`, `506E`, `53B6`, `56FE`, `5A46`.  Ship
+  slots are still 0..9, the player is slot 0 and his wingman slot 1.
+* **Hooks** (`load_wc2_code` in `wcnet_game.cpp`): frame loop `seg001:1BED`
+  (top of the loop `1CA3`, status tests `1CF2`/`1D07`), the campaign loop
+  around a flight `ovr128:02CE` (mission about to load `0486`, flight over
+  `04C3`), `do_damage ovr114:1128`, destroy `ovr114:2B10`, fire
+  `ovr114:3847`, spawn `ovr116:1CED`, nav point setup `ovr116:1511`, despawn
+  `seg006:1AB7`, the per-entity AI dispatcher `ovr141:2CD3`, AI set speed
+  `ovr114:0E5A`, autopilot `ovr107` (`0003`, `0667`, key at `seg001:1079`).
+  The dispatcher, the session and the event code are shared with WC1; the
+  differences are data (`GameParams`, `Loc.pascal`).
+* **What was different.**
+  * Many WC2 functions are pascal: `call_arg16(fn, n)`, `return_from_call(fn,
+    ax)` and `GameCall(fn)` take the convention from the table.
+  * WC2 loads a nav point's ship types when the player gets there
+    (`ovr116:1511`); a spawn of a type that is not loaded returns a slot and
+    creates nothing.  The server's spawns after an autopilot reach a client
+    before its own nav check has run, so the client runs the nav point setup
+    first (`NavSetupJob`), with the spawns and despawns nested in it answered
+    as a client's own.
+  * WC2 places a wingman by formation AI, not by a start offset.  The AI is
+    off for a human's ship, so the client takes the position the server
+    holds for its slot from the start state (this also fixed WC1, where a
+    client used to start inside the host's ship).
+  * Fighters get their AI from `ovr129:150E`, capital ships from `1F13`:
+    the hook is on the dispatcher above both.  On a WC2 client the AI of the
+    host's ship is off as well (it would fly formation on the client).
+  * Mission ship records are 0x3C bytes (name 20 bytes, type byte at +0x14,
+    class word at +0x15: 5 and 6 are asteroid and mine fields); nav point
+    records 0x65 bytes with their ten ship words at +0x51.
+* **Tested**: start in formation, positions and health in step, three Sartha
+  at Nav 1 firing, damaging each other and dying on both machines, autopilot
+  to Nav 1, a landing (both play the landing sequence and return to the
+  barracks), a wingman's death (both get "You have died... Replay Mission").
+
+Not done yet: chat on the comms display, the mission's outcome for the
+debriefing and the campaign path, cloaking, turrets, torpedoes, tractor
+beams, in-flight conversations, Special Operations, the browser page.
+
 ## 3. Plan
 
 1. Game detection and per-game tables (this is also what Secret Missions 2
