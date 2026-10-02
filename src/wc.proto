@@ -176,6 +176,11 @@ message ServerSendBriefingStart {
     optional uint32 series_id = 3;
     // As Frame.rocks: known before the client sets up its first nav point.
     optional uint32 rocks = 4;
+    // WC2: the server's campaign record (what a saved game holds: where the
+    // story is, who is alive), as it was when "Fly mission" was chosen.  The
+    // client takes it over, so that its briefing, its mission and what it
+    // finds in them are the server's.
+    optional bytes campaign_state = 5;
 }
 message NetworkMessage {
     optional Connect connect = 1;

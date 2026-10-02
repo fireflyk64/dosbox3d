@@ -77,7 +77,7 @@
   <section id="source">
     <h2>1. Game files</h2>
     <div id="dropzone" tabindex="0">
-      <strong>Bring your own game.</strong> Drop a <b>.zip</b> of your Wing Commander folder, or the GOG installer
+      <strong>Bring your own game.</strong> Drop a <b>.zip</b> of your Wing Commander or Wing Commander II folder, or the GOG installer
       (<code>setup_wing_commander_*.exe</code>), here, or
       <label class="pick"><input type="file" id="gamefile" accept=".zip,.exe,application/zip,application/octet-stream"> choose a file</label>.
       Nothing is uploaded: the files are unpacked and kept in this browser only.
@@ -85,7 +85,7 @@
     <div id="sourceStatus">No game files yet.</div>
     <div id="sourceButtons">
       <button type="button" class="secondary" id="useServer" hidden>Use this server's copy</button>
-      <button type="button" class="secondary" id="useSaved" hidden>Use the saved copy</button>
+      <span id="savedList"></span>
       <button type="button" class="secondary" id="forget" hidden>Forget the saved copy</button>
       <label id="pickerLabel" hidden>Unknown game; run <select id="exePicker"></select></label>
     </div>
@@ -146,7 +146,7 @@
       <canvas id="canvas" width="640" height="400" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
       <div id="log"></div>
     </div>
-    <p class="hint">Click the screen to give it the keyboard. <kbd>Caps Lock</kbd> is the game's <kbd>Esc</kbd> (it skips cutscenes), because the browser keeps <kbd>Esc</kbd> for leaving full screen; in Chrome and Edge a short tap of <kbd>Esc</kbd> also reaches the game in full screen, and holding it leaves. In the barracks press <kbd>0</kbd> to type a chat message; in space <kbd>Enter</kbd> fires missiles. <kbd>Ctrl</kbd>+<kbd>F10</kbd> releases the mouse.</p>
+    <p class="hint">Click the screen to give it the keyboard. <kbd>Caps Lock</kbd> is the game's <kbd>Esc</kbd> (it skips cutscenes), because the browser keeps <kbd>Esc</kbd> for leaving full screen; in Chrome and Edge a short tap of <kbd>Esc</kbd> also reaches the game in full screen, and holding it leaves. Press <kbd>0</kbd> to type a chat message to the other pilots, <kbd>Enter</kbd> sends it; in space <kbd>Enter</kbd> fires missiles. <kbd>Ctrl</kbd>+<kbd>F10</kbd> releases the mouse.</p>
   </section>
 
   <section id="saves" hidden>

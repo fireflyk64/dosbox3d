@@ -10,8 +10,13 @@
 //
 // The game registry is the only game-specific knowledge here: a game is
 // recognised by an executable, run by a DOS command, and flagged when the
-// emulator's multiplayer hooks apply to it (Wing Commander 1 only, so far).
-// Optional: `saves`, the files the game keeps its saved games in (relative to
+// emulator's multiplayer hooks apply to it (Wing Commander 1 and 2).
+// Optional: `campaign`, the missions the host can pick for everybody: the
+// series as the game numbers them, each with a name and its missions (a
+// count, or one note per mission), and how a picked mission reaches the game:
+// the hooks' MIS / SERIES environment (Wing Commander), or `missionArgs`,
+// arguments for the game's own command line (Wing Commander II's developer
+// switches), with `hints` for the page's lines about it.  `saves`, the files the game keeps its saved games in (relative to
 // the game directory; the page keeps a copy in the browser and offers them as
 // a download), and `cycles`, the emulated CPU speed the game plays well at
 // (DOSBox's default of 3000 is what Ctrl+F11 / Ctrl+F12 adjust), and `pointer`,
@@ -20,13 +25,70 @@
 // mouse range.  Wing Commander parks the pointer at 318,52 of 640x200 (the
 // middle of the cockpit view) and turns by its distance from there.
 
+// Wing Commander's Vega campaign: series 1.. and mission 0.. within the
+// series (what the MIS / SERIES environment of the hooks takes).  The system
+// of each series and the number of missions were read off the game's own
+// briefing screens (an index past the last mission shows a black screen);
+// series 14 and up do not exist in WC.EXE.  40 missions in all.
+const WC1_SERIES = [
+  { series: 1, name: "Enyo", missions: 2 },
+  { series: 2, name: "McAuliffe", missions: 3 },
+  { series: 3, name: "Gateway", missions: 3 },
+  { series: 4, name: "Gimle", missions: 3 },
+  { series: 5, name: "Brimstone", missions: 3 },
+  { series: 6, name: "Chengdu", missions: 3 },
+  { series: 7, name: "Dakota", missions: 3 },
+  { series: 8, name: "Port Hedland", missions: 3 },
+  { series: 9, name: "Kurasawa", missions: 3 },
+  { series: 10, name: "Rostov", missions: 3 },
+  { series: 11, name: "Hubble's Star", missions: 3 },
+  { series: 12, name: "Venice", missions: 4 },
+  { series: 13, name: "Hell's Kitchen", missions: 4 },
+];
+
+// Wing Commander II: twelve series of four missions (docs/wc2-port.md has
+// the survey).  The note says who the story sends along: the second player
+// flies that wingman's ship.  ALONE marks the missions the story flies
+// alone, where the second player rides along as a drone; "" is a mission the
+// survey did not reach.
+const ALONE = "flown alone: the second player is a drone";
+const WC2_SERIES = [
+  { series: 1, missions: ["with Shadow", "with Shadow", "", "with Shadow"] },
+  { series: 2, missions: [ALONE, ALONE, ALONE, ALONE] },
+  { series: 3, missions: ["with Hobbes", "with Hobbes", "with Hobbes", "with Hobbes"] },
+  { series: 4, missions: ["with Doomsday", "with Doomsday", "with Doomsday", ALONE] },
+  { series: 5, missions: ["with Spirit", "with Spirit", ALONE, ""] },
+  { series: 6, missions: ["with Stingray", "with Stingray", "with Stingray", "with Stingray"] },
+  { series: 7, missions: ["with Angel", "with Angel", "with Angel", ""] },
+  { series: 8, missions: ["with Jazz", "with Jazz", ALONE, ALONE] },
+  { series: 9, missions: [ALONE, ALONE, ALONE, ALONE] },
+  { series: 10, missions: ["with Doomsday", "", "with Doomsday", ALONE] },
+  { series: 11, missions: ["with Stingray", "with Stingray", "with Stingray", "with Stingray"] },
+  { series: 12, missions: ["with Jazz", "with Jazz", ALONE, "with the Sabre escort"] },
+];
+
 export const GAMES = [
   { id: "wc1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
     saves: ["GAMEDAT/SAVEGAME.WLD"], cycles: 3630,
-    pointer: { x: 318 / 639, y: 52 / 199, rx: 318 / 639, ry: 52 / 199 } },
+    pointer: { x: 318 / 639, y: 52 / 199, rx: 318 / 639, ry: 52 / 199 },
+    campaign: { series: WC1_SERIES, hints: {
+      forced: "Everyone flies it from a fresh start with the callsigns entered above.",
+      host: "The barracks: your save game and your walk to the briefing decide the mission; wingmen must walk into the briefing room too, and get your mission there.",
+      wing: "The host flies from the barracks: after the host starts, walk into the briefing room on your ship and you get the host's mission." } } },
   { id: "wc1sm2", title: "Wing Commander: Secret Missions 2", detect: ["SM2.EXE"], run: "sm2", multiplayer: false, secondary: true },
-  { id: "wc2", title: "Wing Commander II", detect: ["WC2.EXE"], run: "wc2", multiplayer: false },
+  // "Origin s<series> m<mission>" on WC2's command line puts the story at
+  // that mission and starts in the barracks (a different room from base to
+  // base: the door that flies the mission is not always in the same place).
+  { id: "wc2", title: "Wing Commander II", detect: ["WC2.EXE"], run: "wc2", multiplayer: true,
+    saves: ["GAMEDAT/SAVEGAME.WC2"], cycles: 8000,
+    campaign: { series: WC2_SERIES, missionArgs: (m) => `Origin s${m.series} m${m.mis}`, hints: {
+      forced: "Everyone starts in the barracks with the story at that mission: click the door the game calls \"Fly mission\" (point at a door and it is named), and the briefing plays first. In a mission flown alone the second player is a drone: nothing sees or hits it and it has no guns; 0, then /chase and Enter, rides behind the leader.",
+      host: "The barracks: your saved game decides the mission. Click \"Fly mission\" (point at a door and the game names it); wingmen do the same and get your place in the story, your briefing and your mission.",
+      wing: "The host flies from the barracks: click \"Fly mission\" (point at a door and the game names it), and you get the host's place in the story, the briefing and the mission." } } },
 ];
+
+// The registry entry of a game id, or null (a game picked by its executable).
+export const gameById = (id) => GAMES.find((g) => g.id === id) || null;
 
 // Directories and file types an installer leaves behind that a DOS game
 // never reads (GOG's own DOSBox, redistributables, manuals, icons).

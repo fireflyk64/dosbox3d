@@ -145,6 +145,53 @@ static void load_mission_tree_progress(const std::string &data) {
     }
 }
 
+// WC2's campaign record: a far-heap block, its length in words first.  The
+// barracks holds it between flights (it is saved and freed before one), so
+// it is there when "Fly mission" is chosen and absent in the mission test.
+static PhysPt campaign_record(int *bytes) {
+    *bytes = 0;
+    if (!ds::known(ds::campaignState)) {
+        return 0;
+    }
+    PhysPt rec = PhysMake(rd16((Bit16u)(ds::campaignState + 2)), rd16(ds::campaignState));
+    if (!rec) {
+        return 0;
+    }
+    int n = 2 * (int)mem_readw(rec);
+    if (n < 0x20 || n > 0x1000) {
+        wclog(0, "campaign record of %d bytes: not what was expected", n);
+        return 0;
+    }
+    *bytes = n;
+    return rec;
+}
+
+static std::string read_campaign_state() {
+    int n;
+    PhysPt rec = campaign_record(&n);
+    std::string out;
+    for (int i = 0; i < n; i++) {
+        out.push_back((char)mem_readb(rec + i));
+    }
+    return out;
+}
+
+static void load_campaign_state(const std::string &data) {
+    int n;
+    PhysPt rec = campaign_record(&n);
+    if (data.empty() || !rec) {
+        return;
+    }
+    if ((int)data.length() != n) {
+        wclog(0, "the server's campaign record is %d bytes, ours %d: keeping ours", (int)data.length(), n);
+        return;
+    }
+    for (int i = 0; i < n; i++) {
+        mem_writeb(rec + i, (Bit8u)data[i]);
+    }
+    wclog(1, "took over the server's campaign record: series %d mission %d", mem_readw(rec + 4), mem_readw(rec + 6));
+}
+
 static void populate_mission_end(MissionEnd *end) {
     end->set_game_update((GameState)rd16(ds::missionStatus));
     std::string *tree = end->mutable_mission_tree_progress();
@@ -420,6 +467,7 @@ public:
         MissionEnd end;
         populate_mission_end(&end);
         lastBriefing_.set_mission_tree_progress(end.mission_tree_progress());
+        lastBriefing_.set_campaign_state(read_campaign_state());
         lastBriefing_.set_mission_id(mission);
         lastBriefing_.set_series_id(series);
         accept_clients(true);
@@ -722,6 +770,9 @@ private:
             return false;
         }
         c->inMission = true;
+        if (c->seat == SEAT_DRONE) {
+            show_notice(c->callsign + " rides along as a drone: this mission is flown alone.");
+        }
         // Spawns queued in the pending frame are already in the registry copy.
         c->skipPendingEvents = pendingFrame_.frame().event_size();
         return true;
@@ -1047,7 +1098,7 @@ public:
             return;
         }
         chase_ = !chase_;
-        show_notice(chase_ ? "Drone: riding behind the leader (/chase to fly free)" : "Drone: flying free (/chase to ride behind the leader)");
+        show_notice(chase_ ? "Drone: riding behind the leader (0 then /chase to fly free)" : "Drone: flying free (0 then /chase to ride behind the leader)");
     }
 
     virtual void on_mission_starting(int mission, int series) {
@@ -1288,6 +1339,7 @@ private:
             set_rocks_mode((int)b.rocks());  // before our own nav point setup runs
         }
         load_mission_tree_progress(b.mission_tree_progress());
+        load_campaign_state(b.campaign_state());
         wr8(ds::currentMission, (Bit8u)b.mission_id());
         wr8(ds::currentSeries, (Bit8u)b.series_id());
         wclog(1, "briefing for mission %d/%d", b.mission_id(), b.series_id());
@@ -1302,7 +1354,7 @@ private:
             // another ship here, and the leader's is made first.
             entities_.set_own_ship(-1);
             enqueue_host_body();
-            show_notice("This mission is flown alone: you are a drone. Nothing sees or hits you, you have no guns. /chase rides behind the leader");
+            show_notice("This mission is flown alone: you are a drone. Nothing sees or hits you, and you have no guns. 0 then /chase rides behind the leader.");
         } else {
             entities_.set_own_ship(shipNet_);
         }
@@ -1545,6 +1597,10 @@ const char *wc_net_status_note() {
 
 bool in_space() {
     return g_session != NULL && g_session->in_space();
+}
+
+bool wc_net_overlay_chat() {
+    return !in_space() || !ds::known(ds::commGlobalTxt);
 }
 
 void wc_net_set_rocks(int mode) {

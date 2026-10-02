@@ -57,9 +57,14 @@ the server names by writing it to `dseg:00D0` and the series to `00D2`).
 Without the `l`, `wc2 Origin -k s<series> m<mission>` is the mission jump
 (`ovr127:09A0` parses the command line: `Origin` enables the rest, `-k` makes
 the player invulnerable, `s`/`m` pick the mission and start in the barracks).
-From the barracks a left click on the round door at the middle of the screen
-(pointer at 0.48, 0.55 of the mouse range) is "Fly mission"; the airlock on
-the left is "Exit to DOS".  The briefing conversation plays for about 110
+The barracks is a different room from base to base, and the doors change
+places: the game names the one under the pointer.  In series 1 (Caernarvon
+station) a left click on the round door at the middle of the screen (pointer
+at 0.48, 0.55 of the mouse range) is "Fly mission" and the airlock on the
+left is "Exit to DOS"; on the Concordia (series 9) "Fly mission" is the
+airlock on the left (0.12, 0.5), the terminal beside it "Save/Load game",
+the middle door "Exit to DOS" and the hatch on the right "View storyline".
+`-k` only makes the player invulnerable; the jump works without it.  The briefing conversation plays for about 110
 emulated seconds at `cycles=8000` before the cockpit appears; Esc during the
 opening sequence of a new game drops back to the title.
 
@@ -69,7 +74,7 @@ screen.
 
 ## 3. What works (two native instances, `wc2 Origin -k s1 m0`)
 
-Stage 1 to 4 of the plan in section 7, for a mission the story flies with a wingman:
+Stage 1 to 4 of the plan in section 9, for a mission the story flies with a wingman:
 
 * **Tables.**  `src/cpu/wcnet_ds.def` has a WC2 column; `scripts/wcmap.py
   wc/WC.EXE wc2/WC2.EXE data` produced most of it by pairing functions and
@@ -179,7 +184,53 @@ network layer as well: the direct mode does not have what that scene waits
 for.  It is not a multiplayer problem, but it makes that mission useless for
 headless tests.
 
-## 5. Finding out why the game quit
+## 5. The story path: barracks, briefing, campaign record
+
+The campaign loop is `ovr128:02CE`.  Between flights the game holds a
+campaign record on the far heap (far pointer at `dseg:CF3A`; first word its
+length in words; +4 series, +6 mission, +8/+0xA the scene, +0x12 the phase,
++0x9E a count and from +0xA0 the story's flags, e.g. who is alive): it is
+what a saved game holds.  `ovr120:0793` is the barracks; its choices are 1
+"Fly mission" (`ovr120:0800`), 2 the story scenes, 3 save/load, 4 exit.
+Flying plays the briefing scene (`ovr146:02A4`, the series' script, which
+picks the scene from the record), copies the record's series and mission to
+`dseg:467F`/`4681` (`ovr146:0217`), saves and frees the record
+(`ovr146:0414`) and loads the mission (`ovr128:0486`).
+
+So the two machines meet at `ovr120:0800` (`code::flyMission`), before the
+briefing: the server's briefing message carries its whole campaign record
+(`ServerSendBriefingStart.campaign_state`) and the client overwrites its own
+with it.  A client that came from another mission, or another saved game,
+then watches the server's briefing, flies the server's mission and finds
+the server's story in it (checked: host started with `s3 m1`, client with
+`s1 m0`; both got Hobbes's and Angel's briefing and the Rapier mission).
+The hook at `ovr128:0486` then only starts the flight's bookkeeping.  The
+mission test (`l`) has no record and no barracks: the handshake stays at
+`seg001:0330` there.
+
+## 6. The browser page
+
+`web/gamefiles.js` has both games' campaigns; the page's mission menu, its
+hints and the way a picked mission reaches the game come from the registry
+entry of the host's game (every hello carries the sender's game, and a
+player with another game loaded is told).  A WC2 mission picked by the host
+is `wc2 Origin s<series> m<mission>` on every machine: everybody starts in
+the barracks with the story at that mission and clicks "Fly mission".
+Saved games are `GAMEDAT/SAVEGAME.WC2`; the speed is GOG's `cycles=8000`.
+
+WC2's own comms display is not hooked, so chat lines and notices ("you are
+a drone", "/chase") are drawn on the emulator's overlay in flight too
+(`wc_net_overlay_chat`), for a time that grows with their length.  The
+overlay is drawn on the game's picture, of which the renderer only repaints
+changed lines: a change of text asks for one full repaint
+(`render.scale.clearCache`), or old text stays where the picture is still.
+
+Checked with two headless Chrome pages and a local lobby (the scratch
+`webwc2` test): the host picks 9/1 or 1/0 in the lobby, both click "Fly
+mission", both reach the cockpit; in 9/1 the second page is a drone, types
+`0`, `/chase`, Enter and rides behind the leader.
+
+## 7. Finding out why the game quit
 
 WC2 leaves through `ovr145:0038(message)` (thunk `stub145:0052`, 150 call
 sites): it formats "Sorry, an error has occurred... %03d" and exits.  The
@@ -188,13 +239,15 @@ when the game ends, and with `WCNET_EXIT_STACK=1` the stack as well: the
 near pointer of the message (`push word 0x7f34`) is on it, and
 `scripts/wcexe.py find` on that push finds the check that failed.
 
-## 6. Not done yet
+## 8. Not done yet
 
-Chat on the comms display, the mission's outcome for the debriefing and the
-campaign path, cloaking, turrets, torpedoes, tractor beams, in-flight
-conversations and scenes, Special Operations, the browser page.
+The gunner's seat, chat on the game's own comms display, the mission's
+outcome for the debriefing (each machine scores its own; the next "Fly
+mission" brings the client back to the server's story), cloaking, turrets,
+torpedoes, tractor beams, in-flight conversations and scenes, Special
+Operations.
 
-## 7. Plan
+## 9. Plan
 
 1. Game detection and per-game tables (this is also what Secret Missions 2
    needs): `DOS_Execute` reports the program and its load segment; `ds::` and
@@ -205,4 +258,4 @@ conversations and scenes, Special Operations, the browser page.
 4. Fire, damage, despawn, health, autopilot, mission endings.  *(done)*
 5. WC2's own features: missions the story flies alone (the drone: done; a
    gunner in the turret ships), in-flight scenes.
-6. The browser build: game registry entry, mission menu.
+6. The browser build: game registry entry, mission menu.  *(done)*

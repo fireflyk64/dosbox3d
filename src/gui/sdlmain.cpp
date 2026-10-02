@@ -43,6 +43,7 @@
 #include "version.h"
 #include "dosbox.h"
 #include "video.h"
+#include "render.h"
 #include "mouse.h"
 #include "pic.h"
 #include "timer.h"
@@ -1556,14 +1557,19 @@ bool is_wc_connected();
 void uninit_network();
 extern bool within_briefed_mission;
 extern bool in_space();
+extern bool wc_net_overlay_chat();
 std::string outgoing_prefix = "[Transmit Comms] ";
 size_t last_incoming_text_len = 0;
 std::string incoming_text="";
 size_t last_outgoing_text_len = 0;
-std::string outgoing_text="To transmit comms use the \'0\' key";//OUTGOING TEXT THAT GOES ON AND ON AND ON AND ON AND ON AND ON AND ON AND ON AND ON";
+static const char kCommsHint[] = "To transmit comms use the '0' key";
+std::string outgoing_text=kCommsHint;
 extern Bit8u int10_font_14[256 * 14];
 static void DrawText(Bitu x,Bitu y,const char * text,Bit8u color, Bit8u *surface, Bitu pitch) {
     Bitu step  = pitch /sdl.draw.width;
+    if (step >= 3 && color == 0x80) {
+        color = 0xd8;  // true colour: light grey reads better than mid grey on the darkened strip
+    }
 	Bit8u * draw=surface + x * step + y * pitch;
     Bit8u * start_draw = surface + x * step + y * pitch;
     Bit8u * end_draw = surface + sdl.draw.height * pitch;
@@ -1600,8 +1606,35 @@ static void DrawText(Bitu x,Bitu y,const char * text,Bit8u color, Bit8u *surface
 void GFX_EndUpdate( const Bit16u *changedLines ) {
     Bit16u fakeChangedLines[2];
     if (true) {
+        {
+            // The overlay is drawn onto the game's picture, and the renderer
+            // only repaints the lines the game changed: when a line of ours
+            // changes or goes away, have the whole picture painted again, or
+            // the old text stays where the game's picture is still.
+            static std::string lastIncoming, lastOutgoing;
+            static bool lastInSpace = false;
+            if (lastIncoming != incoming_text || lastOutgoing != outgoing_text || lastInSpace != in_space()) {
+                lastIncoming = incoming_text;
+                lastOutgoing = outgoing_text;
+                lastInSpace = in_space();
+                render.scale.clearCache = true;
+            }
+        }
         if (textPixels) {
-            if (!in_space()) {
+            if (in_space() && !incoming_text.empty()) {
+                // In flight a line stays for a while, not for the rest of
+                // the mission: it covers part of the view.
+                static std::string shown;
+                static Bit32u since = 0;
+                if (shown != incoming_text) {
+                    shown = incoming_text;
+                    since = SDL_GetTicks();
+                } else if (SDL_GetTicks() - since > 8000 + 120 * shown.length()) {  // time to read it
+                    incoming_text = "";
+                    shown = "";
+                }
+            }
+            if (wc_net_overlay_chat()) {
                 std::string lengthen;
                 std::string * to_write = &incoming_text;
                 if (last_incoming_text_len > incoming_text.length()) {
@@ -1615,16 +1648,22 @@ void GFX_EndUpdate( const Bit16u *changedLines ) {
                 DrawText(48,48, to_write->c_str(), 0x80, textPixels, textPitch);
             }
             std::string lengthen;
-            std::string * to_write = &outgoing_text;
-            
-            if (last_outgoing_text_len > outgoing_text.length()) {
-                lengthen = outgoing_text;
-                to_write = &lengthen;
-                for (size_t i = outgoing_text.length(); i < last_outgoing_text_len; i += 1) {
+            const std::string * to_write = &outgoing_text;
+            static const std::string noHint;
+            if (in_space() && outgoing_text == kCommsHint) {
+                to_write = &noHint;  // the hint is for the barracks: in flight it is only in the way
+            }
+
+            if (last_outgoing_text_len > to_write->length()) {
+                lengthen = *to_write;
+                for (size_t i = to_write->length(); i < last_outgoing_text_len; i += 1) {
                     lengthen += " ";
                 }
+                last_outgoing_text_len = to_write->length();
+                to_write = &lengthen;
+            } else {
+                last_outgoing_text_len = to_write->length();
             }
-            last_outgoing_text_len = outgoing_text.length();
             DrawText(48,48 + 14 + 14, to_write->c_str(), 0x80, textPixels, textPitch);
         }
         /* The chat overlay may have touched any line, so report the whole

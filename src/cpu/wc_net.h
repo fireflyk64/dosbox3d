@@ -40,6 +40,9 @@ const char *wc_net_role();
 // Something worth telling the player about the connection, or "".
 const char *wc_net_status_note();
 bool in_space();
+// Chat lines and notices go on the emulator's overlay: outside flight, and in
+// flight when the game has no comms display the hooks can write to (WC2).
+bool wc_net_overlay_chat();
 extern bool within_briefed_mission;
 void wcnetSendChatMessage(const std::string &msg);
 // Asteroid and mine fields: 1 on (the default), 0 off (WCROCKS=0), 2 soft

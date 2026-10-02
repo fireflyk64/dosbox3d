@@ -45,6 +45,7 @@ static void watch(Bit16u ip) { g_watch[ip] = true; }
 // in-flight frame has run: what the test aids mean by "in space".  It does
 // not depend on a network session or on stale slot data from the last mission.
 static bool g_inMission = false;
+static bool g_briefed = false;   // WC2: the session was told of the mission in the barracks, before the briefing
 static bool g_frameSeen = false;
 static int g_flightCount = 0;  // missions that reached their first frame
 static bool in_flight() { return g_inMission && g_frameSeen; }
@@ -639,22 +640,43 @@ static void check_hooks_slow() {
     if (at_location(code::briefingStarted)) {
         wclog(2, "briefing animation starting for mission %d/%d", rd8(ds::currentMission), rd8(ds::currentSeries));
     }
+    if (at_location(code::flyMission)) {
+        // WC2's barracks: "Fly mission" was chosen and the briefing scene
+        // is next.  The client meets the server here, not when the mission
+        // loads, so that it watches the briefing of the mission it is
+        // going to fly: both come from the campaign record.
+        ensure_session();
+        PhysPt rec = PhysMake(rd16((Bit16u)(ds::campaignState + 2)), rd16(ds::campaignState));
+        if (g_session && rec) {
+            has_started_up = true;
+            g_session->on_barracks();
+            wr8(ds::currentSeries, (Bit8u)mem_readw(rec + 4));
+            wr8(ds::currentMission, (Bit8u)mem_readw(rec + 6));
+            g_session->on_mission_starting(rd8(ds::currentMission), rd8(ds::currentSeries));
+            // (A client's record is the server's now: wcnet_session.cpp, load_campaign_state.)
+            g_briefed = true;
+        }
+    }
     bool direct = at_location(code::missionStartingDirect);
     if (at_location(code::missionStarting) || direct) {
-        ensure_session();
-        if (direct && !(g_session && g_session->is_client())) {
+        bool briefed = g_briefed;  // the session's part is done (flyMission above)
+        g_briefed = false;
+        if (!briefed) {
+            ensure_session();
+        }
+        if (direct && !briefed && !(g_session && g_session->is_client())) {
             // WC2's mission test flies what the command line named
             // (dseg:00D0 mission, 00D2 series), and that is the mission
             // the clients are told.
             wr8(ds::currentMission, (Bit8u)rd16(0x00D0));
             wr8(ds::currentSeries, (Bit8u)rd16(0x00D2));
         }
-        if (g_session && !code::enterBarracks.known()) {
-            // WC2 has no barracks hook: this is where a client meets the server.
+        if (g_session && !briefed && !code::enterBarracks.known()) {
+            // WC2's mission test has no barracks: this is where a client meets the server.
             has_started_up = true;
             g_session->on_barracks();
         }
-        if (g_session) {
+        if (g_session && !briefed) {
             g_session->on_mission_starting(rd8(ds::currentMission), rd8(ds::currentSeries));
         }
         // After the session: a client flies the mission the server names.

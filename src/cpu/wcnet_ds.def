@@ -63,6 +63,7 @@ WC_DS(cockpitDamage, 0x8CB2, 0xB18E)  // [cockpitDamage] word per cockpit instru
 WC_DS(navPointState, 0xD25D, 0x44F2)  // 8 x 19 bytes: mission tree progress
 WC_DS(navPointTable, 0x687C, 0x71DC)  // [navPoints] 0x4d bytes per nav point; its mission ships are ten words at +0x39
 WC_DS(playerMissionShip, 0x9560, 0xC1B4)  // [playerMissionShip] word: which mission ship the player flies
+WC_DS(campaignState, 0, 0xCF3A)           // WC2: far pointer to the campaign record (+4 series, +6 mission: what the briefing and the flight load)
 WC_DS(playerWing, 0, 0xC1B6)              // WC2: eight words, the mission ships that fly in the player's wing (0xffff: none)
 WC_DS(slotMissionShip, 0, 0x6E1E)         // WC2: [slotMissionShip + 2*slot] word: the mission ship in a slot
 WC_DS(missionShipTable, 0x6E80, 0x75CE)  // [missionShips] 0x2a bytes per mission ship, word 0 = ship type

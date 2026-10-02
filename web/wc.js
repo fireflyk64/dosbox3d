@@ -10,7 +10,7 @@
 import { P2PGame } from "./p2p-client.js";
 import { initControls } from "./gamepad.js";
 import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles,
-         saveGame, loadGames, forgetGame, totalSize, GAMES } from "./gamefiles.js";
+         saveGame, loadGames, forgetGame, totalSize, gameById } from "./gamefiles.js";
 
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
@@ -51,12 +51,16 @@ let source = null;
 let saved = [];
 
 function setSource(s) {
+  // What the page knows about a game is the registry's, also for a copy this
+  // browser saved when the registry said something else.
+  if (s && gameById(s.game.id)) { const g = gameById(s.game.id); s.game = { id: g.id, title: g.title, run: g.run, multiplayer: g.multiplayer }; }
   source = s;
   if (s) {
     sourceStatus(`Ready: ${s.game.title} from ${s.label} (${s.files.length} files, ${mb(totalSize(s.files))}).` +
-                 (s.game.multiplayer ? "" : " The multiplayer hooks only exist for Wing Commander 1, so this runs single-player."));
+                 (s.game.multiplayer ? "" : " The multiplayer hooks only exist for Wing Commander 1 and 2, so this runs single-player."));
   }
   describeSaves();
+  if (lobby.game) { sayHello(); buildMissionMenu(); renderMission(); }
   updateActions();
 }
 
@@ -93,7 +97,7 @@ async function useFiles(files, label, { persist = true } = {}) {
 
 async function handleFile(file) {
   try {
-    for (const el of ["useServer", "useSaved", "forget"]) $(el).disabled = true;
+    sourceButtons(false);
     sourceStatus(`Reading ${file.name} (${mb(file.size)})…`);
     const bytes = new Uint8Array(await file.arrayBuffer());
     let files;
@@ -112,7 +116,7 @@ async function handleFile(file) {
     sourceStatus(`Could not use ${file.name}: ${e && e.message ? e.message : e}. ` +
                  `A .zip of the installed game folder always works; for a GOG installer you can also unpack it with innoextract and zip the result.`);
   } finally {
-    for (const el of ["useServer", "useSaved", "forget"]) $(el).disabled = false;
+    sourceButtons(true);
   }
 }
 
@@ -137,11 +141,27 @@ async function readTarGz(url) {
   return files;
 }
 
+// The buttons that change the game files: off while a file is being read
+// and once the game runs.
+function sourceButtons(on) {
+  for (const el of [$("useServer"), $("forget"), ...$("savedList").querySelectorAll("button")]) el.disabled = !on;
+}
+const useSavedCopy = (g) => setSource({ label: "the saved copy (" + g.label + ")", game: { id: g.id, title: g.title, run: g.run, multiplayer: g.multiplayer }, root: "", files: g.files });
+
+// One button per game this browser kept, the latest first.
 async function refreshSaved() {
-  saved = await loadGames();
-  $("useSaved").hidden = saved.length === 0;
+  saved = (await loadGames()).sort((a, b) => (b.when || 0) - (a.when || 0));
   $("forget").hidden = saved.length === 0;
-  if (saved.length) $("useSaved").textContent = `Use the saved copy (${saved[0].title}, ${mb(totalSize(saved[0].files))})`;
+  $("forget").textContent = saved.length > 1 ? "Forget the saved copies" : "Forget the saved copy";
+  const list = $("savedList");
+  list.innerHTML = "";
+  for (const g of saved) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "secondary";
+    b.textContent = `Use the saved copy (${g.title}, ${mb(totalSize(g.files))})`;
+    b.addEventListener("click", () => useSavedCopy(g));
+    list.appendChild(b); list.appendChild(document.createTextNode(" "));
+  }
 }
 
 async function initSources() {
@@ -151,10 +171,6 @@ async function initSources() {
   drop.addEventListener("drop", (e) => { const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) void handleFile(f); });
   $("gamefile").addEventListener("change", (e) => { const f = e.target.files && e.target.files[0]; if (f) void handleFile(f); });
 
-  $("useSaved").addEventListener("click", () => {
-    const g = saved[0];
-    if (g) setSource({ label: "the saved copy (" + g.label + ")", game: { id: g.id, title: g.title, run: g.run, multiplayer: g.multiplayer }, root: "", files: g.files });
-  });
   $("forget").addEventListener("click", async () => {
     for (const g of saved) await forgetGame(g.id);
     await refreshSaved();
@@ -172,7 +188,7 @@ async function initSources() {
   let serverCopy = false;
   try { serverCopy = (await fetch(DATA_URL, { method: "HEAD" })).ok; } catch (e) { /* none */ }
   $("useServer").hidden = !serverCopy;
-  if (saved.length) $("useSaved").click();
+  if (saved.length) useSavedCopy(saved[0]);
   else if (serverCopy) $("useServer").click();
 }
 
@@ -182,7 +198,7 @@ async function initSources() {
 // Commander: one file holding all eight bunks).  This browser keeps a copy in
 // local storage, keyed by game: it is put back into the game directory at
 // every start and refreshed whenever the running game changes the file.
-const gameInfo = () => (source && GAMES.find((g) => g.id === source.game.id)) || null;
+const gameInfo = () => (source && gameById(source.game.id)) || null;
 const saveFiles = () => { const g = gameInfo(); return (g && g.saves) || []; };
 const saveKey = (rel) => `wcsave:${source.game.id}:${rel.toUpperCase()}`;
 const baseName = (p) => p.slice(p.lastIndexOf("/") + 1);
@@ -306,27 +322,13 @@ $("saveFile").addEventListener("change", async (e) => {
 
 // -- missions ------------------------------------------------------------------
 
-// Wing Commander's Vega campaign as the game numbers it: series 1.. and
-// mission 0.. within the series (what the MIS / SERIES environment of the
-// hooks takes).  The system of each series and the number of missions were
-// read off the game's own briefing screens (an index past the last mission
-// shows a black screen); series 14 and up do not exist in WC.EXE.  40 in all.  With a forced mission everyone skips the barracks and
-// flies the same mission from a fresh state, so nobody's save game matters.
-const CAMPAIGN = [
-  { series: 1, system: "Enyo", missions: 2 },
-  { series: 2, system: "McAuliffe", missions: 3 },
-  { series: 3, system: "Gateway", missions: 3 },
-  { series: 4, system: "Gimle", missions: 3 },
-  { series: 5, system: "Brimstone", missions: 3 },
-  { series: 6, system: "Chengdu", missions: 3 },
-  { series: 7, system: "Dakota", missions: 3 },
-  { series: 8, system: "Port Hedland", missions: 3 },
-  { series: 9, system: "Kurasawa", missions: 3 },
-  { series: 10, system: "Rostov", missions: 3 },
-  { series: 11, system: "Hubble's Star", missions: 3 },
-  { series: 12, system: "Venice", missions: 4 },
-  { series: 13, system: "Hell's Kitchen", missions: 4 },
-];
+// The host picks a mission of its game's campaign for everybody (the game
+// registry lists them), or none: then everyone starts in the barracks and the
+// host's saved game decides.  A mission is {series, mis} as the game numbers
+// them: series 1.., mission 0.. within the series.  The menu and its labels
+// are for the host's game, which the others learn from its hello.
+const lobbyGameId = () => (isHost() ? (source ? source.game.id : "") : (lobby.games.get(0) || (source ? source.game.id : "")));
+const lobbyCampaign = () => { const g = gameById(lobbyGameId()); return (g && g.campaign) || null; };
 const missionKey = (m) => (m ? `${m.series}/${m.mis}` : "");
 function parseMission(v) {
   const m = /^(\d+)\/(\d+)$/.exec(v || "");
@@ -334,31 +336,59 @@ function parseMission(v) {
 }
 function missionLabel(m) {
   if (!m) return "the campaign from the barracks";
-  const s = CAMPAIGN.find((c) => c.series === m.series);
-  return s ? `${s.system} ${m.mis + 1}` : `series ${m.series}, mission ${m.mis + 1}`;
+  const c = lobbyCampaign();
+  const s = c && c.series.find((e) => e.series === m.series);
+  if (!s) return `series ${m.series}, mission ${m.mis + 1}`;
+  const note = Array.isArray(s.missions) ? s.missions[m.mis] : "";
+  return (s.name ? `${s.name} ${m.mis + 1}` : `series ${s.series}, mission ${m.mis + 1}`) + (note ? ` (${note})` : "");
 }
 function buildMissionMenu() {
   const sel = $("mission");
+  const c = lobbyCampaign();
+  const key = lobbyGameId();
+  if (sel.dataset.game === key && sel.options.length) return;
+  sel.dataset.game = key;
   sel.innerHTML = "";
   const add = (value, text) => { const o = document.createElement("option"); o.value = value; o.textContent = text; sel.appendChild(o); };
   add("", "Campaign: start in the barracks (the host's save game decides)");
-  for (const s of CAMPAIGN) for (let i = 0; i < s.missions; i++) add(`${s.series}/${i}`, `${s.system} ${i + 1}  (series ${s.series}, mission ${i + 1})`);
+  if (!c) return;
+  for (const s of c.series) {
+    const n = Array.isArray(s.missions) ? s.missions.length : s.missions;
+    for (let i = 0; i < n; i++) {
+      const note = Array.isArray(s.missions) ? s.missions[i] : "";
+      add(`${s.series}/${i}`, s.name ? `${s.name} ${i + 1}  (series ${s.series}, mission ${i + 1})`
+                                     : `Series ${s.series}, mission ${i + 1}` + (note ? `  (${note})` : ""));
+    }
+  }
 }
 function renderMission() {
+  buildMissionMenu();
   const sel = $("mission");
+  const c = lobbyCampaign();
+  // A mission the host's game does not have (the host changed games) is none.
+  if (lobby.mission && isHost() && !Array.from(sel.options).some((o) => o.value === missionKey(lobby.mission))) lobby.mission = null;
   sel.value = missionKey(lobby.mission);
   sel.disabled = !isHost() || running;
   $("rocks").value = lobby.rocks;
   $("rocks").disabled = !isHost();  // the host may switch them while flying too
-  $("missionHint").textContent = lobby.mission
-    ? `Everyone flies ${missionLabel(lobby.mission)} from a fresh start with the callsigns entered above.`
-    : (isHost() ? "The barracks: your save game and your walk to the briefing decide the mission; wingmen must walk into the briefing room too, and get your mission there."
-                : "The host flies from the barracks: after the host starts, walk into the briefing room on your ship and you get the host's mission.");
+  const hints = (c && c.hints) || {};
+  $("missionHint").textContent = !c ? (lobbyGameId() ? "" : "Load the game files to pick a mission.")
+    : lobby.mission ? `${missionLabel(lobby.mission)[0].toUpperCase()}${missionLabel(lobby.mission).slice(1)}. ${hints.forced || ""}`
+    : (isHost() ? hints.host : hints.wing) || "";
+}
+// Everyone in a room has to run the same game.
+function checkSameGame(from) {
+  const theirs = lobby.games.get(from);
+  if (!source || !theirs || theirs === source.game.id) return;
+  const g = gameById(theirs);
+  chatLine(`${esc(lobby.names.get(from) || "Player " + (from + 1))} has ${esc(g ? g.title : theirs)} loaded and you have ${esc(source.game.title)}: everyone in a room needs the same game.`, "sys");
 }
 
 // -- the room ------------------------------------------------------------------
 
 const lobby = { game: null, names: new Map(), links: new Map(), flying: new Set(), unsubscribe: null, mission: null,
+                // which game each player has loaded (a registry id), from their hello
+                games: new Map(),
                 // asteroid and mine fields, "on", "soft" (a rock does a
                 // fraction of its damage) or "off": the host's choice, for everybody
                 rocks: "on",
@@ -388,6 +418,7 @@ function sendLobby(obj, to) {
   for (const id of targets) g.sendReliable(id, encodeLobby(obj)).catch((e) => log(`lobby: message to player ${id} failed: ${e.message}`));
 }
 const sayHello = (to, reply) => sendLobby({ t: "hello", name: myName(), flying: running, reply: !!reply,
+  game: source ? source.game.id : "",
   mission: isHost() ? missionKey(lobby.mission) : undefined, rocks: isHost() ? lobby.rocks : undefined }, to);
 
 // Asteroid and mine fields on, soft or off.  The host's page tells the others
@@ -461,6 +492,11 @@ function onLobbyEvent(ev) {
         lobby.names.set(ev.from, m.name);
         if (m.flying) lobby.flying.add(ev.from); else lobby.flying.delete(ev.from);
         if (fresh) chatLine(`${esc(m.name)} is in the room${m.flying ? " (flying)" : ""}`, "sys");
+        if (typeof m.game === "string" && m.game !== (lobby.games.get(ev.from) || "")) {
+          lobby.games.set(ev.from, m.game);
+          checkSameGame(ev.from);
+          if (ev.from === 0) renderMission();
+        }
         if (ev.from === 0 && !isHost() && m.mission !== undefined) {
           const chosen = parseMission(m.mission);
           if (missionKey(chosen) !== missionKey(lobby.mission)) {
@@ -479,23 +515,26 @@ function onLobbyEvent(ev) {
       } else if (m.t === "chat") {
         chatLine(`<span class="name">${esc(m.name)}:</span> ${esc(m.text)}`);
       } else if (m.t === "start" && ev.from === 0 && !running) {
+        if (typeof m.game === "string" && m.game) lobby.games.set(0, m.game);
         lobby.mission = parseMission(m.mission);
         if (typeof m.rocks === "string") lobby.rocks = rocksMode(m.rocks);
         renderMission();
         chatLine(`${esc(lobby.names.get(0) || "The host")} started ${esc(missionLabel(lobby.mission))}`, "sys");
         lobby.flying.add(0); renderRoster();
-        if (source) void start(false);
+        const theirs = gameById(lobby.games.get(0) || "");
+        if (source && theirs && theirs.id !== source.game.id) status(`The host started ${theirs.title}, and you have ${source.game.title} loaded. Load ${theirs.title} above, then press Fly to join.`);
+        else if (source) void start(false);
         else status("The host started the game. Load your game files above, then press Fly to join.");
       }
       break;
     }
     case "player-joined": case "player-rejoined": case "player-replaced":
-      lobby.links.set(ev.playerId, "down"); lobby.names.delete(ev.playerId); lobby.flying.delete(ev.playerId);
+      lobby.links.set(ev.playerId, "down"); lobby.names.delete(ev.playerId); lobby.flying.delete(ev.playerId); lobby.games.delete(ev.playerId);
       renderRoster(); break;
     case "player-left":
       if (ev.reason === "explicit-leave") {
         chatLine(`${esc(lobby.names.get(ev.playerId) || "Player " + (ev.playerId + 1))} left the room`, "sys");
-        lobby.names.delete(ev.playerId); lobby.links.delete(ev.playerId); lobby.flying.delete(ev.playerId);
+        lobby.names.delete(ev.playerId); lobby.links.delete(ev.playerId); lobby.flying.delete(ev.playerId); lobby.games.delete(ev.playerId);
       }
       renderRoster(); updateActions(); break;
     case "peer-state":
@@ -524,7 +563,7 @@ async function joinRoom() {
       forceRelay: $("relay").checked,
     });
     lobby.game = game;
-    lobby.names.clear(); lobby.links.clear(); lobby.flying.clear();
+    lobby.names.clear(); lobby.links.clear(); lobby.flying.clear(); lobby.games.clear();
     lobby.unsubscribe = game.onEvent(onLobbyEvent);
     const url = new URL(location.href);
     url.searchParams.set("room", code);
@@ -550,7 +589,7 @@ function leaveRoom() {
   if (lobby.unsubscribe) lobby.unsubscribe();
   if (lobby.game) { try { lobby.game.close(); } catch (e) { /* gone */ } }
   lobby.game = null; lobby.unsubscribe = null; lobby.adopted = false; lobby.backlog = [];
-  lobby.names.clear(); lobby.links.clear(); lobby.flying.clear();
+  lobby.names.clear(); lobby.links.clear(); lobby.flying.clear(); lobby.games.clear();
   $("lobby").hidden = true; $("leave").hidden = true; $("join").disabled = false;
   for (const id of ["room", "players", "server", "relay"]) $(id).disabled = false;
   $("roster").innerHTML = "";
@@ -588,7 +627,7 @@ buildMissionMenu();
 
 $("fly").addEventListener("click", () => {
   if (!source || !lobby.game || running) return;
-  if (isHost()) sendLobby({ t: "start", mission: missionKey(lobby.mission), rocks: lobby.rocks });
+  if (isHost()) sendLobby({ t: "start", game: source.game.id, mission: missionKey(lobby.mission), rocks: lobby.rocks });
   void start(true);
 });
 $("fullscreen").addEventListener("click", () => goFullscreen());
@@ -633,7 +672,8 @@ async function start(fromGesture) {
   if (running) return;
   running = true;
   $("fly").disabled = true;
-  for (const el of ["gamefile", "useServer", "useSaved", "forget", "exePicker", "callsign", "lastname", "verbose", "leave"]) $(el).disabled = true;
+  for (const el of ["gamefile", "exePicker", "callsign", "lastname", "verbose", "leave"]) $(el).disabled = true;
+  sourceButtons(false);
   try {
     const cfg = {
       code: lobby.game.code,
@@ -657,15 +697,25 @@ async function start(fromGesture) {
     if (source.game.multiplayer) env.WCROCKS = String(ROCKS[lobby.rocks]);
     if (cfg.callsign) env.WCCALLSIGN = cfg.callsign;
     if (cfg.lastname) env.WCLASTNAME = cfg.lastname;
-    if (lobby.mission && source.game.multiplayer) {
-      env.MIS = String(lobby.mission.mis);
-      env.SERIES = String(lobby.mission.series);
+    // The picked mission: in the hooks' environment, or on the game's own
+    // command line (the registry says which).
+    const campaign = gameInfo() && gameInfo().campaign;
+    let missionArgs = "";
+    if (lobby.mission && source.game.multiplayer && campaign) {
+      if (campaign.missionArgs) {
+        missionArgs = " " + campaign.missionArgs(lobby.mission);
+      } else {
+        env.MIS = String(lobby.mission.mis);
+        env.SERIES = String(lobby.mission.series);
+      }
     }
     // Any ?env.NAME=value lands in DOSBox's environment: the same knobs as
     // the native build (MIS, SERIES, WCNET_AUTOKEYS, WCNET_LOG, ...).
     for (const [k, v] of query) if (k.startsWith("env.")) env[k.slice(4)] = v;
     if (env.MIS !== undefined || env.SERIES !== undefined) {
       log(`flying ${missionLabel({ series: Number(env.SERIES || 1), mis: Number(env.MIS || 0) })} straight from the hangar`);
+    } else if (missionArgs) {
+      log(`${missionLabel(lobby.mission)}: ${source.game.run}${missionArgs}`);
     }
 
     const config = {
@@ -692,7 +742,7 @@ async function start(fromGesture) {
     status(source.game.multiplayer ? `Room ${cfg.code}: starting…` : `Starting ${source.game.title}…`);
     canvas.focus();
     // ?cmd=... runs another DOS command instead of the game (debugging aid).
-    const cmd = query.get("cmd") || source.game.run;
+    const cmd = query.get("cmd") || source.game.run + missionArgs;
     // The emulated CPU speed: the game's own good value (the registry), or
     // ?cycles=N; Ctrl+F11 / Ctrl+F12 still adjust it while playing.
     const cycles = Number(query.get("cycles")) || (gameInfo() && gameInfo().cycles) || 0;
