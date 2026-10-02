@@ -540,6 +540,120 @@ void enqueue_host_body() {
     g_trampoline.enqueue(new HostBodyJob());
 }
 
+// ---------------------------------------------------------------------------
+// Turrets (WC2)
+//
+// The fire key in a turret (ovr136:0510) makes a pair of bolts from ship 0
+// along the camera entity, which is what the turret's sight moves.  A
+// gunner's "own ship" is the leader's, mirrored, so its shots have to happen
+// on the server: the gunner's machine sends the camera's orientation and its
+// offset from the ship, and the server runs the same function with its own
+// camera standing there for the moment.  Energy and cooldown were the
+// gunner's to check; the server's own are put back.
+
+static void put_vec(Vector *out, const Vec3 &v) {
+    out->set_x(v.x);
+    out->set_y(v.y);
+    out->set_z(v.z);
+}
+
+static Vec3 get_vec(const Vector &in) {
+    Vec3 v = { in.x(), in.y(), in.z() };
+    return v;
+}
+
+class TurretFireJob : public VmJob {
+public:
+    explicit TurretFireJob(const TurretFire &shot) : shot_(shot) {}
+    virtual bool start() {
+        if (!code::turretFire.known() || !slot_in_use(kPlayerSlot) || !shot_.has_right() || !shot_.has_up() || !shot_.has_fore()) {
+            return false;
+        }
+        const int cam = kCameraSlot;
+        for (int i = 0; i < 4; i++) {
+            saved_[i] = read_vec(vec_slot(base(i), cam));
+        }
+        barrels_ = rd16(ds::turretBarrels);
+        energy_ = rd16(ds::turretEnergy);
+        cooldown_ = rd16(ds::turretCooldown);
+        Vec3 pos = read_vec(vec_slot(ds::gPositionVector, kPlayerSlot));
+        if (shot_.has_offset()) {
+            Vec3 off = get_vec(shot_.offset());
+            pos.x += off.x;
+            pos.y += off.y;
+            pos.z += off.z;
+        }
+        write_vec(vec_slot(ds::gOrientationRightVector, cam), get_vec(shot_.right()));
+        write_vec(vec_slot(ds::gOrientationUpVector, cam), get_vec(shot_.up()));
+        write_vec(vec_slot(ds::gOrientationFrontVector, cam), get_vec(shot_.fore()));
+        write_vec(vec_slot(ds::gPositionVector, cam), pos);
+        wr16(ds::turretBarrels, (Bit16u)shot_.barrels());
+        wr16(ds::turretEnergy, 100);
+        wr16(ds::turretCooldown, 0);
+        started_ = true;
+        call_of(code::turretFire).invoke();
+        return true;
+    }
+    virtual void finish() {
+        if (!started_) {
+            return;
+        }
+        for (int i = 0; i < 4; i++) {
+            write_vec(vec_slot(base(i), kCameraSlot), saved_[i]);
+        }
+        wr16(ds::turretBarrels, barrels_);
+        wr16(ds::turretEnergy, energy_);
+        wr16(ds::turretCooldown, cooldown_);
+    }
+    virtual const char *describe() const { return "turret fire"; }
+
+private:
+    static Bit16u base(int i) {
+        return i == 0 ? ds::gOrientationRightVector : i == 1 ? ds::gOrientationUpVector
+             : i == 2 ? ds::gOrientationFrontVector : ds::gPositionVector;
+    }
+    TurretFire shot_;
+    Vec3 saved_[4];
+    Bit16u barrels_ = 0, energy_ = 0, cooldown_ = 0;
+    bool started_ = false;
+};
+
+void enqueue_turret_fire(const TurretFire &shot) {
+    wclog(2, "the gunner fires a turret");
+    g_trampoline.enqueue(new TurretFireJob(shot));
+}
+
+void on_turret_fire_shot() {
+    Session *s = g_session;
+    if (!s || !s->is_client() || !s->is_gunner() || g_trampoline.is_running()) {
+        return;
+    }
+    const int cam = kCameraSlot;
+    Event ev;
+    TurretFire *shot = ev.mutable_turret();
+    put_vec(shot->mutable_right(), read_vec(vec_slot(ds::gOrientationRightVector, cam)));
+    put_vec(shot->mutable_up(), read_vec(vec_slot(ds::gOrientationUpVector, cam)));
+    put_vec(shot->mutable_fore(), read_vec(vec_slot(ds::gOrientationFrontVector, cam)));
+    Vec3 at = read_vec(vec_slot(ds::gPositionVector, cam)), ship = read_vec(vec_slot(ds::gPositionVector, kPlayerSlot));
+    Vec3 off = { at.x - ship.x, at.y - ship.y, at.z - ship.z };
+    put_vec(shot->mutable_offset(), off);
+    shot->set_barrels(rd16(ds::turretBarrels));
+    s->queue_outgoing_event(ev);
+    wclog(2, "turret shot reported to the server");
+}
+
+void on_turret_auto_next() {
+    Session *s = g_session;
+    if (!s || !s->is_server() || (reg_esi & 0xffff) != (Bit32u)kPlayerSlot) {
+        return;
+    }
+    int turret = (Bit16s)mem_readw(SegPhys(ss) + ((reg_ebp - 0x1c) & 0xffff));
+    if (turret == s->gunner_turret()) {
+        wclog(4, "automatic fire leaves turret %d to the gunner", turret);
+        reg_eip = code::turretAutoSkip.off;
+    }
+}
+
 // Removes this machine's rocks or mines and forgets the nav point's fields.
 class ClearFieldsJob : public VmJob {
 public:
@@ -692,7 +806,7 @@ void on_do_damage_entry() {
         if (!is_ship_slot(dst)) {
             return;  // rocks, mines, bolts: every machine has its own
         }
-        if (quantity != 0 && !s->is_drone() && is_local_hazard(src) && slot_in_use(dst) && entity_type(dst) >= ET_SHIP) {
+        if (quantity != 0 && s->seat() == SEAT_WINGMAN && is_local_hazard(src) && slot_in_use(dst) && entity_type(dst) >= ET_SHIP) {
             report_local_hit(s, dst, quantity, vecOff);
         }
         return_from_call(code::do_damage, 0);  // NPC damage is decided by the server
@@ -729,8 +843,10 @@ void on_fire_entry() {
     int ship = call_arg16(code::fireGunFromShip, 0);
     int gun = call_arg16(code::fireGunFromShip, 1);
     if (s->is_client()) {
-        if (ship != kPlayerSlot || s->is_drone()) {
-            return_from_call(code::fireGunFromShip, 0xffff);  // other ships fire through server events; a drone has no guns
+        if (ship != kPlayerSlot || s->seat() != SEAT_WINGMAN) {
+            // Other ships fire through server events; a drone has no guns,
+            // and a gunner has the turrets, not the pilot's guns.
+            return_from_call(code::fireGunFromShip, 0xffff);
             return;
         }
         WeaponFire fire;

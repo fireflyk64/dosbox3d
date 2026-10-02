@@ -44,6 +44,8 @@ enum Seat {
     SEAT_WINGMAN = 0,  // flies the ship the mission has in the wingman's slot
     SEAT_DRONE = 1,    // a mission the story flies alone: a ship of its own that exists on its
                        // machine only; nothing sees or hits it and it cannot shoot
+    SEAT_GUNNER = 2,   // such a mission in a ship with turrets: its "own ship" is the leader's,
+                       // mirrored from the server; it mans the turrets
 };
 
 class Session {
@@ -60,6 +62,9 @@ public:
     // This machine's own seat (a server is the leader, never a drone).
     virtual Seat seat() const { return SEAT_WINGMAN; }
     bool is_drone() const { return seat() == SEAT_DRONE; }
+    bool is_gunner() const { return seat() == SEAT_GUNNER; }
+    // Server: the turret of our ship a gunner mans, or -1.
+    virtual int gunner_turret() const { return -1; }
     // A drone can ride behind the leader instead of flying itself.
     virtual void toggle_chase() {}
     // Network ids flown by humans: the host and the two client slots.

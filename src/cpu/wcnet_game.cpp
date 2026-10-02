@@ -128,7 +128,7 @@ static void load_wc1_code() {
 static void load_wc2_code() {
     using namespace code;
     enum { SEG001 = 0x03CA, SEG005 = 0x073C, SEG006 = 0x0BD7, STUB107 = 0x1743, STUB114 = 0x1764, STUB116 = 0x1783,
-           STUB120 = 0x17AE, STUB128 = 0x17D6, STUB129 = 0x17DB, STUB134 = 0x1826, STUB141 = 0x1850 };
+           STUB120 = 0x17AE, STUB128 = 0x17D6, STUB136 = 0x1836, STUB129 = 0x17DB, STUB134 = 0x1826, STUB141 = 0x1850 };
     // overlay 114: ships, damage, weapons
     ovr(do_damage, STUB114, 0x00AC, 0x1128, 4, true);        // do_damage(src, dst, quantity, vec*)
     ovr(delayedDespawn, STUB114, 0x00B6, 0x2B10, 2, true);   // destroy(src, ship): wrapper of ovr114:2B69
@@ -151,6 +151,10 @@ static void load_wc2_code() {
     ovr(missionStarting, STUB128, 0x0039, 0x0486);           // about to load the mission and fly
     ovr(missionEnded, STUB128, 0x0039, 0x04C3);              // the flight loop returned
     // overlay 134: asteroid and mine fields
+    ovr(turretFire, STUB136, 0x003E, 0x0510, 0);             // the player's fire key in a turret: a pair of bolts along the camera
+    ovr(turretFireShot, STUB136, 0x003E, 0x0536);            // in it: energy and cooldown allow the shot
+    ovr(turretAutoNext, STUB136, 0x005C, 0x08D8);            // automatic turret fire of ship SI: next turret [bp-0x1C]
+    ovr(turretAutoSkip, STUB136, 0x005C, 0x11BF);            // in it: this turret does not fire
     ovr(clearFields, STUB134, 0x004D, 0x01B8);               // remove the current field's rocks or mines
     // root image: the flight loop (seg001:1BED)
     root(mainLoopTop, SEG001, 0x1CA3);                       // top of the in-flight frame loop

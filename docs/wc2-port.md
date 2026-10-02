@@ -129,8 +129,11 @@ transport to escort, or empty, and a client that took it for its ship would
   after the player's own mission ship at `dseg:C1B4` (`ovr116:1C5C` tests
   both; `dseg:6E1E` has the mission ship of every slot).  "Recon", the Sabre
   that leads the last mission's escort, counts: the second player flies it.
-* **Drone** otherwise (or with `WCSEAT=drone` on the server, for tests).  A
-  drone is a ship that exists on the client's machine only:
+* **Gunner** when there is no such wingman and the leader's ship has turrets
+  (the Broadsword's three, the Sabre's one); see below.
+* **Drone** otherwise (`WCSEAT=drone` or `WCSEAT=gunner` on the server
+  overrides, for tests).  A drone is a ship that exists on the client's
+  machine only:
   * the server has no entity for it, so nothing sees, targets or hits it and
     the leader does not see it; `client_for_slot` answers only for wingmen,
     so slot 1 stays the ship the mission put there, with its AI and health;
@@ -152,31 +155,86 @@ transport to escort, or empty, and a client that took it for its ship would
     puts the leader just above the gun sight).  Flying free it can go and
     look for whatever the leader cannot find.
 
-Still to come for this: a gunner's seat in the Broadsword and Sabre missions
-(the client in one of the leader's turrets), and a way for a drone to point
-something out (its target shown to the leader).
+Still to come for this: a way for a drone to point something out (its target
+shown to the leader).
 
-Missions by what slot 1 is (the direct mode, 25 s in; pilot ids up to 14 are
-the story's wingmen: 1 Angel, 3 Hobbes, 4 Stingray, 6 Jazz, 9 Doomsday, 11
-Shadow, 14 Spirit):
+### The gunner
 
-| series | wingman missions | flown alone (player's ship) |
-|---|---|---|
-| 1 | 0, 1, 3 (Shadow) | |
-| 2 | | 0 (Broadsword), 1, 2, 3 (Ferret) |
-| 3 | 0, 1, 2, 3 (Hobbes) | |
-| 4 | 0, 1, 2 (Doomsday) | 3 (Broadsword) |
-| 5 | 0, 1 (Spirit) | 2 (Epee) |
-| 6 | 0, 1, 2, 3 (Stingray) | |
-| 7 | 0, 1, 2 (Angel) | |
-| 8 | 0, 1 (Jazz) | 2, 3 (Sabre) |
-| 9 | | 0, 2 (Broadsword), 1, 3 (Ferret) |
-| 10 | 0, 2 (Doomsday) | 3 (Broadsword) |
-| 11 | 0, 1, 2, 3 (Stingray) | |
-| 12 | 0, 1 (Jazz), 3 (Recon's Sabre) | 2 (Sabre) |
+Turrets in WC2 (`ovr136`):
 
-Series 13 and 14 do not exist; 1-2, 5-3, 7-3 and 10-1 were not in flight at
-25 s (a scene first).  The Broadsword and the Sabre have turrets.
+* A ship's guns are a table at `dseg:67D4 + 0xA1 * slot`: a count, then ten
+  bytes per gun (type word, mount x, y, z, a flag, the type again).  Type
+  0x0B is a turret; `ovr136:11F9(ship)` counts them (`turret_count`).  The
+  fire key's "all guns" (`ovr114:3EC3`) skips them.
+* F2, F3, F4 put the player in a turret: `dseg:9389` (camera mode) is 4,
+  `dseg:CD6A` the turret (Broadsword: 0 rear, 1 left, 2 right), `dseg:0B24`
+  the view (3, 2, 1), and the stick moves the camera entity (slot 0x43)
+  within limits.  The fire key is then `ovr136:0510` (`seg001:1490`): with
+  turret energy (`dseg:CD5C`, 100 full, 24 a shot) and no cooldown
+  (`dseg:9022`) it makes two bolts (type 8, parent ship 0) with the
+  camera's orientation, from the camera's place plus a barrel offset
+  (`dseg:90AC`, pair `dseg:CDA8`).
+* Unmanned turrets fire by themselves: `ovr136:08A3(ship)` from the AI
+  dispatcher, for the player's ship and for every other ship with turrets,
+  a turret at a time (loop head `ovr136:08D8`, next turret `ovr136:11BF`);
+  it leaves out the turret the player sits in.  It makes its bolts itself,
+  not through `fireGunFromShip`, so it is not replicated: every machine
+  runs it for the ships it sees and gets its own turret fire, which hits
+  its own player's ship there and nobody else's.
+
+The gunner's seat is built on that:
+
+* On the gunner's machine the server's network id 0 is slot 0: its "own
+  ship" is the leader's.  Position, flight and health of slot 0 come from
+  the server every frame like any other ship's (its own steering is
+  overwritten; hits on it are the server's to decide), the leader's shots
+  are replayed from slot 0, and its own fire key does nothing in the
+  pilot's view.  Nothing is spawned for it and the server has no entity for
+  it.
+* Its game is still WC2 with a turret ship: F2/F3/F4 work, the turret
+  sights move, the fire key calls `ovr136:0510`.  The hook at
+  `ovr136:0536` (the shot goes out) sends the camera's three vectors, its
+  offset from the ship and the barrel pair (`Event.turret`); the server
+  runs `ovr136:0510` itself with its camera standing there for the call
+  (`TurretFireJob`; its own camera, energy and cooldown are put back).
+  The bolts are the server's, from its ship: hits and kills are the
+  leader's ship's.
+* The gunner's frames say which turret it sits in (`Frame.manned_turret`),
+  and the server's automatic fire skips that one (hook at `ovr136:08D8`);
+  the others keep firing by themselves on both machines.
+* An autopilot puts every view back to the pilot's: the gunner presses F4
+  again.  Its ending (ejecting, quitting) ends nothing; the leader's death
+  or landing ends its flight.
+
+Checked (two native instances, `Origin -k l s2 m0` Broadsword and `s8 m2`
+Sabre): the gunner's rear and left turret shots appear on the host as the
+same bolts from the host's ship while the host sits in the pilot's view;
+the host's own turret energy is untouched; the landing ends both; the
+gunner ejecting leaves the host flying.
+
+Missions by seat (the direct mode, 25 s in; the ship is the one the player
+really flies: the mission's label for it can say otherwise, 9-0's
+"Broadsword" is a Ferret).  Pilot ids up to 14 are the story's wingmen: 1
+Angel, 3 Hobbes, 4 Stingray, 6 Jazz, 9 Doomsday, 11 Shadow, 14 Spirit.
+
+| series | ship | wingman missions | gunner | drone |
+|---|---|---|---|---|
+| 1 | Ferret | 0, 1, 3 (Shadow) | | |
+| 2 | Broadsword (0), Ferret | | 0 | 1, 2, 3 |
+| 3 | Rapier | 0, 1, 2, 3 (Hobbes) | | |
+| 4 | Broadsword | 0, 1, 2 (Doomsday) | 3 | |
+| 5 | Epee | 0, 1 (Spirit) | | 2 |
+| 6 | Rapier | 0, 1, 2, 3 (Stingray) | | |
+| 7 | Broadsword, Ferret (3) | 0, 1, 2 (Angel) | | 3 |
+| 8 | Sabre | 0, 1 (Jazz) | 2, 3 | |
+| 9 | Ferret, Broadsword (2) | | 2 | 0, 1, 3 |
+| 10 | Broadsword | 0, 2 (Doomsday) | 3 | |
+| 11 | Rapier | 0, 1, 2, 3 (Stingray) | | |
+| 12 | Sabre | 0, 1 (Jazz), 3 (Recon's Sabre) | 2 | |
+
+Series 13 and 14 do not exist; 1-2, 5-3 and 10-1 were not in flight at 25 s
+(a scene first).  In the wingman missions of series 4, 7, 8, 10 and 12 the
+second player flies the wingman's own Broadsword or Sabre.
 
 Series 2 mission 1 stops in a letterboxed scene after the first autopilot
 when started in the direct mode (`Origin -k l s2 m1`), alone and without the
@@ -241,7 +299,7 @@ near pointer of the message (`push word 0x7f34`) is on it, and
 
 ## 8. Not done yet
 
-The gunner's seat, chat on the game's own comms display, the mission's
+Chat on the game's own comms display, the leader's own manual turret shots on a gunner's screen, the mission's
 outcome for the debriefing (each machine scores its own; the next "Fly
 mission" brings the client back to the server's story), cloaking, turrets,
 torpedoes, tractor beams, in-flight conversations and scenes, Special
@@ -256,6 +314,6 @@ Operations.
 2. Map WC2's data segment and frame loop; mission start and end.  *(done)*
 3. Two players in one WC2 mission: handshake, spawns, positions.  *(done)*
 4. Fire, damage, despawn, health, autopilot, mission endings.  *(done)*
-5. WC2's own features: missions the story flies alone (the drone: done; a
-   gunner in the turret ships), in-flight scenes.
+5. WC2's own features: missions the story flies alone (the drone and the
+   gunner: done), in-flight scenes.
 6. The browser build: game registry entry, mission menu.  *(done)*

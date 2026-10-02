@@ -48,23 +48,25 @@ const WC1_SERIES = [
 
 // Wing Commander II: twelve series of four missions (docs/wc2-port.md has
 // the survey).  The note says who the story sends along: the second player
-// flies that wingman's ship.  ALONE marks the missions the story flies
-// alone, where the second player rides along as a drone; "" is a mission the
-// survey did not reach.
-const ALONE = "flown alone: the second player is a drone";
+// flies that wingman's ship.  The story flies the others alone: in a
+// Broadsword or a Sabre the second player is the GUNNER in the leader's
+// turrets, in a ship without turrets a DRONE that rides along; "" is a
+// mission the survey did not reach.
+const DRONE = "flown alone: the second player is a drone";
+const GUNNER = "flown alone: the second player is the turret gunner";
 const WC2_SERIES = [
   { series: 1, missions: ["with Shadow", "with Shadow", "", "with Shadow"] },
-  { series: 2, missions: [ALONE, ALONE, ALONE, ALONE] },
+  { series: 2, missions: [GUNNER, DRONE, DRONE, DRONE] },
   { series: 3, missions: ["with Hobbes", "with Hobbes", "with Hobbes", "with Hobbes"] },
-  { series: 4, missions: ["with Doomsday", "with Doomsday", "with Doomsday", ALONE] },
-  { series: 5, missions: ["with Spirit", "with Spirit", ALONE, ""] },
+  { series: 4, missions: ["with Doomsday", "with Doomsday", "with Doomsday", GUNNER] },
+  { series: 5, missions: ["with Spirit", "with Spirit", DRONE, ""] },
   { series: 6, missions: ["with Stingray", "with Stingray", "with Stingray", "with Stingray"] },
-  { series: 7, missions: ["with Angel", "with Angel", "with Angel", ""] },
-  { series: 8, missions: ["with Jazz", "with Jazz", ALONE, ALONE] },
-  { series: 9, missions: [ALONE, ALONE, ALONE, ALONE] },
-  { series: 10, missions: ["with Doomsday", "", "with Doomsday", ALONE] },
+  { series: 7, missions: ["with Angel", "with Angel", "with Angel", DRONE] },
+  { series: 8, missions: ["with Jazz", "with Jazz", GUNNER, GUNNER] },
+  { series: 9, missions: [DRONE, DRONE, GUNNER, DRONE] },
+  { series: 10, missions: ["with Doomsday", "", "with Doomsday", GUNNER] },
   { series: 11, missions: ["with Stingray", "with Stingray", "with Stingray", "with Stingray"] },
-  { series: 12, missions: ["with Jazz", "with Jazz", ALONE, "with the Sabre escort"] },
+  { series: 12, missions: ["with Jazz", "with Jazz", GUNNER, "with the Sabre escort"] },
 ];
 
 export const GAMES = [
@@ -82,7 +84,7 @@ export const GAMES = [
   { id: "wc2", title: "Wing Commander II", detect: ["WC2.EXE"], run: "wc2", multiplayer: true,
     saves: ["GAMEDAT/SAVEGAME.WC2"], cycles: 8000,
     campaign: { series: WC2_SERIES, missionArgs: (m) => `Origin s${m.series} m${m.mis}`, hints: {
-      forced: "Everyone starts in the barracks with the story at that mission: click the door the game calls \"Fly mission\" (point at a door and it is named), and the briefing plays first. In a mission flown alone the second player is a drone: nothing sees or hits it and it has no guns; 0, then /chase and Enter, rides behind the leader.",
+      forced: "Everyone starts in the barracks with the story at that mission: click the door the game calls \"Fly mission\" (point at a door and it is named), and the briefing plays first. In a mission flown alone the second player is the gunner if the ship has turrets (F4 the rear turret, F2 and F3 the side turrets, F1 the pilot's view), and otherwise a drone: nothing sees or hits it and it has no guns; 0, then /chase and Enter, rides behind the leader.",
       host: "The barracks: your saved game decides the mission. Click \"Fly mission\" (point at a door and the game names it); wingmen do the same and get your place in the story, your briefing and your mission.",
       wing: "The host flies from the barracks: click \"Fly mission\" (point at a door and the game names it), and you get the host's place in the story, the briefing and the mission." } } },
 ];

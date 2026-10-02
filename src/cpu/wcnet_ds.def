@@ -63,6 +63,12 @@ WC_DS(cockpitDamage, 0x8CB2, 0xB18E)  // [cockpitDamage] word per cockpit instru
 WC_DS(navPointState, 0xD25D, 0x44F2)  // 8 x 19 bytes: mission tree progress
 WC_DS(navPointTable, 0x687C, 0x71DC)  // [navPoints] 0x4d bytes per nav point; its mission ships are ten words at +0x39
 WC_DS(playerMissionShip, 0x9560, 0xC1B4)  // [playerMissionShip] word: which mission ship the player flies
+WC_DS(gunTable, 0, 0x67D4)                // WC2: per slot 0xA1 bytes: a count, then 10 bytes per gun (type word first; 0x0B is a turret)
+WC_DS(cameraMode, 0, 0x9389)              // WC2: word, 4 while the player sits in a turret
+WC_DS(mannedTurret, 0, 0xCD6A)            // WC2: word, which turret that is
+WC_DS(turretBarrels, 0, 0xCDA8)           // WC2: word, the barrel offsets of that turret (0 rear, 1 side)
+WC_DS(turretEnergy, 0, 0xCD5C)            // WC2: word, the turret guns' energy (100 full, 24 a shot)
+WC_DS(turretCooldown, 0, 0x9022)          // WC2: word, frames until the turret fires again
 WC_DS(campaignState, 0, 0xCF3A)           // WC2: far pointer to the campaign record (+4 series, +6 mission: what the briefing and the flight load)
 WC_DS(playerWing, 0, 0xC1B6)              // WC2: eight words, the mission ships that fly in the player's wing (0xffff: none)
 WC_DS(slotMissionShip, 0, 0x6E1E)         // WC2: [slotMissionShip + 2*slot] word: the mission ship in a slot

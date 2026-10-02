@@ -396,6 +396,7 @@ static const char *rocks_notice(int mode) {
 struct RemoteClient {
     int net;                     // network id == server slot this client flies (as a wingman)
     Seat seat;                   // decided with the mission start state
+    int mannedTurret;            // a gunner: the turret it sits in, or -1
     Connection conn;
     std::string callsign;
     std::string missionTreeProgress;  // reported with a shared mission end
@@ -406,7 +407,7 @@ struct RemoteClient {
     int skipPendingEvents;       // events already covered by the start state
 
     explicit RemoteClient(int n)
-        : net(n), seat(SEAT_WINGMAN), requestedBriefingStart(false), needsMissionStartState(false),
+        : net(n), seat(SEAT_WINGMAN), mannedTurret(-1), requestedBriefingStart(false), needsMissionStartState(false),
           inMission(false), leftThisMission(false), skipPendingEvents(0) {}
     bool connected() const { return conn.is_open(); }
     void disconnect() {
@@ -443,6 +444,15 @@ public:
 
     virtual void queue_outgoing_event(const Event &ev) {
         *pendingFrame_.mutable_frame()->add_event() = ev;
+    }
+    virtual int gunner_turret() const {
+        for (size_t i = 0; i < clients_.size(); i++) {
+            const RemoteClient *c = clients_[i];
+            if (c->connected() && c->inMission && c->seat == SEAT_GUNNER && c->mannedTurret >= 0) {
+                return c->mannedTurret;
+            }
+        }
+        return -1;
     }
     virtual void on_spawned(const Spawn &spawn) { spawns_.add(spawn); }
     virtual void on_despawned(int net) { spawns_.remove(net); }
@@ -628,26 +638,31 @@ private:
     // What a client is in this mission.  WC.EXE gives every mission a
     // wingman, and his ship is the client's.  WC2 has missions the story
     // flies alone: the slot is then empty or something else entirely (the
-    // carrier, a transport to escort), and the client rides along as a
-    // drone.  A wingman there is a fighter in the player's wing list.
+    // carrier, a transport to escort).  A wingman there is a fighter in the
+    // player's wing list; without one the client is the gunner when the
+    // leader's ship has turrets, and a drone when it has none.  WCSEAT
+    // (drone, gunner) on the server overrides, for tests.
     Seat seat_for(const RemoteClient *c) const {
         if (!is_wc2() || !ds::known(ds::playerWing)) {
             return SEAT_WINGMAN;
         }
         const char *env = getenv("WCSEAT");
+        const bool turrets = turret_count(kPlayerSlot) > 0;
         if (env && !strcasecmp(env, "drone")) {
             return SEAT_DRONE;
         }
-        if (!slot_in_use(c->net) || entity_type(c->net) != ET_SHIP) {
-            return SEAT_DRONE;
+        if (env && !strcasecmp(env, "gunner") && turrets) {
+            return SEAT_GUNNER;
         }
-        Bit16u missionShip = rd16((Bit16u)(ds::slotMissionShip + 2 * c->net));
-        for (int i = 0; i < 8; i++) {
-            if (rd16((Bit16u)(ds::playerWing + 2 * i)) == missionShip) {
-                return SEAT_WINGMAN;
+        if (slot_in_use(c->net) && entity_type(c->net) == ET_SHIP) {
+            Bit16u missionShip = rd16((Bit16u)(ds::slotMissionShip + 2 * c->net));
+            for (int i = 0; i < 8; i++) {
+                if (rd16((Bit16u)(ds::playerWing + 2 * i)) == missionShip) {
+                    return SEAT_WINGMAN;
+                }
             }
         }
-        return SEAT_DRONE;
+        return turrets ? SEAT_GUNNER : SEAT_DRONE;
     }
 
     RemoteClient *allocate_client() {
@@ -741,6 +756,7 @@ private:
         Game *game = msg.mutable_game();
         game->set_assigned_player_id(c->net);
         c->seat = seat_for(c);
+        c->mannedTurret = -1;
         game->set_seat(c->seat);
         if (c->seat == SEAT_WINGMAN) {
             take_station(c->net);
@@ -764,7 +780,7 @@ private:
             stamp_pilot(sp);
         }
         wclog(1, "sending mission start state to player %d (%s, %d ships)", c->net,
-              c->seat == SEAT_DRONE ? "a drone" : "the wingman", (int)spawns.size());
+              c->seat == SEAT_DRONE ? "a drone" : c->seat == SEAT_GUNNER ? "the gunner" : "the wingman", (int)spawns.size());
         if (!c->conn.send(msg)) {
             c->disconnect();
             return false;
@@ -772,6 +788,8 @@ private:
         c->inMission = true;
         if (c->seat == SEAT_DRONE) {
             show_notice(c->callsign + " rides along as a drone: this mission is flown alone.");
+        } else if (c->seat == SEAT_GUNNER) {
+            show_notice(c->callsign + " is your gunner: the turret he sits in is his.");
         }
         // Spawns queued in the pending frame are already in the registry copy.
         c->skipPendingEvents = pendingFrame_.frame().event_size();
@@ -832,13 +850,26 @@ private:
     }
 
     void merge_client_frame(RemoteClient *c, const Frame &frame) {
-        if (c->seat == SEAT_DRONE) {
-            // Nothing a drone does is part of the mission, its ending included.
+        if (c->seat != SEAT_WINGMAN) {
+            // A drone or a gunner has no ship of its own here: its ending
+            // ends nothing, and all that counts of what it does is a
+            // gunner's turret.
             if (frame.has_player_end()) {
-                wclog(1, "player %d (a drone) %s", c->net, status_name(frame.player_end().state()));
+                wclog(1, "player %d (%s) %s", c->net, c->seat == SEAT_DRONE ? "a drone" : "the gunner",
+                      status_name(frame.player_end().state()));
                 c->inMission = false;
                 c->leftThisMission = true;
                 c->needsMissionStartState = false;
+                c->mannedTurret = -1;
+                return;
+            }
+            if (c->seat == SEAT_GUNNER) {
+                c->mannedTurret = frame.has_manned_turret() ? (int)frame.manned_turret() - 1 : -1;
+                for (int i = 0; i < frame.event_size(); i++) {
+                    if (frame.event(i).has_turret()) {
+                        enqueue_turret_fire(frame.event(i).turret());
+                    }
+                }
             }
             return;
         }
@@ -1268,8 +1299,8 @@ public:
                 continue;
             }
             int slot = entities_.net_to_local(su.ship_id());
-            if (slot == kPlayerSlot || !slot_in_use(slot)) {
-                continue;
+            if ((slot == kPlayerSlot && seat_ != SEAT_GUNNER) || !slot_in_use(slot)) {
+                continue;  // our own ship's health is ours, unless it is the leader's ship we ride in
             }
             ShipHealthState h;
             if (parse_health(su.health(), &h)) {
@@ -1348,8 +1379,16 @@ private:
     void apply_start_state(const NetworkMessage &msg) {
         const Game &game = msg.game();
         shipNet_ = game.assigned_player_id();
-        seat_ = game.has_seat() && game.seat() == SEAT_DRONE ? SEAT_DRONE : SEAT_WINGMAN;
-        if (seat_ == SEAT_DRONE) {
+        seat_ = !game.has_seat() ? SEAT_WINGMAN : game.seat() == SEAT_DRONE ? SEAT_DRONE
+              : game.seat() == SEAT_GUNNER ? SEAT_GUNNER : SEAT_WINGMAN;
+        if (seat_ == SEAT_GUNNER) {
+            // Our ship is the leader's: the server's network id 0 is our
+            // slot 0, and where it is, how it flies and how it fares come
+            // from the server like any other ship's.
+            entities_.set_own_ship(-1);
+            entities_.map(kPlayerSlot, kPlayerSlot);
+            show_notice("This mission is flown alone: you are the gunner. F4 is the rear turret, F2 and F3 the side turrets, F1 the pilot's view.");
+        } else if (seat_ == SEAT_DRONE) {
             // No ship of the mission is ours: every spawn of the server's is
             // another ship here, and the leader's is made first.
             entities_.set_own_ship(-1);
@@ -1364,7 +1403,8 @@ private:
         epoch_ = msg.epoch();
         frameNumber_ = msg.frame_number();
         isFresh_ = false;
-        wclog(1, "we are player %d%s; epoch %u frame %llu", shipNet_, seat_ == SEAT_DRONE ? " (a drone)" : "", epoch_,
+        wclog(1, "we are player %d%s; epoch %u frame %llu", shipNet_,
+              seat_ == SEAT_DRONE ? " (a drone)" : seat_ == SEAT_GUNNER ? " (the gunner)" : "", epoch_,
               (unsigned long long)frameNumber_);
     }
 
@@ -1390,8 +1430,15 @@ private:
     }
 
     void populate_own_update() {
-        if (seat_ == SEAT_DRONE) {
-            pendingFrame_.mutable_frame();  // an empty frame still goes out: the exchange is one message each way
+        if (seat_ != SEAT_WINGMAN) {
+            // No ship of our own to report, but a frame still goes out: the
+            // exchange is one message each way.  A gunner says which turret
+            // it sits in.
+            Frame *frame = pendingFrame_.mutable_frame();
+            if (seat_ == SEAT_GUNNER && ds::known(ds::cameraMode)) {
+                enum { kInTurret = 4 };
+                frame->set_manned_turret(rd16(ds::cameraMode) == kInTurret ? rd16(ds::mannedTurret) + 1 : 0);
+            }
             return;
         }
         ShipUpdate *su = update_for(pendingFrame_.mutable_frame(), shipNet_);

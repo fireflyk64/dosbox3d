@@ -280,6 +280,9 @@ static KBD_KEYS script_key(const std::string &name) {
     for (size_t i = 0; i < sizeof(kNamed) / sizeof(kNamed[0]); i++) {
         if (name == kNamed[i].name) return kNamed[i].key;
     }
+    if (name.size() >= 2 && name[0] == 'f' && atoi(name.c_str() + 1) >= 1 && atoi(name.c_str() + 1) <= 12) {
+        return (KBD_KEYS)(KBD_f1 + atoi(name.c_str() + 1) - 1);
+    }
     if (name.size() == 1) {
         char c = name[0];
         static const char kLetters[] = "qwertyuiopasdfghjklzxcvbnm";  // the enum's order
@@ -751,6 +754,12 @@ static void check_hooks_slow() {
             g_session->on_mission_reset();
             g_session->on_mission_victory_calc();
         }
+    }
+    if (at_location(code::turretFireShot)) {
+        on_turret_fire_shot();
+    }
+    if (at_location(code::turretAutoNext)) {
+        on_turret_auto_next();
     }
     if (at_location(code::autopilotKey) && g_session && g_session->is_client()) {
         reg_eip += 5;  // only the server may engage autopilot

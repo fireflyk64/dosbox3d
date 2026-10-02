@@ -32,6 +32,13 @@ void enqueue_remote_event(const Event &ev);
 void enqueue_chat_display(int netShipId, const std::string &callsign, const std::string &text);
 // A drone client: make a ship for the server's player (network id 0).
 void enqueue_host_body();
+// Turrets (WC2).  A gunner's machine reports its shots (on_turret_fire_shot)
+// and the server fires them from its own ship (enqueue_turret_fire); the
+// server's automatic fire leaves the gunner's turret alone
+// (on_turret_auto_next).
+void on_turret_fire_shot();
+void on_turret_auto_next();
+void enqueue_turret_fire(const TurretFire &shot);
 // Server: a client saw one of its own rocks or mines hit a ship of ours.
 void enqueue_reported_damage(const Damage &reported);
 // Server: a client left the mission; remove its copy here (with an explosion

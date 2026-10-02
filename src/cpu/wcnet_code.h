@@ -56,6 +56,8 @@ typedef Loc RootLoc;
     X(runHangarMission) X(simulatorStart) X(simulatorEnd) \
     /* asteroid and mine fields */ \
     X(clearFields) \
+    /* turrets (WC2) */ \
+    X(turretFire) X(turretFireShot) X(turretAutoNext) X(turretAutoSkip) \
     /* root image */ \
     X(mainLoopTop) X(statusCheckAfterKeys) X(statusCheckAfterFrame) X(statusSetByExitKey) \
     X(skipOrchestra) X(afterStartup) X(afterHangarMission)

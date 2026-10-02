@@ -109,6 +109,8 @@ inline bool is_ship_slot(int slot) { return slot >= kPlayerSlot && slot <= kMaxS
 inline int num_slots() { return g_params.slots; }
 inline int max_temp_slot() { return g_params.slots - 4; }
 inline int camera_slot() { return g_params.slots - 3; }
+// How many turrets the ship in a slot has (WC2; 0 where the game has none).
+int turret_count(int slot);
 #define kNumSlots (wc::num_slots())
 #define kMaxTempSlot (wc::max_temp_slot())
 #define kCameraSlot (wc::camera_slot())

@@ -109,12 +109,24 @@ message AutoPilotEvent {
    optional bool finish_camera = 4;
 }
 
+// A gunner's shot from one of the leader's turrets (WC2): the turret's aim is
+// the camera's orientation on the gunner's machine, its place the camera's
+// offset from the ship.
+message TurretFire {
+        optional Vector right = 1;
+        optional Vector up = 2;
+        optional Vector fore = 3;
+        optional Vector offset = 4;
+        optional uint32 barrels = 5;  // which pair of barrel offsets (dseg:CDA8)
+}
+
 message Event {
   optional Spawn spawn = 2;
   optional Damage damage = 3;
   optional WeaponFire fire = 4;
   optional Despawn despawn = 5;
   optional AutoPilotEvent autopiloting = 16;
+  optional TurretFire turret = 17;
 }
 
 message MissionEnd {
@@ -140,6 +152,9 @@ message Frame {
     // player's own ship (2).  Sent with the mission start state and when the
     // host changes it in flight; each machine then removes or restores its own.
     optional uint32 rocks = 20;
+    // From a gunner: the turret it mans plus one (0: none), so that the
+    // server's automatic fire leaves that turret to it.
+    optional uint32 manned_turret = 21;
 }
 
 // Connect -> once per mission
@@ -155,7 +170,8 @@ message Game {
     // What this client is in the mission (Seat in wcnet_session.h): 0 flies
     // the ship the mission has for a wingman (assigned_player_id is its
     // slot on the server); 1 a drone, for missions the story flies alone: a
-    // ship that exists on the client's machine only.
+    // ship that exists on the client's machine only; 2 the gunner, in such a
+    // mission when the leader's ship has turrets: the client rides in it.
     optional uint32 seat = 4;
 }
 

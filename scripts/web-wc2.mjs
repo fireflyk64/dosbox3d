@@ -1,0 +1,120 @@
+// Headless test of Wing Commander II in the browser build: two Chrome pages
+// meet in a lobbylink room, the host picks a mission in the lobby, both click
+// "Fly mission" in the barracks and tap Esc through the briefing, and the
+// second player's seat is checked: the wingman's ship, a drone (rides behind
+// the leader with "0", "/chase", Enter) or the gunner (F4, fire: the shots
+// must reach the host).  Driven by scripts/web-wc2.sh.
+//
+//   GAME_FILE=wc2.zip node scripts/web-wc2.mjs PAGE_URL LOBBY_URL [series/mission] [drone|gunner|wingman] [door x,y]
+//
+// The door is where "Fly mission" is in that mission's barracks, as fractions
+// of the mouse range: the rooms differ (0.48,0.55 the middle door of the
+// blue and the Caernarvon rooms, 0.12,0.5 the airlock of the Concordia's).
+// Known good: 9/1 drone 0.12,0.5; 9/2 gunner 0.48,0.55; 1/0 wingman 0.48,0.55.
+import { createRequire } from "node:module";
+import path from "node:path";
+import fs from "node:fs";
+const [pageUrl, lobbyUrl, mission = "9/1", expect = "drone", doorArg = "0.12,0.5"] = process.argv.slice(2);
+const door = doorArg.split(",").map(Number);
+const require = createRequire(path.join(process.env.PLAYWRIGHT_DIR || process.cwd(), "package.json"));
+const { chromium } = require("playwright");
+const room = "WC2-" + Math.random().toString(36).slice(2, 8).toUpperCase();
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME || "/usr/bin/google-chrome",
+  args: ["--no-sandbox", "--autoplay-policy=no-user-gesture-required", "--use-fake-device-for-media-stream"] });
+const logs = { host: [], wing: [] };
+const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));
+const results = [];
+const check = (what, ok, detail) => { results.push(ok); console.log(`${ok ? "ok  " : "FAIL"} ${what}: ${JSON.stringify(detail)}`); };
+async function open(name, callsign, before) {
+  const page = await browser.newPage();
+  page.on("console", (m) => logs[name].push(m.text()));
+  page.on("pageerror", (e) => console.log(`[${name}] PAGE ERROR: ${e.message}`));
+  const u = new URL(pageUrl);
+  for (const [k, v] of Object.entries({ room, server: lobbyUrl, callsign, "env.WCNET_LOG": "2" })) u.searchParams.set(k, v);
+  await page.goto(u.toString());
+  await page.setInputFiles("#gamefile", process.env.GAME_FILE);
+  await page.waitForFunction(() => /^(Ready|Could not)/.test(document.getElementById("sourceStatus").textContent), null, { timeout: 300000 });
+  console.log(`[${name}] ` + (await page.$eval("#sourceStatus", (el) => el.textContent)).slice(0, 200));
+  await page.waitForFunction(() => !document.getElementById("lobby").hidden && document.getElementById("roster").children.length > 0, null, { timeout: 60000 });
+  if (before) await before(page);
+  return page;
+}
+const flying = (page) => page.evaluate(() => (window.DOSBox ? window.DOSBox._wc_web_in_flight() : -1));
+const has = (name, text) => logs[name].some((l) => l.includes(text));
+const shotDir = process.env.SHOT_DIR || ".";
+const shot = async (page, name) => { const c = await page.$("#canvas"); await c.screenshot({ path: path.join(shotDir, name + ".png") }); };
+// The barracks: click the round door in the middle ("Fly mission"), then tap
+// Esc through the briefing until the cockpit.
+async function fly(page, name) {
+  for (let i = 0; i < 90; i++) {
+    if ((await flying(page)) === 1) return true;
+    if (has(name, "lost the server") || has(name, "Sorry, an error")) return false;
+    await page.evaluate(([i, door]) => { const M = window.DOSBox; if (!M) return;
+      if (i % 4 === 0) { M._wc_web_pointer(door[0], door[1]); setTimeout(() => M._wc_web_mouse_button(0, 1), 400); setTimeout(() => M._wc_web_mouse_button(0, 0), 700); }
+      else M._wc_web_tap_escape(); }, [i, door]);
+    await sleep(2);
+  }
+  return false;
+}
+
+const host = await open("host", "HOST", async (page) => {
+  const options = await page.$eval("#mission", (el) => Array.from(el.options).map((o) => o.textContent));
+  check("the host's mission menu is Wing Commander II's", options.length === 49 && /Series 2, mission 1/.test(options.join("|")), [options.length, options[1], options[5]]);
+  await page.$eval("#mission", (el, v) => { el.value = v; el.dispatchEvent(new Event("change")); }, mission);
+});
+const wing = await open("wing", "WINGMAN", async (page) => {
+  await page.waitForFunction(() => /HOST is in the room/.test(document.getElementById("chatLog").textContent), null, { timeout: 30000 });
+  await sleep(1);
+  const s = await page.$eval("#mission", (el) => ({ value: el.value, disabled: el.disabled, text: el.options[el.selectedIndex] && el.options[el.selectedIndex].textContent }));
+  check("the wingman's lobby shows the host's mission", s.value === mission && s.disabled, s);
+  console.log("[wing] hint: " + (await page.$eval("#missionHint", (el) => el.textContent)));
+});
+await host.waitForFunction(() => !document.getElementById("fly").disabled, null, { timeout: 30000 });
+await host.click("#fly");               // starts the wingman's page too
+await sleep(10);
+check("the wingman's page started with the host's", await wing.evaluate(() => !!window.DOSBox), null);
+await shot(host, "host-barracks");
+const [hf, wf] = await Promise.all([fly(host, "host"), fly(wing, "wing")]);
+check("both reached the cockpit", hf && wf, [hf, wf]);
+await sleep(12);
+await shot(host, "host-flight"); await shot(wing, "wing-flight");
+if (expect === "drone") {
+  check("the host seats the second player as a drone", has("host", "(a drone,"), logs.host.filter((l) => l.includes("mission start state")));
+  check("the wingman's game knows it is a drone", has("wing", "(a drone)"), logs.wing.filter((l) => l.includes("we are player")));
+  check("the leader's ship exists on the drone's machine", has("wing", "the leader's ship is slot"), null);
+  // the real way in: 0 opens the comms prompt, the text, Enter
+  await wing.evaluate(() => document.fullscreenElement ? document.exitFullscreen() : null);
+  await wing.click("#canvas");
+  await wing.keyboard.press("0"); await sleep(0.5);
+  await wing.keyboard.type("/chase", { delay: 80 }); await sleep(0.5);
+  await shot(wing, "wing-typing");
+  await wing.keyboard.press("Enter");
+  await sleep(4);
+  await shot(wing, "wing-chase");
+} else if (expect === "gunner") {
+  check("the host seats the second player as the gunner", has("host", "(the gunner,"), logs.host.filter((l) => l.includes("mission start state")));
+  check("the wingman's game knows it is the gunner", has("wing", "(the gunner)"), logs.wing.filter((l) => l.includes("we are player")));
+  await wing.evaluate(() => document.fullscreenElement ? document.exitFullscreen() : null);
+  await wing.click("#canvas");
+  await wing.keyboard.down("F4"); await sleep(0.6); await wing.keyboard.up("F4"); await sleep(3);  // the game polls the keyboard once a frame
+  await shot(wing, "wing-turret");
+  await wing.keyboard.down("Space"); await sleep(4);
+  await shot(wing, "wing-firing"); await shot(host, "host-firing");
+  await wing.keyboard.up("Space");
+  check("the gunner's turret shots reach the host", has("host", "the gunner fires a turret"), logs.host.filter((l) => l.includes("gunner fires")).length);
+} else {
+  check("the host seats the second player as the wingman", has("host", "(the wingman,"), logs.host.filter((l) => l.includes("mission start state")));
+  check("the wingman took over the host's campaign record", has("wing", "took over the server's campaign record"), null);
+}
+const frames = (name) => logs[name].reduce((m, l) => { const f = /frame (\d+): own health/.exec(l); return f ? Math.max(m, Number(f[1])) : m; }, 0);
+await sleep(20);
+console.log(`frames: host ${frames("host")}, wingman ${frames("wing")}`);
+check("frames flow on both", frames("host") >= 301 && frames("wing") >= 301, [frames("host"), frames("wing")]);
+await shot(host, "host-end"); await shot(wing, "wing-end");
+for (const [name, page] of [["host", host], ["wing", wing]]) {
+  console.log(`${name} chat log: ` + (await page.$eval("#chatLog", (el) => el.innerText.replace(/\n+/g, " | "))).slice(0, 500));
+  fs.writeFileSync(path.join(shotDir, name + ".log"), logs[name].join("\n") + "\n");
+}
+await browser.close();
+console.log(results.every(Boolean) ? "WC2 OK" : "WC2 FAILED");
+process.exit(results.every(Boolean) ? 0 : 1);
