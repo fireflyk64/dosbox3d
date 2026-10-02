@@ -779,6 +779,7 @@ private:
             *sp = it->second;
             stamp_pilot(sp);
         }
+        add_cloak_events(frame);  // after the spawns they belong to
         wclog(1, "sending mission start state to player %d (%s, %d ships)", c->net,
               c->seat == SEAT_DRONE ? "a drone" : c->seat == SEAT_GUNNER ? "the gunner" : "the wingman", (int)spawns.size());
         if (!c->conn.send(msg)) {
@@ -1393,7 +1394,7 @@ private:
             // another ship here, and the leader's is made first.
             entities_.set_own_ship(-1);
             enqueue_host_body();
-            show_notice("This mission is flown alone: you are a drone. Nothing sees or hits you, and you have no guns. 0 then /chase rides behind the leader.");
+            show_notice("This mission is flown alone: you are a drone. Nothing sees or hits you, you have no guns, and you see cloaked ships. 0 then /chase rides behind the leader.");
         } else {
             entities_.set_own_ship(shipNet_);
         }

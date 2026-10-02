@@ -36,6 +36,11 @@ void enqueue_host_body();
 // and the server fires them from its own ship (enqueue_turret_fire); the
 // server's automatic fire leaves the gunner's turret alone
 // (on_turret_auto_next).
+// Cloaking (WC2): the server's AI switches a ship's cloak and tells the
+// clients; theirs does not.  A drone keeps seeing cloaked ships: finding
+// them is what it is for.
+void on_cloak_entry(bool on);
+void add_cloak_events(Frame *frame);  // server: the ships cloaked right now, for a start state
 void on_turret_fire_shot();
 void on_turret_auto_next();
 void enqueue_turret_fire(const TurretFire &shot);

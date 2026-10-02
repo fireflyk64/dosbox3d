@@ -731,6 +731,11 @@ static void check_hooks_slow() {
         return;
     }
 
+    if (at_function(code::cloak)) {
+        on_cloak_entry(true);
+    } else if (at_function(code::uncloak)) {
+        on_cloak_entry(false);
+    }
     if (at_function(code::do_damage)) {
         on_do_damage_entry();
     } else if (at_function(code::fireGunFromShip)) {

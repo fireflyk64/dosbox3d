@@ -120,6 +120,13 @@ message TurretFire {
         optional uint32 barrels = 5;  // which pair of barrel offsets (dseg:CDA8)
 }
 
+// A ship switched its cloaking device (WC2's stealth fighters).  The
+// server's AI decides; the clients' own copies of it are not asked.
+message Cloak {
+        optional uint32 ship_id = 1;
+        optional bool on = 2;
+}
+
 message Event {
   optional Spawn spawn = 2;
   optional Damage damage = 3;
@@ -127,6 +134,7 @@ message Event {
   optional Despawn despawn = 5;
   optional AutoPilotEvent autopiloting = 16;
   optional TurretFire turret = 17;
+  optional Cloak cloak = 18;
 }
 
 message MissionEnd {

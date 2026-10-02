@@ -163,8 +163,33 @@ transport to escort, or empty, and a client that took it for its ship would
     puts the leader just above the gun sight).  Flying free it can go and
     look for whatever the leader cannot find.
 
+  * it sees cloaked ships (below): finding the stealth fighters is what it
+    is for.  The leader does not; the drone has the comms (`0`) to say where
+    they are.
+
 Still to come for this: a way for a drone to point something out (its target
 shown to the leader).
+
+### Cloaking
+
+A ship with a cloaking device has it as the last "gun" of its gun table (type
+0x3C; `ovr114:002F` tests for one, and the spawn hides it from the count).
+Its state is a word per ship at `dseg:70A8`: 2 no device, 0 visible, 1
+cloaked (not drawn, not on the radar, missiles locked on it give up:
+`ovr141:16FA`), with a timer for coming back at `dseg:70BC`.  The AI cloaks
+with `ovr133:0034(ship)` and uncloaks, to shoot, with `ovr133:0085(ship)`.
+
+Every machine runs the AI, so every machine would cloak its own copies in
+its own time.  The server's two calls are events (`Event.cloak`, sent when
+the state really changes; the ships cloaked right now go into a start
+state), a client's own calls are dropped at the function's entry, and the
+client runs the function when the event comes (`CloakJob`).  A drone does
+not run the cloaking half: on its machine the stealth fighters stay visible
+(`WCDRONE_BLIND=1` in its environment turns that off).
+
+Checked on series 5 mission 2 (three Strakha at Nav 1): the host's log and
+the client's show the same cloak and uncloak sequence, the state words agree
+within a few frames, and a drone's stay 0.
 
 ### The gunner
 
@@ -274,7 +299,7 @@ mission test (`l`) has no record and no barracks: the handshake stays at
 hints and the way a picked mission reaches the game come from the registry
 entry of the host's game (every hello carries the sender's game, and a
 player with another game loaded is told).  A WC2 mission picked by the host
-is `wc2 Origin s<series> m<mission>` on every machine: everybody starts in
+is `loadfix -34 wc2 Origin s<series> m<mission>` on every machine: everybody starts in
 the barracks with the story at that mission and clicks "Fly mission".
 Saved games are `GAMEDAT/SAVEGAME.WC2`; the speed is GOG's `cycles=8000`.
 
@@ -306,7 +331,8 @@ code).
 
 ## 8. Not done yet
 
-Chat on the game's own comms display, the leader's own manual turret shots on a gunner's screen, the mission's
+Chat on the game's own comms display, the leader's own manual turret shots on a gunner's screen,
+the automatic turret fire of other ships (every machine makes its own), the mission's
 outcome for the debriefing (each machine scores its own; the next "Fly
 mission" brings the client back to the server's story), cloaking, turrets,
 torpedoes, tractor beams, in-flight conversations and scenes, Special

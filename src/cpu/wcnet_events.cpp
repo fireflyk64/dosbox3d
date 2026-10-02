@@ -541,6 +541,70 @@ void enqueue_host_body() {
 }
 
 // ---------------------------------------------------------------------------
+// Cloaking (WC2)
+//
+// A stealth fighter's AI cloaks it (ovr133:0034) and uncloaks it to shoot
+// (ovr133:0085); a word per ship says which (ds::cloakState).  Every machine
+// runs the AI, so every machine would cloak its copies on its own: the
+// server's calls are sent as events and a client's own are dropped.
+
+enum { kCloaked = 1 };
+
+class CloakJob : public VmJob {
+public:
+    CloakJob(int slot, bool on) : slot_(slot), on_(on) {}
+    virtual bool start() {
+        const Loc &fn = on_ ? code::cloak : code::uncloak;
+        if (!fn.known() || !is_ship_slot(slot_) || !slot_in_use(slot_)) {
+            return false;
+        }
+        wclog(2, "slot %d %s", slot_, on_ ? "cloaks" : "uncloaks");
+        call_of(fn).arg((Bit16u)slot_).invoke();
+        return true;
+    }
+    virtual const char *describe() const { return "cloak"; }
+
+private:
+    int slot_;
+    bool on_;
+};
+
+void on_cloak_entry(bool on) {
+    Session *s = g_session;
+    if (!s || g_trampoline.is_running()) {
+        return;
+    }
+    const Loc &fn = on ? code::cloak : code::uncloak;
+    int ship = call_arg16(fn, 0);
+    if (s->is_client()) {
+        return_from_call(fn, 0);  // the server's AI decides
+        return;
+    }
+    bool cloaked = is_ship_slot(ship) && rd16((Bit16u)(ds::cloakState + 2 * ship)) == kCloaked;
+    if (!is_ship_slot(ship) || on == cloaked) {
+        return;  // nothing changes (the AI asks again and again)
+    }
+    Event ev;
+    ev.mutable_cloak()->set_ship_id(NetworkShipId::from_local(ship).to_net());
+    ev.mutable_cloak()->set_on(on);
+    s->queue_outgoing_event(ev);
+    wclog(2, "slot %d %s", ship, on ? "cloaks" : "uncloaks");
+}
+
+void add_cloak_events(Frame *frame) {
+    if (!ds::known(ds::cloakState)) {
+        return;
+    }
+    for (int slot = kPlayerSlot + 1; slot <= kMaxShipSlot; slot++) {
+        if (slot_in_use(slot) && rd16((Bit16u)(ds::cloakState + 2 * slot)) == kCloaked) {
+            Cloak *c = frame->add_event()->mutable_cloak();
+            c->set_ship_id(NetworkShipId::from_local(slot).to_net());
+            c->set_on(true);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Turrets (WC2)
 //
 // The fire key in a turret (ovr136:0510) makes a pair of bolts from ship 0
@@ -1041,6 +1105,18 @@ void enqueue_remote_event(const Event &ev) {
     }
     if (ev.has_autopiloting()) {
         g_trampoline.enqueue(new AutopilotJob(ev.autopiloting()));
+    }
+    if (ev.has_cloak() && ev.cloak().has_ship_id() && g_session->is_client()) {
+        const Cloak &c = ev.cloak();
+        if (g_entityMap && !g_entityMap->is_mapped(c.ship_id())) {
+            wclog(2, "cloak of unmapped net %d ignored", c.ship_id());
+        } else if (c.on() && g_session->is_drone() && !getenv("WCDRONE_BLIND")) {
+            // A drone's instruments see through the cloak (WCDRONE_BLIND
+            // on its machine: it sees what everybody sees).
+            wclog(2, "net %d cloaks; a drone still sees it", c.ship_id());
+        } else {
+            g_trampoline.enqueue(new CloakJob(NetworkShipId::from_net(c.ship_id()).to_local(), c.on()));
+        }
     }
 }
 
