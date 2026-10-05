@@ -64,21 +64,21 @@ for (const [ship, how] of COCKPITS[game]) {
   let t = await turn();
   check(`${ship}: the stick at rest asks for no turn`, t[0] === 0 && t[1] === 0, t);
   // (The default layout has the pitch inverted: pulling back raises the nose,
-  // and the game's "down" is then negative.)
+  // and the game's "down" is then negative.  At the default sensitivity of
+  // 100% full stick is the game's fastest turn, the view's edge.)
   const back = await held(1, 1), forward = await held(1, -1), right = await held(0, 1), left = await held(0, -1);
-  // (Step 5 where the window has room for it; a window too short for steps 4
-  // and 5, the Rapier's, has only the edge's 8 beyond step 3, and full stick
-  // goes there.)
-  check(`${ship}: full stick back and forward are the same turn up and down`, back[1] === -forward[1] && (back[1] === -5 || back[1] === -8) && back[0] === 0 && forward[0] === 0, [back, forward]);
-  check(`${ship}: full stick right and left are the same turn`, right[0] === 5 && left[0] === -5 && right[1] === 0 && left[1] === 0, [right, left]);
-  const half = await held(0, 0.55), little = await held(1, 0.3);
-  check(`${ship}: less stick is less turn`, half[0] >= 2 && half[0] <= 4 && little[1] <= -1 && little[1] >= -2, [half, little]);
+  check(`${ship}: full stick back and forward are the fastest turn up and down`, back[1] === -8 && forward[1] === 8 && back[0] === 0 && forward[0] === 0, [back, forward]);
+  check(`${ship}: full stick right and left are the fastest turn`, right[0] === 8 && left[0] === -8 && right[1] === 0 && left[1] === 0, [right, left]);
+  const half = await held(0, 0.5), little = await held(1, 0.25);
+  check(`${ship}: less stick is less turn`, half[0] >= 2 && half[0] <= 5 && little[1] <= -1 && little[1] >= -2, [half, little]);
   t = await turn();
   check(`${ship}: and let go it is none again`, t[0] === 0 && t[1] === 0, t);
-  // At full sensitivity the stick reaches the game's fastest turn (the view's edge).
-  await page.$eval("#padSensitivity", (el) => { el.value = "100"; el.dispatchEvent(new Event("input")); el.dispatchEvent(new Event("change")); });
-  const edge = await held(0, 1), up = await held(1, 1);
-  check(`${ship}: at full sensitivity full stick is the fastest turn`, edge[0] === 8 && up[1] === -8, [edge, up]);
+  // At 70% the stick stops at step 5 where the window has room for it (a
+  // window too short for steps 4 and 5, the Rapier's, has only the edge
+  // beyond step 3, and full stick goes there).
+  await page.$eval("#padSensitivity", (el) => { el.value = "70"; el.dispatchEvent(new Event("input")); el.dispatchEvent(new Event("change")); });
+  const r70 = await held(0, 1), u70 = await held(1, 1);
+  check(`${ship}: at 70% full stick is step 5 (or the edge in a short window)`, r70[0] === 5 && (u70[1] === -5 || u70[1] === -8), [r70, u70]);
   await context.close();
 }
 await browser.close();

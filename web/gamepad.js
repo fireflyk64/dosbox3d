@@ -63,8 +63,12 @@ const CONFIG_KEY = "wcpad:config";
 const CHOICE_KEY = "wcpad:choice";
 const NONE = "none";
 
+// The stick's sensitivity is the share of the game's full turn that full
+// stick asks for: 100%, the stick being analog anyway (it was 70%, which
+// stopped at step 5 of the game's 8).  Version 2 of the saved settings:
+// a sensitivity saved by version 1 was the old default, not a choice.
 export function defaultConfig() {
-  const cfg = { version: 1, buttons: {}, axes: {}, deadzone: 0.15, burner: 0.9, sensitivity: 0.7 };
+  const cfg = { version: 2, buttons: {}, axes: {}, deadzone: 0.15, burner: 0.9, sensitivity: 1.0 };
   for (const a of ACTIONS) cfg.buttons[a.id] = a.bind ? { ...a.bind } : null;
   for (const a of AXES) cfg.axes[a.id] = { ...a.bind };
   return cfg;
@@ -73,10 +77,10 @@ function loadConfig() {
   const cfg = defaultConfig();
   try {
     const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || "null");
-    if (saved && saved.version === 1) {
+    if (saved && (saved.version === 1 || saved.version === 2)) {
       for (const a of ACTIONS) if (a.id in (saved.buttons || {})) cfg.buttons[a.id] = saved.buttons[a.id];
       for (const a of AXES) if (saved.axes && saved.axes[a.id]) cfg.axes[a.id] = saved.axes[a.id];
-      for (const k of ["deadzone", "burner", "sensitivity"]) if (typeof saved[k] === "number") cfg[k] = saved[k];
+      for (const k of saved.version === 1 ? ["deadzone", "burner"] : ["deadzone", "burner", "sensitivity"]) if (typeof saved[k] === "number") cfg[k] = saved[k];
     }
   } catch (e) { /* defaults */ }
   return cfg;

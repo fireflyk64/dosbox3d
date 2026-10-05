@@ -557,8 +557,9 @@ top-level README for the workflow).  What differs:
   game for the view and the tables (`wc_web_steer`, `steer_info`) and maps
   the stick onto the steps themselves (`stepped` in `web/gamepad.js`): at
   rest no turn in any cockpit or turret, and the same stick the same step
-  whatever the size of the window; full stick is step 5 at the default
-  sensitivity of 70% and the edge's 8 from 85% up.  A window too short for
+  whatever the size of the window; full stick is the edge's 8 at the
+  default sensitivity of 100% (the stick is analog: the user's choice),
+  and 70% stops at step 5.  A window too short for
   the later steps (the Rapier's 69: steps 4 and 5 begin at 35 and 38
   pixels, the edge at 30) has only the edge beyond step 3, and full stick
   goes there.  `scripts/web-wc2.sh pad` and `scripts/web-smoke.sh pad`
