@@ -156,7 +156,7 @@ Bit32u GetAddress(Bit16u seg, Bit32u offset);
 
 Bits CPU_Core_Normal_Run(void) {
 	while (CPU_Cycles-->0) {
-        wc_net_check_cpu_hooks();
+        wc_net_cpu_hook(reg_eip);
 		LOADIP;
 		core.opcode_index=cpu.code.big*0x200;
 		core.prefixes=cpu.code.big;

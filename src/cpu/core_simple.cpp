@@ -142,7 +142,7 @@ Bits CPU_Core_Simple_Run(void) {
 	while (CPU_Cycles-->0) {
 		// The Wing Commander multiplayer hooks watch every instruction; the
 		// simple core is the default for the browser build (and core=simple).
-		wc_net_check_cpu_hooks();
+		wc_net_cpu_hook(reg_eip);
 		LOADIP;
 		core.opcode_index=cpu.code.big*0x200;
 		core.prefixes=cpu.code.big;

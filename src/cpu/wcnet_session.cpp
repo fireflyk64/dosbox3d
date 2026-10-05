@@ -1462,6 +1462,7 @@ private:
         conn_.close();
         dead_ = true;
         g_pendingUninit = true;
+        wc_net_countdown = 0;  // (the hooks act on it at their next call)
     }
 
     bool send_connect() {

@@ -264,8 +264,9 @@ keeping up effortlessly.  More cycles alone make the empty sky too fast
 
 So in flight (`wcnet_perf.cpp`):
 
-* the emulated CPU gets `WCFLIGHTCYCLES` (default 12000 for WC.EXE) instead
-  of the configured cycles, and its own back when no flight frame has begun
+* the emulated CPU gets `WCFLIGHTCYCLES` (default 12000, for WC2 as well:
+  it holds its 15 frames a second with GOG's 8000 cycles in an ordinary
+  furball with little to spare) instead of the configured cycles, and its own back when no flight frame has begun
   for 300 ms (cutscenes, the autopilot's camera and the barracks take
   their speed from the CPU and keep the old one);
 * a frame that is done early waits for its turn (`PaceJob`, in emulated
@@ -282,6 +283,15 @@ under the game's picture (`wc_web_perf`):
 
     perf: 15.0 fps, worst frame 68 ms, load 41%, emulator at 100% of real time,
           0.1 ms/frame waiting for the network, 12000 cycles, 7 ships, 27 other entities
+
+The hooks' own cost matters in the browser, which has only the interpreting
+CPU cores: the test "is this instruction one of ours" is made in line by
+the cores (`wc_net_cpu_hook`, a table lookup) and only a watched address or
+every thousandth instruction calls out.  As a call per instruction it took
+about a quarter of the wasm build's speed (measured unpaced at 40000 to
+100000 cycles: 30 to 66 thousand cycles a millisecond delivered before, 40
+to 83 thousand after, in headless Chrome on two cores).  The paced game
+needs about 5000 on average in its heaviest fight.
 
 A load near 100% means the game needs more cycles in flight; an emulator
 below 100% means the host cannot deliver the cycles asked for; a wait on the

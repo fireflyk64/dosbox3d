@@ -33,9 +33,12 @@
 
 extern std::string incoming_text;
 
+bool wc_net_watch[0x10000];   // IPs with a hook, whatever the segment (tested in line by the CPU cores)
+Bit32s wc_net_countdown = 0;  // instructions until the next periodic call
+
 namespace wc {
 
-static bool g_watch[0x10000];
+#define g_watch wc_net_watch
 static bool g_watchReady = false;
 static int g_asyncCounter = 0;
 static bool g_skipBarracks = false;
@@ -554,6 +557,7 @@ static void build_watch_list() {
 
 void hooks_game_changed() {
     g_watchReady = false;
+    wc_net_countdown = 0;  // the table is rebuilt before the next instruction
 }
 
 bool g_pendingUninit = false;
@@ -1000,10 +1004,17 @@ void wc_net_check_cpu_hooks() {
         const char *env = getenv("WCNET_WATCH");
         watching = (env && env[0]) ? 1 : 0;
     }
+    bool tick = false;
     if (watching) {
+        // (Debugging: every instruction comes here.)
         memory_watch();
+        wc_net_countdown = 0;
+        tick = ++g_asyncCounter >= 1000;
+    } else if (wc_net_countdown < 0) {
+        wc_net_countdown = 999;
+        tick = true;
     }
-    if (++g_asyncCounter == 1000) {
+    if (tick) {
         g_asyncCounter = 0;
         wc::pace_tick();
         auto_keys();

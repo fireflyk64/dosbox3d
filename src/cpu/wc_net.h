@@ -19,8 +19,20 @@
 #include "dosbox.h"
 #include "net_config.h"
 
-// Called before every instruction by the normal CPU core.
+// The hooks watch every instruction the CPU cores run, and nearly every one
+// is none of their business: the cores make this test in line and only call
+// out for an instruction at a watched address, and once in a thousand for
+// the periodic work (wc_net_countdown; 0 forces the call for the next one).
+// A call per instruction costs the browser build about a seventh of its
+// speed, more than anything else the hooks do.
+extern bool wc_net_watch[0x10000];
+extern Bit32s wc_net_countdown;
 void wc_net_check_cpu_hooks();
+static inline void wc_net_cpu_hook(Bit32u ip) {
+    if (GCC_UNLIKELY(--wc_net_countdown < 0) || (ip < 0x10000 && GCC_UNLIKELY(wc_net_watch[ip]))) {
+        wc_net_check_cpu_hooks();
+    }
+}
 
 // Called by DOS when it has loaded a program (its path, the first paragraph
 // of the image, its PSP) and when a process ends: the hooks only apply to

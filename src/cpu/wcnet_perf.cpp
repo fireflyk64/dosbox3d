@@ -85,7 +85,9 @@ private:
 };
 
 static void boost_cycles() {
-    int want = env_int("WCFLIGHTCYCLES", is_wc1() ? 12000 : 0);
+    // (WC2 holds its own 15 frames a second with GOG's 8000 cycles in an
+    // ordinary furball, with little to spare: it gets the same margin.)
+    int want = env_int("WCFLIGHTCYCLES", g_game != GAME_NONE ? 12000 : 0);
     if (want <= 0 || CPU_CycleAutoAdjust || g_boostCycles || CPU_CycleMax >= want) {
         return;
     }
