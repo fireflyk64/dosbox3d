@@ -43,6 +43,13 @@ message WeaponFire {
         // at the moment of firing; missiles inherit it when spawned, so the
         // replaying machine sets it before calling fireGunFromShip.
         optional uint32 target = 5;
+        // The shooter's own record for that gun and how many guns it had,
+        // read just before the shot.  A hit can knock a random gun off a
+        // ship and the machines do not always pick the same one, so the
+        // replaying machine fires what the shooter fired, not whatever its
+        // own table has under that number.
+        optional bytes gun = 6;
+        optional uint32 guns = 7;
 }
 
 // Authoritative per-ship health snapshot.  Wing Commander applies damage with

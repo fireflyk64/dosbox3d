@@ -48,14 +48,14 @@ bool is_field_mission_ship(int missionShip) {
 }
 
 int turret_count(int slot) {
-    if (!ds::known(ds::gunTable) || slot < 0 || slot > kMaxShipSlot || !slot_in_use(slot)) {
+    if (!is_wc2() || !ds::known(ds::gunTable) || slot < 0 || slot > kMaxShipSlot || !slot_in_use(slot)) {
         return 0;
     }
-    enum { kPerShip = 0xa1, kPerGun = 10, kMostGuns = 16, kTurretGun = 0x0b };
-    Bit16u table = (Bit16u)(ds::gunTable + kPerShip * slot);
+    enum { kMostGuns = 16, kTurretGun = 0x0b };
+    Bit16u table = (Bit16u)(ds::gunTable + g_params.gunsSize * slot);
     int guns = (Bit8s)rd8(table), n = 0;
     for (int g = 0; g < guns && g < kMostGuns; g++) {
-        if (rd16((Bit16u)(table + 1 + kPerGun * g)) == kTurretGun) {
+        if (rd16((Bit16u)(table + 1 + g_params.gunSize * g)) == kTurretGun) {
             n++;
         }
     }

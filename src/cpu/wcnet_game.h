@@ -34,6 +34,7 @@ struct GameParams {
     int navPointSize;        // bytes per nav point record (ds::navPointTable)
     int navPointShipsOff;    // ten mission-ship words in it (0: not located)
     int missionShipAiOff;    // WC2: the word in a mission ship record that picks its AI (6: the player; 0: not located)
+    int gunsSize, gunSize;   // bytes per slot in ds::gunTable, and per gun in it
 };
 extern GameParams g_params;
 

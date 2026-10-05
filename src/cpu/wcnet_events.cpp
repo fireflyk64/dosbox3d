@@ -122,6 +122,46 @@ static void apply_lock(const WeaponFire &fire, int shooter) {
     wr8((Bit16u)(ds::missileTarget + shooter), target);
 }
 
+// A hit can knock a gun off a ship (WC.EXE ovr143:10C6: a random one, the
+// rest move down and the count drops), and a launched missile leaves the
+// table the same way.  The machines do not always lose the same gun, and
+// from then on a gun number means a laser here and a missile there: a
+// wingman's machine launched missiles nobody else had, which no one ever
+// removed.  So a shot carries the shooter's record for its gun, and the
+// machine replaying it puts that under the number first.
+static Bit16u gun_table(int ship) {
+    return (Bit16u)(ds::gunTable + g_params.gunsSize * ship);
+}
+
+static bool gun_in_table(int ship, int gun) {
+    return ds::known(ds::gunTable) && ship >= 0 && ship <= kMaxShipSlot && gun >= 0 &&
+           1 + g_params.gunSize * (gun + 1) <= g_params.gunsSize;
+}
+
+static void capture_gun(WeaponFire *fire, int ship, int gun) {
+    if (!gun_in_table(ship, gun)) {
+        return;
+    }
+    std::string record;
+    for (int i = 0; i < g_params.gunSize; i++) {
+        record.push_back((char)rd8((Bit16u)(gun_table(ship) + 1 + g_params.gunSize * gun + i)));
+    }
+    fire->set_gun(record);
+    fire->set_guns(rd8(gun_table(ship)));
+}
+
+static void apply_gun(const WeaponFire &fire, int ship, int gun) {
+    if (!fire.has_gun() || (int)fire.gun().size() != g_params.gunSize || !gun_in_table(ship, gun)) {
+        return;
+    }
+    for (int i = 0; i < g_params.gunSize; i++) {
+        wr8((Bit16u)(gun_table(ship) + 1 + g_params.gunSize * gun + i), (Bit8u)fire.gun()[i]);
+    }
+    if (fire.has_guns()) {
+        wr8(gun_table(ship), (Bit8u)fire.guns());
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Jobs
 
@@ -135,18 +175,28 @@ public:
         : mode_(mode), fire_(fire), localShip_(localShip), gun_(gun), replayingClientFire_(replayingClientFire) {}
 
     virtual bool start() {
+        // A shot of this machine's own runs in place of the game's call, and
+        // the caller reads the bolt's slot from AX: none, when it is dropped.
+        bool remote = mode_ == REPLAY || replayingClientFire_;
         if (localShip_ == kInvalidSlot || !slot_in_use(localShip_)) {
             wclog(2, "fire: shooter slot %d not usable", localShip_);
+            if (!remote) {
+                reg_eax = 0xffff;
+            }
             return false;
         }
         if (free_temp_slots() < 5) {
             wclog(2, "fire: too few free slots, dropping shot");
+            if (!remote) {
+                reg_eax = 0xffff;
+            }
             return false;
         }
         before_.take();
         started_ = true;
-        if (mode_ == REPLAY || replayingClientFire_) {
+        if (remote) {
             apply_lock(fire_, localShip_);
+            apply_gun(fire_, localShip_, gun_);
         }
         wclog(2, "%s fire: ship %d (net %d) gun %d target %s",
               mode_ == PREDICT ? "predict" : (mode_ == REPLAY ? "replay" : "local"),
@@ -956,7 +1006,7 @@ void on_do_damage_entry() {
 
 void on_fire_entry() {
     Session *s = g_session;
-    if (!s || replaying()) {
+    if (!s) {
         return;
     }
     int ship = call_arg16(code::fireGunFromShip, 0);
@@ -978,6 +1028,7 @@ void on_fire_entry() {
         fire.set_gun_id(gun);
         fire.set_client_seq(g_nextFireSeq++);
         capture_lock(&fire, ship);
+        capture_gun(&fire, ship, gun);
         g_trampoline.enqueue(new FireJob(FireJob::PREDICT, fire, ship, gun));
         g_trampoline.run_instead_of_current_call(code::fireGunFromShip);
         return;
@@ -990,6 +1041,7 @@ void on_fire_entry() {
     fire.set_shooter(NetworkShipId::from_local(ship).to_net());
     fire.set_gun_id(gun);
     capture_lock(&fire, ship);
+    capture_gun(&fire, ship, gun);
     g_trampoline.enqueue(new FireJob(FireJob::BROADCAST, fire, ship, gun));
     g_trampoline.run_instead_of_current_call(code::fireGunFromShip);
 }

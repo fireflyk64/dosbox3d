@@ -218,6 +218,17 @@ extra health" and "wingman explodes" behaviour.
 * Clients fire their own guns immediately (`FireJob::PREDICT`) and tag the
   event with `client_seq`; the server replays it, and the echo lets the client
   map the missile slot instead of firing twice.
+* **A shot carries the gun it came from.**  A ship's guns are a table
+  (`dseg:C472`, 0x33 bytes a slot: a count, then five bytes a gun), and the
+  game takes entries out of it: a launched missile's (`ovr143:0110`), and a
+  random one when a hit damages the weapons (`ovr143:10C6`).  The machines do
+  not always lose the same one, and from then on gun 1 is a laser on one and
+  a missile on the other: a wingman's machine launched a missile for every
+  laser shot of a Dralthi, missiles nobody else had and nobody removed
+  (the count went below zero and the launches went on from stale entries).
+  `WeaponFire.gun` is the shooter's record for that gun and
+  `WeaponFire.guns` its count; the replaying machine puts both in place
+  before the call.
 * **The autopilot's fly-by is not a replay of anything.**  The client runs
   it on the trampoline (`AutopilotJob`), and what the game does meanwhile
   used to be taken for part of a replayed event and left alone.  The nav
@@ -358,7 +369,8 @@ arguments.
   quadrants, damage points, core HP, hull counter, state byte, gun damage,
   engine flag, gun energy (the arrays are listed in the proto comments).
 * `WeaponFire.client_seq` for predicted client shots, `WeaponFire.target`
-  for the shooter's missile lock.
+  for the shooter's missile lock, `WeaponFire.gun` and `.guns` for the
+  shooter's own record of the gun and its count of guns.
 * `Frame.player_end` (`PlayerEnd`) for a client leaving the mission.
 * `Spawn.pilot`: the slot's pilot byte once the mission setup has run.
 * `Frame.rocks` and `ServerSendBriefingStart.rocks`: asteroid and mine fields

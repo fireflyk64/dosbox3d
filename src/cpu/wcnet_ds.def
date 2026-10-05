@@ -64,7 +64,7 @@ WC_DS(navPointState, 0xD25D, 0x44F2)  // 8 x 19 bytes: mission tree progress
 WC_DS(navPointTable, 0x687C, 0x71DC)  // [navPoints] 0x4d bytes per nav point; its mission ships are ten words at +0x39
 WC_DS(playerMissionShip, 0x9560, 0xC1B4)  // [playerMissionShip] word: which mission ship the player flies
 WC_DS(cloakState, 0, 0x70A8)              // WC2: [cloakState + 2*slot] word: 2 no cloaking device, 1 cloaked, 0 visible
-WC_DS(gunTable, 0, 0x67D4)                // WC2: per slot 0xA1 bytes: a count, then 10 bytes per gun (type word first; 0x0B is a turret)
+WC_DS(gunTable, 0xC472, 0x67D4)           // per slot: a count, then a record per gun, type word first (WC1 0x33 bytes, 5 a gun; WC2 0xA1, 10 a gun, 0x0B is a turret)
 WC_DS(cockpitView, 0, 0x0B24)             // WC2: byte, the view F1..F4 chose (0 pilot's; in a turret ship 2 left, 1 right, 3 rear)
 WC_DS(viewKeyState, 0, 0x00DC)            // WC2: word the F-key handlers clear before they switch the view
 WC_DS(cameraMode, 0, 0x9389)              // WC2: word, 4 while the player sits in a turret
