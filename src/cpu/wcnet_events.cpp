@@ -470,19 +470,20 @@ private:
 // treat what the game does as they do in an ordinary frame (g_cinematic,
 // replaying()).
 
-// A gunner sits in a turret, and an autopilot puts every view back to the
-// pilot's.  The turret it sat in when the autopilot began is where it sits
-// again when the camera is back: the call the game's own F2..F4 keys make.
+// A gunner sits in a turret: the rear one when the mission begins (the game
+// itself starts everybody in the pilot's seat), and after an autopilot,
+// which puts every view back to the pilot's, the one it sat in when the
+// autopilot began.  Both by the call the game's own F2..F4 keys make.
 static int g_viewBeforeAutopilot = -1;
 
 class ViewJob : public VmJob {
 public:
-    explicit ViewJob(int view) : view_(view) {}
+    ViewJob(int view, const char *why) : view_(view), why_(why) {}
     virtual bool start() {
         if (!code::setView.known() || !ds::known(ds::cockpitView)) {
             return false;
         }
-        wclog(2, "back to view %d after the autopilot", view_);
+        wclog(2, "view %d (%s)", view_, why_);
         wr16(ds::viewKeyState, 0);
         call_of(code::setView).arg((Bit16u)view_).arg(0).invoke();
         return true;
@@ -491,7 +492,13 @@ public:
 
 private:
     int view_;
+    const char *why_;
 };
+
+void enqueue_gunner_seat() {
+    enum { kRearView = 3 };
+    g_trampoline.enqueue(new ViewJob(kRearView, "the gunner's seat at the start"));
+}
 
 class AutopilotJob : public VmJob {
 public:
@@ -500,7 +507,7 @@ public:
         g_cinematic = false;
         bool finish = ape_.has_finish_camera() && ape_.finish_camera();
         if (finish && g_viewBeforeAutopilot > 0) {
-            g_trampoline.enqueue(new ViewJob(g_viewBeforeAutopilot));
+            g_trampoline.enqueue(new ViewJob(g_viewBeforeAutopilot, "back in the turret after the autopilot"));
             g_viewBeforeAutopilot = -1;
         }
     }

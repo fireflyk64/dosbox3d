@@ -103,7 +103,7 @@ export const GAMES = [
     pointer: { fromGame: true },
     dosbox: "[sblaster]\nirq=5\n",
     campaign: { series: WC2_SERIES, missionArgs: (m) => `Origin s${m.series} m${m.mis}`, hints: {
-      forced: "Everyone starts in the barracks with the story at that mission: click the door the game calls \"Fly mission\" (point at a door and it is named), and the briefing plays first. In a mission flown alone the second player is the gunner if the ship has turrets (F4 the rear turret, F2 and F3 the side turrets, F1 the pilot's view), and otherwise a drone: nothing sees or hits it, it has no guns, and it sees cloaked ships; 0, then /chase and Enter, rides behind the leader.",
+      forced: "Everyone starts in the barracks with the story at that mission: click the door the game calls \"Fly mission\" (point at a door and it is named), and the briefing plays first. In a mission flown alone the second player is the gunner if the ship has turrets (starting in the rear turret; F2 and F3 are the side turrets, F4 the rear one, F1 the pilot's view), and otherwise a drone: nothing sees or hits it, it has no guns, and it sees cloaked ships; 0, then /chase and Enter, rides behind the leader.",
       host: "The barracks: your saved game decides the mission. Click \"Fly mission\" (point at a door and the game names it); wingmen do the same and get your place in the story, your briefing and your mission.",
       wing: "The host flies from the barracks: click \"Fly mission\" (point at a door and the game names it), and you get the host's place in the story, the briefing and the mission." } } },
 ];

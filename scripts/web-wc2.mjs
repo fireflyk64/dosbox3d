@@ -2,8 +2,8 @@
 // meet in a lobbylink room, the host picks a mission in the lobby, both click
 // "Fly mission" in the barracks and tap Esc through the briefing, and the
 // second player's seat is checked: the wingman's ship, a drone (rides behind
-// the leader with "0", "/chase", Enter) or the gunner (F4, fire: the shots
-// must reach the host).  Driven by scripts/web-wc2.sh.
+// the leader with "0", "/chase", Enter) or the gunner (it starts in the rear
+// turret; fire: the shots must reach the host).  Driven by scripts/web-wc2.sh.
 //
 //   GAME_FILE=wc2.zip node scripts/web-wc2.mjs PAGE_URL LOBBY_URL [series/mission] [drone|gunner|wingman] [door x,y]
 //
@@ -100,7 +100,9 @@ if (expect === "drone") {
   check("the wingman's game knows it is the gunner", has("wing", "(the gunner)"), logs.wing.filter((l) => l.includes("we are player")));
   await wing.evaluate(() => document.fullscreenElement ? document.exitFullscreen() : null);
   await wing.click("#canvas");
-  await wing.keyboard.down("F4"); await sleep(0.6); await wing.keyboard.up("F4"); await sleep(3);  // the game polls the keyboard once a frame
+  // (dseg:9389 is 4 while the player sits in a turret, dseg:CD6A the turret: 0 the rear one.)
+  const seat = await wing.evaluate(() => [window.DOSBox._wc_web_ds_byte(0x9389), window.DOSBox._wc_web_ds_byte(0xCD6A)]);
+  check("the gunner starts in the rear turret without a key", seat[0] === 4 && seat[1] === 0, seat);
   await shot(wing, "wing-turret");
   await wing.keyboard.down("Space"); await sleep(4);
   await shot(wing, "wing-firing"); await shot(host, "host-firing");

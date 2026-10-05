@@ -1209,7 +1209,7 @@ private:
 class ClientSession : public Session {
 public:
     ClientSession()
-        : shipNet_(0), seat_(SEAT_WINGMAN), chase_(false), lastServerFrame_(0), lastWrittenMissionStatus_(Proceed), lastVictoryPlusOne_(0),
+        : shipNet_(0), seat_(SEAT_WINGMAN), chase_(false), seatFrames_(-1), lastServerFrame_(0), lastWrittenMissionStatus_(Proceed), lastVictoryPlusOne_(0),
           isFresh_(true), hasRestartedMission_(false), hasSentConnect_(false),
           ignoreNextFrameTop_(false), ownMissionOver_(false), dead_(false), epoch_(0), frameNumber_(0) {
         callsign_ = get_callsign();
@@ -1551,7 +1551,8 @@ private:
             // from the server like any other ship's.
             entities_.set_own_ship(-1);
             entities_.map(kPlayerSlot, kPlayerSlot);
-            show_notice("This mission is flown alone: you are the gunner. F4 is the rear turret, F2 and F3 the side turrets, F1 the pilot's view.");
+            seatFrames_ = 0;
+            show_notice("This mission is flown alone: you are the gunner, in the rear turret. F2 and F3 are the side turrets, F4 the rear one, F1 the pilot's view.");
         } else if (seat_ == SEAT_DRONE) {
             // No ship of the mission is ours: every spawn of the server's is
             // another ship here, and the leader's is made first.
@@ -1601,7 +1602,16 @@ private:
             // it sits in.
             Frame *frame = pendingFrame_.mutable_frame();
             if (seat_ == SEAT_GUNNER && ds::known(ds::cameraMode)) {
-                enum { kInTurret = 4 };
+                enum { kInTurret = 4, kSeatAfter = 8 };
+                // The game starts everybody in the pilot's seat; a gunner's
+                // place is the turret.  A few frames in, when the cockpit
+                // is up.
+                if (seatFrames_ >= 0 && ++seatFrames_ >= kSeatAfter) {
+                    seatFrames_ = -1;
+                    if (rd16(ds::cameraMode) != kInTurret) {
+                        enqueue_gunner_seat();
+                    }
+                }
                 frame->set_manned_turret(rd16(ds::cameraMode) == kInTurret ? rd16(ds::mannedTurret) + 1 : 0);
             }
             return;
@@ -1667,6 +1677,7 @@ private:
     int shipNet_;
     Seat seat_;
     bool chase_;  // a drone rides behind the leader
+    int seatFrames_;  // a gunner: frames flown before it is put in its turret (-1: done)
     Bit64u lastServerFrame_;  // the number of the last server frame applied (Frame.ack)
     EntityMap entities_;
     std::string callsign_;

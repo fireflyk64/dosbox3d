@@ -235,6 +235,9 @@ The gunner's seat is built on that:
 * The gunner's frames say which turret it sits in (`Frame.manned_turret`),
   and the server's automatic fire skips that one (hook at `ovr136:08D8`);
   the others keep firing by themselves on both machines.
+* The game starts every mission in the pilot's seat.  Eight frames into
+  the flight the gunner's machine makes the call the F4 key makes
+  (`enqueue_gunner_seat`): the gunner begins in the rear turret.
 * An autopilot puts every view back to the pilot's.  The gunner's machine
   remembers the view it had when the autopilot's camera began
   (`dseg:0B24`) and, when the camera is back, makes the call the F2..F4

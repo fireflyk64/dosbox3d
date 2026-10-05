@@ -32,6 +32,7 @@ void enqueue_remote_event(const Event &ev);
 void enqueue_chat_display(int netShipId, const std::string &callsign, const std::string &text);
 // A drone client: make a ship for the server's player (network id 0).
 void enqueue_host_body();
+void enqueue_gunner_seat();  // WC2: the gunner's view goes to the rear turret
 // Turrets (WC2).  A gunner's machine reports its shots (on_turret_fire_shot)
 // and the server fires them from its own ship (enqueue_turret_fire); the
 // server's automatic fire leaves the gunner's turret alone
