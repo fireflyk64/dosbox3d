@@ -6,6 +6,7 @@
 #
 #   scripts/web-smoke.sh [seconds] [mission] [series]
 #   NATIVE_HOST=1 scripts/web-smoke.sh [seconds] [mission] [series]
+#   scripts/web-smoke.sh pad      # a controller's stick in a Hornet and a Rapier (scripts/web-pad.mjs)
 #
 # With NATIVE_HOST=1 the native DOSBox (NATIVE_DOSBOX, default
 # build-native/src/dosbox or src/dosbox) hosts through the same lobby with
@@ -42,6 +43,11 @@ python3 "$ROOT/web/serve.py" "$PORT" > "$OUT/http.log" 2>&1 &
 HTTP_PID=$!
 trap 'kill $LOBBY_PID $HTTP_PID 2>/dev/null' EXIT
 sleep 1
+
+if [ "${1:-}" = pad ]; then
+    PLAYWRIGHT_DIR="$PW" SHOT_DIR="$OUT" node "$ROOT/scripts/web-pad.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" wc1 2>&1 | tee "$OUT/pad.log"
+    exit "${PIPESTATUS[0]}"
+fi
 
 if [ -n "${NATIVE_HOST:-}" ]; then
     DOSBOX="${NATIVE_DOSBOX:-$ROOT/build-native/src/dosbox}"

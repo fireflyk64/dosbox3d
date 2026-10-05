@@ -546,20 +546,25 @@ top-level README for the workflow).  What differs:
   steps 1 to 5), within four pixels of the view's edge the step is 8, and
   the keys go to 9.  The view is the cockpit's window, another rectangle in
   every ship: 318,52 is the middle of the Hornet's (0,0..319,104), and
+  the Scimitar's ends at 111, the Raptor's at 86, the Rapier's at 69, and
   WC2's Ferret has 0,0..319,135, its Broadsword ..115.  WC2 had no
   `pointer` entry, so the stick rested the pointer in the middle of the
   screen: 33 pixels below the Ferret's neutral point, a dive at step 3 with
-  the stick let go, and a climb only near the end of its travel.  WC2's
-  entry is now `fromGame`: the page asks the running game for the view and
-  the tables (`wc_web_steer`, `steer_info`) and maps the stick onto the
-  steps themselves (`stepped` in `web/gamepad.js`): at rest no turn in any
-  cockpit or turret, and the same stick the same step whatever the size of
-  the window; full stick is step 5 at the default sensitivity of 70% and
-  the edge's 8 from 85% up.  `scripts/web-wc2.sh pad` checks it with a
-  simulated controller in a Ferret and a Broadsword.  WC.EXE keeps its fixed
-  point: right for the Hornet and near enough for the Scimitar (55), but the
-  Raptor's window ends at 86 and the Rapier's at 69, where the same
-  resting pointer is a dive at step 1 and step 2.
+  the stick let go, and a climb only near the end of its travel; and
+  WC.EXE's fixed 318,52 had only ever been tried in the Hornet: in the
+  Raptor and the Rapier the same resting pointer is a dive at step 1 (`!steer`
+  measured it).  Both entries are now `fromGame`: the page asks the running
+  game for the view and the tables (`wc_web_steer`, `steer_info`) and maps
+  the stick onto the steps themselves (`stepped` in `web/gamepad.js`): at
+  rest no turn in any cockpit or turret, and the same stick the same step
+  whatever the size of the window; full stick is step 5 at the default
+  sensitivity of 70% and the edge's 8 from 85% up.  A window too short for
+  the later steps (the Rapier's 69: steps 4 and 5 begin at 35 and 38
+  pixels, the edge at 30) has only the edge beyond step 3, and full stick
+  goes there.  `scripts/web-wc2.sh pad` and `scripts/web-smoke.sh pad`
+  check it with a simulated controller in a Ferret and a Broadsword, a
+  Hornet and a Rapier.  In the Hornet the change from the fixed point is
+  only that full stick pitches at step 5 instead of 4.
 * **The lobby server checks the page's origin**; the public server accepts
   only its own host.  Serve the page from there or run a lobby server with
   `--allowed-origin` for the page's origin.

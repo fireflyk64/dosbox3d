@@ -347,12 +347,13 @@ static void set_pointer(double fx, double fy) {
     lastY = fy;
 }
 
-// How a game that steers by its mouse pointer in steps reads it (WC2,
-// seg001:0C5A): the pointer is parked in the middle of the 3D view, which is
-// the cockpit's window and so another rectangle in every ship and every
-// turret, and the turn is a step 1..5 by the pointer's distance from that
-// middle, or 8 within four pixels of the view's edge.  For the page's
-// controller support, which has to rest the stick's pointer exactly there:
+// How the games read their steering pointer (WC.EXE seg001:0E52, WC2
+// seg001:0C5A, the same code): the pointer is parked in the middle of the
+// 3D view, which is the cockpit's window and so another rectangle in every
+// ship and every turret, and the turn is a step 1..5 by the pointer's
+// distance from that middle, or 8 within four pixels of the view's edge.
+// For the page's controller support, which has to rest the stick's pointer
+// exactly there:
 //   what 0: the view's left, top, right, bottom (i = 0..3)
 //   what 1, 2: where step i + 1 begins, across and up/down
 //   what 3: how close to the edge the top step begins (i = 0 across, 1 up/down), and that step (i = 2)
@@ -363,7 +364,7 @@ static double steer_info(int what, int i) {
     if (!ds::known(ds::viewRect) || DS == 0 || i < 0) {
         return -1;
     }
-    int shift = rd8(ds::mouseShift) & 3;
+    int shift = ds::known(ds::mouseShift) ? rd8(ds::mouseShift) & 3 : 1;  // (WC.EXE: `shr cx,1`)
     if (what == 0 && i < 4) {
         int v = (Bit16s)rd16((Bit16u)(ds::viewRect + 2 * i));
         return (i & 1) ? v : v << shift;

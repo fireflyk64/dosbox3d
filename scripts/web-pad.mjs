@@ -1,16 +1,18 @@
-// Headless test of a controller's stick in Wing Commander II in the browser
-// build: one Chrome page with a simulated gamepad flies a mission (the
-// mission test, cockpit within seconds) and reads back what the game makes
-// of the stick: the turn it is asked for (wc_web_steer).  The game parks its
-// pointer in the middle of the cockpit's window, which is another in every
-// ship, and a stick that rested anywhere else was a constant dive: at rest
-// the turn must be none, and the same stick the same turn in two cockpits.
-// Driven by scripts/web-wc2.sh pad.
+// Headless test of a controller's stick in the browser build: one Chrome
+// page with a simulated gamepad flies a mission and reads back what the game
+// makes of the stick: the turn it is asked for (wc_web_steer).  Both games
+// park their pointer in the middle of the cockpit's window, which is another
+// in every ship, and a stick that rested anywhere else was a constant dive
+// in every cockpit but the one it was measured in: at rest the turn must be
+// none, and the same stick the same turn in every cockpit.  Driven by
+// scripts/web-wc2.sh pad (Wing Commander II, from a zip of the game) and
+// scripts/web-smoke.sh pad (Wing Commander, from the server's wc.tar.gz).
 //
-//   GAME_FILE=wc2.zip node scripts/web-wc2-pad.mjs PAGE_URL LOBBY_URL
+//   GAME_FILE=wc2.zip node scripts/web-pad.mjs PAGE_URL LOBBY_URL wc2
+//   node scripts/web-pad.mjs PAGE_URL LOBBY_URL wc1
 import { createRequire } from "node:module";
 import path from "node:path";
-const [pageUrl, lobbyUrl] = process.argv.slice(2);
+const [pageUrl, lobbyUrl, game = "wc2"] = process.argv.slice(2);
 const require = createRequire(path.join(process.env.PLAYWRIGHT_DIR || process.cwd(), "package.json"));
 const { chromium } = require("playwright");
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME || "/usr/bin/google-chrome",
@@ -23,27 +25,35 @@ const mock = () => {
   navigator.getGamepads = () => [window.__pad];
 };
 
-// Series 1 is flown in a Ferret, series 2 mission 0 in a Broadsword: two
-// cockpits with windows of different heights.
-for (const [ship, mission] of [["Ferret", "s1 m0"], ["Broadsword", "s2 m0"]]) {
+// Cockpits with windows of different heights: WC2's series 1 is flown in a
+// Ferret and series 2 mission 0 in a Broadsword (the mission test, cockpit
+// within seconds); Wing Commander's Enyo 1 in a Hornet and Gimle 2 in a
+// Rapier (the forced mission, after the briefing).
+const COCKPITS = {
+  wc2: [["Ferret", { cmd: "loadfix -34 wc2 Origin -k l s1 m0" }], ["Broadsword", { cmd: "loadfix -34 wc2 Origin -k l s2 m0" }]],
+  wc1: [["Hornet", { "env.MIS": "0", "env.SERIES": "1" }], ["Rapier", { "env.MIS": "1", "env.SERIES": "4" }]],
+};
+for (const [ship, how] of COCKPITS[game]) {
   const context = await browser.newContext();
   await context.addInitScript(mock);
   const page = await context.newPage();
   page.on("pageerror", (e) => console.log(`PAGE ERROR: ${e.message}`));
   const u = new URL(pageUrl);
   // (An empty WCROOM: the game runs without a session, so nobody is waited for.)
+  // (WC1's own ship is made invulnerable for the test, the briefing is tapped through, and no missile is fired.)
+  const wc1 = game === "wc1" ? { "env.WCNET_AUTOKEYS": "1", "env.WCNET_KEYSCRIPT": "0.5:!poke=00BA:00" } : {};
   for (const [k, v] of Object.entries({ room: "PAD-" + Math.random().toString(36).slice(2, 8).toUpperCase(), server: lobbyUrl, callsign: "HOST",
-                                        "env.WCROOM": "", cmd: `loadfix -34 wc2 Origin -k l ${mission}` })) u.searchParams.set(k, v);
+                                        "env.WCROOM": "", ...how, ...wc1 })) u.searchParams.set(k, v);
   await page.goto(u.toString());
   const axis = (i, v) => page.evaluate(([i, v]) => { window.__pad.axes[i] = v; }, [i, v]);
   const button = (i, v) => page.evaluate(([i, v]) => { window.__pad.buttons[i] = { pressed: v > 0.1, touched: v > 0, value: v }; }, [i, v]);
-  await page.setInputFiles("#gamefile", process.env.GAME_FILE);
+  if (process.env.GAME_FILE) await page.setInputFiles("#gamefile", process.env.GAME_FILE);
   await page.waitForFunction(() => /^(Ready|Could not)/.test(document.getElementById("sourceStatus").textContent), null, { timeout: 300000 });
   await button(0, 1); await page.waitForTimeout(300); await button(0, 0);
   check(`${ship}: a button press picks the controller up`, (await page.inputValue("#padSelect")).startsWith("0:Mock Pad"), await page.inputValue("#padSelect"));
   await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 60000 });
   await page.click("#fly");
-  await page.waitForFunction(() => window.DOSBox && window.DOSBox._wc_web_in_flight && window.DOSBox._wc_web_in_flight() === 1, null, { timeout: 180000 });
+  await page.waitForFunction(() => window.DOSBox && window.DOSBox._wc_web_in_flight && window.DOSBox._wc_web_in_flight() === 1, null, { timeout: 240000 });
   await page.waitForTimeout(4000);
   const view = await page.evaluate(() => [0, 1, 2, 3].map((i) => window.DOSBox._wc_web_steer(0, i)));
   const turn = () => page.evaluate(() => [window.DOSBox._wc_web_steer(4, 0), window.DOSBox._wc_web_steer(4, 1)]);
@@ -56,7 +66,10 @@ for (const [ship, mission] of [["Ferret", "s1 m0"], ["Broadsword", "s2 m0"]]) {
   // (The default layout has the pitch inverted: pulling back raises the nose,
   // and the game's "down" is then negative.)
   const back = await held(1, 1), forward = await held(1, -1), right = await held(0, 1), left = await held(0, -1);
-  check(`${ship}: full stick back and forward are the same turn up and down`, back[1] === -5 && forward[1] === 5 && back[0] === 0 && forward[0] === 0, [back, forward]);
+  // (Step 5 where the window has room for it; a window too short for steps 4
+  // and 5, the Rapier's, has only the edge's 8 beyond step 3, and full stick
+  // goes there.)
+  check(`${ship}: full stick back and forward are the same turn up and down`, back[1] === -forward[1] && (back[1] === -5 || back[1] === -8) && back[0] === 0 && forward[0] === 0, [back, forward]);
   check(`${ship}: full stick right and left are the same turn`, right[0] === 5 && left[0] === -5 && right[1] === 0 && left[1] === 0, [right, left]);
   const half = await held(0, 0.55), little = await held(1, 0.3);
   check(`${ship}: less stick is less turn`, half[0] >= 2 && half[0] <= 4 && little[1] <= -1 && little[1] >= -2, [half, little]);
@@ -69,5 +82,5 @@ for (const [ship, mission] of [["Ferret", "s1 m0"], ["Broadsword", "s2 m0"]]) {
   await context.close();
 }
 await browser.close();
-console.log(results.every(Boolean) ? "WC2 PAD OK" : "WC2 PAD FAILED");
+console.log(results.every(Boolean) ? `${game.toUpperCase()} PAD OK` : `${game.toUpperCase()} PAD FAILED`);
 process.exit(results.every(Boolean) ? 0 : 1);

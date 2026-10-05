@@ -25,11 +25,12 @@
 // 16000 cycles: WCFPS and WCFLIGHTCYCLES in the environment), and `pointer`,
 // for a controller's stick (web/gamepad.js): where the mouse pointer rests
 // when the game steers by it and how far it reaches, as fractions of the
-// mouse range.  Wing Commander parks the pointer at 318,52 of 640x200 (the
-// middle of the cockpit view) and turns by its distance from there.  Wing
-// Commander II parks it in the middle of the cockpit's window, which is
-// another in every ship and every turret, and turns in steps: `fromGame`
-// asks the running game for both (web/wc.js, steeringPointer).
+// mouse range.  Both games park the pointer in the middle of the cockpit's
+// window, which is another rectangle in every ship (318,52 of 640x200 in
+// Wing Commander's Hornet, 34 up in its Rapier) and in every turret, and
+// turn in steps by its distance from there: `fromGame` asks the running
+// game for both (web/wc.js, steeringPointer).  Fixed figures {x, y, rx, ry}
+// are the other form, for a game the hooks know nothing about.
 // `firstName`: the game's people use the pilot's first name, and the page
 // asks for one.
 // `dosbox`: what the game's own setup expects of the machine, as the text of
@@ -81,7 +82,7 @@ const WC2_SERIES = [
 export const GAMES = [
   { id: "wc1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
     saves: ["GAMEDAT/SAVEGAME.WLD"], cycles: 3630,
-    pointer: { x: 318 / 639, y: 52 / 199, rx: 318 / 639, ry: 52 / 199 },
+    pointer: { fromGame: true },
     campaign: { series: WC1_SERIES, hints: {
       forced: "Everyone flies it from a fresh start with the callsigns entered above.",
       host: "The barracks: your save game and your walk to the briefing decide the mission; wingmen must walk into the briefing room too, and get your mission there.",
