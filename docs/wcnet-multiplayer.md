@@ -239,6 +239,13 @@ extra health" and "wingman explodes" behaviour.
   host shot down four Dralthi that stayed on the wingman's radar and came
   along to the next nav point.  `g_cinematic` marks the fly-by, and inside
   it the client's game is answered as at any other time.
+* **A campaign begun in the middle of a series.**  The game adds a series'
+  victory points up (`dseg:C280`, `compute_victory` at `ovr161:01E1`) and
+  takes the winning path when the sum reaches the series' threshold.
+  Starting at Gimle 2 left Gimle 1 at nothing, and two won missions were a
+  lost series.  The missions before the first one flown count as won: their
+  objectives' points (`dseg:9A88`, the campaign table) are added when that
+  first mission is scored (`credit_skipped_missions`).
 
 ## 3. Frame exchange
 

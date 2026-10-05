@@ -42,6 +42,7 @@ WC_DS(currentMission, 0xC255, 0x4681)  // byte (WC2: a word, mission 0.. within 
 WC_DS(currentSeries, 0xC256, 0x467F)  // byte (WC2: a word)
 WC_DS(statusPilots, 0xC260, 0x0000)  // word per named pilot (8): 0 = alive, else series * 4 + mission of his death
 WC_DS(victoryPoints, 0xC280, 0x0000)  // word
+WC_DS(campaignTable, 0x9A88, 0x0000)  // near pointer: 0x5A bytes per series (series 1 first): +2 missions, +3 points for the winning path; +0xA 0x14 bytes per mission, 16 objective point bytes at its +4
 WC_DS(missileTarget, 0xC284, 0x6FF4)  // [currentCampaign+2] byte per slot
 WC_DS(parentShipForShip, 0xC30E, 0x6392)  // byte per slot, 0xff = none
 WC_DS(gMaybeShipRadius, 0xC3B0, 0x627A)  // word per slot

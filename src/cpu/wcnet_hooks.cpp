@@ -61,6 +61,35 @@ static bool g_haveLastMission = false;
 static int g_lastMission = 0;
 static int g_lastSeries = 1;
 
+// A campaign begun in the middle of a series (MIS > 0): the series' earlier
+// missions were not flown, and the game adds up a series' victory points
+// to choose between its winning and its losing path (compute_victory,
+// ovr161:027D).  Unflown they count nothing -- Gimle 2 and 3 flown and won
+// after starting at Gimle 2 led to the losing path's Scimitars.  They are
+// credited as won when the first mission flown is scored.
+static int g_creditSeries = 0, g_creditMissions = 0;
+
+static void credit_skipped_missions() {
+    if (!g_creditMissions || !ds::known(ds::campaignTable) || !ds::known(ds::victoryPoints)) {
+        return;
+    }
+    int series = rd8(ds::currentSeries), missions = g_creditMissions;
+    g_creditMissions = 0;
+    if (series != g_creditSeries || series < 1) {
+        return;
+    }
+    Bit16u record = (Bit16u)(rd16(ds::campaignTable) + 0x5a * (series - 1));
+    int points = 0;
+    for (int m = 0; m < missions && m < 4; m++) {
+        for (int objective = 0; objective < 16; objective++) {
+            points += (Bit8s)rd8((Bit16u)(record + 0xa + 0x14 * m + 4 + objective));
+        }
+    }
+    wr16(ds::victoryPoints, (Bit16u)(rd16(ds::victoryPoints) + points));
+    wclog(1, "series %d began at its mission %d: the %d before it count as won, %d victory points (%d now, %d win the series)",
+          series, missions, missions, points, (int)rd16(ds::victoryPoints), (int)rd16((Bit16u)(record + 3)));
+}
+
 // One line of campaign state for the logs: mission, status, the pilot byte of
 // each ship slot and the eight "killed in mission" words.
 static std::string mission_state_line() {
@@ -646,6 +675,9 @@ static void on_after_startup() {
             mission = g_lastMission;
             series = g_lastSeries;
             wclog(1, "the last mission did not end with a landing: flying %d/%d again", mission, series);
+        } else {
+            g_creditSeries = series;
+            g_creditMissions = mission;
         }
         run_campaign(mission, series);
         g_skipBarracks = true;
@@ -766,6 +798,9 @@ static void check_hooks_slow() {
         on_ai_set_speed_entry();
     }
 
+    if (at_location(code::missionVictoryCalc)) {
+        credit_skipped_missions();  // (a client then takes the server's count)
+    }
     if (at_location(code::missionVictoryCalc) && g_session) {
         g_session->on_mission_victory_calc();
     }
