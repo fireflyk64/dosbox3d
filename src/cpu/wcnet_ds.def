@@ -71,6 +71,11 @@ WC_DS(gunTable, 0xC472, 0x67D4)           // per slot: a count, then a record pe
 WC_DS(cockpitView, 0, 0x0B24)             // WC2: byte, the view F1..F4 chose (0 pilot's; in a turret ship 2 left, 1 right, 3 rear)
 WC_DS(viewKeyState, 0, 0x00DC)            // WC2: word the F-key handlers clear before they switch the view
 WC_DS(cameraMode, 0, 0x9389)              // WC2: word, 4 while the player sits in a turret
+WC_DS(viewRect, 0, 0xBD38)                // WC2: four words, the 3D view's left, top, right, bottom on the 320x200 screen (the cockpit's window: 0,0,319,135 in a Ferret, ..,115 in a Broadsword)
+WC_DS(mouseShift, 0, 0xA337)              // WC2: byte, how far the mouse driver's x is shifted down to a screen x (1)
+WC_DS(steerStepsX, 0, 0x00EE)             // WC2: words, the pointer's distance from the view's middle at which each step of the turn begins (10, 37, 52, 57, 62; then one no pointer reaches)
+WC_DS(steerStepsY, 0, 0x00FA)             // WC2: the same up and down (5, 18, 27, 35, 38)
+WC_DS(steerInput, 0, 0x440E)              // WC2: two words, the turn asked for: pitch (down positive), then yaw; -9..9 from the keys, the mouse's steps are 1..5 and 8 at the view's edge
 WC_DS(mannedTurret, 0, 0xCD6A)            // WC2: word, which turret that is
 WC_DS(turretBarrels, 0, 0xCDA8)           // WC2: word, the barrel offsets of that turret (0 rear, 1 side)
 WC_DS(turretEnergy, 0, 0xCD5C)            // WC2: word, the turret guns' energy (100 full, 24 a shot)

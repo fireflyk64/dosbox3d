@@ -526,6 +526,27 @@ top-level README for the workflow).  What differs:
   a window that is visible but not focused keeps flying: two windows side by
   side are a split screen.  The DOS game-port joystick is off in this build
   (`joysticktype=none`), or a gamepad would reach the game twice.
+* **Where the pointer rests is the cockpit's business.**  Both games read
+  the pointer the same way (WC.EXE `seg001:0E52`, WC2 `seg001:0C5A`): its
+  distance from the middle of the 3D view picks a step of turn from two
+  tables (10, 37, 52, 57, 62 pixels across, 5, 18, 27, 35, 38 up and down:
+  steps 1 to 5), within four pixels of the view's edge the step is 8, and
+  the keys go to 9.  The view is the cockpit's window, another rectangle in
+  every ship: 318,52 is the middle of the Hornet's (0,0..319,104), and
+  WC2's Ferret has 0,0..319,135, its Broadsword ..115.  WC2 had no
+  `pointer` entry, so the stick rested the pointer in the middle of the
+  screen: 33 pixels below the Ferret's neutral point, a dive at step 3 with
+  the stick let go, and a climb only near the end of its travel.  WC2's
+  entry is now `fromGame`: the page asks the running game for the view and
+  the tables (`wc_web_steer`, `steer_info`) and maps the stick onto the
+  steps themselves (`stepped` in `web/gamepad.js`): at rest no turn in any
+  cockpit or turret, and the same stick the same step whatever the size of
+  the window; full stick is step 5 at the default sensitivity of 70% and
+  the edge's 8 from 85% up.  `scripts/web-wc2.sh pad` checks it with a
+  simulated controller in a Ferret and a Broadsword.  WC.EXE keeps its fixed
+  point: right for the Hornet and near enough for the Scimitar (55), but the
+  Raptor's window ends at 86 and the Rapier's at 69, where the same
+  resting pointer is a dive at step 1 and step 2.
 * **The lobby server checks the page's origin**; the public server accepts
   only its own host.  Serve the page from there or run a lobby server with
   `--allowed-origin` for the page's origin.

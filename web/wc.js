@@ -805,9 +805,27 @@ function showPerformance() {
 // A game controller chosen in this window drives the running game's mouse and
 // keyboard (web/gamepad.js); the registry says where the game's steering
 // pointer rests and how far it reaches.
+// Where a controller's stick rests the game's pointer and how far it moves
+// it: the registry's figures (Wing Commander: a fixed point of the screen),
+// or the running game's own (`fromGame`, Wing Commander II: the middle of
+// the cockpit's window, another in every ship and every turret, and the
+// distances at which its steps of turn begin; src/cpu/wcnet_hooks.cpp,
+// steer_info).  The game's are in units of the mouse's range, 640 x 200.
+function steeringPointer() {
+  const p = (gameInfo() && gameInfo().pointer) || null;
+  if (!p || !p.fromGame) return p;
+  const M = running && window.DOSBox;
+  if (!M || !M._wc_web_steer) return null;
+  const [left, top, right, bottom] = [0, 1, 2, 3].map((i) => M._wc_web_steer(0, i));
+  if (!(right > left && bottom > top && left >= 0 && top >= 0)) return null;
+  const steps = (what, range) => { const s = []; for (let i = 0, v; (v = M._wc_web_steer(what, i)) >= 0; i++) s.push(v / range); return s; };
+  return { x: (left + right) / 2 / 639, y: (top + bottom) / 2 / 199, rx: (right - left) / 2 / 639, ry: (bottom - top) / 2 / 199,
+           stepsX: steps(1, 639), stepsY: steps(2, 199), edgeX: M._wc_web_steer(3, 0) / 639, edgeY: M._wc_web_steer(3, 1) / 199, top: M._wc_web_steer(3, 2) };
+}
+
 initControls({
   module: () => (running && window.DOSBox) || null,
-  pointer: () => (gameInfo() && gameInfo().pointer) || null,
+  pointer: steeringPointer,
   log,
 });
 

@@ -6,6 +6,7 @@
 #
 #   GAME_FILE=/path/to/wc2.zip scripts/web-wc2.sh [series/mission] [drone|gunner|wingman] [door x,y]
 #   GAME_FILE=/path/to/wc2.zip scripts/web-wc2.sh intro     # the introduction's speech (scripts/web-wc2-intro.mjs)
+#   GAME_FILE=/path/to/wc2.zip scripts/web-wc2.sh pad       # a controller's stick in two cockpits (scripts/web-wc2-pad.mjs)
 #
 # Logs and screenshots land in $OUT (default /tmp/web-wc2).
 set -u
@@ -35,8 +36,8 @@ python3 "$ROOT/web/serve.py" "$PORT" > "$OUT/http.log" 2>&1 &
 HTTP_PID=$!
 trap 'kill $LOBBY_PID $HTTP_PID 2>/dev/null' EXIT
 sleep 1
-if [ "${1:-}" = intro ]; then
-    PLAYWRIGHT_DIR="$PW" SHOT_DIR="$OUT" GAME_FILE="$GAME_FILE" node "$ROOT/scripts/web-wc2-intro.mjs" \
+if [ "${1:-}" = intro ] || [ "${1:-}" = pad ]; then
+    PLAYWRIGHT_DIR="$PW" SHOT_DIR="$OUT" GAME_FILE="$GAME_FILE" node "$ROOT/scripts/web-wc2-$1.mjs" \
         "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" 2>&1 | tee "$OUT/run.log"
     exit "${PIPESTATUS[0]}"
 fi

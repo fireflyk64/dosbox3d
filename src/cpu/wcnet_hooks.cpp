@@ -301,6 +301,7 @@ static void auto_keys() {
 // "!hit=<qty>[:back]", which damages our own ship as a hit from ahead would,
 // "!say=<text>", which sends a comms message or command ("_" for a space),
 // "!where", which logs where the program is and who called it,
+// "!steer", which logs how the game reads its steering pointer (WC2),
 // "+<key>" / "-<key>", which hold and release a key, or "wait", which holds
 // the script until the next mission reaches its first frame and restarts
 // the clock there.  The clock starts at the first in-flight frame of the
@@ -342,6 +343,43 @@ static void set_pointer(double fx, double fy) {
     Mouse_CursorMoved((float)((fx - lastX) * 640.0), (float)((fy - lastY) * 200.0), (float)fx, (float)fy, false);
     lastX = fx;
     lastY = fy;
+}
+
+// How a game that steers by its mouse pointer in steps reads it (WC2,
+// seg001:0C5A): the pointer is parked in the middle of the 3D view, which is
+// the cockpit's window and so another rectangle in every ship and every
+// turret, and the turn is a step 1..5 by the pointer's distance from that
+// middle, or 8 within four pixels of the view's edge.  For the page's
+// controller support, which has to rest the stick's pointer exactly there:
+//   what 0: the view's left, top, right, bottom (i = 0..3)
+//   what 1, 2: where step i + 1 begins, across and up/down
+//   what 3: how close to the edge the top step begins (i = 0 across, 1 up/down), and that step (i = 2)
+//   what 4: what the game made of it: the turn asked for across (i = 0) and down (i = 1)
+// All distances in units of the mouse's range (640 x 200).  -1: nothing of
+// the kind (another game, past the last step).
+static double steer_info(int what, int i) {
+    if (!ds::known(ds::viewRect) || DS == 0 || i < 0) {
+        return -1;
+    }
+    int shift = rd8(ds::mouseShift) & 3;
+    if (what == 0 && i < 4) {
+        int v = (Bit16s)rd16((Bit16u)(ds::viewRect + 2 * i));
+        return (i & 1) ? v : v << shift;
+    }
+    if ((what == 1 || what == 2) && i < 8) {
+        int v = (Bit16s)rd16((Bit16u)((what == 1 ? ds::steerStepsX : ds::steerStepsY) + 2 * i));
+        if (v <= 0 || v >= 1000) {
+            return -1;  // (the table ends with a distance no pointer reaches)
+        }
+        return what == 1 ? v << shift : v;
+    }
+    if (what == 3 && i < 3) {
+        return i == 0 ? 4 << shift : i == 1 ? 4 : 8;
+    }
+    if (what == 4 && i < 2) {
+        return (Bit16s)rd16((Bit16u)(ds::steerInput + (i == 0 ? 2 : 0)));
+    }
+    return -1;
 }
 
 static std::string ds_text(Bit16u off, int max) {
@@ -501,6 +539,18 @@ static void key_script() {
               rd8(ds::systemDamage + 8), rd16(ds::cockpitDamage), rd16(ds::cockpitDamage + 2), rd16(ds::cockpitDamage + 4),
               rd16(ds::cockpitDamage + 6));
         enqueue_test_hit(qty, back);
+    } else if (item == "!steer") {
+        // !steer logs how the game reads its steering pointer and what it
+        // makes of where the pointer is (steer_info)
+        std::string steps[2];
+        for (int axis = 0; axis < 2; axis++) {
+            for (int i = 0; steer_info(1 + axis, i) >= 0; i++) {
+                steps[axis] += (i ? " " : "") + std::to_string((int)steer_info(1 + axis, i));
+            }
+        }
+        wclog(1, "key script %.1fs (t=%.1f): view %d,%d..%d,%d steps across %s down %s; turn asked for: across %d down %d", t, now / 1000.0,
+              (int)steer_info(0, 0), (int)steer_info(0, 1), (int)steer_info(0, 2), (int)steer_info(0, 3), steps[0].c_str(), steps[1].c_str(),
+              (int)steer_info(4, 0), (int)steer_info(4, 1));
     } else if (item == "!where") {
         // !where logs where the program is: CS:IP with the bytes there (for
         // scripts/wcexe.py find) and the far return addresses up the stack
@@ -914,6 +964,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_perf(int what) {
         return -1;
     }
     return what == 0 ? p.fps : what == 1 ? p.speed : what == 2 ? p.waitMs : what == 3 ? p.cycles : what == 4 ? p.worstFrameMs : p.load;
+}
+// How the game reads its steering pointer (steer_info above).
+extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_steer(int what, int i) {
+    return wc::steer_info(what, i);
 }
 // One byte of the game's data segment, for checks from the page.
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_ds_byte(int off) {

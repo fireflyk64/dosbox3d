@@ -92,11 +92,34 @@ function pads() {
   catch (e) { return []; }
 }
 
+// Wing Commander II turns in steps by how far the pointer is from the middle
+// of its view: step 1, 2, ... begins at steps[0], steps[1], ... and the last
+// and fastest, worth `top`, is the view's edge (`reach` from the middle,
+// taken from `edge` before it; a small view has no room for the later
+// steps).  The stick asks for a share v (-1..1) of the full turn and gets
+// the step nearest to it, with the pointer in the middle of that step's
+// band: a stick at rest is no turn at all in any cockpit, and the same
+// stick is the same turn in a cockpit with a large window and a small one.
+export function stepped(v, steps, reach, edge, top) {
+  const inside = steps.filter((from) => from < reach - edge).length;
+  const worth = (n) => (n > inside ? top : n);     // 0: no turn, 1..inside, inside + 1: the edge
+  const want = Math.abs(v) * top;
+  let best = 0;
+  for (let n = 1; n <= inside + 1; n++) if (Math.abs(worth(n) - want) < Math.abs(worth(best) - want)) best = n;
+  if (best === 0) return 0;
+  if (best > inside) return Math.sign(v) * reach;
+  const from = steps[best - 1];
+  const to = Math.min(reach - edge, best < steps.length ? steps[best] : from + 2 * (from - (steps[best - 2] || 0)));
+  return Math.sign(v) * (from + to) / 2;
+}
+
 // initControls wires the controller picker and the mapping table (elements
 // by id, see index.html) and starts polling.  `host` supplies:
 //   module():  the running emulator's Module, or null
 //   pointer(): the game's steering pointer {x, y, rx, ry} as fractions of the
-//              mouse range (neutral point and reach), or null for the centre
+//              mouse range (neutral point and reach), or null for the centre;
+//              with stepsX / stepsY / edgeX / edgeY / top for a game that
+//              turns in steps (see stepped below)
 //   log(line)
 export function initControls(host) {
   const $ = (id) => document.getElementById(id);
@@ -270,8 +293,13 @@ export function initControls(host) {
     let x, y, refresh;
     if (flying) {
       const p = host.pointer() || { x: 0.5, y: 0.5, rx: 0.5, ry: 0.5 };
-      x = p.x + yaw * p.rx * cfg.sensitivity;
-      y = p.y - pitch * p.ry * cfg.sensitivity;
+      if (p.stepsX) {
+        x = p.x + stepped(yaw * cfg.sensitivity, p.stepsX, p.rx, p.edgeX, p.top);
+        y = p.y - stepped(pitch * cfg.sensitivity, p.stepsY, p.ry, p.edgeY, p.top);
+      } else {
+        x = p.x + yaw * p.rx * cfg.sensitivity;
+        y = p.y - pitch * p.ry * cfg.sensitivity;
+      }
       refresh = 200;             // the game re-centres the pointer by itself now and then
       menu.wasFlight = true;
     } else {
