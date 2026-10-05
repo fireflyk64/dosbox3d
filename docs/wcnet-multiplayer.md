@@ -218,6 +218,16 @@ extra health" and "wingman explodes" behaviour.
 * Clients fire their own guns immediately (`FireJob::PREDICT`) and tag the
   event with `client_seq`; the server replays it, and the echo lets the client
   map the missile slot instead of firing twice.
+* **The autopilot's fly-by is not a replay of anything.**  The client runs
+  it on the trampoline (`AutopilotJob`), and what the game does meanwhile
+  used to be taken for part of a replayed event and left alone.  The nav
+  point setup the client's game runs when it arrives was one such thing: its
+  spawns went through natively, the server's spawns for the same ships then
+  found the slots taken (`spawn produced slot 65535`), and nothing the
+  server said about those ships afterwards reached them -- on Gimle 2 the
+  host shot down four Dralthi that stayed on the wingman's radar and came
+  along to the next nav point.  `g_cinematic` marks the fly-by, and inside
+  it the client's game is answered as at any other time.
 
 ## 3. Frame exchange
 

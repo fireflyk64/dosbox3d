@@ -36,7 +36,10 @@ static bool g_navSetup = false;
 // broadcast like any other.
 static bool g_applyingReport = false;
 
+static bool g_cinematic = false;  // the autopilot's fly-by is being replayed (see AutopilotJob)
+
 void reset_pending_fires() {
+    g_cinematic = false;  // (a mission that ended inside a fly-by)
     g_pendingFires.clear();
 }
 
@@ -410,6 +413,13 @@ private:
     bool started_ = false;
 };
 
+// The autopilot's camera is replayed by calling the game's own animation,
+// and that call is the game flying on for some hundred frames: ships move,
+// the AI thinks, a nav point can come into reach and be set up.  None of
+// that is the replay of anything the server did.  While it runs the hooks
+// treat what the game does as they do in an ordinary frame (g_cinematic,
+// replaying()).
+
 // A gunner sits in a turret, and an autopilot puts every view back to the
 // pilot's.  The turret it sat in when the autopilot began is where it sits
 // again when the camera is back: the call the game's own F2..F4 keys make.
@@ -437,6 +447,7 @@ class AutopilotJob : public VmJob {
 public:
     explicit AutopilotJob(const AutoPilotEvent &ape) : ape_(ape) {}
     virtual void finish() {
+        g_cinematic = false;
         bool finish = ape_.has_finish_camera() && ape_.finish_camera();
         if (finish && g_viewBeforeAutopilot > 0) {
             g_trampoline.enqueue(new ViewJob(g_viewBeforeAutopilot));
@@ -458,6 +469,7 @@ public:
         bool finish = ape_.has_finish_camera() && ape_.finish_camera();
         wclog(2, "replay autopilot %s (%d, %d, %d)", finish ? "finish" : "camera",
               ape_.cam_ship_type(), ape_.cam_mode(), ape_.duration());
+        g_cinematic = true;
         call_of(code::autoAnimation)
             .arg((Bit16u)ape_.cam_ship_type()).arg((Bit16u)ape_.cam_mode()).arg((Bit16u)ape_.duration())
             .invoke();
@@ -606,7 +618,7 @@ private:
 
 void on_cloak_entry(bool on) {
     Session *s = g_session;
-    if (!s || g_trampoline.is_running()) {
+    if (!s || (g_trampoline.is_running() && !g_cinematic)) {
         return;
     }
     const Loc &fn = on ? code::cloak : code::uncloak;
@@ -827,8 +839,16 @@ void enqueue_rocks_change(int mode) {
 // ---------------------------------------------------------------------------
 // Interception
 
+// A call the game makes while a trampoline job runs is part of what that job
+// replays (the bolt a replayed shot makes, the despawns inside a replayed
+// kill) and runs as the game wrote it, unless the job is the autopilot's
+// fly-by (g_cinematic).  That used to count as well: a client whose own ship
+// came into reach of the next nav point during the fly-by set the nav point
+// up itself, with ships of its own that no network id ever named; the
+// server's spawns for them then found them "already there", and every shot,
+// hit and kill of theirs was ignored on that client.
 static bool replaying() {
-    return g_trampoline.is_running();
+    return g_trampoline.is_running() && !g_cinematic;
 }
 
 // The network id of the ship behind a hit or a kill, when a ship is behind
@@ -941,10 +961,15 @@ void on_fire_entry() {
     }
     int ship = call_arg16(code::fireGunFromShip, 0);
     int gun = call_arg16(code::fireGunFromShip, 1);
+    if (replaying()) {
+        wclog(3, "fire inside the %s job: ship %d gun %d", g_trampoline.current_name(), ship, gun);
+        return;
+    }
     if (s->is_client()) {
-        if (ship != kPlayerSlot || s->seat() != SEAT_WINGMAN) {
+        if (ship != kPlayerSlot || s->seat() != SEAT_WINGMAN || g_trampoline.is_running()) {
             // Other ships fire through server events; a drone has no guns,
-            // and a gunner has the turrets, not the pilot's guns.
+            // and a gunner has the turrets, not the pilot's guns.  (And
+            // nobody's guns fire during the autopilot's fly-by.)
             return_from_call(code::fireGunFromShip, 0xffff);
             return;
         }

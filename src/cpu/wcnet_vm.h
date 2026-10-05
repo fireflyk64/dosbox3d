@@ -108,6 +108,8 @@ public:
     void enqueue_front(VmJob *job);
     bool has_pending() const { return !jobs_.empty(); }
     bool is_running() const { return running_; }
+    // What the job in progress calls itself ("" when none is), for logs.
+    const char *current_name() const { return current_ ? current_->describe() : ""; }
 
     // Start executing queued jobs *instead of* the game function `fn` whose
     // entry we are at: the trampoline's final retf returns to that
