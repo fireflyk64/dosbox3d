@@ -410,10 +410,45 @@ private:
     bool started_ = false;
 };
 
+// A gunner sits in a turret, and an autopilot puts every view back to the
+// pilot's.  The turret it sat in when the autopilot began is where it sits
+// again when the camera is back: the call the game's own F2..F4 keys make.
+static int g_viewBeforeAutopilot = -1;
+
+class ViewJob : public VmJob {
+public:
+    explicit ViewJob(int view) : view_(view) {}
+    virtual bool start() {
+        if (!code::setView.known() || !ds::known(ds::cockpitView)) {
+            return false;
+        }
+        wclog(2, "back to view %d after the autopilot", view_);
+        wr16(ds::viewKeyState, 0);
+        call_of(code::setView).arg((Bit16u)view_).arg(0).invoke();
+        return true;
+    }
+    virtual const char *describe() const { return "view"; }
+
+private:
+    int view_;
+};
+
 class AutopilotJob : public VmJob {
 public:
     explicit AutopilotJob(const AutoPilotEvent &ape) : ape_(ape) {}
+    virtual void finish() {
+        bool finish = ape_.has_finish_camera() && ape_.finish_camera();
+        if (finish && g_viewBeforeAutopilot > 0) {
+            g_trampoline.enqueue(new ViewJob(g_viewBeforeAutopilot));
+            g_viewBeforeAutopilot = -1;
+        }
+    }
     virtual bool start() {
+        if (!(ape_.has_finish_camera() && ape_.finish_camera()) && g_session && g_session->is_gunner() &&
+            ds::known(ds::cockpitView) && g_viewBeforeAutopilot < 0) {
+            enum { kInTurret = 4 };
+            g_viewBeforeAutopilot = rd16(ds::cameraMode) == kInTurret ? rd8(ds::cockpitView) : 0;
+        }
         // The server sends one event when its autopilot camera starts and one
         // when it finishes.  Both are replayed by calling the game's
         // autoAnimation: the finish event carries no camera parameters, and

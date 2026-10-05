@@ -57,7 +57,7 @@ typedef Loc RootLoc;
     /* asteroid and mine fields */ \
     X(clearFields) \
     /* turrets (WC2) */ \
-    X(turretFire) X(turretFireShot) X(turretAutoNext) X(turretAutoSkip) \
+    X(turretFire) X(turretFireShot) X(turretAutoNext) X(turretAutoSkip) X(setView) \
     /* cloaking (WC2) */ \
     X(cloak) X(uncloak) \
     /* root image */ \

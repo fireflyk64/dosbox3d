@@ -235,9 +235,13 @@ The gunner's seat is built on that:
 * The gunner's frames say which turret it sits in (`Frame.manned_turret`),
   and the server's automatic fire skips that one (hook at `ovr136:08D8`);
   the others keep firing by themselves on both machines.
-* An autopilot puts every view back to the pilot's: the gunner presses F4
-  again.  Its ending (ejecting, quitting) ends nothing; the leader's death
-  or landing ends its flight.
+* An autopilot puts every view back to the pilot's.  The gunner's machine
+  remembers the view it had when the autopilot's camera began
+  (`dseg:0B24`) and, when the camera is back, makes the call the F2..F4
+  keys make (`ovr141:0AC1(view, 0)`, after clearing `dseg:00DC` as they
+  do): the gunner sits in the same turret again (`ViewJob`).
+* Its ending (ejecting, quitting) ends nothing; the leader's death or
+  landing ends its flight.
 
 Checked (two native instances, `Origin -k l s2 m0` Broadsword and `s8 m2`
 Sabre): the gunner's rear and left turret shots appear on the host as the

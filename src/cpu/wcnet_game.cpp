@@ -153,6 +153,7 @@ static void load_wc2_code() {
     // overlay 134: asteroid and mine fields
     ovr(cloak, STUB133, 0x0057, 0x0034, 1);                  // cloak(ship): the ship vanishes (sound, state 1)
     ovr(uncloak, STUB133, 0x0110, 0x0085, 1);                // uncloak(ship): it comes back over 40 frames (state 0)
+    ovr(setView, STUB141, 0x0066, 0x0AC1, 2);                // setView(view, 0): what F1..F4 call (0 pilot, 2 left, 1 right, 3 rear)
     ovr(turretFire, STUB136, 0x003E, 0x0510, 0);             // the player's fire key in a turret: a pair of bolts along the camera
     ovr(turretFireShot, STUB136, 0x003E, 0x0536);            // in it: energy and cooldown allow the shot
     ovr(turretAutoNext, STUB136, 0x005C, 0x08D8);            // automatic turret fire of ship SI: next turret [bp-0x1C]
