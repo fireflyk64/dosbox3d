@@ -109,10 +109,12 @@ public:
     bool has_pending() const { return !jobs_.empty(); }
     bool is_running() const { return running_; }
 
-    // Start executing queued jobs *instead of* the game function whose entry
-    // we are at: the trampoline's final retf returns to that function's
-    // caller, so the intercepted call itself never runs.
-    void run_instead_of_current_call();
+    // Start executing queued jobs *instead of* the game function `fn` whose
+    // entry we are at: the trampoline's final retf returns to that
+    // function's caller, so the intercepted call itself never runs.  A
+    // pascal function would have taken its arguments off the stack when it
+    // returned; that is done here.
+    void run_instead_of_current_call(const Loc &fn);
     // Start executing queued jobs and then resume at the current CS:IP.
     void run_before_current_instruction();
 

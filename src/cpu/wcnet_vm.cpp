@@ -148,10 +148,21 @@ void Trampoline::jump_to_stub() {
     running_ = true;
 }
 
-void Trampoline::run_instead_of_current_call() {
+void Trampoline::run_instead_of_current_call(const Loc &fn) {
     if (running_) {
         wclog(0, "Trampoline re-entered while running; ignoring");
         return;
+    }
+    if (fn.pascal && fn.nargs) {
+        // The caller of a pascal function leaves the arguments to the
+        // callee's `retf n`.  Left on the stack they shift everything the
+        // caller pops afterwards: WC2's "fire all guns" (ovr114:3EC3) then
+        // returned into nowhere, a divide error with the first shot.
+        Bit16u ip = CPU_Pop16();
+        Bit16u seg = CPU_Pop16();
+        reg_esp = (reg_esp & ~0xffffu) | ((reg_esp + 2 * fn.nargs) & 0xffff);
+        CPU_Push16(seg);
+        CPU_Push16(ip);
     }
     jump_to_stub();
 }

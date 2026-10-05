@@ -954,7 +954,7 @@ void on_fire_entry() {
         fire.set_client_seq(g_nextFireSeq++);
         capture_lock(&fire, ship);
         g_trampoline.enqueue(new FireJob(FireJob::PREDICT, fire, ship, gun));
-        g_trampoline.run_instead_of_current_call();
+        g_trampoline.run_instead_of_current_call(code::fireGunFromShip);
         return;
     }
     if (s->is_remote_player_slot(ship)) {
@@ -966,7 +966,7 @@ void on_fire_entry() {
     fire.set_gun_id(gun);
     capture_lock(&fire, ship);
     g_trampoline.enqueue(new FireJob(FireJob::BROADCAST, fire, ship, gun));
-    g_trampoline.run_instead_of_current_call();
+    g_trampoline.run_instead_of_current_call(code::fireGunFromShip);
 }
 
 void on_spawn_entry() {
@@ -996,7 +996,7 @@ void on_spawn_entry() {
     spawn.set_situation_id(call_arg16(code::outerSpawnShipEntity, 1));
     spawn.set_seed(rd32(ds::randomSeed));
     g_trampoline.enqueue(new SpawnJob(SpawnJob::BROADCAST, spawn));
-    g_trampoline.run_instead_of_current_call();
+    g_trampoline.run_instead_of_current_call(code::outerSpawnShipEntity);
 }
 
 static void intercept_despawn(bool explode) {
@@ -1045,7 +1045,7 @@ static void intercept_despawn(bool explode) {
         }
     }
     g_trampoline.enqueue(new DespawnJob(DespawnJob::BROADCAST, d, ship, src));
-    g_trampoline.run_instead_of_current_call();
+    g_trampoline.run_instead_of_current_call(fn);
 }
 
 void on_despawn_entry() { intercept_despawn(false); }
