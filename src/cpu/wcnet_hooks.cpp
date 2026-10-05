@@ -805,6 +805,13 @@ static void check_hooks_slow() {
     if (at_location(code::autopilotKey) && g_session && g_session->is_client()) {
         reg_eip += 5;  // only the server may engage autopilot
     }
+    if (at_location(code::replayKey)) {
+        // WC2's R shows the last in-flight scene again: the flight stands
+        // still for it on this machine alone, and the key sits next to the
+        // ones a pilot uses.  It does nothing here.
+        wclog(2, "R (the game's replay of the last seconds) is switched off");
+        reg_eip += 0x10;  // to the handler's `jmp` out (seg001:1046)
+    }
     if (at_location(code::autopilotFinished) && g_session && g_session->is_server()) {
         g_session->on_autopilot_finished();
     }

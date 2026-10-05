@@ -319,6 +319,13 @@ Checked with two headless Chrome pages and a local lobby (the scratch
 mission", both reach the cockpit; in 9/1 the second page is a drone, types
 `0`, `/chase`, Enter and rides behind the leader.
 
+### The R key
+
+`R` in flight plays the last seconds again from a recording
+(`seg001:1036` calls `ovr137:0000`): this machine's game stands still for
+it while the other's goes on, and the key sits among the ones a pilot uses.
+The hook steps over the call.
+
 ## 7. Finding out why the game quit or hangs
 
 WC2 leaves through `ovr145:0038(message)` (thunk `stub145:0052`, 150 call

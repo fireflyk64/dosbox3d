@@ -164,6 +164,7 @@ static void load_wc2_code() {
     root(statusCheckAfterFrame, SEG001, 0x1CF2);             // cmp missionStatus after the frame
     root(statusCheckAfterKeys, SEG001, 0x1D07);              // the loop's own test of missionStatus
     root(autopilotKey, SEG001, 0x1079);                      // handle_key: the autopilot key's far call
+    root(replayKey, SEG001, 0x1036);                         // handle_key: R plays the last seconds again (ovr137:0000)
     // root image: "wc2 Origin l s<series> m<mission>" flies one mission with
     // no story around it (main, seg001:0301)
     root(missionStartingDirect, SEG001, 0x0330);             // about to load mission [D0] of series [D2]
