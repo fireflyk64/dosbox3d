@@ -121,6 +121,40 @@ std::string get_callsign() {
     return saved;
 }
 
+// WC2 asks a new pilot for a first name as well, and its conversations print
+// all three from dseg:9640.  A mission chosen on the command line never
+// asks, and the placeholders "CALLSIGN", "PCNAME" and "FIRSTNAME" were
+// what people said.  WCCALLSIGN / WCLASTNAME / WCFIRSTNAME go there and into
+// the saved record's copy (a loaded game brings its own names back, hence
+// the periodic call).
+void apply_pilot_names() {
+    if (!ds::known(ds::shownNames) || !ds::known(ds::savedNames)) {
+        return;
+    }
+    enum { kMost = 12 };  // what the game's own entry screen takes
+    static const struct {
+        const char *env;
+        int shown, saved;
+    } kNames[] = { { "WCCALLSIGN", 0x00, 0x32 }, { "WCLASTNAME", 0x18, 0x19 }, { "WCFIRSTNAME", 0x30, 0x00 } };
+    for (size_t i = 0; i < sizeof(kNames) / sizeof(kNames[0]); i++) {
+        const char *env = getenv(kNames[i].env);
+        if (!env || !env[0]) {
+            continue;
+        }
+        std::string name = std::string(env).substr(0, kMost);
+        Bit16u places[2] = { (Bit16u)(ds::shownNames + kNames[i].shown), (Bit16u)(ds::savedNames + kNames[i].saved) };
+        for (int p = 0; p < 2; p++) {
+            std::string had = read_cstring(places[p], kMost + 1);
+            if (had != name) {
+                if (p == 0) {
+                    wclog(2, "%s: the game's \"%s\" is now \"%s\"", kNames[i].env, had.c_str(), name.c_str());
+                }
+                write_cstring(places[p], kMost + 1, name);
+            }
+        }
+    }
+}
+
 // Clear the KIA flags so the debriefing never tells a sob story about a
 // wingman who is in fact alive on another machine.  One word per named pilot
 // (the mission he died in, series * 4 + mission; 0 = alive): the scripts hold

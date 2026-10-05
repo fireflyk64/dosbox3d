@@ -30,11 +30,13 @@ async function open(name, callsign, before) {
   page.on("console", (m) => logs[name].push(m.text()));
   page.on("pageerror", (e) => console.log(`[${name}] PAGE ERROR: ${e.message}`));
   const u = new URL(pageUrl);
-  for (const [k, v] of Object.entries({ room, server: lobbyUrl, callsign, "env.WCNET_LOG": "2" })) u.searchParams.set(k, v);
+  for (const [k, v] of Object.entries({ room, server: lobbyUrl, callsign, firstname: "Chris", "env.WCNET_LOG": "2" })) u.searchParams.set(k, v);
   await page.goto(u.toString());
+  const hiddenBefore = await page.$eval("#firstnameLabel", (el) => el.hidden);
   await page.setInputFiles("#gamefile", process.env.GAME_FILE);
   await page.waitForFunction(() => /^(Ready|Could not)/.test(document.getElementById("sourceStatus").textContent), null, { timeout: 300000 });
   console.log(`[${name}] ` + (await page.$eval("#sourceStatus", (el) => el.textContent)).slice(0, 200));
+  if (name === "host") check("the first-name field appears with Wing Commander II", hiddenBefore && !(await page.$eval("#firstnameLabel", (el) => el.hidden)), hiddenBefore);
   await page.waitForFunction(() => !document.getElementById("lobby").hidden && document.getElementById("roster").children.length > 0, null, { timeout: 60000 });
   if (before) await before(page);
   return page;
@@ -76,6 +78,8 @@ check("the wingman's page started with the host's", await wing.evaluate(() => !!
 await shot(host, "host-barracks");
 const [hf, wf] = await Promise.all([fly(host, "host"), fly(wing, "wing")]);
 check("both reached the cockpit", hf && wf, [hf, wf]);
+check("the game has the page's first name and callsign", has("host", `WCFIRSTNAME: the game's "FIRSTNAME" is now "Chris"`) && has("wing", `WCCALLSIGN: the game's "CALLSIGN" is now "WINGMAN"`),
+      logs.host.filter((l) => l.includes("the game's")));
 await sleep(12);
 await shot(host, "host-flight"); await shot(wing, "wing-flight");
 if (expect === "drone") {

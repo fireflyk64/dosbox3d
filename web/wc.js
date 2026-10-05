@@ -38,7 +38,7 @@ function sourceStatus(text) { $("sourceStatus").textContent = text; }
 const mb = (n) => (n / 1048576).toFixed(1) + " MB";
 
 // Prefill from the URL (?room=CODE&callsign=...) so a link can be shared.
-for (const k of ["room", "callsign", "lastname", "players"]) if (query.get(k)) $(k).value = query.get(k);
+for (const k of ["room", "callsign", "firstname", "lastname", "players"]) if (query.get(k)) $(k).value = query.get(k);
 if (query.get("relay")) $("relay").checked = true;
 if (query.get("verbose")) $("verbose").checked = true;
 if (!$("room").value) $("room").value = "WC-" + Math.random().toString(36).slice(2, 6).toUpperCase();
@@ -60,6 +60,8 @@ function setSource(s) {
                  (s.game.multiplayer ? "" : " The multiplayer hooks only exist for Wing Commander 1 and 2, so this runs single-player."));
   }
   describeSaves();
+  // (Wing Commander II's people use a first name; the first game has none.)
+  $("firstnameLabel").hidden = !(gameInfo() && gameInfo().firstName);
   if (lobby.game) { sayHello(); buildMissionMenu(); renderMission(); }
   updateActions();
 }
@@ -567,7 +569,7 @@ async function joinRoom() {
     lobby.unsubscribe = game.onEvent(onLobbyEvent);
     const url = new URL(location.href);
     url.searchParams.set("room", code);
-    url.searchParams.delete("callsign"); url.searchParams.delete("lastname");
+    url.searchParams.delete("callsign"); url.searchParams.delete("firstname"); url.searchParams.delete("lastname");
     history.replaceState(null, "", url);
     $("lobby").hidden = false;
     $("leave").hidden = false;
@@ -672,13 +674,14 @@ async function start(fromGesture) {
   if (running) return;
   running = true;
   $("fly").disabled = true;
-  for (const el of ["gamefile", "exePicker", "callsign", "lastname", "verbose", "leave"]) $(el).disabled = true;
+  for (const el of ["gamefile", "exePicker", "callsign", "firstname", "lastname", "verbose", "leave"]) $(el).disabled = true;
   sourceButtons(false);
   try {
     const cfg = {
       code: lobby.game.code,
       callsign: $("callsign").value.trim(),
       lastname: $("lastname").value.trim(),
+      firstname: gameInfo() && gameInfo().firstName ? $("firstname").value.trim() : "",
       players: String(lobby.game.maxPlayers),
       server: $("server").value.trim() || DEFAULT_SERVER,
       relay: $("relay").checked,
@@ -697,6 +700,7 @@ async function start(fromGesture) {
     if (source.game.multiplayer) env.WCROCKS = String(ROCKS[lobby.rocks]);
     if (cfg.callsign) env.WCCALLSIGN = cfg.callsign;
     if (cfg.lastname) env.WCLASTNAME = cfg.lastname;
+    if (cfg.firstname) env.WCFIRSTNAME = cfg.firstname;
     // The picked mission: in the hooks' environment, or on the game's own
     // command line (the registry says which).
     const campaign = gameInfo() && gameInfo().campaign;

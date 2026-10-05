@@ -344,6 +344,18 @@ the startup commands, and the ones not yet run are skipped.)
 `scripts/web-wc2.sh intro` starts a new game in a browser page and checks
 that the audience goes on.
 
+### Names
+
+WC2 asks a new pilot for a first name, a last name and a callsign
+(`ovr119:2340`) and prints them in its conversations from `dseg:9670`,
+`dseg:9658` and `dseg:9640`; the saved record has its own copies
+(`dseg:4629`, `:4642`, `:465B`).  A mission chosen on the command line never
+asks, and the placeholders the executable ships with -- "FIRSTNAME",
+"PCNAME", "CALLSIGN" -- were what people said.  The page has a first-name
+field for this game alone (`firstName` in the registry), and the hooks keep
+`WCFIRSTNAME`, `WCLASTNAME` and `WCCALLSIGN` in all six places
+(`apply_pilot_names`, twelve characters as the game's own screen takes).
+
 ## 7. Finding out why the game quit or hangs
 
 WC2 leaves through `ovr145:0038(message)` (thunk `stub145:0052`, 150 call

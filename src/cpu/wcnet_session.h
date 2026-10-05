@@ -118,6 +118,7 @@ void run_campaign(int missionId, int seriesId);
 // Pilot identity (env WCCALLSIGN / WCLASTNAME override the save game).
 std::string get_callsign();
 std::string get_last_name();
+void apply_pilot_names();  // WC2: the environment's names into the game (periodic)
 
 }  // namespace wc
 

@@ -1059,6 +1059,9 @@ void wc_net_check_cpu_hooks() {
     if (tick) {
         g_asyncCounter = 0;
         wc::pace_tick();
+        if (DS != 0) {
+            apply_pilot_names();
+        }
         auto_keys();
         key_script();
 #ifdef __EMSCRIPTEN__

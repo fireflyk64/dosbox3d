@@ -19,6 +19,8 @@ WC_DS(randomSeed, 0x7728, 0xA904)  // state of the lo..hi random generator (WC.E
 WC_DS(commGlobalTxt, 0x8DF8, 0x0000)  // 80 bytes shown by the VDU comm display
 WC_DS(pilotLastName, 0x9A42, 0x0000)  // 14 bytes
 WC_DS(pilotCallsign, 0x9A50, 0x0000)  // 14 bytes
+WC_DS(shownNames, 0, 0x9640)              // WC2: the names its conversations print: callsign, last name at +0x18, first name at +0x30 ("CALLSIGN", "PCNAME", "FIRSTNAME" until a pilot is entered)
+WC_DS(savedNames, 0, 0x4629)              // WC2: the same in the saved record: first name, last name at +0x19, callsign at +0x32
 WC_DS(gPositionVector, 0xA9C2, 0x56FE)  // 3 x int32 per slot
 WC_DS(entityCullStatus, 0xACC4, 0x4768)  // word per slot: screen x of the last frame's drawing (0x8001 = culled/inactive)
 WC_DS(entityScreenY, 0xAD44, 0x47F4)  // [entityScreenY] word per slot: its screen y
