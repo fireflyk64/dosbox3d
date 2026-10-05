@@ -28,8 +28,8 @@ struct PerfSample {
 // given more cycles than the heaviest frame needs, and a frame that is done
 // early waits, in emulated time, for its turn: the game runs at one speed.
 //
-//   WCFPS=<n>           frames per second (default 15 for WC.EXE; 0: no pacing)
-//   WCFLIGHTCYCLES=<n>  cycles in flight (default 12000; 0: leave alone)
+//   WCFPS=<n>           frames per second (default 20 for WC.EXE; 0: no pacing)
+//   WCFLIGHTCYCLES=<n>  cycles in flight (default 16000 for WC.EXE, 12000 for WC2; 0: leave alone)
 //
 // pace_frame() is called at the top of a new flight frame.  True: the frame
 // is early and a wait was started on the trampoline; the caller returns and

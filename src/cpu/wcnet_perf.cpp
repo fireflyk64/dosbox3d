@@ -50,7 +50,7 @@ static int env_int(const char *name, int fallback) {
 
 int pace_fps() {
     if (g_fps < 0) {
-        g_fps = env_int("WCFPS", is_wc1() ? 15 : 0);
+        g_fps = env_int("WCFPS", is_wc1() ? 20 : 0);
         if (g_fps < 0 || g_fps > 100) {
             g_fps = 0;
         }
@@ -85,9 +85,11 @@ private:
 };
 
 static void boost_cycles() {
-    // (WC2 holds its own 15 frames a second with GOG's 8000 cycles in an
-    // ordinary furball, with little to spare: it gets the same margin.)
-    int want = env_int("WCFLIGHTCYCLES", g_game != GAME_NONE ? 12000 : 0);
+    // WC.EXE's heaviest frames (Gimle 1: Raptors, Jalthi and the Exeter) are
+    // 400 to 660 thousand cycles of work, and a frame at 20 a second has
+    // 50 ms: 16000 leaves room.  (WC2 holds its own 15 frames a second with
+    // GOG's 8000 cycles in an ordinary furball, with little to spare: 12000.)
+    int want = env_int("WCFLIGHTCYCLES", is_wc1() ? 16000 : (g_game != GAME_NONE ? 12000 : 0));
     if (want <= 0 || CPU_CycleAutoAdjust || g_boostCycles || CPU_CycleMax >= want) {
         return;
     }

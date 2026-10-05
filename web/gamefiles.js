@@ -21,8 +21,8 @@
 // a download), and `cycles`, the emulated CPU speed the game plays well at
 // (DOSBox's default of 3000 is what Ctrl+F11 / Ctrl+F12 adjust; Wing
 // Commander 1 has no frame limiter, so its cutscenes and menus take their
-// speed from this, while in flight the hooks hold 15 frames a second with
-// 12000 cycles: WCFPS and WCFLIGHTCYCLES in the environment), and `pointer`,
+// speed from this, while in flight the hooks hold 20 frames a second with
+// 16000 cycles: WCFPS and WCFLIGHTCYCLES in the environment), and `pointer`,
 // for a controller's stick (web/gamepad.js): where the mouse pointer rests
 // when the game steers by it and how far it reaches, as fractions of the
 // mouse range.  Wing Commander parks the pointer at 318,52 of 640x200 (the

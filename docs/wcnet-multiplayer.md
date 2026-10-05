@@ -269,8 +269,9 @@ trip gave 12 frames a second with the host's emulator at 85% of real time
   (`idle_call`, what `HLT` does) and queues itself again: interrupts,
   music and the clock run on, and in a browser nothing is suspended.
 
-With that the same test holds 15 frames a second with both emulators at
-100% of real time up to a round trip of about 300 ms.  What the delay costs
+With that the same test held 15 frames a second with both emulators at
+100% of real time up to a round trip of about 300 ms (six frames: at 20
+frames a second, the default since, that is 250 ms).  What the delay costs
 now is what it must: the server sees a client's ship and shots that much
 later.
 
@@ -285,14 +286,16 @@ keeping up effortlessly.  More cycles alone make the empty sky too fast
 
 So in flight (`wcnet_perf.cpp`):
 
-* the emulated CPU gets `WCFLIGHTCYCLES` (default 12000, for WC2 as well:
-  it holds its 15 frames a second with GOG's 8000 cycles in an ordinary
-  furball with little to spare) instead of the configured cycles, and its own back when no flight frame has begun
+* the emulated CPU gets `WCFLIGHTCYCLES` (default 16000 for WC.EXE, whose
+  heaviest frames are 400 to 660 thousand cycles of work and have 50 ms;
+  12000 for WC2, which holds its 15 frames a second with GOG's 8000 cycles
+  in an ordinary furball with little to spare) instead of the configured cycles, and its own back when no flight frame has begun
   for 300 ms (cutscenes, the autopilot's camera and the barracks take
   their speed from the CPU and keep the old one);
 * a frame that is done early waits for its turn (`PaceJob`, in emulated
-  time as above): `WCFPS` frames a second, default 15 for WC.EXE, 0 for
-  none.  Only the server (or a lone player) paces; a client follows the
+  time as above): `WCFPS` frames a second, default 20 for WC.EXE (it was
+  15 at first; everything in the game moves per frame, so this is also how
+  fast it plays), 0 for none.  Only the server (or a lone player) paces; a client follows the
   server's frames.
 
 The Gimle fight then holds 15.0 frames a second in every interval, alone
