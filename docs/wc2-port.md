@@ -368,10 +368,53 @@ when the game ends, and with `WCNET_EXIT_STACK=1` the stack as well: the
 near pointer of the message (`push word 0x7f34`) is on it, and
 `scripts/wcexe.py find` on that push finds the check that failed.
 
+There are two more exits.  The resource loader's (`seg002:00D0`: a file's
+packet could not be read, or there was no memory for it) prints "Error:
+<file>, packet N", the packet's size, the largest free block and the free
+memory when the game runs with the `Origin` switch, and otherwise formats
+the long message at `dseg:0380` ("Sorry, an error has occurred while
+%s...").  That message and the general one at `dseg:9FC0` are where the
+hooks keep their call thunks and their trampoline: they are put back
+between runs now (docs/wcnet-multiplayer.md, "Running game code"), because
+with a thunk's NUL in front the game left without a word.  The page shows
+the text of any of these in its status line.
+
 `!where` in a key script logs CS:IP, the bytes there and the far return
 addresses up the BP chain; a few of them a second apart show what a hang is
 (the loadfix crash above showed as `0000:0000` with the interrupt table for
 code).
+
+### A crash that was seen once (2026-10-05)
+
+Reported from two browsers: the second mission of a session (series 3,
+mission 2: the briefing in which Stingray scoffs at the freighter), the
+whole briefing played with its speech, and one of the two games "crashed"
+before the launch bay; the other flew on.  Ten more attempts did not show
+it, and nothing here has: the same path (first mission, landing, barracks,
+"Fly mission", that briefing unskipped, launch, cockpit) ran through in 5
+two-instance native runs and in 6 runs of two browser pages, the two
+clicks up to four seconds apart, and the first mission's
+briefing-to-launch step in 4 solo runs at 7500 to 8500 cycles.  What that
+step does: the briefing script ends, `ovr146:0217` copies series and
+mission, `ovr146:0414` writes the campaign record to `GAMEDAT/TEMPGLOB.000`
+and frees it, and the launch scene is loaded.  Checked and put aside:
+
+* memory: the game's free heap (`!mem`, the loader's "MAIN") is 143067
+  bytes at the first mission's start, 83315 in a fight at Nav 1 and 145311
+  at the second mission's start, the same on host and wingman: nothing is
+  lost between missions on either side;
+* the campaign record the wingman takes over (same length or it is not
+  taken), the names written into the game (inside their buffers), the
+  hooks' periodic call (it runs no game code outside the flight loop);
+* DOSBox's settings: `-conf` with only `[sblaster] irq=5` changes nothing
+  else.
+
+What stands out is that the speech was new that day (the IRQ had just been
+put right), that the game's own messages were being wiped by the hooks, and
+that the game is known for crashes that depend on how memory lies (the
+reason for `loadfix`) and for trouble with its speech pack on real
+machines.  The next time, the page's status line and its log say what the
+game said.
 
 ## 8. Not done yet
 

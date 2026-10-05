@@ -1303,6 +1303,34 @@ private:
     bool fromBehind_;
 };
 
+// Test aid (the key script's "!mem"): how much of its own heap the game has
+// free, by the count its loader's error screen prints (WC2: "MAIN").  A
+// flight that left less than the one before it lost something on the way.
+class MemJob : public VmJob {
+public:
+    virtual bool start() {
+        if (!code::freeMainMemory.known()) {
+            return false;
+        }
+        called_ = true;
+        call_of(code::freeMainMemory).invoke();
+        return true;
+    }
+    virtual void finish() {
+        if (called_) {
+            wclog(1, "free main memory: %ld bytes", (long)(((Bit32u)(reg_edx & 0xffff) << 16) | (reg_eax & 0xffff)));
+        }
+    }
+    virtual const char *describe() const { return "mem"; }
+
+private:
+    bool called_ = false;
+};
+
+void enqueue_test_mem() {
+    g_trampoline.enqueue(new MemJob());
+}
+
 void enqueue_test_hit(int quantity, bool fromBehind) {
     g_trampoline.enqueue(new OwnHitJob(quantity, fromBehind));
 }

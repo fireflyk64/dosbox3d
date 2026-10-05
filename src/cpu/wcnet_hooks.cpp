@@ -302,9 +302,11 @@ static void auto_keys() {
 // "!say=<text>", which sends a comms message or command ("_" for a space),
 // "!where", which logs where the program is and who called it,
 // "!steer", which logs how the game reads its steering pointer (WC2),
+// "!mem", which logs how much of its heap the game has free (WC2),
 // "+<key>" / "-<key>", which hold and release a key, or "wait", which holds
 // the script until the next mission reaches its first frame and restarts
-// the clock there.  The clock starts at the first in-flight frame of the
+// the clock there ("skip" does the same and taps Esc every two seconds
+// meanwhile, through the scenes on the way).  The clock starts at the first in-flight frame of the
 // first mission and keeps running through debriefings and cutscenes.
 struct ScriptStep {
     double at;
@@ -433,8 +435,16 @@ static void key_script() {
         return;
     }
     static int waitingSince = -1;  // flight count when a "wait" item ran
+    static bool skipping = false;  // ... a "skip" item: Esc is tapped meanwhile
+    static double nextSkip = 0;
     if (waitingSince >= 0) {
         if (g_flightCount == waitingSince || !in_flight()) {
+            if (skipping && now >= nextSkip) {
+                nextSkip = now + 2000;
+                KEYBOARD_AddKey(KBD_esc, true);
+                held = KBD_esc;
+                releaseAt = now + 150;
+            }
             return;
         }
         waitingSince = -1;
@@ -471,8 +481,9 @@ static void key_script() {
         wclog(1, "key script %.1fs (t=%.1f): dump %s; comm \"%s\"; vdu \"%s\"; %s; %s", t, now / 1000.0, path.c_str(),
               ds_text(ds::commGlobalTxt, 80).c_str(), is_wc1() ? ds_text(0x8E4A, 160).c_str() : "", mission_state_line().c_str(),
               field_state_line().c_str());
-    } else if (item == "wait") {
-        wclog(1, "key script %.1fs (t=%.1f): waiting for the next mission", t, now / 1000.0);
+    } else if (item == "wait" || item == "skip") {
+        skipping = item == "skip";
+        wclog(1, "key script %.1fs (t=%.1f): waiting for the next mission%s", t, now / 1000.0, skipping ? ", tapping Esc through the scenes" : "");
         waitingSince = g_flightCount;
     } else if (item.compare(0, 7, "!mouse=") == 0) {
         // !mouse=<x>:<y>, fractions of the mouse range (0.5:0.5 is the centre)
@@ -539,6 +550,10 @@ static void key_script() {
               rd8(ds::systemDamage + 8), rd16(ds::cockpitDamage), rd16(ds::cockpitDamage + 2), rd16(ds::cockpitDamage + 4),
               rd16(ds::cockpitDamage + 6));
         enqueue_test_hit(qty, back);
+    } else if (item == "!mem") {
+        // !mem logs the game's free heap (WC2), with the next frame's jobs
+        wclog(2, "key script %.1fs (t=%.1f): free memory asked for", t, now / 1000.0);
+        enqueue_test_mem();
     } else if (item == "!steer") {
         // !steer logs how the game reads its steering pointer and what it
         // makes of where the pointer is (steer_info)
@@ -635,6 +650,7 @@ static void build_watch_list() {
 }
 
 void hooks_game_changed() {
+    g_trampoline.forget_scratch();  // (what it kept was the last program's)
     g_watchReady = false;
     wc_net_countdown = 0;  // the table is rebuilt before the next instruction
 }
@@ -1112,6 +1128,7 @@ void wc_net_check_cpu_hooks() {
     }
     if (tick) {
         g_asyncCounter = 0;
+        g_trampoline.restore_scratch_if_idle();
         wc::pace_tick();
         if (DS != 0) {
             apply_pilot_names();

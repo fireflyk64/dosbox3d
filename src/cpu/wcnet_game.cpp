@@ -127,7 +127,7 @@ static void load_wc1_code() {
 // pairs the functions with WC.EXE's).  Many of them are pascal.
 static void load_wc2_code() {
     using namespace code;
-    enum { SEG001 = 0x03CA, SEG005 = 0x073C, SEG006 = 0x0BD7, STUB107 = 0x1743, STUB114 = 0x1764, STUB116 = 0x1783,
+    enum { SEG001 = 0x03CA, SEG005 = 0x073C, SEG006 = 0x0BD7, SEG092 = 0x1677, STUB107 = 0x1743, STUB114 = 0x1764, STUB116 = 0x1783,
            STUB120 = 0x17AE, STUB128 = 0x17D6, STUB133 = 0x1812, STUB136 = 0x1836, STUB129 = 0x17DB, STUB134 = 0x1826, STUB141 = 0x1850 };
     // overlay 114: ships, damage, weapons
     ovr(do_damage, STUB114, 0x00AC, 0x1128, 4, true);        // do_damage(src, dst, quantity, vec*)
@@ -164,6 +164,7 @@ static void load_wc2_code() {
     root(statusCheckAfterFrame, SEG001, 0x1CF2);             // cmp missionStatus after the frame
     root(statusCheckAfterKeys, SEG001, 0x1D07);              // the loop's own test of missionStatus
     root(autopilotKey, SEG001, 0x1079);                      // handle_key: the autopilot key's far call
+    root(freeMainMemory, SEG092, 0x0004);                    // the free bytes of the game's own heap (what its loader's error screen calls MAIN)
     root(replayKey, SEG001, 0x1036);                         // handle_key: R plays the last seconds again (ovr137:0000)
     // root image: "wc2 Origin l s<series> m<mission>" flies one mission with
     // no story around it (main, seg001:0301)

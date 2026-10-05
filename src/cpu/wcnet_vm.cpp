@@ -10,7 +10,12 @@ namespace wc {
 
 // Scratch areas inside the data segment.  These are string constants the game
 // only uses for error messages, so we can overwrite them with code (CS is set
-// to DS while it runs).
+// to DS while it runs).  Only: left overwritten, a game that stops with an
+// error of its own prints an empty message (the thunks begin with a NUL),
+// and "it crashed" is all anyone can report.  So the trampoline keeps what
+// was there and puts it back when it has run out (save_scratch,
+// restore_scratch_if_idle).
+enum { kShellcodeBytes = 250, kStubAreaBytes = 107 };  // the thunk; the scratch vector with the stub at +101
 static Bit16u shellcode_off() { return ds::aSorryAnErrorHasOccured; }         // 249 bytes
 static Bit16u trampoline_off() { return (Bit16u)(ds::aLoadingWingCom + 101); } // 6 bytes
 static Bit16u trampoline_nop() { return (Bit16u)(trampoline_off() + 3); }
@@ -139,7 +144,39 @@ void Trampoline::enqueue_front(VmJob *job) {
     jobs_.push_front(job);
 }
 
+void Trampoline::save_scratch() {
+    if (scratchSaved_) {
+        return;  // (run again before the last run's bytes were put back)
+    }
+    savedCode_.resize(kShellcodeBytes);
+    savedData_.resize(kStubAreaBytes);
+    for (int i = 0; i < kShellcodeBytes; i++) {
+        savedCode_[i] = mem_readb(DS_OFF + (Bit16u)(shellcode_off() + i));
+    }
+    for (int i = 0; i < kStubAreaBytes; i++) {
+        savedData_[i] = mem_readb(DS_OFF + (Bit16u)(ds::aLoadingWingCom + i));
+    }
+    scratchSaved_ = true;
+}
+
+void Trampoline::restore_scratch_if_idle() {
+    if (!scratchSaved_ || running_ || DS == 0) {
+        return;
+    }
+    if (SegValue(cs) == DS && reg_eip >= trampoline_off() && reg_eip < (Bit32u)trampoline_off() + sizeof(kTrampolineCode)) {
+        return;  // the stub's last instructions are still to run
+    }
+    for (int i = 0; i < kShellcodeBytes; i++) {
+        mem_writeb(DS_OFF + (Bit16u)(shellcode_off() + i), savedCode_[i]);
+    }
+    for (int i = 0; i < kStubAreaBytes; i++) {
+        mem_writeb(DS_OFF + (Bit16u)(ds::aLoadingWingCom + i), savedData_[i]);
+    }
+    scratchSaved_ = false;
+}
+
 void Trampoline::jump_to_stub() {
+    save_scratch();
     for (size_t i = 0; i < sizeof(kTrampolineCode); i++) {
         mem_writeb_checked(DS_OFF + trampoline_off() + i, kTrampolineCode[i]);
     }

@@ -131,8 +131,17 @@ public:
     static bool at_hook();
     static Bit16u hook_ip();
 
+    // The scratch areas are the game's own error messages: what was there
+    // goes back when the trampoline has run out (called now and then), and
+    // is forgotten when another program is loaded.
+    void restore_scratch_if_idle();
+    void forget_scratch() { scratchSaved_ = false; }
+
 private:
     void jump_to_stub();
+    void save_scratch();
+    bool scratchSaved_ = false;
+    std::vector<Bit8u> savedCode_, savedData_;
     void start_next();
 
     std::deque<VmJob *> jobs_;

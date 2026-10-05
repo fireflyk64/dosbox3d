@@ -54,6 +54,7 @@ void enqueue_test_kill(int slot);
 // Test aid (the key script's "!hit=<qty>"): our own ship takes that much
 // damage from dead ahead (or from behind), through the game's do_damage.
 void enqueue_test_hit(int quantity, bool fromBehind);
+void enqueue_test_mem();  // logs the game's free heap (WC2)
 
 // Asteroid and mine fields can be switched off (the host decides, see
 // Session::request_rocks; WCROCKS=0 starts without them).  The flag is what
