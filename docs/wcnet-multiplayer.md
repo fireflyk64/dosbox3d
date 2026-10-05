@@ -221,15 +221,74 @@ extra health" and "wingman explodes" behaviour.
 
 ## 3. Frame exchange
 
-Unchanged lockstep from the original design.  At `seg001:20E3` (top of
-`main_loop`) the client sends its `ShipUpdate` (+ events, + health) and blocks
-for the server's frame; the server blocks for one message per client in the
-mission, merges, and sends one frame to each.  The server sends exactly one
-frame per client message so the two sides never drift in message count; the
-autopilot and mission-end flushes (`exchange(true)`) still consume one client
-message each.  Events are replayed through the trampoline before the game
-simulates the frame; the client applies received health snapshots when the
-trampoline drains (`on_trampoline_idle`).
+At `seg001:20E3` (top of `main_loop`) the client sends its `ShipUpdate`
+(+ events, + health) and waits for the server's next frame; the server takes
+in what the clients have sent, merges it, and sends one frame to each.
+Events are replayed through the trampoline before the game simulates the
+frame; the client applies received health snapshots when the trampoline
+drains (`on_trampoline_idle`).
+
+The original design was strict lockstep: the server blocked for one message
+per client and the client blocked for the server's answer, so every frame
+cost a round trip and both emulators stood still while they waited.
+Measured with a simulated delay (`WCNET_LAG`, section 3a): a 50 ms round
+trip gave 12 frames a second with the host's emulator at 85% of real time
+(its music with it), 80 ms gave 9 and 61%.  Now:
+
+* **The server does not wait for a client's frame.**  It drains what has
+  arrived (`drain_client`) and goes on.  Every client frame carries
+  `Frame.ack`, the number of the last server frame the client had applied;
+  only when a client is more than `kWindow` (6) frames behind does the
+  server wait for it (`ClientLagJob`), so a client that has stopped still
+  stops the game instead of being left behind.
+* **The client waits for the server's frame without blocking**
+  (`ServerFrameJob`), and applies every frame that has arrived, in order.
+* **Both waits pass in emulated time.**  A waiting job makes a call that
+  returns at once with the emulated CPU idle to the next timer event
+  (`idle_call`, what `HLT` does) and queues itself again: interrupts,
+  music and the clock run on, and in a browser nothing is suspended.
+
+With that the same test holds 15 frames a second with both emulators at
+100% of real time up to a round trip of about 300 ms.  What the delay costs
+now is what it must: the server sees a client's ship and shots that much
+later.
+
+## 3a. Frame rate
+
+Wing Commander 1 does everything per frame and never waits for a clock: 5120
+units of flight per frame at any frame rate.  At the page's 3630 cycles an
+empty sky ran at 20 frames a second and the fight of Gimle 1 (four Raptors,
+three Jalthi, four Salthi, the Exeter) at 10: half speed, with the host
+keeping up effortlessly.  More cycles alone make the empty sky too fast
+(8000 cycles: 48 frames a second).  WC2 waits for 1/15 s a frame by itself.
+
+So in flight (`wcnet_perf.cpp`):
+
+* the emulated CPU gets `WCFLIGHTCYCLES` (default 12000 for WC.EXE) instead
+  of the configured cycles, and its own back when no flight frame has begun
+  for 300 ms (cutscenes, the autopilot's camera and the barracks take
+  their speed from the CPU and keep the old one);
+* a frame that is done early waits for its turn (`PaceJob`, in emulated
+  time as above): `WCFPS` frames a second, default 15 for WC.EXE, 0 for
+  none.  Only the server (or a lone player) paces; a client follows the
+  server's frames.
+
+The Gimle fight then holds 15.0 frames a second in every interval, alone
+and with two players, natively and in the browser, with the game busy 35 to
+50% of the time.
+
+`WCNET_PERF=<seconds>` logs a line per interval; the page shows the same
+under the game's picture (`wc_web_perf`):
+
+    perf: 15.0 fps, worst frame 68 ms, load 41%, emulator at 100% of real time,
+          0.1 ms/frame waiting for the network, 12000 cycles, 7 ships, 27 other entities
+
+A load near 100% means the game needs more cycles in flight; an emulator
+below 100% means the host cannot deliver the cycles asked for; a wait on the
+host means another player's machine or connection is the brake (a wingman
+always waits: it follows the host's pace).  `WCNET_LAG=<ms>` (native builds)
+holds every received message back that long, to try a slow connection on
+one machine.
 
 ## 4. Modules
 
@@ -431,11 +490,11 @@ top-level README for the workflow).  What differs:
 
 ## 7. Known limitations and follow-ups
 
-* The exchange is still blocking lockstep: both games run at the pace of the
-  slower machine plus one round trip.  The next step for smoothness is to
-  pipeline it (send frame N, consume the server's frame N-1) with velocity
-  extrapolation for remote ships; `ServerSession::exchange` and
-  `ClientSession::on_frame_top` are the only places that would change.
+* A client whose machine cannot hold the server's frame rate applies more
+  than one server frame per frame of its own: the world keeps the server's
+  pace on its screen, but its own ship flies slower than the others (WC1
+  moves per frame).  There is no extrapolation of remote ships between
+  frames.
 * A server with no connected client blocks at the start of every frame until
   one connects (original behaviour); the same happens if the only client
   drops mid-mission.

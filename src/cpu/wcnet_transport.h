@@ -83,8 +83,8 @@ public:
     // Blocking receive of the next message of `cat`.  Messages of other
     // categories that arrive meanwhile are queued.
     RecvStatus recv(MessageCategory cat, NetworkMessage &msg);
-    // Non-blocking: returns NO_DATA when nothing of `cat` is available.  Reads
-    // at most one message from the stream per call.
+    // Non-blocking: returns NO_DATA when nothing of `cat` has arrived
+    // (messages of other categories that have are queued).
     RecvStatus poll(MessageCategory cat, NetworkMessage &msg);
     // Look at the next queued message of `cat` without consuming it.
     const NetworkMessage *peek(MessageCategory cat) const;
@@ -92,8 +92,12 @@ public:
 
 private:
     RecvStatus read_one(NetworkMessage &msg, bool blocking);
+    RecvStatus read_raw(std::string &data, bool blocking);
 
     Stream *stream_;
+    // Test aid (WCNET_LAG): what came in, held back until its time.
+    std::deque<std::pair<double, std::string> > held_;
+    bool heldFailed_ = false;
     std::deque<NetworkMessage> queues_[NUM_CATEGORIES];
 };
 

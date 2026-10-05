@@ -80,6 +80,12 @@ private:
     std::vector<Bit16u> args_;
 };
 
+// For a job that waits: a call that returns at once, with the emulated CPU
+// idle until the next timer event (what HLT does).  The game's interrupts
+// run on, emulated time passes, and the trampoline comes round again; a job
+// that is not done yet queues itself again in front (enqueue_front).
+void idle_call();
+
 // A unit of work executed by the trampoline.
 class VmJob {
 public:
@@ -98,6 +104,8 @@ public:
 
     // Queue a job; ownership is taken.
     void enqueue(VmJob *job);
+    // The same, ahead of everything queued (a job that continues itself).
+    void enqueue_front(VmJob *job);
     bool has_pending() const { return !jobs_.empty(); }
     bool is_running() const { return running_; }
 

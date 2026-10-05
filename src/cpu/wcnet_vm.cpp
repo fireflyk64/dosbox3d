@@ -120,12 +120,23 @@ void GameCall::invoke() const {
     reg_eip = shellcode_off() + 1;
 }
 
+void idle_call() {
+    static const Loc kNowhere = { 0, 0, 0, 0, 0, 0, "nowhere" };  // an unknown function: the call returns at once
+    GameCall(kNowhere).invoke();
+    CPU_IODelayRemoved += CPU_Cycles;
+    CPU_Cycles = 0;
+}
+
 Trampoline g_trampoline;
 
 Trampoline::Trampoline() : current_(NULL), running_(false), idle_(NULL) {}
 
 void Trampoline::enqueue(VmJob *job) {
     jobs_.push_back(job);
+}
+
+void Trampoline::enqueue_front(VmJob *job) {
+    jobs_.push_front(job);
 }
 
 void Trampoline::jump_to_stub() {

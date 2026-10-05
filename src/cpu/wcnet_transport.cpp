@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include "wcnet_transport.h"
+#include "wcnet_perf.h"
 #include "wcnet_log.h"
 
 namespace wc {
@@ -44,6 +45,8 @@ void Connection::close() {
     for (int i = 0; i < NUM_CATEGORIES; i++) {
         queues_[i].clear();
     }
+    held_.clear();
+    heldFailed_ = false;
     if (stream_) {
         stream_->close();
         delete stream_;
@@ -70,12 +73,71 @@ bool Connection::send(const NetworkMessage &msg) {
     return stream_->send(out);
 }
 
+// Test aid: WCNET_LAG=<ms> (native builds) holds every message that comes in
+// back for that long, as a slow link would, one way; with it on both
+// machines the round trip is twice that.
+static double lag_ms() {
+    static double lag = -1;
+    if (lag < 0) {
+#ifdef __EMSCRIPTEN__
+        lag = 0;
+#else
+        const char *env = getenv("WCNET_LAG");
+        lag = env && env[0] ? atof(env) : 0;
+#endif
+    }
+    return lag;
+}
+
+RecvStatus Connection::read_raw(std::string &data, bool blocking) {
+    double lag = lag_ms();
+    if (lag <= 0) {
+        return stream_->recv(data, blocking);
+    }
+#ifndef __EMSCRIPTEN__
+    while (!heldFailed_) {
+        std::string in;
+        RecvStatus st = stream_->recv(in, false);
+        if (st.ok()) {
+            held_.push_back(std::make_pair(perf_now_ms() + lag, in));
+        } else {
+            heldFailed_ = st.failed();
+            break;
+        }
+    }
+    if (held_.empty()) {
+        if (heldFailed_) {
+            return RecvStatus::STATUS_FAIL;
+        }
+        if (!blocking) {
+            return RecvStatus::STATUS_NO_DATA;
+        }
+        std::string in;
+        RecvStatus st = stream_->recv(in, true);
+        if (!st.ok()) {
+            return st;
+        }
+        held_.push_back(std::make_pair(perf_now_ms() + lag, in));
+    }
+    double wait = held_.front().first - perf_now_ms();
+    if (wait > 0) {
+        if (!blocking) {
+            return RecvStatus::STATUS_NO_DATA;
+        }
+        usleep((useconds_t)(wait * 1000.0));
+    }
+    data = held_.front().second;
+    held_.pop_front();
+#endif
+    return RecvStatus::STATUS_OK;
+}
+
 RecvStatus Connection::read_one(NetworkMessage &msg, bool blocking) {
     if (!stream_) {
         return RecvStatus::STATUS_FAIL;
     }
     std::string data;
-    RecvStatus st = stream_->recv(data, blocking);
+    RecvStatus st = read_raw(data, blocking);
     if (!st.ok()) {
         return st;
     }
@@ -95,6 +157,8 @@ RecvStatus Connection::recv(MessageCategory cat, NetworkMessage &msg) {
         queues_[cat].pop_front();
         return RecvStatus::STATUS_OK;
     }
+    // Blocking: the time this takes is what a frame waits for the others.
+    double began = perf_now_ms();
     while (true) {
         RecvStatus st = read_one(msg, true);
         if (!st.ok()) {
@@ -102,6 +166,7 @@ RecvStatus Connection::recv(MessageCategory cat, NetworkMessage &msg) {
         }
         MessageCategory got = category_of(msg);
         if (got == cat) {
+            perf_wait(perf_now_ms() - began);
             return RecvStatus::STATUS_OK;
         }
         queues_[got].push_back(msg);
@@ -114,16 +179,19 @@ RecvStatus Connection::poll(MessageCategory cat, NetworkMessage &msg) {
         queues_[cat].pop_front();
         return RecvStatus::STATUS_OK;
     }
-    RecvStatus st = read_one(msg, false);
-    if (!st.ok()) {
-        return st;
+    // Everything that has arrived is read, until one of `cat` turns up: a
+    // chat line in front of a frame must not hide the frame.
+    while (true) {
+        RecvStatus st = read_one(msg, false);
+        if (!st.ok()) {
+            return st;
+        }
+        MessageCategory got = category_of(msg);
+        if (got == cat) {
+            return RecvStatus::STATUS_OK;
+        }
+        queues_[got].push_back(msg);
     }
-    MessageCategory got = category_of(msg);
-    if (got == cat) {
-        return RecvStatus::STATUS_OK;
-    }
-    queues_[got].push_back(msg);
-    return RecvStatus::STATUS_NO_DATA;
 }
 
 const NetworkMessage *Connection::peek(MessageCategory cat) const {

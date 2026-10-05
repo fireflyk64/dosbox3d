@@ -21,6 +21,7 @@
 #include "wcnet_memory.h"
 #include "wcnet_code.h"
 #include "wcnet_game.h"
+#include "wcnet_perf.h"
 #include "wcnet_log.h"
 #include "cpu.h"
 #include "regs.h"
@@ -45,7 +46,8 @@ static void watch(Bit16u ip) { g_watch[ip] = true; }
 // in-flight frame has run: what the test aids mean by "in space".  It does
 // not depend on a network session or on stale slot data from the last mission.
 static bool g_inMission = false;
-static bool g_briefed = false;   // WC2: the session was told of the mission in the barracks, before the briefing
+static bool g_briefed = false;
+static int g_rockOnto = -1;      // test aid: the slot a rock is to be put onto when the next frame begins   // WC2: the session was told of the mission in the barracks, before the briefing
 static bool g_frameSeen = false;
 static int g_flightCount = 0;  // missions that reached their first frame
 static bool in_flight() { return g_inMission && g_frameSeen; }
@@ -174,9 +176,14 @@ static int rock_onto(int target) {
         write_vec(vec_slot(ds::gPositionVector, rock), p);
         write_vec(vec_slot(ds::gVelocityVector, rock), read_vec(vec_slot(ds::gVelocityVector, kPlayerSlot)));
     } else if (rock != -1) {
-        write_vec(vec_slot(ds::gPositionVector, rock), read_vec(vec_slot(ds::gPositionVector, target)));
-        // coming the other way, so the two meet at twice the ship's speed
+        // Coming the other way, so the two meet at twice the ship's speed;
+        // and they meet in the frame that begins now: the ship will have
+        // moved by its velocity and the rock by the opposite, so the rock
+        // starts two of those steps ahead of the ship.
+        Vec3 p = read_vec(vec_slot(ds::gPositionVector, target));
         Vec3 v = read_vec(vec_slot(ds::gVelocityVector, target));
+        p.x += 2 * v.x; p.y += 2 * v.y; p.z += 2 * v.z;
+        write_vec(vec_slot(ds::gPositionVector, rock), p);
         v.x = -v.x; v.y = -v.y; v.z = -v.z;
         write_vec(vec_slot(ds::gVelocityVector, rock), v);
         // where the last frame drew the ship: the game lets a rock it did not
@@ -428,13 +435,16 @@ static void key_script() {
         // ship, !rock=0 dead ahead of our own
         int slot = script_slot(item.c_str() + 6);
         bool face = item[1] == 'f';
-        int rock = -1;
         if (slot >= 0 && slot < kNumSlots && slot_in_use(slot)) {
-            if (face) face_slot(slot); else rock = rock_onto(slot);
+            // The rock goes on at the start of the next frame, when the ship
+            // is where this frame will have it (a client has just taken the
+            // server's positions): put there now, a frame's motion of the
+            // ship could carry it clear before anything tests for a hit.
+            if (face) face_slot(slot); else g_rockOnto = slot;
         }
-        wclog(1, "key script %.1fs (t=%.1f): %s slot %d (%s, drawn at %04x) rock %d; %s", t, now / 1000.0,
+        wclog(1, "key script %.1fs (t=%.1f): %s slot %d (%s, drawn at %04x); %s", t, now / 1000.0,
               face ? "face" : "rock onto", slot, slot >= 0 && slot_in_use(slot) ? "in use" : "empty",
-              slot >= 0 ? rd16((Bit16u)(ds::entityCullStatus + 2 * slot)) : 0, rock, field_state_line().c_str());
+              slot >= 0 ? rd16((Bit16u)(ds::entityCullStatus + 2 * slot)) : 0, field_state_line().c_str());
     } else if (item.compare(0, 5, "!pos=") == 0) {
         // !pos=<x>:<y>:<z> moves our own ship there
         Vec3 v = read_vec(vec_slot(ds::gPositionVector, kPlayerSlot));
@@ -812,12 +822,29 @@ static void check_hooks_slow() {
             g_flightCount++;
         }
         maybe_dump_data_segment();
+        // The loop comes here once per game frame, and again whenever a
+        // trampoline run started here is over: only the first is a frame.
+        static int lastFrame = -1;
+        if (rd16(ds::frameCounter) != lastFrame) {
+            if (pace_frame(!(g_session && g_session->is_client()))) {
+                g_trampoline.run_before_current_instruction();
+                return;  // early: back here when the frame is due
+            }
+            lastFrame = rd16(ds::frameCounter);
+            perf_frame();
+        }
         ensure_session();
         if (g_session) {
             g_session->on_frame_top();
         } else if (g_trampoline.has_pending()) {
             // Flying alone: nothing else runs the test aids' queued game calls.
             g_trampoline.run_before_current_instruction();
+        }
+        if (!g_trampoline.is_running() && g_rockOnto >= 0) {
+            // The frame begins now (see "!rock=").
+            int rock = slot_in_use(g_rockOnto) ? rock_onto(g_rockOnto) : -1;
+            wclog(1, "key script: rock %d put onto slot %d", rock, g_rockOnto);
+            g_rockOnto = -1;
         }
     }
 }
@@ -830,6 +857,17 @@ static void check_hooks_slow() {
 // emulation speed with wall-clock time.
 extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_emulated_ms() {
     return PIC_FullIndex();
+}
+// The flight loop's performance over the last interval (wcnet_perf.h):
+// 0 fps, 1 emulator speed against real time, 2 ms per frame waiting for the
+// network, 3 cycles, 4 the longest frame in ms, 5 the share of the time the
+// game was working; -1 before the first interval.
+extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_perf(int what) {
+    const wc::PerfSample &p = wc::perf_last();
+    if (!p.valid) {
+        return -1;
+    }
+    return what == 0 ? p.fps : what == 1 ? p.speed : what == 2 ? p.waitMs : what == 3 ? p.cycles : what == 4 ? p.worstFrameMs : p.load;
 }
 // One byte of the game's data segment, for checks from the page.
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_ds_byte(int off) {
@@ -967,6 +1005,7 @@ void wc_net_check_cpu_hooks() {
     }
     if (++g_asyncCounter == 1000) {
         g_asyncCounter = 0;
+        wc::pace_tick();
         auto_keys();
         key_script();
 #ifdef __EMSCRIPTEN__

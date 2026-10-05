@@ -67,6 +67,8 @@
   #saveButtons .pick { color: #7aa2ff; cursor: pointer; text-decoration: underline; }
   #saveButtons input[type=file] { display: none; }
   #saveStatus { color: #9aa3b2; }
+  #perf { color: #9aa3b2; font: 12px/1.5 ui-monospace, monospace; min-height: 18px; margin-top: 6px; }
+  #perf .warn { color: #ffb454; }
   #log { flex: 1 1 320px; min-height: 200px; max-height: 400px; overflow: auto; background: #05070a; border: 1px solid #1d2230; padding: 8px; font: 12px/1.35 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
 </style>
 </head>
@@ -146,6 +148,7 @@
       <canvas id="canvas" width="640" height="400" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
       <div id="log"></div>
     </div>
+    <div id="perf" title="Measured in flight, every two seconds"></div>
     <p class="hint">Click the screen to give it the keyboard. <kbd>Caps Lock</kbd> is the game's <kbd>Esc</kbd> (it skips cutscenes), because the browser keeps <kbd>Esc</kbd> for leaving full screen; in Chrome and Edge a short tap of <kbd>Esc</kbd> also reaches the game in full screen, and holding it leaves. Press <kbd>0</kbd> to type a chat message to the other pilots, <kbd>Enter</kbd> sends it; in space <kbd>Enter</kbd> fires missiles. <kbd>Ctrl</kbd>+<kbd>F10</kbd> releases the mouse.</p>
   </section>
 

@@ -7,6 +7,7 @@ libcpu_a_SOURCES = callback.cpp cpu.cpp flags.cpp modrm.cpp modrm.h core_full.cp
 		   core_dyn_x86.cpp core_dynrec.cpp \
 		   wc_net.h net_config.h wcnet_memory.h wcnet_memory.cpp wcnet_code.h wcnet_log.h wcnet_log.cpp \
 		   wcnet_game.h wcnet_game.cpp wcnet_ds.def \
+		   wcnet_perf.h wcnet_perf.cpp \
 		   wcnet_vm.h wcnet_vm.cpp wcnet_transport.h wcnet_transport.cpp wcnet_entities.h wcnet_entities.cpp \
 		   wcnet_events.h wcnet_events.cpp wcnet_session.h wcnet_session.cpp wcnet_hooks.cpp \
 		   wcnet_lobby.h wcnet_lobby.cpp

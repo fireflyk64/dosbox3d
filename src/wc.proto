@@ -163,6 +163,10 @@ message Frame {
     // From a gunner: the turret it mans plus one (0: none), so that the
     // server's automatic fire leaves that turret to it.
     optional uint32 manned_turret = 21;
+    // Client -> server: the number of the last server frame this client had
+    // applied when it sent this.  The server runs on without waiting for a
+    // client's frame, as long as the client is not too many frames behind.
+    optional uint64 ack = 22;
 }
 
 // Connect -> once per mission

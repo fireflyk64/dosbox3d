@@ -10,6 +10,8 @@
 #endif
 #include "wc_net.h"
 #include "wcnet_session.h"
+#include "wcnet_perf.h"
+#include "pic.h"
 #include "wcnet_events.h"
 #include "wcnet_vm.h"
 #include "wcnet_memory.h"
@@ -397,6 +399,7 @@ struct RemoteClient {
     int net;                     // network id == server slot this client flies (as a wingman)
     Seat seat;                   // decided with the mission start state
     int mannedTurret;            // a gunner: the turret it sits in, or -1
+    Bit64u acked;                // the last frame of ours it had applied, by its own word
     Connection conn;
     std::string callsign;
     std::string missionTreeProgress;  // reported with a shared mission end
@@ -407,7 +410,7 @@ struct RemoteClient {
     int skipPendingEvents;       // events already covered by the start state
 
     explicit RemoteClient(int n)
-        : net(n), seat(SEAT_WINGMAN), mannedTurret(-1), requestedBriefingStart(false), needsMissionStartState(false),
+        : net(n), seat(SEAT_WINGMAN), mannedTurret(-1), acked(0), requestedBriefingStart(false), needsMissionStartState(false),
           inMission(false), leftThisMission(false), skipPendingEvents(0) {}
     bool connected() const { return conn.is_open(); }
     void disconnect() {
@@ -416,6 +419,28 @@ struct RemoteClient {
         needsMissionStartState = false;
         requestedBriefingStart = false;
     }
+};
+
+class ServerSession;
+
+// The server's wait for a client that has fallen too far behind, in emulated
+// time (as ServerFrameJob is for a client).
+class ClientLagJob : public VmJob {
+public:
+    explicit ClientLagJob(ServerSession *server, double began = -1)
+        : server_(server), began_(began < 0 ? PIC_FullIndex() : began), done_(false) {}
+    virtual bool start();
+    virtual void finish() {
+        if (!done_) {
+            g_trampoline.enqueue_front(new ClientLagJob(server_, began_));
+        }
+    }
+    virtual const char *describe() const { return "client lag"; }
+
+private:
+    ServerSession *server_;
+    double began_;
+    bool done_;
 };
 
 class ServerSession : public Session {
@@ -757,6 +782,7 @@ private:
         game->set_assigned_player_id(c->net);
         c->seat = seat_for(c);
         c->mannedTurret = -1;
+        c->acked = frameNumber_;
         game->set_seat(c->seat);
         if (c->seat == SEAT_WINGMAN) {
             take_station(c->net);
@@ -930,37 +956,58 @@ private:
         }
     }
 
-    // Receive one message from a client in the mission, handling anything
-    // that is not a frame in place.  Returns false when the client is gone.
-    bool receive_client_frame(RemoteClient *c, bool mergeUpdates) {
+    // Takes in whatever a client in the mission has sent since last time,
+    // without waiting: frames are merged (or, when only flushing, looked at
+    // for the player's ending), requests answered.  Returns false when the
+    // client is gone.
+    bool drain_client(RemoteClient *c, bool mergeUpdates) {
         NetworkMessage msg;
-        for (int attempts = 0; attempts < 16; attempts++) {
-            if (!c->conn.recv(CAT_GAME, msg).ok()) {
+        for (int n = 0; n < 64; n++) {
+            RecvStatus st = c->conn.poll(CAT_GAME, msg);
+            if (st.no_data()) {
+                return true;
+            }
+            if (!st.ok()) {
                 return false;
             }
             if (msg.has_start_briefing_req()) {
                 handle_briefing_request(c);
-                continue;
-            }
-            if (msg.has_start_mission_req()) {
-                return send_start_state(c);
-            }
-            if (msg.has_frame()) {
+            } else if (msg.has_start_mission_req()) {
+                if (!send_start_state(c)) {
+                    return false;
+                }
+            } else if (msg.has_frame()) {
                 if (msg.epoch() != epoch_) {
                     wclog(2, "player %d sent a frame from epoch %u (now %u)", c->net, msg.epoch(), epoch_);
-                } else if (mergeUpdates || msg.frame().has_player_end()) {
+                    continue;
+                }
+                if (msg.frame().has_ack() && msg.frame().ack() > c->acked) {
+                    c->acked = msg.frame().ack();
+                }
+                if (mergeUpdates || msg.frame().has_player_end()) {
                     merge_client_frame(c, msg.frame());
                 }
-                return true;
+            } else {
+                wclog(0, "unexpected %s message from player %d", message_type_name(msg), c->net);
+                return false;
             }
-            wclog(0, "unexpected %s message from player %d", message_type_name(msg), c->net);
-            return false;
         }
-        return false;
+        return true;
     }
 
-    // One round of the lockstep exchange.  With serverOnlyFlush the client
-    // messages are still consumed (to keep the 1:1 message pattern) but only
+    // The server does not wait for a client's frame before its own: a round
+    // trip per frame would tie the frame rate to the connection.  It runs on
+    // with what has arrived, up to kWindow frames ahead of what a client says
+    // it has applied (six frames cover a round trip of 300 ms at 15 frames a
+    // second); beyond that it waits, so a client that has stopped stops the
+    // game instead of being left behind.
+    enum { kWindow = 6 };
+    bool behind(const RemoteClient *c) const {
+        return c->connected() && c->inMission && frameNumber_ > c->acked + kWindow;
+    }
+
+    // One round of the frame exchange.  With serverOnlyFlush what the clients
+    // have sent is still taken in but only
     // their player_end is honoured, and the frame is sent immediately instead
     // of after the trampoline.
     // The mission setup writes a ship's pilot (dseg:D1A2) after the spawn
@@ -1001,7 +1048,7 @@ private:
             if (!c->inMission) {
                 continue;
             }
-            if (!receive_client_frame(c, !serverOnlyFlush)) {
+            if (!drain_client(c, !serverOnlyFlush)) {
                 wclog(1, "player %d disconnected", c->net);
                 c->disconnect();
             }
@@ -1018,10 +1065,40 @@ private:
         if (serverOnlyFlush) {
             flush_outgoing_frame();
         } else {
+            for (size_t i = 0; i < clients_.size(); i++) {
+                if (behind(clients_[i])) {
+                    // Before anything else of this frame, and in emulated
+                    // time (ClientLagJob).
+                    g_trampoline.enqueue_front(new ClientLagJob(this));
+                    break;
+                }
+            }
             g_trampoline.run_before_current_instruction();
             ignoreNextFrameTop_ = true;
         }
     }
+
+public:
+    // For ClientLagJob: takes in what has arrived; true while a client is
+    // still too far behind for the server to go on.
+    bool clients_behind() {
+        bool waiting = false;
+        for (size_t i = 0; i < clients_.size(); i++) {
+            RemoteClient *c = clients_[i];
+            if (!c->connected() || !c->inMission) {
+                continue;
+            }
+            if (!drain_client(c, true)) {
+                wclog(1, "player %d disconnected", c->net);
+                c->disconnect();
+            } else if (behind(c)) {
+                waiting = true;
+            }
+        }
+        return waiting;
+    }
+
+private:
 
     void flush_outgoing_frame() {
         if (!sendFrameAtIdle_) {
@@ -1072,10 +1149,33 @@ private:
 
 extern bool g_pendingUninit;
 
+class ClientSession;
+
+// A client's wait for the server's frame, in emulated time: looks for the
+// frame, and while it is not there lets the emulated CPU idle to the next
+// timer event and looks again.
+class ServerFrameJob : public VmJob {
+public:
+    explicit ServerFrameJob(ClientSession *client, double began = -1)
+        : client_(client), began_(began < 0 ? PIC_FullIndex() : began), done_(false) {}
+    virtual bool start();
+    virtual void finish() {
+        if (!done_) {
+            g_trampoline.enqueue_front(new ServerFrameJob(client_, began_));
+        }
+    }
+    virtual const char *describe() const { return "server frame"; }
+
+private:
+    ClientSession *client_;
+    double began_;
+    bool done_;
+};
+
 class ClientSession : public Session {
 public:
     ClientSession()
-        : shipNet_(0), seat_(SEAT_WINGMAN), chase_(false), lastWrittenMissionStatus_(Proceed), lastVictoryPlusOne_(0),
+        : shipNet_(0), seat_(SEAT_WINGMAN), chase_(false), lastServerFrame_(0), lastWrittenMissionStatus_(Proceed), lastVictoryPlusOne_(0),
           isFresh_(true), hasRestartedMission_(false), hasSentConnect_(false),
           ignoreNextFrameTop_(false), ownMissionOver_(false), dead_(false), epoch_(0), frameNumber_(0) {
         callsign_ = get_callsign();
@@ -1212,28 +1312,56 @@ public:
             wclog(2, "frame %llu: own health %s", (unsigned long long)frameNumber_, describe_health(kPlayerSlot).c_str());
         }
         populate_own_update();
+        pendingFrame_.mutable_frame()->set_ack(lastServerFrame_);
         if (!conn_.send(pendingFrame_)) {
             drop("lost the server while sending a frame");
             return;
         }
         pendingFrame_.Clear();
-        if (!conn_.recv(CAT_GAME, msg).ok() || !msg.has_frame()) {
-            drop("lost the server while waiting for a frame");
-            return;
-        }
-        if (msg.epoch() == epoch_) {
+        // The server's frame comes when the server's own frame is due.  We
+        // wait for it on the trampoline, in emulated time (ServerFrameJob):
+        // blocking here would stop the emulator, and with it the music and
+        // the clock, for most of every frame.
+        g_trampoline.enqueue(new ServerFrameJob(this));
+        g_trampoline.run_before_current_instruction();
+        ignoreNextFrameTop_ = true;
+    }
+
+    // True when the wait for the server is over: at least one frame of its
+    // came and was applied (its events are queued behind the waiting job),
+    // or the server is gone.  Every frame that has arrived is applied, in
+    // order: after a hiccup of ours or the connection's there can be more
+    // than one, and the server goes by what we have applied (Frame.ack).
+    bool take_server_frame() {
+        bool any = false;
+        for (int n = 0; n < 16; n++) {
+            NetworkMessage msg;
+            RecvStatus st = conn_.poll(CAT_GAME, msg);
+            if (st.no_data()) {
+                break;
+            }
+            if (!st.ok() || !msg.has_frame()) {
+                drop("lost the server while waiting for a frame");
+                return true;
+            }
+            any = true;
+            if (msg.epoch() != epoch_) {
+                wclog(2, "ignoring frame from epoch %u (ours %u)", msg.epoch(), epoch_);
+                continue;
+            }
             bool applyOwn = false;
             for (int i = 0; i < msg.frame().event_size(); i++) {
                 if (msg.frame().event(i).has_autopiloting()) {
                     applyOwn = true;
                 }
             }
+            lastServerFrame_ = msg.frame_number();
             apply_frame(msg.frame(), applyOwn);
-        } else {
-            wclog(2, "ignoring frame from epoch %u (ours %u)", msg.epoch(), epoch_);
+            if (msg.frame().has_mission_end() || applyOwn) {
+                break;  // the mission is over, or a cinematic comes first: the rest can wait
+            }
         }
-        g_trampoline.run_before_current_instruction();
-        ignoreNextFrameTop_ = true;
+        return any;
     }
 
     virtual void on_async_tick() {
@@ -1403,6 +1531,7 @@ private:
         }
         epoch_ = msg.epoch();
         frameNumber_ = msg.frame_number();
+        lastServerFrame_ = msg.frame_number();
         isFresh_ = false;
         wclog(1, "we are player %d%s; epoch %u frame %llu", shipNet_,
               seat_ == SEAT_DRONE ? " (a drone)" : seat_ == SEAT_GUNNER ? " (the gunner)" : "", epoch_,
@@ -1503,6 +1632,7 @@ private:
     int shipNet_;
     Seat seat_;
     bool chase_;  // a drone rides behind the leader
+    Bit64u lastServerFrame_;  // the number of the last server frame applied (Frame.ack)
     EntityMap entities_;
     std::string callsign_;
     GameState lastWrittenMissionStatus_;
@@ -1520,6 +1650,27 @@ private:
     std::vector<ShipUpdate> pendingHealth_;
     HealthPublisher health_;
 };
+
+bool ClientLagJob::start() {
+    if (g_session != server_ || !server_->clients_behind()) {
+        done_ = true;
+        perf_idle_wait(PIC_FullIndex() - began_);
+        return false;
+    }
+    idle_call();
+    return true;
+}
+
+bool ServerFrameJob::start() {
+    // (The session can be gone: a drop tears it down at the next safe point.)
+    if (g_session != client_ || client_->take_server_frame()) {
+        done_ = true;
+        perf_idle_wait(PIC_FullIndex() - began_);
+        return false;
+    }
+    idle_call();
+    return true;
+}
 
 static void trampoline_idle() {
     if (g_session) {

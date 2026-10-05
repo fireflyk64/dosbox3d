@@ -1,6 +1,6 @@
 /*
  *  Multiplayer session: who we are, who we talk to, and the per-frame
- *  lockstep exchange.
+ *  exchange.
  *
  *  Authority model
  *  ---------------
@@ -18,14 +18,19 @@
  *    ending with PlayerEnd; the server adopts it, and its MissionEnd frame
  *    carries it to the other clients.
  *
- *  Frame exchange (lockstep, unchanged from the original design)
- *  ---------------------------------------------------------------
- *  At the top of every in-flight frame each client sends its ShipUpdate plus
- *  any events, then blocks for the server's frame.  The server blocks for one
- *  message from every client in the mission, merges them, and sends one frame
- *  to each.  Events are replayed through the trampoline before the game
- *  simulates the frame.  The server sends exactly one frame per client
- *  message, so that the two sides never drift apart in message count.
+ *  Frame exchange
+ *  --------------
+ *  The server sets the pace (wcnet_perf.h): at the top of every in-flight
+ *  frame it takes in whatever the clients have sent, runs its frame and sends
+ *  one frame to each client.  It does not wait for a client's frame: only
+ *  when a client is more than a few frames behind in what it says it has
+ *  applied (Frame.ack) does the server wait for it.  A client sends its
+ *  ShipUpdate plus any events at the top of its frame, then waits for the
+ *  server's next frame (all that have arrived are applied, in order) before
+ *  it simulates.  Events are replayed through the trampoline before the
+ *  game simulates the frame.  Both waits pass in emulated time (the CPU
+ *  idles, the game's interrupts and the clock run on); nothing blocks the
+ *  emulator for a round trip.
  */
 #ifndef WCNET_SESSION_H_
 #define WCNET_SESSION_H_
