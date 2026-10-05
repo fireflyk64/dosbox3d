@@ -326,6 +326,24 @@ mission", both reach the cockpit; in 9/1 the second page is a drone, types
 it while the other's goes on, and the key sits among the ones a pilot uses.
 The hook steps over the call.
 
+### Speech
+
+The game's sound setup (`wc2.cfg`: `v a904 c25 d1`) is a Sound Blaster at
+220, IRQ 5, DMA 1, which is what GOG's DOSBox is set to (`irq=5`).  With
+DOSBox's default IRQ 7 the first digitised line plays its first block and
+the game waits for an interrupt that comes on another line: the
+introduction stopped for ever a syllable into the Emperor's speech, and no
+wingman ever spoke (`!where` in a headless run of "Start New Game": the
+same two addresses of a wait loop from the Emperor's silhouette on, for as
+long as one cares to look; with `irq=5` the scene plays through).  The
+registry's `dosbox` text is written to a file the page starts DOSBox with
+(`-conf`); a native run needs `irq=5` under `[sblaster]` in its
+dosbox.conf.  (`config -set "sblaster irq=5"` as a startup command does not
+do: re-initialising the card moves its `SET BLASTER` line to the end of
+the startup commands, and the ones not yet run are skipped.)
+`scripts/web-wc2.sh intro` starts a new game in a browser page and checks
+that the audience goes on.
+
 ## 7. Finding out why the game quit or hangs
 
 WC2 leaves through `ovr145:0038(message)` (thunk `stub145:0052`, 150 call

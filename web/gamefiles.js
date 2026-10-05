@@ -27,6 +27,8 @@
 // when the game steers by it and how far it reaches, as fractions of the
 // mouse range.  Wing Commander parks the pointer at 318,52 of 640x200 (the
 // middle of the cockpit view) and turns by its distance from there.
+// `dosbox`: what the game's own setup expects of the machine, as the text of
+// a DOSBox configuration file.
 
 // Wing Commander's Vega campaign: series 1.. and mission 0.. within the
 // series (what the MIS / SERIES environment of the hooks takes).  The system
@@ -87,8 +89,12 @@ export const GAMES = [
   // memory the game jumps through a null pointer in some in-flight scenes
   // (after the first autopilot of series 2 mission 2, at the start of
   // others) and hangs.
+  // Its sound setup (wc2.cfg, "c25": a Sound Blaster at 220, IRQ 5) is GOG's,
+  // and so must the emulated card's be: with DOSBox's IRQ 7 the first spoken
+  // line never ends, and the game waits for it for ever.
   { id: "wc2", title: "Wing Commander II", detect: ["WC2.EXE"], run: "loadfix -34 wc2", multiplayer: true,
     saves: ["GAMEDAT/SAVEGAME.WC2"], cycles: 8000,
+    dosbox: "[sblaster]\nirq=5\n",
     campaign: { series: WC2_SERIES, missionArgs: (m) => `Origin s${m.series} m${m.mis}`, hints: {
       forced: "Everyone starts in the barracks with the story at that mission: click the door the game calls \"Fly mission\" (point at a door and it is named), and the briefing plays first. In a mission flown alone the second player is the gunner if the ship has turrets (F4 the rear turret, F2 and F3 the side turrets, F1 the pilot's view), and otherwise a drone: nothing sees or hits it, it has no guns, and it sees cloaked ships; 0, then /chase and Enter, rides behind the leader.",
       host: "The barracks: your saved game decides the mission. Click \"Fly mission\" (point at a door and the game names it); wingmen do the same and get your place in the story, your briefing and your mission.",

@@ -748,6 +748,11 @@ async function start(fromGesture) {
     const cycles = Number(query.get("cycles")) || (gameInfo() && gameInfo().cycles) || 0;
     const args = ["-c", `mount c ${GAME_ROOT}`, "-c", "c:"];
     if (cycles > 0) args.push("-c", `cycles=${Math.round(cycles)}`);
+    // What the game's own setup expects of the machine (the registry), as a
+    // configuration file: DOSBox's `config -set` rewrites the list of
+    // startup commands it is itself run from, and the game's is lost.
+    const conf = gameInfo() && gameInfo().dosbox;
+    if (conf) { Module.FS.writeFile("/game.conf", conf); args.unshift("-conf", "/game.conf"); }
     Module.callMain([...args, "-c", cmd]);
     setInterval(keepSaves, 4000);
     setInterval(showPerformance, 1000);
