@@ -25,17 +25,21 @@
 //     sign of life; it has no ping, so it answers "unknown message type".)
 //   * The room ends when the server says so (a day after it was made, or
 //     five minutes after the last pilot left): the next page makes it again.
-//   * Whoever makes the room decides its size and its rules, and a page that
-//     keeps none could make a lobby of one seat.  Nothing here prevents it:
-//     the remedy is another lobby (?hall=CODE) or a restart of the server.
+//   * There is a row of lobbies: WC-LOBBY, then WC-LOBBY0, WC-LOBBY1, ...
+//     A page takes a seat in the first that has one (a free seat, or a
+//     silent pilot's), so pilots gather in the first and spill into the
+//     next only when it is full.  That is also what keeps one bad page
+//     from being the end of it: whoever makes a room decides its size and
+//     its rules, and a page that keeps none could make WC-LOBBY with one
+//     seat, or fill it.  The others then land in the next.
 //   * Every pilot is linked to every other, so a newcomer to a full lobby
 //     gets hundreds of offers.  They are spread over a few seconds: the
 //     server drops a socket that has more than a hundred messages waiting.
-import { checkMessage, checkName, makeBucket, splitCodes, whyText, roomTag, RATE, MAX_CHARS, MAX_NAME, GAME_TAGS } from "./chatfilter.js";
-
-export const HALL_CODE = "WC-LOBBY";
+import { checkMessage, checkName, makeBucket, splitCodes, whyText, lobbyCode, isLobbyCode, LOBBY_CODE, RATE, MAX_CHARS, MAX_NAME, GAME_TAGS } from "./chatfilter.js";
 
 const SEATS = 256;                // asked for; a server that gives a room fewer says how many
+const LOBBIES = 32;               // WC-LOBBY, WC-LOBBY0 ... WC-LOBBY30: how far a page goes for a seat
+const CLAIM_BATCH = 32;           // seats of a full lobby asked for in one go
 const OFFER_SPREAD_MS = 25;       // per pilot in the lobby: over how long the offers to a newcomer are spread
 const OFFER_SPREAD_MAX_MS = 6000;
 const ROSTER_NAMES = 24;          // callsigns shown; the rest are counted
@@ -70,14 +74,16 @@ const shuffled = (n) => { const a = Array.from({ length: n }, (_, i) => i); for 
 //   on.message(id, text)   a message from a pilot
 //   on.lost(code, message) the seat is gone (the room ended, the seat was taken, the server went away)
 class HallNet {
-  constructor({ server, code, seats = SEATS, claimAfterMs = CLAIM_AFTER_MS, heartbeatMs = HEARTBEAT_MS, on, log }) {
-    Object.assign(this, { server, code, seats, claimAfterMs, heartbeatMs, on, log });
+  // code: the first lobby's; the others are code + "0", code + "1", ...
+  constructor({ server, code, lobbies = LOBBIES, seats = SEATS, claimAfterMs = CLAIM_AFTER_MS, heartbeatMs = HEARTBEAT_MS, on, log }) {
+    Object.assign(this, { server, base: code, code, lobbies, seats, claimAfterMs, heartbeatMs, on, log });
     this.ws = null; this.selfId = -1; this.maxPlayers = 0; this.players = []; this.token = "";
     this.links = new Map(); this.soon = new Map(); this.closed = false; this.beat = null; this.iceAll = []; this.iceDirect = [];
   }
 
-  // Takes a seat: a free one, the one this page had (its token), or one whose
-  // pilot has been silent too long when all are taken.
+  // Takes a seat: the one this page had (its token), or a seat in the first
+  // lobby of the row that has one -- a free seat, or, when all are taken,
+  // the seat of a pilot who has been silent too long.
   connect() {
     const url = signalingUrl(this.server);
     return new Promise((resolve, reject) => {
@@ -93,41 +99,67 @@ class HallNet {
         this.adopt(ws, joined);
         resolve();
       };
-      // (The time is for one answer: a full lobby is asked seat by seat.)
+      // (The time is for one round of answers: the row is asked lobby by lobby.)
       let timer = null;
       const arm = () => { clearTimeout(timer); timer = setTimeout(() => done(fail("connect-timeout", "the lobby server did not answer")), CONNECT_TIMEOUT_MS); };
       arm();
-      const ask = (msg) => new Promise((answer) => { waiting = answer; arm(); ws.send(JSON.stringify(msg)); });
+      // The server answers every question with "joined" or an error, in
+      // order: several can be asked at once.  With a "joined" among the
+      // answers the rest are "already joined" and nobody waits for them.
+      const askAll = (msgs) => new Promise((answer) => {
+        const got = [];
+        waiting = (m) => { got.push(m); if (m.type === "joined" || got.length === msgs.length) { waiting = null; answer(got); } };
+        arm();
+        for (const m of msgs) ws.send(JSON.stringify(m));
+      });
+      const ask = (msg) => askAll([msg]).then((got) => got[got.length - 1]);
       const create = () => ({ maxPlayers: this.seats, waitUntilFull: false, allowLateJoin: true, allowReconnect: true,
                               allowReplacement: true, reconnectPolicy: "token-or-claim-after-timeout", claimAfterMs: this.claimAfterMs });
       ws.onmessage = (ev) => {
         let m;
         try { m = JSON.parse(ev.data); } catch (e) { return; }
-        if (waiting && (m.type === "joined" || m.type === "error")) { const w = waiting; waiting = null; w(m); }
+        if (waiting && (m.type === "joined" || m.type === "error")) waiting(m);
       };
       ws.onerror = () => done(fail("connection-failed", "no connection to the lobby server"));
       ws.onclose = () => done(fail("connection-closed", "the lobby server closed the connection"));
+      const full = { type: "error", code: "room-full", message: "every seat is taken" };
+      const join = (code, token) => ask({ type: "join", code, create: create(), ...(token ? { resumeToken: token } : {}) });
+      // A full lobby: the seat of a pilot who has been silent too long, if
+      // there is one.  (The seats are asked for a batch at a time, in no
+      // order; the first answer names how many seats there are.)
+      const claim = async (code) => {
+        let seats = SEATS;
+        const ids = shuffled(SEATS);
+        for (let i = 0; i < ids.length; i += CLAIM_BATCH) {
+          const batch = ids.slice(i, i + CLAIM_BATCH).filter((id) => id < seats);
+          if (!batch.length) continue;
+          const answers = await askAll(batch.map((id) => ({ type: "claim-slot", code, playerId: id })));
+          const won = answers.find((m) => m.type === "joined");
+          if (won) return won;
+          for (const m of answers) {
+            const range = m.code === "invalid-target" && /out of range 0\.\.(\d+)/.exec(m.message || "");
+            if (range) seats = Math.min(seats, Number(range[1]) + 1);
+            else if (m.code === "room-not-found") return join(code);   // (it ended meanwhile)
+            else if (m.code !== "slot-not-claimable") return full;     // (a room that lets nobody claim)
+          }
+        }
+        return full;
+      };
+      const seatIn = async (code, token) => {
+        let r = await join(code, token);
+        // (A server set up with fewer seats to a room says how many.)
+        const limit = r.type === "error" && r.code === "invalid-create" && /exceeds limit (\d+)/.exec(r.message || "");
+        if (limit && Number(limit[1]) >= 2) { this.seats = Number(limit[1]); r = await join(code, token); }
+        return r.type === "error" && r.code === "room-full" ? claim(code) : r;
+      };
       ws.onopen = async () => {
         try {
-          const join = () => ask({ type: "join", code: this.code, create: create(), ...(this.token ? { resumeToken: this.token } : {}) });
-          let r = await join();
-          // (A server set up with fewer seats to a room says how many.)
-          const limit = r.type === "error" && r.code === "invalid-create" && /exceeds limit (\d+)/.exec(r.message || "");
-          if (limit && Number(limit[1]) >= 2) { this.seats = Number(limit[1]); r = await join(); }
-          if (r.type === "error" && r.code === "room-full") {
-            let seats = SEATS;
-            for (const id of shuffled(SEATS)) {
-              if (id >= seats) continue;
-              r = await ask({ type: "claim-slot", code: this.code, playerId: id });
-              if (r.type === "joined") break;
-              const range = r.code === "invalid-target" && /out of range 0\.\.(\d+)/.exec(r.message || "");
-              if (range) seats = Number(range[1]) + 1;
-              else if (r.code !== "slot-not-claimable") break;
-            }
-            if (r.type !== "joined" && r.code === "room-not-found") r = await join();   // (it ended meanwhile)
-            else if (r.type !== "joined") r = { type: "error", code: "room-full", message: "every seat in the lobby is taken" };
-          }
-          if (r.type === "joined") done(null, r); else done(fail(r.code || "error", r.message || "the lobby server refused"));
+          // The lobby this page was in, while its seat there may still be its own ...
+          let r = this.token ? await seatIn(this.code, this.token) : full;
+          // ... or the first of the row with a seat.
+          for (let n = 0; n < this.lobbies && r.type !== "joined" && r.code === "room-full"; n++) r = await seatIn(lobbyCode(n, this.base), "");
+          if (r.type === "joined") done(null, r);
+          else done(fail(r.code || "error", r.code === "room-full" ? "every lobby is full" : r.message || "the lobby server refused"));
         } catch (e) { done(fail("connection-failed", String(e && e.message ? e.message : e))); }
       };
     });
@@ -135,6 +167,7 @@ class HallNet {
 
   adopt(ws, joined) {
     this.ws = ws;
+    this.code = joined.code || this.code;
     this.selfId = joined.selfId; this.maxPlayers = joined.maxPlayers; this.token = joined.resumeToken || "";
     this.players = (joined.players || []).map((p) => ({ id: p.id, occupied: !!p.occupied, connected: !!p.connected }));
     this.iceAll = (joined.iceServers || []).map((s) => ({ urls: s.urls, username: s.username, credential: s.credential }));
@@ -210,6 +243,7 @@ class HallNet {
         break;
       case "error":
         if (m.code === "invalid-message") break;   // the answer to our sign of life
+        if (m.code === "already-joined") break;    // ... and to the seats asked for after the one we got
         if (["replaced", "session-superseded", "room-expired", "slow-consumer"].includes(m.code)) this.lost(m.code, m.message || m.code);
         else this.log(`lobby: the server says ${m.code}: ${m.message}`);
         break;
@@ -338,10 +372,12 @@ const store = (s, key, value) => { try { if (value == null) s.removeItem(key); e
 
 // opts: server() the lobby server's address, name() the callsign typed,
 // tag() the loaded game's ("WC1", ... or ""), title(tag) a game's name,
-// onCode(code) a room code was clicked, log(line), code (another lobby,
-// for tests).
+// onCode(code) a room code was clicked, log(line), code (another row of
+// lobbies, for tests).
 export function initHall(opts) {
-  const code = opts.code || HALL_CODE;
+  const code = opts.code || LOBBY_CODE;
+  // The lobbies' own codes, this row's and the public one's, are not rooms.
+  const isLobby = (c) => isLobbyCode(c, code) || isLobbyCode(c);
   const log = opts.log || (() => {});
   let net = null, entering = false, attempt = null, shut = false, back = false, retry = null, retries = 0, settings = {};
   const pilots = new Map();      // seat -> { name, tag } from its hello
@@ -390,7 +426,7 @@ export function initHall(opts) {
     const parts = [el("span", "name" + (me ? " me" : ""), name)];
     if (tag) parts.push(" ", el("span", "game", tag));
     parts.push(": ");
-    for (const p of splitCodes(text, [code, HALL_CODE])) {
+    for (const p of splitCodes(text, isLobby)) {
       if (!p.code) { parts.push(p.text); continue; }
       const a = el("a", "roomcode", p.code);
       const url = new URL(location.href);
@@ -411,7 +447,8 @@ export function initHall(opts) {
     box.textContent = "";
     if (!inside()) return;
     const there = net.players.filter((p) => p.id !== net.selfId && p.occupied && net.open(p.id));
-    box.append(el("span", "count", `${there.length + 1} in the lobby: `));
+    // (Named when it is not the first: pilots in another do not hear this one.)
+    box.append(el("span", "count", `${there.length + 1} in the lobby${net.code === code ? "" : " " + net.code}: `));
     const entry = (name, tag, cls) => { const s = el("span", "pilot " + cls, name); if (tag) s.append(" ", el("span", "game", tag)); return s; };
     box.append(entry(myName() + " (you)", myTag(), "me"));
     for (const p of there.slice(0, ROSTER_NAMES)) {
@@ -502,14 +539,16 @@ export function initHall(opts) {
   async function reconnect() {
     const n = net;
     try {
+      const before = n.code;
       await n.connect();
       if (net !== n) return;
       retries = 0;
       $("hallState").textContent = "";
+      if (n.code !== before) sys(`You are in the lobby ${n.code} now.`);
       renderRoster();
     } catch (e) {
       if (net !== n) return;
-      if (e.code === "room-full") { leave({ keep: true, why: "You lost your seat in the lobby while this page was away, and the lobby is full now. Try again in a while." }); return; }
+      if (e.code === "room-full") { leave({ keep: true, why: "You lost your seat in the lobby while this page was away, and every lobby is full now. Try again in a while." }); return; }
       seatLost(e.code || "error", e.message || String(e), false);
     }
   }
@@ -541,7 +580,7 @@ export function initHall(opts) {
       if (attempt !== n) return false;
       entering = false;
       n.close();
-      $("hallState").textContent = e.code === "room-full" ? "The lobby is full (every seat is taken). Try again in a while."
+      $("hallState").textContent = e.code === "room-full" ? "Every lobby is full (every seat is taken). Try again in a while."
         : `Could not enter the lobby: ${e.message || e}`;
       show();
       return false;
@@ -551,10 +590,10 @@ export function initHall(opts) {
     store(sessionStorage, "wc:hall", "in");
     $("hallState").textContent = "";
     show();
-    sys(`You are in the lobby as ${myName()}. Say which room you fly in: a code like WC1-4821 in a line can be clicked to join. ` +
+    sys(`You are in the lobby${net.code === code ? "" : ` ${net.code} (the ones before it are full)`} as ${myName()}. Say which room you fly in: a code like WC1-4821 in a line can be clicked to join. ` +
         `Lines are ${MAX_CHARS} characters at most, two to start with and then one every ${RATE.every / 1000} seconds; no links.`);
     if (!typedName().ok && typedName().why !== "empty") sys(`Your callsign is not shown here (${whyText(typedName().why)}): you are ${myName()}.`);
-    log(`lobby: in ${code} as pilot ${net.selfId + 1} of ${net.maxPlayers}`);
+    log(`lobby: in ${net.code} as pilot ${net.selfId + 1} of ${net.maxPlayers}`);
     return true;
   }
 
@@ -612,7 +651,8 @@ export function initHall(opts) {
   show();
 
   const api = {
-    code,
+    // Is this one of the lobbies' own codes (and so no room to fly in)?
+    isLobby,
     enter, leave, inside, say,
     // The page's callsign or game changed.
     announce() { if (inside()) { hello(null, false); renderRoster(); } },

@@ -13,6 +13,7 @@
 //                       clickable: WC-1234, WC1-1234, WC2-.., SM2-.., SO1-.., SO2-..
 //   roomTag(code)       which game a code is for ("WC" = not said)
 //   newRoomCode(tag)    a fresh code: the game's prefix and four digits
+//   lobbyCode(n)        the lobby's own codes: WC-LOBBY, WC-LOBBY0, WC-LOBBY1, ...
 //
 // Nothing here touches the page: scripts/web-chatfilter-test.mjs runs it in
 // Node.
@@ -29,6 +30,16 @@ export const MAX_NAME = 16;
 // were loaded, or an older one: it says nothing.
 export const GAME_TAGS = ["WC1", "WC2", "SM2", "SO1", "SO2"];
 const CODE_IN_TEXT = /(^|[^A-Za-z0-9_-])((WC[12]?|SM2|SO[12])-[A-Za-z0-9][A-Za-z0-9_-]{2,57})/gi;
+
+// The public lobby's own codes are not rooms to fly in: WC-LOBBY, and
+// WC-LOBBY0, WC-LOBBY1, ... where pilots land when the ones before are full
+// (web/hall.js).
+export const LOBBY_CODE = "WC-LOBBY";
+export const lobbyCode = (n, base = LOBBY_CODE) => (n <= 0 ? base : base + (n - 1));
+export function isLobbyCode(code, base = LOBBY_CODE) {
+  const c = String(code || "").toUpperCase(), b = base.toUpperCase();
+  return c.startsWith(b) && /^\d*$/.test(c.slice(b.length));
+}
 
 export function roomTag(code) {
   const m = /^(WC[12]?|SM2|SO[12])-/i.exec(String(code || ""));
@@ -57,6 +68,8 @@ export function retagRoomCode(code, tag) {
 // at least four characters after its prefix, and a digit among them or no
 // small letters: "WC1-4821" and "WC-FALCON" are codes, "WC2-style" is talk.
 export function splitCodes(text, except = []) {
+  // (except: codes that are not rooms, a list or a test.)
+  const skip = typeof except === "function" ? except : (code) => except.some((e) => e.toUpperCase() === code.toUpperCase());
   const out = [];
   let last = 0;
   CODE_IN_TEXT.lastIndex = 0;
@@ -67,7 +80,7 @@ export function splitCodes(text, except = []) {
     const rest = raw.slice(raw.indexOf("-") + 1);
     CODE_IN_TEXT.lastIndex = start + raw.length;
     if (rest.length < 4 || !(/\d/.test(rest) || !/[a-z]/.test(rest))) continue;
-    if (except.some((e) => e.toUpperCase() === code.toUpperCase())) continue;
+    if (skip(code)) continue;
     if (start > last) out.push({ text: text.slice(last, start) });
     out.push({ code, tag: roomTag(code) });
     last = start + raw.length;

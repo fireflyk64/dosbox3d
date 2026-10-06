@@ -64,7 +64,8 @@ keyboard, so the chat box stays usable.  Native and browser players can
 share a room, exactly like `runwc.sh DOSPATH room CODE`.
 
 **The public lobby.**  Pilots with nobody to fly with meet in a chat room
-on the page (the lobbylink room `WC-LOBBY`; "Enter the lobby").  A room's
+on the page (the lobbylink room `WC-LOBBY`, and `WC-LOBBY0`, `WC-LOBBY1`
+and so on when it is full; "Enter the lobby").  A room's
 code starts with its game, `WC1-4821`, `WC2-`, `SM2-`, `SO1-`, `SO2-`, and a
 code said in the lobby is a link: a click joins that room, if the game
 loaded on the page is that game.  "Offer this room in the lobby" in the

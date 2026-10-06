@@ -15,7 +15,7 @@ import { initVoice } from "./voice.js";
 import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles,
          saveGame, loadGames, forgetGame, totalSize, gameById, gameByTag, programsIn } from "./gamefiles.js";
 import { newRoomCode, retagRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS } from "./chatfilter.js";
-import { initHall, HALL_CODE } from "./hall.js";
+import { initHall } from "./hall.js";
 
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
@@ -699,7 +699,7 @@ async function joinRoom({ create = true } = {}) {
   const code = normalizeCode($("room").value.trim());
   $("room").value = code;
   if (!/^[A-Za-z0-9_-]{4,64}$/.test(code)) { status("Room codes are 4-64 letters, digits, - or _."); return; }
-  if (code.toUpperCase() === hall.code.toUpperCase() || code.toUpperCase() === HALL_CODE) { status(`${code} is the public lobby (enter it above); a room to fly in needs a code of its own.`); return; }
+  if (hall.isLobby(code)) { status(`${code} is the public lobby (enter it above); a room to fly in needs a code of its own.`); return; }
   if (!fitsRoom(code)) return;
   $("join").disabled = true;
   status(`Joining room ${code}…`);

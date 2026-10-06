@@ -154,6 +154,10 @@ await c.fill("#room", "HALL-" + run);
 await c.click("#join");
 await sleep(1);
 check("the lobby's code is not a room to fly in", /is the public lobby/.test(await status(c)) && (await c.$eval("#lobby", (el) => el.hidden)), await status(c));
+await c.fill("#room", "wc-lobby7");
+await c.click("#join");
+await sleep(1);
+check("nor are the lobbies after it", /WC-LOBBY7 is the public lobby/i.test(await status(c)) && (await c.$eval("#lobby", (el) => el.hidden)), await status(c));
 await c.fill("#room", "wc2-1234");
 await c.click("#join");
 await sleep(1);
@@ -189,9 +193,10 @@ await a.context().close();
 await b.context().close();
 
 // -- a full lobby -------------------------------------------------------------------
-// Two seats, and a seat is claimable after four seconds of silence.
+// Two seats to a lobby, and a seat is claimable after four seconds of silence.
 const small = { hall: "FULL-" + run, game: false };
-const setup = (page) => page.evaluate(() => window.__wcHall.test.configure({ seats: 2, claimAfterMs: 4000, heartbeatMs: 1000 }));
+const setup = (page, more = {}) => page.evaluate((more) => window.__wcHall.test.configure({ seats: 2, claimAfterMs: 4000, heartbeatMs: 1000, ...more }), more);
+const lobbyOf = (page) => page.evaluate(() => { const n = window.__wcHall.test.net(); return n && n.code; });
 const e = await open("ECHO", small), f = await open("FOX", small), g = await open("GOLF", small);
 for (const p of [e, f, g]) await setup(p);
 await enter(e);
@@ -199,16 +204,27 @@ await enter(f);
 check("a lobby of two seats has two pilots", (await pilots(e, 2)) && (await pilots(f, 2)), await text(e, "hallRoster"));
 check("without a game or a callsign's game tag", /^2 in the lobby: ECHO \(you\) · FOX$/.test((await text(e, "hallRoster")).trim()), await text(e, "hallRoster"));
 await sleep(6);
-await g.click("#hallEnter");
-check("a third is told it is full, however long the two have been there", await g.waitForFunction(() => /lobby is full/.test(document.getElementById("hallState").textContent), null, { timeout: 30000 }).then(() => true, () => false), await text(g, "hallState"));
-// FOX's page falls silent (a closed laptop): its seat can be taken.
+await enter(g);
+check("a third lands in the next lobby, however long the two have been there", (await pilots(g, 1)) && (await lobbyOf(g)) === `FULL-${run}0` && (await lobbyOf(e)) === `FULL-${run}`, await lobbyOf(g));
+check("and is told which", (await text(g, "hallRoster")).trim() === `1 in the lobby FULL-${run}0: GOLF (you)` && (await text(g, "hallLog")).includes(`You are in the lobby FULL-${run}0 (the ones before it are full) as GOLF`), await text(g, "hallRoster"));
+// A page that knows of one lobby only is told that it is full.
+const i = await open("INDIA", small);
+await setup(i, { lobbies: 1 });
+await i.click("#hallEnter");
+check("with no lobby left a pilot is told so", await i.waitForFunction(() => /Every lobby is full/.test(document.getElementById("hallState").textContent), null, { timeout: 30000 }).then(() => true, () => false), await text(i, "hallState"));
+await i.context().close();
+// FOX's page falls silent (a closed laptop): its seat in the first lobby can be taken.
+await g.click("#hallLeave");
 await f.evaluate(() => window.__wcHall.test.net().stopHeartbeat());
 await sleep(6);
-await enter(g).catch(() => {});
-check("a silent pilot's seat goes to the newcomer", (await pilots(g, 2)) && /ECHO/.test(await text(g, "hallRoster")), await text(g, "hallState") + " / " + await text(g, "hallRoster"));
-check("and the one who lost it is told when it wakes", await f.waitForFunction(() => /lost your seat in the lobby/.test(document.getElementById("hallState").textContent) && document.getElementById("hallBody").hidden, null, { timeout: 30000 }).then(() => true, () => false), await text(f, "hallState"));
+await enter(g);
+check("a silent pilot's seat in the first lobby goes to the newcomer", (await pilots(g, 2)) && /ECHO/.test(await text(g, "hallRoster")) && (await lobbyOf(g)) === `FULL-${run}`, await text(g, "hallState") + " / " + await text(g, "hallRoster"));
+check("and the one who lost it lands in the next when it wakes", await f.waitForFunction((want) => document.getElementById("hallRoster").textContent.trim() === want, `1 in the lobby FULL-${run}0: FOX (you)`, { timeout: 30000 }).then(() => true, () => false), [await text(f, "hallRoster"), await text(f, "hallState")]);
 await say(g, "hello from GOLF");
 check("the newcomer talks to the one who stayed", await sees(e, "hello from GOLF"), await text(e, "hallLog"));
+await sleep(10.5);
+await say(g, `are you in FULL-${run}0 or WC-LOBBY3?`);
+check("a lobby's code in a line is not a room", (await sees(e, "or WC-LOBBY3?")) && (await e.$$eval("#hallLog a.roomcode", (l) => l.length)) === 0, await text(e, "hallLog"));
 
 // A page that asks for more seats than the server gives a room is told how
 // many there are, and takes that (scripts/web-smoke.sh's server gives 256).

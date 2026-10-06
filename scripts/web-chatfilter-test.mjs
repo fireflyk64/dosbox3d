@@ -5,7 +5,7 @@
 // What pilots of this game say must pass (ships, systems, callsigns, file
 // names, room codes), and links, the word list and its usual disguises must
 // not.
-import { checkMessage, checkName, hasLink, isProfane, makeBucket, splitCodes, roomTag, normalizeCode, newRoomCode, retagRoomCode, RATE, MAX_CHARS } from "../web/chatfilter.js";
+import { checkMessage, checkName, hasLink, isProfane, makeBucket, splitCodes, roomTag, normalizeCode, newRoomCode, retagRoomCode, lobbyCode, isLobbyCode, RATE, MAX_CHARS } from "../web/chatfilter.js";
 
 let failed = 0;
 const check = (ok, what) => { if (!ok) { failed++; console.log("FAIL: " + what); } };
@@ -93,6 +93,10 @@ check(codes("WC-FALCON and WC-Falcon7") === "WC-FALCON,WC-Falcon7", "codes of a 
 check(codes("WC2-style, WC1-like, SO1-only, WC-era, XWC1-1234, WC3-1234") === "", "talk that is not a code: " + codes("WC2-style, WC1-like, SO1-only, WC-era, XWC1-1234, WC3-1234"));
 check(codes("meet in WC-LOBBY or WC1-0007", ["WC-LOBBY"]) === "WC1-0007", "the lobby's own code is not a room");
 check(splitCodes("a WC1-4821 b").map((p) => p.text || `<${p.code}>`).join("") === "a <WC1-4821> b", "the text around a code is kept");
+// The lobby's own codes: a row of them, none a room.
+check([0, 1, 2, 11].map((n) => lobbyCode(n)).join() === "WC-LOBBY,WC-LOBBY0,WC-LOBBY1,WC-LOBBY10" && lobbyCode(2, "HALL-X") === "HALL-X1", "lobbyCode: " + [0, 1, 2, 11].map((n) => lobbyCode(n)));
+check(isLobbyCode("WC-LOBBY") && isLobbyCode("wc-lobby0") && isLobbyCode("WC-LOBBY27") && !isLobbyCode("WC-LOBBYX") && !isLobbyCode("WC-LOBB") && !isLobbyCode("WC1-4821") && isLobbyCode("HALL-X3", "HALL-X") && !isLobbyCode("HALL-X3"), "isLobbyCode");
+check(codes("in WC-LOBBY, WC-LOBBY0 or WC-LOBBY12; room WC2-0042", (c) => isLobbyCode(c)) === "WC2-0042", "a lobby's code in a line is not a room: " + codes("in WC-LOBBY, WC-LOBBY0 or WC-LOBBY12; room WC2-0042", (c) => isLobbyCode(c)));
 check(roomTag("WC1-4821") === "WC1" && roomTag("so2-1") === "SO2" && roomTag("WC-1234") === "WC" && roomTag("FALCON-7") === null, "roomTag");
 check(normalizeCode("wc1-AbCd") === "WC1-AbCd" && normalizeCode("Falcon-7") === "Falcon-7", "normalizeCode");
 check(retagRoomCode("WC-4821", "WC2") === "WC2-4821" && retagRoomCode("WC1-4821", "") === "WC-4821" && retagRoomCode("FALCON-7", "WC2") === "FALCON-7" && retagRoomCode("WC-FALCON", "WC2") === "WC-FALCON", "retagRoomCode");

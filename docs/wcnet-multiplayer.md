@@ -621,11 +621,15 @@ top-level README for the workflow).  What differs:
   disagree (`wrongGame`); the hellos' game ids are still compared as before
   (`checkSameGame`), for codes that name nothing.
 * **The public lobby** (`web/hall.js`, `web/chatfilter.js`) is a chat room
-  where pilots without a wingman say which room they fly in.  It is one
+  where pilots without a wingman say which room they fly in.  It is a
   lobbylink room, `WC-LOBBY`, of 256 seats (the user's figure; a server
   that gives a room fewer says how many, and the page asks again for that:
   the public server's `max_players_hard` was 32 when this was written),
-  and its lines travel over data channels between the browsers like a
+  the first of a row: `WC-LOBBY0`, `WC-LOBBY1`, ... up to `WC-LOBBY30`.  A
+  page takes a seat in the first of the row that has one, so pilots gather
+  in the first and spill into the next only when it is full; a pilot in
+  another lobby than the first sees its name, since the lobbies do not
+  hear each other.  Its lines travel over data channels between the browsers like a
   game's; nobody is in charge, so every page keeps the rules, for what its
   own player types (who is told why a line did not go) and again for what
   arrives (a page that was tampered with gains nothing):
@@ -674,14 +678,17 @@ top-level README for the workflow).  What differs:
   * the server ends a room a day after it was made (or five minutes after
     the last pilot left): the pages take seats again, the first one making
     the room anew.
-  Whoever makes the room decides its options, which a page that keeps no
-  rules could abuse (a lobby of one seat); the server has no reserved rooms,
-  and the user's answer is another lobby (`?hall=CODE` names one) or a
-  restart of the lobby server.  `scripts/web-smoke.sh hall` runs the rules in Node
+  Whoever makes a room decides its options, which a page that keeps no
+  rules could abuse (a lobby of one seat), and seats can be filled; the
+  server has no reserved rooms.  The row of lobbies is the answer to both
+  (the user's): the others land in the next one.  A full lobby is first
+  asked for a silent seat, 32 seats at a time (the server answers every
+  question in order, so a batch costs one round trip), which is what
+  keeps the first lobby from filling with pages that are gone.  `scripts/web-smoke.sh hall` runs the rules in Node
   (`scripts/web-chatfilter-test.mjs`) and the lobby in headless pages
   (`scripts/web-hall.mjs`: talking, the rules on both sides, a room offered
-  and joined by a click, codes for other games, a full lobby and a claimed
-  seat).
+  and joined by a click, codes for other games, a full lobby, the next
+  lobby and a claimed seat).
 * **The lobby server checks the page's origin**; the public server accepts
   only its own host.  Serve the page from there or run a lobby server with
   `--allowed-origin` for the page's origin.
