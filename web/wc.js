@@ -611,7 +611,15 @@ async function joinRoom() {
     const game = await P2PGame.connect({
       server: $("server").value.trim() || DEFAULT_SERVER,
       code,
-      create: { maxPlayers: Math.max(2, Math.min(3, Number($("players").value) || 2)), waitUntilFull: false, allowLateJoin: true, allowReconnect: true, allowReplacement: true },
+      // A room code gets said out loud: nobody who hears it may take a
+      // seat somebody is sitting in.  A seat comes back only to the browser
+      // tab that held it (its hidden resume token: reloading the page keeps
+      // the seat); a tab that is gone leaves its seat taken until the room
+      // dies, and the host makes a new room.  Tokenless "claims" would let
+      // anyone with the code replace a player after 40 s of lobby silence,
+      // which is every player in flight.
+      create: { maxPlayers: Math.max(2, Math.min(3, Number($("players").value) || 2)), waitUntilFull: false, allowLateJoin: true,
+                allowReconnect: true, allowReplacement: false, reconnectPolicy: "token-only" },
       storage: "session",
       storageKey: "wclobby-" + code,
       forceRelay: $("relay").checked,

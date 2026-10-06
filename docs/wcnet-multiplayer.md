@@ -566,6 +566,19 @@ top-level README for the workflow).  What differs:
   check it with a simulated controller in a Ferret and a Broadsword, a
   Hornet and a Rapier.  In the Hornet the change from the fixed point is
   only that full stick pitches at step 5 instead of 4.
+* **A room code may be said in public.**  The lobby server lets anyone
+  with the code take a free seat, and would let anyone "claim" an occupied
+  seat whose holder had been silent on the signaling socket for 40 s
+  (`allowReplacement`, `claim-slot`) -- which is every player in flight,
+  since the game's traffic goes over the data channel and nothing keeps
+  the socket busy.  The page now creates rooms with `allowReplacement:
+  false` and `reconnectPolicy: "token-only"`: a seat comes back only to the
+  tab that held it (the hidden resume token in session storage, which a
+  reload keeps), nobody can push a player out, and a tab that is gone
+  leaves its seat taken until the room dies, so the host makes a new room.
+  A stranger can still take a seat that is free; the host sees the
+  callsign in the roster.  A kick or a lock for the host would be a lobby
+  server change (`lobbylink`).
 * **The game's screen is the game's.**  Nothing is drawn on it by the
   hooks but the chat lines and the answers to the chat commands; the
   seats and their keys are the lobby's hints.  The game's one line of help
