@@ -1230,7 +1230,9 @@ bool wc_net_helmet_name(int *vduOrigin) {
     }
     vduOrigin[0] = (Bit16s)rd16((Bit16u)(ds::commVdu + 4));
     vduOrigin[1] = (Bit16s)rd16((Bit16u)(ds::commVdu + 6));
-    return vduOrigin[0] >= 0 && vduOrigin[0] < 300 && vduOrigin[1] >= 0 && vduOrigin[1] < 180;
+    // (BlankHelmetName reads and paints the picture's columns 22..52 and rows
+    // 16..21: all of them are to be on the game's screen)
+    return vduOrigin[0] >= 0 && vduOrigin[0] + 53 <= 320 && vduOrigin[1] >= 0 && vduOrigin[1] + 22 <= 200;
 }
 
 // A drone riding behind the leader looks at the leader's ship through its
