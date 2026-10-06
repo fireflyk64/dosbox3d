@@ -163,9 +163,8 @@ transport to escort, or empty, and a client that took it for its ship would
     (below); `/chase` in the comms prompt lets it fly free, and back.
     Flying free it can go and look for whatever the leader cannot find.
 
-  * it sees cloaked ships (below): finding the stealth fighters is what it
-    is for.  The leader does not; the drone has the comms (`0`) to say where
-    they are.
+  * it has the comms (`0`) and, flying free, another pair of eyes; it no
+    longer sees through cloaks (below).
 
 Still to come for this: a way for a drone to point something out (its target
 shown to the leader).
@@ -183,13 +182,14 @@ Every machine runs the AI, so every machine would cloak its own copies in
 its own time.  The server's two calls are events (`Event.cloak`, sent when
 the state really changes; the ships cloaked right now go into a start
 state), a client's own calls are dropped at the function's entry, and the
-client runs the function when the event comes (`CloakJob`).  A drone does
-not run the cloaking half: on its machine the stealth fighters stay visible
-(`WCDRONE_BLIND=1` in its environment turns that off).
+client runs the function when the event comes (`CloakJob`).  A drone used
+to skip the cloaking half and see the stealth fighters all along; since
+2026-10-05 it sees what everybody sees (the user: with the leader's energy
+in its hands, the drone was powerful enough).
 
 Checked on series 5 mission 2 (three Strakha at Nav 1): the host's log and
-the client's show the same cloak and uncloak sequence, the state words agree
-within a few frames, and a drone's stay 0.
+the client's show the same cloak and uncloak sequence, and the state words
+agree within a few frames.
 
 ### The gunner
 
@@ -312,6 +312,9 @@ shield poked down and the guns fired empty: shields to the front 33/60 ->
 53/40, shields to guns 20 -> 40, guns to the rear shield, + + - one speed
 step up on the host and on the drone's gauge; and in two browser pages
 (`scripts/web-wc2.sh 5/2 drone`).
+
+With this the drone lost its view through cloaks (the user's call:
+powerful enough).
 
 ## 5. The story path: barracks, briefing, campaign record
 

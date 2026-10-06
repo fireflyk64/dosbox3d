@@ -1229,11 +1229,9 @@ void enqueue_remote_event(const Event &ev) {
         const Cloak &c = ev.cloak();
         if (g_entityMap && !g_entityMap->is_mapped(c.ship_id())) {
             wclog(2, "cloak of unmapped net %d ignored", c.ship_id());
-        } else if (c.on() && g_session->is_drone() && !getenv("WCDRONE_BLIND")) {
-            // A drone's instruments see through the cloak (WCDRONE_BLIND
-            // on its machine: it sees what everybody sees).
-            wclog(2, "net %d cloaks; a drone still sees it", c.ship_id());
         } else {
+            // (A drone saw through cloaks once; with the leader's energy in
+            // its hands that was too much, and it sees what everybody sees.)
             g_trampoline.enqueue(new CloakJob(NetworkShipId::from_net(c.ship_id()).to_local(), c.on()));
         }
     }
