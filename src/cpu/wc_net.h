@@ -65,6 +65,9 @@ void wcnetSendChatMessage(const std::string &msg);
 // Called by the keyboard before a key reaches the game: true takes the key
 // (a drone's copilot keys go to the server instead; wcnet_hooks.cpp).
 bool wc_net_key_filter(int kbdKey, bool pressed);
+// A drone riding behind the leader: its dashboard, from that line of the
+// game's 200 down, is to go dark (src/gui/sdlmain.cpp).
+bool wc_net_cockpit_dim(int *dashboardTop);
 void wc_net_set_rocks(int mode);
 int wc_net_rocks();
 

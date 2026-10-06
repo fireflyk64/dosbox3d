@@ -605,6 +605,19 @@ static void key_script() {
         std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + item.substr(6) + ".ppm";
         wclog(1, "key script %.1fs (t=%.1f): screenshot %s%s", t, now / 1000.0, path.c_str(),
               write_screenshot(path) ? "" : " failed");
+    } else if (item.compare(0, 5, "!vga=") == 0) {
+        // !vga=<name> writes the game's screen as it is in video memory
+        // (320x200 palette indices) and the palette (768 bytes) to
+        // WCNET_DUMP_DIR/<name>.vga
+        const char *dir = getenv("WCNET_DUMP_DIR");
+        std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + item.substr(5) + ".vga";
+        FILE *f = fopen(path.c_str(), "wb");
+        if (f) {
+            for (Bit32u i = 0; i < 320 * 200; i++) fputc(mem_readb(0xA0000 + i), f);
+            for (int i = 0; i < 256; i++) { fputc(vga.dac.rgb[i].red, f); fputc(vga.dac.rgb[i].green, f); fputc(vga.dac.rgb[i].blue, f); }
+            fclose(f);
+        }
+        wclog(1, "key script %.1fs (t=%.1f): video memory to %s", t, now / 1000.0, path.c_str());
     } else if (item.compare(0, 7, "!rocks=") == 0) {
         // !rocks=<1|0|2> switches the asteroid and mine fields on, off or
         // soft, as the host's lobby option or "/rocks ..." in the comms
@@ -1142,6 +1155,50 @@ static void memory_watch() {
             seen[i] = now;
         }
     }
+}
+
+// A drone riding behind the leader looks at the leader's ship through its
+// own cockpit: the dashboard goes dark so that only the gauges show
+// (WCDRONE_COCKPIT=1 keeps the game's own picture).
+bool wc_net_cockpit_dim(int *viewBottom) {
+    using namespace wc;
+    static int keep = -1;
+    if (keep < 0) {
+        const char *env = getenv("WCDRONE_COCKPIT");
+        keep = env && env[0] && env[0] != '0';
+    }
+    if (keep || !g_session || !g_session->is_copilot() || !in_flight() || !is_wc2()) {
+        return false;
+    }
+    // Where the dashboard begins is the cockpit's: the game's 3D view runs
+    // on behind it (to line 135 in a Ferret and an Epee alike), and the
+    // dashboard is drawn over it.  Measured from the video memory (the key
+    // script's !vga) as the first line from which most pixels are the
+    // dashboard's browns and greys, by the player's mission ship type
+    // (byte +0x14 of its record: 0 Ferret, 3 Epee, the drone's two ships;
+    // 2 Broadsword).  Any other cockpit is dimmed from the view's bottom.
+    static const struct { int shipType, top; } kDashboardTop[] = { { 0, 95 }, { 3, 80 } };
+    int top = -1;
+    if (ds::known(ds::slotMissionShip) && ds::known(ds::missionShipTable)) {
+        int ms = (Bit16s)rd16(ds::slotMissionShip);
+        if (ms >= 0 && ms < 64) {
+            int type = rd8((Bit16u)(ds::missionShipTable + g_params.missionShipSize * ms + 0x14));
+            for (size_t i = 0; i < sizeof(kDashboardTop) / sizeof(kDashboardTop[0]); i++) {
+                if (kDashboardTop[i].shipType == type) {
+                    top = kDashboardTop[i].top;
+                }
+            }
+        }
+    }
+    if (top < 0) {
+        double bottom = steer_info(0, 3);
+        if (bottom < 0 || bottom > 199) {
+            return false;
+        }
+        top = (int)bottom + 1;
+    }
+    *viewBottom = top;
+    return true;
 }
 
 // A drone riding behind the leader is the copilot: these keys are the

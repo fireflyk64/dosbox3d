@@ -1547,6 +1547,56 @@ void Inner_GFX_EndUpdate( const Bit16u *changedLines ) {
 		break;
 	}
 }
+// The drone's cockpit, when it rides behind the leader: the dashboard (from
+// the line wc_net_cockpit_dim names) goes dark grey-green, so that only the
+// gauges' lights stand out of the dark and the view is the leader's ship.  The game draws the
+// picture, the renderer repaints the lines that changed, and this touches
+// those lines, which keeps a line darkened once (a brown or grey pixel
+// darkened again would go black).  True colour surfaces only; the channel
+// order is the surface's own.
+extern bool wc_net_cockpit_dim(int *viewBottom);
+static void DimCockpit(const Bit16u *changedLines, int viewBottom, Bit8u *surface, Bitu pitch) {
+    Bitu step = pitch / sdl.draw.width;
+    if (step < 3 || !sdl.surface || !sdl.surface->format || !changedLines) {
+        return;
+    }
+    const SDL_PixelFormat *f = sdl.surface->format;
+    Bitu ri = f->Rshift / 8, gi = f->Gshift / 8, bi = f->Bshift / 8;
+    if (ri >= step || gi >= step || bi >= step) {
+        return;
+    }
+    Bitu from = (Bitu)(viewBottom * (int)sdl.draw.height / 200);  // the dashboard's first line
+    Bitu y = 0;
+    bool changed = false;
+    for (Bitu index = 0; y < sdl.draw.height; index++, changed = !changed) {
+        Bitu run = changedLines[index];
+        for (Bitu n = 0; n < run && y < sdl.draw.height; n++, y++) {
+            if (!changed || y < from) {
+                continue;
+            }
+
+            Bit8u *px = surface + y * pitch;
+            for (Bitu x = 0; x < sdl.draw.width; x++, px += step) {
+                int r = px[ri], g = px[gi], b = px[bi];
+                int most = r > g ? (r > b ? r : b) : (g > b ? g : b);
+                int least = r < g ? (r < b ? r : b) : (g < b ? g : b);
+                // The structure is greys and browns (the pilot's arm too); a
+                // light is a saturated colour (a red lamp has little green
+                // in it; the dashboard's tan and the arm's orange have more
+                // than four ninths of their red), or white.
+                bool grey = most - least < 40 && least < 200;
+                bool brown = r >= g && g >= b && 9 * g >= 4 * r && 10 * g <= 9 * r && least < 200;
+                if (grey || brown) {
+                    int lum = (3 * r + 6 * g + b) / 10;
+                    px[ri] = (Bit8u)(lum / 7);
+                    px[gi] = (Bit8u)(lum / 4);
+                    px[bi] = (Bit8u)(lum / 7);
+                }
+            }
+        }
+    }
+}
+
 bool GFX_StartUpdate(Bit8u * & pixels,Bitu & pitch) {
     bool ret = Inner_GFX_StartUpdate(pixels, pitch);
     textPixels = pixels;
@@ -1623,6 +1673,18 @@ void GFX_EndUpdate( const Bit16u *changedLines ) {
             }
         }
         if (textPixels) {
+            {
+                int viewBottom = 0;
+                bool dim = wc_net_cockpit_dim(&viewBottom);
+                static bool wasDim = false;
+                if (dim != wasDim) {
+                    wasDim = dim;
+                    render.scale.clearCache = true;  // the whole picture again next frame: dark, or the game's own
+                }
+                if (dim) {
+                    DimCockpit(changedLines, viewBottom, textPixels, textPitch);  // (the lines repainted this frame)
+                }
+            }
             if (in_space() && !incoming_text.empty()) {
                 // In flight a line stays for a while, not for the rest of
                 // the mission: it covers part of the view.

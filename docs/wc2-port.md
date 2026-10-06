@@ -317,6 +317,20 @@ step up on the host and on the drone's gauge; and in two browser pages
 With this the drone lost its view through cloaks (the user's call:
 powerful enough).
 
+Riding along, the drone's dashboard is dark: the emulator dims the browns
+and greys of the lines from the dashboard's top down (the game's 3D view
+runs on behind the dashboard, to line 135 in a Ferret and an Epee alike,
+so the view's bottom is no guide: the top is measured per cockpit from
+the video memory, `!vga`, as the first line from which most pixels are
+the dashboard's -- Ferret 95, Epee 80, by the player's mission ship type
+byte; another cockpit is dimmed from the view's bottom) and leaves the
+saturated colours, so that only the gauges' lights stand out and the view
+is the leader's ship (`wc_net_cockpit_dim`, `DimCockpit` in
+src/gui/sdlmain.cpp: on the lines the renderer repainted that frame, which
+keeps a line dimmed once; true-colour output only; `WCDRONE_COCKPIT=1`
+keeps the game's picture).  The window's arch above the dashboard and the
+pilot's legs (blue, a "light" by the rule) stay.
+
 ## 5. The story path: barracks, briefing, campaign record
 
 The campaign loop is `ovr128:02CE`.  Between flights the game holds a
