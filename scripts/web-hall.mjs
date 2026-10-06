@@ -61,6 +61,7 @@ check("nobody is in the lobby without asking", await a.$eval("#hallBody", (el) =
 await enter(a);
 await enter(b);
 check("two pilots see each other", (await pilots(a, 2)) && (await pilots(b, 2)), [await text(a, "hallRoster"), await text(b, "hallRoster")]);
+check("the lobby has 256 seats", (await a.evaluate(() => window.__wcHall.test.net().maxPlayers)) === 256, await a.evaluate(() => window.__wcHall.test.net().maxPlayers));
 check("with callsign and game", /BRAVO\s*WC1/.test(await text(a, "hallRoster")) && /ALPHA\s*WC1/.test(await text(b, "hallRoster")), await text(a, "hallRoster"));
 
 await say(a, "hello from ALPHA");
@@ -197,6 +198,13 @@ check("a silent pilot's seat goes to the newcomer", (await pilots(g, 2)) && /ECH
 check("and the one who lost it is told when it wakes", await f.waitForFunction(() => /lost your seat in the lobby/.test(document.getElementById("hallState").textContent) && document.getElementById("hallBody").hidden, null, { timeout: 30000 }).then(() => true, () => false), await text(f, "hallState"));
 await say(g, "hello from GOLF");
 check("the newcomer talks to the one who stayed", await sees(e, "hello from GOLF"), await text(e, "hallLog"));
+
+// A page that asks for more seats than the server gives a room is told how
+// many there are, and takes that (scripts/web-smoke.sh's server gives 256).
+const h = await open("HOTEL", { hall: "BIG-" + run, game: false });
+await h.evaluate(() => window.__wcHall.test.configure({ seats: 1000 }));
+await enter(h).catch(() => {});
+check("a lobby is made with the seats the server allows", (await h.evaluate(() => { const n = window.__wcHall.test.net(); return n && n.maxPlayers; })) === 256, await text(h, "hallState"));
 
 await browser.close();
 console.log(results.every(Boolean) ? "HALL OK" : "HALL FAILED");

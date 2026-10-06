@@ -622,7 +622,9 @@ top-level README for the workflow).  What differs:
   (`checkSameGame`), for codes that name nothing.
 * **The public lobby** (`web/hall.js`, `web/chatfilter.js`) is a chat room
   where pilots without a wingman say which room they fly in.  It is one
-  lobbylink room, `WC-LOBBY`, with the 32 seats the server gives a room,
+  lobbylink room, `WC-LOBBY`, of 256 seats (the user's figure; a server
+  that gives a room fewer says how many, and the page asks again for that:
+  the public server's `max_players_hard` was 32 when this was written),
   and its lines travel over data channels between the browsers like a
   game's; nobody is in charge, so every page keeps the rules, for what its
   own player types (who is told why a line did not go) and again for what
@@ -654,7 +656,11 @@ top-level README for the workflow).  What differs:
   protocol, not the lobbylink client's:
   * links are direct (STUN only) and go through the server's TURN relay only
     when that has failed: the relay has ports for some dozens of links, and
-    a room of 32 would take them from the games;
+    a full lobby would take them from the games;
+  * every pilot is linked to every other, so a newcomer to a lobby of
+    hundreds is offered hundreds of links.  The offers are spread over up
+    to six seconds (25 ms a pilot present): the server drops a socket with
+    more than a hundred messages waiting;
   * a seat whose page went away without leaving stays taken as far as the
     server knows, and a room of strangers fills up with those.  The room
     is made with `allowReplacement` and a `claimAfterMs` of 150 s: a
@@ -666,8 +672,9 @@ top-level README for the workflow).  What differs:
     the last pilot left): the pages take seats again, the first one making
     the room anew.
   Whoever makes the room decides its options, which a page that keeps no
-  rules could abuse (a lobby of one seat); the server has no reserved rooms
-  yet.  `scripts/web-smoke.sh hall` runs the rules in Node
+  rules could abuse (a lobby of one seat); the server has no reserved rooms,
+  and the user's answer is another lobby (`?hall=CODE` names one) or a
+  restart of the lobby server.  `scripts/web-smoke.sh hall` runs the rules in Node
   (`scripts/web-chatfilter-test.mjs`) and the lobby in headless pages
   (`scripts/web-hall.mjs`: talking, the rules on both sides, a room offered
   and joined by a click, codes for other games, a full lobby and a claimed

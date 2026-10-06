@@ -38,7 +38,9 @@ if [ ! -d "$PW/node_modules/playwright" ]; then
     mkdir -p "$PW" && (cd "$PW" && npm init -y >/dev/null && npm i --silent playwright) || exit 1
 fi
 
-"$LOBBY" --listen-http "127.0.0.1:$LOBBY_PORT" --allowed-origin "http://localhost:$PORT,http://127.0.0.1:$PORT" \
+# (The public lobby asks for 256 seats: a server has to be told to give a room that many.)
+printf '[rooms]\nmax_players_hard = 256\n' > "$OUT/lobby.toml"
+"$LOBBY" --config "$OUT/lobby.toml" --listen-http "127.0.0.1:$LOBBY_PORT" --allowed-origin "http://localhost:$PORT,http://127.0.0.1:$PORT" \
     --public-url "http://127.0.0.1:$LOBBY_PORT" --allow-no-origin > "$OUT/lobby.log" 2>&1 &
 LOBBY_PID=$!
 python3 "$ROOT/web/serve.py" "$PORT" > "$OUT/http.log" 2>&1 &

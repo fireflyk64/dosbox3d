@@ -1,9 +1,10 @@
 // The public lobby: one room of the lobby server, WC-LOBBY, where pilots who
 // do not know each other yet say which room they fly in.
 //
-// It is an ordinary lobbylink room with as many seats as the server gives
-// (32), and its chat goes from browser to browser like a game's messages
-// do; the lobby server only introduces the browsers to each other.  There
+// It is an ordinary lobbylink room of 256 seats (or as many as the server
+// gives a room: it says so, and the page asks again for that many), and its
+// chat goes from browser to browser like a game's messages do; the lobby
+// server only introduces the browsers to each other.  There
 // is nobody in charge of it, so every page keeps the rules itself, for what
 // its own player types and for what arrives (web/chatfilter.js): lines of
 // 60 characters, two to start with and then one every ten seconds, no
@@ -24,11 +25,20 @@
 //     sign of life; it has no ping, so it answers "unknown message type".)
 //   * The room ends when the server says so (a day after it was made, or
 //     five minutes after the last pilot left): the next page makes it again.
+//   * Whoever makes the room decides its size and its rules, and a page that
+//     keeps none could make a lobby of one seat.  Nothing here prevents it:
+//     the remedy is another lobby (?hall=CODE) or a restart of the server.
+//   * Every pilot is linked to every other, so a newcomer to a full lobby
+//     gets hundreds of offers.  They are spread over a few seconds: the
+//     server drops a socket that has more than a hundred messages waiting.
 import { checkMessage, checkName, makeBucket, splitCodes, whyText, roomTag, RATE, MAX_CHARS, MAX_NAME, GAME_TAGS } from "./chatfilter.js";
 
 export const HALL_CODE = "WC-LOBBY";
 
-const SEATS = 32;                 // the lobby server's most for a room
+const SEATS = 256;                // asked for; a server that gives a room fewer says how many
+const OFFER_SPREAD_MS = 25;       // per pilot in the lobby: over how long the offers to a newcomer are spread
+const OFFER_SPREAD_MAX_MS = 6000;
+const ROSTER_NAMES = 24;          // callsigns shown; the rest are counted
 const CLAIM_AFTER_MS = 150000;
 const HEARTBEAT_MS = 25000;
 const CONNECT_TIMEOUT_MS = 20000;
@@ -63,7 +73,7 @@ class HallNet {
   constructor({ server, code, seats = SEATS, claimAfterMs = CLAIM_AFTER_MS, heartbeatMs = HEARTBEAT_MS, on, log }) {
     Object.assign(this, { server, code, seats, claimAfterMs, heartbeatMs, on, log });
     this.ws = null; this.selfId = -1; this.maxPlayers = 0; this.players = []; this.token = "";
-    this.links = new Map(); this.closed = false; this.beat = null; this.iceAll = []; this.iceDirect = [];
+    this.links = new Map(); this.soon = new Map(); this.closed = false; this.beat = null; this.iceAll = []; this.iceDirect = [];
   }
 
   // Takes a seat: a free one, the one this page had (its token), or one whose
@@ -83,8 +93,11 @@ class HallNet {
         this.adopt(ws, joined);
         resolve();
       };
-      const timer = setTimeout(() => done(fail("connect-timeout", "the lobby server did not answer")), CONNECT_TIMEOUT_MS);
-      const ask = (msg) => new Promise((answer) => { waiting = answer; ws.send(JSON.stringify(msg)); });
+      // (The time is for one answer: a full lobby is asked seat by seat.)
+      let timer = null;
+      const arm = () => { clearTimeout(timer); timer = setTimeout(() => done(fail("connect-timeout", "the lobby server did not answer")), CONNECT_TIMEOUT_MS); };
+      arm();
+      const ask = (msg) => new Promise((answer) => { waiting = answer; arm(); ws.send(JSON.stringify(msg)); });
       const create = () => ({ maxPlayers: this.seats, waitUntilFull: false, allowLateJoin: true, allowReconnect: true,
                               allowReplacement: true, reconnectPolicy: "token-or-claim-after-timeout", claimAfterMs: this.claimAfterMs });
       ws.onmessage = (ev) => {
@@ -139,8 +152,22 @@ class HallNet {
     // The lower seat offers: to everybody above who is there now; those
     // below offer to us when the server tells them we came.
     for (const [id] of this.links) this.dropLink(id);
-    for (const p of this.players) if (p.id > this.selfId && p.occupied && p.connected) void this.offer(p.id, 0);
+    for (const p of this.players) if (p.id > this.selfId && p.occupied && p.connected) this.offerSoon(p.id);
   }
+
+  // An offer after a moment of its own, longer in a fuller lobby, so that
+  // the offers a newcomer gets (and the answers to its own) do not all go
+  // through the server at once.
+  offerSoon(id) {
+    clearTimeout(this.soon.get(id));
+    const crowd = this.players.filter((p) => p.occupied).length;
+    this.soon.set(id, setTimeout(() => {
+      this.soon.delete(id);
+      const p = this.players[id];
+      if (!this.closed && this.ws && p && p.occupied && p.connected && !this.links.has(id)) void this.offer(id, 0);
+    }, Math.random() * Math.min(OFFER_SPREAD_MAX_MS, OFFER_SPREAD_MS * crowd)));
+  }
+  forgetOffers() { for (const t of this.soon.values()) clearTimeout(t); this.soon.clear(); }
 
   startHeartbeat() {
     this.stopHeartbeat();
@@ -156,6 +183,7 @@ class HallNet {
     const ws = this.ws;
     this.ws = null;
     try { if (ws) ws.close(); } catch (e) { /* gone */ }
+    this.forgetOffers();
     if (gone) { this.token = ""; for (const [id] of this.links) this.dropLink(id); }
     this.on.lost(code, message, gone);
   }
@@ -174,7 +202,7 @@ class HallNet {
       case "player-left":
         if (slot(m.playerId)) { slot(m.playerId).connected = false; if (m.reason === "explicit-leave") slot(m.playerId).occupied = false; }
         // (Only its socket to the server may be gone: an open channel stays.)
-        if (m.reason === "explicit-leave") this.dropLink(m.playerId);
+        if (m.reason === "explicit-leave") { clearTimeout(this.soon.get(m.playerId)); this.soon.delete(m.playerId); this.dropLink(m.playerId); }
         this.on.roster();
         break;
       case "signal":
@@ -192,7 +220,7 @@ class HallNet {
     if (id === this.selfId) return;
     this.dropLink(id);
     this.on.roster();
-    if (this.selfId < id) void this.offer(id, 0);
+    if (this.selfId < id) this.offerSoon(id);
   }
 
   signal(to, payload) {
@@ -292,6 +320,7 @@ class HallNet {
     if (this.closed) return;
     this.closed = true;
     this.stopHeartbeat();
+    this.forgetOffers();
     const ws = this.ws;
     this.ws = null;
     try { if (ws && ws.readyState === WebSocket.OPEN) ws.send('{"type":"leave"}'); } catch (e) { /* gone */ }
@@ -385,10 +414,11 @@ export function initHall(opts) {
     box.append(el("span", "count", `${there.length + 1} in the lobby: `));
     const entry = (name, tag, cls) => { const s = el("span", "pilot " + cls, name); if (tag) s.append(" ", el("span", "game", tag)); return s; };
     box.append(entry(myName() + " (you)", myTag(), "me"));
-    for (const p of there) {
+    for (const p of there.slice(0, ROSTER_NAMES)) {
       const who = pilots.get(p.id) || { name: fallbackName(p.id), tag: "" };
       box.append(" · ", entry(who.name, who.tag, ""));
     }
+    if (there.length > ROSTER_NAMES) box.append(` · and ${there.length - ROSTER_NAMES} more`);
   }
 
   function hint() {
