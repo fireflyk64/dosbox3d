@@ -18,6 +18,7 @@
 
 
 #include "dosbox.h"
+#include "../cpu/wc_net.h"
 #include "keyboard.h"
 #include "inout.h"
 #include "pic.h"
@@ -218,6 +219,7 @@ static Bitu read_p64(Bitu port,Bitu iolen) {
 }
 
 void KEYBOARD_AddKey(KBD_KEYS keytype,bool pressed) {
+	if (wc_net_key_filter(keytype, pressed)) return;  // a copilot's key, for the leader's ship (wc_net.h)
 	Bit8u ret=0;bool extend=false;
 	switch (keytype) {
 	case KBD_esc:ret=1;break;

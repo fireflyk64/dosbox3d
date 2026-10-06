@@ -134,6 +134,21 @@ message Cloak {
         optional bool on = 2;
 }
 
+// A drone's hand on the leader's ship (its copilot's role in a mission the
+// story flies alone): energy moved between the leader's shields and guns,
+// and the leader's cruising speed.  From a drone to the server only.
+message Copilot {
+        enum Action {
+                SHIELDS_TO_REAR = 1;     // the Up key
+                SHIELDS_TO_FRONT = 2;    // Down
+                SHIELDS_TO_GUNS = 3;     // the fire key
+                GUNS_TO_WEAKEST = 4;     // the missile key: into whichever shield is lower
+                SPEED_UP = 5;            // + and -: the leader's set speed, as the leader's own keys
+                SPEED_DOWN = 6;
+        }
+        optional Action action = 1;
+}
+
 message Event {
   optional Spawn spawn = 2;
   optional Damage damage = 3;
@@ -142,6 +157,7 @@ message Event {
   optional AutoPilotEvent autopiloting = 16;
   optional TurretFire turret = 17;
   optional Cloak cloak = 18;
+  optional Copilot copilot = 19;
 }
 
 message MissionEnd {

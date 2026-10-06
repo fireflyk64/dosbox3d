@@ -2,8 +2,9 @@
 // meet in a lobbylink room, the host picks a mission in the lobby, both click
 // "Fly mission" in the barracks and tap Esc through the briefing, and the
 // second player's seat is checked: the wingman's ship, a drone (rides behind
-// the leader with "0", "/chase", Enter) or the gunner (it starts in the rear
-// turret; fire: the shots must reach the host).  Driven by scripts/web-wc2.sh.
+// the leader as copilot: its + key sets the leader's speed; "0", "/chase",
+// Enter lets it fly free) or the gunner (it starts in the rear turret; fire:
+// the shots must reach the host).  Driven by scripts/web-wc2.sh.
 //
 //   GAME_FILE=wc2.zip node scripts/web-wc2.mjs PAGE_URL LOBBY_URL [series/mission] [drone|gunner|wingman] [door x,y]
 //
@@ -86,15 +87,26 @@ if (expect === "drone") {
   check("the host seats the second player as a drone", has("host", "(a drone,"), logs.host.filter((l) => l.includes("mission start state")));
   check("the wingman's game knows it is a drone", has("wing", "(a drone)"), logs.wing.filter((l) => l.includes("we are player")));
   check("the leader's ship exists on the drone's machine", has("wing", "the leader's ship is slot"), null);
-  // the real way in: 0 opens the comms prompt, the text, Enter
   await wing.evaluate(() => document.fullscreenElement ? document.exitFullscreen() : null);
   await wing.click("#canvas");
+  // The drone rides behind the leader as copilot: its + key is the leader's
+  // cruising speed (dseg:5FBE, an int32 per slot), and its own gauges show
+  // the leader's (the same word on the drone's slot 0).
+  const speed = (page, slot) => page.evaluate((slot) => { const M = window.DOSBox; const b = (o) => M._wc_web_ds_byte(o); const o = 0x5FBE + 4 * slot; return b(o) | (b(o + 1) << 8) | (b(o + 2) << 16); }, slot);
+  const before = await speed(host, 0);
+  await wing.keyboard.press("Equal"); await sleep(0.5); await wing.keyboard.press("Equal"); await sleep(3);
+  const after = await speed(host, 0), mirrored = await speed(wing, 0);
+  check("the drone's + key raises the leader's cruising speed on the host", after > before, [before, after]);
+  check("the drone's own speed gauge shows the leader's", mirrored === after, [mirrored, after]);
+  check("the host says who did it", has("host", "copilot WINGMAN: cruising speed up"), logs.host.filter((l) => l.includes("copilot")).length);
+  // the real way out of the ride: 0 opens the comms prompt, the text, Enter
   await wing.keyboard.press("0"); await sleep(0.5);
   await wing.keyboard.type("/chase", { delay: 80 }); await sleep(0.5);
   await shot(wing, "wing-typing");
   await wing.keyboard.press("Enter");
   await sleep(4);
-  await shot(wing, "wing-chase");
+  await shot(wing, "wing-free");
+  check("the drone flies free after /chase", has("wing", "drone: flying free"), null);
 } else if (expect === "gunner") {
   check("the host seats the second player as the gunner", has("host", "(the gunner,"), logs.host.filter((l) => l.includes("mission start state")));
   check("the wingman's game knows it is the gunner", has("wing", "(the gunner)"), logs.wing.filter((l) => l.includes("we are player")));

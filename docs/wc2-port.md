@@ -157,11 +157,11 @@ transport to escort, or empty, and a client that took it for its ship would
     that is already in a slot (`ovr132:054A`; slot 0's entry in `dseg:6E1E`
     is hidden), and the AI word (+0x35) says 6, "the player", which is error
     024 for any slot but 0 (`ovr116:200D`; it becomes 4, an ordinary pilot);
-  * it starts close behind the leader and is put there again after every
-    autopilot; `/chase` in the comms prompt toggles riding there every frame
+  * it starts close behind the leader and rides there every frame
     (`ClientSession::follow_leader`: 420 lengths behind, 45 below, which
-    puts the leader just above the gun sight).  Flying free it can go and
-    look for whatever the leader cannot find.
+    puts the leader just above the gun sight), as the leader's copilot
+    (below); `/chase` in the comms prompt lets it fly free, and back.
+    Flying free it can go and look for whatever the leader cannot find.
 
   * it sees cloaked ships (below): finding the stealth fighters is what it
     is for.  The leader does not; the drone has the comms (`0`) to say where
@@ -275,6 +275,43 @@ Angel, 3 Hobbes, 4 Stingray, 6 Jazz, 9 Doomsday, 11 Shadow, 14 Spirit.
 Series 13 and 14 do not exist.  In the wingman missions of series 4, 5 (3),
 7, 8, 10 and 12 the second player flies the wingman's own Broadsword or
 Sabre.
+
+### The copilot
+
+A drone riding behind the leader (the default since 2026-10-05; `0` then
+`/chase` lets it fly free, and back) is the leader's copilot, the user's
+idea for keeping that player busy: energy management the game itself has
+no keys for, and the cruising speed.  Its keys never reach its own game
+(`wc_net_key_filter`, called by `KEYBOARD_AddKey`; the chat prompt takes
+its keys before that, and the gunner's keys are left alone) but go to the
+server as `Event.copilot` with the next frame:
+
+| key | action |
+|---|---|
+| Up / Down | shields to the rear / to the front |
+| Space (Fire guns) | shields into the guns, half from each side |
+| Enter (Fire missile) | guns into whichever shield is lower |
+| + / - | the leader's cruising speed: the server taps its own keys (`tap_key`) so the game does what it would for the leader |
+
+The server moves the energy on its own ship's words (`curShield`,
+`shieldMax`, `gunEnergy`; `apply_copilot`): a fifth of a shield's full
+charge a press (12 of an Epee's 60, 23 of a Ferret's 115; the guns go to
+100), capped by what the source has and the destination can take, and
+says what it did on its overlay ("BRAVO: shields to guns: guns 40, shields
+50/38"); the drone's overlay echoes the key.  The game's own recharge goes
+on underneath, so the moves matter when the shields are down, which is
+when they are wanted.  The drone sees the leader's readouts: riding along,
+its own slot 0 (the mission's player ship, the same cockpit) gets the
+leader's shields, armour, guns and damage every frame (`write_health`
+from the leader's copy, in `populate_own_update`), and its place and speed
+are the leader's already (`follow_leader`).  On a controller the D-pad's
+up and down are the two arrows; A, B, L1 and R1 are the rest.
+
+Checked natively (`Origin -k l s5 m2`, two instances) with the front
+shield poked down and the guns fired empty: shields to the front 33/60 ->
+53/40, shields to guns 20 -> 40, guns to the rear shield, + + - one speed
+step up on the host and on the drone's gauge; and in two browser pages
+(`scripts/web-wc2.sh 5/2 drone`).
 
 ## 5. The story path: barracks, briefing, campaign record
 

@@ -3,6 +3,7 @@
 #include <string.h>
 #include <strings.h>
 #include <unistd.h>
+#include <algorithm>
 #include <map>
 #include <vector>
 #ifdef __EMSCRIPTEN__
@@ -20,6 +21,7 @@
 #include "wcnet_transport.h"
 #include "wcnet_lobby.h"
 #include "wcnet_log.h"
+#include "keyboard.h"
 #include "cpu.h"
 #include "regs.h"
 
@@ -793,6 +795,69 @@ private:
         }
     }
 
+    // A drone's hand on our ship: energy between the shields and the guns in
+    // lumps of kLump (the Ferret's shields are 115 a side, the guns go to
+    // 100), and the cruising speed through our own + and - keys, so that
+    // the game does what it would for us.  The next health snapshot takes
+    // the result to everyone.
+    void apply_copilot(RemoteClient *c, Copilot::Action action) {
+        if (c->seat != SEAT_DRONE || !ds::known(ds::curShield) || !ds::known(ds::gunEnergy) || !in_space()) {
+            return;
+        }
+        const int kGunsFull = 100;
+        Bit16u shieldAt = (Bit16u)(ds::curShield + 4 * kPlayerSlot), maxAt = (Bit16u)(ds::shieldMax + 4 * kPlayerSlot);
+        int shield[2] = { (Bit16s)rd16(shieldAt), (Bit16s)rd16((Bit16u)(shieldAt + 2)) };
+        int most[2] = { (Bit16s)rd16(maxAt), (Bit16s)rd16((Bit16u)(maxAt + 2)) };
+        int guns = (Bit16s)rd16((Bit16u)(ds::gunEnergy + 2 * kPlayerSlot));
+        // A fifth of a shield's full charge a press (an Epee's shields are 60
+        // a side, a Ferret's 115; the guns go to 100).
+        const int lump = std::max(10, (most[0] + most[1]) / 10);
+        char line[96];
+        switch (action) {
+        case Copilot::SHIELDS_TO_REAR:
+        case Copilot::SHIELDS_TO_FRONT: {
+            int from = action == Copilot::SHIELDS_TO_REAR ? 0 : 1, to = 1 - from;
+            int moved = std::max(0, std::min(lump, std::min(shield[from], most[to] - shield[to])));
+            shield[from] -= moved;
+            shield[to] += moved;
+            snprintf(line, sizeof(line), "shields to the %s: %d/%d", to ? "rear" : "front", shield[0], shield[1]);
+            break;
+        }
+        case Copilot::SHIELDS_TO_GUNS: {
+            int moved = std::max(0, std::min(lump, std::min(kGunsFull - guns, shield[0] + shield[1])));
+            // Half from each side; what one side cannot give, the other does.
+            int fromFront = std::min(shield[0], moved / 2 + (moved & 1));
+            int fromRear = std::min(shield[1], moved - fromFront);
+            fromFront = moved - fromRear;
+            shield[0] -= fromFront;
+            shield[1] -= fromRear;
+            guns += moved;
+            snprintf(line, sizeof(line), "shields to guns: guns %d, shields %d/%d", guns, shield[0], shield[1]);
+            break;
+        }
+        case Copilot::GUNS_TO_WEAKEST: {
+            int to = shield[1] < shield[0] ? 1 : 0;
+            int moved = std::max(0, std::min(lump, std::min(guns, most[to] - shield[to])));
+            guns -= moved;
+            shield[to] += moved;
+            snprintf(line, sizeof(line), "guns to the %s shield: guns %d, shields %d/%d", to ? "rear" : "front", guns, shield[0], shield[1]);
+            break;
+        }
+        case Copilot::SPEED_UP:
+        case Copilot::SPEED_DOWN:
+            tap_key(action == Copilot::SPEED_UP ? KBD_equals : KBD_minus);
+            snprintf(line, sizeof(line), "cruising speed %s", action == Copilot::SPEED_UP ? "up" : "down");
+            break;
+        default:
+            return;
+        }
+        wr16(shieldAt, (Bit16u)shield[0]);
+        wr16((Bit16u)(shieldAt + 2), (Bit16u)shield[1]);
+        wr16((Bit16u)(ds::gunEnergy + 2 * kPlayerSlot), (Bit16u)guns);
+        wclog(2, "copilot %s: %s", c->callsign.c_str(), line);
+        show_notice(c->callsign + ": " + line);
+    }
+
     bool send_briefing_state(RemoteClient *c) {
         NetworkMessage msg;
         *msg.mutable_briefing_start() = lastBriefing_;
@@ -914,7 +979,7 @@ private:
         if (c->seat != SEAT_WINGMAN) {
             // A drone or a gunner has no ship of its own here: its ending
             // ends nothing, and all that counts of what it does is a
-            // gunner's turret.
+            // gunner's turret and a drone's hand on our energy.
             if (frame.has_player_end()) {
                 wclog(1, "player %d (%s) %s", c->net, c->seat == SEAT_DRONE ? "a drone" : "the gunner",
                       status_name(frame.player_end().state()));
@@ -929,6 +994,12 @@ private:
                 for (int i = 0; i < frame.event_size(); i++) {
                     if (frame.event(i).has_turret()) {
                         enqueue_turret_fire(frame.event(i).turret());
+                    }
+                }
+            } else {
+                for (int i = 0; i < frame.event_size(); i++) {
+                    if (frame.event(i).has_copilot()) {
+                        apply_copilot(c, frame.event(i).copilot().action());
                     }
                 }
             }
@@ -1209,7 +1280,7 @@ private:
 class ClientSession : public Session {
 public:
     ClientSession()
-        : shipNet_(0), seat_(SEAT_WINGMAN), chase_(false), seatFrames_(-1), lastServerFrame_(0), lastWrittenMissionStatus_(Proceed), lastVictoryPlusOne_(0),
+        : shipNet_(0), seat_(SEAT_WINGMAN), chase_(true), seatFrames_(-1), lastServerFrame_(0), lastWrittenMissionStatus_(Proceed), lastVictoryPlusOne_(0),
           isFresh_(true), hasRestartedMission_(false), hasSentConnect_(false),
           ignoreNextFrameTop_(false), ownMissionOver_(false), dead_(false), epoch_(0), frameNumber_(0) {
         callsign_ = get_callsign();
@@ -1258,13 +1329,28 @@ public:
 
     virtual Seat seat() const { return seat_; }
 
+    virtual bool is_copilot() const { return seat_ == SEAT_DRONE && chase_ && !dead_; }
+
+    virtual void copilot(Copilot::Action action) {
+        static const char *const kSaid[] = { "", "shields to the rear", "shields to the front", "shields to the guns",
+                                             "guns to the weakest shield", "cruising speed up", "cruising speed down" };
+        Event ev;
+        ev.mutable_copilot()->set_action(action);
+        queue_outgoing_event(ev);
+        wclog(2, "copilot action %d", (int)action);
+        if (action >= 1 && action <= 6) {
+            show_notice(std::string("Copilot: ") + kSaid[action]);  // (the gauges show the result within the frame)
+        }
+    }
+
     virtual void toggle_chase() {
         if (seat_ != SEAT_DRONE) {
             show_notice("Only a drone can ride behind the leader");
             return;
         }
         chase_ = !chase_;
-        show_notice(chase_ ? "Drone: riding behind the leader (0 then /chase to fly free)" : "Drone: flying free (0 then /chase to ride behind the leader)");
+        wclog(1, "drone: %s", chase_ ? "riding behind the leader as copilot" : "flying free");
+        show_notice(chase_ ? "Drone: riding behind the leader as copilot (0 then /chase to fly free)" : "Drone: flying free (0 then /chase to ride behind the leader as copilot)");
     }
 
     virtual void on_mission_starting(int mission, int series) {
@@ -1558,7 +1644,7 @@ private:
             // another ship here, and the leader's is made first.
             entities_.set_own_ship(-1);
             enqueue_host_body();
-            show_notice("This mission is flown alone: you are a drone. Nothing sees or hits you, you have no guns, and you see cloaked ships. 0 then /chase rides behind the leader.");
+            show_notice("This mission is flown alone: you are the drone and the leader's copilot. Up/Down shift the leader's shields to the rear/front, Space puts shields into the guns, Enter guns into the weakest shield, + and - set the cruising speed. Nothing sees or hits you. 0 then /chase flies free.");
         } else {
             entities_.set_own_ship(shipNet_);
         }
@@ -1601,6 +1687,17 @@ private:
             // exchange is one message each way.  A gunner says which turret
             // it sits in.
             Frame *frame = pendingFrame_.mutable_frame();
+            if (seat_ == SEAT_DRONE && chase_ && entities_.is_mapped(0)) {
+                // The copilot sees the leader's readouts: the leader's
+                // shields, armour, guns and damage go on the drone's own
+                // ship every frame, whose cockpit is the same (one mission,
+                // one ship for the player).  Its own place and speed are the
+                // leader's already (follow_leader).
+                int leader = entities_.net_to_local(0);
+                if (leader != kInvalidSlot && leader != kPlayerSlot && slot_in_use(leader)) {
+                    write_health(kPlayerSlot, read_health(leader), true);
+                }
+            }
             if (seat_ == SEAT_GUNNER && ds::known(ds::cameraMode)) {
                 enum { kInTurret = 4, kSeatAfter = 8 };
                 // The game starts everybody in the pilot's seat; a gunner's

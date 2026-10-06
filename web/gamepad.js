@@ -41,6 +41,13 @@ export const ACTIONS = [
   { id: "burner", label: "Afterburner", keys: ["tab"], bind: { button: 6 }, analog: true },
   { id: "nav", label: "Navigation map", keys: ["n"], bind: { button: 8 } },
   { id: "auto", label: "Autopilot", keys: ["a"], bind: { button: 9 } },
+  // (A drone riding behind the leader is the leader's copilot: the Up and
+  // Down keys shift the leader's shields, Fire guns puts shields into the
+  // guns, Fire missile guns into the weakest shield, Speed up and Slow down
+  // set the cruising speed.  For a pilot the two arrows are the keyboard's
+  // nose up and down.)
+  { id: "up", label: "Up (copilot: shields to the rear)", keys: ["up"], bind: { button: 12 } },
+  { id: "down", label: "Down (copilot: shields to the front)", keys: ["down"], bind: { button: 13 } },
   { id: "gunsel", label: "Change guns", keys: ["g"], bind: null },
   { id: "lock", label: "Lock target", keys: ["l"], bind: null },
   { id: "comms", label: "Communications", keys: ["c"], bind: null },

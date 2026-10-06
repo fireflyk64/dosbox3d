@@ -72,6 +72,10 @@ public:
     virtual int gunner_turret() const { return -1; }
     // A drone can ride behind the leader instead of flying itself.
     virtual void toggle_chase() {}
+    // A drone riding behind the leader is the leader's copilot: its keys go
+    // to the server as Copilot actions (wcnet_hooks.cpp, wc_net_key_filter).
+    virtual bool is_copilot() const { return false; }
+    virtual void copilot(Copilot::Action action) { (void)action; }
     // Network ids flown by humans: the host and the two client slots.
     static bool is_player_net(int net) { return net == 0 || net == 1 || net == 3; }
 

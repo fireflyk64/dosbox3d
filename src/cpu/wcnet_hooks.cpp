@@ -12,6 +12,7 @@
 #include <signal.h>
 #include <time.h>
 #include <math.h>
+#include <deque>
 #include <string>
 #include <vector>
 #include "wc_net.h"
@@ -751,6 +752,39 @@ static void on_after_startup() {
     }
 }
 
+// Keys tapped on this machine's game by the hooks (a copilot's cruising
+// speed is the leader's own + and - keys): pressed at once, released a
+// little later from the periodic call, one at a time.
+static std::deque<KBD_KEYS> g_taps;
+static double g_tapReleaseAt = -1;
+static KBD_KEYS g_tapHeld = KBD_NONE;
+
+void tap_key(int kbdKey) {
+    if (kbdKey > KBD_NONE && kbdKey < KBD_LAST) {
+        g_taps.push_back((KBD_KEYS)kbdKey);
+    }
+}
+
+static void tap_keys() {
+    double now = PIC_FullIndex();
+    if (g_tapHeld != KBD_NONE) {
+        if (now < g_tapReleaseAt) {
+            return;
+        }
+        KEYBOARD_AddKey(g_tapHeld, false);
+        g_tapHeld = KBD_NONE;
+        g_tapReleaseAt = now + 60;  // (a gap before the next, or the game sees one long press)
+        return;
+    }
+    if (g_taps.empty() || now < g_tapReleaseAt) {
+        return;
+    }
+    g_tapHeld = g_taps.front();
+    g_taps.pop_front();
+    KEYBOARD_AddKey(g_tapHeld, true);
+    g_tapReleaseAt = now + 120;
+}
+
 // WCNET_SKIPBARRACKS=1 (test aid): never stop in the rec room or the
 // barracks, so a scripted run goes from one debriefing to the next briefing.
 static bool always_skip_barracks() {
@@ -1110,6 +1144,32 @@ static void memory_watch() {
     }
 }
 
+// A drone riding behind the leader is the copilot: these keys are the
+// leader's energy and cruising speed (Copilot in wc.proto) and never reach
+// the drone's own game, which has no use for them while it rides.  Nothing
+// else is touched: the gunner has a turret to work, and the chat prompt
+// takes its keys before they get here.
+bool wc_net_key_filter(int kbdKey, bool pressed) {
+    using namespace wc;
+    if (!g_session || !g_session->is_copilot() || !in_flight()) {
+        return false;
+    }
+    Copilot::Action action;
+    switch (kbdKey) {
+    case KBD_up: action = Copilot::SHIELDS_TO_REAR; break;
+    case KBD_down: action = Copilot::SHIELDS_TO_FRONT; break;
+    case KBD_space: action = Copilot::SHIELDS_TO_GUNS; break;
+    case KBD_enter: case KBD_kpenter: action = Copilot::GUNS_TO_WEAKEST; break;
+    case KBD_equals: case KBD_kpplus: action = Copilot::SPEED_UP; break;
+    case KBD_minus: case KBD_kpminus: action = Copilot::SPEED_DOWN; break;
+    default: return false;
+    }
+    if (pressed) {
+        g_session->copilot(action);
+    }
+    return true;
+}
+
 void wc_net_check_cpu_hooks() {
     using namespace wc;
     static int watching = -1;
@@ -1131,6 +1191,7 @@ void wc_net_check_cpu_hooks() {
         g_asyncCounter = 0;
         g_trampoline.restore_scratch_if_idle();
         wc::pace_tick();
+        tap_keys();
         if (DS != 0) {
             apply_pilot_names();
         }

@@ -62,6 +62,9 @@ void wcnetSendChatMessage(const std::string &msg);
 // of the game's damage, so one collision is survivable).  The host's choice
 // goes to every player; "/rocks on", "/rocks soft" and "/rocks off" in the
 // comms prompt do the same.
+// Called by the keyboard before a key reaches the game: true takes the key
+// (a drone's copilot keys go to the server instead; wcnet_hooks.cpp).
+bool wc_net_key_filter(int kbdKey, bool pressed);
 void wc_net_set_rocks(int mode);
 int wc_net_rocks();
 
