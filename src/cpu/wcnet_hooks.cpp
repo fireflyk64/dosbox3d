@@ -936,6 +936,9 @@ static void check_hooks_slow() {
     } else if (at_function(code::uncloak)) {
         on_cloak_entry(false);
     }
+    if (at_function(code::showCommMessage)) {
+        on_comm_message_entry();
+    }
     if (at_function(code::do_damage)) {
         on_do_damage_entry();
     } else if (at_function(code::fireGunFromShip)) {
@@ -970,6 +973,7 @@ static void check_hooks_slow() {
         g_session->check_mission_status();
     }
     if (at_location(code::missionEnded) || at_location(code::missionEndedDirect)) {
+        leader_name_restore();
         g_inMission = false;
         wclog(2, "ended: %s", mission_state_line().c_str());
         if (always_skip_barracks()) {
@@ -1034,6 +1038,7 @@ static void check_hooks_slow() {
             perf_frame();
         }
         ensure_session();
+        leader_name_tick();
         if (g_session) {
             g_session->on_frame_top();
         } else if (g_trampoline.has_pending()) {
@@ -1203,6 +1208,30 @@ static void memory_watch() {
             seen[i] = now;
         }
     }
+}
+
+// While the comm display shows a line from the leader's ship on a wingman's
+// machine: where that display's picture begins on the game's screen, for the
+// renderer to paint the name off the pilot's helmet (WCHELMETNAME=1 leaves
+// it).  See "The leader on a wingman's machine" in wcnet_events.cpp.
+bool wc_net_helmet_name(int *vduOrigin) {
+    using namespace wc;
+    static int keep = -1;
+    if (keep < 0) {
+        const char *env = getenv("WCHELMETNAME");
+        keep = env && env[0] && env[0] != '0';
+    }
+    if (keep || !g_session || !g_session->is_client() || !in_flight() || !ds::known(ds::commSpeaker) ||
+        !ds::known(ds::commVdu) || !ds::known(ds::commTextTimer) || (Bit16s)rd16(ds::commTextTimer) <= 0) {
+        return false;
+    }
+    int speaker = rd16(ds::commSpeaker);
+    if (speaker <= 0 || speaker > kMaxShipSlot || !g_session->is_remote_player_slot(speaker)) {
+        return false;
+    }
+    vduOrigin[0] = (Bit16s)rd16((Bit16u)(ds::commVdu + 4));
+    vduOrigin[1] = (Bit16s)rd16((Bit16u)(ds::commVdu + 6));
+    return vduOrigin[0] >= 0 && vduOrigin[0] < 300 && vduOrigin[1] >= 0 && vduOrigin[1] < 180;
 }
 
 // A drone riding behind the leader looks at the leader's ship through its

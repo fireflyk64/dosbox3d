@@ -68,6 +68,9 @@ bool wc_net_key_filter(int kbdKey, bool pressed);
 // A drone riding behind the leader: its dashboard, from that line of the
 // game's 200 down, is to go dark (src/gui/sdlmain.cpp).
 bool wc_net_cockpit_dim(int *dashboardTop);
+// True while the comm display shows a line from the leader's ship on a
+// wingman's machine; vduOrigin: the left and top of that display's picture.
+bool wc_net_helmet_name(int *vduOrigin);
 void wc_net_set_rocks(int mode);
 int wc_net_rocks();
 

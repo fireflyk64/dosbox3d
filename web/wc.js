@@ -908,6 +908,9 @@ async function start(fromGesture) {
     if (cfg.callsign) env.WCCALLSIGN = cfg.callsign;
     if (cfg.lastname) env.WCLASTNAME = cfg.lastname;
     if (cfg.firstname) env.WCFIRSTNAME = cfg.firstname;
+    // A wingman's game calls the leader's ship by the leader's callsign (the
+    // targeting computer, the comm menu): the roster has it.
+    if (!isHost() && lobby.names.get(0)) env.WCHOSTCALLSIGN = lobby.names.get(0);
     if (!$("hint").checked) env.WCNET_NOHINT = "1";
     // The picked mission: in the hooks' environment, or on the game's own
     // command line (the registry says which).

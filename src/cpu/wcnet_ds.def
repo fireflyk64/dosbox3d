@@ -23,6 +23,10 @@ WC_DS(skipRecRoom, 0x3004, 0x3010, 0x0000, 0x0000, 0x0000)  // word: nonzero sen
 WC_DS(savedGameLoaded, 0x300C, 0x3018, 0x0000, 0x0000, 0x0000)  // has_loaded_game
 WC_DS(randomSeed, 0x7728, 0x7A4A, 0xA904, 0xA768, 0xA9FE)  // state of the lo..hi random generator (WC.EXE seg034:0006); the game has two more
 WC_DS(commGlobalTxt, 0x8DF8, 0x90E6, 0x0000, 0x0000, 0x0000)  // 80 bytes shown by the VDU comm display
+WC_DS(commTextTimer, 0x8D96, 0x9084, 0x0000, 0x0000, 0x0000)  // [commTextTimer] word: frames the comm line and its face stay (ovr134:0C37 sets it, ovr134:0C42 counts it down)
+WC_DS(commSpeaker, 0x0B04, 0x0A1C, 0x0000, 0x0000, 0x0000)  // [commSpeaker] word: the ship whose line the comm display shows (ovr138:0979)
+WC_DS(commVdu, 0x9F4A, 0xA230, 0x0000, 0x0000, 0x0000)  // [commVdu] the VDU the comm display draws on: its rectangle on the screen is four words at +4 (left, top, right, bottom)
+WC_DS(pilotRecords, 0x98CA, 0x9BB4, 0x0000, 0x0000, 0x0000)  // [pilotRecords] near pointers, one per named pilot (8): his record, with his name at +0xE
 WC_DS(vduText, 0x8E4A, 0x9138, 0x0000, 0x0000, 0x0000)  // [vduText] 160 bytes: what the VDU shows (ovr138:0154)
 WC_DS(pilotLastName, 0x9A42, 0x9D2C, 0x0000, 0x0000, 0x0000)  // 14 bytes
 WC_DS(pilotCallsign, 0x9A50, 0x9D3A, 0x0000, 0x0000, 0x0000)  // 14 bytes

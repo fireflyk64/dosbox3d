@@ -1,3 +1,4 @@
+#include <cctype>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +19,10 @@ namespace wc {
 
 // Scratch vector inside the data segment for replayed damage positions.
 #define kTmpVectorOff (ds::aLoadingWingCom)
+
+// The named pilot (dseg:D1A2: 3 is Iceman) the leader's ship wears on a
+// wingman's machine: see "The leader on a wingman's machine" below.
+enum { kLeaderFace = 3 };
 
 // Soft rocks (RocksMode): what a rock does to a player's own ship.
 enum { kSoftRockDivisor = 16, kSoftRockMost = 80 };
@@ -394,8 +399,10 @@ public:
                 if (env && env[0] && atoi(env) >= 0 && atoi(env) <= 7) {
                     pilot = atoi(env);
                 }
-                if (is_wc1() && (pilot < 0 || pilot > 7)) {
-                    pilot = 0;  // an old server sent nothing usable: the first named pilot
+                if (is_wc1() && !(env && env[0] && atoi(env) >= 0 && atoi(env) <= 7)) {
+                    // Not the mission's wingman, who is this player: see
+                    // "The leader on a wingman's machine" above.
+                    pilot = kLeaderFace;
                 }
                 wr8((Bit16u)(ds::shipStateByte + slot), (Bit8u)pilot);
                 wclog(2, "slot %d wears pilot %d for the server player (spawn said %d)", slot, pilot,
@@ -538,10 +545,120 @@ private:
     AutoPilotEvent ape_;
 };
 
+// The leader on a wingman's machine.  The leader's own ship carries "the
+// player" there, which is nobody to the comms code of another machine, so
+// the body that stands in for it wears one of the eight named pilots (see
+// SpawnJob): his face on the comm display, his name in the targeting
+// computer, and, because the game takes any such ship for its own wingman,
+// his lines whenever the game thinks a wingman would speak.  It used to be
+// the mission's wingman, the very pilot the second player is: Angel read
+// "ANGEL: It is our duty to engage." from a ship called ANGEL.  Now:
+//  * the body wears Iceman unless WCHOSTPILOT says otherwise (kLeaderFace);
+//  * the game's own lines from that ship are not shown (on_comm_message_entry):
+//    a person flies it, and says what he types;
+//  * the pilot's name is the leader's callsign for the flight
+//    (leader_name_tick; WC2: the name of the ship's mission record), which
+//    is what the targeting computer and the comm menu print;
+//  * the name painted on the helmet of the comm picture is painted out by
+//    the renderer (wc_net_helmet_name, BlankHelmetName in sdlmain.cpp).
+static bool g_chatLine = false;
+static std::string g_leaderCallsign;
+static std::string g_savedPilotName[8];
+static bool g_pilotNameSaved[8] = { false, false, false, false, false, false, false, false };
+
+void note_leader_callsign(const std::string &callsign) {
+    if (callsign.length() > 1 && callsign != "BLUEHAIR") {
+        g_leaderCallsign = callsign;
+    }
+}
+
+static std::string leader_callsign() {
+    const char *env = getenv("WCHOSTCALLSIGN");  // (the page knows it from the room's roster)
+    return env && env[0] ? std::string(env) : g_leaderCallsign;
+}
+
+void on_comm_message_entry() {
+    Session *s = g_session;
+    if (!s || !s->is_client() || g_chatLine) {
+        return;
+    }
+    int ship = call_arg16(code::showCommMessage, 0);
+    if (s->is_remote_player_slot(ship)) {
+        wclog(2, "the game's own line %d for the leader's ship (slot %d) is not shown", call_arg16(code::showCommMessage, 1), ship);
+        return_from_call(code::showCommMessage, 0);
+    }
+}
+
+// Once in a while in flight, on a client: the leader's ship is called by the
+// leader's callsign.
+void leader_name_tick() {
+    static int frames = 0;
+    Session *s = g_session;
+    if (!s || !s->is_client() || !g_entityMap || (frames++ % 20) != 0 || !g_entityMap->is_mapped(0)) {
+        return;
+    }
+    std::string want = leader_callsign();
+    int slot = g_entityMap->net_to_local(0);
+    if (want.empty() || slot <= 0 || slot > kMaxShipSlot || !slot_in_use(slot)) {
+        return;
+    }
+    if (is_wc1() && ds::known(ds::pilotRecords)) {
+        int pilot = rd8((Bit16u)(ds::shipStateByte + slot));
+        if (pilot > 7) {
+            return;
+        }
+        if (want.size() > 13) {
+            want.resize(13);
+        }
+        for (size_t i = 0; i < want.size(); i++) {
+            want[i] = (char)toupper((unsigned char)want[i]);  // (as the game writes its pilots)
+        }
+        Bit16u name = (Bit16u)(rd16((Bit16u)(ds::pilotRecords + 2 * pilot)) + 0xE);
+        std::string now = read_cstring(name, 14);
+        if (now != want) {
+            if (!g_pilotNameSaved[pilot]) {
+                g_pilotNameSaved[pilot] = true;
+                g_savedPilotName[pilot] = now;
+            }
+            write_cstring(name, 14, want);
+            wclog(1, "the leader's ship (slot %d, pilot %d: \"%s\") is called \"%s\" here", slot, pilot, now.c_str(), want.c_str());
+        }
+    } else if (is_wc2() && ds::known(ds::slotMissionShip) && ds::known(ds::missionShipTable)) {
+        int ms = (Bit16s)rd16((Bit16u)(ds::slotMissionShip + 2 * slot));
+        if (ms < 0 || ms >= 64) {
+            return;
+        }
+        if (want.size() > 19) {
+            want.resize(19);
+        }
+        Bit16u name = (Bit16u)(ds::missionShipTable + g_params.missionShipSize * ms);
+        std::string now = read_cstring(name, 20);
+        if (now != want) {
+            write_cstring(name, 20, want);  // (the mission's own data: loaded again with the next mission)
+            wclog(1, "the leader's ship (slot %d, \"%s\") is called \"%s\" here", slot, now.c_str(), want.c_str());
+        }
+    }
+}
+
+// The pilots' own names again when the flight is over (the kill board, the
+// funerals and the saved game are theirs).
+void leader_name_restore() {
+    if (!is_wc1() || !ds::known(ds::pilotRecords)) {
+        return;
+    }
+    for (int pilot = 0; pilot < 8; pilot++) {
+        if (g_pilotNameSaved[pilot]) {
+            g_pilotNameSaved[pilot] = false;
+            write_cstring((Bit16u)(rd16((Bit16u)(ds::pilotRecords + 2 * pilot)) + 0xE), 14, g_savedPilotName[pilot]);
+        }
+    }
+}
+
 class ChatJob : public VmJob {
 public:
     ChatJob(int netShip, const std::string &text) : netShip_(netShip), text_(text) {}
     virtual bool start() {
+        g_chatLine = true;  // (this call of the comm display is ours: on_comm_message_entry)
         int local = NetworkShipId::from_net(netShip_).to_local();
         if (local == kInvalidSlot) {
             local = kPlayerSlot;
@@ -557,6 +674,7 @@ public:
         return true;
     }
     virtual void finish() {
+        g_chatLine = false;
         if (ds::known(ds::commGlobalTxt)) {
             write_cstring(ds::commGlobalTxt, 80, text_);
         }

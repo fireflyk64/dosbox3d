@@ -30,6 +30,12 @@ void on_ai_set_speed_entry();     // ovr143:0874
 // Queue trampoline jobs for every event in a received frame.
 void enqueue_remote_event(const Event &ev);
 void enqueue_chat_display(int netShipId, const std::string &callsign, const std::string &text);
+// The leader on a wingman's machine (wcnet_events.cpp): the game's own lines
+// from its ship are not shown, and the ship goes by the leader's callsign.
+void on_comm_message_entry();     // outerSomeCommThing(ship, message)
+void note_leader_callsign(const std::string &callsign);
+void leader_name_tick();
+void leader_name_restore();
 // A drone client: make a ship for the server's player (network id 0).
 void enqueue_host_body();
 void enqueue_gunner_seat();  // WC2: the gunner's view goes to the rear turret

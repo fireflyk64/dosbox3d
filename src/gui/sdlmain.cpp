@@ -1597,6 +1597,32 @@ static void DimCockpit(const Bit16u *changedLines, int viewBottom, Bit8u *surfac
     }
 }
 
+// The comm picture of a Wing Commander pilot is a helmet with his name
+// painted on its band: five rows of lighter letters on the band's dark
+// green, between the two black patches of the helmet's sides (the picture is
+// the same for all eight pilots but for the eyes and the name).  When the
+// pilot is a stand-in (wc_net_helmet_name: the leader's ship on a wingman's
+// machine), the letters take the band's colour, read from the row under them.
+// Game pixels: the picture's origin plus 22..52 across and 16..20 down.
+extern bool wc_net_helmet_name(int *vduOrigin);
+static void BlankHelmetName(int vduX, int vduY, Bit8u *surface, Bitu pitch) {
+    Bitu step = pitch / sdl.draw.width;
+    if (step < 3 || sdl.draw.width < 320 || sdl.draw.height < 200) {
+        return;
+    }
+    Bitu sx = sdl.draw.width / 320, sy = sdl.draw.height / 200;
+    const Bit8u *band = surface + (Bitu)(vduY + 21) * sy * pitch + (Bitu)(vduX + 30) * sx * step;
+    Bit8u ref[4] = { band[0], band[1], band[2], step > 3 ? band[3] : (Bit8u)0 };
+    for (Bitu y = (Bitu)(vduY + 16) * sy; y < (Bitu)(vduY + 21) * sy && y < sdl.draw.height; y++) {
+        Bit8u *px = surface + y * pitch + (Bitu)(vduX + 22) * sx * step;
+        for (Bitu x = (Bitu)(vduX + 22) * sx; x < (Bitu)(vduX + 53) * sx && x < sdl.draw.width; x++, px += step) {
+            if (px[0] | px[1] | px[2]) {  // (not the black of the helmet's sides)
+                px[0] = ref[0]; px[1] = ref[1]; px[2] = ref[2];
+            }
+        }
+    }
+}
+
 bool GFX_StartUpdate(Bit8u * & pixels,Bitu & pitch) {
     bool ret = Inner_GFX_StartUpdate(pixels, pitch);
     textPixels = pixels;
@@ -1683,6 +1709,10 @@ void GFX_EndUpdate( const Bit16u *changedLines ) {
                 }
                 if (dim) {
                     DimCockpit(changedLines, viewBottom, textPixels, textPitch);  // (the lines repainted this frame)
+                }
+                int vdu[2];
+                if (wc_net_helmet_name(vdu)) {
+                    BlankHelmetName(vdu[0], vdu[1], textPixels, textPitch);
                 }
             }
             if (in_space() && !incoming_text.empty()) {

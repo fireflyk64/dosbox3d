@@ -407,6 +407,9 @@ static void handle_incoming_chat(const Chat &chat) {
         formatted = chat.callsign() + ": " + chat.message();
     }
     incoming_text = formatted;
+    if (chat.ship_id() == 0 && g_session && g_session->is_client()) {
+        note_leader_callsign(chat.callsign());
+    }
     enqueue_chat_display(chat.ship_id(), chat.callsign(), chat.message());
 }
 
