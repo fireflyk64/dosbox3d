@@ -665,7 +665,6 @@ static void build_watch_list() {
 }
 
 void hooks_game_changed() {
-    g_trampoline.forget_scratch();  // (what it kept was the last program's)
     g_watchReady = false;
     wc_net_countdown = 0;  // the table is rebuilt before the next instruction
 }
@@ -1323,7 +1322,6 @@ void wc_net_check_cpu_hooks() {
     }
     if (tick) {
         g_asyncCounter = 0;
-        g_trampoline.restore_scratch_if_idle();
         wc::pace_tick();
         tap_keys();
         if (DS != 0) {

@@ -361,16 +361,16 @@ arguments.
 
 Those two places are the games' error messages (WC2: `dseg:0380`, its
 loader's "Sorry, an error has occurred while %s...", and `dseg:9FC0`, the
-general one), and a thunk begins with a NUL: once the hooks had run, a game
-that stopped with an error of its own printed an empty message and left a
-bare DOS prompt.  The trampoline now keeps what was there before its first
-write of a run and puts it back when it has run out (`save_scratch`,
-`restore_scratch_if_idle`, from the periodic call so that the stub's last
-two instructions have run), so outside the hooks' own jobs the messages are
-the game's again.  The page says so when the game ends by itself, with the
-text the game left on the screen (`game_program_ended` logs it, and the
-stack: the page sets `WCNET_EXIT_STACK`), reports an abort or a trap of
-the emulator the same way, and has a "Copy log" button for a report.
+general one), and a thunk begins with a NUL: once the hooks have run, a game
+that stops with an error of its own prints an empty message and leaves a
+bare DOS prompt.  (For a day the trampoline kept what was there and put it
+back when it had run out; an interrupt taken on the stub's last
+instructions then returned into the game's text, and the flight stood still
+on both machines.  It keeps nothing now.)  The page says so when the game
+ends by itself, with the text the game left on the screen
+(`game_program_ended` logs it, and the stack: the page sets
+`WCNET_EXIT_STACK`), reports an abort or a trap of the emulator the same
+way, and has a "Copy log" button for a report.
 
 ### Hook points (`wcnet_code.h`)
 

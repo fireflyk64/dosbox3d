@@ -10,12 +10,9 @@ namespace wc {
 
 // Scratch areas inside the data segment.  These are string constants the game
 // only uses for error messages, so we can overwrite them with code (CS is set
-// to DS while it runs).  Only: left overwritten, a game that stops with an
-// error of its own prints an empty message (the thunks begin with a NUL),
-// and "it crashed" is all anyone can report.  So the trampoline keeps what
-// was there and puts it back when it has run out (save_scratch,
-// restore_scratch_if_idle).
-enum { kShellcodeBytes = 250, kStubAreaBytes = 107 };  // the thunk; the scratch vector with the stub at +101
+// to DS while it runs).  They stay overwritten: a game that stops with an
+// error of its own once the hooks have run prints an empty message (the
+// thunks begin with a NUL).
 static Bit16u shellcode_off() { return ds::aSorryAnErrorHasOccured; }         // 249 bytes
 static Bit16u trampoline_off() { return (Bit16u)(ds::aLoadingWingCom + 101); } // 6 bytes
 static Bit16u trampoline_nop() { return (Bit16u)(trampoline_off() + 3); }
@@ -144,79 +141,10 @@ void Trampoline::enqueue_front(VmJob *job) {
     jobs_.push_front(job);
 }
 
-void Trampoline::save_scratch() {
-    if (scratchSaved_) {
-        return;  // (run again before the last run's bytes were put back)
-    }
-    savedCode_.resize(kShellcodeBytes);
-    savedData_.resize(kStubAreaBytes);
-    for (int i = 0; i < kShellcodeBytes; i++) {
-        savedCode_[i] = mem_readb(DS_OFF + (Bit16u)(shellcode_off() + i));
-    }
-    for (int i = 0; i < kStubAreaBytes; i++) {
-        savedData_[i] = mem_readb(DS_OFF + (Bit16u)(ds::aLoadingWingCom + i));
-    }
-    scratchSaved_ = true;
-}
-
-// The stub's last instructions can be still to run with CS:IP somewhere
-// else: an interrupt taken between the hook and the stub's retf has its
-// handler running now, and returns into the stub.  With the game's string
-// put back there the processor ran the string ("Bye!", from DS:01EF in
-// WC.EXE), and nothing moved again on either machine.
-//
-// Such an interrupt's frame is where the stub's stack was.  With S the stack
-// pointer the stub was entered with (its return address is there):
-//   taken before the NOP or before "pop bp":  IP at S-8, CS at S-6
-//   taken before "retf":                      IP at S-6, CS at S-4
-// (A thunk's own return address is at S-6 too, and stays there when the
-// stub has returned, but it is the NOP's, never the retf's.)
-bool Trampoline::stub_return_pending() const {
-    if (SegValue(ss) != DS) {
-        return true;  // (a handler on a stack of its own: nothing to go by yet)
-    }
-    const Bit16u sp = (Bit16u)(reg_esp & 0xffff);
-    const Bit16u nop = trampoline_nop(), popBp = (Bit16u)(nop + 1), retf = (Bit16u)(nop + 2);
-    const Bit16u early = (Bit16u)(stubSp_ - 8), late = (Bit16u)(stubSp_ - 6);
-    bool pending = false;
-    if (sp <= early && mem_readw(DS_OFF + (Bit16u)(early + 2)) == DS) {
-        const Bit16u ip = mem_readw(DS_OFF + early);
-        pending = ip == nop || ip == popBp;
-    }
-    if (!pending && sp <= late && mem_readw(DS_OFF + (Bit16u)(late + 2)) == DS) {
-        pending = mem_readw(DS_OFF + late) == retf;
-    }
-    if (pending) {
-        wclog(2, "trampoline: an interrupt was taken on the stub's last instructions; the game's strings wait");
-    }
-    return pending;
-}
-
-void Trampoline::restore_scratch_if_idle() {
-    if (!scratchSaved_ || running_ || DS == 0) {
-        return;
-    }
-    if (SegValue(cs) == DS && reg_eip >= trampoline_off() && reg_eip < (Bit32u)trampoline_off() + sizeof(kTrampolineCode)) {
-        return;  // the stub's last instructions are still to run
-    }
-    if (stub_return_pending()) {
-        return;
-    }
-    for (int i = 0; i < kShellcodeBytes; i++) {
-        mem_writeb(DS_OFF + (Bit16u)(shellcode_off() + i), savedCode_[i]);
-    }
-    for (int i = 0; i < kStubAreaBytes; i++) {
-        mem_writeb(DS_OFF + (Bit16u)(ds::aLoadingWingCom + i), savedData_[i]);
-    }
-    scratchSaved_ = false;
-}
-
 void Trampoline::jump_to_stub() {
-    save_scratch();
     for (size_t i = 0; i < sizeof(kTrampolineCode); i++) {
         mem_writeb_checked(DS_OFF + trampoline_off() + i, kTrampolineCode[i]);
     }
-    stubSp_ = (Bit16u)(reg_esp & 0xffff);
     SegSet16(cs, DS);
     reg_eip = trampoline_off();
     running_ = true;
@@ -261,7 +189,6 @@ Bit16u Trampoline::hook_ip() {
 
 void Trampoline::start_next() {
     while (!jobs_.empty()) {
-        running_ = true;  // (also when the hook is come to again after the queue had run out)
         current_ = jobs_.front();
         jobs_.pop_front();
         wclog(3, "trampoline: start %s", current_->describe());

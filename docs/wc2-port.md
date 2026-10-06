@@ -437,10 +437,10 @@ packet could not be read, or there was no memory for it) prints "Error:
 memory when the game runs with the `Origin` switch, and otherwise formats
 the long message at `dseg:0380` ("Sorry, an error has occurred while
 %s...").  That message and the general one at `dseg:9FC0` are where the
-hooks keep their call thunks and their trampoline: they are put back
-between runs now (docs/wcnet-multiplayer.md, "Running game code"), because
-with a thunk's NUL in front the game left without a word.  The page shows
-the text of any of these in its status line.
+hooks keep their call thunks and their trampoline (docs/wcnet-multiplayer.md,
+"Running game code"): with a thunk's NUL in front, the game leaves without
+a word once the hooks have run.  The page shows what text the game did
+leave in its status line.
 
 Error 007 at "Fly mission" (seen for series 9 mission 1, at once on the
 click) is a game directory without `GAMEDAT/TEMPGLOB.000`: GOG's install
