@@ -65,11 +65,13 @@ share a room, exactly like `runwc.sh DOSPATH room CODE`.
 
 **The public lobby.**  Pilots with nobody to fly with meet in a chat room
 on the page (the lobbylink room `WC-LOBBY`, and `WC-LOBBY0`, `WC-LOBBY1`
-and so on when it is full; "Enter the lobby").  A room's
-code starts with its game, `WC1-4821`, `WC2-`, `SM2-`, `SO1-`, `SO2-`, and a
-code said in the lobby is a link: a click joins that room, if the game
-loaded on the page is that game.  "Offer this room in the lobby" in the
-room form writes the line.  Nobody runs the lobby, so each page keeps its
+and so on when it is full).  A pilot who opens the page is in it, unless a
+link to a room brought the page or the pilot left the lobby before.  A
+room's code starts with its game, `WC1-4821`, `WC2-`, `SM2-`, `SO1-`,
+`SO2-`, and a code said in the lobby is a link: a click joins that room, if
+the game loaded on the page is that game.  "Advertise" sends the pilot's
+room (code, mission, free seats), and `/room` in a line is its code.
+Nobody runs the lobby, so each page keeps its
 rules for its own player and for what the others send: lines of 60
 characters, two to start with and then one every ten seconds (one a second
 while fewer than eight pilots are there), no profanity

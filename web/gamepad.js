@@ -191,7 +191,7 @@ export function initControls(host) {
       listed = signature;
       sel.innerHTML = "";
       const add = (value, text) => { const o = document.createElement("option"); o.value = value; o.textContent = text; sel.appendChild(o); };
-      add(NONE, "Keyboard and mouse");
+      add(NONE, "Keyboard + mouse");
       for (const p of list) add(padKey(p), `${p.index + 1}: ${p.id}${usedElsewhere(padKey(p)) ? " (in use in another window)" : ""}`);
       if (choice && choice !== NONE && !list.some((p) => padKey(p) === choice)) add(choice, `${choice.slice(choice.indexOf(":") + 1)} (not connected)`);
       sel.value = choice || NONE;

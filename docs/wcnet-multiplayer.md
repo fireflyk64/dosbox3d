@@ -654,12 +654,20 @@ top-level README for the workflow).  What differs:
   prefix, with a digit or without small letters) is shown as a link.  A
   click joins that room without making it (`joinRoom({ create: false })`:
   a room nobody is in is "not open any more"), after the game check above.
-  The room form's "Offer this room in the lobby" writes such a line (code,
-  mission, free seats) for the pilot to send.  A pilot who comes later is
-  shown the last line of each pilot present (its author sends it again,
-  marked with its age; one a minute is taken from a seat).  Entering is the
-  pilot's choice (a button; remembered for the next visit), because it
-  connects the browser directly to strangers'.  Flying leaves the lobby
+  Nobody has to type a code: "Advertise", beside Send (and in the room),
+  sends the pilot's room as such a line -- its code, which names the game,
+  the mission and the free seats, "WC1-4821 Gimle 2, 1 seat free" -- and
+  "/room" in a typed line is the room's code.  A pilot who is in no room
+  yet is put into the one of the room form first (`myRoom`).  The line is
+  one of the pilot's lines: when they are used up for the moment it waits
+  in the box.  A pilot who comes later is shown the last line of each
+  pilot present (its author sends it again, marked with its age; one a
+  minute is taken from a seat).  A pilot who opens the page is in the
+  lobby (the user's choice of default; it connects the browser directly to
+  strangers', which the panel says), unless a link to a room brought the
+  page -- that pilot has somebody to fly with -- or the pilot left the
+  lobby: "Leave" is remembered until "Enter the lobby" is pressed again
+  (`hall.auto`; `?lobby=off` keeps a page out once).  Flying leaves the lobby
   (`hall.shut` in `start()`: a lobby of pilots who are away is no use to
   those looking for one), and when the game is over on the page, or the
   page is loaded again, a pilot who was in it is back (`flightOver`).
@@ -693,6 +701,16 @@ top-level README for the workflow).  What differs:
   (`scripts/web-hall.mjs`: talking, the rules on both sides, a room offered
   and joined by a click, codes for other games, a full lobby, the next
   lobby and a claimed seat).
+* **The page's looks** (`web/index.html`) are a cockpit display's: green on
+  black, amber for what matters, corner brackets on the panels; game files
+  and room on the left, the lobby beside them (Send, Advertise and Leave in
+  one row), the room's chat beside its roster, the game below.  Flat
+  colours only: the emulator runs in the page's own thread, and whatever
+  the browser paints around the game's picture is time the game does not
+  get.  (Measured in a headless page, the game in view: the layout costs
+  the same as the old one.  With the picture out of view the browser paints
+  nothing at all, which is why a test window too small to show it reports
+  a faster game.)
 * **The lobby server checks the page's origin**; the public server accepts
   only its own host.  Serve the page from there or run a lobby server with
   `--allowed-origin` for the page's origin.

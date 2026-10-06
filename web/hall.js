@@ -4,12 +4,19 @@
 // It is an ordinary lobbylink room of 32 seats (or as many as the server
 // gives a room: it says so, and the page asks again for that many), and its
 // chat goes from browser to browser like a game's messages do; the lobby
-// server only introduces the browsers to each other.  There
-// is nobody in charge of it, so every page keeps the rules itself, for what
-// its own player types and for what arrives (web/chatfilter.js): lines of
-// 60 characters, two to start with and then one every ten seconds (one a
-// second while fewer than eight pilots are there), no profanity, no links.  A room code in a line (WC1-4821) is shown as a link
-// that joins that room; the page decides whether the game fits (web/wc.js).
+// server only introduces the browsers to each other.  There is nobody in
+// charge of it, so every page keeps the rules itself, for what its own
+// player types and for what arrives (web/chatfilter.js): lines of 60
+// characters, two to start with and then one every ten seconds (one a
+// second while fewer than eight pilots are there), no profanity, no links.
+// A room code in a line (WC1-4821) is shown as a link that joins that room;
+// the page decides whether the game fits (web/wc.js).  Nobody has to type a
+// code: "Advertise" sends the pilot's room, its mission and its free seats,
+// and "/room" in a line is the room's code.
+//
+// A pilot who opens the page is in the lobby (unless a link to a room
+// brought it, or it left the lobby on an earlier visit), and out of it while
+// it flies.
 //
 // The connection is this file's own and not the lobbylink client's
 // (p2p-client.js), which serves a game: a room of strangers wants other
@@ -373,8 +380,10 @@ const store = (s, key, value) => { try { if (value == null) s.removeItem(key); e
 
 // opts: server() the lobby server's address, name() the callsign typed,
 // tag() the loaded game's ("WC1", ... or ""), title(tag) a game's name,
-// onCode(code) a room code was clicked, log(line), code (another row of
-// lobbies, for tests).
+// onCode(code) a room code was clicked, room() the pilot's own room for an
+// advertisement, { code, offer } or null (the page joins the room of its
+// room form first when the pilot is in none), log(line), code (another row
+// of lobbies, for tests).
 export function initHall(opts) {
   const code = opts.code || LOBBY_CODE;
   // The lobbies' own codes, this row's and the public one's, are not rooms.
@@ -563,11 +572,9 @@ export function initHall(opts) {
 
   function show() {
     const on = !!net && !entering;
-    $("hallEnter").hidden = on;
+    $("hallTop").hidden = on;       // the way in, and what entering means
     $("hallEnter").disabled = entering || shut;
-    $("hallLeave").hidden = !on;
     $("hallBody").hidden = !on;
-    $("hallNote").hidden = on;
     if (entering) $("hallState").textContent = "Entering the lobby…";
     renderRoster(); hint();
   }
@@ -598,7 +605,7 @@ export function initHall(opts) {
     store(sessionStorage, "wc:hall", "in");
     $("hallState").textContent = "";
     show();
-    sys(`You are in the lobby${net.code === code ? "" : ` ${net.code} (the ones before it are full)`} as ${myName()}. Say which room you fly in: a code like WC1-4821 in a line can be clicked to join. ` +
+    sys(`You are in the lobby${net.code === code ? "" : ` ${net.code} (the ones before it are full)`} as ${myName()}. Advertise sends your room, and /room in a line is its code; a code like WC1-4821 can be clicked to join. ` +
         `Lines are ${MAX_CHARS} characters at most, two to start with and then one every ${RATE.every / 1000} seconds ` +
         `(one a second while fewer than ${settings.busyFrom || RATE.busyFrom} pilots are here); no links.`);
     if (!typedName().ok && typedName().why !== "empty") sys(`Your callsign is not shown here (${whyText(typedName().why)}): you are ${myName()}.`);
@@ -606,7 +613,8 @@ export function initHall(opts) {
     return true;
   }
 
-  // keep: the pilot did not ask to leave, so the next visit enters again.
+  // keep: the pilot did not ask to leave (the page went away, or the pilot
+  // flies).  A pilot who did ask stays out on the next visit too.
   function leave({ keep = false, why = "" } = {}) {
     clearTimeout(retry); retry = null;
     const was = !!net;
@@ -614,7 +622,7 @@ export function initHall(opts) {
     if (attempt && attempt !== net) attempt.close();
     net = null; entering = false; attempt = null;
     pilots.clear();
-    if (!keep) { store(localStorage, "wc:hall", null); store(sessionStorage, "wc:hall", null); }
+    if (!keep) { store(localStorage, "wc:hall", "out"); store(sessionStorage, "wc:hall", "out"); }
     $("hallState").textContent = why;
     show();
     if (was) log("lobby: left");
@@ -638,13 +646,39 @@ export function initHall(opts) {
     return true;
   }
 
+  // The pilot's room, said without typing its code.  "Advertise" sends the
+  // whole offer (code, mission, free seats); when the pilot's lines are
+  // used up for the moment it waits in the box.
+  async function advertise() {
+    if (shut) return false;
+    const mine = await opts.room();
+    if (!mine) { if (inside()) note("Nothing to advertise: you are in no room (step 2 says why)."); return false; }
+    if (!inside() && !(await enter())) return false;
+    if (say(mine.offer)) { $("hallInput").value = ""; hint(); return true; }
+    $("hallInput").value = mine.offer;
+    hint();
+    return false;
+  }
+  // "/room" in a line is the room's code, and "/room" alone the whole offer.
+  const ROOM_WORD = /(^|\s)\/room(?=\s|$)/gi;
+  async function submit() {
+    let text = $("hallInput").value;
+    if (text.trim().toLowerCase() === "/room") { await advertise(); return; }
+    ROOM_WORD.lastIndex = 0;
+    if (ROOM_WORD.test(text)) {
+      const mine = await opts.room();
+      if (!mine) { note("Not sent: /room is your room's code, and you are in no room (step 2 says why)."); return; }
+      text = text.replace(ROOM_WORD, `$1${mine.code}`);
+      $("hallInput").value = text;    // (what goes, should it have to wait)
+    }
+    if (say(text)) $("hallInput").value = "";
+    hint();
+  }
+
   $("hallEnter").addEventListener("click", () => void enter());
   $("hallLeave").addEventListener("click", () => leave());
-  $("hallForm").addEventListener("submit", (ev) => {
-    ev.preventDefault();
-    if (say($("hallInput").value)) $("hallInput").value = "";
-    hint();
-  });
+  $("hallAdvertise").addEventListener("click", () => void advertise());
+  $("hallForm").addEventListener("submit", (ev) => { ev.preventDefault(); void submit(); });
   $("hallInput").addEventListener("input", () => {
     // (Said while typing, so that nobody composes a line that cannot go.)
     const r = checkMessage($("hallInput").value);
@@ -665,8 +699,8 @@ export function initHall(opts) {
     enter, leave, inside, say,
     // The page's callsign or game changed.
     announce() { if (inside()) { hello(null, false); renderRoster(); } },
-    // A line for the pilot to look over and send (the room's "offer" button).
-    prefill(text) { $("hallInput").value = Array.from(text).slice(0, MAX_CHARS).join(""); noted = ""; hint(); $("hallInput").focus(); },
+    // The pilot's room, as a line in the lobby (the buttons that say so).
+    advertise,
     // While the game runs there is no lobby: the pilot has a flight, and a
     // lobby full of pilots who are away would be no use to those looking
     // for one.  When the game is over (reopen) the lobby is there again,
@@ -679,8 +713,16 @@ export function initHall(opts) {
       show();
       if (back) { back = false; void enter(); }
     },
-    // Entered before, in this tab or on an earlier visit?
-    wanted: (fresh) => stored(sessionStorage, "wc:hall") === "in" || (fresh && stored(localStorage, "wc:hall") === "in"),
+    // Does a page that has just been loaded enter?  Yes, unless the pilot
+    // left the lobby (in this tab, or on an earlier visit and has not
+    // entered since), or a link to a room brought the page: that pilot has
+    // somebody to fly with.  A tab that was in the lobby is in it again
+    // after a reload, link or not.
+    auto({ link = false, off = false } = {}) {
+      const tab = stored(sessionStorage, "wc:hall");
+      if (off || tab === "out") return false;
+      return tab === "in" || (stored(localStorage, "wc:hall") !== "out" && !link);
+    },
     // For the page tests (scripts/web-hall.mjs).
     test: {
       net: () => net,

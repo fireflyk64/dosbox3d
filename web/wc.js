@@ -257,7 +257,10 @@ async function readTarGz(url) {
 function sourceButtons(on) {
   for (const el of [$("useServer"), $("forget"), $("program"), ...$("savedList").querySelectorAll("button")]) el.disabled = !on;
 }
-const useSavedCopy = (g) => setSource({ label: "the saved copy (" + g.label + ")", game: { id: g.id, title: g.title, run: g.run, multiplayer: g.multiplayer }, root: "", files: g.files });
+// (Said with its date and its file: a game that is simply there on the
+// next visit is the copy this browser kept, not one the site has.)
+const useSavedCopy = (g) => setSource({ label: `the copy this browser saved${g.when ? " on " + new Date(g.when).toLocaleDateString() : ""} (${g.label})`, saved: true,
+  game: { id: g.id, title: g.title, run: g.run, multiplayer: g.multiplayer }, root: "", files: g.files });
 
 // One button per game this browser kept, the latest first.
 async function refreshSaved() {
@@ -285,7 +288,7 @@ async function initSources() {
   $("forget").addEventListener("click", async () => {
     for (const g of saved) await forgetGame(g.id);
     await refreshSaved();
-    if (source && source.label.startsWith("the saved copy")) setSource(null);
+    if (source && source.saved) setSource(null);
     sourceStatus("Forgot the saved game files.");
   });
   $("useServer").addEventListener("click", async () => {
@@ -760,24 +763,27 @@ async function joinFromLobby(code) {
   else { $("room").value = typed; retagRoom(); }
 }
 
-// "Offer this room in the lobby": a line with the room's code, for the
-// pilot to look over and send (it counts as one of the pilot's lines).
+// A room advertised in the public lobby: its code (which names the game),
+// the mission and the free seats, "WC1-4821 Gimle 2, 1 seat free".  It is
+// one of the pilot's lines there.
 function offerText() {
   const g = lobby.game;
   const free = g.players.filter((p) => !p.occupied).length;
   const c = lobbyCampaign();
   const s = lobby.mission && c && c.series.find((e) => e.series === lobby.mission.series);
   const what = !lobby.mission ? "campaign" : s && s.name ? `${s.name} ${lobby.mission.mis + 1}` : `series ${lobby.mission.series} mission ${lobby.mission.mis + 1}`;
-  const seats = `${free} seat${free === 1 ? "" : "s"} free`;
+  const seats = free ? `${free} seat${free === 1 ? "" : "s"} free` : "full";
   const full = `${g.code} ${what}, ${seats}`;
   return Array.from(full).length <= MAX_CHARS ? full : `${g.code} ${seats}`;
 }
-$("advertise").addEventListener("click", async () => {
-  if (!lobby.game || running) return;
-  if (!hall.inside() && !(await hall.enter())) return;
-  hall.prefill(offerText());
-  $("hall").scrollIntoView({ block: "nearest", behavior: "smooth" });
-});
+// The pilot's own room for the lobby (its "Advertise" and "/room"): the room
+// the pilot is in, and otherwise the one of the room form, joined now.
+async function myRoom() {
+  if (running) return null;
+  if (!lobby.game) await joinRoom();
+  return lobby.game ? { code: lobby.game.code, offer: offerText() } : null;
+}
+$("advertise").addEventListener("click", () => { if (lobby.game && !running) void hall.advertise(); });
 
 function leaveRoom() {
   voice.stopAll();
@@ -1035,6 +1041,7 @@ const hall = initHall({
   tag: () => gameTag(),
   title: (tag) => (gameByTag(tag) ? gameByTag(tag).title : tag),
   onCode: (code) => void joinFromLobby(code),
+  room: myRoom,
   log,
 });
 window.__wcHall = hall;  // (for the page tests)
@@ -1063,6 +1070,6 @@ initControls({
 void initSources();
 // A shared link (?room=CODE) puts the visitor straight into the room.
 if (query.get("room")) void joinRoom();
-// A pilot who entered the public lobby before is there again: in this tab
-// after a reload, and on a later visit unless a link to a room brought it.
-if (hall.wanted(!query.get("room"))) void hall.enter();
+// The public lobby is where a pilot is unless it left: hall.auto says when
+// not (?lobby=off stays out this once, for tests).
+if (hall.auto({ link: !!query.get("room"), off: query.get("lobby") === "off" })) void hall.enter();

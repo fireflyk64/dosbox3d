@@ -6,189 +6,289 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:,">
 <style>
-  :root { color-scheme: dark; }
-  body { margin: 0; background: #0b0d12; color: #d7dbe3; font: 14px/1.4 system-ui, sans-serif; }
-  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
-  h1 { font-size: 18px; margin: 0 0 12px; }
-  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #7d8797; margin: 0 0 8px; }
-  section { margin-bottom: 16px; }
+  /* A cockpit's displays: green on black with amber for what matters, the
+     panels' corners marked like a targeting bracket.  Compact: game files
+     and room on the left, the public lobby beside them, the game below.
+     Flat colours only: no shadows, blurs, filters, gradients or animations.
+     The emulator runs in this page's own thread, and whatever the browser
+     has to paint around the game's picture is time the game does not get. */
+  :root {
+    color-scheme: dark;
+    --bg: #03060a; --line: #1b5a3a; --line2: #123f29; --dark: #020705;
+    --green: #5ef38c; --green2: #2fae62;
+    --amber: #ffcf40; --amber2: #b98a12; --red: #ff5b4d; --blue: #86b9ff;
+    --text: #cfe9d9; --muted: #7aa58b;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", "Roboto Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.45 var(--mono); }
+  main { max-width: 1260px; margin: 0 auto; padding: 8px 12px 24px; }
   [hidden] { display: none !important; }
-  input[type=text], input[type=number], select { padding: 6px 8px; background: #151922; color: #e8ecf3; border: 1px solid #2a3140; border-radius: 4px; font: inherit; }
-  button { padding: 8px 14px; background: #2f6fed; color: white; border: 0; border-radius: 4px; font: inherit; font-weight: 600; cursor: pointer; }
-  button:disabled { background: #3a4152; cursor: default; }
-  button.secondary { background: #263048; }
-  code { font-family: ui-monospace, monospace; }
-  kbd { background: #1d2230; padding: 1px 5px; border-radius: 3px; font-family: ui-monospace, monospace; }
-  .hint { color: #7d8797; font-size: 12px; margin: 6px 0 0; }
+
+  #top { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; padding: 4px 2px 8px; margin-bottom: 10px; border-bottom: 1px solid var(--line2); }
+  #top h1 { margin: 0; color: var(--amber); font: italic 800 22px/1 Eurostile, "Bank Gothic", "Segoe UI", system-ui, sans-serif; letter-spacing: .22em; text-transform: uppercase; }
+  #top .sub { color: var(--muted); font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; }
+  /* (Three lamps: red, amber, green.) */
+  #top::before, #top::after { content: ""; position: absolute; bottom: 9px; height: 7px; box-sizing: border-box; }
+  #top::before { right: 26px; width: 8px; background: var(--red); }
+  #top::after { right: 2px; width: 20px; border-left: 8px solid var(--amber); border-right: 8px solid var(--green); }
+
+  /* panels */
+  .panel { position: relative; padding: 8px 12px 10px; border: 1px solid var(--line2); background: #06110c; }
+  .panel::before, .panel::after { content: ""; position: absolute; width: 12px; height: 12px; pointer-events: none; }
+  .panel::before { top: -1px; left: -1px; border-top: 2px solid var(--green); border-left: 2px solid var(--green); }
+  .panel::after { bottom: -1px; right: -1px; border-bottom: 2px solid var(--green); border-right: 2px solid var(--green); }
+  h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 7px; font: 700 11px/1.2 var(--mono); letter-spacing: .2em; text-transform: uppercase; color: var(--green); }
+  .head { display: flex; align-items: center; gap: 8px; min-height: 26px; margin-bottom: 7px; }
+  .head h2 { margin: 0; }
+  .head .acts { display: flex; gap: 6px; margin-left: auto; }
+  .head button { padding: 6px 12px; }
+  h2 b { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; background: var(--amber); color: #1a1200; font-weight: 800; letter-spacing: 0;
+    clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px); }
+  #deck { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); grid-template-areas: "source hall" "room hall"; gap: 10px; }
+  #source { grid-area: source; } #hall { grid-area: hall; } #roomPanel { grid-area: room; }
+  #flight, #saves { margin-top: 10px; }
+  @media (max-width: 900px) { #deck { grid-template-columns: minmax(0, 1fr); grid-template-areas: "source" "hall" "room"; } }
+
+  /* controls */
+  button { padding: 7px 12px; border: 1px solid var(--amber2); background: #f0b92c; color: #1c1300; cursor: pointer;
+    font: 700 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+    clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px); }
+  button:hover:not(:disabled) { background: #ffd765; }
+  button.secondary { background: #0a2015; color: var(--green); border-color: var(--green2); }
+  button.secondary:hover:not(:disabled) { background: #113a23; color: #c9ffdc; }
+  button:disabled { background: #0a120e; color: #41614f; border-color: #1c3327; cursor: default; }
+  button:focus-visible { border-color: #ffffff; outline: none; }
+  input[type=text], input[type=number], select { height: 26px; padding: 2px 6px; background: var(--dark); color: #dfffe9; border: 1px solid var(--line); border-radius: 0; font: 13px var(--mono); }
+  input::placeholder { color: #3f6b53; }
+  input[type=text]:focus, input[type=number]:focus, select:focus { border-color: var(--green); outline: none; }
+  input:disabled, select:disabled { color: #6b8f7a; border-color: var(--line2); }
+  input[type=checkbox], input[type=range] { accent-color: var(--green2); }
+  code { font-family: var(--mono); color: var(--green); }
+  kbd { padding: 0 4px; background: #0b2417; border: 1px solid var(--line); color: var(--green); font: 11px var(--mono); }
+  .hint { margin: 4px 0 0; color: var(--muted); font: 11.5px/1.45 system-ui, sans-serif; }
+  label.check { display: inline-flex; flex-direction: row; gap: 5px; align-items: center; color: var(--muted); font-size: 11px; letter-spacing: 0; text-transform: none; }
+  details { margin-top: 6px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; }
+  summary:hover { color: var(--green); }
+
   /* game files */
-  #dropzone { border: 2px dashed #2f6fed; border-radius: 6px; padding: 12px 14px; background: #10141c; }
-  #dropzone.over { background: #17233a; border-color: #7aa2ff; }
-  #dropzone .pick { display: inline; color: #7aa2ff; cursor: pointer; text-decoration: underline; }
+  #dropzone { padding: 7px 10px; border: 1px dashed var(--green2); background: #04100a; font: 12px/1.45 system-ui, sans-serif; }
+  #dropzone.over { background: #0b2a1a; border-color: var(--green); }
+  #dropzone .pick { display: inline; color: var(--amber); cursor: pointer; text-decoration: underline; }
   #dropzone input[type=file] { display: none; }
-  #sourceStatus { margin: 6px 0; color: #9aa3b2; }
-  #sourceButtons { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  #pickerLabel { color: #9aa3b2; font-size: 13px; }
-  /* lobby */
-  #setup { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 14px; align-items: end; margin-bottom: 10px; }
-  #setup label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9aa3b2; }
-  #setup label.check { flex-direction: row; align-items: center; }
-  #voiceLabel .note { font-size: 12px; color: #9aa3b2; }
-  #voiceLabel.attention select { outline: 2px solid #f0c040; box-shadow: 0 0 12px #f0c040; animation: voiceGlow 1.2s ease-in-out infinite alternate; }
-  @keyframes voiceGlow { from { box-shadow: 0 0 4px #f0c040; } to { box-shadow: 0 0 16px #f0c040; } }
-  #padDetails { margin-bottom: 10px; }
-  #padDetails summary { cursor: pointer; color: #9aa3b2; }
+  #sourceStatus { margin: 6px 0; color: var(--green); font-size: 12px; }
+  #sourceButtons { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+  #sourceButtons button { padding: 5px 9px; }
+  #pickerLabel, #programLabel { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; }
+
+  /* the public lobby */
+  #hall { display: flex; flex-direction: column; min-height: 236px; }
+  #hallState { margin-left: auto; color: var(--amber); font-weight: 400; letter-spacing: 0; text-transform: none; text-align: right; }
+  #hallTop { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+  #hallTop .hint { flex: 1 1 260px; margin: 0; }
+  #hallBody { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  #hallRoster { margin-bottom: 5px; color: var(--muted); font-size: 12px; }
+  #hallRoster .pilot { color: var(--text); }
+  #hallRoster .pilot.me { color: var(--blue); }
+  #hall .game { padding: 0 3px; border: 1px solid var(--line); color: var(--green2); font-size: 9px; letter-spacing: .06em; vertical-align: 1px; }
+  #hallChat, #chat { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--line2); background: var(--dark); }
+  #hallChat { flex: 1; }
+  #hallLog, #chatLog { flex: 1 1 0; overflow: auto; padding: 6px 8px; font-size: 12.5px; overflow-wrap: anywhere; }
+  #hallLog { min-height: 132px; }
+  #hallLog .sys, #chatLog .sys { color: var(--muted); }
+  #hallLog .name, #chatLog .name { color: var(--amber); font-weight: 700; }
+  #hallLog .name.me { color: var(--blue); }
+  #hallLog .age { color: var(--muted); font-size: 11px; }
+  #hallLog a.roomcode { padding: 0 4px; background: var(--amber); color: #1c1300; font-weight: 700; text-decoration: none; cursor: pointer; }
+  #hallLog a.roomcode:hover { background: #ffe07a; }
+  #hallLog a.roomcode.other { background: #5a4a17; color: #dccb8f; }
+  #hallForm, #chatForm { display: flex; gap: 5px; padding: 5px; border-top: 1px solid var(--line2); }
+  #hallForm input, #chatForm input { flex: 1; min-width: 0; }
+  #hallForm button, #chatForm button { padding: 6px 9px; }
+  #hallHint { min-height: 17px; margin-top: 3px; }
+  #hallHint.warn { color: var(--amber); }
+
+  /* the room */
+  #setup { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: flex-end; }
+  #setup label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; }
+  #room { width: 12ch; }
+  #callsign, #firstname, #lastname { width: 11.5ch; }
+  #players { width: 3.5em; padding-right: 0; }
+  #padSelect { width: 21ch; }
+  #voice { width: 9.5ch; }
+  /* (One of the two at a time: in a room there is nothing to join.) */
+  #roomPanel:has(#leave:not([hidden])) #join { display: none; }
+  #voiceState { margin-top: 4px; color: var(--amber); font-size: 11px; }
+  #voiceState:empty { display: none; }
+  /* (Lit, not blinking: it can stay lit through a whole flight.) */
+  #voiceLabel.attention { color: var(--amber); }
+  #voiceLabel.attention select { border-color: var(--amber); outline: 2px solid var(--amber); }
+  #options .row { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin-top: 6px; }
+  #options label { color: var(--muted); font-size: 11px; }
+  #server { width: 30ch; max-width: 100%; }
   #padMap { border-collapse: collapse; margin: 8px 0; }
   #padMap td { padding: 3px 12px 3px 0; vertical-align: middle; }
-  #padMap button { padding: 3px 10px; font-weight: 400; }
-  #padMap label.check, #padOptions label { color: #9aa3b2; font-size: 12px; }
+  #padMap button { padding: 4px 9px; }
+  #padMap label.check, #padOptions label { color: var(--muted); font-size: 11px; }
   #padOptions { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
-  /* public lobby */
-  #hallTop { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-  #hallState { color: #9aa3b2; }
-  #hallRoster { margin: 8px 0 6px; font-size: 13px; color: #9aa3b2; }
-  #hallRoster .pilot { color: #d7dbe3; }
-  #hallRoster .pilot.me { color: #7aa2ff; }
-  #hall .game { font-size: 10px; padding: 0 4px; border: 1px solid #2a3140; border-radius: 3px; color: #9aa3b2; vertical-align: 1px; }
-  #hallChat { display: flex; flex-direction: column; background: #10141c; border: 1px solid #1d2230; border-radius: 4px; }
-  #hallLog { height: 150px; overflow: auto; padding: 8px 10px; font-size: 13px; overflow-wrap: anywhere; }
-  #hallLog .sys { color: #7d8797; font-style: italic; }
-  #hallLog .name { color: #7aa2ff; font-weight: 600; }
-  #hallLog .name.me { color: #9fe0b0; }
-  #hallLog .age { color: #7d8797; font-size: 11px; }
-  #hallLog a.roomcode { color: #ffd166; font-weight: 600; text-decoration: underline; cursor: pointer; }
-  #hallLog a.roomcode.other { color: #8b7a4a; }
-  #hallForm { display: flex; gap: 6px; padding: 6px; border-top: 1px solid #1a1f2b; }
-  #hallForm input { flex: 1; }
-  #hallHint { min-height: 17px; }
-  #hallHint.warn { color: #ffb454; }
-  #lobby { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: 12px; }
-  #missionRow { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
-  #missionRow label { display: flex; gap: 8px; align-items: center; color: #9aa3b2; font-size: 12px; }
-  #missionRow select { max-width: 100%; }
-  #roster { list-style: none; margin: 0; padding: 0; background: #10141c; border: 1px solid #1d2230; border-radius: 4px; min-height: 120px; }
-  #roster li { padding: 6px 10px; border-bottom: 1px solid #1a1f2b; display: flex; gap: 8px; align-items: center; }
+  #lobby { display: grid; grid-template-columns: minmax(170px, 230px) minmax(0, 1fr); grid-template-areas: "mission mission" "roster chat"; gap: 6px 10px;
+    margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line2); }
+  #missionRow { grid-area: mission; display: flex; flex-wrap: wrap; gap: 5px 12px; align-items: center; }
+  #missionRow label { display: flex; gap: 6px; align-items: center; min-width: 0; color: var(--muted); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; }
+  #missionRow select { min-width: 0; max-width: 100%; }
+  #mission { width: 34ch; }
+  #rocks { width: 9ch; }
+  #missionHint { flex-basis: 100%; margin: 0; }
+  #rosterBox { grid-area: roster; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  #roster { list-style: none; margin: 0; padding: 0; min-height: 56px; border: 1px solid var(--line2); background: var(--dark); }
+  #roster li { display: flex; gap: 7px; align-items: center; padding: 4px 8px; border-bottom: 1px solid #0c2a1b; font-size: 12.5px; }
   #roster li:last-child { border-bottom: 0; }
-  #roster .dot { width: 9px; height: 9px; border-radius: 50%; background: #3a4152; flex: none; }
-  #roster .dot.up { background: #3ddc84; }
-  #roster .dot.down { background: #f5a623; }
-  #roster .who { flex: 1; }
-  #roster .tag { font-size: 11px; color: #7d8797; }
-  #chat { display: flex; flex-direction: column; background: #10141c; border: 1px solid #1d2230; border-radius: 4px; min-height: 120px; }
-  #chatLog { flex: 1; max-height: 180px; overflow: auto; padding: 8px 10px; font-size: 13px; }
-  #chatLog .sys { color: #7d8797; font-style: italic; }
-  #chatLog .name { color: #7aa2ff; font-weight: 600; }
-  #chatForm { display: flex; gap: 6px; padding: 6px; border-top: 1px solid #1a1f2b; }
-  #chatForm input { flex: 1; }
-  #actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 10px 0; }
-  #status { color: #9aa3b2; }
-  /* game */
-  #stage { display: flex; flex-wrap: wrap; gap: 12px; }
-  #canvas { background: black; width: 640px; height: 400px; image-rendering: pixelated; outline: none; }
-  #canvas:fullscreen { width: 100vw; height: 100vh; object-fit: contain; }
+  #roster .dot { flex: none; width: 8px; height: 8px; background: #25382e; transform: rotate(45deg); }
+  #roster .dot.up { background: var(--green); }
+  #roster .dot.down { background: var(--amber); }
+  #roster .who { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  #roster .tag { color: var(--muted); font-size: 10px; }
+  #lobbyHint { margin: 0; }
+  #chat { grid-area: chat; }
+  #chatLog { min-height: 118px; max-height: 240px; }
+  @media (max-width: 560px) { #lobby { grid-template-columns: minmax(0, 1fr); grid-template-areas: "mission" "roster" "chat"; } }
+
+  /* the game */
+  #actions { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; margin-bottom: 8px; }
+  #fly { padding: 9px 18px; font-size: 13px; }
+  #status { color: var(--amber); font-size: 12px; }
+  #stage { display: flex; flex-wrap: wrap; gap: 10px; }
+  /* (640 x 400 whatever the game's mode, and narrower on a narrow screen: the
+     emulator maps the pointer by the canvas's size on the page.) */
+  #canvas { flex: none; width: min(640px, 100%); height: auto; aspect-ratio: 8 / 5; background: black; image-rendering: pixelated; outline: 1px solid var(--line); }
+  #canvas:fullscreen { width: 100vw; height: 100vh; aspect-ratio: auto; object-fit: contain; outline: none; }
+  #log { flex: 1 1 300px; min-height: 160px; max-height: 402px; overflow: auto; padding: 6px 8px; background: #010403; border: 1px solid var(--line2);
+    color: #6fd398; font: 11px/1.35 var(--mono); white-space: pre-wrap; word-break: break-all; }
+  #perf { min-height: 16px; margin-top: 5px; color: var(--muted); font-size: 11px; }
+  #perf .warn { color: var(--amber); }
+  #under { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; margin-top: 4px; }
+  #under .hint { flex: 1 1 420px; margin: 0; }
   #saveButtons { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-  #saveButtons .pick { color: #7aa2ff; cursor: pointer; text-decoration: underline; }
+  #saveButtons .pick { color: var(--amber); cursor: pointer; text-decoration: underline; }
   #saveButtons input[type=file] { display: none; }
-  #saveStatus { color: #9aa3b2; }
-  #perf { color: #9aa3b2; font: 12px/1.5 ui-monospace, monospace; min-height: 18px; margin-top: 6px; }
-  #perf .warn { color: #ffb454; }
-  #log { flex: 1 1 320px; min-height: 200px; max-height: 400px; overflow: auto; background: #05070a; border: 1px solid #1d2230; padding: 8px; font: 12px/1.35 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
+  #saveStatus { color: var(--muted); font-size: 12px; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Wing Commander — cooperative multiplayer in the browser</h1>
+  <header id="top">
+    <h1>Wing Commander</h1>
+    <span class="sub">cooperative multiplayer in the browser</span>
+  </header>
 
-  <section id="source">
-    <h2>1. Game files</h2>
-    <div id="dropzone" tabindex="0">
-      <strong>Bring your own game.</strong> Drop a <b>.zip</b> of your Wing Commander or Wing Commander II folder, or the GOG installer
-      (<code>setup_wing_commander_*.exe</code>), here, or
-      <label class="pick"><input type="file" id="gamefile" accept=".zip,.exe,application/zip,application/octet-stream"> choose a file</label>.
-      Nothing is uploaded: the files are unpacked and kept in this browser only.
-    </div>
-    <div id="sourceStatus">No game files yet.</div>
-    <div id="sourceButtons">
-      <button type="button" class="secondary" id="useServer" hidden>Use this server's copy</button>
-      <span id="savedList"></span>
-      <button type="button" class="secondary" id="forget" hidden>Forget the saved copy</button>
-      <label id="pickerLabel" hidden>Unknown game; run <select id="exePicker"></select></label>
-      <label id="programLabel" hidden title="The programs in this game directory: everyone in a room plays the same one">Play <select id="program"></select></label>
-    </div>
-  </section>
+  <div id="deck">
+    <section id="source" class="panel">
+      <h2><b>1</b> Game files</h2>
+      <div id="dropzone" tabindex="0">
+        <strong>Bring your own game.</strong> Drop a <b>.zip</b> of your Wing Commander or Wing Commander II folder, or the GOG installer
+        (<code>setup_wing_commander_*.exe</code>), here, or
+        <label class="pick"><input type="file" id="gamefile" accept=".zip,.exe,application/zip,application/octet-stream"> choose a file</label>.
+        Nothing is uploaded: the files are unpacked and kept in this browser only.
+      </div>
+      <div id="sourceStatus">No game files yet.</div>
+      <div id="sourceButtons">
+        <button type="button" class="secondary" id="useServer" hidden>Use this server's copy</button>
+        <span id="savedList"></span>
+        <button type="button" class="secondary" id="forget" hidden>Forget the saved copy</button>
+        <label id="pickerLabel" hidden>Unknown game; run <select id="exePicker"></select></label>
+        <label id="programLabel" hidden title="The programs in this game directory: everyone in a room plays the same one">Play <select id="program"></select></label>
+      </div>
+    </section>
 
-  <section id="hall">
-    <h2>Lobby: find pilots to fly with</h2>
-    <div id="hallTop">
-      <button type="button" class="secondary" id="hallEnter">Enter the lobby</button>
-      <button type="button" class="secondary" id="hallLeave" hidden>Leave the lobby</button>
-      <span id="hallState"></span>
-    </div>
-    <p class="hint" id="hallNote">A public chat room (<code>WC-LOBBY</code>; when it is full, <code>WC-LOBBY0</code>, <code>WC-LOBBY1</code> and so on) where pilots say which room they fly in; a room code in a line can be clicked to join it. Entering connects your browser directly to the other pilots there, as a game does.</p>
-    <div id="hallBody" hidden>
-      <div id="hallRoster"></div>
-      <div id="hallChat">
-        <div id="hallLog"></div>
-        <form id="hallForm"><input type="text" id="hallInput" maxlength="60" autocomplete="off" placeholder="Say which room you fly in: WC1-4821 Enyo 1, one seat free"><button type="submit" class="secondary">Send</button></form>
+    <section id="hall" class="panel">
+      <h2><b>&#9670;</b> Lobby <span id="hallState"></span></h2>
+      <div id="hallTop">
+        <button type="button" class="secondary" id="hallEnter">Enter the lobby</button>
+        <p class="hint" id="hallNote">The public chat room (<code>WC-LOBBY</code>; when it is full, <code>WC-LOBBY0</code>, <code>WC-LOBBY1</code> and so on) where pilots find somebody to fly with. It links your browser directly with the other pilots in it, as a game does.</p>
       </div>
-      <div class="hint" id="hallHint"></div>
-    </div>
-  </section>
+      <div id="hallBody" hidden>
+        <div id="hallRoster"></div>
+        <div id="hallChat">
+          <div id="hallLog"></div>
+          <form id="hallForm">
+            <input type="text" id="hallInput" maxlength="60" autocomplete="off" placeholder="Message; /room is your room code" title="A line for the pilots in the lobby; /room in it is your room's code">
+            <button type="submit" class="secondary">Send</button>
+            <button type="button" class="secondary" id="hallAdvertise" title="Sends your room: its code, its mission and its free seats (the room of step 2 is joined first if you are in none)">Advertise</button>
+            <button type="button" class="secondary" id="hallLeave" title="Leave the lobby; you stay out of it until you enter again">Leave</button>
+          </form>
+        </div>
+        <div class="hint" id="hallHint"></div>
+      </div>
+    </section>
 
-  <section>
-    <h2>2. Room</h2>
-    <form id="setup">
-      <label title="A code of the page's own making starts with the game it is for (WC1, WC2, SM2, SO1, SO2)">Room code <input type="text" id="room" placeholder="WC1-4821" pattern="[A-Za-z0-9_\-]{4,64}" required></label>
-      <label>Callsign <input type="text" id="callsign" placeholder="Maverick"></label>
-      <label id="firstnameLabel" hidden>First name <input type="text" id="firstname" placeholder="Christopher" maxlength="12"></label>
-      <label>Last name <input type="text" id="lastname" placeholder="Blair"></label>
-      <label>Players in room <input type="number" id="players" min="2" max="3" value="2"></label>
-      <label>Controller <select id="padSelect"><option value="none">Keyboard and mouse</option></select></label>
-      <label>Lobby server <input type="text" id="server" value=""></label>
-      <label id="voiceLabel" title="Voice between the players, when everybody in the room has opted in">Voice <select id="voice">
-        <option value="off">Off</option>
-        <option value="listen">Listen only</option>
-        <option value="ptt">Push to talk (hold `)</option>
-        <option value="on">Always on</option>
-      </select> <span id="voiceState" class="note"></span></label>
-      <label class="check"><input type="checkbox" id="hint" checked> Show the game's hint about chatting with <kbd>0</kbd></label>
-      <label class="check"><input type="checkbox" id="relay"> Force TURN relay</label>
-      <label class="check"><input type="checkbox" id="verbose"> Verbose network log</label>
-      <button type="submit" id="join">Join room</button>
-      <button type="button" class="secondary" id="leave" hidden>Leave room</button>
-    </form>
-    <details id="padDetails">
-      <summary>Controller buttons and axes</summary>
-      <p class="hint" id="padHint"></p>
-      <table id="padMap"><tbody id="padRows"></tbody></table>
-      <div id="padOptions">
-        <label>Stick sensitivity <input type="range" id="padSensitivity" min="30" max="100" step="5"> <span id="padSensitivityValue"></span></label>
-        <label>Dead zone <input type="range" id="padDeadzone" min="5" max="40" step="1"> <span id="padDeadzoneValue"></span></label>
-        <label>Afterburner when the trigger is past <input type="range" id="padBurner" min="50" max="100" step="5"> <span id="padBurnerValue"></span></label>
-        <button type="button" class="secondary" id="padReset">Reset to the gamepad layout</button>
+    <section id="roomPanel" class="panel">
+      <div class="head">
+        <h2><b>2</b> Room</h2>
+        <div class="acts">
+          <button type="submit" form="setup" id="join">Join room</button>
+          <button type="button" class="secondary" id="leave" hidden>Leave room</button>
+        </div>
       </div>
-      <p class="hint">The controller is the game's mouse and keyboard: the sticks steer (left stick turns and pitches, right stick pitches and rolls), the buttons press the game's keys. In menus and the barracks the left stick moves the pointer and the Fire guns button clicks. Each browser window has its own controller, so two windows side by side make a split screen: one controller each, or a controller in one and the keyboard and mouse in the other.</p>
-    </details>
-    <div id="lobby" hidden>
-      <div>
-        <ul id="roster"></ul>
-        <p class="hint" id="lobbyHint">Everyone who opens this page's link lands in this room. The first pilot in is the host and starts the game for everyone.</p>
-        <p><button type="button" class="secondary" id="advertise" hidden title="Writes a line with this room's code for the public lobby; you send it">Offer this room in the lobby</button></p>
+      <form id="setup">
+        <label title="A code of the page's own making starts with the game it is for (WC1, WC2, SM2, SO1, SO2)">Room code <input type="text" id="room" placeholder="WC1-4821" pattern="[A-Za-z0-9_\-]{4,64}" required></label>
+        <label>Callsign <input type="text" id="callsign" placeholder="Maverick"></label>
+        <label id="firstnameLabel" hidden>First name <input type="text" id="firstname" placeholder="Christopher" maxlength="12"></label>
+        <label>Last name <input type="text" id="lastname" placeholder="Blair"></label>
+        <label title="Players in the room: 2, or 3"># players <input type="number" id="players" min="2" max="3" value="2"></label>
+        <label>Controller <select id="padSelect"><option value="none">Keyboard + mouse</option></select></label>
+        <label id="voiceLabel" title="Voice between the players, when everybody in the room has opted in">Voice <select id="voice">
+          <option value="off">Off</option>
+          <option value="listen">Listen only</option>
+          <option value="ptt">Push to talk (hold `)</option>
+          <option value="on">Always on</option>
+        </select></label>
+      </form>
+      <div id="voiceState"></div>
+      <details id="options">
+        <summary>Options</summary>
+        <div class="row">
+          <label>Lobby server <input type="text" id="server" value=""></label>
+          <label class="check"><input type="checkbox" id="hint" checked> Show the game's hint about chatting with <kbd>0</kbd></label>
+          <label class="check"><input type="checkbox" id="relay"> Force TURN relay</label>
+          <label class="check"><input type="checkbox" id="verbose"> Verbose network log</label>
+        </div>
+      </details>
+      <details id="padDetails">
+        <summary>Controller buttons and axes</summary>
+        <p class="hint" id="padHint"></p>
+        <table id="padMap"><tbody id="padRows"></tbody></table>
+        <div id="padOptions">
+          <label>Stick sensitivity <input type="range" id="padSensitivity" min="30" max="100" step="5"> <span id="padSensitivityValue"></span></label>
+          <label>Dead zone <input type="range" id="padDeadzone" min="5" max="40" step="1"> <span id="padDeadzoneValue"></span></label>
+          <label>Afterburner when the trigger is past <input type="range" id="padBurner" min="50" max="100" step="5"> <span id="padBurnerValue"></span></label>
+          <button type="button" class="secondary" id="padReset">Reset to the gamepad layout</button>
+        </div>
+        <p class="hint">The controller is the game's mouse and keyboard: the sticks steer (left stick turns and pitches, right stick pitches and rolls), the buttons press the game's keys. In menus and the barracks the left stick moves the pointer and the Fire guns button clicks. Each browser window has its own controller, so two windows side by side make a split screen: one controller each, or a controller in one and the keyboard and mouse in the other.</p>
+      </details>
+      <div id="lobby" hidden>
+        <div id="missionRow">
+          <label>Mission <select id="mission"></select></label>
+          <label title="The host decides, also while flying; /rocks on, /rocks soft and /rocks off in the chat do the same">Asteroids and mines
+            <select id="rocks"><option value="on">on</option><option value="soft">soft: one rock will not kill you</option><option value="off">off</option></select></label>
+          <div class="hint" id="missionHint"></div>
+        </div>
+        <div id="rosterBox">
+          <ul id="roster"></ul>
+          <button type="button" class="secondary" id="advertise" hidden title="Sends this room to the public lobby: its code, its mission and its free seats">Advertise in the lobby</button>
+          <p class="hint" id="lobbyHint">Everyone who opens this page's link lands in this room. The first pilot in is the host and starts the game for everyone.</p>
+        </div>
+        <div id="chat">
+          <div id="chatLog"></div>
+          <form id="chatForm"><input type="text" id="chatInput" placeholder="Say something to your wingmen…" autocomplete="off" maxlength="200"><button type="submit" class="secondary">Send</button></form>
+        </div>
       </div>
-      <div id="missionRow">
-        <label>Mission <select id="mission"></select></label>
-        <label title="The host decides, also while flying; /rocks on, /rocks soft and /rocks off in the chat do the same">Asteroids and mines
-          <select id="rocks"><option value="on">on</option><option value="soft">soft: one rock will not kill you</option><option value="off">off</option></select></label>
-        <div class="hint" id="missionHint"></div>
-      </div>
-      <div id="chat">
-        <div id="chatLog"></div>
-        <form id="chatForm"><input type="text" id="chatInput" placeholder="Say something to your wingmen…" autocomplete="off" maxlength="200"><button type="submit" class="secondary">Send</button></form>
-      </div>
-    </div>
-  </section>
+    </section>
+  </div>
 
-  <section>
-    <h2>3. Fly</h2>
+  <section id="flight" class="panel">
+    <h2><b>3</b> Fly</h2>
     <div id="actions">
       <button type="button" id="fly" disabled>Fly</button>
       <button type="button" class="secondary" id="fullscreen" hidden>Full screen</button>
@@ -199,12 +299,14 @@
       <div id="log"></div>
     </div>
     <div id="perf" title="Measured in flight, every two seconds"></div>
-    <p><button type="button" class="secondary" id="copyLog" title="The log on the right, for a problem report">Copy log</button></p>
-    <p class="hint">Click the screen to give it the keyboard. <kbd>Caps Lock</kbd> is the game's <kbd>Esc</kbd> (it skips cutscenes), because the browser keeps <kbd>Esc</kbd> for leaving full screen; in Chrome and Edge a short tap of <kbd>Esc</kbd> also reaches the game in full screen, and holding it leaves. Press <kbd>0</kbd> to type a chat message to the other pilots, <kbd>Enter</kbd> sends it; in space <kbd>Enter</kbd> fires missiles. With voice on push to talk, hold <kbd>`</kbd> (or the left stick's button on a controller) to speak. <kbd>Ctrl</kbd>+<kbd>F10</kbd> releases the mouse.</p>
+    <div id="under">
+      <button type="button" class="secondary" id="copyLog" title="The log on the right, for a problem report">Copy log</button>
+      <p class="hint">Click the screen to give it the keyboard. <kbd>Caps Lock</kbd> is the game's <kbd>Esc</kbd> (it skips cutscenes), because the browser keeps <kbd>Esc</kbd> for leaving full screen; in Chrome and Edge a short tap of <kbd>Esc</kbd> also reaches the game in full screen, and holding it leaves. Press <kbd>0</kbd> to type a chat message to the other pilots, <kbd>Enter</kbd> sends it; in space <kbd>Enter</kbd> fires missiles. With voice on push to talk, hold <kbd>`</kbd> (or the left stick's button on a controller) to speak. <kbd>Ctrl</kbd>+<kbd>F10</kbd> releases the mouse.</p>
+    </div>
   </section>
 
-  <section id="saves" hidden>
-    <h2>Save games</h2>
+  <section id="saves" class="panel" hidden>
+    <h2><b>&#9632;</b> Save games</h2>
     <div id="saveButtons">
       <button type="button" class="secondary" id="saveDownload">Download save games</button>
       <label class="pick"><input type="file" id="saveFile"> Restore from a file…</label>

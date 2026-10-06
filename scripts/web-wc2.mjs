@@ -138,7 +138,9 @@ if (expect === "drone") {
   check("the wingman took over the host's campaign record", has("wing", "took over the server's campaign record"), null);
 }
 const frames = (name) => logs[name].reduce((m, l) => { const f = /frame (\d+): own health/.exec(l); return f ? Math.max(m, Number(f[1])) : m; }, 0);
-await sleep(20);
+// (The games log a frame count every 300 frames: on a busy machine, with the
+// picture in view of a browser that draws by software, that takes a while.)
+for (let i = 0; i < 45 && !(frames("host") >= 301 && frames("wing") >= 301); i++) await sleep(2);
 console.log(`frames: host ${frames("host")}, wingman ${frames("wing")}`);
 check("frames flow on both", frames("host") >= 301 && frames("wing") >= 301, [frames("host"), frames("wing")]);
 await shot(host, "host-end"); await shot(wing, "wing-end");
