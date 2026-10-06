@@ -566,6 +566,12 @@ top-level README for the workflow).  What differs:
   check it with a simulated controller in a Ferret and a Broadsword, a
   Hornet and a Rapier.  In the Hornet the change from the fixed point is
   only that full stick pitches at step 5 instead of 4.
+* **The game's screen is the game's.**  Nothing is drawn on it by the
+  hooks but the chat lines and the answers to the chat commands; the
+  seats and their keys are the lobby's hints.  The game's one line of help
+  about the `0` key goes for good once a message has been sent from the
+  browser, and the room form has a box to turn it off before that
+  (`WCNET_NOHINT`).
 * **The lobby server checks the page's origin**; the public server accepts
   only its own host.  Serve the page from there or run a lobby server with
   `--allowed-origin` for the page's origin.

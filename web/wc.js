@@ -44,7 +44,21 @@ function status(text) { $("status").textContent = text; }
 // "Copy log" takes the whole log to the clipboard for a report.
 let endNotice = null;
 let emulatorStarted = false;   // (declared here: an error can come before the rest of this file has run)
+// The game's one line of help, "To transmit comms use the '0' key", is for
+// a player who has never chatted: once a message has gone out from this
+// browser it is not shown again, and the box in the room form turns it off
+// before that.
+const HINT_KEY = "wc:hint";
+try { if (localStorage.getItem(HINT_KEY) === "off") $("hint").checked = false; } catch (e) { /* shown */ }
+$("hint").addEventListener("change", () => { try { localStorage.setItem(HINT_KEY, $("hint").checked ? "on" : "off"); } catch (e) { /* not kept */ } });
+function noticeChat(line) {
+  if (/^wcnet: comms: message sent$/.test(line)) {
+    $("hint").checked = false;
+    try { localStorage.setItem(HINT_KEY, "off"); } catch (e) { /* not kept */ }
+  }
+}
 function noticeGameEnd(line) {
+  noticeChat(line);
   if (/^Exit to error: /.test(line)) {
     // (DOSBox itself gave up: an instruction or a device it does not emulate.)
     setTimeout(() => status(`The emulator stopped: ${line.slice(15, 175)}. Reload the page to fly again; "Copy log" under the picture has the details for a report.`), 0);
@@ -713,7 +727,7 @@ async function start(fromGesture) {
   running = true;
   emulatorStarted = true;
   $("fly").disabled = true;
-  for (const el of ["gamefile", "exePicker", "callsign", "firstname", "lastname", "verbose", "leave"]) $(el).disabled = true;
+  for (const el of ["gamefile", "exePicker", "callsign", "firstname", "lastname", "verbose", "hint", "leave"]) $(el).disabled = true;
   sourceButtons(false);
   try {
     const cfg = {
@@ -741,6 +755,7 @@ async function start(fromGesture) {
     if (cfg.callsign) env.WCCALLSIGN = cfg.callsign;
     if (cfg.lastname) env.WCLASTNAME = cfg.lastname;
     if (cfg.firstname) env.WCFIRSTNAME = cfg.firstname;
+    if (!$("hint").checked) env.WCNET_NOHINT = "1";
     // The picked mission: in the hooks' environment, or on the game's own
     // command line (the registry says which).
     const campaign = gameInfo() && gameInfo().campaign;

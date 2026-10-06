@@ -297,8 +297,9 @@ The server moves the energy on its own ship's words (`curShield`,
 `shieldMax`, `gunEnergy`; `apply_copilot`): a fifth of a shield's full
 charge a press (12 of an Epee's 60, 23 of a Ferret's 115; the guns go to
 100), capped by what the source has and the destination can take, and
-says what it did on its overlay ("BRAVO: shields to guns: guns 40, shields
-50/38"); the drone's overlay echoes the key.  The game's own recharge goes
+logs what it did ("copilot BRAVO: shields to guns: guns 40, shields
+50/38"); nothing is drawn on either screen, the gauges show it (the user
+wants the game to look as it always did).  The game's own recharge goes
 on underneath, so the moves matter when the shields are down, which is
 when they are wanted.  The drone sees the leader's readouts: riding along,
 its own slot 0 (the mission's player ship, the same cockpit) gets the
@@ -350,9 +351,17 @@ is `loadfix -34 wc2 Origin s<series> m<mission>` on every machine: everybody sta
 the barracks with the story at that mission and clicks "Fly mission".
 Saved games are `GAMEDAT/SAVEGAME.WC2`; the speed is GOG's `cycles=8000`.
 
-WC2's own comms display is not hooked, so chat lines and notices ("you are
-a drone", "/chase") are drawn on the emulator's overlay in flight too
-(`wc_net_overlay_chat`), for a time that grows with their length.  The
+WC2's own comms display is not hooked, so chat lines (and the answers to
+the `/chase` and `/rocks` commands) are drawn on the emulator's overlay in
+flight too (`wc_net_overlay_chat`), for a time that grows with their
+length.  Nothing else is: the seats and their keys were announced on the
+screen at the mission's start until 2026-10-05, when the user asked for
+the game to look as vanilla as possible; the page's lobby hint has them.
+The game's one line of help, "To transmit comms use the '0' key", stays
+out of flight and goes for good once a message has been sent from that
+browser (the hooks log the sending, the page remembers it in local storage
+and starts the game with `WCNET_NOHINT`), and the room form has a box to
+turn it off before that.  The
 overlay is drawn on the game's picture, of which the renderer only repaints
 changed lines: a change of text asks for one full repaint
 (`render.scale.clearCache`), or old text stays where the picture is still.

@@ -854,8 +854,7 @@ private:
         wr16(shieldAt, (Bit16u)shield[0]);
         wr16((Bit16u)(shieldAt + 2), (Bit16u)shield[1]);
         wr16((Bit16u)(ds::gunEnergy + 2 * kPlayerSlot), (Bit16u)guns);
-        wclog(2, "copilot %s: %s", c->callsign.c_str(), line);
-        show_notice(c->callsign + ": " + line);
+        wclog(2, "copilot %s: %s", c->callsign.c_str(), line);  // (the gauges show it; nothing on the screen)
     }
 
     bool send_briefing_state(RemoteClient *c) {
@@ -912,11 +911,8 @@ private:
             return false;
         }
         c->inMission = true;
-        if (c->seat == SEAT_DRONE) {
-            show_notice(c->callsign + " rides along as a drone: this mission is flown alone.");
-        } else if (c->seat == SEAT_GUNNER) {
-            show_notice(c->callsign + " is your gunner: the turret he sits in is his.");
-        }
+        // (No word of it on the screen: the game looks as it always did, and
+        // the page's lobby says what each seat is.)
         // Spawns queued in the pending frame are already in the registry copy.
         c->skipPendingEvents = pendingFrame_.frame().event_size();
         return true;
@@ -1337,10 +1333,7 @@ public:
         Event ev;
         ev.mutable_copilot()->set_action(action);
         queue_outgoing_event(ev);
-        wclog(2, "copilot action %d", (int)action);
-        if (action >= 1 && action <= 6) {
-            show_notice(std::string("Copilot: ") + kSaid[action]);  // (the gauges show the result within the frame)
-        }
+        wclog(2, "copilot: %s", action >= 1 && action <= 6 ? kSaid[action] : "?");  // (the gauges show the result within the frame)
     }
 
     virtual void toggle_chase() {
@@ -1350,7 +1343,6 @@ public:
         }
         chase_ = !chase_;
         wclog(1, "drone: %s", chase_ ? "riding behind the leader as copilot" : "flying free");
-        show_notice(chase_ ? "Drone: riding behind the leader as copilot (0 then /chase to fly free)" : "Drone: flying free (0 then /chase to ride behind the leader as copilot)");
     }
 
     virtual void on_mission_starting(int mission, int series) {
@@ -1638,13 +1630,13 @@ private:
             entities_.set_own_ship(-1);
             entities_.map(kPlayerSlot, kPlayerSlot);
             seatFrames_ = 0;
-            show_notice("This mission is flown alone: you are the gunner, in the rear turret. F2 and F3 are the side turrets, F4 the rear one, F1 the pilot's view.");
         } else if (seat_ == SEAT_DRONE) {
             // No ship of the mission is ours: every spawn of the server's is
-            // another ship here, and the leader's is made first.
+            // another ship here, and the leader's is made first.  (The seat
+            // and its keys are the page's lobby to explain: the game's
+            // screen stays the game's.)
             entities_.set_own_ship(-1);
             enqueue_host_body();
-            show_notice("This mission is flown alone: you are the drone and the leader's copilot. Up/Down shift the leader's shields to the rear/front, Space puts shields into the guns, Enter guns into the weakest shield, + and - set the cruising speed. Nothing sees or hits you. 0 then /chase flies free.");
         } else {
             entities_.set_own_ship(shipNet_);
         }
@@ -1958,6 +1950,7 @@ int wc_net_rocks() {
 }
 
 void wcnetSendChatMessage(const std::string &msg) {
+    wclog(1, "comms: message sent");  // (the page remembers: the hint about the 0 key is not needed again)
     // "/rocks on", "/rocks soft" and "/rocks off" in the comms prompt are a
     // command, not a message.
     if (strncasecmp(msg.c_str(), "/rocks", 6) == 0) {

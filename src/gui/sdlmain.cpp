@@ -1562,8 +1562,10 @@ std::string outgoing_prefix = "[Transmit Comms] ";
 size_t last_incoming_text_len = 0;
 std::string incoming_text="";
 size_t last_outgoing_text_len = 0;
+// The hint about the 0 key, until the first message is sent; a player who
+// knows (WCNET_NOHINT in the environment, the page's choice) never sees it.
 static const char kCommsHint[] = "To transmit comms use the '0' key";
-std::string outgoing_text=kCommsHint;
+std::string outgoing_text = kCommsHint;
 extern Bit8u int10_font_14[256 * 14];
 static void DrawText(Bitu x,Bitu y,const char * text,Bit8u color, Bit8u *surface, Bitu pitch) {
     Bitu step  = pitch /sdl.draw.width;
@@ -1648,6 +1650,14 @@ void GFX_EndUpdate( const Bit16u *changedLines ) {
                 DrawText(48,48, to_write->c_str(), 0x80, textPixels, textPitch);
             }
             std::string lengthen;
+            static bool hintDecided = false;
+            if (!hintDecided) {
+                hintDecided = true;
+                const char *noHintEnv = getenv("WCNET_NOHINT");
+                if (noHintEnv && noHintEnv[0] && noHintEnv[0] != '0' && outgoing_text == kCommsHint) {
+                    outgoing_text = "";
+                }
+            }
             const std::string * to_write = &outgoing_text;
             static const std::string noHint;
             if (in_space() && outgoing_text == kCommsHint) {
