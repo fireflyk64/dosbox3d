@@ -539,6 +539,23 @@ top-level README for the workflow).  What differs:
   a window that is visible but not focused keeps flying: two windows side by
   side are a split screen.  The DOS game-port joystick is off in this build
   (`joysticktype=none`), or a gamepad would reach the game twice.
+* **No crosshair for a controller.**  In flight the games steer by their
+  mouse pointer, a crosshair the cockpit code draws on every frame while
+  the pointer steers (`cmp word [00C6],1` in WC.EXE's `ovr134:26FE`,
+  `[00DC]` in WC2.EXE's `seg005:3384`): the picture under it is put by
+  (`call far [7A4E]`), the pointer drawn (`call far [7A4A]`), and the next
+  frame puts the picture back.  The page moves that pointer for a
+  controller's stick, so a pilot with a controller had it wandering about
+  the view.  With a controller chosen the page tells the emulator
+  (`wc_web_pointer_off`; `WCNOPOINTER=1` natively), and the hook steps over
+  the one call that draws it (`code::cockpitPointer`, in all five
+  programs): the rest goes on, so nothing is left on the screen, and in
+  the barracks, the menus and the navigation map, where other code draws
+  the pointer, it is there to click with.  "Show the game's crosshair in
+  flight" under the controller's settings brings it back.  Checked
+  natively in the five programs (the screen with and without differs in
+  the pointer's nine by nine pixels and nowhere else) and in
+  `scripts/web-smoke.sh pad`.
 * **Where the pointer rests is the cockpit's business.**  Both games read
   the pointer the same way (WC.EXE `seg001:0E52`, WC2 `seg001:0C5A`): its
   distance from the middle of the 3D view picks a step of turn from two

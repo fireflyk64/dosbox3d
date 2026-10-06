@@ -836,7 +836,32 @@ static void on_barracks() {
     }
 }
 
+// In flight the game steers by its mouse pointer, a crosshair that the
+// cockpit code draws on every frame while the pointer is what steers
+// (WC.EXE dseg:00C6, WC2.EXE dseg:00DC, is 1): the picture under it is put
+// by, the pointer is drawn, and the next frame puts the picture back.  A
+// pilot who steers with a controller has that crosshair wandering about
+// the view for nothing -- the page moves the pointer for the stick -- so
+// the page says when it is not wanted (wc_web_pointer_off; WCNOPOINTER=1
+// natively), and the one call that draws it is stepped over: a `call far
+// [driver]` of four bytes whose arguments the caller takes off the stack
+// itself.  Putting the picture by and back goes on as ever, so nothing is
+// left behind; in the barracks, the menus and the navigation map, where the
+// pointer is what one clicks with, other code draws it, and does.
+static int g_pointerOff = -1;
+static bool pointer_off() {
+    if (g_pointerOff < 0) {
+        const char *env = getenv("WCNOPOINTER");
+        g_pointerOff = env && env[0] && env[0] != '0' ? 1 : 0;
+    }
+    return g_pointerOff != 0;
+}
+
 static void check_hooks_slow() {
+    if (at_location(code::cockpitPointer) && pointer_off()) {
+        reg_eip += 4;
+        return;
+    }
     if (at_location(code::briefingStarted)) {
         wclog(2, "briefing animation starting for mission %d/%d", rd8(ds::currentMission), rd8(ds::currentSeries));
     }
@@ -1080,6 +1105,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_pointer(double fx, double fy) {
     g_webPointerX = fx < 0 ? 0 : fx > 1 ? 1 : fx;
     g_webPointerY = fy < 0 ? 0 : fy > 1 ? 1 : fy;
     g_webPointerWanted = true;
+}
+// The page's controller code: 1 while a controller steers and the cockpit's
+// crosshair is not wanted, 0 when it is (a negative value only asks).
+extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_pointer_off(int off) {
+    if (off >= 0) {
+        wc::g_pointerOff = off ? 1 : 0;
+    }
+    return wc::pointer_off() ? 1 : 0;
 }
 extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_mouse_button(int button, int pressed) {
     if (button < 0 || button > 2) {

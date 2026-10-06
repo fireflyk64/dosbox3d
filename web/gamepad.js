@@ -77,7 +77,9 @@ const NONE = "none";
 // stopped at step 5 of the game's 8).  Version 2 of the saved settings:
 // a sensitivity saved by version 1 was the old default, not a choice.
 export function defaultConfig() {
-  const cfg = { version: 2, buttons: {}, axes: {}, deadzone: 0.15, burner: 0.9, sensitivity: 1.0 };
+  // (pointer: the game's own crosshair stays on the screen in flight.  It
+  // is what a mouse steers by; a stick moves it too, for nothing.)
+  const cfg = { version: 2, buttons: {}, axes: {}, deadzone: 0.15, burner: 0.9, sensitivity: 1.0, pointer: false };
   for (const a of ACTIONS) cfg.buttons[a.id] = a.bind ? { ...a.bind } : null;
   for (const a of AXES) cfg.axes[a.id] = { ...a.bind };
   return cfg;
@@ -90,6 +92,7 @@ function loadConfig() {
       for (const a of ACTIONS) if (a.id in (saved.buttons || {})) cfg.buttons[a.id] = saved.buttons[a.id];
       for (const a of AXES) if (saved.axes && saved.axes[a.id]) cfg.axes[a.id] = saved.axes[a.id];
       for (const k of saved.version === 1 ? ["deadzone", "burner"] : ["deadzone", "burner", "sensitivity"]) if (typeof saved[k] === "number") cfg[k] = saved[k];
+      if (typeof saved.pointer === "boolean") cfg.pointer = saved.pointer;
     }
   } catch (e) { /* defaults */ }
   return cfg;
@@ -159,6 +162,7 @@ export function initControls(host) {
     };
   } catch (e) { /* no coordination between windows */ }
   let lastClaim = 0;
+  let told = { M: null, off: false };   // what the emulator was last told about the crosshair
 
   const selected = () => (choice && choice !== NONE ? pads().find((p) => padKey(p) === choice) || null : null);
   const usedElsewhere = (key) => (Date.now() - (others.get(key) || 0)) < 5000;
@@ -223,6 +227,7 @@ export function initControls(host) {
       $(id).value = String(Math.round(cfg[key] * scale));
       $(id + "Value").textContent = `${Math.round(cfg[key] * scale)}%`;
     }
+    $("padPointer").checked = cfg.pointer;
   }
 
   $("padSelect").addEventListener("change", (e) => choose(e.target.value, "selected"));
@@ -246,6 +251,7 @@ export function initControls(host) {
   for (const [id, key] of [["padSensitivity", "sensitivity"], ["padDeadzone", "deadzone"], ["padBurner", "burner"]]) {
     $(id).addEventListener("input", (e) => { cfg[key] = Number(e.target.value) / 100; $(id + "Value").textContent = `${e.target.value}%`; saveConfig(cfg); });
   }
+  $("padPointer").addEventListener("change", (e) => { cfg.pointer = e.target.checked; saveConfig(cfg); });
   $("padReset").addEventListener("click", () => { cfg = defaultConfig(); saveConfig(cfg); capture = null; releaseAll(); render(); });
 
   // -- reading the controller ---------------------------------------------------
@@ -367,6 +373,10 @@ export function initControls(host) {
     const pad = selected();
     if (channel && choice && choice !== NONE && pad && now - lastClaim > 2000) { channel.postMessage({ t: "claim", key: choice }); lastClaim = now; }
     const M = host.module();
+    // With a controller chosen in this window the cockpit's crosshair is not
+    // drawn (src/cpu/wcnet_hooks.cpp, pointer_off), unless the pilot wants it.
+    const off = !!choice && choice !== NONE && !cfg.pointer;
+    if (M && M._wc_web_pointer_off && (told.M !== M || told.off !== off)) { M._wc_web_pointer_off(off ? 1 : 0); told = { M, off }; }
     if (pad && capture) capturing(pad);
     else if (pad && M && M._wc_web_key && !capture) drive(pad, M, now);
     else if (held.size || rollHeld || clickHeld) releaseAll();

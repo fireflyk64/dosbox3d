@@ -19,6 +19,7 @@ static void load_sm2_code() {
     ovr(despawn, 0x10C2, 0x01DD, 0x1C29, 1);                       // ovr137:1C29 (ovr140:1C16)
     ovr(aiShipThink, 0x1185, 0x00CA, 0x160E, 1);                   // ovr160:160E (ovr163:160E)
     ovr(showCommMessage, 0x107F, 0x025F, 0x33EB, 2);               // ovr131:33EB (ovr134:33ED)
+    ovr(cockpitPointer, 0x107F, 0x0214, 0x2823);                   // ovr131:2823 (ovr134:2823)
     ovr(autoAnimation, 0x107B, 0x0025, 0x0000, 3);                 // ovr130:0000 (ovr133:0000)
     ovr(autoAnimationBody, 0x107B, 0x002A, 0x0003);                // ovr130:0003 (ovr133:0003)
     ovr(autopilotFinished, 0x107B, 0x002A, 0x05C9);                // ovr130:05C9 (ovr133:05C9)
@@ -74,6 +75,7 @@ static void load_so1_code() {
     root(autopilotKey, 0x03C5, 0x10A3);                            // seg001:10A3 (seg001:1079)
     root(freeMainMemory, 0x1687, 0x000B);                          // seg092:000B (seg092:0004)
     root(replayKey, 0x03C5, 0x1060);                               // seg001:1060 (seg001:1036)
+    root(cockpitPointer, 0x073D, 0x36CA);                          // seg005:36CA (seg005:3600)
     root(missionStartingDirect, 0x03C5, 0x0372);                   // seg001:0372 (seg001:0330)
     root(missionEndedDirect, 0x03C5, 0x038B);                      // seg001:038B (seg001:0349)
 }
@@ -110,6 +112,7 @@ static void load_so2_code() {
     root(autopilotKey, 0x03C5, 0x10A3);                            // seg001:10A3 (seg001:1079)
     root(freeMainMemory, 0x1699, 0x000B);                          // seg092:000B (seg092:0004)
     root(replayKey, 0x03C5, 0x1060);                               // seg001:1060 (seg001:1036)
+    root(cockpitPointer, 0x0748, 0x36C8);                          // seg005:36C8 (seg005:3600)
     root(missionStartingDirect, 0x03C5, 0x0372);                   // seg001:0372 (seg001:0330)
     root(missionEndedDirect, 0x03C5, 0x038B);                      // seg001:038B (seg001:0349)
 }

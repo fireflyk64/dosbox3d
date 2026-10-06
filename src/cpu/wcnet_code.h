@@ -60,6 +60,8 @@ typedef Loc RootLoc;
     X(turretFire) X(turretFireShot) X(turretAutoNext) X(turretAutoSkip) X(setView) X(replayKey) X(freeMainMemory) \
     /* cloaking (WC2) */ \
     X(cloak) X(uncloak) \
+    /* the cockpit's mouse pointer */ \
+    X(cockpitPointer) \
     /* root image */ \
     X(mainLoopTop) X(statusCheckAfterKeys) X(statusCheckAfterFrame) X(statusSetByExitKey) \
     X(skipOrchestra) X(afterStartup) X(afterHangarMission)

@@ -97,6 +97,7 @@ static void load_wc1_code() {
     ovr(aiShipThink, STUB163, 0x00CA, 0x160E, 1);          // per-frame ship AI (from ovr141:28D0)
     // overlay 134: VDU / comms
     ovr(showCommMessage, STUB134, 0x025F, 0x33ED, 2);      // outerSomeCommThing(ship, msg): msg 0 shows dseg:8DF8 on the VDU
+    ovr(cockpitPointer, STUB134, 0x0214, 0x2823);          // the frame's last touches (ovr134:26FE): call far [7A4A] draws the mouse pointer
     // overlay 133: autopilot
     ovr(autoAnimation, STUB133, 0x0025, 0x0000, 3);        // autoAnimation(camShipType, camMode, duration)
     ovr(autoAnimationBody, STUB133, 0x002A, 0x0003);       // autoAnimation+3 (after push bp/mov bp,sp)
@@ -170,6 +171,7 @@ static void load_wc2_code() {
     root(autopilotKey, SEG001, 0x1079);                      // handle_key: the autopilot key's far call
     root(freeMainMemory, SEG092, 0x0004);                    // the free bytes of the game's own heap (what its loader's error screen calls MAIN)
     root(replayKey, SEG001, 0x1036);                         // handle_key: R plays the last seconds again (ovr137:0000)
+    root(cockpitPointer, SEG005, 0x3600);                    // the frame's last touches (seg005:3384): call far [DED6] draws the mouse pointer
     // root image: "wc2 Origin l s<series> m<mission>" flies one mission with
     // no story around it (main, seg001:0301)
     root(missionStartingDirect, SEG001, 0x0330);             // about to load mission [D0] of series [D2]

@@ -99,7 +99,9 @@ all the way, the afterburner.  Pitch is inverted by default (pull back to
 climb); every button and axis can be changed under "Controller buttons and
 axes".  Each browser window has its own controller, so two windows side by
 side make a split screen, with a controller each or a controller in one and
-the keyboard and mouse in the other.
+the keyboard and mouse in the other.  With a controller chosen the game's
+mouse crosshair is not drawn in flight (a box under the controller's
+settings brings it back).
 
 **Save games.**  Saving in a bunk writes the game's save file (all eight
 bunks).  The page keeps a copy in the browser's local storage and puts it

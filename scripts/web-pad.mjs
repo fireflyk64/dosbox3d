@@ -79,6 +79,20 @@ for (const [ship, how] of COCKPITS[game]) {
   await page.$eval("#padSensitivity", (el) => { el.value = "70"; el.dispatchEvent(new Event("input")); el.dispatchEvent(new Event("change")); });
   const r70 = await held(0, 1), u70 = await held(1, 1);
   check(`${ship}: at 70% full stick is step 5 (or the edge in a short window)`, r70[0] === 5 && (u70[1] === -5 || u70[1] === -8), [r70, u70]);
+  // The crosshair the game steers by with a mouse is not drawn for a pilot
+  // with a controller (the emulator steps over the cockpit's call that draws
+  // it), unless the pilot ticks the box; with keyboard and mouse it is.
+  const pointerOff = () => page.evaluate(() => window.DOSBox._wc_web_pointer_off(-1));
+  const tick = async (on) => { await page.$eval("#padPointer", (el, on) => { el.checked = on; el.dispatchEvent(new Event("change")); }, on); await page.waitForTimeout(200); };
+  const off1 = await pointerOff();
+  await tick(true);
+  const off2 = await pointerOff();
+  await tick(false);
+  const off3 = await pointerOff();
+  await page.selectOption("#padSelect", "none");
+  await page.waitForTimeout(200);
+  const off4 = await pointerOff();
+  check(`${ship}: with a controller the cockpit's crosshair is off, the box brings it back, and keyboard and mouse have it`, off1 === 1 && off2 === 0 && off3 === 1 && off4 === 0, [off1, off2, off3, off4]);
   await context.close();
 }
 await browser.close();
