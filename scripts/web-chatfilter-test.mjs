@@ -5,7 +5,7 @@
 // What pilots of this game say must pass (ships, systems, callsigns, file
 // names, room codes), and links, the word list and its usual disguises must
 // not.
-import { checkMessage, checkName, hasLink, isProfane, makeBucket, splitCodes, roomTag, normalizeCode, newRoomCode, retagRoomCode, lobbyCode, isLobbyCode, RATE, MAX_CHARS } from "../web/chatfilter.js";
+import { checkMessage, checkName, hasLink, isProfane, makeBucket, splitCodes, roomTag, normalizeCode, newRoomCode, retagRoomCode, lobbyCode, isLobbyCode, lineEvery, RATE, MAX_CHARS } from "../web/chatfilter.js";
 
 let failed = 0;
 const check = (ok, what) => { if (!ok) { failed++; console.log("FAIL: " + what); } };
@@ -73,14 +73,27 @@ check(checkName("x".repeat(17)).why === "long" && checkName("shithead").why === 
   check(!b.take(9000) && b.take(10100) && !b.take(10200), "one more after ten seconds");
   check(b.take(20200) && !b.take(25000) && b.take(30300), "and one every ten seconds after that");
   check(b.take(60000) && b.take(60001) && !b.take(60002), "a quiet pilot has two again");
-  // The receiving side, a little more generous: an honest sender is never dropped.
-  const mine = makeBucket(), theirs = makeBucket({ every: RATE.every - RATE.slack });
-  let now = 0, dropped = 0;
-  for (let i = 0; i < 200; i++) {
-    now += Math.random() < 0.3 ? 50 : Math.random() * 15000;
-    if (mine.take(now) && !theirs.take(now + (Math.random() - 0.5) * 1500)) dropped++;
+  // Among fewer than eight pilots a line a second; the receiving side
+  // counts two pilots more before it holds a sender to ten seconds.
+  check(lineEvery(7) === 1000 && lineEvery(8) === 10000 && lineEvery(64) === 10000 && lineEvery(1) === 1000, "lineEvery, sending: " + [1, 7, 8, 64].map((n) => lineEvery(n)));
+  check(lineEvery(7, true) === 700 && lineEvery(9, true) === 700 && lineEvery(10, true) === 8000, "lineEvery, receiving: " + [7, 9, 10].map((n) => lineEvery(n, true)));
+  let pilots = 3;
+  const q = makeBucket({ every: () => lineEvery(pilots) });
+  check(q.take(0) && q.take(100) && !q.take(200) && q.wait(200) <= 1000 && q.take(1300) && q.take(2400) && !q.take(2500), "three pilots: two lines, then one a second");
+  pilots = 8;
+  check(!q.take(3400) && q.wait(3400) > 3000 && !q.take(6000) && q.take(8000) && !q.take(17000) && q.take(18000), "an eighth pilot comes: ten seconds to a line again");
+  // The receiving side, a little more generous: an honest sender is never
+  // dropped, in a lobby of any size, and not while the two pages count a
+  // pilot apart.
+  for (const [mineCount, theirCount] of [[20, 20], [3, 3], [7, 8], [7, 9], [8, 7]]) {
+    const mine = makeBucket({ every: () => lineEvery(mineCount) }), theirs = makeBucket({ every: () => lineEvery(theirCount, true) });
+    let now = 0, dropped = 0;
+    for (let i = 0; i < 300; i++) {
+      now += Math.random() < 0.3 ? 50 : Math.random() * 1.5 * lineEvery(mineCount);
+      if (mine.take(now) && !theirs.take(now + (Math.random() - 0.5) * 0.15 * lineEvery(mineCount))) dropped++;
+    }
+    check(dropped === 0, `the receiver (counting ${theirCount}) dropped ${dropped} lines of an honest sender (counting ${mineCount})`);
   }
-  check(dropped === 0, `the receiver dropped ${dropped} lines of an honest sender`);
 }
 
 // -- room codes ------------------------------------------------------------------

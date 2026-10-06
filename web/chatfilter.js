@@ -9,6 +9,7 @@
 //                       profanity -> { ok, text } or { ok: false, why }
 //   checkName(name)     the same two rules for a callsign
 //   makeBucket()        two lines to start with, then one every 10 seconds
+//                       (one a second among fewer than 8 pilots: lineEvery)
 //   splitCodes(text)    the room codes in a line, for the page to make
 //                       clickable: WC-1234, WC1-1234, WC2-.., SM2-.., SO1-.., SO2-..
 //   roomTag(code)       which game a code is for ("WC" = not said)
@@ -235,16 +236,28 @@ export function checkName(name) {
 
 // -- how often -------------------------------------------------------------------
 
-// Two lines to start with, then one every ten seconds: a bucket of two
-// tokens that gets one back every `every` milliseconds.  The receiving side
-// keeps one per sender, a little more generous (the network does not deliver
-// at an even pace), so an honest sender's lines are never dropped.
-export const RATE = { burst: 2, every: 10000, slack: 2000 };
+// Two lines to start with, then one every ten seconds in a lobby of eight
+// pilots or more, and one a second among fewer.  (A full lobby of 64 at a
+// line every ten seconds is six lines a second, which can still be read;
+// seven pilots can simply talk.)  A bucket of two tokens gets one back every
+// `every` milliseconds, a number or a function that says what it is now.
+// The receiving side keeps a bucket per sender, a little more generous --
+// the network does not deliver at an even pace, and two pages do not count
+// the same pilots at the same moment -- so that an honest sender's lines
+// are never dropped.
+export const RATE = { burst: 2, every: 10000, slack: 2000, quiet: 1000, quietSlack: 300, busyFrom: 8, margin: 2 };
+// The time between lines among so many pilots, for the sending side or the
+// receiving one.
+export function lineEvery(pilots, receiving = false, busyFrom = RATE.busyFrom) {
+  const busy = pilots >= busyFrom + (receiving ? RATE.margin : 0);
+  return (busy ? RATE.every : RATE.quiet) - (receiving ? (busy ? RATE.slack : RATE.quietSlack) : 0);
+}
 export function makeBucket({ burst = RATE.burst, every = RATE.every, tokens = burst, at = 0 } = {}) {
+  const ms = () => (typeof every === "function" ? every() : every);
   const b = {
     tokens, at,
     fill(now) {
-      if (now > b.at) b.tokens = Math.min(burst, b.tokens + (now - b.at) / every);
+      if (now > b.at) b.tokens = Math.min(burst, b.tokens + (now - b.at) / ms());
       b.at = Math.max(b.at, now);
     },
     // May a line go now?  (Takes its token when it may.)
@@ -257,7 +270,7 @@ export function makeBucket({ burst = RATE.burst, every = RATE.every, tokens = bu
     // Milliseconds until the next line may go.
     wait(now) {
       b.fill(now);
-      return b.tokens >= 1 ? 0 : Math.ceil((1 - b.tokens) * every);
+      return b.tokens >= 1 ? 0 : Math.ceil((1 - b.tokens) * ms());
     },
   };
   return b;

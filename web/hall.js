@@ -1,14 +1,14 @@
 // The public lobby: one room of the lobby server, WC-LOBBY, where pilots who
 // do not know each other yet say which room they fly in.
 //
-// It is an ordinary lobbylink room of 256 seats (or as many as the server
+// It is an ordinary lobbylink room of 64 seats (or as many as the server
 // gives a room: it says so, and the page asks again for that many), and its
 // chat goes from browser to browser like a game's messages do; the lobby
 // server only introduces the browsers to each other.  There
 // is nobody in charge of it, so every page keeps the rules itself, for what
 // its own player types and for what arrives (web/chatfilter.js): lines of
-// 60 characters, two to start with and then one every ten seconds, no
-// profanity, no links.  A room code in a line (WC1-4821) is shown as a link
+// 60 characters, two to start with and then one every ten seconds (one a
+// second while fewer than eight pilots are there), no profanity, no links.  A room code in a line (WC1-4821) is shown as a link
 // that joins that room; the page decides whether the game fits (web/wc.js).
 //
 // The connection is this file's own and not the lobbylink client's
@@ -35,9 +35,10 @@
 //   * Every pilot is linked to every other, so a newcomer to a full lobby
 //     gets hundreds of offers.  They are spread over a few seconds: the
 //     server drops a socket that has more than a hundred messages waiting.
-import { checkMessage, checkName, makeBucket, splitCodes, whyText, lobbyCode, isLobbyCode, LOBBY_CODE, RATE, MAX_CHARS, MAX_NAME, GAME_TAGS } from "./chatfilter.js";
+import { checkMessage, checkName, makeBucket, lineEvery, splitCodes, whyText, lobbyCode, isLobbyCode, LOBBY_CODE, RATE, MAX_CHARS, MAX_NAME, GAME_TAGS } from "./chatfilter.js";
 
-const SEATS = 256;                // asked for; a server that gives a room fewer says how many
+const SEATS = 64;                 // asked for (64 pilots at a line every ten seconds can still be read); a server that gives a room fewer says how many
+const CLAIM_SEATS = 256;          // a full lobby is asked for seats up to here: another page may have made it bigger
 const LOBBIES = 32;               // WC-LOBBY, WC-LOBBY0 ... WC-LOBBY30: how far a page goes for a seat
 const CLAIM_BATCH = 32;           // seats of a full lobby asked for in one go
 const OFFER_SPREAD_MS = 25;       // per pilot in the lobby: over how long the offers to a newcomer are spread
@@ -128,8 +129,8 @@ class HallNet {
       // there is one.  (The seats are asked for a batch at a time, in no
       // order; the first answer names how many seats there are.)
       const claim = async (code) => {
-        let seats = SEATS;
-        const ids = shuffled(SEATS);
+        let seats = CLAIM_SEATS;
+        const ids = shuffled(CLAIM_SEATS);
         for (let i = 0; i < ids.length; i += CLAIM_BATCH) {
           const batch = ids.slice(i, i + CLAIM_BATCH).filter((id) => id < seats);
           if (!batch.length) continue;
@@ -388,12 +389,19 @@ export function initHall(opts) {
   let lastLine = null;           // { text, at }: this pilot's last line, for those who come later
   let noted = "";                // the hint line's own text (a refusal), until the next key
 
+  // The pilots in this lobby, this one included (the roster's count), and
+  // how long a pilot waits between lines among so many: ten seconds from
+  // eight pilots up, a second among fewer.
+  const others = () => (net ? net.players.filter((p) => p.id !== net.selfId && p.occupied && net.open(p.id)) : []);
+  const every = (receiving) => lineEvery(others().length + 1, receiving, settings.busyFrom || RATE.busyFrom);
+
   // What this page may still send: kept over a reload.
   const SENT_KEY = "wc:hall:sent";
   const mine = (() => {
     let saved = null;
     try { saved = JSON.parse(stored(localStorage, SENT_KEY) || "null"); } catch (e) { /* fresh */ }
-    return makeBucket(saved && typeof saved.tokens === "number" && typeof saved.at === "number" && saved.at <= Date.now() ? { tokens: Math.max(0, Math.min(RATE.burst, saved.tokens)), at: saved.at } : { at: Date.now() });
+    const kept = saved && typeof saved.tokens === "number" && typeof saved.at === "number" && saved.at <= Date.now();
+    return makeBucket({ every: () => every(false), ...(kept ? { tokens: Math.max(0, Math.min(RATE.burst, saved.tokens)), at: saved.at } : { at: Date.now() }) });
   })();
   const keepMine = () => store(localStorage, SENT_KEY, JSON.stringify({ tokens: mine.tokens, at: mine.at }));
 
@@ -446,7 +454,7 @@ export function initHall(opts) {
     const box = $("hallRoster");
     box.textContent = "";
     if (!inside()) return;
-    const there = net.players.filter((p) => p.id !== net.selfId && p.occupied && net.open(p.id));
+    const there = others();
     // (Named when it is not the first: pilots in another do not hear this one.)
     box.append(el("span", "count", `${there.length + 1} in the lobby${net.code === code ? "" : " " + net.code}: `));
     const entry = (name, tag, cls) => { const s = el("span", "pilot " + cls, name); if (tag) s.append(" ", el("span", "game", tag)); return s; };
@@ -501,7 +509,7 @@ export function initHall(opts) {
         chatLine(who.name, who.tag, r.text, { old });
         return;
       }
-      if (!buckets.has(id)) buckets.set(id, makeBucket({ every: RATE.every - RATE.slack, at: now }));
+      if (!buckets.has(id)) buckets.set(id, makeBucket({ every: () => every(true), at: now }));
       if (!buckets.get(id).take(now)) { log(`lobby: dropped a line from pilot ${id + 1} (too many)`); return; }
       shown.set(id, r.text);
       chatLine(who.name, who.tag, r.text);
@@ -591,7 +599,8 @@ export function initHall(opts) {
     $("hallState").textContent = "";
     show();
     sys(`You are in the lobby${net.code === code ? "" : ` ${net.code} (the ones before it are full)`} as ${myName()}. Say which room you fly in: a code like WC1-4821 in a line can be clicked to join. ` +
-        `Lines are ${MAX_CHARS} characters at most, two to start with and then one every ${RATE.every / 1000} seconds; no links.`);
+        `Lines are ${MAX_CHARS} characters at most, two to start with and then one every ${RATE.every / 1000} seconds ` +
+        `(one a second while fewer than ${settings.busyFrom || RATE.busyFrom} pilots are here); no links.`);
     if (!typedName().ok && typedName().why !== "empty") sys(`Your callsign is not shown here (${whyText(typedName().why)}): you are ${myName()}.`);
     log(`lobby: in ${net.code} as pilot ${net.selfId + 1} of ${net.maxPlayers}`);
     return true;

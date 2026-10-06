@@ -18,7 +18,9 @@ const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));
 const run = Math.random().toString(36).slice(2, 8).toUpperCase();
 const logs = {};
 
-async function open(name, { hall = "HALL-" + run, game = true, query = {} } = {}) {
+// busy: from how many pilots a lobby is held to a line every ten seconds
+// on that page (8; the pages that try the ten seconds say 2).
+async function open(name, { hall = "HALL-" + run, game = true, query = {}, busy = 0 } = {}) {
   const context = await browser.newContext();
   const page = await context.newPage();
   logs[name] = [];
@@ -29,6 +31,7 @@ async function open(name, { hall = "HALL-" + run, game = true, query = {} } = {}
   for (const [k, v] of Object.entries({ server: lobbyUrl, callsign: name, hall, ...query })) u.searchParams.set(k, v);
   await page.goto(u.toString());
   if (game) await page.waitForFunction(() => /^Ready/.test(document.getElementById("sourceStatus").textContent), null, { timeout: 60000 });
+  if (busy) await page.evaluate((n) => window.__wcHall.test.configure({ busyFrom: n }), busy);
   return page;
 }
 const text = (page, id) => page.$eval("#" + id, (el) => el.innerText);
@@ -45,7 +48,7 @@ const none = await open("NOGAME", { game: false });
 check("a room code before any game is WC- and four digits", /^WC-\d{4}$/.test(await value(none, "room")), await value(none, "room"));
 await none.context().close();
 
-const a = await open("ALPHA");
+const a = await open("ALPHA", { busy: 2 });
 const codeA = await value(a, "room");
 check("with Wing Commander loaded it is WC1- and four digits", /^WC1-\d{4}$/.test(codeA), codeA);
 const programs = await a.$$eval("#program option", (os) => os.map((o) => o.value));
@@ -56,12 +59,12 @@ await a.selectOption("#program", "wc1");
 check("and back", (await value(a, "room")) === codeA, await value(a, "room"));
 
 // -- the lobby --------------------------------------------------------------------
-const b = await open("BRAVO");
+const b = await open("BRAVO", { busy: 2 });
 check("nobody is in the lobby without asking", await a.$eval("#hallBody", (el) => el.hidden), null);
 await enter(a);
 await enter(b);
 check("two pilots see each other", (await pilots(a, 2)) && (await pilots(b, 2)), [await text(a, "hallRoster"), await text(b, "hallRoster")]);
-check("the lobby has 256 seats", (await a.evaluate(() => window.__wcHall.test.net().maxPlayers)) === 256, await a.evaluate(() => window.__wcHall.test.net().maxPlayers));
+check("the lobby has 64 seats", (await a.evaluate(() => window.__wcHall.test.net().maxPlayers)) === 64, await a.evaluate(() => window.__wcHall.test.net().maxPlayers));
 check("with callsign and game", /BRAVO\s*WC1/.test(await text(a, "hallRoster")) && /ALPHA\s*WC1/.test(await text(b, "hallRoster")), await text(a, "hallRoster"));
 
 await say(a, "hello from ALPHA");
@@ -125,7 +128,7 @@ check("no offer button for a full room", await a.$eval("#advertise", (el) => el.
 check("the lobby goes on beside the room", (await pilots(a, 2)) && !(await a.$eval("#hallBody", (el) => el.hidden)), null);
 
 // A pilot who comes later is shown what was last said.
-const c = await open("CHARLIE");
+const c = await open("CHARLIE", { busy: 2 });
 await enter(c);
 check("a third pilot", (await pilots(c, 3)) && (await pilots(a, 3)), await text(c, "hallRoster"));
 check("is shown the last line of those who are there", await sees(c, `${codeA} Enyo 1, 1 seat free`), await text(c, "hallLog"));
@@ -222,7 +225,14 @@ check("a silent pilot's seat in the first lobby goes to the newcomer", (await pi
 check("and the one who lost it lands in the next when it wakes", await f.waitForFunction((want) => document.getElementById("hallRoster").textContent.trim() === want, `1 in the lobby FULL-${run}0: FOX (you)`, { timeout: 30000 }).then(() => true, () => false), [await text(f, "hallRoster"), await text(f, "hallState")]);
 await say(g, "hello from GOLF");
 check("the newcomer talks to the one who stayed", await sees(e, "hello from GOLF"), await text(e, "hallLog"));
-await sleep(10.5);
+// Two pilots are fewer than eight: a line a second.
+await sleep(2.5);
+const three = await g.evaluate(() => ["one", "two", "three"].map((t) => window.__wcHall.say(t)));
+await sleep(0.2);
+check("among fewer than eight pilots the third line waits a second, not ten", three.join() === "true,true,false" && /You can send again in 1 s/.test(await text(g, "hallHint")), [three, await text(g, "hallHint")]);
+await sleep(1.2);
+check("and goes", (await g.evaluate(() => window.__wcHall.say("three"))) && (await sees(e, "GOLF: three")) && (await sees(e, "GOLF: two")), await text(e, "hallLog"));
+await sleep(1.5);
 await say(g, `are you in FULL-${run}0 or WC-LOBBY3?`);
 check("a lobby's code in a line is not a room", (await sees(e, "or WC-LOBBY3?")) && (await e.$$eval("#hallLog a.roomcode", (l) => l.length)) === 0, await text(e, "hallLog"));
 

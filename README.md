@@ -71,7 +71,8 @@ code said in the lobby is a link: a click joins that room, if the game
 loaded on the page is that game.  "Offer this room in the lobby" in the
 room form writes the line.  Nobody runs the lobby, so each page keeps its
 rules for its own player and for what the others send: lines of 60
-characters, two to start with and then one every ten seconds, no profanity
+characters, two to start with and then one every ten seconds (one a second
+while fewer than eight pilots are there), no profanity
 (but hell: there is a Hellcat), no links.  `web/hall.js`,
 `web/chatfilter.js`; docs/wcnet-multiplayer.md, section 6a.
 

@@ -622,9 +622,11 @@ top-level README for the workflow).  What differs:
   (`checkSameGame`), for codes that name nothing.
 * **The public lobby** (`web/hall.js`, `web/chatfilter.js`) is a chat room
   where pilots without a wingman say which room they fly in.  It is a
-  lobbylink room, `WC-LOBBY`, of 256 seats (the user's figure; a server
-  that gives a room fewer says how many, and the page asks again for that:
-  the public server's `max_players_hard` was 32 when this was written),
+  lobbylink room, `WC-LOBBY`, of 64 seats (the user's figure: 64 pilots
+  at a line every ten seconds are six lines a second, which can still be
+  read; a server that gives a room fewer says how many, and the page asks
+  again for that: the public server's `max_players_hard` was 32 when this
+  was written),
   the first of a row: `WC-LOBBY0`, `WC-LOBBY1`, ... up to `WC-LOBBY30`.  A
   page takes a seat in the first of the row that has one, so pilots gather
   in the first and spill into the next only when it is full; a pilot in
@@ -634,10 +636,12 @@ top-level README for the workflow).  What differs:
   own player types (who is told why a line did not go) and again for what
   arrives (a page that was tampered with gains nothing):
   * a line is 60 characters at most;
-  * two lines to start with, then one every ten seconds (a token bucket;
-    the receiving side's, one per seat, refills a little faster so that an
-    honest sender is never dropped, and is not emptied by the seat changing
-    hands);
+  * two lines to start with, then one every ten seconds, and one a second
+    while fewer than eight pilots are in the lobby (a token bucket;
+    the receiving side's, one per seat, refills a little faster and holds
+    a sender to ten seconds only from ten pilots, since two pages do not
+    count the same pilots at the same moment, so that an honest sender is
+    never dropped; it is not filled up again by the seat changing hands);
   * no profanity: a word list of the usual kind, with the usual disguises
     (doubled and spaced letters, look-alike signs, a star inside).  "hell"
     is not on it: the Hellcat is a ship and Hell's Kitchen a system.  A
@@ -664,10 +668,10 @@ top-level README for the workflow).  What differs:
   * links are direct (STUN only) and go through the server's TURN relay only
     when that has failed: the relay has ports for some dozens of links, and
     a full lobby would take them from the games;
-  * every pilot is linked to every other, so a newcomer to a lobby of
-    hundreds is offered hundreds of links.  The offers are spread over up
-    to six seconds (25 ms a pilot present): the server drops a socket with
-    more than a hundred messages waiting;
+  * every pilot is linked to every other, so a newcomer to a full lobby is
+    offered dozens of links at once.  The offers are spread over a moment
+    (25 ms a pilot present): the server drops a socket with more than a
+    hundred messages waiting;
   * a seat whose page went away without leaving stays taken as far as the
     server knows, and a room of strangers fills up with those.  The room
     is made with `allowReplacement` and a `claimAfterMs` of 150 s: a
