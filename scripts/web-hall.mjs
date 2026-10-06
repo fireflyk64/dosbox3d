@@ -64,7 +64,7 @@ check("nobody is in the lobby without asking", await a.$eval("#hallBody", (el) =
 await enter(a);
 await enter(b);
 check("two pilots see each other", (await pilots(a, 2)) && (await pilots(b, 2)), [await text(a, "hallRoster"), await text(b, "hallRoster")]);
-check("the lobby has 64 seats", (await a.evaluate(() => window.__wcHall.test.net().maxPlayers)) === 64, await a.evaluate(() => window.__wcHall.test.net().maxPlayers));
+check("the lobby has 32 seats", (await a.evaluate(() => window.__wcHall.test.net().maxPlayers)) === 32, await a.evaluate(() => window.__wcHall.test.net().maxPlayers));
 check("with callsign and game", /BRAVO\s*WC1/.test(await text(a, "hallRoster")) && /ALPHA\s*WC1/.test(await text(b, "hallRoster")), await text(a, "hallRoster"));
 
 await say(a, "hello from ALPHA");

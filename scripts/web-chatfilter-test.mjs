@@ -75,7 +75,7 @@ check(checkName("x".repeat(17)).why === "long" && checkName("shithead").why === 
   check(b.take(60000) && b.take(60001) && !b.take(60002), "a quiet pilot has two again");
   // Among fewer than eight pilots a line a second; the receiving side
   // counts two pilots more before it holds a sender to ten seconds.
-  check(lineEvery(7) === 1000 && lineEvery(8) === 10000 && lineEvery(64) === 10000 && lineEvery(1) === 1000, "lineEvery, sending: " + [1, 7, 8, 64].map((n) => lineEvery(n)));
+  check(lineEvery(7) === 1000 && lineEvery(8) === 10000 && lineEvery(32) === 10000 && lineEvery(1) === 1000, "lineEvery, sending: " + [1, 7, 8, 32].map((n) => lineEvery(n)));
   check(lineEvery(7, true) === 700 && lineEvery(9, true) === 700 && lineEvery(10, true) === 8000, "lineEvery, receiving: " + [7, 9, 10].map((n) => lineEvery(n, true)));
   let pilots = 3;
   const q = makeBucket({ every: () => lineEvery(pilots) });

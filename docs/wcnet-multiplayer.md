@@ -622,11 +622,11 @@ top-level README for the workflow).  What differs:
   (`checkSameGame`), for codes that name nothing.
 * **The public lobby** (`web/hall.js`, `web/chatfilter.js`) is a chat room
   where pilots without a wingman say which room they fly in.  It is a
-  lobbylink room, `WC-LOBBY`, of 64 seats (the user's figure: 64 pilots
-  at a line every ten seconds are six lines a second, which can still be
-  read; a server that gives a room fewer says how many, and the page asks
-  again for that: the public server's `max_players_hard` was 32 when this
-  was written),
+  lobbylink room, `WC-LOBBY`, of 32 seats (the user's figure, after 256
+  and 64: it is what the public server's `max_players_hard` gives a room,
+  and 32 pilots at a line every ten seconds are three lines a second,
+  which can still be read; a server that gives a room fewer says how many,
+  and the page asks again for that),
   the first of a row: `WC-LOBBY0`, `WC-LOBBY1`, ... up to `WC-LOBBY30`.  A
   page takes a seat in the first of the row that has one, so pilots gather
   in the first and spill into the next only when it is full; a pilot in

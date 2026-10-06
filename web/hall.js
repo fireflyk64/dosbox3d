@@ -1,7 +1,7 @@
 // The public lobby: one room of the lobby server, WC-LOBBY, where pilots who
 // do not know each other yet say which room they fly in.
 //
-// It is an ordinary lobbylink room of 64 seats (or as many as the server
+// It is an ordinary lobbylink room of 32 seats (or as many as the server
 // gives a room: it says so, and the page asks again for that many), and its
 // chat goes from browser to browser like a game's messages do; the lobby
 // server only introduces the browsers to each other.  There
@@ -37,7 +37,7 @@
 //     server drops a socket that has more than a hundred messages waiting.
 import { checkMessage, checkName, makeBucket, lineEvery, splitCodes, whyText, lobbyCode, isLobbyCode, LOBBY_CODE, RATE, MAX_CHARS, MAX_NAME, GAME_TAGS } from "./chatfilter.js";
 
-const SEATS = 64;                 // asked for (64 pilots at a line every ten seconds can still be read); a server that gives a room fewer says how many
+const SEATS = 32;                 // asked for (what the public server gives a room; 32 pilots at a line every ten seconds are three lines a second); a server that gives fewer says how many
 const CLAIM_SEATS = 256;          // a full lobby is asked for seats up to here: another page may have made it bigger
 const LOBBIES = 32;               // WC-LOBBY, WC-LOBBY0 ... WC-LOBBY30: how far a page goes for a seat
 const CLAIM_BATCH = 32;           // seats of a full lobby asked for in one go

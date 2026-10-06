@@ -237,8 +237,8 @@ export function checkName(name) {
 // -- how often -------------------------------------------------------------------
 
 // Two lines to start with, then one every ten seconds in a lobby of eight
-// pilots or more, and one a second among fewer.  (A full lobby of 64 at a
-// line every ten seconds is six lines a second, which can still be read;
+// pilots or more, and one a second among fewer.  (A full lobby of 32 at a
+// line every ten seconds is three lines a second, which can still be read;
 // seven pilots can simply talk.)  A bucket of two tokens gets one back every
 // `every` milliseconds, a number or a function that says what it is now.
 // The receiving side keeps a bucket per sender, a little more generous --
