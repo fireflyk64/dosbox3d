@@ -159,12 +159,48 @@ void Trampoline::save_scratch() {
     scratchSaved_ = true;
 }
 
+// The stub's last instructions can be still to run with CS:IP somewhere
+// else: an interrupt taken between the hook and the stub's retf has its
+// handler running now, and returns into the stub.  With the game's string
+// put back there the processor ran the string ("Bye!", from DS:01EF in
+// WC.EXE), and nothing moved again on either machine.
+//
+// Such an interrupt's frame is where the stub's stack was.  With S the stack
+// pointer the stub was entered with (its return address is there):
+//   taken before the NOP or before "pop bp":  IP at S-8, CS at S-6
+//   taken before "retf":                      IP at S-6, CS at S-4
+// (A thunk's own return address is at S-6 too, and stays there when the
+// stub has returned, but it is the NOP's, never the retf's.)
+bool Trampoline::stub_return_pending() const {
+    if (SegValue(ss) != DS) {
+        return true;  // (a handler on a stack of its own: nothing to go by yet)
+    }
+    const Bit16u sp = (Bit16u)(reg_esp & 0xffff);
+    const Bit16u nop = trampoline_nop(), popBp = (Bit16u)(nop + 1), retf = (Bit16u)(nop + 2);
+    const Bit16u early = (Bit16u)(stubSp_ - 8), late = (Bit16u)(stubSp_ - 6);
+    bool pending = false;
+    if (sp <= early && mem_readw(DS_OFF + (Bit16u)(early + 2)) == DS) {
+        const Bit16u ip = mem_readw(DS_OFF + early);
+        pending = ip == nop || ip == popBp;
+    }
+    if (!pending && sp <= late && mem_readw(DS_OFF + (Bit16u)(late + 2)) == DS) {
+        pending = mem_readw(DS_OFF + late) == retf;
+    }
+    if (pending) {
+        wclog(2, "trampoline: an interrupt was taken on the stub's last instructions; the game's strings wait");
+    }
+    return pending;
+}
+
 void Trampoline::restore_scratch_if_idle() {
     if (!scratchSaved_ || running_ || DS == 0) {
         return;
     }
     if (SegValue(cs) == DS && reg_eip >= trampoline_off() && reg_eip < (Bit32u)trampoline_off() + sizeof(kTrampolineCode)) {
         return;  // the stub's last instructions are still to run
+    }
+    if (stub_return_pending()) {
+        return;
     }
     for (int i = 0; i < kShellcodeBytes; i++) {
         mem_writeb(DS_OFF + (Bit16u)(shellcode_off() + i), savedCode_[i]);
@@ -180,6 +216,7 @@ void Trampoline::jump_to_stub() {
     for (size_t i = 0; i < sizeof(kTrampolineCode); i++) {
         mem_writeb_checked(DS_OFF + trampoline_off() + i, kTrampolineCode[i]);
     }
+    stubSp_ = (Bit16u)(reg_esp & 0xffff);
     SegSet16(cs, DS);
     reg_eip = trampoline_off();
     running_ = true;
@@ -224,6 +261,7 @@ Bit16u Trampoline::hook_ip() {
 
 void Trampoline::start_next() {
     while (!jobs_.empty()) {
+        running_ = true;  // (also when the hook is come to again after the queue had run out)
         current_ = jobs_.front();
         jobs_.pop_front();
         wclog(3, "trampoline: start %s", current_->describe());

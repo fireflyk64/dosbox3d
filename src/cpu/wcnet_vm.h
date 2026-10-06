@@ -140,7 +140,9 @@ public:
 private:
     void jump_to_stub();
     void save_scratch();
+    bool stub_return_pending() const;
     bool scratchSaved_ = false;
+    Bit16u stubSp_ = 0;  // SP when the stub was entered: its return address is there
     std::vector<Bit8u> savedCode_, savedData_;
     void start_next();
 
