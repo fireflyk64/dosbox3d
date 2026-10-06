@@ -32,6 +32,9 @@
   #setup { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 14px; align-items: end; margin-bottom: 10px; }
   #setup label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9aa3b2; }
   #setup label.check { flex-direction: row; align-items: center; }
+  #voiceLabel .note { font-size: 12px; color: #9aa3b2; }
+  #voiceLabel.attention select { outline: 2px solid #f0c040; box-shadow: 0 0 12px #f0c040; animation: voiceGlow 1.2s ease-in-out infinite alternate; }
+  @keyframes voiceGlow { from { box-shadow: 0 0 4px #f0c040; } to { box-shadow: 0 0 16px #f0c040; } }
   #padDetails { margin-bottom: 10px; }
   #padDetails summary { cursor: pointer; color: #9aa3b2; }
   #padMap { border-collapse: collapse; margin: 8px 0; }
@@ -103,6 +106,12 @@
       <label>Players in room <input type="number" id="players" min="2" max="3" value="2"></label>
       <label>Controller <select id="padSelect"><option value="none">Keyboard and mouse</option></select></label>
       <label>Lobby server <input type="text" id="server" value=""></label>
+      <label id="voiceLabel" title="Voice between the players, when everybody in the room has opted in">Voice <select id="voice">
+        <option value="off">Off</option>
+        <option value="listen">Listen only</option>
+        <option value="ptt">Push to talk (hold `)</option>
+        <option value="on">Always on</option>
+      </select> <span id="voiceState" class="note"></span></label>
       <label class="check"><input type="checkbox" id="hint" checked> Show the game's hint about chatting with <kbd>0</kbd></label>
       <label class="check"><input type="checkbox" id="relay"> Force TURN relay</label>
       <label class="check"><input type="checkbox" id="verbose"> Verbose network log</label>
@@ -152,7 +161,7 @@
     </div>
     <div id="perf" title="Measured in flight, every two seconds"></div>
     <p><button type="button" class="secondary" id="copyLog" title="The log on the right, for a problem report">Copy log</button></p>
-    <p class="hint">Click the screen to give it the keyboard. <kbd>Caps Lock</kbd> is the game's <kbd>Esc</kbd> (it skips cutscenes), because the browser keeps <kbd>Esc</kbd> for leaving full screen; in Chrome and Edge a short tap of <kbd>Esc</kbd> also reaches the game in full screen, and holding it leaves. Press <kbd>0</kbd> to type a chat message to the other pilots, <kbd>Enter</kbd> sends it; in space <kbd>Enter</kbd> fires missiles. <kbd>Ctrl</kbd>+<kbd>F10</kbd> releases the mouse.</p>
+    <p class="hint">Click the screen to give it the keyboard. <kbd>Caps Lock</kbd> is the game's <kbd>Esc</kbd> (it skips cutscenes), because the browser keeps <kbd>Esc</kbd> for leaving full screen; in Chrome and Edge a short tap of <kbd>Esc</kbd> also reaches the game in full screen, and holding it leaves. Press <kbd>0</kbd> to type a chat message to the other pilots, <kbd>Enter</kbd> sends it; in space <kbd>Enter</kbd> fires missiles. With voice on push to talk, hold <kbd>`</kbd> (or the left stick's button on a controller) to speak. <kbd>Ctrl</kbd>+<kbd>F10</kbd> releases the mouse.</p>
   </section>
 
   <section id="saves" hidden>

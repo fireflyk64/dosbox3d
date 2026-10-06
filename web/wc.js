@@ -9,6 +9,7 @@
 // protocol never produces, so the transport filters them out.
 import { P2PGame } from "./p2p-client.js";
 import { initControls } from "./gamepad.js";
+import { initVoice } from "./voice.js";
 import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles,
          saveGame, loadGames, forgetGame, totalSize, gameById } from "./gamefiles.js";
 
@@ -472,7 +473,7 @@ function sendLobby(obj, to) {
   for (const id of targets) g.sendReliable(id, encodeLobby(obj)).catch((e) => log(`lobby: message to player ${id} failed: ${e.message}`));
 }
 const sayHello = (to, reply) => sendLobby({ t: "hello", name: myName(), flying: running, reply: !!reply,
-  game: source ? source.game.id : "",
+  game: source ? source.game.id : "", voice: voice.choice(),
   mission: isHost() ? missionKey(lobby.mission) : undefined, rocks: isHost() ? lobby.rocks : undefined }, to);
 
 // Asteroid and mine fields on, soft or off.  The host's page tells the others
@@ -564,8 +565,11 @@ function onLobbyEvent(ev) {
           chatLine(`${esc(m.name)} switched ${rocksLabel(lobby.rocks)}`, "sys");
           renderMission();
         }
+        voice.remote(ev.from, typeof m.voice === "string" ? m.voice : "off");
         if (!m.reply) sayHello(ev.from, true);
         renderRoster(); updateActions();
+      } else if (m.t === "voice") {
+        void voice.signal(ev.from, m.data);
       } else if (m.t === "chat") {
         chatLine(`<span class="name">${esc(m.name)}:</span> ${esc(m.text)}`);
       } else if (m.t === "start" && ev.from === 0 && !running) {
@@ -584,13 +588,16 @@ function onLobbyEvent(ev) {
     }
     case "player-joined": case "player-rejoined": case "player-replaced":
       lobby.links.set(ev.playerId, "down"); lobby.names.delete(ev.playerId); lobby.flying.delete(ev.playerId); lobby.games.delete(ev.playerId);
+      voice.forget(ev.playerId);
       renderRoster(); break;
     case "player-left":
       if (ev.reason === "explicit-leave") {
         chatLine(`${esc(lobby.names.get(ev.playerId) || "Player " + (ev.playerId + 1))} left the room`, "sys");
         lobby.names.delete(ev.playerId); lobby.links.delete(ev.playerId); lobby.flying.delete(ev.playerId); lobby.games.delete(ev.playerId);
       }
+      voice.forget(ev.playerId);
       renderRoster(); updateActions(); break;
+
     case "peer-state":
       lobby.links.set(ev.playerId, ev.state === "connected" ? "up" : (ev.state === "failed" || ev.state === "closed") ? "down" : (lobby.links.get(ev.playerId) || "down"));
       if (ev.state === "connected") sayHello(ev.playerId, false);
@@ -648,6 +655,7 @@ async function joinRoom() {
 }
 
 function leaveRoom() {
+  voice.stopAll();
   if (lobby.unsubscribe) lobby.unsubscribe();
   if (lobby.game) { try { lobby.game.close(); } catch (e) { /* gone */ } }
   lobby.game = null; lobby.unsubscribe = null; lobby.adopted = false; lobby.backlog = [];
@@ -734,6 +742,9 @@ async function start(fromGesture) {
   if (running) return;
   running = true;
   emulatorStarted = true;
+  // Voice on one side only: said here, so that nobody is surprised.
+  const voiceWarning = voice.warning();
+  if (voiceWarning) { chatLine(esc(voiceWarning), "sys"); log("voice: " + voiceWarning); }
   $("fly").disabled = true;
   for (const el of ["gamefile", "exePicker", "callsign", "firstname", "lastname", "verbose", "hint", "leave"]) $(el).disabled = true;
   sourceButtons(false);
@@ -887,8 +898,21 @@ function steeringPointer() {
            stepsX: steps(1, 639), stepsY: steps(2, 199), edgeX: M._wc_web_steer(3, 0) / 639, edgeY: M._wc_web_steer(3, 1) / 199, top: M._wc_web_steer(3, 2) };
 }
 
+// The voice control, told of the room by the lobby code above.
+const voice = initVoice({
+  game: () => lobby.game,
+  names: () => lobby.names,
+  chatLine: (text, cls) => chatLine(esc(text), cls),
+  log,
+  announce: () => { if (lobby.game) sayHello(); },
+  signal: (id, data) => sendLobby({ t: "voice", data }, id),
+});
+window.__wcVoiceLinks = voice.links;  // (for the page tests)
+
 initControls({
   module: () => (running && window.DOSBox) || null,
+  // (A controller button without a key of its own is the page's: push to talk.)
+  onAction: (id, down) => { if (id === "ptt") voice.ptt(down); },
   pointer: steeringPointer,
   log,
 });

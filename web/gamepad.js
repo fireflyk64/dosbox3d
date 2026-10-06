@@ -52,6 +52,8 @@ export const ACTIONS = [
   { id: "lock", label: "Lock target", keys: ["l"], bind: null },
   { id: "comms", label: "Communications", keys: ["c"], bind: null },
   { id: "esc", label: "Esc (skip a scene)", keys: ["esc"], bind: null },
+  // (No key: the page's own action, voice push to talk, through host.onAction.)
+  { id: "ptt", label: "Push to talk (voice)", keys: [], bind: { button: 10 } },
 ];
 // Analog inputs.  Not inverted means: stick right turns and rolls right, and
 // pushing the stick up raises the nose; pitch is inverted by default, the
@@ -132,6 +134,8 @@ export function stepped(v, steps, reach, edge, top) {
 //              with stepsX / stepsY / edgeX / edgeY / top for a game that
 //              turns in steps (see stepped below)
 //   log(line)
+//   onAction(id, down): an action of the page's own (no key), such as voice
+//              push to talk, pressed or released (optional)
 export function initControls(host) {
   const $ = (id) => document.getElementById(id);
   let cfg = loadConfig();
@@ -340,7 +344,10 @@ export function initControls(host) {
       // drinks fuel); letting go needs a little less, so it does not flutter.
       const on = a.analog ? cfg.burner : 0.5;
       const down = held.get(a.id) ? v > on - 0.1 : v >= on;
-      if (down !== !!held.get(a.id)) { sendKeys(M, a.keys, down); held.set(a.id, down); }
+      if (down !== !!held.get(a.id)) {
+        if (a.keys.length) sendKeys(M, a.keys, down); else if (host.onAction) host.onAction(a.id, down);
+        held.set(a.id, down);
+      }
       if (a.click) {
         const click = down && !flying;
         if (click !== clickHeld) { M._wc_web_mouse_button(0, click ? 1 : 0); clickHeld = click; }

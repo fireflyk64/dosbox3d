@@ -585,6 +585,27 @@ top-level README for the workflow).  What differs:
   about the `0` key goes for good once a message has been sent from the
   browser, and the room form has a box to turn it off before that
   (`WCNET_NOHINT`).
+* **Voice** (`web/voice.js`).  Each player chooses in the room form: off
+  (the default), listen only, push to talk, or always on; the choice is
+  kept in local storage and goes to the others with the hello.  Voice runs
+  only when everybody in the room has opted in -- one player who has not
+  wants no voice and gets none, and nobody else hears or is heard either
+  (the user's rule: one open mic could easily be rude).  A player who has
+  not opted in while another has sees the control light up with who did,
+  and Fly puts a line in both chats when a voice is on one side only, so
+  that nobody is surprised.  The sound is WebRTC audio, a second peer
+  connection beside the game's data channel, negotiated with offer, answer
+  and ICE candidates sent as the page's own lobby messages over that data
+  channel (the lobby server's signal relay only passes the game's kinds)
+  with the lobby's ICE servers; the lower player id offers.  The browser's
+  audio processing does the quality: echo cancellation (it knows what the
+  browser plays, the game's sound included), noise suppression, automatic
+  gain, Opus.  Push to talk is the backquote key, held (it does not reach
+  the game), or a controller's left stick button (`ptt` in
+  `web/gamepad.js`); listen only sends no microphone (a `recvonly`
+  transceiver).  Any change of choice renegotiates, and a player going off
+  closes everybody's voice.  `scripts/web-smoke.sh voice` runs it in two
+  headless pages with Chrome's fake microphone.
 * **The lobby server checks the page's origin**; the public server accepts
   only its own host.  Serve the page from there or run a lobby server with
   `--allowed-origin` for the page's origin.

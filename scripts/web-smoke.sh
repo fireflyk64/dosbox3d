@@ -7,6 +7,7 @@
 #   scripts/web-smoke.sh [seconds] [mission] [series]
 #   NATIVE_HOST=1 scripts/web-smoke.sh [seconds] [mission] [series]
 #   scripts/web-smoke.sh pad      # a controller's stick in a Hornet and a Rapier (scripts/web-pad.mjs)
+#   scripts/web-smoke.sh voice    # voice between two pages (scripts/web-voice.mjs)
 #
 # With NATIVE_HOST=1 the native DOSBox (NATIVE_DOSBOX, default
 # build-native/src/dosbox or src/dosbox) hosts through the same lobby with
@@ -46,6 +47,10 @@ sleep 1
 
 if [ "${1:-}" = pad ]; then
     PLAYWRIGHT_DIR="$PW" SHOT_DIR="$OUT" node "$ROOT/scripts/web-pad.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" wc1 2>&1 | tee "$OUT/pad.log"
+    exit "${PIPESTATUS[0]}"
+fi
+if [ "${1:-}" = voice ]; then
+    PLAYWRIGHT_DIR="$PW" node "$ROOT/scripts/web-voice.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" 2>&1 | tee "$OUT/voice.log"
     exit "${PIPESTATUS[0]}"
 fi
 
