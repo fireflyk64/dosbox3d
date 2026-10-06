@@ -4,7 +4,8 @@
 // (the link goes), and Fly with a voice on one side only says so in the chat
 // of both.  Driven by scripts/web-smoke.sh voice.
 //
-//   node scripts/web-voice.mjs PAGE_URL LOBBY_URL
+//   node scripts/web-voice.mjs PAGE_URL LOBBY_URL             # the server's wc.tar.gz
+//   GAME_FILE=wc2.zip node scripts/web-voice.mjs PAGE_URL LOBBY_URL   # the pages' own game files
 import { createRequire } from "node:module";
 import path from "node:path";
 const [pageUrl, lobbyUrl] = process.argv.slice(2);
@@ -25,7 +26,8 @@ async function open(name, callsign) {
   const u = new URL(pageUrl);
   for (const [k, v] of Object.entries({ room, server: lobbyUrl, callsign, "env.MIS": "0", "env.SERIES": "1" })) u.searchParams.set(k, v);
   await page.goto(u.toString());
-  await page.waitForFunction(() => /^(Ready|Could not)/.test(document.getElementById("sourceStatus").textContent), null, { timeout: 120000 });
+  if (process.env.GAME_FILE) await page.setInputFiles("#gamefile", process.env.GAME_FILE);
+  await page.waitForFunction(() => /^(Ready|Could not)/.test(document.getElementById("sourceStatus").textContent), null, { timeout: 300000 });
   // (The page joins the room on its own, ?room= being in the URL.)
   await page.waitForFunction(() => !document.getElementById("lobby").hidden && document.getElementById("roster").children.length > 0, null, { timeout: 60000 });
   return page;
