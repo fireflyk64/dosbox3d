@@ -174,6 +174,17 @@ await c.context().close();
 await a.click("#fly");
 check("the host's Fly takes it out of the lobby", await a.waitForFunction(() => /left the lobby to fly/.test(document.getElementById("hallState").textContent) && document.getElementById("hallEnter").disabled, null, { timeout: 30000 }).then(() => true, () => false), await text(a, "hallState"));
 check("and the wingman, whose game it starts", await b.waitForFunction(() => /left the lobby to fly/.test(document.getElementById("hallState").textContent), null, { timeout: 30000 }).then(() => true, () => false), await text(b, "hallState"));
+// When the game is over the pilot is back (the line is what the hooks log
+// when the game's program ends).
+await a.waitForFunction(() => !!window.DOSBox, null, { timeout: 60000 }).catch(() => {});
+await sleep(2);
+check("nobody is in the lobby while flying", (await a.$eval("#hallBody", (el) => el.hidden)) && (await b.$eval("#hallBody", (el) => el.hidden)), null);
+await a.evaluate(() => window.DOSBox.print("wcnet: Wing Commander ended"));
+check("a pilot whose game is over is back in the lobby", await a.waitForFunction(() => !document.getElementById("hallBody").hidden && /^1 in the lobby/.test(document.getElementById("hallRoster").textContent), null, { timeout: 30000 }).then(() => true, () => false), [await text(a, "hallState"), await text(a, "hallRoster")]);
+check("and the one who still flies is not", await b.$eval("#hallBody", (el) => el.hidden), null);
+await click(a, codeA);
+await sleep(0.5);
+check("a code clicked there says the page has to be loaded again", /Reload the page to join/.test(await status(a)), await status(a));
 await a.context().close();
 await b.context().close();
 

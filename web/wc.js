@@ -62,13 +62,19 @@ function noticeChat(line) {
     try { localStorage.setItem(HINT_KEY, "off"); } catch (e) { /* not kept */ }
   }
 }
+// A pilot who flies is out of the public lobby (start() below).  When the
+// game is over on this page, however it ended, the lobby is open to it
+// again and a pilot who was in it is back in it.
+function flightOver() { setTimeout(() => hall.reopen(), 0); }
 function noticeGameEnd(line) {
   noticeChat(line);
   if (/^Exit to error: /.test(line)) {
     // (DOSBox itself gave up: an instruction or a device it does not emulate.)
     setTimeout(() => status(`The emulator stopped: ${line.slice(15, 175)}. Reload the page to fly again; "Copy log" under the picture has the details for a report.`), 0);
+    flightOver();
   } else if (/^wcnet: .+ ended$/.test(line)) {
     endNotice = { lines: [] };
+    flightOver();
     setTimeout(() => {
       const said = endNotice.lines.join(" / ");
       endNotice = null;
@@ -82,6 +88,7 @@ function emulatorFailed(what) {
   if (!emulatorStarted) return;
   log(`the emulator stopped: ${what}`);
   status(`The emulator stopped (${String(what).split("\n")[0].slice(0, 120)}). Reload the page to fly again; "Copy log" under the picture has the details for a report.`);
+  flightOver();
 }
 window.addEventListener("error", (e) => emulatorFailed((e.error && e.error.stack) || e.message));
 window.addEventListener("unhandledrejection", (e) => emulatorFailed((e.reason && (e.reason.stack || e.reason.message)) || String(e.reason)));
@@ -741,7 +748,7 @@ async function joinRoom({ create = true } = {}) {
 
 // A room code clicked in the public lobby.
 async function joinFromLobby(code) {
-  if (running) return;
+  if (running) { status(`Reload the page to join ${code}: this page's game has been started.`); return; }
   if (lobby.game) {
     status(lobby.game.code === code ? `You are in room ${code}.` : `You are in room ${lobby.game.code}: leave it (step 2) to join ${code}.`);
     return;
@@ -860,8 +867,9 @@ async function start(fromGesture) {
   if (running) return;
   running = true;
   emulatorStarted = true;
-  // (The public lobby is for finding a flight: this page has one.)
-  hall.shut(hall.inside() ? "You left the lobby to fly." : "");
+  // (The public lobby is for finding a flight: this page has one.  The
+  // pilot is back in it when the game is over: flightOver.)
+  hall.shut("You left the lobby to fly.");
   // Voice on one side only: said here, so that nobody is surprised.
   const voiceWarning = voice.warning();
   if (voiceWarning) { chatLine(esc(voiceWarning), "sys"); log("voice: " + voiceWarning); }

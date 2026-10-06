@@ -343,7 +343,7 @@ const store = (s, key, value) => { try { if (value == null) s.removeItem(key); e
 export function initHall(opts) {
   const code = opts.code || HALL_CODE;
   const log = opts.log || (() => {});
-  let net = null, entering = false, attempt = null, shut = false, retry = null, retries = 0, settings = {};
+  let net = null, entering = false, attempt = null, shut = false, back = false, retry = null, retries = 0, settings = {};
   const pilots = new Map();      // seat -> { name, tag } from its hello
   const buckets = new Map();     // seat -> what it may still say (kept when a pilot leaves: a seat is not a fresh start)
   const hellos = new Map();      // seat -> how often it may introduce itself
@@ -618,9 +618,18 @@ export function initHall(opts) {
     announce() { if (inside()) { hello(null, false); renderRoster(); } },
     // A line for the pilot to look over and send (the room's "offer" button).
     prefill(text) { $("hallInput").value = Array.from(text).slice(0, MAX_CHARS).join(""); noted = ""; hint(); $("hallInput").focus(); },
-    // While the game runs there is no lobby: the pilot has a flight.
-    shut(why) { shut = true; leave({ keep: true, why }); },
-    reopen() { shut = false; show(); },
+    // While the game runs there is no lobby: the pilot has a flight, and a
+    // lobby full of pilots who are away would be no use to those looking
+    // for one.  When the game is over (reopen) the lobby is there again,
+    // and a pilot who was in it when the flight began is back in it.
+    shut(why) { if (shut) return; back = inside() || entering; shut = true; leave({ keep: true, why: back ? why : "" }); },
+    reopen() {
+      if (!shut) return;
+      shut = false;
+      $("hallState").textContent = "";
+      show();
+      if (back) { back = false; void enter(); }
+    },
     // Entered before, in this tab or on an earlier visit?
     wanted: (fresh) => stored(sessionStorage, "wc:hall") === "in" || (fresh && stored(localStorage, "wc:hall") === "in"),
     // For the page tests (scripts/web-hall.mjs).

@@ -651,7 +651,10 @@ top-level README for the workflow).  What differs:
   shown the last line of each pilot present (its author sends it again,
   marked with its age; one a minute is taken from a seat).  Entering is the
   pilot's choice (a button; remembered for the next visit), because it
-  connects the browser directly to strangers', and flying leaves.
+  connects the browser directly to strangers'.  Flying leaves the lobby
+  (`hall.shut` in `start()`: a lobby of pilots who are away is no use to
+  those looking for one), and when the game is over on the page, or the
+  page is loaded again, a pilot who was in it is back (`flightOver`).
   The connection is `hall.js`'s own, on the lobby server's signaling
   protocol, not the lobbylink client's:
   * links are direct (STUN only) and go through the server's TURN relay only
