@@ -183,12 +183,27 @@ extra health" and "wingman explodes" behaviour.
   nobody on another machine, so health snapshots never overwrite that byte
   for a human's ship (`write_health(..., keepPilot)`): on the server the
   client's body keeps the pilot the mission setup gave the wingman slot (the
-  mission's wingman), and the client's body for the host wears the pilot the
-  server reports for that spawn (`Spawn.pilot`, stamped when the spawn event
-  leaves, after the mission setup has run), or `WCHOSTPILOT=0..7` to pick
-  another named pilot.  The replayed spawn of an NPC gets its pilot the same
-  way.  Before this, both machines saw "(null)" with a random face and a
-  garbage orders menu for the other human.
+  mission's wingman).  The replayed spawn of an NPC on a client gets the
+  pilot the server reports for it (`Spawn.pilot`, stamped when the spawn
+  event leaves, after the mission setup has run), and so does the client's
+  body for the host in Wing Commander II.  Before this, both machines saw
+  "(null)" with a random face and a garbage orders menu for the other human.
+* **The leader on a wingman's machine** (`wcnet_events.cpp`, under that
+  heading).  What the server reports for the host's own spawn is the
+  mission's wingman, the very pilot the client's player is, and the game
+  takes any ship with a named pilot for its own wingman: Angel's targeting
+  computer said "Target: ANGEL" of the leader, and the leader's ship said
+  Angel's lines.  So in Wing Commander a client's body for the host wears
+  Iceman (pilot 3; `WCHOSTPILOT=0..7` picks another), the game's own lines
+  from that ship are dropped (the hook on `showCommMessage` lets only the
+  chat's own call through), Iceman's name is the host's callsign for the
+  flight (`WCHOSTCALLSIGN`, which the page takes from the room's roster;
+  without it the callsign comes with the host's first typed line) and is put
+  back when the mission ends, and the renderer paints the name off the
+  helmet of the comm picture while a line of the host's is on
+  (`WCHELMETNAME=1` leaves it).  Wing Commander II has the callsign only: it
+  is written as the name of the ship's mission record, which the targeting
+  computer prints.
 * **Shared fate.**  Any player's ending (landed, died, ejected, quit) ends
   the mission for everyone with that same status.  A client reports its own
   ending with `PlayerEnd`; the server adopts the status, its main loop exits,
@@ -418,7 +433,9 @@ shell command still starts/stops the server or connects.  Useful environment:
 | `WCNET_LOG=0..3` | log verbosity (1 default; 2 per event; 3 full protocol) |
 | `MIS=<n> SERIES=<n>` | jump straight into a campaign mission (series 1.., mission 0.. within it; setting either variable is enough, so `MIS=0 SERIES=1` forces the first mission) |
 | `WCCALLSIGN`, `WCLASTNAME` | override the pilot identity |
-| `WCHOSTPILOT=0..7` | on a client: which of the eight named pilots the host's ship appears as (default: the one the server's mission setup gave that slot, i.e. the mission's wingman) |
+| `WCHOSTPILOT=0..7` | on a client: which of the eight named pilots the host's ship appears as (default: 3, Iceman; never the mission's wingman, who is the client's own player) |
+| `WCHOSTCALLSIGN` | on a client: the host's callsign, the name his ship goes by in the targeting computer (the page sets it from the room's roster; without it the host's first typed line brings it) |
+| `WCHELMETNAME=1` | on a client: leave the stand-in pilot's name on the helmet of the comm picture while the host's line is shown |
 | `WCROCKS=0` / `WCROCKS=soft` | on the host: fly without asteroid and mine fields, or with rocks that do a sixteenth of their damage to a player's own ship (everyone follows the host; `/rocks on`, `/rocks soft`, `/rocks off` in the comms prompt switch it in flight) |
 | `WCNET_AUTOKEYS=1` | test aid: press Enter through the briefing, then `A` (autopilot) once in space |
 | `WCNET=0` | fly alone: no server, no room, the game's own wingman (a single-player control for experiments) |
