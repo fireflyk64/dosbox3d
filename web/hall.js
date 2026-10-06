@@ -1,0 +1,606 @@
+// The public lobby: one room of the lobby server, WC-LOBBY, where pilots who
+// do not know each other yet say which room they fly in.
+//
+// It is an ordinary lobbylink room with as many seats as the server gives
+// (32), and its chat goes from browser to browser like a game's messages
+// do; the lobby server only introduces the browsers to each other.  There
+// is nobody in charge of it, so every page keeps the rules itself, for what
+// its own player types and for what arrives (web/chatfilter.js): lines of
+// 60 characters, two to start with and then one every ten seconds, no
+// profanity, no links.  A room code in a line (WC1-4821) is shown as a link
+// that joins that room; the page decides whether the game fits (web/wc.js).
+//
+// The connection is this file's own and not the lobbylink client's
+// (p2p-client.js), which serves a game: a room of strangers wants other
+// habits.
+//   * Browsers connect directly, and through the server's TURN relay only
+//     when that has failed: the relay has ports for a few dozen links, and
+//     the games need them.
+//   * A seat whose page went away without leaving (a closed laptop) stays
+//     taken as far as the server knows.  The room is made so that a seat
+//     silent for two and a half minutes may be claimed by a newcomer when
+//     all are taken, and every page says something to the server twice a
+//     minute so that its own is not.  (The server counts any message as a
+//     sign of life; it has no ping, so it answers "unknown message type".)
+//   * The room ends when the server says so (a day after it was made, or
+//     five minutes after the last pilot left): the next page makes it again.
+import { checkMessage, checkName, makeBucket, splitCodes, whyText, roomTag, RATE, MAX_CHARS, MAX_NAME, GAME_TAGS } from "./chatfilter.js";
+
+export const HALL_CODE = "WC-LOBBY";
+
+const SEATS = 32;                 // the lobby server's most for a room
+const CLAIM_AFTER_MS = 150000;
+const HEARTBEAT_MS = 25000;
+const CONNECT_TIMEOUT_MS = 20000;
+const DIRECT_WAIT_MS = 12000;     // how long a direct connection gets before the relay is tried
+const RELAY_WAIT_MS = 30000;
+const MAX_ATTEMPTS = 3;           // per pair: direct, relayed, relayed
+const MAX_WIRE = 600;             // characters of one message between pages
+const REPLAY_AGE_MS = 15 * 60000; // a newcomer is shown each pilot's last line when it is younger than this
+const REPLAY_EVERY_MS = 60000;    // ... and takes one such line a minute from a seat
+
+// -- the connection --------------------------------------------------------------
+
+function signalingUrl(server) {
+  const u = new URL(server);
+  if (u.protocol === "http:") u.protocol = "ws:";
+  else if (u.protocol === "https:") u.protocol = "wss:";
+  else if (u.protocol !== "ws:" && u.protocol !== "wss:") throw new Error(`unsupported scheme ${u.protocol} in the lobby server's address`);
+  let path = u.pathname.replace(/\/+$/, "");
+  if (!path.endsWith("/ws")) path += "/ws";
+  u.pathname = path; u.search = ""; u.hash = "";
+  return u.toString();
+}
+const fail = (code, message) => Object.assign(new Error(message), { code });
+const shuffled = (n) => { const a = Array.from({ length: n }, (_, i) => i); for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+// One seat in the room and a data channel to everybody else in it.
+//   on.roster()            somebody came or went
+//   on.link(id, open)      the channel to a pilot opened or closed
+//   on.message(id, text)   a message from a pilot
+//   on.lost(code, message) the seat is gone (the room ended, the seat was taken, the server went away)
+class HallNet {
+  constructor({ server, code, seats = SEATS, claimAfterMs = CLAIM_AFTER_MS, heartbeatMs = HEARTBEAT_MS, on, log }) {
+    Object.assign(this, { server, code, seats, claimAfterMs, heartbeatMs, on, log });
+    this.ws = null; this.selfId = -1; this.maxPlayers = 0; this.players = []; this.token = "";
+    this.links = new Map(); this.closed = false; this.beat = null; this.iceAll = []; this.iceDirect = [];
+  }
+
+  // Takes a seat: a free one, the one this page had (its token), or one whose
+  // pilot has been silent too long when all are taken.
+  connect() {
+    const url = signalingUrl(this.server);
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(url);
+      let waiting = null, settled = false;
+      const done = (err, joined) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        // (The page left while the server was answering: the seat goes back.)
+        if (!err && this.closed) { err = fail("closed", "left the lobby"); try { ws.send('{"type":"leave"}'); } catch (e) { /* gone */ } }
+        if (err) { try { ws.close(); } catch (e) { /* gone */ } reject(err); return; }
+        this.adopt(ws, joined);
+        resolve();
+      };
+      const timer = setTimeout(() => done(fail("connect-timeout", "the lobby server did not answer")), CONNECT_TIMEOUT_MS);
+      const ask = (msg) => new Promise((answer) => { waiting = answer; ws.send(JSON.stringify(msg)); });
+      const create = () => ({ maxPlayers: this.seats, waitUntilFull: false, allowLateJoin: true, allowReconnect: true,
+                              allowReplacement: true, reconnectPolicy: "token-or-claim-after-timeout", claimAfterMs: this.claimAfterMs });
+      ws.onmessage = (ev) => {
+        let m;
+        try { m = JSON.parse(ev.data); } catch (e) { return; }
+        if (waiting && (m.type === "joined" || m.type === "error")) { const w = waiting; waiting = null; w(m); }
+      };
+      ws.onerror = () => done(fail("connection-failed", "no connection to the lobby server"));
+      ws.onclose = () => done(fail("connection-closed", "the lobby server closed the connection"));
+      ws.onopen = async () => {
+        try {
+          const join = () => ask({ type: "join", code: this.code, create: create(), ...(this.token ? { resumeToken: this.token } : {}) });
+          let r = await join();
+          // (A server set up with fewer seats to a room says how many.)
+          const limit = r.type === "error" && r.code === "invalid-create" && /exceeds limit (\d+)/.exec(r.message || "");
+          if (limit && Number(limit[1]) >= 2) { this.seats = Number(limit[1]); r = await join(); }
+          if (r.type === "error" && r.code === "room-full") {
+            let seats = SEATS;
+            for (const id of shuffled(SEATS)) {
+              if (id >= seats) continue;
+              r = await ask({ type: "claim-slot", code: this.code, playerId: id });
+              if (r.type === "joined") break;
+              const range = r.code === "invalid-target" && /out of range 0\.\.(\d+)/.exec(r.message || "");
+              if (range) seats = Number(range[1]) + 1;
+              else if (r.code !== "slot-not-claimable") break;
+            }
+            if (r.type !== "joined" && r.code === "room-not-found") r = await join();   // (it ended meanwhile)
+            else if (r.type !== "joined") r = { type: "error", code: "room-full", message: "every seat in the lobby is taken" };
+          }
+          if (r.type === "joined") done(null, r); else done(fail(r.code || "error", r.message || "the lobby server refused"));
+        } catch (e) { done(fail("connection-failed", String(e && e.message ? e.message : e))); }
+      };
+    });
+  }
+
+  adopt(ws, joined) {
+    this.ws = ws;
+    this.selfId = joined.selfId; this.maxPlayers = joined.maxPlayers; this.token = joined.resumeToken || "";
+    this.players = (joined.players || []).map((p) => ({ id: p.id, occupied: !!p.occupied, connected: !!p.connected }));
+    this.iceAll = (joined.iceServers || []).map((s) => ({ urls: s.urls, username: s.username, credential: s.credential }));
+    const urls = (s) => (Array.isArray(s.urls) ? s.urls : [s.urls]);
+    this.iceDirect = this.iceAll.filter((s) => urls(s).every((u) => /^stuns?:/.test(u)));
+    if (!this.iceDirect.length) {
+      // (A TURN server answers STUN on the same port.)
+      const stun = this.iceAll.flatMap(urls).filter((u) => /^turn:/.test(u)).map((u) => u.replace(/^turn:/, "stun:").replace(/\?.*$/, ""));
+      if (stun.length) this.iceDirect = [{ urls: Array.from(new Set(stun)) }];
+    }
+    ws.onmessage = (ev) => { if (this.ws === ws) { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } this.serverSays(m); } };
+    ws.onerror = () => { /* onclose follows */ };
+    ws.onclose = () => { if (this.ws === ws && !this.closed) this.lost("connection-lost", "the connection to the lobby server was lost"); };
+    this.startHeartbeat();
+    // The lower seat offers: to everybody above who is there now; those
+    // below offer to us when the server tells them we came.
+    for (const [id] of this.links) this.dropLink(id);
+    for (const p of this.players) if (p.id > this.selfId && p.occupied && p.connected) void this.offer(p.id, 0);
+  }
+
+  startHeartbeat() {
+    this.stopHeartbeat();
+    this.beat = setInterval(() => { try { if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send('{"type":"ping"}'); } catch (e) { /* onclose reports */ } }, this.heartbeatMs);
+  }
+  stopHeartbeat() { if (this.beat) clearInterval(this.beat); this.beat = null; }
+
+  // The seat is gone, or the socket is: the links to the others stay up
+  // unless the server ended the room or gave the seat away.
+  lost(code, message) {
+    const gone = code === "replaced" || code === "session-superseded" || code === "room-expired";
+    this.stopHeartbeat();
+    const ws = this.ws;
+    this.ws = null;
+    try { if (ws) ws.close(); } catch (e) { /* gone */ }
+    if (gone) { this.token = ""; for (const [id] of this.links) this.dropLink(id); }
+    this.on.lost(code, message, gone);
+  }
+
+  serverSays(m) {
+    const slot = (id) => this.players[id];
+    switch (m.type) {
+      case "player-joined":
+        if (Array.isArray(m.players)) this.players = m.players.map((p) => ({ id: p.id, occupied: !!p.occupied, connected: !!p.connected }));
+        this.peerCame(m.playerId);
+        break;
+      case "player-rejoined": case "player-replaced":
+        if (slot(m.playerId)) { slot(m.playerId).occupied = true; slot(m.playerId).connected = true; }
+        this.peerCame(m.playerId);
+        break;
+      case "player-left":
+        if (slot(m.playerId)) { slot(m.playerId).connected = false; if (m.reason === "explicit-leave") slot(m.playerId).occupied = false; }
+        // (Only its socket to the server may be gone: an open channel stays.)
+        if (m.reason === "explicit-leave") this.dropLink(m.playerId);
+        this.on.roster();
+        break;
+      case "signal":
+        void this.signalFrom(m.from, m.payload || {});
+        break;
+      case "error":
+        if (m.code === "invalid-message") break;   // the answer to our sign of life
+        if (["replaced", "session-superseded", "room-expired", "slow-consumer"].includes(m.code)) this.lost(m.code, m.message || m.code);
+        else this.log(`lobby: the server says ${m.code}: ${m.message}`);
+        break;
+    }
+  }
+
+  peerCame(id) {
+    if (id === this.selfId) return;
+    this.dropLink(id);
+    this.on.roster();
+    if (this.selfId < id) void this.offer(id, 0);
+  }
+
+  signal(to, payload) {
+    try { if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "signal", to, payload })); } catch (e) { /* onclose reports */ }
+  }
+
+  makeLink(id, initiator, relay) {
+    this.dropLink(id);
+    const pc = new RTCPeerConnection({ iceServers: relay ? this.iceAll : this.iceDirect });
+    const dc = pc.createDataChannel("hall", { negotiated: true, id: 1, ordered: true });
+    const link = { id, pc, dc, initiator, attempt: 0, open: false, timer: null, pending: [] };
+    this.links.set(id, link);
+    const current = () => this.links.get(id) === link;
+    dc.onopen = () => { if (!current()) return; link.open = true; clearTimeout(link.timer); this.on.link(id, true); };
+    dc.onclose = () => { if (!current()) return; const was = link.open; link.open = false; if (was) this.on.link(id, false); };
+    dc.onmessage = (ev) => { if (current() && typeof ev.data === "string") this.on.message(id, ev.data); };
+    pc.onicecandidate = (ev) => { if (current() && ev.candidate) this.signal(id, { kind: "ice", candidate: ev.candidate.toJSON() }); };
+    pc.onconnectionstatechange = () => { if (current() && pc.connectionState === "failed") this.linkFailed(link); };
+    return link;
+  }
+  dropLink(id) {
+    const link = this.links.get(id);
+    if (!link) return;
+    this.links.delete(id);
+    clearTimeout(link.timer);
+    try { link.dc.close(); } catch (e) { /* closed */ }
+    try { link.pc.close(); } catch (e) { /* closed */ }
+    if (link.open) { link.open = false; this.on.link(id, false); }
+  }
+
+  async offer(id, attempt) {
+    if (this.closed) return;
+    const link = this.makeLink(id, true, attempt > 0);
+    link.attempt = attempt;
+    link.timer = setTimeout(() => this.linkFailed(link), attempt > 0 ? RELAY_WAIT_MS : DIRECT_WAIT_MS);
+    try {
+      const offer = await link.pc.createOffer();
+      if (this.links.get(id) !== link) return;
+      await link.pc.setLocalDescription(offer);
+      if (this.links.get(id) !== link) return;
+      this.signal(id, { kind: "offer", sdp: link.pc.localDescription.sdp, relay: attempt > 0 });
+    } catch (e) { this.log(`lobby: no offer to pilot ${id + 1}: ${e && e.message ? e.message : e}`); }
+  }
+  // The offering side tries again, the next time with the relay.
+  linkFailed(link) {
+    if (this.links.get(link.id) !== link || this.closed) return;
+    const id = link.id, next = link.attempt + 1, offers = link.initiator;
+    this.dropLink(id);
+    this.on.roster();
+    if (!offers || next >= MAX_ATTEMPTS) return;
+    const there = () => !this.closed && this.ws && !this.links.has(id) && this.players[id] && this.players[id].occupied && this.players[id].connected;
+    setTimeout(() => { if (there()) void this.offer(id, next); }, 500 * next);
+  }
+
+  async signalFrom(from, payload) {
+    if (this.closed || from === this.selfId || !Number.isInteger(from)) return;
+    try {
+      if (payload.kind === "offer") {
+        if (this.selfId < from) return;   // (we offer to those above us)
+        const link = this.makeLink(from, false, !!payload.relay);
+        await link.pc.setRemoteDescription({ type: "offer", sdp: payload.sdp });
+        if (this.links.get(from) !== link) return;
+        this.flush(link);
+        const answer = await link.pc.createAnswer();
+        if (this.links.get(from) !== link) return;
+        await link.pc.setLocalDescription(answer);
+        if (this.links.get(from) !== link) return;
+        this.signal(from, { kind: "answer", sdp: link.pc.localDescription.sdp });
+      } else if (payload.kind === "answer") {
+        const link = this.links.get(from);
+        if (!link || link.pc.signalingState !== "have-local-offer") return;
+        await link.pc.setRemoteDescription({ type: "answer", sdp: payload.sdp });
+        this.flush(link);
+      } else if (payload.kind === "ice") {
+        const link = this.links.get(from);
+        if (!link) return;
+        if (link.pending) link.pending.push(payload.candidate);
+        else await link.pc.addIceCandidate(payload.candidate || undefined).catch(() => { /* a candidate of an older attempt */ });
+      }
+    } catch (e) { this.log(`lobby: connecting to pilot ${from + 1}: ${e && e.message ? e.message : e}`); }
+  }
+  flush(link) {
+    const queued = link.pending || [];
+    link.pending = null;
+    for (const c of queued) link.pc.addIceCandidate(c || undefined).catch(() => { /* stale */ });
+  }
+
+  open(id) { const l = this.links.get(id); return !!(l && l.open); }
+  send(id, text) {
+    const l = this.links.get(id);
+    if (!l || !l.open) return false;
+    try { l.dc.send(text); return true; } catch (e) { return false; }
+  }
+
+  // Gives the seat back.
+  close() {
+    if (this.closed) return;
+    this.closed = true;
+    this.stopHeartbeat();
+    const ws = this.ws;
+    this.ws = null;
+    try { if (ws && ws.readyState === WebSocket.OPEN) ws.send('{"type":"leave"}'); } catch (e) { /* gone */ }
+    try { if (ws) ws.close(1000, "left"); } catch (e) { /* gone */ }
+    for (const [id] of this.links) this.dropLink(id);
+  }
+}
+
+// -- the lobby on the page -------------------------------------------------------
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const stored = (store, key) => { try { return store.getItem(key); } catch (e) { return null; } };
+const store = (s, key, value) => { try { if (value == null) s.removeItem(key); else s.setItem(key, value); } catch (e) { /* not kept */ } };
+
+// opts: server() the lobby server's address, name() the callsign typed,
+// tag() the loaded game's ("WC1", ... or ""), title(tag) a game's name,
+// onCode(code) a room code was clicked, log(line), code (another lobby,
+// for tests).
+export function initHall(opts) {
+  const code = opts.code || HALL_CODE;
+  const log = opts.log || (() => {});
+  let net = null, entering = false, attempt = null, shut = false, retry = null, retries = 0, settings = {};
+  const pilots = new Map();      // seat -> { name, tag } from its hello
+  const buckets = new Map();     // seat -> what it may still say (kept when a pilot leaves: a seat is not a fresh start)
+  const hellos = new Map();      // seat -> how often it may introduce itself
+  const replays = new Map();     // seat -> when an old line was last taken from it
+  const shown = new Map();       // seat -> its last line shown
+  let lastLine = null;           // { text, at }: this pilot's last line, for those who come later
+  let noted = "";                // the hint line's own text (a refusal), until the next key
+
+  // What this page may still send: kept over a reload.
+  const SENT_KEY = "wc:hall:sent";
+  const mine = (() => {
+    let saved = null;
+    try { saved = JSON.parse(stored(localStorage, SENT_KEY) || "null"); } catch (e) { /* fresh */ }
+    return makeBucket(saved && typeof saved.tokens === "number" && typeof saved.at === "number" && saved.at <= Date.now() ? { tokens: Math.max(0, Math.min(RATE.burst, saved.tokens)), at: saved.at } : { at: Date.now() });
+  })();
+  const keepMine = () => store(localStorage, SENT_KEY, JSON.stringify({ tokens: mine.tokens, at: mine.at }));
+
+  const inside = () => !!net && net.selfId >= 0 && !entering;
+  const fallbackName = (id) => `Pilot ${id + 1}`;
+  // The callsign as the lobby shows it: the page's, cut to length, or
+  // "Pilot N" when there is none or it breaks the lobby's rules.
+  const typedName = () => checkName(Array.from(String(opts.name() || "").trim()).slice(0, MAX_NAME).join(""));
+  function myName() {
+    const r = typedName();
+    return r.ok ? r.text : fallbackName(net ? net.selfId : 0);
+  }
+  const myTag = () => (GAME_TAGS.includes(opts.tag()) ? opts.tag() : "");
+
+  function line(cls, ...parts) {
+    const div = el("div", cls);
+    for (const p of parts) div.append(p);
+    const box = $("hallLog");
+    const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 6;
+    box.appendChild(div);
+    while (box.children.length > 200) box.firstChild.remove();
+    if (atBottom) box.scrollTop = box.scrollHeight;
+  }
+  const sys = (text) => line("sys", text);
+
+  // A line of chat: the room codes in it are links.  A code's link is the
+  // page's own address with ?room=, so it also opens in another tab; a click
+  // joins here.
+  function chatLine(name, tag, text, { me = false, old = 0 } = {}) {
+    const parts = [el("span", "name" + (me ? " me" : ""), name)];
+    if (tag) parts.push(" ", el("span", "game", tag));
+    parts.push(": ");
+    for (const p of splitCodes(text, [code, HALL_CODE])) {
+      if (!p.code) { parts.push(p.text); continue; }
+      const a = el("a", "roomcode", p.code);
+      const url = new URL(location.href);
+      url.search = ""; url.searchParams.set("room", p.code);
+      a.href = url.toString();
+      const fits = !GAME_TAGS.includes(p.tag) || !myTag() || p.tag === myTag();
+      if (!fits) a.classList.add("other");
+      a.title = (GAME_TAGS.includes(p.tag) ? `A room for ${opts.title ? opts.title(p.tag) : p.tag}. ` : "") + "Click to join it.";
+      a.addEventListener("click", (ev) => { ev.preventDefault(); opts.onCode(p.code); });
+      parts.push(a);
+    }
+    if (old >= 60000) parts.push(" ", el("span", "age", `(${Math.round(old / 60000)} min ago)`));
+    line(me ? "mine" : "", ...parts);
+  }
+
+  function renderRoster() {
+    const box = $("hallRoster");
+    box.textContent = "";
+    if (!inside()) return;
+    const there = net.players.filter((p) => p.id !== net.selfId && p.occupied && net.open(p.id));
+    box.append(el("span", "count", `${there.length + 1} in the lobby: `));
+    const entry = (name, tag, cls) => { const s = el("span", "pilot " + cls, name); if (tag) s.append(" ", el("span", "game", tag)); return s; };
+    box.append(entry(myName() + " (you)", myTag(), "me"));
+    for (const p of there) {
+      const who = pilots.get(p.id) || { name: fallbackName(p.id), tag: "" };
+      box.append(" · ", entry(who.name, who.tag, ""));
+    }
+  }
+
+  function hint() {
+    const box = $("hallHint");
+    if (!inside()) { box.textContent = ""; return; }
+    const left = MAX_CHARS - Array.from($("hallInput").value).length;
+    const wait = mine.wait(Date.now());
+    box.textContent = noted || (wait > 0 ? `You can send again in ${Math.ceil(wait / 1000)} s.` : left <= 15 ? `${left} characters left.` : "");
+    box.classList.toggle("warn", !!noted);
+  }
+  const note = (text) => { noted = text; hint(); };
+
+  const hello = (to, reply) => {
+    const m = JSON.stringify({ t: "hello", name: myName(), game: myTag(), reply: !!reply });
+    if (to != null) net.send(to, m);
+    else for (const p of net.players) if (p.id !== net.selfId) net.send(p.id, m);
+  };
+
+  function fromPilot(id, raw) {
+    if (!inside() || raw.length > MAX_WIRE) return;
+    let m;
+    try { m = JSON.parse(raw); } catch (e) { return; }
+    if (!m || typeof m !== "object") return;
+    const now = Date.now();
+    if (m.t === "hello") {
+      if (!hellos.has(id)) hellos.set(id, makeBucket({ burst: 4, every: 2000, at: now }));
+      if (!hellos.get(id).take(now)) return;
+      const name = checkName(typeof m.name === "string" ? m.name : "");
+      pilots.set(id, { name: name.ok ? name.text : fallbackName(id), tag: GAME_TAGS.includes(m.game) ? m.game : "" });
+      if (!m.reply) hello(id, true);
+      renderRoster();
+    } else if (m.t === "chat") {
+      const r = checkMessage(typeof m.text === "string" ? m.text : "");
+      if (!r.ok) { log(`lobby: dropped a line from pilot ${id + 1} (${r.why})`); return; }
+      const who = pilots.get(id) || { name: fallbackName(id), tag: "" };
+      if (m.old !== undefined) {
+        // A line said before we came: one a minute from a seat, and not
+        // the one we have already.
+        const old = Number(m.old);
+        if (!(old >= 0 && old <= REPLAY_AGE_MS) || now - (replays.get(id) || 0) < REPLAY_EVERY_MS || shown.get(id) === r.text) return;
+        replays.set(id, now);
+        shown.set(id, r.text);
+        chatLine(who.name, who.tag, r.text, { old });
+        return;
+      }
+      if (!buckets.has(id)) buckets.set(id, makeBucket({ every: RATE.every - RATE.slack, at: now }));
+      if (!buckets.get(id).take(now)) { log(`lobby: dropped a line from pilot ${id + 1} (too many)`); return; }
+      shown.set(id, r.text);
+      chatLine(who.name, who.tag, r.text);
+    }
+  }
+
+  function linkChanged(id, open) {
+    if (!net) return;
+    if (open) {
+      hello(id, false);
+      if (lastLine && Date.now() - lastLine.at < REPLAY_AGE_MS) net.send(id, JSON.stringify({ t: "chat", text: lastLine.text, old: Date.now() - lastLine.at }));
+    } else {
+      pilots.delete(id);
+    }
+    renderRoster();
+  }
+
+  function seatLost(lostCode, message, gone) {
+    if (!net) return;
+    log(`lobby: ${lostCode}: ${message}`);
+    if (lostCode === "session-superseded") {
+      // (This seat was taken up from somewhere else with our own token.)
+      leave({ keep: true, why: "The lobby is open in another window of yours: this one left it." });
+      return;
+    }
+    if (gone) { pilots.clear(); renderRoster(); }
+    // The room ended, the seat was given away while this page slept, or the
+    // server went away: take a seat again, soon and then less and less often.
+    const delay = lostCode === "room-expired" ? 500 + Math.random() * 2500 : Math.min(30000, 2000 * 2 ** retries) * (0.7 + 0.6 * Math.random());
+    retries++;
+    $("hallState").textContent = "Reconnecting to the lobby…";
+    clearTimeout(retry);
+    retry = setTimeout(() => { retry = null; if (net) void reconnect(); }, delay);
+  }
+  async function reconnect() {
+    const n = net;
+    try {
+      await n.connect();
+      if (net !== n) return;
+      retries = 0;
+      $("hallState").textContent = "";
+      renderRoster();
+    } catch (e) {
+      if (net !== n) return;
+      if (e.code === "room-full") { leave({ keep: true, why: "You lost your seat in the lobby while this page was away, and the lobby is full now. Try again in a while." }); return; }
+      seatLost(e.code || "error", e.message || String(e), false);
+    }
+  }
+
+  function show() {
+    const on = !!net && !entering;
+    $("hallEnter").hidden = on;
+    $("hallEnter").disabled = entering || shut;
+    $("hallLeave").hidden = !on;
+    $("hallBody").hidden = !on;
+    $("hallNote").hidden = on;
+    if (entering) $("hallState").textContent = "Entering the lobby…";
+    renderRoster(); hint();
+  }
+
+  async function enter() {
+    if (shut) return false;
+    if (net || entering) return inside();
+    entering = true;
+    $("hallState").textContent = "";
+    show();
+    const n = new HallNet({ server: opts.server(), code, log, ...settings,
+      on: { roster: renderRoster, link: linkChanged, message: fromPilot, lost: seatLost } });
+    attempt = n;
+    try {
+      await n.connect();
+      if (attempt !== n) { n.close(); return false; }   // (left, or flying, meanwhile)
+    } catch (e) {
+      if (attempt !== n) return false;
+      entering = false;
+      n.close();
+      $("hallState").textContent = e.code === "room-full" ? "The lobby is full (every seat is taken). Try again in a while."
+        : `Could not enter the lobby: ${e.message || e}`;
+      show();
+      return false;
+    }
+    net = n; entering = false; retries = 0;
+    store(localStorage, "wc:hall", "in");
+    store(sessionStorage, "wc:hall", "in");
+    $("hallState").textContent = "";
+    show();
+    sys(`You are in the lobby as ${myName()}. Say which room you fly in: a code like WC1-4821 in a line can be clicked to join. ` +
+        `Lines are ${MAX_CHARS} characters at most, two to start with and then one every ${RATE.every / 1000} seconds; no links.`);
+    if (!typedName().ok && typedName().why !== "empty") sys(`Your callsign is not shown here (${whyText(typedName().why)}): you are ${myName()}.`);
+    log(`lobby: in ${code} as pilot ${net.selfId + 1} of ${net.maxPlayers}`);
+    return true;
+  }
+
+  // keep: the pilot did not ask to leave, so the next visit enters again.
+  function leave({ keep = false, why = "" } = {}) {
+    clearTimeout(retry); retry = null;
+    const was = !!net;
+    if (net) net.close();
+    if (attempt && attempt !== net) attempt.close();
+    net = null; entering = false; attempt = null;
+    pilots.clear();
+    if (!keep) { store(localStorage, "wc:hall", null); store(sessionStorage, "wc:hall", null); }
+    $("hallState").textContent = why;
+    show();
+    if (was) log("lobby: left");
+  }
+
+  // Sends a line.  Returns whether it went.
+  function say(text) {
+    if (!inside()) return false;
+    const r = checkMessage(text);
+    if (!r.ok) { if (r.why !== "empty") note(`Not sent: ${whyText(r.why)}.`); return false; }
+    const now = Date.now();
+    const wait = mine.wait(now);
+    if (wait > 0) { note(""); return false; }   // (the hint line counts the seconds down)
+    mine.take(now);
+    keepMine();
+    lastLine = { text: r.text, at: now };
+    chatLine(myName(), myTag(), r.text, { me: true });
+    const m = JSON.stringify({ t: "chat", text: r.text });
+    for (const p of net.players) if (p.id !== net.selfId) net.send(p.id, m);
+    note("");
+    return true;
+  }
+
+  $("hallEnter").addEventListener("click", () => void enter());
+  $("hallLeave").addEventListener("click", () => leave());
+  $("hallForm").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    if (say($("hallInput").value)) $("hallInput").value = "";
+    hint();
+  });
+  $("hallInput").addEventListener("input", () => {
+    // (Said while typing, so that nobody composes a line that cannot go.)
+    const r = checkMessage($("hallInput").value);
+    noted = !r.ok && (r.why === "link" || r.why === "profane" || r.why === "long") ? `This cannot be sent: ${whyText(r.why)}.` : "";
+    hint();
+  });
+  setInterval(() => { if (inside() && !noted) hint(); }, 1000);
+  // A page that goes away gives its seat back; one that comes back from the
+  // browser's page cache takes one again.
+  window.addEventListener("pagehide", () => { if (net) leave({ keep: true }); });
+  window.addEventListener("pageshow", (ev) => { if (ev.persisted && stored(sessionStorage, "wc:hall") === "in") void enter(); });
+
+  show();
+
+  const api = {
+    code,
+    enter, leave, inside, say,
+    // The page's callsign or game changed.
+    announce() { if (inside()) { hello(null, false); renderRoster(); } },
+    // A line for the pilot to look over and send (the room's "offer" button).
+    prefill(text) { $("hallInput").value = Array.from(text).slice(0, MAX_CHARS).join(""); noted = ""; hint(); $("hallInput").focus(); },
+    // While the game runs there is no lobby: the pilot has a flight.
+    shut(why) { shut = true; leave({ keep: true, why }); },
+    reopen() { shut = false; show(); },
+    // Entered before, in this tab or on an earlier visit?
+    wanted: (fresh) => stored(sessionStorage, "wc:hall") === "in" || (fresh && stored(localStorage, "wc:hall") === "in"),
+    // For the page tests (scripts/web-hall.mjs).
+    test: {
+      net: () => net,
+      configure(s) { settings = { ...settings, ...s }; },
+      // A message as a page that keeps no rules would send it.
+      raw(obj) { const m = typeof obj === "string" ? obj : JSON.stringify(obj); for (const p of net.players) if (p.id !== net.selfId) net.send(p.id, m); },
+      refill() { mine.tokens = RATE.burst; keepMine(); },
+    },
+  };
+  return api;
+}

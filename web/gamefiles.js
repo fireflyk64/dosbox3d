@@ -10,7 +10,15 @@
 //
 // The game registry is the only game-specific knowledge here: a game is
 // recognised by an executable, run by a DOS command, and flagged when the
-// emulator's multiplayer hooks apply to it (Wing Commander 1 and 2).
+// emulator's multiplayer hooks apply to it (the five programs of Wing
+// Commander 1 and 2: src/cpu/wcnet_game.cpp).
+// `tag` is the game's name in a room code (WC1-4821; web/chatfilter.js):
+// everyone in a room runs the same program, and the code says which.
+// `partOf`: a program that comes in another game's directory (The Secret
+// Missions 2 in Wing Commander's, the two Special Operations in Wing
+// Commander II's): the directory is recognised by the game's own executable
+// and the page lets the player choose among the programs in it
+// (programsIn).
 // Optional: `campaign`, the missions the host can pick for everybody: the
 // series as the game numbers them, each with a name and its missions (a
 // count, or one note per mission), and how a picked mission reaches the game:
@@ -57,6 +65,22 @@ const WC1_SERIES = [
   { series: 13, name: "Hell's Kitchen", missions: 4 },
 ];
 
+// The Secret Missions 2, the Crusade campaign of SM2.EXE: nine series of two
+// missions (10 and up do not exist; 8 and 9 are the two ways it ends).  The
+// note is the system and the wing each mission's own record names, read
+// from the running game two seconds into the flight.
+const SM2_SERIES = [
+  { series: 1, missions: ["Firekka, Alpha Wing", "Firekka, Kappa Wing"] },
+  { series: 2, missions: ["Firekka, Epsilon Wing", "Firekka, Rho Wing"] },
+  { series: 3, missions: ["Firekka, Delta Wing", "Firekka, Chi Wing"] },
+  { series: 4, missions: ["Corsair, Beta Wing", "Corsair, Gamma Wing"] },
+  { series: 5, missions: ["Firekka, Psi Wing", "Firekka, Theta Wing"] },
+  { series: 6, missions: ["Corsair, Sigma Wing", "Corsair, Mu Wing"] },
+  { series: 7, missions: ["Corsair, Omicron Wing", "Corsair, Omega Wing"] },
+  { series: 8, missions: ["Charon, Iota Wing", "Charon, Upsilon Wing"] },
+  { series: 9, missions: ["Charon, Iota Wing", "Charon, Upsilon Wing"] },
+];
+
 // Wing Commander II: twelve series of four missions (docs/wc2-port.md has
 // the survey).  The note says who the story sends along: the second player
 // flies that wingman's ship.  The story flies the others alone: in a
@@ -79,18 +103,55 @@ const WC2_SERIES = [
   { series: 12, missions: ["with Jazz", "with Jazz", GUNNER, "with the Sabre escort"] },
 ];
 
+// The Special Operations are Wing Commander II's program built again, each
+// with five series of four missions of its own (surveyed like the game's:
+// every mission flown by two in the direct mode, the host's log saying what
+// the second player is).
+const SO1_SERIES = [
+  { series: 1, missions: ["with Stingray", DRONE, GUNNER, GUNNER] },
+  { series: 2, missions: [DRONE, DRONE, GUNNER, GUNNER] },
+  { series: 3, missions: [GUNNER, GUNNER, "with Hobbes", "with Hobbes"] },
+  { series: 4, missions: [GUNNER, GUNNER, GUNNER, GUNNER] },
+  { series: 5, missions: [GUNNER, GUNNER, GUNNER, GUNNER] },
+];
+const SO2_SERIES = [
+  { series: 1, missions: [DRONE, DRONE, GUNNER, GUNNER] },
+  { series: 2, missions: [GUNNER, "with Stingray", GUNNER, GUNNER] },
+  { series: 3, missions: [GUNNER, DRONE, DRONE, DRONE] },
+  { series: 4, missions: [DRONE, DRONE, DRONE, DRONE] },
+  { series: 5, missions: [GUNNER, GUNNER, "with Maniac", DRONE] },
+];
+
+// What the page says under the mission menu: with a mission picked
+// (`forced`), and for the barracks, to the host and to a wingman.
+const WC1_HINTS = {
+  forced: "Everyone flies it from a fresh start with the callsigns entered above.",
+  host: "The barracks: your save game and your walk to the briefing decide the mission; wingmen must walk into the briefing room too, and get your mission there.",
+  wing: "The host flies from the barracks: after the host starts, walk into the briefing room on your ship and you get the host's mission." };
+const WC2_HINTS = {
+  forced: "Everyone starts in the barracks with the story at that mission: click the door the game calls \"Fly mission\" (point at a door and it is named), and the briefing plays first. In a mission flown alone the second player is the gunner if the ship has turrets (starting in the rear turret; F2 and F3 are the side turrets, F4 the rear one, F1 the pilot's view), and otherwise a drone riding behind the leader as its copilot: Up and Down shift the leader's shields to the rear and the front, Space puts shields into the guns, Enter guns into the weakest shield, + and - set the leader's cruising speed, and its gauges show the leader's. Nothing sees or hits it; 0, then /chase and Enter, flies free.",
+  host: "The barracks: your saved game decides the mission. Click \"Fly mission\" (point at a door and the game names it); wingmen do the same and get your place in the story, your briefing and your mission.",
+  wing: "The host flies from the barracks: click \"Fly mission\" (point at a door and the game names it), and you get the host's place in the story, the briefing and the mission." };
+// "Origin s<series> m<mission>" on the command line of Wing Commander II's
+// programs puts the story at that mission and starts in the barracks.
+const wc2Mission = (m) => `Origin s${m.series} m${m.mis}`;
+
 export const GAMES = [
-  { id: "wc1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
+  { id: "wc1", tag: "WC1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
     saves: ["GAMEDAT/SAVEGAME.WLD"], cycles: 3630,
     pointer: { fromGame: true },
-    campaign: { series: WC1_SERIES, hints: {
-      forced: "Everyone flies it from a fresh start with the callsigns entered above.",
-      host: "The barracks: your save game and your walk to the briefing decide the mission; wingmen must walk into the briefing room too, and get your mission there.",
-      wing: "The host flies from the barracks: after the host starts, walk into the briefing room on your ship and you get the host's mission." } } },
-  { id: "wc1sm2", title: "Wing Commander: Secret Missions 2", detect: ["SM2.EXE"], run: "sm2", multiplayer: false, secondary: true },
-  // "Origin s<series> m<mission>" on WC2's command line puts the story at
-  // that mission and starts in the barracks (a different room from base to
-  // base: the door that flies the mission is not always in the same place).
+    campaign: { series: WC1_SERIES, hints: WC1_HINTS } },
+  // SM2.EXE is the game's last build, with the Crusade campaign (it can
+  // load the other two from a saved game), and keeps its saved games in a
+  // file of its own.  The hooks know it as they know WC.EXE; a picked
+  // mission is one of Crusade's.
+  { id: "wc1sm2", tag: "SM2", partOf: "wc1", title: "Wing Commander: The Secret Missions 2", detect: ["SM2.EXE"], run: "sm2", multiplayer: true,
+    saves: ["GAMEDAT/CRUSADE.WLD"], cycles: 3630,
+    pointer: { fromGame: true },
+    campaign: { series: SM2_SERIES, hints: WC1_HINTS } },
+  // A picked mission of Wing Commander II starts in the barracks (a
+  // different room from base to base: the door that flies the mission is
+  // not always in the same place).
   // "loadfix -34" is how GOG starts it, and it matters: loaded lower in
   // memory the game jumps through a null pointer in some in-flight scenes
   // (after the first autopilot of series 2 mission 2, at the start of
@@ -98,19 +159,38 @@ export const GAMES = [
   // Its sound setup (wc2.cfg, "c25": a Sound Blaster at 220, IRQ 5) is GOG's,
   // and so must the emulated card's be: with DOSBox's IRQ 7 the first spoken
   // line never ends, and the game waits for it for ever.
-  { id: "wc2", title: "Wing Commander II", detect: ["WC2.EXE"], run: "loadfix -34 wc2", multiplayer: true,
+  { id: "wc2", tag: "WC2", title: "Wing Commander II", detect: ["WC2.EXE"], run: "loadfix -34 wc2", multiplayer: true,
     saves: ["GAMEDAT/SAVEGAME.WC2"], cycles: 8000,
     firstName: true,
     pointer: { fromGame: true },
     dosbox: "[sblaster]\nirq=5\n",
-    campaign: { series: WC2_SERIES, missionArgs: (m) => `Origin s${m.series} m${m.mis}`, hints: {
-      forced: "Everyone starts in the barracks with the story at that mission: click the door the game calls \"Fly mission\" (point at a door and it is named), and the briefing plays first. In a mission flown alone the second player is the gunner if the ship has turrets (starting in the rear turret; F2 and F3 are the side turrets, F4 the rear one, F1 the pilot's view), and otherwise a drone riding behind the leader as its copilot: Up and Down shift the leader's shields to the rear and the front, Space puts shields into the guns, Enter guns into the weakest shield, + and - set the leader's cruising speed, and its gauges show the leader's. Nothing sees or hits it; 0, then /chase and Enter, flies free.",
-      host: "The barracks: your saved game decides the mission. Click \"Fly mission\" (point at a door and the game names it); wingmen do the same and get your place in the story, your briefing and your mission.",
-      wing: "The host flies from the barracks: click \"Fly mission\" (point at a door and the game names it), and you get the host's place in the story, the briefing and the mission." } } },
+    campaign: { series: WC2_SERIES, missionArgs: wc2Mission, hints: WC2_HINTS } },
+  // The Special Operations are programs of their own in the same directory,
+  // started the way GOG's menu starts them.
+  { id: "wc2so1", tag: "SO1", partOf: "wc2", title: "Wing Commander II: Special Operations 1", detect: ["SO1.EXE"], run: "loadfix -34 so1", multiplayer: true,
+    saves: ["GAMEDAT/SAVEGAME.SO1"], cycles: 8000,
+    firstName: true,
+    pointer: { fromGame: true },
+    dosbox: "[sblaster]\nirq=5\n",
+    campaign: { series: SO1_SERIES, missionArgs: wc2Mission, hints: WC2_HINTS } },
+  { id: "wc2so2", tag: "SO2", partOf: "wc2", title: "Wing Commander II: Special Operations 2", detect: ["SO2.EXE"], run: "loadfix -34 so2", multiplayer: true,
+    saves: ["GAMEDAT/SAVEGAME.SO2"], cycles: 8000,
+    firstName: true,
+    pointer: { fromGame: true },
+    dosbox: "[sblaster]\nirq=5\n",
+    campaign: { series: SO2_SERIES, missionArgs: wc2Mission, hints: WC2_HINTS } },
 ];
 
 // The registry entry of a game id, or null (a game picked by its executable).
 export const gameById = (id) => GAMES.find((g) => g.id === id) || null;
+// ... and of a room code's tag ("WC2").
+export const gameByTag = (tag) => GAMES.find((g) => g.tag === tag) || null;
+// The registry's programs in a game directory (its files, paths relative to
+// it): the game itself first, then the add-ons that came with it.
+export function programsIn(files) {
+  const top = new Set(files.filter((f) => !f.path.includes("/")).map((f) => f.path.toUpperCase()));
+  return GAMES.filter((g) => g.detect.some((d) => top.has(d))).sort((a, b) => (a.partOf ? 1 : 0) - (b.partOf ? 1 : 0));
+}
 
 // Directories and file types an installer leaves behind that a DOS game
 // never reads (GOG's own DOSBox, redistributables, manuals, icons).
@@ -202,7 +282,7 @@ export function identifyGame(files) {
   const normalized = files.map((f) => ({ path: f.path.replace(/\\/g, "/").replace(/^\.?\/+/, ""), data: f.data }));
   let best = null;
   for (const game of GAMES) {
-    if (game.secondary) continue;
+    if (game.partOf) continue;
     for (const f of normalized) {
       if (isJunk(f.path)) continue;
       if (game.detect.includes(base(f.path).toUpperCase())) {

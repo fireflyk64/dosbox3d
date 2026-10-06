@@ -606,6 +606,72 @@ top-level README for the workflow).  What differs:
   transceiver).  Any change of choice renegotiates, and a player going off
   closes everybody's voice.  `scripts/web-smoke.sh voice` runs it in two
   headless pages with Chrome's fake microphone.
+* **A room code names its game.**  Everyone in a room runs the same
+  program, and a code said in public should tell who can join, so a code of
+  the page's own making is the program's tag and four digits: `WC1-4821`
+  (WC.EXE), `SM2-` (SM2.EXE), `WC2-`, `SO1-`, `SO2-` (the registry's `tag`;
+  `WC-` while no game is loaded).  Digits only: no letters, so no words.
+  The code follows the game until the player types another or joins
+  (`retagRoom`).  A game directory holds more than one of these programs
+  (Wing Commander's has SM2.EXE, Wing Commander II's the two Special
+  Operations): the "Play" menu picks one (`programsIn`, `setSource`), and so
+  does a room's code, when the page is asked to join `SO1-4821` with Wing
+  Commander II loaded.  A code for a game that is not loaded is not joined
+  (`fitsRoom`), and Fly is off while the room's code and the loaded game
+  disagree (`wrongGame`); the hellos' game ids are still compared as before
+  (`checkSameGame`), for codes that name nothing.
+* **The public lobby** (`web/hall.js`, `web/chatfilter.js`) is a chat room
+  where pilots without a wingman say which room they fly in.  It is one
+  lobbylink room, `WC-LOBBY`, with the 32 seats the server gives a room,
+  and its lines travel over data channels between the browsers like a
+  game's; nobody is in charge, so every page keeps the rules, for what its
+  own player types (who is told why a line did not go) and again for what
+  arrives (a page that was tampered with gains nothing):
+  * a line is 60 characters at most;
+  * two lines to start with, then one every ten seconds (a token bucket;
+    the receiving side's, one per seat, refills a little faster so that an
+    honest sender is never dropped, and is not emptied by the seat changing
+    hands);
+  * no profanity: a word list of the usual kind, with the usual disguises
+    (doubled and spaced letters, look-alike signs, a star inside).  "hell"
+    is not on it: the Hellcat is a ship and Hell's Kitchen a system.  A
+    number is never a word, which is why the page's own codes are digits;
+  * no links or addresses, however the dot is spelled.  Nothing in the
+    lobby is a link except a room code;
+  * a callsign is held to the same list (16 characters): one that fails is
+    shown as "Pilot N".
+  A room code in a line (`WC1-4821`; four characters or more after the
+  prefix, with a digit or without small letters) is shown as a link.  A
+  click joins that room without making it (`joinRoom({ create: false })`:
+  a room nobody is in is "not open any more"), after the game check above.
+  The room form's "Offer this room in the lobby" writes such a line (code,
+  mission, free seats) for the pilot to send.  A pilot who comes later is
+  shown the last line of each pilot present (its author sends it again,
+  marked with its age; one a minute is taken from a seat).  Entering is the
+  pilot's choice (a button; remembered for the next visit), because it
+  connects the browser directly to strangers', and flying leaves.
+  The connection is `hall.js`'s own, on the lobby server's signaling
+  protocol, not the lobbylink client's:
+  * links are direct (STUN only) and go through the server's TURN relay only
+    when that has failed: the relay has ports for some dozens of links, and
+    a room of 32 would take them from the games;
+  * a seat whose page went away without leaving stays taken as far as the
+    server knows, and a room of strangers fills up with those.  The room
+    is made with `allowReplacement` and a `claimAfterMs` of 150 s: a
+    newcomer who finds it full claims a seat that has been silent that
+    long, and every page sends the server something twice a minute so that
+    its own is not (the server counts any message and has no ping, so the
+    answer is "unknown message type" every time);
+  * the server ends a room a day after it was made (or five minutes after
+    the last pilot left): the pages take seats again, the first one making
+    the room anew.
+  Whoever makes the room decides its options, which a page that keeps no
+  rules could abuse (a lobby of one seat); the server has no reserved rooms
+  yet.  `scripts/web-smoke.sh hall` runs the rules in Node
+  (`scripts/web-chatfilter-test.mjs`) and the lobby in headless pages
+  (`scripts/web-hall.mjs`: talking, the rules on both sides, a room offered
+  and joined by a click, codes for other games, a full lobby and a claimed
+  seat).
 * **The lobby server checks the page's origin**; the public server accepts
   only its own host.  Serve the page from there or run a lobby server with
   `--allowed-origin` for the page's origin.

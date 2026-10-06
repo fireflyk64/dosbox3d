@@ -2,7 +2,9 @@
 //
 // Flow: the player brings the game files (gamefiles.js), joins a lobbylink
 // room from the page (roster + chat over the same WebRTC links the game
-// will use), and the host starts the game for everyone.  DOSBox then runs
+// will use), and the host starts the game for everyone.  Pilots who have
+// nobody to fly with meet in the public lobby (hall.js), a chat room where
+// a room's code can be said and clicked.  DOSBox then runs
 // with that live room connection: src/wclobby_web.js adopts Module.lobbyGame
 // instead of joining the room a second time.  Lobby chat and presence
 // travel as reliable messages tagged with a 4-byte prefix that the game
@@ -11,7 +13,9 @@ import { P2PGame } from "./p2p-client.js";
 import { initControls } from "./gamepad.js";
 import { initVoice } from "./voice.js";
 import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles,
-         saveGame, loadGames, forgetGame, totalSize, gameById } from "./gamefiles.js";
+         saveGame, loadGames, forgetGame, totalSize, gameById, gameByTag, programsIn } from "./gamefiles.js";
+import { newRoomCode, retagRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS } from "./chatfilter.js";
+import { initHall, HALL_CODE } from "./hall.js";
 
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
@@ -94,7 +98,19 @@ const mb = (n) => (n / 1048576).toFixed(1) + " MB";
 for (const k of ["room", "callsign", "firstname", "lastname", "players"]) if (query.get(k)) $(k).value = query.get(k);
 if (query.get("relay")) $("relay").checked = true;
 if (query.get("verbose")) $("verbose").checked = true;
-if (!$("room").value) $("room").value = "WC-" + Math.random().toString(36).slice(2, 6).toUpperCase();
+// A new room's code is the game's tag and four digits (WC1-4821; "WC-" as
+// long as no game is loaded): said in the public lobby it tells who can
+// join.  `autoCode` is the code this page made up: it follows the game the
+// player loads until the player types another or joins.
+let autoCode = "";
+if (!$("room").value) { autoCode = newRoomCode(""); $("room").value = autoCode; }
+function retagRoom() {
+  if (lobby.game || !autoCode || $("room").value !== autoCode) return;
+  autoCode = retagRoomCode(autoCode, gameTag());
+  $("room").value = autoCode;
+}
+// The game a code is for, when it says: the tag of a registry game.
+const codeGame = (code) => (GAME_TAGS.includes(roomTag(code)) ? gameByTag(roomTag(code)) : null);
 
 // -- game files ----------------------------------------------------------------
 
@@ -103,21 +119,54 @@ if (!$("room").value) $("room").value = "WC-" + Math.random().toString(36).slice
 let source = null;
 let saved = [];
 
-function setSource(s) {
+// A game directory can hold more than one program of the registry (Wing
+// Commander's has The Secret Missions 2, Wing Commander II's the two Special
+// Operations).  Which one runs: the one the player picks in the menu
+// (`want`), else the one the room's code names, else the one picked the last
+// time, else the game itself.
+const PROGRAM_KEY = (base) => `wc:program:${base}`;
+function setSource(s, want) {
   // What the page knows about a game is the registry's, also for a copy this
   // browser saved when the registry said something else.
-  if (s && gameById(s.game.id)) { const g = gameById(s.game.id); s.game = { id: g.id, title: g.title, run: g.run, multiplayer: g.multiplayer }; }
+  if (s && gameById(s.game.id)) {
+    const base = gameById(gameById(s.game.id).partOf || s.game.id);
+    const programs = programsIn(s.files);
+    if (!programs.includes(base)) programs.unshift(base);
+    const roomCode = lobby.game ? lobby.game.code : ($("room").value !== autoCode ? $("room").value.trim() : "");
+    let kept = null;
+    try { kept = localStorage.getItem(PROGRAM_KEY(base.id)); } catch (e) { /* none */ }
+    const g = programs.find((p) => p.id === want) || programs.find((p) => p === codeGame(roomCode)) || programs.find((p) => p.id === kept) || base;
+    s.base = base.id; s.programs = programs;
+    s.game = { id: g.id, title: g.title, run: g.run, multiplayer: g.multiplayer };
+  } else if (s) {
+    s.base = s.game.id; s.programs = [];
+  }
   source = s;
+  const sel = $("program");
+  sel.innerHTML = "";
+  for (const g of (s ? s.programs : [])) { const o = document.createElement("option"); o.value = g.id; o.textContent = g.title; sel.appendChild(o); }
+  if (s) sel.value = s.game.id;
+  $("programLabel").hidden = !s || s.programs.length < 2;
   if (s) {
     sourceStatus(`Ready: ${s.game.title} from ${s.label} (${s.files.length} files, ${mb(totalSize(s.files))}).` +
-                 (s.game.multiplayer ? "" : " The multiplayer hooks only exist for Wing Commander 1 and 2, so this runs single-player."));
+                 (s.game.multiplayer ? "" : " The multiplayer hooks do not know this program, so it runs single-player."));
   }
   describeSaves();
   // (Wing Commander II's people use a first name; the first game has none.)
   $("firstnameLabel").hidden = !(gameInfo() && gameInfo().firstName);
+  retagRoom();
   if (lobby.game) { sayHello(); buildMissionMenu(); renderMission(); }
+  hall.announce();
   updateActions();
 }
+$("program").addEventListener("change", () => {
+  if (!source || running) return;
+  try { localStorage.setItem(PROGRAM_KEY(source.base), $("program").value); } catch (e) { /* not kept */ }
+  setSource(source, $("program").value);
+});
+// The loaded game's tag for a room code ("WC1"), or "" (none, or a program
+// the registry does not know).
+const gameTag = () => (gameInfo() && gameInfo().tag) || "";
 
 async function useFiles(files, label, { persist = true } = {}) {
   const id = identifyGame(files);
@@ -199,7 +248,7 @@ async function readTarGz(url) {
 // The buttons that change the game files: off while a file is being read
 // and once the game runs.
 function sourceButtons(on) {
-  for (const el of [$("useServer"), $("forget"), ...$("savedList").querySelectorAll("button")]) el.disabled = !on;
+  for (const el of [$("useServer"), $("forget"), $("program"), ...$("savedList").querySelectorAll("button")]) el.disabled = !on;
 }
 const useSavedCopy = (g) => setSource({ label: "the saved copy (" + g.label + ")", game: { id: g.id, title: g.title, run: g.run, multiplayer: g.multiplayer }, root: "", files: g.files });
 
@@ -243,7 +292,10 @@ async function initSources() {
   let serverCopy = false;
   try { serverCopy = (await fetch(DATA_URL, { method: "HEAD" })).ok; } catch (e) { /* none */ }
   $("useServer").hidden = !serverCopy;
-  if (saved.length) useSavedCopy(saved[0]);
+  // (A link to a room for one game picks that game among the saved copies.)
+  const wanted = codeGame(lobby.game ? lobby.game.code : $("room").value.trim());
+  const fits = wanted && saved.find((g) => programsIn(g.files).includes(wanted));
+  if (saved.length) useSavedCopy(fits || saved[0]);
   else if (serverCopy) $("useServer").click();
 }
 
@@ -522,12 +574,22 @@ function renderRoster() {
   }
 }
 
+// A room's code names its game (WC2-4821), and the game loaded here is
+// another: said instead of flying, because the code is what the others go by.
+function wrongGame() {
+  const theirs = lobby.game && codeGame(lobby.game.code);
+  if (!theirs || !source || source.game.id === theirs.id) return "";
+  return `Room ${lobby.game.code} is a ${theirs.title} room, and you have ${source.game.title} loaded: load ${theirs.title} above, or leave the room.`;
+}
 function updateActions() {
-  const ready = !!source && !!lobby.game && !running;
+  const wrong = wrongGame();
+  const ready = !!source && !!lobby.game && !running && !wrong;
   $("fly").disabled = !ready;
+  $("advertise").hidden = !lobby.game || running || !lobby.game.players.some((p) => !p.occupied);
   if (running) return;
-  if (!source && !lobby.game) status("Load the game files and join a room first.");
-  else if (!source) status("Join succeeded; now load the game files above.");
+  if (wrong) status(wrong);
+  else if (!source && !lobby.game) status("Load the game files and join a room first.");
+  else if (!source) status(`Join succeeded; now load ${codeGame(lobby.game.code) ? codeGame(lobby.game.code).title : "the game files"} above.`);
   else if (!lobby.game) status("Game files ready; join a room to fly with friends.");
   else if (isHost()) { $("fly").textContent = "Fly (starts everyone)"; status(`You host room ${lobby.game.code}. Press Fly when your wingmen are in.`); }
   else { $("fly").textContent = "Fly"; status(lobby.flying.has(0) ? "The host is already flying: press Fly to join the mission." : "Waiting for the host to start; Fly joins on your own too."); }
@@ -609,9 +671,29 @@ function onLobbyEvent(ev) {
   }
 }
 
-async function joinRoom() {
-  const code = $("room").value.trim();
+// The game loaded here against the one a room's code names.  The other
+// programs of the same directory count: a click on SO1-4821 with Wing
+// Commander II loaded switches to Special Operations 1 when it is there.
+function fitsRoom(code) {
+  const theirs = codeGame(code);
+  if (!theirs || !source || source.game.id === theirs.id) return true;
+  if (source.programs.includes(theirs)) {
+    setSource(source, theirs.id);
+    chatLine(`Room ${esc(code)} is a ${esc(theirs.title)} room: switched to ${esc(theirs.title)}.`, "sys");
+    return true;
+  }
+  status(`${code} is a ${theirs.title} room, and you have ${source.game.title} loaded. Load ${theirs.title} above (step 1) to join it.`);
+  return false;
+}
+
+// create: false only joins a room that exists (a code clicked in the lobby).
+async function joinRoom({ create = true } = {}) {
+  if (lobby.game || $("join").disabled) return;
+  const code = normalizeCode($("room").value.trim());
+  $("room").value = code;
   if (!/^[A-Za-z0-9_-]{4,64}$/.test(code)) { status("Room codes are 4-64 letters, digits, - or _."); return; }
+  if (code.toUpperCase() === hall.code.toUpperCase() || code.toUpperCase() === HALL_CODE) { status(`${code} is the public lobby (enter it above); a room to fly in needs a code of its own.`); return; }
+  if (!fitsRoom(code)) return;
   $("join").disabled = true;
   status(`Joining room ${code}…`);
   try {
@@ -625,8 +707,9 @@ async function joinRoom() {
       // dies, and the host makes a new room.  Tokenless "claims" would let
       // anyone with the code replace a player after 40 s of lobby silence,
       // which is every player in flight.
-      create: { maxPlayers: Math.max(2, Math.min(3, Number($("players").value) || 2)), waitUntilFull: false, allowLateJoin: true,
-                allowReconnect: true, allowReplacement: false, reconnectPolicy: "token-only" },
+      create: !create ? undefined
+        : { maxPlayers: Math.max(2, Math.min(3, Number($("players").value) || 2)), waitUntilFull: false, allowLateJoin: true,
+            allowReconnect: true, allowReplacement: false, reconnectPolicy: "token-only" },
       storage: "session",
       storageKey: "wclobby-" + code,
       forceRelay: $("relay").checked,
@@ -649,10 +732,45 @@ async function joinRoom() {
     renderRoster(); updateActions();
     $("chatInput").focus();
   } catch (e) {
-    status(`Could not join room ${code}: ${e && e.code ? e.code + ": " : ""}${e && e.message ? e.message : e}`);
+    status(e && e.code === "room-not-found" ? `Room ${code} is not open any more.`
+      : e && e.code === "room-full" ? `Room ${code} is full.`
+      : `Could not join room ${code}: ${e && e.code ? e.code + ": " : ""}${e && e.message ? e.message : e}`);
     $("join").disabled = false;
   }
 }
+
+// A room code clicked in the public lobby.
+async function joinFromLobby(code) {
+  if (running) return;
+  if (lobby.game) {
+    status(lobby.game.code === code ? `You are in room ${code}.` : `You are in room ${lobby.game.code}: leave it (step 2) to join ${code}.`);
+    return;
+  }
+  const typed = $("room").value;
+  $("room").value = code;
+  await joinRoom({ create: false });
+  if (lobby.game) $("setup").scrollIntoView({ block: "nearest", behavior: "smooth" });
+  else { $("room").value = typed; retagRoom(); }
+}
+
+// "Offer this room in the lobby": a line with the room's code, for the
+// pilot to look over and send (it counts as one of the pilot's lines).
+function offerText() {
+  const g = lobby.game;
+  const free = g.players.filter((p) => !p.occupied).length;
+  const c = lobbyCampaign();
+  const s = lobby.mission && c && c.series.find((e) => e.series === lobby.mission.series);
+  const what = !lobby.mission ? "campaign" : s && s.name ? `${s.name} ${lobby.mission.mis + 1}` : `series ${lobby.mission.series} mission ${lobby.mission.mis + 1}`;
+  const seats = `${free} seat${free === 1 ? "" : "s"} free`;
+  const full = `${g.code} ${what}, ${seats}`;
+  return Array.from(full).length <= MAX_CHARS ? full : `${g.code} ${seats}`;
+}
+$("advertise").addEventListener("click", async () => {
+  if (!lobby.game || running) return;
+  if (!hall.inside() && !(await hall.enter())) return;
+  hall.prefill(offerText());
+  $("hall").scrollIntoView({ block: "nearest", behavior: "smooth" });
+});
 
 function leaveRoom() {
   voice.stopAll();
@@ -682,7 +800,7 @@ $("chatForm").addEventListener("submit", (ev) => {
   chatLine(`<span class="name">${esc(myName())}:</span> ${esc(text)}`);
   sendLobby({ t: "chat", name: myName(), text });
 });
-$("callsign").addEventListener("change", () => { if (lobby.game) { sayHello(); renderRoster(); } });
+$("callsign").addEventListener("change", () => { if (lobby.game) { sayHello(); renderRoster(); } hall.announce(); });
 $("rocks").addEventListener("change", () => setRocks($("rocks").value));
 $("mission").addEventListener("change", () => {
   if (!isHost()) return;
@@ -742,6 +860,8 @@ async function start(fromGesture) {
   if (running) return;
   running = true;
   emulatorStarted = true;
+  // (The public lobby is for finding a flight: this page has one.)
+  hall.shut(hall.inside() ? "You left the lobby to fly." : "");
   // Voice on one side only: said here, so that nobody is surprised.
   const voiceWarning = voice.warning();
   if (voiceWarning) { chatLine(esc(voiceWarning), "sys"); log("voice: " + voiceWarning); }
@@ -843,6 +963,7 @@ async function start(fromGesture) {
       : `${source.game.title} is running.`);
   } catch (e) {
     running = false;
+    hall.reopen();
     log("failed: " + (e && e.stack ? e.stack : e));
     status("Failed to start: " + (e && e.message ? e.message : e));
   }
@@ -898,6 +1019,18 @@ function steeringPointer() {
            stepsX: steps(1, 639), stepsY: steps(2, 199), edgeX: M._wc_web_steer(3, 0) / 639, edgeY: M._wc_web_steer(3, 1) / 199, top: M._wc_web_steer(3, 2) };
 }
 
+// The public lobby (web/hall.js): ?hall=CODE is another one, for tests.
+const hall = initHall({
+  code: query.get("hall") || undefined,
+  server: () => $("server").value.trim() || DEFAULT_SERVER,
+  name: () => $("callsign").value,
+  tag: () => gameTag(),
+  title: (tag) => (gameByTag(tag) ? gameByTag(tag).title : tag),
+  onCode: (code) => void joinFromLobby(code),
+  log,
+});
+window.__wcHall = hall;  // (for the page tests)
+
 // The voice control, told of the room by the lobby code above.
 const voice = initVoice({
   game: () => lobby.game,
@@ -922,3 +1055,6 @@ initControls({
 void initSources();
 // A shared link (?room=CODE) puts the visitor straight into the room.
 if (query.get("room")) void joinRoom();
+// A pilot who entered the public lobby before is there again: in this tab
+// after a reload, and on a later visit unless a link to a room brought it.
+if (hall.wanted(!query.get("room"))) void hall.enter();

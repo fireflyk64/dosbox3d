@@ -5,9 +5,12 @@
 # (or the GOG installer .exe):
 #
 #   GAME_FILE=/path/to/wc2.zip scripts/web-wc2.sh [series/mission] [drone|gunner|wingman] [door x,y]
+#   GAME=so1 GAME_FILE=/path/to/wc2.zip scripts/web-wc2.sh 1/1 drone 0.48,0.55    # Special Operations 1 (GAME=so2: 1/0)
 #   GAME_FILE=/path/to/wc2.zip scripts/web-wc2.sh intro     # the introduction's speech (scripts/web-wc2-intro.mjs)
 #   GAME_FILE=/path/to/wc2.zip scripts/web-wc2.sh pad       # a controller's stick in two cockpits (scripts/web-pad.mjs)
 #
+# The zip must be the whole folder, GAMEDAT/TEMPGLOB.000 included (GOG ships
+# it): without it "Fly mission" ends some missions with the game's error 007.
 # Logs and screenshots land in $OUT (default /tmp/web-wc2).
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

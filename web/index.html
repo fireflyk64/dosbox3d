@@ -42,6 +42,25 @@
   #padMap button { padding: 3px 10px; font-weight: 400; }
   #padMap label.check, #padOptions label { color: #9aa3b2; font-size: 12px; }
   #padOptions { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
+  /* public lobby */
+  #hallTop { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  #hallState { color: #9aa3b2; }
+  #hallRoster { margin: 8px 0 6px; font-size: 13px; color: #9aa3b2; }
+  #hallRoster .pilot { color: #d7dbe3; }
+  #hallRoster .pilot.me { color: #7aa2ff; }
+  #hall .game { font-size: 10px; padding: 0 4px; border: 1px solid #2a3140; border-radius: 3px; color: #9aa3b2; vertical-align: 1px; }
+  #hallChat { display: flex; flex-direction: column; background: #10141c; border: 1px solid #1d2230; border-radius: 4px; }
+  #hallLog { height: 150px; overflow: auto; padding: 8px 10px; font-size: 13px; overflow-wrap: anywhere; }
+  #hallLog .sys { color: #7d8797; font-style: italic; }
+  #hallLog .name { color: #7aa2ff; font-weight: 600; }
+  #hallLog .name.me { color: #9fe0b0; }
+  #hallLog .age { color: #7d8797; font-size: 11px; }
+  #hallLog a.roomcode { color: #ffd166; font-weight: 600; text-decoration: underline; cursor: pointer; }
+  #hallLog a.roomcode.other { color: #8b7a4a; }
+  #hallForm { display: flex; gap: 6px; padding: 6px; border-top: 1px solid #1a1f2b; }
+  #hallForm input { flex: 1; }
+  #hallHint { min-height: 17px; }
+  #hallHint.warn { color: #ffb454; }
   #lobby { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: 12px; }
   #missionRow { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
   #missionRow label { display: flex; gap: 8px; align-items: center; color: #9aa3b2; font-size: 12px; }
@@ -93,13 +112,32 @@
       <span id="savedList"></span>
       <button type="button" class="secondary" id="forget" hidden>Forget the saved copy</button>
       <label id="pickerLabel" hidden>Unknown game; run <select id="exePicker"></select></label>
+      <label id="programLabel" hidden title="The programs in this game directory: everyone in a room plays the same one">Play <select id="program"></select></label>
+    </div>
+  </section>
+
+  <section id="hall">
+    <h2>Lobby: find pilots to fly with</h2>
+    <div id="hallTop">
+      <button type="button" class="secondary" id="hallEnter">Enter the lobby</button>
+      <button type="button" class="secondary" id="hallLeave" hidden>Leave the lobby</button>
+      <span id="hallState"></span>
+    </div>
+    <p class="hint" id="hallNote">A public chat room (<code>WC-LOBBY</code>) where pilots say which room they fly in; a room code in a line can be clicked to join it. Entering connects your browser directly to the other pilots there, as a game does.</p>
+    <div id="hallBody" hidden>
+      <div id="hallRoster"></div>
+      <div id="hallChat">
+        <div id="hallLog"></div>
+        <form id="hallForm"><input type="text" id="hallInput" maxlength="60" autocomplete="off" placeholder="Say which room you fly in: WC1-4821 Enyo 1, one seat free"><button type="submit" class="secondary">Send</button></form>
+      </div>
+      <div class="hint" id="hallHint"></div>
     </div>
   </section>
 
   <section>
     <h2>2. Room</h2>
     <form id="setup">
-      <label>Room code <input type="text" id="room" placeholder="FALCON-7" pattern="[A-Za-z0-9_\-]{4,64}" required></label>
+      <label title="A code of the page's own making starts with the game it is for (WC1, WC2, SM2, SO1, SO2)">Room code <input type="text" id="room" placeholder="WC1-4821" pattern="[A-Za-z0-9_\-]{4,64}" required></label>
       <label>Callsign <input type="text" id="callsign" placeholder="Maverick"></label>
       <label id="firstnameLabel" hidden>First name <input type="text" id="firstname" placeholder="Christopher" maxlength="12"></label>
       <label>Last name <input type="text" id="lastname" placeholder="Blair"></label>
@@ -134,6 +172,7 @@
       <div>
         <ul id="roster"></ul>
         <p class="hint" id="lobbyHint">Everyone who opens this page's link lands in this room. The first pilot in is the host and starts the game for everyone.</p>
+        <p><button type="button" class="secondary" id="advertise" hidden title="Writes a line with this room's code for the public lobby; you send it">Offer this room in the lobby</button></p>
       </div>
       <div id="missionRow">
         <label>Mission <select id="mission"></select></label>

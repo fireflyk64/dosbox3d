@@ -8,6 +8,7 @@
 #   NATIVE_HOST=1 scripts/web-smoke.sh [seconds] [mission] [series]
 #   scripts/web-smoke.sh pad      # a controller's stick in a Hornet and a Rapier (scripts/web-pad.mjs)
 #   scripts/web-smoke.sh voice    # voice between two pages (scripts/web-voice.mjs)
+#   scripts/web-smoke.sh hall     # the public lobby and room codes (scripts/web-hall.mjs; scripts/web-chatfilter-test.mjs first)
 #
 # With NATIVE_HOST=1 the native DOSBox (NATIVE_DOSBOX, default
 # build-native/src/dosbox or src/dosbox) hosts through the same lobby with
@@ -51,6 +52,12 @@ if [ "${1:-}" = pad ]; then
 fi
 if [ "${1:-}" = voice ]; then
     PLAYWRIGHT_DIR="$PW" node "$ROOT/scripts/web-voice.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" 2>&1 | tee "$OUT/voice.log"
+    exit "${PIPESTATUS[0]}"
+fi
+
+if [ "${1:-}" = hall ]; then
+    node "$ROOT/scripts/web-chatfilter-test.mjs" || exit 1
+    PLAYWRIGHT_DIR="$PW" node "$ROOT/scripts/web-hall.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" 2>&1 | tee "$OUT/hall.log"
     exit "${PIPESTATUS[0]}"
 fi
 

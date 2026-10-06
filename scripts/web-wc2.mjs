@@ -7,11 +7,16 @@
 // the shots must reach the host).  Driven by scripts/web-wc2.sh.
 //
 //   GAME_FILE=wc2.zip node scripts/web-wc2.mjs PAGE_URL LOBBY_URL [series/mission] [drone|gunner|wingman] [door x,y]
+//   GAME=so1 GAME_FILE=wc2.zip node scripts/web-wc2.mjs ... 2/0 drone     # Special Operations 1 (so2: 2), from the same directory
+//
+// The room's code names the program (WC2-, SO1-, SO2-): the pages are given
+// the Wing Commander II directory and pick the program by the code.
 //
 // The door is where "Fly mission" is in that mission's barracks, as fractions
 // of the mouse range: the rooms differ (0.48,0.55 the middle door of the
 // blue and the Caernarvon rooms, 0.12,0.5 the airlock of the Concordia's).
-// Known good: 9/1 drone 0.12,0.5; 9/2 gunner 0.48,0.55; 1/0 wingman 0.48,0.55.
+// Known good: 9/1 drone 0.12,0.5; 9/2 gunner 0.48,0.55; 1/0 wingman 0.48,0.55;
+// GAME=so1 1/1 drone 0.48,0.55; GAME=so2 1/0 drone 0.48,0.55.
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs";
@@ -19,7 +24,13 @@ const [pageUrl, lobbyUrl, mission = "9/1", expect = "drone", doorArg = "0.12,0.5
 const door = doorArg.split(",").map(Number);
 const require = createRequire(path.join(process.env.PLAYWRIGHT_DIR || process.cwd(), "package.json"));
 const { chromium } = require("playwright");
-const room = "WC2-" + Math.random().toString(36).slice(2, 8).toUpperCase();
+// What differs from program to program: its tag and title, how many missions
+// its menu has, and where the words the checks read are (src/cpu/wcnet_ds.def:
+// setSpeed, cameraMode, mannedTurret).
+const game = { wc2: { tag: "WC2", id: "wc2", title: "Wing Commander II", options: 49, speed: 0x5FBE, camera: 0x9389, turret: 0xCD6A },
+               so1: { tag: "SO1", id: "wc2so1", title: "Wing Commander II: Special Operations 1", options: 21, speed: 0x5FC8, camera: 0x923B, turret: 0xCC3A },
+               so2: { tag: "SO2", id: "wc2so2", title: "Wing Commander II: Special Operations 2", options: 21, speed: 0x6264, camera: 0x94DB, turret: 0xCED0 } }[process.env.GAME || "wc2"];
+const room = game.tag + "-" + Math.random().toString(36).slice(2, 8).toUpperCase();
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME || "/usr/bin/google-chrome",
   args: ["--no-sandbox", "--autoplay-policy=no-user-gesture-required", "--use-fake-device-for-media-stream"] });
 const logs = { host: [], wing: [] };
@@ -38,6 +49,8 @@ async function open(name, callsign, before) {
   await page.waitForFunction(() => /^(Ready|Could not)/.test(document.getElementById("sourceStatus").textContent), null, { timeout: 300000 });
   console.log(`[${name}] ` + (await page.$eval("#sourceStatus", (el) => el.textContent)).slice(0, 200));
   if (name === "host") check("the first-name field appears with Wing Commander II", hiddenBefore && !(await page.$eval("#firstnameLabel", (el) => el.hidden)), hiddenBefore);
+  check(`${name}: the room's code picks the program`, (await page.$eval("#program", (el) => el.value)) === game.id && (await page.$eval("#sourceStatus", (el) => el.textContent)).startsWith(`Ready: ${game.title} from`),
+        await page.$eval("#program", (el) => el.value));
   await page.waitForFunction(() => !document.getElementById("lobby").hidden && document.getElementById("roster").children.length > 0, null, { timeout: 60000 });
   if (before) await before(page);
   return page;
@@ -62,7 +75,7 @@ async function fly(page, name) {
 
 const host = await open("host", "HOST", async (page) => {
   const options = await page.$eval("#mission", (el) => Array.from(el.options).map((o) => o.textContent));
-  check("the host's mission menu is Wing Commander II's", options.length === 49 && /Series 2, mission 1/.test(options.join("|")), [options.length, options[1], options[5]]);
+  check(`the host's mission menu is ${game.title}'s`, options.length === game.options && /Series 2, mission 1/.test(options.join("|")), [options.length, options[1], options[5]]);
   await page.$eval("#mission", (el, v) => { el.value = v; el.dispatchEvent(new Event("change")); }, mission);
 });
 const wing = await open("wing", "WINGMAN", async (page) => {
@@ -92,7 +105,7 @@ if (expect === "drone") {
   // The drone rides behind the leader as copilot: its + key is the leader's
   // cruising speed (dseg:5FBE, an int32 per slot), and its own gauges show
   // the leader's (the same word on the drone's slot 0).
-  const speed = (page, slot) => page.evaluate((slot) => { const M = window.DOSBox; const b = (o) => M._wc_web_ds_byte(o); const o = 0x5FBE + 4 * slot; return b(o) | (b(o + 1) << 8) | (b(o + 2) << 16); }, slot);
+  const speed = (page, slot) => page.evaluate(([slot, at]) => { const M = window.DOSBox; const b = (o) => M._wc_web_ds_byte(o); const o = at + 4 * slot; return b(o) | (b(o + 1) << 8) | (b(o + 2) << 16); }, [slot, game.speed]);
   const before = await speed(host, 0);
   await wing.keyboard.press("Equal"); await sleep(0.5); await wing.keyboard.press("Equal"); await sleep(3);
   const after = await speed(host, 0), mirrored = await speed(wing, 0);
@@ -112,8 +125,8 @@ if (expect === "drone") {
   check("the wingman's game knows it is the gunner", has("wing", "(the gunner)"), logs.wing.filter((l) => l.includes("we are player")));
   await wing.evaluate(() => document.fullscreenElement ? document.exitFullscreen() : null);
   await wing.click("#canvas");
-  // (dseg:9389 is 4 while the player sits in a turret, dseg:CD6A the turret: 0 the rear one.)
-  const seat = await wing.evaluate(() => [window.DOSBox._wc_web_ds_byte(0x9389), window.DOSBox._wc_web_ds_byte(0xCD6A)]);
+  // (WC2.EXE: dseg:9389 is 4 while the player sits in a turret, dseg:CD6A the turret: 0 the rear one.)
+  const seat = await wing.evaluate(([camera, turret]) => [window.DOSBox._wc_web_ds_byte(camera), window.DOSBox._wc_web_ds_byte(turret)], [game.camera, game.turret]);
   check("the gunner starts in the rear turret without a key", seat[0] === 4 && seat[1] === 0, seat);
   await shot(wing, "wing-turret");
   await wing.keyboard.down("Space"); await sleep(4);
@@ -134,5 +147,5 @@ for (const [name, page] of [["host", host], ["wing", wing]]) {
   fs.writeFileSync(path.join(shotDir, name + ".log"), logs[name].join("\n") + "\n");
 }
 await browser.close();
-console.log(results.every(Boolean) ? "WC2 OK" : "WC2 FAILED");
+console.log(results.every(Boolean) ? `${game.tag} OK` : `${game.tag} FAILED`);
 process.exit(results.every(Boolean) ? 0 : 1);

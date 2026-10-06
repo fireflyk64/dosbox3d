@@ -37,9 +37,11 @@ GOG installer (`setup_wing_commander_*.exe`) onto the page.  Nothing is
 uploaded: a zip is unpacked with the browser's `DecompressionStream`, an
 installer is unpacked by innoextract running in a worker (any Inno Setup /
 GOG installer, so this extends to other games), the game is recognised by
-its executable (`web/gamefiles.js` keeps that registry: WC.EXE runs `wc`
-with multiplayer on; WC2.EXE runs `wc2` single-player; anything else offers
-a picker of the DOS executables found), only the game directory is kept,
+its executable (`web/gamefiles.js` keeps that registry: Wing Commander and
+Wing Commander II with multiplayer on, and the programs that come in their
+directories, The Secret Missions 2 and the two Special Operations, in a
+"Play" menu; anything else offers a picker of the DOS executables found and
+runs single-player), only the game directory is kept,
 and the files are saved in the browser's IndexedDB so the next visit starts
 right away ("Forget the saved copy" removes them).  If unpacking an
 installer fails, the page says so and suggests `innoextract` + zip.
@@ -61,7 +63,18 @@ joining twice (`Module.lobbyGame`).  Only the canvas receives the
 keyboard, so the chat box stays usable.  Native and browser players can
 share a room, exactly like `runwc.sh DOSPATH room CODE`.
 
-**Which mission.**  The host picks it in the lobby: a system and mission
+**The public lobby.**  Pilots with nobody to fly with meet in a chat room
+on the page (the lobbylink room `WC-LOBBY`; "Enter the lobby").  A room's
+code starts with its game, `WC1-4821`, `WC2-`, `SM2-`, `SO1-`, `SO2-`, and a
+code said in the lobby is a link: a click joins that room, if the game
+loaded on the page is that game.  "Offer this room in the lobby" in the
+room form writes the line.  Nobody runs the lobby, so each page keeps its
+rules for its own player and for what the others send: lines of 60
+characters, two to start with and then one every ten seconds, no profanity
+(but hell: there is a Hellcat), no links.  `web/hall.js`,
+`web/chatfilter.js`; docs/wcnet-multiplayer.md, section 6a.
+
+**Which mission.**  The host picks it in the room: a system and mission
 of the Vega campaign (everyone then skips the barracks and flies that
 mission from a fresh start, with the callsign and last name entered on the
 page, so no save game is involved and nothing can disagree), or "Campaign",
@@ -73,7 +86,7 @@ indices: series 1.., mission 0..).  A room is for two pilots unless the host
 asks for a third seat.  When anyone dies, everyone flies that same mission
 again, wherever the campaign had got to.
 
-**Controllers.**  Pick a game controller in the lobby (or press one of its
+**Controllers.**  Pick a game controller in the room form (or press one of its
 buttons while the window has the focus).  It drives the game's mouse and
 keyboard: left stick turns and pitches, right stick pitches and rolls, A
 guns, B missile, X target, Y weapon, L1/R1 speed up/down, Back the
