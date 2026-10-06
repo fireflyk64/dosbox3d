@@ -14,7 +14,8 @@ The games share an engine, relinked and grown.  A function keeps its shape
 
   scripts/wcmap.py wc/WC.EXE wc2/WC2.EXE funcs  [addr ...]   # where did these functions go (default: all pairs)
   scripts/wcmap.py wc/WC.EXE wc2/WC2.EXE data   [XXXX ...]   # votes for data-segment offsets (default: wcnet_ds.def's)
-  scripts/wcmap.py wc/WC.EXE wc2/WC2.EXE def                 # wcnet_ds.def lines with the winning offset and its votes
+  scripts/wcmap.py wc/WC.EXE wc2/WC2.EXE def                 # wcnet_ds.def's names with the winning offset and its votes
+                                                             # (scripts/wcport.py writes a whole column this way)
   scripts/wcmap.py wc/WC.EXE wc2/WC2.EXE where addr ...      # an instruction inside a function -> its twin
 
 The pairing is cached next to the scratch directory given by $WCMAP_CACHE
@@ -206,8 +207,11 @@ def main(argv):
     elif cmd in ("data", "def"):
         defs = []
         path = os.path.join(ROOT, "src", "cpu", "wcnet_ds.def")
+        # wcnet_ds.def has a column per build (WC.EXE, SM2.EXE, WC2.EXE,
+        # SO1.EXE, SO2.EXE): the old executable's is the one mapped from.
+        column = {"wc.exe": 0, "sm2.exe": 1, "wc2.exe": 2, "so1.exe": 3, "so2.exe": 4}.get(os.path.basename(old_path).lower(), 0)
         for line in open(path):
-            mm = re.match(r"WC_DS\((\w+), (0x[0-9A-Fa-f]+), (0x[0-9A-Fa-f]+)\)(.*)$", line.rstrip("\n"))
+            mm = re.match(r"WC_DS\((\w+), " + r"0x[0-9A-Fa-f]+, " * column + r"(0x[0-9A-Fa-f]+)((?:, 0x[0-9A-Fa-f]+)*)\)(.*)$", line.rstrip("\n"))
             defs.append((line.rstrip("\n"), mm))
         if cmd == "data":
             offs = [int(a, 16) for a in argv[4:]] or [int(mm.group(2), 16) for _l, mm in defs if mm]
@@ -218,15 +222,14 @@ def main(argv):
                 print("%04X %-28s %s" % (o, names.get(o, ""), "  ".join("%04X x%d" % (q, n) for q, n in top) or "-"))
         else:
             for line, mm in defs:
-                if not mm:
-                    print(line)
+                if not mm or int(mm.group(2), 16) == 0:
                     continue
                 c = collections.Counter(v.get(int(mm.group(2), 16), {})).most_common(2)
                 best = c[0] if c else (0, 0)
                 second = c[1][1] if len(c) > 1 else 0
                 sure = best[1] >= 3 and best[1] >= 2 * second
-                print("WC_DS(%s, %s, 0x%04X)%s    /* votes %d vs %d%s */" % (
-                    mm.group(1), mm.group(2), best[0] if sure else 0, mm.group(4), best[1], second, "" if sure else " UNSURE %04X" % best[0]))
+                print("%-30s %s -> 0x%04X   votes %d vs %d%s" % (
+                    mm.group(1), mm.group(2), best[0] if sure else 0, best[1], second, "" if sure else " UNSURE %04X" % best[0]))
     else:
         print(__doc__)
         return 1

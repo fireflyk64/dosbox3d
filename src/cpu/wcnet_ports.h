@@ -1,0 +1,116 @@
+/*
+ *  The code places of the other builds of the two games (wcnet_game.cpp),
+ *  carried over from WC.EXE's and WC2.EXE's by scripts/wcport.py: do not edit,
+ *  change the base table (or the script's MANUAL_CODE) and run it again.
+ *  Each line names the place in its own build and, in brackets, in the base.
+ */
+// BEGIN sm2
+// SM2.EXE (The Secret Missions 2), from WC.EXE's places in load_wc1_code.
+static void load_sm2_code() {
+    using namespace code;
+    ovr(do_damage, 0x10EC, 0x0084, 0x0A99, 4);                     // ovr140:0A99 (ovr143:0A99)
+    ovr(delayedDespawn, 0x10EC, 0x008E, 0x1F85, 2);                // ovr140:1F85 (ovr143:1F15)
+    ovr(fireGunFromShip, 0x10EC, 0x012E, 0x29E8, 2);               // ovr140:29E8 (ovr143:2978)
+    ovr(maybe_fire_all_guns, 0x10EC, 0x0156, 0x2EE6, 1);           // ovr140:2EE6 (ovr143:2E76)
+    ovr(aiSetSpeed, 0x10EC, 0x010B, 0x0874);                       // ovr140:0874 (ovr143:0874)
+    ovr(aiSetSpeedReturn, 0x10EC, 0x010B, 0x0918);                 // ovr140:0918 (ovr143:0918)
+    ovr(outerSpawnShipEntity, 0x1107, 0x00B6, 0x11A5, 2);          // ovr142:11A5 (ovr145:115D)
+    ovr(enterNavPoint, 0x1107, 0x0075, 0x09B5, 1);                 // ovr142:09B5 (ovr145:098F)
+    ovr(despawn, 0x10C2, 0x01DD, 0x1C29, 1);                       // ovr137:1C29 (ovr140:1C16)
+    ovr(aiShipThink, 0x1185, 0x00CA, 0x160E, 1);                   // ovr160:160E (ovr163:160E)
+    ovr(showCommMessage, 0x107F, 0x025F, 0x33EB, 2);               // ovr131:33EB (ovr134:33ED)
+    ovr(autoAnimation, 0x107B, 0x0025, 0x0000, 3);                 // ovr130:0000 (ovr133:0000)
+    ovr(autoAnimationBody, 0x107B, 0x002A, 0x0003);                // ovr130:0003 (ovr133:0003)
+    ovr(autopilotFinished, 0x107B, 0x002A, 0x05C9);                // ovr130:05C9 (ovr133:05C9)
+    ovr(briefingStarted, 0x112D, 0x0020, 0x07EC);                  // ovr145:07EC (ovr148:07C1)
+    ovr(enterBarracks, 0x113C, 0x00AC, 0x1039);                    // ovr147:1039 (ovr150:105D)
+    ovr(enterBarracksReturn, 0x113C, 0x00AC, 0x1441);              // ovr147:1441 (ovr150:1391)
+    ovr(missionStarting, 0x1176, 0x0025, 0x04D9);                  // ovr158:04D9 (ovr161:0470)
+    ovr(missionVictoryCalc, 0x1176, 0x0025, 0x02BA);               // ovr158:02BA (ovr161:0251)
+    ovr(missionEnded, 0x1176, 0x0025, 0x0546);                     // ovr158:0546 (ovr161:04DD)
+    ovr(runHangarMission, 0x1176, 0x003E, 0x045D);                 // ovr158:045D (ovr161:03F4)
+    ovr(simulatorStart, 0x117B, 0x002A, 0x1132);                   // ovr159:1132 (ovr162:112E)
+    ovr(simulatorEnd, 0x117B, 0x002A, 0x1338);                     // ovr159:1338 (ovr162:132C)
+    ovr(clearFields, 0x11D2, 0x003E, 0x01AE);                      // ovr165:01AE (ovr168:01AE)
+    root(mainLoopTop, 0x03BB, 0x20B8);                             // seg001:20B8 (seg001:20E3)
+    root(statusCheckAfterKeys, 0x03BB, 0x20C9);                    // seg001:20C9 (seg001:20F4)
+    root(statusCheckAfterFrame, 0x03BB, 0x20E2);                   // seg001:20E2 (seg001:2108)
+    root(statusSetByExitKey, 0x03BB, 0x20C7);                      // seg001:20C7 (seg001:20F2)
+    root(skipOrchestra, 0x03BB, 0x0497);                           // seg001:0497 (seg001:04F2)
+    root(afterStartup, 0x03BB, 0x04B7);                            // seg001:04B7 (seg001:0512)
+    root(afterHangarMission, 0x03BB, 0x04D2);                      // seg001:04D2 (seg001:0536)
+    root(autopilotKey, 0x03BB, 0x15E8);                            // seg001:15E8 (seg001:1695)
+}
+// END sm2
+// BEGIN so1
+// SO1.EXE (Special Operations 1), from WC2.EXE's places in load_wc2_code.
+static void load_so1_code() {
+    using namespace code;
+    ovr(do_damage, 0x1777, 0x00AC, 0x1147, 4, true);               // ovr114:1147 (ovr114:1128)
+    ovr(delayedDespawn, 0x1777, 0x00B6, 0x2B3F, 2, true);          // ovr114:2B3F (ovr114:2B10)
+    ovr(fireGunFromShip, 0x1777, 0x0183, 0x3881, 2, true);         // ovr114:3881 (ovr114:3847)
+    ovr(aiSetSpeed, 0x1777, 0x013D, 0x0E5A, 3, true);              // ovr114:0E5A (ovr114:0E5A)
+    ovr(outerSpawnShipEntity, 0x1796, 0x002A, 0x1CED, 2);          // ovr116:1CED (ovr116:1CED)
+    ovr(enterNavPoint, 0x1796, 0x0089, 0x1511, 1);                 // ovr116:1511 (ovr116:1511)
+    root(despawn, 0x0BE7, 0x1AB2, 1);                              // seg006:1AB2 (seg006:1AB7)
+    ovr(aiShipThink, 0x1862, 0x005C, 0x2CE9, 1);                   // ovr141:2CE9 (ovr141:2CD3)
+    ovr(autoAnimation, 0x1756, 0x0025, 0x0000, 3);                 // ovr107:0000 (ovr107:0000)
+    ovr(autoAnimationBody, 0x1756, 0x0025, 0x0003);                // ovr107:0003 (ovr107:0003)
+    ovr(autopilotFinished, 0x1756, 0x0025, 0x066B);                // ovr107:066B (ovr107:0667)
+    ovr(flyMission, 0x17C0, 0x0043, 0x0800);                       // ovr120:0800 (ovr120:0800)
+    ovr(missionStarting, 0x17E8, 0x0039, 0x0487);                  // ovr128:0487 (ovr128:0486)
+    ovr(missionEnded, 0x17E8, 0x0039, 0x04C4);                     // ovr128:04C4 (ovr128:04C3)
+    ovr(cloak, 0x1824, 0x0057, 0x0013, 1);                         // ovr133:0013 (ovr133:0034)
+    ovr(uncloak, 0x1824, 0x0110, 0x0064, 1);                       // ovr133:0064 (ovr133:0085)
+    ovr(setView, 0x1862, 0x0066, 0x0AC9, 2);                       // ovr141:0AC9 (ovr141:0AC1)
+    ovr(turretFire, 0x1848, 0x003E, 0x0510);                       // ovr136:0510 (ovr136:0510)
+    ovr(turretFireShot, 0x1848, 0x003E, 0x0536);                   // ovr136:0536 (ovr136:0536)
+    ovr(turretAutoNext, 0x1848, 0x005C, 0x08D8);                   // ovr136:08D8 (ovr136:08D8)
+    ovr(turretAutoSkip, 0x1848, 0x005C, 0x11BF);                   // ovr136:11BF (ovr136:11BF)
+    ovr(clearFields, 0x1838, 0x004D, 0x01B8);                      // ovr134:01B8 (ovr134:01B8)
+    root(mainLoopTop, 0x03C5, 0x1D02);                             // seg001:1D02 (seg001:1CA3)
+    root(statusCheckAfterFrame, 0x03C5, 0x1D51);                   // seg001:1D51 (seg001:1CF2)
+    root(statusCheckAfterKeys, 0x03C5, 0x1D66);                    // seg001:1D66 (seg001:1D07)
+    root(autopilotKey, 0x03C5, 0x10A3);                            // seg001:10A3 (seg001:1079)
+    root(freeMainMemory, 0x1687, 0x000B);                          // seg092:000B (seg092:0004)
+    root(replayKey, 0x03C5, 0x1060);                               // seg001:1060 (seg001:1036)
+    root(missionStartingDirect, 0x03C5, 0x0372);                   // seg001:0372 (seg001:0330)
+    root(missionEndedDirect, 0x03C5, 0x038B);                      // seg001:038B (seg001:0349)
+}
+// END so1
+// BEGIN so2
+// SO2.EXE (Special Operations 2), from WC2.EXE's places in load_wc2_code.
+static void load_so2_code() {
+    using namespace code;
+    ovr(do_damage, 0x1776, 0x00AC, 0x1186, 4, true);               // ovr113:1186 (ovr114:1128)
+    ovr(delayedDespawn, 0x1776, 0x00B6, 0x2C07, 2, true);          // ovr113:2C07 (ovr114:2B10)
+    ovr(fireGunFromShip, 0x1776, 0x0183, 0x3957, 2, true);         // ovr113:3957 (ovr114:3847)
+    ovr(aiSetSpeed, 0x1776, 0x013D, 0x0E9C, 3, true);              // ovr113:0E9C (ovr114:0E5A)
+    ovr(outerSpawnShipEntity, 0x1795, 0x002A, 0x1DA9, 2);          // ovr115:1DA9 (ovr116:1CED)
+    ovr(enterNavPoint, 0x1795, 0x0089, 0x15CD, 1);                 // ovr115:15CD (ovr116:1511)
+    root(despawn, 0x0BF2, 0x1AB7, 1);                              // seg006:1AB7 (seg006:1AB7)
+    ovr(aiShipThink, 0x185F, 0x005C, 0x2D83, 1);                   // ovr140:2D83 (ovr141:2CD3)
+    ovr(autoAnimation, 0x1755, 0x0025, 0x0000, 3);                 // ovr106:0000 (ovr107:0000)
+    ovr(autoAnimationBody, 0x1755, 0x0025, 0x0003);                // ovr106:0003 (ovr107:0003)
+    ovr(autopilotFinished, 0x1755, 0x0025, 0x0642);                // ovr106:0642 (ovr107:0667)
+    ovr(flyMission, 0x17BF, 0x0043, 0x0800);                       // ovr119:0800 (ovr120:0800)
+    ovr(missionStarting, 0x17E7, 0x0039, 0x0487);                  // ovr127:0487 (ovr128:0486)
+    ovr(missionEnded, 0x17E7, 0x0039, 0x04C4);                     // ovr127:04C4 (ovr128:04C3)
+    ovr(cloak, 0x1820, 0x0057, 0x0013, 1);                         // ovr132:0013 (ovr133:0034)
+    ovr(uncloak, 0x1820, 0x0110, 0x0064, 1);                       // ovr132:0064 (ovr133:0085)
+    ovr(setView, 0x185F, 0x0066, 0x0ADE, 2);                       // ovr140:0ADE (ovr141:0AC1)
+    ovr(turretFire, 0x1844, 0x003E, 0x0510);                       // ovr135:0510 (ovr136:0510)
+    ovr(turretFireShot, 0x1844, 0x003E, 0x0536);                   // ovr135:0536 (ovr136:0536)
+    ovr(turretAutoNext, 0x1844, 0x005C, 0x08D8);                   // ovr135:08D8 (ovr136:08D8)
+    ovr(turretAutoSkip, 0x1844, 0x005C, 0x11BF);                   // ovr135:11BF (ovr136:11BF)
+    ovr(clearFields, 0x1834, 0x004D, 0x01BE);                      // ovr133:01BE (ovr134:01B8)
+    root(mainLoopTop, 0x03C5, 0x1D02);                             // seg001:1D02 (seg001:1CA3)
+    root(statusCheckAfterFrame, 0x03C5, 0x1D51);                   // seg001:1D51 (seg001:1CF2)
+    root(statusCheckAfterKeys, 0x03C5, 0x1D66);                    // seg001:1D66 (seg001:1D07)
+    root(autopilotKey, 0x03C5, 0x10A3);                            // seg001:10A3 (seg001:1079)
+    root(freeMainMemory, 0x1699, 0x000B);                          // seg092:000B (seg092:0004)
+    root(replayKey, 0x03C5, 0x1060);                               // seg001:1060 (seg001:1036)
+    root(missionStartingDirect, 0x03C5, 0x0372);                   // seg001:0372 (seg001:0330)
+    root(missionEndedDirect, 0x03C5, 0x038B);                      // seg001:038B (seg001:0349)
+}
+// END so2

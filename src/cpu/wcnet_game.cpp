@@ -13,19 +13,23 @@
 namespace wc {
 
 GameId g_game = GAME_NONE;
+BuildId g_build = BUILD_NONE;
 Bit16u g_loadSeg = 0;
-GameParams g_params = { 0x40, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39, 0, 0x33, 5 };
+GameParams g_params = { 0x40, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39, 0, 0x33, 5, 0 };
 
-static const GameParams kWc1Params = { 0x40, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39, 0, 0x33, 5 };
+// WC.EXE starts with the Vega campaign's table (CAMP.000) ...
+static const GameParams kWc1Params = { 0x40, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39, 0, 0x33, 5, 0 };
+// ... and SM2.EXE, the same program otherwise, with Crusade's (CAMP.002).
+static const GameParams kSm2Params = { 0x40, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39, 0, 0x33, 5, 2 };
 // WC2: 70 slots; a mission ship is 0x3c bytes with its class word at +0x15
 // (5 and 6 are fields: ovr116:1D72); nav points are 0x65 bytes
-static const GameParams kWc2Params = { 0x46, 0x3c, 0x15, 2, 5, 6, 0x65, 0x51, 0x35, 0xa1, 10 };
+static const GameParams kWc2Params = { 0x46, 0x3c, 0x15, 2, 5, 6, 0x65, 0x51, 0x35, 0xa1, 10, -1 };
 Bit16u DS = 0;
 PhysPt DS_OFF = 0;
 static Bit16u g_gamePsp = 0;
 
 namespace ds {
-#define WC_DS(name, wc1, wc2) Bit16u name = 0;
+#define WC_DS(name, wc1, sm2, wc2, so1, so2) Bit16u name = 0;
 #include "wcnet_ds.def"
 #undef WC_DS
 }  // namespace ds
@@ -39,8 +43,8 @@ WC_CODE_LIST(X)
 // ---------------------------------------------------------------------------
 // Tables
 
-static void load_ds(GameId game) {
-#define WC_DS(name, wc1, wc2) ds::name = game == GAME_WC1 ? (wc1) : game == GAME_WC2 ? (wc2) : 0;
+static void load_ds(BuildId build) {
+#define WC_DS(name, wc1, sm2, wc2, so1, so2) { static const Bit16u at[] = { 0, wc1, sm2, wc2, so1, so2 }; ds::name = at[build]; }
 #include "wcnet_ds.def"
 #undef WC_DS
 }
@@ -172,26 +176,36 @@ static void load_wc2_code() {
     root(missionEndedDirect, SEG001, 0x0349);                // the flight loop returned
 }
 
+// The other builds: SM2.EXE, SO1.EXE, SO2.EXE (load_sm2_code, ...).
+#include "wcnet_ports.h"
+
 // ---------------------------------------------------------------------------
 // Recognising the program
 
 struct KnownGame {
     GameId id;
+    BuildId build;
     const char *exe;         // file name, upper case
     Bit16u dgroupPara;       // DGROUP's paragraph in the image
     Bit16u signatureOff;     // a string in DGROUP that tells this build from another
     const char *signature;
     const char *title;
+    void (*loadCode)();
 };
 
+// (The paragraphs and the signatures' places: scripts/wcexe.py -e <exe> segs
+// and str.)
 static const KnownGame kGames[] = {
-    { GAME_WC1, "WC.EXE", 0x1231, 0x0187, "Loading WING COMMANDER", "Wing Commander" },
-    { GAME_WC2, "WC2.EXE", 0x1976, 0x8D65, "Origin", "Wing Commander II" },
+    { GAME_WC1, BUILD_WC1, "WC.EXE", 0x1231, 0x0187, "Loading WING COMMANDER", "Wing Commander", load_wc1_code },
+    { GAME_WC1, BUILD_SM2, "SM2.EXE", 0x11E8, 0x0181, "Loading WING COMMANDER", "Wing Commander: The Secret Missions 2", load_sm2_code },
+    { GAME_WC2, BUILD_WC2, "WC2.EXE", 0x1976, 0x8D65, "Origin", "Wing Commander II", load_wc2_code },
+    { GAME_WC2, BUILD_SO1, "SO1.EXE", 0x1989, 0x0258, "Loading WC2 - SPECIAL OPERATIONS 1", "Wing Commander II: Special Operations 1", load_so1_code },
+    { GAME_WC2, BUILD_SO2, "SO2.EXE", 0x1924, 0x025A, "Loading WC2 - SPECIAL OPERATIONS 2", "Wing Commander II: Special Operations 2", load_so2_code },
 };
 
 const char *game_name() {
     for (size_t i = 0; i < sizeof(kGames) / sizeof(kGames[0]); i++) {
-        if (kGames[i].id == g_game) {
+        if (kGames[i].build == g_build) {
             return kGames[i].title;
         }
     }
@@ -200,17 +214,16 @@ const char *game_name() {
 
 static void set_game(const KnownGame *game, Bit16u loadSeg, Bit16u psp) {
     g_game = game ? game->id : GAME_NONE;
+    g_build = game ? game->build : BUILD_NONE;
     g_loadSeg = game ? loadSeg : 0;
     g_gamePsp = game ? psp : 0;
     DS = game ? (Bit16u)(loadSeg + game->dgroupPara) : 0;
     DS_OFF = (PhysPt)DS * 0x10;
-    load_ds(g_game);
-    g_params = g_game == GAME_WC2 ? kWc2Params : kWc1Params;
+    load_ds(g_build);
+    g_params = g_game == GAME_WC2 ? kWc2Params : g_build == BUILD_SM2 ? kSm2Params : kWc1Params;
     clear_code();
-    if (g_game == GAME_WC1) {
-        load_wc1_code();
-    } else if (g_game == GAME_WC2) {
-        load_wc2_code();
+    if (game) {
+        game->loadCode();
     }
     hooks_game_changed();
 }

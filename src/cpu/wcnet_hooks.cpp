@@ -481,7 +481,7 @@ static void key_script() {
             fclose(f);
         }
         wclog(1, "key script %.1fs (t=%.1f): dump %s; comm \"%s\"; vdu \"%s\"; %s; %s", t, now / 1000.0, path.c_str(),
-              ds_text(ds::commGlobalTxt, 80).c_str(), is_wc1() ? ds_text(0x8E4A, 160).c_str() : "", mission_state_line().c_str(),
+              ds_text(ds::commGlobalTxt, 80).c_str(), ds::known(ds::vduText) ? ds_text(ds::vduText, 160).c_str() : "", mission_state_line().c_str(),
               field_state_line().c_str());
     } else if (item == "wait" || item == "skip") {
         skipping = item == "skip";
@@ -760,6 +760,21 @@ static void on_after_startup() {
             g_creditSeries = series;
             g_creditMissions = mission;
         }
+        // Which campaign's mission that is.  The program has one campaign's
+        // table in memory when it starts (WC.EXE Vega's, SM2.EXE Crusade's)
+        // and takes "the campaign to fly next" from its Z<digit> switch or a
+        // saved game; SM2.EXE left alone would fly Vega's missions by
+        // Crusade's table.  So the next campaign is the table's, unless
+        // CAMPAIGN in the environment names another (whose table then has
+        // to come from a saved game: nothing here loads it).
+        if (ds::known(ds::pendingCampaign) && g_params.campaign >= 0) {
+            const char *env = getenv("CAMPAIGN");
+            int campaign = env && env[0] ? atoi(env) : g_params.campaign;
+            if (campaign != g_params.campaign) {
+                wclog(0, "CAMPAIGN=%d: this program starts with campaign %d's table, and the missions of another will not follow each other as they should", campaign, g_params.campaign);
+            }
+            wr16(ds::pendingCampaign, (Bit16u)campaign);
+        }
         run_campaign(mission, series);
         g_skipBarracks = true;
     }
@@ -851,10 +866,10 @@ static void check_hooks_slow() {
         }
         if (direct && !briefed && !(g_session && g_session->is_client())) {
             // WC2's mission test flies what the command line named
-            // (dseg:00D0 mission, 00D2 series), and that is the mission
+            // (ds::directMission and directSeries), and that is the mission
             // the clients are told.
-            wr8(ds::currentMission, (Bit8u)rd16(0x00D0));
-            wr8(ds::currentSeries, (Bit8u)rd16(0x00D2));
+            wr8(ds::currentMission, (Bit8u)rd16(ds::directMission));
+            wr8(ds::currentSeries, (Bit8u)rd16(ds::directSeries));
         }
         if (g_session && !briefed && !code::enterBarracks.known()) {
             // WC2's mission test has no barracks: this is where a client meets the server.
@@ -872,8 +887,8 @@ static void check_hooks_slow() {
         g_lastSeries = rd8(ds::currentSeries);
         if (direct) {
             // A client flies the server's mission there too.
-            wr16(0x00D0, rd8(ds::currentMission));
-            wr16(0x00D2, rd8(ds::currentSeries));
+            wr16(ds::directMission, rd8(ds::currentMission));
+            wr16(ds::directSeries, rd8(ds::currentSeries));
         }
         wclog(2, "starting: %s", mission_state_line().c_str());
     }

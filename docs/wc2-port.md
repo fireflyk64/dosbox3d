@@ -1,7 +1,7 @@
 # Wing Commander II in the multiplayer layer: working notes
 
 Status and findings of the port of `src/cpu/wcnet_*` to `WC2.EXE` (and later
-`SO1.EXE`, `SO2.EXE`).  `docs/wcnet-multiplayer.md` is the design reference for
+`SO1.EXE`, `SO2.EXE`: section 8).  `docs/wcnet-multiplayer.md` is the design reference for
 the Wing Commander 1 implementation; this file records what is different in
 WC2 and how far the port is.  Addresses are in `scripts/wcexe.py` notation
 (`-e wc2/WC2.EXE`); names collected so far are in `scripts/wc2.names`.
@@ -82,7 +82,7 @@ screen.
 
 ## 3. What works (two native instances, `wc2 Origin -k s1 m0`)
 
-Stage 1 to 4 of the plan in section 9, for a mission the story flies with a wingman:
+Stage 1 to 4 of the plan in section 10, for a mission the story flies with a wingman:
 
 * **Tables.**  `src/cpu/wcnet_ds.def` has a WC2 column; `scripts/wcmap.py
   wc/WC.EXE wc2/WC2.EXE data` produced most of it by pairing functions and
@@ -442,6 +442,11 @@ between runs now (docs/wcnet-multiplayer.md, "Running game code"), because
 with a thunk's NUL in front the game left without a word.  The page shows
 the text of any of these in its status line.
 
+Error 007 at "Fly mission" (seen for series 9 mission 1, at once on the
+click) is a game directory without `GAMEDAT/TEMPGLOB.000`: GOG's install
+ships one, and a test archive made without the game's "temporary" files
+does not start that mission (series 1 does).
+
 `!where` in a key script logs CS:IP, the bytes there and the far return
 addresses up the BP chain; a few of them a second apart show what a hang is
 (the loadfix crash above showed as `0000:0000` with the interrupt table for
@@ -479,16 +484,95 @@ reason for `loadfix`) and for trouble with its speech pack on real
 machines.  The next time, the page's status line and its log say what the
 game said.
 
-## 8. Not done yet
+## 8. The other builds: SM2.EXE, SO1.EXE, SO2.EXE
+
+The Secret Missions 2 is WC.EXE built again (SM2.EXE: the same 40 overlays,
+three segments fewer, the data segment's upper half 0x2E6 to 0x2EE further
+up), and the two Special Operations are WC2.EXE's (SO1.EXE: the same 240
+segments, most data ten bytes further up; SO2.EXE: 207 segments and 91
+overlays, the game's overlays one number down).  Nothing in the multiplayer
+layer is written for them: `g_game` is still one of two games, and
+`g_build` picks the addresses.
+
+* `src/cpu/wcnet_ds.def` has a column per build, and
+  `src/cpu/wcnet_ports.h` their code places (`load_sm2_code`, ...).  Both
+  are written by `scripts/wcport.py sm2|so1|so2|all --write` from the base
+  build's column and table: a data offset by `wcmap.py`'s votes (every one
+  unanimous but for the names, 5 or 8 votes to 1), the texts used as scratch
+  space and the steering tables by their contents, the random generator's
+  seed by the generator's code, and SM2.EXE's pilot record and VDU text by
+  hand (`MANUAL` in the script says how); a code place is the instruction
+  aligned with the base build's, and the script's report shows both
+  instructions side by side.  All of them were the same instruction.
+* `kGames` in `wcnet_game.cpp` has the five programs with their DGROUP
+  paragraph and a text that tells the build ("Loading WC2 - SPECIAL
+  OPERATIONS 1").
+* The mission test's words `dseg:00D0`/`00D2` are in the table now
+  (`directMission`, `directSeries`: the same in all three).
+
+**Campaigns (WC1).**  WC.EXE and SM2.EXE know three campaigns: 0 Vega, 1
+The Secret Missions, 2 Crusade.  A word holds the campaign to fly next
+(`pendingCampaign`; the game's own `Z<digit>` switch sets it, and so does a
+loaded game) and `runHangarMission` takes it over; the campaign's file,
+CAMP.00n, has the table of series (`campaignTable`), which the program
+loads once when it starts -- WC.EXE Vega's, SM2.EXE Crusade's -- and again
+with a new game or a loaded one (`ovr161:03A3`, `ovr150:08FE`).  SM2.EXE
+left alone, as the mission jump (`MIS`/`SERIES`) leaves it, would fly
+Vega's missions by Crusade's table: the jump now sets the next campaign to
+the one whose table is there (`GameParams.campaign`; `CAMPAIGN` in the
+environment names another, without its table).  Not done: the campaign
+does not travel with the briefing, so from the barracks everybody has to
+be in the same campaign already (a new game in SM2.EXE is Crusade, in
+WC.EXE Vega), and The Secret Missions' own missions have no entry in the
+page's menu.
+
+Crusade is nine series of two missions (8 and 9 are its two endings; 10
+does not exist): Firekka (1, 2, 3, 5), Corsair (4, 6, 7), Charon (8, 9),
+read from each mission's own record in the running game (the system's name
+is at `dseg:985E` in SM2.EXE, `dseg:9574` in WC.EXE).  Every mission has a
+wingman.  Series 4 and 5-1 are flown in a Dralthi.
+
+Each Special Operations is five series of four missions (`Origin s<1..5>
+m<0..3>`; series 6 gives the loader's error).  Seats, from the host's log
+of every mission flown by two in the direct mode:
+
+| | series 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| SO1 | Stingray, drone, gunner, gunner | drone, drone, gunner, gunner | gunner, gunner, Hobbes, Hobbes | gunner x 4 | gunner x 4 |
+| SO2 | drone, drone, gunner, gunner | gunner, Stingray, gunner, gunner | gunner, drone, drone, drone | drone x 4 | gunner, gunner, Maniac, drone |
+
+(The Crossbow has a turret, the Morningstar has none.)
+
+Checked with two native instances each: SM2.EXE, Crusade 1/0 (briefing,
+launch, both ships in step, the host's 107 shots on the wingman's machine,
+autopilot to Nav 1 and the Dralthi there, the comms' "ICEMAN: Ready to
+engage"); SO1.EXE 1/0 (the wingman's seat, guns both ways, autopilot,
+landing ends both) and SO2.EXE 1/0 (the drone's seat, its copilot keys,
+landing); and WC.EXE's and WC2.EXE's own checks again.  Running several
+pairs at once in one game directory gives the game's error 017 now and
+then (they share its temporary files).
+
+In the browser: the room's code names the program (`SO1-4821`), and the
+page picks it from the Wing Commander II directory.  Checked in two pages
+by the story path, both as the drone's copilot: `GAME=so1 scripts/web-wc2.sh
+1/1 drone 0.48,0.55` and `GAME=so2 scripts/web-wc2.sh 1/0 drone 0.48,0.55`
+(in the Special Operations' barracks the middle door is "Fly mission"; the
+airlock, which flies in the Concordia's room of the game, is "Exit to
+DOS", and the terminal on the left "Save/Load"), and The Secret Missions 2
+with `ROOM=SM2-7001 scripts/web-smoke.sh 100 0 1` (the server's copy of
+Wing Commander's directory; the code picks SM2.EXE).
+
+## 9. Not done yet
 
 Chat on the game's own comms display, the leader's own manual turret shots on a gunner's screen,
 the automatic turret fire of other ships (every machine makes its own), the mission's
 outcome for the debriefing (each machine scores its own; the next "Fly
 mission" brings the client back to the server's story), cloaking, turrets,
-torpedoes, tractor beams, in-flight conversations and scenes, Special
-Operations.
+torpedoes, tractor beams, in-flight conversations and scenes.  In the
+Special Operations only the first mission of each was flown by two; their
+story scenes and the transfer of a pilot from WC2 were not looked at.
 
-## 9. Plan
+## 10. Plan
 
 1. Game detection and per-game tables (this is also what Secret Missions 2
    needs): `DOS_Execute` reports the program and its load segment; `ds::` and

@@ -65,7 +65,7 @@ namespace ds {
 // One variable per line of wcnet_ds.def, holding the offset in the game that
 // is running (wcnet_game.cpp loads them); 0 = that game has no such thing, or
 // it is not located yet.
-#define WC_DS(name, wc1, wc2) extern Bit16u name;
+#define WC_DS(name, wc1, sm2, wc2, so1, so2) extern Bit16u name;
 #include "wcnet_ds.def"
 #undef WC_DS
 inline bool known(Bit16u offset) { return offset != 0; }
