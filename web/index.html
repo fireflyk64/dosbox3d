@@ -88,6 +88,7 @@
   #hallState { margin-left: auto; color: var(--amber); font-weight: 400; letter-spacing: 0; text-transform: none; text-align: right; }
   #hallTop { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
   #hallTop .hint { flex: 1 1 260px; margin: 0; }
+  #hallNeeds { color: var(--amber); }
   #hallBody { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   #hallRoster { margin-bottom: 5px; color: var(--muted); font-size: 12px; }
   #hallRoster .pilot { color: var(--text); }
@@ -206,7 +207,7 @@
       <h2><b>&#9670;</b> Lobby <span id="hallState"></span></h2>
       <div id="hallTop">
         <button type="button" class="secondary" id="hallEnter">Enter the lobby</button>
-        <p class="hint" id="hallNote">The public chat room (<code>WC-LOBBY</code>; when it is full, <code>WC-LOBBY0</code>, <code>WC-LOBBY1</code> and so on) where pilots find somebody to fly with. It links your browser directly with the other pilots in it, as a game does.</p>
+        <p class="hint" id="hallNote"><span id="hallNeeds">Load Wing Commander or Wing Commander II (step 1) to enter: this page connects to the lobby only with a game to fly.</span> The public chat room (<code>WC-LOBBY</code>; when it is full, <code>WC-LOBBY0</code>, <code>WC-LOBBY1</code> and so on) where pilots find somebody to fly with. It links your browser directly with the other pilots in it, as a game does.</p>
       </div>
       <div id="hallBody" hidden>
         <div id="hallRoster"></div>

@@ -1,5 +1,6 @@
 // Headless test of the public lobby (web/hall.js) and of room codes that
-// name their game: pages enter the lobby, talk, are held to its rules by
+// name their game: pages enter the lobby (with a game the hooks know, and
+// not without), talk, are held to its rules by
 // their own page and by the others', advertise a room, and join it by a
 // click on its code.  Driven by scripts/web-smoke.sh hall, which starts the
 // lobby server and the web server; the pages use the server's wc.tar.gz
@@ -8,6 +9,7 @@
 //   node scripts/web-hall.mjs PAGE_URL LOBBY_URL
 import { createRequire } from "node:module";
 import path from "node:path";
+import zlib from "node:zlib";
 const [pageUrl, lobbyUrl] = process.argv.slice(2);
 const require = createRequire(path.join(process.env.PLAYWRIGHT_DIR || process.cwd(), "package.json"));
 const { chromium } = require("playwright");
@@ -17,16 +19,19 @@ const check = (what, ok, detail) => { results.push(!!ok); console.log(`${ok ? "o
 const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));
 const run = Math.random().toString(36).slice(2, 8).toUpperCase();
 const logs = {};
+const sockets = {};   // per page: the WebSockets it opened (the lobby server's are the only ones)
 
 // busy: from how many pilots a lobby is held to a line every ten seconds
-// on that page (8; the pages that try the ten seconds say 2).  A page is in
-// the lobby by itself; wait: false keeps it out (?lobby=off) until the test
-// has set it up and presses "Enter the lobby".
+// on that page (8; the pages that try the ten seconds say 2).  A page with
+// a game is in the lobby by itself; wait: false keeps it out (?lobby=off)
+// until the test has set it up and presses "Enter the lobby".
 async function open(name, { hall = "HALL-" + run, game = true, query = {}, busy = 0, wait = true } = {}) {
   const context = await browser.newContext();
   const page = await context.newPage();
   logs[name] = [];
+  sockets[name] = [];
   page.on("console", (m) => logs[name].push(m.text()));
+  page.on("websocket", (ws) => sockets[name].push(ws.url()));
   page.on("pageerror", (e) => console.log(`[${name}] PAGE ERROR: ${e.message}`));
   if (!game) await page.route("**/wc.tar.gz", (r) => r.abort());
   const u = new URL(pageUrl);
@@ -45,10 +50,46 @@ const say = async (page, line) => { await page.fill("#hallInput", line); await p
 const sees = (page, what, timeout = 8000) => page.waitForFunction((w) => document.getElementById("hallLog").innerText.includes(w), what, { timeout }).then(() => true, () => false);
 const refill = (page) => page.evaluate(() => window.__wcHall.test.refill());
 const status = (page) => text(page, "status");
+// A .zip (stored, not compressed) of one file.
+function zipOf(name, data) {
+  const n = Buffer.from(name), crc = zlib.crc32(data);
+  const local = Buffer.alloc(30), central = Buffer.alloc(46), end = Buffer.alloc(22);
+  local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt32LE(crc, 14);
+  local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(n.length, 26);
+  central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt32LE(crc, 16);
+  central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24); central.writeUInt16LE(n.length, 28);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(46 + n.length, 12); end.writeUInt32LE(30 + n.length + data.length, 16);
+  return Buffer.concat([local, n, data, central, n, end]);
+}
 
 // -- room codes follow the game ---------------------------------------------------
-const none = await open("NOGAME", { game: false, wait: false });
+// A page without a game: its pilot would be in the lobby, and it has not
+// said a word to the lobby server.
+const none = await open("NOGAME", { game: false, hall: "GATE-" + run });
 check("a room code before any game is WC- and four digits", /^WC-\d{4}$/.test(await value(none, "room")), await value(none, "room"));
+await sleep(3);
+const closed = (page) => page.evaluate(() => document.getElementById("hallBody").hidden && document.getElementById("hallEnter").disabled && !document.getElementById("hallNeeds").hidden);
+check("without a game the lobby is closed, and says what it needs", (await closed(none)) && /Load Wing Commander/.test(await text(none, "hallTop")), await text(none, "hallTop"));
+check("nor does the page let itself be told to enter", (await none.evaluate(() => window.__wcHall.enter())) === false, null);
+check("and the page has not connected to the lobby server", sockets.NOGAME.length === 0, sockets.NOGAME);
+// A file of the game's name that is not the game does not open it either.
+const fake = Buffer.alloc(200000, 0x20);
+fake.write("MZ", 0, "latin1"); fake.writeUInt16LE(288, 8);
+await none.setInputFiles("#gamefile", { name: "fake.zip", mimeType: "application/zip", buffer: zipOf("WC.EXE", fake) });
+await none.waitForFunction(() => /^(Ready|Could not)/.test(document.getElementById("sourceStatus").textContent), null, { timeout: 30000 }).catch(() => {});
+await sleep(2);
+check("a WC.EXE that is not the build the hooks know keeps it closed", /not the build the multiplayer hooks know/.test(await text(none, "sourceStatus")) && (await closed(none)) && sockets.NOGAME.length === 0, [await text(none, "sourceStatus"), sockets.NOGAME]);
+// With the game the pilot is in, and nothing had to be pressed.
+await none.unroute("**/wc.tar.gz");
+await none.evaluate(() => { const b = document.getElementById("useServer"); b.hidden = false; b.click(); });
+check("once the game is loaded the pilot is in the lobby", (await inside(none)) && (await pilots(none, 1)) && sockets.NOGAME.length === 1 && /\/ws$/.test(sockets.NOGAME[0]), [await text(none, "hallState"), sockets.NOGAME]);
+check("with the game's tag", /NOGAME \(you\)\s*WC1/.test(await text(none, "hallRoster")), await text(none, "hallRoster"));
+// ... and out again when the game goes.
+await none.setInputFiles("#gamefile", { name: "fake.zip", mimeType: "application/zip", buffer: zipOf("WC.EXE", fake) });
+check("a pilot whose game goes is out of the lobby", await none.waitForFunction(() => document.getElementById("hallBody").hidden && /needs a game to fly/.test(document.getElementById("hallState").textContent), null, { timeout: 30000 }).then(() => true, () => false), await text(none, "hallState"));
+await none.evaluate(() => document.getElementById("useServer").click());
+check("and back in it with the game", await inside(none), await text(none, "hallState"));
 await none.context().close();
 
 const a = await open("ALPHA", { busy: 2 });
@@ -65,10 +106,10 @@ check("and back", (await value(a, "room")) === codeA, await value(a, "room"));
 const b = await open("BRAVO", { busy: 2 });
 check("a pilot who opens the page is in the lobby", (await inside(a)) && (await inside(b)), [await text(a, "hallState"), await text(b, "hallState")]);
 // ... unless a link to a room brought the page: that pilot has a flight.
-const k = await open("KILO", { game: false, query: { room: "LINK-" + run } });
+const k = await open("KILO", { query: { room: "LINK-" + run } });
 await k.waitForFunction(() => !document.getElementById("lobby").hidden, null, { timeout: 30000 }).catch(() => {});
 await sleep(1.5);
-check("a page opened by a room's link is in the room and not in the lobby", (await k.$eval("#hallBody", (el) => el.hidden)) && !(await k.$eval("#hallEnter", (el) => el.hidden || el.disabled)) && !(await k.$eval("#lobby", (el) => el.hidden)), await text(k, "hallState"));
+check("a page opened by a room's link is in the room and not in the lobby, which is open to it", (await k.$eval("#hallBody", (el) => el.hidden)) && !(await k.$eval("#hallEnter", (el) => el.hidden || el.disabled)) && !(await k.$eval("#lobby", (el) => el.hidden)), await text(k, "hallState"));
 await k.context().close();
 check("two pilots see each other", (await pilots(a, 2)) && (await pilots(b, 2)), [await text(a, "hallRoster"), await text(b, "hallRoster")]);
 check("the lobby has 32 seats", (await a.evaluate(() => window.__wcHall.test.net().maxPlayers)) === 32, await a.evaluate(() => window.__wcHall.test.net().maxPlayers));
@@ -214,7 +255,7 @@ await b.context().close();
 
 // -- a full lobby -------------------------------------------------------------------
 // Two seats to a lobby, and a seat is claimable after four seconds of silence.
-const small = { hall: "FULL-" + run, game: false, wait: false };
+const small = { hall: "FULL-" + run, wait: false };
 const setup = (page, more = {}) => page.evaluate((more) => window.__wcHall.test.configure({ seats: 2, claimAfterMs: 4000, heartbeatMs: 1000, ...more }), more);
 const lobbyOf = (page) => page.evaluate(() => { const n = window.__wcHall.test.net(); return n && n.code; });
 const e = await open("ECHO", small), f = await open("FOX", small), g = await open("GOLF", small);
@@ -222,11 +263,11 @@ for (const p of [e, f, g]) await setup(p);
 await enter(e);
 await enter(f);
 check("a lobby of two seats has two pilots", (await pilots(e, 2)) && (await pilots(f, 2)), await text(e, "hallRoster"));
-check("without a game or a callsign's game tag", /^2 in the lobby: ECHO \(you\) · FOX$/.test((await text(e, "hallRoster")).trim()), await text(e, "hallRoster"));
+check("each with its game's tag", /^2 in the lobby: ECHO \(you\)\s*WC1 · FOX\s*WC1$/.test((await text(e, "hallRoster")).trim()), await text(e, "hallRoster"));
 await sleep(6);
 await enter(g);
 check("a third lands in the next lobby, however long the two have been there", (await pilots(g, 1)) && (await lobbyOf(g)) === `FULL-${run}0` && (await lobbyOf(e)) === `FULL-${run}`, await lobbyOf(g));
-check("and is told which", (await text(g, "hallRoster")).trim() === `1 in the lobby FULL-${run}0: GOLF (you)` && (await text(g, "hallLog")).includes(`You are in the lobby FULL-${run}0 (the ones before it are full) as GOLF`), await text(g, "hallRoster"));
+check("and is told which", (await text(g, "hallRoster")).trim().replace(/\s+/g, " ") === `1 in the lobby FULL-${run}0: GOLF (you) WC1` && (await text(g, "hallLog")).includes(`You are in the lobby FULL-${run}0 (the ones before it are full) as GOLF`), await text(g, "hallRoster"));
 // A page that knows of one lobby only is told that it is full.
 const i = await open("INDIA", small);
 await setup(i, { lobbies: 1 });
@@ -239,7 +280,7 @@ await f.evaluate(() => window.__wcHall.test.net().stopHeartbeat());
 await sleep(6);
 await enter(g);
 check("a silent pilot's seat in the first lobby goes to the newcomer", (await pilots(g, 2)) && /ECHO/.test(await text(g, "hallRoster")) && (await lobbyOf(g)) === `FULL-${run}`, await text(g, "hallState") + " / " + await text(g, "hallRoster"));
-check("and the one who lost it lands in the next when it wakes", await f.waitForFunction((want) => document.getElementById("hallRoster").textContent.trim() === want, `1 in the lobby FULL-${run}0: FOX (you)`, { timeout: 30000 }).then(() => true, () => false), [await text(f, "hallRoster"), await text(f, "hallState")]);
+check("and the one who lost it lands in the next when it wakes", await f.waitForFunction((want) => document.getElementById("hallRoster").textContent.trim() === want, `1 in the lobby FULL-${run}0: FOX (you) WC1`, { timeout: 30000 }).then(() => true, () => false), [await text(f, "hallRoster"), await text(f, "hallState")]);
 await say(g, "hello from GOLF");
 check("the newcomer talks to the one who stayed", await sees(e, "hello from GOLF"), await text(e, "hallLog"));
 // Two pilots are fewer than eight: a line a second.
@@ -248,14 +289,14 @@ const three = await g.evaluate(() => ["one", "two", "three"].map((t) => window._
 await sleep(0.2);
 check("among fewer than eight pilots the third line waits a second, not ten", three.join() === "true,true,false" && /You can send again in 1 s/.test(await text(g, "hallHint")), [three, await text(g, "hallHint")]);
 await sleep(1.2);
-check("and goes", (await g.evaluate(() => window.__wcHall.say("three"))) && (await sees(e, "GOLF: three")) && (await sees(e, "GOLF: two")), await text(e, "hallLog"));
+check("and goes", (await g.evaluate(() => window.__wcHall.say("three"))) && (await sees(e, "GOLF WC1: three")) && (await sees(e, "GOLF WC1: two")), await text(e, "hallLog"));
 await sleep(1.5);
 await say(g, `are you in FULL-${run}0 or WC-LOBBY3?`);
 check("a lobby's code in a line is not a room", (await sees(e, "or WC-LOBBY3?")) && (await e.$$eval("#hallLog a.roomcode", (l) => l.length)) === 0, await text(e, "hallLog"));
 
 // A page that asks for more seats than the server gives a room is told how
 // many there are, and takes that (scripts/web-smoke.sh's server gives 256).
-const h = await open("HOTEL", { hall: "BIG-" + run, game: false, wait: false });
+const h = await open("HOTEL", { hall: "BIG-" + run, wait: false });
 await h.evaluate(() => window.__wcHall.test.configure({ seats: 1000 }));
 await enter(h).catch(() => {});
 check("a lobby is made with the seats the server allows", (await h.evaluate(() => { const n = window.__wcHall.test.net(); return n && n.maxPlayers; })) === 256, await text(h, "hallState"));

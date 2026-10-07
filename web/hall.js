@@ -14,9 +14,11 @@
 // code: "Advertise" sends the pilot's room, its mission and its free seats,
 // and "/room" in a line is the room's code.
 //
-// A pilot who opens the page is in the lobby (unless a link to a room
-// brought it, or it left the lobby on an earlier visit), and out of it while
-// it flies.
+// A pilot whose page has a game to fly is in the lobby (unless a link to a
+// room brought it, or it left the lobby on an earlier visit), and out of it
+// while it flies.  A page without a game does not connect at all: the lobby
+// server and the pilots in the lobby hear only of visitors who brought the
+// game (opts.ready; web/wc.js says what counts).
 //
 // The connection is this file's own and not the lobbylink client's
 // (p2p-client.js), which serves a game: a room of strangers wants other
@@ -379,7 +381,9 @@ const stored = (store, key) => { try { return store.getItem(key); } catch (e) { 
 const store = (s, key, value) => { try { if (value == null) s.removeItem(key); else s.setItem(key, value); } catch (e) { /* not kept */ } };
 
 // opts: server() the lobby server's address, name() the callsign typed,
-// tag() the loaded game's ("WC1", ... or ""), title(tag) a game's name,
+// ready() whether a game is loaded that can be flown with others (the lobby
+// is closed without one), tag() the loaded game's ("WC1", ... or ""),
+// title(tag) a game's name,
 // onCode(code) a room code was clicked, room() the pilot's own room for an
 // advertisement, { code, offer } or null (the page joins the room of its
 // room form first when the pilot is in none), log(line), code (another row
@@ -389,7 +393,10 @@ export function initHall(opts) {
   // The lobbies' own codes, this row's and the public one's, are not rooms.
   const isLobby = (c) => isLobbyCode(c, code) || isLobbyCode(c);
   const log = opts.log || (() => {});
-  let net = null, entering = false, attempt = null, shut = false, back = false, retry = null, retries = 0, settings = {};
+  const ready = () => !opts.ready || !!opts.ready();
+  // wanted: the pilot belongs in the lobby and is not in it for the moment
+  // (no game loaded yet, or flying): it enters as soon as it can.
+  let net = null, entering = false, attempt = null, shut = false, wanted = false, retry = null, retries = 0, settings = {};
   const pilots = new Map();      // seat -> { name, tag } from its hello
   const buckets = new Map();     // seat -> what it may still say (kept when a pilot leaves: a seat is not a fresh start)
   const hellos = new Map();      // seat -> how often it may introduce itself
@@ -573,14 +580,16 @@ export function initHall(opts) {
   function show() {
     const on = !!net && !entering;
     $("hallTop").hidden = on;       // the way in, and what entering means
-    $("hallEnter").disabled = entering || shut;
+    $("hallEnter").disabled = entering || shut || !ready();
+    $("hallNeeds").hidden = ready();
     $("hallBody").hidden = !on;
     if (entering) $("hallState").textContent = "Entering the lobby…";
     renderRoster(); hint();
   }
 
   async function enter() {
-    if (shut) return false;
+    if (shut || !ready()) return false;
+    wanted = false;
     if (net || entering) return inside();
     entering = true;
     $("hallState").textContent = "";
@@ -622,7 +631,7 @@ export function initHall(opts) {
     if (attempt && attempt !== net) attempt.close();
     net = null; entering = false; attempt = null;
     pilots.clear();
-    if (!keep) { store(localStorage, "wc:hall", "out"); store(sessionStorage, "wc:hall", "out"); }
+    if (!keep) { wanted = false; store(localStorage, "wc:hall", "out"); store(sessionStorage, "wc:hall", "out"); }
     $("hallState").textContent = why;
     show();
     if (was) log("lobby: left");
@@ -697,23 +706,42 @@ export function initHall(opts) {
     // Is this one of the lobbies' own codes (and so no room to fly in)?
     isLobby,
     enter, leave, inside, say,
-    // The page's callsign or game changed.
+    // The page's callsign changed.
     announce() { if (inside()) { hello(null, false); renderRoster(); } },
+    // A page that has just been loaded and whose pilot belongs in the lobby
+    // (auto): in at once with a game loaded, and otherwise when one is.
+    enterWhenReady() { wanted = true; if (ready()) void enter(); else show(); },
+    // The page's game files changed.  With a game to fly the lobby is open,
+    // and a pilot it was waiting for enters; without one the pilot is out of
+    // it until there is a game again.
+    gameChanged() {
+      if (!ready()) {
+        const was = !!net || entering;
+        wanted = wanted || was;
+        if (was) leave({ keep: true, why: "You left the lobby: it needs a game to fly (step 1)." });
+        else show();
+        return;
+      }
+      show();
+      if (wanted) void enter();
+      else api.announce();
+    },
     // The pilot's room, as a line in the lobby (the buttons that say so).
     advertise,
     // While the game runs there is no lobby: the pilot has a flight, and a
     // lobby full of pilots who are away would be no use to those looking
     // for one.  When the game is over (reopen) the lobby is there again,
     // and a pilot who was in it when the flight began is back in it.
-    shut(why) { if (shut) return; back = inside() || entering; shut = true; leave({ keep: true, why: back ? why : "" }); },
+    shut(why) { if (shut) return; const was = inside() || entering; wanted = wanted || was; shut = true; leave({ keep: true, why: was ? why : "" }); },
     reopen() {
       if (!shut) return;
       shut = false;
       $("hallState").textContent = "";
       show();
-      if (back) { back = false; void enter(); }
+      if (wanted) void enter();
     },
-    // Does a page that has just been loaded enter?  Yes, unless the pilot
+    // Does a page that has just been loaded enter (once it has a game to
+    // fly: enterWhenReady)?  Yes, unless the pilot
     // left the lobby (in this tab, or on an earlier visit and has not
     // entered since), or a link to a room brought the page: that pilot has
     // somebody to fly with.  A tab that was in the lobby is in it again

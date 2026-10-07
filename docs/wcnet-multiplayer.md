@@ -701,7 +701,23 @@ top-level README for the workflow).  What differs:
   strangers', which the panel says), unless a link to a room brought the
   page -- that pilot has somebody to fly with -- or the pilot left the
   lobby: "Leave" is remembered until "Enter the lobby" is pressed again
-  (`hall.auto`; `?lobby=off` keeps a page out once).  Flying leaves the lobby
+  (`hall.auto`; `?lobby=off` keeps a page out once).  **Only a page with a
+  game to fly connects to the lobby** (the user's, for the lobby server's
+  health: every page in a lobby is a socket to the server, a sign of life
+  twice a minute and an introduction to every other pilot, and a visitor
+  who only looks at the page should cost none of that).  The page waits
+  until the game files are loaded (`hall.enterWhenReady`, then
+  `hall.gameChanged` from `setSource`), "Enter the lobby" is off until then
+  and the panel says what is missing; a pilot whose game goes (the saved
+  copy forgotten, another program loaded) is taken out and comes back with
+  the next game.  A game to fly is one the hooks know: a file called
+  `WC.EXE` is not enough, the executable of the chosen program has to be
+  the build of the hooks' own table (`knownBuild` in `web/gamefiles.js`,
+  the same string at the same place of the data segment that
+  `game_program_loaded` looks for, read from the file; the registry's
+  `build`).  Rooms are not held to this: a link to a room joins it at
+  once, so that the host sees the wingman and can say where the files go.
+  Flying leaves the lobby
   (`hall.shut` in `start()`: a lobby of pilots who are away is no use to
   those looking for one), and when the game is over on the page, or the
   page is loaded again, a pilot who was in it is back (`flightOver`).
@@ -732,7 +748,9 @@ top-level README for the workflow).  What differs:
   question in order, so a batch costs one round trip), which is what
   keeps the first lobby from filling with pages that are gone.  `scripts/web-smoke.sh hall` runs the rules in Node
   (`scripts/web-chatfilter-test.mjs`) and the lobby in headless pages
-  (`scripts/web-hall.mjs`: talking, the rules on both sides, a room offered
+  (`scripts/web-hall.mjs`: no socket to the server without a game or with
+  a `WC.EXE` that is not the game, in with the game and out when it goes,
+  talking, the rules on both sides, a room offered
   and joined by a click, codes for other games, a full lobby, the next
   lobby and a claimed seat).
 * **The page's looks** (`web/index.html`) are a cockpit display's: green on

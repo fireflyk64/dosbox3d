@@ -43,6 +43,12 @@
 // asks for one.
 // `dosbox`: what the game's own setup expects of the machine, as the text of
 // a DOSBox configuration file.
+// `build`: how the hooks tell the executable they know from another of the
+// same name (kGames in src/cpu/wcnet_game.cpp, whose figures these are): a
+// string at an offset of the program's data segment, the segment given in
+// paragraphs from the start of the image.  The page asks the file the same
+// question (knownBuild): only a pilot whose game the hooks will fly is let
+// into the public lobby.
 
 // Wing Commander's Vega campaign: series 1.. and mission 0.. within the
 // series (what the MIS / SERIES environment of the hooks takes).  The system
@@ -138,6 +144,7 @@ const wc2Mission = (m) => `Origin s${m.series} m${m.mis}`;
 
 export const GAMES = [
   { id: "wc1", tag: "WC1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
+    build: { para: 0x1231, off: 0x0187, text: "Loading WING COMMANDER" },
     saves: ["GAMEDAT/SAVEGAME.WLD"], cycles: 3630,
     pointer: { fromGame: true },
     campaign: { series: WC1_SERIES, hints: WC1_HINTS } },
@@ -146,6 +153,7 @@ export const GAMES = [
   // file of its own.  The hooks know it as they know WC.EXE; a picked
   // mission is one of Crusade's.
   { id: "wc1sm2", tag: "SM2", partOf: "wc1", title: "Wing Commander: The Secret Missions 2", detect: ["SM2.EXE"], run: "sm2", multiplayer: true,
+    build: { para: 0x11E8, off: 0x0181, text: "Loading WING COMMANDER" },
     saves: ["GAMEDAT/CRUSADE.WLD"], cycles: 3630,
     pointer: { fromGame: true },
     campaign: { series: SM2_SERIES, hints: WC1_HINTS } },
@@ -160,6 +168,7 @@ export const GAMES = [
   // and so must the emulated card's be: with DOSBox's IRQ 7 the first spoken
   // line never ends, and the game waits for it for ever.
   { id: "wc2", tag: "WC2", title: "Wing Commander II", detect: ["WC2.EXE"], run: "loadfix -34 wc2", multiplayer: true,
+    build: { para: 0x1976, off: 0x8D65, text: "Origin" },
     saves: ["GAMEDAT/SAVEGAME.WC2"], cycles: 8000,
     firstName: true,
     pointer: { fromGame: true },
@@ -168,12 +177,14 @@ export const GAMES = [
   // The Special Operations are programs of their own in the same directory,
   // started the way GOG's menu starts them.
   { id: "wc2so1", tag: "SO1", partOf: "wc2", title: "Wing Commander II: Special Operations 1", detect: ["SO1.EXE"], run: "loadfix -34 so1", multiplayer: true,
+    build: { para: 0x1989, off: 0x0258, text: "Loading WC2 - SPECIAL OPERATIONS 1" },
     saves: ["GAMEDAT/SAVEGAME.SO1"], cycles: 8000,
     firstName: true,
     pointer: { fromGame: true },
     dosbox: "[sblaster]\nirq=5\n",
     campaign: { series: SO1_SERIES, missionArgs: wc2Mission, hints: WC2_HINTS } },
   { id: "wc2so2", tag: "SO2", partOf: "wc2", title: "Wing Commander II: Special Operations 2", detect: ["SO2.EXE"], run: "loadfix -34 so2", multiplayer: true,
+    build: { para: 0x1924, off: 0x025A, text: "Loading WC2 - SPECIAL OPERATIONS 2" },
     saves: ["GAMEDAT/SAVEGAME.SO2"], cycles: 8000,
     firstName: true,
     pointer: { fromGame: true },
@@ -190,6 +201,23 @@ export const gameByTag = (tag) => GAMES.find((g) => g.tag === tag) || null;
 export function programsIn(files) {
   const top = new Set(files.filter((f) => !f.path.includes("/")).map((f) => f.path.toUpperCase()));
   return GAMES.filter((g) => g.detect.some((d) => top.has(d))).sort((a, b) => (a.partOf ? 1 : 0) - (b.partOf ? 1 : 0));
+}
+
+// Is the game's executable, among a game directory's files, the build the
+// hooks know?  Their own test (game_program_loaded in
+// src/cpu/wcnet_game.cpp) made on the file instead of the loaded program:
+// the image begins after the MZ header, whose length in paragraphs is the
+// word at byte 8, and a string is the same bytes in both.
+export function knownBuild(game, files) {
+  const sig = game && game.build;
+  if (!sig) return false;
+  const exe = files.find((f) => !f.path.includes("/") && game.detect.includes(f.path.toUpperCase()));
+  const d = exe && exe.data;
+  if (!d || d.length < 28 || d[0] !== 0x4d || d[1] !== 0x5a) return false;
+  const at = ((d[8] | (d[9] << 8)) + sig.para) * 16 + sig.off;
+  if (at + sig.text.length > d.length) return false;
+  for (let i = 0; i < sig.text.length; i++) if (d[at + i] !== sig.text.charCodeAt(i)) return false;
+  return true;
 }
 
 // Directories and file types an installer leaves behind that a DOS game

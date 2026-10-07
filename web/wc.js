@@ -4,7 +4,8 @@
 // room from the page (roster + chat over the same WebRTC links the game
 // will use), and the host starts the game for everyone.  Pilots who have
 // nobody to fly with meet in the public lobby (hall.js), a chat room where
-// a room's code can be said and clicked.  DOSBox then runs
+// a room's code can be said and clicked; the page connects to it only once
+// a game the hooks can fly is loaded.  DOSBox then runs
 // with that live room connection: src/wclobby_web.js adopts Module.lobbyGame
 // instead of joining the room a second time.  Lobby chat and presence
 // travel as reliable messages tagged with a 4-byte prefix that the game
@@ -13,7 +14,7 @@ import { P2PGame } from "./p2p-client.js";
 import { initControls } from "./gamepad.js";
 import { initVoice } from "./voice.js";
 import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles,
-         saveGame, loadGames, forgetGame, totalSize, gameById, gameByTag, programsIn } from "./gamefiles.js";
+         saveGame, loadGames, forgetGame, totalSize, gameById, gameByTag, programsIn, knownBuild } from "./gamefiles.js";
 import { newRoomCode, retagRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS } from "./chatfilter.js";
 import { initHall } from "./hall.js";
 
@@ -145,8 +146,11 @@ function setSource(s, want) {
     const g = programs.find((p) => p.id === want) || programs.find((p) => p === codeGame(roomCode)) || programs.find((p) => p.id === kept) || base;
     s.base = base.id; s.programs = programs;
     s.game = { id: g.id, title: g.title, run: g.run, multiplayer: g.multiplayer };
+    // (A file of the game's name is not yet the game: the hooks fly one
+    // build of each program, and the public lobby is for pilots who have it.)
+    s.known = knownBuild(g, s.files);
   } else if (s) {
-    s.base = s.game.id; s.programs = [];
+    s.base = s.game.id; s.programs = []; s.known = false;
   }
   source = s;
   const sel = $("program");
@@ -156,16 +160,20 @@ function setSource(s, want) {
   $("programLabel").hidden = !s || s.programs.length < 2;
   if (s) {
     sourceStatus(`Ready: ${s.game.title} from ${s.label} (${s.files.length} files, ${mb(totalSize(s.files))}).` +
-                 (s.game.multiplayer ? "" : " The multiplayer hooks do not know this program, so it runs single-player."));
+                 (!s.game.multiplayer ? " The multiplayer hooks do not know this program, so it runs single-player."
+                  : !s.known ? ` Its ${gameById(s.game.id).detect[0]} is not the build the multiplayer hooks know: it runs single-player, and the public lobby stays closed.` : ""));
   }
   describeSaves();
   // (Wing Commander II's people use a first name; the first game has none.)
   $("firstnameLabel").hidden = !(gameInfo() && gameInfo().firstName);
   retagRoom();
   if (lobby.game) { sayHello(); buildMissionMenu(); renderMission(); }
-  hall.announce();
+  hall.gameChanged();
   updateActions();
 }
+// The public lobby is for a pilot with a game to fly: the page connects to
+// it only while one is loaded that the hooks know.
+const lobbyReady = () => !!(source && source.known);
 $("program").addEventListener("change", () => {
   if (!source || running) return;
   try { localStorage.setItem(PROGRAM_KEY(source.base), $("program").value); } catch (e) { /* not kept */ }
@@ -595,7 +603,7 @@ function updateActions() {
   const wrong = wrongGame();
   const ready = !!source && !!lobby.game && !running && !wrong;
   $("fly").disabled = !ready;
-  $("advertise").hidden = !lobby.game || running || !lobby.game.players.some((p) => !p.occupied);
+  $("advertise").hidden = !lobby.game || running || !lobbyReady() || !lobby.game.players.some((p) => !p.occupied);
   if (running) return;
   if (wrong) status(wrong);
   else if (!source && !lobby.game) status("Load the game files and join a room first.");
@@ -1041,6 +1049,7 @@ const hall = initHall({
   code: query.get("hall") || undefined,
   server: () => $("server").value.trim() || DEFAULT_SERVER,
   name: () => $("callsign").value,
+  ready: lobbyReady,
   tag: () => gameTag(),
   title: (tag) => (gameByTag(tag) ? gameByTag(tag).title : tag),
   onCode: (code) => void joinFromLobby(code),
@@ -1073,6 +1082,8 @@ initControls({
 void initSources();
 // A shared link (?room=CODE) puts the visitor straight into the room.
 if (query.get("room")) void joinRoom();
-// The public lobby is where a pilot is unless it left: hall.auto says when
-// not (?lobby=off stays out this once, for tests).
-if (hall.auto({ link: !!query.get("room"), off: query.get("lobby") === "off" })) void hall.enter();
+// The public lobby is where a pilot with a game to fly is unless it left:
+// hall.auto says when not (?lobby=off stays out this once, for tests).  The
+// page enters when the game files are there (setSource), and not before: a
+// visitor who has none costs the lobby server nothing.
+if (hall.auto({ link: !!query.get("room"), off: query.get("lobby") === "off" })) hall.enterWhenReady();
