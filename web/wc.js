@@ -16,7 +16,7 @@ import { initVoice } from "./voice.js";
 import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles,
          saveGame, loadGames, forgetGame, totalSize, gameById, gameByTag, programsIn, knownBuild } from "./gamefiles.js";
 import { newRoomCode, retagRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS } from "./chatfilter.js";
-import { initHall } from "./hall.js";
+import { initHall, OTHER_SERVER, serverDown } from "./hall.js";
 
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
@@ -28,9 +28,41 @@ const GAME_ROOT = "/game";
 const LOBBY_MAGIC = [0x57, 0x43, 0x4c, 0x01]; // "WCL" + version; never a valid protobuf start
 const query = new URLSearchParams(location.search);
 
-// ?server=URL picks another lobby server (its allowed-origin list must
-// include the origin this page is served from).
-$("server").value = query.get("server") || DEFAULT_SERVER;
+// The lobby server only introduces the browsers to each other, and any
+// lobbylink server does that: should the public one be down, pilots agree on
+// another and pass this page's address around with ?server=URL in it (the
+// field under Options is the same).  The other server has to allow this
+// page's origin, and to be served over https when the page is.  A server
+// that is not the public one is named at the top of the page and is in every
+// link the page makes, so that those who follow one meet there.
+function normalizeServer(v) {
+  v = String(v || "").trim();
+  return !v ? "" : /^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? v : "https://" + v;
+}
+$("server").value = normalizeServer(query.get("server")) || DEFAULT_SERVER;
+const serverUrl = () => normalizeServer($("server").value) || DEFAULT_SERVER;
+const otherServer = () => serverUrl() !== DEFAULT_SERVER;
+const withServer = (url) => { if (otherServer()) url.searchParams.set("server", serverUrl()); else url.searchParams.delete("server"); return url; };
+// This page's address for a room: what a room code in the lobby links to.
+function roomLink(code) {
+  const url = new URL(location.href);
+  url.search = ""; url.hash = "";
+  url.searchParams.set("room", code);
+  return withServer(url).toString();
+}
+function showServer() {
+  let name = serverUrl();
+  try { const u = new URL(name); name = u.host + u.pathname.replace(/\/+$/, ""); } catch (e) { /* as typed */ }
+  $("serverTag").hidden = !otherServer();
+  $("serverTag").textContent = otherServer() ? `lobby server: ${name}` : "";
+}
+showServer();
+$("server").addEventListener("change", () => {
+  $("server").value = serverUrl();
+  history.replaceState(null, "", withServer(new URL(location.href)));
+  showServer();
+  hall.serverChanged();
+});
 
 function log(line) {
   console.log(line);
@@ -106,6 +138,10 @@ const mb = (n) => (n / 1048576).toFixed(1) + " MB";
 for (const k of ["room", "callsign", "firstname", "lastname", "players"]) if (query.get(k)) $(k).value = query.get(k);
 if (query.get("relay")) $("relay").checked = true;
 if (query.get("verbose")) $("verbose").checked = true;
+// A link to a room (?room=CODE) whose room this page has not tried to join
+// yet: joinLinked, at the end of this file, says when it does.
+let linked = !!query.get("room");
+const linkWaits = () => linked && !lobby.game && normalizeCode($("room").value.trim()) === normalizeCode(query.get("room").trim());
 // A new room's code is the game's tag and four digits (WC1-4821; "WC-" as
 // long as no game is loaded): said in the public lobby it tells who can
 // join.  `autoCode` is the code this page made up: it follows the game the
@@ -170,6 +206,7 @@ function setSource(s, want) {
   if (lobby.game) { sayHello(); buildMissionMenu(); renderMission(); }
   hall.gameChanged();
   updateActions();
+  joinLinked();
 }
 // The public lobby is for a pilot with a game to fly: the page connects to
 // it only while one is loaded that the hooks know.
@@ -606,7 +643,7 @@ function updateActions() {
   $("advertise").hidden = !lobby.game || running || !lobbyReady() || !lobby.game.players.some((p) => !p.occupied);
   if (running) return;
   if (wrong) status(wrong);
-  else if (!source && !lobby.game) status("Load the game files and join a room first.");
+  else if (!source && !lobby.game) status(linkWaits() ? `Load your game files (step 1) and you are in room ${$("room").value.trim()}; "Join room" takes a seat in it without them.` : "Load the game files and join a room first.");
   else if (!source) status(`Join succeeded; now load ${codeGame(lobby.game.code) ? codeGame(lobby.game.code).title : "the game files"} above.`);
   else if (!lobby.game) status("Game files ready; join a room to fly with friends.");
   else if (isHost()) { $("fly").textContent = "Fly (starts everyone)"; status(`You host room ${lobby.game.code}. Press Fly when your wingmen are in.`); }
@@ -707,16 +744,19 @@ function fitsRoom(code) {
 // create: false only joins a room that exists (a code clicked in the lobby).
 async function joinRoom({ create = true } = {}) {
   if (lobby.game || $("join").disabled) return;
+  // (A link's room that waits for the right game goes on waiting for it.)
+  const viaLink = linkWaits();
+  linked = false;
   const code = normalizeCode($("room").value.trim());
   $("room").value = code;
   if (!/^[A-Za-z0-9_-]{4,64}$/.test(code)) { status("Room codes are 4-64 letters, digits, - or _."); return; }
   if (hall.isLobby(code)) { status(`${code} is the public lobby (enter it above); a room to fly in needs a code of its own.`); return; }
-  if (!fitsRoom(code)) return;
+  if (!fitsRoom(code)) { linked = viaLink; return; }
   $("join").disabled = true;
   status(`Joining room ${code}…`);
   try {
     const game = await P2PGame.connect({
-      server: $("server").value.trim() || DEFAULT_SERVER,
+      server: serverUrl(),
       code,
       // A room code gets said out loud: nobody who hears it may take a
       // seat somebody is sitting in.  A seat comes back only to the browser
@@ -738,7 +778,7 @@ async function joinRoom({ create = true } = {}) {
     const url = new URL(location.href);
     url.searchParams.set("room", code);
     url.searchParams.delete("callsign"); url.searchParams.delete("firstname"); url.searchParams.delete("lastname");
-    history.replaceState(null, "", url);
+    history.replaceState(null, "", withServer(url));
     $("lobby").hidden = false;
     $("leave").hidden = false;
     if (game.selfId === 0) lobby.mission = parseMission(query.get("mission")) || { series: 1, mis: 0 };
@@ -752,7 +792,7 @@ async function joinRoom({ create = true } = {}) {
   } catch (e) {
     status(e && e.code === "room-not-found" ? `Room ${code} is not open any more.`
       : e && e.code === "room-full" ? `Room ${code} is full.`
-      : `Could not join room ${code}: ${e && e.code ? e.code + ": " : ""}${e && e.message ? e.message : e}`);
+      : `Could not join room ${code}: ${e && e.code ? e.code + ": " : ""}${e && e.message ? e.message : e}.${e && serverDown(e.code) ? " " + OTHER_SERVER : ""}`);
     $("join").disabled = false;
   }
 }
@@ -897,7 +937,7 @@ async function start(fromGesture) {
       lastname: $("lastname").value.trim(),
       firstname: gameInfo() && gameInfo().firstName ? $("firstname").value.trim() : "",
       players: String(lobby.game.maxPlayers),
-      server: $("server").value.trim() || DEFAULT_SERVER,
+      server: serverUrl(),
       relay: $("relay").checked,
       verbose: $("verbose").checked,
     };
@@ -1047,7 +1087,8 @@ function steeringPointer() {
 // The public lobby (web/hall.js): ?hall=CODE is another one, for tests.
 const hall = initHall({
   code: query.get("hall") || undefined,
-  server: () => $("server").value.trim() || DEFAULT_SERVER,
+  server: serverUrl,
+  link: roomLink,
   name: () => $("callsign").value,
   ready: lobbyReady,
   tag: () => gameTag(),
@@ -1080,8 +1121,13 @@ initControls({
 // -- go ------------------------------------------------------------------------
 
 void initSources();
-// A shared link (?room=CODE) puts the visitor straight into the room.
-if (query.get("room")) void joinRoom();
+// A shared link (?room=CODE) puts a pilot with a game to fly straight into
+// the room, as soon as the game files are there (setSource).  A page
+// without them joins nothing by itself: whoever opens the link, or whatever
+// does, has said nothing to the lobby server until a game is loaded or
+// "Join room" is pressed.
+function joinLinked() { if (linkWaits() && lobbyReady()) void joinRoom(); }
+if (linked) updateActions();
 // The public lobby is where a pilot with a game to fly is unless it left:
 // hall.auto says when not (?lobby=off stays out this once, for tests).  The
 // page enters when the game files are there (setSource), and not before: a

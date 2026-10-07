@@ -29,6 +29,7 @@
   #top { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; padding: 4px 2px 8px; margin-bottom: 10px; border-bottom: 1px solid var(--line2); }
   #top h1 { margin: 0; color: var(--amber); font: italic 800 22px/1 Eurostile, "Bank Gothic", "Segoe UI", system-ui, sans-serif; letter-spacing: .22em; text-transform: uppercase; }
   #top .sub { color: var(--muted); font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; }
+  #top #serverTag { margin-right: 44px; color: var(--amber); letter-spacing: .04em; text-transform: none; overflow-wrap: anywhere; }
   /* (Three lamps: red, amber, green.) */
   #top::before, #top::after { content: ""; position: absolute; bottom: 9px; height: 7px; box-sizing: border-box; }
   #top::before { right: 26px; width: 8px; background: var(--red); }
@@ -182,6 +183,7 @@
   <header id="top">
     <h1>Wing Commander</h1>
     <span class="sub">cooperative multiplayer in the browser</span>
+    <span class="sub" id="serverTag" title="This page uses another lobby server than the public one (its address has ?server=, or Options says so): you meet the pilots who use the same" hidden></span>
   </header>
 
   <div id="deck">
@@ -250,7 +252,7 @@
       <details id="options">
         <summary>Options</summary>
         <div class="row">
-          <label>Lobby server <input type="text" id="server" value=""></label>
+          <label title="The server that introduces the browsers to each other. Should the public one be down, any other lobbylink server will do: everybody who flies together uses the same, and ?server=URL in this page's address sets it too">Lobby server <input type="text" id="server" value=""></label>
           <label class="check"><input type="checkbox" id="hint" checked> Show the game's hint about chatting with <kbd>0</kbd></label>
           <label class="check"><input type="checkbox" id="relay"> Force TURN relay</label>
           <label class="check"><input type="checkbox" id="verbose"> Verbose network log</label>

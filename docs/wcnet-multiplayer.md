@@ -496,6 +496,13 @@ top-level README for the workflow).  What differs:
 * **The page joins the room first** (roster, chat, host-driven start) and
   DOSBox adopts that `P2PGame` (`Module.lobbyGame`) in `wclobby_connect`
   instead of connecting again, which would supersede the page's session.
+  Joining is somebody's doing (the user's condition for leaving rooms
+  open to pages without a game): "Join room", a code clicked in the lobby,
+  "Advertise".  A link to a room (`?room=CODE`) joins by itself only on a
+  page with a game to fly, when the files are there (`joinLinked` from
+  `setSource`); without one the page says so and waits for the game or for
+  "Join room", so that whatever merely opens a link says nothing to the
+  lobby server.
   Lobby chat and presence are reliable messages prefixed with
   `57 43 4C 01`; a protobuf message never starts with 0x57 (wire type 7),
   so `wclobby_web.js` drops them before they reach the game.
@@ -750,7 +757,8 @@ top-level README for the workflow).  What differs:
   (`scripts/web-chatfilter-test.mjs`) and the lobby in headless pages
   (`scripts/web-hall.mjs`: no socket to the server without a game or with
   a `WC.EXE` that is not the game, in with the game and out when it goes,
-  talking, the rules on both sides, a room offered
+  a room's link that waits for the game, another lobby server by the
+  address and by Options, talking, the rules on both sides, a room offered
   and joined by a click, codes for other games, a full lobby, the next
   lobby and a claimed seat).
 * **The page's looks** (`web/index.html`) are a cockpit display's: green on
@@ -764,8 +772,27 @@ top-level README for the workflow).  What differs:
   nothing at all, which is why a test window too small to show it reports
   a faster game.)
 * **The lobby server checks the page's origin**; the public server accepts
-  only its own host.  Serve the page from there or run a lobby server with
-  `--allowed-origin` for the page's origin.
+  its own host and the deployed page's (`https://fireflyk64.github.io`).
+  Serve the page from there or run a lobby server with `--allowed-origin`
+  for the page's origin.
+* **Any lobbylink server will do** (the user's, for the day the public one
+  is down: the server only introduces the browsers, and pilots can agree on
+  another).  `?server=URL` in the page's address, or "Lobby server" under
+  Options, is the server of the public lobby, of the rooms and of the game
+  (`serverUrl` in `web/wc.js`; an address without a scheme is https).  A
+  server that is not the public one is named at the top of the page and is
+  in every link the page makes -- its own address once a room is joined or
+  the field changed, and the room codes of the lobby (`roomLink`) -- so
+  that those who follow a link meet there; changing the field moves a
+  pilot who is in the lobby, or could not get into it, to the new server's
+  (`hall.serverChanged`).  A server that does not answer is said with the
+  way to another (`OTHER_SERVER`).  It is not remembered from one visit to
+  the next: the address says which server a page talks to, and a link
+  cannot change that for good.  The other server needs `--allowed-origin`
+  for the page's origin, https (a page served over https may not open a
+  `ws:` socket), and a TURN relay of its own for the pilots who cannot be
+  reached directly.  Pilots on different servers do not see each other,
+  and the lobby passes no links, so the new address travels some other way.
 
 ## 7. Known limitations and follow-ups
 

@@ -76,6 +76,10 @@ function signalingUrl(server) {
   return u.toString();
 }
 const fail = (code, message) => Object.assign(new Error(message), { code });
+// The lobby server did not answer (these are the lobbylink client's codes
+// too), and what a pilot is told then: no page depends on that one server.
+export const serverDown = (code) => ["connection-failed", "connection-closed", "connection-lost", "connect-timeout", "invalid-server-url"].includes(code);
+export const OTHER_SERVER = "If the lobby server is down, pilots can meet on another: set it under Options (step 2), or add ?server=URL to this page's address.";
 const shuffled = (n) => { const a = Array.from({ length: n }, (_, i) => i); for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
 // One seat in the room and a data channel to everybody else in it.
@@ -380,7 +384,8 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 const stored = (store, key) => { try { return store.getItem(key); } catch (e) { return null; } };
 const store = (s, key, value) => { try { if (value == null) s.removeItem(key); else s.setItem(key, value); } catch (e) { /* not kept */ } };
 
-// opts: server() the lobby server's address, name() the callsign typed,
+// opts: server() the lobby server's address, link(code) this page's address
+// for a room, name() the callsign typed,
 // ready() whether a game is loaded that can be flown with others (the lobby
 // is closed without one), tag() the loaded game's ("WC1", ... or ""),
 // title(tag) a game's name,
@@ -455,7 +460,7 @@ export function initHall(opts) {
       const a = el("a", "roomcode", p.code);
       const url = new URL(location.href);
       url.search = ""; url.searchParams.set("room", p.code);
-      a.href = url.toString();
+      a.href = opts.link ? opts.link(p.code) : url.toString();
       const fits = !GAME_TAGS.includes(p.tag) || !myTag() || p.tag === myTag();
       if (!fits) a.classList.add("other");
       a.title = (GAME_TAGS.includes(p.tag) ? `A room for ${opts.title ? opts.title(p.tag) : p.tag}. ` : "") + "Click to join it.";
@@ -556,7 +561,7 @@ export function initHall(opts) {
     // server went away: take a seat again, soon and then less and less often.
     const delay = lostCode === "room-expired" ? 500 + Math.random() * 2500 : Math.min(30000, 2000 * 2 ** retries) * (0.7 + 0.6 * Math.random());
     retries++;
-    $("hallState").textContent = "Reconnecting to the lobby…";
+    $("hallState").textContent = "Reconnecting to the lobby…" + (retries > 2 && serverDown(lostCode) ? " " + OTHER_SERVER : "");
     clearTimeout(retry);
     retry = setTimeout(() => { retry = null; if (net) void reconnect(); }, delay);
   }
@@ -603,9 +608,10 @@ export function initHall(opts) {
     } catch (e) {
       if (attempt !== n) return false;
       entering = false;
+      wanted = true;    // (the next occasion tries again: another server, another game, the end of a flight)
       n.close();
       $("hallState").textContent = e.code === "room-full" ? "Every lobby is full (every seat is taken). Try again in a while."
-        : `Could not enter the lobby: ${e.message || e}`;
+        : `Could not enter the lobby: ${e.message || e}.${serverDown(e.code) ? " " + OTHER_SERVER : ""}`;
       show();
       return false;
     }
@@ -725,6 +731,14 @@ export function initHall(opts) {
       show();
       if (wanted) void enter();
       else api.announce();
+    },
+    // The lobby server's address changed: a pilot who is in the lobby, or
+    // could not get into it, takes a seat on the new server.
+    serverChanged() {
+      const was = !!net || entering;
+      if (was) leave({ keep: true });
+      else { $("hallState").textContent = ""; show(); }
+      if (was || wanted) void enter();
     },
     // The pilot's room, as a line in the lobby (the buttons that say so).
     advertise,

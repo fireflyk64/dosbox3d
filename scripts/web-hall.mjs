@@ -111,6 +111,22 @@ await k.waitForFunction(() => !document.getElementById("lobby").hidden, null, { 
 await sleep(1.5);
 check("a page opened by a room's link is in the room and not in the lobby, which is open to it", (await k.$eval("#hallBody", (el) => el.hidden)) && !(await k.$eval("#hallEnter", (el) => el.hidden || el.disabled)) && !(await k.$eval("#lobby", (el) => el.hidden)), await text(k, "hallState"));
 await k.context().close();
+// A link to a room joins nothing for a page without a game: its visitor
+// presses "Join room", or loads the game.
+const l = await open("LIMA", { game: false, query: { room: "WAIT-" + run } });
+await sleep(3);
+check("a room's link opened without a game connects to nothing", (await l.$eval("#lobby", (el) => el.hidden)) && sockets.LIMA.length === 0 && /Load your game files .* room WAIT-/.test(await status(l)), [await status(l), sockets.LIMA]);
+await l.click("#join");
+check("\"Join room\" takes the seat without a game", await l.waitForFunction(() => !document.getElementById("lobby").hidden && /player 1 of 2 in room WAIT-/.test(document.getElementById("chatLog").textContent), null, { timeout: 30000 }).then(() => true, () => false), await status(l));
+const m = await open("MIKE", { game: false, query: { room: "WAIT-" + run } });
+await sleep(3);
+check("a second visitor without a game waits as well", (await m.$eval("#lobby", (el) => el.hidden)) && sockets.MIKE.length === 0, sockets.MIKE);
+await m.unroute("**/wc.tar.gz");
+await m.evaluate(() => { const b = document.getElementById("useServer"); b.hidden = false; b.click(); });
+check("and is in the room once the game is loaded", await m.waitForFunction(() => !document.getElementById("lobby").hidden && /player 2 of 2 in room WAIT-/.test(document.getElementById("chatLog").textContent), null, { timeout: 60000 }).then(() => true, () => false), await status(m));
+check("and not in the lobby: one socket, the room's", (await m.$eval("#hallBody", (el) => el.hidden)) && sockets.MIKE.length === 1, sockets.MIKE);
+await l.context().close();
+await m.context().close();
 check("two pilots see each other", (await pilots(a, 2)) && (await pilots(b, 2)), [await text(a, "hallRoster"), await text(b, "hallRoster")]);
 check("the lobby has 32 seats", (await a.evaluate(() => window.__wcHall.test.net().maxPlayers)) === 32, await a.evaluate(() => window.__wcHall.test.net().maxPlayers));
 check("with callsign and game", /BRAVO\s*WC1/.test(await text(a, "hallRoster")) && /ALPHA\s*WC1/.test(await text(b, "hallRoster")), await text(a, "hallRoster"));
@@ -171,7 +187,8 @@ await a.click("#hallAdvertise"); await sleep(0.3); await a.click("#hallAdvertise
 check("an advertisement that has to wait waits in the box", (await value(a, "hallInput")) === offer && /You can send again in \d+ s/.test(await text(a, "hallHint")), [await value(a, "hallInput"), await text(a, "hallHint")]);
 await a.fill("#hallInput", "");
 check("the code is a link in the other's lobby", await b.waitForFunction((c) => Array.from(document.querySelectorAll("#hallLog a.roomcode")).some((x) => x.textContent === c), codeA, { timeout: 8000 }).then(() => true, () => false), await text(b, "hallLog"));
-check("that also opens the room from another tab", (await b.$eval("#hallLog a.roomcode", (x) => x.href)).endsWith("?room=" + codeA), null);
+const href = new URL(await b.$eval("#hallLog a.roomcode", (x) => x.href));
+check("that also opens the room from another tab, on the lobby server this page uses", href.searchParams.get("room") === codeA && href.searchParams.get("server") === lobbyUrl, href.toString());
 await b.click("#hallLog a.roomcode");
 await b.waitForFunction(() => !document.getElementById("lobby").hidden && document.getElementById("roster").children.length > 0, null, { timeout: 30000 }).catch(() => {});
 check("a click joins the room", (await value(b, "room")) === codeA && /player 2 of 2 in room/.test(await text(b, "chatLog")), await status(b));
@@ -252,6 +269,24 @@ await sleep(0.5);
 check("a code clicked there says the page has to be loaded again", /Reload the page to join/.test(await status(a)), await status(a));
 await a.context().close();
 await b.context().close();
+
+// -- another lobby server -----------------------------------------------------------
+// Should the public server be down, pilots meet on another: ?server=URL in
+// the page's address, or the field under Options.  (Every page of this
+// test uses ?server=; the public server is what a page uses without.)
+const pub = await open("PAPA", { game: false, wait: false, query: { server: "https://pqrstuvw.xyz/lobbylink" } });
+check("the public lobby server is not named on the page", await pub.$eval("#serverTag", (el) => el.hidden), await text(pub, "top"));
+await pub.context().close();
+const setServer = (page, v) => page.$eval("#server", (el, v) => { el.value = v; el.dispatchEvent(new Event("change", { bubbles: true })); }, v);
+const n = await open("NOVEMBER", { hall: "MOVE-" + run, query: { server: "http://127.0.0.1:59999" } });
+check("a lobby server that does not answer is said, with the way to another", await n.waitForFunction(() => { const t = document.getElementById("hallState").textContent; return /Could not enter the lobby/.test(t) && /\?server=URL/.test(t); }, null, { timeout: 30000 }).then(() => true, () => false), await text(n, "hallState"));
+check("the page names the server it uses", (await text(n, "serverTag")) === "lobby server: 127.0.0.1:59999", await text(n, "serverTag"));
+await setServer(n, "127.0.0.1:59999/lobbylink");
+check("an address typed without its scheme is https", (await value(n, "server")) === "https://127.0.0.1:59999/lobbylink", await value(n, "server"));
+await setServer(n, lobbyUrl);
+check("with another server set under Options the pilot is in its lobby", (await inside(n)) && (await pilots(n, 1)), await text(n, "hallState"));
+check("and the page's address and its name say which", new URL(n.url()).searchParams.get("server") === lobbyUrl && (await text(n, "serverTag")) === "lobby server: " + new URL(lobbyUrl).host, [n.url(), await text(n, "serverTag")]);
+await n.context().close();
 
 // -- a full lobby -------------------------------------------------------------------
 // Two seats to a lobby, and a seat is claimable after four seconds of silence.
