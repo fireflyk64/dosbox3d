@@ -1029,7 +1029,7 @@ static void check_hooks_slow() {
         // trampoline run started here is over: only the first is a frame.
         static int lastFrame = -1;
         if (rd16(ds::frameCounter) != lastFrame) {
-            if (pace_frame(!(g_session && g_session->is_client()))) {
+            if (pace_frame(!g_session || g_session->paces())) {
                 g_trampoline.run_before_current_instruction();
                 return;  // early: back here when the frame is due
             }
@@ -1132,6 +1132,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_set_rocks(int mode) {
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_rocks() {
     return wc_net_rocks();
 }
+// The host's page sets the exchange mode (its lobby option; ExchangeMode:
+// 0 auto, 1 low latency, 2 high latency).
+static int g_webLatencyWanted = -1;
+extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_set_latency(int setting) {
+    g_webLatencyWanted = setting < 0 ? 0 : setting;
+}
+// 0: the mode in force (1 low, 2 high), 1: the setting (0 auto), 2: the
+// round trip in ms (-1 before one is known).
+extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_link(int what) {
+    return what == 0 ? wc_net_mode() : what == 1 ? wc_net_mode_setting() : wc_net_rtt_ms();
+}
 // Nonzero while a mission's frame loop runs (flying, autopilot included):
 // the page steers with the stick then, and moves a menu pointer otherwise.
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_in_flight() {
@@ -1155,6 +1166,10 @@ static void web_input_tick() {
     if (g_webRocksWanted >= 0) {
         wc_net_set_rocks(g_webRocksWanted);
         g_webRocksWanted = -1;
+    }
+    if (g_webLatencyWanted >= 0) {
+        wc_net_set_mode(g_webLatencyWanted);
+        g_webLatencyWanted = -1;
     }
 }
 

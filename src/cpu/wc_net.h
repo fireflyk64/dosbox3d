@@ -73,5 +73,14 @@ bool wc_net_cockpit_dim(int *dashboardTop);
 bool wc_net_helmet_name(int *vduOrigin);
 void wc_net_set_rocks(int mode);
 int wc_net_rocks();
+// The exchange mode (ExchangeMode in wcnet_session.h): the setting, 0 auto
+// (the default: the host's game decides from the link it measures), 1 low
+// latency, 2 high latency (WCNET_MODE=auto|low|high; the host's lobby option;
+// "/latency auto", "/latency low", "/latency high" in the comms prompt), the
+// mode in force, and the round trip to the other side in ms (-1: unknown).
+void wc_net_set_mode(int setting);
+int wc_net_mode_setting();
+int wc_net_mode();
+double wc_net_rtt_ms();
 
 #endif

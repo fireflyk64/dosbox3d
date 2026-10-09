@@ -84,5 +84,7 @@ if [ -n "${NATIVE_HOST:-}" ]; then
     grep -v '^$' "$OUT/native-host.err" | tail -25
     exit "$status"
 fi
-PLAYWRIGHT_DIR="$PW" SHOT_DIR="$OUT" node "$ROOT/scripts/web-smoke.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" "$DURATION" "${2:-1}" "${3:-1}" 2>&1 | tee "$OUT/smoke.log"
+# PAGE_QUERY="?env.WCNET_LAG=200&env.WCNET_PERF=2" gives both pages extra
+# address parameters (a simulated link, a forced exchange mode, ...).
+PLAYWRIGHT_DIR="$PW" SHOT_DIR="$OUT" node "$ROOT/scripts/web-smoke.mjs" "http://localhost:$PORT/${PAGE_QUERY:-}" "http://127.0.0.1:$LOBBY_PORT" "$DURATION" "${2:-1}" "${3:-1}" 2>&1 | tee "$OUT/smoke.log"
 exit "${PIPESTATUS[0]}"

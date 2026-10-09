@@ -799,8 +799,11 @@ top-level README for the workflow).  What differs:
 * A client whose machine cannot hold the server's frame rate applies more
   than one server frame per frame of its own: the world keeps the server's
   pace on its screen, but its own ship flies slower than the others (WC1
-  moves per frame).  There is no extrapolation of remote ships between
-  frames.
+  moves per frame).  In the high-latency mode (section 3b) the converse
+  too: a wingman paces itself at the host's nominal rate, so with a host
+  that cannot hold it the wingman's ship flies faster than the host's
+  world.  There is no extrapolation of remote ships between frames beyond
+  what the game itself does with a ship's velocity.
 * A server with no connected client blocks at the start of every frame until
   one connects (original behaviour); the same happens if the only client
   drops mid-mission.

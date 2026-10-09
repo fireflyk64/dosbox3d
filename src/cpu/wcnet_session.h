@@ -44,6 +44,17 @@ namespace wc {
 
 enum Role { ROLE_SERVER, ROLE_CLIENT };
 
+// How the frames are exchanged with a wingman (docs section 3b).  The
+// server decides, from what it measures of the link unless told (WCNET_MODE,
+// the page's option, "/latency" in the comms prompt), and its frames carry
+// the mode in force to the clients.
+enum ExchangeMode {
+    MODE_AUTO = 0,  // a setting only: the server goes by the link it measures
+    MODE_LOW = 1,   // low latency: the client waits for every server frame; the server runs at most six frames ahead
+    MODE_HIGH = 2,  // high latency: the client paces itself and takes the server's frames as they come,
+                    // the server runs as far ahead as the round trip needs; everybody sees the others later
+};
+
 // What a client is in a mission (Game.seat).
 enum Seat {
     SEAT_WINGMAN = 0,  // flies the ship the mission has in the wingman's slot
@@ -109,6 +120,21 @@ public:
     // everybody.  Only the server decides; a client's request just says so.
     // In flight it takes effect at the top of the next frame.
     virtual void request_rocks(int mode) = 0;
+
+    // --- the exchange mode (ExchangeMode) ------------------------------------
+    // Whether this machine paces its own flight frames (wcnet_perf.h): a
+    // server always; a client only in the high-latency mode, where it does
+    // not wait for the server's frames.
+    virtual bool paces() const { return true; }
+    // The setting (MODE_AUTO, MODE_LOW, MODE_HIGH): the server's to make; a
+    // client's request only says so.
+    virtual void request_mode(int setting) { (void)setting; }
+    virtual int mode_setting() const { return MODE_AUTO; }
+    // The mode in force.
+    virtual int mode() const { return MODE_LOW; }
+    // The round trip to the other side in ms (a server: the longest of its
+    // clients'), or -1 before one is known.
+    virtual double rtt_ms() const { return -1; }
 };
 
 // The active session, or NULL when not connected.

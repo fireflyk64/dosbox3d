@@ -533,6 +533,8 @@ function renderMission() {
   sel.disabled = !isHost() || running;
   $("rocks").value = lobby.rocks;
   $("rocks").disabled = !isHost();  // the host may switch them while flying too
+  $("latency").value = lobby.latency;
+  $("latency").disabled = !isHost();
   const hints = (c && c.hints) || {};
   $("missionHint").textContent = !c ? (lobbyGameId() ? "" : "Load the game files to pick a mission.")
     : lobby.mission ? `${missionLabel(lobby.mission)[0].toUpperCase()}${missionLabel(lobby.mission).slice(1)}. ${hints.forced || ""}`
@@ -554,6 +556,9 @@ const lobby = { game: null, names: new Map(), links: new Map(), flying: new Set(
                 // asteroid and mine fields, "on", "soft" (a rock does a
                 // fraction of its damage) or "off": the host's choice, for everybody
                 rocks: "on",
+                // the exchange mode, "auto" (the host's game measures the
+                // connection and picks), "low" or "high" latency: the host's choice
+                latency: "auto",
                 // game-protocol messages that arrive before DOSBox has adopted this
                 // connection (a wingman faster to the launch than the host), handed
                 // to the transport at adoption so nothing is lost
@@ -581,7 +586,8 @@ function sendLobby(obj, to) {
 }
 const sayHello = (to, reply) => sendLobby({ t: "hello", name: myName(), flying: running, reply: !!reply,
   game: source ? source.game.id : "", voice: voice.choice(),
-  mission: isHost() ? missionKey(lobby.mission) : undefined, rocks: isHost() ? lobby.rocks : undefined }, to);
+  mission: isHost() ? missionKey(lobby.mission) : undefined, rocks: isHost() ? lobby.rocks : undefined,
+  latency: isHost() ? lobby.latency : undefined }, to);
 
 // Asteroid and mine fields on, soft or off.  The host's page tells the others
 // (for their lobby) and its own running game, which tells every wingman's game.
@@ -597,6 +603,24 @@ function setRocks(v) {
   chatLine(`You switched ${rocksLabel(v)}`, "sys");
   sayHello();
   if (running && window.DOSBox && window.DOSBox._wc_web_set_rocks) window.DOSBox._wc_web_set_rocks(ROCKS[v]);
+}
+
+// The exchange mode (src/cpu/wcnet_session.h, ExchangeMode): auto, low
+// latency or high latency.  The host's page tells the others (for their
+// lobby) and its own running game, whose frames carry the mode in force to
+// every wingman's game.
+const LATENCY = { auto: 0, low: 1, high: 2 };  // the game's numbers
+const latencyMode = (v) => (Object.prototype.hasOwnProperty.call(LATENCY, v) ? v : "auto");
+const latencyLabel = (v) => (v === "auto" ? "the connection mode to auto (the host's game picks)" : `the connection to ${v} latency`);
+function setLatency(v) {
+  if (!isHost()) { chatLine("Only the host can set the connection mode.", "sys"); renderMission(); return; }
+  v = latencyMode(v);
+  if (lobby.latency === v) return;
+  lobby.latency = v;
+  renderMission();
+  chatLine(`You set ${latencyLabel(v)}`, "sys");
+  sayHello();
+  if (running && window.DOSBox && window.DOSBox._wc_web_set_latency) window.DOSBox._wc_web_set_latency(LATENCY[v]);
 }
 
 function chatLine(html, cls) {
@@ -682,6 +706,11 @@ function onLobbyEvent(ev) {
           chatLine(`${esc(m.name)} switched ${rocksLabel(lobby.rocks)}`, "sys");
           renderMission();
         }
+        if (ev.from === 0 && !isHost() && typeof m.latency === "string" && latencyMode(m.latency) !== lobby.latency) {
+          lobby.latency = latencyMode(m.latency);
+          chatLine(`${esc(m.name)} set ${latencyLabel(lobby.latency)}`, "sys");
+          renderMission();
+        }
         voice.remote(ev.from, typeof m.voice === "string" ? m.voice : "off");
         if (!m.reply) sayHello(ev.from, true);
         renderRoster(); updateActions();
@@ -693,6 +722,7 @@ function onLobbyEvent(ev) {
         if (typeof m.game === "string" && m.game) lobby.games.set(0, m.game);
         lobby.mission = parseMission(m.mission);
         if (typeof m.rocks === "string") lobby.rocks = rocksMode(m.rocks);
+        if (typeof m.latency === "string") lobby.latency = latencyMode(m.latency);
         renderMission();
         chatLine(`${esc(lobby.names.get(0) || "The host")} started ${esc(missionLabel(lobby.mission))}`, "sys");
         lobby.flying.add(0); renderRoster();
@@ -783,6 +813,7 @@ async function joinRoom({ create = true } = {}) {
     $("leave").hidden = false;
     if (game.selfId === 0) lobby.mission = parseMission(query.get("mission")) || { series: 1, mis: 0 };
     lobby.rocks = game.selfId === 0 ? rocksMode({ 0: "off", 2: "soft" }[query.get("rocks")] || query.get("rocks")) : "on";
+    lobby.latency = game.selfId === 0 ? latencyMode(query.get("latency")) : "auto";
     renderMission();
     for (const id of ["room", "players", "server", "relay"]) $(id).disabled = true;
     chatLine(`You are ${esc(myName())}, player ${game.selfId + 1} of ${game.maxPlayers} in room ${esc(code)}${game.selfId === 0 ? " (host)" : ""}. Share this page's link.`, "sys");
@@ -858,11 +889,18 @@ $("chatForm").addEventListener("submit", (ev) => {
     else chatLine(`${rocksLabel(lobby.rocks)[0].toUpperCase()}${rocksLabel(lobby.rocks).slice(1)}; the host switches them with /rocks on, /rocks soft or /rocks off.`, "sys");
     return;
   }
+  const lat = /^\/latency(?:\s+(auto|low|high))?$/i.exec(text);
+  if (lat) {
+    if (lat[1]) setLatency(lat[1].toLowerCase());
+    else chatLine(`${linkState() || `The connection mode is set to ${lobby.latency}`}; the host sets it with /latency auto, /latency low or /latency high.`, "sys");
+    return;
+  }
   chatLine(`<span class="name">${esc(myName())}:</span> ${esc(text)}`);
   sendLobby({ t: "chat", name: myName(), text });
 });
 $("callsign").addEventListener("change", () => { if (lobby.game) { sayHello(); renderRoster(); } hall.announce(); });
 $("rocks").addEventListener("change", () => setRocks($("rocks").value));
+$("latency").addEventListener("change", () => setLatency($("latency").value));
 $("mission").addEventListener("change", () => {
   if (!isHost()) return;
   lobby.mission = parseMission($("mission").value);
@@ -876,7 +914,7 @@ buildMissionMenu();
 
 $("fly").addEventListener("click", () => {
   if (!source || !lobby.game || running) return;
-  if (isHost()) sendLobby({ t: "start", game: source.game.id, mission: missionKey(lobby.mission), rocks: lobby.rocks });
+  if (isHost()) sendLobby({ t: "start", game: source.game.id, mission: missionKey(lobby.mission), rocks: lobby.rocks, latency: lobby.latency });
   void start(true);
 });
 $("fullscreen").addEventListener("click", () => goFullscreen());
@@ -953,6 +991,7 @@ async function start(fromGesture) {
     }
     // The host's game decides and tells the wingmen's; theirs start the same.
     if (source.game.multiplayer) env.WCROCKS = String(ROCKS[lobby.rocks]);
+    if (source.game.multiplayer && isHost() && lobby.latency !== "auto") env.WCNET_MODE = lobby.latency;
     if (cfg.callsign) env.WCCALLSIGN = cfg.callsign;
     if (cfg.lastname) env.WCLASTNAME = cfg.lastname;
     if (cfg.firstname) env.WCFIRSTNAME = cfg.firstname;
@@ -1055,10 +1094,22 @@ function showPerformance() {
   const parts = [`${fps.toFixed(1)} frames/s`, load < 0 ? `${cycles} cycles` : `game busy ${Math.round(100 * load)}% of the time at ${cycles} cycles`,
                  `emulator at ${Math.round(100 * speed)}% of real time`];
   if (!alone) parts.push(isHost() ? `${wait.toFixed(0)} ms/frame waiting for the other players` : "following the host's pace");
+  const link = linkState();
+  if (!alone && link) parts.push(link);
   const warn = speed < 0.93 ? "This computer cannot keep up with the emulated CPU: fewer cycles would run smoother (Ctrl+F11)."
              : load > 0.95 ? "The game needs more CPU than it is given: try ?env.WCFLIGHTCYCLES=20000 in the address."
              : (!alone && isHost() && wait > 10) ? "Another player's computer or connection is holding the game back." : "";
   el.innerHTML = esc(parts.join(" · ")) + (warn ? ` <span class="warn">${esc(warn)}</span>` : "");
+}
+
+// The running game's word on the connection (src/cpu/wcnet_hooks.cpp,
+// wc_web_link): the exchange mode in force and the round trip, or "".
+function linkState() {
+  const M = window.DOSBox;
+  if (!running || !M || !M._wc_web_link || !lobby.game || lobby.game.players.filter((p) => p.occupied).length < 2) return "";
+  const mode = M._wc_web_link(0), setting = M._wc_web_link(1), rtt = M._wc_web_link(2);
+  const name = mode === 2 ? "high-latency mode" : "low-latency mode";
+  return `${name}${setting === 0 ? " (auto)" : ""}${rtt >= 0 ? `, round trip ${Math.round(rtt)} ms` : ""}`;
 }
 
 // -- controllers ---------------------------------------------------------------

@@ -189,7 +189,20 @@ message Frame {
     // Client -> server: the number of the last server frame this client had
     // applied when it sent this.  The server runs on without waiting for a
     // client's frame, as long as the client is not too many frames behind.
+    // Server -> client: the number of the last client frame taken in.
     optional uint64 ack = 22;
+    // With the ack: for how long (ms) the acked frame had been here when
+    // this one was sent, so that the other side has the round trip from its
+    // own clock alone (LinkMonitor in wcnet_session.cpp).
+    optional uint32 ack_delay = 23;
+    // Client -> server: the client's frames in its last second, the
+    // server's view of how the wingman's game is doing.
+    optional uint32 fps = 24;
+    // Server -> client: the exchange mode from this frame on (ExchangeMode
+    // in wcnet_session.h: 1 the client waits for every server frame, 2 it
+    // paces itself and takes the server's frames as they come).  Sent with
+    // the start state and whenever it changes.
+    optional uint32 mode = 25;
 }
 
 // Connect -> once per mission
@@ -208,6 +221,8 @@ message Game {
     // ship that exists on the client's machine only; 2 the gunner, in such a
     // mission when the leader's ship has turrets: the client rides in it.
     optional uint32 seat = 4;
+    // The server's pace, frames a second: a client that paces itself keeps it.
+    optional uint32 fps = 5;
 }
 
 message ClientStartMissionReq {

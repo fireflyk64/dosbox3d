@@ -142,6 +142,7 @@
   #missionRow select { min-width: 0; max-width: 100%; }
   #mission { width: 34ch; }
   #rocks { width: 9ch; }
+  #latency { width: 9ch; }
   #missionHint { flex-basis: 100%; margin: 0; }
   #rosterBox { grid-area: roster; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   #roster { list-style: none; margin: 0; padding: 0; min-height: 56px; border: 1px solid var(--line2); background: var(--dark); }
@@ -276,6 +277,8 @@
           <label>Mission <select id="mission"></select></label>
           <label title="The host decides, also while flying; /rocks on, /rocks soft and /rocks off in the chat do the same">Asteroids and mines
             <select id="rocks"><option value="on">on</option><option value="soft">soft: one rock will not kill you</option><option value="off">off</option></select></label>
+          <label title="How the host's game and the wingmen's exchange their frames. Auto: the host's game measures the connection and picks; low latency: each wingman's game waits for every one of the host's frames, the host runs at most six frames ahead (nearby players); high latency: the wingmen's games pace themselves and take the host's frames as they come, the host runs further ahead (far-away players, a connection with spikes). The host decides, also while flying; /latency auto, /latency low and /latency high in the chat do the same">Connection
+            <select id="latency"><option value="auto">auto</option><option value="low">low latency: nearby</option><option value="high">high latency: far away</option></select></label>
           <div class="hint" id="missionHint"></div>
         </div>
         <div id="rosterBox">

@@ -4,6 +4,7 @@
 #include <strings.h>
 #include <unistd.h>
 #include <algorithm>
+#include <deque>
 #include <map>
 #include <vector>
 #ifdef __EMSCRIPTEN__
@@ -432,6 +433,184 @@ static const char *rocks_notice(int mode) {
 }
 
 // ---------------------------------------------------------------------------
+// The link to the other machine, measured (docs section 3b): the round trip
+// (a frame goes out, the other side's ack of it comes back, less the time
+// the other side held it, Frame.ack_delay), its spikes (a round trip well
+// above the best of the last minute: a lost message sent again, a queue
+// somewhere), and the frame rates of both games, a sample a second.  All
+// in real time (perf_now_ms); the server keeps one per client.
+
+static double frame_ms() {
+    int fps = pace_fps();
+    return 1000.0 / (fps > 0 ? fps : 15);  // (WC2 paces itself at 15)
+}
+
+class LinkMonitor {
+public:
+    enum { kRing = 512, kSpikeMs = 150, kMinuteMs = 60000, kGraceMs = 5000 };
+    LinkMonitor() { reset(); }
+    void reset() {
+        for (int i = 0; i < kRing; i++) {
+            sentNo_[i] = ~(Bit64u)0;
+            sentAt_[i] = 0;
+        }
+        samples_.clear();
+        spikes_.clear();
+        seconds_.clear();
+        rtt_ = -1;
+        spikeOpen_ = false;
+        quietUntil_ = -1;
+        aliveAt_ = -1;
+    }
+    // No frame rate samples for a while: the start of a flight and the
+    // frames after a cinematic are slow by nature.
+    void quiet(double now, double forMs) {
+        if (now + forMs > quietUntil_) {
+            quietUntil_ = now + forMs;
+        }
+    }
+    void sent(Bit64u frame, double now) {
+        sentNo_[frame % kRing] = frame;
+        sentAt_[frame % kRing] = now;
+    }
+    // The other side acks `frame`, which it had held for `heldMs` by then.
+    // Frames that went out before the other side's first word are no
+    // measure of the link: a wingman's first ack comes when its game has
+    // launched, seconds after the start state (the server runs ahead and
+    // waits), and would read as a round trip of seconds.
+    void acked(Bit64u frame, double heldMs, double now) {
+        if (aliveAt_ < 0) {
+            aliveAt_ = now;
+        }
+        if (sentNo_[frame % kRing] != frame || sentAt_[frame % kRing] < aliveAt_ || now < quietUntil_) {
+            return;  // (quiet: the acks that come after a cinematic are of frames sent before it)
+        }
+        double rtt = now - sentAt_[frame % kRing] - heldMs;
+        if (rtt < 0) {
+            rtt = 0;
+        }
+        samples_.push_back(std::make_pair(now, rtt));
+        prune(now);
+        rtt_ = rtt_ < 0 ? rtt : rtt_ + (rtt - rtt_) * 0.1;
+        bool high = rtt > floor() + kSpikeMs;
+        if (high && !spikeOpen_) {
+            spikes_.push_back(now);
+        }
+        spikeOpen_ = high;
+    }
+    // Once a second: the other side's frames in its last second (-1: not
+    // said) and ours.
+    void second(double now, int theirFps, int ourFps) {
+        if (quietUntil_ < 0) {
+            quiet(now, kGraceMs);  // the first second seen: the flight has just begun
+        }
+        Second sec = { now, now < quietUntil_ ? -1 : theirFps, now < quietUntil_ ? -1 : ourFps };
+        seconds_.push_back(sec);
+        prune(now);
+    }
+    bool known() const { return rtt_ >= 0; }
+    double rtt() const { return rtt_; }  // smoothed, ms
+    // The best round trip of the last minute.
+    double floor() const {
+        double best = -1;
+        for (size_t i = 0; i < samples_.size(); i++) {
+            if (best < 0 || samples_[i].second < best) {
+                best = samples_[i].second;
+            }
+        }
+        return best < 0 ? 0 : best;
+    }
+    // The worst round trip of the last `sinceMs`.
+    double ceiling(double now, double sinceMs) const {
+        double worst = 0;
+        for (size_t i = samples_.size(); i-- > 0 && samples_[i].first >= now - sinceMs;) {
+            if (samples_[i].second > worst) {
+                worst = samples_[i].second;
+            }
+        }
+        return worst;
+    }
+    int spikes_per_min() const { return (int)spikes_.size(); }
+    // The share of the round trips of the last `sinceMs` that were spikes:
+    // about the share of its time the other side spends waiting beyond the
+    // link's best, whatever the spikes' cause.
+    double spike_share(double now, double sinceMs) const {
+        int n = 0, high = 0;
+        double best = floor();
+        for (size_t i = samples_.size(); i-- > 0 && samples_[i].first >= now - sinceMs;) {
+            n++;
+            if (samples_[i].second > best + kSpikeMs) {
+                high++;
+            }
+        }
+        return n ? (double)high / n : 0;
+    }
+    // The average of the frame rate samples of the last `sinceMs` (theirs or
+    // ours), or -1 with none.
+    double fps_avg(double now, bool theirs, double sinceMs) const {
+        double sum = 0;
+        int n = 0;
+        for (size_t i = seconds_.size(); i-- > 0 && seconds_[i].at >= now - sinceMs;) {
+            int fps = theirs ? seconds_[i].theirs : seconds_[i].ours;
+            if (fps >= 0) {
+                sum += fps;
+                n++;
+            }
+        }
+        return n ? sum / n : -1;
+    }
+    // Seconds of the last `sinceMs` in which a frame rate was under `fps`.
+    int seconds_under(double now, bool theirs, int fps, double sinceMs) const {
+        int n = 0;
+        for (size_t i = seconds_.size(); i-- > 0 && seconds_[i].at >= now - sinceMs;) {
+            int got = theirs ? seconds_[i].theirs : seconds_[i].ours;
+            if (got >= 0 && got < fps) {
+                n++;
+            }
+        }
+        return n;
+    }
+    int seconds_known() const { return (int)seconds_.size(); }
+
+private:
+    void prune(double now) {
+        while (!samples_.empty() && samples_.front().first < now - kMinuteMs) {
+            samples_.pop_front();
+        }
+        while (!spikes_.empty() && spikes_.front() < now - kMinuteMs) {
+            spikes_.pop_front();
+        }
+        while (!seconds_.empty() && seconds_.front().at < now - kMinuteMs) {
+            seconds_.pop_front();
+        }
+    }
+    struct Second {
+        double at;
+        int theirs, ours;
+    };
+    Bit64u sentNo_[kRing];
+    double sentAt_[kRing];
+    std::deque<std::pair<double, double> > samples_;  // (when, round trip ms), the last minute
+    std::deque<double> spikes_;                        // when each spike began, the last minute
+    std::deque<Second> seconds_;
+    double rtt_;
+    bool spikeOpen_;
+    double quietUntil_;
+    double aliveAt_;  // when the other side first acked anything (-1: not yet)
+};
+
+static const char *mode_name(int mode) {
+    return mode == MODE_HIGH ? "high latency" : mode == MODE_LOW ? "low latency" : "auto";
+}
+
+static int mode_from_name(const char *name) {
+    if (!name || !name[0] || !strcasecmp(name, "auto") || name[0] == '0') return MODE_AUTO;
+    if (!strcasecmp(name, "low") || name[0] == '1') return MODE_LOW;
+    if (!strcasecmp(name, "high") || name[0] == '2') return MODE_HIGH;
+    return MODE_AUTO;
+}
+
+// ---------------------------------------------------------------------------
 // Server
 
 struct RemoteClient {
@@ -439,6 +618,10 @@ struct RemoteClient {
     Seat seat;                   // decided with the mission start state
     int mannedTurret;            // a gunner: the turret it sits in, or -1
     Bit64u acked;                // the last frame of ours it had applied, by its own word
+    Bit64u lastFrame;            // the last frame of its we took in, and when (real ms): our ack
+    double lastFrameAt;
+    int fps;                     // its frames in its last second, by its own word (-1: not said)
+    LinkMonitor link;
     Connection conn;
     std::string callsign;
     std::string missionTreeProgress;  // reported with a shared mission end
@@ -449,8 +632,9 @@ struct RemoteClient {
     int skipPendingEvents;       // events already covered by the start state
 
     explicit RemoteClient(int n)
-        : net(n), seat(SEAT_WINGMAN), mannedTurret(-1), acked(0), requestedBriefingStart(false), needsMissionStartState(false),
-          inMission(false), leftThisMission(false), skipPendingEvents(0) {}
+        : net(n), seat(SEAT_WINGMAN), mannedTurret(-1), acked(0), lastFrame(0), lastFrameAt(0), fps(-1),
+          requestedBriefingStart(false), needsMissionStartState(false), inMission(false), leftThisMission(false),
+          skipPendingEvents(0) {}
     bool connected() const { return conn.is_open(); }
     void disconnect() {
         conn.close();
@@ -487,10 +671,14 @@ public:
     // Takes ownership of the listener.
     explicit ServerSession(Listener *listener)
         : listener_(listener), epoch_(1), frameNumber_(0), sendFrameAtIdle_(false), ignoreNextFrameTop_(false),
-          wantRocks_(rocks_mode()) {
+          wantRocks_(rocks_mode()), modeSetting_(mode_from_name(getenv("WCNET_MODE"))), autoMode_(MODE_LOW),
+          highWindow_(kHighWindowMin), modeSince_(0), modeTickAt_(0), ownFrames_(0), rtt_(-1) {
         allowedIds_.push_back(1);
         allowedIds_.push_back(3);
         reset_pending_frame();
+        if (modeSetting_ != MODE_AUTO) {
+            wclog(1, "exchange mode: %s (WCNET_MODE)", mode_name(modeSetting_));
+        }
     }
     ~ServerSession() {
         for (size_t i = 0; i < clients_.size(); i++) {
@@ -520,6 +708,25 @@ public:
     }
     virtual void on_spawned(const Spawn &spawn) { spawns_.add(spawn); }
     virtual void on_despawned(int net) { spawns_.remove(net); }
+
+    virtual int mode_setting() const { return modeSetting_; }
+    virtual int mode() const { return modeSetting_ != MODE_AUTO ? modeSetting_ : autoMode_; }
+    virtual double rtt_ms() const { return rtt_; }
+
+    virtual void request_mode(int setting) {
+        setting = setting == MODE_LOW ? MODE_LOW : setting == MODE_HIGH ? MODE_HIGH : MODE_AUTO;
+        if (setting == modeSetting_) {
+            return;
+        }
+        int before = mode();
+        modeSetting_ = setting;
+        wclog(1, "exchange mode setting: %s (in force: %s)", mode_name(setting), mode_name(mode()));
+        if (mode() != before) {
+            announce_mode();
+        } else {
+            show_notice(mode_notice());
+        }
+    }
 
     virtual void request_rocks(int mode) {
         mode = mode == ROCKS_OFF ? ROCKS_OFF : mode == ROCKS_SOFT ? ROCKS_SOFT : ROCKS_ON;
@@ -653,12 +860,25 @@ public:
         ape->set_cam_mode(camMode);
         ape->set_duration(duration);
         exchange(true);
+        quiet_links();
     }
 
     virtual void on_autopilot_finished() {
         AutoPilotEvent *ape = pendingFrame_.mutable_frame()->add_event()->mutable_autopiloting();
         ape->set_finish_camera(true);
         exchange(true);
+        quiet_links();
+    }
+
+    // A cinematic: the frames around it are slow on both sides, and the
+    // acks of the frames sent before it come after it, seconds later; none
+    // of that is the link's doing.
+    void quiet_links() {
+        double now = perf_now_ms();
+        for (size_t i = 0; i < clients_.size(); i++) {
+            clients_[i]->link.quiet(now, LinkMonitor::kGraceMs);
+        }
+        modeTickAt_ = 0;
     }
 
     virtual void on_trampoline_idle() {
@@ -888,8 +1108,12 @@ private:
         if (c->seat == SEAT_WINGMAN) {
             take_station(c->net);
         }
+        game->set_fps(pace_fps());
         Frame *frame = game->mutable_starting_state();
         frame->set_rocks(rocks_mode());
+        frame->set_mode(mode());
+        c->link.reset();
+        c->fps = -1;
         for (int slot = kPlayerSlot; slot <= kMaxShipSlot; slot++) {
             if (!slot_in_use(slot)) {
                 continue;
@@ -1085,8 +1309,17 @@ private:
                     wclog(2, "player %d sent a frame from epoch %u (now %u)", c->net, msg.epoch(), epoch_);
                     continue;
                 }
+                double now = perf_now_ms();
                 if (msg.frame().has_ack() && msg.frame().ack() > c->acked) {
                     c->acked = msg.frame().ack();
+                    c->link.acked(c->acked, msg.frame().ack_delay(), now);
+                }
+                if (msg.frame_number() > c->lastFrame) {
+                    c->lastFrame = msg.frame_number();
+                    c->lastFrameAt = now;
+                }
+                if (msg.frame().has_fps()) {
+                    c->fps = (int)msg.frame().fps();
                 }
                 if (mergeUpdates || msg.frame().has_player_end()) {
                     merge_client_frame(c, msg.frame());
@@ -1105,9 +1338,110 @@ private:
     // it has applied (six frames cover a round trip of 300 ms at 15 frames a
     // second); beyond that it waits, so a client that has stopped stops the
     // game instead of being left behind.
-    enum { kWindow = 6 };
+    // In the high-latency mode the window is what the round trip needs plus
+    // a second for its spikes (mode_tick), between a second and five.
+    enum { kWindow = 6, kHighWindowMin = 20, kHighWindowMax = 100 };
+    int window() const { return mode() == MODE_HIGH ? highWindow_ : (int)kWindow; }
     bool behind(const RemoteClient *c) const {
-        return c->connected() && c->inMission && frameNumber_ > c->acked + kWindow;
+        return c->connected() && c->inMission && frameNumber_ > c->acked + window();
+    }
+
+    // Once a second of real time, in flight: a sample of both frame rates
+    // for every client's link monitor, the high-latency window, and the
+    // mode in auto.  Thresholds from the simulated link (docs section 3b):
+    // the low-latency exchange holds 20 frames a second to a round trip of
+    // the window's length, and past that the frame rates themselves say
+    // when the link is too much for it: the spikes (a lost message sent
+    // again, a queue) are logged, but the frame rates are the measure.
+    void mode_tick() {
+        double now = perf_now_ms();
+        if (modeTickAt_ > 0 && now - modeTickAt_ < 1000.0) {
+            return;
+        }
+        int ownFps = modeTickAt_ > 0 ? (int)(ownFrames_ * 1000.0 / (now - modeTickAt_) + 0.5) : -1;
+        modeTickAt_ = now;
+        ownFrames_ = 0;
+        double rtt = -1, worst = 0, spiky = 0;
+        int spikes = 0;
+        double theirFps = -1, ourFps = -1;
+        int dips = 0, seconds = 0;
+        for (size_t i = 0; i < clients_.size(); i++) {
+            RemoteClient *c = clients_[i];
+            if (!c->connected() || !c->inMission) {
+                continue;
+            }
+            c->link.second(now, c->fps, ownFps);
+            c->fps = -1;
+            if (!c->link.known()) {
+                continue;
+            }
+            rtt = std::max(rtt, c->link.rtt());
+            worst = std::max(worst, c->link.ceiling(now, 5000.0));
+            spikes = std::max(spikes, c->link.spikes_per_min());
+            spiky = std::max(spiky, c->link.spike_share(now, 10000.0));
+            theirFps = std::max(theirFps, c->link.fps_avg(now, true, 10000.0));
+            ourFps = c->link.fps_avg(now, false, 10000.0);
+            dips = std::max(dips, std::max(c->link.seconds_under(now, true, 10, 60000.0), c->link.seconds_under(now, false, 10, 60000.0)));
+            seconds = std::max(seconds, c->link.seconds_known());
+        }
+        rtt_ = rtt;
+        if (rtt < 0) {
+            return;
+        }
+        highWindow_ = std::max((int)kHighWindowMin, std::min((int)kHighWindowMax, (int)((worst + 1000.0) / frame_ms() + 0.5)));
+        int before = mode();
+        if (autoMode_ == MODE_LOW) {
+            const char *why = NULL;
+            if (rtt > kRttHigh) {
+                why = "the round trip";
+            } else if (seconds >= 10 && ((theirFps >= 0 && theirFps < 15) || (ourFps >= 0 && ourFps < 15 && perf_last().valid && perf_last().waitMs > 5))) {
+                why = "the frame rate";
+            } else if (dips > 1) {
+                why = "the dips";
+            }
+            if (why) {
+                autoMode_ = MODE_HIGH;
+                modeSince_ = now;
+                wclog(1, "link: %s calls for the high-latency mode (round trip %.0f ms, worst %.0f, spiky %.0f%% of the last 10 s, %d spikes/min, wingman %.0f fps, ours %.0f, %d dips)",
+                      why, rtt, worst, 100 * spiky, spikes, theirFps, ourFps, dips);
+            }
+        } else if (now - modeSince_ > 30000.0 && worst < kRttLow && spikes == 0) {
+            autoMode_ = MODE_LOW;
+            modeSince_ = now;
+            wclog(1, "link: good again, back to the low-latency mode (round trip %.0f ms, worst %.0f)", rtt, worst);
+        }
+        if (mode() != before) {
+            announce_mode();
+        }
+        static double lastLog = 0;
+        if (now - lastLog > 5000.0) {
+            lastLog = now;
+            wclog(2, "link: round trip %.0f ms (worst %.0f), spiky %.0f%%, %d spikes/min, wingman %.0f fps, ours %.0f fps, %d dips/min: %s mode%s, window %d",
+                  rtt, worst, 100 * spiky, spikes, theirFps, ourFps, dips, mode_name(mode()), modeSetting_ == MODE_AUTO ? " (auto)" : "", window());
+        }
+    }
+    // 300: the window's edge, six frames at 20 a second.  The low-latency
+    // exchange held 20 frames a second at a measured 250 and 15.7 at 350.
+    enum { kRttHigh = 300, kRttLow = 150 };
+
+    std::string mode_notice() const {
+        char buf[96];
+        if (rtt_ >= 0) {
+            snprintf(buf, sizeof(buf), "%s mode%s, round trip %.0f ms", mode() == MODE_HIGH ? "High-latency" : "Low-latency",
+                     modeSetting_ == MODE_AUTO ? " (auto)" : "", rtt_);
+        } else {
+            snprintf(buf, sizeof(buf), "%s mode%s", mode() == MODE_HIGH ? "High-latency" : "Low-latency", modeSetting_ == MODE_AUTO ? " (auto)" : "");
+        }
+        return buf;
+    }
+
+    // The mode in force changed: the clients hear with the next frame.
+    void announce_mode() {
+        wclog(1, "exchange mode: %s", mode_name(mode()));
+        if (within_briefed_mission) {
+            pendingFrame_.mutable_frame()->set_mode(mode());
+        }
+        show_notice(mode_notice());
     }
 
     // One round of the frame exchange.  With serverOnlyFlush what the clients
@@ -1128,6 +1462,7 @@ private:
 
     void exchange(bool serverOnlyFlush) {
         frameNumber_ += 1;
+        ownFrames_++;
         if (frameNumber_ % 300 == 1) {
             wclog(2, "frame %llu: own health %s", (unsigned long long)frameNumber_, describe_health(kPlayerSlot).c_str());
         }
@@ -1159,6 +1494,9 @@ private:
         }
         sendFrameAtIdle_ = true;
         accept_clients(true);
+        if (!serverOnlyFlush) {
+            mode_tick();
+        }
         if (!serverOnlyFlush && wantRocks_ != rocks_mode()) {
             // The host switched the rocks: ours go or come back with this
             // frame's jobs, and every client does the same with its own.
@@ -1214,20 +1552,25 @@ private:
             if (!c->connected() || !c->inMission) {
                 continue;
             }
-            const NetworkMessage *msg = &pendingFrame_;
-            NetworkMessage trimmed;
+            // Each client gets its own copy: our ack of its last frame, and
+            // only the events it has not had with its start state.
+            NetworkMessage msg = pendingFrame_;
+            Frame *f = msg.mutable_frame();
             if (c->skipPendingEvents > 0) {
-                trimmed = pendingFrame_;
-                Frame *f = trimmed.mutable_frame();
                 int skip = c->skipPendingEvents < f->event_size() ? c->skipPendingEvents : f->event_size();
                 f->mutable_event()->DeleteSubrange(0, skip);
                 c->skipPendingEvents = 0;
-                msg = &trimmed;
             }
-            if (!c->conn.send(*msg)) {
+            double now = perf_now_ms();
+            if (c->lastFrame > 0) {
+                f->set_ack(c->lastFrame);
+                f->set_ack_delay((Bit32u)std::max(0.0, now - c->lastFrameAt));
+            }
+            c->link.sent(msg.frame_number(), now);
+            if (!c->conn.send(msg)) {
                 wclog(1, "player %d disconnected while sending", c->net);
                 c->disconnect();
-            } else if (msg->frame().has_mission_end()) {
+            } else if (f->has_mission_end()) {
                 c->inMission = false;  // they leave the frame loop on this frame
             }
         }
@@ -1246,6 +1589,13 @@ private:
     bool sendFrameAtIdle_;
     bool ignoreNextFrameTop_;
     int wantRocks_;  // the host's choice (RocksMode); rocks_mode() follows it at a frame top
+    int modeSetting_;   // ExchangeMode: what was asked for
+    int autoMode_;      // what the link calls for (MODE_LOW or MODE_HIGH)
+    int highWindow_;    // frames the server may run ahead in the high-latency mode
+    double modeSince_;  // when autoMode_ last changed (real ms)
+    double modeTickAt_; // the last mode_tick (real ms)
+    int ownFrames_;     // our frames since then
+    double rtt_;        // the longest of the clients' round trips, ms (-1: none known)
 };
 
 // ---------------------------------------------------------------------------
@@ -1279,7 +1629,8 @@ private:
 class ClientSession : public Session {
 public:
     ClientSession()
-        : shipNet_(0), seat_(SEAT_WINGMAN), chase_(true), seatFrames_(-1), lastServerFrame_(0), lastWrittenMissionStatus_(Proceed), lastVictoryPlusOne_(0),
+        : shipNet_(0), seat_(SEAT_WINGMAN), chase_(true), seatFrames_(-1), lastServerFrame_(0), lastServerFrameAt_(0),
+          lastServerFrameEmu_(-1), mode_(MODE_LOW), lastWrittenMissionStatus_(Proceed), lastVictoryPlusOne_(0),
           isFresh_(true), hasRestartedMission_(false), hasSentConnect_(false),
           ignoreNextFrameTop_(false), ownMissionOver_(false), dead_(false), epoch_(0), frameNumber_(0) {
         callsign_ = get_callsign();
@@ -1324,6 +1675,21 @@ public:
     virtual void request_rocks(int mode) {
         (void)mode;
         show_notice("Only the host can switch asteroids and mines");
+    }
+
+    virtual bool paces() const { return mode_ == MODE_HIGH; }
+    virtual int mode() const { return mode_; }
+    virtual double rtt_ms() const { return link_.known() ? link_.rtt() : -1; }
+    virtual void request_mode(int setting) {
+        (void)setting;
+        char buf[96];
+        if (link_.known()) {
+            snprintf(buf, sizeof(buf), "%s mode (the host decides), round trip %.0f ms",
+                     mode_ == MODE_HIGH ? "High-latency" : "Low-latency", link_.rtt());
+        } else {
+            snprintf(buf, sizeof(buf), "%s mode (the host decides)", mode_ == MODE_HIGH ? "High-latency" : "Low-latency");
+        }
+        show_notice(buf);
     }
 
     virtual Seat seat() const { return seat_; }
@@ -1427,7 +1793,18 @@ public:
             wclog(2, "frame %llu: own health %s", (unsigned long long)frameNumber_, describe_health(kPlayerSlot).c_str());
         }
         populate_own_update();
-        pendingFrame_.mutable_frame()->set_ack(lastServerFrame_);
+        double now = perf_now_ms(), emu = PIC_FullIndex();
+        frameTimes_.push_back(emu);
+        while (!frameTimes_.empty() && (frameTimes_.front() < emu - 1000.0 || frameTimes_.front() > emu)) {
+            frameTimes_.pop_front();
+        }
+        Frame *frame = pendingFrame_.mutable_frame();
+        frame->set_ack(lastServerFrame_);
+        if (lastServerFrame_ > 0) {
+            frame->set_ack_delay((Bit32u)std::max(0.0, now - lastServerFrameAt_));
+        }
+        frame->set_fps((Bit32u)frameTimes_.size());
+        link_.sent(frameNumber_, now);
         if (!conn_.send(pendingFrame_)) {
             drop("lost the server while sending a frame");
             return;
@@ -1733,6 +2110,13 @@ private:
             enqueue_rocks_change((int)frame.rocks());
             show_notice(rocks_notice(rocks_mode()));
         }
+        if (frame.has_mode() && (int)frame.mode() != mode_ && (frame.mode() == MODE_LOW || frame.mode() == MODE_HIGH)) {
+            mode_ = (int)frame.mode();
+            wclog(1, "exchange mode: %s (the server's word)", mode_name(mode_));
+            if (within_briefed_mission && !hasRestartedMission_) {
+                show_notice(mode_ == MODE_HIGH ? "High-latency mode: the host's game runs ahead" : "Low-latency mode");
+            }
+        }
         for (int i = 0; i < frame.update_size(); i++) {
             const ShipUpdate &su = frame.update(i);
             if (!su.has_ship_id()) {
@@ -1771,6 +2155,11 @@ private:
     bool chase_;  // a drone rides behind the leader
     int seatFrames_;  // a gunner: frames flown before it is put in its turret (-1: done)
     Bit64u lastServerFrame_;  // the number of the last server frame applied (Frame.ack)
+    double lastServerFrameAt_;   // when it came (real ms): our ack_delay
+    double lastServerFrameEmu_;  // the same in emulated ms (-1: none yet this mission)
+    int mode_;                   // ExchangeMode in force, the server's word
+    LinkMonitor link_;           // the round trip, from the server's acks of our frames
+    std::deque<double> frameTimes_;  // our frame tops of the last emulated second (Frame.fps)
     EntityMap entities_;
     std::string callsign_;
     GameState lastWrittenMissionStatus_;
@@ -1952,6 +2341,24 @@ int wc_net_rocks() {
     return rocks_mode();
 }
 
+void wc_net_set_mode(int setting) {
+    if (g_session) {
+        g_session->request_mode(setting);
+    }
+}
+
+int wc_net_mode_setting() {
+    return g_session ? g_session->mode_setting() : mode_from_name(getenv("WCNET_MODE"));
+}
+
+int wc_net_mode() {
+    return g_session ? g_session->mode() : MODE_LOW;
+}
+
+double wc_net_rtt_ms() {
+    return g_session ? g_session->rtt_ms() : -1;
+}
+
 void wcnetSendChatMessage(const std::string &msg) {
     wclog(1, "comms: message sent");  // (the page remembers: the hint about the 0 key is not needed again)
     // "/rocks on", "/rocks soft" and "/rocks off" in the comms prompt are a
@@ -1968,6 +2375,29 @@ void wcnetSendChatMessage(const std::string &msg) {
             wc_net_set_rocks(ROCKS_SOFT);
         } else {
             show_notice(std::string(rocks_notice(rocks_mode())) + " (/rocks on, soft, off)");
+        }
+        return;
+    }
+    // "/latency auto", "/latency low" and "/latency high": the exchange
+    // mode (the host's to set); "/latency" alone says which is in force.
+    if (strncasecmp(msg.c_str(), "/latency", 8) == 0) {
+        std::string arg = msg.substr(8);
+        size_t first = arg.find_first_not_of(' ');
+        arg = first == std::string::npos ? "" : arg.substr(first);
+        if (!g_session) {
+            show_notice("Not connected");
+        } else if (!g_session->is_server()) {
+            g_session->request_mode(MODE_AUTO);  // (a client is told who decides, and the mode in force)
+        } else if (arg.empty()) {
+            char buf[128], rtt[32] = "";
+            if (g_session->rtt_ms() >= 0) {
+                snprintf(rtt, sizeof(rtt), ", round trip %.0f ms", g_session->rtt_ms());
+            }
+            snprintf(buf, sizeof(buf), "%s mode%s%s (/latency auto, low, high)", g_session->mode() == MODE_HIGH ? "High-latency" : "Low-latency",
+                     g_session->mode_setting() == MODE_AUTO ? " (auto)" : "", rtt);
+            show_notice(buf);
+        } else {
+            g_session->request_mode(mode_from_name(arg.c_str()));
         }
         return;
     }

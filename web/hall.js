@@ -29,7 +29,7 @@
 //   * A seat whose page went away without leaving (a closed laptop) stays
 //     taken as far as the server knows.  The room is made so that a seat
 //     silent for two and a half minutes may be claimed by a newcomer when
-//     all are taken, and every page says something to the server twice a
+//     all are taken, and every page says something to the server once a
 //     minute so that its own is not.  (The server counts any message as a
 //     sign of life; it has no ping, so it answers "unknown message type".)
 //   * The room ends when the server says so (a day after it was made, or
