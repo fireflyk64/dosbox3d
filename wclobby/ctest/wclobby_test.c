@@ -133,6 +133,34 @@ int main(int argc, char **argv) {
     }
     CHECK(wclobby_recv(host, 1, hgen, 0, &buf) == 0, "poll after big");
 
+    step("a best-effort datagram each way");
+    {
+        /* Lost datagrams are allowed by the contract; over a fresh link in a
+         * test they arrive, so a few tries are given before it counts. */
+        static const uint8_t ping[] = "best effort ping", pong[] = "best effort pong";
+        int got = 0, tries;
+        for (tries = 0; tries < 50 && !got; tries++) {
+            CHECK(wclobby_send_best_effort(host, p, hgen, ping, sizeof(ping)) == 0, "host best-effort send");
+            usleep(100000);
+            if (wclobby_recv_best_effort(client, 0, cgen, &buf) == 1) {
+                got = buf.len == sizeof(ping) && memcmp(buf.data, ping, sizeof(ping)) == 0;
+                wclobby_buf_free(&buf);
+            }
+        }
+        CHECK(got, "client never received the host's best-effort datagram");
+        got = 0;
+        for (tries = 0; tries < 50 && !got; tries++) {
+            CHECK(wclobby_send_best_effort(client, 0, cgen, pong, sizeof(pong)) == 0, "client best-effort send");
+            usleep(100000);
+            if (wclobby_recv_best_effort(host, p, hgen, &buf) == 1) {
+                got = buf.len == sizeof(pong) && memcmp(buf.data, pong, sizeof(pong)) == 0;
+                wclobby_buf_free(&buf);
+            }
+        }
+        CHECK(got, "host never received the client's best-effort datagram");
+        printf("  best-effort datagrams arrived both ways\n");
+    }
+
     if (soak > 0) {
         int elapsed;
         printf("- idling for %d s (keepalive %s)\n", soak, no_keepalive ? "off" : "on");

@@ -82,11 +82,22 @@ struct Peer {
     /// The C side holds a stream for the current generation.
     attached: bool,
     inbox: VecDeque<Bytes>,
+    /// Best-effort datagrams, the newest `BEST_EFFORT_KEPT` of them.
+    be_inbox: VecDeque<Bytes>,
 }
+
+const BEST_EFFORT_KEPT: usize = 64;
 
 impl Peer {
     fn new() -> Self {
-        Peer { occupied: false, link: Link::Down, gen: 0, attached: false, inbox: VecDeque::new() }
+        Peer {
+            occupied: false,
+            link: Link::Down,
+            gen: 0,
+            attached: false,
+            inbox: VecDeque::new(),
+            be_inbox: VecDeque::new(),
+        }
     }
     fn live(&self) -> bool {
         self.occupied && matches!(self.link, Link::Up | Link::Flaky)
@@ -107,6 +118,7 @@ impl Peer {
         self.gen = self.gen.wrapping_add(1);
         self.attached = false;
         self.inbox.clear();
+        self.be_inbox.clear();
     }
 }
 
@@ -199,6 +211,19 @@ impl State {
         }
     }
 
+    fn deliver_best_effort(&mut self, from: u16, data: Bytes) {
+        if data.is_empty() {
+            return;
+        }
+        self.link_up(from);
+        if let Some(p) = self.peer(from) {
+            if p.be_inbox.len() >= BEST_EFFORT_KEPT {
+                p.be_inbox.pop_front();
+            }
+            p.be_inbox.push_back(data);
+        }
+    }
+
     fn close_all(&mut self) {
         self.closed = true;
         for id in 0..self.peers.len() {
@@ -263,6 +288,7 @@ impl Shared {
 
 enum Outbound {
     Send { to: u16, data: Bytes },
+    SendBestEffort { to: u16, data: Bytes },
     Close,
 }
 
@@ -281,7 +307,9 @@ fn handle_event(shared: &Shared, ev: Event) {
         Event::Message { from, kind: MessageKind::Reliable, data } => {
             shared.update(|st| st.deliver(from, data));
         }
-        Event::Message { kind: MessageKind::BestEffort, .. } => {}
+        Event::Message { from, kind: MessageKind::BestEffort, data } => {
+            shared.update(|st| st.deliver_best_effort(from, data));
+        }
         Event::PlayerJoined { player_id } => {
             shared.update(|st| st.player_present(player_id, "joined"));
         }
@@ -385,6 +413,10 @@ fn net_thread(
                 },
                 out = out_rx.recv() => match out {
                     None | Some(Outbound::Close) => break,
+                    Some(Outbound::SendBestEffort { to, data }) => {
+                        // (Dropped when the channel is not open or full: the contract.)
+                        let _ = game.send_best_effort(to, data).await;
+                    }
                     Some(Outbound::Send { to, data }) => {
                         match tokio::time::timeout(SEND_TIMEOUT, game.send_reliable(to, data)).await {
                             Ok(Ok(())) => {}
@@ -720,6 +752,74 @@ pub unsafe extern "C" fn wclobby_recv(
         }
         Some(Err(())) => -1,
         None => 0,
+    }
+}
+
+/// # Safety
+/// `h` must be a live handle; `data` must point at `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn wclobby_send_best_effort(
+    h: *mut Hub,
+    to: u16,
+    gen: u32,
+    data: *const u8,
+    len: usize,
+) -> c_int {
+    let hub = &*h;
+    if len == 0 {
+        return -1;
+    }
+    let bytes = Bytes::copy_from_slice(std::slice::from_raw_parts(data, len));
+    {
+        let mut st = hub.shared.lock();
+        if st.closed {
+            return -1;
+        }
+        match st.peer(to) {
+            Some(p) if p.gen == gen && p.live() => {}
+            _ => return -1,
+        }
+    }
+    if hub.out_tx.send(Outbound::SendBestEffort { to, data: bytes }).is_err() {
+        return -1;
+    }
+    0
+}
+
+/// # Safety
+/// `h` must be a live handle; `out` must be writable.
+#[no_mangle]
+pub unsafe extern "C" fn wclobby_recv_best_effort(
+    h: *mut Hub,
+    from: u16,
+    gen: u32,
+    out: *mut wclobby_buf,
+) -> c_int {
+    let hub = &*h;
+    let mut st = hub.shared.lock();
+    if st.closed {
+        return -1;
+    }
+    let Some(p) = st.peer(from) else { return -1 };
+    if p.gen != gen {
+        return -1;
+    }
+    match p.be_inbox.pop_front() {
+        Some(data) => {
+            let boxed: Box<[u8]> = data.to_vec().into_boxed_slice();
+            let len = boxed.len();
+            let raw = Box::into_raw(boxed) as *mut u8;
+            (*out).data = raw;
+            (*out).len = len;
+            1
+        }
+        None => {
+            if p.live() {
+                0
+            } else {
+                -1
+            }
+        }
     }
 }
 

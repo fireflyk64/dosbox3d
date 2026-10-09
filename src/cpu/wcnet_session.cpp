@@ -630,6 +630,9 @@ struct RemoteClient {
     bool inMission;              // takes part in the frame exchange
     bool leftThisMission;        // died/ejected/exited this mission
     int skipPendingEvents;       // events already covered by the start state
+    // The last frame of its whose position we took (by either channel), and when (emulated ms).
+    Bit64u lastPosition = 0;
+    double lastPositionEmu = 0;
 
     explicit RemoteClient(int n)
         : net(n), seat(SEAT_WINGMAN), mannedTurret(-1), acked(0), lastFrame(0), lastFrameAt(0), fps(-1),
@@ -645,6 +648,17 @@ struct RemoteClient {
 };
 
 class ServerSession;
+
+// WCNET_BESTEFFORT=0: no positions by the best-effort channel in the
+// high-latency mode (to measure what it is worth).
+static bool best_effort_wanted() {
+    static int wanted = -1;
+    if (wanted < 0) {
+        const char *env = getenv("WCNET_BESTEFFORT");
+        wanted = env && env[0] == '0' ? 0 : 1;
+    }
+    return wanted == 1;
+}
 
 // The server's wait for a client that has fallen too far behind, in emulated
 // time (as ServerFrameJob is for a client).
@@ -1198,7 +1212,36 @@ private:
         health_.end_frame();
     }
 
-    void merge_client_frame(RemoteClient *c, const Frame &frame) {
+    void merge_client_location(RemoteClient *c, Bit64u frameNo, const Location &loc) {
+        apply_location(loc, c->net);
+        *update_for(pendingFrame_.mutable_frame(), c->net)->mutable_loc() = loc;
+        c->lastPosition = frameNo;
+        c->lastPositionEmu = PIC_FullIndex();
+    }
+
+    // In the high-latency mode a client's position comes by the best-effort
+    // channel as well, a frame number with it: what is fresher than the
+    // last one taken is applied, the rest is behind the times.
+    void drain_client_positions(RemoteClient *c) {
+        NetworkMessage msg;
+        for (int n = 0; n < 64 && c->seat == SEAT_WINGMAN; n++) {
+            RecvStatus st = c->conn.poll_best_effort(msg);
+            if (!st.ok()) {
+                return;
+            }
+            if (msg.epoch() != epoch_ || !msg.has_frame() || msg.frame_number() <= c->lastPosition || !slot_in_use(c->net)) {
+                continue;
+            }
+            for (int i = 0; i < msg.frame().update_size(); i++) {
+                const ShipUpdate &su = msg.frame().update(i);
+                if (su.has_ship_id() && (int)su.ship_id() == c->net && su.has_loc()) {
+                    merge_client_location(c, msg.frame_number(), su.loc());
+                }
+            }
+        }
+    }
+
+    void merge_client_frame(RemoteClient *c, const Frame &frame, Bit64u frameNo) {
         if (c->seat != SEAT_WINGMAN) {
             // A drone or a gunner has no ship of its own here: its ending
             // ends nothing, and all that counts of what it does is a
@@ -1255,9 +1298,9 @@ private:
             if (!slot_in_use(c->net)) {
                 continue;
             }
-            if (su.has_loc()) {
-                apply_location(su.loc(), c->net);
-                *update_for(pendingFrame_.mutable_frame(), c->net)->mutable_loc() = su.loc();
+            if (su.has_loc() && frameNo > c->lastPosition) {
+                // (A fresher one may have come by the best-effort channel.)
+                merge_client_location(c, frameNo, su.loc());
             }
             if (su.has_health()) {
                 ShipHealthState h;
@@ -1322,7 +1365,7 @@ private:
                     c->fps = (int)msg.frame().fps();
                 }
                 if (mergeUpdates || msg.frame().has_player_end()) {
-                    merge_client_frame(c, msg.frame());
+                    merge_client_frame(c, msg.frame(), msg.frame_number());
                 }
             } else {
                 wclog(0, "unexpected %s message from player %d", message_type_name(msg), c->net);
@@ -1490,6 +1533,13 @@ private:
             if (!drain_client(c, !serverOnlyFlush)) {
                 wclog(1, "player %d disconnected", c->net);
                 c->disconnect();
+                continue;
+            }
+            if (!serverOnlyFlush) {
+                drain_client_positions(c);
+                if (c->seat == SEAT_WINGMAN && c->lastPosition > 0) {
+                    perf_position_age(PIC_FullIndex() - c->lastPositionEmu);
+                }
             }
         }
         sendFrameAtIdle_ = true;
@@ -1547,6 +1597,23 @@ private:
             return;
         }
         sendFrameAtIdle_ = false;
+        NetworkMessage positions;
+        if (mode() == MODE_HIGH && best_effort_wanted()) {
+            positions.set_epoch(epoch_);
+            positions.set_frame_number(pendingFrame_.frame_number());
+            Frame *lite = positions.mutable_frame();
+            for (int i = 0; i < pendingFrame_.frame().update_size(); i++) {
+                const ShipUpdate &su = pendingFrame_.frame().update(i);
+                if (su.has_loc()) {
+                    ShipUpdate *out = lite->add_update();
+                    out->set_ship_id(su.ship_id());
+                    *out->mutable_loc() = su.loc();
+                }
+            }
+            if (lite->update_size() == 0) {
+                positions.Clear();
+            }
+        }
         for (size_t i = 0; i < clients_.size(); i++) {
             RemoteClient *c = clients_[i];
             if (!c->connected() || !c->inMission) {
@@ -1572,6 +1639,12 @@ private:
                 c->disconnect();
             } else if (f->has_mission_end()) {
                 c->inMission = false;  // they leave the frame loop on this frame
+            } else if (mode() == MODE_HIGH && positions.has_frame()) {
+                // The same positions once more by the best-effort channel:
+                // they get there when the reliable one is held up by a
+                // message being sent again, and the next frame's supersede
+                // them anyway (ClientSession::take_positions).
+                c->conn.send_best_effort(positions);
             }
         }
         reset_pending_frame();
@@ -1809,14 +1882,73 @@ public:
             drop("lost the server while sending a frame");
             return;
         }
+        if (mode_ == MODE_HIGH && seat_ == SEAT_WINGMAN && best_effort_wanted()) {
+            // Our position once more by the best-effort channel (see the
+            // server's flush_outgoing_frame).
+            NetworkMessage positions;
+            positions.set_epoch(epoch_);
+            positions.set_frame_number(frameNumber_);
+            ShipUpdate *su = positions.mutable_frame()->add_update();
+            su->set_ship_id(shipNet_);
+            populate_location(su->mutable_loc(), kPlayerSlot);
+            conn_.send_best_effort(positions);
+        }
         pendingFrame_.Clear();
-        // The server's frame comes when the server's own frame is due.  We
-        // wait for it on the trampoline, in emulated time (ServerFrameJob):
-        // blocking here would stop the emulator, and with it the music and
-        // the clock, for most of every frame.
-        g_trampoline.enqueue(new ServerFrameJob(this));
+        if (lastPositionEmu_ >= 0) {
+            perf_position_age(emu - lastPositionEmu_);
+        }
+        if (mode_ == MODE_HIGH) {
+            // High latency: the frames are paced here (pace_frame), and
+            // whatever the server has sent by now is applied; its frames
+            // are not waited for, unless there has been none for longer
+            // than the round trip and its spikes can explain: then the
+            // server, or the link, has stopped, and so do we.
+            take_positions();
+            bool any = take_server_frame();
+            if (!any && lastServerFrameEmu_ >= 0 && emu - lastServerFrameEmu_ > silence_ms()) {
+                wclog(2, "no frame from the server for %.0f ms: waiting", emu - lastServerFrameEmu_);
+                g_trampoline.enqueue(new ServerFrameJob(this));
+            }
+        } else {
+            // Low latency: the server's frame comes when the server's own
+            // frame is due.  We wait for it on the trampoline, in emulated
+            // time (ServerFrameJob): blocking here would stop the
+            // emulator, and with it the music and the clock, for most of
+            // every frame.
+            g_trampoline.enqueue(new ServerFrameJob(this));
+        }
         g_trampoline.run_before_current_instruction();
         ignoreNextFrameTop_ = true;
+    }
+
+    // How long the server may be silent in the high-latency mode before we
+    // wait for it: the round trip plus a second, at least a second and a half.
+    double silence_ms() const {
+        return std::max(1500.0, (link_.known() ? link_.ceiling(perf_now_ms(), 5000.0) : 0) + 1000.0);
+    }
+
+    // The server's positions by the best-effort channel (the high-latency
+    // mode): the freshest of what has come is applied when it is newer than
+    // the last positions taken from either channel.
+    void take_positions() {
+        NetworkMessage best;
+        bool any = false;
+        for (int n = 0; n < 64; n++) {
+            NetworkMessage msg;
+            RecvStatus st = conn_.poll_best_effort(msg);
+            if (!st.ok()) {
+                break;
+            }
+            if (msg.epoch() == epoch_ && msg.has_frame() && msg.frame_number() > lastPosition_ && (!any || msg.frame_number() > best.frame_number())) {
+                best = msg;
+                any = true;
+            }
+        }
+        if (any) {
+            apply_frame(best.frame(), false, true);
+            lastPosition_ = best.frame_number();
+            lastPositionEmu_ = PIC_FullIndex();
+        }
     }
 
     // True when the wait for the server is over: at least one frame of its
@@ -1848,7 +1980,19 @@ public:
                 }
             }
             lastServerFrame_ = msg.frame_number();
-            apply_frame(msg.frame(), applyOwn);
+            lastServerFrameAt_ = perf_now_ms();
+            lastServerFrameEmu_ = PIC_FullIndex();
+            if (msg.frame().has_ack()) {
+                link_.acked(msg.frame().ack(), msg.frame().ack_delay(), lastServerFrameAt_);
+            }
+            // Its positions, unless fresher ones came by the best-effort
+            // channel (a cinematic's are taken whatever came).
+            bool applyLoc = applyOwn || msg.frame_number() > lastPosition_;
+            apply_frame(msg.frame(), applyOwn, applyLoc);
+            if (applyLoc) {
+                lastPosition_ = msg.frame_number();
+                lastPositionEmu_ = lastServerFrameEmu_;
+            }
             if (msg.frame().has_mission_end() || applyOwn) {
                 break;  // the mission is over, or a cinematic comes first: the rest can wait
             }
@@ -2021,8 +2165,16 @@ private:
             entities_.set_own_ship(shipNet_);
         }
         if (game.has_starting_state()) {
-            apply_frame(game.starting_state(), true);
+            apply_frame(game.starting_state(), true, true);
         }
+        lastPosition_ = 0;
+        lastPositionEmu_ = -1;
+        if (game.has_fps()) {
+            set_pace_fps((int)game.fps());
+        }
+        link_.reset();
+        frameTimes_.clear();
+        lastServerFrameEmu_ = -1;
         epoch_ = msg.epoch();
         frameNumber_ = msg.frame_number();
         lastServerFrame_ = msg.frame_number();
@@ -2095,7 +2247,7 @@ private:
         health_.end_frame();
     }
 
-    void apply_frame(const Frame &frame, bool applyOwnLocation) {
+    void apply_frame(const Frame &frame, bool applyOwnLocation, bool applyLoc) {
         if (frame.has_mission_end()) {
             const MissionEnd &end = frame.mission_end();
             wr16(ds::missionStatus, (Bit16u)end.game_update());
@@ -2127,7 +2279,7 @@ private:
             // the server has our ship (the wingman's place, not the
             // leader's, where our own mission setup put us).
             bool own = seat_ == SEAT_WINGMAN && (int)su.ship_id() == shipNet_;
-            if (seat_ == SEAT_DRONE && su.ship_id() == (Bit32u)kPlayerSlot && su.has_loc() && (applyOwnLocation || chase_)) {
+            if (seat_ == SEAT_DRONE && su.ship_id() == (Bit32u)kPlayerSlot && su.has_loc() && applyLoc && (applyOwnLocation || chase_)) {
                 follow_leader(su.loc());
             }
             if (!own && !entities_.is_mapped(su.ship_id())) {
@@ -2137,7 +2289,7 @@ private:
             if (is_temp_slot(slot)) {
                 continue;
             }
-            if (su.has_loc() && (!own || applyOwnLocation)) {
+            if (su.has_loc() && applyLoc && (!own || applyOwnLocation)) {
                 apply_location(su.loc(), slot);
             }
             if (su.has_health() && !own) {
@@ -2176,6 +2328,9 @@ private:
     NetworkMessage pendingFrame_;
     std::vector<ShipUpdate> pendingHealth_;
     HealthPublisher health_;
+    // The server frame whose positions were applied last (by either channel), and when (emulated ms; -1: none yet).
+    Bit64u lastPosition_ = 0;
+    double lastPositionEmu_ = -1;
 };
 
 bool ClientLagJob::start() {

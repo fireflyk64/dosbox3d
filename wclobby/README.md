@@ -57,6 +57,15 @@ changes when the link comes up or dies and when either side hangs up
 generation, which is how the game's connect/accept flow — and reconnects
 after a dropped session — map onto a link that stays up.
 
+Beside the reliable messages there is lobbylink's best-effort DataChannel
+(unordered, no retransmit): `wclobby_send_best_effort` hands one datagram
+of up to 16000 bytes to the net thread, which drops it when the channel is
+not open or full, and `wclobby_recv_best_effort` takes the next one that
+arrived on the same generation without waiting (the newest 64 are kept).
+The game uses it for positions in its high-latency mode (a frame number
+with each, the freshest wins), where a lost message on the reliable
+channel would hold everything behind it back for a retransmit.
+
 Once every peer link is up a game sends nothing over the signaling
 WebSocket, and idle proxies and NATs drop such connections after a few
 minutes. The Rust client therefore pings the lobby server every 25 s

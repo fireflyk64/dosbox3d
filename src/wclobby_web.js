@@ -41,7 +41,7 @@ addToLibrary({
     hub(h) { return WCLOBBY.hubs[h]; },
 
     newPeer() {
-      return { occupied: false, link: WCLOBBY.LINK_DOWN, gen: 0, attached: false, inbox: [] };
+      return { occupied: false, link: WCLOBBY.LINK_DOWN, gen: 0, attached: false, inbox: [], beInbox: [] };
     },
     live(p) {
       return p.occupied && (p.link === WCLOBBY.LINK_UP || p.link === WCLOBBY.LINK_FLAKY);
@@ -57,6 +57,7 @@ addToLibrary({
       p.gen = (p.gen + 1) >>> 0;
       p.attached = false;
       p.inbox.length = 0;
+      p.beInbox.length = 0;
     },
 
     linkUp(hub, id) {
@@ -132,6 +133,14 @@ addToLibrary({
       p.inbox.push(data);
       WCLOBBY.notify(hub);
     },
+    // A best-effort datagram: the newest 64 are kept for wclobby_recv_best_effort.
+    deliverBestEffort(hub, from, data) {
+      var p = hub.peers[from];
+      if (!p || data.length === 0) return;
+      WCLOBBY.linkUp(hub, from);
+      if (p.beInbox.length >= 64) p.beInbox.shift();
+      p.beInbox.push(data);
+    },
     closeAll(hub) {
       hub.closed = true;
       for (var i = 0; i < hub.peers.length; i++) WCLOBBY.linkGone(hub, i, 'lobby closed');
@@ -142,6 +151,7 @@ addToLibrary({
       switch (ev.type) {
         case 'message':
           if (ev.kind === 'reliable') WCLOBBY.deliver(hub, ev.from, ev.data);
+          else if (ev.kind === 'best-effort') WCLOBBY.deliverBestEffort(hub, ev.from, ev.data);
           break;
         case 'player-joined':
           WCLOBBY.playerPresent(hub, ev.playerId, 'joined');
@@ -381,6 +391,39 @@ addToLibrary({
       WCLOBBY.linkGone(hub, to, 'send failed');
     });
     return 0;
+  },
+
+  wclobby_send_best_effort__deps: ['$WCLOBBY'],
+  wclobby_send_best_effort: (h, to, gen, data, len) => {
+    var hub = WCLOBBY.hub(h);
+    if (!hub || hub.closed || len === 0) return -1;
+    var p = hub.peers[to];
+    if (!p || p.gen !== (gen >>> 0) || !WCLOBBY.live(p)) return -1;
+    try {
+      hub.game.sendBestEffort(to, HEAPU8.slice(data, data + len));
+    } catch (e) {
+      // (A closed or full channel drops it: the contract.  Only a caller's
+      // error throws, and that is worth a line.)
+      WCLOBBY.log(2, 'best-effort send to player ' + to + ' failed: ' + (e && e.message ? e.message : String(e)));
+    }
+    return 0;
+  },
+
+  wclobby_recv_best_effort__deps: ['$WCLOBBY'],
+  wclobby_recv_best_effort: (h, from, gen, out) => {
+    var hub = WCLOBBY.hub(h);
+    if (!hub || hub.closed) return -1;
+    var p = hub.peers[from];
+    if (!p || p.gen !== (gen >>> 0)) return -1;
+    if (p.beInbox.length) {
+      var bytes = p.beInbox.shift();
+      var ptr = _malloc(bytes.length || 1);
+      HEAPU8.set(bytes, ptr);
+      HEAPU32[out >> 2] = ptr;
+      HEAPU32[(out + 4) >> 2] = bytes.length;
+      return 1;
+    }
+    return WCLOBBY.live(p) ? 0 : -1;
   },
 
   wclobby_recv__deps: ['$WCLOBBY'],

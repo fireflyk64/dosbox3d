@@ -15,7 +15,8 @@ namespace wc {
 static PerfSample g_last = { false, 0, 0, 0, 0, 0, 0, 0, 0 };
 static double g_paced = 0;  // emulated ms of this interval spent waiting for a frame's turn
 static double g_emuStart = -1, g_realStart = 0, g_lastFrameEmu = 0, g_wait = 0, g_worst = 0;
-static int g_frames = 0;
+static double g_ageSum = 0, g_ageWorst = 0;
+static int g_frames = 0, g_ages = 0;
 
 double perf_now_ms() {
     using namespace std::chrono;
@@ -29,6 +30,14 @@ void perf_wait(double ms) {
 void perf_idle_wait(double emulatedMs) {
     g_wait += emulatedMs;
     g_paced += emulatedMs;  // not working either
+}
+
+void perf_position_age(double ms) {
+    g_ageSum += ms;
+    g_ages++;
+    if (ms > g_ageWorst) {
+        g_ageWorst = ms;
+    }
 }
 
 const PerfSample &perf_last() {
@@ -153,6 +162,8 @@ void perf_frame() {
         g_wait = 0;
         g_worst = 0;
         g_paced = 0;
+        g_ageSum = g_ageWorst = 0;
+        g_ages = 0;
         g_lastFrameEmu = emu;
         return;
     }
@@ -174,6 +185,8 @@ void perf_frame() {
     // does, is busy all the time as far as the CPU can tell.)
     g_last.load = pace_fps() > 0 ? 1.0 - g_paced / (emu - g_emuStart) : -1.0;
     g_last.cycles = (int)CPU_CycleMax;
+    g_last.posAgeMs = g_ages ? g_ageSum / g_ages : -1;
+    g_last.posAgeWorstMs = g_ages ? g_ageWorst : -1;
     g_last.ships = 0;
     g_last.others = 0;
     for (int slot = 0; slot < kNumSlots; slot++) {
@@ -182,10 +195,14 @@ void perf_frame() {
         }
     }
     if (log) {
+        char age[64] = "";
+        if (g_ages) {
+            snprintf(age, sizeof(age), ", positions %.0f ms old (worst %.0f)", g_last.posAgeMs, g_last.posAgeWorstMs);
+        }
         wclog(0, "perf: %.1f fps, worst frame %.0f ms, load %.0f%%, emulator at %.0f%% of real time, "
-                 "%.1f ms/frame waiting for the network, %d cycles, %d ships, %d other entities",
+                 "%.1f ms/frame waiting for the network, %d cycles, %d ships, %d other entities%s",
               g_last.fps, g_last.worstFrameMs, g_last.load < 0 ? 100.0 : 100.0 * g_last.load, 100.0 * g_last.speed, g_last.waitMs,
-              g_last.cycles, g_last.ships, g_last.others);
+              g_last.cycles, g_last.ships, g_last.others, age);
     }
     g_emuStart = emu;
     g_realStart = real;
@@ -193,6 +210,8 @@ void perf_frame() {
     g_wait = 0;
     g_worst = 0;
     g_paced = 0;
+    g_ageSum = g_ageWorst = 0;
+    g_ages = 0;
 }
 
 }  // namespace wc

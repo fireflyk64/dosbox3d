@@ -93,6 +93,27 @@ public:
         }
     }
 
+    virtual bool send_best_effort(const std::string &bytes) {
+        if (closed_) {
+            return false;
+        }
+        return wclobby_send_best_effort(h_, player_, gen_, (const uint8_t *)bytes.data(), bytes.size()) == 0;
+    }
+
+    virtual RecvStatus recv_best_effort(std::string &bytes) {
+        if (closed_) {
+            return RecvStatus::STATUS_FAIL;
+        }
+        wclobby_buf_t buf = { NULL, 0 };
+        int r = wclobby_recv_best_effort(h_, player_, gen_, &buf);
+        if (r == 1) {
+            bytes.assign((const char *)buf.data, buf.len);
+            wclobby_buf_free(&buf);
+            return RecvStatus::STATUS_OK;
+        }
+        return r == 0 ? RecvStatus::STATUS_NO_DATA : RecvStatus::STATUS_FAIL;
+    }
+
     // The browser page shares the data channel with its lobby (roster, chat,
     // "start"): those reliable messages start with "WCL\x01", which no
     // protobuf NetworkMessage can (0x57 would be wire type 7).  The browser

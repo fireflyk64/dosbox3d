@@ -342,9 +342,219 @@ needs about 5000 on average in its heaviest fight.
 A load near 100% means the game needs more cycles in flight; an emulator
 below 100% means the host cannot deliver the cycles asked for; a wait on the
 host means another player's machine or connection is the brake (a wingman
-always waits: it follows the host's pace).  `WCNET_LAG=<ms>` (native builds)
-holds every received message back that long, to try a slow connection on
-one machine.
+in the low-latency mode always waits: it follows the host's pace).
+
+## 3b. Far-away players: the simulated link and the two exchange modes
+
+Players on other continents were not satisfied, and what they had was not
+measured.  So first a link can be made bad on purpose, on one machine, from
+the environment (the page's `?env.NAME=value` sets them too, so a browser
+can try it): `WCNET_LAG=<ms>` holds every message that comes in back that
+long (one way: with it on both machines the round trip is twice that);
+`WCNET_JITTER=<ms>` adds a random delay of up to that much to each message,
+and a message cannot overtake the one before it (the link is ordered), so a
+late one holds the next ones back; `WCNET_DROP=<pct>[:<ms>]` loses that
+share of the messages in transit, and since the link is reliable a lost
+message is sent again and it and everything behind it arrive `<ms>` later
+(default: a round trip plus 150 ms, what the fast retransmit of SCTP or TCP
+costs once the other side has noticed the gap from the three messages
+behind it at twenty a second); `WCNET_BURST=<periodMs>:<lossMs>[:<spikeMs>]`
+loses the messages of `<lossMs>` every period and holds those of the
+`<spikeMs>` after them up that long, a queue draining, which is what a
+satellite handover does (Starlink's come every 15 s, by the wall clock on
+both machines at once, so the burst goes by the wall clock too);
+`WCNET_SEED=<n>` picks the random sequence (fixed by default, so a run
+repeats).  `wcnet_transport.cpp`, `Impairment`.
+
+**What the low-latency exchange stood up to** (section 3; two native
+machines in Enyo 1 with the enemies of its first nav point, both firing,
+150 s, `WCNET_PERF=1` for a sample a second; the figures in the table below
+are from those runs):
+
+(the one-way delay is what each machine adds; a frame's round trip as the
+host measures it is twice that plus some 50 ms of frame processing, so a
+"100 ms each way" link reads 250):
+
+| link | host fps (min) | wingman fps (min) | seconds under 15 (host / wingman) | dips under 10 per minute |
+|---|---|---|---|---|
+| none | 20.0 (20.0) | 20.0 (19.8) | 0 / 0 | 0.0 |
+| 50 ms each way | 20.0 (20.0) | 20.0 (19.8) | 0 / 0 | 0.0 |
+| 100 ms each way | 20.0 (20.0) | 20.0 (19.8) | 0 / 0 | 0.0 |
+| 150 ms each way | 15.7 (14.5) | 15.7 (13.9) | 14 / 29 | 0.0 |
+| 200 ms each way | 12.0 (10.4) | 12.1 (10.4) | 112 / 113 | 0.0 |
+| 300 ms each way | 7.3 (6.9) | 7.6 (5.7) | 76 / 76 | 60.0 |
+| 25 ms + jitter up to 50 | 20.0 (20.0) | 20.0 (19.1) | 0 / 0 | 0.0 |
+| 25 ms + jitter up to 100 | 20.0 (20.0) | 17.5 (14.5) | 0 / 3 | 0.0 |
+| 25 ms + jitter up to 200 | 15.1 (11.6) | 10.7 (5.6) | 50 / 106 | 22.9 |
+| 25 ms + jitter up to 400 | 8.4 (4.8) | 5.7 (2.5) | 102 / 99 | 58.8 |
+| 25 ms + 0.5% lost | 20.0 (20.0) | 19.5 (15.6) | 0 / 0 | 0.0 |
+| 25 ms + 1% lost | 20.0 (20.0) | 19.2 (12.7) | 0 / 2 | 0.0 |
+| 25 ms + 2% lost | 20.0 (16.3) | 18.5 (10.4) | 0 / 9 | 0.0 |
+| 25 ms + 5% lost | 19.8 (16.0) | 16.7 (6.9) | 0 / 31 | 1.6 |
+| 150 ms + jitter 100 + 1% lost | 10.5 (4.8) | 8.8 (3.5) | 106 / 104 | 40.0 |
+
+So the exchange of section 3 keeps 20 frames a second to a round trip of
+about 250 ms as the host measures it, and beyond that runs at six frames
+per round trip (the window): 15.7 at 350, 12 at 450, 7 at 650.  Jitter
+costs the wingman alone at first, a frame for every burst of host frames
+(17.5 at 100 ms of jitter, with the host at 20), then both (200 ms: 15 and
+10.7, with 23 seconds a minute under 10 on the wingman); and a lost message
+freezes the wingman for the retransmit, about 200 ms here, which is within
+the target to 2% and past it at 5% (a second under 10 frames a second more
+than once a minute).  The three together as a far-away player might have
+them (150 ms each way, jitter, 1% loss) gave 10.5 and 8.8.
+
+**The two modes** (`ExchangeMode`, `wcnet_session.h`):
+
+* *Low latency*, the exchange of section 3: a wingman's game waits for
+  every one of the host's frames and the host runs at most six frames
+  ahead of what a wingman has applied.  What a wingman sees is at most a
+  frame old relative to what the host sent, and a wingman's shots reach
+  the host a one-way trip later.
+* *High latency*: a wingman's game paces itself (`pace_frame` with the
+  host's `Game.fps`) and at the top of each frame takes in whatever host
+  frames have arrived, none, one or several (`ClientSession::on_frame_top`,
+  `MODE_HIGH`); it waits only when the host has been silent for longer
+  than the round trip and its spikes can explain (`silence_ms`: the worst
+  round trip of the last five seconds plus a second), so that a host that
+  stopped stops the wingman too.  The host's window grows to what the
+  round trip needs plus a second (`highWindow_`, between one and five
+  seconds of frames), and the host takes a wingman's position and shots
+  whenever they come.  Everybody sees the others a one-way trip late, and
+  a burst of host frames after a spike moves the host's ships on a bit at
+  once instead of freezing the wingman's game; the wingman's own ship
+  answers its stick at once in both modes, as it always did.
+
+The host decides which is in force and its frames carry it (`Frame.mode`,
+also in the start state).  `WCNET_MODE=auto|low|high` on the host, the
+page's "Connection" option and `/latency auto`, `/latency low`,
+`/latency high` in the comms prompt or the page's chat set it; a wingman's
+`/latency` says which is in force and the round trip.  `auto` (the
+default) goes by what the host measures of each wingman's link
+(`LinkMonitor`, `ServerSession::mode_tick`, once a second in flight):
+
+* the round trip, from a frame's going out to the wingman's ack of it
+  coming back, less the time the wingman held it (`Frame.ack_delay`; the
+  host's frames ack the wingman's the same way, so the wingman has the
+  figure from its own clock too, for the page's line and `/latency`);
+* its spikes: a round trip more than 150 ms above the best of the last
+  minute (a lost message sent again, a queue somewhere), as a share of
+  the last ten seconds' round trips and counted per minute as they
+  begin, for the log;
+* the wingman's own frame rate, said in each of its frames (`Frame.fps`),
+  and the host's, a sample a second each.
+
+The rules, with the thresholds the simulated link gave (`mode_tick`;
+every figure is as the host measures it, processing included):
+
+* to the high-latency mode when the smoothed round trip passes
+  `kRttHigh` = 300 ms, the window's edge (six frames at 20 a second; the
+  low-latency exchange was whole at a measured 250 and at 15.7 frames a
+  second at 350, and 200 ms of jitter reads as 337 on an ordered link),
+  or a ten-second average of either frame rate is under 15 (the host's
+  only when it is waiting for the network: a slow computer is not the
+  link's fault), or more than one second of the last minute was under 10
+  frames a second on either side, the user's own definition of "not
+  reliably".  The spikes are logged (`spiky`, the share of the last ten
+  seconds' round trips more than 150 ms above the best of the minute,
+  and how many a minute begin) but do not decide: a count a minute does
+  not tell a Starlink-like link from a 5% one (10 to 40 on both), and the
+  share reads 20 to 67% on 100 ms of jitter, a link the exchange was
+  still within the target on;
+* back to the low-latency mode after thirty seconds in which the worst
+  round trip stayed under `kRttLow` = 150 ms and there was no spike.
+
+The user's wish was 15 frames a second on average and never under 10 more
+than once a minute; the first two rules act within seconds of the first
+frames, the last two within a minute of play, so a link that is bad from
+the start is caught before the play is.
+
+**Positions by the best-effort channel.**  On a reliable, ordered link a
+lost message holds everything behind it back until it is sent again, so in
+the high-latency mode a wingman's view of the host's ships froze for the
+retransmit at every loss and then jumped.  lobbylink's second DataChannel
+is unordered and never retransmits (`wclobby_send_best_effort` /
+`wclobby_recv_best_effort` in the Rust library, the C header and the
+browser shim; TCP carries the same marked with the top bit of its length
+prefix), and in the high-latency mode every frame's positions go a second
+time by it, a frame number with each (`ServerSession::flush_outgoing_frame`,
+`ClientSession::take_positions`, `drain_client_positions` on the host for
+the wingman's own): the freshest wins, and a reliable frame older than the
+last positions taken keeps its events and health and leaves its positions
+alone.  `WCNET_BESTEFFORT=0` switches it off, and the perf line says how
+old the other machine's positions were at each frame top.  Measured (high
+mode, 100 ms each way, 5% lost; both machines at 20.0 frames a second
+either way):
+
+| | positions old on the host, average (worst) | seconds with a gap of 150 ms or more, of 117 | on the wingman, average (worst) | seconds, of 115 |
+|---|---|---|---|---|
+| reliable only | 59 ms (400) | 82 | 102 ms (450) | 80 |
+| with the best-effort copies | 13 ms (200) | 1 | 54 ms (250) | 8 |
+
+**The high-latency mode on the same links, and the auto mode** (the
+round trip is the host's own figure, smoothed, with the worst of the run;
+the vhigh300 run and the 200 ms auto run are from the first build, before
+the best-effort positions, so they have no position figures):
+
+| link and mode | host fps (min) | wingman fps (min) | dips under 10 per minute | round trip the host measures (worst) | positions old: host (worst) / wingman (worst) |
+|---|---|---|---|---|---|
+| high: 100 ms each way + 5% lost | 20.0 (20.0) | 20.0 (20.0) | 0.0 | 293 ms (worst 951) | host 13 (200) / wingman 54 (250) |
+| high: 25 ms + jitter up to 400 | 20.0 (20.0) | 20.0 (20.0) | 0.0 | 581 ms (worst 900) | host 50 (300) / wingman 102 (400) |
+| high: 150 ms + jitter 100 + 1% lost | 20.0 (20.0) | 20.0 (20.0) | 0.0 | 512 ms (worst 1049) | host 13 (100) / wingman 61 (150) |
+| high: 300 ms each way | 20.0 (20.0) | 20.0 (20.0) | 0.0 | 674 ms (worst 704) |  |
+| auto: no impairment (stays low) | 20.0 (20.0) | 20.0 (19.6) | 0.0 | 36 ms (worst 49) | host 0 (0) / wingman 15 (31) |
+| auto: 200 ms each way | 20.0 (20.0) | 20.0 (20.0) | 0.0 | 477 ms (worst 553) |  |
+| auto: 25 ms + jitter up to 400 | 20.0 (20.0) | 20.0 (20.0) | 0.0 | 619 ms (worst 898) | host 51 (588) / wingman 102 (351) |
+| auto: 25 ms + 5% lost | 20.0 (20.0) | 20.0 (20.0) | 0.0 | 157 ms (worst 501) | host 9 (250) / wingman 49 (150) |
+| auto: 150 ms + jitter 100 + 1% lost | 20.0 (20.0) | 20.0 (20.0) | 0.0 | 505 ms (worst 1151) | host 14 (408) / wingman 61 (150) |
+
+Every one of them holds 20.0 frames a second on both machines with no dip,
+where the low-latency exchange had 7 to 15.  The auto runs switched within
+the first seconds of the flight, from the round trip alone where it was
+long, from the spikes where it was the loss or the jitter; the clean link
+stayed in the low-latency mode throughout.
+
+**The borderline links, and a Starlink-shaped one.**  The thresholds
+above were set from the runs below (two of the auto runs are from an
+interim build whose rule counted spiky round trips and went high on links
+the low-latency exchange was still within the target on; with the rules
+as they stand those links read a round trip under 300 and stay low, as
+the three handover-burst runs show).  A Starlink link, from the public
+measurements (median ping 33 to 55 ms in the operator's own figures, 80 to
+100 in the academic ones; about 1.4% loss, mostly in bursts at the
+satellite handover every 15 s with some 80 to 100 ms of queueing after
+it), is tried two ways: its loss at random, and as the handover bursts
+(`WCNET_BURST=15000:100:100` with 0.3% at random).
+
+| link and mode | host fps (min) | wingman fps (min) | seconds under 15 (host / wingman) | dips under 10 per minute | round trip the host measures (worst) |
+|---|---|---|---|---|---|
+| auto: 25 ms + jitter up to 100 (interim spike rule: went high) | 20.0 (20.0) | 20.0 (16.1) | 0 / 0 | 0.0 | 231 ms (worst 353) |
+| auto: 25 ms + jitter up to 200 | 20.0 (20.0) | 20.0 (20.0) | 0 / 0 | 0.0 | 338 ms (worst 551) |
+| auto: 25 ms + 1% lost | 20.0 (20.0) | 19.2 (10.6) | 0 / 3 | 0.0 | 90 ms (worst 269) |
+| auto: 25 ms + 2% lost | 20.0 (16.3) | 18.4 (9.0) | 0 / 11 | 1.0 | 91 ms (worst 283) |
+| low: Starlink-like, 60 ms ping, jitter 30, 1% lost at random | 19.8 (15.6) | 18.9 (10.4) | 0 / 9 | 0.0 | 132 ms (worst 353) |
+| auto, the same (interim spike rule: went high) | 20.0 (18.3) | 19.9 (13.7) | 0 / 1 | 0.0 | 168 ms (worst 451) |
+| low: Starlink-like, 100 ms ping, jitter 20, 1% lost at random | 19.0 (13.9) | 18.3 (6.5) | 2 / 19 | 0.5 | 186 ms (worst 407) |
+| auto, the same (interim spike rule: went high) | 19.9 (15.4) | 19.8 (11.7) | 0 / 3 | 0.0 | 203 ms (worst 453) |
+| low: Starlink-like, 60 ms ping, a handover burst every 15 s | 19.9 (17.8) | 19.5 (14.8) | 0 / 1 | 0.0 | 107 ms (worst 348) |
+| auto, the same | 20.0 (18.8) | 19.4 (15.0) | 0 / 0 | 0.0 | 108 ms (worst 327) |
+| low: Starlink-like, 100 ms ping, a handover burst every 15 s | 19.5 (15.7) | 19.1 (12.5) | 0 / 7 | 0.0 | 179 ms (worst 409) |
+| auto, the same | 19.6 (15.6) | 19.3 (13.4) | 0 / 4 | 0.0 | 184 ms (worst 406) |
+
+So a Starlink-like link is within the target in the low-latency mode:
+the 60 ms ping with its loss at random gives the wingman 18.9 frames a
+second with a minimum of 10.4, the handover shape 19.5 with 14.8, and the
+100 ms ping 18.3 to 19.1 with an occasional second under 10 when its loss
+is at random; the auto mode leaves it in the low-latency mode.  The
+high-latency mode gave 20.0 on both machines on every one of them, so a
+pilot who would rather have that than the stricter exchange can ask for it
+(`/latency high`).
+
+## 3c. The page's view
+
+The page's line under the picture (`web/wc.js`, `linkState`) names the
+mode in force and the round trip; the host's "Connection" option (and
+`?latency=low|high` in its address) forces one.
 
 ## 4. Modules
 
@@ -436,6 +646,9 @@ shell command still starts/stops the server or connects.  Useful environment:
 | `WCHOSTPILOT=0..7` | on a client: which of the eight named pilots the host's ship appears as (default: 3, Iceman; never the mission's wingman, who is the client's own player) |
 | `WCHOSTCALLSIGN` | on a client: the host's callsign, the name his ship goes by in the targeting computer (the page sets it from the room's roster; without it the host's first typed line brings it) |
 | `WCHELMETNAME=1` | on a client: leave the stand-in pilot's name on the helmet of the comm picture while the host's line is shown |
+| `WCNET_LAG=<ms>`, `WCNET_JITTER=<ms>`, `WCNET_DROP=<pct>[:<ms>]`, `WCNET_BURST=<periodMs>:<lossMs>[:<spikeMs>]`, `WCNET_SEED=<n>` | test aid: a slow or a bad link made on this machine (section 3b): one-way delay, random extra delay per message, share of messages lost (and how long a lost one takes to be sent again, with everything behind it), a periodic burst of loss and queueing like a satellite handover, and the random sequence |
+| `WCNET_MODE=auto\|low\|high` | on the host: the exchange mode (section 3b; auto, the default, goes by the measured link; the page's "Connection" option and `/latency` do the same) |
+| `WCNET_BESTEFFORT=0` | no positions by the best-effort channel in the high-latency mode (section 3b), to measure what it is worth |
 | `WCROCKS=0` / `WCROCKS=soft` | on the host: fly without asteroid and mine fields, or with rocks that do a sixteenth of their damage to a player's own ship (everyone follows the host; `/rocks on`, `/rocks soft`, `/rocks off` in the comms prompt switch it in flight) |
 | `WCNET_AUTOKEYS=1` | test aid: press Enter through the briefing, then `A` (autopilot) once in space |
 | `WCNET=0` | fly alone: no server, no room, the game's own wingman (a single-player control for experiments) |

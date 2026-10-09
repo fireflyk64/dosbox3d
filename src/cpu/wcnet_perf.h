@@ -20,6 +20,8 @@ struct PerfSample {
     int cycles;           // emulated instructions per ms asked for
     int ships;            // ship slots in use
     int others;           // every other entity (bolts, missiles, rocks, debris)
+    double posAgeMs;      // how old the other machine's positions were when a frame began, on average (-1: none)
+    double posAgeWorstMs; // and at worst
 };
 
 // Pacing.  Wing Commander 1 does everything per frame and never waits: at a
@@ -44,6 +46,7 @@ void set_pace_fps(int fps);    // a client takes the server's
 void perf_frame();            // at the top of every flight frame
 void perf_wait(double ms);    // real time spent blocked on the network
 void perf_idle_wait(double emulatedMs);  // emulated time spent idle, waiting for the network
+void perf_position_age(double ms);       // at a frame top: how old the other machine's last positions are
 const PerfSample &perf_last();
 double perf_now_ms();         // the host's clock
 

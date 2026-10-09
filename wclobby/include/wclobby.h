@@ -98,6 +98,17 @@ typedef struct wclobby_buf {
 int wclobby_recv(wclobby_t *h, uint16_t from, uint32_t gen, int32_t timeout_ms, wclobby_buf_t *out);
 void wclobby_buf_free(wclobby_buf_t *buf);
 
+/* The best-effort channel: one datagram (up to 16000 bytes) that may be
+ * lost, or overtake another, and never holds the reliable messages back;
+ * for what the next one supersedes (positions).  0 = handed to the net
+ * thread (which drops it if the channel is not open or its buffer is
+ * full), -1 = the connection is gone. */
+int wclobby_send_best_effort(wclobby_t *h, uint16_t to, uint32_t gen, const uint8_t *data, size_t len);
+/* Next best-effort message from `from` on connection `gen`, never waiting:
+ * 1 = *out filled (release with wclobby_buf_free), 0 = none, -1 = the
+ * connection is gone.  At most 64 are kept; older ones are dropped. */
+int wclobby_recv_best_effort(wclobby_t *h, uint16_t from, uint32_t gen, wclobby_buf_t *out);
+
 /* Ends the logical connection `gen` to `player`: tells the peer (its
  * recv/send start failing) and bumps the generation locally.  The physical
  * link stays up for a later wclobby_open/wclobby_accept. */
