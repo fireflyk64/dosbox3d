@@ -42,7 +42,10 @@ enum MessageCategory {
 MessageCategory category_of(const NetworkMessage &msg);
 const char *message_type_name(const NetworkMessage &msg);
 
-// A reliable, ordered pipe of whole messages to one peer.
+// A reliable, ordered pipe of whole messages to one peer, with a
+// best-effort side channel: a datagram that may be lost or overtake
+// another and never holds the reliable messages back, for what the next
+// one supersedes (positions).  Over TCP it goes in the same stream, marked.
 class Stream {
 public:
     virtual ~Stream() {}
@@ -53,6 +56,14 @@ public:
     // Next whole message.  Non-blocking calls return NO_DATA when nothing is
     // pending; FAIL means the peer is gone.
     virtual RecvStatus recv(std::string &bytes, bool blocking) = 0;
+    // (A transport without the channel sends it reliably, and has none to
+    // receive.)
+    virtual bool send_best_effort(const std::string &bytes) { return send(bytes); }
+    // Next best-effort message, never waiting (NO_DATA: none).
+    virtual RecvStatus recv_best_effort(std::string &bytes) {
+        (void)bytes;
+        return RecvStatus::STATUS_NO_DATA;
+    }
     // For log lines, e.g. "tcp 10.0.0.2:13255" or "lobby player 1".
     virtual std::string describe() const = 0;
 };
@@ -79,6 +90,10 @@ public:
     std::string describe() const { return stream_ ? stream_->describe() : "not connected"; }
 
     bool send(const NetworkMessage &msg);
+    // The best-effort channel (Stream): a message that may be lost.
+    bool send_best_effort(const NetworkMessage &msg);
+    // Non-blocking: the next best-effort message, NO_DATA when none has arrived.
+    RecvStatus poll_best_effort(NetworkMessage &msg);
 
     // Blocking receive of the next message of `cat`.  Messages of other
     // categories that arrive meanwhile are queued.
@@ -93,10 +108,16 @@ public:
 private:
     RecvStatus read_one(NetworkMessage &msg, bool blocking);
     RecvStatus read_raw(std::string &data, bool blocking);
+    RecvStatus read_raw_best_effort(std::string &data);
 
     Stream *stream_;
-    // Test aid (WCNET_LAG): what came in, held back until its time.
+    // Test aid (a simulated link, wcnet_transport.cpp): what came in, held
+    // back until its time, and the time of the last one (none overtakes it);
+    // the best-effort messages apart (one may overtake another, a lost one
+    // is lost).
     std::deque<std::pair<double, std::string> > held_;
+    std::deque<std::pair<double, std::string> > heldBestEffort_;
+    double heldAfter_ = 0;
     bool heldFailed_ = false;
     std::deque<NetworkMessage> queues_[NUM_CATEGORIES];
 };

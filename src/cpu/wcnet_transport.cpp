@@ -1,10 +1,14 @@
+#include <stdint.h>
 #include <stdio.h>
+#include <math.h>
+#include <chrono>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <netdb.h>
+#include <deque>
 #include <vector>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -12,6 +16,9 @@
 #include "wcnet_transport.h"
 #include "wcnet_perf.h"
 #include "wcnet_log.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 namespace wc {
 
@@ -46,6 +53,8 @@ void Connection::close() {
         queues_[i].clear();
     }
     held_.clear();
+    heldBestEffort_.clear();
+    heldAfter_ = 0;
     heldFailed_ = false;
     if (stream_) {
         stream_->close();
@@ -73,33 +82,139 @@ bool Connection::send(const NetworkMessage &msg) {
     return stream_->send(out);
 }
 
-// Test aid: WCNET_LAG=<ms> (native builds) holds every message that comes in
-// back for that long, as a slow link would, one way; with it on both
-// machines the round trip is twice that.
-static double lag_ms() {
-    static double lag = -1;
-    if (lag < 0) {
-#ifdef __EMSCRIPTEN__
-        lag = 0;
-#else
+// Test aids: a slow or a bad connection, made on one machine (from the
+// environment, so the page's ?env.NAME=value sets them too).  Each applies
+// to what comes in, so with the same figures on both machines the round trip
+// is twice the delay.
+//   WCNET_LAG=<ms>      one-way delay: every message is held back that long
+//   WCNET_JITTER=<ms>   on top of that, a random delay of up to that much,
+//                       different for every message.  The link is ordered:
+//                       a message cannot overtake the one before it, so a
+//                       late one holds the next ones back too
+//   WCNET_DROP=<pct>[:<ms>]  that share of the messages is lost in transit.
+//                       The link is reliable: a lost message is sent again,
+//                       and it and everything behind it arrive <ms> later
+//                       (default: a round trip plus 150 ms, what the fast
+//                       retransmit of SCTP or TCP costs once the other side
+//                       has noticed the gap from the three messages that
+//                       follow it at twenty a second)
+//   WCNET_BURST=<periodMs>:<lossMs>[:<spikeMs>]  every period, the messages
+//                       of <lossMs> are lost and those of the <spikeMs> after
+//                       them are held up that long, a queue draining: what a
+//                       satellite handover does (Starlink's, every 15 s).  By
+//                       the wall clock, so that both machines have it at the
+//                       same moments, as a dish does to both directions
+//   WCNET_SEED=<n>      the random sequence (fixed by default: a run repeats)
+struct Impairment {
+    bool on;
+    double lag, jitter, drop, recover;
+    double burstPeriod, burstLoss, burstSpike;
+    uint32_t state;  // xorshift
+    Impairment() : on(false), lag(0), jitter(0), drop(0), recover(0), burstPeriod(0), burstLoss(0), burstSpike(0), state(0x9e3779b9u) {
         const char *env = getenv("WCNET_LAG");
         lag = env && env[0] ? atof(env) : 0;
-#endif
+        env = getenv("WCNET_JITTER");
+        jitter = env && env[0] ? atof(env) : 0;
+        env = getenv("WCNET_DROP");
+        drop = env && env[0] ? atof(env) / 100.0 : 0;
+        const char *colon = env ? strchr(env, ':') : NULL;
+        recover = colon ? atof(colon + 1) : 2 * lag + 150;
+        env = getenv("WCNET_BURST");
+        if (env && env[0]) {
+            burstPeriod = atof(env);
+            const char *p = strchr(env, ':');
+            burstLoss = p ? atof(p + 1) : 0;
+            p = p ? strchr(p + 1, ':') : NULL;
+            burstSpike = p ? atof(p + 1) : 0;
+        }
+        env = getenv("WCNET_SEED");
+        if (env && env[0]) {
+            state ^= (uint32_t)strtoul(env, NULL, 10) * 2654435761u;
+        }
+        if (lag < 0) lag = 0;
+        if (jitter < 0) jitter = 0;
+        if (drop < 0) drop = 0;
+        if (drop > 1) drop = 1;
+        if (burstPeriod <= 0 || burstLoss + burstSpike <= 0) burstPeriod = 0;
+        on = lag > 0 || jitter > 0 || drop > 0 || burstPeriod > 0;
+        if (on) {
+            wclog(1, "simulated link: %.0f ms delay, %.0f ms jitter, %.1f%% of the messages lost (%.0f ms to recover one)%s",
+                  lag, jitter, 100 * drop, recover, burstPeriod > 0 ? ", and bursts" : "");
+            if (burstPeriod > 0) {
+                wclog(1, "simulated link: every %.0f ms a burst: %.0f ms of loss, then %.0f ms of queue", burstPeriod, burstLoss, burstSpike);
+            }
+        }
     }
-    return lag;
+    // Where in the burst's period the wall clock is.
+    double burst_phase() {
+        if (burstPeriod <= 0) {
+            return -1;
+        }
+        using namespace std::chrono;
+        double wall = duration<double, std::milli>(system_clock::now().time_since_epoch()).count();
+        return fmod(wall, burstPeriod);
+    }
+    double random() {  // 0 <= r < 1
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        return (state >> 8) / 16777216.0;
+    }
+    // When a best-effort message that came in now is let through: -1 when it
+    // is lost (nothing sends it again), else now plus the delay and the
+    // jitter, in no particular order.
+    double due_best_effort(double now) {
+        double phase = burst_phase();
+        if ((drop > 0 && random() < drop) || (phase >= 0 && phase < burstLoss)) {
+            return -1;
+        }
+        return now + lag + jitter * random() + (phase >= burstLoss && phase < burstLoss + burstSpike ? burstSpike : 0);
+    }
+    // When a message that came in now is let through.  (A burst of lost
+    // messages costs one recovery plus their spacing: each is sent again
+    // on its own account, and the first holds the others back.)
+    double due(double now, double *after) {
+        double at = now + lag + jitter * random();
+        double phase = burst_phase();
+        if (phase >= burstLoss && phase < burstLoss + burstSpike) {
+            at += burstSpike;
+        }
+        if ((drop > 0 && random() < drop) || (phase >= 0 && phase < burstLoss)) {
+            at += recover;
+        }
+        if (at < *after) {
+            at = *after;  // behind the one before it
+        }
+        *after = at;
+        return at;
+    }
+};
+
+static Impairment &impairment() {
+    static Impairment imp;
+    return imp;
+}
+
+static void pause_ms(double ms) {
+#ifdef __EMSCRIPTEN__
+    emscripten_sleep((unsigned)(ms < 1 ? 1 : ms));
+#else
+    usleep((useconds_t)(ms * 1000.0));
+#endif
 }
 
 RecvStatus Connection::read_raw(std::string &data, bool blocking) {
-    double lag = lag_ms();
-    if (lag <= 0) {
+    Impairment &imp = impairment();
+    if (!imp.on) {
         return stream_->recv(data, blocking);
     }
-#ifndef __EMSCRIPTEN__
+    // Take in everything that has arrived, each with its time to be let
+    // through, then hand out what is due.
     while (!heldFailed_) {
         std::string in;
         RecvStatus st = stream_->recv(in, false);
         if (st.ok()) {
-            held_.push_back(std::make_pair(perf_now_ms() + lag, in));
+            held_.push_back(std::make_pair(imp.due(perf_now_ms(), &heldAfter_), in));
         } else {
             heldFailed_ = st.failed();
             break;
@@ -117,18 +232,77 @@ RecvStatus Connection::read_raw(std::string &data, bool blocking) {
         if (!st.ok()) {
             return st;
         }
-        held_.push_back(std::make_pair(perf_now_ms() + lag, in));
+        held_.push_back(std::make_pair(imp.due(perf_now_ms(), &heldAfter_), in));
     }
     double wait = held_.front().first - perf_now_ms();
     if (wait > 0) {
         if (!blocking) {
             return RecvStatus::STATUS_NO_DATA;
         }
-        usleep((useconds_t)(wait * 1000.0));
+        pause_ms(wait);
     }
     data = held_.front().second;
     held_.pop_front();
-#endif
+    return RecvStatus::STATUS_OK;
+}
+
+RecvStatus Connection::read_raw_best_effort(std::string &data) {
+    Impairment &imp = impairment();
+    if (!imp.on) {
+        return stream_->recv_best_effort(data);
+    }
+    for (;;) {
+        std::string in;
+        RecvStatus st = stream_->recv_best_effort(in);
+        if (!st.ok()) {
+            if (st.failed() && heldBestEffort_.empty()) {
+                return st;
+            }
+            break;
+        }
+        double at = imp.due_best_effort(perf_now_ms());
+        if (at < 0) {
+            continue;  // lost
+        }
+        // In order of their times: a later one may overtake an earlier one.
+        std::deque<std::pair<double, std::string> >::iterator it = heldBestEffort_.end();
+        while (it != heldBestEffort_.begin() && (it - 1)->first > at) {
+            --it;
+        }
+        heldBestEffort_.insert(it, std::make_pair(at, in));
+    }
+    if (heldBestEffort_.empty() || heldBestEffort_.front().first > perf_now_ms()) {
+        return RecvStatus::STATUS_NO_DATA;
+    }
+    data = heldBestEffort_.front().second;
+    heldBestEffort_.pop_front();
+    return RecvStatus::STATUS_OK;
+}
+
+bool Connection::send_best_effort(const NetworkMessage &msg) {
+    if (!stream_) {
+        return false;
+    }
+    std::string out;
+    if (!msg.SerializeToString(&out) || out.empty()) {
+        return false;
+    }
+    return stream_->send_best_effort(out);
+}
+
+RecvStatus Connection::poll_best_effort(NetworkMessage &msg) {
+    if (!stream_) {
+        return RecvStatus::STATUS_FAIL;
+    }
+    std::string data;
+    RecvStatus st = read_raw_best_effort(data);
+    if (!st.ok()) {
+        return st;
+    }
+    if (!msg.ParseFromArray(data.data(), (int)data.size())) {
+        wclog(0, "protobuf parse failed (best effort)");
+        return RecvStatus::STATUS_NO_DATA;
+    }
     return RecvStatus::STATUS_OK;
 }
 
@@ -202,7 +376,9 @@ const NetworkMessage *Connection::peek(MessageCategory cat) const {
 }
 
 // ---------------------------------------------------------------------------
-// TCP: 3-byte big-endian length prefix per message
+// TCP: 3-byte big-endian length prefix per message; its top bit marks a
+// best-effort message, which TCP carries reliably all the same (a test
+// link's drops are the simulated ones, wcnet_transport.cpp above).
 
 template <class Fn>
 static ssize_t xfer_all(const Fn &fn, unsigned char *buf, size_t size) {
@@ -262,18 +438,57 @@ public:
         }
     }
 
-    virtual bool send(const std::string &bytes) {
+    virtual bool send(const std::string &bytes) { return send_marked(bytes, false); }
+    virtual bool send_best_effort(const std::string &bytes) { return send_marked(bytes, true); }
+
+    virtual RecvStatus recv(std::string &bytes, bool blocking) {
+        if (!reliable_.empty()) {
+            bytes = reliable_.front();
+            reliable_.pop_front();
+            return RecvStatus::STATUS_OK;
+        }
+        for (;;) {
+            bool bestEffort;
+            RecvStatus st = read_frame(bytes, blocking, &bestEffort);
+            if (!st.ok() || !bestEffort) {
+                return st;
+            }
+            bestEffort_.push_back(bytes);
+        }
+    }
+
+    virtual RecvStatus recv_best_effort(std::string &bytes) {
+        while (bestEffort_.empty()) {
+            bool bestEffort;
+            RecvStatus st = read_frame(bytes, false, &bestEffort);
+            if (!st.ok()) {
+                return st;
+            }
+            if (bestEffort) {
+                return RecvStatus::STATUS_OK;
+            }
+            reliable_.push_back(bytes);
+        }
+        bytes = bestEffort_.front();
+        bestEffort_.pop_front();
+        return RecvStatus::STATUS_OK;
+    }
+
+    virtual std::string describe() const { return name_; }
+
+private:
+    bool send_marked(const std::string &bytes, bool bestEffort) {
         if (fd_ == -1) {
             return false;
         }
         size_t len = bytes.length();
-        if (len == 0 || len >= (1u << 24)) {
+        if (len == 0 || len >= (1u << 23)) {
             wclog(0, "message size %d out of range for tcp framing", (int)len);
             return false;
         }
         std::string out;
         out.reserve(len + 3);
-        out.push_back((char)(len >> 16));
+        out.push_back((char)((len >> 16) | (bestEffort ? 0x80 : 0)));
         out.push_back((char)(len >> 8));
         out.push_back((char)len);
         out += bytes;
@@ -285,7 +500,8 @@ public:
         return true;
     }
 
-    virtual RecvStatus recv(std::string &bytes, bool blocking) {
+    // One message off the socket, of either kind.
+    RecvStatus read_frame(std::string &bytes, bool blocking, bool *bestEffort) {
         if (fd_ == -1) {
             return RecvStatus::STATUS_FAIL;
         }
@@ -303,7 +519,8 @@ public:
             }
             return RecvStatus::STATUS_FAIL;
         }
-        size_t len = ((size_t)lengthData[0] << 16) | ((size_t)lengthData[1] << 8) | lengthData[2];
+        *bestEffort = (lengthData[0] & 0x80) != 0;
+        size_t len = ((size_t)(lengthData[0] & 0x7f) << 16) | ((size_t)lengthData[1] << 8) | lengthData[2];
         if (len == 0) {
             wclog(0, "empty message received");
             return RecvStatus::STATUS_FAIL;
@@ -321,9 +538,6 @@ public:
         return RecvStatus::STATUS_OK;
     }
 
-    virtual std::string describe() const { return name_; }
-
-private:
     bool readable() const {
         fd_set set;
         FD_ZERO(&set);
@@ -334,6 +548,7 @@ private:
 
     int fd_;
     std::string name_;
+    std::deque<std::string> reliable_, bestEffort_;  // read while looking for the other kind
 };
 
 class TcpListener : public Listener {
