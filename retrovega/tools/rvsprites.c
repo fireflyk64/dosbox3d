@@ -52,7 +52,7 @@
 #define NSCALES 21
 #define NROLLS 32
 #define ROLL_SIZES 4
-#define MAXV 620                       /* 17 x 19 at 10 degrees with the mirrored headings */
+#define MAXV 2600                      /* 35 x 37 at 5 degrees with the mirrored headings */
 static const int SCALES[NSCALES] = { 256, 215, 181, 152, 128, 108, 91, 76, 64, 54, 45, 38, 32, 27, 22, 19, 16, 13, 11, 9, 8 };
 
 typedef struct { int w, h, ox, oy; unsigned char *px; } Dense;
@@ -301,7 +301,7 @@ int main(int argc, char **argv)
     Dense views[MAXV];
     int type, nviews, asym, v, k, r, nblocks = 0, first_size = 0, roll_from = 0, roll_sizes = ROLL_SIZES, nb, nh;
     Dense sub[MAXV];
-    int nview0, nsub, sub_step = 3, factor = 1, step0 = 0;
+    int nview0, nsub, sub_step = 3, factor = 1, step0 = 0, mask = 0;
     struct { int size, roll, nv; long at, len; unsigned char *data; int w[MAXV], h[MAXV], ox[MAXV], oy[MAXV]; long vat[MAXV]; } *blocks;
     long at;
     if (argc < 3) {
@@ -316,6 +316,8 @@ int main(int argc, char **argv)
         roll_from = atoi(argv[4]);
         roll_sizes = atoi(argv[5]);
     }
+    if (argc >= 9 && strcmp(argv[8], "mask") == 0)
+        mask = 1;                       /* a silhouette set: every opaque pixel 1 (the outline at a denser lattice) */
     if (argc >= 8) {
         sub_step = atoi(argv[6]);
         factor = atoi(argv[7]);
@@ -403,6 +405,18 @@ int main(int argc, char **argv)
                     continue;
                 }
                 one = render(&src[v], SCALES[k + step0], r * (1024 / NROLLS), &w, &h, &ox, &oy, &len);
+                if (mask) {             /* the rows' pixels all 1: the spans are the silhouette */
+                    long i = 4L * (h + 1), y;
+                    for (y = 0; y < h; y++) {
+                        for (;;) {
+                            int skip = one[i], run = one[i + 1];
+                            i += 2;
+                            if (!skip && !run) break;
+                            memset(one + i, 1, run);
+                            i += run;
+                        }
+                    }
+                }
                 memcpy(data + n, one, len);
                 blocks[nblocks].w[v] = w; blocks[nblocks].h[v] = h;
                 blocks[nblocks].ox[v] = ox; blocks[nblocks].oy[v] = oy;
@@ -424,7 +438,7 @@ int main(int argc, char **argv)
     if (!f) { perror(argv[2]); return 1; }
     fwrite("RVSP", 1, 4, f);
     fputc(type, f); fputc(nview0 & 255, f); fputc(NSIZES, f); fputc(NROLLS, f);
-    fputc(roll_sizes, f); fputc(asym | (factor == 2 ? 2 : factor == 4 ? 4 : 0), f); fputc(nb, f); fputc(nh, f);
+    fputc(roll_sizes, f); fputc(asym | (factor == 2 ? 2 : factor == 4 ? 4 : 0) | (mask ? 8 : 0), f); fputc(nb, f); fputc(nh, f);
     for (k = 0; k < 16; k++)            /* the sizes relative to the ship at full size: a half set's start at 128 */
         put16(f, k < NSIZES ? SCALES[k + step0] : 0);
     if (sub_step == 3) { fputc(5, f); fputc(7, f); } else { fputc(nb, f); fputc(nh, f); }   /* the sets' lattice */

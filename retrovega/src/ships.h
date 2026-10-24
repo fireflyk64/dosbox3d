@@ -37,7 +37,10 @@ typedef struct {
 
 typedef struct {
     unsigned char type, asym, rvs, factor;
-    unsigned char rvh;                  /* its file is SHIPnn.RVH (the block mode's), not .RVS: the loaders open it */   /* rvs: a pre-rendered set; else the .RV views at full size only.
+    unsigned char rvh;                  /* its file is SHIPnn.RVH (the block mode's), not .RVS: the loaders open it */
+    unsigned char mask;                 /* a silhouette set (SHIPnn.RVM): the outline alone, every pixel 1, on a denser
+                                           lattice at full size; its view records live in XMS only (more than SHIP_VIEWS) */
+    signed char mask_set;               /* a block-mode paint set's silhouette set, or -1 */   /* rvs: a pre-rendered set; else the .RV views at full size only.
                                                 factor 2 or 4: a SHIPnn.RVH set, its sprites half or quarter size,
                                                 drawn that many times bigger as blocks (RV.EXE /res 2) */
     unsigned short nviews;
@@ -55,6 +58,7 @@ typedef struct {
                                            headings are empty and made from their pair */
 } ShipSet;
 
+extern int g_nomask;                    /* RV.EXE /nomask: a type's silhouette set ignored (the comparison) */
 extern int g_res;                       /* RV.EXE /res N: 2 (the default) SHIPnn.RVH; 1 the sets as they were (SHIPnn.RVS), the
                                            ladder only on every view of the lattice at half size (capitals a
                                            quarter), every ship turned exactly from it as 2 x 2 (4 x 4) blocks */

@@ -24,7 +24,7 @@
 #include "collide.h"
 
 char __far g_people_names[16][28];         /* (far: DGROUP is full) */
-extern int g_winrate, g_flight_seconds, g_flight_timed, g_score_test, g_bench_wanted, g_record, g_capital, g_zoom, g_sky, g_can_quit, g_res;
+extern int g_winrate, g_flight_seconds, g_flight_timed, g_score_test, g_bench_wanted, g_record, g_capital, g_zoom, g_sky, g_can_quit, g_res, g_nomask;
 extern int g_lasers, g_near_bolts, g_far_ships, g_big_ships, g_bolt_demo, g_flames_demo, g_balls, g_near_balls,
     g_ball_demo, g_missile_demo, g_sky_demo, g_boxes, g_collide_demo, g_hull_demo, g_hull_type, g_flame_test,
     g_comm_demo, g_test_ship;
@@ -156,6 +156,8 @@ int main(int argc, char **argv)
             g_zoom = atoi(argv[++i]);
         else if (!strcmp(argv[i], "/res"))              /* 1 the sets as they are; 2 the block mode (SHIPnn.RVH) */
             g_res = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "/nomask"))           /* the silhouette experiment's comparison: no mask sets */
+            g_nomask = 1;
         else if (!strcmp(argv[i], "/sky"))              /* tests: three ship views painted on the sky, to roll and turn round */
             g_sky = 1;
         else if (!strcmp(argv[i], "/noquit"))           /* the page: no Q in the bunk menu (reload is the way out) */

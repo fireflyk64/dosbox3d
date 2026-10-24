@@ -326,7 +326,7 @@ static int load_block(ShipSet __far *s, SetBlock __far *b)
     b->xoff = 0;
     if (!b->blk)
         return 0;
-    sprintf(name, "SHIP%02X.RV%c", s->type, s->rvh ? 'H' : 'S');
+    sprintf(name, "SHIP%02X.RV%c", s->type, s->mask ? 'M' : s->rvh ? 'H' : 'S');
     f = fopen(name, "rb");
     if (!f)
         return 0;
@@ -357,6 +357,8 @@ static int load_rvs(ShipSet __far *s, const char *name)
     s->roll_sizes = hd[8];
     s->asym = hd[9] & 1;
     s->factor = (hd[9] & 2) ? 2 : (hd[9] & 4) ? 4 : 1;
+    s->mask = (hd[9] & 8) != 0;
+    s->mask_set = -1;
     s->nb0 = hd[10] ? hd[10] : 5;
     s->nh0 = hd[11] ? hd[11] : 7;
     for (k = 0; k < 16; k++)
@@ -366,7 +368,7 @@ static int load_rvs(ShipSet __far *s, const char *name)
     if (hd[46] | hd[47])
         s->nviews = hd[46] | (hd[47] << 8);   /* the whole count (byte 5 is its low byte) */
     nblocks = rd32(f);
-    RV_ASSERT(nblocks <= SET_BLOCKS && s->nviews <= SHIP_VIEWS && s->nrolls <= 32);
+    RV_ASSERT(nblocks <= SET_BLOCKS && (s->mask || s->nviews <= SHIP_VIEWS) && s->nrolls <= 32);
     s->nblocks = (int)nblocks;
     /* the index: every block's header and view table, walked by their own view counts */
     index_len = 0;
@@ -397,7 +399,7 @@ static int load_rvs(ShipSet __far *s, const char *name)
         SetBlock __far *b0 = &s->block[0];
         RV_ASSERT(b0->size == 0 && b0->roll == 0);
         b0->loaded = 2;
-        for (v = 0; v < s->nviews; v++) {
+        for (v = 0; v < s->nviews && v < SHIP_VIEWS && !s->mask; v++) {   /* (a mask set's: in XMS only) */
             unsigned char e[12];
             ShipView one;
             xms_get(s->blk, b0->index_at + 12UL * v, e, 12);
@@ -419,9 +421,32 @@ int ships_find(unsigned type)
 {
     int i;
     for (i = 0; i < g_nsets; i++)
-        if (g_set[i]->type == type)
+        if (g_set[i]->type == type && !g_set[i]->mask)
             return i;
     return -1;
+}
+
+/* a type's silhouette set (SHIPnn.RVM), loaded beside its block-mode set when the file is there: the outline
+ * alone at a denser lattice and full size (the silhouette experiment, 2026-10-23) */
+static int load_mask_set(ShipSet __far *paint, unsigned type)
+{
+    char name[16];
+    ShipSet __far *m;
+    if (g_nsets >= SHIP_SETS)
+        return -1;
+    m = (ShipSet __far *)_fmalloc(sizeof(ShipSet));
+    RV_ASSERT(m != 0);
+    _fmemset(m, 0, sizeof(ShipSet));
+    m->type = (unsigned char)type;
+    m->mask = 1;
+    sprintf(name, "SHIP%02X.RVM", type);
+    if (!load_rvs(m, name) || !m->mask) {
+        _ffree(m);
+        return -1;
+    }
+    g_set[g_nsets] = m;
+    paint->mask_set = (signed char)g_nsets;
+    return g_nsets++;
 }
 
 int ships_load(unsigned type)
@@ -459,7 +484,10 @@ int ships_load(unsigned type)
         return -1;
     }
     g_set[g_nsets] = s;
-    return g_nsets++;
+    found = g_nsets++;
+    if (s->factor == 2)
+        load_mask_set(s, type);
+    return found;
 }
 
 /* how many of a set's roll blocks at size k are not loaded */
@@ -492,7 +520,7 @@ static unsigned long load_rolls(ShipSet __far *s, int k, unsigned long room)
     span = s->block[last].at + s->block[last].length - s->block[first].at;
     if (span + 2 > room || !(blk = xms_alloc(span + 2, XMS_MISSION)))
         return 0;
-    sprintf(name, "SHIP%02X.RV%c", s->type, s->rvh ? 'H' : 'S');
+    sprintf(name, "SHIP%02X.RV%c", s->type, s->mask ? 'M' : s->rvh ? 'H' : 'S');
     if (!(f = fopen(name, "rb")))
         return 0;
     file_to_xms(f, s->block[first].at, span, blk, 0);
@@ -515,7 +543,7 @@ static int load_full(ShipSet __far *s, SetBlock __far *b)
     b->loaded = 2;                      /* (the exact draw's still: not the sets') */
     if (!ok)
         return 0;
-    for (v = 0; v < s->nviews; v++)
+    for (v = 0; v < s->nviews && v < SHIP_VIEWS; v++)
         if (s->view[v].w)
             s->view[v].blk = b->blk;
     return 1;
@@ -1161,6 +1189,91 @@ static int draw_turned_at(const ShipSet __far *s, int set_i, int k, int v, int x
     return 1;
 }
 
+int g_nomask = 0;
+
+/* the paint's pixel at (su, sv), or the nearest painted one within three (the paint outside the lines) */
+static unsigned char paint_at(const unsigned char __far *dp, int w, int h, long su, long sv)
+{
+    static const signed char ring[16][2] = { {1,0},{-1,0},{0,1},{0,-1},{1,1},{-1,-1},{1,-1},{-1,1},
+                                             {2,0},{-2,0},{0,2},{0,-2},{3,0},{-3,0},{0,3},{0,-3} };
+    int i;
+    if (su >= 0 && sv >= 0 && su < w && sv < h && dp[(unsigned)sv * w + (unsigned)su])
+        return dp[(unsigned)sv * w + (unsigned)su];
+    for (i = 0; i < 16; i++) {
+        long u = su + ring[i][0], v = sv + ring[i][1];
+        if (u >= 0 && v >= 0 && u < w && v < h && dp[(unsigned)v * w + (unsigned)u])
+            return dp[(unsigned)v * w + (unsigned)u];
+    }
+    return 0;
+}
+
+/* The silhouette experiment (2026-10-23): the ship drawn with the outline of its mask set's view (full size, the
+ * denser lattice) and the paint of its block set's view (half size: 2 x 2 blocks): every screen pixel inside the
+ * turned outline takes the turned paint's pixel under it, the nearest painted one where the paint has none.  A C
+ * kernel, for the look only. */
+static int draw_masked(const ShipSet __far *s, int set_i, int k, int v, const ShipSet __far *m, int m_i, int km, int vm,
+                       int x, int y, int scale256, int roll, int y0, int y1, int xa, int xb, const short __far *ext,
+                       int ext_y0, int ext_rows)
+{
+    ShipView pv, mv;
+    const SetBlock __far *bp = block_of(s, k, 0);
+    const SetBlock __far *bm = block_of(m, km, 0);
+    int mirp, mirm, srcp = stored_view(s, v, &mirp), srcm = stored_view(m, vm, &mirm);
+    const unsigned char __far *dp, __far *dm;
+    LfRot rp, rm;
+    int top, left, oy;
+    if (!bp || !bm || !set_view(s, bp, srcp, &pv) || !set_view(m, bm, srcm, &mv))
+        return 0;
+    if ((unsigned long)pv.w * pv.h > DENSE_MAX || (unsigned long)mv.w * mv.h > DENSE_MAX)
+        return 0;
+    if (!dense_from(m_i, km * 1024 + vm, &mv, mirm))
+        return 0;
+    dm = g_dense;
+    if (!dense_from(set_i, k * 1024 + v, &pv, mirp))
+        return 0;
+    dp = g_dense;
+    if (dp == dm)
+        return 0;
+    if (mirp) pv.ox = pv.w - 1 - pv.ox;
+    if (mirm) mv.ox = mv.w - 1 - mv.ox;
+    lf_rotate_setup(mv.w, mv.h, mv.ox, mv.oy, roll, (int)((long)scale256 * 256 / m->scale[km]), &rm);
+    lf_rotate_setup(pv.w, pv.h, pv.ox, pv.oy, roll, (int)((long)scale256 * 256 / s->scale[k]), &rp);
+    top = y - rm.ocy;
+    left = x - rm.ocx;
+    if (y0 < top) y0 = top;
+    if (y1 > top + rm.oh) y1 = top + rm.oh;
+    if (y0 < 0) y0 = 0;
+    if (y1 > SCR_H) y1 = SCR_H;
+    if (xa < 0) xa = 0;
+    if (xb > SCR_W) xb = SCR_W;
+    if (y0 >= y1 || left >= xb || left + rm.ow <= xa)
+        return 1;
+    if (xa < left) xa = left;
+    if (xb > left + rm.ow) xb = left + rm.ow;
+    for (oy = y0; oy < y1; oy++) {
+        int ca = xa, cb = xb, xs, xe, ox, ry = oy - top, yp = ry - rm.ocy + rp.ocy;
+        unsigned char __far *row;
+        long um, vmm, up, vp;
+        if (!row_clip(oy, &ca, &cb, ext, ext_y0, ext_rows) || !lf_rotate_span(&rm, mv.w, mv.h, ry, ca - left, cb - left, &xs, &xe))
+            continue;
+        row = vid_row(oy) + left;
+        um = rm.u00 + (long)ry * rm.dru + (long)xs * rm.du;
+        vmm = rm.v00 + (long)ry * rm.drv + (long)xs * rm.dv;
+        up = rp.u00 + (long)yp * rp.dru + (long)(xs - rm.ocx + rp.ocx) * rp.du;
+        vp = rp.v00 + (long)yp * rp.drv + (long)(xs - rm.ocx + rp.ocx) * rp.dv;
+        for (ox = xs; ox < xe; ox++, um += rm.du, vmm += rm.dv, up += rp.du, vp += rp.dv) {
+            long su = um >> 16, sv = vmm >> 16;
+            unsigned char p;
+            if (su < 0 || sv < 0 || su >= mv.w || sv >= mv.h || !dm[(unsigned)sv * mv.w + (unsigned)su])
+                continue;
+            p = paint_at(dp, pv.w, pv.h, up >> 16, vp >> 16);
+            if (p)
+                row[ox] = p;
+        }
+    }
+    return 1;
+}
+
 /* the turned draw of a full-size view: inverse mapping from its dense copy */
 static int draw_turned(const ShipSet __far *s, int set_i, int v, int x, int y, int scale256, int roll, int detail,
                        int y0, int y1, int xa, int xb, const short __far *ext, int ext_y0, int ext_rows)
@@ -1360,6 +1473,19 @@ int ships_draw_exact(int set_i, const LfVec *rel, const LfBasis *cam, const LfBa
         int k, want = scale256 / s->factor;
         for (k = s->nsizes - 1; k > 0 && s->scale[k] < want; k--)
             ;
+        if (s->mask_set >= 0 && !g_nomask && s->factor == 2) {
+            const ShipSet __far *m = ships_set(s->mask_set);
+            LfPlace pm;
+            int km;
+            lf_place(rel, cam, ship, g_cx, g_cy, g_focal, m->nb0, m->nh0, &pm);
+            for (km = m->nsizes - 1; km > 0 && m->scale[km] < scale256; km--)
+                ;
+            if (draw_masked(s, set_i, k, p.view, m, s->mask_set, km, pm.view, p.sx, p.sy, scale256, p.roll, y0, y1, xa,
+                            xb, ext, ext_y0, ext_rows)) {
+                drawn(SHIP_PATH_EXACT, pm.view, p.roll);
+                return 1;
+            }
+        }
         if (draw_turned_at(s, set_i, k, p.view, p.sx, p.sy, (int)((long)scale256 * 256 / s->scale[k]), p.roll,
                            s->factor == 4 ? 8 : 4, y0, y1, xa, xb, ext, ext_y0, ext_rows)) {
             drawn(SHIP_PATH_EXACT, p.view, p.roll);

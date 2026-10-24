@@ -280,8 +280,11 @@ static void ship_physics(int s)
          * nose); /zoom 2 yaws it slowly instead, for the player to roll round; /zoom 3 the same
          * swinging 3,000 .. 15,000 km, through the sets' sizes (the player's roll on far ships) */
         long d = g_zoom == 3 ? 256L * 9000 + ((lf_cos((int)(frameCounter * 1024L / 240 % 1024)) * 6000L) >> 14) * 256
+               : g_zoom == 4 ? 256L * 3600 + ((lf_cos((int)(frameCounter * 1024L / 480 % 1024)) * 2400L) >> 14) * 256
                              : 256L * 3600 + ((lf_cos((int)(frameCounter * 1024L / 240 % 1024)) * 2400L) >> 14) * 256;
-        if (g_zoom == 1)
+        if (g_zoom == 4)                /* the slow, deliberate roll (20 degrees a second, a 24-second swing) */
+            rotate_pair(&gOrientationRightVector[s], &gOrientationUpVector[s], turn_step(20, 9));
+        else if (g_zoom == 1)
             rotate_pair(&gOrientationRightVector[s], &gOrientationUpVector[s], turn_step(60, 9));
         else
             rotate_pair(&gOrientationFrontVector[s], &gOrientationRightVector[s], turn_step(12, 9));
