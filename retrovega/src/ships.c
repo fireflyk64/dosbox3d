@@ -654,7 +654,7 @@ static int stored_view(const ShipSet __far *s, int v, int *flags)
         *flags = BLIT_H;
         v = lf_pair_of(v, s->nb0, s->nh0);
     }
-    RV_CHECK(v, SHIP_VIEWS);
+    RV_CHECK(v, s->mask ? (int)s->nviews : SHIP_VIEWS);   /* (a mask set's records are in XMS: any of its views) */
     return v;
 }
 
