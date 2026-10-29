@@ -56,6 +56,8 @@ struct GameParams {
     int gunsSize, gunSize;   // bytes per slot in ds::gunTable, and per gun in it
     int campaign;            // WC1: the campaign whose table the program loads when it starts (-1: none)
     int shipStatsSize;       // bytes per ship type in the game's table of ship figures (ds::shipStatsHull)
+    int maxShipSlot;         // the last ship slot: ships, capships and missiles in 1..this (9; RV.EXE: its header's,
+                             // at most kShipSlotCap), temporaries from the next (wcnet_memory.h)
 };
 extern GameParams g_params;
 

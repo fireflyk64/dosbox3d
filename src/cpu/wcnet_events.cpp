@@ -31,8 +31,10 @@ static std::deque<PendingFire> g_pendingFires;
 static Bit32u g_nextFireSeq = 1;
 
 // Missiles this machine launched by prediction (FireJob::PREDICT), by local
-// slot: the game flies them here and ends them here (intercept_despawn).
+// slot: the game flies them here and ends them here (intercept_despawn).  A
+// bit a ship slot: kShipSlotCap is kept under 32 for it.
 static Bit32u g_predictedMissiles = 0;
+static_assert(kShipSlotCap < 32, "g_predictedMissiles holds a bit for each ship slot");
 static void forget_predicted_missile(int slot) {
     if (slot >= 0 && slot < 32) {
         g_predictedMissiles &= ~(1u << slot);
@@ -69,7 +71,7 @@ static void seed_rng(Bit32u seed) {
 // spawned (fireGunFromShip returns the bolt slot in AX for bolts but missiles
 // take a permanent slot that we must map).
 struct SlotSnapshot {
-    Bit16u types[kMaxShipSlot + 1];
+    Bit16u types[kShipSlotCap + 1];     // (0 .. kMaxShipSlot used)
     void take() {
         for (int i = 0; i <= kMaxShipSlot; i++) {
             types[i] = entity_type(i);
@@ -90,8 +92,8 @@ struct SlotSnapshot {
 // keeps its slot, in AI state 9, until the explosion is over, and a missile's
 // slot becomes its explosion.
 struct DoomedSnapshot {
-    bool doomed[kMaxShipSlot + 1];
-    bool alive[kMaxShipSlot + 1];
+    bool doomed[kShipSlotCap + 1];      // (0 .. kMaxShipSlot used)
+    bool alive[kShipSlotCap + 1];
     static bool is_doomed(int slot) {
         Bit16u type = entity_type(slot);
         return type < ET_MISSILE || (type >= ET_SHIP && rd16((Bit16u)(ds::shipAiState + 2 * slot)) == 9);
