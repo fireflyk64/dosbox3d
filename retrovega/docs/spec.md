@@ -300,9 +300,11 @@ MAXSHIPSLOT is a build constant:
 
 - **9** for bring-up, exactly WC.EXE's partition. With 9 the layer needs no slot changes.
 - **31** now (2026-10-29): 32 ship-class entities, a 32-bit mask's worth, and 92 temporaries (33..124). The layer
-  replicates only 0..9 until it takes the number from `GameParams` (5.3, and phase 2 below), so slots 10..31 are
-  single-player until then.
-- **47** is the most the layer's plan allows: 48 ship-class entities and 77 temporaries.
+  reads it from this header (+12) into `GameParams.maxShipSlot` when RV.EXE loads; its loops over the ship slots
+  run to it. RV.EXE's slots are not replicated yet at all: the layer has no `wcnet_ds.def` column for it.
+- **31** is also the most the layer takes (`kShipSlotCap`): its fixed per-ship arrays hold 32, and its
+  predicted-missile mask is a bit for each ship slot in 32 bits. A header with more is clamped to it, and logged.
+  Past it, those arrays become vectors and the mask widens.
 
 ### 4.3 EntityType (`maybeEntityType`)
 
@@ -417,10 +419,12 @@ contained change to `src/cpu/`.
    - `aiSetSpeed(ship, speed)` is skipped with `return_from_call`, not an IP jump;
    - `despawnQuietly(slot)` replaces the raw offsets in `despawn_slot_quietly` (`wcnet_events.cpp`).
 4. **More than 9 ship slots** (phase 2):
-   - move `kMaxShipSlot` and `kMinTempSlot` into `GameParams`;
-   - turn the fixed snapshot arrays into vectors;
-   - widen the 32-bit predicted-missile mask;
-   - replicate slots 0..max ship slot rather than 0..9.
+   - ~~move `kMaxShipSlot` and `kMinTempSlot` into `GameParams`~~: done, `GameParams.maxShipSlot` (9 for the Wing
+     Commanders, RV.EXE's from its header);
+   - ~~turn the fixed snapshot arrays into vectors~~: sized for `kShipSlotCap` (31) instead, which RV.EXE's 31 fits;
+   - widen the 32-bit predicted-missile mask: only past 31 ship slots;
+   - ~~replicate slots 0..max ship slot rather than 0..9~~: the loops run to `kMaxShipSlot`, the game's. RV.EXE's
+     replication itself is still to write (a `wcnet_ds.def` column for it).
 5. **640×400 cosmetics.** The screenshot, `!vga`, the helmet name and cockpit dimming read mode 13h memory; they should look at `rvVideoMode`. Steering needs nothing, because RV keeps `viewRect`, `steerSteps*` and the mouse in logical 320×200 coordinates in both modes (section 7).
 6. **Optional.** These replace heuristics with explicit state:
    - `setController` and `rvController` instead of skipping the AI hooks per call;

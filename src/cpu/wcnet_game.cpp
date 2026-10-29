@@ -10,6 +10,7 @@
 #include "wcnet_code.h"
 #include "wcnet_log.h"
 #include "wcnet_session.h"
+#include "wcnet_rv.h"
 
 namespace wc {
 
@@ -198,6 +199,51 @@ static void load_wc2_code() {
 // are the RVHOOK thunks (wcnet_rv.h), watched by the dispatcher's own branch.
 static void load_rv_code() {}
 
+// RV.EXE's numbers (retrovega/docs/spec.md 4.6), those its puppet header holds
+// read from it (spec 4.1, DS:0010): "RVPUPPET", the ABI version, then words:
+// the slots, the last ship slot, the first temporary slot, the camera slot,
+// the mission-ship and nav-point records' sizes, the gun table's and a gun
+// record's.  A header the layer doesn't know, or numbers that don't hold
+// together, leave spec 4.6's (and the bring-up's 9 ship slots).
+static GameParams rv_params() {
+    static const GameParams kSpec = { 0x80, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39, 6, 0x33, 5, 0, 0, 9 };
+    static const char kMagic[] = "RVPUPPET";
+    const PhysPt h = DS_OFF + 0x0010;
+    GameParams p = kSpec;
+    for (size_t k = 0; k < 8; k++) {
+        if (mem_readb(h + (PhysPt)k) != (Bit8u)kMagic[k]) {
+            wclog(0, "RV.EXE: no puppet header at DS:0010: spec 4.6's numbers, ships in 1..%d", p.maxShipSlot);
+            return p;
+        }
+    }
+    if (mem_readw(h + 8) != RV_ABI_VERSION) {
+        wclog(0, "RV.EXE: a puppet header of ABI %u where the layer knows %u: spec 4.6's numbers, ships in 1..%d",
+              (unsigned)mem_readw(h + 8), (unsigned)RV_ABI_VERSION, p.maxShipSlot);
+        return p;
+    }
+    p.slots = mem_readw(h + 10);
+    p.maxShipSlot = mem_readw(h + 12);
+    if (p.maxShipSlot < kMinShipSlot || mem_readw(h + 14) != p.maxShipSlot + 1 || mem_readw(h + 16) != p.slots - 3 ||
+        p.slots < p.maxShipSlot + 5 || p.slots > 0x100) {
+        wclog(0, "RV.EXE: a puppet header whose slots don't hold together (%d slots, ships to %d, temporaries from %u, "
+              "the camera %u): spec 4.6's numbers", p.slots, p.maxShipSlot, (unsigned)mem_readw(h + 14),
+              (unsigned)mem_readw(h + 16));
+        return kSpec;
+    }
+    if (p.maxShipSlot > kShipSlotCap) {
+        wclog(0, "RV.EXE: ships in 1..%d, more than the layer's arrays hold: 1..%d only (wcnet_memory.h kShipSlotCap)",
+              p.maxShipSlot, (int)kShipSlotCap);
+        p.maxShipSlot = kShipSlotCap;
+    }
+    p.missionShipSize = mem_readw(h + 18);
+    p.navPointSize = mem_readw(h + 20);
+    p.gunsSize = mem_readw(h + 22);
+    p.gunSize = mem_readw(h + 24);
+    wclog(1, "RV.EXE: %d slots, ships in 1..%d, temporaries from %d (its puppet header)", p.slots, p.maxShipSlot,
+          p.maxShipSlot + 1);
+    return p;
+}
+
 // ---------------------------------------------------------------------------
 // Recognising the program
 
@@ -250,7 +296,8 @@ static void set_game(const KnownGame *game, Bit16u loadSeg, Bit16u psp, Bit16u d
     DS = game ? (Bit16u)(loadSeg + dgroupPara) : 0;
     DS_OFF = (PhysPt)DS * 0x10;
     load_ds(g_build);
-    g_params = g_game == GAME_WC2 ? kWc2Params : g_build == BUILD_SM2 ? kSm2Params : kWc1Params;
+    g_params = g_game == GAME_WC2 ? kWc2Params : g_build == BUILD_SM2 ? kSm2Params
+               : g_build == BUILD_RV ? rv_params() : kWc1Params;
     clear_code();
     if (game) {
         game->loadCode();
