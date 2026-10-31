@@ -5,12 +5,13 @@ an optional clear visor, the points the link needs (where the eyes, the callsign
 lit parts, what glows in each state; render() marches it once, and the states are lit afterwards from the hit
 points (emissive()), so a blink costs no second march.
 
-Human, the pilots' helmet, after the user's reference (a clear-domed hood): a dark satin hard shell round the head,
-its front open from brow to chin behind a clear visor in a black gasket, light air pads at the cheeks inside it, a
-lamp and camera module on the brow, the shell sealing down into a neck collar, and (mask=True, the build's default)
-the breathing gear over nose and mouth.  Lit by a key light (upper left, in front), a fill (right) and a rim
-(behind); soft shadows, occlusion; the visor and the shell reflect a studio (a bright soft-box above and to the
-left, dark below), more at a glancing angle.  The aliens' helmets are tools/aliens3d.py's.
+Human, the pilots' helmet, a racing driver's more than a spaceman's (the user, 2026-10-31; the clear-domed hood
+before it read as a bubble): a dark satin full-face shell close round the head, a wide eye port with the padded
+liner showing round the face, a clear visor on pivots at the temples, the chin bar over the mouth with the
+breathing gear in it (mask=True, the build's default; mask=False opens the port to the chin), the neck seal and
+collar under it.  Lit by a key light (upper left, in front), a fill (right) and a rim (behind); soft shadows,
+occlusion; the visor and the shell reflect a studio (a bright soft-box above and to the left, dark below), more at
+a glancing angle.  The aliens' helmets are tools/aliens3d.py's.
 """
 import numpy as np
 
@@ -40,6 +41,12 @@ def capsule(p, a, b, r):
 def cyl_y(p, c, r, half):
     q = p - c
     d = np.stack([np.hypot(q[..., 0], q[..., 2]) - r, np.abs(q[..., 1]) - half], -1)
+    return np.minimum(np.max(d, -1), 0) + length(np.maximum(d, 0))
+
+
+def cyl_x(p, c, r, half):
+    q = p - c
+    d = np.stack([np.hypot(q[..., 1], q[..., 2]) - r, np.abs(q[..., 0]) - half], -1)
     return np.minimum(np.max(d, -1), 0) + length(np.maximum(d, 0))
 
 
@@ -96,60 +103,92 @@ class Model:
 
 HEAD_C = np.array([0.0, 0.0, 0.0])
 HEAD_R = np.array([0.40, 0.52, 0.46])
-SHELL_C = np.array([0.0, 0.06, -0.06])
-SHELL_R = np.array([0.60, 0.70, 0.70])
-# the face's opening, as a rounded region on the shell's front
-OPEN_C = np.array([0.0, -0.06, 0.6])
-VISOR_C = np.array([0.0, -0.04, 0.02])
-VISOR_R = np.array([0.56, 0.62, 0.66])
+# the shell's outside: a dome blended into a narrower chin bar, its lower rim higher at the back
+DOME_C = np.array([0.0, 0.08, -0.04])
+DOME_R = np.array([0.50, 0.65, 0.62])
+CHIN_C = np.array([0.0, -0.36, 0.06])
+CHIN_R = np.array([0.37, 0.30, 0.56])
+SHELL_T = 0.05
+# the eye port seen from the front (centre, half sizes, corner), wider at the shell than at the face; the bare
+# face's (no breathing gear) reaches down to the chin
+PORT = ((0.0, 0.06), (0.37, 0.21), 0.15)
+PORT_FACE = ((0.0, -0.11), (0.37, 0.38), 0.20)
+VISOR_OFF = 0.022
 # the eyes, on the head's front, for fitting the portraits
 EYES = [np.array([-0.152, 0.075, 0.43]), np.array([0.152, 0.075, 0.43])]
 
 
-def opening(p):
-    """negative inside the face's opening (seen from the front)"""
-    q = p - OPEN_C
-    return np.hypot(q[..., 0] / 0.43, (q[..., 1] + 0.0) / 0.50) - 1.0
+def rbox2(x, y, c, b, r):
+    """a rounded rectangle's distance in the picture's plane (x, y)"""
+    qx = np.abs(x - c[0]) - (b[0] - r)
+    qy = np.abs(y - c[1]) - (b[1] - r)
+    return np.hypot(np.maximum(qx, 0), np.maximum(qy, 0)) + np.minimum(np.maximum(qx, qy), 0) - r
+
+
+def shell_outer(p):
+    """the shell's outer surface's distance"""
+    y, z = p[..., 1], p[..., 2]
+    outer = smin(ellipsoid(p, DOME_C, DOME_R), ellipsoid(p, CHIN_C, CHIN_R), 0.12)
+    rim = -0.56 - 0.10 * np.clip(z, -0.5, 0.6) / 0.6
+    return smax(outer, rim - y, 0.04)
 
 
 class Human(Model):
-    """the pilots' helmet; mask: the breathing gear over nose and mouth (the user's ruling), else the face bare
-    behind the visor (the build's RV_COMMS=face, to weigh what a speaking mouth costs)"""
+    """the pilots' helmet (the user, 2026-10-31: sleek and comfortable, nearer a racing car's than a spaceman's
+    bubble; then the camera nearer, on the face, more of the face shown): a full-face shell close round the head,
+    dark satin; a wide eye port from above the brows to the nose's tip, its padded liner showing round the face, a
+    black gasket at its edge; a clear visor over it on pivots at the temples; the chin bar over the mouth, matte and
+    darker (it faces the key light, and must not outshine the eyes on the link), the breathing gear in it (its
+    light, vents under it).  mask=False (the build's RV_COMMS=face, to weigh what a speaking mouth costs): the port
+    and the visor reach down to the chin, the face bare behind them."""
+    view = {'span': 1.40, 'eye': (0.0, 0.03, 5.0), 'look': (0.0, 0.02, 0.0)}
 
     def __init__(self, mask=True):
         self.mask = mask
-        self.order = ['shell', 'gasket', 'pad', 'metal', 'lens', 'seal', 'head'] + (['mask', 'hose'] if mask else [])
-        self.look = {'shell': (0.16, 0.30, 0.9), 'gasket': (0.035, 0.6, 0.05), 'pad': (0.82, 0.85, 0.05),
-                     'metal': (0.30, 0.25, 0.6), 'lens': (0.05, 0.05, 1.0), 'seal': (0.07, 0.9, 0.05),
-                     'head': (0.5, 0.7, 0.05), 'mask': (0.10, 0.55, 0.05), 'hose': (0.09, 0.6, 0.05)}
-        self.points = {'eye_l': EYES[0], 'eye_r': EYES[1],
-                       'brow': np.array([0.0, 0.535, 0.56]),     # the callsign's place on the shell, above the gasket
-                       'led': np.array([0.0, -0.265, 0.59])}     # the regulator's light: lit while the pilot speaks
+        self.port = PORT if mask else PORT_FACE
+        self.order = ['shell', 'chin', 'gasket', 'pad', 'metal', 'seal', 'head']
+        self.look = {'shell': (0.20, 0.30, 0.9), 'chin': (0.07, 0.65, 0.15), 'gasket': (0.035, 0.6, 0.05),
+                     'pad': (0.42, 0.9, 0.0), 'metal': (0.30, 0.25, 0.6), 'seal': (0.07, 0.9, 0.05),
+                     'head': (0.5, 0.7, 0.05)}
+        (_, py), (_, ph), _ = self.port
+        # the callsign above the visor; the regulator's light (lit while the pilot speaks) under the port, high
+        # enough for a short VDU (comms.c crops one mostly at the bottom)
+        self.points = {'eye_l': EYES[0], 'eye_r': EYES[1], 'brow': self.on_front(0.0, py + ph + 0.11),
+                       'led': self.on_front(0.0, -0.255)}
+
+    def on_front(self, x, y):
+        """the point of the shell's front seen at (x, y)"""
+        lo, hi = 0.0, 1.0
+        for _ in range(40):
+            z = 0.5 * (lo + hi)
+            if shell_outer(np.array([x, y, z])) < 0:
+                lo = z
+            else:
+                hi = z
+        return np.array([x, y, lo])
+
+    def port_d(self, x, y, z):
+        """the eye port's distance, wider towards the shell's outside than at the face (its walls show)"""
+        c, b, r = self.port
+        return rbox2(x, y, c, b, r) - 0.35 * (z - 0.48)
 
     def solids(self, p):
         x = p[..., 0]
         y = p[..., 1]
         z = p[..., 2]
-        pm = mirror_x(p)
-        # the shell: hollow, its front open round the face, its edge rolled, a crest band over the top
-        outer = ellipsoid(p, SHELL_C, SHELL_R)
-        shell = np.abs(outer + 0.03) - 0.03
-        cut = np.maximum(opening(p) * 0.45, -(z - 0.05))
-        shell = smax(shell, -cut, 0.03)
-        # seams: one along the shell's side, one round the opening
-        seam = np.abs(np.abs(x) - 0.43) - 0.004
-        seam = np.maximum(seam, -(y + 0.05))
-        shell = smax(shell, -np.maximum(seam, -outer - 0.02), 0.003)
-        # the gasket: a black rim round the opening, the visor's frame
-        gasket = np.maximum(np.abs(opening(p) * 0.45 + 0.01) - 0.022, np.abs(outer + 0.005) - 0.035)
-        gasket = np.maximum(gasket, -(z - 0.02))
-        # the air pads at the cheeks, inside the opening
-        pad = rbox(pm, np.array([0.335, -0.12, 0.30]), np.array([0.055, 0.12, 0.10]), 0.03)
-        pad = np.maximum(pad, -(ellipsoid(p, SHELL_C, SHELL_R - 0.07)))
-        # the brow's lamp and camera: a housing, two lenses
-        module = rbox(p, np.array([0.0, 0.69, 0.22]), np.array([0.11, 0.035, 0.07]), 0.025)
-        lens = np.minimum(cyl_z(p, np.array([-0.05, 0.69, 0.29]), 0.022, 0.012),
-                          cyl_z(p, np.array([0.05, 0.69, 0.29]), 0.015, 0.012))
+        outer = shell_outer(p)
+        head = ellipsoid(p, HEAD_C, HEAD_R)
+        port = self.port_d(x, y, z)
+        hole = np.maximum(port, 0.05 - z)
+        # the shell: hollow, the port cut through it; the liner fills it to the head, its edge rolled round the port
+        shell = smax(np.maximum(outer, -(outer + SHELL_T)), -hole, 0.01)
+        pad = smax(np.maximum(outer + SHELL_T * 0.8, 0.012 - head), -hole, 0.05)
+        # the gasket: a black rubber edge round the port, a little proud of the shell
+        gasket = np.maximum(np.abs(port + 0.006) - 0.016, np.abs(outer + 0.012) - 0.026)
+        gasket = np.maximum(gasket, 0.05 - z)
+        # the visor's pivots at the temples
+        (_, vy), _, _ = PORT
+        metal = cyl_x(mirror_x(p), np.array([0.485, vy, 0.06]), 0.07, 0.014) - 0.006
         # the neck seal: soft, down from the shell's lower rim to the collar; the collar ring; the suit's shoulders
         # (a fabric tube, wider as it goes down, with a few soft folds round it)
         ty = np.clip((-0.45 - y) / 0.75, 0, 1)
@@ -160,32 +199,29 @@ class Human(Model):
         collar = cyl_y(p, np.array([0, -1.02, -0.06]), 0.46, 0.04) - 0.02
         suit = ellipsoid(p, np.array([0, -1.55, -0.05]), np.array([1.15, 0.58, 0.64]))
         seal = smin(smin(seal, collar, 0.04), suit, 0.10)
-        head = ellipsoid(p, HEAD_C, HEAD_R)
-        d = {'shell': shell, 'gasket': gasket, 'pad': pad, 'metal': module, 'lens': lens, 'seal': seal, 'head': head}
-        if not self.mask:
-            return d
-        # the breathing gear (the user: the mouth covered, the eyes all shown): a rubber mask over nose and mouth,
-        # its regulator in front, straps back across the cheeks, a ribbed hose down to the neck seal
-        mask = ellipsoid(p, np.array([0.0, -0.215, 0.385]), np.array([0.215, 0.205, 0.16]))
-        mask = smax(mask, -(p[..., 2] - 0.30), 0.02)
-        mask = smin(mask, rbox(p, np.array([0.0, -0.10, 0.47]), np.array([0.07, 0.07, 0.05]), 0.04), 0.05)   # (nose)
-        reg = cyl_z(p, np.array([0.0, -0.265, 0.535]), 0.06, 0.035)
-        reg = np.minimum(reg, cyl_z(p, np.array([0.0, -0.265, 0.575]), 0.035, 0.012))
-        straps = np.minimum(capsule(pm, np.array([0.18, -0.13, 0.38]), np.array([0.36, -0.02, 0.12]), 0.014),
-                            capsule(pm, np.array([0.19, -0.30, 0.34]), np.array([0.36, -0.24, 0.08]), 0.014))
-        t = np.clip((-0.33 - y) / 0.36, 0, 1)
-        hx = 0.10 + 0.16 * t
-        hz = 0.47 - 0.14 * t
-        hose = np.where((y < -0.30) & (y > -0.72), np.hypot(x - hx, z - hz) - 0.032 - 0.004 * np.sin(y * 160), 1e3)
-        d['metal'] = np.minimum(module, reg)
-        d['mask'] = np.minimum(mask, straps)
-        d['hose'] = hose
-        return d
+        if self.mask:
+            # the breathing gear in the chin bar (the user: the mouth covered, the eyes all shown): the regulator's
+            # light under the port, three black vents across the chin bar below it
+            vents = np.minimum.reduce([rbox2(x, y, (0.0, -0.31 - 0.045 * k), (0.10 - 0.018 * k, 0.011), 0.011)
+                                       for k in range(3)])
+            shell = smax(shell, -np.maximum(np.maximum(vents, -(outer + 0.018)), -z), 0.004)
+            gasket = np.minimum(gasket, np.maximum(np.maximum(vents + 0.004, np.abs(outer + 0.016) - 0.004), -z))
+            metal = np.minimum(metal, length(p - self.points['led']) - 0.022)
+        # the chin bar: its own matte finish, the edge sweeping down from under the port to the jaw
+        (_, py), (_, ph), _ = self.port
+        below = np.maximum(y - (py - ph - 0.06 - 0.55 * x * x), 0.1 - z)
+        chin = np.maximum(shell, below)
+        shell = np.maximum(shell, -below)
+        return {'shell': shell, 'chin': chin, 'gasket': gasket, 'pad': pad, 'metal': metal, 'seal': seal,
+                'head': head}
 
     def visor(self, p):
-        """the visor: a thin clear dome over the opening"""
-        v = np.abs(ellipsoid(p, VISOR_C, VISOR_R)) - 0.006
-        return np.maximum(v, np.maximum(opening(p) * 0.45 + 0.005, -(p[..., 2] - 0.15)))
+        """the visor: clear, a little off the shell, over the port and back to the pivots"""
+        x, y, z = p[..., 0], p[..., 1], p[..., 2]
+        c, b, r = self.port
+        area = rbox2(x, y, (c[0], c[1]), (0.53, b[1] + 0.045), r + 0.06)
+        v = np.abs(shell_outer(p) - VISOR_OFF) - 0.005
+        return np.maximum(v, np.maximum(area, -z))
 
 
 # --- the renderer ---

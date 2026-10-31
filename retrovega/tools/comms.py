@@ -4,12 +4,12 @@
     comms.py [KEY ...] [--out build/comms] [--cols 112] [--face] [--preview DIR]
 
 The user's brief (2026-10-22): every human pilot in the same helmet, styled for this universe, futuristic but
-functional (after their reference: a clear-domed hood seen head on); the mouth covered by breathing gear and the
-eyes shown, so only the eyes differ from pilot to pilot and only they animate; the callsign on the helmet; a low
-bandwidth, encrypted link: each row drawn twice, the picture deliberately coarse; little memory.  Then: Aera and
-Rlaan pilots in heavy gear, anonymous, each in a helmet of their own (data/aliens.csv, tools/aliens3d.py); and the
-bare face again (--face: no breathing gear, the mouth speaking in lipsync's shapes) as a build option, to weigh its
-cost.
+functional (after their reference: a clear-domed hood seen head on; then, 2026-10-31, sleeker, a racing helmet's
+full face, the camera nearer and more of the face shown); the mouth covered by breathing gear and the eyes shown, so
+only the eyes differ from pilot to pilot and only they animate; the callsign on the helmet; a low bandwidth,
+encrypted link: each row drawn twice, the picture deliberately coarse; little memory.  Then: Aera and Rlaan pilots
+in heavy gear, anonymous, each in a helmet of their own (data/aliens.csv, tools/aliens3d.py); and the bare face
+again (--face: no breathing gear, the mouth speaking in lipsync's shapes) as a build option, to weigh its cost.
 
 The pilots' helmet is one render for everyone (tools/helmet3d.py: signed distance fields ray-marched in numpy, lit,
 the visor's reflection kept apart).  Each pilot's portrait (art/people/faces/KEY/) goes behind the visor, its eyes

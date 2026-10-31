@@ -1598,6 +1598,9 @@ encrypted link: each row drawn twice, the picture deliberately coarse;
 little memory; good on most VDUs, cropped for the rest. Then: the bare face
 again as a compile-time option, to weigh its cost; and Aera and Rlaan
 pilots, in heavy gear, mostly anonymous, each in a helmet of their own.
+Then (2026-10-31): the hood too wide and round, a spaceman's bubble; sleeker
+and comfortable, nearer a racing helmet; the camera nearer, pointing at the
+face, and more of each face shown.
 
 **The art** (`tools/helmet3d.py`, `tools/aliens3d.py`, `tools/comms.py`,
 made in the build into build/comms-mask or build/comms-face). The helmets
@@ -1605,9 +1608,15 @@ are signed distance fields ray-marched in numpy, one render a helmet
 (helmet3d.py's renderer: a model gives its solids, how each looks, an
 optional clear visor and, for an alien, what glows in each state, lit
 afterwards from the hit points so a state costs no second march). The
-pilots' helmet: a dark satin shell, a clear visor in a black gasket, air
-pads at the cheeks, a lamp and camera module, an oxygen mask with its
-regulator, straps and a ribbed hose, a fabric neck seal; key, fill and rim
+pilots' helmet: a racing driver's full face, a dark satin shell close round
+the head; a wide eye port from above the brows to the nose's tip, the padded
+liner showing round the face, a black gasket at its edge; a clear visor on
+pivots at the temples; the chin bar over the mouth, matte and darker (lit
+like the shell it outshone the eyes on the link), the breathing gear in it:
+the regulator's light under the port (high enough for a short VDU, which is
+cropped mostly at the bottom), three black vents; a fabric neck seal; the
+camera close on the face (the crown and the chin bar's foot cut off); key,
+fill and rim
 lights, soft shadows, occlusion, a studio's reflections (the visor's kept
 apart, laid over the face). Each pilot's portrait goes behind the visor,
 its eyes onto the helmet's eye points, its local contrast raised so the

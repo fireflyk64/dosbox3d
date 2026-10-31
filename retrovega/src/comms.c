@@ -350,7 +350,7 @@ static int draw(int vdu, const RvRect __far *r, int y0, int y1)
         return 0;
     px = r->x + (r->w - COMMS_W) / 2;   /* (centred: cropped on a smaller VDU, the link's ground round a bigger; */
     py = r->y + (r->h < COMMS_H ? (r->h - COMMS_H) / 4 : (r->h - COMMS_H) / 2);   /*  a short one loses the
-                                           most at the bottom, the mask and the hose, keeping the callsign) */
+                                           most at the bottom, the chin bar, keeping the callsign) */
     if (y0 < r->y) y0 = r->y;
     if (y1 > r->y + r->h) y1 = r->y + r->h;
     sx0 = r->x > px ? r->x - px : 0;
