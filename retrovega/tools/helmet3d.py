@@ -77,6 +77,7 @@ class Model:
     look = {}                           # solid: (albedo, roughness, clear coat)
     points = {}                         # name: a 3D point, projected onto the picture
     view = {}                           # the camera, if not the pilots' framing (camera()'s span, eye, look)
+    key = None                          # the key light's direction, if not KEY
 
     def solids(self, p):
         raise NotImplementedError
@@ -142,6 +143,9 @@ class Human(Model):
     light, vents under it).  mask=False (the build's RV_COMMS=face, to weigh what a speaking mouth costs): the port
     and the visor reach down to the chin, the face bare behind them."""
     view = {'span': 1.40, 'eye': (0.0, 0.03, 5.0), 'look': (0.0, 0.02, 0.0)}
+    # the key light nearly in front (the user: lit from the side, the dark chin bar's far edge sank into the ground and
+    # the jaw looked unhooked and shifted left), a little left for the dome's shape
+    key = np.array([-0.16, 0.62, 0.77]) / np.linalg.norm([-0.16, 0.62, 0.77])
 
     def __init__(self, mask=True):
         self.mask = mask
@@ -194,7 +198,7 @@ class Human(Model):
         ty = np.clip((-0.45 - y) / 0.75, 0, 1)
         rad = 0.30 + 0.12 * ty * ty
         ang = np.arctan2(x, z + 0.06)
-        folds = 0.012 * np.sin(ang * 7 + y * 9) * (1 - np.abs(np.cos(ang)) * 0.5)
+        folds = 0.012 * np.sin(np.abs(ang) * 7 + y * 9) * (1 - np.abs(np.cos(ang)) * 0.5)
         seal = np.maximum(np.hypot(x, z + 0.06) - rad - folds, np.maximum(y + 0.40, -1.20 - y))
         collar = cyl_y(p, np.array([0, -1.02, -0.06]), 0.46, 0.04) - 0.02
         suit = ellipsoid(p, np.array([0, -1.55, -0.05]), np.array([1.15, 0.58, 0.64]))
@@ -318,12 +322,13 @@ def render(w, h, model=None):
     N = normal_of(sdf, P)
     mat = model.material(P)
     matmap[hit] = mat
-    sh = soft_shadow(sdf, P + N * 0.002, KEY)
+    key = KEY if model.key is None else model.key
+    sh = soft_shadow(sdf, P + N * 0.002, key)
     ao = occlusion(sdf, P, N)
     table = np.array([model.look[k] for k in model.order])
     alb, rough, coat = table[mat, 0], table[mat, 1], table[mat, 2]
     alb = model.albedo(P, mat, alb)
-    nl = np.clip(N @ KEY, 0, 1)
+    nl = np.clip(N @ key, 0, 1)
     nv = np.clip(np.sum(N * V, -1), 0, 1)
 
     def spec(L, power):
@@ -332,7 +337,7 @@ def render(w, h, model=None):
         return np.clip(np.sum(N * Hh, -1), 0, 1) ** power
     power = 2.0 / np.maximum(rough ** 2, 1e-3)
     diffuse = alb * (0.06 + 1.0 * nl * sh + 0.30 * np.clip(N @ FILL, 0, 1) + 0.10 * (0.5 + 0.5 * N[:, 1])) * ao
-    specular = (1.1 * spec(KEY, power) * sh + 0.3 * spec(FILL, power)) * (1 - rough) ** 2
+    specular = (1.1 * spec(key, power) * sh + 0.3 * spec(FILL, power)) * (1 - rough) ** 2
     R = -V + 2 * nv[..., None] * N
     fres = 0.04 + 0.96 * (1 - nv) ** 5
     refl = studio(R) * (0.06 + 0.94 * fres) * coat * ao

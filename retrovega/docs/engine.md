@@ -1615,8 +1615,9 @@ pivots at the temples; the chin bar over the mouth, matte and darker (lit
 like the shell it outshone the eyes on the link), the breathing gear in it:
 the regulator's light under the port (high enough for a short VDU, which is
 cropped mostly at the bottom), three black vents; a fabric neck seal; the
-camera close on the face (the crown and the chin bar's foot cut off); key,
-fill and rim
+camera close on the face (the crown and the chin bar's foot cut off), its
+key light nearly in front (from the side, the dark chin bar's far edge sank
+into the ground and the jaw looked shifted left: the user); key, fill and rim
 lights, soft shadows, occlusion, a studio's reflections (the visor's kept
 apart, laid over the face). Each pilot's portrait goes behind the visor,
 its eyes onto the helmet's eye points, its local contrast raised so the
