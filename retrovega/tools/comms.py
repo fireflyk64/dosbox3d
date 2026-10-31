@@ -65,8 +65,10 @@ GREENS_DARK = [tuple(_FLIGHT[i]) for i in RAMP_DARK]
 LOOK = dict(bg=0.045, lo=0.05, hi=0.75, gamma=0.7, dither=0.25)
 EYES = ['half', 'shut', 'left', 'right']        # RV.DAT's order, after each voice's window; then its mouths
 # a pilot's face lower behind the shared helmet, in portrait pixels (the user, 2026-10-31: Echo's nostrils showed
-# under the visor, the breathing gear should hide them; everyone else as they are)
-DROP = {'ECHO': 5}
+# under the visor, the breathing gear should hide them; then Comet's, Prime's, Drifter's, Wildcard's and a little of
+# Torch's; Anchor's too by the same measure: the chin bar's edge cuts the faces at portrait rows 141-143, each drop is
+# the nostrils' darkest rows put under it with a pixel to spare; Frost's and Kestrel's are hidden already)
+DROP = {'COMET': 7, 'ECHO': 5, 'TORCH': 5, 'DRIFTER': 9, 'PRIME': 6, 'ANCHOR': 6, 'HERO_M': 6, 'HERO_F': 6}
 BLOOM = 0.6                             # an alien's lights: this much of their glow again, blurred round them
 BAYER4 = np.array([[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]) / 16.0 - 0.5
 

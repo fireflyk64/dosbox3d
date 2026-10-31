@@ -1623,9 +1623,10 @@ key light nearly in front (from the side, the dark chin bar's far edge sank
 into the ground and the jaw looked shifted left: the user), and then its
 shading mirror-averaged (the fill, the studio and the rim still lean one way:
 the chin's vents and light sat a few pixels left of the eyes) with the
-dither mirrored too, so the helmet is exactly even; Echo's face a little
-lower behind it than the others' (comms.py's DROP: the user saw Echo's
-nostrils under the visor); key, fill and rim
+dither mirrored too, so the helmet is exactly even; some faces a little
+lower behind it (comms.py's DROP: the user saw Echo's nostrils under the
+visor, then Comet's, Prime's, Drifter's, Wildcard's and Torch's; each drop
+measured, the nostrils' darkest rows under the chin bar's edge); key, fill and rim
 lights, soft shadows, occlusion, a studio's reflections (the visor's kept
 apart, laid over the face). Each pilot's portrait goes behind the visor,
 its eyes onto the helmet's eye points, its local contrast raised so the
