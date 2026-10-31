@@ -22,7 +22,7 @@ ship is a puppet):
    | situation | when |
    |---|---|
    | `SIT_IDLE` | no target |
-   | `SIT_HURT` | the hull below the profile's `flee_pct` |
+   | `SIT_HURT` | its fear at `FEAR_WARY` (15) or more: the cautious row (the fear model, below) |
    | `SIT_TAILED` | the target behind, within `TAIL_KM` (3,500 km), and pointing at the ship |
    | `SIT_PASSED` | within four hull sums (`room_of` × 4) and behind or off the nose: just passed, or about to |
    | `SIT_NEAR` | ahead, within 4/3 × `fire_km` |
@@ -61,11 +61,42 @@ ship in range every 10 s. A turret's shot goes toward `rvTarget`'s lead point (t
 | `T_EVADE` | a pull with a roll one way, then the other; then either a stop (throttle 0, the pursuer overshoots) and away on the afterburner, or a climb away | 4 s; the tail clear |
 | `T_LOOP` | a whole loop, nose up, at cruise | the loop's time (360° at the type's pitch rate) |
 | `T_FLEE` | away from the target at top speed | 6 s |
+| `T_HOME` | to its side's nearest capital ship on the afterburner (the fear model: afraid with a carrier about, it runs under its guns and its fear is gone) | within three hull sums of it; 6 s |
 
 The guns fire when the target is within `fire_km` (and the first gun's own range) and the lead point within the
 profile's `aim_cos` cone (the default `AIM_CONE`, about 7°); a missile when a launcher has rounds, the target
 has sat within `LOCK_CONE` (26°) and in range for the weapon's lock time, the last launch is 4 s past, and the
 dice say so (`missile_pct`).
+
+## The fear model, the leave, and the mission's rules
+
+The old game's fear (read in its code, 2026-10-31; tests/wc1/README.md), kept per mind (`fear`) and moved at
+every tactic pick (`fear_step`): by the situation (a missile homing on it +2c; its target dying halves it; tailed
++c; a tail chase, the target ahead within 57° and facing away, -c; the plain far or near case -d, unless hit in the last steps: a hit adds 4 to `g_under_fire` and a step takes 1, the old game's "hit" case, which nothing calms) and then by its
+health, the armour and hull left in a hundred (`health_pct`): under the profile's `scared_pct` (40) +2c with no
+cap; under 75, +c and capped at 28; else capped at 7. So a whole ship is never afraid for long, a scratched one is
+wary, and a ship under 40% leaves within a pick or two of being tailed. Fear of 15 picks from the cautious row
+(`SIT_HURT`'s); fear of 30 is the leave: with a living capital ship of its side about, `T_HOME` (a run to it on the
+afterburner; there, or when its 6 s are up, its fear is 0 and it fights on, as the old game zeroed the fear of a
+ship with its carrier about), else away for good (`leaving`, `leave_step`: straight up, or down for an odd slot,
+at top speed, the afterburner while an enemy is within 16,000 km, and beyond 16,000 km of every human's ship it is
+removed quietly through `despawn`, its mission ship `g_away`: not killed, and not in the way of the mission's win).
+The rates c and d are the profile's (`fear_up`, `fear_down`) or the mission ship's own (`fear=c/d`); a mission ship
+may also name its profile (`ai=fighter`, ...).
+
+The mission's rules (missions.txt `rules`, `g_rule_flags`; docs/engine.md for `hit=`):
+
+- `aim=cone` (the old game's, the campaign's default): no lead, the nose steered at the target itself, and every
+  ready gun fired whenever the target is within the weapon's own cone (weapons.csv `cone_deg`: the laser 46°, the
+  neutron-class 37°, the mass driver 32°) and in range, no oftener than every 13 steps (`AI_REFIRE_STEPS`); the hits
+  come as the nose sweeps across the target. `aim=lead`: the lead point within the profile's `aim_cos` and within
+  `AIM_MISS_KM` of the nose's line, a volley every `fire_gap`, the shots scattered up to 4° (`AI_SCATTER`).
+- `hold=on` (the old game's, the default): the ship a player has selected as a target holds its guns while that
+  player is within 37° ahead of its nose (`holds_fire`, `HOLD_COS`); its wingmen fire on, and a `PF_NO_MERCY`
+  profile never holds. Read in the old code (the check sits in its tailing attacks: maneuvers 26, 29 and 18; the
+  missile-dodge fires without it) and seen in its flight: the selected Dralthi fired 2 shots in 1,557 frames with
+  the player in its cone and 146 outside it. `hold=off`: every ship fires.
+- `ram=old` (the default) or `ram=soft`: docs/logic.md, `ram_damage`.
 
 ## The steering
 
@@ -109,7 +140,7 @@ record (`P_*` + 1; 0 the type's own), which a mission may set.
 | `aim_cos` | the fire cone (cos × 256) |
 | `pulls`, `bank` | the steering's allowed pulls and style (below) |
 | `ab_pct` | the chance a tactic that closes or flees uses the afterburner |
-| `flee_pct` | the hull percent below which it runs (0 never) |
+| `scared_pct` | its fear climbs freely with its health (armour and hull) under this percent (the old game's 40); 0: never scared |
 | `missile_pct` | the chance a completed lock is a launch |
 | `wait_s` | `T_WAIT`'s patience |
 | `idle` | its tactic with nobody to fight (`T_CRUISE`, `T_FORMATION`, `T_ESCORT`, `T_WAIT`) |
@@ -120,6 +151,8 @@ record (`P_*` + 1; 0 the type's own), which a mission may set.
 | `lead_pct` | how much of the lead it aims off: 100 the shots meet the target, 0 it aims at the target itself (the old games' fighters) |
 | `tail_pct` | behind its target within `TAIL_HOLD_KM` (3,000 km) it flies this percent of its top speed |
 | `fire_gap` | steps between its volleys with the target in the cone (the old game's fighters: one every 0.75 s) |
+| `fear_up`, `fear_down` | the fear model's c and d (the old game's class bytes: c 2-5, d 6-10); a mission ship's own `fear=c/d` stands in |
+| `flags` | `PF_NO_MERCY`: it fires at a player that has it selected, whatever the hold rule (the old game's class 11) |
 | `pick[SIT_*][4]` | the dice: up to four (tactic, weight) a situation |
 
 The rows as they stand:
@@ -127,20 +160,20 @@ The rows as they stand:
 | profile | character |
 |---|---|
 | `P_INTERCEPTOR` | light and fast: head-on passes and pursuits, strafes near, evades when tailed, runs at 30% hull; yaws, no pitch |
-| (every AI) | its shots scatter up to 4 degrees about the nose (`AI_SCATTER`, gun_fire), and it fires when the nose's line passes within 300 km of the lead point (`AIM_MISS_KM`): the old fighters' 13% hits on a hunting player, 28% on a straight one |
+| (every AI) | under `aim=lead`, its shots scatter up to 4 degrees about the nose (`AI_SCATTER`, gun_fire), and it fires when the nose's line passes within 300 km of the lead point (`AIM_MISS_KM`): the old fighters' 13% hits on a hunting player, 28% on a straight one; under `aim=cone` (the default) the old game's own spray: no lead, the weapon's cone |
 | `P_FIGHTER` | the line fighter, as the old game's Dralthi measured (tests/wc1/README.md): straight at the target at full speed, a hard flat yaw away at 900 km with a dash, straight out to 2,500 km, round again (its nose back 2.5 s after a pass, the next 4 s on, as the old fighters' 1.9 and 5.3), a tail at 55% (under a player's cruise, so it falls back rather than creeps up and bumps), the guns from 4,000 km at the lead point, a volley every 0.75 s; runs at 20% |
 | `P_HEAVY` | slow and armoured: head on mostly, breaks rather than jinks, rarely runs |
-| `P_ACE` | strafing runs, hard evasion, never runs, uses the afterburner half the time |
+| `P_ACE` | strafing runs, hard evasion, never scared, fires at a player that has it selected, uses the afterburner half the time |
 | `P_BOMBER` | torpedo runs at capital ships, else a heavy's fight; runs at 25% |
-| `P_WINGMAN` | the player's side: in formation until an enemy comes within 12,000 km, then the line fighter's row exactly (the old game's wingman flew its fighters' own AI: it killed two of three Dralthi and came home) |
+| `P_WINGMAN` | the player's side: in formation until an enemy comes within 12,000 km, then the line fighter's row but for a tail: a 90° break with a dash, else a loop (the old game's first named pilot's table); its fear calms faster (d 8) |
 | `P_CAPITAL` | holds its course; turrets and launchers. An escort target (its mission record's `role`, docs/engine.md) flies its route instead: out, to the next nav point at its top speed and gone there; in, still until the player comes within 8,000 km, then home (`route_step`) |
 | `P_WAITER` | lies in wait up to 30 s, then an interceptor's fight on the afterburner |
 | `P_NOLEFT` | a fighter whose controls cannot turn left: it rolls and pulls up or down instead |
 
 ## Adding a behaviour
 
-- **A new character:** a row in `k_profiles` and a name in the `P_*` enum, then `profile_of` or a mission ship
-  record's byte 17. Nothing else changes.
+- **A new character:** a row in `k_profiles` and a name in the `P_*` enum (and tools/rvdata.py's `PROFILES`, in
+  the same order), then `profile_of` or a mission ship's `ai=`. Nothing else changes.
 - **A new maneuver:** a `T_*` name, its length in `tactic_steps`, its step in `run_tactic` (the nose through
   `steer_to` or `g_turn[s]` directly, the throttle through `throttle`, the fire through `aim_and_fire`), and
   rows that use it.

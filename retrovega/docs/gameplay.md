@@ -266,6 +266,10 @@ What the tests expect (an AI Nicander against a still player):
 | M5.10 waiter | an enemy whose profile lies in wait stays still and cloaked (`rvFlags` 16) while the player points at it, and comes, uncloaked, within 10 s of the player turning away |
 | M5.11 old-straight | the old game's first mission measured (tests/wc1/README.md): a line fighter crossing 15,000 km ahead of a player flying straight at the 300 setting fires first from 1,500-6,000 km, a volley at a time (never two within 12 steps), comes within 2,500 km without a collision, and has its nose back on the player within 15 s of a pass (needs M2: the shot) |
 | M5.12 old-hunt | the same fighter against a player whose nose is set onto it every 3 s: five passes or more in 90 s, one collision at most, the nose back in time after all but one, the volleys apart |
+| M5.13 hold-fire | an enemy 3,000 km ahead facing a still player: with `hold=on` and the player's target set on it, no shot in 15 s with the player within 33° of its nose; with the rule off, or the player's target nobody, shots |
+| M5.14 cone-fire | under `aim=cone` the enemy's shots come with the player 20-46° off its nose too (the laser's `cone_deg` 46), never past 50°, and its volleys are 13 steps apart or more |
+| M5.15 leave | a fighter with its armour gone and 10 hull points left, 2,000 km ahead of a still player pointing at it, grows afraid over its passes, leaves (down: an odd slot) and is removed beyond 16,000 km of the player within 90 s, not killed |
+| M5.16 home | the same with a destroyer of its side 20,000 km off: it runs to within 5,000 km of the destroyer (`T_HOME`) and is not removed |
 
 **The AI as written** (docs/ai.md): a mind per slot runs a tactic picked by weighted dice from its profile's table for
 its situation; a steering turns the tactic's wanted direction into the player's own steer and roll, pulling only where

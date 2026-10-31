@@ -2814,6 +2814,169 @@ static void t_old_hunt(void)
     REQUIRE(d.gap >= OLD_GAP_STEPS, e_gap, d.gap, 0, 0);
 }
 
+/* --- M5.13-M5.16: the old game's rules read in its code (tests/wc1/README.md): the held fire, the cone, the fear --- */
+
+/* the shots an AI enemy 3,000 km ahead, facing a still and invulnerable player, fires in `secs` with the player
+ * within `cos` of its nose (shots_added, the nose read after the step), *wide the rest, *gap the shortest gap between
+ * its volleys; the player's selected target is the enemy (`selected`); the rules as given.  -1: the world broke */
+static int16_t pt_shots_in_cone(uint8_t rules, int16_t selected, int16_t secs, int16_t cos, int16_t *wide, int16_t *gap)
+{
+    uint8_t keep = g_rule_flags;
+    uint16_t a0;
+    int16_t i, in = 0, since = 0x7FFF;
+    *wide = 0;
+    *gap = 0x7FFF;
+    pt_alone(PT_PLAYER);
+    g_sys.armed = 0;
+    playerCanBeDamaged = 0;
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, 0, 0, 3000, TURN / 2);
+    g_sys.target = selected ? 1 : -1;
+    g_rule_flags = rules;
+    a0 = shots_added();
+    for (i = 0; i < secs * SEC && slot_is_ship(1); i++) {
+        if (!pt_step()) {
+            g_rule_flags = keep;
+            g_sys.target = -1;
+            return -1;
+        }
+        if (shots_added() != a0) {
+            int32_t a = pt_aim(1, 0);
+            a0 = shots_added();
+            if (a > cos)
+                in++;
+            else
+                (*wide)++;
+            if (since > 2 && since < *gap)
+                *gap = since;
+            since = 0;
+        }
+        if (since < 0x7FFF)
+            since++;
+    }
+    g_rule_flags = keep;
+    g_sys.target = -1;
+    return in;
+}
+
+/* M5.13: hold=on: the player's selected target fires nothing with the player within 37 degrees of its nose; with the
+ * rule off, or the player's target nobody, it does */
+static void t_hold_fire(void)
+{
+    static const char __far e_held[] = "the player's selected target fired %d shots in 15 s with the player within 33 "
+        "degrees of its nose: under hold=on it holds its guns within 37 (holds_fire)";
+    static const char __far e_free[] = "with hold=off the enemy fired %d shots in 15 s with the player within 33 degrees "
+        "of its nose: it should fire";
+    static const char __far e_other[] = "the player's target being nobody, the enemy fired %d shots in 15 s with the "
+        "player within 33 degrees of its nose: only the selected target holds";
+    int16_t held, free_, other, wide, gap;
+    held = pt_shots_in_cone(RV_RULE_AIM_CONE | RV_RULE_HOLD_FIRE, 1, 15, 215, &wide, &gap);
+    if (held < 0)
+        return;
+    free_ = pt_shots_in_cone(RV_RULE_AIM_CONE, 1, 15, 215, &wide, &gap);
+    if (free_ < 0)
+        return;
+    other = pt_shots_in_cone(RV_RULE_AIM_CONE | RV_RULE_HOLD_FIRE, 0, 15, 215, &wide, &gap);
+    if (other < 0)
+        return;
+    REQUIRE(held == 0, e_held, held, 0, 0);
+    REQUIRE(free_ > 0, e_free, free_, 0, 0);
+    REQUIRE(other > 0, e_other, other, 0, 0);
+}
+
+/* M5.14: aim=cone: the enemy fires with the player anywhere within its laser's 46-degree cone (shots with the player
+ * 20-46 degrees off its nose come), never wider, and its volleys no nearer than 13 steps */
+static void t_cone_fire(void)
+{
+    static const char __far e_none[] = "under aim=cone the enemy fired nothing in 15 s";
+    static const char __far e_narrow[] = "under aim=cone every one of the enemy's %d shots came with the player within 20 "
+        "degrees of its nose: the old game's laser cone is 46 (weapons.csv cone_deg)";
+    static const char __far e_wide[] = "%d of the enemy's shots came with the player over 50 degrees off its nose: the "
+        "cone is 46";
+    static const char __far e_gap[] = "two of the enemy's volleys %d steps apart: under aim=cone no nearer than 13 "
+        "(AI_REFIRE_STEPS)";
+    int16_t narrow, wide, gap, over;
+    narrow = pt_shots_in_cone(RV_RULE_AIM_CONE, 0, 15, 240, &wide, &gap);   /* (240: within 20 degrees) */
+    if (narrow < 0)
+        return;
+    REQUIRE(narrow + wide > 0, e_none, 0, 0, 0);
+    REQUIRE(wide > 0, e_narrow, narrow, 0, 0);
+    REQUIRE(gap >= 12, e_gap, gap, 0, 0);
+    narrow = pt_shots_in_cone(RV_RULE_AIM_CONE, 0, 15, 164, &over, &gap);   /* (164: within 50 degrees) */
+    if (narrow < 0)
+        return;
+    REQUIRE(over == 0, e_wide, over, 0, 0);
+}
+
+/* a scared fighter: its armour gone and its hull nearly, 2,000 km ahead of the player and flying the same way (the
+ * player on its tail, pointing at it), the player still and invulnerable */
+static int16_t pt_scared(void)
+{
+    const RvShipType __far *t;
+    int16_t k;
+    pt_alone(PT_PLAYER);
+    randomSeed = UINT32_C(0x52560000) + 5015;   /* (its own dice: the picks, and so the fear's climb, are the same every run) */
+    g_sys.armed = 0;
+    playerCanBeDamaged = 0;
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, 0, 0, 2000, 0);
+    if ((t = slot_type(1)) == 0)
+        return 0;
+    for (k = 0; k < 4; k++)
+        ARMOR(1, k) = 0;
+    damagePoints[1] = (uint16_t)(t->hull > 10 ? t->hull - 10 : 0);
+    return 1;
+}
+
+/* M5.15: the leave: a scared fighter with the player on its tail grows afraid (its fear climbs with its health at every
+ * pick, and with the player behind it: some 30 s of its passes at a still player), leaves (down, for an odd slot) and
+ * is removed beyond 16,000 km of the player, not killed */
+static void t_leave(void)
+{
+    static const char __far e_stay[] = "in 90 s a scared fighter tailed by the player neither left nor was removed "
+        "(still %d00 km off, %d00 km down): fear 30 is the leave (fear_step, leave_step)";
+    static const char __far e_dead[] = "the scared fighter died (shipAiState 9) rather than leaving";
+    static const char __far e_near[] = "the fighter was removed %d00 km from the player: the leave removes it beyond "
+        "16,000";
+    int32_t far_ = 0, down = 0;
+    int16_t i, died = 0;
+    if (!pt_scared())
+        return;
+    for (i = 0; i < 90 * SEC && slot_is_ship(1); i++) {
+        if (!pt_step())
+            return;
+        if (shipAiState[1] == 9)
+            died = 1;
+        far_ = pt_km(0, 1);
+        if (-gPositionVector[1].y / KM > down)
+            down = -gPositionVector[1].y / KM;
+    }
+    REQUIRE(!died, e_dead, 0, 0, 0);
+    REQUIRE(!slot_is_ship(1), e_stay, (int16_t)(far_ / 100), (int16_t)(down / 100), 0);
+    REQUIRE(far_ > 15000, e_near, (int16_t)(far_ / 100), 0, 0);
+}
+
+/* M5.16: with a capital ship of its side about, the scared fighter runs to it instead (T_HOME: within 5,000 km of it
+ * at some point in 30 s), is not removed, and fights on with its fear gone */
+static void t_home(void)
+{
+    static const char __far e_gone[] = "with its side's capital ship 20,000 km off, the scared fighter was removed: it "
+        "should run to the capital ship (T_HOME), not leave";
+    static const char __far e_far[] = "in 90 s the scared fighter never came within 5,000 km of its side's capital ship "
+        "(nearest %d00 km): T_HOME";
+    int32_t nearest = INT32_C(0x7FFFFFFF), d;
+    int16_t i;
+    if (!pt_scared())
+        return;
+    pt_ship(2, 0x28, SIDE_AERA, CTL_FROZEN, 0, 0, 20000, TURN / 2);   /* (an Agasicles, a destroyer) */
+    for (i = 0; i < 90 * SEC && slot_is_ship(1); i++) {
+        if (!pt_step())
+            return;
+        if (slot_is_ship(2) && (d = pt_km(1, 2)) < nearest)
+            nearest = d;
+    }
+    REQUIRE(slot_is_ship(1), e_gone, 0, 0, 0);
+    REQUIRE(nearest < 5000, e_far, (int16_t)(nearest / 100), 0, 0);
+}
+
 /* M6.1 */
 static void t_ram(void)
 {
@@ -3559,6 +3722,10 @@ static const char __far n_m5_11[] = "M5.11 old-straight (aiFighterThink): agains
     "fighter keeps the old game's measure: shots from 1,500-6,000 km, a volley at a time, passes clear, round in 15 s";
 static const char __far n_m5_12[] = "M5.12 old-hunt (aiFighterThink): hunted by the player, it passes many times, bumps "
     "once at most, comes round in time, fires a volley at a time";
+static const char __far n_m5_13[] = "M5.13 hold-fire (holds_fire): the player's selected target holds its guns with the player within 37 degrees ahead";
+static const char __far n_m5_14[] = "M5.14 cone-fire (aim_and_fire): under aim=cone the guns go within the weapon's cone, 13 steps apart";
+static const char __far n_m5_15[] = "M5.15 leave (fear_step, leave_step): a scared fighter tailed leaves and is removed beyond 16,000 km";
+static const char __far n_m5_16[] = "M5.16 home (T_HOME): with its side's capital ship about it runs there instead and fights on";
 static const char __far n_m6_1[] = "M6.1 ram (step_collisions): ships inside one another are pushed apart, both hurt";
 static const char __far n_m6_2[] = "M6.2 no-ghosts (step_collisions): a ship flown at another does not pass through";
 static const char __far n_m6_3[] = "M6.3 ram-cost (ram_damage): the old rule's square of the closing speed, halved; the soft rule's dozen";
@@ -3612,6 +3779,7 @@ static const PtTest __far k_tests[] = {
     { n_m5_5, t_ai_aims, 1 }, { n_m5_6, t_ai_limits, 0 }, { n_m5_7, t_wingman_fights, 0 },
     { n_m5_8, t_formation, 0 }, { n_m5_9, t_no_left, 0 }, { n_m5_10, t_waiter, 0 }, { n_m5_11, t_old_straight, 0 },
     { n_m5_12, t_old_hunt, 0 },
+    { n_m5_13, t_hold_fire, 0 }, { n_m5_14, t_cone_fire, 0 }, { n_m5_15, t_leave, 0 }, { n_m5_16, t_home, 0 },
     { n_m6_1, t_ram, 0 }, { n_m6_2, t_no_ghosts, 0 }, { n_m6_3, t_ram_cost, 0 },
     { n_m7_1, t_launch, 0 }, { n_m7_2, t_missile_key, 0 }, { n_m7_3, t_missile_flies, 0 },
     { n_m7_4, t_missile_hits, 0 }, { n_m7_5, t_missile_homes, 0 }, { n_m7_6, t_missile_ends, 0 },

@@ -137,7 +137,7 @@ void camp_mission(uint16_t i, RvMission __far *out)
 /* the mission's ships into the tables the layer already reads (spec 4.4):
  * missionShipTable records of 0x2a bytes (+0 type, +2 side, +4 leader,
  * +6 behaviour, +8 nav point, +10 position x y z in km off the nav point,
- * +16 pilot), and the nav points' records of 0x4d bytes, record n for nav n
+ * +16 pilot, +17 AI profile, +18 role, +19 fear rates), and the nav points' records of 0x4d bytes, record n for nav n
  * (outerSpawnShipEntity takes a nav's number as its record), nav 0 the launch
  * point at the origin: +0 id, +2 position x y z in km, and at +0x39 the ten
  * mission ships there (0xFFFF none).  A group's ships side by side, 1,500 km
@@ -178,7 +178,9 @@ void camp_load_units(const RvMission __far *m)
             *(uint16_t *)(rec + 8) = s->nav;
             *(int16_t *)(rec + 10) = (int16_t)(k * 1500);
             rec[16] = s->pilot;
+            rec[17] = s->ai;                /* (its AI profile, P_* + 1, 0 the type's own; logic.c outerSpawnShipEntity) */
             rec[18] = s->role;              /* (an escort target's: RV_ESCORT_OUT, RV_ESCORT_IN; logic.c MSHIP_ROLE) */
+            rec[19] = s->fear;              /* (its own fear rates, c | d << 4, 0 the profile's) */
             for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
                 ;
             if (j < 10)

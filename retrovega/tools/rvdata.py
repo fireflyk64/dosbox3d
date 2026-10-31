@@ -17,7 +17,7 @@ checks every reference and rule (docs/engine.md), and writes:
 missions.txt is one block per mission, a keyword and its value per line,
 '#' comments.  Keywords: mission, node, title, type, music, briefing, win,
 lose, fighter (the player's and the wingman's TYPE), nav (id x y z, km), ship (TYPE|player|wingman side navN [count=N] [role=out|in]
-[pilot=KEY]), field (asteroid|mine x z radius [density=N], km; N rocks per (10,000 km)^3, 1..255,
+[pilot=KEY] [ai=PROFILE] [fear=c/d]), rules (hit= aim= hold= ram=: RULES), field (asteroid|mine x z radius [density=N], km; N rocks per (10,000 km)^3, 1..255,
 0 or none: the engine's own), bar and lounge
 (seat=PILOT|- ...), talk (room speaker listener "text").  briefing, win and lose may repeat: the lines are joined.
 """
@@ -34,12 +34,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 11                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 12                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
                                         # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
                                         # volume, a weapon's radius, a mission's rules); 10: a weapon's damage at
-                                        # the muzzle; 11: a type's shield back a point a side every so many steps
+                                        # the muzzle; 11: a type's shield back a point a side every so many steps;
+                                        # 12: a weapon's cone, a mission ship's AI profile and fear
 LIMITS = {'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 12,
           'SEATS': 3, 'TALKS': 4, 'FIELDS': 4, 'SHIPTYPES': 64, 'WEAPONS': 48}
 TEXT = {'ID': 16, 'TITLE': 48, 'BRIEFING': 640, 'RESULT': 128, 'TALK': 60, 'KEY': 10, 'CALLSIGN': 12,
@@ -143,7 +144,9 @@ WEAPON = [('char', 'code[RV_CODE]', '%ds' % TEXT['CODE']), ('char', 'name[RV_WNA
           ('unsigned char', 'lock', 'B'), ('unsigned short', 'damage', 'H'), ('unsigned short', 'speed_kps', 'H'),
           ('unsigned short', 'range_km', 'H'), ('unsigned char', 'refire', 'B'), ('unsigned char', 'energy', 'B'),
           ('unsigned char', 'lock_tenths', 'B'), ('unsigned char', 'sfx', 'B'), ('unsigned char', 'radius_km', 'B'),
-          ('unsigned short', 'damage_near', 'H')]
+          ('unsigned short', 'damage_near', 'H'), ('unsigned char', 'cone_cos', 'B')]
+GUN_CONE_DEG = 46                      # blank in weapons.csv for a gun: the old game's laser cone, within which an AI
+                                       # fires it under the cone rule (its neutron 37, mass driver 32, flak 84)
 # the flight's sounds (data/sounds.csv: tools/sfx.py makes them, SFX.DAT): a weapon's (its sfx column) and the
 # effects' (src/fx.c) by name; RV_SFX_NONE none
 SOUNDS = [r['name'] for r in csv.DictReader(open(os.path.join(DATA, 'sounds.csv')))]
@@ -161,7 +164,10 @@ NAV = [('unsigned char', 'id', 'B'), ('unsigned char', 'pad', 'B'), ('short', 'x
        ('short', 'z', 'h')]
 SHIP = [('unsigned char', 'type', 'B'), ('unsigned char', 'side', 'B'), ('unsigned char', 'nav', 'B'),
         ('unsigned char', 'count', 'B'), ('unsigned char', 'pilot', 'B'), ('unsigned char', 'role', 'B'),
-        ('unsigned char', 'pad[2]', '2s')]
+        ('unsigned char', 'ai', 'B'), ('unsigned char', 'fear', 'B')]
+# a mission ship's AI profile (missions.txt ai=NAME: logic.c's P_* in this order, 1-based in the record, 0 the type's
+# own) and its own fear rates (fear=c/d, 0-15 each: the old game's class bytes; 0: the profile's)
+PROFILES = ['interceptor', 'fighter', 'heavy', 'ace', 'bomber', 'wingman', 'capital', 'waiter', 'noleft']
 ESCORT_ROLES = {'out': 1, 'in': 2}      # an escort target's role (RV_ESCORT_*): it flies out to the next nav point and
                                         # jumps there; it waits at its own until the player comes, then flies home
 FIELD = [('unsigned char', 'type', 'B'), ('unsigned char', 'density', 'B'), ('short', 'x', 'h'), ('short', 'z', 'h'),
@@ -274,13 +280,17 @@ def compile_weapons():
         # what a hit does at the muzzle (damage_near) and at the end of its reach (damage), a straight line between by
         # the shot's life left (the old game's: a laser 10 at the muzzle, 25 at the end; blank: the same all the way)
         near = int(r.get('damage_near') or r['damage'])
+        cone = float(r.get('cone_deg') or (GUN_CONE_DEG if r['kind'] == 'gun' else 0))
+        if not 0 <= cone <= 180:
+            raise Fail('%s: cone_deg %g is not 0 to 180' % (where, cone))
+        cone_cos = max(0, min(255, int(round(math.cos(math.radians(cone)) * 256)))) if cone else 255
         weapons[r['code']] = (t, r['kind'])
         out.append(struct.pack(fmt(WEAPON), text(r['code'], TEXT['CODE'], where), text(r['name'], TEXT['WNAME'], where),
                                t, WEAPON_KINDS.index(r['kind']), WEAPON_LOOKS.index(r['look']),
                                WEAPON_LOCKS.index(r['lock'] or 'none'), int(r['damage']), int(r['speed_kps']),
                                int(round(float(r['range_km']) * 1000)), int(r['refire_frames'] or 0),
                                int(r['energy'] or 0), int(round(float(r['lock_s'] or 0) * 10)),
-                               SOUNDS.index(r['sfx']) if r['sfx'] else SFX_NONE, radius, near))
+                               SOUNDS.index(r['sfx']) if r['sfx'] else SFX_NONE, radius, near, cone_cos))
     return weapons, out
 
 
@@ -490,7 +500,21 @@ def compile_all():
                 if opts['role'] not in ESCORT_ROLES or kind in ('player', 'wingman'):
                     raise Fail('%s: role=%s: an escort target is role=out or role=in' % (where, opts['role']))
                 role = ESCORT_ROLES[opts['role']]
-            shipr.append(struct.pack(fmt(SHIP), tnum, int(f[1]), nav, int(opts.get('count', 1)), pilot, role, b''))
+            ai = 0
+            if 'ai' in opts:
+                if opts['ai'] not in PROFILES:
+                    raise Fail('%s: ai=%s: the profiles are %s' % (where, opts['ai'], ', '.join(PROFILES)))
+                ai = PROFILES.index(opts['ai']) + 1
+            fear = 0
+            if 'fear' in opts:
+                try:
+                    c, d = (int(v) for v in opts['fear'].split('/'))
+                    if not (0 <= c <= 15 and 0 <= d <= 15):
+                        raise ValueError
+                except ValueError:
+                    raise Fail('%s: fear=c/d, each 0 to 15 (the rate it grows afraid and the rate it calms)' % where)
+                fear = c | d << 4
+            shipr.append(struct.pack(fmt(SHIP), tnum, int(f[1]), nav, int(opts.get('count', 1)), pilot, role, ai, fear))
         if len(shipr) > LIMITS['SHIPS']:
             raise Fail('%s: %d ships, at most %d' % (w, len(shipr), LIMITS['SHIPS']))
         seats, placed = [], {}
@@ -641,6 +665,8 @@ def header_text(sizes):
     out.append('#define RV_RULE_AIM_CONE %d' % RULE_AIM_CONE)
     out.append('#define RV_RULE_HOLD_FIRE %d' % RULE_HOLD_FIRE)
     out.append('#define RV_RULE_RAM_SOFT %d' % RULE_RAM_SOFT)
+    out.append('#define RV_PROFILES %d                 /* missions.txt ai=: %s (logic.c P_*, in this order) */'
+               % (len(PROFILES), ', '.join(PROFILES)))
     out.append('#define RV_GUN_ENERGY_STEPS %d' % GUN_ENERGY_STEPS)
     out.append('#define RV_SHIELD_FULL_SHIFT %d' % SHIELD_FULL_SHIFT)
     for i, k in enumerate(SOUNDS):

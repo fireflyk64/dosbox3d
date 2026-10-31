@@ -5,7 +5,7 @@
 #include "rvtypes.h"
 
 #define RVGAME_MAGIC "RVGAME"
-#define RVGAME_VERSION 11
+#define RVGAME_VERSION 12
 
 #define RV_PILOTS 16
 #define RV_NODES 32
@@ -97,6 +97,7 @@
 #define RV_RULE_AIM_CONE 1
 #define RV_RULE_HOLD_FIRE 2
 #define RV_RULE_RAM_SOFT 4
+#define RV_PROFILES 9                 /* missions.txt ai=: interceptor, fighter, heavy, ace, bomber, wingman, capital, waiter, noleft (logic.c P_*, in this order) */
 #define RV_GUN_ENERGY_STEPS 1
 #define RV_SHIELD_FULL_SHIFT 9
 #define RV_SFX_LASER 0
@@ -203,7 +204,8 @@ typedef struct {
     uint8_t count;
     uint8_t pilot;
     uint8_t role;
-    uint8_t pad[2];
+    uint8_t ai;
+    uint8_t fear;
 } RvShip;
 typedef struct {
     uint8_t room;
@@ -296,6 +298,7 @@ typedef struct {
     uint8_t sfx;
     uint8_t radius_km;
     uint16_t damage_near;
+    uint8_t cone_cos;
 } RvWeapon;
 #pragma pack()
 
@@ -304,7 +307,7 @@ typedef struct {
 #define RV_NODE_SIZE 22
 #define RV_MISSION_SIZE 1424
 #define RV_SHIPTYPE_SIZE 177
-#define RV_WEAPON_SIZE 43
+#define RV_WEAPON_SIZE 44
 
 /* sin(i/256 x 90 degrees) x 16384, i = 0..256: the simulation's trigonometry (flight.c) */
 #ifdef RV_TABLES
