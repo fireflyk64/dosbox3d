@@ -896,7 +896,10 @@ static void missile_step(int16_t s)
  * ==================================================================================================================== */
 
 enum { T_IDLE, T_CRUISE, T_FORMATION, T_ESCORT, T_WAIT,         /* nobody to fight (T_WAIT: still, until a chance) */
-       T_PURSUE, T_HEADON, T_STRAFE, T_SIT, T_RAM, T_TORPEDO,    /* attacks */
+       T_PURSUE, T_APPROACH, T_CLOSE,                           /* attacks (T_APPROACH: the old game's silent approach to a
+                                                                   point behind the target; T_CLOSE: its choice, the
+                                                                   pursuit unless the target faces it, then the approach) */
+       T_HEADON, T_STRAFE, T_SIT, T_RAM, T_TORPEDO,
        T_BREAK, T_EVADE, T_LOOP, T_FLEE, T_HOME,                /* getting away (T_HOME: to its side's capital ship) */
        T_COUNT };
 enum { SIT_IDLE, SIT_FAR, SIT_NEAR, SIT_TAILED, SIT_PASSED, SIT_HURT, SIT_COUNT };
@@ -980,10 +983,13 @@ static const AiProfile __far k_profiles[P_COUNT] = {
      * from up to 4,000 km at the lead point (its nose sat 4.8 degrees off a crossing player's position: the lead
      * angle; with no lead its tail never hit a player flying straight, the old's did 15% of the time), a volley every
      * 0.75 s, keeps attacking
-     * when hunted; it yaws (rolling to bring the target level) and does not pitch */
+     * when hunted; it yaws (rolling to bring the target level) and does not pitch.  Its rows are the old game's
+     * (read in its code, 2026-10-31; the user: keep them as they were, it is fun): far off and in the plain case the
+     * silent approach (its maneuver 40) 60% of the time, else its choice (45: the nose on the target with the guns
+     * unless the target faces it, then the approach); near, the choice mostly, sometimes the guns at once (29) */
     { 25000, 4000, 900, 2500, 0, AIM_CONE, PULL_RIGHT | PULL_LEFT, 1, 30, 40, 50, 0, T_CRUISE, 170, 350, 100, 10, 100, 55, 22, 3, 7, 0,
-      { { { 0, 0 } }, { { T_PURSUE, 100 } }, { { T_PURSUE, 100 } },
-        { { T_PURSUE, 50 }, { T_BREAK, 50 } }, { { T_PURSUE, 60 }, { T_BREAK, 40 } },
+      { { { 0, 0 } }, { { T_APPROACH, 60 }, { T_CLOSE, 40 } }, { { T_CLOSE, 50 }, { T_PURSUE, 30 }, { T_APPROACH, 20 } },
+        { { T_PURSUE, 50 }, { T_BREAK, 50 } }, { { T_CLOSE, 60 }, { T_BREAK, 40 } },
         { { T_PURSUE, 70 }, { T_FLEE, 30 } } } },
     /* P_HEAVY: slow and armoured: head on mostly, pulls rather than yaws, rarely runs */
     { 25000, 3000, 0, 0, 0, AIM_CONE, PULL_ALL, 1, 20, 40, 60, 0, T_CRUISE, 170, 200, 100, 10, 0, 70, 22, 3, 8, 0,
@@ -1007,8 +1013,8 @@ static const AiProfile __far k_profiles[P_COUNT] = {
      * degrees with a dash or loops, as the old game's first named pilot's table has it (a break, else two half
      * loops; tests/wc1/README.md), and its fear falls faster (d 8) */
     { 12000, 4000, 900, 2500, 0, AIM_CONE, PULL_RIGHT | PULL_LEFT, 1, 30, 40, 50, 0, T_FORMATION, 170, 350, 100, 10, 100, 55, 22, 3, 8, 0,
-      { { { 0, 0 } }, { { T_PURSUE, 100 } }, { { T_PURSUE, 100 } },
-        { { T_BREAK, 50 }, { T_LOOP, 50 } }, { { T_PURSUE, 60 }, { T_BREAK, 40 } },
+      { { { 0, 0 } }, { { T_APPROACH, 60 }, { T_CLOSE, 40 } }, { { T_CLOSE, 50 }, { T_PURSUE, 30 }, { T_APPROACH, 20 } },
+        { { T_BREAK, 50 }, { T_LOOP, 50 } }, { { T_CLOSE, 60 }, { T_BREAK, 40 } },
         { { T_PURSUE, 70 }, { T_FLEE, 30 } } } },
     /* P_CAPITAL: holds its course; its turrets and launchers are aiShipThink's */
     { 8000, 6000, 0, 0, 0, AIM_CONE, PULL_ALL, 0, 0, 0, 100, 0, T_CRUISE, 100, 100, 100, 0, 100, 100, 0, 0, 10, 0,
@@ -1306,7 +1312,7 @@ static int16_t tactic_steps(int16_t s, int16_t tactic)
 {
     const RvShipType __far *t = slot_type(s);
     switch (tactic) {
-    case T_PURSUE: return 8 * LOGIC_HZ;
+    case T_PURSUE: case T_APPROACH: return 8 * LOGIC_HZ;
     case T_HEADON: case T_STRAFE: case T_TORPEDO: return 20 * LOGIC_HZ;
     case T_SIT: return 3 * LOGIC_HZ;
     case T_BREAK: return 4 * LOGIC_HZ;  /* (at most: over when the nose is back on the target) */
@@ -1441,6 +1447,12 @@ static void pick_tactic(int16_t s, Mind __far *m, const AiProfile __far *p, int1
         }
     }
     if (tactic == T_TORPEDO && (launcher_of(s) < 0 || m->target == 0xFF || maybeEntityType[m->target] != ET_CAPSHIP))
+        tactic = T_PURSUE;
+    /* the old game's choice (its maneuver 45): the pursuit, unless the target faces the ship within 37 degrees, then the
+     * approach; and the approach itself only under the cone rule (under aim=lead the measured pursuit stands) */
+    if (tactic == T_CLOSE)
+        tactic = v && v->cos_its > HOLD_COS ? T_APPROACH : T_PURSUE;
+    if (tactic == T_APPROACH && !(g_rule_flags & RV_RULE_AIM_CONE))
         tactic = T_PURSUE;
     take_tactic(s, m, p, tactic);
 }
@@ -1699,8 +1711,7 @@ static const RvVec3 *aim_at(const AiProfile __far *p, const View *v)
                                            facing away by more than 120 degrees: then the tail, nose on it */
 #define APPROACH_TAIL_KM 2000
 
-/* the cone rule's approach: the old point (above), in s's frame; 1 when it is the way, 0 when the tail (nose on the
- * target) is.  An approach that goes straight down the target's gun line is what a hunting player hits every
+/* the approach's point (above), in s's frame; 1 when it is the way, 0 when the tail (nose on the target) is.  An approach that goes straight down the target's gun line is what a hunting player hits every
  * shot: the old fighters came in beside it */
 static int16_t approach_point(int16_t s, int16_t tgt, const View *v, RvVec3 *out)
 {
@@ -1723,19 +1734,33 @@ static int16_t run_tactic(int16_t s, Mind __far *m, const AiProfile __far *p, co
     const RvShipType __far *t = slot_type(s);
     int32_t cruise = t ? t->cruise_kps : 200, max = t ? t->max_kps : 300;
     switch (m->tactic) {
-    case T_PURSUE: {                    /* at its lead point (the cone rule: the old approach point, then the nose on
-                                           it); closing, then matching; off before a collision */
-        RvVec3 ap;
-        if ((g_rule_flags & RV_RULE_AIM_CONE) && m->target != 0xFF && approach_point(s, m->target, v, &ap))
-            steer_to(s, p, ap.x, ap.y, ap.z);
-        else
-            steer_to(s, p, aim_at(p, v)->x + pass_side(s, m, p, v), aim_at(p, v)->y, aim_at(p, v)->z);
+    case T_PURSUE:                      /* at its lead point (the cone rule: at the target itself), the guns when they
+                                           bear (the old game's 29, and its tail, 26); closing, then matching; off
+                                           before a collision */
+        steer_to(s, p, aim_at(p, v)->x + pass_side(s, m, p, v), aim_at(p, v)->y, aim_at(p, v)->z);
         /* (closing at full speed, head on too; behind it within the guns' range, at the profile's tail speed; past
          * it, full speed round) */
         throttle(s, v->km > TAIL_HOLD_KM || v->rel.z < 0 || v->cos_its >= 0 ? max : max * p->tail_pct / 100, v->km > 5000 && m->burn);
         aim_and_fire(s, m, p, v, 1);
         if (p->break_km && v->km < p->break_km && v->cos_nose > 0 && m->passing) {
             take_tactic(s, m, p, T_BREAK);   /* (the old game's fighters: straight at it, then a hard flat yaw away) */
+            return 0;
+        }
+        return v->rel.z < 0 && v->km < TAIL_KM;
+    case T_APPROACH: {                  /* the old game's approach (its maneuver 40, read in its code; the user: keep
+                                           it): to the point 500 km plus the radius behind the target (above it when
+                                           it faces the ship), no guns at all, at full speed; the tail (T_PURSUE,
+                                           nose on it, the guns) once behind within the radius plus 2,000 km with
+                                           the target facing away by more than 120 degrees; a break before a pass */
+        RvVec3 ap;
+        if (m->target == 0xFF || !approach_point(s, m->target, v, &ap)) {
+            take_tactic(s, m, p, T_PURSUE);
+            return 0;
+        }
+        steer_to(s, p, ap.x, ap.y, ap.z);
+        throttle(s, max, v->km > 5000 && m->burn);
+        if (p->break_km && v->km < p->break_km && v->cos_nose > 0 && m->passing) {
+            take_tactic(s, m, p, T_BREAK);
             return 0;
         }
         return v->rel.z < 0 && v->km < TAIL_KM;

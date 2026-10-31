@@ -2819,7 +2819,8 @@ static void t_old_hunt(void)
 /* the shots an AI enemy 3,000 km ahead, facing a still and invulnerable player, fires in `secs` with the player
  * within `cos` of its nose (shots_added, the nose read after the step), *wide the rest, *gap the shortest gap between
  * its volleys; the player's selected target is the enemy (`selected`); the rules as given.  -1: the world broke */
-static int16_t pt_shots_in_cone(uint8_t rules, int16_t selected, int16_t secs, int16_t cos, int16_t *wide, int16_t *gap)
+static int16_t pt_shots_in_cone(uint8_t rules, int16_t selected, int16_t secs, int16_t cos, int16_t *wide, int16_t *gap,
+                                int32_t ex, int32_t ey, int32_t ez, int16_t eyaw, int32_t kps)
 {
     uint8_t keep = g_rule_flags;
     uint16_t a0;
@@ -2829,7 +2830,9 @@ static int16_t pt_shots_in_cone(uint8_t rules, int16_t selected, int16_t secs, i
     pt_alone(PT_PLAYER);
     g_sys.armed = 0;
     playerCanBeDamaged = 0;
-    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, 0, 0, 3000, TURN / 2);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, ex, ey, ez, eyaw);
+    pt_speed(0, kps);                   /* (both under way, or both still) */
+    pt_speed(1, kps);
     g_sys.target = selected ? 1 : -1;
     g_rule_flags = rules;
     a0 = shots_added();
@@ -2869,13 +2872,13 @@ static void t_hold_fire(void)
     static const char __far e_other[] = "the player's target being nobody, the enemy fired %d shots in 15 s with the "
         "player within 33 degrees of its nose: only the selected target holds";
     int16_t held, free_, other, wide, gap;
-    held = pt_shots_in_cone(RV_RULE_AIM_CONE | RV_RULE_HOLD_FIRE, 1, 15, 215, &wide, &gap);
+    held = pt_shots_in_cone(RV_RULE_AIM_CONE | RV_RULE_HOLD_FIRE, 1, 15, 215, &wide, &gap, 0, 0, 3000, TURN / 2, 0);
     if (held < 0)
         return;
-    free_ = pt_shots_in_cone(RV_RULE_AIM_CONE, 1, 15, 215, &wide, &gap);
+    free_ = pt_shots_in_cone(RV_RULE_AIM_CONE, 1, 15, 215, &wide, &gap, 0, 0, 3000, TURN / 2, 0);
     if (free_ < 0)
         return;
-    other = pt_shots_in_cone(RV_RULE_AIM_CONE | RV_RULE_HOLD_FIRE, 0, 15, 215, &wide, &gap);
+    other = pt_shots_in_cone(RV_RULE_AIM_CONE | RV_RULE_HOLD_FIRE, 0, 15, 215, &wide, &gap, 0, 0, 3000, TURN / 2, 0);
     if (other < 0)
         return;
     REQUIRE(held == 0, e_held, held, 0, 0);
@@ -2883,28 +2886,34 @@ static void t_hold_fire(void)
     REQUIRE(other > 0, e_other, other, 0, 0);
 }
 
-/* M5.14: aim=cone: the enemy fires with the player anywhere within its laser's 46-degree cone (shots with the player
- * 20-46 degrees off its nose come), never wider, and its volleys no nearer than 13 steps */
+/* M5.14: aim=cone: the enemy's shots come only within its laser's 46-degree cone and its volleys 13 steps apart (the
+ * old game's refire), where under aim=lead they come the profile's fire_gap (22) apart; the enemy crossing the player's
+ * way 45 degrees off, both at 300 kps.  (Shots with the nose 20-46 degrees off the target came of the pursuit that
+ * fired while flying at the old approach point; with the approach silent, M5.19, the nose is on the target when the
+ * guns go, and the cone shows only as the limit) */
 static void t_cone_fire(void)
 {
     static const char __far e_none[] = "under aim=cone the enemy fired nothing in 15 s";
-    static const char __far e_narrow[] = "under aim=cone every one of the enemy's %d shots came with the player within 20 "
-        "degrees of its nose: the old game's laser cone is 46 (weapons.csv cone_deg)";
     static const char __far e_wide[] = "%d of the enemy's shots came with the player over 50 degrees off its nose: the "
         "cone is 46";
     static const char __far e_gap[] = "two of the enemy's volleys %d steps apart: under aim=cone no nearer than 13 "
         "(AI_REFIRE_STEPS)";
-    int16_t narrow, wide, gap, over;
-    narrow = pt_shots_in_cone(RV_RULE_AIM_CONE, 0, 15, 240, &wide, &gap);   /* (240: within 20 degrees) */
+    static const char __far e_slow[] = "under aim=cone the enemy's volleys came no nearer than %d steps: its guns go "
+        "every 13 (AI_REFIRE_STEPS), not the profile's fire_gap";
+    static const char __far e_lead[] = "under aim=lead two of the enemy's volleys came %d steps apart: the profile's "
+        "fire_gap is 22";
+    int16_t narrow, over, gap;
+    narrow = pt_shots_in_cone(RV_RULE_AIM_CONE, 0, 15, 164, &over, &gap, 3500, 0, 3500, TURN * 5 / 8, 300);   /* (164: within 50 degrees) */
     if (narrow < 0)
         return;
-    REQUIRE(narrow + wide > 0, e_none, 0, 0, 0);
-    REQUIRE(wide > 0, e_narrow, narrow, 0, 0);
-    REQUIRE(gap >= 12, e_gap, gap, 0, 0);
-    narrow = pt_shots_in_cone(RV_RULE_AIM_CONE, 0, 15, 164, &over, &gap);   /* (164: within 50 degrees) */
-    if (narrow < 0)
-        return;
+    REQUIRE(narrow + over > 0, e_none, 0, 0, 0);
     REQUIRE(over == 0, e_wide, over, 0, 0);
+    REQUIRE(gap >= 12, e_gap, gap, 0, 0);
+    REQUIRE(gap < 20, e_slow, gap, 0, 0);
+    narrow = pt_shots_in_cone(0, 0, 15, 164, &over, &gap, 3500, 0, 3500, TURN * 5 / 8, 300);
+    if (narrow < 0)
+        return;
+    REQUIRE(gap >= 21, e_lead, gap, 0, 0);
 }
 
 /* the enemy's missiles under the hold: the enemy 2,500 km behind an invulnerable player flying straight at 300 kps,
@@ -2993,6 +3002,63 @@ static void t_dodge_fire(void)
     g_sys.target = -1;
     g_sys.lock = 0;
     REQUIRE(n > 0, e_none, n, 0, 0);
+}
+
+/* the enemy 6,000 km ahead of a still, invulnerable player, facing it, `secs` seconds under `rules`: its shots, how
+ * many came while it was still ahead of the player's wing line, and the step of its first; -1 when the world broke */
+static int16_t pt_approach_shots(uint8_t rules, int16_t secs, int16_t *ahead, int16_t *first)
+{
+    uint8_t keep = g_rule_flags;
+    uint16_t a0;
+    int16_t i, n = 0;
+    *ahead = 0;
+    *first = -1;
+    pt_alone(PT_PLAYER);
+    g_sys.armed = 0;
+    playerCanBeDamaged = 0;
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, 0, 0, 6000, TURN / 2);
+    g_rule_flags = rules;
+    a0 = shots_added();
+    for (i = 0; i < secs * SEC && slot_is_ship(1); i++) {
+        if (!pt_step()) {
+            g_rule_flags = keep;
+            return -1;
+        }
+        if (shots_added() != a0) {
+            a0 = shots_added();
+            n++;
+            if (*first < 0)
+                *first = i;
+            if (gPositionVector[1].z > gPositionVector[0].z)   /* (the player faces +z, still) */
+                (*ahead)++;
+        }
+    }
+    g_rule_flags = keep;
+    return n;
+}
+
+/* M5.19: the approach is silent (the old maneuver 40; the user: keep it): under aim=cone an enemy 6,000 km ahead
+ * facing a still player (the player facing it: the choice too takes the approach) fires nothing for 7 s, the time
+ * it takes to fly past and come round (it fires by 25 s); under aim=lead (the measured pursuit) it fires head on
+ * within 4 s */
+static void t_approach_silent(void)
+{
+    static const char __far e_early[] = "under aim=cone the enemy's first shot came at step %d (%d shots in 25 s, %d of "
+        "them ahead of the player's wing line): the old approach has no guns (T_APPROACH), so none before 7 s";
+    static const char __far e_none[] = "under aim=cone the enemy fired nothing in 25 s: once round the player it fights "
+        "with its guns (T_PURSUE)";
+    static const char __far e_lead[] = "under aim=lead the enemy's first shot came at step %d (%d shots in 4 s): the "
+        "measured pursuit fires head on when the guns bear";
+    int16_t n, ahead, first;
+    n = pt_approach_shots(RV_RULE_AIM_CONE, 25, &ahead, &first);
+    if (n < 0)
+        return;
+    REQUIRE(n > 0, e_none, 0, 0, 0);
+    REQUIRE(first >= 7 * SEC, e_early, first, n, ahead);
+    n = pt_approach_shots(0, 4, &ahead, &first);
+    if (n < 0)
+        return;
+    REQUIRE(n > 0 && first < 4 * SEC, e_lead, first, n, 0);
 }
 
 /* a scared fighter: its armour gone and its hull nearly, 2,000 km ahead of the player and flying the same way (the
@@ -3816,6 +3882,7 @@ static const char __far n_m5_15[] = "M5.15 leave (fear_step, leave_step): a scar
 static const char __far n_m5_16[] = "M5.16 home (T_HOME): with its side's capital ship about it runs there instead and fights on";
 static const char __far n_m5_17[] = "M5.17 hold-missiles (aim_and_fire): the held fire withholds the missiles too";
 static const char __far n_m5_18[] = "M5.18 dodge-fire (missile_ahead): a missile homing on it from ahead, it fires whatever the hold";
+static const char __far n_m5_19[] = "M5.19 approach-silent (T_APPROACH): under aim=cone the approach has no guns; the tail from behind has";
 static const char __far n_m6_1[] = "M6.1 ram (step_collisions): ships inside one another are pushed apart, both hurt";
 static const char __far n_m6_2[] = "M6.2 no-ghosts (step_collisions): a ship flown at another does not pass through";
 static const char __far n_m6_3[] = "M6.3 ram-cost (ram_damage): the old rule's square of the closing speed, halved; the soft rule's dozen";
@@ -3870,7 +3937,7 @@ static const PtTest __far k_tests[] = {
     { n_m5_8, t_formation, 0 }, { n_m5_9, t_no_left, 0 }, { n_m5_10, t_waiter, 0 }, { n_m5_11, t_old_straight, 0 },
     { n_m5_12, t_old_hunt, 0 },
     { n_m5_13, t_hold_fire, 0 }, { n_m5_14, t_cone_fire, 0 }, { n_m5_15, t_leave, 0 }, { n_m5_16, t_home, 0 },
-    { n_m5_17, t_hold_missiles, 0 }, { n_m5_18, t_dodge_fire, 0 },
+    { n_m5_17, t_hold_missiles, 0 }, { n_m5_18, t_dodge_fire, 0 }, { n_m5_19, t_approach_silent, 0 },
     { n_m6_1, t_ram, 0 }, { n_m6_2, t_no_ghosts, 0 }, { n_m6_3, t_ram_cost, 0 },
     { n_m7_1, t_launch, 0 }, { n_m7_2, t_missile_key, 0 }, { n_m7_3, t_missile_flies, 0 },
     { n_m7_4, t_missile_hits, 0 }, { n_m7_5, t_missile_homes, 0 }, { n_m7_6, t_missile_ends, 0 },
