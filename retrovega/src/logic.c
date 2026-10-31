@@ -50,6 +50,7 @@ typedef struct {
     uint8_t gap;                        /* steps since its last volley (saturating): the profile's fire_gap */
     uint8_t leaving;                    /* 1: gone for good (the leave: away and removed far off); 0 not */
     uint8_t fear_up, fear_down;         /* its fear's rates (the profile's, or the mission ship's own: fear=) */
+    int16_t taunt;                      /* steps left of its anger at the player (logic_taunt) */
 } Mind;
 enum { FIRE_GUNS = 1, FIRE_MISSILE = 2 };
 static Mind __far g_mind[NUM_SHIP_SLOTS];
@@ -142,6 +143,7 @@ static int16_t on_view(const RvCamera *cam, const LfVec *w, int16_t *sx, int16_t
 #define NAV_REACH_KM 5000               /* the player this near a nav point has reached it (enterNavPoint) */
 
 static uint16_t g_navs_seen;            /* a bit per nav point the player has reached (nav 0 from the start) */
+static uint8_t __far g_cleared;         /* the carrier cleared the player to land (logic_request_landing) */
 static uint8_t __far g_killed[64];      /* a mission ship (its record) seen dying: shipAiState 9 */
 static uint8_t __far g_away[64];        /* a mission ship gone its own way (an escort target jumped out, or home): not killed */
 
@@ -174,6 +176,11 @@ static int16_t is_wingman(int16_t s)
            && shipAiState[s] != 9 && slot_is_ship(0) && commAnimInfo[s] == commAnimInfo[0];
 }
 
+int16_t logic_is_wingman(int16_t s)
+{
+    return is_wingman(s);
+}
+
 int16_t logic_wingmen(int16_t *out, int16_t max)
 {
     int16_t s, n = 0;
@@ -204,6 +211,20 @@ int16_t logic_order_of(int16_t s)
     return s > 0 && s < NUM_SHIP_SLOTS ? g_order[s] : ORDER_FREE;
 }
 
+/* an enemy fighter told what the player thinks of it (the comm menu's taunt): it turns on the player and nobody else
+ * for TAUNT_STEPS, wherever the player is, and holds no fire for being the player's target (holds_fire).  A ship that
+ * has already broken off stays gone (fighter_think); a capital ship does not rise to it: 0 */
+#define TAUNT_STEPS (20 * LOGIC_HZ)
+int16_t logic_taunt(int16_t s)
+{
+    if (s <= 0 || s >= NUM_SHIP_SLOTS || !slot_is_ship(s) || maybeEntityType[s] != ET_SHIP || shipAiState[s] == 9
+        || commAnimInfo[s] == commAnimInfo[0])
+        return 0;
+    g_mind[s].taunt = TAUNT_STEPS;
+    g_mind[s].timer = 0;                /* (its tactic over: the next step picks afresh, with the player as its target) */
+    return 1;
+}
+
 /* the mission's rule, a patrol's: every nav point reached and every enemy of the mission's killed */
 static int16_t mission_done(void)
 {
@@ -222,6 +243,30 @@ static int16_t mission_done(void)
             if (MSHIP_SIDE(at[j]) != commAnimInfo[0] && !g_killed[at[j] & 63] && !g_away[at[j] & 63])
                 return 0;
     }
+    return 1;
+}
+
+/* --- the home carrier and landing (logic.h) --- */
+
+static int16_t role_of(int16_t s);
+
+int16_t logic_is_home(int16_t s)
+{
+    return s > 0 && s < NUM_SHIP_SLOTS && slot_is_ship(s) && shipAiState[s] != 9 && role_of(s) == RV_ESCORT_HOME;
+}
+
+/* the user's rule (2026-10-31): the carrier takes the player back with the mission finished or at least one nav point
+ * flown (nav 0, the launch, does not count) */
+int16_t logic_landing_allowed(void)
+{
+    return (g_navs_seen & ~1u) != 0 || mission_done();
+}
+
+int16_t logic_request_landing(void)
+{
+    if (!logic_landing_allowed())
+        return 0;
+    g_cleared = 1;
     return 1;
 }
 
@@ -252,6 +297,7 @@ void logic_start(const RvMission __far *m)
     _fmemset(g_away, 0, sizeof g_away);
     _fmemset(&g_hud, 0, sizeof g_hud);   /* (no marks until the first step works them out) */
     g_navs_seen = 1;
+    g_cleared = 0;
     currentNavPoint = 0;
     victoryPoints = 0;                  /* (over the launch's roll: won when the mission is done, step_mission) */
     ship_spawn(0, g_camp.player_ship, SIDE_TERRAN, CTL_PLAYER, 0, 0, 0, 0);
@@ -1847,7 +1893,7 @@ static int16_t missile_ahead(int16_t s)
 static int16_t holds_fire(int16_t s, const AiProfile __far *p)
 {
     int16_t h;
-    if (!(g_rule_flags & RV_RULE_HOLD_FIRE) || (p->flags & PF_NO_MERCY))
+    if (!(g_rule_flags & RV_RULE_HOLD_FIRE) || (p->flags & PF_NO_MERCY) || g_mind[s].taunt)
         return 0;
     for (h = 0; h < NUM_SHIP_SLOTS; h++)
         if (h != s && slot_is_ship(h) && shipAiState[h] != 9 && (rvController[h] == CTL_PLAYER || rvController[h] == CTL_PUPPET)
@@ -2266,9 +2312,17 @@ static void fighter_think(int16_t s)
     }
     if (near_ >= 0 && bd <= p->engage_km && (m->target == 0xFF || bd * 3 < km_between(s, m->target) * 2))
         m->target = (uint8_t)near_;
+    if (m->taunt) {                     /* taunted: the player, wherever it is and whoever is nearer (logic_taunt) */
+        m->taunt--;
+        if (slot_is_ship(0) && shipAiState[0] != 9)
+            m->target = 0;
+    }
     /* a wingman under orders (logic_order): the player's target wherever it is (ATTACK), the enemy nearest the player,
-     * one on the player first (HELP), or nobody at all (FORMATION, RTB) */
-    if (g_order[s] != ORDER_FREE && is_wingman(s)) {
+     * one on the player first (HELP), the enemy nearest it however far (BREAK), or nobody at all (FORMATION, RTB) */
+    if (g_order[s] == ORDER_BREAK && is_wingman(s)) {
+        if (m->target == 0xFF && near_ >= 0)
+            m->target = (uint8_t)near_;
+    } else if (g_order[s] != ORDER_FREE && is_wingman(s)) {
         if (g_order[s] == ORDER_ATTACK) {
             if (g_sys.target >= 0 && slot_is_ship(g_sys.target) && shipAiState[g_sys.target] != 9
                 && commAnimInfo[g_sys.target] != commAnimInfo[s])
@@ -2303,6 +2357,20 @@ static void fighter_think(int16_t s)
             if (m->tactic != T_ESCORT)
                 take_tactic(s, m, p, T_ESCORT);
             escort_step(s, m, p);
+            return;
+        }
+        if (g_order[s] == ORDER_BREAK && is_wingman(s) && slot_is_ship(0) && shipAiState[0] != 9) {
+            m->leader = 0;              /* (out of formation, nobody to fight: on its own, round the player) */
+            if (m->tactic != T_ESCORT)
+                take_tactic(s, m, p, T_ESCORT);
+            escort_step(s, m, p);
+            return;
+        }
+        if (g_order[s] == ORDER_FORMATION && is_wingman(s) && slot_is_ship(0) && shipAiState[0] != 9) {
+            m->leader = 0;              /* (the player's wing, whatever its idle tactic: a transport's escort too) */
+            if (m->tactic != T_FORMATION)
+                take_tactic(s, m, p, T_FORMATION);
+            formation_step(s, m, p);
             return;
         }
         if (m->tactic != p->idle) {
@@ -2345,10 +2413,17 @@ static void fighter_think(int16_t s)
 /* a capital ship's mind for a step: its course held at cruise; its turrets at the nearest enemy in their range (each
  * that is cooled: fired by step_fire through the thunk, aimed at rvTarget by the gun's own code); a launcher at an
  * enemy capital ship now and then */
-/* a slot's mission record's role (an escort target's), 0 none */
+/* a slot's mission record's role (an escort target's, the home carrier's), 0 none */
 static int16_t role_of(int16_t s)
 {
     return slotMissionShip[s] < 64 ? MSHIP_ROLE(slotMissionShip[s]) : 0;
+}
+
+/* an escort target: a ship with a route of its own and the autopilot's company (the home carrier has neither) */
+static int16_t escorted(int16_t s)
+{
+    int16_t r = role_of(s);
+    return r == RV_ESCORT_OUT || r == RV_ESCORT_IN;
 }
 
 /* an escort target's own way (its mission record's role): out, to the mission's next nav point after its own (nav 1
@@ -2391,12 +2466,12 @@ static void ship_think(int16_t s)
     Mind __far *m = &g_mind[s];
     const RvShipType __far *t = slot_type(s);
     int16_t near_ = nearest_enemy(s, 0), g;
-    if (role_of(s)) {
+    if (escorted(s)) {
         route_step(s, m, &k_profiles[m->profile < P_COUNT ? m->profile : P_CAPITAL]);
         if (!slot_is_ship(s))
             return;
     } else
-        throttle(s, t ? t->cruise_kps : 100, 0);
+        throttle(s, role_of(s) == RV_ESCORT_HOME ? 0 : t ? t->cruise_kps : 100, 0);   /* (the carrier holds station) */
     m->target = (uint8_t)(near_ >= 0 ? near_ : 0xFF);
     rvTarget[s] = m->target;
     if (near_ < 0)
@@ -2599,11 +2674,11 @@ void logic_hud(void)
     }
 }
 
-/* the final score: won when the player landed (missionStatus 1) home (at nav 0) with the mission done; dead,
- * ejected, landed elsewhere or with it undone, lost */
+/* the final score: won when the player landed (missionStatus 1) with the mission done, cleared by the carrier or at
+ * home (at nav 0); dead, ejected, landed elsewhere or with it undone, lost */
 void logic_end(void)
 {
-    victoryPoints = (uint16_t)(missionStatus == 1 && mission_done() && nav_km(0) < NAV_REACH_KM);
+    victoryPoints = (uint16_t)(missionStatus == 1 && mission_done() && (g_cleared || nav_km(0) < NAV_REACH_KM));
 }
 
 #define AUTOPILOT_CLEAR_KM 8000         /* no enemy this near (the engine's autopilot lamp says the same: flight.c) */
@@ -2663,7 +2738,7 @@ int16_t logic_autopilot(void)
             gPositionVector[s].x += to.x - gPositionVector[0].x;
             gPositionVector[s].y += to.y - gPositionVector[0].y;
             gPositionVector[s].z += to.z - gPositionVector[0].z;
-        } else if (maybeEntityType[s] == ET_CAPSHIP && role_of(s) && player_km(s) < AUTOPILOT_ESCORT_KM) {
+        } else if (maybeEntityType[s] == ET_CAPSHIP && escorted(s) && player_km(s) < AUTOPILOT_ESCORT_KM) {
             gPositionVector[s] = vec3(to.x - FIX_MUL(gOrientationFrontVector[0].x, AUTOPILOT_BEHIND_KM) * KM,
                                       to.y - FIX_MUL(gOrientationFrontVector[0].y, AUTOPILOT_BEHIND_KM) * KM,
                                       to.z - FIX_MUL(gOrientationFrontVector[0].z, AUTOPILOT_BEHIND_KM) * KM);
@@ -2912,6 +2987,8 @@ uint16_t __far __cdecl outerSpawnShipEntity_impl(uint16_t missionShip, uint16_t 
         g_mind[s].fear_up = (uint8_t)(rec[19] & 15);
         g_mind[s].fear_down = (uint8_t)(rec[19] >> 4);
     }
+    if (rec[18] == RV_ESCORT_HOME)      /* (the carrier holds station from the first: no way on to lose) */
+        setSpeed[s] = speedLo[s] = 0;
     spawn_apart(s);
     return (uint16_t)s;
 }

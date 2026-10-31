@@ -9,7 +9,8 @@ own setting (the Aera war: the ships by the author's map, the systems renamed, t
 The scale: the old game's nav points sit up to 70,000 km out and the engine keeps a nav point in 16 bits of km,
 so every distance is scaled by SCALE (0.45; its speed setting moves 2 km/s a point, ours 1.5, so a leg takes
 some 60% of its time).  Its ship types are read as the author's map has them (TYPES); the
-carrier and its circling escorts are left out (the flight begins at the launch point, as the engine has it); the
+carrier is the mission's home ship (role=home: the player lands by calling it up on the comm) and its circling escorts
+are left out (the flight begins at the launch point, as the engine has it); the
 wingman is one of our cast.  The branching between the systems is the published tree of the old campaign, as
 recalled: edit campaign.csv where it is wrong.  The briefings are written from the mission's shape, to be
 rewritten by hand.
@@ -130,6 +131,7 @@ def port(dumpdir):
             wing += 1
             lines.append('ship     player 0 nav0')
             lines.append('ship     wingman 0 nav0 pilot=%s' % pilot)
+            lines.append('ship     VIGILNC 0 nav0 role=home')
             groups = {}
             player = dmp['player']
             carrier = {s['m'] for s in dmp['ships'] if s['type'] == 8}

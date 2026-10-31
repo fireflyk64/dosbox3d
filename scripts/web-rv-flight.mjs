@@ -118,9 +118,11 @@ if (process.env.COMBAT) {              // the autopilot to the first nav point a
   const seen = (await rvlog()).match(/flight: autopilot: on to nav \d+/);
   console.log(seen ? "ok   " + seen[0] : "note the autopilot did not engage");
 }
-if (!/\/flight /.test(process.env.CMD || "")) {    // (a flight lands when the player calls the carrier: C)
+if (!/\/flight /.test(process.env.CMD || "")) {    // (landing takes a nav point flown and the carrier as the target: this ejects)
   await sleep(Math.max(0, flightS - spent) * 1000);
-  await page.keyboard.press("c");
+  for (let k = 0; k < 2; k++) {        // Ctrl+E twice within two seconds
+    await page.keyboard.down("Control"); await page.keyboard.press("e"); await sleep(200); await page.keyboard.up("Control"); await sleep(200);
+  }
 }
 t = await waitLog(/flight: over/, (flightS + 20) * 1000);
 console.log(/flight: over/.test(t) ? "ok   the flight ended" : "FAIL the flight did not end");

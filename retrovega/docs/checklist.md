@@ -34,3 +34,11 @@ connection to the service is unreliable). Each item below is one commit; the sta
 
 Each item that touches the logic gets a play test (tests/play/playtest.c) run on the host and in DOS
 (`tests/play/playtest.sh --dos`), and the deploy to the page follows each commit that changes RV.EXE.
+
+## Afterwards: the comm menu rebuilt (2026-10-31, the user's ask)
+
+The menu of E1 and E2 gave way to the user's layout: 1 the wingman at all times, 2 the target; the wingman flies in
+formation or breaks formation; an enemy target can be taunted; the home carrier as the target takes the request for
+landing, and grants it with the mission finished or a nav point flown. So every mission now has the Vigilance in it
+(`ship VIGILNC 0 nav0 role=home`), and the comm faces carry subtitles. docs/engine.md "The VDU pages", docs/ai.md,
+M8.13, M8.14, M10.8, M10.9.

@@ -89,13 +89,6 @@ for f in art/ships/SHIP*.RV; do
     # and the block mode's (RV.EXE /res 2): the ladder only, on every view, from half size, drawn as 2 x 2 blocks
     [ "$h" -nt "$f" ] && [ "$h" -nt tools/rvsprites.c ] && [ "$h" -nt src/lightfield.c ] || build/host/rvsprites "$f" "$h" 0 0 0 1 2 > /dev/null
 done
-# the carrier (a test aid, RV.EXE /capital): from half size down, rolls at two sizes
-if [ -f build/rvdat/SHIP20.RV ]; then
-    s="$OUT/SHIP20.RVS"
-    [ "$s" -nt build/rvdat/SHIP20.RV ] && [ "$s" -nt tools/rvsprites.c ] || build/host/rvsprites build/rvdat/SHIP20.RV "$s" 3 3 2 > /dev/null
-    h="$OUT/SHIP20.RVH"             # (the block mode: a capital at a quarter, drawn as 4 x 4 blocks)
-    [ "$h" -nt build/rvdat/SHIP20.RV ] && [ "$h" -nt tools/rvsprites.c ] || build/host/rvsprites build/rvdat/SHIP20.RV "$h" 0 0 0 1 4 > /dev/null
-fi
 fi
 # the explosions' heat cels and the flight's sound effects (tools/explode.py, tools/sfx.py: seconds), when they
 # change; made with CODE=1 too (the code reads them)

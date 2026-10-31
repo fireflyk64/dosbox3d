@@ -363,8 +363,11 @@ nav 0):
 | M8.11 escort-lost | the Ox killed: `mission_done` 0 with every nav flown and every enemy dead |
 | M8.12 escort-along | the autopilot takes the Ox (within 30,000 km) with the player: afterwards it is 800 km behind it, facing the same way; the formation arrives 4,500 km short of the nav point |
 
+| M8.13 home-carrier | a mission ship with `role=home`: 2,000 km behind the launch, still after 10 s and after the autopilot has gone; with the player 8,000 km behind it, T picks it |
+| M8.14 landing-rule | at the launch `logic_request_landing` refuses; at nav 1 it clears; cleared with the mission undone: lost; flown and killed far from home: lost without the clearance, won with it; a mission with nothing to do is cleared at the launch |
+
 The tests take the player to a nav point by moving it (as the autopilot would) and land by setting
-`missionStatus = 1`, as the engine's C key does.
+`missionStatus = 1`, as the engine does when the carrier's clearance has been said.
 
 ### M9: the HUD (`logic_hud`, host only)
 
@@ -390,6 +393,8 @@ tests cover them; flight.c's keys (T, Y, L) and its AUTO call them.
 | M10.5 nav-cross | (host only) the chosen nav point 5,000 km right of a point 20,000 km ahead: `logic_hud` draws within 8 px of a quarter of the focal length right of the view's middle, and nothing there once the player has turned round |
 | M10.6 orders | a wingman 10,000 km right of the player, an enemy 6,000 km ahead of each: free it fights the one nearest to it; attack my target (the player's, the other) it takes that one, and the order is refused with no target set; help me out, the enemy nearest the player; form on my wing, nobody, and it stays within 3,000 km for 10 s; return to base with a destroyer of its side 20,000 km behind, it comes within 5,000 km of it in 40 s |
 | M10.7 missile-lock | the Lancelot's heat seeker on a target 3,000 km ahead flying away: locked after its 3 s and not before; the target turned to face the player, the lock is gone the next step; the image-recognition missile locks on it facing; the tracking wrecked, no lock; the EMCON off, no heat lock; the Schroedinger's dumbfire never locks |
+| M10.8 break-formation | a wingman 800 km off the player, the only enemy 40,000 km away: left alone it fights nobody; told to fly in formation, nobody, within 3,000 km; told to break formation, the far enemy; the enemy gone, it leaves the formation (over 1,500 km off) and stays round the player (within 6,000) |
+| M10.9 taunt | an enemy beside a Terran ship has that as its target; `logic_taunt` refuses a friend and a capital ship; taunted, its target is the player; put 3,000 km ahead of the player, facing it, selected and under hold=on, it fires |
 
 ## The memory: where everything lives
 

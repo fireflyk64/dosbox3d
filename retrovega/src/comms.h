@@ -33,6 +33,7 @@ int comms_voice_for(int side, int type);   /* an alien of side (1 Aera, 2 Rlaan)
  * ends a second after): 0 when there is no such voice */
 int comms_say(int voice, int vdu, const char __far *text);
 int comms_on(int vdu);                  /* a comm shows on this VDU now */
+const char __far *comms_text(void);     /* what it is saying (flight.c shows it under the face) */
 int comms_side(void);                   /* who talks now: their side (0 Terran, 1 Aera, 2 Rlaan), -1 no one */
 void comms_tick(void);                  /* once a frame: the mouth, the blinks, the end */
 

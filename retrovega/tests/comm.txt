@@ -1,0 +1,85 @@
+# The comm menu: RV.EXE /fly 0 /script tests/comm.txt (a wait's unit is about 1/18 s).
+# 1 the wingman, 2 the target; the carrier refuses at the launch; a taunt at nav 1;
+# the carrier clears the player and the flight ends.  The shots are for looking at.
+wait 20
+key s
+log comm: the first page, no target
+key c
+wait 2
+shot C01WHOM
+key 2
+wait 2
+shot C02NOTGT
+key 1
+wait 2
+shot C03WING
+key 1
+wait 8
+shot C04FORM
+wait 32
+shot C05REPLY
+wait 40
+log comm: round to the carrier, which refuses
+hold left 23
+wait 26
+shot C06ROUND
+key t
+wait 3
+shot C07TARG
+key c
+wait 2
+key 2
+wait 2
+shot C08HOME
+key 1
+wait 10
+shot C09ASK
+wait 34
+shot C10DENY
+wait 30
+log comm: on to nav 1, the taunt
+key a
+wait 150
+shot C11NAV
+key y
+wait 2
+key y
+wait 6
+key y
+wait 2
+shot C12ENEMY
+key c
+wait 2
+key 2
+wait 2
+shot C13TAUNT
+key 1
+wait 8
+shot C14SAID
+wait 40
+shot C15REPLY
+log comm: back to the carrier, which clears the player
+wait 30
+hold left 24
+wait 26
+key t
+wait 3
+shot C16TARG
+key c
+wait 2
+key 2
+wait 2
+shot C17HOME
+key 1
+wait 10
+shot C18ASK
+wait 44
+shot C19CLEAR
+wait 140
+shot C20SAID
+wait 120
+shot C21DEBR
+log done
+key esc
+wait 10
+key esc

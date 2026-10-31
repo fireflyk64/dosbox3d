@@ -47,6 +47,7 @@
 #define RV_SHIP_WINGMAN 0xFE
 #define RV_ESCORT_OUT 1
 #define RV_ESCORT_IN 2
+#define RV_ESCORT_HOME 3
 #define RV_PILOT_NONE 0xFF
 
 #define RV_ROOM_BAR 0

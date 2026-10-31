@@ -174,19 +174,28 @@ The rows as they stand:
 
 ## The wingman's orders
 
-The comm menu (C; docs/engine.md "The VDU pages") sends a wingman (a fighter of the player's side flown by the AI:
-`logic_wingmen`) one of five orders (logic.h `ORDER_*`, `logic_order`), which its mind reads where it chooses its
-target:
+The comm menu (C; docs/engine.md "The VDU pages") tells a wingman (a fighter of the player's side flown by the AI:
+`logic_wingmen`) to fly in formation or break formation. Its mind reads the order (logic.h `ORDER_*`, `logic_order`)
+where it chooses its target; the logic knows three more that the menu no longer offers (the user's layout of
+2026-10-31 has the two):
 
 | order | the wingman |
 |---|---|
-| break and attack (`ORDER_FREE`, the default) | fights what comes within its profile's `engage_km`, as above |
+| none (`ORDER_FREE`, the default) | flies its idle tactic (a wingman: formation) and fights what comes within its profile's `engage_km`, as above |
+| break formation (`ORDER_BREAK`, on the menu) | takes the enemy nearest it however far; with no enemy about it leaves its place and circles the player (`T_ESCORT` on the player) |
+| fly in formation (`ORDER_FORMATION`, on the menu) | fights nobody and keeps station (`T_FORMATION`) |
 | attack my target (`ORDER_ATTACK`) | takes the player's target wherever it is, and goes back to its own fight when that target dies; refused with no enemy targeted |
 | help me out (`ORDER_HELP`) | takes the enemy nearest the player, one whose target is the player first |
-| form on my wing (`ORDER_FORMATION`) | fights nobody and keeps station (`T_FORMATION`) |
 | return to base (`ORDER_RTB`) | fights nobody and circles the nearest capital ship of its side (`T_ESCORT` on it); refused without one |
 
-An order ends the tactic it was in, so the next step picks afresh. M10.6 checks each.
+An order ends the tactic it was in, so the next step picks afresh. M10.6 and M10.8 check them.
+
+## The taunt
+
+The comm menu's taunt (`logic_taunt`, an enemy fighter as the player's target) turns it on the player for 20 s: its
+target is the player wherever the player is and whoever is nearer, and it holds no fire for being the player's
+selected target (`holds_fire`), so a taunt draws a fighter off a wingman or an escort at the taunter's own risk. A ship
+already breaking off for good stays gone; a capital ship does not rise to it, though it answers. M10.9 checks it.
 
 ## Adding a behaviour
 

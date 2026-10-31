@@ -1745,13 +1745,14 @@ The user's brief (2026-10-31): T (even with the target unchanged) puts
 the target's top-down wireframe with its shields and hull on a VDU; D a
 damage readout, and the damage and weapon-select displays show the
 player's own ship the same way with the live guns and the chosen missile;
-N a nav menu, the chosen point a white cross in the view; C a comm menu
-for the wingman's orders; the VDUs take the readouts' small font. vdu.c:
+N a nav menu, the chosen point a white cross in the view; C a comm menu;
+the VDUs take the readouts' small font. vdu.c:
 
 - **The right VDU** carries the target page (T, Y), the weapons page (G,
   W) and the damage page (D); **the left** the status lines, the nav page
   (N) and the comm menu (C). A comm face on a VDU draws over its page
-  (comms.c); the right VDU is dark with the targeting display's damage
+  (comms.c), but the comm menu comes up over a face, the comm going on
+  under it; the right VDU is dark with the targeting display's damage
   overlay on.
 - **The wireframe** (`vdu_wire`) is the type's silhouette from above
   (collide.c's mask, `collide_mask`): the outline of its solid cells
@@ -1771,15 +1772,27 @@ for the wingman's orders; the VDUs take the readouts' small font. vdu.c:
   old game's light, moderate, heavy, destroyed; red when destroyed); D
   again names the next.
 - **The nav page:** HOME and the nav points with how far each is, the
-  chosen one in white; N steps to the next. **The comm menu:** SEND TO
-  the wingmen (by callsign, from their mission records) and the carrier;
-  a wingman's page offers 1 attack my target, 2 break and attack, 3 form
-  on my wing, 4 help me out, 5 return to base; the carrier's 1 request
-  landing; 0 or Esc closes. An order goes to the wingman's mind
-  (logic.h's `logic_order`, docs/ai.md) and the pilot says the line on
-  the left VDU in the hero's face, the wingman answering on the right in
-  its own once the pilot's comm is over (a refusal: Negative); INTERCOM
-  OUT when the intercom is wrecked.
+  chosen one in white; N steps to the next. **The comm menu** (the user's
+  layout, 2026-10-31): 1 the wingman, always (the first of the wing, by
+  callsign; NO WINGMAN when none is left), 2 the target (NO TARGET
+  without one; its page follows the target, so T changes it). The
+  wingman's page, and a friendly fighter's as the target: 1 fly in
+  formation, 2 break formation (`logic_order`, docs/ai.md). An enemy's: 1
+  taunt (`logic_taunt`). The home carrier's: 1 request landing. 0 or Esc
+  closes. The pilot says the line on the left VDU in the hero's face and
+  the other answers on the right once the pilot's comm is over: the
+  wingman in its own, an enemy with its voice's own line, the carrier in
+  the XO's. A landing is the carrier's to give:
+  **the mission finished or at least one nav point flown**
+  (`logic_request_landing`, at any range: the flight ends when the
+  clearance has been said, and a clearance counts as home in the score);
+  refused, the status line says NO LANDING for three seconds. The
+  intercom wrecked the page says INTERCOM OUT and only the carrier can
+  still be asked, with no comm faces, since a flight has to be able to
+  end.
+- **Subtitles:** the comm faces have no sound, so `vdu_subtitle` writes
+  what the comm is saying (`comms_text`) in the small font on a black
+  band at the foot of its VDU, the words wrapped, four rows at most.
 - **The text** is panel.c's 3 x 5 readout font (`panel_tiny`, 4 px a
   character, six px a line): thirteen lines on the Schroedinger's 85-px
   VDU, seven on the Franklin's; a menu goes into columns where the VDU

@@ -3687,6 +3687,102 @@ static void t_escort_out(void)
     REQUIRE(victoryPoints != 0, e_won, victoryPoints, 0, 0);
 }
 
+/* a patrol with the home carrier: the player, a wingman and the Vigilance (role=home) at nav 0, two Nicanders at nav 1,
+ * an Agis at nav 2: the carrier's slot */
+static int16_t pt_home_patrol(void)
+{
+    int16_t s;
+    pt_mission();
+    pt_nav(1, 0, 0, NAV1_Z);
+    pt_nav(2, NAV2_X, 0, NAV2_Z);
+    pt_mship(RV_SHIP_WINGMAN, SIDE_TERRAN, 0, 1, RV_PILOT_NONE);
+    pt_mship(PT_CAPSHIP, SIDE_TERRAN, 0, 1, RV_PILOT_NONE);
+    g_tm.ship[g_tm.nship - 1].role = RV_ESCORT_HOME;
+    pt_mship(PT_ENEMY, SIDE_AERA, 1, 2, RV_PILOT_NONE);
+    pt_mship(PT_WEAK, SIDE_AERA, 2, 1, RV_PILOT_NONE);
+    pt_launch(PT_PLAYER);
+    playerCanBeDamaged = 0;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
+        if (logic_is_home(s))
+            return s;
+    return -1;
+}
+
+/* M8.13: the home carrier is in the flight behind the launch, holds station, stays when the autopilot goes, and the
+ * target key finds it once it is in front */
+static void t_home_carrier(void)
+{
+    static const char __far e_there[] = "no home carrier in the slots after the launch (%d): the mission's role=home";
+    static const char __far e_behind[] = "the carrier is %d km from the launch, or ahead of it (%d): behind, within 5,000 "
+        "and clear of the player";
+    static const char __far e_station[] = "10 s in, the carrier is %d km from where it was: it holds station";
+    static const char __far e_along[] = "the autopilot took the carrier along: it is %d km from where it was";
+    static const char __far e_target[] = "with the carrier ahead T picks slot %d, not the carrier (slot %d)";
+    int16_t home = pt_home_patrol();
+    int32_t x, y, z;
+    REQUIRE(home > 0, e_there, home, 0, 0);
+    REQUIRE(pt_km(0, home) < 5000 && pt_km(0, home) > TO_KM(collide_half(home) + collide_half(0)) && !logic_target_ahead(home),
+            e_behind, pt_km(0, home), logic_target_ahead(home), 0);
+    x = TO_KM(gPositionVector[home].x);
+    y = TO_KM(gPositionVector[home].y);
+    z = TO_KM(gPositionVector[home].z);
+    if (!pt_steps(10 * SEC))
+        return;
+    REQUIRE(pt_km_to(home, x, y, z) < 10, e_station, pt_km_to(home, x, y, z), 0, 0);
+    REQUIRE(logic_autopilot(), e_there, 0, 0, 0);
+    REQUIRE(pt_km_to(home, x, y, z) < 10, e_along, pt_km_to(home, x, y, z), 0, 0);
+    pt_put(0, 0, 0, z - 8000, 0);       /* (facing +z, the carrier straight ahead) */
+    g_sys.target = -1;
+    (void)logic_target_next();
+    REQUIRE(g_sys.target == home, e_target, g_sys.target, home, 0);
+    g_sys.target = -1;
+}
+
+/* M8.14: the carrier's rule: no landing at the launch; a nav point flown, or the mission finished, is enough; a
+ * clearance counts as home in the score wherever it was called from, and the mission undone still loses */
+static void t_landing_rule(void)
+{
+    static const char __far e_launch[] = "at the launch the carrier cleared the player (%d): a nav point first";
+    static const char __far e_nav[] = "at nav 1 the carrier refused the player: one nav point flown is enough";
+    static const char __far e_undone[] = "victoryPoints is %d after landing with the mission undone: 0";
+    static const char __far e_far[] = "victoryPoints is %d after landing far from home with no clearance: 0";
+    static const char __far e_won[] = "victoryPoints is %d after a clearance %ld km from home with the mission done: nonzero";
+    static const char __far e_done[] = "a mission with nothing to do was refused at the launch: finished is enough";
+    int16_t home = pt_home_patrol();
+    (void)home;
+    if (!pt_steps(2 * SEC))
+        return;
+    REQUIRE(!logic_landing_allowed() && !logic_request_landing(), e_launch, logic_landing_allowed(), 0, 0);
+    if (!pt_go(0, NAV1_Z))
+        return;
+    REQUIRE(logic_landing_allowed(), e_nav, 0, 0, 0);
+    /* the mission undone: cleared, landed, lost */
+    REQUIRE(logic_request_landing(), e_nav, 0, 0, 0);
+    missionStatus = 1;
+    logic_end();
+    REQUIRE(victoryPoints == 0, e_undone, victoryPoints, 0, 0);
+    /* flown and killed, far from home: lost without the clearance, won with it */
+    missionStatus = 3;
+    home = pt_home_patrol();
+    if (!pt_go(0, NAV1_Z) || !pt_kill_side(SIDE_AERA) || !pt_go(NAV2_X, NAV2_Z) || !pt_kill_side(SIDE_AERA))
+        return;
+    missionStatus = 1;
+    logic_end();
+    REQUIRE(victoryPoints == 0, e_far, victoryPoints, 0, 0);
+    REQUIRE(logic_request_landing(), e_nav, 0, 0, 0);
+    logic_end();
+    REQUIRE(victoryPoints != 0, e_won, victoryPoints, pt_km(0, home), 0);
+    /* nothing to do: finished from the start */
+    missionStatus = 3;
+    pt_mission();
+    pt_mship(PT_CAPSHIP, SIDE_TERRAN, 0, 1, RV_PILOT_NONE);
+    g_tm.ship[g_tm.nship - 1].role = RV_ESCORT_HOME;
+    pt_launch(PT_PLAYER);
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(logic_landing_allowed(), e_done, 0, 0, 0);
+}
+
 /* M8.11 */
 static void t_escort_lost(void)
 {
@@ -4006,6 +4102,89 @@ static void t_orders(void)
     g_sys.target = -1;
 }
 
+/* M10.8: the wingman told to fly in formation fights nobody and keeps its place; told to break formation it goes for
+ * an enemy however far, beyond the reach it fights at by itself, and with no enemy about it leaves its place and
+ * circles the player */
+static void t_break_formation(void)
+{
+    static const char __far e_free[] = "left alone, the wingman's target is %d with the only enemy 40,000 km off: nobody";
+    static const char __far e_form[] = "told to fly in formation its target is %d, %ld km from the player: nobody, near";
+    static const char __far e_far[] = "told to break formation its target is slot %d: the enemy 40,000 km off (slot 2)";
+    static const char __far e_left[] = "broken off with no enemy about, its way off its old place stayed under %ld km in "
+        "10 s: it leaves the formation";
+    static const char __far e_round[] = "broken off with no enemy about, it is %ld km from the player: it stays round "
+        "the player, within 6,000";
+    int16_t i, moved = 0;
+    pt_alone(PT_PLAYER);
+    g_sys.armed = 0;
+    playerCanBeDamaged = 0;
+    pt_ship(1, PT_PLAYER, SIDE_TERRAN, CTL_AI, 800, 0, 0, 0);
+    pt_ship(2, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 40000, TURN / 2);
+    if (!pt_steps(2 * SEC))
+        return;
+    REQUIRE(rvTarget[1] == 0xFF, e_free, rvTarget[1], 0, 0);
+    (void)logic_order(1, ORDER_FORMATION);
+    if (!pt_steps(5 * SEC))
+        return;
+    REQUIRE(rvTarget[1] == 0xFF && pt_km(0, 1) < 3000, e_form, rvTarget[1], pt_km(0, 1), 0);
+    (void)logic_order(1, ORDER_BREAK);
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(rvTarget[1] == 2, e_far, rvTarget[1], 0, 0);
+    ship_clear(2);
+    pt_put(1, 800, 0, 0, 0);
+    for (i = 0; i < 10 * SEC; i++) {
+        if (!pt_step())
+            return;
+        if (pt_km(0, 1) > 1500)
+            moved = 1;
+    }
+    REQUIRE(moved, e_left, (int32_t)1500, 0, 0);
+    REQUIRE(pt_km(0, 1) < 6000, e_round, pt_km(0, 1), 0, 0);
+    (void)logic_order(1, ORDER_FREE);
+}
+
+/* M10.9: the taunt: an enemy fighting a nearer ship turns on the player, however far, and fires though it is the
+ * player's selected target (the held fire is off); it does not move a friend or a capital ship */
+static void t_taunt(void)
+{
+    static const char __far e_first[] = "before the taunt the enemy's target is slot %d: the Terran ship beside it (slot 2)";
+    static const char __far e_turn[] = "taunted, the enemy's target is slot %d: the player (slot 0)";
+    static const char __far e_others[] = "logic_taunt took a friend (%d) or a capital ship (%d)";
+    static const char __far e_fire[] = "the taunted enemy, the player's selected target, with the player on its nose fired "
+        "%d shots in 15 s: a taunted ship holds no fire";
+    int16_t i, a0;
+    pt_alone(PT_PLAYER);
+    g_sys.armed = 0;
+    playerCanBeDamaged = 0;
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, 0, 0, 16000, TURN / 2);
+    pt_ship(2, PT_PLAYER, SIDE_TERRAN, CTL_FROZEN, 1000, 0, 16000, 0);
+    pt_ship(3, PT_CAPSHIP, SIDE_AERA, CTL_FROZEN, -20000, 0, 0, 0);
+    if (!pt_steps(2 * SEC))
+        return;
+    REQUIRE(rvTarget[1] == 2, e_first, rvTarget[1], 0, 0);
+    REQUIRE(!logic_taunt(2) && !logic_taunt(3), e_others, logic_taunt(2), logic_taunt(3), 0);
+    REQUIRE(logic_taunt(1), e_turn, rvTarget[1], 0, 0);
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(rvTarget[1] == 0, e_turn, rvTarget[1], 0, 0);
+    /* the held fire: the player selects it, it faces the player from 3,000 km */
+    g_rule_flags = RV_RULE_AIM_CONE | RV_RULE_HOLD_FIRE;
+    ship_clear(2);
+    ship_clear(3);
+    pt_put(1, 0, 0, 3000, TURN / 2);
+    rvTarget[0] = 1;
+    (void)logic_taunt(1);
+    a0 = shots_added();
+    for (i = 0; i < 15 * SEC; i++) {
+        rvTarget[0] = 1;
+        if (!pt_step())
+            return;
+    }
+    REQUIRE(shots_added() != a0, e_fire, shots_added() - a0, 0, 0);
+    rvTarget[0] = 0xFF;
+}
+
 /* M10.7: the missile lock: the Lancelot's heat seeker on a target 3,000 km ahead flying away locks in its lock time
  * (3 s), and the lock goes the step the target turns to face the player; the image-recognition missile (W) locks on
  * it facing or not; the tracking wrecked, or the EMCON off, no lock; the Schroedinger's dumbfire never locks */
@@ -4242,6 +4421,8 @@ static const char __far n_m8_10[] = "M8.10 escort-out (route_step): an escort ta
 static const char __far n_m8_11[] = "M8.11 escort-lost (mission_done): the Ox killed is the mission lost, whatever else was done";
 static const char __far n_m8_12[] = "M8.12 escort-along (logic_autopilot): the autopilot brings the Ox, 800 km behind the "
     "player, and stops 4,500 km short of the nav point";
+static const char __far n_m8_13[] = "M8.13 home-carrier (camp_load_units, ship_think): the Vigilance behind the launch, holding station, T finds it in front";
+static const char __far n_m8_14[] = "M8.14 landing-rule (logic_request_landing, logic_end): none at the launch; a nav point flown or the mission finished; a clearance is home";
 static const char __far n_m9_1[] = "M9.1 gunsight (logic_hud): a mark at the view's middle";
 static const char __far n_m9_2[] = "M9.2 brackets (logic_hud): marks round the target";
 static const char __far n_m10_1[] = "M10.1 target-front (logic_target_next): T picks only in front of the pilot, nearest the nose first, round";
@@ -4251,6 +4432,9 @@ static const char __far n_m10_4[] = "M10.4 weapon-choice (logic_guns_next, logic
 static const char __far n_m10_5[] = "M10.5 nav-cross (logic_hud): a white cross where the chosen nav point lies on the view";
 static const char __far n_m10_6[] = "M10.6 orders (logic_order): attack my target, help me out, form on my wing, return to base";
 static const char __far n_m10_7[] = "M10.7 missile-lock (lock_tick): a heat seeker from behind in its time, image recognition anyhow, none wrecked or dark, a dumbfire never";
+
+static const char __far n_m10_8[] = "M10.8 break-formation (logic_order): fly in formation fights nobody; break formation goes for any enemy, else round the player";
+static const char __far n_m10_9[] = "M10.9 taunt (logic_taunt): an enemy fighter turns on the player, however far, and holds no fire; not a friend or a capital ship";
 
 static const PtTest __far k_tests[] = {
     { n_m1_1, t_coast, 0 }, { n_m1_2, t_throttle, 0 }, { n_m1_3, t_top_speed, 0 }, { n_m1_4, t_yaw, 0 },
@@ -4284,9 +4468,11 @@ static const PtTest __far k_tests[] = {
     { n_m8_1, t_start, 0 }, { n_m8_2, t_nav1, 0 }, { n_m8_3, t_nav_once, 0 }, { n_m8_4, t_won, 0 },
     { n_m8_5, t_skipped, 0 }, { n_m8_6, t_enemies_left, 0 }, { n_m8_7, t_layer_spawn, 0 }, { n_m8_8, t_autopilot, 0 },
     { n_m8_9, t_fighter, 0 }, { n_m8_10, t_escort_out, 0 }, { n_m8_11, t_escort_lost, 0 }, { n_m8_12, t_escort_along, 0 },
+    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 },
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
     { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 }, { n_m10_6, t_orders, 0 }, { n_m10_7, t_missile_lock, 0 },
+    { n_m10_8, t_break_formation, 0 }, { n_m10_9, t_taunt, 0 },
 };
 
 /* --- the run --- */

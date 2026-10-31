@@ -9,7 +9,7 @@
 #include "rv.h"
 #include "lightfield.h"
 
-#define SHIP_SETS 8
+#define SHIP_SETS 9
 
 typedef struct {
     unsigned short w, h;

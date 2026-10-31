@@ -39,7 +39,7 @@ static int __far g_ncast;
 static unsigned char __far g_ramp[2 * LEVELS];   /* a shade's entry, its scan line's */
 static unsigned char __far g_shade[256];          /* an entry's shade (the grain's), 0xFF: not the link's */
 static unsigned char __far g_steps[MAX_STEPS];
-static char __far g_line[LINE];                   /* a voice's own line, when it says that */
+static char __far g_line[LINE];                   /* the line being said */
 static unsigned char __far g_kept[COMMS_W];       /* a kept row's shades */
 static unsigned char __far g_part[COMMS_W];       /* (an asset's row) */
 static unsigned char __far g_out[2][COMMS_W];     /* a kept row as drawn: its two rows */
@@ -210,8 +210,11 @@ int comms_say(int voice, int vdu, const char __far *text)
             dat_read(a->at, g_line, a->size < LINE ? a->size : LINE);
             g_line[LINE - 1] = 0;
         }
-        text = g_line;
+    } else {
+        _fstrncpy(g_line, text, LINE - 1);
+        g_line[LINE - 1] = 0;
     }
+    text = g_line;
     g_c.vdu = vdu;
     g_c.cols = dat_asset(g_c.v.base)->w;
     g_c.sx = g_c.cols ? COMMS_W / g_c.cols : 1;
@@ -247,6 +250,11 @@ int comms_say(int voice, int vdu, const char __far *text)
     }
     g_c.on = 1;
     return 1;
+}
+
+const char __far *comms_text(void)
+{
+    return g_line;
 }
 
 int comms_on(int vdu)

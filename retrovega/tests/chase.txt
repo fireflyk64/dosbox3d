@@ -60,5 +60,5 @@ wait 18
 shot V07FLY3
 wait 40
 shot V08ARRIV
-key c
+key esc
 wait 90

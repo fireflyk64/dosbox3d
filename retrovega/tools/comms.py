@@ -47,7 +47,7 @@ import lipsync  # noqa: E402
 
 ROOT = os.path.join(HERE, '..')
 FACES = os.path.join(ROOT, 'art', 'people', 'faces')
-PILOTS = ['COMET', 'FROST', 'ECHO', 'TORCH', 'KESTREL', 'DRIFTER', 'PRIME', 'ANCHOR', 'HERO_M', 'HERO_F']
+PILOTS = ['COMET', 'FROST', 'ECHO', 'TORCH', 'KESTREL', 'DRIFTER', 'PRIME', 'ANCHOR', 'HERO_M', 'HERO_F', 'XO']   # (the XO: the carrier's voice)
 SIDES = {'terran': 0, 'aera': 1, 'rlaan': 2}
 SW, SH = 112, 80                        # on the VDU (most cockpits' VDUs are 103..109 x 70..74)
 ROWS = 40                               # kept: each row drawn twice

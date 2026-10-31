@@ -147,13 +147,28 @@ try {
     ok(keys.length === 2 && keys[0][0] === 0x39 && keys[0][1] === 1 && keys[1][1] === 0, `Fire: Space down and up (${JSON.stringify(keys)})`);
     await page.locator("#touchKeys").tap();
     await sleep(300);
-    await page.keyboard.insertText("c");         // the carrier: land, typed with the Keys button
+    await page.keyboard.insertText("c1");        // the comm menu with the Keys button: 1 the wingman
+    await sleep(500);
+    await page.keyboard.insertText("2");         // break formation
     await page.locator("#touchKeys").tap();
   } else {
-    await page.keyboard.press("c");     // the carrier: land
+    await page.keyboard.press("c");     // the comm menu: 1 the wingman, 2 break formation
+    await sleep(300);
+    await page.keyboard.press("1");
+    await sleep(300);
+    await page.keyboard.press("2");
   }
+  t = await waitLog(/flight: comm: order \d+ to slot \d+: taken/, 10000);
+  ok(/flight: comm: order \d+ to slot \d+: taken/.test(t), "the comm menu: the wingman takes the order");
+  // (landing takes a nav point flown and the carrier in front: the play tests' M8.14; this check ejects to end the flight)
+  await page.evaluate(async () => {
+    const f = window.RetroVegaPage.module()._rv_page_key, wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let k = 0; k < 2; k++) {       // Ctrl+E twice within two seconds
+      f(0x1D, 1); f(0x12, 1); await wait(250); f(0x12, 0); f(0x1D, 0); await wait(250);
+    }
+  });
   t = await waitLog(/flight: over/, 20000);
-  ok(/flight: over/.test(t), "C: landed");
+  ok(/flight: over/.test(t), "ejected: the flight is over");
   await sleep(4000);
   await shot("debrief");
   const audio = await page.evaluate(() => { const M = window.RetroVegaPage.module(); return M && M.SDL2 && M.SDL2.audioContext ? M.SDL2.audioContext.state : "none"; });

@@ -34,8 +34,7 @@ static void fit(char *s, int w)
 
 static unsigned char __far g_page[2];
 static unsigned char __far g_cursor;    /* the damage page's line: which hurt system it names (D again: the next) */
-static unsigned char __far g_comm_level;   /* the comm menu: 0 whom, 1 a wingman's orders, 2 the carrier's */
-static int __far g_comm_who;            /* the wingman's slot (level 1) */
+static unsigned char __far g_comm_level;   /* the comm menu's page (LEVEL_*) */
 #define MSHIP_PILOT(r) (missionShipTable[missionShipTable_SIZE * ((r) & 63) + 16])
 
 void vdu_flight_start(void)
@@ -44,20 +43,15 @@ void vdu_flight_start(void)
     g_page[1] = VDU_R_TARGET;
     g_cursor = 0;
     g_comm_level = 0;
-    g_comm_who = -1;
 }
 
 /* --- the comm menu --- */
 
-#define COMM_WINGMEN 6                  /* at most this many wingmen listed */
+enum { LEVEL_WHOM, LEVEL_WINGMAN, LEVEL_TARGET };   /* its pages */
+enum { TARGET_NONE, TARGET_ENEMY, TARGET_HOME, TARGET_WING, TARGET_FRIEND };   /* what the target page offers */
 
-static const char __far k_order_line[ORDER_COUNT][20] = {
-    "BREAK AND ATTACK", "ATTACK MY TARGET", "FORM ON MY WING", "HELP ME OUT", "RETURN TO BASE"
-};
-static const uint8_t __far k_order_key[5] = { ORDER_ATTACK, ORDER_FREE, ORDER_FORMATION, ORDER_HELP, ORDER_RTB };   /* 1 .. 5 */
-
-/* a wingman's callsign (its mission record's pilot), else its type's name */
-static void wingman_name(int s, char *out, int max)
+/* a ship's callsign (its mission record's pilot), else its type's name */
+static void ship_name(int s, char *out, int max)
 {
     int r = slotMissionShip[s], pilot = r < 64 ? MSHIP_PILOT(r) : RV_PILOT_NONE;
     if (pilot != RV_PILOT_NONE && pilot < (int)g_npilots && g_pilots[pilot].callsign[0])
@@ -65,53 +59,92 @@ static void wingman_name(int s, char *out, int max)
     else if (slot_type((int16_t)s))
         _fstrncpy(out, slot_type((int16_t)s)->name, max - 1);
     else
-        strcpy(out, "WINGMAN");
+        strcpy(out, "UNKNOWN");
     out[max - 1] = 0;
+}
+
+static int comm_wrecked(void)
+{
+    return systemDamage[SYS_INTERCOM] >= SYS_WRECKED;
+}
+
+/* the wingman the menu's 1 talks to: the first of the wing, -1 none left */
+static int comm_wingman(void)
+{
+    int16_t wing[1];
+    return logic_wingmen(wing, 1) ? wing[0] : -1;
+}
+
+static int comm_target(void)
+{
+    int t = g_sys.target;
+    if (t < 0 || !slot_is_ship((int16_t)t) || shipAiState[t] == 9)
+        return TARGET_NONE;
+    if (commAnimInfo[t] != commAnimInfo[0])
+        return TARGET_ENEMY;
+    if (logic_is_home((int16_t)t))
+        return TARGET_HOME;
+    return logic_is_wingman((int16_t)t) ? TARGET_WING : TARGET_FRIEND;
+}
+
+/* the page that can still be shown: the wingman dead, the target gone or the intercom wrecked under an open page puts
+ * the menu back at its first (the target's page follows the target: T changes it) */
+static int comm_level(void)
+{
+    int kind;
+    if (g_comm_level == LEVEL_WINGMAN && (comm_wrecked() || comm_wingman() < 0))
+        g_comm_level = LEVEL_WHOM;
+    if (g_comm_level == LEVEL_TARGET) {
+        kind = comm_target();
+        if (kind == TARGET_NONE || (comm_wrecked() && kind != TARGET_HOME))
+            g_comm_level = LEVEL_WHOM;
+    }
+    return g_comm_level;
 }
 
 void vdu_comm_open(void)
 {
-    g_comm_level = 0;
-    g_comm_who = -1;
+    g_comm_level = LEVEL_WHOM;
     g_page[0] = VDU_L_COMM;
 }
 
-int vdu_comm_key(int ch, int *who, int *what)
+int vdu_comm_key(int ch, int *who, int *order)
 {
-    int16_t wing[COMM_WINGMEN];
-    int n, d;
+    int d, level, kind;
     *who = -1;
-    *what = COMM_NONE;
+    *order = ORDER_FREE;
     if (g_page[0] != VDU_L_COMM)
         return COMM_NONE;
     if (ch == 27 || ch == '0') {        /* (Esc, 0: never mind) */
         g_page[0] = VDU_L_STATUS;
-        return *what = COMM_CLOSE;
+        return COMM_CLOSE;
     }
     if (ch < '1' || ch > '9')
         return COMM_NONE;
     d = ch - '0';
-    if (g_comm_level == 0) {            /* whom: a wingman, or the carrier after them */
-        n = logic_wingmen(wing, COMM_WINGMEN);
-        if (d <= n) {
-            g_comm_who = wing[d - 1];
-            g_comm_level = 1;
-        } else if (d == n + 1)
-            g_comm_level = 2;
+    level = comm_level();
+    if (level == LEVEL_WHOM) {
+        if (d == 1)
+            g_comm_level = LEVEL_WINGMAN;
+        else if (d == 2)
+            g_comm_level = LEVEL_TARGET;
+        (void)comm_level();             /* (none to talk to: it stays) */
         return COMM_NONE;
     }
-    if (g_comm_level == 1) {            /* an order */
-        if (d > 5)
+    kind = comm_target();
+    if (level == LEVEL_WINGMAN || kind == TARGET_WING) {
+        if (d > 2)
             return COMM_NONE;
-        *who = g_comm_who;
+        *who = level == LEVEL_WINGMAN ? comm_wingman() : g_sys.target;
+        *order = d == 1 ? ORDER_FORMATION : ORDER_BREAK;
         g_page[0] = VDU_L_STATUS;
-        return *what = (int)k_order_key[d - 1] + 0x100;   /* (the order in the low byte: COMM_ORDER's) */
+        return COMM_ORDER;
     }
-    if (d == 1) {                       /* the carrier: request landing */
-        g_page[0] = VDU_L_STATUS;
-        return *what = COMM_LANDING;
-    }
-    return COMM_NONE;
+    if (d != 1 || kind == TARGET_FRIEND)
+        return COMM_NONE;
+    *who = g_sys.target;
+    g_page[0] = VDU_L_STATUS;
+    return kind == TARGET_ENEMY ? COMM_TAUNT : COMM_LANDING;
 }
 
 void vdu_show(int which, int page)
@@ -439,41 +472,82 @@ static void draw_nav(const RvRect __far *r, int y0, int y1)
     }
 }
 
-/* the comm page: SEND TO and the wingmen and the carrier, or a wingman's orders, or the carrier's */
+/* the comm page: 1 the wingman and 2 the target, or what can be said to the one picked */
 static void draw_comm(const RvRect __far *r, int y0, int y1)
 {
-    char lines[COMM_WINGMEN + 3][20];
-    int16_t wing[COMM_WINGMEN];
-    int n = 0, k, w;
-    if (systemDamage[SYS_INTERCOM] >= SYS_WRECKED) {
-        text(r->x + 4, r->y + 3, "INTERCOM OUT", 0, y0, y1);
-        return;
-    }
-    if (g_comm_level == 0) {
-        char name[12];
-        strcpy(lines[n++], "SEND TO:");
-        w = logic_wingmen(wing, COMM_WINGMEN);
-        for (k = 0; k < w; k++) {
-            wingman_name(wing[k], name, 9);
-            sprintf(lines[n++], "%d %s", k + 1, name);
+    char lines[4][20], name[12];
+    int n = 0, level = comm_level(), kind = comm_target();
+    if (level == LEVEL_WHOM) {
+        int w = comm_wingman();
+        strcpy(lines[n++], comm_wrecked() ? "INTERCOM OUT" : "SEND TO:");
+        if (!comm_wrecked()) {
+            if (w >= 0)
+                ship_name(w, name, 12);
+            else
+                strcpy(name, "NO WINGMAN");
+            sprintf(lines[n++], "1 %s", name);
         }
-        sprintf(lines[n++], "%d CARRIER", w + 1);
-    } else if (g_comm_level == 1) {
-        char name[12];
-        wingman_name(g_comm_who, name, 9);
-        sprintf(lines[n++], "%s:", name);
-        for (k = 0; k < 5; k++) {
-            char line[18];
-            _fstrncpy(line, k_order_line[k_order_key[k]], sizeof line - 1);
-            line[sizeof line - 1] = 0;
-            sprintf(lines[n++], "%d %s", k + 1, line);   /* (18 characters, 72 px: the small VDU is 84) */
-        }
+        if (kind != TARGET_NONE && (!comm_wrecked() || kind == TARGET_HOME)) {
+            ship_name(g_sys.target, name, 12);
+            sprintf(lines[n++], "2 %s", name);
+        } else if (!comm_wrecked())
+            strcpy(lines[n++], "2 NO TARGET");
     } else {
-        strcpy(lines[n++], "CARRIER:");
-        strcpy(lines[n++], "1 LANDING");
+        ship_name(level == LEVEL_WINGMAN ? comm_wingman() : g_sys.target, name, 12);
+        sprintf(lines[n++], "%s:", name);
+        if (level == LEVEL_WINGMAN || kind == TARGET_WING) {
+            strcpy(lines[n++], "1 FLY IN FORMATION");
+            strcpy(lines[n++], "2 BREAK FORMATION");
+        } else if (kind == TARGET_ENEMY)
+            strcpy(lines[n++], "1 TAUNT");
+        else if (kind == TARGET_HOME)
+            strcpy(lines[n++], "1 REQUEST LANDING");
+        else
+            strcpy(lines[n++], "NOTHING TO SEND");
     }
     strcpy(lines[n++], "0 NEVER MIND");
     (void)menu(r, lines, n, 0, -1, y0, y1);
+}
+
+/* a comm's line, its words wrapped to the VDU, the last rows at its foot on black so they read over the face */
+void vdu_subtitle(const RvRect __far *r, const char __far *s, int y0, int y1)
+{
+    enum { ROWS = 4, COLS = 28 };
+    char row[ROWS][COLS + 1];
+    int cols = (r->w - 4) / 4, n = 0, len = 0, k, y, top;
+    if (cols > COLS)
+        cols = COLS;
+    if (cols < 4 || !s || !*s)
+        return;
+    while (*s && n < ROWS) {            /* (greedy: word by word; a word too long for a row is cut) */
+        const char __far *e = s;
+        int w;
+        while (*e && *e != ' ')
+            e++;
+        w = (int)(e - s);
+        if (w > cols)
+            w = cols;
+        if (len && len + 1 + w > cols) {
+            row[n++][len] = 0;
+            len = 0;
+            if (n == ROWS)
+                break;
+        }
+        if (len)
+            row[n][len++] = ' ';
+        for (k = 0; k < w; k++)
+            row[n][len++] = (char)s[k];
+        s = e;
+        while (*s == ' ')
+            s++;
+    }
+    if (n < ROWS && len)
+        row[n++][len] = 0;
+    top = r->y + r->h - n * FH - 1;
+    for (y = top < y0 ? y0 : top; y < y1 && y < r->y + r->h; y++)
+        _fmemset(vid_row(y) + r->x, 0, r->w);
+    for (k = 0; k < n; k++)
+        text(r->x + 2, top + 1 + k * FH, row[k], 1, y0, y1);
 }
 
 int vdu_draw(int which, const RvRect __far *r, int y0, int y1)

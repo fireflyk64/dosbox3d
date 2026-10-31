@@ -142,6 +142,7 @@ void camp_mission(uint16_t i, RvMission __far *out)
  * point at the origin: +0 id, +2 position x y z in km, and at +0x39 the ten
  * mission ships there (0xFFFF none).  A group's ships side by side, 1,500 km
  * apart (a fighter is some 900 km across). */
+#define HOME_BEHIND_KM 2000
 void camp_load_units(const RvMission __far *m)
 {
     uint8_t *ships = missionShipTable, *navs = navPointTable;
@@ -177,9 +178,11 @@ void camp_load_units(const RvMission __far *m)
             *(uint16_t *)(rec + 6) = s->type == RV_SHIP_PLAYER ? 6 : s->type == RV_SHIP_WINGMAN ? 4 : 0;
             *(uint16_t *)(rec + 8) = s->nav;
             *(int16_t *)(rec + 10) = (int16_t)(k * 1500);
+            if (s->role == RV_ESCORT_HOME)  /* (the carrier: behind the launch, which faces +z, its hull clear of the player) */
+                *(int16_t *)(rec + 14) = -HOME_BEHIND_KM;
             rec[16] = s->pilot;
             rec[17] = s->ai;                /* (its AI profile, P_* + 1, 0 the type's own; logic.c outerSpawnShipEntity) */
-            rec[18] = s->role;              /* (an escort target's: RV_ESCORT_OUT, RV_ESCORT_IN; logic.c MSHIP_ROLE) */
+            rec[18] = s->role;              /* (an escort target's, the home carrier's: RV_ESCORT_*; logic.c MSHIP_ROLE) */
             rec[19] = s->fear;              /* (its own fear rates, c | d << 4, 0 the profile's) */
             for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
                 ;

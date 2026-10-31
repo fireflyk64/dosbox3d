@@ -46,7 +46,7 @@
 
 int g_flight_seconds = 20;              /* the benchmark flight's length (RV.EXE /flight N) */
 int g_flight_timed = 0;                 /* /flight N given: the flight lands by itself after N seconds (the tests);
-                                           else it lands when the player calls the carrier (C) */
+                                           else it lands when the carrier clears the player (the comm menu) */
 /* the test aids' switches.  Their code (the demos, the benchmarks, the self-tests) is in the test build only,
  * RVT.EXE (build.sh compiles the modules that have it again with -dRV_TESTS: docs/engine.md, "The test build");
  * the game's RV.EXE keeps the switches, never set, so the flight reads the same either way. */
@@ -1364,8 +1364,12 @@ static void mfd_draw(int which, const RvRect __far *r, int y0, int y1)
 {
     /* a comm on this VDU, else its page (vdu.c: the target, the weapons, the damage; the comm and nav menus); the
        right VDU dark with the targeting display damaged */
-    if (comms_draw(which, r, y0, y1))
+    if (which == 0 && vdu_page(0) == VDU_L_COMM && vdu_draw(0, r, y0, y1))
+        return;                         /* (the menu over a comm: it comes up at any time, the comm goes on under it) */
+    if (comms_draw(which, r, y0, y1)) {
+        vdu_subtitle(r, comms_text(), y0, y1);
         return;
+    }
     if (which == 1 && (rvCockpitDamage >> 1 & 1))
         return;
     (void)vdu_draw(which, r, y0, y1);
@@ -1382,7 +1386,7 @@ static int lasers_far(void);
  * GUARD 243 for an alien's hail) and its frequency knobs step there; the afterburner (Tab) burns fuel and heat; the
  * signature is what an enemy will find you by.  Keys: K EMCON, V sensor, I IFF, U comms mute, N nav point, M master
  * arm, T next target, Y the nearest enemy, L hold the lock, G radar range, H the survival display's page, X a decoy,
- * C call the carrier to land, Tab the afterburner (held), Ctrl+E twice eject; a click on a control works it. */
+ * C the comm menu, Tab the afterburner (held), Ctrl+E twice eject; a click on a control works it. */
 static const unsigned char __far g_freq[3][3] = { { 2, 6, 7 }, { 3, 1, 5 }, { 2, 4, 3 } };   /* MHz: WING, CARRIER, GUARD */
 static unsigned long __far g_eject_at;  /* Ctrl+E (or the handle) once: when; a second within 2 s ejects */
 static int __far g_heat10;              /* heat x 10, following the engine with a lag */
@@ -1390,42 +1394,16 @@ static int __far g_last_side = -1;      /* who talked last frame */
 static unsigned __far g_shield_was;     /* the shields last frame (a drop flickers the lights) */
 static int __far g_flicker;             /* frames of flicker left */
 
-/* C calls the carrier to land (the user's call, 2026-10-23: no more landing when a timer ran out): the player's
- * own voice asks on the left VDU, and the flight ends when the line is said (at once with the comms muted) */
-static unsigned char __far g_landing;   /* 1 the call made, 2 and on the VDU */
-static unsigned long __far g_land_at;   /* when to land, if the call shows no face */
-
-static void call_carrier(void)
-{
-    static const char __far s_call[] = "Vigilance, Wildcard. Requesting clearance to land.";
-    int i;
-    if (g_landing)
-        return;
-    g_landing = 1;
-    g_land_at = clock240() + 240;
-    RV_LOG("flight: C: the player calls the carrier to land");
-    if (g_sys.muted)
-        return;
-    for (i = 0; i < (int)g_npilots; i++)
-        if (g_pilots[i].role == RV_ROLE_HERO && comms_say(comms_voice(i), 0, s_call)) {
-            g_landing = 2;              /* (on the VDU: landing when it is said) */
-            return;
-        }
-}
-
-/* --- the comm menu (vdu.c's page): the pilot's own line on the left VDU, the wingman's answer on the right ---
+/* --- the comm menu (vdu.c's page): the pilot's own line on the left VDU, the answer on the right ---
  *
- * The user's ask (2026-10-31): the wingman takes orders (attack my target, break and attack, form on my wing, help me
- * out, return to base) through a comm menu; the carrier takes the landing request there too */
-static const char __far k_hero_line[ORDER_COUNT][24] = {
-    "Break and attack!", "Attack my target!", "Form on my wing.", "Help me out here!", "Return to base."
-};
-static const char __far k_reply_line[ORDER_COUNT][32] = {
-    "Breaking and attacking!", "Roger, attacking your target.", "Forming up on your wing.", "On my way!", "Heading home."
-};
-static const char __far s_refused[] = "Negative. I can't do that.";
-static int __far g_reply_slot = -1;     /* a wingman's answer waiting for the pilot's own comm to end */
-static const char __far *__far g_reply_text;
+ * The user's asks (2026-10-31): 1 the wingman (fly in formation, break formation), 2 the target (taunt an enemy; the
+ * home carrier: request landing, which it grants with the mission finished or a nav point flown: logic.c).  Landing is
+ * the carrier's answer now, no more a timer's (2026-10-23): the flight ends when its clearance has been said. */
+static unsigned char __far g_landing;   /* cleared: 1 no comm to wait for, 2 the comms being said */
+static unsigned long __far g_land_at;   /* when to land, if the clearance shows no face */
+static unsigned long __far g_denied_until;   /* the status line says so till then */
+static int __far g_reply_voice = -1;    /* an answer waiting for the pilot's own comm to end */
+static const char __far *__far g_reply_text;   /* (NULL: the voice's own line) */
 
 /* a wingman's voice: its mission record's pilot, else the squadron's first pilot */
 static int wingman_voice(int s)
@@ -1439,13 +1417,27 @@ static int wingman_voice(int s)
     return -1;
 }
 
-static int hero_voice(void)
+/* the voice of the first of the cast with this role */
+static int role_voice(int role)
 {
     int i;
     for (i = 0; i < (int)g_npilots; i++)
-        if (g_pilots[i].role == RV_ROLE_HERO)
+        if (g_pilots[i].role == role)
             return comms_voice(i);
     return -1;
+}
+
+static int comm_silent(void)
+{
+    return g_sys.muted || systemDamage[SYS_INTERCOM] >= SYS_WRECKED;
+}
+
+/* the pilot's line now, the other's answer when it is over */
+static void comm_exchange(const char __far *line, int voice, const char __far *reply)
+{
+    (void)comms_say(role_voice(RV_ROLE_HERO), 0, line);
+    g_reply_voice = voice;
+    g_reply_text = reply;
 }
 
 static void comm_open(void)
@@ -1455,43 +1447,84 @@ static void comm_open(void)
     vdu_comm_open();                    /* (the page says so itself when the intercom is out) */
 }
 
-/* a key while the comm menu is up: a digit picks, 0 or Esc closes (vdu_comm_key); an order goes to the wingman's
- * mind (logic_order) with the pilot's line, and the wingman answers once the pilot's comm is over */
-static void comm_key(int ch)
+static void comm_landing(void)
 {
-    int who, what, order, ok;
-    static const char __far s_order[] = "flight: comm: order %d to slot %d: %s";
-    what = vdu_comm_key(ch, &who, &what);
-    if (what == COMM_LANDING) {
-        call_carrier();
+    static const char __far s_ask[] = "Vigilance, Wildcard. Requesting clearance to land.";
+    static const char __far s_yes[] = "Wildcard, Vigilance. You are cleared to land.";
+    static const char __far s_no[] = "Negative, Wildcard. Fly your patrol first.";
+    static const char __far s_log[] = "flight: comm: landing %s";
+    int ok;
+    if (g_landing)
         return;
-    }
-    if (what < 0x100)
+    ok = logic_request_landing();
+    rv_logf(s_log, ok ? "cleared" : "refused");
+    if (ok) {
+        g_landing = 1;
+        g_land_at = clock240() + 240;
+    } else
+        g_denied_until = clock240() + 720;
+    if (comm_silent())
         return;
-    order = what & 0xFF;
-    ok = logic_order(who, order);
-    rv_logf(s_order, order, who, ok ? "taken" : "refused");
-    if (g_sys.muted || systemDamage[SYS_INTERCOM] >= SYS_WRECKED)
-        return;
-    (void)comms_say(hero_voice(), 0, k_hero_line[order]);
-    g_reply_slot = who;
-    g_reply_text = ok ? k_reply_line[order] : s_refused;
+    comm_exchange(s_ask, role_voice(RV_ROLE_XO), ok ? s_yes : s_no);
+    if (ok)
+        g_landing = 2;
 }
 
-/* once a frame: the wingman's answer when the VDUs are free */
+/* the taunt: the pilot's words, the enemy's answer in its own voice's line, its anger (logic_taunt) */
+static void comm_taunt(int who)
+{
+    static const char __far s_taunts[4][44] = {
+        "Is that the best you can fly?", "Over here! Try hitting something for once.",
+        "I've seen better flying from a cargo pod.", "Come and get me, if you can keep up."
+    };
+    static const char __far s_log[] = "flight: comm: taunted slot %d: %s";
+    int ok = logic_taunt((int16_t)who);
+    rv_logf(s_log, who, ok ? "it turns on the player" : "no effect");
+    if (!comm_silent())
+        comm_exchange(s_taunts[frameCounter & 3], comms_voice_for(commAnimInfo[who], gInstanceShipTypes[who]), NULL);
+}
+
+static void comm_order(int who, int order)
+{
+    static const char __far s_form[] = "Form up on my wing.";
+    static const char __far s_break[] = "Break formation!";
+    static const char __far s_forming[] = "Forming up on your wing.";
+    static const char __far s_breaking[] = "Breaking formation!";
+    static const char __far s_refused[] = "Negative. I can't do that.";
+    static const char __far s_log[] = "flight: comm: order %d to slot %d: %s";
+    int ok = logic_order((int16_t)who, (int16_t)order);
+    rv_logf(s_log, order, who, ok ? "taken" : "refused");
+    if (!comm_silent())
+        comm_exchange(order == ORDER_FORMATION ? s_form : s_break, wingman_voice(who),
+                      !ok ? s_refused : order == ORDER_FORMATION ? s_forming : s_breaking);
+}
+
+/* a key while the comm menu is up: a digit picks, 0 or Esc closes (vdu_comm_key) */
+static void comm_key(int ch)
+{
+    int who, order;
+    switch (vdu_comm_key(ch, &who, &order)) {
+    case COMM_ORDER: comm_order(who, order); break;
+    case COMM_TAUNT: comm_taunt(who); break;
+    case COMM_LANDING: comm_landing(); break;
+    }
+}
+
+/* once a frame: the answer when the VDUs are free */
 static void comm_reply_tick(void)
 {
-    if (g_reply_slot < 0 || comms_on(0) || comms_on(1))
+    if (g_reply_voice == -1 || comms_on(0) || comms_on(1))
         return;
-    (void)comms_say(wingman_voice(g_reply_slot), 1, g_reply_text);
-    g_reply_slot = -1;
+    (void)comms_say(g_reply_voice, 1, g_reply_text);
+    g_reply_voice = -1;
 }
 
 static void systems_start(void)
 {
     _fmemset(&g_sys, 0, sizeof g_sys);
     g_landing = 0;
-    g_reply_slot = -1;
+    g_denied_until = 0;
+    g_reply_voice = -1;
     g_sys.emcon = EMCON_ACTIVE;
     g_sys.iff = 1;
     g_sys.armed = 1;                    /* (out of the launch tube: armed) */
@@ -1678,7 +1711,7 @@ static int system_key(int ch)
     case 'k': system_action(RV_PF_EMCON_KNOB, 0); return 1;
     case 'v': g_sys.sensor ^= 1; return 1;
     case 'i': system_action(RV_PF_IFF_KNOB, 0); return 1;
-    case 'c': comm_open(); return 1;    /* (the comm menu: the orders, the landing request) */
+    case 'c': comm_open(); return 1;    /* (the comm menu: the wingman, the target; the landing request) */
     case 'u': system_action(RV_PF_VOL_KNOB, 0); return 1;
     case 'n': system_action(RV_PF_NAV_KNOB, 0); vdu_show(0, VDU_L_NAV); return 1;   /* (N: the nav page, the next point) */
     case 'm': system_action(RV_PF_ARM_KNOB, 0); return 1;
@@ -1820,8 +1853,11 @@ static void gather(void)
     if (g_flight_timed)
         sprintf(g_mfd[0][3], "T-%lu", (FLIGHT_TICKS - (clock240() - g_t0) + 239) / 240);
     else if (g_landing) {
-        static const char __far s_calling[] = "CALLING HOME";
-        _fstrcpy((char __far *)g_mfd[0][3], s_calling);
+        static const char __far s_cleared[] = "LANDING";
+        _fstrcpy((char __far *)g_mfd[0][3], s_cleared);
+    } else if (clock240() < g_denied_until) {
+        static const char __far s_denied[] = "NO LANDING";
+        _fstrcpy((char __far *)g_mfd[0][3], s_denied);
     } else
         g_mfd[0][3][0] = 0;
     for (i = n = 0; i < 4; i++)         /* the lines that say something, from the top (a comm takes the whole VDU, so
@@ -2797,12 +2833,12 @@ void __far __cdecl flight_frame(void)
     if (g_comm_demo && !comms_on(0) && !comms_on(1))
         comm_demo_next();
 #endif
-    if (!g_comm_demo && frameCounter == 90)
+    comm_reply_tick();                  /* (first: an answer waiting goes before a hail takes the VDU) */
+    if (!g_comm_demo && frameCounter == 90 && !comms_on(0) && !comms_on(1) && g_reply_voice == -1)
         comm_launch();
     else if (!g_comm_demo)
         comm_hail();
     comms_tick();
-    comm_reply_tick();
     sim_step();
 #ifdef RV_TESTS
     if (g_boom_demo)
@@ -2909,8 +2945,8 @@ void __far __cdecl flight_frame(void)
     rvFrameDone();
     if (g_flight_timed && now - g_t0 >= FLIGHT_TICKS)
         missionStatus = 1;              /* landed */
-    if (g_landing == 2 ? !comms_on(0) : g_landing && now >= g_land_at)
-        missionStatus = 1;              /* landed: the call said */
+    if (g_landing == 2 ? g_reply_voice == -1 && !comms_on(0) && !comms_on(1) : g_landing && now >= g_land_at)
+        missionStatus = 1;              /* landed: the clearance said */
     if (g_flames_demo && g_record && ++g_flames_frames >= FLAMES_FRAMES)
         missionStatus = 1;              /* (its recording is so many frames, however slowly they are made) */
     /* the frame rate capped at FPS_WANT: the simulation is per frame (a kps is 12.8 units a frame), so

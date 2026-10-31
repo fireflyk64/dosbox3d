@@ -503,13 +503,13 @@ The scan for this guide, most needed first:
    explodes, a shot sounds its weapon, a hit throws sparks, a missile launches and bursts. engine.md, "Explosions and
    sound effects"; keep a dying ship's 9 to a step's end.)*
 3. *(see 2)*
-4. **Capital ship art.** Only the Vigilance exists, as a test aid (`/capital`). The roster's other capital ships have no sprites, and turrets have no aiming code.
+4. **Capital ship art.** The Vigilance (every mission's home carrier), the Kahan, the Ox, the Agasicles, the Anaxidamus and the Charillus have sprites; the roster's other capital ships have none.
 5. **Ship slots beyond 9:** rvabi.def plus the layer's phase 2.
 6. **The layer's RV.EXE support:** its column of offsets, the flight sites and the replication. Today it only logs.
 7. **Mission flow:**
    - nav points carry no hazards or waves into the flight (the placeholder spawns the whole mission at once);
    - the autopilot is the logic's to write (`logic_autopilot`);
-   - landing is only the C key's call to the carrier;
+   - landing is a clearance asked of the home carrier on the comm (the carrier as the target; the mission finished or a nav point flown: `logic_request_landing`), and the flight ends when it has been said;
    - ejection only sets `missionStatus`.
 8. **Text on the MFDs from the logic**, such as a weapon or missile display: no call yet.
 9. **Smaller items:**
