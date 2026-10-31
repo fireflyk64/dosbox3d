@@ -35,6 +35,10 @@ typedef struct {
 #pragma pack()
 
 extern RvSave g_camp;
+/* the mission's rules (data/missions.txt `rules`, camp_load_units): what a bolt must do to hit a ship (0: each
+ * type's own ships.csv choice; else an RV_SHIPTYPE_FLAG_HIT_* for every ship: shots.c) and the RV_RULE_* flags
+ * (logic.c: how the AI aims, whether a player's target holds its guns, what a collision costs) */
+extern uint8_t g_rule_hit, g_rule_flags;
 extern RvPilot g_pilots[RV_PILOTS];
 extern RvNode g_nodes[RV_NODES];
 extern uint16_t g_npilots, g_nnodes, g_nmissions;

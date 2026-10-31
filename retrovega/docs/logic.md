@@ -295,7 +295,7 @@ the side channel for "more bolts than slots".
 | `shot(i)` | the `Shot` record, to read or change: `x y z`, `vx vy vz`, `damage`, `life`, `owner`, `weapon`, `look`, `hx hy hz` (the drawn half length) |
 | `shots_count()`, `shot_remove(i)` | the last shot takes the removed one's index, so walk the list backwards |
 | `shots_move()` | every shot a step of its velocity and of its life; spent ones are removed |
-| `shot_hit(i, &slot, &where)` | the first ship, other than its owner, that its last step went into (its head less its velocity, to its head). A coarse box test, then the silhouette hull (`collide_segment`). Gives the slot and the first point inside |
+| `shot_hit(i, &slot, &where)` | the first ship, other than its owner, that its last step went into (its head less its velocity, to its head), the bolt's own radius (weapons.csv `radius_km`) counted. A coarse box test, then the mission's rule or the type's choice (`g_rule_hit`, ships.csv `hit`; docs/engine.md): within the radius (`segment_in_sphere`), the volume box (`collide_box`) or the silhouette hull (`collide_segment_fat`). Gives the slot and the point inside |
 | `shot_source(i)` | the slot to name as `do_damage`'s source (below) |
 
 **Drawing is automatic.** Each frame the list is copied into the bolts'

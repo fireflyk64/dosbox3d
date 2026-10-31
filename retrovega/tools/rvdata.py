@@ -34,10 +34,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 8                             # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 9                             # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
-                                        # and shields' rates back
+                                        # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
+                                        # volume, a weapon's radius, a mission's rules)
 LIMITS = {'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 12,
           'SEATS': 3, 'TALKS': 4, 'FIELDS': 4, 'SHIPTYPES': 64, 'WEAPONS': 48}
 TEXT = {'ID': 16, 'TITLE': 48, 'BRIEFING': 640, 'RESULT': 128, 'TALK': 60, 'KEY': 10, 'CALLSIGN': 12,
@@ -85,12 +86,34 @@ SHIPTYPE = [('char', 'key[RV_KEY]', '%ds' % TEXT['KEY']), ('char', 'name[RV_NAME
             ('unsigned short', 'missiles', 'H'), ('unsigned char', 'nengines', 'B'),
             ('unsigned char', 'gun_energy_steps', 'B'), ('unsigned char', 'shield_full_shift', 'B'),
             ('signed char', 'engine[RV_ENGINES][4]', '%db' % (4 * 4)),
-            ('unsigned char', 'hit[3]', '3B'), ('unsigned char', 'core', 'B'), ('unsigned char', 'nvitals', 'B'),
+            ('unsigned char', 'hit[3]', '3B'), ('unsigned char', 'box[3]', '3B'), ('unsigned char', 'core', 'B'),
+            ('unsigned char', 'nvitals', 'B'),
             ('signed char', 'vital[RV_VITALS][3]', '%db' % (3 * 8)),
             ('unsigned char', 'loadout[RV_GUNTABLE]', '%ds' % 0x33)]
 SHIPTYPE_FLAG_PLAYER = 1               # the player may fly it (a cockpit kit exists)
-SHIPTYPE_FLAG_HIT_SILHOUETTE = 2       # ships.csv hit=silhouette: a bolt hits it in its silhouettes only (blank: within its
-                                       # radius too, the old game's volume, for the balancing: shots.c)
+# what a bolt must do to hit a type (ships.csv `hit`; a mission's `rules hit=` overrides every type's: the user's
+# ruling of 2026-10-31, a game or a mission picks its look and feel): blank, pass within its radius (the old game's
+# volume, shots.c segment_in_sphere) or through its silhouettes; silhouette, the silhouettes alone; sphere, the
+# radius alone; box, a box in the ship's frame of the sphere's volume (below).  Every test adds the bolt's own
+# radius (weapons.csv radius_km) and takes the bolt's whole step (the segment from where it was to where it is)
+SHIPTYPE_FLAG_HIT_SILHOUETTE = 2
+SHIPTYPE_FLAG_HIT_SPHERE = 4
+SHIPTYPE_FLAG_HIT_BOX = 8
+HIT_MODES = {'': 0, 'silhouette': SHIPTYPE_FLAG_HIT_SILHOUETTE, 'sphere': SHIPTYPE_FLAG_HIT_SPHERE,
+             'box': SHIPTYPE_FLAG_HIT_BOX}
+# a mission's rules (missions.txt `rules`, at the top for every mission and in a mission for itself): hit=ships (each
+# type's own) | silhouette | sphere | box; the flags: aim=lead (the AI leads its shots, scattered a little) | cone
+# (the old game's: no lead, every ready gun whenever the nose is within the weapon's cone); hold=off | on (the old
+# game's: the ship a player has selected holds its guns while that player is within 37 degrees ahead of its nose);
+# ram=old (a collision takes the square of the closing speed in km a step, halved: the old game's, deadly) | soft
+# (a touch's 2 points and a point per 125 kps closing)
+RULE_AIM_CONE, RULE_HOLD_FIRE, RULE_RAM_SOFT = 1, 2, 4
+RULES = {'hit': {'ships': 0, 'silhouette': SHIPTYPE_FLAG_HIT_SILHOUETTE, 'sphere': SHIPTYPE_FLAG_HIT_SPHERE,
+                 'box': SHIPTYPE_FLAG_HIT_BOX},
+         'aim': {'lead': 0, 'cone': RULE_AIM_CONE}, 'hold': {'off': 0, 'on': RULE_HOLD_FIRE},
+         'ram': {'old': 0, 'soft': RULE_RAM_SOFT}}
+BOLT_RADIUS_KM = 10                    # blank in weapons.csv for a gun or a turret: the old game's bolt (a missile 0: it
+                                       # goes through the hull itself)
 GUN_ENERGY_STEPS = 1                   # blank in ships.csv: the gun energy comes back a point every so many steps (a
                                        # point a step: the old game's Hornet held two lasers at a volley every third
                                        # of a second for a minute, which two guns at 5 a shot and a refire of 10 are
@@ -117,7 +140,7 @@ WEAPON = [('char', 'code[RV_CODE]', '%ds' % TEXT['CODE']), ('char', 'name[RV_WNA
           ('unsigned char', 'type', 'B'), ('unsigned char', 'kind', 'B'), ('unsigned char', 'look', 'B'),
           ('unsigned char', 'lock', 'B'), ('unsigned short', 'damage', 'H'), ('unsigned short', 'speed_kps', 'H'),
           ('unsigned short', 'range_km', 'H'), ('unsigned char', 'refire', 'B'), ('unsigned char', 'energy', 'B'),
-          ('unsigned char', 'lock_tenths', 'B'), ('unsigned char', 'sfx', 'B')]
+          ('unsigned char', 'lock_tenths', 'B'), ('unsigned char', 'sfx', 'B'), ('unsigned char', 'radius_km', 'B')]
 # the flight's sounds (data/sounds.csv: tools/sfx.py makes them, SFX.DAT): a weapon's (its sfx column) and the
 # effects' (src/fx.c) by name; RV_SFX_NONE none
 SOUNDS = [r['name'] for r in csv.DictReader(open(os.path.join(DATA, 'sounds.csv')))]
@@ -148,7 +171,8 @@ MISSION = [('char', 'id[RV_ID]', '%ds' % TEXT['ID']), ('unsigned char', 'node', 
            ('char', 'title[RV_TITLE]', '%ds' % TEXT['TITLE']), ('char', 'briefing[RV_BRIEFING]', '%ds' % TEXT['BRIEFING']),
            ('char', 'win[RV_RESULT]', '%ds' % TEXT['RESULT']), ('char', 'lose[RV_RESULT]', '%ds' % TEXT['RESULT']),
            ('RvNav', 'nav[RV_NAVS]', None), ('RvShip', 'ship[RV_SHIPS]', None),
-           ('unsigned char', 'seat[RV_ROOMS][RV_SEATS]', '6B'), ('unsigned char', 'pad2[2]', '2s'),
+           ('unsigned char', 'seat[RV_ROOMS][RV_SEATS]', '6B'), ('unsigned char', 'hit', 'B'),
+           ('unsigned char', 'rules', 'B'),
            ('RvTalk', 'talk[RV_TALKS]', None), ('RvField', 'field[RV_FIELDS]', None)]
 
 
@@ -172,8 +196,18 @@ def load_csv(name):
         return list(csv.DictReader(f))
 
 
+def parse_rules(where, val, into):
+    """a `rules` line's key=value pairs (RULES) into a dict"""
+    for kv in val.split():
+        k, _, v = kv.partition('=')
+        if k not in RULES or v not in RULES[k]:
+            raise Fail('%s: rules are %s' % (where, ', '.join('%s=%s' % (k, '|'.join(RULES[k])) for k in RULES)))
+        into[k] = v
+    return into
+
+
 def parse_missions(path):
-    missions, cur = [], None
+    missions, cur, defaults = [], None, {}
     for lineno, raw in enumerate(open(path), 1):
         line = raw.strip()
         if not line or line.startswith('#'):
@@ -183,8 +217,10 @@ def parse_missions(path):
         where = '%s:%d' % (os.path.basename(path), lineno)
         if key == 'mission':
             cur = {'id': val, 'where': where, 'nav': [], 'ship': [], 'talk': [], 'seats': {}, 'field': [],
-                   'briefing': [], 'win': [], 'lose': []}
+                   'briefing': [], 'win': [], 'lose': [], 'rules': dict(defaults)}
             missions.append(cur)
+        elif key == 'rules':            # (before any mission: every mission's; in one: its own)
+            parse_rules(where, val, defaults if cur is None else cur['rules'])
         elif cur is None:
             raise Fail('%s: %s before any mission' % (where, key))
         elif key in ('briefing', 'win', 'lose'):
@@ -227,14 +263,28 @@ def compile_weapons():
         t = int(r['type'], 16)
         if r['sfx'] and r['sfx'] not in SOUNDS:
             raise Fail('%s: no sound %r in sounds.csv' % (where, r['sfx']))
+        # a shot's own radius, km (the old game's bolt 10: it hits within its radius plus the ship's); blank: a gun's or
+        # a turret's BOLT_RADIUS_KM, anything else's 0
+        radius = int(r.get('radius_km') or (BOLT_RADIUS_KM if r['kind'] in ('gun', 'turret') else 0))
+        if not 0 <= radius <= 255:
+            raise Fail('%s: radius_km %d is not 0 to 255' % (where, radius))
         weapons[r['code']] = (t, r['kind'])
         out.append(struct.pack(fmt(WEAPON), text(r['code'], TEXT['CODE'], where), text(r['name'], TEXT['WNAME'], where),
                                t, WEAPON_KINDS.index(r['kind']), WEAPON_LOOKS.index(r['look']),
                                WEAPON_LOCKS.index(r['lock'] or 'none'), int(r['damage']), int(r['speed_kps']),
                                int(round(float(r['range_km']) * 1000)), int(r['refire_frames'] or 0),
                                int(r['energy'] or 0), int(round(float(r['lock_s'] or 0) * 10)),
-                               SOUNDS.index(r['sfx']) if r['sfx'] else SFX_NONE))
+                               SOUNDS.index(r['sfx']) if r['sfx'] else SFX_NONE, radius))
     return weapons, out
+
+
+def volume_box(hit):
+    """the box of the bounding sphere's volume (the user's hit volume of 2026-10-31, for the thin ships): the
+    silhouettes' width and length, and the height that gives the box the sphere's volume, never under the
+    silhouettes' own and never over the radius.  127ths of the radius, as `hit` is"""
+    hx, hy, hz = (v / 127 for v in hit)
+    grown = math.pi / (6 * hx * hz)     # (4/3 pi r^3 = 8 hx hy hz r^3)
+    return [hit[0], max(hit[1], min(127, int(round(grown * 127)))), hit[2]]
 
 
 def compile_loadout(r, weapons, hit):
@@ -312,8 +362,9 @@ def compile_all():
         # the ship's size: its half box, km (the old game's measured radii for its counterparts, the user's call of
         # 2026-10-30: 100 for a light fighter, 700 for the carrier); blank: by the sprite's size, a light fighter's
         # 128 px as 100 km, the carrier's 640 as 700
-        if (r.get('hit') or '') not in ('', 'silhouette'):
-            raise Fail('ships.csv %s: hit is blank (within its radius, the old game\'s volume) or silhouette' % r['key'])
+        if (r.get('hit') or '') not in HIT_MODES:
+            raise Fail('ships.csv %s: hit is blank (within its radius or through its silhouettes), silhouette, sphere or '
+                       'box' % r['key'])
         radius = n('radius_km') or (n('lod0_px') * (700 if int(r['type'], 16) >= 0x20 else 100) // (640 if int(r['type'], 16) >= 0x20 else 128))
         # the speed above which a full-rate turn slides, and that with the acceleration absorbers damaged; blank:
         # its top speed (it slides on the afterburner only), and its cruise
@@ -332,13 +383,13 @@ def compile_all():
         out_types.append(struct.pack(fmt(SHIPTYPE), text(r['key'], TEXT['KEY'], 'ships.csv'),
                                      text(r['name'], TEXT['NAME'], 'ships.csv'), int(r['type'], 16), n('side'),
                                      (SHIPTYPE_FLAG_PLAYER if r['key'] in cockpit_keys else 0)
-                                     | (SHIPTYPE_FLAG_HIT_SILHOUETTE if (r.get('hit') or '') == 'silhouette' else 0),
+                                     | HIT_MODES[r.get('hit') or ''],
                                      cockpit_keys.index(r['key']) if r['key'] in cockpit_keys else 0xFF,
                                      n('cruise_kps'), n('max_kps'), n('ab_kps'), n('accel'), slide, slide_dmg,
                                      n('yaw_dps'), n('pitch_dps'), n('roll_dps'), guns, n('shield_f'), n('shield_r'),
                                      n('armor_f'), n('armor_r'), n('armor_l'), n('armor_rt'), n('hull'),
                                      n('lod0_px'), radius, rounds, nengines, energy_steps, full_shift, *eng, *hit,
-                                     core, nvitals, *vit, loadout))
+                                     *volume_box(hit), core, nvitals, *vit, loadout))
     talk_ok = {frozenset((r['a'], r['b'])): r['talk'] == 'yes' for r in load_csv('relations.csv')}
     for pair in talk_ok:
         for k in pair:
@@ -493,7 +544,9 @@ def compile_all():
         rec += text(' '.join(m['lose']), TEXT['RESULT'], w).ljust(TEXT['RESULT'], b'\0')
         rec += b''.join(navs).ljust(LIMITS['NAVS'] * struct.calcsize(fmt(NAV)), b'\0')
         rec += b''.join(shipr).ljust(LIMITS['SHIPS'] * struct.calcsize(fmt(SHIP)), b'\0')
-        rec += struct.pack('<6B2s', *seats, b'')
+        rules = m['rules']
+        rec += struct.pack('<6BBB', *seats, RULES['hit'][rules.get('hit', 'ships')],
+                           sum(RULES[k][rules[k]] for k in rules if k != 'hit'))
         rec += b''.join(talks).ljust(LIMITS['TALKS'] * struct.calcsize(fmt(TALK)), b'\0')
         rec += b''.join(fields).ljust(LIMITS['FIELDS'] * struct.calcsize(fmt(FIELD)), b'\0')
         out_missions.append(rec)
@@ -570,6 +623,13 @@ def header_text(sizes):
         out.append('#define RV_ROLE_%s %d' % (k.upper(), v))
     out.append('#define RV_SHIPTYPE_FLAG_PLAYER %d' % SHIPTYPE_FLAG_PLAYER)
     out.append('#define RV_SHIPTYPE_FLAG_HIT_SILHOUETTE %d' % SHIPTYPE_FLAG_HIT_SILHOUETTE)
+    out.append('#define RV_SHIPTYPE_FLAG_HIT_SPHERE %d' % SHIPTYPE_FLAG_HIT_SPHERE)
+    out.append('#define RV_SHIPTYPE_FLAG_HIT_BOX %d' % SHIPTYPE_FLAG_HIT_BOX)
+    out.append('#define RV_SHIPTYPE_HIT_MASK %d' % (SHIPTYPE_FLAG_HIT_SILHOUETTE | SHIPTYPE_FLAG_HIT_SPHERE
+                                                    | SHIPTYPE_FLAG_HIT_BOX))
+    out.append('#define RV_RULE_AIM_CONE %d' % RULE_AIM_CONE)
+    out.append('#define RV_RULE_HOLD_FIRE %d' % RULE_HOLD_FIRE)
+    out.append('#define RV_RULE_RAM_SOFT %d' % RULE_RAM_SOFT)
     out.append('#define RV_GUN_ENERGY_STEPS %d' % GUN_ENERGY_STEPS)
     out.append('#define RV_SHIELD_FULL_SHIFT %d' % SHIELD_FULL_SHIFT)
     for i, k in enumerate(SOUNDS):

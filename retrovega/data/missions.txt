@@ -1,5 +1,14 @@
 # The campaign: the old game's missions' shapes (tests/wc1/port.py from its dumps), in the Aera war.
 # Edit freely: tools/rvdata.py checks every block.
+#
+# The rules every mission flies by (a mission's own `rules` line overrides): what a bolt must do to hit a ship
+# (hit=ships: each type's ships.csv choice; sphere: within its radius, the old game's volume; box: a box of the
+# sphere's volume in the ship's frame, grown tall for the thin ships; silhouette: through its silhouettes), how the
+# AI shoots (aim=cone: the old game's, no lead and every ready gun within the weapon's cone; lead: at the lead
+# point, scattered a little), whether the ship a player has selected holds its guns while that player is within 37
+# degrees ahead of it (hold=on, the old game's), and what a collision costs (ram=old: the square of the closing
+# speed in km a step, halved, the old game's; soft: a dozen points head on)
+rules    hit=sphere aim=cone hold=on ram=old
 
 mission  ENIGMA1
 node     ENIGMA

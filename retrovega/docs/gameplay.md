@@ -205,6 +205,7 @@ What the tests expect:
 | M3.11 shots-hit | 3 s of fire at a ship 1,500 km ahead, side on, hurts it; on the host, the hits name a bolt of the player's |
 | M3.12 recharge | in 20 s the shields come back (never past their most); the armour doesn't |
 | M3.13 type-rates | a type's `gun_energy_steps` and `shield_full_shift` set the rates: with 6 and 4, 10 points of energy in 60 steps, and a shield full in 16 |
+| M3.14 hit-volumes | a laser bolt (radius 10) stepping past a Nicander's middle: 120 km beside it, the sphere rule alone takes it (160 + 10); 100 km above it, the sphere and the volume box (156 up), not the silhouettes (28); through the middle, all three |
 
 ### M4: deaths (`step_deaths`, `despawn`, `delayedDespawn`, `logic_end`)
 

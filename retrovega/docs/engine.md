@@ -188,9 +188,18 @@ looking at the player's ship) and then jumps it to the nav point. Outside, the w
 opening rows at full width between black bars, with no frame and no HUD (`cockpit_external`), and the player's
 own ship is drawn like any other (`flight.c` the view: `cam_pos`, `cam_basis`, `view_frame`).
 
-A ship type's `hit` column in ships.csv says what a bolt must do to hit it: blank, pass within its `radius_km` of
-its middle (the old game's volume, measured: tests/wc1/README.md) or through its silhouettes; `silhouette`, the
-silhouettes alone (the user's design for later versions; the radius is for the balancing).
+What a bolt must do to hit a ship is the mission's rule (missions.txt `rules hit=`, at the top for every mission
+or in one for itself) or, with `hit=ships`, each type's `hit` column in ships.csv: `sphere` (blank in ships.csv, or
+the silhouettes too), pass within its `radius_km` of its middle (the old game's volume, read in its code and
+measured: tests/wc1/README.md); `box`, pass through a box in the ship's frame of the sphere's volume: the
+silhouettes' width and length, and the height that gives it that volume (never under the silhouettes' own, never
+over the radius), so a thin ship like the Nicander is as easy to hit from above as from the side (the user's design
+of 2026-10-31; tools/rvdata.py `volume_box`, collide.c `collide_box`: the bolt's step's middle against the box grown
+by the step's reach along each axis, three compares); `silhouette`, through its silhouettes (the user's design for
+later versions). Every test adds the bolt's own radius (weapons.csv `radius_km`, blank 10 km for a gun: the old
+game's bolt) and takes the bolt's whole step from where it was to where it is. The rules line also picks how the AI
+aims (`aim=`), whether a player's selected target holds its guns (`hold=`) and what a collision costs (`ram=`):
+docs/ai.md.
 
 The running lights are a shield gauge: whole shields, steady; as the front shield drains they flicker harder (on
 for the shields' share of every eight frames), and a hit flickers them for eight frames; dark with the power plant

@@ -13,6 +13,7 @@
 #include "campaign.h"
 
 RvSave g_camp;
+uint8_t g_rule_hit, g_rule_flags;
 RvPilot g_pilots[RV_PILOTS];
 RvNode g_nodes[RV_NODES];
 uint16_t g_npilots, g_nnodes, g_nmissions;
@@ -147,6 +148,8 @@ void camp_load_units(const RvMission __far *m)
     uint16_t i, n = 0, k;
     if (m->fighter != 0xFF)             /* the mission says what the player (and the wingman) fly, as the old campaign did */
         g_camp.player_ship = m->fighter;
+    g_rule_hit = m->hit;                /* (its rules: the hit volume, the AI's aim, the held fire, the collisions) */
+    g_rule_flags = m->rules;
     memset(ships, 0, missionShipTable_SIZE * 64);
     memset(navs, 0, navPointTable_SIZE * 16);
     RV_ASSERT(m->nnav <= RV_NAVS && m->nship <= RV_SHIPS);

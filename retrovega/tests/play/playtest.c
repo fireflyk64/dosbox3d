@@ -2146,6 +2146,49 @@ static void t_sustain(void)
     g_pilot.guns = 0;
 }
 
+/* M3.14: the three hit volumes (shots.c shot_hit, the mission's rule g_rule_hit): a Nicander (radius 160 km; its
+ * silhouettes 89 km across and 28 up; its volume box 89 across, 156 up, 154 along) dead ahead with its nose the
+ * player's way, and a laser bolt (radius 10) stepping 110 km past its middle along the nose: beside it by 120 km the
+ * sphere alone takes it; above it by 100 km the sphere and the box; through the middle all three */
+static int16_t pt_bolt_hits(int32_t dx_km, int32_t dy_km, uint8_t mode)
+{
+    RvVec3 pos = vec3(gPositionVector[1].x + dx_km * KM, gPositionVector[1].y + dy_km * KM, gPositionVector[1].z + 55 * KM);
+    RvVec3 vel = vec3(0, 0, 110 * KM), where;
+    int16_t i, slot = -1, hit;
+    uint8_t keep = g_rule_hit;
+    if ((i = shot_add(0, GUN_TYPE(0, 0), &pos, &vel)) < 0)
+        return -1;
+    g_rule_hit = mode;
+    hit = shot_hit(i, &slot, &where);
+    g_rule_hit = keep;
+    shot_remove(i);
+    return hit && slot == 1;
+}
+
+static void t_hit_volumes(void)
+{
+    static const char __far e_side[] = "a bolt 120 km beside a Nicander's middle: sphere %d, box %d, silhouette %d "
+        "(wanted 1, 0, 0: the sphere's radius 160 plus the bolt's 10; the box and the hull 89 across)";
+    static const char __far e_above[] = "a bolt 100 km above it: sphere %d, box %d, silhouette %d (wanted 1, 1, 0: the "
+        "volume box is 156 km up, the silhouettes 28)";
+    static const char __far e_mid[] = "a bolt through its middle: sphere %d, box %d, silhouette %d (wanted 1, 1, 1)";
+    int16_t a, b, c;
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 3000, 0);
+    a = pt_bolt_hits(120, 0, RV_SHIPTYPE_FLAG_HIT_SPHERE);
+    b = pt_bolt_hits(120, 0, RV_SHIPTYPE_FLAG_HIT_BOX);
+    c = pt_bolt_hits(120, 0, RV_SHIPTYPE_FLAG_HIT_SILHOUETTE);
+    REQUIRE(a == 1 && b == 0 && c == 0, e_side, a, b, c);
+    a = pt_bolt_hits(0, 100, RV_SHIPTYPE_FLAG_HIT_SPHERE);
+    b = pt_bolt_hits(0, 100, RV_SHIPTYPE_FLAG_HIT_BOX);
+    c = pt_bolt_hits(0, 100, RV_SHIPTYPE_FLAG_HIT_SILHOUETTE);
+    REQUIRE(a == 1 && b == 1 && c == 0, e_above, a, b, c);
+    a = pt_bolt_hits(0, 0, RV_SHIPTYPE_FLAG_HIT_SPHERE);
+    b = pt_bolt_hits(0, 0, RV_SHIPTYPE_FLAG_HIT_BOX);
+    c = pt_bolt_hits(0, 0, RV_SHIPTYPE_FLAG_HIT_SILHOUETTE);
+    REQUIRE(a == 1 && b == 1 && c == 1, e_mid, a, b, c);
+}
+
 /* M3.13 */
 static void t_type_rates(void)
 {
@@ -3382,6 +3425,7 @@ static const char __far n_m3_12[] = "M3.12 recharge (step_timers): shields come 
 static const char __far n_m2_19[] = "M2.19 sustain (step_timers): the trigger held 10 s fires the old game's 60 shots (a volley of two "
     "every third of a second) and keeps its energy";
 static const char __far n_m3_13[] = "M3.13 type-rates (step_timers): gun energy and shields come back at the type's rates";
+static const char __far n_m3_14[] = "M3.14 hit-volumes (shot_hit): a bolt within the radius, in the volume box, through the silhouettes, as the rule says";
 static const char __far n_m4_1[] = "M4.1 kill (step_deaths, despawn): dying (9), exploding a while, then gone";
 static const char __far n_m4_2[] = "M4.2 dying-quiet (step_fire, AI): a dying ship fires nothing";
 static const char __far n_m4_3[] = "M4.3 player-dies (step_deaths, logic_end): missionStatus 4, the mission lost";
@@ -3447,6 +3491,7 @@ static const PtTest __far k_tests[] = {
     { n_m3_4, t_armour_sides, 0 }, { n_m3_5, t_hull, 0 }, { n_m3_6, t_big_hit, 0 }, { n_m3_7, t_no_wrap, 0 },
     { n_m3_8, t_player_safe, 0 }, { n_m3_9, t_invulnerable, 0 }, { n_m3_10, t_any_source, 0 },
     { n_m3_11, t_shots_hit, 0 }, { n_m3_12, t_recharge, 0 }, { n_m3_13, t_type_rates, 0 },
+    { n_m3_14, t_hit_volumes, 0 },
     { n_m4_1, t_kill, 0 }, { n_m4_2, t_dying_quiet, 0 }, { n_m4_3, t_player_dies, 0 },
     { n_m5_1, t_ai_thunks, 1 }, { n_m5_2, t_ai_turns, 0 }, { n_m5_3, t_ai_closes, 0 }, { n_m5_4, t_ai_fires, 0 },
     { n_m5_5, t_ai_aims, 1 }, { n_m5_6, t_ai_limits, 0 }, { n_m5_7, t_wingman_fights, 0 },

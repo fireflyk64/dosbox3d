@@ -380,30 +380,63 @@ int16_t collide_point(int16_t slot, const LfVec *p, LfVec *push)
     return 1;
 }
 
+/* the cell at a walk point (cell units with 16 fraction bits) is solid in every silhouette */
+static int16_t solid(const Body *B, const int32_t p[3])
+{
+    int16_t x = (int16_t)(p[0] >> 16), y = (int16_t)(p[1] >> 16), z = (int16_t)(p[2] >> 16);
+    return x >= 0 && x < SN && y >= 0 && y < SN && z >= 0 && z < SN
+           && (!B->m || (BIT(B->m, 0, z, x) && BIT(B->m, 1, y, z) && BIT(B->m, 2, y, x)));
+}
+
+/* the point, or any of the six a bolt's radius off it along the ship's axes (fc: the radius in each axis's cell
+ * units, 16 fraction bits): a fat bolt touches the hull when its middle passes within its radius of a solid cell,
+ * near enough along the axes (the user's rule of 2026-10-31: the bolt's own radius counts in every hit test) */
+static int16_t solid_fat(const Body *B, const int32_t p[3], const int32_t fc[3])
+{
+    int32_t q[3];
+    int16_t i, s;
+    if (solid(B, p))
+        return 1;
+    for (i = 0; i < 3; i++)
+        for (s = -1; s <= 1; s += 2) {
+            q[0] = p[0]; q[1] = p[1]; q[2] = p[2];
+            q[i] += s * fc[i];
+            if (solid(B, q))
+                return 1;
+        }
+    return 0;
+}
+
 int16_t collide_segment(int16_t slot, const LfVec *a, const LfVec *b, LfVec *hit, int16_t *t1024)
 {
+    return collide_segment_fat(slot, a, b, 0, hit, t1024);
+}
+
+int16_t collide_segment_fat(int16_t slot, const LfVec *a, const LfVec *b, int32_t fat, LfVec *hit, int16_t *t1024)
+{
     Body B;
-    int32_t la[3], lb[3], ea[3], eb[3], p[3], dp[3], n, k, big, t0 = 0, t1 = 1024;
+    int32_t la[3], lb[3], ea[3], eb[3], p[3], dp[3], fc[3], n, k, big, t0 = 0, t1 = 1024, R;
     int16_t i;
     if (!body(slot, &B))
         return 0;
-    /* the segment's box against the ship's: nothing near, nothing more */
-    if ((a->x < b->x ? a->x : b->x) >= B.c.x + B.H || (a->x > b->x ? a->x : b->x) <= B.c.x - B.H
-        || (a->y < b->y ? a->y : b->y) >= B.c.y + B.H || (a->y > b->y ? a->y : b->y) <= B.c.y - B.H
-        || (a->z < b->z ? a->z : b->z) >= B.c.z + B.H || (a->z > b->z ? a->z : b->z) <= B.c.z - B.H)
+    /* the segment's box against the ship's (grown by the bolt's radius): nothing near, nothing more */
+    R = B.H + fat;
+    if ((a->x < b->x ? a->x : b->x) >= B.c.x + R || (a->x > b->x ? a->x : b->x) <= B.c.x - R
+        || (a->y < b->y ? a->y : b->y) >= B.c.y + R || (a->y > b->y ? a->y : b->y) <= B.c.y - R
+        || (a->z < b->z ? a->z : b->z) >= B.c.z + R || (a->z > b->z ? a->z : b->z) <= B.c.z - R)
         return 0;
     to_local(&B, a, la);
     to_local(&B, b, lb);
-    /* clipped to the box (t in 1024ths of the way from a to b) */
+    /* clipped to the box, grown by the radius (t in 1024ths of the way from a to b) */
     for (i = 0; i < 3; i++) {
-        int32_t d = lb[i] - la[i];
+        int32_t d = lb[i] - la[i], h = B.h[i] + fat;
         if (!d) {
-            if (la[i] <= -B.h[i] || la[i] >= B.h[i])
+            if (la[i] <= -h || la[i] >= h)
                 return 0;
             continue;
         }
         {
-            int32_t na = -B.h[i] - la[i], nb = B.h[i] - la[i], ta, tb;
+            int32_t na = -h - la[i], nb = h - la[i], ta, tb;
             while (labs(na) > INT32_C(0x1FFFFF) || labs(nb) > INT32_C(0x1FFFFF)) {   /* (x 1024 inside 2^31) */
                 na /= 2;
                 nb /= 2;
@@ -431,6 +464,7 @@ int16_t collide_segment(int16_t slot, const LfVec *a, const LfVec *b, LfVec *hit
         eb[i] = (x1 + B.h[i]) * 256 / B.cs[i];
         if (labs(eb[i] - ea[i]) > big)
             big = labs(eb[i] - ea[i]);
+        fc[i] = fat / B.cs[i] * 65536 + fat % B.cs[i] * 65536 / B.cs[i];   /* (the radius in this axis's cells) */
     }
     n = big / 128 + 1;
     for (i = 0; i < 3; i++) {
@@ -439,9 +473,7 @@ int16_t collide_segment(int16_t slot, const LfVec *a, const LfVec *b, LfVec *hit
         dp[i] = (eb[i] - ea[i]) * 256 / n;
     }
     for (k = 0; k <= n; k++) {
-        int16_t x = (int16_t)(p[0] >> 16), y = (int16_t)(p[1] >> 16), z = (int16_t)(p[2] >> 16);
-        if (x >= 0 && x < SN && y >= 0 && y < SN && z >= 0 && z < SN
-            && (!B.m || (BIT(B.m, 0, z, x) && BIT(B.m, 1, y, z) && BIT(B.m, 2, y, x)))) {
+        if (fat ? solid_fat(&B, p, fc) : solid(&B, p)) {
             if (hit) {
                 int32_t l[3];
                 LfVec w;
@@ -460,6 +492,44 @@ int16_t collide_segment(int16_t slot, const LfVec *a, const LfVec *b, LfVec *hit
             p[i] += dp[i];
     }
     return 0;
+}
+
+int16_t collide_box(int16_t slot, const LfVec *a, const LfVec *b, int32_t fat, LfVec *hit)
+{
+    Body B;
+    LfVec m;
+    int32_t lm[3], dl[3], bh[3], dx, dy, dz;
+    int16_t i;
+    if (!body(slot, &B))
+        return 0;
+    /* the segment's middle in the ship's frame, and its half step along each of the ship's axes */
+    m.x = a->x + (b->x - a->x) / 2;
+    m.y = a->y + (b->y - a->y) / 2;
+    m.z = a->z + (b->z - a->z) / 2;
+    if (labs(m.x - B.c.x) >= INT32_C(0x7FFFFF) || labs(m.y - B.c.y) >= INT32_C(0x7FFFFF) || labs(m.z - B.c.z) >= INT32_C(0x7FFFFF))
+        return 0;
+    to_local(&B, &m, lm);
+    dx = (b->x - a->x) / 2;
+    dy = (b->y - a->y) / 2;
+    dz = (b->z - a->z) / 2;
+    for (i = 0; i < 3; i++) {
+        dl[i] = (dx * B.ax[i][0] + dy * B.ax[i][1] + dz * B.ax[i][2]) / 256;
+        bh[i] = B.H * B.t->box[i] / 127;
+        /* the box grown by the bolt's radius and by the step's reach along this axis, and the middle against it:
+         * three compares (the user's rule of 2026-10-31: no harder math than that) */
+        if (labs(lm[i]) > bh[i] + fat + labs(dl[i]))
+            return 0;
+    }
+    if (hit) {                          /* (the middle, held to the box: where the bolt went in, near enough) */
+        LfVec w;
+        for (i = 0; i < 3; i++)
+            lm[i] = lm[i] < -bh[i] ? -bh[i] : lm[i] > bh[i] ? bh[i] : lm[i];
+        to_world(&B, lm, &w);
+        hit->x = B.c.x + w.x;
+        hit->y = B.c.y + w.y;
+        hit->z = B.c.z + w.z;
+    }
+    return 1;
 }
 
 int16_t collide_shape(int16_t slot, LfVec corner[8], LfVec *v, int16_t maxv)

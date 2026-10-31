@@ -5,7 +5,7 @@
 #include "rvtypes.h"
 
 #define RVGAME_MAGIC "RVGAME"
-#define RVGAME_VERSION 8
+#define RVGAME_VERSION 9
 
 #define RV_PILOTS 16
 #define RV_NODES 32
@@ -91,6 +91,12 @@
 #define RV_ROLE_TECH 4
 #define RV_SHIPTYPE_FLAG_PLAYER 1
 #define RV_SHIPTYPE_FLAG_HIT_SILHOUETTE 2
+#define RV_SHIPTYPE_FLAG_HIT_SPHERE 4
+#define RV_SHIPTYPE_FLAG_HIT_BOX 8
+#define RV_SHIPTYPE_HIT_MASK 14
+#define RV_RULE_AIM_CONE 1
+#define RV_RULE_HOLD_FIRE 2
+#define RV_RULE_RAM_SOFT 4
 #define RV_GUN_ENERGY_STEPS 1
 #define RV_SHIELD_FULL_SHIFT 9
 #define RV_SFX_LASER 0
@@ -230,7 +236,8 @@ typedef struct {
     RvNav nav[RV_NAVS];
     RvShip ship[RV_SHIPS];
     uint8_t seat[RV_ROOMS][RV_SEATS];
-    uint8_t pad2[2];
+    uint8_t hit;
+    uint8_t rules;
     RvTalk talk[RV_TALKS];
     RvField field[RV_FIELDS];
 } RvMission;
@@ -266,6 +273,7 @@ typedef struct {
     uint8_t shield_full_shift;
     int8_t engine[RV_ENGINES][4];
     uint8_t hit[3];
+    uint8_t box[3];
     uint8_t core;
     uint8_t nvitals;
     int8_t vital[RV_VITALS][3];
@@ -285,6 +293,7 @@ typedef struct {
     uint8_t energy;
     uint8_t lock_tenths;
     uint8_t sfx;
+    uint8_t radius_km;
 } RvWeapon;
 #pragma pack()
 
@@ -292,8 +301,8 @@ typedef struct {
 #define RV_PILOT_SIZE 120
 #define RV_NODE_SIZE 22
 #define RV_MISSION_SIZE 1424
-#define RV_SHIPTYPE_SIZE 173
-#define RV_WEAPON_SIZE 40
+#define RV_SHIPTYPE_SIZE 176
+#define RV_WEAPON_SIZE 41
 
 /* sin(i/256 x 90 degrees) x 16384, i = 0..256: the simulation's trigonometry (flight.c) */
 #ifdef RV_TABLES

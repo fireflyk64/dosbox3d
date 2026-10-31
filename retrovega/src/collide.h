@@ -41,6 +41,15 @@ int16_t collide_point(int16_t slot, const LfVec *p, LfVec *push);
  * (if asked) the first point of it in the hull and *t1024 (if asked) how far along it that is, 1024ths of a to b.
  * Its ends within 32,768 km of the ship */
 int16_t collide_segment(int16_t slot, const LfVec *a, const LfVec *b, LfVec *hit, int16_t *t1024);
+/* the same for a bolt of radius `fat` (positions): the hull's box and slabs grown by it, and a cell counts when
+ * the bolt's middle or any of six points its radius off along the ship's axes is solid (the user's rule of
+ * 2026-10-31: the bolt's radius and its whole step count in every hit test) */
+int16_t collide_segment_fat(int16_t slot, const LfVec *a, const LfVec *b, int32_t fat, LfVec *hit, int16_t *t1024);
+/* the bolt's step against the type's volume box (ships.csv: the silhouettes' width and length and the height that
+ * gives it the bounding sphere's volume: tools/rvdata.py volume_box), in the ship's frame: the segment's middle
+ * against the box grown by the bolt's radius and by the half step along each axis, three compares.  1 and *hit
+ * (if asked) when it is in */
+int16_t collide_box(int16_t slot, const LfVec *a, const LfVec *b, int32_t fat, LfVec *hit);
 
 /* a ship's hit box and vitals in the world, for drawing them: its box's eight corners, its vitals (the core
  * first, then the engines, then the rest): how many vitals (at most 1 + 4 + 8) */

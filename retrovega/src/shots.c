@@ -1,9 +1,11 @@
 /* shots.c: the flight's gunfire (shots.h).
  *
  * The list is the truth; the bolts' and balls' pools (bolts.c, balls.c) are refilled from it once a frame, so the
- * drawing never decides anything.  A hit is found as a bolt's is in /hulldemo: a coarse test against each ship's
- * half box (one compare an axis), then the segment of the shot's last step through the ship's silhouette hull
- * (collide_segment).  The module's data is far (DGROUP is nearly full). */
+ * drawing never decides anything.  A hit is found from the segment of the shot's last step (from where it was to
+ * where it is) and the shot's own radius (weapons.csv radius_km, the old game's bolt 10 km): a coarse test against
+ * each ship's half box grown by both (one compare an axis), then the test the mission's rules or the ship's type
+ * picks (shot_hit: within the ship's radius, the old game's volume; its volume box; its silhouettes).  The module's
+ * data is far (DGROUP is nearly full). */
 #include <string.h>
 #include <stdlib.h>
 #include <malloc.h>
@@ -119,10 +121,11 @@ void shots_move(void)
     }
 }
 
-/* the segment a-b passes within r (positions) of the ship's middle: 1 and *hit the nearest point of it (the old game's
- * hit volume, measured from its traces (tests/wc1/README.md): the hunting Hornet's bolts hit a Dralthi when their
- * line passed 200-300 km from its middle; ours, against the silhouettes alone, hardly past 150 km, and the ships
- * felt small and hard to hit) */
+/* the segment a-b passes within r (positions: the ship's radius plus the bolt's) of the ship's middle: 1 and *hit
+ * the nearest point of it (the old game's hit volume, read in its code and measured from its traces
+ * (tests/wc1/README.md): a bolt's point within the bolt's radius plus the ship's, once a frame; the hunting Hornet's
+ * bolts hit a Dralthi when their line passed 200-300 km from its middle; ours, against the silhouettes alone, hardly
+ * past 150 km, and the ships felt small and hard to hit) */
 static int16_t segment_in_sphere(int16_t s, const LfVec *a, const LfVec *b, int32_t r, LfVec *hit)
 {
     int32_t dx = (b->x - a->x) >> 4, dy = (b->y - a->y) >> 4, dz = (b->z - a->z) >> 4;   /* (16ths: the squares fit) */
@@ -147,22 +150,32 @@ static int16_t segment_in_sphere(int16_t s, const LfVec *a, const LfVec *b, int3
 int16_t shot_hit(int16_t i, int16_t *slot, RvVec3 *where)
 {
     Shot __far *sh = shot(i);
+    const RvWeapon __far *w = weapon(sh->weapon);
     LfVec a, b, hit;
-    int32_t ax = labs(sh->vx), ay = labs(sh->vy), az = labs(sh->vz);
+    int32_t ax = labs(sh->vx), ay = labs(sh->vy), az = labs(sh->vz), fat = w ? (int32_t)w->radius_km * KM : 0;
     int16_t s, t;
     b.x = sh->x; b.y = sh->y; b.z = sh->z;
     a.x = b.x - sh->vx; a.y = b.y - sh->vy; a.z = b.z - sh->vz;
     for (s = 0; s <= RV_MAX_SHIP_SLOT; s++) {
+        const RvShipType __far *ty;
         int32_t r;
-        if (s == sh->owner || !slot_is_ship(s))
+        uint8_t mode;
+        if (s == sh->owner || !slot_is_ship(s) || (ty = slot_type(s)) == 0)
             continue;
-        r = collide_half(s);            /* (the coarse test: within its half box and the step on every axis) */
-        if (labs(b.x - gPositionVector[s].x) > r + ax || labs(b.y - gPositionVector[s].y) > r + ay
-            || labs(b.z - gPositionVector[s].z) > r + az)
+        r = collide_half(s);            /* (the coarse test: within its half box, the bolt's radius and the step on
+                                           every axis) */
+        if (labs(b.x - gPositionVector[s].x) > r + fat + ax || labs(b.y - gPositionVector[s].y) > r + fat + ay
+            || labs(b.z - gPositionVector[s].z) > r + fat + az)
             continue;
-        /* (the type's choice, ships.csv `hit`: within its radius as the old game's volume was, or its silhouettes alone) */
-        if ((!(slot_type(s)->flags & RV_SHIPTYPE_FLAG_HIT_SILHOUETTE) && segment_in_sphere(s, &a, &b, r, &hit))
-            || collide_segment(s, &a, &b, &hit, &t)) {
+        /* the mission's rule (g_rule_hit), else the type's choice (ships.csv `hit`): the step within its radius plus
+         * the bolt's (the old game's volume), its volume box (grown by the bolt's radius and the step: collide_box),
+         * its silhouettes (the bolt's radius about the step: collide_segment_fat), or (blank) the radius or the
+         * silhouettes */
+        mode = g_rule_hit ? g_rule_hit : (uint8_t)(ty->flags & RV_SHIPTYPE_HIT_MASK);
+        if (mode == RV_SHIPTYPE_FLAG_HIT_BOX ? collide_box(s, &a, &b, fat, &hit)
+            : mode == RV_SHIPTYPE_FLAG_HIT_SPHERE ? segment_in_sphere(s, &a, &b, r + fat, &hit)
+            : mode == RV_SHIPTYPE_FLAG_HIT_SILHOUETTE ? collide_segment_fat(s, &a, &b, fat, &hit, &t)
+            : (segment_in_sphere(s, &a, &b, r + fat, &hit) || collide_segment_fat(s, &a, &b, fat, &hit, &t))) {
             *slot = s;
             where->x = hit.x; where->y = hit.y; where->z = hit.z;
             g_hits++;
