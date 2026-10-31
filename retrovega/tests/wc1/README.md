@@ -31,6 +31,13 @@ the damage by (source, target) pairs: a collision shows as a symmetric pair of s
 or more. The old game steps 20 times a second; ours 30 (`--fps 30`). The turn rates are angles between the frames'
 front vectors, normalised (the vectors are not quite unit length in either trace).
 
+`fireangles.py TRACE [FRAME:SLOT,...]` (the user's idea, 2026-10-31) takes every F (fire) event and prints, per
+AI slot within 6,000 km of the player, histograms of the shooter's nose angle to the player and of the player's
+nose angle to the shooter at the moment of firing, the head-on volleys against the frames spent head on, and the
+volleys split by whether the slot was the player's selected target (from the dumps' `dseg:662C`, given as the
+frame it was selected from): the check on the held-fire rule read in the code, and on any rule the code reading
+missed.
+
 `dump-all.sh OUT` dumps every mission of the campaign at its first second in space: the nav points and the
 ships of each (for porting them: `port.py`).
 
@@ -209,8 +216,16 @@ bytes a class, c (3 for most, 2 or 5 for some, 0 for the carrier) and d (6-10). 
 under a missile, falls by c in a tail chase, halves when the target dies, falls by d in the plain case; then by
 the ship's health (a 0-100 mix of its four armours and its hull count): under 40, +2c; 40-74, +c capped at 28;
 75 and over, capped at 7. Fear under 15 picks from the bold column of the table, 15-29 from the wary one, 30 and
-over from the third, which is almost always maneuver 21: leave (afterburn away; the order becomes "leave", and
-the ship is removed 16,000 km from the player). This is the retreat the layer saw as "maneuver 21, order 5".
+over from the third, which is almost always maneuver 21: leave. Maneuver 21 (`ovr165:0699`) looks for a living
+capital ship of the ship's own side among the slots (or a mission flag at `dseg:3077`): with one about, the ship's
+fear is set to 0 and its maneuver cleared, and it fights on from the bold column (so the Kilrathi never run while
+their carrier is in the fight, and a Confed wingman never runs beside the Claw); without one its order becomes
+"leave" (5), a Kilrathi counts as fled, and a comm line goes out if it was the player's target. The leave order
+(`ovr163:0228`) flies it straight up, or straight down from an odd slot (the world's axis, not the ship's), with
+the afterburner in 40-frame bursts while any enemy is within 16,000 km, and removes it quietly more than 16,000 km
+from the player; a wingman whose leader is leaving follows the leader instead. The "hit" situation (a hit adds 4
+to a counter that falls 1 a frame) neither raises nor lowers the fear: nothing calms a ship under fire. This is the
+retreat the layer saw as "maneuver 21, order 5".
 
 **The tables.** (Enyo 1's dump: the Dralthi leader is class 1, its wingmen class 0, the Salthi the same; the
 player's wingman class 5, the first named pilot; the player class 13, whose table is empty.) A named pilot (the
@@ -232,25 +247,65 @@ them to the type's rates. The attack speed is a type stat: Hornet 300, Rapier 25
 Salthi 300, Dralthi 230 (the 466 km/s the traces measured), Krant 200, Gratha 200, Jalthi 200; the afterburner
 is bursts of 5, 10 or 40 frames when a maneuver asks and the ship is moving.
 
-**Firing.** The attack maneuvers (26, 29, 18, 10, 32) and a reaction to any enemy within 3,000 km run the weapons
-routine: every gun whose countdown is up and whose target is within its reach (speed times life, 4,800 km for a
-laser, less by the target's own speed when it recedes) fires when the nose is within 46 degrees of the target (a
-laser; a neutron 37, a mass driver 32, flak 84). So the fighters do not aim: they spray a wide cone while the
-steering brings the nose round, and the hits come as the nose crosses the target (the 13-28% measured). A
+**Firing.** The weapons routine (`ovr143:216D`) is reached from five places: the tailing attacks, maneuvers 26
+(the tail), 29 (nose on the target) and 18 (the same with a speed step), through a wrapper (`ovr165:0F2F`); the
+missile dodge, maneuver 32 (a missile homing on the ship: it turns on it and fires at its target within 8,000 km),
+and the rare maneuver 10, directly; and the transports' guns (`ovr163:1519`: a Dorkir or a Lumbari fires at any
+enemy within 3,000 km). The routine fires every gun whose countdown is up and whose target is within its reach
+(speed times life, 4,800 km for a laser, less by the target's own speed when it recedes) when the nose is within
+46 degrees of the target (a laser; a neutron 37, a mass driver 32, flak 84). So the fighters do not aim: they
+spray a wide cone while the steering brings the nose round, and the hits come as the nose crosses the target (the
+13-28% measured). The approach maneuver 40 has no guns at all: it flies at a point 500 km plus the target's radius
+behind the target (above it when the target's nose is within 37 degrees of the ship) and becomes 26, the tail,
+only within the radius plus 2,000 km with the target facing away by more than 120 degrees; maneuver 45 (the
+head-on case for the unnamed classes) is 29 unless the target faces the ship within 37 degrees, then 40. A
 missile goes with a chance of one in twenty a frame scaled down by the distance over 7,000 km: a Dart within 14
 degrees, a Javelin from behind (the target facing away, within 66), a Spiculum within 66, a Pilum at any angle;
-a mine when a tailing target is within 2,000 km behind. The three maneuver calls (26, 29, 18) go through a check
-first: the ship the player has selected as a target holds its guns while the player is within 37 degrees in front
-of it, unless its AI class is 11. Seen as well as read: with the Dralthi leader poked in as the player's selected
-target (`!poke=662C:02`, the player flying straight at nav 1), it fired 2 shots in the 1,557 frames the player sat
-within 37 degrees of its nose and 146 in the 3,983 it did not, while its two wingmen fired 92 and 43 shots at the
-player in their cones (wc1/enyo1-target2 in the scratchpad; the first try with the T key selected the wingman).
+a mine when a tailing target is within 2,000 km behind. The wrapper the three tailing attacks go through is the
+held fire: the ship the player has selected as a target (`dseg:662C`) holds its guns while the player is within 37
+degrees in front of its nose (cos x 100 over 80 from `ovr140:1454`), unless its AI class is 11; the missile dodge
+and the transports' guns do not hold. The scratch `fireangles.py` reads the F (fire) events of a trace with the
+shooter's nose angle to the player and the player's to the shooter. In the hunting run (`enyo1-hunt`, nobody
+selected: `dseg:662C` was -1) the three Dralthi fired 270 volleys within 6,000 km of the player, 242 of them with
+the nose within 37 degrees of the player, and 30 of them head on (both noses within 30 degrees), in 900 head-on
+frames: a volley a second head on, where they fire one every 13 frames when they fire. The earlier count with the
+leader poked in as the target (`enyo1-target2`, "2 shots in 1,557 in-cone frames") proved nothing: the leader
+spent that run 78,000 km off fighting the wingman and fired nothing within 6,000 km of the player. The test is a
+run with the leader selected from 12 s and the player hunting it (`enyo1-target-hunt`: the nose onto the nearest
+enemy every 3 s with the trigger held, the leader re-selected every 30 s, 230 s): within 6,000 km of the player the
+leader fired nothing in the 1,978 frames its nose was within 37 degrees of the player (189 of them head on, both
+noses within 30 degrees) and 6 volleys in the 1,152 frames it was not (3 of them in the 37-46 degree band, 3 at
+46-60), while its two wingmen, never selected, fired 98 and 105 volleys, 90 and 97 of them within 37 degrees and 7
+head on. So the rule holds as read, with no range exception: the ship you have selected does not shoot you while
+it is pointing at you, and what hits you in a head-on charge is its wingmen, or it in the band past 37 degrees
+(the user's recollection of being fired on head on; the user's own cone, and the hold, make the selected ship the
+safe one to charge).
 
-**Against ours.** Matched already: the radii, the shields and armour, the guns' reach, the attack speed, the
-retreat, the enemies' hit rates. Apart, and worth the user's ruling: the bolt that hurts more with distance (ours
-flat), the shield recharge (ours slow), the bolt that takes only the forward speed (ours the whole velocity),
-the lethal collisions (ours gentle), the one-in-a-hundred kill, the 46-degree spray in place of a lead and a
-scatter, the target that holds its fire, and the wingmen's own tables.
+**Built from it (the user's ruling, 2026-10-31: try them all; the held fire and the no-lead cone as flags; the
+one-in-a-hundred kill left out as too deadly for a wingman).** The hit volume is the mission's rule or the type's
+(missions.txt `rules hit=`, ships.csv `hit`: the sphere, the box of the sphere's volume grown tall for the thin
+ships, the silhouettes; the bolt's 10 km and its whole step in every one; docs/engine.md). A shot carries the
+ship's speed along the gun's line only, and hurts by its life left (weapons.csv `damage_near` to `damage`: the
+laser 10 to 25). The shields come back a point a side every `shield_steps` (the Hornet's 5, the Dralthi's 6). A
+collision costs the square of the closing speed in km a step, halved (`rules ram=soft` the old dozen). The AI:
+`rules aim=cone` (no lead, every ready gun within the weapon's `cone_deg`, 13 steps apart, the old approach point
+and the tail from behind; `aim=lead` the measured lead-and-scatter model) and `rules hold=on` (the held fire; an
+ace never holds); the fear model with the class bytes per profile (`fear_up`, `fear_down`, `scared_pct`) or per
+mission ship (`fear=c/d`), the leave (up or down, the afterburner, removed beyond 16,000 km of every pilot, not
+killed), the run to a capital ship of its side and the fear reset (`T_HOME`); the wingman's own tailed row (a break
+or a loop, the first named pilot's table). docs/ai.md has the model; M3.14-M3.15, M5.13-M5.16, M6.3 hold it.
+
+Flown again in this scene under those rules (compare.sh, 2026-10-31): the player straight, the three fighters
+fire first from 3,700-4,600 km at 9-10 s, the tail sits behind with its nose on the player 92-97% of the time
+and hits a straight player with one shot in four (the old tail one in four: 34 of 122) once its shots scatter as
+the old nose wandered (held exactly on, it hit with two in three); the wingman killed one in 119 s and the player's
+hull took 3,841 in 240 s, a good part of it the wingman's own bolts through the player's sphere (the old code has no
+same-side test either: a wingman's bolts hit its leader). Hunted, the three died at 107, 129 and 16 s (the old
+run: two of three by 190 s), the player's hits now hurting 10-25 a bolt; one ram of the player's and one between
+the wingman and a Dralthi, both deadly under the old rule (the old hunt: one bump in 52 passes); the steer-clear
+break (`avoid_break`) and the avoidance's push in proportion to the way wanted took the fighters' rams of each
+other out of the straight run. Still apart: the old approach's spacing (the nearest two 1,746 km apart) and the
+old wingman's bumps (none seen).
 
 ## What is still to measure
 

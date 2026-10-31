@@ -247,7 +247,8 @@ may only draw with hud.h's calls (below).
   - `kind`: `RV_WK_GUN`, `TURRET`, `MISSILE`, `TORPEDO`, `ROCKET`, `MINE`, `SPECIAL`.
   - `look`: how its shot is drawn, below.
   - `lock`: none, heat, image, auto or proximity, and `lock_tenths`.
-  - `damage`, `speed_kps`, `range_km` (the csv's thousands of km: 3.0 is 3,000 km), `refire` (steps), `energy`.
+  - `damage` (at the end of its reach) and `damage_near` (at the muzzle; a hit does a point between by the shot's life left, the old game's bolt: the laser 10 to 25; blank in the csv: flat), `speed_kps`, `range_km` (the csv's thousands of km: 3.0 is 3,000 km), `refire` (steps), `energy`.
+  - `radius_km` (the shot's own radius, counted in every hit test: blank 10 for a gun, the old game's bolt) and `cone_cos` (the csv's `cone_deg`: the AI fires the gun within this of its nose under `rules aim=cone`; blank 46 for a gun, the old game's laser; its neutron 37, mass driver 32).
 - **The `look` column is new.** My first pass at it, to change at will:
   - Terran: lasers, particle cannons and disruptors are bolts; mass drivers slugs; the ion cannon plasma.
   - Aera: green stars.
