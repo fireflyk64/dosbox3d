@@ -2907,6 +2907,94 @@ static void t_cone_fire(void)
     REQUIRE(over == 0, e_wide, over, 0, 0);
 }
 
+/* the enemy's missiles under the hold: the enemy 2,500 km behind an invulnerable player flying straight at 300 kps,
+ * on its tail at the same speed (the player on its nose, within its seekers' lock cone), `secs` seconds; how many
+ * missiles it launched */
+static int16_t pt_missiles_launched(uint8_t rules, int16_t selected, int16_t secs)
+{
+    uint8_t keep = g_rule_flags;
+    int16_t i, n = 0, last = -1, m;
+    pt_alone(PT_PLAYER);
+    g_sys.armed = 0;
+    playerCanBeDamaged = 0;
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, 0, 0, -2500, 0);
+    pt_speed(0, 300);                   /* (both under way: against a still player it breaks off every few seconds and
+                                           its lock never completes) */
+    pt_speed(1, 300);
+    g_sys.target = selected ? 1 : -1;
+    g_rule_flags = rules;
+    for (i = 0; i < secs * SEC && slot_is_ship(1); i++) {
+        if (!pt_step()) {
+            g_rule_flags = keep;
+            g_sys.target = -1;
+            return -1;
+        }
+        if ((m = pt_missile_of(1)) >= 0 && m != last) {
+            n++;
+            last = m;
+        }
+    }
+    g_rule_flags = keep;
+    g_sys.target = -1;
+    return n;
+}
+
+/* M5.17: the held fire holds the missiles too (the old wrapper skipped the whole weapons routine): the player's
+ * selected target, on its tail, launches nothing in 40 s under hold=on, and does with the rule off */
+static void t_hold_missiles(void)
+{
+    static const char __far e_held[] = "the player's selected target launched %d missiles in 40 s from the player's tail "
+        "under hold=on: the hold withholds the missiles too (aim_and_fire)";
+    static const char __far e_free[] = "with hold=off the enemy launched no missile in 40 s from the player's tail: it "
+        "has two seekers and a lock";
+    int16_t held, free_;
+    held = pt_missiles_launched(RV_RULE_AIM_CONE | RV_RULE_HOLD_FIRE, 1, 40);
+    if (held < 0)
+        return;
+    free_ = pt_missiles_launched(RV_RULE_AIM_CONE, 1, 40);
+    if (free_ < 0)
+        return;
+    REQUIRE(held == 0, e_held, held, 0, 0);
+    REQUIRE(free_ > 0, e_free, free_, 0, 0);
+}
+
+/* M5.18: the missile dodge fires whatever the hold (the old maneuver 32): the player's selected target 3,000 km ahead
+ * facing the player holds its guns, until a missile of the player's homes on it from ahead: then it shoots */
+static void t_dodge_fire(void)
+{
+    static const char __far e_none[] = "the player's selected target, holding its guns, fired %d shots in the 6 s a "
+        "missile homed on it from ahead: a missile within 8,000 km ahead ends the hold (missile_ahead)";
+    static const char __far e_nolaunch[] = "the player's ship (type 0x%x) has no missile launcher";
+    static const char __far e_nohome[] = "the player's missile (slot %d) homes on %d, not on the enemy (slot 1)";
+    uint8_t keep = g_rule_flags;
+    uint16_t a0, m;
+    int16_t i, l, n = 0;
+    pt_alone(PT_HOMER);
+    g_sys.armed = 0;
+    playerCanBeDamaged = 0;
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, 0, 0, 3000, TURN / 2);
+    g_sys.target = 1;
+    g_sys.lock = 1;
+    g_rule_flags = RV_RULE_AIM_CONE | RV_RULE_HOLD_FIRE;
+    REQUIRE((l = pt_launcher(0)) >= 0, e_nolaunch, PT_HOMER, 0, 0);
+    m = fireGunFromShip(0, (uint16_t)l);
+    REQUIRE(m <= RV_MAX_SHIP_SLOT && maybeEntityType[m] == ET_MISSILE && missileTarget[m] == 1, e_nohome, m,
+            m <= RV_MAX_SHIP_SLOT ? missileTarget[m] : -1, 0);
+    a0 = shots_added();
+    for (i = 0; i < 6 * SEC && slot_is_ship(1); i++) {
+        if (!pt_step())
+            break;
+        if (shots_added() != a0) {
+            a0 = shots_added();
+            n++;
+        }
+    }
+    g_rule_flags = keep;
+    g_sys.target = -1;
+    g_sys.lock = 0;
+    REQUIRE(n > 0, e_none, n, 0, 0);
+}
+
 /* a scared fighter: its armour gone and its hull nearly, 2,000 km ahead of the player and flying the same way (the
  * player on its tail, pointing at it), the player still and invulnerable */
 static int16_t pt_scared(void)
@@ -3726,6 +3814,8 @@ static const char __far n_m5_13[] = "M5.13 hold-fire (holds_fire): the player's 
 static const char __far n_m5_14[] = "M5.14 cone-fire (aim_and_fire): under aim=cone the guns go within the weapon's cone, 13 steps apart";
 static const char __far n_m5_15[] = "M5.15 leave (fear_step, leave_step): a scared fighter tailed leaves and is removed beyond 16,000 km";
 static const char __far n_m5_16[] = "M5.16 home (T_HOME): with its side's capital ship about it runs there instead and fights on";
+static const char __far n_m5_17[] = "M5.17 hold-missiles (aim_and_fire): the held fire withholds the missiles too";
+static const char __far n_m5_18[] = "M5.18 dodge-fire (missile_ahead): a missile homing on it from ahead, it fires whatever the hold";
 static const char __far n_m6_1[] = "M6.1 ram (step_collisions): ships inside one another are pushed apart, both hurt";
 static const char __far n_m6_2[] = "M6.2 no-ghosts (step_collisions): a ship flown at another does not pass through";
 static const char __far n_m6_3[] = "M6.3 ram-cost (ram_damage): the old rule's square of the closing speed, halved; the soft rule's dozen";
@@ -3780,6 +3870,7 @@ static const PtTest __far k_tests[] = {
     { n_m5_8, t_formation, 0 }, { n_m5_9, t_no_left, 0 }, { n_m5_10, t_waiter, 0 }, { n_m5_11, t_old_straight, 0 },
     { n_m5_12, t_old_hunt, 0 },
     { n_m5_13, t_hold_fire, 0 }, { n_m5_14, t_cone_fire, 0 }, { n_m5_15, t_leave, 0 }, { n_m5_16, t_home, 0 },
+    { n_m5_17, t_hold_missiles, 0 }, { n_m5_18, t_dodge_fire, 0 },
     { n_m6_1, t_ram, 0 }, { n_m6_2, t_no_ghosts, 0 }, { n_m6_3, t_ram_cost, 0 },
     { n_m7_1, t_launch, 0 }, { n_m7_2, t_missile_key, 0 }, { n_m7_3, t_missile_flies, 0 },
     { n_m7_4, t_missile_hits, 0 }, { n_m7_5, t_missile_homes, 0 }, { n_m7_6, t_missile_ends, 0 },

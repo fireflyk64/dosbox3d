@@ -1508,9 +1508,26 @@ static int16_t cos_nose_to(int16_t s, int16_t h)
     return (int16_t)(km ? clamp32(vec_dot(&d, &gOrientationFrontVector[s]) / km, -256, 256) : 256);
 }
 
+#define MISSILE_DODGE_KM 8000           /* the old game's missile dodge (its maneuver 32, read in its code): a missile
+                                           homing on the ship from within 37 degrees ahead and this near, and the ship
+                                           fires its guns at its target whatever the hold */
+
+/* a missile homing on s from within 37 degrees ahead of its nose and under MISSILE_DODGE_KM */
+static int16_t missile_ahead(int16_t s)
+{
+    int16_t k;
+    for (k = 1; k < NUM_SHIP_SLOTS; k++)
+        if (maybeEntityType[k] == ET_MISSILE && missileTarget[k] == s && km_between(s, k) < MISSILE_DODGE_KM
+            && cos_nose_to(s, k) > HOLD_COS)
+            return 1;
+    return 0;
+}
+
 /* the held fire (the mission's rule hold=on; the old game's, read in its code and seen in its flight: the ship a
- * player has selected as a target holds its guns while that player is within 37 degrees ahead of its nose, in its
- * tailing attacks; its wingmen fire on): 1 when s must hold this step.  A profile of PF_NO_MERCY never holds */
+ * player has selected as a target holds its guns, its missiles and its mines while that player is within 37 degrees
+ * ahead of its nose, in its tailing attacks; its wingmen fire on; under a missile coming at it from ahead it fires,
+ * the old missile dodge): 1 when s must hold this step.  A profile of PF_NO_MERCY never holds (the user's ruling,
+ * 2026-10-31: the ace keeps the old game's one exempt class) */
 static int16_t holds_fire(int16_t s, const AiProfile __far *p)
 {
     int16_t h;
@@ -1519,7 +1536,7 @@ static int16_t holds_fire(int16_t s, const AiProfile __far *p)
     for (h = 0; h < NUM_SHIP_SLOTS; h++)
         if (h != s && slot_is_ship(h) && shipAiState[h] != 9 && (rvController[h] == CTL_PLAYER || rvController[h] == CTL_PUPPET)
             && rvTarget[h] == s && cos_nose_to(s, h) > HOLD_COS)
-            return 1;
+            return !missile_ahead(s);
     return 0;
 }
 
@@ -1528,14 +1545,15 @@ static int16_t holds_fire(int16_t s, const AiProfile __far *p)
  * coming as the nose crosses the target); a missile after a lock */
 static void aim_and_fire(int16_t s, Mind __far *m, const AiProfile __far *p, const View *v, int16_t guns)
 {
-    int16_t g = gun_of(s), l;
+    int16_t g = gun_of(s), l, held;
     const RvWeapon __far *w = g >= 0 ? weapon(GUN_TYPE(s, g)) : 0;
     int32_t reach = w ? w->range_km : 0;
     if (reach > p->fire_km)
         reach = p->fire_km;
     if (m->gap < 255)
         m->gap++;
-    if (guns && w && v->km <= reach && gunEnergy[s] > 0 && !holds_fire(s, p)) {
+    held = holds_fire(s, p);
+    if (guns && w && v->km <= reach && gunEnergy[s] > 0 && !held) {
         if (g_rule_flags & RV_RULE_AIM_CONE) {
             if (v->cos_nose >= (int16_t)w->cone_cos && m->gap >= AI_REFIRE_STEPS) {
                 m->fire |= FIRE_GUNS;
@@ -1548,13 +1566,14 @@ static void aim_and_fire(int16_t s, Mind __far *m, const AiProfile __far *p, con
             m->gap = 0;
         }
     }
-    /* a lock: the target in the cone for the weapon's lock time, then the dice, then the launch */
+    /* a lock: the target in the cone for the weapon's lock time, then the dice, then the launch (not under the held
+     * fire: the old wrapper skipped the missiles with the guns) */
     if ((l = launcher_of(s)) >= 0 && (w = weapon(GUN_TYPE(s, l))) != 0 && v->cos_nose >= LOCK_CONE
         && v->km <= w->range_km && (uint16_t)(frameCounter - m->since) >= RELAUNCH_STEPS) {
         if (++m->lock >= (uint16_t)(w->lock_tenths * 3 + 1)) {
             m->lock = 0;
             m->since = frameCounter;
-            if (game_rand() % 100 < p->missile_pct) {
+            if (game_rand() % 100 < p->missile_pct && !held) {
                 m->fire |= FIRE_MISSILE;
                 m->launcher = (uint8_t)l;
             }

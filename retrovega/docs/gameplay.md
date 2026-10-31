@@ -270,6 +270,8 @@ What the tests expect (an AI Nicander against a still player):
 | M5.14 cone-fire | under `aim=cone` the enemy's shots come with the player 20-46° off its nose too (the laser's `cone_deg` 46), never past 50°, and its volleys are 13 steps apart or more |
 | M5.15 leave | a fighter with its armour gone and 10 hull points left, 2,000 km ahead of a still player pointing at it, grows afraid over its passes, leaves (down: an odd slot) and is removed beyond 16,000 km of the player within 90 s, not killed |
 | M5.16 home | the same with a destroyer of its side 20,000 km off: it runs to within 5,000 km of the destroyer (`T_HOME`) and is not removed |
+| M5.17 hold-missiles | the player's selected target on the player's tail (2,500 km behind a player flying straight at 300 kps, the player in its seekers' cone) launches no missile in 40 s under `hold=on`, and does with the rule off: the old wrapper withheld the whole weapons routine |
+| M5.18 dodge-fire | the selected target 3,000 km ahead facing a still player holds its guns, but shoots within the 6 s a missile of the player's homes on it from ahead (the old missile dodge, maneuver 32: a missile within 37° ahead and 8,000 km) |
 
 **The AI as written** (docs/ai.md): a mind per slot runs a tactic picked by weighted dice from its profile's table for
 its situation; a steering turns the tactic's wanted direction into the player's own steer and roll, pulling only where
