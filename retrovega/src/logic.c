@@ -990,6 +990,8 @@ typedef struct {
     int32_t km;
     int16_t cos_nose;                   /* how straight my nose points at it (x 256) */
     int16_t cos_aim;                    /* at its lead point */
+    int16_t cos_fire;                   /* at the lead point as the ship's own shots fly (its velocity carried) */
+    int32_t miss_km;                    /* how far the nose's line passes from that point */
     int16_t cos_its;                    /* how straight ITS nose points at me */
     int32_t closing;                    /* how fast the two come together, km a step (negative: apart) */
 } View;
@@ -1009,7 +1011,9 @@ static void view_of(int16_t s, int16_t t, int16_t lead, View *v)
     ship_rel(s, t, &v->rel);
     v->km = len_of(v->rel.x, v->rel.y, v->rel.z);
     v->cos_nose = cos_of(&v->rel, v->km);
-    /* the lead: the target's move over the shot's flight, twice refined */
+    /* the lead: the target's move over the shot's flight, twice refined.  The way to fly at (aim) takes the target's
+     * own velocity, as the old game's fighters flew; the guns' test (cos_fire, miss_km) takes it less the ship's,
+     * since a shot carries the ship's velocity (gun_fire) and must meet the target as seen from the ship */
     vt = vec3(TO_KM(gVelocityVector[t].x), TO_KM(gVelocityVector[t].y), TO_KM(gVelocityVector[t].z));
     to_body(s, &vt, &w);
     tof = v->km / (kps / KPS_HZ);
@@ -1020,6 +1024,16 @@ static void view_of(int16_t s, int16_t t, int16_t lead, View *v)
                   v->rel.z + (v->aim.z - v->rel.z) * lead / 100);
     alen = len_of(v->aim.x, v->aim.y, v->aim.z);
     v->cos_aim = cos_of(&v->aim, alen);
+    vt = vec3(TO_KM(gVelocityVector[t].x - gVelocityVector[s].x), TO_KM(gVelocityVector[t].y - gVelocityVector[s].y),
+              TO_KM(gVelocityVector[t].z - gVelocityVector[s].z));
+    to_body(s, &vt, &w);
+    tof = v->km / (kps / KPS_HZ);
+    d = vec3(v->rel.x + w.x * tof, v->rel.y + w.y * tof, v->rel.z + w.z * tof);
+    tof = len_of(d.x, d.y, d.z) / (kps / KPS_HZ);
+    d = vec3(v->rel.x + (w.x * tof) * lead / 100, v->rel.y + (w.y * tof) * lead / 100, v->rel.z + (w.z * tof) * lead / 100);
+    alen = len_of(d.x, d.y, d.z);
+    v->cos_fire = cos_of(&d, alen);
+    v->miss_km = alen * (int32_t)lf_sqrt((uint32_t)(INT32_C(65536) - (v->cos_fire < 0 ? 0 : (int32_t)v->cos_fire * v->cos_fire))) / 256;
     /* its nose on me: me from it, along its front */
     d = vec3(TO_KM(gPositionVector[s].x - gPositionVector[t].x), TO_KM(gPositionVector[s].y - gPositionVector[t].y),
              TO_KM(gPositionVector[s].z - gPositionVector[t].z));
@@ -1277,6 +1291,8 @@ static void throttle(int16_t s, int32_t kps, int16_t burn)
         speedLo[s] = (uint32_t)t->ab_kps;
 }
 
+#define AIM_MISS_KM 150                 /* a shot is let go when the nose's line passes this near the lead point */
+
 /* the guns, when the lead point is in the cone and the target in range; a missile after a lock */
 static void aim_and_fire(int16_t s, Mind __far *m, const AiProfile __far *p, const View *v, int16_t guns)
 {
@@ -1287,7 +1303,10 @@ static void aim_and_fire(int16_t s, Mind __far *m, const AiProfile __far *p, con
         reach = p->fire_km;
     if (m->gap < 255)
         m->gap++;
-    if (guns && w && v->km <= reach && v->cos_aim >= p->aim_cos && gunEnergy[s] > 0 && m->gap >= p->fire_gap) {
+    /* the guns: the lead point within the cone, and, far out, within AIM_MISS_KM of the nose's line at its range
+     * (the cone alone let a tail fire 6 degrees off at 2,800 km, 300 km wide of the target) */
+    if (guns && w && v->km <= reach && v->cos_fire >= p->aim_cos && gunEnergy[s] > 0 && m->gap >= p->fire_gap
+        && v->miss_km <= AIM_MISS_KM) {
         m->fire |= FIRE_GUNS;
         m->gap = 0;
     }

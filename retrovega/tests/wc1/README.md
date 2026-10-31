@@ -139,6 +139,7 @@ data/weapons.csv; the guns' energy rule is the type's `gun_energy_steps`, blank 
 | guns at the launch | full | full (`gunEnergy` 100 at spawn; it was 0 for every AI ship) |
 | the guns' reach | the Hornet's lasers hit from 3,800-4,000 km (the shot-to-hit pairs), the tailing Dralthi fired from 3,645 km (median) | `range_km` 4.5 for the fighters' guns (was 3.0: the bolts died before a receding target), `fire_km` 4,000 |
 | avoidance | the nearest two Dralthi 1,746 km apart, never a collision | `avoid_pct` 350 (with the lead, 300 left the hunted duel with two bumps in 90 s) |
+| the shot's own motion | (unmeasured: the implied bolt speeds from the shot-to-hit pairs fit both ways) | a shot carries the ship's velocity (the fork's gun_fire); the AI's guns test their aim against the lead point as the shot flies, the target's velocity less the ship's (`cos_fire`), and let go only within 150 km of it at its range (`AIM_MISS_KM`): 74 hits on the hunting player in 190 s (the old 73), 82 on a straight one (34), where the cone alone let a tail fire 6 degrees off at 2,800 km |
 | the hull under the armour | a laser hit of 14 adds 2-4 to the Dralthi's damage points; it died at 12-27 of them: 4-8 hits on the bare hull, 20 or so from one side in all (its slot 2 took 44 hits over 147 s before dying, slot 3 29 and lived) | `hull` 24 (8 hits; it was 10, 3 hits: a Nicander died after 11 hits in one pass of the hunting player, where the old took 15 in ten seconds and lived) |
 
 Still apart: its speed setting is 2 km/s a point
