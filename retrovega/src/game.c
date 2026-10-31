@@ -21,7 +21,7 @@
 #include "game.h"
 
 enum { MODE_ROOM, MODE_TALK, MODE_BRIEF, MODE_XOCLOSE, MODE_DECK, MODE_DEBRIEF, MODE_BUNK,
-       MODE_NAME, MODE_LOG, MODE_MESSAGE, MODE_ENDING, MODE_BOARD, MODE_QUIT };
+       MODE_NAME, MODE_LOG, MODE_MESSAGE, MODE_ENDING, MODE_BOARD, MODE_DEAD, MODE_QUIT };
 
 static int g_mode, g_back_mode;
 static RvMission __far g_m;
@@ -730,9 +730,40 @@ static void customize(void)
 
 /* --- the flight --- */
 
+/* --- the player's death: a word, and the choice of flying the mission again or carrying on with it lost (the
+ * user, 2026-10-30: not straight back to the base with the mission failed) --- */
+
+static void dead_full(int y0, int y1)
+{
+    gfx_fill(0, 0, SCR_W, SCR_H, UI_BLACK, y0, y1);
+    gfx_text(FONT_TITLE, 200, 140, "YOU HAVE DIED", RV_TEXT_WHITE, y0, y1);
+    gfx_text(FONT_BODY, 150, 200, "R   fly the mission again", RV_TEXT_AMBER, y0, y1);
+    gfx_text(FONT_BODY, 150, 222, "C   carry on: the mission is lost", RV_TEXT_GREY, y0, y1);
+}
+
+static void enter_dead(void)
+{
+    vid_fade(0);
+    g_scene.full = dead_full;
+    g_scene.no_room = 1;
+    g_scene.overlay = 0;
+    g_scene.label[0] = 0;
+    g_mode = MODE_DEAD;
+    music_cue(RV_MUSIC_LOSE, 300);
+    vid_dirty(0, SCR_H);
+    scene_draw();
+    vid_fade(64);
+}
+
+static void leave_dead(void)
+{
+    g_scene.full = 0;
+    g_scene.no_room = 0;
+}
+
 static void launch(void)
 {
-    int won;
+    int won, status;
     mission_load_assets();
     missionStarting();
     g_scene.label[0] = 0;
@@ -742,7 +773,7 @@ static void launch(void)
      * test's /winrate puts the roll back after the flight, so a script can steer the campaign whatever was flown */
     won = (int)(rnd() % 100) < (g_winrate < 0 ? 80 : g_winrate);
     victoryPoints = won;
-    flight_fly(&g_m);
+    status = flight_fly(&g_m);
     if (g_winrate >= 0)
         victoryPoints = won;
     missionVictoryCalc();                           /* the layer's moment: a wingman's score becomes the host's */
@@ -751,6 +782,10 @@ static void launch(void)
     mission_free_assets();
     rv_log("mission %.16Fs %s", (char __far *)g_m.id, g_won ? "won" : "lost");
     g_now = ticks();
+    if (status == 4 && !script_active()) {   /* the player died: the choice first (a test script flies on to the debrief) */
+        enter_dead();
+        return;
+    }
     start_briefing(1);
 }
 
@@ -1280,6 +1315,16 @@ int game_run(void)
         case MODE_ENDING:
             if (in.key != KEY_NONE || in.clicked)
                 g_mode = MODE_QUIT;
+            break;
+        case MODE_DEAD:
+            if (in.ch == 'r' || in.ch == 'R') {
+                leave_dead();
+                camp_load_units(&g_m);  /* (the mission's tables as they were before the flight) */
+                launch();
+            } else if (in.ch == 'c' || in.ch == 'C' || in.key == KEY_ENTER || in.clicked) {
+                leave_dead();
+                start_briefing(1);
+            }
             break;
         }
         scene_draw();
