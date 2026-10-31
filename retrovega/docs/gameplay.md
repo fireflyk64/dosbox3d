@@ -388,6 +388,7 @@ tests cover them; flight.c's keys (T, Y, L) and its AUTO call them.
 | M10.3 systems | hits of 20 through the bare front to the hull hurt a system within 40 (a point each, its cockpit overlay bit set), a GUNS point is a gun destroyed; the shield generator wrecked, the front shield stays at 0 for 10 s and comes back once whole; the power plant wrecked, the gun energy stays |
 | M10.4 weapon-choice | the Lancelot (two particle cannons, two ion guns, heat seekers and image-recognition missiles): G cycles the choice over all, the first type, the second, all again; with the second chosen the trigger fires its two guns and none of the other; W cycles the launchers, and the missile key fires the chosen one |
 | M10.5 nav-cross | (host only) the chosen nav point 5,000 km right of a point 20,000 km ahead: `logic_hud` draws within 8 px of a quarter of the focal length right of the view's middle, and nothing there once the player has turned round |
+| M10.6 orders | a wingman 10,000 km right of the player, an enemy 6,000 km ahead of each: free it fights the one nearest to it; attack my target (the player's, the other) it takes that one, and the order is refused with no target set; help me out, the enemy nearest the player; form on my wing, nobody, and it stays within 3,000 km for 10 s; return to base with a destroyer of its side 20,000 km behind, it comes within 5,000 km of it in 40 s |
 
 ## The memory: where everything lives
 

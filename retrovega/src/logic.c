@@ -57,6 +57,7 @@ static Mind __far g_mind[NUM_SHIP_SLOTS];
 /* a missile's own (its slot has no ship type) */
 typedef struct { uint16_t weapon, life; } MissileState;
 static MissileState __far g_missile[NUM_SHIP_SLOTS];
+static uint8_t __far g_order[NUM_SHIP_SLOTS];   /* the wingmen's orders (ORDER_*, logic.h) */
 
 #define RAM_STEPS 10                    /* a ship hurt by a ram is not hurt by one again for this many steps */
 #define AI_SCATTER 18                   /* an AI's shot's scatter about the nose, 256ths each way (18: 4 degrees; gun_fire) */
@@ -161,6 +162,44 @@ int16_t logic_nav_km(int16_t n, int32_t *km)
     return 1;
 }
 
+/* --- the wingmen's orders (logic.h) --- */
+
+static int16_t is_wingman(int16_t s)
+{
+    return s > 0 && s < NUM_SHIP_SLOTS && slot_is_ship(s) && maybeEntityType[s] == ET_SHIP && rvController[s] == CTL_AI
+           && shipAiState[s] != 9 && slot_is_ship(0) && commAnimInfo[s] == commAnimInfo[0];
+}
+
+int16_t logic_wingmen(int16_t *out, int16_t max)
+{
+    int16_t s, n = 0;
+    for (s = 1; s < NUM_SHIP_SLOTS && n < max; s++)
+        if (is_wingman(s))
+            out[n++] = s;
+    return n;
+}
+
+static int16_t nearest_capital(int16_t s);
+
+int16_t logic_order(int16_t s, int16_t order)
+{
+    if (!is_wingman(s) || order < 0 || order >= ORDER_COUNT)
+        return 0;
+    if (order == ORDER_ATTACK && (g_sys.target < 0 || !slot_is_ship(g_sys.target) || shipAiState[g_sys.target] == 9
+                                  || commAnimInfo[g_sys.target] == commAnimInfo[s]))
+        return 0;
+    if (order == ORDER_RTB && nearest_capital(s) < 0)
+        return 0;
+    g_order[s] = (uint8_t)order;
+    g_mind[s].timer = 0;                /* (its tactic over: the next step picks afresh for the order) */
+    return 1;
+}
+
+int16_t logic_order_of(int16_t s)
+{
+    return s > 0 && s < NUM_SHIP_SLOTS ? g_order[s] : ORDER_FREE;
+}
+
 /* the mission's rule, a patrol's: every nav point reached and every enemy of the mission's killed */
 static int16_t mission_done(void)
 {
@@ -198,6 +237,7 @@ void logic_start(const RvMission __far *m)
     _fmemset(g_turn, 0, sizeof g_turn);
     _fmemset(g_mind, 0, sizeof g_mind);
     _fmemset(g_missile, 0, sizeof g_missile);
+    _fmemset(g_order, 0, sizeof g_order);
     _fmemset(g_rammed, 0, sizeof g_rammed);
     _fmemset(g_died, 0, sizeof g_died);
     memset(systemDamage, 0, systemDamage_SIZE);   /* the player's systems whole (flight.c clears only the cockpit's).  (A
@@ -2184,8 +2224,45 @@ static void fighter_think(int16_t s)
     }
     if (near_ >= 0 && bd <= p->engage_km && (m->target == 0xFF || bd * 3 < km_between(s, m->target) * 2))
         m->target = (uint8_t)near_;
+    /* a wingman under orders (logic_order): the player's target wherever it is (ATTACK), the enemy nearest the player,
+     * one on the player first (HELP), or nobody at all (FORMATION, RTB) */
+    if (g_order[s] != ORDER_FREE && is_wingman(s)) {
+        if (g_order[s] == ORDER_ATTACK) {
+            if (g_sys.target >= 0 && slot_is_ship(g_sys.target) && shipAiState[g_sys.target] != 9
+                && commAnimInfo[g_sys.target] != commAnimInfo[s])
+                m->target = (uint8_t)g_sys.target;
+            else
+                g_order[s] = ORDER_FREE;   /* (the target gone: back to its own fight) */
+        } else if (g_order[s] == ORDER_HELP) {
+            int16_t best = -1, on = 0;
+            bd = INT32_C(0x7FFFFFFF);
+            for (k = 1; k < NUM_SHIP_SLOTS; k++) {
+                int16_t targets_player;
+                if (k == s || !slot_is_ship(k) || commAnimInfo[k] == commAnimInfo[s] || shipAiState[k] == 9 || (rvFlags[k] & 16))
+                    continue;
+                targets_player = rvTarget[k] == 0;
+                d = player_km(k);
+                if (targets_player > on || (targets_player == on && d < bd)) {
+                    bd = d;
+                    best = k;
+                    on = targets_player;
+                }
+            }
+            if (best >= 0)
+                m->target = (uint8_t)best;
+        } else
+            m->target = 0xFF;
+    }
     rvTarget[s] = m->target;
     if (m->target == 0xFF) {            /* nobody to fight: the idle tactic */
+        int16_t cap;
+        if (g_order[s] == ORDER_RTB && is_wingman(s) && (cap = nearest_capital(s)) >= 0) {   /* home: round its carrier */
+            m->leader = (uint8_t)cap;
+            if (m->tactic != T_ESCORT)
+                take_tactic(s, m, p, T_ESCORT);
+            escort_step(s, m, p);
+            return;
+        }
         if (m->tactic != p->idle) {
             take_tactic(s, m, p, p->idle);
             m->timer = tactic_steps(s, p->idle);

@@ -34,12 +34,84 @@ static void fit(char *s, int w)
 
 static unsigned char __far g_page[2];
 static unsigned char __far g_cursor;    /* the damage page's line: which hurt system it names (D again: the next) */
+static unsigned char __far g_comm_level;   /* the comm menu: 0 whom, 1 a wingman's orders, 2 the carrier's */
+static int __far g_comm_who;            /* the wingman's slot (level 1) */
+#define MSHIP_PILOT(r) (missionShipTable[missionShipTable_SIZE * ((r) & 63) + 16])
 
 void vdu_flight_start(void)
 {
     g_page[0] = VDU_L_STATUS;
     g_page[1] = VDU_R_TARGET;
     g_cursor = 0;
+    g_comm_level = 0;
+    g_comm_who = -1;
+}
+
+/* --- the comm menu --- */
+
+#define COMM_WINGMEN 6                  /* at most this many wingmen listed */
+
+static const char __far k_order_line[ORDER_COUNT][20] = {
+    "BREAK AND ATTACK", "ATTACK MY TARGET", "FORM ON MY WING", "HELP ME OUT", "RETURN TO BASE"
+};
+static const uint8_t __far k_order_key[5] = { ORDER_ATTACK, ORDER_FREE, ORDER_FORMATION, ORDER_HELP, ORDER_RTB };   /* 1 .. 5 */
+
+/* a wingman's callsign (its mission record's pilot), else its type's name */
+static void wingman_name(int s, char *out, int max)
+{
+    int r = slotMissionShip[s], pilot = r < 64 ? MSHIP_PILOT(r) : RV_PILOT_NONE;
+    if (pilot != RV_PILOT_NONE && pilot < (int)g_npilots && g_pilots[pilot].callsign[0])
+        _fstrncpy(out, g_pilots[pilot].callsign, max - 1);
+    else if (slot_type((int16_t)s))
+        _fstrncpy(out, slot_type((int16_t)s)->name, max - 1);
+    else
+        strcpy(out, "WINGMAN");
+    out[max - 1] = 0;
+}
+
+void vdu_comm_open(void)
+{
+    g_comm_level = 0;
+    g_comm_who = -1;
+    g_page[0] = VDU_L_COMM;
+}
+
+int vdu_comm_key(int ch, int *who, int *what)
+{
+    int16_t wing[COMM_WINGMEN];
+    int n, d;
+    *who = -1;
+    *what = COMM_NONE;
+    if (g_page[0] != VDU_L_COMM)
+        return COMM_NONE;
+    if (ch == 27 || ch == '0') {        /* (Esc, 0: never mind) */
+        g_page[0] = VDU_L_STATUS;
+        return *what = COMM_CLOSE;
+    }
+    if (ch < '1' || ch > '9')
+        return COMM_NONE;
+    d = ch - '0';
+    if (g_comm_level == 0) {            /* whom: a wingman, or the carrier after them */
+        n = logic_wingmen(wing, COMM_WINGMEN);
+        if (d <= n) {
+            g_comm_who = wing[d - 1];
+            g_comm_level = 1;
+        } else if (d == n + 1)
+            g_comm_level = 2;
+        return COMM_NONE;
+    }
+    if (g_comm_level == 1) {            /* an order */
+        if (d > 5)
+            return COMM_NONE;
+        *who = g_comm_who;
+        g_page[0] = VDU_L_STATUS;
+        return *what = (int)k_order_key[d - 1] + 0x100;   /* (the order in the low byte: COMM_ORDER's) */
+    }
+    if (d == 1) {                       /* the carrier: request landing */
+        g_page[0] = VDU_L_STATUS;
+        return *what = COMM_LANDING;
+    }
+    return COMM_NONE;
 }
 
 void vdu_show(int which, int page)
@@ -321,7 +393,7 @@ static int menu_rows(const RvRect __far *r)
 
 /* a menu's lines down a VDU from line `from`, in columns when it is wide enough (each as wide as the widest
  * line, cut to the VDU), as many as fit; line `lit` in white, the rest amber.  Returns how many it showed */
-static int menu(const RvRect __far *r, char lines[][14], int n, int from, int lit, int y0, int y1)
+static int menu(const RvRect __far *r, char lines[][20], int n, int from, int lit, int y0, int y1)
 {
     int rows = menu_rows(r), k, cw = 0, w, x = r->x + 3, y, shown = 0;
     for (k = from; k < n; k++) {
@@ -345,7 +417,7 @@ static int menu(const RvRect __far *r, char lines[][14], int n, int from, int li
 /* the nav page: the mission's nav points with how far each is, the chosen one lit (N: the next) */
 static void draw_nav(const RvRect __far *r, int y0, int y1)
 {
-    char lines[16][14];
+    char lines[16][20];
     int n = 0, k;
     for (k = 0; k < 16 && n < 16; k++) {
         int32_t km;
@@ -367,6 +439,43 @@ static void draw_nav(const RvRect __far *r, int y0, int y1)
     }
 }
 
+/* the comm page: SEND TO and the wingmen and the carrier, or a wingman's orders, or the carrier's */
+static void draw_comm(const RvRect __far *r, int y0, int y1)
+{
+    char lines[COMM_WINGMEN + 3][20];
+    int16_t wing[COMM_WINGMEN];
+    int n = 0, k, w;
+    if (systemDamage[SYS_INTERCOM] >= SYS_WRECKED) {
+        text(r->x + 4, r->y + 3, "INTERCOM OUT", 0, y0, y1);
+        return;
+    }
+    if (g_comm_level == 0) {
+        char name[12];
+        strcpy(lines[n++], "SEND TO:");
+        w = logic_wingmen(wing, COMM_WINGMEN);
+        for (k = 0; k < w; k++) {
+            wingman_name(wing[k], name, 9);
+            sprintf(lines[n++], "%d %s", k + 1, name);
+        }
+        sprintf(lines[n++], "%d CARRIER", w + 1);
+    } else if (g_comm_level == 1) {
+        char name[12];
+        wingman_name(g_comm_who, name, 9);
+        sprintf(lines[n++], "%s:", name);
+        for (k = 0; k < 5; k++) {
+            char line[18];
+            _fstrncpy(line, k_order_line[k_order_key[k]], sizeof line - 1);
+            line[sizeof line - 1] = 0;
+            sprintf(lines[n++], "%d %s", k + 1, line);   /* (18 characters, 72 px: the small VDU is 84) */
+        }
+    } else {
+        strcpy(lines[n++], "CARRIER:");
+        strcpy(lines[n++], "1 LANDING");
+    }
+    strcpy(lines[n++], "0 NEVER MIND");
+    (void)menu(r, lines, n, 0, -1, y0, y1);
+}
+
 int vdu_draw(int which, const RvRect __far *r, int y0, int y1)
 {
     if (!r->w || y1 <= r->y || y0 >= r->y + r->h)
@@ -374,6 +483,7 @@ int vdu_draw(int which, const RvRect __far *r, int y0, int y1)
     if (which == 0) {
         switch (g_page[0]) {
         case VDU_L_NAV: draw_nav(r, y0, y1); return 1;
+        case VDU_L_COMM: draw_comm(r, y0, y1); return 1;
         default: return 0;
         }
     }

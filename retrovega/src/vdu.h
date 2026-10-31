@@ -14,6 +14,14 @@ enum { VDU_R_TARGET, VDU_R_WEAPONS, VDU_R_DAMAGE };   /* the right VDU's pages *
 enum { VDU_L_STATUS, VDU_L_COMM, VDU_L_NAV };          /* the left VDU's */
 
 void vdu_flight_start(void);            /* the pages at their first (the target, the status lines) */
+
+/* the comm menu (C): SEND TO: the wingmen by callsign and the carrier; then a wingman's orders (attack my target,
+ * break and attack, form on my wing, help me out, return to base) or the carrier's request for landing; a digit
+ * picks, 0 or Esc closes.  vdu_comm_key says what the pilot picked: COMM_ORDER with the wingman's slot and the
+ * order (logic.h ORDER_*), COMM_LANDING, COMM_CLOSE, or COMM_NONE (the key moved within the menu, or was not its) */
+enum { COMM_NONE, COMM_ORDER, COMM_LANDING, COMM_CLOSE };
+void vdu_comm_open(void);               /* the menu up at its first level */
+int vdu_comm_key(int ch, int *who, int *what);
 void vdu_show(int which, int page);     /* a key brings a page up (0 the left VDU, 1 the right) */
 int vdu_page(int which);
 /* the VDU's page into the run y0 .. y1-1 of its rect: 1 when it drew the VDU (the status lines are not drawn after) */

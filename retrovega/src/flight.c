@@ -1413,10 +1413,85 @@ static void call_carrier(void)
         }
 }
 
+/* --- the comm menu (vdu.c's page): the pilot's own line on the left VDU, the wingman's answer on the right ---
+ *
+ * The user's ask (2026-10-31): the wingman takes orders (attack my target, break and attack, form on my wing, help me
+ * out, return to base) through a comm menu; the carrier takes the landing request there too */
+static const char __far k_hero_line[ORDER_COUNT][24] = {
+    "Break and attack!", "Attack my target!", "Form on my wing.", "Help me out here!", "Return to base."
+};
+static const char __far k_reply_line[ORDER_COUNT][32] = {
+    "Breaking and attacking!", "Roger, attacking your target.", "Forming up on your wing.", "On my way!", "Heading home."
+};
+static const char __far s_refused[] = "Negative. I can't do that.";
+static int __far g_reply_slot = -1;     /* a wingman's answer waiting for the pilot's own comm to end */
+static const char __far *__far g_reply_text;
+
+/* a wingman's voice: its mission record's pilot, else the squadron's first pilot */
+static int wingman_voice(int s)
+{
+    int r = slotMissionShip[s], pilot = r < 64 ? missionShipTable[missionShipTable_SIZE * (r & 63) + 16] : RV_PILOT_NONE, i;
+    if (pilot != RV_PILOT_NONE && pilot < (int)g_npilots && comms_voice(pilot) >= 0)
+        return comms_voice(pilot);
+    for (i = 0; i < (int)g_npilots; i++)
+        if (g_pilots[i].role == RV_ROLE_PILOT && comms_voice(i) >= 0)
+            return comms_voice(i);
+    return -1;
+}
+
+static int hero_voice(void)
+{
+    int i;
+    for (i = 0; i < (int)g_npilots; i++)
+        if (g_pilots[i].role == RV_ROLE_HERO)
+            return comms_voice(i);
+    return -1;
+}
+
+static void comm_open(void)
+{
+    if (systemDamage[SYS_INTERCOM] >= SYS_WRECKED)
+        RV_LOG("flight: C: the intercom is wrecked");
+    vdu_comm_open();                    /* (the page says so itself when the intercom is out) */
+}
+
+/* a key while the comm menu is up: a digit picks, 0 or Esc closes (vdu_comm_key); an order goes to the wingman's
+ * mind (logic_order) with the pilot's line, and the wingman answers once the pilot's comm is over */
+static void comm_key(int ch)
+{
+    int who, what, order, ok;
+    static const char __far s_order[] = "flight: comm: order %d to slot %d: %s";
+    what = vdu_comm_key(ch, &who, &what);
+    if (what == COMM_LANDING) {
+        call_carrier();
+        return;
+    }
+    if (what < 0x100)
+        return;
+    order = what & 0xFF;
+    ok = logic_order(who, order);
+    rv_logf(s_order, order, who, ok ? "taken" : "refused");
+    if (g_sys.muted || systemDamage[SYS_INTERCOM] >= SYS_WRECKED)
+        return;
+    (void)comms_say(hero_voice(), 0, k_hero_line[order]);
+    g_reply_slot = who;
+    g_reply_text = ok ? k_reply_line[order] : s_refused;
+}
+
+/* once a frame: the wingman's answer when the VDUs are free */
+static void comm_reply_tick(void)
+{
+    if (g_reply_slot < 0 || comms_on(0) || comms_on(1))
+        return;
+    (void)comms_say(wingman_voice(g_reply_slot), 1, g_reply_text);
+    g_reply_slot = -1;
+}
+
 static void systems_start(void)
 {
     _fmemset(&g_sys, 0, sizeof g_sys);
     g_landing = 0;
+    g_reply_slot = -1;
     g_sys.emcon = EMCON_ACTIVE;
     g_sys.iff = 1;
     g_sys.armed = 1;                    /* (out of the launch tube: armed) */
@@ -1606,7 +1681,7 @@ static int system_key(int ch)
     case 'k': system_action(RV_PF_EMCON_KNOB, 0); return 1;
     case 'v': g_sys.sensor ^= 1; return 1;
     case 'i': system_action(RV_PF_IFF_KNOB, 0); return 1;
-    case 'c': call_carrier(); return 1;
+    case 'c': comm_open(); return 1;    /* (the comm menu: the orders, the landing request) */
     case 'u': system_action(RV_PF_VOL_KNOB, 0); return 1;
     case 'n': system_action(RV_PF_NAV_KNOB, 0); vdu_show(0, VDU_L_NAV); return 1;   /* (N: the nav page, the next point) */
     case 'm': system_action(RV_PF_ARM_KNOB, 0); return 1;
@@ -2643,7 +2718,11 @@ unsigned short __far __cdecl flight_keys(void)
         set_view(VIEW_COCKPIT);
     if (in.key == KEY_ESC && script_active())
         return 5;                       /* a test script ends the flight; the player's Esc is the browser's key, ignored */
-    if (in.key == KEY_CHAR) {
+    if (in.key == KEY_ESC && vdu_page(0) == VDU_L_COMM)
+        comm_key(27);                   /* (the comm menu closed) */
+    if (in.key == KEY_CHAR && in.ch >= '0' && in.ch <= '9' && vdu_page(0) == VDU_L_COMM)
+        comm_key(in.ch);                /* (a pick in the comm menu) */
+    else if (in.key == KEY_CHAR) {
         if (in.ch == '+' || in.ch == '=') setSpeed[0] += g_st.max_speed / 10;
         if (in.ch == '-') setSpeed[0] = setSpeed[0] > (unsigned long)g_st.max_speed / 10 ? setSpeed[0] - g_st.max_speed / 10 : 0;
         if (in.ch == 'f' || in.ch == 'F') setSpeed[0] = g_st.max_speed;
@@ -2726,6 +2805,7 @@ void __far __cdecl flight_frame(void)
     else if (!g_comm_demo)
         comm_hail();
     comms_tick();
+    comm_reply_tick();
     sim_step();
 #ifdef RV_TESTS
     if (g_boom_demo)

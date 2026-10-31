@@ -3951,6 +3951,61 @@ static void t_nav_cross(void)
 #endif
 }
 
+/* M10.6: the wingman's orders: a wingman 10,000 km right of the player, an enemy 6,000 km ahead of the player (A) and
+ * one 6,000 km ahead of the wingman (B): free, it fights B (the nearest to it); told to attack the player's target
+ * (A), A; told to help, A (the nearest to the player); told to form up, nobody, and it stays within 3,000 km of the
+ * player; told home with a destroyer of its side 20,000 km behind, it goes to within 5,000 km of it */
+static void t_orders(void)
+{
+    static const char __far e_wing[] = "logic_wingmen found %d wingmen (slot 1 is the player's side, AI flown): 1";
+    static const char __far e_free[] = "free, the wingman's target is slot %d: the enemy nearest to it (slot 3)";
+    static const char __far e_attack[] = "told to attack the player's target (slot 2) its target is slot %d";
+    static const char __far e_help[] = "told to help, its target is slot %d: the enemy nearest the player (slot 2)";
+    static const char __far e_form[] = "told to form up, its target is %d and it is %ld km from the player after 10 s: "
+        "nobody, within 3,000";
+    static const char __far e_notarget[] = "attack my target with no target set was taken (%d): it is refused";
+    static const char __far e_home[] = "told home, the wingman is %ld km from the destroyer after 40 s: within 5,000";
+    int16_t wing[4], n, i;
+    pt_alone(PT_PLAYER);
+    g_sys.armed = 0;
+    playerCanBeDamaged = 0;
+    pt_ship(1, PT_PLAYER, SIDE_TERRAN, CTL_AI, 10000, 0, 0, 0);
+    pt_ship(2, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 6000, TURN / 2);
+    pt_ship(3, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 10000, 0, 6000, TURN / 2);
+    n = logic_wingmen(wing, 4);
+    REQUIRE(n == 1 && wing[0] == 1, e_wing, n, 0, 0);
+    if (!pt_steps(2 * SEC))
+        return;
+    REQUIRE(rvTarget[1] == 3, e_free, rvTarget[1], 0, 0);
+    g_sys.target = -1;
+    REQUIRE(logic_order(1, ORDER_ATTACK) == 0, e_notarget, 1, 0, 0);
+    g_sys.target = 2;
+    (void)logic_order(1, ORDER_ATTACK);
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(rvTarget[1] == 2, e_attack, rvTarget[1], 0, 0);
+    (void)logic_order(1, ORDER_FREE);
+    if (!pt_steps(2 * SEC))
+        return;
+    (void)logic_order(1, ORDER_HELP);
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(rvTarget[1] == 2, e_help, rvTarget[1], 0, 0);
+    pt_put(1, 800, 0, 0, 0);
+    (void)logic_order(1, ORDER_FORMATION);
+    if (!pt_steps(10 * SEC))
+        return;
+    REQUIRE(rvTarget[1] == 0xFF && pt_km(0, 1) < 3000, e_form, rvTarget[1], pt_km(0, 1), 0);
+    pt_ship(4, PT_CAPSHIP, SIDE_TERRAN, CTL_AI, 0, 0, -20000, 0);
+    (void)logic_order(1, ORDER_RTB);
+    for (i = 0; i < 40 * SEC && pt_km(1, 4) > 4000; i++)
+        if (!pt_step())
+            return;
+    REQUIRE(pt_km(1, 4) < 5000, e_home, pt_km(1, 4), 0, 0);
+    (void)logic_order(1, ORDER_FREE);
+    g_sys.target = -1;
+}
+
 /* M9.1 */
 static void t_gunsight(void)
 {
@@ -4135,6 +4190,7 @@ static const char __far n_m10_2[] = "M10.2 target-lock (logic_target_lock): L ke
 static const char __far n_m10_3[] = "M10.3 systems (hurt_system, step_timers): hits to the hull hurt the nine systems; a wrecked generator or power plant";
 static const char __far n_m10_4[] = "M10.4 weapon-choice (logic_guns_next, logic_missile_next): G picks the guns the trigger fires, W the launcher";
 static const char __far n_m10_5[] = "M10.5 nav-cross (logic_hud): a white cross where the chosen nav point lies on the view";
+static const char __far n_m10_6[] = "M10.6 orders (logic_order): attack my target, help me out, form on my wing, return to base";
 
 static const PtTest __far k_tests[] = {
     { n_m1_1, t_coast, 0 }, { n_m1_2, t_throttle, 0 }, { n_m1_3, t_top_speed, 0 }, { n_m1_4, t_yaw, 0 },
@@ -4170,7 +4226,7 @@ static const PtTest __far k_tests[] = {
     { n_m8_9, t_fighter, 0 }, { n_m8_10, t_escort_out, 0 }, { n_m8_11, t_escort_lost, 0 }, { n_m8_12, t_escort_along, 0 },
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
-    { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 },
+    { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 }, { n_m10_6, t_orders, 0 },
 };
 
 /* --- the run --- */

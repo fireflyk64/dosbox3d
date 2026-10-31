@@ -61,4 +61,15 @@ int16_t logic_launcher(void);           /* the launcher the missile key fires: a
 /* nav point n of the mission (0 home): 1 and how far the player is from it (km), 0 when there is no such point */
 int16_t logic_nav_km(int16_t n, int32_t *km);
 
+/* the wingmen's orders (the comm menu, flight.c and vdu.c; the user's ask, 2026-10-31): a wingman (a fighter of the
+ * player's side flown by the AI) fights what comes within its reach (FREE: break and attack, the default), or the
+ * player's target wherever it goes (ATTACK: attack my target), or the enemy nearest the player, the one on the
+ * player first (HELP: help me out), or keeps station and does not fight (FORMATION: form on my wing), or goes to the
+ * nearest capital ship of its side and circles it (RTB: return to base) */
+enum { ORDER_FREE, ORDER_ATTACK, ORDER_FORMATION, ORDER_HELP, ORDER_RTB, ORDER_COUNT };
+int16_t logic_wingmen(int16_t *out, int16_t max);   /* the wingmen's slots, in order: n of them */
+int16_t logic_order(int16_t s, int16_t order);      /* 1 when slot s takes it (0: no wingman there, or ATTACK with
+                                                       no enemy targeted, or RTB with no capital ship of its side) */
+int16_t logic_order_of(int16_t s);
+
 #endif
