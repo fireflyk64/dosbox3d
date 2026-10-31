@@ -1724,8 +1724,7 @@ static int16_t pt_syncopated(int16_t type, int16_t last, int16_t hold)
     const RvWeapon __far *w;
     uint16_t d;
     int16_t i, g, h, n, late;
-    pt_alone(type);
-    g = pt_first_gun(0);
+    g = pt_first_gun(0);                /* (the ship: pt_syncopated_rated's) */
     n = g >= 0 ? pt_group(0, g) : 0;
     if (n < 2) {
         pt_fail(e_lone, type, n, 0);
@@ -1786,20 +1785,31 @@ static int16_t pt_syncopated(int16_t type, int16_t last, int16_t hold)
     return 1;
 }
 
+/* pt_syncopated with, for the held trigger, the type's energy back a point every third step (as M3.13 sets a rate:
+ * the slot's type record, put back after): the held trigger must run the energy out for the group to come back
+ * together, where the blank rate, a point a step, sustains two lasers for ever, as the old game's did */
+static int16_t pt_syncopated_rated(int16_t type, int16_t last, int16_t hold)
+{
+    RvShipType __far *t;
+    uint8_t keep;
+    int16_t ok;
+    pt_alone(type);
+    t = (RvShipType __far *)slot_type(0);
+    keep = t->gun_energy_steps;
+    if (hold)
+        t->gun_energy_steps = 3;
+    ok = pt_syncopated(type, last, hold);
+    t->gun_energy_steps = keep;
+    return ok;
+}
+
 static void t_syncopated(void)
 {
-    int16_t last, hold, ok = 1;
-    RvShipType __far *tp = (RvShipType __far *)ship_type(PT_PLAYER), *tl = (RvShipType __far *)ship_type(PT_LINKED);
-    uint8_t keep_p = tp->gun_energy_steps, keep_l = tl->gun_energy_steps;
-    for (hold = 0; hold < 2 && ok; hold++) {
-        /* (the held trigger must run the energy out for the group to come back together: a point every third step
-         * here, where the blank rate, a point a step, sustains two lasers for ever, as the old game's did) */
-        tp->gun_energy_steps = tl->gun_energy_steps = (uint8_t)(hold ? 3 : keep_p);
-        for (last = 0; last < 2 && ok; last++)
-            ok = pt_syncopated(PT_PLAYER, last, hold) && pt_syncopated(PT_LINKED, last, hold);
-    }
-    tp->gun_energy_steps = keep_p;
-    tl->gun_energy_steps = keep_l;
+    int16_t last, hold;
+    for (hold = 0; hold < 2; hold++)
+        for (last = 0; last < 2; last++)
+            if (!pt_syncopated_rated(PT_PLAYER, last, hold) || !pt_syncopated_rated(PT_LINKED, last, hold))
+                return;
 }
 
 /* ======================================================================================================== */
