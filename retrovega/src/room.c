@@ -46,7 +46,7 @@ void scene_enter(int room_id, const unsigned char *seats)
     for (i = 0; i < 3; i++) {
         g_scene.seat[i] = seats ? seats[i] : 0xFF;
         if (g_scene.seat[i] != 0xFF && pose_asset(i, 0) == 0xFFFF) {
-            rv_log("room %s: no art of pilot %u in seat %d", r->key, g_scene.seat[i], i);
+            RV_LOG("room %s: no art of pilot %u in seat %d", r->key, g_scene.seat[i], i);
             g_scene.seat[i] = 0xFF;
         }
     }
@@ -159,7 +159,7 @@ static void tab_move(int dir)
     if (best >= 0) {
         int x, y;
         hot_centre(bkind, best, &x, &y);
-        rv_log("tab: to %d,%d", x, y);
+        RV_LOG("tab: to %d,%d", x, y);
         in_warp(x, y);
         dirty_pointer();
         g_scene.px = x;

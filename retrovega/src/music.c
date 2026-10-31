@@ -151,7 +151,7 @@ static void record_start(void)
     g_rec_val = (unsigned char __far *)_fmalloc(REC_MAX);
     if (!g_rec_tick || !g_rec_reg || !g_rec_val
         || !(g_rec_file = fopen(g_dev == DEV_OPL3 ? "OPLLOG.BIN" : "MIDILOG.BIN", "wb"))) {
-        rv_log("music: no room for the log");
+        RV_LOG("music: no room for the log");
         return;
     }
     _disable();
@@ -326,7 +326,6 @@ static int load_bank(const char *path)
     FILE *f = fopen(path, "rb");
     long size;
     unsigned char __far *bank;
-    static unsigned char buf[256];
     long k;
     if (!f)
         return 0;
@@ -338,10 +337,10 @@ static int load_bank(const char *path)
         fclose(f);
         return 0;
     }
-    for (k = 0; k < size; k += sizeof buf) {
-        unsigned n = (unsigned)(size - k < (long)sizeof buf ? size - k : sizeof buf);
-        fread(buf, 1, n, f);
-        _fmemcpy(bank + k, buf, n);
+    for (k = 0; k < size; k += sizeof rv_filebuf) {     /* (through the shared near buffer: fread wants near) */
+        unsigned n = (unsigned)(size - k < (long)sizeof rv_filebuf ? size - k : sizeof rv_filebuf);
+        fread(rv_filebuf, 1, n, f);
+        _fmemcpy(bank + k, rv_filebuf, n);
     }
     fclose(f);
     if (!opl_bank(bank, (unsigned long)size)) {
@@ -641,7 +640,6 @@ static unsigned long beat256(unsigned long tempo)
 
 static int load_song(const char *path, Song *song)
 {
-    static unsigned char buf[256];
     unsigned char hdr[14], hd[8];
     unsigned char __far *trk[MAX_TRACKS];
     unsigned long len[MAX_TRACKS];
@@ -661,13 +659,13 @@ static int load_song(const char *path, Song *song)
     while (ntrk < MAX_TRACKS && ntrk < be16(hdr + 10) && fread(hd, 1, 8, f) == 8 && !memcmp(hd, "MTrk", 4)) {
         unsigned long k, n = be32(hd + 4);
         if (n > 65000UL || !(trk[ntrk] = (unsigned char __far *)_fmalloc((size_t)n + 1))) {
-            rv_log("music: %s: a track of %lu bytes does not fit", path, n);
+            RV_LOG("music: %s: a track of %lu bytes does not fit", path, n);
             break;
         }
-        for (k = 0; k < n; k += sizeof buf) {
-            unsigned m = (unsigned)(n - k < sizeof buf ? n - k : sizeof buf);
-            fread(buf, 1, m, f);
-            _fmemcpy(trk[ntrk] + k, buf, m);
+        for (k = 0; k < n; k += sizeof rv_filebuf) {
+            unsigned m = (unsigned)(n - k < sizeof rv_filebuf ? n - k : sizeof rv_filebuf);
+            fread(rv_filebuf, 1, m, f);
+            _fmemcpy(trk[ntrk] + k, rv_filebuf, m);
         }
         len[ntrk++] = n;
     }
@@ -753,7 +751,7 @@ static int load_song(const char *path, Song *song)
     for (t = 0; t < ntrk; t++)
         _ffree(trk[t]);
     if (nev >= 65535UL) {
-        rv_log("music: %s has too many events (%lu)", path, nev);
+        RV_LOG("music: %s has too many events (%lu)", path, nev);
         song->n = 0;
         ok = 0;
     }
@@ -774,18 +772,18 @@ int music_init(void)
             g_dev = DEV_OPL3;
             opl_init();
         }
-        rv_log("music: %s", g_dev ? "OPL3 at 388h, our bank" : opl == 3 ? "OPL3 at 388h, but no RVOPL.BNK"
+        RV_LOG("music: %s", g_dev ? "OPL3 at 388h, our bank" : opl == 3 ? "OPL3 at 388h, but no RVOPL.BNK"
                : opl == 2 ? "an OPL2 only (the songs need an OPL3)" : "no OPL3 at 388h");
     }
     if (!g_dev && (g_want == MUSIC_AUTO || g_want == MUSIC_MPU401)) {
         g_dev = mpu_init() ? DEV_MPU : DEV_NONE;
-        rv_log("music: MPU-401 %s", g_dev ? "in UART mode" : "not answering (silent)");
+        RV_LOG("music: MPU-401 %s", g_dev ? "in UART mode" : "not answering (silent)");
     }
     for (i = 0; i < 2; i++) {
         g_ring[i].ev = (Ev __far *)_fmalloc(sizeof(Ev) * RING);
         g_ring[i].song = -1;
         if (!g_ring[i].ev) {
-            rv_log("music: no memory for its rings");
+            RV_LOG("music: no memory for its rings");
             g_dev = DEV_NONE;
         }
     }
@@ -797,7 +795,7 @@ int music_init(void)
         if (load_song(name, &song)) {
             _fmemcpy(&g_song[i], &song, sizeof song);
             loaded++;
-            rv_log("music: %s, %u events (round again from %u), beat %u ticks, %u to the bar", name, song.n, song.loop,
+            RV_LOG("music: %s, %u events (round again from %u), beat %u ticks, %u to the bar", name, song.n, song.loop,
                    (unsigned)((song.beat256 + 128) >> 8), song.beats_bar);
         }
     }
@@ -831,19 +829,19 @@ void music_shutdown(void)
     if (g_dev != DEV_NONE)
         silence();
     if (g_dev == DEV_OPL3)
-        rv_log("music: %lu OPL3 register writes, %lu notes took a sounding voice, at most %d voices", g_bytes,
+        RV_LOG("music: %lu OPL3 register writes, %lu notes took a sounding voice, at most %d voices", g_bytes,
                opl_steals, opl_peak);
     else
-        rv_log("music: %lu bytes sent to the MPU-401", g_bytes);
+        RV_LOG("music: %lu bytes sent to the MPU-401", g_bytes);
     if (g_rec_file) {
         music_poll();
         fclose(g_rec_file);
         g_rec_file = 0;
         if (g_rec_lost)
-            rv_log("music: the log lost %lu entries (music_poll too seldom)", g_rec_lost);
+            RV_LOG("music: the log lost %lu entries (music_poll too seldom)", g_rec_lost);
     }
     if (g_starved) {
-        rv_log("music: %lu ticks waited for music_poll", g_starved);
+        RV_LOG("music: %lu ticks waited for music_poll", g_starved);
     }
 }
 
@@ -940,11 +938,11 @@ static void cue_from(int cue, int fade_ms, int at, int body)
     if (song >= 0 && song < RV_MUSIC_STINGS && g_cur >= RV_MUSIC_STINGS && g_next == -1) {
         g_back = song;                  /* a sting playing: the new song after it, from its start */
         g_back_at = 0;
-        rv_log("music: cue %d (%s) after the sting @%lu", cue, name, g_clock);
+        RV_LOG("music: cue %d (%s) after the sting @%lu", cue, name, g_clock);
         return;
     }
     g_back = -1;
-    rv_log("music: cue %d (%s)%s, fade %d ms%s @%lu", cue, song >= 0 ? name : "none", body ? " from its loop" : "", fade_ms,
+    RV_LOG("music: cue %d (%s)%s, fade %d ms%s @%lu", cue, song >= 0 ? name : "none", body ? " from its loop" : "", fade_ms,
            at == MUSIC_BAR ? " on the bar" : at == MUSIC_BEAT ? " on the beat" : "", g_clock);
     cue_song(song, fade_ms, at, body && song >= 0 ? g_song[song].loop : 0);
 }
@@ -968,7 +966,7 @@ void music_sting(int cue)
     }
     _enable();
     _fstrcpy(name, g_files[cue]);
-    rv_log("music: sting %d (%s), then cue %d from event %u @%lu", cue, name, g_back, g_back_at, g_clock);
+    RV_LOG("music: sting %d (%s), then cue %d from event %u @%lu", cue, name, g_back, g_back_at, g_clock);
     g_last = cue;
     cue_song(song, 40, MUSIC_NOW, 0);
 }

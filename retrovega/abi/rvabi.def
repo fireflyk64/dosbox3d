@@ -126,7 +126,7 @@ TABLE navPointTable             0x4d 16 # ten mission-ship words at +0x39
 TABLE missionShipTable          0x2a 64 # +0 ship type, +2 side, +4 leader, +6 behaviour (4 pilot in formation, 6 the player)
 TABLE fieldTable                0x14  7 # +0 type (9 rocks, 10 mines), +2 position (3 x int32), +14 radius (int32 km), +18 density
 
-END 0x8000                               # C data (_DATA, CONST, _BSS) and the stack follow
+END 0x7400                               # C data (_DATA, CONST, _BSS) and the stack follow
 
 # --- RVHOOK: code at paragraph 0 of the image -------------------------------
 # Header (0x00-0x1F): "RVHOOK", 2 zero bytes, then words: +8 DGROUP's segment

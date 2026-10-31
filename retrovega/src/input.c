@@ -104,7 +104,7 @@ int in_init(void)
         r.x.ax = 8; r.x.cx = 0; r.x.dx = SCR_H - 1; int86(0x33, &r, &r);
         in_warp(SCR_W / 2, SCR_H / 2);
     }
-    rv_log("input: mouse %s", g_mouse ? "found" : g_no_mouse ? "not used (/nomouse)" : "missing");
+    RV_LOG("input: mouse %s", g_mouse ? "found" : g_no_mouse ? "not used (/nomouse)" : "missing");
     return 1;
 }
 
@@ -154,7 +154,7 @@ static int bios_key(int *ch)
 int script_open(const char *path)
 {
     g_script = fopen(path, "r");
-    rv_log("script: %s %s", path, g_script ? "opened" : "missing");
+    RV_LOG("script: %s %s", path, g_script ? "opened" : "missing");
     return g_script != 0;
 }
 
@@ -228,7 +228,7 @@ static void script_step(Input *in)
             else if (sscanf(arg, "%15s %d", name, &n) == 2 && !strcmp(name, "fire"))
                 g_hold_until[6] = ticks() + n;   /* the flight's trigger */
             else
-                rv_log("script: hold %s?", arg);
+                RV_LOG("script: hold %s?", arg);
             continue;
         } else if (!strcmp(line, "type")) {
             strncpy(g_typed, arg, sizeof g_typed - 1);
@@ -237,7 +237,7 @@ static void script_step(Input *in)
         } else if (!strcmp(line, "shot")) {
             shot_save(arg);
         } else if (!strcmp(line, "log")) {
-            rv_log("script: %s", arg);
+            RV_LOG("script: %s", arg);
         } else if (!strcmp(line, "quit")) {
             in->key = KEY_ESC;
             g_quit = 1;
@@ -245,7 +245,7 @@ static void script_step(Input *in)
             g_script = 0;
             return;
         } else {
-            rv_log("script: unknown %s", line);
+            RV_LOG("script: unknown %s", line);
         }
     }
     fclose(g_script);
@@ -276,7 +276,7 @@ static int steer(void)
     g_steer_at = now;
     if (!dx && !dy) {
         if (g_held)
-            rv_log("keys: steered to %d,%d", g_x, g_y);
+            RV_LOG("keys: steered to %d,%d", g_x, g_y);
         g_held = 0;
         return 0;
     }
@@ -394,6 +394,8 @@ void in_poll(Input *in)
 
 /* --- screenshots --- */
 
+typedef char shot_row_fits[SCR_W <= sizeof rv_filebuf ? 1 : -1];   /* (shot_save's rows go through it) */
+
 void shot_save(const char *name)
 {
     char path[20];
@@ -426,11 +428,10 @@ void shot_save(const char *name)
         q[3] = 0;
         fwrite(q, 1, 4, f);
     }
-    for (y = SCR_H - 1; y >= 0; y--) {
-        static unsigned char row[SCR_W];
-        vid_read_row(y, row);
-        fwrite(row, 1, SCR_W, f);
+    for (y = SCR_H - 1; y >= 0; y--) {   /* (a row at a time through the shared near buffer: fwrite wants near) */
+        vid_read_row(y, rv_filebuf);
+        fwrite(rv_filebuf, 1, SCR_W, f);
     }
     fclose(f);
-    rv_log("shot: %s, the pointer at %d,%d", path, g_x, g_y);
+    RV_LOG("shot: %s, the pointer at %d,%d", path, g_x, g_y);
 }

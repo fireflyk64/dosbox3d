@@ -84,7 +84,7 @@ int bolts_init(int want, unsigned keep_kb)
         want = want * 3 / 4;
     }
     g_cap = g_b ? want : 0;
-    rv_log("bolts: room for %d (%lu KB of DOS memory was free)", g_cap, (unsigned long)r.x.bx * 16 / 1024);
+    RV_LOG("bolts: room for %d (%lu KB of DOS memory was free)", g_cap, (unsigned long)r.x.bx * 16 / 1024);
     bolts_tables();
     bolts_ticks_reset();
     return g_cap;
@@ -302,18 +302,18 @@ static int setup_agrees(const LzFat *f, LzStyle *st)
     lz_capsule_setup(f, 99, &pc[0]);   /* (one capsule, as the flames are made) */
     rv_capsule_setup(f, 99, &pa[0]);
     if (_fmemcmp(&pc[0], &pa[0], sizeof(LzPass))) {
-        rv_log("bolts: rv_capsule_setup differs for %d,%d-%d,%d r %d", f->ax, f->ay, f->bx, f->by, f->r);
+        RV_LOG("bolts: rv_capsule_setup differs for %d,%d-%d,%d r %d", f->ax, f->ay, f->bx, f->by, f->r);
         return 0;
     }
     n1 = lz_fat_setup(f, st, pc, &cc, &clc);
     n2 = rv_fat_setup(f, &g_style, pa, &ca, (int __far *)&cla);
     if (n1 == n2 && clc == cla && !_fmemcmp(pc, pa, n1 * sizeof(LzPass)) && !(clc && _fmemcmp(&cc, &ca, sizeof cc)))
         return 1;
-    rv_log("bolts: rv_fat_setup differs for %d,%d-%d,%d r %d: %d passes (C %d), core line %d (C %d)", f->ax, f->ay,
+    RV_LOG("bolts: rv_fat_setup differs for %d,%d-%d,%d r %d: %d passes (C %d), core line %d (C %d)", f->ax, f->ay,
            f->bx, f->by, f->r, n2, n1, cla, clc);
     for (w = 0; w < n1 && w < n2; w++)
         if (_fmemcmp(&pc[w], &pa[w], sizeof(LzPass)))
-            rv_log("bolts: pass %d: C top %d bot %d la %d lb %d ra %d rb %d c0 %ld m %ld hw %ld; asm %d %d %d %d %d %d %ld "
+            RV_LOG("bolts: pass %d: C top %d bot %d la %d lb %d ra %d rb %d c0 %ld m %ld hw %ld; asm %d %d %d %d %d %d %ld "
                    "%ld %ld", w, pc[w].top, pc[w].bot, pc[w].la, pc[w].lb, pc[w].ra, pc[w].rb, pc[w].c0, pc[w].m,
                    pc[w].hw, pa[w].top, pa[w].bot, pa[w].la, pa[w].lb, pa[w].ra, pa[w].rb, pa[w].c0, pa[w].m, pa[w].hw);
     return 0;
@@ -332,7 +332,7 @@ long bolts_selftest(void)
     int nlc, nfc, nla, nfa, w, i, k, bad = 0;
     bolts_tables();
     if (!b || !lc || !la || !band || !fc || !ext) {
-        rv_log("bolts: no memory for the self-test");
+        RV_LOG("bolts: no memory for the self-test");
         bad = -2;
         goto out;
     }
@@ -354,10 +354,10 @@ long bolts_selftest(void)
     lz_place(b, TEST_BOLTS, &g_cam, lc, &nlc, TEST_BOLTS, fc, &nfc, FAT_MAX);
     nla = rv_bolts_place(b, TEST_BOLTS, &g_cam, la, TEST_BOLTS, fa, FAT_MAX, (int __far *)&nfa);
     if (nla != nlc || nfa != nfc || _fmemcmp(lc, la, nlc * sizeof(LzLine)) || _fmemcmp(fc, fa, nfc * sizeof(LzFat))) {
-        rv_log("bolts: rv_bolts_place gave %d lines, %d fat; lz_place %d, %d", nla, nfa, nlc, nfc);
+        RV_LOG("bolts: rv_bolts_place gave %d lines, %d fat; lz_place %d, %d", nla, nfa, nlc, nfc);
         for (i = 0; i < nlc && i < nla; i++)
             if (_fmemcmp(&lc[i], &la[i], sizeof(LzLine))) {
-                rv_log("bolts: line %d: C rows %d-%d x %ld %ld %ld m %ld; asm rows %d-%d x %ld %ld %ld m %ld", i,
+                RV_LOG("bolts: line %d: C rows %d-%d x %ld %ld %ld m %ld; asm rows %d-%d x %ld %ld %ld m %ld", i,
                        lc[i].y0, lc[i].y1, lc[i].ax, lc[i].bx, lc[i].x1, lc[i].m, la[i].y0, la[i].y1, la[i].ax,
                        la[i].bx, la[i].x1, la[i].m);
                 break;
@@ -403,7 +403,7 @@ long bolts_selftest(void)
         }
         s2 = checksum(band, &drawn);
         if (s1 != s2) {
-            rv_log("bolts: the draws differ in rows %d-%d (%s the extents)", y0, y1, ex ? "with" : "without");
+            RV_LOG("bolts: the draws differ in rows %d-%d (%s the extents)", y0, y1, ex ? "with" : "without");
             bad = -1;
         }
     }
@@ -441,7 +441,7 @@ long bolts_selftest(void)
                             LzFat fp2;
                             rv_flame_setup(fc[i].ax, fc[i].ay, tx * 3, ty * 3, fc[i].r * 3 / 2, i * 7, &fl2, &fp2);
                             if (_fmemcmp(&fl, &fl2, sizeof fl) || _fmemcmp(&fp, &fp2, sizeof fp)) {
-                                rv_log("bolts: rv_flame_setup differs for flame %d: mode %d/%d sx %ld/%ld s00 %ld/%ld "
+                                RV_LOG("bolts: rv_flame_setup differs for flame %d: mode %d/%d sx %ld/%ld s00 %ld/%ld "
                                        "e00 %ld/%ld kk %ld/%ld fp r %d/%d", i, fl.mode, fl2.mode, fl.sx, fl2.sx, fl.s00,
                                        fl2.s00, fl.e00, fl2.e00, fl.kk, fl2.kk, fp.r, fp2.r);
                                 bad = -1;
@@ -456,7 +456,7 @@ long bolts_selftest(void)
                     sum[pass] = checksum(band, &drawn);
                 }
                 if (sum[0] != sum[1]) {
-                    rv_log("bolts: rv_flame_draw differs from lz_flame_draw in rows %d-%d", y0, y1);
+                    RV_LOG("bolts: rv_flame_draw differs from lz_flame_draw in rows %d-%d", y0, y1);
                     bad = -1;
                 }
             }
@@ -469,11 +469,11 @@ long bolts_selftest(void)
         lz_move((LzBolt __far *)lc, 6, 200);
         rv_bolts_move(b, 6, 200);
         if (_fmemcmp(lc, b, sizeof(LzBolt) * 6)) {
-            rv_log("bolts: rv_bolts_move differs from lz_move");
+            RV_LOG("bolts: rv_bolts_move differs from lz_move");
             bad = -1;
         }
     }
-    rv_log("bolts: the asm %s lasers.c (%d lines, %d fat, %ld pixels compared)", bad ? "DISAGREES WITH" : "agrees with",
+    RV_LOG("bolts: the asm %s lasers.c (%d lines, %d fat, %ld pixels compared)", bad ? "DISAGREES WITH" : "agrees with",
            nlc, nfc, drawn / 2);
 out:
     if (b) _ffree(b);
@@ -625,7 +625,7 @@ void bolts_time(long out[6])
     for (k = 0; k < 6; k++)
         out[k] = 0;
     if (!t_b || !t_l || !t_band || !t_w) {
-        rv_log("bolts: no memory for the timings");
+        RV_LOG("bolts: no memory for the timings");
         goto out;
     }
     identity(&cam);
@@ -644,11 +644,11 @@ void bolts_time(long out[6])
     out[2] = time_of(t_place, 12);
     out[3] = time_of(t_setup, t_nf);
     out[4] = time_of(t_draw, t_nf);
-    rv_log("bolts: the timing's near bolts: %d of 12 on screen, radius %d..%d x16", t_nf, t_nf ? t_f[0].r : 0,
+    RV_LOG("bolts: the timing's near bolts: %d of 12 on screen, radius %d..%d x16", t_nf, t_nf ? t_f[0].r : 0,
            t_nf ? t_f[t_nf - 1].r : 0);
     if (t_encode_each()) {              /* the same bolts pre-rendered, each a sprite of its own */
         long bl = time_of(t_blit_each, t_nf);
-        rv_log("bolts: the same bolts as pre-rendered sprites, each its own, copied a row at a time "
+        RV_LOG("bolts: the same bolts as pre-rendered sprites, each its own, copied a row at a time "
                "(rv_blit_row, as ships_blit_view does): %ld.%02ld us a bolt (%u bytes of runs)", bl / 100, bl % 100,
                t_w->spans_used);
     }
@@ -657,7 +657,7 @@ void bolts_time(long out[6])
     t_n = FAT_MAX;
     camera(0, 0, 0, &cam, SCR_W / 2, SCR_H / 2, 400, t_y0, t_y0 + TEST_ROWS, 0);
     out[5] = time_of(t_all_fat, FAT_MAX);
-    rv_log("bolts: a far bolt %ld.%02ld us to place, %ld.%02ld to draw (%d lines of %ld.%02ld rows); a near one "
+    RV_LOG("bolts: a far bolt %ld.%02ld us to place, %ld.%02ld to draw (%d lines of %ld.%02ld rows); a near one "
            "%ld.%02ld to place, %ld.%02ld to set up, %ld.%02ld to draw; a far one drawn so %ld.%02ld in all",
            out[0] / 100, out[0] % 100, out[1] / 100, out[1] % 100, nfar, nfar ? rows / nfar : 0L,
            nfar ? rows * 100 / nfar % 100 : 0L, out[2] / 100, out[2] % 100, out[3] / 100, out[3] % 100,

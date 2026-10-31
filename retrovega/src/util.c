@@ -53,7 +53,7 @@ void rv_fail(const char *file, int line, const char *what, long value, long limi
 {
     if (rv_fail_hook)
         rv_fail_hook();
-    rv_log("FAIL %s:%d: %s (value %ld, limit %ld)", file, line, what, value, limit);
+    RV_LOG("FAIL %s:%d: %s (value %ld, limit %ld)", file, line, what, value, limit);
     printf("RetroVega stopped: %s:%d: %s (value %ld, limit %ld)\n", file, line, what, value, limit);
     exit(3);
 }

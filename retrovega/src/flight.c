@@ -1311,7 +1311,7 @@ static void draw_world(int y0, int y1)
             LfPlace p;
             int nb, nh;
             ships_drawn(set, plan_how(i), &rel, &cam, &ship, g_plan[i].scale, &p, &nb, &nh);
-            rv_log("lightfield: frame %u slot %d type %02X at %ld,%ld,%ld: view %d roll %d scale %d at %d,%d path %d",
+            RV_LOG("lightfield: frame %u slot %d type %02X at %ld,%ld,%ld: view %d roll %d scale %d at %d,%d path %d",
                    frameCounter, s, gInstanceShipTypes[s], rel.x, rel.y, rel.z, p.view, p.roll, g_plan[i].scale, p.sx, p.sy, path);
         }
     }
@@ -1407,7 +1407,7 @@ static void call_carrier(void)
         return;
     g_landing = 1;
     g_land_at = clock240() + 240;
-    rv_log("flight: C: the player calls the carrier to land");
+    RV_LOG("flight: C: the player calls the carrier to land");
     if (g_sys.muted)
         return;
     for (i = 0; i < (int)g_npilots; i++)
@@ -1473,7 +1473,7 @@ static void eject_pull(void)
 {
     unsigned long now = clock240();
     if (g_eject_at && now - g_eject_at < 480) {
-        rv_log("flight: ejected");
+        RV_LOG("flight: ejected");
         missionStatus = 2;
     }
     g_eject_at = now;
@@ -2208,8 +2208,8 @@ static void lasers_pool(void)
     long t[6];
     unsigned long before = bolts_dos_free();
     if (!ships_dense_reserve())
-        rv_log("lasers: no room for the exact draw's buffers");
-    rv_log("lasers: DOS memory free: %lu KB before the exact draw's buffers, %lu after", before / 1024,
+        RV_LOG("lasers: no room for the exact draw's buffers");
+    RV_LOG("lasers: DOS memory free: %lu KB before the exact draw's buffers, %lu after", before / 1024,
            bolts_dos_free() / 1024);
     bolts_selftest();
     bolts_time(t);
@@ -2226,7 +2226,7 @@ static void lasers_pool(void)
             lf_place(&rel, &cam, &ship, SCR_W / 2, g_cam_cy, 400, 5, 7, &p);
             it++;
         } while ((dt = clock240() - t0) < 120);
-        rv_log("lasers: lf_place takes %lu us", dt * 1000000UL / 240 / (unsigned long)it);
+        RV_LOG("lasers: lf_place takes %lu us", dt * 1000000UL / 240 / (unsigned long)it);
     }
     if (g_balls) {
         balls_selftest();
@@ -2253,7 +2253,7 @@ static void lasers_pool(void)
             g_near_balls = g_bl_cap;
         rv_logf(s_room, g_bl_cap, g_near_balls, g_balls < 0 ? "adapting" : "fixed");
     }
-    rv_log("lasers: room for %d bolts; %d near, %s far; 2 big ships near, %d far", g_lz_cap, g_near_bolts,
+    RV_LOG("lasers: room for %d bolts; %d near, %s far; 2 big ships near, %d far", g_lz_cap, g_near_bolts,
            g_lasers < 0 ? "adapting" : "fixed", g_far_ships);
 }
 
@@ -2421,7 +2421,7 @@ void __far __cdecl flight_startup(void)
     _fmemset(g_was_exact, 0, sizeof g_was_exact);
     _fmemset(g_hold, 0, sizeof g_hold);
     if (g_lasers)
-        rv_log("lasers: DOS memory free as the flight starts: %lu KB", bolts_dos_free() / 1024);
+        RV_LOG("lasers: DOS memory free as the flight starts: %lu KB", bolts_dos_free() / 1024);
     missionStatus = 0;
     frameCounter = 0;
     rvCockpitDamage = 0;
@@ -2499,7 +2499,7 @@ void __far __cdecl flight_startup(void)
         n++;
     }
     if (g_lasers)
-        rv_log("lasers: DOS memory free before the ship sets: %lu KB", bolts_dos_free() / 1024);
+        RV_LOG("lasers: DOS memory free before the ship sets: %lu KB", bolts_dos_free() / 1024);
     {
         /* the sets this flight needs, asked of the page when they are not beside RV.EXE (ships_want) */
         unsigned char want[RV_MAX_SHIP_SLOT + 2 + RV_SHIPS];
@@ -2530,7 +2530,7 @@ void __far __cdecl flight_startup(void)
         unsigned long free_kb = xms_free_kb(), taken, t0 = clock240(), keep = 1024 + rocks_room_kb();   /* (and an
                                            asteroid field's art, read in when the player comes near one) */
         taken = ships_load_blocks(free_kb > keep ? (free_kb - keep) * 1024UL : 0);
-        rv_log("ships: %lu KB of blocks loaded in %lu ms, %lu KB of XMS left", taken / 1024, (clock240() - t0) * 1000 / 240,
+        RV_LOG("ships: %lu KB of blocks loaded in %lu ms, %lu KB of XMS left", taken / 1024, (clock240() - t0) * 1000 / 240,
                xms_free_kb());
     }
     g_cam_cy = cockpit_record() ? (cockpit_record()->open_y0 + cockpit_record()->open_y1) / 2 : SCR_H / 2;
@@ -2558,7 +2558,7 @@ void __far __cdecl flight_startup(void)
         /* the kernels checked, then the three draw paths timed on a full-size view (resident) */
         {
             long n = ships_selftest();
-            rv_log("lightfield: asm kernels %s the C ones (%ld pixels compared)", n < 0 ? "DISAGREE WITH" : "agree with", n);
+            RV_LOG("lightfield: asm kernels %s the C ones (%ld pixels compared)", n < 0 ? "DISAGREE WITH" : "agree with", n);
         }
         {
             int bw, bh, w, h;
@@ -2574,7 +2574,7 @@ void __far __cdecl flight_startup(void)
             g_tv_h = bh;
         }
         ships_time_paths(g_set_enemy, tv, paths);
-        rv_log("lightfield: view %d (%dx%d): copy %ld px/ms, scaled to 3/4 %ld, turned 45 degrees at 3/4 %ld, copy upside down %ld, copy mirrored %ld",
+        RV_LOG("lightfield: view %d (%dx%d): copy %ld px/ms, scaled to 3/4 %ld, turned 45 degrees at 3/4 %ld, copy upside down %ld, copy mirrored %ld",
                tv, g_tv_w, g_tv_h, paths[0], paths[1], paths[2], paths[3], paths[4]);
     }
     if (g_lasers)
@@ -2608,10 +2608,10 @@ void __far __cdecl flight_startup(void)
     scene_draw();
     vid_fade(64);
 #ifdef RV_TESTS
-    rv_log("flight: %.16Fs, %d ships, benchmark view %d (%dx%d)", (char __far *)m->id, n - 1, g_bench_view, g_bench_w,
+    RV_LOG("flight: %.16Fs, %d ships, benchmark view %d (%dx%d)", (char __far *)m->id, n - 1, g_bench_view, g_bench_w,
            g_bench_h);
 #else
-    rv_log("flight: %.16Fs, %d ships", (char __far *)m->id, n - 1);
+    RV_LOG("flight: %.16Fs, %d ships", (char __far *)m->id, n - 1);
 #endif
     cockpit_palette();                  /* only now: the deck kept its own palette while all that loaded (seconds in the
                                            browser: the user saw it go "all crazy" in the flight's palette) */
@@ -2875,7 +2875,7 @@ void __far __cdecl flight_autopilot(void)
 
 void __far __cdecl autoAnimation_c(unsigned short camShipType, unsigned short camMode, unsigned short duration)
 {
-    rv_log("flight: autoAnimation(%u, %u, %u)", camShipType, camMode, duration);
+    RV_LOG("flight: autoAnimation(%u, %u, %u)", camShipType, camMode, duration);
 }
 
 /* --- from the game --- */
@@ -2891,11 +2891,11 @@ int flight_fly(const RvMission __far *m)
 #ifdef RV_TESTS
     {
         int w, h, n = flight_bench_result(&w, &h);
-        rv_log("flight: over with status %u after %u frames; benchmark %d sprites of %dx%d a frame at %d fps (%ld pixels a second)",
+        RV_LOG("flight: over with status %u after %u frames; benchmark %d sprites of %dx%d a frame at %d fps (%ld pixels a second)",
                status, frameCounter, n, w, h, FPS_WANT, (long)n * w * h * FPS_WANT);
     }
 #else
-    rv_log("flight: over with status %u after %u frames", status, frameCounter);
+    RV_LOG("flight: over with status %u after %u frames", status, frameCounter);
 #endif
     {
         unsigned long f = frameCounter, frame = (clock240() - g_t0) - g_t_wait;
@@ -2925,12 +2925,12 @@ int flight_fly(const RvMission __far *m)
         static const char __far s_end[] = "at the flight's end";
         rv_stack_log(s_end);
     }
-    rv_log("flight: the engines' flames took %lu.%02lu ms a frame (%lu.%02lu of it set up)",
+    RV_LOG("flight: the engines' flames took %lu.%02lu ms a frame (%lu.%02lu of it set up)",
            g_t_flames * 1000 / 240 / (frameCounter ? frameCounter : 1),
            (g_t_flames * 100000 / 240 / (frameCounter ? frameCounter : 1)) % 100,
            g_t_flames_set * 1000 / 240 / (frameCounter ? frameCounter : 1),
            (g_t_flames_set * 100000 / 240 / (frameCounter ? frameCounter : 1)) % 100);
-    rv_log("flight: the stars took %lu.%02lu ms a frame to place and %lu.%02lu to draw",
+    RV_LOG("flight: the stars took %lu.%02lu ms a frame to place and %lu.%02lu to draw",
            g_star_place_ticks * 1000 / 240 / (frameCounter ? frameCounter : 1),
            (g_star_place_ticks * 100000 / 240 / (frameCounter ? frameCounter : 1)) % 100,
            g_star_draw_ticks * 1000 / 240 / (frameCounter ? frameCounter : 1),

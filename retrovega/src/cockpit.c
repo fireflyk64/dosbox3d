@@ -77,12 +77,12 @@ int cockpit_load(int ship_type)
             g_cockpit_index = (int)i;   /* (the palette goes in with cockpit_palette, once the flight's loading is done) */
             g_last_valid = 0;
             panel_load(g_cp);
-            rv_log("cockpit: %.8Fs for ship type %d, rows %d-%d open, %d damage layers", (char __far *)c->key,
+            RV_LOG("cockpit: %.8Fs for ship type %d, rows %d-%d open, %d damage layers", (char __far *)c->key,
                    ship_type, c->open_y0, c->open_y1, c->nlayers);
             return 1;
         }
     }
-    rv_log("cockpit: none for ship type %d", ship_type);
+    RV_LOG("cockpit: none for ship type %d", ship_type);
     return 0;
 }
 

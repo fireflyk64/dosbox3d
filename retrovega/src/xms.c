@@ -48,21 +48,21 @@ int xms_init(unsigned long min_kb, unsigned long max_kb)
     rv_xms_entry = (void (__far *)(void))MK_FP(s.es, r.x.bx);
     x.eax = 0x8800; x.ebx = x.ecx = x.edx = 0;
     rv_xms(&x);
-    rv_log("XMS: %lu KB largest free, %lu KB in all", x.eax, x.edx);
+    RV_LOG("XMS: %lu KB largest free, %lu KB in all", x.eax, x.edx);
     if (x.eax < min_kb)
         return 0;
     want_kb = x.eax < max_kb ? x.eax : max_kb;   /* (all of it: DOSBox's memsize=63 gives 61 MB) */
     x.eax = 0x8900; x.edx = want_kb;
     rv_xms(&x);
     if ((x.eax & 0xffff) != 1) {
-        rv_log("XMS: allocating %lu KB failed, error %02lx", want_kb, x.ebx & 0xff);
+        RV_LOG("XMS: allocating %lu KB failed, error %02lx", want_kb, x.ebx & 0xff);
         return 0;
     }
     g_handle = (unsigned short)x.edx;
     g_size = want_kb * 1024UL;
     g_top = 0;
     g_nblocks = 0;
-    rv_log("XMS: arena of %lu KB, handle %u", want_kb, g_handle);
+    RV_LOG("XMS: arena of %lu KB, handle %u", want_kb, g_handle);
     return 1;
 }
 
@@ -84,7 +84,7 @@ XmsBlock xms_alloc(unsigned long bytes, int level)
     RV_CHECK(level, XMS_LEVELS);
     bytes = (bytes + 15) & ~15UL;
     if (g_top + bytes > g_size || g_nblocks >= XMS_MAX_BLOCKS) {
-        rv_log("XMS: out of room for %lu bytes (level %d, %u blocks, %lu KB free)",
+        RV_LOG("XMS: out of room for %lu bytes (level %d, %u blocks, %lu KB free)",
                bytes, level, g_nblocks, xms_free_kb());
         return 0;
     }

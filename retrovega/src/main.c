@@ -49,7 +49,7 @@ extern int g_lasers, g_near_bolts, g_far_ships, g_big_ships, g_bolt_demo, g_flam
 extern int __far g_boom_demo, __far g_shield_demo;
 #endif
 
-void __far __cdecl rvHello_impl(void) { rv_log("rvHello: DS is ready"); }
+void __far __cdecl rvHello_impl(void) { RV_LOG("rvHello: DS is ready"); }
 void __far __cdecl uiMode_impl(unsigned short on) { (void)on; }
 
 /* DOS's free conventional memory, by walking its arena chain below the video segment (the DOS call
@@ -103,7 +103,7 @@ static void log_free(const char *when)
     dos_free(&dtotal, &dlargest);
     heap_free(&total, &largest);
     rv_stack_log(when);
-    rv_log("conventional memory %s: %lu KB free in DOS (the largest block %lu KB), %lu KB free in the heap (largest %lu KB)",
+    RV_LOG("conventional memory %s: %lu KB free in DOS (the largest block %lu KB), %lu KB free in the heap (largest %lu KB)",
            when, dtotal, dlargest, total, largest);
 }
 
@@ -133,7 +133,7 @@ int main(int argc, char **argv)
     rvHello();
     rv_stack_paint();
 #ifdef RV_TESTS
-    rv_log("RVT.EXE: the test build (the demos, the benchmarks and the self-tests are in)");
+    RV_LOG("RVT.EXE: the test build (the demos, the benchmarks and the self-tests are in)");
 #endif
     for (i = 1; i + 1 < argc; i++) {
         if (!strcmp(argv[i], "/script") || !strcmp(argv[i], "-script"))
@@ -314,6 +314,6 @@ int main(int argc, char **argv)
     music_shutdown();
     vid_shutdown();
     xms_shutdown();
-    rv_log("bye (%d)", ok);
+    RV_LOG("bye (%d)", ok);
     return 0;
 }

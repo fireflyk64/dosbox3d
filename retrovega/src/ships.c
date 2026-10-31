@@ -204,7 +204,7 @@ static int load_rv(ShipSet __far *s, const char *name)
     fseek(f, b1, SEEK_SET);
     fread(rec, 1, 13, f);
     if (memcmp(rec, "RVSH", 4) != 0) {
-        rv_log("ships: %s is not a ship file", name);
+        RV_LOG("ships: %s is not a ship file", name);
         fclose(f);
         return 0;
     }
@@ -233,7 +233,7 @@ static int load_rv(ShipSet __far *s, const char *name)
     s->block[0].nv = (unsigned short)s->nviews;
     s->nblocks = 1;
     if (!s->blk) {
-        rv_log("ships: no XMS for %s", name);
+        RV_LOG("ships: no XMS for %s", name);
         fclose(f);
         return 0;
     }
@@ -245,7 +245,7 @@ static int load_rv(ShipSet __far *s, const char *name)
         int w, h, copies = 1, c;
         unsigned long len = (i = v + 1) < n ? tab0[i] - tab0[v] : b0 + total - tab0[v], k;
         if (len > SCRATCH - OUT_MIN) {
-            rv_log("ships: %s view %d is %lu bytes, too big to decode", name, v, len);
+            RV_LOG("ships: %s view %d is %lu bytes, too big to decode", name, v, len);
             continue;
         }
         fseek(f, tab0[v], SEEK_SET);
@@ -258,7 +258,7 @@ static int load_rv(ShipSet __far *s, const char *name)
         w = hdr[1] + hdr[0] + 2;
         h = hdr[2] + hdr[3] + 2;
         if (w > LINE || h > 1024) {
-            rv_log("ships: %s view %d is %dx%d, too big to decode", name, v, w, h);
+            RV_LOG("ships: %s view %d is %dx%d, too big to decode", name, v, w, h);
             continue;
         }
         /* a symmetric ship's band views between the nose-on and tail-on headings
@@ -289,7 +289,7 @@ static int load_rv(ShipSet __far *s, const char *name)
     s->nsizes = 1;
     s->nrolls = 1;
     s->scale[0] = 256;
-    rv_log("ships: %s decoded, %d views, %lu KB in XMS (no .RVS: scaled and turned at draw time)", name, s->nviews, at / 1024);
+    RV_LOG("ships: %s decoded, %d views, %lu KB in XMS (no .RVS: scaled and turned at draw time)", name, s->nviews, at / 1024);
     return 1;
 }
 
@@ -357,7 +357,7 @@ static int load_rvs(ShipSet __far *s, const char *name)
         return 0;
     fread(hd, 1, 48, f);
     if (memcmp(hd, "RVSP", 4) != 0) {
-        rv_log("ships: %s is not a sprite set", name);
+        RV_LOG("ships: %s is not a sprite set", name);
         fclose(f);
         return 0;
     }
@@ -409,7 +409,7 @@ static int load_rvs(ShipSet __far *s, const char *name)
         RV_ASSERT(b0->size == 0 && b0->roll == 0);
         b0->loaded = 2;                 /* (its records: the table in XMS, set_view's) */
     }
-    rv_log("ships: %s, %d views (%d x %d; the copies %d x %d), %d sizes, %d roll steps on %d sizes, %lu blocks", name,
+    RV_LOG("ships: %s, %d views (%d x %d; the copies %d x %d), %d sizes, %d roll steps on %d sizes, %lu blocks", name,
            s->nviews, s->nb0, s->nh0, s->nb1, s->nh1, s->nsizes, s->nrolls, s->roll_sizes, nblocks);
     return 1;
 }
@@ -453,7 +453,7 @@ int ships_load(unsigned type)
         ok = load_rv(s, name);
     }
     if (!ok) {
-        rv_log("ships: no set for type %02X", type);
+        RV_LOG("ships: no set for type %02X", type);
         _ffree(s);
         return -1;
     }
@@ -543,7 +543,7 @@ void ships_want(const unsigned char *types, int n, int wait)
         fprintf(f, "\n");
         fclose(f);
     }
-    rv_log("ships: %d of the flight's %d sets asked of the page (RVWANT.TXT)%s", missing, listed, wait ? ", waiting" : "");
+    RV_LOG("ships: %d of the flight's %d sets asked of the page (RVWANT.TXT)%s", missing, listed, wait ? ", waiting" : "");
     if (!wait)
         return;
     for (;;) {
@@ -555,11 +555,11 @@ void ships_want(const unsigned char *types, int n, int wait)
                 if (!set_present(types[i], name) && !page_lacks(t0, name))
                     missing++;
             if (!missing) {
-                rv_log("ships: the sets came in %lu ms", (now - t0) * 1000 / 240);
+                RV_LOG("ships: the sets came in %lu ms", (now - t0) * 1000 / 240);
                 return;
             }
             if (now - t0 >= SHIPS_WANT_S * 240UL) {
-                rv_log("ships: %d set files did not come in %d s", missing, SHIPS_WANT_S);
+                RV_LOG("ships: %d set files did not come in %d s", missing, SHIPS_WANT_S);
                 return;
             }
         }
@@ -640,7 +640,7 @@ unsigned long ships_load_blocks(unsigned long budget)
                 if (pass == 2) {        /* the rolls: a size's at once */
                     unsigned long got = load_rolls(s, k, budget - taken);
                     if (!got && rolls_out(s, k)) {
-                        rv_log("ships: the budget is spent at type %02X size %d's rolls", s->type, k);
+                        RV_LOG("ships: the budget is spent at type %02X size %d's rolls", s->type, k);
                         goto spent;
                     }
                     taken += got;
@@ -653,7 +653,7 @@ unsigned long ships_load_blocks(unsigned long budget)
                         || (!full && (pass == 0) != (blk->roll == 0)))
                         continue;
                     if (taken + blk->length > budget) {
-                        rv_log("ships: the budget is spent at type %02X size %d roll %d", s->type, k, blk->roll);
+                        RV_LOG("ships: the budget is spent at type %02X size %d roll %d", s->type, k, blk->roll);
                         goto spent;
                     }
                     if (full ? !load_full(s, blk) : !load_block(s, blk))
@@ -1049,7 +1049,7 @@ int ships_dense_reserve(void)
     int i;
     if (!g_slab) {
         g_slab = (unsigned char __far *)rv_alloc_high(SLAB_BYTES);
-        rv_log("ships: the dense slab in %s memory", g_slab ? "upper" : "conventional");
+        RV_LOG("ships: the dense slab in %s memory", g_slab ? "upper" : "conventional");
         if (!g_slab)
             g_slab = (unsigned char __far *)_fmalloc(SLAB_BYTES);
         for (i = 0; i < SLAB_MAX; i++)
@@ -1600,7 +1600,7 @@ long ships_selftest(void)
     rv_scale_row(pic + 9 * 3, map, 2, 21, out_a);
     for (x = 0; x < 64; x++, compared++)
         if (out_c[x] != out_a[x]) {
-            rv_log("selftest: scale row differs at %d (%d vs %d)", x, out_c[x], out_a[x]);
+            RV_LOG("selftest: scale row differs at %d (%d vs %d)", x, out_c[x], out_a[x]);
             return -1;
         }
     for (roll = 0; roll < 1024; roll += 64)
@@ -1617,7 +1617,7 @@ long ships_selftest(void)
                     rv_rotate_row(pic, 9, 7, &r, y, xs, xe, out_a);
                 for (x = 0; x < 64; x++, compared++)
                     if (out_c[x] != out_a[x]) {
-                        rv_log("selftest: turned row differs: roll %d scale %d row %d column %d (%d vs %d)", roll, sc, y, x, out_c[x], out_a[x]);
+                        RV_LOG("selftest: turned row differs: roll %d scale %d row %d column %d (%d vs %d)", roll, sc, y, x, out_c[x], out_a[x]);
                         return -1;
                     }
             }
@@ -1641,7 +1641,7 @@ long ships_selftest(void)
         rv_blit_row_rev(out_a, spans, 30, 5, 28);
         for (x = 0; x < 64; x++, compared++)
             if (out_c[x] != out_a[x]) {
-                rv_log("selftest: mirrored row differs at column %d (%d vs %d)", x, out_c[x], out_a[x]);
+                RV_LOG("selftest: mirrored row differs at column %d (%d vs %d)", x, out_c[x], out_a[x]);
                 return -1;
             }
     }

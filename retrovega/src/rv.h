@@ -14,6 +14,12 @@ void rv_fail(const char *file, int line, const char *what, long value, long limi
 
 void rv_log(const char *fmt, ...);
 void rv_logf(const char __far *fmt, ...);   /* a far format (DGROUP is nearly full) */
+/* rv_log with its format kept far, out of DGROUP: RV_LOG("format", args...), a literal format only (shorter than
+ * rv_logf's 400 bytes); it passes the format one argument more, a 0 it never reads */
+#define RV_LOG(...) do { static const char __far rv_fmt_[] = RV_LOG_FMT_(__VA_ARGS__, 0); \
+                         rv_logf(rv_fmt_ RV_LOG_ARGS_(__VA_ARGS__, 0)); } while (0)
+#define RV_LOG_FMT_(fmt, ...) fmt
+#define RV_LOG_ARGS_(fmt, ...) , __VA_ARGS__
 void rv_stack_paint(void);               /* (main, first) the stack painted, for rv_stack_log */
 void rv_stack_log(const char __far *when);   /* "stack WHEN: N of its M bytes used at the deepest" */
 void __far *rv_alloc_high(unsigned long bytes);   /* upper memory (a UMB), or 0 when DOS has none (util.c) */

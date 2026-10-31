@@ -28,15 +28,16 @@ static int g_fade = 64;
 extern void (*rv_fail_hook)(void);
 
 #pragma pack(1)
-static struct {
+typedef struct {                        /* VESA's mode information, read once into the shared near buffer */
     unsigned short attr;
     unsigned char win_a, win_b;
     unsigned short gran, size, seg_a, seg_b;
     unsigned long func;
     unsigned short pitch, xres, yres;
     unsigned char rest[238];
-} g_mode;
+} VesaMode;
 #pragma pack()
+typedef char vesa_mode_fits[sizeof(VesaMode) <= sizeof rv_filebuf ? 1 : -1];
 
 static void text_mode(void)
 {
@@ -49,35 +50,36 @@ int vid_init(void)
 {
     union REGS r;
     struct SREGS s;
+    VesaMode *mode = (VesaMode *)rv_filebuf;
     g_buf = (unsigned char __far *)rv_alloc_high((unsigned long)BAND_ROWS * SCR_W);   /* upper memory first (64 KB
                                            of DOSBox's 128 KB of UMBs; the dense slab takes the other half) */
-    rv_log("video: the band buffer in %s memory", g_buf ? "upper" : "conventional");
+    RV_LOG("video: the band buffer in %s memory", g_buf ? "upper" : "conventional");
     if (!g_buf)
         g_buf = (unsigned char __far *)_fmalloc((size_t)BAND_ROWS * SCR_W);
     if (!g_buf) {
-        rv_log("video: no memory for the band buffer");
+        RV_LOG("video: no memory for the band buffer");
         return 0;
     }
     _fmemset(g_buf, 0, (size_t)BAND_ROWS * SCR_W);
     segread(&s);
-    s.es = FP_SEG((void __far *)&g_mode);
-    r.x.di = FP_OFF((void __far *)&g_mode);
+    s.es = FP_SEG((void __far *)mode);
+    r.x.di = FP_OFF((void __far *)mode);
     r.x.ax = 0x4F01;
     r.x.cx = 0x100;
     int86x(0x10, &r, &r, &s);
     if (r.x.ax != 0x004F) {
-        rv_log("video: no VESA mode 100h (%04X)", r.x.ax);
+        RV_LOG("video: no VESA mode 100h (%04X)", r.x.ax);
         return 0;
     }
-    g_gran_kb = g_mode.gran ? g_mode.gran : 64;
-    g_win_seg = g_mode.seg_a ? g_mode.seg_a : 0xA000;
-    rv_log("video: mode 100h %ux%u, pitch %u, window %04X, granularity %u KB",
-           g_mode.xres, g_mode.yres, g_mode.pitch, g_win_seg, g_gran_kb);
+    g_gran_kb = mode->gran ? mode->gran : 64;
+    g_win_seg = mode->seg_a ? mode->seg_a : 0xA000;
+    RV_LOG("video: mode 100h %ux%u, pitch %u, window %04X, granularity %u KB",
+           mode->xres, mode->yres, mode->pitch, g_win_seg, g_gran_kb);
     r.x.ax = 0x4F02;
     r.x.bx = 0x100;
     int86(0x10, &r, &r);
     if (r.x.ax != 0x004F) {
-        rv_log("video: setting mode 100h failed (%04X)", r.x.ax);
+        RV_LOG("video: setting mode 100h failed (%04X)", r.x.ax);
         return 0;
     }
     rv_fail_hook = text_mode;

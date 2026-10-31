@@ -47,12 +47,18 @@ The image is therefore:
 |---|---|
 | 0x0000 | RVHOOK, 4 KB: header, thunks, sites (unchanged) |
 | 0x0100 | C code |
-| after the code | DGROUP, last as Watcom wants: the fixed 32 KB block first (ordered ahead of Watcom's `_NULL`), then C data, BSS, stack |
+| after the code | DGROUP, last as Watcom wants: the fixed 29 KB block first (ordered ahead of Watcom's `_NULL`), then C data, BSS, stack |
 
-DGROUP is nearly full: the fixed block, ~8 KB of constants (nearly all of them
-strings), ~11 KB of variables, ~2 KB of the C runtime's and the 4 KB stack
-leave 7.5 KB in RV.EXE (5 KB in RVT.EXE; 2026-10-31), and the C runtime's near
-heap (its FILE structures) lives in what is left. The stack was 8 KB until
+DGROUP: the fixed block (29 KB), ~4.5 KB of constants, ~9 KB of variables, ~2 KB
+of the C runtime's and the 4 KB stack leave 16 KB in RV.EXE (15 KB in RVT.EXE;
+2026-10-31), and the C runtime's near heap (its FILE structures) lives in what
+is left. The same day (the user's picks, from a breakdown of what was near):
+the log's formats went far (`RV_LOG("format", ...)` in rv.h, a static far
+format handed to `rv_logf`: 3.6 KB in RV.EXE; logic.c still uses `rv_log`); the
+fixed block ends at 0x7400, not 0x8000 (`END` in abi/rvabi.def: the 3 KB after
+the mission tables were never used, and no offset moved); the screenshots'
+row, the music's file reads and VESA's mode information go through
+`rv_filebuf`, and the briefing's two text copies are one (game.c `g_shown`). The stack was 8 KB until
 2026-10-31 (the user's call): the deepest use seen is 1.7 KB, a fight to the
 death screen. The build has no stack checks (`-s`) and the stack sits on the
 BSS, so main paints it first (`rv_stack_paint`) and the log says how deep it

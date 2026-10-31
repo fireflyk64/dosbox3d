@@ -90,7 +90,7 @@ static void setup_save(void)
         fwrite(b, 1, 8, f);
         fclose(f);
     }
-    rv_log("setup: talk speed %s", g_talk_names[g_talk_speed]);
+    RV_LOG("setup: talk speed %s", g_talk_names[g_talk_speed]);
 }
 
 /* speech runs on the music clock (240 Hz): fine enough for a shape every 25 ms */
@@ -108,7 +108,7 @@ static void say(int person, const char __far *text)
     g_said = text;
     g_nlip = lip_steps(text, g_lip, MAX_STEPS);
     g_speech_t0 = clock240();
-    rv_log("talk: %d shapes, %lu ms at %s", g_nlip, (unsigned long)g_nlip * LIP_STEP_MS * 100 / g_talk_pcts[g_talk_speed],
+    RV_LOG("talk: %d shapes, %lu ms at %s", g_nlip, (unsigned long)g_nlip * LIP_STEP_MS * 100 / g_talk_pcts[g_talk_speed],
            g_talk_names[g_talk_speed]);
     g_mouth = g_eyes = g_shown_chars = -1;
     g_gesture = 0;
@@ -284,7 +284,7 @@ static void open_board(void)
     g_scene.full = board_full;
     g_scene.no_room = 1;
     g_mode = MODE_BOARD;
-    rv_log("board: up close%s", g_hand == FONT_CHALK ? "" : " (no room for the chalk hand: the title font)");
+    RV_LOG("board: up close%s", g_hand == FONT_CHALK ? "" : " (no room for the chalk hand: the title font)");
     vid_dirty(0, SCR_H);
     scene_draw();
     vid_fade(64);
@@ -358,10 +358,13 @@ static void ambient_talk(void)
 
 static int g_close_room, g_close_back;      /* the close-up's room, and the mode it goes back to */
 
+/* the text a frame shows of the speech, copied out of g_said: said_so_far's, brief_overlay's (each drawn as soon
+ * as copied, so the two share it) */
+static char g_shown[RV_BRIEFING];
+
 /* the speech so far; of a long one (a briefing), only the sentence being said */
 static const char *said_so_far(void)
 {
-    static char shown[RV_BRIEFING];
     int n = _fstrlen(g_said), k = speech_done() ? n : (int)((long)n * speaking_step() / (g_nlip ? g_nlip : 1)), from = 0;
     if (n > 240)
         for (from = k - 1; from > 0; from--)
@@ -371,9 +374,9 @@ static const char *said_so_far(void)
             }
     if (from < 0 || from > k)
         from = 0;
-    _fstrncpy(shown, g_said + from, k - from);
-    shown[k - from] = 0;
-    return shown;
+    _fstrncpy(g_shown, g_said + from, k - from);
+    g_shown[k - from] = 0;
+    return g_shown;
 }
 
 /* a close-up: the speaker's face over the room, blurred (the XO's too: her
@@ -585,7 +588,6 @@ static void xo_underlay(int y0, int y1)
 
 static void brief_overlay(int y0, int y1)
 {
-    static char shown[RV_BRIEFING];
     char head[80];
     int n = _fstrlen(g_said), k = speech_done() ? n : (int)((long)n * speaking_step() / (g_nlip ? g_nlip : 1));
     if (g_mode == MODE_BRIEF && g_stage == 0)
@@ -595,9 +597,9 @@ static void brief_overlay(int y0, int y1)
     gfx_text(FONT_TITLE, 14, 6, head, RV_TEXT_AMBER | 0x10, y0, y1);
     if (y1 > 290) {
         gfx_shade(0, 292, SCR_W, 86, y0, y1);
-        _fstrncpy(shown, g_said, k);
-        shown[k] = 0;
-        gfx_wrap(FONT_BODY, 14, 298, SCR_W - 28, shown, RV_TEXT_WHITE, 3, y0, y1);
+        _fstrncpy(g_shown, g_said, k);
+        g_shown[k] = 0;
+        gfx_wrap(FONT_BODY, 14, 298, SCR_W - 28, g_shown, RV_TEXT_WHITE, 3, y0, y1);
     }
 }
 
@@ -780,7 +782,7 @@ static void launch(void)
     g_won = victoryPoints != 0;
     missionEnded();
     mission_free_assets();
-    rv_log("mission %.16Fs %s", (char __far *)g_m.id, g_won ? "won" : "lost");
+    RV_LOG("mission %.16Fs %s", (char __far *)g_m.id, g_won ? "won" : "lost");
     g_now = ticks();
     if (status == 4 && !script_active()) {   /* the player died: the choice first (a test script flies on to the debrief) */
         enter_dead();
@@ -1100,11 +1102,11 @@ static void ending_full(int y0, int y1)
 /* unload this base's rooms and load another's (the music plays on) */
 static int change_base(int base)
 {
-    rv_log("base %d -> %d: %s", g_base, base, dat_base_file(base));
+    RV_LOG("base %d -> %d: %s", g_base, base, dat_base_file(base));
     vid_fade(0);
     dat_close();
     if (!dat_open(dat_base_file(base))) {
-        rv_log("base %d: no %s, back to the carrier", base, dat_base_file(base));
+        RV_LOG("base %d: no %s, back to the carrier", base, dat_base_file(base));
         base = 0;
         if (!dat_open(dat_base_file(0)))
             rv_fail(__FILE__, __LINE__, "no RV.DAT", 0, 0);
@@ -1127,7 +1129,7 @@ static void mission_load_assets(void)
     xms_free_level(XMS_ROOM);
     dat_enter(XMS_MISSION);
     dat_log();
-    rv_log("mission assets: %lu KB of XMS free", xms_free_kb());
+    RV_LOG("mission assets: %lu KB of XMS free", xms_free_kb());
 }
 
 static void mission_free_assets(void)
@@ -1268,7 +1270,7 @@ int game_run(void)
                             g_mode = MODE_ENDING;
                             music_cue(g_camp.ending == ENDING_GOOD ? RV_MUSIC_WIN : RV_MUSIC_LOSE, 300);
                             vid_dirty(0, SCR_H);
-                            rv_log("ending: %s after %u missions", g_camp.ending == ENDING_GOOD ? "victory" : "loss",
+                            RV_LOG("ending: %s after %u missions", g_camp.ending == ENDING_GOOD ? "victory" : "loss",
                                    g_camp.flown);
                             if (script_active()) {
                                 scene_draw();

@@ -37,7 +37,7 @@ int16_t camp_load_data(const char *path)
     if (memcmp(g_head.magic, RVGAME_MAGIC, 6) != 0 || g_head.version != RVGAME_VERSION
         || g_head.pilot_size != sizeof(RvPilot) || g_head.node_size != sizeof(RvNode)
         || g_head.mission_size != sizeof(RvMission)) {
-        rv_log("game data: %s is not this build's (sizes %u %u %u)", path, g_head.pilot_size, g_head.node_size,
+        RV_LOG("game data: %s is not this build's (sizes %u %u %u)", path, g_head.pilot_size, g_head.node_size,
                g_head.mission_size);
         fclose(f);
         return 0;
@@ -87,7 +87,7 @@ int16_t camp_load_data(const char *path)
         g_weapon_of[w->type] = w;
     }
     fclose(f);
-    rv_log("game data: %u pilots, %u nodes, %u missions, %u ship types, %u weapons", g_npilots, g_nnodes, g_nmissions,
+    RV_LOG("game data: %u pilots, %u nodes, %u missions, %u ship types, %u weapons", g_npilots, g_nnodes, g_nmissions,
            g_nshiptypes, g_nweapons);
     return 1;
 }
@@ -186,7 +186,7 @@ void camp_load_units(const RvMission __far *m)
     missionStatus = 3;                   /* on the carrier */
     currentSeries = g_camp.node;
     currentMission = g_camp.mission;
-    rv_log("mission %.16Fs: %u nav points, %u mission ships", m->id, (uint16_t)m->nnav, n);
+    RV_LOG("mission %.16Fs: %u nav points, %u mission ships", m->id, (uint16_t)m->nnav, n);
     missionLoaded(camp_mission_index());
 }
 
@@ -227,7 +227,7 @@ int16_t camp_resolve(int16_t won)
         uint16_t count = camp_node_missions(g_camp.node);
         int16_t good = g_camp.wins * 2 > count || (g_camp.wins * 2 == count && g_camp.trend >= 0);
         next = good ? n->good : n->bad;
-        rv_log("node %.8s: %u of %u won, trend %d -> %s", n->id, g_camp.wins, count, g_camp.trend, good ? "good" : "bad");
+        RV_LOG("node %.8s: %u of %u won, trend %d -> %s", n->id, g_camp.wins, count, g_camp.trend, good ? "good" : "bad");
     }
     g_camp.mission = 0;
     g_camp.wins = 0;
@@ -262,7 +262,7 @@ int16_t save_write(int16_t bunk, const char *name)
         return 0;
     fwrite(&g_camp, sizeof g_camp, 1, f);
     fclose(f);
-    rv_log("saved bunk %d '%s': node %u mission %u", bunk + 1, g_camp.name, g_camp.node, g_camp.mission);
+    RV_LOG("saved bunk %d '%s': node %u mission %u", bunk + 1, g_camp.name, g_camp.node, g_camp.mission);
     gameSaved(bunk);
     return 1;
 }
@@ -296,7 +296,7 @@ int16_t save_load(int16_t bunk)
     if (!save_read(bunk, &s))
         return 0;
     _fmemcpy(&g_camp, &s, sizeof s);
-    rv_log("loaded bunk %d '%s': node %u mission %u", bunk + 1, g_camp.name, g_camp.node, g_camp.mission);
+    RV_LOG("loaded bunk %d '%s': node %u mission %u", bunk + 1, g_camp.name, g_camp.node, g_camp.mission);
     gameLoaded(bunk);
     return 1;
 }

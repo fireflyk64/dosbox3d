@@ -318,7 +318,7 @@ void flames_bake(void)
     unsigned char __far *pal = (unsigned char __far *)_fmalloc(768);
     bolts_tables();
     if (!g_bk_hdr || !cp || !pal) {
-        rv_log("flames: no %s for the baked flames", !g_bk_hdr ? "XMS" : !cp ? "cockpit palette" : "memory");
+        RV_LOG("flames: no %s for the baked flames", !g_bk_hdr ? "XMS" : !cp ? "cockpit palette" : "memory");
         g_bk_hdr = g_bk_rows = 0;
         if (pal) _ffree(pal);
         return;
@@ -327,7 +327,7 @@ void flames_bake(void)
     k_ok = looks(pal);
     _ffree(pal);
     if (!k_ok) {
-        rv_log("flames: no memory for the looks");
+        RV_LOG("flames: no memory for the looks");
         g_bk_hdr = g_bk_rows = 0;
         return;
     }
@@ -346,7 +346,7 @@ void flames_bake(void)
                         xms_put(g_bk_hdr, (unsigned long)bake_id(look, rho, ang, size, frame) * sizeof b, &b, sizeof b);
                         n++;
                     }
-    rv_log("flames: %d baked in %lu ms, %lu KB (%d did not fit)", n, (clock240() - t0) * 1000 / 240, g_bk_used / 1024,
+    RV_LOG("flames: %d baked in %lu ms, %lu KB (%d did not fit)", n, (clock240() - t0) * 1000 / 240, g_bk_used / 1024,
            lost);
     _ffree(g_look_mem);                 /* (the looks were for the bake) */
     g_look_mem = 0;

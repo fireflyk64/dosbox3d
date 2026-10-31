@@ -113,7 +113,7 @@ static int bring_in(unsigned i, const RvAsset __far *a, int level)
         g_slab[level].used += size;
     }
     if (!blk || !file_to_xms(a->at, blk, off, a->size)) {
-        rv_log("dat: asset %u (%.22Fs): %s", i, (const char __far *)a->name, blk ? "the read failed" : "no XMS");
+        RV_LOG("dat: asset %u (%.22Fs): %s", i, (const char __far *)a->name, blk ? "the read failed" : "no XMS");
         return 0;
     }
     g_in[i].blk = blk;
@@ -177,14 +177,14 @@ int dat_open(const char *path)
     unsigned i;
     g_fd = open(path, O_RDONLY | O_BINARY);
     if (g_fd < 0) {
-        rv_log("dat: no %s", path);
+        RV_LOG("dat: no %s", path);
         return 0;
     }
     g_hdr.nassets = 0;
     if (!file_read(0, &g_hdr, sizeof g_hdr) || memcmp(g_hdr.magic, "RVDAT", 5) != 0
         || g_hdr.version != RVDAT_VERSION || g_hdr.room_size != sizeof(RvRoom) || g_hdr.person_size != sizeof(RvPerson)
         || (g_hdr.ncockpits && g_hdr.cockpit_size != sizeof(RvCockpit))) {
-        rv_log("dat: %s is not this build's RV.DAT (version %u, room %u/%u, person %u/%u, cockpit %u/%u)", path,
+        RV_LOG("dat: %s is not this build's RV.DAT (version %u, room %u/%u, person %u/%u, cockpit %u/%u)", path,
                g_hdr.version, g_hdr.room_size, (unsigned)sizeof(RvRoom), g_hdr.person_size, (unsigned)sizeof(RvPerson),
                g_hdr.cockpit_size, (unsigned)sizeof(RvCockpit));
         g_hdr.nassets = 0;
@@ -219,7 +219,7 @@ int dat_open(const char *path)
         if (a->kind != RV_KIND_IMG && a->kind != RV_KIND_SPR && bring_in(i, a, XMS_BASE))
             pinned += a->size;
     }
-    rv_log("dat: %s, %u assets, %u rooms, %u people, %u cockpits; %lu KB of palettes, fonts and tables in XMS, the "
+    RV_LOG("dat: %s, %u assets, %u rooms, %u people, %u cockpits; %lu KB of palettes, fonts and tables in XMS, the "
            "rest read as wanted", path, g_hdr.nassets, g_hdr.nrooms, g_hdr.npeople, g_hdr.ncockpits, pinned / 1024);
     return 1;
 }

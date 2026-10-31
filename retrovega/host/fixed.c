@@ -4,7 +4,7 @@
 #include "rvhooks.h"
 #include "world.h"
 
-/* DGROUP: the fixed block at 0 .. 0x7FFF as on DOS, then room for the near vectors rv_where hands out */
+/* DGROUP: the fixed block at 0 (RV_FIXED_BYTES, as on DOS), then from 0x8000 room for the near vectors rv_where hands out */
 #define NEAR_RING 0x8000
 #define NEAR_RING_N 64
 uint8_t rv_dgroup[0x10000] __attribute__((aligned(65536)));   /* (on a 64 KB boundary: a pointer's low 16 bits are its
