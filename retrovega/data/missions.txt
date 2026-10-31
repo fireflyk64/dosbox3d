@@ -38,7 +38,7 @@ nav      2 -4500 2250 -29250
 nav      3 0 0 -15750
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ECHO
-ship     OX 0 nav0
+ship     OX 0 nav0 role=out
 ship     AGIS 1 nav1 count=2
 ship     NICANDR 1 nav2 count=3
 bar      left=- middle=KESTREL right=-
@@ -103,7 +103,7 @@ nav      1 27000 -6750 -27000
 nav      2 13500 -3375 -13500
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=KESTREL
-ship     OX 0 nav1
+ship     OX 0 nav1 role=in
 ship     ARISTON 1 nav1 count=4
 ship     AGIS 1 nav2 count=3
 bar      left=- middle=- right=ANCHOR
@@ -165,7 +165,7 @@ nav      1 -32000 4500 -11250
 nav      2 -18000 2250 -2250
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
-ship     OX 0 nav1
+ship     OX 0 nav1 role=in
 ship     CONVOLN 1 nav1 count=2
 ship     AGIS 1 nav2 count=4
 bar      left=TORCH middle=ECHO right=-
@@ -188,7 +188,7 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
 ship     AGIS 1 nav0 count=2
 ship     AGIS 1 nav1 count=2
-ship     ANAXIDM 0 nav2
+ship     KAHAN 0 nav2
 ship     CLEOMEN 1 nav2 count=3
 bar      left=TORCH middle=- right=-
 lounge   left=- middle=- right=PRIME
@@ -271,7 +271,7 @@ nav      3 18000 4500 -20250
 nav      4 0 2250 -15750
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=KESTREL
-ship     ANAXIDM 0 nav3
+ship     KAHAN 0 nav3
 ship     NICANDR 1 nav3 count=4
 ship     AGIS 1 nav4 count=4
 bar      left=FROST middle=- right=ANCHOR
@@ -339,7 +339,7 @@ nav      2 22500 0 -31500
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     SCHROED 0 nav0
-ship     ANAXIDM 0 nav0
+ship     KAHAN 0 nav0 role=out
 ship     AGIS 1 nav0 count=4
 ship     NICANDR 1 nav2 count=6
 bar      left=FROST middle=KESTREL right=ANCHOR
@@ -386,7 +386,8 @@ ship     AGIS 1 nav0 count=5
 ship     ARISTON 1 nav0
 ship     CLEOMEN 1 nav0
 ship     ARISTON 1 nav2 count=3
-ship     OX 0 nav3
+ship     OX 0 nav0 role=out
+ship     OX 0 nav3 role=in
 ship     CLEOMEN 1 nav3 count=3
 bar      left=- middle=- right=DRIFTER
 lounge   left=COMET middle=- right=PRIME
@@ -458,7 +459,7 @@ ship     wingman 0 nav0 pilot=KESTREL
 ship     GAWAIN 0 nav0 count=3
 ship     OX 0 nav0
 ship     CONVOLN 1 nav0 count=3
-ship     OX 0 nav1
+ship     OX 0 nav1 role=in
 ship     CLEOMEN 1 nav1 count=4
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar TORCH PRIME "Quiet out there lately."
@@ -504,10 +505,10 @@ ship     wingman 0 nav0 pilot=PRIME
 ship     GAWAIN 0 nav0 count=2
 ship     CLEOMEN 1 nav0 count=4
 ship     GAWAIN 0 nav1
-ship     ANAXIDM 0 nav1
+ship     KAHAN 0 nav1
 ship     CONVOLN 1 nav1 count=4
 ship     ARISTON 1 nav2 count=4
-ship     ANAXIDM 1 nav2
+ship     ANAXIDM 1 nav2 role=out
 bar      left=FROST middle=- right=DRIFTER
 talk     bar FROST DRIFTER "Quiet out there lately."
 talk     bar DRIFTER FROST "Too quiet."
@@ -535,9 +536,9 @@ ship     CONVOLN 1 nav0 count=2
 ship     NICANDR 1 nav1 count=6
 ship     AGASICL 1 nav1
 ship     ARISTON 1 nav2 count=3
-ship     AGASICL 1 nav2
+ship     AGASICL 1 nav2 role=in
 ship     CLEOMEN 1 nav3 count=2
-ship     AGASICL 1 nav3
+ship     AGASICL 1 nav3 role=in
 bar      left=FROST middle=- right=COMET
 talk     bar FROST COMET "Watch my six out there."
 talk     bar COMET FROST "Always."
@@ -558,7 +559,7 @@ nav      1 6750 -2250 -15750
 nav      2 9000 -4500 -32000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
-ship     ANAXIDM 0 nav0
+ship     KAHAN 0 nav0
 ship     AGIS 1 nav1 count=4
 ship     FRANKLN 0 nav2
 ship     CONVOLN 1 nav2 count=4
@@ -586,7 +587,7 @@ nav      4 -13500 0 -11250
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ECHO
 ship     FRANKLN 0 nav0
-ship     ANAXIDM 0 nav2
+ship     KAHAN 0 nav2 role=in
 ship     NICANDR 1 nav2 count=4
 ship     NICANDR 1 nav3 count=2
 ship     ARISTON 1 nav4 count=4
@@ -614,7 +615,7 @@ ship     wingman 0 nav0 pilot=COMET
 ship     NICANDR 1 nav2 count=2
 ship     CONVOLN 1 nav3 count=2
 ship     CONVOLN 1 nav4 count=4
-ship     AGASICL 1 nav4
+ship     AGASICL 1 nav4 role=in
 field    asteroid 0 6750 32000
 field    asteroid 4500 0 32000
 field    asteroid -4500 0 32000
@@ -667,7 +668,7 @@ nav      3 18000 2250 0
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=KESTREL
 ship     ARISTON 1 nav2 count=4
-ship     ANAXIDM 1 nav2
+ship     ANAXIDM 1 nav2 role=in
 ship     NICANDR 1 nav3 count=4
 field    asteroid 4500 0 32000
 field    asteroid 4500 -2250 32000
@@ -768,7 +769,7 @@ ship     FRANKLN 0 nav0
 ship     OX 0 nav0 count=2
 ship     CLEOMEN 1 nav0
 ship     FRANKLN 0 nav1 count=2
-ship     ANAXIDM 0 nav1
+ship     KAHAN 0 nav1
 ship     CLEOMEN 1 nav2 count=2
 ship     ARISTON 1 nav4 count=4
 ship     AGASICL 1 nav4
@@ -886,7 +887,7 @@ ship     wingman 0 nav0 pilot=KESTREL
 ship     OX 0 nav0
 ship     ARISTON 0 nav0
 ship     AGIS 1 nav1 count=4
-ship     OX 0 nav2
+ship     OX 0 nav2 role=in
 ship     ARISTON 1 nav2 count=3
 ship     ARISTON 1 nav3 count=4
 ship     CONVOLN 1 nav4 count=3
@@ -914,7 +915,7 @@ ship     OX 0 nav0
 ship     AGIS 1 nav0
 ship     AGIS 1 nav1 count=3
 ship     CONVOLN 1 nav2 count=4
-ship     ANAXIDM 1 nav2
+ship     ANAXIDM 1 nav2 role=in
 ship     CONVOLN 1 nav3 count=2
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar TORCH KESTREL "Quiet out there lately."
@@ -938,7 +939,7 @@ ship     wingman 0 nav0 pilot=PRIME
 ship     SCHROED 0 nav0 count=2
 ship     AGIS 1 nav1 count=5
 ship     GAWAIN 0 nav2
-ship     ANAXIDM 0 nav2
+ship     KAHAN 0 nav2
 ship     NICANDR 1 nav2 count=4
 ship     CONVOLN 1 nav3 count=4
 bar      left=TORCH middle=PRIME right=COMET

@@ -16,7 +16,7 @@ checks every reference and rule (docs/engine.md), and writes:
 
 missions.txt is one block per mission, a keyword and its value per line,
 '#' comments.  Keywords: mission, node, title, type, music, briefing, win,
-lose, fighter (the player's and the wingman's TYPE), nav (id x y z, km), ship (TYPE|player|wingman side navN [count=N]
+lose, fighter (the player's and the wingman's TYPE), nav (id x y z, km), ship (TYPE|player|wingman side navN [count=N] [role=out|in]
 [pilot=KEY]), field (asteroid|mine x z radius [density=N], km; N rocks per (10,000 km)^3, 1..255,
 0 or none: the engine's own), bar and lounge
 (seat=PILOT|- ...), talk (room speaker listener "text").  briefing, win and lose may repeat: the lines are joined.
@@ -130,7 +130,10 @@ NODE = [('char', 'id[RV_NODE_ID]', '%ds' % TEXT['NODE_ID']), ('unsigned char', '
 NAV = [('unsigned char', 'id', 'B'), ('unsigned char', 'pad', 'B'), ('short', 'x', 'h'), ('short', 'y', 'h'),
        ('short', 'z', 'h')]
 SHIP = [('unsigned char', 'type', 'B'), ('unsigned char', 'side', 'B'), ('unsigned char', 'nav', 'B'),
-        ('unsigned char', 'count', 'B'), ('unsigned char', 'pilot', 'B'), ('unsigned char', 'pad[3]', '3s')]
+        ('unsigned char', 'count', 'B'), ('unsigned char', 'pilot', 'B'), ('unsigned char', 'role', 'B'),
+        ('unsigned char', 'pad[2]', '2s')]
+ESCORT_ROLES = {'out': 1, 'in': 2}      # an escort target's role (RV_ESCORT_*): it flies out to the next nav point and
+                                        # jumps there; it waits at its own until the player comes, then flies home
 FIELD = [('unsigned char', 'type', 'B'), ('unsigned char', 'density', 'B'), ('short', 'x', 'h'), ('short', 'z', 'h'),
          ('short', 'radius', 'h')]
 TALK = [('unsigned char', 'room', 'B'), ('unsigned char', 'speaker', 'B'), ('unsigned char', 'listener', 'B'),
@@ -412,7 +415,12 @@ def compile_all():
                 pilot = pilot_index[opts['pilot']]
                 if kind == 'wingman':
                     wingman = opts['pilot']
-            shipr.append(struct.pack(fmt(SHIP), tnum, int(f[1]), nav, int(opts.get('count', 1)), pilot, b''))
+            role = 0
+            if 'role' in opts:
+                if opts['role'] not in ESCORT_ROLES or kind in ('player', 'wingman'):
+                    raise Fail('%s: role=%s: an escort target is role=out or role=in' % (where, opts['role']))
+                role = ESCORT_ROLES[opts['role']]
+            shipr.append(struct.pack(fmt(SHIP), tnum, int(f[1]), nav, int(opts.get('count', 1)), pilot, role, b''))
         if len(shipr) > LIMITS['SHIPS']:
             raise Fail('%s: %d ships, at most %d' % (w, len(shipr), LIMITS['SHIPS']))
         seats, placed = [], {}
@@ -539,6 +547,7 @@ def header_text(sizes):
             '#define RV_NODE_BAD 0x%02X' % BAD,
             '', '/* mission ship types picked at run time */',
             '#define RV_SHIP_PLAYER 0x%02X' % SHIP_PLAYER, '#define RV_SHIP_WINGMAN 0x%02X' % SHIP_WINGMAN,
+            '#define RV_ESCORT_OUT %d' % ESCORT_ROLES['out'], '#define RV_ESCORT_IN %d' % ESCORT_ROLES['in'],
             '#define RV_PILOT_NONE 0xFF', '']
     for i, r in enumerate(ROOMS):
         out.append('#define RV_ROOM_%s %d' % (r.upper(), i))

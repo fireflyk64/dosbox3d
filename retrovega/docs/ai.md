@@ -132,7 +132,7 @@ The rows as they stand:
 | `P_ACE` | strafing runs, hard evasion, never runs, uses the afterburner half the time |
 | `P_BOMBER` | torpedo runs at capital ships, else a heavy's fight; runs at 25% |
 | `P_WINGMAN` | the player's side: in formation until an enemy comes within 12,000 km, then the line fighter's row exactly (the old game's wingman flew its fighters' own AI: it killed two of three Dralthi and came home) |
-| `P_CAPITAL` | holds its course; turrets and launchers |
+| `P_CAPITAL` | holds its course; turrets and launchers. An escort target (its mission record's `role`, docs/engine.md) flies its route instead: out, to the next nav point at its top speed and gone there; in, still until the player comes within 8,000 km, then home (`route_step`) |
 | `P_WAITER` | lies in wait up to 30 s, then an interceptor's fight on the afterburner |
 | `P_NOLEFT` | a fighter whose controls cannot turn left: it rolls and pulls up or down instead |
 

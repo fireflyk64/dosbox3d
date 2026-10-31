@@ -95,11 +95,16 @@ static struct {
 #define NAV_SHIPS(n) ((const uint16_t *)(NAV_REC(n) + 0x39))         /* its ten mission ships, 0xFFFF ends them */
 #define MSHIP(r) (missionShipTable + missionShipTable_SIZE * ((r) & 63))
 #define MSHIP_SIDE(r) (*(const uint16_t *)(MSHIP(r) + 2))
+#define MSHIP_NAV(r) (*(const uint16_t *)(MSHIP(r) + 8))
+#define MSHIP_ROLE(r) (MSHIP(r)[18])    /* an escort target's role (RV_ESCORT_OUT, RV_ESCORT_IN; campaign.c), 0 none */
+#define ROUTE_JUMP_KM 3000              /* an escort target this near its goal is away: out, it jumps; in, it is home */
+#define ROUTE_WAKE_KM 8000              /* an escort target that waits sets off home when the player is this near */
 #define MSHIP_BEHAVIOUR(r) (*(const uint16_t *)(MSHIP(r) + 6))     /* 6 the player, 4 a wingman */
 #define NAV_REACH_KM 5000               /* the player this near a nav point has reached it (enterNavPoint) */
 
 static uint16_t g_navs_seen;            /* a bit per nav point the player has reached (nav 0 from the start) */
 static uint8_t __far g_killed[64];      /* a mission ship (its record) seen dying: shipAiState 9 */
+static uint8_t __far g_away[64];        /* a mission ship gone its own way (an escort target jumped out, or home): not killed */
 
 static int16_t nav_defined(int16_t n)
 {
@@ -119,6 +124,9 @@ static int16_t mission_done(void)
 {
     const uint16_t *at;
     int16_t n, j;
+    for (j = 0; j < 64; j++)            /* (an escort target of the player's side killed: lost, whatever else was done) */
+        if (g_killed[j] && MSHIP_ROLE(j) && MSHIP_SIDE(j) == commAnimInfo[0])
+            return 0;
     for (n = 0; n < NAVS; n++) {
         if (!nav_defined(n))
             continue;
@@ -154,6 +162,7 @@ void logic_start(const RvMission __far *m)
                                            near memset: Watcom makes a far pointer from this fixed address with segment
                                            0, so _fmemset cleared the interrupt table instead and the damage stayed) */
     _fmemset(g_killed, 0, sizeof g_killed);
+    _fmemset(g_away, 0, sizeof g_away);
     _fmemset(&g_hud, 0, sizeof g_hud);   /* (no marks until the first step works them out) */
     g_navs_seen = 1;
     currentNavPoint = 0;
@@ -1589,12 +1598,58 @@ static void fighter_think(int16_t s)
 /* a capital ship's mind for a step: its course held at cruise; its turrets at the nearest enemy in their range (each
  * that is cooled: fired by step_fire through the thunk, aimed at rvTarget by the gun's own code); a launcher at an
  * enemy capital ship now and then */
+/* a slot's mission record's role (an escort target's), 0 none */
+static int16_t role_of(int16_t s)
+{
+    return slotMissionShip[s] < 64 ? MSHIP_ROLE(slotMissionShip[s]) : 0;
+}
+
+/* an escort target's own way (its mission record's role): out, to the mission's next nav point after its own (nav 1
+ * from the launch) at its top speed, and gone (a jump) ROUTE_JUMP_KM short of it: the old game's transport set off
+ * from the carrier for Nav 1 at once, 300 km/s, and vanished there (tests/wc1/README.md); in, still at its own nav
+ * point until the player comes within ROUTE_WAKE_KM, then home to nav 0 the same way (an enemy's stays where it is) */
+static void route_step(int16_t s, Mind __far *m, const AiProfile __far *p)
+{
+    static const char __far s_gone[] = "logic: slot %d (mission ship %d) %s at nav %d";
+    const RvShipType __far *t = slot_type(s);
+    int16_t rec = slotMissionShip[s] & 63, role = MSHIP_ROLE(rec), goal = -1, n;
+    RvVec3 d, b;
+    if (role == RV_ESCORT_OUT) {
+        for (n = (int16_t)(MSHIP_NAV(rec) & 15) + 1; n < NAVS && goal < 0; n++)
+            if (nav_defined(n))
+                goal = n;
+    } else if (commAnimInfo[s] == commAnimInfo[0] && (m->phase || player_km(s) < ROUTE_WAKE_KM)) {
+        m->phase = 1;
+        goal = 0;
+    }
+    if (goal < 0) {
+        throttle(s, 0, 0);
+        return;
+    }
+    d = vec3(NAV_AT(goal, 0) - TO_KM(gPositionVector[s].x), NAV_AT(goal, 1) - TO_KM(gPositionVector[s].y),
+             NAV_AT(goal, 2) - TO_KM(gPositionVector[s].z));
+    if (len_of(d.x, d.y, d.z) < ROUTE_JUMP_KM) {
+        rv_logf(s_gone, s, rec, role == RV_ESCORT_OUT ? "jumped out" : "home", goal);
+        g_away[rec] = 1;
+        ship_clear(s);
+        return;
+    }
+    to_body(s, &d, &b);
+    steer_to(s, p, b.x, b.y, b.z);
+    throttle(s, t ? t->max_kps : 100, 0);
+}
+
 static void ship_think(int16_t s)
 {
     Mind __far *m = &g_mind[s];
     const RvShipType __far *t = slot_type(s);
     int16_t near_ = nearest_enemy(s, 0), g;
-    throttle(s, t ? t->cruise_kps : 100, 0);
+    if (role_of(s)) {
+        route_step(s, m, &k_profiles[m->profile < P_COUNT ? m->profile : P_CAPITAL]);
+        if (!slot_is_ship(s))
+            return;
+    } else
+        throttle(s, t ? t->cruise_kps : 100, 0);
     m->target = (uint8_t)(near_ >= 0 ? near_ : 0xFF);
     rvTarget[s] = m->target;
     if (near_ < 0)
@@ -1776,7 +1831,11 @@ void logic_end(void)
 }
 
 #define AUTOPILOT_CLEAR_KM 8000         /* no enemy this near (the engine's autopilot lamp says the same: flight.c) */
-#define AUTOPILOT_SHORT_KM 3000         /* it stops this far short of the nav point, facing it */
+#define AUTOPILOT_SHORT_KM 4500         /* it stops this far short of the nav point, facing it (the old game's 10,000 km at
+                                           its scale: the enemies 14,000 km ahead on arrival, tests/wc1/README.md) */
+#define AUTOPILOT_ESCORT_KM 30000       /* an escort target of the player's side this near comes along, AUTOPILOT_BEHIND_KM
+                                           behind the player (the old game's transport came along, 1,800 km behind) */
+#define AUTOPILOT_BEHIND_KM 800
 #define AUTOPILOT_WING_KM 10000         /* the friendly fighters this near come along, keeping their places */
 
 /* the autopilot key (A), between two steps: with no enemy near, the player (and the wing) taken on to the next nav
@@ -1809,16 +1868,24 @@ int16_t logic_autopilot(void)
     to = vec3((NAV_AT(next, 0) - FIX_MUL(gOrientationFrontVector[0].x, AUTOPILOT_SHORT_KM)) * KM,
               (NAV_AT(next, 1) - FIX_MUL(gOrientationFrontVector[0].y, AUTOPILOT_SHORT_KM)) * KM,
               (NAV_AT(next, 2) - FIX_MUL(gOrientationFrontVector[0].z, AUTOPILOT_SHORT_KM)) * KM);
-    /* the wing: moved as the player is, facing the same way (player_km while the player is still where it was) */
-    for (s = 1; s < NUM_SHIP_SLOTS; s++)
-        if (slot_is_ship(s) && maybeEntityType[s] == ET_SHIP && commAnimInfo[s] == commAnimInfo[0]
-            && rvController[s] == CTL_AI && shipAiState[s] != 9 && player_km(s) < AUTOPILOT_WING_KM) {
+    /* the wing: moved as the player is, facing the same way (player_km while the player is still where it was); an
+     * escort target of the player's side put behind it */
+    for (s = 1; s < NUM_SHIP_SLOTS; s++) {
+        if (!slot_is_ship(s) || commAnimInfo[s] != commAnimInfo[0] || rvController[s] != CTL_AI || shipAiState[s] == 9)
+            continue;
+        if (maybeEntityType[s] == ET_SHIP && player_km(s) < AUTOPILOT_WING_KM) {
             gPositionVector[s].x += to.x - gPositionVector[0].x;
             gPositionVector[s].y += to.y - gPositionVector[0].y;
             gPositionVector[s].z += to.z - gPositionVector[0].z;
-            ship_face(s, yaw, pitch);
-            fly_ahead(s);
-        }
+        } else if (maybeEntityType[s] == ET_CAPSHIP && role_of(s) && player_km(s) < AUTOPILOT_ESCORT_KM) {
+            gPositionVector[s] = vec3(to.x - FIX_MUL(gOrientationFrontVector[0].x, AUTOPILOT_BEHIND_KM) * KM,
+                                      to.y - FIX_MUL(gOrientationFrontVector[0].y, AUTOPILOT_BEHIND_KM) * KM,
+                                      to.z - FIX_MUL(gOrientationFrontVector[0].z, AUTOPILOT_BEHIND_KM) * KM);
+        } else
+            continue;
+        ship_face(s, yaw, pitch);
+        fly_ahead(s);
+    }
     gPositionVector[0] = to;
     fly_ahead(0);
     if (next)
@@ -1999,8 +2066,8 @@ uint16_t __far __cdecl farShipTest_impl(uint16_t slot, uint16_t km)
  * formation station is taken from (formation_step) */
 static void spawn_apart(int16_t s)
 {
-    int16_t k, hit = -1;
-    int32_t off;
+    int16_t k, hit = -1, tries;
+    int32_t off, step;
     const RvVec3 *R;
     for (k = 0; k < NUM_SHIP_SLOTS; k++)
         if (k != s && slot_is_ship(k) && km_between(s, k) < room_of(s, k) + 100) {
@@ -2013,8 +2080,17 @@ static void spawn_apart(int16_t s)
     if (off < 800)
         off = 800;
     R = &gOrientationRightVector[hit];
-    gPositionVector[s] = vec3(gPositionVector[hit].x + R->x * off, gPositionVector[hit].y + R->y * off,
-                              gPositionVector[hit].z + R->z * off);   /* (R is 256 a unit: x 256 km = KM x km) */
+    /* further out to the right each time the place found is inside another ship (a wingman and a transport both put
+     * at the leader's place landed on each other, and the bumps took the transport's way off it every step) */
+    for (tries = 1, step = off; tries <= 8; tries++, off += step) {
+        gPositionVector[s] = vec3(gPositionVector[hit].x + R->x * off, gPositionVector[hit].y + R->y * off,
+                                  gPositionVector[hit].z + R->z * off);   /* (R is 256 a unit: x 256 km = KM x km) */
+        for (k = 0; k < NUM_SHIP_SLOTS; k++)
+            if (k != s && slot_is_ship(k) && km_between(s, k) < room_of(s, k) + 100)
+                break;
+        if (k == NUM_SHIP_SLOTS)
+            return;
+    }
 }
 
 uint16_t __far __cdecl outerSpawnShipEntity_impl(uint16_t missionShip, uint16_t navPoint)

@@ -162,6 +162,16 @@ talk     bar FROST DRIFTER "Ten credits says you come back first."
 ship with a cockpit, over the campaign's own choice; without it the choice stays (Kit's, at the deck). The ported
 old campaign sets it from each old mission's player record.
 
+`role=out` or `role=in` on a ship line makes it an escort target (the old campaign's transports and destroyers,
+from their records' behaviour word): `out` sets off at once for the mission's next nav point after its own at its
+top speed and jumps out (vanishes) 3,000 km short of it, as the old game's transport did; `in` waits at its nav
+point until the player comes within 8,000 km, then flies home to nav 0 the same way (an enemy's waits where it
+is). One of the player's side killed is the mission lost. The autopilot brings one along, 800 km behind the player
+(the wingman beside it), and drops the formation 4,500 km short of the nav point.
+
+When the player dies the flight ends on a screen of its own, "You have died", with R to fly the mission again
+(the tables put back as they were) and C to carry on to the debriefing with the mission lost.
+
 `tools/campaign.py` writes the campaign and these placeholder missions
 (seeded, so the same every time); edit them by hand from here on.
 `tools/rvdata.py` compiles campaign, missions and cast into

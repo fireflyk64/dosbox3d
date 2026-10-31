@@ -45,6 +45,8 @@
 /* mission ship types picked at run time */
 #define RV_SHIP_PLAYER 0xFF
 #define RV_SHIP_WINGMAN 0xFE
+#define RV_ESCORT_OUT 1
+#define RV_ESCORT_IN 2
 #define RV_PILOT_NONE 0xFF
 
 #define RV_ROOM_BAR 0
@@ -193,7 +195,8 @@ typedef struct {
     uint8_t nav;
     uint8_t count;
     uint8_t pilot;
-    uint8_t pad[3];
+    uint8_t role;
+    uint8_t pad[2];
 } RvShip;
 typedef struct {
     uint8_t room;

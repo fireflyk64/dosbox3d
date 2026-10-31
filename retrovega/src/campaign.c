@@ -175,6 +175,7 @@ void camp_load_units(const RvMission __far *m)
             *(uint16_t *)(rec + 8) = s->nav;
             *(int16_t *)(rec + 10) = (int16_t)(k * 1500);
             rec[16] = s->pilot;
+            rec[18] = s->role;              /* (an escort target's: RV_ESCORT_OUT, RV_ESCORT_IN; logic.c MSHIP_ROLE) */
             for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
                 ;
             if (j < 10)

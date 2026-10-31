@@ -50,6 +50,7 @@ int16_t playtest_run(const char *only);
 #define PT_HOMER 0x02                   /* the Gawain: two particle cannons, two friend-or-foe missiles */
 #define PT_ENEMY 0x08                   /* the Nicander */
 #define PT_WEAK 0x0B                    /* the Agis */
+#define PT_OX 0x24                      /* the Ox: the transport the old campaign's missions escort */
 #define PT_CAPSHIP 0x20                 /* the Vigilance */
 #define PT_LINKED 0x03                  /* the Redeemer: four mass drivers, linked */
 #define SEC LOGIC_HZ                    /* steps a second */
@@ -3117,6 +3118,108 @@ static void t_fighter(void)
     pt_mission();
 }
 
+/* the Ox's slot, -1 none */
+static int16_t pt_ox(void)
+{
+    int16_t s;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
+        if (slot_is_ship(s) && gInstanceShipTypes[s] == PT_OX)
+            return s;
+    return -1;
+}
+
+/* the patrol with an Ox to escort out (role=out at nav 0): nav 1 and 2 as pt_patrol's; the player invulnerable */
+static int16_t pt_escort(void)
+{
+    pt_mission();
+    pt_nav(1, 0, 0, NAV1_Z);
+    pt_nav(2, NAV2_X, 0, NAV2_Z);
+    pt_mship(RV_SHIP_WINGMAN, SIDE_TERRAN, 0, 1, RV_PILOT_NONE);
+    pt_mship(PT_OX, SIDE_TERRAN, 0, 1, RV_PILOT_NONE);
+    g_tm.ship[g_tm.nship - 1].role = RV_ESCORT_OUT;
+    pt_mship(PT_ENEMY, SIDE_AERA, 1, 2, RV_PILOT_NONE);
+    pt_mship(PT_WEAK, SIDE_AERA, 2, 1, RV_PILOT_NONE);
+    pt_launch(PT_PLAYER);
+    playerCanBeDamaged = 0;
+    return pt_ox();
+}
+
+/* M8.10 */
+static void t_escort_out(void)
+{
+    static const char __far e_there[] = "no Ox (type 0x24) in the world after the launch (slot %d)";
+    static const char __far e_moved[] = "15 s in, the Ox is %d km from nav 1: it was %d (an escort target out sets off "
+        "for the next nav point at once)";
+    static const char __far e_alive[] = "the Ox died on its way (slot %d)";
+    static const char __far e_gone[] = "60 s in the Ox is still here, %d km from nav 1: it jumps out 3,000 km short";
+    static const char __far e_won[] = "victoryPoints is %d after the patrol with the Ox jumped out: nonzero (its jump "
+        "is not a loss)";
+    int16_t ox = pt_escort();
+    int32_t d0;
+    REQUIRE(ox > 0, e_there, ox, 0, 0);
+    d0 = pt_km_to(ox, 0, 0, NAV1_Z);
+    if (!pt_steps(15 * SEC))
+        return;
+    REQUIRE(slot_is_ship(ox) && gInstanceShipTypes[ox] == PT_OX && shipAiState[ox] != 9, e_alive, ox, 0, 0);
+    REQUIRE(pt_km_to(ox, 0, 0, NAV1_Z) < d0 - 300, e_moved, pt_km_to(ox, 0, 0, NAV1_Z), d0, 0);
+    /* the player goes to nav 1 (the autopilot's way: the Ox along, 800 km behind), and the Ox flies the rest */
+    if (!pt_go(0, NAV1_Z) || !pt_kill_side(SIDE_AERA))
+        return;
+    if (!pt_steps(45 * SEC))
+        return;
+    REQUIRE(!slot_is_ship(ox) || gInstanceShipTypes[ox] != PT_OX, e_gone, pt_km_to(ox, 0, 0, NAV1_Z), 0, 0);
+    if (!pt_go(NAV2_X, NAV2_Z) || !pt_kill_side(SIDE_AERA) || !pt_go(0, 0))
+        return;
+    missionStatus = 1;
+    logic_end();
+    REQUIRE(victoryPoints != 0, e_won, victoryPoints, 0, 0);
+}
+
+/* M8.11 */
+static void t_escort_lost(void)
+{
+    static const char __far e_there[] = "no Ox in the world after the launch (slot %d)";
+    static const char __far e_dead[] = "the Ox is not dying after a hit of 2000 (shipAiState %d)";
+    static const char __far e_lost[] = "victoryPoints is %d after the Ox was killed, with every nav flown and every "
+        "enemy dead: 0 (an escort target of the player's side lost is the mission lost)";
+    int16_t ox = pt_escort(), i;
+    REQUIRE(ox > 0, e_there, ox, 0, 0);
+    (void)pt_hit(0xFFFF, ox, 2000, 2, 0, 0);
+    for (i = 0; i < 12 * SEC && slot_is_ship(ox) && gInstanceShipTypes[ox] == PT_OX && shipAiState[ox] != 9; i++)
+        if (!pt_step())
+            return;
+    REQUIRE(!slot_is_ship(ox) || gInstanceShipTypes[ox] != PT_OX || shipAiState[ox] == 9, e_dead, shipAiState[ox], 0, 0);
+    if (!pt_go(0, NAV1_Z) || !pt_kill_side(SIDE_AERA) || !pt_go(NAV2_X, NAV2_Z) || !pt_kill_side(SIDE_AERA) || !pt_go(0, 0))
+        return;
+    missionStatus = 1;
+    logic_end();
+    REQUIRE(victoryPoints == 0, e_lost, victoryPoints, 0, 0);
+}
+
+/* M8.12 */
+static void t_escort_along(void)
+{
+    static const char __far e_there[] = "no Ox in the world after the launch (slot %d)";
+    static const char __far e_went[] = "the autopilot returned %d and left the player %d km from nav 1: it stops 4,500 "
+        "km short";
+    static const char __far e_along[] = "after the autopilot the Ox is %d km from the player: it comes along, 800 km "
+        "behind";
+    static const char __far e_behind[] = "after the autopilot the Ox is %d km along the player's nose: behind it";
+    int16_t ox = pt_escort(), r;
+    int32_t along;
+    REQUIRE(ox > 0, e_there, ox, 0, 0);
+    if (!pt_steps(SEC))
+        return;
+    r = logic_autopilot();
+    REQUIRE(r && pt_km_to(0, 0, 0, NAV1_Z) > 3500 && pt_km_to(0, 0, 0, NAV1_Z) < 5500, e_went, r,
+            pt_km_to(0, 0, 0, NAV1_Z), 0);
+    REQUIRE(pt_km(0, ox) >= 600 && pt_km(0, ox) <= 1200, e_along, pt_km(0, ox), 0, 0);
+    along = ((gPositionVector[ox].x - gPositionVector[0].x) / 256 * gOrientationFrontVector[0].x
+             + (gPositionVector[ox].y - gPositionVector[0].y) / 256 * gOrientationFrontVector[0].y
+             + (gPositionVector[ox].z - gPositionVector[0].z) / 256 * gOrientationFrontVector[0].z) / 256;
+    REQUIRE(along < -400, e_behind, along, 0, 0);
+}
+
 /* M9.1 */
 static void t_gunsight(void)
 {
@@ -3276,6 +3379,11 @@ static const char __far n_m8_8[] = "M8.8 autopilot (logic_autopilot): on to the 
     "near";
 static const char __far n_m8_9[] = "M8.9 fighter (camp_load_units): the mission's fighter line puts the player and the wingman "
     "in that ship (the old campaign's Hornet, Raptor, ...)";
+static const char __far n_m8_10[] = "M8.10 escort-out (route_step): an escort target out sets off for the next nav point, "
+    "comes along on the autopilot, and jumps out there: not a loss";
+static const char __far n_m8_11[] = "M8.11 escort-lost (mission_done): the Ox killed is the mission lost, whatever else was done";
+static const char __far n_m8_12[] = "M8.12 escort-along (logic_autopilot): the autopilot brings the Ox, 800 km behind the "
+    "player, and stops 4,500 km short of the nav point";
 static const char __far n_m9_1[] = "M9.1 gunsight (logic_hud): a mark at the view's middle";
 static const char __far n_m9_2[] = "M9.2 brackets (logic_hud): marks round the target";
 
@@ -3306,7 +3414,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_4, t_missile_hits, 0 }, { n_m7_5, t_missile_homes, 0 }, { n_m7_6, t_missile_ends, 0 },
     { n_m8_1, t_start, 0 }, { n_m8_2, t_nav1, 0 }, { n_m8_3, t_nav_once, 0 }, { n_m8_4, t_won, 0 },
     { n_m8_5, t_skipped, 0 }, { n_m8_6, t_enemies_left, 0 }, { n_m8_7, t_layer_spawn, 0 }, { n_m8_8, t_autopilot, 0 },
-    { n_m8_9, t_fighter, 0 },
+    { n_m8_9, t_fighter, 0 }, { n_m8_10, t_escort_out, 0 }, { n_m8_11, t_escort_lost, 0 }, { n_m8_12, t_escort_along, 0 },
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
 };
 

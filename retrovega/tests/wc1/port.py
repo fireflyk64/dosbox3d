@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.join(ROOT, 'tools'))
 SCALE = 0.45                            # (its farthest nav points sit 70,000 km out)
 # the old game's ship types, by what the dumps showed at each nav point (tests/wc1/README.md), to the author's map
 TYPES = {0: 'SCHROED', 1: 'FRANKLN', 2: 'GAWAIN', 3: 'LANCELT', 8: 'VIGILNC', 9: 'AGIS', 10: 'NICANDR', 11: 'ARISTON',
-         12: 'CONVOLN', 13: 'CLEOMEN', 6: 'OX', 4: 'KAHAN', 5: 'AGASICL', 7: 'ANAXIDM', 14: 'CHARILS', 15: 'AGASICL',
+         12: 'CONVOLN', 13: 'CLEOMEN', 6: 'OX', 4: 'KAHAN', 5: 'AGASICL', 7: 'KAHAN', 14: 'CHARILS', 15: 'AGASICL',
          16: 'AGASICL', 17: 'AGASICL', 18: 'ANAXIDM', 19: 'CHARILS', 21: 'LEONIDS'}
 CAPITALS = {4, 5, 6, 7, 8, 14, 15, 16, 17, 18, 19, 21}
 FIELDS = {22: 'asteroid', 23: 'mine'}
@@ -134,6 +134,7 @@ def port(dumpdir):
             escorts = {s['m'] for s in dmp['ships'] if s['behaviour'] == 3 and s['leader'] in carrier}
             escorts |= {s['m'] for s in dmp['ships'] if s['leader'] in escorts}
             followers = [s['m'] for s in dmp['ships'] if s['leader'] == player]
+            targets = []
             for s in dmp['ships']:
                 t = s['type']
                 if t in FIELDS or t == 8 or s['m'] == player or s['m'] in escorts or (followers and s['m'] == followers[0]):
@@ -142,8 +143,15 @@ def port(dumpdir):
                 for n in dmp['navs']:
                     if s['m'] in n['ships']:
                         nav = n['n']
+                if s['behaviour'] in (6, 7):   # an escort target: out (it flew to the next nav point and jumped), in (it waited)
+                    targets.append((nav, t, s['side'], 'out' if s['behaviour'] == 6 else 'in'))
+                    continue
                 key = (nav, t, s['side'])
                 groups[key] = groups.get(key, 0) + 1
+            for nav, t, side, role in targets:
+                kind = TYPES.get(t)
+                if kind:
+                    lines.append('ship     %s %d nav%d role=%s' % (kind, 1 if side else 0, nav, role))
             enemies_at = {}
             for (nav, t, side), count in sorted(groups.items()):
                 kind = TYPES.get(t)
