@@ -119,6 +119,31 @@ void shots_move(void)
     }
 }
 
+/* the segment a-b passes within r (positions) of the ship's middle: 1 and *hit the nearest point of it (the old game's
+ * hit volume, measured from its traces (tests/wc1/README.md): the hunting Hornet's bolts hit a Dralthi when their
+ * line passed 200-300 km from its middle; ours, against the silhouettes alone, hardly past 150 km, and the ships
+ * felt small and hard to hit) */
+static int16_t segment_in_sphere(int16_t s, const LfVec *a, const LfVec *b, int32_t r, LfVec *hit)
+{
+    int32_t dx = (b->x - a->x) >> 4, dy = (b->y - a->y) >> 4, dz = (b->z - a->z) >> 4;   /* (16ths: the squares fit) */
+    int32_t px = (gPositionVector[s].x - a->x) >> 4, py = (gPositionVector[s].y - a->y) >> 4, pz = (gPositionVector[s].z - a->z) >> 4;
+    int32_t dd = dx * dx + dy * dy + dz * dz, t;
+    if (labs(dx) > 30000L || labs(dy) > 30000L || labs(dz) > 30000L || labs(px) > 30000L || labs(py) > 30000L || labs(pz) > 30000L)
+        return 0;
+    t = dd ? (px * dx + py * dy + pz * dz) * 16 / dd : 0;   /* (16ths of the way along) */
+    if (t < 0) t = 0;
+    if (t > 16) t = 16;
+    px -= dx * t / 16;
+    py -= dy * t / 16;
+    pz -= dz * t / 16;
+    if (px * px + py * py + pz * pz > (r >> 4) * (r >> 4))
+        return 0;
+    hit->x = a->x + (b->x - a->x) * t / 16;
+    hit->y = a->y + (b->y - a->y) * t / 16;
+    hit->z = a->z + (b->z - a->z) * t / 16;
+    return 1;
+}
+
 int16_t shot_hit(int16_t i, int16_t *slot, RvVec3 *where)
 {
     Shot __far *sh = shot(i);
@@ -135,7 +160,7 @@ int16_t shot_hit(int16_t i, int16_t *slot, RvVec3 *where)
         if (labs(b.x - gPositionVector[s].x) > r + ax || labs(b.y - gPositionVector[s].y) > r + ay
             || labs(b.z - gPositionVector[s].z) > r + az)
             continue;
-        if (collide_segment(s, &a, &b, &hit, &t)) {
+        if (segment_in_sphere(s, &a, &b, r, &hit) || collide_segment(s, &a, &b, &hit, &t)) {
             *slot = s;
             where->x = hit.x; where->y = hit.y; where->z = hit.z;
             g_hits++;

@@ -57,6 +57,7 @@ typedef struct { uint16_t weapon, life; } MissileState;
 static MissileState __far g_missile[NUM_SHIP_SLOTS];
 
 #define RAM_STEPS 10                    /* a ship hurt by a ram is not hurt by one again for this many steps */
+#define AI_SCATTER 18                   /* an AI's shot's scatter about the nose, 256ths each way (18: 4 degrees; gun_fire) */
 static uint16_t __far g_rammed[NUM_SHIP_SLOTS];   /* the step a ship was last hurt by a ram */
 static uint16_t __far g_died[NUM_SHIP_SLOTS];     /* the step a ship was seen dying (0: not), its explosion's start */
 #define DEATH_STEPS (LOGIC_HZ * 3 / 2)  /* a fighter explodes this long before its slot ends; a capital ship longer */
@@ -548,6 +549,17 @@ static uint16_t gun_fire(uint16_t ship, uint16_t gun, const RvWeapon __far *w)
             d.z = d.z * 256 / km;
             front = d;
         }
+    }
+    if (rvController[ship] == CTL_AI && w->kind == RV_WK_GUN) {
+        /* an AI's shot scatters up to AI_SCATTER about the nose (the old game's fighters hit a hunting player with 13%
+         * of their shots and a straight one with 28%; with the fine aim alone ours hit 30% and 44%), by a hash of the
+         * step, the ship and the gun: the same on every machine the layer replays the call on */
+        uint16_t h = (uint16_t)(frameCounter * 2654435U + ship * 40503U + gun * 9973U);
+        int32_t jx = ((int32_t)(h & 31) - 16) * AI_SCATTER / 16, jy = ((int32_t)((h >> 5) & 31) - 16) * AI_SCATTER / 16;
+        const RvVec3 *R = &gOrientationRightVector[ship], *U = &gOrientationUpVector[ship];
+        front.x += FIX_MUL(R->x, jx) + FIX_MUL(U->x, jy);
+        front.y += FIX_MUL(R->y, jx) + FIX_MUL(U->y, jy);
+        front.z += FIX_MUL(R->z, jx) + FIX_MUL(U->z, jy);
     }
     vel = vec3(FIX_MUL(front.x, step),
                FIX_MUL(front.y, step),
@@ -1301,7 +1313,7 @@ static void throttle(int16_t s, int32_t kps, int16_t burn)
         speedLo[s] = (uint32_t)t->ab_kps;
 }
 
-#define AIM_MISS_KM 150                 /* a shot is let go when the nose's line passes this near the lead point */
+#define AIM_MISS_KM 300                 /* a shot is let go when the nose's line passes this near the lead point */
 
 /* the guns, when the lead point is in the cone and the target in range; a missile after a lock */
 static void aim_and_fire(int16_t s, Mind __far *m, const AiProfile __far *p, const View *v, int16_t guns)

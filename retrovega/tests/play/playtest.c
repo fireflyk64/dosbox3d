@@ -1926,14 +1926,14 @@ static void t_hull(void)
 /* M3.6 */
 static void t_big_hit(void)
 {
-    static const char __far e_dead[] = "a hit of 200 on a ship of %d all told left it alive (shipAiState %d, hull "
+    static const char __far e_dead[] = "a hit past the whole of a ship of %d left it alive (shipAiState %d, hull "
         "damage %d): a ship whose hull is gone dies, shipAiState 9";
     static const char __far e_wrap[] = "a shield or armour wrapped past 0 (%d, %d): they stop at 0";
     pt_target();
-    (void)pt_hit(0xFFFF, 1, 200, 2, 0, 0);
+    (void)pt_hit(0xFFFF, 1, (uint16_t)(pt_health(1) + slot_type(1)->hull + 10), 2, 0, 0);
     if (!pt_step())
         return;
-    REQUIRE(shipAiState[1] == 9, e_dead, pt_health(1) + 200, shipAiState[1], damagePoints[1]);
+    REQUIRE(shipAiState[1] == 9, e_dead, pt_health(1) + slot_type(1)->hull, shipAiState[1], damagePoints[1]);
     REQUIRE(SHIELD(1, 0) <= SHIELD_MAX(1, 0) && ARMOR(1, 0) <= slot_type(1)->armor_f, e_wrap, SHIELD(1, 0), ARMOR(1, 0),
             0);
 }
@@ -1943,13 +1943,14 @@ static void t_no_wrap(void)
 {
     static const char __far e_wrap[] = "after hit %d a shield or armour wrapped (front shield %d, front armour %d)";
     static const char __far e_back[] = "a hit on a dying ship brought it back (shipAiState %d)";
-    static const char __far e_dead[] = "100 hits of 3 all round a ship of %d all told: still alive";
-    int16_t i, was_dead = 0;
+    static const char __far e_dead[] = "100 hits of %d all round a ship of %d all told: still alive";
+    int16_t i, was_dead = 0, qty;
     int32_t all;
     pt_target();
     all = pt_health(1) + slot_type(1)->hull;
+    qty = (int16_t)(all / 80 + 1);      /* (a hundred of them are more than the ship, whatever its units) */
     for (i = 0; i < 100; i++) {
-        (void)pt_hit(0xFFFF, 1, 3, (int16_t)(i % 3 - 1) * 2, (int16_t)(i % 5 - 2), 0);
+        (void)pt_hit(0xFFFF, 1, (uint16_t)qty, (int16_t)(i % 3 - 1) * 2, (int16_t)(i % 5 - 2), 0);
         REQUIRE(SHIELD(1, 0) <= SHIELD_MAX(1, 0) && SHIELD(1, 1) <= SHIELD_MAX(1, 1)
                 && ARMOR(1, 0) <= slot_type(1)->armor_f && ARMOR(1, 1) <= slot_type(1)->armor_r
                 && ARMOR(1, 2) <= slot_type(1)->armor_l && ARMOR(1, 3) <= slot_type(1)->armor_rt, e_wrap, i,
@@ -1960,7 +1961,7 @@ static void t_no_wrap(void)
     }
     if (!pt_step())
         return;
-    REQUIRE(shipAiState[1] == 9 || !slot_is_ship(1), e_dead, all, 0, 0);
+    REQUIRE(shipAiState[1] == 9 || !slot_is_ship(1), e_dead, qty, all, 0);
 }
 
 /* M3.8 */
@@ -2126,19 +2127,21 @@ static void t_recharge(void)
 /* M2.19 */
 static void t_sustain(void)
 {
-    static const char __far e_few[] = "%d shots in 10 s of trigger: the old game's Hornet fired 60 (a volley of two every "
-        "third of a second) without running down";
-    static const char __far e_many[] = "%d shots in 10 s of trigger: more than a volley every third of a second (60)";
-    static const char __far e_drained[] = "gun energy down to %d after 10 s of trigger: two lasers are sustained";
+    static const char __far e_few[] = "%d shots in 10 s of trigger from %d guns: the old game's Hornet fired a volley every "
+        "third of a second (30 a gun) without running down";
+    static const char __far e_many[] = "%d shots in 10 s of trigger from %d guns: more than a volley every third of a second";
+    static const char __far e_drained[] = "gun energy down to %d after 10 s of trigger: the lasers are sustained";
     uint16_t a0;
+    int16_t guns;
     pt_alone(PT_PLAYER);
+    guns = pt_guns(0);
     g_sys.armed = 1;
     g_pilot.guns = 1;
     a0 = shots_added();
     if (!pt_steps(10 * SEC))
         return;
-    REQUIRE((uint16_t)(shots_added() - a0) >= 54, e_few, (uint16_t)(shots_added() - a0), 0, 0);
-    REQUIRE((uint16_t)(shots_added() - a0) <= 66, e_many, (uint16_t)(shots_added() - a0), 0, 0);
+    REQUIRE((uint16_t)(shots_added() - a0) >= guns * 27, e_few, (uint16_t)(shots_added() - a0), guns, 0);
+    REQUIRE((uint16_t)(shots_added() - a0) <= guns * 33, e_many, (uint16_t)(shots_added() - a0), guns, 0);
     REQUIRE(gunEnergy[0] >= 50, e_drained, gunEnergy[0], 0, 0);
     g_pilot.guns = 0;
 }
@@ -2190,7 +2193,7 @@ static void t_kill(void)
     int32_t ends;
     pt_alone(PT_PLAYER);
     pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, 0, 0, 6000, 0);
-    (void)pt_hit(0xFFFF, 1, 200, -2, 0, 0);
+    (void)pt_hit(0xFFFF, 1, (uint16_t)(pt_health(1) + slot_type(1)->hull + 10), -2, 0, 0);   /* (past the whole ship) */
     if (!pt_step())
         return;
     REQUIRE(slot_is_ship(1), e_kept, 0, 0, 0);
@@ -2223,7 +2226,7 @@ static void t_dying_quiet(void)
         if (!pt_step())
             return;
     REQUIRE(shots_added() != a0, e_quiet, 0, 0, 0);
-    (void)pt_hit(0xFFFF, 1, 200, -2, 0, 0);
+    (void)pt_hit(0xFFFF, 1, (uint16_t)(pt_health(1) + slot_type(1)->hull + 10), -2, 0, 0);   /* (past the whole ship) */
     if (!pt_step())                     /* (its last step: it may have fired before step_deaths saw its hull gone) */
         return;
     a0 = shots_added();                 /* (the player holds its fire: every shot is the enemy's) */

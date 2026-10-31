@@ -1592,7 +1592,11 @@ static void systems_tick(void)
     g_shield_was = shield;
     if (g_flicker)
         g_flicker--;
-    g_sys.lights = g_sys.emcon != EMCON_OFF && !(rvCockpitDamage >> 9 & 1) && !(g_flicker & 2);
+    /* the running lights: a flicker on a hit (g_flicker), and dimmer as the shields drain (the user, 2026-10-31: the
+     * power diverted to the shields): on for the shields' share of every eight frames, so a half shield is a hard
+     * flicker and nothing is dark; whole, steady */
+    g_sys.lights = g_sys.emcon != EMCON_OFF && !(rvCockpitDamage >> 9 & 1) && !(g_flicker & 2)
+                   && (g_st.shield_f >= 100 || (int)(frameCounter & 7) * 100 < g_st.shield_f * 8);
     /* the nav point: how far; the autopilot when no enemy is within 8,000 km */
     g_sys.nav_km = -1;
     if (g_m && g_sys.nav < g_m->nnav) {

@@ -127,6 +127,7 @@ The rows as they stand:
 | profile | character |
 |---|---|
 | `P_INTERCEPTOR` | light and fast: head-on passes and pursuits, strafes near, evades when tailed, runs at 30% hull; yaws, no pitch |
+| (every AI) | its shots scatter up to 4 degrees about the nose (`AI_SCATTER`, gun_fire), and it fires when the nose's line passes within 300 km of the lead point (`AIM_MISS_KM`): the old fighters' 13% hits on a hunting player, 28% on a straight one |
 | `P_FIGHTER` | the line fighter, as the old game's Dralthi measured (tests/wc1/README.md): straight at the target at full speed, a hard flat yaw away at 900 km with a dash, straight out to 2,500 km, round again (its nose back 2.5 s after a pass, the next 4 s on, as the old fighters' 1.9 and 5.3), a tail at 55% (under a player's cruise, so it falls back rather than creeps up and bumps), the guns from 4,000 km at the lead point, a volley every 0.75 s; runs at 20% |
 | `P_HEAVY` | slow and armoured: head on mostly, breaks rather than jinks, rarely runs |
 | `P_ACE` | strafing runs, hard evasion, never runs, uses the afterburner half the time |

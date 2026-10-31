@@ -176,6 +176,10 @@ looking at the player's ship) and then jumps it to the nav point. Outside, the w
 opening rows at full width between black bars, with no frame and no HUD (`cockpit_external`), and the player's
 own ship is drawn like any other (`flight.c` the view: `cam_pos`, `cam_basis`, `view_frame`).
 
+The running lights are a shield gauge: whole shields, steady; as the front shield drains they flicker harder (on
+for the shields' share of every eight frames), and a hit flickers them for eight frames; dark with the power plant
+hit or EMCON off.
+
 When the player dies the flight ends on a screen of its own, "You have died", with R to fly the mission again
 (the tables put back as they were) and C to carry on to the debriefing with the mission lost.
 

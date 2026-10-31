@@ -253,9 +253,10 @@ def compile_loadout(r, weapons, hit):
                 recs.append((t, 0, -8, min(count, 127)))       # a launcher under the belly, its rounds
                 rounds += count
                 continue
-            for i in range(count):                             # a record a gun, spread across the middle
-                x = (2 * i + 1 - count) / max(count, 1) * 0.6 * hit[0] / 127 * 32
-                recs.append((t, int(round(x)), 12 if col == 'turrets' else -2, 0))
+            for i in range(count):                             # a record a gun, spread across the middle; an odd
+                x = (2 * i + 1 - count) / max(count, 1) * 0.6 * hit[0] / 127 * 32   # count's middle one on top (the
+                up = 12 if col == 'turrets' else 8 if count % 2 and i == count // 2 else -2   # Schroedinger's third laser)
+                recs.append((t, int(round(x)), up, 0))
             guns += count if col == 'guns' else 0
     if len(recs) > GUNS:
         print('rvdata: ships.csv %s: %d guns and launchers, the gun table keeps %d' % (r['key'], len(recs), GUNS),
