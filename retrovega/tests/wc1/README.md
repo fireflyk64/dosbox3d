@@ -2,8 +2,10 @@
 
 The AI's tables (docs/ai.md) are meant to reproduce the behaviour of the space combat of the early nineties, so
 this directory flies the old game itself, as a black box, and ours in the same scene, and compares what the
-ships did. Nothing here reads the old program's code: the multiplayer layer already knows where its ships' slots
-are (`src/cpu/wcnet_ds.def`), and the trace is what any spectator could see.
+ships did. Nothing here read the old program's code until 2026-10-31, when the user asked for its collision and
+AI routines to be disassembled (`scripts/wcdis.py` over `wc/WC.EXE`): what they say is in the last section, as rules
+and numbers; the multiplayer layer already knew where its ships' slots are (`src/cpu/wcnet_ds.def`), and the trace
+is what any spectator could see.
 
 ## The old game, traced
 
@@ -152,6 +154,103 @@ straight player at 466 km/s fell behind and turned on the wingman, where ours ke
 call); its hunted passes spread wider (a tenth over 1,400 km, ours 1,000); its fighters open fire some 25 s after the
 arrival where ours, starting at the arrival's positions, fire at 9 s; the Salthi, Krant, Gratha and Jalthi loadouts
 and hides are not measured yet (the Salthi's two guns are known).
+
+## What the code says (the collision and AI routines disassembled, 2026-10-31)
+
+The user asked for the old program's collision and AI routines to be read, to see what sources of difficulty the
+measurements had missed. `scripts/wcdis.py dis ovr141:209D` (the weapon hit), `ovr140:1964` (the hit test),
+`ovr143:0A99` (the damage), `ovr143:216D` (the AI's weapons), `ovr163:13CF` (the orders), `ovr164:1024` (the
+situations), `ovr166:11F8` (the maneuvers) are the entries; the ship table is `dseg:49DC`, 0x6F bytes a type.
+What they say, and where we stand:
+
+**Hits.** Once a frame a bolt is tested against every ship: it hits when its point lies within the bolt's radius
+plus the ship's of the ship's middle (a box test per axis first, then a cheap length). The radii are a column of
+the ship table: Hornet 100, Rapier 120, Scimitar 165, Raptor 180, Salthi 120, Dralthi 160, Krant 140, Gratha 140,
+Jalthi 160, the capital ships 240-700, a bolt 10, a missile 20-25. The same rule both ways: the player's Hornet is
+the smallest target of all. Ours: `radius_km` in data/ships.csv (Schroedinger 100, Nicander 160) and a segment
+test, slightly kinder than the point. Two ships collide within half the sum of their radii (130 km between a Hornet
+and a Dralthi); each takes the square of the closing speed in km a frame, halved (two fighters head on at 400 kps
+close at 53 km a frame: 1,400 points, death; a 100-kps brush, 18), then they are pushed apart by their masses
+(Hornet 125, Dralthi 140, the Claw 10,000). Ours: a touch is 2 points plus the closing speed over 1,600 positions a
+step, a dozen head on (`RAM_BASE`, `RAM_PER`: logic.c): far gentler, the user's call.
+
+**Damage.** A hit takes the facing shield (front or rear by the hit's direction against the ship's front), then
+the facing armour (front/rear, or left/right beyond 45 degrees of the right axis), then the hull: an unnamed
+fighter adds max(1, rest/6) to its damage points and dies at its type's count (Hornet 5, Rapier 6, Scimitar 7,
+Raptor 8, Salthi 5, Dralthi 7, Krant 6, Gratha 7, Jalthi 7; a named pilot's ship adds max(1, rest/40)); the player
+adds max(1, rest/16) a bolt (rest/32 a collision) and each hit through the armour also rolls a system from a table
+by ship. One hit in a hundred that gets through the armour kills the ship outright when the shooter is a fighter
+that is neither the player nor the player's selected target. Shields come back a point a side every N frames, N a
+type stat: Hornet 5 (6 a second: 40 in 7 s), Rapier 3, Scimitar 6, Raptor 3, Salthi 10, Dralthi 6, Krant 5, Gratha
+4, Jalthi 7; ours a full shield in 17 s (`SHIELD_FULL_SHIFT`), two and a half times slower. Gun energy is 100, a
+laser costs 7, a neutron 14, a mass driver 9, and it comes back 2 a frame with full shields, 1 while they charge;
+the player fires with any energy above zero (it goes negative).
+
+**Bolts.** A bolt's damage is the gun's base less half its remaining life: a laser's base is 25 and it lives 30
+frames, so it hits for 10 at the muzzle and 25 at the end of its reach, 14 at a thousand km (the figure the layer
+measured); a neutron 30-40 over 20 frames, a mass driver 17-30 over 25. A shot from far hurts more. Ours: 14 flat.
+It flies at 160 km a frame (4,800 km/s at 30 a second) along the gun's line plus only the ship's speed along that
+line (the dot of its velocity and its front: no sideways drift), for 30 frames: 4,800 km plus the ship's motion.
+Ours carries the ship's whole velocity (the fork's gun_fire, kept 2026-10-31). The refire is a countdown on the
+ship: the player's lasers every 7 frames (mass drivers 5, neutrons 11), all guns at once; an AI ship every 13
+frames, all its ready guns at once. A dumbfire is launched toward the lead point of the shooter's target when it
+has one (the player's selected target too): only a ship with no target fires it straight.
+
+**The AI's shape.** A frame runs, per ship: its order (from the mission: attack, escort, patrol, leave...), a
+sub-state, and a tactic; in the attack the tactic picks a *situation*, adjusts a *fear* value, picks a *maneuver*
+from a table when none runs, and runs it. The situations, in the order tested: a missile of the enemy's in flight
+at it; its target dying; the target over 8,000 km off; hit in the last frames (a hit adds 4 to a counter that
+falls 1 a frame); the target ahead within 57 degrees and facing away (a tail chase); head on (each within some 40
+degrees of the other); the target behind it within 127 degrees, facing it within 32, inside 7,000 km (tailed);
+the target nearly stopped (a speed setting under 20); else the plain case.
+
+**Fear.** Each ship has an AI class from its mission record (0-4 the unnamed, 5-16 the named pilots), and two
+bytes a class, c (3 for most, 2 or 5 for some, 0 for the carrier) and d (6-10). Fear rises by c when tailed, 2c
+under a missile, falls by c in a tail chase, halves when the target dies, falls by d in the plain case; then by
+the ship's health (a 0-100 mix of its four armours and its hull count): under 40, +2c; 40-74, +c capped at 28;
+75 and over, capped at 7. Fear under 15 picks from the bold column of the table, 15-29 from the wary one, 30 and
+over from the third, which is almost always maneuver 21: leave (afterburn away; the order becomes "leave", and
+the ship is removed 16,000 km from the player). This is the retreat the layer saw as "maneuver 21, order 5".
+
+**The tables.** (Enyo 1's dump: the Dralthi leader is class 1, its wingmen class 0, the Salthi the same; the
+player's wingman class 5, the first named pilot; the player class 13, whose table is empty.) A named pilot (the
+wingmen, the aces) has a 9x3x3 table (situation, fear column: a chance in a
+hundred, maneuver A, else B); an unnamed Kilrathi class has one of the same shape; an unnamed Confed class a flat
+list, from which the plain case takes maneuver 40 with a chance of 60 + 5 x class, else a random list entry. The
+Kilrathi classes, bold column, plain case: 40-80% maneuver 40 (close in), else 45 (29 unless the target is
+facing it, then 40); target slow: 29 or 37; far: 39; tailed: 17 (yaw 90), 8 (two half loops), 46 (nothing new),
+12 (burn, yaw 180) or, class 3 once in fifty, 22 (drop a mine); head on: 45, 46, 41, 29, 31; a tail chase: 45;
+hit: 46 mostly, else 17, 38 (random jinks), 29, 36, 11; target dying: 2 (steer clear). The maneuvers themselves
+(47, a routine each, chained by their own steps): 40 flies at a point 500 km plus the target's radius behind it
+(above it when the target faces it) at attack speed and, within the radius plus 2,000 km with the target facing
+away, becomes 26, the tail: nose on the target, the target's speed matched inside three of its own radii, guns.
+29: nose on the target, guns. 18: the same with a speed step. 39: close at attack speed, a 5-degree jink four
+frames in a hundred. 37: afterburn when under 700 km. 7: break 90 degrees on a random axis and burn. 2: turn
+away by 10 or 40 degrees, break 8 when within three radii, burn. The steering is always at the full turn rate
+toward the target's present position: no lead at all; the yaw/pitch commands are the angles, the physics clamps
+them to the type's rates. The attack speed is a type stat: Hornet 300, Rapier 250, Scimitar 150, Raptor 250,
+Salthi 300, Dralthi 230 (the 466 km/s the traces measured), Krant 200, Gratha 200, Jalthi 200; the afterburner
+is bursts of 5, 10 or 40 frames when a maneuver asks and the ship is moving.
+
+**Firing.** The attack maneuvers (26, 29, 18, 10, 32) and a reaction to any enemy within 3,000 km run the weapons
+routine: every gun whose countdown is up and whose target is within its reach (speed times life, 4,800 km for a
+laser, less by the target's own speed when it recedes) fires when the nose is within 46 degrees of the target (a
+laser; a neutron 37, a mass driver 32, flak 84). So the fighters do not aim: they spray a wide cone while the
+steering brings the nose round, and the hits come as the nose crosses the target (the 13-28% measured). A
+missile goes with a chance of one in twenty a frame scaled down by the distance over 7,000 km: a Dart within 14
+degrees, a Javelin from behind (the target facing away, within 66), a Spiculum within 66, a Pilum at any angle;
+a mine when a tailing target is within 2,000 km behind. The three maneuver calls (26, 29, 18) go through a check
+first: the ship the player has selected as a target holds its guns while the player is within 37 degrees in front
+of it, unless its AI class is 11. Seen as well as read: with the Dralthi leader poked in as the player's selected
+target (`!poke=662C:02`, the player flying straight at nav 1), it fired 2 shots in the 1,557 frames the player sat
+within 37 degrees of its nose and 146 in the 3,983 it did not, while its two wingmen fired 92 and 43 shots at the
+player in their cones (wc1/enyo1-target2 in the scratchpad; the first try with the T key selected the wingman).
+
+**Against ours.** Matched already: the radii, the shields and armour, the guns' reach, the attack speed, the
+retreat, the enemies' hit rates. Apart, and worth the user's ruling: the bolt that hurts more with distance (ours
+flat), the shield recharge (ours slow), the bolt that takes only the forward speed (ours the whole velocity),
+the lethal collisions (ours gentle), the one-in-a-hundred kill, the 46-degree spray in place of a lead and a
+scatter, the target that holds its fire, and the wingmen's own tables.
 
 ## What is still to measure
 
