@@ -16,6 +16,14 @@
 #define BAR 2                           /* an armour bar's thickness, px */
 #define GAP 2                           /* between the wire and the armour, the armour and the shield */
 
+/* a line cut to a width: the text's last characters dropped until it fits */
+static void fit(char *s, int w)
+{
+    int n = (int)strlen(s);
+    while (n > 0 && gfx_text_width(FONT_BODY, s) > w)
+        s[--n] = 0;
+}
+
 static unsigned char __far g_page[2];
 static unsigned char __far g_cursor;    /* the damage page's line: which hurt system it names (D again: the next) */
 
@@ -173,13 +181,6 @@ static int hull_pct(int s)
     return damagePoints[s] >= t->hull ? 0 : (int)(100 - (long)damagePoints[s] * 100 / t->hull);
 }
 
-/* a line cut to a width: the text's last characters dropped until it fits */
-static void fit(char *s, int w)
-{
-    int n = (int)strlen(s);
-    while (n > 0 && gfx_text_width(FONT_BODY, s) > w)
-        s[--n] = 0;
-}
 
 /* a ship's page (the target's, the own ship's): the wire with its bars, and three lines of text beside it on a wide
  * VDU, else one above and one below */
@@ -301,10 +302,73 @@ static void draw_weapons(const RvRect __far *r, int y0, int y1)
     ship_page(0, gInstanceShipTypes[0], r, top, a, b, y0, y1);
 }
 
+
+/* how many lines a VDU holds at once: its rows of the body font (18 px tall: four on an 85-px VDU, two on a 49-px)
+ * times the columns of `cw` px it is wide */
+static int menu_rows(const RvRect __far *r)
+{
+    int rows = (r->h - 4) / (gfx_font_height(FONT_BODY) + 1);
+    return rows < 1 ? 1 : rows;
+}
+
+/* a menu's lines down a VDU from line `from`, in columns when it is wide enough (each as wide as the widest
+ * line, cut to the VDU), as many as fit; line `lit` in white, the rest amber.  Returns how many it showed */
+static int menu(const RvRect __far *r, char lines[][14], int n, int from, int lit, int y0, int y1)
+{
+    int fh = gfx_font_height(FONT_BODY), rows = menu_rows(r), k, cw = 0, w, x = r->x + 3, y, shown = 0;
+    for (k = from; k < n; k++) {
+        fit(lines[k], r->w - 6);
+        if ((w = gfx_text_width(FONT_BODY, lines[k])) > cw)
+            cw = w;
+    }
+    cw += 8;
+    for (k = from; k < n; k++) {
+        y = r->y + 2 + ((k - from) % rows) * (fh + 1);
+        if (x + cw - 8 > r->x + r->w)
+            break;                      /* (no room for another column) */
+        gfx_text(FONT_BODY, x, y, lines[k], k == lit ? RV_TEXT_WHITE : RV_TEXT_AMBER, y0, y1);
+        shown++;
+        if ((k - from) % rows == rows - 1)
+            x += cw;
+    }
+    return shown;
+}
+
+/* the nav page: the mission's nav points with how far each is, the chosen one lit (N: the next) */
+static void draw_nav(const RvRect __far *r, int y0, int y1)
+{
+    char lines[16][14];
+    int n = 0, k;
+    for (k = 0; k < 16 && n < 16; k++) {
+        int32_t km;
+        if (!logic_nav_km(k, &km))
+            continue;
+        if (k == 0)
+            sprintf(lines[n], "HOME %ldK", (km + 500) / 1000);
+        else
+            sprintf(lines[n], "NAV%d %ldK", k, (km + 500) / 1000);   /* (short: eight characters fill the small VDU) */
+        n++;
+    }
+    if (!n) {
+        gfx_text(FONT_BODY, r->x + 4, r->y + 3, "NO NAV", RV_TEXT_AMBER, y0, y1);
+        return;
+    }
+    {   /* (the chosen one on the VDU: from the start of its page of rows) */
+        int per = menu_rows(r), lit = g_sys.nav < n ? g_sys.nav : 0;
+        (void)menu(r, lines, n, lit - lit % per, lit, y0, y1);
+    }
+}
+
 int vdu_draw(int which, const RvRect __far *r, int y0, int y1)
 {
     if (!r->w || y1 <= r->y || y0 >= r->y + r->h)
         return 0;
+    if (which == 0) {
+        switch (g_page[0]) {
+        case VDU_L_NAV: draw_nav(r, y0, y1); return 1;
+        default: return 0;
+        }
+    }
     if (which == 1) {
         switch (g_page[1]) {
         case VDU_R_TARGET: draw_target(r, y0, y1); return 1;

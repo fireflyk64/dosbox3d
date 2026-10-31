@@ -94,7 +94,32 @@ static struct {
     int16_t cx, cy, arm;                /* the gunsight: the view's middle (where the nose points), its arms (px) */
     int16_t target;                     /* the target's brackets: 1 when it is on the view */
     int16_t x0, y0, x1, y1, colour;
+    int16_t nav;                        /* the chosen nav point's cross: 1 when it is on the view (the user's white cross) */
+    int16_t nav_x, nav_y;
 } __far g_hud;
+
+/* a world point on the camera's screen: 1 and (sx, sy) when it is ahead and on the view */
+static int16_t on_view(const RvCamera *cam, const LfVec *w, int16_t *sx, int16_t *sy)
+{
+    int32_t rx = (w->x - cam->pos.x) >> 4, ry = (w->y - cam->pos.y) >> 4, rz = (w->z - cam->pos.z) >> 4, X, Y, Z;
+    while (labs(rx) > 0x7FFFFF || labs(ry) > 0x7FFFFF || labs(rz) > 0x7FFFFF) {   /* (far off: the way is all that matters) */
+        rx /= 2;
+        ry /= 2;
+        rz /= 2;
+    }
+    X = (rx * cam->b.right.x + ry * cam->b.right.y + rz * cam->b.right.z) / 256;
+    Y = (rx * cam->b.up.x + ry * cam->b.up.y + rz * cam->b.up.z) / 256;
+    Z = (rx * cam->b.front.x + ry * cam->b.front.y + rz * cam->b.front.z) / 256;
+    if (Z < 16)
+        return 0;
+    X = cam->cx + X * cam->focal / Z;
+    Y = cam->cy - Y * cam->focal / Z;
+    if (X < cam->vx0 || X >= cam->vx1 || Y < cam->vy0 || Y >= cam->vy1)
+        return 0;
+    *sx = (int16_t)X;
+    *sy = (int16_t)Y;
+    return 1;
+}
 
 /* --- the mission: its nav points and ships, as camp_load_units put them in the tables the layer reads --- */
 
@@ -126,6 +151,14 @@ static int32_t nav_km(int16_t n)
     int32_t dx = labs(TO_KM(gPositionVector[0].x) - NAV_AT(n, 0)), dy = labs(TO_KM(gPositionVector[0].y) - NAV_AT(n, 1)),
             dz = labs(TO_KM(gPositionVector[0].z) - NAV_AT(n, 2)), m = dx > dy ? (dx > dz ? dx : dz) : (dy > dz ? dy : dz);
     return m + ((dx + dy + dz - m) >> 1);
+}
+
+int16_t logic_nav_km(int16_t n, int32_t *km)
+{
+    if (n < 0 || n >= NAVS || !nav_defined(n))
+        return 0;
+    *km = nav_km(n);
+    return 1;
 }
 
 /* the mission's rule, a patrol's: every nav point reached and every enemy of the mission's killed */
@@ -2383,6 +2416,17 @@ static void hud_marks(void)
     g_hud.cx = cam.cx;
     g_hud.cy = cam.cy;
     g_hud.arm = (int16_t)((cam.vx1 - cam.vx0) >> 6);   /* (10 px at 640 across, 5 at 320) */
+    g_hud.nav = 0;
+    if (g_sys.nav < NAVS && nav_defined(g_sys.nav)) {   /* the chosen nav point: a white cross where it lies */
+        LfVec w;
+        int16_t sx, sy;
+        w.x = (int32_t)NAV_AT(g_sys.nav, 0) * KM;
+        w.y = (int32_t)NAV_AT(g_sys.nav, 1) * KM;
+        w.z = (int32_t)NAV_AT(g_sys.nav, 2) * KM;
+        g_hud.nav = on_view(&cam, &w, &sx, &sy);   /* (near pointers: g_hud is far) */
+        g_hud.nav_x = sx;
+        g_hud.nav_y = sy;
+    }
     g_hud.target = g_sys.target >= 0 && flight_ent_box(g_sys.target, &cam, &b) && b.visible;
     if (!g_hud.target)
         return;
@@ -2414,6 +2458,8 @@ void logic_hud(void)
     if (!g_hud.arm)
         return;
     hud_cross(g_hud.cx, g_hud.cy, g_hud.arm, UI_AMBER2);
+    if (g_hud.nav)
+        hud_cross(g_hud.nav_x, g_hud.nav_y, g_hud.arm, UI_WHITE);
     if (g_hud.target)
         hud_brackets(g_hud.x0, g_hud.y0, g_hud.x1, g_hud.y1, g_hud.colour);
 }

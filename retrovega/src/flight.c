@@ -1608,7 +1608,7 @@ static int system_key(int ch)
     case 'i': system_action(RV_PF_IFF_KNOB, 0); return 1;
     case 'c': call_carrier(); return 1;
     case 'u': system_action(RV_PF_VOL_KNOB, 0); return 1;
-    case 'n': system_action(RV_PF_NAV_KNOB, 0); return 1;
+    case 'n': system_action(RV_PF_NAV_KNOB, 0); vdu_show(0, VDU_L_NAV); return 1;   /* (N: the nav page, the next point) */
     case 'm': system_action(RV_PF_ARM_KNOB, 0); return 1;
     case 't': target_next(); vdu_show(1, VDU_R_TARGET); return 1;   /* (T brings the target page up, changed or not) */
     case 'y': target_nearest(); vdu_show(1, VDU_R_TARGET); return 1;
@@ -1752,8 +1752,9 @@ static void gather(void)
         _fstrcpy((char __far *)g_mfd[0][3], s_calling);
     } else
         g_mfd[0][3][0] = 0;
-    for (i = n = 0; i < 4; i++)         /* the lines that say something, from the top (a comm takes the whole VDU) */
-        if (g_mfd[0][i][0] && !comms_on(0))
+    for (i = n = 0; i < 4; i++)         /* the lines that say something, from the top (a comm takes the whole VDU, so
+                                           does a page of vdu.c's) */
+        if (g_mfd[0][i][0] && !comms_on(0) && vdu_page(0) == VDU_L_STATUS)
             g_st.mfd_text[0][n++] = g_mfd[0][i];
     while (n < 4)
         g_st.mfd_text[0][n++] = 0;

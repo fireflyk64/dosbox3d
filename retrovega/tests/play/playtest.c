@@ -3910,6 +3910,47 @@ static void t_weapon_choice(void)
     g_sys.launcher_sel = 0;
 }
 
+/* M10.5: the nav cross (host only): the chosen nav point 5,000 km right of a point 20,000 km ahead draws a mark a
+ * quarter of the focal length right of the view's middle */
+static void t_nav_cross(void)
+{
+#ifdef RV_HOST
+    static const char __far e_none[] = "logic_hud drew nothing within 8 px of the chosen nav point's place on the view "
+        "(%d, %d): the white cross";
+    static const char __far e_stray[] = "with the nav point behind the player logic_hud still drew %d pixels there";
+    RvCamera cam;
+    int16_t x, y, n;
+    pt_mission();
+    pt_nav(1, 5000, 0, 20000);
+    pt_launch(PT_PLAYER);               /* (pt_alone would empty the mission again) */
+    if (!slot_is_ship(0) || rvController[0] != CTL_PLAYER) {
+        ship_spawn(0, PT_PLAYER, SIDE_TERRAN, CTL_PLAYER, 0, 0, 0, 0);
+        shipStateByte[0] = 8;
+    }
+    pt_put(0, 0, 0, 0, 0);
+    pt_speed(0, 0);
+    g_sys.nav = 1;
+    if (!pt_step())
+        return;
+    flight_camera(&cam);
+    x = (int16_t)(cam.cx + cam.focal / 4);
+    y = cam.cy;
+    memset(host_screen, 0, sizeof host_screen);
+    hud_band(0, HOST_H, NULL, 0, 0);
+    logic_hud();
+    REQUIRE(pt_drawn((int16_t)(x - 8), (int16_t)(y - 8), (int16_t)(x + 9), (int16_t)(y + 9)), e_none, x, y, 0);
+    pt_put(0, 0, 0, 0, TURN / 2);
+    if (!pt_step())
+        return;
+    memset(host_screen, 0, sizeof host_screen);
+    hud_band(0, HOST_H, NULL, 0, 0);
+    logic_hud();
+    n = pt_drawn((int16_t)(x - 8), (int16_t)(y - 8), (int16_t)(x + 9), (int16_t)(y + 9));
+    REQUIRE(n == 0, e_stray, n, 0, 0);
+    g_sys.nav = 0;
+#endif
+}
+
 /* M9.1 */
 static void t_gunsight(void)
 {
@@ -4093,6 +4134,7 @@ static const char __far n_m10_1[] = "M10.1 target-front (logic_target_next): T p
 static const char __far n_m10_2[] = "M10.2 target-lock (logic_target_lock): L keeps the target through T, Y; off when it dies or the tracking is wrecked";
 static const char __far n_m10_3[] = "M10.3 systems (hurt_system, step_timers): hits to the hull hurt the nine systems; a wrecked generator or power plant";
 static const char __far n_m10_4[] = "M10.4 weapon-choice (logic_guns_next, logic_missile_next): G picks the guns the trigger fires, W the launcher";
+static const char __far n_m10_5[] = "M10.5 nav-cross (logic_hud): a white cross where the chosen nav point lies on the view";
 
 static const PtTest __far k_tests[] = {
     { n_m1_1, t_coast, 0 }, { n_m1_2, t_throttle, 0 }, { n_m1_3, t_top_speed, 0 }, { n_m1_4, t_yaw, 0 },
@@ -4128,7 +4170,7 @@ static const PtTest __far k_tests[] = {
     { n_m8_9, t_fighter, 0 }, { n_m8_10, t_escort_out, 0 }, { n_m8_11, t_escort_lost, 0 }, { n_m8_12, t_escort_along, 0 },
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
-    { n_m10_4, t_weapon_choice, 0 },
+    { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 },
 };
 
 /* --- the run --- */
