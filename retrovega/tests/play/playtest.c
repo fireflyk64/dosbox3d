@@ -1788,11 +1788,18 @@ static int16_t pt_syncopated(int16_t type, int16_t last, int16_t hold)
 
 static void t_syncopated(void)
 {
-    int16_t last, hold;
-    for (hold = 0; hold < 2; hold++)
-        for (last = 0; last < 2; last++)
-            if (!pt_syncopated(PT_PLAYER, last, hold) || !pt_syncopated(PT_LINKED, last, hold))
-                return;
+    int16_t last, hold, ok = 1;
+    RvShipType __far *tp = (RvShipType __far *)ship_type(PT_PLAYER), *tl = (RvShipType __far *)ship_type(PT_LINKED);
+    uint8_t keep_p = tp->gun_energy_steps, keep_l = tl->gun_energy_steps;
+    for (hold = 0; hold < 2 && ok; hold++) {
+        /* (the held trigger must run the energy out for the group to come back together: a point every third step
+         * here, where the blank rate, a point a step, sustains two lasers for ever, as the old game's did) */
+        tp->gun_energy_steps = tl->gun_energy_steps = (uint8_t)(hold ? 3 : keep_p);
+        for (last = 0; last < 2 && ok; last++)
+            ok = pt_syncopated(PT_PLAYER, last, hold) && pt_syncopated(PT_LINKED, last, hold);
+    }
+    tp->gun_energy_steps = keep_p;
+    tl->gun_energy_steps = keep_l;
 }
 
 /* ======================================================================================================== */
@@ -2104,6 +2111,26 @@ static void t_recharge(void)
     }
     REQUIRE(SHIELD(0, 0) > 1 && SHIELD(0, 1) > 0, e_none, SHIELD(0, 0), SHIELD(0, 1), 0);
     REQUIRE(ARMOR(0, 0) == 2, e_armour, 2, ARMOR(0, 0), 0);
+}
+
+/* M2.19 */
+static void t_sustain(void)
+{
+    static const char __far e_few[] = "%d shots in 10 s of trigger: the old game's Hornet fired 60 (a volley of two every "
+        "third of a second) without running down";
+    static const char __far e_many[] = "%d shots in 10 s of trigger: more than a volley every third of a second (60)";
+    static const char __far e_drained[] = "gun energy down to %d after 10 s of trigger: two lasers are sustained";
+    uint16_t a0;
+    pt_alone(PT_PLAYER);
+    g_sys.armed = 1;
+    g_pilot.guns = 1;
+    a0 = shots_added();
+    if (!pt_steps(10 * SEC))
+        return;
+    REQUIRE((uint16_t)(shots_added() - a0) >= 54, e_few, (uint16_t)(shots_added() - a0), 0, 0);
+    REQUIRE((uint16_t)(shots_added() - a0) <= 66, e_many, (uint16_t)(shots_added() - a0), 0, 0);
+    REQUIRE(gunEnergy[0] >= 50, e_drained, gunEnergy[0], 0, 0);
+    g_pilot.guns = 0;
 }
 
 /* M3.13 */
@@ -2561,6 +2588,7 @@ static int16_t pt_old_duel(int16_t hunt, int16_t secs, Duel *d)
     d->nearest = INT32_C(0x7FFFFFFF);
     d->gap = 0x7FFF;
     pt_alone(PT_PLAYER);
+    randomSeed = UINT32_C(0x52560000) + 5000 + (uint32_t)hunt;   /* (its own dice, whatever its place in the table) */
     g_sys.armed = 0;
     playerCanBeDamaged = 0;
     pt_speed(0, 300);
@@ -3338,6 +3366,8 @@ static const char __far n_m3_10[] = "M3.10 any-source (do_damage): the same hit 
 static const char __far n_m3_11[] = "M3.11 shots-hit (step_shots): gunfire hurts what it meets, src a bolt of the "
     "shooter's";
 static const char __far n_m3_12[] = "M3.12 recharge (step_timers): shields come back, armour does not";
+static const char __far n_m2_19[] = "M2.19 sustain (step_timers): the trigger held 10 s fires the old game's 60 shots (a volley of two "
+    "every third of a second) and keeps its energy";
 static const char __far n_m3_13[] = "M3.13 type-rates (step_timers): gun energy and shields come back at the type's rates";
 static const char __far n_m4_1[] = "M4.1 kill (step_deaths, despawn): dying (9), exploding a while, then gone";
 static const char __far n_m4_2[] = "M4.2 dying-quiet (step_fire, AI): a dying ship fires nothing";
@@ -3399,7 +3429,7 @@ static const PtTest __far k_tests[] = {
     { n_m2_5, t_trigger, 0 }, { n_m2_6, t_safety, 0 }, { n_m2_7, t_broken_gun, 0 }, { n_m2_8, t_all_guns, 0 },
     { n_m2_9, t_range, 0 }, { n_m2_10, t_launcher_rounds, 0 }, { n_m2_11, t_destroyed_bit, 0 },
     { n_m2_12, t_energy_gate, 0 }, { n_m2_13, t_muzzles, 0 }, { n_m2_14, t_turrets, 0 }, { n_m2_15, t_shots_full, 0 },
-    { n_m2_16, t_volleys, 0 }, { n_m2_17, t_link_fire, 0 }, { n_m2_18, t_syncopated, 0 },
+    { n_m2_16, t_volleys, 0 }, { n_m2_17, t_link_fire, 0 }, { n_m2_18, t_syncopated, 0 }, { n_m2_19, t_sustain, 0 },
     { n_m3_1, t_shield_front, 0 }, { n_m3_2, t_shield_rear, 0 }, { n_m3_3, t_armour, 0 },
     { n_m3_4, t_armour_sides, 0 }, { n_m3_5, t_hull, 0 }, { n_m3_6, t_big_hit, 0 }, { n_m3_7, t_no_wrap, 0 },
     { n_m3_8, t_player_safe, 0 }, { n_m3_9, t_invulnerable, 0 }, { n_m3_10, t_any_source, 0 },

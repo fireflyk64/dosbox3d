@@ -103,9 +103,10 @@ What the tuning set, all in the line fighter's row of `k_profiles` (docs/ai.md) 
 
 - straight at the target at full speed (`pick`: a pursuit in every situation but tailed, passed and hurt), aiming
   at it, not ahead of it (`lead_pct` 0), the guns from 3,000 km (`fire_km`), a volley every 22 steps (`fire_gap`);
-- a hard flat yaw away at 900 km when a pass is coming (`break_km`, with the afterburner for its first 10 steps,
-  `burst`, at the type's full rate, `turn_pct` 100), then straight out until the target is 2,500 km off or 1.8 s
-  have passed (`out_km`, `BREAK_OUT_STEPS`), then the yaw back, over as soon as the nose is on the target. Measured
+- a hard flat yaw away at 900 km when a pass is coming (`break_km`, at the type's full rate, `turn_pct` 100), then
+  straight out with the afterburner for the leg's first 20 steps (`burst` x 2: lit during the yaw instead, into the
+  pass, it closed at 2,000 km/s and grazed a straight player in 7 duels of 8) until the target is 2,500 km off or
+  1.8 s have passed (`out_km`, `BREAK_OUT_STEPS`), then the yaw back, over as soon as the nose is on the target. Measured
   against the old game's hunting run (2026-10-30, the scratch measure.py): the old fighters' nose was back 1.9 s
   after a pass at 2,529 km, the next pass 5.3 s on, the nearest two of them 1,746 km apart (median; under 500 km
   4.8% of the time, never a collision); ours before this came round in 1.0 s at 935 km, passed every 2.2 s, flew
@@ -123,7 +124,7 @@ What the tuning set, all in the line fighter's row of `k_profiles` (docs/ai.md) 
 ## The ships themselves, and the guns (the user's play report, 2026-10-30)
 
 The same traces say what the ships are made of and how the guns run, and these were set to match (data/ships.csv,
-data/weapons.csv; the guns' energy rule is fablevega's M2):
+data/weapons.csv; the guns' energy rule is the type's `gun_energy_steps`, blank a point a step):
 
 | what | the old game | ours now |
 |---|---|---|
@@ -131,7 +132,7 @@ data/weapons.csv; the guns' energy rule is fablevega's M2):
 | the Dralthi's top speed, turn | the 400 setting at 2 km/s a point; 161-196 degrees a second | `max_kps` 530 at 1.5 (was 500), `yaw_dps` 125 x 1.5 = 187 (was 105: 157) |
 | shields and armour (front/rear; f/r/l/rt) | Hornet 40/40, 45/40/30/30; Dralthi 50/50, 45/35/30/30; Scimitar (type 2: the McAuliffe player's, the sluggish thick one) 60/50, 85/80/65/65 | x 3/14 (a laser hit of 14 is 3 here): Schroedinger 9/9, 10/9/6/6; Nicander 11/11, 10/8/6/6; Franklin 13/11, 18/17/14/14 with two mass drivers (the Scimitar's), and the Gawain (the Raptor, untraced) the same |
 | a shield back from nothing | 15 s (a point every 0.3 s over the Dralthi's 50) | 17 s (`SHIELD_FULL_SHIFT` 9; was 8.5 s) |
-| the player's trigger held | 6 shots a second (two lasers, a volley every third of a second) for a minute, 4 in every seventh second | the energy back a point a step, a laser 5 a shot at a refire of 10 steps: 60 shots in 10 s, sustained (M2.10); it was 20 shots in the first second, then 2-3 a second with one gun at a time, the user's "only one gun comes out" |
+| the player's trigger held | 6 shots a second (two lasers, a volley every third of a second) for a minute, 4 in every seventh second | the energy back a point a step (ships.csv `gun_energy_steps`, blank), a laser 5 a shot at a refire of 10 steps: 60 shots in 10 s, sustained (M2.19); it was 20 shots in the first second, then 2-3 a second with one gun at a time, the user's "only one gun comes out" |
 | the hunting player's hits | 1,184 shots, 80 hits (7%) in 190 s, two Dralthi dead | 500 shots, 27 hits (5%) before this round: the fire rate, not the hit box, was the gap (bolts are segment-tested, shots.c) |
 | the wingman, player straight | killed two of the three Dralthi (75 shots) and came home | fired 6 shots in 69 s and died: its row pitched and fled; now the fighter's row (`P_WINGMAN`) |
 | what the player flies | the mission's ship: Hornet, Raptor, Scimitar, Rapier by system (the dumps' player record) | each ported mission's `fighter` line (port.py from the dumps); the player had flown the campaign's default, the Redeemer |

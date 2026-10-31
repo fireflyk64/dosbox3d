@@ -166,6 +166,7 @@ What the tests expect:
 | M2.15 shots-full | with the shot list full (`SHOTS_MAX`), a fire still sets the cooldown and spends the energy: every machine replaying the call changes the gun the same way |
 | M2.16 volleys | the player's linked guns, from one shot short of a volley's energy, 10 s of held trigger: every step fires none or the whole group, never part of it; the group's cooldowns stay equal; at least three volleys as the energy comes back |
 | M2.17 link-fire | the same for a group of four (the Redeemer's mass drivers), and for the three left with one of them destroyed |
+| M2.19 sustain | the trigger held 10 s from a full bar: 54-66 shots (the old game's Hornet: 60, a volley of two every third of a second) and the energy still at 50 or more: two lasers at 5 a shot and a refire of 10 are sustained by the default of a point a step |
 
 ### M3: damage (`do_damage`, `step_shots`, `step_timers`)
 
@@ -575,7 +576,7 @@ into `RVGAME.DAT` (run by `build.sh`, and by `host/build.sh` for the harness).
 `tests/play/playtest.c` is the suite, in one file that builds for both sides; `tests/play/playtest.sh` runs it.
 
 ```
-tests/play/playtest.sh              all 80 on the host
+tests/play/playtest.sh              all 91 on the host
 tests/play/playtest.sh M3 M5.2      milestone 3 and test M5.2
 tests/play/playtest.sh --dos        on the host, then in DOSBox, and the hashes compared
 tests/play/playtest.sh --steps M5.3 one test on both, a hash of each part of the world after every step

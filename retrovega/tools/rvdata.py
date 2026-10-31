@@ -89,10 +89,12 @@ SHIPTYPE = [('char', 'key[RV_KEY]', '%ds' % TEXT['KEY']), ('char', 'name[RV_NAME
             ('signed char', 'vital[RV_VITALS][3]', '%db' % (3 * 8)),
             ('unsigned char', 'loadout[RV_GUNTABLE]', '%ds' % 0x33)]
 SHIPTYPE_FLAG_PLAYER = 1               # the player may fly it (a cockpit kit exists)
-GUN_ENERGY_STEPS = 3                   # blank in ships.csv: the gun energy comes back a point every so many steps
-                                       # (empty to 100 in 10 s)
-SHIELD_FULL_SHIFT = 8                  # blank in ships.csv: a shield comes back from nothing in 1 << this steps (256:
-                                       # 8.5 s at LOGIC_HZ), whatever its size (2 points to 900)
+GUN_ENERGY_STEPS = 1                   # blank in ships.csv: the gun energy comes back a point every so many steps (a
+                                       # point a step: the old game's Hornet held two lasers at a volley every third
+                                       # of a second for a minute, which two guns at 5 a shot and a refire of 10 are
+                                       # exactly, tests/wc1/README.md)
+SHIELD_FULL_SHIFT = 9                  # blank in ships.csv: a shield comes back from nothing in 1 << this steps (512:
+                                       # 17 s at LOGIC_HZ, the old game's 15 s), whatever its size (2 points to 900)
 # a ship type's engines (data/engines.csv, tools/engines.py): x, y, z in its sprites' box (127 = the half box; +x
 # the ship's left, +z the nose) and the glow's radius, min(0.3 size, 0.09) of the half box, in 1/1024ths
 ENGINES = 4

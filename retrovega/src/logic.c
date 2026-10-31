@@ -180,7 +180,9 @@ void logic_start(const RvMission __far *m)
 /* the points a store of `most` gains this step to fill in 1 << shift steps, spread evenly over them:
  * phase (the step's place among them) takes its share, and the shares add up to `most`.  The share is
  * (phase + 1) * most >> shift less phase * most >> shift: all that decides it is what adding `most` carries out of
- * the low `shift` bits of phase * most, so 16 bits do (tools/rvdata.py keeps most to 32768 and shift to 15) */
+ * the low `shift` bits of phase * most, so 16 bits do (tools/rvdata.py keeps most to 32768 and shift to 15).  The
+ * type's shift (ships.csv; blank 9: 512 steps, 17 s, as the old game's Dralthi took 15 s over its 50 points,
+ * tests/wc1/README.md) */
 static uint16_t refill(uint16_t most, uint16_t phase, uint8_t shift)
 {
     return (uint16_t)((((uint16_t)(phase * most) & ((1U << shift) - 1)) + most) >> shift);
@@ -1467,8 +1469,8 @@ static int16_t run_tactic(int16_t s, Mind __far *m, const AiProfile __far *p, co
             if (m->target != 0xFF)
                 m->dir = (int8_t)(flat ? ((v->rel.x < 0) == (v->rel.z > 0) ? 1 : -1) : (v->rel.x < 0 ? -1 : 1));
         }
-        throttle(s, max, at < p->burst);   /* (the dash: the old game's fighters lit it at every pass) */
         if (!flat) {
+            throttle(s, max, at < p->burst);   /* (the dash: the old game's fighters lit it at every pass) */
             g_turn[s].y = (int8_t)(cap * m->dir);
             g_turn[s].roll = (int8_t)(5 * m->dir);
             return m->target != 0xFF && v->cos_nose >= 230 && at > 2;
@@ -1485,6 +1487,9 @@ static int16_t run_tactic(int16_t s, Mind __far *m, const AiProfile __far *p, co
             g_turn[s].x = (int8_t)(cap * m->dir);
         else if (m->phase == 3 && m->target != 0xFF)
             g_turn[s].x = (int8_t)(v->rel.x < 0 ? -cap : cap);
+        /* the dash on the straight leg's first steps, away (the old game's at every pass): lit during the yaw, into
+         * the pass, it closed at 2,000 km/s from 900 km and grazed a player flying straight in 7 duels of 8 */
+        throttle(s, max, m->phase == 2 && at < 2 * p->burst);
         return m->phase == 3 && (m->target == 0xFF || v->cos_nose >= 230);
         /* (over with the nose on the target: the pursuit takes it from there, and breaks away again if too near) */
     }
