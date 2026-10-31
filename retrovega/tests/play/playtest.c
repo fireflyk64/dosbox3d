@@ -3101,7 +3101,7 @@ static void t_fighter(void)
     static const char __far e_player[] = "after camp_load_units the player's ship is type %d: the mission's fighter (%d)";
     static const char __far e_wing[] = "the wingman's record (behaviour 4) has type %d: the mission's fighter (%d), the "
         "player's own";
-    static const char __far e_third[] = "the third mission's fighter is type %d: the Gawain (2), the old campaign's Raptor";
+    static const char __far e_third[] = "the third mission's fighter is type %d: the Franklin (1), the old campaign's Scimitar";
     int16_t n, wing = -1;
     camp_mission(0, &g_tm);
     REQUIRE(g_tm.fighter == 0x00, e_first, g_tm.fighter, 0, 0);
@@ -3113,7 +3113,7 @@ static void t_fighter(void)
             wing = *(const uint16_t *)(missionShipTable + missionShipTable_SIZE * n);
     REQUIRE(wing == g_tm.fighter, e_wing, wing, g_tm.fighter, 0);
     camp_mission(2, &g_tm);
-    REQUIRE(g_tm.fighter == 0x02, e_third, g_tm.fighter, 0, 0);
+    REQUIRE(g_tm.fighter == 0x01, e_third, g_tm.fighter, 0, 0);
     g_camp.player_ship = PT_PLAYER;
     pt_mission();
 }
