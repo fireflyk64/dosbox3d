@@ -25,8 +25,8 @@ SCALE = 0.45                            # (its farthest nav points sit 70,000 km
 # the old game's ship types, by what the dumps showed at each nav point (tests/wc1/README.md), to the author's map
 TYPES = {0: 'SCHROED', 1: 'FRANKLN', 2: 'GAWAIN', 3: 'LANCELT', 8: 'VIGILNC', 9: 'AGIS', 10: 'NICANDR', 11: 'ARISTON',
          12: 'CONVOLN', 13: 'CLEOMEN', 6: 'OX', 4: 'KAHAN', 5: 'AGASICL', 7: 'ANAXIDM', 14: 'CHARILS', 15: 'AGASICL',
-         16: 'AGASICL', 17: 'AGASICL', 18: 'ANAXIDM', 19: 'CHARILS'}
-CAPITALS = {4, 5, 6, 7, 8, 14, 15, 16, 17, 18, 19}
+         16: 'AGASICL', 17: 'AGASICL', 18: 'ANAXIDM', 19: 'CHARILS', 21: 'LEONIDS'}
+CAPITALS = {4, 5, 6, 7, 8, 14, 15, 16, 17, 18, 19, 21}
 FIELDS = {22: 'asteroid', 23: 'mine'}
 # the systems, in the old campaign's order, as places of the Aera war: (node id, name, good next, bad next)
 SERIES = [
@@ -47,7 +47,8 @@ SERIES = [
 WINGMEN = ['TORCH', 'ECHO', 'COMET', 'FROST', 'KESTREL', 'DRIFTER', 'PRIME', 'ANCHOR']
 NAMES = {'SCHROED': 'Schroedinger', 'FRANKLN': 'Franklin', 'GAWAIN': 'Gawain', 'LANCELT': 'Lancelot', 'AGIS': 'Agis',
          'NICANDR': 'Nicander', 'ARISTON': 'Ariston', 'CONVOLN': 'Convolution', 'CLEOMEN': 'Cleomenes', 'OX': 'Ox',
-         'KAHAN': 'Kahan', 'AGASICL': 'Agasicles', 'ANAXIDM': 'Anaxidamus', 'CHARILS': 'Charillus', 'VIGILNC': 'Vigilance'}
+         'KAHAN': 'Kahan', 'AGASICL': 'Agasicles', 'ANAXIDM': 'Anaxidamus', 'CHARILS': 'Charillus', 'VIGILNC': 'Vigilance',
+         'LEONIDS': 'Leonidas'}
 
 def s24(b, o):
     v = b[o] | b[o + 1] << 8 | b[o + 2] << 16

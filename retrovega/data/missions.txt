@@ -857,6 +857,7 @@ ship     wingman 0 nav0 pilot=FROST
 ship     LANCELT 0 nav3
 ship     ARISTON 1 nav5 count=4
 ship     ANAXIDM 1 nav5
+ship     LEONIDS 1 nav6
 ship     CONVOLN 1 nav6 count=4
 ship     AGIS 1 nav7 count=4
 ship     CLEOMEN 1 nav8 count=4
