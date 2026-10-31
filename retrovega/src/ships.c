@@ -31,6 +31,7 @@
  * JavaScript makes the sets. */
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <malloc.h>
 #include <io.h>
 #include <fcntl.h>
@@ -478,6 +479,24 @@ static int file_present(const char *name)
     return 1;
 }
 
+/* the page's answer for what it cannot provide (RVNONE.TXT: "none GEN SHIP24.RVH ...", the generation the
+ * request's): a set the site lacks is not waited for (the type flies unseen: ships_load logs it) */
+static int page_lacks(unsigned long gen, const char *name)
+{
+    char line[160], *p;
+    FILE *f = fopen("RVNONE.TXT", "r");
+    if (!f)
+        return 0;
+    p = fgets(line, sizeof line, f);
+    fclose(f);
+    if (!p || strncmp(line, "none ", 5) || strtoul(line + 5, &p, 10) != gen)
+        return 0;
+    for (p = strstr(p, name); p; p = strstr(p + 1, name))
+        if (p[-1] == ' ' && (p[strlen(name)] == ' ' || p[strlen(name)] == '\n' || !p[strlen(name)]))
+            return 1;
+    return 0;
+}
+
 static int set_present(unsigned type, char *name)
 {
     sprintf(name, g_res == 2 ? "SHIP%02X.RVH" : "SHIP%02X.RVS", type);
@@ -531,9 +550,9 @@ void ships_want(const unsigned char *types, int n, int wait)
         unsigned long now = clock240();
         if (now - last >= 60) {         /* a look every quarter second */
             last = now;
-            missing = extra && !file_present(extra);
+            missing = extra && !file_present(extra) && !page_lacks(t0, extra);
             for (i = 0; i < n; i++)
-                if (!set_present(types[i], name))
+                if (!set_present(types[i], name) && !page_lacks(t0, name))
                     missing++;
             if (!missing) {
                 rv_log("ships: the sets came in %lu ms", (now - t0) * 1000 / 240);

@@ -18,7 +18,10 @@
 import { makeSet } from "./rvsprites.js";
 
 const RV_ART_CACHE = "rv-art", RV_SET_CACHE = "rv-sets-";
-const RV_RECIPE = { RVH: [0, 0, 0, 1, 2], RVS: [0, 4, 9] };   // build.sh's: the block mode's ladder; the sharp sets (?res=1)
+// build.sh's recipes: the block mode's ladder and the sharp sets (?res=1); a capital ship (types 0x20 up, 37 views at
+// 384-512 px) from half size down with rolls at two sizes, and at a quarter drawn as 4 x 4 blocks
+const RV_RECIPE = { RVH: [0, 0, 0, 1, 2], RVS: [0, 4, 9] }, RV_RECIPE_CAPITAL = { RVH: [0, 0, 0, 1, 4], RVS: [3, 3, 2] };
+const recipeOf = (key, ext) => (parseInt(key.slice(4), 16) >= 0x20 ? RV_RECIPE_CAPITAL : RV_RECIPE)[ext];
 const mb = (n) => (n / 1048576).toFixed(1) + " MB";
 
 async function rvCache(name) { try { return window.caches ? await caches.open(name) : null; } catch (e) { return null; } }
@@ -97,17 +100,20 @@ export function createSetProvider({ base, root, status, log }) {
       const rv = await fetchArt(info, `${label(key)}'s views`);
       status(`Making ${label(key)}'s sprite set…`);
       const t0 = performance.now();
-      try { set = await makeInWorker(rv, RV_RECIPE[ext]); }
-      catch (e) { log(`the sprite worker: ${e.message}; making ${name} on the page`); set = makeSet(rv, ...RV_RECIPE[ext]); }
+      try { set = await makeInWorker(rv, recipeOf(key, ext)); }
+      catch (e) { log(`the sprite worker: ${e.message}; making ${name} on the page`); set = makeSet(rv, ...recipeOf(key, ext)); }
       log(`made ${name} (${mb(set.length)}) in ${Math.round(performance.now() - t0)} ms`);
       if (sets) try { await sets.put(req, new Response(set)); } catch (e) { log(`could not keep ${name}: ${e.message}`); }
     }
     FS.writeFile(`${root}/${name}`, set);
   }
 
-  // the flight's list served: the sets it needs made and written, the rest removed
-  async function provide(FS, names) {
+  // the flight's list served: the sets it needs made and written, the rest removed; what cannot be had (a ship the
+  // site has no views of) is named in RVNONE.TXT ("none GEN NAME ..."), so the game stops waiting for it and flies
+  // without (retrovega/src/ships.c page_lacks) instead of standing at the deck for three minutes
+  async function provide(FS, names, gen) {
     const t0 = performance.now();
+    const lacking = [];
     let made = 0;
     try {
       await loadManifest();
@@ -117,11 +123,13 @@ export function createSetProvider({ base, root, status, log }) {
         let have = false;
         try { FS.stat(`${root}/${name}`); have = true; } catch (e) { /* not yet */ }
         if (have) continue;
-        await provideOne(FS, name);
-        made++;
+        try { await provideOne(FS, name); made++; }
+        catch (e) { lacking.push(name); log(`ship sets: ${name}: ${e.message} (the game flies without it)`); }
       }
-      status(made ? `${made} ship set${made > 1 ? "s" : ""} ready in ${((performance.now() - t0) / 1000).toFixed(1)} s` : "The ships' sets are in");
-      log(`ship sets: ${names.join(" ")} (${made} made) in ${Math.round(performance.now() - t0)} ms`);
+      if (lacking.length) FS.writeFile(`${root}/RVNONE.TXT`, `none ${gen} ${lacking.join(" ")}\n`);
+      status(lacking.length ? `Could not get ${lacking.join(", ")}: flying without`
+        : made ? `${made} ship set${made > 1 ? "s" : ""} ready in ${((performance.now() - t0) / 1000).toFixed(1)} s` : "The ships' sets are in");
+      log(`ship sets: ${names.join(" ")} (${made} made${lacking.length ? `, ${lacking.length} not on this site` : ""}) in ${Math.round(performance.now() - t0)} ms`);
     } catch (e) {
       log(`ship sets: ${e.message}`);
       status(`Could not get the ships' sets: ${e.message}`);
@@ -136,7 +144,7 @@ export function createSetProvider({ base, root, status, log }) {
     const m = /^want (\d+)((?: \S+)*)/.exec(text);
     if (!m || m[1] === wantGen) return;
     wantGen = m[1];
-    busy = provide(FS, m[2].trim().split(/\s+/).filter(Boolean)).finally(() => { busy = null; });
+    busy = provide(FS, m[2].trim().split(/\s+/).filter(Boolean), m[1]).finally(() => { busy = null; });
   }
 
   return { loadManifest, poll };

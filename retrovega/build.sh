@@ -73,11 +73,19 @@ mkdir -p build/host
 gcc -std=gnu99 -O2 -I src -o build/host/rvsprites src/lightfield.c tools/rvsprites.c
 for f in art/ships/SHIP*.RV; do
     s="$OUT/$(basename "${f%.RV}").RVS"
+    h="${s%.RVS}.RVH"
+    t="$(basename "$f")"; t="${t#SHIP}"; t="${t%.RV}"
+    if [ "$((16#$t))" -ge 32 ]; then
+        # a capital ship (types 0x20 up: 37 views at 384-512 px): from half size down, rolls at two sizes; and the
+        # block mode's at a quarter, drawn as 4 x 4 blocks (web/rvsets.js makes the same for the page)
+        [ "$s" -nt "$f" ] && [ "$s" -nt tools/rvsprites.c ] && [ "$s" -nt src/lightfield.c ] || build/host/rvsprites "$f" "$s" 3 3 2 > /dev/null
+        [ "$h" -nt "$f" ] && [ "$h" -nt tools/rvsprites.c ] && [ "$h" -nt src/lightfield.c ] || build/host/rvsprites "$f" "$h" 0 0 0 1 4 > /dev/null
+        continue
+    fi
     # (the nearest ships are drawn exactly in flight: rolls at every size from half down, so a far
     # ship turns with the player's roll - the user's ruling, 2026-10-20)
     [ "$s" -nt "$f" ] && [ "$s" -nt tools/rvsprites.c ] && [ "$s" -nt src/lightfield.c ] || build/host/rvsprites "$f" "$s" 0 4 9 > /dev/null
     # and the block mode's (RV.EXE /res 2): the ladder only, on every view, from half size, drawn as 2 x 2 blocks
-    h="${s%.RVS}.RVH"
     [ "$h" -nt "$f" ] && [ "$h" -nt tools/rvsprites.c ] && [ "$h" -nt src/lightfield.c ] || build/host/rvsprites "$f" "$h" 0 0 0 1 2 > /dev/null
 done
 # the carrier (a test aid, RV.EXE /capital): from half size down, rolls at two sizes
