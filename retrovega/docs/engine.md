@@ -142,6 +142,7 @@ node     L3m1
 title    Patrol: the Rigel relay
 type     patrol
 music    briefing
+fighter  SCHROED
 briefing Pilots, listen up. Aera fighters have been sighted near the Rigel relay.
 briefing You and Echo will sweep Nav 1 and Nav 2, then return to the carrier.
 win      We hold the Rigel relay. Good flying.
@@ -156,6 +157,10 @@ bar      left=FROST middle=- right=DRIFTER
 lounge   left=KESTREL middle=TORCH right=ANCHOR
 talk     bar FROST DRIFTER "Ten credits says you come back first."
 ```
+
+`fighter` names the ship the mission puts the player in (and the wingman, who flies the player's type): a
+ship with a cockpit, over the campaign's own choice; without it the choice stays (Kit's, at the deck). The ported
+old campaign sets it from each old mission's player record.
 
 `tools/campaign.py` writes the campaign and these placeholder missions
 (seeded, so the same every time); edit them by hand from here on.

@@ -116,6 +116,8 @@ def port(dumpdir):
             # the nav points, scaled, nav 0 the launch point at the origin
             by_nav = {}
             lines = ['mission  %s' % mid, 'node     %s' % node, 'type     patrol', 'music    briefing']
+            # what the player flew (its own mission ship's type: the wingman flies the same)
+            lines.append('fighter  %s' % TYPES[dmp['ships'][dmp['player']]['type']])
             navs = [n for n in dmp['navs'] if n['n'] > 0]
             for n in navs:
                 lines.append('nav      %d %d %d %d' % (n['n'], km(n['x']), km(n['y']), km(n['z'])))

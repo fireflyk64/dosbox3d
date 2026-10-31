@@ -346,6 +346,7 @@ nav 0):
 | M8.6 enemies-left | both navs flown, nothing killed, landed: 0 |
 | M8.7 layer-spawn | `outerSpawnShipEntity(1, 0)` puts the wingman's record into a free slot at nav 0 (my plumbing: it passes now) |
 | M8.8 autopilot | from the start, to nav 1 (`currentNavPoint` 1); with enemies 4,000 km ahead, returns 0 and moves nothing; with them gone, to nav 2 |
+| M8.9 fighter | the first mission's `fighter` is the Schroedinger (the old campaign's Hornet) and the third's the Gawain (its Raptor); `camp_load_units` puts the player in it (over the campaign's choice) and the wingman's record is the same type |
 
 The tests take the player to a nav point by moving it (as the autopilot would) and land by setting
 `missionStatus = 1`, as the engine's C key does.
@@ -571,7 +572,7 @@ into `RVGAME.DAT` (run by `build.sh`, and by `host/build.sh` for the harness).
 `tests/play/playtest.c` is the suite, in one file that builds for both sides; `tests/play/playtest.sh` runs it.
 
 ```
-tests/play/playtest.sh              all 76 on the host
+tests/play/playtest.sh              all 77 on the host
 tests/play/playtest.sh M3 M5.2      milestone 3 and test M5.2
 tests/play/playtest.sh --dos        on the host, then in DOSBox, and the hashes compared
 tests/play/playtest.sh --steps M5.3 one test on both, a hash of each part of the world after every step

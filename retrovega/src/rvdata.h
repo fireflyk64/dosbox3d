@@ -218,7 +218,7 @@ typedef struct {
     uint8_t nship;
     uint8_t ntalk;
     uint8_t nfield;
-    uint8_t pad;
+    uint8_t fighter;
     char title[RV_TITLE];
     char briefing[RV_BRIEFING];
     char win[RV_RESULT];

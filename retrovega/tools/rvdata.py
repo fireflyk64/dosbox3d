@@ -16,7 +16,7 @@ checks every reference and rule (docs/engine.md), and writes:
 
 missions.txt is one block per mission, a keyword and its value per line,
 '#' comments.  Keywords: mission, node, title, type, music, briefing, win,
-lose, nav (id x y z, km), ship (TYPE|player|wingman side navN [count=N]
+lose, fighter (the player's and the wingman's TYPE), nav (id x y z, km), ship (TYPE|player|wingman side navN [count=N]
 [pilot=KEY]), field (asteroid|mine x z radius [density=N], km; N rocks per (10,000 km)^3, 1..255,
 0 or none: the engine's own), bar and lounge
 (seat=PILOT|- ...), talk (room speaker listener "text").  briefing, win and lose may repeat: the lines are joined.
@@ -137,7 +137,7 @@ TALK = [('unsigned char', 'room', 'B'), ('unsigned char', 'speaker', 'B'), ('uns
         ('unsigned char', 'pad', 'B'), ('char', 'text[RV_TALK]', '%ds' % TEXT['TALK'])]
 MISSION = [('char', 'id[RV_ID]', '%ds' % TEXT['ID']), ('unsigned char', 'node', 'B'), ('unsigned char', 'type', 'B'),
            ('unsigned char', 'music', 'B'), ('unsigned char', 'nnav', 'B'), ('unsigned char', 'nship', 'B'),
-           ('unsigned char', 'ntalk', 'B'), ('unsigned char', 'nfield', 'B'), ('unsigned char', 'pad', 'B'),
+           ('unsigned char', 'ntalk', 'B'), ('unsigned char', 'nfield', 'B'), ('unsigned char', 'fighter', 'B'),
            ('char', 'title[RV_TITLE]', '%ds' % TEXT['TITLE']), ('char', 'briefing[RV_BRIEFING]', '%ds' % TEXT['BRIEFING']),
            ('char', 'win[RV_RESULT]', '%ds' % TEXT['RESULT']), ('char', 'lose[RV_RESULT]', '%ds' % TEXT['RESULT']),
            ('RvNav', 'nav[RV_NAVS]', None), ('RvShip', 'ship[RV_SHIPS]', None),
@@ -182,7 +182,7 @@ def parse_missions(path):
             raise Fail('%s: %s before any mission' % (where, key))
         elif key in ('briefing', 'win', 'lose'):
             cur[key].append(val)
-        elif key in ('node', 'title', 'type', 'music'):
+        elif key in ('node', 'title', 'type', 'music', 'fighter'):
             cur[key] = val
         elif key == 'nav':
             cur['nav'].append((where, val.split()))
@@ -462,8 +462,15 @@ def compile_all():
             fields.append(struct.pack(fmt(FIELD), FIELDS[f[0]], density, int(f[1]), int(f[2]), int(f[3])))
         if len(fields) > LIMITS['FIELDS']:
             raise Fail('%s: %d fields, at most %d' % (w, len(fields), LIMITS['FIELDS']))
+        # the fighter the mission puts the player (and the wingman) in; none (0xFF): the campaign's choice stays
+        cockpits = set(json.load(open(os.path.join(DATA, 'cockpits.json')))['ships'])
+        fighter = 0xFF
+        if 'fighter' in m:
+            if m['fighter'] not in ships or m['fighter'] not in cockpits:
+                raise Fail('%s: fighter %s is not a ship the player can fly (cockpits.json)' % (w, m['fighter']))
+            fighter = ships[m['fighter']]
         rec = struct.pack('<%ds8B' % TEXT['ID'], text(m['id'], TEXT['ID'], w), node_index[m['node']],
-                          TYPES[m['type']], MUSIC[m['music']], len(navs), len(shipr), len(talks), len(fields), 0)
+                          TYPES[m['type']], MUSIC[m['music']], len(navs), len(shipr), len(talks), len(fields), fighter)
         rec += text(m['title'], TEXT['TITLE'], w).ljust(TEXT['TITLE'], b'\0')
         rec += text(' '.join(m['briefing']), TEXT['BRIEFING'], w).ljust(TEXT['BRIEFING'], b'\0')
         rec += text(' '.join(m['win']), TEXT['RESULT'], w).ljust(TEXT['RESULT'], b'\0')

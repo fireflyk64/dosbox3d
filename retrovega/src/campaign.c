@@ -145,6 +145,8 @@ void camp_load_units(const RvMission __far *m)
 {
     uint8_t *ships = missionShipTable, *navs = navPointTable;
     uint16_t i, n = 0, k;
+    if (m->fighter != 0xFF)             /* the mission says what the player (and the wingman) fly, as the old campaign did */
+        g_camp.player_ship = m->fighter;
     memset(ships, 0, missionShipTable_SIZE * 64);
     memset(navs, 0, navPointTable_SIZE * 16);
     RV_ASSERT(m->nnav <= RV_NAVS && m->nship <= RV_SHIPS);

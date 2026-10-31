@@ -346,6 +346,7 @@ static void pt_mission(void)
     _fmemset(&g_tm, 0, sizeof g_tm);
     _fstrcpy(g_tm.id, s_id);
     g_tm.nship = 1;
+    g_tm.fighter = 0xFF;                /* (no fighter of its own: the player's type stays the test's) */
     g_tm.ship[0].type = RV_SHIP_PLAYER;
     g_tm.ship[0].count = 1;
     g_tm.ship[0].pilot = RV_PILOT_NONE;
@@ -3092,6 +3093,30 @@ static int16_t pt_drawn(int16_t x0, int16_t y0, int16_t x1, int16_t y1)   /* pix
 }
 #endif
 
+/* M8.9 */
+static void t_fighter(void)
+{
+    static const char __far e_first[] = "the first mission's fighter is type %d: the Schroedinger (0), the old campaign's Hornet";
+    static const char __far e_player[] = "after camp_load_units the player's ship is type %d: the mission's fighter (%d)";
+    static const char __far e_wing[] = "the wingman's record (behaviour 4) has type %d: the mission's fighter (%d), the "
+        "player's own";
+    static const char __far e_third[] = "the third mission's fighter is type %d: the Gawain (2), the old campaign's Raptor";
+    int16_t n, wing = -1;
+    camp_mission(0, &g_tm);
+    REQUIRE(g_tm.fighter == 0x00, e_first, g_tm.fighter, 0, 0);
+    g_camp.player_ship = 0x03;          /* (the campaign's default, the Redeemer: the mission overrides it) */
+    camp_load_units(&g_tm);
+    REQUIRE(g_camp.player_ship == g_tm.fighter, e_player, g_camp.player_ship, g_tm.fighter, 0);
+    for (n = 0; n < 64; n++)
+        if (*(const uint16_t *)(missionShipTable + missionShipTable_SIZE * n + 6) == 4)
+            wing = *(const uint16_t *)(missionShipTable + missionShipTable_SIZE * n);
+    REQUIRE(wing == g_tm.fighter, e_wing, wing, g_tm.fighter, 0);
+    camp_mission(2, &g_tm);
+    REQUIRE(g_tm.fighter == 0x02, e_third, g_tm.fighter, 0, 0);
+    g_camp.player_ship = PT_PLAYER;
+    pt_mission();
+}
+
 /* M9.1 */
 static void t_gunsight(void)
 {
@@ -3249,6 +3274,8 @@ static const char __far n_m8_6[] = "M8.6 enemies-left (logic_end): the navs flow
 static const char __far n_m8_7[] = "M8.7 layer-spawn (outerSpawnShipEntity, plumbing): a mission ship at its nav point";
 static const char __far n_m8_8[] = "M8.8 autopilot (logic_autopilot): on to the next nav point, never with enemies "
     "near";
+static const char __far n_m8_9[] = "M8.9 fighter (camp_load_units): the mission's fighter line puts the player and the wingman "
+    "in that ship (the old campaign's Hornet, Raptor, ...)";
 static const char __far n_m9_1[] = "M9.1 gunsight (logic_hud): a mark at the view's middle";
 static const char __far n_m9_2[] = "M9.2 brackets (logic_hud): marks round the target";
 
@@ -3279,6 +3306,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_4, t_missile_hits, 0 }, { n_m7_5, t_missile_homes, 0 }, { n_m7_6, t_missile_ends, 0 },
     { n_m8_1, t_start, 0 }, { n_m8_2, t_nav1, 0 }, { n_m8_3, t_nav_once, 0 }, { n_m8_4, t_won, 0 },
     { n_m8_5, t_skipped, 0 }, { n_m8_6, t_enemies_left, 0 }, { n_m8_7, t_layer_spawn, 0 }, { n_m8_8, t_autopilot, 0 },
+    { n_m8_9, t_fighter, 0 },
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
 };
 

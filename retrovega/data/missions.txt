@@ -6,6 +6,7 @@ node     ENIGMA
 title    Patrol: the Enigma shipyards, 3 nav points
 type     patrol
 music    briefing
+fighter  SCHROED
 briefing Pilots, listen up. The Vigilance holds station in the Enigma shipyards. You and Torch will fly Nav 1, Nav 2, Nav 3 and come home. Intelligence expects 3 Nicanders at Nav 1; 2 Agis at Nav 3. Keep your wingman close and bring the ship back.
 win      The Enigma shipyards holds. Good flying; get some rest.
 lose     We lost ground in the Enigma shipyards. Debrief, and we go again tomorrow.
@@ -28,6 +29,7 @@ node     ENIGMA
 title    Patrol: the Enigma shipyards, 3 nav points
 type     patrol
 music    briefing
+fighter  SCHROED
 briefing Pilots, listen up. The Vigilance holds station in the Enigma shipyards. You and Echo will fly Nav 1, Nav 2, Nav 3 and come home. Intelligence expects our Ox at Nav 0; 2 Agis at Nav 1; 3 Nicanders at Nav 2. Keep your wingman close and bring the ship back.
 win      The Enigma shipyards holds. Good flying; get some rest.
 lose     We lost ground in the Enigma shipyards. Debrief, and we go again tomorrow.
@@ -47,6 +49,7 @@ node     CEPHID
 title    Patrol: Cephid 17, 4 nav points
 type     patrol
 music    briefing
+fighter  GAWAIN
 briefing Pilots, listen up. The Vigilance holds station in Cephid 17. You and Comet will fly Nav 1, Nav 2, Nav 3, Nav 4 and come home. Intelligence expects 3 Nicanders at Nav 1; 3 Agis at Nav 4. Keep your wingman close and bring the ship back.
 win      Cephid 17 holds. Good flying; get some rest.
 lose     We lost ground in Cephid 17. Debrief, and we go again tomorrow.
@@ -68,6 +71,7 @@ node     CEPHID
 title    Patrol: Cephid 17, 2 nav points
 type     patrol
 music    briefing
+fighter  GAWAIN
 briefing Pilots, listen up. The Vigilance holds station in Cephid 17. You and Frost will fly Nav 1, Nav 2 and come home. Intelligence expects our Gawain at Nav 0; 4 Nicanders at Nav 1; 2 Aristons and an Agasicles at Nav 2. Keep your wingman close and bring the ship back.
 win      Cephid 17 holds. Good flying; get some rest.
 lose     We lost ground in Cephid 17. Debrief, and we go again tomorrow.
@@ -91,6 +95,7 @@ node     CEPHID
 title    Patrol: Cephid 17, 2 nav points
 type     patrol
 music    briefing
+fighter  GAWAIN
 briefing Pilots, listen up. The Vigilance holds station in Cephid 17. You and Kestrel will fly Nav 1, Nav 2 and come home. Intelligence expects our Ox and 4 Aristons at Nav 1; 3 Agis at Nav 2. Keep your wingman close and bring the ship back.
 win      Cephid 17 holds. Good flying; get some rest.
 lose     We lost ground in Cephid 17. Debrief, and we go again tomorrow.
@@ -111,6 +116,7 @@ node     SHELTON
 title    Patrol: Shelton, 3 nav points
 type     patrol
 music    briefing
+fighter  SCHROED
 briefing Pilots, listen up. The Vigilance holds station in Shelton. You and Drifter will fly Nav 1, Nav 2, Nav 3 and come home. Intelligence expects 4 Agis at Nav 2; 2 Convolutions at Nav 3. Keep your wingman close and bring the ship back.
 win      Shelton holds. Good flying; get some rest.
 lose     We lost ground in Shelton. Debrief, and we go again tomorrow.
@@ -131,6 +137,7 @@ node     SHELTON
 title    Patrol: Shelton, one nav point
 type     patrol
 music    briefing
+fighter  SCHROED
 briefing Pilots, listen up. The Vigilance holds station in Shelton. You and Prime will fly Nav 1 and come home. Intelligence expects our Schroedinger and 4 Nicanders at Nav 0; 4 Nicanders at Nav 1. Keep your wingman close and bring the ship back.
 win      Shelton holds. Good flying; get some rest.
 lose     We lost ground in Shelton. Debrief, and we go again tomorrow.
@@ -150,6 +157,7 @@ node     SHELTON
 title    Patrol: Shelton, 2 nav points
 type     patrol
 music    briefing
+fighter  SCHROED
 briefing Pilots, listen up. The Vigilance holds station in Shelton. You and Anchor will fly Nav 1, Nav 2 and come home. Intelligence expects our Ox and 2 Convolutions at Nav 1; 4 Agis at Nav 2. Keep your wingman close and bring the ship back.
 win      Shelton holds. Good flying; get some rest.
 lose     We lost ground in Shelton. Debrief, and we go again tomorrow.
@@ -170,6 +178,7 @@ node     CRUCIBL
 title    Patrol: the Crucible picket, 2 nav points
 type     patrol
 music    briefing
+fighter  LANCELT
 briefing Pilots, listen up. The Vigilance holds station in the Crucible picket. You and Torch will fly Nav 1, Nav 2 and come home. Intelligence expects 2 Agis at Nav 0; 2 Agis at Nav 1; our Anaxidamus and 3 Cleomenes at Nav 2. Keep your wingman close and bring the ship back.
 win      The Crucible picket holds. Good flying; get some rest.
 lose     We lost ground in the Crucible picket. Debrief, and we go again tomorrow.
@@ -189,6 +198,7 @@ node     CRUCIBL
 title    Patrol: the Crucible picket, 3 nav points
 type     patrol
 music    briefing
+fighter  FRANKLN
 briefing Pilots, listen up. The Vigilance holds station in the Crucible picket. You and Echo will fly Nav 1, Nav 2, Nav 3 and come home. Intelligence expects our Gawain at Nav 0; 4 Nicanders at Nav 2; 2 Convolutions at Nav 3. Keep your wingman close and bring the ship back.
 win      The Crucible picket holds. Good flying; get some rest.
 lose     We lost ground in the Crucible picket. Debrief, and we go again tomorrow.
@@ -210,6 +220,7 @@ node     CRUCIBL
 title    Patrol: the Crucible picket, 2 nav points
 type     patrol
 music    briefing
+fighter  LANCELT
 briefing Pilots, listen up. The Vigilance holds station in the Crucible picket. You and Comet will fly Nav 1, Nav 2 and come home. Intelligence expects our Schroedinger at Nav 0; 5 Nicanders at Nav 1; 4 Nicanders at Nav 2. Keep your wingman close and bring the ship back.
 win      The Crucible picket holds. Good flying; get some rest.
 lose     We lost ground in the Crucible picket. Debrief, and we go again tomorrow.
@@ -228,6 +239,7 @@ node     OLDZIEY
 title    Patrol: Oldziey, 4 nav points
 type     patrol
 music    briefing
+fighter  GAWAIN
 briefing Pilots, listen up. The Vigilance holds station in Oldziey. You and Frost will fly Nav 1, Nav 2, Nav 3, Nav 4 and come home. Intelligence expects a Convolution at Nav 0; an Agis at Nav 1; 3 Convolutions at Nav 2; 2 Aristons at Nav 3. Keep your wingman close and bring the ship back.
 win      Oldziey holds. Good flying; get some rest.
 lose     We lost ground in Oldziey. Debrief, and we go again tomorrow.
@@ -251,6 +263,7 @@ node     OLDZIEY
 title    Patrol: Oldziey, 2 nav points
 type     patrol
 music    briefing
+fighter  GAWAIN
 briefing Pilots, listen up. The Vigilance holds station in Oldziey. You and Kestrel will fly Nav 3, Nav 4 and come home. Intelligence expects our Anaxidamus and 4 Nicanders at Nav 3; 4 Agis at Nav 4. Keep your wingman close and bring the ship back.
 win      Oldziey holds. Good flying; get some rest.
 lose     We lost ground in Oldziey. Debrief, and we go again tomorrow.
@@ -271,6 +284,7 @@ node     OLDZIEY
 title    Patrol: Oldziey, 2 nav points
 type     patrol
 music    briefing
+fighter  GAWAIN
 briefing Pilots, listen up. The Vigilance holds station in Oldziey. You and Drifter will fly Nav 2, Nav 3 and come home. Intelligence expects 2 Cleomenes at Nav 0; 4 Aristons and an Agasicles at Nav 2; 2 Aristons at Nav 3. Keep your wingman close and bring the ship back.
 win      Oldziey holds. Good flying; get some rest.
 lose     We lost ground in Oldziey. Debrief, and we go again tomorrow.
@@ -292,6 +306,7 @@ node     DEFIANC
 title    Patrol: Defiance, 2 nav points
 type     patrol
 music    briefing
+fighter  SCHROED
 briefing Pilots, listen up. The Vigilance holds station in Defiance. You and Prime will fly Nav 1, Nav 2 and come home. Intelligence expects our Schroedinger at Nav 0; our Schroedinger and 4 Aristons at Nav 1; 2 Aristons and an Agasicles at Nav 2. Keep your wingman close and bring the ship back.
 win      Defiance holds. Good flying; get some rest.
 lose     We lost ground in Defiance. Debrief, and we go again tomorrow.
@@ -316,6 +331,7 @@ node     DEFIANC
 title    Patrol: Defiance, one nav point
 type     patrol
 music    briefing
+fighter  SCHROED
 briefing Pilots, listen up. The Vigilance holds station in Defiance. You and Anchor will fly Nav 2 and come home. Intelligence expects our Schroedinger and our Anaxidamus and 4 Agis at Nav 0; 6 Nicanders at Nav 2. Keep your wingman close and bring the ship back.
 win      Defiance holds. Good flying; get some rest.
 lose     We lost ground in Defiance. Debrief, and we go again tomorrow.
@@ -336,6 +352,7 @@ node     DEFIANC
 title    Patrol: Defiance, one nav point
 type     patrol
 music    briefing
+fighter  SCHROED
 briefing Pilots, listen up. The Vigilance holds station in Defiance. You and Torch will fly Nav 1 and come home. Intelligence expects our Schroedinger and 2 Convolutions at Nav 0; 4 Convolutions at Nav 1. Keep your wingman close and bring the ship back.
 win      Defiance holds. Good flying; get some rest.
 lose     We lost ground in Defiance. Debrief, and we go again tomorrow.
@@ -355,6 +372,7 @@ node     LIXIS
 title    Patrol: the Lixis beacon, 2 nav points
 type     patrol
 music    briefing
+fighter  LANCELT
 briefing Pilots, listen up. The Vigilance holds station in the Lixis beacon. You and Echo will fly Nav 2, Nav 3 and come home. Intelligence expects our Lancelot and our Ox and 5 Agis and an Ariston and a Cleomenes at Nav 0; 3 Aristons at Nav 2; our Ox and 3 Cleomenes at Nav 3. Keep your wingman close and bring the ship back.
 win      The Lixis beacon holds. Good flying; get some rest.
 lose     We lost ground in the Lixis beacon. Debrief, and we go again tomorrow.
@@ -380,6 +398,7 @@ node     LIXIS
 title    Patrol: the Lixis beacon, 4 nav points
 type     patrol
 music    briefing
+fighter  LANCELT
 briefing Pilots, listen up. The Vigilance holds station in the Lixis beacon. You and Comet will fly Nav 1, Nav 2, Nav 3, Nav 4 and come home. Intelligence expects our Lancelot and our Ox at Nav 0; 2 Convolutions at Nav 1; 4 Aristons at Nav 2; 2 Aristons and an Agasicles at Nav 3. Keep your wingman close and bring the ship back.
 win      The Lixis beacon holds. Good flying; get some rest.
 lose     We lost ground in the Lixis beacon. Debrief, and we go again tomorrow.
@@ -405,6 +424,7 @@ node     LIXIS
 title    Patrol: the Lixis beacon, 3 nav points
 type     patrol
 music    briefing
+fighter  LANCELT
 briefing Pilots, listen up. The Vigilance holds station in the Lixis beacon. You and Frost will fly Nav 1, Nav 2, Nav 3 and come home. Intelligence expects our Gawain at Nav 0; 5 Aristons and an Agasicles at Nav 1; 2 Cleomenes and an Agasicles at Nav 2; 2 Cleomenes and an Agasicles at Nav 3. Keep your wingman close and bring the ship back.
 win      The Lixis beacon holds. Good flying; get some rest.
 lose     We lost ground in the Lixis beacon. Debrief, and we go again tomorrow.
@@ -428,6 +448,7 @@ node     ATARAXI
 title    Patrol: Ataraxia, one nav point
 type     patrol
 music    briefing
+fighter  GAWAIN
 briefing Pilots, listen up. The Vigilance holds station in Ataraxia. You and Kestrel will fly Nav 1 and come home. Intelligence expects our Gawain and our Ox and 3 Convolutions at Nav 0; our Ox and 4 Cleomenes at Nav 1. Keep your wingman close and bring the ship back.
 win      Ataraxia holds. Good flying; get some rest.
 lose     We lost ground in Ataraxia. Debrief, and we go again tomorrow.
@@ -449,6 +470,7 @@ node     ATARAXI
 title    Patrol: Ataraxia, 4 nav points
 type     patrol
 music    briefing
+fighter  GAWAIN
 briefing Pilots, listen up. The Vigilance holds station in Ataraxia. You and Drifter will fly Nav 1, Nav 2, Nav 3, Nav 4 and come home. Intelligence expects our Schroedinger and 2 Convolutions at Nav 0; 3 Nicanders at Nav 1; 4 Convolutions and an Anaxidamus at Nav 3. Keep your wingman close and bring the ship back.
 win      Ataraxia holds. Good flying; get some rest.
 lose     We lost ground in Ataraxia. Debrief, and we go again tomorrow.
@@ -471,6 +493,7 @@ node     ATARAXI
 title    Patrol: Ataraxia, 2 nav points
 type     patrol
 music    briefing
+fighter  GAWAIN
 briefing Pilots, listen up. The Vigilance holds station in Ataraxia. You and Prime will fly Nav 1, Nav 2 and come home. Intelligence expects our Gawain and 4 Cleomenes at Nav 0; our Gawain and our Anaxidamus and 4 Convolutions at Nav 1; 4 Aristons and an Anaxidamus at Nav 2. Keep your wingman close and bring the ship back.
 win      Ataraxia holds. Good flying; get some rest.
 lose     We lost ground in Ataraxia. Debrief, and we go again tomorrow.
@@ -497,6 +520,7 @@ node     RIGEL
 title    Patrol: the Rigel relay, 3 nav points
 type     patrol
 music    briefing
+fighter  FRANKLN
 briefing Pilots, listen up. The Vigilance holds station in the Rigel relay. You and Anchor will fly Nav 1, Nav 2, Nav 3 and come home. Intelligence expects our Gawain and an Ariston and 2 Convolutions at Nav 0; 6 Nicanders and an Agasicles at Nav 1; 3 Aristons and an Agasicles at Nav 2; 2 Cleomenes and an Agasicles at Nav 3. Keep your wingman close and bring the ship back.
 win      The Rigel relay holds. Good flying; get some rest.
 lose     We lost ground in the Rigel relay. Debrief, and we go again tomorrow.
@@ -526,6 +550,7 @@ node     RIGEL
 title    Patrol: the Rigel relay, 2 nav points
 type     patrol
 music    briefing
+fighter  FRANKLN
 briefing Pilots, listen up. The Vigilance holds station in the Rigel relay. You and Torch will fly Nav 1, Nav 2 and come home. Intelligence expects our Anaxidamus at Nav 0; 4 Agis at Nav 1; our Franklin and 4 Convolutions and our Agasicles at Nav 2. Keep your wingman close and bring the ship back.
 win      The Rigel relay holds. Good flying; get some rest.
 lose     We lost ground in the Rigel relay. Debrief, and we go again tomorrow.
@@ -550,6 +575,7 @@ node     RIGEL
 title    Patrol: the Rigel relay, 4 nav points
 type     patrol
 music    briefing
+fighter  FRANKLN
 briefing Pilots, listen up. The Vigilance holds station in the Rigel relay. You and Echo will fly Nav 1, Nav 2, Nav 3, Nav 4 and come home. Intelligence expects our Franklin at Nav 0; our Anaxidamus and 4 Nicanders at Nav 2; 2 Nicanders at Nav 3; 4 Aristons at Nav 4. Keep your wingman close and bring the ship back.
 win      The Rigel relay holds. Good flying; get some rest.
 lose     We lost ground in the Rigel relay. Debrief, and we go again tomorrow.
@@ -574,6 +600,7 @@ node     BARNARD
 title    Patrol: Barnard's Star, 5 nav points
 type     patrol
 music    briefing
+fighter  LANCELT
 briefing Pilots, listen up. The Vigilance holds station in Barnard's Star. You and Comet will fly Nav 1, Nav 2, Nav 3, Nav 4, Nav 5 and come home. Intelligence expects 2 Nicanders at Nav 2; 2 Convolutions at Nav 3; 4 Convolutions and an Agasicles at Nav 4. Mind the asteroid field along the way. Keep your wingman close and bring the ship back.
 win      Barnard's Star holds. Good flying; get some rest.
 lose     We lost ground in Barnard's Star. Debrief, and we go again tomorrow.
@@ -601,6 +628,7 @@ node     BARNARD
 title    Patrol: Barnard's Star, 3 nav points
 type     patrol
 music    briefing
+fighter  LANCELT
 briefing Pilots, listen up. The Vigilance holds station in Barnard's Star. You and Frost will fly Nav 1, Nav 2, Nav 3 and come home. Intelligence expects an Agis at Nav 0; 2 Agis at Nav 1; 3 Agis at Nav 2; 4 Cleomenes and an Agasicles at Nav 3. Mind the asteroid field along the way. Keep your wingman close and bring the ship back.
 win      Barnard's Star holds. Good flying; get some rest.
 lose     We lost ground in Barnard's Star. Debrief, and we go again tomorrow.
@@ -629,6 +657,7 @@ node     BARNARD
 title    Patrol: Barnard's Star, 3 nav points
 type     patrol
 music    briefing
+fighter  LANCELT
 briefing Pilots, listen up. The Vigilance holds station in Barnard's Star. You and Kestrel will fly Nav 1, Nav 2, Nav 3 and come home. Intelligence expects 4 Aristons and an Anaxidamus at Nav 2; 4 Nicanders at Nav 3. Mind the asteroid field along the way. Keep your wingman close and bring the ship back.
 win      Barnard's Star holds. Good flying; get some rest.
 lose     We lost ground in Barnard's Star. Debrief, and we go again tomorrow.
@@ -653,6 +682,7 @@ node     WOLF359
 title    Patrol: Wolf 359, 3 nav points
 type     patrol
 music    briefing
+fighter  GAWAIN
 briefing Pilots, listen up. The Vigilance holds station in Wolf 359. You and Drifter will fly Nav 1, Nav 2, Nav 3 and come home. Intelligence expects our Gawain at Nav 0; 4 Aristons and an Agasicles at Nav 1; 4 Nicanders and 2 Agasicles at Nav 2. Keep your wingman close and bring the ship back.
 win      Wolf 359 holds. Good flying; get some rest.
 lose     We lost ground in Wolf 359. Debrief, and we go again tomorrow.
@@ -676,6 +706,7 @@ node     WOLF359
 title    Patrol: Wolf 359, 3 nav points
 type     patrol
 music    briefing
+fighter  GAWAIN
 briefing Pilots, listen up. The Vigilance holds station in Wolf 359. You and Prime will fly Nav 1, Nav 2, Nav 3 and come home. Intelligence expects our Gawain at Nav 0; 4 Nicanders at Nav 1; our Ox and 4 Convolutions at Nav 2. Keep your wingman close and bring the ship back.
 win      Wolf 359 holds. Good flying; get some rest.
 lose     We lost ground in Wolf 359. Debrief, and we go again tomorrow.
@@ -698,6 +729,7 @@ node     WOLF359
 title    Patrol: Wolf 359, 3 nav points
 type     patrol
 music    briefing
+fighter  GAWAIN
 briefing Pilots, listen up. The Vigilance holds station in Wolf 359. You and Anchor will fly Nav 1, Nav 2, Nav 3 and come home. Intelligence expects our Gawain and our Ox at Nav 0; 3 Aristons at Nav 1; 4 Convolutions at Nav 2; 2 Cleomenes at Nav 3. Keep your wingman close and bring the ship back.
 win      Wolf 359 holds. Good flying; get some rest.
 lose     We lost ground in Wolf 359. Debrief, and we go again tomorrow.
@@ -721,6 +753,7 @@ node     SHMRN
 title    Patrol: the Shmrn pocket, 5 nav points
 type     patrol
 music    briefing
+fighter  FRANKLN
 briefing Pilots, listen up. The Vigilance holds station in the Shmrn pocket. You and Torch will fly Nav 1, Nav 2, Nav 3, Nav 4, Nav 5 and come home. Intelligence expects our Franklin and our Ox and a Cleomenes at Nav 0; our Franklin and our Anaxidamus at Nav 1; 2 Cleomenes at Nav 2; 4 Aristons and an Agasicles at Nav 4; 4 Convolutions at Nav 5. Keep your wingman close and bring the ship back.
 win      The Shmrn pocket holds. Good flying; get some rest.
 lose     We lost ground in the Shmrn pocket. Debrief, and we go again tomorrow.
@@ -750,6 +783,7 @@ node     SHMRN
 title    Patrol: the Shmrn pocket, 7 nav points
 type     patrol
 music    briefing
+fighter  FRANKLN
 briefing Pilots, listen up. The Vigilance holds station in the Shmrn pocket. You and Echo will fly Nav 1, Nav 2, Nav 3, Nav 4, Nav 5, Nav 6, Nav 7 and come home. Intelligence expects our Franklin at Nav 1; 4 Agis and an Anaxidamus at Nav 4; 4 Aristons at Nav 5; 2 Convolutions at Nav 6; 2 Convolutions at Nav 7. Keep your wingman close and bring the ship back.
 win      The Shmrn pocket holds. Good flying; get some rest.
 lose     We lost ground in the Shmrn pocket. Debrief, and we go again tomorrow.
@@ -778,6 +812,7 @@ node     SHMRN
 title    Patrol: the Shmrn pocket, 6 nav points
 type     patrol
 music    briefing
+fighter  FRANKLN
 briefing Pilots, listen up. The Vigilance holds station in the Shmrn pocket. You and Comet will fly Nav 1, Nav 2, Nav 3, Nav 4, Nav 5, Nav 6 and come home. Intelligence expects 4 Convolutions at Nav 0; our Franklin at Nav 1; 4 Convolutions at Nav 3; 2 Cleomenes at Nav 5; 2 Nicanders and an Agasicles at Nav 6. Keep your wingman close and bring the ship back.
 win      The Shmrn pocket holds. Good flying; get some rest.
 lose     We lost ground in the Shmrn pocket. Debrief, and we go again tomorrow.
@@ -805,6 +840,7 @@ node     SHMRN
 title    Patrol: the Shmrn pocket, 8 nav points
 type     patrol
 music    briefing
+fighter  FRANKLN
 briefing Pilots, listen up. The Vigilance holds station in the Shmrn pocket. You and Frost will fly Nav 1, Nav 2, Nav 3, Nav 4, Nav 5, Nav 6, Nav 7, Nav 8 and come home. Intelligence expects our Lancelot at Nav 3; 4 Aristons and an Anaxidamus at Nav 5; 4 Convolutions at Nav 6; 4 Agis at Nav 7; 4 Cleomenes at Nav 8. Keep your wingman close and bring the ship back.
 win      The Shmrn pocket holds. Good flying; get some rest.
 lose     We lost ground in the Shmrn pocket. Debrief, and we go again tomorrow.
@@ -836,6 +872,7 @@ node     LUYTEN
 title    Patrol: Luyten's Star, 4 nav points
 type     patrol
 music    briefing
+fighter  GAWAIN
 briefing Pilots, listen up. The Vigilance holds station in Luyten's Star. You and Kestrel will fly Nav 1, Nav 2, Nav 3, Nav 4 and come home. Intelligence expects our Ox and our Ariston at Nav 0; 4 Agis at Nav 1; our Ox and 3 Aristons at Nav 2; 4 Aristons at Nav 3; 3 Convolutions at Nav 4. Keep your wingman close and bring the ship back.
 win      Luyten's Star holds. Good flying; get some rest.
 lose     We lost ground in Luyten's Star. Debrief, and we go again tomorrow.
@@ -862,6 +899,7 @@ node     LUYTEN
 title    Patrol: Luyten's Star, 3 nav points
 type     patrol
 music    briefing
+fighter  GAWAIN
 briefing Pilots, listen up. The Vigilance holds station in Luyten's Star. You and Drifter will fly Nav 1, Nav 2, Nav 3 and come home. Intelligence expects our Gawain and our Ox and an Agis at Nav 0; 3 Agis at Nav 1; 4 Convolutions and an Anaxidamus at Nav 2; 2 Convolutions at Nav 3. Keep your wingman close and bring the ship back.
 win      Luyten's Star holds. Good flying; get some rest.
 lose     We lost ground in Luyten's Star. Debrief, and we go again tomorrow.
@@ -887,6 +925,7 @@ node     LUYTEN
 title    Patrol: Luyten's Star, 3 nav points
 type     patrol
 music    briefing
+fighter  GAWAIN
 briefing Pilots, listen up. The Vigilance holds station in Luyten's Star. You and Prime will fly Nav 1, Nav 2, Nav 3 and come home. Intelligence expects our Schroedinger at Nav 0; 5 Agis at Nav 1; our Gawain and our Anaxidamus and 4 Nicanders at Nav 2; 4 Convolutions at Nav 3. Keep your wingman close and bring the ship back.
 win      Luyten's Star holds. Good flying; get some rest.
 lose     We lost ground in Luyten's Star. Debrief, and we go again tomorrow.
@@ -913,6 +952,7 @@ node     LUYTEN
 title    Patrol: Luyten's Star, 7 nav points
 type     patrol
 music    briefing
+fighter  GAWAIN
 briefing Pilots, listen up. The Vigilance holds station in Luyten's Star. You and Anchor will fly Nav 1, Nav 2, Nav 3, Nav 4, Nav 5, Nav 6, Nav 7 and come home. Intelligence expects 4 Aristons at Nav 3; 2 Convolutions and an Agasicles at Nav 4; 4 Agis at Nav 5; 5 Nicanders at Nav 6; 3 Cleomenes at Nav 7. Mind the asteroid field along the way. Keep your wingman close and bring the ship back.
 win      Luyten's Star holds. Good flying; get some rest.
 lose     We lost ground in Luyten's Star. Debrief, and we go again tomorrow.
