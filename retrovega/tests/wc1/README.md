@@ -80,8 +80,11 @@ Facts of its world that ours now shares, or does not:
   player at the 300 setting flies 600 km/s there and 450 here, which is why ours can keep up with one when tailing.
 - **Its afterburner is three times its top speed and instant**: 2,400 km/s within a frame or two. Ours is 2.4 times
   (`ab_kps`) and the player's ramps up at the type's acceleration; an AI's is set at once (`throttle`).
-- **Its fighters shoot at the target itself, not a lead point**: their shots were at 0 degrees off the player's
-  position. Ours do the same (`lead_pct` 0): the passes then come of the target's own motion and the break.
+- **Its fighters shoot at the lead point**: their shots were at 0 degrees off a player flying straight ahead of them
+  (where the lead point lies on the same line) and 4.8 degrees off a crossing one at 2,045 km moving 264 km/s
+  across, which is the lead angle for a 3,300 km/s bolt. Ours do the same (`lead_pct` 100, since 2026-10-30 late:
+  read as 0 at first; with 0 our tail never hit a player flying straight where the old's hit 15% of the time, and
+  our hunters hit a hunting player 4% of their shots against the old's 13%; with 100, 14% and 19%).
 
 ## Ours, tuned to it (the same scene, 2026-10-30)
 
@@ -133,6 +136,8 @@ data/weapons.csv; the guns' energy rule is fablevega's M2):
 | the wingman, player straight | killed two of the three Dralthi (75 shots) and came home | fired 6 shots in 69 s and died: its row pitched and fled; now the fighter's row (`P_WINGMAN`) |
 | what the player flies | the mission's ship: Hornet, Raptor, Scimitar, Rapier by system (the dumps' player record) | each ported mission's `fighter` line (port.py from the dumps); the player had flown the campaign's default, the Redeemer |
 | guns at the launch | full | full (`gunEnergy` 100 at spawn; it was 0 for every AI ship) |
+| the guns' reach | the Hornet's lasers hit from 3,800-4,000 km (the shot-to-hit pairs), the tailing Dralthi fired from 3,645 km (median) | `range_km` 4.5 for the fighters' guns (was 3.0: the bolts died before a receding target), `fire_km` 4,000 |
+| avoidance | the nearest two Dralthi 1,746 km apart, never a collision | `avoid_pct` 350 (with the lead, 300 left the hunted duel with two bumps in 90 s) |
 | the hull under the armour | a laser hit of 14 adds 2-4 to the Dralthi's damage points; it died at 12-27 of them: 4-8 hits on the bare hull, 20 or so from one side in all (its slot 2 took 44 hits over 147 s before dying, slot 3 29 and lived) | `hull` 24 (8 hits; it was 10, 3 hits: a Nicander died after 11 hits in one pass of the hunting player, where the old took 15 in ten seconds and lived) |
 
 Still apart: its speed setting is 2 km/s a point

@@ -915,10 +915,12 @@ static const AiProfile __far k_profiles[P_COUNT] = {
     /* P_FIGHTER: the line fighter, as the old game's Dralthi measured (tests/wc1/README.md): straight at the
      * target at full speed, a hard flat yaw away at 900 km (its passes 250-900 km), round again in a second or two
      * with a dash of afterburner at every pass, a tail at 55% of its speed (437 km/s: under a player's 300 setting, as
-     * the old Dralthi's 466 was under the old player's 600, so it falls back rather than creeps up and bumps), a
-     * volley every 0.75 s, keeps attacking
+     * the old Dralthi's 466 was under the old player's 600, so it falls back rather than creeps up and bumps) firing
+     * from up to 4,000 km at the lead point (its nose sat 4.8 degrees off a crossing player's position: the lead
+     * angle; with no lead its tail never hit a player flying straight, the old's did 15% of the time), a volley every
+     * 0.75 s, keeps attacking
      * when hunted; it yaws (rolling to bring the target level) and does not pitch */
-    { 25000, 3000, 900, 2500, 0, AIM_CONE, PULL_RIGHT | PULL_LEFT, 1, 30, 20, 50, 0, T_CRUISE, 170, 300, 100, 10, 0, 55, 22,
+    { 25000, 4000, 900, 2500, 0, AIM_CONE, PULL_RIGHT | PULL_LEFT, 1, 30, 20, 50, 0, T_CRUISE, 170, 350, 100, 10, 100, 55, 22,
       { { { 0, 0 } }, { { T_PURSUE, 100 } }, { { T_PURSUE, 100 } },
         { { T_PURSUE, 50 }, { T_BREAK, 50 } }, { { T_PURSUE, 60 }, { T_BREAK, 40 } },
         { { T_PURSUE, 70 }, { T_FLEE, 30 } } } },
@@ -940,7 +942,7 @@ static const AiProfile __far k_profiles[P_COUNT] = {
     /* P_WINGMAN: the player's side: keeps station, and fights what comes within 12,000 km exactly as the line
      * fighter does (the old game's wingman flew its fighters' own AI: in the straight run it killed two of the three
      * Dralthi and came home; with its own pitching, fleeing row ours fired 6 shots in 69 s and died) */
-    { 12000, 3000, 900, 2500, 0, AIM_CONE, PULL_RIGHT | PULL_LEFT, 1, 30, 20, 50, 0, T_FORMATION, 170, 300, 100, 10, 0, 55, 22,
+    { 12000, 4000, 900, 2500, 0, AIM_CONE, PULL_RIGHT | PULL_LEFT, 1, 30, 20, 50, 0, T_FORMATION, 170, 350, 100, 10, 100, 55, 22,
       { { { 0, 0 } }, { { T_PURSUE, 100 } }, { { T_PURSUE, 100 } },
         { { T_PURSUE, 50 }, { T_BREAK, 50 } }, { { T_PURSUE, 60 }, { T_BREAK, 40 } },
         { { T_PURSUE, 70 }, { T_FLEE, 30 } } } },
