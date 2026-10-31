@@ -2124,6 +2124,37 @@ static void t_recharge(void)
     REQUIRE(ARMOR(0, 0) == 2, e_armour, 2, ARMOR(0, 0), 0);
 }
 
+/* M2.20: a shot carries the ship's speed along its nose and nothing of its slide (the old game's bolts, read in its
+ * code: the gun's speed plus the dot of the ship's velocity and the gun's line): the player sliding sideways at 50
+ * km a step with the nose ahead fires a shot that flies along the nose at the laser's speed; moving ahead at 40 km a
+ * step, one that flies at the laser's speed plus 40 */
+static void t_forward_only(void)
+{
+    static const char __far e_side[] = "the shot of a ship sliding 50 km a step sideways drifts %d km a step sideways: "
+        "a shot carries the ship's speed along the nose only (gun_fire)";
+    static const char __far e_ahead[] = "its speed along the nose is %d km a step: the laser's %d, the ship's along "
+        "the nose being 0";
+    static const char __far e_plus[] = "a ship moving 40 km a step ahead fires a shot at %d km a step: the laser's %d "
+        "plus the 40";
+    const RvWeapon __far *w = weapon(GUN_TYPE(0, 0));
+    int16_t step;
+    pt_alone(PT_PLAYER);
+    if (!w)
+        return;
+    step = (int16_t)TO_KM(KPS_STEP(w->speed_kps));
+    gVelocityVector[0] = vec3(50 * KM, 0, 0);
+    (void)fireGunFromShip(0, 0);
+    REQUIRE(shots_count() == 1 && labs(shot(0)->vx) < KM, e_side, (int16_t)TO_KM(shot(0)->vx), 0, 0);
+    REQUIRE(labs(TO_KM(shot(0)->vz) - step) <= 1, e_ahead, (int16_t)TO_KM(shot(0)->vz), step, 0);
+    shot_remove(0);
+    GUN_STATE(0, 0) = 0;
+    gVelocityVector[0] = vec3(0, 0, 40 * KM);
+    (void)fireGunFromShip(0, 0);
+    REQUIRE(shots_count() == 1 && labs(TO_KM(shot(0)->vz) - (step + 40)) <= 1, e_plus, (int16_t)TO_KM(shot(0)->vz),
+            step, 0);
+    gVelocityVector[0] = vec3(0, 0, 0);
+}
+
 /* M2.19 */
 static void t_sustain(void)
 {
@@ -2187,6 +2218,34 @@ static void t_hit_volumes(void)
     b = pt_bolt_hits(0, 0, RV_SHIPTYPE_FLAG_HIT_BOX);
     c = pt_bolt_hits(0, 0, RV_SHIPTYPE_FLAG_HIT_SILHOUETTE);
     REQUIRE(a == 1 && b == 1 && c == 1, e_mid, a, b, c);
+}
+
+/* M3.15: a hit does the weapon's damage_near at the muzzle and its damage at the end of its reach, a line between
+ * by the life left (the old game's bolt, read in its code: a laser 10 at the muzzle, 25 at the end): a laser bolt
+ * into a Nicander's middle with all its life does 10, with one step left 25 */
+static void t_damage_grows(void)
+{
+    static const char __far e_hit[] = "a laser bolt through a Nicander's middle did not hit (shot_hit)";
+    static const char __far e_near[] = "a laser bolt fresh from the muzzle hit for %d: the old game's 10 (weapons.csv "
+        "damage_near)";
+    static const char __far e_far[] = "a laser bolt at the end of its reach hit for %d: the old game's 25 (weapons.csv "
+        "damage)";
+    RvVec3 pos, vel = vec3(0, 0, 110 * KM), where;
+    int16_t i, slot = -1, hit, d_near, d_far;
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 3000, 0);
+    pos = vec3(gPositionVector[1].x, gPositionVector[1].y, gPositionVector[1].z + 55 * KM);
+    if ((i = shot_add(0, GUN_TYPE(0, 0), &pos, &vel)) < 0)
+        return;
+    hit = shot_hit(i, &slot, &where);
+    d_near = (int16_t)shot(i)->damage;
+    shot(i)->life = 1;
+    hit = hit && shot_hit(i, &slot, &where);
+    d_far = (int16_t)shot(i)->damage;
+    shot_remove(i);
+    REQUIRE(hit && slot == 1, e_hit, 0, 0, 0);
+    REQUIRE(d_near == 10, e_near, d_near, 0, 0);
+    REQUIRE(d_far == 25, e_far, d_far, 0, 0);
 }
 
 /* M3.13 */
@@ -3426,6 +3485,8 @@ static const char __far n_m2_19[] = "M2.19 sustain (step_timers): the trigger he
     "every third of a second) and keeps its energy";
 static const char __far n_m3_13[] = "M3.13 type-rates (step_timers): gun energy and shields come back at the type's rates";
 static const char __far n_m3_14[] = "M3.14 hit-volumes (shot_hit): a bolt within the radius, in the volume box, through the silhouettes, as the rule says";
+static const char __far n_m3_15[] = "M3.15 damage-grows (shot_hit): a bolt hurts by its life left: the laser 10 at the muzzle, 25 at the end of its reach";
+static const char __far n_m2_20[] = "M2.20 forward-only (gun_fire): a shot carries the ship's speed along the nose, nothing of its slide";
 static const char __far n_m4_1[] = "M4.1 kill (step_deaths, despawn): dying (9), exploding a while, then gone";
 static const char __far n_m4_2[] = "M4.2 dying-quiet (step_fire, AI): a dying ship fires nothing";
 static const char __far n_m4_3[] = "M4.3 player-dies (step_deaths, logic_end): missionStatus 4, the mission lost";
@@ -3487,11 +3548,12 @@ static const PtTest __far k_tests[] = {
     { n_m2_9, t_range, 0 }, { n_m2_10, t_launcher_rounds, 0 }, { n_m2_11, t_destroyed_bit, 0 },
     { n_m2_12, t_energy_gate, 0 }, { n_m2_13, t_muzzles, 0 }, { n_m2_14, t_turrets, 0 }, { n_m2_15, t_shots_full, 0 },
     { n_m2_16, t_volleys, 0 }, { n_m2_17, t_link_fire, 0 }, { n_m2_18, t_syncopated, 0 }, { n_m2_19, t_sustain, 0 },
+    { n_m2_20, t_forward_only, 0 },
     { n_m3_1, t_shield_front, 0 }, { n_m3_2, t_shield_rear, 0 }, { n_m3_3, t_armour, 0 },
     { n_m3_4, t_armour_sides, 0 }, { n_m3_5, t_hull, 0 }, { n_m3_6, t_big_hit, 0 }, { n_m3_7, t_no_wrap, 0 },
     { n_m3_8, t_player_safe, 0 }, { n_m3_9, t_invulnerable, 0 }, { n_m3_10, t_any_source, 0 },
     { n_m3_11, t_shots_hit, 0 }, { n_m3_12, t_recharge, 0 }, { n_m3_13, t_type_rates, 0 },
-    { n_m3_14, t_hit_volumes, 0 },
+    { n_m3_14, t_hit_volumes, 0 }, { n_m3_15, t_damage_grows, 0 },
     { n_m4_1, t_kill, 0 }, { n_m4_2, t_dying_quiet, 0 }, { n_m4_3, t_player_dies, 0 },
     { n_m5_1, t_ai_thunks, 1 }, { n_m5_2, t_ai_turns, 0 }, { n_m5_3, t_ai_closes, 0 }, { n_m5_4, t_ai_fires, 0 },
     { n_m5_5, t_ai_aims, 1 }, { n_m5_6, t_ai_limits, 0 }, { n_m5_7, t_wingman_fights, 0 },

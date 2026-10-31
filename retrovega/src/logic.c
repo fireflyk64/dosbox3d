@@ -467,6 +467,16 @@ static void to_body(int16_t s, const RvVec3 *d, RvVec3 *out)
     out->z = vec_dot(d, &gOrientationFrontVector[s]) / 256;
 }
 
+/* what a shot of s's carries: s's velocity along its nose, positions a step (the old game's bolts, read in its code
+ * 2026-10-31: the gun's speed plus the dot of the ship's velocity and the gun's line, nothing of its slide: a
+ * sliding ship's shots go where its nose points) */
+static RvVec3 carried_of(int16_t s)
+{
+    const RvVec3 *F = &gOrientationFrontVector[s];
+    int32_t along = vec_dot(&gVelocityVector[s], F) / 256;
+    return vec3(FIX_MUL(F->x, along), FIX_MUL(F->y, along), FIX_MUL(F->z, along));
+}
+
 /* s flying along its nose at its speed (after a jump: no momentum the other way to slide off) */
 static void fly_ahead(int16_t s)
 {
@@ -514,8 +524,8 @@ static int16_t gun_of(int16_t s)
  * ==================================================================================================================== */
 
 /* (ship, gun, its weapon): a gun or a turret fires: a shot from its mount (gun_mount), along the nose at the
- * weapon's speed (a turret's toward rvTarget[ship]'s lead point: the ship's mind aims it); the cooldown into
- * GUN_STATE's low bits, the energy off gunEnergy.  Returns 0xFFFF */
+ * weapon's speed plus the ship's own along that line (carried_of; a turret's toward rvTarget[ship]'s lead point:
+ * the ship's mind aims it); the cooldown into GUN_STATE's low bits, the energy off gunEnergy.  Returns 0xFFFF */
 static uint16_t gun_fire(uint16_t ship, uint16_t gun, const RvWeapon __far *w)
 {
     RvVec3 physical_offset, vel;
@@ -525,10 +535,10 @@ static uint16_t gun_fire(uint16_t ship, uint16_t gun, const RvWeapon __far *w)
     (void)gun_mount(ship, gun, &physical_offset);
     if (w->kind == RV_WK_TURRET && target != 0xff && slot_is_ship(target)) {
         /* a turret's shot toward the target's lead point (km from the mount; the shot's time there, twice refined),
-         * the target's velocity less the ship's own: the shot carries the ship's (below) */
-        RvVec3 d, vt = vec3(TO_KM(gVelocityVector[target].x - gVelocityVector[ship].x),
-                            TO_KM(gVelocityVector[target].y - gVelocityVector[ship].y),
-                            TO_KM(gVelocityVector[target].z - gVelocityVector[ship].z));
+         * the target's velocity less what the shot carries of the ship's own (below) */
+        RvVec3 d, c = carried_of((int16_t)ship), vt = vec3(TO_KM(gVelocityVector[target].x - c.x),
+                                                            TO_KM(gVelocityVector[target].y - c.y),
+                                                            TO_KM(gVelocityVector[target].z - c.z));
         int32_t km, tof, kps_step = w->speed_kps / KPS_HZ + 1;
         d = vec3(TO_KM(gPositionVector[target].x - physical_offset.x),
                  TO_KM(gPositionVector[target].y - physical_offset.y),
@@ -561,13 +571,13 @@ static uint16_t gun_fire(uint16_t ship, uint16_t gun, const RvWeapon __far *w)
         front.y += FIX_MUL(R->y, jx) + FIX_MUL(U->y, jy);
         front.z += FIX_MUL(R->z, jx) + FIX_MUL(U->z, jy);
     }
+    /* along the gun's line at the weapon's speed plus the ship's own speed along that line (the old game's rule,
+     * read in its code 2026-10-31: the dot of its velocity and the line, nothing of its slide; the fork's shots
+     * carried the whole velocity and drifted sideways where the old ones did not) */
+    step += vec_dot(&gVelocityVector[ship], &front) / 256;
     vel = vec3(FIX_MUL(front.x, step),
                FIX_MUL(front.y, step),
                FIX_MUL(front.z, step));
-    /* TODO: must we really add the ship's own velocity gVelocityVector[ship] */
-    vel.x += gVelocityVector[ship].x;
-    vel.y += gVelocityVector[ship].y;
-    vel.z += gVelocityVector[ship].z;
     (void)shot_add((int16_t)ship, GUN_TYPE(ship, gun), &physical_offset, &vel);
     GUN_STATE(ship, gun) = (uint8_t)((GUN_STATE(ship, gun) & GUN_DESTROYED) | (w->refire & 0x7F));
      gunEnergy[ship] = (uint16_t)(gunEnergy[ship] > w->energy ? gunEnergy[ship] - w->energy : 0);
@@ -1029,8 +1039,9 @@ static void view_of(int16_t s, int16_t t, int16_t lead, View *v)
     v->km = len_of(v->rel.x, v->rel.y, v->rel.z);
     v->cos_nose = cos_of(&v->rel, v->km);
     /* the lead: the target's move over the shot's flight, twice refined.  The way to fly at (aim) takes the target's
-     * own velocity, as the old game's fighters flew; the guns' test (cos_fire, miss_km) takes it less the ship's,
-     * since a shot carries the ship's velocity (gun_fire) and must meet the target as seen from the ship */
+     * own velocity, as the old game's fighters flew; the guns' test (cos_fire, miss_km) takes it less what a shot
+     * carries of the ship's (its velocity along the nose: carried_of, gun_fire), since the shot must meet the target
+     * as seen from the ship */
     vt = vec3(TO_KM(gVelocityVector[t].x), TO_KM(gVelocityVector[t].y), TO_KM(gVelocityVector[t].z));
     to_body(s, &vt, &w);
     tof = v->km / (kps / KPS_HZ);
@@ -1041,8 +1052,8 @@ static void view_of(int16_t s, int16_t t, int16_t lead, View *v)
                   v->rel.z + (v->aim.z - v->rel.z) * lead / 100);
     alen = len_of(v->aim.x, v->aim.y, v->aim.z);
     v->cos_aim = cos_of(&v->aim, alen);
-    vt = vec3(TO_KM(gVelocityVector[t].x - gVelocityVector[s].x), TO_KM(gVelocityVector[t].y - gVelocityVector[s].y),
-              TO_KM(gVelocityVector[t].z - gVelocityVector[s].z));
+    d = carried_of(s);
+    vt = vec3(TO_KM(gVelocityVector[t].x - d.x), TO_KM(gVelocityVector[t].y - d.y), TO_KM(gVelocityVector[t].z - d.z));
     to_body(s, &vt, &w);
     tof = v->km / (kps / KPS_HZ);
     d = vec3(v->rel.x + w.x * tof, v->rel.y + w.y * tof, v->rel.z + w.z * tof);
@@ -1450,9 +1461,9 @@ static int32_t pass_side(int16_t s, const Mind __far *m, const AiProfile __far *
     return lane;
 }
 
-/* where an attack points the nose: within the guns' reach, the lead point as the ship's own shots fly (its velocity
- * carried: gun_fire), so what the nose is on is what the shots meet; beyond it, the target's own lead point, the
- * old fighters' approach (the ship's velocity shifts as it turns and slides, and so does the shot's way) */
+/* where an attack points the nose: within the guns' reach, the lead point as the ship's own shots fly (its speed
+ * along the nose carried: gun_fire), so what the nose is on is what the shots meet; beyond it, the target's own
+ * lead point, the old fighters' approach (the ship's velocity shifts as it turns, and so does the shot's way) */
 static const RvVec3 *aim_at(const AiProfile __far *p, const View *v)
 {
     return v->km <= p->fire_km ? &v->aim_fire : &v->aim;

@@ -268,7 +268,7 @@ energy. It sets the cooldown and spends the energy itself.
 
 - **A gun or a turret** puts a shot in the world: `shot_add(ship, weapon_type, &muzzle, &velocity)`.
   - The muzzle: the position + right × mount x + up × mount y (scaled by `collide_half(ship) / 32`) + front × the nose (`collide_half / 127 × slot_type(ship)->hit[2]`).
-  - The velocity: front × `KPS_STEP(speed_kps)`, plus the ship's own velocity if bolts should inherit it.
+  - The velocity: front × (`KPS_STEP(speed_kps)` plus the ship's own speed along the front): the old game's bolts take the dot of the ship's velocity and the gun's line, nothing of its slide (`carried_of`).
   - The shot's life is the weapon's range at its speed.
 - **A launcher** puts a missile into a free ship slot: `ET_MISSILE`, `parentShipForShip` the ship, `missileTarget` its target. It returns that slot, which the layer maps across machines. Otherwise it returns 0xFFFF.
 - **Lead, don't aim** (the user's ruling, 2026-10-20): shots fly straight at a finite speed and hit only by meeting the target. No hitscan, no auto-aim.

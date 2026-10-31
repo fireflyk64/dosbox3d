@@ -34,11 +34,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 9                             # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 10                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
                                         # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
-                                        # volume, a weapon's radius, a mission's rules)
+                                        # volume, a weapon's radius, a mission's rules); 10: a weapon's damage at
+                                        # the muzzle
 LIMITS = {'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 12,
           'SEATS': 3, 'TALKS': 4, 'FIELDS': 4, 'SHIPTYPES': 64, 'WEAPONS': 48}
 TEXT = {'ID': 16, 'TITLE': 48, 'BRIEFING': 640, 'RESULT': 128, 'TALK': 60, 'KEY': 10, 'CALLSIGN': 12,
@@ -140,7 +141,8 @@ WEAPON = [('char', 'code[RV_CODE]', '%ds' % TEXT['CODE']), ('char', 'name[RV_WNA
           ('unsigned char', 'type', 'B'), ('unsigned char', 'kind', 'B'), ('unsigned char', 'look', 'B'),
           ('unsigned char', 'lock', 'B'), ('unsigned short', 'damage', 'H'), ('unsigned short', 'speed_kps', 'H'),
           ('unsigned short', 'range_km', 'H'), ('unsigned char', 'refire', 'B'), ('unsigned char', 'energy', 'B'),
-          ('unsigned char', 'lock_tenths', 'B'), ('unsigned char', 'sfx', 'B'), ('unsigned char', 'radius_km', 'B')]
+          ('unsigned char', 'lock_tenths', 'B'), ('unsigned char', 'sfx', 'B'), ('unsigned char', 'radius_km', 'B'),
+          ('unsigned short', 'damage_near', 'H')]
 # the flight's sounds (data/sounds.csv: tools/sfx.py makes them, SFX.DAT): a weapon's (its sfx column) and the
 # effects' (src/fx.c) by name; RV_SFX_NONE none
 SOUNDS = [r['name'] for r in csv.DictReader(open(os.path.join(DATA, 'sounds.csv')))]
@@ -268,13 +270,16 @@ def compile_weapons():
         radius = int(r.get('radius_km') or (BOLT_RADIUS_KM if r['kind'] in ('gun', 'turret') else 0))
         if not 0 <= radius <= 255:
             raise Fail('%s: radius_km %d is not 0 to 255' % (where, radius))
+        # what a hit does at the muzzle (damage_near) and at the end of its reach (damage), a straight line between by
+        # the shot's life left (the old game's: a laser 10 at the muzzle, 25 at the end; blank: the same all the way)
+        near = int(r.get('damage_near') or r['damage'])
         weapons[r['code']] = (t, r['kind'])
         out.append(struct.pack(fmt(WEAPON), text(r['code'], TEXT['CODE'], where), text(r['name'], TEXT['WNAME'], where),
                                t, WEAPON_KINDS.index(r['kind']), WEAPON_LOOKS.index(r['look']),
                                WEAPON_LOCKS.index(r['lock'] or 'none'), int(r['damage']), int(r['speed_kps']),
                                int(round(float(r['range_km']) * 1000)), int(r['refire_frames'] or 0),
                                int(r['energy'] or 0), int(round(float(r['lock_s'] or 0) * 10)),
-                               SOUNDS.index(r['sfx']) if r['sfx'] else SFX_NONE, radius))
+                               SOUNDS.index(r['sfx']) if r['sfx'] else SFX_NONE, radius, near))
     return weapons, out
 
 

@@ -167,6 +167,7 @@ What the tests expect:
 | M2.16 volleys | the player's linked guns, from one shot short of a volley's energy, 10 s of held trigger: every step fires none or the whole group, never part of it; the group's cooldowns stay equal; at least three volleys as the energy comes back |
 | M2.17 link-fire | the same for a group of four (the Redeemer's mass drivers), and for the three left with one of them destroyed |
 | M2.19 sustain | the trigger held 10 s from a full bar: 54-66 shots (the old game's Hornet: 60, a volley of two every third of a second) and the energy still at 50 or more: two lasers at 5 a shot and a refire of 10 are sustained by the default of a point a step |
+| M2.20 forward-only | a ship sliding 50 km a step sideways with its nose ahead fires a shot that flies along the nose at the laser's speed, nothing sideways; moving 40 km a step ahead, at the laser's speed plus 40 (the old game's bolts: the gun's speed plus the ship's along the gun's line) |
 
 ### M3: damage (`do_damage`, `step_shots`, `step_timers`)
 
@@ -206,6 +207,7 @@ What the tests expect:
 | M3.12 recharge | in 20 s the shields come back (never past their most); the armour doesn't |
 | M3.13 type-rates | a type's `gun_energy_steps` and `shield_full_shift` set the rates: with 6 and 4, 10 points of energy in 60 steps, and a shield full in 16 |
 | M3.14 hit-volumes | a laser bolt (radius 10) stepping past a Nicander's middle: 120 km beside it, the sphere rule alone takes it (160 + 10); 100 km above it, the sphere and the volume box (156 up), not the silhouettes (28); through the middle, all three |
+| M3.15 damage-grows | a laser bolt into a Nicander's middle with all its life does 10, with one step left 25: `damage_near` at the muzzle to `damage` at the end of its reach, a line between by the life left (the old game's bolt) |
 
 ### M4: deaths (`step_deaths`, `despawn`, `delayedDespawn`, `logic_end`)
 

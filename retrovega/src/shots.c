@@ -179,6 +179,14 @@ int16_t shot_hit(int16_t i, int16_t *slot, RvVec3 *where)
             *slot = s;
             where->x = hit.x; where->y = hit.y; where->z = hit.z;
             g_hits++;
+            /* what the hit does: the weapon's damage_near at the muzzle, its damage at the end of its reach, a
+             * straight line between by the life left (the old game's bolt, read in its code 2026-10-31: the base
+             * less half the life left, a laser 10 at the muzzle and 25 at the end: a shot from far hurts more) */
+            if (w && w->damage_near != w->damage && w->speed_kps) {
+                int32_t life0 = (int32_t)w->range_km * KPS_HZ / w->speed_kps;
+                if (life0 > 0 && sh->life <= life0)
+                    sh->damage = (uint16_t)(w->damage - ((int32_t)w->damage - w->damage_near) * sh->life / life0);
+            }
             if (shots_on_hit)
                 shots_on_hit(s, where, sh->owner, sh->damage);
             return 1;
