@@ -7,7 +7,8 @@
 // CMD="rv /noquit /lasers -1 /flight 30" runs the game with other arguments (the page's ?cmd=; the laser
 // benchmark logs its "lasers:" and "bolts:" lines); FLIGHT_S is how long the flight lasts (20); PARAMS adds
 // page parameters ("cycles=40000&env.WCNET_PERF=4": the layer's "perf:" lines, emulator speed against the
-// wall clock, are printed at the end).
+// wall clock, are printed at the end); COMBAT=1 takes the autopilot to the first nav point and its enemies after
+// 12 s and fights there for 30 s (with the perf lines, the emulator's speed in a fight).
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs";
@@ -108,8 +109,17 @@ const flying = logs.some((l) => /runHangarMission/.test(l)) || /flight: slot|fli
 console.log(flying ? "ok   the flight started" : "FAIL no flight started (" + (t.split("\n").slice(-3).join(" | ")) + ")");
 await sleep(4000); await shot("flight-4s");
 await sleep(8000); await shot("flight-12s");
+let spent = 12;
+if (process.env.COMBAT) {              // the autopilot to the first nav point and its enemies: a fight, for the perf lines
+  await page.keyboard.press("a");
+  await sleep(6000); await shot("combat-6s");
+  await sleep(24000); await shot("combat-30s");
+  spent += 30;
+  const seen = (await rvlog()).match(/flight: autopilot: on to nav \d+/);
+  console.log(seen ? "ok   " + seen[0] : "note the autopilot did not engage");
+}
 if (!/\/flight /.test(process.env.CMD || "")) {    // (a flight lands when the player calls the carrier: C)
-  await sleep(Math.max(0, flightS - 12) * 1000);
+  await sleep(Math.max(0, flightS - spent) * 1000);
   await page.keyboard.press("c");
 }
 t = await waitLog(/flight: over/, (flightS + 20) * 1000);
