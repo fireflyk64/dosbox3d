@@ -230,7 +230,7 @@ and hit what is where it now is.
    - A `CTL_PUPPET` only coasts: position += velocity.
 5. **`step_shots`**: `shots_move()`, then for each shot `shot_hit(i, &slot, &where)`. On a hit: `do_damage(shot_source(i), slot, shot(i)->damage, RV_WHERE(&where))`, then `shot_remove(i)`. Walk the list backwards when removing.
 6. **`step_missiles`**: missiles are ship slots of type `ET_MISSILE`. They steer like ships, toward `missileTarget[s]`, and burst on a proximity test (`collide_point` or a distance), through `do_damage`.
-7. **`step_collisions`**: `collide_coarse(a, b)`, then `collide_ships(a, b, &push, &depth)`. Move b by `push` (or each by half), and charge both through `do_damage`.
+7. **`step_collisions`**: `collide_coarse(a, b)`, then `collide_ships(a, b, &push, &depth)`. Move b by `push` (or each by half), and charge both through `do_damage`: the old game's cost (`ram_damage`, read in its code: the square of the closing speed in km a step, halved; two fighters head on at their top speeds die of it, a brush costs a few points, a touch at rest nothing), or with the mission's `rules ram=soft` a touch's 2 points and a point per 125 kps closing.
 8. **`step_deaths`**:
    - A ship whose hull is gone gets `shipAiState[s] = 9` and keeps its slot while its explosion lasts. Then `despawn(s)`, or `delayedDespawn(killer, s)`.
    - The player's death sets `missionStatus = 4`.

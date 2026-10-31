@@ -2844,6 +2844,41 @@ static void t_ram(void)
             slot_is_ship(1) ? h1 - low1 : 0, 0);
 }
 
+/* M6.3: what a collision costs is the mission's rule: the old game's (ram=old), the square of the closing speed in
+ * km a step, halved (10 km a step: 50 points), or the soft one (ram=soft: 2 and a point per 125 kps closing: 3) */
+static int16_t pt_ram_cost(uint8_t soft)
+{
+    int32_t h0;
+    uint8_t keep = g_rule_flags;
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 150, TURN / 2);
+    pt_speed(0, 200);                   /* (10 km a step: a set velocity alone decays at the slide rate before the test) */
+    g_rule_flags = (uint8_t)(soft ? keep | RV_RULE_RAM_SOFT : keep & ~RV_RULE_RAM_SOFT);
+    h0 = pt_health(0);
+    if (!pt_step()) {
+        g_rule_flags = keep;
+        return -1;
+    }
+    g_rule_flags = keep;
+    return (int16_t)(h0 - pt_health(0));
+}
+
+static void t_ram_cost(void)
+{
+    static const char __far e_old[] = "closing at 10 km a step under the old rule cost the player %d: the square of the "
+        "closing speed, halved, is 50 (less a point of shield back)";
+    static const char __far e_soft[] = "closing at 10 km a step under the soft rule cost the player %d: 2 and a point per "
+        "125 kps is 3";
+    int16_t old_cost = pt_ram_cost(0), soft_cost;
+    if (old_cost < 0)
+        return;
+    soft_cost = pt_ram_cost(1);
+    if (soft_cost < 0)
+        return;
+    REQUIRE(old_cost >= 49 && old_cost <= 50, e_old, old_cost, 0, 0);
+    REQUIRE(soft_cost >= 2 && soft_cost <= 4, e_soft, soft_cost, 0, 0);
+}
+
 /* M6.2 */
 static void t_no_ghosts(void)
 {
@@ -3526,6 +3561,7 @@ static const char __far n_m5_12[] = "M5.12 old-hunt (aiFighterThink): hunted by 
     "once at most, comes round in time, fires a volley at a time";
 static const char __far n_m6_1[] = "M6.1 ram (step_collisions): ships inside one another are pushed apart, both hurt";
 static const char __far n_m6_2[] = "M6.2 no-ghosts (step_collisions): a ship flown at another does not pass through";
+static const char __far n_m6_3[] = "M6.3 ram-cost (ram_damage): the old rule's square of the closing speed, halved; the soft rule's dozen";
 static const char __far n_m7_1[] = "M7.1 launch (fireGunFromShip): a launcher puts a missile in a ship slot";
 static const char __far n_m7_2[] = "M7.2 missile-key (step_fire): Enter launches one, as many as the rounds";
 static const char __far n_m7_3[] = "M7.3 missile-flies (step_missiles): a dumbfire flies straight at its speed";
@@ -3576,7 +3612,7 @@ static const PtTest __far k_tests[] = {
     { n_m5_5, t_ai_aims, 1 }, { n_m5_6, t_ai_limits, 0 }, { n_m5_7, t_wingman_fights, 0 },
     { n_m5_8, t_formation, 0 }, { n_m5_9, t_no_left, 0 }, { n_m5_10, t_waiter, 0 }, { n_m5_11, t_old_straight, 0 },
     { n_m5_12, t_old_hunt, 0 },
-    { n_m6_1, t_ram, 0 }, { n_m6_2, t_no_ghosts, 0 },
+    { n_m6_1, t_ram, 0 }, { n_m6_2, t_no_ghosts, 0 }, { n_m6_3, t_ram_cost, 0 },
     { n_m7_1, t_launch, 0 }, { n_m7_2, t_missile_key, 0 }, { n_m7_3, t_missile_flies, 0 },
     { n_m7_4, t_missile_hits, 0 }, { n_m7_5, t_missile_homes, 0 }, { n_m7_6, t_missile_ends, 0 },
     { n_m8_1, t_start, 0 }, { n_m8_2, t_nav1, 0 }, { n_m8_3, t_nav_once, 0 }, { n_m8_4, t_won, 0 },

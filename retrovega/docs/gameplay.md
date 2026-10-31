@@ -288,6 +288,7 @@ What the tests expect:
 |---|---|
 | M6.1 ram | a player inside a frozen ship, closing at 10 km a step, is out within 10 steps (or touching: less than 1/16 of its half box deep); both hurt (the lowest their health went: the shields come back) |
 | M6.2 no-ghosts | flown at top speed at a ship 1,500 km ahead, the player is never inside it more than 3 steps in a row, and the collision hurts the ship |
+| M6.3 ram-cost | closing at 10 km a step costs the player 50 under the old rule (the square of the closing speed in km a step, halved) and 3 under `rules ram=soft` |
 
 ### M7: missiles (`fireGunFromShip`'s launchers, `step_missiles`, `step_fire`)
 

@@ -630,9 +630,9 @@ static void guns_fire_ready(uint16_t ship)
  * Collisions (M6): two ships inside one another are parted and both hurt
  * ==================================================================================================================== */
 
-#define RAM_BASE 2                      /* a touch's damage */
-#define RAM_PER 1600                    /* positions a step of closing speed a point more (125 kps: two fighters
-                                           head on at their top speeds bump for a dozen points, as the old games had it) */
+#define RAM_BASE 2                      /* the soft rule (RV_RULE_RAM_SOFT): a touch's damage */
+#define RAM_PER 1600                    /* and positions a step of closing speed a point more (125 kps: two fighters
+                                           head on at their top speeds bump for a dozen points) */
 
 static void bump_away(int16_t s, int8_t dir);   /* (an AI ship's mind after a bump: the AI, below) */
 
@@ -662,12 +662,20 @@ static void ram_shove(int16_t s, const LfVec *push, int16_t part, int16_t into)
     speedLo[s] = speedLo[s] / 4;        /* (a bump takes the way off a ship) */
 }
 
-/* a collision's damage: the two ships' closing speed, positions a step, into points */
+/* a collision's damage to each ship: the old game's rule (read in its code, 2026-10-31; the user: sensible), the
+ * square of the two ships' closing speed in km a step, halved (two fighters head on at 400 kps close at 53 km a
+ * step: 1,400 points, death; a 100-kps brush, 18; a touch at rest, nothing), or the soft rule the mission may ask
+ * for (ram=soft: a touch's RAM_BASE and a point per RAM_PER of closing) */
 static uint16_t ram_damage(int16_t a, int16_t b)
 {
     int32_t closing = len_of(gVelocityVector[a].x - gVelocityVector[b].x, gVelocityVector[a].y - gVelocityVector[b].y,
                              gVelocityVector[a].z - gVelocityVector[b].z);
-    return (uint16_t)(RAM_BASE + closing / RAM_PER);
+    if (g_rule_flags & RV_RULE_RAM_SOFT)
+        return (uint16_t)(RAM_BASE + closing / RAM_PER);
+    closing = TO_KM(closing);
+    if (closing > 360)                  /* (the square fits a word: 64,800) */
+        closing = 360;
+    return (uint16_t)(closing * closing / 2);
 }
 
 /* a and b touch coarsely: the fine test, then the push that parts them (the lighter, by its box, gives way the more;
