@@ -160,7 +160,9 @@ int16_t shot_hit(int16_t i, int16_t *slot, RvVec3 *where)
         if (labs(b.x - gPositionVector[s].x) > r + ax || labs(b.y - gPositionVector[s].y) > r + ay
             || labs(b.z - gPositionVector[s].z) > r + az)
             continue;
-        if (segment_in_sphere(s, &a, &b, r, &hit) || collide_segment(s, &a, &b, &hit, &t)) {
+        /* (the type's choice, ships.csv `hit`: within its radius as the old game's volume was, or its silhouettes alone) */
+        if ((!(slot_type(s)->flags & RV_SHIPTYPE_FLAG_HIT_SILHOUETTE) && segment_in_sphere(s, &a, &b, r, &hit))
+            || collide_segment(s, &a, &b, &hit, &t)) {
             *slot = s;
             where->x = hit.x; where->y = hit.y; where->z = hit.z;
             g_hits++;

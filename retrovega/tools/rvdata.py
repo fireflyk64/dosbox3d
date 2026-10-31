@@ -89,6 +89,8 @@ SHIPTYPE = [('char', 'key[RV_KEY]', '%ds' % TEXT['KEY']), ('char', 'name[RV_NAME
             ('signed char', 'vital[RV_VITALS][3]', '%db' % (3 * 8)),
             ('unsigned char', 'loadout[RV_GUNTABLE]', '%ds' % 0x33)]
 SHIPTYPE_FLAG_PLAYER = 1               # the player may fly it (a cockpit kit exists)
+SHIPTYPE_FLAG_HIT_SILHOUETTE = 2       # ships.csv hit=silhouette: a bolt hits it in its silhouettes only (blank: within its
+                                       # radius too, the old game's volume, for the balancing: shots.c)
 GUN_ENERGY_STEPS = 1                   # blank in ships.csv: the gun energy comes back a point every so many steps (a
                                        # point a step: the old game's Hornet held two lasers at a volley every third
                                        # of a second for a minute, which two guns at 5 a shot and a refire of 10 are
@@ -310,6 +312,8 @@ def compile_all():
         # the ship's size: its half box, km (the old game's measured radii for its counterparts, the user's call of
         # 2026-10-30: 100 for a light fighter, 700 for the carrier); blank: by the sprite's size, a light fighter's
         # 128 px as 100 km, the carrier's 640 as 700
+        if (r.get('hit') or '') not in ('', 'silhouette'):
+            raise Fail('ships.csv %s: hit is blank (within its radius, the old game\'s volume) or silhouette' % r['key'])
         radius = n('radius_km') or (n('lod0_px') * (700 if int(r['type'], 16) >= 0x20 else 100) // (640 if int(r['type'], 16) >= 0x20 else 128))
         # the speed above which a full-rate turn slides, and that with the acceleration absorbers damaged; blank:
         # its top speed (it slides on the afterburner only), and its cruise
@@ -327,7 +331,8 @@ def compile_all():
                 raise Fail('ships.csv %s: %s %d is over 32768' % (r['key'], k, n(k)))
         out_types.append(struct.pack(fmt(SHIPTYPE), text(r['key'], TEXT['KEY'], 'ships.csv'),
                                      text(r['name'], TEXT['NAME'], 'ships.csv'), int(r['type'], 16), n('side'),
-                                     SHIPTYPE_FLAG_PLAYER if r['key'] in cockpit_keys else 0,
+                                     (SHIPTYPE_FLAG_PLAYER if r['key'] in cockpit_keys else 0)
+                                     | (SHIPTYPE_FLAG_HIT_SILHOUETTE if (r.get('hit') or '') == 'silhouette' else 0),
                                      cockpit_keys.index(r['key']) if r['key'] in cockpit_keys else 0xFF,
                                      n('cruise_kps'), n('max_kps'), n('ab_kps'), n('accel'), slide, slide_dmg,
                                      n('yaw_dps'), n('pitch_dps'), n('roll_dps'), guns, n('shield_f'), n('shield_r'),
@@ -564,6 +569,7 @@ def header_text(sizes):
     for k, v in ROLES.items():
         out.append('#define RV_ROLE_%s %d' % (k.upper(), v))
     out.append('#define RV_SHIPTYPE_FLAG_PLAYER %d' % SHIPTYPE_FLAG_PLAYER)
+    out.append('#define RV_SHIPTYPE_FLAG_HIT_SILHOUETTE %d' % SHIPTYPE_FLAG_HIT_SILHOUETTE)
     out.append('#define RV_GUN_ENERGY_STEPS %d' % GUN_ENERGY_STEPS)
     out.append('#define RV_SHIELD_FULL_SHIFT %d' % SHIELD_FULL_SHIFT)
     for i, k in enumerate(SOUNDS):

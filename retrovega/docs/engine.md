@@ -176,6 +176,10 @@ looking at the player's ship) and then jumps it to the nav point. Outside, the w
 opening rows at full width between black bars, with no frame and no HUD (`cockpit_external`), and the player's
 own ship is drawn like any other (`flight.c` the view: `cam_pos`, `cam_basis`, `view_frame`).
 
+A ship type's `hit` column in ships.csv says what a bolt must do to hit it: blank, pass within its `radius_km` of
+its middle (the old game's volume, measured: tests/wc1/README.md) or through its silhouettes; `silhouette`, the
+silhouettes alone (the user's design for later versions; the radius is for the balancing).
+
 The running lights are a shield gauge: whole shields, steady; as the front shield drains they flicker harder (on
 for the shields' share of every eight frames), and a hit flickers them for eight frames; dark with the power plant
 hit or EMCON off.
