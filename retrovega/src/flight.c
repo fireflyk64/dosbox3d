@@ -1709,10 +1709,9 @@ static void gather(void)
         sprintf(g_mfd[0][2], "%dx%d VIEW", g_bench_w, g_bench_h);
     } else
 #endif
-    {
-        strcpy(g_mfd[0][0], "ARROWS TURN");
-        strcpy(g_mfd[0][1], "Q E ROLL");
-        strcpy(g_mfd[0][2], "+ - F S SPD");
+    {                                   /* (nothing: the controls were listed here till the user had them moved out of
+                                           the game, onto the page beside it, 2026-10-31) */
+        g_mfd[0][0][0] = g_mfd[0][1][0] = g_mfd[0][2][0] = 0;
     }
 #ifdef RV_TESTS
     if (g_bolt_demo) {
@@ -1723,14 +1722,16 @@ static void gather(void)
 #endif
     if (g_flight_timed)
         sprintf(g_mfd[0][3], "T-%lu", (FLIGHT_TICKS - (clock240() - g_t0) + 239) / 240);
-    else {
-        static const char __far s_home[] = "C: CALL HOME", s_calling[] = "CALLING HOME";
-        _fstrcpy((char __far *)g_mfd[0][3], g_landing ? s_calling : s_home);
-    }
-    g_st.mfd_text[0][0] = comms_on(0) ? 0 : g_mfd[0][0];   /* (a comm takes the whole VDU) */
-    g_st.mfd_text[0][1] = g_mfd[0][1];
-    g_st.mfd_text[0][2] = g_mfd[0][2];
-    g_st.mfd_text[0][3] = g_mfd[0][3];
+    else if (g_landing) {
+        static const char __far s_calling[] = "CALLING HOME";
+        _fstrcpy((char __far *)g_mfd[0][3], s_calling);
+    } else
+        g_mfd[0][3][0] = 0;
+    for (i = n = 0; i < 4; i++)         /* the lines that say something, from the top (a comm takes the whole VDU) */
+        if (g_mfd[0][i][0] && !comms_on(0))
+            g_st.mfd_text[0][n++] = g_mfd[0][i];
+    while (n < 4)
+        g_st.mfd_text[0][n++] = 0;
     g_st.mfd_text[1][0] = 0;
     g_st.mfd_draw = mfd_draw;
 }

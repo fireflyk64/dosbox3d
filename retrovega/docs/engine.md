@@ -716,8 +716,11 @@ Off by default since 2026-10-20 (`g_bench_wanted` 0): the copies tiled the
 sky in the player's first flight ("many Aera fighters like a benchmark").
 `RV.EXE /bench -1` is the adapting measurement the tests quote (tests
 pass it to tests/flight.txt), `/bench N` a fixed count. Without it the
-left MFD shows the controls instead of the readout — ARROWS TURN, Q E
-ROLL, + - F S SPD — which is how the player learns to roll. Turning it off
+left MFD showed the controls instead of the readout — ARROWS TURN, Q E
+ROLL, + - F S SPD, C: CALL HOME — till the user had them moved out of the
+game onto the page beside it (2026-10-31: out of place on a VDU); the MFD
+now shows only what says something (CALLING HOME while the carrier is
+called, a test's readout), else nothing. Turning it off
 exposed that nothing else capped the frame rate: the simulation is per
 frame (a kps is 12.8 units a frame), and a bare flight ran at ~95 fps
 natively, three times too fast; `flight_frame` now waits out the frame to

@@ -238,7 +238,10 @@ function setSource(s, want) {
                               + " The menu has every program of the games this browser holds; in a room everyone plays the host's.";
   }
   $("source").classList.toggle("loaded", !!s);
-  // The help under the game is the loaded game's own.
+  // The help under the game is the loaded game's own; so are its keys, where it has a list (RetroVega's flight).
+  const keys = s && gameInfo() && gameInfo().keys;
+  $("gameKeys").innerHTML = keys || "";
+  $("gameKeys").hidden = !keys;
   const hints = s && gameInfo() && gameInfo().campaign && gameInfo().campaign.hints;
   $("helpMission").textContent = (hints && hints.help) || (gameInfo() && gameInfo().help)
     || (s ? "The multiplayer hooks do not know this program: it runs single-player." : "Load the game files (step 1): the help is the game's own.");

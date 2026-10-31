@@ -250,6 +250,8 @@ export const GAMES = [
     // machine spends only what the game uses; the browser's emulator does ~70000 on a 2016 desktop core)
     cycles: 50000,
     pointer: { x: 0.5, y: 0.5, rx: 0.5, ry: 0.5 },
+    // the flight's keys, under the picture (the game listed them on a VDU till the user had them moved out of it)
+    keys: "<b>RetroVega in flight:</b> the mouse or the arrow keys steer, <kbd>Q</kbd> and <kbd>E</kbd> roll, <kbd>Space</kbd> or the left button fires; <kbd>+</kbd> and <kbd>-</kbd> set the speed, <kbd>F</kbd> full, <kbd>S</kbd> stop; <kbd>A</kbd> the autopilot, <kbd>T</kbd> the next target; <kbd>F5</kbd> the outside view, <kbd>F1</kbd> the cockpit; <kbd>C</kbd> calls the carrier to land.",
     help: "RetroVega has no flight yet: everyone starts in their own quarters on the TCS Clydesdale and walks the ship, bar, briefing room and deck, saving in the bunk. The host's Fly starts everybody's game. Arrow keys steer the pointer, Tab jumps between the things you can use, Enter uses one.",
     dosbox: "[dosbox]\nmemsize=63\n[dos]\nxms=true\nems=false\numb=true\n[sblaster]\nsbtype=sb16\noplmode=opl3\n" },
 ];
