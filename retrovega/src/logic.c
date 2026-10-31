@@ -523,10 +523,11 @@ static uint16_t gun_fire(uint16_t ship, uint16_t gun, const RvWeapon __far *w)
     RvVec3 front = gOrientationFrontVector[ship];
     (void)gun_mount(ship, gun, &physical_offset);
     if (w->kind == RV_WK_TURRET && target != 0xff && slot_is_ship(target)) {
-        /* a turret's shot toward the target's lead point (km from the mount; the shot's time there, twice refined) */
-        RvVec3 d, vt = vec3(TO_KM(gVelocityVector[target].x),
-                            TO_KM(gVelocityVector[target].y),
-                            TO_KM(gVelocityVector[target].z));
+        /* a turret's shot toward the target's lead point (km from the mount; the shot's time there, twice refined),
+         * the target's velocity less the ship's own: the shot carries the ship's (below) */
+        RvVec3 d, vt = vec3(TO_KM(gVelocityVector[target].x - gVelocityVector[ship].x),
+                            TO_KM(gVelocityVector[target].y - gVelocityVector[ship].y),
+                            TO_KM(gVelocityVector[target].z - gVelocityVector[ship].z));
         int32_t km, tof, kps_step = w->speed_kps / KPS_HZ + 1;
         d = vec3(TO_KM(gPositionVector[target].x - physical_offset.x),
                  TO_KM(gPositionVector[target].y - physical_offset.y),
@@ -906,6 +907,8 @@ typedef struct {
 #define AIM_CONE 250                    /* cos x 256 of the usual fire cone: some 7 degrees */
 #define LOCK_CONE 230                   /* a missile locks with the target within this: some 26 degrees */
 #define TAIL_KM 3500                    /* an attacker behind, this near, is on my tail */
+#define TAIL_HOLD_KM 3000               /* a tail slows to its tail speed this near its target (held at the guns' reach, 4,000,
+                                           it sat at the reach's edge, where its bolts died on a receding target: 3% hits) */
 #define RELAUNCH_STEPS (4 * LOGIC_HZ)   /* missiles no closer together than this */
 
 static const AiProfile __far k_profiles[P_COUNT] = {
@@ -990,7 +993,9 @@ typedef struct {
     int32_t km;
     int16_t cos_nose;                   /* how straight my nose points at it (x 256) */
     int16_t cos_aim;                    /* at its lead point */
-    int16_t cos_fire;                   /* at the lead point as the ship's own shots fly (its velocity carried) */
+    RvVec3 aim_fire;                    /* the lead point as the ship's own shots fly (its velocity carried): the nose
+                                           goes there within the guns' reach (aim_at) */
+    int16_t cos_fire;                   /* at that point */
     int32_t miss_km;                    /* how far the nose's line passes from that point */
     int16_t cos_its;                    /* how straight ITS nose points at me */
     int32_t closing;                    /* how fast the two come together, km a step (negative: apart) */
@@ -1031,6 +1036,7 @@ static void view_of(int16_t s, int16_t t, int16_t lead, View *v)
     d = vec3(v->rel.x + w.x * tof, v->rel.y + w.y * tof, v->rel.z + w.z * tof);
     tof = len_of(d.x, d.y, d.z) / (kps / KPS_HZ);
     d = vec3(v->rel.x + (w.x * tof) * lead / 100, v->rel.y + (w.y * tof) * lead / 100, v->rel.z + (w.z * tof) * lead / 100);
+    v->aim_fire = d;
     alen = len_of(d.x, d.y, d.z);
     v->cos_fire = cos_of(&d, alen);
     v->miss_km = alen * (int32_t)lf_sqrt((uint32_t)(INT32_C(65536) - (v->cos_fire < 0 ? 0 : (int32_t)v->cos_fire * v->cos_fire))) / 256;
@@ -1085,7 +1091,11 @@ static uint8_t leader_of(int16_t s)
 
 static int8_t steer_of(int16_t angle)
 {
-    return (int8_t)clamp32((int32_t)angle * 9 / FULL_AT, -9, 9);
+    int16_t r = (int16_t)clamp32((int32_t)angle * 9 / FULL_AT, -9, 9);
+    if (!r && angle)                    /* (the last degree too: with none under 3 units, 1.1 degrees, a tail's shots
+                                           passed 45 km over a target 3,000 km ahead, every one) */
+        r = (int16_t)(angle > 0 ? 1 : -1);
+    return (int8_t)r;
 }
 
 /* (dx right, dy up, dz ahead): g_turn[s].  The straight way is a yaw and a pitch at once; a profile that banks, or
@@ -1428,6 +1438,14 @@ static int32_t pass_side(int16_t s, const Mind __far *m, const AiProfile __far *
     return lane;
 }
 
+/* where an attack points the nose: within the guns' reach, the lead point as the ship's own shots fly (its velocity
+ * carried: gun_fire), so what the nose is on is what the shots meet; beyond it, the target's own lead point, the
+ * old fighters' approach (the ship's velocity shifts as it turns and slides, and so does the shot's way) */
+static const RvVec3 *aim_at(const AiProfile __far *p, const View *v)
+{
+    return v->km <= p->fire_km ? &v->aim_fire : &v->aim;
+}
+
 /* the tactic's step: the nose, the throttle, the fire; 1 when it is over before its time */
 static int16_t run_tactic(int16_t s, Mind __far *m, const AiProfile __far *p, const View *v)
 {
@@ -1435,10 +1453,10 @@ static int16_t run_tactic(int16_t s, Mind __far *m, const AiProfile __far *p, co
     int32_t cruise = t ? t->cruise_kps : 200, max = t ? t->max_kps : 300;
     switch (m->tactic) {
     case T_PURSUE:                      /* at its lead point; closing, then matching; off before a collision */
-        steer_to(s, p, v->aim.x + pass_side(s, m, p, v), v->aim.y, v->aim.z);
+        steer_to(s, p, aim_at(p, v)->x + pass_side(s, m, p, v), aim_at(p, v)->y, aim_at(p, v)->z);
         /* (closing at full speed, head on too; behind it within the guns' range, at the profile's tail speed; past
          * it, full speed round) */
-        throttle(s, v->km > p->fire_km || v->rel.z < 0 || v->cos_its >= 0 ? max : max * p->tail_pct / 100, v->km > 5000 && m->burn);
+        throttle(s, v->km > TAIL_HOLD_KM || v->rel.z < 0 || v->cos_its >= 0 ? max : max * p->tail_pct / 100, v->km > 5000 && m->burn);
         aim_and_fire(s, m, p, v, 1);
         if (p->break_km && v->km < p->break_km && v->cos_nose > 0 && m->passing) {
             take_tactic(s, m, p, T_BREAK);   /* (the old game's fighters: straight at it, then a hard flat yaw away) */
@@ -1447,7 +1465,7 @@ static int16_t run_tactic(int16_t s, Mind __far *m, const AiProfile __far *p, co
         return v->rel.z < 0 && v->km < TAIL_KM;
     case T_HEADON:                      /* straight at it at full speed, firing; off at the break distance */
     case T_STRAFE:                      /* the same, but through: it keeps going until it has passed */
-        steer_to(s, p, v->aim.x + pass_side(s, m, p, v), v->aim.y, v->aim.z);
+        steer_to(s, p, aim_at(p, v)->x + pass_side(s, m, p, v), aim_at(p, v)->y, aim_at(p, v)->z);
         throttle(s, max, m->burn && v->km > 4000);
         aim_and_fire(s, m, p, v, 1);
         if (p->break_km && v->km < p->break_km && (m->tactic == T_HEADON || (m->passing && v->cos_its < 0))) {
@@ -1456,7 +1474,7 @@ static int16_t run_tactic(int16_t s, Mind __far *m, const AiProfile __far *p, co
         }
         return v->rel.z < 0;            /* (through the pass: the target behind, the dice again) */
     case T_SIT:                         /* still, turning onto it, firing */
-        steer_to(s, p, v->aim.x, v->aim.y, v->aim.z);
+        steer_to(s, p, aim_at(p, v)->x, aim_at(p, v)->y, aim_at(p, v)->z);
         throttle(s, 0, 0);
         aim_and_fire(s, m, p, v, 1);
         return 0;
@@ -1467,7 +1485,7 @@ static int16_t run_tactic(int16_t s, Mind __far *m, const AiProfile __far *p, co
         return 0;
     case T_TORPEDO: {                   /* at a capital ship until a torpedo is away, then off */
         int16_t l = launcher_of(s);
-        steer_to(s, p, v->aim.x, v->aim.y, v->aim.z);
+        steer_to(s, p, aim_at(p, v)->x, aim_at(p, v)->y, aim_at(p, v)->z);
         throttle(s, v->km > 4000 ? max : cruise, 0);
         aim_and_fire(s, m, p, v, v->km < 2000);
         if (m->fire & FIRE_MISSILE) {

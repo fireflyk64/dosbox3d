@@ -118,7 +118,7 @@ record (`P_*` + 1; 0 the type's own), which a mission may set.
 | `turn_pct` | it uses this percent of its type's turn rate at most |
 | `burst` | steps of afterburner at the start of every break (the old games' dash); 0 none |
 | `lead_pct` | how much of the lead it aims off: 100 the shots meet the target, 0 it aims at the target itself (the old games' fighters) |
-| `tail_pct` | behind its target within the guns' range it flies this percent of its top speed |
+| `tail_pct` | behind its target within `TAIL_HOLD_KM` (3,000 km) it flies this percent of its top speed |
 | `fire_gap` | steps between its volleys with the target in the cone (the old game's fighters: one every 0.75 s) |
 | `pick[SIT_*][4]` | the dice: up to four (tactic, weight) a situation |
 
