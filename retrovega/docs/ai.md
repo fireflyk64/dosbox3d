@@ -172,6 +172,22 @@ The rows as they stand:
 | `P_WAITER` | lies in wait up to 30 s, then an interceptor's fight on the afterburner |
 | `P_NOLEFT` | a fighter whose controls cannot turn left: it rolls and pulls up or down instead |
 
+## The wingman's orders
+
+The comm menu (C; docs/engine.md "The VDU pages") sends a wingman (a fighter of the player's side flown by the AI:
+`logic_wingmen`) one of five orders (logic.h `ORDER_*`, `logic_order`), which its mind reads where it chooses its
+target:
+
+| order | the wingman |
+|---|---|
+| break and attack (`ORDER_FREE`, the default) | fights what comes within its profile's `engage_km`, as above |
+| attack my target (`ORDER_ATTACK`) | takes the player's target wherever it is, and goes back to its own fight when that target dies; refused with no enemy targeted |
+| help me out (`ORDER_HELP`) | takes the enemy nearest the player, one whose target is the player first |
+| form on my wing (`ORDER_FORMATION`) | fights nobody and keeps station (`T_FORMATION`) |
+| return to base (`ORDER_RTB`) | fights nobody and circles the nearest capital ship of its side (`T_ESCORT` on it); refused without one |
+
+An order ends the tactic it was in, so the next step picks afresh. M10.6 checks each.
+
 ## Adding a behaviour
 
 - **A new character:** a row in `k_profiles` and a name in the `P_*` enum (and tools/rvdata.py's `PROFILES`, in

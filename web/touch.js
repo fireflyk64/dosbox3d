@@ -104,7 +104,7 @@ export function initTouch({ send: sendKey, log }) {
     show(on) {
       bar.hidden = !(on && touchy());
       if (bar.hidden) { fireOff(); field.blur(); }
-      if (on && !bar.hidden) log("touch: KEYS (the keyboard), ESC and FIRE under the picture");
+      if (on && !bar.hidden) log("touch: KEYS (the keyboard), ESC, TARGET, COMM, MISSILE and FIRE under the picture");
     },
   };
 }

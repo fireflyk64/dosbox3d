@@ -239,6 +239,14 @@ and hit what is where it now is.
 `logic_hud()` is called after the world is drawn, once per band of rows. It
 may only draw with hud.h's calls (below).
 
+The cockpit's keys reach the logic through logic.h (so the play tests cover them, M10): `logic_target_next`,
+`logic_target_nearest`, `logic_target_lock` and `logic_target_ahead` (the target key only in front of the pilot, the
+lock: the user's rulings of 2026-10-31), `logic_guns_next`, `logic_gun_types`, `logic_gun_selected`,
+`logic_missile_next` and `logic_launcher` (the weapon choice, `g_sys.gun_sel` and `launcher_sel`), `logic_nav_km`
+(the nav page), `logic_wingmen`, `logic_order` and `logic_order_of` (the wingman's orders, docs/ai.md), and the
+player's systems (`SYS_*`, `logic_system_name`: the old game's nine, hurt by hits through the armour). The missile
+lock (`lock_tick`, `g_sys.lock`, `lock_pct`, `lock_kind`) runs in the player's step.
+
 ## Firing
 
 ### The data

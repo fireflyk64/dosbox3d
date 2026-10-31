@@ -29,8 +29,8 @@ connection to the service is unreliable). Each item below is one commit; the sta
 | E2 | the wingman's orders in its mind: formation (`T_FORMATION` until ordered off), attack my target (the player's target, pursued wherever it goes), break and attack (free engagement, the default), help me out (whoever tails the player), return to base (the leave to the carrier); it answers on the comm with its own voice | done (M10.6; logic_order) |
 | F1 | the missile lock: the chosen missile's seeker (weapons.csv `lock`): heat only from the target's rear arc, image with the nose on it, friend-or-foe at once on the target else the nearest enemy, dumbfire never (straight); the lock builds over `lock_s` with the target in the seeker's cone and is lost out of it; none with the track wrecked | done (M10.7; logic.c lock_tick) |
 | F2 | the lock display on the HUD: a Top Gun style reticle closing on the target as the lock builds, solid when locked, with the seeker's name; the lock lamp follows it | done (logic_hud: the closing diamond, the double one locked) |
-| G1 | the page's key list (web/gamefiles.js `keys`) and the phone buttons (web/touch.js) for the new keys | todo |
-| H1 | docs: docs/ai.md (the new tactics and the orders), docs/engine.md (the VDUs, the locks), docs/gameplay.md (the tests) | todo |
+| G1 | the page's key list (web/gamefiles.js `keys`) and the phone buttons (web/touch.js) for the new keys | done (gamefiles.js keys; touch.js Target, Comm, Missile buttons) |
+| H1 | docs: docs/ai.md (the new tactics and the orders), docs/engine.md (the VDUs, the locks), docs/gameplay.md (the tests) | done |
 
 Each item that touches the logic gets a play test (tests/play/playtest.c) run on the host and in DOS
 (`tests/play/playtest.sh --dos`), and the deploy to the page follows each commit that changes RV.EXE.

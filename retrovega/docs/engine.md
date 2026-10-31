@@ -732,16 +732,22 @@ identified), PASSIVE (the scope unidentified), OFF (a dark scope, the
 running lights off, the smallest signature). The sensor mode (V): the
 lock's seeker, radar (needs EMCON ACTIVE and the IFF) or infrared (needs a
 hot target: its engines toward us, or burning). IFF (I): off, every
-contact one colour. Master arm (M), decoys (X), hold the lock (L), the
-radar range (G: 4,000 / 8,000 / 16,000 km), the survival display's page
-(H: shields and armour, hull and damage, the nav point), the nav point
-(N), the target (T next, Y the nearest enemy; the nearest at launch;
-AUTO keeps it so), comms muted (C: no comm faces, no hails), the
+contact one colour. Master arm (M), decoys (X), the target lock (L: the
+chosen target kept through T, Y and AUTO; none with the tracking system
+wrecked), the radar range (R: 4,000 / 8,000 / 16,000 km), the survival
+display's page (H: shields and armour, hull and damage, the nav point),
+the nav point (N: the next, and the nav page on the left VDU), the target
+(T the next in front of the pilot, nearest the nose first; Y the nearest
+enemy in front; the nearest at launch; AUTO keeps it so: logic.c's
+`logic_target_*`, the user's ruling of 2026-10-31), the guns the trigger
+fires (G: all, or one type) and the missile (W), the damage readout (D),
+the comm menu (C, below), comms muted (U: no comm faces, no hails), the
 afterburner (Tab held: the ship's afterburner speed, fuel for about 11 s,
 heat), eject (Ctrl+E twice within two seconds, or the handle: the mission
-ends ejected). The LOCK lamp is the target held in an 11-degree cone
-within 6,000 km by a seeker the switches allow; MASTER WARN blinks for a
-damaged system or a shield under a quarter. The radio tunes itself to
+ends ejected; none with the ejector wrecked). The LOCK lamp is the missile
+lock (logic.c's `lock_tick`: the chosen missile's seeker on the target,
+below); MASTER WARN blinks for a damaged system or a shield under a
+quarter. The radio tunes itself to
 whoever starts talking (WING 267 MHz for a pilot, GUARD 243 for an
 alien's hail: the real military distress frequency; CARRIER 315 for the
 carrier), its digit knobs stepping there a notch every third frame. The
@@ -1732,6 +1738,63 @@ An alien's speech step is 1.6 ms, its eyes' 0.8 ms; the aliens' art is 18
 KB for six. Nearly all of it is XMS calls: a row rebuilt is four reads and
 a write, a row drawn one move. The picture held in conventional memory
 (9 KB) would make the draw a `rep movsd` a row, about 0.1 ms.
+
+### The VDU pages: the target, the weapons, the damage, the nav and comm menus
+
+The user's brief (2026-10-31): T (even with the target unchanged) puts
+the target's top-down wireframe with its shields and hull on a VDU; D a
+damage readout, and the damage and weapon-select displays show the
+player's own ship the same way with the live guns and the chosen missile;
+N a nav menu, the chosen point a white cross in the view; C a comm menu
+for the wingman's orders; the VDUs take the readouts' small font. vdu.c:
+
+- **The right VDU** carries the target page (T, Y), the weapons page (G,
+  W) and the damage page (D); **the left** the status lines, the nav page
+  (N) and the comm menu (C). A comm face on a VDU draws over its page
+  (comms.c); the right VDU is dark with the targeting display's damage
+  overlay on.
+- **The wireframe** (`vdu_wire`) is the type's silhouette from above
+  (collide.c's mask, `collide_mask`): the outline of its solid cells
+  fitted to the ship's proportions (`hit`, the silhouettes' half
+  extents), the nose up, in white; a type without silhouettes draws its
+  box. Round it (`vdu_ship`) the front and rear shields are bars outside
+  and the four armour faces bars inside, each as long as what is left,
+  in the survival display's colours (lit shield 79, lit armour 70, spent
+  black: the user's rulings of 2026-10-23).
+- **The target page:** the target's name (its type's), its range, its
+  hull left, and the ship. **The weapons page:** the guns the trigger
+  fires (GUNS: ALL, or a type's code), the own ship with a dot at each
+  gun's mount on its leading edge (amber a gun that fires, grey one the
+  choice leaves out, red one destroyed), the chosen missile's code and
+  the rounds of its kind. **The damage page:** NO DAMAGE or DAMAGE n, the
+  own ship, and one hurt system named with its level as four boxes (the
+  old game's light, moderate, heavy, destroyed; red when destroyed); D
+  again names the next.
+- **The nav page:** HOME and the nav points with how far each is, the
+  chosen one in white; N steps to the next. **The comm menu:** SEND TO
+  the wingmen (by callsign, from their mission records) and the carrier;
+  a wingman's page offers 1 attack my target, 2 break and attack, 3 form
+  on my wing, 4 help me out, 5 return to base; the carrier's 1 request
+  landing; 0 or Esc closes. An order goes to the wingman's mind
+  (logic.h's `logic_order`, docs/ai.md) and the pilot says the line on
+  the left VDU in the hero's face, the wingman answering on the right in
+  its own once the pilot's comm is over (a refusal: Negative); INTERCOM
+  OUT when the intercom is wrecked.
+- **The text** is panel.c's 3 x 5 readout font (`panel_tiny`, 4 px a
+  character, six px a line): thirteen lines on the Schroedinger's 85-px
+  VDU, seven on the Franklin's; a menu goes into columns where the VDU
+  is wide, its lines cut to the VDU's width, and a page of rows from
+  the chosen line.
+- **The HUD** (logic.c's `logic_hud`) draws a white cross where the
+  chosen nav point lies on the view, and the missile lock as an amber
+  diamond closing on the target's brackets as the lock builds, a white
+  double diamond tight about them when it is locked (nothing for a
+  dumbfire). The lock itself: a heat seeker only from the target's rear
+  arc (its engines toward the player, or its afterburner lit) with the
+  EMCON not off, image recognition with the radar on, friend-or-foe with
+  the radar on and the IFF, each with the target within 26 degrees and
+  the weapon's range for its lock time (weapons.csv `lock_s`), lost the
+  step it leaves them; none with the tracking wrecked.
 
 ### Balls: the spherical projectiles
 
