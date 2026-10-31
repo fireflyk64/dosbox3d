@@ -109,11 +109,29 @@ What the tuning set, all in the line fighter's row of `k_profiles` (docs/ai.md) 
 - attackers of one target spread a hull's width apart (`pass_pct` 170) and steer round anything closing within
   three hull sums (`avoid_pct` 300).
 
-Still apart: its afterburner reaches 3 times the top speed (ours 2.4, `ab_kps`); its Dralthi turns up to 196
-degrees a second at the 90th percentile where our Nicander's rate is 157 (`yaw_dps` 105 at 1.5: raise it to 125
-for the old feel); its hunted passes spread wider (a tenth over 1,400 km, ours 1,000); its fighters open fire some
-25 s after the arrival where ours, starting at the arrival's positions, fire at 9 s; and our wingman's dumbfires hit
-the player now and then (24 points a hit, 2-5 a flight: friendly fire down the line of its shot).
+## The ships themselves, and the guns (the user's play report, 2026-10-30)
+
+The same traces say what the ships are made of and how the guns run, and these were set to match (data/ships.csv,
+data/weapons.csv; the guns' energy rule is fablevega's M2):
+
+| what | the old game | ours now |
+|---|---|---|
+| the Dralthi's guns | two (gun indices 0 and 1 in its F lines), 14 points a hit | the Nicander's 2xPH3 at 3 (it had 2xPH2 2xPH3: 20 a volley against the Dralthi's 28 at 14, that is 3.3 times the hurt) |
+| the Dralthi's top speed, turn | the 400 setting at 2 km/s a point; 161-196 degrees a second | `max_kps` 530 at 1.5 (was 500), `yaw_dps` 125 x 1.5 = 187 (was 105: 157) |
+| shields and armour (front/rear; f/r/l/rt) | Hornet 40/40, 45/40/30/30; Dralthi 50/50, 45/35/30/30; Raptor 60/50, 85/80/65/65 | x 3/14 (a laser hit of 14 is 3 here): Schroedinger 9/9, 10/9/6/6; Nicander 11/11, 10/8/6/6; Gawain 13/11, 18/17/14/14 |
+| a shield back from nothing | 15 s (a point every 0.3 s over the Dralthi's 50) | 17 s (`SHIELD_FULL_SHIFT` 9; was 8.5 s) |
+| the player's trigger held | 6 shots a second (two lasers, a volley every third of a second) for a minute, 4 in every seventh second | the energy back a point a step, a laser 5 a shot at a refire of 10 steps: 60 shots in 10 s, sustained (M2.10); it was 20 shots in the first second, then 2-3 a second with one gun at a time, the user's "only one gun comes out" |
+| the hunting player's hits | 1,184 shots, 80 hits (7%) in 190 s, two Dralthi dead | 500 shots, 27 hits (5%) before this round: the fire rate, not the hit box, was the gap (bolts are segment-tested, shots.c) |
+| the wingman, player straight | killed two of the three Dralthi (75 shots) and came home | fired 6 shots in 69 s and died: its row pitched and fled; now the fighter's row (`P_WINGMAN`) |
+| what the player flies | the mission's ship: Hornet, Raptor, Scimitar, Rapier by system (the dumps' player record) | each ported mission's `fighter` line (port.py from the dumps); the player had flown the campaign's default, the Redeemer |
+| guns at the launch | full | full (`gunEnergy` 100 at spawn; it was 0 for every AI ship) |
+
+Still apart: its afterburner reaches 3 times the top speed (ours 2.4, `ab_kps`); its speed setting is 2 km/s a point
+and ours 1.5 (`KPS_HZ`: a player at the 300 setting flies 600 km/s there and 450 here, so the Dralthi that tailed the
+straight player at 466 km/s fell behind and turned on the wingman, where ours keep up: the user's flight model's
+call); its hunted passes spread wider (a tenth over 1,400 km, ours 1,000); its fighters open fire some 25 s after the
+arrival where ours, starting at the arrival's positions, fire at 9 s; the Salthi, Krant, Gratha and Jalthi loadouts
+and hides are not measured yet (the Salthi's two guns are known).
 
 ## What is still to measure
 

@@ -743,7 +743,7 @@ static uint16_t missile_launch(uint16_t ship, uint16_t gun, const RvWeapon __far
         ARMOR(s, k) = 0;
     damagePoints[s] = 0;
     coreHp[s] = 0;
-    gunEnergy[s] = 0;
+    gunEnergy[s] = 100;                 /* (full: the old game's ships fire from the first second) */
     gunDamage[s] = 0;
     engineFlag[s] = 0;
     GUN_COUNT(s) = 0;
@@ -923,11 +923,13 @@ static const AiProfile __far k_profiles[P_COUNT] = {
       { { { 0, 0 } }, { { T_TORPEDO, 70 }, { T_PURSUE, 30 } }, { { T_TORPEDO, 60 }, { T_PURSUE, 40 } },
         { { T_BREAK, 70 }, { T_EVADE, 30 } }, { { T_BREAK, 70 }, { T_LOOP, 30 } },
         { { T_FLEE, 60 }, { T_PURSUE, 40 } } } },
-    /* P_WINGMAN: the player's side: keeps station, fights what comes near like a fighter */
-    { 12000, 3000, 900, 0, AIM_CONE, PULL_ALL, 0, 30, 25, 50, 0, T_FORMATION, 170, 300, 100, 10, 0, 60, 22,
-      { { { 0, 0 } }, { { T_PURSUE, 70 }, { T_HEADON, 30 } }, { { T_PURSUE, 80 }, { T_HEADON, 20 } },
-        { { T_BREAK, 50 }, { T_EVADE, 50 } }, { { T_PURSUE, 60 }, { T_BREAK, 40 } },
-        { { T_FLEE, 50 }, { T_PURSUE, 50 } } } },
+    /* P_WINGMAN: the player's side: keeps station, and fights what comes within 12,000 km exactly as the line
+     * fighter does (the old game's wingman flew its fighters' own AI: in the straight run it killed two of the three
+     * Dralthi and came home; with its own pitching, fleeing row ours fired 6 shots in 69 s and died) */
+    { 12000, 3000, 900, 0, AIM_CONE, PULL_RIGHT | PULL_LEFT, 1, 30, 20, 50, 0, T_FORMATION, 170, 300, 100, 10, 0, 60, 22,
+      { { { 0, 0 } }, { { T_PURSUE, 100 } }, { { T_PURSUE, 100 } },
+        { { T_PURSUE, 50 }, { T_BREAK, 50 } }, { { T_PURSUE, 60 }, { T_BREAK, 40 } },
+        { { T_PURSUE, 70 }, { T_FLEE, 30 } } } },
     /* P_CAPITAL: holds its course; its turrets and launchers are aiShipThink's */
     { 8000, 6000, 0, 0, AIM_CONE, PULL_ALL, 0, 0, 0, 100, 0, T_CRUISE, 100, 100, 100, 0, 100, 100, 0,
       { { { 0, 0 } }, { { T_CRUISE, 100 } }, { { T_CRUISE, 100 } }, { { T_CRUISE, 100 } }, { { T_CRUISE, 100 } },
