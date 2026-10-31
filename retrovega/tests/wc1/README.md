@@ -105,7 +105,9 @@ What the tuning set, all in the line fighter's row of `k_profiles` (docs/ai.md) 
   it is behind, over as soon as the nose is on it;
 - yaws, with a roll to bring the target level, and does not pitch (`pulls` right and left, `bank` 1: within 20
   degrees of the nose a yaw and a pitch at once for the fine aim), as the old fighters' turns were flat;
-- a tail at 60% of its top speed (`tail_pct`) behind the target within the guns' range;
+- a tail at 55% of its top speed (`tail_pct`: 437 km/s, under a player's 300 setting as the old Dralthi's 466 was under
+  the old player's 600; at 60% of the new 530 top it crept up on a straight player and bumped it) behind the target
+  within the guns' range;
 - attackers of one target spread a hull's width apart (`pass_pct` 170) and steer round anything closing within
   three hull sums (`avoid_pct` 300).
 

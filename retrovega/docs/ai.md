@@ -126,7 +126,7 @@ The rows as they stand:
 | profile | character |
 |---|---|
 | `P_INTERCEPTOR` | light and fast: head-on passes and pursuits, strafes near, evades when tailed, runs at 30% hull; yaws, no pitch |
-| `P_FIGHTER` | the line fighter, as the old game's Dralthi measured (tests/wc1/README.md): straight at the target at full speed, a hard flat yaw away at 900 km with a dash, round again in a second or two, a tail at 60%, a volley every 0.75 s; runs at 20% |
+| `P_FIGHTER` | the line fighter, as the old game's Dralthi measured (tests/wc1/README.md): straight at the target at full speed, a hard flat yaw away at 900 km with a dash, round again in a second or two, a tail at 55% (under a player's cruise, so it falls back rather than creeps up and bumps), a volley every 0.75 s; runs at 20% |
 | `P_HEAVY` | slow and armoured: head on mostly, breaks rather than jinks, rarely runs |
 | `P_ACE` | strafing runs, hard evasion, never runs, uses the afterburner half the time |
 | `P_BOMBER` | torpedo runs at capital ships, else a heavy's fight; runs at 25% |
