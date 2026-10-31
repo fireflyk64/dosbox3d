@@ -75,7 +75,8 @@ for f in art/ships/SHIP*.RV; do
     s="$OUT/$(basename "${f%.RV}").RVS"
     h="${s%.RVS}.RVH"
     t="$(basename "$f")"; t="${t#SHIP}"; t="${t%.RV}"
-    if [ "$((16#$t))" -ge 32 ]; then
+    case "$t" in [01]?) capital=0 ;; *) capital=1 ;; esac
+    if [ "$capital" = 1 ]; then
         # a capital ship (types 0x20 up: 37 views at 384-512 px): from half size down, rolls at two sizes; and the
         # block mode's at a quarter, drawn as 4 x 4 blocks (web/rvsets.js makes the same for the page)
         [ "$s" -nt "$f" ] && [ "$s" -nt tools/rvsprites.c ] && [ "$s" -nt src/lightfield.c ] || build/host/rvsprites "$f" "$s" 3 3 2 > /dev/null
