@@ -386,6 +386,7 @@ tests cover them; flight.c's keys (T, Y, L) and its AUTO call them.
 | M10.1 target-front | three enemies about a still player (ahead, 45° right, behind): T picks the one nearest the nose in front, T again the next by the angle, T again round to the first and never the one behind; Y the nearest enemy in front; the player turned round, T picks the one that was behind; with nothing in front T keeps the target it has |
 | M10.2 target-lock | L locks the target (`g_sys.hold`): T and Y leave it; L again unlocks; a locked target that dies is dropped with its lock; with `systemDamage[SYS_TRACK]` wrecked L refuses, and a lock held when the tracking is wrecked goes |
 | M10.3 systems | hits of 20 through the bare front to the hull hurt a system within 40 (a point each, its cockpit overlay bit set), a GUNS point is a gun destroyed; the shield generator wrecked, the front shield stays at 0 for 10 s and comes back once whole; the power plant wrecked, the gun energy stays |
+| M10.4 weapon-choice | the Lancelot (two particle cannons, two ion guns, heat seekers and image-recognition missiles): G cycles the choice over all, the first type, the second, all again; with the second chosen the trigger fires its two guns and none of the other; W cycles the launchers, and the missile key fires the chosen one |
 
 ## The memory: where everything lives
 

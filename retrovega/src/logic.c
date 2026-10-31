@@ -382,17 +382,81 @@ static void target_tick(void)
 /* 3. the fire loop: who pulls a trigger this step (the player's g_pilot.guns with g_sys.armed, g_pilot.missile;
  * the AI's own decisions) and which guns are ready (cooled, the energy there): each one fired through the
  * fireGunFromShip thunk (or maybe_fire_all_guns), which makes the shot */
-/* a ship's launcher with rounds left: the first (the panel has no weapon choice yet), -1 none */
+static void guns_fire_ready(uint16_t ship);
+
+static int16_t is_launcher(int16_t s, int16_t g)
+{
+    const RvWeapon __far *w = weapon(GUN_TYPE(s, g));
+    return w && (w->kind == RV_WK_MISSILE || w->kind == RV_WK_TORPEDO || w->kind == RV_WK_ROCKET);
+}
+
+/* a ship's launcher with rounds left: the first, or, the player's, the one chosen (g_sys.launcher_sel: the n-th
+ * launcher) when it has rounds; -1 none */
 static int16_t launcher_of(int16_t s)
 {
-    int16_t g;
+    int16_t g, n = 0, first = -1;
     for (g = 0; g < GUN_COUNT(s); g++) {
-        const RvWeapon __far *w = weapon(GUN_TYPE(s, g));
-        if (w && (w->kind == RV_WK_MISSILE || w->kind == RV_WK_TORPEDO || w->kind == RV_WK_ROCKET)
-            && !(GUN_STATE(s, g) & GUN_DESTROYED) && (GUN_STATE(s, g) & 0x7F))
-            return g;
+        if (!is_launcher(s, g))
+            continue;
+        if (!(GUN_STATE(s, g) & GUN_DESTROYED) && (GUN_STATE(s, g) & 0x7F)) {
+            if (s == 0 && rvController[0] == CTL_PLAYER && n == g_sys.launcher_sel)
+                return g;
+            if (first < 0)
+                first = g;
+        }
+        n++;
     }
-    return -1;
+    return first;
+}
+
+/* --- the player's weapon choice (logic.h) --- */
+
+int16_t logic_gun_types(uint16_t *out, int16_t max)
+{
+    int16_t g, n = 0, i;
+    for (g = 0; g < GUN_COUNT(0) && n < max; g++) {
+        const RvWeapon __far *w = weapon(GUN_TYPE(0, g));
+        if (!w || (w->kind != RV_WK_GUN && w->kind != RV_WK_TURRET))
+            continue;
+        for (i = 0; i < n && out[i] != GUN_TYPE(0, g); i++)
+            ;
+        if (i == n)
+            out[n++] = GUN_TYPE(0, g);
+    }
+    return n;
+}
+
+int16_t logic_guns_next(void)
+{
+    uint16_t types[8];
+    int16_t n = logic_gun_types(types, 8);
+    g_sys.gun_sel = (uint8_t)(n > 1 ? (g_sys.gun_sel + 1) % (n + 1) : 0);   /* (one type: the choice is all of them) */
+    return g_sys.gun_sel;
+}
+
+int16_t logic_gun_selected(int16_t g)
+{
+    uint16_t types[8];
+    int16_t n;
+    if (!g_sys.gun_sel)
+        return 1;
+    n = logic_gun_types(types, 8);
+    return g_sys.gun_sel <= n && GUN_TYPE(0, g) == types[g_sys.gun_sel - 1];
+}
+
+int16_t logic_missile_next(void)
+{
+    int16_t g, n = 0;
+    for (g = 0; g < GUN_COUNT(0); g++)
+        if (is_launcher(0, g))
+            n++;
+    g_sys.launcher_sel = (uint8_t)(n ? (g_sys.launcher_sel + 1) % n : 0);
+    return g_sys.launcher_sel;
+}
+
+int16_t logic_launcher(void)
+{
+    return launcher_of(0);
 }
 
 static void step_fire(void)
@@ -407,8 +471,11 @@ static void step_fire(void)
                 (void)fireGunFromShip(0, (uint16_t)g);
             }
         }
-        if (g_pilot.guns) {
-            maybe_fire_all_guns(0);
+        if (g_pilot.guns) {             /* (the trigger: all the guns, or the type chosen: guns_fire_ready) */
+            if (g_sys.gun_sel)
+                guns_fire_ready(0);
+            else
+                maybe_fire_all_guns(0);
         }
     }
     /* the minds' choices (aiFighterThink, aiShipThink left them in g_mind): through the thunks */
@@ -445,8 +512,8 @@ static const uint8_t __far k_sys_overlay[SYS_COUNT] = {
     21,                                 /* REPAIR: (none) */
     0                                   /* GUNS: weapons */
 };
-static const char __far k_sys_name[SYS_COUNT][13] = {
-    "ACCEL ABSORB", "POWER PLANT", "SHIELD GEN", "COMPUTER", "INTERCOM", "TARGET TRACK", "EJECTOR", "REPAIR SYS", "GUNS"
+static const char __far k_sys_name[SYS_COUNT][9] = {   /* (the readout's lines are short: a small VDU) */
+    "ABSORBER", "POWER", "SHIELDS", "COMPUTER", "INTERCOM", "TRACKING", "EJECTOR", "REPAIR", "GUNS"
 };
 
 const char __far *logic_system_name(int16_t k)
@@ -720,6 +787,9 @@ static void guns_fire_ready(uint16_t ship)
         uint16_t this_type = GUN_TYPE(ship, g);
         const RvWeapon __far *w = weapon(this_type);
         if (!w || (w->kind != RV_WK_GUN && w->kind != RV_WK_TURRET)) {
+            continue;
+        }
+        if (ship == 0 && rvController[0] == CTL_PLAYER && !logic_gun_selected(g)) {   /* (the player's choice, G) */
             continue;
         }
         if ((GUN_STATE(ship, g) & (0x7f | GUN_DESTROYED)) || gunEnergy[ship] < w->energy) {

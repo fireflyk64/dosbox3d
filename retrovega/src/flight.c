@@ -1613,7 +1613,10 @@ static int system_key(int ch)
     case 't': target_next(); vdu_show(1, VDU_R_TARGET); return 1;   /* (T brings the target page up, changed or not) */
     case 'y': target_nearest(); vdu_show(1, VDU_R_TARGET); return 1;
     case 'l': system_action(RV_PF_LOCK, 0); return 1;
-    case 'g': system_action(RV_PF_RADAR_KNOB, 0); return 1;
+    case 'r': system_action(RV_PF_RADAR_KNOB, 0); return 1;   /* (the radar's range: was G, now the guns') */
+    case 'g': (void)logic_guns_next(); vdu_show(1, VDU_R_WEAPONS); return 1;
+    case 'w': (void)logic_missile_next(); vdu_show(1, VDU_R_WEAPONS); return 1;
+    case 'd': vdu_show(1, VDU_R_DAMAGE); return 1;
     case 'h': g_sys.surv_page = (unsigned char)((g_sys.surv_page + 1) % 3); return 1;
     case 'x': system_action(RV_PF_DEFENCE, 0); return 1;
     }
@@ -2646,7 +2649,8 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.ch == 's' || in.ch == 'S') setSpeed[0] = 0;
         if (in.ch == 'a' || in.ch == 'A') rv_autopilot_key();
         else system_key(in.ch);
-        if (in.ch == 'd' || in.ch == 'D') {   /* the next damage layer the cockpit has */
+#ifdef RV_TESTS
+        if (in.ch == '[') {             /* the next damage layer the cockpit has (a test's look at them) */
             int k;
             for (k = 0; k < RV_CP_LAYERS; k++) {
                 int bit = (g_damage_next + k) % RV_CP_LAYERS;
@@ -2657,7 +2661,8 @@ unsigned short __far __cdecl flight_keys(void)
                 }
             }
         }
-        if (in.ch == 'r' || in.ch == 'R') rvCockpitDamage = 0;
+        if (in.ch == ']') rvCockpitDamage = 0;
+#endif
     }
     {   /* Ctrl+E pulls the eject handle (twice within two seconds ejects); a click on the panel works its control */
         static unsigned char __far ctrl_e;

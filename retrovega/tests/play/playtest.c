@@ -3860,6 +3860,56 @@ static void t_systems(void)
     memset(systemDamage, 0, systemDamage_SIZE);
 }
 
+#define PT_MIXED 0x05                   /* the Lancelot: two particle cannons and two ion guns, four heat seekers and
+                                           two image-recognition missiles */
+
+/* M10.4: the weapon choice: G cycles the guns over all and each type the ship carries, and the trigger then fires
+ * that type alone; W cycles the launchers, and the missile key fires the chosen one */
+static void t_weapon_choice(void)
+{
+    static const char __far e_types[] = "the Lancelot's gun types: %d (two particle cannons and two ion guns: 2)";
+    static const char __far e_cycle[] = "G from all went %d, %d, %d: the first type, the second, all again";
+    static const char __far e_only[] = "with type %d chosen the trigger fired %d guns of it and %d of the other: that "
+        "type alone";
+    static const char __far e_launchers[] = "W from the first launcher went %d, then %d: round the launchers";
+    static const char __far e_fires[] = "the missile key with launcher choice %d fired from gun %d, not a launcher of "
+        "the chosen kind (type %d)";
+    uint16_t types[8], m;
+    int16_t n, a, b, c, g, mine, other, l0, l1, l2, w1;
+    pt_alone(PT_MIXED);
+    n = logic_gun_types(types, 8);
+    REQUIRE(n == 2, e_types, n, 0, 0);
+    a = logic_guns_next();
+    b = logic_guns_next();
+    c = logic_guns_next();
+    REQUIRE(a == 1 && b == 2 && c == 0, e_cycle, a, b, c);
+    g_sys.gun_sel = 2;
+    g_pilot.guns = 1;
+    if (!pt_step())
+        return;
+    g_pilot.guns = 0;
+    for (g = mine = other = 0; g < GUN_COUNT(0); g++)
+        if (pt_is_gun(0, g) && (GUN_STATE(0, g) & 0x7F)) {
+            if (GUN_TYPE(0, g) == types[1])
+                mine++;
+            else
+                other++;
+        }
+    REQUIRE(mine == 2 && other == 0, e_only, 2, mine, other);
+    g_sys.gun_sel = 0;
+    l0 = logic_launcher();
+    w1 = logic_missile_next();
+    l1 = logic_launcher();
+    (void)logic_missile_next();
+    l2 = logic_launcher();
+    REQUIRE(w1 == 1 && l1 != l0 && l2 != l1, e_launchers, l1, l2, 0);
+    g_sys.launcher_sel = 1;
+    l1 = logic_launcher();
+    m = fireGunFromShip(0, (uint16_t)l1);
+    REQUIRE(m <= RV_MAX_SHIP_SLOT && maybeEntityType[m] == ET_MISSILE, e_fires, 1, l1, GUN_TYPE(0, l1));
+    g_sys.launcher_sel = 0;
+}
+
 /* M9.1 */
 static void t_gunsight(void)
 {
@@ -4042,6 +4092,7 @@ static const char __far n_m9_2[] = "M9.2 brackets (logic_hud): marks round the t
 static const char __far n_m10_1[] = "M10.1 target-front (logic_target_next): T picks only in front of the pilot, nearest the nose first, round";
 static const char __far n_m10_2[] = "M10.2 target-lock (logic_target_lock): L keeps the target through T, Y; off when it dies or the tracking is wrecked";
 static const char __far n_m10_3[] = "M10.3 systems (hurt_system, step_timers): hits to the hull hurt the nine systems; a wrecked generator or power plant";
+static const char __far n_m10_4[] = "M10.4 weapon-choice (logic_guns_next, logic_missile_next): G picks the guns the trigger fires, W the launcher";
 
 static const PtTest __far k_tests[] = {
     { n_m1_1, t_coast, 0 }, { n_m1_2, t_throttle, 0 }, { n_m1_3, t_top_speed, 0 }, { n_m1_4, t_yaw, 0 },
@@ -4077,6 +4128,7 @@ static const PtTest __far k_tests[] = {
     { n_m8_9, t_fighter, 0 }, { n_m8_10, t_escort_out, 0 }, { n_m8_11, t_escort_lost, 0 }, { n_m8_12, t_escort_along, 0 },
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
+    { n_m10_4, t_weapon_choice, 0 },
 };
 
 /* --- the run --- */

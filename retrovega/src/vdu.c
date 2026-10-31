@@ -17,15 +17,19 @@
 #define GAP 2                           /* between the wire and the armour, the armour and the shield */
 
 static unsigned char __far g_page[2];
+static unsigned char __far g_cursor;    /* the damage page's line: which hurt system it names (D again: the next) */
 
 void vdu_flight_start(void)
 {
     g_page[0] = VDU_L_STATUS;
     g_page[1] = VDU_R_TARGET;
+    g_cursor = 0;
 }
 
 void vdu_show(int which, int page)
 {
+    if (which == 1 && page == VDU_R_DAMAGE && g_page[1] == VDU_R_DAMAGE)
+        g_cursor++;                     /* (D on the damage page: the next hurt system) */
     g_page[which & 1] = (unsigned char)page;
 }
 
@@ -51,19 +55,29 @@ static int solid(const unsigned char __far *m, int px, int py, int w, int h)
     return TOP(m, row, col) != 0;
 }
 
-void vdu_wire(int type, int x, int y, int w, int h, unsigned char colour, int y0, int y1)
+/* the box the type's outline is fitted in: the w x h box at (x, y) shrunk to the ship's proportions (hit: the
+ * silhouettes' half extents, 127ths of the radius) */
+static void wire_box(int type, int x, int y, int w, int h, int *bx, int *by, int *bw, int *bh)
 {
     const RvShipType __far *t = ship_type((uint16_t)type);
+    int hx = t ? t->hit[0] : 100, hz = t ? t->hit[2] : 100, most = hx > hz ? hx : hz;
+    if (!most)
+        most = 1;
+    *bw = (int)((long)w * hx / most);
+    *bh = (int)((long)h * hz / most);
+    if (*bw < 2) *bw = 2;
+    if (*bh < 2) *bh = 2;
+    *bx = x + (w - *bw) / 2;
+    *by = y + (h - *bh) / 2;
+}
+
+void vdu_wire(int type, int x, int y, int w, int h, unsigned char colour, int y0, int y1)
+{
     const unsigned char __far *m = collide_mask((uint16_t)type);
-    int hx = t ? t->hit[0] : 100, hz = t ? t->hit[2] : 100, most = hx > hz ? hx : hz, bw, bh, bx, by, px, py;
-    if (w < 4 || h < 4 || !most)
+    int bw, bh, bx, by, px, py;
+    if (w < 4 || h < 4)
         return;
-    bw = (int)((long)w * hx / most);    /* the box fitted, the ship's proportions kept (hit: 127ths of the radius) */
-    bh = (int)((long)h * hz / most);
-    if (bw < 2) bw = 2;
-    if (bh < 2) bh = 2;
-    bx = x + (w - bw) / 2;
-    by = y + (h - bh) / 2;
+    wire_box(type, x, y, w, h, &bx, &by, &bw, &bh);
     if (!m) {                           /* (no silhouettes: its box) */
         gfx_frame(bx, by, bw, bh, colour, y0, y1);
         return;
@@ -91,6 +105,28 @@ static int pct_of(unsigned long have, unsigned long most)
     return (int)(have * 100 / most);
 }
 
+/* the player's guns on the own ship's wire (the weapons page): a dot at each gun's mount across the ship, on
+ * the hull's leading edge there: amber a gun the trigger fires, grey one the choice leaves out, red a destroyed one */
+static void gun_marks(int type, int ix, int iy, int inner, int y0, int y1)
+{
+    const unsigned char __far *m = collide_mask((uint16_t)type);
+    int bx, by, bw, bh, g;
+    wire_box(type, ix, iy, inner, inner, &bx, &by, &bw, &bh);
+    for (g = 0; g < GUN_COUNT(0); g++) {
+        const RvWeapon __far *w = weapon(GUN_TYPE(0, g));
+        int px, py, col;
+        if (!w || (w->kind != RV_WK_GUN && w->kind != RV_WK_TURRET))
+            continue;
+        px = bw / 2 + (int)((long)GUN_MOUNT_X(0, g) * (bw / 2) / 32);   /* (the mount: 32nds of the half box) */
+        if (px < 0) px = 0;
+        if (px >= bw) px = bw - 1;
+        for (py = 0; py < bh - 1 && m && !solid(m, px, py, bw, bh); py++)
+            ;                           /* (the leading edge there) */
+        col = GUN_STATE(0, g) & GUN_DESTROYED ? UI_RED : logic_gun_selected((int16_t)g) ? UI_AMBER3 : UI_GREY4;
+        gfx_fill(bx + px - 1, by + py - 1, 3, 3, (unsigned char)col, y0, y1);
+    }
+}
+
 void vdu_ship(int type, int s, int x, int y, int side, int y0, int y1)
 {
     const RvShipType __far *t = ship_type((uint16_t)type);
@@ -100,6 +136,8 @@ void vdu_ship(int type, int s, int x, int y, int side, int y0, int y1)
     ix = x + (side - inner) / 2;
     iy = y + (side - inner) / 2;
     vdu_wire(type, ix, iy, inner, inner, WIRE, y0, y1);
+    if (s == 0 && g_page[1] == VDU_R_WEAPONS)
+        gun_marks(type, ix, iy, inner, y0, y1);
     /* the levels: the front and rear shields, the front, rear, left and right armour */
     pct[0] = pct_of(SHIELD(s, 0), SHIELD_MAX(s, 0));
     pct[1] = pct_of(SHIELD(s, 1), SHIELD_MAX(s, 1));
@@ -190,6 +228,79 @@ static void draw_target(const RvRect __far *r, int y0, int y1)
     ship_page(s, gInstanceShipTypes[s], r, name, a, b, y0, y1);
 }
 
+/* the damage page: the own ship, how many systems are hurt, and one of them named with its level as four boxes (the
+ * old game's light, moderate, heavy, destroyed); D again names the next */
+static void draw_damage(const RvRect __far *r, int y0, int y1)
+{
+    char top[16], a[16], b[4];
+    int k, n = 0, at = -1, i = 0, fh = gfx_font_height(FONT_BODY), x, y, lv;
+    if (!slot_type(0))
+        return;
+    for (k = 0; k < SYS_COUNT; k++)
+        if (systemDamage[k])
+            n++;
+    if (n) {
+        for (k = 0; k < SYS_COUNT; k++)
+            if (systemDamage[k] && i++ == (int)(g_cursor % n))
+                at = k;
+    }
+    sprintf(top, n ? "DAMAGE %d" : "INTACT", n);
+    a[0] = b[0] = 0;
+    if (at >= 0)
+        _fstrncpy(a, logic_system_name((int16_t)at), sizeof a - 1), a[sizeof a - 1] = 0;
+    ship_page(0, gInstanceShipTypes[0], r, top, a, b, y0, y1);
+    if (at < 0)
+        return;
+    /* the level: four boxes after the name, lit to the damage, red when it is destroyed */
+    lv = systemDamage[at];
+    if (r->w >= 2 * r->h) {
+        x = r->x + r->h - 4 + 8;
+        y = r->y + 2 + 2 * (fh + 1) + 1;
+    } else {
+        x = r->x + 3 + gfx_text_width(FONT_BODY, a) + 5;
+        y = r->y + r->h - fh - 2 + 1;
+    }
+    for (k = 0; k < 4; k++)
+        if (k < lv)
+            gfx_fill(x + k * 5, y, 4, fh - 3, lv >= SYS_WRECKED ? UI_RED : UI_AMBER3, y0, y1);
+        else
+            gfx_frame(x + k * 5, y, 4, fh - 3, UI_GREY4, y0, y1);
+}
+
+/* the weapons page: the guns the trigger fires (all, or one type), the own ship with its guns marked, and the
+ * missile the missile key fires with its rounds */
+static void draw_weapons(const RvRect __far *r, int y0, int y1)
+{
+    char top[16], a[16], b[8];
+    uint16_t types[8];
+    int n = logic_gun_types(types, 8), l = logic_launcher(), g, rounds = 0;
+    const RvWeapon __far *w;
+    if (!slot_type(0))
+        return;
+    if (!g_sys.gun_sel || g_sys.gun_sel > n)
+        strcpy(top, "ALL GUNS");         /* (cut to the VDU's width where it must be: "ALL GUN" reads) */
+    else {
+        char code[RV_CODE + 1];
+        _fstrncpy(code, weapon(types[g_sys.gun_sel - 1])->code, RV_CODE);
+        code[RV_CODE] = 0;
+        sprintf(top, "%s ONLY", code);
+    }
+    if (l >= 0 && (w = weapon(GUN_TYPE(0, l))) != 0) {
+        char code[RV_CODE + 1];
+        _fstrncpy(code, w->code, RV_CODE);
+        code[RV_CODE] = 0;
+        for (g = 0; g < GUN_COUNT(0); g++)   /* (the rounds of every launcher of that weapon) */
+            if (GUN_TYPE(0, g) == GUN_TYPE(0, l) && !(GUN_STATE(0, g) & GUN_DESTROYED))
+                rounds += GUN_STATE(0, g) & 0x7F;
+        sprintf(a, "%s", code);
+        sprintf(b, "x%d", rounds);
+    } else {
+        strcpy(a, "NO MISSILE");
+        b[0] = 0;
+    }
+    ship_page(0, gInstanceShipTypes[0], r, top, a, b, y0, y1);
+}
+
 int vdu_draw(int which, const RvRect __far *r, int y0, int y1)
 {
     if (!r->w || y1 <= r->y || y0 >= r->y + r->h)
@@ -197,6 +308,8 @@ int vdu_draw(int which, const RvRect __far *r, int y0, int y1)
     if (which == 1) {
         switch (g_page[1]) {
         case VDU_R_TARGET: draw_target(r, y0, y1); return 1;
+        case VDU_R_WEAPONS: draw_weapons(r, y0, y1); return 1;
+        case VDU_R_DAMAGE: draw_damage(r, y0, y1); return 1;
         default: return 0;
         }
     }

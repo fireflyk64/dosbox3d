@@ -34,6 +34,8 @@ typedef struct {
     uint8_t talking;                    /* a transmission coming in */
     uint8_t lock, warn, burning, lights, autopilot_ready, target_hot;
     int16_t target;                     /* its slot, -1 none */
+    uint8_t gun_sel;                    /* the guns chosen (G, logic_guns_next): 0 all, k the k-th gun type the ship carries */
+    uint8_t launcher_sel;               /* the launcher chosen (W, logic_missile_next): the n-th of the ship's, from 0 */
     int16_t heat, signature;            /* 0 .. 100 */
     int16_t heat_shown, sig_shown;      /* as the HEAT and SIGNATURE displays show them: taken every 5 s */
     int16_t fuel;                       /* afterburner fuel, 0 .. 1000 */

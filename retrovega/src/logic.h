@@ -49,4 +49,13 @@ int16_t logic_target_nearest(void);     /* Y, AUTO: the nearest enemy in front *
 int16_t logic_target_lock(void);        /* L: the lock on, or off again; 1 when it is on after this */
 int16_t logic_target_ahead(int16_t s);  /* slot s is in front of the pilot (ahead of the wing line, or on it) */
 
+/* the player's weapon choice (flight.c's G and W keys, the weapons VDU): the guns fired by the trigger are all of
+ * them (g_sys.gun_sel 0) or one type of them (k: the k-th type the ship carries, in the gun table's order); the
+ * launcher the missile key fires is the n-th of the ship's (g_sys.launcher_sel), or the first with rounds */
+int16_t logic_guns_next(void);          /* G: the next choice round; the new gun_sel */
+int16_t logic_gun_types(uint16_t *out, int16_t max);   /* the types the ship's guns are, in order: n of them */
+int16_t logic_gun_selected(int16_t g);  /* gun g of the player's fires with the trigger as the choice stands */
+int16_t logic_missile_next(void);       /* W: the next launcher round; the new launcher_sel */
+int16_t logic_launcher(void);           /* the launcher the missile key fires: a gun index, -1 none with rounds */
+
 #endif
