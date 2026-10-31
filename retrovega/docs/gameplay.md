@@ -338,7 +338,7 @@ nav 0):
 
 | test | expects |
 |---|---|
-| M8.1 start | slot 0 the player (`CTL_PLAYER`, the player's type); one Terran AI within 10,000 km, its pilot the mission's; each ship's `slotMissionShip` a record of its type and side; no enemies yet; `currentNavPoint` 0 |
+| M8.1 start | slot 0 the player (`CTL_PLAYER`, the player's type); one Terran AI within 10,000 km, its pilot the mission's; each ship's `slotMissionShip` a record of its type and side; no enemies yet; `currentNavPoint` 0 ; the wingman starts beside the player (800 km to its right), not on it |
 | M8.2 nav1 | the player taken to nav 1: `currentNavPoint` 1, and nav 1's two Nicanders within 15,000 km of it, their records nav 1's |
 | M8.3 nav-once | 5 s more there: still two |
 | M8.4 won | `victoryPoints` 0 a second in; nav 1 flown and its ships killed, then nav 2's; home; landed: nonzero |

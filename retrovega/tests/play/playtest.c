@@ -2919,6 +2919,8 @@ static void t_start(void)
     static const char __far e_early[] = "%d enemies out there at the start: the ships of nav 1 and 2 come when the "
         "player gets there";
     static const char __far e_nav[] = "currentNavPoint is %d at the start: 0";
+    static const char __far e_inside[] = "the wingman starts %d km from the player, inside the two hulls (%d km): it "
+        "spawns beside its leader, not on it";
     int16_t pilot, s, w = -1, n = 0;
     const uint8_t *rec;
     pilot = pt_patrol();
@@ -2930,6 +2932,7 @@ static void t_start(void)
             n++;
         }
     REQUIRE(n == 1, e_wing, n, 0, 0);
+    REQUIRE(pt_km(0, w) >= (collide_half(0) + collide_half(w)) / KM, e_inside, pt_km(0, w), (collide_half(0) + collide_half(w)) / KM, 0);
     EXPECT(shipStateByte[w] == pilot, e_pilot, shipStateByte[w], pilot, 0);
     for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
         if (slot_is_ship(s)) {

@@ -1976,6 +1976,30 @@ uint16_t __far __cdecl farShipTest_impl(uint16_t slot, uint16_t km)
  * (navPointTable's, km), at its formation place off it; behaviour 6 (the player) takes slot 0.  The layer calls it
  * to put another player's ship into this machine's flight (it switches the record's behaviour from 6 to 4 around
  * the call): returns the slot, 0xFFFF none */
+/* nobody spawns inside another ship: a mission ship put down on one already there (a wingman's record has no place of
+ * its own, so it landed on the player, and the two ground against each other all flight: the user's flickering lights,
+ * 2026-10-30) is moved to that ship's right, 800 km or the two hulls and a margin, whichever is more: where a wingman's
+ * formation station is taken from (formation_step) */
+static void spawn_apart(int16_t s)
+{
+    int16_t k, hit = -1;
+    int32_t off;
+    const RvVec3 *R;
+    for (k = 0; k < NUM_SHIP_SLOTS; k++)
+        if (k != s && slot_is_ship(k) && km_between(s, k) < room_of(s, k) + 100) {
+            hit = k;
+            break;
+        }
+    if (hit < 0)
+        return;
+    off = room_of(s, hit) + 300;
+    if (off < 800)
+        off = 800;
+    R = &gOrientationRightVector[hit];
+    gPositionVector[s] = vec3(gPositionVector[hit].x + R->x * off, gPositionVector[hit].y + R->y * off,
+                              gPositionVector[hit].z + R->z * off);   /* (R is 256 a unit: x 256 km = KM x km) */
+}
+
 uint16_t __far __cdecl outerSpawnShipEntity_impl(uint16_t missionShip, uint16_t navPoint)
 {
     const uint8_t *rec = missionShipTable + missionShipTable_SIZE * (missionShip & 63);
@@ -1992,5 +2016,6 @@ uint16_t __far __cdecl outerSpawnShipEntity_impl(uint16_t missionShip, uint16_t 
     shipStateByte[s] = s == 0 ? 8 : rec[16];
     if (rec[17] && rec[17] <= P_COUNT)  /* (its AI's profile, when the mission names one: docs/ai.md) */
         g_mind[s].profile = (uint8_t)(rec[17] - 1);
+    spawn_apart(s);
     return (uint16_t)s;
 }
