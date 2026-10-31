@@ -31,12 +31,23 @@ static unsigned char __far g_last_page;   /* the survival display's page last dr
 
 const RvCockpit __far *cockpit_record(void) { return g_cp; }
 
+static short __far *g_ext_full;         /* the opening's rows at full width (the external views) */
+static int g_external;
+
 const short __far *cockpit_extents(int *y0, int *rows)
 {
     *y0 = g_ext_y0;
     *rows = g_ext_rows;
-    return g_ext;
+    return g_external && g_ext_full ? g_ext_full : g_ext;
 }
+
+void cockpit_external(int on)
+{
+    g_external = on;
+    vid_dirty(0, SCR_H);
+}
+
+int cockpit_is_external(void) { return g_external; }
 
 int cockpit_load(int ship_type)
 {
@@ -55,6 +66,14 @@ int cockpit_load(int ship_type)
             g_ext = (short __far *)_fmalloc((size_t)ex->size + 2);
             RV_ASSERT(g_ext != 0 && ex->size == 4UL * g_ext_rows);
             dat_read(ex->at, g_ext, ex->size);
+            g_ext_full = (short __far *)_fmalloc((size_t)ex->size + 2);
+            if (g_ext_full) {
+                int r;
+                for (r = 0; r < g_ext_rows; r++) {
+                    g_ext_full[2 * r] = 0;
+                    g_ext_full[2 * r + 1] = SCR_W;
+                }
+            }
             g_cockpit_index = (int)i;   /* (the palette goes in with cockpit_palette, once the flight's loading is done) */
             g_last_valid = 0;
             panel_load(g_cp);
@@ -78,6 +97,9 @@ void cockpit_unload(void)
     panel_unload();
     if (g_cp) _ffree(g_cp);
     if (g_ext) _ffree(g_ext);
+    if (g_ext_full) _ffree(g_ext_full);
+    g_ext_full = 0;
+    g_external = 0;
     g_cp = 0;
     g_ext = 0;
     g_cockpit_index = -1;
@@ -297,7 +319,7 @@ void cockpit_draw(int y0, int y1, const CockpitState *st, void (*world)(int y0, 
 {
     const RvCockpit __far *c = g_cp;
     int tdy, sdx, sdy;
-    if (!c) {
+    if (!c || g_external) {             /* (an outside view: the opening's rows full width between black bars) */
         gfx_fill(0, 0, SCR_W, SCR_H, UI_BLACK, y0, y1);
         if (world)
             world(y0, y1);

@@ -276,6 +276,89 @@ int __far __cdecl rv_stars_place(const short __far *stars, int n, const long __f
                                  short __far *out);
 static const LfVec g_world_up = { 0, 256, 0 };
 static int g_cam_cy = SCR_H / 2;        /* the camera's centre row: the opening's middle (ships_set_camera's) */
+
+/* --- the view: the cockpit's, or an outside camera: F5 the chase camera (behind and above the player's ship, looking
+ * its way; F1 back), and the autopilot's flyby (the user, 2026-10-30: the formation seen from outside before the
+ * jump, so the arrival is not a cut).  Outside, the world is drawn in the opening's rows at full width between black
+ * bars, no frame, no HUD (cockpit_external), and the player's own ship is drawn like any other --- */
+enum { VIEW_COCKPIT, VIEW_CHASE, VIEW_FLYBY };
+static int g_view, g_view_back;         /* the view, and the one the flyby goes back to */
+static int g_fly_t;                     /* the flyby's frame */
+static LfVec g_cam_pos;                 /* the outside camera (positions) and its basis */
+static LfBasis g_cam_b;
+#define FLYBY_FRAMES 90                 /* three seconds along the formation's left side, ahead to behind */
+#define CHASE_BACK_KM 450               /* the chase camera: this far behind the ship and above it (a fighter of 100 km */
+#define CHASE_UP_KM 100                 /* then spans some 90 px, in the lower third of the view) */
+static void basis_of(int s, LfBasis *b);
+
+static const LfVec *cam_pos(void) { return g_view ? &g_cam_pos : (const LfVec *)&gPositionVector[0]; }
+static void cam_basis(LfBasis *b) { if (g_view) *b = g_cam_b; else basis_of(0, b); }
+
+static void unit_of(LfVec *v)           /* a vector to length 256 (its parts within 2^23) */
+{
+    long n = (long)lf_sqrt((unsigned long)((v->x >> 4) * (v->x >> 4) + (v->y >> 4) * (v->y >> 4) + (v->z >> 4) * (v->z >> 4))) << 4;
+    if (n < 1)
+        n = 1;
+    v->x = v->x * 256 / n;
+    v->y = v->y * 256 / n;
+    v->z = v->z * 256 / n;
+}
+
+static void cross_of(const LfVec *a, const LfVec *b, LfVec *o)   /* of two 256-long vectors, 256-long again */
+{
+    o->x = (a->y * b->z - a->z * b->y) / 256;
+    o->y = (a->z * b->x - a->x * b->z) / 256;
+    o->z = (a->x * b->y - a->y * b->x) / 256;
+}
+
+/* the camera at `at` looking at the player's ship, the ship's up the reference (right = up x front, up = front x right) */
+static void cam_look(const LfVec *at)
+{
+    LfBasis ship;
+    LfVec d;
+    basis_of(0, &ship);
+    g_cam_pos = *at;
+    d.x = (gPositionVector[0].x - at->x) >> 4;
+    d.y = (gPositionVector[0].y - at->y) >> 4;
+    d.z = (gPositionVector[0].z - at->z) >> 4;
+    unit_of(&d);
+    g_cam_b.front = d;
+    cross_of(&ship.up, &g_cam_b.front, &g_cam_b.right);
+    unit_of(&g_cam_b.right);
+    cross_of(&g_cam_b.front, &g_cam_b.right, &g_cam_b.up);
+    unit_of(&g_cam_b.up);
+}
+
+/* the outside camera's pose this frame */
+static void view_frame(void)
+{
+    LfBasis ship;
+    if (!g_view)
+        return;
+    basis_of(0, &ship);
+    if (g_view == VIEW_CHASE) {
+        g_cam_pos.x = gPositionVector[0].x - ship.front.x * CHASE_BACK_KM + ship.up.x * CHASE_UP_KM;
+        g_cam_pos.y = gPositionVector[0].y - ship.front.y * CHASE_BACK_KM + ship.up.y * CHASE_UP_KM;
+        g_cam_pos.z = gPositionVector[0].z - ship.front.z * CHASE_BACK_KM + ship.up.z * CHASE_UP_KM;
+        g_cam_b = ship;
+    } else {
+        long along = 900 - 1800L * g_fly_t / FLYBY_FRAMES;
+        LfVec at;
+        at.x = gPositionVector[0].x - ship.right.x * 900 + ship.up.x * 150 + ship.front.x * along;
+        at.y = gPositionVector[0].y - ship.right.y * 900 + ship.up.y * 150 + ship.front.y * along;
+        at.z = gPositionVector[0].z - ship.right.z * 900 + ship.up.z * 150 + ship.front.z * along;
+        cam_look(&at);
+    }
+}
+
+static void set_view(int view)
+{
+    static const char __far s_view[] = "flight: the view: %s";
+    g_view = view;
+    cockpit_external(view != VIEW_COCKPIT);
+    view_frame();
+    rv_logf(s_view, view == VIEW_COCKPIT ? "the cockpit" : view == VIEW_CHASE ? "the chase camera" : "the autopilot's flyby");
+}
 static unsigned long g_star_place_ticks, g_star_draw_ticks;   /* what the sky costs (logged when the flight ends) */
 
 static void stars_init(void)
@@ -310,7 +393,7 @@ static void stars_place(void)
     LfBasis cam;
     long basis[9];
     unsigned long t0 = clock240();
-    basis_of(0, &cam);
+    cam_basis(&cam);
     basis[0] = cam.front.x; basis[1] = cam.front.y; basis[2] = cam.front.z;
     basis[3] = cam.right.x; basis[4] = cam.right.y; basis[5] = cam.right.z;
     basis[6] = cam.up.x; basis[7] = cam.up.y; basis[8] = cam.up.z;
@@ -365,11 +448,12 @@ static int scale_of(const LfVec *rel, const RvShipType __far *t)
     return (int)(sc > 512 ? 512 : sc);
 }
 
-static void rel_of(int s, LfVec *rel)
+static void rel_of(int s, LfVec *rel)   /* a slot's place from the camera's */
 {
-    rel->x = gPositionVector[s].x - gPositionVector[0].x;
-    rel->y = gPositionVector[s].y - gPositionVector[0].y;
-    rel->z = gPositionVector[s].z - gPositionVector[0].z;
+    const LfVec *c = cam_pos();
+    rel->x = gPositionVector[s].x - c->x;
+    rel->y = gPositionVector[s].y - c->y;
+    rel->z = gPositionVector[s].z - c->z;
 }
 
 static unsigned long g_t_flames, g_t_flames_set;   /* what the engines' flames cost: in all, and set up */
@@ -399,8 +483,8 @@ static void plan_draws(void)
     long px[PLAN_MAX], budget = g_onfly_px;
     int s, i, k, n_exact, order[PLAN_MAX];
     g_nplan = 0;
-    basis_of(0, &cam);
-    for (s = 1; s <= RV_MAX_SHIP_SLOT && g_nplan < PLAN_MAX; s++) {
+    cam_basis(&cam);
+    for (s = g_view ? 0 : 1; s <= RV_MAX_SHIP_SLOT && g_nplan < PLAN_MAX; s++) {   /* (outside, the player's ship too) */
         int set;
         if ((maybeEntityType[s] != 0xC && maybeEntityType[s] != 0xD) || fx_hidden(s))
             continue;
@@ -501,8 +585,8 @@ static unsigned long g_world_calls;     /* draw_world's calls: the bands a frame
 void flight_camera(RvCamera *c)
 {
     const RvCockpit __far *ck = cockpit_record();
-    c->pos = *(const LfVec *)&gPositionVector[0];
-    basis_of(0, &c->b);
+    c->pos = *cam_pos();
+    cam_basis(&c->b);
     c->cx = SCR_W / 2;
     c->cy = (short)g_cam_cy;
     c->focal = 400;
@@ -672,9 +756,9 @@ static void collide_report(void)
 static int to_screen(const LfVec *w, int *sx, int *sy)
 {
     LfBasis cam;
-    long rx = (w->x - gPositionVector[0].x) >> 4, ry = (w->y - gPositionVector[0].y) >> 4,
-         rz = (w->z - gPositionVector[0].z) >> 4, X, Y, Z;
-    basis_of(0, &cam);
+    long rx = (w->x - cam_pos()->x) >> 4, ry = (w->y - cam_pos()->y) >> 4,
+         rz = (w->z - cam_pos()->z) >> 4, X, Y, Z;
+    cam_basis(&cam);
     X = (rx * cam.right.x + ry * cam.right.y + rz * cam.right.z) / 256;
     Y = (rx * cam.up.x + ry * cam.up.y + rz * cam.up.z) / 256;
     Z = (rx * cam.front.x + ry * cam.front.y + rz * cam.front.z) / 256;
@@ -1160,13 +1244,13 @@ static void draw_world(int y0, int y1)
     if (g_bl_cap)                       /* the far balls: a pixel or a few */
         balls_draw_far(y0, y1, ext, ey0, rows);
     if (g_sky && g_set_enemy >= 0) {
-        basis_of(0, &cam);
+        cam_basis(&cam);
         for (i = 0; i < 3; i++)
             ships_draw_sky(g_set_enemy, g_sky_sprites[i].v, &g_sky_sprites[i].dir, &g_world_up, &cam,
                            g_sky_sprites[i].scale, y0, y1, 0, SCR_W, ext, ey0, rows);
     }
     /* the ships, as the frame's plan has them: the nearest exactly, the rest from the sets */
-    basis_of(0, &cam);
+    cam_basis(&cam);
     for (i = 0; i < g_nplan; i++) {
         LfVec rel;
         int s = g_plan[i].slot, set = g_plan[i].set;
@@ -1208,7 +1292,8 @@ static void draw_world(int y0, int y1)
         balls_draw_near(y0, y1, ext, ey0, rows);
     shots_draw_near(y0, y1, ext, ey0, rows);
     missiles_draw(y0, y1, ext, ey0, rows);
-    logic_hud();                        /* the game's own marks over the view */
+    if (!g_view)
+        logic_hud();                    /* the game's own marks over the view (none from outside) */
 #ifdef RV_TESTS
     if (g_boxes)
         boxes_draw(y0, ey0);
@@ -1229,7 +1314,7 @@ static void __far __cdecl draw_pointer_body(void)
 {
     /* the steering cross where the pointer is, in mouse mode */
     int x = g_scene.px, y = g_scene.py;
-    if (g_keyboard_steer || g_bolt_demo || g_ball_demo || g_missile_demo || g_sky_demo || g_collide_demo || g_hull_demo)   /* (the demo's middle bolt is where the cross would be) */
+    if (g_view || g_keyboard_steer || g_bolt_demo || g_ball_demo || g_missile_demo || g_sky_demo || g_collide_demo || g_hull_demo)   /* (the demo's middle bolt is where the cross would be) */
         return;
     gfx_fill(x - 5, y, 11, 1, UI_WHITE, g_ptr_y0, g_ptr_y1);
     gfx_fill(x, y - 5, 1, 11, UI_WHITE, g_ptr_y0, g_ptr_y1);
@@ -1870,8 +1955,8 @@ static void missiles_frame(void)
         for (; k < MISSILE_MAX; k++)
             p[k].live = 0;
     }
-    basis_of(0, &cam);
-    missiles_place(gPositionVector[0].x, gPositionVector[0].y, gPositionVector[0].z, &cam, SCR_W / 2, g_cam_cy, 400,
+    cam_basis(&cam);
+    missiles_place(cam_pos()->x, cam_pos()->y, cam_pos()->z, &cam, SCR_W / 2, g_cam_cy, 400,
                    c ? c->open_y0 : 0, c ? c->open_y1 : SCR_H);
 }
 
@@ -2523,6 +2608,10 @@ unsigned short __far __cdecl flight_keys(void)
     in_poll(&in);
     if (in.key == KEY_F12)
         shot_save("RVSHOT");
+    if (in.key == KEY_F5 && g_view != VIEW_FLYBY)
+        set_view(g_view == VIEW_CHASE ? VIEW_COCKPIT : VIEW_CHASE);
+    if (in.key == KEY_F1 && g_view != VIEW_FLYBY)
+        set_view(VIEW_COCKPIT);
     if (in.key == KEY_ESC && script_active())
         return 5;                       /* a test script ends the flight; the player's Esc is the browser's key, ignored */
     if (in.key == KEY_CHAR) {
@@ -2613,6 +2702,15 @@ void __far __cdecl flight_frame(void)
 #endif
     fx_frame();                         /* what the step did: explosions and sounds started */
     explode_frame();
+    if (g_view == VIEW_FLYBY && ++g_fly_t >= FLYBY_FRAMES) {   /* the flyby over: the jump, and the view back */
+        static const char __far s_went[] = "flight: autopilot: on to nav %u", __far s_not[] = "flight: autopilot: not now";
+        set_view(g_view_back);
+        if (logic_autopilot())
+            rv_logf(s_went, currentNavPoint);
+        else
+            rv_logf(s_not);
+    }
+    view_frame();
 #ifdef RV_TESTS
     if (g_sky_demo)
         sky_demo_step();
@@ -2624,13 +2722,13 @@ void __far __cdecl flight_frame(void)
     {
         LfBasis cam;                    /* the asteroid fields: theirs entered and left, the rocks placed, the hits */
         const RvCockpit __far *c = cockpit_record();
-        basis_of(0, &cam);
+        cam_basis(&cam);
         rocks_frame(&cam, SCR_W / 2, g_cam_cy, 400, c ? c->open_y0 : 0, c ? c->open_y1 : SCR_H);
     }
     stars_place();
     {
         LfBasis cam;
-        basis_of(0, &cam);
+        cam_basis(&cam);
         sky_place(&cam, SCR_W / 2, g_cam_cy, 400);
     }
     {
@@ -2654,10 +2752,10 @@ void __far __cdecl flight_frame(void)
     {
         LfBasis cam;                    /* the shots (shots.c): through the camera, as the bolts and the balls */
         const RvCockpit __far *c = cockpit_record();
-        basis_of(0, &cam);
-        shots_place((const LfVec *)&gPositionVector[0], &cam, SCR_W / 2, g_cam_cy, 400, c ? c->open_y0 : 0,
+        cam_basis(&cam);
+        shots_place(cam_pos(), &cam, SCR_W / 2, g_cam_cy, 400, c ? c->open_y0 : 0,
                     c ? c->open_y1 : SCR_H);
-        explode_place((const LfVec *)&gPositionVector[0], &cam, SCR_W / 2, g_cam_cy, 400);
+        explode_place(cam_pos(), &cam, SCR_W / 2, g_cam_cy, 400);
     }
     /* the rate over the last FPS_WINDOW frames */
     dt = now - g_frame_t[k];
@@ -2725,10 +2823,14 @@ void __far __cdecl flight_music(void)
 
 void __far __cdecl flight_autopilot(void)
 {
-    static const char __far s_went[] = "flight: autopilot: on to nav %u", __far s_not[] = "flight: autopilot: not now";
-    if (logic_autopilot())
-        rv_logf(s_went, currentNavPoint);
-    else
+    static const char __far s_not[] = "flight: autopilot: not now";
+    if (g_view == VIEW_FLYBY)
+        return;
+    if (logic_autopilot_ready() >= 0) {   /* the flyby, then the jump (flight_frame) */
+        g_view_back = g_view;
+        g_fly_t = 0;
+        set_view(VIEW_FLYBY);
+    } else
         rv_logf(s_not);
 }
 
@@ -2743,6 +2845,8 @@ int flight_fly(const RvMission __far *m)
 {
     unsigned short status;
     g_m = m;
+    g_view = g_view_back = VIEW_COCKPIT;
+    g_fly_t = 0;
     uiMode(0);
     status = rv_flight_run();           /* (its loop begins with flight_startup: the loading, then the palette) */
 #ifdef RV_TESTS

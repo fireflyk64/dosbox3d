@@ -1844,22 +1844,32 @@ void logic_end(void)
  * point, as the old games cut to the arrival; 1 when it went, 0 when it may not.  (On a multiplayer client the layer
  * steps over the key's call: the host's autopilot moves everyone).  The next nav point is the first not reached
  * yet, home (nav 0) when all are; the player arrives AUTOPILOT_SHORT_KM short of it, facing it */
-int16_t logic_autopilot(void)
+/* the autopilot may go: the player alive, no enemy within AUTOPILOT_CLEAR_KM, and a nav point to go to (the next
+ * unseen, or home) not yet reached: that nav point, or -1 (the engine asks before its flyby, flight.c) */
+int16_t logic_autopilot_ready(void)
 {
-    RvVec3 d, to;
-    int32_t horiz;
-    int16_t s, n, next = 0, yaw, pitch;
+    int16_t s, n, next = 0;
     if (!slot_is_ship(0) || shipAiState[0] == 9)
-        return 0;
+        return -1;
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
         if (slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9
             && player_km(s) < AUTOPILOT_CLEAR_KM)
-            return 0;
+            return -1;
     for (n = 1; n < NAVS && !next; n++)
         if (nav_defined(n) && !(g_navs_seen >> n & 1))
             next = n;
     if (nav_km(next) <= AUTOPILOT_SHORT_KM)
-        return 0;                       /* (there already) */
+        return -1;                      /* (there already) */
+    return next;
+}
+
+int16_t logic_autopilot(void)
+{
+    RvVec3 d, to;
+    int32_t horiz;
+    int16_t s, next, yaw, pitch;
+    if ((next = logic_autopilot_ready()) < 0)
+        return 0;
     /* the way there, km; its level part's length in 16 km steps (the squares of km overflow) */
     d = vec3(NAV_AT(next, 0) - TO_KM(gPositionVector[0].x), NAV_AT(next, 1) - TO_KM(gPositionVector[0].y),
              NAV_AT(next, 2) - TO_KM(gPositionVector[0].z));

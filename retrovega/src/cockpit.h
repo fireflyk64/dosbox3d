@@ -26,6 +26,9 @@ void cockpit_palette(void);              /* its palette installed: when the flig
 void cockpit_unload(void);
 const RvCockpit __far *cockpit_record(void);
 const short __far *cockpit_extents(int *y0, int *rows);   /* (first, end) x per row of the opening */
+void cockpit_external(int on);          /* an outside view: the world in the opening's rows, full width, black bars
+                                           above and below, no frame, no HUD (the chase camera, the autopilot's flyby) */
+int cockpit_is_external(void);
 void cockpit_dirty(const CockpitState *st);               /* marks what must be redrawn for this state */
 void cockpit_draw(int y0, int y1, const CockpitState *st, void (*world)(int y0, int y1));
 

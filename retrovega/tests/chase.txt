@@ -1,0 +1,64 @@
+# the views: the launch, F5 the chase camera (and a turn in it), F1 back, A the flyby and the arrival, then C to land
+# (waits are ticks, 18.2 a second)
+wait 10
+click
+wait 3
+move 593 200
+click
+wait 8
+key tab
+wait 1
+key tab
+wait 1
+key tab
+wait 1
+key tab
+wait 1
+key tab
+wait 1
+key enter
+wait 6
+key tab
+wait 1
+key tab
+wait 1
+key tab
+wait 1
+key tab
+wait 1
+key enter
+wait 3
+key esc
+wait 1
+key esc
+wait 1
+key esc
+wait 8
+key tab
+wait 1
+key tab
+wait 1
+key enter
+wait 15
+wait 110
+shot V01COCK
+key f5
+wait 55
+shot V02CHASE
+key right 20
+wait 36
+shot V03CHASE
+key f1
+wait 36
+shot V04BACK
+key a
+wait 18
+shot V05FLY1
+wait 18
+shot V06FLY2
+wait 18
+shot V07FLY3
+wait 40
+shot V08ARRIV
+key c
+wait 90

@@ -144,6 +144,8 @@ static int bios_key(int *ch)
     case 0x01: return KEY_ESC;
     case 0x0E: return KEY_BACKSPACE;
     case 0x86: return KEY_F12;
+    case 0x3B: return KEY_F1;       /* the views: F1 the cockpit, F5 the chase camera (flight.c) */
+    case 0x3F: return KEY_F5;
     case 0x0F: return *ch == 9 ? KEY_TAB : KEY_BACKTAB;
     }
     return *ch >= 32 && *ch < 127 ? KEY_CHAR : KEY_NONE;
@@ -160,7 +162,8 @@ int script_active(void) { return g_script != 0 || g_quit; }
 
 static int key_named(const char *s, int *ch)
 {
-    static const char *names[] = { "", "left", "right", "up", "down", "enter", "esc", "backspace", "f12", "tab", "backtab" };
+    static const char *names[] = { "", "left", "right", "up", "down", "enter", "esc", "backspace", "f12", "tab", "backtab",
+                                   "f1", "f5" };
     int i;
     for (i = 1; i < (int)RV_COUNT(names); i++)
         if (!strcmp(s, names[i]))

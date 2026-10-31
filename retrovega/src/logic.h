@@ -28,5 +28,6 @@ void logic_hud(void);                   /* a band of the view is drawn: draw ove
 void logic_end(void);                   /* the flight is over (missionStatus says how) */
 int16_t logic_autopilot(void);          /* the A key, between steps: 1 when it flew the player on (to the next nav
                                            point), 0 when it may not (enemies near, nowhere to go) */
+int16_t logic_autopilot_ready(void);    /* the nav point it would go to, -1 not now (the engine asks before its flyby) */
 
 #endif

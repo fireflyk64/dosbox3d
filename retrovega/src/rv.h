@@ -103,7 +103,7 @@ int gfx_wrap(int font, int x, int y, int w, const char *s, int colour, int line_
 
 /* input (input.c): the mouse and the keys, or a test script's events */
 enum { KEY_NONE, KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN, KEY_ENTER, KEY_ESC, KEY_BACKSPACE, KEY_F12, KEY_TAB, KEY_BACKTAB,
-       KEY_CHAR };
+       KEY_F1, KEY_F5, KEY_CHAR };
 typedef struct { int x, y, clicked, key, ch, moved, keyboard; } Input;
 int in_init(void);
 void in_nomouse(void);                  /* (before in_init) the keys only: /nomouse */

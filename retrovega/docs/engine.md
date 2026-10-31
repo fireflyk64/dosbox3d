@@ -169,6 +169,13 @@ point until the player comes within 8,000 km, then flies home to nav 0 the same 
 is). One of the player's side killed is the mission lost. The autopilot brings one along, 800 km behind the player
 (the wingman beside it), and drops the formation 4,500 km short of the nav point.
 
+The views: F5 the chase camera (behind and above the player's ship, looking its way, the ship in the lower
+third of the view; F5 again or F1 back to the cockpit), and the autopilot's flyby: A, when the autopilot may go,
+shows the formation from outside for three seconds (a camera sliding along its left side from ahead to behind,
+looking at the player's ship) and then jumps it to the nav point. Outside, the world is drawn in the cockpit's
+opening rows at full width between black bars, with no frame and no HUD (`cockpit_external`), and the player's
+own ship is drawn like any other (`flight.c` the view: `cam_pos`, `cam_basis`, `view_frame`).
+
 When the player dies the flight ends on a screen of its own, "You have died", with R to fly the mission again
 (the tables put back as they were) and C to carry on to the debriefing with the mission lost.
 
