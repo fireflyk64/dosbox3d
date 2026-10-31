@@ -77,6 +77,16 @@ static int tiny(int x, int y, const char *s, unsigned char col, int y0, int y1)
     return x - x0;
 }
 
+int panel_tiny(int x, int y, const char *s, unsigned char col, int y0, int y1)
+{
+    return tiny(x, y, s, col, y0, y1);
+}
+
+int panel_tiny_width(const char *s)
+{
+    return 4 * (int)strlen(s);
+}
+
 void panel_unload(void)
 {
     int i;

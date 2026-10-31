@@ -41,7 +41,7 @@ typedef struct {
     int16_t fuel;                       /* afterburner fuel, 0 .. 1000 */
     int16_t hull;                       /* percent */
     int32_t target_km, nav_km;          /* -1: none */
-    char target_name[12];
+    char target_name[16];
 } ShipSystems;
 extern ShipSystems __far g_sys;
 
@@ -52,5 +52,10 @@ void panel_draw(const CockpitState *st, int y0, int y1);
 int panel_at(int x, int y, int *fn, int *arg);   /* the control under a point: 1, its RV_PF_* and argument */
 int panel_has(int fn);                       /* this cockpit's panel has a control of that function */
 void panel_fuel_bar(int x, int y, int w, int h, int pct, int upright, int y0, int y1);   /* fuel: a backlit bar */
+/* the readouts' small font (3 x 5, 4 px a character, capitals, digits, . % - :), for the VDU pages too (the
+ * user, 2026-10-31): text at (x, y) in a palette colour, rows y0 .. y1-1; returns its width */
+int panel_tiny(int x, int y, const char *s, unsigned char col, int y0, int y1);
+int panel_tiny_width(const char *s);
+#define PANEL_TINY_H 5
 
 #endif
