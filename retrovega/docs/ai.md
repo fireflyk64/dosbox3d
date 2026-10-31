@@ -104,6 +104,7 @@ record (`P_*` + 1; 0 the type's own), which a mission may set.
 | `engage_km` | an enemy this near is fought |
 | `fire_km` | the guns fire within this (and their own range) |
 | `break_km` | a pursuit with a pass coming (`passing`: closing at a tenth of the top speed or more) breaks off this near; 0 never (it rams) |
+| `out_km` | a flat break (a profile that yaws): after its first yaw (`burst` steps) it flies straight out until the target is this far, or 1.8 s (`BREAK_OUT_STEPS`), then yaws back until its nose is on the target; 0: the yaw back at once. The old fighters' nose was back 1.9 s after a pass, 2,500 km out, the next pass 5 s on |
 | `pounce_km` | `T_WAIT`'s chance distance |
 | `aim_cos` | the fire cone (cos × 256) |
 | `pulls`, `bank` | the steering's allowed pulls and style (below) |
@@ -126,7 +127,7 @@ The rows as they stand:
 | profile | character |
 |---|---|
 | `P_INTERCEPTOR` | light and fast: head-on passes and pursuits, strafes near, evades when tailed, runs at 30% hull; yaws, no pitch |
-| `P_FIGHTER` | the line fighter, as the old game's Dralthi measured (tests/wc1/README.md): straight at the target at full speed, a hard flat yaw away at 900 km with a dash, round again in a second or two, a tail at 55% (under a player's cruise, so it falls back rather than creeps up and bumps), a volley every 0.75 s; runs at 20% |
+| `P_FIGHTER` | the line fighter, as the old game's Dralthi measured (tests/wc1/README.md): straight at the target at full speed, a hard flat yaw away at 900 km with a dash, straight out to 2,500 km, round again (its nose back 2.5 s after a pass, the next 4 s on, as the old fighters' 1.9 and 5.3), a tail at 55% (under a player's cruise, so it falls back rather than creeps up and bumps), a volley every 0.75 s; runs at 20% |
 | `P_HEAVY` | slow and armoured: head on mostly, breaks rather than jinks, rarely runs |
 | `P_ACE` | strafing runs, hard evasion, never runs, uses the afterburner half the time |
 | `P_BOMBER` | torpedo runs at capital ships, else a heavy's fight; runs at 25% |

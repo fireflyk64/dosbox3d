@@ -100,9 +100,15 @@ What the tuning set, all in the line fighter's row of `k_profiles` (docs/ai.md) 
 
 - straight at the target at full speed (`pick`: a pursuit in every situation but tailed, passed and hurt), aiming
   at it, not ahead of it (`lead_pct` 0), the guns from 3,000 km (`fire_km`), a volley every 22 steps (`fire_gap`);
-- a hard flat yaw away at 900 km when a pass is coming (`break_km`; `T_BREAK` lasts a second, with the afterburner
-  for its first 10 steps, `burst`), at the type's full rate (`turn_pct` 100); a turn back toward the target once
-  it is behind, over as soon as the nose is on it;
+- a hard flat yaw away at 900 km when a pass is coming (`break_km`, with the afterburner for its first 10 steps,
+  `burst`, at the type's full rate, `turn_pct` 100), then straight out until the target is 2,500 km off or 1.8 s
+  have passed (`out_km`, `BREAK_OUT_STEPS`), then the yaw back, over as soon as the nose is on the target. Measured
+  against the old game's hunting run (2026-10-30, the scratch measure.py): the old fighters' nose was back 1.9 s
+  after a pass at 2,529 km, the next pass 5.3 s on, the nearest two of them 1,746 km apart (median; under 500 km
+  4.8% of the time, never a collision); ours before this came round in 1.0 s at 935 km, passed every 2.2 s, flew
+  670 km apart (under 500 km 28%) and bumped one another; now 2.5 s at 1,780 km, 4.1 s, 1,633 km apart (under 500
+  km 2.3%), no bumps between them in 190 s. The Nicander's afterburner is three times its top speed (`ab_kps` 1590,
+  2,385 km/s) as the Dralthi's 2,400 was;
 - yaws, with a roll to bring the target level, and does not pitch (`pulls` right and left, `bank` 1: within 20
   degrees of the nose a yaw and a pitch at once for the fine aim), as the old fighters' turns were flat;
 - a tail at 55% of its top speed (`tail_pct`: 437 km/s, under a player's 300 setting as the old Dralthi's 466 was under
@@ -127,8 +133,9 @@ data/weapons.csv; the guns' energy rule is fablevega's M2):
 | the wingman, player straight | killed two of the three Dralthi (75 shots) and came home | fired 6 shots in 69 s and died: its row pitched and fled; now the fighter's row (`P_WINGMAN`) |
 | what the player flies | the mission's ship: Hornet, Raptor, Scimitar, Rapier by system (the dumps' player record) | each ported mission's `fighter` line (port.py from the dumps); the player had flown the campaign's default, the Redeemer |
 | guns at the launch | full | full (`gunEnergy` 100 at spawn; it was 0 for every AI ship) |
+| the hull under the armour | a laser hit of 14 adds 2-4 to the Dralthi's damage points; it died at 12-27 of them: 4-8 hits on the bare hull, 20 or so from one side in all (its slot 2 took 44 hits over 147 s before dying, slot 3 29 and lived) | `hull` 24 (8 hits; it was 10, 3 hits: a Nicander died after 11 hits in one pass of the hunting player, where the old took 15 in ten seconds and lived) |
 
-Still apart: its afterburner reaches 3 times the top speed (ours 2.4, `ab_kps`); its speed setting is 2 km/s a point
+Still apart: its speed setting is 2 km/s a point
 and ours 1.5 (`KPS_HZ`: a player at the 300 setting flies 600 km/s there and 450 here, so the Dralthi that tailed the
 straight player at 466 km/s fell behind and turned on the wingman, where ours keep up: the user's flight model's
 call); its hunted passes spread wider (a tenth over 1,400 km, ours 1,000); its fighters open fire some 25 s after the
