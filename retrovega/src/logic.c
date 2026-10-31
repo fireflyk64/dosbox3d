@@ -295,7 +295,8 @@ int16_t logic_target_ahead(int16_t s)
         return 0;
     d = vec3(TO_KM(gPositionVector[s].x - gPositionVector[0].x), TO_KM(gPositionVector[s].y - gPositionVector[0].y),
              TO_KM(gPositionVector[s].z - gPositionVector[0].z));
-    return vec_dot(&d, &gOrientationFrontVector[0]) > 0;
+    return vec_dot(&d, &gOrientationFrontVector[0]) >= 0;   /* (on the wing line too: a wingman in formation beside
+                                                                the player is there to be picked) */
 }
 
 /* the ships in front of the pilot, the nearest to the nose first (an enemy only when `enemies`): n of them */

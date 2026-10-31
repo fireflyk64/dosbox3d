@@ -39,6 +39,7 @@
 #include "shots.h"
 #include "hud.h"
 #include "logic.h"
+#include "vdu.h"
 #include "explode.h"
 #include "sfx.h"
 #include "fx.h"
@@ -1361,18 +1362,13 @@ static void flight_draw(int y0, int y1)
 
 static void mfd_draw(int which, const RvRect __far *r, int y0, int y1)
 {
-    /* a comm on this VDU, else on the right one the target's view, clipped to the glass */
-    const ShipSet __far *set;
-    int si = g_sys.target >= 0 ? ships_find(gInstanceShipTypes[g_sys.target]) : g_set_enemy;
+    /* a comm on this VDU, else its page (vdu.c: the target, the weapons, the damage; the comm and nav menus); the
+       right VDU dark with the targeting display damaged */
     if (comms_draw(which, r, y0, y1))
         return;
-    if (which != 1 || si < 0 || (rvCockpitDamage >> 1 & 1))   /* (the target's view; none with the MFD damaged) */
+    if (which == 1 && (rvCockpitDamage >> 1 & 1))
         return;
-    set = ships_set(si);
-    if (y1 <= r->y || y0 >= r->y + r->h)
-        return;
-    ships_blit_size(set, 1, 10, r->x + r->w / 2, r->y + r->h / 2, y0 > r->y ? y0 : r->y,
-                    y1 < r->y + r->h ? y1 : r->y + r->h, r->x, r->x + r->w, 0, 0, 0);
+    (void)vdu_draw(which, r, y0, y1);
 }
 
 #ifdef RV_TESTS
@@ -1614,8 +1610,8 @@ static int system_key(int ch)
     case 'u': system_action(RV_PF_VOL_KNOB, 0); return 1;
     case 'n': system_action(RV_PF_NAV_KNOB, 0); return 1;
     case 'm': system_action(RV_PF_ARM_KNOB, 0); return 1;
-    case 't': target_next(); return 1;
-    case 'y': target_nearest(); return 1;
+    case 't': target_next(); vdu_show(1, VDU_R_TARGET); return 1;   /* (T brings the target page up, changed or not) */
+    case 'y': target_nearest(); vdu_show(1, VDU_R_TARGET); return 1;
     case 'l': system_action(RV_PF_LOCK, 0); return 1;
     case 'g': system_action(RV_PF_RADAR_KNOB, 0); return 1;
     case 'h': g_sys.surv_page = (unsigned char)((g_sys.surv_page + 1) % 3); return 1;
@@ -2609,6 +2605,7 @@ void __far __cdecl flight_startup(void)
     flames_init();                      /* (its colours from that palette) */
     comms_flight_start();
     systems_start();
+    vdu_flight_start();
     score_start(g_m);                   /* (the first calm song: the deck's launch music gives way) */
     g_hailed = 0;
     missiles_init();

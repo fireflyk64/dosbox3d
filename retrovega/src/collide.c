@@ -115,6 +115,11 @@ static const uint8_t __far *shape(uint16_t type)
     return g_cache[lru].m;
 }
 
+const uint8_t __far *collide_mask(uint16_t type)
+{
+    return shape(type);
+}
+
 void collide_flight_end(void)
 {
     int16_t i;

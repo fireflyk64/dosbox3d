@@ -47,6 +47,6 @@ const char __far *logic_system_name(int16_t k);   /* its name for the readout (D
 int16_t logic_target_next(void);        /* T */
 int16_t logic_target_nearest(void);     /* Y, AUTO: the nearest enemy in front */
 int16_t logic_target_lock(void);        /* L: the lock on, or off again; 1 when it is on after this */
-int16_t logic_target_ahead(int16_t s);  /* slot s is in front of the pilot (ahead of the wing line) */
+int16_t logic_target_ahead(int16_t s);  /* slot s is in front of the pilot (ahead of the wing line, or on it) */
 
 #endif

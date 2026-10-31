@@ -55,4 +55,10 @@ int16_t collide_box(int16_t slot, const LfVec *a, const LfVec *b, int32_t fat, L
  * first, then the engines, then the rest): how many vitals (at most 1 + 4 + 8) */
 int16_t collide_shape(int16_t slot, LfVec corner[8], LfVec *vital, int16_t maxv);
 
+/* a type's three silhouettes for drawing them (the VDUs' top-down wireframe): 3 x 512 bytes, each a 64 x 64 bit
+ * mask, rows of 8 bytes, a cell's bit 1 << (col & 7) of byte col >> 3: mask 0 from above (row: the cell along
+ * the ship's front, 0 the tail, 63 the nose; column: along its right), 1 from the side (row along its up, column
+ * along its front), 2 from the front (row along its up, column along its right); 0 when the type has none */
+const uint8_t __far *collide_mask(uint16_t type);
+
 #endif
