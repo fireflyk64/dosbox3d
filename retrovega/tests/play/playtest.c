@@ -4006,6 +4006,65 @@ static void t_orders(void)
     g_sys.target = -1;
 }
 
+/* M10.7: the missile lock: the Lancelot's heat seeker on a target 3,000 km ahead flying away locks in its lock time
+ * (3 s), and the lock goes the step the target turns to face the player; the image-recognition missile (W) locks on
+ * it facing or not; the tracking wrecked, or the EMCON off, no lock; the Schroedinger's dumbfire never locks */
+static void t_missile_lock(void)
+{
+    static const char __far e_heat[] = "the heat seeker on a target flying away 3,000 km ahead: after 100 steps the lock "
+        "is %d at %d percent (its lock time 3 s)";
+    static const char __far e_early[] = "the heat seeker locked after %d steps: its lock time is 3 s (90 steps)";
+    static const char __far e_face[] = "the target turned to face the player and the heat seeker's lock stayed (%d, %d "
+        "percent): a heat seeker locks from behind only";
+    static const char __far e_image[] = "the image-recognition missile on the facing target: after 100 steps the lock is "
+        "%d (it needs no rear aspect)";
+    static const char __far e_track[] = "the tracking wrecked, the lock is %d at %d percent: none";
+    static const char __far e_emcon[] = "the EMCON off, the heat seeker's lock is %d: it needs the sensors on";
+    static const char __far e_dumb[] = "a dumbfire chosen, the lock is %d at %d percent: a dumbfire never locks";
+    int16_t i, at = -1;
+    pt_alone(PT_MIXED);
+    g_sys.armed = 0;
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 3000, 0);   /* (facing +z: away from the player) */
+    g_sys.target = 1;
+    g_sys.launcher_sel = 0;             /* (the first launcher: a heat seeker) */
+    for (i = 0; i < 100; i++) {
+        if (!pt_step())
+            return;
+        if (g_sys.lock && at < 0)
+            at = i;
+    }
+    REQUIRE(g_sys.lock == 1 && g_sys.lock_pct == 100, e_heat, g_sys.lock, g_sys.lock_pct, 0);
+    REQUIRE(at >= 85, e_early, at, 0, 0);
+    pt_put(1, 0, 0, 3000, TURN / 2);
+    if (!pt_step())
+        return;
+    REQUIRE(g_sys.lock == 0 && g_sys.lock_pct == 0, e_face, g_sys.lock, g_sys.lock_pct, 0);
+    while (logic_launcher() >= 0 && weapon(GUN_TYPE(0, logic_launcher()))->lock != RV_LOCK_IMAGE)
+        (void)logic_missile_next();
+    if (!pt_steps(100))
+        return;
+    REQUIRE(g_sys.lock == 1, e_image, g_sys.lock, 0, 0);
+    systemDamage[SYS_TRACK] = SYS_WRECKED;
+    if (!pt_step())
+        return;
+    REQUIRE(g_sys.lock == 0 && g_sys.lock_pct == 0, e_track, g_sys.lock, g_sys.lock_pct, 0);
+    systemDamage[SYS_TRACK] = 0;
+    g_sys.launcher_sel = 0;
+    pt_put(1, 0, 0, 3000, 0);
+    g_sys.emcon = EMCON_OFF;
+    if (!pt_steps(100))
+        return;
+    REQUIRE(g_sys.lock == 0, e_emcon, g_sys.lock, 0, 0);
+    g_sys.emcon = EMCON_ACTIVE;
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 3000, 0);
+    g_sys.target = 1;
+    if (!pt_steps(100))
+        return;
+    REQUIRE(g_sys.lock == 0 && g_sys.lock_pct == 0, e_dumb, g_sys.lock, g_sys.lock_pct, 0);
+    g_sys.target = -1;
+}
+
 /* M9.1 */
 static void t_gunsight(void)
 {
@@ -4191,6 +4250,7 @@ static const char __far n_m10_3[] = "M10.3 systems (hurt_system, step_timers): h
 static const char __far n_m10_4[] = "M10.4 weapon-choice (logic_guns_next, logic_missile_next): G picks the guns the trigger fires, W the launcher";
 static const char __far n_m10_5[] = "M10.5 nav-cross (logic_hud): a white cross where the chosen nav point lies on the view";
 static const char __far n_m10_6[] = "M10.6 orders (logic_order): attack my target, help me out, form on my wing, return to base";
+static const char __far n_m10_7[] = "M10.7 missile-lock (lock_tick): a heat seeker from behind in its time, image recognition anyhow, none wrecked or dark, a dumbfire never";
 
 static const PtTest __far k_tests[] = {
     { n_m1_1, t_coast, 0 }, { n_m1_2, t_throttle, 0 }, { n_m1_3, t_top_speed, 0 }, { n_m1_4, t_yaw, 0 },
@@ -4226,7 +4286,7 @@ static const PtTest __far k_tests[] = {
     { n_m8_9, t_fighter, 0 }, { n_m8_10, t_escort_out, 0 }, { n_m8_11, t_escort_lost, 0 }, { n_m8_12, t_escort_along, 0 },
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
-    { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 }, { n_m10_6, t_orders, 0 },
+    { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 }, { n_m10_6, t_orders, 0 }, { n_m10_7, t_missile_lock, 0 },
 };
 
 /* --- the run --- */

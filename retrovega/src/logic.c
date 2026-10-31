@@ -58,6 +58,7 @@ static Mind __far g_mind[NUM_SHIP_SLOTS];
 typedef struct { uint16_t weapon, life; } MissileState;
 static MissileState __far g_missile[NUM_SHIP_SLOTS];
 static uint8_t __far g_order[NUM_SHIP_SLOTS];   /* the wingmen's orders (ORDER_*, logic.h) */
+static uint16_t __far g_lock_steps;     /* the player's missile lock building (lock_tick) */
 
 #define RAM_STEPS 10                    /* a ship hurt by a ram is not hurt by one again for this many steps */
 #define AI_SCATTER 18                   /* an AI's shot's scatter about the nose, 256ths each way (18: 4 degrees; gun_fire) */
@@ -71,6 +72,7 @@ static uint16_t __far g_died[NUM_SHIP_SLOTS];     /* the step a ship was seen dy
 static uint8_t profile_of(uint16_t type, uint16_t side);
 static void mind_rates(int16_t s);      /* (its fear's rates from its profile: the AI, below) */
 static void target_tick(void);          /* (the player's target each step: the targeting, below) */
+static void lock_tick(void);            /* (the player's missile lock each step: with the missiles, below) */
 
 void logic_prepare_spawn(int16_t ship_index)
 {
@@ -97,6 +99,8 @@ static struct {
     int16_t x0, y0, x1, y1, colour;
     int16_t nav;                        /* the chosen nav point's cross: 1 when it is on the view (the user's white cross) */
     int16_t nav_x, nav_y;
+    int16_t lock;                       /* the missile lock's reticle: 0 none, 1 building (closing on the target), 2 locked */
+    int16_t sx, sy, half, lock_r;
 } __far g_hud;
 
 /* a world point on the camera's screen: 1 and (sx, sy) when it is ahead and on the view */
@@ -238,6 +242,7 @@ void logic_start(const RvMission __far *m)
     _fmemset(g_mind, 0, sizeof g_mind);
     _fmemset(g_missile, 0, sizeof g_missile);
     _fmemset(g_order, 0, sizeof g_order);
+    g_lock_steps = 0;
     _fmemset(g_rammed, 0, sizeof g_rammed);
     _fmemset(g_died, 0, sizeof g_died);
     memset(systemDamage, 0, systemDamage_SIZE);   /* the player's systems whole (flight.c clears only the cockpit's).  (A
@@ -339,8 +344,10 @@ static void step_minds(void)
             g_turn[s].x = g_pilot.steer_x;
             g_turn[s].y = g_pilot.steer_y;
             g_turn[s].roll = g_pilot.roll;
-            if (s == 0)
+            if (s == 0) {
                 target_tick();
+                lock_tick();
+            }
             rvTarget[s] = (uint8_t)(g_sys.target >= 0 ? g_sys.target : 0xFF);   /* (the layer reads them) */
             playerTarget = (uint16_t)(g_sys.target >= 0 ? g_sys.target : 0xFFFF);
             break;
@@ -1017,6 +1024,41 @@ static uint8_t missile_target_of(int16_t ship, const RvWeapon __far *w)
     if (w->lock == RV_LOCK_AUTO && (t = nearest_enemy(ship, 0)) >= 0)
         return (uint8_t)t;
     return 0xFF;
+}
+
+#define PLAYER_LOCK_CONE 230            /* the player's seekers lock with the target within this: some 26 degrees */
+
+/* the player's missile lock (the user's ask, 2026-10-31: a Top Gun lock display; a heat seeker from behind only,
+ * friend-or-foe and dumbfire pointed at the target, one seeking the nearest, the other straight): the chosen
+ * launcher's seeker against the target: a heat seeker only from the target's rear arc (its engines toward the
+ * player, or its afterburner lit) with the EMCON not off; image recognition with the radar on; friend-or-foe with
+ * the radar on and the IFF; each needs the target within PLAYER_LOCK_CONE and the weapon's range for its lock time
+ * (weapons.csv lock_s), and is lost out of them; a dumbfire never locks; none with the tracking wrecked.
+ * g_sys.lock, lock_pct and lock_kind say where it stands (the HUD's reticle, the lock lamp, the launch) */
+static void lock_tick(void)
+{
+    int16_t l = launcher_of(0), t = g_sys.target, ok = 0;
+    const RvWeapon __far *w = l >= 0 ? weapon(GUN_TYPE(0, l)) : 0;
+    uint16_t need = w ? (uint16_t)(w->lock_tenths * 3 + 1) : 1;
+    g_sys.lock_kind = (uint8_t)(w ? w->lock : RV_LOCK_NONE);
+    if (w && w->lock != RV_LOCK_NONE && w->lock != RV_LOCK_PROXIMITY && t > 0 && slot_is_ship(t) && shipAiState[t] != 9
+        && systemDamage[SYS_TRACK] < SYS_WRECKED && cos_nose_to(0, t) >= PLAYER_LOCK_CONE && km_between(0, t) <= w->range_km) {
+        if (w->lock == RV_LOCK_HEAT) {
+            RvVec3 d = vec3(TO_KM(gPositionVector[t].x - gPositionVector[0].x), TO_KM(gPositionVector[t].y - gPositionVector[0].y),
+                            TO_KM(gPositionVector[t].z - gPositionVector[0].z));
+            ok = g_sys.emcon != EMCON_OFF && (vec_dot(&d, &gOrientationFrontVector[t]) > 0 || rvAfterburner[t]);
+        } else if (w->lock == RV_LOCK_IMAGE)
+            ok = g_sys.emcon == EMCON_ACTIVE;
+        else
+            ok = g_sys.emcon == EMCON_ACTIVE && g_sys.iff;
+    }
+    if (ok) {
+        if (g_lock_steps < need)
+            g_lock_steps++;
+    } else
+        g_lock_steps = 0;
+    g_sys.lock = (uint8_t)(ok && g_lock_steps >= need);
+    g_sys.lock_pct = (uint8_t)(ok ? (int32_t)g_lock_steps * 100 / need : 0);
 }
 
 /* (ship, gun, its weapon): a launcher fires: a round fewer, and the missile into a free ship slot at the mount,
@@ -2513,6 +2555,16 @@ static void hud_marks(void)
     g_hud.x1 = (int16_t)(b.sx + half + 1);
     g_hud.y1 = (int16_t)(b.sy + half + 1);
     g_hud.colour = commAnimInfo[g_sys.target] == commAnimInfo[0] ? UI_HILITE : UI_RED;
+    /* the lock's reticle (the user's Top Gun display): a diamond closing on the target as the lock builds, from four
+     * halves out to the brackets; locked, a second one tight about it */
+    g_hud.sx = b.sx;
+    g_hud.sy = b.sy;
+    g_hud.half = half;
+    g_hud.lock = 0;
+    if (g_sys.lock_kind != RV_LOCK_NONE && g_sys.lock_kind != RV_LOCK_PROXIMITY && (g_sys.lock || g_sys.lock_pct)) {
+        g_hud.lock = (int16_t)(g_sys.lock ? 2 : 1);
+        g_hud.lock_r = (int16_t)(half + 3 + (int32_t)(100 - g_sys.lock_pct) * (3 * half + 12) / 100);
+    }
 }
 
 void logic_frame(void)
@@ -2539,6 +2591,12 @@ void logic_hud(void)
         hud_cross(g_hud.nav_x, g_hud.nav_y, g_hud.arm, UI_WHITE);
     if (g_hud.target)
         hud_brackets(g_hud.x0, g_hud.y0, g_hud.x1, g_hud.y1, g_hud.colour);
+    if (g_hud.target && g_hud.lock == 1)
+        hud_diamond(g_hud.sx, g_hud.sy, g_hud.lock_r, UI_AMBER2);
+    if (g_hud.target && g_hud.lock == 2) {
+        hud_diamond(g_hud.sx, g_hud.sy, (int16_t)(g_hud.half + 3), UI_WHITE);
+        hud_diamond(g_hud.sx, g_hud.sy, (int16_t)(g_hud.half + 4), UI_WHITE);
+    }
 }
 
 /* the final score: won when the player landed (missionStatus 1) home (at nav 0) with the mission done; dead,

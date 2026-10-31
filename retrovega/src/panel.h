@@ -33,6 +33,8 @@ typedef struct {
     uint8_t digit[3];                   /* the frequency knobs as they stand (they step to the channel's) */
     uint8_t talking;                    /* a transmission coming in */
     uint8_t lock, warn, burning, lights, autopilot_ready, target_hot;
+    uint8_t lock_pct, lock_kind;        /* the missile lock building, 0 .. 100, and the chosen missile's seeker
+                                           (RV_LOCK_*: none a dumbfire); logic.c's lock_tick */
     int16_t target;                     /* its slot, -1 none */
     uint8_t gun_sel;                    /* the guns chosen (G, logic_guns_next): 0 all, k the k-th gun type the ship carries */
     uint8_t launcher_sel;               /* the launcher chosen (W, logic_missile_next): the n-th of the ship's, from 0 */

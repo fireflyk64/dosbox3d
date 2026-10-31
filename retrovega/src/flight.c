@@ -1597,7 +1597,7 @@ static void systems_tick(void)
     if ((frameCounter == 2 && g_sys.target < 0) || (g_sys.autotarget && frameCounter % 30 == 0))
         target_nearest();
     g_sys.target_km = -1;
-    g_sys.target_hot = g_sys.lock = 0;
+    g_sys.target_hot = 0;               /* (the missile lock is the logic's: lock_tick) */
     g_sys.target_name[0] = 0;
     if ((s = g_sys.target) >= 0) {
         const RvShipType __far *tt = slot_type(s);
@@ -1613,11 +1613,8 @@ static void systems_tick(void)
         len = (long)lf_sqrt((unsigned long)((d.x / 16) * (d.x / 16) + (d.y / 16) * (d.y / 16) + (d.z / 16) * (d.z / 16))) * 16;
         /* hot: its engines toward us (we are behind it) or its afterburner lit */
         g_sys.target_hot = vec_dot(&d, &gOrientationFrontVector[s]) > 0 || burning(s);
-        /* the lock (until missiles: the target held in the gunsight, 11 degrees, 6,000 km): radar-guided needs the
-           radar on (EMCON ACTIVE) and the IFF; infrared a hot target and not EMCON OFF */
-        if (len > 0 && z * 100 / len > 98 && g_sys.target_km < 6000)
-            g_sys.lock = g_sys.sensor == SENSOR_RADAR ? g_sys.emcon == EMCON_ACTIVE && g_sys.iff
-                                                      : g_sys.emcon != EMCON_OFF && g_sys.target_hot;
+        (void)z;
+        (void)len;
         if (g_sys.match && t)
             setSpeed[0] = speedLo[s] < t->max_kps ? speedLo[s] : t->max_kps;
     }
