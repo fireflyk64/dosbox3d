@@ -31,7 +31,7 @@ Conventional memory budget (DOSBox leaves about 630 KB free):
 | what | KB |
 |---|---|
 | RVHOOK (thunks, flight-loop skeleton) | 2 |
-| DGROUP: fixed block 32 KB + C data + 8 KB stack | 64 |
+| DGROUP: fixed block 32 KB + C data + 4 KB stack | 58 |
 | code | ≤ 192 |
 | 640×400 back buffer (4 bands of 100 rows × 640 = 64,000 bytes) | 250 |
 | sound DMA double buffer | 8 |

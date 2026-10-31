@@ -102,6 +102,7 @@ static void log_free(const char *when)
     _fheapshrink();     /* (what the heap holds free in whole segments goes back to DOS first) */
     dos_free(&dtotal, &dlargest);
     heap_free(&total, &largest);
+    rv_stack_log(when);
     rv_log("conventional memory %s: %lu KB free in DOS (the largest block %lu KB), %lu KB free in the heap (largest %lu KB)",
            when, dtotal, dlargest, total, largest);
 }
@@ -130,6 +131,7 @@ int main(int argc, char **argv)
     const char *playtest = 0;
 #endif
     rvHello();
+    rv_stack_paint();
 #ifdef RV_TESTS
     rv_log("RVT.EXE: the test build (the demos, the benchmarks and the self-tests are in)");
 #endif

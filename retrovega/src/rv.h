@@ -14,6 +14,8 @@ void rv_fail(const char *file, int line, const char *what, long value, long limi
 
 void rv_log(const char *fmt, ...);
 void rv_logf(const char __far *fmt, ...);   /* a far format (DGROUP is nearly full) */
+void rv_stack_paint(void);               /* (main, first) the stack painted, for rv_stack_log */
+void rv_stack_log(const char __far *when);   /* "stack WHEN: N of its M bytes used at the deepest" */
 void __far *rv_alloc_high(unsigned long bytes);   /* upper memory (a UMB), or 0 when DOS has none (util.c) */
 extern unsigned char rv_filebuf[1024];  /* the one near buffer file reads land in (fread wants near; DGROUP is nearly full) */
 

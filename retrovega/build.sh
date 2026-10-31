@@ -138,7 +138,7 @@ done
 link() {
     name=$1; shift
     wlink system dos name "$OUT/$name" option quiet option map="$OUT/${name%.EXE}.MAP" \
-        option stack=8192 \
+        option stack=4096 \
         order clname RVHOOK clname CODE clname FAR_DATA \
               clname BEGDATA segment RVFIXED segment _NULL segment _AFTERNULL \
               clname DATA clname BSS clname STACK \

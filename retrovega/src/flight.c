@@ -2921,6 +2921,10 @@ int flight_fly(const RvMission __far *m)
             rv_logf(s_s, per_frame(t[0], frameCounter) / 100, per_frame(t[0], frameCounter) % 100,
                     per_frame(t[1], frameCounter) / 100, per_frame(t[1], frameCounter) % 100);
     }
+    {
+        static const char __far s_end[] = "at the flight's end";
+        rv_stack_log(s_end);
+    }
     rv_log("flight: the engines' flames took %lu.%02lu ms a frame (%lu.%02lu of it set up)",
            g_t_flames * 1000 / 240 / (frameCounter ? frameCounter : 1),
            (g_t_flames * 100000 / 240 / (frameCounter ? frameCounter : 1)) % 100,

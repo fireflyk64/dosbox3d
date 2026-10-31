@@ -590,6 +590,55 @@ static int advance(Cursor *c, unsigned char *beats_bar)
     return 0;
 }
 
+/* The tempo map in whole numbers, exact, and no floating point (it took the 8087 emulator into the program, 12 KB
+ * of code and 0.8 KB of DGROUP): the time is whole music ticks and rem / per of one more, per = 12500 x the division,
+ * since a MIDI tick at `tempo` microseconds a beat lasts tempo x 3 / per music ticks (TICK_HZ / 1e6 = 3 / 12500).
+ * 32-bit sums only (Watcom's 64-bit division is a slow loop, and the songs have 96,000 events). */
+#define TICK_PART (TICK_HZ / 80)         /* TICK_HZ / 1e6 in lowest terms: TICK_PART / US_PART */
+#define US_PART (1000000UL / 80)
+typedef char tick_hz_whole[TICK_HZ % 80 == 0 ? 1 : -1];   /* (else the lowest terms are others) */
+
+typedef struct {
+    unsigned long whole, rem, per;      /* the time: whole + rem / per music ticks */
+    unsigned long kq, kr, most;         /* a MIDI tick at the tempo: kq + kr / per; `most` MIDI ticks' kr fit 32 bits */
+} Clock;
+
+static void clock_tempo(Clock *k, unsigned long tempo)
+{
+    unsigned long t = tempo * TICK_PART; /* (a tempo is 24 bits) */
+    k->kq = t / k->per;
+    k->kr = t % k->per;
+    k->most = k->kr ? (0xFFFFFFFFUL - k->per) / k->kr : 0xFFFFFFFFUL;
+}
+
+static void clock_add(Clock *k, unsigned long midi_ticks)
+{
+    if (k->kq)                          /* (the multiplications and divisions are calls: none where not needed) */
+        k->whole += midi_ticks * k->kq;
+    while (midi_ticks) {
+        unsigned long n = midi_ticks < k->most ? midi_ticks : k->most;
+        k->rem += n * k->kr;
+        if (k->rem >= k->per) {
+            unsigned long q = k->rem / k->per;
+            k->whole += q;
+            k->rem -= q * k->per;
+        }
+        midi_ticks -= n;
+    }
+}
+
+/* the time to the nearest music tick (a half up) */
+static unsigned long clock_now(const Clock *k)
+{
+    return k->whole + (k->rem >= k->per - k->rem);
+}
+
+/* a beat at the tempo in 1/256 music ticks, to the nearest */
+static unsigned long beat256(unsigned long tempo)
+{
+    return tempo / US_PART * (256 * TICK_PART) + (tempo % US_PART * (256 * TICK_PART) + US_PART / 2) / US_PART;
+}
+
 static int load_song(const char *path, Song *song)
 {
     static unsigned char buf[256];
@@ -603,7 +652,7 @@ static int load_song(const char *path, Song *song)
     FILE *f = fopen(path, "rb");
     if (!f)
         return 0;
-    if (fread(hdr, 1, 14, f) != 14 || memcmp(hdr, "MThd", 4) != 0 || (be16(hdr + 12) & 0x8000)) {
+    if (fread(hdr, 1, 14, f) != 14 || memcmp(hdr, "MThd", 4) != 0 || (be16(hdr + 12) & 0x8000) || !be16(hdr + 12)) {
         fclose(f);
         return 0;
     }
@@ -626,10 +675,13 @@ static int load_song(const char *path, Song *song)
     song->beats_bar = 4;
     song->loop = 0;
     for (pass = 0; pass < 2; pass++) {
-        unsigned long tempo = 500000UL, last_tick = 0, n = 0;
-        double us = 0, last_us_out = 0;
+        unsigned long tempo = 500000UL, last_tick = 0, n = 0, out = 0;   /* out: the music ticks written so far */
+        Clock k;
+        k.whole = k.rem = 0;
+        k.per = US_PART * division;
+        clock_tempo(&k, tempo);
         song->nsect = 0;
-        song->beat256 = (unsigned long)((double)tempo * TICK_HZ * 256 / 1e6 + 0.5);
+        song->beat256 = beat256(tempo);
         for (t = 0; t < ntrk; t++) {
             cur[t].p = trk[t];
             cur[t].end = trk[t] + len[t];
@@ -646,12 +698,14 @@ static int load_song(const char *path, Song *song)
             if (best < 0)
                 break;
             c = &cur[best];
-            us += (double)(c->tick - last_tick) * tempo / division;
+            if (pass && c->tick != last_tick)   /* (the counting pass needs no times; a chord, no time) */
+                clock_add(&k, c->tick - last_tick);
             last_tick = c->tick;
             if (c->st == 0xFF) {
                 tempo = ((unsigned long)c->d1 << 16) | ((unsigned)c->d2 << 8) | c->d3;
+                clock_tempo(&k, tempo);
                 if (c->tick == 0)
-                    song->beat256 = (unsigned long)((double)tempo * TICK_HZ * 256 / 1e6 + 0.5);
+                    song->beat256 = beat256(tempo);
             } else {
                 if (c->st == 0xFE)
                     song->loop = (unsigned)n;   /* (a do-nothing event marks it) */
@@ -659,8 +713,8 @@ static int load_song(const char *path, Song *song)
                     song->sect[song->nsect++] = (unsigned)n;
                 if (pass) {
                     Ev __far *e = &g_chunk[(unsigned)(n % CHUNK_EV)];
-                    e->delta = (unsigned short)((us - last_us_out) * TICK_HZ / 1e6 + 0.5);
-                    last_us_out += (double)e->delta * 1e6 / TICK_HZ;
+                    e->delta = (unsigned short)(clock_now(&k) - out);
+                    out += e->delta;
                     e->status = c->st >= 0xFD ? 0 : c->st;
                     e->d1 = c->d1;
                     e->d2 = c->d2;
@@ -683,9 +737,11 @@ static int load_song(const char *path, Song *song)
              * 156 a beat is 92.3: counted as 92, the bars came short and the rest grew nearly a bar too long) */
             unsigned long bar = (unsigned long)division * song->beats_bar;
             unsigned long end_tick = bar ? (last_tick + bar - 1) / bar * bar : last_tick;
-            double end_us = us + (double)(end_tick - last_tick) * tempo / division;
+            unsigned long end;
             Ev __far *e = &g_chunk[(unsigned)(n % CHUNK_EV)];
-            e->delta = (unsigned short)(end_us > last_us_out ? (end_us - last_us_out) * TICK_HZ / 1e6 + 0.5 : 0);
+            clock_add(&k, end_tick - last_tick);
+            end = clock_now(&k);
+            e->delta = (unsigned short)(end > out ? end - out : 0);
             e->status = e->d1 = e->d2 = 0;
             e->flags = EV_LAST;
             n++;

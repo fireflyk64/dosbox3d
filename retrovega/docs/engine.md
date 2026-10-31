@@ -49,9 +49,15 @@ The image is therefore:
 | 0x0100 | C code |
 | after the code | DGROUP, last as Watcom wants: the fixed 32 KB block first (ordered ahead of Watcom's `_NULL`), then C data, BSS, stack |
 
-DGROUP is full: the fixed block, ~10.5 KB of constant strings, ~12 KB of BSS
-and the 8 KB stack leave a few hundred bytes, and the C runtime's near heap
-(its FILE structures) lives in what is left. With under ~200 bytes free
+DGROUP is nearly full: the fixed block, ~8 KB of constants (nearly all of them
+strings), ~11 KB of variables, ~2 KB of the C runtime's and the 4 KB stack
+leave 7.5 KB in RV.EXE (5 KB in RVT.EXE; 2026-10-31), and the C runtime's near
+heap (its FILE structures) lives in what is left. The stack was 8 KB until
+2026-10-31 (the user's call): the deepest use seen is 1.7 KB, a fight to the
+death screen. The build has no stack checks (`-s`) and the stack sits on the
+BSS, so main paints it first (`rv_stack_paint`) and the log says how deep it
+went (`stack at the flight's end: N of its 4064 bytes`, util.c's
+`rv_stack_log`, at each flight's end and in the memory lines). With under ~200 bytes free
 RV.EXE cannot open its files ("RV.DAT or RVGAME.DAT is missing", no
 RVLOG.TXT) or prints "Not enough memory to allocate file structures". New
 tables go `__far` (the people's labels moved out on 2026-10-21: 624 bytes
@@ -371,7 +377,15 @@ Built (src/music.c, src/opl.c):
   up to 64 KB and a song as long as its tracks allow), the tracks merged
   as they are read and timed through their tempo maps in ticks of the
   music clock, and written to XMS (resident) 256 events at a time. Each
-  loops, padded to a whole bar.
+  loops, padded to a whole bar. The timing is whole numbers, exact (since
+  2026-10-31, the user's call: the doubles it had took Watcom's 8087
+  emulator into RV.EXE, 12 KB of code and 0.8 KB of DGROUP): a time is
+  whole music ticks and a remainder in 1/(12500 x the division) of one,
+  32-bit sums, an event to the nearest tick (a half up). Against the
+  doubles, 24 of the 28 songs came out the same; BAR, CRUISE1, ROCKS and
+  VICTORY3, the songs with events on exact half ticks, now have those
+  events a tick (4 ms) later than the doubles' error put them. The songs
+  load in 40 BIOS ticks where they took 38.
 - **Streaming:** the interrupt plays from a ring of 1024 events in
   conventional memory (some 40 s of the busiest song), which the main loop
   (`music_poll`) tops up from XMS; the next song's ring is filled by

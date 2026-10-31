@@ -93,3 +93,30 @@ void __far *rv_alloc_high(unsigned long bytes)
     int86(0x21, &r, &r);
     return seg ? MK_FP(seg, 0) : 0;
 }
+
+/* The stack's deepest use.  The program has no stack checks (-s) and the stack (4 KB, build.sh) sits on the BSS: an
+ * overflow would write over the last variables unseen.  Painted at the start, the paint left untouched counted when
+ * logged (the flight's end, log_free): 1.7 KB was the deepest seen (2026-10-31, a fight to the death screen). */
+#ifndef RV_HOST
+extern unsigned _STACKLOW, _STACKTOP;   /* (Watcom's startup's) */
+#define STACK_PAINT 0xA5
+
+void rv_stack_paint(void)
+{
+    unsigned char *p = (unsigned char *)_STACKLOW, *e = (unsigned char *)&p - 128;   /* (to below this frame) */
+    while (p < e)
+        *p++ = STACK_PAINT;
+}
+
+void rv_stack_log(const char __far *when)
+{
+    static const char __far s_used[] = "stack %Fs: %u of its %u bytes used at the deepest";
+    const unsigned char *p = (const unsigned char *)_STACKLOW;
+    while (p < (const unsigned char *)_STACKTOP && *p == STACK_PAINT)
+        p++;
+    rv_logf(s_used, when, _STACKTOP - (unsigned)p, _STACKTOP - _STACKLOW);
+}
+#else
+void rv_stack_paint(void) {}
+void rv_stack_log(const char __far *when) { (void)when; }
+#endif
