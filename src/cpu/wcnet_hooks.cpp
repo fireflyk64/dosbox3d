@@ -2092,13 +2092,28 @@ static void rv_check_hooks() {
         } else if (t.off == 0x007A || (t.off == 0x00CF && call_arg16(0) == 1)) {   // missionEnded, uiMode(1)
             g_inMission = false;
         }
+        // A thunk's first call is logged at level 1 (the ABI is seen to be alive), the rest at 2 (the page's verbose
+        // box), and the ones the game's logic makes every step for every AI ship (aiFighterThink, aiSetSpeed, ...)
+        // at 3 only: the page writes every line to the browser's console, and in a fight with four AI ships that was
+        // hundreds of console lines a second, which the browser could not absorb at any cycle count (the emulator
+        // fell to a fifth of real time; the user's report of 2026-10-30).
+        static unsigned calls[sizeof(kRvThunks) / sizeof(kRvThunks[0])];
+        const bool everyStep = !strcmp(t.name, "aiFighterThink") || !strcmp(t.name, "aiShipThink")
+                               || !strcmp(t.name, "aiSetSpeed") || !strcmp(t.name, "maybe_fire_all_guns");
+        const int level = calls[i] == 0 ? 1 : everyStep ? 3 : 2;
+        if (calls[i] < 0xFFFFFFFFu) {
+            calls[i]++;
+        }
+        if (wclog_level() < level) {
+            return;
+        }
         char args[64] = "";
         for (int a = 0; a < t.nargs && a < 4; a++) {
             char one[12];
             snprintf(one, sizeof(one), "%s%u", a ? ", " : "", (unsigned)call_arg16(a));
             strncat(args, one, sizeof(args) - strlen(args) - 1);
         }
-        wclog(1, "RV.EXE: %s(%s)", t.name, args);
+        wclog(level, "RV.EXE: %s(%s)", t.name, args);
         return;
     }
 }
