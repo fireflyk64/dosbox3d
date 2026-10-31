@@ -5,7 +5,7 @@
 #include "rvtypes.h"
 
 #define RVGAME_MAGIC "RVGAME"
-#define RVGAME_VERSION 10
+#define RVGAME_VERSION 11
 
 #define RV_PILOTS 16
 #define RV_NODES 32
@@ -271,6 +271,7 @@ typedef struct {
     uint8_t nengines;
     uint8_t gun_energy_steps;
     uint8_t shield_full_shift;
+    uint8_t shield_steps;
     int8_t engine[RV_ENGINES][4];
     uint8_t hit[3];
     uint8_t box[3];
@@ -302,7 +303,7 @@ typedef struct {
 #define RV_PILOT_SIZE 120
 #define RV_NODE_SIZE 22
 #define RV_MISSION_SIZE 1424
-#define RV_SHIPTYPE_SIZE 176
+#define RV_SHIPTYPE_SIZE 177
 #define RV_WEAPON_SIZE 43
 
 /* sin(i/256 x 90 degrees) x 16384, i = 0..256: the simulation's trigonometry (flight.c) */

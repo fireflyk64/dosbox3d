@@ -191,8 +191,9 @@ static uint16_t refill(uint16_t most, uint16_t phase, uint8_t shift)
 
 /* 1. what runs down or builds up by itself: the guns' cooldowns (GUN_STATE), gun energy (gunEnergy), the shields
  * coming back (SHIELD toward SHIELD_MAX), the afterburner's fuel.  (The guns' are M2's.)  The rates are the type's
- * (gun_energy_steps, shield_full_shift).  The armour doesn't come back in flight; a dying ship's shields stay down;
- * a puppet's are the layer's */
+ * (gun_energy_steps; shield_steps, the old game's stat: a point back on each side every so many steps, the Hornet 5
+ * and the Dralthi 6, a 40-point shield in 7 s; a type without it fills in 1 << shield_full_shift steps).  The armour
+ * doesn't come back in flight; a dying ship's shields stay down; a puppet's are the layer's */
 static void step_timers(void)
 {
     int16_t ship, k;
@@ -209,7 +210,8 @@ static void step_timers(void)
         for (k = 0; k < 2; k+=1) {
             uint16_t most = SHIELD_MAX(ship, k);
             if (SHIELD(ship, k) != most) {
-                uint16_t up = refill(most, phase, shift);
+                uint16_t up = type_of_ship && type_of_ship->shield_steps ? (frameCounter % type_of_ship->shield_steps == 0)
+                              : refill(most, phase, shift);
                 SHIELD(ship, k) = SHIELD(ship, k) + up < most ? SHIELD(ship, k) + up : most;
             }
         }

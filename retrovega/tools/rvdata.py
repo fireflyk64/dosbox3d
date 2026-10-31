@@ -34,12 +34,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 10                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 11                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
                                         # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
                                         # volume, a weapon's radius, a mission's rules); 10: a weapon's damage at
-                                        # the muzzle
+                                        # the muzzle; 11: a type's shield back a point a side every so many steps
 LIMITS = {'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 12,
           'SEATS': 3, 'TALKS': 4, 'FIELDS': 4, 'SHIPTYPES': 64, 'WEAPONS': 48}
 TEXT = {'ID': 16, 'TITLE': 48, 'BRIEFING': 640, 'RESULT': 128, 'TALK': 60, 'KEY': 10, 'CALLSIGN': 12,
@@ -86,6 +86,7 @@ SHIPTYPE = [('char', 'key[RV_KEY]', '%ds' % TEXT['KEY']), ('char', 'name[RV_NAME
             ('unsigned short', 'radius_km', 'H'),
             ('unsigned short', 'missiles', 'H'), ('unsigned char', 'nengines', 'B'),
             ('unsigned char', 'gun_energy_steps', 'B'), ('unsigned char', 'shield_full_shift', 'B'),
+            ('unsigned char', 'shield_steps', 'B'),
             ('signed char', 'engine[RV_ENGINES][4]', '%db' % (4 * 4)),
             ('unsigned char', 'hit[3]', '3B'), ('unsigned char', 'box[3]', '3B'), ('unsigned char', 'core', 'B'),
             ('unsigned char', 'nvitals', 'B'),
@@ -378,10 +379,15 @@ def compile_all():
         # the other
         energy_steps = int(r['gun_energy_steps'] or GUN_ENERGY_STEPS)
         full_shift = int(r['shield_full_shift'] or SHIELD_FULL_SHIFT)
+        # the old game's shield stat (read in its code, 2026-10-31): a point back on each side every shield_steps
+        # steps (the Hornet 5, the Dralthi 6: a 40-point shield in 7 s); blank 0: by shield_full_shift instead
+        shield_steps = int(r.get('shield_steps') or 0)
         if not 1 <= energy_steps <= 255:
             raise Fail('ships.csv %s: gun_energy_steps %d is not 1 to 255' % (r['key'], energy_steps))
         if not 0 <= full_shift <= 15:
             raise Fail('ships.csv %s: shield_full_shift %d is not 0 to 15' % (r['key'], full_shift))
+        if not 0 <= shield_steps <= 255:
+            raise Fail('ships.csv %s: shield_steps %d is not 0 to 255' % (r['key'], shield_steps))
         for k in ('shield_f', 'shield_r'):      # (refill adds one to the low bits of a 16-bit product)
             if n(k) > 32768:
                 raise Fail('ships.csv %s: %s %d is over 32768' % (r['key'], k, n(k)))
@@ -393,7 +399,7 @@ def compile_all():
                                      n('cruise_kps'), n('max_kps'), n('ab_kps'), n('accel'), slide, slide_dmg,
                                      n('yaw_dps'), n('pitch_dps'), n('roll_dps'), guns, n('shield_f'), n('shield_r'),
                                      n('armor_f'), n('armor_r'), n('armor_l'), n('armor_rt'), n('hull'),
-                                     n('lod0_px'), radius, rounds, nengines, energy_steps, full_shift, *eng, *hit,
+                                     n('lod0_px'), radius, rounds, nengines, energy_steps, full_shift, shield_steps, *eng, *hit,
                                      *volume_box(hit), core, nvitals, *vit, loadout))
     talk_ok = {frozenset((r['a'], r['b'])): r['talk'] == 'yes' for r in load_csv('relations.csv')}
     for pair in talk_ok:

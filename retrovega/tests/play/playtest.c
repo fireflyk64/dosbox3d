@@ -2253,28 +2253,39 @@ static void t_type_rates(void)
 {
     static const char __far e_energy[] = "gun energy back %d points in 60 steps, a point every 6 is 10";
     static const char __far e_shield[] = "a shield back to %d of %d in 16 steps, shield_full_shift 4 fills it in those";
+    static const char __far e_steps[] = "a shield back %d points in 16 steps with shield_steps 4 (the old game's stat: "
+        "a point a side every 4 steps): 4 expected";
     RvShipType __far *t;
-    uint8_t keep_steps, keep_shift;
-    uint16_t shield = 0;
+    uint8_t keep_steps, keep_shift, keep_sh;
+    uint16_t shield = 0, by_steps = 0;
     int16_t i, ok = 1;
     pt_alone(PT_PLAYER);
     t = (RvShipType __far *)slot_type(0);       /* (the table outlives the test: put back before any REQUIRE) */
     keep_steps = t->gun_energy_steps;
     keep_shift = t->shield_full_shift;
+    keep_sh = t->shield_steps;
     t->gun_energy_steps = 6;
     t->shield_full_shift = 4;
+    t->shield_steps = 0;
     gunEnergy[0] = 0;
     SHIELD(0, 0) = 0;
     for (i = 0; i < 60 && ok; i++) {
         ok = pt_step();
-        if (i == 15)
+        if (i == 15) {                  /* (the shift's 16 steps done: then the old game's stat over the next 16) */
             shield = SHIELD(0, 0);
+            t->shield_steps = 4;
+            SHIELD(0, 0) = 0;
+        }
+        if (i == 31)
+            by_steps = SHIELD(0, 0);
     }
     t->gun_energy_steps = keep_steps;
     t->shield_full_shift = keep_shift;
+    t->shield_steps = keep_sh;
     if (!ok)
         return;
     REQUIRE(shield == SHIELD_MAX(0, 0), e_shield, shield, SHIELD_MAX(0, 0), 0);
+    REQUIRE(by_steps == 4, e_steps, by_steps, 0, 0);
     REQUIRE(gunEnergy[0] == 10, e_energy, gunEnergy[0], 0, 0);
 }
 
@@ -2811,20 +2822,26 @@ static void t_ram(void)
         "%d is touching)";
     static const char __far e_hurt[] = "a collision hurt the player by %d and the enemy by %d: both take damage";
     LfVec push;
-    int32_t depth, h0, h1;
+    int32_t depth, h0, h1, low0, low1;
     int16_t i;
     pt_alone(PT_PLAYER);
     pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 150, TURN / 2);   /* (inside one another: the radii are 100 and 160 km) */
     REQUIRE(collide_ships(0, 1, &push, &depth), e_test, 0, 0, 0);
-    h0 = pt_health(0);
-    h1 = pt_health(1);
-    for (i = 0; i < 10; i++)
+    gVelocityVector[0] = vec3(0, 0, 10 * KM);   /* (closing at 10 km a step: the hurt is the closing speed's) */
+    h0 = low0 = pt_health(0);
+    h1 = low1 = pt_health(1);
+    for (i = 0; i < 10; i++) {          /* (the lowest the health went: the shields come back as the steps pass) */
         if (!pt_step())
             return;
+        if (pt_health(0) < low0)
+            low0 = pt_health(0);
+        if (slot_is_ship(1) && pt_health(1) < low1)
+            low1 = pt_health(1);
+    }
     REQUIRE(!slot_is_ship(1) || !collide_ships(0, 1, &push, &depth) || depth <= collide_half(0) / 4, e_stuck, depth,
             collide_half(0) / 4, 0);
-    REQUIRE(pt_health(0) < h0 && (pt_health(1) < h1 || shipAiState[1] == 9 || !slot_is_ship(1)), e_hurt,
-            h0 - pt_health(0), slot_is_ship(1) ? h1 - pt_health(1) : 0, 0);
+    REQUIRE(low0 < h0 && (low1 < h1 || shipAiState[1] == 9 || !slot_is_ship(1)), e_hurt, h0 - low0,
+            slot_is_ship(1) ? h1 - low1 : 0, 0);
 }
 
 /* M6.2 */
@@ -3483,7 +3500,7 @@ static const char __far n_m3_11[] = "M3.11 shots-hit (step_shots): gunfire hurts
 static const char __far n_m3_12[] = "M3.12 recharge (step_timers): shields come back, armour does not";
 static const char __far n_m2_19[] = "M2.19 sustain (step_timers): the trigger held 10 s fires the old game's 60 shots (a volley of two "
     "every third of a second) and keeps its energy";
-static const char __far n_m3_13[] = "M3.13 type-rates (step_timers): gun energy and shields come back at the type's rates";
+static const char __far n_m3_13[] = "M3.13 type-rates (step_timers): gun energy and shields come back at the type's rates (a point a side every shield_steps, or the shift)";
 static const char __far n_m3_14[] = "M3.14 hit-volumes (shot_hit): a bolt within the radius, in the volume box, through the silhouettes, as the rule says";
 static const char __far n_m3_15[] = "M3.15 damage-grows (shot_hit): a bolt hurts by its life left: the laser 10 at the muzzle, 25 at the end of its reach";
 static const char __far n_m2_20[] = "M2.20 forward-only (gun_fire): a shot carries the ship's speed along the nose, nothing of its slide";

@@ -216,7 +216,7 @@ and hit what is where it now is.
 
 1. **`step_timers`**: what runs down or builds up by itself.
    - The guns' cooldowns: `GUN_STATE(s, g) & 0x7F` counts steps down to 0. Keep bit 7, which marks the gun destroyed.
-   - `gunEnergy` back toward 100, a point every `gun_energy_steps` steps, and the shields back toward `SHIELD_MAX`, full from nothing in `1 << shield_full_shift` steps: the type's (ships.csv; blank is 1 and 9: a point a step, and 17 s, the old game's measure).
+   - `gunEnergy` back toward 100, a point every `gun_energy_steps` steps, and the shields back toward `SHIELD_MAX`, a point on each side every `shield_steps` steps (the old game's stat, read in its code: the Hornet 5, the Dralthi 6, a 40-point shield in 7 s; the fighters have it) or, for a type without it, full from nothing in `1 << shield_full_shift` steps (blank 9: 17 s, as the old game's Dralthi was measured over its 50 points).
 2. **`step_minds`**: each ship slot, by `rvController`:
    - `CTL_PLAYER` flies by `g_pilot`: `steer_x` and `steer_y` (-9..9: + turns the nose right, + pulls it up), `roll` (+ lifts the right wing), `afterburner`.
    - `CTL_AI` calls the thunk: `aiFighterThink(s)`, or `aiShipThink(s)` for `ET_CAPSHIP`. Always the thunk, so the layer can skip it on clients.

@@ -205,7 +205,7 @@ What the tests expect:
 | M3.10 any-source | a hit of 3 and of 30 does the same with src 0xFFFF, the player's ship and a bolt of the player's |
 | M3.11 shots-hit | 3 s of fire at a ship 1,500 km ahead, side on, hurts it; on the host, the hits name a bolt of the player's |
 | M3.12 recharge | in 20 s the shields come back (never past their most); the armour doesn't |
-| M3.13 type-rates | a type's `gun_energy_steps` and `shield_full_shift` set the rates: with 6 and 4, 10 points of energy in 60 steps, and a shield full in 16 |
+| M3.13 type-rates | a type's `gun_energy_steps`, `shield_full_shift` and `shield_steps` set the rates: with 6 and 4, 10 points of energy in 60 steps, and a shield full in 16; with `shield_steps` 4, a shield back 4 points in 16 steps (the old game's stat) |
 | M3.14 hit-volumes | a laser bolt (radius 10) stepping past a Nicander's middle: 120 km beside it, the sphere rule alone takes it (160 + 10); 100 km above it, the sphere and the volume box (156 up), not the silhouettes (28); through the middle, all three |
 | M3.15 damage-grows | a laser bolt into a Nicander's middle with all its life does 10, with one step left 25: `damage_near` at the muzzle to `damage` at the end of its reach, a line between by the life left (the old game's bolt) |
 
@@ -286,7 +286,7 @@ What the tests expect:
 
 | test | expects |
 |---|---|
-| M6.1 ram | a player inside a frozen ship is out within 10 steps (or touching: less than 1/16 of its half box deep); both hurt |
+| M6.1 ram | a player inside a frozen ship, closing at 10 km a step, is out within 10 steps (or touching: less than 1/16 of its half box deep); both hurt (the lowest their health went: the shields come back) |
 | M6.2 no-ghosts | flown at top speed at a ship 1,500 km ahead, the player is never inside it more than 3 steps in a row, and the collision hurts the ship |
 
 ### M7: missiles (`fireGunFromShip`'s launchers, `step_missiles`, `step_fire`)
