@@ -121,7 +121,8 @@ if (process.env.COMBAT) {              // the autopilot to the first nav point a
 if (!/\/flight /.test(process.env.CMD || "")) {    // (landing takes a nav point flown and the carrier as the target: this ejects)
   await sleep(Math.max(0, flightS - spent) * 1000);
   for (let k = 0; k < 2; k++) {        // Ctrl+E twice within two seconds
-    await page.keyboard.down("Control"); await page.keyboard.press("e"); await sleep(200); await page.keyboard.up("Control"); await sleep(200);
+    await page.keyboard.down("Control"); await page.keyboard.down("e"); await sleep(250);   // (held: the game reads the keys once a frame)
+    await page.keyboard.up("e"); await page.keyboard.up("Control"); await sleep(250);
   }
 }
 t = await waitLog(/flight: over/, (flightS + 20) * 1000);
