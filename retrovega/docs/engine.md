@@ -1620,7 +1620,12 @@ the regulator's light under the port (high enough for a short VDU, which is
 cropped mostly at the bottom), three black vents; a fabric neck seal; the
 camera close on the face (the crown and the chin bar's foot cut off), its
 key light nearly in front (from the side, the dark chin bar's far edge sank
-into the ground and the jaw looked shifted left: the user); key, fill and rim
+into the ground and the jaw looked shifted left: the user), and then its
+shading mirror-averaged (the fill, the studio and the rim still lean one way:
+the chin's vents and light sat a few pixels left of the eyes) with the
+dither mirrored too, so the helmet is exactly even; Echo's face a little
+lower behind it than the others' (comms.py's DROP: the user saw Echo's
+nostrils under the visor); key, fill and rim
 lights, soft shadows, occlusion, a studio's reflections (the visor's kept
 apart, laid over the face). Each pilot's portrait goes behind the visor,
 its eyes onto the helmet's eye points, its local contrast raised so the

@@ -64,6 +64,9 @@ GREENS = [tuple(_FLIGHT[i]) for i in RAMP]
 GREENS_DARK = [tuple(_FLIGHT[i]) for i in RAMP_DARK]
 LOOK = dict(bg=0.045, lo=0.05, hi=0.75, gamma=0.7, dither=0.25)
 EYES = ['half', 'shut', 'left', 'right']        # RV.DAT's order, after each voice's window; then its mouths
+# a pilot's face lower behind the shared helmet, in portrait pixels (the user, 2026-10-31: Echo's nostrils showed
+# under the visor, the breathing gear should hide them; everyone else as they are)
+DROP = {'ECHO': 5}
 BLOOM = 0.6                             # an alien's lights: this much of their glow again, blurred round them
 BAYER4 = np.array([[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]) / 16.0 - 0.5
 
@@ -135,7 +138,7 @@ def composite(r, por, lum_face):
     s = (px1 - px0) / (sx1 - sx0)
     ys, xs = np.mgrid[0:h, 0:w]
     px = (xs + 0.5 - sx0) * s + px0
-    py = (ys + 0.5 - sy0) * s + py0
+    py = (ys + 0.5 - sy0) * s + py0 - DROP.get(por.key, 0)
     face = ndimage.map_coordinates(lum_face, [py - 0.5, px - 0.5], order=1, mode='nearest')
     head = r['mat'] == r['names'].index('head')
     out = np.where(head, face * (0.35 + 0.75 * np.clip(r['light'], 0, 1.2)), r['lum'])
@@ -151,6 +154,7 @@ def shades(gray, cols):
                        dtype=np.float64) / 255.0
     s = np.clip((small - LOOK['lo']) / (LOOK['hi'] - LOOK['lo']), 0, 1) ** LOOK['gamma']
     b = np.tile(BAYER4, (ROWS // 4 + 1, cols // 4 + 1))[:ROWS, :cols]
+    b[:, cols - cols // 2:] = b[:, :cols // 2][:, ::-1]     # (mirrored: a symmetric picture stays symmetric)
     return np.clip(np.round(s * (LEVELS - 1) + b * LOOK['dither']), 0, LEVELS - 1).astype(np.uint8)
 
 

@@ -78,6 +78,7 @@ class Model:
     points = {}                         # name: a 3D point, projected onto the picture
     view = {}                           # the camera, if not the pilots' framing (camera()'s span, eye, look)
     key = None                          # the key light's direction, if not KEY
+    mirror = False                      # symmetric: its shading made exactly even, left and right (mirror-averaged)
 
     def solids(self, p):
         raise NotImplementedError
@@ -146,6 +147,8 @@ class Human(Model):
     # the key light nearly in front (the user: lit from the side, the dark chin bar's far edge sank into the ground and
     # the jaw looked unhooked and shifted left), a little left for the dome's shape
     key = np.array([-0.16, 0.62, 0.77]) / np.linalg.norm([-0.16, 0.62, 0.77])
+    mirror = True                       # (then still the fill, the studio and the rim lean one way: the user saw the
+                                        #  chin's vents and light a few pixels left of the eyes)
 
     def __init__(self, mask=True):
         self.mask = mask
@@ -361,6 +364,8 @@ def render(w, h, model=None):
             vrefl[front] = studio(Rv) * (0.22 + 0.78 * fres) * 0.4
             vpass[front] = 0.82 * (1 - fres)
     pts = {k: project(v) for k, v in model.points.items()}
+    if model.mirror:                    # (the shape is symmetric about x = 0 and so is the pixel grid: only the lights are not)
+        lum, light, vrefl, vpass = [(a + a[:, ::-1]) * 0.5 for a in (lum, light, vrefl, vpass)]
     out = {'lum': lum, 'mat': matmap, 'names': list(model.order), 'light': light, 'visor_refl': vrefl,
            'visor_pass': vpass, 'hit': hit, 'P': P, 'pmat': mat, 'points': pts, 'model': model}
     if 'eye_l' in pts:                  # (the pilots' helmet: where the portraits' eyes go, the callsign, the light)
