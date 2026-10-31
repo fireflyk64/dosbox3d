@@ -30,4 +30,23 @@ int16_t logic_autopilot(void);          /* the A key, between steps: 1 when it f
                                            point), 0 when it may not (enemies near, nowhere to go) */
 int16_t logic_autopilot_ready(void);    /* the nav point it would go to, -1 not now (the engine asks before its flyby) */
 
+/* the player's systems (systemDamage's bytes, one each: 0 whole .. SYS_WRECKED; the old game's nine, read in its
+ * damage readout): a hit through the armour to the hull may hurt one (do_damage).  What each does when hurt:
+ * ABSORBERS the slide (M1); POWER the gun energy back slower, none wrecked (and the running lights out, flight.c);
+ * SHIELDS the shields back slower, none wrecked; TRACK no target lock and no missile lock wrecked; INTERCOM no comm
+ * menu wrecked; EJECTOR no ejection wrecked; GUNS a gun destroyed a point; COMPUTER and REPAIR the readout only */
+enum { SYS_ABSORBERS, SYS_POWER, SYS_SHIELDS, SYS_COMPUTER, SYS_INTERCOM, SYS_TRACK, SYS_EJECTOR, SYS_REPAIR, SYS_GUNS,
+       SYS_COUNT };
+#define SYS_WRECKED 4                   /* systemDamage's most */
+const char __far *logic_system_name(int16_t k);   /* its name for the readout (D) */
+
+/* the player's targeting (flight.c's T, Y and L keys, its AUTO; the user's ruling, 2026-10-31): the target key
+ * selects only among the ships in front of the pilot (ahead of the wing line), the one nearest the nose first and
+ * each press the next round; a lock (L, g_sys.hold) keeps the chosen target through T, Y and AUTO until it is
+ * unlocked or the target dies; no lock with the target-tracking system wrecked.  Each returns the target, -1 none */
+int16_t logic_target_next(void);        /* T */
+int16_t logic_target_nearest(void);     /* Y, AUTO: the nearest enemy in front */
+int16_t logic_target_lock(void);        /* L: the lock on, or off again; 1 when it is on after this */
+int16_t logic_target_ahead(int16_t s);  /* slot s is in front of the pilot (ahead of the wing line) */
+
 #endif

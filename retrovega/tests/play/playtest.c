@@ -3732,6 +3732,134 @@ static void t_escort_along(void)
     REQUIRE(along < -400, e_behind, along, 0, 0);
 }
 
+/* ======================================================================================================== */
+/* M10: the cockpit (logic_target_*, the lock, SYS_*; the user's rulings of 2026-10-31: the target key only in front,
+ * a lock, no lock with the tracking wrecked) */
+
+/* three frozen enemies about a still player facing +z: slot 1 straight ahead at 5,000 km, slot 2 45 degrees right
+ * at 4,243 km, slot 3 behind at 4,000 km */
+static void pt_three(void)
+{
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 5000, TURN / 2);
+    pt_ship(2, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 3000, 0, 3000, TURN / 2);
+    pt_ship(3, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, -4000, 0);
+}
+
+/* M10.1 */
+static void t_target_front(void)
+{
+    static const char __far e_first[] = "T from no target picked slot %d: the ship nearest the nose in front (slot 1)";
+    static const char __far e_second[] = "T again picked slot %d: the next in front round by the angle (slot 2)";
+    static const char __far e_round[] = "T a third time picked slot %d: round to the first in front (slot 1), never "
+        "the one behind";
+    static const char __far e_behind[] = "the player turned round, T picked slot %d: the ship that was behind is in "
+        "front now (slot 3)";
+    static const char __far e_none[] = "with nothing in front T changed the target to %d: it keeps the one it has";
+    static const char __far e_nearest[] = "Y picked slot %d: the nearest enemy in front (slot 2), not the one behind";
+    pt_three();
+    if (!pt_step())
+        return;
+    REQUIRE(logic_target_next() == 1, e_first, g_sys.target, 0, 0);
+    REQUIRE(logic_target_next() == 2, e_second, g_sys.target, 0, 0);
+    REQUIRE(logic_target_next() == 1, e_round, g_sys.target, 0, 0);
+    REQUIRE(logic_target_nearest() == 2, e_nearest, g_sys.target, 0, 0);
+    pt_put(0, 0, 0, 0, TURN / 2);
+    if (!pt_step())
+        return;
+    REQUIRE(logic_target_next() == 3, e_behind, g_sys.target, 0, 0);
+    pt_put(0, 0, 0, 0, 0);
+    ship_clear(1);
+    ship_clear(2);
+    if (!pt_step())
+        return;
+    REQUIRE(logic_target_next() == 3, e_none, g_sys.target, 0, 0);
+}
+
+/* M10.2 */
+static void t_target_lock(void)
+{
+    static const char __far e_lock[] = "L on slot 1 did not lock (%d, hold %d)";
+    static const char __far e_kept[] = "locked on slot 1, T or Y moved the target to %d: a lock keeps it";
+    static const char __far e_off[] = "L again left the lock on (%d)";
+    static const char __far e_free[] = "unlocked, Y did not take the nearest enemy in front (slot 2): %d";
+    static const char __far e_dead[] = "the locked target died and the target is %d, the lock %d: both go";
+    static const char __far e_track[] = "with the target tracking wrecked L locked (%d, hold %d): it must not";
+    static const char __far e_drop[] = "the tracking wrecked after a lock, the lock stayed (%d): it goes";
+    pt_three();
+    if (!pt_step())
+        return;
+    (void)logic_target_next();
+    REQUIRE(logic_target_lock() == 1 && g_sys.hold, e_lock, g_sys.target, g_sys.hold, 0);
+    (void)logic_target_next();
+    (void)logic_target_nearest();
+    REQUIRE(g_sys.target == 1, e_kept, g_sys.target, 0, 0);
+    REQUIRE(logic_target_lock() == 0 && !g_sys.hold, e_off, g_sys.hold, 0, 0);
+    REQUIRE(logic_target_nearest() == 2, e_free, g_sys.target, 0, 0);
+    (void)logic_target_lock();
+    shipAiState[2] = 9;
+    if (!pt_step())
+        return;
+    REQUIRE(g_sys.target == -1 && !g_sys.hold, e_dead, g_sys.target, g_sys.hold, 0);
+    (void)logic_target_next();
+    systemDamage[SYS_TRACK] = SYS_WRECKED;
+    REQUIRE(logic_target_lock() == 0 && !g_sys.hold, e_track, g_sys.target, g_sys.hold, 0);
+    systemDamage[SYS_TRACK] = 0;
+    (void)logic_target_lock();
+    systemDamage[SYS_TRACK] = SYS_WRECKED;
+    if (!pt_step())
+        return;
+    REQUIRE(!g_sys.hold, e_drop, g_sys.hold, 0, 0);
+    systemDamage[SYS_TRACK] = 0;
+}
+
+/* M10.3: the systems: hits through the armour to the hull hurt them (a point each, the overlay bit), the shield
+ * generator wrecked stops the shields coming back, the power plant wrecked the gun energy, and a GUNS point is a gun
+ * destroyed */
+static void t_systems(void)
+{
+    static const char __far e_whole[] = "%d hits through the armour to the hull hurt no system (hurt_system)";
+    static const char __far e_overlay[] = "a system hurt and no cockpit overlay bit set (rvCockpitDamage 0)";
+    static const char __far e_guns[] = "GUNS at %d and %d guns destroyed: a point is a gun";
+    static const char __far e_shield[] = "the shield generator wrecked, the front shield came back to %d in 10 s";
+    static const char __far e_shield_ok[] = "the generator whole again, the front shield stayed at %d for 10 s";
+    static const char __far e_power[] = "the power plant wrecked, the gun energy came back to %d in 5 s";
+    int16_t i, k, hurt = 0, guns = 0;
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 20000, TURN / 2);
+    SHIELD(0, 0) = 0;
+    ARMOR(0, 0) = 0;
+    for (i = 0; i < 40; i++) {          /* (hits of 20 through the bare front: the odds of a system 20 in the hull's 56;
+                                           the hull made whole after each, so the player lives through the forty) */
+        (void)pt_hit(0xFFFF, 0, 20, 1, 0, 0);
+        damagePoints[0] = 0;
+    }
+    for (k = 0; k < SYS_COUNT; k++)
+        hurt = (int16_t)(hurt + systemDamage[k]);
+    REQUIRE(hurt > 0, e_whole, i, 0, 0);
+    REQUIRE(rvCockpitDamage != 0, e_overlay, 0, 0, 0);
+    for (k = 0; k < GUN_COUNT(0); k++)
+        if (pt_is_gun(0, k) && (GUN_STATE(0, k) & GUN_DESTROYED))
+            guns++;
+    REQUIRE(guns == (systemDamage[SYS_GUNS] < pt_guns(0) ? systemDamage[SYS_GUNS] : pt_guns(0)), e_guns, systemDamage[SYS_GUNS], guns, 0);
+    memset(systemDamage, 0, systemDamage_SIZE);
+    systemDamage[SYS_SHIELDS] = SYS_WRECKED;
+    SHIELD(0, 0) = 0;
+    if (!pt_steps(10 * SEC))
+        return;
+    REQUIRE(SHIELD(0, 0) == 0, e_shield, SHIELD(0, 0), 0, 0);
+    systemDamage[SYS_SHIELDS] = 0;
+    if (!pt_steps(10 * SEC))
+        return;
+    REQUIRE(SHIELD(0, 0) > 0, e_shield_ok, SHIELD(0, 0), 0, 0);
+    systemDamage[SYS_POWER] = SYS_WRECKED;
+    gunEnergy[0] = 10;
+    if (!pt_steps(5 * SEC))
+        return;
+    REQUIRE(gunEnergy[0] == 10, e_power, gunEnergy[0], 0, 0);
+    memset(systemDamage, 0, systemDamage_SIZE);
+}
+
 /* M9.1 */
 static void t_gunsight(void)
 {
@@ -3911,6 +4039,9 @@ static const char __far n_m8_12[] = "M8.12 escort-along (logic_autopilot): the a
     "player, and stops 4,500 km short of the nav point";
 static const char __far n_m9_1[] = "M9.1 gunsight (logic_hud): a mark at the view's middle";
 static const char __far n_m9_2[] = "M9.2 brackets (logic_hud): marks round the target";
+static const char __far n_m10_1[] = "M10.1 target-front (logic_target_next): T picks only in front of the pilot, nearest the nose first, round";
+static const char __far n_m10_2[] = "M10.2 target-lock (logic_target_lock): L keeps the target through T, Y; off when it dies or the tracking is wrecked";
+static const char __far n_m10_3[] = "M10.3 systems (hurt_system, step_timers): hits to the hull hurt the nine systems; a wrecked generator or power plant";
 
 static const PtTest __far k_tests[] = {
     { n_m1_1, t_coast, 0 }, { n_m1_2, t_throttle, 0 }, { n_m1_3, t_top_speed, 0 }, { n_m1_4, t_yaw, 0 },
@@ -3945,6 +4076,7 @@ static const PtTest __far k_tests[] = {
     { n_m8_5, t_skipped, 0 }, { n_m8_6, t_enemies_left, 0 }, { n_m8_7, t_layer_spawn, 0 }, { n_m8_8, t_autopilot, 0 },
     { n_m8_9, t_fighter, 0 }, { n_m8_10, t_escort_out, 0 }, { n_m8_11, t_escort_lost, 0 }, { n_m8_12, t_escort_along, 0 },
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
+    { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
 };
 
 /* --- the run --- */
@@ -4032,10 +4164,11 @@ int16_t playtest_run(const char *only)
     static const char __far s_ms[] = "  M%d %d/%d";
     static const char __far s_start[] = "the play tests: %d of them; each line PASS or FAIL, the world's hash, the test";
     static const char __far s_steps[] = "steps";
-    int16_t i, n = (int16_t)(sizeof k_tests / sizeof k_tests[0]), ran = 0, passed = 0, m, mr[10], mp[10];
+    int16_t i, n = (int16_t)(sizeof k_tests / sizeof k_tests[0]), ran = 0, passed = 0, m, mr[12], mp[12];
     uint32_t h;
     for (m = 0; m < 10; m++)
         mr[m] = mp[m] = 0;
+    mr[10] = mp[10] = mr[11] = mp[11] = 0;
     g_steps = 0;
     if (only)
         for (i = 0; only[i]; i++)
@@ -4063,12 +4196,16 @@ int16_t playtest_run(const char *only)
         g_failed = 0;
         k_tests[i].fn();
         h = pt_hash();
-        m = (int16_t)(k_tests[i].name[1] - '0');
+        m = (int16_t)(k_tests[i].name[1] - '0');   /* (M1 .. M9, M10, M11: the digits before the dot) */
+        if (k_tests[i].name[2] >= '0' && k_tests[i].name[2] <= '9')
+            m = (int16_t)(m * 10 + k_tests[i].name[2] - '0');
+        if (m > 11)
+            m = 11;
         ran++;
-        mr[m % 10]++;
+        mr[m]++;
         if (!g_failed) {
             passed++;
-            mp[m % 10]++;
+            mp[m]++;
         }
         ln_s(s_pre);
         ln_s(g_failed ? s_fail : s_pass);
@@ -4081,7 +4218,7 @@ int16_t playtest_run(const char *only)
     collide_flight_end();
     ln_s(s_pre);
     ln_f(s_sum, passed, ran, 0);
-    for (m = 1; m < 10; m++)
+    for (m = 1; m < 12; m++)
         if (mr[m])
             ln_f(s_ms, m, mp[m], mr[m]);
     ln_end();

@@ -375,6 +375,18 @@ The tests take the player to a nav point by moving it (as the autopilot would) a
 M9.1 wants a mark within 30 px of the middle; M9.2 wants marks within 10 px of the target's box. They read the
 host harness's screen, so they don't run in DOS.
 
+### M10: the cockpit (`logic_target_*`, the lock, `SYS_*`)
+
+The user's rulings (2026-10-31): the target key selects only what is in front of the pilot and there is a lock; a
+wrecked target-tracking system means no lock; the player's systems are the old game's nine. In logic.c, so these
+tests cover them; flight.c's keys (T, Y, L) and its AUTO call them.
+
+| test | expects |
+|---|---|
+| M10.1 target-front | three enemies about a still player (ahead, 45° right, behind): T picks the one nearest the nose in front, T again the next by the angle, T again round to the first and never the one behind; Y the nearest enemy in front; the player turned round, T picks the one that was behind; with nothing in front T keeps the target it has |
+| M10.2 target-lock | L locks the target (`g_sys.hold`): T and Y leave it; L again unlocks; a locked target that dies is dropped with its lock; with `systemDamage[SYS_TRACK]` wrecked L refuses, and a lock held when the tracking is wrecked goes |
+| M10.3 systems | hits of 20 through the bare front to the hull hurt a system within 40 (a point each, its cockpit overlay bit set), a GUNS point is a gun destroyed; the shield generator wrecked, the front shield stays at 0 for 10 s and comes back once whole; the power plant wrecked, the gun energy stays |
+
 ## The memory: where everything lives
 
 ### The fixed block
@@ -405,7 +417,7 @@ writes it by offset, so the offsets are fixed for good. `abi/rvabi.def` is the o
 | 0x0116 | `victoryPoints` | 2 | the mission's score: nonzero won | **you**; the stand-in roll before (see below) |
 | 0x011E-0x0123 | `fieldCount`, `fieldRockTally`, `currentField` | 6 | the asteroid fields | rocks.c |
 | 0x0128 | `steerInput` | 4 | the steering as the layer reads it: pitch, yaw | flight.c, each frame |
-| 0x028C | `systemDamage` | 10 | a byte per system, 0..4 | free for your damage model |
+| 0x028C | `systemDamage` | 10 | a byte per system, 0..4 | the nine systems (logic.h `SYS_*`): absorbers, power plant, shield generator, computer, intercom, target tracking, ejector, repair, guns |
 | 0x02A0 | `tempVector` | 12 | a spare near vector (a `where`) | anyone |
 | 0x02C0 | `navPointState` | 152 | 8 × 19 bytes of nav-point progress | free for your mission's progress |
 | 0x035E | `rvCockpitDamage` | 4 | a bit per cracked cockpit overlay (logic.md, "Damage") | you |

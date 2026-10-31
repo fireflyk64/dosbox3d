@@ -69,6 +69,7 @@ static uint16_t __far g_died[NUM_SHIP_SLOTS];     /* the step a ship was seen dy
 
 static uint8_t profile_of(uint16_t type, uint16_t side);
 static void mind_rates(int16_t s);      /* (its fear's rates from its profile: the AI, below) */
+static void target_tick(void);          /* (the player's target each step: the targeting, below) */
 
 void logic_prepare_spawn(int16_t ship_index)
 {
@@ -216,15 +217,22 @@ static void step_timers(void)
         shift = type_of_ship ? type_of_ship->shield_full_shift : RV_SHIELD_FULL_SHIFT;
         energy_steps = type_of_ship ? type_of_ship->gun_energy_steps : RV_GUN_ENERGY_STEPS;
         phase = frameCounter & ((1U << shift) - 1);
+        /* (the player's shield generator and power plant hurt: the shields and the energy come back a point every
+         * 1 + the damage times as many steps, and not at all wrecked) */
         for (k = 0; k < 2; k+=1) {
             uint16_t most = SHIELD_MAX(ship, k);
             if (SHIELD(ship, k) != most) {
                 uint16_t up = type_of_ship && type_of_ship->shield_steps ? (frameCounter % type_of_ship->shield_steps == 0)
                               : refill(most, phase, shift);
+                if (ship == 0 && rvController[0] == CTL_PLAYER && systemDamage[SYS_SHIELDS]
+                    && (systemDamage[SYS_SHIELDS] >= SYS_WRECKED || frameCounter % (1 + systemDamage[SYS_SHIELDS]) != 0))
+                    up = 0;
                 SHIELD(ship, k) = SHIELD(ship, k) + up < most ? SHIELD(ship, k) + up : most;
             }
         }
-        if (gunEnergy[ship] < 100 && (uint16_t)(frameCounter + ship) % energy_steps == 0) {
+        if (gunEnergy[ship] < 100 && (uint16_t)(frameCounter + ship) % energy_steps == 0
+            && !(ship == 0 && rvController[0] == CTL_PLAYER && systemDamage[SYS_POWER]
+                 && (systemDamage[SYS_POWER] >= SYS_WRECKED || frameCounter % (1 + systemDamage[SYS_POWER]) != 0))) {
             gunEnergy[ship] += 1;
         }
         {
@@ -258,6 +266,8 @@ static void step_minds(void)
             g_turn[s].x = g_pilot.steer_x;
             g_turn[s].y = g_pilot.steer_y;
             g_turn[s].roll = g_pilot.roll;
+            if (s == 0)
+                target_tick();
             rvTarget[s] = (uint8_t)(g_sys.target >= 0 ? g_sys.target : 0xFF);   /* (the layer reads them) */
             playerTarget = (uint16_t)(g_sys.target >= 0 ? g_sys.target : 0xFFFF);
             break;
@@ -271,6 +281,101 @@ static void step_minds(void)
             break;
         }
     }
+}
+
+/* --- the player's targeting (logic.h): T, Y, L and AUTO, with the lock --- */
+
+static int16_t cos_nose_to(int16_t s, int16_t h);
+static int32_t km_between(int16_t a, int16_t b);
+
+int16_t logic_target_ahead(int16_t s)
+{
+    RvVec3 d;
+    if (s <= 0 || s >= NUM_SHIP_SLOTS || !slot_is_ship(s) || maybeEntityType[s] == ET_MISSILE || shipAiState[s] == 9)
+        return 0;
+    d = vec3(TO_KM(gPositionVector[s].x - gPositionVector[0].x), TO_KM(gPositionVector[s].y - gPositionVector[0].y),
+             TO_KM(gPositionVector[s].z - gPositionVector[0].z));
+    return vec_dot(&d, &gOrientationFrontVector[0]) > 0;
+}
+
+/* the ships in front of the pilot, the nearest to the nose first (an enemy only when `enemies`): n of them */
+static int16_t targets_ahead(int16_t *out, int16_t enemies)
+{
+    int16_t n = 0, k, i, j;
+    int16_t c[NUM_SHIP_SLOTS];
+    for (k = 1; k < NUM_SHIP_SLOTS; k++) {
+        int16_t ck;
+        if (!logic_target_ahead(k) || (enemies && commAnimInfo[k] == commAnimInfo[0]))
+            continue;
+        ck = cos_nose_to(0, k);
+        for (i = 0; i < n && c[i] >= ck; i++)
+            ;
+        for (j = n; j > i; j--) {
+            out[j] = out[j - 1];
+            c[j] = c[j - 1];
+        }
+        out[i] = k;
+        c[i] = ck;
+        n++;
+    }
+    return n;
+}
+
+int16_t logic_target_next(void)
+{
+    int16_t list[NUM_SHIP_SLOTS], n, i;
+    if (g_sys.hold)
+        return g_sys.target;
+    n = targets_ahead(list, 0);
+    if (!n)
+        return g_sys.target;
+    for (i = 0; i < n; i++)
+        if (list[i] == g_sys.target) {
+            g_sys.target = list[(i + 1) % n];
+            return g_sys.target;
+        }
+    g_sys.target = list[0];
+    return g_sys.target;
+}
+
+int16_t logic_target_nearest(void)
+{
+    int16_t list[NUM_SHIP_SLOTS], n, i, best = -1;
+    int32_t bd = INT32_C(0x7FFFFFFF), d;
+    if (g_sys.hold)
+        return g_sys.target;
+    n = targets_ahead(list, 1);
+    for (i = 0; i < n; i++)
+        if ((d = km_between(0, list[i])) < bd) {
+            bd = d;
+            best = list[i];
+        }
+    if (best >= 0)
+        g_sys.target = best;
+    return g_sys.target;
+}
+
+int16_t logic_target_lock(void)
+{
+    if (g_sys.hold) {
+        g_sys.hold = 0;
+        return 0;
+    }
+    if (g_sys.target < 0 || !slot_is_ship(g_sys.target) || shipAiState[g_sys.target] == 9 || systemDamage[SYS_TRACK] >= SYS_WRECKED)
+        return 0;
+    g_sys.hold = 1;
+    return 1;
+}
+
+/* each step: a target that died is dropped and its lock with it; the lock goes with the tracking system */
+static void target_tick(void)
+{
+    if (g_sys.target >= 0 && (!slot_is_ship(g_sys.target) || shipAiState[g_sys.target] == 9)) {
+        g_sys.target = -1;
+        g_sys.hold = 0;
+    }
+    if (systemDamage[SYS_TRACK] >= SYS_WRECKED)
+        g_sys.hold = 0;
 }
 
 /* 3. the fire loop: who pulls a trigger this step (the player's g_pilot.guns with g_sys.armed, g_pilot.missile;
@@ -325,15 +430,28 @@ int32_t vec_len(const RvVec3 *a) {
     return lf_sqrt((uint32_t)(a->x * a->x + a->y * a->y + a->z * a->z));
 }
 
-/* the player's systems: systemDamage's bytes (one set, the player's ship's: 0 whole .. SYS_WRECKED), each shown hurt
- * by a cockpit overlay (its rvCockpitDamage bit, tools/cockpits.py BITS).  A hit through to the hull may hurt one
- * (do_damage_impl) */
-enum { SYS_ABSORBERS,                   /* the acceleration absorbers: hurt, the slide comes on at slide_dmg_kps */
-       SYS_COUNT };
-#define SYS_WRECKED 4                   /* systemDamage's most */
-#define CP_FLIGHT_CONTROLS 15           /* the absorbers' overlay: every cockpit kit has it, and no panel goes dark
-                                           with it */
-static const uint8_t __far k_sys_overlay[SYS_COUNT] = { CP_FLIGHT_CONTROLS };
+/* the player's systems: systemDamage's bytes (one set, the player's ship's: 0 whole .. SYS_WRECKED; logic.h's SYS_*,
+ * the old game's nine), each shown hurt by a cockpit overlay (its rvCockpitDamage bit, tools/cockpits.py BITS).  A
+ * hit through to the hull may hurt one (do_damage_impl) */
+static const uint8_t __far k_sys_overlay[SYS_COUNT] = {
+    15,                                 /* ABSORBERS: flight_controls (every kit has it, no panel goes dark with it) */
+    9,                                  /* POWER: power_distribution (flight.c's running lights read the bit) */
+    3,                                  /* SHIELDS: shields */
+    1,                                  /* COMPUTER: targeting / systems_vdu */
+    13,                                 /* INTERCOM: communications */
+    18,                                 /* TRACK: target_controls */
+    20,                                 /* EJECTOR: (no kit paints it) */
+    21,                                 /* REPAIR: (none) */
+    0                                   /* GUNS: weapons */
+};
+static const char __far k_sys_name[SYS_COUNT][13] = {
+    "ACCEL ABSORB", "POWER PLANT", "SHIELD GEN", "COMPUTER", "INTERCOM", "TARGET TRACK", "EJECTOR", "REPAIR SYS", "GUNS"
+};
+
+const char __far *logic_system_name(int16_t k)
+{
+    return k >= 0 && k < SYS_COUNT ? k_sys_name[k] : k_sys_name[0];
+}
 
 static int32_t reduce_slide(int16_t ship_index)
 {
@@ -2334,6 +2452,16 @@ static void hurt_system(uint16_t left, uint16_t hull)
     if (systemDamage[k] < SYS_WRECKED)
         systemDamage[k]++;
     rvCockpitDamage |= 1UL << k_sys_overlay[k];
+    if (k == SYS_GUNS) {                /* a gun of the player's destroyed: the first still working */
+        int16_t g;
+        for (g = 0; g < GUN_COUNT(0); g++) {
+            const RvWeapon __far *w = weapon(GUN_TYPE(0, g));
+            if (w && (w->kind == RV_WK_GUN || w->kind == RV_WK_TURRET) && !(GUN_STATE(0, g) & GUN_DESTROYED)) {
+                GUN_STATE(0, g) |= GUN_DESTROYED;
+                break;
+            }
+        }
+    }
 }
 
 uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, uint16_t where)

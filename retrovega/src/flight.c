@@ -1444,34 +1444,25 @@ static int is_ship(int s)
     return s > 0 && s <= RV_MAX_SHIP_SLOT && (maybeEntityType[s] == 0xC || maybeEntityType[s] == 0xD);
 }
 
-/* the target: the next ship after the one chosen (then none), or the nearest enemy */
+/* the target: the logic's (logic.h: only what is in front of the pilot, the nearest to the nose first, round and
+ * round; the nearest enemy in front; a lock that keeps it, L) */
 static void target_next(void)
 {
-    int s;
-    for (s = g_sys.target + 1; s <= RV_MAX_SHIP_SLOT; s++)
-        if (is_ship(s)) {
-            g_sys.target = s;
-            return;
-        }
-    g_sys.target = -1;
+    (void)logic_target_next();
 }
 
 static void target_nearest(void)
 {
-    int s, best = -1;
-    long d, bd = 0;
-    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
-        if (is_ship(s) && commAnimInfo[s] != 0 && ((d = player_km(s)) < bd || best < 0)) {
-            best = s;
-            bd = d;
-        }
-    if (best >= 0)
-        g_sys.target = best;
+    (void)logic_target_nearest();
 }
 
 static void eject_pull(void)
 {
     unsigned long now = clock240();
+    if (systemDamage[SYS_EJECTOR] >= SYS_WRECKED) {   /* (the ejector wrecked: no way out) */
+        RV_LOG("flight: eject: the ejector is wrecked");
+        return;
+    }
     if (g_eject_at && now - g_eject_at < 480) {
         RV_LOG("flight: ejected");
         missionStatus = 2;
@@ -1496,7 +1487,7 @@ static void system_action(int fn, int arg)
         if (g_m && g_m->nnav) g_sys.nav = (unsigned char)((g_sys.nav + 1) % g_m->nnav);
         break;
     case RV_PF_TARGET_LAMP: case RV_PF_TARGET_ID: case RV_PF_RANGE_BAR: target_next(); break;
-    case RV_PF_LOCK: g_sys.hold ^= 1; break;
+    case RV_PF_LOCK: (void)logic_target_lock(); break;
     case RV_PF_ARM_LAMP: case RV_PF_ARM_KNOB: g_sys.armed ^= 1; break;
     case RV_PF_AUTO_LAMP:
         if (arg == 0) rv_autopilot_key();
