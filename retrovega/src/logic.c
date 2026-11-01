@@ -282,6 +282,15 @@ int16_t logic_request_landing(void)
 }
 
 #ifdef RV_TESTS
+/* a script's way to see the carrier die (flight.c's test key) */
+void logic_test_kill_carrier(void)
+{
+    int16_t s;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (logic_is_home(s))
+            shipAiState[s] = 9;
+}
+
 /* a script's way to the carrier (flight.c's test keys): the player 3,000 km off its bow (0) or its beam (1), facing it */
 void logic_test_to_carrier(int16_t where)
 {
@@ -2680,8 +2689,11 @@ static void step_deaths(void)
             continue;
         if (s == 0)                     /* the player's end: the flight ends at the loop's next check */
             missionStatus = 4;
-        else
+        else {
+            if (role_of(s) == RV_ESCORT_HOME && !missionStatus)   /* (the carrier's end is the player's, the user's ask) */
+                missionStatus = MISSION_CARRIER_LOST;
             despawn((uint16_t)s);
+        }
     }
 }
 

@@ -57,7 +57,7 @@ TYPES = {'patrol': 0}
 MUSIC_FILES = ['BRIEF', 'BAR', 'LAUNCH', 'WIN', 'LOSE', 'QUARTERS', 'LOUNGE',
                'CRUISE1', 'CRUISE2', 'CRUISE3', 'CRUISE4', 'CRUISE5', 'CRUISE6', 'CRUISE7', 'CRUISE8',
                'HOMEWARD', 'HOMELOSS', 'BATTLE1', 'BATTLE2', 'BATTLE3', 'ROCKS',
-               'PANIC1', 'PANIC2', 'PANIC3', 'VICTORY1', 'VICTORY2', 'VICTORY3', 'TRAGEDY']
+               'PANIC1', 'PANIC2', 'PANIC3', 'LOST', 'VICTORY1', 'VICTORY2', 'VICTORY3', 'TRAGEDY']
 MUSIC = {'briefing': 0, 'bar': 1, 'launch': 2, 'win': 3, 'lose': 4, 'quarters': 5, 'lounge': 6}
 MUSIC.update({f.lower(): i for i, f in enumerate(MUSIC_FILES) if i >= len(MUSIC)})
 ROLES = {'pilot': 0, 'hero': 1, 'barman': 2, 'xo': 3, 'tech': 4}

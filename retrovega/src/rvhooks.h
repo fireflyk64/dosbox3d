@@ -48,7 +48,7 @@ extern uint8_t rv_dgroup[];
 #define rvPuppetDirectory_SIZE         192
 
 /* --- scalars: 0x0100- --- */
-#define missionStatus                  (*RV_AT(uint16_t *, 0x0100)) /* 0 flying, 1 landed, 2 ejected, 3 on the carrier, 4 dead, 5 exit */
+#define missionStatus                  (*RV_AT(uint16_t *, 0x0100)) /* 0 flying, 1 landed, 2 ejected, 3 on the carrier, 4 dead, 5 exit, 6 carrier lost */
 #define missionStatus_SIZE             2
 #define playerCanBeDamaged             (*RV_AT(uint16_t *, 0x0102)) /* do_damage ignores slot 0 while zero */
 #define playerCanBeDamaged_SIZE        2

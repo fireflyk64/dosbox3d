@@ -124,7 +124,7 @@ The arrays a ship uses:
 | `slotMissionShip[s]`, `shipStateByte[s]` | | the mission ship record it came from; its pilot (0..15 the cast, 8 a human, 0xff none) |
 
 Scalars you will use: `frameCounter` (steps, +1 each, nothing else
-changes it), `missionStatus` (0 flying; set 1 landed, 2 ejected, 4 dead, 5
+changes it), `missionStatus` (0 flying; set 1 landed, 2 ejected, 4 dead, 6 the home carrier destroyed, 5
 exit to end the flight), `playerCanBeDamaged`, `victoryPoints` (nonzero:
 won, read after the flight; until your logic sets it, it is the 80% roll made
 at launch in game.c), `randomSeed`, `currentNavPoint`, `tempVector` (a

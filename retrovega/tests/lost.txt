@@ -1,0 +1,26 @@
+# The carrier destroyed: EXE=RVT.EXE tests/run.sh tests/lost.txt /fly 0
+# Facing it, it blows up (the | key), the screen comes up, R flies again.
+wait 20
+key s
+hold left 23
+wait 26
+key |
+wait 20
+shot L1BURN
+wait 30
+shot L2BURN
+wait 60
+shot L3ROOM
+wait 40
+shot L4TITLE
+wait 60
+shot L5WORDS
+wait 60
+shot L6CHOICE
+key r
+wait 60
+shot L7AGAIN
+log done
+key esc
+wait 10
+key esc

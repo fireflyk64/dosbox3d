@@ -33,7 +33,7 @@ VAR   rvPuppetHeader              48    # "RVPUPPET", ABI version, SLOTS, MAXSHI
 VAR   rvPuppetDirectory          192    # one word per VAR/SLOT/TABLE below, in this order: its offset
 
 SECTION scalars 0x0100
-VAR   missionStatus                2    # 0 flying, 1 landed, 2 ejected, 3 on the carrier, 4 dead, 5 exit
+VAR   missionStatus                2    # 0 flying, 1 landed, 2 ejected, 3 on the carrier, 4 dead, 5 exit, 6 carrier lost
 VAR   playerCanBeDamaged           2    # do_damage ignores slot 0 while zero
 VAR   frameCounter                 2    # +1 per simulation frame, nothing else
 VAR   randomSeed                   4    # the only gameplay random state (spec 6.3)

@@ -8,7 +8,7 @@
 Each is a loop in a type 1 Standard MIDI File: a tempo track, then a track
 per instrument.  The four room songs are written out in tools/songs.py for
 our OPL3 bank (tools/oplbank.py); LAUNCH, WIN and LOSE are still the short
-placeholders below.
+placeholders below; LOST is the carrier's loss.
 """
 import argparse
 import os
@@ -144,7 +144,30 @@ def lose_song():
     return s
 
 
-SONGS = {'LAUNCH.MID': launch_song, 'WIN.MID': win_song, 'LOSE.MID': lose_song}
+def lost_song():
+    """the carrier lost (the user: "a haunting losing screen"): hollow fifths in B flat minor on the low strings, no
+    third and no beat, and in the emptiness the way home's tune on a far horn (HOMELOSS's opening: tools/flightsongs.py),
+    which stops before it gets anywhere; an oboe answers from high up, once; it comes round without ever arriving"""
+    s = Song(46)
+    s.program(0, 48, 72)      # strings
+    s.program(1, 60, 78)      # horn
+    s.program(2, 68, 66)      # oboe
+    hollow = [(0, 8, 'A#2', 'F3'), (8, 8, 'F#2', 'C#3'), (16, 4, 'D#3', 'A#3'), (20, 4, 'A#2', 'F3'),
+              (24, 8, 'A#2', 'F3')]
+    for beat, dur, low, high in hollow:
+        s.note(0, beat, dur - 0.1, pitch(low), 52)
+        s.note(0, beat, dur - 0.1, pitch(high), 46)
+    for beat, dur, name in ((2, 2, 'C#4'), (4, 1, 'F4'), (5, 1, 'A#4'), (6, 3, 'A4'), (9, 1, 'F4')):   # the way home
+        s.note(1, beat, dur - 0.1, pitch(name), 60)
+    for beat, dur, name in ((12, 3, 'A#5'), (15, 1, 'G#5'), (16, 4, 'F#5')):                            # from far above
+        s.note(2, beat, dur - 0.1, pitch(name), 54)
+    for beat, dur, name in ((22, 2, 'C#4'), (24, 1, 'F4'), (25, 1, 'A#4')):                             # and it breaks off
+        s.note(1, beat, dur - 0.1, pitch(name), 52)
+    s.note(0, 31.9, 0.1, pitch('A#2'), 1)   # (the loop's length: the last bar is silence but for the strings)
+    return s
+
+
+SONGS = {'LAUNCH.MID': launch_song, 'WIN.MID': win_song, 'LOSE.MID': lose_song, 'LOST.MID': lost_song}
 
 
 def main():

@@ -13,6 +13,7 @@
 #include "rv.h"
 #include "rvhooks.h"
 #include "room.h"
+#include "logic.h"
 #include "campaign.h"
 #include "ships.h"
 #include "lipsync.h"
@@ -757,10 +758,92 @@ static void enter_dead(void)
     vid_fade(64);
 }
 
+static int g_lost;                      /* the dead screen is the carrier's */
+
 static void leave_dead(void)
 {
     g_scene.full = 0;
     g_scene.no_room = 0;
+    g_scene.overlay = 0;
+    g_scene.hide_pointer = 0;
+    g_lost = 0;
+}
+
+/* --- the carrier lost (the user, 2026-10-31: "a haunting losing screen but just like you blew up"): the flight ends as
+ * at the player's death, with the same choice, on the crew's lounge with nobody in it, gone cold: the room's colours
+ * brought down from black to a dim blue, but for the game's greys and white, left whole for the words, which come one
+ * at a time (the room's art uses the game's amber and blue entries too: they go down with the rest) --- */
+
+#define LOST_FADE_TICKS 90              /* the room coming up: 5 s of ticks (18.2 a second) */
+#define LOST_WAIT_TICKS 54              /* no key takes it away for 3 s: a finger on the trigger is still there */
+static const unsigned long k_lost_line_at[3] = { 36, 90, 144 };   /* when each block of words comes: 2, 5, 8 s */
+#define LOST_KEEP 8                     /* UI_BLACK .. UI_WHITE stay */
+static unsigned char __far g_cold[(256 - LOST_KEEP) * 3];
+static int g_lost_stage;                /* how many blocks of words show */
+static int g_lost_level;
+static unsigned long g_lost_t0;
+
+static void lost_centred(int font, int y, const char *s, int colour, int y0, int y1)
+{
+    gfx_text(font, (SCR_W - gfx_text_width(font, s)) / 2, y, s, colour, y0, y1);
+}
+
+static void lost_overlay(int y0, int y1)
+{
+    if (g_lost_stage >= 1)
+        lost_centred(FONT_TITLE, 26, "THE VIGILANCE IS GONE", RV_TEXT_WHITE, y0, y1);
+    if (g_lost_stage >= 2) {
+        lost_centred(FONT_BODY, 62, "Every bunk aboard her is empty.", RV_TEXT_GREY, y0, y1);
+        lost_centred(FONT_BODY, 80, "No one is left to call you home.", RV_TEXT_GREY, y0, y1);
+    }
+    if (g_lost_stage >= 3) {
+        gfx_text(FONT_BODY, 150, 348, "R   fly the mission again", RV_TEXT_WHITE, y0, y1);
+        gfx_text(FONT_BODY, 150, 370, "C   carry on: the mission is lost", RV_TEXT_GREY, y0, y1);
+    }
+}
+
+static void enter_lost(void)
+{
+    const unsigned char *pal;
+    int i;
+    vid_fade(0);
+    scene_enter(RV_R_LOUNGE, 0);        /* (nobody in the seats) */
+    pal = shot_palette();
+    for (i = 0; i < 256 - LOST_KEEP; i++) {   /* (the room's colours, drained and cold) */
+        const unsigned char *c = pal + (i + LOST_KEEP) * 3;
+        unsigned grey = (c[0] * 3U + c[1] * 6U + c[2]) / 10;
+        g_cold[i * 3] = (unsigned char)((grey * 4U + c[0]) / 20);
+        g_cold[i * 3 + 1] = (unsigned char)((grey * 5U + c[1]) / 20);
+        g_cold[i * 3 + 2] = (unsigned char)((grey * 7U + c[2]) / 20);
+    }
+    vid_palette(g_cold, LOST_KEEP, 256 - LOST_KEEP);
+    g_scene.no_room = 1;
+    g_scene.hide_pointer = 1;
+    g_scene.overlay = lost_overlay;
+    g_scene.label[0] = 0;
+    g_lost = 1;
+    g_lost_stage = 0;
+    g_lost_level = 0;
+    g_lost_t0 = ticks();
+    g_mode = MODE_DEAD;
+    music_cue(RV_MUSIC_LOST, 1500);
+    vid_dirty(0, SCR_H);
+    scene_draw();
+}
+
+/* once a loop on the screen: the room coming up, the words coming */
+static void lost_tick(void)
+{
+    unsigned long t = g_now - g_lost_t0;
+    int level = t >= LOST_FADE_TICKS ? 64 : (int)(t * 64 / LOST_FADE_TICKS);
+    if (level != g_lost_level) {
+        g_lost_level = level;
+        vid_fade(level);
+    }
+    while (g_lost_stage < 3 && t >= k_lost_line_at[g_lost_stage]) {
+        g_lost_stage++;
+        vid_dirty(0, SCR_H);
+    }
 }
 
 static void launch(void)
@@ -786,6 +869,10 @@ static void launch(void)
     g_now = ticks();
     if (status == 4 && !script_active()) {   /* the player died: the choice first (a test script flies on to the debrief) */
         enter_dead();
+        return;
+    }
+    if (status == MISSION_CARRIER_LOST) {    /* the carrier: the same choice, on its own screen */
+        enter_lost();
         return;
     }
     start_briefing(1);
@@ -1319,6 +1406,11 @@ int game_run(void)
                 g_mode = MODE_QUIT;
             break;
         case MODE_DEAD:
+            if (g_lost) {
+                lost_tick();
+                if (g_now - g_lost_t0 < LOST_WAIT_TICKS)
+                    break;
+            }
             if (in.ch == 'r' || in.ch == 'R') {
                 leave_dead();
                 camp_load_units(&g_m);  /* (the mission's tables as they were before the flight) */

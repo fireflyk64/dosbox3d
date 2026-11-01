@@ -365,6 +365,7 @@ nav 0):
 
 | M8.13 home-carrier | a mission ship with `role=home`: 2,000 km behind the launch, still after 10 s and after the autopilot has gone; with the player 8,000 km behind it, T picks it |
 | M8.14 landing-rule | at the launch `logic_request_landing` answers not yet; at nav 1, 20,000 km off, too far; back within 8,000 km, cleared; far off again, still cleared; a mission with nothing to do is cleared at the launch |
+| M8.16 carrier-lost | the carrier destroyed, every nav flown and every enemy dead: `missionStatus` still 0 the next step, 6 within 10 s, `victoryPoints` 0 |
 | M8.15 landing-contact | not cleared, into the bow: stopped, speed 0, shields whole; cleared, into the beam (at the hull's hollow middle) and the stern: stopped; turned away it flies off; into the bow: `missionStatus` 1, `victoryPoints` 0 with the patrol undone and nonzero with it done |
 
 The tests take the player to a nav point by moving it (as the autopilot would) and, but for M8.15, land by setting
@@ -416,7 +417,7 @@ writes it by offset, so the offsets are fixed for good. `abi/rvabi.def` is the o
 
 | DS: | name | bytes | meaning | written by |
 |---|---|---|---|---|
-| 0x0100 | `missionStatus` | 2 | 0 flying; 1 landed; 2 ejected; 3 on the carrier (before launch); 4 dead; 5 left (a test script) | flight.c 0 at the start; the engine 1 (C, the carrier call) and 2 (Ctrl+E twice); **you 4**; the layer may |
+| 0x0100 | `missionStatus` | 2 | 0 flying; 1 landed; 2 ejected; 3 on the carrier (before launch); 4 dead; 6 the home carrier destroyed; 5 left (a test script) | flight.c 0 at the start; the engine 1 (C, the carrier call) and 2 (Ctrl+E twice); **you 4**; the layer may |
 | 0x0102 | `playerCanBeDamaged` | 2 | 0: slot 0 takes no damage | the engine 1 at the start; the layer, cheats |
 | 0x0104 | `frameCounter` | 2 | steps flown, +1 a step | the engine only |
 | 0x0106 | `randomSeed` | 4 | the play's one random stream (`game_rand`) | the engine seeds it per mission; the layer re-seeds |

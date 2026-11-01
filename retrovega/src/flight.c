@@ -2790,6 +2790,7 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.ch == ']') rvCockpitDamage = 0;
         if (in.ch == '{') logic_test_to_carrier(0);   /* (a script's way to the carrier: its bow, its beam) */
         if (in.ch == '}') logic_test_to_carrier(1);
+        if (in.ch == '|') logic_test_kill_carrier();
 #endif
     }
     {   /* Ctrl+E pulls the eject handle (twice within two seconds ejects); a click on the panel works its control */

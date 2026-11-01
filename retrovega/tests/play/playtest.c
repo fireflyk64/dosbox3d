@@ -3853,6 +3853,31 @@ static void t_landing_contact(void)
     REQUIRE(victoryPoints != 0, e_won, victoryPoints, 0, 0);
 }
 
+/* M8.16: the carrier destroyed: the flight ends with it (missionStatus 6) when its explosion has run, and it is a loss
+ * however well the patrol went */
+static void t_carrier_lost(void)
+{
+    static const char __far e_alive[] = "2,000 points a hit, 400 hits, and the carrier is not dying (state %d)";
+    static const char __far e_early[] = "the flight ended (%d) the moment the carrier began to die: its explosion runs first";
+    static const char __far e_status[] = "missionStatus is %d 10 s after the carrier began to die: 6";
+    static const char __far e_score[] = "victoryPoints is %d with the carrier destroyed: 0";
+    int16_t home = pt_home_patrol(), i;
+    if (!pt_go(0, NAV1_Z) || !pt_kill_side(SIDE_AERA) || !pt_go(NAV2_X, NAV2_Z) || !pt_kill_side(SIDE_AERA))
+        return;
+    for (i = 0; i < 400 && shipAiState[home] != 9; i++)
+        (void)pt_hit(0xFFFF, home, 2000, 2, 0, 0);
+    REQUIRE(shipAiState[home] == 9, e_alive, shipAiState[home], 0, 0);
+    if (!pt_step())
+        return;
+    REQUIRE(missionStatus == 0, e_early, missionStatus, 0, 0);
+    for (i = 0; i < 10 * SEC && !missionStatus; i++)
+        if (!pt_step())
+            return;
+    REQUIRE(missionStatus == MISSION_CARRIER_LOST, e_status, missionStatus, 0, 0);
+    logic_end();
+    REQUIRE(victoryPoints == 0, e_score, victoryPoints, 0, 0);
+}
+
 /* M8.11 */
 static void t_escort_lost(void)
 {
@@ -4493,6 +4518,7 @@ static const char __far n_m8_12[] = "M8.12 escort-along (logic_autopilot): the a
     "player, and stops 4,500 km short of the nav point";
 static const char __far n_m8_13[] = "M8.13 home-carrier (camp_load_units, ship_think): the Vigilance behind the launch, holding station, T finds it in front";
 static const char __far n_m8_14[] = "M8.14 landing-rule (logic_request_landing): none at the launch or too far; a nav point flown or the mission finished; a clearance stands";
+static const char __far n_m8_16[] = "M8.16 carrier-lost (step_deaths, logic_end): the carrier destroyed ends the flight when its explosion has run: a loss";
 static const char __far n_m8_15[] = "M8.15 landing-contact (carrier_contact, logic_end): cleared into the bow lands, anywhere else the hull stops it unhurt; undone lost, done won";
 static const char __far n_m9_1[] = "M9.1 gunsight (logic_hud): a mark at the view's middle";
 static const char __far n_m9_2[] = "M9.2 brackets (logic_hud): marks round the target";
@@ -4539,7 +4565,7 @@ static const PtTest __far k_tests[] = {
     { n_m8_1, t_start, 0 }, { n_m8_2, t_nav1, 0 }, { n_m8_3, t_nav_once, 0 }, { n_m8_4, t_won, 0 },
     { n_m8_5, t_skipped, 0 }, { n_m8_6, t_enemies_left, 0 }, { n_m8_7, t_layer_spawn, 0 }, { n_m8_8, t_autopilot, 0 },
     { n_m8_9, t_fighter, 0 }, { n_m8_10, t_escort_out, 0 }, { n_m8_11, t_escort_lost, 0 }, { n_m8_12, t_escort_along, 0 },
-    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 }, { n_m8_15, t_landing_contact, 0 },
+    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 }, { n_m8_15, t_landing_contact, 0 }, { n_m8_16, t_carrier_lost, 0 },
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
     { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 }, { n_m10_6, t_orders, 0 }, { n_m10_7, t_missile_lock, 0 },
