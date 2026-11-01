@@ -2,15 +2,17 @@
 # The GUI's soak test: no flying, no player.  The whole game natively, under AddressSanitizer, on a virtual clock (a
 # campaign in seconds), clicking and pressing at random (game.c's /monkey) along every way through the campaign's map
 # and over many seeds, with wingmen lost, escorts lost, the player dead and the carrier lost at random (/kill).
-#   tests/monkey.sh [-j N] [-s SEEDS] [-b ACTIONS] [-k KILL%] [-t SECONDS] [--dos] [--flying]
+#   tests/monkey.sh [-j N] [-s SEEDS] [-b ACTIONS] [-k KILL%] [-t SECONDS] [-n ROUTES] [--dos] [--flying]
 # Every run must end in "bye", with no sanitizer report, no "LEAK:" on the ledger (src/mem.c) and no "FAIL".  A run still
 # going after -t seconds is a freeze: gdb takes its stack (the emulator's, and the game's CS:IP, with --dos) before it is
 # killed.  A failed run's files are kept in build/monkey/fail-*, with the line to run it again.
-#   --dos     RV.EXE itself, in the native DOSBox (slower: fewer runs)
+#   --dos     RV.EXE itself, in the native DOSBox with DOSBOX_TURBO (a real-flight campaign in under a minute);
+#             RV_EXE=RVT.EXE the far-heap test build
 #   --flying  real flights of a second, not /noflight
 set -u
 cd "$(dirname "$0")/.."
-JOBS=4 SEEDS=3 BUDGET=120 KILL=25 LIMIT=180 DOS= FLYING=
+JOBS=4 SEEDS=3 BUDGET=120 KILL=25 LIMIT=180 DOS= FLYING= MAX=0
+RV_EXE=${RV_EXE:-RV.EXE}
 while [ $# -gt 0 ]; do
     case "$1" in
         -j) JOBS=$2; shift 2;;
@@ -18,9 +20,10 @@ while [ $# -gt 0 ]; do
         -b) BUDGET=$2; shift 2;;
         -k) KILL=$2; shift 2;;
         -t) LIMIT=$2; shift 2;;
+        -n) MAX=$2; shift 2;;
         --dos) DOS=1; shift;;
         --flying) FLYING=1; shift;;
-        *) echo "usage: $0 [-j N] [-s SEEDS] [-b ACTIONS] [-k KILL%] [-t SECONDS] [--dos] [--flying]"; exit 2;;
+        *) echo "usage: $0 [-j N] [-s SEEDS] [-b ACTIONS] [-k KILL%] [-t SECONDS] [-n ROUTES] [--dos] [--flying]"; exit 2;;
     esac
 done
 OUT=build/monkey
@@ -41,15 +44,17 @@ while read -r route; do
         n=$((n + 1))
         echo "$n $((n * 7919 + s)) $route" >> "$OUT/jobs.txt"
     done
-done < "$OUT/routes.txt"
+done < <(if [ "$MAX" -gt 0 ]; then shuf --random-source=<(yes) -n "$MAX" "$OUT/routes.txt"; else cat "$OUT/routes.txt"; fi)
 one() {
     id=$1; seed=$2; route=$3
     d=$OUT/run-$id
     args="$FLAGS /monkey $seed $BUDGET /route $route /kill $KILL"
     mkdir -p "$d"
     if [ -n "$DOS" ]; then
-        cp build/dos/*.DAT build/dos/*.EXE build/dos/*.MID build/dos/*.BNK build/dos/*.RV* "$d/" 2>/dev/null
-        sed -e "s#mount c ../dos#mount c $PWD/$d#" -e "s#RV.EXE /script WALK.TXT#RV.EXE $args#" \
+        for f in build/dos/*; do
+            case "$f" in */RVLOG.TXT|*/BUNK*|*/RVSETUP.CFG|*/WALK.TXT|*.BMP|*.obj|*.MAP|*/t|*/p|*/stubs) ;; *) ln -sf "$PWD/$f" "$d/";; esac
+        done
+        sed -e "s#mount c ../dos#mount c $PWD/$d#" -e "s#RV.EXE /script WALK.TXT#${RV_EXE:-RV.EXE} $args#" \
             -e "s#^cycles=.*#cycles=${CYCLES:-20000}#" tests/rv.conf > "$d/run.conf"
         DOSBOX_TURBO=1 $HOME/dev/dosbox3d/build-native/src/dosbox -conf "$d/run.conf" > "$d/out.txt" 2>&1 &
         rc_p=$!
@@ -80,7 +85,6 @@ one() {
     fi
     if [ -n "$why" ]; then
         echo "$args" > "$d/again.txt"
-        rm -f "$d"/*.DAT "$d"/*.EXE "$d"/*.MID "$d"/*.BNK "$d"/*.RV? 2>/dev/null
         find "$d" -type l -delete
         mv "$d" "$OUT/fail-$id"
         echo "$why $id seed $seed route $route (rc $rc): $(tail -1 "$OUT/fail-$id/RVLOG.TXT" 2>/dev/null | cut -c1-70)"
@@ -90,7 +94,7 @@ one() {
     fi
 }
 export -f one
-export OUT FLAGS BUDGET KILL LIMIT DOS
+export OUT FLAGS BUDGET KILL LIMIT DOS RV_EXE
 total=$(wc -l < "$OUT/jobs.txt")
 t0=$(date +%s)
 xargs -P "$JOBS" -L 1 bash -c 'one "$0" "$1" "$2"' < "$OUT/jobs.txt" > "$OUT/results.txt"
