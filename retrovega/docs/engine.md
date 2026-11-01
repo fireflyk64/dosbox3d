@@ -2637,6 +2637,14 @@ so drawing any of them is the same `rv_blit_row` the benchmark measured.
 Measured next: the scaler's real cost, and whether the far scales shimmer
 enough to want a half-size source set (spec §8).
 
+## The sprite accelerator
+
+In our DOSBox the ships can be drawn by an imaginary card, RVGX, from their full-size views, a pixel a pixel, in no emulated
+time: `docs/gx.md` is its manual, `src/gx.c` the game's side of it, `src/hardware/rvgx.cpp` the card. `ships_draw_exact` asks it
+first; any negative answer (the picture has not come, or there is no such picture) is that frame's blocks, so the block sets
+are still what a flight needs and waits for, on every machine. On anything else the install check says no and it is as if it
+were not here.
+
 ## Fonts, pointer, driver
 
 - **Fonts:** rasterised by `tools/rvpack.py` into our own bitmap format,

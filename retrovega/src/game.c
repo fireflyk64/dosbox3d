@@ -19,6 +19,7 @@
 #include "lightfield.h"
 #include "rocks.h"
 #include "ships.h"
+#include "gx.h"
 #include "lipsync.h"
 #include "music.h"
 #include "flight.h"
@@ -73,6 +74,8 @@ static unsigned rnd(void)
 static const unsigned g_talk_pcts[] = { 100, 200, 300, 400 };
 static const char *g_talk_names[] = { "slow", "normal", "fast", "very fast" };
 static int g_talk_speed = 1;
+static int g_low_detail;                /* the ships' detail, the bunk menu's choice (0: high, gx.h; only asked with the card there) */
+static const char *g_detail_names_[] = { "high", "low" };
 #define SETUP_FILE "RVSETUP.CFG"
 
 static void setup_load(void)
@@ -81,8 +84,11 @@ static void setup_load(void)
     FILE *f = fopen(SETUP_FILE, "rb");
     if (!f)
         return;
-    if (fread(b, 1, 8, f) == 8 && !memcmp(b, "RVCFG1", 6) && b[6] < RV_COUNT(g_talk_pcts))
+    if (fread(b, 1, 8, f) == 8 && !memcmp(b, "RVCFG1", 6) && b[6] < RV_COUNT(g_talk_pcts)) {
         g_talk_speed = b[6];
+        g_low_detail = b[7] == 1;       /* (older files have 0 here: high detail, the default) */
+    }
+    gx_set(!g_low_detail);
     fclose(f);
 }
 
@@ -92,12 +98,12 @@ static void setup_save(void)
     FILE *f = fopen(SETUP_FILE, "wb");
     memcpy(b, "RVCFG1", 6);
     b[6] = (char)g_talk_speed;
-    b[7] = 0;
+    b[7] = (char)g_low_detail;
     if (f) {
         fwrite(b, 1, 8, f);
         fclose(f);
     }
-    RV_LOG("setup: talk speed %s", g_talk_names[g_talk_speed]);
+    RV_LOG("setup: talk speed %s, ship detail %s", g_talk_names[g_talk_speed], g_detail_names_[g_low_detail]);
 }
 
 /* speech runs on the music clock (240 Hz): fine enough for a shape every 25 ms */
@@ -1242,6 +1248,31 @@ static void talk_speed_row(int y0, int y1)
     }
 }
 
+/* the bunk menu's row for the ships' detail, beside its title: only with a sprite accelerator to choose it for (gx.h) */
+#define DETAIL_Y 56
+#define DETAIL_X 282
+#define DETAIL_LABEL "SHIP DETAIL (H)"
+static int detail_x(int i, int *w)
+{
+    int k, x = DETAIL_X + gfx_text_width(FONT_BODY, DETAIL_LABEL) + 16;
+    for (k = 0; k < i; k++)
+        x += gfx_text_width(FONT_BODY, g_detail_names_[k]) + 18;
+    *w = gfx_text_width(FONT_BODY, g_detail_names_[i]);
+    return x;
+}
+
+static void detail_row(int y0, int y1)
+{
+    int i;
+    gfx_text(FONT_BODY, DETAIL_X, DETAIL_Y, DETAIL_LABEL, RV_TEXT_AMBER, y0, y1);
+    for (i = 0; i < (int)RV_COUNT(g_detail_names_); i++) {
+        int w, x = detail_x(i, &w);
+        if (i == g_low_detail)
+            gfx_fill(x - 6, DETAIL_Y - 3, w + 12, 20, UI_PANEL_EDGE, y0, y1);
+        gfx_text(FONT_BODY, x, DETAIL_Y, g_detail_names_[i], i == g_low_detail ? RV_TEXT_WHITE : RV_TEXT_GREY, y0, y1);
+    }
+}
+
 /* the bunk menu's buttons: each does what its key does, so a touch screen (a phone, where there are no keys to
  * press) can work the whole menu; the close box at the top right, and a click outside the panel, close it */
 #define BUNK_X0 90
@@ -1332,8 +1363,11 @@ static void bunk_overlay(int y0, int y1)
             gfx_fill(100, y - 3, 440, 22, UI_PANEL_EDGE, y0, y1);
         gfx_text(FONT_BODY, 110, y, s, i == g_bunk_sel ? RV_TEXT_WHITE : RV_TEXT_GREY, y0, y1);
     }
-    if (g_mode != MODE_NAME)
+    if (g_mode != MODE_NAME) {
         talk_speed_row(y0, y1);
+        if (gx_present())
+            detail_row(y0, y1);
+    }
     n = bunk_buttons(b);
     for (i = 0; i < n; i++) {
         int x = button_x(b, i, &w);
@@ -1386,6 +1420,26 @@ static void bunk_input(const Input *in0)
     }
     if (g_can_quit && in->key == KEY_CHAR && (in->ch == 'q' || in->ch == 'Q') && g_mode != MODE_NAME) {
         g_quit_asked = 1;               /* the one way out of a DOS install: from the bunk, deliberately */
+        return;
+    }
+    /* the ships' detail: H for the other, or a click on one */
+    if (gx_present() && g_mode != MODE_NAME
+        && ((in->key == KEY_CHAR && (in->ch == 'h' || in->ch == 'H'))
+            || (in->clicked && in->y >= DETAIL_Y - 4 && in->y < DETAIL_Y + 18 && in->x >= DETAIL_X && in->x < CLOSE_X))) {
+        int i, w, pick = -1;
+        if (!in->clicked)
+            pick = !g_low_detail;
+        for (i = 0; in->clicked && i < (int)RV_COUNT(g_detail_names_); i++) {
+            int x = detail_x(i, &w);
+            if (in->x >= x - 8 && in->x < x + w + 8)
+                pick = i;
+        }
+        if (pick >= 0) {
+            g_low_detail = pick;
+            gx_set(!g_low_detail);
+            setup_save();
+            vid_dirty(30, 350);
+        }
         return;
     }
     /* the talk speed: T for the next, or a click on one */

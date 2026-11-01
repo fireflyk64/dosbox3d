@@ -27,6 +27,8 @@
 
 static Bitu call_int2f,call_int2a;
 
+void RVGX_Init(void);    /* the sprite accelerator's answer on this interrupt (hardware/rvgx.cpp) */
+
 static std::list<MultiplexHandler*> Multiplex;
 typedef std::list<MultiplexHandler*>::iterator Multiplex_it;
 
@@ -207,6 +209,7 @@ void DOS_SetupMisc(void) {
 	CALLBACK_Setup(call_int2f,&INT2F_Handler,CB_IRET,"DOS Int 2f");
 	RealSetVec(0x2f,CALLBACK_RealPointer(call_int2f));
 	DOS_AddMultiplexHandler(DOS_MultiplexFunctions);
+	RVGX_Init();
 	/* Setup the dos network interrupt */
 	call_int2a=CALLBACK_Allocate();
 	CALLBACK_Setup(call_int2a,&INT2A_Handler,CB_IRET,"DOS Int 2a");

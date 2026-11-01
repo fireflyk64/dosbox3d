@@ -44,8 +44,19 @@ export function createSetProvider({ base, root, status, log }) {
     return manifest;
   }
 
-  // a file fetched and ungzipped, checked against the list's size: the cache's, by its hash, else the site's
-  async function fetchArt(info, what) {
+  // a file fetched and ungzipped, checked against the list's size: the cache's, by its hash, else the site's; asked for
+  // twice at once (the sets' maker and the sprite accelerator want the same views) it is fetched once
+  const fetching = new Map();
+  function fetchArt(info, what) {
+    let p = fetching.get(info.sha1);
+    if (!p) {
+      p = fetchArtOnce(info, what).finally(() => fetching.delete(info.sha1));
+      fetching.set(info.sha1, p);
+    }
+    return p;
+  }
+
+  async function fetchArtOnce(info, what) {
     const cache = await rvCache(RV_ART_CACHE), req = `/rv-art/${info.sha1}`;
     if (cache) { const hit = await cache.match(req); if (hit) return new Uint8Array(await hit.arrayBuffer()); }
     status(`Fetching ${what} (${mb(info.bytes)})…`);
@@ -151,7 +162,16 @@ export function createSetProvider({ base, root, status, log }) {
     busy = provide(FS, m[2].trim().split(/\s+/).filter(Boolean), m[1]).finally(() => { busy = null; });
   }
 
-  return { loadManifest, poll };
+  // a bundle the sprite accelerator asks for by its name (src/hardware/rvgx.cpp): a ship's views as they are
+  async function fetchBundle(name) {
+    await loadManifest();
+    if (manifest.files && manifest.files[name]) return fetchArt(manifest.files[name], name);
+    const m = /^(SHIP[0-9A-F]{2})\.RV$/.exec(name), info = m && manifest.ships[m[1]];
+    if (!info) throw new Error("not on this site");
+    return fetchArt(info, `${label(m[1])}'s views`);
+  }
+
+  return { loadManifest, poll, fetchBundle };
 }
 
 // a .tar.gz's files ({ path, data }), as the build's tar writes them (ustar)

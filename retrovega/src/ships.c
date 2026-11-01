@@ -37,6 +37,7 @@
 #include <fcntl.h>
 #include <dos.h>
 #include "ships.h"
+#include "gx.h"
 #include "rocks.h"
 #include "lightfield.h"
 #include "music.h"
@@ -552,6 +553,7 @@ void ships_want(const unsigned char *types, int n, int wait)
     int i, k, missing = 0, listed = 0;
     const char *extra = rocks_file();   /* (an asteroid field's art: listed with the sets, fetched the same way) */
     FILE *f;
+    gx_want(types, n);                  /* (their full-size views asked of the sprite accelerator, when there is one) */
     for (i = 0; i < n; i++)
         if (!set_present(types[i], name))
             missing++;
@@ -1523,6 +1525,16 @@ int ships_draw_exact(int set_i, const LfVec *rel, const LfBasis *cam, const LfBa
     lf_place(rel, cam, ship, g_cx, g_cy, g_focal, s->nb0, s->nh0, &p);
     if (!p.on_screen || scale256 < 8)
         return 1;
+    if (s->factor > 1 && gx_on()) {
+        /* the sprite accelerator's picture, a pixel a pixel, when it has one (a roll this near none at full size is
+         * none, as a native draw and ships_drawn have it); anything else it answers, the blocks below */
+        int mir, src = stored_view(s, p.view, &mir);
+        if (gx_draw(s->type, src, mir, p.sx, p.sy, scale256, scale256 == 256 && ((p.roll + 8) & 1023) < 16 ? 0 : p.roll,
+                    y0, y1, xa, xb, ext, ext_y0, ext_rows) >= 0) {
+            drawn(SHIP_PATH_EXACT, p.view, p.roll);
+            return 1;
+        }
+    }
     if (s->factor > 1) {
         /* a block mode: the ladder's smallest sprite still at least the ship's size over the block, turned and scaled
          * to the ship's size as 2 x 2 blocks, or 3 x 3 or 4 x 4 for a capital ship with others about (the user: one

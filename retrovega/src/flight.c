@@ -23,6 +23,7 @@
 #include "campaign.h"
 #include "music.h"
 #include "ships.h"
+#include "gx.h"
 #include "cockpit.h"
 #include "bolts.h"
 #include "flames.h"
@@ -3110,6 +3111,13 @@ unsigned short __far __cdecl flight_keys(void)
     if (in.key == KEY_CHAR && in.ch >= '0' && in.ch <= '9' && vdu_page(0) == VDU_L_COMM)
         comm_key(in.ch);                /* (a pick in the comm menu) */
     else if (in.key == KEY_CHAR) {
+#ifdef RV_TESTS
+        if (in.ch == '`')               /* (the test build keeps ~ for its own) */
+#else
+        if (in.ch == '`' || in.ch == '~')   /* the ships between their high detail and their blocks, there and back (the user's, as
+                                           StarCraft Remastered's key does) */
+#endif
+            gx_toggle();
         if (in.ch == '+' || in.ch == '=') setSpeed[0] += g_st.max_speed / 10;
         if (in.ch == '-') setSpeed[0] = setSpeed[0] > (unsigned long)g_st.max_speed / 10 ? setSpeed[0] - g_st.max_speed / 10 : 0;
         if (in.ch == 'f' || in.ch == 'F') setSpeed[0] = g_st.max_speed;
@@ -3432,6 +3440,7 @@ static void flight_over(unsigned short status)
     g_scene.hide_pointer = 0;
     in_steer(1);
     ships_draw_log();
+    gx_log();
     rocks_report();
     logic_end();
     sfx_flight_end();

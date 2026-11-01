@@ -1,0 +1,48 @@
+# The sprite accelerator (docs/gx.md) on the zoom scene: one ship ahead, the ` key flipping it between the card's
+# picture and the game's blocks.  GX=1 EXE=RVT.EXE tests/run.sh tests/gxzoom.txt /zoom 1 /bench 0
+wait 10
+click
+wait 3
+move 593 200
+click
+wait 8
+move 429 140
+click
+wait 8
+move 605 113
+click
+wait 6
+key esc
+wait 2
+key esc
+wait 2
+key esc
+wait 8
+move 478 176
+click
+wait 30
+shot G01ON
+key `
+wait 2
+shot G02OFF
+key `
+wait 2
+shot G03ON
+wait 60
+shot G04ON
+key `
+wait 2
+shot G05OFF
+key `
+wait 2
+shot G06ON
+wait 60
+shot G07ON
+key `
+wait 2
+shot G08OFF
+key `
+wait 10
+key esc
+wait 16
+log done

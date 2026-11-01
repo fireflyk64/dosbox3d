@@ -1528,6 +1528,19 @@ async function start(fromGesture) {
       locateFile: (path) => path,
       onAbort: (what) => emulatorFailed(`abort: ${what}`),
       preRun: [() => { Object.assign(config.ENV, env); }],
+      // The sprite accelerator asks for a bundle (src/hardware/rvgx.cpp, retrovega/docs/gx.md): it comes into the
+      // emulator's memory whenever it comes, and the game draws its blocks until then.
+      rvgxWant: (id, name) => {
+        rvSets.fetchBundle(name).then((data) => {
+          const at = config._malloc(data.length);
+          config.HEAPU8.set(data, at);
+          config._wc_web_rvgx_loaded(id, at, data.length);
+          log(`sprite accelerator: ${name} in (${mb(data.length)})`);
+        }).catch((e) => {
+          log(`sprite accelerator: ${name}: ${e.message}`);
+          config._wc_web_rvgx_loaded(id, 0, -1);
+        });
+      },
     };
     const Module = await createDOSBox(config);
 

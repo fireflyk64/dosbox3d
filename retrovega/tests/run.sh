@@ -10,6 +10,7 @@
 # The rigs read the frames' lines, so /verbose goes along; QUIET=1 runs without it, as the page does.
 # DOSBOX=path runs another DOSBox (any stock one runs RV.EXE; the default is this repository's native build);
 # SHOW=1 opens its window (the default is headless).
+# GX=1 turns on the sprite accelerator in a DOSBox that has it (RVGX_DIR = build/dos; docs/gx.md); GXDELAY=MS its transfer time.
 set -e
 cd "$(dirname "$0")/.."
 [ -n "$NOBUILD" ] || ./build.sh > /dev/null
@@ -22,7 +23,7 @@ exe=${EXE:-RV.EXE}
 if [ -z "$EXE" ]; then
     for a in "$@"; do
         case "$a" in
-            /script|/flight|/winrate|/res|/onfly|/skyrows|/field|/rockxms|/mpu|/nomusic|/noquit|/fly|/at|/nomouse|/noflight|/route|/kill|/ledger|/verbose|/leaktest|/monkey|/freezetest) ;;
+            /script|/flight|/winrate|/res|/onfly|/skyrows|/field|/rockxms|/mpu|/nomusic|/noquit|/fly|/at|/nomouse|/noflight|/route|/kill|/ledger|/verbose|/leaktest|/monkey|/freezetest|/nogx) ;;
             /playtest|/twins) exe=RVP.EXE; break;;
             /*) exe=RVT.EXE;;
         esac
@@ -33,6 +34,7 @@ verbose=/verbose
 sed -e 's#mount c ../dos#mount c '"$PWD"'/build/dos#' -e "s#RV.EXE /script WALK.TXT#$exe /script WALK.TXT $verbose $*#" \
     -e "s#^cycles=.*#cycles=${CYCLES:-40000}#" tests/rv.conf > build/dosrun/run.conf
 [ -n "$SHOW" ] || export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
+[ -z "$GX" ] || export RVGX_DIR="$PWD/build/dos" RVGX_DELAY_MS="${GXDELAY:-0}"
 timeout ${TIMEOUT:-300} ${DOSBOX:-$HOME/dev/dosbox3d/build-native/src/dosbox} \
     -conf build/dosrun/run.conf > build/dosrun/dosbox.log 2>&1 || true
 grep -v "^stub" build/dos/RVLOG.TXT

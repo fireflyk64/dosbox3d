@@ -26,6 +26,7 @@
 #include "game.h"
 #include "music.h"
 #include "ships.h"
+#include "gx.h"
 #include "flames.h"
 #include "balls.h"
 #include "rocks.h"
@@ -131,7 +132,7 @@ static void names(void)
 #endif
 int main(int argc, char **argv)
 {
-    int i, ok;
+    int i, ok, nogx = 0;
 #ifdef RV_PLAYTEST
     static const char __far s_playtest[] = "/playtest";
     const char *playtest = 0;
@@ -277,6 +278,8 @@ int main(int argc, char **argv)
             monkey_start(seed, (unsigned)atoi(argv[i + 2]));
             i += 2;
         }
+        else if (!strcmp(argv[i], "/nogx"))             /* the sprite accelerator not asked for, as on any other DOS */
+            nogx = 1;
         else if (!strcmp(argv[i], "/noquit"))           /* the page: no Q in the bunk menu (reload is the way out) */
             g_can_quit = 0;
 #ifdef RV_TESTS
@@ -311,6 +314,8 @@ int main(int argc, char **argv)
     }
     /* resident before base: XMS levels nest (xms.c); the songs are resident too */
     log_free("at the start");
+    if (!nogx)
+        (void)gx_init();                /* is there a sprite accelerator?  (only our DOSBox: docs/gx.md) */
     (void)gfx_scratch();                /* (first: 32 KB in one piece, which the test build had none of by the time it was asked for) */
     ok = camp_load_data("RVGAME.DAT");
     if (ok) {

@@ -1,0 +1,39 @@
+# The sprite accelerator (docs/gx.md): a flight with the ` key flipping the ships between the card's picture and the
+# game's blocks, a shot of each.  GX=1 tests/run.sh tests/gx.txt /nomusic
+wait 10
+click
+wait 3
+move 593 200
+click
+wait 8
+move 429 140
+click
+wait 8
+move 605 113
+click
+wait 6
+key esc
+wait 2
+key esc
+wait 2
+key esc
+wait 8
+move 478 176
+click
+wait 40
+shot G01ON
+key `
+wait 2
+shot G02OFF
+key `
+wait 2
+shot G03ON
+wait 40
+shot G04ON
+key `
+wait 2
+shot G05OFF
+key `
+wait 20
+key esc
+wait 20
