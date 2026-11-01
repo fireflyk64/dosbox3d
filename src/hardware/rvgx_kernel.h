@@ -84,8 +84,8 @@ static inline bool rvgx_decode(const RvgxFile &f, uint32_t view, bool mirror, Rv
 	uint32_t off = 8;
 	const int32_t x2 = rvgx_le16s(buf), x1 = rvgx_le16s(buf + 2), y1 = rvgx_le16s(buf + 4), y2 = rvgx_le16s(buf + 6);
 	const int32_t w = x1 + x2 + 2, h = y1 + y2 + 2;
-	if (w < 1 || h < 1 || w > RVGX_VIEW_MAX || h > RVGX_VIEW_MAX)
-		return false;
+	if (w < 1 || h < 1 || w > RVGX_VIEW_MAX || h > RVGX_VIEW_MAX || x1 < -1 || y1 < -1 || x1 + 1 >= w || y1 + 1 >= h)
+		return false;                   /* (the origin inside the picture, as every real view has it) */
 	uint8_t *px = (uint8_t *)calloc((size_t)w * h, 1);
 	if (!px)
 		return false;

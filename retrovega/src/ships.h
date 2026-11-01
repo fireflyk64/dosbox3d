@@ -61,6 +61,7 @@ void ships_lattice(int set, int exact, int *nb, int *nh);
 int ships_load(unsigned type);          /* a type's set: SHIPnn.RVS (its index), else SHIPnn.RV decoded; -> set
                                            index, or -1 (no file, no room) */
 int ships_present(unsigned type);      /* its set is beside RV.EXE, so ships_load finds it */
+void ships_detail_toggle(void);         /* the ` key: the ships' high detail off or on, and on, the open sets' views asked for */
 void ships_want(const unsigned char *types, int n, int wait);   /* the types' sets asked of the page (RVWANT.TXT)
                                            when not beside RV.EXE; wait: until they are, SHIPS_WANT_S at most */
 unsigned long ships_load_blocks(unsigned long budget);   /* the dense copies' cache, then every open set's blocks:

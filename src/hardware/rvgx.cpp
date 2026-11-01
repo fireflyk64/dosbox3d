@@ -20,13 +20,13 @@
  * (retrovega/docs/gx.md is the card's manual; retrovega/src/gx.c its driver).
  *
  * A program finds it with INT 2Fh AX=E700h: every other DOS and DOSBox leaves
- * AL at 0, so a game asks once and otherwise never knows it was here.  Given a
- * list of names it fetches those image bundles (a ship's SHIPnn.RV) by itself,
- * in the background, into its own memory: the browser's fetch on the page, a
- * directory natively.  Then one interrupt draws a view of a bundle turned and
- * scaled straight into the program's frame buffer, in no emulated time, or
- * says in the parameter block, with a negative number, why it did not: the
- * program then draws the picture its own way.
+ * AL at 0, so a game asks once and otherwise never knows it was here.  Told a
+ * name for one of its slots, it fetches that image bundle (a ship's SHIPnn.RV)
+ * by itself, in the background, into its own memory: the browser's fetch on the
+ * page, a directory natively.  Then one interrupt draws a view of a slot's bundle
+ * turned and scaled straight into the program's frame buffer, in no emulated
+ * time, or says in the parameter block, with a negative number, why it did not:
+ * the program then draws the picture its own way.
  *
  * Natively it is installed only when RVGX_DIR names the directory it "fetches"
  * from (RVGX_DELAY_MS pretends the transfer takes that long); in the browser
@@ -39,7 +39,6 @@
 #include <chrono>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 #include "dosbox.h"
 #include "mem.h"
@@ -58,7 +57,7 @@ enum {
 	RVGX_AH = 0xE7,
 	FN_INSTALLED = 0x00,  /* BX 'RV', CX 'GX' -> AL FFh, BX 'gx', CH.CL the version */
 	FN_ATTACH = 0x01,     /* ES:BX the parameter block -> AX 0 */
-	FN_LIST = 0x10,       /* the block's list_addr, list_len: the names, a NUL after each */
+	FN_NAME = 0x10,       /* the block's bundle: a slot; its name: what it is to hold, replacing what it holds */
 	FN_STATUS = 0x11,     /* the block's stat_* filled in */
 	FN_DRAW = 0x20,       /* the block's bundle .. ext_rows; its result says how it went */
 	RVGX_SIG_IN_BX = 0x5256, RVGX_SIG_IN_CX = 0x4758, RVGX_SIG_OUT_BX = 0x7867,
@@ -73,22 +72,21 @@ enum {
 	B_RESULT = 0, B_BUNDLE = 2, B_VIEW = 4, B_FLAGS = 6, B_X = 8, B_Y = 10, B_SCALE = 12, B_ROLL = 14,
 	B_FB_OFF = 16, B_FB_SEG = 18, B_STRIDE = 20, B_FB_Y0 = 22, B_Y0 = 24, B_Y1 = 26, B_XA = 28, B_XB = 30,
 	B_EXT_OFF = 32, B_EXT_SEG = 34, B_EXT_Y0 = 36, B_EXT_ROWS = 38,
-	B_LIST_ADDR = 40, B_LIST_LEN = 44,
+	B_NAME_OFF = 40, B_NAME_SEG = 42,
 	B_STAT_DRAWS = 48, B_STAT_PX = 52, B_STAT_US = 56, B_STAT_READY = 60, B_STAT_WAITING = 62
 };
 
-#define RVGX_NAMES_MAX 64
-#define RVGX_LIST_MAX 4096u
+#define RVGX_SLOTS 256
+#define RVGX_NAME_MAX 64
 #define RVGX_DENSE_BYTES (48u * 1024u * 1024u)   /* the views kept expanded, all bundles together */
 
 struct Bundle {
 	uint32_t id;
 	std::string name;
-	int state;                  /* 0 ready, or the result a draw of it gets */
+	int state;                  /* 0 ready, or the result a draw of it gets: RVGX_E_INDEX, the slot is empty */
 	uint8_t *data;              /* the file, malloc'd */
 	RvgxFile file;
 	double due;                 /* (native) the emulated ms the pretended transfer ends */
-	bool asked;
 };
 
 struct Dense {
@@ -96,7 +94,7 @@ struct Dense {
 	uint32_t used;
 };
 
-static std::vector<Bundle> g_bundles;
+static Bundle g_slots[RVGX_SLOTS];
 static std::unordered_map<uint64_t, Dense> g_dense;
 static uint64_t g_dense_bytes;
 static uint32_t g_clock, g_next_id = 1;
@@ -138,7 +136,7 @@ static void bundle_arrived(Bundle &b, uint8_t *data, int size)
 /* the page's answer to Module.rvgxWant(id, name) */
 extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_rvgx_loaded(int id, uint8_t *data, int size)
 {
-	for (Bundle &b : g_bundles)
+	for (Bundle &b : g_slots)
 		if (b.id == (uint32_t)id) {
 			if (b.state == RVGX_E_NOT_YET)
 				bundle_arrived(b, data, size);
@@ -146,7 +144,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_rvgx_loaded(int id, uint8_t *data, i
 				free(data);
 			return;
 		}
-	free(data);  /* (no longer wanted: another mission's list has come since) */
+	free(data);  /* (no longer wanted: the slot has been given another name since) */
 }
 #else
 static void native_arrive(Bundle &b)
@@ -172,7 +170,6 @@ static void native_arrive(Bundle &b)
 static void bundle_request(Bundle &b)
 {
 	b.state = RVGX_E_NOT_YET;
-	b.asked = true;
 #ifdef __EMSCRIPTEN__
 	EM_ASM({ if (Module.rvgxWant) Module.rvgxWant($0, UTF8ToString($1)); else Module._wc_web_rvgx_loaded($0, 0, -1); },
 	       (int)b.id, b.name.c_str());
@@ -232,60 +229,57 @@ static Dense *dense_of(Bundle &b, uint32_t view, bool mirror)
 
 /* --- the functions --- */
 
-static void list_load(void)
+/* a slot given a name, replacing what it held.  The name it already holds changes nothing, so a program may name its
+ * slots in a loop as often as it likes; one that could not be had is tried again.  An empty name or none: empty */
+static void slot_name(void)
 {
-	PhysPt addr = (PhysPt)rw(B_LIST_ADDR) | ((PhysPt)rw(B_LIST_ADDR + 2) << 16);
-	uint32_t len = rw(B_LIST_LEN), at = 0;
-	std::vector<Bundle> next;
-	if (len > RVGX_LIST_MAX || addr >= MEM_TotalPages() * 4096u || len > MEM_TotalPages() * 4096u - addr) {
-		put_result(RVGX_E_TARGET);
+	const unsigned slot = rw(B_BUNDLE);
+	const uint16_t seg = rw(B_NAME_SEG), off = rw(B_NAME_OFF);
+	std::string name;
+	bool clean = true;
+	if (slot >= RVGX_SLOTS) {
+		put_result(RVGX_E_INDEX);
 		return;
 	}
-	while (at < len && next.size() < RVGX_NAMES_MAX) {
-		std::string name;
-		bool clean = true;
-		for (; at < len; at++) {
-			char c = (char)phys_readb(addr + at);
+	if (seg || off) {
+		for (unsigned i = 0;; i++) {
+			const char c = (char)real_readb(seg, (uint16_t)(off + i));
 			if (!c)
 				break;
+			if (i >= RVGX_NAME_MAX) {
+				clean = false;
+				break;
+			}
 			clean = clean && ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-');
 			name += c;
 		}
-		at++;
-		if (name.empty())
-			break;
-		Bundle b;
-		b.id = g_next_id++;
-		b.name = name;
-		b.state = clean ? RVGX_E_NOT_YET : RVGX_E_NOT_FOUND;
-		b.data = 0;
-		memset(&b.file, 0, sizeof b.file);
-		b.due = 0;
-		b.asked = false;
-		for (Bundle &old : g_bundles)   /* (one the last list had too stays, as it is) */
-			if (old.name == name && old.id) {
-				b = old;
-				old.id = 0;
-				break;
-			}
-		next.push_back(b);
 	}
-	for (Bundle &old : g_bundles)
-		if (old.id) {
-			forget_dense(old.id);
-			free(old.data);
-		}
-	g_bundles.swap(next);
-	put_result((int)g_bundles.size());
-	for (Bundle &b : g_bundles)         /* (after: its answer can come at once) */
-		if (b.state == RVGX_E_NOT_YET && !b.asked)
-			bundle_request(b);
+	Bundle &b = g_slots[slot];
+	put_result(0);
+	if (b.name == name && b.state != RVGX_E_NOT_FOUND)
+		return;
+	if (b.id)
+		forget_dense(b.id);
+	free(b.data);
+	b.data = 0;
+	memset(&b.file, 0, sizeof b.file);
+	b.name = name;
+	b.id = 0;
+	b.due = 0;
+	b.state = RVGX_E_INDEX;
+	if (name.empty())
+		return;
+	b.id = g_next_id++;
+	if (clean)
+		bundle_request(b);
+	else
+		b.state = RVGX_E_NOT_FOUND;
 }
 
 static void status_fill(void)
 {
 	unsigned ready = 0, waiting = 0;
-	for (Bundle &b : g_bundles) {
+	for (Bundle &b : g_slots) {
 		bundle_service(b);
 		ready += b.state == 0;
 		waiting += b.state == RVGX_E_NOT_YET;
@@ -314,9 +308,9 @@ static int draw(void)
 	const unsigned index = rw(B_BUNDLE), view = rw(B_VIEW), flags = rw(B_FLAGS);
 	const int scale = rs(B_SCALE), stride = rw(B_STRIDE), fb_y0 = rs(B_FB_Y0);
 	int y0 = rs(B_Y0), y1 = rs(B_Y1), xa = rs(B_XA), xb = rs(B_XB);
-	if (index >= g_bundles.size())
+	if (index >= RVGX_SLOTS)
 		return RVGX_E_INDEX;
-	Bundle &b = g_bundles[index];
+	Bundle &b = g_slots[index];
 	bundle_service(b);
 	if (b.state)
 		return b.state;
@@ -375,9 +369,9 @@ static bool RVGX_Multiplex(void)
 		g_attached = true;
 		reg_ax = 0;
 		return true;
-	case FN_LIST:
+	case FN_NAME:
 		if (g_attached)
-			list_load();
+			slot_name();
 		return true;
 	case FN_STATUS:
 		if (g_attached)
@@ -396,6 +390,13 @@ void RVGX_Init(void)
 	const char *off = getenv("RVGX");
 	if (off && !strcmp(off, "0"))
 		return;
+	for (Bundle &b : g_slots) {
+		b.id = 0;
+		b.state = RVGX_E_INDEX;
+		b.data = 0;
+		b.due = 0;
+		memset(&b.file, 0, sizeof b.file);
+	}
 #ifndef __EMSCRIPTEN__
 	g_dir = getenv("RVGX_DIR");
 	if (!g_dir)

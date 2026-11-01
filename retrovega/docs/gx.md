@@ -9,6 +9,12 @@ over the network while the game carries on. Any draw the card cannot do (the pic
 says so in a word, and the game draws that ship the old way that frame. The `` ` `` key (or `~`) flips between the two at
 any moment; the bunk menu's SHIP DETAIL row is the same setting, kept in RVSETUP.CFG, high by default.
 
+The point is memory more than speed. A mission's full-size views are tens of megabytes, far past what a DOS machine can
+hold beside everything else, and a capital ship's alone are why the game draws those as 4 x 4 blocks. On the card they
+live outside the emulated machine altogether: in the browser's cache and the card's own memory, costing the game nothing,
+so a capital ship is drawn at full resolution however many are about. The DOS machine still holds what it needs to draw
+the blocks, because any picture may be missing at any moment.
+
 ## Calling it from DOS
 
 Everything goes through `INT 2Fh`, DOS's multiplex interrupt, because every DOS since 3.0 answers it: an unclaimed
@@ -37,7 +43,7 @@ program that happens to use AH=E7h cannot be mistaken for a card.
 |---|---|
 | `E700h` | Install check. In: BX `'RV'` (5256h), CX `'GX'` (4758h). With a card: AL FFh, BX `'gx'` (7867h), CH.CL the version (1.0). Without: AL 0, nothing else changed. |
 | `E701h` | Attach the block at ES:BX. AX 0. |
-| `E710h` | Load a list of bundles (below). `result`: how many names. Returns at once; nothing waits for the network. |
+| `E710h` | Name a slot (below): what the slot `bundle` is to hold. Returns at once; nothing waits for the network. |
 | `E711h` | Status: fills the `stat_` fields. |
 | `E720h` | Draw. `result` 0 when drawn. |
 
@@ -46,7 +52,7 @@ program that happens to use AH=E7h cannot be mistaken for a card.
 | Offset | Field | Meaning |
 |---|---|---|
 | 0 | `int16 result` | written by the card; negative: why not (below) |
-| 2 | `uint16 bundle` | its place in the list, from 0 |
+| 2 | `uint16 bundle` | a slot, 0 to 255 |
 | 4 | `uint16 view` | which picture in the bundle |
 | 6 | `uint16 flags` | bit 0: mirrored left to right |
 | 8, 10 | `int16 x, y` | where the picture's origin lands on the screen |
@@ -59,8 +65,7 @@ program that happens to use AH=E7h cannot be mistaken for a card.
 | 28, 30 | `int16 xa, xb` | the columns it may write, xa .. xb-1 |
 | 32 | `far ext` | 0:0, or a table of two int16 a row: each row's first column and one past its last (the cockpit's opening) |
 | 36, 38 | `int16 ext_y0, ext_rows` | the rows that table covers |
-| 40 | `uint32 list_addr` | `E710h`: the names' linear address in XMS |
-| 44 | `uint16 list_len` | their bytes |
+| 40 | `far name` | `E710h`: offset then segment of the name, NUL-terminated; 0:0 or an empty name empties the slot |
 | 48, 52, 56 | `uint32 stat_draws, stat_px, stat_us` | `E711h`: draws, pixels, host microseconds since the emulator started |
 | 60, 62 | `uint16 stat_ready, stat_waiting` | `E711h`: bundles in, and on the way |
 
@@ -72,7 +77,7 @@ is `-5` and the game draws for itself. Pixels of value 0 in a picture are clear.
 | Value | Meaning | What the game does |
 |---|---|---|
 | 0 | drawn | nothing |
-| -1 | no such bundle in the list | draws its blocks |
+| -1 | that slot is empty | draws its blocks |
 | -2 | it is not to be had (not on the site, damaged) | draws its blocks, for good |
 | -3 | it has not come yet | draws its blocks; the next frame may find it |
 | -4 | no such view in it, or a damaged one | draws its blocks |
@@ -81,13 +86,26 @@ is `-5` and the game draws for itself. Pixels of value 0 in a picture are clear.
 The game treats them alike and only counts them: a flight's end logs `gx: this flight N ships by the card, M fell
 back: ...`.
 
-### The list
+### The slots
 
-At the briefing and again at the launch (`ships_want`), the game writes the flight's names into a small XMS block, each
-followed by a NUL, an empty one to end (`SHIP02.RV\0SHIP08.RV\0\0`), locks the block for its linear address, calls
-`E710h`, and unlocks. A bundle's number in later draws is its place in that list. A bundle the last list had too stays
-as it is, and one no longer listed is dropped along with its expanded views. Names hold only letters, digits, `.`, `_`
-and `-`; any other is `-2`.
+The card has 256 slots, each holding one bundle, and is told about them one at a time. There is no list to build: the game
+keeps nothing, and passes the name from the stack.
+
+```c
+for (i = 0; i < n; i++) {
+    char name[16];
+    sprintf(name, "SHIP%02X.RV", types[i]);
+    block.bundle = types[i];  block.name = name;
+    gx_int(0xE710);
+}
+```
+
+The game's convention is that a ship type's slot is its number, so a draw needs no table to find it. A slot keeps what it
+holds until it is named otherwise, across missions, in the card's memory rather than the machine's. Naming a slot with the
+name it already holds does nothing, so the game simply repeats the loop at the briefing and the launch (`ships_want`). A
+bundle that could not be had is tried again when it is next named. A different name replaces the slot's bundle, and any
+answer still on its way for the old one is dropped. Names hold only letters, digits, `.`, `_` and `-`, up to 64 of them;
+anything else is `-2`.
 
 A bundle is a ship's `SHIPnn.RV`, the same file the page already fetches to make its block sets, in one view numbering:
 the game places a ship with `lf_place` on the file's own lattice, and sends the stored view (a symmetric ship's
@@ -95,7 +113,7 @@ mirrored headings are their pair's, flag 1).
 
 ## Inside the card
 
-- `src/hardware/rvgx.cpp` is the DOS device: the handshake, the block, the list, the cache of expanded views (48 MB,
+- `src/hardware/rvgx.cpp` is the DOS device: the handshake, the block, the slots, the cache of expanded views (48 MB,
   least recently used out). It lives on the multiplex chain, added in `DOS_SetupMisc`.
 - `src/hardware/rvgx_kernel.h` is the pixel code, plain C++ with no DOSBox in it: the file parsed and each record of a
   view checked (the data comes over a network), and `rvgx_draw`, the turn and scale by inverse mapping.

@@ -3117,7 +3117,7 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.ch == '`' || in.ch == '~')   /* the ships between their high detail and their blocks, there and back (the user's, as
                                            StarCraft Remastered's key does) */
 #endif
-            gx_toggle();
+            ships_detail_toggle();
         if (in.ch == '+' || in.ch == '=') setSpeed[0] += g_st.max_speed / 10;
         if (in.ch == '-') setSpeed[0] = setSpeed[0] > (unsigned long)g_st.max_speed / 10 ? setSpeed[0] - g_st.max_speed / 10 : 0;
         if (in.ch == 'f' || in.ch == 'F') setSpeed[0] = g_st.max_speed;

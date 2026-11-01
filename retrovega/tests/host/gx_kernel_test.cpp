@@ -1,5 +1,6 @@
 /* gx_kernel_test.cpp: the sprite accelerator's pixel code (src/hardware/rvgx_kernel.h) on its own: docs/gx.md.
  *
+ *   gx_kernel_test views FILE.RV.. every view of real files decodes
  *   gx_kernel_test equal FILE.RV   every kernel path against the game's own (lightfield.c's lf_rotate_row), on real views
  *   gx_kernel_test fuzz FILE.RV N  N damaged copies decoded and drawn: for the sanitizers (gx_kernel_test.sh builds it so)
  *   gx_kernel_test bench FILE.RV   how many ships a frame the kernel can draw
@@ -92,6 +93,20 @@ static int equal(const char *path)
 	return 0;
 }
 
+/* every view of a real file decodes: the checks that turn damage away turn none of the art away */
+static int every_view(const char *path)
+{
+	std::vector<uint8_t> file = load(path);
+	RvgxFile f;
+	if (!rvgx_parse(file.data(), (uint32_t)file.size(), &f)) { printf("%s: not a bundle\n", path); return 1; }
+	for (uint32_t v = 0; v < f.nviews; v++) {
+		RvgxView d;
+		if (!rvgx_decode(f, v, false, &d)) { printf("%s: view %u turned away\n", path, v); return 1; }
+		free(d.px);
+	}
+	return 0;
+}
+
 static int fuzz(const char *path, long n)
 {
 	enum { W = 640, H = 100 };
@@ -169,6 +184,13 @@ static int bench(const char *path)
 
 int main(int argc, char **argv)
 {
+	if (argc >= 3 && !strcmp(argv[1], "views")) {
+		for (int i = 2; i < argc; i++)
+			if (every_view(argv[i]))
+				return 1;
+		printf("GX VIEWS OK: every view of %d files\n", argc - 2);
+		return 0;
+	}
 	if (argc >= 3 && !strcmp(argv[1], "equal")) return equal(argv[2]);
 	if (argc >= 4 && !strcmp(argv[1], "fuzz")) return fuzz(argv[2], atol(argv[3]));
 	if (argc >= 3 && !strcmp(argv[1], "bench")) return bench(argv[2]);

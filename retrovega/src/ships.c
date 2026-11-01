@@ -498,6 +498,16 @@ int ships_load(unsigned type)
     return g_nsets++;
 }
 
+void ships_detail_toggle(void)
+{
+    int i;
+    gx_toggle();
+    for (i = 0; i < g_nsets; i++) {     /* (turned on when off at the briefing: nothing had been asked) */
+        unsigned char type = g_set[i]->type;
+        gx_want(&type, 1);
+    }
+}
+
 /* The page's part (web/wc.js): when a set a flight needs is not beside
  * RV.EXE, the flight's whole list goes into RVWANT.TXT ("want GEN
  * SHIP02.RVH ..."), which the page polls; it fetches each missing type's

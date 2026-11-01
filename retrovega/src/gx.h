@@ -20,15 +20,14 @@
 #define gx_draw(type, view, mirror, x, y, scale, roll, y0, y1, xa, xb, ext, ext_y0, ext_rows) ((void)(view), (void)(mirror), -1)
 #else
 
-int gx_init(void);                      /* asks whether the card is there (once, after xms_init, before anything else in
-                                           XMS but the resident): 1 when it is */
+int gx_init(void);                      /* asks whether the card is there (once): 1 when it is */
 int gx_present(void);
 int gx_on(void);                        /* it is there and turned on: draws go to it */
 void gx_set(int on);                    /* the setting: the bunk menu's (RVSETUP.CFG) */
 void gx_toggle(void);                   /* the ` key: the same setting, for now, at once */
 
-/* the next flight's ship types: their views' bundles asked of the card (not waited for).  With the setting off the
- * list is only kept, for when it is turned on */
+/* ship types' views asked of the card, each named to the slot of its type's number (not waited for: nothing is, and
+ * it holds whatever it has been given until a slot is named otherwise).  Nothing with the setting off */
 void gx_want(const unsigned char *types, int n);
 
 /* a ship type's view drawn by the card (mirror: left to right, for a symmetric ship's other headings), its origin at
