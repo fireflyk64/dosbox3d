@@ -479,12 +479,13 @@ def pack_cockpits(pack, ships_csv, panels_dir):
                             len(CP_FREE) - hand, CP_FREE[0])
         if hand:
             part += make_palette(stick_ims, hand, CP_FREE[0] + len(CP_FREE) - hand)
-        pal = Palette(UI + flight[16:CP_FREE[0]] + part + flight[CP_FREE[-1] + 1:])   # the UI's 16 first, as every palette
+        pal = Palette(UI + flight[16:CP_FREE[0]] + part + [(118, 118, 114)])   # the UI's 16 first, as every palette
         allowed = list(range(16)) + CP_FREE
         over_black = Image.alpha_composite(Image.new('RGBA', SCREEN, (0, 0, 0, 255)), base)
         idx = pal.index_dither(over_black, allowed)
         idx[opening] = 0
-        rec = {'palette': add_palette(pack, 'cpal_' + key, pal, list(range(256))),
+        # (255, the grey above, is the rocks' tracker colour, set at run time: rocks.c; no table may give it)
+        rec = {'palette': add_palette(pack, 'cpal_' + key, pal, list(range(255))),
                'base': pack.add('cp_' + key, 'IMG', bytes(idx.reshape(-1)), SCREEN[0], SCREEN[1], 0, 0)}
         # the struts: what the base paints inside the opening's row extents
         inside = np.zeros_like(opening)

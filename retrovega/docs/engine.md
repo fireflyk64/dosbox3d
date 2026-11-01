@@ -222,9 +222,11 @@ on no list and no map, and asks nothing of the player unless they come to it; it
 took them all for waypoints until 2026-10-31. Fields (`field asteroid|mine x y z radius [density=N]`, km) are read from the old game's mission
 records (types 0x16 and 0x17) at the map's 0.45, which keeps its layout: no waypoint lies inside a field. A mission's
 field stays a cluster in its own place (`FIELD_SMALL`): its rocks drift, seven times the plain density, seen from afar
-and gone round, and every few seconds one ahead is set flying at the player. A mine field is the same rocks with
-trackers (the user: "like they are rocks with trackers... a singular unique color"): one red light flashing on top of
-each, so a field of them reads from far off as blinking lights (`tracker`). They hit like rocks.
+and gone round, and every few seconds one ahead is set flying at the player. A mine is the same rock with trackers,
+sharing its art (the user: "the diamond is just gray when they are not [mines]... 6 diamonds per mine, one per cube
+face"): every rock has six diamonds painted on it, on the faces of a cube standing on a corner of the spin axis
+(`tools/rocks.py`), in palette entry 255, which nothing else in a flight uses. `tracker_colour` keeps that entry grey in
+an asteroid field and flashes it red about twice a second in a mine field. They hit like rocks.
 
 **The autopilot traces its line** (`way_stop`; the user: "raytrace the path along the line to see if enemy spawn regions
 or asteroid fields are in the way"): it goes to the chosen nav point, stopping 500 km short of a field across the line,

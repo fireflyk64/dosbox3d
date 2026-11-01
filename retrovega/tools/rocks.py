@@ -190,6 +190,9 @@ uniform float holes, scale, blotch, glint, shine;
 uniform float seed, rough;
 uniform vec3 alb;
 uniform mat3 rot;
+uniform int mark_pass;
+uniform vec3 mark_axis[6], mark_u[6], mark_v[6];
+uniform float mark_size;
 uniform vec4 planes[CHUNKS * FACES];
 uniform int chunk_end[CHUNKS];
 uniform int nchunk;
@@ -274,6 +277,14 @@ void main() {
         if (t > 2.4) break;
     }
     if (d >= 0.0006) discard;
+    if (mark_pass == 1) {               // the trackers: a diamond stencilled along each cube face's axis onto the rock
+        float on = 0.0;
+        for (int i = 0; i < 6; i++)
+            if (dot(v_obj, mark_axis[i]) > 0.0 && abs(dot(v_obj, mark_u[i])) + abs(dot(v_obj, mark_v[i])) < mark_size)
+                on = 1.0;
+        frag = vec4(on, on, on, 1.0);
+        return;
+    }
     // its faces' way (the solid's gradient: the creases stay sharp), tipped by the surface's bumps
     float q = 0.0015;
     vec3 gs = vec3(sdf(v_obj + vec3(q, 0, 0)) - sdf(v_obj - vec3(q, 0, 0)), sdf(v_obj + vec3(0, q, 0)) - sdf(v_obj - vec3(0, q, 0)),
@@ -317,6 +328,36 @@ def rotation(axis, angle):
 POSES = [((0.4, 1.0, 0.2), 0.7), ((1.0, 0.2, 0.4), 1.9), ((0.2, 0.3, 1.0), 0.4), ((0.5, 0.8, 0.3), 2.6)]
 SPIN = (0.0, 1.0, 0.0)
 
+# The trackers (the user: "share art with the rocks... the diamond is just gray when they are not [mines]... 6 diamonds
+# per mine, one per cube face"): every rock carries six diamonds in one palette colour of their own, MARK_INDEX, which
+# nothing else in a flight uses.  rocks.c sets it: grey in an asteroid field, flashing red in a mine field.  The cube
+# stands on a corner of the spin axis, so each face comes round into view and none stays edge on at the top.
+MARK_INDEX = 255
+MARK_SIZE = 0.14                       # (a diamond's half width, in the rock's own units: its radius is about 0.75)
+
+
+def mark_axes(pose):
+    """the six faces' axes and the diamond's two ways on each, in the rock's own frame"""
+    lat = math.asin(1 / math.sqrt(3))
+    axes, us, vs = [], [], []
+    up = np.array(SPIN)
+    for i in range(6):
+        lon = i * math.pi / 3
+        la = lat if i % 2 else -lat
+        a = np.array([math.cos(la) * math.sin(lon), math.sin(la), math.cos(la) * math.cos(lon)])
+        u = np.cross(up, a)
+        u /= np.linalg.norm(u)
+        v = np.cross(a, u)
+        axes.append(tuple(pose.T @ a))
+        us.append(tuple(pose.T @ u))
+        vs.append(tuple(pose.T @ v))
+    return axes, us, vs
+
+
+def mark_at(mark, d):
+    """a tracker pass box-filtered to d x d"""
+    return np.asarray(Image.fromarray(mark.astype(np.float32), 'F').resize((d, d), Image.BOX), dtype=np.float64)
+
 
 def render_kind(ctx, kind, n):
     """the kind's TUMBLE frames, n x n: linear RGB (premultiplied) and coverage"""
@@ -346,16 +387,23 @@ def render_kind(ctx, kind, n):
     fbo = ctx.framebuffer(color_attachments=[color])
     pose_axis, pose_angle = POSES[kind]
     pose = rotation(pose_axis, pose_angle)
-    frames = []
+    axes, us, vs = mark_axes(pose)
+    prog['mark_axis'].value = axes
+    prog['mark_u'].value = us
+    prog['mark_v'].value = vs
+    prog['mark_size'].value = MARK_SIZE
+    frames, marks = [], []
     for f in range(TUMBLE):
         rot = rotation(SPIN, 2 * math.pi * f / TUMBLE) @ pose
         prog['rot'].write(rot.T.astype('f4').tobytes())
-        fbo.use()
-        fbo.clear(0, 0, 0, 0)
-        vao.render(moderngl.TRIANGLES)
-        img = np.frombuffer(color.read(), dtype=np.float32).reshape(n, n, 4)[::-1]
-        frames.append(img.copy())
-    return frames
+        for which in (0, 1):
+            prog['mark_pass'].value = which
+            fbo.use()
+            fbo.clear(0, 0, 0, 0)
+            vao.render(moderngl.TRIANGLES)
+            img = np.frombuffer(color.read(), dtype=np.float32).reshape(n, n, 4)[::-1]
+            (marks if which else frames).append(img[..., 0].copy() if which else img.copy())
+    return frames, marks
 
 
 def shrink(img, d):
@@ -371,7 +419,7 @@ def shrink(img, d):
     return np.clip(srgb * 255, 0, 255), a
 
 
-def small_sprite(col, a, table):
+def small_sprite(col, a, table, mark=None):
     d = a.shape[0]
     cut = 0.5 if d > 2 else 0.25
     idx = sky.quantize(np.maximum(col, 6.0), table) if d > 2 else sky.quantize(np.maximum(col, 6.0), (table[0], table[0]))
@@ -379,6 +427,13 @@ def small_sprite(col, a, table):
         m = a > 0
         mean = (col * a[..., None])[m].sum(0) / max(a[m].sum(), 1e-6) if m.any() else np.array([60.0, 60, 60])
         idx = np.full((d, d), sky.quantize(np.maximum(mean, 6.0)[None, None], (table[0], table[0]))[0, 0])
+    if mark is not None and d > 2:     # (a dot at least: what is seen of a mine from far off)
+        on = (mark >= 0.4) & (a >= cut)
+        if not on.any():
+            seen = np.where(a >= cut, mark, 0)
+            if seen.max() >= 0.08:
+                on = seen == seen.max()
+        idx = np.where(on, MARK_INDEX, idx)
     return np.where(a >= cut, idx, 0).astype(np.uint8)
 
 
@@ -426,11 +481,11 @@ def row_runs(on):
     return [(x0, x1) for x0, x1 in out]
 
 
-def big_record(col, a, table):
+def big_record(col, a, table, mark):
     """one big sprite's record: u16 rows, u16 the run table's bytes, for each row a count and its runs (u8 left
     + 1, u8 length: even), then the runs' pixels in turn; and how many pixels"""
     d = a.shape[0]
-    idx = sky.quantize(np.maximum(col, 6.0), table)
+    idx = np.where(mark >= 0.5, MARK_INDEX, sky.quantize(np.maximum(col, 6.0), table))
     heads, pix, px = bytearray(), bytearray(), 0
     for y in range(d):
         runs = row_runs(a[y] >= 0.5)
@@ -461,21 +516,23 @@ def main():
     ctx = moderngl.create_standalone_context(backend='egl')
     pal = sky.flight_palette()
     table = sky.palette_table(pal)
+    pal = np.vstack([pal, np.zeros((48, 3))])
+    pal[MARK_INDEX] = (118, 118, 114)  # (the previews: grey, as an asteroid field has it)
     sizes = big_sizes()
     n = BIG_MAX * SS
     small_blob, index, records = bytearray(), [], bytearray()
     sheet_cells = []
     gif_frames = [[] for _ in range(TUMBLE)]
     for kind in range(len(KINDS)):
-        frames = render_kind(ctx, kind, n)
+        frames, marks = render_kind(ctx, kind, n)
         kpx = 0
         for f in range(SMALL_FRAMES):
-            img = frames[f * TUMBLE // SMALL_FRAMES]
+            img, mark = frames[f * TUMBLE // SMALL_FRAMES], marks[f * TUMBLE // SMALL_FRAMES]
             for d in range(1, SMALL + 1):
-                small_blob += bytes(small_sprite(*shrink(img, d), table).reshape(-1))
+                small_blob += bytes(small_sprite(*shrink(img, d), table, mark_at(mark, d)).reshape(-1))
         for f, img in enumerate(frames):
             for d in sizes:
-                rec, px = big_record(*shrink(img, d), table)
+                rec, px = big_record(*shrink(img, d), table, mark_at(marks[f], d))
                 index.append(len(records))
                 records += rec
                 if len(records) & 1:
@@ -483,7 +540,7 @@ def main():
                 kpx += px
             for d in (16, 48, BIG_MAX):
                 col, a = shrink(img, d)
-                spr = sky.quantize(np.maximum(col, 6.0), table)
+                spr = np.where(mark_at(marks[f], d) >= 0.5, MARK_INDEX, sky.quantize(np.maximum(col, 6.0), table))
                 spr = np.where(a >= 0.5, spr, 0)
                 gif_frames[f].append((kind, d, spr))
                 if f in (0, 8, 16, 24) and d == BIG_MAX:
