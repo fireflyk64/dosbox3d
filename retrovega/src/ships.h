@@ -98,6 +98,7 @@ int ships_draw(int set, const LfVec *rel, const LfBasis *cam, const LfBasis *shi
  * also 2 x 1 blocks.  Returns 0 when the view is not in (its full-size
  * block did not fit) or too big for the dense buffer: the caller draws from
  * the sets. */
+void ships_capital_blocks(int b);       /* the block size capital ships are drawn in this frame: 2, 3 or 4 */
 int ships_draw_exact(int set, const LfVec *rel, const LfBasis *cam, const LfBasis *ship, int scale256, int detail,
                      int y0, int y1, int xa, int xb, const short __far *ext, int ext_y0, int ext_rows);
 

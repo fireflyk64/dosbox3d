@@ -80,7 +80,7 @@ for f in art/ships/SHIP*.RV; do
         # a capital ship (types 0x20 up: 37 views at 384-512 px): from half size down, rolls at two sizes; and the
         # block mode's at a quarter, drawn as 4 x 4 blocks (web/rvsets.js makes the same for the page)
         [ "$s" -nt "$f" ] && [ "$s" -nt tools/rvsprites.c ] && [ "$s" -nt src/lightfield.c ] || build/host/rvsprites "$f" "$s" 3 3 2 > /dev/null
-        [ "$h" -nt "$f" ] && [ "$h" -nt tools/rvsprites.c ] && [ "$h" -nt src/lightfield.c ] || build/host/rvsprites "$f" "$h" 0 0 0 1 4 > /dev/null
+        [ "$h" -nt "$f" ] && [ "$h" -nt tools/rvsprites.c ] && [ "$h" -nt src/lightfield.c ] || build/host/rvsprites "$f" "$h" 0 0 0 1 2 > /dev/null
         continue
     fi
     # (the nearest ships are drawn exactly in flight: rolls at every size from half down, so a far

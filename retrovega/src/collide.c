@@ -342,6 +342,21 @@ int16_t collide_ships(int16_t a, int16_t b, LfVec *push, int32_t *depth)
         *depth = 0;
     if (!collide_coarse(a, b) || !body(a, &A) || !body(b, &B))
         return 0;
+    /* a capital ship against a smaller ship is its silhouettes and nothing else, under any rule (the user: its own
+     * vitals are points on a mesh, and may stand clear of the hull): the other's vitals in them */
+    if ((maybeEntityType[a] == ET_CAPSHIP) != (maybeEntityType[b] == ET_CAPSHIP)) {
+        if (maybeEntityType[b] == ET_CAPSHIP) {
+            if ((d = vitals_in(&B, &A, &m)) != 0) {
+                push->x = -m.x;         /* (a's in b: a moves out, so b by the opposite) */
+                push->y = -m.y;
+                push->z = -m.z;
+            }
+        } else if ((d = vitals_in(&A, &B, &m)) != 0)
+            *push = m;                  /* (b's vital in a: b moves out) */
+        if (depth)
+            *depth = d;
+        return d != 0;
+    }
     va = (uint32_t)(A.h[0] >> 10) * (A.h[1] >> 10) * (A.h[2] >> 10);
     vb = (uint32_t)(B.h[0] >> 10) * (B.h[1] >> 10) * (B.h[2] >> 10);
     /* the smaller's hull against the bigger's vitals first; then the bigger's hull against the smaller's */

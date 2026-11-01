@@ -1233,11 +1233,15 @@ a cache and with maximal predictability?"). Two modes from the same
   lattice's 10 degrees; the ships are 320 x 200 pixels under a 640 x 400
   cockpit, which is WC1's pixel size. Cost: ~1.3 ms a big ship, 4 ms for
   one filling the opening (the zoom scene's frame-time line: "ships drawn
-  exactly 4.25"); the sets load in 100 ms. Capital ships take factor 4
-  (`0 0 0 1 4`, the ladder from a quarter, drawn as 4 x 4 blocks: detail
-  8, a C row kernel copying three rows of four) — the user: "it's ok if
-  they are pretty blocky way up close if it gives us space to store those
-  10 degree views"; ~2 MB a capital at 10 degrees, no turns stored. The
+  exactly 4.25"); the sets load in 100 ms. Capital ships took factor 4 until
+  2026-10-31 (always 4 x 4 blocks, for the room it saved; the user, having seen it,
+  asked for finer). They now take factor 2 like the fighters, ~2.2 MB for the
+  Vigilance (0.66 before), and the block is chosen each frame by how many capital
+  ships are within 15,000 km, in view or not, so turning does not change the look:
+  one alone in 2 x 2, two in 3 x 3, more in 4 x 4 (`ships_capital_blocks`, details
+  6 and 8, a C row kernel; `/capblocks N` forces it). The ladder's smallest sprite
+  that still fills the block is what gets turned, so coarse blocks cost less dense
+  memory, and a sprite too big for a dense copy gives way to the next. The
   factor is in the header (byte 9, bits 1-2), `ShipSet.factor`; a set's
   blocks hold only the lattice's own views, so `set_view` is bounded by
   the block's view count (`SetBlock.nv`) and `find_sprite` maps a mirrored

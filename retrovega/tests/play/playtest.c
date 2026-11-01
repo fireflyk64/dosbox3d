@@ -4027,6 +4027,39 @@ static void t_capital_map(void)
     REQUIRE(r == 1, e_hit, r, 0, 0);
 }
 
+/* M6.5: a fighter against a capital ship is that ship's silhouettes under every setting: clear of the hull but well
+ * inside its sphere nothing touches, on the deck it does, whatever the mission's hit= and ram= say */
+static void t_capital_ram(void)
+{
+    static const char __far e_clear[] = "hit rule %d, ram flags %d: a fighter 400 km off the carrier's axis, clear of its hull: collides";
+    static const char __far e_coarse[] = "the fighter 400 km off is not inside the carrier's reach (half %ld km): the test proves nothing";
+    static const char __far e_deck[] = "hit rule %d, ram flags %d: a fighter in the carrier's deck: does not collide";
+    static const uint8_t rules[4] = { 0, RV_SHIPTYPE_FLAG_HIT_SPHERE, RV_SHIPTYPE_FLAG_HIT_BOX, RV_SHIPTYPE_FLAG_HIT_SILHOUETTE };
+    uint8_t keep_hit = g_rule_hit, keep_flags = g_rule_flags;
+    int16_t i, j, coarse = 1, clear = -1, deck = -1;
+    LfVec push;
+    int32_t depth;
+    for (i = 0; i < 4; i++)
+        for (j = 0; j < 2; j++) {
+            pt_alone(PT_PLAYER);
+            pt_ship(1, PT_CAPSHIP, SIDE_AERA, CTL_FROZEN, 0, 0, 0, 0);
+            g_rule_hit = rules[i];
+            g_rule_flags = (uint8_t)(j ? (keep_flags | RV_RULE_RAM_SOFT) : (keep_flags & ~RV_RULE_RAM_SOFT));
+            gPositionVector[0] = vec3(400L * KM, 0, 0);
+            coarse &= collide_coarse(0, 1) != 0;
+            if (collide_ships(0, 1, &push, &depth) && clear < 0)
+                clear = i * 2 + j;
+            gPositionVector[0] = vec3(0, 75L * KM, 0);
+            if (!collide_ships(0, 1, &push, &depth) && deck < 0)
+                deck = i * 2 + j;
+        }
+    g_rule_hit = keep_hit;
+    g_rule_flags = keep_flags;
+    REQUIRE(coarse, e_coarse, (long)(collide_half(1) / KM), 0, 0);
+    REQUIRE(clear < 0, e_clear, clear / 2, clear & 1, 0);
+    REQUIRE(deck < 0, e_deck, deck / 2, deck & 1, 0);
+}
+
 /* M8.20: an escorted ship's jump is told once, friendly, from where it was, and it is no kill */
 static int16_t pt_jumps, pt_jump_slot, pt_jump_friend;
 static void pt_on_jump(int16_t slot, int16_t friendly)
@@ -4805,6 +4838,7 @@ static const char __far n_m8_17[] = "M8.17 turrets-off (ship_think): a mission's
 static const char __far n_m8_18[] = "M8.18 attack-capital (view_of): fighters attacking a capital ship break off by its hull and few fly into it";
 static const char __far n_m8_19[] = "M8.19 autopilot-apart (logic_autopilot): the wingman coming down on the Ox's spot arrives apart, and nobody hits it";
 static const char __far n_m6_4[] = "M6.4 capital-map (shot_hit): a capital ship is hit on its actual shape under any rule, not its radius";
+static const char __far n_m6_5[] = "M6.5 capital-ram (collide_ships): a fighter against a capital ship is its silhouettes under every hit= and ram= setting";
 static const char __far n_m8_20[] = "M8.20 jump-told (route_step, logic_on_jump): an escorted ship's jump is told once, friendly, for the star and the flash";
 static const char __far n_m8_21[] = "M8.21 wingman-lost (logic_wingman_lost, camp_load_units, camp_line_ok): a lost wingman is named, the next mission solo, their lines gone";
 static const char __far n_m8_22[] = "M8.22 kit-boost (kit_boost, logic_boost): talking to Kit before the launch: half as much armour again, or a round more; nothing without it";
@@ -4856,7 +4890,7 @@ static const PtTest __far k_tests[] = {
     { n_m8_1, t_start, 0 }, { n_m8_2, t_nav1, 0 }, { n_m8_3, t_nav_once, 0 }, { n_m8_4, t_won, 0 },
     { n_m8_5, t_skipped, 0 }, { n_m8_6, t_enemies_left, 0 }, { n_m8_7, t_layer_spawn, 0 }, { n_m8_8, t_autopilot, 0 },
     { n_m8_9, t_fighter, 0 }, { n_m8_10, t_escort_out, 0 }, { n_m8_11, t_escort_lost, 0 }, { n_m8_12, t_escort_along, 0 },
-    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 }, { n_m8_15, t_landing_contact, 0 }, { n_m8_16, t_carrier_lost, 0 }, { n_m8_17, t_turrets_off, 0 }, { n_m8_18, t_attack_capital, 0 }, { n_m8_20, t_jump_told, 0 }, { n_m8_21, t_wingman_lost, 0 }, { n_m8_22, t_kit_boost, 0 }, { n_m8_23, t_way_out, 0 }, { n_m8_19, t_autopilot_apart, 0 }, { n_m6_4, t_capital_map, 0 },
+    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 }, { n_m8_15, t_landing_contact, 0 }, { n_m8_16, t_carrier_lost, 0 }, { n_m8_17, t_turrets_off, 0 }, { n_m8_18, t_attack_capital, 0 }, { n_m8_20, t_jump_told, 0 }, { n_m8_21, t_wingman_lost, 0 }, { n_m8_22, t_kit_boost, 0 }, { n_m8_23, t_way_out, 0 }, { n_m8_19, t_autopilot_apart, 0 }, { n_m6_4, t_capital_map, 0 }, { n_m6_5, t_capital_ram, 0 },
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
     { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 }, { n_m10_6, t_orders, 0 }, { n_m10_7, t_missile_lock, 0 },

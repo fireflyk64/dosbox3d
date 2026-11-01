@@ -53,6 +53,7 @@ int g_flight_timed = 0;                 /* /flight N given: the flight lands by 
 int g_bench_wanted = 0;                 /* RV.EXE /bench N: that many copies, no adapting; 0 none (the default: the
                                            copies tiled the sky for the user); -1 adapt, the measurement */
 int g_record = 0;                       /* RV.EXE /record N: a screenshot (Rnnnnn.BMP) every N frames of flight */
+int g_capital_blocks_test = 0;          /* RVT.EXE /capblocks N: capital ships in N x N blocks, however many there are */
 int g_capital = 0;                      /* RV.EXE /capital: the carrier in the flight (a test aid) */
 int g_sky = 0;                          /* RV.EXE /sky: three ship views painted on the sky, to roll and turn round (a test aid) */
 /* the sky test scene's sprites: the enemy type's views, painted on the sky at these directions and sizes */
@@ -507,6 +508,8 @@ static int plan_how(int i)
 }
 
 /* once a frame: which ships show, how big, which are drawn exactly, in what order */
+#define CAPITAL_NEAR_KM 15000L          /* a capital ship further off is small enough not to count */
+
 static void plan_draws(void)
 {
     LfBasis cam, ship;
@@ -558,9 +561,19 @@ static void plan_draws(void)
         budget -= px[best] / detail;
         order[n_exact] = best;
     }
-    if (g_res == 2)                     /* the block mode: every ship turned exactly from its ladder, as blocks */
+    if (g_res == 2) {                   /* the block mode: every ship turned exactly from its ladder, as blocks */
+        int caps = 0;
         for (i = 0; i < g_nplan; i++)
             g_plan[i].exact = 4;
+        /* capital ships near the player, in view or not (so turning does not change their look): one alone in fine
+         * blocks, two a little coarser, more as the 4 x 4 they can all afford (the user, 2026-10-31) */
+        for (s = 0; s <= RV_MAX_SHIP_SLOT; s++)
+            if (maybeEntityType[s] == 0xD && labs(TO_KM(gPositionVector[s].x - gPositionVector[0].x)) < CAPITAL_NEAR_KM
+                && labs(TO_KM(gPositionVector[s].y - gPositionVector[0].y)) < CAPITAL_NEAR_KM
+                && labs(TO_KM(gPositionVector[s].z - gPositionVector[0].z)) < CAPITAL_NEAR_KM)
+                caps++;
+        ships_capital_blocks(g_capital_blocks_test ? g_capital_blocks_test : caps <= 1 ? 2 : caps == 2 ? 3 : 4);
+    }
     for (s = 0; s <= RV_MAX_SHIP_SLOT; s++) {
         int now = 0;
         for (i = 0; i < n_exact; i++)

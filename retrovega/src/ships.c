@@ -1150,7 +1150,8 @@ static int make_dense(const ShipSet __far *s, int set_i, int v)
  * edges walking in from its span and samples between them (rv_turn_drawn), a dropped row probes its edges from the
  * row above's (a step or two each), copies the part the row above covers too and samples the rest out to its own
  * edges (rv_turn_dropped): one call a row (lowlevel.asm).  4 also writes each drawn row's samples as 2 x 1 blocks
- * (rv_rotate_row2): a ship too big for the budget is drawn coarser rather than slower. */
+ * (rv_rotate_row2): a ship too big for the budget is drawn coarser rather than slower.  6 and 8: 3 x 3 and 4 x 4 blocks,
+ * for capital ships with others about (ships_capital_blocks). */
 static void turn_rows(int w, int h, int ox, int oy_, int x, int y, int scale256, int roll, int detail, int y0, int y1,
                       int xa, int xb, const short __far *ext, int ext_y0, int ext_rows)
 {
@@ -1184,15 +1185,20 @@ static void turn_rows(int w, int h, int ox, int oy_, int x, int y, int scale256,
             rv_rotate_row(g_dense, w, h, &r, oy - top, xs, xe, row);
             continue;
         }
-        if (detail >= 8) {              /* 4 x 4 blocks (the quarter-size sets: capital ships) */
-            int ry = oy - top, x4;
-            if (ry & 3) {
-                if (oy > y0 && oy - 1 >= 0)
-                    _fmemcpy(row + (ca - left), vid_row(oy - 1) + ca, cb - ca);
+        if (detail >= 6) {              /* 3 x 3 or 4 x 4 blocks (capital ships, when there are several about) */
+            int ry = oy - top, b = detail >= 8 ? 4 : 3, off = ry % b, xb0;
+            long u, vv, du, dv;
+            if (off && oy > y0 && oy > 0) {     /* (a band's first row samples its block's: nothing above to copy) */
+                _fmemcpy(row + (ca - left), vid_row(oy - 1) + ca, cb - ca);
                 continue;
             }
-            for (x4 = xs & ~3; x4 < xe; x4 += 4) {
-                long u = r.u00 + (long)ry * r.dru + (long)x4 * r.du, vv = r.v00 + (long)ry * r.drv + (long)x4 * r.dv;
+            ry -= off;
+            xb0 = xs - xs % b;
+            u = r.u00 + (long)ry * r.dru + (long)xb0 * r.du;
+            vv = r.v00 + (long)ry * r.drv + (long)xb0 * r.dv;
+            du = r.du * b;
+            dv = r.dv * b;
+            for (; xb0 < xe; xb0 += b, u += du, vv += dv) {
                 long su = u >> 16, sv = vv >> 16;
                 unsigned char pix;
                 int n;
@@ -1201,9 +1207,9 @@ static void turn_rows(int w, int h, int ox, int oy_, int x, int y, int scale256,
                 pix = g_dense[(unsigned)sv * w + (unsigned)su];
                 if (!pix)
                     continue;
-                for (n = 0; n < 4; n++)
-                    if (x4 + n >= ca - left && x4 + n < cb - left)
-                        row[x4 + n] = pix;
+                for (n = 0; n < b; n++)
+                    if (xb0 + n >= ca - left && xb0 + n < cb - left)
+                        row[xb0 + n] = pix;
             }
             continue;
         }
@@ -1425,6 +1431,13 @@ int ships_draw(int set_i, const LfVec *rel, const LfBasis *cam, const LfBasis *s
     return SHIP_PATH_TURNED;
 }
 
+static int __far g_capital_blocks = 2;
+
+void ships_capital_blocks(int b)
+{
+    g_capital_blocks = b;
+}
+
 int ships_draw_exact(int set_i, const LfVec *rel, const LfBasis *cam, const LfBasis *ship, int scale256, int detail,
                      int y0, int y1, int xa, int xb, const short __far *ext, int ext_y0, int ext_rows)
 {
@@ -1435,16 +1448,19 @@ int ships_draw_exact(int set_i, const LfVec *rel, const LfBasis *cam, const LfBa
     if (!p.on_screen || scale256 < 8)
         return 1;
     if (s->factor > 1) {
-        /* a block mode: the ladder's smallest sprite still at least the ship's size over the factor, turned and
-         * scaled to the ship's size as 2 x 2 (4 x 4) blocks */
-        int k, want = scale256 / s->factor;
+        /* a block mode: the ladder's smallest sprite still at least the ship's size over the block, turned and scaled
+         * to the ship's size as 2 x 2 blocks, or 3 x 3 or 4 x 4 for a capital ship with others about (the user: one
+         * alone is drawn fine, an intermediate for two).  A sprite too big for a dense copy gives way to the next */
+        int k, want, b = s->type >= 0x20 && g_capital_blocks > s->factor ? g_capital_blocks : s->factor;
+        want = scale256 / b;
         for (k = s->nsizes - 1; k > 0 && s->scale[k] < want; k--)
             ;
-        if (draw_turned_at(s, set_i, k, p.view, p.sx, p.sy, (int)((long)scale256 * 256 / s->scale[k]), p.roll,
-                           s->factor == 4 ? 8 : 4, y0, y1, xa, xb, ext, ext_y0, ext_rows)) {
-            drawn(SHIP_PATH_EXACT, p.view, p.roll);
-            return 1;
-        }
+        for (; k < s->nsizes; k++)
+            if (draw_turned_at(s, set_i, k, p.view, p.sx, p.sy, (int)((long)scale256 * 256 / s->scale[k]), p.roll,
+                               b >= 4 ? 8 : b == 3 ? 6 : 4, y0, y1, xa, xb, ext, ext_y0, ext_rows)) {
+                drawn(SHIP_PATH_EXACT, p.view, p.roll);
+                return 1;
+            }
         return 0;
     }
     if (scale256 == 256 && ((p.roll + 8) & 1023) < 16) {

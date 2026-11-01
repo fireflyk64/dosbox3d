@@ -297,6 +297,7 @@ What the tests expect:
 | M6.2 no-ghosts | flown at top speed at a ship 1,500 km ahead, the player is never inside it more than 3 steps in a row, and the collision hurts the ship |
 | M6.3 ram-cost | closing at 10 km a step costs the player 50 under the old rule (the square of the closing speed in km a step, halved) and 3 under `rules ram=soft` |
 | M6.4 capital-map | under `hit=sphere` a shot 400 km off the carrier's axis, inside its 700 km radius but clear of its hull, flies on; one along its deck hits: a capital ship is hit on its actual shape under any rule |
+| M6.5 capital-ram | a fighter clear of the carrier's hull but inside its sphere does not collide, and one in its deck does, under all four hit= settings and both ram= settings |
 
 ### M7: missiles (`fireGunFromShip`'s launchers, `step_missiles`, `step_fire`)
 
