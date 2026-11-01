@@ -1057,16 +1057,15 @@ static void flame_test(void)
 
 #endif /* RV_TESTS */
 
-/* a flight's first comm, three seconds out: the first of the mission's people with comm art (its talk's speakers,
- * the squadron's pilots) says their own line on the left VDU (until the missions have comm lines of their own) */
+/* a flight's first comm, three seconds out: the wingman, on the left VDU, in their own line */
+static int wingman_voice(int s);
+
 static void comm_launch(void)
 {
-    int i;
-    if (!g_m || g_sys.muted)
+    int16_t wing[1];
+    if (!g_m || g_sys.muted || !logic_wingmen(wing, 1))
         return;
-    for (i = 0; i < (int)g_m->ntalk; i++)
-        if (comms_say(comms_voice(g_m->talk[i].speaker), 0, (const char __far *)g_pilots[g_m->talk[i].speaker].line))
-            return;
+    (void)comms_say(wingman_voice(wing[0]), 0, NULL);
 }
 
 /* the aliens' hail: the first Aera or Rlaan fighter to come within HAIL_KM hails the player on the right VDU, once

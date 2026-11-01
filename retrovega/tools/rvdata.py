@@ -492,7 +492,8 @@ def compile_all():
                 raise Fail('%s: unknown nav point %s' % (where, f[2]))
             pilot = NONE
             if 'pilot' in opts:
-                if opts['pilot'] not in pilot_index or people[pilot_index[opts['pilot']]]['role'] != 'pilot':
+                # (the barman and the chief can fly: Tally and Kit, the user's wingmen nine and ten; the arcs doc)
+                if opts['pilot'] not in pilot_index or people[pilot_index[opts['pilot']]]['role'] not in ('pilot', 'barman', 'tech'):
                     raise Fail('%s: %s is not a pilot' % (where, opts['pilot']))
                 pilot = pilot_index[opts['pilot']]
                 if kind == 'wingman':

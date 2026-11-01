@@ -47,7 +47,10 @@ SERIES = [
     ('SHMRN', 'the Shmrn pocket', 'GOOD', 'BAD'),
     ('LUYTEN', "Luyten's Star", 'BAD', 'BAD'),
 ]
-WINGMEN = ['TORCH', 'ECHO', 'COMET', 'FROST', 'KESTREL', 'DRIFTER', 'PRIME', 'ANCHOR']
+# who flies each system: the arcs the user approved (2026-10-31), by personality against the old game's wingman there
+WINGMEN = {'ENIGMA': 'FROST', 'CEPHID': 'DRIFTER', 'SHELTON': 'COMET', 'CRUCIBL': 'ANCHOR', 'OLDZIEY': 'PRIME',
+           'DEFIANC': 'COMET', 'LIXIS': 'ANCHOR', 'ATARAXI': 'ECHO', 'RIGEL': 'FROST', 'BARNARD': 'KESTREL',
+           'WOLF359': 'TECH', 'SHMRN': 'TORCH', 'LUYTEN': 'TALLY'}
 NAMES = {'SCHROED': 'Schroedinger', 'FRANKLN': 'Franklin', 'GAWAIN': 'Gawain', 'LANCELT': 'Lancelot', 'AGIS': 'Agis',
          'NICANDR': 'Nicander', 'ARISTON': 'Ariston', 'CONVOLN': 'Convolution', 'CLEOMEN': 'Cleomenes', 'OX': 'Ox',
          'KAHAN': 'Kahan', 'AGASICL': 'Agasicles', 'ANAXIDM': 'Anaxidamus', 'CHARILS': 'Charillus', 'VIGILNC': 'Vigilance',
@@ -107,7 +110,6 @@ def port(dumpdir):
     from campaign import relations, seat_room, TALK   # (the placeholders' seats and table talk)
     rel = relations()
     nodes, missions = [], []
-    wing = 0
     for si, (node, system, good, bad) in enumerate(SERIES):
         ids = []
         for mi in range(4):
@@ -127,8 +129,7 @@ def port(dumpdir):
                 lines.append('nav      %d %d %d %d' % (n['n'], km(n['x']), km(n['y']), km(n['z'])))
             # who is where: the enemies and the escort targets by nav, grouped by type; the carrier, its escorts
             # (behaviour 3 and their followers at nav 0) and the player's own records left out
-            pilot = WINGMEN[wing % len(WINGMEN)]
-            wing += 1
+            pilot = WINGMEN[node]
             lines.append('ship     player 0 nav0')
             lines.append('ship     wingman 0 nav0 pilot=%s' % pilot)
             carrier_line = len(lines)
