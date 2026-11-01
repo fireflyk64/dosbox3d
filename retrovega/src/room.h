@@ -21,6 +21,8 @@ typedef struct {
     unsigned long turn_next;
     int actor_frame, actor_step;
     unsigned long actor_next, glance_at;
+    unsigned char actor_gone;           /* the room's actor was lost in a mission: not drawn, not pointed at */
+    unsigned char hot_gone;             /* 1 + a hotspot that went with them; 0 none */
     int hover_kind, hover_index;
     int px, py, pointer, hide_pointer;
     char label[40];

@@ -65,6 +65,8 @@ wait 2
 click
 wait 12
 shot S12KIT
+key esc
+wait 6
 move 478 176
 wait 2
 click

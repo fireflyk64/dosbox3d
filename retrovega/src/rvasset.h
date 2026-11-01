@@ -123,7 +123,7 @@
 #define RV_ACT_SCORES 4
 #define RV_ACT_SIMULATOR 5
 #define RV_ACT_CLOSEUP 6
-#define RV_ACT_CUSTOMIZE 7
+#define RV_ACT_KIT 7
 #define RV_ACT_LAUNCH 8
 #define RV_ACT_MEDALS 9
 #define RV_ACT_LETTERS 10

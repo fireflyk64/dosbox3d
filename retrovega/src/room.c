@@ -74,7 +74,7 @@ static void find_hover(int x, int y, int *kind, int *index)
             return;
         }
     }
-    if (r->has_actor && x >= r->actor.x && y >= r->actor.y && x < r->actor.x + r->actor.w
+    if (r->has_actor && !g_scene.actor_gone && x >= r->actor.x && y >= r->actor.y && x < r->actor.x + r->actor.w
         && y < r->actor.y + r->actor.h) {
         *kind = HOVER_ACTOR;
         *index = 0;
@@ -82,6 +82,8 @@ static void find_hover(int x, int y, int *kind, int *index)
     }
     for (i = 0; i < r->nhot; i++) {
         const RvHot __far *h = &r->hot[i];
+        if (i + 1 == g_scene.hot_gone)
+            continue;
         if (x >= h->x && y >= h->y && x < h->x + h->w && y < h->y + h->h) {
             *kind = HOVER_HOT;
             *index = i;
@@ -140,11 +142,11 @@ static void tab_move(int dir)
         here = (long)g_scene.px * 1024 + g_scene.py;
     }
     for (k = HOVER_SEAT; k <= HOVER_HOT; k++) {
-        int n = k == HOVER_SEAT ? 3 : k == HOVER_ACTOR ? r->has_actor : r->nhot;
+        int n = k == HOVER_SEAT ? 3 : k == HOVER_ACTOR ? r->has_actor && !g_scene.actor_gone : r->nhot;
         for (i = 0; i < n; i++) {
             int x, y;
             long key;
-            if (k == HOVER_SEAT && g_scene.seat[i] == 0xFF)
+            if ((k == HOVER_SEAT && g_scene.seat[i] == 0xFF) || (k == HOVER_HOT && i + 1 == g_scene.hot_gone))
                 continue;
             hot_centre(k, i, &x, &y);
             key = ((long)x * 1024 + y) * dir;
@@ -229,7 +231,7 @@ int scene_update(const Input *in, SceneAction *act)
         }
     }
     /* the actor: its idle loop, the hover frame, now and then a glance */
-    if (r->has_actor) {
+    if (r->has_actor && !g_scene.actor_gone) {
         const RvActor __far *a = &r->actor;
         int frame = g_scene.actor_frame;
         if (kind == HOVER_ACTOR || g_scene.facing == 9) {
@@ -300,7 +302,7 @@ static void draw_band(int y0, int y1)
             gfx_sprite_dither(pose_asset(i, 1), 0, 0, y0, y1, 1);
         }
     }
-    if (r->has_actor)
+    if (r->has_actor && !g_scene.actor_gone)
         gfx_image(r->actor.frame0 + g_scene.actor_frame, AT_ASSET, AT_ASSET, y0, y1);
     if (g_scene.overlay)
         g_scene.overlay(y0, y1);

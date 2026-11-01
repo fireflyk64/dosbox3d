@@ -1,0 +1,57 @@
+# Frost lost: EXE=RVT.EXE tests/run.sh tests/scenes3.txt /fly 0 (the ~ key: the wingman dies)
+# The debrief says so; Tally and Comet speak of it; her chair is empty; the briefing is solo.
+wait 40
+key ~
+wait 30
+key c
+wait 120
+shot E1DEBR
+click
+wait 30
+shot E2DEBR
+key esc
+wait 30
+move 75 150
+wait 4
+click
+wait 80
+shot E3TALLY
+key esc
+wait 8
+move 320 382
+wait 2
+click
+wait 14
+shot E4LOUNG
+move 215 225
+wait 4
+click
+wait 10
+click
+wait 10
+click
+wait 10
+click
+wait 90
+shot E5COMET
+key esc
+wait 8
+move 431 126
+wait 2
+click
+wait 14
+move 145 152
+wait 2
+click
+wait 60
+shot E6BRIEF
+click
+wait 50
+shot E7SOLO
+click
+wait 50
+shot E8YOU
+log done
+click
+wait 50
+shot E9CUT

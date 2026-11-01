@@ -69,7 +69,7 @@ UI_NAMES = ['BLACK', 'GREY1', 'GREY2', 'GREY3', 'GREY4', 'GREY5', 'GREY6', 'WHIT
             'AMBER3', 'AMBER4', 'PANEL', 'PANEL_EDGE', 'HILITE', 'RED']
 TEXT_COLOURS = [7, 11, 5]       # white, amber, grey: the mix tables' order
 KIND = {'PAL': 1, 'PALPART': 2, 'IMG': 3, 'SPR': 4, 'FONT': 5, 'RAW': 6}
-ACTIONS = ['NONE', 'GOTO', 'BUNK', 'LOG', 'SCORES', 'SIMULATOR', 'CLOSEUP', 'CUSTOMIZE', 'LAUNCH', 'MEDALS',
+ACTIONS = ['NONE', 'GOTO', 'BUNK', 'LOG', 'SCORES', 'SIMULATOR', 'CLOSEUP', 'KIT', 'LAUNCH', 'MEDALS',
            'LETTERS', 'PHOTOS', 'KILLS']
 LIMITS = {'HOTS': 8, 'POSES': 12, 'IDLE': 16, 'DECK_SHIPS': 8, 'CLIPS': 3, 'PEOPLE': 16, 'ACTOR_FRAMES': 12,
           'COMM_VOICES': 24, 'PANEL': 48}
@@ -296,14 +296,18 @@ def pack_room(pack, key, people_idx, cfg, place, d):
                             len(a['clips']['idle']), names.index(a['hover']), names.index(glance), 0,
                             *a['rect'], first, *idle)
     hot = hotspots(key, cfg, frame)
-    # the close-up's backdrop: 48 colours in 16-63
+    cp, cback = pack_closeup(pack, key, back)
+    rec.update(hot=hot, poses=poses, actor=actor, closeup_part=cp, closeup_back=cback)
+    return rec, pal
+
+
+def pack_closeup(pack, key, back):
+    """The close-up's backdrop: 48 colours in 16-63."""
     cb = closeup_backdrop(back)
     part = make_palette([cb], 48, 16)
     cpal = Palette(UI + part + [(0, 0, 0)] * 192)
     cp = pack.add('cpal_' + key, 'PALPART', struct.pack('<BB', 16, 48) + vga(part) + closeup_mix(cpal.colours))
-    cback = add_image(pack, 'cback_' + key, cb, cpal, allowed=list(range(64)))
-    rec.update(hot=hot, poses=poses, actor=actor, closeup_part=cp, closeup_back=cback)
-    return rec, pal
+    return cp, add_image(pack, 'cback_' + key, cb, cpal, allowed=list(range(64)))
 
 
 def closeup_mix(colours):
@@ -751,10 +755,11 @@ def main():
         deck = b'\0' * (struct.calcsize('<BBH3H3B3B3H4h') + 4 * LIMITS['DECK_SHIPS'])
         if key == 'deck':
             rec, deck = pack_deck(pack, place, d, ships_csv)
+            cp, cback = pack_closeup(pack, key, Image.open(os.path.join(d, place['back'])))      # (Kit's face)
             rec.update(hot=hotspots(key, cfg, places.Frame(cfg['crop'])), poses=[],
                        actor=struct.pack('<6B4hH%dB' % (2 * LIMITS['IDLE']), 0xFF, *([0] * 9), 0,
                                          *([0] * 2 * LIMITS['IDLE'])),
-                       closeup_part=0xFFFF, closeup_back=0xFFFF)
+                       closeup_part=cp, closeup_back=cback)
         else:
             rec, pal = pack_room(pack, key, people_idx, cfg, place, d)
             if place.get('zoom', {}).get('chalkboard'):

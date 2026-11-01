@@ -19,9 +19,30 @@ title    Patrol: the Enigma shipyards, 3 nav points
 type     patrol
 music    briefing
 fighter  SCHROED
-briefing Pilots, listen up. The Vigilance holds station in the Enigma shipyards. You and Frost will fly Nav 1, Nav 2, Nav 3 and come home. Intelligence expects 3 Nicanders at Nav 1; 2 Agis at Nav 3. Keep your wingman close and bring the ship back.
-win      The Enigma shipyards holds. Good flying; get some rest.
-lose     We lost ground in the Enigma shipyards. Debrief, and we go again tomorrow.
+briefing "Sit down, people. We have a long shift and a short list."
+briefing "The Vigilance dropped out of jump at the Enigma shipyards this morning, and the Aera know we're here."
+briefing "Blue flight had the first patrol. You have the next."
+briefing "New pilots fly lead today, with a veteran on the wing. Veterans, keep an eye on them."
+briefing "Wildcard, you have the first wing. You and Frost will fly Nav 1, Nav 2, Nav 3 and come home."
+briefing "Frost has been out here since the first raids. You lead, but when she talks, you listen. Clear?"
+briefing you "Yes, Commander."
+briefing "Intelligence expects 3 Nicanders at Nav 1 and 2 Agis at Nav 3."
+briefing "Fly all of it. The Vigilance won't clear you to land before you have."
+briefing "Questions?"
+briefing FROST "If they find us first, Commander?"
+briefing "Engage if the odds are good. Wildcard makes that call."
+briefing you "(Your mind wanders while she works through the other wings.)"
+briefing "...and back aboard by 2200. Wildcard, Kit wants a word on the deck before you launch."
+briefing "One more thing. The simulator resets. Out there, nothing does. Dismissed."
+win      "Welcome back, Wildcard. That's your first patrol flown."
+win      FROST "A steady pilot, Commander. Checked on me all the way round."
+win      alive=FROST "Frost doesn't say that about many. The yard keeps working. Get some rest."
+win      dead=FROST "It wasn't your doing, Wildcard. She knew what she signed for, and the yard keeps working."
+lose     "You came back. That's the best I can say for it."
+lose     "The Aera still hold that lane, and the yard crews will pay for it."
+lose     FROST "That's on me as much as the new one, Commander."
+lose     you "No excuses, Commander."
+lose     "Good, because I wouldn't take any. We go again tomorrow."
 nav      1 13500 -2250 6750
 nav      2 20250 4500 -9000
 nav      3 2250 2250 -20250
@@ -30,12 +51,41 @@ ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
 ship     NICANDR 1 nav1 count=3
 ship     AGIS 1 nav3 count=2
-bar      left=FROST middle=PRIME right=DRIFTER
-talk     bar FROST PRIME "Quiet out there lately."
-talk     bar PRIME FROST "Too quiet."
-lounge   left=KESTREL middle=ECHO right=ANCHOR
-talk     lounge KESTREL ECHO "Quiet out there lately."
-talk     lounge ECHO KESTREL "Too quiet."
+bar      left=- middle=PRIME right=DRIFTER
+talk     bar DRIFTER PRIME "Ten credits says the next voice on the comm is Prime."
+talk     bar PRIME DRIFTER "Put me down for twenty."
+talk     bar DRIFTER PRIME "You can't bet on yourself."
+talk     bar PRIME DRIFTER "Who else would I bet on?"
+say      bar TALLY TALLY "New face. First one's on the house, and you owe me a rematch."
+say      bar TALLY you "A rematch? We've never played."
+say      bar TALLY TALLY "Everybody owes me a rematch. That's what the board's for."
+say      bar TALLY DRIFTER "Don't ask him about the board. Ask him what he's lost to it."
+say      bar DRIFTER DRIFTER "Owen Price. Drifter. I run the pool on which Mercer is on the comm next."
+say      bar DRIFTER DRIFTER "It's the only honest game aboard."
+say      bar DRIFTER TALLY "Honest. He's into me for forty."
+say      bar DRIFTER DRIFTER "Flying with Frost? Ask her why she left the medical corps. Nobody's collected on that yet."
+say      bar PRIME PRIME "Julian Mercer. Prime. The good-looking one."
+say      bar PRIME you "Drifter says there are two of you."
+say      bar PRIME PRIME "There's me, and there's a spare. Relax. He knows."
+say      bar PRIME TALLY "Wait till you meet the spare. He pays his tab."
+lounge   left=KESTREL middle=- right=FROST
+talk     lounge KESTREL FROST "The new one looks nervous."
+talk     lounge FROST KESTREL "Good. Nervous ones look behind them."
+talk     lounge KESTREL FROST "What do I look like?"
+talk     lounge FROST KESTREL "Like you already looked."
+say      lounge FROST FROST "One rule out there. Check your wingman before you check your kills."
+say      lounge FROST you "That's it?"
+say      lounge FROST FROST "That's the one the academy doesn't test. If I go quiet, you come looking."
+say      lounge FROST KESTREL "She came looking for me once. I didn't need it. She came anyway."
+say      lounge KESTREL KESTREL "Kenji Arai. Kestrel."
+say      lounge KESTREL you "Wildcard. Is this seat taken?"
+say      lounge KESTREL KESTREL "No. It never is."
+say      lounge KESTREL FROST "Sit down, Wildcard. He won't bite."
+talk     deck TECH you "Try not to scratch her."
+say      deck TECH TECH "You're the new one. I'm Kit. Everything on this deck is mine, including that fighter."
+say      deck TECH you "She looks new."
+say      deck TECH TECH boost=armor "New plate on every side, past what the yard says she carries. Don't ask me where I get it."
+radio    "Frost to Wildcard. You have the lead. Talk to me if anything looks wrong."
 
 mission  ENIGMA2
 node     ENIGMA
@@ -43,9 +93,27 @@ title    Patrol: the Enigma shipyards, 3 nav points
 type     patrol
 music    briefing
 fighter  SCHROED
-briefing Pilots, listen up. The Vigilance holds station in the Enigma shipyards. You and Frost will fly Nav 1, Nav 2, Nav 3 and come home. Intelligence expects our Ox at Nav 0; 2 Agis at Nav 1; 3 Nicanders at Nav 2. Keep your wingman close and bring the ship back.
-win      The Enigma shipyards holds. Good flying; get some rest.
-lose     We lost ground in the Enigma shipyards. Debrief, and we go again tomorrow.
+briefing "...which leaves the last wing, and the job I care about most."
+briefing after=won "Yesterday's patrol kept the lane open, so the yard can finally move stock."
+briefing after=lost "The Aera still hold yesterday's lane, so the yard is moving stock the long way round."
+briefing dead=FROST "We are short of pilots since Frost, Wildcard, so you fly this one alone."
+briefing "You and Frost have the Ox. It leaves the yard with a month of spare parts, Kit's share included."
+briefing "It sets off for Nav 1 as you launch and jumps out just short of it. You will see the flash."
+briefing "Then Nav 2, Nav 3 and home. Intelligence expects 2 Agis at Nav 1, after the Ox, and 3 Nicanders at Nav 2."
+briefing "Your job is that Ox. You do not leave it to chase anything. Lose it and you lose the mission."
+briefing "Questions?"
+briefing you "And if they break off, Commander?"
+briefing "Then you stay with the Ox."
+briefing "That's all. See Kit before you go, she has been asking for you. Dismissed."
+win      "Good work, Wildcard. The Ox jumped on schedule."
+win      FROST "Wildcard stayed on it the whole way, Commander."
+win      you alive=FROST "Frost earned half of that."
+win      dead=FROST "The Ox made its jump. That's what she bought."
+win      "Kit gets her parts. She will find something else to complain about."
+lose     escort=lost "We lost the Ox. That was a month of repairs for the whole fleet."
+lose     "That was not the job I gave you. Kit will want a word with you. So will I."
+lose     you "Yes, Commander."
+lose     "See that it doesn't happen twice."
 nav      1 -11250 1350 -11250
 nav      2 -4500 2250 -29250
 nav      3 0 0 -15750
@@ -55,8 +123,49 @@ ship     VIGILNC 0 nav0 role=home
 ship     OX 0 nav0 role=out
 ship     AGIS 1 nav1 count=2
 ship     NICANDR 1 nav2 count=3
-bar      left=- middle=KESTREL right=-
-lounge   left=- middle=ECHO right=-
+bar      left=TORCH middle=PRIME right=ANCHOR
+talk     bar TORCH ANCHOR "Shmrn's still out there."
+talk     bar PRIME TORCH "So's my luck, and I don't bring it up at every table."
+talk     bar ANCHOR TORCH "Your transfer request came back, Torch. I filed it again."
+say      bar TALLY TALLY dead=FROST "Frost's name stays up on the board. They all do."
+say      bar TALLY TALLY after=won "First patrol on the board. That rematch is still open."
+say      bar TALLY TALLY after=lost "Nothing on the board yet. It's a long war, and the chalk's patient."
+say      bar TORCH TORCH "Rafael Ortega. Torch. They'll tell you I bring up Shmrn too much."
+say      bar TORCH PRIME "He brings up Shmrn too much."
+say      bar TORCH TORCH "It's still out there."
+say      bar TORCH TALLY "Let him be, Julian. Your brother's paying for that drink."
+say      bar PRIME PRIME "Scratched your fighter yet? Don't worry, my brother signs for those."
+say      bar PRIME ANCHOR "I do. Don't encourage him."
+say      bar ANCHOR ANCHOR "Julius Mercer. And no, I'm not the other one."
+say      bar ANCHOR you "He says you sign for his scratches."
+say      bar ANCHOR ANCHOR "Somebody has to fill in the form."
+say      bar ANCHOR PRIME "See? There's a spare."
+lounge   left=COMET middle=- right=FROST
+talk     lounge COMET FROST "How's the new one?"
+talk     lounge FROST COMET after=won "Checked on me out there."
+talk     lounge FROST COMET after=lost "Came home. We'll work on the rest."
+talk     lounge COMET FROST "Give it a week."
+say      lounge FROST FROST after=won "You checked on me out there. Keep doing that."
+say      lounge FROST FROST after=lost "We lost the lane, and you came home. One of those can be fixed tomorrow."
+say      lounge FROST FROST "The Ox is slow and it won't dodge. You'll want to be the thing that gets shot at."
+say      lounge FROST you "Why did you leave the medical corps?"
+say      lounge FROST FROST "Drifter put you up to that?"
+say      lounge FROST you "He says nobody's collected."
+say      lounge FROST FROST "Nobody will."
+say      lounge FROST COMET "Nobody's asked twice, either."
+say      lounge COMET COMET "Rookie."
+say      lounge COMET you "It's Wildcard."
+say      lounge COMET COMET "Sure it is."
+say      lounge COMET FROST "She does that to everyone."
+say      lounge COMET COMET "A Nicander's hull is six times an Agis's, and it carries seekers. Shoot the Agis when you're tired."
+say      lounge COMET COMET dead=FROST "Frost knew everybody's name. Don't ask me to pick that up."
+talk     deck TECH you after=won "You scratched her. Right there. I can see it from here."
+talk     deck TECH you after=lost "You scratched her, and you lost the lane. Busy day."
+say      deck TECH TECH "That Ox has a month of my parts on it. If it goes, whatever's holding your wing on is a promise."
+say      deck TECH TECH boost=fuel "I've run you a reserve tank. You'll burn it getting back to the Ox."
+say      deck TECH you "Where do the parts come from?"
+say      deck TECH TECH "I told you not to ask."
+radio    "Frost to Wildcard. There's the Ox. Keep between it and anything with guns."
 
 mission  CEPHID1
 node     CEPHID

@@ -1063,8 +1063,14 @@ static int wingman_voice(int s);
 static void comm_launch(void)
 {
     int16_t wing[1];
+    int i;
     if (!g_m || g_sys.muted || !logic_wingmen(wing, 1))
         return;
+    for (i = 0; i < (int)g_m->ntalk; i++) {   /* (the mission's radio line, the one for how the last went) */
+        const RvTalk __far *t = camp_line(g_m, i);
+        if (t->room == RV_ROOM_RADIO && camp_line_ok(t) && comms_say(wingman_voice(wing[0]), 0, t->text))
+            return;
+    }
     (void)comms_say(wingman_voice(wing[0]), 0, NULL);
 }
 
@@ -1412,7 +1418,7 @@ static int wingman_voice(int s)
     if (pilot != RV_PILOT_NONE && pilot < (int)g_npilots && comms_voice(pilot) >= 0)
         return comms_voice(pilot);
     for (i = 0; i < (int)g_npilots; i++)
-        if (g_pilots[i].role == RV_ROLE_PILOT && comms_voice(i) >= 0)
+        if (g_pilots[i].role == RV_ROLE_PILOT && g_camp.pilot[i].alive && comms_voice(i) >= 0)
             return comms_voice(i);
     return -1;
 }
@@ -1546,6 +1552,7 @@ static void systems_start(void)
     _fmemcpy(g_sys.digit, g_freq[CHAN_WING], 3);
     g_sys.target = -1;
     g_sys.fuel = 1000;
+    g_sys.fuel_extra = logic_boost == RV_BOOST_FUEL ? 500 : 0;
     g_sys.hull = 100;
     g_sys.lights = 1;
     g_sys.target_km = g_sys.nav_km = -1;
@@ -1666,8 +1673,12 @@ static void systems_tick(void)
     /* the afterburner: Tab held, while there is fuel (a third of a second's worth a frame... 11 s in all) */
     g_sys.burning = in_key_down(0x0F) && g_sys.fuel > 0 && t;
     rvAfterburner[0] = g_sys.burning;
-    if (g_sys.burning)
-        g_sys.fuel -= 3;
+    if (g_sys.burning) {
+        if (g_sys.fuel_extra > 0)
+            g_sys.fuel_extra -= 3;
+        else
+            g_sys.fuel -= 3;
+    }
     if (g_sys.fuel < 0)
         g_sys.fuel = 0;
     /* heat follows the engine; the signature is EMCON's, the heat's and the radar's */
@@ -2792,6 +2803,7 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.ch == '}') logic_test_to_carrier(1);
         if (in.ch == '|') logic_test_kill_carrier();
         if (in.ch == '^') logic_test_jump_out();
+        if (in.ch == '~') logic_test_kill_wingman();
 #endif
     }
     {   /* Ctrl+E pulls the eject handle (twice within two seconds ejects); a click on the panel works its control */

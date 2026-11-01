@@ -15,6 +15,7 @@ wingman is one of our cast.  The branching between the systems is the published 
 recalled: edit campaign.csv where it is wrong.  The briefings are written from the mission's shape, to be
 rewritten by hand.
 """
+import re
 import csv, os, random, struct, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -215,6 +216,8 @@ def main():
     text = header + '\n\n'.join(missions) + '\n'
     camp = 'node,layer,col,missions,good,bad\n' + ''.join('%s,%d,0,%s,%s,%s\n' % (n, i + 1, ' '.join(ids), g, b) for n, i, ids, g, b in nodes)
     if '--write' in sys.argv:
+        if re.search(r'(?m)^say ', open(os.path.join(DATA, 'missions.txt')).read()):
+            sys.exit('data/missions.txt has written scenes now: --write would lose them; port the shapes by hand')
         open(os.path.join(DATA, 'missions.txt'), 'w').write(text)
         open(os.path.join(DATA, 'campaign.csv'), 'w').write(camp)
         print('wrote %d missions in %d nodes' % (len(missions), len(nodes)))

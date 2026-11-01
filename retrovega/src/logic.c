@@ -73,6 +73,7 @@ static uint16_t __far g_died[NUM_SHIP_SLOTS];     /* the step a ship was seen dy
 static uint8_t profile_of(uint16_t type, uint16_t side);
 static void mind_rates(int16_t s);      /* (its fear's rates from its profile: the AI, below) */
 static void target_tick(void);          /* (the player's target each step: the targeting, below) */
+static void kit_boost(void);            /* (what Kit did to the player's fighter: below, with the launchers) */
 static void lock_tick(void);            /* (the player's missile lock each step: with the missiles, below) */
 
 void logic_prepare_spawn(int16_t ship_index)
@@ -208,6 +209,24 @@ int16_t logic_order(int16_t s, int16_t order)
     return 1;
 }
 
+int16_t logic_wingman_lost(void)
+{
+    int16_t j;
+    for (j = 0; j < 64; j++)
+        if (g_killed[j] && MSHIP_BEHAVIOUR(j) == 4 && MSHIP(j)[16] < RV_PILOTS)
+            return MSHIP(j)[16];
+    return -1;
+}
+
+int16_t logic_escort_lost(void)
+{
+    int16_t j;
+    for (j = 0; j < 64; j++)
+        if (g_killed[j] && MSHIP_ROLE(j) && MSHIP_ROLE(j) != RV_ESCORT_HOME && MSHIP_SIDE(j) == commAnimInfo[0])
+            return 1;
+    return 0;
+}
+
 int16_t logic_order_of(int16_t s)
 {
     return s > 0 && s < NUM_SHIP_SLOTS ? g_order[s] : ORDER_FREE;
@@ -300,6 +319,15 @@ void logic_test_jump_out(void)
         }
 }
 
+/* a script's way to lose the wingman (flight.c's test key) */
+void logic_test_kill_wingman(void)
+{
+    int16_t s;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (slot_is_ship(s) && slotMissionShip[s] < 64 && MSHIP_BEHAVIOUR(slotMissionShip[s]) == 4)
+            shipAiState[s] = 9;
+}
+
 /* a script's way to see the carrier die (flight.c's test key) */
 void logic_test_kill_carrier(void)
 {
@@ -374,6 +402,7 @@ void logic_start(const RvMission __far *m)
     ship_spawn(0, g_camp.player_ship, SIDE_TERRAN, CTL_PLAYER, 0, 0, 0, 0);
     shipStateByte[0] = 8;               /* (a human) */
     slotMissionShip[0] = playerMissionShip;
+    kit_boost();
     for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
         if (MSHIP_BEHAVIOUR(at[j]) != 6)
             (void)outerSpawnShipEntity(at[j], 0);
@@ -585,6 +614,28 @@ static int16_t is_launcher(int16_t s, int16_t g)
 {
     const RvWeapon __far *w = weapon(GUN_TYPE(s, g));
     return w && (w->kind == RV_WK_MISSILE || w->kind == RV_WK_TORPEDO || w->kind == RV_WK_ROCKET);
+}
+
+/* the player talked to Kit before the launch (game.c, a line of hers with boost=KIND): half as much again on all four
+ * armour faces (the displays read full until the extra is gone), or one more round in the first launcher.  The fuel's
+ * is the flight's (g_sys.fuel_extra) */
+uint8_t __far logic_boost;
+
+static void kit_boost(void)
+{
+    int16_t k;
+    if (logic_boost == RV_BOOST_ARMOR) {
+        for (k = 0; k < 4; k++)
+            ARMOR(0, k) += ARMOR(0, k) / 2;
+    } else if (logic_boost == RV_BOOST_MISSILE) {
+        for (k = 0; k < GUN_COUNT(0); k++)
+            if (is_launcher(0, k)) {
+                GUN_STATE(0, k) += 1;
+                break;
+            }
+    }
+    if (logic_boost)
+        RV_LOG("logic: Kit's boost %d", logic_boost);
 }
 
 /* a ship's launcher with rounds left: the first, or, the player's, the one chosen (g_sys.launcher_sel: the n-th

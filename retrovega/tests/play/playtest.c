@@ -4059,6 +4059,74 @@ static void t_jump_told(void)
     REQUIRE(!slot_is_ship(ox) || gInstanceShipTypes[ox] != PT_OX, e_kill, 0, 0, 0);
 }
 
+/* M8.21: the wingman lost: logic_wingman_lost names the pilot; a dead pilot's wingman record is left out of the next
+ * mission, so it is flown solo; and a line with a dead pilot in it, or one conditioned on a death, says so */
+static void t_wingman_lost(void)
+{
+    static const char __far e_none[] = "no wingman, or no pilot on it (pilot %d, %d wingmen)";
+    static const char __far e_clean[] = "logic_wingman_lost says pilot %d with the wingman alive: -1";
+    static const char __far e_named[] = "the wingman killed, logic_wingman_lost says pilot %d: %d";
+    static const char __far e_solo[] = "%d wingmen with their pilot dead: the record is left out, the mission solo";
+    static const char __far e_line[] = "a line by the dead pilot is ok (%d), or one for their death is not (%d)";
+    int16_t pilot = pt_patrol(), wing[2], n, i, s = -1, keep;
+    RvTalk t;
+    n = logic_wingmen(wing, 2);
+    REQUIRE(pilot != RV_PILOT_NONE && n >= 1, e_none, pilot, n, 0);
+    playerCanBeDamaged = 0;
+    REQUIRE(logic_wingman_lost() == -1, e_clean, logic_wingman_lost(), 0, 0);
+    s = wing[0];
+    for (i = 0; i < 100 && shipAiState[s] != 9; i++)
+        (void)pt_hit(0xFFFF, s, 2000, 2, 0, 0);
+    if (!pt_step())
+        return;
+    REQUIRE(logic_wingman_lost() == pilot, e_named, logic_wingman_lost(), pilot, 0);
+    keep = g_camp.pilot[pilot].alive;
+    g_camp.pilot[pilot].alive = 0;
+    (void)pt_patrol();
+    n = logic_wingmen(wing, 2);
+    _fmemset(&t, 0, sizeof t);
+    t.speaker = (uint8_t)pilot;
+    t.listener = RV_PILOT_NONE;
+    i = camp_line_ok(&t);
+    t.speaker = RV_PILOT_NONE;
+    t.flags = RV_TALK_DEAD;
+    t.arg = (uint8_t)pilot;
+    s = camp_line_ok(&t);
+    g_camp.pilot[pilot].alive = (uint8_t)keep;
+    REQUIRE(n == 0, e_solo, n, 0, 0);
+    REQUIRE(i == 0 && s == 1, e_line, i, s, 0);
+}
+
+/* M8.22: Kit's boost: half as much armour again on each face, or a round more in the first launcher, for a flight that
+ * starts with it (logic_boost, a line of hers on the deck); nothing without it.  (The fuel is the flight's: tests/scenes.txt) */
+static void t_kit_boost(void)
+{
+    static const char __far e_armor[] = "armour face %d: %d with Kit's plate, %d without: half as much again";
+    static const char __far e_round[] = "launcher %d: %d rounds with Kit's missile, %d without: one more";
+    static const char __far e_plain[] = "armour %d after the boosted flights, %d before: no boost, none";
+    int16_t plain[4], plated[4], k, l, rounds, more, again;
+    logic_boost = 0;
+    (void)pt_patrol();
+    l = logic_launcher();
+    for (k = 0; k < 4; k++)
+        plain[k] = ARMOR(0, k);
+    rounds = l >= 0 ? GUN_STATE(0, l) & 0x7F : 0;
+    logic_boost = RV_BOOST_ARMOR;
+    (void)pt_patrol();
+    for (k = 0; k < 4; k++)
+        plated[k] = ARMOR(0, k);
+    logic_boost = RV_BOOST_MISSILE;
+    (void)pt_patrol();
+    more = l >= 0 ? GUN_STATE(0, l) & 0x7F : 0;
+    logic_boost = 0;
+    (void)pt_patrol();
+    again = ARMOR(0, 0);
+    for (k = 0; k < 4; k++)
+        REQUIRE(plated[k] == plain[k] + plain[k] / 2, e_armor, k, plated[k], plain[k]);
+    REQUIRE(l >= 0 && more == rounds + 1, e_round, l, more, rounds);
+    REQUIRE(again == plain[0], e_plain, again, plain[0], 0);
+}
+
 /* M8.11 */
 static void t_escort_lost(void)
 {
@@ -4066,8 +4134,11 @@ static void t_escort_lost(void)
     static const char __far e_dead[] = "the Ox is not dying after a hit of 2000 (shipAiState %d)";
     static const char __far e_lost[] = "victoryPoints is %d after the Ox was killed, with every nav flown and every "
         "enemy dead: 0 (an escort target of the player's side lost is the mission lost)";
+    static const char __far e_told[] = "logic_escort_lost says %d with the Ox killed: 1 (the debrief's escort=lost)";
+    static const char __far e_early[] = "logic_escort_lost says %d with the Ox alive: 0";
     int16_t ox = pt_escort(), i;
     REQUIRE(ox > 0, e_there, ox, 0, 0);
+    REQUIRE(logic_escort_lost() == 0, e_early, logic_escort_lost(), 0, 0);
     (void)pt_hit(0xFFFF, ox, 2000, 2, 0, 0);
     for (i = 0; i < 12 * SEC && slot_is_ship(ox) && gInstanceShipTypes[ox] == PT_OX && shipAiState[ox] != 9; i++)
         if (!pt_step())
@@ -4078,6 +4149,7 @@ static void t_escort_lost(void)
     missionStatus = 1;
     logic_end();
     REQUIRE(victoryPoints == 0, e_lost, victoryPoints, 0, 0);
+    REQUIRE(logic_escort_lost() == 1, e_told, logic_escort_lost(), 0, 0);
 }
 
 /* M8.12 */
@@ -4213,7 +4285,9 @@ static void t_systems(void)
     for (k = 0; k < GUN_COUNT(0); k++)
         if (pt_is_gun(0, k) && (GUN_STATE(0, k) & GUN_DESTROYED))
             guns++;
-    REQUIRE(guns == (systemDamage[SYS_GUNS] < pt_guns(0) ? systemDamage[SYS_GUNS] : pt_guns(0)), e_guns, systemDamage[SYS_GUNS], guns, 0);
+    /* (pt_guns counts the working ones: the destroyed and the working are all the ship has) */
+    REQUIRE(guns == (systemDamage[SYS_GUNS] < guns + pt_guns(0) ? systemDamage[SYS_GUNS] : guns + pt_guns(0)), e_guns,
+            systemDamage[SYS_GUNS], guns, 0);
     memset(systemDamage, 0, systemDamage_SIZE);
     systemDamage[SYS_SHIELDS] = SYS_WRECKED;
     SHIELD(0, 0) = 0;
@@ -4704,6 +4778,8 @@ static const char __far n_m8_18[] = "M8.18 attack-capital (view_of): fighters at
 static const char __far n_m8_19[] = "M8.19 autopilot-apart (logic_autopilot): the wingman coming down on the Ox's spot arrives apart, and nobody hits it";
 static const char __far n_m6_4[] = "M6.4 capital-map (shot_hit): a capital ship is hit on its actual shape under any rule, not its radius";
 static const char __far n_m8_20[] = "M8.20 jump-told (route_step, logic_on_jump): an escorted ship's jump is told once, friendly, for the star and the flash";
+static const char __far n_m8_21[] = "M8.21 wingman-lost (logic_wingman_lost, camp_load_units, camp_line_ok): a lost wingman is named, the next mission solo, their lines gone";
+static const char __far n_m8_22[] = "M8.22 kit-boost (kit_boost, logic_boost): talking to Kit before the launch: half as much armour again, or a round more; nothing without it";
 static const char __far n_m8_16[] = "M8.16 carrier-lost (step_deaths, logic_end): the carrier destroyed ends the flight when its explosion has run: a loss";
 static const char __far n_m8_15[] = "M8.15 landing-contact (carrier_contact, logic_end): cleared into the bow lands, anywhere else the hull stops it unhurt; undone lost, done won";
 static const char __far n_m9_1[] = "M9.1 gunsight (logic_hud): a mark at the view's middle";
@@ -4751,7 +4827,7 @@ static const PtTest __far k_tests[] = {
     { n_m8_1, t_start, 0 }, { n_m8_2, t_nav1, 0 }, { n_m8_3, t_nav_once, 0 }, { n_m8_4, t_won, 0 },
     { n_m8_5, t_skipped, 0 }, { n_m8_6, t_enemies_left, 0 }, { n_m8_7, t_layer_spawn, 0 }, { n_m8_8, t_autopilot, 0 },
     { n_m8_9, t_fighter, 0 }, { n_m8_10, t_escort_out, 0 }, { n_m8_11, t_escort_lost, 0 }, { n_m8_12, t_escort_along, 0 },
-    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 }, { n_m8_15, t_landing_contact, 0 }, { n_m8_16, t_carrier_lost, 0 }, { n_m8_17, t_turrets_off, 0 }, { n_m8_18, t_attack_capital, 0 }, { n_m8_20, t_jump_told, 0 }, { n_m8_19, t_autopilot_apart, 0 }, { n_m6_4, t_capital_map, 0 },
+    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 }, { n_m8_15, t_landing_contact, 0 }, { n_m8_16, t_carrier_lost, 0 }, { n_m8_17, t_turrets_off, 0 }, { n_m8_18, t_attack_capital, 0 }, { n_m8_20, t_jump_told, 0 }, { n_m8_21, t_wingman_lost, 0 }, { n_m8_22, t_kit_boost, 0 }, { n_m8_19, t_autopilot_apart, 0 }, { n_m6_4, t_capital_map, 0 },
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
     { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 }, { n_m10_6, t_orders, 0 }, { n_m10_7, t_missile_lock, 0 },

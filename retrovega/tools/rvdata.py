@@ -19,7 +19,8 @@ missions.txt is one block per mission, a keyword and its value per line,
 lose, fighter (the player's and the wingman's TYPE), nav (id x y z, km), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home] [turrets=off]
 [pilot=KEY] [ai=PROFILE] [fear=c/d]), rules (hit= aim= hold= ram=: RULES), field (asteroid|mine x z radius [density=N], km; N rocks per (10,000 km)^3, 1..255,
 0 or none: the engine's own), bar and lounge
-(seat=PILOT|- ...), talk (room speaker listener "text").  briefing, win and lose may repeat: the lines are joined.
+(seat=PILOT|- ...), and the lines, docs/engine.md: briefing, win, lose [WHO] [conditions] "line" (or plain text: the XO's,
+split at its sentences), talk, say, radio.
 """
 import argparse
 import csv
@@ -34,17 +35,18 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 13                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 14                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
                                         # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
                                         # volume, a weapon's radius, a mission's rules); 10: a weapon's damage at
                                         # the muzzle; 11: a type's shield back a point a side every so many steps;
                                         # 12: a weapon's cone, a mission ship's AI profile and fear;
-                                        # 13: a mission ship's turrets=off
+                                        # 13: a mission ship's turrets=off; 14: scenes: 24 lines a
+                                        # mission, 120 characters, conditions (say, radio, after=, if=, unless=, dead=)
 LIMITS = {'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 12,
-          'SEATS': 3, 'TALKS': 4, 'FIELDS': 4, 'SHIPTYPES': 64, 'WEAPONS': 48}
-TEXT = {'ID': 16, 'TITLE': 48, 'BRIEFING': 640, 'RESULT': 128, 'TALK': 60, 'KEY': 10, 'CALLSIGN': 12,
+          'SEATS': 3, 'TALKS': 200, 'FIELDS': 4, 'SHIPTYPES': 64, 'WEAPONS': 48}
+TEXT = {'ID': 16, 'TITLE': 48, 'TALK': 108, 'KEY': 10, 'CALLSIGN': 12,
         'NAME': 24, 'NODE_ID': 8, 'LINE': 72, 'CODE': 6, 'WNAME': 20}
 FIELDS = {'asteroid': 9, 'mine': 10}                 # their EntityType, as fieldTable keeps them
 NONE, GOOD, BAD = 0xFF, 0xFE, 0xFD                   # node edges: a node index, or an ending
@@ -72,7 +74,8 @@ HEADER = [('char', 'magic[8]', '8s'), ('unsigned short', 'version', 'H'), ('unsi
           ('unsigned short', 'nshiptypes', 'H'), ('unsigned short', 'shiptype_size', 'H'),
           ('unsigned long', 'shiptypes_at', 'L'), ('unsigned short', 'nweapons', 'H'),
           ('unsigned short', 'weapon_size', 'H'), ('unsigned long', 'weapons_at', 'L'),
-          ('unsigned char', 'reserved[14]', '14s')]
+          ('unsigned short', 'nlines', 'H'), ('unsigned short', 'line_size', 'H'), ('unsigned long', 'lines_at', 'L'),
+          ('unsigned char', 'reserved[6]', '6s')]
 # a ship type: data/ships.csv's row, its numbers as the simulation wants them
 SHIPTYPE = [('char', 'key[RV_KEY]', '%ds' % TEXT['KEY']), ('char', 'name[RV_NAME]', '%ds' % TEXT['NAME']),
             ('unsigned char', 'type', 'B'), ('unsigned char', 'side', 'B'), ('unsigned char', 'flags', 'B'),
@@ -175,16 +178,24 @@ ESCORT_ROLES = {'out': 1, 'in': 2, 'home': 3}   # a mission ship's role (RV_ESCO
 FIELD = [('unsigned char', 'type', 'B'), ('unsigned char', 'density', 'B'), ('short', 'x', 'h'), ('short', 'z', 'h'),
          ('short', 'radius', 'h')]
 TALK = [('unsigned char', 'room', 'B'), ('unsigned char', 'speaker', 'B'), ('unsigned char', 'listener', 'B'),
-        ('unsigned char', 'pad', 'B'), ('char', 'text[RV_TALK]', '%ds' % TEXT['TALK'])]
+        ('unsigned char', 'flags', 'B'), ('unsigned char', 'arg', 'B'), ('unsigned char', 'boost', 'B'),
+        ('char', 'text[RV_TALK]', '%ds' % TEXT['TALK'])]
+# a line's flags: a conversation's (say) and not table talk; shown only after the last mission was won, or lost; only
+# with system `arg` flown, or not flown; only with pilot `arg` dead.  A line with a dead pilot in it is never shown
+TALK_FLAGS = {'SAY': 1, 'WON': 2, 'LOST': 4, 'IF': 8, 'UNLESS': 16, 'DEAD': 32, 'ALIVE': 64, 'ESCORT': 128}
+SPEAKER_YOU = 0xFE                      # the player, in a conversation
+# what Kit does to the fighter on a line of hers that plays (say deck ... boost=KIND): logic_boost
+TALK_BOOSTS = {'armor': 1, 'fuel': 2, 'missile': 3}
+# the rooms of the lines past the seated ones (RV_ROOM_RADIO = len(ROOMS), the wingman at the launch; then the deck)
+BRIEF_ROOMS = {'briefing': len(ROOMS) + 2, 'win': len(ROOMS) + 3, 'lose': len(ROOMS) + 4}
 MISSION = [('char', 'id[RV_ID]', '%ds' % TEXT['ID']), ('unsigned char', 'node', 'B'), ('unsigned char', 'type', 'B'),
            ('unsigned char', 'music', 'B'), ('unsigned char', 'nnav', 'B'), ('unsigned char', 'nship', 'B'),
            ('unsigned char', 'ntalk', 'B'), ('unsigned char', 'nfield', 'B'), ('unsigned char', 'fighter', 'B'),
-           ('char', 'title[RV_TITLE]', '%ds' % TEXT['TITLE']), ('char', 'briefing[RV_BRIEFING]', '%ds' % TEXT['BRIEFING']),
-           ('char', 'win[RV_RESULT]', '%ds' % TEXT['RESULT']), ('char', 'lose[RV_RESULT]', '%ds' % TEXT['RESULT']),
+           ('char', 'title[RV_TITLE]', '%ds' % TEXT['TITLE']),
            ('RvNav', 'nav[RV_NAVS]', None), ('RvShip', 'ship[RV_SHIPS]', None),
            ('unsigned char', 'seat[RV_ROOMS][RV_SEATS]', '6B'), ('unsigned char', 'hit', 'B'),
            ('unsigned char', 'rules', 'B'),
-           ('RvTalk', 'talk[RV_TALKS]', None), ('RvField', 'field[RV_FIELDS]', None)]
+           ('unsigned short', 'talk0', 'H'), ('RvField', 'field[RV_FIELDS]', None)]
 
 
 def fmt(fields):
@@ -217,6 +228,21 @@ def parse_rules(where, val, into):
     return into
 
 
+def split_sentences(val, most):
+    """Plain text as lines of at most `most` characters, each ending a sentence where it can."""
+    out, cur = [], ''
+    for word in val.split():
+        if cur and len(cur) + 1 + len(word) > most:
+            out.append(cur)
+            cur = word
+        else:
+            cur = cur + ' ' + word if cur else word
+        if cur.endswith(('.', '!', '?')) and len(cur) > most // 2:
+            out.append(cur)
+            cur = ''
+    return out + [cur] if cur else out
+
+
 def parse_missions(path):
     missions, cur, defaults = [], None, {}
     for lineno, raw in enumerate(open(path), 1):
@@ -228,14 +254,16 @@ def parse_missions(path):
         where = '%s:%d' % (os.path.basename(path), lineno)
         if key == 'mission':
             cur = {'id': val, 'where': where, 'nav': [], 'ship': [], 'talk': [], 'seats': {}, 'field': [],
-                   'briefing': [], 'win': [], 'lose': [], 'rules': dict(defaults)}
+                   'rules': dict(defaults)}
             missions.append(cur)
         elif key == 'rules':            # (before any mission: every mission's; in one: its own)
             parse_rules(where, val, defaults if cur is None else cur['rules'])
         elif cur is None:
             raise Fail('%s: %s before any mission' % (where, key))
         elif key in ('briefing', 'win', 'lose'):
-            cur[key].append(val)
+            # (the XO's words, plain and split at the sentences; or, quoted, a line: [WHO] [conditions] "line")
+            for line_ in ([shlex.split(val)] if '"' in val else [[t] for t in split_sentences(val, TEXT['TALK'] - 1)]):
+                cur['talk'].append((where, key, line_))
         elif key in ('node', 'title', 'type', 'music', 'fighter'):
             cur[key] = val
         elif key == 'nav':
@@ -246,8 +274,8 @@ def parse_missions(path):
             cur['field'].append((where, val.split()))
         elif key in ROOMS:
             cur['seats'][key] = (where, dict(kv.split('=', 1) for kv in val.split()))
-        elif key == 'talk':
-            cur['talk'].append((where, shlex.split(val)))
+        elif key in ('talk', 'say', 'radio'):   # (one list: their order is the order they are said in)
+            cur['talk'].append((where, key, shlex.split(val)))
         else:
             raise Fail('%s: unknown keyword %r' % (where, key))
     return missions
@@ -458,6 +486,7 @@ def compile_all():
     check_dag(nodes)
 
     out_missions = []
+    out_lines = []
     for m in missions:
         w = m['where']
         for k in ('node', 'title', 'type', 'music'):
@@ -526,6 +555,10 @@ def compile_all():
                                      opts.get('turrets', 'on') == 'off'))
         if len(shipr) > LIMITS['SHIPS']:
             raise Fail('%s: %d ships, at most %d' % (w, len(shipr), LIMITS['SHIPS']))
+        if wingman is not None:         # (a wingman lost, the XO says this without them: game.c cuts " and NAME")
+            you = 'You and %s' % people[pilot_index[wingman]]['callsign']
+            if you not in ' '.join(f[-1] for _w, k_, f in m['talk'] if k_ == 'briefing'):
+                raise Fail('%s: the briefing must say "%s": it is cut when the wingman is dead' % (w, you))
         homes = sum('role=home' in f[3:] for _w, f in m['ship'])
         if homes != 1:                  # (the player lands by calling it up on the comm: without it no flight can end well)
             raise Fail('%s: %d ships with role=home: a mission has its home carrier, one' % (w, homes))
@@ -540,7 +573,7 @@ def compile_all():
                     continue
                 if who not in pilot_index:
                     raise Fail('%s: unknown pilot %s' % (where, who))
-                if who in FIXED_PLACES:
+                if who in FIXED_PLACES and not (who == 'TECH' and wingman == 'TECH'):    # (Kit, while she flies)
                     raise Fail('%s: %s is always at %s' % (where, who, FIXED_PLACES[who]))
                 if who not in seat_art[room].get(s, ()):
                     raise Fail('%s: no art of %s in the %s %s seat (only %s)'
@@ -555,13 +588,78 @@ def compile_all():
                     if a < b and not talk_ok.get(frozenset((a, b)), True):
                         raise Fail('%s: %s and %s will not sit at one table (relations.csv)' % (where, a, b))
         talks = []
-        for where, f in m['talk']:
-            room, a, b, line = f
-            if room not in ROOMS or placed.get(a) != room or placed.get(b) != room:
-                raise Fail('%s: %s and %s are not both in the %s' % (where, a, b, room))
-            if not talk_ok.get(frozenset((a, b)), True):
-                raise Fail('%s: %s and %s do not talk (relations.csv)' % (where, a, b))
-            talks.append(struct.pack(fmt(TALK), ROOMS.index(room), pilot_index[a], pilot_index[b], 0,
+        for where, kind, f in m['talk']:
+            # talk ROOM A B [conditions] "line"      table talk, A to B, both seated: subtitles in the room
+            # say ROOM OWNER WHO [conditions] "line" what clicking OWNER plays, in order, WHO speaking: OWNER, `you`,
+            #                                        or another seated there; OWNER seated, or Tally in the bar
+            # radio [conditions] "line"              the wingman, on the comm at the launch
+            # talk deck TECH you [conditions] "line" Kit, in subtitles as the player walks onto the deck, once
+            # say deck TECH TECH|you [conditions] "line"   clicking Kit on the deck, the first time in a mission
+            line, opts = f[-1], f[:-1]
+            flags, arg, boost = 0, 0, 0
+            while opts and '=' in opts[-1]:
+                k, v = opts.pop().split('=', 1)
+                if k == 'boost' and v in TALK_BOOSTS:
+                    boost = TALK_BOOSTS[v]
+                elif k == 'after' and v in ('won', 'lost'):
+                    flags |= TALK_FLAGS['WON' if v == 'won' else 'LOST']
+                elif k in ('if', 'unless') and v in node_index:
+                    flags |= TALK_FLAGS[k.upper()]
+                    arg = node_index[v]
+                elif k in ('dead', 'alive') and v in pilot_index:
+                    flags |= TALK_FLAGS[k.upper()]
+                    arg = pilot_index[v]
+                elif k == 'escort' and v == 'lost':
+                    flags |= TALK_FLAGS['ESCORT']
+                else:
+                    raise Fail('%s: %s=%s: the conditions are after=won|lost, if=NODE, unless=NODE, dead=PILOT, alive=PILOT, escort=lost, and on '
+                               'Kit\'s lines boost=armor|fuel|missile' % (where, k, v))
+            if boost and (kind != 'say' or opts[:2] != ['deck', 'TECH'] or opts[2:] != ['TECH']):
+                raise Fail('%s: a boost is on a line Kit says on the deck: say deck TECH TECH boost=KIND "line"' % where)
+            if kind in BRIEF_ROOMS:     # [WHO] [conditions] "line": the XO's, or anyone's in their close-up
+                if len(opts) > 1 or (opts and opts[0] != 'you' and opts[0] not in pilot_index):
+                    raise Fail('%s: %s [WHO] [conditions] "line": WHO is `you` or someone in people.csv' % (where, kind))
+                who = opts[0] if opts else 'XO'
+                talks.append(struct.pack(fmt(TALK), BRIEF_ROOMS[kind], SPEAKER_YOU if who == 'you' else pilot_index[who],
+                                         NONE, flags, arg, 0, text(line, TEXT['TALK'], where)))
+                continue
+            if kind == 'radio':
+                if opts or wingman is None:
+                    raise Fail('%s: radio [conditions] "line", in a mission with a wingman' % where)
+                talks.append(struct.pack(fmt(TALK), len(ROOMS), pilot_index[wingman], NONE, flags, arg, 0,
+                                         text(line, TEXT['TALK'], where)))
+                continue
+            if len(opts) != 3 or opts[0] not in ROOMS + ['deck']:
+                raise Fail('%s: %s ROOM A B [conditions] "line"' % (where, kind))
+            room, a, b = opts
+            if room == 'deck':
+                if a != 'TECH' or b not in ('TECH', 'you') or (kind == 'talk' and b != 'you'):
+                    raise Fail('%s: the deck is Kit\'s: talk deck TECH you, or say deck TECH TECH|you' % where)
+                if kind == 'talk':
+                    speaker, listener = pilot_index['TECH'], NONE
+                else:
+                    speaker, listener = SPEAKER_YOU if b == 'you' else pilot_index['TECH'], pilot_index['TECH']
+                    flags |= TALK_FLAGS['SAY']
+                talks.append(struct.pack(fmt(TALK), len(ROOMS) + 1, speaker, listener, flags, arg, boost,
+                                         text(line, TEXT['TALK'], where)))
+                continue
+            if kind == 'talk':
+                if placed.get(a) != room or placed.get(b) != room:
+                    raise Fail('%s: %s and %s are not both in the %s' % (where, a, b, room))
+                if not talk_ok.get(frozenset((a, b)), True):
+                    raise Fail('%s: %s and %s do not talk (relations.csv)' % (where, a, b))
+                speaker, listener = pilot_index[a], pilot_index[b]
+            else:
+                owner, who = a, b
+                if placed.get(owner) != room and not (room == 'bar' and owner == 'TALLY'):
+                    raise Fail('%s: nobody clicks %s in the %s: not seated there' % (where, owner, room))
+                if who != 'you' and who != owner and placed.get(who) != room and not (room == 'bar' and who == 'TALLY'):
+                    raise Fail('%s: %s is not in the %s to speak' % (where, who, room))
+                if who != 'you' and not talk_ok.get(frozenset((owner, who)), True):
+                    raise Fail('%s: %s and %s do not talk (relations.csv)' % (where, owner, who))
+                speaker, listener = SPEAKER_YOU if who == 'you' else pilot_index[who], pilot_index[owner]
+                flags |= TALK_FLAGS['SAY']
+            talks.append(struct.pack(fmt(TALK), ROOMS.index(room), speaker, listener, flags, arg, 0,
                                      text(line, TEXT['TALK'], where)))
         if len(talks) > LIMITS['TALKS']:
             raise Fail('%s: %d talk lines, at most %d' % (w, len(talks), LIMITS['TALKS']))
@@ -586,15 +684,13 @@ def compile_all():
         rec = struct.pack('<%ds8B' % TEXT['ID'], text(m['id'], TEXT['ID'], w), node_index[m['node']],
                           TYPES[m['type']], MUSIC[m['music']], len(navs), len(shipr), len(talks), len(fields), fighter)
         rec += text(m['title'], TEXT['TITLE'], w).ljust(TEXT['TITLE'], b'\0')
-        rec += text(' '.join(m['briefing']), TEXT['BRIEFING'], w).ljust(TEXT['BRIEFING'], b'\0')
-        rec += text(' '.join(m['win']), TEXT['RESULT'], w).ljust(TEXT['RESULT'], b'\0')
-        rec += text(' '.join(m['lose']), TEXT['RESULT'], w).ljust(TEXT['RESULT'], b'\0')
         rec += b''.join(navs).ljust(LIMITS['NAVS'] * struct.calcsize(fmt(NAV)), b'\0')
         rec += b''.join(shipr).ljust(LIMITS['SHIPS'] * struct.calcsize(fmt(SHIP)), b'\0')
         rules = m['rules']
         rec += struct.pack('<6BBB', *seats, RULES['hit'][rules.get('hit', 'ships')],
                            sum(RULES[k][rules[k]] for k in rules if k != 'hit'))
-        rec += b''.join(talks).ljust(LIMITS['TALKS'] * struct.calcsize(fmt(TALK)), b'\0')
+        rec += struct.pack('<H', len(out_lines))        # (its lines are their own table: XMS, read one at a time)
+        out_lines += talks
         rec += b''.join(fields).ljust(LIMITS['FIELDS'] * struct.calcsize(fmt(FIELD)), b'\0')
         out_missions.append(rec)
 
@@ -602,7 +698,7 @@ def compile_all():
                               text(p['callsign'] or p['key'].title(), TEXT['CALLSIGN'], 'people.csv'),
                               text(p['name'], TEXT['NAME'], 'people.csv'), ROLES[p['role']], 0,
                               text(p['line'], TEXT['LINE'], 'people.csv %s line' % p['key'])) for p in people]
-    return out_pilots, out_nodes, out_missions, out_types, out_weapons, node_index[nodes[0]['node']]
+    return out_pilots, out_nodes, out_missions, out_types, out_weapons, node_index[nodes[0]['node']], out_lines
 
 
 def check_dag(nodes):
@@ -657,7 +753,15 @@ def header_text(sizes):
             '#define RV_SHIP_PLAYER 0x%02X' % SHIP_PLAYER, '#define RV_SHIP_WINGMAN 0x%02X' % SHIP_WINGMAN,
             '#define RV_ESCORT_OUT %d' % ESCORT_ROLES['out'], '#define RV_ESCORT_IN %d' % ESCORT_ROLES['in'],
             '#define RV_ESCORT_HOME %d' % ESCORT_ROLES['home'],
-            '#define RV_PILOT_NONE 0xFF', '']
+            '#define RV_PILOT_NONE 0xFF', '#define RV_SPEAKER_YOU 0x%02X' % SPEAKER_YOU,
+            '#define RV_ROOM_RADIO %d' % len(ROOMS), '#define RV_ROOM_DECK %d' % (len(ROOMS) + 1)]
+    for k, v in BRIEF_ROOMS.items():
+        out.append('#define RV_ROOM_%s %d' % ({'briefing': 'BRIEF'}.get(k, k.upper()), v))
+    for k, v in TALK_BOOSTS.items():
+        out.append('#define RV_BOOST_%s %d' % (k.upper(), v))
+    out.append('')
+    for k, v in TALK_FLAGS.items():
+        out.append('#define RV_TALK_%s %d' % (k, v))
     for i, r in enumerate(ROOMS):
         out.append('#define RV_ROOM_%s %d' % (r.upper(), i))
     for k, v in FIELDS.items():
@@ -715,23 +819,27 @@ def main():
     ap.add_argument('--header', default=os.path.join(ROOT, 'src', 'rvdata.h'))
     args = ap.parse_args()
     try:
-        pilots, nodes, missions, types, weapons, start = compile_all()
+        pilots, nodes, missions, types, weapons, start, lines = compile_all()
     except Fail as e:
         sys.exit('rvdata: %s' % e)
     sizes = {'HEADER': struct.calcsize(fmt(HEADER)), 'PILOT': len(pilots[0]), 'NODE': len(nodes[0]),
-             'MISSION': len(missions[0]), 'SHIPTYPE': len(types[0]), 'WEAPON': len(weapons[0])}
+             'MISSION': len(missions[0]), 'SHIPTYPE': len(types[0]), 'WEAPON': len(weapons[0]),
+             'LINE': struct.calcsize(fmt(TALK))}
     hsize = sizes['HEADER']
     pilots_at = hsize
     nodes_at = pilots_at + len(pilots) * sizes['PILOT']
     missions_at = nodes_at + len(nodes) * sizes['NODE']
     types_at = missions_at + len(missions) * sizes['MISSION']
     weapons_at = types_at + len(types) * sizes['SHIPTYPE']
+    lines_at = weapons_at + len(weapons) * sizes['WEAPON']
     head = struct.pack(fmt(HEADER), b'RVGAME', VERSION, hsize, len(pilots), sizes['PILOT'], pilots_at,
                        len(nodes), sizes['NODE'], nodes_at, len(missions), sizes['MISSION'], missions_at, start,
-                       len(types), sizes['SHIPTYPE'], types_at, len(weapons), sizes['WEAPON'], weapons_at, b'')
+                       len(types), sizes['SHIPTYPE'], types_at, len(weapons), sizes['WEAPON'], weapons_at,
+                       len(lines), sizes['LINE'], lines_at, b'')
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, 'wb') as f:
-        f.write(head + b''.join(pilots) + b''.join(nodes) + b''.join(missions) + b''.join(types) + b''.join(weapons))
+        f.write(head + b''.join(pilots) + b''.join(nodes) + b''.join(missions) + b''.join(types) + b''.join(weapons)
+                + b''.join(lines))
     with open(args.header, 'w') as f:
         f.write(header_text(sizes))
     print('%s: %d pilots, %d nodes, %d missions (%d bytes each), %d ship types, %d weapons, %d bytes'

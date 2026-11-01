@@ -6,6 +6,7 @@
  * good with 3-4 wins, bad with 0-1, and with 2 as the campaign's running
  * total says. */
 #include <stdio.h>
+#include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
 #include "rv.h"
@@ -24,13 +25,12 @@ uint16_t g_nweapons;
 static const RvShipType __far * __far g_type_of[RV_SHIPTYPES];   /* each type number's record (ship_type), 0 none */
 static const RvWeapon __far * __far g_weapon_of[RV_WEAPON_TYPES];   /* each weapon number's record (weapon), 0 none */
 static RvGameHeader g_head;
-static XmsBlock g_missions;
+static XmsBlock g_missions, g_lines;
 
 int16_t camp_load_data(const char *path)
 {
     FILE *f = fopen(path, "rb");
     uint8_t *buf = rv_filebuf;
-    static uint8_t __far mission[sizeof(RvMission) + 2];
     uint16_t i;
     if (!f)
         return 0;
@@ -58,10 +58,22 @@ int16_t camp_load_data(const char *path)
         uint16_t k;
         for (k = 0; k < sizeof(RvMission); k += sizeof rv_filebuf) {
             uint16_t part = sizeof(RvMission) - k < sizeof rv_filebuf ? sizeof(RvMission) - k : sizeof rv_filebuf;
-            fread(buf, 1, part, f);
-            _fmemcpy(mission + k, buf, part);
+            fread(buf, 1, part, f);     /* (straight to XMS, a file buffer at a time: no second mission in memory) */
+            xms_put(g_missions, (uint32_t)i * sizeof(RvMission) + k, buf, part);
         }
-        xms_put(g_missions, (uint32_t)i * sizeof(RvMission), mission, sizeof(RvMission));
+    }
+    RV_ASSERT(g_head.line_size == sizeof(RvTalk));
+    g_lines = xms_alloc((uint32_t)sizeof(RvTalk) * g_head.nlines, XMS_RESIDENT);
+    RV_ASSERT(g_lines != 0);
+    fseek(f, g_head.lines_at, SEEK_SET);
+    {
+        uint32_t at = 0, all = (uint32_t)sizeof(RvTalk) * g_head.nlines;
+        while (at < all) {
+            uint16_t part = all - at < sizeof rv_filebuf ? (uint16_t)(all - at) : (uint16_t)sizeof rv_filebuf;
+            fread(buf, 1, part, f);
+            xms_put(g_lines, at, buf, part);
+            at += part;
+        }
     }
     RV_ASSERT(g_head.nshiptypes <= RV_SHIPTYPES && g_head.shiptype_size == sizeof(RvShipType));
     g_nshiptypes = g_head.nshiptypes;
@@ -128,6 +140,45 @@ uint16_t camp_mission_index(void)
     return g_nodes[g_camp.node].missions[g_camp.mission];
 }
 
+/* a line of the mission's: every scene, briefing and debrief lives in XMS and comes down a line at a time, so the
+ * flight does not carry them.  One copy here: good until the next call for another line */
+const RvTalk __far *camp_line(const RvMission __far *m, int16_t k)
+{
+    static RvTalk __far line;
+    static uint16_t have = 0xFFFF;
+    uint16_t at = m->talk0 + k;
+    RV_CHECK(k, m->ntalk);
+    if (at != have) {
+        xms_get(g_lines, (uint32_t)at * sizeof(RvTalk), &line, sizeof(RvTalk));
+        have = at;
+    }
+    return &line;
+}
+
+int16_t camp_line_ok(const RvTalk __far *t)
+{
+    uint8_t f = t->flags;
+    if ((f & RV_TALK_WON) && g_camp.last != 1)
+        return 0;
+    if ((f & RV_TALK_LOST) && g_camp.last != 2)
+        return 0;
+    if ((f & RV_TALK_IF) && !(g_camp.systems >> t->arg & 1))
+        return 0;
+    if ((f & RV_TALK_UNLESS) && (g_camp.systems >> t->arg & 1))
+        return 0;
+    if ((f & RV_TALK_DEAD) && g_camp.pilot[t->arg].alive)
+        return 0;
+    if ((f & RV_TALK_ALIVE) && !g_camp.pilot[t->arg].alive)
+        return 0;
+    if ((f & RV_TALK_ESCORT) && !g_camp.escort_lost)
+        return 0;
+    if (t->speaker < RV_PILOTS && !g_camp.pilot[t->speaker].alive)
+        return 0;
+    if (t->listener < RV_PILOTS && !g_camp.pilot[t->listener].alive)
+        return 0;
+    return 1;
+}
+
 void camp_mission(uint16_t i, RvMission __far *out)
 {
     RV_CHECK(i, g_nmissions);
@@ -167,6 +218,9 @@ void camp_load_units(const RvMission __far *m)
     }
     for (i = 0; i < m->nship; i++) {
         const RvShip __far *s = &m->ship[i];
+        /* (a wingman the player lost is gone: the user, 2026-10-31: the rest of the system is solo) */
+        if (s->type == RV_SHIP_WINGMAN && s->pilot < RV_PILOTS && !g_camp.pilot[s->pilot].alive)
+            continue;
         for (k = 0; k < s->count && n < 64; k++, n++) {
             uint8_t *rec = ships + missionShipTable_SIZE * n;
             uint16_t type = s->type == RV_SHIP_PLAYER || s->type == RV_SHIP_WINGMAN ? g_camp.player_ship : s->type;
@@ -212,17 +266,22 @@ uint16_t camp_node_missions(uint16_t node)
 
 int16_t camp_resolve(int16_t won)
 {
-    RvMission m;
+    RvShip ships[RV_SHIPS];             /* (only these: a whole mission would not fit on the stack) */
+    uint32_t at = (uint32_t)camp_mission_index() * sizeof(RvMission);
+    uint8_t nship;
     uint16_t i, next;
-    camp_mission(camp_mission_index(), &m);
+    xms_get(g_missions, at + offsetof(RvMission, nship), &nship, 1);
+    xms_get(g_missions, at + offsetof(RvMission, ship), ships, sizeof ships);
+    g_camp.last = (uint8_t)(won ? 1 : 2);
+    g_camp.systems |= (uint16_t)(1u << g_camp.node);
     g_camp.flown++;
     g_camp.wins += won ? 1 : 0;
     g_camp.trend += won ? 1 : -1;
-    for (i = 0; i < m.nship; i++)
-        if (m.ship[i].pilot != RV_PILOT_NONE && m.ship[i].pilot < RV_PILOTS) {
-            g_camp.pilot[m.ship[i].pilot].missions++;
+    for (i = 0; i < nship; i++)
+        if (ships[i].pilot != RV_PILOT_NONE && ships[i].pilot < RV_PILOTS) {
+            g_camp.pilot[ships[i].pilot].missions++;
             if (won)
-                g_camp.pilot[m.ship[i].pilot].kills += 1 + (uint16_t)(ticks() % 3);
+                g_camp.pilot[ships[i].pilot].kills += 1 + (uint16_t)(ticks() % 3);
         }
     missionResolved(won ? 1 : 0);
     if (++g_camp.mission < camp_node_missions(g_camp.node)) {
@@ -276,6 +335,7 @@ int16_t save_write(int16_t bunk, const char *name)
     return 1;
 }
 
+#define SAVE_V2_MORE 4                  /* the bytes version 2 added at the end: systems, last, escort_lost */
 int16_t save_read(int16_t bunk, RvSave __far *out)
 {
     char path[16];
@@ -286,8 +346,16 @@ int16_t save_read(int16_t bunk, RvSave __far *out)
     f = fopen(path, "rb");
     if (!f)
         return 0;
-    if (fread(&s, sizeof s, 1, f) != 1)
-        s.magic[0] = 0;
+    {
+        size_t got = fread(&s, 1, sizeof s, f);
+        /* (version 1: the same but for the fields at the end, which start empty) */
+        if (got == sizeof s - SAVE_V2_MORE && s.version == 1 && s.size == sizeof s - SAVE_V2_MORE) {
+            memset((char *)&s + got, 0, SAVE_V2_MORE);
+            s.version = SAVE_VERSION;
+            s.size = sizeof s;
+        } else if (got != sizeof s)
+            s.magic[0] = 0;
+    }
     _fmemcpy(out, &s, sizeof s);
     if (memcmp(s.magic, SAVE_MAGIC, 6) != 0
         || s.version != SAVE_VERSION || s.size != sizeof s || s.node >= g_nnodes

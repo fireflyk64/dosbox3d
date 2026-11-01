@@ -5,7 +5,7 @@
 #include "rvtypes.h"
 
 #define RVGAME_MAGIC "RVGAME"
-#define RVGAME_VERSION 13
+#define RVGAME_VERSION 14
 
 #define RV_PILOTS 16
 #define RV_NODES 32
@@ -14,7 +14,7 @@
 #define RV_NAVS 8
 #define RV_SHIPS 12
 #define RV_SEATS 3
-#define RV_TALKS 4
+#define RV_TALKS 200
 #define RV_FIELDS 4
 #define RV_SHIPTYPES 64
 #define RV_WEAPONS 48
@@ -26,9 +26,7 @@
 #define RV_GUNS 10
 #define RV_ID 16
 #define RV_TITLE 48
-#define RV_BRIEFING 640
-#define RV_RESULT 128
-#define RV_TALK 60
+#define RV_TALK 108
 #define RV_KEY 10
 #define RV_CALLSIGN 12
 #define RV_NAME 24
@@ -49,7 +47,24 @@
 #define RV_ESCORT_IN 2
 #define RV_ESCORT_HOME 3
 #define RV_PILOT_NONE 0xFF
+#define RV_SPEAKER_YOU 0xFE
+#define RV_ROOM_RADIO 2
+#define RV_ROOM_DECK 3
+#define RV_ROOM_BRIEF 4
+#define RV_ROOM_WIN 5
+#define RV_ROOM_LOSE 6
+#define RV_BOOST_ARMOR 1
+#define RV_BOOST_FUEL 2
+#define RV_BOOST_MISSILE 3
 
+#define RV_TALK_SAY 1
+#define RV_TALK_WON 2
+#define RV_TALK_LOST 4
+#define RV_TALK_IF 8
+#define RV_TALK_UNLESS 16
+#define RV_TALK_DEAD 32
+#define RV_TALK_ALIVE 64
+#define RV_TALK_ESCORT 128
 #define RV_ROOM_BAR 0
 #define RV_ROOM_LOUNGE 1
 #define RV_FIELD_ASTEROID 9
@@ -173,7 +188,10 @@ typedef struct {
     uint16_t nweapons;
     uint16_t weapon_size;
     uint32_t weapons_at;
-    uint8_t reserved[14];
+    uint16_t nlines;
+    uint16_t line_size;
+    uint32_t lines_at;
+    uint8_t reserved[6];
 } RvGameHeader;
 typedef struct {
     char key[RV_KEY];
@@ -214,7 +232,9 @@ typedef struct {
     uint8_t room;
     uint8_t speaker;
     uint8_t listener;
-    uint8_t pad;
+    uint8_t flags;
+    uint8_t arg;
+    uint8_t boost;
     char text[RV_TALK];
 } RvTalk;
 typedef struct {
@@ -235,15 +255,12 @@ typedef struct {
     uint8_t nfield;
     uint8_t fighter;
     char title[RV_TITLE];
-    char briefing[RV_BRIEFING];
-    char win[RV_RESULT];
-    char lose[RV_RESULT];
     RvNav nav[RV_NAVS];
     RvShip ship[RV_SHIPS];
     uint8_t seat[RV_ROOMS][RV_SEATS];
     uint8_t hit;
     uint8_t rules;
-    RvTalk talk[RV_TALKS];
+    uint16_t talk0;
     RvField field[RV_FIELDS];
 } RvMission;
 typedef struct {
@@ -308,9 +325,10 @@ typedef struct {
 #define RV_HEADER_SIZE 68
 #define RV_PILOT_SIZE 120
 #define RV_NODE_SIZE 22
-#define RV_MISSION_SIZE 1436
+#define RV_MISSION_SIZE 286
 #define RV_SHIPTYPE_SIZE 177
 #define RV_WEAPON_SIZE 44
+#define RV_LINE_SIZE 114
 
 /* sin(i/256 x 90 degrees) x 16384, i = 0..256: the simulation's trigonometry (flight.c) */
 #ifdef RV_TABLES

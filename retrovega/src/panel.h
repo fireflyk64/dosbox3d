@@ -41,6 +41,7 @@ typedef struct {
     int16_t heat, signature;            /* 0 .. 100 */
     int16_t heat_shown, sig_shown;      /* as the HEAT and SIGNATURE displays show them: taken every 5 s */
     int16_t fuel;                       /* afterburner fuel, 0 .. 1000 */
+    int16_t fuel_extra;                 /* Kit's reserve tank, burned first: the gauge reads full until it is gone */
     int16_t hull;                       /* percent */
     int32_t target_km, nav_km;          /* -1: none */
     char target_name[16];

@@ -171,8 +171,36 @@ talk     bar FROST DRIFTER "Ten credits says you come back first."
 ```
 
 `fighter` names the ship the mission puts the player in (and the wingman, who flies the player's type): a
-ship with a cockpit, over the campaign's own choice; without it the choice stays (Kit's, at the deck). The ported
-old campaign sets it from each old mission's player record.
+ship with a cockpit, over the campaign's own choice. The ported old campaign sets it from each old mission's player
+record; there is no choosing a fighter on the deck.
+
+### Lines: who says what, when
+
+Every word spoken outside a flight is a line of the mission's: 108 characters at most, in the order written. They are
+a table of their own in RVGAME.DAT (`RvMission.talk0`, `ntalk`), loaded into XMS, and come down one at a time
+(`camp_line`), so a flight carries none of them; the words being said are copied by `say`.
+
+| Line | Where it plays |
+|---|---|
+| `briefing [WHO] [conditions] "line"` | the briefing, in turn; a click goes to the next, Esc leaves the rest |
+| `win` / `lose [WHO] [conditions] "line"` | the debrief, the same way |
+| `talk ROOM A B [conditions] "line"` | table talk in the bar or lounge: subtitles, round and round; A and B seated there |
+| `say ROOM OWNER WHO [conditions] "line"` | clicking OWNER: their conversation, a page a click, each page in its speaker's face. WHO is OWNER, `you`, anyone else seated there who may talk to OWNER, or in the bar Tally |
+| `talk deck TECH you [conditions] "line"` | Kit in subtitles as the player walks onto the deck, once |
+| `say deck TECH TECH\|you [boost=armor\|fuel\|missile] [conditions] "line"` | clicking Kit; a boost is given when its line plays |
+| `radio [conditions] "line"` | the wingman on the comm at the launch |
+
+In `briefing`, `win` and `lose`, WHO is left out for the XO, at the lectern; `you` or anyone in `people.csv` speaks in
+their own close-up. Plain unquoted text, as in the example above, is the XO's and is split at its sentences.
+
+The conditions: `after=won|lost` (the last mission; in a debrief, the one before the flight), `if=NODE` and `unless=NODE`
+(a system flown or not), `dead=PILOT`, `alive=PILOT`, `escort=lost` (the last flight lost a ship it was escorting). A
+line with a dead pilot speaking or spoken to never plays. A briefing with a wingman must say "You and NAME": when the
+wingman is dead " and NAME" is cut, so the same sentence reads for a solo flight.
+
+Kit's boost (`logic_boost`, set when her line plays, kept for a retry of that flight, cleared on entering a room): half
+as much armour again on all four faces, 500 more points of afterburner fuel burned before the gauge moves, or one more
+round in the first launcher. The gauges read full until the extra is gone; the deck's top line says what she did.
 
 `role=out` or `role=in` on a ship line makes it an escort target (the old campaign's transports and destroyers,
 from their records' behaviour word): `out` sets off at once for the mission's next nav point after its own at its
@@ -222,10 +250,16 @@ it already reads.
 
 - **One place a mission:** each mission puts each pilot in at most one
   place: a bar seat, a lounge seat, or nowhere.
-- **Fixed places:** Kit is always at the deck (she is painted into it),
-  Tally always at the bar, the XO always at the briefing.
+- **Fixed places:** Kit is always at the deck (she is painted into it), and may
+  also sit in the bar or lounge in a mission she flies as the wingman. Tally is
+  always at the bar, the XO always at the briefing. Lost in a mission, Kit is gone
+  from the deck and Tally from the bar.
 - **Art:** a pilot can only take a seat their art was drawn for
-  (docs/places.md: three pilots per seat per room).
+  (docs/places.md: three pilots per seat per room). Each seat is filled on its own,
+  and no two pilots share a seat in both rooms, so **any two pilots can sit together
+  in at least one room** (some in only one: Drifter and Anchor only in the lounge,
+  the Mercers only in the bar). What cannot happen is some threes: Drifter, Anchor and
+  Prime have no table.
 - **Who sits together:** `data/relations.csv` says who will share a
   table and talk (friends, rivals, the twins), and who will not. The tool
   only seats pilots at one table if every pair there may talk. A `talk`

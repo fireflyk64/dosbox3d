@@ -1,0 +1,72 @@
+# The evening after a lost flight: EXE=RVT.EXE tests/run.sh tests/scenes2.txt /fly 0
+wait 40
+key c
+wait 120
+shot C1DEBR
+key esc
+wait 30
+shot C2BAR
+move 240 240
+wait 4
+click
+wait 30
+shot C3TORCH
+click
+wait 15
+shot C4PRIME
+click
+wait 15
+click
+wait 40
+shot C5TALLY
+click
+wait 8
+move 320 382
+wait 2
+click
+wait 14
+move 215 225
+wait 4
+click
+wait 8
+click
+wait 8
+click
+wait 8
+click
+wait 30
+shot C6FROST
+click
+wait 8
+move 431 126
+wait 2
+click
+wait 14
+move 145 152
+wait 2
+click
+wait 60
+shot C7BRIEF
+click
+wait 40
+shot C8LOST
+click
+wait 40
+shot C9OX
+key esc
+wait 30
+move 201 172
+wait 4
+click
+wait 8
+click
+wait 60
+shot D1KIT
+key esc
+wait 15
+shot D2DECK
+move 478 176
+wait 2
+click
+wait 120
+log done

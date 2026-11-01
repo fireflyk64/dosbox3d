@@ -21,7 +21,7 @@
 #include "flight.h"
 #include "game.h"
 
-enum { MODE_ROOM, MODE_TALK, MODE_BRIEF, MODE_XOCLOSE, MODE_DECK, MODE_DEBRIEF, MODE_BUNK,
+enum { MODE_ROOM, MODE_TALK, MODE_BRIEF, MODE_DECK, MODE_DEBRIEF, MODE_BUNK,
        MODE_NAME, MODE_LOG, MODE_MESSAGE, MODE_ENDING, MODE_BOARD, MODE_DEAD, MODE_QUIT };
 
 static int g_mode, g_back_mode;
@@ -105,6 +105,10 @@ static int speaking_step(void)
 
 static void say(int person, const char __far *text)
 {
+    static char __far words[RV_TALK + 48];   /* (its own copy: a mission's lines come out of XMS one at a time) */
+    _fstrncpy(words, text, sizeof words - 1);
+    words[sizeof words - 1] = 0;
+    text = words;
     g_speaker = person;
     g_said = text;
     g_nlip = lip_steps(text, g_lip, MAX_STEPS);
@@ -159,12 +163,14 @@ static int g_talk_line = -1;
 static void talk_overlay(int y0, int y1)
 {
     const RvTalk __far *t;
-    char line[96];
+    char line[136];
     if (g_talk_line < 0)
         return;
-    t = &g_m.talk[g_talk_line];
-    sprintf(line, "%.10s: %.60Fs", g_pilots[t->speaker].callsign, t->text);
-    gfx_text(FONT_BODY, 16, SCR_H - LABEL_H - 22, line, RV_TEXT_WHITE | 0x10, y0, y1);
+    t = camp_line(&g_m, g_talk_line);
+    sprintf(line, "%.10s: %.120Fs", g_pilots[t->speaker].callsign, t->text);
+    /* (a long line on two rows, the second where a short one's only row is) */
+    gfx_wrap(FONT_BODY, 16, gfx_text_width(FONT_BODY, line) > SCR_W - 32 ? SCR_H - LABEL_H - 44 : SCR_H - LABEL_H - 22,
+             SCR_W - 32, line, RV_TEXT_WHITE | 0x10, 2, y0, y1);
 }
 
 /* --- the tally board: Tally's chalk --- */
@@ -315,7 +321,7 @@ static void room_overlay(int y0, int y1)
 static int room_song(int room)
 {
     return room == RV_R_QUARTERS || room == RV_R_LOCKER ? RV_MUSIC_QUARTERS
-         : room == RV_R_LOUNGE ? RV_MUSIC_LOUNGE : RV_MUSIC_BAR;
+         : room == RV_R_LOUNGE ? RV_MUSIC_LOUNGE : room == RV_R_DECK ? RV_MUSIC_LAUNCH : RV_MUSIC_BAR;
 }
 
 static void enter_room(int room)
@@ -323,8 +329,19 @@ static void enter_room(int room)
     unsigned char seats[3] = { 0xFF, 0xFF, 0xFF };
     if (room == RV_R_BAR || room == RV_R_LOUNGE)
         _fmemcpy(seats, g_m.seat[room == RV_R_BAR ? RV_ROOM_BAR : RV_ROOM_LOUNGE], 3);
+    {
+        int k;                          /* (a pilot the player lost never sits here again: the user, 2026-10-31) */
+        for (k = 0; k < 3; k++)
+            if (seats[k] < RV_PILOTS && !g_camp.pilot[seats[k]].alive)
+                seats[k] = 0xFF;
+    }
+    logic_boost = 0;                    /* (Kit's was for the mission she said it about) */
     vid_fade(0);
     scene_enter(room, seats);
+    {
+        const RvRoom __far *r = dat_room(room);   /* (Tally, flown and lost) */
+        g_scene.actor_gone = r->has_actor && r->actor.person < RV_PILOTS && !g_camp.pilot[r->actor.person].alive;
+    }
     g_scene.overlay = room_overlay;
     g_mode = MODE_ROOM;
     g_talk_line = -1;
@@ -334,22 +351,49 @@ static void enter_room(int room)
     vid_fade(64);
 }
 
-/* the table talk: this room's lines in turn, as subtitles */
+/* the people.csv row of whoever has this role (the XO), or -1 */
+static int person_of(int role)
+{
+    int i;
+    for (i = 0; i < (int)g_npilots; i++)
+        if (g_pilots[i].role == role)
+            return i;
+    return -1;
+}
+
+/* the mission's lines for the room the player is in, or -1 */
+static int talk_room(void)
+{
+    return g_scene.room == RV_R_BAR ? RV_ROOM_BAR : g_scene.room == RV_R_LOUNGE ? RV_ROOM_LOUNGE
+         : g_scene.room == RV_R_DECK ? RV_ROOM_DECK : -1;
+}
+
+/* the table talk: this room's lines in turn, as subtitles (round and round; Kit on the deck says hers once) */
 static void ambient_talk(void)
 {
-    int i, room = g_scene.room == RV_R_BAR ? RV_ROOM_BAR : g_scene.room == RV_R_LOUNGE ? RV_ROOM_LOUNGE : -1;
+    int i, room = talk_room();
     if (room < 0 || g_now < g_talk_at)
         return;
     for (i = 1; i <= (int)g_m.ntalk; i++) {
         int k = (g_talk_line + i) % (g_m.ntalk ? g_m.ntalk : 1);
-        if (g_m.ntalk && g_m.talk[k].room == room) {
+        const RvTalk __far *t;
+        if (room == RV_ROOM_DECK && k <= g_talk_line)
+            break;
+        t = camp_line(&g_m, k);
+        if (t->room == room && !(t->flags & RV_TALK_SAY) && camp_line_ok(t)) {
             g_talk_line = k;
             /* a second, then as long as reading it takes at the talk speed (8 letters a second at "slow") */
-            g_talk_at = g_now + 18 + (unsigned long)_fstrlen(g_m.talk[k].text) * 227 / g_talk_pcts[g_talk_speed];
-            vid_dirty(SCR_H - LABEL_H - 24, SCR_H - LABEL_H);
+            g_talk_at = g_now + 18 + (unsigned long)_fstrlen(t->text) * 227 / g_talk_pcts[g_talk_speed];
+            vid_dirty(SCR_H - LABEL_H - 46, SCR_H - LABEL_H);
             return;
         }
     }
+    if (room == RV_ROOM_DECK && g_talk_line >= 0) {      /* (said: the last line off, and quiet until the launch) */
+        g_talk_line = -1;
+        vid_dirty(SCR_H - LABEL_H - 46, SCR_H - LABEL_H);
+    }
+    if (room == RV_ROOM_DECK)
+        g_talk_at = 0xFFFFFFFFUL;
 }
 
 /* --- close-ups: a person speaking --- */
@@ -361,7 +405,7 @@ static int g_close_room, g_close_back;      /* the close-up's room, and the mode
 
 /* the text a frame shows of the speech, copied out of g_said: said_so_far's, brief_overlay's (each drawn as soon
  * as copied, so the two share it) */
-static char g_shown[RV_BRIEFING];
+static char g_shown[RV_TALK + 48];
 
 /* the speech so far; of a long one (a briefing), only the sentence being said */
 static const char *said_so_far(void)
@@ -406,7 +450,7 @@ static void talk_full(int y0, int y1)
         gfx_text(FONT_TITLE, 400, 130, title, RV_TEXT_AMBER, y0, y1);
         gfx_text(FONT_BODY, 400, 160, g_pilots[g_speaker].name, RV_TEXT_WHITE, y0, y1);
     }
-    gfx_wrap(FONT_BODY, 400, 196, 220, said_so_far(), RV_TEXT_WHITE, 4, y0, y1);
+    gfx_wrap(FONT_BODY, 400, 196, 220, said_so_far(), RV_TEXT_WHITE, 8, y0, y1);
 }
 
 /* what moves in a close-up: the mouth, the eyes, the words */
@@ -468,26 +512,73 @@ static void close_talk(void)
 static const char __far *line_of(int person)
 {
     int i;
-    for (i = 0; i < (int)g_m.ntalk; i++)
-        if (g_m.talk[i].speaker == person)
-            return g_m.talk[i].text;
+    for (i = 0; i < (int)g_m.ntalk; i++) {
+        const RvTalk __far *t = camp_line(&g_m, i);
+        if (t->speaker == person && t->room < RV_ROOM_RADIO && camp_line_ok(t))
+            return t->text;
+    }
     return g_pilots[person].line;
+}
+
+/* --- a conversation: clicking a pilot plays their `say` lines in this room, a page a click, each in its speaker's face
+ * (the player's own when it is a reply); Esc leaves.  None for them: their one line --- */
+
+static int g_conv_owner = -1, g_conv_at;
+static int g_clip, g_clip_frame, g_deck_ship;       /* (the deck, below: Kit's loop and the fighter on the pad) */
+
+static int conv_next(void)
+{
+    int i, room = talk_room();
+    for (i = g_conv_at + 1; i < (int)g_m.ntalk; i++) {
+        const RvTalk __far *t = camp_line(&g_m, i);
+        if ((t->flags & RV_TALK_SAY) && t->room == room && t->listener == g_conv_owner && camp_line_ok(t))
+            return i;
+    }
+    return -1;
+}
+
+static void conv_page(int k)
+{
+    const RvTalk __far *t = camp_line(&g_m, k);
+    int who = t->speaker == RV_SPEAKER_YOU ? person_of(RV_ROLE_HERO) : t->speaker, back = g_close_back, was = g_mode;
+    g_conv_at = k;
+    if (t->boost) {                     /* (Kit's line that comes with a part: she nods when the player is back) */
+        logic_boost = t->boost;
+        g_clip = 2;
+        g_clip_frame = 0;
+    }
+    say(who, t->text);
+    if (was == MODE_TALK) {             /* (the next page: the same room, this speaker's face) */
+        show_face();
+        g_close_back = back;
+    } else {
+        if (!show_face())
+            return;
+        g_mode = MODE_TALK;
+        music_cue(room_song(g_close_room), 150);
+    }
+}
+
+static void open_conv(int person)
+{
+    int k;
+    if (dat_room(g_scene.room)->closeup_part == 0xFFFF)
+        return;
+    g_conv_owner = person;
+    g_conv_at = -1;
+    k = conv_next();
+    if (k < 0) {
+        g_conv_owner = -1;
+        open_talk(person, line_of(person));
+        return;
+    }
+    conv_page(k);
 }
 
 /* --- the briefing and the debrief: the XO at the lectern --- */
 
-static int g_stage, g_xo_close;
+static int g_stage;
 static unsigned long g_stage_at;
-
-/* the people.csv row of whoever has this role (the XO), or -1 */
-static int person_of(int role)
-{
-    int i;
-    for (i = 0; i < (int)g_npilots; i++)
-        if (g_pilots[i].role == role)
-            return i;
-    return -1;
-}
 
 static void situation_display(int y0, int y1)
 {
@@ -604,6 +695,73 @@ static void brief_overlay(int y0, int y1)
     }
 }
 
+/* the briefing and the debrief are lines (tools/rvdata.py: briefing, win, lose), in turn, as in a conversation: the
+ * XO's at the lectern, anyone else's in their own close-up.  A line waits a second after it has been said, or for a
+ * click; Esc leaves the rest.  With the wingman dead, " and NAME" is cut from "You and NAME ..." (rvdata holds every
+ * briefing to that), so the mission is flown solo.  A debrief with the wingman lost in the flight says so first, and
+ * that is where the loss becomes final (flying a mission again after dying undoes it, launch) */
+static char __far g_xo_words[RV_TALK + 48];
+static int g_lost_wing = -1;
+static int g_line_room, g_line_at, g_lines_left, g_line_face;
+
+static const char __far *line_words(const RvTalk __far *t)
+{
+    const char __far *from = t->text;
+    char name[24];
+    int i, n = 0;
+    if (t->room != RV_ROOM_BRIEF)
+        return from;
+    for (i = 0; i < (int)g_m.nship; i++)
+        if (g_m.ship[i].type == RV_SHIP_WINGMAN && g_m.ship[i].pilot < RV_PILOTS && !g_camp.pilot[g_m.ship[i].pilot].alive) {
+            int cut;
+            sprintf(name, " and %.10s", g_pilots[g_m.ship[i].pilot].callsign);
+            cut = (int)strlen(name);
+            while (from[n] && _fstrncmp(from + n, name, cut) != 0)
+                n++;
+            if (!from[n])
+                return from;
+            _fmemcpy(g_xo_words, from, n);
+            _fstrcpy(g_xo_words + n, from + n + cut);
+            return g_xo_words;
+        }
+    return from;
+}
+
+static int line_next(void)
+{
+    int i;
+    for (i = g_line_at + 1; i < (int)g_m.ntalk; i++) {
+        const RvTalk __far *t = camp_line(&g_m, i);
+        if (t->room == g_line_room && camp_line_ok(t))
+            return i;
+    }
+    return -1;
+}
+
+static void line_face_off(void)
+{
+    if (g_line_face) {
+        g_line_face = 0;
+        close_talk();
+    }
+}
+
+static void line_page(int k)
+{
+    const RvTalk __far *t = camp_line(&g_m, k);
+    int who = t->speaker == RV_SPEAKER_YOU ? person_of(RV_ROLE_HERO) : t->speaker;
+    g_line_at = k;
+    g_stage_at = 0;
+    if (g_pilots[who].role == RV_ROLE_XO) {
+        line_face_off();
+        say(who, line_words(t));
+        vid_dirty(292, 378);
+    } else {
+        say(who, t->text);
+        g_line_face = show_face();
+    }
+}
+
 static void start_briefing(int debrief)
 {
     vid_fade(0);
@@ -612,7 +770,6 @@ static void start_briefing(int debrief)
     g_scene.overlay = brief_overlay;
     g_mode = debrief ? MODE_DEBRIEF : MODE_BRIEF;
     g_stage = 0;
-    g_xo_close = 0;
     if (!debrief) {
         /* the flight's sets asked of the page now (ships_want), fetched while the briefing is read */
         unsigned char want[RV_MAX_SHIP_SLOT + 2];
@@ -628,7 +785,28 @@ static void start_briefing(int debrief)
             want[nw++] = 0x08;          /* (the flight's stand-in enemy type) */
         ships_want(want, nw, 0);
     }
-    say(person_of(RV_ROLE_XO), debrief ? (g_won ? g_m.win : g_m.lose) : g_m.briefing);
+    g_line_room = !debrief ? RV_ROOM_BRIEF : g_won ? RV_ROOM_WIN : RV_ROOM_LOSE;
+    g_line_at = -1;
+    g_lines_left = 1;
+    g_line_face = 0;
+    g_stage_at = 0;
+    if (debrief && g_lost_wing >= 0) {
+        char name[24];
+        sprintf(name, "We lost %.10s.", g_pilots[g_lost_wing].callsign);
+        _fstrcpy(g_xo_words, name);
+        g_camp.pilot[g_lost_wing].alive = 0;
+        RV_LOG("campaign: pilot %d lost", g_lost_wing);
+        g_lost_wing = -1;
+        say(person_of(RV_ROLE_XO), g_xo_words);
+    } else {
+        int k = line_next();
+        if (k >= 0)
+            line_page(k);
+        else {
+            g_xo_words[0] = 0;
+            say(person_of(RV_ROLE_XO), g_xo_words);
+        }
+    }
     if (!debrief)
         briefingStarted();
     music_cue(debrief ? (g_won ? RV_MUSIC_WIN : RV_MUSIC_LOSE) : RV_MUSIC_BRIEFING, 250);
@@ -648,10 +826,6 @@ static void brief_tick(void)
     g = sentences == 0 ? 0 : 1 + (sentences - 1) % 2;
     if (speech_done())
         g = 0;
-    if (g_xo_close) {                           /* (her close-up: face_tick) */
-        g_gesture = g;
-        return;
-    }
     if (g != g_gesture || mouth_now() != g_mouth) {
         const RvSpeaker __far *s = &dat_room(RV_R_BRIEFING)->speaker;
         const RvAsset __far *a = dat_asset(s->cell0);
@@ -667,22 +841,25 @@ static void brief_tick(void)
 
 /* --- the deck: Kit and the fighter --- */
 
-static int g_clip, g_clip_frame, g_deck_ship;
 static unsigned long g_clip_at;
 
 static void deck_underlay(int y0, int y1)
 {
     const RvDeck __far *d = &dat_room(RV_R_DECK)->deck;
     gfx_image(d->ship[g_deck_ship].plate, 0, 0, y0, y1);
+    if (g_scene.hot_gone)               /* (Kit flew, and the player lost her: the fighter, and nobody) */
+        return;
     gfx_sprite(d->front, 0, 0, y0, y1);
     gfx_sprite(d->clip_first[g_clip] + g_clip_frame, 0, 0, y0, y1);
 }
 
 static void deck_overlay(int y0, int y1)
 {
-    char s[96];                         /* (a 40-character title, the words and a name: 69 at most; 64 overflowed) */
-    sprintf(s, "%.40Fs  //  your fighter: %s", (char __far *)g_m.title, ship_name(g_camp.player_ship));
+    char s[108];                        /* (a 40-character title, the words, a name and what Kit did) */
+    static const char *const s_boost[] = { "", " + armor", " + fuel", " + missile" };
+    sprintf(s, "%.40Fs  //  your fighter: %s%s", (char __far *)g_m.title, ship_name(g_camp.player_ship), s_boost[logic_boost & 3]);
     gfx_text(FONT_BODY, 14, 8, s, RV_TEXT_AMBER | 0x10, y0, y1);
+    talk_overlay(y0, y1);
 }
 
 static void enter_deck(void)
@@ -697,6 +874,13 @@ static void enter_deck(void)
             g_deck_ship = i;
     g_scene.underlay = deck_underlay;
     g_scene.overlay = deck_overlay;
+    i = person_of(RV_ROLE_TECH);
+    if (i >= 0 && !g_camp.pilot[i].alive)
+        for (i = 0; i < (int)dat_room(RV_R_DECK)->nhot; i++)
+            if (dat_room(RV_R_DECK)->hot[i].action == RV_ACT_KIT)
+                g_scene.hot_gone = i + 1;
+    g_talk_line = -1;
+    g_talk_at = g_now + 18;
     g_clip = g_clip_frame = 0;
     g_clip_at = g_now;
     g_mode = MODE_DECK;
@@ -716,19 +900,6 @@ static void deck_tick(void)
         g_clip = (g_clip + 1) % RV_CLIPS;
     }
     vid_dirty(d->patch_y, d->patch_y + d->patch_h);
-}
-
-static void customize(void)
-{
-    const RvDeck __far *d = &dat_room(RV_R_DECK)->deck;
-    char s[64];
-    g_deck_ship = (g_deck_ship + 1) % d->nships;
-    g_camp.player_ship = d->ship[g_deck_ship].ship_type;
-    g_clip = 2;                           /* the ready nod */
-    g_clip_frame = 0;
-    vid_dirty(0, SCR_H);
-    sprintf(s, "Kit: the %s it is", ship_name(g_camp.player_ship));
-    strncpy(g_scene.label, s, sizeof g_scene.label - 1);
 }
 
 /* --- the flight --- */
@@ -859,6 +1030,8 @@ static void launch(void)
     won = (int)(rnd() % 100) < (g_winrate < 0 ? 80 : g_winrate);
     victoryPoints = won;
     status = flight_fly(&g_m);
+    g_lost_wing = logic_wingman_lost();
+    g_camp.escort_lost = (uint8_t)logic_escort_lost();
     if (g_winrate >= 0)
         victoryPoints = won;
     missionVictoryCalc();                           /* the layer's moment: a wingman's score becomes the host's */
@@ -1253,13 +1426,7 @@ static void hot_action(const SceneAction *a)
     case RV_ACT_LETTERS: message("Letters from home, read until the folds wore through."); break;
     case RV_ACT_PHOTOS: message("Photographs from before the war."); break;
     case RV_ACT_KILLS: message("Your flight record: kills and missions, one tally mark at a time."); break;
-    case RV_ACT_CLOSEUP:
-        if (show_face()) {
-            g_xo_close = 1;
-            g_mode = MODE_XOCLOSE;
-        }
-        break;
-    case RV_ACT_CUSTOMIZE: customize(); break;
+    case RV_ACT_KIT: open_conv(person_of(RV_ROLE_TECH)); break;
     case RV_ACT_LAUNCH: launch(); break;
     }
 }
@@ -1319,7 +1486,7 @@ int game_run(void)
             if (act.kind == ACTION_HOT)
                 hot_action(&act);
             else if (act.kind == ACTION_SEAT || act.kind == ACTION_ACTOR)
-                open_talk(act.arg, line_of(act.arg));
+                open_conv(act.arg);
             break;
         case MODE_MESSAGE:
             if (in.clicked || in.key == KEY_ENTER || in.key == KEY_ESC) {
@@ -1330,18 +1497,54 @@ int game_run(void)
             break;
         case MODE_TALK:
             face_tick();
-            if (in.clicked || in.key == KEY_ENTER || in.key == KEY_ESC)
-                close_talk();
+            if (in.clicked || in.key == KEY_ENTER || in.key == KEY_ESC) {
+                int k = in.key == KEY_ESC || g_conv_owner < 0 ? -1 : conv_next();
+                if (k >= 0)
+                    conv_page(k);
+                else {
+                    g_conv_owner = -1;
+                    close_talk();
+                }
+            }
             break;
         case MODE_BRIEF:
         case MODE_DEBRIEF:
-            brief_tick();
-            if (act.kind == ACTION_HOT && act.action == RV_ACT_CLOSEUP) {
-                hot_action(&act);
-            } else if (speech_done() || in.key == KEY_ESC || (act.kind == ACTION_HOT && act.action == RV_ACT_GOTO)) {
+            if (g_line_face)
+                face_tick();
+            else
+                brief_tick();
+            if (g_lines_left) {                 /* (a click anywhere: the pointer comes in over the XO) */
+                int next = in.clicked || in.key == KEY_ENTER;
+                if (in.key == KEY_ESC) {        /* (the rest of it unheard: straight on) */
+                    g_lines_left = 0;
+                    line_face_off();
+                    g_stage = 2;
+                    g_stage_at = g_now;
+                } else {
+                    if (!next && speech_done()) {
+                        if (!g_stage_at)
+                            g_stage_at = g_now + 18;
+                        next = g_now >= g_stage_at;
+                    }
+                    if (next) {
+                        int k = line_next();
+                        if (k >= 0) {
+                            line_page(k);
+                        } else {                /* (the last line: a click goes on at once, the wait takes the screen off) */
+                            g_lines_left = 0;
+                            line_face_off();
+                            g_stage_at = g_now + 18;
+                            if (in.clicked || in.key == KEY_ENTER) {
+                                g_stage = 2;
+                                g_stage_at = g_now;
+                            }
+                        }
+                    }
+                }
+            } else if (speech_done() || in.key == KEY_ESC || in.clicked || g_stage == 2) {
                 if (!g_stage_at)
                     g_stage_at = g_now + 18;
-                if (g_now >= g_stage_at || in.key == KEY_ESC) {
+                if (g_now >= g_stage_at || in.key == KEY_ESC || in.clicked) {
                     if (g_mode == MODE_BRIEF && g_stage < 2) {
                         g_stage++;
                         g_stage_at = g_now + 7;
@@ -1371,20 +1574,13 @@ int game_run(void)
                 }
             }
             break;
-        case MODE_XOCLOSE:
-            brief_tick();
-            face_tick();
-            if (in.clicked || in.key == KEY_ENTER || in.key == KEY_ESC) {
-                g_xo_close = 0;
-                close_talk();                       /* (back to the briefing or the debrief) */
-            }
-            break;
         case MODE_BOARD:
             if (in.clicked || in.key == KEY_ENTER || in.key == KEY_ESC)
                 close_board();
             break;
         case MODE_DECK:
             deck_tick();
+            ambient_talk();
             if (act.kind == ACTION_HOT)
                 hot_action(&act);
             break;

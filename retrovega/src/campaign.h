@@ -6,7 +6,7 @@
 
 #define BUNKS 8
 #define SAVE_MAGIC "RVSAVE"
-#define SAVE_VERSION 1
+#define SAVE_VERSION 2                   /* (a version 1 save is read too: the fields at the end start empty) */
 enum { ENDING_NONE, ENDING_GOOD, ENDING_BAD };
 
 #pragma pack(1)
@@ -31,10 +31,15 @@ typedef struct {
     uint32_t seed;
     uint16_t flown;                     /* missions flown in all */
     RvPilotStats pilot[RV_PILOTS];
+    uint16_t systems;                   /* a bit per campaign node flown (the scenes' if= and unless=) */
+    uint8_t last;                       /* the last mission: 0 none yet, 1 won, 2 lost (the scenes' after=) */
+    uint8_t escort_lost;                /* the last flight lost a ship it was escorting (the scenes' escort=lost) */
 } RvSave;
 #pragma pack()
 
 extern RvSave g_camp;
+const RvTalk __far *camp_line(const RvMission __far *m, int16_t k);   /* line k of the mission, out of XMS */
+int16_t camp_line_ok(const RvTalk __far *t);   /* a scene's line can be said now: its conditions, and nobody dead in it */
 /* the mission's rules (data/missions.txt `rules`, camp_load_units): what a bolt must do to hit a ship (0: each
  * type's own ships.csv choice; else an RV_SHIPTYPE_FLAG_HIT_* for every ship: shots.c) and the RV_RULE_* flags
  * (logic.c: how the AI aims, whether a player's target holds its guns, what a collision costs) */

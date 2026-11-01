@@ -77,6 +77,9 @@ int16_t logic_order(int16_t s, int16_t order);      /* 1 when slot s takes it (0
                                                        no enemy targeted, or RTB with no capital ship of its side) */
 int16_t logic_order_of(int16_t s);
 int16_t logic_taunt(int16_t s);         /* an enemy fighter turns on the player for a while: 1 when it does */
+extern uint8_t __far logic_boost;       /* RV_BOOST_*: what Kit did to the fighter for this mission's flights; 0 none */
+int16_t logic_escort_lost(void);        /* a ship the player was escorting was killed this flight */
+int16_t logic_wingman_lost(void);       /* the mission's wingman was killed this flight: their pilot (people.csv row), -1 no */
 
 /* the home carrier (the mission's ship with role=home, holding station at nav 0) and landing (the user's rules,
  * 2026-10-31): asked on the comm with the carrier as the target, it clears the player with the mission finished or at
@@ -94,6 +97,7 @@ extern void (*__far logic_on_jump)(int16_t slot, int16_t friendly);
 #ifdef RV_TESTS
 void logic_test_to_carrier(int16_t where);   /* a script's way there: 0 off its bow, 1 off its beam */
 void logic_test_kill_carrier(void);
+void logic_test_kill_wingman(void);
 void logic_test_jump_out(void);         /* a script's way to see a jump: the first escorted ship, ahead of the player */
 #endif
 

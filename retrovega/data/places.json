@@ -667,8 +667,8 @@
           648,
           700
         ],
-        "does": "customize",
-        "label": "Kit: your fighter"
+        "does": "kit",
+        "label": "Kit"
       },
       "fighter": {
         "rect": [
