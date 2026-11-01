@@ -43,10 +43,19 @@ await page.waitForFunction(() => window.DOSBox && window.DOSBox._wc_web_in_fligh
 const flying = () => page.evaluate(() => window.DOSBox._wc_web_in_flight());
 const turn = () => page.evaluate(() => [window.DOSBox._wc_web_steer(4, 0), window.DOSBox._wc_web_steer(4, 1)]);
 const t0 = Date.now();
-await page.waitForFunction(() => /simulator: its flight is running/.test(document.getElementById("log").textContent) || window.DOSBox._wc_web_in_flight() === 1, null, { timeout: 600000 });
+// (a new game runs a short TrainSim flight of its own before the name is asked for: this waits for the one the rec room's
+// pod starts, once the enemy has been picked; between the two the stick is a pointer)
+let was = 0, flights = 0;
+while (flights < 2) {
+  const f = await flying();
+  if (f === 1 && was === 0) flights++;
+  was = f;
+  if (Date.now() - t0 > 600000) { console.log(`SIM PAD FAILED (${flights} flights)`); await browser.close(); process.exit(1); }
+  await page.waitForTimeout(250);
+}
 console.log(`the simulator's flight after ${((Date.now() - t0) / 1000).toFixed(0)} s`);
 check("the simulator's flight counts as flying for the stick", (await flying()) === 1, await flying());
-await page.waitForTimeout(1500);
+await page.waitForTimeout(800);
 const view = await page.evaluate(() => [0, 1, 2, 3].map((i) => window.DOSBox._wc_web_steer(0, i)));
 console.log(`the view is ${view.join(",")} of 640x200`);
 let t = await turn();
