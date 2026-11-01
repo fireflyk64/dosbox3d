@@ -371,6 +371,7 @@ nav 0):
 | M8.17 turrets-off | an enemy 1,500 km from the carrier: its turrets fire; with `turrets=off`, not a shot in 5 s |
 | M8.18 attack-capital | a lone ace from each of 16 sides on a carrier with its turrets off, 90 s each: at most 3 fly into it, and they fire |
 | M8.19 autopilot-apart | a wingman whose offset comes down exactly where the autopilot puts the Ox, at speed: they arrive apart, and in 3 s the Ox takes no hit |
+| M8.24 nav-choice | `g_sys.nav` follows the first waypoint not reached until N (`logic_nav_next`) picks one; N goes down the list and round through home; the autopilot goes to the one chosen, and the choice follows again once it is reached |
 | M8.23 way-out | `camp_way_out`: a debrief's `system=`: nothing before the system's last mission; then good or bad as `camp_resolve` will have it |
 | M8.22 kit-boost | a flight started with `logic_boost`: half as much armour again on each face, or one more round in the first launcher; none without it |
 | M8.20 jump-told | the Ox put within reach of its jump: `logic_on_jump` called once, for its slot, friendly; it is gone and it is no kill |

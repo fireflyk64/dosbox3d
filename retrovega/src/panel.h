@@ -59,6 +59,7 @@ void panel_fuel_bar(int x, int y, int w, int h, int pct, int upright, int y0, in
  * user, 2026-10-31): text at (x, y) in a palette colour, rows y0 .. y1-1; returns its width */
 int panel_tiny(int x, int y, const char *s, unsigned char col, int y0, int y1);
 int panel_tiny_width(const char *s);
+void panel_nav_name(char *s);           /* the chosen nav point, as the displays name it: HOME or NAV n */
 #define PANEL_TINY_H 5
 
 #endif

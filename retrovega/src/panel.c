@@ -86,6 +86,14 @@ int panel_tiny(int x, int y, const char *s, unsigned char col, int y0, int y1)
     return tiny(x, y, s, col, y0, y1);
 }
 
+void panel_nav_name(char *s)
+{
+    if (g_sys.nav)
+        sprintf(s, "NAV %d", g_sys.nav);
+    else
+        strcpy(s, "HOME");
+}
+
 int panel_tiny_width(const char *s)
 {
     return 4 * (int)strlen(s);
@@ -337,7 +345,7 @@ static int readout(const RvPanelControl __far *p, char *a, char *b)   /* a: 32, 
     case RV_PF_HEAT: sprintf(a, "%d%%", g_sys.heat); break;
     case RV_PF_SIGNATURE: sprintf(a, "%d%%", g_sys.signature); break;
     case RV_PF_AUX_NAV:
-        sprintf(a, "NAV %d", g_sys.nav + 1);
+        panel_nav_name(a);
         km(b, g_sys.nav_km);
         break;
     case RV_PF_TARGET_ID:
@@ -461,7 +469,7 @@ static void read(const RvPanelControl __far *p, const CockpitState *st, Reading 
                 sprintf(r->a, "HULL %d%%", g_sys.hull);
                 sprintf(r->b, "DMG %d", n);
             } else if (r->page == 2) {
-                sprintf(r->a, "NAV %d", g_sys.nav + 1);
+                panel_nav_name(r->a);
                 km(r->b, g_sys.nav_km);
             } else {
                 r->v[0] = (short)clamp100(st->shield_f);

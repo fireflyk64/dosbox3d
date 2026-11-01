@@ -62,7 +62,9 @@ int32_t logic_target_km(int16_t s);     /* how far slot s is from the player, hu
                                            the sum of the half boxes: the VDUs' range, a lock's, the landing's) */
 
 /* nav point n of the mission (0 home): 1 and how far the player is from it (km), 0 when there is no such point */
-int16_t logic_nav_km(int16_t n, int32_t *km);
+int16_t logic_nav_km(int16_t n, int32_t *km);   /* a nav point on the player's lists: how far; 0 not one */
+void logic_nav_next(void);              /* N: the next on the list, chosen */
+int16_t logic_nav_mark(int16_t *x, int16_t *y);   /* the chosen one on the view: 1 in view, 2 pinned at the rim, 0 no mark */
 
 /* the wingmen's orders (the comm menu, flight.c and vdu.c; the user's asks, 2026-10-31): a wingman (a fighter of the
  * player's side flown by the AI) flies in formation and fights what comes within its reach (FREE, the default), or

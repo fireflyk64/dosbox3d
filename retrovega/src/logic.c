@@ -100,33 +100,10 @@ static struct {
     int16_t target;                     /* the target's brackets: 1 when it is on the view */
     int16_t x0, y0, x1, y1, colour;
     int16_t nav;                        /* the chosen nav point's cross: 1 when it is on the view (the user's white cross) */
-    int16_t nav_x, nav_y;
+    int16_t nav_x, nav_y, nav_dx, nav_dy;
     int16_t lock;                       /* the missile lock's reticle: 0 none, 1 building (closing on the target), 2 locked */
     int16_t sx, sy, half, lock_r;
 } __far g_hud;
-
-/* a world point on the camera's screen: 1 and (sx, sy) when it is ahead and on the view */
-static int16_t on_view(const RvCamera *cam, const LfVec *w, int16_t *sx, int16_t *sy)
-{
-    int32_t rx = (w->x - cam->pos.x) >> 4, ry = (w->y - cam->pos.y) >> 4, rz = (w->z - cam->pos.z) >> 4, X, Y, Z;
-    while (labs(rx) > 0x7FFFFF || labs(ry) > 0x7FFFFF || labs(rz) > 0x7FFFFF) {   /* (far off: the way is all that matters) */
-        rx /= 2;
-        ry /= 2;
-        rz /= 2;
-    }
-    X = (rx * cam->b.right.x + ry * cam->b.right.y + rz * cam->b.right.z) / 256;
-    Y = (rx * cam->b.up.x + ry * cam->b.up.y + rz * cam->b.up.z) / 256;
-    Z = (rx * cam->b.front.x + ry * cam->b.front.y + rz * cam->b.front.z) / 256;
-    if (Z < 16)
-        return 0;
-    X = cam->cx + X * cam->focal / Z;
-    Y = cam->cy - Y * cam->focal / Z;
-    if (X < cam->vx0 || X >= cam->vx1 || Y < cam->vy0 || Y >= cam->vy1)
-        return 0;
-    *sx = (int16_t)X;
-    *sy = (int16_t)Y;
-    return 1;
-}
 
 /* --- the mission: its nav points and ships, as camp_load_units put them in the tables the layer reads --- */
 
@@ -155,6 +132,39 @@ static int16_t nav_defined(int16_t n)
     return n == 0 || NAV_REC(n)[0] == n;
 }
 
+/* a nav point on the player's lists: home and the mission's waypoints, not its hidden trigger points */
+#define NAV_HIDDEN(n) (NAV_REC(n)[1] & 1)
+static int16_t nav_listed(int16_t n)
+{
+    return nav_defined(n) && (n == 0 || !NAV_HIDDEN(n));
+}
+
+/* the way the player is headed: the first waypoint not reached yet, home when all are */
+static int16_t nav_next_unseen(void)
+{
+    int16_t n;
+    for (n = 1; n < NAVS; n++)
+        if (nav_listed(n) && !(g_navs_seen >> n & 1))
+            return n;
+    return 0;
+}
+
+/* N: the next on the list (the waypoints, then home).  g_sys.nav follows the way ahead until the player picks one, and
+ * again once that one is reached */
+static uint8_t __far g_nav_chosen;
+
+void logic_nav_next(void)
+{
+    int16_t k = g_sys.nav, i;
+    for (i = 0; i < NAVS; i++) {
+        k = (int16_t)((k + 1) % NAVS);
+        if (nav_listed(k))
+            break;
+    }
+    g_sys.nav = (uint8_t)k;
+    g_nav_chosen = 1;
+}
+
 /* how far the player is from nav point n, km, roughly (the largest axis and half the rest, as player_km) */
 static int32_t nav_km(int16_t n)
 {
@@ -165,7 +175,7 @@ static int32_t nav_km(int16_t n)
 
 int16_t logic_nav_km(int16_t n, int32_t *km)
 {
-    if (n < 0 || n >= NAVS || !nav_defined(n))
+    if (n < 0 || n >= NAVS || !nav_listed(n))
         return 0;
     *km = nav_km(n);
     return 1;
@@ -395,6 +405,7 @@ void logic_start(const RvMission __far *m)
     _fmemset(g_away, 0, sizeof g_away);
     _fmemset(&g_hud, 0, sizeof g_hud);   /* (no marks until the first step works them out) */
     g_navs_seen = 1;
+    g_nav_chosen = 0;
     g_cleared = 0;
     g_stopped = 0;
     currentNavPoint = 0;
@@ -2827,6 +2838,60 @@ static void step_mission(void)
 #define HUD_BRACKET_MIN 4               /* brackets no tighter than this about the target's middle (px): far off, its
                                            box is a dot */
 
+/* the chosen nav point on the view: a white cross where it lies, and when it is off the view a smaller one at the rim
+ * in its direction, with a tick pointing out (the user: "I still don't see the cross"): 1 and 2 in g_hud.nav */
+#define NAV_PIN_RX 150                  /* the rim: well inside every cockpit's opening, less room below the sight */
+#define NAV_PIN_UP 100
+#define NAV_PIN_DOWN 50
+#define NAV_PIN_TICK 12
+
+static void nav_mark(const RvCamera *cam)
+{
+    int32_t rx, ry, rz, X, Y, Z, len;
+    rx = ((int32_t)NAV_AT(g_sys.nav, 0) * KM - cam->pos.x) >> 4;
+    ry = ((int32_t)NAV_AT(g_sys.nav, 1) * KM - cam->pos.y) >> 4;
+    rz = ((int32_t)NAV_AT(g_sys.nav, 2) * KM - cam->pos.z) >> 4;
+    while (labs(rx) > 0x7FFFFF || labs(ry) > 0x7FFFFF || labs(rz) > 0x7FFFFF) {
+        rx /= 2;
+        ry /= 2;
+        rz /= 2;
+    }
+    X = (rx * cam->b.right.x + ry * cam->b.right.y + rz * cam->b.right.z) / 256;
+    Y = (rx * cam->b.up.x + ry * cam->b.up.y + rz * cam->b.up.z) / 256;
+    Z = (rx * cam->b.front.x + ry * cam->b.front.y + rz * cam->b.front.z) / 256;
+    if (Z >= 16) {
+        int32_t sx = cam->cx + X * cam->focal / Z, sy = cam->cy - Y * cam->focal / Z;
+        if (sx >= cam->vx0 && sx < cam->vx1 && sy >= cam->vy0 && sy < cam->vy1
+            && labs(sx - cam->cx) <= NAV_PIN_RX && sy >= cam->cy - NAV_PIN_UP && sy <= cam->cy + NAV_PIN_DOWN) {
+            g_hud.nav = 1;
+            g_hud.nav_x = (int16_t)sx;
+            g_hud.nav_y = (int16_t)sy;
+            return;
+        }
+    }
+    while (labs(X) > 30000L || labs(Y) > 30000L) {
+        X /= 2;
+        Y /= 2;
+    }
+    if (!X && !Y)
+        Y = 1;                          /* (dead astern: up is as good a way round as any) */
+    len = (int32_t)lf_sqrt((uint32_t)(X * X + Y * Y));
+    if (!len)
+        len = 1;
+    g_hud.nav = 2;
+    g_hud.nav_x = (int16_t)(cam->cx + X * NAV_PIN_RX / len);
+    g_hud.nav_y = (int16_t)(cam->cy - Y * (Y > 0 ? NAV_PIN_UP : NAV_PIN_DOWN) / len);
+    g_hud.nav_dx = (int16_t)(X * NAV_PIN_TICK / len);
+    g_hud.nav_dy = (int16_t)(-Y * NAV_PIN_TICK / len);
+}
+
+int16_t logic_nav_mark(int16_t *x, int16_t *y)
+{
+    *x = g_hud.nav_x;
+    *y = g_hud.nav_y;
+    return g_hud.nav;
+}
+
 static void hud_marks(void)
 {
     RvCamera cam;
@@ -2836,17 +2901,9 @@ static void hud_marks(void)
     g_hud.cx = cam.cx;
     g_hud.cy = cam.cy;
     g_hud.arm = (int16_t)((cam.vx1 - cam.vx0) >> 6);   /* (10 px at 640 across, 5 at 320) */
-    g_hud.nav = 0;
-    if (g_sys.nav < NAVS && nav_defined(g_sys.nav)) {   /* the chosen nav point: a white cross where it lies */
-        LfVec w;
-        int16_t sx, sy;
-        w.x = (int32_t)NAV_AT(g_sys.nav, 0) * KM;
-        w.y = (int32_t)NAV_AT(g_sys.nav, 1) * KM;
-        w.z = (int32_t)NAV_AT(g_sys.nav, 2) * KM;
-        g_hud.nav = on_view(&cam, &w, &sx, &sy);   /* (near pointers: g_hud is far) */
-        g_hud.nav_x = sx;
-        g_hud.nav_y = sy;
-    }
+    if (!g_nav_chosen)
+        g_sys.nav = (uint8_t)nav_next_unseen();
+    nav_mark(&cam);
     g_hud.target = g_sys.target >= 0 && flight_ent_box(g_sys.target, &cam, &b) && b.visible;
     if (!g_hud.target)
         return;
@@ -2888,8 +2945,12 @@ void logic_hud(void)
     if (!g_hud.arm)
         return;
     hud_cross(g_hud.cx, g_hud.cy, g_hud.arm, UI_AMBER2);
-    if (g_hud.nav)
+    if (g_hud.nav == 1)
         hud_cross(g_hud.nav_x, g_hud.nav_y, g_hud.arm, UI_WHITE);
+    else if (g_hud.nav == 2) {
+        hud_cross(g_hud.nav_x, g_hud.nav_y, (int16_t)(g_hud.arm / 2), UI_WHITE);
+        hud_line(g_hud.nav_x, g_hud.nav_y, (int16_t)(g_hud.nav_x + g_hud.nav_dx), (int16_t)(g_hud.nav_y + g_hud.nav_dy), UI_WHITE);
+    }
     if (g_hud.target)
         hud_brackets(g_hud.x0, g_hud.y0, g_hud.x1, g_hud.y1, g_hud.colour);
     if (g_hud.target && g_hud.lock == 1)
@@ -2923,16 +2984,14 @@ void logic_end(void)
  * unseen, or home) not yet reached: that nav point, or -1 (the engine asks before its flyby, flight.c) */
 int16_t logic_autopilot_ready(void)
 {
-    int16_t s, n, next = 0;
+    int16_t s, next;
     if (!slot_is_ship(0) || shipAiState[0] == 9)
         return -1;
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
         if (slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9
             && player_km(s) < AUTOPILOT_CLEAR_KM)
             return -1;
-    for (n = 1; n < NAVS && !next; n++)
-        if (nav_defined(n) && !(g_navs_seen >> n & 1))
-            next = n;
+    next = g_nav_chosen ? g_sys.nav : nav_next_unseen();
     if (nav_km(next) <= AUTOPILOT_SHORT_KM)
         return -1;                      /* (there already) */
     return next;
@@ -3132,6 +3191,8 @@ void __far __cdecl enterNavPoint_impl(uint16_t nav)
         return;
     currentNavPoint = nav;
     g_navs_seen |= 1u << nav;
+    if (g_nav_chosen && g_sys.nav == nav)
+        g_nav_chosen = 0;               /* (the one the player picked, reached: on along the way) */
     at = NAV_SHIPS(nav);
     for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
         if (MSHIP_BEHAVIOUR(at[j]) != 6 && outerSpawnShipEntity(at[j], nav) != 0xFFFF)

@@ -4188,6 +4188,39 @@ static void t_way_out(void)
     REQUIRE(nb == 2, e_way, 1, 0, nb);
 }
 
+/* M8.24: the chosen nav point: it follows the way ahead until N picks one; N goes down the list and round through home;
+ * the autopilot goes to the one chosen, and the choice goes back to following once it is reached */
+static void t_nav_choice(void)
+{
+    static const char __far e_first[] = "after the launch the chosen nav point is %d: 1, the way ahead";
+    static const char __far e_next[] = "N pressed %d times: nav %d chosen, wanted %d";
+    static const char __far e_went[] = "nav 2 chosen, the autopilot left currentNavPoint at %d (returned %d)";
+    static const char __far e_back[] = "nav 2 reached: the chosen nav point is %d, the first not reached (1)";
+    (void)pt_patrol();
+    if (!pt_step())
+        return;
+    REQUIRE(g_sys.nav == 1, e_first, g_sys.nav, 0, 0);
+    logic_nav_next();
+    REQUIRE(g_sys.nav == 2, e_next, 1, g_sys.nav, 2);
+    logic_nav_next();
+    REQUIRE(g_sys.nav == 0, e_next, 2, g_sys.nav, 0);
+    logic_nav_next();
+    REQUIRE(g_sys.nav == 1, e_next, 3, g_sys.nav, 1);
+    logic_nav_next();
+    REQUIRE(g_sys.nav == 2, e_next, 4, g_sys.nav, 2);
+    {
+        int16_t i, r = 0;
+        for (i = 1; i < NUM_SHIP_SLOTS; i++)
+            if (slot_is_ship(i) && commAnimInfo[i] != commAnimInfo[0])
+                ship_clear(i);
+        r = logic_autopilot();
+        REQUIRE(r == 1 && currentNavPoint == 2, e_went, currentNavPoint, r, 0);
+    }
+    if (!pt_step())
+        return;
+    REQUIRE(g_sys.nav == 1, e_back, g_sys.nav, 0, 0);
+}
+
 /* M8.11 */
 static void t_escort_lost(void)
 {
@@ -4843,6 +4876,7 @@ static const char __far n_m8_20[] = "M8.20 jump-told (route_step, logic_on_jump)
 static const char __far n_m8_21[] = "M8.21 wingman-lost (logic_wingman_lost, camp_load_units, camp_line_ok): a lost wingman is named, the next mission solo, their lines gone";
 static const char __far n_m8_22[] = "M8.22 kit-boost (kit_boost, logic_boost): talking to Kit before the launch: half as much armour again, or a round more; nothing without it";
 static const char __far n_m8_23[] = "M8.23 way-out (camp_way_out): how a system comes out of the flight just flown: nothing before its last mission, then as camp_resolve has it";
+static const char __far n_m8_24[] = "M8.24 nav-choice (logic_nav_next, logic_autopilot): the chosen nav point follows the way ahead until N picks one; the autopilot goes to it";
 static const char __far n_m8_16[] = "M8.16 carrier-lost (step_deaths, logic_end): the carrier destroyed ends the flight when its explosion has run: a loss";
 static const char __far n_m8_15[] = "M8.15 landing-contact (carrier_contact, logic_end): cleared into the bow lands, anywhere else the hull stops it unhurt; undone lost, done won";
 static const char __far n_m9_1[] = "M9.1 gunsight (logic_hud): a mark at the view's middle";
@@ -4890,7 +4924,7 @@ static const PtTest __far k_tests[] = {
     { n_m8_1, t_start, 0 }, { n_m8_2, t_nav1, 0 }, { n_m8_3, t_nav_once, 0 }, { n_m8_4, t_won, 0 },
     { n_m8_5, t_skipped, 0 }, { n_m8_6, t_enemies_left, 0 }, { n_m8_7, t_layer_spawn, 0 }, { n_m8_8, t_autopilot, 0 },
     { n_m8_9, t_fighter, 0 }, { n_m8_10, t_escort_out, 0 }, { n_m8_11, t_escort_lost, 0 }, { n_m8_12, t_escort_along, 0 },
-    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 }, { n_m8_15, t_landing_contact, 0 }, { n_m8_16, t_carrier_lost, 0 }, { n_m8_17, t_turrets_off, 0 }, { n_m8_18, t_attack_capital, 0 }, { n_m8_20, t_jump_told, 0 }, { n_m8_21, t_wingman_lost, 0 }, { n_m8_22, t_kit_boost, 0 }, { n_m8_23, t_way_out, 0 }, { n_m8_19, t_autopilot_apart, 0 }, { n_m6_4, t_capital_map, 0 }, { n_m6_5, t_capital_ram, 0 },
+    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 }, { n_m8_15, t_landing_contact, 0 }, { n_m8_16, t_carrier_lost, 0 }, { n_m8_17, t_turrets_off, 0 }, { n_m8_18, t_attack_capital, 0 }, { n_m8_20, t_jump_told, 0 }, { n_m8_21, t_wingman_lost, 0 }, { n_m8_22, t_kit_boost, 0 }, { n_m8_23, t_way_out, 0 }, { n_m8_24, t_nav_choice, 0 }, { n_m8_19, t_autopilot_apart, 0 }, { n_m6_4, t_capital_map, 0 }, { n_m6_5, t_capital_ram, 0 },
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
     { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 }, { n_m10_6, t_orders, 0 }, { n_m10_7, t_missile_lock, 0 },

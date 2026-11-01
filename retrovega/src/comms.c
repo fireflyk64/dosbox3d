@@ -274,6 +274,11 @@ static int shape(void)
     return step < g_c.nsteps ? g_steps[step] : 0;
 }
 
+void comms_stop(void)
+{
+    g_c.on = 0;
+}
+
 void comms_tick(void)
 {
     unsigned long now = clock240();

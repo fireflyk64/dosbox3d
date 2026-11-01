@@ -335,6 +335,12 @@ static void draw_target(const RvRect __far *r, int y0, int y1)
     int s = g_sys.target;
     if (s < 0 || !slot_type((int16_t)s)) {
         text(r->x + 4, r->y + 3, "NO TARGET", 0, y0, y1);
+        panel_nav_name(a);              /* (the chosen nav point instead: where to go, how far) */
+        text(r->x + 4, r->y + 3 + 2 * FH, a, 1, y0, y1);
+        if (g_sys.nav_km >= 0) {
+            sprintf(b, "%ld KM", g_sys.nav_km);
+            text(r->x + 4, r->y + 3 + 3 * FH, b, 0, y0, y1);
+        }
         return;
     }
     _fstrncpy(name, g_sys.target_name, sizeof name - 1);
@@ -452,19 +458,22 @@ static int menu(const RvRect __far *r, char lines[][20], int n, int from, int li
     return shown;
 }
 
-/* the nav page: the mission's nav points with how far each is, the chosen one lit (N: the next) */
+/* the nav page: the waypoints with how far each is, then home; the chosen one lit (N: the next) */
 static void draw_nav(const RvRect __far *r, int y0, int y1)
 {
     char lines[16][20];
-    int n = 0, k;
-    for (k = 0; k < 16 && n < 16; k++) {
+    int n = 0, k, lit = 0;
+    for (k = 1; k <= 16 && n < 16; k++) {
         int32_t km;
-        if (!logic_nav_km(k, &km))
+        int id = k % 16;                /* (home last: the way out, then the way back) */
+        if (!logic_nav_km(id, &km))
             continue;
-        if (k == 0)
-            sprintf(lines[n], "HOME %ldK", (km + 500) / 1000);
+        if (id == g_sys.nav)
+            lit = n;
+        if (id)
+            sprintf(lines[n], "NAV %d  %ldK", id, (km + 500) / 1000);
         else
-            sprintf(lines[n], "NAV %d  %ldK", k, (km + 500) / 1000);
+            sprintf(lines[n], "HOME  %ldK", (km + 500) / 1000);
         n++;
     }
     if (!n) {
@@ -472,7 +481,7 @@ static void draw_nav(const RvRect __far *r, int y0, int y1)
         return;
     }
     {   /* (the chosen one on the VDU: from the start of its page of rows) */
-        int per = menu_rows(r), lit = g_sys.nav < n ? g_sys.nav : 0;
+        int per = menu_rows(r);
         (void)menu(r, lines, n, lit - lit % per, lit, y0, y1);
     }
 }

@@ -451,6 +451,29 @@ static void draw_stars(int y0, int y1)
     g_star_draw_ticks += clock240() - t0;
 }
 
+/* the chosen nav point's name and distance beside its mark, where the opening has room for it */
+static void nav_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
+{
+    char s[24], n[12];
+    int16_t mx, my;
+    int x, w, row, tries;
+    if (!logic_nav_mark(&mx, &my) || g_sys.nav_km < 0)
+        return;
+    panel_nav_name(n);
+    sprintf(s, "%s %ldK", n, (g_sys.nav_km + 500) / 1000);
+    w = panel_tiny_width(s);
+    row = my - 2;
+    for (tries = 0; tries < 2; tries++) {
+        x = tries ? mx - 14 - w : mx + 14;
+        if (x < 0 || x + w > SCR_W || row < 0 || row + PANEL_TINY_H > SCR_H)
+            continue;
+        if (ext && (row < ey0 || row >= ey0 + rows || x < ext[2 * (row - ey0)] || x + w > ext[2 * (row - ey0) + 1]))
+            continue;
+        (void)panel_tiny(x, row, s, UI_WHITE, y0, y1);
+        return;
+    }
+}
+
 /* the camera: the player's own frame; a ship's basis as the lightfield wants it */
 static void basis_of(int s, LfBasis *b)
 {
@@ -1343,7 +1366,10 @@ static void draw_world(int y0, int y1)
     shots_draw_near(y0, y1, ext, ey0, rows);
     missiles_draw(y0, y1, ext, ey0, rows);
     if (!g_view)
+    {
         logic_hud();                    /* the game's own marks over the view (none from outside) */
+        nav_tag(y0, y1, ext, ey0, rows);
+    }
 #ifdef RV_TESTS
     if (g_boxes)
         boxes_draw(y0, ey0);
@@ -1620,7 +1646,7 @@ static void system_action(int fn, int arg)
     case RV_PF_IFF_LAMP: case RV_PF_IFF_KNOB: g_sys.iff ^= 1; break;
     case RV_PF_COM_LAMP: case RV_PF_COM_ON: case RV_PF_VOL_KNOB: g_sys.muted ^= 1; break;
     case RV_PF_NAV_LAMP: case RV_PF_NAV_KNOB: case RV_PF_AUX_NAV:
-        if (g_m && g_m->nnav) g_sys.nav = (unsigned char)((g_sys.nav + 1) % g_m->nnav);
+        logic_nav_next();
         break;
     case RV_PF_TARGET_LAMP: case RV_PF_TARGET_ID: case RV_PF_RANGE_BAR: target_next(); break;
     case RV_PF_LOCK: (void)logic_target_lock(); break;
@@ -1726,13 +1752,11 @@ static void systems_tick(void)
     g_sys.lights = g_sys.emcon != EMCON_OFF && !(rvCockpitDamage >> 9 & 1) && !(g_flicker & 2)
                    && (g_st.shield_f >= 100 || (int)(frameCounter & 7) * 100 < g_st.shield_f * 8);
     /* the nav point: how far; the autopilot when no enemy is within 8,000 km */
-    g_sys.nav_km = -1;
-    if (g_m && g_sys.nav < g_m->nnav) {
-        long dx = labs((long)g_m->nav[g_sys.nav].x - gPositionVector[0].x / 256);
-        long dz = labs((long)g_m->nav[g_sys.nav].z - gPositionVector[0].z / 256);
-        g_sys.nav_km = (dx > dz ? dx : dz) + (dx > dz ? dz : dx) / 2;
+    {
+        int32_t km;
+        g_sys.nav_km = logic_nav_km(g_sys.nav, &km) ? km : -1;
     }
-    g_sys.autopilot_ready = g_m && g_m->nnav;
+    g_sys.autopilot_ready = g_m != 0;
     for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
         if (is_ship(s) && commAnimInfo[s] == 1 && player_km(s) < 8000)
             g_sys.autopilot_ready = 0;
@@ -1749,7 +1773,12 @@ static int system_key(int ch)
     case 'i': system_action(RV_PF_IFF_KNOB, 0); return 1;
     case 'c': comm_open(); return 1;    /* (the comm menu: the wingman, the target; the landing request) */
     case 'u': system_action(RV_PF_VOL_KNOB, 0); return 1;
-    case 'n': system_action(RV_PF_NAV_KNOB, 0); vdu_show(0, VDU_L_NAV); return 1;   /* (N: the nav page, the next point) */
+    case 'n':
+        if (comms_on(0))
+            comms_stop();               /* (the page asked for: it was behind the launch's comm, and never seen) */
+        system_action(RV_PF_NAV_KNOB, 0);
+        vdu_show(0, VDU_L_NAV);
+        return 1;   /* (N: the nav page, the next point) */
     case 'm': system_action(RV_PF_ARM_KNOB, 0); return 1;
     case 't': target_next(); vdu_show(1, VDU_R_TARGET); return 1;   /* (T brings the target page up, changed or not) */
     case 'y': target_nearest(); vdu_show(1, VDU_R_TARGET); return 1;

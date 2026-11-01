@@ -216,7 +216,7 @@ static void survival(const RvRect __far *r, const CockpitState *st, int y0, int 
             sprintf(a, "HULL %d%%", g_sys.hull);
             sprintf(b, "DMG %d", n);
         } else {
-            sprintf(a, "NAV %d", g_sys.nav + 1);
+            panel_nav_name(a);
             if (g_sys.nav_km < 0) strcpy(b, "-");
             else sprintf(b, "%ldK", g_sys.nav_km / 1000);
         }

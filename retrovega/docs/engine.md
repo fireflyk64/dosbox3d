@@ -1815,64 +1815,13 @@ the VDUs take the readouts' small font. vdu.c:
   own ship, and one hurt system named with its level as four boxes (the
   old game's light, moderate, heavy, destroyed; red when destroyed); D
   again names the next.
-- **The nav page:** HOME and the nav points with how far each is, the
-  chosen one in white; N steps to the next. **The comm menu** (the user's
-  layout, 2026-10-31): 1 the wingman, always (the first of the wing, by
-  callsign; NO WINGMAN when none is left), 2 the target (NO TARGET
-  without one; its page follows the target, so T changes it). The
-  wingman's page, and a friendly fighter's as the target: 1 fly in
-  formation, 2 break formation, 3 attack my target, 4 help me out, 5
-  return to base (`logic_order`, docs/ai.md). An enemy's: 1
-  taunt (`logic_taunt`). The home carrier's: 1 request landing. 0 or Esc
-  closes. The pilot says the line on the left VDU in the hero's face and
-  the other answers on the right once the pilot's comm is over: the
-  wingman in its own, an enemy with its voice's own line, the carrier in
-  the XO's. A clearance is the carrier's to give: **the mission finished
-  or at least one nav point flown, the player within 8,000 km**
-  (`logic_request_landing`; refused, the status line says NO LANDING for
-  three seconds; given, CLEARED, and it stands). The landing is the
-  player's: **fly into the carrier's bow**, within 18 degrees of its
-  axis, and the flight ends. Its other sides, or the bow with no
-  clearance, just stop the fighter, unhurt, and the XO says why
-  (`carrier_contact`; the fighter can turn and fly off again). This goes
-  by the carrier's actual shape, its silhouettes, as bolts do (the user:
-  a capital ship uses the actual map in any setting, whatever a mission's
-  `hit=` rule says for the fighters), so the gap the Vigilance has under
-  its deck amidships can be flown through. Landing with
-  the mission undone is a loss. The intercom wrecked the page says
-  INTERCOM OUT and only the carrier can still be asked, with no comm
-  faces, since a flight has to be able to end.
-- **Range:** the target page's KM, a lock's range and the landing's limit
-  are hull to hull (`logic_target_km`), a capital ship by its actual shape
-  (docs/ai.md).
-- **The carrier lost:** a mission's home carrier can be destroyed. When its
-  explosion has run (`step_deaths`) the flight ends with `missionStatus` 6, a
-  loss however the patrol went, and game.c's `enter_lost` shows the user's
-  "haunting losing screen, but just like you blew up": the same choice as the
-  player's death (R flies the mission again, C carries on with it lost), on
-  the crew's lounge with nobody in it, its colours drained to a dim blue
-  while the UI's greys and white stay whole for the words, which come in
-  three blocks over 8 s; no key takes it away for the first 3 s. LOST.MID
-  (tools/midi.py) plays: hollow fifths in B flat minor, the way home's tune
-  on a far horn, breaking off. RVT.EXE's `|` key and tests/lost.txt show it.
-- **Subtitles:** the comm faces have no sound, so `vdu_subtitle` writes
-  what the comm is saying (`comms_text`) in the small font on a black
-  band at the foot of its VDU, the words wrapped, four rows at most.
-- **The text** is panel.c's 3 x 5 readout font (`panel_tiny`, 4 px a
-  character, six px a line): thirteen lines on the Schroedinger's 85-px
-  VDU, seven on the Franklin's; a menu goes into columns where the VDU
-  is wide, its lines cut to the VDU's width, and a page of rows from
-  the chosen line.
-- **The HUD** (logic.c's `logic_hud`) draws a white cross where the
-  chosen nav point lies on the view, and the missile lock as an amber
-  diamond closing on the target's brackets as the lock builds, a white
-  double diamond tight about them when it is locked (nothing for a
-  dumbfire). The lock itself: a heat seeker only from the target's rear
-  arc (its engines toward the player, or its afterburner lit) with the
-  EMCON not off, image recognition with the radar on, friend-or-foe with
-  the radar on and the IFF, each with the target within 26 degrees and
-  the weapon's range for its lock time (weapons.csv `lock_s`), lost the
-  step it leaves them; none with the tracking wrecked.
+- **The nav page:** the waypoints with how far each is, then HOME, the chosen one lit;
+  N opens it (ending any comm that was on that VDU) and goes on to the next. `g_sys.nav` is
+  the nav point's own number: it follows the first waypoint not reached until N picks one,
+  and again once that one is reached, and the autopilot goes to it. Its name and distance
+  also show on the panel, on the right VDU when there is no target, and beside its mark on
+  the view: a white cross where it lies, or off the view a smaller cross at the rim in its
+  direction with a tick pointing out (`logic_nav_mark`).
 
 ### Balls: the spherical projectiles
 
