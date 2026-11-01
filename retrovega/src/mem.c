@@ -1,4 +1,5 @@
 /* mem.c: the ledger of the fixed arrays (mem.h), and of everything else a mission might leave behind. */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <dos.h>
@@ -245,6 +246,26 @@ void mem_ledger(const char __far *when)
     }
     if (g_bad != before)                 /* (what differed once is reported once: the new state is the one to hold) */
         _fmemcpy(&g_first, &l, sizeof l);
+}
+
+/* stdio keeps a closed stream's record, 16 bytes of the near heap, for the next open: the most files ever open at once sets
+ * how many there are.  That is settled here, at the start, so it cannot look like a leak later: the page's RVWANT.TXT, open
+ * while a set is looked for, was one such record, once, in a room's frame (in DOSBox every set is on disk, and it never
+ * happened).  Four: that file, the one looked for, a test script and the log. */
+void mem_settle(void)
+{
+#ifndef RV_HOST
+    static const char __far s_name[] = "RVLOG.TXT";
+    char name[12];
+    FILE *f[4];
+    int i;
+    _fstrcpy(name, s_name);
+    for (i = 0; i < 4; i++)
+        f[i] = fopen(name, "r");
+    for (i = 0; i < 4; i++)
+        if (f[i])
+            fclose(f[i]);
+#endif
 }
 
 /* --- the watch: free conventional memory, a frame at a time --- */

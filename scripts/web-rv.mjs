@@ -87,7 +87,8 @@ check("and stays out of the lobby", await plain.evaluate(() => !(window.__wcHall
 await plain.context().close();
 
 // -- 1. no files: RetroVega, the lobby, a flight alone ---------------------------
-const solo = await open("solo", { callsign: "SOLO", retrovega: "" });
+// (/verbose: the Tab and steering checks read the frames' lines, RV.EXE keeps them to itself otherwise)
+const solo = await open("solo", { callsign: "SOLO", retrovega: "", cmd: "rv /noquit /verbose" });
 check("with no files the page plays RetroVega", (await solo.$eval("#program", (el) => el.value)) === "rv",
   await solo.$eval("#program", (el) => [...el.options].map((o) => o.textContent).join(", ")));
 await solo.waitForFunction(() => window.__wcHall && window.__wcHall.inside(), null, { timeout: 30000 }).catch(() => {});

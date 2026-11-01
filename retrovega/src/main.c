@@ -141,6 +141,7 @@ int main(int argc, char **argv)
 #endif
     rvHello();
     rv_stack_paint();
+    mem_settle();                       /* (after a first line: it opens the log) */
 #ifdef RV_TESTS
     RV_LOG("RVT.EXE: the test build (the demos, the benchmarks and the self-tests are in)");
 #endif
