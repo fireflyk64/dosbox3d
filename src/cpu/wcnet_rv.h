@@ -11,6 +11,9 @@
 #define RV_SIGNATURE_OFF 0x0400       // in DGROUP
 #define RV_ABI_VERSION 1
 
+#define RV_DS_viewRect 0x0144
+#define RV_DS_steerInput 0x0128
+
 struct RvThunk { unsigned short off; const char *name; int nargs; bool returns; };
 static const RvThunk kRvThunks[] = {
     { 0x0020, "rvHello", 0, false },

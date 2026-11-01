@@ -9,7 +9,7 @@
 // page parameters ("cycles=40000&env.WCNET_PERF=4": the layer's "perf:" lines, emulator speed against the
 // wall clock, are printed at the end); COMBAT=1 takes the autopilot to the first nav point and its enemies after
 // 12 s and fights there for 30 s (with the perf lines, the emulator's speed in a fight).  SIM=1 goes to the bar's
-// simulator instead: its chair, its first wave, Esc back.
+// simulator instead: its chair, its first wave, Esc back.  PAD=1 with it: a simulated controller, its stick tried in there.
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs";
@@ -28,6 +28,11 @@ const browser = await chromium.launch({ headless: true, executablePath: chrome,
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const logs = [];
 const context = await browser.newContext();
+if (process.env.PAD) await context.addInitScript(() => {   // a simulated controller (as scripts/web-pad.mjs)
+  window.__pad = { id: "Mock Pad (STANDARD GAMEPAD)", index: 0, connected: true, mapping: "standard", timestamp: 0,
+                   axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })) };
+  navigator.getGamepads = () => [window.__pad];
+});
 const page = await context.newPage();
 page.on("console", (m) => logs.push(m.text()));
 page.on("pageerror", (e) => { logs.push("PAGE ERROR: " + e.message); console.log("PAGE ERROR: " + e.message); });
@@ -56,6 +61,12 @@ const waitLog = async (re, ms) => {
   }
 };
 await page.waitForFunction(() => window.__wcHall && window.__wcHall.inside(), null, { timeout: 30000 }).catch(() => {});
+if (process.env.PAD) {                 // (its first button press picks it up)
+  const button = (i, v) => page.evaluate(([i, v]) => { window.__pad.buttons[i] = { pressed: v > 0.1, touched: v > 0, value: v }; }, [i, v]);
+  await button(0, 1); await sleep(300); await button(0, 0);
+  const picked = await page.inputValue("#padSelect");
+  console.log(picked.startsWith("0:Mock Pad") ? "ok   the controller picked up" : `FAIL the controller not picked up: ${picked}`);
+}
 await page.click("#join");
 await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 30000 });
 await page.click("#fly");
@@ -102,12 +113,42 @@ if (process.env.SIM) {                 // the bar's simulator: the chair, a wave
   t = await waitLog(/simulator: 1 of type 10/, 180000);   // (the page fetches and makes the seven sets first)
   console.log(/simulator: 1 of type 10/.test(t) ? "ok   the simulator's first wave" : "FAIL no first wave (" + t.split("\n").slice(-3).join(" | ") + ")");
   await sleep(5000); await shot("sim-5s");
+  if (process.env.PAD) {               // the stick: a turn of the game's own steps, none at rest (the layer's stick_flying, steer_info)
+    const axis = (i, v) => page.evaluate(([i, v]) => { window.__pad.axes[i] = v; }, [i, v]);
+    const state = () => page.evaluate(() => ({ flying: window.DOSBox._wc_web_in_flight(), x: window.DOSBox._wc_web_steer(4, 0), y: window.DOSBox._wc_web_steer(4, 1) }));
+    const check = (what, ok, got) => console.log(`${ok ? "ok  " : "FAIL"} ${what}: ${JSON.stringify(got)}`);
+    await sleep(1000);
+    let s = await state();
+    check("the stick at rest: flying, no turn", s.flying === 1 && s.x === 0 && s.y === 0, s);
+    await axis(0, 1); await sleep(1200); s = await state();
+    check("hard right: the full turn right", s.x === 9, s);
+    await axis(0, -1); await sleep(1200); s = await state();
+    check("hard left: the full turn left", s.x === -9, s);
+    await axis(0, 0.5); await sleep(1200); s = await state();
+    check("half right: a middling turn", s.x >= 3 && s.x <= 6, s);
+    await axis(0, 0.12); await sleep(1200); s = await state();
+    check("a touch right: the first steps, no dead stick", s.x >= 1 && s.x <= 2, s);
+    await axis(0, 0); await sleep(1200); s = await state();
+    check("back at rest: no turn", s.x === 0 && s.y === 0, s);
+    await axis(1, -1); await sleep(1200); s = await state();
+    check("stick forward: full, one way", Math.abs(s.y) === 9, s);
+    const forward = s.y;
+    await axis(1, 1); await sleep(1200); s = await state();
+    check("stick back: full, the other way", s.y === -forward, s);
+    await axis(1, 0); await sleep(1200); s = await state();
+    check("back at rest again: no turn", s.x === 0 && s.y === 0, s);
+    await shot("sim-pad");
+  }
   if (process.env.SIM_HOLD) await page.evaluate(process.env.SIM_HOLD);
   await sleep(Number(process.env.SIM_S || 6) * 1000); await shot("sim-more");
   await page.keyboard.press("Escape");
   t = await waitLog(/flight: over with status 5/, 15000);
   console.log(/flight: over with status 5/.test(t) ? "ok   Esc left the simulator" : "FAIL Esc did not leave the simulator");
   await sleep(3000); await shot("sim-back");
+  if (process.env.PAD) {
+    const flying = await page.evaluate(() => window.DOSBox._wc_web_in_flight());
+    console.log(flying === 0 ? "ok   back in the bar the stick is a pointer again" : `FAIL still flying for the stick: ${flying}`);
+  }
   t = await rvlog();
   console.log(/stub: missionStarting|stub: uiMode|stub: rvFrameDone/.test(t.slice(t.indexOf("simulator:"))) ? "FAIL a mission's hook in the simulator" : "ok   none of a mission's hooks in the simulator");
   console.log(/FAIL /.test(t) ? "FAIL a stop in the engine's log" : "ok   no stop in the engine's log");

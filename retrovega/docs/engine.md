@@ -2109,6 +2109,17 @@ wingman, no carrier. Shields heal "every time the count increases". Esc leaves.
   every edge of the view (`gfx_mix_run`, the palette's mix tables, so it lights
   what is behind it) and two streaks of reflection across a corner. About 5,000
   pixel lookups a frame.
+- **The stick:** on the page a controller is the game's mouse, the layer resting
+  the pointer where the game's neutral point is and `wc_web_in_flight` saying
+  whether the stick steers or moves a menu's pointer. Three things were wrong, the
+  last for every RetroVega flight: a simulator's flight counted as no flight
+  (WC1's TrainSim too: `stick_flying` now also says yes between RV.EXE's
+  `simulatorStart` and `simulatorEnd`, and in WC1's simulator while its flight
+  loop keeps coming round, so its SELECT ENEMY screen keeps a pointer); RV.EXE's
+  hooks never took the page's pointer at all; and it rested at the middle of the
+  screen, a dive in every cockpit (`viewRect` in the fixed block now gives the
+  opening's middle and `rv_steer_info` the steps of `STEER_*`). Between the two
+  thunks the layer ignores RV.EXE's other thunks too.
 - **Tests:** `tests/sim.txt` (the flow), `tests/sim-many.txt` with `RVT.EXE
   /simat N` (31 Shizus: 43 ms a frame at 50,000 cycles in the test build),
   `SIM=1 scripts/web-rv-flight.mjs` (the page).

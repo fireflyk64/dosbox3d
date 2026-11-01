@@ -2829,6 +2829,13 @@ static void balls_report(void)
 
 /* --- the loop's calls (rvflight.inc) --- */
 
+/* the pointer's steering: pixels from the middle of the opening.  (src/cpu/wcnet_hooks.cpp rv_steer_info works out the page's
+ * stick from these: change both) */
+#define STEER_DEAD_X 16
+#define STEER_DEAD_Y 12
+#define STEER_FULL_X 120
+#define STEER_FULL_Y 80
+
 void __far __cdecl flight_startup(void)
 {
     const RvMission __far *m = g_m;
@@ -2946,6 +2953,16 @@ void __far __cdecl flight_startup(void)
     if (g_lasers)
         lasers_sets();
 #endif
+    {
+        /* where the steering pointer rests and how far it reaches, in the old games' logical 320 x 200: the page's stick
+         * rests it exactly there (the layer's steer_info) */
+        short *v = (short *)viewRect;
+        int rest = cockpit_record() ? (cockpit_record()->open_y0 + cockpit_record()->open_y1) / 2 : SCR_H / 2;
+        v[0] = (SCR_W / 2 - STEER_FULL_X) / 2;
+        v[1] = (short)((rest - STEER_FULL_Y) / 2);
+        v[2] = (SCR_W / 2 + STEER_FULL_X) / 2;
+        v[3] = (short)((rest + STEER_FULL_Y) / 2);
+    }
     {
         /* the sets' ladders and rolls, within what the mission level has left (1 MB kept back) */
         unsigned long free_kb = xms_free_kb(), taken, t0 = clock240(), keep = 1024 + rocks_room_kb();   /* (and an
@@ -3141,8 +3158,10 @@ unsigned short __far __cdecl flight_keys(void)
     } else {
         int ox = in.x - cx, oy = in.y - cy;
         g_keyboard_steer = 0;
-        g_steer_x = ox > 16 ? (ox > 120 ? 9 : ox * 9 / 120) : ox < -16 ? (ox < -120 ? -9 : ox * 9 / 120) : 0;
-        g_steer_y = oy > 12 ? (oy > 80 ? 9 : oy * 9 / 80) : oy < -12 ? (oy < -80 ? -9 : oy * 9 / 80) : 0;
+        g_steer_x = ox > STEER_DEAD_X ? (ox > STEER_FULL_X ? 9 : ox * 9 / STEER_FULL_X)
+                  : ox < -STEER_DEAD_X ? (ox < -STEER_FULL_X ? -9 : ox * 9 / STEER_FULL_X) : 0;
+        g_steer_y = oy > STEER_DEAD_Y ? (oy > STEER_FULL_Y ? 9 : oy * 9 / STEER_FULL_Y)
+                  : oy < -STEER_DEAD_Y ? (oy < -STEER_FULL_Y ? -9 : oy * 9 / STEER_FULL_Y) : 0;
     }
     steerInput = ((unsigned long)(unsigned short)(short)g_steer_x << 16) | (unsigned short)(short)g_steer_y;
     /* the pilot's controls for the game's logic (logic.h): the turn, the trigger (Space, or the left button held with
@@ -3330,6 +3349,7 @@ void __far __cdecl autoAnimation_c(unsigned short camShipType, unsigned short ca
 
 static void flight_over(unsigned short status)
 {
+    memset(viewRect, 0, viewRect_SIZE);  /* (no steering pointer to rest now) */
 #ifdef RV_TESTS
     {
         int w, h, n = flight_bench_result(&w, &h);
