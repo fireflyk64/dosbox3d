@@ -8,6 +8,8 @@
 #   SAN=ubsan|asan|none       the checks built in (the default UBSan)
 #   CC=clang                  clang (and clang++)
 #   OPT=-O1                   the optimisation (always -g3)
+#   SHARP=0                   the ships in DOS's 2 x 2 and 4 x 4 blocks (default 1: every ship a pixel a pixel, from its
+#                             full-size views)
 #   DEPS=1                    no 32-bit SDL2 installed: unpack libsdl2-dev:i386 into ~/.local/sdl2-i386 (host/sdl32.sh)
 #   WEB=1                     the browser's (build/gameweb/: rv.js, rv.wasm; Emscripten, ASYNCIFY)
 #   TESTS=1                   the test build's aids in, as RVT.EXE has them (RV_TESTS: the demos, the benchmarks, the
@@ -78,7 +80,7 @@ python3 tools/rvabi.py --stubs "$OUT/stubs"
 # (host/rvhost.h, host/dos/: dos.h, i86.h, conio.h, io.h, malloc.h); main.c's main is rv_main there (play.c's calls it)
 ENGINE=$(sed -n 's/^ENGINE="\(.*\)"$/\1/p' build.sh)
 [ -n "$ENGINE" ] || { echo "build.sh's ENGINE list not found"; exit 1; }
-COMMON="-std=gnu99 -g3 -funsigned-char -fno-strict-aliasing -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -DRV_HOST_GAME
+COMMON="-std=gnu99 -g3 -funsigned-char -fno-strict-aliasing -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -DRV_HOST_GAME -DRV_SHARP_SHIPS=${SHARP:-1}
         -include host/rvhost.h -Ihost/dos -Isrc -Ihost"
 WARN="-Wall -Wno-unused-parameter -Wno-sign-compare -Wno-unused-result -Wno-format -Wno-unused-but-set-variable
       -Wno-pointer-sign -Wno-char-subscripts"

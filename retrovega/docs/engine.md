@@ -2080,11 +2080,14 @@ wingman, no carrier. Shields heal "every time the count increases". Esc leaves.
 - **The waves** (`src/simulator.c`, play tests M11): `simulator_frame`, a step
   after the game's logic, counts the kills, and when no Rlaan ship is left
   (a dying one still counts: its explosion finishes first) waits two seconds
-  and spawns the next, facing the player 5,000 km ahead, six to a row. The
-  most at once is `SIM_MAX_SHIPS`, every ship slot but the player's: 31, which
-  is 2,976 kills in all to win. Past it `missionStatus` is 1 and
-  `simulator_won()` says so. The AI, guns, deaths, explosions and music are the
-  flight's. Xuanzong (a jammer missile) and Gaozong (a probe) have no guns.
+  and spawns the next, facing the player 5,000 km ahead, six to a row. 47 kills
+  win (the user's number, after 2,976 at the slots' limit was "way" too many: 6,
+  12 and 18 make 36, so it comes in the round of four); two seconds later
+  `missionStatus` is 1. When the count goes up the shields, fuel, guns' energy
+  and missile rounds are made whole, not armour, hull or damaged systems. The
+  AI, guns, deaths, explosions and music are the flight's. Xuanzong and Gaozong,
+  unarmed in Vega Strike, have guns in `ships.csv` for this: 3 and 2 Kteks,
+  interpolated from the Shizu and Zhuangzong beside the Schroedinger and Agis.
 - **The hooks:** `flight_simulator` (flight.c) runs `flight_startup`,
   `flight_keys`, `flight_frame` and `flight_music` from a C loop rather than
   `rv_flight_run`, so none of `rvflight.inc`'s sites execute, and it calls
@@ -2705,6 +2708,32 @@ names in the game's own directory, and nothing else.
     memory. Now an odd span's last column is written once, in the assembly
     and its twin. `RVP.EXE /twins` also checks that nothing outside the span
     changes; the old code fails that at once.
+
+
+### Every ship a pixel a pixel (`RV_SHARP_SHIPS`)
+
+The user, 2026-11-01: "a (default-on) compile time flag for the non-dos version to just draw single pixels for each rotated
+sprite rather than 4x4 blocks or 2x2 blocks--irrespective of ships on the screen. I have an imagination a modern CPU can
+handle the transforms". It can.
+
+- **Why there were blocks:** the block mode's sets (`SHIPnn.RVH`) store sprites from half size down, a quarter for capital
+  ships, so a near ship is a small sprite drawn big: the blocks are in the data, not only in the draw. Asking the draw for
+  single pixels from those would only have shown the same squares turned.
+- **What it does:** `RV_SHARP_SHIPS` (host/rvhost.h: 1 in the host and browser game, 0 on DOS, which does not change) makes
+  `g_res` 3: `ships_load` reads the full-size views themselves, `SHIPnn.RV`, and `plan_draws` has every ship drawn by
+  `ships_draw_exact` at detail 1, the turned draw's inverse mapping from a dense copy, however many there are. The flames
+  follow from `ships_drawn`, as for any exact ship. `SHARP=0 host/game.sh` or `make SHARP=0` in desktop/ builds the blocks;
+  `/res 2` at run time goes back to them too, where the `.RVH` files are there.
+- **What had to grow, host only:** the scratch to 512 KB (a capital ship's view runs past 32 KB), the dense slab to 4 MB
+  (640 x 640 fits), the XMS arena to 192 MB. A fighter's views decode to 3-5 MB, a capital ship's to 2 MB.
+- **`load_rv`:** unused since 2026-10-23 and rotted: it read only the first 64 of 901 views, and wrote a record for each
+  mirrored heading past the end of its index block. It now keeps the stored views only (`stored_view` draws the pair
+  backwards, as for the sets) and gives back what it did not use (`xms_shrink`).
+- **The page:** `ships_want` asks for `SHIPnn.RV`; `web/rvsets.js` writes the views as they are, with nothing to make, so a
+  first flight waits for the download only. /dosbox still asks for its `.RVH` sets.
+- **Cost:** natively the picture took 0.47 ms a frame against 0.73 in blocks, in the same fight with one ship in view (the
+  block mode's 2 x 2 samples are not free either), with a busy machine beside it; a far ship is point-sampled from the
+  full-size view, where the ladder's smaller sprites were filtered: it may shimmer a little.
 
 ## Bounds
 

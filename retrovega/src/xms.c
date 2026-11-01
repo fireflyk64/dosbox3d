@@ -100,6 +100,15 @@ XmsBlock xms_alloc(unsigned long bytes, int level)
     return (XmsBlock)i;
 }
 
+void xms_shrink(XmsBlock b, unsigned long bytes)
+{
+    bytes = (bytes + 15) & ~15UL;
+    if ((unsigned)b == g_nblocks && bytes < g_block[b].size) {
+        g_top = g_block[b].off + bytes;
+        g_block[b].size = bytes;
+    }
+}
+
 void xms_free_level(int level)
 {
     while (g_nblocks && g_block[g_nblocks].level >= level) {

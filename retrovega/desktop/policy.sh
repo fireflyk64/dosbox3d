@@ -31,7 +31,7 @@ core_sandbox() {
         "${SYS[@]}" --dev /dev
         --ro-bind "$BIN/rv-core" /rv-core
         --bind "$data" /data)
-    for f in "$files"/*.DAT "$files"/*.MID "$files"/*.BNK "$files"/SHIP*.RVS "$files"/SHIP*.RVH; do
+    for f in "$files"/*.DAT "$files"/*.MID "$files"/*.BNK "$files"/SHIP*.RV "$files"/SHIP*.RVS "$files"/SHIP*.RVH; do
         [ -e "$f" ] && CORE_SANDBOX+=(--ro-bind "$f" "/data/$(basename "$f")")
     done
     [ -n "$pipes" ] && CORE_SANDBOX+=(--bind "$pipes" /pipes)

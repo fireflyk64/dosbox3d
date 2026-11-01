@@ -605,6 +605,11 @@ static void plan_draws(void)
                 caps++;
         ships_capital_blocks(g_capital_blocks_test ? g_capital_blocks_test : caps <= 1 ? 2 : caps == 2 ? 3 : 4);
     }
+#if RV_SHARP_SHIPS
+    if (g_res == 3)                     /* every ship exactly, a pixel a pixel, however many */
+        for (i = 0; i < g_nplan; i++)
+            g_plan[i].exact = 1;
+#endif
     for (s = 0; s <= RV_MAX_SHIP_SLOT; s++) {
         int now = 0;
         for (i = 0; i < n_exact; i++)

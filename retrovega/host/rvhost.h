@@ -37,6 +37,12 @@ void hle_ffree(void *p);
 #define _fstrchr strchr
 
 #ifdef RV_HOST_GAME
+/* the non-DOS game draws every ship turned exactly, a pixel a pixel, from its full-size views, however many are about
+ * (the user, 2026-11-01): DOS's 2 x 2 and 4 x 4 blocks are what 16-bit CPUs could pay for.  SHARP=0 host/game.sh, or
+ * make SHARP=0 in desktop/, builds the blocks instead */
+#ifndef RV_SHARP_SHIPS
+#define RV_SHARP_SHIPS 1
+#endif
 /* Watcom's printf takes F and N before a conversion (a far, a near pointer: "%Fs"); the host's would read %F as a
  * double.  The game's formats go through these, which drop them (fmt.c) */
 #include <stdio.h>

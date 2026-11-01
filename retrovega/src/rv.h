@@ -2,6 +2,17 @@
 #ifndef RV_H
 #define RV_H
 
+#ifndef RV_SHARP_SHIPS
+#define RV_SHARP_SHIPS 0                /* (host/rvhost.h: the non-DOS game's ships a pixel a pixel) */
+#endif
+/* gfx.c's scratch: a view's raw bytes, then the rows going out.  (A capital ship's full-size view runs past 32 KB: DOS
+ * never decodes one) */
+#if RV_SHARP_SHIPS
+#define GFX_SCRATCH 524288UL
+#else
+#define GFX_SCRATCH 32768U
+#endif
+
 #include <stddef.h>
 
 /* Bounds: every index into a fixed table goes through RV_CHECK; a failure
@@ -40,7 +51,8 @@ int xms_init(unsigned long min_kb, unsigned long max_kb);   /* one arena of all 
 extern void (*xms_freed)(unsigned nblocks);   /* (dat.c's: blocks past the first nblocks were given back) */
 unsigned long xms_free_kb(void);       /* free in the arena */
 XmsBlock xms_alloc(unsigned long bytes, int level);
-void xms_free_level(int level);        /* frees that level and all above it */
+void xms_free_level(int level);
+void xms_shrink(XmsBlock b, unsigned long bytes);   /* the block taken last gives back what it did not use */        /* frees that level and all above it */
 int xms_put(XmsBlock b, unsigned long off, const void __far *src, unsigned long n);
 int xms_get(XmsBlock b, unsigned long off, void __far *dst, unsigned long n);
 int xms_copy_conv(void __far *dst, const void __far *src, unsigned long n); /* host-speed copy */

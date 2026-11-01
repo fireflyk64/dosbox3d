@@ -10,7 +10,7 @@
 #include <malloc.h>
 #include "rv.h"
 
-#define SCRATCH 32768U
+#define SCRATCH GFX_SCRATCH
 static unsigned char __far *g_scratch;
 static unsigned char g_shade[256];
 static unsigned char __far g_mix[3][3][256];   /* (far: DGROUP is nearly full) */

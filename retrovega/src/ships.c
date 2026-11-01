@@ -41,7 +41,7 @@
 #include "lightfield.h"
 #include "music.h"
 
-#define SCRATCH 32768U                  /* gfx.c's scratch: a view's raw bytes, then the rows going out */
+#define SCRATCH GFX_SCRATCH             /* gfx.c's scratch: a view's raw bytes, then the rows going out */
 #define LINE 1024
 #define BAND_ROWS 12                    /* rows decoded at a time */
 #define OUT_MIN 4096U                   /* the least room kept for the rows going out */
@@ -55,13 +55,22 @@ static int g_cx = SCR_W / 2, g_cy = SCR_H / 2, g_focal = 400;
 
 /* two views expanded dense (w x h, pitch w) for the exact draw: the nearest
  * ships keep theirs from frame to frame */
+#if RV_SHARP_SHIPS
+#define DENSE_MAX 1048576UL             /* (a capital ship's full-size views are up to 640 px square) */
+#else
 #define DENSE_MAX 65024U
+#endif
 /* The dense copies: one 64 KB slab (upper memory when DOS has it: DOSBox's 128 KB of UMBs hold it and the band
  * buffer) with as many views as fit, placed round it as a ring; the block mode's paint views are a few KB each,
  * so a mission's ships stay expanded and nothing moves to or from XMS (the eight XMS copies and the two 64 KB
  * buffers before 2026-10-23); a sharp-mode full-size view takes the slab alone. */
+#if RV_SHARP_SHIPS
+#define SLAB_BYTES 4194304UL            /* (a screen full of full-size views stays expanded) */
+#define SLAB_MAX 64
+#else
 #define SLAB_BYTES 65024U
 #define SLAB_MAX 32
+#endif
 static unsigned char __far *g_slab;
 static struct { short set, key; unsigned off, len; } __far g_slab_ent[SLAB_MAX];
 static unsigned g_slab_cursor;
@@ -182,10 +191,13 @@ static unsigned long encode_view(XmsBlock blk, unsigned long at, const unsigned 
     return at + n - start;
 }
 
+#define RV_VIEWS_MAX (RV_SHARP_SHIPS ? 1024 : 64)
+
 static int load_rv(ShipSet __far *s, const char *name)
 {
+    static unsigned long __far tab0[RV_VIEWS_MAX];
     FILE *f = fopen(name, "rb");
-    unsigned long total, b0, b1, n, i, at, size, tab0[64];
+    unsigned long total, b0, b1, n, i, at, size;
     unsigned long __far *rowtab;
     unsigned char __far *raw = gfx_scratch();
     unsigned char rec[13];
@@ -219,7 +231,7 @@ static int load_rv(ShipSet __far *s, const char *name)
     total = rd32(f);
     n = (rd32(f) & 0xFFFFFFUL);
     n = (n - 4) / 4;                    /* the first offset says how long the table is */
-    if (n > 64) n = 64;
+    if (n > RV_VIEWS_MAX) n = RV_VIEWS_MAX;
     fseek(f, b0 + 4, SEEK_SET);
     for (i = 0; i < n; i++)
         tab0[i] = b0 + (rd32(f) & 0xFFFFFFUL);
@@ -242,8 +254,9 @@ static int load_rv(ShipSet __far *s, const char *name)
     at = 0;
     for (v = 0; v < s->nviews; v++) {
         short hdr[4];
-        int w, h, copies = 1, c;
-        unsigned long len = (i = v + 1) < n ? tab0[i] - tab0[v] : b0 + total - tab0[v], k;
+        int w, h, ox, oy;
+        unsigned char rec[12];
+        unsigned long len = (i = v + 1) < n ? tab0[i] - tab0[v] : b0 + total - tab0[v], k, vat;
         if (len > SCRATCH - OUT_MIN) {
             RV_LOG("ships: %s view %d is %lu bytes, too big to decode", name, v, len);
             continue;
@@ -261,29 +274,24 @@ static int load_rv(ShipSet __far *s, const char *name)
             RV_LOG("ships: %s view %d is %dx%d, too big to decode", name, v, w, h);
             continue;
         }
-        /* a symmetric ship's band views between the nose-on and tail-on headings
-         * also make the mirrored heading (their pair) */
-        if (!s->asym && lf_pair_of(v, s->nb0, s->nh0) != v)
-            copies = 2;
-        for (c = 0; c < copies; c++) {
-            int idx = c ? lf_pair_of(v, s->nb0, s->nh0) : v, ox = c ? w - 1 - (hdr[1] + 1) : hdr[1] + 1, oy = hdr[2] + 1;
-            unsigned char rec[12];
-            unsigned long vat = at;
-            XmsBlock data = s->block[0].blk;
-            rec[0] = (unsigned char)w; rec[1] = (unsigned char)(w >> 8);
-            rec[2] = (unsigned char)h; rec[3] = (unsigned char)(h >> 8);
-            rec[4] = (unsigned char)ox; rec[5] = (unsigned char)(ox >> 8);
-            rec[6] = (unsigned char)oy; rec[7] = (unsigned char)(oy >> 8);
-            rec[8] = (unsigned char)vat; rec[9] = (unsigned char)(vat >> 8); rec[10] = (unsigned char)(vat >> 16); rec[11] = (unsigned char)(vat >> 24);
-            xms_put(s->blk, 12UL * idx, rec, 12);
-            at += 4UL * (h + 1);
-            at += encode_view(data, at, raw, len, w, h, hdr[1], hdr[2], c, rowtab);
-            xms_put(data, vat, rowtab, 4UL * (h + 1));
-            at = (at + 1) & ~1UL;
-        }
+        /* (a symmetric ship's mirrored headings are not stored: stored_view draws the pair backwards.  A record for
+         * each, as this once wrote, ran past the index block into the views) */
+        ox = hdr[1] + 1;
+        oy = hdr[2] + 1;
+        vat = at;
+        rec[0] = (unsigned char)w; rec[1] = (unsigned char)(w >> 8);
+        rec[2] = (unsigned char)h; rec[3] = (unsigned char)(h >> 8);
+        rec[4] = (unsigned char)ox; rec[5] = (unsigned char)(ox >> 8);
+        rec[6] = (unsigned char)oy; rec[7] = (unsigned char)(oy >> 8);
+        rec[8] = (unsigned char)vat; rec[9] = (unsigned char)(vat >> 8); rec[10] = (unsigned char)(vat >> 16);
+        rec[11] = (unsigned char)(vat >> 24);
+        xms_put(s->blk, 12UL * v, rec, 12);
+        at += 4UL * (h + 1);
+        at += encode_view(s->block[0].blk, at, raw, len, w, h, hdr[1], hdr[2], 0, rowtab);
+        xms_put(s->block[0].blk, vat, rowtab, 4UL * (h + 1));
+        at = (at + 1) & ~1UL;
     }
-    if (!s->asym)
-        s->nviews = (unsigned short)LF_LATTICE_VIEWS(s->nb0, s->nh0);
+    xms_shrink(s->block[0].blk, at + 2);   /* (it was taken at the most it could be, last of the mission's blocks) */
     _ffree(rowtab);
     fclose(f);
     s->nsizes = 1;
@@ -437,7 +445,10 @@ int ships_load(unsigned type)
     _fmemset(s, 0, sizeof(ShipSet));
     s->type = (unsigned char)type;
     ok = 0;
-    if (g_res == 2) {                   /* the block mode's set, when it is there */
+    if (g_res == 3) {                   /* (the full-size views themselves: RV_SHARP_SHIPS) */
+        sprintf(name, "SHIP%02X.RV", type);
+        ok = load_rv(s, name);
+    } else if (g_res == 2) {            /* the block mode's set, when it is there */
         sprintf(name, "SHIP%02X.RVH", type);
         s->rvh = 1;
         ok = load_rvs(s, name);
@@ -499,7 +510,7 @@ static int page_lacks(unsigned long gen, const char *name)
 
 static int set_present(unsigned type, char *name)
 {
-    sprintf(name, g_res == 2 ? "SHIP%02X.RVH" : "SHIP%02X.RVS", type);
+    sprintf(name, g_res == 3 ? "SHIP%02X.RV" : g_res == 2 ? "SHIP%02X.RVH" : "SHIP%02X.RVS", type);
     return file_present(name);
 }
 
@@ -1399,7 +1410,7 @@ int ships_turn_wanted(int set_i, int scale256)
     return turn_wanted(ships_set(set_i), scale256);
 }
 
-int g_res = 2;                          /* the block mode is the game's mode (the user, 2026-10-23: "here is where we need
+int g_res = RV_SHARP_SHIPS ? 3 : 2;     /* (3: every ship turned exactly from its full-size views, a pixel a pixel: not DOS) the block mode is the game's mode (the user, 2026-10-23: "here is where we need
                                            to be"); /res 1 keeps the sharp sets for comparison */
 
 int ships_draw(int set_i, const LfVec *rel, const LfBasis *cam, const LfBasis *ship, int scale256,

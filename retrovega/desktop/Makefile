@@ -38,7 +38,7 @@ CORE_SRC = \
 # the DOS words answered by host/rvhost.h and host/dos/; hardened (stack protector, position independent, full
 # RELRO, no executable stack)
 CORE_CFLAGS = -m32 -std=gnu99 -O2 -g -fwrapv -funsigned-char -fno-strict-aliasing -fstack-protector-strong -fPIE \
-    -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -DRV_HOST_GAME -include ../host/rvhost.h \
+    -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -DRV_HOST_GAME -DRV_SHARP_SHIPS=$(SHARP) -include ../host/rvhost.h \
     -I../host/dos -I../src -I../host -I. -ffile-prefix-map=$(ROOT)=retrovega \
     -Wall -Wno-unused-parameter -Wno-sign-compare -Wno-unused-result -Wno-format -Wno-unused-but-set-variable \
     -Wno-pointer-sign -Wno-char-subscripts -Wno-stringop-truncation
@@ -108,8 +108,10 @@ $(OUT)/core $(OUT)/front: | $(OUT)
 	mkdir $@
 
 # the game's files: the data the DOS build makes (or fetch-data.sh fetched), and the ships' sets made here (the
-# sharp sets, SHIPnn.RVS, and the block mode's, SHIPnn.RVH: ../build.sh's recipes)
+# sharp sets, SHIPnn.RVS, and the block mode's, SHIPnn.RVH: ../build.sh's recipes; the views, SHIPnn.RV, are what the
+# game draws from when built SHARP=1, the default)
 FROM ?= ../build/dos
+SHARP ?= 1
 DATA_FILES = RV.DAT RVGAME.DAT BALLS.DAT SKY.DAT SHAPES.DAT EXPLODE.DAT SFX.DAT ROCKS.DAT RVOPL.BNK
 data: $(OUT)/rvsprites
 	@test -n "$(DATA)" || { echo "make data DATA=dir (where the game's files go)"; exit 1; }
@@ -117,6 +119,7 @@ data: $(OUT)/rvsprites
 	cd $(FROM) && cp $(DATA_FILES) *.MID $(abspath $(DATA))/
 	for f in ../art/ships/SHIP*.RV; do \
 	    s=$(DATA)/$$(basename $$f .RV); \
+	    cp $$f $$s.RV; \
 	    $(OUT)/rvsprites $$f $$s.RVS 0 4 9 > /dev/null && $(OUT)/rvsprites $$f $$s.RVH 0 0 0 1 2 > /dev/null || exit 1; \
 	done
 

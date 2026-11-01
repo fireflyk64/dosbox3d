@@ -89,10 +89,14 @@ export function createSetProvider({ base, root, status, log }) {
       FS.writeFile(`${root}/${name}`, await fetchArt(manifest.files[name], name));
       return;
     }
-    const m = /^(SHIP[0-9A-F]{2})\.(RVH|RVS)$/.exec(name);
+    const m = /^(SHIP[0-9A-F]{2})\.(RVH|RVS|RV)$/.exec(name);
     if (!m) throw new Error(`${name}: not a set file`);
     const key = m[1], ext = m[2], info = manifest.ships[key];
     if (!info) throw new Error(`${key}: no such ship on this site`);
+    if (ext === "RV") {                // (the native game's own full-size views, as they are: nothing to make)
+      FS.writeFile(`${root}/${name}`, await fetchArt(info, `${label(key)}'s views`));
+      return;
+    }
     const sets = await rvCache(RV_SET_CACHE + manifest.build), req = `/rv-set/${info.sha1}/${ext}`;
     let set = null;
     if (sets) { const hit = await sets.match(req); if (hit) set = new Uint8Array(await hit.arrayBuffer()); }
@@ -118,7 +122,7 @@ export function createSetProvider({ base, root, status, log }) {
     try {
       await loadManifest();
       for (const f of FS.readdir(root))
-        if (/^SHIP[0-9A-F]{2}\.(RVH|RVS)$/.test(f) && !names.includes(f)) { try { FS.unlink(`${root}/${f}`); } catch (e) { /* in use */ } }
+        if (/^SHIP[0-9A-F]{2}\.(RVH|RVS|RV)$/.test(f) && !names.includes(f)) { try { FS.unlink(`${root}/${f}`); } catch (e) { /* in use */ } }
       for (const name of names) {
         let have = false;
         try { FS.stat(`${root}/${name}`); have = true; } catch (e) { /* not yet */ }
