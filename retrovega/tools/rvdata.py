@@ -16,7 +16,7 @@ checks every reference and rule (docs/engine.md), and writes:
 
 missions.txt is one block per mission, a keyword and its value per line,
 '#' comments.  Keywords: mission, node, title, type, music, briefing, win,
-lose, fighter (the player's and the wingman's TYPE), nav (id x y z, km), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home]
+lose, fighter (the player's and the wingman's TYPE), nav (id x y z, km), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home] [turrets=off]
 [pilot=KEY] [ai=PROFILE] [fear=c/d]), rules (hit= aim= hold= ram=: RULES), field (asteroid|mine x z radius [density=N], km; N rocks per (10,000 km)^3, 1..255,
 0 or none: the engine's own), bar and lounge
 (seat=PILOT|- ...), talk (room speaker listener "text").  briefing, win and lose may repeat: the lines are joined.
@@ -34,13 +34,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 12                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 13                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
                                         # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
                                         # volume, a weapon's radius, a mission's rules); 10: a weapon's damage at
                                         # the muzzle; 11: a type's shield back a point a side every so many steps;
-                                        # 12: a weapon's cone, a mission ship's AI profile and fear
+                                        # 12: a weapon's cone, a mission ship's AI profile and fear;
+                                        # 13: a mission ship's turrets=off
 LIMITS = {'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 12,
           'SEATS': 3, 'TALKS': 4, 'FIELDS': 4, 'SHIPTYPES': 64, 'WEAPONS': 48}
 TEXT = {'ID': 16, 'TITLE': 48, 'BRIEFING': 640, 'RESULT': 128, 'TALK': 60, 'KEY': 10, 'CALLSIGN': 12,
@@ -164,7 +165,7 @@ NAV = [('unsigned char', 'id', 'B'), ('unsigned char', 'pad', 'B'), ('short', 'x
        ('short', 'z', 'h')]
 SHIP = [('unsigned char', 'type', 'B'), ('unsigned char', 'side', 'B'), ('unsigned char', 'nav', 'B'),
         ('unsigned char', 'count', 'B'), ('unsigned char', 'pilot', 'B'), ('unsigned char', 'role', 'B'),
-        ('unsigned char', 'ai', 'B'), ('unsigned char', 'fear', 'B')]
+        ('unsigned char', 'ai', 'B'), ('unsigned char', 'fear', 'B'), ('unsigned char', 'noturrets', 'B')]
 # a mission ship's AI profile (missions.txt ai=NAME: logic.c's P_* in this order, 1-based in the record, 0 the type's
 # own) and its own fear rates (fear=c/d, 0-15 each: the old game's class bytes; 0: the profile's)
 PROFILES = ['interceptor', 'fighter', 'heavy', 'ace', 'bomber', 'wingman', 'capital', 'waiter', 'noleft']
@@ -518,7 +519,10 @@ def compile_all():
                 except ValueError:
                     raise Fail('%s: fear=c/d, each 0 to 15 (the rate it grows afraid and the rate it calms)' % where)
                 fear = c | d << 4
-            shipr.append(struct.pack(fmt(SHIP), tnum, int(f[1]), nav, int(opts.get('count', 1)), pilot, role, ai, fear))
+            if opts.get('turrets', 'on') not in ('on', 'off'):
+                raise Fail('%s: turrets=on or turrets=off' % where)
+            shipr.append(struct.pack(fmt(SHIP), tnum, int(f[1]), nav, int(opts.get('count', 1)), pilot, role, ai, fear,
+                                     opts.get('turrets', 'on') == 'off'))
         if len(shipr) > LIMITS['SHIPS']:
             raise Fail('%s: %d ships, at most %d' % (w, len(shipr), LIMITS['SHIPS']))
         homes = sum('role=home' in f[3:] for _w, f in m['ship'])

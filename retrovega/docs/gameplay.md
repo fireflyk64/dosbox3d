@@ -366,6 +366,8 @@ nav 0):
 | M8.13 home-carrier | a mission ship with `role=home`: 2,000 km behind the launch, still after 10 s and after the autopilot has gone; with the player 8,000 km behind it, T picks it |
 | M8.14 landing-rule | at the launch `logic_request_landing` answers not yet; at nav 1, 20,000 km off, too far; back within 8,000 km, cleared; far off again, still cleared; a mission with nothing to do is cleared at the launch |
 | M8.16 carrier-lost | the carrier destroyed, every nav flown and every enemy dead: `missionStatus` still 0 the next step, 6 within 10 s, `victoryPoints` 0 |
+| M8.17 turrets-off | an enemy 1,500 km from the carrier: its turrets fire; with `turrets=off`, not a shot in 5 s |
+| M8.18 attack-capital | a lone ace on a carrier with its turrets off, 90 s: alive (it breaks off by the hull's distance), and it has fired |
 | M8.15 landing-contact | not cleared, into the bow: stopped, speed 0, shields whole; cleared, into the beam (at the hull's hollow middle) and the stern: stopped; turned away it flies off; into the bow: `missionStatus` 1, `victoryPoints` 0 with the patrol undone and nonzero with it done |
 
 The tests take the player to a nav point by moving it (as the autopilot would) and, but for M8.15, land by setting
@@ -554,7 +556,7 @@ into `RVGAME.DAT` (run by `build.sh`, and by `host/build.sh` for the harness).
 | `type` | `patrol` | the mission's kind: `RvMission.type`, for your `step_mission` | only `patrol` exists |
 | `music` | a cue | the briefing's music | |
 | `nav` | `N x y z` | nav point N at x, y, z km from the launch point (nav 0) | N 1..15, each once; ±32,767 km; 8 a mission |
-| `ship` | `TYPE side navN [count=N] [pilot=KEY]` | `count` ships of a type (a ships.csv key, `player` or `wingman`) of a side (0 Terran, 1 Aera, 2 Rlaan) at a nav point, with a cast pilot | 12 lines, 64 ships in all |
+| `ship` | `TYPE side navN [count=N] [pilot=KEY] [role=out\|in\|home] [turrets=off]` | `count` ships of a type (a ships.csv key, `player` or `wingman`) of a side (0 Terran, 1 Aera, 2 Rlaan) at a nav point, with a cast pilot | 12 lines, 64 ships in all |
 | `field` | `asteroid\|mine x z radius [density=N]` | an asteroid or mine field, km (rocks.c flies it) | 4 |
 | `bar`, `lounge`, `talk` | | who sits in the rooms, and what they say | |
 

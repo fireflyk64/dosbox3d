@@ -131,6 +131,7 @@ def port(dumpdir):
             wing += 1
             lines.append('ship     player 0 nav0')
             lines.append('ship     wingman 0 nav0 pilot=%s' % pilot)
+            carrier_line = len(lines)
             lines.append('ship     VIGILNC 0 nav0 role=home')
             groups = {}
             player = dmp['player']
@@ -167,6 +168,8 @@ def port(dumpdir):
                     enemies_at.setdefault(nav, []).append(plural(count, NAMES.get(kind, kind)))
                 else:
                     enemies_at.setdefault(nav, []).append('our %s' % NAMES.get(kind, kind))
+            if any(side and nav == 0 and TYPES.get(t) for nav, t, side in groups):   # (see missions.txt's head)
+                lines[carrier_line] += ' turrets=off'
             for f in dmp['fields'][:4]:
                 kind = FIELDS.get(f['type'])
                 if kind:

@@ -136,6 +136,7 @@ static int16_t on_view(const RvCamera *cam, const LfVec *w, int16_t *sx, int16_t
 #define MSHIP(r) (missionShipTable + missionShipTable_SIZE * ((r) & 63))
 #define MSHIP_SIDE(r) (*(const uint16_t *)(MSHIP(r) + 2))
 #define MSHIP_NAV(r) (*(const uint16_t *)(MSHIP(r) + 8))
+#define MSHIP_NO_TURRETS(r) (MSHIP(r)[20])   /* the mission's turrets=off: a capital ship with its turrets silent */
 #define MSHIP_ROLE(r) (MSHIP(r)[18])    /* an escort target's role (RV_ESCORT_OUT, RV_ESCORT_IN; campaign.c), 0 none */
 #define ROUTE_JUMP_KM 3000              /* an escort target this near its goal is away: out, it jumps; in, it is home */
 #define ROUTE_WAKE_KM 8000              /* an escort target that waits sets off home when the player is this near */
@@ -259,7 +260,7 @@ int16_t logic_is_home(int16_t s)
 /* the user's rule (2026-10-31): the carrier takes the player back with the mission finished or at least one nav point
  * flown (nav 0, the launch, does not count), the player within LANDING_RANGE_KM when asking; a clearance stands */
 #define LANDING_RANGE_KM 8000           /* (the autopilot home stops within 6,500 km of the carrier) */
-static int32_t km_between(int16_t a, int16_t b);
+static int32_t gap_between(int16_t a, int16_t b);
 
 int16_t logic_landing_allowed(void)
 {
@@ -274,7 +275,7 @@ int16_t logic_request_landing(void)
     if (!logic_landing_allowed())
         return LANDING_NOT_YET;
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
-        if (logic_is_home(s) && km_between(0, s) <= LANDING_RANGE_KM) {
+        if (logic_is_home(s) && gap_between(0, s) <= LANDING_RANGE_KM) {
             g_cleared = 1;
             return LANDING_CLEARED;
         }
@@ -832,6 +833,25 @@ static int32_t km_between(int16_t a, int16_t b)
                   TO_KM(gPositionVector[b].z - gPositionVector[a].z));
 }
 
+/* how far apart two ships are, hull to hull: the middles' distance less the sum of their half boxes (the user,
+ * 2026-10-31: "exclude the sum of the radii, since it is effectively that much closer"), at least 1.  What a distance
+ * to a target means: in an attack, a turret's and a lock's range, the landing's limit, the cockpit's readout */
+static int32_t gap_of(int32_t km, int16_t a, int16_t b)
+{
+    int32_t room = TO_KM(collide_half(a) + collide_half(b));
+    return km > room + 1 ? km - room : 1;
+}
+
+static int32_t gap_between(int16_t a, int16_t b)
+{
+    return gap_of(km_between(a, b), a, b);
+}
+
+int32_t logic_target_km(int16_t s)
+{
+    return gap_between(0, s);
+}
+
 /* a world vector (km, or anything under 2^23) as s's frame sees it: right, up, ahead */
 static void to_body(int16_t s, const RvVec3 *d, RvVec3 *out)
 {
@@ -1196,7 +1216,7 @@ static void lock_tick(void)
     uint16_t need = w ? (uint16_t)(w->lock_tenths * 3 + 1) : 1;
     g_sys.lock_kind = (uint8_t)(w ? w->lock : RV_LOCK_NONE);
     if (w && w->lock != RV_LOCK_NONE && w->lock != RV_LOCK_PROXIMITY && t > 0 && slot_is_ship(t) && shipAiState[t] != 9
-        && systemDamage[SYS_TRACK] < SYS_WRECKED && cos_nose_to(0, t) >= PLAYER_LOCK_CONE && km_between(0, t) <= w->range_km) {
+        && systemDamage[SYS_TRACK] < SYS_WRECKED && cos_nose_to(0, t) >= PLAYER_LOCK_CONE && gap_between(0, t) <= w->range_km) {
         if (w->lock == RV_LOCK_HEAT) {
             RvVec3 d = vec3(TO_KM(gPositionVector[t].x - gPositionVector[0].x), TO_KM(gPositionVector[t].y - gPositionVector[0].y),
                             TO_KM(gPositionVector[t].z - gPositionVector[0].z));
@@ -1579,6 +1599,10 @@ static void view_of(int16_t s, int16_t t, int16_t lead, View *v)
     w = vec3(TO_KM(gVelocityVector[s].x - gVelocityVector[t].x), TO_KM(gVelocityVector[s].y - gVelocityVector[t].y),
              TO_KM(gVelocityVector[s].z - gVelocityVector[t].z));
     v->closing = v->km ? -vec_dot(&w, &d) / v->km : 0;
+    /* the distances an attack goes by (when to break off, when to fire) are hull to hull: at 900 km from its middle a
+     * fighter attacking the carrier was within a few steps of its 700 km of hull, and every one that came near flew into
+     * it (the user's suspicion, measured 2026-10-31).  (Last: the cosines above want the middles' distance) */
+    v->km = gap_of(v->km, s, t);
 }
 
 /* the nearest living ship of another side (not cloaked), or of the capital ships only; -1 none */
@@ -2589,11 +2613,12 @@ static void ship_think(int16_t s)
         if (!w || (GUN_STATE(s, g) & GUN_DESTROYED))
             continue;
         if (w->kind == RV_WK_TURRET) {
-            if (!(GUN_STATE(s, g) & 0x7F) && km_between(s, near_) <= w->range_km)
+            if (!(GUN_STATE(s, g) & 0x7F) && gap_between(s, near_) <= w->range_km
+                && !(slotMissionShip[s] < 64 && MSHIP_NO_TURRETS(slotMissionShip[s])))   /* (a mission's turrets=off) */
                 m->turrets |= (uint16_t)(1u << g);
         } else if (w->kind == RV_WK_TORPEDO || w->kind == RV_WK_MISSILE) {
             int16_t cap = nearest_enemy(s, 1);
-            if (cap >= 0 && (GUN_STATE(s, g) & 0x7F) && km_between(s, cap) <= w->range_km
+            if (cap >= 0 && (GUN_STATE(s, g) & 0x7F) && gap_between(s, cap) <= w->range_km
                 && (uint16_t)(frameCounter - m->since) >= (uint16_t)(10 * LOGIC_HZ)) {
                 m->since = frameCounter;
                 rvTarget[s] = (uint8_t)cap;

@@ -189,6 +189,24 @@ target:
 
 An order ends the tactic it was in, so the next step picks afresh. M10.6 and M10.8 check them.
 
+## Distance to a target
+
+A distance to a target is hull to hull: the middles' distance less the sum of the two half boxes (`gap_of`; the user,
+2026-10-31, "it is effectively that much closer"). An attack's break-off and firing distances (`view_of`), a turret's
+and a lock's range, the landing's limit and the cockpit's readout all go by it. Before it, a fighter attacking the
+carrier broke off 900 km from its middle, within a few steps of its 700 km of hull, and flew into it (M8.18). Who is
+nearest, and the engage distance, still go by the middles.
+
+Enemy fighters attacking one still target also fly into each other (`ram`, lethal at speed); that is older than the
+carrier, and untouched.
+
+## A capital ship's turrets
+
+A capital ship fires its turrets at the nearest enemy in range, and they are deadly: the Vigilance has seven aces dead
+in under 15 s. A mission's `turrets=off` (ship line; `ship_think`) keeps them silent: the home carrier has it where
+enemies start at nav 0, so the player has that fight to fly. Then heavies and aces can kill the carrier in anything from
+a minute to nine, unhindered; light fighters do not (measured on the host, 2026-10-31, the player away).
+
 ## The taunt
 
 The comm menu's taunt (`logic_taunt`, an enemy fighter as the player's target) turns it on the player for 20 s: its

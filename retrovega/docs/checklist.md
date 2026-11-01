@@ -42,4 +42,6 @@ formation or breaks formation; an enemy target can be taunted; the home carrier 
 landing, and grants it with the mission finished or a nav point flown and the player near, who then flies into its
 bow. So every mission now has the Vigilance in it
 (`ship VIGILNC 0 nav0 role=home`), and the comm faces carry subtitles. docs/engine.md "The VDU pages", docs/ai.md,
-M8.13, M8.14, M10.8, M10.9.
+M8.13 to M8.18, M10.8, M10.9. Then the user's answers: a distance limit, the landing itself into the bow, the other
+sides only stopping the fighter; every wingman order back on the menu; the carrier destroyable, with its own screen;
+`turrets=off`; distances to a target hull to hull.

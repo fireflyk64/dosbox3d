@@ -8,6 +8,9 @@
 # point, scattered a little), whether the ship a player has selected holds its guns while that player is within 37
 # degrees ahead of it (hold=on, the old game's), and what a collision costs (ram=old: the square of the closing
 # speed in km a step, halved, the old game's; soft: a dozen points head on)
+#
+# A ship line's turrets=off keeps a capital ship's turrets silent: the home carrier with enemies at nav 0 has it, or
+# its turrets would have those fighters dead in seconds, with the player only watching (measured 2026-10-31)
 rules    hit=sphere aim=cone hold=on ram=old
 
 mission  ENIGMA1
@@ -159,7 +162,7 @@ lose     We lost ground in Shelton. Debrief, and we go again tomorrow.
 nav      1 0 0 0
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=PRIME
-ship     VIGILNC 0 nav0 role=home
+ship     VIGILNC 0 nav0 role=home turrets=off
 ship     SCHROED 0 nav0 count=2
 ship     NICANDR 1 nav0 count=4
 ship     NICANDR 1 nav1 count=4
@@ -203,7 +206,7 @@ nav      1 0 0 0
 nav      2 6750 4500 20250
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
-ship     VIGILNC 0 nav0 role=home
+ship     VIGILNC 0 nav0 role=home turrets=off
 ship     AGIS 1 nav0 count=2
 ship     AGIS 1 nav1 count=2
 ship     KAHAN 0 nav2
@@ -269,7 +272,7 @@ nav      3 9000 2250 -13500
 nav      4 -9000 -2250 -11250
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
-ship     VIGILNC 0 nav0 role=home
+ship     VIGILNC 0 nav0 role=home turrets=off
 ship     CONVOLN 1 nav0
 ship     AGIS 1 nav1
 ship     CONVOLN 1 nav2 count=3
@@ -314,7 +317,7 @@ nav      2 -18000 0 -22500
 nav      3 -18000 0 -22500
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=DRIFTER
-ship     VIGILNC 0 nav0 role=home
+ship     VIGILNC 0 nav0 role=home turrets=off
 ship     CLEOMEN 1 nav0 count=2
 ship     ARISTON 1 nav2 count=4
 ship     AGASICL 1 nav2
@@ -362,7 +365,7 @@ lose     We lost ground in Defiance. Debrief, and we go again tomorrow.
 nav      2 22500 0 -31500
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
-ship     VIGILNC 0 nav0 role=home
+ship     VIGILNC 0 nav0 role=home turrets=off
 ship     SCHROED 0 nav0
 ship     KAHAN 0 nav0 role=out
 ship     AGIS 1 nav0 count=4
@@ -384,7 +387,7 @@ lose     We lost ground in Defiance. Debrief, and we go again tomorrow.
 nav      1 0 0 0
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
-ship     VIGILNC 0 nav0 role=home
+ship     VIGILNC 0 nav0 role=home turrets=off
 ship     SCHROED 0 nav0
 ship     CONVOLN 1 nav0 count=2
 ship     CONVOLN 1 nav1 count=4
@@ -406,7 +409,7 @@ nav      2 29250 -4500 -9000
 nav      3 15750 0 -24750
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ECHO
-ship     VIGILNC 0 nav0 role=home
+ship     VIGILNC 0 nav0 role=home turrets=off
 ship     GAWAIN 0 nav0 count=2
 ship     OX 0 nav0 count=4
 ship     AGIS 1 nav0 count=5
@@ -485,7 +488,7 @@ lose     We lost ground in Ataraxia. Debrief, and we go again tomorrow.
 nav      1 -4500 0 32000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=KESTREL
-ship     VIGILNC 0 nav0 role=home
+ship     VIGILNC 0 nav0 role=home turrets=off
 ship     FRANKLN 0 nav0 count=3
 ship     OX 0 nav0
 ship     CONVOLN 1 nav0 count=3
@@ -511,7 +514,7 @@ nav      3 -4500 2250 -15750
 nav      4 -15750 0 -9000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=DRIFTER
-ship     VIGILNC 0 nav0 role=home
+ship     VIGILNC 0 nav0 role=home turrets=off
 ship     SCHROED 0 nav0 count=2
 ship     CONVOLN 1 nav0 count=2
 ship     NICANDR 1 nav1 count=3
@@ -533,7 +536,7 @@ nav      1 18000 4500 13500
 nav      2 29250 2250 -2250
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=PRIME
-ship     VIGILNC 0 nav0 role=home
+ship     VIGILNC 0 nav0 role=home turrets=off
 ship     FRANKLN 0 nav0 count=2
 ship     CLEOMEN 1 nav0 count=4
 ship     FRANKLN 0 nav1
@@ -562,7 +565,7 @@ nav      2 13500 6750 31500
 nav      3 0 2250 24750
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
-ship     VIGILNC 0 nav0 role=home
+ship     VIGILNC 0 nav0 role=home turrets=off
 ship     FRANKLN 0 nav0
 ship     ARISTON 1 nav0
 ship     CONVOLN 1 nav0 count=2
@@ -674,7 +677,7 @@ nav      2 0 0 0
 nav      3 6750 0 32000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
-ship     VIGILNC 0 nav0 role=home
+ship     VIGILNC 0 nav0 role=home turrets=off
 ship     AGIS 1 nav0
 ship     AGIS 1 nav1 count=2
 ship     AGIS 1 nav2 count=3
@@ -806,7 +809,7 @@ nav      4 -4500 -2250 -20250
 nav      5 -4500 -2250 -20250
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
-ship     VIGILNC 0 nav0 role=home
+ship     VIGILNC 0 nav0 role=home turrets=off
 ship     LANCELT 0 nav0
 ship     OX 0 nav0 count=2
 ship     CLEOMEN 1 nav0
@@ -868,7 +871,7 @@ nav      5 -27000 6750 -9000
 nav      6 -22500 9000 -24750
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
-ship     VIGILNC 0 nav0 role=home
+ship     VIGILNC 0 nav0 role=home turrets=off
 ship     CONVOLN 1 nav0 count=4
 ship     LANCELT 0 nav1
 ship     CONVOLN 1 nav3 count=4
@@ -956,7 +959,7 @@ nav      2 9000 9000 31500
 nav      3 9000 9000 31500
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=DRIFTER
-ship     VIGILNC 0 nav0 role=home
+ship     VIGILNC 0 nav0 role=home turrets=off
 ship     FRANKLN 0 nav0
 ship     OX 0 nav0
 ship     AGIS 1 nav0

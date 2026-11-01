@@ -184,6 +184,7 @@ void camp_load_units(const RvMission __far *m)
             rec[17] = s->ai;                /* (its AI profile, P_* + 1, 0 the type's own; logic.c outerSpawnShipEntity) */
             rec[18] = s->role;              /* (an escort target's, the home carrier's: RV_ESCORT_*; logic.c MSHIP_ROLE) */
             rec[19] = s->fear;              /* (its own fear rates, c | d << 4, 0 the profile's) */
+            rec[20] = s->noturrets;         /* (its turrets silent: a mission's turrets=off; logic.c ship_think) */
             for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
                 ;
             if (j < 10)

@@ -58,6 +58,9 @@ int16_t logic_gun_selected(int16_t g);  /* gun g of the player's fires with the 
 int16_t logic_missile_next(void);       /* W: the next launcher round; the new launcher_sel */
 int16_t logic_launcher(void);           /* the launcher the missile key fires: a gun index, -1 none with rounds */
 
+int32_t logic_target_km(int16_t s);     /* how far slot s is from the player, hull to hull (the middles' distance less
+                                           the sum of the half boxes: the VDUs' range, a lock's, the landing's) */
+
 /* nav point n of the mission (0 home): 1 and how far the player is from it (km), 0 when there is no such point */
 int16_t logic_nav_km(int16_t n, int32_t *km);
 

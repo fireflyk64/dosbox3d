@@ -1797,6 +1797,8 @@ the VDUs take the readouts' small font. vdu.c:
   the mission undone is a loss. The intercom wrecked the page says
   INTERCOM OUT and only the carrier can still be asked, with no comm
   faces, since a flight has to be able to end.
+- **Range:** the target page's KM, a lock's range and the landing's limit
+  are hull to hull (`logic_target_km`; docs/ai.md).
 - **The carrier lost:** a mission's home carrier can be destroyed. When its
   explosion has run (`step_deaths`) the flight ends with `missionStatus` 6, a
   loss however the patrol went, and game.c's `enter_lost` shows the user's

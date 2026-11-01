@@ -1649,7 +1649,7 @@ static void systems_tick(void)
         const RvShipType __far *tt = slot_type(s);
         RvVec3 d;
         long z, len;
-        g_sys.target_km = player_km(s);
+        g_sys.target_km = logic_target_km((int16_t)s);
         if (tt)
             _fstrncpy(g_sys.target_name, tt->name, sizeof g_sys.target_name - 1);
         d.x = (gPositionVector[s].x - gPositionVector[0].x) / 16;
