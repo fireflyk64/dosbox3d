@@ -410,6 +410,54 @@ static int rock_on_course(LzRock __far *r, const LfBasis *cam, const Field __far
     return in_field(f, r->x, r->y, r->z);
 }
 
+/* A mission's field is small against the bubble (the old game's sizes at the map's 0.45: fields sit beside the waypoints,
+ * 2,250 km and 3,375 km across the radius), so the far side of the bubble is rarely in it.  Its rocks stay in the field,
+ * a cluster the player sees from afar and can go round: they drift, none comes in from the bubble's edge, and now and
+ * then one ahead is set flying at the player.  Seven times the density: at the plain figure one holds six rocks */
+#define FIELD_SMALL(f) ((f)->r_km * 2 < ROCK_BUBBLE_KM)
+#define SMALL_DENSITY 7
+#define SMALL_AWAY_KM 1500L             /* a rock put back no nearer the player than this */
+#define SMALL_AIM_KM 4000L              /* a rock this near and ahead may be set flying at the player */
+
+static void rock_in_field(LzRock __far *r, const Field __far *f)
+{
+    int tries;
+    for (tries = 0; tries < 8; tries++) {
+        long x = (long)(rnd() % 2001) - 1000, y = (long)(rnd() % 2001) - 1000, z = (long)(rnd() % 2001) - 1000, dx, dy, dz;
+        if (x * x + y * y + z * z > 1000000L)
+            continue;
+        r->x = f->x + x * f->r_km / 1000 * 256;
+        r->y = f->y + y * f->r_km / 1000 * 256;
+        r->z = f->z + z * f->r_km / 1000 * 256;
+        dx = labs(r->x - gPositionVector[0].x) / 256;
+        dy = labs(r->y - gPositionVector[0].y) / 256;
+        dz = labs(r->z - gPositionVector[0].z) / 256;
+        if (dx > SMALL_AWAY_KM || dy > SMALL_AWAY_KM || dz > SMALL_AWAY_KM)
+            break;
+    }
+    rock_looks(r);
+    r->vx = (short)((int)(rnd() % 257) - 128);   /* (half a km a frame at most, each way: it drifts) */
+    r->vy = (short)((int)(rnd() % 257) - 128);
+    r->vz = (short)((int)(rnd() % 257) - 128);
+}
+
+/* one of a small field's rocks ahead of the player, not too far, set flying at them */
+static void small_aim(const LfBasis *cam)
+{
+    int tries;
+    for (tries = 0; tries < 8 && g_n; tries++) {
+        LzRock __far *r = &g_r[rnd() % g_n];
+        long dx = (r->x - gPositionVector[0].x) / 256, dy = (r->y - gPositionVector[0].y) / 256, dz = (r->z - gPositionVector[0].z) / 256;
+        if (labs(dx) > SMALL_AIM_KM || labs(dy) > SMALL_AIM_KM || labs(dz) > SMALL_AIM_KM)
+            continue;
+        if (dx * cam->front.x + dy * cam->front.y + dz * cam->front.z <= 0)
+            continue;
+        aim(r, cam, 0);
+        g_aimed++;
+        return;
+    }
+}
+
 /* the bubble filled, as the flight starts in a field: anywhere in it, in the field, not on the player */
 static void fill(const Field __far *f, const LfBasis *cam)
 {
@@ -443,8 +491,11 @@ static void field_enter(int i, int filled, const LfBasis *cam)
         __far s_full[] = "the bubble filled", __far s_edge[] = "they come in ahead";
     const Field __far *f = &g_f[i];
     /* (the bubble's volume, (4/3) pi R^3, in thousandths of (10,000 km)^3) */
-    long vol1000 = 4189L * (ROCK_BUBBLE_KM / 100) * (ROCK_BUBBLE_KM / 100) / 1000 * (ROCK_BUBBLE_KM / 100) / 1000;
+    long rv = FIELD_SMALL(f) ? f->r_km : ROCK_BUBBLE_KM;
+    long vol1000 = 4189L * (rv / 100) * (rv / 100) / 1000 * (rv / 100) / 1000;
     g_want_n = (int)((long)f->density * vol1000 / 1000);
+    if (FIELD_SMALL(f))
+        g_want_n *= SMALL_DENSITY;
     if (g_want_n < 1)
         g_want_n = 1;
     dat_level(XMS_HAZARD);              /* (first: the art goes at the new level, the archive's reads after it) */
@@ -458,7 +509,12 @@ static void field_enter(int i, int filled, const LfBasis *cam)
     }
     g_seed = 99991UL + 7919UL * i + frameCounter;
     g_n = 0;
-    if (filled)
+    if (FIELD_SMALL(f)) {
+        while (g_n < g_want_n && g_n < g_cap) {
+            rock_in_field(&g_r[g_n], f);
+            g_n++;
+        }
+    } else if (filled)
         fill(f, cam);
 #ifdef RV_TESTS
     {
@@ -629,6 +685,20 @@ static void keep(const LfBasis *cam, int nreap)
 {
     const Field __far *f = &g_f[g_active];
     int i, top = 0;
+    if (FIELD_SMALL(f)) {               /* (they stay in the field: one lost, or out past the bubble, is put back in it) */
+        for (i = 0; i < nreap; i++)
+            rock_in_field(&g_r[g_reap[i]], f);
+        while (g_n < g_want_n && g_n < g_cap && top++ < 8) {
+            rock_in_field(&g_r[g_n], f);
+            g_n++;
+        }
+        if (speedLo[0] > 20 && (short)(frameCounter - g_aim_at) >= 0) {
+            small_aim(cam);
+            g_aim_at = (unsigned short)(frameCounter + 30L * AIM_K / f->density / 2 + rnd() % (30L * AIM_K / f->density));
+        }
+        fieldRockTally = (unsigned short)g_n;
+        return;
+    }
     /* (the highest index first: a removal moves the last rock into the hole) */
     /* now and then the first one round goes on the player's course instead (only while they fly) */
     if (nreap && speedLo[0] > 20 && (short)(frameCounter - g_aim_at) >= 0) {
@@ -697,7 +767,8 @@ void rocks_frame(const LfBasis *cam, int cx, int cy, int focal, int y0, int y1)
             if (out < 0)
                 currentField = (unsigned short)(unsigned)(fieldTable + fieldTable_SIZE * i);
             /* near: the bubble reaches it (the one whose rocks are out keeps them a little farther) */
-            if (g_f[i].type == RV_FIELD_ASTEROID && out < ROCK_BUBBLE_KM + (g_active == i ? ZONE_PAD_KM : 0)
+            /* (a mine field takes the same rocks for now: there is no mine art yet) */
+            if (out < ROCK_BUBBLE_KM + (g_active == i ? ZONE_PAD_KM : 0)
                 && (near_one < 0 || i == g_active))
                 near_one = i;
         }

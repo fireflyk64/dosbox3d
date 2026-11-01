@@ -16,8 +16,8 @@ checks every reference and rule (docs/engine.md), and writes:
 
 missions.txt is one block per mission, a keyword and its value per line,
 '#' comments.  Keywords: mission, node, title, type, music, briefing, win,
-lose, fighter (the player's and the wingman's TYPE), nav (id x y z, km), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home] [turrets=off]
-[pilot=KEY] [ai=PROFILE] [fear=c/d]), rules (hit= aim= hold= ram=: RULES), field (asteroid|mine x z radius [density=N], km; N rocks per (10,000 km)^3, 1..255,
+lose, fighter (the player's and the wingman's TYPE), nav (id x y z [hidden], km: the waypoints numbered from 1, then the hidden trigger points), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home] [turrets=off]
+[pilot=KEY] [ai=PROFILE] [fear=c/d]), rules (hit= aim= hold= ram=: RULES), field (asteroid|mine x y z radius [density=N], km; N rocks per (10,000 km)^3, 1..255,
 0 or none: the engine's own), bar and lounge
 (seat=PILOT|- ...), and the lines, docs/engine.md: briefing, win, lose [WHO] [conditions] "line" (or plain text: the XO's,
 split at its sentences), talk, say, radio.
@@ -46,7 +46,7 @@ VERSION = 14                            # 2: the ship types' engines; 3: their h
                                         # 13: a mission ship's turrets=off; 14: scenes: 24 lines a
                                         # mission, 120 characters, conditions (say, radio, after=, if=, unless=, dead=)
 LIMITS = {'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 12,
-          'SEATS': 3, 'TALKS': 200, 'FIELDS': 4, 'SHIPTYPES': 64, 'WEAPONS': 48}
+          'SEATS': 3, 'TALKS': 200, 'FIELDS': 7, 'SHIPTYPES': 64, 'WEAPONS': 48}
 TEXT = {'ID': 16, 'TITLE': 48, 'TALK': 108, 'KEY': 10, 'CALLSIGN': 12,
         'NAME': 24, 'NODE_ID': 8, 'LINE': 72, 'CODE': 6, 'WNAME': 20}
 FIELDS = {'asteroid': 9, 'mine': 10}                 # their EntityType, as fieldTable keeps them
@@ -165,7 +165,7 @@ PILOT = [('char', 'key[RV_KEY]', '%ds' % TEXT['KEY']), ('char', 'callsign[RV_CAL
 NODE = [('char', 'id[RV_NODE_ID]', '%ds' % TEXT['NODE_ID']), ('unsigned char', 'layer', 'B'),
         ('signed char', 'col', 'b'), ('unsigned short', 'missions[RV_MISSIONS_PER_NODE]', '4H'),
         ('unsigned char', 'good', 'B'), ('unsigned char', 'bad', 'B'), ('unsigned char', 'pad[2]', '2s')]
-NAV = [('unsigned char', 'id', 'B'), ('unsigned char', 'pad', 'B'), ('short', 'x', 'h'), ('short', 'y', 'h'),
+NAV = [('unsigned char', 'id', 'B'), ('unsigned char', 'flags', 'B'), ('short', 'x', 'h'), ('short', 'y', 'h'),
        ('short', 'z', 'h')]
 SHIP = [('unsigned char', 'type', 'B'), ('unsigned char', 'side', 'B'), ('unsigned char', 'nav', 'B'),
         ('unsigned char', 'count', 'B'), ('unsigned char', 'pilot', 'B'), ('unsigned char', 'role', 'B'),
@@ -176,7 +176,7 @@ PROFILES = ['interceptor', 'fighter', 'heavy', 'ace', 'bomber', 'wingman', 'capi
 ESCORT_ROLES = {'out': 1, 'in': 2, 'home': 3}   # a mission ship's role (RV_ESCORT_*): an escort target flies out to the
                                         # next nav point and jumps there, or waits at its own until the player comes
                                         # and flies home; `home` is the carrier the player lands on: it holds station
-FIELD = [('unsigned char', 'type', 'B'), ('unsigned char', 'density', 'B'), ('short', 'x', 'h'), ('short', 'z', 'h'),
+FIELD = [('unsigned char', 'type', 'B'), ('unsigned char', 'density', 'B'), ('short', 'x', 'h'), ('short', 'y', 'h'), ('short', 'z', 'h'),
          ('short', 'radius', 'h')]
 TALK = [('unsigned char', 'room', 'B'), ('unsigned char', 'speaker', 'B'), ('unsigned char', 'listener', 'B'),
         ('unsigned char', 'flags', 'B'), ('unsigned char', 'arg', 'B'), ('unsigned char', 'boost', 'B'),
@@ -499,10 +499,13 @@ def compile_all():
             raise Fail('%s: type %r / music %r unknown' % (w, m['type'], m['music']))
         navs = []
         for where, f in m['nav']:
-            navs.append(struct.pack(fmt(NAV), int(f[0]), 0, int(f[1]), int(f[2]), int(f[3])))
+            if len(f) not in (4, 5) or (len(f) == 5 and f[4] != 'hidden'):
+                raise Fail('%s: nav ID x y z [hidden]' % where)
+            navs.append(struct.pack(fmt(NAV), int(f[0]), 1 if len(f) == 5 else 0, int(f[1]), int(f[2]), int(f[3])))
         if len(navs) > LIMITS['NAVS']:
             raise Fail('%s: %d nav points, at most %d' % (w, len(navs), LIMITS['NAVS']))
         nav_ids = {0} | {int(f[0]) for _w, f in m['nav']}
+        hidden_navs = {int(f[0]) for _w, f in m['nav'] if len(f) == 5}
         listed = [int(f[0]) for _w, f in m['nav']]
         if any(not 1 <= i <= 15 for i in listed) or len(set(listed)) != len(listed):
             raise Fail('%s: nav points are numbered 1..15, each once (navPointTable has a record a number; 0 is the '
@@ -567,6 +570,8 @@ def compile_all():
                 key_ = named.get(say_) or named.get(say_[:-1]) if say_ not in named else named[say_]
                 have = sum(int(next((o[6:] for o in g[3:] if o.startswith('count=')), 1)) for _x, g in m['ship']
                            if g[0] == key_ and g[1] == '1' and g[2] == 'nav' + nav_)
+                if int(nav_) in hidden_navs:
+                    raise Fail('%s: the briefing names Nav %s, a hidden trigger point the player has no list of' % (_w, nav_))
                 if have != int(n_):
                     raise Fail('%s: the briefing says %s %s at Nav %s, the mission has %d' % (_w, n_, say_, nav_, have))
         homes = sum('role=home' in f[3:] for _w, f in m['ship'])
@@ -684,12 +689,12 @@ def compile_all():
         fields = []
         for where, f in m['field']:
             density = 0
-            if len(f) == 5 and f[4].startswith('density='):
-                density = int(f[4][8:])
-                f = f[:4]
-            if f[0] not in FIELDS or len(f) != 4 or not 0 <= density <= 255:
-                raise Fail('%s: a field is asteroid|mine x z radius [density=0..255]' % where)
-            fields.append(struct.pack(fmt(FIELD), FIELDS[f[0]], density, int(f[1]), int(f[2]), int(f[3])))
+            if len(f) == 6 and f[5].startswith('density='):
+                density = int(f[5][8:])
+                f = f[:5]
+            if f[0] not in FIELDS or len(f) != 5 or not 0 <= density <= 255:
+                raise Fail('%s: a field is asteroid|mine x y z radius [density=0..255]' % where)
+            fields.append(struct.pack(fmt(FIELD), FIELDS[f[0]], density, int(f[1]), int(f[2]), int(f[3]), int(f[4])))
         if len(fields) > LIMITS['FIELDS']:
             raise Fail('%s: %d fields, at most %d' % (w, len(fields), LIMITS['FIELDS']))
         # the fighter the mission puts the player (and the wingman) in; none (0xFF): the campaign's choice stays

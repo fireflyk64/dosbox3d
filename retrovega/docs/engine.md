@@ -215,6 +215,20 @@ point until the player comes within 8,000 km, then flies home to nav 0 the same 
 is). One of the player's side killed is the mission lost. The autopilot brings one along, 800 km behind the player
 (the wingman beside it), and drops the formation 4,500 km short of the nav point.
 
+**Nav points and fields, as the old game has them.** A mission's nav points are its waypoints, numbered from 1 in the
+order the player flies them (`nav ID x y z`), then its hidden trigger points (`nav ID x y z hidden`): the old game's
+nav table holds both, the second kind named `.Encounter`, `.Ambush`, `.TC wave`, `.Nav 1` and so on. A hidden point is
+on no list and no map, and asks nothing of the player unless they come to it; its ships come when they do. The port
+took them all for waypoints until 2026-10-31. Fields (`field asteroid|mine x y z radius [density=N]`, km) are read from the old game's mission
+records (types 0x16 and 0x17) at the map's 0.45, which keeps its layout: no waypoint lies inside a field. A mission's
+field stays a cluster in its own place (`FIELD_SMALL`): its rocks drift, seven times the plain density, seen from afar
+and gone round, and every few seconds one ahead is set flying at the player. A mine field takes the same rocks for now.
+
+**The autopilot traces its line** (`way_stop`; the user: "raytrace the path along the line to see if enemy spawn regions
+or asteroid fields are in the way"): it goes to the chosen nav point, stopping 500 km short of a field across the line,
+or 500 km inside the reach of a point not yet reached that still has ships to come, whose ships then come. It will not
+go with a field less than 1,000 km ahead on the line (nor from inside one): the player flies through, as in the old game.
+
 **Who is in the scene** (`step_scene`): the old game took a ship out at 16,000 km from the player, and its nav points
 were far enough apart that the last one's ships were gone before the next one's came. At our 0.45 of its distances
 that is 7,200 km, and the shortest leg between waypoints is 11,250 km. A capital ship or friendly fighter that far off

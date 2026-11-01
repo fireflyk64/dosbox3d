@@ -222,6 +222,7 @@ void camp_load_units(const RvMission __far *m)
         RV_CHECK(m->nav[i].id, 16);
         rec = navs + navPointTable_SIZE * m->nav[i].id;
         rec[0] = m->nav[i].id;
+        rec[1] = m->nav[i].flags;       /* (1: hidden, logic.c NAV_HIDDEN) */
         *(int16_t *)(rec + 2) = m->nav[i].x;
         *(int16_t *)(rec + 4) = m->nav[i].y;
         *(int16_t *)(rec + 6) = m->nav[i].z;

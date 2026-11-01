@@ -27,6 +27,7 @@ briefing "Wildcard, you have the first wing. You and Frost will fly Nav 1, Nav 2
 briefing "Frost has been out here since the first raids. You lead, but when she talks, you listen. Clear?"
 briefing you "Yes, Commander."
 briefing "Intelligence expects 3 Nicanders at Nav 1 and 2 Agis at Nav 3."
+briefing "There are asteroids near Nav 2, and more on your way back from Nav 3, so stay on course."
 briefing "Fly all of it. The Vigilance won't clear you to land before you have."
 briefing "Questions?"
 briefing FROST "If they find us first, Commander?"
@@ -51,6 +52,8 @@ ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
 ship     NICANDR 1 nav1 count=3
 ship     AGIS 1 nav3 count=2
+field    asteroid 20250 3150 -6750 3375
+field    asteroid -900 900 -15750 2250
 bar      left=- middle=PRIME right=DRIFTER
 talk     bar DRIFTER PRIME "Ten credits says the next voice on the comm is Prime."
 talk     bar PRIME DRIFTER "Put me down for twenty."
@@ -89,7 +92,7 @@ radio    "Frost to Wildcard. You have the lead. Talk to me if anything looks wro
 
 mission  ENIGMA2
 node     ENIGMA
-title    Patrol: the Enigma shipyards, 3 nav points
+title    Patrol: the Enigma shipyards, 2 nav points
 type     patrol
 music    briefing
 fighter  SCHROED
@@ -99,7 +102,8 @@ briefing after=lost "The Aera still hold yesterday's lane, so the yard is moving
 briefing dead=FROST "We are short of pilots since Frost, Wildcard, so you fly this one alone."
 briefing "You and Frost have the Ox. It leaves the yard with a month of spare parts, Kit's share included."
 briefing "It sets off for Nav 1 as you launch and jumps out just short of it. You will see the flash."
-briefing "Then Nav 2, Nav 3 and home. Intelligence expects 2 Agis at Nav 1, after the Ox, and 3 Nicanders at Nav 2."
+briefing "Then Nav 2 and home. Intelligence expects 2 Agis at Nav 1, after the Ox, and 3 Nicanders at Nav 2."
+briefing "There's an asteroid field on your way home, so mind your course."
 briefing "Your job is that Ox. You do not leave it to chase anything. Lose it and you lose the mission."
 briefing "Questions?"
 briefing you "And if they break off, Commander?"
@@ -116,13 +120,14 @@ lose     you "Yes, Commander."
 lose     "See that it doesn't happen twice."
 nav      1 -11250 1350 -11250
 nav      2 -4500 2250 -29250
-nav      3 0 0 -15750
+nav      3 0 0 -15750 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
 ship     OX 0 nav0 role=out
 ship     AGIS 1 nav1 count=2
 ship     NICANDR 1 nav2 count=3
+field    asteroid -2250 675 -15750 3375
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar TORCH ANCHOR "Shmrn's still out there."
 talk     bar PRIME TORCH "So's my luck, and I don't bring it up at every table."
@@ -182,7 +187,7 @@ briefing after=lost "We left Enigma with that lane contested, so the Aera will b
 briefing "We came out of jump a few hours ago, so these are first patrols. I want four jump points clear."
 briefing "You're in a Franklin this time. Kit has been at it, so bring it back the way she gave it to you."
 briefing "Intelligence expects 3 Nicanders at Nav 1 and 3 Agis at Nav 4."
-briefing "Scanners show debris near Nav 3. It may be nothing. Fly it as if it's something."
+briefing "Scanners show debris near Nav 3. It may be an Aera mine field, so be careful around it."
 briefing "Questions?"
 briefing you "(No hands go up.)"
 briefing "Good. Let's get to work. Dismissed."
@@ -204,6 +209,7 @@ ship     wingman 0 nav0 pilot=DRIFTER
 ship     VIGILNC 0 nav0 role=home
 ship     NICANDR 1 nav1 count=3
 ship     AGIS 1 nav4 count=3
+field    mine -24750 -2250 -4500 2250
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER TORCH "Fifty to one against Shmrn, Torch. That's me being friendly."
 talk     bar TORCH DRIFTER "Put me down for ten."
@@ -323,7 +329,7 @@ radio    "Drifter here. Big bogie, three Franklins and you. I've given worse odd
 
 mission  CEPHID3
 node     CEPHID
-title    Patrol: Cephid 17, 2 nav points
+title    Patrol: Cephid 17, 1 nav point
 type     patrol
 music    briefing
 fighter  FRANKLN
@@ -334,7 +340,7 @@ briefing dead=DRIFTER "You draw the final run, Wildcard, and you draw it alone. 
 briefing "An Ox is waiting for you at Nav 1. As soon as you reach it, it comes home at top speed."
 briefing "It won't stop for anything. They'll try to pull you away, so don't let them."
 briefing "If that Ox dies, you've lost the mission."
-briefing "Intelligence expects 4 Aristons at Nav 1 and 3 Agis at Nav 2."
+briefing "Intelligence expects 4 Aristons at Nav 1."
 briefing "One more thing, for everyone. Intelligence says the ace they call Sixty-Four is in this system."
 briefing you "Sixty-Four, Commander?"
 briefing "Kills. Fighters and capital ships, on our count. It flies a Convolution."
@@ -348,7 +354,7 @@ lose     escort=lost "We lost the Ox. That was fuel the whole task force was cou
 lose     "We jump in the morning, and we jump short. Go and get some rest, Wildcard."
 lose     DRIFTER "Ten credits you don't sleep."
 nav      1 27000 -6750 -27000
-nav      2 13500 -3375 -13500
+nav      2 13500 -3375 -13500 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=DRIFTER
 ship     VIGILNC 0 nav0 role=home
@@ -400,6 +406,7 @@ briefing COMET "Who's Wildcard?"
 briefing "The one in front of you, Comet."
 briefing "Comet has more kills than anyone aboard. You lead anyway. If she tells you something, believe it."
 briefing "Intelligence expects 4 Agis at Nav 2 and 2 Convolutions at Nav 3."
+briefing "We're picking up debris around Nav 1. It's probably asteroids, so watch yourself."
 briefing "Convolutions mean aces. Sixty-Four flies one."
 briefing you "Is it out there, Commander?"
 briefing "If it is, tell me before you tell Tally. Dismissed."
@@ -419,6 +426,7 @@ ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home
 ship     AGIS 1 nav2 count=4
 ship     CONVOLN 1 nav3 count=2
+field    asteroid -13500 2250 6750 2250
 bar      left=FROST middle=PRIME right=COMET
 talk     bar PRIME COMET "Go straight in on the big ship and pick off the small ones after. It's quicker."
 talk     bar COMET PRIME "It's quicker for the small ones."
@@ -462,7 +470,7 @@ type     patrol
 music    briefing
 fighter  SCHROED
 briefing "Code Red, people. Don't sit down."
-briefing "We have 4 Nicanders on top of the ship right now, and 4 Nicanders at Nav 1 coming behind them."
+briefing "We have 8 Nicanders on top of the ship right now."
 briefing "The other squadrons are out on patrol, and Kit has our turrets in pieces. You're what we've got."
 briefing "We have 2 Schroedingers up already. They won't last."
 briefing "You and Comet are first down the tube."
@@ -477,7 +485,7 @@ win      "Kit wants her turrets back together, and you out of her way. Dismissed
 lose     "We took hits on the deck, and there are people in the med bay who don't fly."
 lose     you "Yes, Commander."
 lose     "Kit has six hours to put her right. Stay out of her way."
-nav      1 0 0 0
+nav      1 0 0 0 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home turrets=off
@@ -517,7 +525,7 @@ radio    "Comet. Scramble, Rookie. Keep up."
 
 mission  SHELTON3
 node     SHELTON
-title    Patrol: Shelton, 2 nav points
+title    Patrol: Shelton, 1 nav point
 type     patrol
 music    briefing
 fighter  SCHROED
@@ -527,7 +535,7 @@ briefing after=lost "After what they did to the deck, I want every escort tight.
 briefing you "(She gives out the runs, one wing at a time. You draw the last.)"
 briefing "You and Comet have the final run. An Ox is waiting at Nav 1."
 briefing "As soon as you reach it, it comes home at top speed, and it won't turn aside for anything."
-briefing "Intelligence expects 2 Convolutions at Nav 1 and 4 Agis at Nav 2."
+briefing "Intelligence expects 2 Convolutions at Nav 1."
 briefing "Two Convolutions. Sixty-Four may be one of them."
 briefing you "What do we do if it is, Commander?"
 briefing COMET "Kill the one next to it first."
@@ -543,7 +551,7 @@ lose     "We jump when we jump. That's all for now."
 lose     COMET "I told you to stay close, rookie."
 lose     you alive=COMET "Yes, you did."
 nav      1 -32000 4500 -11250
-nav      2 -18000 2250 -2250
+nav      2 -18000 2250 -2250 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home
@@ -583,7 +591,7 @@ radio    "Comet. Stay close, Wildcard."
 
 mission  CRUCIBL1
 node     CRUCIBL
-title    Patrol: the Crucible picket, 2 nav points
+title    Patrol: the Crucible picket, 1 nav point
 type     patrol
 music    briefing
 fighter  GAWAIN
@@ -592,10 +600,10 @@ briefing after=won "Cephid 17 went well for us. It didn't go well for the fleet,
 briefing after=lost "We came out of Cephid 17 short of fuel and shorter of friends, so nobody here gets a rest."
 briefing "The Aera have held the Crucible for a month. We aren't the first ship in, but the others are under attack."
 briefing you "(She hands out the wings. Yours is sixth, and you've stopped listening by the fourth.)"
-briefing "Wildcard, you lead. You and Anchor go to the Kahan, the destroyer at Nav 2. You'll have Gawains."
-briefing "Nav 1 is on our doorstep. Intelligence expects 2 Agis at Nav 1, and 2 more already sniffing round the ship."
+briefing "Wildcard, you lead. You and Anchor go to the Kahan, the destroyer at Nav 1. You'll have Gawains."
+briefing "There are 4 Agis already sniffing round the ship."
 briefing "Our turrets are down for repair, so clear those before you go."
-briefing "Then it's 3 Cleomenes at Nav 2, on top of her. Those are heavy assault ships, and they're in no hurry."
+briefing "Then it's 3 Cleomenes at Nav 1, on top of her. Those are heavy assault ships, and they're in no hurry."
 briefing ANCHOR "Commander, the procedure is local defense first, then relief. Is that the order?"
 briefing "That's the order, Anchor. Dismissed."
 win      "The Kahan's captain says thank you. She doesn't say that, so I had it checked."
@@ -608,15 +616,15 @@ lose     ANCHOR "The fault is mine, Commander. I was late on station."
 lose     you alive=ANCHOR "He wasn't, Commander."
 lose     alive=ANCHOR "I know he wasn't. Anchor signs for everything. Dismissed."
 lose     dead=ANCHOR "Dismissed, Wildcard. Get some sleep. That's an order, and I doubt it'll work."
-nav      1 0 0 0
-nav      2 6750 4500 20250
+nav      1 6750 4500 20250
+nav      2 0 0 0 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     AGIS 1 nav0 count=2
-ship     AGIS 1 nav1 count=2
-ship     KAHAN 0 nav2
-ship     CLEOMEN 1 nav2 count=3
+ship     AGIS 1 nav2 count=2
+ship     KAHAN 0 nav1
+ship     CLEOMEN 1 nav1 count=3
 bar      left=TORCH middle=PRIME right=COMET
 talk     bar PRIME COMET "Did you see me come over the deck? Two meters."
 talk     bar COMET PRIME "I saw the form."
@@ -670,6 +678,7 @@ briefing PRIME "You lucky so-and-so. Tell me how she feels!"
 briefing "Don't go mad out there, Wildcard. Nobody knows yet what that ship can do, or what it can't."
 briefing ANCHOR "The manual is eleven pages, Commander. I've read them."
 briefing alive=ANCHOR "I'm sure you have."
+briefing "There's a field of what look like asteroids around Nav 1, so watch yourself there."
 briefing "A Franklin flies top cover on the way out."
 briefing "Intelligence expects 4 Nicanders at Nav 2 and 2 Convolutions at Nav 3."
 briefing you "Understood, Commander. Nothing fancy."
@@ -691,6 +700,7 @@ ship     VIGILNC 0 nav0 role=home
 ship     FRANKLN 0 nav0
 ship     NICANDR 1 nav2 count=4
 ship     CONVOLN 1 nav3 count=2
+field    asteroid 14625 4500 -5625 2250
 bar      left=FROST middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Relax, Carbon. If you lose, there's a spare."
 talk     bar ANCHOR PRIME "I know. I've read the contract."
@@ -727,7 +737,7 @@ radio    "Anchor to Wildcard. Manual says stay under eighty percent for the firs
 
 mission  CRUCIBL3
 node     CRUCIBL
-title    Patrol: the Crucible picket, 2 nav points
+title    Patrol: the Crucible picket, 1 nav point
 type     patrol
 music    briefing
 fighter  GAWAIN
@@ -736,7 +746,7 @@ briefing "Either the Aera are pulling out of the Crucible, or they're getting re
 briefing "Either way, I have to know. First up is what looks like a squadron of Nicanders."
 briefing "You and Anchor go and look. 4 Schroedingers go with you, so make use of them."
 briefing dead=ANCHOR "We can't replace Anchor, Wildcard. You lead the Schroedingers alone."
-briefing "Intelligence expects 5 Nicanders at Nav 1 and 4 Nicanders at Nav 2."
+briefing "Intelligence expects 5 Nicanders at Nav 1, and there may be more behind them."
 briefing "If you can take them, engage. If it's too big, break off. I need the information more than I need heroes."
 briefing you "I've heard Sixty-Four is at the Crucible, Commander. Is that true?"
 briefing "It may be. It's very dangerous, and I want to know if it's here, so bring me that too."
@@ -748,10 +758,10 @@ win      alive=ANCHOR "I've read your log, Anchor. It's the cleanest on this shi
 win      dead=ANCHOR "I've read his logs. All of them. Someday I'll tell you what I found. Dismissed."
 lose     "They aren't pulling out, are they?"
 lose     you "No, Commander."
-lose     ANCHOR "My position at Nav 2 was poor. Put it on me."
+lose     ANCHOR "My position at Nav 1 was poor. Put it on me."
 lose     "We'll be leaving the Crucible the hard way, then. Dismissed."
 nav      1 -15750 -4500 9000
-nav      2 -15750 -4500 9000
+nav      2 -15750 -4500 9000 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home
@@ -792,7 +802,7 @@ radio    "Anchor to Wildcard. Nine Nicanders on the estimate. I have the checkli
 
 mission  OLDZIEY1
 node     OLDZIEY
-title    Patrol: Oldziey, 4 nav points
+title    Patrol: Oldziey, 3 nav points
 type     patrol
 music    briefing
 fighter  FRANKLN
@@ -804,8 +814,9 @@ briefing PRIME "Patrols? Commander, you wound me."
 briefing "You're first in the rotation, Wildcard. You and Prime, since he's so keen."
 briefing PRIME "Oh, sure. Send the best one."
 briefing "There are always lavatories to scrub, Prime, if you'd rather."
-briefing "Four points, in Franklins. A Convolution is already out there near us, and our turrets are down."
-briefing "Intelligence expects 1 Agis at Nav 1, 3 Convolutions at Nav 2 and 2 Aristons at Nav 3."
+briefing "Three points, in Franklins, with a few asteroids near Nav 2. A Convolution is already near us."
+briefing "Our turrets are down, so see to that first."
+briefing "Intelligence expects 1 Agis at Nav 1 and 2 Aristons at Nav 2. We really don't know what else."
 briefing "If he gives you any trouble, Wildcard, you have my permission to shoot him."
 briefing you "With a missile, Commander?"
 briefing "He isn't worth a missile."
@@ -822,16 +833,17 @@ lose     PRIME "We got out of it, didn't we?"
 lose     you alive=PRIME "Barely. He nearly took my wing off."
 lose     "I've told Kit she can say whatever she likes. Dismissed."
 nav      1 15750 0 6750
-nav      2 15750 0 6750
-nav      3 9000 2250 -13500
-nav      4 -9000 -2250 -11250
+nav      2 9000 2250 -13500
+nav      3 -9000 -2250 -11250
+nav      4 15750 0 6750 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=PRIME
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     CONVOLN 1 nav0
 ship     AGIS 1 nav1
-ship     CONVOLN 1 nav2 count=3
-ship     ARISTON 1 nav3 count=2
+ship     CONVOLN 1 nav4 count=3
+ship     ARISTON 1 nav2 count=2
+field    asteroid 6750 2250 -11250 2250
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar PRIME TORCH "Sit down, Torch. Let me tell you about the time I took four Nicanders with one wing."
 talk     bar TORCH PRIME "You told me Tuesday."
@@ -872,10 +884,10 @@ music    briefing
 fighter  FRANKLN
 briefing "We're getting ready for the assault on the second planet. More ships are coming in over the next few hours."
 briefing you "(She hands out the rendezvous runs. Yours is last.)"
-briefing "You and Prime have the last run. We've got a Kahan coming in at Nav 3, and I want that point clear."
+briefing "You and Prime have the last run. We've got a Kahan coming in at Nav 1, and I want that point clear."
 briefing dead=PRIME "You have the last run, Wildcard, on your own."
-briefing "Intelligence expects 4 Nicanders at Nav 3 and 4 Agis at Nav 4."
-briefing "It's Nav 3 first, then Nav 4 and home. They'll try to draw you off. Don't go."
+briefing "Intelligence expects 4 Nicanders at Nav 1 and 4 Agis at Nav 2."
+briefing "It's Nav 1 first, then Nav 2 and home. They'll try to draw you off. Don't go."
 briefing PRIME "How far off is off, Commander?"
 briefing "Within five thousand kilometers in a fight, closer when cruising. Not that close to Wildcard."
 briefing PRIME "Understood."
@@ -887,14 +899,14 @@ win      PRIME "Don't tell anyone."
 lose     escort=lost "We lost a ship I was counting on."
 lose     "That assault's going to cost more now. Go and get some rest."
 lose     PRIME "That one's on me, Commander. Put my name on it. My own."
-nav      3 18000 4500 -20250
-nav      4 0 2250 -15750
+nav      1 18000 4500 -20250
+nav      2 0 2250 -15750
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=PRIME
 ship     VIGILNC 0 nav0 role=home
-ship     KAHAN 0 nav3
-ship     NICANDR 1 nav3 count=4
-ship     AGIS 1 nav4 count=4
+ship     KAHAN 0 nav1
+ship     NICANDR 1 nav1 count=4
+ship     AGIS 1 nav2 count=4
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER KESTREL "What's the line on Prime staying sober tonight?"
 talk     bar KESTREL DRIFTER "He isn't drinking."
@@ -925,7 +937,7 @@ radio    "Prime here. Stay on my wing or I'll stay on yours. Either way. Just st
 
 mission  OLDZIEY3
 node     OLDZIEY
-title    Patrol: Oldziey, 2 nav points
+title    Patrol: Oldziey, 1 nav point
 type     patrol
 music    briefing
 fighter  FRANKLN
@@ -933,9 +945,9 @@ briefing "The assault's on, people, and the blockade is holding. They're despera
 briefing after=won "You kept that point clear yesterday, so the Kahan's in the line. Good."
 briefing after=lost "We're a ship short on the line, so everything that gets past us counts double."
 briefing "They're sending everything to break through to the second planet. Our job is to stop it."
-briefing "You and Prime are first up. We have a large bogie at Nav 2, probably a supply run under guard."
+briefing "You and Prime are first up. We have a large bogie at Nav 1, probably a supply run under guard."
 briefing dead=PRIME "You're first up, Wildcard. I'm sorry. I don't have a wingman to give you."
-briefing "Intelligence expects 4 Aristons at Nav 2, with an Agasicles destroyer, and 2 Aristons at Nav 3."
+briefing "Intelligence expects 4 Aristons at Nav 1, with an Agasicles destroyer."
 briefing "There are 2 Cleomenes looking for our deck as well, and the turrets are out again. See to those first."
 briefing "Every ship that gets past us drags this out another week. Don't let yours get past. Dismissed."
 win      "The blockade held on your side, Wildcard. That's all I can ask."
@@ -946,15 +958,15 @@ lose     "They got through on your side. The second planet has another week in i
 lose     PRIME "I had the angle, Commander. I went for the shot instead of the wing."
 lose     you alive=PRIME "We both did."
 lose     "I know what you did. Dismissed."
-nav      2 -18000 0 -22500
-nav      3 -18000 0 -22500
+nav      1 -18000 0 -22500
+nav      2 -18000 0 -22500 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=PRIME
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     CLEOMEN 1 nav0 count=2
-ship     ARISTON 1 nav2 count=4
-ship     AGASICL 1 nav2
-ship     ARISTON 1 nav3 count=2
+ship     ARISTON 1 nav1 count=4
+ship     AGASICL 1 nav1
+ship     ARISTON 1 nav2 count=2
 bar      left=FROST middle=PRIME right=COMET
 talk     bar PRIME COMET "Tally's got me down for twelve now. You?"
 talk     bar COMET PRIME "Don't ask."
@@ -983,11 +995,11 @@ talk     deck TECH you "I see Prime came back with both wings. I'm putting that 
 say      deck TECH TECH boost=missile "Here's a missile for that destroyer. Off the top of a crate, like the last one."
 say      deck TECH you "What wall?"
 say      deck TECH TECH "Never mind what wall."
-radio    "Prime here. Agasicles at Nav 2. Fighters first, as they say. I've got your wing, Wildcard."
+radio    "Prime here. Agasicles at Nav 1. Fighters first, as they say. I've got your wing, Wildcard."
 
 mission  DEFIANC1
 node     DEFIANC
-title    Patrol: Defiance, 2 nav points
+title    Patrol: Defiance, 1 nav point
 type     patrol
 music    briefing
 fighter  SCHROED
@@ -998,7 +1010,7 @@ briefing COMET "Who is she?"
 briefing "Ensign Tamsin Rowe, off the Kahan. And you can remember that one, Comet."
 briefing "She's got a fix on an Agasicles destroyer in this system, and I need what's in her computer."
 briefing "Her last position is Nav 1. Intelligence expects 4 Aristons at Nav 1, inside twenty thousand."
-briefing "A Schroedinger's up with you. If you've got anything left, there's a destroyer and 2 Aristons at Nav 2."
+briefing "A Schroedinger's up with you. Her fix says that destroyer is close by Nav 1, so stay alert."
 briefing dead=COMET "You fly it alone, Wildcard. I have nobody else ready."
 briefing "Questions?"
 briefing COMET "No. We'd better just go, Commander."
@@ -1011,7 +1023,7 @@ lose     COMET "Your Ensign flew straight. I'll give her that."
 lose     alive=COMET "Rowe. Her name was Rowe. You'll say it, or you'll stand there until you do."
 lose     COMET "Rowe."
 nav      1 -15750 4500 18000
-nav      2 -15750 4500 18000
+nav      2 -15750 4500 18000 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home
@@ -1060,8 +1072,8 @@ briefing "Next up is the second wing."
 briefing after=won "Ensign Rowe's data found us that destroyer, so that's one problem we can see."
 briefing after=lost "We still don't know where that destroyer is, and we've got a job to do anyway."
 briefing "You and Comet have the Kahan. She has orders to leave for the next jump, and she leaves now."
-briefing "She's hurt and slow. She sets off as you launch, and she'll jump just short of Nav 2."
-briefing "We have 4 Agis on top of us already, and no turrets. Then 6 Nicanders at Nav 2, waiting for her."
+briefing "She's hurt and slow. She sets off as you launch, and she'll jump just short of Nav 1."
+briefing "We have 4 Agis on top of us already, and no turrets. Then 6 Nicanders at Nav 1, waiting for her."
 briefing COMET "Commander, six Nicanders against one destroyer that can't turn?"
 briefing "Yes. I'm sorry. A Schroedinger flies with you."
 briefing dead=COMET "It's you and that Schroedinger, Wildcard."
@@ -1075,14 +1087,14 @@ win      COMET "I've learned plenty."
 lose     escort=lost "We lost the Kahan. I'll need the room for a while. I'm going to be writing."
 lose     COMET "Commander. I can do some of those."
 lose     alive=COMET "No, you can't. Not yet. Dismissed."
-nav      2 22500 0 -31500
+nav      1 22500 0 -31500
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     SCHROED 0 nav0
 ship     KAHAN 0 nav0 role=out
 ship     AGIS 1 nav0 count=4
-ship     NICANDR 1 nav2 count=6
+ship     NICANDR 1 nav1 count=6
 bar      left=FROST middle=- right=COMET
 talk     bar COMET FROST "A hundred and forty names."
 talk     bar FROST COMET "She'd know the hundred and forty-first if you asked."
@@ -1118,8 +1130,8 @@ title    Patrol: Defiance, one nav point
 type     patrol
 music    briefing
 fighter  SCHROED
-briefing "Code Red, everyone. We've got 4 Convolutions at Nav 1, headed right for us."
-briefing "Nav 1 is just off our bow. There are 2 more on our deck already, and I still don't have the turrets."
+briefing "Code Red, everyone. We've got 4 Convolutions headed right for us."
+briefing "There are 2 more on our deck already, and I still don't have the turrets."
 briefing "They've already killed one of the two Schroedingers flying guard, so they mean it."
 briefing "You and Comet are first to launch."
 briefing dead=COMET "You're first to launch, Wildcard. There's nobody else ready."
@@ -1134,7 +1146,7 @@ win      "Dismissed, both of you."
 lose     "We're still flying. I don't know how. Kit says I shouldn't ask."
 lose     COMET "They're faster than the last lot, Commander."
 lose     "Then we're faster than we've been. Dismissed."
-nav      1 0 0 0
+nav      1 0 0 0 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home turrets=off
@@ -1184,10 +1196,10 @@ briefing "We've been ordered to cover the medical transports, going out and comi
 briefing "You and Anchor have the job. I'm counting on you, and so are they. You'll have Gawains."
 briefing dead=ANCHOR "You'll have Gawains, Wildcard. I'm short a pilot since we lost Anchor, so you lead 2 of them alone."
 briefing "We're under attack here already, and the turrets are off. 5 Agis, an Ariston and a Cleomenes off our bow."
-briefing "An Ox hospital ship leaves as you launch, and it jumps out just short of Nav 2. Stay with it to the jump."
-briefing "Intelligence expects 3 Aristons at Nav 2."
-briefing "Then go to Nav 3 and meet the other Ox. Bring it home. That's the one with the vaccine."
-briefing "Intelligence expects 3 Cleomenes at Nav 3. Lose either Ox, and you've lost the mission."
+briefing "An Ox hospital ship leaves as you launch, and it jumps out just short of Nav 1. Stay with it to the jump."
+briefing "Intelligence expects 3 Aristons at Nav 1."
+briefing "Then go to Nav 2 and meet the other Ox. Bring it home. That's the one with the vaccine."
+briefing "Intelligence expects 3 Cleomenes at Nav 2. Lose either Ox, and you've lost the mission."
 briefing "Any questions?"
 briefing ANCHOR "None, Commander. I've read the plan. It's correct."
 briefing "Dismissed."
@@ -1199,8 +1211,8 @@ lose     escort=lost "We lost an Ox. Some people on that colony won't be alive n
 lose     FROST "I'll go down with what's left, Commander. They're short of hands."
 lose     alive=FROST "I can't spare you, Frost. I know what I'm saying. Dismissed."
 lose     dead=FROST "I'd send a doctor if I had one. Dismissed."
-nav      2 29250 -4500 -9000
-nav      3 15750 0 -24750
+nav      1 29250 -4500 -9000
+nav      2 15750 0 -24750
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home turrets=off
@@ -1209,10 +1221,10 @@ ship     OX 0 nav0 count=4
 ship     AGIS 1 nav0 count=5
 ship     ARISTON 1 nav0
 ship     CLEOMEN 1 nav0
-ship     ARISTON 1 nav2 count=3
+ship     ARISTON 1 nav1 count=3
 ship     OX 0 nav0 role=out
-ship     OX 0 nav3 role=in
-ship     CLEOMEN 1 nav3 count=3
+ship     OX 0 nav2 role=in
+ship     CLEOMEN 1 nav2 count=3
 bar      left=FROST middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Sixty-Four's been asking for me."
 talk     bar ANCHOR PRIME "It hasn't been asking for anyone. It's an Aera fighter pilot."
@@ -1247,7 +1259,7 @@ radio    "Anchor to Wildcard. Both transports on the plan. The plan's correct. L
 
 mission  LIXIS2
 node     LIXIS
-title    Patrol: the Lixis beacon, 4 nav points
+title    Patrol: the Lixis beacon, 3 nav points
 type     patrol
 music    briefing
 fighter  GAWAIN
@@ -1255,9 +1267,9 @@ briefing you "(Ten minutes in, she reaches the patrol wings.)"
 briefing "It has been quiet out here for a day, which I don't like. The Aera are out there, and I don't know where."
 briefing after=won "We got the vaccine down, so they've had a day to think about that."
 briefing after=lost "They've had a day to think about what they did to that colony, and so have we."
-briefing "You and Anchor have the second patrol. Find them, and bring me a report. Four points."
+briefing "You and Anchor have the second patrol. Find them, and bring me a report. Three points."
 briefing "A Gawain and an Ox go out with you to the jump. There's some debris at Nav 1. It could be nothing."
-briefing "Intelligence expects 2 Convolutions at Nav 1, 4 Aristons at Nav 2, 2 Aristons at Nav 3 and an Agasicles."
+briefing "Intelligence expects 2 Convolutions at Nav 1 and 4 Aristons at Nav 2."
 briefing you "Are we cleared to engage, Commander?"
 briefing "Use your judgement. I don't want to lose any more pilots than I have to."
 briefing ANCHOR "Commander, a word about comm discipline before we launch."
@@ -1270,8 +1282,8 @@ lose     ANCHOR "Commander, I have a proposal, regarding my brother and myself. 
 lose     alive=ANCHOR "Come and see me, Anchor. It can't get worse."
 nav      1 4500 2250 -15750
 nav      2 -15750 0 -22500
-nav      3 -15750 0 -22500
-nav      4 -20250 4500 0
+nav      3 -20250 4500 0
+nav      4 -15750 0 -22500 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home
@@ -1279,8 +1291,10 @@ ship     GAWAIN 0 nav0
 ship     OX 0 nav0
 ship     CONVOLN 1 nav1 count=2
 ship     ARISTON 1 nav2 count=4
-ship     ARISTON 1 nav3 count=2
-ship     AGASICL 1 nav3
+ship     ARISTON 1 nav4 count=2
+ship     AGASICL 1 nav4
+field    asteroid 4500 3150 -13500 2250
+field    asteroid -20250 5400 2250 2250
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar ANCHOR PRIME "It's a bad idea."
 talk     bar PRIME ANCHOR "Say it in my voice."
@@ -1309,14 +1323,14 @@ say      lounge FROST FROST "How many on that colony? Forty thousand. I know the
 say      lounge FROST you "You saved a lot of them."
 say      lounge FROST FROST "You did. Check on Anchor. He's got more on his mind than he's saying."
 talk     deck TECH you "I can tell those twins apart. It's in how they land."
-say      deck TECH TECH boost=fuel "That's a reserve tank, so you don't run dry on a four-point. Julian lands hot and Julius lands flat."
+say      deck TECH TECH boost=fuel "That's a reserve tank, so you don't run dry out there. Julian lands hot and Julius lands flat."
 say      deck TECH you "Have you told anyone?"
 say      deck TECH TECH "Nobody asks the mechanic."
-radio    "Anchor to Wildcard. Patrol's four points, comm discipline's tight. No talking on channel, please."
+radio    "Anchor to Wildcard. Patrol's three points, comm discipline's tight. No talking on channel, please."
 
 mission  LIXIS3
 node     LIXIS
-title    Patrol: the Lixis beacon, 3 nav points
+title    Patrol: the Lixis beacon, 2 nav points
 type     patrol
 music    briefing
 fighter  GAWAIN
@@ -1328,7 +1342,7 @@ briefing you "Yes, Commander."
 briefing "There's something you don't know yet. Our spotters have put Sixty-Four with the convoy."
 briefing PRIME "Then it'll be delighted to hear from me, Commander."
 briefing "I've read Anchor's proposal. It's not in the regulations, and I've signed it."
-briefing "Intelligence expects 5 Aristons at Nav 1, then 2 Cleomenes at Nav 2 and 2 Cleomenes at Nav 3."
+briefing "Intelligence expects 5 Aristons at Nav 1, then 2 Cleomenes at Nav 2."
 briefing "Each with an Agasicles. The Agasicles are your main objective, and the best defended."
 briefing "Watch yourself with Sixty-Four, but put your fire on the destroyers."
 briefing "You launch in three minutes. Dismissed."
@@ -1343,7 +1357,7 @@ lose     ANCHOR "The fault was not mine, Commander."
 lose     alive=ANCHOR "No, I don't believe it was. That's new. Dismissed."
 nav      1 4500 2250 20250
 nav      2 24750 -4500 20250
-nav      3 24750 -4500 20250
+nav      3 24750 -4500 20250 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home
@@ -1470,6 +1484,7 @@ briefing "We've got 2 Convolutions off the ship and our turrets are off, so 2 Sc
 briefing "Intelligence expects 3 Nicanders at Nav 1 and 4 Convolutions at Nav 3."
 briefing "Traffic is heavier than ever."
 briefing "Our people think they've spotted a new capital ship at Nav 3, an Anaxidamus cruiser."
+briefing "There's debris around Nav 2 and another field at Nav 4. Some of that will be mines."
 briefing "If you see it, look at it as closely as you can."
 briefing you "If we spot it, do we engage?"
 briefing "There's no need for heroics, Wildcard. Just come back and tell me about it."
@@ -1495,6 +1510,9 @@ ship     CONVOLN 1 nav0 count=2
 ship     NICANDR 1 nav1 count=3
 ship     CONVOLN 1 nav3 count=4
 ship     ANAXIDM 1 nav3
+field    mine 6750 2250 -18000 2250
+field    asteroid -11250 0 -9000 2250
+field    asteroid -18000 -2250 -6750 3375
 bar      left=TORCH middle=ECHO right=-
 talk     bar TORCH ECHO "Did you go and see them?"
 talk     bar ECHO TORCH "Yes."
@@ -1595,7 +1613,7 @@ radio    "Echo. I've got your six, and I'll keep it. They're on the ship, Wildca
 
 mission  RIGEL1
 node     RIGEL
-title    Patrol: the Rigel relay, 3 nav points
+title    Patrol: the Rigel relay, 2 nav points
 type     patrol
 music    briefing
 fighter  LANCELT
@@ -1607,8 +1625,8 @@ briefing "After, Frost. I know you've been asked about that. You're going to be 
 briefing "Frost is our senior pilot as of this morning. Wildcard, you lead. You and Frost, in Lancelots."
 briefing dead=FROST "I'd have given you Frost, Wildcard. I have nobody else to give you, so you'll go alone."
 briefing "We have an Ariston and 2 Convolutions on us, and the turrets are off. A Franklin stays with the ship."
-briefing "Intelligence expects 6 Nicanders at Nav 1 with an Agasicles, 3 Aristons at Nav 2, 2 Cleomenes at Nav 3."
-briefing "The other two Agasicles, at Nav 2 and Nav 3, are the ones I want."
+briefing "Intelligence expects 6 Nicanders at Nav 1 with an Agasicles, and 3 Aristons at Nav 2."
+briefing "The Agasicles at Nav 2 is the one I want. Come home by Nav 1 again, in case of late arrivals."
 briefing you "What's on them, Commander?"
 briefing "Nothing definite. They're the best guarded, so it's something, or someone. Dismissed."
 win      "That's two destroyers they won't be using. Well flown."
@@ -1620,7 +1638,7 @@ lose     FROST "Rlaan traders use that lane, Commander. They might have seen som
 lose     alive=FROST "I've had that from Command. They're asking me who you've been talking to. Dismissed."
 nav      1 0 2250 24750
 nav      2 13500 6750 31500
-nav      3 0 2250 24750
+nav      3 0 2250 24750 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home turrets=off
@@ -1665,7 +1683,7 @@ radio    "Frost to Wildcard. Stay on station. If I go quiet, you know what to do
 
 mission  RIGEL2
 node     RIGEL
-title    Patrol: the Rigel relay, 2 nav points
+title    Patrol: the Rigel relay, 1 nav point
 type     patrol
 music    briefing
 fighter  LANCELT
@@ -1673,8 +1691,8 @@ briefing "We've been lucky, people. Less than four hours ago, a Kahan in the out
 briefing "A whole Aera destroyer, intact. Command wants it in the siege at Rigel."
 briefing "I've given my assurances we'll bring her in. You and Frost have this one."
 briefing dead=FROST "You have this one alone, Wildcard."
-briefing "She's holding at Nav 2, with a Lancelot flying guard. Clear the point so she can come on."
-briefing "Intelligence expects 4 Agis at Nav 1 and 4 Convolutions at Nav 2."
+briefing "She's holding at Nav 1, with a Lancelot flying guard. Clear the point so she can come on."
+briefing "Intelligence expects 4 Convolutions at Nav 1. There's an asteroid belt along the way."
 briefing "The Aera want her back or want her dead, and they've got fast ships going after her."
 briefing FROST "Commander, there's a Rlaan observer aboard that destroyer. I've heard him on the comm."
 briefing alive=FROST "So has Command. Don't talk to him, Frost, until I say. Dismissed."
@@ -1685,16 +1703,17 @@ win      alive=FROST "I know. Go and talk to him. Take Tally's bottle, not mine.
 lose     "They got her back, or got to her. Either way, it's not going to help the siege."
 lose     FROST "He was calling for me on the comm. He asked me to come."
 lose     alive=FROST "I know what he asked. That's in the file now. Dismissed."
-nav      1 6750 -2250 -15750
-nav      2 9000 -4500 -32000
+nav      1 9000 -4500 -32000
+nav      2 6750 -2250 -15750 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
 ship     KAHAN 0 nav0
-ship     AGIS 1 nav1 count=4
-ship     LANCELT 0 nav2
-ship     CONVOLN 1 nav2 count=4
-ship     AGASICL 0 nav2
+ship     AGIS 1 nav2 count=4
+ship     LANCELT 0 nav1
+ship     CONVOLN 1 nav1 count=4
+ship     AGASICL 0 nav1
+field    asteroid 6750 -1350 -13500 3375
 bar      left=FROST middle=KESTREL right=DRIFTER
 talk     bar KESTREL FROST "They're looking at you the way they look at me."
 talk     bar FROST KESTREL "Is that why you sat down here?"
@@ -1719,25 +1738,25 @@ say      lounge ECHO you "You could tell her."
 say      lounge ECHO ECHO "I'd rather kill a Convolution."
 say      lounge ANCHOR ANCHOR "That Agasicles has a lot of people aboard. Prize crew. Don't be late."
 talk     deck TECH you "If you bring that Agasicles back I want to look at its fuel lines. I have ideas."
-say      deck TECH TECH boost=fuel "That's a reserve tank for the long run out to Nav 2. It's off the last Lancelot crate."
+say      deck TECH TECH boost=fuel "That's a reserve tank for the long run out to Nav 1. It's off the last Lancelot crate."
 say      deck TECH you "Is it on the list?"
 say      deck TECH TECH "No. That one's only spare. You're allowed to like it."
 radio    "Frost to Wildcard. Long way out, and a prize crew at the end of it. Check on me, and I'll check on you."
 
 mission  RIGEL3
 node     RIGEL
-title    Patrol: the Rigel relay, 4 nav points
+title    Patrol: the Rigel relay, 1 nav point
 type     patrol
 music    briefing
 fighter  LANCELT
 briefing "We've had a tight-band transmission from a Kahan, the Thermopylae. She's old, and in bad shape."
-briefing "Your job is to meet her at Nav 2. She'll start for home as soon as you reach her."
+briefing "Your job is to meet her at Nav 1. She'll start for home as soon as you reach her."
 briefing you "(She looks over the wings. Then Frost stands up.)"
 briefing FROST "I'd like this one, Commander. I served on the Thermopylae, in her med bay."
 briefing alive=FROST "I know you did, Frost. All right. You and Frost, then, and a Lancelot stays with the ship."
 briefing dead=FROST "You and Frost would have had this one, Wildcard. You have it alone now."
-briefing "Intelligence expects 4 Nicanders at Nav 2, 2 Nicanders at Nav 3 and 4 Aristons at Nav 4."
-briefing "Nav 1 first, then Nav 2 for the Kahan. Once she's on her way, sweep Nav 3 and Nav 4."
+briefing "Intelligence expects 4 Nicanders at Nav 1."
+briefing "She reports a minefield on the way out. Go round it, and stay with her coming home."
 briefing "If you lose that Kahan, you've lost the mission. There are a lot of wounded on her. Dismissed."
 win      "The Thermopylae's on station. It's the first good news her people have had in a month."
 win      FROST "They still have the same chief surgeon. He remembers me."
@@ -1747,18 +1766,19 @@ win      "We have a relay to take. Dismissed."
 lose     escort=lost "We lost the Thermopylae, and everyone aboard."
 lose     FROST "I'd like to see the list, Commander."
 lose     alive=FROST "Later, Frost. Let's both of us sit down first."
-nav      1 -4500 0 -15750
-nav      2 -15750 0 -29250
-nav      3 -15750 0 -29250
-nav      4 -13500 0 -11250
+nav      1 -15750 0 -29250
+nav      2 -4500 0 -15750 hidden
+nav      3 -15750 0 -29250 hidden
+nav      4 -13500 0 -11250 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
 ship     LANCELT 0 nav0
-ship     KAHAN 0 nav2 role=in
-ship     NICANDR 1 nav2 count=4
+ship     KAHAN 0 nav1 role=in
+ship     NICANDR 1 nav1 count=4
 ship     NICANDR 1 nav3 count=2
 ship     ARISTON 1 nav4 count=4
+field    mine -6750 0 -15750 2250
 bar      left=TORCH middle=PRIME right=COMET
 talk     bar COMET TORCH "What's Frost got on the Thermopylae?"
 talk     bar TORCH COMET "Ask her. Nobody else will."
@@ -1792,7 +1812,7 @@ radio    "Frost to Wildcard. I know this ship. Stay close. We're bringing all of
 
 mission  BARNARD1
 node     BARNARD
-title    Patrol: Barnard's Star, 5 nav points
+title    Patrol: Barnard's Star, 4 nav points
 type     patrol
 music    briefing
 fighter  GAWAIN
@@ -1801,12 +1821,12 @@ briefing after=lost "You know how the last system went. We fell back here, and h
 briefing after=won "We came out of the last system in good order, and I'd like to keep it that way."
 briefing "Barnard's Star has been off limits since before the war. There are miners here nobody's counted."
 briefing "The rocks are full of metal, so the Aera want them. We're here to stop that, and get the miners out."
-briefing "First we find every hostile in the system. Wildcard, you lead. You and Kestrel, in Gawains, five points."
+briefing "First we find every hostile in the system. Wildcard, you lead. You and Kestrel, in Gawains, four points."
 briefing dead=KESTREL "I had Kestrel down for this, Wildcard. You'll have to fly it without him."
 briefing "He doesn't say much. Listen when he does."
 briefing KESTREL "Yes."
-briefing "Intelligence expects 2 Nicanders at Nav 2, 2 Convolutions at Nav 3 and 4 Convolutions at Nav 4."
-briefing "There's an Agasicles holding at Nav 4. And there are dense asteroid fields out there, so mind the rocks."
+briefing "Intelligence expects 2 Nicanders at Nav 2 and 2 Convolutions at Nav 3."
+briefing "They may have something bigger near Nav 3. And there are dense asteroid fields out here, so mind them."
 briefing you "If we find it, do we engage, Commander?"
 briefing "Your call. If you do, make it count. Dismissed."
 win      "You found them, and you're back. Tactical has its map."
@@ -1821,18 +1841,18 @@ lose     you "Yes, Commander."
 nav      1 15750 2250 4500
 nav      2 20250 2250 15750
 nav      3 4500 -2250 20250
-nav      4 4500 -2250 20250
-nav      5 -6750 0 13500
+nav      4 -6750 0 13500
+nav      5 4500 -2250 20250 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=KESTREL
 ship     VIGILNC 0 nav0 role=home
 ship     NICANDR 1 nav2 count=2
 ship     CONVOLN 1 nav3 count=2
-ship     CONVOLN 1 nav4 count=4
-ship     AGASICL 1 nav4 role=in
-field    asteroid 0 6750 32000
-field    asteroid 4500 0 32000
-field    asteroid -4500 0 32000
+ship     CONVOLN 1 nav5 count=4
+ship     AGASICL 1 nav5 role=in
+field    asteroid 15750 4500 4500 2250
+field    asteroid 20250 4500 15750 2250
+field    asteroid -6750 2250 13500 2250
 bar      left=TORCH middle=KESTREL right=ANCHOR
 talk     bar ANCHOR KESTREL "They're sending me out with a transport tomorrow."
 talk     bar KESTREL ANCHOR "Which side?"
@@ -1867,19 +1887,19 @@ radio    "Kestrel. I'm going first through the field. Don't follow me."
 
 mission  BARNARD2
 node     BARNARD
-title    Patrol: Barnard's Star, 3 nav points
+title    Patrol: Barnard's Star, 1 nav point
 type     patrol
 music    briefing
 fighter  GAWAIN
 briefing "Listen up, people. They are strengthening their position, and they have a destroyer in the system."
 briefing alive=ANCHOR "Before that. Anchor is in the med bay. He took a hit covering an Ox yesterday, and it's bad."
 briefing alive=ANCHOR "The transport got home. He did everything right. I've read the log."
-briefing "Tactical has a confirmed fix on an Agasicles at Nav 3, with 4 Cleomenes at Nav 3 guarding it."
+briefing "Tactical has a confirmed fix on an Agasicles at Nav 1, with 4 Cleomenes at Nav 1 guarding it."
 briefing "You and Kestrel get this one. We can't have that firepower at our backs. I'm counting on you."
 briefing dead=KESTREL "You've got this one to yourself, Wildcard. We can't have that firepower at our backs."
 briefing KESTREL "We'll go through the field. They won't look for us there."
 briefing "That's your plan? It's a good one. It would be, if it were anyone else. Go on."
-briefing "On the way out you'll meet 1 Agis on our deck, 2 Agis at Nav 1 and 3 Agis at Nav 2. Turrets are out."
+briefing "There's an Agis on our deck and the turrets are out. Expect more of them on the way."
 briefing "Do it right, and we have a safe corridor for reinforcements. Dismissed."
 win      "That's an Agasicles we don't have to worry about. Well flown."
 win      KESTREL "I'd like to be excused now."
@@ -1889,20 +1909,18 @@ win      "He's fine. They built him to be fine. Dismissed."
 lose     "It's still out there, then."
 lose     KESTREL "I'll go back."
 lose     alive=KESTREL "You'll wait until you've been told to. Dismissed."
-nav      1 0 0 18000
-nav      2 0 0 0
-nav      3 6750 0 32000
+nav      1 6750 0 32000
+nav      2 0 0 18000 hidden
+nav      3 0 0 0 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=KESTREL
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     AGIS 1 nav0
-ship     AGIS 1 nav1 count=2
-ship     AGIS 1 nav2 count=3
-ship     CLEOMEN 1 nav3 count=4
-ship     AGASICL 1 nav3
-field    asteroid 0 0 32000
-field    asteroid 4500 -2250 32000
-field    asteroid -4500 -2250 32000
+ship     AGIS 1 nav2 count=2
+ship     AGIS 1 nav3 count=3
+ship     CLEOMEN 1 nav1 count=4
+ship     AGASICL 1 nav1
+field    asteroid 2250 900 20250 2250
 bar      left=TORCH middle=PRIME right=-
 talk     bar TORCH PRIME "You could sit there. Next to you."
 talk     bar PRIME TORCH "Nobody's sitting there."
@@ -1929,7 +1947,7 @@ radio    "Kestrel. Through the field, then. Keep your nose on my tail. You won't
 
 mission  BARNARD3
 node     BARNARD
-title    Patrol: Barnard's Star, 3 nav points
+title    Patrol: Barnard's Star, 2 nav points
 type     patrol
 music    briefing
 fighter  GAWAIN
@@ -1938,7 +1956,7 @@ briefing "We don't know what she is, but she's big. Very big. I need a look at h
 briefing "You and Kestrel are going to go and get one."
 briefing dead=KESTREL "You're going to get a look at her, Wildcard, alone. Find out what you can."
 briefing "Find out what you can, but make sure you come back with it. She won't be alone."
-briefing "Intelligence puts her near Nav 2, with 4 Aristons at Nav 2, and 4 Nicanders at Nav 3 past that."
+briefing "Intelligence puts her near Nav 2, with 4 Aristons at Nav 2."
 briefing "You can go through Nav 1, around the field, or pick your way through the rocks. It's your call."
 briefing KESTREL "It's an Anaxidamus. I can see the bearing from here."
 briefing alive=KESTREL "Tactical can't, Kestrel, so go and show them."
@@ -1953,16 +1971,15 @@ lose     KESTREL "We can't hold here, Commander."
 lose     alive=KESTREL "You're not the first person to tell me that today. Dismissed."
 nav      1 13500 4500 13500
 nav      2 32000 4500 6750
-nav      3 18000 2250 0
+nav      3 18000 2250 0 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=KESTREL
 ship     VIGILNC 0 nav0 role=home
 ship     ARISTON 1 nav2 count=4
 ship     ANAXIDM 1 nav2 role=in
 ship     NICANDR 1 nav3 count=4
-field    asteroid 4500 0 32000
-field    asteroid 4500 -2250 32000
-field    asteroid -4500 -2250 32000
+field    asteroid 18000 4500 15750 2250
+field    asteroid 15750 3150 2250 2250
 bar      left=FROST middle=ECHO right=COMET
 talk     bar ECHO FROST "How many more systems before they're at the Home Worlds?"
 talk     bar FROST ECHO "Tally has a map."
@@ -2011,6 +2028,7 @@ briefing "You and Kit will fly the second run, with a Franklin, in case either o
 briefing dead=TECH "You'll fly the second run alone, Wildcard."
 briefing TECH "I raced before you were out of school. Don't you scratch her."
 briefing "Intelligence expects 4 Aristons at Nav 1 and 4 Nicanders at Nav 2, each with an Agasicles or more."
+briefing "The colony mined the approach to Nav 3, so mind your course there."
 briefing "We've got tankers on the way, so I want those jump points clear of everything. Dismissed."
 win      "Those points are clear. I didn't expect that, and I'm glad to be wrong."
 win      TECH "She pulls to the left. I'll fix it. Your wing's dented, by the way."
@@ -2030,6 +2048,7 @@ ship     ARISTON 1 nav1 count=4
 ship     AGASICL 1 nav1
 ship     NICANDR 1 nav2 count=4
 ship     AGASICL 1 nav2 count=2
+field    mine -2250 4500 18000 2250
 bar      left=TORCH middle=PRIME right=COMET
 talk     bar COMET PRIME "Who's got the book?"
 talk     bar PRIME COMET "Tally."
@@ -2068,15 +2087,15 @@ radio    "Kit here. Don't scratch her. She's got more names on her than Solberg'
 
 mission  WOLF3592
 node     WOLF359
-title    Patrol: Wolf 359, 3 nav points
+title    Patrol: Wolf 359, 1 nav point
 type     patrol
 music    briefing
 fighter  FRANKLN
 briefing "We're running low on fuel. I don't have to tell you what happens to a carrier that runs out."
-briefing "We've got 2 Oxes coming in with fuel, holding at Nav 2 until that point's clear. The Aera know."
+briefing "We've got 2 Oxes coming in with fuel, holding at Nav 1 until that point's clear. The Aera know."
 briefing "You and Kit have the first pair. A Franklin goes with you. The Vigilance has to have that fuel."
 briefing dead=TECH "You've got the first pair on your own, Wildcard. A Franklin goes with you."
-briefing "Intelligence expects 4 Nicanders at Nav 1 and 4 Convolutions at Nav 2."
+briefing "Intelligence expects 4 Convolutions at Nav 1."
 briefing alive=DRIFTER "There's no word on Drifter. I've got every pilot in this room listening for him. Dismissed."
 briefing dead=DRIFTER "Dismissed."
 win      "We've got fuel. A few more days of it. That was good flying, both of you."
@@ -2085,16 +2104,18 @@ win      alive=TECH "You'll have it, Chief. And you'll have a hot meal, if you s
 lose     "We'll run on what we have. It won't be long enough."
 lose     TECH "I can cut the deck heaters. I'll take everything that isn't holding a pilot."
 lose     alive=TECH "I know you will. Dismissed."
-nav      1 2250 4500 18000
-nav      2 4500 9000 32000
-nav      3 2250 4500 18000
+nav      1 4500 9000 32000
+nav      2 2250 4500 18000 hidden
+nav      3 2250 4500 18000 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TECH
 ship     VIGILNC 0 nav0 role=home
 ship     FRANKLN 0 nav0
-ship     NICANDR 1 nav1 count=4
-ship     OX 0 nav2 count=2
-ship     CONVOLN 1 nav2 count=4
+ship     NICANDR 1 nav2 count=4
+ship     OX 0 nav1 count=2
+ship     CONVOLN 1 nav1 count=4
+field    mine -2250 4500 18000 2250
+field    mine 6750 4500 20250 2250
 bar      left=- middle=- right=COMET
 say      bar COMET COMET "I've got a sheet of paper in front of me. It's blank. It's going to stay that way."
 say      bar COMET you "Who's it for?"
@@ -2120,11 +2141,11 @@ say      lounge TORCH TORCH "Pay Drifter my ten credits, if he comes back. Then 
 talk     deck TECH you "You're short on fuel. So am I. Don't ask me for anything today."
 say      deck TECH you "Is that a third fighter you're building, on the floor?"
 say      deck TECH TECH "No. That's what's left. I've been saving it. Never you mind for who."
-radio    "Kit here. Fuel's at Nav 2. Fly like you've got none, because you haven't."
+radio    "Kit here. Fuel's at Nav 1. Fly like you've got none, because you haven't."
 
 mission  WOLF3593
 node     WOLF359
-title    Patrol: Wolf 359, 3 nav points
+title    Patrol: Wolf 359, 1 nav point
 type     patrol
 music    briefing
 fighter  FRANKLN
@@ -2133,8 +2154,8 @@ briefing "The main Aera strength is out there, but another flight of bogies has 
 briefing "With the fighters away, we're wide open. So I'm sending the only wing I have."
 briefing "You and Kit, see what's out there. 2 Oxes are staying with us, and a Franklin. Report straight to me."
 briefing dead=TECH "You, Wildcard, see what's out there. 2 Oxes are staying with us, and a Franklin."
-briefing "Intelligence expects 3 Aristons at Nav 1, 4 Convolutions at Nav 2 and 2 Cleomenes at Nav 3."
-briefing "Those last two are close in. If it looks good, engage. That's your call."
+briefing "Intelligence expects 3 Aristons at Nav 1, among some asteroids."
+briefing "If it looks good, engage. That's your call."
 briefing alive=DRIFTER "We found Drifter's pod. It's a long way out. A destroyer's sitting on it, and I can't reach it."
 briefing "Any questions? Very well. Report directly to me when you get back. Dismissed."
 win      system=won "We've held. I don't know for how long, or why, but we've held at Wolf 359."
@@ -2155,8 +2176,8 @@ lose     system=lost alive=DRIFTER "They reached Drifter's pod too late. He had 
 lose     system=lost TECH "I've got what's left of the list. I know what it's for now."
 lose     system=lost "Dismissed, all of you. Get whatever rest you can."
 nav      1 15750 0 -15750
-nav      2 0 0 0
-nav      3 0 0 0
+nav      2 0 0 0 hidden
+nav      3 0 0 0 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TECH
 ship     VIGILNC 0 nav0 role=home
@@ -2165,6 +2186,8 @@ ship     OX 0 nav0 count=2
 ship     ARISTON 1 nav1 count=3
 ship     CONVOLN 1 nav2 count=4
 ship     CLEOMEN 1 nav3 count=2
+field    asteroid 15750 0 -11250 2250
+field    asteroid 13500 0 -18000 2250
 bar      left=FROST middle=KESTREL right=-
 talk     bar FROST KESTREL "You should sleep."
 talk     bar KESTREL FROST "Yes."
@@ -2194,7 +2217,7 @@ radio    "Kit here. They're on top of us. I've got your wing. Don't scratch her.
 
 mission  SHMRN1
 node     SHMRN
-title    Patrol: the Shmrn pocket, 5 nav points
+title    Patrol: the Shmrn pocket, 4 nav points
 type     patrol
 music    briefing
 fighter  LANCELT
@@ -2203,11 +2226,12 @@ briefing FROST "An old trading family, Commander. It'll cost them. I told them w
 briefing dead=FROST "They opened it for Frost. She'd been writing to an old trading family for years. I found the letters."
 briefing TORCH "Shmrn's still out there."
 briefing "Yes, Torch, it is. You've told us every day for three years, and you were right."
-briefing "You and Torch fly the first recon, five points, in Lancelots. He asked, and I had no reason to say no."
+briefing "You and Torch fly the first recon, four points, in Lancelots. He asked, and I had no reason to say no."
 briefing "Command thinks the Aera run this whole sector from inside the pocket. We're going to find out."
 briefing "We have a Cleomenes off the ship and the turrets are off, so clear that. A Lancelot and 2 Oxes stay here."
 briefing "At Nav 1 you pass a Kahan and 2 Lancelots of ours. After that you're in territory nobody's seen for years."
-briefing "Intelligence expects 2 Cleomenes at Nav 2, 4 Aristons at Nav 4 and 4 Convolutions at Nav 5."
+briefing "Intelligence expects 2 Cleomenes at Nav 2 and 4 Aristons at Nav 4."
+briefing "There's a lot of debris out there, and some of it will be mines."
 briefing you "What do we do if we meet something bigger, Commander?"
 briefing "Your call. I'd engage anything up to a destroyer. Dismissed."
 win      "A clean recon. Now we know what's in there. It's a lot, but we know."
@@ -2221,7 +2245,7 @@ nav      1 18000 2250 4500
 nav      2 24750 4500 -9000
 nav      3 9000 0 -13500
 nav      4 -4500 -2250 -20250
-nav      5 -4500 -2250 -20250
+nav      5 -4500 -2250 -20250 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home turrets=off
@@ -2234,6 +2258,9 @@ ship     CLEOMEN 1 nav2 count=2
 ship     ARISTON 1 nav4 count=4
 ship     AGASICL 1 nav4
 ship     CONVOLN 1 nav5 count=4
+field    asteroid 15750 4500 6750 2250
+field    mine 27000 6750 -6750 2250
+field    asteroid 9000 0 -15750 2250
 bar      left=FROST middle=PRIME right=DRIFTER
 talk     bar DRIFTER FROST "I've had fifty to one against this for three years."
 talk     bar FROST DRIFTER "I hope you've got the money."
@@ -2276,7 +2303,7 @@ radio    "Torch. Shmrn's still out there. Let's go and see."
 
 mission  SHMRN2
 node     SHMRN
-title    Patrol: the Shmrn pocket, 7 nav points
+title    Patrol: the Shmrn pocket, 3 nav points
 type     patrol
 music    briefing
 fighter  LANCELT
@@ -2284,9 +2311,9 @@ briefing "We've done our recon, and we've found them. From now on we engage and 
 briefing after=won "Your report gave us the map for it."
 briefing after=lost "We have most of a map, and we're going anyway."
 briefing "You and Torch are first up. You'll go after an Anaxidamus cruiser, with 2 Lancelots from the fleet."
-briefing "They'll meet you at Nav 1. Then you go on, seven points in all. It'll be a long day."
-briefing "Intelligence expects 4 Agis at Nav 4 with the cruiser, 4 Aristons at Nav 5."
-briefing "Then 2 Convolutions at Nav 6 and 2 Convolutions at Nav 7. Save something for those."
+briefing "They'll meet you at Nav 1. Then you go on, three points in all. It'll be a long day."
+briefing "Intelligence expects 4 Agis at Nav 3 with the cruiser."
+briefing "Save something for the way home. I doubt it'll be quiet."
 briefing you "Have we found their command, Commander?"
 briefing "Not yet, Wildcard, but Tactical's narrowed it down."
 briefing TORCH "And the signal?"
@@ -2300,20 +2327,21 @@ lose     TORCH "Put me back out there. Tonight."
 lose     alive=TORCH "Tomorrow, Torch. You'll be no use to anybody tonight. Dismissed."
 nav      1 13500 -2250 -4500
 nav      2 11250 0 -18000
-nav      3 11250 0 -18000
-nav      4 6750 -6750 -32000
-nav      5 6750 -6750 -32000
-nav      6 4500 0 -15750
-nav      7 4500 0 -15750
+nav      3 6750 -6750 -32000
+nav      4 11250 0 -18000 hidden
+nav      5 6750 -6750 -32000 hidden
+nav      6 4500 0 -15750 hidden
+nav      7 4500 0 -15750 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home
 ship     LANCELT 0 nav1 count=2
-ship     AGIS 1 nav4 count=4
-ship     ANAXIDM 1 nav4
+ship     AGIS 1 nav3 count=4
+ship     ANAXIDM 1 nav3
 ship     ARISTON 1 nav5 count=4
 ship     CONVOLN 1 nav6 count=2
 ship     CONVOLN 1 nav7 count=2
+field    asteroid 9000 0 -15750 2250
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER TORCH "Long odds against Shmrn."
 talk     bar TORCH DRIFTER "I'm in it, Drifter. I've been in it for a week."
@@ -2347,15 +2375,15 @@ say      lounge COMET COMET "They're going to ask me for something, Rookie. I ca
 say      lounge COMET you "What?"
 say      lounge COMET COMET "Something with names in it."
 talk     deck TECH you "Long way out, for a Lancelot. You're going to feel that in your seat."
-say      deck TECH TECH boost=fuel "I've run you a reserve. Seven nav points. This one's mine, so you'll bring it back."
+say      deck TECH TECH boost=fuel "I've run you a reserve. It's a long way. This one's mine, so you'll bring it back."
 say      deck TECH you "Have you given up flying, then?"
 say      deck TECH TECH if=WOLF359 "I flew. It's on the wall. I've got a deck to run, and it's a better one. Don't ask me again."
 say      deck TECH TECH unless=WOLF359 "I used to race. Tally's been telling me I drove like a civilian. After the war, we'll see."
-radio    "Torch. Seven points. I've got a long way to go, and it's the right way this time."
+radio    "Torch. Three points. I've got a long way to go, and it's the right way this time."
 
 mission  SHMRN3
 node     SHMRN
-title    Patrol: the Shmrn pocket, 6 nav points
+title    Patrol: the Shmrn pocket, 3 nav points
 type     patrol
 music    briefing
 fighter  LANCELT
@@ -2363,8 +2391,8 @@ briefing "The Vigilance is moving up to the pocket, and we're going to take fire
 briefing you "(She gives out the flanks: above, below, port.)"
 briefing "You and Torch have the starboard side. Three legs, then you meet us at the far end."
 briefing "4 Convolutions are on us already, and the turrets are off. A Lancelot stays with the ship."
-briefing "Past that, Intelligence expects 4 Convolutions at Nav 3, 2 Cleomenes at Nav 5, and 2 Nicanders at Nav 6."
-briefing "There's an Agasicles at Nav 6 as well. Assume anything you see is coming for the ship, and engage it."
+briefing "Past that, Intelligence expects 2 Cleomenes at Nav 2 and 2 Nicanders at Nav 3."
+briefing "There's an Agasicles at Nav 3 as well. Assume anything you see is coming for the ship, and engage it."
 briefing you "What are we looking at out there, Commander?"
 briefing unless=LIXIS "It's a crucial base, so they'll send their best. Sixty-Four is said to be here. Watch for it."
 briefing if=LIXIS "It's a crucial base, so they'll send their best. They've lost Sixty-Four, and they know who did it."
@@ -2377,21 +2405,23 @@ win      alive=TORCH "Yes. Go and find out what you're going to say to her next.
 lose     "We got here, but it cost us. I have people to write to tonight."
 lose     TORCH "She asked who was flying. I told her."
 lose     alive=TORCH "I know what you told her. Dismissed."
-nav      1 -3375 4500 -13500
-nav      2 -6750 9000 -27000
-nav      3 -9000 11250 -32000
-nav      4 -18000 4500 0
-nav      5 -27000 6750 -9000
-nav      6 -22500 9000 -24750
+nav      1 -18000 4500 0
+nav      2 -27000 6750 -9000
+nav      3 -22500 9000 -24750
+nav      4 -3375 4500 -13500 hidden
+nav      5 -6750 9000 -27000 hidden
+nav      6 -9000 11250 -32000 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     CONVOLN 1 nav0 count=4
-ship     LANCELT 0 nav1
-ship     CONVOLN 1 nav3 count=4
-ship     CLEOMEN 1 nav5 count=2
-ship     NICANDR 1 nav6 count=2
-ship     AGASICL 1 nav6
+ship     LANCELT 0 nav4
+ship     CONVOLN 1 nav6 count=4
+ship     CLEOMEN 1 nav2 count=2
+ship     NICANDR 1 nav3 count=2
+ship     AGASICL 1 nav3
+field    mine -18000 4500 2250 2250
+field    mine -29250 6300 -6750 2250
 bar      left=FROST middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Who signed for my wingtip?"
 talk     bar ANCHOR PRIME "You did."
@@ -2426,16 +2456,16 @@ radio    "Torch. Starboard side. Stay close. I've got something to say to someon
 
 mission  SHMRN4
 node     SHMRN
-title    Patrol: the Shmrn pocket, 8 nav points
+title    Patrol: the Shmrn pocket, 3 nav points
 type     patrol
 music    briefing
 fighter  LANCELT
 briefing "All right, people. This is the big one."
-briefing "We know what's in the pocket now. A Leonidas dreadnought runs this sector from Nav 6."
+briefing "We know what's in the pocket now. A Leonidas dreadnought runs this sector from Nav 2."
 briefing "They expect every capital ship we have, and that's hours off. A handful of fighters can do it first."
-briefing "You and Torch go straight in. A Gawain will join you at Nav 3 if it can."
-briefing "Intelligence expects 4 Aristons at Nav 5, with an Anaxidamus. Slip past them. Don't stop and fight."
-briefing "Then the dreadnought, and 4 Convolutions at Nav 6. Past it, 4 Agis at Nav 7 and 4 Cleomenes at Nav 8."
+briefing "You and Torch go straight in. A Gawain will join you on the way if it can."
+briefing "Intelligence expects 4 Aristons at Nav 1, with an Anaxidamus. Slip past them. Don't stop and fight."
+briefing "Then the dreadnought, and 4 Convolutions at Nav 2. Past it, 4 Agis at Nav 3."
 briefing you "What do we hit it with, Commander?"
 briefing "Your missiles. Save them. Your guns won't scratch anything that big."
 briefing TORCH "My sister's going to be watching this."
@@ -2457,24 +2487,25 @@ lose     system=won "Go on. Tally says the first round's on him."
 lose     system=lost "It's still there, and we're leaving. We have orders. The lane won't stay open."
 lose     system=lost TORCH "Then I'm staying."
 lose     system=lost alive=TORCH "No, you aren't. You've carried those codes for three years. You can carry them again. Dismissed."
-nav      1 -6750 0 -6750
-nav      2 -4500 0 -18000
-nav      3 6750 0 -31500
-nav      4 6750 0 -13500
-nav      5 13500 0 -27000
-nav      6 24750 0 -32000
-nav      7 24750 0 -32000
-nav      8 24750 0 -32000
+nav      1 13500 0 -27000
+nav      2 24750 0 -32000
+nav      3 24750 0 -32000
+nav      4 -6750 0 -6750 hidden
+nav      5 -4500 0 -18000 hidden
+nav      6 6750 0 -31500 hidden
+nav      7 6750 0 -13500 hidden
+nav      8 24750 0 -32000 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home
-ship     GAWAIN 0 nav3
-ship     ARISTON 1 nav5 count=4
-ship     ANAXIDM 1 nav5
-ship     LEONIDS 1 nav6
-ship     CONVOLN 1 nav6 count=4
-ship     AGIS 1 nav7 count=4
+ship     GAWAIN 0 nav6
+ship     ARISTON 1 nav1 count=4
+ship     ANAXIDM 1 nav1
+ship     LEONIDS 1 nav2
+ship     CONVOLN 1 nav2 count=4
+ship     AGIS 1 nav3 count=4
 ship     CLEOMEN 1 nav8 count=4
+field    mine 9000 0 -13500 2250
 wipe     ECHO
 bar      left=TORCH middle=ECHO right=COMET
 talk     bar COMET ECHO "Your column's gone."
@@ -2514,11 +2545,11 @@ talk     deck TECH you "I've put the list away. I've got a tin of grey paint. I'
 say      deck TECH TECH boost=missile "One more missile. It's the last crate on the ship. Use it on the big one."
 say      deck TECH you "And then what, Kit?"
 say      deck TECH TECH "Tally says he can beat me round the Sol rings in a civilian hull. I'm going to take his money."
-radio    "Torch. Nav 6, then. Don't stop for anything. Ines is watching, and I've got something to bring her."
+radio    "Torch. Nav 2, then. Don't stop for anything. Ines is watching, and I've got something to bring her."
 
 mission  LUYTEN1
 node     LUYTEN
-title    Patrol: Luyten's Star, 4 nav points
+title    Patrol: Luyten's Star, 1 nav point
 type     patrol
 music    briefing
 fighter  FRANKLN
@@ -2528,9 +2559,9 @@ briefing "Refugees are coming in from everywhere."
 briefing "For the next few days, our job is to see they arrive. I've got no pilots left to do it with."
 briefing "So Wendell Greer is flying. Some of you know him as Tally."
 briefing TALLY "Don't get up. Try to keep up, kid."
-briefing "You and Tally have the first run. An Ox is waiting at Nav 2, and it starts for home when you reach it."
+briefing "You and Tally have the first run. An Ox is waiting at Nav 1, and it starts for home when you reach it."
 briefing "It's heavy, so it's slow. That's civilians on board, children and old people. I want you very careful."
-briefing "Intelligence expects 4 Agis at Nav 1, 3 Aristons at Nav 2, 4 Aristons at Nav 3 and 3 Convolutions at Nav 4."
+briefing "Intelligence expects 3 Aristons at Nav 1. The patrols around the jump points will be heavy."
 briefing "There's an Ariston on our deck already. An Ox stays with us until you've seen to that."
 briefing "If you lose the Ox, you've lost the mission. I'll read you the manifest myself. Dismissed."
 win      "The Ox is in, with four hundred and twelve people on it. I've got them on a list."
@@ -2541,18 +2572,18 @@ win      dead=TALLY "There are four hundred and twelve people who'll never know 
 lose     escort=lost "We lost the Ox. I have the manifest here. I'll read it later, on my own."
 lose     TALLY "I had it, and I had it, and then I didn't. That's forty years of flying."
 lose     "Get some rest, both of you. Dismissed."
-nav      1 -11250 2250 -11250
-nav      2 -20250 4500 -22500
-nav      3 -20250 4500 -22500
-nav      4 -11250 2250 -11250
+nav      1 -20250 4500 -22500
+nav      2 -11250 2250 -11250 hidden
+nav      3 -20250 4500 -22500 hidden
+nav      4 -11250 2250 -11250 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TALLY
 ship     VIGILNC 0 nav0 role=home
 ship     OX 0 nav0
 ship     ARISTON 0 nav0
-ship     AGIS 1 nav1 count=4
-ship     OX 0 nav2 role=in
-ship     ARISTON 1 nav2 count=3
+ship     AGIS 1 nav2 count=4
+ship     OX 0 nav1 role=in
+ship     ARISTON 1 nav1 count=3
 ship     ARISTON 1 nav3 count=4
 ship     CONVOLN 1 nav4 count=3
 bar      left=- middle=PRIME right=COMET
@@ -2596,16 +2627,16 @@ radio    "Tally here. It's been a while. Don't look at me like that, kid. I can 
 
 mission  LUYTEN2
 node     LUYTEN
-title    Patrol: Luyten's Star, 3 nav points
+title    Patrol: Luyten's Star, 1 nav point
 type     patrol
 music    briefing
 fighter  FRANKLN
 briefing "The situation is getting worse. We've lost the last relay at Wolf 359, and they're coming here next."
 briefing alive=TORCH "Torch took a fighter last night and jumped for Shmrn, alone. Nobody stopped him. Nor did I."
-briefing "We have half a dozen fighters circling Nav 2, thirty-four thousand out, waiting for something."
+briefing "We have half a dozen fighters circling Nav 1, thirty-four thousand out, waiting for something."
 briefing "It might be a tanker. It's more likely the first of their cruisers, an Anaxidamus."
 briefing "You and Tally go and look. A Franklin and an Ox stay with us, and the turrets are off."
-briefing "There's an Agis on our deck. Past that, 3 Agis at Nav 1, 4 Convolutions at Nav 2, 2 Convolutions at Nav 3."
+briefing "There's an Agis on our deck, 4 Convolutions at Nav 1, and they've mined the way there."
 briefing TALLY "Do we make a play for her, Commander, or is this just a look?"
 briefing "You'll have to make the call, but I'd engage. She'll never be as open as when she's just jumped in."
 briefing "Dismissed."
@@ -2616,19 +2647,21 @@ win      TALLY "You owe me."
 lose     "So she's in the system now. We'll have to deal with that as well."
 lose     TALLY "My eyes aren't what they were. Don't tell Solberg."
 lose     alive=TALLY "I signed your medical, Wendell. I know what your eyes are. Dismissed."
-nav      1 4500 4500 15750
-nav      2 9000 9000 31500
-nav      3 9000 9000 31500
+nav      1 9000 9000 31500
+nav      2 4500 4500 15750 hidden
+nav      3 9000 9000 31500 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TALLY
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     FRANKLN 0 nav0
 ship     OX 0 nav0
 ship     AGIS 1 nav0
-ship     AGIS 1 nav1 count=3
-ship     CONVOLN 1 nav2 count=4
-ship     ANAXIDM 1 nav2 role=in
+ship     AGIS 1 nav2 count=3
+ship     CONVOLN 1 nav1 count=4
+ship     ANAXIDM 1 nav1 role=in
 ship     CONVOLN 1 nav3 count=2
+field    mine 6750 4500 13500 3375
+field    mine 2250 4500 18000 2250
 wipe     ALL
 bar      left=- middle=ECHO right=COMET
 talk     bar ECHO COMET "He wiped it."
@@ -2660,7 +2693,7 @@ radio    "Tally here. There's a cruiser coming, kid. I always wanted to see one 
 
 mission  LUYTEN3
 node     LUYTEN
-title    Patrol: Luyten's Star, 3 nav points
+title    Patrol: Luyten's Star, 1 nav point
 type     patrol
 music    briefing
 fighter  FRANKLN
@@ -2669,8 +2702,8 @@ briefing "Command has ordered the evacuation of all civilians from Luyten's Star
 briefing you "I thought they were evacuating people to Luyten's Star, Commander."
 briefing "They were, Wildcard. This turned out to be a stopover. Our job is to hold as long as we can."
 briefing "Right now, several of our ships are under attack around the system, and I'm sending wings to each."
-briefing "You and Tally have the Kahan at Nav 2, and the Franklin with her. 2 Schroedingers go out with you."
-briefing "Intelligence expects 5 Agis at Nav 1, 4 Nicanders at Nav 2 and 4 Convolutions at Nav 3."
+briefing "You and Tally have the Kahan at Nav 1, and the Franklin with her. 2 Schroedingers go out with you."
+briefing "Intelligence expects 4 Nicanders at Nav 1, and they've mined the way there."
 briefing "If you get intercepted, get through. Do not stop to fight until you reach her. Understood?"
 briefing TALLY "That takes all the fun out of it, Commander."
 briefing you "Understood. No delays."
@@ -2681,18 +2714,20 @@ win      "Dismissed, both of you. Eat something."
 lose     "We've lost the Kahan's escort, and I don't know if we still have the Kahan."
 lose     TALLY "That's not on the kid, Commander. That's on me. Write it down."
 lose     "I'm writing it all down, Wendell. Dismissed."
-nav      1 15750 0 9000
-nav      2 31500 0 18000
-nav      3 31500 0 18000
+nav      1 31500 0 18000
+nav      2 15750 0 9000 hidden
+nav      3 31500 0 18000 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TALLY
 ship     VIGILNC 0 nav0 role=home
 ship     SCHROED 0 nav0 count=2
-ship     AGIS 1 nav1 count=5
-ship     FRANKLN 0 nav2
-ship     KAHAN 0 nav2
-ship     NICANDR 1 nav2 count=4
+ship     AGIS 1 nav2 count=5
+ship     FRANKLN 0 nav1
+ship     KAHAN 0 nav1
+ship     NICANDR 1 nav1 count=4
 ship     CONVOLN 1 nav3 count=4
+field    mine 15750 0 6750 3375
+field    mine 15750 0 13500 2250
 bar      left=- middle=- right=COMET
 say      bar COMET COMET "They came in to see Julian, from the Guild. The family's lawyers. There was a form."
 say      bar COMET you "What did they want?"
@@ -2720,20 +2755,20 @@ radio    "Tally here. No stopping, she says. I never did learn. Stay with me, ki
 
 mission  LUYTEN4
 node     LUYTEN
-title    Patrol: Luyten's Star, 7 nav points
+title    Patrol: Luyten's Star, 1 nav point
 type     patrol
 music    briefing
 fighter  FRANKLN
 briefing "Well, ladies and gentlemen, it's all over."
 briefing "The last refugee ship has left. We've been ordered out, and the fleet is falling back to the Home Worlds."
 briefing "I need a volunteer wing, for a mission that may well be suicide. I won't ask until you've heard it."
-briefing "The Vigilance is headed for her jump. An Agasicles is closing, with 2 Convolutions at Nav 4."
+briefing "The Vigilance is headed for her jump. An Agasicles is closing, with 2 Convolutions at Nav 1."
 briefing "I need someone to hold the Agasicles off while we prepare to jump."
 briefing "There are no guarantees. We won't be able to wait for you. Whoever goes may well be left behind."
 briefing you "I'll do it, Commander."
 briefing "You and Tally, then. I'm not surprised."
 briefing TALLY "Someone has to bring you back, kid. You owe me a rematch."
-briefing "Intelligence expects 4 Aristons at Nav 3, 4 Agis at Nav 5, 5 Nicanders at Nav 6 and 3 Cleomenes at Nav 7."
+briefing "There are dozens of fighters in the area, and mines on the way to our jump."
 briefing "This is a very brave thing. I know every name on this ship, and I'll know yours. Good luck. Dismissed."
 win      "You came back. I'd have bet against it, if there was anyone left to take it. We jump in ninety seconds."
 win      TALLY "I'm current for another month, Commander."
@@ -2744,24 +2779,26 @@ win      "Get to a seat, Wildcard. We're leaving the sector. We'll be back. I've
 lose     "We have to jump. I don't know who's still out there. I'm sorry. I'm going to write it down."
 lose     TALLY "We held them as long as we could. Get us out of here, Mira."
 lose     "Get to a seat, Wildcard. We're leaving the sector. I've got all your names."
-nav      1 -15750 -2250 -2250
-nav      2 -31500 -4500 -4500
-nav      3 -32000 -6750 -6750
-nav      4 18000 0 4500
-nav      5 0 0 0
-nav      6 -15750 -2250 -2250
-nav      7 -31500 -4500 -4500
+nav      1 18000 0 4500
+nav      2 -15750 -2250 -2250 hidden
+nav      3 -31500 -4500 -4500 hidden
+nav      4 -32000 -6750 -6750 hidden
+nav      5 0 0 0 hidden
+nav      6 -15750 -2250 -2250 hidden
+nav      7 -31500 -4500 -4500 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TALLY
 ship     VIGILNC 0 nav0 role=home
-ship     ARISTON 1 nav3 count=4
-ship     CONVOLN 1 nav4 count=2
-ship     AGASICL 1 nav4
+ship     ARISTON 1 nav4 count=4
+ship     CONVOLN 1 nav1 count=2
+ship     AGASICL 1 nav1
 ship     AGIS 1 nav5 count=4
 ship     NICANDR 1 nav6 count=5
 ship     CLEOMEN 1 nav7 count=3
-field    asteroid 0 4500 32000
-field    asteroid -2250 -2250 32000
+field    mine -18000 -2250 -4500 2250
+field    mine -32000 -4500 -6750 2250
+field    asteroid 0 0 4500 2250
+field    asteroid -2250 0 -2250 2250
 bar      left=- middle=- right=-
 say      bar TALLY TALLY "There's nobody here. You noticed. I've got the board clean, and the glasses are done."
 say      bar TALLY you "Are you ready?"

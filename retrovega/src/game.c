@@ -15,6 +15,8 @@
 #include "room.h"
 #include "logic.h"
 #include "campaign.h"
+#include "lightfield.h"
+#include "rocks.h"
 #include "ships.h"
 #include "lipsync.h"
 #include "music.h"
@@ -24,6 +26,7 @@
 enum { MODE_ROOM, MODE_TALK, MODE_BRIEF, MODE_DECK, MODE_DEBRIEF, MODE_BUNK,
        MODE_NAME, MODE_LOG, MODE_MESSAGE, MODE_ENDING, MODE_BOARD, MODE_DEAD, MODE_QUIT };
 
+extern int g_field;                     /* (flight.c: /field D, a test's) */
 static int g_mode, g_back_mode;
 static RvMission __far g_m;
 static unsigned long g_now;
@@ -631,7 +634,11 @@ static void situation_display(int y0, int y1)
     {
         int px = MAPX(0), py = MAPY(0);
         for (i = 0; i <= g_m.nnav; i++) {
-            int nx = i < g_m.nnav ? MAPX(g_m.nav[i].x) : MAPX(0), ny = i < g_m.nnav ? MAPY(g_m.nav[i].z) : MAPY(0);
+            int nx, ny;
+            if (i < g_m.nnav && (g_m.nav[i].flags & 1))
+                continue;               /* (a hidden trigger point: the player's map has no word of it) */
+            nx = i < g_m.nnav ? MAPX(g_m.nav[i].x) : MAPX(0);
+            ny = i < g_m.nnav ? MAPY(g_m.nav[i].z) : MAPY(0);
             gfx_line(px, py, nx, ny, UI_HILITE, 3, y0, y1);
             px = nx; py = ny;
         }
@@ -642,6 +649,8 @@ static void situation_display(int y0, int y1)
     for (i = 0; i < g_m.nnav; i++) {
         char s[8];
         int k, foes = 0;
+        if (g_m.nav[i].flags & 1)
+            continue;
         for (k = 0; k < g_m.nship; k++)
             if (g_m.ship[k].nav == g_m.nav[i].id && g_m.ship[k].side == 1)
                 foes += g_m.ship[k].count;
@@ -1405,6 +1414,7 @@ static void next_mission(void)
 {
     int i;
     camp_mission(camp_mission_index(), &g_m);
+    rocks_want(g_m.nfield > 0 || g_field > 0);   /* (a field's art: listed with the ships', room kept for it) */
     for (i = 0; i < RV_PILOTS; i++)     /* (Tally wipes the board: everyone's marks, or one column) */
         if (g_m.wipe == 0xFE || g_m.wipe == i)
             g_camp.pilot[i].kills = 0;

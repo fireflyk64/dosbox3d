@@ -2789,6 +2789,12 @@ void __far __cdecl flight_startup(void)
     missiles_init();
     sky_clear();
     rocks_flight_start();
+    if (g_m) {                          /* the mission's asteroid and mine fields */
+        int fi;
+        for (fi = 0; fi < (int)g_m->nfield; fi++)
+            rocks_field_add(g_m->field[fi].type, (long)g_m->field[fi].x * 256, (long)g_m->field[fi].y * 256,
+                            (long)g_m->field[fi].z * 256, g_m->field[fi].radius, g_m->field[fi].density);
+    }
     sfx_flight_start();                 /* (last: the card plays from now) */
     if (g_field > 0)                    /* (centred where the player starts: big enough to fly in for minutes) */
         rocks_field_add(RV_FIELD_ASTEROID, gPositionVector[0].x, gPositionVector[0].y, gPositionVector[0].z, 200000L,

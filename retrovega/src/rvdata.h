@@ -15,7 +15,7 @@
 #define RV_SHIPS 12
 #define RV_SEATS 3
 #define RV_TALKS 200
-#define RV_FIELDS 4
+#define RV_FIELDS 7
 #define RV_SHIPTYPES 64
 #define RV_WEAPONS 48
 #define RV_WEAPON_TYPES 64
@@ -212,7 +212,7 @@ typedef struct {
 } RvNode;
 typedef struct {
     uint8_t id;
-    uint8_t pad;
+    uint8_t flags;
     int16_t x;
     int16_t y;
     int16_t z;
@@ -241,6 +241,7 @@ typedef struct {
     uint8_t type;
     uint8_t density;
     int16_t x;
+    int16_t y;
     int16_t z;
     int16_t radius;
 } RvField;
@@ -326,7 +327,7 @@ typedef struct {
 #define RV_HEADER_SIZE 68
 #define RV_PILOT_SIZE 120
 #define RV_NODE_SIZE 22
-#define RV_MISSION_SIZE 287
+#define RV_MISSION_SIZE 325
 #define RV_SHIPTYPE_SIZE 177
 #define RV_WEAPON_SIZE 44
 #define RV_LINE_SIZE 114

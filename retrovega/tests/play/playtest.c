@@ -4255,6 +4255,70 @@ static void t_scene(void)
     REQUIRE(SHIELD(home, 0) >= sh, e_same, SHIELD(home, 0), sh, 0);
 }
 
+/* M8.26: the autopilot traces the line ahead: it stops short of a field across it and will not go from its edge; it
+ * stops at a hidden trigger point on the way, whose ships then come; hidden points are on no list and ask nothing */
+static void pt_field(int16_t x, int16_t y, int16_t z, int16_t r)
+{
+    RvField __far *f = &g_tm.field[g_tm.nfield++];
+    f->type = RV_FIELD_ASTEROID;
+    f->density = 0;
+    f->x = x;
+    f->y = y;
+    f->z = z;
+    f->radius = r;
+}
+
+static void t_way_ahead(void)
+{
+    static const char __far e_field[] = "a field at 10,000 km, 1,000 across: the autopilot stopped at %d km (returned %d): wanted some 8,500";
+    static const char __far e_edge[] = "at the field's edge the autopilot went on to %d km: it should refuse";
+    static const char __far e_past[] = "past the field the autopilot left the player at %d km: wanted some 15,500, the nav point's short";
+    static const char __far e_hid[] = "a hidden point at 10,000 km: the autopilot stopped at %d km: wanted some 5,500";
+    static const char __far e_came[] = "the hidden point's ships did not come (%d enemies in the world)";
+    static const char __far e_list[] = "the hidden point is on the player's lists (logic_nav_km says %d), or was chosen (%d)";
+    static const char __far e_done[] = "the patrol flown and the hidden point never come to: victoryPoints %d, it asks nothing: 1";
+    int16_t r, i, enemies;
+    int32_t km;
+    pt_mission();
+    pt_nav(1, 0, 0, NAV1_Z);
+    pt_field(0, 0, 10000, 1000);
+    pt_launch(PT_PLAYER);
+    r = logic_autopilot();
+    REQUIRE(r == 1 && labs(TO_KM(gPositionVector[0].z) - 8500) < 150, e_field, (int)TO_KM(gPositionVector[0].z), r, 0);
+    REQUIRE(logic_autopilot() == 0, e_edge, (int)TO_KM(gPositionVector[0].z), 0, 0);
+    pt_put(0, 0, 0, 12000, 0);
+    r = logic_autopilot();
+    REQUIRE(r == 1 && labs(TO_KM(gPositionVector[0].z) - 15500) < 150, e_past, (int)TO_KM(gPositionVector[0].z), 0, 0);
+    pt_mission();
+    pt_nav(1, 0, 0, NAV1_Z);
+    pt_nav(2, 0, 0, 10000);
+    g_tm.nav[g_tm.nnav - 1].flags = 1;
+    pt_mship(PT_ENEMY, SIDE_AERA, 2, 2, RV_PILOT_NONE);
+    pt_launch(PT_PLAYER);
+    REQUIRE(logic_nav_km(2, &km) == 0 && g_sys.nav != 2, e_list, logic_nav_km(2, &km), g_sys.nav, 0);
+    r = logic_autopilot();
+    REQUIRE(r == 1 && labs(TO_KM(gPositionVector[0].z) - 5500) < 150, e_hid, (int)TO_KM(gPositionVector[0].z), 0, 0);
+    enemies = 0;
+    for (i = 1; i < NUM_SHIP_SLOTS; i++)
+        enemies += slot_is_ship(i) && commAnimInfo[i] != commAnimInfo[0];
+    REQUIRE(enemies == 2, e_came, enemies, 0, 0);
+    pt_mission();
+    pt_nav(1, 0, 0, NAV1_Z);
+    pt_nav(2, 15000, 0, 0);
+    g_tm.nav[g_tm.nnav - 1].flags = 1;
+    pt_mship(PT_ENEMY, SIDE_AERA, 2, 2, RV_PILOT_NONE);
+    pt_launch(PT_PLAYER);
+    (void)logic_autopilot();
+    if (!pt_step())
+        return;
+    gPositionVector[0] = vec3(0, 0, 0);
+    if (!pt_step())
+        return;
+    missionStatus = 1;
+    logic_end();
+    REQUIRE(victoryPoints != 0, e_done, victoryPoints, 0, 0);
+}
+
 /* M8.11 */
 static void t_escort_lost(void)
 {
@@ -4912,6 +4976,7 @@ static const char __far n_m8_22[] = "M8.22 kit-boost (kit_boost, logic_boost): t
 static const char __far n_m8_23[] = "M8.23 way-out (camp_way_out): how a system comes out of the flight just flown: nothing before its last mission, then as camp_resolve has it";
 static const char __far n_m8_24[] = "M8.24 nav-choice (logic_nav_next, logic_autopilot): the chosen nav point follows the way ahead until N picks one; the autopilot goes to it";
 static const char __far n_m8_25[] = "M8.25 scene (step_scene): past 7,200 km the carrier is out of the scene and cannot be targeted; it is back as it was when the player is";
+static const char __far n_m8_26[] = "M8.26 way-ahead (logic_autopilot): the autopilot stops short of a field and at a hidden point on its line; hidden points are on no list and ask nothing";
 static const char __far n_m8_16[] = "M8.16 carrier-lost (step_deaths, logic_end): the carrier destroyed ends the flight when its explosion has run: a loss";
 static const char __far n_m8_15[] = "M8.15 landing-contact (carrier_contact, logic_end): cleared into the bow lands, anywhere else the hull stops it unhurt; undone lost, done won";
 static const char __far n_m9_1[] = "M9.1 gunsight (logic_hud): a mark at the view's middle";
@@ -4959,7 +5024,7 @@ static const PtTest __far k_tests[] = {
     { n_m8_1, t_start, 0 }, { n_m8_2, t_nav1, 0 }, { n_m8_3, t_nav_once, 0 }, { n_m8_4, t_won, 0 },
     { n_m8_5, t_skipped, 0 }, { n_m8_6, t_enemies_left, 0 }, { n_m8_7, t_layer_spawn, 0 }, { n_m8_8, t_autopilot, 0 },
     { n_m8_9, t_fighter, 0 }, { n_m8_10, t_escort_out, 0 }, { n_m8_11, t_escort_lost, 0 }, { n_m8_12, t_escort_along, 0 },
-    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 }, { n_m8_15, t_landing_contact, 0 }, { n_m8_16, t_carrier_lost, 0 }, { n_m8_17, t_turrets_off, 0 }, { n_m8_18, t_attack_capital, 0 }, { n_m8_20, t_jump_told, 0 }, { n_m8_21, t_wingman_lost, 0 }, { n_m8_22, t_kit_boost, 0 }, { n_m8_23, t_way_out, 0 }, { n_m8_24, t_nav_choice, 0 }, { n_m8_25, t_scene, 0 }, { n_m8_19, t_autopilot_apart, 0 }, { n_m6_4, t_capital_map, 0 }, { n_m6_5, t_capital_ram, 0 },
+    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 }, { n_m8_15, t_landing_contact, 0 }, { n_m8_16, t_carrier_lost, 0 }, { n_m8_17, t_turrets_off, 0 }, { n_m8_18, t_attack_capital, 0 }, { n_m8_20, t_jump_told, 0 }, { n_m8_21, t_wingman_lost, 0 }, { n_m8_22, t_kit_boost, 0 }, { n_m8_23, t_way_out, 0 }, { n_m8_24, t_nav_choice, 0 }, { n_m8_25, t_scene, 0 }, { n_m8_26, t_way_ahead, 0 }, { n_m8_19, t_autopilot_apart, 0 }, { n_m6_4, t_capital_map, 0 }, { n_m6_5, t_capital_ram, 0 },
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
     { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 }, { n_m10_6, t_orders, 0 }, { n_m10_7, t_missile_lock, 0 },

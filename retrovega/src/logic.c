@@ -122,6 +122,8 @@ static struct {
 #define NAV_REACH_KM 5000               /* the player this near a nav point has reached it (enterNavPoint) */
 
 static uint16_t g_navs_seen;            /* a bit per nav point the player has reached (nav 0 from the start) */
+static RvField __far g_fields[RV_FIELDS];   /* the mission's asteroid and mine fields: the autopilot looks out for them */
+static int16_t __far g_nfields;
 static uint8_t __far g_cleared;         /* the carrier cleared the player to land (logic_request_landing) */
 static uint8_t __far g_stopped;         /* the carrier's hull stopped the player: 1 cleared, 2 not (the comm's to say) */
 static uint8_t __far g_killed[64];      /* a mission ship (its record) seen dying: shipAiState 9 */
@@ -267,8 +269,11 @@ static int16_t mission_done(void)
     for (n = 0; n < NAVS; n++) {
         if (!nav_defined(n))
             continue;
-        if (!(g_navs_seen >> n & 1))
+        if (!(g_navs_seen >> n & 1)) {
+            if (NAV_HIDDEN(n))
+                continue;               /* (a trigger point not come to: it asks nothing of the player) */
             return 0;
+        }
         at = NAV_SHIPS(n);
         for (j = 0; j < 10 && at[j] != 0xFFFF; j++)   /* (an enemy that left, afraid, is not in the way) */
             if (MSHIP_SIDE(at[j]) != commAnimInfo[0] && !g_killed[at[j] & 63] && !g_away[at[j] & 63])
@@ -388,7 +393,10 @@ void logic_start(const RvMission __far *m)
     /* Clear the accumulation of fractional turn progress */
     const uint16_t *at = NAV_SHIPS(0);
     int16_t j;
-    (void)m;
+    g_nfields = 0;
+    if (m)
+        for (j = 0; j < (int16_t)m->nfield && j < RV_FIELDS; j++)
+            g_fields[g_nfields++] = m->field[j];
     _fmemset(&g_pilot, 0, sizeof g_pilot);
     _fmemset(g_turn_frac, 0, sizeof(g_turn_frac));
     _fmemset(g_turn, 0, sizeof g_turn);
@@ -3017,8 +3025,76 @@ void logic_end(void)
  * point, as the old games cut to the arrival; 1 when it went, 0 when it may not.  (On a multiplayer client the layer
  * steps over the key's call: the host's autopilot moves everyone).  The next nav point is the first not reached
  * yet, home (nav 0) when all are; the player arrives AUTOPILOT_SHORT_KM short of it, facing it */
-/* the autopilot may go: the player alive, no enemy within AUTOPILOT_CLEAR_KM, and a nav point to go to (the next
- * unseen, or home) not yet reached: that nav point, or -1 (the engine asks before its flyby, flight.c) */
+#define AUTOPILOT_FIELD_KM 500          /* it stops this far short of a field's edge */
+#define AUTOPILOT_REGION_IN_KM 500      /* and this far inside the reach of a trigger point on its way, so it goes off */
+#define AUTOPILOT_MIN_KM 1000           /* a field nearer than this along the way: it will not go (the old game's: not in
+                                           a field, and it stops at the edge; the player flies through) */
+
+/* a line from the origin along d, len long (16 km units), against a sphere about c of radius r: how far along it
+ * first comes inside, -1 never (0: it starts inside) */
+static int32_t line_enters(const int32_t d[3], int32_t len, int32_t cx, int32_t cy, int32_t cz, int32_t r)
+{
+    int32_t u = (cx * d[0] + cy * d[1] + cz * d[2]) / len, perp = cx * cx + cy * cy + cz * cz - u * u, back;
+    if (perp >= r * r)
+        return -1;
+    back = (int32_t)lf_sqrt((uint32_t)(r * r - perp));
+    if (u + back < 0 || u - back > len)
+        return -1;
+    return u - back < 0 ? 0 : u - back;
+}
+
+/* a nav point with someone still to come at it */
+static int16_t nav_has_ships(int16_t n)
+{
+    const uint16_t *at = NAV_SHIPS(n);
+    int16_t j;
+    for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
+        if (!g_killed[at[j] & 63] && !g_away[at[j] & 63])
+            return 1;
+    return 0;
+}
+
+/* the way to nav point `next`, traced as the old game's autopilot does (the user: "raytrace the path along the line to
+ * see if enemy spawn regions or asteroid fields are in the way"): how far the player can be taken, km; *region the
+ * trigger point or waypoint not yet reached that it stops at (-1 none), *field 1 when a field stops it.  Neither: all
+ * the way, AUTOPILOT_SHORT_KM short of the nav point */
+static int32_t way_stop(int16_t next, int16_t *region, int16_t *field)
+{
+    int32_t px = TO_KM(gPositionVector[0].x), py = TO_KM(gPositionVector[0].y), pz = TO_KM(gPositionVector[0].z), d[3], len, best, e;
+    int16_t i;
+    d[0] = (NAV_AT(next, 0) - px) >> 4;
+    d[1] = (NAV_AT(next, 1) - py) >> 4;
+    d[2] = (NAV_AT(next, 2) - pz) >> 4;
+    len = (int32_t)lf_sqrt((uint32_t)(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]));
+    if (!len)
+        len = 1;
+    best = len * 16 - AUTOPILOT_SHORT_KM;
+    *region = -1;
+    *field = 0;
+    for (i = 0; i < g_nfields; i++) {
+        e = line_enters(d, len, (g_fields[i].x - px) >> 4, (g_fields[i].y - py) >> 4, (g_fields[i].z - pz) >> 4,
+                        ((int32_t)g_fields[i].radius + AUTOPILOT_FIELD_KM) >> 4);
+        if (e >= 0 && e * 16 < best) {
+            best = e * 16;
+            *field = 1;
+        }
+    }
+    for (i = 1; i < NAVS; i++) {
+        if (i == next || !nav_defined(i) || (g_navs_seen >> i & 1) || !nav_has_ships(i))
+            continue;
+        e = line_enters(d, len, (NAV_AT(i, 0) - px) >> 4, (NAV_AT(i, 1) - py) >> 4, (NAV_AT(i, 2) - pz) >> 4, NAV_REACH_KM >> 4);
+        if (e >= 0 && e * 16 + AUTOPILOT_REGION_IN_KM < best) {
+            best = e * 16 + AUTOPILOT_REGION_IN_KM;
+            *region = i;
+            *field = 0;
+        }
+    }
+    return best;
+}
+
+/* the autopilot may go: the player alive, no enemy within AUTOPILOT_CLEAR_KM, a nav point to go to (the one chosen, else
+ * the next not reached, else home) not yet reached, and no field at hand: that nav point, or -1 (the engine asks before
+ * its flyby, flight.c) */
 int16_t logic_autopilot_ready(void)
 {
     int16_t s, next;
@@ -3031,6 +3107,12 @@ int16_t logic_autopilot_ready(void)
     next = g_nav_chosen ? g_sys.nav : nav_next_unseen();
     if (nav_km(next) <= AUTOPILOT_SHORT_KM)
         return -1;                      /* (there already) */
+    {
+        int16_t region, field;
+        int32_t stop = way_stop(next, &region, &field);
+        if (field && stop < AUTOPILOT_MIN_KM)
+            return -1;
+    }
     return next;
 }
 
@@ -3039,9 +3121,9 @@ static void spawn_apart(int16_t s);
 int16_t logic_autopilot(void)
 {
     RvVec3 d, to;
-    int32_t horiz;
+    int32_t horiz, stop;
     uint32_t moved = 0;
-    int16_t s, next, yaw, pitch;
+    int16_t s, next, yaw, pitch, region, field;
     if ((next = logic_autopilot_ready()) < 0)
         return 0;
     /* the way there, km; its level part's length in 16 km steps (the squares of km overflow) */
@@ -3050,10 +3132,16 @@ int16_t logic_autopilot(void)
     horiz = (int32_t)lf_sqrt((uint32_t)((d.x >> 4) * (d.x >> 4) + (d.z >> 4) * (d.z >> 4))) << 4;
     yaw = lf_atan2(d.x, d.z);
     pitch = lf_atan2(d.y, horiz);
+    stop = way_stop(next, &region, &field);
     ship_face(0, yaw, pitch);
-    to = vec3((NAV_AT(next, 0) - FIX_MUL(gOrientationFrontVector[0].x, AUTOPILOT_SHORT_KM)) * KM,
-              (NAV_AT(next, 1) - FIX_MUL(gOrientationFrontVector[0].y, AUTOPILOT_SHORT_KM)) * KM,
-              (NAV_AT(next, 2) - FIX_MUL(gOrientationFrontVector[0].z, AUTOPILOT_SHORT_KM)) * KM);
+    if (region >= 0 || field)
+        to = vec3((TO_KM(gPositionVector[0].x) + FIX_MUL(gOrientationFrontVector[0].x, stop)) * KM,
+                  (TO_KM(gPositionVector[0].y) + FIX_MUL(gOrientationFrontVector[0].y, stop)) * KM,
+                  (TO_KM(gPositionVector[0].z) + FIX_MUL(gOrientationFrontVector[0].z, stop)) * KM);
+    else
+        to = vec3((NAV_AT(next, 0) - FIX_MUL(gOrientationFrontVector[0].x, AUTOPILOT_SHORT_KM)) * KM,
+                  (NAV_AT(next, 1) - FIX_MUL(gOrientationFrontVector[0].y, AUTOPILOT_SHORT_KM)) * KM,
+                  (NAV_AT(next, 2) - FIX_MUL(gOrientationFrontVector[0].z, AUTOPILOT_SHORT_KM)) * KM);
     /* the wing: moved as the player is, facing the same way (player_km while the player is still where it was); an
      * escort target of the player's side put behind it */
     for (s = 1; s < NUM_SHIP_SLOTS; s++) {
@@ -3082,7 +3170,9 @@ int16_t logic_autopilot(void)
         if (moved >> s & 1)
             spawn_apart(s);
     step_scene();                       /* (what was here gone, what is there back, before the next picture) */
-    if (next)
+    if (region >= 0)
+        enterNavPoint((uint16_t)region);
+    else if (next && !field)
         enterNavPoint((uint16_t)next);
     return 1;
 }
