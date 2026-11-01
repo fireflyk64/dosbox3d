@@ -1,0 +1,24 @@
+# the simulator at many ships (/simat N)
+wait 12
+click
+wait 4
+move 593 200
+wait 2
+click
+wait 12
+move 429 140
+wait 2
+click
+wait 14
+move 620 300
+wait 3
+click
+wait 150
+shot MANY1
+wait 150
+shot MANY2
+wait 150
+key esc
+wait 30
+shot MANY3
+quit

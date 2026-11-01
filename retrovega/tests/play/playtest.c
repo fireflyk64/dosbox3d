@@ -33,6 +33,7 @@
 #include "shots.h"
 #include "hud.h"
 #include "logic.h"
+#include "simulator.h"
 #ifdef RV_HOST
 #include "host.h"
 #endif
@@ -4786,6 +4787,114 @@ static void t_missile_lock(void)
     g_sys.target = -1;
 }
 
+/* --- M11: the simulator (simulator.c; the user, 2026-11-01) --- */
+
+static int16_t sim_enemies(int16_t *type)
+{
+    int16_t s, n = 0;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (maybeEntityType[s] == ET_SHIP && commAnimInfo[s] == SIDE_RLAAN) {
+            n++;
+            *type = (int16_t)gInstanceShipTypes[s];
+        }
+    return n;
+}
+
+/* steps of the flight with the simulator's, until there are enemies (some 1) or none: 0 when they never come */
+static int16_t sim_until(int16_t some)
+{
+    int16_t i, t;
+    for (i = 0; i < 600; i++) {
+        if (!pt_step())
+            return 0;
+        simulator_frame();
+        if ((sim_enemies(&t) > 0) == some)
+            return 1;
+    }
+    return 0;
+}
+
+/* M11.1 */
+static void t_sim_waves(void)
+{
+    static const char __far e_none[] = "wave %d never came, or the last would not die";
+    static const char __far e_wave[] = "wave %d: %d ships of type %02X (see the table of what should come in the test)";
+    static const char __far e_kills[] = "%u kills after seven waves of eight ships: simulator_frame counts each death once";
+    static const uint8_t __far want[7][2] = { { 1, 0x10 }, { 1, 0x11 }, { 1, 0x12 }, { 1, 0x13 }, { 1, 0x14 }, { 1, 0x15 }, { 2, 0x10 } };
+    int16_t w, n, t = -1;
+    pt_alone(PT_PLAYER);
+    simulator_start();
+    for (w = 0; w < 7; w++) {
+        REQUIRE(sim_until(1), e_none, w, 0, 0);
+        n = sim_enemies(&t);
+        REQUIRE(n == want[w][0] && t == want[w][1], e_wave, w, n, t);
+        simulator_test_kill();
+        REQUIRE(sim_until(0), e_none, w, 0, 0);
+    }
+    REQUIRE(simulator_kills() == 8, e_kills, simulator_kills(), 0, 0);
+}
+
+/* M11.2 */
+static void t_sim_shields(void)
+{
+    static const char __far e_none[] = "wave %d never came, or the last would not die";
+    static const char __far e_early[] = "wave %d, the same count: the front shield is %u, not healed: the count has not gone up";
+    static const char __far e_late[] = "the count went up to two and the shields are %u and %u of %u: healed every time the count increases";
+    int16_t w, t = -1;
+    pt_alone(PT_PLAYER);
+    simulator_start();
+    for (w = 0; w < 6; w++) {
+        REQUIRE(sim_until(1), e_none, w, 0, 0);
+        if (w)
+            REQUIRE(SHIELD(0, 0) < SHIELD_MAX(0, 0), e_early, w, SHIELD(0, 0), 0);
+        SHIELD(0, 0) = 1;
+        SHIELD(0, 1) = 1;
+        simulator_test_kill();
+        REQUIRE(sim_until(0), e_none, w, 0, 0);
+    }
+    REQUIRE(sim_until(1), e_none, 6, 0, 0);
+    REQUIRE(sim_enemies(&t) == 2 && SHIELD(0, 0) == SHIELD_MAX(0, 0) && SHIELD(0, 1) == SHIELD_MAX(0, 1), e_late, SHIELD(0, 0),
+            SHIELD(0, 1), SHIELD_MAX(0, 0));
+}
+
+/* M11.3 */
+static void t_sim_win(void)
+{
+    static const char __far e_none[] = "the last wave never came, or would not die";
+    static const char __far e_full[] = "the last wave is %d ships, %d wanted: as many as there are slots";
+    static const char __far e_won[] = "won %d, missionStatus %u: clearing the last type at the most ships ends the flight, won";
+    int16_t t = -1;
+    pt_alone(PT_PLAYER);
+    simulator_start();
+    simulator_test_at(SIM_MAX_SHIPS, SIM_TYPES - 1);
+    REQUIRE(sim_until(1), e_none, 0, 0, 0);
+    REQUIRE(sim_enemies(&t) == SIM_MAX_SHIPS, e_full, sim_enemies(&t), SIM_MAX_SHIPS, 0);
+    simulator_test_kill();
+    REQUIRE(sim_until(0), e_none, 0, 0, 0);
+    simulator_frame();
+    REQUIRE(simulator_won() && missionStatus == 1, e_won, simulator_won(), missionStatus, 0);
+    missionStatus = 0;
+}
+
+/* M11.4 */
+static void t_sim_death(void)
+{
+    static const char __far e_more[] = "%d enemies came after the player died: the simulator goes until the player is destroyed";
+    static const char __far e_end[] = "missionStatus %u, won %d: a dead player ends the flight (4), not won";
+    int16_t i, t = -1;
+    pt_alone(PT_PLAYER);
+    simulator_start();
+    shipAiState[0] = 9;
+    for (i = 0; i < 200 && !missionStatus; i++) {
+        if (!pt_step())
+            return;
+        simulator_frame();
+    }
+    REQUIRE(sim_enemies(&t) == 0, e_more, sim_enemies(&t), 0, 0);
+    REQUIRE(missionStatus == 4 && !simulator_won(), e_end, missionStatus, simulator_won(), 0);
+    missionStatus = 0;
+}
+
 /* M9.1 */
 static void t_gunsight(void)
 {
@@ -4990,6 +5099,10 @@ static const char __far n_m10_6[] = "M10.6 orders (logic_order): attack my targe
 static const char __far n_m10_7[] = "M10.7 missile-lock (lock_tick): a heat seeker from behind in its time, image recognition anyhow, none wrecked or dark, a dumbfire never";
 
 static const char __far n_m10_8[] = "M10.8 break-formation (logic_order): fly in formation fights nobody; break formation goes for any enemy, else round the player";
+static const char __far n_m11_1[] = "M11.1 sim-waves (simulator_frame): one of each Rlaan fighter type in turn, then two of the first";
+static const char __far n_m11_2[] = "M11.2 sim-shields (simulator_frame): the shields healed when the count goes up, not between";
+static const char __far n_m11_3[] = "M11.3 sim-win (simulator_frame): the last type at the most ships cleared ends the flight, won";
+static const char __far n_m11_4[] = "M11.4 sim-death (simulator_frame): no more waves once the player is dying, and the flight ends";
 static const char __far n_m10_9[] = "M10.9 taunt (logic_taunt): an enemy fighter turns on the player, however far, and holds no fire; not a friend or a capital ship";
 
 static const PtTest __far k_tests[] = {
@@ -5029,6 +5142,7 @@ static const PtTest __far k_tests[] = {
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
     { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 }, { n_m10_6, t_orders, 0 }, { n_m10_7, t_missile_lock, 0 },
     { n_m10_8, t_break_formation, 0 }, { n_m10_9, t_taunt, 0 },
+    { n_m11_1, t_sim_waves, 0 }, { n_m11_2, t_sim_shields, 0 }, { n_m11_3, t_sim_win, 0 }, { n_m11_4, t_sim_death, 0 },
 };
 
 /* --- the run --- */

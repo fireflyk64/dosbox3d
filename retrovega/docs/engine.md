@@ -2069,6 +2069,50 @@ another 2,500 km out turned a little toward the camera, one coming nose
 first from 6,000 km, one far (9,000 km) climbing across as a line; ten
 seconds.
 
+### The simulator
+
+The user, 2026-11-01: the chair and stick of the rig in the bar launch a
+Schroedinger, "strictly single player".
+One of each Rlaan fighter type in turn, then two of the first, and so on until
+the player is destroyed; they win "if they max out the number of ships". No
+wingman, no carrier. Shields heal "every time the count increases". Esc leaves.
+
+- **The waves** (`src/simulator.c`, play tests M11): `simulator_frame`, a step
+  after the game's logic, counts the kills, and when no Rlaan ship is left
+  (a dying one still counts: its explosion finishes first) waits two seconds
+  and spawns the next, facing the player 5,000 km ahead, six to a row. The
+  most at once is `SIM_MAX_SHIPS`, every ship slot but the player's: 31, which
+  is 2,976 kills in all to win. Past it `missionStatus` is 1 and
+  `simulator_won()` says so. The AI, guns, deaths, explosions and music are the
+  flight's. Xuanzong (a jammer missile) and Gaozong (a probe) have no guns.
+- **The hooks:** `flight_simulator` (flight.c) runs `flight_startup`,
+  `flight_keys`, `flight_frame` and `flight_music` from a C loop rather than
+  `rv_flight_run`, so none of `rvflight.inc`'s sites execute, and it calls
+  `simulatorStart` and `simulatorEnd`, never `missionStarting`,
+  `missionVictoryCalc`, `missionEnded`, `uiMode`, `rvFrameDone`,
+  `runHangarMission` or, through `camp_load_tables`, `missionLoaded`. The
+  autopilot's site and the cockpit pointer's are stepped round too. The logic's
+  own thunks (`do_damage`, `aiFighterThink`) are still called; the layer ignores
+  them between `simulatorStart` and `simulatorEnd`.
+- **The mission:** `simulator_mission` makes a record: the player's ship in
+  nav 0, hidden (`hud_marks` draws no cross), the six types at count 0 so
+  `flight_startup` loads their sets, the rules of the campaign's next mission.
+  `start_simulator` (game.c) saves the player's fighter and puts the real
+  mission's tables back afterwards. Nothing goes into the campaign or a save.
+- **The windshield** (the user, on a first try in blue: the rig in the bar is
+  brown, so a blue cockpit does not match it; "something that looks like a
+  windshield ... squarier ... cut off part of the diagonals above the VDUs ...
+  draw edges of the screen as glassy"): the Schroedinger's colours as they are.
+  `cockpit_windshield(148)` rewrites the opening's rows above the VDUs' housings
+  to a pane nearly the screen's width with rounded corners, the frame is not
+  drawn above that row, and `glass_edges` lays three translucent levels along
+  every edge of the view (`gfx_mix_run`, the palette's mix tables, so it lights
+  what is behind it) and two streaks of reflection across a corner. About 5,000
+  pixel lookups a frame.
+- **Tests:** `tests/sim.txt` (the flow), `tests/sim-many.txt` with `RVT.EXE
+  /simat N` (31 Shizus: 43 ms a frame at 50,000 cycles in the test build),
+  `SIM=1 scripts/web-rv-flight.mjs` (the page).
+
 ### The bar's window on space
 
 The user, 2026-11-01: the bar's painted planet is cut out and the window shows

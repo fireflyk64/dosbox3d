@@ -96,6 +96,8 @@ void gfx_sprite_dither(unsigned a, int dx, int dy, int y0, int y1, int which);  
 int gfx_sprite_hit(unsigned a, int dx, int dy, int px, int py);
 void gfx_fill(int x, int y, int w, int h, unsigned char c, int y0, int y1);
 void gfx_shade(int x, int y, int w, int h, int y0, int y1);
+void gfx_mix_run(int x0, int x1, int y, int c3, int level, int y0, int y1);   /* a row's pixels mixed toward the text colour
+                                           c3 (0 white, 1 amber, 2 grey), level 0 25%, 1 50%, 2 75%: translucency */
 void gfx_mix_to_black(int x, int y, int w, int h, int y0, int y1);
 void gfx_line(int xa, int ya, int xb, int yb, unsigned char c, int dash, int y0, int y1);
 void gfx_circle(int cx, int cy, int r, unsigned char c, int dotted, int y0, int y1);

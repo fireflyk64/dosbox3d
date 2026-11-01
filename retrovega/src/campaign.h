@@ -58,6 +58,7 @@ int16_t camp_load_data(const char *path);
 void camp_new(void);
 uint16_t camp_mission_index(void);              /* the mission to fly next */
 void camp_mission(uint16_t i, RvMission __far *out);
+void camp_load_tables(const RvMission __far *m);   /* camp_load_units without telling the layer (missionLoaded): the simulator's */
 void camp_load_units(const RvMission __far *m);   /* missionShipTable and navPointTable, then missionLoaded */
 extern uint8_t g_camp_way;                               /* a debrief's system=: 1 won, 2 lost, 0 the system goes on */
 void camp_way_out(int16_t won);                          /* works that out for the flight just flown, before camp_resolve */

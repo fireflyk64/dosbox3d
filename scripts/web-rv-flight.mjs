@@ -8,7 +8,8 @@
 // benchmark logs its "lasers:" and "bolts:" lines); FLIGHT_S is how long the flight lasts (20); PARAMS adds
 // page parameters ("cycles=40000&env.WCNET_PERF=4": the layer's "perf:" lines, emulator speed against the
 // wall clock, are printed at the end); COMBAT=1 takes the autopilot to the first nav point and its enemies after
-// 12 s and fights there for 30 s (with the perf lines, the emulator's speed in a fight).
+// 12 s and fights there for 30 s (with the perf lines, the emulator's speed in a fight).  SIM=1 goes to the bar's
+// simulator instead: its chair, its first wave, Esc back.
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs";
@@ -95,6 +96,26 @@ if (!await hotspot(593, 200, "the quarters' door")) process.exit(1);
 await waitLog(new RegExp(`(stub: roomEntered[^]*){${n + 1}}`), 8000); await sleep(1500);
 if (!await hotspot(431, 170, "the lounge's hatch")) process.exit(1);
 await waitLog(new RegExp(`(stub: roomEntered[^]*){${n + 2}}`), 8000); await sleep(1500);
+if (process.env.SIM) {                 // the bar's simulator: the chair, a wave, Esc back (retrovega/docs/engine.md)
+  await shot("bar");
+  if (!await hotspot(619, 290, "the simulator's chair")) process.exit(1);
+  t = await waitLog(/simulator: 1 of type 10/, 180000);   // (the page fetches and makes the seven sets first)
+  console.log(/simulator: 1 of type 10/.test(t) ? "ok   the simulator's first wave" : "FAIL no first wave (" + t.split("\n").slice(-3).join(" | ") + ")");
+  await sleep(5000); await shot("sim-5s");
+  if (process.env.SIM_HOLD) await page.evaluate(process.env.SIM_HOLD);
+  await sleep(Number(process.env.SIM_S || 6) * 1000); await shot("sim-more");
+  await page.keyboard.press("Escape");
+  t = await waitLog(/flight: over with status 5/, 15000);
+  console.log(/flight: over with status 5/.test(t) ? "ok   Esc left the simulator" : "FAIL Esc did not leave the simulator");
+  await sleep(3000); await shot("sim-back");
+  t = await rvlog();
+  console.log(/stub: missionStarting|stub: uiMode|stub: rvFrameDone/.test(t.slice(t.indexOf("simulator:"))) ? "FAIL a mission's hook in the simulator" : "ok   none of a mission's hooks in the simulator");
+  console.log(/FAIL /.test(t) ? "FAIL a stop in the engine's log" : "ok   no stop in the engine's log");
+  console.log(logs.filter((l) => /simulatorStart|simulatorEnd|PAGE ERROR/.test(l)).slice(0, 6).join("\n"));
+  fs.writeFileSync(path.join(shotDir, "rv-flight-RVLOG.TXT"), t);
+  await browser.close();
+  process.exit(0);
+}
 if (!await hotspot(605, 113, "the bar's door")) process.exit(1);
 t = await waitLog(/briefingStarted/, 8000);
 if (!/briefingStarted/.test(t)) { console.log("FAIL no briefing"); process.exit(1); }

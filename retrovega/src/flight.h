@@ -9,6 +9,7 @@
 /* flies the mission: loads its assets, runs the loop in RVHOOK (rvflight.inc)
  * until missionStatus is set, frees them; returns the final missionStatus */
 int flight_fly(const RvMission __far *m);
+int flight_simulator(const RvMission __far *m);   /* the same in the simulator: none of the flight loop's hooks */
 
 /* a room's window on space (flight.c): the room's window rows (RvRoom.win_*) show the flight's stars and a far thing, with
  * ships going by, or asteroids; seed: what is out there (the system's number).  Open once the room is entered (its level is taken: what

@@ -21,6 +21,7 @@
 #include "lipsync.h"
 #include "music.h"
 #include "flight.h"
+#include "simulator.h"
 #include "game.h"
 
 enum { MODE_ROOM, MODE_TALK, MODE_BRIEF, MODE_DECK, MODE_DEBRIEF, MODE_BUNK,
@@ -1441,6 +1442,41 @@ static void next_mission(void)
     camp_load_units(&g_m);
 }
 
+/* the bar's simulator: a Schroedinger whatever the mission's fighter, away from the campaign: back in the bar with what
+ * it came to, the next mission's tables as they were */
+static void start_simulator(void)
+{
+    unsigned char ship = g_camp.player_ship;
+    int status;
+    strcpy(g_scene.label, "Simulator: powering up");   /* (the page may be making the Rlaan's sets) */
+    vid_dirty(SCR_H - LABEL_H, SCR_H);
+    scene_draw();
+    flight_window_close();
+    g_scene.leave = 0;
+    g_scene.underlay = 0;
+    g_scene.overlay = 0;
+    g_scene.label[0] = 0;
+    logic_boost = 0;
+    {
+        const RvMission __far *sim = simulator_mission(&g_m);
+        camp_load_tables(sim);
+        mission_load_assets();
+        status = flight_simulator(sim);
+    }
+    mission_free_assets();
+    g_camp.player_ship = ship;
+    camp_load_tables(&g_m);
+    g_now = ticks();
+    enter_room(RV_R_BAR);
+    if (simulator_won())
+        sprintf(g_msg, "You beat the simulator: every Rlaan type, %d at a time. Kills: %u. It has nothing left to throw at you.",
+                simulator_count(), simulator_kills());
+    else
+        sprintf(g_msg, "%s at %d x %s. Kills: %u.", status == 4 ? "Simulator: shot down" : "Simulator: switched off",
+                simulator_count(), ship_name(simulator_type()), simulator_kills());
+    message(g_msg);
+}
+
 static void hot_action(const SceneAction *a)
 {
     switch (a->action) {
@@ -1457,7 +1493,7 @@ static void hot_action(const SceneAction *a)
         vid_dirty(20, 370);
         break;
     case RV_ACT_SCORES: open_board(); break;
-    case RV_ACT_SIMULATOR: message("The simulator is down for refit. Tally's record stands, for now."); break;
+    case RV_ACT_SIMULATOR: start_simulator(); break;
     case RV_ACT_MEDALS: message("Your medal case. Medals and ribbons go here as you earn them."); break;
     case RV_ACT_LETTERS: message("Letters from home, read until the folds wore through."); break;
     case RV_ACT_PHOTOS: message("Photographs from before the war."); break;

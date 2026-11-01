@@ -204,7 +204,7 @@ void camp_mission(uint16_t i, RvMission __far *out)
  * mission ships there (0xFFFF none).  A group's ships side by side, 1,500 km
  * apart (a fighter is some 900 km across). */
 #define HOME_BEHIND_KM 2000
-void camp_load_units(const RvMission __far *m)
+void camp_load_tables(const RvMission __far *m)
 {
     uint8_t *ships = missionShipTable, *navs = navPointTable;
     uint16_t i, n = 0, k;
@@ -261,6 +261,11 @@ void camp_load_units(const RvMission __far *m)
     currentSeries = g_camp.node;
     currentMission = g_camp.mission;
     RV_LOG("mission %.16Fs: %u nav points, %u mission ships", m->id, (uint16_t)m->nnav, n);
+}
+
+void camp_load_units(const RvMission __far *m)
+{
+    camp_load_tables(m);
     missionLoaded(camp_mission_index());
 }
 
