@@ -46,8 +46,14 @@
 #define SIZES_MAX 64
 #define DMAX 512                        /* the largest diameter drawn: a ladder sprite as 4 x 4 blocks */
 #define SUM_SQ(n) ((unsigned long)(n) * ((n) + 1) * (2 * (n) + 1) / 6)
+#ifdef RV_HEAP
 #define ROCK_MAX 1200
 #define ROCK_OUT 400                    /* on screen at most */
+#else
+#define ROCK_MAX 128                    /* (a mission's small field asks 126: data/missions.txt, FIELD_SMALL) */
+#define ROCK_OUT 128
+#endif
+#define ROCK_SMALL_BYTES 6528U          /* rocks.dat's small sprites: 4 kinds x 8 frames x 1 .. 8 px squared */
 #define ROCK_REAP 96                    /* brought round in a frame at most (the rest wait a frame) */
 #define ROCK_HITS 16
 #define ROCK_BUBBLE_KM 9000L            /* the sphere kept full about the player */
@@ -233,11 +239,11 @@ static int art_in(void)
 
 static void pool_free(void)
 {
-    if (g_r) _ffree(g_r);
-    if (g_o) _ffree(g_o);
-    if (g_so) _ffree(g_so);
-    if (g_order) _ffree(g_order);
-    if (g_smallspr) _ffree(g_smallspr);
+    if (g_r) MEM_GIVE(g_r);
+    if (g_o) MEM_GIVE(g_o);
+    if (g_so) MEM_GIVE(g_so);
+    if (g_order) MEM_GIVE(g_order);
+    if (g_smallspr) MEM_GIVE(g_smallspr);
     g_r = 0;
     g_o = 0;
     g_so = 0;
@@ -246,20 +252,26 @@ static void pool_free(void)
     g_n = g_cap = g_no = g_ns = g_nb = 0;
 }
 
+MEM_ARRAY(unsigned char, g_smallspr_arr, ROCK_SMALL_BYTES)
+MEM_ARRAY(LzRockOut, g_o_arr, ROCK_OUT)
+MEM_ARRAY(LzBallOut, g_so_arr, ROCK_OUT)
+MEM_ARRAY(short, g_order_arr, ROCK_OUT)
+MEM_ARRAY(LzRock, g_r_arr, ROCK_MAX)
+
 static int pool_alloc(int want)
 {
     static const char __far s_room[] = "rocks: room for %d rocks (%d asked), %lu KB of DOS memory left";
     unsigned long sbytes = (unsigned long)g_kinds * g_sframes * g_small_set;
-    g_smallspr = (unsigned char __far *)_fmalloc((size_t)sbytes);
-    g_o = (LzRockOut __far *)_fmalloc(ROCK_OUT * sizeof(LzRockOut));
-    g_so = (LzBallOut __far *)_fmalloc(ROCK_OUT * sizeof(LzBallOut));
-    g_order = (short __far *)_fmalloc(ROCK_OUT * sizeof(short));
+    g_smallspr = MEM_TAKE(unsigned char, g_smallspr_arr, sbytes);
+    g_o = MEM_TAKE(LzRockOut, g_o_arr, ROCK_OUT);
+    g_so = MEM_TAKE(LzBallOut, g_so_arr, ROCK_OUT);
+    g_order = MEM_TAKE(short, g_order_arr, ROCK_OUT);
     if (!g_smallspr || !g_o || !g_so || !g_order)
         return 0;
     xms_get(g_blk, FILE_HEAD + ((g_nbig + 1) & ~1), g_smallspr, sbytes);
     if (want > ROCK_MAX)
         want = ROCK_MAX;
-    while (want >= 16 && (g_r = (LzRock __far *)_fmalloc((size_t)want * sizeof(LzRock))) == 0)
+    while (want >= 16 && (g_r = MEM_TAKE(LzRock, g_r_arr, want)) == 0)
         want = want * 3 / 4;
     g_cap = g_r ? want : 0;
     rv_logf(s_room, g_cap, g_want_n, bolts_dos_free() / 1024);

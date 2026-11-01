@@ -22,6 +22,9 @@ void __far __cdecl rv_scale_row(const unsigned char __far *line, const unsigned 
 
 #define CACHE 4                         /* cels kept at once */
 #define MAP_W 1024                      /* the widest an explosion is drawn, px */
+#define CACHE_CEL 48                    /* the art's cel, px a side, as built (mem_take stops the game if it grows) */
+MEM_ARRAY(uint8_t, g_cache_arr, CACHE * CACHE_CEL * CACHE_CEL)
+MEM_ARRAY(uint16_t, g_map_arr, MAP_W)
 #define CEL_MAX 64
 #define TL_MAX 64
 #define ZMIN16 (16 * 60)                /* the near plane: 60 km, in sixteenths of a km */
@@ -152,9 +155,9 @@ int16_t explode_flight_start(void)
     if (!g_blk)
         return 0;
     if (!g_cache_mem)
-        g_cache_mem = (uint8_t __far *)_fmalloc((size_t)CACHE * g_size * g_size);
+        g_cache_mem = MEM_TAKE(uint8_t, g_cache_arr, (unsigned long)CACHE * g_size * g_size);
     if (!g_map)
-        g_map = (uint16_t __far *)_fmalloc(MAP_W * sizeof(uint16_t));
+        g_map = MEM_TAKE(uint16_t, g_map_arr, MAP_W);
     if (!g_cache_mem || !g_map) {
         explode_flight_end();
         return 0;
@@ -170,10 +173,10 @@ int16_t explode_flight_start(void)
 void explode_flight_end(void)
 {
     if (g_cache_mem)
-        _ffree(g_cache_mem);
+        MEM_GIVE(g_cache_mem);
     g_cache_mem = 0;
     if (g_map)
-        _ffree(g_map);
+        MEM_GIVE(g_map);
     g_map = 0;
     g_n = g_nord = 0;
     g_ready = 0;

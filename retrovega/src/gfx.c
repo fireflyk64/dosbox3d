@@ -8,6 +8,8 @@
  * text colour, partial through the palette's mix tables. */
 #include <string.h>
 #include <malloc.h>
+#include <dos.h>
+#include <i86.h>
 #include "rv.h"
 
 #define SCRATCH 32768U
@@ -23,13 +25,91 @@ typedef struct {
 } Font;
 static Font g_font[3];                  /* body, title, and the chalk while the tally board shows */
 
+/* The fixed arrays (mem.h).  Sizes from the archive's fonts as built: mem_take stops the game, naming it, if one grows. */
+#define FONT_BODY_BYTES 4096U
+#define FONT_TITLE_BYTES 9984U
+#define SHARE_BYTES 14848U              /* the chalk hand while the board shows, or a flight's silhouettes */
+MEM_ARRAY(unsigned char, g_scratch_mem, SCRATCH)
+MEM_ARRAY(unsigned char, g_font_body_mem, FONT_BODY_BYTES)
+MEM_ARRAY(unsigned char, g_font_title_mem, FONT_TITLE_BYTES)
+MEM_ARRAY(unsigned char, g_share_mem, SHARE_BYTES)
+
 static void need_scratch(void)
 {
     if (!g_scratch) {
-        g_scratch = (unsigned char __far *)_fmalloc(SCRATCH);
+        g_scratch = MEM_TAKE(unsigned char, g_scratch_mem, SCRATCH);
         RV_ASSERT(g_scratch != 0);
     }
 }
+
+unsigned char __far *gfx_share_take(unsigned long bytes) { return MEM_TAKE(unsigned char, g_share_mem, bytes); }
+void gfx_share_give(unsigned char __far *p) { MEM_GIVE(p); }
+
+/* The start's loans (the music's tracks as it reads them): before the first room these arrays hold nothing yet and
+ * nothing else needs them, so no memory is set aside for a thing done once.  Best fit, so that the biggest stays whole.
+ * The longest track does not fit in any: for it, one block from DOS, given back by gfx_boot_done before the game starts */
+#ifdef RV_HEAP
+void __far *gfx_boot_take(unsigned long bytes) { return _fmalloc((size_t)bytes); }
+void gfx_boot_give(void __far *p) { _ffree(p); }
+void gfx_boot_reset(void) { }
+void gfx_boot_done(void) { }
+#else
+#define BOOT_BIG 34048U                 /* the longest track, BAR.MID's 33,932 bytes */
+#ifdef RV_HOST
+static unsigned char g_boot_big[BOOT_BIG];
+#else
+static unsigned __far g_boot_seg;
+#endif
+static unsigned __far g_boot_used[5];
+
+static unsigned char __far *boot_big(void)
+{
+#ifdef RV_HOST
+    return g_boot_big;
+#else
+    if (!g_boot_seg) {
+        unsigned seg;                   /* (near: the call takes a near pointer, and g_boot_seg is far) */
+        if (_dos_allocmem(BOOT_BIG / 16, &seg) == 0)
+            g_boot_seg = seg;
+    }
+    return g_boot_seg ? (unsigned char __far *)MK_FP(g_boot_seg, 0) : 0;
+#endif
+}
+
+void __far *gfx_boot_take(unsigned long bytes)
+{
+    unsigned char __far *base[5];
+    unsigned size[5];
+    int i, best = -1;
+    base[0] = g_scratch_mem.a; size[0] = SCRATCH;
+    base[1] = g_share_mem.a; size[1] = SHARE_BYTES;
+    base[2] = g_font_title_mem.a; size[2] = FONT_TITLE_BYTES;
+    base[3] = g_font_body_mem.a; size[3] = FONT_BODY_BYTES;
+    base[4] = 0; size[4] = BOOT_BIG;
+    for (i = 0; i < 4; i++)
+        if ((unsigned long)size[i] - g_boot_used[i] >= bytes
+            && (best < 0 || size[i] - g_boot_used[i] < size[best] - g_boot_used[best]))
+            best = i;
+    if (best < 0) {                     /* (the DOS block last, and only for what fits nowhere else: the long track) */
+        if (bytes > (unsigned long)size[4] - g_boot_used[4] || (base[4] = boot_big()) == 0)
+            return 0;
+        best = 4;
+    }
+    g_boot_used[best] += (unsigned)bytes;
+    return base[best] + (g_boot_used[best] - (unsigned)bytes);
+}
+void gfx_boot_give(void __far *p) { (void)p; }
+void gfx_boot_reset(void) { _fmemset(g_boot_used, 0, sizeof g_boot_used); }
+void gfx_boot_done(void)
+{
+    gfx_boot_reset();
+#ifndef RV_HOST
+    if (g_boot_seg)
+        _dos_freemem(g_boot_seg);
+    g_boot_seg = 0;
+#endif
+}
+#endif
 
 unsigned char __far *gfx_scratch(void)
 {
@@ -242,8 +322,12 @@ void gfx_mix_to_black(int x, int y, int w, int h, int y0, int y1)
 
 static void font_free(int i)
 {
-    if (g_font[i].table)
-        _ffree(g_font[i].table - 4);
+    if (g_font[i].table) {
+        if (i == FONT_CHALK)
+            gfx_share_give(g_font[i].table - 4);
+        else
+            MEM_GIVE(g_font[i].table - 4);
+    }
     g_font[i].table = 0;
 }
 
@@ -253,7 +337,9 @@ static int font_read(int i, unsigned id)
     unsigned char __far *p;
     font_free(i);                           /* a new base brings its own */
     RV_ASSERT(as->kind == RV_KIND_FONT);
-    p = (unsigned char __far *)_fmalloc((size_t)as->size + 1);
+    p = i == FONT_BODY ? MEM_TAKE(unsigned char, g_font_body_mem, as->size + 1)
+        : i == FONT_TITLE ? MEM_TAKE(unsigned char, g_font_title_mem, as->size + 1)
+        : gfx_share_take(as->size + 1);
     if (!p)
         return 0;
     dat_read(as->at, p, as->size);

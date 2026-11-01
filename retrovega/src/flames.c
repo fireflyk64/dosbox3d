@@ -108,8 +108,6 @@ static int looks(const unsigned char __far *pal)
     unsigned short seed = 12345;        /* (16 bits: the generator wraps as on DOS) */
     int k, t;
     if (!g_look_mem)
-        g_look_mem = _fmalloc(2 * sizeof(LzFlameLook) + 16);
-    if (!g_look_mem)
         return 0;
 #ifdef RV_HOST                          /* (a flat address: 16-aligned, as the paragraph is) */
     (void)lin;
@@ -315,19 +313,24 @@ void flames_bake(void)
     unsigned long t0 = clock240();
     int look, rho, ang, size, frame, n = 0, lost = 0;
     const RvCockpit __far *cp = dat_cockpit(0);
-    unsigned char __far *pal = (unsigned char __far *)_fmalloc(768);
+    /* (for the bake, once, at the start: the room the silhouettes and the chalk take later) */
+    unsigned char __far *room = gfx_share_take(2 * sizeof(LzFlameLook) + 16 + 768);
+    unsigned char __far *pal = room;
     bolts_tables();
     if (!g_bk_hdr || !cp || !pal) {
         RV_LOG("flames: no %s for the baked flames", !g_bk_hdr ? "XMS" : !cp ? "cockpit palette" : "memory");
         g_bk_hdr = g_bk_rows = 0;
-        if (pal) _ffree(pal);
+        if (room) gfx_share_give(room);
         return;
     }
+    pal = room + 2 * sizeof(LzFlameLook) + 16;
+    g_look_mem = room;
     dat_read(dat_asset(cp->palette)->at, pal, 768);   /* (the flight palette: any cockpit's below RV_CP_FIRST) */
     k_ok = looks(pal);
-    _ffree(pal);
     if (!k_ok) {
         RV_LOG("flames: no memory for the looks");
+        gfx_share_give(room);
+        g_look_mem = 0;
         g_bk_hdr = g_bk_rows = 0;
         return;
     }
@@ -348,7 +351,7 @@ void flames_bake(void)
                     }
     RV_LOG("flames: %d baked in %lu ms, %lu KB (%d did not fit)", n, (clock240() - t0) * 1000 / 240, g_bk_used / 1024,
            lost);
-    _ffree(g_look_mem);                 /* (the looks were for the bake) */
+    gfx_share_give(room);               /* (the looks were for the bake) */
     g_look_mem = 0;
     g_look = 0;
 }

@@ -77,6 +77,7 @@ void xms_shutdown(void)
 }
 
 unsigned long xms_free_kb(void) { return (g_size - g_top) / 1024; }
+unsigned xms_blocks(void) { return g_nblocks; }
 
 XmsBlock xms_alloc(unsigned long bytes, int level)
 {

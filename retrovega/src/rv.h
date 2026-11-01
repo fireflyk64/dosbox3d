@@ -39,6 +39,7 @@ int xms_init(unsigned long min_kb, unsigned long max_kb);   /* one arena of all 
                                            there is less than min_kb */
 extern void (*xms_freed)(unsigned nblocks);   /* (dat.c's: blocks past the first nblocks were given back) */
 unsigned long xms_free_kb(void);       /* free in the arena */
+unsigned xms_blocks(void);             /* blocks taken (mem.c's ledger) */
 XmsBlock xms_alloc(unsigned long bytes, int level);
 void xms_free_level(int level);        /* frees that level and all above it */
 int xms_put(XmsBlock b, unsigned long off, const void __far *src, unsigned long n);
@@ -88,6 +89,12 @@ void dat_log(void);                     /* the assets read in so far */
 /* drawing (gfx.c), every call clipped to the rows y0 .. y1-1 being drawn */
 #define AT_ASSET (-32768)              /* x or y: where the asset says */
 unsigned char __far *gfx_scratch(void);   /* the 32 KB scratch buffer (sprites rows pass through it) */
+unsigned char __far *gfx_share_take(unsigned long bytes);   /* the chalk hand's room, or a flight's silhouettes' */
+void gfx_share_give(unsigned char __far *p);
+void __far *gfx_boot_take(unsigned long bytes);   /* the start's loans, before the first room: 0 if it will not fit */
+void gfx_boot_give(void __far *p);
+void gfx_boot_reset(void);
+void gfx_boot_done(void);
 void gfx_use_palette(unsigned asset);  /* full palette asset: colours, shade and text tables */
 void gfx_use_part(unsigned asset, int with_text);  /* a palette part (close-ups) */
 void gfx_image(unsigned a, int x, int y, int y0, int y1);
@@ -134,7 +141,15 @@ void rv_halt(void);
 #endif
 int script_open(const char *path);
 int script_active(void);
+void monkey_start(unsigned long seed, unsigned budget);   /* the test rig: game.c's /monkey */
+int monkey_on(void);
+void monkey_step(Input *in, int *x, int *y);
+extern int g_noflight, g_kill_pct;
+extern long g_freeze_test;
+extern const char *g_route;
 void shot_save(const char *name);      /* the back buffer as NAME.BMP, with the palette shown */
 const unsigned char *shot_palette(void);
+
+#include "mem.h"
 
 #endif

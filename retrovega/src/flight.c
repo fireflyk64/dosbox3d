@@ -1460,6 +1460,8 @@ static void win_flyby_start(void)
     rv_logf(s_by, n, z);
 }
 
+MEM_ARRAY(short, g_win_ext_arr, 2 * SCR_H + 1)
+
 void flight_window_open(int room, unsigned seed, int outside)
 {
     static const char __far s_open[] = "window: open, seed %u, %Fs: %d rows at %d, the sky's things %d";
@@ -1471,7 +1473,7 @@ void flight_window_open(int room, unsigned seed, int outside)
     if (g_win.on || r->win_ext == 0xFFFF)
         return;
     ex = dat_asset(r->win_ext);
-    g_win.ext = (short __far *)_fmalloc((size_t)ex->size + 2);
+    g_win.ext = MEM_TAKE(short, g_win_ext_arr, ex->size / 2 + 1);
     if (!g_win.ext)
         return;
     dat_read(ex->at, g_win.ext, ex->size);
@@ -1549,7 +1551,7 @@ void flight_window_close(void)
     ships_unload();                     /* (their XMS: the caller's level goes next) */
     memset(maybeEntityType, 0, RV_SLOTS * 2);
     g_nplan = 0;
-    _ffree(g_win.ext);
+    MEM_GIVE(g_win.ext);
     g_win.ext = 0;
 }
 
@@ -3148,6 +3150,12 @@ void __far __cdecl flight_frame(void)
 {
     unsigned long now = clock240(), dt;
     int k = (int)(frameCounter % FPS_WINDOW);
+    if (!(frameCounter % 450)) {        /* (/ledger: every 15 s) */
+        int i, n = 0;
+        for (i = 0; i < NUM_SHIP_SLOTS; i++)
+            n += slot_is_ship(i);
+        mem_flying(frameCounter, n, shots_count(), explode_count());
+    }
 #ifdef RV_TESTS
     if (g_flame_test == 1) {            /* (the self-test: once, before the first frame's plan) */
         g_flame_test = 2;

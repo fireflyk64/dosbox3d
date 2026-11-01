@@ -14,6 +14,7 @@
 #include "rvhooks.h"
 #include "room.h"
 #include "logic.h"
+#include "freeze.h"
 #include "campaign.h"
 #include "lightfield.h"
 #include "rocks.h"
@@ -1047,6 +1048,121 @@ static void lost_tick(void)
     }
 }
 
+/* --- the test rig (RV.EXE itself, so that what is tested is the game; tests/monkey.sh): ---
+ *   /noflight       a launch does not fly: straight to its debrief, every room and screen and the campaign's way as ever
+ *   /route WLW...   each mission's result in turn (then /winrate's or the roll)
+ *   /kill P         with /noflight, P% a mission: its wingman lost, an escort lost; a quarter of that the player dead, the
+ *                   carrier lost, so that the lines and the screens for them come up
+ *   /monkey SEED N  no player: clicks and keys at random, known spots as often as not; after N actions a mission it heads
+ *                   for the launch.  The seed is the campaign's too, so a run comes out the same (native build: the same
+ *                   to the frame; DOSBox's clock has its own ideas) */
+extern int g_can_quit;
+long g_freeze_test;
+int g_noflight, g_kill_pct;
+const char *g_route;
+static unsigned g_route_at;
+static unsigned long __far g_mk;
+static unsigned __far g_mk_budget = 200, g_mk_acts, g_mk_wait;
+static unsigned long __far g_mk_total;
+
+void monkey_start(unsigned long seed, unsigned budget)
+{
+    g_mk = seed ? seed : 1;
+    if (budget)
+        g_mk_budget = budget;
+    g_can_quit = 0;
+}
+
+int monkey_on(void) { return g_mk != 0; }
+
+static unsigned mk_r(unsigned n)
+{
+    g_mk ^= g_mk << 13;
+    g_mk ^= g_mk >> 17;
+    g_mk ^= g_mk << 5;
+    return (unsigned)((g_mk >> 7) % n);
+}
+
+/* the way to the launch from a room: the hot spot that goes there, -1 none */
+static int monkey_way(const RvRoom __far *r)
+{
+    static const unsigned char s_order[] = { RV_R_BRIEFING, RV_R_BAR, RV_R_LOUNGE, RV_R_QUARTERS };
+    int i, k;
+    for (i = 0; i < r->nhot; i++)
+        if (r->hot[i].action == RV_ACT_LAUNCH)
+            return i;
+    for (k = 0; k < (int)sizeof s_order; k++)
+        for (i = 0; i < r->nhot; i++)
+            if (r->hot[i].action == RV_ACT_GOTO && r->hot[i].arg == s_order[k] && s_order[k] != g_scene.room)
+                return i;
+    return -1;
+}
+
+void monkey_step(Input *in, int *x, int *y)
+{
+    static const char s_chars[] = "sltrcqSLTRCQ abzAB123";
+    unsigned k;
+    if (g_mk_wait) {
+        g_mk_wait--;
+        return;
+    }
+    g_mk_wait = mk_r(10);
+    g_mk_acts++;
+    g_mk_total++;
+    if (g_mode == MODE_ROOM || g_mode == MODE_DECK) {
+        const RvRoom __far *r = dat_room(g_scene.room);
+        int want = -1;
+        if (g_mk_acts > g_mk_budget || mk_r(100) < 3)
+            want = monkey_way(r);
+        else if (r->nhot && mk_r(100) < 45)
+            want = (int)mk_r(r->nhot);
+        if (want >= 0) {
+            /* (anywhere in it: a seat can lie over its middle, and the seat is what a click there takes) */
+            *x = r->hot[want].x + (int)mk_r(r->hot[want].w ? r->hot[want].w : 1);
+            *y = r->hot[want].y + (int)mk_r(r->hot[want].h ? r->hot[want].h : 1);
+            in->moved = in->clicked = 1;
+            return;
+        }
+    }
+    k = mk_r(100);
+    if (k < 55) {                       /* (anywhere: a seat, a menu's row, a button, nothing) */
+        *x = (int)mk_r(SCR_W);
+        *y = (int)mk_r(SCR_H);
+        in->moved = 1;
+        in->clicked = mk_r(5) != 0;
+    } else if (k < 75) {
+        switch (mk_r(7)) {
+        case 0: in->key = KEY_ESC; break;
+        case 1: in->key = KEY_ENTER; break;
+        case 2: in->key = KEY_TAB; break;
+        case 3: in->key = KEY_BACKTAB; break;
+        case 4: in->key = KEY_BACKSPACE; break;
+        case 5: in->key = KEY_F1; break;
+        default: in->key = KEY_F5; break;
+        }
+    } else {
+        in->key = KEY_CHAR;
+        in->ch = s_chars[mk_r(sizeof s_chars - 1)];
+    }
+}
+
+static int noflight(void)
+{
+    int i;
+    g_lost_wing = -1;
+    g_camp.escort_lost = 0;
+    if (g_kill_pct && (int)(rnd() % 100) < g_kill_pct)
+        for (i = 0; i < g_m.nship; i++)
+            if (g_m.ship[i].type == RV_SHIP_WINGMAN && g_m.ship[i].pilot < RV_PILOTS
+                && g_camp.pilot[g_m.ship[i].pilot].alive)
+                g_lost_wing = g_m.ship[i].pilot;
+    if (g_kill_pct && (int)(rnd() % 100) < g_kill_pct)
+        g_camp.escort_lost = 1;
+    if (g_kill_pct && (int)(rnd() % 100) < g_kill_pct / 4)
+        return rnd() & 1 ? 4 : MISSION_CARRIER_LOST;
+    return 1;
+}
+
 static void launch(void)
 {
     int won, status;
@@ -1058,12 +1174,21 @@ static void launch(void)
      * music knows it (score.c); the game's logic scores the mission over it (logic_start, docs/gameplay.md).  A
      * test's /winrate puts the roll back after the flight, so a script can steer the campaign whatever was flown */
     won = (int)(rnd() % 100) < (g_winrate < 0 ? 80 : g_winrate);
+    if (g_route && g_route[g_route_at]) {
+        won = g_route[g_route_at] == 'W';
+        g_route_at++;
+    }
     victoryPoints = won;
-    status = flight_fly(&g_m);
-    g_lost_wing = logic_wingman_lost();
-    g_camp.escort_lost = (uint8_t)logic_escort_lost();
-    if (g_winrate >= 0)
+    if (g_noflight) {
+        status = noflight();
+    } else {
+        status = flight_fly(&g_m);
+        g_lost_wing = logic_wingman_lost();
+        g_camp.escort_lost = (uint8_t)logic_escort_lost();
+    }
+    if (g_winrate >= 0 || g_route || g_noflight)
         victoryPoints = won;
+    g_mk_acts = 0;
     missionVictoryCalc();                           /* the layer's moment: a wingman's score becomes the host's */
     g_won = victoryPoints != 0;
     missionEnded();
@@ -1417,6 +1542,10 @@ static void mission_load_assets(void)
      * through a flight), and the archive's assets the flight wants go to the
      * mission's level */
     xms_free_level(XMS_ROOM);
+    {
+        static const char __far s_when[] = "before a flight";
+        mem_ledger(s_when);
+    }
     dat_enter(XMS_MISSION);
     dat_log();
     RV_LOG("mission assets: %lu KB of XMS free", xms_free_kb());
@@ -1425,6 +1554,10 @@ static void mission_load_assets(void)
 static void mission_free_assets(void)
 {
     xms_free_level(XMS_MISSION);
+    {
+        static const char __far s_when[] = "after a flight";   /* (every resource back: the user's rule) */
+        mem_ledger(s_when);
+    }
 }
 
 /* --- the next mission --- */
@@ -1491,6 +1624,8 @@ int game_run(void)
     g_now = ticks();
     setup_load();
     camp_new();
+    if (g_mk)
+        g_camp.seed = g_mk;             /* (the run comes out the same: every roll from the seed) */
     next_mission();
     if (g_fly > -2) {                   /* /fly: the rooms skipped, straight out of the launch tube; after the flight
                                            the debriefing and the base as ever */
@@ -1504,7 +1639,12 @@ int game_run(void)
         message("Wildcard, welcome aboard the TCS Vigilance. Your bunk keeps your saves. "
                 "The briefing room is through the big door in the bar.");
     }
+    freeze_start();
     while (g_mode != MODE_QUIT) {
+        freeze_pet();
+        if (g_freeze_test && !--g_freeze_test)
+            for (;;)
+                ;                       /* (/freezetest N: what the watch is for) */
         rv_halt();                      /* once a music tick at most (1/240 s): the host idles between */
         g_now = ticks();
         in_steer(g_mode != MODE_BUNK && g_mode != MODE_NAME);     /* those menus take the arrows */
@@ -1658,5 +1798,8 @@ int game_run(void)
         }
         scene_draw();
     }
+    freeze_stop();
+    if (g_mk)
+        RV_LOG("monkey: %lu actions, %u leaks on the ledger", g_mk_total, mem_bad());
     return 1;
 }

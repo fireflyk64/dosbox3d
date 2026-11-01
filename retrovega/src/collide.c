@@ -47,6 +47,7 @@ typedef struct {
 static XmsBlock __far g_shape_blk;
 static uint8_t __far g_shape_of[256];   /* a type's silhouettes in the block (0xFF none) */
 static struct { uint8_t __far *m; int16_t type; uint16_t used; } __far g_cache[CACHE];
+static uint8_t __far * __far g_cache_mem;   /* the room for them (gfx_share_take: the chalk hand's while the board shows) */
 static uint16_t __far g_tick;
 static Body __far g_body[RV_MAX_SHIP_SLOT + 1];   /* each slot's, as last taken (reused while it stands) */
 static uint8_t __far g_body_ok[RV_MAX_SHIP_SLOT + 1];
@@ -104,7 +105,9 @@ static const uint8_t __far *shape(uint16_t type)
         if (g_cache[i].used < g_cache[lru].used)
             lru = i;
     }
-    if (!g_cache[lru].m && (g_cache[lru].m = (uint8_t __far *)_fmalloc(SBYTES)) == 0) {
+    if (!g_cache_mem)
+        g_cache_mem = gfx_share_take((unsigned long)CACHE * SBYTES);
+    if (!g_cache[lru].m && (g_cache[lru].m = g_cache_mem ? g_cache_mem + (unsigned)lru * SBYTES : 0) == 0) {
         static const char __far s_nomem[] = "collide: no memory for type %u's silhouettes: its box stands in";
         rv_logf(s_nomem, type);
         return 0;
@@ -123,11 +126,11 @@ const uint8_t __far *collide_mask(uint16_t type)
 void collide_flight_end(void)
 {
     int16_t i;
-    for (i = 0; i < CACHE; i++) {
-        if (g_cache[i].m)
-            _ffree(g_cache[i].m);
+    for (i = 0; i < CACHE; i++)
         g_cache[i].m = 0;
-    }
+    if (g_cache_mem)
+        gfx_share_give(g_cache_mem);
+    g_cache_mem = 0;
     _fmemset(g_body_ok, 0, sizeof g_body_ok);
 }
 

@@ -96,7 +96,7 @@ fi
     || ~/.venvs/retrovega-art/bin/python -P tools/explode.py --out "$OUT/EXPLODE.DAT" > /dev/null
 [ "$OUT/SFX.DAT" -nt tools/sfx.py ] && [ "$OUT/SFX.DAT" -nt data/sounds.csv ] \
     || ~/.venvs/retrovega-art/bin/python -P tools/sfx.py --out "$OUT/SFX.DAT" > /dev/null
-ENGINE="util xms video dat gfx input room lipsync opl music score campaign lightfield ships lasers bolts balls rocks missiles sky collide flames comms panel vdu cockpit world shots hud explode sfx fx logic flight game main"
+ENGINE="mem freeze util xms video dat gfx input room lipsync opl music score campaign lightfield ships lasers bolts balls rocks missiles sky collide flames comms panel vdu cockpit world shots hud explode sfx fx logic flight game main"
 LOGIC=${LOGIC:-src/logic.c}           # (LOGIC=path: another logic.c in its place, an experiment's; the play tests' check)
 for c in $ENGINE hello; do
     if [ "$c" = logic ]; then src=$LOGIC; else src=src/$c.c; fi
@@ -104,7 +104,7 @@ for c in $ENGINE hello; do
 done
 # the test build, RVT.EXE (docs/engine.md, "The test build"): the modules with test code (the demos, the
 # benchmarks, the self-tests, under RV_TESTS) compiled again with it on; RV.EXE, the game's, goes without
-TESTED=$(cd src && grep -l 'RV_TESTS' $(for c in $ENGINE; do printf '%s.c ' "$c"; done) | sed 's/\.c$//' | tr '\n' ' ')
+TESTED=$(cd src && grep -lE 'RV_TESTS|RV_HEAP|MEM_ARRAY' $(for c in $ENGINE; do printf '%s.c ' "$c"; done) | sed 's/\.c$//' | tr '\n' ' ')
 mkdir -p "$OUT/t"
 for c in $TESTED; do
     if [ "$c" = logic ]; then src=$LOGIC; else src=src/$c.c; fi
@@ -116,7 +116,12 @@ wcc $CFLAGS -dRV_TESTS -fo="$OUT/t/twins.obj" src/twins.c
 # docs/gameplay.md) and the asm's C twins (src/twins.c: RVP.EXE /twins), and main's switches for them; nothing
 # else (in RVT.EXE they took 62 KB its flights need: both exit before any flight)
 mkdir -p "$OUT/p"
-wcc $CFLAGS -dRV_PLAYTEST -fo="$OUT/p/main.obj" src/main.c
+# (with the far heap, as RVT.EXE: the fixed arrays, mem.h, leave no room beside 60 KB more code)
+HEAPED=$(cd src && grep -lE 'RV_HEAP|MEM_ARRAY' $(for c in $ENGINE; do printf '%s.c ' "$c"; done) | sed 's/\.c$//' | tr '\n' ' ')
+for c in $HEAPED; do
+    case "$c" in logic) src=$LOGIC;; *) src=src/$c.c;; esac
+    wcc $CFLAGS -dRV_HEAP -dRV_PLAYTEST -fo="$OUT/p/$c.obj" "$src"
+done
 wcc $CFLAGS -fo="$OUT/p/playtest.obj" tests/play/playtest.c
 # RVHOOK first (image paragraph 0), the C code, then DGROUP last as Watcom's
 # startup needs it, with the fixed block (RVFIXED) ahead of Watcom's _NULL so
@@ -142,7 +147,13 @@ link RV.EXE file "$OUT/lowlevel.obj" file "$OUT/lasers_a.obj" file "$OUT/rocks_a
 link RVP.EXE file "$OUT/lowlevel.obj" file "$OUT/lasers_a.obj" file "$OUT/rocks_a.obj" file "$OUT/p/playtest.obj" \
     file "$OUT/t/twins.obj" \
     $(for c in $ENGINE; do
-    case "$c" in main) printf ' file %s/p/main.obj' "$OUT";; *) printf ' file %s/%s.obj' "$OUT" "$c";; esac; done)
+    case " $HEAPED " in *" $c "*) printf ' file %s/p/%s.obj' "$OUT" "$c";; *) printf ' file %s/%s.obj' "$OUT" "$c";; esac; done)
 link RVT.EXE file "$OUT/lowlevel.obj" file "$OUT/lasers_a.obj" file "$OUT/rocks_a.obj" $(for c in $ENGINE; do
     case " $TESTED " in *" $c "*) printf ' file %s/t/%s.obj' "$OUT" "$c";; *) printf ' file %s/%s.obj' "$OUT" "$c";; esac; done)
+# RV.EXE has no heap (mem.h, the user's ruling): a far allocation creeping back in is a build failure
+if grep -qE '(^| )_(fmalloc|ffree|fheapshrink)_( |$)' "$OUT/RV.MAP"; then
+    echo "RV.EXE links the far heap: every buffer belongs in a fixed array (src/mem.h)"
+    grep -E '(^| )_(fmalloc|ffree|fheapshrink)_( |$)' "$OUT/RV.MAP"
+    exit 1
+fi
 echo "built $OUT/RV.EXE, $OUT/RVT.EXE (the test build), $OUT/RVP.EXE (the self-tests) and $OUT/HELLO.EXE"

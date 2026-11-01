@@ -37,6 +37,7 @@
 #include "rv.h"
 #include "rvdata.h"
 #include "music.h"
+#include "freeze.h"
 #include "opl.h"
 
 #define TICK_HZ 240U
@@ -83,6 +84,10 @@ typedef struct {
     unsigned then_from, then_at;        /* its first event, and the playing song's event it comes after */
 } Ring;
 static Ring g_ring[2];
+MEM_ARRAY(Ev, g_ring0_arr, RING)
+MEM_ARRAY(Ev, g_ring1_arr, RING)
+#define BANK_BYTES 2400U                /* RVOPL.BNK as built */
+MEM_ARRAY(unsigned char, g_bank_arr, BANK_BYTES)
 static volatile int g_play, g_next_ring;
 static volatile unsigned long g_starved;
 
@@ -143,6 +148,7 @@ void music_record(int on)
  * left the fonts no room (the heap grew round them), and upper memory is the ships' dense buffers' to the byte.
  * So the chip's set-up is written into it first, as opl_init wrote it, and every voice's patch again at its
  * next note. */
+#ifdef RV_HEAP
 static void record_start(void)
 {
     g_want_rec = 0;
@@ -165,6 +171,9 @@ static void record_start(void)
     }
     _enable();
 }
+#else
+static void record_start(void) { g_want_rec = 0; }
+#endif
 
 static void record(unsigned reg, unsigned char val)
 {
@@ -332,7 +341,7 @@ static int load_bank(const char *path)
     fseek(f, 0, SEEK_END);
     size = ftell(f);
     fseek(f, 0, SEEK_SET);
-    bank = size > 0 && size < 32000L ? (unsigned char __far *)_fmalloc((size_t)size) : 0;
+    bank = size > 0 && size < 32000L ? MEM_TAKE(unsigned char, g_bank_arr, size) : 0;
     if (!bank) {
         fclose(f);
         return 0;
@@ -344,7 +353,7 @@ static int load_bank(const char *path)
     }
     fclose(f);
     if (!opl_bank(bank, (unsigned long)size)) {
-        _ffree(bank);
+        MEM_GIVE(bank);
         return 0;
     }
     return 1;
@@ -413,7 +422,11 @@ static void play(const Ev *e)
     }
 }
 
+#ifdef RV_HOST
 static void __interrupt __far isr(void)
+#else
+static void __interrupt __far isr(union INTPACK r)
+#endif
 {
     g_clock++;
     if (g_dev == DEV_OPL3)
@@ -504,6 +517,11 @@ static void __interrupt __far isr(void)
         _chain_intr(g_old8);
     }
     outp(0x20, 0x20);
+#ifndef RV_HOST
+    freeze_tick(r.w.cs, r.w.ip, (const void __far *)&r);   /* (a tick in 273: the chain's a BIOS tick's, it counts in the next) */
+#else
+    freeze_tick(0, 0, 0);
+#endif
 }
 
 /* --- reading Standard MIDI Files --- */
@@ -658,7 +676,7 @@ static int load_song(const char *path, Song *song)
     fseek(f, 8 + be32(hdr + 4), SEEK_SET);
     while (ntrk < MAX_TRACKS && ntrk < be16(hdr + 10) && fread(hd, 1, 8, f) == 8 && !memcmp(hd, "MTrk", 4)) {
         unsigned long k, n = be32(hd + 4);
-        if (n > 65000UL || !(trk[ntrk] = (unsigned char __far *)_fmalloc((size_t)n + 1))) {
+        if (n > 65000UL || !(trk[ntrk] = (unsigned char __far *)gfx_boot_take(n + 1))) {
             RV_LOG("music: %s: a track of %lu bytes does not fit", path, n);
             break;
         }
@@ -749,7 +767,8 @@ static int load_song(const char *path, Song *song)
         }
     }
     for (t = 0; t < ntrk; t++)
-        _ffree(trk[t]);
+        gfx_boot_give(trk[t]);
+    gfx_boot_reset();
     if (nev >= 65535UL) {
         RV_LOG("music: %s has too many events (%lu)", path, nev);
         song->n = 0;
@@ -780,14 +799,14 @@ int music_init(void)
         RV_LOG("music: MPU-401 %s", g_dev ? "in UART mode" : "not answering (silent)");
     }
     for (i = 0; i < 2; i++) {
-        g_ring[i].ev = (Ev __far *)_fmalloc(sizeof(Ev) * RING);
+        g_ring[i].ev = i ? MEM_TAKE(Ev, g_ring1_arr, RING) : MEM_TAKE(Ev, g_ring0_arr, RING);
         g_ring[i].song = -1;
         if (!g_ring[i].ev) {
             RV_LOG("music: no memory for its rings");
             g_dev = DEV_NONE;
         }
     }
-    g_chunk = (Ev __far *)_fmalloc(sizeof(Ev) * CHUNK_EV);    /* only while reading */
+    g_chunk = g_ring[1].ev;             /* only while reading: nothing plays yet, and it is 256 events of the ring's 1024 */
     for (i = 0; g_chunk && i < MAX_SONGS; i++) {
         char name[13];
         Song song;
@@ -799,10 +818,11 @@ int music_init(void)
                    (unsigned)((song.beat256 + 128) >> 8), song.beats_bar);
         }
     }
-    if (g_chunk)
-        _ffree(g_chunk);
     g_chunk = 0;
+    gfx_boot_done();
+#ifdef RV_HEAP
     _fheapshrink();                     /* (the tracks read are given back to DOS: the far heap grew for them) */
+#endif
     g_old8 = _dos_getvect(8);
     atexit(music_shutdown);             /* a stop (rv_fail) gives the timer back too */
     g_installed = 1;

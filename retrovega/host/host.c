@@ -520,3 +520,7 @@ uint32_t host_hash(void)
     }
     return h;
 }
+
+/* rvsim has no rooms and no chalk: the silhouettes' room from the heap (the game's: gfx.c) */
+unsigned char *gfx_share_take(unsigned long bytes) { return (unsigned char *)malloc(bytes); }
+void gfx_share_give(unsigned char *p) { free(p); }

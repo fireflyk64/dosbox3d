@@ -212,6 +212,7 @@ void sfx_poll(void)
 /* --- DOS: the Sound Blaster --- */
 
 #define RING 4096u                      /* the DMA ring: 186 ms */
+MEM_ARRAY(uint8_t, g_mem_arr, 2 * RING)
 #define LEAD 1792u                      /* mixed ahead of the card: 81 ms, two frames and a half */
 
 static uint16_t __far g_base, __far g_irq, __far g_dma, __far g_dsp;
@@ -343,7 +344,7 @@ int16_t sfx_flight_start(void)
         if (maj < 2 || maj > 9)
             why = s_why3;
     }
-    if (!why && (g_mem = (uint8_t __far *)_fmalloc(2 * RING)) == 0)
+    if (!why && (g_mem = MEM_TAKE(uint8_t, g_mem_arr, 2 * RING)) == 0)
         why = s_why4;
     if (why) {
         _fstrcpy(w, why);
@@ -421,7 +422,7 @@ void sfx_flight_end(void)
         rv_logf(s_end, g_mixed, g_irqs);
     }
     if (g_mem)
-        _ffree(g_mem);
+        MEM_GIVE(g_mem);
     g_mem = g_ring = 0;
     g_on = 0;
 }

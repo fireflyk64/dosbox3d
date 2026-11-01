@@ -218,8 +218,12 @@ is). One of the player's side killed is the mission lost. The autopilot brings o
 **Nav points and fields, as the old game has them.** A mission's nav points are its waypoints, numbered from 1 in the
 order the player flies them (`nav ID x y z`), then its hidden trigger points (`nav ID x y z hidden`): the old game's
 nav table holds both, the second kind named `.Encounter`, `.Ambush`, `.TC wave`, `.Nav 1` and so on. A hidden point is
-on no list and no map, and asks nothing of the player unless they come to it; its ships come when they do. The port
-took them all for waypoints until 2026-10-31. Fields (`field asteroid|mine x y z radius [density=N]`, km) are read from the old game's mission
+on no list and no map, and asks nothing of the player unless they come to it; its ships come when they do, but a second
+wave waits for the first (the user, 2026-11-01): while an enemy fighter is out a hidden point's enemies hold
+(`wave_may_come`); when the last one is killed they come, and when the last one ran they are called off, unless the wave
+holds a capital ship or an escort target. A wave starts where the old game has it, off its nav point (`at=x,y,z`, km; `tests/wc1/places.py` writes them), and a ship in no
+nav point's list never flies. Enemies at the launch, in four missions, have the wingman start 3,000 km past them
+(`wingman_behind`), to come up behind them. The port took them all for waypoints until 2026-10-31. Fields (`field asteroid|mine x y z radius [density=N]`, km) are read from the old game's mission
 records (types 0x16 and 0x17) at the map's 0.45, which keeps its layout: no waypoint lies inside a field. A mission's
 field stays a cluster in its own place (`FIELD_SMALL`): its rocks drift, seven times the plain density, seen from afar
 and gone round, and every few seconds one ahead is set flying at the player. A mine is the same rock with trackers,
@@ -907,6 +911,44 @@ The status line says what is being fetched or made. Without the Cache API
 (an http page other than localhost, a private window) it all still works,
 fetched each time. scripts/web-rv-flight.mjs flies it: the briefing asked
 for two sets, both were made in 3.8 s, and the launch found them in place.
+
+### Memory: no heap, fixed places
+
+RV.EXE has no heap (the user, 2026-11-01: "make sure everything has a fixed location", "sidestep malloc and free with
+fixed-sized arrays"). The far heap kept what a flight freed, DOS's largest free block shrank, and from the second flight of
+a session the bolts' pool found no room: no bolt or ball was drawn. Every buffer of conventional memory is now an array of a
+fixed size, its address in `RV.MAP`, declared where it is used:
+
+    MEM_ARRAY(LzBolt, g_b_arr, SHOTS_MAX)      at file level: the array, a guard behind it
+    g_b = MEM_TAKE(LzBolt, g_b_arr, want);     for use: cleared, the guard set, on the ledger
+    MEM_GIVE(g_b);                             done with it
+
+A take asking more than the array has stops the game, naming the array. `build.sh` refuses an RV.EXE that links `_fmalloc`.
+RVT.EXE and RVP.EXE have 60 KB more code and no room for the arrays: `RV_HEAP` keeps the far heap there, so what the game does
+is tested with RV.EXE itself. Upper memory holds what it held, the band buffer and the dense slab, each taken once. The image
+is 590 KB, which leaves about 34 KB of DOS memory free, all the time (`log_free`).
+
+Two rooms are shared because their users never meet: `gfx_share_take` is the chalk hand's while the board shows, or a flight's
+silhouettes, and the flames' looks for the bake. The music's reading at the start borrows the empty scratch and font arrays
+(`gfx_boot_take`) and, for BAR.MID's 33,932-byte track, one DOS block, given back before the first room.
+
+**The ledger** (`mem_ledger`, `src/mem.c`), before each flight and after it: arrays out, DOS's free memory, the near heap, XMS
+free and its blocks, the files open, a hash of the interrupt table (a stray write through a null far pointer lands there), and
+every array's guard. Anything that differs from the first look logs `LEAK:`. `/ledger` logs every look, and in a flight a
+`flying:` line every 15 s: slots, shots, explosions, XMS, the near heap.
+
+**The freeze watch** (`src/freeze.c`). The main loop says it is alive (`freeze_pet`); after 20 s without it the music's interrupt
+writes `FREEZE:` to RVLOG.TXT: the registers, the stack and the last second's interrupted addresses. `tests/freezemap.py
+RVLOG.TXT` names them from `RV.MAP`. The game goes on as it was: a very slow load is not a freeze. `/dosbox` shows the report
+on the page (`showFreeze`). It cannot see a loop with interrupts off or a stuck interrupt: `tests/freezetrace.sh PID` takes those
+through DOSBox with gdb. The native build has no watch (`/rv`: the browser's own tools).
+
+**The soak rig** (`tests/monkey.sh`): no player. `/noflight` (a launch goes straight to its debrief), `/route WLW...` (each
+mission's result), `/kill P` (wingmen and escorts lost, the player dead, the carrier lost), `/monkey SEED N` (random clicks and
+keys, known spots as often as not; after N actions a mission it heads for the launch). Natively under AddressSanitizer on a virtual
+clock (`RV_VCLOCK=1`) a campaign takes seconds. `tests/routes.py` lists every way through the campaign's map, 68 of them.
+`--flying` flies real flights of a second, `--dos` runs RV.EXE itself in DOSBox (`DOSBOX_TURBO=1`). A failure keeps its files in
+`build/monkey/fail-*`, with the arguments to run it again.
 
 ### The test build: RVT.EXE
 

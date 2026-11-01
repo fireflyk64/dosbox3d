@@ -28,8 +28,21 @@ static SDL_Texture *g_tex;
 static SDL_AudioDeviceID g_audio;
 static int g_mute;
 
+/* RV_VCLOCK=1 (the test rig, tests/monkey.sh): time is what the game has waited for, no more; as fast as the machine
+ * goes and the same every run */
+static int vclock(void)
+{
+    static int on = -1;
+    if (on < 0)
+        on = getenv("RV_VCLOCK") != 0;
+    return on;
+}
+static uint64_t g_vnow;
+
 uint64_t plat_now_us(void)
 {
+    if (vclock())
+        return g_vnow += 2;             /* (each look at the clock costs a little: a loop on it ends) */
 #ifdef __EMSCRIPTEN__
     return (uint64_t)(emscripten_get_now() * 1000.0);
 #else
@@ -41,6 +54,10 @@ uint64_t plat_now_us(void)
 
 void plat_sleep_us(uint32_t us)
 {
+    if (vclock()) {
+        g_vnow += us;
+        return;
+    }
 #ifdef __EMSCRIPTEN__
     emscripten_sleep(us / 1000);        /* (0: a turn for the page, and back) */
 #else

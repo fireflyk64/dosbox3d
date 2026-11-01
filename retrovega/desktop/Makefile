@@ -25,7 +25,7 @@ ROOT := $(abspath ..)
 # --- rv-core: the game ---
 
 CORE_SRC = \
-    ../src/util.c ../src/xms.c ../src/video.c ../src/dat.c ../src/gfx.c ../src/input.c ../src/room.c \
+    ../src/mem.c ../src/freeze.c ../src/util.c ../src/xms.c ../src/video.c ../src/dat.c ../src/gfx.c ../src/input.c ../src/room.c \
     ../src/lipsync.c ../src/opl.c ../src/music.c ../src/score.c ../src/campaign.c ../src/lightfield.c \
     ../src/ships.c ../src/lasers.c ../src/bolts.c ../src/balls.c ../src/rocks.c ../src/missiles.c ../src/sky.c \
     ../src/collide.c ../src/flames.c ../src/comms.c ../src/panel.c ../src/vdu.c ../src/cockpit.c ../src/world.c \

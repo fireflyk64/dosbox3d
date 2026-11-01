@@ -342,6 +342,13 @@ void in_poll(Input *in)
         in->keyboard = g_keyboard;
         return;
     }
+    if (monkey_on()) {                  /* (the test rig: no player, game.c) */
+        monkey_step(in, &g_x, &g_y);
+        in->x = g_x;
+        in->y = g_y;
+        in->keyboard = 0;
+        return;
+    }
     key = bios_key(&ch);
     in->key = key;
     in->ch = ch;

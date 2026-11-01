@@ -47,8 +47,14 @@
 #define OUT_MIN 4096U                   /* the least room kept for the rows going out */
 
 static ShipSet __far *g_set[SHIP_SETS];
+MEM_ARRAY(ShipSet, g_set_arr, SHIP_SETS)
+#ifndef RV_HEAP
+static ShipSet __far *g_set_all;        /* the array, while it is out */
+#endif
 static int g_nsets;
+#ifdef RV_HEAP
 static unsigned char __far *g_band;     /* BAND_ROWS x LINE pixels, 0 = clear (no view uses colour 0) */
+#endif
 
 /* the camera */
 static int g_cx = SCR_W / 2, g_cy = SCR_H / 2, g_focal = 400;
@@ -67,6 +73,8 @@ static struct { short set, key; unsigned off, len; } __far g_slab_ent[SLAB_MAX];
 static unsigned g_slab_cursor;
 static unsigned char __far *g_dense;    /* the one a draw is using */
 static unsigned long g_dc_hits, g_dc_expands;   /* (the flight's tally: found in the slab, expanded into it) */
+MEM_ARRAY(unsigned short, g_cmap_arr, LINE)
+MEM_ARRAY(unsigned char, g_line_arr, LINE)
 static unsigned short __far *g_cmap;    /* the scaled draw's column map, LINE entries */
 static unsigned char __far *g_line;     /* one source row expanded, LINE pixels */
 
@@ -86,14 +94,15 @@ long __far __cdecl rv_turn_drawn(const unsigned char __far *dense, int w, int h,
 long __far __cdecl rv_turn_dropped(const unsigned char __far *dense, int w, int h, const LfRot *r, int y, int xs,
                                    int xe, int pl, int pr, unsigned char __far *out, const unsigned char __far *above);
 
-/* --- the .RV fallback: decoding WC's sprite code --- */
-
 static unsigned long rd32(FILE *f)
 {
     unsigned char b[4];
     fread(b, 1, 4, f);
     return b[0] | ((unsigned long)b[1] << 8) | ((unsigned long)b[2] << 16) | ((unsigned long)b[3] << 24);
 }
+
+#ifdef RV_HEAP                          /* (RV.EXE has no heap, and the game's sets are all .RVS or .RVH) */
+/* --- the .RV fallback: decoding WC's sprite code --- */
 
 /* the records of a view (its raw bytes at buf) for rows r0 .. r0+n-1 into
  * the band buffer, w wide; the origin's column is x1 + 1, its row y1 + 1 */
@@ -293,6 +302,8 @@ static int load_rv(ShipSet __far *s, const char *name)
     return 1;
 }
 
+#endif /* RV_HEAP */
+
 /* --- the pre-rendered sets --- */
 
 /* a file's bytes [at, at+n) into an XMS block at `to` */
@@ -432,7 +443,13 @@ int ships_load(unsigned type)
         return found;
     if (g_nsets >= SHIP_SETS)
         return -1;
+#ifdef RV_HEAP
     s = (ShipSet __far *)_fmalloc(sizeof(ShipSet));
+#else
+    if (!g_set_all)
+        g_set_all = MEM_TAKE(ShipSet, g_set_arr, SHIP_SETS);
+    s = g_set_all + g_nsets;
+#endif
     RV_ASSERT(s != 0);
     _fmemset(s, 0, sizeof(ShipSet));
     s->type = (unsigned char)type;
@@ -449,12 +466,16 @@ int ships_load(unsigned type)
         ok = load_rvs(s, name);
     }
     if (!ok) {
+#ifdef RV_HEAP
         sprintf(name, "SHIP%02X.RV", type);
         ok = load_rv(s, name);
+#endif
     }
     if (!ok) {
         RV_LOG("ships: no set for type %02X", type);
+#ifdef RV_HEAP
         _ffree(s);
+#endif
         return -1;
     }
     g_set[g_nsets] = s;
@@ -692,9 +713,19 @@ const ShipSet __far *ships_set(int i)
 void ships_unload(void)
 {
     int i;
+#ifdef RV_HEAP
     for (i = 0; i < g_nsets; i++)
         _ffree(g_set[i]);
+#else
+    if (g_set_all)
+        MEM_GIVE(g_set_all);
+    g_set_all = 0;
+#endif
     g_nsets = 0;
+    if (g_cmap) MEM_GIVE(g_cmap);
+    if (g_line) MEM_GIVE(g_line);
+    g_cmap = 0;
+    g_line = 0;
     for (i = 0; i < SLAB_MAX; i++)
         g_slab_ent[i].set = -1;
     g_slab_cursor = 0;
@@ -995,8 +1026,8 @@ static void expand_row(const unsigned char __far *p, unsigned char __far *line, 
 
 static void need_buffers(void)
 {
-    if (!g_cmap) g_cmap = (unsigned short __far *)_fmalloc(2 * LINE);
-    if (!g_line) g_line = (unsigned char __far *)_fmalloc(LINE);
+    if (!g_cmap) g_cmap = MEM_TAKE(unsigned short, g_cmap_arr, LINE);
+    if (!g_line) g_line = MEM_TAKE(unsigned char, g_line_arr, LINE);
     RV_ASSERT(g_cmap && g_line);
 }
 
@@ -1056,8 +1087,10 @@ int ships_dense_reserve(void)
     if (!g_slab) {
         g_slab = (unsigned char __far *)rv_alloc_high(SLAB_BYTES);
         RV_LOG("ships: the dense slab in %s memory", g_slab ? "upper" : "conventional");
+#ifdef RV_HEAP
         if (!g_slab)
             g_slab = (unsigned char __far *)_fmalloc(SLAB_BYTES);
+#endif
         for (i = 0; i < SLAB_MAX; i++)
             g_slab_ent[i].set = -1;
     }

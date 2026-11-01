@@ -40,7 +40,16 @@ static unsigned long dir_at(unsigned i)
 static RvRoom __far *g_rooms;
 static RvPerson __far *g_people;
 static RvCockpit __far *g_cockpits;
-static struct { XmsBlock blk; unsigned short off; } __far *g_in;   /* each asset's place in XMS (blk 0: not in) */
+typedef struct { XmsBlock blk; unsigned short off; } AssetIn;
+#define DAT_ROOMS 8
+#define DAT_PEOPLE 16
+#define DAT_COCKPITS 10
+#define DAT_ASSETS 1400
+MEM_ARRAY(RvRoom, g_rooms_mem, DAT_ROOMS)
+MEM_ARRAY(RvPerson, g_people_mem, DAT_PEOPLE)
+MEM_ARRAY(RvCockpit, g_cockpits_mem, DAT_COCKPITS)
+MEM_ARRAY(AssetIn, g_in_mem, DAT_ASSETS)
+static AssetIn __far *g_in;   /* each asset's place in XMS (blk 0: not in) */
 static struct { XmsBlock blk; unsigned long used; } __far g_slab[XMS_LEVELS];
 static int g_level = XMS_ROOM;          /* where an asset wanted now goes */
 static unsigned long g_read_bytes, g_reads;   /* (the tally) */
@@ -191,10 +200,10 @@ int dat_open(const char *path)
         return 0;
     }
     g_dir_blk = xms_alloc(sizeof(RvAsset) * (unsigned long)g_hdr.nassets + 2, XMS_RESIDENT);
-    g_rooms = (RvRoom __far *)_fmalloc(sizeof(RvRoom) * g_hdr.nrooms);
-    g_people = (RvPerson __far *)_fmalloc(sizeof(RvPerson) * g_hdr.npeople);
-    g_cockpits = (RvCockpit __far *)_fmalloc(sizeof(RvCockpit) * (g_hdr.ncockpits ? g_hdr.ncockpits : 1));
-    g_in = _fmalloc(sizeof *g_in * (unsigned long)g_hdr.nassets);
+    g_rooms = MEM_TAKE(RvRoom, g_rooms_mem, g_hdr.nrooms);
+    g_people = MEM_TAKE(RvPerson, g_people_mem, g_hdr.npeople);
+    g_cockpits = MEM_TAKE(RvCockpit, g_cockpits_mem, g_hdr.ncockpits ? g_hdr.ncockpits : 1);
+    g_in = MEM_TAKE(AssetIn, g_in_mem, g_hdr.nassets);
     if (!g_dir_blk || !g_rooms || !g_people || !g_cockpits || !g_in)
         return 0;
     _fmemset(g_in, 0, sizeof *g_in * g_hdr.nassets);
@@ -227,10 +236,10 @@ int dat_open(const char *path)
 void dat_close(void)
 {
     xms_free_level(XMS_BASE);           /* (first: freed() clears what was in) */
-    if (g_rooms) _ffree(g_rooms);
-    if (g_people) _ffree(g_people);
-    if (g_cockpits) _ffree(g_cockpits);
-    if (g_in) _ffree(g_in);
+    if (g_rooms) MEM_GIVE(g_rooms);
+    if (g_people) MEM_GIVE(g_people);
+    if (g_cockpits) MEM_GIVE(g_cockpits);
+    if (g_in) MEM_GIVE(g_in);
     if (g_fd >= 0) close(g_fd);
     g_fd = -1;
     g_dir_blk = 0;

@@ -54,10 +54,12 @@ int vid_init(void)
     g_buf = (unsigned char __far *)rv_alloc_high((unsigned long)BAND_ROWS * SCR_W);   /* upper memory first (64 KB
                                            of DOSBox's 128 KB of UMBs; the dense slab takes the other half) */
     RV_LOG("video: the band buffer in %s memory", g_buf ? "upper" : "conventional");
+#ifdef RV_HEAP
     if (!g_buf)
         g_buf = (unsigned char __far *)_fmalloc((size_t)BAND_ROWS * SCR_W);
+#endif
     if (!g_buf) {
-        RV_LOG("video: no memory for the band buffer");
+        RV_LOG("video: no memory for the band buffer: the game needs upper memory (umb=true in DOSBox)");
         return 0;
     }
     _fmemset(g_buf, 0, (size_t)BAND_ROWS * SCR_W);

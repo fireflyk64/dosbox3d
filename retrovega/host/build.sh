@@ -111,7 +111,7 @@ else
         SDLL=$($PC --libs sdl2)
     fi
 fi
-CFLAGS="$ARCHF $OPT $COMMON $WARN $SANF"
+CFLAGS="$ARCHF $OPT $COMMON $WARN $SANF -DRV_HEAP"   # (rvsim has no fixed arrays: src/mem.h)
 rm -f "$OUT"/obj/*.o
 $CC $CFLAGS -c -o "$OUT/obj/logic.o" "$LOGIC"
 for c in $SHARED; do

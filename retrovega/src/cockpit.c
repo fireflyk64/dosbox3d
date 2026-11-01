@@ -17,6 +17,10 @@
 #include "cockpit.h"
 #include "panel.h"
 
+#define EXT_SHORTS (2 * SCR_H + 1)       /* an opening's rows: a pair each */
+MEM_ARRAY(RvCockpit, g_cp_arr, 1)
+MEM_ARRAY(short, g_ext_arr, EXT_SHORTS)
+MEM_ARRAY(short, g_ext_full_arr, EXT_SHORTS)
 static RvCockpit __far *g_cp;
 static short __far *g_ext;
 static int g_ext_y0, g_ext_rows;
@@ -58,15 +62,15 @@ int cockpit_load(int ship_type)
         const RvCockpit __far *c = dat_cockpit(i);
         if (c->ship_type == ship_type) {
             const RvAsset __far *ex = dat_asset(c->extents);
-            g_cp = (RvCockpit __far *)_fmalloc(sizeof(RvCockpit));
+            g_cp = MEM_TAKE(RvCockpit, g_cp_arr, 1);
             RV_ASSERT(g_cp != 0);
             _fmemcpy(g_cp, c, sizeof(RvCockpit));
             g_ext_y0 = c->open_y0;
             g_ext_rows = c->open_y1 - c->open_y0;
-            g_ext = (short __far *)_fmalloc((size_t)ex->size + 2);
+            g_ext = MEM_TAKE(short, g_ext_arr, ex->size / 2 + 1);
             RV_ASSERT(g_ext != 0 && ex->size == 4UL * g_ext_rows);
             dat_read(ex->at, g_ext, ex->size);
-            g_ext_full = (short __far *)_fmalloc((size_t)ex->size + 2);
+            g_ext_full = MEM_TAKE(short, g_ext_full_arr, ex->size / 2 + 1);
             if (g_ext_full) {
                 int r;
                 for (r = 0; r < g_ext_rows; r++) {
@@ -95,9 +99,9 @@ void cockpit_palette(void)
 void cockpit_unload(void)
 {
     panel_unload();
-    if (g_cp) _ffree(g_cp);
-    if (g_ext) _ffree(g_ext);
-    if (g_ext_full) _ffree(g_ext_full);
+    if (g_cp) MEM_GIVE(g_cp);
+    if (g_ext) MEM_GIVE(g_ext);
+    if (g_ext_full) MEM_GIVE(g_ext_full);
     g_ext_full = 0;
     g_external = 0;
     g_cp = 0;

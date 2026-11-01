@@ -518,6 +518,17 @@ function writeSave(FS, rel, data) {
   try { FS.writeFile(r.path, data); return true; } catch (e) { return false; }
 }
 const liveFS = () => (running && window.DOSBox && window.DOSBox.FS) || null;
+// A freeze RetroVega has reported about itself (retrovega/src/freeze.c): the report and what led to it, ready to copy.
+function showFreeze() {
+  const FS = liveFS();
+  if (!FS || !$("freezeBox").hidden) return;
+  let text;
+  try { text = new TextDecoder().decode(FS.readFile(`${GAME_ROOT}/RVLOG.TXT`)); } catch (e) { return; }
+  const at = text.indexOf("FREEZE:");
+  if (at < 0) return;
+  $("freezeReport").value = text.slice(0, at).split("\n").slice(-25).join("\n") + text.slice(at);
+  $("freezeBox").hidden = false;
+}
 
 function describeSaves() {
   const files = saveFiles();
@@ -1572,6 +1583,7 @@ async function start(fromGesture) {
     if (gameInfo() && gameInfo().id === "rv") {
       rvSets.loadManifest().catch((e) => log(`rv/ships.json: ${e.message}`));
       setInterval(() => rvSets.poll(liveFS()), 300);
+      setInterval(showFreeze, 5000);
     }
     setInterval(keepSaves, 4000);
     setInterval(showPerformance, 1000);

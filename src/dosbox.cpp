@@ -474,7 +474,7 @@ static void DOSBOX_RealInit(Section * sec) {
 
 	ticksRemain=0;
 	ticksLast=GetTicks();
-	ticksLocked = false;
+	ticksLocked = getenv("DOSBOX_TURBO") != NULL;	/* the test rigs (retrovega/tests/monkey.sh): as fast as it goes */
 	DOSBOX_SetLoop(&Normal_Loop);
 	MSG_Init(section);
 

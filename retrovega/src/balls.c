@@ -16,6 +16,7 @@
 #include <malloc.h>
 #include <dos.h>
 #include "rv.h"
+#include "shots.h"
 #include "music.h"
 #include "bolts.h"
 #include "balls.h"
@@ -93,28 +94,34 @@ int balls_reserve(void)
     return 1;
 }
 
+#define SMALL_SETS_BYTES 2700U          /* balls.dat's small sprites as built */
+MEM_ARRAY(unsigned char, g_small_arr, SMALL_SETS_BYTES)
+MEM_ARRAY(unsigned char, g_near_arr, NEAR_BYTES)
+MEM_ARRAY(LzBall, g_b_arr, SHOTS_MAX)
+MEM_ARRAY(LzBallOut, g_o_arr, SHOTS_MAX)
+
 /* the small sprites' block and the big ones' buffer (a flight's) */
 static int buffers(void)
 {
     int i;
     if (!g_small) {
-        g_small = (unsigned char __far *)_fmalloc(g_sets * LZ_BALL_SMALL_SET);
+        g_small = MEM_TAKE(unsigned char, g_small_arr, (unsigned long)g_sets * LZ_BALL_SMALL_SET);
         if (!g_small)
             return 0;
         for (i = 0; i < g_sets; i++)    /* (the small sizes come first in each set) */
             xms_get(g_blk, i * g_set_bytes, g_small + i * LZ_BALL_SMALL_SET, LZ_BALL_SMALL_SET);
     }
     if (!g_near)
-        g_near = (unsigned char __far *)_fmalloc(NEAR_BYTES);
+        g_near = MEM_TAKE(unsigned char, g_near_arr, NEAR_BYTES);
     return g_near != 0;
 }
 
 void balls_free(void)
 {
-    if (g_b) _ffree(g_b);
-    if (g_o) _ffree(g_o);
-    if (g_small) _ffree(g_small);
-    if (g_near) _ffree(g_near);
+    if (g_b) MEM_GIVE(g_b);
+    if (g_o) MEM_GIVE(g_o);
+    if (g_small) MEM_GIVE(g_small);
+    if (g_near) MEM_GIVE(g_near);
     g_b = 0;
     g_o = 0;
     g_small = g_near = 0;
@@ -124,13 +131,16 @@ void balls_free(void)
 int balls_init(int want, unsigned keep_kb)
 {
     static const char __far s_room[] = "balls: room for %d";
+#ifdef RV_HEAP
     unsigned long room;
     unsigned each = sizeof(LzBall) + sizeof(LzBallOut);
+#endif
     balls_free();
     if (!g_blk || !buffers()) {
         balls_free();
         return 0;
     }
+#ifdef RV_HEAP
     room = bolts_dos_free();
     if (want > 2000)
         want = 2000;                    /* (each array within a segment) */
@@ -138,16 +148,23 @@ int balls_init(int want, unsigned keep_kb)
     if ((unsigned long)want * each > room)
         want = (int)(room / each);
     while (want >= 16) {
-        g_b = (LzBall __far *)_fmalloc((size_t)want * sizeof(LzBall));
-        g_o = g_b ? (LzBallOut __far *)_fmalloc((size_t)want * sizeof(LzBallOut)) : 0;
+        g_b = MEM_TAKE(LzBall, g_b_arr, want);
+        g_o = g_b ? MEM_TAKE(LzBallOut, g_o_arr, want) : 0;
         if (g_b && g_o)
             break;
-        if (g_b) _ffree(g_b);
-        if (g_o) _ffree(g_o);
+        if (g_b) MEM_GIVE(g_b);
+        if (g_o) MEM_GIVE(g_o);
         g_b = 0;
         g_o = 0;
         want = want * 3 / 4;
     }
+#else
+    (void)keep_kb;
+    if (want > SHOTS_MAX)
+        want = SHOTS_MAX;
+    g_b = MEM_TAKE(LzBall, g_b_arr, want);
+    g_o = MEM_TAKE(LzBallOut, g_o_arr, want);
+#endif
     g_cap = g_b ? want : 0;
     if (!g_b)
         balls_free();                   /* (the buffers too: the caller frees only a pool it got) */

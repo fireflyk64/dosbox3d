@@ -24,16 +24,20 @@ static uint16_t __far g_added, __far g_hits;   /* the flight's shots and the hit
 void (*__far shots_on_add)(int16_t owner, uint16_t weapon_type);
 void (*__far shots_on_hit)(int16_t slot, const RvVec3 *where, int16_t owner, uint16_t damage);
 
+MEM_ARRAY(Shot, g_s_arr, SHOTS_MAX)
+
 int16_t shots_flight_start(int16_t own_pools)
 {
     static const char __far s_room[] = "shots: room for %d (bolts drawn %d, balls %d)";
     shots_flight_end();
     g_added = g_hits = 0;
-    g_s = (Shot __far *)_fmalloc(SHOTS_MAX * sizeof(Shot));
+    g_s = MEM_TAKE(Shot, g_s_arr, SHOTS_MAX);
     if (own_pools && g_s) {
+#ifdef RV_HEAP
 #ifndef RV_HOST
         _fheapshrink();                 /* (the last flight's memory, held in the far heap, back to DOS: the pools ask
-                                           DOS what is free, and from the second flight on it said nothing was) */
+                                           DOS what is free) */
+#endif
 #endif
         g_bolts = bolts_init(SHOTS_MAX, 48);   /* (48 KB kept for the rocks, should a field come) */
         g_balls = balls_init(SHOTS_MAX, 48);
@@ -47,7 +51,7 @@ void shots_flight_end(void)
     static const char __far s_tally[] = "shots: %u fired, %u hits";
     if (g_s) {
         rv_logf(s_tally, g_added, g_hits);
-        _ffree(g_s);
+        MEM_GIVE(g_s);
     }
     if (g_bolts)
         bolts_free();

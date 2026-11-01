@@ -13,6 +13,12 @@ static RvPanelControl __far g_pc[RV_PANEL];
 static int __far g_n;
 static unsigned char __far g_shown[RV_PANEL];   /* each control's state as drawn (a needle: its angle / 2, a bar or
                                                    a readout: a hash of what it shows) */
+#define MAPS_BYTES 8192U                /* a cockpit's maps, all of them (the most, logged at each: panel_load) */
+MEM_ARRAY(unsigned char, g_maps_arr, MAPS_BYTES)
+#ifndef RV_HEAP
+static unsigned char __far * __far g_maps;   /* the array, while it is out, */
+static unsigned __far g_maps_used;      /* and how far it is taken */
+#endif
 static unsigned char __far *__far g_map[RV_PANEL];   /* a map's pixels (its IMG, read in) */
 
 /* a display's reading (needles, bars, readouts, maps): what it shows, drawn from this alone.  The displays take
@@ -103,10 +109,18 @@ void panel_unload(void)
 {
     int i;
     for (i = 0; i < RV_PANEL; i++) {
+#ifdef RV_HEAP
         if (g_map[i])
             _ffree(g_map[i]);
+#endif
         g_map[i] = 0;
     }
+#ifndef RV_HEAP
+    if (g_maps)
+        MEM_GIVE(g_maps);
+    g_maps = 0;
+    g_maps_used = 0;
+#endif
     g_n = 0;
 }
 
@@ -127,10 +141,21 @@ void panel_load(const RvCockpit __far *c)
     for (i = 0; i < g_n; i++)           /* (the maps in conventional memory: a few KB, drawn row by row) */
         if (g_pc[i].kind == RV_PK_MAP) {
             const RvAsset __far *m = dat_asset(g_pc[i].sprite);
+#ifdef RV_HEAP
             g_map[i] = (unsigned char __far *)_fmalloc((size_t)m->size);
+#else
+            if (!g_maps)
+                g_maps = MEM_TAKE(unsigned char, g_maps_arr, MAPS_BYTES);
+            RV_ASSERT(g_maps_used + m->size <= MAPS_BYTES);
+            g_map[i] = g_maps + g_maps_used;
+            g_maps_used += (unsigned)m->size;
+#endif
             RV_ASSERT(g_map[i] != 0);
             dat_read(m->at, g_map[i], m->size);
         }
+#ifndef RV_HEAP
+    RV_LOG("panel: %u bytes of maps", g_maps_used);
+#endif
 }
 
 int panel_has(int fn)

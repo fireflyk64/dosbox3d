@@ -21,7 +21,7 @@ exe=${EXE:-RV.EXE}
 if [ -z "$EXE" ]; then
     for a in "$@"; do
         case "$a" in
-            /script|/flight|/winrate|/res|/onfly|/skyrows|/field|/rockxms|/mpu|/nomusic|/noquit|/fly|/at|/nomouse) ;;
+            /script|/flight|/winrate|/res|/onfly|/skyrows|/field|/rockxms|/mpu|/nomusic|/noquit|/fly|/at|/nomouse|/noflight|/route|/kill|/ledger|/monkey|/freezetest) ;;
             /playtest|/twins) exe=RVP.EXE; break;;
             /*) exe=RVT.EXE;;
         esac

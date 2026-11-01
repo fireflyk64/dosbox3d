@@ -14,6 +14,7 @@
 #include <malloc.h>
 #include <dos.h>
 #include "rv.h"
+#include "shots.h"
 #include "music.h"
 #include "bolts.h"
 
@@ -54,20 +55,26 @@ unsigned long bolts_dos_free(void)
 
 void bolts_free(void)
 {
-    if (g_b) _ffree(g_b);
-    if (g_l) _ffree(g_l);
+    if (g_b) MEM_GIVE(g_b);
+    if (g_l) MEM_GIVE(g_l);
     g_b = 0;
     g_l = 0;
     g_cap = g_n = g_nl = g_nf = 0;
 }
 
+MEM_ARRAY(LzBolt, g_b_arr, SHOTS_MAX)
+MEM_ARRAY(LzLine, g_l_arr, SHOTS_MAX)
+
 int bolts_init(int want, unsigned keep_kb)
 {
+#ifdef RV_HEAP
     union REGS r;
     unsigned long room;
+#endif
     bolts_free();
     if (want > 3200)
         want = 3200;                    /* each array within a segment */
+#ifdef RV_HEAP
     r.h.ah = 0x48;                      /* what DOS has left, less what must stay free */
     r.x.bx = 0xFFFF;
     int86(0x21, &r, &r);
@@ -76,15 +83,26 @@ int bolts_init(int want, unsigned keep_kb)
     if ((unsigned long)want * (sizeof(LzBolt) + sizeof(LzLine) + 1) > room)
         want = (int)(room / (sizeof(LzBolt) + sizeof(LzLine) + 1));
     while (want >= 16) {
-        g_b = (LzBolt __far *)_fmalloc((size_t)want * sizeof(LzBolt));
-        g_l = g_b ? (LzLine __far *)_fmalloc((size_t)want * sizeof(LzLine)) : 0;
+        g_b = MEM_TAKE(LzBolt, g_b_arr, want);
+        g_l = g_b ? MEM_TAKE(LzLine, g_l_arr, want) : 0;
         if (g_b && g_l)
             break;
         bolts_free();
         want = want * 3 / 4;
     }
+#else
+    (void)keep_kb;                      /* (fixed arrays: a shot's bolt always has its place) */
+    if (want > SHOTS_MAX)
+        want = SHOTS_MAX;
+    g_b = MEM_TAKE(LzBolt, g_b_arr, want);
+    g_l = MEM_TAKE(LzLine, g_l_arr, want);
+#endif
     g_cap = g_b ? want : 0;
+#ifdef RV_HEAP
     RV_LOG("bolts: room for %d (%lu KB of DOS memory was free)", g_cap, (unsigned long)r.x.bx * 16 / 1024);
+#else
+    RV_LOG("bolts: room for %d", g_cap);
+#endif
     bolts_tables();
     bolts_ticks_reset();
     return g_cap;

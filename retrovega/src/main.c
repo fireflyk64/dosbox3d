@@ -82,6 +82,7 @@ static void dos_free(unsigned long *total, unsigned long *largest)
     *largest = *largest * 16 / 1024;
 }
 
+#ifdef RV_HEAP
 /* what the C far heap already holds free (freed memory stays in it: the DOS figure does not move when a table
  * leaves): the free total and the largest free entry, by walking it */
 static void heap_free(unsigned long *total, unsigned long *largest)
@@ -96,13 +97,16 @@ static void heap_free(unsigned long *total, unsigned long *largest)
                 *largest = hi._size;
         }
 }
+#endif /* RV_HEAP */
 
 static void log_free(const char *when)
 {
-    unsigned long dtotal, dlargest, total, largest;
+    unsigned long dtotal, dlargest, total = 0, largest = 0;
+#ifdef RV_HEAP
     _fheapshrink();     /* (what the heap holds free in whole segments goes back to DOS first) */
-    dos_free(&dtotal, &dlargest);
     heap_free(&total, &largest);
+#endif
+    dos_free(&dtotal, &dlargest);
     rv_stack_log(when);
     RV_LOG("conventional memory %s: %lu KB free in DOS (the largest block %lu KB), %lu KB free in the heap (largest %lu KB)",
            when, dtotal, dlargest, total, largest);
@@ -234,6 +238,8 @@ int main(int argc, char **argv)
     }
     for (i = 1; i < argc; i++) {
         static const char __far s_nomouse[] = "/nomouse", __far s_fly[] = "/fly", __far s_at[] = "/at";
+        static const char __far s_noflight[] = "/noflight", __far s_route[] = "/route", __far s_kill[] = "/kill",
+            __far s_ledger[] = "/ledger", __far s_monkey[] = "/monkey", __far s_freezetest[] = "/freezetest";
         if (!_fstrcmp(argv[i], s_nomouse))          /* the keys only: the mouse driver left alone (the native build's
                                                        window lets the pointer go, for a debugger beside it) */
             in_nomouse();
@@ -246,6 +252,21 @@ int main(int argc, char **argv)
             music_device(MUSIC_MPU401);
         else if (!strcmp(argv[i], "/nomusic"))
             music_device(MUSIC_OFF);
+        else if (!_fstrcmp(argv[i], s_noflight))    /* the test rig: game.c's comment */
+            g_noflight = 1;
+        else if (!_fstrcmp(argv[i], s_route) && i + 1 < argc)
+            g_route = argv[++i];
+        else if (!_fstrcmp(argv[i], s_kill) && i + 1 < argc)
+            g_kill_pct = atoi(argv[++i]);
+        else if (!_fstrcmp(argv[i], s_freezetest) && i + 1 < argc)
+            g_freeze_test = atol(argv[++i]);
+        else if (!_fstrcmp(argv[i], s_ledger))
+            mem_ledger_always(1);
+        else if (!_fstrcmp(argv[i], s_monkey) && i + 2 < argc) {
+            unsigned long seed = strtoul(argv[i + 1], 0, 10);
+            monkey_start(seed, (unsigned)atoi(argv[i + 2]));
+            i += 2;
+        }
         else if (!strcmp(argv[i], "/noquit"))           /* the page: no Q in the bunk menu (reload is the way out) */
             g_can_quit = 0;
 #ifdef RV_TESTS
