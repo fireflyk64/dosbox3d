@@ -1790,15 +1790,17 @@ the VDUs take the readouts' small font. vdu.c:
   player's: **fly into the carrier's bow**, within 18 degrees of its
   axis, and the flight ends. Its other sides, or the bow with no
   clearance, just stop the fighter, unhurt, and the XO says why
-  (`carrier_contact`; the fighter can turn and fly off again). The
-  carrier is solid for this, its outline from above through the height
-  of its box: its side silhouette is hollow under the deck amidships, so
-  the hull test the guns use would let a fighter through. Landing with
+  (`carrier_contact`; the fighter can turn and fly off again). This goes
+  by the carrier's actual shape, its silhouettes, as bolts do (the user:
+  a capital ship uses the actual map in any setting, whatever a mission's
+  `hit=` rule says for the fighters), so the gap the Vigilance has under
+  its deck amidships can be flown through. Landing with
   the mission undone is a loss. The intercom wrecked the page says
   INTERCOM OUT and only the carrier can still be asked, with no comm
   faces, since a flight has to be able to end.
 - **Range:** the target page's KM, a lock's range and the landing's limit
-  are hull to hull (`logic_target_km`; docs/ai.md).
+  are hull to hull (`logic_target_km`), a capital ship by its actual shape
+  (docs/ai.md).
 - **The carrier lost:** a mission's home carrier can be destroyed. When its
   explosion has run (`step_deaths`) the flight ends with `missionStatus` 6, a
   loss however the patrol went, and game.c's `enter_lost` shows the user's

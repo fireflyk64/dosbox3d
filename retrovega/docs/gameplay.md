@@ -296,6 +296,7 @@ What the tests expect:
 | M6.1 ram | a player inside a frozen ship, closing at 10 km a step, is out within 10 steps (or touching: less than 1/16 of its half box deep); both hurt (the lowest their health went: the shields come back) |
 | M6.2 no-ghosts | flown at top speed at a ship 1,500 km ahead, the player is never inside it more than 3 steps in a row, and the collision hurts the ship |
 | M6.3 ram-cost | closing at 10 km a step costs the player 50 under the old rule (the square of the closing speed in km a step, halved) and 3 under `rules ram=soft` |
+| M6.4 capital-map | under `hit=sphere` a shot 400 km off the carrier's axis, inside its 700 km radius but clear of its hull, flies on; one along its deck hits: a capital ship is hit on its actual shape under any rule |
 
 ### M7: missiles (`fireGunFromShip`'s launchers, `step_missiles`, `step_fire`)
 
@@ -367,8 +368,9 @@ nav 0):
 | M8.14 landing-rule | at the launch `logic_request_landing` answers not yet; at nav 1, 20,000 km off, too far; back within 8,000 km, cleared; far off again, still cleared; a mission with nothing to do is cleared at the launch |
 | M8.16 carrier-lost | the carrier destroyed, every nav flown and every enemy dead: `missionStatus` still 0 the next step, 6 within 10 s, `victoryPoints` 0 |
 | M8.17 turrets-off | an enemy 1,500 km from the carrier: its turrets fire; with `turrets=off`, not a shot in 5 s |
-| M8.18 attack-capital | a lone ace on a carrier with its turrets off, 90 s: alive (it breaks off by the hull's distance), and it has fired |
-| M8.15 landing-contact | not cleared, into the bow: stopped, speed 0, shields whole; cleared, into the beam (at the hull's hollow middle) and the stern: stopped; turned away it flies off; into the bow: `missionStatus` 1, `victoryPoints` 0 with the patrol undone and nonzero with it done |
+| M8.18 attack-capital | a lone ace from each of 16 sides on a carrier with its turrets off, 90 s each: at most 3 fly into it, and they fire |
+| M8.19 autopilot-apart | a wingman whose offset comes down exactly where the autopilot puts the Ox, at speed: they arrive apart, and in 3 s the Ox takes no hit |
+| M8.15 landing-contact | not cleared, into the bow: stopped, speed 0, shields whole; cleared, into the beam at the deck's height and the stern: stopped; turned away it flies off; into the bow: `missionStatus` 1, `victoryPoints` 0 with the patrol undone and nonzero with it done |
 
 The tests take the player to a nav point by moving it (as the autopilot would) and, but for M8.15, land by setting
 `missionStatus = 1`, as the logic does when a cleared player flies into the carrier's bow.

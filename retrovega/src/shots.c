@@ -172,6 +172,9 @@ int16_t shot_hit(int16_t i, int16_t *slot, RvVec3 *where)
          * its silhouettes (the bolt's radius about the step: collide_segment_fat), or (blank) the radius or the
          * silhouettes */
         mode = g_rule_hit ? g_rule_hit : (uint8_t)(ty->flags & RV_SHIPTYPE_HIT_MASK);
+        if (maybeEntityType[s] == ET_CAPSHIP)   /* (a capital ship is its actual shape under any rule, the user's: its
+                                           radius is a sphere of mostly empty space) */
+            mode = RV_SHIPTYPE_FLAG_HIT_SILHOUETTE;
         if (mode == RV_SHIPTYPE_FLAG_HIT_BOX ? collide_box(s, &a, &b, fat, &hit)
             : mode == RV_SHIPTYPE_FLAG_HIT_SPHERE ? segment_in_sphere(s, &a, &b, r + fat, &hit)
             : mode == RV_SHIPTYPE_FLAG_HIT_SILHOUETTE ? collide_segment_fat(s, &a, &b, fat, &hit, &t)

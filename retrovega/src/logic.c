@@ -301,8 +301,11 @@ void logic_test_to_carrier(int16_t where)
             const RvVec3 *F = &gOrientationFrontVector[s], *R = &gOrientationRightVector[s];
             const RvVec3 *W = where ? R : F;
             RvVec3 *P = &gOrientationFrontVector[0];
-            gPositionVector[0] = vec3(gPositionVector[s].x + W->x * 3000, gPositionVector[s].y + W->y * 3000,
-                                      gPositionVector[s].z + W->z * 3000);   /* (a unit is 256: x km = positions) */
+            const RvVec3 *U = &gOrientationUpVector[s];
+            int32_t up = where ? 75 : 0;   /* (the beam at the deck's height: under it is the gap) */
+            gPositionVector[0] = vec3(gPositionVector[s].x + W->x * 3000 + U->x * up,
+                                      gPositionVector[s].y + W->y * 3000 + U->y * up,
+                                      gPositionVector[s].z + W->z * 3000 + U->z * up);   /* (a unit is 256: x km = positions) */
             *P = vec3(-W->x, -W->y, -W->z);
             gOrientationUpVector[0] = gOrientationUpVector[s];
             gOrientationRightVector[0] = where ? vec3(F->x, F->y, F->z) : vec3(-R->x, -R->y, -R->z);
@@ -833,12 +836,43 @@ static int32_t km_between(int16_t a, int16_t b)
                   TO_KM(gPositionVector[b].z - gPositionVector[a].z));
 }
 
-/* how far apart two ships are, hull to hull: the middles' distance less the sum of their half boxes (the user,
- * 2026-10-31: "exclude the sum of the radii, since it is effectively that much closer"), at least 1.  What a distance
- * to a target means: in an attack, a turret's and a lock's range, the landing's limit, the cockpit's readout */
+/* how far apart two ships are, hull to hull (the user, 2026-10-31: "exclude the sum of the radii, since it is effectively
+ * that much closer"), at least 1.  What a distance to a target means: in an attack, a turret's and a lock's range, the
+ * landing's limit, the cockpit's readout.  Fighters: the middles' distance less the sum of their half boxes.  A capital
+ * ship, under any setting, by its actual shape (the user again): along the line to its middle as far as its silhouettes
+ * begin, less the other's half box; with no hull on that line (it runs under the Vigilance's deck) to the box its
+ * silhouettes fill, so that a fighter beside a hollow does not take itself to be far from everything */
+#define GAP_MAP_KM 30000                /* (collide_segment's reach; further off the radius will do) */
 static int32_t gap_of(int32_t km, int16_t a, int16_t b)
 {
-    int32_t room = TO_KM(collide_half(a) + collide_half(b));
+    int32_t room;
+    int16_t cap = maybeEntityType[b] == ET_CAPSHIP ? b : a, other = cap == b ? a : b, t;
+    LfVec hit;
+    RvVec3 r;
+    const RvShipType __far *ty;
+    if (maybeEntityType[a] == ET_CAPSHIP && maybeEntityType[b] == ET_CAPSHIP && collide_half(a) > collide_half(b)) {
+        cap = a;
+        other = b;
+    }
+    if (maybeEntityType[cap] != ET_CAPSHIP || km > GAP_MAP_KM)
+        room = TO_KM(collide_half(a) + collide_half(b));
+    else {
+        room = TO_KM(collide_half(other));
+        if (collide_segment(cap, (const LfVec *)&gPositionVector[other], (const LfVec *)&gPositionVector[cap], &hit, &t))
+            km = km * t / 1024;
+        else if ((ty = slot_type(cap)) != 0) {
+            int32_t half = TO_KM(collide_half(cap)), m;
+            ship_rel(cap, other, &r);
+            r.x = labs(r.x) - half * ty->hit[0] / 127;
+            r.y = labs(r.y) - half * ty->hit[1] / 127;
+            r.z = labs(r.z) - half * ty->hit[2] / 127;
+            r.x = r.x < 0 ? 0 : r.x;
+            r.y = r.y < 0 ? 0 : r.y;
+            r.z = r.z < 0 ? 0 : r.z;
+            m = r.x > r.y ? (r.x > r.z ? r.x : r.z) : (r.y > r.z ? r.y : r.z);   /* (the largest and half the rest) */
+            km = m + ((r.x + r.y + r.z - m) >> 1);
+        }
+    }
     return km > room + 1 ? km - room : 1;
 }
 
@@ -1050,46 +1084,19 @@ static void ram_shove(int16_t s, const LfVec *push, int16_t part, int16_t into)
 }
 
 /* the player against the home carrier (the user, 2026-10-31: "they can land from the front only.  Other sides should
- * just stop the fighter"): a solid thing, its outline from above through the whole height of its box, so no gap in the
- * hull lets a fighter by (the Vigilance's side silhouette is hollow under the deck, and the bullets' hull test has a
- * fighter fly clean through it).  r: the player in the carrier's frame, km.  1 when the fighter touches it */
-static int16_t carrier_touches(int16_t home, const RvVec3 *r)
-{
-    static const int8_t __far k_at[5][2] = { { 0, 0 }, { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
-    const RvShipType __far *t = slot_type(home);
-    const RvShipType __far *me = slot_type(0);
-    const uint8_t __far *top;
-    int32_t half, hx, hy, hz, m;
-    int16_t k;
-    if (!t || !me)
-        return 0;
-    half = TO_KM(collide_half(home));
-    hx = half * t->hit[0] / 127;
-    hy = half * t->hit[1] / 127;
-    hz = half * t->hit[2] / 127;
-    m = TO_KM(collide_half(0)) * me->hit[2] / 127;   /* (the fighter's half length, on every side of it) */
-    if (labs(r->x) > hx + m || labs(r->y) > hy + m || labs(r->z) > hz + m)
-        return 0;
-    if ((top = collide_mask(gInstanceShipTypes[home])) == 0 || hx <= 0 || hz <= 0)
-        return 1;                       /* (no silhouettes: its box) */
-    for (k = 0; k < 5; k++) {
-        int32_t col = (r->x + k_at[k][0] * m + hx) * 32 / hx, row = (r->z + k_at[k][1] * m + hz) * 32 / hz;
-        if (col >= 0 && col < 64 && row >= 0 && row < 64
-            && (top[row * 8 + (col >> 3)] >> (int16_t)(col & 7) & 1))
-            return 1;
-    }
-    return 0;
-}
-
-/* cleared and within LANDING_ARC_DIV of the bow's axis the player has landed, and the flight ends at the loop's next
- * check; anywhere else, or not cleared, the fighter flying into it stops where it was, unhurt, and can fly off again */
+ * just stop the fighter"), on its actual shape (the user: in any setting a capital ship uses the actual map; so the
+ * gap under the Vigilance's deck amidships can be flown through): cleared and within LANDING_ARC_DIV of the bow's axis
+ * the player has landed, and the flight ends at the loop's next check; anywhere else, or not cleared, the fighter
+ * flying into it stops where it was, unhurt, and can fly off again */
 #define LANDING_ARC_DIV 3               /* off the axis by at most 1/3 of the way along it: 18 degrees */
 static void carrier_contact(int16_t home)
 {
     RvVec3 r, *v = &gVelocityVector[0];
-    ship_rel(home, 0, &r);              /* (z along its bow) */
-    if (!carrier_touches(home, &r))
+    LfVec push;
+    int32_t depth;
+    if (!collide_ships(0, home, &push, &depth))
         return;
+    ship_rel(home, 0, &r);              /* (z along its bow) */
     if (g_cleared && r.z > 0 && labs(r.x) <= r.z / LANDING_ARC_DIV && labs(r.y) <= r.z / LANDING_ARC_DIV) {
         missionStatus = 1;
         return;
@@ -1600,8 +1607,8 @@ static void view_of(int16_t s, int16_t t, int16_t lead, View *v)
              TO_KM(gVelocityVector[s].z - gVelocityVector[t].z));
     v->closing = v->km ? -vec_dot(&w, &d) / v->km : 0;
     /* the distances an attack goes by (when to break off, when to fire) are hull to hull: at 900 km from its middle a
-     * fighter attacking the carrier was within a few steps of its 700 km of hull, and every one that came near flew into
-     * it (the user's suspicion, measured 2026-10-31).  (Last: the cosines above want the middles' distance) */
+     * fighter attacking the carrier was within a few steps of its hull, and every one that came near flew into it (the
+     * user's suspicion, measured 2026-10-31).  (Last: the cosines above want the middles' distance) */
     v->km = gap_of(v->km, s, t);
 }
 
@@ -2853,10 +2860,13 @@ int16_t logic_autopilot_ready(void)
     return next;
 }
 
+static void spawn_apart(int16_t s);
+
 int16_t logic_autopilot(void)
 {
     RvVec3 d, to;
     int32_t horiz;
+    uint32_t moved = 0;
     int16_t s, next, yaw, pitch;
     if ((next = logic_autopilot_ready()) < 0)
         return 0;
@@ -2887,9 +2897,16 @@ int16_t logic_autopilot(void)
             continue;
         ship_face(s, yaw, pitch);
         fly_ahead(s);
+        moved |= (uint32_t)1 << s;
     }
     gPositionVector[0] = to;
     fly_ahead(0);
+    /* nobody lands on anybody: the wing keeps its place off the player, the escort target goes to one fixed spot behind
+     * it, and with the nose turned for the next leg a wingman 800 km off the beam came down on the transport (one in
+     * eleven jumps within 500 km, at whatever speed it had: a collision's damage goes by its square) */
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (moved >> s & 1)
+            spawn_apart(s);
     if (next)
         enterNavPoint((uint16_t)next);
     return 1;
@@ -2959,6 +2976,9 @@ uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, 
     left = spend(&ARMOR(dst, ar), spend(&SHIELD(dst, sh), qty));
     if (left) {
         if (damagePoints[dst] >= t->hull || left >= t->hull - damagePoints[dst]) {
+            static const char __far s_killed[] = "logic: frame %u: slot %u (type %02X, side %d) killed by %u (type %02X): %u points";
+            rv_logf(s_killed, frameCounter, dst, gInstanceShipTypes[dst], commAnimInfo[dst], src,
+                    RV_SLOT_OK(src) ? gInstanceShipTypes[src] : 0xFF, qty);
             damagePoints[dst] = t->hull;
             shipAiState[dst] = 9;
         } else {

@@ -3771,12 +3771,12 @@ static void t_landing_rule(void)
 
 /* the player flown at the carrier at 300 kps from where it is put, until it lands or stops: 0 when the test failed */
 static int16_t pt_stopped;              /* what logic_carrier_stopped said, once it said something */
-static int16_t pt_fly_in(int32_t x, int32_t z, int16_t yaw)
+static int16_t pt_fly_at(int32_t x, int32_t y, int32_t z, int16_t yaw)
 {
     int16_t i;
     (void)logic_carrier_stopped();
     pt_stopped = 0;
-    pt_put(0, x, 0, z, yaw);
+    pt_put(0, x, y, z, yaw);
     pt_speed(0, 300);
     for (i = 0; i < 20 * SEC && !missionStatus && !pt_stopped; i++) {
         if (!pt_step())
@@ -3786,8 +3786,14 @@ static int16_t pt_fly_in(int32_t x, int32_t z, int16_t yaw)
     return 1;
 }
 
+static int16_t pt_fly_in(int32_t x, int32_t z, int16_t yaw)
+{
+    return pt_fly_at(x, 0, z, yaw);
+}
+
 /* M8.15: the landing is the player's, into the bow, cleared: anywhere else, or not cleared, the hull stops the fighter
- * unhurt, and it can fly off again; a landing with the mission undone is lost, with it done won */
+ * unhurt, and it can fly off again (on its actual shape: at the deck's height abeam it stops, under the deck the fighter
+ * goes through the gap the Vigilance has there); a landing with the mission undone is lost, with it done won */
 static void t_landing_contact(void)
 {
     static const char __far e_bow_shut[] = "not cleared, into the bow: status %d, stopped %d (0, and 2: the hull stops it)";
@@ -3817,13 +3823,12 @@ static void t_landing_contact(void)
     /* the beam: whichever yaw faces -x */
     pt_put(0, 3000, 0, cz, TURN / 4);
     yaw_in = gOrientationFrontVector[0].x < 0 ? TURN / 4 : 3 * TURN / 4;
-    if (!pt_fly_in(3000, cz, yaw_in))
+    if (!pt_fly_at(3000, 75, cz, yaw_in))
         return;
     REQUIRE(missionStatus == 0 && pt_stopped == 1, e_side, missionStatus, pt_stopped, TO_KM(gPositionVector[0].x));
-    /* (the hull is hollow under the deck amidships, and this was flown at its middle: nothing gets through) */
     /* off again, the other way */
     d0 = pt_km(0, home);
-    pt_put(0, TO_KM(gPositionVector[0].x), 0, cz, (int16_t)(yaw_in + TURN / 2));
+    pt_put(0, TO_KM(gPositionVector[0].x), 75, cz, (int16_t)(yaw_in + TURN / 2));
     pt_speed(0, 300);
     if (!pt_steps(3 * SEC))
         return;
@@ -3913,35 +3918,113 @@ static void t_turrets_off(void)
     REQUIRE(off == 0, e_off, off, 0, 0);
 }
 
-/* M8.18: a fighter attacks a capital ship without flying into it: an ace on the carrier, its turrets off, 90 s: it lives
- * and it has hit the carrier's shields (it breaks off by the hull, not by the middle, which is inside the hull's reach) */
+/* M8.18: a fighter attacks a capital ship without flying into it (it breaks off by the hull's distance, not the middle's):
+ * an ace from each of 16 sides, alone, on the carrier with its turrets off, 90 s each: few crash, and they fire */
 static void t_attack_capital(void)
 {
-    static const char __far e_dead[] = "a lone ace attacking the carrier is dying after %ld s: it flew into the hull";
-    static const char __far e_none[] = "a lone ace attacking the carrier fired no shot in 90 s";
-    int16_t home = -1, i;
-    uint16_t a0;
+    static const char __far e_crash[] = "%d of 16 lone aces attacking the carrier flew into it inside 90 s: at most 3";
+    static const char __far e_none[] = "16 lone aces attacking the carrier fired no shot";
+    int16_t a, i, crashes = 0;
+    uint16_t a0 = 0, a1 = 0;
+    for (a = 0; a < 16; a++) {
+        int32_t x = lf_cos((int16_t)(a * 64)) * 4000 / 16384, z = lf_sin((int16_t)(a * 64)) * 4000 / 16384;
+        pt_mission();
+        pt_mship(PT_CAPSHIP, SIDE_TERRAN, 0, 1, RV_PILOT_NONE);
+        g_tm.ship[g_tm.nship - 1].role = RV_ESCORT_HOME;
+        g_tm.ship[g_tm.nship - 1].noturrets = 1;
+        pt_launch(PT_PLAYER);
+        playerCanBeDamaged = 0;
+        g_sys.armed = 0;
+        pt_put(0, 0, 0, 30000, 0);
+        pt_speed(0, 0);
+        pt_ship(20, 0x0D, SIDE_AERA, CTL_AI, x, 0, z - 2000, (int16_t)(a * 64 + TURN / 2));
+        a0 = shots_added();
+        for (i = 0; i < 90 * SEC && slot_is_ship(20) && shipAiState[20] != 9; i++)
+            if (!pt_step())
+                return;
+        a1 = (uint16_t)(a1 + (uint16_t)(shots_added() - a0));
+        if (slot_is_ship(20) && shipAiState[20] == 9)
+            crashes++;
+        missionStatus = 0;
+    }
+    REQUIRE(crashes <= 3, e_crash, crashes, 0, 0);
+    REQUIRE(a1 != 0, e_none, 0, 0, 0);
+}
+
+/* M8.19: the autopilot lands nobody on anybody: the wingman placed so its offset comes down exactly on the spot the Ox is
+ * put (800 km behind the player at the arrival), at speed: they arrive apart, and in 3 s the Ox takes no hit */
+static void t_autopilot_apart(void)
+{
+    static const char __far e_ox[] = "no Ox (%d) or wingman (%d) after the launch";
+    static const char __far e_apart[] = "after the jump the wingman is %ld km from the Ox: clear of it, over %ld";
+    static const char __far e_hit[] = "the Ox has lost %d of its front shield 3 s after the jump: nobody hit it";
+    int16_t ox, wing = -1, i, sh0;
+    missionStatus = 3;
     pt_mission();
-    pt_mship(PT_CAPSHIP, SIDE_TERRAN, 0, 1, RV_PILOT_NONE);
-    g_tm.ship[g_tm.nship - 1].role = RV_ESCORT_HOME;
-    g_tm.ship[g_tm.nship - 1].noturrets = 1;
+    pt_nav(1, 0, 0, NAV1_Z);
+    pt_mship(RV_SHIP_WINGMAN, SIDE_TERRAN, 0, 1, RV_PILOT_NONE);
+    pt_mship(PT_OX, SIDE_TERRAN, 0, 1, RV_PILOT_NONE);
+    g_tm.ship[g_tm.nship - 1].role = RV_ESCORT_OUT;
     pt_launch(PT_PLAYER);
+    missionStatus = 0;
     playerCanBeDamaged = 0;
     g_sys.armed = 0;
+    ox = pt_ox();
     for (i = 1; i <= RV_MAX_SHIP_SLOT; i++)
-        if (logic_is_home(i))
-            home = i;
-    pt_put(0, 0, 0, 30000, 0);
-    pt_speed(0, 0);
-    pt_ship(20, 0x0D, SIDE_AERA, CTL_AI, 0, 0, 2000, 0);
-    a0 = shots_added();
-    for (i = 0; i < 90 * SEC; i++) {
+        if (slot_is_ship(i) && maybeEntityType[i] == ET_SHIP && commAnimInfo[i] == SIDE_TERRAN)
+            wing = i;
+    REQUIRE(ox > 0 && wing > 0, e_ox, ox, wing, 0);
+    pt_put(0, 0, 0, 0, 0);
+    pt_put(wing, 0, 0, -800, 0);        /* (the player goes on along +z: the wingman stays 800 km behind it) */
+    pt_speed(wing, 450);
+    sh0 = (int16_t)SHIELD(ox, 0);
+    REQUIRE(logic_autopilot(), e_ox, ox, wing, 0);
+    REQUIRE(pt_km(wing, ox) > TO_KM(collide_half(wing) + collide_half(ox)), e_apart, pt_km(wing, ox),
+            TO_KM(collide_half(wing) + collide_half(ox)), 0);
+    if (!pt_steps(3 * SEC))
+        return;
+    REQUIRE((int16_t)SHIELD(ox, 0) >= sh0 && damagePoints[ox] == 0, e_hit, sh0 - (int16_t)SHIELD(ox, 0), 0, 0);
+}
+
+/* M6.4: a capital ship is hit on its actual shape whatever the mission's rule: under hit=sphere a bolt 400 km off the
+ * Vigilance's beam, within its 700 km radius but clear of its hull, flies on; one along its keel hits it */
+static int16_t pt_capital_shot(int32_t x, int32_t y)
+{
+    RvVec3 at, vel;
+    int16_t sh0, i, ar0;
+    pt_alone(PT_PLAYER);
+    g_sys.armed = 0;
+    pt_ship(1, PT_CAPSHIP, SIDE_AERA, CTL_FROZEN, 0, 0, 0, 0);
+    sh0 = (int16_t)SHIELD(1, 1);
+    ar0 = (int16_t)SHIELD(1, 0);
+    at = vec3(x * KM, y * KM, -1200L * KM);
+    vel = vec3(0, 0, 20L * KM);
+    (void)shot_add(0, GUN_TYPE(0, 0), &at, &vel);
+    for (i = 0; i < 100 && shots_count(); i++)
         if (!pt_step())
-            return;
-        REQUIRE(slot_is_ship(20) && shipAiState[20] != 9, e_dead, (int32_t)(i / SEC), 0, 0);
-    }
-    REQUIRE(shots_added() != a0, e_none, 0, 0, 0);
-    (void)home;
+            return -1;
+    return (int16_t)(sh0 != (int16_t)SHIELD(1, 1) || ar0 != (int16_t)SHIELD(1, 0));
+}
+
+static void t_capital_map(void)
+{
+    static const char __far e_miss[] = "a shot through the carrier's sphere, 400 km off its axis and clear of its hull, under "
+        "hit=sphere: it hit (%d): it flies on";
+    static const char __far e_hit[] = "a shot along the carrier's deck under hit=sphere: it hit %d: on its actual shape it hits";
+    uint8_t keep = g_rule_hit;
+    int16_t r;
+    g_rule_hit = RV_SHIPTYPE_FLAG_HIT_SPHERE;
+    r = pt_capital_shot(400, 0);
+    g_rule_hit = keep;
+    if (r < 0)
+        return;
+    REQUIRE(r == 0, e_miss, r, 0, 0);
+    g_rule_hit = RV_SHIPTYPE_FLAG_HIT_SPHERE;
+    r = pt_capital_shot(0, 75);
+    g_rule_hit = keep;
+    if (r < 0)
+        return;
+    REQUIRE(r == 1, e_hit, r, 0, 0);
 }
 
 /* M8.11 */
@@ -4585,7 +4668,9 @@ static const char __far n_m8_12[] = "M8.12 escort-along (logic_autopilot): the a
 static const char __far n_m8_13[] = "M8.13 home-carrier (camp_load_units, ship_think): the Vigilance behind the launch, holding station, T finds it in front";
 static const char __far n_m8_14[] = "M8.14 landing-rule (logic_request_landing): none at the launch or too far; a nav point flown or the mission finished; a clearance stands";
 static const char __far n_m8_17[] = "M8.17 turrets-off (ship_think): a mission's turrets=off keeps a capital ship's turrets silent";
-static const char __far n_m8_18[] = "M8.18 attack-capital (view_of): a fighter attacking a capital ship breaks off by its hull and does not fly into it";
+static const char __far n_m8_18[] = "M8.18 attack-capital (view_of): fighters attacking a capital ship break off by its hull and few fly into it";
+static const char __far n_m8_19[] = "M8.19 autopilot-apart (logic_autopilot): the wingman coming down on the Ox's spot arrives apart, and nobody hits it";
+static const char __far n_m6_4[] = "M6.4 capital-map (shot_hit): a capital ship is hit on its actual shape under any rule, not its radius";
 static const char __far n_m8_16[] = "M8.16 carrier-lost (step_deaths, logic_end): the carrier destroyed ends the flight when its explosion has run: a loss";
 static const char __far n_m8_15[] = "M8.15 landing-contact (carrier_contact, logic_end): cleared into the bow lands, anywhere else the hull stops it unhurt; undone lost, done won";
 static const char __far n_m9_1[] = "M9.1 gunsight (logic_hud): a mark at the view's middle";
@@ -4633,7 +4718,7 @@ static const PtTest __far k_tests[] = {
     { n_m8_1, t_start, 0 }, { n_m8_2, t_nav1, 0 }, { n_m8_3, t_nav_once, 0 }, { n_m8_4, t_won, 0 },
     { n_m8_5, t_skipped, 0 }, { n_m8_6, t_enemies_left, 0 }, { n_m8_7, t_layer_spawn, 0 }, { n_m8_8, t_autopilot, 0 },
     { n_m8_9, t_fighter, 0 }, { n_m8_10, t_escort_out, 0 }, { n_m8_11, t_escort_lost, 0 }, { n_m8_12, t_escort_along, 0 },
-    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 }, { n_m8_15, t_landing_contact, 0 }, { n_m8_16, t_carrier_lost, 0 }, { n_m8_17, t_turrets_off, 0 }, { n_m8_18, t_attack_capital, 0 },
+    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 }, { n_m8_15, t_landing_contact, 0 }, { n_m8_16, t_carrier_lost, 0 }, { n_m8_17, t_turrets_off, 0 }, { n_m8_18, t_attack_capital, 0 }, { n_m8_19, t_autopilot_apart, 0 }, { n_m6_4, t_capital_map, 0 },
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
     { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 }, { n_m10_6, t_orders, 0 }, { n_m10_7, t_missile_lock, 0 },

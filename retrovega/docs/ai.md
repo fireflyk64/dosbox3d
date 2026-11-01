@@ -191,10 +191,13 @@ An order ends the tactic it was in, so the next step picks afresh. M10.6 and M10
 
 ## Distance to a target
 
-A distance to a target is hull to hull: the middles' distance less the sum of the two half boxes (`gap_of`; the user,
-2026-10-31, "it is effectively that much closer"). An attack's break-off and firing distances (`view_of`), a turret's
+A distance to a target is hull to hull (`gap_of`; the user, 2026-10-31, "it is effectively that much closer"): between
+fighters the middles' distance less the sum of the two half boxes; to a capital ship by its actual shape, along the line
+to its middle as far as its silhouettes begin (`collide_segment`), less the other's half box, and with no hull on that
+line (under the Vigilance's deck) to the box the silhouettes fill. An attack's break-off and firing distances (`view_of`), a turret's
 and a lock's range, the landing's limit and the cockpit's readout all go by it. Before it, a fighter attacking the
-carrier broke off 900 km from its middle, within a few steps of its 700 km of hull, and flew into it (M8.18). Who is
+carrier broke off 900 km from its middle, within a few steps of its hull, and flew into it (M8.18: 3 of 48 lone
+attackers crash in 90 s by the map, 4 of 48 by the radii). Who is
 nearest, and the engage distance, still go by the middles.
 
 Enemy fighters attacking one still target also fly into each other (`ram`, lethal at speed); that is older than the
