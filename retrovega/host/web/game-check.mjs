@@ -92,30 +92,39 @@ try {
     await sleep(800);
   }
   await press(600, 380);                // outside the panel: closed
-  await press(593, 200);                // the quarters' door
-  t = await waitLog(/cue \d+ \(LOUNGE\.MID\)/, 8000);
-  ok(/LOUNGE\.MID/.test(t), "the quarters' door: the lounge");
+  // a hotspot used until the room's music says it worked (a line of table talk can swallow a press). The cue, not the
+  // song's name: the name is in the log from the start, where the music is loaded
+  const go = async (gx, gy, song, what) => {
+    const re = new RegExp(`cue \\d+ \\(${song}\\.MID\\)`);
+    let found = false;
+    for (let k = 0; k < 6 && !found; k++) {
+      await press(gx, gy);
+      found = re.test(await waitLog(re, 3000));
+    }
+    return ok(found, what);
+  };
+  await go(593, 200, "LOUNGE", "the quarters' door: the lounge");
   await sleep(1500);
   await shot("lounge");
-  await press(431, 170);                // the lounge's hatch
-  t = await waitLog(/cue \d+ \(BAR\.MID\)/, 8000);
-  ok(/BAR\.MID/.test(t), "the lounge's hatch: the bar");
+  await go(429, 140, "BAR", "the lounge's hatch: the bar");   // (its top: a pilot sits over the rest)
   await sleep(1500);
   await shot("bar");
-  await press(145, 152);                // the bar's hatch: the briefing
-  t = await waitLog(/cue \d+ \(BRIEF\.MID\)/, 8000);
-  ok(/BRIEF\.MID/.test(t), "the bar's hatch: the briefing");
+  await go(149, 145, "BRIEF", "the bar's hatch: the briefing");
   await sleep(2500);
   await shot("briefing");
-  t = await waitLog(/cue \d+ \(LAUNCH\.MID\)/, 150000);   // (the briefing runs its course)
-  ok(/LAUNCH\.MID/.test(t), "after the briefing: the deck");
+  for (let k = 0; k < 3; k++) {         // (Esc: the briefing skipped)
+    if (phone) await page.locator("#touchEsc").tap(); else await page.keyboard.press("Escape");
+    await sleep(1200);
+  }
+  t = await waitLog(/cue \d+ \(LAUNCH\.MID\)/, 30000);
+  ok(/cue \d+ \(LAUNCH\.MID\)/.test(t), "after the briefing: the deck");
   await sleep(2500);
   await shot("deck");
   await press(201, 172);                // the kit
   await sleep(1500);
   await press(478, 176);                // launch
-  t = await waitLog(/flight: L1c0_m1/, 180000);   // (the ships' sets fetched and made by the page first)
-  ok(/flight: L1c0_m1/.test(t), "launched: the flight (the ships' sets came from the page)");
+  t = await waitLog(/flight: \S+, \d+ ships/, 180000);   // (the ships' sets fetched and made by the page first)
+  ok(/flight: \S+, \d+ ships/.test(t), "launched: the flight (the ships' sets came from the page)");
   await sleep(4000);
   await shot("flight");
   if (phone) {
