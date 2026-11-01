@@ -1,8 +1,12 @@
 {
   "bar": {
-    "about": "The pilots' lounge and bar: Tally behind the counter, a round table with three seats, the chalkboard, the hatch to the simulator.",
+    "about": "The pilots' lounge and bar: Tally behind the counter, a round table with three seats, the chalkboard, the door to the briefing room and the Schroedinger simulator rig at the right.",
     "src": "art/places/src/bar-v2",
     "background": "naval-lounge-empty.png",
+    "overlays": [
+      "overlay-door.png",
+      "overlay-sim.png"
+    ],
     "crop": [
       0,
       32,
@@ -157,12 +161,22 @@
         "does": "goto:lounge",
         "label": "Crew lounge"
       },
+      "door": {
+        "rect": [
+          1370,
+          100,
+          1536,
+          507
+        ],
+        "does": "goto:briefing",
+        "label": "Briefing room"
+      },
       "simulator": {
         "rect": [
-          1205,
-          245,
-          1285,
-          595
+          1434,
+          647,
+          1536,
+          812
         ],
         "does": "simulator",
         "label": "Simulator"

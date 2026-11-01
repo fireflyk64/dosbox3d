@@ -1,0 +1,34 @@
+# the bar's door and simulator rig: the walk there, the picture, what each answers to
+wait 12
+click
+wait 4
+move 593 200
+wait 2
+click
+wait 12
+move 429 140
+wait 2
+click
+wait 14
+shot BAR1
+log hover: the door
+move 610 100
+wait 4
+shot BAR2
+log hover: the glass over the rig (nothing)
+move 610 210
+wait 4
+shot BAR3
+log hover: the chair
+move 620 300
+wait 4
+shot BAR4
+move 300 370
+wait 4
+log the door: to the briefing room
+move 610 100
+wait 2
+click
+wait 60
+shot BAR5
+quit

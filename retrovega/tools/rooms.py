@@ -25,6 +25,8 @@ A room can have:
                where a reference shot has them; the mouth follows lipsync.py
                and the gesture changes with each sentence.  Also drawn
                large over a blurred crop of the room for the close-up.
+    overlays   pictures on transparency painted over the room's back layer, at the plate's size (the bar's door and
+               simulator rig); the shots are still cut against the plate as painted
     hotspots   rectangles the mouse can click, with what they do
     boards     rectangles the engine writes or draws on (the chalkboard, the
                briefing screen, the medal case)
@@ -432,7 +434,11 @@ def build(key, cfg, out, log=print):
     plate = load(os.path.join(src, cfg['background']))
     od = os.path.join(out, key)
     os.makedirs(od, exist_ok=True)
-    back = frame.image(Image.fromarray((plate * 255 + 0.5).astype(np.uint8), 'RGB'))
+    room = Image.fromarray((plate * 255 + 0.5).astype(np.uint8), 'RGB')
+    for name in cfg.get('overlays', []):     # painted over the room, at full size: what the shots do not have (they are
+        over = Image.open(os.path.join(src, name)).convert('RGBA')   # cut against the plate as it was)
+        room = Image.composite(over.convert('RGB'), room, over.getchannel('A'))
+    back = frame.image(room)
     back.save(os.path.join(od, 'back.png'))
     place = {'size': list(places.SCREEN), 'back': 'back.png', 'about': cfg.get('about', '')}
     if 'seats' in cfg:
