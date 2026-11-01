@@ -786,6 +786,8 @@ static void start_briefing(int debrief)
         ships_want(want, nw, 0);
     }
     g_line_room = !debrief ? RV_ROOM_BRIEF : g_won ? RV_ROOM_WIN : RV_ROOM_LOSE;
+    if (debrief)
+        camp_way_out(g_won);
     g_line_at = -1;
     g_lines_left = 1;
     g_line_face = 0;
@@ -1401,7 +1403,11 @@ static void mission_free_assets(void)
 
 static void next_mission(void)
 {
+    int i;
     camp_mission(camp_mission_index(), &g_m);
+    for (i = 0; i < RV_PILOTS; i++)     /* (Tally wipes the board: everyone's marks, or one column) */
+        if (g_m.wipe == 0xFE || g_m.wipe == i)
+            g_camp.pilot[i].kills = 0;
     camp_load_units(&g_m);
 }
 

@@ -194,7 +194,7 @@ MISSION = [('char', 'id[RV_ID]', '%ds' % TEXT['ID']), ('unsigned char', 'node', 
            ('unsigned char', 'ntalk', 'B'), ('unsigned char', 'nfield', 'B'), ('unsigned char', 'fighter', 'B'),
            ('char', 'title[RV_TITLE]', '%ds' % TEXT['TITLE']),
            ('RvNav', 'nav[RV_NAVS]', None), ('RvShip', 'ship[RV_SHIPS]', None),
-           ('unsigned char', 'seat[RV_ROOMS][RV_SEATS]', '6B'), ('unsigned char', 'hit', 'B'),
+           ('unsigned char', 'seat[RV_ROOMS][RV_SEATS]', '6B'), ('unsigned char', 'wipe', 'B'), ('unsigned char', 'hit', 'B'),
            ('unsigned char', 'rules', 'B'),
            ('unsigned short', 'talk0', 'H'), ('RvField', 'field[RV_FIELDS]', None)]
 
@@ -265,7 +265,7 @@ def parse_missions(path):
             # (the XO's words, plain and split at the sentences; or, quoted, a line: [WHO] [conditions] "line")
             for line_ in ([shlex.split(val)] if '"' in val else [[t] for t in split_sentences(val, TEXT['TALK'] - 1)]):
                 cur['talk'].append((where, key, line_))
-        elif key in ('node', 'title', 'type', 'music', 'fighter'):
+        elif key in ('node', 'title', 'type', 'music', 'fighter', 'wipe'):
             cur[key] = val
         elif key == 'nav':
             cur['nav'].append((where, val.split()))
@@ -607,11 +607,13 @@ def compile_all():
             # say deck TECH TECH|you [conditions] "line"   clicking Kit on the deck, the first time in a mission
             line, opts = f[-1], f[:-1]
             flags, arg, boost, args = 0, 0, 0, 0
-            while opts and '=' in opts[-1]:
-                k, v = opts.pop().split('=', 1)
+            conds = [o for o in opts if '=' in o]       # (anywhere among the words before the line)
+            opts = [o for o in opts if '=' not in o]
+            for cond in conds:
+                k, v = cond.split('=', 1)
                 if k == 'boost' and v in TALK_BOOSTS:
                     boost = TALK_BOOSTS[v]
-                elif k == 'after' and v in ('won', 'lost'):
+                elif k == 'after' and v in ('won', 'lost') and kind not in ('win', 'lose'):
                     flags |= TALK_FLAGS['WON' if v == 'won' else 'LOST']
                 elif k in ('if', 'unless') and v in node_index:
                     flags |= TALK_FLAGS[k.upper()]
@@ -623,8 +625,10 @@ def compile_all():
                     args += 1
                 elif k == 'escort' and v == 'lost':
                     flags |= TALK_FLAGS['ESCORT']
+                elif k == 'system' and v in ('won', 'lost') and kind in ('win', 'lose'):
+                    flags |= TALK_FLAGS['WON' if v == 'won' else 'LOST']   # (game: how the system comes out of this flight)
                 else:
-                    raise Fail('%s: %s=%s: the conditions are after=won|lost, if=NODE, unless=NODE, dead=PILOT, alive=PILOT, escort=lost, and on '
+                    raise Fail('%s: %s=%s: the conditions are after=won|lost, if=NODE, unless=NODE, dead=PILOT, alive=PILOT, escort=lost, in a debrief system=won|lost, and on '
                                'Kit\'s lines boost=armor|fuel|missile' % (where, k, v))
             if args > 1:
                 raise Fail('%s: only one of if=, unless=, dead= and alive= on a line' % where)
@@ -667,7 +671,7 @@ def compile_all():
                 owner, who = a, b
                 if placed.get(owner) != room and not (room == 'bar' and owner == 'TALLY'):
                     raise Fail('%s: nobody clicks %s in the %s: not seated there' % (where, owner, room))
-                if who != 'you' and who != owner and placed.get(who) != room and not (room == 'bar' and who == 'TALLY'):
+                if who != 'you' and who != owner and placed.get(who) != room and not (room == 'bar' and who in ('TALLY', 'XO')):
                     raise Fail('%s: %s is not in the %s to speak' % (where, who, room))
                 if who != 'you' and not talk_ok.get(frozenset((owner, who)), True):
                     raise Fail('%s: %s and %s do not talk (relations.csv)' % (where, owner, who))
@@ -701,7 +705,12 @@ def compile_all():
         rec += b''.join(navs).ljust(LIMITS['NAVS'] * struct.calcsize(fmt(NAV)), b'\0')
         rec += b''.join(shipr).ljust(LIMITS['SHIPS'] * struct.calcsize(fmt(SHIP)), b'\0')
         rules = m['rules']
-        rec += struct.pack('<6BBB', *seats, RULES['hit'][rules.get('hit', 'ships')],
+        # wipe ALL|PILOT: Tally's board, as the player comes to this mission
+        wipe = m.get('wipe', '')
+        if wipe and wipe != 'ALL' and wipe not in pilot_index:
+            raise Fail('%s: wipe ALL or a pilot: %s' % (w, wipe))
+        rec += struct.pack('<6BBBB', *seats, 0xFE if wipe == 'ALL' else pilot_index[wipe] if wipe else NONE,
+                           RULES['hit'][rules.get('hit', 'ships')],
                            sum(RULES[k][rules[k]] for k in rules if k != 'hit'))
         rec += struct.pack('<H', len(out_lines))        # (its lines are their own table: XMS, read one at a time)
         out_lines += talks

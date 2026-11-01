@@ -190,12 +190,18 @@ a table of their own in RVGAME.DAT (`RvMission.talk0`, `ntalk`), loaded into XMS
 | `say deck TECH TECH\|you [boost=armor\|fuel\|missile] [conditions] "line"` | clicking Kit; a boost is given when its line plays |
 | `radio [conditions] "line"` | the wingman on the comm at the launch |
 
+`wipe ALL|PILOT` on a mission clears Tally's board, or one column of it, as the player comes to that mission. In the bar
+a `say`'s WHO can also be `XO`: Solberg walks in. A briefing's "N Nicanders at Nav K" is checked against the mission's
+ship lines when the data is built.
+
 In `briefing`, `win` and `lose`, WHO is left out for the XO, at the lectern; `you` or anyone in `people.csv` speaks in
 their own close-up. Plain unquoted text, as in the example above, is the XO's and is split at its sentences.
 
 The conditions: `after=won|lost` (the last mission; in a debrief, the one before the flight), `if=NODE` and `unless=NODE`
-(a system flown or not), `dead=PILOT`, `alive=PILOT`, `escort=lost` (the last flight lost a ship it was escorting). A
-line with a dead pilot speaking or spoken to never plays. A briefing with a wingman must say "You and NAME": when the
+(a system flown or not), `dead=PILOT`, `alive=PILOT` (one of those four on a line), `escort=lost` (the last flight
+lost a ship it was escorting), and in a debrief `system=won|lost` (how the system comes out with this flight: on its
+last mission only; a system can be won on a flight lost, so the story's turns go by this and not by which debrief it
+is). A line with a dead pilot speaking or spoken to never plays. A briefing with a wingman must say "You and NAME": when the
 wingman is dead " and NAME" is cut, so the same sentence reads for a solo flight.
 
 Kit's boost (`logic_boost`, set when her line plays, kept for a retry of that flight, cleared on entering a room): half

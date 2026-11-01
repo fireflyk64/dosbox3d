@@ -155,12 +155,22 @@ const RvTalk __far *camp_line(const RvMission __far *m, int16_t k)
     return &line;
 }
 
+/* the way out of a node: good with more missions won than lost, bad with fewer, and an even split by the campaign's
+ * running total (a node of four: three or four won good, none or one bad, two by the total) */
+static int16_t way_good(int16_t wins, uint16_t count, int16_t trend)
+{
+    return wins * 2 > (int16_t)count || (wins * 2 == (int16_t)count && trend >= 0);
+}
+
+uint8_t g_camp_way;
+
 int16_t camp_line_ok(const RvTalk __far *t)
 {
-    uint8_t f = t->flags;
-    if ((f & RV_TALK_WON) && g_camp.last != 1)
+    uint8_t f = t->flags, was;
+    was = t->room == RV_ROOM_WIN || t->room == RV_ROOM_LOSE ? g_camp_way : g_camp.last;
+    if ((f & RV_TALK_WON) && was != 1)
         return 0;
-    if ((f & RV_TALK_LOST) && g_camp.last != 2)
+    if ((f & RV_TALK_LOST) && was != 2)
         return 0;
     if ((f & RV_TALK_IF) && !(g_camp.systems >> t->arg & 1))
         return 0;
@@ -264,6 +274,15 @@ uint16_t camp_node_missions(uint16_t node)
     return k ? k : 1;
 }
 
+void camp_way_out(int16_t won)
+{
+    uint16_t count = camp_node_missions(g_camp.node);
+    if (g_camp.mission + 1u < count)
+        g_camp_way = 0;
+    else
+        g_camp_way = way_good(g_camp.wins + (won ? 1 : 0), count, g_camp.trend + (won ? 1 : -1)) ? 1 : 2;
+}
+
 int16_t camp_resolve(int16_t won)
 {
     RvShip ships[RV_SHIPS];             /* (only these: a whole mission would not fit on the stack) */
@@ -289,11 +308,9 @@ int16_t camp_resolve(int16_t won)
         return 0;
     }
     {
-        /* the way out: good with more missions won than lost, bad with fewer, and an even split by the campaign's
-         * running total (a node of four: three or four won good, none or one bad, two by the total) */
         const RvNode *n = &g_nodes[g_camp.node];
         uint16_t count = camp_node_missions(g_camp.node);
-        int16_t good = g_camp.wins * 2 > count || (g_camp.wins * 2 == count && g_camp.trend >= 0);
+        int16_t good = way_good(g_camp.wins, count, g_camp.trend);
         next = good ? n->good : n->bad;
         RV_LOG("node %.8s: %u of %u won, trend %d -> %s", n->id, g_camp.wins, count, g_camp.trend, good ? "good" : "bad");
     }

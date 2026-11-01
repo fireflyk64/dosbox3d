@@ -258,6 +258,7 @@ typedef struct {
     RvNav nav[RV_NAVS];
     RvShip ship[RV_SHIPS];
     uint8_t seat[RV_ROOMS][RV_SEATS];
+    uint8_t wipe;
     uint8_t hit;
     uint8_t rules;
     uint16_t talk0;
@@ -325,7 +326,7 @@ typedef struct {
 #define RV_HEADER_SIZE 68
 #define RV_PILOT_SIZE 120
 #define RV_NODE_SIZE 22
-#define RV_MISSION_SIZE 286
+#define RV_MISSION_SIZE 287
 #define RV_SHIPTYPE_SIZE 177
 #define RV_WEAPON_SIZE 44
 #define RV_LINE_SIZE 114
