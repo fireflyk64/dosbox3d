@@ -2652,6 +2652,7 @@ void __far __cdecl flight_startup(void)
     fx_flight_start();
     shots_on_add = fx_shot;
     shots_on_hit = fx_hit;
+    logic_on_jump = fx_jump;
 #ifdef RV_TESTS
     if (g_set_enemy >= 0) {
         /* the benchmark's sprite: the biggest of the type's band views at the sets' first resident step (84 %) */
@@ -2791,6 +2792,7 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.ch == '{') logic_test_to_carrier(0);   /* (a script's way to the carrier: its bow, its beam) */
         if (in.ch == '}') logic_test_to_carrier(1);
         if (in.ch == '|') logic_test_kill_carrier();
+        if (in.ch == '^') logic_test_jump_out();
 #endif
     }
     {   /* Ctrl+E pulls the eject handle (twice within two seconds ejects); a click on the panel works its control */
@@ -3078,6 +3080,8 @@ int flight_fly(const RvMission __far *m)
     sfx_flight_end();
     shots_on_add = 0;
     shots_on_hit = 0;
+    logic_on_jump = 0;
+    vid_flash(0);
     explode_flight_end();
     shots_flight_end();
     rocks_flight_end();

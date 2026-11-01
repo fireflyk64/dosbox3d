@@ -4027,6 +4027,38 @@ static void t_capital_map(void)
     REQUIRE(r == 1, e_hit, r, 0, 0);
 }
 
+/* M8.20: an escorted ship's jump is told once, friendly, from where it was, and it is no kill */
+static int16_t pt_jumps, pt_jump_slot, pt_jump_friend;
+static void pt_on_jump(int16_t slot, int16_t friendly)
+{
+    pt_jumps++;
+    pt_jump_slot = slot;
+    pt_jump_friend = friendly;
+}
+
+static void t_jump_told(void)
+{
+    static const char __far e_there[] = "no Ox after the launch (%d)";
+    static const char __far e_once[] = "the Ox reached its jump and logic_on_jump was called %d times, for slot %d (the Ox: %d): once";
+    static const char __far e_friend[] = "the Ox's jump was told as friendly %d: 1, the player's side";
+    static const char __far e_kill[] = "the Ox's jump counted as a kill: it is away, and the mission is not lost by it";
+    int16_t ox = pt_escort(), i;
+    REQUIRE(ox > 0, e_there, ox, 0, 0);
+    pt_jumps = 0;
+    logic_on_jump = pt_on_jump;
+    pt_put(ox, 0, 0, NAV1_Z - 3500, 0);
+    pt_speed(ox, 80);
+    for (i = 0; i < 20 * SEC && pt_jumps == 0; i++)
+        if (!pt_step()) {
+            logic_on_jump = 0;
+            return;
+        }
+    logic_on_jump = 0;
+    REQUIRE(pt_jumps == 1 && pt_jump_slot == ox, e_once, pt_jumps, pt_jump_slot, ox);
+    REQUIRE(pt_jump_friend == 1, e_friend, pt_jump_friend, 0, 0);
+    REQUIRE(!slot_is_ship(ox) || gInstanceShipTypes[ox] != PT_OX, e_kill, 0, 0, 0);
+}
+
 /* M8.11 */
 static void t_escort_lost(void)
 {
@@ -4671,6 +4703,7 @@ static const char __far n_m8_17[] = "M8.17 turrets-off (ship_think): a mission's
 static const char __far n_m8_18[] = "M8.18 attack-capital (view_of): fighters attacking a capital ship break off by its hull and few fly into it";
 static const char __far n_m8_19[] = "M8.19 autopilot-apart (logic_autopilot): the wingman coming down on the Ox's spot arrives apart, and nobody hits it";
 static const char __far n_m6_4[] = "M6.4 capital-map (shot_hit): a capital ship is hit on its actual shape under any rule, not its radius";
+static const char __far n_m8_20[] = "M8.20 jump-told (route_step, logic_on_jump): an escorted ship's jump is told once, friendly, for the star and the flash";
 static const char __far n_m8_16[] = "M8.16 carrier-lost (step_deaths, logic_end): the carrier destroyed ends the flight when its explosion has run: a loss";
 static const char __far n_m8_15[] = "M8.15 landing-contact (carrier_contact, logic_end): cleared into the bow lands, anywhere else the hull stops it unhurt; undone lost, done won";
 static const char __far n_m9_1[] = "M9.1 gunsight (logic_hud): a mark at the view's middle";
@@ -4718,7 +4751,7 @@ static const PtTest __far k_tests[] = {
     { n_m8_1, t_start, 0 }, { n_m8_2, t_nav1, 0 }, { n_m8_3, t_nav_once, 0 }, { n_m8_4, t_won, 0 },
     { n_m8_5, t_skipped, 0 }, { n_m8_6, t_enemies_left, 0 }, { n_m8_7, t_layer_spawn, 0 }, { n_m8_8, t_autopilot, 0 },
     { n_m8_9, t_fighter, 0 }, { n_m8_10, t_escort_out, 0 }, { n_m8_11, t_escort_lost, 0 }, { n_m8_12, t_escort_along, 0 },
-    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 }, { n_m8_15, t_landing_contact, 0 }, { n_m8_16, t_carrier_lost, 0 }, { n_m8_17, t_turrets_off, 0 }, { n_m8_18, t_attack_capital, 0 }, { n_m8_19, t_autopilot_apart, 0 }, { n_m6_4, t_capital_map, 0 },
+    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 }, { n_m8_15, t_landing_contact, 0 }, { n_m8_16, t_carrier_lost, 0 }, { n_m8_17, t_turrets_off, 0 }, { n_m8_18, t_attack_capital, 0 }, { n_m8_20, t_jump_told, 0 }, { n_m8_19, t_autopilot_apart, 0 }, { n_m6_4, t_capital_map, 0 },
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
     { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 }, { n_m10_6, t_orders, 0 }, { n_m10_7, t_missile_lock, 0 },

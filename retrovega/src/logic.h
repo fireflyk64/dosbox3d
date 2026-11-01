@@ -89,9 +89,12 @@ int16_t logic_is_home(int16_t s);       /* slot s is the home carrier, alive */
 int16_t logic_landing_allowed(void);
 int16_t logic_request_landing(void);    /* LANDING_*: a clearance stands for the rest of the flight */
 int16_t logic_carrier_stopped(void);    /* the hull stopped the player since last asked: 1 cleared, 2 not, 0 no */
+/* an escorted ship jumps away, just before its slot ends (flight.c: fx_jump's star and flash); friendly: the player's side */
+extern void (*__far logic_on_jump)(int16_t slot, int16_t friendly);
 #ifdef RV_TESTS
 void logic_test_to_carrier(int16_t where);   /* a script's way there: 0 off its bow, 1 off its beam */
 void logic_test_kill_carrier(void);
+void logic_test_jump_out(void);         /* a script's way to see a jump: the first escorted ship, ahead of the player */
 #endif
 
 #endif

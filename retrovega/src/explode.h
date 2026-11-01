@@ -15,7 +15,7 @@
 #include "rvhooks.h"
 #include "lightfield.h"
 
-enum { BOOM_SHIP, BOOM_CAPITAL, BOOM_MISSILE, BOOM_HIT, BOOM_SHIELD, BOOM_KINDS };
+enum { BOOM_SHIP, BOOM_CAPITAL, BOOM_MISSILE, BOOM_HIT, BOOM_SHIELD, BOOM_JUMP, BOOM_KINDS };
 #define EXPLODE_MAX 16                  /* at once */
 
 int16_t explode_reserve(void);          /* when the game starts (resident XMS): EXPLODE.DAT in */

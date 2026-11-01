@@ -400,10 +400,20 @@ void shot_save(const char *name)
 {
     char path[20];
     FILE *f;
+#if defined(RV_TESTS) && !defined(RV_HOST)
+    unsigned char dac[768];             /* (the test build's shots: the VGA's own palette, so a fade or a flash shows) */
+    const unsigned char *pal = dac;
+#else
     const unsigned char *pal = shot_palette();
+#endif
     unsigned long size = 54 + 1024 + (unsigned long)SCR_W * SCR_H;
     unsigned char h[54];
     int y, i;
+#if defined(RV_TESTS) && !defined(RV_HOST)
+    outp(0x3C7, 0);
+    for (i = 0; i < 768; i++)
+        dac[i] = (unsigned char)inp(0x3C9);
+#endif
     sprintf(path, "%.8s.BMP", name);
     f = fopen(path, "wb");
     if (!f)

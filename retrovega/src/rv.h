@@ -65,6 +65,7 @@ void vid_flip(void);                   /* copy the run drawn to the screen */
 void vid_read_row(int y, unsigned char __far *dst);   /* a row as shown (screenshots) */
 void vid_palette(const unsigned char __far *rgb6, int first, int n);
 void vid_fade(int level);              /* 0 black .. 64 full: the current palette scaled */
+void vid_flash(int level);             /* 0 none .. 64 all white: the current palette washed out */
 void vid_wait_retrace(void);
 
 /* the archive (dat.c): RV.DAT, all of it in XMS */

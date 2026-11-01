@@ -370,6 +370,7 @@ nav 0):
 | M8.17 turrets-off | an enemy 1,500 km from the carrier: its turrets fire; with `turrets=off`, not a shot in 5 s |
 | M8.18 attack-capital | a lone ace from each of 16 sides on a carrier with its turrets off, 90 s each: at most 3 fly into it, and they fire |
 | M8.19 autopilot-apart | a wingman whose offset comes down exactly where the autopilot puts the Ox, at speed: they arrive apart, and in 3 s the Ox takes no hit |
+| M8.20 jump-told | the Ox put within reach of its jump: `logic_on_jump` called once, for its slot, friendly; it is gone and it is no kill |
 | M8.15 landing-contact | not cleared, into the bow: stopped, speed 0, shields whole; cleared, into the beam at the deck's height and the stern: stopped; turned away it flies off; into the bow: `missionStatus` 1, `victoryPoints` 0 with the patrol undone and nonzero with it done |
 
 The tests take the player to a nav point by moving it (as the autopilot would) and, but for M8.15, land by setting

@@ -59,9 +59,14 @@ static int16_t pitch_jitter(void)
     return (int16_t)(248 + vis_rand() % 17);
 }
 
+#define JUMP_FLASH 60                   /* the screen's wash at a friend's jump, of 64; gone in 8 frames */
+#define JUMP_FLASH_STEP 8
+static uint8_t __far g_flash;
+
 void fx_flight_start(void)
 {
     int16_t s;
+    g_flash = 0;
     for (s = 0; s < N; s++) {
         g_type[s] = (uint8_t)maybeEntityType[s];
         g_dying[s] = (uint8_t)(slot_is_ship(s) && shipAiState[s] == 9);
@@ -99,9 +104,26 @@ static void death(int16_t s)
     sfx_play(RV_SFX_BOOM_SHIP, vol_at(km_to(&at), BOOMS_KM), pitch_jitter());
 }
 
+/* a ship jumps out (the user: a star, camera aligned; "may flash the whole screen white to indicate success jump out") */
+void fx_jump(int16_t slot, int16_t friendly)
+{
+    static const RvVec3 still = { 0, 0, 0 };
+    RvVec3 at = gPositionVector[slot], vel = still;
+    explode_add(&at, &vel, collide_half(slot) / 256, BOOM_JUMP, 0, (uint16_t)(frameCounter * 31 + slot * 977));
+    sfx_play(RV_SFX_LAUNCH, friendly ? 256 : vol_at(km_to(&at), BOOMS_KM), 180);
+    if (friendly)
+        g_flash = JUMP_FLASH;
+}
+
 void fx_frame(void)
 {
     int16_t s;
+    if (g_flash) {
+        vid_flash(g_flash);
+        g_flash = (uint8_t)(g_flash > JUMP_FLASH_STEP ? g_flash - JUMP_FLASH_STEP : 0);
+        if (!g_flash)
+            vid_flash(0);
+    }
     for (s = 0; s < N; s++) {
         uint8_t et = (uint8_t)maybeEntityType[s];
         if (slot_is_ship(s)) {

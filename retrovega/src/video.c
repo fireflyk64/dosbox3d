@@ -179,12 +179,22 @@ void vid_read_row(int y, unsigned char __far *dst)
     }
 }
 
+static int g_flash;                     /* 0 .. 64: the screen washed toward white (vid_flash) */
+
 static void put_palette(void)
 {
     int i;
     outp(0x3C8, 0);
-    for (i = 0; i < 768; i++)
-        outp(0x3C9, (unsigned char)((g_pal[i] * g_fade) >> 6));
+    for (i = 0; i < 768; i++) {
+        unsigned c = (g_pal[i] * g_fade) >> 6;
+        outp(0x3C9, (unsigned char)(c + (((63 - c) * g_flash) >> 6)));
+    }
+}
+
+void vid_flash(int level)
+{
+    g_flash = level < 0 ? 0 : level > 64 ? 64 : level;
+    put_palette();
 }
 
 void vid_palette(const unsigned char __far *rgb6, int first, int n)

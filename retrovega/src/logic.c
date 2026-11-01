@@ -283,6 +283,23 @@ int16_t logic_request_landing(void)
 }
 
 #ifdef RV_TESTS
+static void route_jump(int16_t s);
+static int16_t escorted(int16_t s);
+
+/* a script's way to see a jump (flight.c's test key): the first escorted ship 2,500 km ahead of the player, gone */
+void logic_test_jump_out(void)
+{
+    int16_t s;
+    const RvVec3 *F = &gOrientationFrontVector[0];
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (slot_is_ship(s) && shipAiState[s] != 9 && escorted(s)) {
+            gPositionVector[s] = vec3(gPositionVector[0].x + F->x * 2500, gPositionVector[0].y + F->y * 2500,
+                                      gPositionVector[0].z + F->z * 2500);
+            route_jump(s);
+            return;
+        }
+}
+
 /* a script's way to see the carrier die (flight.c's test key) */
 void logic_test_kill_carrier(void)
 {
@@ -2569,6 +2586,17 @@ static int16_t escorted(int16_t s)
  * from the launch) at its top speed, and gone (a jump) ROUTE_JUMP_KM short of it: the old game's transport set off
  * from the carrier for Nav 1 at once, 300 km/s, and vanished there (tests/wc1/README.md); in, still at its own nav
  * point until the player comes within ROUTE_WAKE_KM, then home to nav 0 the same way (an enemy's stays where it is) */
+void (*__far logic_on_jump)(int16_t slot, int16_t friendly);
+
+/* gone safe: its star and the player's flash (fx_jump), and it counts as away, not killed */
+static void route_jump(int16_t s)
+{
+    if (logic_on_jump)
+        logic_on_jump(s, commAnimInfo[s] == commAnimInfo[0]);
+    g_away[slotMissionShip[s] & 63] = 1;
+    ship_clear(s);
+}
+
 static void route_step(int16_t s, Mind __far *m, const AiProfile __far *p)
 {
     static const char __far s_gone[] = "logic: slot %d (mission ship %d) %s at nav %d";
@@ -2591,8 +2619,7 @@ static void route_step(int16_t s, Mind __far *m, const AiProfile __far *p)
              NAV_AT(goal, 2) - TO_KM(gPositionVector[s].z));
     if (len_of(d.x, d.y, d.z) < ROUTE_JUMP_KM) {
         rv_logf(s_gone, s, rec, role == RV_ESCORT_OUT ? "jumped out" : "home", goal);
-        g_away[rec] = 1;
-        ship_clear(s);
+        route_jump(s);
         return;
     }
     to_body(s, &d, &b);

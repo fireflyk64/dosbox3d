@@ -1909,6 +1909,7 @@ watches the world, once a step after the logic.
 
 | it sees | it starts |
 |---|---|
+| an escorted ship jumping out (`logic_on_jump`, `fx_jump`) | a star where it was (`BOOM_JUMP`, `jump_star`: a white core in a blue halo with long arms, square to the camera, at least 10 px however far, 24 steps); if it is on the player's side, the whole screen washed white and back in 8 frames (`vid_flash`, through the palette, so it costs no drawing), the sign of a jump made safely; tests/jump.txt shows it, RVT.EXE's `^` key |
 | a ship's `shipAiState` turning 9 | an explosion where it is, drifting with it (a capital ship: six bursts over its hull, then the biggest); the death's sound by distance; its sprite hidden two steps later (the flash covers it) |
 | a slot becoming `ET_MISSILE` | the launch's sound (its weapon's, `gInstanceShipTypes` if that is a weapon, else the missile's) |
 | a missile slot ending | a missile's burst where it last was, and its sound |

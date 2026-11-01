@@ -1,0 +1,28 @@
+# A ship jumping out: EXE=RVT.EXE tests/run.sh tests/jump.txt /fly 1
+# The ^ key puts the transport ahead of the player and jumps it: the star, the flash.
+wait 20
+key s
+wait 20
+shot J0
+key ^
+shot J1
+wait 1
+shot J2
+wait 1
+shot J3
+wait 1
+shot J4
+wait 1
+shot J5
+wait 1
+shot J6
+wait 1
+shot J7
+wait 1
+shot J8
+wait 10
+shot J9
+log done
+key esc
+wait 10
+key esc

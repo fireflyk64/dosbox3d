@@ -51,6 +51,7 @@ static const struct { uint8_t life, sparks, debris, ball; } __far k_kind[BOOM_KI
     { 26, 12, 0, 1 },                   /* a missile's burst */
     { 9, 6, 0, 0 },                     /* a hit: the flash and sparks */
     { 16, 0, 0, 0 },                    /* a shield's haze (haze; its life by its strength) */
+    { 24, 0, 0, 0 },                    /* a ship's jump: a star (jump_star) */
 };
 /* the haze's colours, cool to hot: light blues to white, from the entries every cockpit's palette keeps */
 static const uint8_t __far k_shield[6] = { 92, 94, 95, 79, 14, 143 };
@@ -424,6 +425,33 @@ static void overlays(const Boom __far *b, const Tl __far *t)
     }
 }
 
+/* a ship jumping out (the user, 2026-10-31: "a jump out star either blue or white, camera aligned"): a white core in a
+ * blue halo with long arms, always square to the view, opening fast and dying slower.  Far off it keeps a size to be
+ * seen by */
+#define JUMP_MIN_PX 10
+static void jump_star(const Boom __far *b)
+{
+    int16_t R = b->rpx < JUMP_MIN_PX ? JUMP_MIN_PX : b->rpx, age = b->age, life = b->life, i;
+    int16_t k = age < 5 ? (int16_t)((age + 1) * 256 / 5) : (int16_t)((life - age) * 256 / (life - 5));
+    int16_t arm = (int16_t)((int32_t)R * 4 * k / 256), halo = (int16_t)((int32_t)R * k / 256), core = (int16_t)(halo / 2 + 1);
+    int16_t blue = k_shield[2], pale = k_shield[3];
+    if (halo > 0)
+        disc(b->sx, b->sy, halo, blue);
+    disc(b->sx, b->sy, core, UI_WHITE);
+    hud_run(b->sx - arm / 2, b->sx + arm / 2 + 1, b->sy - 1, pale);
+    hud_run(b->sx - arm / 2, b->sx + arm / 2 + 1, b->sy + 1, pale);
+    hud_vline(b->sx - 1, b->sy - arm / 2, b->sy + arm / 2 + 1, pale);
+    hud_vline(b->sx + 1, b->sy - arm / 2, b->sy + arm / 2 + 1, pale);
+    hud_run(b->sx - arm, b->sx + arm + 1, b->sy, UI_WHITE);
+    hud_vline(b->sx, b->sy - arm, b->sy + arm + 1, UI_WHITE);
+    for (i = core; i < arm * 2 / 5; i++) {   /* (the short diagonals) */
+        hud_dot((int16_t)(b->sx + i), (int16_t)(b->sy + i), blue);
+        hud_dot((int16_t)(b->sx - i), (int16_t)(b->sy + i), blue);
+        hud_dot((int16_t)(b->sx + i), (int16_t)(b->sy - i), blue);
+        hud_dot((int16_t)(b->sx - i), (int16_t)(b->sy - i), blue);
+    }
+}
+
 /* a shield's haze: light blue stipple over the screen's pixels, made new every frame.  A checkerboard that flips each
  * frame, the pixels on it kept by noise against a density by the distance from the middle, so the edge breaks up into
  * specks; the denser the brighter.  It grows easing out and loses its energy from the middle first, so it opens into
@@ -506,6 +534,10 @@ static void draw_one(const Boom __far *b, int16_t y0, int16_t y1, const int16_t 
     const uint8_t __far *cel;
     if (b->kind == BOOM_SHIELD) {
         haze(b, y0, y1, ext, ext_y0, ext_rows);
+        return;
+    }
+    if (b->kind == BOOM_JUMP) {
+        jump_star(b);
         return;
     }
     t = &g_tl[(uint16_t)b->age * g_ntl / b->life];

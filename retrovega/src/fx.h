@@ -14,6 +14,7 @@
 void fx_flight_start(void);             /* the world as it stands taken as seen */
 void fx_frame(void);                    /* after each step: what changed */
 int16_t fx_hidden(int16_t slot);        /* a dying ship the explosion has replaced: not drawn */
+void fx_jump(int16_t slot, int16_t friendly);   /* a ship jumps out: its star, and a friend's a white flash (logic_on_jump) */
 void fx_shot(int16_t owner, uint16_t weapon_type);              /* a shot added (shots.c) */
 void fx_hit(int16_t slot, const RvVec3 *where, int16_t owner, uint16_t damage);   /* a shot met a ship there, its
                                            damage not done yet (shots.c) */
