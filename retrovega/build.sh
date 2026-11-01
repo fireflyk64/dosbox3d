@@ -156,4 +156,17 @@ if grep -qE '(^| )_(fmalloc|ffree|fheapshrink)_( |$)' "$OUT/RV.MAP"; then
     grep -E '(^| )_(fmalloc|ffree|fheapshrink)_( |$)' "$OUT/RV.MAP"
     exit 1
 fi
+# RV.EXE's image against what DOS has for it: past this it does not load at all ("Not enough memory"), and nothing in the
+# game can say so.  640,512 bytes is what DOSBox leaves a program (image + DOS free, measured with tests/rv.conf: the
+# ledger's "conventional memory at the start")
+RV_ROOM=640512
+RV_IMAGE=$(sed -n 's/^Memory size: *[0-9a-fA-F]* (\([0-9]*\)\.).*/\1/p' "$OUT/RV.MAP")
+RV_LEFT=$((RV_ROOM - RV_IMAGE))
+echo "RV.EXE takes $RV_IMAGE bytes of conventional memory, $RV_LEFT left for DOS to hand out"
+if [ "$RV_LEFT" -lt 2048 ]; then
+    echo "RV.EXE is too big for conventional memory: it would not load, or be at the very edge (see docs/engine.md, Memory)"
+    exit 1
+elif [ "$RV_LEFT" -lt 8192 ]; then
+    echo "WARNING: RV.EXE has under 8 KB of conventional memory to spare"
+fi
 echo "built $OUT/RV.EXE, $OUT/RVT.EXE (the test build), $OUT/RVP.EXE (the self-tests) and $OUT/HELLO.EXE"
