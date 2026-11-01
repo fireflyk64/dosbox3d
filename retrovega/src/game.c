@@ -279,7 +279,10 @@ static void board_full(int y0, int y1)
         unsigned k = g_camp.pilot[order[i]].kills;
         char num[8];
         gfx_text(g_hand, sx + 28, ry, g_pilots[order[i]].callsign, RV_TEXT_WHITE | TEXT_CHALK, y0, y1);
-        tally_marks(sx + 176, ry + 9, 22, 7, 3, k < 30 ? k : 30, 31 + order[i], y0, y1);
+        if (g_camp.pilot[order[i]].alive)
+            tally_marks(sx + 176, ry + 9, 22, 7, 3, k < 30 ? k : 30, 31 + order[i], y0, y1);
+        else                            /* (lost for good: the name stays up, the count beside it) */
+            gfx_text(g_hand, sx + 176, ry, "KIA", RV_TEXT_WHITE | TEXT_CHALK, y0, y1);
         sprintf(num, "%u", k);
         gfx_text(g_hand, sx + sw - 28 - gfx_text_width(g_hand, num), ry, num, RV_TEXT_WHITE | TEXT_CHALK, y0, y1);
     }
@@ -1415,8 +1418,8 @@ static void next_mission(void)
     int i;
     camp_mission(camp_mission_index(), &g_m);
     rocks_want(g_m.nfield > 0 || g_field > 0);   /* (a field's art: listed with the ships', room kept for it) */
-    for (i = 0; i < RV_PILOTS; i++)     /* (Tally wipes the board: everyone's marks, or one column) */
-        if (g_m.wipe == 0xFE || g_m.wipe == i)
+    for (i = 0; i < RV_PILOTS; i++)     /* (Tally wipes the board: everyone's marks, or one column; not the lost's) */
+        if ((g_m.wipe == 0xFE || g_m.wipe == i) && g_camp.pilot[i].alive)
             g_camp.pilot[i].kills = 0;
     camp_load_units(&g_m);
 }

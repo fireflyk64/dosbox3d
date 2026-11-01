@@ -1,0 +1,20 @@
+# A wingman lost in a flight is KIA on Tally's board
+# EXE=RVT.EXE tests/run.sh tests/kia.txt /fly 0 /flight 6
+# ~ kills the wingman, the flight lands by itself, the debrief passes, the board up close.
+wait 40
+key ~
+wait 190
+shot K2DEBR
+key esc
+wait 8
+key esc
+wait 8
+key esc
+wait 30
+shot K3BAR
+move 232 142
+wait 4
+click
+wait 12
+shot K4BOARD
+log board

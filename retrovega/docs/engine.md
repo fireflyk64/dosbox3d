@@ -443,7 +443,9 @@ Alt-X, "so it's rare".
   sentence being said.
 - **The tally board:** the bar's chalkboard shows chalk scribbles from
   across the room; a click shows it up close, every pilot, most splashes
-  first, in a chalk hand with tally marks (gfx.c's `gfx_chalk`: a stroke
+  first, a pilot lost in a flight with KIA where the marks were and the
+  count kept beside it (a `wipe` spares the lost), in a chalk hand with
+  tally marks (gfx.c's `gfx_chalk`: a stroke
   whose pixels are mixed toward white by a hash of where they are, so the
   slate shows through). The hand's font (13 KB) is loaded only while the
   board shows: after a flight the largest free block can be under 32 KB.
