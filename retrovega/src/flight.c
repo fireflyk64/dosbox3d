@@ -41,6 +41,7 @@
 #include "logic.h"
 #include "vdu.h"
 #include "explode.h"
+#include "freeze.h"
 #include "sfx.h"
 #include "fx.h"
 #include "simulator.h"
@@ -1483,6 +1484,7 @@ void flight_window_open(int room, unsigned seed, int outside)
     int i, k, things = 0, x0 = SCR_W, x1 = 0;
     if (g_win.on || r->win_ext == 0xFFFF)
         return;
+    freeze_hold();                      /* (its ships' sets may have to come from the page) */
     ex = dat_asset(r->win_ext);
     RV_ASSERT(ex->size <= sizeof g_win.ext);
     dat_read(ex->at, g_win.ext, ex->size);
@@ -3188,6 +3190,7 @@ void __far __cdecl flight_frame(void)
 {
     unsigned long now = clock240(), dt;
     int k = (int)(frameCounter % FPS_WINDOW);
+    freeze_pet();                       /* (a flight's frame is the main loop, as far as the freeze watch goes) */
     if (!(frameCounter % 450)) {        /* (/ledger: every 15 s) */
         int i, n = 0;
         for (i = 0; i < NUM_SHIP_SLOTS; i++)

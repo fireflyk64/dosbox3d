@@ -11,6 +11,7 @@
 #include "freeze.h"
 
 volatile unsigned __far g_freeze_ticks;
+volatile unsigned char __far g_freeze_hold;
 
 #ifdef RV_HOST
 void freeze_start(void) { }
@@ -147,7 +148,7 @@ void freeze_tick(unsigned cs, unsigned ip, const void __far *frame)
 {
     const unsigned __far *f = (const unsigned __far *)frame;
     int i;
-    if (!g_on)
+    if (!g_on || g_freeze_hold)
         return;
     g_since = ++g_freeze_ticks;
     if (g_freeze_ticks < LIMIT - 240)

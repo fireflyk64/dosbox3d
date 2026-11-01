@@ -525,7 +525,8 @@ function showFreeze() {
   let text;
   try { text = new TextDecoder().decode(FS.readFile(`${GAME_ROOT}/RVLOG.TXT`)); } catch (e) { return; }
   const at = text.indexOf("FREEZE:");
-  if (at < 0) return;
+  // (twice: 80 s stuck, not just a very slow moment; the first report comes at 20 s, the next a minute later)
+  if (at < 0 || text.indexOf("FREEZE:", at + 1) < 0) return;
   $("freezeReport").value = text.slice(0, at).split("\n").slice(-25).join("\n") + text.slice(at);
   $("freezeBox").hidden = false;
 }

@@ -35,7 +35,7 @@ if [ -z "$DOS" ]; then
     export RV_VCLOCK=1 ASAN_OPTIONS=detect_leaks=0:abort_on_error=0
 fi
 FLAGS="/noflight"
-[ -n "$FLYING" ] && FLAGS="/flight 1"
+[ -n "$FLYING" ] && FLAGS="/flight ${FLIGHT_S:-1}"   # (FLIGHT_S=45: long enough for the freeze watch to matter)
 python3 tests/routes.py > "$OUT/routes.txt"
 : > "$OUT/jobs.txt"
 n=0

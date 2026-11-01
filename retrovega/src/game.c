@@ -1167,6 +1167,7 @@ static int noflight(void)
 static void launch(void)
 {
     int won, status;
+    freeze_hold();                      /* (the load, sets the page may be fetching: until the flight's first frame) */
     mission_load_assets();
     missionStarting();
     g_scene.label[0] = 0;
@@ -1184,6 +1185,7 @@ static void launch(void)
         status = noflight();
     } else {
         status = flight_fly(&g_m);
+        freeze_hold();                  /* (what is unloaded, until the game's loop is back) */
         g_lost_wing = logic_wingman_lost();
         g_camp.escort_lost = (uint8_t)logic_escort_lost();
     }

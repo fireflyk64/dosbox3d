@@ -5,7 +5,9 @@
 #define FREEZE_H
 
 extern volatile unsigned __far g_freeze_ticks;   /* music ticks (1/240 s) since the main loop last ran */
-#define freeze_pet() (g_freeze_ticks = 0)
+extern volatile unsigned char __far g_freeze_hold;   /* a long load under way: no reports until a loop runs again */
+#define freeze_pet() (g_freeze_ticks = 0, g_freeze_hold = 0)     /* the game's loop, and the flight's every frame */
+#define freeze_hold() (g_freeze_hold = 1)
 
 void freeze_start(void);                /* the watch on: the game's loop has begun */
 void freeze_stop(void);
