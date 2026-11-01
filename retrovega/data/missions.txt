@@ -173,9 +173,28 @@ title    Patrol: Cephid 17, 4 nav points
 type     patrol
 music    briefing
 fighter  FRANKLN
-briefing Pilots, listen up. The Vigilance holds station in Cephid 17. You and Drifter will fly Nav 1, Nav 2, Nav 3, Nav 4 and come home. Intelligence expects 3 Nicanders at Nav 1; 3 Agis at Nav 4. Keep your wingman close and bring the ship back.
-win      Cephid 17 holds. Good flying; get some rest.
-lose     We lost ground in Cephid 17. Debrief, and we go again tomorrow.
+briefing you "(Fifteen minutes into the briefing, Solberg reaches your wing.)"
+briefing "Wildcard, you lead the second wing. You and Drifter will fly Nav 1, Nav 2, Nav 3, Nav 4 and come home."
+briefing DRIFTER "Ten credits says we bring her back with the paint on, Commander."
+briefing "Nobody in this room will take that bet, Drifter."
+briefing after=won "We left the Enigma yards working and the lane open. Let's see what Cephid 17 has for us."
+briefing after=lost "We left Enigma with that lane contested, so the Aera will be expecting us at Cephid 17."
+briefing "We came out of jump a few hours ago, so these are first patrols. I want four jump points clear."
+briefing "You're in a Franklin this time. Kit has been at it, so bring it back the way she gave it to you."
+briefing "Intelligence expects 3 Nicanders at Nav 1 and 3 Agis at Nav 4."
+briefing "Scanners show debris near Nav 3. It may be nothing. Fly it as if it's something."
+briefing "Questions?"
+briefing you "(No hands go up.)"
+briefing "Good. Let's get to work. Dismissed."
+win      "Well flown, Wildcard. Four jump points, and you're still here to tell me about them."
+win      you alive=DRIFTER "Drifter made that easy, Commander."
+win      DRIFTER "Don't brag on me, Wildcard. She'll start expecting it."
+win      dead=DRIFTER "He owed half this ship money, or they owed him. You'll find out which. That's war, Wildcard."
+win      "Get some food. There's more where that came from."
+lose     "You ran into trouble, I hear."
+lose     you "Yes, Commander. It's all on the recorder."
+lose     "Then at least I know where they are. Somebody will have to go back and clear those points."
+lose     DRIFTER "Ten credits says it's us."
 nav      1 -4500 2250 -18000
 nav      2 -13500 0 -9000
 nav      3 -27000 -2250 -2250
@@ -185,10 +204,45 @@ ship     wingman 0 nav0 pilot=DRIFTER
 ship     VIGILNC 0 nav0 role=home
 ship     NICANDR 1 nav1 count=3
 ship     AGIS 1 nav4 count=3
-bar      left=FROST middle=- right=-
-lounge   left=COMET middle=DRIFTER right=ANCHOR
-talk     lounge COMET DRIFTER "Quiet out there lately."
-talk     lounge DRIFTER COMET "Too quiet."
+bar      left=TORCH middle=KESTREL right=DRIFTER
+talk     bar DRIFTER TORCH "Fifty to one against Shmrn, Torch. That's me being friendly."
+talk     bar TORCH DRIFTER "Put me down for ten."
+talk     bar DRIFTER TORCH "That's ten a week for a year now."
+talk     bar TORCH DRIFTER "It's still out there."
+say      bar DRIFTER DRIFTER "Wildcard. You're on my wing now, so you're my problem. Sit down."
+say      bar DRIFTER DRIFTER "Ten credits says you can't tell me what's wrong with that Franklin of yours."
+say      bar DRIFTER you "What's wrong with her?"
+say      bar DRIFTER DRIFTER "Left intake's running rich. You can hear it on the way up to speed. That's ten you owe me."
+say      bar DRIFTER you "I never took the bet."
+say      bar DRIFTER DRIFTER "Nobody ever does. Pay me when you get back."
+say      bar DRIFTER DRIFTER dead=FROST "Frost owed me eleven. I'm paying it to her family anyway. That's how the book works."
+say      bar DRIFTER TALLY "He means it. Don't ask to see the book."
+say      bar KESTREL KESTREL "You dropped this."
+say      bar KESTREL you "I didn't feel it go."
+say      bar KESTREL TALLY "Nobody does. He's saved me eleven glasses this month."
+say      bar KESTREL KESTREL "Twelve."
+say      bar TORCH TORCH "You came from Enigma. I came from Shmrn, on the last courier out."
+say      bar TORCH you "What happened there?"
+say      bar TORCH TORCH "Nobody's gone to look. That's what happened."
+say      bar TALLY TALLY after=won "Your name's on the board. In chalk, so don't get attached to it."
+say      bar TALLY TALLY after=lost "Rough start. The board's got room. Rematch when you're ready."
+lounge   left=- middle=ECHO right=FROST
+talk     lounge ECHO FROST "You speak Rlaan. Say something useful in it."
+talk     lounge FROST ECHO "I've been trying to, for years."
+talk     lounge ECHO FROST "Then tell them to get off the fence."
+say      lounge FROST FROST "Drifter's yours now. Listen to him about engines. Don't listen to him about money."
+say      lounge FROST you "He says I owe him ten."
+say      lounge FROST FROST "You do. Everybody does. That's the point of him."
+say      lounge ECHO ECHO "Kasia Wren. Echo. I've got your six."
+say      lounge ECHO you "Good to know."
+say      lounge ECHO FROST "She says that. Then you look round, and she's gone after something."
+say      lounge ECHO ECHO "And it's dead."
+talk     deck TECH you "She was a diplomat's shuttle. I gave her guns. She hasn't forgiven me."
+say      deck TECH TECH after=won boost=missile "The Ox got through, so the crates came in. You get a missile off the top of one."
+say      deck TECH TECH after=lost "Nothing on the shelf for you today. Ask Solberg why."
+say      deck TECH you "What else is in the crates?"
+say      deck TECH TECH "Things you don't read the stencils on. Go on, Drifter's waiting."
+radio    "Drifter here. Hear that rattle? That's your left intake. Ten credits says she holds."
 
 mission  CEPHID2
 node     CEPHID
@@ -196,9 +250,28 @@ title    Patrol: Cephid 17, 2 nav points
 type     patrol
 music    briefing
 fighter  FRANKLN
-briefing Pilots, listen up. The Vigilance holds station in Cephid 17. You and Drifter will fly Nav 1, Nav 2 and come home. Intelligence expects our Gawain at Nav 0; 4 Nicanders at Nav 1; 2 Aristons and an Agasicles at Nav 2. Keep your wingman close and bring the ship back.
-win      Cephid 17 holds. Good flying; get some rest.
-lose     We lost ground in Cephid 17. Debrief, and we go again tomorrow.
+briefing "Things are about to heat up, people. The fleet is mounting an offensive."
+briefing "The supply ships start arriving tomorrow, so I want this system clean tonight."
+briefing after=won "Yesterday's patrols kept the jump points clear. The Aera noticed."
+briefing after=lost "We missed some of those jump points yesterday, and the Aera used them."
+briefing "Tactical has a large bogie jumping in about thirty thousand kilometers out. It's headed this way."
+briefing "It could be a transport. It's probably not. Wildcard, go and find out, and kill it if you can."
+briefing dead=DRIFTER "You fly it without a wingman, Wildcard. I have nobody to give you."
+briefing "You and Drifter go first, with 3 more Franklins behind you."
+briefing DRIFTER "Faith, Commander, three Franklins and a big bogie. What's the line on that?"
+briefing "You don't want to know the line. Here's the plan."
+briefing "Intelligence expects 4 Nicanders at Nav 1."
+briefing "At Nav 2, an Agasicles destroyer, if that's what it is, and 2 Aristons to guard it."
+briefing "Bring a report back if nothing else. I'd rather have the report than the hero."
+briefing you "(She sends the other wings after the other bogies, then looks up.)"
+briefing "Dismissed."
+win      "That was a destroyer, and now it isn't. Tactical is delighted. So am I."
+win      DRIFTER "She'd have turned on us at the end, Commander. Wildcard saw it first."
+win      you alive=DRIFTER "He's being kind. He heard it first."
+win      "I'll take the result either way. The supply ships come in on schedule."
+lose     "Tell me about it."
+lose     you "It was a destroyer, Commander. We didn't stop it."
+lose     "No. But now I know what it is, and that's something. Get some sleep."
 nav      1 15750 2250 -4500
 nav      2 31500 4500 -9000
 ship     player 0 nav0
@@ -208,12 +281,45 @@ ship     FRANKLN 0 nav0 count=3
 ship     NICANDR 1 nav1 count=4
 ship     ARISTON 1 nav2 count=2
 ship     AGASICL 1 nav2
-bar      left=- middle=ECHO right=COMET
-talk     bar ECHO COMET "Quiet out there lately."
-talk     bar COMET ECHO "Too quiet."
-lounge   left=KESTREL middle=- right=FROST
-talk     lounge KESTREL FROST "Watch my six out there."
-talk     lounge FROST KESTREL "Always."
+bar      left=TORCH middle=ECHO right=COMET
+talk     bar TORCH COMET "You don't lead a Nicander. You wait for it to break."
+talk     bar COMET TORCH "I lead it, and I'm still here. Who's counting?"
+talk     bar ECHO COMET "I am."
+say      bar ECHO ECHO "See the board? Tally keeps a column just for me."
+say      bar ECHO you "What's in it?"
+say      bar ECHO ECHO "Aera. Only Aera. It isn't long enough."
+say      bar ECHO TALLY "She checks it before she eats."
+say      bar COMET COMET "Rookie."
+say      bar COMET you "It's Wildcard."
+say      bar COMET COMET "Last three missions with me and I might remember that."
+say      bar COMET TORCH "She won't. I've been Torch for a year and she calls me Shmrn."
+say      bar TORCH TORCH "Long odds, Drifter says. He's right. That's why I keep paying him."
+say      bar TORCH you "Why, if the odds are that long?"
+say      bar TORCH TORCH "It's cheaper than forgetting."
+say      bar TALLY TALLY after=won "Two for the board, then. Comet says your shooting's adequate. That's her being warm."
+say      bar TALLY TALLY after=lost "Bad day. First one's on the house. They're all on the house until you win one."
+say      bar TALLY you "You said that was a rematch."
+say      bar TALLY TALLY "Everything's a rematch."
+lounge   left=KESTREL middle=DRIFTER right=PRIME
+talk     lounge DRIFTER KESTREL "Ten credits says you can't call the next coin."
+talk     lounge KESTREL DRIFTER "Tails."
+talk     lounge DRIFTER KESTREL "I haven't thrown it."
+talk     lounge KESTREL DRIFTER "I know."
+say      lounge DRIFTER DRIFTER "You'll notice I don't settle up before a mission. Not with anyone."
+say      lounge DRIFTER you "Why not?"
+say      lounge DRIFTER DRIFTER "Because you can't die. You owe me."
+say      lounge DRIFTER KESTREL "He has a book."
+say      lounge DRIFTER you "And if someone dies owing?"
+say      lounge DRIFTER DRIFTER "Then I pay their family what they owed. It keeps the book square. Now go and fly."
+say      lounge PRIME PRIME "Heard you're chasing something big. You'll want to go in fast and low."
+say      lounge PRIME you "Does that work?"
+say      lounge PRIME PRIME "Every time so far. Relax, there's a spare."
+say      lounge KESTREL KESTREL "He means himself. He says it to everyone."
+talk     deck TECH you "What's that dent? No, don't tell me. Drifter already sold me the story."
+say      deck TECH TECH boost=armor "That's a destroyer out there. I've hung extra plate on you, so try to hit it with something else."
+say      deck TECH you "Where do you find plate on this ship?"
+say      deck TECH TECH "Where I find everything."
+radio    "Drifter here. Big bogie, three Franklins and you. I've given worse odds to better pilots."
 
 mission  CEPHID3
 node     CEPHID
@@ -221,9 +327,26 @@ title    Patrol: Cephid 17, 2 nav points
 type     patrol
 music    briefing
 fighter  FRANKLN
-briefing Pilots, listen up. The Vigilance holds station in Cephid 17. You and Drifter will fly Nav 1, Nav 2 and come home. Intelligence expects our Ox and 4 Aristons at Nav 1; 3 Agis at Nav 2. Keep your wingman close and bring the ship back.
-win      Cephid 17 holds. Good flying; get some rest.
-lose     We lost ground in Cephid 17. Debrief, and we go again tomorrow.
+briefing "We leave Cephid 17 tomorrow night, but the Oxes come first. Half a dozen of them, and the Aera know it."
+briefing you "(She works down the list of wings. Yours is last.)"
+briefing "You and Drifter draw the final run."
+briefing dead=DRIFTER "You draw the final run, Wildcard, and you draw it alone. I'm sorry."
+briefing "An Ox is waiting for you at Nav 1. As soon as you reach it, it comes home at top speed."
+briefing "It won't stop for anything. They'll try to pull you away, so don't let them."
+briefing "If that Ox dies, you've lost the mission."
+briefing "Intelligence expects 4 Aristons at Nav 1 and 3 Agis at Nav 2."
+briefing "One more thing, for everyone. Intelligence says the ace they call Sixty-Four is in this system."
+briefing you "Sixty-Four, Commander?"
+briefing "Kills. Fighters and capital ships, on our count. It flies a Convolution."
+briefing COMET "It's sixty-six. They haven't heard about Rigel yet."
+briefing "If you meet it, you don't make it personal. Dismissed."
+win      "The Ox is home, and Tactical says we leave on time. Good flying, Wildcard."
+win      DRIFTER "That's me off your wing, then. You still owe me ten."
+win      you alive=DRIFTER "I'll pay you when you tell me what the bet was."
+win      dead=DRIFTER "Drifter would have wanted you to know you still owe him ten. I checked the book. You do."
+lose     escort=lost "We lost the Ox. That was fuel the whole task force was counting on."
+lose     "We jump in the morning, and we jump short. Go and get some rest, Wildcard."
+lose     DRIFTER "Ten credits you don't sleep."
 nav      1 27000 -6750 -27000
 nav      2 13500 -3375 -13500
 ship     player 0 nav0
@@ -232,10 +355,35 @@ ship     VIGILNC 0 nav0 role=home
 ship     OX 0 nav1 role=in
 ship     ARISTON 1 nav1 count=4
 ship     AGIS 1 nav2 count=3
-bar      left=- middle=- right=ANCHOR
-lounge   left=KESTREL middle=DRIFTER right=-
-talk     lounge KESTREL DRIFTER "Ten credits says you come back first."
-talk     lounge DRIFTER KESTREL "You'd bet on your own funeral."
+bar      left=- middle=PRIME right=ANCHOR
+talk     bar PRIME ANCHOR "Who signed for my wingtip?"
+talk     bar ANCHOR PRIME "I did. It's on the form as a bird strike."
+talk     bar PRIME ANCHOR "We're in space, Carbon."
+talk     bar ANCHOR PRIME "I noted that."
+say      bar ANCHOR ANCHOR "Julius Mercer. And no, I'm not the other one."
+say      bar ANCHOR you "He says you sign for his scratches."
+say      bar ANCHOR ANCHOR "Somebody has to fill in the form."
+say      bar ANCHOR PRIME "See? There's a spare."
+say      bar PRIME PRIME "Sixty-Four? I'd like to meet it. Sixty-five would look good next to my name."
+say      bar PRIME TALLY "You're on the board for nine, Julian. Six of those are Agis."
+say      bar PRIME PRIME "Agis are harder than they look."
+say      bar TALLY TALLY "This is the last night at this bar. Well, it's the same bar. You know what I mean."
+say      bar TALLY you "Have you ever seen Sixty-Four?"
+say      bar TALLY TALLY "I don't fly, kid. I keep the board. Rematch?"
+lounge   left=- middle=DRIFTER right=FROST
+talk     lounge DRIFTER FROST "Ten credits says you tell the new one why you left the corps."
+talk     lounge FROST DRIFTER "Keep your money."
+talk     lounge DRIFTER FROST "That's what I said you'd say."
+say      lounge DRIFTER DRIFTER "An Ox won't dodge and it won't thank you. Stay in close and listen for its engines."
+say      lounge DRIFTER you "Listen, in space?"
+say      lounge DRIFTER DRIFTER "On your comm. You hear a pilot's voice go up, you know where to look."
+say      lounge FROST FROST "They'll try to draw you off. It's what I'd do. Check on your wingman, then get back to that Ox."
+say      lounge FROST DRIFTER "That's the first rule. She's only got the one."
+talk     deck TECH you "If you bring me that Ox, I'll say something nice. I'm told it happens."
+say      deck TECH TECH boost=fuel "I've run you a reserve tank. An Ox runs at top speed and it won't wait for you."
+say      deck TECH you "What did you take it out of?"
+say      deck TECH TECH "Something that wasn't using it."
+radio    "Drifter here. There's our Ox, or there will be. Stay close. Ten credits says they try the left."
 
 mission  SHELTON1
 node     SHELTON
@@ -243,9 +391,26 @@ title    Patrol: Shelton, 3 nav points
 type     patrol
 music    briefing
 fighter  SCHROED
-briefing Pilots, listen up. The Vigilance holds station in Shelton. You and Comet will fly Nav 1, Nav 2, Nav 3 and come home. Intelligence expects 4 Agis at Nav 2; 2 Convolutions at Nav 3. Keep your wingman close and bring the ship back.
-win      Shelton holds. Good flying; get some rest.
-lose     We lost ground in Shelton. Debrief, and we go again tomorrow.
+briefing "Welcome to Shelton. The Aera hold the next two jumps, and we intend to change that."
+briefing after=won "We came out of Cephid 17 fat on fuel. Let's not waste it."
+briefing after=lost "Cephid 17 ended badly, so we are short on fuel. Fly like it."
+briefing you "(She runs through the first wings. Yours comes next.)"
+briefing "Wildcard, you lead. You and Comet will fly Nav 1, Nav 2, Nav 3 and come home, in Schroedingers."
+briefing COMET "Who's Wildcard?"
+briefing "The one in front of you, Comet."
+briefing "Comet has more kills than anyone aboard. You lead anyway. If she tells you something, believe it."
+briefing "Intelligence expects 4 Agis at Nav 2 and 2 Convolutions at Nav 3."
+briefing "Convolutions mean aces. Sixty-Four flies one."
+briefing you "Is it out there, Commander?"
+briefing "If it is, tell me before you tell Tally. Dismissed."
+win      "Good work. Three nav points, and I have a clean report."
+win      COMET "The rookie didn't get in my way."
+win      alive=COMET "From Comet, that's a medal. Get some rest, Wildcard."
+win      dead=COMET "I will write her letter myself. Get some rest, Wildcard, if you can."
+lose     "That isn't the patrol I asked for."
+lose     COMET "I've seen worse. Not this week."
+lose     you "We'll do better, Commander."
+lose     "See that you do. Dismissed."
 nav      1 -13500 2250 4500
 nav      2 -20250 4500 -9000
 nav      3 -6750 2250 -20250
@@ -254,10 +419,41 @@ ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home
 ship     AGIS 1 nav2 count=4
 ship     CONVOLN 1 nav3 count=2
-bar      left=- middle=PRIME right=DRIFTER
-talk     bar PRIME DRIFTER "Ten credits says you come back first."
-talk     bar DRIFTER PRIME "You'd bet on your own funeral."
-lounge   left=- middle=TORCH right=-
+bar      left=FROST middle=PRIME right=COMET
+talk     bar PRIME COMET "Go straight in on the big ship and pick off the small ones after. It's quicker."
+talk     bar COMET PRIME "It's quicker for the small ones."
+talk     bar FROST PRIME "How many times has she pulled you out of that?"
+talk     bar PRIME FROST "Twice. I'm told it was close."
+say      bar COMET COMET "Rookie. You're on my wing tomorrow."
+say      bar COMET you "I'm leading, as I heard it."
+say      bar COMET COMET "That's what it says on the board. Clean up the fighters first, then look at anything bigger."
+say      bar COMET FROST "She's right, and she won't say it twice. Write it down."
+say      bar PRIME PRIME "She tell you to take the fighters first? She tells everyone. It's very sound."
+say      bar PRIME you "Isn't it?"
+say      bar PRIME PRIME "Sound's fine. Nobody buys sound a drink."
+say      bar FROST FROST "How's Comet treating you?"
+say      bar FROST you "She doesn't know my name."
+say      bar FROST FROST "She knows it. Give it time, and don't take it to heart."
+say      bar TALLY TALLY "She's the only one who reads that board as a score. The rest of you think it's a joke."
+say      bar TALLY you "Isn't it?"
+say      bar TALLY TALLY "Rematch."
+lounge   left=KESTREL middle=ECHO right=ANCHOR
+talk     lounge ANCHOR KESTREL "They asked me which one of us was real again."
+talk     lounge KESTREL ANCHOR "What did you say?"
+talk     lounge ANCHOR KESTREL "That the form only has one box."
+say      lounge ANCHOR ANCHOR "Anchor. If you're on Comet's wing, read the pre-flight twice. She only reads it once, and she's right."
+say      lounge ANCHOR KESTREL "He means that kindly."
+say      lounge KESTREL KESTREL "You sat down."
+say      lounge KESTREL you "There was a chair."
+say      lounge KESTREL KESTREL "There usually is."
+say      lounge ECHO ECHO "Convolutions at Nav 3? If you see one, call it. I'd like to know where it went."
+say      lounge ECHO you "You're not on this one."
+say      lounge ECHO ECHO "I know. I checked."
+talk     deck TECH you "Back in a Schroedinger. I told you not to scratch the last one."
+say      deck TECH you "There's red paint under this patch. She's green."
+say      deck TECH TECH boost=armor "Is there? I've hung extra plate on you, so you won't have to look at it."
+say      deck TECH you "(She takes a sander to the patch while you watch.)"
+radio    "Comet. Stay on my wing, Rookie."
 
 mission  SHELTON2
 node     SHELTON
@@ -265,9 +461,22 @@ title    Patrol: Shelton, one nav point
 type     patrol
 music    briefing
 fighter  SCHROED
-briefing Pilots, listen up. The Vigilance holds station in Shelton. You and Comet will fly Nav 1 and come home. Intelligence expects our Schroedinger and 4 Nicanders at Nav 0; 4 Nicanders at Nav 1. Keep your wingman close and bring the ship back.
-win      Shelton holds. Good flying; get some rest.
-lose     We lost ground in Shelton. Debrief, and we go again tomorrow.
+briefing "Code Red, people. Don't sit down."
+briefing "We have 4 Nicanders on top of the ship right now, and 4 Nicanders at Nav 1 coming behind them."
+briefing "The other squadrons are out on patrol, and Kit has our turrets in pieces. You're what we've got."
+briefing "We have 2 Schroedingers up already. They won't last."
+briefing "You and Comet are first down the tube."
+briefing dead=COMET "You're alone on this one, Wildcard. Nobody else is close enough to the tube."
+briefing COMET "Commander, how long until the turrets are back?"
+briefing "Long enough that I'm asking you. Stop them, or you'll have no place to land. Go!"
+win      "The Vigilance is still here, and I credit you for that."
+win      COMET "The rookie shot two off my tail."
+win      you alive=COMET "You said you didn't need the help."
+win      COMET "I didn't."
+win      "Kit wants her turrets back together, and you out of her way. Dismissed."
+lose     "We took hits on the deck, and there are people in the med bay who don't fly."
+lose     you "Yes, Commander."
+lose     "Kit has six hours to put her right. Stay out of her way."
 nav      1 0 0 0
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
@@ -275,10 +484,36 @@ ship     VIGILNC 0 nav0 role=home turrets=off
 ship     SCHROED 0 nav0 count=2
 ship     NICANDR 1 nav0 count=4
 ship     NICANDR 1 nav1 count=4
-bar      left=FROST middle=KESTREL right=ANCHOR
-talk     bar FROST KESTREL "Watch my six out there."
-talk     bar KESTREL FROST "Always."
-lounge   left=- middle=TORCH right=-
+bar      left=TORCH middle=- right=DRIFTER
+talk     bar DRIFTER TORCH "The line on a Nicander reaching our deck is four to one."
+talk     bar TORCH DRIFTER "You're taking bets on the ship?"
+talk     bar DRIFTER TORCH "Somebody has to know what she's worth."
+say      bar DRIFTER DRIFTER "You still owe me ten. Don't get killed. I hate paying out."
+say      bar DRIFTER you "Is that a rule or a threat?"
+say      bar DRIFTER DRIFTER "It's the same page."
+say      bar TORCH TORCH "This is what it looked like on Shmrn, the first day. Everyone said it was only a raid."
+say      bar TORCH DRIFTER "Fifty to one, Torch."
+say      bar TALLY TALLY "I know, you don't have time. Sit down anyway. Thirty seconds."
+say      bar TALLY you "What's it for?"
+say      bar TALLY TALLY "So you've got something to come back and finish."
+lounge   left=COMET middle=ECHO right=FROST
+talk     lounge COMET ECHO "You left formation again."
+talk     lounge ECHO COMET "I got two."
+talk     lounge COMET ECHO "Your wingman got one, alone. He'd like you to know."
+say      lounge COMET COMET "Rookie."
+say      lounge COMET you "Why Rookie? We've flown together now."
+say      lounge COMET COMET "Homeland Security. Eight pilots, one wing. I knew all their names."
+say      lounge COMET FROST "She wrote all the letters, too."
+say      lounge COMET COMET "That's enough, Frost."
+say      lounge FROST FROST "Comet won't check on you. She thinks she's faster than you are."
+say      lounge FROST you "Is she?"
+say      lounge FROST FROST "Check on her anyway."
+say      lounge ECHO ECHO "Four on the ship. That's four more for the column, if someone leaves me any."
+talk     deck TECH you "If you're looking for your turrets, they're on my floor."
+say      deck TECH TECH boost=missile "Here, a missile off the rack I had to move to get at them. Use it on something."
+say      deck TECH you "You took the turrets apart during a fight?"
+say      deck TECH TECH "They were apart before the fight. Go."
+radio    "Comet. Scramble, Rookie. Keep up."
 
 mission  SHELTON3
 node     SHELTON
@@ -286,9 +521,27 @@ title    Patrol: Shelton, 2 nav points
 type     patrol
 music    briefing
 fighter  SCHROED
-briefing Pilots, listen up. The Vigilance holds station in Shelton. You and Comet will fly Nav 1, Nav 2 and come home. Intelligence expects our Ox and 2 Convolutions at Nav 1; 4 Agis at Nav 2. Keep your wingman close and bring the ship back.
-win      Shelton holds. Good flying; get some rest.
-lose     We lost ground in Shelton. Debrief, and we go again tomorrow.
+briefing "We pull out of Shelton tomorrow, but the Oxes come first."
+briefing after=won "You kept the ship in one piece yesterday. They'll be back, so I want every escort tight."
+briefing after=lost "After what they did to the deck, I want every escort tight."
+briefing you "(She gives out the runs, one wing at a time. You draw the last.)"
+briefing "You and Comet have the final run. An Ox is waiting at Nav 1."
+briefing "As soon as you reach it, it comes home at top speed, and it won't turn aside for anything."
+briefing "Intelligence expects 2 Convolutions at Nav 1 and 4 Agis at Nav 2."
+briefing "Two Convolutions. Sixty-Four may be one of them."
+briefing you "What do we do if it is, Commander?"
+briefing COMET "Kill the one next to it first."
+briefing alive=COMET "Comet has it right. Your job is the Ox. Lose it, and you lose the mission. Dismissed."
+briefing dead=COMET "Your job is the Ox, Wildcard. Lose it and you lose the mission. Dismissed."
+win      "The Ox is home. Good flying, both of you."
+win      COMET "The rookie flew all right."
+win      you alive=COMET "Thank you."
+win      COMET "Don't."
+win      dead=COMET "The Ox is home because of her. Remember that when you sign the form."
+lose     escort=lost "We lost the Ox, and the fuel it was carrying."
+lose     "We jump when we jump. That's all for now."
+lose     COMET "I told you to stay close, rookie."
+lose     you alive=COMET "Yes, you did."
 nav      1 -32000 4500 -11250
 nav      2 -18000 2250 -2250
 ship     player 0 nav0
@@ -297,10 +550,36 @@ ship     VIGILNC 0 nav0 role=home
 ship     OX 0 nav1 role=in
 ship     CONVOLN 1 nav1 count=2
 ship     AGIS 1 nav2 count=4
-bar      left=TORCH middle=ECHO right=-
-talk     bar TORCH ECHO "Watch my six out there."
-talk     bar ECHO TORCH "Always."
-lounge   left=- middle=- right=FROST
+bar      left=FROST middle=ECHO right=ANCHOR
+talk     bar ECHO FROST "Your Rlaan could fly a convoy through here tomorrow and nobody would stop them."
+talk     bar FROST ECHO "Nobody would stop them because they've stayed out of it."
+talk     bar ECHO FROST "That's what I said."
+say      bar ANCHOR ANCHOR "Julius Mercer. Comet's report says you stayed on her wing. I filed it."
+say      bar ANCHOR you "You read everyone's reports?"
+say      bar ANCHOR ANCHOR "Somebody has to. You'd be surprised what's in them."
+say      bar ANCHOR TALLY "He'd be surprised what isn't."
+say      bar FROST FROST "The Ox isn't going to thank you. Bring it home anyway."
+say      bar FROST you "You always say to check my wingman first."
+say      bar FROST FROST "An Ox has more people on it than the whole squadron. Call it your wingman."
+say      bar ECHO ECHO "If you meet Sixty-Four, don't let Comet have it. Call me."
+say      bar ECHO FROST "She has her own mission, Echo."
+say      bar ECHO ECHO "I know what I have."
+lounge   left=COMET middle=DRIFTER right=PRIME
+talk     lounge DRIFTER PRIME "Ten credits says Carbon's voice is next on the comm."
+talk     lounge PRIME DRIFTER "He's not even scheduled."
+talk     lounge DRIFTER PRIME "That's what makes it a bet."
+say      lounge COMET COMET "Convolutions turn inside you. Don't try it. Let them go by and take the shot on the way out."
+say      lounge COMET you "Anything else?"
+say      lounge COMET COMET "Yes. Don't talk on the comm."
+say      lounge COMET DRIFTER "Ten credits says you talk on the comm."
+say      lounge DRIFTER DRIFTER "You've lasted longer on her wing than most. I've got money on you now. Don't embarrass me."
+say      lounge PRIME PRIME "Sixty-Four, sixty-five, who's counting? I'd like to see it try that on me."
+say      lounge PRIME COMET "It wouldn't have to try."
+talk     deck TECH you "That's three times now you've brought her back. People will talk."
+say      deck TECH TECH boost=fuel "You're on a reserve tank. An Ox doesn't slow down for anyone, and neither do Convolutions."
+say      deck TECH you "Thanks, Kit."
+say      deck TECH TECH "Don't thank me. Bring it back. It wasn't mine to start with."
+radio    "Comet. Stay close, Wildcard."
 
 mission  CRUCIBL1
 node     CRUCIBL

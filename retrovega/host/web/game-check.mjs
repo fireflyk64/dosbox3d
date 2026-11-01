@@ -120,11 +120,16 @@ try {
   ok(/cue \d+ \(LAUNCH\.MID\)/.test(t), "after the briefing: the deck");
   await sleep(2500);
   await shot("deck");
-  await press(201, 172);                // the kit
+  await press(201, 172);                // Kit: her conversation, a page a press
   await sleep(1500);
+  for (let k = 0; k < 6; k++) {         // (away from her and the fighter: past her last page it does nothing)
+    await press(30, 380);
+    await sleep(500);
+  }
   await press(478, 176);                // launch
   t = await waitLog(/flight: \S+, \d+ ships/, 180000);   // (the ships' sets fetched and made by the page first)
   ok(/flight: \S+, \d+ ships/.test(t), "launched: the flight (the ships' sets came from the page)");
+  ok(/logic: Kit's boost \d/.test(t), "talking to Kit first: her boost is on the fighter");
   await sleep(4000);
   await shot("flight");
   if (phone) {

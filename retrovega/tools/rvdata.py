@@ -23,6 +23,7 @@ lose, fighter (the player's and the wingman's TYPE), nav (id x y z, km), ship (T
 split at its sentences), talk, say, radio.
 """
 import argparse
+import re
 import csv
 import json
 import math
@@ -559,6 +560,15 @@ def compile_all():
             you = 'You and %s' % people[pilot_index[wingman]]['callsign']
             if you not in ' '.join(f[-1] for _w, k_, f in m['talk'] if k_ == 'briefing'):
                 raise Fail('%s: the briefing must say "%s": it is cut when the wingman is dead' % (w, you))
+        # what the XO says is there is there: "3 Nicanders at Nav 1" against the mission's ship lines
+        named = {r['name']: r['key'] for r in load_csv('ships.csv')}
+        for _w, k_, f in m['talk']:
+            for n_, say_, nav_ in re.findall(r'(\d+) ([A-Z][a-z]+) at Nav (\d)', f[-1]) if k_ == 'briefing' else ():
+                key_ = named.get(say_) or named.get(say_[:-1]) if say_ not in named else named[say_]
+                have = sum(int(next((o[6:] for o in g[3:] if o.startswith('count=')), 1)) for _x, g in m['ship']
+                           if g[0] == key_ and g[1] == '1' and g[2] == 'nav' + nav_)
+                if have != int(n_):
+                    raise Fail('%s: the briefing says %s %s at Nav %s, the mission has %d' % (_w, n_, say_, nav_, have))
         homes = sum('role=home' in f[3:] for _w, f in m['ship'])
         if homes != 1:                  # (the player lands by calling it up on the comm: without it no flight can end well)
             raise Fail('%s: %d ships with role=home: a mission has its home carrier, one' % (w, homes))
@@ -596,7 +606,7 @@ def compile_all():
             # talk deck TECH you [conditions] "line" Kit, in subtitles as the player walks onto the deck, once
             # say deck TECH TECH|you [conditions] "line"   clicking Kit on the deck, the first time in a mission
             line, opts = f[-1], f[:-1]
-            flags, arg, boost = 0, 0, 0
+            flags, arg, boost, args = 0, 0, 0, 0
             while opts and '=' in opts[-1]:
                 k, v = opts.pop().split('=', 1)
                 if k == 'boost' and v in TALK_BOOSTS:
@@ -606,14 +616,18 @@ def compile_all():
                 elif k in ('if', 'unless') and v in node_index:
                     flags |= TALK_FLAGS[k.upper()]
                     arg = node_index[v]
+                    args += 1
                 elif k in ('dead', 'alive') and v in pilot_index:
                     flags |= TALK_FLAGS[k.upper()]
                     arg = pilot_index[v]
+                    args += 1
                 elif k == 'escort' and v == 'lost':
                     flags |= TALK_FLAGS['ESCORT']
                 else:
                     raise Fail('%s: %s=%s: the conditions are after=won|lost, if=NODE, unless=NODE, dead=PILOT, alive=PILOT, escort=lost, and on '
                                'Kit\'s lines boost=armor|fuel|missile' % (where, k, v))
+            if args > 1:
+                raise Fail('%s: only one of if=, unless=, dead= and alive= on a line' % where)
             if boost and (kind != 'say' or opts[:2] != ['deck', 'TECH'] or opts[2:] != ['TECH']):
                 raise Fail('%s: a boost is on a line Kit says on the deck: say deck TECH TECH boost=KIND "line"' % where)
             if kind in BRIEF_ROOMS:     # [WHO] [conditions] "line": the XO's, or anyone's in their close-up
