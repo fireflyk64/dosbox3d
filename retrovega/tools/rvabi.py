@@ -136,6 +136,9 @@ def main():
         p('#define RV_SIGNATURE_OFF 0x%04X       // in DGROUP' % [i for i in items if i['name'] == 'aLoadingWingCom'][0]['off'])
         p('#define RV_ABI_VERSION %d' % ABI_VERSION)
         p()
+        for name in ('viewRect', 'steerInput'):
+            p('#define RV_DS_%s 0x%04X' % (name, [i for i in items if i['name'] == name][0]['off']))
+        p()
         p('struct RvThunk { unsigned short off; const char *name; int nargs; bool returns; };')
         p('static const RvThunk kRvThunks[] = {')
         for f in funcs:

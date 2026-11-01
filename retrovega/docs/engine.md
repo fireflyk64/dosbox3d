@@ -2111,6 +2111,64 @@ another 2,500 km out turned a little toward the camera, one coming nose
 first from 6,000 km, one far (9,000 km) climbing across as a line; ten
 seconds.
 
+### The simulator
+
+The user, 2026-11-01: the chair and stick of the rig in the bar launch a
+Schroedinger, "strictly single player".
+One of each Rlaan fighter type in turn, then two of the first, and so on until
+the player is destroyed; they win "if they max out the number of ships". No
+wingman, no carrier. Shields heal "every time the count increases". Esc leaves.
+
+- **The waves** (`src/simulator.c`, play tests M11): `simulator_frame`, a step
+  after the game's logic, counts the kills, and when no Rlaan ship is left
+  (a dying one still counts: its explosion finishes first) waits two seconds
+  and spawns the next, facing the player 5,000 km ahead, six to a row. 47 kills
+  win (the user's number, after 2,976 at the slots' limit was "way" too many: 6,
+  12 and 18 make 36, so it comes in the round of four); two seconds later
+  `missionStatus` is 1. When the count goes up the shields, fuel, guns' energy
+  and missile rounds are made whole, not armour, hull or damaged systems. The
+  AI, guns, deaths, explosions and music are the flight's. Xuanzong and Gaozong,
+  unarmed in Vega Strike, have guns in `ships.csv` for this: 3 and 2 Kteks,
+  interpolated from the Shizu and Zhuangzong beside the Schroedinger and Agis.
+- **The hooks:** `flight_simulator` (flight.c) runs `flight_startup`,
+  `flight_keys`, `flight_frame` and `flight_music` from a C loop rather than
+  `rv_flight_run`, so none of `rvflight.inc`'s sites execute, and it calls
+  `simulatorStart` and `simulatorEnd`, never `missionStarting`,
+  `missionVictoryCalc`, `missionEnded`, `uiMode`, `rvFrameDone`,
+  `runHangarMission` or, through `camp_load_tables`, `missionLoaded`. The
+  autopilot's site and the cockpit pointer's are stepped round too. The logic's
+  own thunks (`do_damage`, `aiFighterThink`) are still called; the layer ignores
+  them between `simulatorStart` and `simulatorEnd`.
+- **The mission:** `simulator_mission` makes a record: the player's ship in
+  nav 0, hidden (`hud_marks` draws no cross), the six types at count 0 so
+  `flight_startup` loads their sets, the rules of the campaign's next mission.
+  `start_simulator` (game.c) saves the player's fighter and puts the real
+  mission's tables back afterwards. Nothing goes into the campaign or a save.
+- **The windshield** (the user, on a first try in blue: the rig in the bar is
+  brown, so a blue cockpit does not match it; "something that looks like a
+  windshield ... squarier ... cut off part of the diagonals above the VDUs ...
+  draw edges of the screen as glassy"): the Schroedinger's colours as they are.
+  `cockpit_windshield(148)` rewrites the opening's rows above the VDUs' housings
+  to a pane nearly the screen's width with rounded corners, the frame is not
+  drawn above that row, and `glass_edges` lays three translucent levels along
+  every edge of the view (`gfx_mix_run`, the palette's mix tables, so it lights
+  what is behind it) and two streaks of reflection across a corner. About 5,000
+  pixel lookups a frame.
+- **The stick:** on the page a controller is the game's mouse, the layer resting
+  the pointer where the game's neutral point is and `wc_web_in_flight` saying
+  whether the stick steers or moves a menu's pointer. Three things were wrong, the
+  last for every RetroVega flight: a simulator's flight counted as no flight
+  (WC1's TrainSim too: `stick_flying` now also says yes between RV.EXE's
+  `simulatorStart` and `simulatorEnd`, and in WC1's simulator while its flight
+  loop keeps coming round, so its SELECT ENEMY screen keeps a pointer); RV.EXE's
+  hooks never took the page's pointer at all; and it rested at the middle of the
+  screen, a dive in every cockpit (`viewRect` in the fixed block now gives the
+  opening's middle and `rv_steer_info` the steps of `STEER_*`). Between the two
+  thunks the layer ignores RV.EXE's other thunks too.
+- **Tests:** `tests/sim.txt` (the flow), `tests/sim-many.txt` with `RVT.EXE
+  /simat N` (31 Shizus: 43 ms a frame at 50,000 cycles in the test build),
+  `SIM=1 scripts/web-rv-flight.mjs` (the page).
+
 ### The bar's window on space
 
 The user, 2026-11-01: the bar's painted planet is cut out and the window shows
@@ -2692,6 +2750,32 @@ names in the game's own directory, and nothing else.
     memory. Now an odd span's last column is written once, in the assembly
     and its twin. `RVP.EXE /twins` also checks that nothing outside the span
     changes; the old code fails that at once.
+
+
+### Every ship a pixel a pixel (`RV_SHARP_SHIPS`)
+
+The user, 2026-11-01: "a (default-on) compile time flag for the non-dos version to just draw single pixels for each rotated
+sprite rather than 4x4 blocks or 2x2 blocks--irrespective of ships on the screen. I have an imagination a modern CPU can
+handle the transforms". It can.
+
+- **Why there were blocks:** the block mode's sets (`SHIPnn.RVH`) store sprites from half size down, a quarter for capital
+  ships, so a near ship is a small sprite drawn big: the blocks are in the data, not only in the draw. Asking the draw for
+  single pixels from those would only have shown the same squares turned.
+- **What it does:** `RV_SHARP_SHIPS` (host/rvhost.h: 1 in the host and browser game, 0 on DOS, which does not change) makes
+  `g_res` 3: `ships_load` reads the full-size views themselves, `SHIPnn.RV`, and `plan_draws` has every ship drawn by
+  `ships_draw_exact` at detail 1, the turned draw's inverse mapping from a dense copy, however many there are. The flames
+  follow from `ships_drawn`, as for any exact ship. `SHARP=0 host/game.sh` or `make SHARP=0` in desktop/ builds the blocks;
+  `/res 2` at run time goes back to them too, where the `.RVH` files are there.
+- **What had to grow, host only:** the scratch to 512 KB (a capital ship's view runs past 32 KB), the dense slab to 4 MB
+  (640 x 640 fits), the XMS arena to 192 MB. A fighter's views decode to 3-5 MB, a capital ship's to 2 MB.
+- **`load_rv`:** unused since 2026-10-23 and rotted: it read only the first 64 of 901 views, and wrote a record for each
+  mirrored heading past the end of its index block. It now keeps the stored views only (`stored_view` draws the pair
+  backwards, as for the sets) and gives back what it did not use (`xms_shrink`).
+- **The page:** `ships_want` asks for `SHIPnn.RV`; `web/rvsets.js` writes the views as they are, with nothing to make, so a
+  first flight waits for the download only. /dosbox still asks for its `.RVH` sets.
+- **Cost:** natively the picture took 0.47 ms a frame against 0.73 in blocks, in the same fight with one ship in view (the
+  block mode's 2 x 2 samples are not free either), with a busy machine beside it; a far ship is point-sampled from the
+  full-size view, where the ladder's smaller sprites were filtered: it may shimmer a little.
 
 ## Bounds
 

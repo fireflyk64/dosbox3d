@@ -16,6 +16,7 @@
 #include "rvhooks.h"
 #include "cockpit.h"
 #include "panel.h"
+#include "lightfield.h"
 
 #define EXT_SHORTS (2 * SCR_H + 1)       /* an opening's rows: a pair each */
 MEM_ARRAY(RvCockpit, g_cp_arr, 1)
@@ -43,6 +44,87 @@ const short __far *cockpit_extents(int *y0, int *rows)
     *y0 = g_ext_y0;
     *rows = g_ext_rows;
     return g_external && g_ext_full ? g_ext_full : g_ext;
+}
+
+/* --- the simulator's windshield (the user, 2026-11-01: the rig in the bar is brown with a square screen, so the cockpit
+ * stays brown and "looks like a windshield": "squarier ... cut off part of the diagonals above the VDUs ... draw edges of
+ * the screen as glassy") --- */
+
+#define PANE_MARGIN 3                   /* the pane's gap from the screen's edges */
+#define PANE_TOP_R 14                   /* its corners' radii */
+#define PANE_LOW_R 7
+#define GLASS_LEVELS 3
+
+static int g_shield_y;                  /* above this row: no frame */
+
+static int corner_inset(int r, int from_end)   /* how far a rounded corner of radius r comes in, from_end rows from its edge */
+{
+    long d = r - from_end;
+    return from_end >= r ? 0 : r - (int)lf_sqrt((unsigned long)((long)r * r - d * d));
+}
+
+void cockpit_windshield(int bottom)
+{
+    int y;
+    if (!g_ext || bottom > g_ext_y0 + g_ext_rows)
+        return;
+    for (y = g_ext_y0; y < bottom; y++) {
+        int k = y - g_ext_y0, in;
+        if (y < PANE_MARGIN) {          /* (an empty span) */
+            g_ext[2 * k] = g_ext[2 * k + 1] = SCR_W / 2;
+            continue;
+        }
+        in = corner_inset(PANE_TOP_R, y - PANE_MARGIN);
+        if (bottom - 1 - y < PANE_LOW_R)
+            in = corner_inset(PANE_LOW_R, bottom - 1 - y);
+        g_ext[2 * k] = (short)(PANE_MARGIN + in);
+        g_ext[2 * k + 1] = (short)(SCR_W - PANE_MARGIN - in);
+    }
+    g_shield_y = bottom;
+}
+
+/* the edge's three levels, along every edge of the view (the span's ends, and what a row has that the rows beside it have
+ * not), brightest outermost; and a reflection's two streaks across a corner of the pane */
+static void glass_edges(int y0, int y1)
+{
+    static const unsigned char __far k_tint[GLASS_LEVELS][2] = { { 0, 2 }, { 2, 1 }, { 0, 0 } };   /* (c3, level): white
+                                           75%, grey 50%, white 25% */
+    int y, d, k;
+    const int ey1 = g_ext_y0 + g_ext_rows;
+    for (y = y0 > g_ext_y0 ? y0 : g_ext_y0; y < y1 && y < ey1; y++) {
+        int x0 = g_ext[2 * (y - g_ext_y0)], x1 = g_ext[2 * (y - g_ext_y0) + 1];
+        if (x0 >= x1)
+            continue;
+        for (d = 1; d <= GLASS_LEVELS; d++) {
+            int a = x0 + 1, b = x1 - 1;         /* (this level's inside: past it, the next level's) */
+            for (k = 1; k <= d; k++) {
+                int up = y - k - g_ext_y0, dn = y + k - g_ext_y0;
+                if (up < 0 || dn >= g_ext_rows) {
+                    a = b;                      /* (off the view: nothing inside at this level) */
+                    break;
+                }
+                if (g_ext[2 * up] > a) a = g_ext[2 * up];
+                if (g_ext[2 * dn] > a) a = g_ext[2 * dn];
+                if (g_ext[2 * up + 1] < b) b = g_ext[2 * up + 1];
+                if (g_ext[2 * dn + 1] < b) b = g_ext[2 * dn + 1];
+            }
+            if (a >= b) {
+                gfx_mix_run(x0, x1, y, k_tint[d - 1][0], k_tint[d - 1][1], y0, y1);
+                x0 = x1;
+                break;
+            }
+            gfx_mix_run(x0, a, y, k_tint[d - 1][0], k_tint[d - 1][1], y0, y1);
+            gfx_mix_run(b, x1, y, k_tint[d - 1][0], k_tint[d - 1][1], y0, y1);
+            x0 = a;
+            x1 = b;
+        }
+    }
+    /* the reflection: top right, slanting as the light through a canopy does */
+    for (y = y0 > PANE_MARGIN + 4 ? y0 : PANE_MARGIN + 4; y < y1 && y < 64; y++) {
+        int x = SCR_W - 96 - y;
+        gfx_mix_run(x, x + 16, y, 0, 0, y0, y1);
+        gfx_mix_run(x + 24, x + 28, y, 0, 0, y0, y1);
+    }
 }
 
 void cockpit_external(int on)
@@ -104,6 +186,7 @@ void cockpit_unload(void)
     if (g_ext_full) MEM_GIVE(g_ext_full);
     g_ext_full = 0;
     g_external = 0;
+    g_shield_y = 0;
     g_cp = 0;
     g_ext = 0;
     g_cockpit_index = -1;
@@ -329,9 +412,21 @@ void cockpit_draw(int y0, int y1, const CockpitState *st, void (*world)(int y0, 
             world(y0, y1);
         return;
     }
-    gfx_image(c->base, 0, 0, y0, y1);
+    if (g_shield_y && y0 < g_shield_y) {
+        gfx_fill(0, y0, SCR_W, (y1 < g_shield_y ? y1 : g_shield_y) - y0, UI_BLACK, y0, y1);
+        if (y1 > g_shield_y)
+            gfx_image(c->base, 0, 0, g_shield_y, y1);
+    } else
+        gfx_image(c->base, 0, 0, y0, y1);
     if (world && y1 > c->open_y0 && y0 < c->open_y1)
         world(y0, y1);
+    if (g_shield_y) {
+        glass_edges(y0, y1);
+        if (y1 <= g_shield_y)           /* (nothing of the frame up here) */
+            return;
+        if (y0 < g_shield_y)
+            y0 = g_shield_y;
+    }
     if (c->struts != 0xFFFF)
         gfx_sprite(c->struts, 0, 0, y0, y1);
     survival(&c->survival, st, y0, y1);

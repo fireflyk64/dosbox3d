@@ -12,7 +12,7 @@
 #include <i86.h>
 #include "rv.h"
 
-#define SCRATCH 32768U
+#define SCRATCH GFX_SCRATCH
 static unsigned char __far *g_scratch;
 static unsigned char g_shade[256];
 static unsigned char __far g_mix[3][3][256];   /* (far: DGROUP is nearly full) */
@@ -310,6 +310,23 @@ void gfx_shade(int x, int y, int w, int h, int y0, int y1)
         for (i = 0; i < w; i++)
             p[i] = g_shade[p[i]];
     }
+}
+
+void gfx_mix_run(int x0, int x1, int y, int c3, int level, int y0, int y1)
+{
+    unsigned char __far *p;
+    const unsigned char __far *t = g_mix[c3][level];
+    if (y < y0 || y >= y1)
+        return;
+    if (x0 < 0)
+        x0 = 0;
+    if (x1 > SCR_W)
+        x1 = SCR_W;
+    if (x0 >= x1)
+        return;
+    p = vid_row(y);
+    for (; x0 < x1; x0++)
+        p[x0] = t[p[x0]];
 }
 
 void gfx_mix_to_black(int x, int y, int w, int h, int y0, int y1)

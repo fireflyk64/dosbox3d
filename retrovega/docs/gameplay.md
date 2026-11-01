@@ -411,6 +411,15 @@ tests cover them; flight.c's keys (T, Y, L) and its AUTO call them.
 | M10.8 break-formation | a wingman 800 km off the player, the only enemy 40,000 km away: left alone it fights nobody; told to fly in formation, nobody, within 3,000 km; told to break formation, the far enemy; the enemy gone, it leaves the formation (over 1,500 km off) and stays round the player (within 6,000) |
 | M10.9 taunt | an enemy beside a Terran ship has that as its target; `logic_taunt` refuses a friend and a capital ship; taunted, its target is the player; put 3,000 km ahead of the player, facing it, selected and under hold=on, it fires |
 
+### M11: the simulator (`src/simulator.c`)
+
+| test | what it checks |
+|---|---|
+| M11.1 sim-waves | one of each Rlaan fighter type in turn, then two of the first; each death counted once |
+| M11.2 sim-replenish | shields, fuel, guns' energy and missile rounds whole when the count goes up, not when only the type changes |
+| M11.3 sim-win | 47 kills, in the round of four: `missionStatus` 1, won, no wave after it |
+| M11.4 sim-death | no wave comes once the player is dying, and the flight ends at 4, not won |
+
 ## The memory: where everything lives
 
 ### The fixed block

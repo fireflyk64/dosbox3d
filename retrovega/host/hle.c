@@ -459,7 +459,11 @@ static void int21(union REGS *r, struct SREGS *s)
 }
 
 static uint8_t *g_xms;
+#if RV_SHARP_SHIPS
+static uint32_t g_xms_kb = 196608;      /* (the full-size views of a mission's nine types, decoded) */
+#else
 static uint32_t g_xms_kb = 63424;       /* (what DOSBox's memsize=63 gives: the page's) */
+#endif
 static uint32_t g_xms_bytes;
 
 void rv_xms(RvRegs *x)
@@ -471,7 +475,11 @@ void rv_xms(RvRegs *x)
         x->ebx &= ~0xFFUL;
         break;
     case 0x89:
+#ifdef __EMSCRIPTEN__                   /* (a wasm heap's new pages read zero, and calloc would touch them all) */
+        if (g_xms || x->edx > g_xms_kb || !(g_xms = malloc((size_t)(x->edx ? x->edx : 1) * 1024))) {
+#else
         if (g_xms || x->edx > g_xms_kb || !(g_xms = calloc(x->edx ? x->edx : 1, 1024))) {
+#endif
             x->eax = 0;
             x->ebx = (x->ebx & ~0xFFUL) | 0xA0;
             break;

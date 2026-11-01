@@ -2,6 +2,17 @@
 #ifndef RV_H
 #define RV_H
 
+#ifndef RV_SHARP_SHIPS
+#define RV_SHARP_SHIPS 0                /* (host/rvhost.h: the non-DOS game's ships a pixel a pixel) */
+#endif
+/* gfx.c's scratch: a view's raw bytes, then the rows going out.  (A capital ship's full-size view runs past 32 KB: DOS
+ * never decodes one) */
+#if RV_SHARP_SHIPS
+#define GFX_SCRATCH 524288UL
+#else
+#define GFX_SCRATCH 32768U
+#endif
+
 #include <stddef.h>
 
 /* Bounds: every index into a fixed table goes through RV_CHECK; a failure
@@ -41,7 +52,8 @@ extern void (*xms_freed)(unsigned nblocks);   /* (dat.c's: blocks past the first
 unsigned long xms_free_kb(void);       /* free in the arena */
 unsigned xms_blocks(void);             /* blocks taken (mem.c's ledger) */
 XmsBlock xms_alloc(unsigned long bytes, int level);
-void xms_free_level(int level);        /* frees that level and all above it */
+void xms_free_level(int level);
+void xms_shrink(XmsBlock b, unsigned long bytes);   /* the block taken last gives back what it did not use */        /* frees that level and all above it */
 int xms_put(XmsBlock b, unsigned long off, const void __far *src, unsigned long n);
 int xms_get(XmsBlock b, unsigned long off, void __far *dst, unsigned long n);
 int xms_copy_conv(void __far *dst, const void __far *src, unsigned long n); /* host-speed copy */
@@ -103,6 +115,8 @@ void gfx_sprite_dither(unsigned a, int dx, int dy, int y0, int y1, int which);  
 int gfx_sprite_hit(unsigned a, int dx, int dy, int px, int py);
 void gfx_fill(int x, int y, int w, int h, unsigned char c, int y0, int y1);
 void gfx_shade(int x, int y, int w, int h, int y0, int y1);
+void gfx_mix_run(int x0, int x1, int y, int c3, int level, int y0, int y1);   /* a row's pixels mixed toward the text colour
+                                           c3 (0 white, 1 amber, 2 grey), level 0 25%, 1 50%, 2 75%: translucency */
 void gfx_mix_to_black(int x, int y, int w, int h, int y0, int y1);
 void gfx_line(int xa, int ya, int xb, int yb, unsigned char c, int dash, int y0, int y1);
 void gfx_circle(int cx, int cy, int r, unsigned char c, int dotted, int y0, int y1);

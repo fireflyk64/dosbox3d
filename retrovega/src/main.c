@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <dos.h>
 #include "rv.h"
+#include "simulator.h"
 #include "rvhooks.h"
 #include "room.h"
 #include "campaign.h"
@@ -276,6 +277,8 @@ int main(int argc, char **argv)
             g_capital_blocks_test = atoi(argv[++i]);
         else if (!strcmp(argv[i], "/capital"))          /* tests: the carrier in the flight */
             g_capital = 1;
+        else if (!strcmp(argv[i], "/simat") && i + 1 < argc)   /* tests: the simulator starts at this many ships */
+            simulator_test_first((int16_t)atoi(argv[++i]));
         else if (!strcmp(argv[i], "/scoretest"))        /* tests: the flight's music by the clock (score.c); 2: the remixes; 3: the cycle's end */
             g_score_test = i + 1 < argc && argv[i + 1][0] >= '1' && argv[i + 1][0] <= '9' ? atoi(argv[++i]) : 1;
         else if (!strcmp(argv[i], "/sky"))              /* tests: three ship views painted on the sky, to roll and turn round */
@@ -299,6 +302,7 @@ int main(int argc, char **argv)
     }
     /* resident before base: XMS levels nest (xms.c); the songs are resident too */
     log_free("at the start");
+    (void)gfx_scratch();                /* (first: 32 KB in one piece, which the test build had none of by the time it was asked for) */
     ok = camp_load_data("RVGAME.DAT");
     if (ok) {
         music_init();                   /* before the back buffer: its reading needs room */

@@ -1,0 +1,33 @@
+# the simulator: the chair, a wave or two, Esc back
+wait 12
+click
+wait 4
+move 593 200
+wait 2
+click
+wait 12
+move 429 140
+wait 2
+click
+wait 14
+log the chair
+move 620 300
+wait 3
+click
+wait 30
+shot SIM1
+wait 60
+shot SIM2
+hold fire 40
+wait 50
+shot SIM3
+wait 60
+shot SIM4
+log Esc leaves
+key esc
+wait 30
+shot SIM5
+click
+wait 10
+shot SIM6
+quit

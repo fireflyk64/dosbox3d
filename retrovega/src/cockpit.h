@@ -29,6 +29,9 @@ const short __far *cockpit_extents(int *y0, int *rows);   /* (first, end) x per 
 void cockpit_external(int on);          /* an outside view: the world in the opening's rows, full width, black bars
                                            above and below, no frame, no HUD (the chase camera, the autopilot's flyby) */
 int cockpit_is_external(void);
+/* the simulator: not a canopy but a screen: above row `bottom` no frame, the world in a pane nearly the screen's width,
+ * and glass drawn along all the edges of the view.  Till the cockpit is unloaded */
+void cockpit_windshield(int bottom);
 void cockpit_dirty(const CockpitState *st);               /* marks what must be redrawn for this state */
 void cockpit_draw(int y0, int y1, const CockpitState *st, void (*world)(int y0, int y1));
 

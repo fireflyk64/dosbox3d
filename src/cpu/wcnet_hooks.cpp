@@ -60,6 +60,21 @@ static int g_rockOnto = -1;      // test aid: the slot a rock is to be put onto 
 static bool g_frameSeen = false;
 static int g_flightCount = 0;  // missions that reached their first frame
 static bool in_flight() { return g_inMission && g_frameSeen; }
+// The page's stick steers in a flight and moves a pointer in a menu.  A simulator's flight is flown like any other but is no
+// mission (the hooks stand aside for it: in_simulation, g_rvSimulator), and in_flight says no: so the stick drifted the
+// pointer like a mouse's, a turn that never stopped (WC1's TrainSim, RetroVega's simulator).  WC1's simulator has screens
+// of its own around its flight: it is flying while its loop keeps coming round.
+static bool g_rvSimulator = false;   // between RV.EXE's simulatorStart and simulatorEnd: it has no screens of its own
+static double g_simLoopMs = -1e9;    // PIC_FullIndex at WC1's simulator's last mainLoopTop
+static bool stick_flying() {
+    return in_flight() || g_rvSimulator || (in_simulation > 0 && PIC_FullIndex() - g_simLoopMs < 1000);
+}
+static void simulator_loop_came_round() {
+    if (PIC_FullIndex() - g_simLoopMs >= 1000) {
+        wclog(1, "simulator: its flight is running");
+    }
+    g_simLoopMs = PIC_FullIndex();
+}
 bool before_first_frame() { return g_inMission && !g_frameSeen; }
 
 // The mission most recently started on this machine: after a death the game
@@ -375,7 +390,43 @@ static void set_pointer(double fx, double fy) {
 //   what 4: what the game made of it: the turn asked for across (i = 0) and down (i = 1)
 // All distances in units of the mouse's range (640 x 200).  -1: nothing of
 // the kind (another game, past the last step).
+//
+// RV.EXE: its pointer is 640 x 400 and steers by flight.c's STEER_* (nine steps, a whole number of pixels from where each
+// begins); the view's middle and reach are in its fixed block while a flight runs.
+static double rv_steer_info(int what, int i) {
+    static const short kX[9] = { 17, 27, 40, 54, 67, 80, 94, 107, 120 };   // ox * 9 / 120, past 16
+    static const short kY[9] = { 13, 18, 27, 36, 45, 54, 63, 72, 80 };     // oy * 9 / 80, past 12
+    if (DS == 0 || i < 0) {
+        return -1;
+    }
+    int right = (Bit16s)rd16((Bit16u)(RV_DS_viewRect + 4)), left = (Bit16s)rd16(RV_DS_viewRect);
+    if (right <= left) {
+        return -1;                                    // (no flight)
+    }
+    if (what == 0 && i < 4) {
+        int v = (Bit16s)rd16((Bit16u)(RV_DS_viewRect + 2 * i));
+        double margin = i < 2 ? -2 : 2;               // (a little past the full turn: the logical rectangle's halves and
+        return (i & 1) ? v + margin : (v + margin) * 2;   // the pointer's whole pixels fell short of it, step 8 of 9)
+    }
+    if (what == 1 && i < 9) {
+        return kX[i];
+    }
+    if (what == 2 && i < 9) {
+        return kY[i] / 2.0;                           // (the mouse's 400 rows in the units here, 200)
+    }
+    if (what == 3 && i < 3) {
+        return i == 2 ? 9 : 0;                        // (the top step begins at the reach itself)
+    }
+    if (what == 4 && i < 2) {
+        return (Bit16s)rd16((Bit16u)(RV_DS_steerInput + (i == 0 ? 2 : 0)));
+    }
+    return -1;
+}
+
 static double steer_info(int what, int i) {
+    if (g_build == BUILD_RV) {
+        return rv_steer_info(what, i);
+    }
     if (!ds::known(ds::viewRect) || DS == 0 || i < 0) {
         return -1;
     }
@@ -1455,6 +1506,9 @@ static void check_hooks_slow() {
         incoming_text = "";
     }
     if (in_simulation) {
+        if (at_location(code::mainLoopTop)) {
+            simulator_loop_came_round();
+        }
         if (at_location(code::simulatorEnd)) {
             in_simulation -= 1;
         }
@@ -1646,6 +1700,9 @@ static void check_hooks_solo() {
         in_simulation += 1;
     }
     if (in_simulation) {
+        if (at_location(code::mainLoopTop)) {
+            simulator_loop_came_round();
+        }
         if (at_location(code::simulatorEnd)) {
             in_simulation -= 1;
         }
@@ -1740,6 +1797,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_pointer(double fx, double fy) {
     g_webPointerX = fx < 0 ? 0 : fx > 1 ? 1 : fx;
     g_webPointerY = fy < 0 ? 0 : fy > 1 ? 1 : fy;
     g_webPointerWanted = true;
+    wc_net_countdown = 0;       // (taken at the next instruction: RetroVega's hooks have no periodic call)
 }
 // The page's controller code: 1 while a controller steers and the cockpit's
 // crosshair is not wanted, 0 when it is (a negative value only asks).
@@ -1804,7 +1862,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_link(int what) {
 // Nonzero while a mission's frame loop runs (flying, autopilot included):
 // the page steers with the stick then, and moves a menu pointer otherwise.
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_in_flight() {
-    return wc::in_flight() ? 1 : 0;
+    return wc::stick_flying() ? 1 : 0;
 }
 // the page's keys and mouse buttons, into DOSBox's keyboard and mouse driver: every game's (RetroVega's too)
 static void web_keys_and_buttons() {
@@ -2063,6 +2121,10 @@ static void rv_check_hooks() {
     // the page's keys (a phone's keyboard, the touch controls, a gamepad's buttons), mouse buttons and Esc tap: the
     // page's calls ask for this check (wc_net_countdown 0), and a held Esc keeps it coming until its release
     web_keys_and_buttons();
+    if (g_webPointerWanted) {           // (the page's stick; it had no way in here, in a flight or in the rooms)
+        g_webPointerWanted = false;
+        set_pointer(g_webPointerX, g_webPointerY);
+    }
     escape_tap();
     wc_net_countdown = scripted || g_escHeld ? 999 : 0x7fffffff;
 #else
@@ -2079,6 +2141,14 @@ static void rv_check_hooks() {
         // The flight as the layer's measuring sees it (wcnet_perf.h: WCNET_PERF natively, the page's
         // performance line): from missionStarting to missionEnded or uiMode(1), a frame at each
         // rvFrameDone (not logged: it comes thirty times a second).
+        if (t.off == 0x0084) {              // simulatorStart: one player's, nothing for the layer until simulatorEnd
+            g_rvSimulator = true;
+        } else if (t.off == 0x0089) {       // simulatorEnd
+            g_rvSimulator = false;
+        }
+        if (g_rvSimulator && t.off != 0x0084) {
+            return;                         // (the logic's thunks, do_damage and the rest: ignored)
+        }
         if (t.off == 0x00A7) {              // rvFrameDone
             g_frameSeen = true;
             if (g_inMission) {

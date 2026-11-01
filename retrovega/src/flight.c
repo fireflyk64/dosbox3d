@@ -43,6 +43,7 @@
 #include "explode.h"
 #include "sfx.h"
 #include "fx.h"
+#include "simulator.h"
 
 int g_flight_seconds = 20;              /* the benchmark flight's length (RV.EXE /flight N) */
 int g_flight_timed = 0;                 /* /flight N given: the flight lands by itself after N seconds (the tests);
@@ -213,6 +214,7 @@ void __far __cdecl rv_autopilot_key(void);
 void __far __cdecl rv_cockpit_pointer(void (__far __cdecl *draw)(void));
 
 static const RvMission __far *g_m;
+static unsigned char __far g_sim;       /* this flight is the simulator's (flight_simulator) */
 static unsigned long g_t0, g_frame_t[FPS_WINDOW];
 static int g_fps10;                     /* frames a second x 10 */
 static int g_set_enemy = -1, g_set_wing = -1;
@@ -603,6 +605,11 @@ static void plan_draws(void)
                 caps++;
         ships_capital_blocks(g_capital_blocks_test ? g_capital_blocks_test : caps <= 1 ? 2 : caps == 2 ? 3 : 4);
     }
+#if RV_SHARP_SHIPS
+    if (g_res == 3)                     /* every ship exactly, a pixel a pixel, however many */
+        for (i = 0; i < g_nplan; i++)
+            g_plan[i].exact = 1;
+#endif
     for (s = 0; s <= RV_MAX_SHIP_SLOT; s++) {
         int now = 0;
         for (i = 0; i < n_exact; i++)
@@ -1375,6 +1382,11 @@ static void draw_world(int y0, int y1)
     {
         logic_hud();                    /* the game's own marks over the view (none from outside) */
         nav_tag(y0, y1, ext, ey0, rows);
+        if (g_sim && y0 < ey0 + 24 && y1 > ey0 + 6) {
+            char s[64];
+            simulator_line(s);
+            gfx_text(FONT_BODY, (SCR_W - gfx_text_width(FONT_BODY, s)) / 2, ey0 + 8, s, RV_TEXT_WHITE, y0, y1);
+        }
     }
 #ifdef RV_TESTS
     if (g_boxes)
@@ -1402,13 +1414,14 @@ static void draw_world(int y0, int y1)
 #define WIN_FOCAL 400
 #define WIN_STARS 90
 #define WIN_WING 3                      /* ships in a flight going by */
+#define WIN_ROWS 100                    /* the window's rows at most */
 #define WIN_FIELD_Z_KM 4200L            /* the rocks: a small field ahead, the window looking into it */
 #define WIN_FIELD_R_KM 2800L
 #define WIN_FIELD_DENSITY 250
 static const unsigned char __far k_win_types[2] = { 0x00, 0x02 };   /* the Schroedinger and the Gawain */
 
 static struct {
-    short __far *ext;
+    short ext[2 * WIN_ROWS];            /* (first x, end x) a row */
     short y0, rows, cx, cy;
     unsigned char on, rocks, sets, nfly;
     unsigned short next_fly, fly_left;  /* frameCounter of the next flight going by; frames left of this one */
@@ -1460,8 +1473,6 @@ static void win_flyby_start(void)
     rv_logf(s_by, n, z);
 }
 
-MEM_ARRAY(short, g_win_ext_arr, 2 * SCR_H + 1)
-
 void flight_window_open(int room, unsigned seed, int outside)
 {
     static const char __far s_open[] = "window: open, seed %u, %Fs: %d rows at %d, the sky's things %d";
@@ -1473,9 +1484,7 @@ void flight_window_open(int room, unsigned seed, int outside)
     if (g_win.on || r->win_ext == 0xFFFF)
         return;
     ex = dat_asset(r->win_ext);
-    g_win.ext = MEM_TAKE(short, g_win_ext_arr, ex->size / 2 + 1);
-    if (!g_win.ext)
-        return;
+    RV_ASSERT(ex->size <= sizeof g_win.ext);
     dat_read(ex->at, g_win.ext, ex->size);
     g_win.y0 = r->win_y0;
     g_win.rows = r->win_rows;
@@ -1551,8 +1560,6 @@ void flight_window_close(void)
     ships_unload();                     /* (their XMS: the caller's level goes next) */
     memset(maybeEntityType, 0, RV_SLOTS * 2);
     g_nplan = 0;
-    MEM_GIVE(g_win.ext);
-    g_win.ext = 0;
 }
 
 void flight_window_tick(void)
@@ -1649,7 +1656,10 @@ static void flight_draw(int y0, int y1)
     cockpit_draw(y0, y1, &g_st, draw_world);
     g_ptr_y0 = y0;
     g_ptr_y1 = y1;
-    rv_cockpit_pointer(draw_pointer_body);
+    if (g_sim)                          /* (no hook site in the simulator) */
+        draw_pointer_body();
+    else
+        rv_cockpit_pointer(draw_pointer_body);
 }
 
 static void mfd_draw(int which, const RvRect __far *r, int y0, int y1)
@@ -1900,7 +1910,7 @@ static void system_action(int fn, int arg)
     case RV_PF_LOCK: (void)logic_target_lock(); break;
     case RV_PF_ARM_LAMP: case RV_PF_ARM_KNOB: g_sys.armed ^= 1; break;
     case RV_PF_AUTO_LAMP:
-        if (arg == 0) rv_autopilot_key();
+        if (arg == 0 && !g_sim) rv_autopilot_key();
         else if (arg == 1) g_sys.match ^= 1;
         else if (arg == 2) g_sys.autotarget ^= 1;
         else g_sys.autodecoy ^= 1;
@@ -2824,6 +2834,13 @@ static void balls_report(void)
 
 /* --- the loop's calls (rvflight.inc) --- */
 
+/* the pointer's steering: pixels from the middle of the opening.  (src/cpu/wcnet_hooks.cpp rv_steer_info works out the page's
+ * stick from these: change both) */
+#define STEER_DEAD_X 16
+#define STEER_DEAD_Y 12
+#define STEER_FULL_X 120
+#define STEER_FULL_Y 80
+
 void __far __cdecl flight_startup(void)
 {
     const RvMission __far *m = g_m;
@@ -2844,10 +2861,14 @@ void __far __cdecl flight_startup(void)
         g_camp.player_ship = (unsigned char)(g_test_ship - 1);
     g_my_type = ship_type(g_camp.player_ship);
     cockpit_load(g_camp.player_ship);
+    if (g_sim)                          /* (the rig's screen, not a canopy: simulator.h) */
+        cockpit_windshield(SIM_WINDSHIELD_Y);
     /* the play's random stream for this flight (the same mission flown again from the same save starts the same;
      * with the layer, the host's seed), then the game's logic puts the mission's ships in the slots */
     randomSeed = 0x52560000UL + (unsigned long)camp_mission_index() * 977UL + g_camp.flown;
     logic_start(m);
+    if (g_sim)
+        simulator_start();
     for (i = 1; i <= RV_MAX_SHIP_SLOT; i++)
         if (slot_is_ship(i))
             n = i + 1;
@@ -2855,7 +2876,7 @@ void __far __cdecl flight_startup(void)
         if (m->ship[i].side == 1 && m->ship[i].type != RV_SHIP_PLAYER)
             enemy_type = m->ship[i].type == RV_SHIP_WINGMAN ? g_camp.player_ship : m->ship[i].type;
     if (enemy_type < 0)
-        enemy_type = 0x08;
+        enemy_type = g_sim ? m->ship[1].type : 0x08;
     if (g_zoom) {
         /* a test aid: one Gawain dead ahead, a little off the nose, rolling, swinging in and out */
         n = 1;
@@ -2937,6 +2958,16 @@ void __far __cdecl flight_startup(void)
     if (g_lasers)
         lasers_sets();
 #endif
+    {
+        /* where the steering pointer rests and how far it reaches, in the old games' logical 320 x 200: the page's stick
+         * rests it exactly there (the layer's steer_info) */
+        short *v = (short *)viewRect;
+        int rest = cockpit_record() ? (cockpit_record()->open_y0 + cockpit_record()->open_y1) / 2 : SCR_H / 2;
+        v[0] = (SCR_W / 2 - STEER_FULL_X) / 2;
+        v[1] = (short)((rest - STEER_FULL_Y) / 2);
+        v[2] = (SCR_W / 2 + STEER_FULL_X) / 2;
+        v[3] = (short)((rest + STEER_FULL_Y) / 2);
+    }
     {
         /* the sets' ladders and rolls, within what the mission level has left (1 MB kept back) */
         unsigned long free_kb = xms_free_kb(), taken, t0 = clock240(), keep = 1024 + rocks_room_kb();   /* (and an
@@ -3069,8 +3100,9 @@ unsigned short __far __cdecl flight_keys(void)
         set_view(g_view == VIEW_CHASE ? VIEW_COCKPIT : VIEW_CHASE);
     if (in.key == KEY_F1 && g_view != VIEW_FLYBY)
         set_view(VIEW_COCKPIT);
-    if (in.key == KEY_ESC && script_active())
-        return 5;                       /* a test script ends the flight; the player's Esc is the browser's key, ignored */
+    if (in.key == KEY_ESC && (script_active() || g_sim))
+        return 5;                       /* a test script ends the flight, and Esc leaves the simulator; the player's Esc in
+                                           a mission is the browser's key, ignored */
     if (in.key == KEY_ESC && vdu_page(0) == VDU_L_COMM)
         comm_key(27);                   /* (the comm menu closed) */
     if (in.key == KEY_CHAR && in.ch >= '0' && in.ch <= '9' && vdu_page(0) == VDU_L_COMM)
@@ -3080,8 +3112,11 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.ch == '-') setSpeed[0] = setSpeed[0] > (unsigned long)g_st.max_speed / 10 ? setSpeed[0] - g_st.max_speed / 10 : 0;
         if (in.ch == 'f' || in.ch == 'F') setSpeed[0] = g_st.max_speed;
         if (in.ch == 's' || in.ch == 'S') setSpeed[0] = 0;
-        if (in.ch == 'a' || in.ch == 'A') rv_autopilot_key();
-        else system_key(in.ch);
+        if (in.ch == 'a' || in.ch == 'A') {
+            if (!g_sim)                 /* (nowhere to go, and it is a hook's site) */
+                rv_autopilot_key();
+        } else
+            system_key(in.ch);
 #ifdef RV_TESTS
         if (in.ch == '[') {             /* the next damage layer the cockpit has (a test's look at them) */
             int k;
@@ -3100,6 +3135,7 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.ch == '|') logic_test_kill_carrier();
         if (in.ch == '^') logic_test_jump_out();
         if (in.ch == '~') logic_test_kill_wingman();
+        if (in.ch == '\\' && g_sim) simulator_test_kill();
 #endif
     }
     {   /* Ctrl+E pulls the eject handle (twice within two seconds ejects); a click on the panel works its control */
@@ -3127,8 +3163,10 @@ unsigned short __far __cdecl flight_keys(void)
     } else {
         int ox = in.x - cx, oy = in.y - cy;
         g_keyboard_steer = 0;
-        g_steer_x = ox > 16 ? (ox > 120 ? 9 : ox * 9 / 120) : ox < -16 ? (ox < -120 ? -9 : ox * 9 / 120) : 0;
-        g_steer_y = oy > 12 ? (oy > 80 ? 9 : oy * 9 / 80) : oy < -12 ? (oy < -80 ? -9 : oy * 9 / 80) : 0;
+        g_steer_x = ox > STEER_DEAD_X ? (ox > STEER_FULL_X ? 9 : ox * 9 / STEER_FULL_X)
+                  : ox < -STEER_DEAD_X ? (ox < -STEER_FULL_X ? -9 : ox * 9 / STEER_FULL_X) : 0;
+        g_steer_y = oy > STEER_DEAD_Y ? (oy > STEER_FULL_Y ? 9 : oy * 9 / STEER_FULL_Y)
+                  : oy < -STEER_DEAD_Y ? (oy < -STEER_FULL_Y ? -9 : oy * 9 / STEER_FULL_Y) : 0;
     }
     steerInput = ((unsigned long)(unsigned short)(short)g_steer_x << 16) | (unsigned short)(short)g_steer_y;
     /* the pilot's controls for the game's logic (logic.h): the turn, the trigger (Space, or the left button held with
@@ -3172,6 +3210,8 @@ void __far __cdecl flight_frame(void)
         comm_hail();
     comms_tick();
     sim_step();
+    if (g_sim)
+        simulator_frame();
 #ifdef RV_TESTS
     if (g_boom_demo)
         boom_demo_step();
@@ -3274,7 +3314,8 @@ void __far __cdecl flight_frame(void)
         sprintf(name, "R%05u", frameCounter / g_record);
         shot_save(name);
     }
-    rvFrameDone();
+    if (!g_sim)
+        rvFrameDone();
     if (g_flight_timed && now - g_t0 >= FLIGHT_TICKS)
         missionStatus = 1;              /* landed */
     if (g_flames_demo && g_record && ++g_flames_frames >= FLAMES_FRAMES)
@@ -3317,14 +3358,9 @@ void __far __cdecl autoAnimation_c(unsigned short camShipType, unsigned short ca
 
 /* --- from the game --- */
 
-int flight_fly(const RvMission __far *m)
+static void flight_over(unsigned short status)
 {
-    unsigned short status;
-    g_m = m;
-    g_view = g_view_back = VIEW_COCKPIT;
-    g_fly_t = 0;
-    uiMode(0);
-    status = rv_flight_run();           /* (its loop begins with flight_startup: the loading, then the palette) */
+    memset(viewRect, 0, viewRect_SIZE);  /* (no steering pointer to rest now) */
 #ifdef RV_TESTS
     {
         int w, h, n = flight_bench_result(&w, &h);
@@ -3402,7 +3438,48 @@ int flight_fly(const RvMission __far *m)
     ships_unload();
     collide_flight_end();
     cockpit_unload();
+}
+
+int flight_fly(const RvMission __far *m)
+{
+    unsigned short status;
+    g_m = m;
+    g_view = g_view_back = VIEW_COCKPIT;
+    g_fly_t = 0;
+    uiMode(0);
+    status = rv_flight_run();           /* (its loop begins with flight_startup: the loading, then the palette) */
+    flight_over(status);
     rv_hangar();
     uiMode(1);
+    return status;
+}
+
+/* the simulator's flight: the same flight in a loop of its own, away from RVHOOK's sites (the layer's multiplayer work
+ * hangs on them: this is strictly one player's) and with only simulatorStart and simulatorEnd to say so.  What it does
+ * not call: missionStarting, missionEnded, uiMode, rvFrameDone, the hangar's return */
+int flight_simulator(const RvMission __far *m)
+{
+    unsigned short status;
+    g_m = m;
+    g_view = g_view_back = VIEW_COCKPIT;
+    g_fly_t = 0;
+    g_sim = 1;
+    simulatorStart();
+    flight_startup();
+    for (;;) {
+        status = flight_keys();
+        if (status)
+            missionStatus = status;
+        if (missionStatus)
+            break;
+        flight_frame();
+        flight_music();
+        if (missionStatus)
+            break;
+    }
+    status = missionStatus;
+    flight_over(status);
+    simulatorEnd();
+    g_sim = 0;
     return status;
 }

@@ -3061,7 +3061,10 @@ static void hud_marks(void)
     g_hud.arm = (int16_t)((cam.vx1 - cam.vx0) >> 6);   /* (10 px at 640 across, 5 at 320) */
     if (!g_nav_chosen)
         g_sys.nav = (uint8_t)nav_next_unseen();
-    nav_mark(&cam);
+    if (NAV_HIDDEN(g_sys.nav))          /* (the simulator: nowhere to go, no cross) */
+        g_hud.nav = 0;
+    else
+        nav_mark(&cam);
     g_hud.target = g_sys.target >= 0 && flight_ent_box(g_sys.target, &cam, &b) && b.visible;
     if (!g_hud.target)
         return;
