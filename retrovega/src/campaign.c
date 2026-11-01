@@ -242,7 +242,9 @@ void camp_load_units(const RvMission __far *m)
             *(uint16_t *)(rec + 4) = s->type == RV_SHIP_PLAYER ? 0xFFFF : 0;
             *(uint16_t *)(rec + 6) = s->type == RV_SHIP_PLAYER ? 6 : s->type == RV_SHIP_WINGMAN ? 4 : 0;
             *(uint16_t *)(rec + 8) = s->nav;
-            *(int16_t *)(rec + 10) = (int16_t)(k * 1500);
+            *(int16_t *)(rec + 10) = (int16_t)(s->x + k * 1500);
+            *(int16_t *)(rec + 12) = s->y;  /* (where the wave starts, off its nav point: at=x,y,z, the old game's) */
+            *(int16_t *)(rec + 14) = s->z;
             if (s->role == RV_ESCORT_HOME)  /* (the carrier: behind the launch, which faces +z, its hull clear of the player) */
                 *(int16_t *)(rec + 14) = -HOME_BEHIND_KM;
             rec[16] = s->pilot;

@@ -50,8 +50,8 @@ nav      3 2250 2250 -20250
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
-ship     NICANDR 1 nav1 count=3
-ship     AGIS 1 nav3 count=2
+ship     NICANDR 1 nav1 count=3 at=-2250,450,2250
+ship     AGIS 1 nav3 count=2 at=2250,900,2250
 field    asteroid 20250 3150 -6750 3375
 field    asteroid -900 900 -15750 2250
 bar      left=- middle=PRIME right=DRIFTER
@@ -125,8 +125,9 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
 ship     OX 0 nav0 role=out
-ship     AGIS 1 nav1 count=2
-ship     NICANDR 1 nav2 count=3
+ship     AGIS 1 nav1 count=2 at=0,0,-2250
+ship     NICANDR 1 nav2 count=2 at=1350,0,2250
+ship     NICANDR 1 nav2 at=-2250,2250,-2250
 field    asteroid -2250 675 -15750 3375
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar TORCH ANCHOR "Shmrn's still out there."
@@ -207,8 +208,8 @@ nav      4 -15750 2250 9000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=DRIFTER
 ship     VIGILNC 0 nav0 role=home
-ship     NICANDR 1 nav1 count=3
-ship     AGIS 1 nav4 count=3
+ship     NICANDR 1 nav1 count=3 at=4500,0,0
+ship     AGIS 1 nav4 count=3 at=2250,-2250,0
 field    mine -24750 -2250 -4500 2250
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER TORCH "Fifty to one against Shmrn, Torch. That's me being friendly."
@@ -283,10 +284,11 @@ nav      2 31500 4500 -9000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=DRIFTER
 ship     VIGILNC 0 nav0 role=home
-ship     FRANKLN 0 nav0 count=3
-ship     NICANDR 1 nav1 count=4
+ship     FRANKLN 0 nav0 count=2 at=0,0,1125
+ship     NICANDR 1 nav1 count=2 at=2250,2250,2250
+ship     NICANDR 1 nav1 count=2 at=-2250,-2250,-2250
 ship     ARISTON 1 nav2 count=2
-ship     AGASICL 1 nav2
+ship     AGASICL 1 nav2 at=3375,0,-1350
 bar      left=TORCH middle=ECHO right=COMET
 talk     bar TORCH COMET "You don't lead a Nicander. You wait for it to break."
 talk     bar COMET TORCH "I lead it, and I'm still here. Who's counting?"
@@ -359,8 +361,10 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=DRIFTER
 ship     VIGILNC 0 nav0 role=home
 ship     OX 0 nav1 role=in
-ship     ARISTON 1 nav1 count=4
-ship     AGIS 1 nav2 count=3
+ship     ARISTON 1 nav1 count=2 at=2250,900,4500
+ship     ARISTON 1 nav1 count=2 at=-2250,-450,-2250
+ship     AGIS 1 nav2 at=0,900,2250
+ship     AGIS 1 nav2 count=2 at=0,-1350,4500
 bar      left=- middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Who signed for my wingtip?"
 talk     bar ANCHOR PRIME "I did. It's on the form as a bird strike."
@@ -424,8 +428,9 @@ nav      3 -6750 2250 -20250
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home
-ship     AGIS 1 nav2 count=4
-ship     CONVOLN 1 nav3 count=2
+ship     AGIS 1 nav2 count=2 at=-4500,2250,2250
+ship     AGIS 1 nav2 count=2 at=-2250,0,-2250
+ship     CONVOLN 1 nav3 count=2 at=2250,2250,2250
 field    asteroid -13500 2250 6750 2250
 bar      left=FROST middle=PRIME right=COMET
 talk     bar PRIME COMET "Go straight in on the big ship and pick off the small ones after. It's quicker."
@@ -489,9 +494,11 @@ nav      1 0 0 0 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home turrets=off
-ship     SCHROED 0 nav0 count=2
-ship     NICANDR 1 nav0 count=4
-ship     NICANDR 1 nav1 count=4
+ship     SCHROED 0 nav0 count=2 at=-1125,0,0
+ship     NICANDR 1 nav0 count=2 at=-6750,-6750,-4500
+ship     NICANDR 1 nav0 count=2 at=4500,2250,-2250
+ship     NICANDR 1 nav1 count=2 at=-11250,0,-6750
+ship     NICANDR 1 nav1 count=2 at=2250,0,-15750
 bar      left=TORCH middle=- right=DRIFTER
 talk     bar DRIFTER TORCH "The line on a Nicander reaching our deck is four to one."
 talk     bar TORCH DRIFTER "You're taking bets on the ship?"
@@ -556,8 +563,9 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home
 ship     OX 0 nav1 role=in
-ship     CONVOLN 1 nav1 count=2
-ship     AGIS 1 nav2 count=4
+ship     CONVOLN 1 nav1 count=2 at=-2250,2250,4500
+ship     AGIS 1 nav2 count=2 at=-2250,2250,-3150
+ship     AGIS 1 nav2 count=2
 bar      left=FROST middle=ECHO right=ANCHOR
 talk     bar ECHO FROST "Your Rlaan could fly a convoy through here tomorrow and nobody would stop them."
 talk     bar FROST ECHO "Nobody would stop them because they've stayed out of it."
@@ -621,10 +629,11 @@ nav      2 0 0 0 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home turrets=off
-ship     AGIS 1 nav0 count=2
-ship     AGIS 1 nav2 count=2
+ship     AGIS 1 nav0 count=2 at=2250,1800,6750
+ship     AGIS 1 nav2 count=2 at=0,-2250,0
 ship     KAHAN 0 nav1
-ship     CLEOMEN 1 nav1 count=3
+ship     CLEOMEN 1 nav1 count=2 at=-3600,-3600,3150
+ship     CLEOMEN 1 nav1 at=3600,3600,-4500
 bar      left=TORCH middle=PRIME right=COMET
 talk     bar PRIME COMET "Did you see me come over the deck? Two meters."
 talk     bar COMET PRIME "I saw the form."
@@ -698,8 +707,9 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home
 ship     FRANKLN 0 nav0
-ship     NICANDR 1 nav2 count=4
-ship     CONVOLN 1 nav3 count=2
+ship     NICANDR 1 nav2 count=2 at=-2250,-2250,-2250
+ship     NICANDR 1 nav2 count=2
+ship     CONVOLN 1 nav3 count=2 at=-2250,0,6750
 field    asteroid 14625 4500 -5625 2250
 bar      left=FROST middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Relax, Carbon. If you lose, there's a spare."
@@ -765,9 +775,12 @@ nav      2 -15750 -4500 9000 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home
-ship     SCHROED 0 nav0 count=4
-ship     NICANDR 1 nav1 count=5
-ship     NICANDR 1 nav2 count=4
+ship     SCHROED 0 nav0 count=2 at=0,0,1125
+ship     SCHROED 0 nav0 count=2
+ship     NICANDR 1 nav1 count=2 at=-6750,0,2250
+ship     NICANDR 1 nav1 count=3
+ship     NICANDR 1 nav2 count=2 at=0,3150,0
+ship     NICANDR 1 nav2 count=2
 bar      left=TORCH middle=- right=COMET
 talk     bar TORCH COMET "You think they're leaving?"
 talk     bar COMET TORCH "Nobody leaves."
@@ -839,10 +852,10 @@ nav      4 15750 0 6750 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=PRIME
 ship     VIGILNC 0 nav0 role=home turrets=off
-ship     CONVOLN 1 nav0
-ship     AGIS 1 nav1
-ship     CONVOLN 1 nav4 count=3
-ship     ARISTON 1 nav2 count=2
+ship     AGIS 1 nav1 at=0,0,-1350
+ship     CONVOLN 1 nav4 count=2 at=0,-5850,0
+ship     CONVOLN 1 nav4
+ship     ARISTON 1 nav2 count=2 at=2250,0,0
 field    asteroid 6750 2250 -11250 2250
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar PRIME TORCH "Sit down, Torch. Let me tell you about the time I took four Nicanders with one wing."
@@ -904,9 +917,11 @@ nav      2 0 2250 -15750
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=PRIME
 ship     VIGILNC 0 nav0 role=home
-ship     KAHAN 0 nav1
-ship     NICANDR 1 nav1 count=4
-ship     AGIS 1 nav2 count=4
+ship     KAHAN 0 nav1 at=2250,0,-2250
+ship     NICANDR 1 nav1 count=2 at=0,0,4500
+ship     NICANDR 1 nav1 count=2
+ship     AGIS 1 nav2 count=2 at=0,0,-2250
+ship     AGIS 1 nav2 count=2
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER KESTREL "What's the line on Prime staying sober tonight?"
 talk     bar KESTREL DRIFTER "He isn't drinking."
@@ -963,10 +978,10 @@ nav      2 -18000 0 -22500 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=PRIME
 ship     VIGILNC 0 nav0 role=home turrets=off
-ship     CLEOMEN 1 nav0 count=2
-ship     ARISTON 1 nav1 count=4
-ship     AGASICL 1 nav1
-ship     ARISTON 1 nav2 count=2
+ship     ARISTON 1 nav1 count=2 at=0,4500,2250
+ship     ARISTON 1 nav1 count=2
+ship     AGASICL 1 nav1 at=-2250,6750,-2250
+ship     ARISTON 1 nav2 count=2 at=-2250,4500,0
 bar      left=FROST middle=PRIME right=COMET
 talk     bar PRIME COMET "Tally's got me down for twelve now. You?"
 talk     bar COMET PRIME "Don't ask."
@@ -1028,10 +1043,11 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home
 ship     SCHROED 0 nav0
-ship     SCHROED 0 nav1
-ship     ARISTON 1 nav1 count=4
-ship     ARISTON 1 nav2 count=2
-ship     AGASICL 1 nav2
+ship     SCHROED 0 nav1 at=2250,-900,4500
+ship     ARISTON 1 nav1 count=2 at=-3150,0,-3375
+ship     ARISTON 1 nav1 count=2
+ship     ARISTON 1 nav2 count=2 at=2250,0,6750
+ship     AGASICL 1 nav2 at=2250,0,9000
 bar      left=- middle=PRIME right=COMET
 talk     bar PRIME COMET "Solberg's looking at you."
 talk     bar COMET PRIME "Solberg looks at everyone. She's writing it all down."
@@ -1093,8 +1109,9 @@ ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     SCHROED 0 nav0
 ship     KAHAN 0 nav0 role=out
-ship     AGIS 1 nav0 count=4
-ship     NICANDR 1 nav1 count=6
+ship     NICANDR 1 nav1 count=2 at=4500,0,0
+ship     NICANDR 1 nav1 count=2
+ship     NICANDR 1 nav1 count=2
 bar      left=FROST middle=- right=COMET
 talk     bar COMET FROST "A hundred and forty names."
 talk     bar FROST COMET "She'd know the hundred and forty-first if you asked."
@@ -1151,8 +1168,9 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     SCHROED 0 nav0
-ship     CONVOLN 1 nav0 count=2
-ship     CONVOLN 1 nav1 count=4
+ship     CONVOLN 1 nav0 count=2 at=6750,0,4500
+ship     CONVOLN 1 nav1 count=2 at=-2250,900,4500
+ship     CONVOLN 1 nav1 count=2 at=2250,0,-4500
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER TORCH "Fifty to one against Shmrn. I may have to lengthen that."
 talk     bar TORCH DRIFTER "Put me down for ten."
@@ -1216,15 +1234,13 @@ nav      2 15750 0 -24750
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home turrets=off
-ship     GAWAIN 0 nav0 count=2
-ship     OX 0 nav0 count=4
-ship     AGIS 1 nav0 count=5
-ship     ARISTON 1 nav0
-ship     CLEOMEN 1 nav0
-ship     ARISTON 1 nav1 count=3
+ship     GAWAIN 0 nav0 count=2 at=-1125,0,3375
+ship     OX 0 nav0 count=3 at=-2250,0,4500
+ship     ARISTON 1 nav1 count=2 at=0,0,-4500
+ship     ARISTON 1 nav1
 ship     OX 0 nav0 role=out
 ship     OX 0 nav2 role=in
-ship     CLEOMEN 1 nav2 count=3
+ship     CLEOMEN 1 nav2 count=3 at=-4500,-1350,-2250
 bar      left=FROST middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Sixty-Four's been asking for me."
 talk     bar ANCHOR PRIME "It hasn't been asking for anyone. It's an Aera fighter pilot."
@@ -1288,11 +1304,12 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home
 ship     GAWAIN 0 nav0
-ship     OX 0 nav0
-ship     CONVOLN 1 nav1 count=2
-ship     ARISTON 1 nav2 count=4
-ship     ARISTON 1 nav4 count=2
-ship     AGASICL 1 nav4
+ship     OX 0 nav0 at=-4500,-2250,-2250
+ship     CONVOLN 1 nav1 count=2 at=4500,0,0
+ship     ARISTON 1 nav2 count=2 at=4500,0,2250
+ship     ARISTON 1 nav2 count=2
+ship     ARISTON 1 nav4 count=2 at=-5625,0,-4500
+ship     AGASICL 1 nav4 at=-6750,0,-5400
 field    asteroid 4500 3150 -13500 2250
 field    asteroid -20250 5400 2250 2250
 bar      left=TORCH middle=PRIME right=ANCHOR
@@ -1362,12 +1379,14 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home
 ship     FRANKLN 0 nav0 count=2
-ship     ARISTON 1 nav1 count=5
-ship     AGASICL 1 nav1
-ship     CLEOMEN 1 nav2 count=2
-ship     AGASICL 1 nav2
-ship     CLEOMEN 1 nav3 count=2
-ship     AGASICL 1 nav3
+ship     ARISTON 1 nav1 at=-2250,2250,0
+ship     ARISTON 1 nav1 count=2
+ship     ARISTON 1 nav1 count=2
+ship     AGASICL 1 nav1 at=-2250,2250,2250
+ship     CLEOMEN 1 nav2 count=2 at=-4500,0,2250
+ship     AGASICL 1 nav2 at=-2250,0,2250
+ship     CLEOMEN 1 nav3 count=2 at=-4500,0,-2250
+ship     AGASICL 1 nav3 at=-2250,0,-4500
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar ANCHOR TORCH "Relax. There's a spare."
 talk     bar TORCH ANCHOR "Which one are you?"
@@ -1431,11 +1450,12 @@ nav      1 -4500 0 32000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ECHO
 ship     VIGILNC 0 nav0 role=home turrets=off
-ship     FRANKLN 0 nav0 count=3
-ship     OX 0 nav0
-ship     CONVOLN 1 nav0 count=3
+ship     FRANKLN 0 nav0
+ship     FRANKLN 0 nav0 count=2 at=-4500,900,0
+ship     OX 0 nav0 at=-4500,0,-2250
 ship     OX 0 nav1 role=in
-ship     CLEOMEN 1 nav1 count=4
+ship     CLEOMEN 1 nav1 count=2 at=-2250,2250,2250
+ship     CLEOMEN 1 nav1 count=2 at=4500,0,-4500
 bar      left=FROST middle=ECHO right=COMET
 talk     bar ECHO FROST "Your Rlaan could have got people out of Naxos. They were right there."
 talk     bar FROST ECHO "They were trading partners, Echo. They were scared too."
@@ -1506,10 +1526,11 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ECHO
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     SCHROED 0 nav0 count=2
-ship     CONVOLN 1 nav0 count=2
-ship     NICANDR 1 nav1 count=3
-ship     CONVOLN 1 nav3 count=4
-ship     ANAXIDM 1 nav3
+ship     NICANDR 1 nav1 count=2 at=0,0,-2250
+ship     NICANDR 1 nav1
+ship     CONVOLN 1 nav3 count=2 at=-2250,2250,-4500
+ship     CONVOLN 1 nav3 count=2
+ship     ANAXIDM 1 nav3 at=-2250,2250,-6750
 field    mine 6750 2250 -18000 2250
 field    asteroid -11250 0 -9000 2250
 field    asteroid -18000 -2250 -6750 3375
@@ -1572,12 +1593,15 @@ nav      2 29250 2250 -2250
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ECHO
 ship     VIGILNC 0 nav0 role=home turrets=off
-ship     FRANKLN 0 nav0 count=2
-ship     CLEOMEN 1 nav0 count=4
-ship     FRANKLN 0 nav1
-ship     KAHAN 0 nav1
-ship     CONVOLN 1 nav1 count=4
-ship     ARISTON 1 nav2 count=4
+ship     FRANKLN 0 nav0
+ship     CLEOMEN 1 nav0 count=2 at=0,0,4500
+ship     CLEOMEN 1 nav0 count=2 at=-2250,-2250,-2250
+ship     FRANKLN 0 nav1 at=0,0,1125
+ship     KAHAN 0 nav1 at=-2250,0,2250
+ship     CONVOLN 1 nav1 count=2 at=-2250,0,-2250
+ship     CONVOLN 1 nav1 count=2
+ship     ARISTON 1 nav2 count=3 at=-2250,0,6750
+ship     ARISTON 1 nav2
 ship     ANAXIDM 1 nav2 role=out
 bar      left=FROST middle=ECHO right=ANCHOR
 talk     bar ECHO FROST "You could talk to your Rlaan."
@@ -1643,13 +1667,14 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     FRANKLN 0 nav0
-ship     ARISTON 1 nav0
-ship     CONVOLN 1 nav0 count=2
-ship     NICANDR 1 nav1 count=6
-ship     AGASICL 1 nav1
-ship     ARISTON 1 nav2 count=3
+ship     NICANDR 1 nav1 count=2 at=-2250,0,-2250
+ship     NICANDR 1 nav1 count=2
+ship     NICANDR 1 nav1 count=2
+ship     AGASICL 1 nav1 at=-4500,0,0
+ship     ARISTON 1 nav2 count=2 at=-2250,2250,2250
+ship     ARISTON 1 nav2
 ship     AGASICL 1 nav2 role=in
-ship     CLEOMEN 1 nav3 count=2
+ship     CLEOMEN 1 nav3 count=2 at=2250,1125,2250
 ship     AGASICL 1 nav3 role=in
 bar      left=FROST middle=PRIME right=ANCHOR
 talk     bar PRIME FROST "I hear you've got a promotion and an investigation. Which one do I congratulate?"
@@ -1709,10 +1734,12 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
 ship     KAHAN 0 nav0
-ship     AGIS 1 nav2 count=4
-ship     LANCELT 0 nav1
-ship     CONVOLN 1 nav1 count=4
-ship     AGASICL 0 nav1
+ship     AGIS 1 nav2 count=2 at=0,-900,-2250
+ship     AGIS 1 nav2 count=2
+ship     LANCELT 0 nav1 at=0,1350,2250
+ship     CONVOLN 1 nav1 count=2 at=0,0,4500
+ship     CONVOLN 1 nav1 count=2 at=0,1350,-2250
+ship     AGASICL 0 nav1 at=2250,1125,2250
 field    asteroid 6750 -1350 -13500 3375
 bar      left=FROST middle=KESTREL right=DRIFTER
 talk     bar KESTREL FROST "They're looking at you the way they look at me."
@@ -1775,9 +1802,11 @@ ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
 ship     LANCELT 0 nav0
 ship     KAHAN 0 nav1 role=in
-ship     NICANDR 1 nav1 count=4
-ship     NICANDR 1 nav3 count=2
-ship     ARISTON 1 nav4 count=4
+ship     NICANDR 1 nav1 count=2 at=-4500,0,0
+ship     NICANDR 1 nav1 count=2
+ship     NICANDR 1 nav3 count=2 at=-6750,0,-2250
+ship     ARISTON 1 nav4 count=2 at=0,-2250,-2250
+ship     ARISTON 1 nav4 count=2
 field    mine -6750 0 -15750 2250
 bar      left=TORCH middle=PRIME right=COMET
 talk     bar COMET TORCH "What's Frost got on the Thermopylae?"
@@ -1846,9 +1875,10 @@ nav      5 4500 -2250 20250 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=KESTREL
 ship     VIGILNC 0 nav0 role=home
-ship     NICANDR 1 nav2 count=2
-ship     CONVOLN 1 nav3 count=2
-ship     CONVOLN 1 nav5 count=4
+ship     NICANDR 1 nav2 count=2 at=2250,0,0
+ship     CONVOLN 1 nav3 count=2 at=-2250,1125,-2250
+ship     CONVOLN 1 nav5 count=2 at=2250,-1350,2250
+ship     CONVOLN 1 nav5 count=2
 ship     AGASICL 1 nav5 role=in
 field    asteroid 15750 4500 4500 2250
 field    asteroid 20250 4500 15750 2250
@@ -1915,10 +1945,11 @@ nav      3 0 0 0 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=KESTREL
 ship     VIGILNC 0 nav0 role=home turrets=off
-ship     AGIS 1 nav0
-ship     AGIS 1 nav2 count=2
-ship     AGIS 1 nav3 count=3
-ship     CLEOMEN 1 nav1 count=4
+ship     AGIS 1 nav2 count=2 at=0,-1125,2250
+ship     AGIS 1 nav3 at=-4500,0,2250
+ship     AGIS 1 nav3 count=2
+ship     CLEOMEN 1 nav1 count=2 at=-2250,-4500,0
+ship     CLEOMEN 1 nav1 count=2 at=2250,-450,-2250
 ship     AGASICL 1 nav1
 field    asteroid 2250 900 20250 2250
 bar      left=TORCH middle=PRIME right=-
@@ -1975,9 +2006,11 @@ nav      3 18000 2250 0 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=KESTREL
 ship     VIGILNC 0 nav0 role=home
-ship     ARISTON 1 nav2 count=4
+ship     ARISTON 1 nav2 count=2 at=-2250,1125,2250
+ship     ARISTON 1 nav2 count=2 at=0,1125,-2250
 ship     ANAXIDM 1 nav2 role=in
-ship     NICANDR 1 nav3 count=4
+ship     NICANDR 1 nav3 count=2 at=-4500,0,-2250
+ship     NICANDR 1 nav3 count=2
 field    asteroid 18000 4500 15750 2250
 field    asteroid 15750 3150 2250 2250
 bar      left=FROST middle=ECHO right=COMET
@@ -2044,10 +2077,12 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TECH
 ship     VIGILNC 0 nav0 role=home
 ship     FRANKLN 0 nav0
-ship     ARISTON 1 nav1 count=4
-ship     AGASICL 1 nav1
-ship     NICANDR 1 nav2 count=4
-ship     AGASICL 1 nav2 count=2
+ship     ARISTON 1 nav1 count=2 at=2250,0,2250
+ship     ARISTON 1 nav1 count=2 at=-2250,1350,0
+ship     AGASICL 1 nav1 at=0,0,4500
+ship     NICANDR 1 nav2 count=2 at=-2250,0,-2250
+ship     NICANDR 1 nav2 count=2
+ship     AGASICL 1 nav2 count=2 at=-2250,0,0
 field    mine -2250 4500 18000 2250
 bar      left=TORCH middle=PRIME right=COMET
 talk     bar COMET PRIME "Who's got the book?"
@@ -2111,9 +2146,12 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TECH
 ship     VIGILNC 0 nav0 role=home
 ship     FRANKLN 0 nav0
-ship     NICANDR 1 nav2 count=4
-ship     OX 0 nav1 count=2
-ship     CONVOLN 1 nav1 count=4
+ship     NICANDR 1 nav2 count=2 at=4500,0,-2250
+ship     NICANDR 1 nav2 count=2 at=-2250,0,4500
+ship     OX 0 nav1
+ship     OX 0 nav1
+ship     CONVOLN 1 nav1 count=2 at=-2250,2250,2250
+ship     CONVOLN 1 nav1 count=2
 field    mine -2250 4500 18000 2250
 field    mine 6750 4500 20250 2250
 bar      left=- middle=- right=COMET
@@ -2182,10 +2220,11 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TECH
 ship     VIGILNC 0 nav0 role=home
 ship     FRANKLN 0 nav0
-ship     OX 0 nav0 count=2
-ship     ARISTON 1 nav1 count=3
-ship     CONVOLN 1 nav2 count=4
-ship     CLEOMEN 1 nav3 count=2
+ship     OX 0 nav0 count=2 at=4500,1125,-2250
+ship     ARISTON 1 nav1 count=3 at=2250,450,2250
+ship     CONVOLN 1 nav2 count=2 at=-2250,-1350,-2250
+ship     CONVOLN 1 nav2 count=2 at=2250,0,-4500
+ship     CLEOMEN 1 nav3 count=2 at=6750,0,4500
 field    asteroid 15750 0 -11250 2250
 field    asteroid 13500 0 -18000 2250
 bar      left=FROST middle=KESTREL right=-
@@ -2250,14 +2289,15 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     LANCELT 0 nav0
-ship     OX 0 nav0 count=2
-ship     CLEOMEN 1 nav0
-ship     LANCELT 0 nav1 count=2
+ship     OX 0 nav0 count=2 at=4500,1350,2250
+ship     LANCELT 0 nav1 count=2 at=-2250,-450,-2250
 ship     KAHAN 0 nav1
-ship     CLEOMEN 1 nav2 count=2
-ship     ARISTON 1 nav4 count=4
-ship     AGASICL 1 nav4
-ship     CONVOLN 1 nav5 count=4
+ship     CLEOMEN 1 nav2 count=2 at=0,2250,-2250
+ship     ARISTON 1 nav4 count=2 at=-2250,1350,2250
+ship     ARISTON 1 nav4 count=2
+ship     AGASICL 1 nav4 at=-4500,1350,0
+ship     CONVOLN 1 nav5 count=2 at=-6750,2250,0
+ship     CONVOLN 1 nav5 count=2
 field    asteroid 15750 4500 6750 2250
 field    mine 27000 6750 -6750 2250
 field    asteroid 9000 0 -15750 2250
@@ -2335,12 +2375,14 @@ nav      7 4500 0 -15750 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home
-ship     LANCELT 0 nav1 count=2
-ship     AGIS 1 nav3 count=4
-ship     ANAXIDM 1 nav3
-ship     ARISTON 1 nav5 count=4
-ship     CONVOLN 1 nav6 count=2
-ship     CONVOLN 1 nav7 count=2
+ship     LANCELT 0 nav1 count=2 at=2250,1125,0
+ship     AGIS 1 nav3 count=2 at=2250,0,0
+ship     AGIS 1 nav3 count=2
+ship     ANAXIDM 1 nav3 at=2250,0,-2250
+ship     ARISTON 1 nav5 count=2 at=0,2250,-4500
+ship     ARISTON 1 nav5 count=2
+ship     CONVOLN 1 nav6 count=2 at=-2250,450,-2250
+ship     CONVOLN 1 nav7 count=2 at=0,1125,2250
 field    asteroid 9000 0 -15750 2250
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER TORCH "Long odds against Shmrn."
@@ -2414,12 +2456,12 @@ nav      6 -9000 11250 -32000 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home turrets=off
-ship     CONVOLN 1 nav0 count=4
 ship     LANCELT 0 nav4
-ship     CONVOLN 1 nav6 count=4
-ship     CLEOMEN 1 nav2 count=2
-ship     NICANDR 1 nav3 count=2
-ship     AGASICL 1 nav3
+ship     CONVOLN 1 nav6 count=2 at=900,-1350,-4500
+ship     CONVOLN 1 nav6 count=2 at=-4500,900,4500
+ship     CLEOMEN 1 nav2 count=2 at=-2250,0,-2250
+ship     NICANDR 1 nav3 count=2 at=0,2250,2250
+ship     AGASICL 1 nav3 at=2250,2250,2250
 field    mine -18000 4500 2250 2250
 field    mine -29250 6300 -6750 2250
 bar      left=FROST middle=PRIME right=ANCHOR
@@ -2499,12 +2541,16 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home
 ship     GAWAIN 0 nav6
-ship     ARISTON 1 nav1 count=4
-ship     ANAXIDM 1 nav1
+ship     ARISTON 1 nav1 count=2 at=-2250,0,2250
+ship     ARISTON 1 nav1 count=2 at=0,1125,4500
+ship     ANAXIDM 1 nav1 at=-2250,450,0
 ship     LEONIDS 1 nav2
-ship     CONVOLN 1 nav2 count=4
-ship     AGIS 1 nav3 count=4
-ship     CLEOMEN 1 nav8 count=4
+ship     CONVOLN 1 nav2 count=2 at=-2250,900,2250
+ship     CONVOLN 1 nav2 count=2
+ship     AGIS 1 nav3 count=2 at=6750,-1125,-2250
+ship     AGIS 1 nav3 count=2
+ship     CLEOMEN 1 nav8 count=2 at=2250,0,-6750
+ship     CLEOMEN 1 nav8 count=2
 field    mine 9000 0 -13500 2250
 wipe     ECHO
 bar      left=TORCH middle=ECHO right=COMET
@@ -2579,13 +2625,16 @@ nav      4 -11250 2250 -11250 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TALLY
 ship     VIGILNC 0 nav0 role=home
-ship     OX 0 nav0
+ship     OX 0 nav0 at=-2250,1350,2250
 ship     ARISTON 0 nav0
-ship     AGIS 1 nav2 count=4
+ship     AGIS 1 nav2 count=2 at=-2250,0,2250
+ship     AGIS 1 nav2 count=2
 ship     OX 0 nav1 role=in
-ship     ARISTON 1 nav1 count=3
-ship     ARISTON 1 nav3 count=4
-ship     CONVOLN 1 nav4 count=3
+ship     ARISTON 1 nav1 count=2 at=2250,0,-2250
+ship     ARISTON 1 nav1 at=-4500,450,0
+ship     ARISTON 1 nav3 count=2
+ship     ARISTON 1 nav3 count=2
+ship     CONVOLN 1 nav4 count=3 at=2250,-1125,0
 bar      left=- middle=PRIME right=COMET
 talk     bar PRIME COMET "Pre-flight complete. I read it twice."
 talk     bar COMET PRIME "You don't have to do that."
@@ -2654,12 +2703,12 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TALLY
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     FRANKLN 0 nav0
-ship     OX 0 nav0
-ship     AGIS 1 nav0
-ship     AGIS 1 nav2 count=3
-ship     CONVOLN 1 nav1 count=4
+ship     OX 0 nav0 at=4500,0,2250
+ship     AGIS 1 nav2 count=3 at=2250,0,2250
+ship     CONVOLN 1 nav1 count=2 at=2250,-1125,-4500
+ship     CONVOLN 1 nav1 count=2 at=-2250,-2250,-2250
 ship     ANAXIDM 1 nav1 role=in
-ship     CONVOLN 1 nav3 count=2
+ship     CONVOLN 1 nav3 count=2 at=0,0,6750
 field    mine 6750 4500 13500 3375
 field    mine 2250 4500 18000 2250
 wipe     ALL
@@ -2721,11 +2770,15 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TALLY
 ship     VIGILNC 0 nav0 role=home
 ship     SCHROED 0 nav0 count=2
-ship     AGIS 1 nav2 count=5
-ship     FRANKLN 0 nav1
+ship     AGIS 1 nav2 at=-3375,2250,1350
+ship     AGIS 1 nav2 count=2
+ship     AGIS 1 nav2 count=2
+ship     FRANKLN 0 nav1 at=0,0,-2250
 ship     KAHAN 0 nav1
-ship     NICANDR 1 nav1 count=4
-ship     CONVOLN 1 nav3 count=4
+ship     NICANDR 1 nav1 count=2 at=-2250,1125,-4500
+ship     NICANDR 1 nav1 count=2 at=-4500,-450,0
+ship     CONVOLN 1 nav3 count=2 at=2250,0,6750
+ship     CONVOLN 1 nav3 count=2
 field    mine 15750 0 6750 3375
 field    mine 15750 0 13500 2250
 bar      left=- middle=- right=COMET
@@ -2789,12 +2842,16 @@ nav      7 -31500 -4500 -4500 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TALLY
 ship     VIGILNC 0 nav0 role=home
-ship     ARISTON 1 nav4 count=4
-ship     CONVOLN 1 nav1 count=2
-ship     AGASICL 1 nav1
-ship     AGIS 1 nav5 count=4
-ship     NICANDR 1 nav6 count=5
-ship     CLEOMEN 1 nav7 count=3
+ship     ARISTON 1 nav4 count=2 at=2250,-1125,-2250
+ship     ARISTON 1 nav4 count=2
+ship     CONVOLN 1 nav1 count=2 at=-2250,0,0
+ship     AGASICL 1 nav1 at=0,0,2250
+ship     AGIS 1 nav5 count=2 at=2250,0,-2250
+ship     AGIS 1 nav5 count=2
+ship     NICANDR 1 nav6 at=0,2250,2250
+ship     NICANDR 1 nav6 count=2
+ship     NICANDR 1 nav6 count=2
+ship     CLEOMEN 1 nav7 count=3 at=0,0,2250
 field    mine -18000 -2250 -4500 2250
 field    mine -32000 -4500 -6750 2250
 field    asteroid 0 0 4500 2250
