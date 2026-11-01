@@ -215,6 +215,14 @@ point until the player comes within 8,000 km, then flies home to nav 0 the same 
 is). One of the player's side killed is the mission lost. The autopilot brings one along, 800 km behind the player
 (the wingman beside it), and drops the formation 4,500 km short of the nav point.
 
+**Who is in the scene** (`step_scene`): the old game took a ship out at 16,000 km from the player, and its nav points
+were far enough apart that the last one's ships were gone before the next one's came. At our 0.45 of its distances
+that is 7,200 km, and the shortest leg between waypoints is 11,250 km. A capital ship or friendly fighter that far off
+is held: `maybeEntityType` is `ET_OFFSCENE`, so it is no ship to anything (no target, no radar, nothing to run into),
+keeps its slot, its damage and its place, and is back within 7,000 km. An enemy fighter stays, since it can fly after
+the player; so do the wing and a ship the player is escorting. So the carrier can be targeted and landed on only when
+it is near.
+
 The views: F5 the chase camera (behind and above the player's ship, looking its way, the ship in the lower
 third of the view; F5 again or F1 back to the cockpit), and the autopilot's flyby: A, when the autopilot may go,
 shows the formation from outside for three seconds (a camera sliding along its left side from ahead to behind,

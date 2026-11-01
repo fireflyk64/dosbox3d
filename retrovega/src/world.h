@@ -12,7 +12,7 @@
 #include "rvdata.h"
 
 /* EntityType (maybeEntityType; spec 4.3): the layer compares them with < and >=, so the order matters */
-enum { ET_NONE = 0, ET_NAV = 2, ET_NAVICON = 3, ET_DUST = 4, ET_EXPLOSION = 5, ET_SPARKLE = 6, ET_ENGINE = 7,
+enum { ET_NONE = 0, ET_OFFSCENE = 1 /* a ship left behind: held, not in the world until the player is back (logic.c) */, ET_NAV = 2, ET_NAVICON = 3, ET_DUST = 4, ET_EXPLOSION = 5, ET_SPARKLE = 6, ET_ENGINE = 7,
        ET_BOLT = 8, ET_ASTEROID = 9, ET_MINE = 10, ET_MISSILE = 11, ET_SHIP = 12, ET_CAPSHIP = 13 };
 /* rvController (spec 6.4): who flies the slot */
 enum { CTL_AI, CTL_PLAYER, CTL_PUPPET, CTL_SCRIPT, CTL_FROZEN };

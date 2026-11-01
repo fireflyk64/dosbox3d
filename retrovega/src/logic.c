@@ -2818,6 +2818,42 @@ static void step_deaths(void)
     }
 }
 
+/* 0. who is in the scene.  The old game took a ship out when it was 16,000 km from the player, and its nav points were
+ * far enough apart that the last one's ships were gone before the next one's came (the user: "the previous nav point
+ * would leave the scene"; its distances here are 0.45 of its own, so 7,200 km, and the shortest leg between waypoints
+ * is 11,250 km with the autopilot stopping 4,500 short).  A capital ship or a friendly fighter that far off is held:
+ * its slot keeps it just as it is, but it is no ship to anything (no target, no radar, nothing to run into), and it
+ * is back when the player is.  An enemy fighter stays, since it can fly after the player; so does the wing, and a
+ * ship the player is escorting, which has its own way to go */
+#define SCENE_KM 7200
+#define SCENE_BACK_KM 7000              /* (a little nearer, so a ship on the line does not flicker) */
+static uint8_t __far g_off_type[NUM_SHIP_SLOTS];
+uint8_t __far logic_scene_off;          /* (the play tests': most of them set a scene with the player well away from it) */
+
+static void step_scene(void)
+{
+    int16_t s, friendly;
+    if (!slot_is_ship(0) || logic_scene_off)
+        return;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++) {
+        if (maybeEntityType[s] == ET_OFFSCENE) {
+            if (player_km(s) < SCENE_BACK_KM)
+                maybeEntityType[s] = g_off_type[s];
+            continue;
+        }
+        if (!slot_is_ship(s) || shipAiState[s] == 9 || player_km(s) <= SCENE_KM)
+            continue;
+        friendly = commAnimInfo[s] == commAnimInfo[0];
+        if (maybeEntityType[s] == ET_CAPSHIP ? (friendly && escorted(s))
+            : (!friendly || (slotMissionShip[s] < 64 && MSHIP_BEHAVIOUR(slotMissionShip[s]) == 4)))
+            continue;
+        g_off_type[s] = maybeEntityType[s];
+        maybeEntityType[s] = ET_OFFSCENE;
+        if (g_sys.target == s)
+            g_sys.target = -1;
+    }
+}
+
 /* 9. the mission: nav points reached (enterNavPoint), waves, objectives, the score (victoryPoints, nonzero won).
  * A kill is the mission ship seen dying; the score is the mission done, as it stands (logic_end has the last word) */
 static void step_mission(void)
@@ -2927,6 +2963,7 @@ static void hud_marks(void)
 
 void logic_frame(void)
 {
+    step_scene();
     step_timers();
     step_minds();
     step_fire();
@@ -3044,6 +3081,7 @@ int16_t logic_autopilot(void)
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
         if (moved >> s & 1)
             spawn_apart(s);
+    step_scene();                       /* (what was here gone, what is there back, before the next picture) */
     if (next)
         enterNavPoint((uint16_t)next);
     return 1;
