@@ -97,6 +97,7 @@ int16_t logic_request_landing(void);    /* LANDING_*: a clearance stands for the
 int16_t logic_carrier_stopped(void);    /* the hull stopped the player since last asked: 1 cleared, 2 not, 0 no */
 /* an escorted ship jumps away, just before its slot ends (flight.c: fx_jump's star and flash); friendly: the player's side */
 extern void (*__far logic_on_jump)(int16_t slot, int16_t friendly);
+void logic_test_leave(int16_t s);        /* the play tests' way to have an enemy leave, as fear or a jump does */
 #ifdef RV_TESTS
 void logic_test_to_carrier(int16_t where);   /* a script's way there: 0 off its bow, 1 off its beam */
 void logic_test_kill_carrier(void);

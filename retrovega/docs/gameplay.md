@@ -371,6 +371,8 @@ nav 0):
 | M8.17 turrets-off | an enemy 1,500 km from the carrier: its turrets fire; with `turrets=off`, not a shot in 5 s |
 | M8.18 attack-capital | a lone ace from each of 16 sides on a carrier with its turrets off, 90 s each: at most 3 fly into it, and they fire |
 | M8.19 autopilot-apart | a wingman whose offset comes down exactly where the autopilot puts the Ox, at speed: they arrive apart, and in 3 s the Ox takes no hit |
+| M8.27 second-wave | a hidden trigger point's enemies do not come while an enemy fighter is out; when the last one is killed they come; when the last one ran they are called off, and ask nothing of the player (a wave with a capital ship or an escort target always comes) |
+| M8.28 wingman-behind | enemies at the launch: the wingman starts 3,000 km past them, on the far side from the player, facing them; none: beside the player |
 | M8.26 way-ahead | a field across the line: the autopilot stops 500 km short of its edge and will not go from there, and goes again past it; a hidden point on the line: it stops inside its reach and its ships come; hidden points are on no list, and one never come to does not hold the mission up |
 | M8.25 scene | past 7,200 km the home carrier is no ship to anything and cannot be the target; the wing stays; it is back as it was when the player is |
 | M8.24 nav-choice | `g_sys.nav` follows the first waypoint not reached until N (`logic_nav_next`) picks one; N goes down the list and round through home; the autopilot goes to the one chosen, and the choice follows again once it is reached |

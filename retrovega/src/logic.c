@@ -121,6 +121,8 @@ static struct {
 #define MSHIP_BEHAVIOUR(r) (*(const uint16_t *)(MSHIP(r) + 6))     /* 6 the player, 4 a wingman */
 #define NAV_REACH_KM 5000               /* the player this near a nav point has reached it (enterNavPoint) */
 
+static uint16_t g_wave_held;            /* a bit per trigger point whose wave has waited for the enemies out */
+static uint8_t g_enemy_ran;             /* the last enemy gone left, not killed */
 static uint16_t g_navs_seen;            /* a bit per nav point the player has reached (nav 0 from the start) */
 static RvField __far g_fields[RV_FIELDS];   /* the mission's asteroid and mine fields: the autopilot looks out for them */
 static int16_t __far g_nfields;
@@ -388,6 +390,49 @@ int16_t logic_carrier_stopped(void)
 /* the player into slot 0 (the camera and the cockpit are slot 0's) at the launch point, facing ahead, and nav 0's
  * other mission ships (the wing) at it through outerSpawnShipEntity; the other nav points' come when the player
  * gets there (enterNavPoint).  The mission (m) is in the tables already: camp_load_units put it there */
+/* Enemies at the launch (the user, 2026-11-01: "if enemies arrive the wingman starts quite far away behind the enemies to
+ * sneak up on them"): put down beside the player, a wave had a named wingman dead in under two seconds and for good,
+ * head on or under fire, before the player could turn.  The wingman starts past them instead, on the far side from the
+ * player and facing them, and its formation place is the usual one off the wing */
+#define WING_BEHIND_KM 3000
+static int32_t len_of(int32_t x, int32_t y, int32_t z);
+static void wingman_behind(void)
+{
+    int32_t x = 0, y = 0, z = 0, len, horiz;
+    int16_t s, wing = -1, n = 0, *off;
+    RvVec3 to;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++) {
+        if (!slot_is_ship(s))
+            continue;
+        if (commAnimInfo[s] != commAnimInfo[0]) {
+            x += TO_KM(gPositionVector[s].x);
+            y += TO_KM(gPositionVector[s].y);
+            z += TO_KM(gPositionVector[s].z);
+            n++;
+        } else if (wing < 0 && slotMissionShip[s] < 64 && MSHIP_BEHAVIOUR(slotMissionShip[s]) == 4) {
+            wing = s;
+        }
+    }
+    if (!n || wing < 0)
+        return;
+    x /= n;
+    y /= n;
+    z /= n;
+    len = len_of(x, y, z);              /* (the player is at the launch point, the middle of things) */
+    if (len < 100) {
+        to = vec3(gOrientationFrontVector[0].x * WING_BEHIND_KM / 256, gOrientationFrontVector[0].y * WING_BEHIND_KM / 256,
+                  gOrientationFrontVector[0].z * WING_BEHIND_KM / 256);
+    } else {
+        to = vec3(x * WING_BEHIND_KM / len, y * WING_BEHIND_KM / len, z * WING_BEHIND_KM / len);
+    }
+    gPositionVector[wing] = vec3((x + to.x) * KM, (y + to.y) * KM, (z + to.z) * KM);
+    horiz = (int32_t)lf_sqrt((uint32_t)((to.x >> 4) * (to.x >> 4) + (to.z >> 4) * (to.z >> 4))) * 16;
+    ship_face(wing, lf_atan2(-to.x, -to.z), lf_atan2(-to.y, horiz));
+    off = (int16_t *)(formationOffset + 6 * wing);
+    off[0] = 800;
+    off[1] = off[2] = 0;
+}
+
 void logic_start(const RvMission __far *m)
 {
     /* Clear the accumulation of fractional turn progress */
@@ -413,6 +458,8 @@ void logic_start(const RvMission __far *m)
     _fmemset(g_away, 0, sizeof g_away);
     _fmemset(&g_hud, 0, sizeof g_hud);   /* (no marks until the first step works them out) */
     g_navs_seen = 1;
+    g_wave_held = 0;
+    g_enemy_ran = 0;
     g_nav_chosen = 0;
     g_cleared = 0;
     g_stopped = 0;
@@ -425,6 +472,7 @@ void logic_start(const RvMission __far *m)
     for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
         if (MSHIP_BEHAVIOUR(at[j]) != 6)
             (void)outerSpawnShipEntity(at[j], 0);
+    wingman_behind();
 }
 
 /* --- a step: the main loop's body --- */
@@ -2067,6 +2115,8 @@ static void leave_step(int16_t s, Mind __far *m, const AiProfile __far *p)
         rv_logf(s_gone, s, slotMissionShip[s] < 64 ? slotMissionShip[s] : -1, LEAVE_KM);
         if (slotMissionShip[s] < 64)
             g_away[slotMissionShip[s]] = 1;
+        if (commAnimInfo[s] != commAnimInfo[0])
+            g_enemy_ran = 1;
         despawn((uint16_t)s);
     }
 }
@@ -2664,6 +2714,8 @@ static void route_jump(int16_t s)
     if (logic_on_jump)
         logic_on_jump(s, commAnimInfo[s] == commAnimInfo[0]);
     g_away[slotMissionShip[s] & 63] = 1;
+    if (commAnimInfo[s] != commAnimInfo[0])
+        g_enemy_ran = 1;
     ship_clear(s);
 }
 
@@ -2862,17 +2914,79 @@ static void step_scene(void)
     }
 }
 
+/* A second wave waits for the first (the user, 2026-11-01: "Second waves should definitely wait until the first wave is
+ * dead.  If the last enemy runs, then they can avoid spawning").  A hidden trigger point with enemies on it, the player
+ * in reach, holds them while any enemy fighter is still out (a capital ship does not hold a wave: it may never die, and
+ * fighters coming to its aid are what it is there for).  When the last one is gone they come; if that last one ran, they
+ * are called off, unless the wave has a capital ship or an escort target in it, which the mission may turn on. */
+static int16_t enemy_fighters_out(void)
+{
+    int16_t s;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (slot_is_ship(s) && shipAiState[s] != 9 && commAnimInfo[s] != commAnimInfo[0]
+            && gInstanceShipTypes[s] < 0x20)
+            return 1;
+    return 0;
+}
+
+/* a test's way to have an enemy leave, as the fear's leave or a jump out does */
+void logic_test_leave(int16_t s)
+{
+    if (slotMissionShip[s] < 64)
+        g_away[slotMissionShip[s]] = 1;
+    if (commAnimInfo[s] != commAnimInfo[0])
+        g_enemy_ran = 1;
+    ship_clear(s);
+}
+
+static int16_t wave_may_come(int16_t n)
+{
+    static const char __far s_off[] = "logic: the last enemy ran: the wave at nav %d called off";
+    static const char __far s_held[] = "logic: the wave at nav %d waits for the enemies out to be gone";
+    const uint16_t *at = NAV_SHIPS(n);
+    int16_t j, enemies = 0, stays = 0;
+    if (n == 0 || !NAV_HIDDEN(n))
+        return 1;
+    for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
+        if (MSHIP_SIDE(at[j]) != commAnimInfo[0]) {
+            enemies++;
+            if (MSHIP_ROLE(at[j]) || *(const uint16_t *)MSHIP(at[j]) >= 0x20)
+                stays = 1;
+        } else {
+            stays = 1;                  /* (a friend on it comes, whoever is out) */
+        }
+    if (!enemies)
+        return 1;
+    if (enemy_fighters_out()) {
+        if (!(g_wave_held >> n & 1))
+            rv_logf(s_held, n);
+        g_wave_held |= 1u << n;
+        return 0;
+    }
+    if ((g_wave_held >> n & 1) && g_enemy_ran && !stays) {
+        rv_logf(s_off, n);
+        for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
+            g_away[at[j] & 63] = 1;     /* (as ships that left: nothing asked of the player) */
+        g_navs_seen |= 1u << n;
+        return 0;
+    }
+    return 1;
+}
+
 /* 9. the mission: nav points reached (enterNavPoint), waves, objectives, the score (victoryPoints, nonzero won).
  * A kill is the mission ship seen dying; the score is the mission done, as it stands (logic_end has the last word) */
 static void step_mission(void)
 {
     int16_t s, n;
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
-        if (slot_is_ship(s) && shipAiState[s] == 9 && slotMissionShip[s] < 64)
+        if (slot_is_ship(s) && shipAiState[s] == 9 && slotMissionShip[s] < 64) {
+            if (!g_killed[slotMissionShip[s]] && commAnimInfo[s] != commAnimInfo[0])
+                g_enemy_ran = 0;
             g_killed[slotMissionShip[s]] = 1;
+        }
     if (slot_is_ship(0) && shipAiState[0] != 9)
         for (n = 0; n < NAVS; n++)
-            if (nav_defined(n) && !(g_navs_seen >> n & 1) && nav_km(n) < NAV_REACH_KM)
+            if (nav_defined(n) && !(g_navs_seen >> n & 1) && nav_km(n) < NAV_REACH_KM && wave_may_come(n))
                 enterNavPoint((uint16_t)n);
     victoryPoints = (uint16_t)mission_done();
 }
@@ -3170,10 +3284,12 @@ int16_t logic_autopilot(void)
         if (moved >> s & 1)
             spawn_apart(s);
     step_scene();                       /* (what was here gone, what is there back, before the next picture) */
-    if (region >= 0)
-        enterNavPoint((uint16_t)region);
-    else if (next && !field)
+    if (region >= 0) {
+        if (wave_may_come(region))
+            enterNavPoint((uint16_t)region);
+    } else if (next && !field) {
         enterNavPoint((uint16_t)next);
+    }
     return 1;
 }
 
