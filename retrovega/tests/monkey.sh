@@ -3,12 +3,14 @@
 # campaign in seconds), clicking and pressing at random (game.c's /monkey) along every way through the campaign's map
 # and over many seeds, with wingmen lost, escorts lost, the player dead and the carrier lost at random (/kill).
 #   tests/monkey.sh [-j N] [-s SEEDS] [-b ACTIONS] [-k KILL%] [-t SECONDS] [-n ROUTES] [--dos] [--flying]
-# Every run must end in "bye", with no sanitizer report, no "LEAK:" on the ledger (src/mem.c) and no "FAIL".  A run still
+# Every run must end in "bye", with no sanitizer report, no "LEAK:" (the ledger's, or conventional memory falling in a
+# frame: src/mem.c), no music track refused for want of room and no "FAIL".  A run still
 # going after -t seconds is a freeze: gdb takes its stack (the emulator's, and the game's CS:IP, with --dos) before it is
 # killed.  A failed run's files are kept in build/monkey/fail-*, with the line to run it again.
 #   --dos     RV.EXE itself, in the native DOSBox with DOSBOX_TURBO (a real-flight campaign in under a minute);
 #             RV_EXE=RVT.EXE the far-heap test build
 #   --flying  real flights of a second, not /noflight
+# KEEP_LOGS=1 keeps every run's RVLOG.TXT in build/monkey/logs.
 set -u
 cd "$(dirname "$0")/.."
 JOBS=4 SEEDS=3 BUDGET=120 KILL=25 LIMIT=180 DOS= FLYING= MAX=0
@@ -28,7 +30,7 @@ while [ $# -gt 0 ]; do
 done
 OUT=build/monkey
 mkdir -p "$OUT"
-rm -rf "$OUT"/run-* "$OUT"/fail-*
+rm -rf "$OUT"/run-* "$OUT"/fail-* "$OUT"/logs
 export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
 if [ -z "$DOS" ]; then
     SAN=asan host/game.sh > "$OUT/build.log" 2>&1 || { tail -5 "$OUT/build.log"; echo "the native build failed"; exit 1; }
@@ -80,6 +82,7 @@ one() {
         if grep -q "AddressSanitizer\|runtime error" "$d/out.txt"; then why=SANITIZER
         elif grep -q "^LEAK:" "$log" 2>/dev/null; then why=LEAK
         elif grep -q "^FREEZE\|^FAIL" "$log" 2>/dev/null; then why=FAIL
+        elif grep -q "does not fit" "$log" 2>/dev/null; then why=NOROOM
         elif ! grep -q "^bye" "$log" 2>/dev/null; then why=DIED
         fi
     fi
@@ -90,11 +93,12 @@ one() {
         echo "$why $id seed $seed route $route (rc $rc): $(tail -1 "$OUT/fail-$id/RVLOG.TXT" 2>/dev/null | cut -c1-70)"
     else
         echo "ok $id $(grep -c '^mission' "$log") missions, $(grep '^ending' "$log" | cut -c9-30), $(grep '^monkey' "$log" | cut -c9-24)"
+        if [ -n "${KEEP_LOGS:-}" ]; then mkdir -p "$OUT/logs"; cp "$log" "$OUT/logs/run-$id.txt"; fi
         rm -rf "$d"
     fi
 }
 export -f one
-export OUT FLAGS BUDGET KILL LIMIT DOS RV_EXE
+export OUT FLAGS BUDGET KILL LIMIT DOS RV_EXE KEEP_LOGS
 total=$(wc -l < "$OUT/jobs.txt")
 t0=$(date +%s)
 xargs -P "$JOBS" -L 1 bash -c 'one "$0" "$1" "$2"' < "$OUT/jobs.txt" > "$OUT/results.txt"

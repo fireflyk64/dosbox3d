@@ -1100,7 +1100,10 @@ int ships_dense_reserve(void)
     int i;
     if (!g_slab) {
         g_slab = (unsigned char __far *)rv_alloc_high(SLAB_BYTES);
-        RV_LOG("ships: the dense slab in %s memory", g_slab ? "upper" : "conventional");
+        if (g_slab)
+            RV_NOTE("ships: the dense slab in upper memory");
+        else
+            RV_LOG("ships: the dense slab in conventional memory");
 #ifdef RV_HEAP
         if (!g_slab)
             g_slab = (unsigned char __far *)_fmalloc(SLAB_BYTES);

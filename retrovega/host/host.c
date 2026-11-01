@@ -62,6 +62,8 @@ static void vlog(const char *fmt, va_list ap)
     fputc('\n', host_log ? host_log : stderr);
 }
 
+unsigned char g_rv_verbose = 1;
+
 void rv_log(const char *fmt, ...)
 {
     va_list ap;
@@ -71,6 +73,14 @@ void rv_log(const char *fmt, ...)
 }
 
 void rv_logf(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vlog(fmt, ap);
+    va_end(ap);
+}
+
+void rv_notef(const char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);

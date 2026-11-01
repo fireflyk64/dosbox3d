@@ -6,6 +6,8 @@
 #include "rv.h"
 #include "twins.h"
 
+unsigned char g_rv_verbose = 1;
+
 void rv_log(const char *fmt, ...)
 {
     va_list ap;
@@ -17,6 +19,16 @@ void rv_log(const char *fmt, ...)
 }
 
 void rv_logf(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vprintf(fmt, ap);
+    va_end(ap);
+    putchar('\n');
+    fflush(stdout);                     /* (all of it out before a sanitizer stops the run) */
+}
+
+void rv_notef(const char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);

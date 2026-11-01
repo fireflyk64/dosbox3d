@@ -231,7 +231,7 @@ static int art_in(void)
         g_size_of[d] = (unsigned char)best;
         g_k_of[d] = (unsigned char)(k > 4 ? 4 : k);
     }
-    rv_logf(s_in, g_kinds, g_frames, g_small, g_nbig, g_bigmax, size / 1024, (clock240() - t0) * 1000 / 240);
+    rv_notef(s_in, g_kinds, g_frames, g_small, g_nbig, g_bigmax, size / 1024, (clock240() - t0) * 1000 / 240);
     return 1;
 }
 
@@ -274,7 +274,7 @@ static int pool_alloc(int want)
     while (want >= 16 && (g_r = MEM_TAKE(LzRock, g_r_arr, want)) == 0)
         want = want * 3 / 4;
     g_cap = g_r ? want : 0;
-    rv_logf(s_room, g_cap, g_want_n, bolts_dos_free() / 1024);
+    rv_notef(s_room, g_cap, g_want_n, bolts_dos_free() / 1024);
     return g_cap > 0;
 }
 
@@ -326,7 +326,7 @@ int rocks_field_add(int type, long x, long y, long z, long radius_km, int densit
     f->density = density > 0 ? density : ROCK_DENSITY;
     f->slot = (unsigned char)FIELD_SLOT(g_nf);
     field_slot(g_nf, 1);
-    rv_logf(s_add, g_nf, type == RV_FIELD_ASTEROID ? s_ast : s_mine, x / 256, y / 256, z / 256, 2 * radius_km, f->density);
+    rv_notef(s_add, g_nf, type == RV_FIELD_ASTEROID ? s_ast : s_mine, x / 256, y / 256, z / 256, 2 * radius_km, f->density);
     fieldCount = (unsigned short)++g_nf;
     return g_nf - 1;
 }
@@ -561,14 +561,14 @@ static void field_enter(int i, int filled, const LfBasis *cam)
     g_active = i;
     g_nfrag = 0;
     g_aim_at = (unsigned short)(frameCounter + 30L * AIM_K / f->density);
-    rv_logf(s_in, i, g_want_n, filled ? s_full : s_edge);
+    rv_notef(s_in, i, g_want_n, filled ? s_full : s_edge);
 }
 
 static void field_leave(void)
 {
     static const char __far s_out[] = "rocks: away from field %d: its rocks and art given back";
     if (g_active >= 0)
-        rv_logf(s_out, g_active);
+        rv_notef(s_out, g_active);
     pool_free();
     if (g_blk) {
         xms_free_level(XMS_HAZARD);
@@ -614,7 +614,7 @@ void __far __cdecl clearFields_impl(void)
 {
     static const char __far s_clear[] = "rocks: the fields cleared";
     rocks_flight_end();
-    rv_logf(s_clear);
+    rv_notef(s_clear);
 }
 
 /* --- a frame --- */
@@ -687,7 +687,7 @@ static void hits(int n, const LfBasis *cam)
         ((RvVec3 *)tempVector)->x = gPositionVector[0].x + (c[0] * cam->right.x + c[1] * cam->up.x + c[2] * cam->front.x);
         ((RvVec3 *)tempVector)->y = gPositionVector[0].y + (c[0] * cam->right.y + c[1] * cam->up.y + c[2] * cam->front.y);
         ((RvVec3 *)tempVector)->z = gPositionVector[0].z + (c[0] * cam->right.z + c[1] * cam->up.z + c[2] * cam->front.z);
-        rv_logf(s_hit, frameCounter, (int)(2 * R), r->kind, speed, head, qty);
+        rv_notef(s_hit, frameCounter, (int)(2 * R), r->kind, speed, head, qty);
         do_damage((unsigned short)g_f[g_active].slot, 0, qty, (unsigned short)(unsigned)tempVector);
         /* tossed aside (the user, 2026-10-24): across the player's way, away from the rock (dead ahead: a side
          * at random), at a speed of its own dying away over a second; theirs is kept */

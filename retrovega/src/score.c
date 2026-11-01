@@ -132,7 +132,7 @@ static void follow(int mood)
         static const char __far came[] = "score: cue %d came in @%lu";
         g_sc.cue = now;                 /* (the follow-on came in) */
         g_sc.queued = -1;
-        rv_logf(came, now, r);
+        rv_notef(came, now, r);
     }
     if (now != g_sc.cue || music_then_cue() >= 0)
         return;

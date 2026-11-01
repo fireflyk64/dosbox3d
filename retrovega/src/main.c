@@ -136,6 +136,9 @@ int main(int argc, char **argv)
     static const char __far s_playtest[] = "/playtest";
     const char *playtest = 0;
 #endif
+#if defined(RV_TESTS) || defined(RV_PLAYTEST) || defined(RV_HOST)
+    g_rv_verbose = 1;                   /* (RV.EXE keeps quiet in its frames unless /verbose: rv.h) */
+#endif
     rvHello();
     rv_stack_paint();
 #ifdef RV_TESTS
@@ -240,7 +243,8 @@ int main(int argc, char **argv)
     for (i = 1; i < argc; i++) {
         static const char __far s_nomouse[] = "/nomouse", __far s_fly[] = "/fly", __far s_at[] = "/at";
         static const char __far s_noflight[] = "/noflight", __far s_route[] = "/route", __far s_kill[] = "/kill",
-            __far s_ledger[] = "/ledger", __far s_monkey[] = "/monkey", __far s_freezetest[] = "/freezetest";
+            __far s_ledger[] = "/ledger", __far s_monkey[] = "/monkey", __far s_freezetest[] = "/freezetest",
+            __far s_verbose[] = "/verbose", __far s_leaktest[] = "/leaktest";
         if (!_fstrcmp(argv[i], s_nomouse))          /* the keys only: the mouse driver left alone (the native build's
                                                        window lets the pointer go, for a debugger beside it) */
             in_nomouse();
@@ -263,6 +267,10 @@ int main(int argc, char **argv)
             g_freeze_test = atol(argv[++i]);
         else if (!_fstrcmp(argv[i], s_ledger))
             mem_ledger_always(1);
+        else if (!_fstrcmp(argv[i], s_verbose))     /* the rigs: the lines of a nominal frame (rv.h, RV_NOTE) */
+            g_rv_verbose = 1;
+        else if (!_fstrcmp(argv[i], s_leaktest) && i + 1 < argc)   /* the watch's test (mem.c) */
+            mem_leak_test((unsigned)atoi(argv[++i]));
         else if (!_fstrcmp(argv[i], s_monkey) && i + 2 < argc) {
             unsigned long seed = strtoul(argv[i + 1], 0, 10);
             monkey_start(seed, (unsigned)atoi(argv[i + 2]));

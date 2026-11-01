@@ -38,5 +38,9 @@ void mem_ledger(const char __far *when);   /* what is out, what DOS, the near he
 void mem_flying(unsigned frame, int slots, int shots, int booms);
 void mem_ledger_always(int on);            /* /ledger: a line at every look, not only when something differs */
 unsigned mem_bad(void);                    /* how many "LEAK:" lines so far */
+void mem_watch(const char __far *where, unsigned frame);   /* once a frame, the rooms' and the flight's: a line only when
+                                              free conventional memory has fallen since the frame before */
+void mem_watch_report(const char __far *when);   /* how the watch stands: its falls, what is free, the lowest seen */
+void mem_leak_test(unsigned frames);       /* /leaktest N: memory taken every N frames and not given back */
 
 #endif

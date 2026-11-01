@@ -926,17 +926,31 @@ fixed size, its address in `RV.MAP`, declared where it is used:
 
 A take asking more than the array has stops the game, naming the array. `build.sh` refuses an RV.EXE that links `_fmalloc`.
 RVT.EXE and RVP.EXE have 60 KB more code and no room for the arrays: `RV_HEAP` keeps the far heap there, so what the game does
-is tested with RV.EXE itself. Upper memory holds what it held, the band buffer and the dense slab, each taken once. The image
-is 590 KB, which leaves about 34 KB of DOS memory free, all the time (`log_free`).
+is tested with RV.EXE itself. Upper memory holds what it held, the band buffer and the dense slab, each taken once.
+
+The image is the budget. DOSBox leaves a program 640,512 bytes, RV.EXE takes 618 KB of them (2026-11-01; `build.sh` says how many
+on every build), and the rest, 22 KB, stays free in DOS all the time. Past that it does not load at all, and nothing in the game
+could say so: `build.sh` warns under 8 KB left and refuses under 2 KB.
 
 Two rooms are shared because their users never meet: `gfx_share_take` is the chalk hand's while the board shows, or a flight's
 silhouettes, and the flames' looks for the bake. The music's reading at the start borrows the empty scratch and font arrays
-(`gfx_boot_take`) and, for BAR.MID's 33,932-byte track, one DOS block, given back before the first room.
+(`gfx_boot_take`) and, for BAR.MID's 33,932-byte track, one DOS block in upper memory, given back before the first room (in
+conventional memory, once the image had grown past 606 KB, it would not fit, and the bar's music played without its drums).
 
 **The ledger** (`mem_ledger`, `src/mem.c`), before each flight and after it: arrays out, DOS's free memory, the near heap, XMS
 free and its blocks, the files open, a hash of the interrupt table (a stray write through a null far pointer lands there), and
 every array's guard. Anything that differs from the first look logs `LEAK:`. `/ledger` logs every look, and in a flight a
 `flying:` line every 15 s: slots, shots, explosions, XMS, the near heap.
+
+**The memory watch** (`mem_watch`, `src/mem.c`), once a frame in the rooms and in a flight: DOS's free memory (the arena chain, in
+paragraphs) and the near heap. Nothing takes conventional memory once the game runs, spawning ships and entering fields included
+(they go to XMS), so there is no normal fall to tell from a leak: any fall logs `LEAK: conventional memory fell: ...`, and a flight's
+end logs how many there have been and the lowest seen. `/leaktest N` leaks every N frames, to see the watch speak.
+
+**The log keeps quiet in frames.** RV.EXE logs nothing from a flight's first frame to its end, and nothing as it sits in a room,
+but for what is wrong (the user, 2026-11-01): each line opens and closes a file, and a line should mean something. A line about
+nothing wrong in a frame is `RV_NOTE("...")` or `rv_notef(s_fmt, ...)`, which only print with `/verbose`; `tests/run.sh` passes it
+(`QUIET=1` not), the test and the native builds have it on. Loads and transitions still log. `tests/quiet.sh` holds all this.
 
 **The freeze watch** (`src/freeze.c`). The main loop says it is alive (`freeze_pet`); after 20 s without it the music's interrupt
 writes `FREEZE:` to RVLOG.TXT: the registers, the stack and the last second's interrupted addresses. `tests/freezemap.py

@@ -126,32 +126,40 @@ static void arrays_list(void) { }
 #endif
 
 #ifdef RV_HOST
-static unsigned long dos_kb(void) { return 0; }
+static unsigned dos_paras(unsigned *largest) { *largest = 0; return 0; }
 static unsigned files_open(void) { return 0; }
 static unsigned ivt_hash(void) { return 0; }
 static unsigned near_free(void) { return 0; }
 #else
-/* free in DOS below 640 KB, KB (the arena chain: the largest-block call would not see two blocks) */
-static unsigned long dos_kb(void)
+/* free in DOS below 640 KB, in paragraphs of 16 bytes, and the largest block of it (the arena chain: the largest-block
+ * call would not see two blocks) */
+static unsigned dos_paras(unsigned *largest)
 {
-    union REGS r;
-    struct SREGS sr;
-    unsigned seg;
-    unsigned long total = 0;
-    segread(&sr);
-    r.h.ah = 0x52;
-    intdosx(&r, &r, &sr);
-    seg = *(unsigned short __far *)MK_FP(sr.es, r.x.bx - 2);
+    static unsigned __far first;        /* (the chain's first block never moves: asked of DOS once) */
+    unsigned seg, total = 0;
+    if (!first) {
+        union REGS r;
+        struct SREGS sr;
+        segread(&sr);
+        r.h.ah = 0x52;
+        intdosx(&r, &r, &sr);
+        first = *(unsigned short __far *)MK_FP(sr.es, r.x.bx - 2);
+    }
+    *largest = 0;
+    seg = first;
     while (seg < 0xA000) {
         unsigned char __far *mcb = (unsigned char __far *)MK_FP(seg, 0);
         unsigned size = *(unsigned short __far *)(mcb + 3);
-        if (*(unsigned short __far *)(mcb + 1) == 0)
+        if (*(unsigned short __far *)(mcb + 1) == 0) {
             total += size;
+            if (size > *largest)
+                *largest = size;
+        }
         if (mcb[0] != 'M')
             break;
         seg += size + 1;
     }
-    return total * 16 / 1024;
+    return total;
 }
 
 /* the files this program has open: its job file table in the PSP */
@@ -178,6 +186,12 @@ static unsigned ivt_hash(void)
 
 static unsigned near_free(void) { return (unsigned)_memavl(); }
 #endif
+
+static unsigned long dos_kb(void)
+{
+    unsigned largest;
+    return (unsigned long)dos_paras(&largest) * 16 / 1024;
+}
 
 void mem_ledger(const char __far *when)
 {
@@ -214,8 +228,11 @@ void mem_ledger(const char __far *when)
     DIFF(dos_kb, s_dos)
     DIFF(xms_kb, s_xms)
     DIFF(xms_blocks, s_blocks)
-    DIFF(files, s_files)
     DIFF(ivt, s_ivt)
+    if (l.files > g_first.files) {       /* (more is what counts: a test script ending closes one) */
+        g_bad++;
+        rv_logf(s_n, when, s_files, (unsigned long)g_first.files, (unsigned long)l.files);
+    }
     if (l.near_free < g_first.near_free) {   /* (the near heap: less is what counts, stdio's free list settles) */
         g_bad++;
         rv_logf(s_n, when, s_near, (unsigned long)g_first.near_free, (unsigned long)l.near_free);
@@ -228,4 +245,73 @@ void mem_ledger(const char __far *when)
     }
     if (g_bad != before)                 /* (what differed once is reported once: the new state is the one to hold) */
         _fmemcpy(&g_first, &l, sizeof l);
+}
+
+/* --- the watch: free conventional memory, a frame at a time --- */
+/* The rooms' loop and the flight's frame call this once a frame.  A line only when it has fallen since the frame before
+ * (the user, 2026-11-01): silence means it held.  RV.EXE takes no conventional memory once it is running: the buffers are
+ * fixed arrays, the ships and the rocks go to XMS, stdio gives back what it takes before the frame ends.  So there is no
+ * normal operation to tell apart from a leak, and any fall at all is a "LEAK:" (measured 2026-11-01: 0 falls over every
+ * mission's flight, the guns firing, waves and fields coming in, and the clicker's campaigns).  mem_bad() counts it. */
+typedef struct {
+    unsigned dos, big, near_;           /* free in DOS and DOS's largest block (paragraphs), free in the near heap (bytes) */
+} Free;
+static Free __far g_last, __far g_low, __far g_start;
+static unsigned __far g_falls, __far g_leak_test;
+static unsigned char __far g_watching;
+
+/* /leaktest N: every N frames, memory taken from the near heap and from DOS and never given back (the watch's own test:
+ * a watch that has never spoken proves nothing) */
+void mem_leak_test(unsigned frames) { g_leak_test = frames; }
+static void leak_test(void)
+{
+    static unsigned __far count;
+#ifndef RV_HOST
+    unsigned seg;
+    if (!g_leak_test || ++count % g_leak_test)
+        return;
+    (void)malloc(64);
+    (void)_dos_allocmem(4, &seg);
+#else
+    (void)count;
+#endif
+}
+
+void mem_watch(const char __far *where, unsigned frame)
+{
+    static const char __far s_start[] =
+        "conventional memory, the watch starts in %Fs: %lu bytes free in DOS (largest block %lu), %u in the near heap";
+    static const char __far s_fell[] =
+        "LEAK: conventional memory fell: %Fs frame %u: DOS %lu -> %lu bytes (largest %lu -> %lu), near heap %u -> %u";
+    Free now, was;
+    leak_test();
+    now.dos = dos_paras(&now.big);
+    now.near_ = near_free();
+    _fmemcpy(&was, &g_last, sizeof was);
+    _fmemcpy(&g_last, &now, sizeof now);
+    if (!g_watching) {
+        g_watching = 1;
+        _fmemcpy(&g_start, &now, sizeof now);
+        _fmemcpy(&g_low, &now, sizeof now);
+        rv_logf(s_start, where, (unsigned long)now.dos * 16, (unsigned long)now.big * 16, now.near_);
+        return;
+    }
+    if (now.dos < g_low.dos)
+        g_low.dos = now.dos;
+    if (now.near_ < g_low.near_)
+        g_low.near_ = now.near_;
+    if (now.dos < was.dos || now.near_ < was.near_) {
+        g_falls++;
+        g_bad++;
+        rv_logf(s_fell, where, frame, (unsigned long)was.dos * 16, (unsigned long)now.dos * 16,
+                (unsigned long)was.big * 16, (unsigned long)now.big * 16, was.near_, now.near_);
+    }
+}
+
+void mem_watch_report(const char __far *when)
+{
+    static const char __far s_line[] =
+        "conventional memory %Fs: %u falls; DOS %lu bytes free, started at %lu, lowest %lu; near heap %u, started at %u, lowest %u";
+    rv_logf(s_line, when, g_falls, (unsigned long)g_last.dos * 16, (unsigned long)g_start.dos * 16,
+            (unsigned long)g_low.dos * 16, g_last.near_, g_start.near_, g_low.near_);
 }

@@ -958,11 +958,11 @@ static void cue_from(int cue, int fade_ms, int at, int body)
     if (song >= 0 && song < RV_MUSIC_STINGS && g_cur >= RV_MUSIC_STINGS && g_next == -1) {
         g_back = song;                  /* a sting playing: the new song after it, from its start */
         g_back_at = 0;
-        RV_LOG("music: cue %d (%s) after the sting @%lu", cue, name, g_clock);
+        RV_NOTE("music: cue %d (%s) after the sting @%lu", cue, name, g_clock);
         return;
     }
     g_back = -1;
-    RV_LOG("music: cue %d (%s)%s, fade %d ms%s @%lu", cue, song >= 0 ? name : "none", body ? " from its loop" : "", fade_ms,
+    RV_NOTE("music: cue %d (%s)%s, fade %d ms%s @%lu", cue, song >= 0 ? name : "none", body ? " from its loop" : "", fade_ms,
            at == MUSIC_BAR ? " on the bar" : at == MUSIC_BEAT ? " on the beat" : "", g_clock);
     cue_song(song, fade_ms, at, body && song >= 0 ? g_song[song].loop : 0);
 }
@@ -986,7 +986,7 @@ void music_sting(int cue)
     }
     _enable();
     _fstrcpy(name, g_files[cue]);
-    RV_LOG("music: sting %d (%s), then cue %d from event %u @%lu", cue, name, g_back, g_back_at, g_clock);
+    RV_NOTE("music: sting %d (%s), then cue %d from event %u @%lu", cue, name, g_back, g_back_at, g_clock);
     g_last = cue;
     cue_song(song, 40, MUSIC_NOW, 0);
 }
@@ -1016,7 +1016,7 @@ void music_then(int cue, int from_sect, int at_sects)
     r->then_song = song;
     g_then_cue = cue;
     g_last = cue;
-    rv_logf(g_then_fmt, cue, r->then_from, at, r->song, g_clock);
+    rv_notef(g_then_fmt, cue, r->then_from, at, r->song, g_clock);
 }
 
 int music_then_cue(void)

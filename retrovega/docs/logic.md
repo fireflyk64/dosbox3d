@@ -683,5 +683,5 @@ build").
   - When I filled the loop with the first flight's stand-ins and a simple fire loop, it gave 82 shots and 32 hits, and the Gawain's shields and armour went to 0. That was the check of these helpers.
 - **The host harness** runs the logic on Linux, under gdb, rr, valgrind and the sanitizers, with the multiplayer rules checked (see "The host harness (rvsim)"). `tests/host/rvsim_test.sh` is its self-test.
 - `/field D` puts every flight in an asteroid field; `/boxes` brackets every ship (`flight_ent_box`'s check).
-- `rv_logf(s_fmt, ...)` writes a line to RVLOG.TXT. It opens and closes the file each line, so log events, not every step.
+- `rv_logf(s_fmt, ...)` writes a line to RVLOG.TXT. It opens and closes the file each line, so log events, not every step. For what goes wrong; a line about nothing wrong is `rv_notef(s_fmt, ...)`, printed only with `/verbose` (`tests/run.sh` passes it): RV.EXE keeps quiet in a flight's frames, and `tests/quiet.sh` fails on a line there.
 - In the browser the log is `new TextDecoder().decode(DOSBox.FS.readFile("/game/RVLOG.TXT"))` in the console.

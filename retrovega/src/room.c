@@ -164,7 +164,7 @@ static void tab_move(int dir)
     if (best >= 0) {
         int x, y;
         hot_centre(bkind, best, &x, &y);
-        RV_LOG("tab: to %d,%d", x, y);
+        RV_NOTE("tab: to %d,%d", x, y);
         in_warp(x, y);
         dirty_pointer();
         g_scene.px = x;

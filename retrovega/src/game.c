@@ -119,7 +119,7 @@ static void say(int person, const char __far *text)
     g_said = text;
     g_nlip = lip_steps(text, g_lip, MAX_STEPS);
     g_speech_t0 = clock240();
-    RV_LOG("talk: %d shapes, %lu ms at %s", g_nlip, (unsigned long)g_nlip * LIP_STEP_MS * 100 / g_talk_pcts[g_talk_speed],
+    RV_NOTE("talk: %d shapes, %lu ms at %s", g_nlip, (unsigned long)g_nlip * LIP_STEP_MS * 100 / g_talk_pcts[g_talk_speed],
            g_talk_names[g_talk_speed]);
     g_mouth = g_eyes = g_shown_chars = -1;
     g_gesture = 0;
@@ -300,7 +300,7 @@ static void open_board(void)
     g_scene.full = board_full;
     g_scene.no_room = 1;
     g_mode = MODE_BOARD;
-    RV_LOG("board: up close%s", g_hand == FONT_CHALK ? "" : " (no room for the chalk hand: the title font)");
+    RV_NOTE("board: up close%s", g_hand == FONT_CHALK ? "" : " (no room for the chalk hand: the title font)");
     vid_dirty(0, SCR_H);
     scene_draw();
     vid_fade(64);
@@ -1837,6 +1837,11 @@ int game_run(void)
             break;
         }
         scene_draw();
+        {
+            static const char __far s_rooms[] = "the rooms";
+            static unsigned __far s_frame;
+            mem_watch(s_rooms, ++s_frame);
+        }
     }
     freeze_stop();
     if (g_mk)

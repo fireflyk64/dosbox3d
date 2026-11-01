@@ -29,6 +29,13 @@ void rv_logf(const char __far *fmt, ...);   /* a far format (DGROUP is nearly fu
  * rv_logf's 400 bytes); it passes the format one argument more, a 0 it never reads */
 #define RV_LOG(...) do { static const char __far rv_fmt_[] = RV_LOG_FMT_(__VA_ARGS__, 0); \
                          rv_logf(rv_fmt_ RV_LOG_ARGS_(__VA_ARGS__, 0)); } while (0)
+/* A line about nothing wrong, in a room's or a flight's frame: RV.EXE keeps quiet there (the user, 2026-11-01: "remove
+ * nominal printouts"), so that a line in a flight means something; /verbose brings them back for the rigs that read
+ * them, and the test and native builds have them on.  What goes wrong stays RV_LOG/rv_logf. */
+extern unsigned char __far g_rv_verbose;
+void rv_notef(const char __far *fmt, ...);
+#define RV_NOTE(...) do { static const char __far rv_fmt_[] = RV_LOG_FMT_(__VA_ARGS__, 0); \
+                          rv_notef(rv_fmt_ RV_LOG_ARGS_(__VA_ARGS__, 0)); } while (0)
 #define RV_LOG_FMT_(fmt, ...) fmt
 #define RV_LOG_ARGS_(fmt, ...) , __VA_ARGS__
 void rv_stack_paint(void);               /* (main, first) the stack painted, for rv_stack_log */

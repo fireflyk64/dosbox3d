@@ -8,6 +8,7 @@
 #include "rv.h"
 
 static int g_log_started;
+unsigned char __far g_rv_verbose;
 unsigned char rv_filebuf[1024];
 
 /* a line in RVLOG.TXT; the file is closed after each (DOSBox writes a file
@@ -29,10 +30,9 @@ void rv_log(const char *fmt, ...)
 
 /* the same with its format far (out of DGROUP, which is nearly full: `static const char __far` formats), copied
  * to the stack for the library */
-void rv_logf(const char __far *fmt, ...)
+static void vlogf(const char __far *fmt, va_list ap)
 {
     char buf[400];
-    va_list ap;
     FILE *f;
     _fstrncpy(buf, fmt, sizeof buf - 1);
     buf[sizeof buf - 1] = 0;
@@ -40,11 +40,28 @@ void rv_logf(const char __far *fmt, ...)
     if (!f)
         return;
     g_log_started = 1;
-    va_start(ap, fmt);
     vfprintf(f, buf, ap);
-    va_end(ap);
     fputc('\n', f);
     fclose(f);
+}
+
+void rv_logf(const char __far *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vlogf(fmt, ap);
+    va_end(ap);
+}
+
+/* the same, for a line about nothing wrong in a frame: only with /verbose (rv.h) */
+void rv_notef(const char __far *fmt, ...)
+{
+    va_list ap;
+    if (!g_rv_verbose)
+        return;
+    va_start(ap, fmt);
+    vlogf(fmt, ap);
+    va_end(ap);
 }
 
 void (*rv_fail_hook)(void);   /* the video module restores text mode here */

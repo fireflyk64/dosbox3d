@@ -154,6 +154,9 @@ static int bios_key(int *ch)
 int script_open(const char *path)
 {
     g_script = fopen(path, "r");
+    if (g_script)                       /* (its stdio buffer now, 514 bytes of the near heap: not at the first line it
+                                           reads, in a frame, where the memory watch would call that a leak) */
+        ungetc(fgetc(g_script), g_script);
     RV_LOG("script: %s %s", path, g_script ? "opened" : "missing");
     return g_script != 0;
 }
@@ -276,7 +279,7 @@ static int steer(void)
     g_steer_at = now;
     if (!dx && !dy) {
         if (g_held)
-            RV_LOG("keys: steered to %d,%d", g_x, g_y);
+            RV_NOTE("keys: steered to %d,%d", g_x, g_y);
         g_held = 0;
         return 0;
     }

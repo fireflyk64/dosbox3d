@@ -94,7 +94,7 @@ static void spawn_wave(void)
         gOrientationRightVector[s] = vec3(-R->x, -R->y, -R->z);
         g_s.counted[s] = 0;
     }
-    rv_logf(s_wave, g_s.count, type, g_s.kills);
+    rv_notef(s_wave, g_s.count, type, g_s.kills);
 }
 
 /* the count went up: what a flight uses up made whole: the shields, the fuel, the guns' energy, the launchers' rounds.
@@ -127,7 +127,7 @@ void simulator_frame(void)
         static const char __far s_won[] = "simulator: won, %u kills";
         g_s.won = 1;
         g_s.end = SIM_BREATH;           /* (the last one's explosion seen) */
-        rv_logf(s_won, g_s.kills);
+        rv_notef(s_won, g_s.kills);
     }
     if (missionStatus)
         return;

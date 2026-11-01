@@ -2112,7 +2112,7 @@ static void leave_step(int16_t s, Mind __far *m, const AiProfile __far *p)
     }
 #endif
     if (far_) {
-        rv_logf(s_gone, s, slotMissionShip[s] < 64 ? slotMissionShip[s] : -1, LEAVE_KM);
+        rv_notef(s_gone, s, slotMissionShip[s] < 64 ? slotMissionShip[s] : -1, LEAVE_KM);
         if (slotMissionShip[s] < 64)
             g_away[slotMissionShip[s]] = 1;
         if (commAnimInfo[s] != commAnimInfo[0])
@@ -2740,7 +2740,7 @@ static void route_step(int16_t s, Mind __far *m, const AiProfile __far *p)
     d = vec3(NAV_AT(goal, 0) - TO_KM(gPositionVector[s].x), NAV_AT(goal, 1) - TO_KM(gPositionVector[s].y),
              NAV_AT(goal, 2) - TO_KM(gPositionVector[s].z));
     if (len_of(d.x, d.y, d.z) < ROUTE_JUMP_KM) {
-        rv_logf(s_gone, s, rec, role == RV_ESCORT_OUT ? "jumped out" : "home", goal);
+        rv_notef(s_gone, s, rec, role == RV_ESCORT_OUT ? "jumped out" : "home", goal);
         route_jump(s);
         return;
     }
@@ -2959,7 +2959,7 @@ static int16_t wave_may_come(int16_t n)
         return 1;
     if (enemy_fighters_out()) {
         if (!(g_wave_held >> n & 1))
-            rv_logf(s_held, n);
+            rv_notef(s_held, n);
         g_wave_held |= 1u << n;
         return 0;
     }
@@ -2969,7 +2969,7 @@ static int16_t wave_may_come(int16_t n)
         && len_of(NAV_AT(n, 0), NAV_AT(n, 1), NAV_AT(n, 2)) < NAV_REACH_KM)
         return 0;
     if ((g_wave_held >> n & 1) && g_enemy_ran && !stays) {
-        rv_logf(s_off, n);
+        rv_notef(s_off, n);
         for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
             g_away[at[j] & 63] = 1;     /* (as ships that left: nothing asked of the player) */
         g_navs_seen |= 1u << n;
@@ -3366,7 +3366,7 @@ uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, 
     if (left) {
         if (damagePoints[dst] >= t->hull || left >= t->hull - damagePoints[dst]) {
             static const char __far s_killed[] = "logic: frame %u: slot %u (type %02X, side %d) killed by %u (type %02X): %u points";
-            rv_logf(s_killed, frameCounter, dst, gInstanceShipTypes[dst], commAnimInfo[dst], src,
+            rv_notef(s_killed, frameCounter, dst, gInstanceShipTypes[dst], commAnimInfo[dst], src,
                     RV_SLOT_OK(src) ? gInstanceShipTypes[src] : 0xFF, qty);
             damagePoints[dst] = t->hull;
             shipAiState[dst] = 9;
@@ -3449,7 +3449,7 @@ void __far __cdecl enterNavPoint_impl(uint16_t nav)
     for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
         if (MSHIP_BEHAVIOUR(at[j]) != 6 && outerSpawnShipEntity(at[j], nav) != 0xFFFF)
             n++;
-    rv_logf(s_nav, nav, n);
+    rv_notef(s_nav, nav, n);
 }
 
 /* PLUMBING (ship, speed): the AI's throttle (the layer skips the call for a puppet) */

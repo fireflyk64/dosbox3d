@@ -7,6 +7,7 @@
 # RVT.EXE, the test build with the demos, benchmarks and self-tests in (/playtest, /twins: RVP.EXE, the self-tests' build).
 # EXE=RVT.EXE (or RV.EXE) picks one regardless.
 # NOBUILD=1 skips the build; CYCLES=N runs at N cycles (the page runs 50000); TIMEOUT=S (300).
+# The rigs read the frames' lines, so /verbose goes along; QUIET=1 runs without it, as the page does.
 # DOSBOX=path runs another DOSBox (any stock one runs RV.EXE; the default is this repository's native build);
 # SHOW=1 opens its window (the default is headless).
 set -e
@@ -21,13 +22,15 @@ exe=${EXE:-RV.EXE}
 if [ -z "$EXE" ]; then
     for a in "$@"; do
         case "$a" in
-            /script|/flight|/winrate|/res|/onfly|/skyrows|/field|/rockxms|/mpu|/nomusic|/noquit|/fly|/at|/nomouse|/noflight|/route|/kill|/ledger|/monkey|/freezetest) ;;
+            /script|/flight|/winrate|/res|/onfly|/skyrows|/field|/rockxms|/mpu|/nomusic|/noquit|/fly|/at|/nomouse|/noflight|/route|/kill|/ledger|/verbose|/leaktest|/monkey|/freezetest) ;;
             /playtest|/twins) exe=RVP.EXE; break;;
             /*) exe=RVT.EXE;;
         esac
     done
 fi
-sed -e 's#mount c ../dos#mount c '"$PWD"'/build/dos#' -e "s#RV.EXE /script WALK.TXT#$exe /script WALK.TXT $*#" \
+verbose=/verbose
+[ -z "$QUIET" ] || verbose=
+sed -e 's#mount c ../dos#mount c '"$PWD"'/build/dos#' -e "s#RV.EXE /script WALK.TXT#$exe /script WALK.TXT $verbose $*#" \
     -e "s#^cycles=.*#cycles=${CYCLES:-40000}#" tests/rv.conf > build/dosrun/run.conf
 [ -n "$SHOW" ] || export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
 timeout ${TIMEOUT:-300} ${DOSBOX:-$HOME/dev/dosbox3d/build-native/src/dosbox} \

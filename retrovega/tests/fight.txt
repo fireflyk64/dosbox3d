@@ -1,0 +1,27 @@
+# a fight: fire in bursts, target, autopilot, more fire
+wait 90
+key y
+hold fire 60
+wait 120
+key y
+hold fire 60
+wait 120
+key a
+wait 120
+key y
+hold fire 90
+wait 200
+key a
+wait 150
+key y
+hold fire 90
+wait 200
+key a
+wait 150
+key y
+hold fire 90
+wait 200
+key a
+wait 150
+hold fire 90
+wait 20000

@@ -37,7 +37,10 @@ try {
     if (full) await page.screenshot({ path: file });
     else await page.locator("#canvas").screenshot({ path: file });
   };
-  await page.goto(pageUrl);
+  // (/verbose: this reads the music's cues and the hooks' stubs, RV.EXE keeps them to itself otherwise; /rv's native build has them on)
+  const opened = new URL(pageUrl);
+  if (opened.searchParams.has("retrovega")) opened.searchParams.set("cmd", "rv /noquit /verbose");
+  await page.goto(opened.toString());
   await page.waitForFunction(() => document.getElementById("sourceStatus") && document.getElementById("sourceStatus").dataset.state === "ready",
     null, { timeout: 90000 });
   ok(/[?&]retrovega/.test(page.url()), `the page offers RetroVega (${page.url()})`);

@@ -41,7 +41,8 @@ u.searchParams.set("server", lobbyUrl);
 u.searchParams.set("hall", "RVHALL-" + Math.random().toString(36).slice(2, 6).toUpperCase());
 u.searchParams.set("callsign", "FLIGHT");
 u.searchParams.set("retrovega", "");
-if (process.env.CMD) u.searchParams.set("cmd", process.env.CMD);
+// (/verbose: the checks below read the frames' lines, RV.EXE keeps them to itself otherwise)
+u.searchParams.set("cmd", process.env.CMD || "rv /noquit /verbose");
 for (const kv of (process.env.PARAMS || "").split("&").filter(Boolean)) {
   const i = kv.indexOf("=");
   u.searchParams.set(i < 0 ? kv : kv.slice(0, i), i < 0 ? "" : kv.slice(i + 1));

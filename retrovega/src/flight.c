@@ -393,7 +393,7 @@ static void set_view(int view)
     g_view = view;
     cockpit_external(view != VIEW_COCKPIT);
     view_frame();
-    rv_logf(s_view, view == VIEW_COCKPIT ? "the cockpit" : view == VIEW_CHASE ? "the chase camera" : "the autopilot's flyby");
+    rv_notef(s_view, view == VIEW_COCKPIT ? "the cockpit" : view == VIEW_CHASE ? "the chase camera" : "the autopilot's flyby");
 }
 static unsigned long g_star_place_ticks, g_star_draw_ticks;   /* what the sky costs (logged when the flight ends) */
 
@@ -1148,7 +1148,7 @@ static void comm_hail(void)
             continue;
         v = comms_voice_for(commAnimInfo[s], gInstanceShipTypes[s]);
         g_hailed = 1;
-        rv_logf(s_hail, frameCounter, s, gInstanceShipTypes[s], commAnimInfo[s], v);
+        rv_notef(s_hail, frameCounter, s, gInstanceShipTypes[s], commAnimInfo[s], v);
         comms_say(v, 1, NULL);
         return;
     }
@@ -1362,7 +1362,7 @@ static void draw_world(int y0, int y1)
             flames_draw(&g_plan[i].fl, y0, y1, ext, ey0, rows);
             g_t_flames += clock240() - t0;
         }
-        if (y0 <= ey0 && (frameCounter % 100 == 1 || (g_record && frameCounter % g_record == 0))) {
+        if (g_rv_verbose && y0 <= ey0 && (frameCounter % 100 == 1 || (g_record && frameCounter % g_record == 0))) {
             /* now and then, where each ship was put (tests/ships.txt reads it) */
             LfPlace p;
             int nb, nh;
@@ -1440,7 +1440,7 @@ static void win_sets_in(void)
     free_kb = xms_free_kb();
     taken = ships_load_blocks(free_kb > 4096 ? (free_kb - 4096) * 1024UL : 0);
     g_win.sets = 1;
-    rv_logf(s_in, taken / 1024, (clock240() - t0) * 1000 / 240);
+    rv_notef(s_in, taken / 1024, (clock240() - t0) * 1000 / 240);
 }
 
 static void win_flyby_start(void)
@@ -1471,7 +1471,7 @@ static void win_flyby_start(void)
     }
     g_win.nfly = (unsigned char)n;
     g_win.fly_left = (unsigned short)((2 * half + n * 420L) / kmf + 10);
-    rv_logf(s_by, n, z);
+    rv_notef(s_by, n, z);
 }
 
 void flight_window_open(int room, unsigned seed, int outside)
@@ -1550,7 +1550,7 @@ void flight_window_open(int room, unsigned seed, int outside)
     g_win.next = clock240();
     g_win.on = 1;
     plan_draws();
-    rv_logf(s_open, seed, g_win.rocks ? s_rocks : s_sky, g_win.rows, g_win.y0, things);
+    rv_notef(s_open, seed, g_win.rocks ? s_rocks : s_sky, g_win.rows, g_win.y0, things);
 }
 
 void flight_window_close(void)
@@ -1748,7 +1748,7 @@ static void comm_exchange(const char __far *line, int voice, const char __far *r
 static void comm_open(void)
 {
     if (systemDamage[SYS_INTERCOM] >= SYS_WRECKED)
-        RV_LOG("flight: C: the intercom is wrecked");
+        RV_NOTE("flight: C: the intercom is wrecked");
     vdu_comm_open();                    /* (the page says so itself when the intercom is out) */
 }
 
@@ -1760,7 +1760,7 @@ static void comm_landing(void)
     static const char __far s_far[] = "Negative, Wildcard. You're too far out. Come closer.";
     static const char __far s_log[] = "flight: comm: landing %d (0 cleared, 1 not yet, 2 too far)";
     int r = logic_request_landing();
-    rv_logf(s_log, r);
+    rv_notef(s_log, r);
     if (r == LANDING_CLEARED)
         g_landing = 1;
     else
@@ -1778,7 +1778,7 @@ static void comm_stop_tick(void)
     int k = logic_carrier_stopped();
     if (!k)
         return;
-    rv_logf(s_log, k);
+    rv_notef(s_log, k);
     if (comm_silent() || clock240() < g_stop_said || g_reply_voice != -1 || comms_on(0) || comms_on(1))
         return;
     g_stop_said = clock240() + 2400;
@@ -1794,7 +1794,7 @@ static void comm_taunt(int who)
     };
     static const char __far s_log[] = "flight: comm: taunted slot %d: %s";
     int ok = logic_taunt((int16_t)who);
-    rv_logf(s_log, who, ok ? "it turns on the player" : "no effect");
+    rv_notef(s_log, who, ok ? "it turns on the player" : "no effect");
     if (!comm_silent())
         comm_exchange(s_taunts[frameCounter & 3], comms_voice_for(commAnimInfo[who], gInstanceShipTypes[who]), NULL);
 }
@@ -1810,7 +1810,7 @@ static void comm_order(int who, int order)
     static const char __far s_refused[] = "Negative. I can't do that.";
     static const char __far s_log[] = "flight: comm: order %d to slot %d: %s";
     int ok = logic_order((int16_t)who, (int16_t)order);
-    rv_logf(s_log, order, who, ok ? "taken" : "refused");
+    rv_notef(s_log, order, who, ok ? "taken" : "refused");
     if (!comm_silent())
         comm_exchange(s_said[order], wingman_voice(who), ok ? s_reply[order] : s_refused);
 }
@@ -1882,11 +1882,11 @@ static void eject_pull(void)
 {
     unsigned long now = clock240();
     if (systemDamage[SYS_EJECTOR] >= SYS_WRECKED) {   /* (the ejector wrecked: no way out) */
-        RV_LOG("flight: eject: the ejector is wrecked");
+        RV_NOTE("flight: eject: the ejector is wrecked");
         return;
     }
     if (g_eject_at && now - g_eject_at < 480) {
-        RV_LOG("flight: ejected");
+        RV_NOTE("flight: ejected");
         missionStatus = 2;
     }
     g_eject_at = now;
@@ -3191,6 +3191,10 @@ void __far __cdecl flight_frame(void)
     unsigned long now = clock240(), dt;
     int k = (int)(frameCounter % FPS_WINDOW);
     freeze_pet();                       /* (a flight's frame is the main loop, as far as the freeze watch goes) */
+    {
+        static const char __far s_flight[] = "the flight";
+        mem_watch(s_flight, frameCounter);
+    }
     if (!(frameCounter % 450)) {        /* (/ledger: every 15 s) */
         int i, n = 0;
         for (i = 0; i < NUM_SHIP_SLOTS; i++)
@@ -3227,9 +3231,9 @@ void __far __cdecl flight_frame(void)
         static const char __far s_went[] = "flight: autopilot: on to nav %u", __far s_not[] = "flight: autopilot: not now";
         set_view(g_view_back);
         if (logic_autopilot())
-            rv_logf(s_went, currentNavPoint);
+            rv_notef(s_went, currentNavPoint);
         else
-            rv_logf(s_not);
+            rv_notef(s_not);
     }
     view_frame();
 #ifdef RV_TESTS
@@ -3351,12 +3355,12 @@ void __far __cdecl flight_autopilot(void)
         g_fly_t = 0;
         set_view(VIEW_FLYBY);
     } else
-        rv_logf(s_not);
+        rv_notef(s_not);
 }
 
 void __far __cdecl autoAnimation_c(unsigned short camShipType, unsigned short camMode, unsigned short duration)
 {
-    RV_LOG("flight: autoAnimation(%u, %u, %u)", camShipType, camMode, duration);
+    RV_NOTE("flight: autoAnimation(%u, %u, %u)", camShipType, camMode, duration);
 }
 
 /* --- from the game --- */
@@ -3400,6 +3404,7 @@ static void flight_over(unsigned short status)
     {
         static const char __far s_end[] = "at the flight's end";
         rv_stack_log(s_end);
+        mem_watch_report(s_end);
     }
     RV_LOG("flight: the engines' flames took %lu.%02lu ms a frame (%lu.%02lu of it set up)",
            g_t_flames * 1000 / 240 / (frameCounter ? frameCounter : 1),
