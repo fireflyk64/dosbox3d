@@ -47,7 +47,8 @@ void gfx_share_give(unsigned char __far *p) { MEM_GIVE(p); }
 
 /* The start's loans (the music's tracks as it reads them): before the first room these arrays hold nothing yet and
  * nothing else needs them, so no memory is set aside for a thing done once.  Best fit, so that the biggest stays whole.
- * The longest track does not fit in any: for it, one block from DOS, given back by gfx_boot_done before the game starts */
+ * The longest track does not fit in any: for it, one block from DOS (upper memory if it has any), given back by
+ * gfx_boot_done before the game starts */
 #ifdef RV_HEAP
 void __far *gfx_boot_take(unsigned long bytes) { return _fmalloc((size_t)bytes); }
 void gfx_boot_give(void __far *p) { _ffree(p); }
@@ -68,8 +69,12 @@ static unsigned char __far *boot_big(void)
     return g_boot_big;
 #else
     if (!g_boot_seg) {
+        void __far *high = rv_alloc_high(BOOT_BIG);   /* upper memory first: conventional has less free than this (2026-11-01:
+                                           22 KB, and BAR.MID lost its last track, the drums, without a word on screen) */
         unsigned seg;                   /* (near: the call takes a near pointer, and g_boot_seg is far) */
-        if (_dos_allocmem(BOOT_BIG / 16, &seg) == 0)
+        if (high)
+            g_boot_seg = FP_SEG(high);
+        else if (_dos_allocmem(BOOT_BIG / 16, &seg) == 0)
             g_boot_seg = seg;
     }
     return g_boot_seg ? (unsigned char __far *)MK_FP(g_boot_seg, 0) : 0;
