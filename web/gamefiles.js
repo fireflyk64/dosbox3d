@@ -59,7 +59,7 @@
 // `joystick`: the game reads a joystick on the game port itself, its own
 // way (double clicks and all), and the hooks know its joystick state: the
 // controller picker offers each pad "built in" too (web/gamepad.js).
-// `noFlight`: no missions to pick and nothing to fly yet (the page hides
+// `noFlight`: no missions to pick and no shared flight (the page hides
 // its mission and flight options).
 // `builtin`: a game the site itself serves (ours to give away), as a
 // .tar.gz beside the page: it is in every browser's "Play" menu with no
@@ -240,7 +240,7 @@ export const GAMES = [
   // RetroVega (retrovega/ in dosbox3d): our own game in the Vega Strike
   // universe, open data, built into the page.  It wants 32 MB of XMS, VESA
   // 640x400 and the Sound Blaster's OPL3.  Its saved games are the eight
-  // bunks.  No flight yet: in a room everyone walks the carrier on their own.
+  // bunks.  In a room everyone plays their own campaign: flights are not shared yet.
   { id: "rv", tag: "RV", title: "RetroVega", detect: ["RV.EXE"], run: "rv /noquit", multiplayer: true,
     builtin: "retrovega.tar.gz", noFlight: true,
     build: { rvhook: true, off: 0x0400, text: "Loading RETROVEGA" },
@@ -252,7 +252,7 @@ export const GAMES = [
     pointer: { x: 0.5, y: 0.5, rx: 0.5, ry: 0.5 },
     // the flight's keys, under the picture (the game listed them on a VDU till the user had them moved out of it)
     keys: "<b>RetroVega in flight:</b> the mouse or the arrow keys steer, <kbd>Q</kbd> and <kbd>E</kbd> roll, <kbd>Space</kbd> or the left button fires the guns, <kbd>Enter</kbd> a missile, <kbd>Tab</kbd> the afterburner; <kbd>+</kbd> and <kbd>-</kbd> set the speed, <kbd>F</kbd> full, <kbd>S</kbd> stop; <kbd>T</kbd> the next target in front of you, <kbd>Y</kbd> the nearest enemy, <kbd>L</kbd> locks the target; <kbd>G</kbd> picks the guns, <kbd>W</kbd> the missile, <kbd>D</kbd> the damage readout; <kbd>N</kbd> the nav points (a white cross marks the one chosen), <kbd>A</kbd> the autopilot; <kbd>C</kbd> the comm menu: <kbd>1</kbd> your wingman (fly in formation, break formation, attack your target, help you out, return to base), <kbd>2</kbd> your target (taunt an enemy; with the carrier as your target, request landing within 8,000 km, granted once you have flown a nav point or finished the mission, then fly in over its bow); <kbd>R</kbd> the radar's range; <kbd>F5</kbd> the outside view, <kbd>F1</kbd> the cockpit.",
-    help: "RetroVega has no flight yet: everyone starts in their own quarters on the TCS Clydesdale and walks the ship, bar, briefing room and deck, saving in the bunk. The host's Fly starts everybody's game. Arrow keys steer the pointer, Tab jumps between the things you can use, Enter uses one.",
+    help: "RetroVega is a campaign of 40 missions: you start in your quarters aboard the TCS Vigilance and walk the ship, bar, briefing room and deck, saving in the bunk, then fly from the deck. In a room everyone plays their own campaign; flights are not shared yet. The host's Fly starts everybody's game. Arrow keys steer the pointer, Tab jumps between the things you can use, Enter uses one.",
     dosbox: "[dosbox]\nmemsize=63\n[dos]\nxms=true\nems=false\numb=true\n[sblaster]\nsbtype=sb16\noplmode=opl3\n" },
 ];
 
