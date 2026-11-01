@@ -414,8 +414,8 @@ tests cover them; flight.c's keys (T, Y, L) and its AUTO call them.
 | test | what it checks |
 |---|---|
 | M11.1 sim-waves | one of each Rlaan fighter type in turn, then two of the first; each death counted once |
-| M11.2 sim-shields | the player's shields whole when the count goes up, and not when only the type changes |
-| M11.3 sim-win | the last type at `SIM_MAX_SHIPS` (every ship slot but the player's) cleared: `missionStatus` 1, won |
+| M11.2 sim-replenish | shields, fuel, guns' energy and missile rounds whole when the count goes up, not when only the type changes |
+| M11.3 sim-win | 47 kills, in the round of four: `missionStatus` 1, won, no wave after it |
 | M11.4 sim-death | no wave comes once the player is dying, and the flight ends at 4, not won |
 
 ## The memory: where everything lives

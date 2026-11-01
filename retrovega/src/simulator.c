@@ -1,7 +1,8 @@
 /* simulator.c: the bar's simulator (the user, 2026-11-01).  The player in a Schroedinger, nothing else out there: "the
  * player starts fighting one of [the] rlaan types.  It cycles through all the rlaan fighter types, then goes to two of
- * the first and so forth.  Until the player is destroyed.  They win if they max out the number of ships.  No wingman,
- * no carrier, just fighting.  Shields get healed every time the count increases."
+ * the first and so forth.  Until the player is destroyed ... No wingman, no carrier, just fighting.  Shields get healed
+ * every time the count increases"; then "a solid 47 kills would be enough to demonstrate prowess" (it comes in the
+ * fourth round) and "missiles fuel etc should be replenished when the count increases".
  *
  * The waves' bookkeeping only: the flight, its AI, its guns and its deaths are the game's own, as they are in a mission.
  * It is strictly one player's (flight_simulator: none of the flight loop's hook sites, simulatorStart and simulatorEnd
@@ -13,19 +14,21 @@
 #include "campaign.h"
 #include "world.h"
 #include "logic.h"
+#include "panel.h"
 #include "simulator.h"
 
 #define SIM_BREATH 60                   /* steps between a wave's end and the next (2 s) */
 #define SIM_AHEAD_KM 5000L              /* a wave comes in this far ahead of the player */
 #define SIM_SPACING_KM 1200L            /* its ships this far apart, six to a row */
 #define SIM_ROW 6
+#define SIM_FUEL_FULL 1000              /* (flight.c systems_start) */
 
 static const uint8_t __far k_types[SIM_TYPES] = { 0x10, 0x11, 0x12, 0x13, 0x14, 0x15 };   /* ships.csv's order: Shizu,
                                            Zhuangzong, Taizong, Shizong, Xuanzong, Gaozong */
 static RvMission __far g_mission;
 static struct {
     uint8_t count, type_i, won;
-    uint16_t wait, kills;
+    uint16_t wait, kills, end;
     uint8_t counted[NUM_SHIP_SLOTS];    /* this slot's death is in the kills */
 } __far g_s;
 
@@ -94,6 +97,20 @@ static void spawn_wave(void)
     rv_logf(s_wave, g_s.count, type, g_s.kills);
 }
 
+/* the count went up: what a flight uses up made whole: the shields, the fuel, the guns' energy, the launchers' rounds.
+ * (Not the armour, the hull or a system hurt: that is damage, and what a run has to answer for.  A gun destroyed stays so) */
+static void replenish(void)
+{
+    const RvShipType __far *t = slot_type(0);
+    int16_t g;
+    SHIELD(0, 0) = SHIELD_MAX(0, 0);
+    SHIELD(0, 1) = SHIELD_MAX(0, 1);
+    gunEnergy[0] = 100;
+    g_sys.fuel = SIM_FUEL_FULL;
+    for (g = 0; t && g < GUN_COUNT(0); g++)
+        GUN_STATE(0, g) = (uint8_t)((GUN_STATE(0, g) & GUN_DESTROYED) | t->loadout[1 + g * 5 + 4]);
+}
+
 void simulator_frame(void)
 {
     int16_t s, alive = 0;
@@ -106,22 +123,27 @@ void simulator_frame(void)
             g_s.kills++;
         }
     }
-    if (alive || missionStatus || shipAiState[0] == 9)
+    if (g_s.kills >= SIM_WIN_KILLS && !g_s.won) {
+        static const char __far s_won[] = "simulator: won, %u kills";
+        g_s.won = 1;
+        g_s.end = SIM_BREATH;           /* (the last one's explosion seen) */
+        rv_logf(s_won, g_s.kills);
+    }
+    if (missionStatus)
+        return;
+    if (g_s.won) {                      /* (won, whatever the wave's other ships do now) */
+        if (--g_s.end == 0)
+            missionStatus = 1;
+        return;
+    }
+    if (alive || shipAiState[0] == 9)
         return;
     if (!g_s.wait) {                    /* the wave is over: on to the next type, or one more of the first */
         if (++g_s.type_i == SIM_TYPES) {
-            if (g_s.count >= SIM_MAX_SHIPS) {
-                static const char __far s_won[] = "simulator: won, %u kills";
-                g_s.type_i = SIM_TYPES - 1;
-                g_s.won = 1;
-                missionStatus = 1;
-                rv_logf(s_won, g_s.kills);
-                return;
-            }
             g_s.type_i = 0;
-            g_s.count++;
-            SHIELD(0, 0) = SHIELD_MAX(0, 0);   /* (the count went up: the player's shields whole) */
-            SHIELD(0, 1) = SHIELD_MAX(0, 1);
+            if (g_s.count < SIM_MAX_SHIPS)
+                g_s.count++;
+            replenish();
         }
         g_s.wait = SIM_BREATH;
     }
@@ -137,7 +159,7 @@ void simulator_line(char *out)
     if (t)
         _fstrncpy(name, t->name, sizeof name - 1);
     name[sizeof name - 1] = 0;
-    sprintf(out, "%d x %s  KILLS %u  ESC LEAVES", g_s.count, name, g_s.kills);
+    sprintf(out, "%d x %s  KILLS %u OF %d  ESC LEAVES", g_s.count, name, g_s.kills, SIM_WIN_KILLS);
 }
 
 int16_t simulator_count(void) { return g_s.count; }

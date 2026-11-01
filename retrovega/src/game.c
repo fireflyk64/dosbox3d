@@ -1469,8 +1469,8 @@ static void start_simulator(void)
     g_now = ticks();
     enter_room(RV_R_BAR);
     if (simulator_won())
-        sprintf(g_msg, "You beat the simulator: every Rlaan type, %d at a time. Kills: %u. It has nothing left to throw at you.",
-                simulator_count(), simulator_kills());
+        sprintf(g_msg, "You beat the simulator: %u kills, up to %d Rlaan at a time. It has nothing left to throw at you.",
+                simulator_kills(), simulator_count());
     else
         sprintf(g_msg, "%s at %d x %s. Kills: %u.", status == 4 ? "Simulator: shot down" : "Simulator: switched off",
                 simulator_count(), ship_name(simulator_type()), simulator_kills());
