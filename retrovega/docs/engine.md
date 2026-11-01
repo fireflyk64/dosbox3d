@@ -221,7 +221,8 @@ nav table holds both, the second kind named `.Encounter`, `.Ambush`, `.TC wave`,
 on no list and no map, and asks nothing of the player unless they come to it; its ships come when they do, but a second
 wave waits for the first (the user, 2026-11-01): while an enemy fighter is out a hidden point's enemies hold
 (`wave_may_come`); when the last one is killed they come, and when the last one ran they are called off, unless the wave
-holds a capital ship or an escort target. A wave starts where the old game has it, off its nav point (`at=x,y,z`, km; `tests/wc1/places.py` writes them), and a ship in no
+holds a capital ship or an escort target. A hidden point at the launch itself with nobody out is the way home's encounter
+and waits for the player to have flown a nav point. A wave starts where the old game has it, off its nav point (`at=x,y,z`, km; `tests/wc1/places.py` writes them), and a ship in no
 nav point's list never flies. Enemies at the launch, in four missions, have the wingman start 3,000 km past them
 (`wingman_behind`), to come up behind them. The port took them all for waypoints until 2026-10-31. Fields (`field asteroid|mine x y z radius [density=N]`, km) are read from the old game's mission
 records (types 0x16 and 0x17) at the map's 0.45, which keeps its layout: no waypoint lies inside a field. A mission's

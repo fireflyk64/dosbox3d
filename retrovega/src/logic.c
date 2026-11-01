@@ -2963,6 +2963,11 @@ static int16_t wave_may_come(int16_t n)
         g_wave_held |= 1u << n;
         return 0;
     }
+    /* a hidden point at the launch itself, with nobody out, is the way home's encounter: the old game's `.Encounter` at
+     * the carrier.  Not at the launch: a wave has to have waited there, or the player to have flown a nav point first */
+    if (!(g_wave_held >> n & 1) && g_navs_seen == 1
+        && len_of(NAV_AT(n, 0), NAV_AT(n, 1), NAV_AT(n, 2)) < NAV_REACH_KM)
+        return 0;
     if ((g_wave_held >> n & 1) && g_enemy_ran && !stays) {
         rv_logf(s_off, n);
         for (j = 0; j < 10 && at[j] != 0xFFFF; j++)

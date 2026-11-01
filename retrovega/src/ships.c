@@ -52,7 +52,7 @@ MEM_ARRAY(ShipSet, g_set_arr, SHIP_SETS)
 static ShipSet __far *g_set_all;        /* the array, while it is out */
 #endif
 static int g_nsets;
-#ifdef RV_HEAP
+#if defined(RV_HEAP) || defined(RV_HOST)
 static unsigned char __far *g_band;     /* BAND_ROWS x LINE pixels, 0 = clear (no view uses colour 0) */
 #endif
 
@@ -110,7 +110,7 @@ static unsigned long rd32(FILE *f)
     return b[0] | ((unsigned long)b[1] << 8) | ((unsigned long)b[2] << 16) | ((unsigned long)b[3] << 24);
 }
 
-#ifdef RV_HEAP                          /* (RV.EXE has no heap, and the game's sets are all .RVS or .RVH) */
+#if defined(RV_HEAP) || defined(RV_HOST)   /* (RV.EXE has no heap, and the game's sets are all .RVS or .RVH) */
 /* --- the .RV fallback: decoding WC's sprite code --- */
 
 /* the records of a view (its raw bytes at buf) for rows r0 .. r0+n-1 into
@@ -310,7 +310,7 @@ static int load_rv(ShipSet __far *s, const char *name)
     return 1;
 }
 
-#endif /* RV_HEAP */
+#endif
 
 /* --- the pre-rendered sets --- */
 
@@ -462,10 +462,13 @@ int ships_load(unsigned type)
     _fmemset(s, 0, sizeof(ShipSet));
     s->type = (unsigned char)type;
     ok = 0;
+#if defined(RV_HEAP) || defined(RV_HOST)
     if (g_res == 3) {                   /* (the full-size views themselves: RV_SHARP_SHIPS) */
         sprintf(name, "SHIP%02X.RV", type);
         ok = load_rv(s, name);
-    } else if (g_res == 2) {            /* the block mode's set, when it is there */
+    } else
+#endif
+    if (g_res == 2) {            /* the block mode's set, when it is there */
         sprintf(name, "SHIP%02X.RVH", type);
         s->rvh = 1;
         ok = load_rvs(s, name);
@@ -477,7 +480,7 @@ int ships_load(unsigned type)
         ok = load_rvs(s, name);
     }
     if (!ok) {
-#ifdef RV_HEAP
+#if defined(RV_HEAP) || defined(RV_HOST)
         sprintf(name, "SHIP%02X.RV", type);
         ok = load_rv(s, name);
 #endif
