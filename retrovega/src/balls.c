@@ -149,6 +149,8 @@ int balls_init(int want, unsigned keep_kb)
         want = want * 3 / 4;
     }
     g_cap = g_b ? want : 0;
+    if (!g_b)
+        balls_free();                   /* (the buffers too: the caller frees only a pool it got) */
     rv_logf(s_room, g_cap);
     return g_cap;
 }

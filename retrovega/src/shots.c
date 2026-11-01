@@ -31,6 +31,10 @@ int16_t shots_flight_start(int16_t own_pools)
     g_added = g_hits = 0;
     g_s = (Shot __far *)_fmalloc(SHOTS_MAX * sizeof(Shot));
     if (own_pools && g_s) {
+#ifndef RV_HOST
+        _fheapshrink();                 /* (the last flight's memory, held in the far heap, back to DOS: the pools ask
+                                           DOS what is free, and from the second flight on it said nothing was) */
+#endif
         g_bolts = bolts_init(SHOTS_MAX, 48);   /* (48 KB kept for the rocks, should a field come) */
         g_balls = balls_init(SHOTS_MAX, 48);
     }
