@@ -4,7 +4,320 @@
   400
  ],
  "back": "back.png",
- "about": "The pilots' lounge and bar: Tally behind the counter, a round table with three seats, the chalkboard, the hatch to the simulator.",
+ "about": "The pilots' lounge and bar: Tally behind the counter, a round table with three seats, the chalkboard; at the back on the left the hatches to the crew's bunks (the leftmost, where a mouse thrown left lands) and your own quarters (the one nearer the window); the door to the briefing room and the Schroedinger simulator rig at the right.",
+ "window": {
+  "y0": 99,
+  "rows": [
+   [
+    324,
+    457
+   ],
+   [
+    323,
+    458
+   ],
+   [
+    322,
+    459
+   ],
+   [
+    321,
+    459
+   ],
+   [
+    320,
+    460
+   ],
+   [
+    319,
+    461
+   ],
+   [
+    319,
+    462
+   ],
+   [
+    318,
+    463
+   ],
+   [
+    317,
+    463
+   ],
+   [
+    316,
+    464
+   ],
+   [
+    315,
+    464
+   ],
+   [
+    314,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    312,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    312,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    313,
+    464
+   ],
+   [
+    314,
+    463
+   ],
+   [
+    315,
+    462
+   ],
+   [
+    316,
+    461
+   ],
+   [
+    317,
+    460
+   ],
+   [
+    318,
+    459
+   ],
+   [
+    319,
+    458
+   ],
+   [
+    319,
+    458
+   ],
+   [
+    320,
+    457
+   ]
+  ]
+ },
  "seats": {
   "left": {
    "FROST": {
@@ -49,36 +362,36 @@
     "talk": {
      "file": "seat-PRIME-talk.png",
      "x": 291,
-     "y": 168
+     "y": 169
     },
     "face": {
      "file": "seat-PRIME-face.png",
      "x": 291,
-     "y": 168
+     "y": 169
     }
    },
    "KESTREL": {
     "talk": {
      "file": "seat-KESTREL-talk.png",
      "x": 291,
-     "y": 168
+     "y": 169
     },
     "face": {
      "file": "seat-KESTREL-face.png",
      "x": 291,
-     "y": 167
+     "y": 168
     }
    },
    "ECHO": {
     "talk": {
      "file": "seat-ECHO-talk.png",
      "x": 290,
-     "y": 167
+     "y": 168
     },
     "face": {
      "file": "seat-ECHO-face.png",
      "x": 290,
-     "y": 166
+     "y": 168
     }
    }
   },
@@ -87,36 +400,36 @@
     "talk": {
      "file": "seat-DRIFTER-talk.png",
      "x": 386,
-     "y": 171
+     "y": 172
     },
     "face": {
      "file": "seat-DRIFTER-face.png",
      "x": 386,
-     "y": 170
+     "y": 172
     }
    },
    "COMET": {
     "talk": {
      "file": "seat-COMET-talk.png",
      "x": 386,
-     "y": 175
+     "y": 176
     },
     "face": {
      "file": "seat-COMET-face.png",
      "x": 386,
-     "y": 174
+     "y": 175
     }
    },
    "ANCHOR": {
     "talk": {
      "file": "seat-ANCHOR-talk.png",
      "x": 387,
-     "y": 171
+     "y": 173
     },
     "face": {
      "file": "seat-ANCHOR-face.png",
      "x": 386,
-     "y": 172
+     "y": 173
     }
    }
   }
@@ -192,15 +505,25 @@
   }
  },
  "hotspots": {
-  "hatch": {
+  "bunks_door": {
    "rect": [
-    132,
-    123,
-    33,
-    68
+    106,
+    112,
+    22,
+    69
    ],
-   "does": "goto:briefing",
-   "label": "Briefing room"
+   "does": "goto:lounge",
+   "label": "Crew bunks"
+  },
+  "quarters_door": {
+   "rect": [
+    135,
+    123,
+    29,
+    57
+   ],
+   "does": "goto:quarters",
+   "label": "Your quarters"
   },
   "lounge": {
    "rect": [
@@ -212,12 +535,22 @@
    "does": "goto:lounge",
    "label": "Crew lounge"
   },
+  "door": {
+   "rect": [
+    571,
+    28,
+    69,
+    170
+   ],
+   "does": "goto:briefing",
+   "label": "Briefing room"
+  },
   "simulator": {
    "rect": [
-    502,
-    89,
-    33,
-    146
+    598,
+    256,
+    42,
+    69
    ],
    "does": "simulator",
    "label": "Simulator"

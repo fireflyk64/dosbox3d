@@ -2,7 +2,7 @@
 #ifndef RVASSET_H
 #define RVASSET_H
 
-#define RVDAT_VERSION 4
+#define RVDAT_VERSION 5
 
 #define RV_HOTS 8
 #define RV_POSES 12
@@ -238,6 +238,8 @@ typedef struct {
     RvSpeaker speaker;
     RvDeck deck;
     RvBoard board[4];
+    unsigned short win_ext;     /* RAW: a window on space (flight.c): (first x, end x) a row; 0xFFFF none */
+    short win_y0, win_rows;
 } RvRoom;
 typedef struct {
     char key[10];
@@ -296,7 +298,7 @@ typedef struct {
 } RvPanelControl;
 #pragma pack()
 
-#define RV_ROOM_SIZE 556
+#define RV_ROOM_SIZE 562
 #define RV_PERSON_SIZE 22
 #define RV_COCKPIT_SIZE 230
 

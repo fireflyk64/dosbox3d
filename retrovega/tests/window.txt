@@ -1,0 +1,23 @@
+# the bar's window on space: the walk there, then what goes by (tests/run.sh tests/window.txt /at N: mission N's)
+wait 12
+click
+wait 4
+move 593 200
+wait 2
+click
+wait 12
+move 429 140
+wait 2
+click
+wait 14
+move 300 370
+shot WIN0
+wait 40
+shot WIN1
+wait 12
+shot WIN2
+wait 40
+shot WIN3
+wait 12
+shot WIN4
+quit

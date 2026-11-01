@@ -164,7 +164,8 @@ PILOT = [('char', 'key[RV_KEY]', '%ds' % TEXT['KEY']), ('char', 'callsign[RV_CAL
          ('unsigned char', 'pad', 'B'), ('char', 'line[RV_LINE]', '%ds' % TEXT['LINE'])]
 NODE = [('char', 'id[RV_NODE_ID]', '%ds' % TEXT['NODE_ID']), ('unsigned char', 'layer', 'B'),
         ('signed char', 'col', 'b'), ('unsigned short', 'missions[RV_MISSIONS_PER_NODE]', '4H'),
-        ('unsigned char', 'good', 'B'), ('unsigned char', 'bad', 'B'), ('unsigned char', 'pad[2]', '2s')]
+        ('unsigned char', 'good', 'B'), ('unsigned char', 'bad', 'B'), ('unsigned char', 'outside', 'B'),
+        ('unsigned char', 'pad', 'B')]
 NAV = [('unsigned char', 'id', 'B'), ('unsigned char', 'flags', 'B'), ('short', 'x', 'h'), ('short', 'y', 'h'),
        ('short', 'z', 'h')]
 SHIP = [('unsigned char', 'type', 'B'), ('unsigned char', 'side', 'B'), ('unsigned char', 'nav', 'B'),
@@ -201,6 +202,11 @@ MISSION = [('char', 'id[RV_ID]', '%ds' % TEXT['ID']), ('unsigned char', 'node', 
 
 def fmt(fields):
     return '<' + ''.join(f for _t, _n, f in fields if f)
+
+
+# campaign.csv's outside: what a room's window shows in that system (flight.c): one far thing, partly hidden; asteroids; one
+# well off to the side, its edge showing; nothing but stars
+OUTSIDE = ['', 'rocks', 'edge', 'empty']
 
 
 class Fail(Exception):
@@ -481,7 +487,7 @@ def compile_all():
                 raise Fail('%s: mission %s says it belongs to %s' % (where, m, missions[mission_index[m]].get('node')))
         out_nodes.append(struct.pack(fmt(NODE), text(n['node'], TEXT['NODE_ID'], where), int(n['layer']),
                                      int(n['col']), *([mission_index[m] for m in ms] + [0xFFFF] * (LIMITS['MISSIONS_PER_NODE'] - len(ms))),
-                                     edge(n['good'], where), edge(n['bad'], where), b''))
+                                     edge(n['good'], where), edge(n['bad'], where), OUTSIDE.index(n.get('outside') or ''), 0))
         if n['good'] == n['bad']:
             print('%s: both ways out go to %s' % (where, n['good']), file=sys.stderr)
     check_dag(nodes)

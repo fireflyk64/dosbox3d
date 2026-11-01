@@ -41,7 +41,7 @@ wait 40
 shot A4DRIFT
 click
 wait 10
-move 145 152
+move 605 113
 wait 2
 click
 wait 40

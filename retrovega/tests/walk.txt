@@ -33,7 +33,7 @@ wait 30
 shot S06TALK
 click
 wait 8
-move 431 170
+move 429 140
 wait 2
 click
 wait 12
@@ -41,7 +41,7 @@ shot S07BAR
 move 75 150
 wait 8
 shot S08TALLY
-move 145 152
+move 605 113
 wait 2
 click
 wait 90

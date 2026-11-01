@@ -37,6 +37,7 @@ static int change_base(int base);
 static void mission_load_assets(void);
 static void mission_free_assets(void);
 int __far g_fly = -2;                   /* /fly [N]: -2 not asked; -1 the campaign's next mission; N that mission */
+int __far g_at = -1;                    /* /at N: the rooms with the campaign at mission N */
 int g_winrate = -1;                         /* percent: a launch's chance of a win (/winrate N, a test's: the roll then
                                                decides, whatever the flight did); -1 not given: 80, the stand-in */
 
@@ -323,6 +324,28 @@ static void room_overlay(int y0, int y1)
     talk_overlay(y0, y1);
 }
 
+/* the next flight's sets asked of the page (ships_want; it drops what is not listed), and two more for a window on space
+ * (or -1) */
+static void mission_want(int a, int b)
+{
+    unsigned char want[RV_MAX_SHIP_SLOT + 4];
+    int i, nw = 0, enemy = 0;
+    if (a >= 0) {
+        want[nw++] = (unsigned char)a;
+        want[nw++] = (unsigned char)b;
+    }
+    want[nw++] = g_camp.player_ship;
+    for (i = 0; i < g_m.nship && nw < (int)sizeof want - 1; i++) {
+        int type = g_m.ship[i].type;
+        if (g_m.ship[i].side == 1)
+            enemy = 1;
+        want[nw++] = (unsigned char)(type == RV_SHIP_PLAYER || type == RV_SHIP_WINGMAN ? g_camp.player_ship : type);
+    }
+    if (!enemy)
+        want[nw++] = 0x08;              /* (the flight's stand-in enemy type) */
+    ships_want(want, nw, 0);
+}
+
 /* each room's song: the quarters and the locker, the lounge, the bar (and the rest) */
 static int room_song(int room)
 {
@@ -352,6 +375,12 @@ static void enter_room(int room)
     g_mode = MODE_ROOM;
     g_talk_line = -1;
     g_talk_at = 0;
+    if (dat_room(room)->win_ext != 0xFFFF) {   /* (a window on space: the system's sky, ships going by, or the rocks) */
+        mission_want(0x00, 0x02);
+        flight_window_open(room, g_camp.node, g_nodes[g_camp.node].outside);
+        g_scene.underlay = flight_window_draw;
+        g_scene.leave = flight_window_close;
+    }
     music_cue(room_song(room), 250);
     scene_draw();
     vid_fade(64);
@@ -782,21 +811,8 @@ static void start_briefing(int debrief)
     g_scene.overlay = brief_overlay;
     g_mode = debrief ? MODE_DEBRIEF : MODE_BRIEF;
     g_stage = 0;
-    if (!debrief) {
-        /* the flight's sets asked of the page now (ships_want), fetched while the briefing is read */
-        unsigned char want[RV_MAX_SHIP_SLOT + 2];
-        int i, nw = 0, enemy = 0;
-        want[nw++] = g_camp.player_ship;
-        for (i = 0; i < g_m.nship && nw < (int)sizeof want - 1; i++) {
-            int type = g_m.ship[i].type;
-            if (g_m.ship[i].side == 1)
-                enemy = 1;
-            want[nw++] = (unsigned char)(type == RV_SHIP_PLAYER || type == RV_SHIP_WINGMAN ? g_camp.player_ship : type);
-        }
-        if (!enemy)
-            want[nw++] = 0x08;          /* (the flight's stand-in enemy type) */
-        ships_want(want, nw, 0);
-    }
+    if (!debrief)                       /* the flight's sets asked of the page now, fetched while the briefing is read */
+        mission_want(-1, 0);
     g_line_room = !debrief ? RV_ROOM_BRIEF : g_won ? RV_ROOM_WIN : RV_ROOM_LOSE;
     if (debrief)
         camp_way_out(g_won);
@@ -1417,7 +1433,8 @@ static void next_mission(void)
 {
     int i;
     camp_mission(camp_mission_index(), &g_m);
-    rocks_want(g_m.nfield > 0 || g_field > 0);   /* (a field's art: listed with the ships', room kept for it) */
+    rocks_want(g_m.nfield > 0 || g_field > 0 || g_nodes[g_camp.node].outside == WINDOW_ROCKS);   /* (a field's art: listed with the
+                                           ships', room kept for it; the bar's window has rocks in some systems) */
     for (i = 0; i < RV_PILOTS; i++)     /* (Tally wipes the board: everyone's marks, or one column; not the lost's) */
         if ((g_m.wipe == 0xFE || g_m.wipe == i) && g_camp.pilot[i].alive)
             g_camp.pilot[i].kills = 0;
@@ -1481,9 +1498,11 @@ int game_run(void)
             fly_mission(g_fly);
         launch();
     } else {
+        if (g_at >= 0)
+            fly_mission(g_at);
         enter_room(RV_R_QUARTERS);
         message("Wildcard, welcome aboard the TCS Vigilance. Your bunk keeps your saves. "
-                "The briefing room is through the hatch in the bar.");
+                "The briefing room is through the big door in the bar.");
     }
     while (g_mode != MODE_QUIT) {
         rv_halt();                      /* once a music tick at most (1/240 s): the host idles between */
@@ -1499,6 +1518,7 @@ int game_run(void)
         if ((in.key == KEY_ESC && in.ch == 'q' && script_active()) || g_quit_asked)
             break;
         scene_update(&in, &act);
+        flight_window_tick();
         switch (g_mode) {
         case MODE_ROOM:
             ambient_talk();

@@ -95,7 +95,7 @@ if (!await hotspot(593, 200, "the quarters' door")) process.exit(1);
 await waitLog(new RegExp(`(stub: roomEntered[^]*){${n + 1}}`), 8000); await sleep(1500);
 if (!await hotspot(431, 170, "the lounge's hatch")) process.exit(1);
 await waitLog(new RegExp(`(stub: roomEntered[^]*){${n + 2}}`), 8000); await sleep(1500);
-if (!await hotspot(145, 152, "the bar's hatch")) process.exit(1);
+if (!await hotspot(605, 113, "the bar's door")) process.exit(1);
 t = await waitLog(/briefingStarted/, 8000);
 if (!/briefingStarted/.test(t)) { console.log("FAIL no briefing"); process.exit(1); }
 await sleep(2000);

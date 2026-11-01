@@ -39,6 +39,8 @@ void scene_enter(int room_id, const unsigned char *seats)
 {
     const RvRoom __far *r;
     int i;
+    if (g_scene.leave)
+        g_scene.leave();
     dat_enter(XMS_ROOM);                /* (the last room's pictures given back: this one's read as drawn) */
     memset(&g_scene, 0, sizeof g_scene);
     g_scene.room = room_id;
@@ -74,13 +76,8 @@ static void find_hover(int x, int y, int *kind, int *index)
             return;
         }
     }
-    if (r->has_actor && !g_scene.actor_gone && x >= r->actor.x && y >= r->actor.y && x < r->actor.x + r->actor.w
-        && y < r->actor.y + r->actor.h) {
-        *kind = HOVER_ACTOR;
-        *index = 0;
-        return;
-    }
-    for (i = 0; i < r->nhot; i++) {
+    for (i = 0; i < r->nhot; i++) {     /* (before the actor: its rectangle is wider than the figure, and the hatch behind
+                                           the bar's Tally is mostly inside it) */
         const RvHot __far *h = &r->hot[i];
         if (i + 1 == g_scene.hot_gone)
             continue;
@@ -89,6 +86,12 @@ static void find_hover(int x, int y, int *kind, int *index)
             *index = i;
             return;
         }
+    }
+    if (r->has_actor && !g_scene.actor_gone && x >= r->actor.x && y >= r->actor.y && x < r->actor.x + r->actor.w
+        && y < r->actor.y + r->actor.h) {
+        *kind = HOVER_ACTOR;
+        *index = 0;
+        return;
     }
     *kind = HOVER_NONE;
     *index = 0;

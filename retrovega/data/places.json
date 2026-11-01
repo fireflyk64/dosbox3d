@@ -1,8 +1,22 @@
 {
   "bar": {
-    "about": "The pilots' lounge and bar: Tally behind the counter, a round table with three seats, the chalkboard, the hatch to the simulator.",
+    "about": "The pilots' lounge and bar: Tally behind the counter, a round table with three seats, the chalkboard; at the back on the left the hatches to the crew's bunks (the leftmost, where a mouse thrown left lands) and your own quarters (the one nearer the window); the door to the briefing room and the Schroedinger simulator rig at the right.",
     "src": "art/places/src/bar-v2",
     "background": "naval-lounge-empty.png",
+    "overlays": [
+      "overlay-door.png",
+      "overlay-sim.png"
+    ],
+    "window": [
+      [780, 269],
+      [1095, 269],
+      [1113, 292],
+      [1113, 433],
+      [1095, 453],
+      [769, 453],
+      [750, 431],
+      [750, 300]
+    ],
     "crop": [
       0,
       32,
@@ -137,15 +151,25 @@
       }
     },
     "hotspots": {
-      "hatch": {
+      "bunks_door": {
         "rect": [
-          318,
-          328,
-          398,
-          492
+          254,
+          300,
+          308,
+          465
         ],
-        "does": "goto:briefing",
-        "label": "Briefing room"
+        "does": "goto:lounge",
+        "label": "Crew bunks"
+      },
+      "quarters_door": {
+        "rect": [
+          323,
+          328,
+          392,
+          465
+        ],
+        "does": "goto:quarters",
+        "label": "Your quarters"
       },
       "lounge": {
         "rect": [
@@ -157,12 +181,22 @@
         "does": "goto:lounge",
         "label": "Crew lounge"
       },
+      "door": {
+        "rect": [
+          1370,
+          100,
+          1536,
+          507
+        ],
+        "does": "goto:briefing",
+        "label": "Briefing room"
+      },
       "simulator": {
         "rect": [
-          1205,
-          245,
-          1285,
-          595
+          1434,
+          647,
+          1536,
+          812
         ],
         "does": "simulator",
         "label": "Simulator"

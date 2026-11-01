@@ -9,12 +9,12 @@ wait 2
 click
 wait 360
 log to the bar
-move 431 170
+move 429 140
 wait 2
 click
 wait 90
 log to the briefing
-move 145 152
+move 605 113
 wait 2
 click
 wait 450

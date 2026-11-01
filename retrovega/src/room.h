@@ -29,6 +29,7 @@ typedef struct {
     void (*underlay)(int y0, int y1);   /* room-specific pictures, under the people */
     void (*overlay)(int y0, int y1);    /* the game's text and panels, over everything but the pointer */
     void (*full)(int y0, int y1);       /* set: the game draws the whole screen (close-ups, endings) */
+    void (*leave)(void);                /* set: called as the next room is entered (what the room holds in XMS goes then) */
     int no_room;                        /* no room's hotspots or people: only the game's screen */
 } Scene;
 

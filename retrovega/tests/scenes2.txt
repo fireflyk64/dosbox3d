@@ -42,7 +42,7 @@ move 431 126
 wait 2
 click
 wait 14
-move 145 152
+move 605 113
 wait 2
 click
 wait 60
