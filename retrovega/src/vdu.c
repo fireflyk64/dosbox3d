@@ -48,6 +48,11 @@ void vdu_flight_start(void)
 /* --- the comm menu --- */
 
 enum { LEVEL_WHOM, LEVEL_WINGMAN, LEVEL_TARGET };   /* its pages */
+#define COMM_ORDERS 5                   /* what a wingman can be told, the keys 1 .. 5 */
+static const char __far k_order_line[COMM_ORDERS][17] = {
+    "FLY IN FORMATION", "BREAK FORMATION", "ATTACK MY TARGET", "HELP ME OUT", "RETURN TO BASE"
+};
+static const uint8_t __far k_order_key[COMM_ORDERS] = { ORDER_FORMATION, ORDER_BREAK, ORDER_ATTACK, ORDER_HELP, ORDER_RTB };
 enum { TARGET_NONE, TARGET_ENEMY, TARGET_HOME, TARGET_WING, TARGET_FRIEND };   /* what the target page offers */
 
 /* a ship's callsign (its mission record's pilot), else its type's name */
@@ -133,10 +138,10 @@ int vdu_comm_key(int ch, int *who, int *order)
     }
     kind = comm_target();
     if (level == LEVEL_WINGMAN || kind == TARGET_WING) {
-        if (d > 2)
+        if (d > COMM_ORDERS)
             return COMM_NONE;
         *who = level == LEVEL_WINGMAN ? comm_wingman() : g_sys.target;
-        *order = d == 1 ? ORDER_FORMATION : ORDER_BREAK;
+        *order = k_order_key[d - 1];
         g_page[0] = VDU_L_STATUS;
         return COMM_ORDER;
     }
@@ -475,7 +480,7 @@ static void draw_nav(const RvRect __far *r, int y0, int y1)
 /* the comm page: 1 the wingman and 2 the target, or what can be said to the one picked */
 static void draw_comm(const RvRect __far *r, int y0, int y1)
 {
-    char lines[4][20], name[12];
+    char lines[COMM_ORDERS + 2][20], name[12];
     int n = 0, level = comm_level(), kind = comm_target();
     if (level == LEVEL_WHOM) {
         int w = comm_wingman();
@@ -496,8 +501,11 @@ static void draw_comm(const RvRect __far *r, int y0, int y1)
         ship_name(level == LEVEL_WINGMAN ? comm_wingman() : g_sys.target, name, 12);
         sprintf(lines[n++], "%s:", name);
         if (level == LEVEL_WINGMAN || kind == TARGET_WING) {
-            strcpy(lines[n++], "1 FLY IN FORMATION");
-            strcpy(lines[n++], "2 BREAK FORMATION");
+            int k;
+            for (k = 0; k < COMM_ORDERS; k++) {
+                sprintf(lines[n], "%d ", k + 1);
+                _fstrcpy(lines[n++] + 2, k_order_line[k]);
+            }
         } else if (kind == TARGET_ENEMY)
             strcpy(lines[n++], "1 TAUNT");
         else if (kind == TARGET_HOME)

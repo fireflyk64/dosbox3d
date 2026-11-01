@@ -64,9 +64,9 @@ int16_t logic_nav_km(int16_t n, int32_t *km);
 /* the wingmen's orders (the comm menu, flight.c and vdu.c; the user's asks, 2026-10-31): a wingman (a fighter of the
  * player's side flown by the AI) flies in formation and fights what comes within its reach (FREE, the default), or
  * keeps station and does not fight (FORMATION: fly in formation), or leaves the formation, goes for the enemy nearest
- * it however far and with none about circles the player (BREAK: break formation).  The menu offers those two.  The
- * logic also knows the player's target wherever it goes (ATTACK), the enemy nearest the player, the one on the player
- * first (HELP), and the nearest capital ship of its side, circled (RTB) */
+ * it however far and with none about circles the player (BREAK: break formation), or the player's target wherever it
+ * goes (ATTACK: attack my target), or the enemy nearest the player, the one on the player first (HELP: help me out),
+ * or the nearest capital ship of its side, circled (RTB: return to base) */
 enum { ORDER_FREE, ORDER_ATTACK, ORDER_FORMATION, ORDER_HELP, ORDER_RTB, ORDER_BREAK, ORDER_COUNT };
 int16_t logic_wingmen(int16_t *out, int16_t max);   /* the wingmen's slots, in order: n of them */
 int16_t logic_is_wingman(int16_t s);    /* slot s is one of them */

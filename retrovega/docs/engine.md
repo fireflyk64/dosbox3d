@@ -1777,7 +1777,8 @@ the VDUs take the readouts' small font. vdu.c:
   callsign; NO WINGMAN when none is left), 2 the target (NO TARGET
   without one; its page follows the target, so T changes it). The
   wingman's page, and a friendly fighter's as the target: 1 fly in
-  formation, 2 break formation (`logic_order`, docs/ai.md). An enemy's: 1
+  formation, 2 break formation, 3 attack my target, 4 help me out, 5
+  return to base (`logic_order`, docs/ai.md). An enemy's: 1
   taunt (`logic_taunt`). The home carrier's: 1 request landing. 0 or Esc
   closes. The pilot says the line on the left VDU in the hero's face and
   the other answers on the right once the pilot's comm is over: the

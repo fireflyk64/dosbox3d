@@ -16,7 +16,7 @@ enum { VDU_L_STATUS, VDU_L_COMM, VDU_L_NAV };          /* the left VDU's */
 void vdu_flight_start(void);            /* the pages at their first (the target, the status lines) */
 
 /* the comm menu (C; the user's layout, 2026-10-31): 1 the wingman, always, 2 the target.  The wingman (or a friendly
- * fighter as the target): 1 fly in formation, 2 break formation.  An enemy target: 1 taunt.  The home carrier as the
+ * fighter as the target): 1 fly in formation, 2 break formation, 3 attack my target, 4 help me out, 5 return to base.  An enemy target: 1 taunt.  The home carrier as the
  * target: 1 request landing.  A digit picks, 0 or Esc closes.  The intercom wrecked, only the carrier can still be
  * asked (its deck sees the ship: a flight has to be able to end).  vdu_comm_key says what the pilot picked: COMM_ORDER
  * with the ship's slot and the order (logic.h ORDER_*), COMM_TAUNT with the ship's, COMM_LANDING, COMM_CLOSE, or

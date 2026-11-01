@@ -1396,7 +1396,8 @@ static int __far g_flicker;             /* frames of flicker left */
 
 /* --- the comm menu (vdu.c's page): the pilot's own line on the left VDU, the answer on the right ---
  *
- * The user's asks (2026-10-31): 1 the wingman (fly in formation, break formation), 2 the target (taunt an enemy; the
+ * The user's asks (2026-10-31): 1 the wingman (fly in formation, break formation, attack my target, help me out,
+ * return to base), 2 the target (taunt an enemy; the
  * home carrier: request landing, which it grants with the mission finished or a nav point flown: logic.c).  Landing is
  * the carrier's answer now, no more a timer's (2026-10-23): the flight ends when its clearance has been said. */
 static unsigned char __far g_landing;   /* cleared: 1 no comm to wait for, 2 the comms being said */
@@ -1486,17 +1487,18 @@ static void comm_taunt(int who)
 
 static void comm_order(int who, int order)
 {
-    static const char __far s_form[] = "Form up on my wing.";
-    static const char __far s_break[] = "Break formation!";
-    static const char __far s_forming[] = "Forming up on your wing.";
-    static const char __far s_breaking[] = "Breaking formation!";
+    static const char __far s_said[ORDER_COUNT][20] = {
+        "", "Attack my target!", "Form up on my wing.", "Help me out here!", "Return to base.", "Break formation!"
+    };
+    static const char __far s_reply[ORDER_COUNT][30] = {
+        "", "Roger, attacking your target.", "Forming up on your wing.", "On my way!", "Heading home.", "Breaking formation!"
+    };
     static const char __far s_refused[] = "Negative. I can't do that.";
     static const char __far s_log[] = "flight: comm: order %d to slot %d: %s";
     int ok = logic_order((int16_t)who, (int16_t)order);
     rv_logf(s_log, order, who, ok ? "taken" : "refused");
     if (!comm_silent())
-        comm_exchange(order == ORDER_FORMATION ? s_form : s_break, wingman_voice(who),
-                      !ok ? s_refused : order == ORDER_FORMATION ? s_forming : s_breaking);
+        comm_exchange(s_said[order], wingman_voice(who), ok ? s_reply[order] : s_refused);
 }
 
 /* a key while the comm menu is up: a digit picks, 0 or Esc closes (vdu_comm_key) */
