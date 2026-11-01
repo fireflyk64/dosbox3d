@@ -144,6 +144,7 @@ static int16_t on_view(const RvCamera *cam, const LfVec *w, int16_t *sx, int16_t
 
 static uint16_t g_navs_seen;            /* a bit per nav point the player has reached (nav 0 from the start) */
 static uint8_t __far g_cleared;         /* the carrier cleared the player to land (logic_request_landing) */
+static uint8_t __far g_stopped;         /* the carrier's hull stopped the player: 1 cleared, 2 not (the comm's to say) */
 static uint8_t __far g_killed[64];      /* a mission ship (its record) seen dying: shipAiState 9 */
 static uint8_t __far g_away[64];        /* a mission ship gone its own way (an escort target jumped out, or home): not killed */
 
@@ -256,7 +257,10 @@ int16_t logic_is_home(int16_t s)
 }
 
 /* the user's rule (2026-10-31): the carrier takes the player back with the mission finished or at least one nav point
- * flown (nav 0, the launch, does not count) */
+ * flown (nav 0, the launch, does not count), the player within LANDING_RANGE_KM when asking; a clearance stands */
+#define LANDING_RANGE_KM 8000           /* (the autopilot home stops within 6,500 km of the carrier) */
+static int32_t km_between(int16_t a, int16_t b);
+
 int16_t logic_landing_allowed(void)
 {
     return (g_navs_seen & ~1u) != 0 || mission_done();
@@ -264,10 +268,46 @@ int16_t logic_landing_allowed(void)
 
 int16_t logic_request_landing(void)
 {
+    int16_t s;
+    if (g_cleared)
+        return LANDING_CLEARED;
     if (!logic_landing_allowed())
-        return 0;
-    g_cleared = 1;
-    return 1;
+        return LANDING_NOT_YET;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (logic_is_home(s) && km_between(0, s) <= LANDING_RANGE_KM) {
+            g_cleared = 1;
+            return LANDING_CLEARED;
+        }
+    return LANDING_TOO_FAR;
+}
+
+#ifdef RV_TESTS
+/* a script's way to the carrier (flight.c's test keys): the player 3,000 km off its bow (0) or its beam (1), facing it */
+void logic_test_to_carrier(int16_t where)
+{
+    int16_t s;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (logic_is_home(s)) {
+            const RvVec3 *F = &gOrientationFrontVector[s], *R = &gOrientationRightVector[s];
+            const RvVec3 *W = where ? R : F;
+            RvVec3 *P = &gOrientationFrontVector[0];
+            gPositionVector[0] = vec3(gPositionVector[s].x + W->x * 3000, gPositionVector[s].y + W->y * 3000,
+                                      gPositionVector[s].z + W->z * 3000);   /* (a unit is 256: x km = positions) */
+            *P = vec3(-W->x, -W->y, -W->z);
+            gOrientationUpVector[0] = gOrientationUpVector[s];
+            gOrientationRightVector[0] = where ? vec3(F->x, F->y, F->z) : vec3(-R->x, -R->y, -R->z);
+            gVelocityVector[0] = vec3(0, 0, 0);
+            setSpeed[0] = speedLo[0] = 0;
+            return;
+        }
+}
+#endif
+
+int16_t logic_carrier_stopped(void)
+{
+    int16_t was = g_stopped;
+    g_stopped = 0;
+    return was;
 }
 
 /* --- the flight begins --- */
@@ -298,6 +338,7 @@ void logic_start(const RvMission __far *m)
     _fmemset(&g_hud, 0, sizeof g_hud);   /* (no marks until the first step works them out) */
     g_navs_seen = 1;
     g_cleared = 0;
+    g_stopped = 0;
     currentNavPoint = 0;
     victoryPoints = 0;                  /* (over the launch's roll: won when the mission is done, step_mission) */
     ship_spawn(0, g_camp.player_ship, SIDE_TERRAN, CTL_PLAYER, 0, 0, 0, 0);
@@ -977,6 +1018,64 @@ static void ram_shove(int16_t s, const LfVec *push, int16_t part, int16_t into)
         v->z -= FIX_MUL(n.z, d) * into;
     }
     speedLo[s] = speedLo[s] / 4;        /* (a bump takes the way off a ship) */
+}
+
+/* the player against the home carrier (the user, 2026-10-31: "they can land from the front only.  Other sides should
+ * just stop the fighter"): a solid thing, its outline from above through the whole height of its box, so no gap in the
+ * hull lets a fighter by (the Vigilance's side silhouette is hollow under the deck, and the bullets' hull test has a
+ * fighter fly clean through it).  r: the player in the carrier's frame, km.  1 when the fighter touches it */
+static int16_t carrier_touches(int16_t home, const RvVec3 *r)
+{
+    static const int8_t __far k_at[5][2] = { { 0, 0 }, { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
+    const RvShipType __far *t = slot_type(home);
+    const RvShipType __far *me = slot_type(0);
+    const uint8_t __far *top;
+    int32_t half, hx, hy, hz, m;
+    int16_t k;
+    if (!t || !me)
+        return 0;
+    half = TO_KM(collide_half(home));
+    hx = half * t->hit[0] / 127;
+    hy = half * t->hit[1] / 127;
+    hz = half * t->hit[2] / 127;
+    m = TO_KM(collide_half(0)) * me->hit[2] / 127;   /* (the fighter's half length, on every side of it) */
+    if (labs(r->x) > hx + m || labs(r->y) > hy + m || labs(r->z) > hz + m)
+        return 0;
+    if ((top = collide_mask(gInstanceShipTypes[home])) == 0 || hx <= 0 || hz <= 0)
+        return 1;                       /* (no silhouettes: its box) */
+    for (k = 0; k < 5; k++) {
+        int32_t col = (r->x + k_at[k][0] * m + hx) * 32 / hx, row = (r->z + k_at[k][1] * m + hz) * 32 / hz;
+        if (col >= 0 && col < 64 && row >= 0 && row < 64
+            && (top[row * 8 + (col >> 3)] >> (int16_t)(col & 7) & 1))
+            return 1;
+    }
+    return 0;
+}
+
+/* cleared and within LANDING_ARC_DIV of the bow's axis the player has landed, and the flight ends at the loop's next
+ * check; anywhere else, or not cleared, the fighter flying into it stops where it was, unhurt, and can fly off again */
+#define LANDING_ARC_DIV 3               /* off the axis by at most 1/3 of the way along it: 18 degrees */
+static void carrier_contact(int16_t home)
+{
+    RvVec3 r, *v = &gVelocityVector[0];
+    ship_rel(home, 0, &r);              /* (z along its bow) */
+    if (!carrier_touches(home, &r))
+        return;
+    if (g_cleared && r.z > 0 && labs(r.x) <= r.z / LANDING_ARC_DIV && labs(r.y) <= r.z / LANDING_ARC_DIV) {
+        missionStatus = 1;
+        return;
+    }
+    /* (flying into it, not off it: toward its middle; km and km per step, so the products fit) */
+    if (TO_KM(gPositionVector[home].x - gPositionVector[0].x) * (v->x / 16)
+        + TO_KM(gPositionVector[home].y - gPositionVector[0].y) * (v->y / 16)
+        + TO_KM(gPositionVector[home].z - gPositionVector[0].z) * (v->z / 16) > 0) {
+        gPositionVector[0].x -= v->x;   /* (the step that took it there undone) */
+        gPositionVector[0].y -= v->y;
+        gPositionVector[0].z -= v->z;
+        *v = vec3(0, 0, 0);
+        setSpeed[0] = speedLo[0] = 0;
+        g_stopped = (uint8_t)(g_cleared ? 1 : 2);
+    }
 }
 
 /* a collision's damage to each ship: the old game's rule (read in its code, 2026-10-31; the user: sensible), the
@@ -2552,9 +2651,14 @@ static void step_collisions(void)
     for (a = 0; a < NUM_SHIP_SLOTS - 1; a++) {
         if (!slot_is_ship(a))
             continue;
-        for (b = a + 1; b < NUM_SHIP_SLOTS; b++)   /* (a dying ship is still a hull: the others bump into it) */
-            if (slot_is_ship(b) && collide_coarse(a, b))
+        for (b = a + 1; b < NUM_SHIP_SLOTS; b++) {   /* (a dying ship is still a hull: the others bump into it) */
+            if (!slot_is_ship(b))
+                continue;
+            if (a == 0 && shipAiState[0] != 9 && logic_is_home(b))
+                carrier_contact(b);     /* (the player and the home carrier: its own rule) */
+            else if (collide_coarse(a, b))
                 ram(a, b);
+        }
     }
 }
 
@@ -2674,11 +2778,11 @@ void logic_hud(void)
     }
 }
 
-/* the final score: won when the player landed (missionStatus 1) with the mission done, cleared by the carrier or at
- * home (at nav 0); dead, ejected, landed elsewhere or with it undone, lost */
+/* the final score: won when the player landed (missionStatus 1) home (at nav 0) with the mission done; dead,
+ * ejected, landed elsewhere or with it undone, lost */
 void logic_end(void)
 {
-    victoryPoints = (uint16_t)(missionStatus == 1 && mission_done() && (g_cleared || nav_km(0) < NAV_REACH_KM));
+    victoryPoints = (uint16_t)(missionStatus == 1 && mission_done() && nav_km(0) < NAV_REACH_KM);
 }
 
 #define AUTOPILOT_CLEAR_KM 8000         /* no enemy this near (the engine's autopilot lamp says the same: flight.c) */

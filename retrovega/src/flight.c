@@ -1398,11 +1398,11 @@ static int __far g_flicker;             /* frames of flicker left */
  *
  * The user's asks (2026-10-31): 1 the wingman (fly in formation, break formation, attack my target, help me out,
  * return to base), 2 the target (taunt an enemy; the
- * home carrier: request landing, which it grants with the mission finished or a nav point flown: logic.c).  Landing is
- * the carrier's answer now, no more a timer's (2026-10-23): the flight ends when its clearance has been said. */
-static unsigned char __far g_landing;   /* cleared: 1 no comm to wait for, 2 the comms being said */
-static unsigned long __far g_land_at;   /* when to land, if the clearance shows no face */
+ * home carrier: request landing, which it grants with the mission finished or a nav point flown and the player near
+ * enough: logic.c).  The landing itself is the player's, into the carrier's bow: the flight ends there (logic.c). */
+static unsigned char __far g_landing;   /* the carrier has cleared the player (who lands by flying into its bow) */
 static unsigned long __far g_denied_until;   /* the status line says so till then */
+static unsigned long __far g_stop_said;      /* the carrier's word about a stop: not again till then */
 static int __far g_reply_voice = -1;    /* an answer waiting for the pilot's own comm to end */
 static const char __far *__far g_reply_text;   /* (NULL: the voice's own line) */
 
@@ -1451,24 +1451,34 @@ static void comm_open(void)
 static void comm_landing(void)
 {
     static const char __far s_ask[] = "Vigilance, Wildcard. Requesting clearance to land.";
-    static const char __far s_yes[] = "Wildcard, Vigilance. You are cleared to land.";
+    static const char __far s_yes[] = "Wildcard, Vigilance. Cleared to land. Come in over the bow.";
     static const char __far s_no[] = "Negative, Wildcard. Fly your patrol first.";
-    static const char __far s_log[] = "flight: comm: landing %s";
-    int ok;
-    if (g_landing)
-        return;
-    ok = logic_request_landing();
-    rv_logf(s_log, ok ? "cleared" : "refused");
-    if (ok) {
+    static const char __far s_far[] = "Negative, Wildcard. You're too far out. Come closer.";
+    static const char __far s_log[] = "flight: comm: landing %d (0 cleared, 1 not yet, 2 too far)";
+    int r = logic_request_landing();
+    rv_logf(s_log, r);
+    if (r == LANDING_CLEARED)
         g_landing = 1;
-        g_land_at = clock240() + 240;
-    } else
+    else
         g_denied_until = clock240() + 720;
-    if (comm_silent())
+    if (!comm_silent())
+        comm_exchange(s_ask, role_voice(RV_ROLE_XO), r == LANDING_CLEARED ? s_yes : r == LANDING_NOT_YET ? s_no : s_far);
+}
+
+/* once a frame: the hull stopped the player (logic.c): the carrier says why, now and then */
+static void comm_stop_tick(void)
+{
+    static const char __far s_side[] = "Wrong side, Wildcard. Come around to the bow.";
+    static const char __far s_ask[] = "Watch it, Wildcard! You're not cleared. Call it in.";
+    static const char __far s_log[] = "flight: the carrier's hull stopped the player (%d: 1 cleared, 2 not)";
+    int k = logic_carrier_stopped();
+    if (!k)
         return;
-    comm_exchange(s_ask, role_voice(RV_ROLE_XO), ok ? s_yes : s_no);
-    if (ok)
-        g_landing = 2;
+    rv_logf(s_log, k);
+    if (comm_silent() || clock240() < g_stop_said || g_reply_voice != -1 || comms_on(0) || comms_on(1))
+        return;
+    g_stop_said = clock240() + 2400;
+    (void)comms_say(role_voice(RV_ROLE_XO), 1, k == 1 ? s_side : s_ask);
 }
 
 /* the taunt: the pilot's words, the enemy's answer in its own voice's line, its anger (logic_taunt) */
@@ -1526,6 +1536,7 @@ static void systems_start(void)
     _fmemset(&g_sys, 0, sizeof g_sys);
     g_landing = 0;
     g_denied_until = 0;
+    g_stop_said = 0;
     g_reply_voice = -1;
     g_sys.emcon = EMCON_ACTIVE;
     g_sys.iff = 1;
@@ -1855,7 +1866,7 @@ static void gather(void)
     if (g_flight_timed)
         sprintf(g_mfd[0][3], "T-%lu", (FLIGHT_TICKS - (clock240() - g_t0) + 239) / 240);
     else if (g_landing) {
-        static const char __far s_cleared[] = "LANDING";
+        static const char __far s_cleared[] = "CLEARED";
         _fstrcpy((char __far *)g_mfd[0][3], s_cleared);
     } else if (clock240() < g_denied_until) {
         static const char __far s_denied[] = "NO LANDING";
@@ -2777,6 +2788,8 @@ unsigned short __far __cdecl flight_keys(void)
             }
         }
         if (in.ch == ']') rvCockpitDamage = 0;
+        if (in.ch == '{') logic_test_to_carrier(0);   /* (a script's way to the carrier: its bow, its beam) */
+        if (in.ch == '}') logic_test_to_carrier(1);
 #endif
     }
     {   /* Ctrl+E pulls the eject handle (twice within two seconds ejects); a click on the panel works its control */
@@ -2836,6 +2849,7 @@ void __far __cdecl flight_frame(void)
         comm_demo_next();
 #endif
     comm_reply_tick();                  /* (first: an answer waiting goes before a hail takes the VDU) */
+    comm_stop_tick();
     if (!g_comm_demo && frameCounter == 90 && !comms_on(0) && !comms_on(1) && g_reply_voice == -1)
         comm_launch();
     else if (!g_comm_demo)
@@ -2947,8 +2961,6 @@ void __far __cdecl flight_frame(void)
     rvFrameDone();
     if (g_flight_timed && now - g_t0 >= FLIGHT_TICKS)
         missionStatus = 1;              /* landed */
-    if (g_landing == 2 ? g_reply_voice == -1 && !comms_on(0) && !comms_on(1) : g_landing && now >= g_land_at)
-        missionStatus = 1;              /* landed: the clearance said */
     if (g_flames_demo && g_record && ++g_flames_frames >= FLAMES_FRAMES)
         missionStatus = 1;              /* (its recording is so many frames, however slowly they are made) */
     /* the frame rate capped at FPS_WANT: the simulation is per frame (a kps is 12.8 units a frame), so

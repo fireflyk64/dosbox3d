@@ -39,6 +39,7 @@ Each item that touches the logic gets a play test (tests/play/playtest.c) run on
 
 The menu of E1 and E2 gave way to the user's layout: 1 the wingman at all times, 2 the target; the wingman flies in
 formation or breaks formation; an enemy target can be taunted; the home carrier as the target takes the request for
-landing, and grants it with the mission finished or a nav point flown. So every mission now has the Vigilance in it
+landing, and grants it with the mission finished or a nav point flown and the player near, who then flies into its
+bow. So every mission now has the Vigilance in it
 (`ship VIGILNC 0 nav0 role=home`), and the comm faces carry subtitles. docs/engine.md "The VDU pages", docs/ai.md,
 M8.13, M8.14, M10.8, M10.9.

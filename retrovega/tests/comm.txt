@@ -1,6 +1,6 @@
-# The comm menu: RV.EXE /fly 0 /script tests/comm.txt (a wait's unit is about 1/18 s).
+# The comm menu: EXE=RVT.EXE tests/run.sh tests/comm.txt /fly 0 (a wait is about 1/18 s).
 # 1 the wingman, 2 the target; the carrier refuses at the launch; a taunt at nav 1;
-# the carrier clears the player and the flight ends.  The shots are for looking at.
+# too far; cleared near; the beam stops the fighter; the bow lands.  Shots to look at.
 wait 20
 key s
 log comm: the first page, no target
@@ -58,27 +58,47 @@ wait 8
 shot C14SAID
 wait 40
 shot C15REPLY
-log comm: back to the carrier, which clears the player
+log comm: too far from here
 wait 30
 hold left 24
 wait 26
 key t
 wait 3
-shot C16TARG
 key c
 wait 2
 key 2
 wait 2
-shot C17HOME
+shot C16HOME
 key 1
-wait 10
-shot C18ASK
-wait 44
-shot C19CLEAR
-wait 140
-shot C20SAID
-wait 120
-shot C21DEBR
+wait 90
+shot C17FAR
+log comm: near, cleared; the beam stops the fighter
+key {
+wait 3
+key t
+wait 3
+key c
+wait 2
+key 2
+wait 2
+key 1
+wait 150
+shot C18CLEAR
+key }
+wait 3
+shot C19BEAM
+key f
+wait 130
+shot C20STOP
+wait 60
+shot C21SAID
+log comm: the bow lands
+key {
+wait 3
+shot C22BOW
+key f
+wait 130
+shot C23DEBR
 log done
 key esc
 wait 10

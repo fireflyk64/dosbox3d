@@ -3398,7 +3398,7 @@ static int16_t pt_go(int32_t x, int32_t z)
 {
     int16_t s;
     for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
-        if (slot_is_ship(s) && commAnimInfo[s] == SIDE_TERRAN && rvController[s] == CTL_AI) {
+        if (slot_is_ship(s) && commAnimInfo[s] == SIDE_TERRAN && rvController[s] == CTL_AI && !logic_is_home(s)) {
             gPositionVector[s].x = (x + 1500) * KM;
             gPositionVector[s].y = 0;
             gPositionVector[s].z = z * KM;
@@ -3738,49 +3738,119 @@ static void t_home_carrier(void)
     g_sys.target = -1;
 }
 
-/* M8.14: the carrier's rule: no landing at the launch; a nav point flown, or the mission finished, is enough; a
- * clearance counts as home in the score wherever it was called from, and the mission undone still loses */
+/* M8.14: the carrier's rule: no clearance at the launch; a nav point flown or the mission finished, and the player
+ * within range; a clearance stands */
 static void t_landing_rule(void)
 {
-    static const char __far e_launch[] = "at the launch the carrier cleared the player (%d): a nav point first";
-    static const char __far e_nav[] = "at nav 1 the carrier refused the player: one nav point flown is enough";
-    static const char __far e_undone[] = "victoryPoints is %d after landing with the mission undone: 0";
-    static const char __far e_far[] = "victoryPoints is %d after landing far from home with no clearance: 0";
-    static const char __far e_won[] = "victoryPoints is %d after a clearance %ld km from home with the mission done: nonzero";
-    static const char __far e_done[] = "a mission with nothing to do was refused at the launch: finished is enough";
+    static const char __far e_launch[] = "at the launch the carrier answered %d: LANDING_NOT_YET (%d), a nav point first";
+    static const char __far e_far[] = "at nav 1 the carrier answered %d: LANDING_TOO_FAR (%d), %d km off";
+    static const char __far e_near[] = "back near home, a nav point flown, the carrier answered %d: LANDING_CLEARED";
+    static const char __far e_stands[] = "cleared, then far off, the carrier answered %d: a clearance stands";
+    static const char __far e_done[] = "a mission with nothing to do, beside the carrier, was answered %d: finished is enough";
     int16_t home = pt_home_patrol();
-    (void)home;
     if (!pt_steps(2 * SEC))
         return;
-    REQUIRE(!logic_landing_allowed() && !logic_request_landing(), e_launch, logic_landing_allowed(), 0, 0);
+    REQUIRE(logic_request_landing() == LANDING_NOT_YET, e_launch, logic_request_landing(), LANDING_NOT_YET, 0);
     if (!pt_go(0, NAV1_Z))
         return;
-    REQUIRE(logic_landing_allowed(), e_nav, 0, 0, 0);
-    /* the mission undone: cleared, landed, lost */
-    REQUIRE(logic_request_landing(), e_nav, 0, 0, 0);
-    missionStatus = 1;
-    logic_end();
-    REQUIRE(victoryPoints == 0, e_undone, victoryPoints, 0, 0);
-    /* flown and killed, far from home: lost without the clearance, won with it */
-    missionStatus = 3;
-    home = pt_home_patrol();
-    if (!pt_go(0, NAV1_Z) || !pt_kill_side(SIDE_AERA) || !pt_go(NAV2_X, NAV2_Z) || !pt_kill_side(SIDE_AERA))
+    REQUIRE(logic_request_landing() == LANDING_TOO_FAR, e_far, logic_request_landing(), LANDING_TOO_FAR, pt_km(0, home));
+    if (!pt_go(0, 3000))
         return;
-    missionStatus = 1;
-    logic_end();
-    REQUIRE(victoryPoints == 0, e_far, victoryPoints, 0, 0);
-    REQUIRE(logic_request_landing(), e_nav, 0, 0, 0);
-    logic_end();
-    REQUIRE(victoryPoints != 0, e_won, victoryPoints, pt_km(0, home), 0);
-    /* nothing to do: finished from the start */
-    missionStatus = 3;
+    REQUIRE(logic_request_landing() == LANDING_CLEARED, e_near, logic_request_landing(), 0, 0);
+    if (!pt_go(0, NAV1_Z))
+        return;
+    REQUIRE(logic_request_landing() == LANDING_CLEARED, e_stands, logic_request_landing(), 0, 0);
     pt_mission();
     pt_mship(PT_CAPSHIP, SIDE_TERRAN, 0, 1, RV_PILOT_NONE);
     g_tm.ship[g_tm.nship - 1].role = RV_ESCORT_HOME;
     pt_launch(PT_PLAYER);
     if (!pt_steps(SEC))
         return;
-    REQUIRE(logic_landing_allowed(), e_done, 0, 0, 0);
+    REQUIRE(logic_request_landing() == LANDING_CLEARED, e_done, logic_request_landing(), 0, 0);
+}
+
+/* the player flown at the carrier at 300 kps from where it is put, until it lands or stops: 0 when the test failed */
+static int16_t pt_stopped;              /* what logic_carrier_stopped said, once it said something */
+static int16_t pt_fly_in(int32_t x, int32_t z, int16_t yaw)
+{
+    int16_t i;
+    (void)logic_carrier_stopped();
+    pt_stopped = 0;
+    pt_put(0, x, 0, z, yaw);
+    pt_speed(0, 300);
+    for (i = 0; i < 20 * SEC && !missionStatus && !pt_stopped; i++) {
+        if (!pt_step())
+            return 0;
+        pt_stopped = logic_carrier_stopped();
+    }
+    return 1;
+}
+
+/* M8.15: the landing is the player's, into the bow, cleared: anywhere else, or not cleared, the hull stops the fighter
+ * unhurt, and it can fly off again; a landing with the mission undone is lost, with it done won */
+static void t_landing_contact(void)
+{
+    static const char __far e_bow_shut[] = "not cleared, into the bow: status %d, stopped %d (0, and 2: the hull stops it)";
+    static const char __far e_hurt[] = "the hull's stop hurt the fighter: its shield was %d and is %d";
+    static const char __far e_moving[] = "stopped by the hull its speed is still %ld: 0";
+    static const char __far e_side[] = "cleared, into its beam: status %d, stopped %d, at x %d km (0, and 1: the other sides only stop it)";
+    static const char __far e_stern[] = "cleared, into its stern: status %d, stopped %d (0, and 1)";
+    static const char __far e_stuck[] = "stopped, then turned away at 300 kps, it is %ld km from the carrier after 3 s: it "
+        "flies off (it was %ld)";
+    static const char __far e_bow[] = "cleared, into the bow: status %d after 20 s: 1, landed";
+    static const char __far e_lost[] = "victoryPoints is %d after landing with the mission undone: 0";
+    static const char __far e_won[] = "victoryPoints is %d after landing with the mission done: nonzero";
+    int16_t home = pt_home_patrol(), sh0, yaw_in;
+    int32_t cz, d0;
+    REQUIRE(home > 0, e_stuck, (int32_t)home, (int32_t)0, 0);
+    cz = TO_KM(gPositionVector[home].z);
+    sh0 = (int16_t)SHIELD(0, 0);
+    /* a nav point flown, so the carrier would clear it; not asked yet */
+    if (!pt_go(0, NAV1_Z))
+        return;
+    if (!pt_fly_in(0, cz + 3000, TURN / 2))
+        return;
+    REQUIRE(missionStatus == 0 && pt_stopped == 2, e_bow_shut, missionStatus, 2, 0);
+    REQUIRE((int16_t)SHIELD(0, 0) >= sh0, e_hurt, sh0, (int16_t)SHIELD(0, 0), 0);
+    REQUIRE(speedLo[0] == 0, e_moving, (int32_t)speedLo[0], 0, 0);
+    REQUIRE(logic_request_landing() == LANDING_CLEARED, e_bow, logic_request_landing(), 0, 0);
+    /* the beam: whichever yaw faces -x */
+    pt_put(0, 3000, 0, cz, TURN / 4);
+    yaw_in = gOrientationFrontVector[0].x < 0 ? TURN / 4 : 3 * TURN / 4;
+    if (!pt_fly_in(3000, cz, yaw_in))
+        return;
+    REQUIRE(missionStatus == 0 && pt_stopped == 1, e_side, missionStatus, pt_stopped, TO_KM(gPositionVector[0].x));
+    /* (the hull is hollow under the deck amidships, and this was flown at its middle: nothing gets through) */
+    /* off again, the other way */
+    d0 = pt_km(0, home);
+    pt_put(0, TO_KM(gPositionVector[0].x), 0, cz, (int16_t)(yaw_in + TURN / 2));
+    pt_speed(0, 300);
+    if (!pt_steps(3 * SEC))
+        return;
+    REQUIRE(pt_km(0, home) > d0 + 300, e_stuck, pt_km(0, home), d0, 0);
+    /* the stern */
+    if (!pt_fly_in(0, cz - 3000, 0))
+        return;
+    REQUIRE(missionStatus == 0 && pt_stopped == 1, e_stern, missionStatus, 1, 0);
+    /* the bow, the patrol undone: landed, lost */
+    if (!pt_fly_in(0, cz + 3000, TURN / 2))
+        return;
+    REQUIRE(missionStatus == 1, e_bow, missionStatus, 0, 0);
+    logic_end();
+    REQUIRE(victoryPoints == 0, e_lost, victoryPoints, 0, 0);
+    /* flown and killed: landed, won */
+    missionStatus = 3;
+    home = pt_home_patrol();
+    missionStatus = 0;
+    if (!pt_go(0, NAV1_Z) || !pt_kill_side(SIDE_AERA) || !pt_go(NAV2_X, NAV2_Z) || !pt_kill_side(SIDE_AERA)
+        || !pt_go(0, 3000))
+        return;
+    REQUIRE(logic_request_landing() == LANDING_CLEARED, e_bow, logic_request_landing(), 0, 0);
+    if (!pt_fly_in(0, cz + 3000, TURN / 2))
+        return;
+    REQUIRE(missionStatus == 1, e_bow, missionStatus, 0, 0);
+    logic_end();
+    REQUIRE(victoryPoints != 0, e_won, victoryPoints, 0, 0);
 }
 
 /* M8.11 */
@@ -4422,7 +4492,8 @@ static const char __far n_m8_11[] = "M8.11 escort-lost (mission_done): the Ox ki
 static const char __far n_m8_12[] = "M8.12 escort-along (logic_autopilot): the autopilot brings the Ox, 800 km behind the "
     "player, and stops 4,500 km short of the nav point";
 static const char __far n_m8_13[] = "M8.13 home-carrier (camp_load_units, ship_think): the Vigilance behind the launch, holding station, T finds it in front";
-static const char __far n_m8_14[] = "M8.14 landing-rule (logic_request_landing, logic_end): none at the launch; a nav point flown or the mission finished; a clearance is home";
+static const char __far n_m8_14[] = "M8.14 landing-rule (logic_request_landing): none at the launch or too far; a nav point flown or the mission finished; a clearance stands";
+static const char __far n_m8_15[] = "M8.15 landing-contact (carrier_contact, logic_end): cleared into the bow lands, anywhere else the hull stops it unhurt; undone lost, done won";
 static const char __far n_m9_1[] = "M9.1 gunsight (logic_hud): a mark at the view's middle";
 static const char __far n_m9_2[] = "M9.2 brackets (logic_hud): marks round the target";
 static const char __far n_m10_1[] = "M10.1 target-front (logic_target_next): T picks only in front of the pilot, nearest the nose first, round";
@@ -4468,7 +4539,7 @@ static const PtTest __far k_tests[] = {
     { n_m8_1, t_start, 0 }, { n_m8_2, t_nav1, 0 }, { n_m8_3, t_nav_once, 0 }, { n_m8_4, t_won, 0 },
     { n_m8_5, t_skipped, 0 }, { n_m8_6, t_enemies_left, 0 }, { n_m8_7, t_layer_spawn, 0 }, { n_m8_8, t_autopilot, 0 },
     { n_m8_9, t_fighter, 0 }, { n_m8_10, t_escort_out, 0 }, { n_m8_11, t_escort_lost, 0 }, { n_m8_12, t_escort_along, 0 },
-    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 },
+    { n_m8_13, t_home_carrier, 0 }, { n_m8_14, t_landing_rule, 0 }, { n_m8_15, t_landing_contact, 0 },
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
     { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 }, { n_m10_6, t_orders, 0 }, { n_m10_7, t_missile_lock, 0 },

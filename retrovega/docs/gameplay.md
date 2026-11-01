@@ -364,10 +364,11 @@ nav 0):
 | M8.12 escort-along | the autopilot takes the Ox (within 30,000 km) with the player: afterwards it is 800 km behind it, facing the same way; the formation arrives 4,500 km short of the nav point |
 
 | M8.13 home-carrier | a mission ship with `role=home`: 2,000 km behind the launch, still after 10 s and after the autopilot has gone; with the player 8,000 km behind it, T picks it |
-| M8.14 landing-rule | at the launch `logic_request_landing` refuses; at nav 1 it clears; cleared with the mission undone: lost; flown and killed far from home: lost without the clearance, won with it; a mission with nothing to do is cleared at the launch |
+| M8.14 landing-rule | at the launch `logic_request_landing` answers not yet; at nav 1, 20,000 km off, too far; back within 8,000 km, cleared; far off again, still cleared; a mission with nothing to do is cleared at the launch |
+| M8.15 landing-contact | not cleared, into the bow: stopped, speed 0, shields whole; cleared, into the beam (at the hull's hollow middle) and the stern: stopped; turned away it flies off; into the bow: `missionStatus` 1, `victoryPoints` 0 with the patrol undone and nonzero with it done |
 
-The tests take the player to a nav point by moving it (as the autopilot would) and land by setting
-`missionStatus = 1`, as the engine does when the carrier's clearance has been said.
+The tests take the player to a nav point by moving it (as the autopilot would) and, but for M8.15, land by setting
+`missionStatus = 1`, as the logic does when a cleared player flies into the carrier's bow.
 
 ### M9: the HUD (`logic_hud`, host only)
 

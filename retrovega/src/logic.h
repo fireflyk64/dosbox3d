@@ -75,11 +75,17 @@ int16_t logic_order(int16_t s, int16_t order);      /* 1 when slot s takes it (0
 int16_t logic_order_of(int16_t s);
 int16_t logic_taunt(int16_t s);         /* an enemy fighter turns on the player for a while: 1 when it does */
 
-/* the home carrier (the mission's ship with role=home, holding station at nav 0) and landing (the comm menu, with the
- * carrier as the target; the user's rule, 2026-10-31): the carrier takes the player back with the mission finished or
- * at least one nav point flown.  A clearance counts as home in the score, wherever the player called from */
+/* the home carrier (the mission's ship with role=home, holding station at nav 0) and landing (the user's rules,
+ * 2026-10-31): asked on the comm with the carrier as the target, it clears the player with the mission finished or at
+ * least one nav point flown, the player near enough; the player then lands by flying into its bow.  Its other sides,
+ * or the bow without a clearance, just stop the fighter, unhurt.  Landing with the mission undone is a loss */
+enum { LANDING_CLEARED, LANDING_NOT_YET, LANDING_TOO_FAR };
 int16_t logic_is_home(int16_t s);       /* slot s is the home carrier, alive */
 int16_t logic_landing_allowed(void);
-int16_t logic_request_landing(void);    /* 1 cleared (logic_end then counts the player home), 0 refused */
+int16_t logic_request_landing(void);    /* LANDING_*: a clearance stands for the rest of the flight */
+int16_t logic_carrier_stopped(void);    /* the hull stopped the player since last asked: 1 cleared, 2 not, 0 no */
+#ifdef RV_TESTS
+void logic_test_to_carrier(int16_t where);   /* a script's way there: 0 off its bow, 1 off its beam */
+#endif
 
 #endif

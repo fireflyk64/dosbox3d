@@ -1783,14 +1783,20 @@ the VDUs take the readouts' small font. vdu.c:
   closes. The pilot says the line on the left VDU in the hero's face and
   the other answers on the right once the pilot's comm is over: the
   wingman in its own, an enemy with its voice's own line, the carrier in
-  the XO's. A landing is the carrier's to give:
-  **the mission finished or at least one nav point flown**
-  (`logic_request_landing`, at any range: the flight ends when the
-  clearance has been said, and a clearance counts as home in the score);
-  refused, the status line says NO LANDING for three seconds. The
-  intercom wrecked the page says INTERCOM OUT and only the carrier can
-  still be asked, with no comm faces, since a flight has to be able to
-  end.
+  the XO's. A clearance is the carrier's to give: **the mission finished
+  or at least one nav point flown, the player within 8,000 km**
+  (`logic_request_landing`; refused, the status line says NO LANDING for
+  three seconds; given, CLEARED, and it stands). The landing is the
+  player's: **fly into the carrier's bow**, within 18 degrees of its
+  axis, and the flight ends. Its other sides, or the bow with no
+  clearance, just stop the fighter, unhurt, and the XO says why
+  (`carrier_contact`; the fighter can turn and fly off again). The
+  carrier is solid for this, its outline from above through the height
+  of its box: its side silhouette is hollow under the deck amidships, so
+  the hull test the guns use would let a fighter through. Landing with
+  the mission undone is a loss. The intercom wrecked the page says
+  INTERCOM OUT and only the carrier can still be asked, with no comm
+  faces, since a flight has to be able to end.
 - **Subtitles:** the comm faces have no sound, so `vdu_subtitle` writes
   what the comm is saying (`comms_text`) in the small font on a black
   band at the foot of its VDU, the words wrapped, four rows at most.
