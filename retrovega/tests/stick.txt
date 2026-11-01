@@ -9,7 +9,7 @@ wait 8
 move 431 170
 click
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc

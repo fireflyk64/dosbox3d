@@ -1483,7 +1483,7 @@ int game_run(void)
     } else {
         enter_room(RV_R_QUARTERS);
         message("Wildcard, welcome aboard the TCS Vigilance. Your bunk keeps your saves. "
-                "The briefing room is through the hatch in the bar.");
+                "The briefing room is through the big door in the bar.");
     }
     while (g_mode != MODE_QUIT) {
         rv_halt();                      /* once a music tick at most (1/240 s): the host idles between */

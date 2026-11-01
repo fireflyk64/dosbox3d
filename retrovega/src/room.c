@@ -74,13 +74,8 @@ static void find_hover(int x, int y, int *kind, int *index)
             return;
         }
     }
-    if (r->has_actor && !g_scene.actor_gone && x >= r->actor.x && y >= r->actor.y && x < r->actor.x + r->actor.w
-        && y < r->actor.y + r->actor.h) {
-        *kind = HOVER_ACTOR;
-        *index = 0;
-        return;
-    }
-    for (i = 0; i < r->nhot; i++) {
+    for (i = 0; i < r->nhot; i++) {     /* (before the actor: its rectangle is wider than the figure, and the hatch behind
+                                           the bar's Tally is mostly inside it) */
         const RvHot __far *h = &r->hot[i];
         if (i + 1 == g_scene.hot_gone)
             continue;
@@ -89,6 +84,12 @@ static void find_hover(int x, int y, int *kind, int *index)
             *index = i;
             return;
         }
+    }
+    if (r->has_actor && !g_scene.actor_gone && x >= r->actor.x && y >= r->actor.y && x < r->actor.x + r->actor.w
+        && y < r->actor.y + r->actor.h) {
+        *kind = HOVER_ACTOR;
+        *index = 0;
+        return;
     }
     *kind = HOVER_NONE;
     *index = 0;

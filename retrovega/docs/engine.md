@@ -388,13 +388,15 @@ Built so far:
 |---|---|
 | quarters | lounge |
 | lounge | quarters (the bunks), bar (the hatch) |
-| bar | lounge, **briefing (the hazard-striped hatch on the back-left wall)** |
+| bar | the lounge (the floor, and the leftmost hatch at the back), quarters (the hatch beside it, nearer the window), **briefing (the big door on the right)**, the simulator (the rig's chair and stick) |
 | briefing | the deck (after a briefing), the bar |
 | deck | back to the briefing room for the debrief |
 
-The bar's painted hatch, left of the chalkboard, is the door to the
-briefing room: there is one, so no new art is needed. Coming back from a
-mission lands in the briefing room for the debrief.
+The bar's door to the briefing room and the simulator rig are the user's
+overlays on the plate (`overlays` in data/places.json); with them, the two
+hatches left of the chalkboard lead to the crew's bunks and to the player's
+own quarters. Coming back from a mission lands in the briefing room for the
+debrief.
 
 ## Input: mouse and keys together
 

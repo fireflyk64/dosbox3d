@@ -4,7 +4,7 @@
   400
  ],
  "back": "back.png",
- "about": "The pilots' lounge and bar: Tally behind the counter, a round table with three seats, the chalkboard, the door to the briefing room and the Schroedinger simulator rig at the right.",
+ "about": "The pilots' lounge and bar: Tally behind the counter, a round table with three seats, the chalkboard; at the back on the left the hatches to the crew's bunks (the leftmost, where a mouse thrown left lands) and your own quarters (the one nearer the window); the door to the briefing room and the Schroedinger simulator rig at the right.",
  "seats": {
   "left": {
    "FROST": {
@@ -192,15 +192,25 @@
   }
  },
  "hotspots": {
-  "hatch": {
+  "bunks_door": {
    "rect": [
-    132,
-    123,
-    33,
-    68
+    106,
+    112,
+    22,
+    69
    ],
-   "does": "goto:briefing",
-   "label": "Briefing room"
+   "does": "goto:lounge",
+   "label": "Crew bunks"
+  },
+  "quarters_door": {
+   "rect": [
+    135,
+    123,
+    29,
+    57
+   ],
+   "does": "goto:quarters",
+   "label": "Your quarters"
   },
   "lounge": {
    "rect": [

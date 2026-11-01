@@ -1,7 +1,7 @@
 // game-check.mjs: the native build's page (host/web/site.sh) in headless Chrome: it loads, Fly starts the game, and
 // the base works by the mouse: the welcome closes, the bunk menu saves (bunk 1 by its buttons; with PHONE=1 bunk 2
 // named with the Keys button as a phone's keyboard types) and closes, the quarters' door leads to the lounge, its
-// hatch to the bar, the bar's hatch to the briefing; then the deck, the launch (the ships' sets made by the page as
+// hatch to the bar, the bar's door to the briefing; then the deck, the launch (the ships' sets made by the page as
 // the game asks), a flight, C to land (PHONE=1: Fire held, then C by the Keys button), the debrief; and the page
 // reloaded keeps the saves.  Screenshots in SHOT_DIR (game-NN-name.png), the game's log as game-RVLOG.TXT.
 // Prints "GAME OK" when every step showed.
@@ -109,7 +109,7 @@ try {
   await go(429, 140, "BAR", "the lounge's hatch: the bar");   // (its top: a pilot sits over the rest)
   await sleep(1500);
   await shot("bar");
-  await go(149, 145, "BRIEF", "the bar's hatch: the briefing");
+  await go(605, 113, "BRIEF", "the bar's door: the briefing");
   await sleep(2500);
   await shot("briefing");
   for (let k = 0; k < 3; k++) {         // (Esc: the briefing skipped)

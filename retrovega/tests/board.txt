@@ -21,7 +21,7 @@ shot B02BOARD
 click
 wait 8
 shot B03BACK
-move 145 152
+move 605 113
 wait 2
 click
 wait 30

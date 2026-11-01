@@ -145,7 +145,7 @@ rectangles.
 
 | room | hotspots |
 |---|---|
-| bar | simulator (the hatch in the right wall), chalkboard (the tally board up close), hatch (to the briefing), the floor (to the lounge) |
+| bar | the door on the right (to the briefing), the rig's chair and stick (the simulator; not the part under the door), chalkboard (the tally board up close), the two hatches at the back (the leftmost to the crew's bunks, the one nearer the window to your quarters), the floor (to the lounge) |
 | lounge | hatch (exit), bunks (to the quarters) |
 | quarters | bunk (save and load), locker, desk (log), door (exit) |
 | locker | medals, letters, photos, helmet (kills), back (exit) |

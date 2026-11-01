@@ -1,4 +1,4 @@
-# the bar's door and simulator rig: the walk there, the picture, what each answers to
+# the bar's doors and simulator rig: the walk there, the picture, what each answers to
 wait 12
 click
 wait 4
@@ -12,7 +12,7 @@ click
 wait 14
 shot BAR1
 log hover: the door
-move 610 100
+move 605 113
 wait 4
 shot BAR2
 log hover: the glass over the rig (nothing)
@@ -23,12 +23,42 @@ log hover: the chair
 move 620 300
 wait 4
 shot BAR4
-move 300 370
+log hover: the leftmost hatch (the crew's bunks)
+move 117 146
 wait 4
+shot BAR5
+log hover: the hatch nearer the window (your quarters)
+move 149 150
+wait 4
+shot BAR6
+log the hatch nearer the window: to your quarters
+click
+wait 16
+shot BAR7
+log back through the lounge to the bar
+move 593 200
+wait 2
+click
+wait 12
+move 429 140
+wait 2
+click
+wait 14
+log the leftmost hatch: to the crew's bunks
+move 117 146
+wait 2
+click
+wait 16
+shot BAR8
+log back to the bar
+move 429 140
+wait 2
+click
+wait 14
 log the door: to the briefing room
-move 610 100
+move 605 113
 wait 2
 click
 wait 60
-shot BAR5
+shot BAR9
 quit

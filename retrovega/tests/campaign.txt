@@ -8,7 +8,7 @@ wait 8
 move 431 170
 click
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -22,7 +22,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -36,7 +36,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -50,7 +50,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -66,7 +66,7 @@ key esc
 wait 8
 move 600 200
 shot AFTER4
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -80,7 +80,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -94,7 +94,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -108,7 +108,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -122,7 +122,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -136,7 +136,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -150,7 +150,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -164,7 +164,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -178,7 +178,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -192,7 +192,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -206,7 +206,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -220,7 +220,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -234,7 +234,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -248,7 +248,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -262,7 +262,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -276,7 +276,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -290,7 +290,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -304,7 +304,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -318,7 +318,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -332,7 +332,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -346,7 +346,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -360,7 +360,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -374,7 +374,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -388,7 +388,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -402,7 +402,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -416,7 +416,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -430,7 +430,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -444,7 +444,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -458,7 +458,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -472,7 +472,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -486,7 +486,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -500,7 +500,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -514,7 +514,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -528,7 +528,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -542,7 +542,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc
@@ -556,7 +556,7 @@ click
 wait 34
 key esc
 wait 8
-move 145 152
+move 605 113
 click
 wait 6
 key esc

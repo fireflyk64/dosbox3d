@@ -14,7 +14,7 @@ wait 2
 click
 wait 90
 log to the briefing
-move 145 152
+move 605 113
 wait 2
 click
 wait 450
