@@ -26,7 +26,7 @@ const logs = [];
 page.on("console", (m) => logs.push(m.text()));
 page.on("pageerror", (e) => console.log(`PAGE ERROR: ${e.message}`));
 const u = new URL(pageUrl);
-for (const [k, v] of Object.entries({ server: "http://127.0.0.1:9/lobbylink", callsign: "SIM", "env.WCNET_KEYSCRIPT": KEYS + ",72:" + CLICK + ",73:!button=0:1,73.3:!button=0:0",
+for (const [k, v] of Object.entries({ server: "http://127.0.0.1:9/lobbylink", callsign: "SIM", "env.WCNET_KEYSCRIPT": KEYS + ",72:" + CLICK + ",73:!button=0:1,73.3:!button=0:0,74:!poke=00BA:00,76:!poke=00BA:00,80:!poke=00BA:00",
                                       "env.WCNET_KEYSCRIPT_FROM": "boot", "env.WCNET_LOG": "1" })) u.searchParams.set(k, v);
 await page.goto(u.toString());
 if (process.env.GAME_FILE) await page.setInputFiles("#gamefile", process.env.GAME_FILE);
@@ -51,8 +51,10 @@ const view = await page.evaluate(() => [0, 1, 2, 3].map((i) => window.DOSBox._wc
 console.log(`the view is ${view.join(",")} of 640x200`);
 let t = await turn();
 check("the stick at rest asks for no turn", t[0] === 0 && t[1] === 0, t);
-const held = async (a, v) => { await axis(a, v); await page.waitForTimeout(800); const r = await turn(); await axis(a, 0); await page.waitForTimeout(800); return r; };
+// (the simulator's game is short: quick holds, and it must still be flying at the end)
+const held = async (a, v) => { await axis(a, v); await page.waitForTimeout(500); const r = await turn(); await axis(a, 0); await page.waitForTimeout(400); return r; };
 const right = await held(0, 1), left = await held(0, -1), back = await held(1, 1), forward = await held(1, -1);
+check("still flying after the holds", (await flying()) === 1, await flying());
 check("full stick right and left are the fastest turn", right[0] === 8 && left[0] === -8 && right[1] === 0 && left[1] === 0, [right, left]);
 check("full stick back and forward are the fastest turn up and down", back[1] === -8 && forward[1] === 8 && back[0] === 0 && forward[0] === 0, [back, forward]);
 t = await turn();

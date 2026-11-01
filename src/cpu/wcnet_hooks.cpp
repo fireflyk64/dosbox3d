@@ -405,7 +405,8 @@ static double rv_steer_info(int what, int i) {
     }
     if (what == 0 && i < 4) {
         int v = (Bit16s)rd16((Bit16u)(RV_DS_viewRect + 2 * i));
-        return (i & 1) ? v : v * 2;
+        double margin = i < 2 ? -2 : 2;               // (a little past the full turn: the logical rectangle's halves and
+        return (i & 1) ? v + margin : (v + margin) * 2;   // the pointer's whole pixels fell short of it, step 8 of 9)
     }
     if (what == 1 && i < 9) {
         return kX[i];
