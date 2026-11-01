@@ -767,7 +767,7 @@ void rocks_frame(const LfBasis *cam, int cx, int cy, int focal, int y0, int y1)
             if (out < 0)
                 currentField = (unsigned short)(unsigned)(fieldTable + fieldTable_SIZE * i);
             /* near: the bubble reaches it (the one whose rocks are out keeps them a little farther) */
-            /* (a mine field takes the same rocks for now: there is no mine art yet) */
+            /* (a mine field takes the same rocks: its mines are rocks with trackers, tracker()) */
             if (out < ROCK_BUBBLE_KM + (g_active == i ? ZONE_PAD_KM : 0)
                 && (near_one < 0 || i == g_active))
                 near_one = i;
@@ -858,12 +858,52 @@ int rocks_live(void) { return g_active >= 0 ? g_n : 0; }
 
 /* --- the draws --- */
 
+/* a mine is a rock with a tracker on it (the user: "like they are rocks with trackers... a singular unique color"): one
+ * red light, flashing, on the top of the rock, where the tumble about the vertical keeps it in sight.  A field of them
+ * reads from far off as blinking lights.  Drawn after its rock, so a nearer rock covers it */
+#define TRACKER_COLOUR UI_RED
+
+static void tracker(const LzRockOut __far *o, int y0, int y1, const short __far *ext, int ext_y0)
+{
+    int half = o->d / 14, cy = o->y - (int)((long)o->d * 3 / 8), dy;
+    if (((frameCounter + o->kind * 5) >> 3) & 1)   /* (about twice a second, the kinds out of step) */
+        return;
+    if (half < 1)
+        half = 1;
+    if (half > 6)
+        half = 6;
+    for (dy = -half; dy <= half; dy++) {   /* (a diamond) */
+        int y = cy + dy, w = half - (dy < 0 ? -dy : dy), xa = o->x - w, xb = o->x + w + 1;
+        if (y < y0 || y >= y1)
+            continue;
+        if (ext) {
+            if (y < ext_y0)
+                continue;
+            if (xa < ext[2 * (y - ext_y0)]) xa = ext[2 * (y - ext_y0)];
+            if (xb > ext[2 * (y - ext_y0) + 1]) xb = ext[2 * (y - ext_y0) + 1];
+        }
+        if (xa < 0) xa = 0;
+        if (xb > SCR_W) xb = SCR_W;
+        if (xa < xb)
+            _fmemset(vid_row(y) + xa, TRACKER_COLOUR, xb - xa);
+    }
+}
+
+#define MINES() (g_active >= 0 && g_f[g_active].type == RV_FIELD_MINE)
+
 void rocks_draw_small(int y0, int y1, const short __far *ext, int ext_y0, int ext_rows)
 {
     unsigned long t0 = clock240();
     int run0, run1;
-    if (g_ns && vid_run(&run0, &run1) && bolts_rows(&y0, &y1, &ext, &ext_y0, ext_rows))
+    if (g_ns && vid_run(&run0, &run1) && bolts_rows(&y0, &y1, &ext, &ext_y0, ext_rows)) {
         rv_balls_draw(g_so, g_ns, vid_row(run0), run0, y0, y1, ext, ext_y0);
+        if (MINES()) {                  /* (the far ones' lights: what is seen of a mine field from far off) */
+            int i;
+            for (i = 0; i < g_no; i++)
+                if (g_o[i].d <= (unsigned)g_small)
+                    tracker(&g_o[i], y0, y1, ext, ext_y0);
+        }
+    }
     g_t_small += clock240() - t0;
 }
 
@@ -905,6 +945,8 @@ static void draw_big(const LzRockOut __far *o, int y0, int y1, const short __far
         pix = record(o->kind, o->frame, s, 0);
         rv_rocks_xms(g_hdr + 4, ds, left, top, g_handle, g_base + pix, vid_row(run0), run0, y0, y1, ext, ext_y0);
         g_rows += ds;
+        if (MINES())
+            tracker(o, y0, y1, ext, ext_y0);
         return;
     }
     {
@@ -918,6 +960,8 @@ static void draw_big(const LzRockOut __far *o, int y0, int y1, const short __far
             g_blocks_n++;
         }
     }
+    if (MINES())
+        tracker(o, y0, y1, ext, ext_y0);
 }
 
 void rocks_draw_to(long depth, int y0, int y1, const short __far *ext, int ext_y0, int ext_rows)
