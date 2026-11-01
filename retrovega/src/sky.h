@@ -20,7 +20,8 @@
 
 int sky_reserve(void);                  /* when the game starts, before RV.DAT (resident XMS): SKY.DAT in */
 int sky_things(void);                   /* the kinds SKY.DAT has */
-void sky_rows(int rows);                /* 0: each thing drawn its own way (SKY.DAT's); 1 every row, 2 doubled (half the
+int sky_box(int thing);                 /* the box it is drawn in, px across */
+int sky_rows(int rows);                 /* (returns the last setting) 0: each thing drawn its own way (SKY.DAT's); 1 every row, 2 doubled (half the
                                            rows, each twice), 3 interlaced (every other screen row: the low-cost look,
                                            a gas's) */
 void sky_clear(void);                   /* a flight's start: an empty sky */

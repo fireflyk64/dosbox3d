@@ -95,6 +95,7 @@ unsigned long rocks_room_kb(void);      /* the XMS the rocks will want near a fi
 void rocks_frame(const LfBasis *cam, int cx, int cy, int focal, int y0, int y1);
 int rocks_on_screen(int *small, int *big);   /* this frame's */
 int rocks_live(void);                   /* rocks kept round the player now */
+void rocks_retry(void);                 /* a field whose art had not come in: tried again at the next frame */
 
 /* per band: the small (far) ones, before the ships; the big ones in depth order with them (rocks_draw_to: those
  * deeper than `depth`, in positions, not drawn yet; then rocks_draw_rest) */

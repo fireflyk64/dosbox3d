@@ -2069,6 +2069,50 @@ another 2,500 km out turned a little toward the camera, one coming nose
 first from 6,000 km, one far (9,000 km) climbing across as a line; ten
 seconds.
 
+### The bar's window on space
+
+The user, 2026-11-01: the bar's painted planet is cut out and the window shows
+space drawn by the flight's own renderer, with Schroedingers and Gawains going
+by now and then, one far thing partly hidden by the frame, chosen by the
+system ("2 makes it too crowded"), in one system asteroids instead, and at
+least one with nothing, or the big thing mostly out of view.
+
+- **The cut:** `window` in data/places.json is the polygon in the plate's
+  pixels; `tools/rooms.py` blacks it out of the back layer and writes its rows
+  (first x, end x) to place.json. RV.DAT carries them as a RAW asset
+  (`RvRoom.win_ext`, `win_y0`, `win_rows`), the same form as a cockpit's
+  opening, so every draw clips to it unchanged. A seat's sprite keeps its
+  margin out of the polygon, or the painted sky shows round a head.
+- **The palette:** the flight's sprites are indexed in the flight palette, so
+  a room with a window has it too: the UI's 16 and the flight's up to 207, the
+  room's own 47 in the cockpit's slots (`window_palette` in tools/rvpack.py:
+  k-means on what the fixed colours serve worst), the rocks' tracker grey in
+  255. Its RMS error over the bar is 7.8 of 255, and nothing shows it.
+- **The draw:** `flight_window_open`, `_tick`, `_draw` and `_close` in
+  flight.c, the draw as the room's underlay. The camera is slot 0, standing
+  still at the origin; the slots are free in the rooms, and the ships going by
+  are slots moved by hand with no logic. `plan_draws`, `ships_draw_as`,
+  `flames_draw`, `sky_draw` and the rocks are the flight's. The stars are
+  written straight into the on-screen list, ninety in the window's box.
+  The nebula is drawn doubled here, not interlaced: at rest behind a small
+  window its lines read as stripes.
+- **Cost:** with no ship going by and no rocks, nothing is dirty and nothing
+  is drawn. While one goes by, or always in the rocks' system, the window's 77
+  rows are redrawn 30 times a second.
+- **Memory:** the sets (10 MB, 195 ms) load behind the fade as the bar is
+  entered, at the mission's level, and the room's later reads go above them;
+  the rocks' art at the hazard level (7 MB, 137 ms). `g_scene.leave` lets them
+  go as the next room is entered. On the page `mission_want` lists the two
+  types with the next flight's, and a set not there yet is looked for again
+  when the next flight is due, so the first visit may simply be empty.
+- **What's outside:** `outside` in data/campaign.csv: blank, a far thing to one
+  side; `rocks` (BARNARD, the old game's Rostov: its briefings say dense
+  asteroid fields); `edge`, the far thing well off to the side (CEPHID,
+  OLDZIEY); `empty` (RIGEL). The seed is the node's number, so a system always
+  looks the same. Asteroids are a small field ahead, slot 0 not being a ship
+  so no rock can hit it. `RV.EXE /at N` (tests/window.txt) puts the rooms at
+  mission N, to look at any system.
+
 ### The sky's far things: nebulae, galaxies, planets
 
 The user's brief (2026-10-21): nebulae, distant galaxies and planets, all at

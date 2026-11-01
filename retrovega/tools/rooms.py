@@ -27,6 +27,8 @@ A room can have:
                large over a blurred crop of the room for the close-up.
     overlays   pictures on transparency painted over the room's back layer, at the plate's size (the bar's door and
                simulator rig); the shots are still cut against the plate as painted
+    window     a polygon (source pixels) that shows space: black in the back layer, its rows in place.json; the game draws
+               space there with the flight's own renderer (flight.c), so the room takes the flight palette (rvpack.py)
     hotspots   rectangles the mouse can click, with what they do
     boards     rectangles the engine writes or draws on (the chalkboard, the
                briefing screen, the medal case)
@@ -195,17 +197,26 @@ def body(mask):
     return np.isin(lab, 1 + np.nonzero(sizes >= sizes.max() / 5)[0])
 
 
-def sprite(frame, img, mask, dilate=3):
-    """A cut-out at screen size: (RGBA image, x, y), hard alpha, cropped."""
+def sprite(frame, img, mask, dilate=3, avoid=None):
+    """A cut-out at screen size: (RGBA image, x, y), hard alpha, cropped.  Its margin stays out of avoid (a window on
+    space: the plate's painted sky round a head would show as a fringe against the real one)."""
     import places
     if dilate:
-        mask = ndimage.binary_dilation(mask, iterations=dilate)
+        grown = ndimage.binary_dilation(mask, iterations=dilate)
+        mask = grown if avoid is None else grown & (~avoid | mask)
     rgba = np.dstack([img, mask.astype(np.float32)])
     small = places.hard(frame.image(Image.fromarray((rgba * 255 + 0.5).astype(np.uint8), 'RGBA')))
     bb = small.getbbox()
     if not bb:
         return None
     return small.crop(bb), bb[0], bb[1]
+
+
+def polygon_mask(shape, polygon):
+    from PIL import ImageDraw
+    m = Image.new('L', (shape[1], shape[0]), 0)
+    ImageDraw.Draw(m).polygon([tuple(p) for p in polygon], fill=255)
+    return np.asarray(m) >= 128
 
 
 def seats(cfg, src, plate, frame, od, log):
@@ -217,6 +228,7 @@ def seats(cfg, src, plate, frame, od, log):
             for f in poses.values():
                 if f not in shots:
                     shots[f] = changes(plate, load(os.path.join(src, f)), limit)
+    avoid = polygon_mask(plate.shape[:2], cfg['window']) if 'window' in cfg else None
     people = sum(m.astype(np.float32) for _img, m in shots.values())
     names = list(cfg['seats'])
     centres = [cfg['seats'][n]['x'] for n in names]
@@ -229,7 +241,7 @@ def seats(cfg, src, plate, frame, od, log):
             for pose, f in poses.items():
                 img, mask = shots[f]
                 region = owner[f] == k
-                cut = sprite(frame, img, body(mask & region) & region)
+                cut = sprite(frame, img, body(mask & region) & region, avoid=avoid)
                 if cut is None:
                     log('  %s %s %s: nothing there' % (name, pilot, pose))
                     continue
@@ -421,6 +433,25 @@ def script(text, gestures):
     return out
 
 
+def cut_window(back, polygon, frame, size):
+    """A window on space: the polygon (source pixels, convex, inside the frame's painted bevel) goes black in the back
+    layer, and the game draws space there: {y0, rows: [[first x, end x] per row]}, in screen pixels."""
+    from PIL import ImageDraw
+    mask = Image.new('L', size, 0)
+    ImageDraw.Draw(mask).polygon([tuple(p) for p in polygon], fill=255)
+    small = np.asarray(frame.image(mask)) >= 128
+    ys = np.nonzero(small.any(axis=1))[0]
+    y0, y1 = int(ys[0]), int(ys[-1]) + 1
+    rows = []
+    for y in range(y0, y1):
+        xs = np.nonzero(small[y])[0]
+        rows.append([int(xs[0]), int(xs[-1]) + 1])
+    a = np.asarray(back).copy()
+    for y, (x0, x1) in zip(range(y0, y1), rows):
+        a[y, x0:x1] = 0
+    return Image.fromarray(a, 'RGB'), {'y0': y0, 'rows': rows}
+
+
 def scale_rect(frame, r):
     x0, y0 = frame.xy(r[0], r[1])
     x1, y1 = frame.xy(r[2], r[3])
@@ -439,8 +470,13 @@ def build(key, cfg, out, log=print):
         over = Image.open(os.path.join(src, name)).convert('RGBA')   # cut against the plate as it was)
         room = Image.composite(over.convert('RGB'), room, over.getchannel('A'))
     back = frame.image(room)
+    window = None
+    if 'window' in cfg:
+        back, window = cut_window(back, cfg['window'], frame, room.size)
     back.save(os.path.join(od, 'back.png'))
     place = {'size': list(places.SCREEN), 'back': 'back.png', 'about': cfg.get('about', '')}
+    if window:
+        place['window'] = window
     if 'seats' in cfg:
         place['seats'] = seats(cfg, src, plate, frame, od, log)
     if 'actors' in cfg:

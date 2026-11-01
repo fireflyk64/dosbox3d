@@ -8,7 +8,7 @@ move 593 200
 wait 2
 click
 wait 12
-move 431 170
+move 429 140
 wait 2
 click
 wait 12

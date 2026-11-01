@@ -877,6 +877,13 @@ int rocks_on_screen(int *small, int *big)
 
 int rocks_live(void) { return g_active >= 0 ? g_n : 0; }
 
+/* (a field whose art had not come in: tried again at the next frame) */
+void rocks_retry(void)
+{
+    if (g_active <= -2)
+        g_active = -1;
+}
+
 /* --- the draws --- */
 
 void rocks_draw_small(int y0, int y1, const short __far *ext, int ext_y0, int ext_rows)

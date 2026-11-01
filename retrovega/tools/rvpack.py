@@ -52,7 +52,7 @@ import legs  # noqa: E402
 import panels  # noqa: E402
 import places  # noqa: E402
 
-VERSION = 4
+VERSION = 5
 SCREEN = (640, 400)
 ROOMS = ['bar', 'lounge', 'briefing', 'quarters', 'locker', 'deck']
 FACE = 352                      # close-up face size (the 256 px faces scaled 1.375)
@@ -218,6 +218,44 @@ def room_palette(images):
     return Palette(UI + room)
 
 
+def window_palette(images):
+    """A room with a window on space (rooms.py): the flight's palette below RV_CP_FIRST, so the flight's sprites draw in it
+    as they are (ships, rocks, the sky's far things, flames), the room's own colours in the slots a cockpit has (k-means
+    on the colours the flight's serve worst, a few iterations), and the rocks' tracker grey in 255."""
+    flight = [tuple(c) for c in json.load(open(os.path.join(ROOT, 'data', 'palette.json')))['rgb']]
+    fixed = np.array(UI + flight[16:CP_FREE[0]], np.float32)
+    parts = []
+    for im in images:
+        a = np.asarray(im.convert('RGBA'))
+        parts.append(a[a[..., 3] >= 128][:, :3])
+    px = np.concatenate(parts)
+    key = (px[:, 0].astype(np.int32) >> 3) << 10 | (px[:, 1].astype(np.int32) >> 3) << 5 | px[:, 2] >> 3
+    _u, first, count = np.unique(key, return_index=True, return_counts=True)
+    c, w = px[first].astype(np.float32), count.astype(np.float32)
+
+    def near(pal):
+        d = np.empty(len(c), np.float32)
+        lab = np.empty(len(c), np.int32)
+        for i in range(0, len(c), 4096):        # (in pieces: colours x palette is a big table)
+            t = ((c[i:i + 4096, None, :] - pal[None]) ** 2).sum(-1)
+            lab[i:i + 4096], d[i:i + 4096] = t.argmin(1), t.min(1)
+        return lab, d
+    own = []
+    n = len(CP_FREE)
+    for _ in range(n):                          # (each new one the colour worst served, by how much of it there is)
+        _lab, d = near(np.vstack([fixed] + ([np.array(own)] if own else [])))
+        own.append(c[np.argmax(d * w)])
+    own = np.array(own)
+    for _ in range(12):
+        lab, _d = near(np.vstack([fixed, own]))
+        for k in range(n):
+            m = lab == len(fixed) + k
+            if m.any():
+                own[k] = (c[m] * w[m, None]).sum(0) / w[m].sum()
+    part = [tuple(int(round(v)) for v in rgb) for rgb in own]
+    return Palette(UI + flight[16:CP_FREE[0]] + part + [(118, 118, 114)])
+
+
 def hotspots(key, cfg, frame):
     out = []
     for name, h in cfg.get('hotspots', {}).items():
@@ -265,13 +303,20 @@ def pack_room(pack, key, people_idx, cfg, place, d):
             if st:
                 extra.append(Image.open(os.path.join(d, st['file'])))
         extra.append(Image.open(os.path.join(d, place['speaker']['atlas'])))
-    pal = room_palette([back] + [s[3] for s in sprites] + [f[2] for f in actor_frames] + extra)
-    rec = {'palette': add_palette(pack, 'pal_' + key, pal, list(range(256))),
-           'back': add_image(pack, 'back_' + key, back, pal)}
+    images = [back] + [s[3] for s in sprites] + [f[2] for f in actor_frames] + extra
+    window = place.get('window')
+    pal = window_palette(images) if window else room_palette(images)
+    allowed = list(range(255)) if window else None      # (255 is the rocks' tracker colour: nothing else uses it)
+    rec = {'palette': add_palette(pack, 'pal_' + key, pal, list(range(255)) if window else list(range(256))),
+           'back': add_image(pack, 'back_' + key, back, pal, allowed=allowed)}
+    rec['window'] = struct.pack('<Hhh', 0xFFFF, 0, 0)
+    if window:
+        rec['window'] = struct.pack('<Hhh', pack.add('win_' + key, 'RAW', b''.join(struct.pack('<2h', *r) for r in window['rows'])),
+                                    window['y0'], len(window['rows']))
     poses = []
     by_pilot = {}
     for seat, pilot, pose, im, x, y in sprites:
-        i = add_sprite(pack, '%s_%s_%s' % (key[:3], pilot[:7], pose[:4]), im, pal, x, y)
+        i = add_sprite(pack, '%s_%s_%s' % (key[:3], pilot[:7], pose[:4]), im, pal, x, y, allowed)
         by_pilot.setdefault((seat, pilot), {})[pose] = i
     for (seat, pilot), ps in by_pilot.items():
         poses.append(struct.pack('<BBHH', ['left', 'middle', 'right'].index(seat), people_idx[pilot],
@@ -284,7 +329,7 @@ def pack_room(pack, key, people_idx, cfg, place, d):
         frames = [f for f in actor_frames if f[0] == name]
         first = None
         for _n, fname, im in frames:
-            i = add_image(pack, '%s_%s' % (name[:8], fname[:8]), im.convert('RGB'), pal, a['rect'][0], a['rect'][1])
+            i = add_image(pack, '%s_%s' % (name[:8], fname[:8]), im.convert('RGB'), pal, a['rect'][0], a['rect'][1], allowed)
             first = i if first is None else first
         names = [f[1] for f in frames]
         idle = []
@@ -777,7 +822,7 @@ def main():
         rooms.append(struct.pack('<12sBBBB4H', key.encode(), ROOMS.index(key), len(rec['hot']), len(rec['poses']),
                                  0 if rec['actor'][0] == 0xFF else 1, rec['palette'], rec['back'],
                                  rec['closeup_part'], rec['closeup_back'])
-                     + hot + poses + rec['actor'] + speaker + deck + boards)
+                     + hot + poses + rec['actor'] + speaker + deck + boards + rec.get('window', struct.pack('<Hhh', 0xFFFF, 0, 0)))
     comm_cast, comm_ramp, comm_voices = pack_comms(pack, args.comms, ships_csv)
     persons = pack_people(pack, people, comm_voices)
     cockpits_recs, previews = pack_cockpits(pack, ships_csv, args.panels)
@@ -918,6 +963,8 @@ typedef struct {
     RvSpeaker speaker;
     RvDeck deck;
     RvBoard board[4];
+    unsigned short win_ext;     /* RAW: a window on space (flight.c): (first x, end x) a row; 0xFFFF none */
+    short win_y0, win_rows;
 } RvRoom;
 typedef struct {
     char key[10];

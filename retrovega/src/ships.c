@@ -503,6 +503,12 @@ static int set_present(unsigned type, char *name)
     return file_present(name);
 }
 
+int ships_present(unsigned type)
+{
+    char name[16];
+    return set_present(type, name);
+}
+
 void ships_want(const unsigned char *types, int n, int wait)
 {
     char name[16];

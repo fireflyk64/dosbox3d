@@ -435,10 +435,9 @@ static void stars_place(void)
     g_star_place_ticks += clock240() - t0;
 }
 
-static void draw_stars(int y0, int y1)
+static void stars_in(int y0, int y1, const short __far *ext, int ey0, int rows)
 {
-    int i, ey0, rows;
-    const short __far *ext = cockpit_extents(&ey0, &rows);
+    int i;
     unsigned long t0 = clock240();
     for (i = 0; i < g_star_n; i++) {
         int x = g_star_at[i].x, y = g_star_at[i].y, k = y - ey0;
@@ -449,6 +448,13 @@ static void draw_stars(int y0, int y1)
         vid_row(y)[x] = (unsigned char)g_star_at[i].c;
     }
     g_star_draw_ticks += clock240() - t0;
+}
+
+static void draw_stars(int y0, int y1)
+{
+    int ey0, rows;
+    const short __far *ext = cockpit_extents(&ey0, &rows);
+    stars_in(y0, y1, ext, ey0, rows);
 }
 
 /* the chosen nav point's name and distance beside its mark, where the opening has room for it */
@@ -1382,6 +1388,246 @@ static void draw_world(int y0, int y1)
         for (i = 0; i < g_nbench; i++)
             ships_blit_size(bench, 1, g_bench_view, g_bench[i].x, g_bench[i].y, y0, y1, 0, SCR_W, ext, ey0, rows);
 #endif
+}
+
+/* --- a room's window on space (the user, 2026-11-01: the bar "should use the actual space renderer ... occasional
+ * Schroedingers and Gawains flying by", one partly hidden far thing, which and where chosen by the system; Barnard's
+ * Star, the old game's Rostov, has asteroids instead).  The flight's own stars, sky things, ships,
+ * flames and rocks, clipped to the window's rows as a flight is to the cockpit's opening, from a camera that stands
+ * still: nothing is redrawn unless something outside moves.  The slots are free in the rooms (a flight's start clears
+ * them), so the ships are slots moved by hand, with no logic.  What is loaded goes at the mission's level and the
+ * rocks' at the hazard's above it, given back as the next room is entered (g_scene.leave) --- */
+
+#define WIN_HZ 30
+#define WIN_FOCAL 400
+#define WIN_STARS 90
+#define WIN_WING 3                      /* ships in a flight going by */
+#define WIN_FIELD_Z_KM 4200L            /* the rocks: a small field ahead, the window looking into it */
+#define WIN_FIELD_R_KM 2800L
+#define WIN_FIELD_DENSITY 250
+static const unsigned char __far k_win_types[2] = { 0x00, 0x02 };   /* the Schroedinger and the Gawain */
+
+static struct {
+    short __far *ext;
+    short y0, rows, cx, cy;
+    unsigned char on, rocks, sets, nfly;
+    unsigned short next_fly, fly_left;  /* frameCounter of the next flight going by; frames left of this one */
+    unsigned long next;                 /* clock240 of the next frame */
+} __far g_win;
+
+static void win_sets_in(void)
+{
+    static const char __far s_in[] = "window: the ships' sets in, %lu KB in %lu ms";
+    unsigned long t0 = clock240(), free_kb, taken;
+    if (g_win.sets || !ships_present(k_win_types[0]) || !ships_present(k_win_types[1]))
+        return;
+    ships_load(k_win_types[0]);
+    ships_load(k_win_types[1]);
+    free_kb = xms_free_kb();
+    taken = ships_load_blocks(free_kb > 4096 ? (free_kb - 4096) * 1024UL : 0);
+    g_win.sets = 1;
+    rv_logf(s_in, taken / 1024, (clock240() - t0) * 1000 / 240);
+}
+
+static void win_flyby_start(void)
+{
+    static const char __far s_by[] = "window: %d ships going by at %ld km";
+    int n = 1 + vrnd() % WIN_WING, i, dir = (vrnd() & 1) ? 1 : -1;
+    long z = 1400 + vrnd() % 3400, half = z * 19 / 100 + 500;   /* (the window's half width at z, and a ship's length) */
+    long y = ((long)(vrnd() % 33) - 16) * z / WIN_FOCAL, kmf = 10 + vrnd() % 9;   /* km a frame: 300 .. 540 km/s */
+    int yaw = dir * 256 + (int)(vrnd() % 121) - 60, pitch = (int)(vrnd() % 41) - 20;   /* (across, a little toward or away) */
+    int type = k_win_types[vrnd() & 1], burn = vrnd() % 4 == 0;
+    for (i = 0; i < n; i++) {
+        int s = i + 1;
+        const RvShipType __far *t;
+        if (vrnd() % 4 == 0)            /* (now and then a wing of both) */
+            type = k_win_types[vrnd() & 1];
+        t = ship_type(type);
+        maybeEntityType[s] = ET_SHIP;
+        gInstanceShipTypes[s] = (uint16_t)type;
+        shipAiState[s] = 0;
+        ship_face(s, yaw, pitch);
+        gPositionVector[s].x = -dir * (half + i * 420L) * 256;
+        gPositionVector[s].y = (y + (i & 1 ? 180L : i ? -180L : 0L)) * 256;
+        gPositionVector[s].z = (z + i * 260L) * 256;
+        gVelocityVector[s].x = gOrientationFrontVector[s].x * kmf;
+        gVelocityVector[s].y = gOrientationFrontVector[s].y * kmf;
+        gVelocityVector[s].z = gOrientationFrontVector[s].z * kmf;
+        speedLo[s] = t ? (unsigned long)t->max_kps + (burn ? 1 : 0) : 200;
+    }
+    g_win.nfly = (unsigned char)n;
+    g_win.fly_left = (unsigned short)((2 * half + n * 420L) / kmf + 10);
+    rv_logf(s_by, n, z);
+}
+
+void flight_window_open(int room, unsigned seed, int outside)
+{
+    static const char __far s_open[] = "window: open, seed %u, %Fs: %d rows at %d, the sky's things %d";
+    static const char __far s_rocks[] = "rocks", __far s_sky[] = "the sky";
+    const RvRoom __far *r = dat_room(room);
+    const RvAsset __far *ex;
+    LfBasis cam;
+    int i, k, things = 0, x0 = SCR_W, x1 = 0;
+    if (g_win.on || r->win_ext == 0xFFFF)
+        return;
+    ex = dat_asset(r->win_ext);
+    g_win.ext = (short __far *)_fmalloc((size_t)ex->size + 2);
+    if (!g_win.ext)
+        return;
+    dat_read(ex->at, g_win.ext, ex->size);
+    g_win.y0 = r->win_y0;
+    g_win.rows = r->win_rows;
+    for (i = 0; i < g_win.rows; i++) {
+        if (g_win.ext[2 * i] < x0) x0 = g_win.ext[2 * i];
+        if (g_win.ext[2 * i + 1] > x1) x1 = g_win.ext[2 * i + 1];
+    }
+    g_win.cx = (short)((x0 + x1) / 2);
+    g_win.cy = (short)(g_win.y0 + g_win.rows / 2);
+    dat_level(XMS_MISSION);             /* (the room's pictures read from now on go above the sets) */
+    memset(maybeEntityType, 0, RV_SLOTS * 2);
+    _fmemset(g_was_exact, 0, sizeof g_was_exact);
+    _fmemset(g_hold, 0, sizeof g_hold);
+    ship_face(0, 0, 0);                 /* the camera: slot 0, standing still, looking along +z */
+    gPositionVector[0].x = gPositionVector[0].y = gPositionVector[0].z = 0;
+    gVelocityVector[0].x = gVelocityVector[0].y = gVelocityVector[0].z = 0;
+    setSpeed[0] = speedLo[0] = 0;
+    frameCounter = 0;
+    g_view = VIEW_COCKPIT;
+    ships_set_camera(g_win.cx, g_win.cy, WIN_FOCAL);
+    flames_init();
+    /* what is outside: the system's, each time the player comes back in */
+    g_vseed = 0x2F6E2B1UL + (unsigned long)seed * 7919UL;
+    for (i = 0; i < WIN_STARS && i < STARS; i++) {
+        g_star_at[i].x = (short)(x0 + vrnd() % (x1 - x0));
+        g_star_at[i].y = (short)(g_win.y0 + vrnd() % g_win.rows);
+        g_star_at[i].c = (vrnd() & 3) ? UI_GREY4 : UI_GREY6;
+    }
+    g_star_n = i;
+    sky_clear();
+    basis_of(0, &cam);
+    if ((outside == WINDOW_SKY || outside == WINDOW_EDGE) && sky_things() > 0) {
+        /* one far thing (the user: "2 makes it too crowded", a second only if very small, and none of these is), to one
+         * side, so that the frame hides part of it: the smallest is wider than the window is high.  In some systems
+         * it is well off to the side, only its edge showing (a thing's art fills about 4/5 of its box) */
+        LfVec dir, up;
+        int turn = (int)(vrnd() % TURN);
+        long off, sign = (vrnd() & 1) ? 1L : -1L;
+        k = (int)(vrnd() % sky_things());
+        off = outside == WINDOW_EDGE ? (x1 - x0) / 2 + sky_box(k) * 2 / 5 - 16 : 30 + vrnd() % 50;
+        dir.x = sign * off * 16;
+        dir.y = ((long)(vrnd() % 61) - 30) * 16;
+        dir.z = (long)WIN_FOCAL * 16;
+        up.x = lf_sin(turn);
+        up.y = lf_cos(turn);
+        up.z = 0;
+        things = sky_add(k, &dir, &up);
+    }
+    k = sky_rows(2);                    /* (doubled: at rest, seen through a small window, an interlaced nebula is stripes) */
+    sky_place(&cam, g_win.cx, g_win.cy, WIN_FOCAL);
+    sky_rows(k);
+    g_win.sets = 0;
+    win_sets_in();                      /* (before the rocks: their art goes at a level above) */
+    rocks_flight_start();
+    g_win.rocks = outside == WINDOW_ROCKS;
+    if (g_win.rocks)
+        rocks_field_add(RV_FIELD_ASTEROID, 0, 0, WIN_FIELD_Z_KM * 256, WIN_FIELD_R_KM, WIN_FIELD_DENSITY);
+    rocks_frame(&cam, g_win.cx, g_win.cy, WIN_FOCAL, g_win.y0, g_win.y0 + g_win.rows);
+    g_win.nfly = 0;
+    g_win.next_fly = (unsigned short)(60 + vrnd() % 120);   /* (the first soon: two to six seconds) */
+    g_win.next = clock240();
+    g_win.on = 1;
+    plan_draws();
+    rv_logf(s_open, seed, g_win.rocks ? s_rocks : s_sky, g_win.rows, g_win.y0, things);
+}
+
+void flight_window_close(void)
+{
+    if (!g_win.on)
+        return;
+    g_win.on = 0;
+    rocks_flight_end();                 /* (its art given back, the archive's level the mission's) */
+    ships_unload();                     /* (their XMS: the caller's level goes next) */
+    memset(maybeEntityType, 0, RV_SLOTS * 2);
+    g_nplan = 0;
+    _ffree(g_win.ext);
+    g_win.ext = 0;
+}
+
+void flight_window_tick(void)
+{
+    unsigned long now;
+    int moved = 0, s;
+    if (!g_win.on || g_scene.full)
+        return;
+    now = clock240();
+    if ((long)(now - g_win.next) < 0)
+        return;
+    g_win.next = now + 240 / WIN_HZ;
+    frameCounter++;
+    if (g_win.nfly) {
+        moved = 1;
+        for (s = 1; s <= g_win.nfly; s++) {
+            gPositionVector[s].x += gVelocityVector[s].x;
+            gPositionVector[s].y += gVelocityVector[s].y;
+            gPositionVector[s].z += gVelocityVector[s].z;
+        }
+        if (--g_win.fly_left == 0) {
+            for (s = 1; s <= g_win.nfly; s++)
+                maybeEntityType[s] = 0;
+            g_win.nfly = 0;
+            g_win.next_fly = (unsigned short)(frameCounter + 120 + vrnd() % 480);   /* (four to twenty seconds) */
+        }
+    } else if ((short)(frameCounter - g_win.next_fly) >= 0) {
+        if (!g_win.rocks || !rocks_live())
+            win_sets_in();              /* (the page may have brought them since) */
+        if (g_win.sets) {
+            win_flyby_start();
+            moved = 1;
+        } else
+            g_win.next_fly = (unsigned short)(frameCounter + 150);
+    }
+    if (g_win.rocks) {
+        LfBasis cam;
+        if (!rocks_live() && (frameCounter & 127) == 0)
+            rocks_retry();              /* (the page may have brought their art since) */
+        basis_of(0, &cam);
+        rocks_frame(&cam, g_win.cx, g_win.cy, WIN_FOCAL, g_win.y0, g_win.y0 + g_win.rows);
+        if (rocks_live())
+            moved = 1;
+    }
+    if (moved) {
+        plan_draws();
+        vid_dirty(g_win.y0, g_win.y0 + g_win.rows);
+    }
+}
+
+void flight_window_draw(int y0, int y1)
+{
+    const short __far *ext = g_win.ext;
+    int ey0 = g_win.y0, rows = g_win.rows, i;
+    LfBasis cam, ship;
+    if (!g_win.on || y1 <= ey0 || y0 >= ey0 + rows)
+        return;
+    sky_draw(0, y0, y1, ext, ey0, rows);
+    stars_in(y0, y1, ext, ey0, rows);
+    sky_draw(1, y0, y1, ext, ey0, rows);
+    rocks_draw_small(y0, y1, ext, ey0, rows);
+    rocks_draw_begin();
+    basis_of(0, &cam);
+    for (i = 0; i < g_nplan; i++) {
+        LfVec rel;
+        int s = g_plan[i].slot, set = g_plan[i].set;
+        rel_of(s, &rel);
+        basis_of(s, &ship);
+        rocks_draw_to(g_plan[i].depth, y0, y1, ext, ey0, rows);
+        if (!g_plan[i].fl.front)
+            flames_draw(&g_plan[i].fl, y0, y1, ext, ey0, rows);
+        ships_draw_as(set, plan_how(i), g_plan[i].exact ? g_plan[i].exact : 1, &rel, &cam, &ship, g_plan[i].scale, y0, y1,
+                      0, SCR_W, ext, ey0, rows);
+        if (g_plan[i].fl.front)
+            flames_draw(&g_plan[i].fl, y0, y1, ext, ey0, rows);
+    }
+    rocks_draw_rest(y0, y1, ext, ey0, rows);
 }
 
 static int g_ptr_y0, g_ptr_y1;

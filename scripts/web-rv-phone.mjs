@@ -105,7 +105,7 @@ try {
   ok(/LOUNGE\.MID/.test(t), "the quarters' door: the lounge");
   await sleep(1500);
   await shot("lounge");
-  await tap(431, 170);                // the lounge's hatch
+  await tap(429, 140);                // the lounge's hatch (its top: a pilot sits over the rest)
   t = await waitLog(/cue \d+ \(BAR\.MID\)/, 8000);
   ok(/BAR\.MID/.test(t), "the lounge's hatch: the bar");
   await sleep(1500);

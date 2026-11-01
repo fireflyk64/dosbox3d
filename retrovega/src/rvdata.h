@@ -208,7 +208,8 @@ typedef struct {
     uint16_t missions[RV_MISSIONS_PER_NODE];
     uint8_t good;
     uint8_t bad;
-    uint8_t pad[2];
+    uint8_t outside;
+    uint8_t pad;
 } RvNode;
 typedef struct {
     uint8_t id;

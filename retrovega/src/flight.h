@@ -10,6 +10,16 @@
  * until missionStatus is set, frees them; returns the final missionStatus */
 int flight_fly(const RvMission __far *m);
 
+/* a room's window on space (flight.c): the room's window rows (RvRoom.win_*) show the flight's stars and a far thing, with
+ * ships going by, or asteroids; seed: what is out there (the system's number).  Open once the room is entered (its level is taken: what
+ * it loads is given back with the room's), draw as the room's underlay, tick once a pass of the game's loop, close
+ * as the room is left (g_scene.leave) */
+enum { WINDOW_SKY, WINDOW_ROCKS, WINDOW_EDGE, WINDOW_EMPTY };   /* what's outside: RvNode.outside, campaign.csv's (rvdata.py) */
+void flight_window_open(int room, unsigned seed, int outside);
+void flight_window_close(void);
+void flight_window_tick(void);
+void flight_window_draw(int y0, int y1);
+
 #ifdef RV_TESTS
 /* the benchmark's result, after a flight: sprites a frame at 30 fps, and the
  * sprite's size (the test build, RVT.EXE) */

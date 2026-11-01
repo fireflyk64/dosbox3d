@@ -33,6 +33,7 @@ TYPES = {0: 'SCHROED', 1: 'LANCELT', 2: 'FRANKLN', 3: 'GAWAIN', 8: 'VIGILNC', 9:
 CAPITALS = {4, 5, 6, 7, 8, 14, 15, 16, 17, 18, 19, 21}
 FIELDS = {22: 'asteroid', 23: 'mine'}
 # the systems, in the old campaign's order, as places of the Aera war: (node id, name, good next, bad next)
+OUTSIDE = {'BARNARD': 'rocks', 'CEPHID': 'edge', 'OLDZIEY': 'edge', 'RIGEL': 'empty'}   # (the bar's window, data/campaign.csv)
 SERIES = [
     ('ENIGMA', 'the Enigma shipyards', 'CEPHID', 'CEPHID'),
     ('CEPHID', 'Cephid 17', 'SHELTON', 'CRUCIBL'),
@@ -214,7 +215,8 @@ def main():
     header = ('# The campaign: the old game\'s missions\' shapes (tests/wc1/port.py from its dumps), in the Aera war.\n'
               '# Edit freely: tools/rvdata.py checks every block.\n\n')
     text = header + '\n\n'.join(missions) + '\n'
-    camp = 'node,layer,col,missions,good,bad\n' + ''.join('%s,%d,0,%s,%s,%s\n' % (n, i + 1, ' '.join(ids), g, b) for n, i, ids, g, b in nodes)
+    # (outside: what the bar's window shows there; Barnard's Star, the old game's Rostov with its dense asteroid fields, has rocks)
+    camp = 'node,layer,col,missions,good,bad,outside\n' + ''.join('%s,%d,0,%s,%s,%s,%s\n' % (n, i + 1, ' '.join(ids), g, b, OUTSIDE.get(n, '')) for n, i, ids, g, b in nodes)
     if '--write' in sys.argv:
         if re.search(r'(?m)^say ', open(os.path.join(DATA, 'missions.txt')).read()):
             sys.exit('data/missions.txt has written scenes now: --write would lose them; port the shapes by hand')

@@ -91,7 +91,14 @@ int sky_reserve(void)
 
 int sky_things(void) { return g_kinds; }
 
-void sky_rows(int rows) { g_rows_all = rows; }
+int sky_box(int thing) { return thing >= 0 && thing < g_kinds ? g_kind[thing].box : 0; }
+
+int sky_rows(int rows)
+{
+    int was = g_rows_all;
+    g_rows_all = rows;
+    return was;
+}
 
 void sky_clear(void)
 {
