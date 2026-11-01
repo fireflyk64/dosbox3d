@@ -1583,6 +1583,7 @@ static void start_simulator(void)
 {
     unsigned char ship = g_camp.player_ship;
     int status;
+    freeze_hold();                      /* (the load, seven sets the page may be making: until the flight's first frame) */
     strcpy(g_scene.label, "Simulator: powering up");   /* (the page may be making the Rlaan's sets) */
     vid_dirty(SCR_H - LABEL_H, SCR_H);
     scene_draw();
@@ -1598,6 +1599,7 @@ static void start_simulator(void)
         mission_load_assets();
         status = flight_simulator(sim);
     }
+    freeze_hold();                      /* (what is unloaded, until the game's loop is back) */
     mission_free_assets();
     g_camp.player_ship = ship;
     camp_load_tables(&g_m);

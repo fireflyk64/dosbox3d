@@ -152,6 +152,7 @@ if (process.env.SIM) {                 // the bar's simulator: the chair, a wave
   t = await rvlog();
   console.log(/stub: missionStarting|stub: uiMode|stub: rvFrameDone/.test(t.slice(t.indexOf("simulator:"))) ? "FAIL a mission's hook in the simulator" : "ok   none of a mission's hooks in the simulator");
   console.log(/FAIL /.test(t) ? "FAIL a stop in the engine's log" : "ok   no stop in the engine's log");
+  console.log(/^FREEZE:/m.test(t) ? "FAIL the freeze watch reported in the simulator's run" : "ok   no freeze report, the sets' wait included");
   console.log(logs.filter((l) => /simulatorStart|simulatorEnd|PAGE ERROR/.test(l)).slice(0, 6).join("\n"));
   fs.writeFileSync(path.join(shotDir, "rv-flight-RVLOG.TXT"), t);
   await browser.close();

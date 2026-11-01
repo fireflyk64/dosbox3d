@@ -941,7 +941,7 @@ every array's guard. Anything that differs from the first look logs `LEAK:`. `/l
 **The freeze watch** (`src/freeze.c`). The main loop says it is alive (`freeze_pet`); after 20 s without it the music's interrupt
 writes `FREEZE:` to RVLOG.TXT: the registers, the stack and the last second's interrupted addresses. `tests/freezemap.py
 RVLOG.TXT` names them from `RV.MAP`. The game goes on as it was: a very slow load is not a freeze. A flight's frame counts as the
-main loop, and a load (a launch, the bar window's sets) holds the watch until a loop runs again (`freeze_hold`). `/dosbox` shows
+main loop, and a load (a launch, the simulator, the bar window's sets) holds the watch until a loop runs again (`freeze_hold`). `/dosbox` shows
 the report on the page at the second one, 80 s stuck (`showFreeze`). It cannot see a loop with interrupts off or a stuck interrupt: `tests/freezetrace.sh PID` takes those
 through DOSBox with gdb. The native build has no watch (`/rv`: the browser's own tools).
 
