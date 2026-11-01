@@ -926,7 +926,9 @@ fixed size, its address in `RV.MAP`, declared where it is used:
 
 A take asking more than the array has stops the game, naming the array. `build.sh` refuses an RV.EXE that links `_fmalloc`.
 RVT.EXE and RVP.EXE have 60 KB more code and no room for the arrays: `RV_HEAP` keeps the far heap there, so what the game does
-is tested with RV.EXE itself. Upper memory holds what it held, the band buffer and the dense slab, each taken once.
+is tested with RV.EXE itself. Upper memory holds what it held, the band buffer and the dense slab (`ships_dense_reserve`), both
+taken at the start and never given back; in the native build the slab is a plain array. If the slab were ever missing the exact draw
+asks again at each draw and the log says so once, and a flight's end counts the draws refused.
 
 The image is the budget. DOSBox leaves a program 640,512 bytes, RV.EXE takes 618 KB of them (2026-11-01; `build.sh` says how many
 on every build), and the rest, 22 KB, stays free in DOS all the time. Past that it does not load at all, and nothing in the game

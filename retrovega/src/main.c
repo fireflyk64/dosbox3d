@@ -342,6 +342,7 @@ int main(int argc, char **argv)
         xms_shutdown();
         return 1;
     }
+    (void)ships_dense_reserve();        /* (the other half of upper memory, now and for good: ships.c) */
     gfx_font_load();
     flames_bake();                      /* the engines' flames, once */
     log_free("after the screen and the fonts");

@@ -1597,7 +1597,7 @@ static void start_simulator(void)
         const RvMission __far *sim = simulator_mission(&g_m);
         camp_load_tables(sim);
         mission_load_assets();
-        status = flight_simulator(sim);
+        status = g_noflight ? 0 : flight_simulator(sim);   /* (the test rig's /noflight: no flying here either) */
     }
     freeze_hold();                      /* (what is unloaded, until the game's loop is back) */
     mission_free_assets();

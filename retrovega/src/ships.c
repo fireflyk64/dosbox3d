@@ -81,7 +81,8 @@ static unsigned char __far *g_slab;
 static struct { short set, key; unsigned off, len; } __far g_slab_ent[SLAB_MAX];
 static unsigned g_slab_cursor;
 static unsigned char __far *g_dense;    /* the one a draw is using */
-static unsigned long g_dc_hits, g_dc_expands;   /* (the flight's tally: found in the slab, expanded into it) */
+static unsigned long g_dc_hits, g_dc_expands, g_dc_refused;   /* (the flight's tally: found in the slab, expanded into it,
+                                                                    no slab for it or too big for it) */
 MEM_ARRAY(unsigned short, g_cmap_arr, LINE)
 MEM_ARRAY(unsigned char, g_line_arr, LINE)
 static unsigned short __far *g_cmap;    /* the scaled draw's column map, LINE entries */
@@ -670,7 +671,7 @@ unsigned long ships_load_blocks(unsigned long budget)
 {
     unsigned long taken = 0;
     int pass, i, k;
-    g_dc_hits = g_dc_expands = 0;
+    g_dc_hits = g_dc_expands = g_dc_refused = 0;
     for (pass = 0; pass < 3; pass++)
         for (k = 0; k < 16; k++)
             for (i = 0; i < g_nsets; i++) {
@@ -782,8 +783,9 @@ static int stored_view(const ShipSet __far *s, int v, int *flags)
 
 void ships_draw_log(void)
 {
-    static const char __far s_dc[] = "ships: the turned draw's dense copies: %lu expanded into the slab, %lu found there";
-    rv_logf(s_dc, g_dc_expands, g_dc_hits);
+    static const char __far s_dc[] =
+        "ships: the turned draw's dense copies: %lu expanded into the slab, %lu found there, %lu refused";
+    rv_logf(s_dc, g_dc_expands, g_dc_hits, g_dc_refused);
 }
 
 /* --- drawing --- */
@@ -1094,24 +1096,40 @@ static void draw_scaled(const ShipSet __far *s, int v, int x, int y, int scale25
     }
 }
 
-/* the slab: upper memory first (DOSBox's 128 KB of UMBs hold it and the band buffer), else conventional */
+/* The slab: one fixed place for the whole game, nothing a mission asks can change it.  Taken once at the start (main,
+ * right after the band buffer: 64 KB each of DOSBox's 128 KB of UMBs), never given back.  The native build's is a plain
+ * array: 4 MB in sharp mode, past what rv_alloc_high hands out.  (Lazily from the far heap until 2026-11-01, when the heap
+ * left: the native game then had no slab at all, and no ship turned exactly.)  If it ever is not there this asks again
+ * at each draw, and says so once. */
+#ifdef RV_HOST
+static unsigned char g_slab_mem[SLAB_BYTES];
+#endif
+
 int ships_dense_reserve(void)
 {
+    static unsigned char __far said;
     int i;
-    if (!g_slab) {
-        g_slab = (unsigned char __far *)rv_alloc_high(SLAB_BYTES);
-        if (g_slab)
-            RV_NOTE("ships: the dense slab in upper memory");
-        else
-            RV_LOG("ships: the dense slab in conventional memory");
+    if (g_slab)
+        return 1;
+#ifdef RV_HOST
+    g_slab = g_slab_mem;
+#else
+    g_slab = (unsigned char __far *)rv_alloc_high(SLAB_BYTES);
 #ifdef RV_HEAP
-        if (!g_slab)
-            g_slab = (unsigned char __far *)_fmalloc(SLAB_BYTES);
+    if (!g_slab)
+        g_slab = (unsigned char __far *)_fmalloc(SLAB_BYTES);
 #endif
-        for (i = 0; i < SLAB_MAX; i++)
-            g_slab_ent[i].set = -1;
+#endif
+    if (!g_slab) {
+        if (!said)
+            RV_LOG("ships: no room for the dense slab: no ship is turned exactly until there is");
+        said = 1;
+        return 0;
     }
-    return g_slab != 0;
+    RV_LOG("ships: the dense slab in place, %lu bytes", (unsigned long)SLAB_BYTES);
+    for (i = 0; i < SLAB_MAX; i++)
+        g_slab_ent[i].set = -1;
+    return 1;
 }
 
 /* a view's dense copy is in the slab: *buf its entry (the callers' "in a buffer"); *dc is always -1 now */
@@ -1139,8 +1157,10 @@ static int dense_from(int set_i, int key, const ShipView *view, int mir)
         g_dc_hits++;
         return 1;
     }
-    if (!w || (unsigned long)w * h > SLAB_BYTES || !ships_dense_reserve())
+    if (!w || (unsigned long)w * h > SLAB_BYTES || !ships_dense_reserve()) {
+        g_dc_refused++;
         return 0;
+    }
     /* a place in the ring: from the cursor, back at the start when it does not fit; whatever lay there is out */
     if (g_slab_cursor + (unsigned long)len > SLAB_BYTES)
         g_slab_cursor = 0;

@@ -4,7 +4,7 @@
 # and over many seeds, with wingmen lost, escorts lost, the player dead and the carrier lost at random (/kill).
 #   tests/monkey.sh [-j N] [-s SEEDS] [-b ACTIONS] [-k KILL%] [-t SECONDS] [-n ROUTES] [--dos] [--flying]
 # Every run must end in "bye", with no sanitizer report, no "LEAK:" (the ledger's, or conventional memory falling in a
-# frame: src/mem.c), no music track refused for want of room and no "FAIL".  A run still
+# frame: src/mem.c), no music track or dense slab refused for want of room and no "FAIL".  A run still
 # going after -t seconds is a freeze: gdb takes its stack (the emulator's, and the game's CS:IP, with --dos) before it is
 # killed.  A failed run's files are kept in build/monkey/fail-*, with the line to run it again.
 #   --dos     RV.EXE itself, in the native DOSBox with DOSBOX_TURBO (a real-flight campaign in under a minute);
@@ -82,7 +82,7 @@ one() {
         if grep -q "AddressSanitizer\|runtime error" "$d/out.txt"; then why=SANITIZER
         elif grep -q "^LEAK:" "$log" 2>/dev/null; then why=LEAK
         elif grep -q "^FREEZE\|^FAIL" "$log" 2>/dev/null; then why=FAIL
-        elif grep -q "does not fit" "$log" 2>/dev/null; then why=NOROOM
+        elif grep -q "does not fit\|no room for the dense slab" "$log" 2>/dev/null; then why=NOROOM
         elif ! grep -q "^bye" "$log" 2>/dev/null; then why=DIED
         fi
     fi

@@ -4,7 +4,7 @@
 #   tests/quiet.sh [MISSION ...]    default a spread: launch fights, fields, waves, capital ships; `seq 0 39` for all
 #   1. nothing is logged from a flight's first frame to its end, but for what is wrong (FLIGHT_S=40 a flight, s);
 #   2. conventional memory holds: no "LEAK:", the flight's end says 0 falls, DOS and the near heap where they started;
-#   3. the music loaded whole, no track refused for want of room;
+#   3. the music loaded whole, no track refused for want of room, and the exact draw's slab was there: none refused;
 #   4. the watch can speak: with /leaktest its LEAK lines come.
 # A flight at the page's speed is not needed: DOSBOX_TURBO=1 at 20,000 cycles, CYCLES= another.
 set -u
@@ -51,6 +51,8 @@ for m in "$@"; do
     [ -z "$talk" ] || bad "mission $m: lines in the flight:" $'\n'"$(echo "$talk" | cut -c1-120 | head -10)"
     grep -q "^LEAK" "$L" && bad "mission $m:" $'\n'"$(grep '^LEAK' "$L" | cut -c1-130 | head -5)"
     grep -q "does not fit" "$L" && bad "mission $m: $(grep -m1 'does not fit' "$L")"
+    grep -q "no room for the dense slab" "$L" && bad "mission $m: $(grep -m1 'no room for the dense slab' "$L")"
+    grep -q "dense copies:.*, 0 refused" "$L" || bad "mission $m: $(grep -m1 'dense copies:' "$L")"
     end=$(grep -m1 "^conventional memory at the flight's end" "$L")
     case "$end" in *": 0 falls;"*) ;; *) bad "mission $m: $end";; esac
     echo "ok   mission $m: $(grep -m1 '^flight: over' "$L" | cut -c9-), ${end#*: }"
