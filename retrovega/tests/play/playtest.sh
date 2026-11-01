@@ -11,6 +11,7 @@
 # to tests/run.sh (a stock DOSBox runs RVP.EXE).  The outputs: build/playtest-host.txt, build/playtest-dos.txt.
 # Exit 0 only when every test passes and, with --dos, every hash matches.
 set -e
+export LC_ALL=C                         # (sort and join must agree: M1.14 against M11.1)
 cd "$(dirname "$0")/../.."
 dos=
 steps=
