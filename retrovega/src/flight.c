@@ -2655,7 +2655,8 @@ static void balls_step(void)
  * the line drawing (3/4 px of radius, 1,067 km) in about five seconds; the round
  * is ten seconds (drawn as this build draws fat bolts), then the flight
  * lands. */
-#define DEMO_GAP_KM ((2 * BOLT_RMAX16 / 16 + 10) * BOLT_ZMIN_KM / 400)   /* centres 18 px apart at the near plane */
+#define DEMO_GAP_KM ((2 * 64 / 16 + 10) * 200 / 400)   /* centres 18 px apart at 200 km (the demo's own: the near
+                                           plane and the widest bolt were these when it was recorded) */
 static const signed char __far g_demo_at[DEMO_BOLTS][2] = {   /* across, up: km */
     { 0, 0 }, { DEMO_GAP_KM, 0 }, { -DEMO_METRE / 2, 0 },
     { -DEMO_METRE * 3 / 2, 0 }, { DEMO_METRE * 3 / 2, 0 }, { 0, DEMO_METRE }, { 0, -DEMO_METRE },

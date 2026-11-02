@@ -17,7 +17,8 @@
 #define BALL_FIRE 2                     /* a searing red and white ball, energy crackling out of it (four) */
 #define BALL_STAR 3                     /* a shining green ball with four spikes, turning (four) */
 #define BALL_KINDS 4
-#define BALL_ZMIN_KM 100                /* the near plane: a ball nearer is not drawn */
+#define BALL_ZMIN_KM 60                 /* the near plane: a ball nearer is not drawn (60, as the bolts': a fighter's
+                                           gun is 80-90 km ahead of the eye) */
 #define BALL_ZMAX_KM 40000
 
 int balls_reserve(void);                /* when the game starts, before RV.DAT (resident XMS): BALLS.DAT in */

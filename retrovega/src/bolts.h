@@ -10,9 +10,11 @@
 #define BOLT_RADIUS16 32                /* a bolt's radius, sixteenths of a km (2 km) */
 #define BOLT_HALF16 192                 /* half its length (12 km): 64 x 8 px at the near plane, side on (the user
                                            doubled the length, 2026-10-21) */
-#define BOLT_ZMIN_KM 200                /* the near plane: a bolt nearer is cut there (so drawn at most 8 px across) */
+#define BOLT_ZMIN_KM 60                 /* the near plane: a bolt nearer is cut there.  (It was 200 km, 8 px across at
+                                           most: a fighter's guns, 90 km ahead of the eye at the nose, were never seen;
+                                           the user wanted "the big laser close by") */
 #define BOLT_ZMAX_KM 40000
-#define BOLT_RMAX16 64                  /* the radius drawn at most: 4 px */
+#define BOLT_RMAX16 128                 /* the radius drawn at most: 8 px (LZ_RMAX16), a bolt within 100 km */
 #define BOLT_LINE16 12                  /* under 3/4 px of radius a bolt is a line */
 
 void bolts_tables(void);                /* the capsules' root table and the whole width's extents: before any draw

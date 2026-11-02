@@ -85,6 +85,8 @@ int16_t shot_add(int16_t owner, uint16_t weapon_type, const RvVec3 *pos, const R
     s->owner = (uint8_t)owner;
     s->weapon = (uint16_t)weapon_type;
     s->look = w ? w->look : RV_LOOK_BOLT;
+    s->fresh = 2;
+    s->pad = 0;
     s->damage = w ? w->damage : 1;
     /* its life: its weapon's range at its weapon's speed (a beam's speed is 0: two steps) */
     s->life = w && w->speed_kps ? (uint16_t)((int32_t)w->range_km * KPS_HZ / w->speed_kps) : 2;
@@ -126,6 +128,8 @@ void shots_move(void)
         s->x += s->vx;
         s->y += s->vy;
         s->z += s->vz;
+        if (s->fresh)
+            s->fresh--;
     }
 }
 
@@ -233,18 +237,31 @@ void shots_place(const LfVec *eye, const LfBasis *cam, int16_t cx, int16_t cy, i
         return;
     for (i = 0; i < g_n; i++) {
         const Shot __far *s = &g_s[i];
+        /* on the frame it was fired (moved once: the step's move comes before the drawing) a bolt is drawn the whole
+         * way it came, from the gun to its head, and a ball half way: else the player's first sight of a laser was
+         * 210 km out, a third of the way to the crosshair, and the guns' end of it, 80-90 km ahead of the eye, never
+         * (the user: "I never get to see the big laser close by", "visible on that first frame right above your
+         * head").  Half the step, x16: sixteenths of a km (a step under 4,000 km) */
+        int16_t mx = s->fresh == 1 ? (int16_t)(s->vx / 32) : 0, my = s->fresh == 1 ? (int16_t)(s->vy / 32) : 0,
+                mz = s->fresh == 1 ? (int16_t)(s->vz / 32) : 0;
         if (s->look == RV_LOOK_BOLT || s->look == RV_LOOK_BEAM) {
             if (!b || nb >= g_bolts)
                 continue;
-            /* (a bolt's middle: its head less its half length; positions are sixteenths x 16) */
-            b[nb].x = s->x - s->hx * INT32_C(16); b[nb].y = s->y - s->hy * INT32_C(16);
-            b[nb].z = s->z - s->hz * INT32_C(16);
-            b[nb].hx = s->hx; b[nb].hy = s->hy; b[nb].hz = s->hz;
+            if (mx || my || mz) {       /* (the streak: its middle half a step back, half a step long) */
+                b[nb].x = s->x - mx * INT32_C(16); b[nb].y = s->y - my * INT32_C(16);
+                b[nb].z = s->z - mz * INT32_C(16);
+                b[nb].hx = mx; b[nb].hy = my; b[nb].hz = mz;
+            } else {                    /* (a bolt's middle: its head less its half length; positions are sixteenths x 16) */
+                b[nb].x = s->x - s->hx * INT32_C(16); b[nb].y = s->y - s->hy * INT32_C(16);
+                b[nb].z = s->z - s->hz * INT32_C(16);
+                b[nb].hx = s->hx; b[nb].hy = s->hy; b[nb].hz = s->hz;
+            }
             nb++;
         } else if (s->look >= RV_LOOK_SLUG && s->look <= RV_LOOK_STAR) {
             if (!ball || nl >= g_balls)
                 continue;
-            ball[nl].x = s->x; ball[nl].y = s->y; ball[nl].z = s->z;
+            ball[nl].x = s->x - mx * INT32_C(16); ball[nl].y = s->y - my * INT32_C(16);
+            ball[nl].z = s->z - mz * INT32_C(16);
             ball[nl].vx = ball[nl].vy = ball[nl].vz = 0;   /* (drawn where the list has it, not flown) */
             ball[nl].kind = (uint8_t)(s->look - RV_LOOK_SLUG);
             ball[nl].phase = (uint8_t)i;

@@ -25,7 +25,9 @@ typedef struct {
     uint16_t life;                      /* steps left */
     uint8_t owner;                      /* the slot that fired it */
     uint8_t look;                       /* RV_LOOK_*: how it is drawn (bolt, beam: a capsule; slug .. star: a ball) */
-} Shot;                                 /* 38 bytes */
+    uint8_t fresh;                      /* 2 just added, 1 moved once (drawn at its muzzle still), 0 after */
+    uint8_t pad;
+} Shot;                                 /* 40 bytes */
 
 int16_t shots_flight_start(int16_t own_pools);   /* none in flight; room made for SHOTS_MAX (own_pools 0: a test scene has
                                            the bolts' and balls' pools: the shots are kept but not drawn) */
