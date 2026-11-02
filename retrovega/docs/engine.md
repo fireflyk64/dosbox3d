@@ -1901,10 +1901,10 @@ the VDUs take the readouts' small font. vdu.c:
   fires (GUNS: ALL, or a type's code), the own ship with a dot at each
   gun's mount on its leading edge (amber a gun that fires, grey one the
   choice leaves out, red one destroyed), the chosen missile's code and
-  the rounds of its kind. **The damage page:** NO DAMAGE or DAMAGE n, the
-  own ship, and one hurt system named with its level as four boxes (the
-  old game's light, moderate, heavy, destroyed; red when destroyed); D
-  again names the next.
+  the rounds of its kind. **The damage page:** the own ship as those pages
+  draw it, the hull above it, and below it the name of one hurt system in
+  small red letters (or NO DAMAGE), in turn every two seconds; D again
+  names the next.
 - **The nav page:** the waypoints with how far each is, then HOME, the chosen one lit;
   N opens it (ending any comm that was on that VDU) and goes on to the next. `g_sys.nav` is
   the nav point's own number: it follows the first waypoint not reached until N picks one,

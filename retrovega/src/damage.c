@@ -440,7 +440,8 @@ void damage_test_worse(void)
     }
 }
 
-/* a few systems hurt, the VDUs and the computer left whole: a look at the damage page (the _ key) */
+/* a few systems hurt, the VDUs and the computer left whole, and a third of the hull more each time, short of the reserve: a look at
+ * the damage page and the hull's words (the _ key) */
 void damage_test_some(void)
 {
     static const uint8_t __far some[4][2] = { { SYS_ENGINE, 2 }, { SYS_GUNS, 1 }, { SYS_FUEL, 4 }, { SYS_ABSORBERS, 3 } };
@@ -453,7 +454,9 @@ void damage_test_some(void)
     ARMOR(0, 1) = (uint16_t)(ARMOR(0, 1) / 2);
     ARMOR(0, 3) = 0;
     SHIELD(0, 1) = 0;
-    damagePoints[0] = (uint16_t)(slot_type(0)->hull / 3);
+    damagePoints[0] = (uint16_t)(damagePoints[0] + slot_type(0)->hull / 3);
+    if (damagePoints[0] >= slot_type(0)->hull)
+        damagePoints[0] = (uint16_t)(slot_type(0)->hull - 1);
 }
 
 /* the hull gone and half the reserve spent (the ) key) */

@@ -392,15 +392,14 @@ static void draw_target(const RvRect __far *r, int y0, int y1)
 }
 
 /* the damage page (the user's, 2026-11-01): the own ship as the target and weapons pages draw a ship, the wire with its armour and
- * shields and its guns marked (a destroyed one red).  Above it the hull, or what is left of the reserve in red; below it, in red in
- * the small font, one hurt system with its level as four boxes: they come round by themselves, and D moves on at once */
+ * shields and its guns marked (a destroyed one red).  Above it the hull in a word, red on the reserve; below it, in red in
+ * the small font, the name of one hurt system and no more (the user: not "so accurate", "just state the part if it's damaged"): they
+ * come round by themselves, and D moves on at once */
 #define DAMAGE_TURN 60                  /* frames a system is named: two seconds */
-#define DAMAGE_NAME_W 38                /* (the longest name's width, and where the boxes begin) */
-#define DAMAGE_BOX 5
 static void draw_damage(const RvRect __far *r, int y0, int y1)
 {
-    char top[16], name[12], count[8];
-    int list[SYS_COUNT], n = 0, k, wide = r->w >= 2 * r->h, x, ytop, y, lv, sys, at;
+    char top[16], name[12];
+    int list[SYS_COUNT], n = 0, k, wide = r->w >= 2 * r->h, x, ytop, y;
     if (!slot_type(0))
         return;
     for (k = 0; k < SYS_COUNT; k++)
@@ -410,37 +409,15 @@ static void draw_damage(const RvRect __far *r, int y0, int y1)
     x = wide ? r->x + (r->h - 4) + 8 : r->x + 3;
     ytop = r->y + 3;
     y = wide ? r->y + 3 + FH + 1 : r->y + r->h - FH - 2;
-    if (g_sys.reserve >= 0) {
-        top[0] = 0;
-        ship_page(0, gInstanceShipTypes[0], r, top, n ? "" : "NO DAMAGE", "", y0, y1);
-        sprintf(top, "CORE %d%%", g_sys.reserve);
+    panel_hull_name(top);
+    ship_page(0, gInstanceShipTypes[0], r, g_sys.reserve >= 0 ? "" : top, n ? "" : "NO DAMAGE", "", y0, y1);
+    if (g_sys.reserve >= 0)
         panel_tiny(x, ytop, top, UI_RED, y0, y1);
-    } else {
-        sprintf(top, "HULL %d%%", g_sys.hull);
-        ship_page(0, gInstanceShipTypes[0], r, top, n ? "" : "NO DAMAGE", "", y0, y1);
-    }
     if (!n)
         return;
-    at = (int)((g_cursor + frameCounter / DAMAGE_TURN) % n);
-    sys = list[at];
-    lv = sys_level((int16_t)sys);
-    _fstrncpy(name, logic_system_name((int16_t)sys), sizeof name - 1);
+    _fstrncpy(name, logic_system_name((int16_t)list[(g_cursor + frameCounter / DAMAGE_TURN) % n]), sizeof name - 1);
     name[sizeof name - 1] = 0;
     panel_tiny(x, y, name, UI_RED, y0, y1);
-    if (wide)
-        y += FH + 1;                    /* (the boxes on the next line) */
-    else
-        x += DAMAGE_NAME_W;
-    for (k = 0; k < 4; k++)
-        if (k < lv)
-            gfx_fill(x + k * DAMAGE_BOX, y, DAMAGE_BOX - 1, PANEL_TINY_H, UI_RED, y0, y1);
-        else
-            gfx_frame(x + k * DAMAGE_BOX, y, DAMAGE_BOX - 1, PANEL_TINY_H, UI_GREY4, y0, y1);
-    /* which of how many, after the boxes */
-    if (n > 1) {
-        sprintf(count, "%d/%d", at + 1, n);
-        panel_tiny(x + 4 * DAMAGE_BOX + 3, y, count, TEXT, y0, y1);
-    }
 }
 
 /* the weapons page: the guns the trigger fires (all, or one type), the own ship with its guns marked, and the

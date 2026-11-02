@@ -10,7 +10,7 @@ system with odds of `left x 1.5 / hull`, and a further one per 24 points of it, 
 ## The reserve
 
 The hull's last point is not the end. Past it the player has **twice the hull again** (at least 60 points), and every hit on
-it breaks at least one system. The VDU and the survival display read `CORE n%` in place of the hull, the master warning goes
+it breaks at least one system. The VDU and the survival display read `CORE HIT` in place of the hull, the master warning goes
 frantic, a klaxon sounds, smoke drifts up through the cockpit, and the view never stops shaking. A hit bigger than all of it
 still kills outright.
 
@@ -57,9 +57,10 @@ gone. Nothing leaves a pilot unable to get home: the nav cross always shows, and
 ## On the panel
 
 `D` brings up the damage page on the left VDU, drawn as the target and weapons pages draw a ship: the outline with its armour and
-shields and its guns (a destroyed one red). Above it the hull, or `CORE n%` in red once it is gone; below it, in small red letters, one
-hurt system with its level as four boxes, and which of how many (`2/4`). They come round by themselves every two seconds, and `D` moves
-on at once. `W` or `G` puts up the weapons page in the same place. `H` shows the count on the survival display.
+shields and its guns (a destroyed one red). Above it the hull in a word, `CORE HIT` in red once it is gone; below it, in small red letters, the
+name of one hurt system and nothing about how badly (the user: "just state the part if it's damaged"). They come round by themselves
+every two seconds, and `D` moves on at once. `W` or `G` puts up the weapons page in the same place. The own hull has no figure anywhere (the user: "a little mystery", "let the players live on edge"): `HULL OK` down to 60%, `HULL HIT`
+down to 25%, then `HULL LOW`, and the kits' hull bars move in the same steps. `H` shows the count on the survival display.
 
 The cockpit kits' painted damage shows each system hurt, a bit of `rvCockpitDamage` per overlay (`k_overlay`). Not every kit
 paints every overlay. The hull's own: the armour readout with a side gone, the hull readout at a quarter gone, the left canopy at

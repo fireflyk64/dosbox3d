@@ -64,7 +64,6 @@ static unsigned short glyph(char ch)
     if (ch == '%') return G(5, 1, 2, 4, 5);
     if (ch == '-') return G(0, 0, 7, 0, 0);
     if (ch == ':') return G(0, 2, 0, 2, 0);
-    if (ch == '/') return G(1, 1, 2, 4, 4);
     if (ch == ',') return G(0, 0, 0, 2, 4);     /* (the comm subtitles' punctuation) */
     if (ch == '!') return G(2, 2, 2, 0, 2);
     if (ch == '?') return G(6, 1, 2, 0, 2);
@@ -92,6 +91,15 @@ static int tiny(int x, int y, const char *s, unsigned char col, int y0, int y1)
 int panel_tiny(int x, int y, const char *s, unsigned char col, int y0, int y1)
 {
     return tiny(x, y, s, col, y0, y1);
+}
+
+/* the own hull in a word and no figure (the user, 2026-11-01: "a little mystery" on it, "let the players live on edge"); the words
+ * change where the panic music does and at a quarter */
+#define HULL_HIT 60
+#define HULL_LOW 25
+void panel_hull_name(char *s)
+{
+    strcpy(s, g_sys.reserve >= 0 ? "CORE HIT" : g_sys.hull >= HULL_HIT ? "HULL OK" : g_sys.hull >= HULL_LOW ? "HULL HIT" : "HULL LOW");
 }
 
 void panel_nav_name(char *s)
@@ -272,7 +280,8 @@ static int bar_value(const RvPanelControl __far *p, const CockpitState *st)
         for (m = 100, i = 0; i < 4; i++)
             if (st->armor[i] < m) m = st->armor[i];
         return m;
-    case RV_PF_HULL_BAR: return g_sys.hull;
+    case RV_PF_HULL_BAR:                /* (in steps, as the words) */
+        return g_sys.hull >= HULL_HIT ? 100 : g_sys.hull >= HULL_LOW ? HULL_HIT : g_sys.hull > 0 ? HULL_LOW : 0;
     case RV_PF_FUEL_BAR: return g_sys.fuel / 10;
     case RV_PF_SIGNATURE: return g_sys.sig_shown;
     case RV_PF_POWER_BAR: return st->damage >> 9 & 1 ? 35 : 100;
@@ -392,7 +401,7 @@ static int readout(const RvPanelControl __far *p, char *a, char *b)   /* a: 32, 
 /* one or two lines inside a box: the body font when both fit it, else the small one, cut to the box's width */
 static void fit_text(int x, int yb, int w, int h, char *a, char *b, int y0, int y1)
 {
-    int big = gfx_font_height(FONT_BODY), lines = b[0] ? 2 : 1, k = (w - 4) / 4, y;
+    int big = gfx_font_height(FONT_BODY), lines = b[0] ? 2 : 1, k = (w - 1) / 4, y;
     if (h >= big * lines + 2 && gfx_text_width(FONT_BODY, a) <= w - 4 && gfx_text_width(FONT_BODY, b) <= w - 4) {
         y = yb + (h - big * lines) / 2;
         gfx_text(FONT_BODY, x + 2 + (w - 4 - gfx_text_width(FONT_BODY, a)) / 2, y, a, RV_TEXT_AMBER, y0, y1);
@@ -493,7 +502,7 @@ static void read(const RvPanelControl __far *p, const CockpitState *st, Reading 
                 int n = 0;
                 for (; d; d >>= 1)
                     n += (int)(d & 1);
-                sprintf(r->a, "HULL %d%%", g_sys.hull);
+                panel_hull_name(r->a);
                 sprintf(r->b, "DMG %d", n);
             } else if (r->page == 2) {
                 panel_nav_name(r->a);

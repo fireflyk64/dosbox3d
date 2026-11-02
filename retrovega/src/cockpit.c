@@ -300,10 +300,7 @@ static void survival(const RvRect __far *r, const CockpitState *st, int y0, int 
         for (i = 0; i < SYS_COUNT; i++)
             n += sys_level((int16_t)i) != 0;
         if (g_sys.surv_page == 1) {
-            if (g_sys.reserve >= 0)
-                sprintf(a, "CORE %d%%", g_sys.reserve);
-            else
-                sprintf(a, "HULL %d%%", g_sys.hull);
+            panel_hull_name(a);
             sprintf(b, "DMG %d", n);
         } else {
             panel_nav_name(a);
