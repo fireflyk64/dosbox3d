@@ -58,7 +58,7 @@ gone. Nothing leaves a pilot unable to get home: the nav cross always shows, and
 
 `D` brings up the damage page on the left VDU: the ship's outline, as the target and weapons pages draw it, with every hurt part on it
 as a shape, where it sits in a ship (the user: "engine section for engine", "a computer for computer", "radar for radar"). The engine
-section is the tail of the ship's own outline around its real engines, ribbed, with the nozzles; guns and missile racks at their real
+section is the end of the ship's own outline by its real nozzles, ribbed, and the nozzles; guns and missile racks at their real
 mounts; thrusters on the outline, firing out; the others are pictures from `tools/vduparts.py` (a dish, a monitor and keyboard, a reactor,
 a spring for the absorbers), placed by `g_part_at` ahead of the engine section. A lost gun or launcher counts as its system hurt, for good.
 One part at a time is bright with a black card behind it, its name below in small red letters and nothing about how badly (the user:
@@ -66,7 +66,7 @@ One part at a time is bright with a black card behind it, its name below in smal
 
 `G` and `W` put up the weapons pages in the same place, from the user's picture of an old game's VDU: `ACTIVE GUNS` or `ACTIVE MISSILE`,
 the weapon's name, how hard it hits in a word (`DAMAGE: MODERATE`: under 25 light, under 36 moderate, under 100 heavy, else severe), the
-ship with the weapons that fire in red and the others grey, a missile for each round left, and the count (`4 GUNS ENGAGED`, `2 LOADED`). A
+ship with the weapons that fire in light green and the others grey, a missile for each round left, and the count (`4 GUNS ENGAGED`, `2 LOADED`). A
 VDU under 80 rows and narrower than twice its height has the name above the ship and the rest below. A page asked for ends a comm on that
 VDU, as the nav page always did: the face would hide it.
 

@@ -381,9 +381,11 @@ static void draw_target(const RvRect __far *r, int y0, int y1)
  * display has the shields and the armour), a dim green the shapes stand out on (tools/vduparts.py draws them, vduparts.h) --- */
 
 #define OWN_WIRE 68
-#define PART_HI UI_RED                  /* the part the page names, the weapons that fire */
+#define PART_HI UI_RED                  /* the part the damage page names */
 #define PART_DIM 98                     /* the other hurt parts */
 #define PART_LO 96
+#define WEAPON_HI 71                    /* the weapons pages: a weapon that fires, light green on the wire (the user: "they contrast") */
+#define WEAPON_LO 69
 #define MOUNT_OFF UI_GREY4              /* a weapon the choice leaves out */
 #define MOUNT_OFF_LO UI_GREY2
 
@@ -514,6 +516,9 @@ static void mount_marks(const Own *o, int mode, unsigned char hi, unsigned char 
         }
 }
 
+/* the engine section's length: just the end by the nozzles (the user: a long one was "a bit tubular") */
+#define ENGINE_ROWS(o) ((o)->h / 8 + 2)
+
 /* the row of the rearmost engine, and how far across the engines reach (their places: data/engines.csv) */
 static int engine_tail(const Own *o, int *xa, int *xb)
 {
@@ -546,7 +551,7 @@ static void part_engine(const Own *o, unsigned char hi, unsigned char lo)
         n = RV_ENGINES;
     xa -= 4;
     xb += 4;
-    top = tail - o->h / 4;
+    top = tail - ENGINE_ROWS(o);
     for (py = top; py <= tail; py++) {
         unsigned char __far *d;
         if (o->y + py < o->y0 || o->y + py >= o->y1)
@@ -566,8 +571,8 @@ static void part_engine(const Own *o, unsigned char hi, unsigned char lo)
 /* where a part sits on the ship: across, 32nds of the hull's half width at that row, then along, 64ths of the way from the nose to the
  * engine section; by SYS_ */
 static const signed char __far g_part_at[SYS_COUNT][2] = {
-    { 26, 52 }, { 0, 43 }, { -26, 52 }, { 0, 30 }, { -26, 40 }, { -24, 14 }, { 0, 18 }, { -30, 64 }, { 0, 0 },
-    { 0, 0 }, { 0, 56 }, { 0, 6 }, { -26, 28 }, { 26, 28 }, { 26, 40 }, { 0, 0 }, { 0, 0 }, { 24, 14 }, { 30, 64 } };
+    { 26, 46 }, { 0, 37 }, { -26, 46 }, { 0, 26 }, { -26, 36 }, { -24, 13 }, { 0, 15 }, { -30, 58 }, { 0, 0 },
+    { 0, 0 }, { 0, 48 }, { 0, 5 }, { -26, 26 }, { 26, 26 }, { 26, 36 }, { 0, 0 }, { 0, 0 }, { 24, 13 }, { 30, 58 } };
 
 static void part_draw(const Own *o, int k, unsigned char hi, unsigned char lo, int card)
 {
@@ -585,7 +590,7 @@ static void part_draw(const Own *o, int k, unsigned char hi, unsigned char lo, i
         }
         return;
     }
-    py = (engine_tail(o, &xa, &xb) - o->h / 4) * g_part_at[k][1] / 64;
+    py = (engine_tail(o, &xa, &xb) - ENGINE_ROWS(o)) * g_part_at[k][1] / 64;
     half = half_at(o, py);
     if (half < 8)
         half = 8;
@@ -655,7 +660,7 @@ static void centred(const RvRect __far *r, int x, int w, int y, char *s, int y0,
 }
 
 /* the weapons pages, G the guns, W the missile (the user's picture, 2026-11-01): what is active, its name, how hard it hits in a word,
- * the ship with it in red on its mounts, and how many.  On a VDU too short for all of it the name above and the rest below */
+ * the ship with it in green on its mounts, and how many.  On a VDU too short for all of it the name above and the rest below */
 static void draw_weapons(const RvRect __far *r, int missile, int y0, int y1)
 {
     char title[16], name[RV_WNAME + 1], word[24], count[20];
@@ -708,7 +713,7 @@ static void draw_weapons(const RvRect __far *r, int missile, int y0, int y1)
         strcat(word, hits < 25 ? "LIGHT" : hits < 36 ? "MODERATE" : hits < 100 ? "HEAVY" : "SEVERE");
     }
     own_begin(&o, r, full && !wide ? 3 : 1, &side, y0, y1);
-    mount_marks(&o, missile ? MARK_MISSILES : MARK_GUNS, PART_HI, PART_LO);
+    mount_marks(&o, missile ? MARK_MISSILES : MARK_GUNS, WEAPON_HI, WEAPON_LO);
     x = wide ? r->x + side + 6 : r->x + 3;
     tw = r->x + r->w - 3 - x;
     y = r->y + 3;
