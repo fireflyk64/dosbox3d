@@ -228,7 +228,25 @@ static const RvShipType __far *g_my_type;
 static CockpitState g_st;
 static char g_mfd[2][4][28];
 static int g_steer_x, g_steer_y, g_steer_roll;   /* -9..9 */
+static int g_key_x, g_key_y;            /* the arrows' own steps (key_ramp), apart from the pointer's */
 static int g_keyboard_steer;
+
+/* the arrows' ramp, the old game's (read in its code, seg001:0945, and traced in a Hornet, 2026-11-02): an axis's
+ * step goes one further each step its arrow is held, 1 .. 9, then 8 and 9 in turn; the opposite arrow puts it to 0
+ * for that step, and so does letting go; Shift with an arrow is 9 at once.  A tap of a step or two turns a ninth or
+ * two of the full rate, and the full rate comes in 0.3 s (the user: the arrows "jump over the target", "a short tap
+ * results in less turning so that you can aim exactly but you rapidly accelerate to full turn").  (The old game kept
+ * a released arrow's turn while any other key was held, Space too: not copied) */
+static int key_ramp(int was, int dir, int shift)
+{
+    if (!dir || (was > 0 && dir < 0) || (was < 0 && dir > 0))
+        return 0;
+    if (shift)
+        return dir * 9;
+    if (was < 0)
+        was = -was;
+    return dir * (was < 9 ? was + 1 : 8);
+}
 static int g_exit;
 static unsigned long g_damage_at;
 static int g_damage_next;
@@ -3147,7 +3165,7 @@ void __far __cdecl flight_startup(void)
     g_bench_sum = 0;
     g_bench_frames = 0;
 #endif
-    g_steer_x = g_steer_y = 0;
+    g_steer_x = g_steer_y = g_steer_roll = g_key_x = g_key_y = 0;
     g_exit = 0;
     g_damage_next = 0;
     stars_init();
@@ -3212,7 +3230,7 @@ unsigned short __far __cdecl flight_keys(void)
     Input in;
     int arrows = in_arrows(), dx = ((arrows >> 1) & 1) - (arrows & 1), dy = ((arrows >> 3) & 1) - ((arrows >> 2) & 1);
     const RvCockpit __far *c = cockpit_record();
-    int cx = SCR_W / 2, cy = c ? (c->open_y0 + c->open_y1) / 2 : SCR_H / 2;
+    int cx = SCR_W / 2, cy = c ? (c->open_y0 + c->open_y1) / 2 : SCR_H / 2, shift;
     in_poll(&in);
     if (in.key == KEY_F12)
         shot_save("RVSHOT");
@@ -3294,12 +3312,15 @@ unsigned short __far __cdecl flight_keys(void)
         setSpeed[0] = damage_kps((uint16_t)g_st.max_speed);   /* (the engine hurt: the throttle stops at what it gives) */
     if (in_key_down(0x0D) || in_key_down(0x4E)) setSpeed[0] += 2;    /* = and keypad + held */
     if ((in_key_down(0x0C) || in_key_down(0x4A)) && setSpeed[0] >= 2) setSpeed[0] -= 2;
-    g_steer_roll = ((arrows >> 5) & 1) * 9 - ((arrows >> 4) & 1) * 9;
-    /* steering: the arrows at full rate, else the pointer's distance from the middle */
+    /* steering: the arrows by their ramp (key_ramp), else the pointer's distance from the middle */
+    shift = in_key_down(0x2A) || in_key_down(0x36);
+    g_steer_roll = key_ramp(g_steer_roll, ((arrows >> 5) & 1) - ((arrows >> 4) & 1), shift);
+    g_key_x = key_ramp(g_key_x, dx, shift);
+    g_key_y = key_ramp(g_key_y, dy, shift);
     if (dx || dy) {
         g_keyboard_steer = 1;
-        g_steer_x = dx * 9;
-        g_steer_y = dy * 9;
+        g_steer_x = g_key_x;
+        g_steer_y = g_key_y;
     } else if (in.keyboard && !in.moved) {
         g_keyboard_steer = 1;
         g_steer_x = g_steer_y = 0;
