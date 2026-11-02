@@ -308,6 +308,8 @@ What to write:
   - `parentShipForShip` the ship;
   - `missileTarget` its target (`g_sys.target` for the player, `rvTarget` for an AI), 0xFF for a dumbfire (lock
     none);
+  - a dumbfire sets off toward its shooter's target's lead point when that lies within 15 degrees of the nose, then
+    flies straight (`dumbfire_aim`; the user: "tilt towards the target to help aim since you only get one shot");
   - the rounds (`GUN_STATE`'s low bits) one fewer;
   - return the slot: the layer maps it across machines.
 - Keep the missile's weapon and life in arrays of your own: a missile slot has no ship type.
@@ -324,11 +326,12 @@ What the tests expect:
 | test | expects |
 |---|---|
 | M7.1 launch | the Schroedinger's launcher gives an `ET_MISSILE` slot, parent 0, within the ship's size of it; rounds one fewer |
-| M7.2 missile-key | Enter launches one; four presses with two rounds launch two |
+| M7.2 missile-key | Enter launches one; as many presses as the rounds of every launcher, and two more, launch the rounds (the chosen launcher empty, the next one's) |
 | M7.3 missile-flies | a second after launch, a dumbfire moves 80-120% of `KPS_STEP(speed_kps)` a step, straight along the nose |
 | M7.4 missile-hits | a dumbfire at a ship 2,500 km ahead, on its line, hurts it within 10 s, and its slot ends |
 | M7.5 missile-homes | a friend-or-foe from the Gawain, `missileTarget` set at launch, hurts a ship 31° off its nose |
 | M7.6 missile-ends | fired into empty space, it ends within twice its range's steps |
+| M7.7 dumbfire-aims | the Schroedinger's dumbfire at its chosen target 8° off the nose, side on 2,500 km out, hurts it within 10 s; with the target 30° off it sets off straight along the nose (last in the table: a test's dice are its place) |
 
 ### M8: the mission (`logic_start`, `step_mission`, `enterNavPoint`, `logic_end`, `logic_autopilot`)
 

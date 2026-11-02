@@ -1380,6 +1380,43 @@ static void lock_tick(void)
 /* (ship, gun, its weapon): a launcher fires: a round fewer, and the missile into a free ship slot at the mount,
  * facing the ship's way at its weapon's speed, its parent the ship, its target by the lock.  The slot (the layer
  * maps it), 0xFFFF when every slot is taken (the round is spent and nothing flies) */
+#define DUMBFIRE_CONE 247               /* a dumbfire sets off toward its shooter's target when the target's lead point
+                                           lies within this of the nose (cos x 256: some 15 degrees) */
+
+/* a dumbfire's help (the user, 2026-11-02: "the dumbfires tilt towards the target to help aim since you only get one
+ * shot"): its shooter's target (the player's chosen one, an AI's rvTarget) alive and its lead point (where it will be
+ * when the missile gets there, at the missile's speed: twice refined) within DUMBFIRE_CONE of the nose, the missile
+ * sets off toward that point; then it flies straight, as a dumbfire does */
+static void dumbfire_aim(int16_t s, int16_t ship, const RvWeapon __far *w)
+{
+    int16_t t = rvController[ship] == CTL_PLAYER ? g_sys.target : (rvTarget[ship] == 0xFF ? -1 : rvTarget[ship]);
+    int32_t tof, len, km_step = w->speed_kps / KPS_HZ + 1;
+    int16_t i, yaw, pitch;
+    RvVec3 p, vt, d, b;
+    if (t < 0 || t == ship || !slot_is_ship(t) || shipAiState[t] == 9)
+        return;
+    p = vec3(TO_KM(gPositionVector[t].x - gPositionVector[s].x), TO_KM(gPositionVector[t].y - gPositionVector[s].y),
+             TO_KM(gPositionVector[t].z - gPositionVector[s].z));
+    vt = vec3(TO_KM(gVelocityVector[t].x), TO_KM(gVelocityVector[t].y), TO_KM(gVelocityVector[t].z));
+    d = p;
+    for (i = 0; i < 2; i++) {
+        tof = len_of(d.x, d.y, d.z) / km_step;
+        d = vec3(p.x + vt.x * tof, p.y + vt.y * tof, p.z + vt.z * tof);
+    }
+    to_body(s, &d, &b);
+    len = len_of(b.x, b.y, b.z);
+    if (b.z <= 0 || b.z * 256 < (int32_t)DUMBFIRE_CONE * len)
+        return;
+    yaw = angle_of(b.x, b.z);
+    pitch = angle_of(b.y, len_of(b.x, 0, b.z));
+    if (yaw)
+        vec_turn(&gOrientationFrontVector[s], &gOrientationRightVector[s], yaw);
+    if (pitch)
+        vec_turn(&gOrientationFrontVector[s], &gOrientationUpVector[s], pitch);
+    if (yaw || pitch)
+        ship_orthonormalise(s);
+}
+
 static uint16_t missile_launch(uint16_t ship, uint16_t gun, const RvWeapon __far *w)
 {
     int16_t s = ship_free_slot(), k;
@@ -1401,6 +1438,8 @@ static uint16_t missile_launch(uint16_t ship, uint16_t gun, const RvWeapon __far
     gOrientationFrontVector[s] = gOrientationFrontVector[ship];
     gOrientationRightVector[s] = gOrientationRightVector[ship];
     gOrientationUpVector[s] = gOrientationUpVector[ship];
+    if (w->kind == RV_WK_MISSILE && w->lock == RV_LOCK_NONE)
+        dumbfire_aim(s, (int16_t)ship, w);
     setSpeed[s] = speedLo[s] = w->speed_kps;
     fly_ahead(s);
     for (k = 0; k < 2; k++)

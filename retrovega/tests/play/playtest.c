@@ -47,7 +47,8 @@ int16_t playtest_run(const char *only);
 #define AIM_SHARE 70                    /* percent of its shots */
 
 /* the ships the tests fly (data/ships.csv) */
-#define PT_PLAYER 0x00                  /* the Schroedinger: two lasers, two dumbfires */
+#define PT_PLAYER 0x00                  /* the Schroedinger: three lasers, two dumbfires (its first launcher) and a heat
+                                           seeker */
 #define PT_HOMER 0x02                   /* the Gawain: two particle cannons, two friend-or-foe missiles */
 #define PT_ENEMY 0x08                   /* the Nicander */
 #define PT_WEAK 0x0B                    /* the Agis */
@@ -3265,7 +3266,11 @@ static void t_missile_key(void)
     int16_t l, r0, i, k, n = 0, seen[RV_MAX_SHIP_SLOT + 1];
     pt_alone(PT_PLAYER);
     REQUIRE((l = pt_launcher(0)) >= 0, e_nolaunch, PT_PLAYER, 0, 0);
-    r0 = GUN_STATE(0, l) & 0x7F;
+    r0 = 0;                             /* (every launcher's rounds: the chosen one empty, Enter fires the next's) */
+    for (k = 0; k < GUN_COUNT(0); k++)
+        if (weapon(GUN_TYPE(0, k)) && weapon(GUN_TYPE(0, k))->kind != RV_WK_GUN
+            && weapon(GUN_TYPE(0, k))->kind != RV_WK_TURRET)
+            r0 = (int16_t)(r0 + (GUN_STATE(0, k) & 0x7F));
     for (i = 0; i <= RV_MAX_SHIP_SLOT; i++)
         seen[i] = 0;
     for (i = 0; i < r0 + 2; i++) {
@@ -3356,6 +3361,41 @@ static void t_missile_hits(void) { t_missile_at(PT_PLAYER, 0, 2500, 0); }
 
 /* M7.5 */
 static void t_missile_homes(void) { t_missile_at(PT_HOMER, 1500, 2500, 1); }
+
+/* M7.7: a dumbfire sets off toward the chosen target's lead point within 15 degrees of the nose (the user's: "tilt
+ * towards the target to help aim"), and hits it; with the target 30 degrees off it flies straight along the nose */
+static void t_dumbfire_aims(void)
+{
+    static const char __far e_miss[] = "a dumbfire at a target 8 degrees off the nose did it no harm in 10 s";
+    static const char __far e_straight[] = "a dumbfire with its target 30 degrees off sets off %d/256 along the nose: "
+        "straight expected";
+    int16_t l, i;
+    uint16_t m;
+    int32_t h0, along;
+    pt_alone(PT_PLAYER);
+    REQUIRE((l = pt_launcher(0)) >= 0, e_nolaunch, PT_PLAYER, 0, 0);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 351, 0, 2500, TURN / 4);   /* (8 degrees right, side on) */
+    playerCanBeDamaged = 0;
+    g_sys.target = 1;
+    rvTarget[0] = 1;
+    playerTarget = 1;
+    h0 = pt_health(1);
+    m = fireGunFromShip(0, (uint16_t)l);
+    REQUIRE(m <= RV_MAX_SHIP_SLOT && maybeEntityType[m] == ET_MISSILE, e_nomissile, l, m, 0);
+    for (i = 0; i < 10 * SEC && pt_health(1) == h0 && slot_is_ship(1) && shipAiState[1] != 9; i++)
+        if (!pt_step())
+            return;
+    REQUIRE(pt_health(1) < h0 || shipAiState[1] == 9 || !slot_is_ship(1), e_miss, 0, 0, 0);
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 1443, 0, 2500, TURN / 4);   /* (30 degrees right) */
+    g_sys.target = 1;
+    rvTarget[0] = 1;
+    playerTarget = 1;
+    m = fireGunFromShip(0, (uint16_t)l);
+    REQUIRE(m <= RV_MAX_SHIP_SLOT && maybeEntityType[m] == ET_MISSILE, e_nomissile, l, m, 0);
+    along = vec_dot(&gOrientationFrontVector[m], &gOrientationFrontVector[0]) / 256;
+    REQUIRE(along >= 255, e_straight, along, 0, 0);
+}
 
 /* M7.6 */
 static void t_missile_ends(void)
@@ -5574,6 +5614,7 @@ static const char __far n_m7_3[] = "M7.3 missile-flies (step_missiles): a dumbfi
 static const char __far n_m7_4[] = "M7.4 missile-hits (step_missiles): a dumbfire hurts the ship ahead and ends";
 static const char __far n_m7_5[] = "M7.5 missile-homes (step_missiles): a friend-or-foe turns onto its target";
 static const char __far n_m7_6[] = "M7.6 missile-ends (step_missiles): a missile ends at its range";
+static const char __far n_m7_7[] = "M7.7 dumbfire-aims (dumbfire_aim): a dumbfire sets off toward the target within 15 degrees of the nose, else straight";
 static const char __far n_m8_1[] = "M8.1 start (logic_start): the player in slot 0, the wingman, no enemies yet";
 static const char __far n_m8_2[] = "M8.2 nav1 (step_mission, enterNavPoint): nav 1's ships come when the player does";
 static const char __far n_m8_3[] = "M8.3 nav-once (step_mission): and only once";
@@ -5668,6 +5709,8 @@ static const PtTest __far k_tests[] = {
     { n_m12_5, t_tank, 0 }, { n_m12_6, t_shield_cap, 0 }, { n_m12_7, t_mounts, 0 }, { n_m12_8, t_thrusters, 0 },
     { n_m12_9, t_repair, 0 }, { n_m12_10, t_damage_reset, 0 }, { n_m12_11, t_home_tier, 0 },
     { n_m11_1, t_sim_waves, 0 }, { n_m11_2, t_sim_replenish, 0 }, { n_m11_3, t_sim_win, 0 }, { n_m11_4, t_sim_death, 0 },
+    { n_m7_7, t_dumbfire_aims, 0 },     /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
+                                           M8.18 pass on theirs only) */
 };
 
 /* --- the run --- */
