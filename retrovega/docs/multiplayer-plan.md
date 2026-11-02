@@ -21,6 +21,19 @@ means Claude's notes in `~/.claude/projects/-home-sandbox-dev-dosbox3d/memory/`.
     So the layer touches RV.EXE only through its fixed interface (section 3).
   - "make a plan containing all the entry points and how they would slot into the dosbox3d subsystem", then build
     it in a fresh context.
+- **The user's answers to the plan's questions (2026-11-02):**
+  1. **The campaign:** "client flies the host's mission selection, no matter what save they have loaded. The
+     splashes get added to that savegame and saved out. It's imperfect but simple and avoids translating across
+     complex savegame files. This way if they play together the counts should advance correctly." And: "the
+     dosbox menu should have a full list of which campaigns will be chosen or 'start in the barracks' ... exactly
+     like WC1 except there's that restart option that happens if either player dies" (RV's death screen: R fly
+     the mission again, C carry on). Sections 4.3, 4.4 and 4.10.
+  2. **Fate:** "exactly like WC1" (one death ends the mission for everyone). Section 4.4.
+  3. **Collisions:** "the damage is worked out by the player that collided unless the client collides with the host
+     -- in WC1 we zero'd out that damage -- it should be the same". Section 4.6.
+  4. **Pacing:** "the multiplayer layer should run it at 30 fps, but the fps counter is configurable, so that can
+     slow down how fast the physics runs, making the game easier and the network traffic less intense. But the
+     default should be 30 as the real game is." Section 4.1.
 - **The standing working rules:**
   - Commit, push and full-deploy after each finished step ((memory note `commit-deploy-each-step`)).
   - Never edit the worktree while a deploy runs: it builds `/rv` and the DOS game from the working tree.
@@ -176,8 +189,11 @@ means Claude's notes in `~/.claude/projects/-home-sandbox-dev-dosbox3d/memory/`.
   `KPS_HZ` 20.
 - The layer paces WC1 per frame at 20 by default (the page's FPS box, 800 cycles per fps; (memory note `frame-pacing`)), and
   `pace_fps` is 0 for non-WC1 games (`wcnet_perf.cpp:63`). RV caps itself (`flight.c` ~3516-3524).
-- Paced at 20, RV would run at two thirds of its speed. Plan: the layer paces RV at 30 (a `GameParams` or
-  `is_wc1_like()` choice), and RV skips its self-cap when `rvNetRole` ≠ 0.
+- Paced at 20, RV would run at two thirds of its speed.
+- **Settled (the user):** the layer paces RV per frame, one logic step a frame, at 30 by default. The page's FPS box
+  sets it, as for WC1: fewer frames make the physics slower, the game easier and the traffic lighter. In
+  `web/gamefiles.js` that's an `fps` of its own for the `rv` entry, like `WC1_FPS` ({def 20, min 8, max 60}) but
+  def 30; the min and max are my choice. RV skips its self-cap when `rvNetRole` ≠ 0, so the layer's pacing rules.
 - Up to 31 Locations a frame at 30 fps is more traffic than WC1's 9 at 20. Watch the low-mode window (6 frames).
 
 4.2 **Seats.**
@@ -200,12 +216,32 @@ means Claude's notes in `~/.claude/projects/-home-sandbox-dev-dosbox3d/memory/`.
   - the client reloads `missionShipTable`/`navPointTable` from the node and mission the host sends.
 - `RV.EXE /fly N` (MIS/SERIES, `game.c` ~1846-1867) starts both instances in the same mission without any
   handshake: use it for the first milestone's rig.
-- **Ruling needed:** whose campaign does a client fly, and what does its own bunk save remember? WC1's client
-  flies the host's mission.
+- **Settled (the user):** a client flies the host's mission selection whatever save it has loaded. The flight's
+  results (the "splashes", its kills, and the sortie) are added to the client's own save, which is then saved
+  out. Nothing is translated between the two saves: "imperfect but simple"; played together, both counts
+  advance.
+  - Unsettled (ask when it comes up): whether the client's own campaign position moves.
+- **The page's menu (the user: "exactly like WC1"):**
+  - the first row: "Campaign from the barracks" (the host's save game decides; for RV, the quarters);
+  - then every mission of the campaign, by node, as WC1 lists every series and mission;
+  - a picked mission: everyone starts at it, as WC1's MIS/SERIES does. RV has `/fly N` (the campaign put at
+    mission N, straight out of the launch tube) and `/at N` (the same, starting in the quarters): pick the one
+    that matches WC1's picked-mission flow.
+- **Generate the list, don't hand-write it.** The campaign changes as the game does (13 nodes, 40 missions today,
+  `data/campaign.csv`). Generate it with the game's data: the page already reads RV's files from
+  `retrovega.tar.gz` (`web/rvsets.js`), so a small JSON in the tarball, made by `tools/rvdata.py`, keeps the menu
+  and the game in step.
 
 4.4 **Mission end and fate.**
-- WC1 shares fate: a wingman's death shows "YOU HAVE DIED" on the host. RV needs each human's own end: a client's
-  own end goes as `PlayerEnd` (2660), and the server applies shared fate (1761-1786) except for WC2's landings.
+- **Settled (the user): fate exactly like WC1.** One human's death ends the mission for everyone. A client's own end
+  goes as `PlayerEnd` (2660), and the server applies shared fate (1761-1786; only WC2's landings are exempt).
+- **And RV's restart.**
+  - RV's death screen (`game.c` `dead_full`: "YOU HAVE DIED", "R fly the mission again", "C carry on: the mission
+    is lost") and the carrier-lost screen (`lost_overlay`, the same R/C) come up on every machine when either
+    player dies.
+  - My proposal: the host's R or C decides for the room, and clients show the screen and follow.
+  - R re-flies the same mission on all. This is WC1's restart-after-death (the layer remembers the last mission
+    started and re-flies it; memory note `wc1-mission-flow`).
 - `logic_end` (`logic.c` ~3267) scores a win only if the host itself landed near nav 0. Score for any human home,
   or the host's view of it.
 - `logic_wingman_lost` (`logic.c` 228) marks a dead human wingman's pilot as lost in the campaign. Later
@@ -230,9 +266,14 @@ means Claude's notes in `~/.claude/projects/-home-sandbox-dev-dosbox3d/memory/`.
   - **Never `a == 0`:** Watcom -ox compiled `a == 0 && ...` there as a constant 0 (section 6).
   - On the host a human wingman is CTL_PUPPET. It gets no shove (`ram_moves`) and no capital-ship stop
     (`ram_stop`), and the host's damage to it must not apply.
-  - Proposal: each machine computes its own human's bump against the other ship. The enemy's share (the user: it
-    takes what the human took) comes from the server, which works the human's cap out on the puppet's mirrored
-    health, the way a wingman's bolt hits are reported. `ram_cap_player` takes a slot.
+  - **Settled (the user):** "the damage is worked out by the player that collided".
+    - The machine whose human collided works out both shares: its own by the player rule, and the other ship's
+      ("as much as the player took", or an NPC's own cap for a friend). It reports the other ship's share to the
+      host, the way a wingman's bolt hits are reported (events.cpp 1302-1316).
+    - A client colliding with the HOST does no damage to either: "in WC1 we zero'd out that damage", the harmless
+      wing bump (events.cpp ~1274).
+    - NPC-NPC collisions are the host's.
+    - `ram_cap_player` stays the local player's (slot 0, asked as CTL_PLAYER).
   - Two NPCs each take at most that shield and half that armour, so no bump ever kills an NPC ("to avoid
     tragedy"). Into a capital ship over 100 kps: stopped dead, throttle 0.
 - Rocks are local hazards (`rvFlags` bit 2, `rocks.c`). A wingman reports its own rocks' hits (WC1's rule), which
@@ -261,9 +302,10 @@ The AI wingman's lines and the lost-wingman song must not fire for a human.
 human, or a client's ship would fly into a world the host has hidden.
 
 4.10 **The page.**
-- `web/gamefiles.js` `rv`: drop `noFlight` (it hides the mission, connection and collision menus) and fix the help
-  text.
-- RV has no mission picker: the host's campaign decides.
+- `web/gamefiles.js` `rv`:
+  - drop `noFlight` (it hides the mission, connection and collision menus) and fix the help text;
+  - give it a `campaign` (the generated list, 4.3) and `fps` (4.1).
+- The mission menu works exactly as WC1's: "Campaign from the barracks" first, then every mission.
 - The Players counter / room of one is `WCSOLO=1` ((memory note `solo-room`)), the game as it is.
 - `scripts/web-smoke.sh` has the WC two-page smoke; add an RV pair.
 
@@ -301,7 +343,8 @@ work at every step.
 
 **Step 2: shots, hits, missiles, deaths.**
 - Fire, prediction and hit reports should work as they are: count the `replay damage` lines.
-- RV: `delayedDespawn` at a death's first sighting; the puppet lock (4.7); the collision split (4.6).
+- RV: `delayedDespawn` at a death's first sighting; the puppet lock (4.7); the collisions worked out by the
+  colliding player's machine, with client-host bumps at zero (4.6).
 - Rig: `!face=npc` + space, a CHEAT callsign for an idle second player ((memory note `cheat-callsign`)); compare RVLOG's
   "killed by" lines on both machines.
 
@@ -312,14 +355,16 @@ work at every step.
   - status 6;
   - the autopilot with puppets and its thunks;
   - `step_scene` by the nearest human;
-  - each human's own fate;
+  - shared fate as WC1, with RV's R/C restart screen on every machine and the host's choice ruling (4.4);
+  - the client's save gets its flight's results added and saved (4.3);
   - `logic_wingman_lost` gated.
 - Test: the host lands (`!status=1`, `landedOn`), then the second mission starts on both with equal won/lost
   lines. The second-mission traps are (memory note `wingman-second-mission`) (stale `lastFrame`/`lastPosition`: cleared in
   `send_start_state`, 1548-1553).
 
 **Step 4: the page.**
-- `noFlight` off, the help text, the RV two-page smoke, the live check.
+- `noFlight` off, the generated mission menu ("Campaign from the barracks" + every mission), the `fps` box at
+  30, the help text, the RV two-page smoke, the live check.
 
 **Step 5: a room of three.**
 - The seat spawn (`Spawn.again`) for RV, gunners excluded (no turrets).
