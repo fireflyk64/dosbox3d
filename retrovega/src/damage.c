@@ -440,6 +440,22 @@ void damage_test_worse(void)
     }
 }
 
+/* a few systems hurt, the VDUs and the computer left whole: a look at the damage page (the _ key) */
+void damage_test_some(void)
+{
+    static const uint8_t __far some[4][2] = { { SYS_ENGINE, 2 }, { SYS_GUNS, 1 }, { SYS_FUEL, 4 }, { SYS_ABSORBERS, 3 } };
+    int16_t i;
+    for (i = 0; i < 4; i++) {
+        sys_set(some[i][0], some[i][1]);
+        overlays(some[i][0], some[i][1]);
+    }
+    mount_destroyed(0, 3);
+    ARMOR(0, 1) = (uint16_t)(ARMOR(0, 1) / 2);
+    ARMOR(0, 3) = 0;
+    SHIELD(0, 1) = 0;
+    damagePoints[0] = (uint16_t)(slot_type(0)->hull / 3);
+}
+
 /* the hull gone and half the reserve spent (the ) key) */
 void damage_test_breach(void)
 {

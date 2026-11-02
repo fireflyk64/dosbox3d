@@ -2067,9 +2067,9 @@ static int system_key(int ch)
     case 'y': target_nearest(); vdu_show(1, VDU_R_TARGET); return 1;
     case 'l': system_action(RV_PF_LOCK, 0); return 1;
     case 'r': system_action(RV_PF_RADAR_KNOB, 0); return 1;   /* (the radar's range: was G, now the guns') */
-    case 'g': (void)logic_guns_next(); vdu_show(1, VDU_R_WEAPONS); return 1;
-    case 'w': (void)logic_missile_next(); vdu_show(1, VDU_R_WEAPONS); return 1;
-    case 'd': vdu_show(1, VDU_R_DAMAGE); return 1;
+    case 'g': (void)logic_guns_next(); vdu_show(0, VDU_L_WEAPONS); return 1;
+    case 'w': (void)logic_missile_next(); vdu_show(0, VDU_L_WEAPONS); return 1;
+    case 'd': vdu_show(0, VDU_L_DAMAGE); return 1;
     case 'h': g_sys.surv_page = (unsigned char)((g_sys.surv_page + 1) % 3); return 1;
     case 'x': system_action(RV_PF_DEFENCE, 0); return 1;
     }
@@ -3168,6 +3168,7 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.ch == ']') rvCockpitDamage = 0;
         if (in.ch == '(') damage_test_worse();
         if (in.ch == ')') damage_test_breach();
+        if (in.ch == '_') damage_test_some();
         if (in.ch == '{') logic_test_to_carrier(0);   /* (a script's way to the carrier: its bow, its beam) */
         if (in.ch == '}') logic_test_to_carrier(1);
         if (in.ch == '|') logic_test_kill_carrier();

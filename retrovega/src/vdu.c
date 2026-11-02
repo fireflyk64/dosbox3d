@@ -189,7 +189,7 @@ void vdu_broken(const RvRect __far *r, int level, int y0, int y1)
 
 void vdu_show(int which, int page)
 {
-    if (which == 1 && page == VDU_R_DAMAGE && g_page[1] == VDU_R_DAMAGE)
+    if (which == 0 && page == VDU_L_DAMAGE && g_page[0] == VDU_L_DAMAGE)
         g_cursor++;                     /* (D on the damage page: the next hurt system) */
     g_page[which & 1] = (unsigned char)page;
 }
@@ -297,7 +297,7 @@ void vdu_ship(int type, int s, int x, int y, int side, int y0, int y1)
     ix = x + (side - inner) / 2;
     iy = y + (side - inner) / 2;
     vdu_wire(type, ix, iy, inner, inner, WIRE, y0, y1);
-    if (s == 0 && (g_page[1] == VDU_R_WEAPONS || g_page[1] == VDU_R_DAMAGE))
+    if (s == 0 && (g_page[0] == VDU_L_WEAPONS || g_page[0] == VDU_L_DAMAGE))
         gun_marks(type, ix, iy, inner, y0, y1);
     /* the levels: the front and rear shields, the front, rear, left and right armour */
     pct[0] = pct_of(SHIELD(s, 0), SHIELD_MAX(s, 0));
@@ -391,52 +391,55 @@ static void draw_target(const RvRect __far *r, int y0, int y1)
     ship_page(s, gInstanceShipTypes[s], r, name, a, b, y0, y1);
 }
 
-/* the damage page: how much of the hull is left (of the reserve, once it is gone, in red), the own ship with its armour and
- * shields and its guns marked, and every system hurt with its level as four boxes (the old game's light, moderate,
- * heavy, destroyed; red destroyed).  D again moves the list on, when it is longer than the VDU */
+/* the damage page (the user's, 2026-11-01): the own ship as the target and weapons pages draw a ship, the wire with its armour and
+ * shields and its guns marked (a destroyed one red).  Above it the hull, or what is left of the reserve in red; below it, in red in
+ * the small font, one hurt system with its level as four boxes: they come round by themselves, and D moves on at once */
+#define DAMAGE_TURN 60                  /* frames a system is named: two seconds */
+#define DAMAGE_NAME_W 38                /* (the longest name's width, and where the boxes begin) */
+#define DAMAGE_BOX 5
 static void draw_damage(const RvRect __far *r, int y0, int y1)
 {
-    enum { NAME_W = 37, BOX = 5, LIST_W = NAME_W + 4 * BOX };
-    char top[16], name[12];
-    int list[SYS_COUNT], n = 0, k, side, x, y, rows, first;
-    const RvShipType __far *t = slot_type(0);
-    if (!t)
+    char top[16], name[12], count[8];
+    int list[SYS_COUNT], n = 0, k, wide = r->w >= 2 * r->h, x, ytop, y, lv, sys, at;
+    if (!slot_type(0))
         return;
     for (k = 0; k < SYS_COUNT; k++)
         if (sys_level((int16_t)k))
             list[n++] = k;
-    side = r->h - 4;
-    if (side > r->w - LIST_W - 7)
-        side = r->w - LIST_W - 7;
-    if (side >= 24) {
-        vdu_ship(gInstanceShipTypes[0], 0, r->x + 2, r->y + 2, side, y0, y1);
-        x = r->x + side + 5;
-    } else
-        x = r->x + 3;
-    y = r->y + 3;
+    /* (where ship_page puts its lines: at the wire's right on a wide VDU, else above and below it) */
+    x = wide ? r->x + (r->h - 4) + 8 : r->x + 3;
+    ytop = r->y + 3;
+    y = wide ? r->y + 3 + FH + 1 : r->y + r->h - FH - 2;
     if (g_sys.reserve >= 0) {
+        top[0] = 0;
+        ship_page(0, gInstanceShipTypes[0], r, top, n ? "" : "NO DAMAGE", "", y0, y1);
         sprintf(top, "CORE %d%%", g_sys.reserve);
-        panel_tiny(x, y, top, (frameCounter & 8) ? UI_RED : UI_WHITE, y0, y1);
+        panel_tiny(x, ytop, top, UI_RED, y0, y1);
     } else {
-        sprintf(top, n ? "HULL %d%%" : g_sys.hull < 100 ? "HULL %d%%" : "NO DAMAGE", g_sys.hull);
-        text(x, y, top, 0, y0, y1);
+        sprintf(top, "HULL %d%%", g_sys.hull);
+        ship_page(0, gInstanceShipTypes[0], r, top, n ? "" : "NO DAMAGE", "", y0, y1);
     }
-    y += FH + 2;
-    rows = (r->y + r->h - y) / FH;
-    if (rows < 1 || !n)
+    if (!n)
         return;
-    first = n > rows ? (int)(g_cursor % n) : 0;
-    for (k = 0; k < n && k < rows; k++) {
-        int sys = list[(first + k) % n], lv = sys_level((int16_t)sys), b;
-        _fstrncpy(name, logic_system_name((int16_t)sys), sizeof name - 1);
-        name[sizeof name - 1] = 0;
-        panel_tiny(x, y, name, lv >= SYS_WRECKED ? UI_RED : TEXT, y0, y1);
-        for (b = 0; b < 4; b++)
-            if (b < lv)
-                gfx_fill(x + NAME_W + b * BOX, y, BOX - 1, PANEL_TINY_H, lv >= SYS_WRECKED ? UI_RED : UI_AMBER3, y0, y1);
-            else
-                gfx_frame(x + NAME_W + b * BOX, y, BOX - 1, PANEL_TINY_H, UI_GREY4, y0, y1);
-        y += FH;
+    at = (int)((g_cursor + frameCounter / DAMAGE_TURN) % n);
+    sys = list[at];
+    lv = sys_level((int16_t)sys);
+    _fstrncpy(name, logic_system_name((int16_t)sys), sizeof name - 1);
+    name[sizeof name - 1] = 0;
+    panel_tiny(x, y, name, UI_RED, y0, y1);
+    if (wide)
+        y += FH + 1;                    /* (the boxes on the next line) */
+    else
+        x += DAMAGE_NAME_W;
+    for (k = 0; k < 4; k++)
+        if (k < lv)
+            gfx_fill(x + k * DAMAGE_BOX, y, DAMAGE_BOX - 1, PANEL_TINY_H, UI_RED, y0, y1);
+        else
+            gfx_frame(x + k * DAMAGE_BOX, y, DAMAGE_BOX - 1, PANEL_TINY_H, UI_GREY4, y0, y1);
+    /* which of how many, after the boxes */
+    if (n > 1) {
+        sprintf(count, "%d/%d", at + 1, n);
+        panel_tiny(x + 4 * DAMAGE_BOX + 3, y, count, TEXT, y0, y1);
     }
 }
 
@@ -631,14 +634,14 @@ int vdu_draw(int which, const RvRect __far *r, int y0, int y1)
         switch (g_page[0]) {
         case VDU_L_NAV: draw_nav(r, y0, y1); return 1;
         case VDU_L_COMM: draw_comm(r, y0, y1); return 1;
+        case VDU_L_WEAPONS: draw_weapons(r, y0, y1); return 1;
+        case VDU_L_DAMAGE: draw_damage(r, y0, y1); return 1;
         default: return 0;
         }
     }
     if (which == 1) {
         switch (g_page[1]) {
         case VDU_R_TARGET: draw_target(r, y0, y1); return 1;
-        case VDU_R_WEAPONS: draw_weapons(r, y0, y1); return 1;
-        case VDU_R_DAMAGE: draw_damage(r, y0, y1); return 1;
         default: return 0;
         }
     }

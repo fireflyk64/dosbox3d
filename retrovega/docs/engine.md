@@ -1882,12 +1882,12 @@ player's own ship the same way with the live guns and the chosen missile;
 N a nav menu, the chosen point a white cross in the view; C a comm menu;
 the VDUs take the readouts' small font. vdu.c:
 
-- **The right VDU** carries the target page (T, Y), the weapons page (G,
-  W) and the damage page (D); **the left** the status lines, the nav page
-  (N) and the comm menu (C). A comm face on a VDU draws over its page
+- **The right VDU** carries the target page (T, Y); **the left** the status lines,
+  the nav page (N), the comm menu (C), the weapons page (G, W) and the damage page
+  (D; the user's, 2026-11-01). A comm face on a VDU draws over its page
   (comms.c), but the comm menu comes up over a face, the comm going on
-  under it; the right VDU is dark with the targeting display's damage
-  overlay on.
+  under it. A VDU's own glass and the computer decide what is left of a page
+  (docs/damage.md).
 - **The wireframe** (`vdu_wire`) is the type's silhouette from above
   (collide.c's mask, `collide_mask`): the outline of its solid cells
   fitted to the ship's proportions (`hit`, the silhouettes' half

@@ -3,15 +3,15 @@
  * The user's brief (2026-10-31): T (even with the target unchanged) puts the target's top-down wireframe with its
  * shields and hull on a VDU; D a damage readout, and the damage and weapon-select displays show the player's own
  * ship the same way with the live guns and the chosen missile; N a nav menu; C a comm menu for the wingman's orders.
- * The right VDU carries the target, the weapons and the damage pages (the old games' way), the left the status
- * lines, the comm menu and the nav menu.  A comm face on a VDU draws over its page (comms.c). */
+ * The right VDU carries the target; the left the status lines, the comm and nav menus, and the weapons and the damage
+ * (the user, 2026-11-01: D the damage, W or G the weapons).  A comm face on a VDU draws over its page (comms.c). */
 #ifndef RV_VDU_H
 #define RV_VDU_H
 
 #include "rvasset.h"
 
-enum { VDU_R_TARGET, VDU_R_WEAPONS, VDU_R_DAMAGE };   /* the right VDU's pages */
-enum { VDU_L_STATUS, VDU_L_COMM, VDU_L_NAV };          /* the left VDU's */
+enum { VDU_R_TARGET };                  /* the right VDU's pages */
+enum { VDU_L_STATUS, VDU_L_COMM, VDU_L_NAV, VDU_L_WEAPONS, VDU_L_DAMAGE };   /* the left VDU's */
 
 void vdu_flight_start(void);            /* the pages at their first (the target, the status lines) */
 

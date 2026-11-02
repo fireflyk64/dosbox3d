@@ -64,6 +64,7 @@ static unsigned short glyph(char ch)
     if (ch == '%') return G(5, 1, 2, 4, 5);
     if (ch == '-') return G(0, 0, 7, 0, 0);
     if (ch == ':') return G(0, 2, 0, 2, 0);
+    if (ch == '/') return G(1, 1, 2, 4, 4);
     if (ch == ',') return G(0, 0, 0, 2, 4);     /* (the comm subtitles' punctuation) */
     if (ch == '!') return G(2, 2, 2, 0, 2);
     if (ch == '?') return G(6, 1, 2, 0, 2);
