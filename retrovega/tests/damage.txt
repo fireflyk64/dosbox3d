@@ -1,0 +1,28 @@
+# The damage displays at each level (docs/damage.md): ( breaks every system
+# a point more, ) takes the hull and half the reserve.
+# EXE=RVT.EXE tests/run.sh tests/damage.txt /fly 1 /flight 60
+wait 30
+key d
+wait 3
+shot D00WHOLE
+key (
+wait 6
+shot D01LIGHT
+key (
+wait 6
+shot D02MOD
+key (
+wait 6
+shot D03HEAVY
+key d
+wait 6
+shot D03MORE
+key (
+wait 6
+shot D04WRECK
+key )
+wait 6
+shot D05CORE
+key esc
+wait 16
+log done

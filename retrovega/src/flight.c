@@ -312,6 +312,8 @@ static int g_star_n;
 int __far __cdecl rv_stars_place(const short __far *stars, int n, const long __far *basis, int cx, int cy, int rows,
                                  short __far *out);
 static const LfVec g_world_up = { 0, 256, 0 };
+static int g_cam_cx = SCR_W / 2;        /* the camera's centre column, g_cam_cy its row: the view's middle, thrown about by a hit (fx_shake) */
+static int g_cam_cy0 = SCR_H / 2;       /* (the row before the throw) */
 static int g_cam_cy = SCR_H / 2;        /* the camera's centre row: the opening's middle (ships_set_camera's) */
 
 /* --- the view: the cockpit's, or an outside camera: F5 the chase camera (behind and above the player's ship, looking
@@ -434,7 +436,7 @@ static void stars_place(void)
     basis[0] = cam.front.x; basis[1] = cam.front.y; basis[2] = cam.front.z;
     basis[3] = cam.right.x; basis[4] = cam.right.y; basis[5] = cam.right.z;
     basis[6] = cam.up.x; basis[7] = cam.up.y; basis[8] = cam.up.z;
-    g_star_n = rv_stars_place((const short __far *)g_star, STARS, (const long __far *)basis, SCR_W / 2, g_cam_cy, SCR_H,
+    g_star_n = rv_stars_place((const short __far *)g_star, STARS, (const long __far *)basis, g_cam_cx, g_cam_cy, SCR_H,
                               (short __far *)g_star_at);
     g_star_place_ticks += clock240() - t0;
 }
@@ -670,7 +672,7 @@ void flight_camera(RvCamera *c)
     const RvCockpit __far *ck = cockpit_record();
     c->pos = *cam_pos();
     cam_basis(&c->b);
-    c->cx = SCR_W / 2;
+    c->cx = (short)g_cam_cx;
     c->cy = (short)g_cam_cy;
     c->focal = 400;
     c->vx0 = 0;
@@ -960,7 +962,7 @@ static void ft_sheet(void)
         ships_lattice(set[c], ex, &nb, &nh);   /* (before: the true roll in the placement's lattice, 11.25 degrees) */
         {
             LfPlace p0;
-            lf_place(&rel[c], &cam, &ship[c], SCR_W / 2, g_cam_cy, 400, nb, nh, &p0);
+            lf_place(&rel[c], &cam, &ship[c], g_cam_cx, g_cam_cy, 400, nb, nh, &p0);
             ft_tail(p0.view, p0.roll, nb, nh, &ox, &oy);
         }
         a = lf_atan2(oy, ox);
@@ -1062,7 +1064,7 @@ static void flame_test(void)
                     flames_add(t, &p, nb, nh, sc, o & 1, 1, &fs);
                     /* before: the true roll in the placement's lattice, the way to the nearest 11.25 degrees */
                     ships_lattice(set, ex == SHIP_AS_EXACT, &nb, &nh);
-                    lf_place(&rel, &cam, &ship, SCR_W / 2, g_cam_cy, 400, nb, nh, &p0);
+                    lf_place(&rel, &cam, &ship, g_cam_cx, g_cam_cy, 400, nb, nh, &p0);
                     ft_tail(p0.view, p0.roll, nb, nh, &ox, &oy);
                     {
                         long ax = ox < 0 ? -ox : ox, ay = oy < 0 ? -oy : oy;
@@ -1657,6 +1659,8 @@ static void __far __cdecl draw_pointer_body(void)
 static void flight_draw(int y0, int y1)
 {
     cockpit_draw(y0, y1, &g_st, draw_world);
+    if (g_view == VIEW_COCKPIT)
+        fx_cockpit_draw(y0, y1);
     g_ptr_y0 = y0;
     g_ptr_y1 = y1;
     if (g_sim)                          /* (no hook site in the simulator) */
@@ -1665,19 +1669,40 @@ static void flight_draw(int y0, int y1)
         rv_cockpit_pointer(draw_pointer_body);
 }
 
-static void mfd_draw(int which, const RvRect __far *r, int y0, int y1)
+static void mfd_page(int which, const RvRect __far *r, int y0, int y1)
 {
-    /* a comm on this VDU, else its page (vdu.c: the target, the weapons, the damage; the comm and nav menus); the
-       right VDU dark with the targeting display damaged */
+    /* a comm on this VDU, else its page (vdu.c: the target, the weapons, the damage; the comm and nav menus) */
     if (which == 0 && vdu_page(0) == VDU_L_COMM && vdu_draw(0, r, y0, y1))
         return;                         /* (the menu over a comm: it comes up at any time, the comm goes on under it) */
     if (comms_draw(which, r, y0, y1)) {
         vdu_subtitle(r, comms_text(), y0, y1);
         return;
     }
-    if (which == 1 && (rvCockpitDamage >> 1 & 1))
-        return;
     (void)vdu_draw(which, r, y0, y1);
+}
+
+/* the VDU, as its glass and the computer leave it (damage.h): its glass wrecked it is dead, a few dashes on black; the
+ * computer hurt sends both to static in bursts, longer the worse, for good wrecked (the old game's).  The comm menu is how
+ * the pilot still lands: it stays up, on the other VDU if its own is dead */
+static void mfd_draw(int which, const RvRect __far *r, int y0, int y1)
+{
+    static const unsigned char __far burst_mask[5] = { 0, 63, 31, 15, 0 }, burst_on[5] = { 0, 4, 8, 9, 1 };
+    int glass = sys_level(which ? SYS_VDU_R : SYS_VDU_L), comp = sys_level(SYS_COMPUTER);
+    int menu = vdu_page(0) == VDU_L_COMM && (which == 0 || sys_level(SYS_VDU_L) >= SYS_WRECKED);
+    if (glass >= SYS_WRECKED) {
+        vdu_static(r, 1, y0, y1);
+        return;
+    }
+    if (comp && (int)(frameCounter & burst_mask[comp]) < burst_on[comp]) {
+        vdu_static(r, 6, y0, y1);
+        if (!menu)
+            return;
+    }
+    if (menu)
+        (void)vdu_draw(0, r, y0, y1);
+    else
+        mfd_page(which, r, y0, y1);
+    vdu_broken(r, glass, y0, y1);
 }
 
 #ifdef RV_TESTS
@@ -1999,8 +2024,11 @@ static void systems_tick(void)
     }
     g_sys.hull = t && t->hull ? 100 - (int)((long)damagePoints[0] * 100 / t->hull) : 100;
     if (g_sys.hull < 0) g_sys.hull = 0;
+    g_sys.reserve = t && damage_in_reserve() ? damage_reserve_pct(t->hull) : -1;
     g_sys.warn = rvCockpitDamage != 0 || (SHIELD_MAX(0, 0) && SHIELD(0, 0) * 4 < SHIELD_MAX(0, 0))
                  || (SHIELD_MAX(0, 1) && SHIELD(0, 1) * 4 < SHIELD_MAX(0, 1));
+    for (k = 0; k < SYS_COUNT && !g_sys.warn; k++)
+        g_sys.warn = sys_level((int16_t)k) != 0;
     /* the running lights: off under EMCON OFF or with the power plant damaged; a hit flickers them */
     if (shield < g_shield_was)
         g_flicker = 8;
@@ -2015,9 +2043,9 @@ static void systems_tick(void)
     /* the nav point: how far; the autopilot when no enemy is within 8,000 km */
     {
         int32_t km;
-        g_sys.nav_km = logic_nav_km(g_sys.nav, &km) ? km : -1;
+        g_sys.nav_km = logic_nav_km(g_sys.nav, &km) && sys_level(SYS_NAV) < 3 ? km : -1;   /* (the nav computer badly hurt: no distance) */
     }
-    g_sys.autopilot_ready = g_m != 0;
+    g_sys.autopilot_ready = g_m != 0 && sys_level(SYS_NAV) < SYS_WRECKED;
     for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
         if (is_ship(s) && commAnimInfo[s] == 1 && player_km(s) < 8000)
             g_sys.autopilot_ready = 0;
@@ -2084,8 +2112,9 @@ static void gather(void)
         if (maybeEntityType[s] != 0xC && maybeEntityType[s] != 0xD)
             continue;
         /* (EMCON OFF: a dark scope; beyond the range knob's: not shown) */
-        if (g_sys.emcon == EMCON_OFF || player_km(s) > (4000L << g_sys.radar_range))
-            continue;
+        if (g_sys.emcon == EMCON_OFF || player_km(s) > (4000L << g_sys.radar_range) >> (sys_level(SYS_RADAR) >= 2)
+            || sys_level(SYS_RADAR) >= SYS_WRECKED || (sys_level(SYS_RADAR) == 3 && (frameCounter + s * 5) & 16))
+            continue;                   /* (the radar hurt: moderate half the range, heavy contacts come and go, wrecked none) */
         d.x = (gPositionVector[s].x - gPositionVector[0].x) / 16;
         d.y = (gPositionVector[s].y - gPositionVector[0].y) / 16;
         d.z = (gPositionVector[s].z - gPositionVector[0].z) / 16;
@@ -2107,11 +2136,13 @@ static void gather(void)
         g_st.contact[n].x = (short)((lf_cos(a) * rr) >> 14);
         g_st.contact[n].y = (short)(-((lf_sin(a) * rr) >> 14));   /* up is up the screen */
         g_st.contact[n].colour = s == g_sys.target ? UI_WHITE   /* (unidentified without IFF or the radar emitting) */
-                                 : !g_sys.iff || g_sys.emcon != EMCON_ACTIVE ? UI_GREY5
+                                 : !g_sys.iff || g_sys.emcon != EMCON_ACTIVE || sys_level(SYS_IFF) >= SYS_WRECKED
+                                   || (sys_level(SYS_IFF) && (frameCounter >> (5 - sys_level(SYS_IFF))) & 1) ? UI_GREY5
                                  : commAnimInfo[s] == 0 ? UI_HILITE : commAnimInfo[s] == 1 ? UI_RED : UI_AMBER4;
         n++;
     }
     g_st.ncontacts = n;
+    g_st.radar_level = (unsigned char)sys_level(SYS_RADAR);
     (void)c;
 #ifdef RV_TESTS
     if (g_flames_demo) {
@@ -2417,7 +2448,7 @@ static void missiles_frame(void)
             p[k].live = 0;
     }
     cam_basis(&cam);
-    missiles_place(cam_pos()->x, cam_pos()->y, cam_pos()->z, &cam, SCR_W / 2, g_cam_cy, 400,
+    missiles_place(cam_pos()->x, cam_pos()->y, cam_pos()->z, &cam, g_cam_cx, g_cam_cy, 400,
                    c ? c->open_y0 : 0, c ? c->open_y1 : SCR_H);
 }
 
@@ -2648,7 +2679,7 @@ static void lasers_pool(void)
         basis_of(0, &cam);
         rel.x = 256L * 1500; rel.y = 256L * 400; rel.z = 256L * 8000;
         do {
-            lf_place(&rel, &cam, &ship, SCR_W / 2, g_cam_cy, 400, 5, 7, &p);
+            lf_place(&rel, &cam, &ship, g_cam_cx, g_cam_cy, 400, 5, 7, &p);
             it++;
         } while ((dt = clock240() - t0) < 120);
         RV_LOG("lasers: lf_place takes %lu us", dt * 1000000UL / 240 / (unsigned long)it);
@@ -2737,9 +2768,9 @@ static void lasers_place(void)
     LfBasis cam;
     const RvCockpit __far *c = cockpit_record();
     basis_of(0, &cam);
-    bolts_place(gPositionVector[0].x, gPositionVector[0].y, gPositionVector[0].z, &cam, SCR_W / 2, g_cam_cy, 400,
+    bolts_place(gPositionVector[0].x, gPositionVector[0].y, gPositionVector[0].z, &cam, g_cam_cx, g_cam_cy, 400,
                 c ? c->open_y0 : 0, c ? c->open_y1 : SCR_H, BOLT_LINE16);
-    balls_place(gPositionVector[0].x, gPositionVector[0].y, gPositionVector[0].z, &cam, SCR_W / 2, g_cam_cy, 400,
+    balls_place(gPositionVector[0].x, gPositionVector[0].y, gPositionVector[0].z, &cam, g_cam_cx, g_cam_cy, 400,
                 c ? c->open_y0 : 0, c ? c->open_y1 : SCR_H, frameCounter / 2);   /* (15 animation frames a second) */
 }
 
@@ -2979,8 +3010,9 @@ void __far __cdecl flight_startup(void)
         RV_LOG("ships: %lu KB of blocks loaded in %lu ms, %lu KB of XMS left", taken / 1024, (clock240() - t0) * 1000 / 240,
                xms_free_kb());
     }
-    g_cam_cy = cockpit_record() ? (cockpit_record()->open_y0 + cockpit_record()->open_y1) / 2 : SCR_H / 2;
-    ships_set_camera(SCR_W / 2, g_cam_cy, 400);
+    g_cam_cx = SCR_W / 2;
+    g_cam_cy0 = g_cam_cy = cockpit_record() ? (cockpit_record()->open_y0 + cockpit_record()->open_y1) / 2 : SCR_H / 2;
+    ships_set_camera(g_cam_cx, g_cam_cy, 400);
     shots_flight_start(!g_lasers);      /* (the laser benchmark and its demos keep the bolts' and balls' pools) */
     explode_flight_start();             /* the effects: explosions, sounds, and what starts them (fx.c) */
     fx_flight_start();
@@ -3140,6 +3172,8 @@ unsigned short __far __cdecl flight_keys(void)
             }
         }
         if (in.ch == ']') rvCockpitDamage = 0;
+        if (in.ch == '(') damage_test_worse();
+        if (in.ch == ')') damage_test_breach();
         if (in.ch == '{') logic_test_to_carrier(0);   /* (a script's way to the carrier: its bow, its beam) */
         if (in.ch == '}') logic_test_to_carrier(1);
         if (in.ch == '|') logic_test_kill_carrier();
@@ -3252,17 +3286,25 @@ void __far __cdecl flight_frame(void)
     if (g_hull_demo)
         hull_demo_step();
 #endif
+    {   /* the view thrown about by the player's hurt: everything through the opening moves, the cockpit round it stands */
+        int16_t dx, dy;
+        fx_shake(&dx, &dy);
+        g_view_outside = g_view != VIEW_COCKPIT;
+        g_cam_cx = SCR_W / 2 + dx;
+        g_cam_cy = g_cam_cy0 + dy;
+        ships_set_camera(g_cam_cx, g_cam_cy, 400);
+    }
     {
         LfBasis cam;                    /* the asteroid fields: theirs entered and left, the rocks placed, the hits */
         const RvCockpit __far *c = cockpit_record();
         cam_basis(&cam);
-        rocks_frame(&cam, SCR_W / 2, g_cam_cy, 400, c ? c->open_y0 : 0, c ? c->open_y1 : SCR_H);
+        rocks_frame(&cam, g_cam_cx, g_cam_cy, 400, c ? c->open_y0 : 0, c ? c->open_y1 : SCR_H);
     }
     stars_place();
     {
         LfBasis cam;
         cam_basis(&cam);
-        sky_place(&cam, SCR_W / 2, g_cam_cy, 400);
+        sky_place(&cam, g_cam_cx, g_cam_cy, 400);
     }
     {
         unsigned long t0 = clock240();
@@ -3286,9 +3328,9 @@ void __far __cdecl flight_frame(void)
         LfBasis cam;                    /* the shots (shots.c): through the camera, as the bolts and the balls */
         const RvCockpit __far *c = cockpit_record();
         cam_basis(&cam);
-        shots_place(cam_pos(), &cam, SCR_W / 2, g_cam_cy, 400, c ? c->open_y0 : 0,
+        shots_place(cam_pos(), &cam, g_cam_cx, g_cam_cy, 400, c ? c->open_y0 : 0,
                     c ? c->open_y1 : SCR_H);
-        explode_place(cam_pos(), &cam, SCR_W / 2, g_cam_cy, 400);
+        explode_place(cam_pos(), &cam, g_cam_cx, g_cam_cy, 400);
     }
     /* the rate over the last FPS_WINDOW frames */
     dt = now - g_frame_t[k];

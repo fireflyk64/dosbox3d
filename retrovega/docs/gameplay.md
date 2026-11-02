@@ -411,6 +411,21 @@ tests cover them; flight.c's keys (T, Y, L) and its AUTO call them.
 | M10.8 break-formation | a wingman 800 km off the player, the only enemy 40,000 km away: left alone it fights nobody; told to fly in formation, nobody, within 3,000 km; told to break formation, the far enemy; the enemy gone, it leaves the formation (over 1,500 km off) and stays round the player (within 6,000) |
 | M10.9 taunt | an enemy beside a Terran ship has that as its target; `logic_taunt` refuses a friend and a capital ship; taunted, its target is the player; put 3,000 km ahead of the player, facing it, selected and under hold=on, it fires |
 
+### M12: the player's damage (`src/damage.c`, docs/damage.md)
+
+| test | expects |
+|---|---|
+| M12.1 reserve | past the hull's last point the player lives on, for twice the hull's points more; a Nicander whose hull goes dies |
+| M12.2 reserve-breaks | on the reserve every hit breaks a system |
+| M12.3 where | 300 heavy hits a side: the rear breaks the engine and the tank and never the guns or VDUs, the front the guns and radar and never the engine or tank; a side never the other's VDU |
+| M12.4 engine | each level holds full throttle under its share of the top speed; wrecked no burner; whole again, the top speed |
+| M12.5 tank | level 2 holds 55% at most and leaks; wrecked it is empty, no burner |
+| M12.6 shield-cap | the generator at level 2: the shield falls to half at once; whole, it fills again |
+| M12.7 mounts | a hit on the right takes the rightmost gun first; every launcher destroyed, `logic_launcher` gives none |
+| M12.8 thrusters | wrecked, the nose swings less than a whole ship's in the same time; hands off and whole it stays put, heavy it pulls |
+| M12.9 repair | a point every 20 s, never a wrecked system or a mount; the repair system wrecked, none |
+| M12.10 damage-reset | a new ship is whole, its reserve full |
+
 ### M11: the simulator (`src/simulator.c`)
 
 | test | what it checks |
@@ -450,7 +465,7 @@ writes it by offset, so the offsets are fixed for good. `abi/rvabi.def` is the o
 | 0x0116 | `victoryPoints` | 2 | the mission's score: nonzero won | **you**; the stand-in roll before (see below) |
 | 0x011E-0x0123 | `fieldCount`, `fieldRockTally`, `currentField` | 6 | the asteroid fields | rocks.c |
 | 0x0128 | `steerInput` | 4 | the steering as the layer reads it: pitch, yaw | flight.c, each frame |
-| 0x028C | `systemDamage` | 10 | a byte per system, 0..4 | the nine systems (logic.h `SYS_*`): absorbers, power plant, shield generator, computer, intercom, target tracking, ejector, repair, guns |
+| 0x028C | `systemDamage` | 10 | a byte per system, 0..4 | the first ten of the nineteen systems (damage.h `SYS_*`; `sys_level` reads any of them): absorbers, power plant, shield generator, computer, intercom, target tracking, ejector, repair, guns |
 | 0x02A0 | `tempVector` | 12 | a spare near vector (a `where`) | anyone |
 | 0x02C0 | `navPointState` | 152 | 8 × 19 bytes of nav-point progress | free for your mission's progress |
 | 0x035E | `rvCockpitDamage` | 4 | a bit per cracked cockpit overlay (logic.md, "Damage") | you |

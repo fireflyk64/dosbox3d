@@ -75,9 +75,9 @@ static const struct { uint8_t bit, at, bit2, at2; } __far k_overlay[SYS_COUNT] =
     { 17, 1, 0xFF, 0 },                 /* GUNS: the weapon controls */
     { 8, 1, 11, 2 },                    /* ENGINE: the propulsion panel, the engine status */
     { 7, 1, 0xFF, 0 },                  /* FUEL: the fuel gauge */
-    { 2, 2, 19, 3 },                    /* RADAR: the scope's glass, its controls */
-    { 0, 2, 0xFF, 0 },                  /* VDU_L: its glass */
-    { 1, 2, 0xFF, 0 },                  /* VDU_R: its glass */
+    { 2, 3, 19, 3 },                    /* RADAR: the scope's glass, its controls */
+    { 0, 3, 0xFF, 0 },                  /* VDU_L: its glass (heavy: below that static and lost rows, a page still to read) */
+    { 1, 3, 0xFF, 0 },                  /* VDU_R: its glass */
     { 12, 1, 0xFF, 0 },                 /* NAV: the nav lamp */
     { 15, 1, 0xFF, 0 },                 /* THRUSTERS: the flight controls */
     { 17, 1, 0xFF, 0 },                 /* RACKS: the weapon controls */
@@ -188,6 +188,11 @@ static void event(int16_t k, int16_t level)
     g_event_in++;
     if ((uint8_t)(g_event_in - g_event_out) > 8)
         g_event_out = (uint8_t)(g_event_in - 8);
+}
+
+int16_t damage_overlay(int16_t k)
+{
+    return k >= 0 && k < SYS_COUNT && k_overlay[k].bit != 0xFF ? k_overlay[k].bit : -1;
 }
 
 int16_t damage_event(int16_t *sys, int16_t *level)
@@ -416,3 +421,33 @@ int16_t damage_lock_factor(void)
         return 0;
     return (int16_t)(1 + track + (sys_level(SYS_COMPUTER) >= 3 ? 1 : 0));
 }
+
+#ifdef RV_TESTS
+/* every system a point worse, with what breaking it does (a script's way to see each level: RVT.EXE's ( key) */
+void damage_test_worse(void)
+{
+    int16_t k, level;
+    for (k = 0; k < SYS_COUNT; k++) {
+        level = sys_level(k);
+        if (level >= SYS_WRECKED)
+            continue;
+        sys_set(k, (int16_t)(level + 1));
+        overlays(k, (int16_t)(level + 1));
+        event(k, (int16_t)(level + 1));
+        if (k == SYS_GUNS)
+            mount_destroyed(0, 3);
+        else if (k == SYS_RACKS)
+            mount_destroyed(1, 3);
+    }
+}
+
+/* the hull gone and half the reserve spent (the ) key) */
+void damage_test_breach(void)
+{
+    const RvShipType __far *t = slot_type(0);
+    if (!t)
+        return;
+    damagePoints[0] = t->hull;
+    (void)damage_reserve_take(reserve_of(t->hull) / 2, t->hull);
+}
+#endif

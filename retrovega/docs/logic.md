@@ -357,6 +357,7 @@ What it can spend, all in the slot arrays:
 - `ARMOR(s, 0..3)`: front, rear, left, right;
 - `damagePoints` against the type's `hull`;
 - `coreHp`, `gunDamage`, `engineFlag`, and each gun's destroyed bit;
+- the player's systems and reserve (`src/damage.c`, docs/damage.md);
 - the player's cockpit damage: `rvCockpitDamage`, a bit per overlay. Bits (tools/cockpits.py): 0 left MFD, 1 right MFD, 2 radar, 3 shields, 4 armour, 5 hull, 6 speed, 7 fuel, 8 propulsion, 9 power, 11 engine, 12 nav, 13 comms, 14 IFF, 17 weapon controls, 20 ejection, 23-25 canopy. A set bit shows the cracked overlay, and some panels go dark with it.
 
 ## Queries: is there a collision, where is it on screen

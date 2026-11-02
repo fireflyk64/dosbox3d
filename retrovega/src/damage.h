@@ -52,5 +52,11 @@ int16_t damage_lock_factor(void);       /* a missile's lock takes this many time
 /* what has just broken, for the effects (the flight's: sparks, a klaxon): 1 and the next one's system and level, 0 none
  * waiting.  Only ever read: a machine that does not ask loses nothing */
 int16_t damage_event(int16_t *sys, int16_t *level);
+int16_t damage_overlay(int16_t k);      /* the cockpit overlay that shows system k hurt: where its sparks fly from; -1 none */
+
+#ifdef RV_TESTS
+void damage_test_worse(void);           /* every system a point worse (RVT.EXE's ( key) */
+void damage_test_breach(void);          /* the hull gone and half the reserve spent (its ) key) */
+#endif
 
 #endif

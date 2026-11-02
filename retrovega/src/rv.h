@@ -86,6 +86,7 @@ void vid_read_row(int y, unsigned char __far *dst);   /* a row as shown (screens
 void vid_palette(const unsigned char __far *rgb6, int first, int n);
 void vid_fade(int level);              /* 0 black .. 64 full: the current palette scaled */
 void vid_flash(int level);             /* 0 none .. 64 all white: the current palette washed out */
+void vid_flash_red(int level);          /* the same toward red (a hit through to the hull) */
 void vid_wait_retrace(void);
 
 /* the archive (dat.c): RV.DAT, all of it in XMS */

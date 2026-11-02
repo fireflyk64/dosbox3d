@@ -1,0 +1,12 @@
+# The effects of a breakdown (docs/damage.md), with /record 1 for the frames.
+# EXE=RVT.EXE tests/run.sh tests/damagefx.txt /fly 1 /flight 60 /record 1
+wait 20
+key (
+wait 8
+key (
+wait 8
+key )
+wait 12
+key esc
+wait 10
+log done

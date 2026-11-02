@@ -3061,12 +3061,24 @@ static void hud_marks(void)
     g_hud.target = g_sys.target >= 0 && flight_ent_box(g_sys.target, &cam, &b) && b.visible;
     if (!g_hud.target)
         return;
+    {   /* the tracking hurt: the brackets wander, and heavy they come and go (no dice here: the marks are not play) */
+        int16_t lv = sys_level(SYS_TRACK);
+        if (lv >= 3 && (frameCounter & 12) == 12) {
+            g_hud.target = 0;
+            return;
+        }
+        if (lv) {
+            int16_t a = (int16_t)(1 << (lv - 1)), wx = (int16_t)((frameCounter * 7) & (2 * a - 1)), wy = (int16_t)((frameCounter * 13) & (2 * a - 1));
+            b.sx = (int16_t)(b.sx + wx - a / 2);
+            b.sy = (int16_t)(b.sy + wy - a / 2);
+        }
+    }
     half = b.half > HUD_BRACKET_MIN ? b.half : HUD_BRACKET_MIN;   /* (b.half: steady as it turns) */
     g_hud.x0 = (int16_t)(b.sx - half);
     g_hud.y0 = (int16_t)(b.sy - half);
     g_hud.x1 = (int16_t)(b.sx + half + 1);
     g_hud.y1 = (int16_t)(b.sy + half + 1);
-    g_hud.colour = commAnimInfo[g_sys.target] == commAnimInfo[0] ? UI_HILITE : UI_RED;
+    g_hud.colour = sys_level(SYS_IFF) >= SYS_WRECKED ? UI_GREY5 : commAnimInfo[g_sys.target] == commAnimInfo[0] ? UI_HILITE : UI_RED;
     /* the lock's reticle (the user's Top Gun display): a diamond closing on the target as the lock builds, from four
      * halves out to the brackets; locked, a second one tight about it */
     g_hud.sx = b.sx;

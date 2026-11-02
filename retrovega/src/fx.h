@@ -13,6 +13,9 @@
 
 void fx_flight_start(void);             /* the world as it stands taken as seen */
 void fx_frame(void);                    /* after each step: what changed */
+void fx_shake(int16_t *dx, int16_t *dy);   /* once a frame: how far the view is thrown this frame (the player's hurt) */
+void fx_cockpit_draw(int y0, int y1);   /* a band of the cockpit is drawn: the sparks and smoke over it */
+extern int16_t g_view_outside;          /* the camera is outside the ship (flight.c) */
 int16_t fx_hidden(int16_t slot);        /* a dying ship the explosion has replaced: not drawn */
 void fx_jump(int16_t slot, int16_t friendly);   /* a ship jumps out: its star, and a friend's a white flash (logic_on_jump) */
 void fx_shot(int16_t owner, uint16_t weapon_type);              /* a shot added (shots.c) */

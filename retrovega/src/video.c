@@ -182,6 +182,7 @@ void vid_read_row(int y, unsigned char __far *dst)
 }
 
 static int g_flash;                     /* 0 .. 64: the screen washed toward white (vid_flash) */
+static int g_flash_red;                 /* ... or red (vid_flash_red: the hull hit) */
 
 static void put_palette(void)
 {
@@ -189,13 +190,24 @@ static void put_palette(void)
     outp(0x3C8, 0);
     for (i = 0; i < 768; i++) {
         unsigned c = (g_pal[i] * g_fade) >> 6;
-        outp(0x3C9, (unsigned char)(c + (((63 - c) * g_flash) >> 6)));
+        if (g_flash_red)                /* (red up, green and blue down) */
+            outp(0x3C9, (unsigned char)(i % 3 == 0 ? c + (((63 - c) * g_flash_red) >> 6) : c - ((c * g_flash_red) >> 7)));
+        else
+            outp(0x3C9, (unsigned char)(c + (((63 - c) * g_flash) >> 6)));
     }
 }
 
 void vid_flash(int level)
 {
+    g_flash_red = 0;
     g_flash = level < 0 ? 0 : level > 64 ? 64 : level;
+    put_palette();
+}
+
+void vid_flash_red(int level)
+{
+    g_flash = 0;
+    g_flash_red = level < 0 ? 0 : level > 64 ? 64 : level;
     put_palette();
 }
 

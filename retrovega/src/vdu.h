@@ -26,6 +26,8 @@ void vdu_comm_open(void);               /* the menu up at its first level */
 int vdu_comm_key(int ch, int *who, int *order);
 /* what a comm is saying, in the small font at the foot of its VDU (over the chin of the face; rows y0 .. y1-1) */
 void vdu_subtitle(const RvRect __far *r, const char __far *s, int y0, int y1);
+void vdu_static(const RvRect __far *r, int amount, int y0, int y1);   /* static on it: 1 a few dashes .. 6 every row */
+void vdu_broken(const RvRect __far *r, int level, int y0, int y1);   /* the page drawn seen through glass broken to that level */
 void vdu_show(int which, int page);     /* a key brings a page up (0 the left VDU, 1 the right) */
 int vdu_page(int which);
 /* the VDU's page into the run y0 .. y1-1 of its rect: 1 when it drew the VDU (the status lines are not drawn after) */

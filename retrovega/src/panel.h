@@ -43,6 +43,7 @@ typedef struct {
     int16_t fuel;                       /* afterburner fuel, 0 .. 1000 */
     int16_t fuel_extra;                 /* Kit's reserve tank, burned first: the gauge reads full until it is gone */
     int16_t hull;                       /* percent */
+    int16_t reserve;                    /* the reserve past the hull (damage.h), percent; -1 while the hull still stands */
     int32_t target_km, nav_km;          /* -1: none */
     char target_name[16];
 } ShipSystems;

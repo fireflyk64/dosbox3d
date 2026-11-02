@@ -333,6 +333,29 @@ def hit_hull():
     return drive(crunch + thud + rattle + ring, 2.0)
 
 
+def spark():
+    t = tl(0.38)
+    arc = svf(noise(t, 31), 3400, 2.5, 'bp') * env(t, 0.001, 0.07) * 1.8
+    spit = crackle(t, 1800, 32, 0.14) * 0.9
+    buzz = pulse(118 + 0 * t, 0.3) * sine(1900 + 0 * t) * env(t, 0.002, 0.05) * 0.5
+    return drive(arc + spit + buzz, 2.0)
+
+
+def klaxon():
+    t = tl(0.72)
+    hi = pulse(660 + 0 * t, 0.5) * (t < 0.33)
+    lo = pulse(440 + 0 * t, 0.5) * ((t >= 0.36) & (t < 0.69))
+    return drive(svf(hi + lo, 2600, 0.9) * 0.8, 1.3)
+
+
+def wrecked():
+    t = tl(0.8)
+    clunk = svf(noise(t, 33), 500, 1.6, 'bp') * env(t, 0.0005, 0.05) * 2.2
+    thud = sine(sweep(t, 90, 40, 0.08)) * env(t, 0.001, 0.14)
+    whine = saw(sweep(t, 1500, 90, 0.25)) * env(t, 0.01, 0.3) * 0.28
+    return drive(clunk + thud + whine, 1.8)
+
+
 def hit_far():
     t = tl(0.16)
     pop = svf(noise(t, 20), sweep(t, 2500, 500, 0.03), 1.2) * env(t, 0.0008, 0.035) * 1.5
@@ -341,6 +364,9 @@ def hit_far():
 
 
 RECIPES = {
+    'spark': spark,
+    'klaxon': klaxon,
+    'wrecked': wrecked,
     'laser': lambda: laser(),
     'laser_t': lambda: laser(0.75, 0.26),
     'particle': lambda: particle(),

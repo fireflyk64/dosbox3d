@@ -6,6 +6,7 @@
 #include "music.h"
 #include "lightfield.h"
 #include "panel.h"
+#include "damage.h"
 
 ShipSystems __far g_sys;
 
@@ -183,12 +184,12 @@ static int state(const RvPanelControl __far *p, const CockpitState *st)
     int a = p->arg, n = p->flags ? p->flags : 1;
     switch (p->fn) {
     case RV_PF_LOCK: return g_sys.lock;
-    case RV_PF_WARN: return g_sys.warn && blink(4);
+    case RV_PF_WARN: return g_sys.warn && blink(g_sys.reserve >= 0 ? 12 : 4);   /* (the hull gone: frantic) */
     case RV_PF_AB_LAMP: return g_sys.burning;
     case RV_PF_NAV_LAMP: return !(st->damage >> 12 & 1) && (!g_sys.autopilot_ready || blink(2));
-    case RV_PF_COM_LAMP: return g_sys.talking;
+    case RV_PF_COM_LAMP: return g_sys.talking && sys_level(SYS_INTERCOM) < SYS_WRECKED;
     case RV_PF_COM_ON: return !g_sys.muted;
-    case RV_PF_IFF_LAMP: return g_sys.iff;
+    case RV_PF_IFF_LAMP: return g_sys.iff && sys_level(SYS_IFF) < SYS_WRECKED;
     case RV_PF_EM_LAMP: return g_sys.emcon == EMCON_ACTIVE;
     case RV_PF_EMCON_LAMP: return a == 3 ? g_sys.emcon != EMCON_ACTIVE : g_sys.emcon == a;
     case RV_PF_SENSOR_LAMP: return g_sys.sensor == a;

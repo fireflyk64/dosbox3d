@@ -16,6 +16,7 @@
 #include "rvhooks.h"
 #include "cockpit.h"
 #include "panel.h"
+#include "damage.h"
 #include "lightfield.h"
 
 #define EXT_SHORTS (2 * SCR_H + 1)       /* an opening's rows: a pair each */
@@ -295,12 +296,14 @@ static void survival(const RvRect __far *r, const CockpitState *st, int y0, int 
         return;
     if (g_sys.surv_page) {              /* (its other pages: the hull and how many systems are damaged; the nav) */
         char a[16], b[16];
-        unsigned long d = st->damage;
         int n = 0, h = gfx_font_height(FONT_BODY);
-        for (; d; d >>= 1)
-            n += (int)(d & 1);
+        for (i = 0; i < SYS_COUNT; i++)
+            n += sys_level((int16_t)i) != 0;
         if (g_sys.surv_page == 1) {
-            sprintf(a, "HULL %d%%", g_sys.hull);
+            if (g_sys.reserve >= 0)
+                sprintf(a, "CORE %d%%", g_sys.reserve);
+            else
+                sprintf(a, "HULL %d%%", g_sys.hull);
             sprintf(b, "DMG %d", n);
         } else {
             panel_nav_name(a);
@@ -352,9 +355,24 @@ static void radar(const RvCockpit __far *c, const CockpitState *st, int y0, int 
     int i, r = c->radar_r;
     if (y1 <= c->radar_y - r || y0 >= c->radar_y + r + 1)
         return;
-    gfx_circle(c->radar_x, c->radar_y, r - 1, UI_GREY2, 1, y0, y1);
-    gfx_fill(c->radar_x - 2, c->radar_y, 5, 1, UI_GREY4, y0, y1);
-    gfx_fill(c->radar_x, c->radar_y - 2, 1, 5, UI_GREY4, y0, y1);
+    if (st->radar_level < SYS_WRECKED) {
+        gfx_circle(c->radar_x, c->radar_y, r - 1, UI_GREY2, 1, y0, y1);
+        gfx_fill(c->radar_x - 2, c->radar_y, 5, 1, UI_GREY4, y0, y1);
+        gfx_fill(c->radar_x, c->radar_y - 2, 1, 5, UI_GREY4, y0, y1);
+    }
+    if (st->radar_level) {              /* the scope hurt: snow, more the worse, on a dead one a last few specks */
+        uint16_t seed = (uint16_t)(frameCounter * 25173U + 13849U);
+        int n = st->radar_level >= SYS_WRECKED ? 4 : st->radar_level * 6;
+        for (i = 0; i < n; i++) {
+            int x, y;
+            seed = (uint16_t)(seed * 25173U + 13849U);
+            x = (int)((uint16_t)(seed >> 4) % (uint16_t)(2 * r)) - r;
+            seed = (uint16_t)(seed * 25173U + 13849U);
+            y = (int)((uint16_t)(seed >> 4) % (uint16_t)(2 * r)) - r;
+            if ((long)x * x + (long)y * y < (long)(r - 2) * (r - 2))
+                gfx_fill(c->radar_x + x, c->radar_y + y, 1, 1, UI_GREY4, y0, y1);
+        }
+    }
     for (i = 0; i < st->ncontacts && i < CP_CONTACTS; i++) {
         int x = c->radar_x + (int)((long)st->contact[i].x * (r - 2) / 256);
         int y = c->radar_y + (int)((long)st->contact[i].y * (r - 2) / 256);
@@ -392,6 +410,19 @@ static void speed_fuel(const RvCockpit __far *c, const CockpitState *st, int y0,
     r = &c->fuel;
     if (r->w >= 12 && y1 > r->y && y0 < r->y + r->h)    /* (a lamp-sized one is the panel's fuel lamp) */
         panel_fuel_bar(r->x, r->y, r->w, r->h, st->fuel, r->h > r->w, y0, y1);   /* (backlit: the user's) */
+}
+
+int cockpit_layer_box(int bit, int *x, int *y, int *w, int *h)
+{
+    const RvAsset __far *as;
+    if (!g_cp || bit < 0 || bit >= RV_CP_LAYERS || g_cp->layer[bit].sprite == 0xFFFF)
+        return 0;
+    as = dat_asset(g_cp->layer[bit].sprite);
+    *x = as->x;
+    *y = as->y;
+    *w = as->w;
+    *h = as->h;
+    return 1;
 }
 
 static void damage_layers(const RvCockpit __far *c, const CockpitState *st, int attach, int dx, int dy, int y0, int y1)

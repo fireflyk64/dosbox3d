@@ -15,6 +15,7 @@ typedef struct {
     unsigned long damage;               /* rvCockpitDamage: a bit per overlay */
     int lock, warn;                     /* the lamps */
     int ncontacts;
+    unsigned char radar_level;          /* its system's damage (damage.h): the scope's noise, none of it left wrecked */
     struct { short x, y; unsigned char colour; } contact[CP_CONTACTS];   /* radar: 256 = the rim */
     const char *mfd_text[2][4];         /* lines on each MFD (0 left, 1 right), NULL ends */
     void (*mfd_draw)(int which, const RvRect __far *r, int y0, int y1);   /* drawn before the text, or NULL */
@@ -34,5 +35,7 @@ int cockpit_is_external(void);
 void cockpit_windshield(int bottom);
 void cockpit_dirty(const CockpitState *st);               /* marks what must be redrawn for this state */
 void cockpit_draw(int y0, int y1, const CockpitState *st, void (*world)(int y0, int y1));
+
+int cockpit_layer_box(int bit, int *x, int *y, int *w, int *h);   /* where that damage overlay is in this cockpit: 0 it paints none */
 
 #endif

@@ -152,6 +152,41 @@ int vdu_comm_key(int ch, int *who, int *order)
     return kind == TARGET_ENEMY ? COMM_TAUNT : COMM_LANDING;
 }
 
+/* static on a VDU: rows of bright dashes, as many as `amount` (1 a few, 6 every row), the same in every band of a frame */
+void vdu_static(const RvRect __far *r, int amount, int y0, int y1)
+{
+    static const unsigned char __far colours[8] = { UI_GREY2, UI_GREY2, UI_GREY2, UI_GREY4, UI_GREY4, UI_GREY4, UI_GREY5, UI_WHITE };
+    uint16_t seed = (uint16_t)(frameCounter * 40503U + r->x);
+    int row, n, top = r->y + 2, bottom = r->y + r->h - 2, step = amount >= 6 ? 1 : 8 / amount, left = r->x + 2, w = r->w - 4;
+    if (w < 8)
+        return;
+    for (row = top + (seed & 3) % step; row < bottom; row += step) {
+        for (n = amount >= 6 ? 3 : 1; n > 0; n--) {
+            int x, len;
+            seed = (uint16_t)(seed * 25173U + 13849U);
+            x = (int)((uint16_t)(seed >> 3) % (uint16_t)w);
+            seed = (uint16_t)(seed * 25173U + 13849U);
+            len = 1 + (int)((uint16_t)(seed >> 3) % (uint16_t)(w / 3));
+            if (x + len > w)
+                len = w - x;
+            if (row >= y0 && row < y1)
+                gfx_fill(left + x, row, len, 1, colours[(seed >> 12) & 7], y0, y1);
+        }
+    }
+}
+
+/* a page seen through broken glass: heavy, every other row out */
+void vdu_broken(const RvRect __far *r, int level, int y0, int y1)
+{
+    int row;
+    if (level >= 3)
+        for (row = r->y + 2; row < r->y + r->h - 2; row += 2)
+            if (row >= y0 && row < y1)
+                gfx_fill(r->x + 2, row, r->w - 4, 1, UI_BLACK, y0, y1);
+    if (level)
+        vdu_static(r, level, y0, y1);
+}
+
 void vdu_show(int which, int page)
 {
     if (which == 1 && page == VDU_R_DAMAGE && g_page[1] == VDU_R_DAMAGE)
@@ -262,7 +297,7 @@ void vdu_ship(int type, int s, int x, int y, int side, int y0, int y1)
     ix = x + (side - inner) / 2;
     iy = y + (side - inner) / 2;
     vdu_wire(type, ix, iy, inner, inner, WIRE, y0, y1);
-    if (s == 0 && g_page[1] == VDU_R_WEAPONS)
+    if (s == 0 && (g_page[1] == VDU_R_WEAPONS || g_page[1] == VDU_R_DAMAGE))
         gun_marks(type, ix, iy, inner, y0, y1);
     /* the levels: the front and rear shields, the front, rear, left and right armour */
     pct[0] = pct_of(SHIELD(s, 0), SHIELD_MAX(s, 0));
@@ -345,51 +380,64 @@ static void draw_target(const RvRect __far *r, int y0, int y1)
     }
     _fstrncpy(name, g_sys.target_name, sizeof name - 1);
     name[sizeof name - 1] = 0;
-    if (g_sys.target_km >= 0)
+    if (g_sys.target_km >= 0 && sys_level(SYS_TRACK) < 3)   /* (the tracking badly hurt: no range, no reading of it) */
         sprintf(a, "%ld KM", g_sys.target_km);
     else
         strcpy(a, "-");
-    sprintf(b, "HULL %d%%", hull_pct(s));
+    if (sys_level(SYS_TRACK) < 3)
+        sprintf(b, "HULL %d%%", hull_pct(s));
+    else
+        strcpy(b, "HULL -");
     ship_page(s, gInstanceShipTypes[s], r, name, a, b, y0, y1);
 }
 
-/* the damage page: the own ship, how many systems are hurt, and one of them named with its level as four boxes (the
- * old game's light, moderate, heavy, destroyed); D again names the next */
+/* the damage page: how much of the hull is left (of the reserve, once it is gone, in red), the own ship with its armour and
+ * shields and its guns marked, and every system hurt with its level as four boxes (the old game's light, moderate,
+ * heavy, destroyed; red destroyed).  D again moves the list on, when it is longer than the VDU */
 static void draw_damage(const RvRect __far *r, int y0, int y1)
 {
-    char top[16], a[16], b[4];
-    int k, n = 0, at = -1, i = 0, x, y, lv;
-    if (!slot_type(0))
+    enum { NAME_W = 37, BOX = 5, LIST_W = NAME_W + 4 * BOX };
+    char top[16], name[12];
+    int list[SYS_COUNT], n = 0, k, side, x, y, rows, first;
+    const RvShipType __far *t = slot_type(0);
+    if (!t)
         return;
     for (k = 0; k < SYS_COUNT; k++)
-        if (systemDamage[k])
-            n++;
-    if (n) {
-        for (k = 0; k < SYS_COUNT; k++)
-            if (systemDamage[k] && i++ == (int)(g_cursor % n))
-                at = k;
-    }
-    sprintf(top, n ? "DAMAGE %d" : "NO DAMAGE", n);
-    a[0] = b[0] = 0;
-    if (at >= 0)
-        _fstrncpy(a, logic_system_name((int16_t)at), sizeof a - 1), a[sizeof a - 1] = 0;
-    ship_page(0, gInstanceShipTypes[0], r, top, a, b, y0, y1);
-    if (at < 0)
-        return;
-    /* the level: four boxes after the name, lit to the damage, red when it is destroyed */
-    lv = systemDamage[at];
-    if (r->w >= 2 * r->h) {
-        x = r->x + r->h - 4 + 8;
-        y = r->y + 3 + 2 * (FH + 1);
+        if (sys_level((int16_t)k))
+            list[n++] = k;
+    side = r->h - 4;
+    if (side > r->w - LIST_W - 7)
+        side = r->w - LIST_W - 7;
+    if (side >= 24) {
+        vdu_ship(gInstanceShipTypes[0], 0, r->x + 2, r->y + 2, side, y0, y1);
+        x = r->x + side + 5;
+    } else
+        x = r->x + 3;
+    y = r->y + 3;
+    if (g_sys.reserve >= 0) {
+        sprintf(top, "CORE %d%%", g_sys.reserve);
+        panel_tiny(x, y, top, (frameCounter & 8) ? UI_RED : UI_WHITE, y0, y1);
     } else {
-        x = r->x + 3 + panel_tiny_width(a) + 5;
-        y = r->y + r->h - FH - 2;
+        sprintf(top, n ? "HULL %d%%" : g_sys.hull < 100 ? "HULL %d%%" : "NO DAMAGE", g_sys.hull);
+        text(x, y, top, 0, y0, y1);
     }
-    for (k = 0; k < 4; k++)
-        if (k < lv)
-            gfx_fill(x + k * 5, y, 4, PANEL_TINY_H, lv >= SYS_WRECKED ? UI_RED : UI_AMBER3, y0, y1);
-        else
-            gfx_frame(x + k * 5, y, 4, PANEL_TINY_H, UI_GREY4, y0, y1);
+    y += FH + 2;
+    rows = (r->y + r->h - y) / FH;
+    if (rows < 1 || !n)
+        return;
+    first = n > rows ? (int)(g_cursor % n) : 0;
+    for (k = 0; k < n && k < rows; k++) {
+        int sys = list[(first + k) % n], lv = sys_level((int16_t)sys), b;
+        _fstrncpy(name, logic_system_name((int16_t)sys), sizeof name - 1);
+        name[sizeof name - 1] = 0;
+        panel_tiny(x, y, name, lv >= SYS_WRECKED ? UI_RED : TEXT, y0, y1);
+        for (b = 0; b < 4; b++)
+            if (b < lv)
+                gfx_fill(x + NAME_W + b * BOX, y, BOX - 1, PANEL_TINY_H, lv >= SYS_WRECKED ? UI_RED : UI_AMBER3, y0, y1);
+            else
+                gfx_frame(x + NAME_W + b * BOX, y, BOX - 1, PANEL_TINY_H, UI_GREY4, y0, y1);
+        y += FH;
+    }
 }
 
 /* the weapons page: the guns the trigger fires (all, or one type), the own ship with its guns marked, and the
@@ -560,6 +608,14 @@ void vdu_subtitle(const RvRect __far *r, const char __far *s, int y0, int y1)
     }
     if (n < ROWS && len)
         row[n++][len] = 0;
+    if (sys_level(SYS_INTERCOM)) {      /* the intercom hurt: words lost, more the worse */
+        static const unsigned char __far lost[5] = { 0, 1, 2, 4, 7 };
+        int lv = sys_level(SYS_INTERCOM), i;
+        for (k = 0; k < n; k++)
+            for (i = 0; row[k][i]; i++)
+                if (row[k][i] != ' ' && (((uint16_t)(k * 31 + i * 7 + (frameCounter >> 3)) * 40503U) >> 13) < lost[lv])
+                    row[k][i] = '-';
+    }
     top = r->y + r->h - n * FH - 1;
     for (y = top < y0 ? y0 : top; y < y1 && y < r->y + r->h; y++)
         _fmemset(vid_row(y) + r->x, 0, r->w);

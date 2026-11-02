@@ -9,6 +9,9 @@
 #include "world.h"
 #include "explode.h"
 #include "sfx.h"
+#include "cockpit.h"
+#include "damage.h"
+#include "logic.h"
 #include "fx.h"
 
 #define N (RV_MAX_SHIP_SLOT + 1)
@@ -26,6 +29,7 @@ static RvVec3 __far g_pos[N], __far g_vel[N];   /* a missile's last place and ve
 static uint16_t __far g_last_frame[RV_SFX_COUNT];   /* a volley: one sound of a weapon a step and ship */
 static uint8_t __far g_last_owner[RV_SFX_COUNT];
 static uint32_t __far g_vis = 0x9E3779B9UL;   /* the effects' own random stream (never the play's) */
+int16_t g_view_outside;                 /* the camera is outside the ship (flight.c): the player's own hull shows too */
 
 static uint16_t vis_rand(void)
 {
@@ -61,12 +65,201 @@ static int16_t pitch_jitter(void)
 
 #define JUMP_FLASH 60                   /* the screen's wash at a friend's jump, of 64; gone in 8 frames */
 #define JUMP_FLASH_STEP 8
-static uint8_t __far g_flash;
+static uint8_t __far g_flash, __far g_flash_red;
+
+/* --- the player's own hurt: the view shaken, sparks and smoke in the cockpit, the screen's wash, the alarms ---
+ *
+ * All of it read from what has changed (a hit from any source, a system broken): picture and sound only, from the effects'
+ * own random stream, so none of it touches the play */
+#define SPARKS 32
+#define SPARK_FRAC 16                   /* its place and speed: sixteenths of a pixel */
+typedef struct { int16_t x, y, vx, vy; uint8_t life, smoke; } Spark;
+static Spark __far g_spark[SPARKS];
+static uint16_t __far g_seen_shield, __far g_seen_armour, __far g_seen_hull;
+static uint8_t __far g_seen_valid;      /* (a flight's first frame: only what is there, no hit) */
+static int16_t __far g_seen_reserve;
+static uint8_t __far g_shake;           /* the view's shake: pixels each way */
+static uint8_t __far g_shake_left;      /* frames until it eases a pixel */
+static uint16_t __far g_klaxon_at;      /* the frame the klaxon next sounds */
+#define KLAXON_STEPS 45
+
+static void spark_add(int16_t x, int16_t y, int16_t smoke)
+{
+    int16_t i;
+    for (i = 0; i < SPARKS; i++)
+        if (!g_spark[i].life) {
+            Spark __far *p = &g_spark[i];
+            p->x = (int16_t)(x * SPARK_FRAC);
+            p->y = (int16_t)(y * SPARK_FRAC);
+            p->smoke = (uint8_t)smoke;
+            if (smoke) {
+                p->vx = (int16_t)((int16_t)(vis_rand() % 9) - 4);
+                p->vy = (int16_t)(-6 - (int16_t)(vis_rand() % 8));
+                p->life = (uint8_t)(30 + vis_rand() % 30);
+            } else {
+                p->vx = (int16_t)((int16_t)(vis_rand() % 97) - 48);
+                p->vy = (int16_t)(-(int16_t)(vis_rand() % 56));
+                p->life = (uint8_t)(10 + vis_rand() % 16);
+            }
+            return;
+        }
+}
+
+/* a burst from what broke (where its overlay is; a kit that paints none of it, somewhere along the panel) */
+static void sparks_from(int16_t bit, int16_t n, int16_t smoke)
+{
+    int x = 60 + (int)(vis_rand() % 520), y = 300, w = 0, h = 0;
+    if (bit >= 0 && cockpit_layer_box(bit, &x, &y, &w, &h)) {
+        x += (int)(vis_rand() % (uint16_t)(w ? w : 1));
+        y += (int)(vis_rand() % (uint16_t)(h ? h : 1));
+    }
+    while (n-- > 0)
+        spark_add((int16_t)x, (int16_t)y, smoke);
+}
+
+static void shake_up(int16_t px)
+{
+    if (px > g_shake)
+        g_shake = (uint8_t)px;
+    g_shake_left = 3;
+}
+
+static void hurt_frame(void)
+{
+    const RvShipType __far *t = slot_type(0);
+    uint16_t shield, armour, hull;
+    int16_t i, k, lv, reserve;
+    if (!t || !slot_is_ship(0) || rvController[0] != CTL_PLAYER)
+        return;
+    shield = (uint16_t)(SHIELD(0, 0) + SHIELD(0, 1));
+    armour = (uint16_t)(ARMOR(0, 0) + ARMOR(0, 1) + ARMOR(0, 2) + ARMOR(0, 3));
+    hull = damagePoints[0];
+    reserve = damage_in_reserve() ? damage_reserve_pct(t->hull) : 100;
+    /* a hit: the harder it got through the harder the jolt */
+    if (!g_seen_valid) {
+        g_seen_valid = 1;
+    } else if (hull > g_seen_hull || reserve < g_seen_reserve) {
+        shake_up(reserve < 100 ? 7 : 5);
+        g_flash_red = 26;
+        sparks_from(-1, 6, 0);
+    } else if (armour < g_seen_armour) {
+        shake_up(3);
+        g_flash = g_flash > 12 ? g_flash : 12;
+    } else if (shield < g_seen_shield) {
+        shake_up(1);
+    }
+    g_seen_shield = shield;
+    g_seen_armour = armour;
+    g_seen_hull = hull;
+    g_seen_reserve = reserve;
+    /* what broke: sparks from its panel, a spit of sound; a wrecked one a clunk and smoke */
+    while (damage_event(&k, &lv)) {
+        sparks_from(damage_overlay(k), lv >= SYS_WRECKED ? 14 : 8, 0);
+        if (lv >= SYS_WRECKED)
+            sparks_from(damage_overlay(k), 3, 1);
+        sfx_play(lv >= SYS_WRECKED ? RV_SFX_WRECKED : RV_SFX_SPARK, 256, pitch_jitter());
+    }
+    /* on the reserve: the klaxon, and the cockpit smoking */
+    if (damage_in_reserve() && shipAiState[0] != 9) {
+        if ((int16_t)(frameCounter - g_klaxon_at) >= 0) {
+            sfx_play(RV_SFX_KLAXON, 180, 256);
+            g_klaxon_at = (uint16_t)(frameCounter + KLAXON_STEPS);
+        }
+        if ((frameCounter & 7) == 0)
+            sparks_from(-1, 1, 1);
+    }
+    /* the jolt eases */
+    if (g_shake && g_shake_left && --g_shake_left == 0) {
+        g_shake--;
+        g_shake_left = 3;
+    }
+    /* the sparks fall and the smoke rises: their rows are the panel's to draw again, before and after */
+    for (i = 0; i < SPARKS; i++) {
+        Spark __far *p = &g_spark[i];
+        int16_t row;
+        if (!p->life)
+            continue;
+        row = (int16_t)(p->y / SPARK_FRAC);
+        vid_dirty(row - 1, row + 4);
+        p->x = (int16_t)(p->x + p->vx);
+        p->y = (int16_t)(p->y + p->vy);
+        if (!p->smoke)
+            p->vy = (int16_t)(p->vy + 4);
+        p->life--;
+        row = (int16_t)(p->y / SPARK_FRAC);
+        vid_dirty(row - 1, row + 4);
+    }
+}
+
+void fx_shake(int16_t *dx, int16_t *dy)
+{
+    int16_t px = g_shake;
+    *dx = *dy = 0;
+    if (slot_is_ship(0) && rvController[0] == CTL_PLAYER && shipAiState[0] != 9) {
+        /* a rumble with nothing hitting: the engine badly hurt, every other frame; the absorbers hurt, in a hard turn; on the
+         * reserve, the whole ship */
+        if (px < 1 && ((sys_level(SYS_ENGINE) >= 3 && speedLo[0] && (frameCounter & 1)) || damage_in_reserve()))
+            px = 1;
+        if (px < 2 && sys_level(SYS_ABSORBERS) >= 2 && (g_pilot.steer_x >= 7 || g_pilot.steer_x <= -7 || g_pilot.steer_y >= 7 || g_pilot.steer_y <= -7))
+            px = (int16_t)(sys_level(SYS_ABSORBERS) >= 4 ? 2 : 1);
+    }
+    if (px) {
+        *dx = (int16_t)((int16_t)(vis_rand() % (uint16_t)(2 * px + 1)) - px);
+        *dy = (int16_t)((int16_t)(vis_rand() % (uint16_t)(2 * px + 1)) - px);
+    }
+}
+
+void fx_cockpit_draw(int y0, int y1)
+{
+    static const unsigned char __far hot[4] = { UI_RED, UI_AMBER2, UI_AMBER3, UI_WHITE };
+    int16_t i;
+    for (i = 0; i < SPARKS; i++) {
+        const Spark __far *p = &g_spark[i];
+        int x, y;
+        if (!p->life)
+            continue;
+        x = p->x / SPARK_FRAC;
+        y = p->y / SPARK_FRAC;
+        if (x < 0 || x >= SCR_W - 4 || y < 0 || y >= SCR_H - 4)
+            continue;
+        if (p->smoke)                   /* (a dark wisp, fading out to specks as it goes) */
+            gfx_fill(x, y, p->life > 12 ? 4 : 2, p->life > 12 ? 3 : 2, p->life > 24 ? UI_GREY1 : UI_GREY2, y0, y1);
+        else
+            gfx_line(x, y, x - p->vx / (SPARK_FRAC / 2), y - p->vy / (SPARK_FRAC / 2),   /* (a streak: where it was two frames ago) */
+                     hot[p->life >> 2 > 3 ? 3 : p->life >> 2], 0, y0, y1);
+    }
+}
+
+/* now and then a ship that has been hurt badly shows it: a spit of sparks off its hull */
+static void ships_smoke(void)
+{
+    int16_t s;
+    for (s = (g_view_outside ? 0 : 1); s < N; s++) {
+        const RvShipType __far *t;
+        RvVec3 at;
+        int32_t half;
+        if (!slot_is_ship(s) || shipAiState[s] == 9 || ((frameCounter + s * 7) & 15) || maybeEntityType[s] != ET_SHIP)
+            continue;
+        t = slot_type(s);
+        if (!t || !t->hull || (uint32_t)damagePoints[s] * 2 < (uint32_t)t->hull || km_to(&gPositionVector[s]) > GUNS_KM)
+            continue;
+        half = collide_half(s) / 256;
+        at.x = gPositionVector[s].x + ((int32_t)(vis_rand() % 256) - 128) * (half / 2);
+        at.y = gPositionVector[s].y + ((int32_t)(vis_rand() % 256) - 128) * (half / 4);
+        at.z = gPositionVector[s].z + ((int32_t)(vis_rand() % 256) - 128) * (half / 2);
+        explode_add(&at, &gVelocityVector[s], 50, BOOM_HIT, 0, (uint16_t)(frameCounter * 7 + s));
+    }
+}
 
 void fx_flight_start(void)
 {
     int16_t s;
     g_flash = 0;
+    g_flash_red = 0;
+    g_shake = g_shake_left = 0;
+    g_klaxon_at = 0;
+    _fmemset(g_spark, 0, sizeof g_spark);
+    g_seen_valid = 0;
     for (s = 0; s < N; s++) {
         g_type[s] = (uint8_t)maybeEntityType[s];
         g_dying[s] = (uint8_t)(slot_is_ship(s) && shipAiState[s] == 9);
@@ -118,7 +311,14 @@ void fx_jump(int16_t slot, int16_t friendly)
 void fx_frame(void)
 {
     int16_t s;
-    if (g_flash) {
+    hurt_frame();
+    ships_smoke();
+    if (g_flash_red) {
+        vid_flash_red(g_flash_red);
+        g_flash_red = (uint8_t)(g_flash_red > JUMP_FLASH_STEP ? g_flash_red - JUMP_FLASH_STEP : 0);
+        if (!g_flash_red)
+            vid_flash_red(0);
+    } else if (g_flash) {
         vid_flash(g_flash);
         g_flash = (uint8_t)(g_flash > JUMP_FLASH_STEP ? g_flash - JUMP_FLASH_STEP : 0);
         if (!g_flash)
