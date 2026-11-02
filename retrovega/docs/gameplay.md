@@ -288,6 +288,14 @@ What to write:
 - **Part them:** `push` is the least move of b that frees them. Move b by it, or a by -push, or each by half; a
   frozen ship is not moved.
 - **Hurt both** through `do_damage`, each with the other as `src`.
+- **What it may cost** (the user, 2026-11-02: "collisions are too punishing"), on the side facing the other ship:
+  - the player, that shield at a tenth or less: the whole (`ram_damage`); more: at most that shield and that
+    armour, or, that armour gone, that shield and the hull down to 40% of what it is; and a system a point besides
+    (`damage_ram_point`, unless the hit broke one);
+  - an enemy that hit the player: as much as the player took; a friend: its own cap, below;
+  - any two NPCs (wingmen, escorts, enemies, capital ships): each at most that shield and half what is left of that
+    armour ("to avoid tragedy"): a bump never kills an NPC.
+- **Into a capital ship** faster than 100 kps a ship stops dead, its throttle at 0 (slower, it creeps away).
 
 What the tests expect:
 
@@ -298,6 +306,7 @@ What the tests expect:
 | M6.3 ram-cost | closing at 10 km a step costs the player 50 under the old rule (the square of the closing speed in km a step, halved) and 3 under `rules ram=soft` |
 | M6.4 capital-map | under `hit=sphere` a shot 400 km off the carrier's axis, inside its 700 km radius but clear of its hull, flies on; one along its deck hits: a capital ship is hit on its actual shape under any rule |
 | M6.5 capital-ram | a fighter clear of the carrier's hull but inside its sphere does not collide, and one in its deck does, under all four hit= settings and both ram= settings |
+| M6.6 ram-caps | head on into a Nicander at 450 kps, the player's front armour goes and its hull is untouched, a system breaks, and the Nicander loses what the player lost; the front armour gone, the hull goes to 40%; two Nicanders head on at 50 km a step each lose at most that shield and half that armour, and live; into an Agasicles at 450 kps the player stops, throttle 0; at 80 kps its throttle stays |
 
 ### M7: missiles (`fireGunFromShip`'s launchers, `step_missiles`, `step_fire`)
 
@@ -372,7 +381,7 @@ nav 0):
 | M8.14 landing-rule | at the launch `logic_request_landing` answers not yet; at nav 1, 20,000 km off, too far; back within 8,000 km, cleared; far off again, still cleared; a mission with nothing to do is cleared at the launch |
 | M8.16 carrier-lost | the carrier destroyed, every nav flown and every enemy dead: `missionStatus` still 0 the next step, 6 within 10 s, `victoryPoints` 0 |
 | M8.17 turrets-off | an enemy 1,500 km from the carrier: its turrets fire; with `turrets=off`, not a shot in 5 s |
-| M8.18 attack-capital | a lone ace from each of 16 sides on a carrier with its turrets off, 90 s each: at most 3 fly into it, and they fire |
+| M8.18 attack-capital | a lone ace from each of 16 sides on a carrier with its turrets off, 90 s each: at most 3 touch its hull (a bump no longer kills an NPC), and they fire |
 | M8.19 autopilot-apart | a wingman whose offset comes down exactly where the autopilot puts the Ox, at speed: they arrive apart, and in 3 s the Ox takes no hit |
 | M8.27 second-wave | a hidden trigger point's enemies do not come while an enemy fighter is out; when the last one is killed they come; when the last one ran they are called off, and ask nothing of the player (a wave with a capital ship or an escort target always comes) |
 | M8.28 wingman-behind | enemies at the launch: the wingman starts 3,000 km past them, on the far side from the player, facing them; none: beside the player |

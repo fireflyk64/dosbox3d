@@ -42,6 +42,11 @@ int16_t damage_in_reserve(void);        /* the hull is gone and it is what is le
  * systems it breaks, from game_rand */
 void damage_hurt(uint16_t left, uint16_t hull, int16_t side);
 
+/* a collision's point (the user: a collision "should also guarantee one system or cockpit damage"): the points broken
+ * so far (a running count, taken before the collision's hit), then one on `side` unless the hit broke one itself */
+uint8_t damage_points_so_far(void);
+void damage_ram_point(uint8_t before, int16_t side);
+
 /* once a step: the repair system's work, the tank's leak, the overlays the hull's state shows */
 void damage_step(void);
 

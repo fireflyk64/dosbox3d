@@ -370,6 +370,17 @@ void damage_hurt(uint16_t left, uint16_t hull, int16_t side)
         one_point(side);
 }
 
+uint8_t damage_points_so_far(void)
+{
+    return g_event_in;
+}
+
+void damage_ram_point(uint8_t before, int16_t side)
+{
+    if (side >= 0 && side <= 3 && g_event_in == before)
+        one_point(side);
+}
+
 /* --- once a step --- */
 
 /* hurt, and something the repair system can mend: not the absorbers or the tracking, and no weapon that is missing: a gun, a

@@ -3205,6 +3205,84 @@ static void t_ram_cost(void)
     REQUIRE(soft_cost >= 2 && soft_cost <= 4, e_soft, soft_cost, 0, 0);
 }
 
+/* M6.6: what a collision may cost (the user, 2026-11-02): the player with its shield up loses that shield and that
+ * armour at most, a system besides, and the enemy as much; that armour gone, the hull down to 40% of what it was;
+ * two NPCs head on at 50 km a step each lose that shield and half that armour at most, and live; a fighter running
+ * into a capital ship over 100 kps stops dead, throttle and all, and under it does not */
+static void t_ram_caps(void)
+{
+    static const char __far e_test[] = "the test's two ships do not overlap to begin with (case %d)";
+    static const char __far e_capped[] = "flown head on into a Nicander at 450 kps with the front armour at %d: the "
+        "armour is %d after and the hull lost %d: shield and armour only";
+    static const char __far e_system[] = "the player's collision broke no system: one at least";
+    static const char __far e_same[] = "the player lost %d and the Nicander %d: the enemy takes what the player took";
+    static const char __far e_hull[] = "the front armour gone, the player's hull went from %d left to %d: to 40 percent";
+    static const char __far e_npc[] = "two Nicanders head on at 50 km a step: slot %d lost %d (at most %d), or died";
+    static const char __far e_stop[] = "into a capital ship at 450 kps the player's speed is %d (throttle %d): stopped";
+    static const char __far e_creep[] = "into a capital ship at 80 kps the player's throttle is %d: unchanged (it creeps "
+        "on)";
+    LfVec push;
+    int32_t depth, h0, h1, d0, d1;
+    int16_t k, sys, a0, room0, room1, cap[3];
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 150, TURN / 2);
+    REQUIRE(collide_ships(0, 1, &push, &depth), e_test, 1, 0, 0);
+    pt_speed(0, 450);
+    a0 = (int16_t)ARMOR(0, 0);
+    room0 = (int16_t)(slot_type(0)->hull - damagePoints[0]);
+    h0 = pt_health(0);
+    h1 = pt_health(1);
+    if (!pt_step())
+        return;
+    room1 = (int16_t)(slot_type(0)->hull - damagePoints[0]);
+    REQUIRE(ARMOR(0, 0) == 0 && room1 == room0, e_capped, a0, ARMOR(0, 0), room0 - room1);
+    for (k = 0, sys = 0; k < SYS_COUNT; k++)
+        sys = (int16_t)(sys + sys_level(k));
+    REQUIRE(sys > 0, e_system, 0, 0, 0);
+    d0 = h0 - pt_health(0);
+    d1 = h1 - pt_health(1);
+    REQUIRE(labs(d0 - d1) <= 3, e_same, d0, d1, 0);
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 150, TURN / 2);
+    pt_speed(0, 450);
+    ARMOR(0, 0) = 0;
+    room0 = (int16_t)(slot_type(0)->hull - damagePoints[0]);
+    if (!pt_step())
+        return;
+    room1 = (int16_t)(slot_type(0)->hull - damagePoints[0]);
+    REQUIRE(room1 >= room0 * 2 / 5 - 1 && room1 <= room0 * 2 / 5 + 1, e_hull, room0, room1, 0);
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 5000, 0);
+    pt_ship(2, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 5060, TURN / 2);
+    REQUIRE(collide_ships(1, 2, &push, &depth), e_test, 2, 0, 0);
+    gVelocityVector[1] = vec3(0, 0, 25 * KM);
+    gVelocityVector[2] = vec3(0, 0, -25 * KM);
+    for (k = 1; k <= 2; k++)
+        cap[k] = (int16_t)(SHIELD(k, 0) + ARMOR(k, 0) / 2 + 2);   /* (+2: a point of each shield back in the step) */
+    h0 = pt_health(1);
+    h1 = pt_health(2);
+    if (!pt_step())
+        return;
+    d0 = h0 - pt_health(1);
+    d1 = h1 - pt_health(2);
+    REQUIRE(d0 > 0 && d0 <= cap[1] && shipAiState[1] != 9, e_npc, 1, d0, cap[1]);
+    REQUIRE(d1 > 0 && d1 <= cap[2] && shipAiState[2] != 9, e_npc, 2, d1, cap[2]);
+    for (k = 0; k < 2; k++) {
+        int16_t kps = k ? 80 : 450;
+        pt_alone(PT_PLAYER);
+        playerCanBeDamaged = 0;
+        pt_ship(1, 0x28, SIDE_AERA, CTL_FROZEN, 0, 0, 0, 0);   /* (an Agasicles about the player) */
+        REQUIRE(collide_ships(0, 1, &push, &depth), e_test, 3 + k, 0, 0);
+        pt_speed(0, kps);
+        if (!pt_step())
+            return;
+        if (k)
+            REQUIRE(setSpeed[0] == 80, e_creep, setSpeed[0], 0, 0);
+        else
+            REQUIRE(setSpeed[0] == 0 && speedLo[0] == 0, e_stop, speedLo[0], setSpeed[0], 0);
+    }
+}
+
 /* M6.2 */
 static void t_no_ghosts(void)
 {
@@ -3968,13 +4046,16 @@ static void t_turrets_off(void)
 }
 
 /* M8.18: a fighter attacks a capital ship without flying into it (it breaks off by the hull's distance, not the middle's):
- * an ace from each of 16 sides, alone, on the carrier with its turrets off, 90 s each: few crash, and they fire */
+ * an ace from each of 16 sides, alone, on the carrier with its turrets off, 90 s each: few touch its hull (a bump no
+ * longer kills an NPC: M6.6), and they fire */
 static void t_attack_capital(void)
 {
     static const char __far e_crash[] = "%d of 16 lone aces attacking the carrier flew into it inside 90 s: at most 3";
     static const char __far e_none[] = "16 lone aces attacking the carrier fired no shot";
-    int16_t a, i, crashes = 0;
+    int16_t a, i, s, crashes = 0, touched;
     uint16_t a0 = 0, a1 = 0;
+    LfVec push;
+    int32_t depth;
     for (a = 0; a < 16; a++) {
         int32_t x = lf_cos((int16_t)(a * 64)) * 4000 / 16384, z = lf_sin((int16_t)(a * 64)) * 4000 / 16384;
         pt_mission();
@@ -3988,11 +4069,17 @@ static void t_attack_capital(void)
         pt_speed(0, 0);
         pt_ship(20, 0x0D, SIDE_AERA, CTL_AI, x, 0, z - 2000, (int16_t)(a * 64 + TURN / 2));
         a0 = shots_added();
-        for (i = 0; i < 90 * SEC && slot_is_ship(20) && shipAiState[20] != 9; i++)
+        touched = 0;
+        for (i = 0; i < 90 * SEC && slot_is_ship(20) && shipAiState[20] != 9; i++) {
             if (!pt_step())
                 return;
+            for (s = 1; s < 20 && !touched; s++)
+                if (slot_is_ship(s) && maybeEntityType[s] == ET_CAPSHIP && slot_is_ship(20)
+                    && collide_ships(20, s, &push, &depth))
+                    touched = 1;
+        }
         a1 = (uint16_t)(a1 + (uint16_t)(shots_added() - a0));
-        if (slot_is_ship(20) && shipAiState[20] == 9)
+        if (touched || (slot_is_ship(20) && shipAiState[20] == 9))
             crashes++;
         missionStatus = 0;
     }
@@ -5639,6 +5726,7 @@ static const char __far n_m8_18[] = "M8.18 attack-capital (view_of): fighters at
 static const char __far n_m8_19[] = "M8.19 autopilot-apart (logic_autopilot): the wingman coming down on the Ox's spot arrives apart, and nobody hits it";
 static const char __far n_m6_4[] = "M6.4 capital-map (shot_hit): a capital ship is hit on its actual shape under any rule, not its radius";
 static const char __far n_m6_5[] = "M6.5 capital-ram (collide_ships): a fighter against a capital ship is its silhouettes under every hit= and ram= setting";
+static const char __far n_m6_6[] = "M6.6 ram-caps (ram): a collision costs the player its shield and armour at most (the hull to 40% with the armour gone) and a system, an NPC its shield and half its armour; into a capital ship over 100 kps, stopped";
 static const char __far n_m8_20[] = "M8.20 jump-told (route_step, logic_on_jump): an escorted ship's jump is told once, friendly, for the star and the flash";
 static const char __far n_m8_21[] = "M8.21 wingman-lost (logic_wingman_lost, camp_load_units, camp_line_ok): a lost wingman is named, the next mission solo, their lines gone";
 static const char __far n_m8_22[] = "M8.22 kit-boost (kit_boost, logic_boost): talking to Kit before the launch: half as much armour again, or a round more; nothing without it";
@@ -5709,7 +5797,7 @@ static const PtTest __far k_tests[] = {
     { n_m12_5, t_tank, 0 }, { n_m12_6, t_shield_cap, 0 }, { n_m12_7, t_mounts, 0 }, { n_m12_8, t_thrusters, 0 },
     { n_m12_9, t_repair, 0 }, { n_m12_10, t_damage_reset, 0 }, { n_m12_11, t_home_tier, 0 },
     { n_m11_1, t_sim_waves, 0 }, { n_m11_2, t_sim_replenish, 0 }, { n_m11_3, t_sim_win, 0 }, { n_m11_4, t_sim_death, 0 },
-    { n_m7_7, t_dumbfire_aims, 0 },     /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
+    { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
 };
 

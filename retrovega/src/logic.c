@@ -1264,15 +1264,80 @@ static uint16_t ram_damage(int16_t a, int16_t b)
     return (uint16_t)(closing * closing / 2);
 }
 
+static void hit_sides(int16_t dst, const RvVec3 *w, int16_t *sh, int16_t *ar);
+
+/* what a collision may cost (the user, 2026-11-02: "collisions are too punishing ... This will prevent massive
+ * frustration and still make collisions punishing and memorable").  The player, on the side the other ship is: with
+ * that shield at a tenth or less, the whole of it (ram_damage); with more, at most that shield and that armour, or,
+ * that armour gone, that shield and the hull down to 40% of what it is (a system point besides: ram_hurt) */
+static uint16_t ram_cap_player(uint16_t qty, int16_t other)
+{
+    const RvShipType __far *t = slot_type(0);
+    int16_t sh, ar;
+    uint32_t cap;
+    if (!t)
+        return qty;
+    hit_sides(0, &gPositionVector[other], &sh, &ar);
+    if ((uint32_t)SHIELD(0, sh) * 10 <= SHIELD_MAX(0, sh))
+        return qty;
+    cap = (uint32_t)SHIELD(0, sh) + ARMOR(0, ar);
+    if (!ARMOR(0, ar)) {
+        uint16_t room = damagePoints[0] < t->hull ? (uint16_t)(t->hull - damagePoints[0]) : 0;
+        cap += room - (uint32_t)room * 2 / 5;
+    }
+    return cap < qty ? (uint16_t)cap : qty;
+}
+
+/* an NPC, any (a wingman, an escort, an enemy, a capital ship), on the side the other ship is: at most that shield and
+ * half of what is left of that armour (the user: "only ... enough to remove the shield and half the remaining armor
+ * on that face, if any", "that can be all NPCs to avoid tragedy"): a bump never kills one */
+static uint16_t ram_cap_npc(int16_t s, uint16_t qty, int16_t other)
+{
+    int16_t sh, ar;
+    uint32_t cap;
+    hit_sides(s, &gPositionVector[other], &sh, &ar);
+    cap = (uint32_t)SHIELD(s, sh) + ARMOR(s, ar) / 2;
+    return cap < qty ? (uint16_t)cap : qty;
+}
+
+#define RAM_STOP_KPS 100                /* a ship flying into a capital ship faster than this stops dead */
+
+/* s ran into a capital ship: faster than RAM_STOP_KPS it stops dead, its throttle at 0 too (the user, 2026-11-02:
+ * "you can creep away but if you're fighting big time and smack into a capship you get stopped which can make you a
+ * sitting duck"); slower, the bump's quartered speed (ram_shove) and away it creeps.  kps: its speed before the bump */
+static void ram_stop(int16_t s, uint32_t kps)
+{
+    if (kps <= RAM_STOP_KPS || !ram_moves(s) || maybeEntityType[s] == ET_CAPSHIP)
+        return;
+    gVelocityVector[s] = vec3(0, 0, 0);
+    setSpeed[s] = speedLo[s] = 0;
+}
+
+/* dst hurt by its collision with src (src's place the hit's); the player besides loses a system a point on that side
+ * unless the hit broke one (damage_ram_point) */
+static void ram_hurt(int16_t src, int16_t dst, uint16_t qty, uint16_t raw)
+{
+    uint8_t before = damage_points_so_far();
+    int16_t sh, ar;
+    (void)do_damage((uint16_t)src, (uint16_t)dst, qty, RV_WHERE(&gPositionVector[src]));
+    if (raw && dst == 0 && rvController[0] == CTL_PLAYER && playerCanBeDamaged && slot_is_ship(0) && shipAiState[0] != 9) {
+        hit_sides(0, &gPositionVector[src], &sh, &ar);
+        damage_ram_point(before, ar);
+    }
+}
+
 /* a and b touch coarsely: the fine test, then the push that parts them (the lighter, by its box, gives way the more;
  * one that cannot move leaves it all to the other) and the hurt, each with the other as the source and the other's
- * place as the hit's (the side facing it); a pair touching on hurts every RAM_STEPS */
+ * place as the hit's (the side facing it); a pair touching on hurts every RAM_STEPS.  What each takes: the player its
+ * cap (ram_cap_player), and an enemy that hit it as much as the player took, a friend its own cap; two NPCs each its
+ * own cap (ram_cap_npc) */
 static void ram(int16_t a, int16_t b)
 {
     LfVec push;
     int32_t depth, ha, hb;
     int16_t ma, mb, pa, pb;
-    uint16_t qty;
+    uint16_t qty, qa, qb;
+    uint32_t ka, kb;
     if (!collide_ships(a, b, &push, &depth))
         return;
     push.x += push.x / 2;               /* (half as far again as touching, so the next step is not inside again) */
@@ -1290,21 +1355,34 @@ static void ram(int16_t a, int16_t b)
         pb = mb ? 256 : 0;
     }
     qty = ram_damage(a, b);
+    ka = speedLo[a];
+    kb = speedLo[b];
     if (pb)
         ram_shove(b, &push, pb, -1);
     if (pa)
         ram_shove(a, &push, (int16_t)-pa, 1);
+    if (a == 0 && rvController[0] == CTL_PLAYER) {   /* (after the push: the sides do_damage will find) */
+        qa = ram_cap_player(qty, b);
+        qb = commAnimInfo[b] == commAnimInfo[0] ? ram_cap_npc(b, qty, a) : qa;
+    } else {                            /* (b is never slot 0: a < b) */
+        qa = ram_cap_npc(a, qty, b);
+        qb = ram_cap_npc(b, qty, a);
+    }
+    if (maybeEntityType[b] == ET_CAPSHIP)
+        ram_stop(a, ka);
+    if (maybeEntityType[a] == ET_CAPSHIP)
+        ram_stop(b, kb);
     if (rvController[a] == CTL_AI)      /* (a bump: the minds break away, each its own way) */
         bump_away(a, 1);
     if (rvController[b] == CTL_AI)
         bump_away(b, -1);
     if ((uint16_t)(frameCounter - g_rammed[a]) >= RAM_STEPS) {
         g_rammed[a] = frameCounter;
-        (void)do_damage((uint16_t)b, (uint16_t)a, qty, RV_WHERE(&gPositionVector[b]));
+        ram_hurt(b, a, qa, qty);
     }
     if ((uint16_t)(frameCounter - g_rammed[b]) >= RAM_STEPS) {
         g_rammed[b] = frameCounter;
-        (void)do_damage((uint16_t)a, (uint16_t)b, qty, RV_WHERE(&gPositionVector[a]));
+        ram_hurt(a, b, qb, qty);
     }
 }
 
@@ -3367,27 +3445,31 @@ static uint16_t spend(uint16_t *store, uint16_t qty)
     return (uint16_t)(qty - took);
 }
 
+/* which shield (0 front, 1 rear) and which armour (0 front, 1 rear, 2 left, 3 right) a hit at w takes on dst: the hit's
+ * place from the ship's middle, in km (in positions the products overflow), along its front and its right.  Front or
+ * rear picks the shield; the larger of along and across, the armour */
+static void hit_sides(int16_t dst, const RvVec3 *w, int16_t *sh, int16_t *ar)
+{
+    RvVec3 d;
+    int32_t f, r;
+    d = vec3(TO_KM(w->x - gPositionVector[dst].x), TO_KM(w->y - gPositionVector[dst].y),
+             TO_KM(w->z - gPositionVector[dst].z));
+    f = vec_dot(&d, &gOrientationFrontVector[dst]);
+    r = vec_dot(&d, &gOrientationRightVector[dst]);
+    *sh = f >= 0 ? 0 : 1;
+    *ar = labs(f) >= labs(r) ? *sh : r >= 0 ? 3 : 2;
+}
+
 uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, uint16_t where)
 {
     const RvShipType __far *t;
-    const RvVec3 *w;
-    RvVec3 d;
-    int32_t f, r;
     int16_t sh, ar;
     uint16_t left;
     (void)src;                          /* (blame and effects only: the amount must not depend on it) */
     if (!slot_is_ship((int16_t)dst) || !qty || (dst == 0 && !playerCanBeDamaged) || (rvFlags[dst] & 1)
         || shipAiState[dst] == 9 || (t = slot_type((int16_t)dst)) == 0)
         return 0;
-    /* which side: the hit's place from the ship's middle, in km (in positions the products overflow), along its
-     * front and its right.  Front or rear picks the shield; the larger of along and across, the armour */
-    w = RV_WHERE_VEC(where);
-    d = vec3(TO_KM(w->x - gPositionVector[dst].x), TO_KM(w->y - gPositionVector[dst].y),
-             TO_KM(w->z - gPositionVector[dst].z));
-    f = vec_dot(&d, &gOrientationFrontVector[dst]);
-    r = vec_dot(&d, &gOrientationRightVector[dst]);
-    sh = f >= 0 ? 0 : 1;
-    ar = labs(f) >= labs(r) ? sh : r >= 0 ? 3 : 2;
+    hit_sides((int16_t)dst, RV_WHERE_VEC(where), &sh, &ar);   /* (which side) */
     /* that shield, then that armour, then the hull: its end is the ship's (shipAiState 9, the layer's sign of a
      * death; step_deaths takes it from there) */
     g_under_fire[dst] = (uint8_t)(g_under_fire[dst] > 251 ? 255 : g_under_fire[dst] + 4);
