@@ -68,6 +68,10 @@ if (process.env.PAD) {                 // (its first button press picks it up)
   const picked = await page.inputValue("#padSelect");
   console.log(picked.startsWith("0:Mock Pad") ? "ok   the controller picked up" : `FAIL the controller not picked up: ${picked}`);
 }
+// a room of one (Players 1): the game alone, as it is.  (In a room of two a host's game waits at the briefing room for
+// its wingman since shared flights came: retrovega/docs/multiplayer.md)
+await page.fill("#seats", "1");
+await page.dispatchEvent("#seats", "change");
 await page.click("#join");
 await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 30000 });
 await page.click("#fly");
