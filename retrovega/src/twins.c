@@ -487,21 +487,24 @@ long c_turn_dropped(const unsigned char LZ_FAR *dense, int w, int h, const LfRot
     return pair(first, end);
 }
 
-/* the sky's stars through the camera: a sphere of cubes round it, three stars a cube thrown about by a hash of its
- * coordinates and the seed.  shell: for |y| x 8 + |z|, the column's first and last |x| as two nibbles, 0xFF none.  The basis as
- * front, right, up (256 = 1.0); (x, y, c) out for each on screen, c the hash's last word, at most `most` of them; the count back */
-#define STAR_CELL_DEPTH 796
-#define STAR_DEPTH INT32_C(262144)
-#define STAR_THROW 224
+/* the sky's stars through the camera, nothing stored: a cube round it, 3 x 3 cells on each of its six faces, stars placed by a
+ * hash of the cell and the seed, fewer in the cells towards the corners, which cover less of the sky.  The basis as front, right,
+ * up (256 = 1.0); (x, y, c) out for each on screen, c a hash word, at most `most` of them; the count back */
+#define STARS_MIDDLE 76
+#define STARS_EDGE 44
+#define STARS_CORNER 26
+#define STAR_CELL 683
+#define STAR_FACE 1024
+#define STAR_DEPTH INT32_C(160000)
+#define STAR_THROW INT32_C(124000)
 #ifdef RV_TESTS
-static int g_stars_no_cull;             /* (the test's: every cube tried, to show the sides never turn away a star that would show) */
+static int g_stars_no_cull;             /* (the test's: every cell tried, to show the sides never pass by a star that would show) */
 #endif
 
-int c_stars_place(const unsigned char LZ_FAR *shell, unsigned seed, const long LZ_FAR *basis, int cx, int cy, int rows,
-                  short LZ_FAR *out, int most)
+int c_stars_place(unsigned seed, const long LZ_FAR *basis, int cx, int cy, int rows, short LZ_FAR *out, int most)
 {
     uint32_t b[9];
-    int16_t on = 0, k, y, z;
+    int16_t on = 0, k, f, j, i;
     int32_t tx, tu, td;
     for (k = 0; k < 9; k++)
         b[k] = (uint32_t)basis[k];
@@ -512,81 +515,73 @@ int c_stars_place(const unsigned char LZ_FAR *shell, unsigned seed, const long L
     tx = (int32_t)((uint32_t)tx * 256u) / 400 + 1;
     tu = (int32_t)((uint32_t)(int32_t)(int16_t)cy * 256u) / 400 + 1;
     td = (int32_t)((uint32_t)((int32_t)(int16_t)rows - (int16_t)cy) * 256u) / 400 + 1;
-    for (y = -7; y <= 7; y++)
-        for (z = -7; z <= 7; z++) {
-            unsigned char col = shell[(y < 0 ? -y : y) * 8 + (z < 0 ? -z : z)];
-            int16_t first, last, side, x, run_end;
-            uint32_t yz, yzr, yzu;
-            if (col == 0xFF)
-                continue;
-            first = col >> 4;
-            last = col & 15;
-            yz = (uint32_t)(int32_t)y * b[1] + (uint32_t)(int32_t)z * b[2];
-            yzr = (uint32_t)(int32_t)y * b[4] + (uint32_t)(int32_t)z * b[5];
-            yzu = (uint32_t)(int32_t)y * b[7] + (uint32_t)(int32_t)z * b[8];
-            for (side = 0; side < 2; side++) {
-                if (!first && side)
-                    break;              /* (a column through the middle: one run) */
-                x = side ? first : (int16_t)-last;
-                run_end = side || !first ? last : (int16_t)-first;
-                for (; x <= run_end; x++) {
-                    int32_t depth = (int32_t)((uint32_t)(int32_t)x * b[0] + yz);
-                    uint16_t h;
-                    int16_t star;
-                    int32_t across, up;
-                    uint32_t deep;
-                    if (depth < STAR_CELL_DEPTH)
-                        continue;
-                    deep = (uint32_t)depth + STAR_THROW;
-                    across = (int32_t)((uint32_t)(int32_t)x * b[3] + yzr);
-                    if (across < 0)
-                        across = (int32_t)(0u - (uint32_t)across);
-                    up = (int32_t)(((uint32_t)(int32_t)x * b[6] + yzu) << 8);
+    for (f = 0; f < 6; f++) {
+        int16_t a = f >> 1, bb = (a + 1) % 3, c = (a + 2) % 3;
+        uint32_t fu = b[a], fv = b[bb], fw = b[c] * STAR_FACE, ru = b[3 + a], rv = b[3 + bb], rw = b[3 + c] * STAR_FACE,
+                 uu = b[6 + a], uv = b[6 + bb], uw = b[6 + c] * STAR_FACE;
+        if (f & 1) {
+            fw = 0u - fw;
+            rw = 0u - rw;
+            uw = 0u - uw;
+        }
+        for (j = 0; j < 3; j++)
+            for (i = 0; i < 3; i++) {
+                uint32_t mu = (uint32_t)(int32_t)(int16_t)((i - 1) * STAR_CELL), mv = (uint32_t)(int32_t)(int16_t)((j - 1) * STAR_CELL);
+                int32_t deep = (int32_t)(mu * fu + mv * fv + fw + (uint32_t)STAR_THROW), across, up;
+                uint16_t h;
+                int16_t n, ou, ov;
+                if (deep < STAR_DEPTH)
+                    continue;
+                across = (int32_t)(mu * ru + mv * rv + rw);
+                if (across < 0)
+                    across = (int32_t)(0u - (uint32_t)across);
+                up = (int32_t)((mu * uu + mv * uv + uw) << 8);
 #ifdef RV_TESTS
-                    if (!g_stars_no_cull)
+                if (!g_stars_no_cull)
 #endif
-                    if ((int32_t)((uint32_t)across << 8) > (int32_t)(deep * (uint32_t)tx + STAR_THROW * 256u)
-                        || up > (int32_t)(deep * (uint32_t)tu + STAR_THROW * 256u)
-                        || (int32_t)(0u - (uint32_t)up) > (int32_t)(deep * (uint32_t)td + STAR_THROW * 256u))
+                if ((int32_t)((uint32_t)across << 8) > (int32_t)((uint32_t)deep * (uint32_t)tx + (uint32_t)STAR_THROW * 256u)
+                    || up > (int32_t)((uint32_t)deep * (uint32_t)tu + (uint32_t)STAR_THROW * 256u)
+                    || (int32_t)(0u - (uint32_t)up) > (int32_t)((uint32_t)deep * (uint32_t)td + (uint32_t)STAR_THROW * 256u))
+                    continue;
+                h = (uint16_t)((uint16_t)(f + 1) * 40503u + (uint16_t)(i + 1) * 25173u + (uint16_t)(j + 1) * 13849u + (uint16_t)seed);
+                ou = (int16_t)(i * STAR_CELL - STAR_FACE);
+                ov = (int16_t)(j * STAR_CELL - STAR_FACE);
+                n = (i == 1) + (j == 1) == 2 ? STARS_MIDDLE : (i == 1) + (j == 1) == 1 ? STARS_EDGE : STARS_CORNER;
+                for (; n > 0; n--, h = (uint16_t)(h + 52711u)) {
+                    uint16_t t = (uint16_t)((uint32_t)h * 25173u + 13849u), wa, wb;
+                    uint32_t pu, pv;
+                    int32_t d, q;
+                    int16_t sx, sy;
+                    t ^= (uint16_t)(t >> 7);
+                    wa = (uint16_t)((uint32_t)t * 40503u + 1u);
+                    wa ^= (uint16_t)(wa >> 6);
+                    wb = (uint16_t)((uint32_t)wa * 25173u + 13849u);
+                    wb ^= (uint16_t)(wb >> 5);
+                    pu = (uint32_t)(int32_t)(int16_t)(ou + (int16_t)(((uint32_t)wa * STAR_CELL) >> 16));
+                    pv = (uint32_t)(int32_t)(int16_t)(ov + (int16_t)(((uint32_t)wb * STAR_CELL) >> 16));
+                    d = (int32_t)(pu * fu + pv * fv + fw);
+                    if (d < STAR_DEPTH)
                         continue;
-                    h = (uint16_t)((uint16_t)(x + 8) * 40503u + (uint16_t)(y + 8) * 25173u + (uint16_t)(z + 8) * 13849u + (uint16_t)seed);
-                    for (star = 0; star < 3; star++, h = (uint16_t)(h + 52711u)) {
-                        uint16_t t = (uint16_t)((uint32_t)h * 25173u + 13849u), wa, wb, wc;
-                        uint32_t px, py, pz;
-                        int32_t d, q;
-                        int16_t sx, sy;
-                        t ^= (uint16_t)(t >> 7);
-                        wa = (uint16_t)((uint32_t)t * 40503u + 1u);
-                        wa ^= (uint16_t)(wa >> 6);
-                        wb = (uint16_t)((uint32_t)wa * 25173u + 13849u);
-                        wb ^= (uint16_t)(wb >> 5);
-                        wc = (uint16_t)((uint32_t)wb * 40503u + 1u);
-                        wc ^= (uint16_t)(wc >> 6);
-                        px = (uint32_t)(int32_t)(int16_t)((wa >> 8) - 128 + x * 256);
-                        py = (uint32_t)(int32_t)(int16_t)((wb >> 8) - 128 + y * 256);
-                        pz = (uint32_t)(int32_t)(int16_t)((wc >> 8) - 128 + z * 256);
-                        d = (int32_t)(px * b[0] + py * b[1] + pz * b[2]);
-                        if (d < STAR_DEPTH)
-                            continue;
-                        q = (int32_t)((px * b[3] + py * b[4] + pz * b[5]) * 400u) / d;
-                        sx = (int16_t)((uint16_t)q + (uint16_t)cx);
-                        if (sx < 0 || sx >= 640)
-                            continue;
-                        q = (int32_t)((px * b[6] + py * b[7] + pz * b[8]) * 400u) / d;
-                        sy = (int16_t)((uint16_t)cy - (uint16_t)q);
-                        if (sy < 0 || sy >= (int16_t)rows)
-                            continue;
-                        out[0] = sx;
-                        out[1] = sy;
-                        out[2] = (short)wc;
-                        out += 3;
-                        on++;
-                        if (on >= most)
-                            return on;
-                    }
+                    q = (int32_t)((pu * ru + pv * rv + rw) * 400u) / d;
+                    sx = (int16_t)((uint16_t)q + (uint16_t)cx);
+                    if (sx < 0 || sx >= 640)
+                        continue;
+                    q = (int32_t)((pu * uu + pv * uv + uw) * 400u) / d;
+                    sy = (int16_t)((uint16_t)cy - (uint16_t)q);
+                    if (sy < 0 || sy >= (int16_t)rows)
+                        continue;
+                    t = (uint16_t)((uint32_t)wb * 40503u + 1u);
+                    t ^= (uint16_t)(t >> 6);
+                    out[0] = sx;
+                    out[1] = sy;
+                    out[2] = (short)t;
+                    out += 3;
+                    on++;
+                    if (on >= most)
+                        return on;
                 }
             }
-        }
+    }
     return on;
 }
 
@@ -858,24 +853,10 @@ static void test_turned(void)
 static void test_stars(void)
 {
     static const char LZ_FAR n_stars[] = "stars_place";
-    unsigned char LZ_FAR *shell = g_mem;
     short LZ_FAR *oc = (short LZ_FAR *)g_bc, LZ_FAR *oa = (short LZ_FAR *)g_ba;
     long basis[9], i;
-    int k, nc, na, y, z;
+    int k, nc, na;
     g_sum = 0;
-    for (y = 0; y < 8; y++)             /* (the sphere of cubes, as flight.c makes it) */
-        for (z = 0; z < 8; z++) {
-            int x, first = -1, last = -1;
-            for (x = 0; x < 8; x++) {
-                int d = x * x + y * y + z * z;
-                if (d >= 49 && d < 64) {
-                    if (first < 0)
-                        first = x;
-                    last = x;
-                }
-            }
-            shell[y * 8 + z] = (unsigned char)(first < 0 ? 0xFF : first << 4 | last);
-        }
     for (i = 0; i < 48; i++) {
         int cx = tw_in(200, 440), cy = tw_in(50, 350), rows = tw_in(1, 400);
         int most = i % 4 == 3 ? 0 : i % 4 == 1 ? tw_in(1, 20) : TW_STARS;   /* (a limit reached, or none) */
@@ -891,15 +872,15 @@ static void test_stars(void)
         }
         _fmemset(oc, 0, TW_STARS * 6);
         _fmemset(oa, 0, TW_STARS * 6);
-        nc = c_stars_place(shell, seed, basis, cx, cy, rows, oc, most);
-        na = rv_stars_place(shell, seed, basis, cx, cy, rows, oa, most);
+        nc = c_stars_place(seed, basis, cx, cy, rows, oc, most);
+        na = rv_stars_place(seed, basis, cx, cy, rows, oa, most);
         if ((nc != na || _fmemcmp(oc, oa, TW_STARS * 6)) && tw_differ(n_stars, i, nc, na, 0, 0))
             return;
         sum_16(nc);
         for (k = 0; k < nc * 3; k++)
             sum_16(oc[k]);
     }
-    /* true cameras, every way: the same from the asm; and turning away cubes by the screen's sides loses no star */
+    /* true cameras, every way: the same from the asm; and passing by cells by the screen's sides loses no star */
     for (i = 0; i < 160; i++) {
         long fx = tw_in(-1000, 1000), fy = tw_in(-1000, 1000), fz = tw_in(-1000, 1000), tx0 = tw_in(-1000, 1000), ty0 = tw_in(-1000, 1000),
              tz0 = tw_in(-1000, 1000), n, rx, ry, rz;
@@ -920,13 +901,13 @@ static void test_stars(void)
         basis[6] = (ry * fz - rz * fy) / 256; basis[7] = (rz * fx - rx * fz) / 256; basis[8] = (rx * fy - ry * fx) / 256;
         _fmemset(oc, 0, TW_STARS * 6);
         _fmemset(oa, 0, TW_STARS * 6);
-        nc = c_stars_place(shell, seed, basis, cx, cy, rows, oc, TW_STARS);
-        na = rv_stars_place(shell, seed, basis, cx, cy, rows, oa, TW_STARS);
+        nc = c_stars_place(seed, basis, cx, cy, rows, oc, TW_STARS);
+        na = rv_stars_place(seed, basis, cx, cy, rows, oa, TW_STARS);
         if ((nc != na || _fmemcmp(oc, oa, TW_STARS * 6)) && tw_differ(n_stars, i, nc, na, 0, 0))
             return;
         _fmemset(oa, 0, TW_STARS * 6);
         g_stars_no_cull = 1;
-        na = c_stars_place(shell, seed, basis, cx, cy, rows, oa, TW_STARS);
+        na = c_stars_place(seed, basis, cx, cy, rows, oa, TW_STARS);
         g_stars_no_cull = 0;
         if ((nc != na || _fmemcmp(oc, oa, TW_STARS * 6)) && tw_differ(n_stars, i, nc, na, 1, 0))
             return;

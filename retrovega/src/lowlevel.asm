@@ -783,36 +783,35 @@ _rv_rotate_row2:
         pop bp
         retf
 
-; int rv_stars_place(const unsigned char far *shell, unsigned seed, const long far *basis, int cx, int cy,
-;                    int rows, short far *out, int most)
-; The sky's stars through the camera.  The sky is a sphere of cubes round it,
-; as one might build from blocks: the lattice's cubes between two radii, three
-; stars in each, thrown about inside it by a hash of its coordinates and the
-; seed, so nothing is stored and any part of the sky comes from its own
-; coordinates.  shell: for |y| x 8 + |z|, the column's first and last |x| as
-; two nibbles, FFh none.  basis the camera's front, right and up (256 = 1.0) as
-; nine longs; out gets (x, y, c) for each star on screen (0 <= x < 640, 0 <= y
-; < rows; c the hash's last word, whose low bits choose the colour), at most
-; `most` of them, and the count is returned.  A cube's depth moves by a constant
-; along its column, so most are turned away with no multiply; those left are
-; tried against the screen's four sides, with room for a star's throw inside
-; the cube (never turning away one that would show: /twins holds it to that);
-; a star is then a hash and the depth test before the other products and the
-; divisions.
+; int rv_stars_place(unsigned seed, const long far *basis, int cx, int cy, int rows, short far *out, int most)
+; The sky's stars through the camera, nothing stored: a cube round it, three
+; cells by three on each of its six faces, and in each cell stars placed by a
+; hash of the cell and the seed.  A corner cell covers less of the sky than a
+; face's middle, so it holds fewer: STARS_MIDDLE, STARS_EDGE, STARS_CORNER, which
+; keeps the sky even with no warp.  basis the camera's front, right and up (256 =
+; 1.0) as nine longs; out gets (x, y, c) for each star on screen (0 <= x < 640,
+; 0 <= y < rows; c a hash word, whose low bits choose the colour), at most `most`
+; of them, and the count is returned.  A cell whose middle is too far past one of
+; the screen's sides, allowing for how far a star can lie from it, is passed by
+; whole (never one with a star that would show: /twins holds it to that).
 ; Twin: c_stars_place, src/twins.c.
-STAR_CELL_DEPTH equ 796             ; (cube units x 256) the nearest a cube can be and still hold a star past...
-STAR_DEPTH equ 262144               ; ...4 cube units along the view, x 65536: no star on the screen is nearer
-STAR_THROW equ 224                  ; (x 256 a cube) how far a star can lie from its cube's middle along any way
+STARS_MIDDLE equ 76
+STARS_EDGE equ 44
+STARS_CORNER equ 26
+STAR_CELL equ 683                   ; a cell's width on the face: 1024 = the face's half
+STAR_FACE equ 1024
+STAR_DEPTH equ 160000               ; (x 1024 x 256) the nearest a star on the screen can be along the view
+STAR_THROW equ 124000               ; how far a star can lie from its cell's middle, along any way
         global _rv_stars_place
 _rv_stars_place:
         push bp
         mov bp,sp
-        sub sp,100
+        sub sp,116
         push si
         push di
         push ds
-        mov ds,[bp+14]              ; the basis to the frame: nine dwords
-        mov si,[bp+12]
+        mov ds,[bp+10]              ; the basis to the frame: nine dwords
+        mov si,[bp+8]
         mov di,bp
         sub di,36
         mov cx,9
@@ -823,11 +822,14 @@ _rv_stars_place:
         add di,4
         dec cx
         jnz .copy
-        mov word [bp-38],0          ; on screen
-        cmp word [bp+26],0
+        mov word [bp-74],0          ; on screen
+        cmp word [bp+22],0
         jle .done
+        mov ax,[bp+18]
+        mov [bp-106],ax             ; where the next goes
+        mov es,[bp+20]
         mov ecx,400                 ; the screen's four sides as slopes, 256 = 45 degrees (one more: truncated, never too tight)
-        movsx eax,word [bp+16]      ; across: the further of its two sides from the camera's column
+        movsx eax,word [bp+12]      ; across: the further of its two sides from the camera's column
         mov edx,640
         sub edx,eax
         cmp eax,edx
@@ -838,138 +840,167 @@ _rv_stars_place:
         cdq
         idiv ecx
         inc eax
-        mov [bp-86],eax
-        movsx eax,word [bp+18]      ; above
+        mov [bp-84],eax
+        movsx eax,word [bp+14]      ; above
         imul eax,eax,256
         cdq
         idiv ecx
         inc eax
-        mov [bp-90],eax
-        movsx eax,word [bp+20]      ; below
-        movsx edx,word [bp+18]
+        mov [bp-88],eax
+        movsx eax,word [bp+16]      ; below
+        movsx edx,word [bp+14]
         sub eax,edx
         imul eax,eax,256
         cdq
         idiv ecx
         inc eax
-        mov [bp-94],eax
-        mov es,[bp+24]
-        mov di,[bp+22]
-        mov ds,[bp+8]               ; the shell
-        mov si,[bp+6]
-        mov word [bp-40],-7         ; y
-.row:
-        mov word [bp-42],-7         ; z
-.column:
-        mov ax,[bp-40]              ; |y| x 8 + |z|
-        cwd
-        xor ax,dx
-        sub ax,dx
-        shl ax,3
-        mov bx,ax
-        mov ax,[bp-42]
-        cwd
-        xor ax,dx
-        sub ax,dx
-        add bx,ax
-        mov al,[ds:si+bx]
-        cmp al,0FFh
-        je .next_column
-        mov ah,al
-        shr ah,4                    ; its first |x|
-        and al,15                   ; its last
-        xor bx,bx
-        mov bl,al
-        neg bx
-        mov [bp-46],bx              ; x: from -last ...
-        xor bx,bx
-        mov bl,ah
-        mov [bp-52],bx              ; (first)
-        xor bx,bx
-        mov bl,al
-        mov [bp-54],bx              ; (last)
-        mov bx,[bp-52]
-        neg bx
-        cmp word [bp-52],0
-        jne .two_runs
-        mov bx,[bp-54]              ; (a column through the middle: one run, -last .. last)
-.two_runs:
-        mov [bp-48],bx              ; ... to -first (or to last)
-        movsx eax,word [bp-40]      ; the depth of the column's y and z, x 256 a cube
-        imul eax,dword [bp-32]
-        mov edx,eax
-        movsx eax,word [bp-42]
-        imul eax,dword [bp-28]
-        add edx,eax
-        mov [bp-58],edx
-        movsx eax,word [bp-40]      ; and how far across and up
-        imul eax,dword [bp-20]
-        mov edx,eax
-        movsx eax,word [bp-42]
-        imul eax,dword [bp-16]
-        add edx,eax
-        mov [bp-78],edx
-        movsx eax,word [bp-40]
-        imul eax,dword [bp-8]
-        mov edx,eax
-        movsx eax,word [bp-42]
-        imul eax,dword [bp-4]
-        add edx,eax
-        mov [bp-82],edx
-.run:
-        movsx eax,word [bp-46]
-        imul eax,dword [bp-36]
-        add eax,[bp-58]
-.cube:                              ; (eax: this cube's depth)
-        cmp eax,STAR_CELL_DEPTH
-        jl .next_cube
-        mov [bp-62],eax
-        add eax,STAR_THROW          ; (the screen's sides here, x 256: the slope x how deep, and the throw)
-        movsx ecx,word [bp-46]
-        mov ebx,ecx                 ; across, either way
-        imul ebx,dword [bp-24]
-        add ebx,[bp-78]
+        mov [bp-92],eax
+        mov word [bp-76],0          ; the face
+.face:
+        mov ax,[bp-76]              ; its axes: u along a, v along the next, out along the last, then back the other way
+        shr ax,1
+        shl ax,2
+        mov si,ax
+        add ax,4
+        cmp ax,12
+        jb .b_ok
+        xor ax,ax
+.b_ok:
+        mov [bp-114],ax
+        add ax,4
+        cmp ax,12
+        jb .c_ok
+        xor ax,ax
+.c_ok:
+        mov di,ax
+        mov eax,[bp+si-36]          ; the front's share of u, v and the face's own distance
+        mov [bp-40],eax
+        mov eax,[bp+di-36]
+        imul eax,eax,STAR_FACE
+        test word [bp-76],1
+        jz .f_pos
+        neg eax
+.f_pos:
+        mov [bp-48],eax
+        mov eax,[bp+si-24]          ; the right's
+        mov [bp-52],eax
+        mov eax,[bp+di-24]
+        imul eax,eax,STAR_FACE
+        test word [bp-76],1
+        jz .r_pos
+        neg eax
+.r_pos:
+        mov [bp-60],eax
+        mov eax,[bp+si-12]          ; the up's
+        mov [bp-64],eax
+        mov eax,[bp+di-12]
+        imul eax,eax,STAR_FACE
+        test word [bp-76],1
+        jz .u_pos
+        neg eax
+.u_pos:
+        mov [bp-72],eax
+        mov si,[bp-114]             ; (v's: bp and bx do not go together in an address)
+        mov eax,[bp+si-36]
+        mov [bp-44],eax
+        mov eax,[bp+si-24]
+        mov [bp-56],eax
+        mov eax,[bp+si-12]
+        mov [bp-68],eax
+        mov word [bp-78],0          ; the cell's row
+.cell_row:
+        mov word [bp-80],0          ; its column
+.cell:
+        mov ax,[bp-80]              ; its middle
+        dec ax
+        imul ax,ax,STAR_CELL
+        movsx esi,ax
+        mov ax,[bp-78]
+        dec ax
+        imul ax,ax,STAR_CELL
+        movsx edi,ax
+        mov eax,esi                 ; how deep, with a star's throw
+        imul eax,dword [bp-40]
+        mov edx,edi
+        imul edx,dword [bp-44]
+        add eax,edx
+        add eax,[bp-48]
+        add eax,STAR_THROW
+        cmp eax,STAR_DEPTH
+        jl .next_cell
+        mov [bp-110],eax
+        mov ebx,esi                 ; across, either way
+        imul ebx,dword [bp-52]
+        mov edx,edi
+        imul edx,dword [bp-56]
+        add ebx,edx
+        add ebx,[bp-60]
         mov edx,ebx
         sar edx,31
         xor ebx,edx
         sub ebx,edx
         shl ebx,8
         mov edx,eax
-        imul edx,dword [bp-86]
+        imul edx,dword [bp-84]
         add edx,STAR_THROW * 256
         cmp ebx,edx
-        jg .out_cube
-        mov ebx,ecx                 ; above
-        imul ebx,dword [bp-12]
-        add ebx,[bp-82]
+        jg .next_cell
+        mov ebx,esi                 ; above
+        imul ebx,dword [bp-64]
+        mov edx,edi
+        imul edx,dword [bp-68]
+        add ebx,edx
+        add ebx,[bp-72]
         shl ebx,8
         mov edx,eax
-        imul edx,dword [bp-90]
+        imul edx,dword [bp-88]
         add edx,STAR_THROW * 256
         cmp ebx,edx
-        jg .out_cube
+        jg .next_cell
         neg ebx                     ; below
         mov edx,eax
-        imul edx,dword [bp-94]
+        imul edx,dword [bp-92]
         add edx,STAR_THROW * 256
         cmp ebx,edx
-        jg .out_cube
-        mov ax,[bp-46]              ; the cube's hash
-        add ax,8
+        jg .next_cell
+        mov ax,[bp-76]              ; the cell's hash
+        inc ax
         imul ax,ax,-25033           ; (40503)
-        mov bx,[bp-40]
-        add bx,8
+        mov bx,[bp-80]
+        inc bx
         imul bx,bx,25173
         add ax,bx
-        mov bx,[bp-42]
-        add bx,8
+        mov bx,[bp-78]
+        inc bx
         imul bx,bx,13849
         add ax,bx
-        add ax,[bp+10]
-        mov [bp-64],ax
-        mov word [bp-66],3          ; its stars
+        add ax,[bp+6]
+        mov [bp-94],ax
+        mov ax,[bp-80]              ; its stars: fewer towards the corners
+        imul ax,ax,STAR_CELL
+        sub ax,STAR_FACE
+        mov [bp-98],ax
+        mov ax,[bp-78]
+        imul ax,ax,STAR_CELL
+        sub ax,STAR_FACE
+        mov [bp-100],ax
+        xor ax,ax
+        cmp word [bp-80],1
+        jne .count1
+        inc ax
+.count1:
+        cmp word [bp-78],1
+        jne .count2
+        inc ax
+.count2:
+        mov word [bp-96],STARS_CORNER
+        cmp ax,1
+        jb .star
+        mov word [bp-96],STARS_EDGE
+        je .star
+        mov word [bp-96],STARS_MIDDLE
 .star:
-        mov ax,[bp-64]              ; the star's three words
+        mov ax,[bp-94]              ; the star's words
         imul ax,ax,25173
         add ax,13849
         mov dx,ax
@@ -980,128 +1011,92 @@ _rv_stars_place:
         mov dx,ax
         shr dx,6
         xor ax,dx
-        mov bx,ax                   ; its x: the cube's, thrown about inside it (256 a cube)
-        shr bx,8
-        sub bx,128
-        mov cx,[bp-46]
-        shl cx,8
-        add bx,cx
-        mov [bp-68],bx
+        mov [bp-112],ax             ; (its first word)
+        mov cx,STAR_CELL
+        mul cx
+        add dx,[bp-98]              ; u: its place across the cell
+        movsx esi,dx
+        mov ax,[bp-112]             ; its second
         imul ax,ax,25173
         add ax,13849
         mov dx,ax
         shr dx,5
         xor ax,dx
-        mov bx,ax                   ; its y
-        shr bx,8
-        sub bx,128
-        mov cx,[bp-40]
-        shl cx,8
-        add bx,cx
-        mov [bp-70],bx
-        imul ax,ax,-25033
-        inc ax
-        mov dx,ax
-        shr dx,6
-        xor ax,dx
-        mov [bp-74],ax              ; (the colour's word)
-        shr ax,8                    ; its z
-        sub ax,128
-        mov cx,[bp-42]
-        shl cx,8
-        add ax,cx
-        mov [bp-72],ax
-        movsx eax,word [bp-68]
-        imul eax,dword [bp-36]      ; x fx
-        mov edx,eax
-        movsx eax,word [bp-70]
-        imul eax,dword [bp-32]      ; y fy
-        add edx,eax
-        movsx eax,word [bp-72]
-        imul eax,dword [bp-28]      ; z fz
-        add edx,eax                 ; the depth
-        cmp edx,STAR_DEPTH
+        mov [bp-102],ax
+        mov cx,STAR_CELL
+        mul cx
+        add dx,[bp-100]             ; v
+        movsx edi,dx
+        mov eax,esi                 ; how deep
+        imul eax,dword [bp-40]
+        mov edx,edi
+        imul edx,dword [bp-44]
+        add eax,edx
+        add eax,[bp-48]
+        cmp eax,STAR_DEPTH
         jl .next_star
-        mov ecx,edx
-        movsx eax,word [bp-68]
-        imul eax,dword [bp-24]      ; x rx
-        mov ebx,eax
-        movsx eax,word [bp-70]
-        imul eax,dword [bp-20]
-        add ebx,eax
-        movsx eax,word [bp-72]
-        imul eax,dword [bp-16]
-        add ebx,eax                 ; across
-        mov eax,ebx
+        mov ecx,eax
+        mov eax,esi                 ; across
+        imul eax,dword [bp-52]
+        mov edx,edi
+        imul edx,dword [bp-56]
+        add eax,edx
+        add eax,[bp-60]
         imul eax,eax,400            ; the focal length
         cdq
         idiv ecx
-        add ax,[bp+16]              ; sx
+        add ax,[bp+12]              ; sx
         cmp ax,0
         jl .next_star
         cmp ax,640
         jge .next_star
         mov bx,ax
-        movsx eax,word [bp-68]
-        imul eax,dword [bp-12]      ; x ux
-        mov edx,eax
-        movsx eax,word [bp-70]
-        imul eax,dword [bp-8]
-        add edx,eax
-        movsx eax,word [bp-72]
-        imul eax,dword [bp-4]
-        add edx,eax                 ; up
-        mov eax,edx
+        mov eax,esi                 ; up
+        imul eax,dword [bp-64]
+        mov edx,edi
+        imul edx,dword [bp-68]
+        add eax,edx
+        add eax,[bp-72]
         imul eax,eax,400
         cdq
         idiv ecx
-        mov dx,[bp+18]
+        mov dx,[bp+14]
         sub dx,ax                   ; sy: the camera's up is up the screen
         cmp dx,0
         jl .next_star
-        cmp dx,[bp+20]
+        cmp dx,[bp+16]
         jge .next_star
+        mov di,[bp-106]
         mov [es:di],bx
         mov [es:di+2],dx
-        mov ax,[bp-74]
+        mov ax,[bp-102]             ; the colour's word
+        imul ax,ax,-25033
+        inc ax
+        mov dx,ax
+        shr dx,6
+        xor ax,dx
         mov [es:di+4],ax
-        add di,6
-        inc word [bp-38]
-        mov ax,[bp-38]
-        cmp ax,[bp+26]
+        add word [bp-106],6
+        inc word [bp-74]
+        mov ax,[bp-74]
+        cmp ax,[bp+22]
         jge .done                   ; (as many as there is room for)
 .next_star:
-        add word [bp-64],-12825     ; (52711: the next star's start)
-        dec word [bp-66]
+        add word [bp-94],-12825     ; (52711: the next star's start)
+        dec word [bp-96]
         jnz .star
-.out_cube:
-        mov eax,[bp-62]
-.next_cube:
-        add eax,[bp-36]             ; along the column: the depth moves by the front's x
-        mov bx,[bp-46]
-        cmp bx,[bp-48]
-        jge .run_done
-        inc word [bp-46]
-        jmp .cube
-.run_done:
-        mov bx,[bp-52]
-        cmp bx,0                    ; (one run, or the second done)
-        je .next_column
-        cmp word [bp-46],0
-        jg .next_column
-        mov [bp-46],bx              ; the other side: first .. last
-        mov bx,[bp-54]
-        mov [bp-48],bx
-        jmp .run
-.next_column:
-        inc word [bp-42]
-        cmp word [bp-42],7
-        jle .column
-        inc word [bp-40]
-        cmp word [bp-40],7
-        jle .row
+.next_cell:
+        inc word [bp-80]
+        cmp word [bp-80],3
+        jb .cell
+        inc word [bp-78]
+        cmp word [bp-78],3
+        jb .cell_row
+        inc word [bp-76]
+        cmp word [bp-76],6
+        jb .face
 .done:
-        mov ax,[bp-38]
+        mov ax,[bp-74]
         pop ds
         pop di
         pop si

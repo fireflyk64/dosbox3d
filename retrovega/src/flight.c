@@ -210,8 +210,8 @@ static int g_nplan;
 #define FPS_WINDOW 8                    /* frames the rate is measured over */
 #define FPS_WANT LOGIC_HZ
 #define BENCH_MAX 900
-#define STARS_SHOWN 256                 /* at most on screen at once: the 738 cubes of the sky's sphere hold 2,214 stars, the whole screen
-                                           sees about 200, at most 218, and never more than 81 of the cubes, 243 stars */
+#define STARS_SHOWN 256                 /* at most on screen at once: the sky's 2,136 stars, of which the whole screen sees about 195, at
+                                           most about 231 (a search of every way round), and the opening about 115 */
 
 /* rvflight.inc */
 unsigned short __far __cdecl rv_flight_run(void);
@@ -310,15 +310,12 @@ static void sim_step(void)
  * put through the camera (lf_sky), so they turn with every axis of the
  * player's own rotation, as the ships do, and the ships sit still against
  * them */
-static unsigned char __far g_star_shell[64];   /* the sky's sphere of cubes (the user's, built as one might from blocks): for
-                                           |y| x 8 + |z|, the column's first and last |x|; the cubes are those with 49 <= r x r < 64 */
-static unsigned __far g_star_seed;      /* the sky's: a star system's own, the same each visit */
+static unsigned __far g_star_seed;      /* the sky's: a star system's own, the same each visit (lowlevel.asm rv_stars_place has the rest) */
 static struct { short x, y, c; } __far g_star_at[STARS_SHOWN];   /* the ones on screen this frame: c its colour's choice (STAR_COLOUR) */
 #define STAR_COLOUR(c) ((c) & 3 ? UI_GREY4 : UI_GREY6)
 static int g_star_most;                 /* the most on screen in a frame, this flight */
 static int g_star_n;
-int __far __cdecl rv_stars_place(const unsigned char __far *shell, unsigned seed, const long __far *basis, int cx, int cy,
-                                int rows, short __far *out, int most);
+int __far __cdecl rv_stars_place(unsigned seed, const long __far *basis, int cx, int cy, int rows, short __far *out, int most);
 static const LfVec g_world_up = { 0, 256, 0 };
 static int g_cam_cx = SCR_W / 2;        /* the camera's centre column, g_cam_cy its row: the view's middle, thrown about by a hit (fx_shake) */
 static int g_cam_cy0 = SCR_H / 2;       /* (the row before the throw) */
@@ -410,20 +407,6 @@ static unsigned long g_star_place_ticks, g_star_draw_ticks;   /* what the sky co
 
 static void stars_init(void)
 {
-    int y, z, x;
-    for (y = 0; y < 8; y++)
-        for (z = 0; z < 8; z++) {
-            int first = -1, last = -1;
-            for (x = 0; x < 8; x++) {
-                int d = x * x + y * y + z * z;
-                if (d >= 49 && d < 64) {
-                    if (first < 0)
-                        first = x;
-                    last = x;
-                }
-            }
-            g_star_shell[y * 8 + z] = (unsigned char)(first < 0 ? 0xFF : first << 4 | last);
-        }
     g_star_seed = (unsigned)g_camp.node * 40503U + 7U;
     g_star_n = 0;
     g_star_most = 0;
@@ -444,7 +427,7 @@ static void stars_place(void)
     basis[3] = cam.right.x; basis[4] = cam.right.y; basis[5] = cam.right.z;
     basis[6] = cam.up.x; basis[7] = cam.up.y; basis[8] = cam.up.z;
     /* (from the cockpit, none below the opening: the panel hides them, and the bands would walk past them all the same) */
-    g_star_n = rv_stars_place(g_star_shell, g_star_seed, (const long __far *)basis, g_cam_cx, g_cam_cy,
+    g_star_n = rv_stars_place(g_star_seed, (const long __far *)basis, g_cam_cx, g_cam_cy,
                               g_view == VIEW_COCKPIT && cockpit_record() ? cockpit_record()->open_y1 : SCR_H,
                               (short __far *)g_star_at, STARS_SHOWN);
     if (g_star_n > g_star_most)
