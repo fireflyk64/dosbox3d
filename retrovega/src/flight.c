@@ -306,11 +306,15 @@ static void sim_step(void)
  * put through the camera (lf_sky), so they turn with every axis of the
  * player's own rotation, as the ships do, and the ships sit still against
  * them */
-static struct { short x, y, z, c; } __far g_star[STARS];   /* a direction of length 4096, and a colour */
-static struct { short x, y, c; } __far g_star_at[STARS];   /* the ones on screen this frame */
+#define STARS_SHOWN 400                 /* at most on screen at once: the whole screen sees a tenth of the sky, about 180, and the
+                                           opening a twentieth; any past this go undrawn that frame */
+static struct { short x, y, z; } __far g_star[STARS];   /* a direction of length 4096 */
+static struct { short x, y, c; } __far g_star_at[STARS_SHOWN];   /* the ones on screen this frame: c its colour's choice (STAR_COLOUR) */
+#define STAR_COLOUR(c) ((c) & 3 ? UI_GREY4 : UI_GREY6)
+static int g_star_most;                 /* the most on screen in a frame, this flight */
 static int g_star_n;
 int __far __cdecl rv_stars_place(const short __far *stars, int n, const long __far *basis, int cx, int cy, int rows,
-                                 short __far *out);
+                                 short __far *out, int most);
 static const LfVec g_world_up = { 0, 256, 0 };
 static int g_cam_cx = SCR_W / 2;        /* the camera's centre column, g_cam_cy its row: the view's middle, thrown about by a hit (fx_shake) */
 static int g_cam_cy0 = SCR_H / 2;       /* (the row before the throw) */
@@ -417,9 +421,9 @@ static void stars_init(void)
         g_star[i].x = (short)(x * 4096 / (long)r);
         g_star[i].y = (short)(y * 4096 / (long)r);
         g_star[i].z = (short)(z * 4096 / (long)r);
-        g_star[i].c = (i & 3) ? UI_GREY4 : UI_GREY6;
     }
     g_star_n = 0;
+    g_star_most = 0;
 }
 
 static void basis_of(int s, LfBasis *b);
@@ -437,7 +441,9 @@ static void stars_place(void)
     basis[3] = cam.right.x; basis[4] = cam.right.y; basis[5] = cam.right.z;
     basis[6] = cam.up.x; basis[7] = cam.up.y; basis[8] = cam.up.z;
     g_star_n = rv_stars_place((const short __far *)g_star, STARS, (const long __far *)basis, g_cam_cx, g_cam_cy, SCR_H,
-                              (short __far *)g_star_at);
+                              (short __far *)g_star_at, STARS_SHOWN);
+    if (g_star_n > g_star_most)
+        g_star_most = g_star_n;
     g_star_place_ticks += clock240() - t0;
 }
 
@@ -451,7 +457,7 @@ static void stars_in(int y0, int y1, const short __far *ext, int ey0, int rows)
             continue;
         if (ext && (k < 0 || k >= rows || x < ext[2 * k] || x >= ext[2 * k + 1]))
             continue;
-        vid_row(y)[x] = (unsigned char)g_star_at[i].c;
+        vid_row(y)[x] = (unsigned char)STAR_COLOUR(g_star_at[i].c);
     }
     g_star_draw_ticks += clock240() - t0;
 }
@@ -1513,10 +1519,10 @@ void flight_window_open(int room, unsigned seed, int outside)
     flames_init();
     /* what is outside: the system's, each time the player comes back in */
     g_vseed = 0x2F6E2B1UL + (unsigned long)seed * 7919UL;
-    for (i = 0; i < WIN_STARS && i < STARS; i++) {
+    for (i = 0; i < WIN_STARS && i < STARS_SHOWN; i++) {
         g_star_at[i].x = (short)(x0 + vrnd() % (x1 - x0));
         g_star_at[i].y = (short)(g_win.y0 + vrnd() % g_win.rows);
-        g_star_at[i].c = (vrnd() & 3) ? UI_GREY4 : UI_GREY6;
+        g_star_at[i].c = (short)(vrnd() & 3);
     }
     g_star_n = i;
     sky_clear();
@@ -3461,6 +3467,7 @@ static void flight_over(unsigned short status)
            (g_t_flames * 100000 / 240 / (frameCounter ? frameCounter : 1)) % 100,
            g_t_flames_set * 1000 / 240 / (frameCounter ? frameCounter : 1),
            (g_t_flames_set * 100000 / 240 / (frameCounter ? frameCounter : 1)) % 100);
+    RV_LOG("flight: at most %d stars on screen at once, of %d room", g_star_most, STARS_SHOWN);
     RV_LOG("flight: the stars took %lu.%02lu ms a frame to place and %lu.%02lu to draw",
            g_star_place_ticks * 1000 / 240 / (frameCounter ? frameCounter : 1),
            (g_star_place_ticks * 100000 / 240 / (frameCounter ? frameCounter : 1)) % 100,

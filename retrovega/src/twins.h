@@ -51,7 +51,7 @@ long c_turn_drawn(const unsigned char LZ_FAR *dense, int w, int h, const LfRot *
 long c_turn_dropped(const unsigned char LZ_FAR *dense, int w, int h, const LfRot *r, int y, int xs, int xe, int pl,
                     int pr, unsigned char LZ_FAR *out, const unsigned char LZ_FAR *above);
 int c_stars_place(const short LZ_FAR *stars, int n, const long LZ_FAR *basis, int cx, int cy, int rows,
-                  short LZ_FAR *out);
+                  short LZ_FAR *out, int most);
 
 #if defined(__WATCOMC__) || defined(RV_HOST)
 /* lowlevel.asm's (ships.c and flight.c declare them too), on the host host/asm_twins.c's */
@@ -70,7 +70,7 @@ long __far __cdecl rv_turn_drawn(const unsigned char __far *dense, int w, int h,
 long __far __cdecl rv_turn_dropped(const unsigned char __far *dense, int w, int h, const LfRot *r, int y, int xs,
                                    int xe, int pl, int pr, unsigned char __far *out, const unsigned char __far *above);
 int __far __cdecl rv_stars_place(const short __far *stars, int n, const long __far *basis, int cx, int cy, int rows,
-                                 short __far *out);
+                                 short __far *out, int most);
 #endif
 
 #ifdef RV_TESTS

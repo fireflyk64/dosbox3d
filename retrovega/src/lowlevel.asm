@@ -784,13 +784,15 @@ _rv_rotate_row2:
         retf
 
 ; int rv_stars_place(const short far *stars, int n, const long far *basis, int cx, int cy, int rows,
-;                    short far *out)
-; The sky's stars through the camera: stars are (x, y, z, c) shorts, a
-; direction of length 4096 and a colour; basis the camera's front, right
-; and up (256 = 1.0) as nine longs; out gets (x, y, c) for every star on
-; screen (0 <= x < 640, 0 <= y < rows) and the count is returned.  Three
-; products decide whether a star is near enough to straight ahead (depth
-; over 0.7 of its length) before the other six and the two divisions.
+;                    short far *out, int most)
+; The sky's stars through the camera: stars are (x, y, z) shorts, a
+; direction of length 4096; basis the camera's front, right and up
+; (256 = 1.0) as nine longs; out gets (x, y, i) for each star on screen
+; (0 <= x < 640, 0 <= y < rows; i its place in the list, which gives its
+; colour), at most `most` of them, the rest of the sky left out, and the
+; count is returned.  Three products decide whether a star is near enough
+; to straight ahead (depth over 0.7 of its length) before the other six and
+; the two divisions.
         global _rv_stars_place
 _rv_stars_place:
         push bp
@@ -825,6 +827,8 @@ _rv_stars_place:
         mov es,[bp+24]
         mov di,[bp+22]
         cmp word [bp-38],0
+        jle .done
+        cmp word [bp+26],0
         jle .done
 .star:
         movsx eax,word [si]
@@ -879,12 +883,16 @@ _rv_stars_place:
         jge .next
         mov [es:di],bx
         mov [es:di+2],dx
-        mov ax,[si+6]
+        mov ax,[bp+10]
+        sub ax,[bp-38]              ; its place in the list
         mov [es:di+4],ax
         add di,6
         inc word [bp-46]
+        mov ax,[bp-46]
+        cmp ax,[bp+26]
+        jge .done                   ; (as many as there is room for)
 .next:
-        add si,8
+        add si,6
         dec word [bp-38]
         jnz .star
 .done:

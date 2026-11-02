@@ -487,18 +487,18 @@ long c_turn_dropped(const unsigned char LZ_FAR *dense, int w, int h, const LfRot
     return pair(first, end);
 }
 
-/* the stars (x, y, z, c: a direction of length 4096 and a colour) through the basis (front, right, up; 256 = 1.0):
- * (x, y, c) out for each on screen, its depth over 0.7 of its length first; the count back */
+/* the stars (x, y, z: a direction of length 4096) through the basis (front, right, up; 256 = 1.0): (x, y, i) out for each on
+ * screen, i its place in the list, at most `most` of them, its depth over 0.7 of its length first; the count back */
 int c_stars_place(const short LZ_FAR *stars, int n, const long LZ_FAR *basis, int cx, int cy, int rows,
-                  short LZ_FAR *out)
+                  short LZ_FAR *out, int most)
 {
     uint32_t b[9];
     int16_t left = (int16_t)n, on = 0, k;
     for (k = 0; k < 9; k++)
         b[k] = (uint32_t)basis[k];
-    if (left <= 0)
+    if (left <= 0 || most <= 0)
         return 0;
-    for (; left; left--, stars += 4) {
+    for (; left; left--, stars += 3) {
         uint32_t x = (uint32_t)(int32_t)stars[0], y = (uint32_t)(int32_t)stars[1], z = (uint32_t)(int32_t)stars[2];
         int32_t depth = (int32_t)(x * b[0] + y * b[1] + z * b[2]), q;
         int16_t sx, sy;
@@ -514,9 +514,11 @@ int c_stars_place(const short LZ_FAR *stars, int n, const long LZ_FAR *basis, in
             continue;
         out[0] = sx;
         out[1] = sy;
-        out[2] = stars[3];
+        out[2] = (short)(n - left);
         out += 3;
         on++;
+        if (on >= most)
+            break;
     }
     return on;
 }
@@ -795,14 +797,15 @@ static void test_stars(void)
     g_sum = 0;
     for (i = 0; i < 24; i++) {
         int cx = tw_in(200, 440), cy = tw_in(50, 350), rows = tw_in(1, 400), n = i ? TW_STARS : 0;
-        for (k = 0; k < TW_STARS * 4; k++)
-            st[k] = (short)(k % 4 == 3 ? tw_in(0, 255) : tw_in(-4096, 4096));
+        int most = i % 3 == 2 ? TW_STARS : i % 3 == 1 ? tw_in(1, 20) : i % 6 ? tw_in(1, TW_STARS) : 0;   /* (a limit reached, or none) */
+        for (k = 0; k < TW_STARS * 3; k++)
+            st[k] = (short)tw_in(-4096, 4096);
         for (k = 0; k < 9; k++)
             basis[k] = i < 12 ? tw_in(-300, 300) : tw_in(-1500, 1500);   /* (the second dozen's products wrap) */
         _fmemset(oc, 0, TW_STARS * 6);
         _fmemset(oa, 0, TW_STARS * 6);
-        nc = c_stars_place(st, n, basis, cx, cy, rows, oc);
-        na = rv_stars_place(st, n, basis, cx, cy, rows, oa);
+        nc = c_stars_place(st, n, basis, cx, cy, rows, oc, most);
+        na = rv_stars_place(st, n, basis, cx, cy, rows, oa, most);
         if ((nc != na || _fmemcmp(oc, oa, TW_STARS * 6)) && tw_differ(n_stars, i, nc, na, 0, 0))
             return;
         sum_16(nc);
