@@ -425,6 +425,7 @@ tests cover them; flight.c's keys (T, Y, L) and its AUTO call them.
 | M12.8 thrusters | wrecked, the nose swings less than a whole ship's in the same time; hands off and whole it stays put, heavy it pulls |
 | M12.9 repair | a point every 20 s, chosen at random, a wrecked system too; never the absorbers, the tracking, guns, racks, decoys, the hull or armour; the repair system hurt at all, none |
 | M12.10 damage-reset | a new ship is whole, its reserve full |
+| M12.11 home-tier | `damage_home_tier`: intact whole; scarred armour worn (Kit's extra plate no credit) or a system hurt; holed a face gone, the hull touched or four systems hurt; wrecked past three quarters of the hull or on the reserve. `damage_hull_tens` counts a part begun as a ten; a lost weapon is its system hurt |
 
 ### M11: the simulator (`src/simulator.c`)
 

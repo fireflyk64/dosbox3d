@@ -142,17 +142,38 @@ uint16_t camp_mission_index(void)
 
 /* a line of the mission's: every scene, briefing and debrief lives in XMS and comes down a line at a time, so the
  * flight does not carry them.  One copy here: good until the next call for another line */
-const RvTalk __far *camp_line(const RvMission __far *m, int16_t k)
+static const RvTalk __far *line_at(uint16_t at)
 {
     static RvTalk __far line;
     static uint16_t have = 0xFFFF;
-    uint16_t at = m->talk0 + k;
-    RV_CHECK(k, m->ntalk);
     if (at != have) {
         xms_get(g_lines, (uint32_t)at * sizeof(RvTalk), &line, sizeof(RvTalk));
         have = at;
     }
     return &line;
+}
+
+const RvTalk __far *camp_line(const RvMission __far *m, int16_t k)
+{
+    RV_CHECK(k, m->ntalk);
+    return line_at(m->talk0 + k);
+}
+
+int16_t camp_home_count(int16_t tier)
+{
+    RV_CHECK(tier, 4);
+    return g_head.home_n[tier];
+}
+
+const char __far *camp_home_line(int16_t tier, int16_t k)
+{
+    uint16_t at = g_head.home_line;
+    int16_t i;
+    RV_CHECK(tier, 4);
+    RV_CHECK(k, g_head.home_n[tier]);
+    for (i = 0; i < tier; i++)
+        at += g_head.home_n[i];
+    return line_at(at + k)->text;
 }
 
 /* the way out of a node: good with more missions won than lost, bad with fewer, and an even split by the campaign's

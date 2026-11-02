@@ -54,6 +54,37 @@ missing (guns, missile racks and decoys), and it never mends the hull, the armou
 **The comm menu is how a pilot lands**, so it stays up: on the other VDU if its own is dead, over the static if the computer is
 gone. Nothing leaves a pilot unable to get home: the nav cross always shows, and a wrecked intercom still asks for the landing.
 
+## Coming home
+
+A landing on the carrier's bow is followed by two things, each skipped by a click (`landedOn` says it was a real landing, set by
+`carrier_contact`; an ejection, a test's exit key or a lost flight has neither). The flight and its result are settled before either starts.
+
+**The landing, from outside** (`landing_show`, flight.c): three and a half seconds. The camera starts close behind the fighter, which fills
+the view, and pulls back and round to above the carrier's quarter, while the fighter flies in along the carrier's far side and goes behind
+the hull: the sprites are drawn far to near, so the carrier covers it. Then black. The game's logic is not running; everyone else is taken
+out of the shot.
+
+**Kit at the plate** (`enter_home`, game.c): her close-up in front of an armour plate, the flank of a fighter curving under into the dark,
+with this flight's damage on it, rolling about 100 pixels into place behind her as the scene opens and slowing to a stop (the user), then the
+debrief. If she flew and was lost, there is no scene.
+
+| Tier (`damage_home_tier`) | When |
+|---|---|
+| `intact` | all the armour there, nothing hurt |
+| `scarred` | armour worn, or a system hurt |
+| `holed` | a face of armour gone, the hull touched, or four systems hurt |
+| `wrecked` | more than three quarters of the hull gone, or on the reserve |
+
+Her words are in `data/homecoming.csv`, at least four a tier (the build refuses fewer), never the same one twice running.
+
+The plate (`tools/plates.py`, art/places/plate/, by hand) is a clean picture and cut-out stamps, in the close-up's 48 colours. The game lays
+a big stamp (a torn hole, wires) on it for each system hurt, and a small one (a puncture, a slash, a splash, gouges) for each ten of the
+hull gone, or each quarter of the armour while the hull is whole. Which stamp is seeded by what it stands for (`home_stamp`), so the same
+damage looks the same and other damage looks other. At most six of each (the user: "cap it after like 4 or 6"); a wrecked ship shows at least
+four big ones whichever systems they were. No rust and no soot: it happened in a vacuum (the user), so what a hit leaves is paint blasted off
+to bare steel, scoring and spatter. The plate is 100 pixels wider than the screen, at the left, with stamps of its own there for the roll. The picture is put together once, in
+a 296 KB resident XMS block (`game_reserve`, twice over: a drawing band is a screen wide), so her mouth moving costs only the copy.
+
 ## On the panel
 
 `D` brings up the damage page on the left VDU: the ship's outline, as the target and weapons pages draw it, with every hurt part on it

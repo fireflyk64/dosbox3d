@@ -623,22 +623,6 @@ static void part_draw(const Own *o, int k, unsigned char hi, unsigned char lo, i
     stamp(o, k, cx, py, 0, hi, lo);
 }
 
-/* a weapon lost counts as its system hurt: the repair system never brings one back */
-static int part_hurt(int k)
-{
-    int g;
-    if (sys_level((int16_t)k))
-        return 1;
-    if (k != SYS_GUNS && k != SYS_RACKS)
-        return 0;
-    for (g = 0; g < GUN_COUNT(0); g++) {
-        const RvWeapon __far *w = weapon(GUN_TYPE(0, g));
-        if (w && (GUN_STATE(0, g) & GUN_DESTROYED) && (w->kind == RV_WK_GUN || w->kind == RV_WK_TURRET) == (k == SYS_GUNS))
-            return 1;
-    }
-    return 0;
-}
-
 /* the damage page: the hull in a word above the ship, red on the reserve; the hurt parts on it as shapes where they sit in a ship
  * (the user: "engine section for engine", "a computer for computer", "radar for radar"), and one of them at a time bright, its name
  * below in red and no more (the user: not "so accurate", "just state the part if it's damaged"): they come round by themselves, and
@@ -652,7 +636,7 @@ static void draw_damage(const RvRect __far *r, int y0, int y1)
     if (!slot_type(0))
         return;
     for (k = 0; k < SYS_COUNT; k++)
-        if (part_hurt(k))
+        if (damage_part_hurt((int16_t)k))
             list[n++] = k;
     own_begin(&o, r, 1, &side, y0, y1);
     now = n ? list[(g_cursor + frameCounter / DAMAGE_TURN) % n] : -1;

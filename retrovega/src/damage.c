@@ -171,6 +171,77 @@ int16_t damage_in_reserve(void)
     return g_in_reserve;
 }
 
+int16_t damage_part_hurt(int16_t k)
+{
+    int16_t g;
+    if (sys_level(k))
+        return 1;
+    if (k != SYS_GUNS && k != SYS_RACKS)
+        return 0;
+    for (g = 0; g < GUN_COUNT(0); g++) {
+        const RvWeapon __far *w = weapon(GUN_TYPE(0, g));
+        if (w && (GUN_STATE(0, g) & GUN_DESTROYED) && (w->kind == RV_WK_GUN || w->kind == RV_WK_TURRET) == (k == SYS_GUNS))
+            return 1;
+    }
+    return 0;
+}
+
+int16_t damage_hull_tens(void)
+{
+    const RvShipType __far *t = slot_type(0);
+    uint32_t gone;
+    if (!t || !t->hull)
+        return 0;
+    if (damagePoints[0] >= t->hull)
+        return 10;
+    gone = (uint32_t)damagePoints[0] * 100;
+    return (int16_t)((gone / t->hull + (gone % t->hull != 0) + 9) / 10);
+}
+
+/* what a type starts with on an armour face */
+static uint32_t armour_of_type(const RvShipType __far *t, int16_t i)
+{
+    return i == 0 ? t->armor_f : i == 1 ? t->armor_r : i == 2 ? t->armor_l : t->armor_rt;
+}
+
+int16_t damage_armour_quarters(void)
+{
+    const RvShipType __far *t = slot_type(0);
+    uint32_t most = 0, left = 0;
+    int16_t i;
+    if (!t)
+        return 0;
+    for (i = 0; i < 4; i++) {
+        uint32_t m = armour_of_type(t, i), a = ARMOR(0, i);
+        most += m;
+        left += a < m ? a : m;          /* (Kit's extra plate is no credit against what has gone) */
+    }
+    if (!most || left >= most)
+        return 0;
+    return (int16_t)(((most - left) * 4 + most - 1) / most);
+}
+
+#define HOME_HOLED_SYSTEMS 4            /* this many systems hurt is more than scars, whatever the armour says */
+int16_t damage_home_tier(void)
+{
+    const RvShipType __far *t = slot_type(0);
+    int16_t i, hurt = 0;
+    if (!t)
+        return HOME_INTACT;
+    if (g_in_reserve || damage_hull_tens() > 7)   /* (HULL LOW, or the reserve) */
+        return HOME_WRECKED;
+    if (damagePoints[0])
+        return HOME_HOLED;
+    for (i = 0; i < 4; i++)
+        if (armour_of_type(t, i) && !ARMOR(0, i))
+            return HOME_HOLED;
+    for (i = 0; i < SYS_COUNT; i++)
+        hurt += damage_part_hurt(i);
+    if (hurt >= HOME_HOLED_SYSTEMS)
+        return HOME_HOLED;
+    return hurt || damage_armour_quarters() ? HOME_SCARRED : HOME_INTACT;
+}
+
 /* --- a hit --- */
 
 static void overlays(int16_t k, int16_t level)

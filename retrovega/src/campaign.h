@@ -39,6 +39,8 @@ typedef struct {
 
 extern RvSave g_camp;
 const RvTalk __far *camp_line(const RvMission __far *m, int16_t k);   /* line k of the mission, out of XMS */
+int16_t camp_home_count(int16_t tier);   /* what Kit has to say to a fighter come home in this state (damage_home_tier): how many lines */
+const char __far *camp_home_line(int16_t tier, int16_t k);   /* line k of them, out of XMS */
 int16_t camp_line_ok(const RvTalk __far *t);   /* a scene's line can be said now: its conditions, and nobody dead in it */
 /* the mission's rules (data/missions.txt `rules`, camp_load_units): what a bolt must do to hit a ship (0: each
  * type's own ships.csv choice; else an RV_SHIPTYPE_FLAG_HIT_* for every ship: shots.c) and the RV_RULE_* flags

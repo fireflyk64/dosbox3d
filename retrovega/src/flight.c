@@ -325,7 +325,7 @@ static int g_cam_cy = SCR_H / 2;        /* the camera's centre row: the opening'
  * its way; F1 back), and the autopilot's flyby (the user, 2026-10-30: the formation seen from outside before the
  * jump, so the arrival is not a cut).  Outside, the world is drawn in the opening's rows at full width between black
  * bars, no frame, no HUD (cockpit_external), and the player's own ship is drawn like any other --- */
-enum { VIEW_COCKPIT, VIEW_CHASE, VIEW_FLYBY };
+enum { VIEW_COCKPIT, VIEW_CHASE, VIEW_FLYBY, VIEW_LANDING };
 static int g_view, g_view_back;         /* the view, and the one the flyby goes back to */
 static int g_fly_t;                     /* the flyby's frame */
 static LfVec g_cam_pos;                 /* the outside camera (positions) and its basis */
@@ -356,15 +356,15 @@ static void cross_of(const LfVec *a, const LfVec *b, LfVec *o)   /* of two 256-l
 }
 
 /* the camera at `at` looking at the player's ship, the ship's up the reference (right = up x front, up = front x right) */
-static void cam_look(const LfVec *at)
+static void cam_look_at(const LfVec *at, const LfVec *to)
 {
     LfBasis ship;
     LfVec d;
     basis_of(0, &ship);
     g_cam_pos = *at;
-    d.x = (gPositionVector[0].x - at->x) >> 4;
-    d.y = (gPositionVector[0].y - at->y) >> 4;
-    d.z = (gPositionVector[0].z - at->z) >> 4;
+    d.x = (to->x - at->x) >> 4;
+    d.y = (to->y - at->y) >> 4;
+    d.z = (to->z - at->z) >> 4;
     unit_of(&d);
     g_cam_b.front = d;
     cross_of(&ship.up, &g_cam_b.front, &g_cam_b.right);
@@ -373,12 +373,95 @@ static void cam_look(const LfVec *at)
     unit_of(&g_cam_b.up);
 }
 
+static void cam_look(const LfVec *at)
+{
+    cam_look_at(at, (const LfVec *)&gPositionVector[0]);
+}
+
+/* --- the landing, from outside (the user, 2026-11-01: "a quick animation for landing like we do for autopilot", "angled above with the
+ * carrier occluding the ship", "it effectively will fly behind the carrier; fade to black", and "start with the fighter very big and zoom
+ * out so it can become just a few pixels as it docks": a fighter is far smaller than a carrier).  The fighter has touched the carrier's
+ * bow, so the flight is over and its result settled (logic.c, carrier_contact).  The camera cuts to close behind the fighter, and pulls
+ * back and round, up above the carrier's quarter, while the fighter flies in along the carrier's far side and slips behind the hull (the
+ * sprites are drawn far to near, so the carrier covers it).  Nothing is decided in here: the game's logic has stopped, and the rest are
+ * taken out of the shot.  A click skips it --- */
+#define LANDING_FRAMES 105              /* three and a half seconds */
+#define LANDING_FADE 22                 /* the last of them, to black */
+/* in the carrier's frame, km: along its bow, up, to its right */
+#define LANDING_FROM_ALONG 2300         /* the fighter comes from here */
+#define LANDING_TO_ALONG 140            /* to here, well behind the hull */
+#define LANDING_PATH_UP (-70)
+#define LANDING_PATH_RIGHT (-130)
+#define LANDING_D0 (100L * 16)          /* the camera's way from the fighter, 16ths of a km, at first: it fills the view; */
+#define LANDING_GROW 139                /* and 4096ths more of it a frame: 3,300 km by the end, where it is about 12 px */
+static int g_landing_t;                 /* its frame; -1 no landing */
+static long g_landing_along, g_landing_d;   /* the fighter along the carrier, the camera's way from it */
+
+/* a place in the carrier's frame: along its bow, up, to its right, km */
+static void landing_at(LfVec *p, long along, long up, long right)
+{
+    int16_t h = landedOn;
+    p->x = gPositionVector[h].x + gOrientationFrontVector[h].x * along + gOrientationUpVector[h].x * up + gOrientationRightVector[h].x * right;
+    p->y = gPositionVector[h].y + gOrientationFrontVector[h].y * along + gOrientationUpVector[h].y * up + gOrientationRightVector[h].y * right;
+    p->z = gPositionVector[h].z + gOrientationFrontVector[h].z * along + gOrientationUpVector[h].z * up + gOrientationRightVector[h].z * right;
+}
+
+static void landing_camera(void)
+{
+    LfVec at, to;
+    long d = g_landing_d >> 4, t = g_landing_t, back = LANDING_FRAMES - t, keep;
+    /* round from behind it (75 along, 45 up, 35 right, in hundredths) to over the carrier's quarter (35, 55, 75) */
+    landing_at(&at, g_landing_along + (75 * back + 35 * t) / LANDING_FRAMES * d / 100, LANDING_PATH_UP + (45 * back + 55 * t) / LANDING_FRAMES * d / 100,
+               LANDING_PATH_RIGHT + (35 * back + 75 * t) / LANDING_FRAMES * d / 100);
+    /* looking at it, then more and more at the carrier: 256ths of the fighter kept, down to 70 */
+    keep = t < LANDING_FRAMES / 4 ? 256 : 256 - (t - LANDING_FRAMES / 4) * 186 / (LANDING_FRAMES - LANDING_FRAMES / 4);
+    landing_at(&to, g_landing_along * keep / 256, LANDING_PATH_UP * keep / 256, LANDING_PATH_RIGHT * keep / 256);
+    cam_look_at(&at, &to);
+}
+
+static void landing_step(void)
+{
+    int16_t h = landedOn;
+    int s, left = LANDING_FRAMES - g_landing_t;
+    LfVec p;
+    frameCounter++;
+    if (!g_landing_t)                   /* (a clear shot: the rest of the flight is over, and they would only fly through it) */
+        for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
+            if (s != h && slot_is_ship(s))
+                maybeEntityType[s] = ET_OFFSCENE;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
+        if (slot_is_ship(s)) {
+            gPositionVector[s].x += gVelocityVector[s].x;
+            gPositionVector[s].y += gVelocityVector[s].y;
+            gPositionVector[s].z += gVelocityVector[s].z;
+        }
+    shots_move();
+    /* slowing a little as it comes in, nose to the carrier's stern; the camera farther off each frame */
+    g_landing_along = LANDING_TO_ALONG + (long)(LANDING_FROM_ALONG - LANDING_TO_ALONG) * left / LANDING_FRAMES * (LANDING_FRAMES * 3L + left) / (LANDING_FRAMES * 4L);
+    if (!g_landing_t)
+        g_landing_d = LANDING_D0;
+    else
+        g_landing_d += g_landing_d * LANDING_GROW >> 12;
+    landing_at(&p, g_landing_along, LANDING_PATH_UP, LANDING_PATH_RIGHT);
+    gPositionVector[0].x = p.x;
+    gPositionVector[0].y = p.y;
+    gPositionVector[0].z = p.z;
+    gOrientationFrontVector[0] = vec3(-gOrientationFrontVector[h].x, -gOrientationFrontVector[h].y, -gOrientationFrontVector[h].z);
+    gOrientationRightVector[0] = vec3(-gOrientationRightVector[h].x, -gOrientationRightVector[h].y, -gOrientationRightVector[h].z);
+    gOrientationUpVector[0] = gOrientationUpVector[h];
+    g_landing_t++;
+}
+
 /* the outside camera's pose this frame */
 static void view_frame(void)
 {
     LfBasis ship;
     if (!g_view)
         return;
+    if (g_view == VIEW_LANDING) {
+        landing_camera();
+        return;
+    }
     basis_of(0, &ship);
     if (g_view == VIEW_CHASE) {
         g_cam_pos.x = gPositionVector[0].x - ship.front.x * CHASE_BACK_KM + ship.up.x * CHASE_UP_KM;
@@ -401,7 +484,8 @@ static void set_view(int view)
     g_view = view;
     cockpit_external(view != VIEW_COCKPIT);
     view_frame();
-    rv_notef(s_view, view == VIEW_COCKPIT ? "the cockpit" : view == VIEW_CHASE ? "the chase camera" : "the autopilot's flyby");
+    rv_notef(s_view, view == VIEW_COCKPIT ? "the cockpit" : view == VIEW_CHASE ? "the chase camera"
+             : view == VIEW_LANDING ? "the landing" : "the autopilot's flyby");
 }
 static unsigned long g_star_place_ticks, g_star_draw_ticks;   /* what the sky costs (logged when the flight ends) */
 
@@ -3176,6 +3260,18 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.ch == ')') damage_test_breach();
         if (in.ch == '_') damage_test_some();
         if (in.ch == '^') damage_test_all();
+        if (in.ch == '\\') logic_test_cleared();   /* (a script's way to land: cleared, whatever has been flown) */
+        if (in.ch == '@') {             /* (a clean ship for the scenes after a landing: no benchmark scenery, the armour whole) */
+            const RvShipType __far *t = slot_type(0);
+            g_damage_at = 0xFFFFFFFFUL;
+            rvCockpitDamage = 0;
+            if (t) {
+                ARMOR(0, 0) = t->armor_f;
+                ARMOR(0, 1) = t->armor_r;
+                ARMOR(0, 2) = t->armor_l;
+                ARMOR(0, 3) = t->armor_rt;
+            }
+        }
         if (in.ch == '{') logic_test_to_carrier(0);   /* (a script's way to the carrier: its bow, its beam) */
         if (in.ch == '}') logic_test_to_carrier(1);
         if (in.ch == '|') logic_test_kill_carrier();
@@ -3253,6 +3349,9 @@ void __far __cdecl flight_frame(void)
     if (g_comm_demo && !comms_on(0) && !comms_on(1))
         comm_demo_next();
 #endif
+    if (g_landing_t >= 0)
+        landing_step();
+    else {
     comm_reply_tick();                  /* (first: an answer waiting goes before a hail takes the VDU) */
     comm_stop_tick();
     if (!g_comm_demo && frameCounter == 90 && !comms_on(0) && !comms_on(1) && g_reply_voice == -1)
@@ -3261,6 +3360,7 @@ void __far __cdecl flight_frame(void)
         comm_hail();
     comms_tick();
     sim_step();
+    }
     if (g_sim)
         simulator_frame();
 #ifdef RV_TESTS
@@ -3385,7 +3485,7 @@ void __far __cdecl flight_frame(void)
         sprintf(name, "R%05u", frameCounter / g_record);
         shot_save(name);
     }
-    if (!g_sim)
+    if (!g_sim && g_landing_t < 0)
         rvFrameDone();
     if (g_flight_timed && now - g_t0 >= FLIGHT_TICKS)
         missionStatus = 1;              /* landed */
@@ -3515,6 +3615,26 @@ static void flight_over(unsigned short status)
     cockpit_unload();
 }
 
+static void landing_show(void)
+{
+    Input in;
+    comms_stop();
+    g_landing_t = 0;
+    set_view(VIEW_LANDING);
+    while (g_landing_t < LANDING_FRAMES) {
+        in_poll(&in);
+        if (in.clicked || in.key == KEY_ENTER || in.key == KEY_ESC)
+            break;
+        flight_frame();
+        flight_music();
+        if (LANDING_FRAMES - g_landing_t < LANDING_FADE)
+            vid_fade((LANDING_FRAMES - g_landing_t) * 64 / LANDING_FADE);
+    }
+    vid_fade(0);
+    g_landing_t = -1;
+    set_view(VIEW_COCKPIT);
+}
+
 int flight_fly(const RvMission __far *m)
 {
     unsigned short status;
@@ -3522,7 +3642,10 @@ int flight_fly(const RvMission __far *m)
     g_view = g_view_back = VIEW_COCKPIT;
     g_fly_t = 0;
     uiMode(0);
+    g_landing_t = -1;
     status = rv_flight_run();           /* (its loop begins with flight_startup: the loading, then the palette) */
+    if (status == 1 && landedOn != 0xFFFF)
+        landing_show();
     flight_over(status);
     rv_hangar();
     uiMode(1);
@@ -3539,6 +3662,7 @@ int flight_simulator(const RvMission __far *m)
     g_view = g_view_back = VIEW_COCKPIT;
     g_fly_t = 0;
     g_sim = 1;
+    g_landing_t = -1;
     simulatorStart();
     flight_startup();
     for (;;) {

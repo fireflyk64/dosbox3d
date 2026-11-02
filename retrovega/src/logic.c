@@ -357,6 +357,11 @@ void logic_test_kill_carrier(void)
 }
 
 /* a script's way to the carrier (flight.c's test keys): the player 3,000 km off its bow (0) or its beam (1), facing it */
+void logic_test_cleared(void)
+{
+    g_cleared = 1;
+}
+
 void logic_test_to_carrier(int16_t where)
 {
     int16_t s;
@@ -462,6 +467,7 @@ void logic_start(const RvMission __far *m)
     g_enemy_ran = 0;
     g_nav_chosen = 0;
     g_cleared = 0;
+    landedOn = 0xFFFF;
     g_stopped = 0;
     currentNavPoint = 0;
     victoryPoints = 0;                  /* (over the launch's roll: won when the mission is done, step_mission) */
@@ -1220,6 +1226,7 @@ static void carrier_contact(int16_t home)
         return;
     ship_rel(home, 0, &r);              /* (z along its bow) */
     if (g_cleared && r.z > 0 && labs(r.x) <= r.z / LANDING_ARC_DIV && labs(r.y) <= r.z / LANDING_ARC_DIV) {
+        landedOn = (uint16_t)home;      /* (the engine's cue: the landing seen from outside, Kit at the plate) */
         missionStatus = 1;
         return;
     }

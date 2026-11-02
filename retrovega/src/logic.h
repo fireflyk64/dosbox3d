@@ -90,6 +90,7 @@ int16_t logic_carrier_stopped(void);    /* the hull stopped the player since las
 extern void (*__far logic_on_jump)(int16_t slot, int16_t friendly);
 void logic_test_leave(int16_t s);        /* the play tests' way to have an enemy leave, as fear or a jump does */
 #ifdef RV_TESTS
+void logic_test_cleared(void);           /* the carrier has cleared the player to land, whatever they have flown */
 void logic_test_to_carrier(int16_t where);   /* a script's way there: 0 off its bow, 1 off its beam */
 void logic_test_kill_carrier(void);
 void logic_test_kill_wingman(void);

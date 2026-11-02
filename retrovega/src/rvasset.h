@@ -2,7 +2,7 @@
 #ifndef RVASSET_H
 #define RVASSET_H
 
-#define RVDAT_VERSION 5
+#define RVDAT_VERSION 6
 
 #define RV_HOTS 8
 #define RV_POSES 12
@@ -181,6 +181,8 @@ typedef struct {
     short chalk_slate[4];               /* the slate in that picture: x, y, w, h */
     unsigned short comm_cast, comm_ramp;   /* the comm link: its voices (RAW: an RvCommVoice each), its ramp (RAW:
                                            the shades' palette entries, the same a scan line darker) */
+    unsigned short plate_part, plate_back, plate_big, plate_small;   /* Kit's armour plate: its colours, its picture, its stamps (SPR, in a row) */
+    unsigned char plate_nbig, plate_nsmall;
     unsigned char reserved[6];
 } RvDatHeader;
 typedef struct {

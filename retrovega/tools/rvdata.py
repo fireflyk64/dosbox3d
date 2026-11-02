@@ -36,7 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 15                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 16                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
                                         # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
@@ -54,6 +54,7 @@ NONE, GOOD, BAD = 0xFF, 0xFE, 0xFD                   # node edges: a node index,
 SHIP_PLAYER, SHIP_WINGMAN = 0xFF, 0xFE               # mission ship types chosen at run time
 ROOMS = ['bar', 'lounge']
 SEAT_NAMES = ['left', 'middle', 'right']
+HOME_TIERS = ['intact', 'scarred', 'holed', 'wrecked']   # (damage_home_tier's order)
 FIXED_PLACES = {'TECH': 'the deck', 'TALLY': 'the bar', 'XO': 'the briefing room'}
 TYPES = {'patrol': 0}
 # the music's cues, in their files' order: the rooms' songs (tools/songs.py, tools/midi.py), then the flight's
@@ -76,7 +77,7 @@ HEADER = [('char', 'magic[8]', '8s'), ('unsigned short', 'version', 'H'), ('unsi
           ('unsigned long', 'shiptypes_at', 'L'), ('unsigned short', 'nweapons', 'H'),
           ('unsigned short', 'weapon_size', 'H'), ('unsigned long', 'weapons_at', 'L'),
           ('unsigned short', 'nlines', 'H'), ('unsigned short', 'line_size', 'H'), ('unsigned long', 'lines_at', 'L'),
-          ('unsigned char', 'reserved[6]', '6s')]
+          ('unsigned short', 'home_line', 'H'), ('unsigned char', 'home_n[4]', '4s')]   # (Kit's words at the plate: the first, how many by tier)
 # a ship type: data/ships.csv's row, its numbers as the simulation wants them
 SHIPTYPE = [('char', 'key[RV_KEY]', '%ds' % TEXT['KEY']), ('char', 'name[RV_NAME]', '%ds' % TEXT['NAME']),
             ('unsigned char', 'type', 'B'), ('unsigned char', 'side', 'B'), ('unsigned char', 'flags', 'B'),
@@ -736,7 +737,20 @@ def compile_all():
                               text(p['callsign'] or p['key'].title(), TEXT['CALLSIGN'], 'people.csv'),
                               text(p['name'], TEXT['NAME'], 'people.csv'), ROLES[p['role']], 0,
                               text(p['line'], TEXT['LINE'], 'people.csv %s line' % p['key'])) for p in people]
-    return out_pilots, out_nodes, out_missions, out_types, out_weapons, node_index[nodes[0]['node']], out_lines
+    # what Kit says when a fighter comes home, by how badly (data/homecoming.csv): after every mission's lines, in the tiers' order
+    home_line = len(out_lines)
+    home_n = []
+    rows = load_csv('homecoming.csv')
+    for tier in HOME_TIERS:
+        said = [r['line'] for r in rows if r['tier'] == tier]
+        if len(said) < 4:                               # (the user: at least 4 each, so they don't get old)
+            raise Fail('homecoming.csv: %d lines for %s, at least 4' % (len(said), tier))
+        home_n.append(len(said))
+        out_lines += [struct.pack(fmt(TALK), 0, pilot_index['TECH'], pilot_index['TECH'], 0, 0, 0,
+                                  text(line, TEXT['TALK'], 'homecoming.csv')) for line in said]
+    if len(rows) != sum(home_n):
+        raise Fail('homecoming.csv: a tier that is not one of %s' % ', '.join(HOME_TIERS))
+    return out_pilots, out_nodes, out_missions, out_types, out_weapons, node_index[nodes[0]['node']], out_lines, home_line, bytes(home_n)
 
 
 def check_dag(nodes):
@@ -857,7 +871,7 @@ def main():
     ap.add_argument('--header', default=os.path.join(ROOT, 'src', 'rvdata.h'))
     args = ap.parse_args()
     try:
-        pilots, nodes, missions, types, weapons, start, lines = compile_all()
+        pilots, nodes, missions, types, weapons, start, lines, home_line, home_n = compile_all()
     except Fail as e:
         sys.exit('rvdata: %s' % e)
     sizes = {'HEADER': struct.calcsize(fmt(HEADER)), 'PILOT': len(pilots[0]), 'NODE': len(nodes[0]),
@@ -873,7 +887,7 @@ def main():
     head = struct.pack(fmt(HEADER), b'RVGAME', VERSION, hsize, len(pilots), sizes['PILOT'], pilots_at,
                        len(nodes), sizes['NODE'], nodes_at, len(missions), sizes['MISSION'], missions_at, start,
                        len(types), sizes['SHIPTYPE'], types_at, len(weapons), sizes['WEAPON'], weapons_at,
-                       len(lines), sizes['LINE'], lines_at, b'')
+                       len(lines), sizes['LINE'], lines_at, home_line, home_n)
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, 'wb') as f:
         f.write(head + b''.join(pilots) + b''.join(nodes) + b''.join(missions) + b''.join(types) + b''.join(weapons)

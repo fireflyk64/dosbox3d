@@ -3846,9 +3846,10 @@ static void t_landing_contact(void)
         return;
     REQUIRE(missionStatus == 0 && pt_stopped == 1, e_stern, missionStatus, 1, 0);
     /* the bow, the patrol undone: landed, lost */
+    REQUIRE(landedOn == 0xFFFF, e_bow, landedOn, 0, 0);
     if (!pt_fly_in(0, cz + 3000, TURN / 2))
         return;
-    REQUIRE(missionStatus == 1, e_bow, missionStatus, 0, 0);
+    REQUIRE(missionStatus == 1 && landedOn == (uint16_t)home, e_bow, missionStatus, landedOn, home);
     logic_end();
     REQUIRE(victoryPoints == 0, e_lost, victoryPoints, 0, 0);
     /* flown and killed: landed, won */
@@ -5376,6 +5377,58 @@ static void t_damage_reset(void)
             damage_reserve_pct(slot_type(0)->hull), 0, 0);
 }
 
+/* M12.11: what Kit's plate and her words go by: the armour, the systems, the hull in tens, the reserve */
+static void t_home_tier(void)
+{
+    static const char __far e_tier[] = "%d: the tier is %d, not %d";
+    static const char __far e_tens[] = "%d%% of the hull gone: %d tens, not %d";
+    static const char __far e_quarters[] = "the armour's quarters are %d, not %d (%d)";
+    static const char __far e_lost[] = "gun %d destroyed and the guns are not hurt: %d %d";
+    const RvShipType __far *t;
+    int16_t g;
+    pt_alone(PT_PLAYER);
+    t = slot_type(0);
+    REQUIRE(damage_home_tier() == HOME_INTACT, e_tier, 1, damage_home_tier(), HOME_INTACT);
+    REQUIRE(damage_armour_quarters() == 0 && damage_hull_tens() == 0, e_quarters, damage_armour_quarters(), 0, damage_hull_tens());
+    /* Kit's extra plate is no credit: more than the type's on a face, less on another, is still worn */
+    ARMOR(0, 0) = (uint16_t)(t->armor_f * 2);
+    ARMOR(0, 1) = (uint16_t)(t->armor_r - 1);
+    REQUIRE(damage_home_tier() == HOME_SCARRED, e_tier, 2, damage_home_tier(), HOME_SCARRED);
+    REQUIRE(damage_armour_quarters() == 1, e_quarters, damage_armour_quarters(), 1, 0);
+    pt_alone(PT_PLAYER);
+    sys_set(SYS_RADAR, 1);
+    REQUIRE(damage_home_tier() == HOME_SCARRED, e_tier, 3, damage_home_tier(), HOME_SCARRED);
+    sys_set(SYS_ENGINE, 1);
+    sys_set(SYS_FUEL, 1);
+    sys_set(SYS_NAV, 1);
+    REQUIRE(damage_home_tier() == HOME_HOLED, e_tier, 4, damage_home_tier(), HOME_HOLED);
+    pt_alone(PT_PLAYER);
+    ARMOR(0, 2) = 0;
+    REQUIRE(damage_home_tier() == HOME_HOLED, e_tier, 5, damage_home_tier(), HOME_HOLED);
+    /* a part begun counts as a ten; past three quarters gone is wrecked */
+    pt_alone(PT_PLAYER);
+    damagePoints[0] = 1;
+    REQUIRE(damage_hull_tens() == 1, e_tens, 1, damage_hull_tens(), 1);
+    REQUIRE(damage_home_tier() == HOME_HOLED, e_tier, 6, damage_home_tier(), HOME_HOLED);
+    damagePoints[0] = (uint16_t)(t->hull / 2);
+    REQUIRE(damage_hull_tens() == 5 || damage_hull_tens() == 6, e_tens, 50, damage_hull_tens(), 5);
+    damagePoints[0] = (uint16_t)(t->hull - 1);
+    REQUIRE(damage_hull_tens() == 10, e_tens, 99, damage_hull_tens(), 10);
+    REQUIRE(damage_home_tier() == HOME_WRECKED, e_tier, 7, damage_home_tier(), HOME_WRECKED);
+    /* a weapon lost is its system hurt, and so never whole again */
+    pt_alone(PT_PLAYER);
+    REQUIRE(!damage_part_hurt(SYS_GUNS), e_lost, 0, damage_part_hurt(SYS_GUNS), 0);
+    for (g = 0; g < GUN_COUNT(0); g++) {
+        const RvWeapon __far *w = weapon(GUN_TYPE(0, g));
+        if (w && w->kind == RV_WK_GUN) {
+            GUN_STATE(0, g) |= GUN_DESTROYED;
+            break;
+        }
+    }
+    REQUIRE(damage_part_hurt(SYS_GUNS) && !damage_part_hurt(SYS_RACKS), e_lost, g, damage_part_hurt(SYS_GUNS), damage_part_hurt(SYS_RACKS));
+    REQUIRE(damage_home_tier() == HOME_SCARRED, e_tier, 8, damage_home_tier(), HOME_SCARRED);
+}
+
 /* ======================================================================================================== */
 
 static const char __far n_m1_1[] = "M1.1 coast (step_motion): a ship flies along its nose at its speed, position += "
@@ -5467,6 +5520,7 @@ static const char __far n_m12_6[] = "M12.6 shield-cap (damage_shield_cap): the g
 static const char __far n_m12_7[] = "M12.7 mounts (damage_hurt): a hit on a side takes that side's gun first; a destroyed launcher fires no more";
 static const char __far n_m12_8[] = "M12.8 thrusters (damage_turn_rate, damage_pull): slower turns, and heavy the nose pulls by itself";
 static const char __far n_m12_9[] = "M12.9 repair (damage_step): a point every 20 s at random, wrecked too; never absorbers, tracking, missing weapons, hull or armour; none itself hurt";
+static const char __far n_m12_11[] = "M12.11 home-tier (damage_home_tier): what Kit's plate and words go by: armour, systems, the hull in tens, a weapon lost";
 static const char __far n_m12_10[] = "M12.10 damage-reset (damage_reset): a new ship is whole with its reserve full";
 static const char __far n_m4_1[] = "M4.1 kill (step_deaths, despawn): dying (9), exploding a while, then gone";
 static const char __far n_m4_2[] = "M4.2 dying-quiet (step_fire, AI): a dying ship fires nothing";
@@ -5596,7 +5650,7 @@ static const PtTest __far k_tests[] = {
     { n_m10_8, t_break_formation, 0 }, { n_m10_9, t_taunt, 0 },
     { n_m12_1, t_reserve, 0 }, { n_m12_2, t_reserve_breaks, 0 }, { n_m12_3, t_where, 0 }, { n_m12_4, t_engine, 0 },
     { n_m12_5, t_tank, 0 }, { n_m12_6, t_shield_cap, 0 }, { n_m12_7, t_mounts, 0 }, { n_m12_8, t_thrusters, 0 },
-    { n_m12_9, t_repair, 0 }, { n_m12_10, t_damage_reset, 0 },
+    { n_m12_9, t_repair, 0 }, { n_m12_10, t_damage_reset, 0 }, { n_m12_11, t_home_tier, 0 },
     { n_m11_1, t_sim_waves, 0 }, { n_m11_2, t_sim_replenish, 0 }, { n_m11_3, t_sim_win, 0 }, { n_m11_4, t_sim_death, 0 },
 };
 

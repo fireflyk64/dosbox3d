@@ -18,6 +18,14 @@ enum { SYS_ABSORBERS, SYS_POWER, SYS_SHIELDS, SYS_COMPUTER, SYS_INTERCOM, SYS_TR
 #define SYS_WRECKED 4                   /* a system's most */
 
 int16_t sys_level(int16_t k);
+/* a fighter come home: what Kit's plate and her words go by (game.c).  How many tens of the hull's hundred have gone, a part begun counting
+ * as one; how many quarters of the armour; a system hurt, or for guns and racks a weapon lost (the repair system never brings one back) */
+enum { HOME_INTACT, HOME_SCARRED, HOME_HOLED, HOME_WRECKED };
+int16_t damage_home_tier(void);         /* intact: all the armour; scarred: it wore or a system was hurt; holed: a face gone or the hull hit;
+                                           wrecked: HULL LOW or on the reserve */
+int16_t damage_hull_tens(void);
+int16_t damage_armour_quarters(void);
+int16_t damage_part_hurt(int16_t k);
 void sys_set(int16_t k, int16_t level);
 const char __far *logic_system_name(int16_t k);   /* its name for the readout (D) */
 

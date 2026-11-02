@@ -332,6 +332,7 @@ int main(int argc, char **argv)
         balls_reserve();                /* the balls' sprites (resident) */
         sky_reserve();                  /* the sky's far things (resident) */
         collide_reserve();              /* the ships' silhouettes (resident) */
+        game_reserve();                 /* Kit's armour plate, as put together for a flight (resident) */
         explode_reserve();              /* the explosions' cels and the sound effects (resident) */
         sfx_reserve();
 #ifdef RV_PLAYTEST

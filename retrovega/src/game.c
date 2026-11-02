@@ -27,7 +27,7 @@
 #include "game.h"
 
 enum { MODE_ROOM, MODE_TALK, MODE_BRIEF, MODE_DECK, MODE_DEBRIEF, MODE_BUNK,
-       MODE_NAME, MODE_LOG, MODE_MESSAGE, MODE_ENDING, MODE_BOARD, MODE_DEAD, MODE_QUIT };
+       MODE_NAME, MODE_LOG, MODE_MESSAGE, MODE_ENDING, MODE_BOARD, MODE_DEAD, MODE_HOME, MODE_QUIT };
 
 extern int g_field;                     /* (flight.c: /field D, a test's) */
 static int g_mode, g_back_mode;
@@ -478,13 +478,105 @@ static int eyes_now(void)
     return (g_now / 4) % 17 == 0 ? 2 : (g_now / 4) % 17 == 1 ? 1 : 0;   /* a blink every 4 s */
 }
 
+/* --- home: Kit in front of the armour plate as a fighter comes back (the user, 2026-11-01), the plate showing this flight's damage: a big
+ * stamp a system hurt, a small one for each ten of the hull's hundred gone (for each quarter of the armour while the hull is whole), each
+ * placed by a seed of what it stands for, so the same damage looks the same and other damage looks other.  At most six of each (the user:
+ * "cap it after like 4 or 6").  The picture is put together once and kept in XMS, so that her mouth moving costs only the copy --- */
+#define HOME_BIG_MOST 6
+#define HOME_SMALL_MOST 6
+#define HOME_WRECKED_BIG 4              /* a ship this far gone shows holes whichever systems they were */
+#define PLATE_EXTRA 100                 /* the plate rolls into place behind her (the user: "slide into place", "about 100 pixels"): this much */
+#define PLATE_W (SCR_W + PLATE_EXTRA)   /* of it, at its left, is only seen on the way */
+#define PLATE_SLIDE 300                 /* clock240's: a second and a quarter, slowing to a stop */
+#define PLATE_MOVES_Y 322               /* the rows it shows in: under them it has gone into the dark */
+static XmsBlock g_plate;                /* (resident: taken once, when the game starts) */
+static int g_plate_pass, g_plate_off;   /* the plate's left part, then the rest; how far from its place it is */
+static unsigned long g_plate_t0;
+static unsigned short __far g_stamp[HOME_BIG_MOST + HOME_SMALL_MOST];
+static int g_nstamps;
+static int g_plate_on;                  /* a close-up's backdrop is the plate */
+static int g_home_tier;                 /* the state the fighter came home in */
+
+void game_reserve(void)
+{
+    g_plate = xms_alloc((unsigned long)PLATE_W * SCR_H, XMS_RESIDENT);
+}
+
+static void home_stamp(unsigned first, unsigned count, unsigned seed, unsigned long *used)
+{
+    unsigned long x = (seed + 1UL) * 2654435761UL;
+    unsigned i, tried;
+    x ^= x >> 15;
+    i = (unsigned)(x >> 9) % count;
+    for (tried = 0; tried < count && (*used >> i & 1); tried++)
+        i = (i + 1) % count;
+    if (tried < count && g_nstamps < (int)RV_COUNT(g_stamp)) {
+        *used |= 1UL << i;
+        g_stamp[g_nstamps++] = (unsigned short)(first + i);
+    }
+}
+
+/* straight after the flight, while its damage is still there */
+static void home_note(void)
+{
+    const RvDatHeader __far *h = dat_header();
+    unsigned long used = 0;
+    int tens = damage_hull_tens(), n = tens ? tens : damage_armour_quarters(), k, big = 0;
+    g_home_tier = damage_home_tier();
+    g_nstamps = 0;
+    for (k = 0; k < n && k < HOME_SMALL_MOST; k++)
+        home_stamp(h->plate_small, h->plate_nsmall, (tens ? 100 : 200) + k, &used);
+    used = 0;
+    for (k = 0; k < SYS_COUNT && big < HOME_BIG_MOST; k++)
+        if (damage_part_hurt((int16_t)k)) {
+            home_stamp(h->plate_big, h->plate_nbig, k, &used);
+            big++;
+        }
+    for (k = 0; g_home_tier == HOME_WRECKED && big < HOME_WRECKED_BIG; k++, big++)
+        home_stamp(h->plate_big, h->plate_nbig, 300 + k, &used);
+}
+
+/* the picture in the plate's block, a row PLATE_W wide: a band is only a screen wide, so twice, the left part and then the rest */
+static void plate_compose(int y0, int y1)
+{
+    int i, r, dx = g_plate_pass ? 0 : PLATE_EXTRA;
+    gfx_image(dat_header()->plate_back, dx - PLATE_EXTRA, 0, y0, y1);
+    for (i = 0; i < g_nstamps; i++)
+        gfx_sprite(g_stamp[i], dx, 0, y0, y1);
+    if (g_plate)
+        for (r = y0; r < y1; r++)
+            xms_put(g_plate, (unsigned long)r * PLATE_W + (g_plate_pass ? PLATE_EXTRA : 0), vid_row(r), g_plate_pass ? SCR_W : PLATE_EXTRA);
+}
+
+/* where it has got to; a new place, its rows to draw again */
+static void plate_tick(void)
+{
+    unsigned long t = clock240() - g_plate_t0;
+    int off = 0;
+    if (g_plate && t < PLATE_SLIDE) {
+        long left = PLATE_SLIDE - (long)t;
+        off = (int)(PLATE_EXTRA * left / PLATE_SLIDE * left / PLATE_SLIDE) & ~1;
+    }
+    if (off != g_plate_off) {
+        g_plate_off = off;
+        vid_dirty(0, PLATE_MOVES_Y);
+    }
+}
+
 static void talk_full(int y0, int y1)
 {
     const RvRoom __far *r = dat_room(g_close_room);
     const RvPerson __far *p = dat_person(g_speaker);
     int mouth = mouth_now(), eyes = eyes_now();
     char title[40];
-    gfx_image(r->closeup_back, 0, 0, y0, y1);
+    if (!g_plate_on)
+        gfx_image(r->closeup_back, 0, 0, y0, y1);
+    else if (g_plate) {
+        int row;
+        for (row = y0; row < y1; row++)
+            xms_get(g_plate, (unsigned long)row * PLATE_W + PLATE_EXTRA - g_plate_off, vid_row(row), SCR_W);
+    } else
+        plate_compose(y0, y1);
     gfx_sprite(p->face, FACE_X, FACE_Y, y0, y1);
     gfx_image(p->eyes0 + eyes, FACE_X + dat_asset(p->eyes0)->x, FACE_Y + dat_asset(p->eyes0)->y, y0, y1);
     gfx_image(p->mouth0 + mouth, FACE_X + dat_asset(p->mouth0)->x, FACE_Y + dat_asset(p->mouth0)->y, y0, y1);
@@ -812,9 +904,50 @@ static void line_page(int k)
     }
 }
 
+/* Kit at the plate, saying something about it; 0 when she cannot (she flew, and the player lost her).  Not the same line twice running */
+static int enter_home(void)
+{
+    static signed char __far last[4] = { -1, -1, -1, -1 };
+    const RvDatHeader __far *h = dat_header();
+    int kit = person_of(RV_ROLE_TECH), n, k;
+    if (kit < 0 || !g_camp.pilot[kit].alive || g_lost_wing == kit)
+        return 0;
+    n = camp_home_count((int16_t)g_home_tier);
+    k = (int)((ticks() * 25173UL >> 4) % n);
+    if (k == last[g_home_tier])
+        k = (k + 1) % n;
+    last[g_home_tier] = (signed char)k;
+    vid_fade(0);
+    scene_enter(RV_R_BRIEFING, 0);
+    gfx_use_part(h->plate_part, 1);
+    gfx_use_part(dat_person(kit)->palpart, 0);
+    g_close_room = RV_R_BRIEFING;
+    g_scene.no_room = 1;
+    g_scene.hide_pointer = 1;           /* (the plate put together, out of sight) */
+    g_scene.full = plate_compose;
+    for (g_plate_pass = 0; g_plate_pass < 2; g_plate_pass++) {
+        vid_dirty(0, SCR_H);
+        scene_draw();
+    }
+    g_scene.hide_pointer = 0;
+    g_plate_on = 1;
+    g_plate_off = g_plate ? PLATE_EXTRA : 0;
+    say(kit, camp_home_line((int16_t)g_home_tier, (int16_t)k));
+    g_scene.full = talk_full;
+    g_stage_at = 0;
+    g_mode = MODE_HOME;
+    music_cue(g_won ? RV_MUSIC_WIN : RV_MUSIC_LOSE, 250);   /* (the debrief's: it carries on under what follows) */
+    vid_dirty(0, SCR_H);
+    scene_draw();
+    vid_fade(64);
+    g_plate_t0 = clock240();
+    return 1;
+}
+
 static void start_briefing(int debrief)
 {
     vid_fade(0);
+    g_plate_on = 0;
     scene_enter(RV_R_BRIEFING, 0);
     g_scene.underlay = xo_underlay;
     g_scene.overlay = brief_overlay;
@@ -1171,7 +1304,7 @@ static int noflight(void)
 
 static void launch(void)
 {
-    int won, status;
+    int won, status, landed = 0;
     freeze_hold();                      /* (the load, sets the page may be fetching: until the flight's first frame) */
     mission_load_assets();
     missionStarting();
@@ -1190,6 +1323,9 @@ static void launch(void)
         status = noflight();
     } else {
         status = flight_fly(&g_m);
+        landed = status == 1 && landedOn != 0xFFFF;
+        if (landed)
+            home_note();
         freeze_hold();                  /* (what is unloaded, until the game's loop is back) */
         g_lost_wing = logic_wingman_lost();
         g_camp.escort_lost = (uint8_t)logic_escort_lost();
@@ -1211,6 +1347,8 @@ static void launch(void)
         enter_lost();
         return;
     }
+    if (landed && enter_home())
+        return;
     start_briefing(1);
 }
 
@@ -1872,6 +2010,14 @@ int game_run(void)
         case MODE_ENDING:
             if (in.key != KEY_NONE || in.clicked)
                 g_mode = MODE_QUIT;
+            break;
+        case MODE_HOME:                         /* (her say, and a moment to read it; a click goes on at once) */
+            face_tick();
+            plate_tick();
+            if (speech_done() && !g_stage_at)
+                g_stage_at = g_now + 40;
+            if (in.clicked || in.key == KEY_ENTER || in.key == KEY_ESC || (g_stage_at && g_now >= g_stage_at))
+                start_briefing(1);
             break;
         case MODE_DEAD:
             if (g_lost) {

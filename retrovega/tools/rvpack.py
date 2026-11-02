@@ -52,7 +52,7 @@ import legs  # noqa: E402
 import panels  # noqa: E402
 import places  # noqa: E402
 
-VERSION = 5
+VERSION = 6
 SCREEN = (640, 400)
 ROOMS = ['bar', 'lounge', 'briefing', 'quarters', 'locker', 'deck']
 FACE = 352                      # close-up face size (the 256 px faces scaled 1.375)
@@ -364,6 +364,25 @@ def closeup_mix(colours):
             out += bytes(nearest(colours, rgb * (1 - a) + np.array(colours[t], np.float32) * a,
                                  list(range(64))).astype(np.uint8))
     return out
+
+
+def pack_plate(pack):
+    """Kit's armour plate (tools/plates.py): the clean plate and the stamps the game lays over it for this flight's damage, all in the
+    close-up's 48 colours; no blur, unlike a room behind a close-up: it is what she is talking about."""
+    d = os.path.join(ROOT, 'art', 'places', 'plate')
+    table = json.load(open(os.path.join(d, 'stamps.json')))
+    base = Image.open(os.path.join(d, 'base.png')).convert('RGB')
+    stamps = {k: [(Image.open(os.path.join(d, e['file'])).convert('RGBA'), e['x'], e['y']) for e in table[k]] for k in ('big', 'small')}
+    part = make_palette([base] + [s[0] for k in stamps for s in stamps[k]], 48, 16)
+    cpal = Palette(UI + part + [(0, 0, 0)] * 192)
+    cp = pack.add('cpal_plate', 'PALPART', struct.pack('<BB', 16, 48) + vga(part) + closeup_mix(cpal.colours))
+    back = add_image(pack, 'plate_back', base, cpal, allowed=list(range(64)))
+    first = {}
+    for k in stamps:
+        for i, (im, x, y) in enumerate(stamps[k]):
+            a = add_sprite(pack, 'plate_%s%02d' % (k, i), im, cpal, x, y, list(range(64)))
+            first.setdefault(k, a)
+    return cp, back, first['big'], first['small'], len(stamps['big']), len(stamps['small'])
 
 
 SPEAKER_FMT = '<4BH9BBHHH'
@@ -847,11 +866,12 @@ def main():
                                  rec['closeup_part'], rec['closeup_back'])
                      + hot + poses + rec['actor'] + speaker + deck + boards + rec.get('window', struct.pack('<Hhh', 0xFFFF, 0, 0)))
     comm_cast, comm_ramp, comm_voices = pack_comms(pack, args.comms, ships_csv)
+    plate = pack_plate(pack)
     persons = pack_people(pack, people, comm_voices)
     cockpits_recs, previews = pack_cockpits(pack, ships_csv, args.panels)
     preview_cockpits(previews, os.path.join(ROOT, 'docs', 'cockpits-packed.png'))
     # lay out: header, directory, rooms, people, cockpits, payloads
-    hdr_fmt = '<8sHHLHLHLHHHHHHHHLHHHH4hHH6s'
+    hdr_fmt = '<8sHHLHLHLHHHHHHHHLHHHH4hHHHHHHBB6s'
     hsize = struct.calcsize(hdr_fmt)
     dir_at = hsize
     dsize = 40
@@ -869,7 +889,7 @@ def main():
     head = struct.pack(hdr_fmt, b'RVDAT', VERSION, len(pack.assets), dir_at, len(rooms), rooms_at, len(persons),
                        people_at, len(rooms[0]), len(persons[0]), body, title, arrow, door, ui_i,
                        len(cockpits_recs), cockpits_at, len(cockpits_recs[0]), chalk, chalk_pal, chalk_back, *slate,
-                       comm_cast, comm_ramp, b'')
+                       comm_cast, comm_ramp, *plate, b'')
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, 'wb') as f:
         f.write(head + b''.join(directory) + b''.join(rooms) + b''.join(persons) + b''.join(cockpits_recs)
@@ -929,6 +949,8 @@ def header(room_size, person_size, cockpit_size):
     short chalk_slate[4];               /* the slate in that picture: x, y, w, h */
     unsigned short comm_cast, comm_ramp;   /* the comm link: its voices (RAW: an RvCommVoice each), its ramp (RAW:
                                            the shades' palette entries, the same a scan line darker) */
+    unsigned short plate_part, plate_back, plate_big, plate_small;   /* Kit's armour plate: its colours, its picture, its stamps (SPR, in a row) */
+    unsigned char plate_nbig, plate_nsmall;
     unsigned char reserved[6];
 } RvDatHeader;
 typedef struct {

@@ -5,7 +5,7 @@
 #include "rvtypes.h"
 
 #define RVGAME_MAGIC "RVGAME"
-#define RVGAME_VERSION 15
+#define RVGAME_VERSION 16
 
 #define RV_PILOTS 16
 #define RV_NODES 32
@@ -195,7 +195,8 @@ typedef struct {
     uint16_t nlines;
     uint16_t line_size;
     uint32_t lines_at;
-    uint8_t reserved[6];
+    uint16_t home_line;
+    uint8_t home_n[4];
 } RvGameHeader;
 typedef struct {
     char key[RV_KEY];
