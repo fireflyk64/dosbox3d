@@ -2046,6 +2046,14 @@ static void systems_tick(void)
 }
 
 /* the keys of the systems (a character typed): 1 if it was one */
+/* a page asked for on the left VDU: it must show, so a comm that is on there goes */
+static void left_page(int page)
+{
+    if (comms_on(0))
+        comms_stop();
+    vdu_show(0, page);
+}
+
 static int system_key(int ch)
 {
     if (ch >= 'A' && ch <= 'Z')
@@ -2057,19 +2065,17 @@ static int system_key(int ch)
     case 'c': comm_open(); return 1;    /* (the comm menu: the wingman, the target; the landing request) */
     case 'u': system_action(RV_PF_VOL_KNOB, 0); return 1;
     case 'n':
-        if (comms_on(0))
-            comms_stop();               /* (the page asked for: it was behind the launch's comm, and never seen) */
         system_action(RV_PF_NAV_KNOB, 0);
-        vdu_show(0, VDU_L_NAV);
+        left_page(VDU_L_NAV);
         return 1;   /* (N: the nav page, the next point) */
     case 'm': system_action(RV_PF_ARM_KNOB, 0); return 1;
     case 't': target_next(); vdu_show(1, VDU_R_TARGET); return 1;   /* (T brings the target page up, changed or not) */
     case 'y': target_nearest(); vdu_show(1, VDU_R_TARGET); return 1;
     case 'l': system_action(RV_PF_LOCK, 0); return 1;
     case 'r': system_action(RV_PF_RADAR_KNOB, 0); return 1;   /* (the radar's range: was G, now the guns') */
-    case 'g': (void)logic_guns_next(); vdu_show(0, VDU_L_WEAPONS); return 1;
-    case 'w': (void)logic_missile_next(); vdu_show(0, VDU_L_WEAPONS); return 1;
-    case 'd': vdu_show(0, VDU_L_DAMAGE); return 1;
+    case 'g': (void)logic_guns_next(); left_page(VDU_L_WEAPONS); return 1;
+    case 'w': (void)logic_missile_next(); left_page(VDU_L_MISSILE); return 1;
+    case 'd': left_page(VDU_L_DAMAGE); return 1;
     case 'h': g_sys.surv_page = (unsigned char)((g_sys.surv_page + 1) % 3); return 1;
     case 'x': system_action(RV_PF_DEFENCE, 0); return 1;
     }
@@ -3169,6 +3175,7 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.ch == '(') damage_test_worse();
         if (in.ch == ')') damage_test_breach();
         if (in.ch == '_') damage_test_some();
+        if (in.ch == '^') damage_test_all();
         if (in.ch == '{') logic_test_to_carrier(0);   /* (a script's way to the carrier: its bow, its beam) */
         if (in.ch == '}') logic_test_to_carrier(1);
         if (in.ch == '|') logic_test_kill_carrier();

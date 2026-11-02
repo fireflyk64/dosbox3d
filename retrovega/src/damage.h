@@ -57,6 +57,7 @@ int16_t damage_overlay(int16_t k);      /* the cockpit overlay that shows system
 #ifdef RV_TESTS
 void damage_test_worse(void);           /* every system a point worse (RVT.EXE's ( key) */
 void damage_test_breach(void);          /* the hull gone and half the reserve spent (its ) key) */
+void damage_test_all(void);             /* every system a little hurt (its ^ key: all the shapes) */
 void damage_test_some(void);            /* a few systems hurt, the VDUs left whole (its _ key: a look at the damage page) */
 #endif
 

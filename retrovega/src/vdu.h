@@ -11,7 +11,7 @@
 #include "rvasset.h"
 
 enum { VDU_R_TARGET };                  /* the right VDU's pages */
-enum { VDU_L_STATUS, VDU_L_COMM, VDU_L_NAV, VDU_L_WEAPONS, VDU_L_DAMAGE };   /* the left VDU's */
+enum { VDU_L_STATUS, VDU_L_COMM, VDU_L_NAV, VDU_L_WEAPONS, VDU_L_MISSILE, VDU_L_DAMAGE };   /* the left VDU's */
 
 void vdu_flight_start(void);            /* the pages at their first (the target, the status lines) */
 

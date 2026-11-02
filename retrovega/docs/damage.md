@@ -56,11 +56,22 @@ gone. Nothing leaves a pilot unable to get home: the nav cross always shows, and
 
 ## On the panel
 
-`D` brings up the damage page on the left VDU, drawn as the target and weapons pages draw a ship: the outline with its armour and
-shields and its guns (a destroyed one red). Above it the hull in a word, `CORE HIT` in red once it is gone; below it, in small red letters, the
-name of one hurt system and nothing about how badly (the user: "just state the part if it's damaged"). They come round by themselves
-every two seconds, and `D` moves on at once. `W` or `G` puts up the weapons page in the same place. The own hull has no figure anywhere (the user: "a little mystery", "let the players live on edge"): `HULL OK` down to 60%, `HULL HIT`
-down to 25%, then `HULL LOW`, and the kits' hull bars move in the same steps. `H` shows the count on the survival display.
+`D` brings up the damage page on the left VDU: the ship's outline, as the target and weapons pages draw it, with every hurt part on it
+as a shape, where it sits in a ship (the user: "engine section for engine", "a computer for computer", "radar for radar"). The engine
+section is the tail of the ship's own outline around its real engines, ribbed, with the nozzles; guns and missile racks at their real
+mounts; thrusters on the outline, firing out; the others are pictures from `tools/vduparts.py` (a dish, a monitor and keyboard, a reactor,
+a spring for the absorbers), placed by `g_part_at` ahead of the engine section. A lost gun or launcher counts as its system hurt, for good.
+One part at a time is bright with a black card behind it, its name below in small red letters and nothing about how badly (the user:
+"just state the part if it's damaged"). They come round by themselves every two seconds, and `D` moves on at once.
+
+`G` and `W` put up the weapons pages in the same place, from the user's picture of an old game's VDU: `ACTIVE GUNS` or `ACTIVE MISSILE`,
+the weapon's name, how hard it hits in a word (`DAMAGE: MODERATE`: under 25 light, under 36 moderate, under 100 heavy, else severe), the
+ship with the weapons that fire in red and the others grey, a missile for each round left, and the count (`4 GUNS ENGAGED`, `2 LOADED`). A
+VDU under 80 rows and narrower than twice its height has the name above the ship and the rest below. A page asked for ends a comm on that
+VDU, as the nav page always did: the face would hide it.
+
+The own hull has no figure anywhere (the user: "a little mystery", "let the players live on edge"): `HULL OK` down to 60%, `HULL HIT`
+down to 25%, then `HULL LOW`, `CORE HIT` on the reserve, and the kits' hull bars move in the same steps. `H` shows the count on the survival display.
 
 The cockpit kits' painted damage shows each system hurt, a bit of `rvCockpitDamage` per overlay (`k_overlay`). Not every kit
 paints every overlay. The hull's own: the armour readout with a side gone, the hull readout at a quarter gone, the left canopy at

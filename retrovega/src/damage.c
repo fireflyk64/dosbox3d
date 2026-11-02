@@ -459,6 +459,14 @@ void damage_test_some(void)
         damagePoints[0] = (uint16_t)(slot_type(0)->hull - 1);
 }
 
+/* every system a little hurt: a look at all the shapes on the damage page (the ^ key) */
+void damage_test_all(void)
+{
+    int16_t k;
+    for (k = 0; k < SYS_COUNT; k++)
+        sys_set(k, 1);
+}
+
 /* the hull gone and half the reserve spent (the ) key) */
 void damage_test_breach(void)
 {

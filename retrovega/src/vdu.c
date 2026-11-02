@@ -9,6 +9,7 @@
 #include "world.h"
 #include "logic.h"
 #include "vdu.h"
+#include "vduparts.h"
 
 #define SHIELD_LIT 79                   /* the survival display's colours (panel.c; the user's, 2026-10-23) */
 #define ARMOUR_LIT 70
@@ -211,8 +212,8 @@ static int solid(const unsigned char __far *m, int px, int py, int w, int h)
     int col, row;
     if (px < 0 || py < 0 || px >= w || py >= h)
         return 0;
-    col = (int)((long)px * SN / w);
-    row = SN - 1 - (int)((long)py * SN / h);   /* (the nose, row 63, at the top) */
+    col = px * SN / w;                  /* (no long: a VDU is under 512 px, and this runs for every pixel of the wire) */
+    row = SN - 1 - py * SN / h;         /* (the nose, row 63, at the top) */
     return TOP(m, row, col) != 0;
 }
 
@@ -232,27 +233,36 @@ static void wire_box(int type, int x, int y, int w, int h, int *bx, int *by, int
     *by = y + (h - *bh) / 2;
 }
 
+/* the outline: a pixel of the ship with a side that is not.  (This runs every frame a page shows a ship: the columns are worked out
+ * once, not per pixel.) */
+#define WIRE_MOST 128                   /* the widest box it draws; a VDU's is under 90 */
 void vdu_wire(int type, int x, int y, int w, int h, unsigned char colour, int y0, int y1)
 {
     const unsigned char __far *m = collide_mask((uint16_t)type);
-    int bw, bh, bx, by, px, py;
+    unsigned char col[WIRE_MOST];
+    int bw, bh, bx, by, px, py, up, here, down;
     if (w < 4 || h < 4)
         return;
     wire_box(type, x, y, w, h, &bx, &by, &bw, &bh);
-    if (!m) {                           /* (no silhouettes: its box) */
+    if (!m || bw > WIRE_MOST) {         /* (no silhouettes: its box) */
         gfx_frame(bx, by, bw, bh, colour, y0, y1);
         return;
     }
+    for (px = 0; px < bw; px++)
+        col[px] = (unsigned char)(px * SN / bw);
     for (py = 0; py < bh; py++) {
         unsigned char __far *d;
         if (by + py < y0 || by + py >= y1)
             continue;
-        d = vid_row(by + py);
+        d = vid_row(by + py) + bx;
+        here = SN - 1 - py * SN / bh;   /* (the nose, row 63, at the top) */
+        up = py ? SN - 1 - (py - 1) * SN / bh : -1;
+        down = py + 1 < bh ? SN - 1 - (py + 1) * SN / bh : -1;
         for (px = 0; px < bw; px++)
-            if (solid(m, px, py, bw, bh)
-                && (!solid(m, px - 1, py, bw, bh) || !solid(m, px + 1, py, bw, bh) || !solid(m, px, py - 1, bw, bh)
-                    || !solid(m, px, py + 1, bw, bh)))
-                d[bx + px] = colour;
+            if (TOP(m, here, col[px])
+                && (!px || !TOP(m, here, col[px - 1]) || px + 1 == bw || !TOP(m, here, col[px + 1])
+                    || up < 0 || !TOP(m, up, col[px]) || down < 0 || !TOP(m, down, col[px])))
+                d[px] = colour;
     }
 }
 
@@ -266,28 +276,6 @@ static int pct_of(unsigned long have, unsigned long most)
     return (int)(have * 100 / most);
 }
 
-/* the player's guns on the own ship's wire (the weapons page): a dot at each gun's mount across the ship, on
- * the hull's leading edge there: amber a gun the trigger fires, grey one the choice leaves out, red a destroyed one */
-static void gun_marks(int type, int ix, int iy, int inner, int y0, int y1)
-{
-    const unsigned char __far *m = collide_mask((uint16_t)type);
-    int bx, by, bw, bh, g;
-    wire_box(type, ix, iy, inner, inner, &bx, &by, &bw, &bh);
-    for (g = 0; g < GUN_COUNT(0); g++) {
-        const RvWeapon __far *w = weapon(GUN_TYPE(0, g));
-        int px, py, col;
-        if (!w || (w->kind != RV_WK_GUN && w->kind != RV_WK_TURRET))
-            continue;
-        px = bw / 2 + (int)((long)GUN_MOUNT_X(0, g) * (bw / 2) / 32);   /* (the mount: 32nds of the half box) */
-        if (px < 0) px = 0;
-        if (px >= bw) px = bw - 1;
-        for (py = 0; py < bh - 1 && m && !solid(m, px, py, bw, bh); py++)
-            ;                           /* (the leading edge there) */
-        col = GUN_STATE(0, g) & GUN_DESTROYED ? UI_RED : logic_gun_selected((int16_t)g) ? UI_AMBER3 : UI_GREY4;
-        gfx_fill(bx + px - 1, by + py - 1, 3, 3, (unsigned char)col, y0, y1);
-    }
-}
-
 void vdu_ship(int type, int s, int x, int y, int side, int y0, int y1)
 {
     const RvShipType __far *t = ship_type((uint16_t)type);
@@ -297,8 +285,6 @@ void vdu_ship(int type, int s, int x, int y, int side, int y0, int y1)
     ix = x + (side - inner) / 2;
     iy = y + (side - inner) / 2;
     vdu_wire(type, ix, iy, inner, inner, WIRE, y0, y1);
-    if (s == 0 && (g_page[0] == VDU_L_WEAPONS || g_page[0] == VDU_L_DAMAGE))
-        gun_marks(type, ix, iy, inner, y0, y1);
     /* the levels: the front and rear shields, the front, rear, left and right armour */
     pct[0] = pct_of(SHIELD(s, 0), SHIELD_MAX(s, 0));
     pct[1] = pct_of(SHIELD(s, 1), SHIELD_MAX(s, 1));
@@ -391,67 +377,354 @@ static void draw_target(const RvRect __far *r, int y0, int y1)
     ship_page(s, gInstanceShipTypes[s], r, name, a, b, y0, y1);
 }
 
-/* the damage page (the user's, 2026-11-01): the own ship as the target and weapons pages draw a ship, the wire with its armour and
- * shields and its guns marked (a destroyed one red).  Above it the hull in a word, red on the reserve; below it, in red in
- * the small font, the name of one hurt system and no more (the user: not "so accurate", "just state the part if it's damaged"): they
- * come round by themselves, and D moves on at once */
+/* --- the own ship's pages, damage and weapons (the user's, 2026-11-01): the wire with the whole of its square, no bars (the survival
+ * display has the shields and the armour), a dim green the shapes stand out on (tools/vduparts.py draws them, vduparts.h) --- */
+
+#define OWN_WIRE 68
+#define PART_HI UI_RED                  /* the part the page names, the weapons that fire */
+#define PART_DIM 98                     /* the other hurt parts */
+#define PART_LO 96
+#define MOUNT_OFF UI_GREY4              /* a weapon the choice leaves out */
+#define MOUNT_OFF_LO UI_GREY2
+
+typedef struct {
+    const RvRect __far *r;              /* the VDU */
+    const unsigned char __far *m;       /* the ship's outline */
+    int x, y, w, h;                     /* its box on the screen */
+    int y0, y1;
+} Own;
+
+/* the square for the ship below `above` lines and above one, or at the left of a wide VDU; the wire in it */
+static void own_begin(Own *o, const RvRect __far *r, int above, int *side, int y0, int y1)
+{
+    int x, y;
+    if (r->w >= 2 * r->h) {
+        *side = r->h - 4;
+        x = r->x + 2;
+        y = r->y + 2;
+    } else {
+        *side = r->h - (above + 1) * FH - 6;
+        if (*side > r->w - 4)
+            *side = r->w - 4;
+        x = r->x + (r->w - *side) / 2;
+        y = r->y + 3 + above * FH + 1;
+    }
+    o->r = r;
+    o->m = collide_mask((uint16_t)gInstanceShipTypes[0]);
+    o->y0 = y0;
+    o->y1 = y1;
+    wire_box(gInstanceShipTypes[0], x, y, *side, *side, &o->x, &o->y, &o->w, &o->h);
+    vdu_wire(gInstanceShipTypes[0], x, y, *side, *side, OWN_WIRE, y0, y1);
+}
+
+/* a shape centred at a place on the ship's box, kept on the VDU */
+static void stamp(const Own *o, int k, int px, int py, int mirror, unsigned char hi, unsigned char lo)
+{
+    const unsigned short __far *a = g_part[k];
+    int cx = o->x + px - PART_N / 2, cy = o->y + py - PART_N / 2, row, col;
+    if (cx < o->r->x + 1) cx = o->r->x + 1;
+    if (cx > o->r->x + o->r->w - PART_N - 1) cx = o->r->x + o->r->w - PART_N - 1;
+    if (cy < o->r->y + 1) cy = o->r->y + 1;
+    if (cy > o->r->y + o->r->h - PART_N - 1) cy = o->r->y + o->r->h - PART_N - 1;
+    for (row = 0; row < PART_N; row++) {
+        unsigned char __far *d;
+        unsigned short b = a[row], l = a[row + PART_N];
+        if (cy + row < o->y0 || cy + row >= o->y1 || !(b | l))
+            continue;
+        d = vid_row(cy + row) + cx;
+        for (col = 0; col < PART_N; col++) {
+            int bit = mirror ? col : PART_N - 1 - col;
+            if (b >> bit & 1)
+                d[col] = hi;
+            else if (l >> bit & 1)
+                d[col] = lo;
+        }
+    }
+}
+
+/* how far the hull reaches from the centre line along a row */
+static int half_at(const Own *o, int py)
+{
+    int d;
+    if (!o->m)
+        return o->w / 2;
+    for (d = o->w / 2; d > 0; d--)
+        if (solid(o->m, o->w / 2 - d, py, o->w, o->h) || solid(o->m, o->w / 2 + d, py, o->w, o->h))
+            return d;
+    return 0;
+}
+
+/* where the hull's leading edge is at a place across the ship; -1 no hull there */
+static int leading_edge(const Own *o, int px)
+{
+    int py;
+    if (!o->m)
+        return 0;
+    for (py = 0; py < o->h; py++)
+        if (solid(o->m, px, py, o->w, o->h))
+            return py;
+    return -1;
+}
+
+/* the weapons of a kind on the wire, each at its mount across the ship: a gun from the hull's leading edge there; a launcher a missile
+ * for each round it has left, side by side, further back.  The ones that fire are drawn last, over the others */
+#define ROUNDS_DRAWN 8
+#define ROUND_W 7
+enum { MARK_GUNS, MARK_MISSILES, MARK_HURT_GUNS, MARK_HURT_RACKS };
+static void mount_marks(const Own *o, int mode, unsigned char hi, unsigned char lo)
+{
+    int g, pass, l = logic_launcher(), want_guns = mode == MARK_GUNS || mode == MARK_HURT_GUNS, hurt = mode >= MARK_HURT_GUNS;
+    for (pass = 0; pass < 2; pass++)
+        for (g = 0; g < GUN_COUNT(0); g++) {
+            const RvWeapon __far *w = weapon(GUN_TYPE(0, g));
+            int gun, dead, px, py, fires, rounds, i;
+            if (!w)
+                continue;
+            gun = w->kind == RV_WK_GUN || w->kind == RV_WK_TURRET;
+            if (gun != want_guns)
+                continue;
+            dead = (GUN_STATE(0, g) & GUN_DESTROYED) != 0;
+            if (hurt) {
+                if (!(dead || sys_level(gun ? SYS_GUNS : SYS_RACKS)))
+                    continue;
+                fires = 1;
+            } else {
+                if (dead)
+                    continue;           /* (gone from the ship: the damage page says so) */
+                fires = gun ? logic_gun_selected((int16_t)g) : l >= 0 && GUN_TYPE(0, g) == GUN_TYPE(0, l);
+            }
+            if (fires != pass)
+                continue;
+            px = o->w / 2 + (int)GUN_MOUNT_X(0, g) * (o->w / 2) / 32;   /* (32nds of the half box) */
+            if (px < 0) px = 0;
+            if (px >= o->w) px = o->w - 1;
+            if (gun) {
+                py = leading_edge(o, px);
+                stamp(o, SYS_GUNS, px, (py < 0 ? 0 : py) + PART_N / 2, 0, fires ? hi : MOUNT_OFF, fires ? lo : MOUNT_OFF_LO);
+                continue;
+            }
+            rounds = hurt ? 1 : GUN_STATE(0, g) & 0x7F;
+            if (rounds > ROUNDS_DRAWN)
+                rounds = ROUNDS_DRAWN;
+            for (i = 0; i < rounds; i++) {
+                int at = px + (2 * i - rounds + 1) * ROUND_W / 2;
+                py = at >= 0 && at < o->w ? leading_edge(o, at) : -1;
+                stamp(o, SYS_RACKS, at, (py < 0 ? o->h / 2 : py + o->h / 5), 0, fires ? hi : MOUNT_OFF, fires ? lo : MOUNT_OFF_LO);
+            }
+        }
+}
+
+/* the row of the rearmost engine, and how far across the engines reach (their places: data/engines.csv) */
+static int engine_tail(const Own *o, int *xa, int *xb)
+{
+    const RvShipType __far *t = ship_type((uint16_t)gInstanceShipTypes[0]);
+    int hx = t && t->hit[0] ? t->hit[0] : 100, hz = t && t->hit[2] ? t->hit[2] : 100;
+    int n = t ? t->nengines : 0, tail = 0, k;
+    if (n > RV_ENGINES)
+        n = RV_ENGINES;
+    *xa = o->w;
+    *xb = 0;
+    for (k = 0; k < n; k++) {
+        int ex = o->w / 2 + t->engine[k][0] * (o->w / 2) / hx, ey = o->h / 2 - t->engine[k][2] * (o->h / 2) / hz;
+        if (ex < *xa) *xa = ex;
+        if (ex > *xb) *xb = ex;
+        if (ey > tail) tail = ey;
+    }
+    if (!n) {
+        *xa = *xb = o->w / 2;
+        tail = o->h - 1;
+    }
+    return tail >= o->h ? o->h - 1 : tail;
+}
+
+/* the engine section: the tail of the ship's own outline around its engines, ribbed, and the nozzles */
+static void part_engine(const Own *o, unsigned char hi, unsigned char lo)
+{
+    const RvShipType __far *t = ship_type((uint16_t)gInstanceShipTypes[0]);
+    int hx = t && t->hit[0] ? t->hit[0] : 100, n = t ? t->nengines : 0, xa, xb, tail = engine_tail(o, &xa, &xb), top, k, px, py;
+    if (n > RV_ENGINES)
+        n = RV_ENGINES;
+    xa -= 4;
+    xb += 4;
+    top = tail - o->h / 4;
+    for (py = top; py <= tail; py++) {
+        unsigned char __far *d;
+        if (o->y + py < o->y0 || o->y + py >= o->y1)
+            continue;
+        d = vid_row(o->y + py) + o->x;
+        for (px = xa; px <= xb; px++)
+            if (px >= 0 && px < o->w && (!o->m || solid(o->m, px, py, o->w, o->h)))
+                d[px] = (tail - py) % 3 == 2 ? lo : hi;
+    }
+    for (k = 0; k < n; k++) {
+        int ex = o->x + o->w / 2 + t->engine[k][0] * (o->w / 2) / hx;
+        gfx_fill(ex - 2, o->y + tail + 1, 5, 1, hi, o->y0, o->y1);
+        gfx_fill(ex - 3, o->y + tail + 2, 7, 1, lo, o->y0, o->y1);
+    }
+}
+
+/* where a part sits on the ship: across, 32nds of the hull's half width at that row, then along, 64ths of the way from the nose to the
+ * engine section; by SYS_ */
+static const signed char __far g_part_at[SYS_COUNT][2] = {
+    { 26, 52 }, { 0, 43 }, { -26, 52 }, { 0, 30 }, { -26, 40 }, { -24, 14 }, { 0, 18 }, { -30, 64 }, { 0, 0 },
+    { 0, 0 }, { 0, 56 }, { 0, 6 }, { -26, 28 }, { 26, 28 }, { 26, 40 }, { 0, 0 }, { 0, 0 }, { 24, 14 }, { 30, 64 } };
+
+static void part_draw(const Own *o, int k, unsigned char hi, unsigned char lo, int card)
+{
+    int py, half, i, xa, xb, cx;
+    switch (k) {
+    case SYS_GUNS: mount_marks(o, MARK_HURT_GUNS, hi, lo); return;
+    case SYS_RACKS: mount_marks(o, MARK_HURT_RACKS, hi, lo); return;
+    case SYS_ENGINE: part_engine(o, hi, lo); return;
+    case SYS_THRUSTERS:                 /* (four, on the outline, firing out) */
+        for (i = 0; i < 2; i++) {
+            py = o->h * (i ? 44 : 18) / 64;
+            half = half_at(o, py);
+            stamp(o, k, o->w / 2 - half + 2, py, 1, hi, lo);
+            stamp(o, k, o->w / 2 + half - 2, py, 0, hi, lo);
+        }
+        return;
+    }
+    py = (engine_tail(o, &xa, &xb) - o->h / 4) * g_part_at[k][1] / 64;
+    half = half_at(o, py);
+    if (half < 8)
+        half = 8;
+    cx = o->w / 2 + g_part_at[k][0] * half / 32;
+    if (card)                           /* (the one named: clear of the others) */
+        gfx_fill(o->x + cx - PART_N / 2 - 1, o->y + py - PART_N / 2 - 1, PART_N + 2, PART_N + 2, UI_BLACK, o->y0, o->y1);
+    stamp(o, k, cx, py, 0, hi, lo);
+}
+
+/* a weapon lost counts as its system hurt: the repair system never brings one back */
+static int part_hurt(int k)
+{
+    int g;
+    if (sys_level((int16_t)k))
+        return 1;
+    if (k != SYS_GUNS && k != SYS_RACKS)
+        return 0;
+    for (g = 0; g < GUN_COUNT(0); g++) {
+        const RvWeapon __far *w = weapon(GUN_TYPE(0, g));
+        if (w && (GUN_STATE(0, g) & GUN_DESTROYED) && (w->kind == RV_WK_GUN || w->kind == RV_WK_TURRET) == (k == SYS_GUNS))
+            return 1;
+    }
+    return 0;
+}
+
+/* the damage page: the hull in a word above the ship, red on the reserve; the hurt parts on it as shapes where they sit in a ship
+ * (the user: "engine section for engine", "a computer for computer", "radar for radar"), and one of them at a time bright, its name
+ * below in red and no more (the user: not "so accurate", "just state the part if it's damaged"): they come round by themselves, and
+ * D moves on at once */
 #define DAMAGE_TURN 60                  /* frames a system is named: two seconds */
 static void draw_damage(const RvRect __far *r, int y0, int y1)
 {
     char top[16], name[12];
-    int list[SYS_COUNT], n = 0, k, wide = r->w >= 2 * r->h, x, ytop, y;
+    Own o;
+    int list[SYS_COUNT], n = 0, k, side, now, wide = r->w >= 2 * r->h, x, y;
     if (!slot_type(0))
         return;
     for (k = 0; k < SYS_COUNT; k++)
-        if (sys_level((int16_t)k))
+        if (part_hurt(k))
             list[n++] = k;
-    /* (where ship_page puts its lines: at the wire's right on a wide VDU, else above and below it) */
-    x = wide ? r->x + (r->h - 4) + 8 : r->x + 3;
-    ytop = r->y + 3;
-    y = wide ? r->y + 3 + FH + 1 : r->y + r->h - FH - 2;
+    own_begin(&o, r, 1, &side, y0, y1);
+    now = n ? list[(g_cursor + frameCounter / DAMAGE_TURN) % n] : -1;
+    for (k = 0; k < n; k++)
+        if (list[k] != now)
+            part_draw(&o, list[k], PART_DIM, PART_LO, 0);
+    if (n)
+        part_draw(&o, now, PART_HI, PART_LO, 1);
+    x = wide ? r->x + side + 8 : r->x + 3;
     panel_hull_name(top);
-    ship_page(0, gInstanceShipTypes[0], r, g_sys.reserve >= 0 ? "" : top, n ? "" : "NO DAMAGE", "", y0, y1);
-    if (g_sys.reserve >= 0)
-        panel_tiny(x, ytop, top, UI_RED, y0, y1);
-    if (!n)
-        return;
-    _fstrncpy(name, logic_system_name((int16_t)list[(g_cursor + frameCounter / DAMAGE_TURN) % n]), sizeof name - 1);
-    name[sizeof name - 1] = 0;
-    panel_tiny(x, y, name, UI_RED, y0, y1);
+    panel_tiny(x, r->y + 3, top, g_sys.reserve >= 0 ? UI_RED : TEXT, y0, y1);
+    y = wide ? r->y + 3 + FH + 1 : r->y + r->h - FH - 2;
+    if (n) {
+        _fstrncpy(name, logic_system_name((int16_t)now), sizeof name - 1);
+        name[sizeof name - 1] = 0;
+        panel_tiny(x, y, name, UI_RED, y0, y1);
+    } else {
+        text(x, y, "NO DAMAGE", 0, y0, y1);
+    }
 }
 
-/* the weapons page: the guns the trigger fires (all, or one type), the own ship with its guns marked, and the
- * missile the missile key fires with its rounds */
-static void draw_weapons(const RvRect __far *r, int y0, int y1)
+/* a line across the middle of the VDU (the weapons page has its lines centred, as the old games' do) */
+static void centred(const RvRect __far *r, int x, int w, int y, char *s, int y0, int y1)
 {
-    char top[16], a[16], b[8];
+    (void)r;
+    fit(s, w);
+    text(x + (w - panel_tiny_width(s)) / 2, y, s, 0, y0, y1);
+}
+
+/* the weapons pages, G the guns, W the missile (the user's picture, 2026-11-01): what is active, its name, how hard it hits in a word,
+ * the ship with it in red on its mounts, and how many.  On a VDU too short for all of it the name above and the rest below */
+static void draw_weapons(const RvRect __far *r, int missile, int y0, int y1)
+{
+    char title[16], name[RV_WNAME + 1], word[24], count[20];
+    Own o;
     uint16_t types[8];
-    int n = logic_gun_types(types, 8), l = logic_launcher(), g, rounds = 0;
-    const RvWeapon __far *w;
+    const RvWeapon __far *w = 0;
+    unsigned hits = 0;
+    int n, g, have = 0, side, l = logic_launcher(), wide = r->w >= 2 * r->h, full = wide || r->h >= 80, x, tw, y;
     if (!slot_type(0))
         return;
-    if (!g_sys.gun_sel || g_sys.gun_sel > n)
-        strcpy(top, "GUNS: ALL");
-    else {
-        char code[RV_CODE + 1];
-        _fstrncpy(code, weapon(types[g_sys.gun_sel - 1])->code, RV_CODE);
-        code[RV_CODE] = 0;
-        sprintf(top, "GUNS: %s", code);
-    }
-    if (l >= 0 && (w = weapon(GUN_TYPE(0, l))) != 0) {
-        char code[RV_CODE + 1];
-        _fstrncpy(code, w->code, RV_CODE);
-        code[RV_CODE] = 0;
-        for (g = 0; g < GUN_COUNT(0); g++)   /* (the rounds of every launcher of that weapon) */
-            if (GUN_TYPE(0, g) == GUN_TYPE(0, l) && !(GUN_STATE(0, g) & GUN_DESTROYED))
-                rounds += GUN_STATE(0, g) & 0x7F;
-        sprintf(a, "%s", code);
-        sprintf(b, "x%d", rounds);
+    if (missile) {
+        strcpy(title, "ACTIVE MISSILE");
+        if (l >= 0 && (w = weapon(GUN_TYPE(0, l))) != 0) {
+            for (g = 0; g < GUN_COUNT(0); g++)   /* (the rounds of every launcher of that weapon) */
+                if (GUN_TYPE(0, g) == GUN_TYPE(0, l) && !(GUN_STATE(0, g) & GUN_DESTROYED))
+                    have += GUN_STATE(0, g) & 0x7F;
+        }
+        sprintf(count, "%d LOADED", have);
     } else {
-        strcpy(a, "NO MISSILE");
-        b[0] = 0;
+        strcpy(title, "ACTIVE GUNS");
+        n = logic_gun_types(types, 8);
+        if (n == 1 || (g_sys.gun_sel && g_sys.gun_sel <= n))
+            w = weapon(types[n == 1 ? 0 : g_sys.gun_sel - 1]);
+        for (g = 0; g < GUN_COUNT(0); g++) {
+            const RvWeapon __far *t = weapon(GUN_TYPE(0, g));
+            if (t && (t->kind == RV_WK_GUN || t->kind == RV_WK_TURRET) && logic_gun_selected((int16_t)g)
+                && !(GUN_STATE(0, g) & GUN_DESTROYED)) {
+                have++;
+                if (t->damage > hits)   /* (all of them at once, of two kinds: the harder) */
+                    hits = t->damage;
+            }
+        }
+        if (!full)
+            sprintf(count, "%d ENGAGED", have);
+        else
+            sprintf(count, have == 1 ? "1 GUN ENGAGED" : "%d GUNS ENGAGED", have);
     }
-    ship_page(0, gInstanceShipTypes[0], r, top, a, b, y0, y1);
+    if (w) {
+        _fstrncpy(name, w->name, RV_WNAME);
+        name[RV_WNAME] = 0;
+        hits = w->damage;
+    } else {
+        strcpy(name, missile ? "NO MISSILES" : have ? "ALL GUNS" : "NO GUNS");
+        if (missile)
+            count[0] = 0;
+    }
+    word[0] = 0;
+    if (hits) {
+        strcpy(word, full ? "DAMAGE: " : "");
+        strcat(word, hits < 25 ? "LIGHT" : hits < 36 ? "MODERATE" : hits < 100 ? "HEAVY" : "SEVERE");
+    }
+    own_begin(&o, r, full && !wide ? 3 : 1, &side, y0, y1);
+    mount_marks(&o, missile ? MARK_MISSILES : MARK_GUNS, PART_HI, PART_LO);
+    x = wide ? r->x + side + 6 : r->x + 3;
+    tw = r->x + r->w - 3 - x;
+    y = r->y + 3;
+    if (full) {
+        centred(r, x, tw, y, title, y0, y1);
+        gfx_fill(x + 2, y + FH - 1, tw - 4, 1, TEXT, y0, y1);
+        centred(r, x, tw, y + FH + 1, name, y0, y1);
+        centred(r, x, tw, y + 2 * FH + 1, word, y0, y1);
+        centred(r, x, tw, wide ? y + 3 * FH + 1 : r->y + r->h - FH - 2, count, y0, y1);
+    } else {
+        centred(r, x, tw, y, name, y0, y1);
+        y = r->y + r->h - FH - 2;
+        fit(word, tw - panel_tiny_width(count) - 4);
+        text(x, y, word, 0, y0, y1);
+        text(x + tw - panel_tiny_width(count), y, count, 0, y0, y1);
+    }
 }
 
 
@@ -611,7 +884,8 @@ int vdu_draw(int which, const RvRect __far *r, int y0, int y1)
         switch (g_page[0]) {
         case VDU_L_NAV: draw_nav(r, y0, y1); return 1;
         case VDU_L_COMM: draw_comm(r, y0, y1); return 1;
-        case VDU_L_WEAPONS: draw_weapons(r, y0, y1); return 1;
+        case VDU_L_WEAPONS: draw_weapons(r, 0, y0, y1); return 1;
+        case VDU_L_MISSILE: draw_weapons(r, 1, y0, y1); return 1;
         case VDU_L_DAMAGE: draw_damage(r, y0, y1); return 1;
         default: return 0;
         }

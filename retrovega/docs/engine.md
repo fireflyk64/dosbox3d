@@ -1883,7 +1883,7 @@ N a nav menu, the chosen point a white cross in the view; C a comm menu;
 the VDUs take the readouts' small font. vdu.c:
 
 - **The right VDU** carries the target page (T, Y); **the left** the status lines,
-  the nav page (N), the comm menu (C), the weapons page (G, W) and the damage page
+  the nav page (N), the comm menu (C), the weapons pages (G, W) and the damage page
   (D; the user's, 2026-11-01). A comm face on a VDU draws over its page
   (comms.c), but the comm menu comes up over a face, the comm going on
   under it. A VDU's own glass and the computer decide what is left of a page
@@ -1897,14 +1897,10 @@ the VDUs take the readouts' small font. vdu.c:
   in the survival display's colours (lit shield 79, lit armour 70, spent
   black: the user's rulings of 2026-10-23).
 - **The target page:** the target's name (its type's), its range, its
-  hull left, and the ship. **The weapons page:** the guns the trigger
-  fires (GUNS: ALL, or a type's code), the own ship with a dot at each
-  gun's mount on its leading edge (amber a gun that fires, grey one the
-  choice leaves out, red one destroyed), the chosen missile's code and
-  the rounds of its kind. **The damage page:** the own ship as those pages
-  draw it, the hull above it, and below it the name of one hurt system in
-  small red letters (or NO DAMAGE), in turn every two seconds; D again
-  names the next.
+  hull left, and the ship. **The weapons pages** (G the guns, W the missile) and
+  **the damage page** (D) draw the own ship without the bars, for the room: docs/damage.md
+  has what they show. Their shapes are 11 x 11 pixel art in `tools/vduparts.py`, which writes
+  `src/vduparts.h` (run by hand, the header is checked in), one by `SYS_` in its order.
 - **The nav page:** the waypoints with how far each is, then HOME, the chosen one lit;
   N opens it (ending any comm that was on that VDU) and goes on to the next. `g_sys.nav` is
   the nav point's own number: it follows the first waypoint not reached until N picks one,
