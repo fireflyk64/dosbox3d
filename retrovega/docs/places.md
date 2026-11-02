@@ -197,6 +197,9 @@ shoulders, listed in `animations.json`:
 | console-work | gaze down, a small head dip, taps on the console | 32 at 80 ms |
 | ready-nod | a double nod towards the fighter | 32 at 80 ms |
 
+Only idle's first frame is used now, with the eyes of frame 20 for a blink: the user found the breathing "zombie-like", the whole figure
+warping up and down (2026-11-01), so Kit stands still and blinks every few seconds (`KIT_EYES` in tools/rvpack.py, `deck_tick`).
+
 The source canvas is 1536x1024. It is cropped to 1536x960 (32 pixels off
 the top and the bottom) and scaled to 640x400.
 

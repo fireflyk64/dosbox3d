@@ -402,6 +402,10 @@ def pack_briefing(pack, rec, pal, place, d):
                        place['stages']['ms'] // 55 or 1)
 
 
+KIT_EYES_SHUT = 20                      # the idle clip's frame with her eyes closed, and where they are in her patch
+KIT_EYES = (83, 37, 106, 50)
+
+
 def pack_deck(pack, place, d, ships_csv):
     back = Image.open(os.path.join(d, 'back.png')).convert('RGBA')
     F = place['fighter']
@@ -428,13 +432,15 @@ def pack_deck(pack, place, d, ships_csv):
     px, py, pw, ph = A['patch']
     cut = front.copy()
     ImageDraw.Draw(cut).rectangle([px, py, px + pw - 1, py + ph - 1], fill=(0, 0, 0, 0))
-    clips = []
-    for name in ('idle', 'console-work', 'ready-nod'):
-        c = A['clips'][name]
-        at = Image.open(os.path.join(d, c['atlas']))
-        cells = [at.crop(((k % c['columns']) * pw, (k // c['columns']) * ph,
-                          (k % c['columns'] + 1) * pw, (k // c['columns'] + 1) * ph)) for k in range(c['frames'])]
-        clips.append((name, cells, c['ms']))
+    # Kit stands still, and blinks (the user: the pack's breathing "looks zombie-like", the whole figure warping up and down): the idle
+    # clip's first frame, and the same with the eyes of its frame with them closed.  The pack's other clips move her head, so they go too
+    c = A['clips']['idle']
+    at = Image.open(os.path.join(d, c['atlas'])).convert('RGBA')
+    cell = lambda k: at.crop(((k % c['columns']) * pw, (k // c['columns']) * ph,
+                              (k % c['columns'] + 1) * pw, (k // c['columns'] + 1) * ph))
+    still, blink = cell(0), cell(0)
+    blink.paste(cell(KIT_EYES_SHUT).crop(KIT_EYES), KIT_EYES[:2])
+    clips = [('idle', [still, blink], c['ms'])]
     pal = room_palette([p for _s, p in plates[:3]] + [front] + clips[0][1][:4])
     rec = {'palette': add_palette(pack, 'pal_deck', pal, list(range(256))),
            'back': add_image(pack, 'back_deck', back.convert('RGB'), pal)}
@@ -458,8 +464,8 @@ def pack_deck(pack, place, d, ships_csv):
     types = {r['key']: int(r['type'], 16) for r in ships_csv}
     ships = b''.join(struct.pack('<BBH', types[s], 0, i) for s, i in entries)
     ships += b'\0' * (4 * LIMITS['DECK_SHIPS'] - len(ships))
-    deck = struct.pack('<BBH3H3B3B3H4h', len(entries), 0, front_i, *clip_first, *clip_n, 0, 0, 0,
-                       *[max(1, m // 55) for m in clip_ms], px, py, pw, ph) + ships
+    deck = struct.pack('<BBH3H3B3B3H4h', len(entries), 0, front_i, clip_first[0], 0, 0, clip_n[0], 0, 0, 0, 0, 0,
+                       max(1, clip_ms[0] // 55), 0, 0, px, py, pw, ph) + ships
     return rec, deck
 
 
@@ -675,13 +681,30 @@ def pack_comms(pack, d, ships_csv):
     return cast_i, ramp_i, voices
 
 
+def round_shoulders(im):
+    """The bust's shoulders ran into the sides of its square and stopped there like stubs (the user): their outer top corners cut to a
+    quarter ellipse from the row each first touches the side, so they fall away instead.  As big as that side's stub is tall: a pilot's
+    shoulder touches the side much lower down than Kit's, and one size cut into their sleeves (the user: "you cut too much")."""
+    a = np.array(im)
+    h, w = a.shape[:2]
+    for side in (0, w - 1):
+        rows = np.nonzero(a[:, side, 3] > 128)[0]
+        if not len(rows):
+            continue
+        rx, ry = (h - rows[0]) * 2 // 3, (h - rows[0]) * 5 // 4
+        for k in range(rx):
+            t = (rx - k) / rx
+            a[:int(rows[0] + ry * (1 - (1 - t * t) ** 0.5)), k if side == 0 else w - 1 - k, 3] = 0
+    return Image.fromarray(a)
+
+
 def pack_people(pack, keys, comms=None):
     out = []
     for key in keys:
         d = os.path.join(ROOT, 'art', 'people', 'faces', key)
         fj = json.load(open(os.path.join(d, 'face.json')))
         k = FACE / fj['size']
-        base = Image.open(os.path.join(d, 'base.png')).convert('RGBA').resize((FACE, FACE), Image.LANCZOS)
+        base = round_shoulders(Image.open(os.path.join(d, 'base.png')).convert('RGBA').resize((FACE, FACE), Image.LANCZOS))
         mouths = [Image.open(os.path.join(d, 'mouth_%d.png' % i)).convert('RGBA') for i in range(9)]
         eyes = [Image.open(os.path.join(d, 'eyes_%d.png' % i)).convert('RGBA') for i in range(3)]
         mb, eb = fj['mouth_box'], fj['eye_box']

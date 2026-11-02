@@ -571,7 +571,7 @@ static const char __far *line_of(int person)
  * (the player's own when it is a reply); Esc leaves.  None for them: their one line --- */
 
 static int g_conv_owner = -1, g_conv_at;
-static int g_clip, g_clip_frame, g_deck_ship;       /* (the deck, below: Kit's loop and the fighter on the pad) */
+static int g_clip_frame, g_deck_ship;   /* (the deck, below: Kit, her eyes open or shut, and the fighter on the pad) */
 
 static int conv_next(void)
 {
@@ -589,11 +589,8 @@ static void conv_page(int k)
     const RvTalk __far *t = camp_line(&g_m, k);
     int who = t->speaker == RV_SPEAKER_YOU ? person_of(RV_ROLE_HERO) : t->speaker, back = g_close_back, was = g_mode;
     g_conv_at = k;
-    if (t->boost) {                     /* (Kit's line that comes with a part: she nods when the player is back) */
+    if (t->boost)                       /* (Kit's line that comes with a part) */
         logic_boost = t->boost;
-        g_clip = 2;
-        g_clip_frame = 0;
-    }
     say(who, t->text);
     if (was == MODE_TALK) {             /* (the next page: the same room, this speaker's face) */
         show_face();
@@ -892,7 +889,7 @@ static void deck_underlay(int y0, int y1)
     if (g_scene.hot_gone)               /* (Kit flew, and the player lost her: the fighter, and nobody) */
         return;
     gfx_sprite(d->front, 0, 0, y0, y1);
-    gfx_sprite(d->clip_first[g_clip] + g_clip_frame, 0, 0, y0, y1);
+    gfx_sprite(d->clip_first[0] + g_clip_frame, 0, 0, y0, y1);
 }
 
 static void deck_overlay(int y0, int y1)
@@ -923,7 +920,7 @@ static void enter_deck(void)
                 g_scene.hot_gone = i + 1;
     g_talk_line = -1;
     g_talk_at = g_now + 18;
-    g_clip = g_clip_frame = 0;
+    g_clip_frame = 0;
     g_clip_at = g_now;
     g_mode = MODE_DECK;
     music_cue(RV_MUSIC_LAUNCH, 250);
@@ -931,16 +928,14 @@ static void enter_deck(void)
     vid_fade(64);
 }
 
+/* Kit stands still and blinks (the user, 2026-11-01: her breathing "looks zombie-like"): shut three ticks of 55 ms, then 2.5 to 7 s open */
 static void deck_tick(void)
 {
     const RvDeck __far *d = &dat_room(RV_R_DECK)->deck;
     if (g_now < g_clip_at)
         return;
-    g_clip_at = g_now + d->clip_ticks[g_clip];
-    if (++g_clip_frame >= d->clip_n[g_clip]) {
-        g_clip_frame = 0;
-        g_clip = (g_clip + 1) % RV_CLIPS;
-    }
+    g_clip_frame = !g_clip_frame;
+    g_clip_at = g_now + (g_clip_frame ? 3 : 45 + (g_now * 25173UL >> 4) % 82);
     vid_dirty(d->patch_y, d->patch_y + d->patch_h);
 }
 
