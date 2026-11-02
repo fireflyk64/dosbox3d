@@ -3215,6 +3215,8 @@ static void t_ram_caps(void)
     static const char __far e_capped[] = "flown head on into a Nicander at 450 kps with the front armour at %d: the "
         "armour is %d after and the hull lost %d: shield and armour only";
     static const char __far e_system[] = "the player's collision broke no system: one at least";
+    static const char __far e_light[] = "a bump at 200 kps (50 points, under the front shield and armour) broke %d system "
+        "points and cost %d: the old rule's damage and no system point";
     static const char __far e_same[] = "the player lost %d and the Nicander %d: the enemy takes what the player took";
     static const char __far e_hull[] = "the front armour gone, the player's hull went from %d left to %d: to 40 percent";
     static const char __far e_npc[] = "two Nicanders head on at 50 km a step: slot %d lost %d (at most %d), or died";
@@ -3242,6 +3244,16 @@ static void t_ram_caps(void)
     d0 = h0 - pt_health(0);
     d1 = h1 - pt_health(1);
     REQUIRE(labs(d0 - d1) <= 3, e_same, d0, d1, 0);
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 150, TURN / 2);
+    pt_speed(0, 200);
+    h0 = pt_health(0);
+    if (!pt_step())
+        return;
+    for (k = 0, sys = 0; k < SYS_COUNT; k++)
+        sys = (int16_t)(sys + sys_level(k));
+    d0 = h0 - pt_health(0);
+    REQUIRE(sys == 0 && d0 >= 48 && d0 <= 50, e_light, sys, d0, 0);
     pt_alone(PT_PLAYER);
     pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 150, TURN / 2);
     pt_speed(0, 450);
@@ -5726,7 +5738,7 @@ static const char __far n_m8_18[] = "M8.18 attack-capital (view_of): fighters at
 static const char __far n_m8_19[] = "M8.19 autopilot-apart (logic_autopilot): the wingman coming down on the Ox's spot arrives apart, and nobody hits it";
 static const char __far n_m6_4[] = "M6.4 capital-map (shot_hit): a capital ship is hit on its actual shape under any rule, not its radius";
 static const char __far n_m6_5[] = "M6.5 capital-ram (collide_ships): a fighter against a capital ship is its silhouettes under every hit= and ram= setting";
-static const char __far n_m6_6[] = "M6.6 ram-caps (ram): a collision costs the player its shield and armour at most (the hull to 40% with the armour gone) and a system, an NPC its shield and half its armour; into a capital ship over 100 kps, stopped";
+static const char __far n_m6_6[] = "M6.6 ram-caps (ram): a collision costs the player its shield and armour at most (the hull to 40% with the armour gone) and, cut, a system; a light one the old rule's; an NPC its shield and half its armour; into a capital ship over 100 kps, stopped";
 static const char __far n_m8_20[] = "M8.20 jump-told (route_step, logic_on_jump): an escorted ship's jump is told once, friendly, for the star and the flash";
 static const char __far n_m8_21[] = "M8.21 wingman-lost (logic_wingman_lost, camp_load_units, camp_line_ok): a lost wingman is named, the next mission solo, their lines gone";
 static const char __far n_m8_22[] = "M8.22 kit-boost (kit_boost, logic_boost): talking to Kit before the launch: half as much armour again, or a round more; nothing without it";

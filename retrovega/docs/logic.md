@@ -473,7 +473,10 @@ let that work without rewriting your logic:
 
 - C89: declarations before statements.
 - `near` and `far` are keywords: don't name variables that.
-- `-ox` once miscompiled an `if (s == 0) ... else` in the physics. When C behaves impossibly, read `wdis` output.
+- `-ox` once miscompiled an `if (s == 0) ... else` in the physics, and again (2026-11-02) `a == 0 && ...` in
+  `ram()`: it put a constant 0 for it, dropped the player's arm, and the player took an NPC's collision cap on DOS
+  only (the host's hashes parted from DOS's at M6.2 and M6.6). Asking `rvController[a] == CTL_PLAYER` compiled
+  right. When C behaves impossibly, read `wdis` output (`wdis -s=src/logic.c build/dos/logic.obj`).
 - A fixed-block address with a constant index passed as a **far** pointer gets segment 0, not DS:
   `_fmemcpy(&v, &gPositionVector[0], 12)` reads the interrupt table. Near calls (`memcpy`, the helpers) and a
   variable index are safe (docs/gameplay.md, "Watcom and DOS traps").

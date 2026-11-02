@@ -1267,9 +1267,10 @@ static uint16_t ram_damage(int16_t a, int16_t b)
 static void hit_sides(int16_t dst, const RvVec3 *w, int16_t *sh, int16_t *ar);
 
 /* what a collision may cost (the user, 2026-11-02: "collisions are too punishing ... This will prevent massive
- * frustration and still make collisions punishing and memorable").  The player, on the side the other ship is: with
- * that shield at a tenth or less, the whole of it (ram_damage); with more, at most that shield and that armour, or,
- * that armour gone, that shield and the hull down to 40% of what it is (a system point besides: ram_hurt) */
+ * frustration and still make collisions punishing and memorable"), never more than the old game's (ram_damage).  The
+ * player, on the side the other ship is: with that shield at a tenth or less, the whole of it; with more, at most that
+ * shield and that armour, or, that armour gone, that shield and the hull down to 40% of what it is (and when that cut
+ * the old game's, a system point besides: ram_hurt) */
 static uint16_t ram_cap_player(uint16_t qty, int16_t other)
 {
     const RvShipType __far *t = slot_type(0);
@@ -1313,14 +1314,16 @@ static void ram_stop(int16_t s, uint32_t kps)
     setSpeed[s] = speedLo[s] = 0;
 }
 
-/* dst hurt by its collision with src (src's place the hit's); the player besides loses a system a point on that side
- * unless the hit broke one (damage_ram_point) */
+/* dst hurt by its collision with src (src's place the hit's); the player, when its cap cut the old game's damage (qty
+ * under raw), besides loses a system a point on that side unless the hit broke one (damage_ram_point; the user: the
+ * point is "only if the original formula would do more": a bump the old rule made light stays as it was) */
 static void ram_hurt(int16_t src, int16_t dst, uint16_t qty, uint16_t raw)
 {
     uint8_t before = damage_points_so_far();
     int16_t sh, ar;
     (void)do_damage((uint16_t)src, (uint16_t)dst, qty, RV_WHERE(&gPositionVector[src]));
-    if (raw && dst == 0 && rvController[0] == CTL_PLAYER && playerCanBeDamaged && slot_is_ship(0) && shipAiState[0] != 9) {
+    if (qty < raw && rvController[dst] == CTL_PLAYER && playerCanBeDamaged && slot_is_ship(0)
+        && shipAiState[0] != 9) {       /* (the local player: slot 0; see ram's note on asking a == 0) */
         hit_sides(0, &gPositionVector[src], &sh, &ar);
         damage_ram_point(before, ar);
     }
@@ -1338,6 +1341,7 @@ static void ram(int16_t a, int16_t b)
     int16_t ma, mb, pa, pb;
     uint16_t qty, qa, qb;
     uint32_t ka, kb;
+    int16_t player;
     if (!collide_ships(a, b, &push, &depth))
         return;
     push.x += push.x / 2;               /* (half as far again as touching, so the next step is not inside again) */
@@ -1361,13 +1365,13 @@ static void ram(int16_t a, int16_t b)
         ram_shove(b, &push, pb, -1);
     if (pa)
         ram_shove(a, &push, (int16_t)-pa, 1);
-    if (a == 0 && rvController[0] == CTL_PLAYER) {   /* (after the push: the sides do_damage will find) */
-        qa = ram_cap_player(qty, b);
-        qb = commAnimInfo[b] == commAnimInfo[0] ? ram_cap_npc(b, qty, a) : qa;
-    } else {                            /* (b is never slot 0: a < b) */
-        qa = ram_cap_npc(a, qty, b);
-        qb = ram_cap_npc(b, qty, a);
-    }
+    /* (after the push: the sides do_damage will find.  b is never slot 0: a < b.  The local player is the slot that
+     * is CTL_PLAYER, slot 0: asked of rvController[a], not of a == 0, which Watcom -ox took as never true here (it
+     * put a constant 0 for `a == 0 && ...` and dropped the player's arm, as it once dropped an `if (s == 0)` arm in
+     * the physics): on DOS the player took an NPC's cap.  docs/logic.md) */
+    player = (int16_t)(rvController[a] == CTL_PLAYER);
+    qa = player ? ram_cap_player(qty, b) : ram_cap_npc(a, qty, b);
+    qb = player && commAnimInfo[b] != commAnimInfo[0] ? qa : ram_cap_npc(b, qty, a);
     if (maybeEntityType[b] == ET_CAPSHIP)
         ram_stop(a, ka);
     if (maybeEntityType[a] == ET_CAPSHIP)
