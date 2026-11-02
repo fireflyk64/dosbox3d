@@ -2645,6 +2645,24 @@ first; any negative answer (the picture has not come, or there is no such pictur
 are still what a flight needs and waits for, on every machine. On anything else the install check says no and it is as if it
 were not here.
 
+## The sky's stars
+
+The user's: a sphere of cubes round the camera, as one might build from blocks, and nothing stored. The cubes are the lattice's
+with 49 <= r x r < 64: 738 of them, 3 stars each, 2,214 in all, about 200 on the whole screen, and through the opening about 145.
+A star is thrown about inside its cube by a hash of the cube's coordinates, the star's number and the sky's seed (the star system's,
+so a system has the same sky each visit), so any part of the sky comes from its own coordinates. `g_star_shell` is the sphere: 64
+bytes, made from that rule at a flight's start, a column's first and last |x|.
+
+`rv_stars_place` (lowlevel.asm; twin c_stars_place) walks the columns. A cube's depth moves by a constant along a column, so most are
+turned away with no multiply, then by the screen's four sides, with room for a star's throw; only then a star costs a hash and its
+projection. `/twins` holds the asm to its twin, and on true cameras holds the culled walk to trying every cube, star for star.
+
+The list is capped at `STARS_SHOWN`, 256: never more than 81 cubes show at once, so 243. **The radii matter:** 7 to 8 is even, but 6.5
+to 7.5 gives rings of 0.51 to 1.26 of the mean by angle from an axis. Change them and measure it again.
+
+Replaced the 2,000 random directions on 2026-11-01: 11.8 KB of conventional memory back, the placing 1.30 ms a frame against 1.02 at
+40,000 cycles (`RVT.EXE /starbench 1000`), a shorter list for the bands to walk.
+
 ## When memory is short
 
 RV.EXE holds every buffer in the image, so it cannot run out once it has loaded. The test builds (RVT, RVP) use a heap for most of

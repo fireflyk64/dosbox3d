@@ -56,6 +56,9 @@ int g_flight_timed = 0;                 /* /flight N given: the flight lands by 
 int g_bench_wanted = 0;                 /* RV.EXE /bench N: that many copies, no adapting; 0 none (the default: the
                                            copies tiled the sky for the user); -1 adapt, the measurement */
 int g_record = 0;                       /* RV.EXE /record N: a screenshot (Rnnnnn.BMP) every N frames of flight */
+#ifdef RV_TESTS
+int g_star_bench;                       /* RVT.EXE /starbench N */
+#endif
 int g_capital_blocks_test = 0;          /* RVT.EXE /capblocks N: capital ships in N x N blocks, however many there are */
 int g_capital = 0;                      /* RV.EXE /capital: the carrier in the flight (a test aid) */
 int g_sky = 0;                          /* RV.EXE /sky: three ship views painted on the sky, to roll and turn round (a test aid) */
@@ -207,7 +210,8 @@ static int g_nplan;
 #define FPS_WINDOW 8                    /* frames the rate is measured over */
 #define FPS_WANT LOGIC_HZ
 #define BENCH_MAX 900
-#define STARS 2000                      /* over the whole sky: the opening sees a twentieth of it */
+#define STARS_SHOWN 256                 /* at most on screen at once: the 738 cubes of the sky's sphere hold 2,214 stars, the whole screen
+                                           sees about 200, at most 218, and never more than 81 of the cubes, 243 stars */
 
 /* rvflight.inc */
 unsigned short __far __cdecl rv_flight_run(void);
@@ -306,15 +310,15 @@ static void sim_step(void)
  * put through the camera (lf_sky), so they turn with every axis of the
  * player's own rotation, as the ships do, and the ships sit still against
  * them */
-#define STARS_SHOWN 400                 /* at most on screen at once: the whole screen sees a tenth of the sky, about 180, and the
-                                           opening a twentieth; any past this go undrawn that frame */
-static struct { short x, y, z; } __far g_star[STARS];   /* a direction of length 4096 */
+static unsigned char __far g_star_shell[64];   /* the sky's sphere of cubes (the user's, built as one might from blocks): for
+                                           |y| x 8 + |z|, the column's first and last |x|; the cubes are those with 49 <= r x r < 64 */
+static unsigned __far g_star_seed;      /* the sky's: a star system's own, the same each visit */
 static struct { short x, y, c; } __far g_star_at[STARS_SHOWN];   /* the ones on screen this frame: c its colour's choice (STAR_COLOUR) */
 #define STAR_COLOUR(c) ((c) & 3 ? UI_GREY4 : UI_GREY6)
 static int g_star_most;                 /* the most on screen in a frame, this flight */
 static int g_star_n;
-int __far __cdecl rv_stars_place(const short __far *stars, int n, const long __far *basis, int cx, int cy, int rows,
-                                 short __far *out, int most);
+int __far __cdecl rv_stars_place(const unsigned char __far *shell, unsigned seed, const long __far *basis, int cx, int cy,
+                                int rows, short __far *out, int most);
 static const LfVec g_world_up = { 0, 256, 0 };
 static int g_cam_cx = SCR_W / 2;        /* the camera's centre column, g_cam_cy its row: the view's middle, thrown about by a hit (fx_shake) */
 static int g_cam_cy0 = SCR_H / 2;       /* (the row before the throw) */
@@ -406,22 +410,21 @@ static unsigned long g_star_place_ticks, g_star_draw_ticks;   /* what the sky co
 
 static void stars_init(void)
 {
-    int i;
-    for (i = 0; i < STARS; i++) {
-        /* a point of the unit sphere: one of the cube, inside the ball, pushed out to length 4096 */
-        long x, y, z, n;
-        unsigned long r;
-        do {
-            x = (long)(vrnd() % 8192) - 4096;
-            y = (long)(vrnd() % 8192) - 4096;
-            z = (long)(vrnd() % 8192) - 4096;
-            n = x * x + y * y + z * z;
-        } while (n < 1024L * 1024 || n > 4096L * 4096);
-        r = lf_sqrt((unsigned long)n);
-        g_star[i].x = (short)(x * 4096 / (long)r);
-        g_star[i].y = (short)(y * 4096 / (long)r);
-        g_star[i].z = (short)(z * 4096 / (long)r);
-    }
+    int y, z, x;
+    for (y = 0; y < 8; y++)
+        for (z = 0; z < 8; z++) {
+            int first = -1, last = -1;
+            for (x = 0; x < 8; x++) {
+                int d = x * x + y * y + z * z;
+                if (d >= 49 && d < 64) {
+                    if (first < 0)
+                        first = x;
+                    last = x;
+                }
+            }
+            g_star_shell[y * 8 + z] = (unsigned char)(first < 0 ? 0xFF : first << 4 | last);
+        }
+    g_star_seed = (unsigned)g_camp.node * 40503U + 7U;
     g_star_n = 0;
     g_star_most = 0;
 }
@@ -440,7 +443,9 @@ static void stars_place(void)
     basis[0] = cam.front.x; basis[1] = cam.front.y; basis[2] = cam.front.z;
     basis[3] = cam.right.x; basis[4] = cam.right.y; basis[5] = cam.right.z;
     basis[6] = cam.up.x; basis[7] = cam.up.y; basis[8] = cam.up.z;
-    g_star_n = rv_stars_place((const short __far *)g_star, STARS, (const long __far *)basis, g_cam_cx, g_cam_cy, SCR_H,
+    /* (from the cockpit, none below the opening: the panel hides them, and the bands would walk past them all the same) */
+    g_star_n = rv_stars_place(g_star_shell, g_star_seed, (const long __far *)basis, g_cam_cx, g_cam_cy,
+                              g_view == VIEW_COCKPIT && cockpit_record() ? cockpit_record()->open_y1 : SCR_H,
                               (short __far *)g_star_at, STARS_SHOWN);
     if (g_star_n > g_star_most)
         g_star_most = g_star_n;
@@ -3291,6 +3296,18 @@ void __far __cdecl flight_frame(void)
         collide_demo_step();
     if (g_hull_demo)
         hull_demo_step();
+#endif
+#ifdef RV_TESTS
+    if (g_star_bench && frameCounter == 5) {   /* (RVT.EXE /starbench: the placing timed over enough calls for the clock's 4 ms ticks) */
+        int k;
+        unsigned long t0 = clock240(), dt;
+        for (k = 0; k < g_star_bench; k++)
+            stars_place();
+        dt = clock240() - t0;
+        RV_LOG("stars: %lu.%02lu ms to place them, %d on screen", dt * 1000 / 240 / g_star_bench,
+               (dt * 100000 / 240 / g_star_bench) % 100, g_star_n);
+        g_star_bench = 0;
+    }
 #endif
     {   /* the view thrown about by the player's hurt: everything through the opening moves, the cockpit round it stands */
         int16_t dx, dy;

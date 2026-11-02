@@ -45,6 +45,7 @@ int16_t playtest_run(const char *only);  /* (tests/play/playtest.c: RVP.EXE /pla
 long twins_selftest(void);              /* (twins.c: RVP.EXE /twins) */
 #endif
 #ifdef RV_TESTS                         /* the test build's aids (flight.c, score.c) */
+extern int g_star_bench;
 extern int g_score_test, g_bench_wanted, g_record, g_capital, g_capital_blocks_test, g_zoom, g_sky;
 extern int g_lasers, g_near_bolts, g_far_ships, g_big_ships, g_bolt_demo, g_flames_demo, g_balls, g_near_balls,
     g_ball_demo, g_missile_demo, g_sky_demo, g_boxes, g_collide_demo, g_hull_demo, g_hull_type, g_flame_test,
@@ -287,6 +288,8 @@ int main(int argc, char **argv)
             music_record(1);
         else if (!strcmp(argv[i], "/capblocks") && i + 1 < argc)   /* tests: capital ships' blocks, 2, 3 or 4 */
             g_capital_blocks_test = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "/starbench") && i + 1 < argc)   /* tests: the stars' placing timed, N times over */
+            g_star_bench = atoi(argv[++i]);
         else if (!strcmp(argv[i], "/capital"))          /* tests: the carrier in the flight */
             g_capital = 1;
         else if (!strcmp(argv[i], "/simat") && i + 1 < argc)   /* tests: the simulator starts at this many ships */

@@ -121,7 +121,7 @@ long rv_turn_dropped(const unsigned char *dense, int w, int h, const LfRot *r, i
     return c_turn_dropped(dense, w, h, r, y, xs, xe, pl, pr, out, above);
 }
 
-int rv_stars_place(const short *stars, int n, const long *basis, int cx, int cy, int rows, short *out, int most)
+int rv_stars_place(const unsigned char *shell, unsigned seed, const long *basis, int cx, int cy, int rows, short *out, int most)
 {
-    return c_stars_place(stars, n, basis, cx, cy, rows, out, most);
+    return c_stars_place(shell, seed, basis, cx, cy, rows, out, most);
 }
