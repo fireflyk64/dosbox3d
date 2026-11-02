@@ -206,15 +206,21 @@ int vdu_page(int which)
 #define SROW 8
 #define TOP(m, row, col) ((m)[(row) * SROW + ((col) >> 3)] & (1 << ((col) & 7)))
 
+/* the outline's column under a pixel across a box w wide: the right half worked out from the edge as the left is, so a pixel and its
+ * mirror image read mirror-image columns and a symmetric ship comes out symmetric (px * SN / w alone reads them one apart) */
+static int col_of(int px, int w)
+{
+    return px * 2 < w ? px * SN / w : SN - 1 - (w - 1 - px) * SN / w;   /* (no long: a VDU is under 512 px) */
+}
+
 /* the cell under a pixel of the fitted box: solid or not (outside the box: not) */
 static int solid(const unsigned char __far *m, int px, int py, int w, int h)
 {
-    int col, row;
+    int row;
     if (px < 0 || py < 0 || px >= w || py >= h)
         return 0;
-    col = px * SN / w;                  /* (no long: a VDU is under 512 px, and this runs for every pixel of the wire) */
     row = SN - 1 - py * SN / h;         /* (the nose, row 63, at the top) */
-    return TOP(m, row, col) != 0;
+    return TOP(m, row, col_of(px, w)) != 0;
 }
 
 /* the box the type's outline is fitted in: the w x h box at (x, y) shrunk to the ship's proportions (hit: the
@@ -227,7 +233,9 @@ static void wire_box(int type, int x, int y, int w, int h, int *bx, int *by, int
         most = 1;
     *bw = (int)((long)w * hx / most);
     *bh = (int)((long)h * hz / most);
-    if (*bw < 2) *bw = 2;
+    if (!(*bw & 1))                     /* (odd: a pixel on the centre line, w / 2 + d and w / 2 - d mirror images) */
+        (*bw)--;
+    if (*bw < 3) *bw = 3;
     if (*bh < 2) *bh = 2;
     *bx = x + (w - *bw) / 2;
     *by = y + (h - *bh) / 2;
@@ -249,7 +257,7 @@ void vdu_wire(int type, int x, int y, int w, int h, unsigned char colour, int y0
         return;
     }
     for (px = 0; px < bw; px++)
-        col[px] = (unsigned char)(px * SN / bw);
+        col[px] = (unsigned char)col_of(px, bw);
     for (py = 0; py < bh; py++) {
         unsigned char __far *d;
         if (by + py < y0 || by + py >= y1)
@@ -456,14 +464,15 @@ static int half_at(const Own *o, int py)
     return 0;
 }
 
-/* where the hull's leading edge is at a place across the ship; -1 no hull there */
+/* where the hull's leading edge is at a place across the ship and its mirror image, the same row for both: a stray cell of one
+ * side's outline must not put a pair of guns out of line; -1 no hull there */
 static int leading_edge(const Own *o, int px)
 {
     int py;
     if (!o->m)
         return 0;
     for (py = 0; py < o->h; py++)
-        if (solid(o->m, px, py, o->w, o->h))
+        if (solid(o->m, px, py, o->w, o->h) || solid(o->m, o->w - 1 - px, py, o->w, o->h))
             return py;
     return -1;
 }
@@ -472,6 +481,7 @@ static int leading_edge(const Own *o, int px)
  * for each round it has left, side by side, further back.  The ones that fire are drawn last, over the others */
 #define ROUNDS_DRAWN 8
 #define ROUND_W 7
+#define GUN_W 5
 enum { MARK_GUNS, MARK_MISSILES, MARK_HURT_GUNS, MARK_HURT_RACKS };
 static void mount_marks(const Own *o, int mode, unsigned char hi, unsigned char lo)
 {
@@ -479,7 +489,7 @@ static void mount_marks(const Own *o, int mode, unsigned char hi, unsigned char 
     for (pass = 0; pass < 2; pass++)
         for (g = 0; g < GUN_COUNT(0); g++) {
             const RvWeapon __far *w = weapon(GUN_TYPE(0, g));
-            int gun, dead, px, py, fires, rounds, i;
+            int gun, dead, px, py, fires, rounds, i, k, same = 0, racks = 0;
             if (!w)
                 continue;
             gun = w->kind == RV_WK_GUN || w->kind == RV_WK_TURRET;
@@ -497,7 +507,17 @@ static void mount_marks(const Own *o, int mode, unsigned char hi, unsigned char 
             }
             if (fires != pass)
                 continue;
-            px = o->w / 2 + (int)GUN_MOUNT_X(0, g) * (o->w / 2) / 32;   /* (32nds of the half box) */
+            for (k = 0; k < g; k++) {   /* (two kinds of gun share their mounts, and launchers all sit on the centre line: */
+                const RvWeapon __far *e = weapon(GUN_TYPE(0, k));   /* each to be seen, the guns side by side, the racks behind) */
+                if (e && (e->kind == RV_WK_GUN || e->kind == RV_WK_TURRET) == gun) {
+                    same += GUN_MOUNT_X(0, k) == GUN_MOUNT_X(0, g);
+                    racks++;
+                }
+            }
+            px = (int)GUN_MOUNT_X(0, g) * (o->w / 2) / 32;   /* (32nds of the half box) */
+            if (gun)
+                px += (GUN_MOUNT_X(0, g) < 0 ? -same : same) * GUN_W;
+            px += o->w / 2;
             if (px < 0) px = 0;
             if (px >= o->w) px = o->w - 1;
             if (gun) {
@@ -511,7 +531,10 @@ static void mount_marks(const Own *o, int mode, unsigned char hi, unsigned char 
             for (i = 0; i < rounds; i++) {
                 int at = px + (2 * i - rounds + 1) * ROUND_W / 2;
                 py = at >= 0 && at < o->w ? leading_edge(o, at) : -1;
-                stamp(o, SYS_RACKS, at, (py < 0 ? o->h / 2 : py + o->h / 5), 0, fires ? hi : MOUNT_OFF, fires ? lo : MOUNT_OFF_LO);
+                py = (py < 0 ? o->h / 2 : py + o->h / 5) + racks * (PART_N + 1);
+                if (py > o->h - PART_N / 2 - 1)   /* (inside the ship's box: the count is under it) */
+                    py = o->h - PART_N / 2 - 1;
+                stamp(o, SYS_RACKS, at, py, 0, fires ? hi : MOUNT_OFF, fires ? lo : MOUNT_OFF_LO);
             }
         }
 }

@@ -66,12 +66,15 @@ One part at a time is bright with a black card behind it, its name below in smal
 
 `G` and `W` put up the weapons pages in the same place, from the user's picture of an old game's VDU: `ACTIVE GUNS` or `ACTIVE MISSILE`,
 the weapon's name, how hard it hits in a word (`DAMAGE: MODERATE`: under 25 light, under 36 moderate, under 100 heavy, else severe), the
-ship with the weapons that fire in light green and the others grey, a missile for each round left, and the count (`4 GUNS ENGAGED`, `2 LOADED`). A
+ship with the weapons that fire in light green and the others grey (two kinds of gun on one mount side by side, each kind of missile in
+its own row), a missile for each round left, and the count (`4 GUNS ENGAGED`, `2 LOADED`). A
 VDU under 80 rows and narrower than twice its height has the name above the ship and the rest below. A page asked for ends a comm on that
 VDU, as the nav page always did: the face would hide it.
 
 The own hull has no figure anywhere (the user: "a little mystery", "let the players live on edge"): `HULL OK` down to 60%, `HULL HIT`
-down to 25%, then `HULL LOW`, `CORE HIT` on the reserve, and the kits' hull bars move in the same steps. `H` shows the count on the survival display.
+down to 25%, then `HULL LOW`, `CORE HIT` on the reserve, and the kits' hull bars move in the same steps. The outline and everything on it come out mirror images on a symmetric ship: the box is an odd width, so there is a centre pixel, and a
+pixel and its mirror image read mirror-image columns of the outline (`col_of`). Only the Convolution is asymmetric; the rest differ by at
+most 3% of their cells, from the renders. `H` shows the count on the survival display.
 
 The cockpit kits' painted damage shows each system hurt, a bit of `rvCockpitDamage` per overlay (`k_overlay`). Not every kit
 paints every overlay. The hull's own: the armour readout with a side gone, the hull readout at a quarter gone, the left canopy at
