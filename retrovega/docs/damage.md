@@ -45,10 +45,11 @@ A rolled system that is wrecked already passes to the next, so no hit is wasted.
 | Nav computer | | | no distance on the nav readout | no autopilot (the cross still shows the way) |
 | Intercom | words lost from the comm | more | half | nearly all, no comm menu but the landing |
 | Ejector | | | | no ejection |
-| Repair | mends slower | slower | slower | mends nothing |
+| Repair | mends nothing | | | |
 
-**The repair system** mends a point off a hurt system every 20 s, times one plus its own damage. It cannot mend what is wrecked,
-a destroyed mount, or the decoys, and the glass stays cracked after the system behind it is mended.
+**The repair system** (the user's rules) mends a point off a hurt system every 20 s, chosen at random, a wrecked one too, for as long as it
+is whole itself: any damage to it and nothing mends again. It cannot mend the absorbers or the tracking, a missing weapon stays
+missing (guns, missile racks and decoys), and it never mends the hull, the armour or the reserve. The glass stays cracked after the system behind it is mended, and fuel that leaked is gone.
 
 **The comm menu is how a pilot lands**, so it stays up: on the other VDU if its own is dead, over the static if the computer is
 gone. Nothing leaves a pilot unable to get home: the nav cross always shows, and a wrecked intercom still asks for the landing.

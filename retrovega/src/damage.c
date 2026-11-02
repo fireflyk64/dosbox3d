@@ -27,7 +27,7 @@ static uint8_t __far g_event_in, __far g_event_out;
 #define POINT_QTY 24                    /* a hit breaks a further system per this much */
 #define POINTS_MOST 3
 
-/* the repair system: a point off one hurt system every 20 s, as much slower as it is hurt itself, none wrecked */
+/* the repair system: a point off one hurt system every 20 s, chosen at random, while it is whole itself (the user's) */
 #define REPAIR_STEPS (20 * 30)
 
 /* Each system's chance of a hit on each side, in 64ths (each row of the table is a system, each column a side: front,
@@ -301,35 +301,34 @@ void damage_hurt(uint16_t left, uint16_t hull, int16_t side)
 
 /* --- once a step --- */
 
+/* hurt, and something the repair system can mend: not the absorbers or the tracking, and no weapon that is missing: a gun, a
+ * rack or the decoys gone stay gone (the user's) */
+static int16_t mendable(int16_t k)
+{
+    return sys_level(k) && k != SYS_ABSORBERS && k != SYS_TRACK && k != SYS_GUNS && k != SYS_RACKS && k != SYS_DECOYS;
+}
+
 void damage_step(void)
 {
     const RvShipType __far *t;
     int16_t k, n;
     if (!slot_is_ship(0) || rvController[0] != CTL_PLAYER || (t = slot_type(0)) == 0)
         return;
-    /* the repair system: a point off a hurt system.  Not what is gone for good: a wrecked system, a mount (a gun or a rack
-     * destroyed stays so), the decoys.  The glass stays cracked too: a repair mends the system, not the overlay */
-    {
-        int16_t lv = sys_level(SYS_REPAIR);
-        if (lv < SYS_WRECKED && g_repair_wait && --g_repair_wait == 0) {
-            n = 0;
-            for (k = 0; k < SYS_COUNT; k++) {
-                int16_t l = sys_level(k);
-                if (l && l < SYS_WRECKED && k != SYS_GUNS && k != SYS_RACKS && k != SYS_DECOYS)
-                    n++;
-            }
-            if (n) {
-                int16_t pick = (int16_t)(game_rand() % n);
-                for (k = 0; k < SYS_COUNT; k++) {
-                    int16_t l = sys_level(k);
-                    if (l && l < SYS_WRECKED && k != SYS_GUNS && k != SYS_RACKS && k != SYS_DECOYS && !pick--) {
-                        sys_set(k, (int16_t)(l - 1));
-                        break;
-                    }
+    /* the repair system, whole: a point off a hurt system at random.  The glass stays cracked: it mends the system, not the overlay */
+    if (!sys_level(SYS_REPAIR) && g_repair_wait && --g_repair_wait == 0) {
+        n = 0;
+        for (k = 0; k < SYS_COUNT; k++)
+            if (mendable(k))
+                n++;
+        if (n) {
+            int16_t pick = (int16_t)(game_rand() % n);
+            for (k = 0; k < SYS_COUNT; k++)
+                if (mendable(k) && !pick--) {
+                    sys_set(k, (int16_t)(sys_level(k) - 1));
+                    break;
                 }
-            }
-            g_repair_wait = (uint16_t)(REPAIR_STEPS * (1 + lv));
         }
+        g_repair_wait = REPAIR_STEPS;
     }
     /* the tank: what it still holds (a hole bigger the worse it is) and its leak */
     {

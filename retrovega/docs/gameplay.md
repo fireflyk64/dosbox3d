@@ -423,7 +423,7 @@ tests cover them; flight.c's keys (T, Y, L) and its AUTO call them.
 | M12.6 shield-cap | the generator at level 2: the shield falls to half at once; whole, it fills again |
 | M12.7 mounts | a hit on the right takes the rightmost gun first; every launcher destroyed, `logic_launcher` gives none |
 | M12.8 thrusters | wrecked, the nose swings less than a whole ship's in the same time; hands off and whole it stays put, heavy it pulls |
-| M12.9 repair | a point every 20 s, never a wrecked system or a mount; the repair system wrecked, none |
+| M12.9 repair | a point every 20 s, chosen at random, a wrecked system too; never the absorbers, the tracking, guns, racks, decoys, the hull or armour; the repair system hurt at all, none |
 | M12.10 damage-reset | a new ship is whole, its reserve full |
 
 ### M11: the simulator (`src/simulator.c`)

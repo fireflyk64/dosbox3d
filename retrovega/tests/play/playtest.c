@@ -544,6 +544,12 @@ static uint16_t pt_hit(uint16_t src, int16_t s, uint16_t qty, int16_t f, int16_t
     return do_damage(src, (uint16_t)s, qty, RV_WHERE(&w));
 }
 
+/* the repair system damaged: a test that sets a system's level and needs it to hold is not racing its 20 s */
+static void pt_no_repairs(void)
+{
+    sys_set(SYS_REPAIR, SYS_WRECKED);
+}
+
 /* ======================================================================================================== */
 /* M1: flight (step_minds for the player, step_motion, step_timers) */
 
@@ -4565,6 +4571,7 @@ static void t_systems(void)
     REQUIRE(guns == (systemDamage[SYS_GUNS] < guns + pt_guns(0) ? systemDamage[SYS_GUNS] : guns + pt_guns(0)), e_guns,
             systemDamage[SYS_GUNS], guns, 0);
     damage_reset();
+    pt_no_repairs();
     systemDamage[SYS_SHIELDS] = SYS_WRECKED;
     SHIELD(0, 0) = 0;
     if (!pt_steps(10 * SEC))
@@ -5158,6 +5165,7 @@ static void t_engine(void)
     pt_alone(PT_PLAYER);
     most = (int16_t)slot_type(0)->max_kps;
     setSpeed[0] = most;
+    pt_no_repairs();
     for (lv = 1; lv <= SYS_WRECKED; lv++) {
         int16_t cap = (int16_t)((int32_t)most * pct[lv] / 100);
         sys_set(SYS_ENGINE, lv);
@@ -5182,6 +5190,7 @@ static void t_tank(void)
     static const char __far e_burn[] = "the tank wrecked and the afterburner still lights";
     int16_t was;
     pt_alone(PT_PLAYER);
+    pt_no_repairs();
     g_sys.fuel = 1000;
     sys_set(SYS_FUEL, 2);
     if (!pt_steps(1))
@@ -5205,6 +5214,7 @@ static void t_shield_cap(void)
     static const char __far e_back[] = "the generator whole again and the shield came back to %d of %d in 60 s";
     uint16_t most;
     pt_alone(PT_PLAYER);
+    pt_no_repairs();
     most = SHIELD_MAX(0, 0);
     sys_set(SYS_SHIELDS, 2);
     if (!pt_steps(2))
@@ -5259,6 +5269,7 @@ static void t_thrusters(void)
         return;
     whole = labs(gOrientationFrontVector[0].x - start.x);
     pt_alone(PT_PLAYER);
+    pt_no_repairs();
     sys_set(SYS_THRUSTERS, SYS_WRECKED);
     start = gOrientationFrontVector[0];
     g_pilot.steer_x = 9;
@@ -5272,37 +5283,79 @@ static void t_thrusters(void)
     if (!pt_steps(3 * SEC))
         return;
     REQUIRE(gOrientationFrontVector[0].x == start.x, e_steady, gOrientationFrontVector[0].x - start.x, 0, 0);
+    pt_no_repairs();
     sys_set(SYS_THRUSTERS, 3);
     if (!pt_steps(3 * SEC))
         return;
     REQUIRE(gOrientationFrontVector[0].x != start.x, e_pull, 0, 0, 0);
 }
 
-/* M12.9: the repair system mends a point every 20 s: not what is wrecked, not a mount; itself wrecked, nothing */
+/* M12.9: the repair system mends a point every 20 s, even a wrecked system; not the absorbers, the tracking or a missing weapon; and
+ * hurt at all, nothing */
 static void t_repair(void)
 {
     static const char __far e_mend[] = "the radar at level 2 after %d s is at %d";
-    static const char __far e_wrecked[] = "a wrecked engine came back to level %d: what is wrecked stays";
-    static const char __far e_guns[] = "the guns' level came back to %d: a destroyed mount stays";
-    static const char __far e_none[] = "the repair system wrecked and the radar mended to level %d";
+    static const char __far e_never[] = "system %d came back from level %d to %d: the repair system cannot mend it";
+    static const char __far e_wrecked[] = "a wrecked engine after 21 s is at level %d: it mends too";
+    static const char __far e_random[] = "after 41 s the two hurt systems have lost %d points: a point every 20 s, whichever";
+    static const char __far e_both[] = "over 16 repairs the repair system chose the radar %d times: it chooses at random";
+    static const char __far e_none[] = "the repair system at level %d and the radar mended to level %d";
+    static const char __far e_hull[] = "the hull's damage went from %d to %d with the repair system at work: it never mends the hull";
+    static const char __far e_armour[] = "armour %d went from %d to %d with the repair system at work: it never mends armour";
+    static const int16_t never[5] = { SYS_ABSORBERS, SYS_TRACK, SYS_GUNS, SYS_RACKS, SYS_DECOYS };
+    uint16_t hull, armour[4];
+    int16_t k, lv, chose = 0;
     pt_alone(PT_PLAYER);
     sys_set(SYS_RADAR, 2);
-    sys_set(SYS_ENGINE, SYS_WRECKED);
-    sys_set(SYS_GUNS, 2);
+    for (k = 0; k < 5; k++)
+        sys_set(never[k], (int16_t)(k % 2 + 2));
+    damagePoints[0] = 10;
+    hull = damagePoints[0];
+    for (k = 0; k < 4; k++) {
+        ARMOR(0, k) = (uint16_t)(ARMOR(0, k) / 2);
+        armour[k] = ARMOR(0, k);
+    }
     if (!pt_steps(21 * SEC))
         return;
     REQUIRE(sys_level(SYS_RADAR) == 1, e_mend, 21, sys_level(SYS_RADAR), 0);
     if (!pt_steps(20 * SEC))
         return;
     REQUIRE(sys_level(SYS_RADAR) == 0, e_mend, 41, sys_level(SYS_RADAR), 0);
-    REQUIRE(sys_level(SYS_ENGINE) == SYS_WRECKED, e_wrecked, sys_level(SYS_ENGINE), 0, 0);
-    REQUIRE(sys_level(SYS_GUNS) == 2, e_guns, sys_level(SYS_GUNS), 0, 0);
+    if (!pt_steps(25 * SEC))
+        return;
+    for (k = 0; k < 5; k++)
+        REQUIRE(sys_level(never[k]) == k % 2 + 2, e_never, never[k], k % 2 + 2, sys_level(never[k]));
+    REQUIRE(damagePoints[0] == hull, e_hull, hull, damagePoints[0], 0);
+    for (k = 0; k < 4; k++)
+        REQUIRE(ARMOR(0, k) == armour[k], e_armour, k, armour[k], ARMOR(0, k));
+    pt_alone(PT_PLAYER);
+    sys_set(SYS_ENGINE, SYS_WRECKED);
+    if (!pt_steps(21 * SEC))
+        return;
+    REQUIRE(sys_level(SYS_ENGINE) == SYS_WRECKED - 1, e_wrecked, sys_level(SYS_ENGINE), 0, 0);
     pt_alone(PT_PLAYER);
     sys_set(SYS_RADAR, 2);
-    sys_set(SYS_REPAIR, SYS_WRECKED);
-    if (!pt_steps(45 * SEC))
+    sys_set(SYS_NAV, 2);
+    if (!pt_steps(41 * SEC))
         return;
-    REQUIRE(sys_level(SYS_RADAR) == 2, e_none, sys_level(SYS_RADAR), 0, 0);
+    REQUIRE(sys_level(SYS_RADAR) + sys_level(SYS_NAV) == 2, e_random, 4 - sys_level(SYS_RADAR) - sys_level(SYS_NAV), 0, 0);
+    pt_alone(PT_PLAYER);
+    for (k = 0; k < 16; k++) {          /* (which, at random: one flight's dice, a repair after another) */
+        sys_set(SYS_RADAR, 1);
+        sys_set(SYS_NAV, 1);
+        if (!pt_steps(20 * SEC))
+            return;
+        chose = (int16_t)(chose + !sys_level(SYS_RADAR));
+    }
+    REQUIRE(chose >= 3 && chose <= 13, e_both, chose, 0, 0);
+    for (lv = 1; lv <= SYS_WRECKED; lv += 3) {
+        pt_alone(PT_PLAYER);
+        sys_set(SYS_RADAR, 2);
+        sys_set(SYS_REPAIR, lv);
+        if (!pt_steps(45 * SEC))
+            return;
+        REQUIRE(sys_level(SYS_RADAR) == 2, e_none, lv, sys_level(SYS_RADAR), 0);
+    }
 }
 
 /* M12.10: a flight starts whole, whatever the last one left */
@@ -5413,7 +5466,7 @@ static const char __far n_m12_5[] = "M12.5 tank (damage_step): holds less, leaks
 static const char __far n_m12_6[] = "M12.6 shield-cap (damage_shield_cap): the generator hurt holds less, whole it fills again";
 static const char __far n_m12_7[] = "M12.7 mounts (damage_hurt): a hit on a side takes that side's gun first; a destroyed launcher fires no more";
 static const char __far n_m12_8[] = "M12.8 thrusters (damage_turn_rate, damage_pull): slower turns, and heavy the nose pulls by itself";
-static const char __far n_m12_9[] = "M12.9 repair (damage_step): a point every 20 s, not what is wrecked or a mount, none itself wrecked";
+static const char __far n_m12_9[] = "M12.9 repair (damage_step): a point every 20 s at random, wrecked too; never absorbers, tracking, missing weapons, hull or armour; none itself hurt";
 static const char __far n_m12_10[] = "M12.10 damage-reset (damage_reset): a new ship is whole with its reserve full";
 static const char __far n_m4_1[] = "M4.1 kill (step_deaths, despawn): dying (9), exploding a while, then gone";
 static const char __far n_m4_2[] = "M4.2 dying-quiet (step_fire, AI): a dying ship fires nothing";
