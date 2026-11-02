@@ -319,6 +319,10 @@ int main(int argc, char **argv)
     (void)gfx_scratch();                /* (first: 32 KB in one piece, which the test build had none of by the time it was asked for) */
     ok = camp_load_data("RVGAME.DAT");
     if (ok) {
+#ifdef RV_PLAYTEST
+        if (!playtest)                  /* (the play tests have no use for it, and their heap needs the 47 KB it takes: short of
+                                           room the silhouettes give way to boxes and the world parts from the host's) */
+#endif
         music_init();                   /* before the back buffer: its reading needs room */
         log_free("after the music");
         flames_reserve();               /* (resident too) */
