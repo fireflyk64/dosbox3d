@@ -80,6 +80,8 @@ void logic_prepare_spawn(int16_t ship_index)
 {
     if (ship_index < 0 || ship_index >= NUM_SHIP_SLOTS)   /* (only ship slots keep anything: nothing to forget) */
         return;
+    if (ship_index == 0)
+        damage_reset();                 /* (a new ship in the player's place: nothing of the last one's damage) */
     _fmemset(&g_turn_frac[ship_index][0], 0, sizeof(g_turn_frac[0]));
     _fmemset(&g_turn[ship_index], 0, sizeof(Turn));
     _fmemset(&g_mind[ship_index], 0, sizeof(Mind));
@@ -451,9 +453,7 @@ void logic_start(const RvMission __far *m)
     g_lock_steps = 0;
     _fmemset(g_rammed, 0, sizeof g_rammed);
     _fmemset(g_died, 0, sizeof g_died);
-    memset(systemDamage, 0, systemDamage_SIZE);   /* the player's systems whole (flight.c clears only the cockpit's).  (A
-                                           near memset: Watcom makes a far pointer from this fixed address with segment
-                                           0, so _fmemset cleared the interrupt table instead and the damage stayed) */
+    damage_reset();                     /* the player's systems whole, the reserve full (flight.c clears only the cockpit's) */
     _fmemset(g_killed, 0, sizeof g_killed);
     _fmemset(g_away, 0, sizeof g_away);
     _fmemset(&g_hud, 0, sizeof g_hud);   /* (no marks until the first step works them out) */
@@ -512,6 +512,8 @@ static void step_timers(void)
          * 1 + the damage times as many steps, and not at all wrecked) */
         for (k = 0; k < 2; k+=1) {
             uint16_t most = SHIELD_MAX(ship, k);
+            if (ship == 0 && rvController[0] == CTL_PLAYER)
+                most = damage_shield_cap(most);   /* (the generator hurt holds less: what is over it goes at once) */
             if (SHIELD(ship, k) != most) {
                 uint16_t up = type_of_ship && type_of_ship->shield_steps ? (frameCounter % type_of_ship->shield_steps == 0)
                               : refill(most, phase, shift);
@@ -521,7 +523,8 @@ static void step_timers(void)
                 SHIELD(ship, k) = SHIELD(ship, k) + up < most ? SHIELD(ship, k) + up : most;
             }
         }
-        if (gunEnergy[ship] < 100 && (uint16_t)(frameCounter + ship) % energy_steps == 0
+        if (gunEnergy[ship] < (ship == 0 && rvController[0] == CTL_PLAYER ? damage_energy_cap() : 100U)
+            && (uint16_t)(frameCounter + ship) % energy_steps == 0
             && !(ship == 0 && rvController[0] == CTL_PLAYER && systemDamage[SYS_POWER]
                  && (systemDamage[SYS_POWER] >= SYS_WRECKED || frameCounter % (1 + systemDamage[SYS_POWER]) != 0))) {
             gunEnergy[ship] += 1;
@@ -813,34 +816,11 @@ int32_t vec_len(const RvVec3 *a) {
     return lf_sqrt((uint32_t)(a->x * a->x + a->y * a->y + a->z * a->z));
 }
 
-/* the player's systems: systemDamage's bytes (one set, the player's ship's: 0 whole .. SYS_WRECKED; logic.h's SYS_*,
- * the old game's nine), each shown hurt by a cockpit overlay (its rvCockpitDamage bit, tools/cockpits.py BITS).  A
- * hit through to the hull may hurt one (do_damage_impl) */
-static const uint8_t __far k_sys_overlay[SYS_COUNT] = {
-    15,                                 /* ABSORBERS: flight_controls (every kit has it, no panel goes dark with it) */
-    9,                                  /* POWER: power_distribution (flight.c's running lights read the bit) */
-    3,                                  /* SHIELDS: shields */
-    1,                                  /* COMPUTER: targeting / systems_vdu */
-    13,                                 /* INTERCOM: communications */
-    18,                                 /* TRACK: target_controls */
-    20,                                 /* EJECTOR: (no kit paints it) */
-    21,                                 /* REPAIR: (none) */
-    0                                   /* GUNS: weapons */
-};
-static const char __far k_sys_name[SYS_COUNT][9] = {   /* (the readout's lines are short: a small VDU) */
-    "ABSORBER", "POWER", "SHIELDS", "COMPUTER", "INTERCOM", "TRACKING", "EJECTOR", "REPAIR", "GUNS"
-};
-
-const char __far *logic_system_name(int16_t k)
-{
-    return k >= 0 && k < SYS_COUNT ? k_sys_name[k] : k_sys_name[0];
-}
-
 static int32_t reduce_slide(int16_t ship_index)
 {
     const RvShipType __far *t = slot_type(ship_index);
     /* the speed above which a full-rate turn slides (ships.csv) */
-    int32_t slide = ship_index == 0 && systemDamage[SYS_ABSORBERS] ? t->slide_dmg_kps : t->slide_kps;
+    int32_t slide = ship_index == 0 && systemDamage[SYS_ABSORBERS] ? damage_slide(t->slide_dmg_kps) : t->slide_kps;
     int32_t target_speed = speedLo[ship_index];
     const RvVec3 *front = &gOrientationFrontVector[ship_index];
     int32_t step = KPS_STEP(target_speed);
@@ -872,14 +852,17 @@ static void step_speed(int16_t ship_index, uint16_t phase)
 {
     uint16_t v = (uint16_t)speedLo[ship_index];
     const RvShipType __far *t = slot_type(ship_index);
-    uint16_t desired_speed = t->max_kps;
+    const int16_t player = ship_index == 0 && rvController[0] == CTL_PLAYER;
+    uint16_t top = player ? damage_kps(t->max_kps) : t->max_kps;   /* (the player's engine hurt gives less of all of it) */
+    uint16_t accel = player ? damage_accel(t->accel) : t->accel;
+    uint16_t desired_speed = top;
     if (rvAfterburner[ship_index] && t->ab_kps) {
-        desired_speed = t->ab_kps;
-    } else if (setSpeed[ship_index] < t->max_kps) {
+        desired_speed = player ? damage_kps(t->ab_kps) : t->ab_kps;
+    } else if (setSpeed[ship_index] < top) {
         desired_speed = setSpeed[ship_index];
     }
     {
-        uint16_t dv = t->accel / KPS_HZ + (phase < t->accel % KPS_HZ);
+        uint16_t dv = accel / KPS_HZ + (phase < accel % KPS_HZ);
 
         if (v < desired_speed) {
             v = desired_speed - v > dv ? v + dv : desired_speed;
@@ -910,22 +893,26 @@ static void step_turn(int16_t ship_index,
                       int8_t steer_y,
                       int8_t roll)
 {
+    const int16_t player = ship_index == 0 && rvController[0] == CTL_PLAYER;
+    if (player) {                       /* (the thrusters badly hurt pull the nose to the side that lost them) */
+        steer_x = (int8_t)(steer_x + damage_pull());
+    }
     if (steer_x || steer_y || roll) {
         const RvShipType __far *t = slot_type(ship_index);
         if (steer_x) {
             vec_turn(&gOrientationFrontVector[ship_index],
                      &gOrientationRightVector[ship_index],
-                     turn_units(ship_index, 0, TURN_STEP(t->yaw_dps, steer_x)));
+                     turn_units(ship_index, 0, TURN_STEP(player ? damage_turn_rate(t->yaw_dps) : t->yaw_dps, steer_x)));
         }
         if (steer_y) {
             vec_turn(&gOrientationFrontVector[ship_index],
                      &gOrientationUpVector[ship_index],
-                     turn_units(ship_index, 1, TURN_STEP(t->pitch_dps, steer_y)));
+                     turn_units(ship_index, 1, TURN_STEP(player ? damage_turn_rate(t->pitch_dps) : t->pitch_dps, steer_y)));
         }
         if (roll) {
             vec_turn(&gOrientationRightVector[ship_index],
                      &gOrientationUpVector[ship_index],
-                     turn_units(ship_index, 2, TURN_STEP(t->roll_dps, roll)));
+                     turn_units(ship_index, 2, TURN_STEP(player ? damage_turn_rate(t->roll_dps) : t->roll_dps, roll)));
         }
         ship_orthonormalise(ship_index);
     }
@@ -1355,10 +1342,11 @@ static void lock_tick(void)
 {
     int16_t l = launcher_of(0), t = g_sys.target, ok = 0;
     const RvWeapon __far *w = l >= 0 ? weapon(GUN_TYPE(0, l)) : 0;
-    uint16_t need = w ? (uint16_t)(w->lock_tenths * 3 + 1) : 1;
+    int16_t factor = damage_lock_factor();   /* (the tracking and the computer hurt: a lock takes longer; wrecked, never) */
+    uint16_t need = (w ? (uint16_t)(w->lock_tenths * 3 + 1) : 1) * (uint16_t)(factor ? factor : 1);
     g_sys.lock_kind = (uint8_t)(w ? w->lock : RV_LOCK_NONE);
     if (w && w->lock != RV_LOCK_NONE && w->lock != RV_LOCK_PROXIMITY && t > 0 && slot_is_ship(t) && shipAiState[t] != 9
-        && systemDamage[SYS_TRACK] < SYS_WRECKED && cos_nose_to(0, t) >= PLAYER_LOCK_CONE && gap_between(0, t) <= w->range_km) {
+        && factor && cos_nose_to(0, t) >= PLAYER_LOCK_CONE && gap_between(0, t) <= w->range_km) {
         if (w->lock == RV_LOCK_HEAT) {
             RvVec3 d = vec3(TO_KM(gPositionVector[t].x - gPositionVector[0].x), TO_KM(gPositionVector[t].y - gPositionVector[0].y),
                             TO_KM(gPositionVector[t].z - gPositionVector[0].z));
@@ -1366,7 +1354,7 @@ static void lock_tick(void)
         } else if (w->lock == RV_LOCK_IMAGE)
             ok = g_sys.emcon == EMCON_ACTIVE;
         else
-            ok = g_sys.emcon == EMCON_ACTIVE && g_sys.iff;
+            ok = g_sys.emcon == EMCON_ACTIVE && g_sys.iff && sys_level(SYS_IFF) < SYS_WRECKED;
     }
     if (ok) {
         if (g_lock_steps < need)
@@ -3095,6 +3083,7 @@ void logic_frame(void)
 {
     step_scene();
     step_timers();
+    damage_step();
     step_minds();
     step_fire();
     step_motion();
@@ -3220,8 +3209,8 @@ static int32_t way_stop(int16_t next, int16_t *region, int16_t *field)
 int16_t logic_autopilot_ready(void)
 {
     int16_t s, next;
-    if (!slot_is_ship(0) || shipAiState[0] == 9)
-        return -1;
+    if (!slot_is_ship(0) || shipAiState[0] == 9 || sys_level(SYS_NAV) >= SYS_WRECKED)
+        return -1;                      /* (the nav computer wrecked: the pilot flies home by hand, the cross still shows) */
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
         if (slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9
             && player_km(s) < AUTOPILOT_CLEAR_KM)
@@ -3315,29 +3304,6 @@ static uint16_t spend(uint16_t *store, uint16_t qty)
     return (uint16_t)(qty - took);
 }
 
-/* a hit of `left` through to the player's hull (of `hull` in all) hurts a system with odds left / hull: which one,
- * and whether, from game_rand (the layer re-seeds it to replay a hit).  A point of its systemDamage, and its overlay */
-static void hurt_system(uint16_t left, uint16_t hull)
-{
-    uint16_t k;
-    if (game_rand() % hull >= left)
-        return;
-    k = game_rand() % SYS_COUNT;
-    if (systemDamage[k] < SYS_WRECKED)
-        systemDamage[k]++;
-    rvCockpitDamage |= 1UL << k_sys_overlay[k];
-    if (k == SYS_GUNS) {                /* a gun of the player's destroyed: the first still working */
-        int16_t g;
-        for (g = 0; g < GUN_COUNT(0); g++) {
-            const RvWeapon __far *w = weapon(GUN_TYPE(0, g));
-            if (w && (w->kind == RV_WK_GUN || w->kind == RV_WK_TURRET) && !(GUN_STATE(0, g) & GUN_DESTROYED)) {
-                GUN_STATE(0, g) |= GUN_DESTROYED;
-                break;
-            }
-        }
-    }
-}
-
 uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, uint16_t where)
 {
     const RvShipType __far *t;
@@ -3364,7 +3330,12 @@ uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, 
     g_under_fire[dst] = (uint8_t)(g_under_fire[dst] > 251 ? 255 : g_under_fire[dst] + 4);
     left = spend(&ARMOR(dst, ar), spend(&SHIELD(dst, sh), qty));
     if (left) {
-        if (damagePoints[dst] >= t->hull || left >= t->hull - damagePoints[dst]) {
+        const int16_t player = dst == 0 && rvController[0] == CTL_PLAYER;
+        const uint16_t room = damagePoints[dst] < t->hull ? (uint16_t)(t->hull - damagePoints[dst]) : 0;
+        /* the hull's last point is not the player's end: the reserve takes what is left over (damage.h) */
+        if (player && left >= room && damage_reserve_take((uint16_t)(left - room), t->hull)) {
+            damagePoints[dst] = t->hull;
+        } else if (left >= room) {
             static const char __far s_killed[] = "logic: frame %u: slot %u (type %02X, side %d) killed by %u (type %02X): %u points";
             rv_notef(s_killed, frameCounter, dst, gInstanceShipTypes[dst], commAnimInfo[dst], src,
                     RV_SLOT_OK(src) ? gInstanceShipTypes[src] : 0xFF, qty);
@@ -3373,8 +3344,8 @@ uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, 
         } else {
             damagePoints[dst] = (uint16_t)(damagePoints[dst] + left);
         }
-        if (dst == 0 && t->hull)
-            hurt_system(left, t->hull);
+        if (player && t->hull)
+            damage_hurt(left, t->hull, ar);
     }
     return qty;
 }

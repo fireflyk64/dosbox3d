@@ -57,7 +57,7 @@ EOF
 # the game's sources as Watcom builds them: char unsigned (Watcom's), no type-based aliasing (Watcom assumes none,
 # and the slot arrays are read through casts), the DOS words (host/rvhost.h)
 LOGIC=${LOGIC:-src/logic.c}
-SHARED="world shots collide lightfield hud campaign simulator"
+SHARED="world shots collide lightfield hud campaign simulator damage"
 COMMON="-std=gnu99 -g3 -funsigned-char -fno-strict-aliasing -include host/rvhost.h -Isrc -Ihost -I$OUT"
 WARN="-Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -Wno-missing-field-initializers -Wno-unused-result
       -Wdeclaration-after-statement"     # (C89's rule: Watcom refuses a declaration after a statement)

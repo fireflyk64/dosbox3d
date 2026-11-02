@@ -29,7 +29,7 @@ CORE_SRC = \
     ../src/lipsync.c ../src/opl.c ../src/music.c ../src/score.c ../src/campaign.c ../src/lightfield.c \
     ../src/ships.c ../src/lasers.c ../src/bolts.c ../src/balls.c ../src/rocks.c ../src/missiles.c ../src/sky.c \
     ../src/collide.c ../src/flames.c ../src/comms.c ../src/panel.c ../src/vdu.c ../src/cockpit.c ../src/world.c \
-    ../src/shots.c ../src/hud.c ../src/explode.c ../src/sfx.c ../src/fx.c ../src/logic.c ../src/simulator.c ../src/flight.c \
+    ../src/shots.c ../src/hud.c ../src/explode.c ../src/sfx.c ../src/fx.c ../src/damage.c ../src/logic.c ../src/simulator.c ../src/flight.c \
     ../src/game.c ../src/main.c ../src/twins.c \
     ../host/hle.c ../host/fixed.c ../host/flightloop.c ../host/asm_twins.c ../host/fsguard.c \
     gen/thunks.c gen/stubs.c core.c seccomp.c

@@ -4,6 +4,7 @@
 #define LOGIC_H
 
 #include "rvdata.h"
+#include "damage.h"                     /* (the player's systems: SYS_*, what each does when hurt) */
 
 #define LOGIC_HZ 30                     /* steps a second: the flight draws a frame a step and waits out the rest of
                                            1 / LOGIC_HZ s (with the layer, its frame pacing sets the rate instead) */
@@ -29,16 +30,6 @@ void logic_end(void);                   /* the flight is over (missionStatus say
 int16_t logic_autopilot(void);          /* the A key, between steps: 1 when it flew the player on (to the next nav
                                            point), 0 when it may not (enemies near, nowhere to go) */
 int16_t logic_autopilot_ready(void);    /* the nav point it would go to, -1 not now (the engine asks before its flyby) */
-
-/* the player's systems (systemDamage's bytes, one each: 0 whole .. SYS_WRECKED; the old game's nine, read in its
- * damage readout): a hit through the armour to the hull may hurt one (do_damage).  What each does when hurt:
- * ABSORBERS the slide (M1); POWER the gun energy back slower, none wrecked (and the running lights out, flight.c);
- * SHIELDS the shields back slower, none wrecked; TRACK no target lock and no missile lock wrecked; INTERCOM no comm
- * menu wrecked; EJECTOR no ejection wrecked; GUNS a gun destroyed a point; COMPUTER and REPAIR the readout only */
-enum { SYS_ABSORBERS, SYS_POWER, SYS_SHIELDS, SYS_COMPUTER, SYS_INTERCOM, SYS_TRACK, SYS_EJECTOR, SYS_REPAIR, SYS_GUNS,
-       SYS_COUNT };
-#define SYS_WRECKED 4                   /* systemDamage's most */
-const char __far *logic_system_name(int16_t k);   /* its name for the readout (D) */
 
 /* the player's targeting (flight.c's T, Y and L keys, its AUTO; the user's ruling, 2026-10-31): the target key
  * selects only among the ships in front of the pilot (ahead of the wing line), the one nearest the nose first and

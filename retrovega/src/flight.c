@@ -1971,7 +1971,7 @@ static void systems_tick(void)
             setSpeed[0] = speedLo[s] < t->max_kps ? speedLo[s] : t->max_kps;
     }
     /* the afterburner: Tab held, while there is fuel (a third of a second's worth a frame... 11 s in all) */
-    g_sys.burning = in_key_down(0x0F) && g_sys.fuel > 0 && t;
+    g_sys.burning = in_key_down(0x0F) && g_sys.fuel > 0 && t && damage_burner_ok();
     rvAfterburner[0] = g_sys.burning;
     if (g_sys.burning) {
         if (g_sys.fuel_extra > 0)
@@ -3157,8 +3157,8 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.clicked && c && in.y >= c->open_y1 && panel_at(in.x, in.y, &fn, &arg))
             system_action(fn, arg);
     }
-    if (setSpeed[0] > (unsigned long)g_st.max_speed)
-        setSpeed[0] = g_st.max_speed;
+    if (setSpeed[0] > (unsigned long)damage_kps((uint16_t)g_st.max_speed))
+        setSpeed[0] = damage_kps((uint16_t)g_st.max_speed);   /* (the engine hurt: the throttle stops at what it gives) */
     if (in_key_down(0x0D) || in_key_down(0x4E)) setSpeed[0] += 2;    /* = and keypad + held */
     if ((in_key_down(0x0C) || in_key_down(0x4A)) && setSpeed[0] >= 2) setSpeed[0] -= 2;
     g_steer_roll = ((arrows >> 5) & 1) * 9 - ((arrows >> 4) & 1) * 9;

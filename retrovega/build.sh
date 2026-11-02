@@ -96,7 +96,7 @@ fi
     || ~/.venvs/retrovega-art/bin/python -P tools/explode.py --out "$OUT/EXPLODE.DAT" > /dev/null
 [ "$OUT/SFX.DAT" -nt tools/sfx.py ] && [ "$OUT/SFX.DAT" -nt data/sounds.csv ] \
     || ~/.venvs/retrovega-art/bin/python -P tools/sfx.py --out "$OUT/SFX.DAT" > /dev/null
-ENGINE="mem freeze util xms gx video dat gfx input room lipsync opl music score campaign lightfield ships lasers bolts balls rocks missiles sky collide flames comms panel vdu cockpit world shots hud explode sfx fx logic simulator flight game main"
+ENGINE="mem freeze util xms gx video dat gfx input room lipsync opl music score campaign lightfield ships lasers bolts balls rocks missiles sky collide flames comms panel vdu cockpit world shots hud explode sfx fx damage logic simulator flight game main"
 LOGIC=${LOGIC:-src/logic.c}           # (LOGIC=path: another logic.c in its place, an experiment's; the play tests' check)
 for c in $ENGINE hello; do
     if [ "$c" = logic ]; then src=$LOGIC; else src=src/$c.c; fi

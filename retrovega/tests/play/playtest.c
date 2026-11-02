@@ -4555,7 +4555,7 @@ static void t_systems(void)
         damagePoints[0] = 0;
     }
     for (k = 0; k < SYS_COUNT; k++)
-        hurt = (int16_t)(hurt + systemDamage[k]);
+        hurt = (int16_t)(hurt + sys_level(k));
     REQUIRE(hurt > 0, e_whole, i, 0, 0);
     REQUIRE(rvCockpitDamage != 0, e_overlay, 0, 0, 0);
     for (k = 0; k < GUN_COUNT(0); k++)
@@ -4564,7 +4564,7 @@ static void t_systems(void)
     /* (pt_guns counts the working ones: the destroyed and the working are all the ship has) */
     REQUIRE(guns == (systemDamage[SYS_GUNS] < guns + pt_guns(0) ? systemDamage[SYS_GUNS] : guns + pt_guns(0)), e_guns,
             systemDamage[SYS_GUNS], guns, 0);
-    memset(systemDamage, 0, systemDamage_SIZE);
+    damage_reset();
     systemDamage[SYS_SHIELDS] = SYS_WRECKED;
     SHIELD(0, 0) = 0;
     if (!pt_steps(10 * SEC))
@@ -5048,6 +5048,281 @@ static void t_brackets(void)
 #endif
 }
 
+
+/* ======================================================================================================== */
+/* M12: the player's damage (damage.c, docs/damage.md) */
+
+/* the player's ship down to its hull: nothing between a hit and it */
+static void pt_bare(void)
+{
+    int16_t k;
+    for (k = 0; k < 2; k++)
+        SHIELD(0, k) = 0;
+    for (k = 0; k < 4; k++)
+        ARMOR(0, k) = 0;
+}
+
+/* M12.1: past the hull's last point the player lives on the reserve; nobody else has one */
+static void t_reserve(void)
+{
+    static const char __far e_dead[] = "the hull gone after %d points and the player's ship is dying: the reserve takes what is over";
+    static const char __far e_flag[] = "the hull is gone and damage_in_reserve says %d";
+    static const char __far e_long[] = "%d more points past the hull and still alive: the reserve is twice the hull (%d)";
+    static const char __far e_short[] = "only %d points past the hull killed the player: the reserve is twice the hull (%d)";
+    static const char __far e_npc[] = "a Nicander's hull gone and its state is %d: 9, it has no reserve";
+    uint16_t hull;
+    int16_t i, took = 0;
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 20000, TURN / 2);
+    hull = slot_type(0)->hull;
+    pt_bare();
+    (void)pt_hit(0xFFFF, 0, (uint16_t)(hull + 5), 1, 0, 0);
+    REQUIRE(shipAiState[0] != 9, e_dead, hull + 5, 0, 0);
+    REQUIRE(damage_in_reserve(), e_flag, damage_in_reserve(), 0, 0);
+    took = 5;
+    for (i = 0; i < 1000 && shipAiState[0] != 9; i++) {
+        (void)pt_hit(0xFFFF, 0, 5, 1, 0, 0);
+        took = (int16_t)(took + 5);
+    }
+    REQUIRE(took <= 2 * hull + 5, e_long, took, 2 * hull, 0);
+    REQUIRE(took >= 2 * hull - 5, e_short, took, 2 * hull, 0);
+    SHIELD(1, 0) = SHIELD(1, 1) = 0;
+    for (i = 0; i < 4; i++)
+        ARMOR(1, i) = 0;
+    (void)pt_hit(0xFFFF, 1, (uint16_t)(slot_type(1)->hull + 5), 1, 0, 0);
+    REQUIRE(shipAiState[1] == 9, e_npc, shipAiState[1], 0, 0);
+}
+
+/* M12.2: on the reserve every hit breaks something */
+static void t_reserve_breaks(void)
+{
+    static const char __far e_none[] = "hit %d on the reserve broke nothing: every one does";
+    int16_t i, k;
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 20000, TURN / 2);
+    pt_bare();
+    (void)pt_hit(0xFFFF, 0, slot_type(0)->hull, 1, 0, 0);
+    for (i = 0; i < 8; i++) {
+        int16_t was = 0, now = 0;
+        for (k = 0; k < SYS_COUNT; k++)
+            was = (int16_t)(was + sys_level(k));
+        (void)pt_hit(0xFFFF, 0, 2, 1, 0, 0);
+        for (k = 0; k < SYS_COUNT; k++)
+            now = (int16_t)(now + sys_level(k));
+        REQUIRE(now > was, e_none, i, 0, 0);
+    }
+}
+
+/* M12.3: where a hit lands decides what it breaks */
+static void t_where(void)
+{
+    static const char __far e_rear[] = "%d hits on the rear broke the guns %d times and the VDUs %d: nothing of those is aft";
+    static const char __far e_aft[] = "%d hits on the rear broke the engine %d and the tank %d times: they are what is aft";
+    static const char __far e_front[] = "hits on the front broke the engine %d times and the tank %d: they are aft";
+    static const char __far e_guns[] = "%d hits on the front broke the guns %d times and the radar %d: they are forward";
+    static const char __far e_left[] = "hits on the left broke the right VDU %d times";
+    static const char __far e_right[] = "hits on the right broke the left VDU %d times";
+    int16_t side, i, tally[4][SYS_COUNT];
+    static const int16_t f[4] = { 2, -2, 0, 0 }, r[4] = { 0, 0, -2, 2 };
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 20000, TURN / 2);
+    memset(tally, 0, sizeof tally);
+    for (side = 0; side < 4; side++)
+        for (i = 0; i < 300; i++) {
+            int16_t k, lv;
+            damage_reset();
+            pt_bare();
+            damagePoints[0] = 0;
+            (void)pt_hit(0xFFFF, 0, 40, f[side], r[side], 0);
+            while (damage_event(&k, &lv))
+                tally[side][k]++;
+        }
+    REQUIRE(!tally[1][SYS_GUNS] && !tally[1][SYS_VDU_L] && !tally[1][SYS_VDU_R], e_rear, 300, tally[1][SYS_GUNS],
+            tally[1][SYS_VDU_L] + tally[1][SYS_VDU_R]);
+    REQUIRE(tally[1][SYS_ENGINE] > 60 && tally[1][SYS_FUEL] > 60, e_aft, 300, tally[1][SYS_ENGINE], tally[1][SYS_FUEL]);
+    REQUIRE(!tally[0][SYS_ENGINE] && !tally[0][SYS_FUEL], e_front, tally[0][SYS_ENGINE], tally[0][SYS_FUEL], 0);
+    REQUIRE(tally[0][SYS_GUNS] > 60 && tally[0][SYS_RADAR] > 40, e_guns, 300, tally[0][SYS_GUNS], tally[0][SYS_RADAR]);
+    REQUIRE(!tally[2][SYS_VDU_R], e_left, tally[2][SYS_VDU_R], 0, 0);
+    REQUIRE(!tally[3][SYS_VDU_L], e_right, tally[3][SYS_VDU_L], 0, 0);
+}
+
+/* M12.4: the engine: less top speed, less acceleration, no burner wrecked, and it comes back with the level */
+static void t_engine(void)
+{
+    static const char __far e_top[] = "the engine at level %d: %d kps at full throttle, its share of the type's %d is at most %d";
+    static const char __far e_whole[] = "the engine whole again: %d kps of %d";
+    static const char __far e_burner[] = "the engine wrecked and the afterburner still lights";
+    static const char __far e_burn2[] = "the engine whole and the afterburner refused";
+    static const uint8_t pct[5] = { 100, 85, 65, 45, 25 };
+    int16_t lv, most;
+    pt_alone(PT_PLAYER);
+    most = (int16_t)slot_type(0)->max_kps;
+    setSpeed[0] = most;
+    for (lv = 1; lv <= SYS_WRECKED; lv++) {
+        int16_t cap = (int16_t)((int32_t)most * pct[lv] / 100);
+        sys_set(SYS_ENGINE, lv);
+        if (!pt_steps(5 * SEC))
+            return;
+        REQUIRE((int32_t)speedLo[0] <= cap, e_top, lv, speedLo[0], most);
+    }
+    REQUIRE(!damage_burner_ok(), e_burner, 0, 0, 0);
+    sys_set(SYS_ENGINE, 0);
+    REQUIRE(damage_burner_ok(), e_burn2, 0, 0, 0);
+    if (!pt_steps(10 * SEC))
+        return;
+    REQUIRE((int32_t)speedLo[0] == most, e_whole, speedLo[0], most, 0);
+}
+
+/* M12.5: the tank: holds less, leaks, and wrecked is empty with no burner */
+static void t_tank(void)
+{
+    static const char __far e_cap[] = "the tank at level 2 holds %d of 1000: 55%% at most";
+    static const char __far e_leak[] = "the tank at level 2 leaked from %d to %d in 10 s";
+    static const char __far e_gone[] = "the tank wrecked and %d of fuel in it";
+    static const char __far e_burn[] = "the tank wrecked and the afterburner still lights";
+    int16_t was;
+    pt_alone(PT_PLAYER);
+    g_sys.fuel = 1000;
+    sys_set(SYS_FUEL, 2);
+    if (!pt_steps(1))
+        return;
+    REQUIRE(g_sys.fuel <= 550, e_cap, g_sys.fuel, 0, 0);
+    was = g_sys.fuel;
+    if (!pt_steps(10 * SEC))
+        return;
+    REQUIRE(g_sys.fuel < was, e_leak, was, g_sys.fuel, 0);
+    sys_set(SYS_FUEL, SYS_WRECKED);
+    if (!pt_steps(1))
+        return;
+    REQUIRE(g_sys.fuel == 0, e_gone, g_sys.fuel, 0, 0);
+    REQUIRE(!damage_burner_ok(), e_burn, 0, 0, 0);
+}
+
+/* M12.6: the shield generator hurt holds less: what is over its most goes at once */
+static void t_shield_cap(void)
+{
+    static const char __far e_cap[] = "the generator at level 2: the front shield holds %d of %d: half at most";
+    static const char __far e_back[] = "the generator whole again and the shield came back to %d of %d in 60 s";
+    uint16_t most;
+    pt_alone(PT_PLAYER);
+    most = SHIELD_MAX(0, 0);
+    sys_set(SYS_SHIELDS, 2);
+    if (!pt_steps(2))
+        return;
+    REQUIRE((uint32_t)SHIELD(0, 0) * 2 <= most, e_cap, SHIELD(0, 0), most, 0);
+    sys_set(SYS_SHIELDS, 0);
+    if (!pt_steps(60 * SEC))
+        return;
+    REQUIRE(SHIELD(0, 0) == most, e_back, SHIELD(0, 0), most, 0);
+}
+
+/* M12.7: a hit on a side takes that side's gun first, and a destroyed launcher fires no more */
+static void t_mounts(void)
+{
+    static const char __far e_side[] = "a hit on the right took the gun mounted at %d when one is at %d: the side's own goes first";
+    static const char __far e_none[] = "%d hits on the right and the guns never broke";
+    static const char __far e_rack[] = "every launcher destroyed and logic_launcher still gives %d";
+    int16_t i, g, most_right = -127, taken = -127;
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 20000, TURN / 2);
+    for (g = 0; g < GUN_COUNT(0); g++)
+        if (pt_is_gun(0, g) && GUN_MOUNT_X(0, g) > most_right)
+            most_right = GUN_MOUNT_X(0, g);
+    for (i = 0; i < 800 && !systemDamage[SYS_GUNS]; i++) {
+        pt_bare();
+        damagePoints[0] = 0;
+        (void)pt_hit(0xFFFF, 0, 20, 0, 2, 0);
+    }
+    REQUIRE(systemDamage[SYS_GUNS], e_none, i, 0, 0);
+    for (g = 0; g < GUN_COUNT(0); g++)
+        if (pt_is_gun(0, g) && (GUN_STATE(0, g) & GUN_DESTROYED))
+            taken = GUN_MOUNT_X(0, g);
+    REQUIRE(taken == most_right, e_side, taken, most_right, 0);
+    for (g = 0; g < GUN_COUNT(0); g++)
+        if (!pt_is_gun(0, g))
+            GUN_STATE(0, g) |= GUN_DESTROYED;
+    REQUIRE(logic_launcher() < 0, e_rack, logic_launcher(), 0, 0);
+}
+
+/* M12.8: the thrusters: slower turns, and badly hurt the nose pulls by itself */
+static void t_thrusters(void)
+{
+    static const char __far e_slow[] = "the nose swung %ld with the thrusters wrecked, %ld whole, in the same time: slower";
+    static const char __far e_steady[] = "hands off with the thrusters whole and the nose moved by %ld";
+    static const char __far e_pull[] = "hands off with the thrusters heavy and the nose stayed put";
+    RvVec3 start;
+    int32_t whole, hurt;
+    pt_alone(PT_PLAYER);
+    start = gOrientationFrontVector[0];
+    g_pilot.steer_x = 9;
+    if (!pt_steps(SEC / 3))
+        return;
+    whole = labs(gOrientationFrontVector[0].x - start.x);
+    pt_alone(PT_PLAYER);
+    sys_set(SYS_THRUSTERS, SYS_WRECKED);
+    start = gOrientationFrontVector[0];
+    g_pilot.steer_x = 9;
+    if (!pt_steps(SEC / 3))
+        return;
+    hurt = labs(gOrientationFrontVector[0].x - start.x);
+    REQUIRE(hurt < whole, e_slow, hurt, whole, 0);
+    pt_alone(PT_PLAYER);
+    start = gOrientationFrontVector[0];
+    g_pilot.steer_x = 0;
+    if (!pt_steps(3 * SEC))
+        return;
+    REQUIRE(gOrientationFrontVector[0].x == start.x, e_steady, gOrientationFrontVector[0].x - start.x, 0, 0);
+    sys_set(SYS_THRUSTERS, 3);
+    if (!pt_steps(3 * SEC))
+        return;
+    REQUIRE(gOrientationFrontVector[0].x != start.x, e_pull, 0, 0, 0);
+}
+
+/* M12.9: the repair system mends a point every 20 s: not what is wrecked, not a mount; itself wrecked, nothing */
+static void t_repair(void)
+{
+    static const char __far e_mend[] = "the radar at level 2 after %d s is at %d";
+    static const char __far e_wrecked[] = "a wrecked engine came back to level %d: what is wrecked stays";
+    static const char __far e_guns[] = "the guns' level came back to %d: a destroyed mount stays";
+    static const char __far e_none[] = "the repair system wrecked and the radar mended to level %d";
+    pt_alone(PT_PLAYER);
+    sys_set(SYS_RADAR, 2);
+    sys_set(SYS_ENGINE, SYS_WRECKED);
+    sys_set(SYS_GUNS, 2);
+    if (!pt_steps(21 * SEC))
+        return;
+    REQUIRE(sys_level(SYS_RADAR) == 1, e_mend, 21, sys_level(SYS_RADAR), 0);
+    if (!pt_steps(20 * SEC))
+        return;
+    REQUIRE(sys_level(SYS_RADAR) == 0, e_mend, 41, sys_level(SYS_RADAR), 0);
+    REQUIRE(sys_level(SYS_ENGINE) == SYS_WRECKED, e_wrecked, sys_level(SYS_ENGINE), 0, 0);
+    REQUIRE(sys_level(SYS_GUNS) == 2, e_guns, sys_level(SYS_GUNS), 0, 0);
+    pt_alone(PT_PLAYER);
+    sys_set(SYS_RADAR, 2);
+    sys_set(SYS_REPAIR, SYS_WRECKED);
+    if (!pt_steps(45 * SEC))
+        return;
+    REQUIRE(sys_level(SYS_RADAR) == 2, e_none, sys_level(SYS_RADAR), 0, 0);
+}
+
+/* M12.10: a flight starts whole, whatever the last one left */
+static void t_damage_reset(void)
+{
+    static const char __far e_level[] = "a new ship and system %d is at level %d";
+    static const char __far e_res[] = "a new ship and the reserve is at %d%%";
+    int16_t k;
+    pt_alone(PT_PLAYER);
+    pt_bare();
+    (void)pt_hit(0xFFFF, 0, 80, 1, 0, 0);
+    for (k = 0; k < SYS_COUNT; k++)
+        sys_set(k, 3);
+    pt_alone(PT_PLAYER);
+    for (k = 0; k < SYS_COUNT; k++)
+        REQUIRE(sys_level(k) == 0, e_level, k, sys_level(k), 0);
+    REQUIRE(damage_reserve_pct(slot_type(0)->hull) == 100 && !damage_in_reserve(), e_res,
+            damage_reserve_pct(slot_type(0)->hull), 0, 0);
+}
+
 /* ======================================================================================================== */
 
 static const char __far n_m1_1[] = "M1.1 coast (step_motion): a ship flies along its nose at its speed, position += "
@@ -5130,6 +5405,16 @@ static const char __far n_m3_13[] = "M3.13 type-rates (step_timers): gun energy 
 static const char __far n_m3_14[] = "M3.14 hit-volumes (shot_hit): a bolt within the radius, in the volume box, through the silhouettes, as the rule says";
 static const char __far n_m3_15[] = "M3.15 damage-grows (shot_hit): a bolt hurts by its life left: the laser 10 at the muzzle, 25 at the end of its reach";
 static const char __far n_m2_20[] = "M2.20 forward-only (gun_fire): a shot carries the ship's speed along the nose, nothing of its slide";
+static const char __far n_m12_1[] = "M12.1 reserve (damage_reserve_take): past the hull the player lives on twice the hull more; nobody else does";
+static const char __far n_m12_2[] = "M12.2 reserve-breaks (damage_hurt): on the reserve every hit breaks a system";
+static const char __far n_m12_3[] = "M12.3 where (damage_hurt): the rear breaks the engine and tank not the guns, the front the reverse, a side not the other's VDU";
+static const char __far n_m12_4[] = "M12.4 engine (damage_kps): less top speed by its level, no burner wrecked, back when whole";
+static const char __far n_m12_5[] = "M12.5 tank (damage_step): holds less, leaks, wrecked is empty with no burner";
+static const char __far n_m12_6[] = "M12.6 shield-cap (damage_shield_cap): the generator hurt holds less, whole it fills again";
+static const char __far n_m12_7[] = "M12.7 mounts (damage_hurt): a hit on a side takes that side's gun first; a destroyed launcher fires no more";
+static const char __far n_m12_8[] = "M12.8 thrusters (damage_turn_rate, damage_pull): slower turns, and heavy the nose pulls by itself";
+static const char __far n_m12_9[] = "M12.9 repair (damage_step): a point every 20 s, not what is wrecked or a mount, none itself wrecked";
+static const char __far n_m12_10[] = "M12.10 damage-reset (damage_reset): a new ship is whole with its reserve full";
 static const char __far n_m4_1[] = "M4.1 kill (step_deaths, despawn): dying (9), exploding a while, then gone";
 static const char __far n_m4_2[] = "M4.2 dying-quiet (step_fire, AI): a dying ship fires nothing";
 static const char __far n_m4_3[] = "M4.3 player-dies (step_deaths, logic_end): missionStatus 4, the mission lost";
@@ -5205,7 +5490,7 @@ static const char __far n_m9_1[] = "M9.1 gunsight (logic_hud): a mark at the vie
 static const char __far n_m9_2[] = "M9.2 brackets (logic_hud): marks round the target";
 static const char __far n_m10_1[] = "M10.1 target-front (logic_target_next): T picks only in front of the pilot, nearest the nose first, round";
 static const char __far n_m10_2[] = "M10.2 target-lock (logic_target_lock): L keeps the target through T, Y; off when it dies or the tracking is wrecked";
-static const char __far n_m10_3[] = "M10.3 systems (hurt_system, step_timers): hits to the hull hurt the nine systems; a wrecked generator or power plant";
+static const char __far n_m10_3[] = "M10.3 systems (damage_hurt, step_timers): hits to the hull hurt the systems; a wrecked generator or power plant";
 static const char __far n_m10_4[] = "M10.4 weapon-choice (logic_guns_next, logic_missile_next): G picks the guns the trigger fires, W the launcher";
 static const char __far n_m10_5[] = "M10.5 nav-cross (logic_hud): a white cross where the chosen nav point lies on the view";
 static const char __far n_m10_6[] = "M10.6 orders (logic_order): attack my target, help me out, form on my wing, return to base";
@@ -5256,6 +5541,9 @@ static const PtTest __far k_tests[] = {
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
     { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 }, { n_m10_6, t_orders, 0 }, { n_m10_7, t_missile_lock, 0 },
     { n_m10_8, t_break_formation, 0 }, { n_m10_9, t_taunt, 0 },
+    { n_m12_1, t_reserve, 0 }, { n_m12_2, t_reserve_breaks, 0 }, { n_m12_3, t_where, 0 }, { n_m12_4, t_engine, 0 },
+    { n_m12_5, t_tank, 0 }, { n_m12_6, t_shield_cap, 0 }, { n_m12_7, t_mounts, 0 }, { n_m12_8, t_thrusters, 0 },
+    { n_m12_9, t_repair, 0 }, { n_m12_10, t_damage_reset, 0 },
     { n_m11_1, t_sim_waves, 0 }, { n_m11_2, t_sim_replenish, 0 }, { n_m11_3, t_sim_win, 0 }, { n_m11_4, t_sim_death, 0 },
 };
 
@@ -5344,11 +5632,11 @@ int16_t playtest_run(const char *only)
     static const char __far s_ms[] = "  M%d %d/%d";
     static const char __far s_start[] = "the play tests: %d of them; each line PASS or FAIL, the world's hash, the test";
     static const char __far s_steps[] = "steps";
-    int16_t i, n = (int16_t)(sizeof k_tests / sizeof k_tests[0]), ran = 0, passed = 0, m, mr[12], mp[12];
+    int16_t i, n = (int16_t)(sizeof k_tests / sizeof k_tests[0]), ran = 0, passed = 0, m, mr[13], mp[13];
     uint32_t h;
     for (m = 0; m < 10; m++)
         mr[m] = mp[m] = 0;
-    mr[10] = mp[10] = mr[11] = mp[11] = 0;
+    mr[10] = mp[10] = mr[11] = mp[11] = mr[12] = mp[12] = 0;
     g_steps = 0;
     if (only)
         for (i = 0; only[i]; i++)
@@ -5376,11 +5664,11 @@ int16_t playtest_run(const char *only)
         g_failed = 0;
         k_tests[i].fn();
         h = pt_hash();
-        m = (int16_t)(k_tests[i].name[1] - '0');   /* (M1 .. M9, M10, M11: the digits before the dot) */
+        m = (int16_t)(k_tests[i].name[1] - '0');   /* (M1 .. M9, M10 .. M12: the digits before the dot) */
         if (k_tests[i].name[2] >= '0' && k_tests[i].name[2] <= '9')
             m = (int16_t)(m * 10 + k_tests[i].name[2] - '0');
-        if (m > 11)
-            m = 11;
+        if (m > 12)
+            m = 12;
         ran++;
         mr[m]++;
         if (!g_failed) {
@@ -5398,7 +5686,7 @@ int16_t playtest_run(const char *only)
     collide_flight_end();
     ln_s(s_pre);
     ln_f(s_sum, passed, ran, 0);
-    for (m = 1; m < 12; m++)
+    for (m = 1; m < 13; m++)
         if (mr[m])
             ln_f(s_ms, m, mp[m], mr[m]);
     ln_end();
