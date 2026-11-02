@@ -514,17 +514,22 @@ static void step_timers(void)
         shift = type_of_ship ? type_of_ship->shield_full_shift : RV_SHIELD_FULL_SHIFT;
         energy_steps = type_of_ship ? type_of_ship->gun_energy_steps : RV_GUN_ENERGY_STEPS;
         phase = frameCounter & ((1U << shift) - 1);
-        /* (the player's shield generator and power plant hurt: the shields and the energy come back a point every
-         * 1 + the damage times as many steps, and not at all wrecked) */
+        /* (the player's shield generator and power plant hurt: the shields and the energy come back on one in
+         * 1 + the damage of the steps they would have, counted in their own steps (frameCounter / shield_steps: a
+         * type's 3 and a moderate generator's 3 went back at the full rate counted in frames).  The shields wrecked
+         * come back not at all; the energy wrecked at a fifth, to 40%: the guns with none left for good took the
+         * player out of the fight (the user's)) */
         for (k = 0; k < 2; k+=1) {
             uint16_t most = SHIELD_MAX(ship, k);
             if (ship == 0 && rvController[0] == CTL_PLAYER)
                 most = damage_shield_cap(most);   /* (the generator hurt holds less: what is over it goes at once) */
             if (SHIELD(ship, k) != most) {
-                uint16_t up = type_of_ship && type_of_ship->shield_steps ? (frameCounter % type_of_ship->shield_steps == 0)
+                uint16_t steps = type_of_ship && type_of_ship->shield_steps ? type_of_ship->shield_steps : 1;
+                uint16_t up = type_of_ship && type_of_ship->shield_steps ? (frameCounter % steps == 0)
                               : refill(most, phase, shift);
                 if (ship == 0 && rvController[0] == CTL_PLAYER && systemDamage[SYS_SHIELDS]
-                    && (systemDamage[SYS_SHIELDS] >= SYS_WRECKED || frameCounter % (1 + systemDamage[SYS_SHIELDS]) != 0))
+                    && (systemDamage[SYS_SHIELDS] >= SYS_WRECKED
+                        || (uint16_t)(frameCounter / steps) % (1 + systemDamage[SYS_SHIELDS]) != 0))
                     up = 0;
                 SHIELD(ship, k) = SHIELD(ship, k) + up < most ? SHIELD(ship, k) + up : most;
             }
@@ -532,7 +537,7 @@ static void step_timers(void)
         if (gunEnergy[ship] < (ship == 0 && rvController[0] == CTL_PLAYER ? damage_energy_cap() : 100U)
             && (uint16_t)(frameCounter + ship) % energy_steps == 0
             && !(ship == 0 && rvController[0] == CTL_PLAYER && systemDamage[SYS_POWER]
-                 && (systemDamage[SYS_POWER] >= SYS_WRECKED || frameCounter % (1 + systemDamage[SYS_POWER]) != 0))) {
+                 && (uint16_t)(frameCounter / energy_steps) % (1 + systemDamage[SYS_POWER]) != 0)) {
             gunEnergy[ship] += 1;
         }
         {

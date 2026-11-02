@@ -32,8 +32,8 @@ A rolled system that is wrecked already passes to the next, so no hit is wasted.
 | Fuel tank | holds 80%, leaks, loses an eighth at the hit | 55%, leaks faster | 30% | empty, Kit's reserve too, no afterburner |
 | Thrusters | 90% turn rates | 75% | 60%, the nose pulls | 40%, the nose pulls |
 | Absorbers | slides from the type's damaged figure | 80% of it, the view jolts in a hard turn | 60% | 40%, jolts harder |
-| Shield generator | holds 75%, slower back | 50% | 25% | none |
-| Power plant | energy to 85%, slower back, running lights out | 65% | 40% | none comes back |
+| Shield generator | holds 75%, back at half the rate | 50%, a third | 25%, a quarter | none |
+| Power plant | energy to 85%, back at half the rate, running lights out | 65%, a third | 40%, a quarter | 40%, a fifth (never none: the guns must still fire) |
 | Guns | a gun destroyed a point, on the hit's side first | | | |
 | Missile racks | a launcher destroyed a point, its rounds with it | | | |
 | Decoys | half lost a point | | | none |

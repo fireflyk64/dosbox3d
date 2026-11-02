@@ -98,7 +98,7 @@ static const struct { uint8_t bit, at, bit2, at2; } __far k_overlay[SYS_COUNT] =
 static const uint8_t __far k_engine_pct[5] = { 100, 85, 65, 45, 25 };
 static const uint8_t __far k_turn_pct[5] = { 100, 90, 75, 60, 40 };
 static const uint8_t __far k_shield_pct[5] = { 100, 75, 50, 25, 0 };
-static const uint8_t __far k_energy_pct[5] = { 100, 85, 65, 40, 40 };   /* (wrecked it does not come back at all: step_timers) */
+static const uint8_t __far k_energy_pct[5] = { 100, 85, 65, 40, 40 };   /* (wrecked it comes back at a fifth: step_timers) */
 static const uint8_t __far k_fuel_pct[5] = { 100, 80, 55, 30, 0 };
 static const uint8_t __far k_slide_pct[5] = { 100, 100, 80, 60, 40 };
 /* the tank's leak, thousandths of its fuel a second */

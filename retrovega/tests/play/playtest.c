@@ -4541,8 +4541,9 @@ static void t_target_lock(void)
 }
 
 /* M10.3: the systems: hits through the armour to the hull hurt them (a point each, the overlay bit), the shield
- * generator wrecked stops the shields coming back, the power plant wrecked the gun energy, and a GUNS point is a gun
- * destroyed */
+ * generator wrecked stops the shields coming back, the power plant wrecked slows the gun energy to a fifth and holds
+ * it to 40% (never none: the user's), a hurt generator slows the shields in the type's own steps, and a GUNS point is
+ * a gun destroyed */
 static void t_systems(void)
 {
     static const char __far e_whole[] = "%d hits through the armour to the hull hurt no system (hurt_system)";
@@ -4550,7 +4551,11 @@ static void t_systems(void)
     static const char __far e_guns[] = "GUNS at %d and %d guns destroyed: a point is a gun";
     static const char __far e_shield[] = "the shield generator wrecked, the front shield came back to %d in 10 s";
     static const char __far e_shield_ok[] = "the generator whole again, the front shield stayed at %d for 10 s";
-    static const char __far e_power[] = "the power plant wrecked, the gun energy came back to %d in 5 s";
+    static const char __far e_power[] = "the power plant wrecked, the gun energy went from 10 to %d in 1 s (a fifth of "
+        "a point a step: 16)";
+    static const char __far e_power_cap[] = "the power plant wrecked, the gun energy at %d after 6 s (held to 40)";
+    static const char __far e_slow_shield[] = "the Gawain's generator moderately hurt, its front shield came back %d in 3 s "
+        "(a point every 3 steps, a third of them: 10)";
     int16_t i, k, hurt = 0, guns = 0;
     pt_alone(PT_PLAYER);
     pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 20000, TURN / 2);
@@ -4584,9 +4589,20 @@ static void t_systems(void)
     REQUIRE(SHIELD(0, 0) > 0, e_shield_ok, SHIELD(0, 0), 0, 0);
     systemDamage[SYS_POWER] = SYS_WRECKED;
     gunEnergy[0] = 10;
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(gunEnergy[0] >= 15 && gunEnergy[0] <= 17, e_power, gunEnergy[0], 0, 0);
     if (!pt_steps(5 * SEC))
         return;
-    REQUIRE(gunEnergy[0] == 10, e_power, gunEnergy[0], 0, 0);
+    REQUIRE(gunEnergy[0] == 40, e_power_cap, gunEnergy[0], 0, 0);
+    memset(systemDamage, 0, systemDamage_SIZE);
+    pt_alone(0x02);                     /* (the Gawain: shield_steps 3, the moderate generator's 1 + 2 the same) */
+    pt_no_repairs();
+    systemDamage[SYS_SHIELDS] = 2;
+    SHIELD(0, 0) = 0;
+    if (!pt_steps(3 * SEC))
+        return;
+    REQUIRE(SHIELD(0, 0) >= 9 && SHIELD(0, 0) <= 11, e_slow_shield, SHIELD(0, 0), 0, 0);
     memset(systemDamage, 0, systemDamage_SIZE);
 }
 
