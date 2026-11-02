@@ -409,6 +409,8 @@ unchanged:
 
 ### 5.3 What the layer has to learn
 
+The plan to build it, every entry point and what this list leaves out: [multiplayer-plan.md](multiplayer-plan.md).
+
 These are the places where RV.EXE differs on purpose. Each is a small,
 contained change to `src/cpu/`.
 
