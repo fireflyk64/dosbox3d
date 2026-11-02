@@ -1119,7 +1119,7 @@ static unsigned char g_slab_mem[SLAB_BYTES];
 
 int ships_dense_reserve(void)
 {
-    static unsigned char __far said;
+    static const char __far s_slab[] = "ships: no room for the dense slab: no ship is turned exactly until there is";
     int i;
     if (g_slab)
         return 1;
@@ -1133,9 +1133,7 @@ int ships_dense_reserve(void)
 #endif
 #endif
     if (!g_slab) {
-        if (!said)
-            RV_LOG("ships: no room for the dense slab: no ship is turned exactly until there is");
-        said = 1;
+        mem_short(s_slab);
         return 0;
     }
     RV_LOG("ships: the dense slab in place, %lu bytes", (unsigned long)SLAB_BYTES);

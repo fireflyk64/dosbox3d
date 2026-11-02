@@ -318,7 +318,11 @@ void flames_bake(void)
     unsigned char __far *pal = room;
     bolts_tables();
     if (!g_bk_hdr || !cp || !pal) {
-        RV_LOG("flames: no %s for the baked flames", !g_bk_hdr ? "XMS" : !cp ? "cockpit palette" : "memory");
+        static const char __far s_room[] = "flames: no room to bake them: no engine flames";
+        if (!g_bk_hdr || !pal)
+            mem_short(s_room);
+        else
+            RV_LOG("flames: no cockpit palette for the baked flames");
         g_bk_hdr = g_bk_rows = 0;
         if (room) gfx_share_give(room);
         return;
@@ -328,7 +332,10 @@ void flames_bake(void)
     dat_read(dat_asset(cp->palette)->at, pal, 768);   /* (the flight palette: any cockpit's below RV_CP_FIRST) */
     k_ok = looks(pal);
     if (!k_ok) {
-        RV_LOG("flames: no memory for the looks");
+        {
+            static const char __far s_looks[] = "flames: no room for their looks: no engine flames";
+            mem_short(s_looks);
+        }
         gfx_share_give(room);
         g_look_mem = 0;
         g_bk_hdr = g_bk_rows = 0;

@@ -159,6 +159,8 @@ int16_t explode_flight_start(void)
     if (!g_map)
         g_map = MEM_TAKE(uint16_t, g_map_arr, MAP_W);
     if (!g_cache_mem || !g_map) {
+        static const char __far s_room[] = "explode: no room for its cache: no explosions this flight";
+        mem_short(s_room);
         explode_flight_end();
         return 0;
     }

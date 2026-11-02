@@ -344,8 +344,10 @@ int16_t sfx_flight_start(void)
         if (maj < 2 || maj > 9)
             why = s_why3;
     }
-    if (!why && (g_mem = MEM_TAKE(uint8_t, g_mem_arr, 2 * RING)) == 0)
+    if (!why && (g_mem = MEM_TAKE(uint8_t, g_mem_arr, 2 * RING)) == 0) {
         why = s_why4;
+        mem_short(s_why4);
+    }
     if (why) {
         _fstrcpy(w, why);
         rv_logf(s_no, w);

@@ -42,8 +42,23 @@ static void need_scratch(void)
     }
 }
 
+#ifdef RV_HEAP
+/* (the test builds reserve it just as the game does: from their heap it ran out as their code grew, a ship's hull quietly
+ * became its box, and they flew another physics than the game's) */
+static unsigned char __far g_share_fixed[SHARE_BYTES];
+static unsigned char __far g_share_out;
+unsigned char __far *gfx_share_take(unsigned long bytes)
+{
+    if (g_share_out || bytes > SHARE_BYTES)
+        return 0;
+    g_share_out = 1;
+    return g_share_fixed;
+}
+void gfx_share_give(unsigned char __far *p) { (void)p; g_share_out = 0; }
+#else
 unsigned char __far *gfx_share_take(unsigned long bytes) { return MEM_TAKE(unsigned char, g_share_mem, bytes); }
 void gfx_share_give(unsigned char __far *p) { MEM_GIVE(p); }
+#endif
 
 /* The start's loans (the music's tracks as it reads them): before the first room these arrays hold nothing yet and
  * nothing else needs them, so no memory is set aside for a thing done once.  Best fit, so that the biggest stays whole.

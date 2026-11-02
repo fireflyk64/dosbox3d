@@ -266,8 +266,11 @@ static int pool_alloc(int want)
     g_o = MEM_TAKE(LzRockOut, g_o_arr, ROCK_OUT);
     g_so = MEM_TAKE(LzBallOut, g_so_arr, ROCK_OUT);
     g_order = MEM_TAKE(short, g_order_arr, ROCK_OUT);
-    if (!g_smallspr || !g_o || !g_so || !g_order)
+    if (!g_smallspr || !g_o || !g_so || !g_order) {
+        static const char __far s_room[] = "rocks: no room for their lists: no asteroid fields";
+        mem_short(s_room);
         return 0;
+    }
     xms_get(g_blk, FILE_HEAD + ((g_nbig + 1) & ~1), g_smallspr, sbytes);
     if (want > ROCK_MAX)
         want = ROCK_MAX;

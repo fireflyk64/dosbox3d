@@ -306,7 +306,11 @@ static void open_board(void)
     g_scene.full = board_full;
     g_scene.no_room = 1;
     g_mode = MODE_BOARD;
-    RV_NOTE("board: up close%s", g_hand == FONT_CHALK ? "" : " (no room for the chalk hand: the title font)");
+    if (g_hand != FONT_CHALK) {
+        static const char __far s_hand[] = "board: no room for the chalk hand: the title font instead";
+        mem_short(s_hand);
+    }
+    RV_NOTE("board: up close%s", g_hand == FONT_CHALK ? "" : " (the title font)");
     vid_dirty(0, SCR_H);
     scene_draw();
     vid_fade(64);

@@ -3483,6 +3483,7 @@ static void flight_over(unsigned short status)
     in_steer(1);
     ships_draw_log();
     gx_log();
+    mem_short_log();
     rocks_report();
     logic_end();
     sfx_flight_end();

@@ -47,8 +47,8 @@ NOBUILD=1 CYCLES=${CYCLES:-max} TIMEOUT=${TIMEOUT:-900} tests/run.sh tests/walk.
     > /dev/null 2>&1 || true
 tr -d '\r' < build/dos/RVLOG.TXT | grep '^playtest:' > build/playtest-dos.txt || true
 # (short of memory a ship's hull quietly becomes its box and the physics change: never a result to trust)
-if tr -d '\r' < build/dos/RVLOG.TXT | grep -q 'no memory for'; then
-    tr -d '\r' < build/dos/RVLOG.TXT | grep 'no memory for' | sort | uniq -c
+if tr -d '\r' < build/dos/RVLOG.TXT | grep -q '^MEMORY:'; then
+    tr -d '\r' < build/dos/RVLOG.TXT | grep '^MEMORY:' | sort | uniq -c
     echo "RVP.EXE ran short of memory: its results are not the game's"
     exit 2
 fi

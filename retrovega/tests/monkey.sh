@@ -81,6 +81,7 @@ one() {
     if [ -z "$why" ]; then
         if grep -q "AddressSanitizer\|runtime error" "$d/out.txt"; then why=SANITIZER
         elif grep -q "^LEAK:" "$log" 2>/dev/null; then why=LEAK
+        elif grep -q "^MEMORY:" "$log" 2>/dev/null; then why=MEMORY
         elif grep -q "^FREEZE\|^FAIL" "$log" 2>/dev/null; then why=FAIL
         elif grep -q "does not fit\|no room for the dense slab" "$log" 2>/dev/null; then why=NOROOM
         elif ! grep -q "^bye" "$log" 2>/dev/null; then why=DIED

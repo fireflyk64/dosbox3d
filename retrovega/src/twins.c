@@ -1265,9 +1265,14 @@ long twins_selftest(void)
     int k, xms;
     g_tw_seed = 4321;
     g_tw_bad = 0;
+    /* (94 KB in all, more than RVP.EXE has left: the big ones in upper memory, which nothing has yet this early) */
     g_bc = (unsigned char LZ_FAR *)_fmalloc(TW_ROWS * SCR_W + 64);
     g_ba = (unsigned char LZ_FAR *)_fmalloc(TW_ROWS * SCR_W + 64);
+#ifdef RV_HOST
     g_mem = (unsigned char LZ_FAR *)_fmalloc(MEM_BYTES);
+#else
+    g_mem = (unsigned char LZ_FAR *)rv_alloc_high(MEM_BYTES);
+#endif
     g_ext = (short LZ_FAR *)_fmalloc(SCR_H * 2 * sizeof(short));
     g_open = (short LZ_FAR *)_fmalloc(SCR_H * 2 * sizeof(short));
     if (!g_bc || !g_ba || !g_mem || !g_ext || !g_open) {

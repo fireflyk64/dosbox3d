@@ -108,8 +108,8 @@ static const uint8_t __far *shape(uint16_t type)
     if (!g_cache_mem)
         g_cache_mem = gfx_share_take((unsigned long)CACHE * SBYTES);
     if (!g_cache[lru].m && (g_cache[lru].m = g_cache_mem ? g_cache_mem + (unsigned)lru * SBYTES : 0) == 0) {
-        static const char __far s_nomem[] = "collide: no memory for type %u's silhouettes: its box stands in";
-        rv_logf(s_nomem, type);
+        static const char __far s_nomem[] = "collide: no room for the ships' silhouettes: their boxes stand in, and the physics change";
+        mem_short(s_nomem);
         return 0;
     }
     xms_get(g_shape_blk, (uint32_t)g_shape_of[type] * SBYTES, g_cache[lru].m, SBYTES);

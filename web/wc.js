@@ -519,11 +519,15 @@ function writeSave(FS, rel, data) {
 }
 const liveFS = () => (running && window.DOSBox && window.DOSBox.FS) || null;
 // A freeze RetroVega has reported about itself (retrovega/src/freeze.c): the report and what led to it, ready to copy.
+let memorySaid = false;
 function showFreeze() {
   const FS = liveFS();
   if (!FS || !$("freezeBox").hidden) return;
   let text;
   try { text = new TextDecoder().decode(FS.readFile(`${GAME_ROOT}/RVLOG.TXT`)); } catch (e) { return; }
+  // (the game has gone without a buffer, with less of something for it: retrovega/src/mem.h)
+  const short = /^MEMORY:.*$/m.exec(text);
+  if (short && !memorySaid) { memorySaid = true; log(`RetroVega ${short[0]}`); }
   const at = text.indexOf("FREEZE:");
   // (twice: 80 s stuck, not just a very slow moment; the first report comes at 20 s, the next a minute later)
   if (at < 0 || text.indexOf("FREEZE:", at + 1) < 0) return;

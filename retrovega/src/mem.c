@@ -268,6 +268,34 @@ void mem_settle(void)
 #endif
 }
 
+/* --- what went without --- */
+#define SHORTS 8
+static struct { const char __far *what; unsigned long n; } __far g_short[SHORTS];
+
+void mem_short(const char __far *what)
+{
+    static const char __far s_line[] = "MEMORY: %Fs";
+    int i;
+    for (i = 0; i < SHORTS && g_short[i].what; i++)
+        if (g_short[i].what == what) {
+            g_short[i].n++;
+            return;
+        }
+    rv_logf(s_line, what);
+    if (i < SHORTS) {
+        g_short[i].what = what;
+        g_short[i].n = 1;
+    }
+}
+
+void mem_short_log(void)
+{
+    static const char __far s_line[] = "MEMORY: %lu times: %Fs";
+    int i;
+    for (i = 0; i < SHORTS && g_short[i].what; i++)
+        rv_logf(s_line, g_short[i].n, g_short[i].what);
+}
+
 /* --- the watch: free conventional memory, a frame at a time --- */
 /* The rooms' loop and the flight's frame call this once a frame.  A line only when it has fallen since the frame before
  * (the user, 2026-11-01): silence means it held.  RV.EXE takes no conventional memory once it is running: the buffers are
@@ -293,6 +321,10 @@ static void leak_test(void)
         return;
     (void)malloc(64);
     (void)_dos_allocmem(4, &seg);
+    {
+        static const char __far s_test[] = "the watch's own test";
+        mem_short(s_test);
+    }
 #else
     (void)count;
 #endif

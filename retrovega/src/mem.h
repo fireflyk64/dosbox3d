@@ -33,6 +33,11 @@ void __far *mem_take(void __far *p, unsigned long bytes, unsigned long want, con
 void mem_give(void __far *p);
 #endif
 
+/* a buffer did not come and the game goes on with less (a hull its box, no chalk hand): "MEMORY: what" in the log, once a
+ * what, in every build, and how many times at the flight's end.  Never a normal thing: the rigs fail on the line */
+void mem_short(const char __far *what);
+void mem_short_log(void);               /* the flight's end: each one's count */
+
 void mem_ledger(const char __far *when);   /* what is out, what DOS, the near heap and XMS have, the files open, the
                                               interrupt table; against the first such look: "LEAK: ..." when it differs */
 void mem_flying(unsigned frame, int slots, int shots, int booms);

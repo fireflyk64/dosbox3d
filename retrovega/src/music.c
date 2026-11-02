@@ -802,7 +802,8 @@ int music_init(void)
         g_ring[i].ev = i ? MEM_TAKE(Ev, g_ring1_arr, RING) : MEM_TAKE(Ev, g_ring0_arr, RING);
         g_ring[i].song = -1;
         if (!g_ring[i].ev) {
-            RV_LOG("music: no memory for its rings");
+            static const char __far s_rings[] = "music: no room for its rings: no music";
+            mem_short(s_rings);
             g_dev = DEV_NONE;
         }
     }

@@ -534,3 +534,5 @@ uint32_t host_hash(void)
 /* rvsim has no rooms and no chalk: the silhouettes' room from the heap (the game's: gfx.c) */
 unsigned char *gfx_share_take(unsigned long bytes) { return (unsigned char *)malloc(bytes); }
 void gfx_share_give(unsigned char *p) { free(p); }
+void mem_short(const char *what) { printf("MEMORY: %s\n", what); }   /* (the game's: src/mem.c) */
+void mem_short_log(void) { }
