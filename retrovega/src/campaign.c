@@ -18,7 +18,7 @@ uint8_t g_rule_hit, g_rule_flags;
 RvPilot g_pilots[RV_PILOTS];
 RvNode g_nodes[RV_NODES];
 uint16_t g_npilots, g_nnodes, g_nmissions;
-RvShipType __far g_shiptypes[RV_SHIPTYPES];
+RvShipType __far g_shiptypes[RV_SHIPRECORDS];   /* (RV_SHIPTYPES is how high a type's number goes: g_type_of's size) */
 uint16_t g_nshiptypes;
 RvWeapon __far g_weapons[RV_WEAPONS];
 uint16_t g_nweapons;
@@ -75,7 +75,7 @@ int16_t camp_load_data(const char *path)
             at += part;
         }
     }
-    RV_ASSERT(g_head.nshiptypes <= RV_SHIPTYPES && g_head.shiptype_size == sizeof(RvShipType));
+    RV_ASSERT(g_head.nshiptypes <= RV_SHIPRECORDS && g_head.shiptype_size == sizeof(RvShipType));
     g_nshiptypes = g_head.nshiptypes;
     fseek(f, g_head.shiptypes_at, SEEK_SET);
     for (i = 0; i < RV_SHIPTYPES; i++)

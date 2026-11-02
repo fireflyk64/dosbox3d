@@ -47,7 +47,7 @@ extern uint8_t g_rule_hit, g_rule_flags;
 extern RvPilot g_pilots[RV_PILOTS];
 extern RvNode g_nodes[RV_NODES];
 extern uint16_t g_npilots, g_nnodes, g_nmissions;
-extern RvShipType __far g_shiptypes[RV_SHIPTYPES];
+extern RvShipType __far g_shiptypes[RV_SHIPRECORDS];
 extern uint16_t g_nshiptypes;
 const RvShipType __far *ship_type(uint16_t type);   /* data/ships.csv's row for a type, or NULL */
 extern RvWeapon __far g_weapons[RV_WEAPONS];

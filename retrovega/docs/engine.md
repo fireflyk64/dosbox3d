@@ -2645,6 +2645,22 @@ first; any negative answer (the picture has not come, or there is no such pictur
 are still what a flight needs and waits for, on every machine. On anything else the install check says no and it is as if it
 were not here.
 
+## When memory is short
+
+RV.EXE holds every buffer in the image, so it cannot run out once it has loaded. The test builds (RVT, RVP) use a heap for most of
+theirs and can, and on any build a buffer in upper memory depends on the machine. Whatever the build, a buffer that does not come
+and a game that carries on with less says so with `mem_short`: one `MEMORY:` line a cause in RVLOG.TXT, how many times at the flight's
+end, and on the page's log. It is never normal: `tests/quiet.sh`, `tests/monkey.sh` and `tests/play/playtest.sh` fail on the line, and
+`/leaktest` proves it speaks. That rule came from a silent one: short of room, `collide.c` gave ships their boxes for their hulls, and
+RVP.EXE flew another physics than the game's for a day's worth of false alarms. So the shared array (`gfx_share_take`: the chalk hand,
+or a flight's silhouettes) is fixed in every build.
+
+The silhouettes themselves are in XMS, 35 ships' in 52 KB; the array is only the 8 types a flight is reading. It cannot move there: a
+hit test reads single bits in a tight loop, and XMS is a driver call and a copy each time.
+
+The budget: `build.sh` prints what RV.EXE leaves of DOSBox's 640,512 bytes, warns under 8 KB and refuses under 2 KB. A real DOS with its
+drivers offers less than DOSBox does.
+
 ## Fonts, pointer, driver
 
 - **Fonts:** rasterised by `tools/rvpack.py` into our own bitmap format,

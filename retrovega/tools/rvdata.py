@@ -46,7 +46,7 @@ VERSION = 15                            # 2: the ship types' engines; 3: their h
                                         # 13: a mission ship's turrets=off; 14: scenes: 24 lines a
                                         # mission, 120 characters, conditions (say, radio, after=, if=, unless=, dead=)
 LIMITS = {'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 16,
-          'SEATS': 3, 'TALKS': 200, 'FIELDS': 7, 'SHIPTYPES': 64, 'WEAPONS': 48}
+          'SEATS': 3, 'TALKS': 200, 'FIELDS': 7, 'SHIPTYPES': 64, 'SHIPRECORDS': 44, 'WEAPONS': 40}
 TEXT = {'ID': 16, 'TITLE': 48, 'TALK': 108, 'KEY': 10, 'CALLSIGN': 12,
         'NAME': 24, 'NODE_ID': 8, 'LINE': 72, 'CODE': 6, 'WNAME': 20}
 FIELDS = {'asteroid': 9, 'mine': 10}                 # their EntityType, as fieldTable keeps them
@@ -380,8 +380,8 @@ def compile_all():
     ships_csv = load_csv('ships.csv')
     ships = {r['key']: int(r['type'], 16) for r in ships_csv}
     cockpit_keys = list(json.load(open(os.path.join(DATA, 'cockpits.json')))['ships'])
-    if len(ships_csv) > LIMITS['SHIPTYPES']:
-        raise Fail('ships.csv: %d types, at most %d' % (len(ships_csv), LIMITS['SHIPTYPES']))
+    if len(ships_csv) > LIMITS['SHIPRECORDS']:   # (SHIPTYPES is how high their numbers go; each record costs conventional memory)
+        raise Fail('ships.csv: %d types, room for %d (LIMITS SHIPRECORDS)' % (len(ships_csv), LIMITS['SHIPRECORDS']))
     nums = [int(r['type'], 16) for r in ships_csv]
     if len(set(nums)) != len(nums) or max(nums) >= LIMITS['SHIPTYPES']:
         raise Fail('ships.csv: type numbers must be unique and below 0x%02X (the game looks a type up by its number)'
