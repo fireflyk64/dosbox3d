@@ -116,6 +116,10 @@ function noticeChat(line) {
 function flightOver() { setTimeout(() => hall.reopen(), 0); }
 function noticeGameEnd(line) {
   noticeChat(line);
+  if (/^wcnet: RV ABI mismatch: /.test(line)) {
+    // (the game and the emulator of this page were not built from one interface: RetroVega flies, alone)
+    setTimeout(() => status(`This page's RetroVega and its emulator do not match (${line.replace(/^wcnet: RV ABI mismatch: /, "").split(";")[0]}): the game flies alone, shared flights are off. Reload the page; if it stays, "Copy log" has the details for a report.`), 0);
+  }
   if (/^Exit to error: /.test(line)) {
     // (DOSBox itself gave up: an instruction or a device it does not emulate.)
     setTimeout(() => status(`The emulator stopped: ${line.slice(15, 175)}. Reload the page to fly again; "Copy log" under the picture has the details for a report.`), 0);
@@ -629,6 +633,28 @@ function missionLabel(m) {
   const note = Array.isArray(s.missions) ? s.missions[m.mis] : "";
   return (s.name ? `${s.name} ${m.mis + 1}` : `ch ${s.series}, mission ${m.mis + 1}`) + (note ? ` (${note})` : "");
 }
+// A campaign whose series come from a file beside the page (the registry's
+// `campaign.manifest`: RetroVega's rv-campaign.json, made with the game's own
+// data), fetched once; the menu is made again when it has come.
+const manifests = new Map();
+function loadCampaignManifest(g) {
+  const c = g && g.campaign;
+  if (!c || !c.manifest || manifests.has(g.id)) return;
+  manifests.set(g.id, fetch(c.manifest).then((r) => {
+    if (!r.ok) throw new Error(`${c.manifest}: HTTP ${r.status}`);
+    return r.json();
+  }).then((m) => {
+    // a node a series, numbered from 1 as the menu numbers series; its missions' titles, and the numbers the
+    // game's /brief takes (missionArgs)
+    c.series.length = 0;
+    for (const s of m.series) {
+      const name = s.id.charAt(0) + s.id.slice(1).toLowerCase();
+      c.series.push({ series: s.node + 1, name, missions: s.missions.map((x) => x.title), packed: s.missions.map((x) => x.n) });
+    }
+    $("mission").dataset.game = "";
+    if (lobby.game) renderMission();
+  }).catch((e) => { log(`the mission menu of ${g.title}: ${e.message || e}`); }));
+}
 function buildMissionMenu() {
   const sel = $("mission");
   const c = lobbyCampaign();
@@ -651,6 +677,7 @@ function buildMissionMenu() {
 }
 function renderMission() {
   $("missionRow").hidden = !lobbyFlies();
+  loadCampaignManifest(gameById(lobbyGameId()));
   buildMissionMenu();
   const sel = $("mission");
   const c = lobbyCampaign();
@@ -662,6 +689,10 @@ function renderMission() {
   // all.  The frame rate stays: the hooks pace a flight alone too.)
   const one = soloRoom();
   for (const id of ["mission", "latency", "collisions"]) $(id).parentElement.hidden = one;
+  // (a game whose asteroids are its own, each machine's: only the wing bumps are the room's to choose)
+  const ownRocks = !!(gameById(lobbyGameId()) || {}).ownRocks;
+  for (const o of $("collisions").options) o.hidden = ownRocks && !o.value.startsWith("on-");
+  if (ownRocks) lobby.rocks = "on";
   $("collisions").value = `${lobby.rocks}-${lobby.wingBumps}`;
   $("collisions").disabled = !isHost();  // the host may switch them while flying too
   $("latency").value = lobby.latency;

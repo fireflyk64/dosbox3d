@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The game's logic data: campaign, missions and cast, checked and compiled.
 
-    rvdata.py [--out build/dos/RVGAME.DAT] [--header src/rvdata.h]
+    rvdata.py [--out build/dos/RVGAME.DAT] [--header src/rvdata.h] [--manifest build/dos/RVNET.JSON]
 
 Reads data/campaign.csv, data/missions.txt, data/people.csv,
 data/relations.csv, data/ships.csv and the seat art (art/places/*/place.json),
@@ -865,10 +865,31 @@ def header_text(sizes):
     return '\n'.join(out)
 
 
+def manifest(nodes, missions):
+    """RVNET.JSON: the campaign as the page's mission menu lists it (web/gamefiles.js, the build copies it beside the
+    page as rv-campaign.json), read back from the packed records RVGAME.DAT holds, so the menu and the game agree
+    however the campaign changes: a node a series, in RVGAME.DAT's order, its missions in its order, each with the
+    number RV.EXE's /brief N takes (its record's), its id and its title"""
+    node = struct.Struct(fmt(NODE))
+    head = struct.Struct('<%ds8B%ds' % (TEXT['ID'], TEXT['TITLE']))   # (a mission record's start: rec in compile_all)
+    series = []
+    for i, rec in enumerate(nodes):
+        v = node.unpack(rec)
+        ms = []
+        for n in v[3:3 + LIMITS['MISSIONS_PER_NODE']]:
+            if n == 0xFFFF:
+                continue
+            h = head.unpack_from(missions[n])
+            ms.append({'n': n, 'id': h[0].rstrip(b'\0').decode('ascii'), 'title': h[-1].rstrip(b'\0').decode('ascii')})
+        series.append({'node': i, 'id': v[0].rstrip(b'\0').decode('ascii'), 'missions': ms})
+    return {'version': 1, 'series': series}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--out', default=os.path.join(ROOT, 'build', 'dos', 'RVGAME.DAT'))
     ap.add_argument('--header', default=os.path.join(ROOT, 'src', 'rvdata.h'))
+    ap.add_argument('--manifest', default=os.path.join(ROOT, 'build', 'dos', 'RVNET.JSON'))
     args = ap.parse_args()
     try:
         pilots, nodes, missions, types, weapons, start, lines, home_line, home_n = compile_all()
@@ -894,6 +915,9 @@ def main():
                 + b''.join(lines))
     with open(args.header, 'w') as f:
         f.write(header_text(sizes))
+    with open(args.manifest, 'w') as f:
+        json.dump(manifest(nodes, missions), f, separators=(',', ':'))
+        f.write('\n')
     print('%s: %d pilots, %d nodes, %d missions (%d bytes each), %d ship types, %d weapons, %d bytes'
           % (args.out, len(pilots), len(nodes), len(missions), sizes['MISSION'], len(types), len(weapons),
              os.path.getsize(args.out)))

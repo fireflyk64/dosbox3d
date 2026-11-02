@@ -11,7 +11,11 @@
 //      OPL3, and the keyboard reaches it (Tab jumps between hotspots, a held
 //      arrow key steers the pointer);
 //   2. a host and a wingman meet in an RV- room by its link; the host's Fly
-//      starts both games.
+//      starts both games;
+//   3. a shared flight (retrovega/docs/multiplayer.md): the host's menu has
+//      every mission of rv-campaign.json and 30 frames a second; the host
+//      flies mission 0 and the wingman asked for 3: both fly the host's,
+//      each has the other's ship where it is (offsets from wcnet_rv.h).
 //
 //   node scripts/web-rv.mjs PAGE_URL LOBBY_URL [seconds]
 //
@@ -139,6 +143,54 @@ await sleep(Math.max(0, seconds * 1000 - 10000));
 check("no stop in either game", !/FAIL /.test(await rvlog(host)) && !/FAIL /.test(await rvlog(wing)));
 await keep("host", host);
 await keep("wing", wing);
+
+// -- 3. a shared flight ----------------------------------------------------------
+await host.context().close();
+await wing.context().close();
+const rv = Object.fromEntries([...fs.readFileSync(new URL("../src/cpu/wcnet_rv.h", import.meta.url), "utf8")
+  .matchAll(/#define (RV_\w+)\s+(0x[0-9A-Fa-f]+|\d+)\b/g)].map((m) => [m[1], Number(m[2])]));
+const bytes = (page, off, n) => page.evaluate(([o, k]) => Array.from({ length: k }, (_, i) => window.DOSBox._wc_web_ds_byte(o + i)), [off, n]);
+const word = (b, i) => b[i] | (b[i + 1] << 8);
+const long = (b, i) => (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24));
+async function shared(page) {
+  const slots = rv.RV_MAX_SHIP_SLOT + 1;
+  const pos = await bytes(page, rv.RV_DS_gPositionVector, 12 * slots);
+  const s = { role: (await bytes(page, rv.RV_DS_rvNetRole, 1))[0], node: (await bytes(page, rv.RV_DS_currentSeries, 1))[0],
+    mission: (await bytes(page, rv.RV_DS_currentMission, 1))[0], frame: word(await bytes(page, rv.RV_DS_frameCounter, 2), 0),
+    ctl: await bytes(page, rv.RV_DS_rvController, slots), net: await bytes(page, rv.RV_DS_rvNetId, slots),
+    flags: await bytes(page, rv.RV_DS_rvFlags, 2 * slots), pos: [] };
+  for (let i = 0; i < slots; i++) s.pos.push([long(pos, 12 * i), long(pos, 12 * i + 4), long(pos, 12 * i + 8)]);
+  return s;
+}
+const km = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) / 256;
+const room2 = "RV-" + String(Math.floor(Math.random() * 9000) + 1000);
+const h2 = await open("host2", { room: room2, callsign: "CHEATHOST", retrovega: "", cmd: "rv /noquit /fly 0" });
+await h2.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 30000 });
+const w2 = await open("wing2", { room: room2, callsign: "WINGMAN", cmd: "rv /noquit /fly 3" });
+await w2.waitForFunction(() => !document.getElementById("lobby").hidden && document.getElementById("roster").children.length > 1, null, { timeout: 30000 });
+await h2.waitForFunction(() => document.getElementById("roster").children.length > 1, null, { timeout: 30000 });
+const campaign = await (await fetch(new URL("rv-campaign.json", pageUrl))).json();
+const missions = campaign.series.reduce((n, s) => n + s.missions.length, 0);
+await h2.waitForFunction((n) => document.querySelectorAll("#mission option").length === n + 1, missions, { timeout: 20000 }).catch(() => {});
+check(`the host's menu: the barracks and the campaign's ${missions} missions`, (await h2.$$eval("#mission option", (os) => os.length)) === missions + 1);
+check("the host's frame rate is 30", (await h2.$eval("#fps", (el) => el.value)) === "30");
+await h2.click("#fly");
+const flying = (page) => page.waitForFunction(() => window.DOSBox && window.DOSBox._wc_web_in_flight && window.DOSBox._wc_web_in_flight() === 1, null, { timeout: 150000 }).then(() => true, () => false);
+const [hf, wf] = await Promise.all([flying(h2), flying(w2)]);
+check("both pages fly", hf && wf);
+for (const page of [h2, w2]) { await page.focus("#canvas"); await page.keyboard.press("s"); }   // (stopped: where each is holds still)
+await sleep(8000);
+const [hs, ws] = [await shared(h2), await shared(w2)];
+check("the host is the host and the wingman a guest", hs.role === 1 && ws.role === 2, `${hs.role} ${ws.role}`);
+check("the wingman flies the host's mission", hs.node === ws.node && hs.mission === ws.mission, `host ${hs.node}/${hs.mission}, wingman ${ws.node}/${ws.mission}`);
+const me = ws.net[0];
+check("the host has the wingman's ship, a human's puppet, where it is", me >= 1 && me <= rv.RV_MAX_SHIP_SLOT && hs.ctl[me] === 2 && (hs.flags[2 * me] & 32) && km(hs.pos[me], ws.pos[0]) < 150,
+  me >= 1 ? `slot ${me}, ${km(hs.pos[me], ws.pos[0]).toFixed(0)} km off` : `net id ${me}`);
+const body = ws.net.findIndex((n, i) => i > 0 && n === 0 && ws.ctl[i] === 2);
+check("the wingman has the host's ship where it is", body > 0 && km(ws.pos[body], hs.pos[0]) < 150, body > 0 ? `${km(ws.pos[body], hs.pos[0]).toFixed(0)} km off` : "none");
+check("no stop in either game", !/FAIL /.test(await rvlog(h2)) && !/FAIL /.test(await rvlog(w2)));
+await keep("host2", h2);
+await keep("wing2", w2);
 
 await browser.close();
 const ok = checks.every((c) => c.ok);

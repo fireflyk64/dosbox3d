@@ -172,6 +172,9 @@ class Check:
             if host and g:
                 self.need(km(host.pos(0), g.pos(0)) > 5000, 'the host went by autopilot (%.0f km)' % km(host.pos(0), g.pos(0)))
             self.meeting('after')
+        if sc == 'ram':
+            self.logs_say(1, r'reporting a hit by our own ship', "the guest's collisions went to the host")
+            self.logs_say(0, r'reported damage to \d+', "the host took the guest's share")
         if sc == 'combat':
             self.logs_say(1, r'reporting a hit by our own guns', "the guest's hits went to the host")
             self.logs_say(0, r'reported damage to \d+', "the host took the guest's hits")

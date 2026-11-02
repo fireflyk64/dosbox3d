@@ -27,8 +27,8 @@ void rv_set_compatible(bool ok, const std::string &why);
 // Why it did not ("" when it did, or no RV.EXE runs).
 const std::string &rv_mismatch();
 
-// Shared flights for the running RV.EXE: the interface matches, the room is
-// not a room of one (WCSOLO), and WCRVNET is not 0.
+// Shared flights for the running RV.EXE: the interface matches and WCRVNET
+// is not 0 (a room of one, WCSOLO, is the dispatcher's to keep out).
 bool rv_shared();
 
 // RV.EXE's GameParams: its record sizes and slots (wcnet_rv.h), no fields

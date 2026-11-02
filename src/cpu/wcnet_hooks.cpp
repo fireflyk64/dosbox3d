@@ -798,6 +798,21 @@ static void key_script() {
         wclog(1, "key script %.1fs (t=%.1f): %s slot %d (%s, drawn at %04x); %s", t, now / 1000.0,
               face ? "face" : "rock onto", slot, slot >= 0 && slot_in_use(slot) ? "in use" : "empty",
               slot >= 0 ? rd16((Bit16u)(ds::entityCullStatus + 2 * slot)) : 0, field_state_line().c_str());
+    } else if (item.compare(0, 5, "!ram=") == 0) {
+        // !ram=<slot|npc>: our ship put 150 km off that ship's nose, facing it at our speed (test aid: a collision at
+        // the next steps)
+        int slot = script_slot(item.c_str() + 5);
+        if (slot > kPlayerSlot && slot <= kMaxShipSlot && slot_in_use(slot)) {
+            Vec3 p = read_vec(vec_slot(ds::gPositionVector, slot)), f = read_vec(vec_slot(ds::gOrientationFrontVector, slot));
+            Vec3 r = read_vec(vec_slot(ds::gOrientationRightVector, slot));
+            Vec3 at = { p.x + f.x * 150, p.y + f.y * 150, p.z + f.z * 150 };   // (a unit vector is 256: 150 km)
+            Vec3 back = { -f.x, -f.y, -f.z }, left = { -r.x, -r.y, -r.z };    // (front and right both turned: the
+            write_vec(vec_slot(ds::gPositionVector, kPlayerSlot), at);         // same handedness, up as it is)
+            write_vec(vec_slot(ds::gOrientationFrontVector, kPlayerSlot), back);
+            write_vec(vec_slot(ds::gOrientationRightVector, kPlayerSlot), left);
+            write_vec(vec_slot(ds::gOrientationUpVector, kPlayerSlot), read_vec(vec_slot(ds::gOrientationUpVector, slot)));
+        }
+        wclog(1, "key script %.1fs (t=%.1f): ram slot %d (%s)", t, now / 1000.0, slot, slot > 0 && slot_in_use(slot) ? "in use" : "empty");
     } else if (item.compare(0, 5, "!pos=") == 0) {
         // !pos=<x>:<y>:<z> moves our own ship there
         Vec3 v = read_vec(vec_slot(ds::gPositionVector, kPlayerSlot));

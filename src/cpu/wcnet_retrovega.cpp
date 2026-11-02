@@ -26,10 +26,10 @@ void rv_set_compatible(bool ok, const std::string &why) {
 
 const std::string &rv_mismatch() { return g_rvMismatch; }
 
-// Until the page offers RetroVega's shared flights (web/gamefiles.js), the
-// layer opens them only when asked (WCRVNET=1, the native rigs); WCRVNET=0
-// keeps them shut whatever the default.
-static const bool kRvSharedByDefault = false;
+// Shared flights for a compatible RV.EXE in a room (the page offers them:
+// web/gamefiles.js); WCRVNET=0 keeps them shut, the game then only watched
+// as before them.
+static const bool kRvSharedByDefault = true;
 
 bool rv_shared() {
     if (!rv_compatible()) {

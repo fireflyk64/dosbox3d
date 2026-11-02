@@ -61,6 +61,10 @@
 // controller picker offers each pad "built in" too (web/gamepad.js).
 // `noFlight`: no missions to pick and no shared flight (the page hides
 // its mission and flight options).
+// `campaign.manifest`: the campaign's series come from that file beside
+// the page, made by the game's own build (RetroVega's rv-campaign.json):
+// wc.js fills `series` from it.  `ownRocks`: the game's asteroids are its
+// own, every machine's (the room's asteroid choices do not apply).
 // `builtin`: a game the site itself serves (ours to give away), as a
 // .tar.gz beside the page: it is in every browser's "Play" menu with no
 // files dropped, fetched when it is flown.
@@ -175,6 +179,25 @@ const wc2Mission = (m) => `Origin s${m.series} m${m.mis}`;
 // Wing Commander moves everything by a step a frame, so its frame rate is
 // its speed: some missions were made for a slower one (the host's choice).
 const WC1_FPS = { def: 20, min: 8, max: 60 };
+// RetroVega too, at 30 as it runs alone (the user: "the default should be 30
+// as the real game is"; fewer make it slower and easier, and lighter on the
+// link).
+const RV_FPS = { def: 30, min: 8, max: 60 };
+// A picked RetroVega mission (its series a campaign node, from
+// rv-campaign.json): everyone starts in the briefing room with the campaign
+// at that mission, as Wing Commander's picked mission starts at its briefing.
+const rvMission = (m) => {
+  const s = RV_CAMPAIGN.series.find((e) => e.series === m.series);
+  const n = s && s.packed ? s.packed[m.mis] : undefined;
+  return Number.isInteger(n) ? `/brief ${n}` : "";
+};
+const RV_HINTS = {
+  forced: "Everyone starts in the briefing room for it, the campaign at that mission; your saves stay as they were.",
+  host: "Your campaign decides: walk into the briefing room and your wingmen get your mission there.",
+  wing: "The host's campaign decides: walk into the briefing room and you get the host's mission there.",
+  help: "RetroVega is a campaign of 40 missions: you start in your quarters aboard the TCS Vigilance and walk the ship, bar, briefing room and deck, saving in the bunk, then fly from the deck. Flown together, the host's game runs the mission and each other pilot flies one of its wingmen (a third gets a fighter of their own). A wingman flies the host's mission whatever their own save holds; their sortie and their kills go into their own save, their campaign stays where it was. When anyone dies, or the carrier is lost, everyone's flight ends, and the host's R (fly it again) or C (carry on) decides for everyone. A pilot's bumps into another pilot do no harm. The host's Fly starts everybody's game. Arrow keys steer the pointer, Tab jumps between the things you can use, Enter uses one." };
+// (series: filled from rv-campaign.json by web/wc.js before the menu is made)
+const RV_CAMPAIGN = { series: [], manifest: "rv-campaign.json", missionArgs: rvMission, hints: RV_HINTS };
 
 export const GAMES = [
   { id: "wc1", tag: "WC1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
@@ -240,9 +263,9 @@ export const GAMES = [
   // RetroVega (retrovega/ in dosbox3d): our own game in the Vega Strike
   // universe, open data, built into the page.  It wants 32 MB of XMS, VESA
   // 640x400 and the Sound Blaster's OPL3.  Its saved games are the eight
-  // bunks.  In a room everyone plays their own campaign: flights are not shared yet.
+  // bunks.  Flown together as Wing Commander is (retrovega/docs/multiplayer.md).
   { id: "rv", tag: "RV", title: "RetroVega", detect: ["RV.EXE"], run: "rv /noquit", multiplayer: true,
-    builtin: "retrovega.tar.gz", noFlight: true,
+    builtin: "retrovega.tar.gz", fps: RV_FPS, campaign: RV_CAMPAIGN, ownRocks: true,
     build: { rvhook: true, off: 0x0400, text: "Loading RETROVEGA" },
     saves: ["BUNK01.SAV", "BUNK02.SAV", "BUNK03.SAV", "BUNK04.SAV", "BUNK05.SAV", "BUNK06.SAV", "BUNK07.SAV", "BUNK08.SAV",
             "RVSETUP.CFG"],   // (its settings: the talk speed)
@@ -252,7 +275,6 @@ export const GAMES = [
     pointer: { fromGame: true },       // (the middle of the cockpit's opening, another in every ship: wc_web_steer)
     // the flight's keys, under the picture (the game listed them on a VDU till the user had them moved out of it)
     keys: "<b>RetroVega in flight:</b> the mouse or the arrow keys steer (a tap turns a little, held they build to the full turn in a third of a second; <kbd>Shift</kbd> with an arrow turns at full at once), <kbd>Q</kbd> and <kbd>E</kbd> roll (the same way), <kbd>Space</kbd> or the left button fires the guns, <kbd>Enter</kbd> a missile, <kbd>Tab</kbd> the afterburner; <kbd>+</kbd> and <kbd>-</kbd> set the speed, <kbd>F</kbd> full, <kbd>S</kbd> stop; <kbd>T</kbd> the next target in front of you, <kbd>Y</kbd> the nearest enemy, <kbd>L</kbd> locks the target; <kbd>G</kbd> picks the guns, <kbd>W</kbd> the missile, <kbd>D</kbd> the damage readout; <kbd>N</kbd> the nav points (a white cross marks the one chosen), <kbd>A</kbd> the autopilot; <kbd>`</kbd> or <kbd>~</kbd> the ships between high detail and blocks, at once; <kbd>C</kbd> the comm menu: <kbd>1</kbd> your wingman (fly in formation, break formation, attack your target, help you out, return to base), <kbd>2</kbd> your target (taunt an enemy; with the carrier as your target, request landing within 8,000 km, granted once you have flown a nav point or finished the mission, then fly in over its bow); <kbd>R</kbd> the radar's range; <kbd>F5</kbd> the outside view, <kbd>F1</kbd> the cockpit. The simulator in the bar (click its chair) is Rlaan after Rlaan, on your own: <kbd>Esc</kbd> or <kbd>Caps Lock</kbd> leaves it.",
-    help: "RetroVega is a campaign of 40 missions: you start in your quarters aboard the TCS Vigilance and walk the ship, bar, briefing room and deck, saving in the bunk, then fly from the deck. In a room everyone plays their own campaign; flights are not shared yet. The host's Fly starts everybody's game. Arrow keys steer the pointer, Tab jumps between the things you can use, Enter uses one.",
     dosbox: "[dosbox]\nmemsize=63\n[dos]\nxms=true\nems=false\numb=true\n[sblaster]\nsbtype=sb16\noplmode=opl3\n" },
 ];
 

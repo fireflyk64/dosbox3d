@@ -1221,7 +1221,7 @@ static bool ship_behind(int src, int *net) {
 // Client: one of this machine's own rocks or mines hit a ship the server
 // owns.  The server cannot see that rock, so tell it; the damage comes back
 // with the server's next frame like any other.
-static void report_local_hit(Session *s, int dst, Bit16u quantity, Bit16u vecOff, bool ourGuns) {
+static void report_local_hit(Session *s, int dst, Bit16u quantity, Bit16u vecOff, bool ourGuns, const char *what = NULL) {
     if (g_entityMap && !g_entityMap->is_local_mapped(dst)) {
         return;
     }
@@ -1236,7 +1236,8 @@ static void report_local_hit(Session *s, int dst, Bit16u quantity, Bit16u vecOff
     dam->mutable_pos()->set_x(v.x);
     dam->mutable_pos()->set_y(v.y);
     dam->mutable_pos()->set_z(v.z);
-    wclog(2, "reporting a hit by our own %s on slot %d (net %d) qty %d", ourGuns ? "guns" : "rock or mine", dst, dam->ship_id(), quantity);
+    wclog(2, "reporting a hit by our own %s on slot %d (net %d) qty %d", what ? what : ourGuns ? "guns" : "rock or mine", dst,
+          dam->ship_id(), quantity);
     s->queue_outgoing_event(ev);
 }
 
@@ -1312,6 +1313,10 @@ void on_do_damage_entry() {
                 report_local_hit(s, dst, quantity, vecOff, false);
             } else if (our_own_bolt(src)) {
                 report_local_hit(s, dst, quantity, vecOff, true);
+            } else if (src == kPlayerSlot && g_traits.puppets) {
+                // Our own ship ran into it: a game whose collisions are the colliding pilot's machine's (RetroVega's
+                // ram: retrovega/docs/multiplayer.md) worked out its share here, and the host applies it.
+                report_local_hit(s, dst, quantity, vecOff, true, "ship");
             }
         }
         return_from_call(code::do_damage, 0);  // NPC damage is decided by the server

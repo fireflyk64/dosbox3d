@@ -78,7 +78,21 @@ the build, so the game and the emulator in one deploy always agree.
 - **Pacing:** the layer paces RV a step a frame (`WCFPS`, default 30; the page's FPS box). RV leaves its own frame
   cap off when `rvNetRole` is not 0.
 
-## 4. The game
+## 4. The page
+
+- `web/gamefiles.js`'s `rv` entry flies together (no `noFlight`): the mission menu is "Campaign from the barracks"
+  and every mission of the campaign, read from `rv-campaign.json` (`tools/rvdata.py` writes `RVNET.JSON` from the same
+  packed records as `RVGAME.DAT`; `scripts/build-web.sh` puts it beside the page), so the menu follows the campaign.
+  A picked mission is `rv /noquit /brief N`. The FPS box: 30 by default, 8-60. The room's asteroid choices are hidden
+  (`ownRocks`: RetroVega's rocks are each machine's own); the wing bumps stay the host's choice.
+- A room of one (Players 1: `WCSOLO`) is the game alone, as before. In a room of two or three the host's game waits in
+  front of the briefing room for its wingmen ("Waiting for your wingmen"), as Wing Commander's waits in its barracks.
+- An RV.EXE and an emulator of two interfaces: the page says so in its status line (the layer's "RV ABI mismatch"),
+  and the game flies alone.
+- `scripts/web-rv.mjs` (the deploy's RV smoke) flies two pages together: the menu's missions, the 30, the host's
+  mission on both, each ship where its own page has it.
+
+## 5. The game
 
 Multiplayer appears in the logic only as who flies a ship (`rvController`, `RV_FLAG_HUMAN`), never as a role:
 
@@ -105,7 +119,7 @@ Multiplayer appears in the logic only as who flies a ship (`rvController`, `RV_F
 - **Picked missions** (the page's menu): `/brief N`, the campaign at mission N, starting in the briefing room, as
   WC1's picked mission starts at its briefing.
 
-## 5. Checks
+## 6. Checks
 
 - **Play tests** (`tests/play/playtest.sh --dos`, last in the table): M6.7 ram-owner, M7.8 puppet-launch, M8.29
   scene-human, M8.30 human-seat-lost, M8.31 dying.
@@ -115,7 +129,8 @@ Multiplayer appears in the logic only as who flies a ship (`rvController`, `RV_F
   a puppet; as many ships on both; both at the host's frame rate), `retry`, `carrier`, `guestdeath` (the death
   screens, the host's R reaching the guest, the mission flown again and met again), `land` (the guest's landing is
   the host's, scored alike), `autopilot` (the guest taken along), `kill` (the host's kills explode and go on the
-  guest), `combat` (the guest's hits go to the host and come back), `PLAYERS=3` (a seat made for the third), and
+  guest), `combat` (the guest's hits go to the host and come back), `ram` (the guest's share of its collisions
+  goes to the host), `PLAYERS=3` (a seat made for the third), and
   `WCFPS=15`. One pair at a time; 40-55 s each.
 - **A mismatched interface** (`scripts/rvnet-abi.sh`): copies with the RVHOOK version, then a word of the directory,
   changed are refused and only watched.
@@ -124,4 +139,4 @@ Multiplayer appears in the logic only as who flies a ship (`rvController`, `RV_F
   campaign was never saved has no bunk to write).
 - **Key-script aids** this added (`src/cpu/wcnet_hooks.cpp`): `T:!ds=NAME` dumps the data segment,
   `T:!land[=SLOT]` lands on that ship (or the first capital ship of ours), `T:waitkey=KEY` waits for the next
-  flight tapping KEY (the death screen's R).
+  flight tapping KEY (the death screen's R), `T:!ram=SLOT|npc` puts our ship nose to nose with that one.

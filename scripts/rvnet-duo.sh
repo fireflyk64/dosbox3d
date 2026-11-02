@@ -13,6 +13,8 @@
 #             autopilot   the host's autopilot takes the guest along
 #             combat      after the host's autopilot to the enemies, the guest flies at them and fires: its hits
 #                         reach the host's game, and come back to it
+#             ram         after the host's autopilot to the enemies, the guest flies into them: its ship's share of
+#                         each collision goes to the host's game
 #             kill        the host's autopilot to the enemies, which it destroys (!killfoes): the guest sees them
 #                         explode, then go
 #   PLAYERS   2 (default) or 3: a third pilot, seated by the host
@@ -58,6 +60,9 @@ land)
 autopilot)
     HOST="$HOST,10:a,14:!ds=after"
     GUEST="$GUEST,14:!ds=after" ;;
+ram)
+    HOST="$HOST,10:a"
+    GUEST="$GUEST,13:f,15:!ram=npc,17:!ram=npc,19:!ram=npc" ;;
 combat)
     HOST="$HOST,10:a"
     GUEST="$GUEST,13:!face=npc,13.3:f,15:!face=npc,15.5:+space,19:-space,19.2:!face=npc,19.5:+space,23:-space,23.5:enter,24:!face=npc,24.5:+space,28:-space" ;;
