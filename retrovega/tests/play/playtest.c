@@ -5586,6 +5586,149 @@ static void t_home_tier(void)
 
 /* ======================================================================================================== */
 
+/* ======================================================================================================== */
+/* Shared flights (docs/multiplayer.md): the logic's part, by who flies a ship (CTL_PUPPET, RV_FLAG_HUMAN) */
+
+/* M6.7: a collision is the machine's whose pilot is in it, or where no ship in it is another machine's */
+static void t_ram_owner(void)
+{
+    static const char __far e_ai[] = "two AI Nicanders inside each other lost %d and %d: a pair of this machine's is "
+        "hurt (the test's control)";
+    static const char __far e_puppet[] = "an AI Nicander inside another machine's (a puppet) lost %d and the puppet %d: "
+        "that pair is the other machine's, nothing here";
+    static const char __far e_player[] = "the player flown into another machine's ship lost nothing: its own collision is "
+        "worked out here (%d)";
+    int32_t h1, h2;
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, 0, 0, 20000, 0);
+    pt_ship(2, PT_ENEMY, SIDE_AERA, CTL_AI, 0, 0, 20150, TURN / 2);
+    pt_speed(1, 450);
+    h1 = pt_health(1);
+    h2 = pt_health(2);
+    if (!pt_step())
+        return;
+    REQUIRE(pt_health(1) < h1 && pt_health(2) < h2, e_ai, h1 - pt_health(1), h2 - pt_health(2), 0);
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, 0, 0, 20000, 0);
+    pt_ship(2, PT_ENEMY, SIDE_AERA, CTL_PUPPET, 0, 0, 20150, TURN / 2);
+    pt_speed(1, 450);
+    h1 = pt_health(1);
+    h2 = pt_health(2);
+    if (!pt_step())
+        return;
+    REQUIRE(pt_health(1) == h1 && pt_health(2) == h2, e_puppet, h1 - pt_health(1), h2 - pt_health(2), 0);
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_PUPPET, 0, 0, 150, TURN / 2);
+    pt_speed(0, 450);
+    h1 = pt_health(0);
+    if (!pt_step())
+        return;
+    REQUIRE(pt_health(0) < h1, e_player, h1 - pt_health(0), 0, 0);
+}
+
+/* M7.8: a launch by another machine's ship homes on what that machine published (missileTarget[ship]) */
+static void t_puppet_launch(void)
+{
+    static const char __far e_target[] = "a puppet's seeker, its machine's target slot 2 published, homes on %d";
+    static const char __far e_own[] = "the player's seeker launched at its locked target 2 left %d published for the "
+        "other machines (missileTarget[0])";
+    int16_t l;
+    uint16_t m;
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_HOMER, SIDE_TERRAN, CTL_PUPPET, 0, 0, -1000, 0);
+    pt_ship(2, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 18000, TURN / 2);
+    pt_ship(3, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 3000, 0, 9000, TURN / 2);
+    REQUIRE((l = pt_launcher(1)) >= 0, e_nolaunch, PT_HOMER, 0, 0);
+    missileTarget[1] = 2;
+    rvTarget[1] = 0xFF;
+    g_sys.target = -1;
+    m = fireGunFromShip(1, (uint16_t)l);
+    REQUIRE(m <= RV_MAX_SHIP_SLOT && maybeEntityType[m] == ET_MISSILE, e_nomissile, l, m, 0);
+    REQUIRE(missileTarget[m] == 2, e_target, missileTarget[m], 0, 0);
+    /* the local pilot's: published before the shot (step_fire), for the layer to carry */
+    pt_alone(PT_HOMER);
+    pt_ship(2, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 3000, TURN / 2);
+    missileTarget[0] = 0xFF;
+    g_sys.target = 2;
+    g_sys.lock = 1;
+    g_sys.armed = 1;
+    g_pilot.missile = 1;
+    if (!pt_step())
+        return;
+    g_pilot.missile = 0;
+    REQUIRE(missileTarget[0] == 2, e_own, missileTarget[0], 0, 0);
+}
+
+/* M8.29: a ship near another machine's pilot (RV_FLAG_HUMAN) stays in the scene, though far from this one's */
+static void t_scene_human(void)
+{
+    static const char __far e_there[] = "no home carrier at the launch (%d)";
+    static const char __far e_kept[] = "the carrier 20,000 km from the player but 2,000 from another machine's pilot was "
+        "held off the scene: it stays near any human";
+    static const char __far e_gone[] = "the other pilot gone far too: the carrier is still in the scene";
+    int16_t home = pt_home_patrol(), z, h = 20;
+    logic_scene_off = 0;
+    REQUIRE(home > 0, e_there, home, 0, 0);
+    z = (int16_t)TO_KM(gPositionVector[home].z);
+    pt_put(0, 0, 0, (int16_t)(z + 20000), 0);
+    pt_ship(h, PT_PLAYER, SIDE_TERRAN, CTL_PUPPET, 0, 0, (int16_t)(z + 2000), 0);
+    rvFlags[h] |= RV_FLAG_HUMAN;
+    if (!pt_step())
+        return;
+    REQUIRE(slot_is_ship(home), e_kept, 0, 0, 0);
+    pt_put(h, 0, 0, (int16_t)(z + 30000), 0);
+    if (!pt_step())
+        return;
+    REQUIRE(!slot_is_ship(home), e_gone, 0, 0, 0);
+}
+
+/* M8.30: a wingman another machine's pilot flew, killed, is no named pilot's death */
+static void t_human_seat_lost(void)
+{
+    static const char __far e_none[] = "no wingman, or no pilot on it (pilot %d, %d wingmen)";
+    static const char __far e_lost[] = "a human's wingman seat killed: logic_wingman_lost says pilot %d, -1 expected";
+    int16_t pilot = pt_patrol(), wing[2], n, i, s;
+    n = logic_wingmen(wing, 2);
+    REQUIRE(pilot != RV_PILOT_NONE && n >= 1, e_none, pilot, n, 0);
+    playerCanBeDamaged = 0;
+    s = wing[0];
+    rvController[s] = CTL_PUPPET;
+    rvFlags[s] |= RV_FLAG_HUMAN;
+    for (i = 0; i < 100 && shipAiState[s] != 9; i++)
+        (void)pt_hit(0xFFFF, s, 2000, 2, 0, 0);
+    if (!pt_step())
+        return;
+    REQUIRE(logic_wingman_lost() == -1, e_lost, logic_wingman_lost(), 0, 0);
+}
+
+/* M8.31: delayedDespawn starts a ship's end (the layer's kill on another machine), and the player's own kills are its
+ * splashes */
+static void t_dying(void)
+{
+    static const char __far e_start[] = "delayedDespawn on a live Nicander: shipAiState %d, a ship %d: dying (9), still a "
+        "ship";
+    static const char __far e_end[] = "the Nicander still a ship %d steps after delayedDespawn: gone after its explosion";
+    static const char __far e_splash[] = "the player's own hull killed a Nicander and an AI one another: %d splashes, 1";
+    int16_t i;
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, 0, 0, 20000, 0);
+    delayedDespawn(0xFFFF, 1);
+    REQUIRE(shipAiState[1] == 9 && slot_is_ship(1), e_start, shipAiState[1], slot_is_ship(1), 0);
+    for (i = 0; i < 2 * SEC && slot_is_ship(1); i++)
+        if (!pt_step())
+            return;
+    REQUIRE(!slot_is_ship(1), e_end, i, 0, 0);
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 20000, 0);
+    pt_ship(2, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 25000, 0);
+    pt_ship(3, PT_HOMER, SIDE_TERRAN, CTL_AI, 0, 0, 30000, 0);
+    for (i = 0; i < 100 && shipAiState[1] != 9; i++)
+        (void)pt_hit(0, 1, 2000, 2, 0, 0);
+    for (i = 0; i < 100 && shipAiState[2] != 9; i++)
+        (void)pt_hit(3, 2, 2000, 2, 0, 0);
+    REQUIRE(logic_splashes == 1, e_splash, logic_splashes, 0, 0);
+}
+
 static const char __far n_m1_1[] = "M1.1 coast (step_motion): a ship flies along its nose at its speed, position += "
     "velocity";
 static const char __far n_m1_2[] = "M1.2 throttle (step_motion): the speed builds to the throttle at the type's accel, "
@@ -5738,6 +5881,11 @@ static const char __far n_m8_18[] = "M8.18 attack-capital (view_of): fighters at
 static const char __far n_m8_19[] = "M8.19 autopilot-apart (logic_autopilot): the wingman coming down on the Ox's spot arrives apart, and nobody hits it";
 static const char __far n_m6_4[] = "M6.4 capital-map (shot_hit): a capital ship is hit on its actual shape under any rule, not its radius";
 static const char __far n_m6_5[] = "M6.5 capital-ram (collide_ships): a fighter against a capital ship is its silhouettes under every hit= and ram= setting";
+static const char __far n_m6_7[] = "M6.7 ram-owner (ram): a collision is worked out where its pilot is, or where no ship in it is another machine's";
+static const char __far n_m7_8[] = "M7.8 puppet-launch (missile_launch, step_fire): a launch by another machine's ship homes on the target that machine published";
+static const char __far n_m8_29[] = "M8.29 scene-human (step_scene): a ship near another machine's pilot stays in the scene";
+static const char __far n_m8_30[] = "M8.30 human-seat-lost (logic_wingman_lost): a wingman a person flew, killed, is no named pilot's death";
+static const char __far n_m8_31[] = "M8.31 dying (delayedDespawn, do_damage): delayedDespawn starts a ship's end; the player's kills are its splashes";
 static const char __far n_m6_6[] = "M6.6 ram-caps (ram): a collision costs the player its shield and armour at most (the hull to 40% with the armour gone) and, cut, a system; a light one the old rule's; an NPC its shield and half its armour; into a capital ship over 100 kps, stopped";
 static const char __far n_m8_20[] = "M8.20 jump-told (route_step, logic_on_jump): an escorted ship's jump is told once, friendly, for the star and the flash";
 static const char __far n_m8_21[] = "M8.21 wingman-lost (logic_wingman_lost, camp_load_units, camp_line_ok): a lost wingman is named, the next mission solo, their lines gone";
@@ -5811,6 +5959,8 @@ static const PtTest __far k_tests[] = {
     { n_m11_1, t_sim_waves, 0 }, { n_m11_2, t_sim_replenish, 0 }, { n_m11_3, t_sim_win, 0 }, { n_m11_4, t_sim_death, 0 },
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
+    { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 },
 };
 
 /* --- the run --- */

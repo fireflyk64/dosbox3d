@@ -3516,7 +3516,8 @@ void __far __cdecl flight_frame(void)
     /* the frame rate capped at FPS_WANT: the simulation is per frame (a kps is 12.8 units a frame), so
      * without the cap a bare flight ran three times too fast natively (the adapting benchmark had been
      * holding it at 30 by loading it; off by default now) */
-    if (g_bench_wanted >= 0 && g_lasers >= 0 && g_balls >= 0) {   /* (the adapting benchmarks: the uncapped rate) */
+    if (g_bench_wanted >= 0 && g_lasers >= 0 && g_balls >= 0 && !rvNetRole) {   /* (the adapting benchmarks: the uncapped
+                                           rate; a shared flight: the layer paces it, WCFPS and the page's FPS box) */
         unsigned long t0 = clock240();
         while (clock240() - now < 240 / FPS_WANT)
             rv_halt();
@@ -3666,6 +3667,8 @@ int flight_fly(const RvMission __far *m)
     uiMode(0);
     g_landing_t = -1;
     status = rv_flight_run();           /* (its loop begins with flight_startup: the loading, then the palette) */
+    missionEnded();                     /* (at once, as WC.EXE's: the layer shares the ending before the landing's show,
+                                           and the score follows it, missionVictoryCalc: docs/multiplayer.md) */
     if (status == 1 && landedOn != 0xFFFF)
         landing_show();
     flight_over(status);

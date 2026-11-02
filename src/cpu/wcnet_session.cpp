@@ -21,6 +21,7 @@
 #include "wcnet_memory.h"
 #include "wcnet_code.h"
 #include "wcnet_game.h"
+#include "wcnet_retrovega.h"
 #include "wcnet_transport.h"
 #include "wcnet_lobby.h"
 #include "wcnet_log.h"
@@ -315,6 +316,9 @@ static void apply_location(const Location &loc, int slot) {
     if (loc.has_set_speed()) {
         wr32((Bit16u)(ds::setSpeed + 4 * slot), loc.set_speed());
     }
+    if (g_traits.puppets) {
+        rv_stamp_motion(slot);
+    }
 }
 
 static void fill_health(ShipHealth *out, const ShipHealthState &h) {
@@ -413,8 +417,28 @@ static const char *status_name(int status) {
     case EndCarrier: return "carrier";
     case EndDeath: return "died";
     case EndExit: return "exited";
+    case EndCarrierLost: return "lost the carrier";
     }
     return "?";
+}
+
+// The last missionStatus that is a shared ending: EndExit, or RetroVega's
+// carrier lost (GameTraits.carrierLostEnd).
+static int last_shared_end() {
+    return g_traits.carrierLostEnd ? (int)EndCarrierLost : (int)EndExit;
+}
+
+// A player's own ending, as its PlayerEnd says it: its status, and for a
+// landing the ship it landed on (RetroVega: the host's game lands everyone on
+// it and scores it).
+static void populate_player_end(PlayerEnd *end, int status) {
+    end->set_state((GameState)status);
+    if (status == EndLand && g_traits.missionTables && ds::known(ds::landedOn)) {
+        int slot = (Bit16s)rd16(ds::landedOn);
+        if (is_ship_slot(slot) && slot_in_use(slot)) {
+            end->set_landed_on_plus_one(1 + (Bit32u)NetworkShipId::from_local(slot).to_net());
+        }
+    }
 }
 
 static void handle_incoming_chat(const Chat &chat) {
@@ -683,7 +707,7 @@ class ServerSession;
 
 // The pilots the room seats: the lobby room's own size (the page's "3
 // players" box makes it three), or WCPLAYERS over TCP (two by default).
-static int room_seats() {
+int room_seats() {
 #ifdef C_LOBBYLINK
     if (g_lobby && g_lobby->max_players() > 0) {
         return g_lobby->max_players();
@@ -734,7 +758,9 @@ public:
         allowedIds_.push_back(1);
         allowedIds_.push_back(3);
         seats_ = room_seats();
-        wclog(1, "a room of %d: %s", seats_, seats_ >= 3 ? "seats are made for a third pilot" : "the second pilot's seat is the one slot 1 gives");
+        wclog(1, "a room of %d: %s", seats_, seats_ >= 3 ? "seats are made for a third pilot"
+              : g_traits.seatsInRoomOfTwo ? "the second pilot takes a wingman of the mission, or a ship made for it"
+              : "the second pilot's seat is the one slot 1 gives");
         reset_pending_frame();
         const char *env = getenv("WCNET_MODE");
         wclog(1, "exchange mode setting: %s (%s)", mode_name(modeSetting_), env && env[0] ? "WCNET_MODE" : "the default");
@@ -824,6 +850,15 @@ public:
         lastBriefing_.set_campaign_state(read_campaign_state());
         lastBriefing_.set_mission_id(mission);
         lastBriefing_.set_series_id(series);
+        lastBriefing_.clear_mission_ship_table();
+        lastBriefing_.clear_nav_point_table();
+        lastBriefing_.clear_player_mission_ship();
+        if (g_traits.missionTables) {
+            RvMissionTables t = rv_read_mission_tables();
+            lastBriefing_.set_mission_ship_table(t.missionShips);
+            lastBriefing_.set_nav_point_table(t.navPoints);
+            lastBriefing_.set_player_mission_ship((Bit32u)t.playerMissionShip);
+        }
         accept_clients(true);
         wclog(1, "mission %d/%d starting with %d client slot(s)", mission, series, (int)clients_.size());
         for (size_t i = 0; i < clients_.size(); i++) {
@@ -887,7 +922,7 @@ public:
         within_briefed_mission = false;
         int status = rd16(ds::missionStatus);
         wclog(1, "mission ended: %s", status_name(status));
-        if (status > EndExit) {
+        if (status > last_shared_end()) {
             return;
         }
         for (size_t i = 0; i < clients_.size(); i++) {
@@ -905,7 +940,7 @@ public:
         // The score follows on its own (on_mission_victory_calc).
         sendFrameAtIdle_ = true;
         exchange(true);
-        if (status == EndDeath || status == EndCarrier) {
+        if ((status == EndDeath || status == EndCarrier) && !g_traits.victoryCalcAlways) {
             // These endings skip the victory computation, so do the reset
             // that normally runs there: otherwise the epoch, the spawn
             // registry and the clients' left-this-mission flags survive
@@ -990,6 +1025,41 @@ public:
     virtual void on_barracks() {
         accept_clients(true);
         wclog(1, "server has %d client slot(s)", (int)clients_.size());
+    }
+
+    // Our death screen's key decides for the room: it goes to every guest at
+    // once, out of band (they are on their own death screens, out of any
+    // flight), and stands here.
+    virtual int restart_choice(int proposed) {
+        if (proposed != 1 && proposed != 2) {
+            return proposed;
+        }
+        NetworkMessage msg;
+        msg.set_restart_choice((Bit32u)proposed);
+        for (size_t i = 0; i < clients_.size(); i++) {
+            RemoteClient *c = clients_[i];
+            if (c->connected() && !c->conn.send(msg)) {
+                wclog(0, "failed to send the restart choice to player %d", c->net);
+            }
+        }
+        wclog(1, "our choice on the death screen: %s, for everyone", proposed == 1 ? "fly the mission again" : "carry on");
+        return proposed;
+    }
+
+    // The ships humans fly here: a puppet of the game's (no mind, no throttle
+    // of its own: its owner's positions move it) and a human's; a puppet
+    // whose human has gone is the AI's again.
+    virtual void reconcile_puppets() {
+        for (int slot = kMinShipSlot; slot <= kMaxShipSlot; slot++) {
+            const bool human = client_for_slot(slot) != NULL && clients_[slot]->inMission && slot_in_use(slot) &&
+                               entity_type(slot) != ET_MISSILE;
+            const int ctl = rv_controller(slot);
+            if (human && (ctl != RV_CTL_PUPPET || !rv_human(slot))) {
+                rv_mark(slot, RV_CTL_PUPPET, true, slot);
+            } else if (!human && rv_marked(slot)) {
+                rv_mark(slot, slot_in_use(slot) && ctl == RV_CTL_PUPPET ? RV_CTL_AI : ctl, false, -1);
+            }
+        }
     }
 
     virtual void check_mission_status() {}
@@ -1147,7 +1217,7 @@ private:
     // the ships the server made as seats.
     std::vector<int> wing_seats() const {
         std::vector<int> out;
-        if (is_wc1()) {
+        if (g_traits.wingSeatsByRecords) {
             out = wing_slots_wc1();
         } else if (is_wc2()) {
             for (int slot = kPlayerSlot + 1; slot <= kMaxShipSlot; slot++) {
@@ -1214,7 +1284,7 @@ private:
     SeatPlan plan_seat(RemoteClient *c) {
         c->seat = SEAT_WINGMAN;
         c->startView = 0;
-        if (seats_ < 3) {
+        if (seats_ < 3 && !g_traits.seatsInRoomOfTwo) {
             return plan_seat_of_two(c);
         }
         const char *env = getenv("WCSEAT");
@@ -1248,7 +1318,7 @@ private:
         if (seatSpawn_.active) {
             return SEAT_WAIT;  // one is on its way (for whoever asked first)
         }
-        if (!c->seatSpawnFailed && (is_wc1() || is_wc2())) {
+        if (!c->seatSpawnFailed && (g_traits.wingSeatsByRecords || g_traits.seatFromPlayerRecord)) {
             int ms = -1, situation = -1;
             const char *whose = "";
             const std::map<int, Spawn> &all = spawns_.all();
@@ -1259,7 +1329,7 @@ private:
                     whose = seatSlots_.count(seats[0]) ? "the record of a seat made before" : "the wingman's record";
                     situation = is_wc2() && ds::known(ds::currentNavPoint) ? rd16(ds::currentNavPoint) : (int)it->second.situation_id();
                 }
-            } else if (is_wc2() && ds::known(ds::playerMissionShip) && ds::known(ds::currentNavPoint)) {
+            } else if (g_traits.seatFromPlayerRecord && ds::known(ds::playerMissionShip) && ds::known(ds::currentNavPoint)) {
                 ms = rd16(ds::playerMissionShip);
                 whose = "our own ship's record";
                 situation = rd16(ds::currentNavPoint);
@@ -1504,6 +1574,9 @@ private:
         }
         if (c->seat == SEAT_WINGMAN) {
             take_station(c->net);
+            if (g_traits.puppets) {
+                rv_mark(c->net, RV_CTL_PUPPET, true, c->net);
+            }
         }
         game->set_fps(pace_fps());
         Frame *frame = game->mutable_starting_state();
@@ -1782,6 +1855,13 @@ private:
             c->inMission = false;
             c->leftThisMission = true;
             c->needsMissionStartState = false;
+            if (status == EndLand && frame.player_end().has_landed_on_plus_one() && ds::known(ds::landedOn)) {
+                int carrier = (int)frame.player_end().landed_on_plus_one() - 1;  // (our slots are the network ids)
+                if (is_ship_slot(carrier) && slot_in_use(carrier) && entity_type(carrier) == ET_CAPSHIP) {
+                    wr16(ds::landedOn, (Bit16u)carrier);
+                    wclog(1, "player %d landed on slot %d: everyone lands there", c->net, carrier);
+                }
+            }
             wr16(ds::missionStatus, (Bit16u)status);
             return;
         }
@@ -2356,6 +2436,7 @@ public:
         (void)mission; (void)series;
         liven_everyone();
         within_briefed_mission = true;
+        restartChoice_ = 0;
         if (!dead_) {
             pre_briefing_handshake();
         }
@@ -2416,10 +2497,10 @@ public:
             msg.set_epoch(epoch_);
             msg.set_frame_number(++frameNumber_);
             msg.mutable_frame()->set_flying(false);
-            if (!ownMissionOver_ && lastWrittenMissionStatus_ == Proceed && status > Proceed && status <= EndExit) {
+            if (!ownMissionOver_ && lastWrittenMissionStatus_ == Proceed && status > Proceed && status <= last_shared_end()) {
                 ownMissionOver_ = true;
                 wclog(1, "we %s (the flight loop ended before a status check); leaving the mission", status_name(status));
-                msg.mutable_frame()->mutable_player_end()->set_state((GameState)status);
+                populate_player_end(msg.mutable_frame()->mutable_player_end(), status);
             }
             wclog(2, "out of the flight loop: told the server");
             conn_.send(msg);
@@ -2434,7 +2515,7 @@ public:
             load_campaign_state(missionEndCampaignState_);
             missionEndCampaignState_.clear();
         }
-        if (lastWrittenMissionStatus_ == EndDeath || lastWrittenMissionStatus_ == EndCarrier) {
+        if ((lastWrittenMissionStatus_ == EndDeath || lastWrittenMissionStatus_ == EndCarrier) && !g_traits.victoryCalcAlways) {
             // No victory computation after these endings, so reset here
             // (entity map, health mirror, own-mission-over flag) or the next
             // mission starts with stale state.
@@ -2618,7 +2699,11 @@ public:
         }
         NetworkMessage msg;
         RecvStatus st = conn_.poll(CAT_CHAT, msg);
-        if (st.ok() && msg.has_in_flight_scene()) {
+        if (st.ok() && msg.has_restart_choice()) {
+            restartChoice_ = (int)msg.restart_choice();
+            wclog(1, "the host's choice on the death screen: %s", restartChoice_ == 1 ? "fly the mission again" :
+                  restartChoice_ == 2 ? "carry on" : "?");
+        } else if (st.ok() && msg.has_in_flight_scene()) {
             host_scene((int)msg.in_flight_scene().scene());
         } else if (st.ok()) {
             handle_incoming_chat(msg.chat());
@@ -2675,7 +2760,7 @@ public:
             NetworkMessage msg;
             msg.set_epoch(epoch_);
             msg.set_frame_number(++frameNumber_);
-            msg.mutable_frame()->mutable_player_end()->set_state((GameState)status);
+            populate_player_end(msg.mutable_frame()->mutable_player_end(), status);
             conn_.send(msg);
         }
         lastWrittenMissionStatus_ = (GameState)status;
@@ -2702,6 +2787,55 @@ public:
 
     virtual bool in_space() const {
         return within_briefed_mission && !hasRestartedMission_;
+    }
+
+    // The host's key decides; ours waits for it (0), once it has come it is
+    // taken.  Without the host any more, we decide for ourselves.
+    virtual int restart_choice(int proposed) {
+        if (dead_ || !conn_.is_open()) {
+            return proposed;
+        }
+        if (proposed && !restartChoiceAsked_) {
+            restartChoiceAsked_ = true;
+            wclog(1, "our key on the death screen waits for the host's choice");
+        }
+        int choice = restartChoice_ == 1 || restartChoice_ == 2 ? restartChoice_ : 0;
+        if (choice) {
+            restartChoice_ = 0;
+            restartChoiceAsked_ = false;
+        }
+        return choice;
+    }
+
+    // Every ship the server owns is a puppet here (its motion comes in its
+    // frames, its health in its snapshots, its shots as events: the AI does
+    // not fly a copy), a human's when a person flies it; our own is ours.
+    virtual void reconcile_puppets() {
+        if (seat_ != SEAT_WINGMAN) {
+            return;
+        }
+        rv_set_net_id(kPlayerSlot, shipNet_);
+        bool mapped[kShipSlotCap + 1] = {};
+        for (int net = 0; net <= kMaxShipSlot; net++) {
+            if (net == shipNet_ || !entities_.is_mapped(net)) {
+                continue;
+            }
+            int slot = entities_.net_to_local(net);
+            // (a ship, or one the game holds off the scene for now; a missile flies itself here, from the shot)
+            if (slot <= kPlayerSlot || slot > kMaxShipSlot || !slot_in_use(slot) || entity_type(slot) == ET_MISSILE) {
+                continue;
+            }
+            mapped[slot] = true;
+            const bool human = is_human_net(net);
+            if (rv_controller(slot) != RV_CTL_PUPPET || rv_human(slot) != human) {
+                rv_mark(slot, RV_CTL_PUPPET, human, net);
+            }
+        }
+        for (int slot = kMinShipSlot; slot <= kMaxShipSlot; slot++) {
+            if (!mapped[slot] && rv_marked(slot)) {
+                rv_mark(slot, slot_in_use(slot) && rv_controller(slot) == RV_CTL_PUPPET ? RV_CTL_AI : rv_controller(slot), false, -1);
+            }
+        }
     }
 
     // For ServerFrameJob: once, after host_scene made our pending scene
@@ -2799,6 +2933,13 @@ private:
         load_campaign_state(b.campaign_state());
         wr8(ds::currentMission, (Bit8u)b.mission_id());
         wr8(ds::currentSeries, (Bit8u)b.series_id());
+        if (g_traits.missionTables && b.has_mission_ship_table()) {
+            RvMissionTables t;
+            t.missionShips = b.mission_ship_table();
+            t.navPoints = b.nav_point_table();
+            t.playerMissionShip = (int)b.player_mission_ship();
+            rv_write_mission_tables(t);
+        }
         wclog(1, "briefing for mission %d/%d", b.mission_id(), b.series_id());
     }
 
@@ -3024,6 +3165,8 @@ private:
     bool ownMissionOver_;
     bool dead_;
     bool sceneDue_;  // host_scene: our pending scene plays at the next frame, which runs without a server frame
+    int restartChoice_ = 0;           // the host's choice on the death screen, not yet taken (1, 2; 0 none)
+    bool restartChoiceAsked_ = false; // (our own key was pressed while we waited: logged once)
     Bit32u epoch_;
     Bit64u frameNumber_;
     NetworkMessage pendingFrame_;
@@ -3082,6 +3225,14 @@ bool init_network() {
         if (!said) {
             said = true;
             wclog(1, "networking disabled (WCNET=0)");
+        }
+        return false;
+    }
+    if (g_traits.netNeedsConfig && !getenv("WCROOM") && !getenv("WCHOST") && !getenv("WCPORT")) {
+        static bool said = false;
+        if (!said) {
+            said = true;
+            wclog(1, "%s alone: no room or peer named (WCROOM, WCHOST or WCPORT)", game_name());
         }
         return false;
     }
@@ -3149,6 +3300,9 @@ bool init_network() {
 
 void uninit_network() {
     net_config.reset_from_env();
+    if (g_traits.puppets) {
+        rv_unmark_all();    // (a guest flies on alone: the host's ships are its AI's again)
+    }
     if (g_session) {
         Session *s = g_session;
         g_session = NULL;

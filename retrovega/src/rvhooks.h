@@ -13,7 +13,7 @@
 
 #include "rvtypes.h"
 
-#define RV_ABI_VERSION 1
+#define RV_ABI_VERSION 2
 #define RV_SLOTS 128
 #define RV_MAX_SHIP_SLOT 31
 #define RV_CAMERA_SLOT (RV_SLOTS - 3)
@@ -208,7 +208,7 @@ extern uint8_t rv_dgroup[];
 #define rvController_SIZE              1
 #define rvNetId                        RV_AT(uint8_t *, 0x5B80)  /* [128] */ /* network id, 0xff none: the layer's, the engine never reads it */
 #define rvNetId_SIZE                   1
-#define rvFlags                        RV_AT(uint16_t *, 0x5C00)  /* [128] */ /* 1 invulnerable, 2 local-only hazard, 4 docked, 8 jamming, 16 cloaked */
+#define rvFlags                        RV_AT(uint16_t *, 0x5C00)  /* [128] */ /* 1 invulnerable, 2 local-only hazard, 4 docked, 8 jamming, 16 cloaked, 32 a human's (another machine's) */
 #define rvFlags_SIZE                   2
 #define rvLastWrite                    RV_AT(uint16_t *, 0x5D00)  /* [128] */ /* frameCounter when the layer last wrote the slot's motion */
 #define rvLastWrite_SIZE               2
@@ -264,6 +264,7 @@ extern uint8_t rv_dgroup[];
 #define RV_FN_gameLoaded               0x00C5
 #define RV_FN_baseChanged              0x00CA
 #define RV_FN_uiMode                   0x00CF
+#define RV_FN_restartChoice            0x00D4
 
 extern void __far __cdecl rvHello(void); /* first call after start-up: the layer can take DS from here */
 void __far __cdecl rvHello_impl(void);
@@ -337,6 +338,8 @@ extern void __far __cdecl baseChanged(uint16_t); /* (base): the player's home sh
 void __far __cdecl baseChanged_impl(uint16_t);
 extern void __far __cdecl uiMode(uint16_t); /* (on): 1 entering screens without flight, 0 leaving them */
 void __far __cdecl uiMode_impl(uint16_t);
+extern uint16_t __far __cdecl restartChoice(uint16_t); /* (choice): the death screen's R (1) or C (2), 0 asks -> the choice that stands, 0 none yet */
+uint16_t __far __cdecl restartChoice_impl(uint16_t);
 
 /* --- sites: RVHOOK offsets in the flight loop (rvhook.asm) --- */
 #define RV_SITE_mainLoopTop            0x0400  /* interrupts on, no live registers but SI DI BP */

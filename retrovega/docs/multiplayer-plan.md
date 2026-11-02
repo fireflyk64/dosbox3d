@@ -1,6 +1,7 @@
 # RetroVega multiplayer: the plan
 
-Written 2026-11-02, at the end of a long session, so that a fresh one can build it. Nothing here is built yet.
+Written 2026-11-02, at the end of a long session, so that a fresh one can build it. **Built the same day: what was
+built, and where it departs from this plan, is `multiplayer.md`.** This file stays as the survey.
 Read this whole file first, then `docs/spec.md` sections 2-6, then the files each step names. "Memory note"
 means Claude's notes in `~/.claude/projects/-home-sandbox-dev-dosbox3d/memory/`. Line numbers are as of commit
 2155a901 and will drift: search for the names.

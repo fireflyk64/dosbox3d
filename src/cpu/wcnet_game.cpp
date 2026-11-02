@@ -11,6 +11,7 @@
 #include "wcnet_log.h"
 #include "wcnet_session.h"
 #include "wcnet_rv.h"
+#include "wcnet_retrovega.h"
 
 namespace wc {
 
@@ -18,6 +19,38 @@ GameId g_game = GAME_NONE;
 BuildId g_build = BUILD_NONE;
 Bit16u g_loadSeg = 0;
 GameParams g_params = { 0x40, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39, 0, 0x33, 5, 0, 0x6f, 9 };
+GameTraits g_traits = {};
+
+// What each game has (wcnet_game.h).  Wing Commander is paced at 30 frames a
+// second natively (the page's FPS box says 20); Wing Commander II paces itself.
+static GameTraits traits_of(GameId game) {
+    GameTraits t = {};
+    switch (game) {
+    case GAME_WC1:
+        t.wingSeatsByRecords = true;
+        t.defaultFps = 30;
+        break;
+    case GAME_WC2:
+        t.seatFromPlayerRecord = true;
+        t.turrets = true;
+        break;
+    case GAME_RV:
+        t.wingSeatsByRecords = true;
+        t.seatsInRoomOfTwo = true;
+        t.seatFromPlayerRecord = true;
+        t.puppets = true;
+        t.missionTables = true;
+        t.carrierLostEnd = true;
+        t.victoryCalcAlways = true;
+        t.restartChoice = true;
+        t.netNeedsConfig = true;
+        t.defaultFps = 30;          // LOGIC_HZ: a step a frame, as the game runs alone
+        break;
+    default:
+        break;
+    }
+    return t;
+}
 
 // WC.EXE starts with the Vega campaign's table (CAMP.000) ...
 static const GameParams kWc1Params = { 0x40, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39, 0, 0x33, 5, 0, 0x6f, 9 };
@@ -49,6 +82,13 @@ static void load_ds(BuildId build) {
 #define WC_DS(name, wc1, sm2, wc2, so1, so2) { static const Bit16u at[] = { 0, wc1, sm2, wc2, so1, so2, 0 }; ds::name = at[build]; }
 #include "wcnet_ds.def"
 #undef WC_DS
+    if (build == BUILD_RV && rv_compatible()) {
+        // RV.EXE's offsets come from its interface, generated (wcnet_rv.h):
+        // every name of wcnet_ds.def its fixed block has; the rest stay 0.
+#define X(name, off) ds::name = (Bit16u)(off);
+        WCNET_RV_DS(X)
+#undef X
+    }
 }
 
 static void clear_code() {
@@ -195,53 +235,46 @@ static void load_wc2_code() {
 // The other builds: SM2.EXE, SO1.EXE, SO2.EXE (load_sm2_code, ...).
 #include "wcnet_ports.h"
 
-// RV.EXE, the new game (retrovega/): none of WC.EXE's places.  Its hook places
-// are the RVHOOK thunks (wcnet_rv.h), watched by the dispatcher's own branch.
-static void load_rv_code() {}
-
-// RV.EXE's numbers (retrovega/docs/spec.md 4.6), those its puppet header holds
-// read from it (spec 4.1, DS:0010): "RVPUPPET", the ABI version, then words:
-// the slots, the last ship slot, the first temporary slot, the camera slot,
-// the mission-ship and nav-point records' sizes, the gun table's and a gun
-// record's.  A header the layer doesn't know, or numbers that don't hold
-// together, leave spec 4.6's (and the bring-up's 9 ship slots).
-static GameParams rv_params() {
-    static const GameParams kSpec = { 0x80, 0x2a, 0, 2, 0x16, 0x17, 0x4d, 0x39, 6, 0x33, 5, 0, 0, 9 };
-    static const char kMagic[] = "RVPUPPET";
-    const PhysPt h = DS_OFF + 0x0010;
-    GameParams p = kSpec;
-    for (size_t k = 0; k < 8; k++) {
-        if (mem_readb(h + (PhysPt)k) != (Bit8u)kMagic[k]) {
-            wclog(0, "RV.EXE: no puppet header at DS:0010: spec 4.6's numbers, ships in 1..%d", p.maxShipSlot);
-            return p;
-        }
+// RV.EXE, the new game (retrovega/): its RVHOOK thunks and sites, at the
+// offsets generated from its interface (wcnet_rv.h), all in the root image's
+// first paragraph; bound only when the interface check passed (an RV.EXE of
+// another ABI is watched, never hooked: rv_check_hooks).  Left unbound on
+// purpose (retrovega/docs/multiplayer.md): afterStartup and
+// afterHangarMission (WC.EXE's campaign jumps), skipOrchestra (RV's music
+// call, every frame), runHangarMission and enterBarracks (RV has its own
+// rooms), cockpitPointer, and the probes nothing needs.
+static void load_rv_code() {
+    using namespace code;
+    if (!rv_compatible()) {
+        return;
     }
-    if (mem_readw(h + 8) != RV_ABI_VERSION) {
-        wclog(0, "RV.EXE: a puppet header of ABI %u where the layer knows %u: spec 4.6's numbers, ships in 1..%d",
-              (unsigned)mem_readw(h + 8), (unsigned)RV_ABI_VERSION, p.maxShipSlot);
-        return p;
-    }
-    p.slots = mem_readw(h + 10);
-    p.maxShipSlot = mem_readw(h + 12);
-    if (p.maxShipSlot < kMinShipSlot || mem_readw(h + 14) != p.maxShipSlot + 1 || mem_readw(h + 16) != p.slots - 3 ||
-        p.slots < p.maxShipSlot + 5 || p.slots > 0x100) {
-        wclog(0, "RV.EXE: a puppet header whose slots don't hold together (%d slots, ships to %d, temporaries from %u, "
-              "the camera %u): spec 4.6's numbers", p.slots, p.maxShipSlot, (unsigned)mem_readw(h + 14),
-              (unsigned)mem_readw(h + 16));
-        return kSpec;
-    }
-    if (p.maxShipSlot > kShipSlotCap) {
-        wclog(0, "RV.EXE: ships in 1..%d, more than the layer's arrays hold: 1..%d only (wcnet_memory.h kShipSlotCap)",
-              p.maxShipSlot, (int)kShipSlotCap);
-        p.maxShipSlot = kShipSlotCap;
-    }
-    p.missionShipSize = mem_readw(h + 18);
-    p.navPointSize = mem_readw(h + 20);
-    p.gunsSize = mem_readw(h + 22);
-    p.gunSize = mem_readw(h + 24);
-    wclog(1, "RV.EXE: %d slots, ships in 1..%d, temporaries from %d (its puppet header)", p.slots, p.maxShipSlot,
-          p.maxShipSlot + 1);
-    return p;
+    root(rvHello, 0, RV_FN_rvHello, 0);
+    root(do_damage, 0, RV_FN_do_damage, 4);
+    root(delayedDespawn, 0, RV_FN_delayedDespawn, 2);
+    root(fireGunFromShip, 0, RV_FN_fireGunFromShip, 2);
+    root(maybe_fire_all_guns, 0, RV_FN_maybe_fire_all_guns, 1);
+    root(aiSetSpeed, 0, RV_FN_aiSetSpeed, 2);
+    root(outerSpawnShipEntity, 0, RV_FN_outerSpawnShipEntity, 2);
+    root(enterNavPoint, 0, RV_FN_enterNavPoint, 1);
+    root(despawn, 0, RV_FN_despawn, 1);
+    root(aiShipThink, 0, RV_FN_aiShipThink, 1);
+    root(aiFighterThink, 0, RV_FN_aiFighterThink, 1);
+    root(autoAnimation, 0, RV_FN_autoAnimation, 3);
+    root(autopilotFinished, 0, RV_FN_autopilotFinished, 0);
+    root(briefingStarted, 0, RV_FN_briefingStarted, 0);
+    root(missionStarting, 0, RV_FN_missionStarting, 0);
+    root(missionVictoryCalc, 0, RV_FN_missionVictoryCalc, 0);
+    root(missionEnded, 0, RV_FN_missionEnded, 0);
+    root(simulatorStart, 0, RV_FN_simulatorStart, 0);
+    root(simulatorEnd, 0, RV_FN_simulatorEnd, 0);
+    root(clearFields, 0, RV_FN_clearFields, 0);
+    root(restartChoice, 0, RV_FN_restartChoice, 1);
+    root(mainLoopTop, 0, RV_SITE_mainLoopTop);
+    root(statusSetByExitKey, 0, RV_SITE_statusSetByExitKey);
+    root(statusCheckAfterKeys, 0, RV_SITE_statusCheckAfterKeys);
+    root(statusCheckAfterFrame, 0, RV_SITE_statusCheckAfterFrame);
+    root(autopilotKey, 0, RV_SITE_autopilotKey);
+    root(autoAnimationBody, 0, RV_SITE_autoAnimationBody);
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +331,7 @@ static void set_game(const KnownGame *game, Bit16u loadSeg, Bit16u psp, Bit16u d
     load_ds(g_build);
     g_params = g_game == GAME_WC2 ? kWc2Params : g_build == BUILD_SM2 ? kSm2Params
                : g_build == BUILD_RV ? rv_params() : kWc1Params;
+    g_traits = traits_of(g_game);
     clear_code();
     if (game) {
         game->loadCode();
@@ -335,6 +369,17 @@ void game_program_loaded(const char *path, Bit16u loadSeg, Bit16u psp) {
                 continue;
             }
             para = (Bit16u)(mem_readw(hook + 8) - loadSeg);
+            // Its interface against the one this layer was built from: a
+            // mismatch is watched, never hooked (retrovega/docs/multiplayer.md).
+            std::string why;
+            bool ok = rv_interface_check(loadSeg, para, &why);
+            rv_set_compatible(ok, why);
+            if (!ok) {
+                wclog(0, "RV ABI mismatch: %s; shared flights are off, the hooks only watch", why.c_str());
+            } else {
+                wclog(1, "RV.EXE: ABI %d, %u thunks, %u sites, the fixed block as the emulator has it", RV_ABI_VERSION,
+                      (unsigned)(sizeof(kRvThunks) / sizeof(kRvThunks[0])), (unsigned)(sizeof(kRvSites) / sizeof(kRvSites[0])));
+            }
         }
         PhysPt at = ((PhysPt)(loadSeg + para)) * 0x10 + g.signatureOff;
         size_t len = strlen(g.signature);
@@ -400,6 +445,7 @@ void game_program_ended(Bit16u psp) {
             g_session->on_program_ended();
         }
         set_game(NULL, 0, 0, 0);
+        rv_set_compatible(false, "");
     }
 }
 

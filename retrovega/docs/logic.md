@@ -232,7 +232,8 @@ and hit what is where it now is.
 6. **`step_missiles`**: missiles are ship slots of type `ET_MISSILE`. They steer like ships, toward `missileTarget[s]`, and burst on a proximity test (`collide_point` or a distance), through `do_damage`.
 7. **`step_collisions`**: `collide_coarse(a, b)`, then `collide_ships(a, b, &push, &depth)`. Move b by `push` (or each by half), and charge both through `do_damage`: the old game's cost (`ram_damage`, read in its code: the square of the closing speed in km a step, halved; two fighters head on at their top speeds die of it, a brush costs a few points, a touch at rest nothing), or with the mission's `rules ram=soft` a touch's 2 points and a point per 125 kps closing.
 8. **`step_deaths`**:
-   - A ship whose hull is gone gets `shipAiState[s] = 9` and keeps its slot while its explosion lasts. Then `despawn(s)`, or `delayedDespawn(killer, s)`.
+   - A ship whose hull is gone gets `shipAiState[s] = 9` and keeps its slot while its explosion lasts. `step_deaths` calls `delayedDespawn(killer, s)` when it first sees it (ABI 2: the body starts the dying, so the layer hears every kill), then `despawn(s)` when the explosion is over.
+   - Shared flights (docs/multiplayer.md): the logic knows another machine's ship only by `rvController` (CTL_PUPPET) and `rvFlags` (RV_FLAG_HUMAN), never by a role: collisions (`ram`), a launch's target (`missileTarget[ship]`, published before the shot), the scene and the autopilot (the nearest human), a human's wingman seat (`g_killed` 2).
    - The player's death sets `missionStatus = 4`.
 9. **`step_mission`**: nav points reached (`enterNavPoint(nav)`), waves spawned (`outerSpawnShipEntity(record, nav)`), objectives, and `victoryPoints`.
 

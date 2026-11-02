@@ -105,6 +105,9 @@ enum GameState {
      EndCarrier = 3;
      EndDeath = 4;
      EndExit = 5;
+     // RetroVega: the home carrier was destroyed (missionStatus 6), a shared
+     // ending with the death screen's choice (retrovega/docs/multiplayer.md).
+     EndCarrierLost = 6;
 }
 
 enum AutoPilotState {
@@ -188,6 +191,9 @@ message MissionEnd {
 // else.  Landing is still a shared mission end and travels in MissionEnd.
 message PlayerEnd {
     optional GameState state = 1;
+    // RetroVega: a guest that landed says on which ship (its network id + 1),
+    // so the host's game lands everyone on it, and scores the landing.
+    optional uint32 landed_on_plus_one = 2;
 }
 
 message Frame {
@@ -281,6 +287,14 @@ message ServerSendBriefingStart {
     // client takes it over, so that its briefing, its mission and what it
     // finds in them are the server's.
     optional bytes campaign_state = 5;
+    // RetroVega: the mission's records as the host's game compiled them
+    // (missionShipTable, navPointTable, and the record the player flies).  A
+    // guest's own save can number them differently (a wingman it lost is left
+    // out), and every spawn names a record: the guest flies by the host's.
+    // Nothing of either player's save goes across.
+    optional bytes mission_ship_table = 7;
+    optional bytes nav_point_table = 8;
+    optional uint32 player_mission_ship = 9;
 }
 // Server -> client, out of band (polled like chat, so that a wingman waiting
 // for a frame sees it): the host's game is starting an in-flight scene of
@@ -304,4 +318,8 @@ message NetworkMessage {
     optional ClientStartBriefingReq start_briefing_req = 16;
     optional ServerSendBriefingStart briefing_start = 17;
     optional InFlightScene in_flight_scene = 18;
+    // Server -> client, out of band (polled like chat: the guest is on its
+    // death screen, out of any flight): the host's choice there, 1 fly the
+    // mission again, 2 carry on (RetroVega's restartChoice).
+    optional uint32 restart_choice = 19;
 }

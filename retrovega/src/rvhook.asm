@@ -42,13 +42,14 @@ group DGROUP RVFIXED
         extern _gameLoaded_impl
         extern _baseChanged_impl
         extern _uiMode_impl
+        extern _restartChoice_impl
 
 segment RVHOOK public align=16 class=RVHOOK use16
 rvhook_start:
         db "RVHOOK", 0, 0
         dw seg rvfixed_start              ; +8: DGROUP, relocated by DOS
-        dw 1                              ; +10: ABI version
-        dw 36                             ; +12: thunks
+        dw 2                              ; +10: ABI version
+        dw 37                             ; +12: thunks
         dw 10                             ; +14: sites
         times 0x20 - ($ - rvhook_start) db 0
         global _rvHello
@@ -159,6 +160,9 @@ _baseChanged:                                   ; 0x00CA
         global _uiMode
 _uiMode:                                   ; 0x00CF
         jmp far _uiMode_impl
+        global _restartChoice
+_restartChoice:                                   ; 0x00D4
+        jmp far _restartChoice_impl
         times 0x400 - ($ - rvhook_start) db 0xCC
 ; The flight loop and its sites: hand-written in src/rvflight.inc, each site
 ; at the offset abi/rvabi.def fixes (RV_SITE_*), touching the fixed-block
@@ -186,7 +190,7 @@ _rv_fixed_block:
         times 0x0010 - ($ - rvfixed_start) db 0
 ; 0x0010 rvPuppetHeader
         db "RVPUPPET"
-        dw 1, 128, 31, 32, 125
+        dw 2, 128, 31, 32, 125
         dw 0x2a, 0x4d, 0x33, 5, 0
         dd 0                           ; build number (the build stamps it)
         times 16 db 0                  ; build date

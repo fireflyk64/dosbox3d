@@ -13,6 +13,9 @@ OUT=build/dos
 mkdir -p "$OUT"
 python3 tools/rvabi.py --c-header > src/rvhooks.h
 python3 tools/rvabi.py --asm > src/rvhook.asm
+# the emulator's copy of the interface (src/cpu/wcnet_rv.h) must be the one abi/rvabi.def makes: a game and a layer
+# built from two definitions would disagree in silence (tools/rvabi.py --write-layer makes it; docs/multiplayer.md)
+python3 tools/rvabi.py --check-layer
 python3 tools/rvdata.py --out "$OUT/RVGAME.DAT" --header src/rvdata.h
 # the art tools' venv (tools/art-requirements.txt), made with uv on the system python when missing; packages no newer
 # than 30 days (UV_EXCLUDE_NEWER overrides), so a release has had time to be caught if it was bad

@@ -120,6 +120,15 @@ public:
     // (a comm answer, or a cutscene of the mission's script).
     virtual void on_in_flight_scene(int scene) { (void)scene; }
     virtual bool in_space() const = 0;
+    // RetroVega's death screen (the restartChoice thunk): `proposed` is this
+    // machine's key, 0 none yet, 1 fly the mission again, 2 carry on; the
+    // answer is the choice that stands (0: none yet).  The host's own stands
+    // and goes to every guest; a guest's is the host's.
+    virtual int restart_choice(int proposed) { return proposed; }
+    // Games that mark the ships flown elsewhere (GameTraits.puppets): the
+    // marks made to agree with who flies what, at every frame top and after a
+    // ship is replayed.
+    virtual void reconcile_puppets() {}
 
     virtual void send_chat(const std::string &text) = 0;
 
@@ -150,6 +159,9 @@ extern Session *g_session;
 
 extern int in_simulation;
 extern bool has_started_up;
+
+// The pilots the room seats (the lobby room's size, or WCPLAYERS; two by default).
+int room_seats();
 
 // Jump into the campaign at a mission (MIS/SERIES environment variables).
 void run_campaign(int missionId, int seriesId);

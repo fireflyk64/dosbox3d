@@ -305,3 +305,13 @@ void uiMode(uint16_t a0)
     uiMode_impl(a0);
     host_thunk_leave(RV_FN_uiMode, "uiMode", 1, a, 0);
 }
+
+uint16_t restartChoice(uint16_t a0)
+{
+    uint16_t a[1] = { a0 };
+    uint16_t r;
+    host_thunk_enter(RV_FN_restartChoice, "restartChoice", 1, a);
+    r = restartChoice_impl(a0);
+    host_thunk_leave(RV_FN_restartChoice, "restartChoice", 1, a, r);
+    return r;
+}

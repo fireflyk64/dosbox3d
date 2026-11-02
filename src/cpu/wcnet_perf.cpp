@@ -60,7 +60,7 @@ static int env_int(const char *name, int fallback) {
 
 int pace_fps() {
     if (g_fps < 0) {
-        g_fps = env_int("WCFPS", is_wc1() ? 30 : 0);
+        g_fps = env_int("WCFPS", g_traits.defaultFps);   // (the game's: wcnet_game.cpp traits_of)
         if (g_fps < 0 || g_fps > 100) {
             g_fps = 0;
         }

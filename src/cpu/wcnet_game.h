@@ -36,7 +36,7 @@ enum BuildId {
     BUILD_WC2,  // WC2.EXE
     BUILD_SO1,  // SO1.EXE: Special Operations 1
     BUILD_SO2,  // SO2.EXE: Special Operations 2
-    BUILD_RV,   // RV.EXE: no column of wcnet_ds.def yet; its DS comes from RVHOOK (wcnet_rv.h)
+    BUILD_RV,   // RV.EXE: its DS from RVHOOK, its data map and places generated from its interface (wcnet_rv.h)
 };
 
 extern GameId g_game;
@@ -61,8 +61,29 @@ struct GameParams {
 };
 extern GameParams g_params;
 
+// What a game has, for the code that is the same for every game but for these
+// (the session, the seats, the pacing).  Asked instead of which game it is, so
+// a game's own ways are written down in one place (wcnet_game.cpp, traits_of),
+// and Wing Commander's raw-address work stays behind is_wc1().
+struct GameTraits {
+    bool wingSeatsByRecords;    // the wing's seats are the mission's wingman records (wing_slots_wc1): WC1, RV
+    bool seatsInRoomOfTwo;      // a room of two seats its guest as a room of three does (a real wingman, else a ship
+                                // made for it), not by plan_seat_of_two's slot 1: RV
+    bool seatFromPlayerRecord;  // with no wingman record to copy, a made seat copies the player's own: WC2, RV
+    bool turrets;               // gunner and drone seats: WC2
+    bool puppets;               // ships flown elsewhere are marked in the game (rvController, rvFlags): RV
+    bool missionTables;         // the host's compiled mission records go with the briefing: RV
+    bool carrierLostEnd;        // missionStatus 6, the carrier lost, is a shared ending: RV
+    bool victoryCalcAlways;     // missionVictoryCalc follows every ending, a death too (no early reset): RV
+    bool restartChoice;         // the death screen's R/C is the host's (restartChoice thunk): RV
+    bool netNeedsConfig;        // networking only with a room or a peer configured (WCROOM, WCHOST, WCPORT): RV
+    int defaultFps;             // frames a second the hooks pace a flight at (WCFPS overrides; 0: the game's own)
+};
+extern GameTraits g_traits;
+
 inline bool is_wc1() { return g_game == GAME_WC1; }
 inline bool is_wc2() { return g_game == GAME_WC2; }
+inline bool is_rv() { return g_game == GAME_RV; }
 const char *game_name();
 
 // From DOS: a program was loaded at loadSeg for the process `psp`, and the

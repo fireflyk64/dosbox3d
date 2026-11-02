@@ -74,6 +74,7 @@ int16_t logic_taunt(int16_t s);         /* an enemy fighter turns on the player 
 extern uint8_t __far logic_boost;       /* RV_BOOST_*: what Kit did to the fighter for this mission's flights; 0 none */
 int16_t logic_escort_lost(void);        /* a ship the player was escorting was killed this flight */
 int16_t logic_wingman_lost(void);       /* the mission's wingman was killed this flight: their pilot (people.csv row), -1 no */
+extern uint16_t __far logic_splashes;   /* this flight's kills by the local pilot (its guns, missiles, hull): a guest's save takes them */
 
 /* the home carrier (the mission's ship with role=home, holding station at nav 0) and landing (the user's rules,
  * 2026-10-31): asked on the comm with the carrier as the target, it clears the player with the mission finished or at

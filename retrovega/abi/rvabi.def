@@ -1,4 +1,4 @@
-# RetroVega puppet ABI, version 1: the one source of every place the
+# RetroVega puppet ABI, version 2: the one source of every place the
 # multiplayer hook layer (src/cpu/wcnet_*) reads, writes or calls in RV.EXE.
 #
 # tools/rvabi.py lays this file out and prints the offsets (docs/spec.md
@@ -16,11 +16,17 @@
 #                           (16-bit args); thunk n sits at 0x20 + 5*n
 #   SITE  name offset       an instruction in RVHOOK at a fixed offset
 #
+# A VAR, SLOT or TABLE may end with the word `nolayer`: room kept in the block
+# for a WC.EXE name the layer knows, with nothing of RV's behind it that the
+# layer could use (a near pointer RV never sets): the layer's map leaves it
+# out (tools/rvabi.py --layer), so its code takes it for unknown (ds::known).
+#
 # Units (as WC.EXE has them, so the hook layer's arithmetic carries over):
 # positions int32, 256 = 1 km; orientation vectors int32, 256 = 1.0 (front,
 # right, up: a left-handed frame like the screen's, x right, y up, z into
 # it, so the camera's up is up the screen); velocity = position change per
-# frame; one frame = one simulation step (20 per second).
+# frame; one frame = one simulation step (LOGIC_HZ, 30 per second; a speed in
+# kps converts at KPS_HZ, 20, as WC.EXE's did).
 
 SLOTS 128
 MAXSHIPSLOT 31         # ships, capital ships and missiles in 1..31 (WC.EXE had 1..9): 32 ship-class slots, a
@@ -63,7 +69,7 @@ VAR   commGlobalTxt               80
 VAR   vduText                    160
 VAR   pilotCallsign               14
 VAR   pilotLastName               14
-VAR   pilotRecords                16    # near pointers, one per named pilot (8); name at +0xE
+VAR   pilotRecords                16 nolayer   # near pointers, one per named pilot (8); name at +0xE
 VAR   statusPilots                16    # word per named pilot: 0 alive, else series*4 + mission of death
 VAR   systemDamage                10    # byte per system (9 used), 0..4
 VAR   cockpitDamage                8    # word per instrument (4): 1 broken
@@ -71,7 +77,7 @@ VAR   vduStatus10WhenPlayerHitsSmth 2
 VAR   tempVector                  12
 VAR   entitiesToDespawn           20    # slots of the current field's rocks or mines, 0xff free (RV: always free, no rock is a slot)
 VAR   navPointState              152    # 8 x 19 bytes: mission tree progress
-VAR   campaignTable                2    # near pointer to the campaign table (spec 4.4)
+VAR   campaignTable                2 nolayer   # near pointer to the campaign table (spec 4.4)
 VAR   rvPlayerCount                1    # humans in the flight, written by the layer (1 in single player)
 VAR   rvNetRole                    1    # 0 single player, 1 host, 2 client: the engine only reads it
 VAR   rvCockpitDamage              4    # a bit per cockpit damage layer (tools/cockpits.py BITS): its overlay shows while set
@@ -115,7 +121,7 @@ SLOT  entityScreenY                2
 SLOT  damageProperty               2    # bolts: damage; ships: AI timers
 SLOT  rvController                 1    # 0 AI, 1 the local player, 2 puppet (a remote human), 3 script, 4 frozen
 SLOT  rvNetId                      1    # network id, 0xff none: the layer's, the engine never reads it
-SLOT  rvFlags                      2    # 1 invulnerable, 2 local-only hazard, 4 docked, 8 jamming, 16 cloaked
+SLOT  rvFlags                      2    # 1 invulnerable, 2 local-only hazard, 4 docked, 8 jamming, 16 cloaked, 32 a human's (another machine's)
 SLOT  rvLastWrite                  2    # frameCounter when the layer last wrote the slot's motion
 SLOT  rvTarget                     1    # what this ship targets, 0xff none
 SLOT  rvAfterburner                1    # 0 off, 1 on
@@ -173,6 +179,8 @@ FUNC  gameSaved                   1 -   # (bunk)
 FUNC  gameLoaded                  1 -   # (bunk)
 FUNC  baseChanged                 1 -   # (base): the player's home ship changed
 FUNC  uiMode                      1 -   # (on): 1 entering screens without flight, 0 leaving them
+# Shared flights (ABI 2: docs/multiplayer.md), appended so no thunk above moves.
+FUNC  restartChoice               1 ax  # (choice): the death screen's R (1) or C (2), 0 asks -> the choice that stands, 0 none yet
 
 # Sites: instructions in RVHOOK's hand-written flight loop (rvhook.asm) at
 # fixed offsets, with the same instruction and register contract as the

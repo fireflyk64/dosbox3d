@@ -41,6 +41,14 @@ static void mission_load_assets(void);
 static void mission_free_assets(void);
 int __far g_fly = -2;                   /* /fly [N]: -2 not asked; -1 the campaign's next mission; N that mission */
 int __far g_at = -1;                    /* /at N: the rooms with the campaign at mission N */
+int __far g_brief = -1;                 /* /brief N: the campaign at mission N, its briefing first (the page's picked
+                                           mission: as Wing Commander's starts at its briefing) */
+/* a shared flight (docs/multiplayer.md): the meeting point done for this flight (flight_prepare), and whether it is a
+ * guest's (the host's mission, by the host's records: only the sortie and its splashes go into this save) */
+static int g_prepared, g_guest;
+static int g_rooms_shown;               /* a room has been on the screen (not so at a /fly or /brief boot) */
+static uint16_t g_guest_splashes;
+static void flight_prepare(void);
 int g_winrate = -1;                         /* percent: a launch's chance of a win (/winrate N, a test's: the roll then
                                                decides, whatever the flight did); -1 not given: 80, the stand-in */
 
@@ -368,6 +376,7 @@ static int room_song(int room)
 static void enter_room(int room)
 {
     unsigned char seats[3] = { 0xFF, 0xFF, 0xFF };
+    g_rooms_shown = 1;
     if (room == RV_R_BAR || room == RV_R_LOUNGE)
         _fmemcpy(seats, g_m.seat[room == RV_R_BAR ? RV_ROOM_BAR : RV_ROOM_LOUNGE], 3);
     {
@@ -946,6 +955,8 @@ static int enter_home(void)
 
 static void start_briefing(int debrief)
 {
+    if (!debrief)
+        flight_prepare();               /* (a guest's mission is the host's from here: its briefing, its sets) */
     vid_fade(0);
     g_plate_on = 0;
     scene_enter(RV_R_BRIEFING, 0);
@@ -1029,7 +1040,7 @@ static void deck_overlay(int y0, int y1)
 {
     char s[108];                        /* (a 40-character title, the words, a name and what Kit did) */
     static const char *const s_boost[] = { "", " + armor", " + fuel", " + missile" };
-    sprintf(s, "%.40Fs  //  your fighter: %s%s", (char __far *)g_m.title, ship_name(g_camp.player_ship), s_boost[logic_boost & 3]);
+    sprintf(s, "%.40Fs  //  your fighter: %s%s", (char __far *)g_m.title, ship_name(camp_flight_fighter()), s_boost[logic_boost & 3]);
     gfx_text(FONT_BODY, 14, 8, s, RV_TEXT_AMBER | 0x10, y0, y1);
     talk_overlay(y0, y1);
 }
@@ -1038,11 +1049,12 @@ static void enter_deck(void)
 {
     const RvDeck __far *d = &dat_room(RV_R_DECK)->deck;
     int i;
+    g_rooms_shown = 1;
     vid_fade(0);
     scene_enter(RV_R_DECK, 0);
     g_deck_ship = 0;
     for (i = 0; i < d->nships; i++)
-        if (d->ship[i].ship_type == g_camp.player_ship)
+        if (d->ship[i].ship_type == camp_flight_fighter())
             g_deck_ship = i;
     g_scene.underlay = deck_underlay;
     g_scene.overlay = deck_overlay;
@@ -1077,12 +1089,21 @@ static void deck_tick(void)
 /* --- the player's death: a word, and the choice of flying the mission again or carrying on with it lost (the
  * user, 2026-10-30: not straight back to the base with the mission failed) --- */
 
+/* in a shared flight the host's R or C is everyone's (restartChoice): said under the choice */
+static const char *shared_choice_line(void)
+{
+    return rvNetRole == 2 ? "The host chooses for everyone." : rvNetRole == 1 ? "Your choice is everyone's." : 0;
+}
+
 static void dead_full(int y0, int y1)
 {
+    const char *who = shared_choice_line();
     gfx_fill(0, 0, SCR_W, SCR_H, UI_BLACK, y0, y1);
     gfx_text(FONT_TITLE, 200, 140, "YOU HAVE DIED", RV_TEXT_WHITE, y0, y1);
     gfx_text(FONT_BODY, 150, 200, "R   fly the mission again", RV_TEXT_AMBER, y0, y1);
     gfx_text(FONT_BODY, 150, 222, "C   carry on: the mission is lost", RV_TEXT_GREY, y0, y1);
+    if (who)
+        gfx_text(FONT_BODY, 150, 254, who, RV_TEXT_GREY, y0, y1);
 }
 
 static void enter_dead(void)
@@ -1138,8 +1159,11 @@ static void lost_overlay(int y0, int y1)
         lost_centred(FONT_BODY, 80, "No one is left to call you home.", RV_TEXT_GREY, y0, y1);
     }
     if (g_lost_stage >= 3) {
+        const char *who = shared_choice_line();
         gfx_text(FONT_BODY, 150, 348, "R   fly the mission again", RV_TEXT_WHITE, y0, y1);
         gfx_text(FONT_BODY, 150, 370, "C   carry on: the mission is lost", RV_TEXT_GREY, y0, y1);
+        if (who)
+            gfx_text(FONT_BODY, 150, 392, who, RV_TEXT_GREY, y0, y1);
     }
 }
 
@@ -1302,12 +1326,44 @@ static int noflight(void)
     return 1;
 }
 
+/* the flight's mission settled, once a flight, before its briefing (or its launch, /fly): the layer's meeting point.
+ * missionStarting: a host takes its guests there; a guest's layer puts the host's mission in currentSeries and
+ * currentMission (its campaign node, and its mission there) and the host's compiled records in the tables (a guest's
+ * own save could number them otherwise: a wingman it lost is left out).  A guest then flies that mission by those
+ * records, its own campaign where it was (docs/multiplayer.md).  Alone, nothing changes */
+static void flight_prepare(void)
+{
+    if (g_prepared)
+        return;
+    g_prepared = 1;
+    if (rvNetRole && g_rooms_shown && (g_mode == MODE_ROOM || g_mode == MODE_DECK)) {   /* (the wait can be long: say
+                                           what for, over the room on the screen) */
+        strcpy(g_scene.label, rvNetRole == 2 ? "Waiting for the host's mission" : "Waiting for your wingmen");
+        vid_dirty(SCR_H - LABEL_H, SCR_H);
+        scene_draw();
+    }
+    missionStarting();
+    g_scene.label[0] = 0;
+    g_guest = rvNetRole == 2;
+    if (g_guest) {
+        uint16_t node = currentSeries, k = currentMission;
+        if (node < g_nnodes && k < RV_MISSIONS_PER_NODE && g_nodes[node].missions[k] < g_nmissions) {
+            camp_mission(g_nodes[node].missions[k], &g_m);
+            camp_load_rules(&g_m);      /* (its rules; its tables are the host's already) */
+            rocks_want(g_m.nfield > 0 || g_field > 0);
+            RV_LOG("guest: the host's mission %.16Fs (node %u, mission %u there)", (char __far *)g_m.id, node, k);
+        } else {
+            RV_LOG("guest: the host's mission (node %u, mission %u) is not in this game's campaign", node, k);
+        }
+    }
+}
+
 static void launch(void)
 {
     int won, status, landed = 0;
     freeze_hold();                      /* (the load, sets the page may be fetching: until the flight's first frame) */
+    flight_prepare();
     mission_load_assets();
-    missionStarting();
     g_scene.label[0] = 0;
     /* the mission's score, in the fixed block where the layer reads it and carries it to the other players
      * (MissionEnd, as in WC1): nonzero won.  The roll is the stand-in, made before the flight so the way home's
@@ -1321,21 +1377,28 @@ static void launch(void)
     victoryPoints = won;
     if (g_noflight) {
         status = noflight();
+        missionEnded();                 /* (as flight_fly's loop returning would) */
     } else {
         status = flight_fly(&g_m);
         landed = status == 1 && landedOn != 0xFFFF;
         if (landed)
             home_note();
         freeze_hold();                  /* (what is unloaded, until the game's loop is back) */
-        g_lost_wing = logic_wingman_lost();
-        g_camp.escort_lost = (uint8_t)logic_escort_lost();
+        if (g_guest) {                  /* (the host's mission: its losses are the host's campaign's, not this one's) */
+            g_lost_wing = -1;
+            g_guest_splashes = logic_splashes;
+        } else {
+            g_lost_wing = logic_wingman_lost();
+            g_camp.escort_lost = (uint8_t)logic_escort_lost();
+        }
     }
+    g_prepared = 0;                     /* (the next flight meets again: a retry, the next mission) */
     if (g_winrate >= 0 || g_route || g_noflight)
         victoryPoints = won;
     g_mk_acts = 0;
-    missionVictoryCalc();                           /* the layer's moment: a wingman's score becomes the host's */
+    missionVictoryCalc();                           /* the layer's moment: a wingman's score becomes the host's (after
+                                                       missionEnded, which flight_fly calls as the loop returns) */
     g_won = victoryPoints != 0;
-    missionEnded();
     mission_free_assets();
     RV_LOG("mission %.16Fs %s", (char __far *)g_m.id, g_won ? "won" : "lost");
     g_now = ticks();
@@ -1612,6 +1675,7 @@ static void bunk_input(const Input *in0)
         vid_dirty(30, 350);
     } else if (in->key == KEY_CHAR && (in->ch == 'l' || in->ch == 'L') && g_bunk_full[g_bunk_sel]) {
         if (save_load(g_bunk_sel)) {
+            g_prepared = 0;             /* (another campaign: its next briefing is a new meeting) */
             if (g_camp.base != g_base)
                 change_base(g_camp.base);
             camp_mission(camp_mission_index(), &g_m);
@@ -1805,6 +1869,19 @@ static void start_simulator(void)
     message(g_msg);
 }
 
+/* the flight just debriefed goes into the save: alone or as the host, the campaign's move (camp_resolve; nonzero: the
+ * campaign has ended); as a guest, the sortie and its splashes only (camp_guest_sortie: the user, 2026-11-02) */
+static int debrief_settle(void)
+{
+    if (g_guest) {
+        g_guest = 0;
+        camp_guest_sortie(g_won, g_guest_splashes);
+        return 0;
+    }
+    camp_resolve(g_won);
+    return g_camp.ending;
+}
+
 static void hot_action(const SceneAction *a)
 {
     switch (a->action) {
@@ -1829,6 +1906,13 @@ static void hot_action(const SceneAction *a)
     case RV_ACT_KIT: open_conv(person_of(RV_ROLE_TECH)); break;
     case RV_ACT_LAUNCH: launch(); break;
     }
+}
+
+/* (choice): the death screen's key, 0 none; the choice that stands.  Alone, the key; in a shared flight the layer
+ * answers for the thunk (the host's choice) */
+uint16_t __far __cdecl restartChoice_impl(uint16_t choice)
+{
+    return choice;
 }
 
 /* /fly N: the campaign put where mission N is (its node and place in it), so the debriefing scores that one */
@@ -1863,6 +1947,9 @@ int game_run(void)
         if (g_fly >= 0)
             fly_mission(g_fly);
         launch();
+    } else if (g_brief >= 0) {         /* (the campaign at mission N, its briefing first) */
+        fly_mission(g_brief);
+        start_briefing(0);
     } else {
         if (g_at >= 0)
             fly_mission(g_at);
@@ -1964,7 +2051,7 @@ int game_run(void)
                         g_stage_at = 0;
                         if (brief) {
                             enter_deck();
-                        } else if (camp_resolve(g_won), g_camp.ending) {
+                        } else if (debrief_settle()) {
                             g_scene.full = ending_full;
                             g_scene.no_room = 1;
                             g_mode = MODE_ENDING;
@@ -2025,13 +2112,21 @@ int game_run(void)
                 if (g_now - g_lost_t0 < LOST_WAIT_TICKS)
                     break;
             }
-            if (in.ch == 'r' || in.ch == 'R') {
-                leave_dead();
-                camp_load_units(&g_m);  /* (the mission's tables as they were before the flight) */
-                launch();
-            } else if (in.ch == 'c' || in.ch == 'C' || in.key == KEY_ENTER || in.clicked) {
-                leave_dead();
-                start_briefing(1);
+            {
+                /* the key (1 fly it again, 2 carry on, 0 none), and the choice that stands: alone the key; in a shared
+                 * flight the host's, for everyone (the restartChoice thunk: docs/multiplayer.md) */
+                int key = in.ch == 'r' || in.ch == 'R' ? 1
+                          : in.ch == 'c' || in.ch == 'C' || in.key == KEY_ENTER || in.clicked ? 2 : 0;
+                int choice = (int)restartChoice((uint16_t)key);
+                if (choice == 1) {
+                    leave_dead();
+                    if (!g_guest)       /* (a guest's tables come with the host's mission again: flight_prepare) */
+                        camp_load_units(&g_m);   /* (the mission's tables as they were before the flight) */
+                    launch();
+                } else if (choice == 2) {
+                    leave_dead();
+                    start_briefing(1);
+                }
             }
             break;
         }

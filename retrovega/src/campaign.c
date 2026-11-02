@@ -231,8 +231,7 @@ void camp_load_tables(const RvMission __far *m)
     uint16_t i, n = 0, k;
     if (m->fighter != 0xFF)             /* the mission says what the player (and the wingman) fly, as the old campaign did */
         g_camp.player_ship = m->fighter;
-    g_rule_hit = m->hit;                /* (its rules: the hit volume, the AI's aim, the held fire, the collisions) */
-    g_rule_flags = m->rules;
+    camp_load_rules(m);
     memset(ships, 0, missionShipTable_SIZE * 64);
     memset(navs, 0, navPointTable_SIZE * 16);
     RV_ASSERT(m->nnav <= RV_NAVS && m->nship <= RV_SHIPS);
@@ -284,6 +283,18 @@ void camp_load_tables(const RvMission __far *m)
     currentSeries = g_camp.node;
     currentMission = g_camp.mission;
     RV_LOG("mission %.16Fs: %u nav points, %u mission ships", m->id, (uint16_t)m->nnav, n);
+}
+
+void camp_load_rules(const RvMission __far *m)
+{
+    g_rule_hit = m->hit;                /* (its rules: the hit volume, the AI's aim, the held fire, the collisions) */
+    g_rule_flags = m->rules;
+}
+
+uint16_t camp_flight_fighter(void)
+{
+    const uint8_t *rec = missionShipTable + missionShipTable_SIZE * (playerMissionShip & 63);
+    return *(const uint16_t *)(rec + 6) == 6 ? *(const uint16_t *)rec : g_camp.player_ship;
 }
 
 void camp_load_units(const RvMission __far *m)
@@ -355,6 +366,24 @@ int16_t camp_resolve(int16_t won)
     return 1;
 }
 
+/* a guest's flight (the host's mission, flown in a shared flight: docs/multiplayer.md): the sortie and the pilot's own
+ * splashes go into the hero's record, and the save to its bunk when it has one; the campaign stays where it was, and
+ * nobody's fate in it changes (the user, 2026-11-02: "The splashes get added to that savegame and saved out") */
+void camp_guest_sortie(int16_t won, uint16_t splashes)
+{
+    uint16_t i;
+    g_camp.flown++;
+    for (i = 0; i < g_npilots; i++)
+        if (g_pilots[i].role == RV_ROLE_HERO) {
+            g_camp.pilot[i].missions++;
+            g_camp.pilot[i].kills = (uint16_t)(g_camp.pilot[i].kills + splashes);
+        }
+    missionResolved(won ? 1 : 0);
+    RV_LOG("guest: a sortie (%s) and %u splashes into the save", won ? "won" : "lost", splashes);
+    if (g_camp.name[0])                 /* (a campaign never saved has no bunk of its own) */
+        (void)save_write(g_camp.bunk, g_camp.name);
+}
+
 /* --- the bunks: BUNK01.SAV .. BUNK08.SAV --- */
 
 static void bunk_path(int16_t bunk, char *path)
@@ -368,7 +397,8 @@ int16_t save_write(int16_t bunk, const char *name)
     FILE *f;
     RV_CHECK(bunk, BUNKS);
     g_camp.bunk = (uint8_t)bunk;
-    strncpy(g_camp.name, name, sizeof g_camp.name - 1);
+    if (name != g_camp.name)            /* (a save under the name it has: strncpy onto itself is undefined) */
+        strncpy(g_camp.name, name, sizeof g_camp.name - 1);
     g_camp.name[sizeof g_camp.name - 1] = 0;
     bunk_path(bunk, path);
     f = fopen(path, "wb");

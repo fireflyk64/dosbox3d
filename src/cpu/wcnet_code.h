@@ -64,7 +64,9 @@ typedef Loc RootLoc;
     X(cockpitPointer) \
     /* root image */ \
     X(mainLoopTop) X(statusCheckAfterKeys) X(statusCheckAfterFrame) X(statusSetByExitKey) \
-    X(skipOrchestra) X(afterStartup) X(afterHangarMission)
+    X(skipOrchestra) X(afterStartup) X(afterHangarMission) \
+    /* RetroVega's own: its first call, and the death screen's choice */ \
+    X(rvHello) X(restartChoice)
 
 #define X(name) extern Loc name;
 WC_CODE_LIST(X)

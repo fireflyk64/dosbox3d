@@ -67,6 +67,13 @@ static uint16_t __far g_rammed[NUM_SHIP_SLOTS];   /* the step a ship was last hu
 static uint8_t __far g_under_fire[NUM_SHIP_SLOTS];   /* the old game's hit counter: a hit adds 4, a step takes 1 (the
                                            fear model's "hit" situation while it stands: no calming) */
 static uint16_t __far g_died[NUM_SHIP_SLOTS];     /* the step a ship was seen dying (0: not), its explosion's start */
+static uint16_t __far g_killer[NUM_SHIP_SLOTS];   /* what brought its end about (do_damage's src), for delayedDespawn */
+uint16_t __far logic_splashes;          /* this flight's kills by the local pilot's own guns, missiles and rams (logic.h) */
+/* the humans in the flight but the local pilot: the ships people fly on other machines (RV_FLAG_HUMAN), noted at each
+ * step's start (humans_note) */
+#define HUMANS_MAX 4
+static int8_t __far g_humans[HUMANS_MAX];
+static int16_t g_nhumans;
 #define DEATH_STEPS (LOGIC_HZ * 3 / 2)  /* a fighter explodes this long before its slot ends; a capital ship longer */
 #define DEATH_STEPS_CAPITAL (LOGIC_HZ * 4)
 
@@ -93,6 +100,7 @@ void logic_prepare_spawn(int16_t ship_index)
     g_rammed[ship_index] = (uint16_t)(frameCounter - RAM_STEPS);
     g_under_fire[ship_index] = 0;
     g_died[ship_index] = 0;
+    g_killer[ship_index] = 0xFFFF;
 }
 
 /* the HUD's marks, worked out once a step (hud_marks, the step's end) and drawn band by band (logic_hud, some four
@@ -228,8 +236,8 @@ int16_t logic_order(int16_t s, int16_t order)
 int16_t logic_wingman_lost(void)
 {
     int16_t j;
-    for (j = 0; j < 64; j++)
-        if (g_killed[j] && MSHIP_BEHAVIOUR(j) == 4 && MSHIP(j)[16] < RV_PILOTS)
+    for (j = 0; j < 64; j++)            /* (g_killed 2: a person flew it, on another machine: no named pilot died) */
+        if (g_killed[j] == 1 && MSHIP_BEHAVIOUR(j) == 4 && MSHIP(j)[16] < RV_PILOTS)
             return MSHIP(j)[16];
     return -1;
 }
@@ -471,7 +479,12 @@ void logic_start(const RvMission __far *m)
     g_stopped = 0;
     currentNavPoint = 0;
     victoryPoints = 0;                  /* (over the launch's roll: won when the mission is done, step_mission) */
-    ship_spawn(0, g_camp.player_ship, SIDE_TERRAN, CTL_PLAYER, 0, 0, 0, 0);
+    logic_splashes = 0;
+    g_nhumans = 0;
+    /* the player's fighter is the one its record names (camp_load_tables put the save's there; in a shared flight a
+     * guest's is the host's choice: docs/multiplayer.md); a test's scene with no player record, the save's */
+    ship_spawn(0, MSHIP_BEHAVIOUR(playerMissionShip) == 6 ? *(const uint16_t *)MSHIP(playerMissionShip) : g_camp.player_ship,
+               SIDE_TERRAN, CTL_PLAYER, 0, 0, 0, 0);
     shipStateByte[0] = 8;               /* (a human) */
     slotMissionShip[0] = playerMissionShip;
     kit_boost();
@@ -788,6 +801,19 @@ int16_t logic_launcher(void)
     return launcher_of(0);
 }
 
+static uint8_t launch_target(int16_t ship, const RvWeapon __far *w);
+
+/* a launcher fires: whom its missile is for published first in missileTarget[ship], where the layer reads it with the
+ * shot (capture_lock) and puts it on the other machines before replaying it there (missile_launch reads it for a
+ * puppet), then the shot through the thunk */
+static void fire_launcher(int16_t ship, int16_t g)
+{
+    const RvWeapon __far *w = weapon(GUN_TYPE(ship, g));
+    if (w)
+        missileTarget[ship] = launch_target(ship, w);
+    (void)fireGunFromShip((uint16_t)ship, (uint16_t)g);
+}
+
 static void step_fire(void)
 {
     int16_t s, g;
@@ -797,7 +823,7 @@ static void step_fire(void)
         if (g_pilot.missile) {
             int16_t g = launcher_of(0);
             if (g >= 0) {
-                (void)fireGunFromShip(0, (uint16_t)g);
+                fire_launcher(0, g);
             }
         }
         if (g_pilot.guns) {             /* (the trigger: all the guns, or the type chosen: guns_fire_ready) */
@@ -814,7 +840,7 @@ static void step_fire(void)
         if (g_mind[s].fire & FIRE_GUNS)
             maybe_fire_all_guns((uint16_t)s);
         if (g_mind[s].fire & FIRE_MISSILE)
-            (void)fireGunFromShip((uint16_t)s, g_mind[s].launcher);
+            fire_launcher(s, (int16_t)g_mind[s].launcher);
         if (g_mind[s].turrets)          /* a capital ship's turrets that bear */
             for (g = 0; g < GUN_COUNT(s) && g < 16; g++)
                 if (g_mind[s].turrets & (1u << g))
@@ -1342,6 +1368,13 @@ static void ram(int16_t a, int16_t b)
     uint16_t qty, qa, qb;
     uint32_t ka, kb;
     int16_t player;
+    /* a pair is this machine's when its own pilot is in it, or when no ship in it is flown on another machine
+     * (CTL_PUPPET, a shared flight's): every machine works out its own pilot's collisions, both shares (the user,
+     * 2026-11-02: "the damage is worked out by the player that collided"; the layer takes what it does to another
+     * machine's ship there, and two humans' bump to nothing), and the host its NPCs' */
+    if (rvController[a] != CTL_PLAYER && rvController[b] != CTL_PLAYER
+        && (rvController[a] == CTL_PUPPET || rvController[b] == CTL_PUPPET))
+        return;
     if (!collide_ships(a, b, &push, &depth))
         return;
     push.x += push.x / 2;               /* (half as far again as touching, so the next step is not inside again) */
@@ -1408,12 +1441,15 @@ static int16_t missile_dps(const RvWeapon __far *w)
 static int16_t nearest_enemy(int16_t s, int16_t capital_only);
 
 /* whom a missile launched by `ship` homes on: a dumbfire nobody; the player's the cockpit's lock (a friend-or-foe
- * the target, else the nearest enemy); an AI's its own target */
+ * the target, else the nearest enemy); an AI's its own target; a puppet's what its own machine published
+ * (missileTarget[ship]: fire_launcher) */
 static uint8_t missile_target_of(int16_t ship, const RvWeapon __far *w)
 {
     int16_t t;
     if (w->lock == RV_LOCK_NONE || w->lock == RV_LOCK_PROXIMITY)
         return 0xFF;
+    if (rvController[ship] == CTL_PUPPET)
+        return missileTarget[ship];
     if (rvController[ship] != CTL_PLAYER)
         return rvTarget[ship];
     if (g_sys.target >= 0 && slot_is_ship(g_sys.target) && (g_sys.lock || w->lock == RV_LOCK_AUTO))
@@ -1421,6 +1457,19 @@ static uint8_t missile_target_of(int16_t ship, const RvWeapon __far *w)
     if (w->lock == RV_LOCK_AUTO && (t = nearest_enemy(ship, 0)) >= 0)
         return (uint8_t)t;
     return 0xFF;
+}
+
+/* whom a launch by `ship` is for (fire_launcher publishes it): a seeker's homing target; a dumbfire's, the target it
+ * may be pointed at (dumbfire_aim): the player's chosen one, an AI's own, a puppet's as its machine published it */
+static uint8_t launch_target(int16_t ship, const RvWeapon __far *w)
+{
+    if (w->kind != RV_WK_MISSILE || w->lock != RV_LOCK_NONE)
+        return missile_target_of(ship, w);
+    if (rvController[ship] == CTL_PUPPET)
+        return missileTarget[ship];
+    if (rvController[ship] == CTL_PLAYER)
+        return (uint8_t)(g_sys.target >= 0 ? g_sys.target : 0xFF);
+    return rvTarget[ship];
 }
 
 #define PLAYER_LOCK_CONE 230            /* the player's seekers lock with the target within this: some 26 degrees */
@@ -1471,7 +1520,8 @@ static void lock_tick(void)
  * sets off toward that point; then it flies straight, as a dumbfire does */
 static void dumbfire_aim(int16_t s, int16_t ship, const RvWeapon __far *w)
 {
-    int16_t t = rvController[ship] == CTL_PLAYER ? g_sys.target : (rvTarget[ship] == 0xFF ? -1 : rvTarget[ship]);
+    uint8_t aim = launch_target(ship, w);
+    int16_t t = aim == 0xFF ? -1 : aim;
     int32_t tof, len, km_step = w->speed_kps / KPS_HZ + 1;
     int16_t i, yaw, pitch;
     RvVec3 p, vt, d, b;
@@ -2982,9 +3032,10 @@ static void step_deaths(void)
             g_died[s] = 0;
             continue;
         }
-        if (!g_died[s]) {               /* seen now: its explosion begins (fx.c shows it); it drifts to a stop */
-            g_died[s] = (uint16_t)(frameCounter ? frameCounter : 1);
-            setSpeed[s] = 0;
+        if (!g_died[s]) {               /* seen now: its end, through the thunk (the layer hears of a kill as of the old
+                                           game's; on a guest the host's word starts it), whose body starts its explosion
+                                           (fx.c shows it); it drifts to a stop */
+            delayedDespawn(g_killer[s], (uint16_t)s);
             continue;
         }
         if ((uint16_t)(frameCounter - g_died[s]) < (maybeEntityType[s] == ET_CAPSHIP ? DEATH_STEPS_CAPITAL : DEATH_STEPS))
@@ -3011,6 +3062,29 @@ static void step_deaths(void)
 static uint8_t __far g_off_type[NUM_SHIP_SLOTS];
 uint8_t __far logic_scene_off;          /* (the play tests': most of them set a scene with the player well away from it) */
 
+/* the ships people fly on other machines (RV_FLAG_HUMAN: the layer marks them in a shared flight), noted for the step */
+static void humans_note(void)
+{
+    int16_t s;
+    g_nhumans = 0;
+    for (s = 1; s < NUM_SHIP_SLOTS && g_nhumans < HUMANS_MAX; s++)
+        if ((rvFlags[s] & RV_FLAG_HUMAN) && slot_is_ship(s))
+            g_humans[g_nhumans++] = (int8_t)s;
+}
+
+/* km from the nearest human, roughly (player_km's measure): the local pilot, or one of the noted (humans_note) */
+static int32_t human_km(int16_t s)
+{
+    int32_t best = player_km(s), km;
+    int16_t k;
+    for (k = 0; k < g_nhumans; k++)
+        if (g_humans[k] != s && (km = km_between(s, g_humans[k])) < best)
+            best = km;
+    return best;
+}
+
+/* (by the nearest human: alone, the local pilot; in a shared flight a ship near any pilot stays in the scene on every
+ * machine, and a human's own ship is never held) */
 static void step_scene(void)
 {
     int16_t s, friendly;
@@ -3018,11 +3092,11 @@ static void step_scene(void)
         return;
     for (s = 1; s < NUM_SHIP_SLOTS; s++) {
         if (maybeEntityType[s] == ET_OFFSCENE) {
-            if (player_km(s) < SCENE_BACK_KM)
+            if (human_km(s) < SCENE_BACK_KM)
                 maybeEntityType[s] = g_off_type[s];
             continue;
         }
-        if (!slot_is_ship(s) || shipAiState[s] == 9 || player_km(s) <= SCENE_KM)
+        if (!slot_is_ship(s) || shipAiState[s] == 9 || (rvFlags[s] & RV_FLAG_HUMAN) || human_km(s) <= SCENE_KM)
             continue;
         friendly = commAnimInfo[s] == commAnimInfo[0];
         if (maybeEntityType[s] == ET_CAPSHIP ? (friendly && escorted(s))
@@ -3108,7 +3182,8 @@ static void step_mission(void)
         if (slot_is_ship(s) && shipAiState[s] == 9 && slotMissionShip[s] < 64) {
             if (!g_killed[slotMissionShip[s]] && commAnimInfo[s] != commAnimInfo[0])
                 g_enemy_ran = 0;
-            g_killed[slotMissionShip[s]] = 1;
+            if (!g_killed[slotMissionShip[s]])
+                g_killed[slotMissionShip[s]] = (uint8_t)(rvFlags[s] & RV_FLAG_HUMAN ? 2 : 1);
         }
     if (slot_is_ship(0) && shipAiState[0] != 9)
         for (n = 0; n < NAVS; n++)
@@ -3226,6 +3301,7 @@ static void hud_marks(void)
 
 void logic_frame(void)
 {
+    humans_note();
     step_scene();
     step_timers();
     damage_step();
@@ -3266,7 +3342,10 @@ void logic_hud(void)
  * ejected, landed elsewhere or with it undone, lost */
 void logic_end(void)
 {
-    victoryPoints = (uint16_t)(missionStatus == 1 && mission_done() && nav_km(0) < NAV_REACH_KM);
+    /* (home: at the launch point, or on the home carrier: in a shared flight the pilot who landed may be another,
+     * whose landing the layer gives this game: landedOn) */
+    int16_t home = landedOn != 0xFFFF && logic_is_home((int16_t)landedOn);
+    victoryPoints = (uint16_t)(missionStatus == 1 && mission_done() && (home || nav_km(0) < NAV_REACH_KM));
 }
 
 #define AUTOPILOT_CLEAR_KM 8000         /* no enemy this near (the engine's autopilot lamp says the same: flight.c) */
@@ -3356,9 +3435,10 @@ int16_t logic_autopilot_ready(void)
     int16_t s, next;
     if (!slot_is_ship(0) || shipAiState[0] == 9 || sys_level(SYS_NAV) >= SYS_WRECKED)
         return -1;                      /* (the nav computer wrecked: the pilot flies home by hand, the cross still shows) */
-    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+    humans_note();
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)   /* (near any human: a wingman in a fight on another machine holds it too) */
         if (slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9
-            && player_km(s) < AUTOPILOT_CLEAR_KM)
+            && human_km(s) < AUTOPILOT_CLEAR_KM)
             return -1;
     next = g_nav_chosen ? g_sys.nav : nav_next_unseen();
     if (nav_km(next) <= AUTOPILOT_SHORT_KM)
@@ -3389,6 +3469,9 @@ int16_t logic_autopilot(void)
     yaw = lf_atan2(d.x, d.z);
     pitch = lf_atan2(d.y, horiz);
     stop = way_stop(next, &region, &field);
+    /* (the jump's start and end through the thunks: in a shared flight the layer replays them, and every pilot's ship
+     * goes where the host's game puts it; alone, two probes) */
+    autoAnimation((uint16_t)gInstanceShipTypes[0], 1, 0);
     ship_face(0, yaw, pitch);
     if (region >= 0 || field)
         to = vec3((TO_KM(gPositionVector[0].x) + FIX_MUL(gOrientationFrontVector[0].x, stop)) * KM,
@@ -3400,10 +3483,11 @@ int16_t logic_autopilot(void)
                   (NAV_AT(next, 2) - FIX_MUL(gOrientationFrontVector[0].z, AUTOPILOT_SHORT_KM)) * KM);
     /* the wing: moved as the player is, facing the same way (player_km while the player is still where it was); an
      * escort target of the player's side put behind it */
-    for (s = 1; s < NUM_SHIP_SLOTS; s++) {
-        if (!slot_is_ship(s) || commAnimInfo[s] != commAnimInfo[0] || rvController[s] != CTL_AI || shipAiState[s] == 9)
+    for (s = 1; s < NUM_SHIP_SLOTS; s++) {   /* (a human wingman, on another machine, always comes: the wing is the wing) */
+        if (!slot_is_ship(s) || commAnimInfo[s] != commAnimInfo[0] || shipAiState[s] == 9
+            || (rvController[s] != CTL_AI && !(rvFlags[s] & RV_FLAG_HUMAN)))
             continue;
-        if (maybeEntityType[s] == ET_SHIP && player_km(s) < AUTOPILOT_WING_KM) {
+        if (maybeEntityType[s] == ET_SHIP && (player_km(s) < AUTOPILOT_WING_KM || (rvFlags[s] & RV_FLAG_HUMAN))) {
             gPositionVector[s].x += to.x - gPositionVector[0].x;
             gPositionVector[s].y += to.y - gPositionVector[0].y;
             gPositionVector[s].z += to.z - gPositionVector[0].z;
@@ -3432,6 +3516,7 @@ int16_t logic_autopilot(void)
     } else if (next && !field) {
         enterNavPoint((uint16_t)next);
     }
+    autopilotFinished();
     return 1;
 }
 
@@ -3490,6 +3575,14 @@ uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, 
                     RV_SLOT_OK(src) ? gInstanceShipTypes[src] : 0xFF, qty);
             damagePoints[dst] = t->hull;
             shipAiState[dst] = 9;
+            g_killer[dst] = src;
+            {                           /* (the local pilot's splash: its bolt, its missile, its own hull, at an enemy) */
+                uint16_t by = RV_SLOT_OK(src) && (src > RV_MAX_SHIP_SLOT || maybeEntityType[src] == ET_MISSILE)
+                              && parentShipForShip[src] != 0xFF ? parentShipForShip[src] : src;
+                if (RV_SLOT_OK(by) && by <= RV_MAX_SHIP_SLOT && rvController[by] == CTL_PLAYER
+                    && commAnimInfo[dst] != commAnimInfo[by])
+                    logic_splashes++;
+            }
         } else {
             damagePoints[dst] = (uint16_t)(damagePoints[dst] + left);
         }
@@ -3544,12 +3637,19 @@ void __far __cdecl despawn_impl(uint16_t ship)
         ship_clear((int16_t)ship);
 }
 
-/* (src, ship): a ship's end that src brought about (a kill): the same, after its explosion's time */
+/* (src, ship): a ship's end that src brought about (a kill) begins: dying (shipAiState 9), its explosion's time from
+ * now (step_deaths counts it, then despawn ends it), its throttle at 0.  step_deaths calls it when it first sees a
+ * ship dying; the layer, on a machine whose copy the host's kill reaches */
 void __far __cdecl delayedDespawn_impl(uint16_t src, uint16_t ship)
 {
-    (void)src;                          /* (the blame is the layer's: the explosion's time has passed in step_deaths) */
-    if (RV_SLOT_OK(ship) && ship <= RV_MAX_SHIP_SLOT)
-        ship_clear((int16_t)ship);
+    (void)src;                          /* (the blame: do_damage's, the layer's) */
+    if (!RV_SLOT_OK(ship) || ship > RV_MAX_SHIP_SLOT || !slot_is_ship((int16_t)ship))
+        return;
+    shipAiState[ship] = 9;
+    if (!g_died[ship]) {
+        g_died[ship] = (uint16_t)(frameCounter ? frameCounter : 1);
+        setSpeed[ship] = 0;
+    }
 }
 
 /* (nav): the player has reached nav point `nav`: its ships and hazards come (each of its mission ships through

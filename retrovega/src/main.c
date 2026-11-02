@@ -39,6 +39,7 @@ char __far g_people_names[16][28];         /* (far: DGROUP is full) */
 extern int g_winrate, g_flight_seconds, g_flight_timed, g_can_quit, g_res, g_field;
 extern int __far g_fly;                 /* (game.c) /fly [N]: straight to a flight */
 extern int __far g_at;                  /* (game.c) /at N: the rooms with the campaign at mission N (a test's way to any system) */
+extern int __far g_brief;               /* (game.c) /brief N: the campaign at mission N, its briefing first (the page's pick) */
 extern long g_onfly_px;
 #ifdef RV_PLAYTEST                      /* the self-tests' build, RVP.EXE */
 int16_t playtest_run(const char *only);  /* (tests/play/playtest.c: RVP.EXE /playtest) */
@@ -244,7 +245,7 @@ int main(int argc, char **argv)
 #endif
     }
     for (i = 1; i < argc; i++) {
-        static const char __far s_nomouse[] = "/nomouse", __far s_fly[] = "/fly", __far s_at[] = "/at";
+        static const char __far s_nomouse[] = "/nomouse", __far s_fly[] = "/fly", __far s_at[] = "/at", __far s_brief[] = "/brief";
         static const char __far s_noflight[] = "/noflight", __far s_route[] = "/route", __far s_kill[] = "/kill",
             __far s_ledger[] = "/ledger", __far s_monkey[] = "/monkey", __far s_freezetest[] = "/freezetest",
             __far s_verbose[] = "/verbose", __far s_leaktest[] = "/leaktest";
@@ -256,6 +257,8 @@ int main(int argc, char **argv)
             g_fly = i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9' ? atoi(argv[++i]) : -1;
         else if (!_fstrcmp(argv[i], s_at) && i + 1 < argc)   /* the rooms, the campaign at mission N of RVGAME.DAT */
             g_at = atoi(argv[++i]);
+        else if (!_fstrcmp(argv[i], s_brief) && i + 1 < argc)   /* the briefing room, the campaign at mission N */
+            g_brief = atoi(argv[++i]);
         else if (!strcmp(argv[i], "/mpu"))
             music_device(MUSIC_MPU401);
         else if (!strcmp(argv[i], "/nomusic"))

@@ -309,6 +309,7 @@ What the tests expect:
 | M6.4 capital-map | under `hit=sphere` a shot 400 km off the carrier's axis, inside its 700 km radius but clear of its hull, flies on; one along its deck hits: a capital ship is hit on its actual shape under any rule |
 | M6.5 capital-ram | a fighter clear of the carrier's hull but inside its sphere does not collide, and one in its deck does, under all four hit= settings and both ram= settings |
 | M6.6 ram-caps | head on into a Nicander at 450 kps, the player's front armour goes and its hull is untouched, a system breaks, and the Nicander loses what the player lost; at 200 kps (50 points, under the cap) the old rule's 50 and no system; the front armour gone, the hull goes to 40%; two Nicanders head on at 50 km a step each lose at most that shield and half that armour, and live; into an Agasicles at 450 kps the player stops, throttle 0; at 80 kps its throttle stays |
+| M6.7 ram-owner | two AI Nicanders inside each other are both hurt; an AI one inside another machine's (CTL_PUPPET) neither: that pair is the other machine's; the player flown into a puppet is hurt: its own collision is worked out here (docs/multiplayer.md; last in the table) |
 
 ### M7: missiles (`fireGunFromShip`'s launchers, `step_missiles`, `step_fire`)
 
@@ -343,6 +344,7 @@ What the tests expect:
 | M7.5 missile-homes | a friend-or-foe from the Gawain, `missileTarget` set at launch, hurts a ship 31° off its nose |
 | M7.6 missile-ends | fired into empty space, it ends within twice its range's steps |
 | M7.7 dumbfire-aims | the Schroedinger's dumbfire at its chosen target 8° off the nose, side on 2,500 km out, hurts it within 10 s; with the target 30° off it sets off straight along the nose (last in the table: a test's dice are its place) |
+| M7.8 puppet-launch | a Gawain flown on another machine (a puppet) launches its seeker with that machine's target (slot 2) in missileTarget: the missile homes on 2; the player's own launch publishes its locked target there first (step_fire), for the layer to carry |
 
 ### M8: the mission (`logic_start`, `step_mission`, `enterNavPoint`, `logic_end`, `logic_autopilot`)
 
@@ -387,6 +389,9 @@ nav 0):
 | M8.19 autopilot-apart | a wingman whose offset comes down exactly where the autopilot puts the Ox, at speed: they arrive apart, and in 3 s the Ox takes no hit |
 | M8.27 second-wave | a hidden trigger point's enemies do not come while an enemy fighter is out; when the last one is killed they come; when the last one ran they are called off, and ask nothing of the player (a wave with a capital ship or an escort target always comes) |
 | M8.28 wingman-behind | enemies at the launch: the wingman starts 3,000 km past them, on the far side from the player, facing them; none: beside the player |
+| M8.29 scene-human | the carrier 20,000 km from the player but 2,000 km from another machine's pilot (RV_FLAG_HUMAN) stays in the scene; that pilot gone 30,000 km too, it is held off it |
+| M8.30 human-seat-lost | the patrol's wingman flown by a person on another machine (a puppet, RV_FLAG_HUMAN) killed: no named pilot is lost |
+| M8.31 dying | delayedDespawn on a live Nicander makes it dying (shipAiState 9) at once, still a ship, and gone after its explosion; the player's own hull kills a Nicander and an AI another: one splash (logic_splashes) |
 | M8.26 way-ahead | a field across the line: the autopilot stops 500 km short of its edge and will not go from there, and goes again past it; a hidden point on the line: it stops inside its reach and its ships come; hidden points are on no list, and one never come to does not hold the mission up |
 | M8.25 scene | past 7,200 km the home carrier is no ship to anything and cannot be the target; the wing stays; it is back as it was when the player is |
 | M8.24 nav-choice | `g_sys.nav` follows the first waypoint not reached until N (`logic_nav_next`) picks one; N goes down the list and round through home; the autopilot goes to the one chosen, and the choice follows again once it is reached |

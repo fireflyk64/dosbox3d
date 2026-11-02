@@ -26,6 +26,7 @@
 #include "wcnet_perf.h"
 #include "wcnet_log.h"
 #include "wcnet_rv.h"
+#include "wcnet_retrovega.h"
 #include "wcnet_lab.h"
 #include "callback.h"
 #include "cpu.h"
@@ -654,7 +655,8 @@ static void key_script() {
         return;
     }
     static int waitingSince = -1;  // flight count when a "wait" item ran
-    static bool skipping = false;  // ... a "skip" item: Esc is tapped meanwhile
+    static bool skipping = false;  // ... a "skip" item: Esc is tapped meanwhile (a "waitkey=<key>" item: that key)
+    static KBD_KEYS skipKey = KBD_esc;
     static bool clicking = false;  // ... a "clickskip" item: the pointer is put on a spot and clicked meanwhile
     static double clickX = 0.48, clickY = 0.55;
     static double nextSkip = 0;
@@ -668,8 +670,8 @@ static void key_script() {
         if (g_flightCount == waitingSince || !in_flight()) {
             if (skipping && now >= nextSkip) {
                 nextSkip = now + 2000;
-                KEYBOARD_AddKey(KBD_esc, true);
-                held = KBD_esc;
+                KEYBOARD_AddKey(skipKey, true);
+                held = skipKey;
                 releaseAt = now + 150;
             }
             if (clicking && now >= nextSkip && !buttonDown) {
@@ -717,16 +719,22 @@ static void key_script() {
         wclog(1, "key script %.1fs (t=%.1f): dump %s; comm \"%s\"; vdu \"%s\"; %s; %s", t, now / 1000.0, path.c_str(),
               ds_text(ds::commGlobalTxt, 80).c_str(), ds::known(ds::vduText) ? ds_text(ds::vduText, 160).c_str() : "", mission_state_line().c_str(),
               field_state_line().c_str());
-    } else if (item == "wait" || item == "skip" || item.compare(0, 9, "clickskip") == 0) {
-        skipping = item == "skip";
+    } else if (item == "wait" || item == "skip" || item.compare(0, 9, "clickskip") == 0 || item.compare(0, 8, "waitkey=") == 0) {
+        // (waitkey=<key>: as skip, with that key instead of Esc: RetroVega's death screen's R or C)
+        skipping = item == "skip" || item.compare(0, 8, "waitkey=") == 0;
+        skipKey = item.compare(0, 8, "waitkey=") == 0 ? script_key(item.substr(8)) : KBD_esc;
+        if (skipKey == KBD_NONE) {
+            skipKey = KBD_esc;
+        }
         clicking = item.compare(0, 9, "clickskip") == 0;
         if (clicking && item.size() > 10) {  // clickskip=<x>:<y>
             clickX = atof(item.c_str() + 10);
             size_t colon = item.find(':');
             if (colon != std::string::npos) clickY = atof(item.c_str() + colon + 1);
         }
-        wclog(1, "key script %.1fs (t=%.1f): waiting for the next mission%s", t, now / 1000.0,
-              skipping ? ", tapping Esc through the scenes" : clicking ? ", clicking through the scenes and the barracks" : "");
+        wclog(1, "key script %.1fs (t=%.1f): waiting for the next mission%s%s", t, now / 1000.0,
+              skipping ? ", tapping " : clicking ? ", clicking through the scenes and the barracks" : "",
+              skipping ? (skipKey == KBD_esc ? "Esc through the scenes" : item.c_str() + 8) : "");
         waitingSince = g_flightCount;
     } else if (item.compare(0, 7, "!mouse=") == 0) {
         // !mouse=<x>:<y>, fractions of the mouse range (0.5:0.5 is the centre)
@@ -925,6 +933,35 @@ static void key_script() {
               !server ? "ignored: not the server" : slot_in_use(slot) ? "in use" : "empty", mission_state_line().c_str());
         if (server && slot_in_use(slot)) {
             enqueue_test_kill(slot);
+        }
+    } else if (item.compare(0, 4, "!ds=") == 0) {
+        // !ds=<name> writes the game's data segment (64 KB) to WCNET_DUMP_DIR/<name>.ds: what a rig compares between
+        // machines (scripts/rvnet-check.py reads RetroVega's offsets from wcnet_rv.h)
+        const char *dir = getenv("WCNET_DUMP_DIR");
+        std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + item.substr(4) + ".ds";
+        FILE *f = DS ? fopen(path.c_str(), "wb") : NULL;
+        if (f) {
+            for (Bit32u off = 0; off < 0x10000; off++) {
+                fputc(rd8((Bit16u)off), f);
+            }
+            fclose(f);
+        }
+        wclog(1, "key script %.1fs (t=%.1f): data segment to %s%s (frame %d)", t, now / 1000.0, path.c_str(),
+              f ? "" : " failed", DS ? (int)rd16(ds::frameCounter) : -1);
+    } else if (item.compare(0, 5, "!land") == 0) {
+        // !land[=<slot>]: a landing the game took (test aid): on that ship, or the first capital ship of our side,
+        // missionStatus 1 (the game's own landing check writes the same two words)
+        int slot = item.size() > 6 ? atoi(item.c_str() + 6) : -1;
+        for (int s = kMinShipSlot; slot < 0 && s <= kMaxShipSlot && ds::known(ds::commAnimInfo); s++) {
+            if (entity_type(s) == ET_CAPSHIP && rd16((Bit16u)(ds::commAnimInfo + 2 * s)) == rd16(ds::commAnimInfo)) {
+                slot = s;
+            }
+        }
+        bool ok = ds::known(ds::landedOn) && is_ship_slot(slot) && slot > kPlayerSlot && entity_type(slot) == ET_CAPSHIP;
+        wclog(1, "key script %.1fs (t=%.1f): land on slot %d%s", t, now / 1000.0, slot, ok ? "" : ": no capital ship there");
+        if (ok) {
+            wr16(ds::landedOn, (Bit16u)slot);
+            wr16(ds::missionStatus, 1);
         }
     } else if (item.compare(0, 8, "!status=") == 0) {
         int status = atoi(item.c_str() + 8);
@@ -1438,9 +1475,37 @@ static void keep_far_ship_near_humans() {
     reg_eip += 5 + (Bit8s)mem_readb(ip + 4);  // the `jng`'s target: the ship is near
 }
 
+// RetroVega's part in the flight as the game sees it (rvNetRole,
+// rvPlayerCount): the session's role, or alone.
+static void rv_publish_role() {
+    if (!is_rv()) {
+        return;
+    }
+    if (!g_session) {
+        rv_set_role(RV_ROLE_ALONE, 1);
+    } else {
+        rv_set_role(g_session->is_server() ? RV_ROLE_HOST : RV_ROLE_GUEST, room_seats());
+    }
+}
+
 static void check_hooks_slow() {
     if (at_location(code::cockpitPointer) && pointer_off()) {
         reg_eip += 4;
+        return;
+    }
+    if (at_function(code::rvHello)) {
+        // RetroVega's first call: a room's session is sought now, so that the
+        // game knows its part from its first screen (rvNetRole) and can say
+        // so before it waits at the meeting point (missionStarting).
+        ensure_session();
+        rv_publish_role();
+    }
+    if (at_function(code::restartChoice)) {
+        // The death screen's R or C (0: no key yet): alone, the key decides;
+        // the host's goes to everyone and decides; a guest's is the host's.
+        if (g_session) {
+            return_from_call(code::restartChoice, (Bit16u)g_session->restart_choice(call_arg16(code::restartChoice, 0)));
+        }
         return;
     }
     if (at_location(code::briefingStarted)) {
@@ -1485,6 +1550,7 @@ static void check_hooks_slow() {
         if (g_session && !briefed) {
             g_session->on_mission_starting(rd8(ds::currentMission), rd8(ds::currentSeries));
         }
+        rv_publish_role();
         // After the session: a client flies the mission the server names.
         g_inMission = true;
         g_frameSeen = false;
@@ -1504,6 +1570,7 @@ static void check_hooks_slow() {
     if (at_location(code::simulatorStart)) {
         in_simulation += 1;
         incoming_text = "";
+        g_rvSimulator = is_rv();    // (RV's simulator has a loop of its own, no mainLoopTop: stick_flying)
     }
     if (in_simulation) {
         if (at_location(code::mainLoopTop)) {
@@ -1511,6 +1578,7 @@ static void check_hooks_slow() {
         }
         if (at_location(code::simulatorEnd)) {
             in_simulation -= 1;
+            g_rvSimulator = false;
         }
         return;
     }
@@ -1571,7 +1639,7 @@ static void check_hooks_slow() {
         leader_name_restore();
         g_inMission = false;
         wclog(2, "ended: %s", mission_state_line().c_str());
-        if (always_skip_barracks()) {
+        if (always_skip_barracks() && ds::known(ds::skipRecRoom)) {
             wr16(ds::skipRecRoom, 1);
         }
         if (g_session) {
@@ -1669,6 +1737,9 @@ static void check_hooks_slow() {
         }
         ensure_session();
         leader_name_tick();
+        if (g_session && g_traits.puppets) {
+            g_session->reconcile_puppets();
+        }
         if (g_session) {
             g_session->on_frame_top();
         } else if (g_trampoline.has_pending()) {
@@ -2234,7 +2305,9 @@ Bitu wc_net_hook_exit(Bit32u ip) {
 
 void wc_net_check_cpu_hooks() {
     using namespace wc;
-    if (g_build == BUILD_RV) {
+    if (g_build == BUILD_RV && (!rv_shared() || solo())) {
+        // RetroVega alone (a room of one), with shared flights switched off, or
+        // of an interface this emulator was not built for: only watched.
         rv_check_hooks();
         return;
     }
