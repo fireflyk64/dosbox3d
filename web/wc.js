@@ -108,12 +108,37 @@ function noticeChat(line) {
     try { localStorage.setItem(HINT_KEY, "off"); } catch (e) { /* not kept */ }
   }
 }
-// A pilot who flies is out of the public lobby (start() below).  When the
-// game is over on this page, however it ended, the lobby is open to it
-// again and a pilot who was in it is back in it.
+// A pilot who flies stays in the public lobby (the user, 2026-11-03: "right
+// now actually everyone can always stay in the lobby during game. It's too
+// quiet for the moment to worry--we can deploy lobby departure as a future
+// optimization if it gets too busy"); hall.shut is kept for that day.  When
+// the game is over on this page, however it ended, the lobby is open to it
+// again (a no-op while it never closed).
 function flightOver() { setTimeout(() => hall.reopen(), 0); }
+// The host's game holds at a briefing for a wingman who has flown a mission
+// with it (the layer's lockstep; the first mission together never waits),
+// and a wingman's for the host's briefing: said in the room's chat, where
+// the other pilot's lines come (the user: "before freezing it output
+// 'waiting on other player...' in the place where player chat can appear").
+var briefingAsked = null;   // (var: a log line can come before this file has run this far)
+function noticeWaiting(line) {
+  let m;
+  if ((m = /^wcnet: waiting on the other player, (.*), at the briefing$/.exec(line))) {
+    setTimeout(() => { chatLine(`Waiting on the other player (${esc(m[1])})…`, "sys"); status(`Waiting on the other player (${m[1]}) at the briefing…`); }, 0);
+  } else if (/^wcnet: the other player is at the briefing/.test(line)) {
+    setTimeout(() => { chatLine("The other player is at the briefing: the mission begins.", "sys"); status(""); }, 0);
+  } else if (/^wcnet: asking the server which briefing to load$/.test(line)) {
+    // (a wingman's: said only when the host's answer takes a while)
+    clearTimeout(briefingAsked);
+    briefingAsked = setTimeout(() => { briefingAsked = null; chatLine("Waiting on the host…", "sys"); }, 1500);
+  } else if (/^wcnet: briefing for mission /.test(line) && briefingAsked) {
+    clearTimeout(briefingAsked);
+    briefingAsked = null;
+  }
+}
 function noticeGameEnd(line) {
   noticeChat(line);
+  noticeWaiting(line);
   if (/^wcnet: RV ABI mismatch: /.test(line)) {
     // (the game and the emulator of this page were not built from one interface: RetroVega flies, alone)
     setTimeout(() => status(`This page's RetroVega and its emulator do not match (${line.replace(/^wcnet: RV ABI mismatch: /, "").split(";")[0]}): the game flies alone, shared flights are off. Reload the page; if it stays, "Copy log" has the details for a report.`), 0);
@@ -943,7 +968,7 @@ function updateActions() {
   const wrong = wrongGame();
   const ready = !!source && !!lobby.game && !running && !wrong;
   $("fly").disabled = !ready;
-  $("advertise").hidden = !lobby.game || running || !lobbyReady() || !lobby.game.players.some((p) => !p.occupied);
+  $("advertise").hidden = !lobby.game || !lobbyReady() || !lobby.game.players.some((p) => !p.occupied);   // (in flight too)
   if (!running) {
     if (wrong) status(wrong);
     else if (!source && !lobby.game) status(linkWaits() ? `Load your game files (step 1) and you are in room ${$("room").value.trim()}; "Join room" takes a seat in it without them.` : "Load the game files and join a room first.");
@@ -1230,16 +1255,17 @@ function offerText() {
   return Array.from(full).length <= MAX_CHARS ? full : `${g.code} ${seats}`;
 }
 // The pilot's own room for the lobby (its "Advertise" and "/room"): the room
-// the pilot is in, and otherwise the one of the room form, joined now.
+// the pilot is in, and otherwise the one of the room form, joined now; in
+// flight, the room flown in (Fly advertises it while it has a seat free).
 async function myRoom() {
-  if (running) return null;
+  if (running) return lobby.game && !soloRoom() ? { code: lobby.game.code, offer: offerText() } : null;
   const alone = "A room of one (Players 1) is not offered in the lobby: nobody can join it.";
   if (!lobby.game && seatCount() === 1) { status(alone); return null; }
   if (!lobby.game) await joinRoom();
   if (soloRoom()) { status(alone); return null; }
   return lobby.game ? { code: lobby.game.code, offer: offerText() } : null;
 }
-$("advertise").addEventListener("click", () => { if (lobby.game && !running) void hall.advertise(); });
+$("advertise").addEventListener("click", () => { if (lobby.game) void hall.advertise(); });
 
 // -- an open game ----------------------------------------------------------------
 
@@ -1251,15 +1277,16 @@ $("advertise").addEventListener("click", () => { if (lobby.game && !running) voi
 // typed there, or makes that room).  A pilot who ticks Private is not asked
 // about their room, nor is anyone in the room of a host who ticked it: only
 // its code or its link brings somebody in.
-try { $("private").checked = localStorage.getItem(PRIVATE_KEY) === "1"; } catch (e) { /* not kept */ }
-$("private").addEventListener("change", () => {
-  try { localStorage.setItem(PRIVATE_KEY, privateOn() ? "1" : "0"); } catch (e) { /* not kept */ }
-  sayHello();
-});
+// Private is not remembered between visits (the user, 2026-11-03: "users
+// have become confused how others could not join using join open game when
+// that button was accidentally ticked"); what an earlier page kept goes.
+try { localStorage.removeItem(PRIVATE_KEY); } catch (e) { /* nothing kept */ }
+$("private").addEventListener("change", () => sayHello());
 // The room this page offers to a pilot looking for an open game, or null.
 function openRoom() {
   const g = lobby.game;
-  if (!g || running || privateOn() || lobby.hostPrivate) return null;
+  // (A room in flight is offered too while it has a free seat: whoever comes joins the mission in progress.)
+  if (!g || privateOn() || lobby.hostPrivate) return null;
   const free = g.players.filter((p) => !p.occupied).length;
   return free > 0 ? { code: g.code, game: lobbyGameId(), free } : null;
 }
@@ -1488,9 +1515,13 @@ async function start(fromGesture) {
   // configuration or into none (see below).
   joystickPort = controls.builtIn();
   emulatorStarted = true;
-  // (The public lobby is for finding a flight: this page has one.  The
-  // pilot is back in it when the game is over: flightOver.)
-  hall.shut("You left the lobby to fly.");
+  // (The pilot stays in the public lobby while flying: flightOver.)  A room
+  // with a seat free is advertised there as the flight begins (the user,
+  // 2026-11-03: "If someone clicks play without full number of people in the
+  // room can you auto-hit the advertise to the window. That way others can
+  // join in at that time"), unless it is private: whoever comes joins the
+  // mission in progress.
+  if (!soloRoom() && lobby.game && lobby.game.players.some((p) => !p.occupied) && !privateOn() && !lobby.hostPrivate) void hall.advertise({ auto: true });
   // Voice on one side only: said here, so that nobody is surprised.
   const voiceWarning = voice.warning();
   if (voiceWarning) { chatLine(esc(voiceWarning), "sys"); log("voice: " + voiceWarning); }

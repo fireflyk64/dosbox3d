@@ -165,12 +165,16 @@ async function shared(page) {
   return s;
 }
 const km = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) / 256;
-const room2 = "RV-" + String(Math.floor(Math.random() * 9000) + 1000);
-const h2 = await open("host2", { room: room2, callsign: "CHEATHOST", retrovega: "", cmd: "rv /noquit /fly 0" });
+// The new pilot's way in (the user, 2026-11-03): a host in a room of two with nobody else presses Fly and flies (the
+// first mission together never waits for anybody); the Fly advertised the room in the lobby; a pilot there clicks its
+// code, presses Fly, and joins the mission in progress.
+const h2 = await open("host2", { callsign: "CHEATHOST", cmd: "rv /noquit /fly 0" });
+const w2 = await open("wing2", { callsign: "WINGMAN", cmd: "rv /noquit /fly 3" });
+const inLobby = (page) => page.waitForFunction(() => !document.getElementById("hallBody").hidden && !!window.__wcHall.test.net(), null, { timeout: 30000 }).then(() => true, () => false);
+check("both pilots are in the lobby", (await inLobby(h2)) && (await inLobby(w2)));
+await h2.click("#join");
 await h2.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 30000 });
-const w2 = await open("wing2", { room: room2, callsign: "WINGMAN", cmd: "rv /noquit /fly 3" });
-await w2.waitForFunction(() => !document.getElementById("lobby").hidden && document.getElementById("roster").children.length > 1, null, { timeout: 30000 });
-await h2.waitForFunction(() => document.getElementById("roster").children.length > 1, null, { timeout: 30000 });
+const room2 = await h2.$eval("#room", (el) => el.value);
 const campaign = await (await fetch(new URL("rv-campaign.json", pageUrl))).json();
 const missions = campaign.series.reduce((n, s) => n + s.missions.length, 0);
 await h2.waitForFunction((n) => document.querySelectorAll("#mission option").length === n + 1, missions, { timeout: 20000 }).catch(() => {});
@@ -178,8 +182,17 @@ check(`the host's menu: the barracks and the campaign's ${missions} missions`, (
 check("the host's frame rate is 30", (await h2.$eval("#fps", (el) => el.value)) === "30");
 await h2.click("#fly");
 const flying = (page) => page.waitForFunction(() => window.DOSBox && window.DOSBox._wc_web_in_flight && window.DOSBox._wc_web_in_flight() === 1, null, { timeout: 150000 }).then(() => true, () => false);
-const [hf, wf] = await Promise.all([flying(h2), flying(w2)]);
-check("both pages fly", hf && wf);
+check(`a host alone in room ${room2} of two flies: nobody is waited for`, await flying(h2));
+check("as the host", (await bytes(h2, rv.RV_DS_rvNetRole, 1))[0] === 1);
+const offered = await w2.waitForFunction((code) => Array.from(document.querySelectorAll("#hallLog a.roomcode")).some((x) => x.textContent === code), room2, { timeout: 20000 }).then(() => true, () => false);
+check("the host's Fly advertised the room in the lobby", offered, await w2.$eval("#hallLog", (el) => el.textContent.slice(-160)));
+check("and the host is in the lobby still", await inLobby(h2));
+if (offered) await w2.evaluate((code) => Array.from(document.querySelectorAll("#hallLog a.roomcode")).find((x) => x.textContent === code).click(), room2);
+else { await w2.fill("#room", room2); await w2.click("#join"); }   // (the code typed: the checks after this still run)
+await w2.waitForFunction(() => !document.getElementById("lobby").hidden && document.getElementById("roster").children.length > 1, null, { timeout: 30000 });
+await sleep(10000);   // (the host flies on alone meanwhile)
+await w2.click("#fly");
+check("the wingman's Fly takes it into the mission in progress", await flying(w2));
 for (const page of [h2, w2]) { await page.focus("#canvas"); await page.keyboard.press("s"); }   // (stopped: where each is holds still)
 await sleep(8000);
 const [hs, ws] = [await shared(h2), await shared(w2)];

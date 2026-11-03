@@ -730,12 +730,15 @@ export function initHall(opts) {
   // The pilot's room, said without typing its code.  "Advertise" sends the
   // whole offer (code, mission, free seats); when the pilot's lines are
   // used up for the moment it waits in the box.
-  async function advertise() {
-    if (shut) return false;
+  // (auto: the page's own, as a flight begins in a room with a seat free: only for a pilot in the lobby, and
+  // nothing left in the input when the line has to wait)
+  async function advertise({ auto = false } = {}) {
+    if (shut || (auto && !inside())) return false;
     const mine = await opts.room();
-    if (!mine) { if (inside()) note("Nothing to advertise (step 2 says why)."); return false; }
+    if (!mine) { if (inside() && !auto) note("Nothing to advertise (step 2 says why)."); return false; }
     if (!inside() && !(await enter())) return false;
     if (say(mine.offer)) { $("hallInput").value = ""; hint(); return true; }
+    if (auto) return false;
     $("hallInput").value = mine.offer;
     hint();
     return false;

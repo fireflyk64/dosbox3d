@@ -299,18 +299,20 @@ await sleep(3);
 check("and a reload stays out", await c.$eval("#hallBody", (el) => el.hidden), null);
 await c.context().close();
 
-// Flying leaves the lobby.
+// Flying keeps the pilots in the lobby (the user, 2026-11-03: "everyone can always stay in the lobby during game").
 await a.click("#fly");
-check("the host's Fly takes it out of the lobby", await a.waitForFunction(() => /left the lobby to fly/.test(document.getElementById("hallState").textContent) && document.getElementById("hallEnter").disabled, null, { timeout: 30000 }).then(() => true, () => false), await text(a, "hallState"));
-check("and the wingman, whose game it starts", await b.waitForFunction(() => /left the lobby to fly/.test(document.getElementById("hallState").textContent), null, { timeout: 30000 }).then(() => true, () => false), await text(b, "hallState"));
-// When the game is over the pilot is back (the line is what the hooks log
-// when the game's program ends).
 await a.waitForFunction(() => !!window.DOSBox, null, { timeout: 60000 }).catch(() => {});
 await sleep(2);
-check("nobody is in the lobby while flying", (await a.$eval("#hallBody", (el) => el.hidden)) && (await b.$eval("#hallBody", (el) => el.hidden)), null);
+check("the host and the wingman stay in the lobby while flying", (await inside(a)) && (await inside(b)) && (await pilots(a, 2)), [await text(a, "hallState"), await text(a, "hallRoster")]);
+// The host's game waiting at a briefing for a wingman says so in the room's chat (the line is the layer's).
+await a.evaluate(() => window.DOSBox.print("wcnet: waiting on the other player, BRAVO, at the briefing"));
+check("a wait at the briefing is said in the room's chat", await a.waitForFunction(() => /Waiting on the other player \(BRAVO\)/.test(document.getElementById("chatLog").textContent), null, { timeout: 10000 }).then(() => true, () => false), await text(a, "chatLog"));
+await a.evaluate(() => window.DOSBox.print("wcnet: the other player is at the briefing: the mission begins"));
+check("and its end", await a.waitForFunction(() => /the mission begins/.test(document.getElementById("chatLog").textContent), null, { timeout: 10000 }).then(() => true, () => false), await text(a, "chatLog"));
+// When the game is over the pilot is in the lobby still (the line is what the hooks log when the game's program ends).
 await a.evaluate(() => window.DOSBox.print("wcnet: Wing Commander ended"));
-check("a pilot whose game is over is back in the lobby", await a.waitForFunction(() => !document.getElementById("hallBody").hidden && /^1 in the lobby/.test(document.getElementById("hallRoster").textContent), null, { timeout: 30000 }).then(() => true, () => false), [await text(a, "hallState"), await text(a, "hallRoster")]);
-check("and the one who still flies is not", await b.$eval("#hallBody", (el) => el.hidden), null);
+await sleep(1);
+check("a pilot whose game is over is in the lobby", await inside(a), [await text(a, "hallState"), await text(a, "hallRoster")]);
 // (The page's "stopped by itself" status lands 300 ms after the ended line: let it, or it overwrites the click's answer.)
 await sleep(1);
 await click(a, codeA);
@@ -373,7 +375,7 @@ check("a room for a game this browser lacks is not joined", !got.room && got.not
 await ownRoom(tango);
 const codeT = await value(tango, "room");
 await romeo.uncheck("#private");
-check("Private is remembered by the browser", (await romeo.evaluate(() => localStorage.getItem("wc:private"))) === "0", null);
+check("Private is not remembered by the browser", (await romeo.evaluate(() => localStorage.getItem("wc:private"))) === null, null);
 const uniform = await open("UNIFORM", opened);
 await inside(uniform); await pilots(uniform, 6);
 got = await openGame(uniform);

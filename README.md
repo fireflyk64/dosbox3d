@@ -106,7 +106,9 @@ room's code starts with its game, `WC1-4821`, `WC2-`, `SM2-`, `SO1-`,
 `SO2-`, `SO3-`, `SO3P-` (the Culloden campaign and its three-seat version,
 `so3/README.md`), and a code said in the lobby is a link: a click joins that
 room, if the game loaded on the page is that game.  "Advertise" sends the pilot's
-room (code, mission, free seats), and `/room` in a line is its code.
+room (code, mission, free seats), and `/room` in a line is its code; Fly
+sends it by itself while the room has a seat free, the pilot stays in the
+lobby while flying, and whoever comes joins the mission in progress.
 Nobody runs the lobby, so each page keeps its
 rules for its own player and for what the others send: lines of 60
 characters, two to start with and then one every ten seconds (one a second
