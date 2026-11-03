@@ -60,9 +60,9 @@ enum {
 	FN_NAME = 0x10,       /* the block's bundle: a slot; its name: what it is to hold, replacing what it holds */
 	FN_STATUS = 0x11,     /* the block's stat_* filled in */
 	FN_DRAW = 0x20,       /* the block's bundle .. ext_rows; its result says how it went */
-	FN_DEBRIS = 0x30,     /* (1.1) a wreck's debris: the block's fb .. ext_rows and its debris part; result 0 */
+	FN_DEBRIS = 0x30,     /* (1.2) a wreck's debris: the block's fb .. ext_rows and its debris part; result 0 */
 	RVGX_SIG_IN_BX = 0x5256, RVGX_SIG_IN_CX = 0x4758, RVGX_SIG_OUT_BX = 0x7867,
-	RVGX_VERSION = 0x0101
+	RVGX_VERSION = 0x0102
 };
 
 /* the result word */
@@ -75,9 +75,9 @@ enum {
 	B_EXT_OFF = 32, B_EXT_SEG = 34, B_EXT_Y0 = 36, B_EXT_ROWS = 38,
 	B_NAME_OFF = 40, B_NAME_SEG = 42,
 	B_STAT_DRAWS = 48, B_STAT_PX = 52, B_STAT_US = 56, B_STAT_READY = 60, B_STAT_WAITING = 62,
-	/* (1.1) the debris part, the game's RvDebris (retrovega/src/debris.h) packed */
+	/* (1.2) the debris part, the game's RvDebris (retrovega/src/debris.h) packed (1.1's had six colours a ramp) */
 	B_D_SEED = 64, B_D_AGE = 66, B_D_LIFE = 68, B_D_COUNT = 70, B_D_FOCAL = 72, B_D_CX = 74, B_D_CY = 76,
-	B_D_X = 78, B_D_Y = 82, B_D_Z = 86, B_D_SPREAD = 90, B_D_PIECE = 94, B_D_M = 98, B_D_METAL = 116, B_D_HOT = 122,
+	B_D_X = 78, B_D_Y = 82, B_D_Z = 86, B_D_SPREAD = 90, B_D_PIECE = 94, B_D_M = 98, B_D_METAL = 116, B_D_HOT = 124,
 	B_SIZE = 128
 };
 
@@ -377,10 +377,10 @@ static int debris(void)
 	d.piece = (int32_t)real_readd(g_block_seg, g_block_off + B_D_PIECE);
 	for (int i = 0; i < 9; i++)
 		d.m[i] = rs(B_D_M + 2 * i);
-	for (int i = 0; i < DEBRIS_SHADES; i++) {
+	for (int i = 0; i < DEBRIS_METAL; i++)
 		d.metal[i] = real_readb(g_block_seg, g_block_off + B_D_METAL + i);
+	for (int i = 0; i < DEBRIS_HOT; i++)
 		d.hot[i] = real_readb(g_block_seg, g_block_off + B_D_HOT + i);
-	}
 	if (y0 < fb_y0) y0 = fb_y0;
 	if (xa < 0) xa = 0;
 	if (xb > stride) xb = stride;
@@ -469,5 +469,6 @@ void RVGX_Init(void)
 #else
 	LOG_MSG("RVGX: the sprite accelerator is installed, its bundles from the site");
 #endif
+	rv_debris_prepare();  /* (the debris' tumble made now, not at a flight's first kill) */
 	DOS_AddMultiplexHandler(RVGX_Multiplex);
 }

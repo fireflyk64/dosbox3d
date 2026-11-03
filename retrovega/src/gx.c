@@ -44,14 +44,14 @@ typedef struct {
     unsigned short pad0, pad1;
     unsigned long stat_draws, stat_px, stat_us;
     unsigned short stat_ready, stat_waiting;
-    RvDebris debris;                    /* (1.1) GX_DEBRIS: the cloud (debris.h, packed) */
+    RvDebris debris;                    /* (1.2) GX_DEBRIS: the cloud (debris.h, packed) */
 } GxBlock;
 #pragma pack()
 typedef char gx_block_is_128_bytes[sizeof(GxBlock) == 128 ? 1 : -1];
 
 static GxBlock __far g_block;
 static int g_present, g_setting = 1;    /* (high detail is on by default) */
-static int g_minor;                     /* the card's version's second number: 1 and up draws debris */
+static int g_minor;                     /* the card's version's second number: 2 and up draws debris (1.1 had other colours) */
 static unsigned long __far g_debris_draws;
 static unsigned long __far g_fell[6];   /* draws refused, by reason: g_fell[1] -1 .. g_fell[5] -5 */
 static unsigned long __far g_drawn;
@@ -108,7 +108,7 @@ void gx_want(const unsigned char *types, int n)
     }
 }
 
-int gx_debris_on(void) { return g_present && g_setting && g_minor >= 1; }
+int gx_debris_on(void) { return g_present && g_setting && g_minor >= 2; }
 
 RvDebris __far *gx_debris_args(void) { return &g_block.debris; }
 

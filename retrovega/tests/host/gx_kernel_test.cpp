@@ -227,10 +227,10 @@ static int debris(long n)
 		d.piece = wild(200);
 		for (int i = 0; i < 9; i++)
 			d.m[i] = (int16_t)(rnd() % 8 ? (int)(rnd() % 513) - 256 : (int)rnd());
-		for (int i = 0; i < DEBRIS_SHADES; i++) {
+		for (int i = 0; i < DEBRIS_METAL; i++)
 			d.metal[i] = (uint8_t)(1 + i);
+		for (int i = 0; i < DEBRIS_HOT; i++)
 			d.hot[i] = (uint8_t)(101 + i);
-		}
 		drawn += rv_debris_draw(&d, fb.data(), fb_y0, stride, y0, y1, xa, xb, use_ext ? ext.data() : 0, ext_y0,
 		                        use_ext ? ext_rows : 0);
 		for (int r = 0; r < rows; r++) {
@@ -269,8 +269,10 @@ static int debris(long n)
 	d.z = 16 * 900;                     /* 900 km off, a fighter's cloud */
 	d.piece = 60;
 	d.m[0] = d.m[4] = d.m[8] = 256;
-	for (int i = 0; i < DEBRIS_SHADES; i++)
-		d.metal[i] = d.hot[i] = (uint8_t)(1 + i);
+	for (int i = 0; i < DEBRIS_METAL; i++)
+		d.metal[i] = (uint8_t)(1 + i);
+	for (int i = 0; i < DEBRIS_HOT; i++)
+		d.hot[i] = (uint8_t)(1 + i);
 	std::vector<uint8_t> fb(640 * 350);
 	double ms = 0;
 	long reps = 0, px = 0;

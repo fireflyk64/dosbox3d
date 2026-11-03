@@ -33,7 +33,7 @@ MEM_ARRAY(uint16_t, g_map_arr, MAP_W)
 #define HAZES_A_SHIP 3                  /* a ship's at once: under fire, the next takes its oldest's place */
 #define HAZE_STEPS 64                   /* its table of density by distance squared */
 #define WRECK_CLOUDS 3                  /* wrecks at once, in the effects' pool */
-#define WRECK_SHARDS 40                 /* a wreck's shards (debris.c: and half as many embers) */
+#define WRECK_SHARDS 40                 /* a wreck's chunks (debris.c: and half as many embers) */
 
 typedef struct { uint8_t cel, thr; uint16_t gain, grow, spark, debris; } Tl;   /* EXPLODE.DAT's timeline records */
 
@@ -87,8 +87,8 @@ static int16_t __far g_ready;
 /* the frame's camera, for the wrecks' debris (drawn on the host: debris.c), and their colours from the flight palette:
  * the neutral hull greys dark to light, the fire's entries dim to white */
 static int16_t __far g_wm[9], __far g_wfocal, __far g_wcx, __far g_wcy;
-static const uint8_t __far k_wreck_metal[DEBRIS_SHADES] = { 161, 168, 180, 192, 197, 203 };
-static const uint8_t __far k_wreck_hot[DEBRIS_SHADES] = { 131, 133, 135, 137, 139, 143 };
+static const uint8_t __far k_wreck_metal[DEBRIS_METAL] = { 161, 168, 180, 186, 192, 197, 201, 203 };
+static const uint8_t __far k_wreck_hot[DEBRIS_HOT] = { 131, 135, 139, 143 };
 #define WRECK_ALL 0x7FFF                /* (a wreck's rpx: the eye is in it, every row may hold a piece) */
 #ifdef RV_HOST
 RvDebris g_host_debris;                 /* (gx_debris_args off DOS: gx.h) */
@@ -166,6 +166,10 @@ int16_t explode_flight_start(void)
     static const char __far s_room[] = "explode: room for %d, a cache of %d cels (%u bytes)";
     int16_t i;
     explode_flight_end();
+#ifdef RV_HOST
+    rv_debris_prepare();                /* (the native builds' debris tumble made now, not at the first kill; the card
+                                           makes its own when it is installed) */
+#endif
     if (!g_blk)
         return 0;
     if (!g_cache_mem)
@@ -622,7 +626,7 @@ static void wreck_draw(const Boom __far *b, int16_t y0, int16_t y1, const int16_
     d->y = b->cam_y;
     d->z = b->depth / 16;
     d->spread = wreck_spread(b);
-    d->piece = b->r16 / 15;
+    d->piece = b->r16 / 6;               /* (a chunk a sixth of the hull's radius: torn-off plating, not grit) */
     _fmemcpy(d->m, g_wm, sizeof d->m);
     _fmemcpy(d->metal, k_wreck_metal, sizeof d->metal);
     _fmemcpy(d->hot, k_wreck_hot, sizeof d->hot);

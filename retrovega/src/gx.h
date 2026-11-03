@@ -45,7 +45,7 @@ int gx_draw(unsigned type, int view, int mirror, int x, int y, int scale, int ro
             const short __far *ext, int ext_y0, int ext_rows);
 
 /* a wreck's debris (debris.h): its cloud written into gx_debris_args (the card's own block), then drawn by the card
- * into the run being drawn, as gx_draw's; nothing without a card of 1.1 or later, or with the setting off: DOS alone
+ * into the run being drawn, as gx_draw's; nothing without a card of 1.2 or later, or with the setting off: DOS alone
  * shows no debris (the user's ruling, 2026-11-03) */
 int gx_debris_on(void);
 RvDebris __far *gx_debris_args(void);

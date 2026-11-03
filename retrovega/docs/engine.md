@@ -2049,8 +2049,15 @@ A death must keep its 9 to the end of a step (the slot may be cleared any
 time after): fx.c looks between steps. The pictures and the sounds take
 their own random stream, never `game_rand`, and are each machine's own.
 Ship destruction blasts use a 40% larger radius relative to the hull, including the six capital-ship bursts and their final blast.
-Each destroyed ship also leaves a cloud of debris for seven seconds: forty tumbling shards of hull, lit by their faces as
-they turn, glowing while hot (one in four for longer), and embers flying out ahead of them (`src/debris.c`). Every piece
+Each destroyed ship also leaves a cloud of debris for seven seconds: forty chunks of armour plating tumbling away, glowing
+while hot (one in four for longer), and embers flying out ahead of them (`src/debris.c`). The chunks are cut from the
+plate's damage stamps (the user: "we need some kind of photo source. Like those armor chunks in the interstitial ... those
+could be almost reused directly. I guess they would need to tumble"): `tools/debris.py` takes eight windows of bare torn
+metal from `art/places/plate/big_NN.png`, gives each a torn outline (a few long strips, a few broad pieces) and writes
+their light to `src/debris_art.h`. The tumble is made once: each chunk turns as a flat piece of plating about an axis in
+its plane, narrowing to a sliver edge on, its back mirrored and darker, lit by how squarely it faces the key light; drawn
+as the rocks are, a picture a frame, upright and only scaled (the user: "axis aligned asteroids are the best analogy ...
+they will be tumbling so rolling won't be noticeable"), in eight greys, or four fire colours while hot. Every piece
 follows from the wreck's seed and age in world space, about the wreck's coasting position, so flying past or turning gives
 parallax and nothing is kept between frames. Three clouds at most share the 16-effect pool; new explosions take priority
 over old wrecks. The debris is drawn on the host, not by RV.EXE (the user's design, 2026-11-03: "those FX could simply not
