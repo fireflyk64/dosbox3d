@@ -45,6 +45,7 @@ try {
     null, { timeout: 90000 });
   ok(/[?&]retrovega/.test(page.url()), `the page offers RetroVega (${page.url()})`);
   await shot("page", true);
+  ok((await page.locator("#seats").inputValue()) === "1", "a phone's room is a room of one to begin with");
   await page.locator("#seats").fill("1");
   await page.locator("#join").tap();
   await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 30000 });
@@ -98,6 +99,12 @@ try {
   ok(/saved bunk 2 'Cal Brody'/.test(t), "typed a name with the Keys button: bunk 2 'Cal Brody'");
   await page.locator("#touchKeys").tap();        // (the keyboard away)
   await shot("bunk-typed");
+  // (in full screen every button its own place: none on another, 2026-11-03: Target, Comm and Missile had piled up on Esc)
+  const boxes = await page.evaluate(() => ["touchKeys", "touchEsc", "touchTgt", "touchComm", "touchMissile", "touchFire"]
+    .map((id) => { const b = document.getElementById(id).getBoundingClientRect(); return { id, x0: b.left, y0: b.top, x1: b.right, y1: b.bottom }; }));
+  const overlap = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+  const piled = boxes.flatMap((a, i) => boxes.slice(i + 1).filter((b) => overlap(a, b)).map((b) => a.id + "/" + b.id));
+  ok(piled.length === 0, "the touch buttons lie apart" + (piled.length ? ": " + piled.join(", ") : ""));
   await page.locator("#touchEsc").tap();         // Esc: back to the list
   await sleep(800);
   await tap(600, 380);                // outside the panel: closed
