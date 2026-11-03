@@ -77,6 +77,8 @@
 #define RV_SV_ARMOR_L 4
 #define RV_SV_ARMOR_RT 5
 #define RV_FACE 352
+#define RV_FACE_X 24
+#define RV_FACE_Y 62
 #define RV_CP_LAYERS 32
 #define RV_CP_FIRST 208
 

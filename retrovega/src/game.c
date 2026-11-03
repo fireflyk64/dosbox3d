@@ -513,8 +513,8 @@ static void ambient_talk(void)
 
 /* --- close-ups: a person speaking --- */
 
-#define FACE_X 24
-#define FACE_Y 62
+#define FACE_X RV_FACE_X
+#define FACE_Y RV_FACE_Y
 
 static int g_close_room, g_close_back;      /* the close-up's room, and the mode it goes back to */
 

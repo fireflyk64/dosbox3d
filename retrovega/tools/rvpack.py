@@ -56,6 +56,8 @@ VERSION = 6
 SCREEN = (640, 400)
 ROOMS = ['bar', 'lounge', 'briefing', 'quarters', 'locker', 'deck']
 FACE = 352                      # close-up face size (the 256 px faces scaled 1.375)
+FACE_X, FACE_Y = 24, 62          # the portrait's origin on screen, also emitted for game.c
+FACE_FRAME = 16
 # Orbitron (SIL OFL 1.1, art/fonts/), the user's pick for the futuristic look:
 # bold for body text, black for titles.  (file, pixels, weight)
 FONT_FILES = {'body': ('Orbitron.ttf', 13, 700), 'title': ('Orbitron.ttf', 22, 900)}
@@ -701,9 +703,7 @@ def pack_comms(pack, d, ships_csv):
 
 
 def round_shoulders(im):
-    """The bust's shoulders ran into the sides of its square and stopped there like stubs (the user): their outer top corners cut to a
-    quarter ellipse from the row each first touches the side, so they fall away instead.  As big as that side's stub is tall: a pilot's
-    shoulder touches the side much lower down than Kit's, and one size cut into their sleeves (the user: "you cut too much")."""
+    """Kit's outer shoulder corners fall away in quarter ellipses instead of ending in square stubs."""
     a = np.array(im)
     h, w = a.shape[:2]
     for side in (0, w - 1):
@@ -717,13 +717,48 @@ def round_shoulders(im):
     return Image.fromarray(a)
 
 
+def frame_portrait(im):
+    """A 16-pixel battleship steel frame outside the bust; its bottom rail fits above the screen's 8-pixel margin.
+    The portrait keeps its scale and origin, so its mouth and eye patches still line up."""
+    b = FACE_FRAME
+    w, h = im.width + 2 * b, min(im.height + 2 * b, SCREEN[1] - FACE_Y + b - 8)
+    y, x = np.indices((h, w))
+    grain = ((x * 17 + y * 29 + x * y % 13) % 7 - 3) + (y % 3 == 0) * 2
+    steel = np.clip(np.array((78, 88, 96)) + grain[..., None], 0, 255).astype(np.uint8)
+    a = np.dstack((steel, np.full((h, w), 255, np.uint8)))
+    a[b:h - b, b:w - b, 3] = 0
+    framed = Image.fromarray(a)
+    framed.paste(im.crop((0, 0, im.width, h - 2 * b)), (b, b))
+    dr = ImageDraw.Draw(framed)
+    # Raised outer bevel, recessed inner lip: light from above and left.
+    for i, (light, dark) in enumerate(zip((32, 148, 112), (18, 34, 48))):
+        dr.line([(i, h - 1 - i), (i, i), (w - 1 - i, i)], fill=(light, light + 5, light + 8))
+        dr.line([(w - 1 - i, i + 1), (w - 1 - i, h - 1 - i), (i + 1, h - 1 - i)],
+                fill=(dark, dark + 5, dark + 8))
+    for i, (dark, light) in enumerate(zip((46, 30, 18), (112, 142, 76))):
+        r = b - 3 + i
+        dr.line([(r, h - 1 - r), (r, r), (w - 1 - r, r)], fill=(dark, dark + 5, dark + 8))
+        dr.line([(w - 1 - r, r + 1), (w - 1 - r, h - 1 - r), (r + 1, h - 1 - r)],
+                fill=(light, light + 5, light + 8))
+    for cx, cy in ((8, 8), (w - 9, 8), (8, h - 9), (w - 9, h - 9)):
+        dr.ellipse((cx - 4, cy - 4, cx + 4, cy + 4), fill=(26, 32, 38), outline=(126, 136, 144))
+        dr.ellipse((cx - 2, cy - 2, cx + 2, cy + 2), fill=(110, 120, 128))
+        dr.line((cx - 2, cy + 2, cx + 2, cy - 2), fill=(28, 34, 40))
+    return framed
+
+
 def pack_people(pack, keys, comms=None):
     out = []
     for key in keys:
         d = os.path.join(ROOT, 'art', 'people', 'faces', key)
         fj = json.load(open(os.path.join(d, 'face.json')))
         k = FACE / fj['size']
-        base = round_shoulders(Image.open(os.path.join(d, 'base.png')).convert('RGBA').resize((FACE, FACE), Image.LANCZOS))
+        base = Image.open(os.path.join(d, 'base.png')).convert('RGBA').resize((FACE, FACE), Image.LANCZOS)
+        if key == 'TECH':
+            base = round_shoulders(base)
+        offset = 0 if key == 'TECH' else -FACE_FRAME
+        if key != 'TECH':
+            base = frame_portrait(base)
         mouths = [Image.open(os.path.join(d, 'mouth_%d.png' % i)).convert('RGBA') for i in range(9)]
         eyes = [Image.open(os.path.join(d, 'eyes_%d.png' % i)).convert('RGBA') for i in range(3)]
         mb, eb = fj['mouth_box'], fj['eye_box']
@@ -735,7 +770,7 @@ def pack_people(pack, keys, comms=None):
         pal = Palette(UI + [(0, 0, 0)] * 48 + part)
         allowed = [0] + list(range(64, 256))
         pp = pack.add('ppal_' + key[:12], 'PALPART', struct.pack('<BB', 64, 192) + vga(part))
-        b = add_sprite(pack, 'face_' + key[:12], base, pal, 0, 0, allowed)
+        b = add_sprite(pack, 'face_' + key[:12], base, pal, offset, offset, allowed)
         m0 = None
         for i, m in enumerate(mouths):
             j = add_image(pack, 'mouth%d_%s' % (i, key[:10]), m.convert('RGB'), pal, mpos[0], mpos[1], allowed)
@@ -745,7 +780,7 @@ def pack_people(pack, keys, comms=None):
             j = add_image(pack, 'eyes%d_%s' % (i, key[:10]), e.convert('RGB'), pal, epos[0], epos[1], allowed)
             e0 = j if e0 is None else e0
         bb = np.asarray(base)[..., 3] >= 128
-        top = int(np.nonzero(bb.any(axis=1))[0][0])
+        top = int(np.nonzero(bb.any(axis=1))[0][0]) + offset
         out.append(struct.pack('<10sHHHHhH', key.encode()[:9], pp, b, m0, e0, top, (comms or {}).get(key, 0xFFFF)))
     return out
 
@@ -912,7 +947,8 @@ def header(room_size, person_size, cockpit_size):
     lines += ['#define RV_SV_%s %d' % (k, getattr(panels, 'SV_' + k)) for k in ('SHIP', 'BASE', 'RANKS', 'SHIELD_F',
                                                                                'SHIELD_R', 'ARMOR_F', 'ARMOR_R',
                                                                                'ARMOR_L', 'ARMOR_RT')]
-    lines += ['#define RV_FACE %d' % FACE, '#define RV_CP_LAYERS %d' % CP_LAYERS,
+    lines += ['#define RV_FACE %d' % FACE, '#define RV_FACE_X %d' % FACE_X, '#define RV_FACE_Y %d' % FACE_Y,
+              '#define RV_CP_LAYERS %d' % CP_LAYERS,
               '#define RV_CP_FIRST %d' % CP_FREE[0], '']
     for bit in sorted(cockpits.BIT_NAMES):
         lines.append('#define RV_CPD_%s %d' % (cockpits.BIT_NAMES[bit].upper(), bit))
