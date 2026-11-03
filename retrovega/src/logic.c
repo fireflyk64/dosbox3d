@@ -57,7 +57,7 @@ typedef struct {
                                            attack speed */
     uint8_t burst_left;                 /* the leave's afterburner: steps left of this burst */
     uint8_t leg;                        /* an escort target out with jump=N: the waypoint it is making for (0: the first) */
-    uint8_t pad_;                       /* (even) */
+    uint8_t raiding;                    /* the player's escort target it was sent after, its slot + 1 (raid_target); 0 none */
 } Mind;
 enum { FIRE_GUNS = 1, FIRE_MISSILE = 2 };
 static Mind __far g_mind[NUM_SHIP_SLOTS];
@@ -2791,6 +2791,38 @@ static int16_t avoid_break(int16_t s, Mind __far *m, const AiProfile __far *p)
     return 0;
 }
 
+/* An escort target of the player's side about (a transport the player guards): one fighter of its enemies goes for
+ * it, the one nearest it, and keeps at it until it is gone or the fighter is; then the next nearest (the user,
+ * 2026-11-03: "the enemies don't seem particularly interested in it even though at least one should go for it").  The
+ * player's taunt still turns the raider (logic_taunt).  Only the other side's fighters raid: a wingman's targets stay
+ * its orders'.  For s: the escort target to go for, -1 none */
+#define RAID_KM 20000                   /* an escort target this near draws its raider */
+static int16_t escorted(int16_t s);
+
+static int16_t raid_target(int16_t s)
+{
+    int16_t e, k, best = -1;
+    int32_t d, bd = INT32_C(0x7FFFFFFF);
+    if (commAnimInfo[s] == commAnimInfo[0] || maybeEntityType[s] != ET_SHIP || g_mind[s].leaving)
+        return -1;
+    for (e = 1; e < NUM_SHIP_SLOTS; e++)    /* (the escort target of the player's side nearest it) */
+        if (slot_is_ship(e) && shipAiState[e] != 9 && escorted(e) && commAnimInfo[e] == commAnimInfo[0]
+            && (d = km_between(s, e)) < RAID_KM && d < bd) {
+            bd = d;
+            best = e;
+        }
+    if (best < 0)
+        return -1;
+    if (g_mind[s].raiding == best + 1)
+        return best;                    /* (already at it) */
+    for (k = 0; k < NUM_SHIP_SLOTS; k++)    /* (one raider an escort target: another at it already, or nearer it) */
+        if (k != s && slot_is_ship(k) && shipAiState[k] != 9 && commAnimInfo[k] == commAnimInfo[s]
+            && maybeEntityType[k] == ET_SHIP && rvController[k] == CTL_AI && !g_mind[k].leaving
+            && (g_mind[k].raiding == best + 1 || km_between(k, best) < bd))
+            return -1;
+    return best;
+}
+
 /* a fighter's mind for a step: its target, its situation, its tactic, its decisions (g_turn, the throttle, fire) */
 static void fighter_think(int16_t s)
 {
@@ -2819,7 +2851,13 @@ static void fighter_think(int16_t s)
             near_ = k;
         }
     }
-    if (near_ >= 0 && bd <= p->engage_km && (m->target == 0xFF || bd * 3 < km_between(s, m->target) * 2))
+    {
+        int16_t raid = raid_target(s);
+        m->raiding = (uint8_t)(raid + 1);
+        if (raid >= 0)
+            m->target = (uint8_t)raid;
+    }
+    if (!m->raiding && near_ >= 0 && bd <= p->engage_km && (m->target == 0xFF || bd * 3 < km_between(s, m->target) * 2))
         m->target = (uint8_t)near_;
     if (m->taunt) {                     /* taunted: the player, wherever it is and whoever is nearer (logic_taunt) */
         m->taunt--;

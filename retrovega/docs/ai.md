@@ -12,7 +12,11 @@ ship is a puppet):
 
 1. **The target.** Its current one is kept while it lives, is an enemy and stays within 1.5 × the profile's
    `engage_km`; else the nearest enemy within `engage_km` (never a cloaked one, `rvFlags` 16). `rvTarget[s]`
-   says which.
+   says which. One fighter of the player's enemies is the **raider** of an escort target of the player's side within
+   `RAID_KM` (20,000 km): the one nearest it, kept at it till one of them is gone, then the next nearest
+   (`raid_target`, `Mind.raiding`); its target is the escort target whoever is nearer (the user, 2026-11-03: "the
+   enemies don't seem particularly interested in it even though at least one should go for it"). The taunt still
+   turns it; the player's wingmen never raid. M5.21.
 2. **The view** of the target (`View`): where it is in the ship's own frame (right, up, ahead, km), its lead
    point (where the guns' shots would meet it: the target's move over the shot's time of flight, twice refined),
    how straight the nose points at it (`cos_nose`) and at the lead point (`cos_aim`), and how straight *its*
@@ -222,7 +226,7 @@ a minute to nine, unhindered; light fighters do not (measured on the host, 2026-
 
 The comm menu's taunt (`logic_taunt`, an enemy fighter as the player's target) turns it on the player for 20 s: its
 target is the player wherever the player is and whoever is nearer, and it holds no fire for being the player's
-selected target (`holds_fire`), so a taunt draws a fighter off a wingman or an escort at the taunter's own risk. A ship
+selected target (`holds_fire`), so a taunt draws a fighter off a wingman or an escort (the raider too) at the taunter's own risk. A ship
 already breaking off for good stays gone; a capital ship does not rise to it, though it answers. M10.9 checks it.
 
 ## Adding a behaviour

@@ -3891,6 +3891,42 @@ static void t_escort_out(void)
     REQUIRE(victoryPoints != 0, e_won, victoryPoints, 0, 0);
 }
 
+/* M5.21: one of the enemies goes for the escort target (the user, 2026-11-03: "the enemies don't seem particularly
+ * interested in it even though at least one should go for it"): two Nicanders near the patrol's Ox, exactly one at it;
+ * that one killed, the other takes it on; taunted, it turns on the player */
+static void t_raid(void)
+{
+    static const char __far e_there[] = "no Ox, or no free slots for the Nicanders (%d, %d, %d)";
+    static const char __far e_one[] = "5 s in, %d of the two Nicanders are at the Ox (targets %d, %d): exactly one";
+    static const char __far e_next[] = "the raider killed, 5 s on the other Nicander's target is %d: the Ox (%d)";
+    static const char __far e_taunt[] = "taunted, the raider's target is %d a step on: the player (0)";
+    int16_t ox = pt_escort(), a = -1, b = -1, k, n, raider, other;
+    for (k = 1; k <= RV_MAX_SHIP_SLOT; k++)
+        if (!slot_is_ship(k)) {
+            if (a < 0)
+                a = k;
+            else if (b < 0)
+                b = k;
+        }
+    REQUIRE(ox > 0 && a > 0 && b > 0, e_there, ox, a, b);
+    pt_ship(a, PT_ENEMY, SIDE_AERA, CTL_AI, 3000, 0, 8000, TURN / 2);
+    pt_ship(b, PT_ENEMY, SIDE_AERA, CTL_AI, -3000, 0, 9000, TURN / 2);
+    if (!pt_steps(5 * SEC))
+        return;
+    n = (rvTarget[a] == ox) + (rvTarget[b] == ox);
+    REQUIRE(n == 1, e_one, n, rvTarget[a], rvTarget[b]);
+    raider = rvTarget[a] == ox ? a : b;
+    other = raider == a ? b : a;
+    (void)pt_hit(0xFFFF, raider, 2000, 2, 0, 0);
+    if (!pt_steps(5 * SEC))
+        return;
+    REQUIRE(rvTarget[other] == ox, e_next, rvTarget[other], ox, 0);
+    (void)logic_taunt(other);
+    if (!pt_step())
+        return;
+    REQUIRE(rvTarget[other] == 0, e_taunt, rvTarget[other], 0, 0);
+}
+
 /* M8.33: an escort target out with jump=2 goes through nav 1 with the player and jumps only short of nav 2 (the user,
  * 2026-11-03: "the ox should jump at nav 2 not nav 1"): it holds at nav 1 while the enemies there are about, goes on
  * when they are gone, and is out of the world, not killed, by nav 2 */
@@ -4189,6 +4225,9 @@ static void t_attack_capital(void)
         g_tm.ship[g_tm.nship - 1].role = RV_ESCORT_HOME;
         g_tm.ship[g_tm.nship - 1].noturrets = 1;
         pt_launch(PT_PLAYER);
+        randomSeed = UINT32_C(0x52560000) + 108 * 977;   /* (its own dice, whatever its place in the table: its count of 16
+                                                           is a measure near its limit, and these are the ones it was
+                                                           measured with, at index 108 until 2026-11-03) */
         playerCanBeDamaged = 0;
         g_sys.armed = 0;
         pt_put(0, 0, 0, 30000, 0);
@@ -6008,6 +6047,7 @@ static const char __far n_m5_15[] = "M5.15 leave (fear_step, leave_step): a scar
 static const char __far n_m5_16[] = "M5.16 home (T_HOME): with its side's capital ship about it runs there instead and fights on";
 static const char __far n_m5_17[] = "M5.17 hold-missiles (aim_and_fire): the held fire withholds the missiles too";
 static const char __far n_m5_18[] = "M5.18 dodge-fire (missile_ahead): a missile homing on it from ahead, it fires whatever the hold";
+static const char __far n_m5_21[] = "M5.21 raid (raid_target): one enemy fighter goes for the player's escort target, the next when it dies; a taunt turns it";
 static const char __far n_m5_20[] = "M5.20 easy-hold (g_easy): the held fire only under the easy mode; a selected Shizong fires on a still player";
 static const char __far n_m5_19[] = "M5.19 approach-silent (T_APPROACH): under aim=cone the approach has no guns; the tail from behind has";
 static const char __far n_m6_1[] = "M6.1 ram (step_collisions): ships inside one another are pushed apart, both hurt";
@@ -6105,7 +6145,7 @@ static const PtTest __far k_tests[] = {
     { n_m5_8, t_formation, 0 }, { n_m5_9, t_no_left, 0 }, { n_m5_10, t_waiter, 0 }, { n_m5_11, t_old_straight, 0 },
     { n_m5_12, t_old_hunt, 0 },
     { n_m5_13, t_hold_fire, 0 }, { n_m5_14, t_cone_fire, 0 }, { n_m5_15, t_leave, 0 }, { n_m5_16, t_home, 0 },
-    { n_m5_17, t_hold_missiles, 0 }, { n_m5_18, t_dodge_fire, 0 }, { n_m5_19, t_approach_silent, 0 }, { n_m5_20, t_easy_hold, 0 },
+    { n_m5_17, t_hold_missiles, 0 }, { n_m5_18, t_dodge_fire, 0 }, { n_m5_19, t_approach_silent, 0 }, { n_m5_20, t_easy_hold, 0 }, { n_m5_21, t_raid, 0 },
     { n_m6_1, t_ram, 0 }, { n_m6_2, t_no_ghosts, 0 }, { n_m6_3, t_ram_cost, 0 },
     { n_m7_1, t_launch, 0 }, { n_m7_2, t_missile_key, 0 }, { n_m7_3, t_missile_flies, 0 },
     { n_m7_4, t_missile_hits, 0 }, { n_m7_5, t_missile_homes, 0 }, { n_m7_6, t_missile_ends, 0 },
