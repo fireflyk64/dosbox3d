@@ -376,7 +376,11 @@ afterburner only while closing; off the burner an AI slows at its acceleration, 
 dash at some 22 km/s a frame): straight, shots a fighter 41-98, speed median 330-434; hunted, the nose back after a
 pass in 1.3-3.4 s, 6-9 passes a fighter in their 64-89 s. And the leave (order 5, ovr163:0228; its burner
 ovr143:2F5D, read 2026-11-02) burns in bursts of 40 frames, the next once the ship is down to its top speed: ours held
-the burner on and outran a pursuer.
+the burner on and outran a pursuer. With the measured fighter's approach on no afterburner (`ab_pct` 0: the old one
+closed at its top speed), straight: 19-46 shots a fighter. Hunted by rvsim's test pilot ours now die in 42-80 s, the
+old ones lived 150-190: unexamined. And in the game an enemy wave comes in from 15,000 km (`wave_out`: the old
+arrival; ours had been 4,600), first shots some 12 s after the arrival against the old 18-21 (ours close at some
+900 km/s, the old ones at 610-675: they angle in).
 
 ## What is still to measure
 

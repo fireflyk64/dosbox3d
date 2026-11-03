@@ -224,7 +224,13 @@ wave waits for the first (the user, 2026-11-01): while an enemy fighter is out a
 holds a capital ship or an escort target. A hidden point at the launch itself with nobody out is the way home's encounter
 and waits for the player to have flown a nav point. A wave starts where the old game has it, off its nav point (`at=x,y,z`, km; `tests/wc1/places.py` writes them), and a ship in no
 nav point's list never flies. Enemies at the launch, in four missions, have the wingman start 3,000 km past them
-(`wingman_behind`), to come up behind them. The port took them all for waypoints until 2026-10-31. Fields (`field asteroid|mine x y z radius [density=N]`, km) are read from the old game's mission
+(`wingman_behind`), to come up behind them. The port took them all for waypoints until 2026-10-31. **An enemy wave
+comes in from the old game's distance** (logic.c `wave_out`, 2026-11-02): its autopilot stopped 15,200 km short of
+Enyo's nav 1 and its Dralthi were 15,173 km off, first firing 18 to 25 s on; at our map's 0.45 a wave came 4,600 km
+from an arriving player and fired within seconds, though the fights are at the old game's full scale. So the enemy
+fighters a nav point brings are moved out together along the way from the player to their middle until it is
+`WAVE_KM` (15,000) off, their formation kept (first shots some 12 s on), and the autopilot waits for no enemy within
+16,000 km (`AUTOPILOT_CLEAR_KM`, the engine's lamp the same). Fields (`field asteroid|mine x y z radius [density=N]`, km) are read from the old game's mission
 records (types 0x16 and 0x17) at the map's 0.45, which keeps its layout (six waypoints lie inside a field, as the old
 game's Enyo nav 2 does). **A field is an effect, as the old game's are** (the user, 2026-11-02: "a field effect where
 while inside rocks spawn with velocity towards you ... a few close and a few distant rocks on screen at a time. More

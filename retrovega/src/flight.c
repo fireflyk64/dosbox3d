@@ -2158,14 +2158,14 @@ static void systems_tick(void)
      * flicker and nothing is dark; whole, steady */
     g_sys.lights = g_sys.emcon != EMCON_OFF && !(rvCockpitDamage >> 9 & 1) && !(g_flicker & 2)
                    && (g_st.shield_f >= 100 || (int)(frameCounter & 7) * 100 < g_st.shield_f * 8);
-    /* the nav point: how far; the autopilot when no enemy is within 8,000 km */
+    /* the nav point: how far; the autopilot when no enemy is within 16,000 km (logic.c AUTOPILOT_CLEAR_KM) */
     {
         int32_t km;
         g_sys.nav_km = logic_nav_km(g_sys.nav, &km) && sys_level(SYS_NAV) < 3 ? km : -1;   /* (the nav computer badly hurt: no distance) */
     }
     g_sys.autopilot_ready = g_m != 0 && sys_level(SYS_NAV) < SYS_WRECKED;
     for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
-        if (is_ship(s) && commAnimInfo[s] == 1 && player_km(s) < 8000)
+        if (is_ship(s) && commAnimInfo[s] == 1 && player_km(s) < 16000)
             g_sys.autopilot_ready = 0;
 }
 

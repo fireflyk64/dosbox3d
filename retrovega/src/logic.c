@@ -1783,7 +1783,8 @@ static const AiProfile __far k_profiles[P_COUNT] = {
         { { T_FLEE, 60 }, { T_PURSUE, 40 } } } },
     /* P_FIGHTER: the line fighter, as the old game's Dralthi measured (tests/wc1/README.md): straight at the
      * target at full speed, a hard flat yaw away at 900 km (its passes 250-900 km), round again in a second or two
-     * with a dash of afterburner at every pass, a tail at 55% of its speed (437 km/s: under a player's 300 setting, as
+     * with a dash of afterburner at every pass and none on the way in (ab_pct 0: the old one closed at its top speed,
+     * 2026-11-02), a tail at 55% of its speed (437 km/s: under a player's 300 setting, as
      * the old Dralthi's 466 was under the old player's 600, so it falls back rather than creeps up and bumps) firing
      * from up to 4,000 km at the lead point (its nose sat 4.8 degrees off a crossing player's position: the lead
      * angle; with no lead its tail never hit a player flying straight, the old's did 15% of the time), a volley every
@@ -1792,7 +1793,7 @@ static const AiProfile __far k_profiles[P_COUNT] = {
      * (read in its code, 2026-10-31; the user: keep them as they were, it is fun): far off and in the plain case the
      * silent approach (its maneuver 40) 60% of the time, else its choice (45: the nose on the target with the guns
      * unless the target faces it, then the approach); near, the choice mostly, sometimes the guns at once (29) */
-    { 25000, 4000, 900, 2500, 0, AIM_CONE, PULL_RIGHT | PULL_LEFT, 1, 30, 40, 50, 0, T_CRUISE, 170, 350, 100, 13, 100, 55, 29, 3, 7, 0,
+    { 25000, 4000, 900, 2500, 0, AIM_CONE, PULL_RIGHT | PULL_LEFT, 1, 0, 40, 50, 0, T_CRUISE, 170, 350, 100, 13, 100, 55, 29, 3, 7, 0,
       { { { 0, 0 } }, { { T_APPROACH, 60 }, { T_CLOSE, 40 } }, { { T_CLOSE, 50 }, { T_PURSUE, 30 }, { T_APPROACH, 20 } },
         { { T_PURSUE, 50 }, { T_BREAK, 50 } }, { { T_CLOSE, 60 }, { T_BREAK, 40 } },
         { { T_PURSUE, 70 }, { T_FLEE, 30 } } } },
@@ -3392,7 +3393,8 @@ void logic_end(void)
     victoryPoints = (uint16_t)(missionStatus == 1 && mission_done() && (home || nav_km(0) < NAV_REACH_KM));
 }
 
-#define AUTOPILOT_CLEAR_KM 8000         /* no enemy this near (the engine's autopilot lamp says the same: flight.c) */
+#define AUTOPILOT_CLEAR_KM 16000        /* no enemy this near (the engine's autopilot lamp says the same: flight.c): a wave
+                                           coming in from WAVE_KM holds it, as the old game's scene did (16,000) */
 #define AUTOPILOT_SHORT_KM 4500         /* it stops this far short of the nav point, facing it (the old game's 10,000 km at
                                            its scale: the enemies 14,000 km ahead on arrival, tests/wc1/README.md) */
 #define AUTOPILOT_ESCORT_KM 30000       /* an escort target of the player's side this near comes along, AUTOPILOT_BEHIND_KM
@@ -3717,9 +3719,56 @@ void __far __cdecl delayedDespawn_impl(uint16_t src, uint16_t ship)
 
 /* (nav): the player has reached nav point `nav`: its ships and hazards come (each of its mission ships through
  * outerSpawnShipEntity, at its place off the nav point), once */
+/* An enemy wave comes in from the old game's distance (traced 2026-11-02: its autopilot stopped 15,200 km short of
+ * Enyo's nav 1 and its three Dralthi, 5,000 to 7,000 km beyond the nav, were 15,173 km off; their first shots came 18
+ * to 25 s on).  Our map is at 0.45 of its size, so a wave at its nav point came 4,600 km from an arriving player and
+ * fired within seconds; the fights are at its full scale (the ships' sizes, speeds, reach).  So the enemy fighters
+ * a nav point brings are moved out together, along the way from the player to their middle, until it is WAVE_KM
+ * off; their formation and the nav's other ships stay */
+#define WAVE_KM 15000
+
+static void wave_out(const uint8_t __far *came)
+{
+    static const char __far s_out[] = "logic: the wave of %d moved out from %ld km to %ld km of the player";
+    int32_t cx = 0, cy = 0, cz = 0, d, k;
+    int16_t s, n = 0;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (came[s]) {
+            cx += TO_KM(gPositionVector[s].x - gPositionVector[0].x);
+            cy += TO_KM(gPositionVector[s].y - gPositionVector[0].y);
+            cz += TO_KM(gPositionVector[s].z - gPositionVector[0].z);
+            n++;
+        }
+    if (!n)
+        return;
+    cx /= n;
+    cy /= n;
+    cz /= n;
+    d = len_of(cx, cy, cz);
+    if (d >= WAVE_KM)
+        return;
+    if (d < 100) {                      /* (on the player: out ahead of it) */
+        cx = FIX_MUL(gOrientationFrontVector[0].x, 1000);
+        cy = FIX_MUL(gOrientationFrontVector[0].y, 1000);
+        cz = FIX_MUL(gOrientationFrontVector[0].z, 1000);
+        d = len_of(cx, cy, cz);
+        if (d < 1)
+            return;
+    }
+    k = WAVE_KM - d;                    /* (km to go, along the way out) */
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (came[s]) {
+            gPositionVector[s].x += cx * k / d * KM;
+            gPositionVector[s].y += cy * k / d * KM;
+            gPositionVector[s].z += cz * k / d * KM;
+        }
+    rv_notef(s_out, n, (long)d, (long)WAVE_KM);
+}
+
 void __far __cdecl enterNavPoint_impl(uint16_t nav)
 {
     static const char __far s_nav[] = "logic: nav %u reached: %d ships came";
+    static uint8_t __far came[NUM_SHIP_SLOTS];
     const uint16_t *at;
     int16_t j, n = 0;
     if (nav >= NAVS)
@@ -3729,9 +3778,17 @@ void __far __cdecl enterNavPoint_impl(uint16_t nav)
     if (g_nav_chosen && g_sys.nav == nav)
         g_nav_chosen = 0;               /* (the one the player picked, reached: on along the way) */
     at = NAV_SHIPS(nav);
-    for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
-        if (MSHIP_BEHAVIOUR(at[j]) != 6 && outerSpawnShipEntity(at[j], nav) != 0xFFFF)
+    _fmemset(came, 0, sizeof came);
+    for (j = 0; j < 10 && at[j] != 0xFFFF; j++) {
+        uint16_t s;
+        if (MSHIP_BEHAVIOUR(at[j]) != 6 && (s = outerSpawnShipEntity(at[j], nav)) != 0xFFFF) {
             n++;
+            if (s > 0 && s < NUM_SHIP_SLOTS && maybeEntityType[s] == ET_SHIP && commAnimInfo[s] != commAnimInfo[0]
+                && !MSHIP_ROLE(at[j]))
+                came[s] = 1;            /* (an enemy fighter: out to WAVE_KM with its wave) */
+        }
+    }
+    wave_out(came);
     rv_notef(s_nav, nav, n);
 }
 
