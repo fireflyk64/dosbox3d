@@ -82,8 +82,9 @@ the build, so the game and the emulator in one deploy always agree.
 
 - RetroVega is built into every page (since 2026-11-03, the user: "make the default site include the retrovega flag
   by default and default to that system if there are no other games"; `?retrovega` no longer changes anything): it is
-  in every "Play" menu and the game of a page with no other. The public lobby is the loaded game's: RetroVega's
-  pilots meet in `RV-LOBBY` (and `RV-LOBBY0` ...), the others in `WC-LOBBY`; a page that switches games moves.
+  in every "Play" menu and the game of a page with no other. Every game's pilots meet in the one public lobby,
+  `WC-LOBBY` (the user: "We have to have a unified lobby...splitting people in an almost abandoned service will not
+  help it grow"); the roster tags each pilot with their game (`RV`, `WC1` ...), and a page that switches games stays.
 - `web/gamefiles.js`'s `rv` entry flies together (no `noFlight`): the mission menu is "Campaign from the quarters"
   and every mission of the campaign, read from `rv-campaign.json` (`tools/rvdata.py` writes `RVNET.JSON` from the same
   packed records as `RVGAME.DAT`; `scripts/build-web.sh` puts it beside the page), so the menu follows the campaign.

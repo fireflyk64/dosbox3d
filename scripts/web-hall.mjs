@@ -64,14 +64,15 @@ function zipOf(name, data) {
 }
 
 // -- room codes follow the game ---------------------------------------------------
-// A page with no files brought plays RetroVega, built in (since 2026-11-03), and its pilot is in RetroVega's own
-// lobby; a game the hooks do not know takes the pilot out, Wing Commander puts it in WC-LOBBY, RetroVega back in
-// RV-LOBBY.  (hall: "", the public lobbies' own names, on this test's lobby server.)
+// A page with no files brought plays RetroVega, built in (since 2026-11-03), and its pilot is in the one public
+// lobby, WC-LOBBY, every game's (the user: "We have to have a unified lobby"); a game the hooks do not know takes
+// the pilot out, Wing Commander puts it back, and switching games keeps it there on the same connection, with the
+// new game's tag.  (hall: "", the public lobby's own name, on this test's lobby server.)
 const none = await open("NOGAME", { game: false, hall: "" });
 check("a page with nothing brought plays RetroVega: its room code is RV- and four digits", (await value(none, "program")) === "rv" && /^RV-\d{4}$/.test(await value(none, "room")), [await value(none, "program"), await value(none, "room")]);
 const lobbyAt = (page) => page.evaluate(() => { const n = window.__wcHall.test.net(); return n ? n.code : ""; });
 const inLobby = (page, code) => page.waitForFunction((c) => { const n = window.__wcHall.test.net(); return n && n.code === c && !document.getElementById("hallBody").hidden; }, code, { timeout: 30000 }).then(() => true, () => false);
-check("and is in RetroVega's lobby by itself", (await inLobby(none, "RV-LOBBY")) && sockets.NOGAME.length === 1 && /RV-LOBBY/.test(await text(none, "hallNote")), [await lobbyAt(none), sockets.NOGAME, await text(none, "hallState")]);
+check("and is in the public lobby, WC-LOBBY, by itself", (await inLobby(none, "WC-LOBBY")) && sockets.NOGAME.length === 1 && /WC-LOBBY/.test(await text(none, "hallNote")), [await lobbyAt(none), sockets.NOGAME, await text(none, "hallState")]);
 check("with the game's tag", /NOGAME \(you\)\s*RV/.test(await text(none, "hallRoster")), await text(none, "hallRoster"));
 const closed = (page) => page.evaluate(() => document.getElementById("hallBody").hidden && document.getElementById("hallEnter").disabled && !document.getElementById("hallNeeds").hidden);
 // A file of the game's name that is not the game takes the pilot out.
@@ -88,9 +89,11 @@ await none.evaluate(() => { const b = document.getElementById("useServer"); b.hi
 check("once Wing Commander is loaded the pilot is in WC-LOBBY", (await inLobby(none, "WC-LOBBY")) && (await pilots(none, 1)) && sockets.NOGAME.length === 2 && /\/ws$/.test(sockets.NOGAME[1]) && /WC-LOBBY/.test(await text(none, "hallNote")), [await lobbyAt(none), await text(none, "hallState"), sockets.NOGAME]);
 check("with that game's tag", /NOGAME \(you\)\s*WC1/.test(await text(none, "hallRoster")), await text(none, "hallRoster"));
 await none.selectOption("#program", "rv");
-check("RetroVega picked under Play: back in RV-LOBBY", (await inLobby(none, "RV-LOBBY")) && sockets.NOGAME.length === 3, [await lobbyAt(none), sockets.NOGAME]);
+const tagged = (page, re) => page.waitForFunction((src) => new RegExp(src).test(document.getElementById("hallRoster").textContent), re.source, { timeout: 15000 }).then(() => true, () => false);
+await none.selectOption("#program", "rv");
+check("RetroVega picked under Play: still in WC-LOBBY on the same connection, with RetroVega's tag", (await tagged(none, /NOGAME \(you\)\s*RV/)) && (await inLobby(none, "WC-LOBBY")) && sockets.NOGAME.length === 2, [await lobbyAt(none), sockets.NOGAME, await text(none, "hallRoster")]);
 await none.selectOption("#program", "wc1");
-check("and Wing Commander again: WC-LOBBY", await inLobby(none, "WC-LOBBY"), await lobbyAt(none));
+check("and Wing Commander again: WC-LOBBY, the WC1 tag", (await tagged(none, /NOGAME \(you\)\s*WC1/)) && (await inLobby(none, "WC-LOBBY")) && sockets.NOGAME.length === 2, [await lobbyAt(none), sockets.NOGAME]);
 // ... and out again when the game goes.
 await none.setInputFiles("#gamefile", { name: "fake.zip", mimeType: "application/zip", buffer: zipOf("WC.EXE", fake) });
 check("a pilot whose game goes is out of the lobby", await none.waitForFunction(() => document.getElementById("hallBody").hidden && /needs a game to fly/.test(document.getElementById("hallState").textContent), null, { timeout: 30000 }).then(() => true, () => false), await text(none, "hallState"));

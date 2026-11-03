@@ -4,7 +4,7 @@
 // and:
 //
 //   0. a page with no game files, ?retrovega or not, plays RetroVega, and
-//      its lobby is RetroVega's own (RV-LOBBY);
+//      its lobby is the one public lobby, every game's (WC-LOBBY);
 //   1. a page with no game files at all (a fresh browser, a site with no
 //      wc.tar.gz) has RetroVega in its "Play" menu, enters the public lobby
 //      by itself, joins a room and flies alone: the game starts, finds the
@@ -88,7 +88,7 @@ console.log(`lobby ${hallCode} at ${lobbyUrl}`);
 const plain = await open("plain", { callsign: "PLAIN", hall: "", lobby: "off" });
 check("without ?retrovega a page with no files plays RetroVega", (await plain.$eval("#program", (el) => el.value)) === "rv",
   await plain.$eval("#program", (el) => [...el.options].map((o) => o.value).join(", ")));
-check("and its lobby is RetroVega's, RV-LOBBY", (await plain.$eval("#hallNote code.lobbyName", (el) => el.textContent)) === "RV-LOBBY",
+check("and its lobby is the public one, every game's: WC-LOBBY", (await plain.$eval("#hallNote code.lobbyName", (el) => el.textContent)) === "WC-LOBBY",
   await plain.$eval("#hallNote code.lobbyName", (el) => el.textContent));
 await plain.context().close();
 

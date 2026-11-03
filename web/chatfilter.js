@@ -36,10 +36,8 @@ const CODE_IN_TEXT = new RegExp(`(^|[^A-Za-z0-9_-])((${PREFIX})-[A-Za-z0-9_-]{1,
 
 // The public lobby's own codes are not rooms to fly in: WC-LOBBY, and
 // WC-LOBBY0, WC-LOBBY1, ... where pilots land when the ones before are full
-// (web/hall.js); RetroVega's pilots have a row of their own, RV-LOBBY ...
+// (web/hall.js).
 export const LOBBY_CODE = "WC-LOBBY";
-export const RV_LOBBY_CODE = "RV-LOBBY";
-export const LOBBY_CODES = [LOBBY_CODE, RV_LOBBY_CODE];
 export const lobbyCode = (n, base = LOBBY_CODE) => (n <= 0 ? base : base + (n - 1));
 export function isLobbyCode(code, base = LOBBY_CODE) {
   const c = String(code || "").toUpperCase(), b = base.toUpperCase();

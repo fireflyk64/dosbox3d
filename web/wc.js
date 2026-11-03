@@ -18,7 +18,7 @@ import { initVoice } from "./voice.js";
 import { loadSo3 } from "./so3.js";
 import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles,
          saveGame, loadGames, forgetGame, totalSize, gameById, gameByTag, programsIn, knownBuild, GAMES } from "./gamefiles.js";
-import { newRoomCode, retagRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS, LOBBY_CODE, RV_LOBBY_CODE } from "./chatfilter.js";
+import { newRoomCode, retagRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS } from "./chatfilter.js";
 import { initHall, OTHER_SERVER, serverDown } from "./hall.js";
 import { createSetProvider, readTarGz } from "./rvsets.js";
 
@@ -35,8 +35,7 @@ const query = new URLSearchParams(location.search);
 // the game of a page with no other (the user, 2026-11-03: "make the default
 // site include the retrovega flag by default and default to that system if
 // there are no other games"; before, only with ?retrovega, which still does
-// no harm).  Its pilots meet in a lobby of their own (RV-LOBBY), the others
-// in WC-LOBBY: the page's lobby is the loaded game's (lobbyName).
+// no harm).  Its pilots meet everyone else's in WC-LOBBY (lobbyName).
 // The "Capship hull" box is offered only with ?capship (or &capship, or
 // #capship) in the address (the user's call, 2026-10-22); a wingman's game
 // takes the host's choice either way.
@@ -253,7 +252,6 @@ function setSource(s, want) {
   $("firstnameLabel").hidden = !(gameInfo() && gameInfo().firstName);
   retagRoom();
   if (lobby.game) { sayHello(); buildMissionMenu(); renderMission(); }
-  showLobbyName();
   hall.gameChanged();
   updateActions();
   joinLinked();
@@ -1725,16 +1723,12 @@ function steeringPointer() {
            stepsX: steps(1, 639), stepsY: steps(2, 199), edgeX: M._wc_web_steer(3, 0) / 639, edgeY: M._wc_web_steer(3, 1) / 199, top: M._wc_web_steer(3, 2) };
 }
 
-// The public lobby (web/hall.js): the loaded game's, RetroVega's pilots in
-// their own row (RV-LOBBY ...), the others in WC-LOBBY's; ?hall=CODE is
-// another one, for tests.
-function lobbyName() {
-  return query.get("hall") || (gameInfo() && gameInfo().id === "rv" ? RV_LOBBY_CODE : LOBBY_CODE);
-}
-function showLobbyName() {
-  for (const el of document.querySelectorAll("code.lobbyName")) el.textContent = lobbyName() + (el.dataset.n || "");
-}
-showLobbyName();
+// The public lobby (web/hall.js): one for every game's pilots, WC-LOBBY (the
+// user, 2026-11-03: "We have to have a unified lobby...splitting people in an
+// almost abandoned service will not help it grow"; the roster tags each pilot
+// with their game); ?hall=CODE is another one, for tests.
+const lobbyName = query.get("hall") || undefined;
+if (lobbyName) for (const el of document.querySelectorAll("code.lobbyName")) el.textContent = lobbyName + (el.dataset.n || "");
 const hall = initHall({
   code: lobbyName,
   server: serverUrl,
