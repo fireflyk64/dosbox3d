@@ -479,6 +479,8 @@ Alt-X, "so it's rare".
 - Close-ups have a 16-pixel battleship steel frame, with beveled edges and corner fasteners, packed into the face sprite.
   Kit alone keeps the rounded shoulders and has no frame. The other portraits keep their original shoulder outlines;
   the frame's bottom rail fits on screen, with the bust ending behind it. The mouth and eye patches keep their positions.
+  Portraits with repeated padding at their shoulder edges use a narrower, centred frame that hides the padding without
+  scaling the face or shifting its animation patches (currently Tally, the male Wildcard and the XO).
 - **Clicking the XO** at the briefing opens her talking close-up, the same
   as a pilot's (her face over the room blurred, her name and rank); the
   briefing goes on there, and a speech too long for the column shows the

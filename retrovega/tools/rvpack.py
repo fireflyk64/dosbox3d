@@ -717,18 +717,35 @@ def round_shoulders(im):
     return Image.fromarray(a)
 
 
-def frame_portrait(im):
+def portrait_inset(im, scale):
+    """Hide sustained runs of repeated opaque edge pixels from portraits.py's nearest-edge padding.
+    Use a symmetric inset to keep the face centred; two screen pixels also cover the resize filter's fringe."""
+    a = np.asarray(im)
+    padding = 0
+    for side in (a, a[:, ::-1]):
+        rows = side[side[:, 0, 3] >= 128]
+        if not len(rows):
+            continue
+        same = (rows == rows[:, :1]).all(axis=2)
+        runs = np.where(same.all(axis=1), im.width, np.argmin(same, axis=1))
+        runs = runs[(runs >= 3) & (runs <= im.width // 8)]
+        if len(runs) >= 8:
+            padding = max(padding, int(np.ceil(np.median(runs))))
+    return int(np.ceil(padding * scale)) + 2 if padding else 0
+
+
+def frame_portrait(im, inset=0):
     """A 16-pixel battleship steel frame outside the bust; its bottom rail fits above the screen's 8-pixel margin.
     The portrait keeps its scale and origin, so its mouth and eye patches still line up."""
     b = FACE_FRAME
-    w, h = im.width + 2 * b, min(im.height + 2 * b, SCREEN[1] - FACE_Y + b - 8)
+    w, h = im.width - 2 * inset + 2 * b, min(im.height + 2 * b, SCREEN[1] - FACE_Y + b - 8)
     y, x = np.indices((h, w))
     grain = ((x * 17 + y * 29 + x * y % 13) % 7 - 3) + (y % 3 == 0) * 2
     steel = np.clip(np.array((78, 88, 96)) + grain[..., None], 0, 255).astype(np.uint8)
     a = np.dstack((steel, np.full((h, w), 255, np.uint8)))
     a[b:h - b, b:w - b, 3] = 0
     framed = Image.fromarray(a)
-    framed.paste(im.crop((0, 0, im.width, h - 2 * b)), (b, b))
+    framed.paste(im.crop((inset, 0, im.width - inset, h - 2 * b)), (b, b))
     dr = ImageDraw.Draw(framed)
     # Raised outer bevel, recessed inner lip: light from above and left.
     for i, (light, dark) in enumerate(zip((32, 148, 112), (18, 34, 48))):
@@ -753,12 +770,14 @@ def pack_people(pack, keys, comms=None):
         d = os.path.join(ROOT, 'art', 'people', 'faces', key)
         fj = json.load(open(os.path.join(d, 'face.json')))
         k = FACE / fj['size']
-        base = Image.open(os.path.join(d, 'base.png')).convert('RGBA').resize((FACE, FACE), Image.LANCZOS)
+        source = Image.open(os.path.join(d, 'base.png')).convert('RGBA')
+        inset = portrait_inset(source, k) if key != 'TECH' else 0
+        base = source.resize((FACE, FACE), Image.LANCZOS)
         if key == 'TECH':
             base = round_shoulders(base)
-        offset = 0 if key == 'TECH' else -FACE_FRAME
+        offset_x, offset_y = (0, 0) if key == 'TECH' else (inset - FACE_FRAME, -FACE_FRAME)
         if key != 'TECH':
-            base = frame_portrait(base)
+            base = frame_portrait(base, inset)
         mouths = [Image.open(os.path.join(d, 'mouth_%d.png' % i)).convert('RGBA') for i in range(9)]
         eyes = [Image.open(os.path.join(d, 'eyes_%d.png' % i)).convert('RGBA') for i in range(3)]
         mb, eb = fj['mouth_box'], fj['eye_box']
@@ -770,7 +789,7 @@ def pack_people(pack, keys, comms=None):
         pal = Palette(UI + [(0, 0, 0)] * 48 + part)
         allowed = [0] + list(range(64, 256))
         pp = pack.add('ppal_' + key[:12], 'PALPART', struct.pack('<BB', 64, 192) + vga(part))
-        b = add_sprite(pack, 'face_' + key[:12], base, pal, offset, offset, allowed)
+        b = add_sprite(pack, 'face_' + key[:12], base, pal, offset_x, offset_y, allowed)
         m0 = None
         for i, m in enumerate(mouths):
             j = add_image(pack, 'mouth%d_%s' % (i, key[:10]), m.convert('RGB'), pal, mpos[0], mpos[1], allowed)
@@ -780,7 +799,7 @@ def pack_people(pack, keys, comms=None):
             j = add_image(pack, 'eyes%d_%s' % (i, key[:10]), e.convert('RGB'), pal, epos[0], epos[1], allowed)
             e0 = j if e0 is None else e0
         bb = np.asarray(base)[..., 3] >= 128
-        top = int(np.nonzero(bb.any(axis=1))[0][0]) + offset
+        top = int(np.nonzero(bb.any(axis=1))[0][0]) + offset_y
         out.append(struct.pack('<10sHHHHhH', key.encode()[:9], pp, b, m0, e0, top, (comms or {}).get(key, 0xFFFF)))
     return out
 
