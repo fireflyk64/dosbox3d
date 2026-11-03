@@ -14,6 +14,7 @@
 #include "shots.h"
 #include "flight.h"
 #include "panel.h"
+#include "logic.h"
 #include "bolts.h"
 #include "balls.h"
 #include "host.h"
@@ -411,12 +412,16 @@ void host_thunk_enter(uint16_t fn, const char *name, int16_t nargs, const uint16
             host_rule("do_damage: where (%u) is not a near RvVec3", a[3]);
         if (host_check_src && src != 0xFFFF && RV_SLOT_OK(dst)) {
             /* the hit again with src 0xFFFF, as another machine may replay it, on a copy of the fixed block */
+            ShipSystems sys = g_sys;     /* (and the state outside it: the systems, the reserve, the counters) */
+            logic_damage_snap(1);
             memcpy(g_before, rv_dgroup, RV_FIXED_BYTES);
             g_in_check = 1;
             g_call[d].alt_ret = do_damage_impl(0xFFFF, dst, a[2], a[3]);
             g_in_check = 0;
             memcpy(g_alt, rv_dgroup, RV_FIXED_BYTES);
             memcpy(rv_dgroup, g_before, RV_FIXED_BYTES);
+            logic_damage_snap(0);
+            g_sys = sys;
             g_call[d].alt = 1;
         }
     } else if (fn == RV_FN_fireGunFromShip) {

@@ -382,6 +382,19 @@ old ones lived 150-190: unexamined. And in the game an enemy wave comes in from 
 arrival; ours had been 4,600), first shots some 12 s after the arrival against the old 18-21 (ours close at some
 900 km/s, the old ones at 610-675: they angle in).
 
+### The fighters' aim at range (2026-11-02, later)
+
+With the tail falling back as the old one did, a straight player took 256 points in 4 minutes where the old game's took
+872: the same damage a hit (21 and 23), the same fire (202 volleys and 220), a third of the hits. By range, the old
+tail hit 71% of its volleys from 2,000-3,000 km, 45% from 3,000-4,000, 25% from 4,000-5,000; ours 25%, 13%, 3%: its 4
+degrees of scatter (`AI_SCATTER`, tuned when the tail sat at 3,000 km and fired all the time) missed at range. The
+bolt's reach was not it (5.4 thousand km for the Photon changed nothing). Now the scatter goes with the range (the user:
+"maybe the 4% number should depend on range"; `scatter_of`, the nearest ship of another side within 25 degrees of the
+nose): 4 degrees up close, 3 past 1,000 km, 2 past 1,500: 36 hits, 782 points straight (the old game's 38, 872), and
+hunted 449 (the old 613; ours die sooner, 42-80 s against 138-180: the Schroedinger's three lasers against the
+Hornet's two, and our hunter hitting 7.6% against 3.5%). Going on down to 1 degree past 2,000 and none past 2,500 gave
+1,449 points straight: too many.
+
 ## What is still to measure
 
 The other types (the Salthi at nav 3; Krant, Gratha, Jalthi, the capital ships and their turrets in the later

@@ -67,7 +67,9 @@ static uint8_t __far g_order[NUM_SHIP_SLOTS];   /* the wingmen's orders (ORDER_*
 static uint16_t __far g_lock_steps;     /* the player's missile lock building (lock_tick) */
 
 #define RAM_STEPS 10                    /* a ship hurt by a ram is not hurt by one again for this many steps */
-#define AI_SCATTER 18                   /* an AI's shot's scatter about the nose, 256ths each way (18: 4 degrees; gun_fire) */
+#define AI_SCATTER 18                   /* an AI's shot's scatter about the nose, 256ths each way (18: 4 degrees; gun_fire), up
+                                           close: less with the range (scatter_of) */
+static int32_t scatter_of(int16_t ship);
 static uint16_t __far g_rammed[NUM_SHIP_SLOTS];   /* the step a ship was last hurt by a ram */
 static uint8_t __far g_under_fire[NUM_SHIP_SLOTS];   /* the old game's hit counter: a hit adds 4, a step takes 1 (the
                                            fear model's "hit" situation while it stands: no calming) */
@@ -1152,7 +1154,8 @@ static uint16_t gun_fire(uint16_t ship, uint16_t gun, const RvWeapon __far *w)
          * three where the old tail's nose wandered within 25 degrees and hit with one in four), by a hash of the
          * step, the ship and the gun: the same on every machine the layer replays the call on */
         uint16_t h = (uint16_t)(frameCounter * 2654435U + ship * 40503U + gun * 9973U);
-        int32_t jx = ((int32_t)(h & 31) - 16) * AI_SCATTER / 16, jy = ((int32_t)((h >> 5) & 31) - 16) * AI_SCATTER / 16;
+        int32_t sc = scatter_of(ship);
+        int32_t jx = ((int32_t)(h & 31) - 16) * sc / 16, jy = ((int32_t)((h >> 5) & 31) - 16) * sc / 16;
         const RvVec3 *R = &gOrientationRightVector[ship], *U = &gOrientationUpVector[ship];
         front.x += FIX_MUL(R->x, jx) + FIX_MUL(U->x, jy);
         front.y += FIX_MUL(R->y, jx) + FIX_MUL(U->y, jy);
@@ -3604,6 +3607,28 @@ static void hit_sides(int16_t dst, const RvVec3 *w, int16_t *sh, int16_t *ar)
  * hit itself.  What the hull is to take of `left` */
 #define NAMED_HULL_HITS 8
 
+#ifdef RV_HOST
+/* the host's src check (host.c): what do_damage changes outside the fixed block (and the damage module's own) kept, 1,
+ * and put back, 0, round its trial with src 0xFFFF */
+void logic_damage_snap(int16_t save)
+{
+    static uint8_t under[NUM_SHIP_SLOTS], pk[RV_PILOTS];
+    static uint16_t killer[NUM_SHIP_SLOTS], splashes;
+    if (save) {
+        _fmemcpy(under, g_under_fire, sizeof under);
+        _fmemcpy(killer, g_killer, sizeof killer);
+        _fmemcpy(pk, logic_pilot_kills, sizeof pk);
+        splashes = logic_splashes;
+    } else {
+        _fmemcpy(g_under_fire, under, sizeof under);
+        _fmemcpy(g_killer, killer, sizeof killer);
+        _fmemcpy(logic_pilot_kills, pk, sizeof pk);
+        logic_splashes = splashes;
+    }
+    damage_snap(save);
+}
+#endif
+
 static uint16_t hull_take(int16_t s, uint16_t left, uint16_t hull)
 {
     uint16_t rec = slotMissionShip[s];
@@ -3663,6 +3688,34 @@ uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, 
             damage_hurt(left, t->hull, ar);
     }
     return qty;
+}
+
+/* An AI's scatter by the range (the user, 2026-11-02: "maybe the 4% number should depend on range"): 4 degrees up close,
+ * 3 past 1,000 km, 2 past 1,500.  The old game's tail hit a straight player 71% of the time from 2,000-3,000 km, 45% from
+ * 3,000-4,000, 25% from 4,000-5,000; ours, scattering 4 degrees at any range, 25%, 13% and 3% (a straight player took
+ * 256 points in 4 minutes where the old one took 872).  Measured in the first mission's scene: 2 degrees from 1,500 km
+ * out, 782 points (36 hits; the old 38); going on down to 1 past 2,000 and none past 2,500 (the user's first idea),
+ * 1,449: the tail falling back fires from 2,500-4,500 km, all of it on target.  The range is the nearest
+ * ship of another side within 25 degrees of the nose, from the positions every machine has (each flies its own copy
+ * of a shot); none: the near scatter */
+static int32_t scatter_of(int16_t ship)
+{
+    int32_t nearest = -1;
+    int16_t k;
+    for (k = 0; k < NUM_SHIP_SLOTS; k++) {
+        RvVec3 d;
+        int32_t km;
+        if (k == ship || !slot_is_ship(k) || commAnimInfo[k] == commAnimInfo[ship] || shipAiState[k] == 9)
+            continue;
+        d = vec3(TO_KM(gPositionVector[k].x - gPositionVector[ship].x), TO_KM(gPositionVector[k].y - gPositionVector[ship].y),
+                 TO_KM(gPositionVector[k].z - gPositionVector[ship].z));
+        km = len_of(d.x, d.y, d.z);
+        if (km > 0 && vec_dot(&d, &gOrientationFrontVector[ship]) / km < 232 /* (cos 25 degrees x 256) */)
+            continue;
+        if (nearest < 0 || km < nearest)
+            nearest = km;
+    }
+    return nearest < 1000 ? AI_SCATTER : nearest < 1500 ? AI_SCATTER * 3 / 4 : AI_SCATTER / 2;
 }
 
 /* (ship, gun): gun record `gun` of the ship fires: a gun or a turret puts a shot in the world (shot_add, from its

@@ -39,6 +39,9 @@ void damage_reset(void);
 #define DAMAGE_RESERVE_TENTHS 17
 #define DAMAGE_RESERVE_LEAST 60
 int16_t damage_reserve_take(uint16_t over, uint16_t hull);
+#ifdef RV_HOST
+void damage_snap(int16_t save);         /* (the host's src check: this module's state kept, 1, and put back, 0) */
+#endif
 int16_t damage_reserve_pct(uint16_t hull);    /* what is left of it, in a hundred */
 int16_t damage_in_reserve(void);        /* the hull is gone and it is what is left */
 

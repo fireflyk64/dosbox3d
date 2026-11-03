@@ -18,6 +18,28 @@ static uint16_t __far g_leak;           /* the tank's leak, carried between step
 static struct { uint8_t sys, level; } __far g_events[8];
 static uint8_t __far g_event_in, __far g_event_out;
 
+#ifdef RV_HOST
+/* the host's src check (host.c): this module's state kept, and put back, round its trial do_damage (a trial that spent
+ * the reserve left the real hit to find it gone, and the two came out different: M5.6, 2026-11-02) */
+void damage_snap(int16_t save)
+{
+    static uint8_t more[SYS_MORE], in_reserve, pull, ev_in, ev_out;
+    static uint16_t used, repair_wait, leak;
+    static struct { uint8_t sys, level; } events[8];
+    if (save) {
+        _fmemcpy(more, g_more, sizeof more);
+        _fmemcpy(events, g_events, sizeof events);
+        used = g_reserve_used; in_reserve = g_in_reserve; pull = g_pull; repair_wait = g_repair_wait; leak = g_leak;
+        ev_in = g_event_in; ev_out = g_event_out;
+    } else {
+        _fmemcpy(g_more, more, sizeof more);
+        _fmemcpy(g_events, events, sizeof events);
+        g_reserve_used = used; g_in_reserve = in_reserve; g_pull = pull; g_repair_wait = repair_wait; g_leak = leak;
+        g_event_in = ev_in; g_event_out = ev_out;
+    }
+}
+#endif
+
 /* The reserve, against the type's hull (damage.h: 1.7 times).  A fighter whose hull has gone has this much again to limp
  * home on (the user's: "an extra reservoir of health"); every hit on it breaks something */
 
