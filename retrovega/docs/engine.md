@@ -2020,6 +2020,10 @@ guns, retro but not Game Boy: good retro.
 **What starts them (fx.c).** Nothing in the logic: like the music, fx.c only
 watches the world, once a step after the logic.
 
+Motion cues use the same observer: two faint HUD rails carry ticks outward and down at a rate proportional to actual speed,
+and stop flowing at rest. Starting acceleration or braking gives a brief 2-pixel pitch response, 3 pixels with the afterburner,
+which settles at steady speed. These cues show in the cockpit; the game's motion and aim are unchanged.
+
 | it sees | it starts |
 |---|---|
 | an escorted ship jumping out (`logic_on_jump`, `fx_jump`) | a star where it was (`BOOM_JUMP`, `jump_star`: a white core in a blue halo with long arms, square to the camera, at least 10 px however far, 24 steps); if it is on the player's side, the whole screen washed white and back in 8 frames (`vid_flash`, through the palette, so it costs no drawing), the sign of a jump made safely; tests/jump.txt shows it, RVT.EXE's `^` key |
@@ -2033,6 +2037,11 @@ A death must keep its 9 to the end of a step (the slot may be cleared any
 time after): fx.c looks between steps. The pictures and the sounds take
 their own random stream, never `game_rand`, and are each machine's own.
 Ship destruction blasts use a 40% larger radius relative to the hull, including the six capital-ship bursts and their final blast.
+Each destroyed ship also leaves eight tumbling fragments for seven seconds. Their world positions follow the wreck's last velocity
+and spread from its location, so flying past or turning gives parallax. Three clouds at most reuse the existing 16-effect pool;
+new explosions take priority over old wrecks. A fixed 24-piece projection cache (288 bytes) is depth sorted with the explosions
+and ships, and clipped to the canopy. No extra sprite art or heap allocations. `tests/host/motion_test.sh` checks the limits,
+settling, expiry, parallax and clipping with the host sanitizers.
 
 **The explosion (explode.c, tools/explode.py, EXPLODE.DAT, 37 KB in XMS).**
 The art is heat, not colour: eight cels of 48 x 48 (0 clear .. 255 white

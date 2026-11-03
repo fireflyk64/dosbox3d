@@ -1,0 +1,23 @@
+# Visual motion check: RVT.EXE /fly 0 /boomdemo /record 2 /flight 10 /script MOTION.TXT
+# Native: build/game32-tests/rv --data DIR /fly 0 /boomdemo /record 2 /flight 10 /script MOTION.TXT
+# @ keeps the demo's ship pristine. Stop, accelerate, cruise, brake, then turn past the wreck fragments.
+wait 8
+key @
+key s
+wait 10
+shot STOP
+key f
+wait 1
+shot ACCEL
+wait 29
+shot CRUISE
+key s
+wait 1
+shot BRAKE
+wait 28
+shot WRECK
+hold left 8
+wait 16
+shot TURN
+wait 100
+quit

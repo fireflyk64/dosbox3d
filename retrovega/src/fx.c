@@ -13,6 +13,7 @@
 #include "damage.h"
 #include "logic.h"
 #include "fx.h"
+#include "hud.h"
 
 #define N (RV_MAX_SHIP_SLOT + 1)
 #define HIDE_AFTER 2                    /* steps after its death a ship's sprite goes: the flash covers it by then */
@@ -66,6 +67,53 @@ static int16_t pitch_jitter(void)
 #define JUMP_FLASH 60                   /* the screen's wash at a friend's jump, of 64; gone in 8 frames */
 #define JUMP_FLASH_STEP 8
 static uint8_t __far g_flash, __far g_flash_red;
+
+/* Synthetic flow beside the gunsight, and a short pitch response at the start of acceleration or braking.
+ * Q8 pixels; only the picture changes, never the ship's motion or the play's random stream. */
+static uint16_t __far g_flow_phase, __far g_motion_speed;
+static int16_t __far g_motion_bob;
+static int8_t __far g_thrust_dir;
+static uint8_t __far g_motion_valid, __far g_motion_cool, __far g_motion_burning, __far g_motion_idle;
+
+static void motion_frame(uint16_t speed, uint16_t top, int16_t burning)
+{
+    int32_t dv = (int32_t)speed - g_motion_speed;
+    int16_t dir = dv > 1 ? 1 : dv < -1 ? -1 : 0;
+    uint32_t step = top ? (uint32_t)speed * 384 / top : 0;
+    if (step > 1536) step = 1536;
+    g_flow_phase = (uint16_t)((g_flow_phase + step) % (48U * 256U));
+    g_motion_bob = (int16_t)(g_motion_bob * 7 / 8);
+    if (g_motion_cool) g_motion_cool--;
+    if (g_motion_valid && dir && ((dir != g_thrust_dir && (!g_motion_cool || dir * g_motion_bob < 0))
+        || (burning && !g_motion_burning))) {
+        g_motion_bob = (int16_t)(dir * (burning ? 3 : 2) * 256);
+        g_motion_cool = 12;
+    }
+    g_motion_speed = speed;
+    if (dir) {
+        g_thrust_dir = (int8_t)dir;
+        g_motion_idle = 0;
+    } else if (g_motion_idle < 3 && ++g_motion_idle == 3) {
+        g_thrust_dir = 0;               /* tolerate repeated speed samples between changes; one kick per acceleration */
+    }
+    g_motion_burning = (uint8_t)burning;
+    g_motion_valid = 1;
+}
+
+void fx_hud(int16_t cx, int16_t cy)
+{
+    int16_t side, i;
+    if (!g_motion_valid || shipAiState[0] == 9)
+        return;
+    for (side = -1; side <= 1; side += 2) {
+        hud_line(cx + side * 34, cy - 24, cx + side * 50, cy + 24, UI_PANEL_EDGE);
+        for (i = 0; i < 3; i++) {
+            int16_t p = (int16_t)(((g_flow_phase >> 8) + i * 16) % 48);
+            int16_t x = cx + side * (34 + p / 3), y = cy - 24 + p;
+            hud_line(x, y, x + side * 4, y + 1, UI_GREY4);
+        }
+    }
+}
 
 /* --- the player's own hurt: the view shaken, sparks and smoke in the cockpit, the screen's wash, the alarms ---
  *
@@ -207,6 +255,8 @@ void fx_shake(int16_t *dx, int16_t *dy)
         *dx = (int16_t)((int16_t)(vis_rand() % (uint16_t)(2 * px + 1)) - px);
         *dy = (int16_t)((int16_t)(vis_rand() % (uint16_t)(2 * px + 1)) - px);
     }
+    if (!g_view_outside)
+        *dy += g_motion_bob / 256;
 }
 
 void fx_cockpit_draw(int y0, int y1)
@@ -260,6 +310,9 @@ void fx_flight_start(void)
     g_klaxon_at = 0;
     _fmemset(g_spark, 0, sizeof g_spark);
     g_seen_valid = 0;
+    g_flow_phase = g_motion_speed = 0;
+    g_motion_bob = g_thrust_dir = 0;
+    g_motion_valid = g_motion_cool = g_motion_burning = g_motion_idle = 0;
     for (s = 0; s < N; s++) {
         g_type[s] = (uint8_t)maybeEntityType[s];
         g_dying[s] = (uint8_t)(slot_is_ship(s) && shipAiState[s] == 9);
@@ -280,6 +333,7 @@ static void death(int16_t s)
         sfx_play(RV_SFX_BOOM_SHIP, 256, 256);
         return;
     }
+    explode_add(&at, &gVelocityVector[s], half_km, BOOM_WRECK, 0, seed);
     if (maybeEntityType[s] == ET_CAPSHIP) {
         /* a capital ship: bursts over its hull, then the last and biggest */
         int16_t k;
@@ -312,6 +366,11 @@ void fx_jump(int16_t slot, int16_t friendly)
 void fx_frame(void)
 {
     int16_t s;
+    const RvShipType __far *t = slot_type(0);
+    if (t && slot_is_ship(0) && shipAiState[0] != 9)
+        motion_frame((uint16_t)speedLo[0], t->max_kps, rvAfterburner[0]);
+    else
+        g_motion_bob = 0;
     hurt_frame();
     ships_smoke();
     if (g_flash_red) {

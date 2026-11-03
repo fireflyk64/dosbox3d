@@ -1494,6 +1494,7 @@ static void draw_world(int y0, int y1)
     missiles_draw(y0, y1, ext, ey0, rows);
     if (!g_view)
     {
+        fx_hud((int16_t)g_cam_cx, (int16_t)g_cam_cy);
         logic_hud();                    /* the game's own marks over the view (none from outside) */
         nav_tag(y0, y1, ext, ey0, rows);
         if (g_sim && y0 < ey0 + 24 && y1 > ey0 + 6) {
@@ -3451,8 +3452,8 @@ void __far __cdecl flight_frame(void)
 #endif
     {   /* the view thrown about by the player's hurt: everything through the opening moves, the cockpit round it stands */
         int16_t dx, dy;
-        fx_shake(&dx, &dy);
         g_view_outside = g_view != VIEW_COCKPIT;
+        fx_shake(&dx, &dy);
         g_cam_cx = SCR_W / 2 + dx;
         g_cam_cy = g_cam_cy0 + dy;
         ships_set_camera(g_cam_cx, g_cam_cy, FLIGHT_FOCAL);

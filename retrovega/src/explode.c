@@ -10,6 +10,7 @@
  * module's data is far (DGROUP is nearly full). */
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <malloc.h>
 #include "rv.h"
 #include "rvhooks.h"
@@ -31,6 +32,8 @@ MEM_ARRAY(uint16_t, g_map_arr, MAP_W)
 #define HAZE_PX 40                      /* the widest a shield's haze is drawn, radius in px */
 #define HAZES_A_SHIP 3                  /* a ship's at once: under fire, the next takes its oldest's place */
 #define HAZE_STEPS 64                   /* its table of density by distance squared */
+#define WRECK_CLOUDS 3                  /* in the existing effect pool, eight procedural pieces each */
+#define WRECK_PIECES (WRECK_CLOUDS * 8)
 
 typedef struct { uint8_t cel, thr; uint16_t gain, grow, spark, debris; } Tl;   /* EXPLODE.DAT's timeline records */
 
@@ -55,6 +58,7 @@ static const struct { uint8_t life, sparks, debris, ball; } __far k_kind[BOOM_KI
     { 9, 6, 0, 0 },                     /* a hit: the flash and sparks */
     { 16, 0, 0, 0 },                    /* a shield's haze (haze; its life by its strength) */
     { 24, 0, 0, 0 },                    /* a ship's jump: a star (jump_star) */
+    { 210, 0, 8, 0 },                   /* wreck fragments: seven seconds, generated in world space */
 };
 /* the haze's colours, cool to hot: light blues to white, from the entries every cockpit's palette keeps */
 static const uint8_t __far k_shield[6] = { 92, 94, 95, 79, 14, 143 };
@@ -79,6 +83,14 @@ static int16_t __far g_n;
 static uint8_t __far g_order[EXPLODE_MAX];
 static int16_t __far g_nord, __far g_next;
 static int16_t __far g_ready;
+typedef struct {
+    int32_t depth;
+    int16_t x, y;
+    uint8_t size, turn, colour;
+} Fragment;
+static Fragment __far g_fragment[WRECK_PIECES];   /* the projected pieces, reused every frame; no sprite art */
+static int16_t __far g_nfrag, __far g_frag_next;
+static uint16_t rnd(uint32_t *st);
 
 int16_t explode_reserve(void)
 {
@@ -166,7 +178,7 @@ int16_t explode_flight_start(void)
     }
     for (i = 0; i < CACHE; i++)
         g_cache_key[i] = -1;
-    g_n = g_nord = 0;
+    g_n = g_nord = g_nfrag = g_frag_next = 0;
     g_ready = 1;
     rv_logf(s_room, EXPLODE_MAX, CACHE, CACHE * g_size * g_size + MAP_W * 2);
     return 1;
@@ -180,7 +192,7 @@ void explode_flight_end(void)
     if (g_map)
         MEM_GIVE(g_map);
     g_map = 0;
-    g_n = g_nord = 0;
+    g_n = g_nord = g_nfrag = g_frag_next = 0;
     g_ready = 0;
 }
 
@@ -207,13 +219,26 @@ static void boom_set(Boom __far *b, const RvVec3 *at, const RvVec3 *vel, int32_t
 void explode_add(const RvVec3 *at, const RvVec3 *vel, int32_t radius_km, int16_t kind, uint16_t delay, uint16_t seed)
 {
     Boom __far *b;
+    int16_t i, old = -1, wrecks = 0;
     if (!g_ready || kind < 0 || kind >= BOOM_KINDS)
         return;
-    if (g_n >= EXPLODE_MAX) {           /* full: the oldest gives its place */
-        int16_t i, old = 0;
-        for (i = 1; i < g_n; i++)
-            if (g_b[i].age > g_b[old].age)
+    for (i = 0; i < g_n; i++)
+        if (g_b[i].kind == BOOM_WRECK) {
+            wrecks++;
+            if (old < 0 || g_b[i].age > g_b[old].age)
                 old = i;
+        }
+    if (kind == BOOM_WRECK && wrecks >= WRECK_CLOUDS) {
+        b = &g_b[old];                  /* the newest three wrecks; no growth of the pool */
+    } else if (g_n >= EXPLODE_MAX) {    /* a new blast can take a wreck's place, never the other way round */
+        if (kind == BOOM_WRECK)
+            return;
+        if (old < 0) {
+            old = 0;
+            for (i = 1; i < g_n; i++)
+                if (g_b[i].age > g_b[old].age)
+                    old = i;
+        }
         b = &g_b[old];
     } else {
         b = &g_b[g_n++];
@@ -262,7 +287,7 @@ void explode_frame(void)
             continue;
         }
         b->x += b->vx; b->y += b->vy; b->z += b->vz;
-        if (b->kind != BOOM_SHIELD) {   /* (the drift slows; a shield's haze stays on its ship) */
+        if (b->kind != BOOM_SHIELD && b->kind != BOOM_WRECK) {   /* wrecks coast with their ship's last velocity */
             b->vx -= b->vx / 16; b->vy -= b->vy / 16; b->vz -= b->vz / 16;
         }
         if (++b->age >= b->life)
@@ -270,15 +295,71 @@ void explode_frame(void)
     }
 }
 
+/* Each shard's place is derived from the wreck's seed and age, in world coordinates. Turning or flying through
+ * the cloud gives real parallax; the pieces do not follow the gunsight. Only their projected marks are stored. */
+static void wreck_place(const Boom __far *b, const LfVec *eye, const LfBasis *cam, int16_t cx, int16_t cy, int16_t focal)
+{
+    uint32_t st = b->seed;
+    int16_t i, k;
+    int32_t spread = b->r16 * (b->age + 12L) / 48;
+    if (b->age < 6)
+        return;
+    for (i = 0; i < 8 && g_nfrag < WRECK_PIECES; i++) {
+        int32_t dx = (int32_t)(rnd(&st) & 511) - 256, dy = (int32_t)(rnd(&st) & 511) - 256;
+        int32_t dz = (int32_t)(rnd(&st) & 511) - 256;
+        int32_t piece = b->r16 / (10 + rnd(&st) % 20), rx, ry, rz, X, Y, Z, x, y, size;
+        int16_t turn = (int16_t)((b->age / 5 + i + (b->seed & 3)) & 3);
+        uint8_t colour = g_cols[g_nramp + g_nspark + (i + b->age / 9) % g_ndebris];
+        if (b->age > b->life - 45 && ((b->age + i * 11) & 7) < (b->age - (b->life - 45)) * 8 / 45)
+            continue;
+        rx = ((b->x - eye->x) >> 4) + dx * spread / 256;
+        ry = ((b->y - eye->y) >> 4) + dy * spread / 256;
+        rz = ((b->z - eye->z) >> 4) + dz * spread / 256;
+        if (labs(rx) > 2000000L || labs(ry) > 2000000L || labs(rz) > 2000000L)
+            continue;
+        X = (rx * cam->right.x + ry * cam->right.y + rz * cam->right.z) / 256;
+        Y = (rx * cam->up.x + ry * cam->up.y + rz * cam->up.z) / 256;
+        Z = (rx * cam->front.x + ry * cam->front.y + rz * cam->front.z) / 256;
+        if (Z < ZMIN16)
+            continue;
+        size = piece * focal / Z;
+        if (!size && Z > b->r16 * 120)
+            continue;                  /* too small and far away to see */
+        if (size < 1) size = 1;
+        if (size > 6) size = 6;
+        x = cx + X * focal / Z;
+        y = cy - Y * focal / Z;
+        if (x + size < 0 || x - size >= SCR_W || y + size < 0 || y - size >= SCR_H)
+            continue;
+        if (b->age < 24 && !(i & 3))
+            colour = g_cols[g_nramp + b->age * (g_nspark - 1) / 24];
+        for (k = g_nfrag; k > 0 && g_fragment[k - 1].depth < Z * 16; k--)
+            g_fragment[k] = g_fragment[k - 1];
+        g_fragment[k].depth = Z * 16;
+        g_fragment[k].x = (int16_t)x;
+        g_fragment[k].y = (int16_t)y;
+        g_fragment[k].size = (uint8_t)size;
+        g_fragment[k].turn = (uint8_t)turn;
+        g_fragment[k].colour = colour;
+        g_nfrag++;
+    }
+}
+
 void explode_place(const LfVec *eye, const LfBasis *cam, int16_t cx, int16_t cy, int16_t focal)
 {
     int16_t i, k;
     g_nord = 0;
+    g_nfrag = 0;
     for (i = 0; i < g_n; i++) {
         Boom __far *b = &g_b[i];
         int32_t rx = (b->x - eye->x) >> 4, ry = (b->y - eye->y) >> 4, rz = (b->z - eye->z) >> 4;   /* (16ths of a km) */
         int32_t X, Y, Z, r, sx, sy;
         b->on = 0;
+        if (b->kind == BOOM_WRECK) {
+            if (!b->wait)
+                wreck_place(b, eye, cam, cx, cy, focal);
+            continue;
+        }
         if (b->wait || rx > INT32_C(2000000) || rx < -INT32_C(2000000) || ry > INT32_C(2000000)
             || ry < -INT32_C(2000000) || rz > INT32_C(2000000) || rz < -INT32_C(2000000))
             continue;
@@ -579,17 +660,41 @@ static void draw_one(const Boom __far *b, int16_t y0, int16_t y1, const int16_t 
 
 void explode_draw_begin(void)
 {
-    g_next = 0;
+    g_next = g_frag_next = 0;
+}
+
+static void fragment_draw(const Fragment __far *f)
+{
+    int16_t x = f->x, y = f->y, r = f->size, c = f->colour;
+    if (f->turn == 0)
+        hud_line(x - r, y - r / 2, x + r, y + r / 2, c);
+    else if (f->turn == 1)
+        hud_line(x - r / 2, y + r, x + r / 2, y - r, c);
+    else if (f->turn == 2) {
+        hud_run(x - r, x + r + 1, y, c);
+        if (r > 1) hud_run(x - r + 1, x + r, y + 1, c);
+    } else {
+        hud_vline(x, y - r, y + r + 1, c);
+        if (r > 1) hud_vline(x + 1, y - r + 1, y + r, c);
+    }
 }
 
 void explode_draw_to(int32_t depth, int16_t y0, int16_t y1, const int16_t __far *ext, int16_t ext_y0, int16_t ext_rows)
 {
-    while (g_next < g_nord && g_b[g_order[g_next]].depth > depth)
-        draw_one(&g_b[g_order[g_next++]], y0, y1, ext, ext_y0, ext_rows);
+    while (g_next < g_nord || g_frag_next < g_nfrag) {
+        int16_t frag = g_frag_next < g_nfrag && (g_next >= g_nord
+            || g_fragment[g_frag_next].depth > g_b[g_order[g_next]].depth);
+        int32_t z = frag ? g_fragment[g_frag_next].depth : g_b[g_order[g_next]].depth;
+        if (z <= depth)
+            break;
+        if (frag)
+            fragment_draw(&g_fragment[g_frag_next++]);
+        else
+            draw_one(&g_b[g_order[g_next++]], y0, y1, ext, ext_y0, ext_rows);
+    }
 }
 
 void explode_draw_rest(int16_t y0, int16_t y1, const int16_t __far *ext, int16_t ext_y0, int16_t ext_rows)
 {
-    while (g_next < g_nord)
-        draw_one(&g_b[g_order[g_next++]], y0, y1, ext, ext_y0, ext_rows);
+    explode_draw_to(INT32_MIN, y0, y1, ext, ext_y0, ext_rows);
 }
