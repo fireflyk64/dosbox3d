@@ -106,8 +106,12 @@ Multiplayer appears in the logic only as who flies a ship (`rvController`, `RV_F
   (shipAiState 9, the explosion's time); `despawn` ends it. The layer hears the kill as it did WC.EXE's.
 - **The scene** (`step_scene`): a ship is held off-scene by its distance from the nearest human, not the local
   pilot's.
-- **The autopilot** brings the human wingmen along with the AI wing, waits for no enemy near any human, and calls
-  `autoAnimation` / `autopilotFinished` around the jump, so a guest's ship is moved with the host's.
+- **The autopilot** brings the human wingmen along with the AI wing and waits for no enemy near any human. Its
+  three-second flyby is the engine's (`flight.c`), and it starts with `autoAnimation(type, 1, frames)`: the layer
+  replays that on every guest at once, which shows the flyby around its own ship and never jumps itself. The host's
+  jump ends with `autopilotFinished`, which ends every guest's flyby and takes each ship where the host's game put
+  it. A flyby that ends without a jump (an enemy came near) sends `autoAnimation(0, 0, 0)` instead, and a guest's
+  flyby whose end never comes stops two seconds past its own.
 - **The pilots' fates:** a wingman flown by a human (`g_killed` 2) is no named pilot's death.
 - **Splashes:** the local pilot's kills in the flight (`logic_splashes`), for the guest's save.
 - **The player's fighter** is the one its mission record names (`missionShipTable[playerMissionShip]`), which is the
@@ -128,7 +132,7 @@ Multiplayer appears in the logic only as who flies a ship (`rvController`, `RV_F
   mission 3 and flies the host's 0 by the host's records; each has the other where it is; every copy of a host ship
   a puppet; as many ships on both; both at the host's frame rate), `retry`, `carrier`, `guestdeath` (the death
   screens, the host's R reaching the guest, the mission flown again and met again), `land` (the guest's landing is
-  the host's, scored alike), `autopilot` (the guest taken along), `kill` (the host's kills explode and go on the
+  the host's, scored alike), `autopilot` (the host's flyby shown on the guest while the host's runs, then the guest taken along), `kill` (the host's kills explode and go on the
   guest), `combat` (the guest's hits go to the host and come back), `ram` (the guest's share of its collisions
   goes to the host), `PLAYERS=3` (a seat made for the third), and
   `WCFPS=15`. One pair at a time; 40-55 s each.

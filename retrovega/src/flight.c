@@ -346,9 +346,14 @@ static int g_cam_cy = SCR_H / 2;        /* the camera's centre row: the opening'
 enum { VIEW_COCKPIT, VIEW_CHASE, VIEW_FLYBY, VIEW_LANDING };
 static int g_view, g_view_back;         /* the view, and the one the flyby goes back to */
 static int g_fly_t;                     /* the flyby's frame */
+static int g_fly_jump;                  /* 1: our own autopilot's flyby, our jump at its end; 0: another machine's, shown
+                                           here (autoAnimation_c) until its jump moves us */
+static int g_flying;                    /* a flight runs (rv_flight_run): another machine's flyby may be shown */
 static LfVec g_cam_pos;                 /* the outside camera (positions) and its basis */
 static LfBasis g_cam_b;
 #define FLYBY_FRAMES 90                 /* three seconds along the formation's left side, ahead to behind */
+#define FLYBY_WAIT 60                   /* another machine's flyby: shown until its end comes (autoAnimation(0, 0, 0)), or
+                                           this many frames past its own */
 #define CHASE_BACK_KM 450               /* the chase camera: this far behind the ship and above it (a fighter of 100 km */
 #define CHASE_UP_KM 100                 /* then spans some 90 px, in the lower third of the view) */
 static void basis_of(int s, LfBasis *b);
@@ -504,6 +509,15 @@ static void set_view(int view)
     view_frame();
     rv_notef(s_view, view == VIEW_COCKPIT ? "the cockpit" : view == VIEW_CHASE ? "the chase camera"
              : view == VIEW_LANDING ? "the landing" : "the autopilot's flyby");
+}
+
+/* the autopilot's flyby from now: `jump` 1 ours (the jump at its end, flight_frame), 0 another machine's */
+static void fly_by(int jump)
+{
+    g_view_back = g_view;
+    g_fly_t = 0;
+    g_fly_jump = jump;
+    set_view(VIEW_FLYBY);
 }
 static unsigned long g_star_place_ticks, g_star_draw_ticks;   /* what the sky costs (logged when the flight ends) */
 
@@ -3401,14 +3415,17 @@ void __far __cdecl flight_frame(void)
 #endif
     fx_frame();                         /* what the step did: explosions and sounds started */
     explode_frame();
-    if (g_view == VIEW_FLYBY && ++g_fly_t >= FLYBY_FRAMES) {   /* the flyby over: the jump, and the view back */
+    if (g_view == VIEW_FLYBY && ++g_fly_t >= FLYBY_FRAMES && g_fly_jump) {   /* our flyby over: the jump, the view back */
         static const char __far s_went[] = "flight: autopilot: on to nav %u", __far s_not[] = "flight: autopilot: not now";
         set_view(g_view_back);
-        if (logic_autopilot())
+        if (logic_autopilot())          /* (its autopilotFinished ends the camera on every machine) */
             rv_notef(s_went, currentNavPoint);
-        else
+        else {
             rv_notef(s_not);
-    }
+            autoAnimation(0, 0, 0);     /* (no jump: the camera's end, for every machine that shows it) */
+        }
+    } else if (g_view == VIEW_FLYBY && !g_fly_jump && g_fly_t >= FLYBY_FRAMES + FLYBY_WAIT)
+        set_view(g_view_back);          /* (another machine's flyby whose end never came) */
     view_frame();
 #ifdef RV_TESTS
     if (g_sky_demo)
@@ -3546,16 +3563,27 @@ void __far __cdecl flight_autopilot(void)
     if (g_view == VIEW_FLYBY)
         return;
     if (logic_autopilot_ready() >= 0) {   /* the flyby, then the jump (flight_frame) */
-        g_view_back = g_view;
-        g_fly_t = 0;
-        set_view(VIEW_FLYBY);
+        fly_by(1);
+        /* the camera's start through the thunk: in a shared flight the layer shows it on every machine at once (as the
+         * old game's autopilot animation), each around its own ship */
+        autoAnimation((uint16_t)gInstanceShipTypes[0], 1, FLYBY_FRAMES);
     } else
         rv_notef(s_not);
 }
 
+/* the autopilot's camera, the autoAnimation thunk's body: (type, mode, frames) starts it, (0, 0, 0) ends it.  Our own
+ * flyby's start comes here too, already showing (flight_autopilot).  In a shared flight the layer calls it with another
+ * machine's (docs/multiplayer.md): that flyby is shown here, around our own ship, until its end comes (or FLYBY_WAIT
+ * past its frames), with no jump of ours after it: that machine's jump moves this ship */
 void __far __cdecl autoAnimation_c(unsigned short camShipType, unsigned short camMode, unsigned short duration)
 {
-    RV_NOTE("flight: autoAnimation(%u, %u, %u)", camShipType, camMode, duration);
+    RV_NOTE("flight: autoAnimation(%u, %u, %u) at frame %u", camShipType, camMode, duration, frameCounter);
+    if (!g_flying || g_sim)
+        return;
+    if (camMode && (g_view == VIEW_COCKPIT || g_view == VIEW_CHASE))
+        fly_by(0);
+    else if (!camMode && g_view == VIEW_FLYBY && !g_fly_jump)
+        set_view(g_view_back);
 }
 
 /* --- from the game --- */
@@ -3674,7 +3702,9 @@ int flight_fly(const RvMission __far *m)
     g_fly_t = 0;
     uiMode(0);
     g_landing_t = -1;
+    g_flying = 1;
     status = rv_flight_run();           /* (its loop begins with flight_startup: the loading, then the palette) */
+    g_flying = 0;
     missionEnded();                     /* (at once, as WC.EXE's: the layer shares the ending before the landing's show,
                                            and the score follows it, missionVictoryCalc: docs/multiplayer.md) */
     if (status == 1 && landedOn != 0xFFFF)

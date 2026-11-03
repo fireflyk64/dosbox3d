@@ -10,7 +10,7 @@
 #             carrier     the host's carrier is lost (forced status 6): the carrier's screen on both, R
 #             guestdeath  the guest dies (forced): both on their death screens, the host's R decides
 #             land        the guest lands on the carrier (forced, !land): the host's game lands on the same ship
-#             autopilot   the host's autopilot takes the guest along
+#             autopilot   the host's autopilot: its flyby shown on the guest at once, then the guest taken along
 #             combat      after the host's autopilot to the enemies, the guest flies at them and fires: its hits
 #                         reach the host's game, and come back to it
 #             ram         after the host's autopilot to the enemies, the guest flies into them: its ship's share of
@@ -58,8 +58,8 @@ guestdeath)
 land)
     GUEST="$GUEST,10:!land" ;;
 autopilot)
-    HOST="$HOST,10:a,14:!ds=after"
-    GUEST="$GUEST,14:!ds=after" ;;
+    HOST="$HOST,10:a,11.5:!shot=flyby,14:!ds=after"
+    GUEST="$GUEST,11.5:!shot=flyby,14:!ds=after" ;;
 ram)
     HOST="$HOST,10:a"
     GUEST="$GUEST,13:f,15:!ram=npc,17:!ram=npc,19:!ram=npc" ;;

@@ -3469,9 +3469,8 @@ int16_t logic_autopilot(void)
     yaw = lf_atan2(d.x, d.z);
     pitch = lf_atan2(d.y, horiz);
     stop = way_stop(next, &region, &field);
-    /* (the jump's start and end through the thunks: in a shared flight the layer replays them, and every pilot's ship
-     * goes where the host's game puts it; alone, two probes) */
-    autoAnimation((uint16_t)gInstanceShipTypes[0], 1, 0);
+    /* (the camera's start was the engine's, at its flyby: flight.c; the jump's end goes through autopilotFinished below:
+     * in a shared flight the layer replays it, and every pilot's ship goes where the host's game puts it) */
     ship_face(0, yaw, pitch);
     if (region >= 0 || field)
         to = vec3((TO_KM(gPositionVector[0].x) + FIX_MUL(gOrientationFrontVector[0].x, stop)) * KM,

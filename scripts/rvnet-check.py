@@ -168,6 +168,19 @@ class Check:
                       'everyone scored the mission alike (%s)' % [w[-1] if w else None for w in won])
         if sc == 'autopilot':
             self.logs_say(1, r'replay autopilot', 'the guest replayed the autopilot')
+            # the host's flyby on every guest while the host's runs (flight.c, autoAnimation_c): begun by the camera's
+            # start, ended by the jump's end, most of its 90 frames long, and no jump of the guest's own
+            self.need(re.search(r'flight: autopilot: on to nav', self.game_log(0)) is not None, 'the host jumped')
+            for n in range(1, self.players):
+                g = self.game_log(n)
+                start = re.search(r'flight: autoAnimation\(\d+, 1, (\d+)\) at frame (\d+)', g)
+                end = start and re.search(r'flight: autoAnimation\(0, 0, 0\) at frame (\d+)', g[start.end():])
+                shown = start and re.search(r"flight: the view: the autopilot's flyby", g[start.end():])
+                if self.need(start and end and shown, "p%d showed the host's flyby (its start, the view, its end)" % n):
+                    frames = int(end.group(1)) - int(start.group(2))
+                    self.need(int(start.group(1)) * 2 // 3 <= frames <= int(start.group(1)) + 60,
+                              "p%d's flyby lasted as the host's (%d frames of %s)" % (n, frames, start.group(1)))
+                self.need('flight: autopilot: on to nav' not in g, 'p%d did not jump by itself' % n)
             host, g = self.dump(0, 'moved'), self.dump(0, 'after')
             if host and g:
                 self.need(km(host.pos(0), g.pos(0)) > 5000, 'the host went by autopilot (%.0f km)' % km(host.pos(0), g.pos(0)))
