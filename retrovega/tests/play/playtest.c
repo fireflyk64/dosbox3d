@@ -3927,6 +3927,30 @@ static void t_raid(void)
     REQUIRE(rvTarget[other] == 0, e_taunt, rvTarget[other], 0, 0);
 }
 
+/* M8.34: the autopilot brings the mission's wingman however far it is (the user, 2026-11-03: "sometimes my wingmate
+ * doesn't auto with me and I just go it alone"): 25,000 km off, after the jump it is within 3,000 km of the player */
+static void t_autopilot_far_wingman(void)
+{
+    static const char __far e_wing[] = "no wingman in the patrol (%d)";
+    static const char __far e_went[] = "the autopilot returned %d (the player %d km from nav 1)";
+    static const char __far e_along[] = "the wingman, 25,000 km off before the jump, is %d km from the player after it: "
+        "it comes along";
+    int16_t s, w = -1, r;
+    pt_patrol();
+    playerCanBeDamaged = 0;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
+        if (slot_is_ship(s) && commAnimInfo[s] == SIDE_TERRAN && logic_is_wingman(s))
+            w = s;
+    REQUIRE(w > 0, e_wing, w, 0, 0);
+    pt_put(w, -25000, 0, 0, 0);
+    if (!pt_steps(SEC))
+        return;
+    r = logic_autopilot();
+    REQUIRE(r && pt_km_to(0, 0, 0, NAV1_Z) < 5000, e_went, r, pt_km_to(0, 0, 0, NAV1_Z), 0);
+    REQUIRE(pt_km_to(w, gPositionVector[0].x / 256, gPositionVector[0].y / 256, gPositionVector[0].z / 256) < 3000,
+            e_along, pt_km_to(w, gPositionVector[0].x / 256, gPositionVector[0].y / 256, gPositionVector[0].z / 256), 0, 0);
+}
+
 /* M8.33: an escort target out with jump=2 goes through nav 1 with the player and jumps only short of nav 2 (the user,
  * 2026-11-03: "the ox should jump at nav 2 not nav 1"): it holds at nav 1 while the enemies there are about, goes on
  * when they are gone, and is out of the world, not killed, by nav 2 */
@@ -6089,6 +6113,7 @@ static const char __far n_m7_8[] = "M7.8 puppet-launch (missile_launch, step_fir
 static const char __far n_m8_29[] = "M8.29 scene-human (step_scene): a ship near another machine's pilot stays in the scene";
 static const char __far n_m8_30[] = "M8.30 human-seat-lost (logic_wingman_lost): a wingman a person flew, killed, is no named pilot's death";
 static const char __far n_m8_33[] = "M8.33 escort-jump (route_step): an escort target out with jump=2 holds at nav 1 through the fight and jumps only at nav 2";
+static const char __far n_m8_34[] = "M8.34 autopilot-wingman (logic_autopilot): the mission's wingman comes along however far it had gone";
 static const char __far n_m8_32[] = "M8.32 named-hull (do_damage): a named pilot's hull takes a hit past its armour as a share, eight laser hits; a person's seat the hit itself";
 static const char __far n_m8_31[] = "M8.31 dying (delayedDespawn, do_damage): delayedDespawn starts a ship's end; the player's kills are its splashes";
 static const char __far n_m6_6[] = "M6.6 ram-caps (ram): a collision costs the player its shield and armour at most (the hull to 40% with the armour gone) and, cut, a system; a light one the old rule's; an NPC its shield and half its armour; into a capital ship over 100 kps, stopped";
@@ -6165,7 +6190,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 },
 };
 
 /* --- the run --- */

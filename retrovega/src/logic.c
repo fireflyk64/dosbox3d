@@ -3489,6 +3489,7 @@ void logic_end(void)
                                            behind the player (the old game's transport came along, 1,800 km behind) */
 #define AUTOPILOT_BEHIND_KM 800
 #define AUTOPILOT_WING_KM 10000         /* the friendly fighters this near come along, keeping their places */
+#define AUTOPILOT_WING_SIDE_KM 1500     /* the mission's wingman, farther than that, comes along this far to the right */
 
 /* the autopilot key (A), between two steps: with no enemy near, the player (and the wing) taken on to the next nav
  * point, as the old games cut to the arrival; 1 when it went, 0 when it may not.  (On a multiplayer client the layer
@@ -3624,6 +3625,13 @@ int16_t logic_autopilot(void)
             gPositionVector[s].x += to.x - gPositionVector[0].x;
             gPositionVector[s].y += to.y - gPositionVector[0].y;
             gPositionVector[s].z += to.z - gPositionVector[0].z;
+        } else if (maybeEntityType[s] == ET_SHIP && slotMissionShip[s] < 64 && MSHIP_BEHAVIOUR(slotMissionShip[s]) == 4) {
+            /* the mission's wingman, however far it had gone, comes along beside the player (the user, 2026-11-03:
+             * "sometimes my wingmate doesn't auto with me and I just go it alone"; it was left beyond 10,000 km) */
+            const RvVec3 *R = &gOrientationRightVector[0];
+            gPositionVector[s] = vec3(to.x + FIX_MUL(R->x, AUTOPILOT_WING_SIDE_KM) * KM,
+                                      to.y + FIX_MUL(R->y, AUTOPILOT_WING_SIDE_KM) * KM,
+                                      to.z + FIX_MUL(R->z, AUTOPILOT_WING_SIDE_KM) * KM);
         } else if (maybeEntityType[s] == ET_CAPSHIP && escorted(s) && player_km(s) < AUTOPILOT_ESCORT_KM) {
             gPositionVector[s] = vec3(to.x - FIX_MUL(gOrientationFrontVector[0].x, AUTOPILOT_BEHIND_KM) * KM,
                                       to.y - FIX_MUL(gOrientationFrontVector[0].y, AUTOPILOT_BEHIND_KM) * KM,

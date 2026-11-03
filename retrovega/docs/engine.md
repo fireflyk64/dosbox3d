@@ -269,6 +269,9 @@ an asteroid field and flashes it red about twice a second in a mine field. They 
 or asteroid fields are in the way"): it goes to the chosen nav point, stopping 500 km short of a field across the line,
 or 500 km inside the reach of a point not yet reached that still has ships to come, whose ships then come. It will not
 go with a field less than 1,000 km ahead on the line (nor from inside one): the player flies through, as in the old game.
+It takes along the friendly fighters within 10,000 km, keeping their places, and the mission's wingman however far it
+has gone, put 1,500 km to the player's right (the user, 2026-11-03: "sometimes my wingmate doesn't auto with me and I just
+go it alone"; it was left behind past 10,000 km); a person's wingman always comes. M8.34.
 
 **Who is in the scene** (`step_scene`): the old game took a ship out at 16,000 km from the player, and its nav points
 were far enough apart that the last one's ships were gone before the next one's came. At our 0.45 of its distances
