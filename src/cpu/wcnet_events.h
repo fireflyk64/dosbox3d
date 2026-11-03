@@ -67,7 +67,7 @@ void enqueue_test_kill(int slot);
 bool before_first_frame();   // a mission has started but its first flight frame has not run: the game is setting it up
 // Test aid (the key script's "!hit=<qty>"): our own ship takes that much
 // damage from dead ahead (or from behind), through the game's do_damage.
-void enqueue_test_hit(int quantity, bool fromBehind);
+void enqueue_test_hit(int quantity, bool fromBehind, int slot = 0);  // (slot: the ship hit; 0 our own)
 void enqueue_test_mem();  // logs the game's free heap (WC2)
 // A key pressed and released on this machine's game, as a player would
 // (wcnet_hooks.cpp; the release follows from the periodic call).

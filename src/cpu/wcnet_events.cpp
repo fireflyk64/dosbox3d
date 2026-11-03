@@ -1739,15 +1739,15 @@ void enqueue_test_kill(int slot) {
 // then the player's own damage model with its cockpit damage).
 class OwnHitJob : public VmJob {
 public:
-    OwnHitJob(int quantity, bool fromBehind) : quantity_(quantity), fromBehind_(fromBehind) {}
+    OwnHitJob(int quantity, bool fromBehind, int slot) : quantity_(quantity), fromBehind_(fromBehind), slot_(slot) {}
     virtual bool start() {
         // The vector is the way the blow travels: against our nose for a
         // hit from ahead (front shield and armor), along it from behind.
         // RetroVega's is the place the hit lands: 100 km off our nose (or
         // tail), its front vector 256 long and a km 256 positions.
-        Vec3 v = read_vec(vec_slot(ds::gOrientationFrontVector, kPlayerSlot));
+        Vec3 v = read_vec(vec_slot(ds::gOrientationFrontVector, slot_));
         if (g_traits.damageAtPlace) {
-            Vec3 p = read_vec(vec_slot(ds::gPositionVector, kPlayerSlot));
+            Vec3 p = read_vec(vec_slot(ds::gPositionVector, slot_));
             int k = fromBehind_ ? -100 : 100;
             v.x = p.x + v.x * k; v.y = p.y + v.y * k; v.z = p.z + v.z * k;
         } else if (!fromBehind_) {
@@ -1755,7 +1755,7 @@ public:
         }
         write_vec(kTmpVectorOff, v);
         call_of(code::do_damage)
-            .arg((Bit16u)kInvalidSlot).arg((Bit16u)kPlayerSlot)
+            .arg((Bit16u)kInvalidSlot).arg((Bit16u)slot_)
             .arg((Bit16u)quantity_).arg((Bit16u)kTmpVectorOff)
             .invoke();
         return true;
@@ -1765,6 +1765,7 @@ public:
 private:
     int quantity_;
     bool fromBehind_;
+    int slot_;
 };
 
 // Test aid (the key script's "!mem"): how much of its own heap the game has
@@ -1795,8 +1796,8 @@ void enqueue_test_mem() {
     g_trampoline.enqueue(new MemJob());
 }
 
-void enqueue_test_hit(int quantity, bool fromBehind) {
-    g_trampoline.enqueue(new OwnHitJob(quantity, fromBehind));
+void enqueue_test_hit(int quantity, bool fromBehind, int slot) {
+    g_trampoline.enqueue(new OwnHitJob(quantity, fromBehind, slot));
 }
 
 // ---------------------------------------------------------------------------

@@ -161,6 +161,17 @@ static int first_npc_ship() {
     return -1;
 }
 
+// the first ship of a side not ours (commAnimInfo: a word per slot, the side)
+static int first_foe_ship() {
+    Bit16u ours = rd16(ds::commAnimInfo);
+    for (int slot = kMinShipSlot; slot <= kMaxShipSlot; slot++) {
+        if (entity_type(slot) == ET_SHIP && rd16((Bit16u)(ds::commAnimInfo + 2 * slot)) != ours) {
+            return slot;
+        }
+    }
+    return -1;
+}
+
 static int first_rock() {
     for (int i = 0; i < 0x14; i++) {
         int slot = rd8((Bit16u)(ds::entitiesToDespawn + i));
@@ -177,7 +188,8 @@ static int script_slot(const char *arg) {
         Bit8u t = ds::known(ds::missileTarget) ? rd8((Bit16u)(ds::missileTarget + kPlayerSlot)) : 0xff;
         return t == 0xff ? -1 : (int)t;
     }
-    return strcmp(arg, "npc") == 0 ? first_npc_ship() : strcmp(arg, "rock") == 0 ? first_rock() : atoi(arg);
+    return strcmp(arg, "npc") == 0 ? first_npc_ship() : strcmp(arg, "foe") == 0 ? first_foe_ship()
+           : strcmp(arg, "rock") == 0 ? first_rock() : atoi(arg);
 }
 
 static void face_slot(int target) {
@@ -327,6 +339,9 @@ static void auto_keys() {
 // "!rocks=<1|0|2>", which switches the asteroid and mine fields (2: soft),
 // "!shot=<name>", which writes the screen to WCNET_DUMP_DIR/<name>.ppm,
 // "!hit=<qty>[:back]", which damages our own ship as a hit from ahead would,
+// "!shoot=<slot|npc>:<qty>[:back]", which damages that ship the same way,
+// "!tail=<slot|npc|foe>[:<km>]", which puts our ship that far behind that one, facing its way
+// (a slot: a number, "npc" the first other ship, "foe" the first of another side),
 // "!say=<text>", which sends a comms message or command ("_" for a space),
 // "!where", which logs where the program is and who called it,
 // "!steer", which logs how the game reads its steering pointer (WC2),
@@ -813,6 +828,40 @@ static void key_script() {
             write_vec(vec_slot(ds::gOrientationUpVector, kPlayerSlot), read_vec(vec_slot(ds::gOrientationUpVector, slot)));
         }
         wclog(1, "key script %.1fs (t=%.1f): ram slot %d (%s)", t, now / 1000.0, slot, slot > 0 && slot_in_use(slot) ? "in use" : "empty");
+    } else if (item.compare(0, 6, "!tail=") == 0) {
+        // !tail=<slot|npc>[:<km>]: our ship put km (default 1,500) behind that ship, facing its way (test aid: on its
+        // six, its engines toward us, for a heat seeker's lock)
+        std::string arg = item.substr(6);
+        size_t colon = arg.find(':');
+        int km = colon == std::string::npos ? 1500 : atoi(arg.c_str() + colon + 1);
+        int slot = script_slot(arg.substr(0, colon).c_str());
+        if (slot > kPlayerSlot && slot <= kMaxShipSlot && slot_in_use(slot)) {
+            Vec3 p = read_vec(vec_slot(ds::gPositionVector, slot)), f = read_vec(vec_slot(ds::gOrientationFrontVector, slot));
+            Vec3 at = { p.x - f.x * km, p.y - f.y * km, p.z - f.z * km };     // (a unit vector is 256: km km)
+            write_vec(vec_slot(ds::gPositionVector, kPlayerSlot), at);
+            write_vec(vec_slot(ds::gOrientationFrontVector, kPlayerSlot), f);
+            write_vec(vec_slot(ds::gOrientationRightVector, kPlayerSlot), read_vec(vec_slot(ds::gOrientationRightVector, slot)));
+            write_vec(vec_slot(ds::gOrientationUpVector, kPlayerSlot), read_vec(vec_slot(ds::gOrientationUpVector, slot)));
+        }
+        wclog(1, "key script %.1fs (t=%.1f): %d km behind slot %d (%s)", t, now / 1000.0, km, slot,
+              slot > 0 && slot_in_use(slot) ? "in use" : "empty");
+    } else if (item.compare(0, 7, "!shoot=") == 0) {
+        // !shoot=<slot|npc>:<qty>[:back]: that ship hit from dead ahead (or behind), as !hit hits ours
+        std::string arg = item.substr(7);
+        size_t colon = arg.find(':');
+        int slot = script_slot(arg.substr(0, colon).c_str());
+        int qty = colon == std::string::npos ? 0 : atoi(arg.c_str() + colon + 1);
+        bool back = arg.find(":back") != std::string::npos;
+        if (slot > kPlayerSlot && slot <= kMaxShipSlot && slot_in_use(slot) && qty > 0) {
+            ShipHealthState h = read_health(slot);
+            wclog(1, "key script %.1fs (t=%.1f): hit slot %d with %d from %s; shield %d/%d armor %d/%d/%d/%d core %d; "
+                  "ai state %d", t, now / 1000.0, slot, qty, back ? "behind" : "ahead", h.shield[0], h.shield[1],
+                  h.armor[0], h.armor[1], h.armor[2], h.armor[3], h.coreHp,
+                  (int)(Bit16s)rd16((Bit16u)(ds::shipAiState + 2 * slot)));
+            enqueue_test_hit(qty, back, slot);
+        } else {
+            wclog(1, "key script %.1fs (t=%.1f): no ship to hit in slot %d", t, now / 1000.0, slot);
+        }
     } else if (item.compare(0, 5, "!pos=") == 0) {
         // !pos=<x>:<y>:<z> moves our own ship there
         Vec3 v = read_vec(vec_slot(ds::gPositionVector, kPlayerSlot));

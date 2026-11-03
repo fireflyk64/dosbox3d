@@ -145,4 +145,6 @@ Multiplayer appears in the logic only as who flies a ship (`rvController`, `RV_F
   `T:!land[=SLOT]` lands on that ship (or the first capital ship of ours), `T:waitkey=KEY` waits for the next
   flight tapping KEY (the death screen's R), `T:!ram=SLOT|npc` puts our ship nose to nose with that one; `T:!hit=QTY[:back]` (WC1's) lands a hit 100 km
   off our nose (or tail): RetroVega's `do_damage` takes the place a hit lands (`GameTraits.damageAtPlace`), not the
-  way the blow travels.
+  way the blow travels; `T:!shoot=SLOT|npc|foe:QTY[:back]` hits another ship the same way (the hits a wingman
+  takes: docs/damage.md); `T:!tail=SLOT|npc|foe[:KM]` puts our ship KM (1,500) behind that one, facing its way (a
+  heat seeker's lock). `npc` is the first other ship, `foe` the first of another side.
