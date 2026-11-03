@@ -817,8 +817,10 @@ enemy in front; the nearest at launch; AUTO keeps it so: logic.c's
 `logic_target_*`, the user's ruling of 2026-10-31), the guns the trigger
 fires (G: all, or one type) and the missile (W), the damage readout (D),
 the comm menu (C, below), comms muted (U: no comm faces, no hails), the
-afterburner (Tab held: the ship's afterburner speed, fuel for about 11 s,
-heat), eject (Ctrl+E twice within two seconds, or the handle: the mission
+afterburner (Tab held: the ship's afterburner speed, and heat; the fuel
+as the old game's: ships.csv `fuel` is the tank in its units, the throttle
+open burns a little, the afterburner much more, so a Schroedinger's tank is
+49 s of afterburner, a Pacifier's 73, and 33 minutes of throttle), eject (Ctrl+E twice within two seconds, or the handle: the mission
 ends ejected; none with the ejector wrecked). The LOCK lamp is the missile
 lock (logic.c's `lock_tick`: the chosen missile's seeker on the target,
 below); MASTER WARN blinks for a damaged system or a shield under a

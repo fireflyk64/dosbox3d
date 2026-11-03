@@ -36,7 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 16                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 17                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
                                         # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
@@ -44,7 +44,8 @@ VERSION = 16                            # 2: the ship types' engines; 3: their h
                                         # the muzzle; 11: a type's shield back a point a side every so many steps;
                                         # 12: a weapon's cone, a mission ship's AI profile and fear;
                                         # 13: a mission ship's turrets=off; 14: scenes: 24 lines a
-                                        # mission, 120 characters, conditions (say, radio, after=, if=, unless=, dead=)
+                                        # mission, 120 characters, conditions (say, radio, after=, if=, unless=, dead=);
+                                        # 17: a ship type's fuel rates (fuel_cruise, fuel_burn)
 LIMITS = {'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 16,
           'SEATS': 3, 'TALKS': 200, 'FIELDS': 7, 'SHIPTYPES': 64, 'SHIPRECORDS': 44, 'WEAPONS': 40}
 TEXT = {'ID': 16, 'TITLE': 48, 'TALK': 108, 'KEY': 10, 'CALLSIGN': 12,
@@ -94,6 +95,7 @@ SHIPTYPE = [('char', 'key[RV_KEY]', '%ds' % TEXT['KEY']), ('char', 'name[RV_NAME
             ('unsigned short', 'missiles', 'H'), ('unsigned char', 'nengines', 'B'),
             ('unsigned char', 'gun_energy_steps', 'B'), ('unsigned char', 'shield_full_shift', 'B'),
             ('unsigned char', 'shield_steps', 'B'),
+            ('unsigned short', 'fuel_cruise', 'H'), ('unsigned short', 'fuel_burn', 'H'),
             ('signed char', 'engine[RV_ENGINES][4]', '%db' % (4 * 4)),
             ('unsigned char', 'hit[3]', '3B'), ('unsigned char', 'box[3]', '3B'), ('unsigned char', 'core', 'B'),
             ('unsigned char', 'nvitals', 'B'),
@@ -129,6 +131,25 @@ GUN_ENERGY_STEPS = 1                   # blank in ships.csv: the gun energy come
                                        # exactly, tests/wc1/README.md)
 SHIELD_FULL_SHIFT = 9                  # blank in ships.csv: a shield comes back from nothing in 1 << this steps (512:
                                        # 17 s at LOGIC_HZ, the old game's 15 s), whatever its size (2 points to 900)
+# the afterburner's fuel, as the old game counts it (its code, read 2026-11-02: a type's tank at kShipStats +0x0C, 5 a
+# frame while the throttle is open, ovr143:33E3, and 200 more a frame on the afterburner, ovr141:1B38; its kps is km
+# per twentieth of a second, so a frame is a twentieth): ships.csv `fuel` is the tank in its units, blank the old
+# game's 200,000 (the Hornet's and every non-Confed type's; the Rapier 250,000, the Scimitar 280,000, the Raptor
+# 300,000).  The game's tank is 1,000 points (the gauge's tenths of a percent): a type's rates are thousandths of a
+# point a step (LOGIC_HZ), so a Hornet's tank is 49 s of afterburner and 33 minutes of throttle, as the old game's
+FUEL_TANK = 200000
+FUEL_CRUISE, FUEL_BURN, FUEL_HZ, LOGIC_HZ = 5, 200, 20, 30
+
+
+def fuel_rates(r):
+    """a ships.csv row's (fuel_cruise, fuel_burn): thousandths of the game's 1,000-point tank a step with the throttle
+    open, and more on the afterburner"""
+    tank = int(r.get('fuel') or FUEL_TANK)
+    if not 20000 <= tank <= 10000000:
+        raise Fail('ships.csv %s: fuel %d is not 20,000 to 10,000,000 (the old game\'s units: a Hornet 200,000)'
+                   % (r['key'], tank))
+    rate = lambda per_frame: int(round(1000.0 * 1000 * per_frame * FUEL_HZ / (LOGIC_HZ * tank)))
+    return rate(FUEL_CRUISE), rate(FUEL_BURN)
 # a ship type's engines (data/engines.csv, tools/engines.py): x, y, z in its sprites' box (127 = the half box; +x
 # the ship's left, +z the nose) and the glow's radius, min(0.3 size, 0.09) of the half box, in 1/1024ths
 ENGINES = 4
@@ -440,6 +461,7 @@ def compile_all():
         for k in ('shield_f', 'shield_r'):      # (refill adds one to the low bits of a 16-bit product)
             if n(k) > 32768:
                 raise Fail('ships.csv %s: %s %d is over 32768' % (r['key'], k, n(k)))
+        fuel_cruise, fuel_burn = fuel_rates(r)
         out_types.append(struct.pack(fmt(SHIPTYPE), text(r['key'], TEXT['KEY'], 'ships.csv'),
                                      text(r['name'], TEXT['NAME'], 'ships.csv'), int(r['type'], 16), n('side'),
                                      (SHIPTYPE_FLAG_PLAYER if r['key'] in cockpit_keys else 0)
@@ -448,7 +470,8 @@ def compile_all():
                                      n('cruise_kps'), n('max_kps'), n('ab_kps'), n('accel'), slide, slide_dmg,
                                      n('yaw_dps'), n('pitch_dps'), n('roll_dps'), guns, n('shield_f'), n('shield_r'),
                                      n('armor_f'), n('armor_r'), n('armor_l'), n('armor_rt'), n('hull'),
-                                     n('lod0_px'), radius, rounds, nengines, energy_steps, full_shift, shield_steps, *eng, *hit,
+                                     n('lod0_px'), radius, rounds, nengines, energy_steps, full_shift, shield_steps,
+                                     fuel_cruise, fuel_burn, *eng, *hit,
                                      *volume_box(hit), core, nvitals, *vit, loadout))
     talk_ok = {frozenset((r['a'], r['b'])): r['talk'] == 'yes' for r in load_csv('relations.csv')}
     for pair in talk_ok:

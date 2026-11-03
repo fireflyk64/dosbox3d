@@ -1816,6 +1816,7 @@ static int lasers_far(void);
 static const unsigned char __far g_freq[3][3] = { { 2, 6, 7 }, { 3, 1, 5 }, { 2, 4, 3 } };   /* MHz: WING, CARRIER, GUARD */
 static unsigned long __far g_eject_at;  /* Ctrl+E (or the handle) once: when; a second within 2 s ejects */
 static int __far g_heat10;              /* heat x 10, following the engine with a lag */
+static unsigned __far g_fuel_milli;     /* the fuel burned toward the next point, thousandths (the type's rates) */
 static int __far g_last_side = -1;      /* who talked last frame */
 static unsigned __far g_shield_was;     /* the shields last frame (a drop flickers the lights) */
 static int __far g_flicker;             /* frames of flicker left */
@@ -1974,6 +1975,7 @@ static void systems_start(void)
     g_sys.target = -1;
     g_sys.fuel = 1000;
     g_sys.fuel_extra = logic_boost == RV_BOOST_FUEL ? 500 : 0;
+    g_fuel_milli = 0;
     g_sys.hull = 100;
     g_sys.lights = 1;
     g_sys.target_km = g_sys.nav_km = -1;
@@ -2091,14 +2093,20 @@ static void systems_tick(void)
         if (g_sys.match && t)
             setSpeed[0] = speedLo[s] < t->max_kps ? speedLo[s] : t->max_kps;
     }
-    /* the afterburner: Tab held, while there is fuel (a third of a second's worth a frame... 11 s in all) */
+    /* the afterburner: Tab held, while there is fuel.  The fuel as the old game's: the throttle open burns a little, the
+     * afterburner much more, the type's rates in thousandths of a point a step (data/ships.csv fuel: a Hornet's tank is
+     * 49 s of afterburner, 33 minutes of throttle); Kit's reserve first */
     g_sys.burning = in_key_down(0x0F) && g_sys.fuel > 0 && t && damage_burner_ok();
     rvAfterburner[0] = g_sys.burning;
-    if (g_sys.burning) {
-        if (g_sys.fuel_extra > 0)
-            g_sys.fuel_extra -= 3;
-        else
-            g_sys.fuel -= 3;
+    if (t) {
+        g_fuel_milli += (setSpeed[0] > 0 ? t->fuel_cruise : 0) + (g_sys.burning ? t->fuel_burn : 0);
+        while (g_fuel_milli >= 1000) {
+            g_fuel_milli -= 1000;
+            if (g_sys.fuel_extra > 0)
+                g_sys.fuel_extra--;
+            else if (g_sys.fuel > 0)
+                g_sys.fuel--;
+        }
     }
     if (g_sys.fuel < 0)
         g_sys.fuel = 0;
