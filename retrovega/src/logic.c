@@ -53,6 +53,9 @@ typedef struct {
     uint8_t leaving;                    /* 1: gone for good (the leave: away and removed far off); 0 not */
     uint8_t fear_up, fear_down;         /* its fear's rates (the profile's, or the mission ship's own: fear=) */
     int16_t taunt;                      /* steps left of its anger at the player (logic_taunt) */
+    uint8_t catching;                   /* 1: closing on its target at full speed (from CATCH_FAR_KM in), 0: at its
+                                           attack speed */
+    uint8_t burst_left;                 /* the leave's afterburner: steps left of this burst */
 } Mind;
 enum { FIRE_GUNS = 1, FIRE_MISSILE = 2 };
 static Mind __far g_mind[NUM_SHIP_SLOTS];
@@ -1763,8 +1766,13 @@ enum { PF_NO_MERCY = 1 };               /* it fires at a player that has it sele
 #define AIM_CONE 250                    /* cos x 256 of the usual fire cone: some 7 degrees */
 #define LOCK_CONE 230                   /* a missile locks with the target within this: some 26 degrees */
 #define TAIL_KM 3500                    /* an attacker behind, this near, is on my tail */
-#define TAIL_HOLD_KM 3000               /* a tail slows to its tail speed this near its target (held at the guns' reach, 4,000,
-                                           it sat at the reach's edge, where its bolts died on a receding target: 3% hits) */
+/* An attack's speed, as the old game's fighters flew it (its first mission traced at 15 frames a second, 2026-11-02:
+ * tests/wc1/README.md): at its attack speed (the profile's tail_pct of its top: the old ship table's +16, the Dralthi's
+ * 230) once near, head on or behind, firing while the guns reach; behind a target faster than that it falls back, out
+ * of reach, and only past CATCH_FAR_KM does it close again at full speed, to CATCH_NEAR_KM (a target facing it: into
+ * its guns' reach, the profile's fire_km; the old fighters slowed at some 5,500 km, their reach).  The old tail fired a third of the time so, where one held at the guns' reach fired all the time */
+#define CATCH_FAR_KM 8000
+#define CATCH_NEAR_KM 2500
 #define RELAUNCH_STEPS (4 * LOGIC_HZ)   /* missiles no closer together than this */
 
 static const AiProfile __far k_profiles[P_COUNT] = {
@@ -2149,6 +2157,11 @@ static void take_tactic(int16_t s, Mind __far *m, const AiProfile __far *p, int1
     m->timer = tactic_steps(s, tactic);
     m->dir = (int8_t)(game_rand() & 1 ? 1 : -1);
     m->burn = (uint8_t)(p->ab_pct && game_rand() % 100 < p->ab_pct);
+    /* (an attack on a target facing it from beyond its guns' reach begins by closing in; a tail's own hysteresis stands
+     * across the picks: CATCH_*) */
+    if (tactic == T_PURSUE && m->target != 0xFF && km_between(s, m->target) > (int32_t)p->fire_km
+        && cos_nose_to(m->target, s) >= 0)
+        m->catching = 1;
     if (tactic == T_WAIT) {
         m->timer = (int16_t)(p->wait_s * LOGIC_HZ);
         rvFlags[s] |= 16;               /* (cloaked: unseen by the others' minds) */
@@ -2269,17 +2282,17 @@ static void pick_tactic(int16_t s, Mind __far *m, const AiProfile __far *p, int1
 }
 
 static void throttle(int16_t s, int32_t kps, int16_t burn);
+static int16_t cos_nose_to(int16_t s, int16_t h);
 
-/* the leave (the old game's order 5, read in its code): straight up, or down for an odd slot, as fast as it goes, the
- * afterburner while an enemy is within LEAVE_KM; and beyond LEAVE_KM of every human's ship it is removed, quietly,
- * its mission ship away (not killed: the mission goes on without it) */
+/* the leave (the old game's order 5, read in its code): straight up, or down for an odd slot, at its top speed with the
+ * afterburner in bursts; and beyond LEAVE_KM of every human's ship it is removed, quietly, its mission ship away (not
+ * killed: the mission goes on without it) */
 static void leave_step(int16_t s, Mind __far *m, const AiProfile __far *p)
 {
     static const char __far s_gone[] = "logic: slot %d (mission ship %d) left: beyond %d km of every pilot";
     const RvShipType __far *t = slot_type(s);
     RvVec3 up = vec3(0, (s & 1) ? -256 : 256, 0), b;
     int16_t k, near_ = 0, far_ = 1;
-    (void)m;                            /* (the host's log below reads it) */
     to_body(s, &up, &b);
     steer_to(s, p, b.x, b.y, b.z);
     for (k = 0; k < NUM_SHIP_SLOTS; k++) {
@@ -2290,12 +2303,21 @@ static void leave_step(int16_t s, Mind __far *m, const AiProfile __far *p)
         if ((rvController[k] == CTL_PLAYER || rvController[k] == CTL_PUPPET) && km_between(s, k) <= LEAVE_KM)
             far_ = 0;
     }
-    throttle(s, t ? t->max_kps : 300, near_);
+    /* the burner in the old game's bursts (its leave, read in its code 2026-11-02: ovr163:0228, ovr143:2F5D): 40 of its
+     * frames at a time, the next only once it has slowed back to its top speed (coasting at its acceleration), then at
+     * once with an enemy within LEAVE_KM, else half the time a frame.  A run that surges and coasts, which a pilot on the
+     * burner catches (the Nicander's 1,200 for 2.7 s, then 3.6 s down to 400: some 980 kps on the whole, the
+     * Schroedinger's burner 1,260); held on it, ours got away (the user: "leap off into the ether") */
+    if (m->burst_left)
+        m->burst_left--;
+    else if (t && speedLo[s] <= (uint32_t)t->max_kps && (near_ || game_rand() % (2 * WC_FRAME_STEPS) == 0))
+        m->burst_left = 40 * WC_FRAME_STEPS;
+    throttle(s, t ? t->max_kps : 300, m->burst_left > 0);
 #ifdef RV_HOST
     if (getenv("RV_TACTICS") && frameCounter % 30 == 0) {
         static const char __far f[] = "leave %u: slot %d fear %d at %ld %ld %ld km, speed %lu, burner %d, steer %d %d %d";
         rv_logf(f, (unsigned)frameCounter, s, m->fear, (long)TO_KM(gPositionVector[s].x), (long)TO_KM(gPositionVector[s].y),
-                (long)TO_KM(gPositionVector[s].z), (unsigned long)speedLo[s], near_, g_turn[s].x, g_turn[s].y, g_turn[s].roll);
+                (long)TO_KM(gPositionVector[s].z), (unsigned long)speedLo[s], rvAfterburner[s], g_turn[s].x, g_turn[s].y, g_turn[s].roll);
     }
 #endif
     if (far_) {
@@ -2315,11 +2337,12 @@ static void throttle(int16_t s, int32_t kps, int16_t burn)
     int32_t most = t ? t->max_kps : 300;
     aiSetSpeed((uint16_t)s, (uint16_t)clamp32(kps, 0, most));
     rvAfterburner[s] = (uint8_t)(burn && t && t->ab_kps ? 1 : 0);
-    if (!rvAfterburner[s] && speedLo[s] > (uint32_t)most)   /* (off the burner, an AI is at its top speed at once) */
-        speedLo[s] = (uint32_t)most;
     if (rvAfterburner[s] && speedLo[s] < (uint32_t)t->ab_kps)   /* (on it, at its burner speed at once: the old game's
                                                                    fighters dashed to 3x in a frame; the player's ramps) */
         speedLo[s] = (uint32_t)t->ab_kps;
+    /* (off it, it slows at its type's acceleration, as the player's does: the old fighters came down from a dash at
+     * some 22 km/s a frame of their 15, the Nicander's 150 here; one put at its top speed at once had its burner as
+     * good as always on) */
 }
 
 #define AIM_MISS_KM 300                 /* a shot is let go when the nose's line passes this near the lead point */
@@ -2552,9 +2575,13 @@ static int16_t run_tactic(int16_t s, Mind __far *m, const AiProfile __far *p, co
                                            bear (the old game's 29, and its tail, 26); closing, then matching; off
                                            before a collision */
         steer_to(s, p, aim_at(p, v)->x + pass_side(s, m, p, v), aim_at(p, v)->y, aim_at(p, v)->z);
-        /* (closing at full speed, head on too; behind it within the guns' range, at the profile's tail speed; past
-         * it, full speed round) */
-        throttle(s, v->km > TAIL_HOLD_KM || v->rel.z < 0 || v->cos_its >= 0 ? max : max * p->tail_pct / 100, v->km > 5000 && m->burn);
+        /* (closing from far at full speed, then at its attack speed (CATCH_*), head on or behind; past it, full speed
+         * round) */
+        if (v->km > CATCH_FAR_KM)
+            m->catching = 1;
+        else if (v->km < (v->cos_its >= 0 ? (int32_t)p->fire_km : CATCH_NEAR_KM))
+            m->catching = 0;
+        throttle(s, m->catching || v->rel.z < 0 ? max : max * p->tail_pct / 100, m->catching && v->km > 5000 && m->burn);
         aim_and_fire(s, m, p, v, 1);
         if (p->break_km && v->km < p->break_km && v->cos_nose > 0 && m->passing) {
             take_tactic(s, m, p, T_BREAK);   /* (the old game's fighters: straight at it, then a hard flat yaw away) */

@@ -367,6 +367,17 @@ The same scene, the old game traced again and read at 15 (`run-old.sh`: straight
 | shots a fighter | 23-74 (one fought the wingman); 46-82 | 193-208; 15-87 |
 | passes a fighter, the nose back after one | one or none; 7-11, median 2.3 s, a tenth 9-12 s | none; about 25, median 3.3 s, a tenth 7-8 s |
 
+What was still apart was the speed of an attack. The old tail (straight) flew at its attack speed, 348 km/s under the
+player's 450, fell back from 1,200 to 8,500 km firing while within some 5,500, then closed at full speed (605) to
+4,300-7,500 and fell back again: in range a third of the time. Hunted, it slowed to the same 348 at some 5,500 km head
+on and fired its way in. Ours went everywhere at full speed and its tail held at 3,000 km for good. Now (`CATCH_*`,
+`tail_pct` as the attack speed; an attack closes in only on a target facing it from beyond its guns' reach, the
+afterburner only while closing; off the burner an AI slows at its acceleration, as the old fighters came down from a
+dash at some 22 km/s a frame): straight, shots a fighter 41-98, speed median 330-434; hunted, the nose back after a
+pass in 1.3-3.4 s, 6-9 passes a fighter in their 64-89 s. And the leave (order 5, ovr163:0228; its burner
+ovr143:2F5D, read 2026-11-02) burns in bursts of 40 frames, the next once the ship is down to its top speed: ours held
+the burner on and outran a pursuer.
+
 ## What is still to measure
 
 The other types (the Salthi at nav 3; Krant, Gratha, Jalthi, the capital ships and their turrets in the later

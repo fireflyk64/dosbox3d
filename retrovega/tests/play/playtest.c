@@ -2522,12 +2522,13 @@ static void t_ai_aims(void)
 static void t_ai_limits(void)
 {
     static const char __far e_turn[] = "the enemy's nose turned %d (1024 a turn) in a step: its type allows %d";
-    static const char __far e_fast[] = "the enemy flew %d kps (afterburner %d): its type's top speed is %d";
+    static const char __far e_fast[] = "the enemy flew %d kps (afterburner %d): its type's top speed is %d, and over it "
+        "only on the burner or coming down from it";
     static const char __far e_still[] = "the enemy turned %d (1024 a turn) and flew %d km in 30 s: nothing to test";
     const RvShipType __far *t;
     RvVec3 f0, x;
     int16_t i, most;
-    int32_t c, turned = 0;
+    int32_t c, turned = 0, was = 0;
     pt_duel();
     t = slot_type(1);
     most = (int16_t)(pt_turn_of(1, t->yaw_dps > t->pitch_dps ? t->yaw_dps : t->pitch_dps, 9) * 3 / 2 + 3);
@@ -2541,8 +2542,11 @@ static void t_ai_limits(void)
         c = lf_atan2(pt_len(x.x, x.y, x.z), vec_dot(&gOrientationFrontVector[1], &f0) / 256);
         REQUIRE(c <= most, e_turn, c, most, 0);
         turned += c;
-        REQUIRE((int32_t)speedLo[1] <= (int32_t)(rvAfterburner[1] ? t->ab_kps : t->max_kps), e_fast, (int32_t)speedLo[1],
+        /* (off the burner, over its top speed only coming down: the old fighters slowed from a dash at their rate) */
+        REQUIRE((int32_t)speedLo[1] <= (int32_t)(rvAfterburner[1] ? t->ab_kps : t->max_kps)
+                || (!rvAfterburner[1] && (int32_t)speedLo[1] < was), e_fast, (int32_t)speedLo[1],
                 rvAfterburner[1], rvAfterburner[1] ? t->ab_kps : t->max_kps);
+        was = (int32_t)speedLo[1];
     }
     REQUIRE(turned >= TURN / 8 && (!slot_is_ship(1) || pt_km_to(1, 0, 0, 6000) > 500), e_still, turned,
             slot_is_ship(1) ? pt_km_to(1, 0, 0, 6000) : 0, 0);

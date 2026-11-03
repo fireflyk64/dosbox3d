@@ -81,7 +81,9 @@ wary, and a ship under 40% leaves within a pick or two of being tailed. Fear of 
 (`SIT_HURT`'s); fear of 30 is the leave: with a living capital ship of its side about, `T_HOME` (a run to it on the
 afterburner; there, or when its 6 s are up, its fear is 0 and it fights on, as the old game zeroed the fear of a
 ship with its carrier about), else away for good (`leaving`, `leave_step`: straight up, or down for an odd slot,
-at top speed, the afterburner while an enemy is within 16,000 km, and beyond 16,000 km of every human's ship it is
+at top speed, the afterburner in the old game's bursts (40 of its frames, the next once it has slowed to its top
+speed: at once with an enemy within 16,000 km, else half the time a frame; off the burner every AI slows at its
+type's acceleration, not at once), and beyond 16,000 km of every human's ship it is
 removed quietly through `despawn`, its mission ship `g_away`: not killed, and not in the way of the mission's win).
 The rates c and d are the profile's (`fear_up`, `fear_down`) or the mission ship's own (`fear=c/d`); a mission ship
 may also name its profile (`ai=fighter`, ...).
@@ -151,8 +153,8 @@ record (`P_*` + 1; 0 the type's own), which a mission may set.
 | `turn_pct` | it uses this percent of its type's turn rate at most |
 | `burst` | steps of afterburner at the start of every break (the old games' dash); 0 none |
 | `lead_pct` | how much of the lead it aims off: 100 the shots meet the target, 0 it aims at the target itself (the old games' fighters) |
-| `tail_pct` | behind its target within `TAIL_HOLD_KM` (3,000 km) it flies this percent of its top speed |
-| `fire_gap` | steps between its volleys with the target in the cone (the old game's fighters: one every 0.75 s) |
+| `tail_pct` | its attack speed, this percent of its top speed (the old ship table's +16: the Dralthi's 230 of 400): once its target is near, head on (within `fire_km`) or behind (within `CATCH_NEAR_KM`, 2,500 km), it flies this; behind a faster target it falls back, and closes again at full speed only past `CATCH_FAR_KM` (8,000 km), the old tail's cycle: in range a third of the time |
+| `fire_gap` | steps between its volleys with the target in the cone (the old game's fighters: one every 15 of its frames, a second) |
 | `fear_up`, `fear_down` | the fear model's c and d (the old game's class bytes: c 2-5, d 6-10); a mission ship's own `fear=c/d` stands in |
 | `flags` | `PF_NO_MERCY`: it fires at a player that has it selected, whatever the hold rule (the old game's class 11) |
 | `pick[SIT_*][4]` | the dice: up to four (tactic, weight) a situation |
