@@ -478,8 +478,10 @@ Alt-X, "so it's rare".
   count kept beside it (a `wipe` spares the lost), in a chalk hand with
   tally marks (gfx.c's `gfx_chalk`: a stroke
   whose pixels are mixed toward white by a hash of where they are, so the
-  slate shows through). The hand's font (13 KB) is loaded only while the
-  board shows: after a flight the largest free block can be under 32 KB.
+  slate shows through). Nine rows fit the hero and all eight pilots, with
+  Echo, Prime and Anchor each on their own row. The hand's font is loaded
+  only while the board shows: after a flight the largest free block can
+  be under 32 KB.
 
 ## Music: interactive MIDI on the OPL3
 
@@ -2709,7 +2711,7 @@ drivers offers less than DOSBox does.
 - **Fonts:** rasterised by `tools/rvpack.py` into our own bitmap format,
   2-bit coverage drawn through the palette's mix tables: Orbitron (SIL OFL)
   at 13 px for text and 22 px for titles, always in memory; the tally
-  board's chalk hand, Caveat (SIL OFL) at 30 px, roughened a little and
+  board's chalk hand, Caveat (SIL OFL) at 27 px, roughened a little and
   packed four pixels to a byte, in memory only while the board shows.
 - **Pointer:** our own art (CC0), an arrow and a highlight ring, drawn by
   the engine with save-under.

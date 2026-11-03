@@ -61,7 +61,7 @@ FACE_FRAME = 16
 # Orbitron (SIL OFL 1.1, art/fonts/), the user's pick for the futuristic look:
 # bold for body text, black for titles.  (file, pixels, weight)
 FONT_FILES = {'body': ('Orbitron.ttf', 13, 700), 'title': ('Orbitron.ttf', 22, 900)}
-CHALK_FONT = ('Caveat.ttf', 30, 700)     # the tally board's hand (SIL OFL), loaded only while it shows
+CHALK_FONT = ('Caveat.ttf', 27, 700)     # the tally board's hand (SIL OFL), nine rows, loaded only while it shows
 FONT_DIR = os.path.join(ROOT, 'art', 'fonts')
 
 UI = [(0, 0, 0), (28, 28, 30), (60, 60, 64), (100, 100, 104), (140, 140, 144), (180, 180, 184),

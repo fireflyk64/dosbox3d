@@ -396,7 +396,7 @@ int gfx_font_load(void)
     return 1;
 }
 
-/* the chalk hand (13 KB) is in memory only while the tally board shows;
+/* the chalk hand is in memory only while the tally board shows;
  * 0 if there was no room for it */
 int gfx_font_chalk(int on)
 {

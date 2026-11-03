@@ -160,9 +160,9 @@ rectangles.
   of the plate around the board, scaled to the screen with its own
   palette), the hero and every pilot with marks or a sortie in a chalk hand
   (Caveat, SIL OFL), most first, with tally marks and no number (the user:
-  "the tallies are cooler"), as many as the slate holds (the hero always
-  up, in the last row if not above it); the twins (relations.csv) share a
-  row, "Prime/Anchor", their marks split by a stroke; a new campaign starts
+  "the tallies are cooler"). The 27-pixel hand and 24-pixel row spacing fit
+  all nine rows: the hero and all eight pilots, including Echo, Prime and
+  Anchor each on their own row. A new campaign starts
   each pilot at people.csv's `kills` (3 to 18, by seniority and story), and
   a flight adds its real splashes: the hero's own, and each named pilot's
   the AI flew (logic.c `logic_pilot_kills`; they had a random 1 to 3 on a
