@@ -3074,6 +3074,67 @@ static void t_approach_silent(void)
     REQUIRE(n > 0 && first < 4 * SEC, e_lead, first, n, 0);
 }
 
+/* the volleys a Shizong (the Rlaan's disabler, four Cripplers) fires in `secs` from 3,000 km ahead of a still and
+ * invulnerable player that has it selected, under `rules` (set after the scene: pt_alone loads the test mission's) */
+static int16_t pt_shizong_volleys(uint8_t rules, int16_t secs)
+{
+    uint16_t a0;
+    int16_t i, n = 0;
+    pt_alone(PT_PLAYER);
+    g_sys.armed = 0;
+    playerCanBeDamaged = 0;
+    pt_ship(1, 0x13, SIDE_RLAAN, CTL_AI, 0, 0, 3000, TURN / 2);
+    g_sys.target = 1;
+    g_rule_flags = rules;
+    a0 = shots_added();
+    for (i = 0; i < secs * SEC && slot_is_ship(1); i++) {
+        if (!pt_step()) {
+            g_sys.target = -1;
+            return -1;
+        }
+        pt_speed(0, 0);
+        if (shots_added() != a0) {
+            a0 = shots_added();
+            n++;
+        }
+    }
+    g_sys.target = -1;
+    return n;
+}
+
+/* M5.20: the held fire is the easy mode's (the user, 2026-11-03: a selected Shizong circled a still player for 15
+ * minutes and never fired; "have a global easy mode that can turn it on...but keep it off for most play"): the first
+ * mission's own rules leave it off and its selected Shizong fires; the bunk menu's easy (g_easy) turns it on in
+ * camp_load_rules, and the Shizong holds (measured: 38 volleys in 120 s, and none) */
+static void t_easy_hold(void)
+{
+    static const char __far e_data[] = "the first mission's rules have the held fire on (flags %d): it is the easy mode's";
+    static const char __far e_easy[] = "under the easy mode the rules are %d: camp_load_rules should add the held fire (%d)";
+    static const char __far e_fires[] = "the selected Shizong fired %d volleys in 30 s on a still player under the first "
+        "mission's rules: it should fire";
+    static const char __far e_holds[] = "under the easy mode the selected Shizong fired %d volleys in 30 s, the player "
+        "ahead of its nose: it should hold";
+    uint8_t keep = g_rule_flags, keep_easy = g_easy, normal, easy;
+    int16_t fired, held;
+    camp_mission(0, &g_tm);
+    g_easy = 0;
+    camp_load_rules(&g_tm);
+    normal = g_rule_flags;
+    g_easy = 1;
+    camp_load_rules(&g_tm);
+    easy = g_rule_flags;
+    g_easy = keep_easy;
+    fired = pt_shizong_volleys(normal, 30);
+    held = pt_shizong_volleys(easy, 30);
+    g_rule_flags = keep;
+    if (fired < 0 || held < 0)
+        return;
+    REQUIRE(!(normal & RV_RULE_HOLD_FIRE), e_data, normal, 0, 0);
+    REQUIRE(easy == (normal | RV_RULE_HOLD_FIRE), e_easy, easy, RV_RULE_HOLD_FIRE, 0);
+    REQUIRE(fired > 0, e_fires, fired, 0, 0);
+    REQUIRE(held == 0, e_holds, held, 0, 0);
+}
+
 /* a scared fighter: its armour gone and its hull nearly, 2,000 km ahead of the player and flying the same way (the
  * player on its tail, pointing at it), the player still and invulnerable */
 static int16_t pt_scared(void)
@@ -5899,6 +5960,7 @@ static const char __far n_m5_15[] = "M5.15 leave (fear_step, leave_step): a scar
 static const char __far n_m5_16[] = "M5.16 home (T_HOME): with its side's capital ship about it runs there instead and fights on";
 static const char __far n_m5_17[] = "M5.17 hold-missiles (aim_and_fire): the held fire withholds the missiles too";
 static const char __far n_m5_18[] = "M5.18 dodge-fire (missile_ahead): a missile homing on it from ahead, it fires whatever the hold";
+static const char __far n_m5_20[] = "M5.20 easy-hold (g_easy): the held fire only under the easy mode; a selected Shizong fires on a still player";
 static const char __far n_m5_19[] = "M5.19 approach-silent (T_APPROACH): under aim=cone the approach has no guns; the tail from behind has";
 static const char __far n_m6_1[] = "M6.1 ram (step_collisions): ships inside one another are pushed apart, both hurt";
 static const char __far n_m6_2[] = "M6.2 no-ghosts (step_collisions): a ship flown at another does not pass through";
@@ -5994,7 +6056,7 @@ static const PtTest __far k_tests[] = {
     { n_m5_8, t_formation, 0 }, { n_m5_9, t_no_left, 0 }, { n_m5_10, t_waiter, 0 }, { n_m5_11, t_old_straight, 0 },
     { n_m5_12, t_old_hunt, 0 },
     { n_m5_13, t_hold_fire, 0 }, { n_m5_14, t_cone_fire, 0 }, { n_m5_15, t_leave, 0 }, { n_m5_16, t_home, 0 },
-    { n_m5_17, t_hold_missiles, 0 }, { n_m5_18, t_dodge_fire, 0 }, { n_m5_19, t_approach_silent, 0 },
+    { n_m5_17, t_hold_missiles, 0 }, { n_m5_18, t_dodge_fire, 0 }, { n_m5_19, t_approach_silent, 0 }, { n_m5_20, t_easy_hold, 0 },
     { n_m6_1, t_ram, 0 }, { n_m6_2, t_no_ghosts, 0 }, { n_m6_3, t_ram_cost, 0 },
     { n_m7_1, t_launch, 0 }, { n_m7_2, t_missile_key, 0 }, { n_m7_3, t_missile_flies, 0 },
     { n_m7_4, t_missile_hits, 0 }, { n_m7_5, t_missile_homes, 0 }, { n_m7_6, t_missile_ends, 0 },

@@ -272,6 +272,7 @@ What the tests expect (an AI Nicander against a still player):
 | M5.16 home | the same with a destroyer of its side 15,000 km off: it runs to within 5,000 km of the destroyer (`T_HOME`) and is not removed |
 | M5.17 hold-missiles | the player's selected target on the player's tail (2,500 km behind a player flying straight at 300 kps, the player in its seekers' cone) launches no missile in 40 s under `hold=on`, and does with the rule off: the old wrapper withheld the whole weapons routine |
 | M5.18 dodge-fire | the selected target 3,000 km ahead facing a still player holds its guns, but shoots within the 6 s a missile of the player's homes on it from ahead (the old missile dodge, maneuver 32: a missile within 37° ahead and 8,000 km) |
+| M5.20 easy-hold | the first mission's rules leave the held fire off and a Shizong 3,000 km ahead of a still player that has it selected fires within 30 s; the bunk menu's easy (`g_easy`) adds `hold=on` in `camp_load_rules` and the same Shizong fires nothing (the user, 2026-11-03: one circled a still player for 15 minutes) |
 | M5.19 approach-silent | under `aim=cone` an enemy 6,000 km ahead facing a still player that faces it fires nothing in its first 7 s (the old approach, `T_APPROACH`, has no guns: it flies past and comes round first) and does by 25 s; under `aim=lead` it fires head on within 4 s |
 
 **The AI as written** (docs/ai.md): a mind per slot runs a tactic picked by weighted dice from its profile's table for

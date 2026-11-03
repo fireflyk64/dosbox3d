@@ -95,11 +95,17 @@ The mission's rules (missions.txt `rules`, `g_rule_flags`; docs/engine.md for `h
   neutron-class 37°, the mass driver 32°) and in range, no oftener than every 13 of the old game's frames, 26 steps (`AI_REFIRE_STEPS`); the hits
   come as the nose sweeps across the target. `aim=lead`: the lead point within the profile's `aim_cos` and within
   `AIM_MISS_KM` of the nose's line, a volley every `fire_gap`, the shots scattered up to 4° (`AI_SCATTER`).
-- `hold=on` (the old game's, the default): the ship a player has selected as a target holds its guns while that
+- `hold=on` (the old game's; since 2026-11-03 the easy mode's, `hold=off` the campaign's): the ship a player has
+  selected as a target holds its guns while that
   player is within 37° ahead of its nose (`holds_fire`, `HOLD_COS`); its wingmen fire on, and a `PF_NO_MERCY`
   profile never holds. Read in the old code (the check sits in its tailing attacks: maneuvers 26, 29 and 18; the
   missile-dodge fires without it) and seen in its flight: the selected Dralthi fired 2 shots in 1,557 frames with
-  the player in its cone and 146 outside it. `hold=off`: every ship fires.
+  the player in its cone and 146 outside it. `hold=off`: every ship fires. The user's ruling (2026-11-03: a selected
+  Shizong circled a still player for 15 minutes without a shot; its Cripplers' 46-degree cone left it only the band
+  past 37, and a Taizong's 20-degree beam none at all; the rule never looks at which way the player faces): off for
+  the usual play, on under the bunk menu's DIFFICULTY easy (`g_easy`, RVSETUP.CFG's ninth byte; `camp_load_rules`
+  adds the flag to every mission's, the simulator's too; in a room the host's choice counts, its AI deciding the
+  fire). M5.20 holds it.
 - `ram=old` (the default) or `ram=soft`: docs/logic.md, `ram_damage`.
 
 ## The steering

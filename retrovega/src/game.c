@@ -84,17 +84,20 @@ static const char *g_talk_names[] = { "slow", "normal", "fast", "very fast" };
 static int g_talk_speed = 1;
 static int g_low_detail;                /* the ships' detail, the bunk menu's choice (0: high, gx.h; only asked with the card there) */
 static const char *g_detail_names_[] = { "high", "low" };
+static const char *g_diff_names[] = { "normal", "easy" };   /* the difficulty, the bunk menu's choice: g_easy (campaign.c) */
 #define SETUP_FILE "RVSETUP.CFG"
 
 static void setup_load(void)
 {
-    unsigned char b[8];
+    unsigned char b[9];
+    size_t n;
     FILE *f = fopen(SETUP_FILE, "rb");
     if (!f)
         return;
-    if (fread(b, 1, 8, f) == 8 && !memcmp(b, "RVCFG1", 6) && b[6] < RV_COUNT(g_talk_pcts)) {
+    if ((n = fread(b, 1, 9, f)) >= 8 && !memcmp(b, "RVCFG1", 6) && b[6] < RV_COUNT(g_talk_pcts)) {
         g_talk_speed = b[6];
         g_low_detail = b[7] == 1;       /* (older files have 0 here: high detail, the default) */
+        g_easy = n == 9 && b[8] == 1;   /* (older files end before it: normal) */
     }
     gx_set(!g_low_detail);
     fclose(f);
@@ -102,16 +105,18 @@ static void setup_load(void)
 
 static void setup_save(void)
 {
-    char b[8];
+    char b[9];
     FILE *f = fopen(SETUP_FILE, "wb");
     memcpy(b, "RVCFG1", 6);
     b[6] = (char)g_talk_speed;
     b[7] = (char)g_low_detail;
+    b[8] = (char)g_easy;
     if (f) {
-        fwrite(b, 1, 8, f);
+        fwrite(b, 1, 9, f);
         fclose(f);
     }
-    RV_LOG("setup: talk speed %s, ship detail %s", g_talk_names[g_talk_speed], g_detail_names_[g_low_detail]);
+    RV_LOG("setup: talk speed %s, ship detail %s, difficulty %s", g_talk_names[g_talk_speed], g_detail_names_[g_low_detail],
+           g_diff_names[g_easy]);
 }
 
 /* speech runs on the music clock (240 Hz): fine enough for a shape every 25 ms */
@@ -1456,6 +1461,31 @@ static void talk_speed_row(int y0, int y1)
     }
 }
 
+/* the bunk menu's row of difficulties, between the bunks and the talk speeds (what easy changes is not said: the
+ * user, 2026-11-03: "better to keep it magic") */
+#define DIFF_Y 272
+#define DIFF_LABEL "DIFFICULTY (D)"
+static int diff_x(int i, int *w)
+{
+    int k, x = 110 + gfx_text_width(FONT_BODY, SPEED_LABEL) + 20;   /* (its choices under the talk speeds') */
+    for (k = 0; k < i; k++)
+        x += gfx_text_width(FONT_BODY, g_diff_names[k]) + 22;
+    *w = gfx_text_width(FONT_BODY, g_diff_names[i]);
+    return x;
+}
+
+static void difficulty_row(int y0, int y1)
+{
+    int i;
+    gfx_text(FONT_BODY, 110, DIFF_Y, DIFF_LABEL, RV_TEXT_AMBER, y0, y1);
+    for (i = 0; i < (int)RV_COUNT(g_diff_names); i++) {
+        int w, x = diff_x(i, &w);
+        if (i == g_easy)
+            gfx_fill(x - 6, DIFF_Y - 3, w + 12, 20, UI_PANEL_EDGE, y0, y1);
+        gfx_text(FONT_BODY, x, DIFF_Y, g_diff_names[i], i == g_easy ? RV_TEXT_WHITE : RV_TEXT_GREY, y0, y1);
+    }
+}
+
 /* the bunk menu's row for the ships' detail, beside its title: only with a sprite accelerator to choose it for (gx.h) */
 #define DETAIL_Y 56
 #define DETAIL_X 282
@@ -1491,6 +1521,8 @@ static void detail_row(int y0, int y1)
 #define BTN_H 21
 #define CLOSE_X 522
 #define CLOSE_Y 46
+#define BUNK_ROW0 82                    /* the first bunk's row, and the rows apart (24: the difficulty's row fits under them) */
+#define BUNK_ROW_H 24
 typedef struct { const char *label; int key, ch; } Button;
 
 static int bunk_buttons(Button *b)
@@ -1561,17 +1593,18 @@ static void bunk_overlay(int y0, int y1)
     gfx_text(FONT_TITLE, 106, 50, "YOUR BUNK", RV_TEXT_AMBER, y0, y1);
     for (i = 0; i < BUNKS; i++) {
         char s[80];
-        int y = 86 + i * 26;
+        int y = BUNK_ROW0 + i * BUNK_ROW_H;
         if (g_bunk_full[i])
             sprintf(s, "%d  %.22Fs   layer %u, mission %u", i + 1, (char __far *)g_bunk_info[i].name,
                     (unsigned)g_nodes[g_bunk_info[i].node].layer, (unsigned)g_bunk_info[i].mission + 1);
         else
             sprintf(s, "%d  (empty)", i + 1);
         if (i == g_bunk_sel)
-            gfx_fill(100, y - 3, 440, 22, UI_PANEL_EDGE, y0, y1);
+            gfx_fill(100, y - 3, 440, BUNK_ROW_H - 2, UI_PANEL_EDGE, y0, y1);
         gfx_text(FONT_BODY, 110, y, s, i == g_bunk_sel ? RV_TEXT_WHITE : RV_TEXT_GREY, y0, y1);
     }
     if (g_mode != MODE_NAME) {
+        difficulty_row(y0, y1);
         talk_speed_row(y0, y1);
         if (gx_present())
             detail_row(y0, y1);
@@ -1617,7 +1650,7 @@ static void close_bunks(void)
 static void bunk_input(const Input *in0)
 {
     Input c = *in0, *in = &c;
-    int row = (in->y - 83) / 26;
+    int row = (in->y - (BUNK_ROW0 - 3)) / BUNK_ROW_H;
     bunk_click(in);
     if (g_mode != MODE_BUNK)
         return;
@@ -1650,6 +1683,23 @@ static void bunk_input(const Input *in0)
         }
         return;
     }
+    /* the difficulty: D for the other, or a click on one (from the next flight: camp_load_rules) */
+    if ((in->key == KEY_CHAR && (in->ch == 'd' || in->ch == 'D')) || (in->clicked && in->y >= DIFF_Y - 3 && in->y < DIFF_Y + 16)) {
+        int i, w, pick = -1;
+        if (!in->clicked)
+            pick = !g_easy;
+        for (i = 0; in->clicked && i < (int)RV_COUNT(g_diff_names); i++) {
+            int x = diff_x(i, &w);
+            if (in->x >= x - 8 && in->x < x + w + 8)
+                pick = i;
+        }
+        if (pick >= 0) {
+            g_easy = (uint8_t)pick;
+            setup_save();
+            vid_dirty(30, 350);
+        }
+        return;
+    }
     /* the talk speed: T for the next, or a click on one */
     if ((in->key == KEY_CHAR && (in->ch == 't' || in->ch == 'T')) || (in->clicked && in->y >= SPEED_Y - 4 && in->y < SPEED_Y + 18)) {
         int i, w, pick = -1;
@@ -1670,7 +1720,7 @@ static void bunk_input(const Input *in0)
     if (in->key == KEY_UP && g_bunk_sel > 0) g_bunk_sel--, vid_dirty(30, 350);
     if (in->key == KEY_DOWN && g_bunk_sel < BUNKS - 1) g_bunk_sel++, vid_dirty(30, 350);
     if (in->key == KEY_DOWN && g_bunk_sel < 0) g_bunk_sel = 0, vid_dirty(30, 350);
-    if (in->clicked && in->x > 100 && in->x < 540 && row >= 0 && row < BUNKS && in->y >= 83) {
+    if (in->clicked && in->x > 100 && in->x < 540 && row >= 0 && row < BUNKS && in->y >= BUNK_ROW0 - 3) {
         g_bunk_sel = row;
         vid_dirty(30, 350);
     }

@@ -46,6 +46,7 @@ int16_t camp_line_ok(const RvTalk __far *t);   /* a scene's line can be said now
  * type's own ships.csv choice; else an RV_SHIPTYPE_FLAG_HIT_* for every ship: shots.c) and the RV_RULE_* flags
  * (logic.c: how the AI aims, whether a player's target holds its guns, what a collision costs) */
 extern uint8_t g_rule_hit, g_rule_flags;
+extern uint8_t g_easy;                  /* the bunk menu's difficulty: 1 easy (camp_load_rules turns the held fire on) */
 extern RvPilot g_pilots[RV_PILOTS];
 extern RvNode g_nodes[RV_NODES];
 extern uint16_t g_npilots, g_nnodes, g_nmissions;

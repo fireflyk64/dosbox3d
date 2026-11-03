@@ -469,6 +469,13 @@ Alt-X, "so it's rare".
   `RVSETUP.CFG` (the browser page keeps it with the bunks). The bar's and
   the lounge's table talk stays up for a second plus its reading time at
   that pace.
+- **The bunk menu's DIFFICULTY row** (above the talk speeds; D or a click):
+  normal, the default, or easy, which turns on the old game's held fire in
+  every mission from the next flight (the ship you have selected holds its
+  guns while you are within 37 degrees of its nose; docs/ai.md). Kept as
+  `RVSETUP.CFG`'s ninth byte (an older eight-byte file reads as normal).
+  The bunks' rows are 24 pixels apart to make room for it. The menu does
+  not say what easy changes (the user: "better to keep it magic").
 - Close-ups have a 16-pixel battleship steel frame, with beveled edges and corner fasteners, packed into the face sprite.
   Kit alone keeps the rounded shoulders and has no frame. The other portraits keep their original shoulder outlines;
   the frame's bottom rail fits on screen, with the bust ending behind it. The mouth and eye patches keep their positions.

@@ -15,6 +15,7 @@
 
 RvSave g_camp;
 uint8_t g_rule_hit, g_rule_flags;
+uint8_t g_easy;                         /* the bunk menu's difficulty (RVSETUP.CFG): 1 easy, the held fire on in every mission */
 RvPilot g_pilots[RV_PILOTS];
 RvNode g_nodes[RV_NODES];
 uint16_t g_npilots, g_nnodes, g_nmissions;
@@ -291,6 +292,11 @@ void camp_load_rules(const RvMission __far *m)
 {
     g_rule_hit = m->hit;                /* (its rules: the hit volume, the AI's aim, the held fire, the collisions) */
     g_rule_flags = m->rules;
+    if (g_easy)                         /* (the easy mode: the old game's held fire, a player's selected target holding its
+                                           guns while the player is ahead of its nose; off for the usual play, the user's
+                                           ruling 2026-11-03: a selected Shizong circled a still player for 15 minutes
+                                           and never fired) */
+        g_rule_flags |= RV_RULE_HOLD_FIRE;
 }
 
 uint16_t camp_flight_fighter(void)

@@ -6,12 +6,13 @@
 # sphere's volume in the ship's frame, grown tall for the thin ships; silhouette: through its silhouettes), how the
 # AI shoots (aim=cone: the old game's, no lead and every ready gun within the weapon's cone; lead: at the lead
 # point, scattered a little), whether the ship a player has selected holds its guns while that player is within 37
-# degrees ahead of it (hold=on, the old game's), and what a collision costs (ram=old: the square of the closing
-# speed in km a step, halved, the old game's; soft: a dozen points head on)
+# degrees ahead of it (hold=on, the old game's; off here: the bunk menu's easy difficulty turns it on in every
+# mission), and what a collision costs (ram=old: the square of the closing speed in km a step, halved, the old
+# game's; soft: a dozen points head on)
 #
 # A ship line's turrets=off keeps a capital ship's turrets silent: the home carrier with enemies at nav 0 has it, or
 # its turrets would have those fighters dead in seconds, with the player only watching (measured 2026-10-31)
-rules    hit=sphere aim=cone hold=on ram=old
+rules    hit=sphere aim=cone hold=off ram=old
 
 mission  ENIGMA1
 node     ENIGMA
