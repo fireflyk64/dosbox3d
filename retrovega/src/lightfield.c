@@ -141,11 +141,47 @@ void lf_sprite_point(const LfViewRot *r, int16_t roll, int32_t x, int32_t y, int
     *sy = (qx * s - qy * c) >> 14;
 }
 
+/* camera-space (x, y, z), z > 0, on the screen: out's sx, sy, and whether it is near enough the view to draw
+ * (on_screen).  In a long first: as a short, a ship nearly beside the camera (89 degrees off the nose) wrapped back
+ * onto the screen */
+static void to_screen(int32_t x, int32_t y, int32_t z, int16_t cx, int16_t cy, int16_t focal, LfPlace *out)
+{
+    int32_t sx = cx + x * focal / z, sy = cy - y * focal / z;   /* the camera's up is up the screen */
+    if (sx < -320 || sx > 960 || sy < -320 || sy > 720)
+        return;
+    out->sx = (int16_t)sx;
+    out->sy = (int16_t)sy;
+    out->on_screen = 1;
+}
+
+/* The turn on screen, clockwise, of a sprite whose own up (nose_left: its left) is to lie along `axis` there, at
+ * (dx, dy) pixels right of and above the view's centre.  A short step a along the axis from the camera-space point
+ * P shows on the screen as (a.right - a.front P.x/P.z, a.up - a.front P.y/P.z): the screen point gives P.x/P.z and
+ * P.y/P.z to within a pixel, with no product the size of the distance.  The sprite's own up (or left) is the axis
+ * less its part along the line of sight, which shows as no step at all: the same.  (Without the front terms every
+ * sprite was turned as if it sat in the middle of the view: a carrier seen from 35 degrees above banked 13
+ * degrees as the camera yawed 20.) */
+static int16_t screen_turn(const LfVec *axis, const LfBasis *cam, int16_t dx, int16_t dy, int16_t focal,
+                           int16_t nose_left)
+{
+    int32_t ux = dot(axis, &cam->right), uy = dot(axis, &cam->up), uz = dot(axis, &cam->front);
+    if (focal && uz) {
+        ux -= (int32_t)dx * uz / focal;
+        uy -= (int32_t)dy * uz / focal;
+    }
+    while (ux > 65535 || ux < -65535 || uy > 65535 || uy < -65535) {
+        ux /= 2;                        /* (lf_atan2 takes the smaller times 16384, in a long) */
+        uy /= 2;
+    }
+    return nose_left ? lf_atan2(uy, -ux) : lf_atan2(ux, uy);
+}
+
 void lf_place(const LfVec *rel, const LfBasis *cam, const LfBasis *ship, int16_t cx, int16_t cy, int16_t focal,
               int16_t nb, int16_t nh, LfPlace *out)
 {
     LfVec d, back;
-    int32_t x, y, z, ux, uy;
+    int32_t x, y, z;
+    int16_t pole;
     d.x = rel->x / 16;                  /* 16 units = 1/16 km: keeps the products in a long */
     d.y = rel->y / 16;
     d.z = rel->z / 16;
@@ -159,39 +195,19 @@ void lf_place(const LfVec *rel, const LfBasis *cam, const LfBasis *ship, int16_t
     out->roll = 0;
     if (z < 2)
         return;
-    out->sx = cx + (int16_t)(x * focal / z);
-    out->sy = cy - (int16_t)(y * focal / z);     /* the camera's up is up the screen */
-    if (out->sx < -320 || out->sx > 960 || out->sy < -320 || out->sy > 720)
+    to_screen(x, y, z, cx, cy, focal, out);
+    if (!out->on_screen)
         return;
-    out->on_screen = 1;
     /* the viewer's direction in the ship's own frame.  The renderer's +x is
      * the ship's left (a right-handed mesh with the nose on +z), the game's
      * right vector its right: hence -right. */
     back.x = -d.x; back.y = -d.y; back.z = -d.z;
     out->view = lf_view_of(-dot(&back, &ship->right) / 256, dot(&back, &ship->up) / 256, dot(&back, &ship->front) / 256,
                            nb, nh);
-    /* A band's vertical is ship-up; the poles keep the nose pointing left.
-     * Project that axis at the ship's screen position: du = axis.right -
-     * (X/Z) * axis.front, dv = axis.up - (Y/Z) * axis.front. The existing
-     * screen point supplies X/Z and Y/Z to within one pixel, without a
-     * distance-sized product. Using only the first dot products treated
-     * every ship as centred and falsely banked elevated ships during yaw. */
-    {
-        int16_t pole = out->view == 0 || out->view == 1 + nb * nh;
-        const LfVec *axis = pole ? &ship->front : &ship->up;
-        int32_t uz = dot(axis, &cam->front);
-        ux = dot(axis, &cam->right);
-        uy = dot(axis, &cam->up);
-        if (focal && uz) {
-            ux -= (int32_t)(out->sx - cx) * uz / focal;
-            uy -= (int32_t)(cy - out->sy) * uz / focal;
-        }
-        /* lf_atan2 multiplies its smaller argument by 16384 in a signed long. */
-        while (ux > 65535 || ux < -65535 || uy > 65535 || uy < -65535) {
-            ux /= 2; uy /= 2;
-        }
-        out->roll = pole ? lf_atan2(uy, -ux) : lf_atan2(ux, uy);
-    }
+    /* the turn on screen, clockwise: a band view is drawn with the ship's up toward the top of the screen; the top
+     * and bottom views lie nose left */
+    pole = out->view == 0 || out->view == 1 + nb * nh;
+    out->roll = screen_turn(pole ? &ship->front : &ship->up, cam, out->sx - cx, cy - out->sy, focal, pole);
 }
 
 void lf_sky(const LfVec *dir, const LfVec *up, const LfBasis *cam, int16_t cx, int16_t cy, int16_t focal, LfPlace *out)
@@ -202,12 +218,9 @@ void lf_sky(const LfVec *dir, const LfVec *up, const LfBasis *cam, int16_t cx, i
     out->sx = out->sy = out->view = out->roll = 0;
     if (z < 2)
         return;
-    out->sx = cx + (int16_t)(x * focal / z);
-    out->sy = cy - (int16_t)(y * focal / z);
-    if (out->sx < -320 || out->sx > 960 || out->sy < -320 || out->sy > 720)
-        return;
-    out->on_screen = 1;
-    out->roll = lf_atan2(dot(up, &cam->right), dot(up, &cam->up));   /* as a band view's up is turned (lf_place) */
+    to_screen(x, y, z, cx, cy, focal, out);
+    if (out->on_screen)                 /* as a band view's up is turned (lf_place) */
+        out->roll = screen_turn(up, cam, out->sx - cx, cy - out->sy, focal, 0);
 }
 
 /* --- the kernels --- */

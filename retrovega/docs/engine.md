@@ -1075,7 +1075,10 @@ flight's start (`lightfield: asm kernels agree with the C ones`).
   up is up the screen; the renderer's +x is a ship's left (a right-handed
   mesh with its nose on +z), so the heading is taken toward −right. A band
   view's turn on screen is the angle of the ship's up seen through the
-  camera; the top and bottom views, which lie nose left, use the nose.
+  camera, as perspective draws it where the ship is on the screen, not in
+  the middle of the view (2026-11-03: a carrier seen from 35° above banked
+  13° as the camera yawed 20°); the top and bottom views, which lie nose
+  left, use the nose. The sky's sprites (`lf_sky`) are turned the same way.
 - **lf_place** gives the screen point, the view (0..61) and the turn
   (1024 a turn); the flight takes the size from the distance: full size at
   2,500 km in the ABI's WC-scale units, where a kps is 12.8 units a frame

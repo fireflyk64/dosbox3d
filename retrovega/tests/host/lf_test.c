@@ -322,6 +322,62 @@ int main(void)
         CHECK(q.on_screen && q.sx == -80 && q.sy == 200 && q.roll == s.roll && (q.roll == 256 || q.roll == 768),
               "lf_sky: the camera rolled right, up shows left (%d,%d), turned as a ship would be (roll %d, lf_place %d)",
               q.sx, q.sy, q.roll, s.roll);
+        /* a nebula above or below the horizon as the camera, pitched to it, yaws about its own up: it slides across
+         * the view unturned, as the stars about it do (perspective, not the middle's turn), and turns only with a
+         * real roll of the camera (the cameras of the ships' case above) */
+        {
+            static const int elevations[] = {-60, -35, 0, 35, 60};
+            static const int banks[] = {-23, 0, 23};
+            int ei, bi, yaw, bad = 0, worst_sky = 0, cases = 0;
+            for (ei = 0; ei < 5; ei++) {
+                double e = elevations[ei] * M_PI / 180, se = sin(e), ce = cos(e);
+                dir.x = 0;
+                dir.y = (int32_t)lround(-se * 4096);
+                dir.z = (int32_t)lround(ce * 4096);
+                for (yaw = -30; yaw <= 30; yaw += 5)
+                    for (bi = 0; bi < 3; bi++) {
+                        double t = yaw * M_PI / 180, st = sin(t), ct = cos(t), b = banks[bi] * M_PI / 180;
+                        double sb = sin(b), cb = cos(b);
+                        int want = ((int)lround(banks[bi] * 1024.0 / 360) % 1024 + 1024) % 1024, error;
+                        basis(&cam, lround(st * 256), lround(-se * ct * 256), lround(ce * ct * 256),
+                              lround(ct * cb * 256), lround((se * st * cb + ce * sb) * 256),
+                              lround((-ce * st * cb + se * sb) * 256), lround(-ct * sb * 256),
+                              lround((ce * cb - se * st * sb) * 256), lround((se * cb + ce * st * sb) * 256));
+                        lf_sky(&dir, &upv, &cam, 320, 200, 400, &q);
+                        error = abs(q.roll - want);
+                        if (error > 512) error = 1024 - error;
+                        if (error > worst_sky) worst_sky = error;
+                        if (!q.on_screen || error > 3) {
+                            if (bad < 4)
+                                printf("     sky elev %d yaw %d camera roll %d: roll %d/%d\n", elevations[ei], yaw,
+                                       banks[bi], q.roll, want);
+                            bad++;
+                        }
+                        cases++;
+                    }
+            }
+            CHECK(bad == 0, "lf_sky: a nebula off the middle keeps the sky's up as the camera yaws, within 3/1024: %d cases, worst %d (%d off)",
+                  cases, worst_sky, bad);
+        }
+    }
+    /* a ship nearly beside the camera (1,000 km to the right, its middle 1/8 .. 12 km ahead: 89.3 degrees and
+     * more off the nose) is thousands of screens off: never on the screen (as a short its place wrapped back onto
+     * it, a ship drawn where none is) */
+    {
+        int32_t ahead;
+        int wrapped = 0;
+        basis(&cam, 0, 0, 256, 256, 0, 0, 0, 256, 0);
+        basis(&ship, 0, 0, 256, 256, 0, 0, 0, 256, 0);
+        for (ahead = 32; ahead < 12 * 256; ahead += 4) {
+            rel.x = 1000L * 256; rel.y = 0; rel.z = ahead;
+            lf_place(&rel, &cam, &ship, 320, 140, 400, 5, 7, &p);
+            wrapped += p.on_screen;
+        }
+        rel.x = 1000L * 256; rel.y = 0; rel.z = 1250L * 256;    /* 38.7 degrees off: the view's edge */
+        lf_place(&rel, &cam, &ship, 320, 140, 400, 5, 7, &p);
+        CHECK(wrapped == 0 && p.on_screen && p.sx == 640,
+              "a ship beside the camera is never on the screen (%d of 760 were), one at the view's edge is (%d, at %d)",
+              wrapped, p.on_screen, p.sx);
     }
 printf("%s (%d failures)\n", fails ? "LF FAILED" : "LF OK", fails);
     return fails != 0;
