@@ -16,7 +16,7 @@ checks every reference and rule (docs/engine.md), and writes:
 
 missions.txt is one block per mission, a keyword and its value per line,
 '#' comments.  Keywords: mission, node, title, type, music, briefing, win,
-lose, fighter (the player's and the wingman's TYPE), nav (id x y z [hidden], km: the waypoints numbered from 1, then the hidden trigger points), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home] [turrets=off]
+lose, fighter (the player's and the wingman's TYPE), nav (id x y z [hidden], km: the waypoints numbered from 1, then the hidden trigger points), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home] [jump=N] [turrets=off]
 [pilot=KEY] [ai=PROFILE] [fear=c/d]), rules (hit= aim= hold= ram=: RULES), field (asteroid|mine x y z radius [density=N], km; N rocks per (10,000 km)^3, 1..255,
 0 or none: the engine's own), bar and lounge
 (seat=PILOT|- ...), and the lines, docs/engine.md: briefing, win, lose [WHO] [conditions] "line" (or plain text: the XO's,
@@ -36,7 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 18                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 19                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
                                         # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
@@ -45,7 +45,8 @@ VERSION = 18                            # 2: the ship types' engines; 3: their h
                                         # 12: a weapon's cone, a mission ship's AI profile and fear;
                                         # 13: a mission ship's turrets=off; 14: scenes: 24 lines a
                                         # mission, 120 characters, conditions (say, radio, after=, if=, unless=, dead=);
-                                        # 17: a ship type's fuel rates (fuel_cruise, fuel_burn); 18: a pilot's board seed and twin
+                                        # 17: a ship type's fuel rates (fuel_cruise, fuel_burn); 18: a pilot's board seed and twin;
+                                        # 19: a mission ship's jump=N (an escort target's last nav point)
 LIMITS = {'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 16,
           'SEATS': 3, 'TALKS': 200, 'FIELDS': 7, 'SHIPTYPES': 64, 'SHIPRECORDS': 44, 'WEAPONS': 40}
 TEXT = {'ID': 16, 'TITLE': 48, 'TALK': 108, 'KEY': 10, 'CALLSIGN': 12,
@@ -196,6 +197,7 @@ NAV = [('unsigned char', 'id', 'B'), ('unsigned char', 'flags', 'B'), ('short', 
 SHIP = [('unsigned char', 'type', 'B'), ('unsigned char', 'side', 'B'), ('unsigned char', 'nav', 'B'),
         ('unsigned char', 'count', 'B'), ('unsigned char', 'pilot', 'B'), ('unsigned char', 'role', 'B'),
         ('unsigned char', 'ai', 'B'), ('unsigned char', 'fear', 'B'), ('unsigned char', 'noturrets', 'B'),
+        ('unsigned char', 'jump', 'B'),  # (role=out's jump=N: the nav point it jumps short of, 0 the next after its own)
         ('short', 'x', 'h'), ('short', 'y', 'h'), ('short', 'z', 'h')]   # (where it starts off its nav point, km: at=x,y,z)
 # a mission ship's AI profile (missions.txt ai=NAME: logic.c's P_* in this order, 1-based in the record, 0 the type's
 # own) and its own fear rates (fear=c/d, 0-15 each: the old game's class bytes; 0: the profile's)
@@ -603,11 +605,19 @@ def compile_all():
                 fear = c | d << 4
             if opts.get('turrets', 'on') not in ('on', 'off'):
                 raise Fail('%s: turrets=on or turrets=off' % where)
+            jump = 0
+            if 'jump' in opts:          # (through the waypoints with the player, out only short of nav N: logic.c route_step)
+                try:
+                    jump = int(opts['jump'])
+                except ValueError:
+                    jump = -1
+                if role != ESCORT_ROLES['out'] or jump <= nav or jump not in nav_ids or jump in hidden_navs:
+                    raise Fail('%s: jump=N goes with role=out: N a waypoint after its own nav point' % where)
             at = opts.get('at', '0,0,0').split(',')
             if len(at) != 3 or any(not -32768 <= int(v) <= 32767 for v in at):
                 raise Fail('%s: at=x,y,z, km off its nav point' % where)
             shipr.append(struct.pack(fmt(SHIP), tnum, int(f[1]), nav, int(opts.get('count', 1)), pilot, role, ai, fear,
-                                     opts.get('turrets', 'on') == 'off', int(at[0]), int(at[1]), int(at[2])))
+                                     opts.get('turrets', 'on') == 'off', jump, int(at[0]), int(at[1]), int(at[2])))
         if len(shipr) > LIMITS['SHIPS']:
             raise Fail('%s: %d ships, at most %d' % (w, len(shipr), LIMITS['SHIPS']))
         if wingman is not None:         # (a wingman lost, the XO says this without them: game.c cuts " and NAME")

@@ -210,7 +210,14 @@ round in the first launcher. The gauges read full until the extra is gone; the d
 
 `role=out` or `role=in` on a ship line makes it an escort target (the old campaign's transports and destroyers,
 from their records' behaviour word): `out` sets off at once for the mission's next nav point after its own at its
-top speed and jumps out (vanishes) 3,000 km short of it, as the old game's transport did; `in` waits at its nav
+top speed and jumps out (vanishes) within 1,000 km of it, as the old game's transport did (3,000 km short until
+2026-11-03: the user, "lets allow it to be within 200 km of the nav point ... or even 500 or 1000"; at 200 the Ox,
+80 kps and 4 degrees a second, circled the point), at a fifth of its speed while its way is more than 25 degrees off its
+nose, so it turns in. With `jump=N` it goes on with the player waypoint by waypoint and jumps only at nav N (the user:
+"the ox should jump at nav 2 not nav 1"; the Enigma 2 Ox): at each waypoint before N it holds within 1,000 km until the
+player has been there and no
+enemy is within 16,000 km of it, so the fight there is fought round it, then goes on (the autopilot carrying it moves it
+on to its own next waypoint too); `in` waits at its nav
 point until the player comes within 8,000 km, then flies home to nav 0 the same way (an enemy's waits where it
 is). One of the player's side killed is the mission lost. The autopilot brings one along, 800 km behind the player
 (the wingman beside it), and drops the formation 4,500 km short of the nav point.

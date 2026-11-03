@@ -394,6 +394,7 @@ nav 0):
 | M8.30 human-seat-lost | the patrol's wingman flown by a person on another machine (a puppet, RV_FLAG_HUMAN) killed: no named pilot is lost |
 | M8.31 dying | delayedDespawn on a live Nicander makes it dying (shipAiState 9) at once, still a ship, and gone after its explosion; the player's own hull kills a Nicander and an AI another: one splash (logic_splashes) |
 | M8.32 named-hull | a named pilot's wingman, bare to its hull, dies after eight hits of 14 (a share of the hull each, NAMED_HULL_HITS), at once to one of 400; a person's wingman seat takes each hit itself |
+| M8.33 escort-jump | the escort patrol's Ox with `jump=2`: brought to nav 1, it holds there (within 6,000 km, not jumped) for 30 s while the enemies of nav 1 are about; with them gone it goes on (500 km nearer nav 2 in 30 s); brought to nav 2 it is out of the world within 60 s, not killed, and the patrol is won (the user, 2026-11-03: "the ox should jump at nav 2 not nav 1") |
 | M8.26 way-ahead | a field across the line: the autopilot stops 500 km short of its edge and will not go from there, and goes again past it; a hidden point on the line: it stops inside its reach and its ships come; hidden points are on no list, and one never come to does not hold the mission up |
 | M8.25 scene | past 7,200 km the home carrier is no ship to anything and cannot be the target; the wing stays; it is back as it was when the player is |
 | M8.24 nav-choice | `g_sys.nav` follows the first waypoint not reached until N (`logic_nav_next`) picks one; N goes down the list and round through home; the autopilot goes to the one chosen, and the choice follows again once it is reached |
@@ -613,7 +614,7 @@ into `RVGAME.DAT` (run by `build.sh`, and by `host/build.sh` for the harness).
 | `type` | `patrol` | the mission's kind: `RvMission.type`, for your `step_mission` | only `patrol` exists |
 | `music` | a cue | the briefing's music | |
 | `nav` | `N x y z` | nav point N at x, y, z km from the launch point (nav 0) | N 1..15, each once; ±32,767 km; 8 a mission |
-| `ship` | `TYPE side navN [count=N] [pilot=KEY] [role=out\|in\|home] [turrets=off]` | `count` ships of a type (a ships.csv key, `player` or `wingman`) of a side (0 Terran, 1 Aera, 2 Rlaan) at a nav point, with a cast pilot | 12 lines, 64 ships in all |
+| `ship` | `TYPE side navN [count=N] [pilot=KEY] [role=out\|in\|home] [jump=N] [turrets=off]` | `count` ships of a type (a ships.csv key, `player` or `wingman`) of a side (0 Terran, 1 Aera, 2 Rlaan) at a nav point, with a cast pilot | 12 lines, 64 ships in all |
 | `field` | `asteroid\|mine x z radius [density=N]` | an asteroid or mine field, km (rocks.c flies it) | 4 |
 | `bar`, `lounge`, `talk` | | who sits in the rooms, and what they say | |
 

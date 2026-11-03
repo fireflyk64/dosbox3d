@@ -103,8 +103,8 @@ briefing after=won "Yesterday's patrol kept the lane open, so the yard can final
 briefing after=lost "The Aera still hold yesterday's lane, so the yard is moving stock the long way round."
 briefing dead=FROST "We are short of pilots since Frost, Wildcard, so you fly this one alone."
 briefing "You and Frost have the Ox. It leaves the yard with a month of spare parts, Kit's share included."
-briefing "It sets off for Nav 1 as you launch and jumps out just short of it. You will see the flash."
-briefing "Then Nav 2 and home. Intelligence expects 2 Agis at Nav 1, after the Ox, and 3 Nicanders at Nav 2."
+briefing "It goes with you to Nav 1, then on to Nav 2, and jumps out just short of Nav 2. You will see the flash."
+briefing "Then home. Intelligence expects 2 Agis at Nav 1, after the Ox, and 3 Nicanders at Nav 2."
 briefing "There's an asteroid field on your way home, so mind your course."
 briefing "Your job is that Ox. You do not leave it to chase anything. Lose it and you lose the mission."
 briefing "Questions?"
@@ -126,7 +126,7 @@ nav      3 0 0 -15750 hidden
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
-ship     OX 0 nav0 role=out
+ship     OX 0 nav0 role=out jump=2
 ship     AGIS 1 nav1 count=2 at=0,0,-2250
 ship     NICANDR 1 nav2 count=2 at=1350,0,2250
 ship     NICANDR 1 nav2 at=-2250,2250,-2250

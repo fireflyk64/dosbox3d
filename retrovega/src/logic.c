@@ -56,6 +56,8 @@ typedef struct {
     uint8_t catching;                   /* 1: closing on its target at full speed (from CATCH_FAR_KM in), 0: at its
                                            attack speed */
     uint8_t burst_left;                 /* the leave's afterburner: steps left of this burst */
+    uint8_t leg;                        /* an escort target out with jump=N: the waypoint it is making for (0: the first) */
+    uint8_t pad_;                       /* (even) */
 } Mind;
 enum { FIRE_GUNS = 1, FIRE_MISSILE = 2 };
 static Mind __far g_mind[NUM_SHIP_SLOTS];
@@ -134,8 +136,18 @@ static struct {
 #define MSHIP_NAV(r) (*(const uint16_t *)(MSHIP(r) + 8))
 #define MSHIP_NO_TURRETS(r) (MSHIP(r)[20])   /* the mission's turrets=off: a capital ship with its turrets silent */
 #define MSHIP_ROLE(r) (MSHIP(r)[18])    /* an escort target's role (RV_ESCORT_OUT, RV_ESCORT_IN; campaign.c), 0 none */
-#define ROUTE_JUMP_KM 3000              /* an escort target this near its goal is away: out, it jumps; in, it is home */
+#define MSHIP_JUMP(r) (MSHIP(r)[21])    /* role=out's last nav point (missions.txt jump=N), 0 the next after its own */
+#define ROUTE_JUMP_KM 3000              /* an escort target in this near nav 0 is home (the carrier is there) */
+#define ROUTE_OUT_KM 1000               /* an escort target out this near a nav point is there: it holds at a waypoint
+                                           on its way, jumps at its last (the user, 2026-11-03: "lets allow it to be
+                                           within 200 km of the nav point ... or even 500 or 1000"; it was 3,000 km
+                                           short; at 200 the Ox, 80 kps turning 4 degrees a second, circled 1,300 km
+                                           out) */
+#define ROUTE_TURN_COS 230              /* its way more than some 25 degrees off its nose: a fifth of its speed, so it
+                                           turns in rather than round */
 #define ROUTE_WAKE_KM 8000              /* an escort target that waits sets off home when the player is this near */
+#define ROUTE_CLEAR_KM 16000            /* an escort target holding at a waypoint goes on with no enemy this near
+                                           (AUTOPILOT_CLEAR_KM's distance: the fight there over) */
 #define MSHIP_BEHAVIOUR(r) (*(const uint16_t *)(MSHIP(r) + 6))     /* 6 the player, 4 a wingman */
 #define NAV_REACH_KM 5000               /* the player this near a nav point has reached it (enterNavPoint) */
 
@@ -2924,9 +2936,14 @@ static int16_t escorted(int16_t s)
 }
 
 /* an escort target's own way (its mission record's role): out, to the mission's next nav point after its own (nav 1
- * from the launch) at its top speed, and gone (a jump) ROUTE_JUMP_KM short of it: the old game's transport set off
+ * from the launch) at its top speed, and gone (a jump) there: the old game's transport set off
  * from the carrier for Nav 1 at once, 300 km/s, and vanished there (tests/wc1/README.md); in, still at its own nav
- * point until the player comes within ROUTE_WAKE_KM, then home to nav 0 the same way (an enemy's stays where it is) */
+ * point until the player comes within ROUTE_WAKE_KM, then home to nav 0 the same way (an enemy's stays where it is).
+ * Out, it is there ROUTE_OUT_KM from the nav point.  With the mission's jump=N, it goes with the player waypoint by
+ * waypoint and out only at nav N (the user, 2026-11-03: "the ox should jump at nav 2 not nav 1"): at a waypoint before
+ * N it holds, ROUTE_OUT_KM off it, until the
+ * player has been there and no enemy is within ROUTE_CLEAR_KM of it (the fight there is its fight too), then on
+ * to the next (Mind.leg; the autopilot, carrying it, moves it on to its own next) */
 void (*__far logic_on_jump)(int16_t slot, int16_t friendly);
 
 /* gone safe: its star and the player's flash (fx_jump), and it counts as away, not killed */
@@ -2940,34 +2957,62 @@ static void route_jump(int16_t s)
     ship_clear(s);
 }
 
+static int16_t route_last(int16_t rec, int16_t first)   /* role=out's last nav point: jump=N, else the first */
+{
+    int16_t j = MSHIP_JUMP(rec);
+    return first >= 0 && j > first && j < NAVS && nav_defined(j) ? j : first;
+}
+
 static void route_step(int16_t s, Mind __far *m, const AiProfile __far *p)
 {
     static const char __far s_gone[] = "logic: slot %d (mission ship %d) %s at nav %d";
+    static const char __far s_on[] = "logic: slot %d (mission ship %d) on from nav %d to nav %d";
     const RvShipType __far *t = slot_type(s);
-    int16_t rec = slotMissionShip[s] & 63, role = MSHIP_ROLE(rec), goal = -1, n;
+    int16_t rec = slotMissionShip[s] & 63, role = MSHIP_ROLE(rec), goal = -1, last = -1, n, foe;
+    int32_t reach = role == RV_ESCORT_OUT ? ROUTE_OUT_KM : ROUTE_JUMP_KM;
     RvVec3 d, b;
     if (role == RV_ESCORT_OUT) {
         for (n = (int16_t)(MSHIP_NAV(rec) & 15) + 1; n < NAVS && goal < 0; n++)
             if (nav_defined(n))
                 goal = n;
+        last = route_last(rec, goal);
+        if (m->leg > goal)
+            goal = m->leg < last ? m->leg : last;
     } else if (commAnimInfo[s] == commAnimInfo[0] && (m->phase || player_km(s) < ROUTE_WAKE_KM)) {
         m->phase = 1;
-        goal = 0;
+        goal = last = 0;
     }
     if (goal < 0) {
         throttle(s, 0, 0);
         return;
     }
-    d = vec3(NAV_AT(goal, 0) - TO_KM(gPositionVector[s].x), NAV_AT(goal, 1) - TO_KM(gPositionVector[s].y),
-             NAV_AT(goal, 2) - TO_KM(gPositionVector[s].z));
-    if (len_of(d.x, d.y, d.z) < ROUTE_JUMP_KM) {
+    for (;;) {                          /* (a waypoint before the last, reached, the way on clear: on to the next) */
+        d = vec3(NAV_AT(goal, 0) - TO_KM(gPositionVector[s].x), NAV_AT(goal, 1) - TO_KM(gPositionVector[s].y),
+                 NAV_AT(goal, 2) - TO_KM(gPositionVector[s].z));
+        if (goal == last || len_of(d.x, d.y, d.z) >= reach)
+            break;
+        foe = nearest_enemy(s, 0);
+        if (!(g_navs_seen >> goal & 1) || (foe >= 0 && km_between(s, foe) < ROUTE_CLEAR_KM)) {
+            throttle(s, 0, 0);          /* (holding: the player not there yet, or the fight on) */
+            return;
+        }
+        for (n = goal + 1; n < last && !nav_listed(n); n++)
+            ;
+        rv_notef(s_on, s, rec, goal, n);
+        goal = n;
+        m->leg = (uint8_t)n;
+    }
+    if (len_of(d.x, d.y, d.z) < reach) {
         rv_notef(s_gone, s, rec, role == RV_ESCORT_OUT ? "jumped out" : "home", goal);
         route_jump(s);
         return;
     }
     to_body(s, &d, &b);
     steer_to(s, p, b.x, b.y, b.z);
-    throttle(s, t ? t->max_kps : 100, 0);
+    {
+        int32_t km = len_of(b.x, b.y, b.z), top = t ? t->max_kps : 100;
+        throttle(s, km && b.z * 256 / km < ROUTE_TURN_COS ? top / 5 : top, 0);
+    }
 }
 
 static void ship_think(int16_t s)
@@ -3545,6 +3590,8 @@ int16_t logic_autopilot(void)
             gPositionVector[s] = vec3(to.x - FIX_MUL(gOrientationFrontVector[0].x, AUTOPILOT_BEHIND_KM) * KM,
                                       to.y - FIX_MUL(gOrientationFrontVector[0].y, AUTOPILOT_BEHIND_KM) * KM,
                                       to.z - FIX_MUL(gOrientationFrontVector[0].z, AUTOPILOT_BEHIND_KM) * KM);
+            if (role_of(s) == RV_ESCORT_OUT && next > g_mind[s].leg)
+                g_mind[s].leg = (uint8_t)next;   /* (carried to the next waypoint: that is its way now; route_step) */
         } else
             continue;
         ship_face(s, yaw, pitch);
