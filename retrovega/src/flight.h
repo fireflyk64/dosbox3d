@@ -6,6 +6,12 @@
 #include "rvdata.h"
 #include "lightfield.h"
 
+/* the flight camera's focal length, px on the 640-wide screen: +-45 degrees across, as the old game's camera (160 on its
+ * 320-wide screen, measured 2026-11-02 from its rocks' screen places); ours was 400, +-39 (the user's C: the wider
+ * view).  The ships' art keeps its own reference (their full size at a focal length of 400: scale_of); the
+ * bar's window keeps 400 (WIN_FOCAL); the stars are placed with the same in lowlevel.asm (STAR_FOCAL) */
+#define FLIGHT_FOCAL 320
+
 /* flies the mission: loads its assets, runs the loop in RVHOOK (rvflight.inc)
  * until missionStatus is set, frees them; returns the final missionStatus */
 int flight_fly(const RvMission __far *m);

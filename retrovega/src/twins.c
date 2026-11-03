@@ -490,12 +490,13 @@ long c_turn_dropped(const unsigned char LZ_FAR *dense, int w, int h, const LfRot
 /* the sky's stars through the camera, nothing stored: a cube round it, 3 x 3 cells on each of its six faces, stars placed by a
  * hash of the cell and the seed, fewer in the cells towards the corners, which cover less of the sky.  The basis as front, right,
  * up (256 = 1.0); (x, y, c) out for each on screen, c a hash word, at most `most` of them; the count back */
-#define STARS_MIDDLE 76
-#define STARS_EDGE 44
-#define STARS_CORNER 26
+#define STARS_MIDDLE 49                 /* (lowlevel.asm's: x (320/400)^2 of the 76, 44, 26 at focal 400) */
+#define STARS_EDGE 28
+#define STARS_CORNER 17
+#define STAR_FOCAL 320                  /* (flight.h FLIGHT_FOCAL) */
 #define STAR_CELL 683
 #define STAR_FACE 1024
-#define STAR_DEPTH INT32_C(160000)
+#define STAR_DEPTH INT32_C(140000)
 #define STAR_THROW INT32_C(124000)
 #ifdef RV_TESTS
 static int g_stars_no_cull;             /* (the test's: every cell tried, to show the sides never pass by a star that would show) */
@@ -512,9 +513,9 @@ int c_stars_place(unsigned seed, const long LZ_FAR *basis, int cx, int cy, int r
         return 0;
     /* the screen's four sides as slopes, 256 = 45 degrees (one more: truncated, never too tight) */
     tx = (int32_t)(int16_t)cx >= INT32_C(640) - (int16_t)cx ? (int16_t)cx : INT32_C(640) - (int16_t)cx;
-    tx = (int32_t)((uint32_t)tx * 256u) / 400 + 1;
-    tu = (int32_t)((uint32_t)(int32_t)(int16_t)cy * 256u) / 400 + 1;
-    td = (int32_t)((uint32_t)((int32_t)(int16_t)rows - (int16_t)cy) * 256u) / 400 + 1;
+    tx = (int32_t)((uint32_t)tx * 256u) / STAR_FOCAL + 1;
+    tu = (int32_t)((uint32_t)(int32_t)(int16_t)cy * 256u) / STAR_FOCAL + 1;
+    td = (int32_t)((uint32_t)((int32_t)(int16_t)rows - (int16_t)cy) * 256u) / STAR_FOCAL + 1;
     for (f = 0; f < 6; f++) {
         int16_t a = f >> 1, bb = (a + 1) % 3, c = (a + 2) % 3;
         uint32_t fu = b[a], fv = b[bb], fw = b[c] * STAR_FACE, ru = b[3 + a], rv = b[3 + bb], rw = b[3 + c] * STAR_FACE,
@@ -562,11 +563,11 @@ int c_stars_place(unsigned seed, const long LZ_FAR *basis, int cx, int cy, int r
                     d = (int32_t)(pu * fu + pv * fv + fw);
                     if (d < STAR_DEPTH)
                         continue;
-                    q = (int32_t)((pu * ru + pv * rv + rw) * 400u) / d;
+                    q = (int32_t)((pu * ru + pv * rv + rw) * (uint32_t)STAR_FOCAL) / d;
                     sx = (int16_t)((uint16_t)q + (uint16_t)cx);
                     if (sx < 0 || sx >= 640)
                         continue;
-                    q = (int32_t)((pu * uu + pv * uv + uw) * 400u) / d;
+                    q = (int32_t)((pu * uu + pv * uv + uw) * (uint32_t)STAR_FOCAL) / d;
                     sy = (int16_t)((uint16_t)cy - (uint16_t)q);
                     if (sy < 0 || sy >= (int16_t)rows)
                         continue;

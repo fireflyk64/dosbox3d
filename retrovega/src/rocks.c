@@ -54,6 +54,7 @@
 #include "sfx.h"
 #include "rocks.h"
 #include "world.h"
+#include "flight.h"
 
 #define FILE_HEAD 24
 #define KINDS_MAX 4
@@ -435,12 +436,13 @@ static void ship_basis(LfBasis *b)
     b->up = *(const LfVec *)&gOrientationUpVector[0];
 }
 
-/* the old game's angle a (degrees, 0 .. 35) as the same share of our view: tan(a) x 160 / 400, 1,024 = 1.0 */
+/* the old game's angle a (degrees, 0 .. 35) as the same share of our view: tan(a) x (its 160 px over its half-width
+ * 160) x (our half-width 320 over FLIGHT_FOCAL), 1,024 = 1.0 */
 static long view_share(int a)
 {
     long r = (long)a * 1787 / 100;      /* (radians x 1,024) */
     long t = r + r * r / 1024 * r / (3L * 1024);   /* (the tangent to its cube: 2% short at 35 degrees) */
-    return t * 2 / 5;
+    return t * 320 / FLIGHT_FOCAL;
 }
 
 /* the rocks a field keeps at most: FX_CAP at the plain density, more or fewer by its own */

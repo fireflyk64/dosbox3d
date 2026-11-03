@@ -245,9 +245,13 @@ flies at where the player will be after the old game's time, 3.7 to 4.7 seconds 
 speed is from 250, to meet them there. A rock past 6,400 km from the player is gone, and it grows in from a dot past
 72% of that. On the first mission's field that is about 8 on screen at cruise, as the old game's 5 to 9. A shot that
 meets a rock is spent and breaks it one time in three (the old game's rule; `shots_on_rocks`), and the player's ship
-breaks any it flies into, the harm by the speed they met at. Our numbers are not the old game's kilometres: its view is
-2.5 times wider (focal 160) and its rocks as big as its fighters, so ours start farther out and come at the player
-themselves, to show the old game's few pixels and reach the player in its seconds. The bar's window keeps the older
+breaks any it flies into, the harm by the speed they met at. Our numbers are not the old game's kilometres: its rocks
+are as big as its fighters and ours a quarter to a half, so ours start farther out and come at the player themselves,
+to show its few degrees and reach the player in its seconds. **The flight's view is the old game's** (2026-11-02,
+`FLIGHT_FOCAL` 320 on the 640-wide screen: +-45 degrees across, as its focal 160 on its 320, measured from its rocks'
+screen places; it was 400, +-39): every placer takes it (ships, shots, missiles, explosions, rocks, the sky), the stars'
+asm too (`STAR_FOCAL`, their number a cell x (320/400)^2: as many on screen); the ships' art keeps its own reference
+(full size at focal 400, `scale_of`), the bar's window its 400. The bar's window keeps the older
 cluster (`rocks_field_cluster`: rocks that stay in the field and drift). A mine is the same rock with trackers,
 sharing its art (the user: "the diamond is just gray when they are not [mines]... 6 diamonds per mine, one per cube
 face"): every rock has six diamonds painted on it, on the faces of a cube standing on a corner of the spin axis

@@ -795,12 +795,14 @@ _rv_rotate_row2:
 ; the screen's sides, allowing for how far a star can lie from it, is passed by
 ; whole (never one with a star that would show: /twins holds it to that).
 ; Twin: c_stars_place, src/twins.c.
-STARS_MIDDLE equ 76
-STARS_EDGE equ 44
-STARS_CORNER equ 26
+STARS_MIDDLE equ 49                 ; (x (320/400)^2 of the 76, 44, 26 at focal 400: as many on the wider screen)
+STARS_EDGE equ 28
+STARS_CORNER equ 17
+STAR_FOCAL equ 320                  ; the flight camera's (flight.h FLIGHT_FOCAL)
 STAR_CELL equ 683                   ; a cell's width on the face: 1024 = the face's half
 STAR_FACE equ 1024
-STAR_DEPTH equ 160000               ; (x 1024 x 256) the nearest a star on the screen can be along the view
+STAR_DEPTH equ 140000               ; (x 1024 x 256) the nearest a star on the screen can be along the view (52 degrees off it
+                                    ; at the screen's corner, focal 320: 0.62 of the way; this 0.53)
 STAR_THROW equ 124000               ; how far a star can lie from its cell's middle, along any way
         global _rv_stars_place
 _rv_stars_place:
@@ -828,7 +830,7 @@ _rv_stars_place:
         mov ax,[bp+18]
         mov [bp-106],ax             ; where the next goes
         mov es,[bp+20]
-        mov ecx,400                 ; the screen's four sides as slopes, 256 = 45 degrees (one more: truncated, never too tight)
+        mov ecx,STAR_FOCAL          ; the screen's four sides as slopes, 256 = 45 degrees (one more: truncated, never too tight)
         movsx eax,word [bp+12]      ; across: the further of its two sides from the camera's column
         mov edx,640
         sub edx,eax
@@ -1042,7 +1044,7 @@ _rv_stars_place:
         imul edx,dword [bp-56]
         add eax,edx
         add eax,[bp-60]
-        imul eax,eax,400            ; the focal length
+        imul eax,eax,STAR_FOCAL     ; the focal length
         cdq
         idiv ecx
         add ax,[bp+12]              ; sx
@@ -1057,7 +1059,7 @@ _rv_stars_place:
         imul edx,dword [bp-68]
         add eax,edx
         add eax,[bp-72]
-        imul eax,eax,400
+        imul eax,eax,STAR_FOCAL
         cdq
         idiv ecx
         mov dx,[bp+14]

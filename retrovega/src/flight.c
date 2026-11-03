@@ -210,8 +210,8 @@ static int g_nplan;
 #define FPS_WINDOW 8                    /* frames the rate is measured over */
 #define FPS_WANT LOGIC_HZ
 #define BENCH_MAX 900
-#define STARS_SHOWN 256                 /* at most on screen at once: the sky's 2,136 stars, of which the whole screen sees about 195, at
-                                           most about 231 (a search of every way round), and the opening about 115 */
+#define STARS_SHOWN 256                 /* at most on screen at once: the sky's some 1,370 stars (fewer a cell since the wider view,
+                                           FLIGHT_FOCAL: as many on screen as before), of which the whole screen sees about 195 */
 
 /* rvflight.inc */
 unsigned short __far __cdecl rv_flight_run(void);
@@ -784,7 +784,7 @@ void flight_camera(RvCamera *c)
     cam_basis(&c->b);
     c->cx = (short)g_cam_cx;
     c->cy = (short)g_cam_cy;
-    c->focal = 400;
+    c->focal = FLIGHT_FOCAL;
     c->vx0 = 0;
     c->vx1 = SCR_W;
     c->vy0 = ck ? ck->open_y0 : 0;
@@ -959,8 +959,8 @@ static int to_screen(const LfVec *w, int *sx, int *sy)
     Z = (rx * cam.front.x + ry * cam.front.y + rz * cam.front.z) / 256;
     if (Z < 16)
         return 0;
-    X = SCR_W / 2 + X * 400 / Z;
-    Y = g_cam_cy - Y * 400 / Z;
+    X = SCR_W / 2 + X * FLIGHT_FOCAL / Z;
+    Y = g_cam_cy - Y * FLIGHT_FOCAL / Z;
     *sx = (int)(X < -4000 ? -4000 : X > 4000 ? 4000 : X);
     *sy = (int)(Y < -4000 ? -4000 : Y > 4000 ? 4000 : Y);
     return 1;
@@ -2573,7 +2573,7 @@ static void missiles_frame(void)
             p[k].live = 0;
     }
     cam_basis(&cam);
-    missiles_place(cam_pos()->x, cam_pos()->y, cam_pos()->z, &cam, g_cam_cx, g_cam_cy, 400,
+    missiles_place(cam_pos()->x, cam_pos()->y, cam_pos()->z, &cam, g_cam_cx, g_cam_cy, FLIGHT_FOCAL,
                    c ? c->open_y0 : 0, c ? c->open_y1 : SCR_H);
 }
 
@@ -2894,9 +2894,9 @@ static void lasers_place(void)
     LfBasis cam;
     const RvCockpit __far *c = cockpit_record();
     basis_of(0, &cam);
-    bolts_place(gPositionVector[0].x, gPositionVector[0].y, gPositionVector[0].z, &cam, g_cam_cx, g_cam_cy, 400,
+    bolts_place(gPositionVector[0].x, gPositionVector[0].y, gPositionVector[0].z, &cam, g_cam_cx, g_cam_cy, FLIGHT_FOCAL,
                 c ? c->open_y0 : 0, c ? c->open_y1 : SCR_H, BOLT_LINE16);
-    balls_place(gPositionVector[0].x, gPositionVector[0].y, gPositionVector[0].z, &cam, g_cam_cx, g_cam_cy, 400,
+    balls_place(gPositionVector[0].x, gPositionVector[0].y, gPositionVector[0].z, &cam, g_cam_cx, g_cam_cy, FLIGHT_FOCAL,
                 c ? c->open_y0 : 0, c ? c->open_y1 : SCR_H, frameCounter / 2);   /* (15 animation frames a second) */
 }
 
@@ -3138,7 +3138,7 @@ void __far __cdecl flight_startup(void)
     }
     g_cam_cx = SCR_W / 2;
     g_cam_cy0 = g_cam_cy = cockpit_record() ? (cockpit_record()->open_y0 + cockpit_record()->open_y1) / 2 : SCR_H / 2;
-    ships_set_camera(g_cam_cx, g_cam_cy, 400);
+    ships_set_camera(g_cam_cx, g_cam_cy, FLIGHT_FOCAL);
     shots_flight_start(!g_lasers);      /* (the laser benchmark and its demos keep the bolts' and balls' pools) */
     explode_flight_start();             /* the effects: explosions, sounds, and what starts them (fx.c) */
     fx_flight_start();
@@ -3455,19 +3455,19 @@ void __far __cdecl flight_frame(void)
         g_view_outside = g_view != VIEW_COCKPIT;
         g_cam_cx = SCR_W / 2 + dx;
         g_cam_cy = g_cam_cy0 + dy;
-        ships_set_camera(g_cam_cx, g_cam_cy, 400);
+        ships_set_camera(g_cam_cx, g_cam_cy, FLIGHT_FOCAL);
     }
     {
         LfBasis cam;                    /* the asteroid fields: theirs entered and left, the rocks placed, the hits */
         const RvCockpit __far *c = cockpit_record();
         cam_basis(&cam);
-        rocks_frame(&cam, g_cam_cx, g_cam_cy, 400, c ? c->open_y0 : 0, c ? c->open_y1 : SCR_H);
+        rocks_frame(&cam, g_cam_cx, g_cam_cy, FLIGHT_FOCAL, c ? c->open_y0 : 0, c ? c->open_y1 : SCR_H);
     }
     stars_place();
     {
         LfBasis cam;
         cam_basis(&cam);
-        sky_place(&cam, g_cam_cx, g_cam_cy, 400);
+        sky_place(&cam, g_cam_cx, g_cam_cy, FLIGHT_FOCAL);
     }
     {
         unsigned long t0 = clock240();
@@ -3491,9 +3491,9 @@ void __far __cdecl flight_frame(void)
         LfBasis cam;                    /* the shots (shots.c): through the camera, as the bolts and the balls */
         const RvCockpit __far *c = cockpit_record();
         cam_basis(&cam);
-        shots_place(cam_pos(), &cam, g_cam_cx, g_cam_cy, 400, c ? c->open_y0 : 0,
+        shots_place(cam_pos(), &cam, g_cam_cx, g_cam_cy, FLIGHT_FOCAL, c ? c->open_y0 : 0,
                     c ? c->open_y1 : SCR_H);
-        explode_place(cam_pos(), &cam, g_cam_cx, g_cam_cy, 400);
+        explode_place(cam_pos(), &cam, g_cam_cx, g_cam_cy, FLIGHT_FOCAL);
     }
     /* the rate over the last FPS_WINDOW frames */
     dt = now - g_frame_t[k];
