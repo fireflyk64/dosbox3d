@@ -4285,9 +4285,10 @@ static void t_attack_capital(void)
         g_tm.ship[g_tm.nship - 1].role = RV_ESCORT_HOME;
         g_tm.ship[g_tm.nship - 1].noturrets = 1;
         pt_launch(PT_PLAYER);
-        randomSeed = UINT32_C(0x52560000) + 108 * 977;   /* (its own dice, whatever its place in the table: its count of 16
-                                                           is a measure near its limit, and these are the ones it was
-                                                           measured with, at index 108 until 2026-11-03) */
+        /* (its own dice, whatever its place in the table: its count of 16 is a measure near its limit, and these are
+           the ones it was measured with, at index 108 until 2026-11-03; the index a uint32_t, as the runner's: 108 x
+           977 passes a 16-bit int, and DOS threw other dice) */
+        randomSeed = UINT32_C(0x52560000) + (uint32_t)108 * 977;
         playerCanBeDamaged = 0;
         g_sys.armed = 0;
         pt_put(0, 0, 0, 30000, 0);
