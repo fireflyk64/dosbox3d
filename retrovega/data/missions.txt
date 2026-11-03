@@ -53,8 +53,8 @@ ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
 ship     NICANDR 1 nav1 count=3 at=-2250,450,2250
 ship     AGIS 1 nav3 count=2 at=2250,900,2250
-field    asteroid 20250 3150 -6750 3375
-field    asteroid -900 900 -15750 2250
+field    asteroid 20250 1500 -4000 7500
+field    asteroid -4750 -750 -10250 5000
 bar      left=- middle=PRIME right=DRIFTER
 talk     bar DRIFTER PRIME "Ten credits says the next voice on the comm is Prime."
 talk     bar PRIME DRIFTER "Put me down for twenty."
@@ -130,7 +130,7 @@ ship     OX 0 nav0 role=out jump=2
 ship     AGIS 1 nav1 count=2 at=0,0,-2250
 ship     NICANDR 1 nav2 count=2 at=1350,0,2250
 ship     NICANDR 1 nav2 at=-2250,2250,-2250
-field    asteroid -2250 675 -15750 3375
+field    asteroid -5000 1500 -15750 7202
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar TORCH ANCHOR "Shmrn's still out there."
 talk     bar PRIME TORCH "So's my luck, and I don't bring it up at every table."
@@ -212,7 +212,7 @@ ship     wingman 0 nav0 pilot=DRIFTER
 ship     VIGILNC 0 nav0 role=home
 ship     NICANDR 1 nav1 count=3 at=4500,0,0
 ship     AGIS 1 nav4 count=3 at=2250,-2250,0
-field    mine -24750 -2250 -4500 2250
+field    mine -22000 -2250 -7250 5000 level=2
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER TORCH "Fifty to one against Shmrn, Torch. That's me being friendly."
 talk     bar TORCH DRIFTER "Put me down for ten."
@@ -433,7 +433,7 @@ ship     VIGILNC 0 nav0 role=home
 ship     AGIS 1 nav2 count=2 at=-4500,2250,2250
 ship     AGIS 1 nav2 count=2 at=-2250,0,-2250
 ship     CONVOLN 1 nav3 count=2 at=2250,2250,2250
-field    asteroid -13500 2250 6750 2250
+field    asteroid -13500 2250 9500 5000
 bar      left=FROST middle=PRIME right=COMET
 talk     bar PRIME COMET "Go straight in on the big ship and pick off the small ones after. It's quicker."
 talk     bar COMET PRIME "It's quicker for the small ones."
@@ -712,7 +712,7 @@ ship     FRANKLN 0 nav0
 ship     NICANDR 1 nav2 count=2 at=-2250,-2250,-2250
 ship     NICANDR 1 nav2 count=2
 ship     CONVOLN 1 nav3 count=2 at=-2250,0,6750
-field    asteroid 14625 4500 -5625 2250
+field    asteroid 13250 4500 -7000 5000 level=1
 bar      left=FROST middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Relax, Carbon. If you lose, there's a spare."
 talk     bar ANCHOR PRIME "I know. I've read the contract."
@@ -858,7 +858,7 @@ ship     AGIS 1 nav1 at=0,0,-1350
 ship     CONVOLN 1 nav4 count=2 at=0,-5850,0
 ship     CONVOLN 1 nav4
 ship     ARISTON 1 nav2 count=2 at=2250,0,0
-field    asteroid 6750 2250 -11250 2250
+field    asteroid 4000 2250 -8500 5000 level=2
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar PRIME TORCH "Sit down, Torch. Let me tell you about the time I took four Nicanders with one wing."
 talk     bar TORCH PRIME "You told me Tuesday."
@@ -1312,8 +1312,8 @@ ship     ARISTON 1 nav2 count=2 at=4500,0,2250
 ship     ARISTON 1 nav2 count=2
 ship     ARISTON 1 nav4 count=2 at=-5625,0,-4500
 ship     AGASICL 1 nav4 at=-6750,0,-5400
-field    asteroid 4500 3150 -13500 2250
-field    asteroid -20250 5400 2250 2250
+field    asteroid 4500 4250 -10750 5000 level=3
+field    asteroid -20250 6500 5000 5000 level=3
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar ANCHOR PRIME "It's a bad idea."
 talk     bar PRIME ANCHOR "Say it in my voice."
@@ -1533,9 +1533,9 @@ ship     NICANDR 1 nav1
 ship     CONVOLN 1 nav3 count=2 at=-2250,2250,-4500
 ship     CONVOLN 1 nav3 count=2
 ship     ANAXIDM 1 nav3 at=-2250,2250,-6750
-field    mine 6750 2250 -18000 2250
-field    asteroid -11250 0 -9000 2250
-field    asteroid -18000 -2250 -6750 3375
+field    mine 6750 2250 -20750 5000 level=2
+field    asteroid -5750 0 -9000 5000 level=2
+field    asteroid -20750 -5000 -4000 7500 level=2
 bar      left=TORCH middle=ECHO right=-
 talk     bar TORCH ECHO "Did you go and see them?"
 talk     bar ECHO TORCH "Yes."
@@ -1742,7 +1742,7 @@ ship     LANCELT 0 nav1 at=0,1350,2250
 ship     CONVOLN 1 nav1 count=2 at=0,0,4500
 ship     CONVOLN 1 nav1 count=2 at=0,1350,-2250
 ship     AGASICL 0 nav1 at=2250,1125,2250
-field    asteroid 6750 -1350 -13500 3375
+field    asteroid 6750 -250 -10750 7500 level=1
 bar      left=FROST middle=KESTREL right=DRIFTER
 talk     bar KESTREL FROST "They're looking at you the way they look at me."
 talk     bar FROST KESTREL "Is that why you sat down here?"
@@ -1809,7 +1809,7 @@ ship     NICANDR 1 nav1 count=2
 ship     NICANDR 1 nav3 count=2 at=-6750,0,-2250
 ship     ARISTON 1 nav4 count=2 at=0,-2250,-2250
 ship     ARISTON 1 nav4 count=2
-field    mine -6750 0 -15750 2250
+field    mine -9500 0 -15750 5000 level=1
 bar      left=TORCH middle=PRIME right=COMET
 talk     bar COMET TORCH "What's Frost got on the Thermopylae?"
 talk     bar TORCH COMET "Ask her. Nobody else will."
@@ -1882,9 +1882,12 @@ ship     CONVOLN 1 nav3 count=2 at=-2250,1125,-2250
 ship     CONVOLN 1 nav5 count=2 at=2250,-1350,2250
 ship     CONVOLN 1 nav5 count=2
 ship     AGASICL 1 nav5 role=in
-field    asteroid 15750 4500 4500 2250
-field    asteroid 20250 4500 15750 2250
-field    asteroid -6750 2250 13500 2250
+field    asteroid 15750 7250 4500 5000 level=3
+field    asteroid 20250 7250 15750 5000 level=3
+field    asteroid -6750 5000 13500 5000 level=3
+field    asteroid 0 0 15000 5000 level=3
+field    asteroid 10000 2000 0 5000 level=3
+field    asteroid -10000 0 0 5000 level=3
 bar      left=TORCH middle=KESTREL right=ANCHOR
 talk     bar ANCHOR KESTREL "They're sending me out with a transport tomorrow."
 talk     bar KESTREL ANCHOR "Which side?"
@@ -1953,7 +1956,10 @@ ship     AGIS 1 nav3 count=2
 ship     CLEOMEN 1 nav1 count=2 at=-2250,-4500,0
 ship     CLEOMEN 1 nav1 count=2 at=2250,-450,-2250
 ship     AGASICL 1 nav1
-field    asteroid 2250 900 20250 2250
+field    asteroid 5000 2000 23000 5000 level=3
+field    asteroid 0 10000 0 5000 level=3
+field    asteroid 10000 3000 -5000 5000 level=3
+field    asteroid -10000 0 -5000 5000 level=3
 bar      left=TORCH middle=PRIME right=-
 talk     bar TORCH PRIME "You could sit there. Next to you."
 talk     bar PRIME TORCH "Nobody's sitting there."
@@ -2013,8 +2019,11 @@ ship     ARISTON 1 nav2 count=2 at=0,1125,-2250
 ship     ANAXIDM 1 nav2 role=in
 ship     NICANDR 1 nav3 count=2 at=-4500,0,-2250
 ship     NICANDR 1 nav3 count=2
-field    asteroid 18000 4500 15750 2250
-field    asteroid 15750 3150 2250 2250
+field    asteroid 23500 4500 18500 5000 level=3
+field    asteroid 13000 4250 5000 5000 level=3
+field    asteroid 10000 0 0 5000 level=3
+field    asteroid 10000 3000 -5000 5000 level=3
+field    asteroid -10000 0 -5000 5000 level=3
 bar      left=FROST middle=ECHO right=COMET
 talk     bar ECHO FROST "How many more systems before they're at the Home Worlds?"
 talk     bar FROST ECHO "Tally has a map."
@@ -2085,7 +2094,7 @@ ship     AGASICL 1 nav1 at=0,0,4500
 ship     NICANDR 1 nav2 count=2 at=-2250,0,-2250
 ship     NICANDR 1 nav2 count=2
 ship     AGASICL 1 nav2 count=2 at=-2250,0,0
-field    mine -2250 4500 18000 2250
+field    mine 500 4500 15250 5000 level=2
 bar      left=TORCH middle=PRIME right=COMET
 talk     bar COMET PRIME "Who's got the book?"
 talk     bar PRIME COMET "Tally."
@@ -2154,8 +2163,8 @@ ship     OX 0 nav1
 ship     OX 0 nav1
 ship     CONVOLN 1 nav1 count=2 at=-2250,2250,2250
 ship     CONVOLN 1 nav1 count=2
-field    mine -2250 4500 18000 2250
-field    mine 6750 4500 20250 2250
+field    mine -7750 4500 18000 5000 level=2
+field    mine 12250 4500 23000 5000 level=2
 bar      left=- middle=- right=COMET
 say      bar COMET COMET "I've got a sheet of paper in front of me. It's blank. It's going to stay that way."
 say      bar COMET you "Who's it for?"
@@ -2227,8 +2236,8 @@ ship     ARISTON 1 nav1 count=3 at=2250,450,2250
 ship     CONVOLN 1 nav2 count=2 at=-2250,-1350,-2250
 ship     CONVOLN 1 nav2 count=2 at=2250,0,-4500
 ship     CLEOMEN 1 nav3 count=2 at=6750,0,4500
-field    asteroid 15750 0 -11250 2250
-field    asteroid 13500 0 -18000 2250
+field    asteroid 15750 0 -5750 5000 level=2
+field    asteroid 10750 0 -20750 5000 level=2
 bar      left=FROST middle=KESTREL right=-
 talk     bar FROST KESTREL "You should sleep."
 talk     bar KESTREL FROST "Yes."
@@ -2300,9 +2309,9 @@ ship     ARISTON 1 nav4 count=2
 ship     AGASICL 1 nav4 at=-4500,1350,0
 ship     CONVOLN 1 nav5 count=2 at=-6750,2250,0
 ship     CONVOLN 1 nav5 count=2
-field    asteroid 15750 4500 6750 2250
-field    mine 27000 6750 -6750 2250
-field    asteroid 9000 0 -15750 2250
+field    asteroid 13000 7250 9500 5000 level=1
+field    mine 29750 9500 -4000 5000 level=1
+field    asteroid 9000 0 -18500 5000 level=1
 bar      left=FROST middle=PRIME right=DRIFTER
 talk     bar DRIFTER FROST "I've had fifty to one against this for three years."
 talk     bar FROST DRIFTER "I hope you've got the money."
@@ -2385,7 +2394,8 @@ ship     ARISTON 1 nav5 count=2 at=0,2250,-4500
 ship     ARISTON 1 nav5 count=2
 ship     CONVOLN 1 nav6 count=2 at=-2250,450,-2250
 ship     CONVOLN 1 nav7 count=2 at=0,1125,2250
-field    asteroid 9000 0 -15750 2250
+field    asteroid 6250 0 -13000 2759 level=1
+field    asteroid 14500 0 -15750 3452 level=1
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER TORCH "Long odds against Shmrn."
 talk     bar TORCH DRIFTER "I'm in it, Drifter. I've been in it for a week."
@@ -2464,8 +2474,8 @@ ship     CONVOLN 1 nav6 count=2 at=-4500,900,4500
 ship     CLEOMEN 1 nav2 count=2 at=-2250,0,-2250
 ship     NICANDR 1 nav3 count=2 at=0,2250,2250
 ship     AGASICL 1 nav3 at=2250,2250,2250
-field    mine -18000 4500 2250 2250
-field    mine -29250 6300 -6750 2250
+field    mine -18000 4500 5000 5000 level=1
+field    mine -32000 5750 -4000 5000 level=1
 bar      left=FROST middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Who signed for my wingtip?"
 talk     bar ANCHOR PRIME "You did."
@@ -2553,7 +2563,7 @@ ship     AGIS 1 nav3 count=2 at=6750,-1125,-2250
 ship     AGIS 1 nav3 count=2
 ship     CLEOMEN 1 nav8 count=2 at=2250,0,-6750
 ship     CLEOMEN 1 nav8 count=2
-field    mine 9000 0 -13500 2250
+field    mine 11750 0 -13500 5000 level=1
 wipe     ECHO
 bar      left=TORCH middle=ECHO right=COMET
 talk     bar COMET ECHO "Your column's gone."
@@ -2711,8 +2721,8 @@ ship     CONVOLN 1 nav1 count=2 at=2250,-1125,-4500
 ship     CONVOLN 1 nav1 count=2 at=-2250,-2250,-2250
 ship     ANAXIDM 1 nav1 role=in
 ship     CONVOLN 1 nav3 count=2 at=0,0,6750
-field    mine 6750 4500 13500 3375
-field    mine 2250 4500 18000 2250
+field    mine 9500 4500 10750 7500 level=2
+field    mine -500 4500 20750 5000 level=2
 wipe     ALL
 bar      left=- middle=ECHO right=COMET
 talk     bar ECHO COMET "He wiped it."
@@ -2781,8 +2791,8 @@ ship     NICANDR 1 nav1 count=2 at=-2250,1125,-4500
 ship     NICANDR 1 nav1 count=2 at=-4500,-450,0
 ship     CONVOLN 1 nav3 count=2 at=2250,0,6750
 ship     CONVOLN 1 nav3 count=2
-field    mine 15750 0 6750 3375
-field    mine 15750 0 13500 2250
+field    mine 15750 0 4000 7500 level=2
+field    mine 15750 0 19000 5000 level=2
 bar      left=- middle=- right=COMET
 say      bar COMET COMET "They came in to see Julian, from the Guild. The family's lawyers. There was a form."
 say      bar COMET you "What did they want?"
@@ -2854,10 +2864,10 @@ ship     NICANDR 1 nav6 at=0,2250,2250
 ship     NICANDR 1 nav6 count=2
 ship     NICANDR 1 nav6 count=2
 ship     CLEOMEN 1 nav7 count=3 at=0,0,2250
-field    mine -18000 -2250 -4500 2250
-field    mine -32000 -4500 -6750 2250
-field    asteroid 0 0 4500 2250
-field    asteroid -2250 0 -2250 2250
+field    mine -20750 -2250 -7250 5000 level=2
+field    mine -32000 -1750 -6750 5000 level=2
+field    asteroid 0 0 10000 5000 level=2
+field    asteroid -5000 0 -5000 5000 level=2
 bar      left=- middle=- right=-
 say      bar TALLY TALLY "There's nobody here. You noticed. I've got the board clean, and the glasses are done."
 say      bar TALLY you "Are you ready?"

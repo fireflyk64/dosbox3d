@@ -5,7 +5,7 @@
 #include "rvtypes.h"
 
 #define RVGAME_MAGIC "RVGAME"
-#define RVGAME_VERSION 19
+#define RVGAME_VERSION 20
 
 #define RV_PILOTS 16
 #define RV_NODES 32
@@ -255,6 +255,7 @@ typedef struct {
     int16_t y;
     int16_t z;
     int16_t radius;
+    uint8_t level;
 } RvField;
 typedef struct {
     char id[RV_ID];
@@ -340,7 +341,7 @@ typedef struct {
 #define RV_HEADER_SIZE 68
 #define RV_PILOT_SIZE 121
 #define RV_NODE_SIZE 22
-#define RV_MISSION_SIZE 473
+#define RV_MISSION_SIZE 480
 #define RV_SHIPTYPE_SIZE 181
 #define RV_WEAPON_SIZE 44
 #define RV_LINE_SIZE 114

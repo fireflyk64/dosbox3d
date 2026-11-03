@@ -88,7 +88,8 @@ void __far __cdecl rv_rocks_copy(const unsigned char __far *hdr, int rows, int x
 #define ROCK_DENSITY 120                /* a field's density when the mission does not say: its rocks at once are
                                            rocks.c's FX_CAP x density / ROCK_DENSITY (a cluster's: per (10,000 km)^3) */
 
-int rocks_field_add(int type, long x, long y, long z, long radius_km, int density);   /* -> its index, -1 none */
+int rocks_field_add(int type, long x, long y, long z, long radius_km, int density, int level);   /* -> its index, -1
+                                           none; level: the old game's rock level, 0..3 (missions.txt level=) */
 int rocks_field_cluster(long x, long y, long z, long radius_km, int density);   /* the bar window's: asteroids that
                                            stay in the field and drift */
 void rocks_flight_start(void);          /* no fields, no rocks */
@@ -113,6 +114,9 @@ void rocks_draw_begin(void);
 void rocks_draw_to(long depth, int y0, int y1, const short __far *ext, int ext_y0, int ext_rows);
 void rocks_draw_rest(int y0, int y1, const short __far *ext, int ext_y0, int ext_rows);
 
+#ifdef RV_TESTS
+void rocks_test_to_field(void);
+#endif
 void rocks_report(void);                /* the flight's tally (logged) */
 extern int g_rock_xms;                  /* RV.EXE /rockxms 0: the big rocks' rows copied from conventional memory
                                            (one XMS move a rock, then the copy) rather than moved a row at a time */

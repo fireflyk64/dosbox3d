@@ -336,10 +336,14 @@ rock slots of each dump (`entitiesToDespawn` dseg:6610, their positions, velocit
   seconds. Rocks are 100 km in radius, the Hornet's own size. Mines (type 0x21) face the player and drift at it at 2 km
   a frame, and close in when near (092E).
 
-Ours (`src/rocks.c`, docs/engine.md "Nav points and fields") keeps the counts, the chance, the cone (as the same share
-of a view 2.5 times narrower), the aimed share and its times, in seconds; it makes rocks farther out (6,000 km: our rocks
-show the old game's few pixels there) and gives the others a speed at the player (the user's 250 kps) rather than across,
-so they reach the player in the old game's seconds although our ships are slower against their size.
+Ours (`src/rocks.c`, docs/engine.md "Nav points and fields") has all of this in the old game's own numbers since
+2026-11-03 (our ships, view and speeds are its own now), the fields at its size about their own nav points, and its
+level (dseg:BFF4, by series: 0 in Enyo, 2 or 3 later), which the code reads at two places: the aimed rock's pitch
+window (06F2, dseg:39AA, a pair a level: -10..4, -8..8, -12..8, -8..8; past level 3 none) and its time's base (041B,
+dseg:39A6: 56, 52, 75, 73 frames, 65 past 3). Measured flying straight through, invulnerable, at 200 kps
+(`run-old.sh OUT 1 0 "1:!rocks=1,3:!pos=11520000:1792000:-1152000,110:@end" 150`, the D lines of the trace a hit of
+1,000 or more each): the nav 2 field (7,500 km) 6 and 7 hits, the nav 3 field (5,000 km, with two Salthi) 1 and 2.
+Ours, tests/rocks-cross.txt on ENIGMA1: 3 and 9, 1 and 5 (before: 2 and 2, 3).
 
 ## At 15 frames a second (2026-11-02)
 

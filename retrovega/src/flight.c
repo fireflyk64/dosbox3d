@@ -3234,12 +3234,13 @@ void __far __cdecl flight_startup(void)
         int fi;
         for (fi = 0; fi < (int)g_m->nfield; fi++)
             rocks_field_add(g_m->field[fi].type, (long)g_m->field[fi].x * 256, (long)g_m->field[fi].y * 256,
-                            (long)g_m->field[fi].z * 256, g_m->field[fi].radius, g_m->field[fi].density);
+                            (long)g_m->field[fi].z * 256, g_m->field[fi].radius, g_m->field[fi].density,
+                            g_m->field[fi].level);
     }
     sfx_flight_start();                 /* (last: the card plays from now) */
     if (g_field > 0)                    /* (centred where the player starts: big enough to fly in for minutes) */
         rocks_field_add(RV_FIELD_ASTEROID, gPositionVector[0].x, gPositionVector[0].y, gPositionVector[0].z, 200000L,
-                        g_field);
+                        g_field, 0);
 #ifdef RV_TESTS
     if (g_sky_demo)
         sky_demo_setup();
@@ -3325,6 +3326,7 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.ch == '|') logic_test_kill_carrier();
         if (in.ch == '^') logic_test_jump_out();
         if (in.ch == '~') logic_test_kill_wingman();
+        if (in.ch == '#') rocks_test_to_field();   /* (a script's way through a field: tests/rocks-cross.txt) */
         if (in.ch == '&' && g_sim) simulator_test_kill();
 #endif
     }

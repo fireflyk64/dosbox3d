@@ -17,8 +17,8 @@ checks every reference and rule (docs/engine.md), and writes:
 missions.txt is one block per mission, a keyword and its value per line,
 '#' comments.  Keywords: mission, node, title, type, music, briefing, win,
 lose, fighter (the player's and the wingman's TYPE), nav (id x y z [hidden], km: the waypoints numbered from 1, then the hidden trigger points), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home] [jump=N] [turrets=off]
-[pilot=KEY] [ai=PROFILE] [fear=c/d]), rules (hit= aim= hold= ram=: RULES), field (asteroid|mine x y z radius [density=N], km; N rocks per (10,000 km)^3, 1..255,
-0 or none: the engine's own), bar and lounge
+[pilot=KEY] [ai=PROFILE] [fear=c/d]), rules (hit= aim= hold= ram=: RULES), field (asteroid|mine x y z radius [density=N] [level=L], km; N rocks per (10,000 km)^3, 1..255,
+0 or none: the engine's own; L the old game's rock level, 0..3: how many fly at the player, and when), bar and lounge
 (seat=PILOT|- ...), and the lines, docs/engine.md: briefing, win, lose [WHO] [conditions] "line" (or plain text: the XO's,
 split at its sentences), talk, say, radio.
 """
@@ -36,7 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 19                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 20                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
                                         # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
@@ -47,6 +47,7 @@ VERSION = 19                            # 2: the ship types' engines; 3: their h
                                         # mission, 120 characters, conditions (say, radio, after=, if=, unless=, dead=);
                                         # 17: a ship type's fuel rates (fuel_cruise, fuel_burn); 18: a pilot's board seed and twin;
                                         # 19: a mission ship's jump=N (an escort target's last nav point)
+                                        # 20: a field's level=L (the old game's rock level, dseg:BFF4)
 LIMITS = {'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 16,
           'SEATS': 3, 'TALKS': 200, 'FIELDS': 7, 'SHIPTYPES': 64, 'SHIPRECORDS': 44, 'WEAPONS': 40}
 TEXT = {'ID': 16, 'TITLE': 48, 'TALK': 108, 'KEY': 10, 'CALLSIGN': 12,
@@ -206,7 +207,7 @@ ESCORT_ROLES = {'out': 1, 'in': 2, 'home': 3}   # a mission ship's role (RV_ESCO
                                         # next nav point and jumps there, or waits at its own until the player comes
                                         # and flies home; `home` is the carrier the player lands on: it holds station
 FIELD = [('unsigned char', 'type', 'B'), ('unsigned char', 'density', 'B'), ('short', 'x', 'h'), ('short', 'y', 'h'), ('short', 'z', 'h'),
-         ('short', 'radius', 'h')]
+         ('short', 'radius', 'h'), ('unsigned char', 'level', 'B')]
 TALK = [('unsigned char', 'room', 'B'), ('unsigned char', 'speaker', 'B'), ('unsigned char', 'listener', 'B'),
         ('unsigned char', 'flags', 'B'), ('unsigned char', 'arg', 'B'), ('unsigned char', 'boost', 'B'),
         ('char', 'text[RV_TALK]', '%ds' % TEXT['TALK'])]
@@ -749,13 +750,19 @@ def compile_all():
             raise Fail('%s: %d talk lines, at most %d' % (w, len(talks), LIMITS['TALKS']))
         fields = []
         for where, f in m['field']:
-            density = 0
-            if len(f) == 6 and f[5].startswith('density='):
-                density = int(f[5][8:])
-                f = f[:5]
-            if f[0] not in FIELDS or len(f) != 5 or not 0 <= density <= 255:
-                raise Fail('%s: a field is asteroid|mine x y z radius [density=0..255]' % where)
-            fields.append(struct.pack(fmt(FIELD), FIELDS[f[0]], density, int(f[1]), int(f[2]), int(f[3]), int(f[4])))
+            density = level = 0
+            opts = [w for w in f[5:]]
+            f = f[:5]
+            for o in opts:
+                if o.startswith('density='):
+                    density = int(o[8:])
+                elif o.startswith('level='):
+                    level = int(o[6:])
+                else:
+                    raise Fail('%s: a field is asteroid|mine x y z radius [density=0..255] [level=0..3]' % where)
+            if f[0] not in FIELDS or len(f) != 5 or not 0 <= density <= 255 or not 0 <= level <= 3:
+                raise Fail('%s: a field is asteroid|mine x y z radius [density=0..255] [level=0..3]' % where)
+            fields.append(struct.pack(fmt(FIELD), FIELDS[f[0]], density, int(f[1]), int(f[2]), int(f[3]), int(f[4]), level))
         if len(fields) > LIMITS['FIELDS']:
             raise Fail('%s: %d fields, at most %d' % (w, len(fields), LIMITS['FIELDS']))
         # the fighter the mission puts the player (and the wingman) in; none (0xFF): the campaign's choice stays

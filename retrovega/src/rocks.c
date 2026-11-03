@@ -2,21 +2,26 @@
  *
  * A field is an effect, as the old game's are (its overlay 168 read
  * 2026-11-02 and its rocks measured in flight: tests/wc1/README.md, "The
- * asteroid fields"): while the point FX_CHECK_KM ahead of the player's nose
- * is inside a field, rocks are made ahead of them and come at them, at most
- * FX_CAP at once (the old game's 20, scaled by the field's density).  A
- * rock is made FX_SPAWN_KM ahead, in a cone about the nose (the old game's
- * +-35 x +-20 degrees of its 90-degree view: the same share of ours) turned
- * where the nose is turning, with the old game's chance a frame of its (the
- * faster the player goes, the sooner).  Most fly at the player at about 250 kps
- * (the user's figure; the old game's drift across) toward a point off them
- * by up to the kind's miss, a fifth keep still, and the old game's share
- * flies at where the player will be after its time (3.7 to 4.7 seconds at
- * 250 kps, sooner the farther the player's speed is from it) to meet them
- * there.  A rock past FX_FAR_KM from the player is gone (passed, or drifted
- * off), and another is made ahead; it grows in from a dot past FX_FADE of
- * FX_FAR_KM.  A shot that goes into a rock is spent and breaks it one time
- * in three (the old game's); the player's ship flying into one breaks it.
+ * asteroid fields"), in its own numbers since 2026-11-03 (the user: the
+ * fields felt "really sparse" and "easy", "only require a single juke";
+ * "make sure they are just about the same size as WC1 fields and similar
+ * difficult"): our ships, our view and our speeds are its own now (radius
+ * 100 km, +-45 degrees across, a kps 1.5 km/s), and so are the fields
+ * (missions.txt: its radii about its own nav points).  While the point
+ * FX_CHECK_KM ahead of the player's nose is inside a field, rocks are made
+ * ahead of them, at most FX_CAP at once (the old game's 20, scaled by the
+ * field's density): FX_SPAWN_KM ahead, in a cone about the nose (its +-35 x
+ * +-20 degrees) turned where the nose is turning, with its chance a frame of
+ * its (the faster the player goes, the sooner), and only where that point is
+ * in the field.  Most drift across the field (a right angle off the line to
+ * its middle, up, down, left or right) at 100 to 160 kps and the player flies
+ * into them, a fifth keep still, and some fly at where the player will be
+ * after its time (its share and its time by the field's level, its
+ * dseg:BFF4: 0 to 3) to meet them there.  A rock past FX_FAR_KM from the
+ * player, less with the player's speed down to FX_FAR_MIN_KM (its 4,300 and
+ * 3,100), is gone, and another is made ahead.  Mines come at the player.  A
+ * shot that goes into a rock is spent and breaks it one time in three (the
+ * old game's); the player's ship flying into one breaks it.
  * Once a frame every rock goes through the camera (rv_rocks_place,
  * rocks.asm): the ones on screen out, the ones too far to a list to be
  * removed, the ones within reach to a list tested against the player's hit
@@ -76,24 +81,27 @@
 #define FIELD_SLOT(i) (RV_CAMERA_SLOT - 1 - (i))   /* a field's local-only hazard slot */
 #define ZONE_PAD_KM 2000L               /* the art stays this much past where it was read in */
 #define SHIFT_KEY 18                    /* depth keys: camera units >> 18 = 64 km a key */
-#define ROCK_KM_MIN 110L                /* a rock's radius: a quarter to a half of a fighter (the user, 2026-10-24) */
-#define ROCK_KM_SPAN 130L
+#define ROCK_KM_MIN 80L                 /* a field's rock's radius: about a fighter's, as the old game's (100 km, the
+                                           Hornet's); 2026-10-24's quarter to a half of a fighter was of the bigger
+                                           ships then, and the bar window's cluster keeps that look */
+#define ROCK_KM_SPAN 40L
+#define CLUSTER_KM_MIN 110L
+#define CLUSTER_KM_SPAN 130L
 #define FRAG_MAX 32                     /* pieces of broken rock in flight at once */
 #define FRAG_N 7                        /* a rock breaks into so many */
 
 /* The field as an effect: the old game's (ovr168: 20 rocks, made 3,050 km ahead within +-35 x +-20 degrees of the
- * nose, a chance of (speed/10 + 30)/215 a frame, gone past 3,100-4,300 km; its camera's focal length 160, its rocks
- * as big as its fighters) at our scale: our view is 2.5 times narrower (focal 400) and our rocks a quarter to a half
- * of a fighter, so a rock is made farther out, where it shows a few pixels as the old game's did, and comes at the
- * player itself, so that it is on them in the old game's seconds */
+ * nose, a chance of (speed/10 + 30)/215 a frame, gone past 3,100-4,300 km by the speed; its camera's focal length 160
+ * on its 320, ours 320 on our 640; its rocks as big as its fighters, 100 km, as ours) in its own numbers */
 #define FX_CAP 20                       /* rocks at once at the plain density (ROCK_DENSITY; a field's density= scales it) */
-#define FX_SPAWN_KM 6000L               /* a new rock this far ahead */
-#define FX_FAR_KM 6400L                 /* a rock farther than this from the player is gone */
-#define FX_FADE 72                      /* percent of FX_FAR_KM past which a rock shrinks, to nothing at it: it grows in */
-#define FX_CHECK_KM 1400L               /* rocks come while the point this far ahead of the nose is in a field (the old
-                                           game's 3,050 km at the map's 0.45: they come as the player nears the edge,
-                                           and stop as the far edge nears) */
-#define FX_NEAR_KM 3000L                /* the art read in when a field's edge is this near */
+#define FX_SPAWN_KM 3050L               /* a new rock this far ahead (the old game's 2,940-3,130 measured) */
+#define FX_FAR_KM 4300L                 /* a rock farther than this from the player is gone ... */
+#define FX_FAR_MIN_KM 3100L             /* ... down to this, 60 km less for each of the old game's km a frame (kps / 10)
+                                           of the player's speed (its 0890: 4,300 a rock drawn, 4,300-3,100 one not) */
+#define FX_CHECK_KM 3050L               /* rocks come while the point this far ahead of the nose is in a field (each
+                                           made only where its own point is, its 06A9) */
+#define FX_NEAR_KM 4500L                /* the art read in when a field's edge is this near (rocks come from 3,050 km
+                                           before it) */
 #define FX_ENTRY 3                      /* rocks made at once as a field begins (the old game's 3) */
 #define FX_LEAD_STEPS 30                /* the cone turned to where the nose will point in a second */
 #define FX_YAW 35                       /* the cone, in the old game's degrees (+-35 across, +-20 up and down), each */
@@ -103,15 +111,21 @@
 
 /* how a field's rocks come, by its kind (asteroids, mines) */
 typedef struct {
-    unsigned short kps_min, kps_span;   /* a coming rock's own speed (kps) */
-    unsigned short miss_km;             /* toward a point off the player by up to this, across and up */
+    unsigned short kps_min, kps_span;   /* a rock's own speed (kps) */
+    unsigned short miss_km;             /* (at the player) toward a point off them by up to this, across and up */
     unsigned char still;                /* percent of them that keep still (the old game's fifth) */
     unsigned char aimed;                /* 1: the old game's share flies at where the player will be */
+    unsigned char across;               /* 1: the rest drift across the field (the old game's 036A), 0: at the player */
 } FieldKind;
 static const FieldKind __far k_kind[2] = {
-    { 200, 100, 1500, 20, 1 },          /* asteroids: about 250 kps (the user's figure) */
-    { 30, 20, 600, 20, 0 },             /* mines: they drift at the player (the old game's: 2 km a frame, at it) */
+    { 100, 60, 0, 20, 1, 1 },           /* asteroids: across at 10 to 16 of its km a frame */
+    { 30, 20, 600, 20, 0, 0 },          /* mines: they drift at the player (the old game's: 2 km a frame, at it) */
 };
+/* the old game's levels (dseg:BFF4, a mission's): a rock flies at where the player will be when it comes up within
+ * the cone's pitch LO < e < HI and yaw +-19 (then 60%: its 06F2, dseg:39AA), after T + random(15) of its frames (its
+ * 041B, dseg:39A6) */
+static const signed char __far k_aim_lo[4] = { -10, -8, -12, -8 }, __far k_aim_hi[4] = { 4, 8, 8, 8 };
+static const unsigned char __far k_aim_t[4] = { 56, 52, 75, 73 };
 
 int g_rock_xms = 1;
 static char s_file[] = "ROCKS.DAT";     /* (near: DOS wants it so) */
@@ -155,7 +169,7 @@ static int __far g_nfrag;
 typedef struct {
     long x, y, z, r_km;
     int density;
-    unsigned char type, slot, cluster;
+    unsigned char type, slot, cluster, level;
 } Field;
 static Field __far g_f[FIELDS_MAX];
 static int __far g_nf, __far g_active = -1;   /* the field the art was read in for (-1: none, no art; -2 - i: field
@@ -357,10 +371,10 @@ static void field_slot(int i, int on)
     *(long *)(rec + 10) = f->z;
     *(long *)(rec + 14) = f->r_km;
     rec[18] = (unsigned char)f->density;
-    rec[19] = 0;
+    rec[19] = f->level;
 }
 
-int rocks_field_add(int type, long x, long y, long z, long radius_km, int density)
+int rocks_field_add(int type, long x, long y, long z, long radius_km, int density, int level)
 {
     static const char __far s_add[] = "rocks: field %d (%Fs) at %ld,%ld,%ld km, %ld km across, %d rocks per (10,000 km)^3";
     static const char __far s_ast[] = "asteroids", __far s_mine[] = "mines";
@@ -374,6 +388,7 @@ int rocks_field_add(int type, long x, long y, long z, long radius_km, int densit
     f->z = z;
     f->r_km = radius_km;
     f->density = density > 0 ? density : ROCK_DENSITY;
+    f->level = (unsigned char)(level >= 0 && level <= 3 ? level : 0);
     f->slot = (unsigned char)FIELD_SLOT(g_nf);
     f->cluster = 0;
     field_slot(g_nf, 1);
@@ -384,7 +399,7 @@ int rocks_field_add(int type, long x, long y, long z, long radius_km, int densit
 
 int rocks_field_cluster(long x, long y, long z, long radius_km, int density)
 {
-    int i = rocks_field_add(RV_FIELD_ASTEROID, x, y, z, radius_km, density);
+    int i = rocks_field_add(RV_FIELD_ASTEROID, x, y, z, radius_km, density, 0);
     if (i >= 0)
         g_f[i].cluster = 1;
     return i;
@@ -413,13 +428,14 @@ static int in_field(const Field __far *f, long x, long y, long z)
     return (unsigned long)(dx * dx + dy * dy + dz * dz) <= (unsigned long)(r * r);
 }
 
-/* a new rock's looks: its kind, its radius (110 .. 240 km: a quarter to a half of a fighter), its spin's phase and
- * speed (a turn in one to four seconds, either way) */
-static void rock_looks(LzRock __far *r)
+/* a new rock's looks: its kind, its radius (a field's 80 .. 120 km, a fighter's; the window's cluster's 110 .. 240),
+ * its spin's phase and speed (a turn in one to four seconds, either way) */
+static void rock_looks(LzRock __far *r, int cluster)
 {
     unsigned spin;
     r->kind = (unsigned char)(rnd() % g_kinds);
-    r->r8 = (unsigned char)((ROCK_KM_MIN + (long)(rnd() % (ROCK_KM_SPAN + 1))) / 8);
+    r->r8 = (unsigned char)((cluster ? CLUSTER_KM_MIN + (long)(rnd() % (CLUSTER_KM_SPAN + 1))
+                                     : ROCK_KM_MIN + (long)(rnd() % (ROCK_KM_SPAN + 1))) / 8);
     r->phase = (unsigned char)(rnd() & (g_frames - 1));
     spin = 1 + rnd() % 4;
     r->spin = (signed char)((rnd() & 1) ? spin : -(int)spin);
@@ -483,11 +499,51 @@ static void fly_in(LzRock __far *r, long dx, long dy, long dz, long t)
     r->vz = (short)vz;
 }
 
-/* A rock of field fi made km ahead of the nose, in the cone (the old game's +-35 x +-20 degrees, as the same share of
- * our view) turned to where the nose is turning, and its way: the old game's share (asteroids) at the point the
- * player will be at after its time (its frames: 56 to 70, fewer by up to twice how far the player's speed is from 250
- * kps; less up to 4 for the rock's own: each WC_FRAME_STEPS of our steps), the field's still ones still, and the rest at the
- * player at the kind's speed toward a point off them by up to its miss.  0: the way would not come out */
+/* a rock's way across its field: a right angle off the line from it to the field's middle, up, down, left or right of
+ * that line (the old game's 036A: the rock faces the middle and turns), at kps.  0: it is at the middle */
+static int fly_across(LzRock __far *r, const Field __far *f, long kps)
+{
+    long m[3], s[3], u[3], l, k = kps * 64 / 5;   /* (a kps: 12.8 positions a step) */
+    int i, pick = (int)(rnd() & 3);
+    m[0] = (f->x - r->x) / 256;         /* (km) */
+    m[1] = (f->y - r->y) / 256;
+    m[2] = (f->z - r->z) / 256;
+    l = (long)lf_sqrt((unsigned long)(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]));
+    if (l < 16)
+        return 0;
+    for (i = 0; i < 3; i++)
+        m[i] = m[i] * 1024 / l;         /* (1,024 a unit) */
+    /* (across: the line crossed with the world's up, or with its x where the line is near the vertical) */
+    if (labs(m[1]) < 1000) {
+        s[0] = m[2]; s[1] = 0; s[2] = -m[0];
+    } else {
+        s[0] = 0; s[1] = -m[2]; s[2] = m[1];
+    }
+    l = (long)lf_sqrt((unsigned long)(s[0] * s[0] + s[1] * s[1] + s[2] * s[2]));
+    if (l < 16)
+        return 0;
+    for (i = 0; i < 3; i++)
+        s[i] = s[i] * 1024 / l;
+    u[0] = (s[1] * m[2] - s[2] * m[1]) / 1024;   /* (up off the line: across x the line) */
+    u[1] = (s[2] * m[0] - s[0] * m[2]) / 1024;
+    u[2] = (s[0] * m[1] - s[1] * m[0]) / 1024;
+    for (i = 0; i < 3; i++) {
+        long v = pick & 2 ? u[i] : s[i];
+        v = (pick & 1 ? -v : v) * k / 1024;
+        if (i == 0) r->vx = (short)v;
+        else if (i == 1) r->vy = (short)v;
+        else r->vz = (short)v;
+    }
+    return 1;
+}
+
+/* A rock of field fi made km ahead of the nose, in the cone (the old game's +-35 x +-20 degrees) turned to where the
+ * nose is turning, where that point is in the field (the old game's 06A9), and its way: the old game's share by the
+ * field's level (asteroids) at the point the player will be at after its time (its frames: the level's 52 to 75 and
+ * up to 14 more, fewer by up to twice how far the player's speed is from 250 kps; less up to 4 for the rock's own:
+ * each WC_FRAME_STEPS of our steps), the field's still ones still, and the rest across the field (asteroids) or at
+ * the player toward a point off them by up to the kind's miss (mines).  0: no rock (outside the field, or the way
+ * would not come out) */
 static int rock_make(LzRock __far *r, const LfBasis *b, int fi, long km)
 {
     const Field __far *f = &g_f[fi];
@@ -508,14 +564,16 @@ static int rock_make(LzRock __far *r, const LfBasis *b, int fi, long km)
     r->x = gPositionVector[0].x + d[0] * km / len * 256;
     r->y = gPositionVector[0].y + d[1] * km / len * 256;
     r->z = gPositionVector[0].z + d[2] * km / len * 256;
-    rock_looks(r);
-    if (k->aimed && e > -10 && e < 4 && a > -19 && a < 19 && rnd() % 100 < 60) {
+    if (!f->cluster && !in_field(f, r->x, r->y, r->z))
+        return 0;
+    rock_looks(r, 0);
+    if (k->aimed && e > k_aim_lo[f->level] && e < k_aim_hi[f->level] && a > -19 && a < 19 && rnd() % 100 < 60) {
         long off = 25 - (long)(speedLo[0] / 10), t, t2;   /* (the old game's speed: kps / 10, km a frame) */
         if (off < 0)
             off = -off;
         if (off > 10000)
             off = 10000;
-        t = 56 + (long)(rnd() % 15) - (off ? (long)(rnd() % (unsigned)(2 * off)) : 0);
+        t = k_aim_t[f->level] + (long)(rnd() % 15) - (off ? (long)(rnd() % (unsigned)(2 * off)) : 0);
         if (t < 7)
             t = 7;
         t2 = t - (long)(rnd() % 5);
@@ -526,9 +584,10 @@ static int rock_make(LzRock __far *r, const LfBasis *b, int fi, long km)
         fly_in(r, gPositionVector[0].x + gVelocityVector[0].x * t - r->x, gPositionVector[0].y + gVelocityVector[0].y * t - r->y,
                gPositionVector[0].z + gVelocityVector[0].z * t - r->z, t2);
         g_aimed++;
-    } else if (rnd() % 100 < k->still)
+    } else if (rnd() % 100 < k->still
+               || (k->across && !fly_across(r, f, k->kps_min + (long)(rnd() % (k->kps_span + 1)))))
         r->vx = r->vy = r->vz = 0;
-    else {
+    else if (!k->across) {
         long m1 = (long)(rnd() % (2 * k->miss_km + 1)) - k->miss_km, m2 = (long)(rnd() % (2 * k->miss_km + 1)) - k->miss_km,
             kps = k->kps_min + (long)(rnd() % (k->kps_span + 1)), dx, dy, dz, dl;
         dx = (gPositionVector[0].x + b->right.x * m1 + b->up.x * m2 - r->x) / 256;   /* (km) */
@@ -568,7 +627,7 @@ static void rock_in_field(LzRock __far *r, const Field __far *f)
         if (dx > CLUSTER_AWAY_KM || dy > CLUSTER_AWAY_KM || dz > CLUSTER_AWAY_KM)
             break;
     }
-    rock_looks(r);
+    rock_looks(r, 1);
     r->vx = (short)((int)(rnd() % 257) - 128);   /* (half a km a frame at most, each way: it drifts) */
     r->vy = (short)((int)(rnd() % 257) - 128);
     r->vz = (short)((int)(rnd() % 257) - 128);
@@ -965,8 +1024,17 @@ void rocks_frame(const LfBasis *cam, int cx, int cy, int focal, int y0, int y1)
               100, 70000L, 0, 0, y0, y1);
     g_rc.dk = (unsigned long)focal * 65536UL * 16;   /* 2 x 8 km x 4,096 x focal x 16 / 16: d x16 = r8 dk / Z */
     cluster = g_f[g_active].cluster;
-    g_rc.far2 = cluster ? (unsigned long)BUBBLE_KM * BUBBLE_KM : (unsigned long)FX_FAR_KM * FX_FAR_KM;
-    g_rc.fade2 = g_rc.far2 / 10000 * (cluster ? BUBBLE_FADE * BUBBLE_FADE : FX_FADE * FX_FADE);
+    if (cluster) {
+        g_rc.far2 = (unsigned long)BUBBLE_KM * BUBBLE_KM;
+        g_rc.fade2 = g_rc.far2 / 10000 * BUBBLE_FADE * BUBBLE_FADE;
+    } else {                            /* (the old game's: gone past 4,300 km, 60 less for each km a frame of speed, to
+                                           3,100; a rock made at 3,050 full size, smaller only out past it) */
+        long reap = FX_FAR_KM - 60L * (long)(speedLo[0] / 10);   /* (not "far": Watcom's keyword) */
+        if (reap < FX_FAR_MIN_KM)
+            reap = FX_FAR_MIN_KM;
+        g_rc.far2 = (unsigned long)reap * reap;
+        g_rc.fade2 = (unsigned long)FX_SPAWN_KM * FX_SPAWN_KM;
+    }
     g_rc.reach = ROCK_REACH_KM * 4096;
     g_rc.anim = frameCounter;
     g_rc.mask = (unsigned short)(g_frames - 1);
@@ -1289,3 +1357,31 @@ out:
 }
 #endif /* RV_NO_TWINS */
 #endif /* RV_TESTS */
+
+#ifdef RV_TESTS
+/* a script's way into a field (flight.c's test key #): the player put 3,550 km outside the next field of the mission
+ * (the first, then the one after it at each press), on the line through its middle along the nose, facing it, at
+ * 200 kps, taking no damage (the rocks still hit, and are logged): a straight pass, as tests/wc1 flies the old game's */
+void rocks_test_to_field(void)
+{
+    static const char __far s_to[] = "rocks: test: the player %ld km before field %d (radius %ld km), facing its middle";
+    static int __far next;
+    int i = -1, k;
+    long back;
+    for (k = 0; k < g_nf; k++)
+        if (!g_f[(next + k) % g_nf].cluster) {
+            i = (next + k) % g_nf;
+            break;
+        }
+    if (i < 0)
+        return;
+    next = i + 1;
+    back = g_f[i].r_km + 3550;
+    gPositionVector[0].x = g_f[i].x - gOrientationFrontVector[0].x * back;
+    gPositionVector[0].y = g_f[i].y - gOrientationFrontVector[0].y * back;
+    gPositionVector[0].z = g_f[i].z - gOrientationFrontVector[0].z * back;
+    setSpeed[0] = speedLo[0] = 200;
+    playerCanBeDamaged = 0;
+    rv_logf(s_to, back, i, g_f[i].r_km);
+}
+#endif

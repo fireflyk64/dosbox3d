@@ -1,0 +1,7 @@
+# A straight pass through a mission's field (RVT.EXE: EXE=RVT.EXE tests/run.sh tests/rocks-cross.txt /fly 0 /flight 120):
+# out of the launch, # puts the player 3,550 km before the first field facing its middle at 200 kps, taking no damage;
+# then nothing is touched: each rock's hit is logged ("rocks: frame ... hit the player"), the tally at the end
+wait 33
+key #
+wait 1800
+log done

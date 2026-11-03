@@ -237,24 +237,32 @@ Enyo's nav 1 and its Dralthi were 15,173 km off, first firing 18 to 25 s on; at 
 from an arriving player and fired within seconds, though the fights are at the old game's full scale. So the enemy
 fighters a nav point brings are moved out together along the way from the player to their middle until it is
 `WAVE_KM` (15,000) off, their formation kept (first shots some 12 s on), and the autopilot waits for no enemy within
-16,000 km (`AUTOPILOT_CLEAR_KM`, the engine's lamp the same). Fields (`field asteroid|mine x y z radius [density=N]`, km) are read from the old game's mission
-records (types 0x16 and 0x17) at the map's 0.45, which keeps its layout (six waypoints lie inside a field, as the old
-game's Enyo nav 2 does). **A field is an effect, as the old game's are** (the user, 2026-11-02: "a field effect where
-while inside rocks spawn with velocity towards you ... a few close and a few distant rocks on screen at a time. More
-rocks spawn as you move or as the dodged rocks get too far behind"; the old game's overlay 168 read and its rocks
-measured the same day: `tests/wc1/README.md`, "The asteroid fields"). While the point 1,400 km ahead of the nose is in a
-field (the old game's 3,050 km at the map's 0.45), `rocks.c` makes rocks 6,000 km ahead, in a cone of the old game's
-+-35 x +-20 degrees taken as the same share of our narrower view and turned to where the nose is turning: three as the
-field begins, then the old game's chance, (kps/10 + 30)/215 a frame of its 15 a second, so the faster the player
-goes the sooner, up to 20 at once (`density=` scales it: 20 x density / 120). Most come at the player at 200-300 kps
-toward a point up to 1,500 km off them, a fifth keep still, and about one in nine (the old game's share and window)
-flies at where the player will be after the old game's time, 3.7 to 4.7 seconds at 250 kps and less the farther their
-speed is from 250, to meet them there. A rock past 6,400 km from the player is gone, and it grows in from a dot past
-72% of that. On the first mission's field that is about 8 on screen at cruise, as the old game's 5 to 9. A shot that
-meets a rock is spent and breaks it one time in three (the old game's rule; `shots_on_rocks`), and the player's ship
-breaks any it flies into, the harm by the speed they met at. Our numbers are not the old game's kilometres: its rocks
-are as big as its fighters and ours a quarter to a half, so ours start farther out and come at the player themselves,
-to show its few degrees and reach the player in its seconds. **The flight's view is the old game's** (2026-11-02,
+16,000 km (`AUTOPILOT_CLEAR_KM`, the engine's lamp the same). Fields (`field asteroid|mine x y z radius [density=N] [level=L]`, km) are the old game's mission
+records (types 0x16 and 0x17) at its own size since 2026-11-03 (the user: the fields felt "really sparse" and "easy",
+"only require a single juke"; "make sure they are just about the same size as WC1 fields and similar difficult"):
+each lies about its own nav point (ours, at the map's 0.45) by the old game's offset and radius (5,000 or 7,500 km,
+not 0.45 of them as before, when a field was crossed in under half the old game's time at its speed), a point of
+ours kept out of a field it would newly take in (the field made smaller), and the ten fields our port had left out
+(Barnard's three about the launch, a hidden point's) are in. Two waypoints lie inside a field, as in the old game
+(ENIGMA1 nav 2, CRUCIBL2 nav 1). `level=` is the old game's rock level (dseg:BFF4, 0 to 3 by series). **A field is
+an effect, as the old game's are** (the user, 2026-11-02: "a field effect where while inside rocks spawn with
+velocity towards you ... a few close and a few distant rocks on screen at a time. More rocks spawn as you move or as
+the dodged rocks get too far behind"; the old game's overlay 168 read and its rocks measured the same day:
+`tests/wc1/README.md`, "The asteroid fields"), in its own numbers since 2026-11-03, our ships, view and speeds being
+its own: while the point 3,050 km ahead of the nose is in a field, `rocks.c` makes rocks 3,050 km ahead, in a cone
+of its +-35 x +-20 degrees turned to where the nose is turning, each only where its point is in the field: three as
+the field begins, then its chance, (kps/10 + 30)/215 a frame of its 15 a second, so the faster the player goes the
+sooner, up to 20 at once (`density=` scales it: 20 x density / 120). Most drift across the field, a right angle off
+the line to its middle (up, down, left or right of it), at 100-160 kps, a fifth keep still, and some fly at where
+the player will be after its time to meet them there: those come up within a pitch window and a yaw of +-19
+degrees, then 60%, about one in ten at level 0, one in seven at level 2, in 3.7 to 5 s by the level. A rock past
+4,300 km from the player, 60 km less for each 10 kps of the player's speed down to 3,100 (the old game's), is gone,
+and one made at 3,050 is full size. Rocks are 80-120 km in radius, a fighter's, as its 100. Mines come at the
+player. Flown straight through, invulnerable, at 200 kps (tests/rocks-cross.txt: the test build's `#` puts the
+player before a field, facing its middle): ENIGMA1's 7,500 km field 3 and 9 hits, its 5,000 one 1 and 5 (the old
+game's Enyo 1, `tests/wc1/run-old.sh`: 6 and 7, 1 and 2; ours before: 2 and 2, 3). A shot that meets a rock is spent
+and breaks it one time in three (the old game's rule; `shots_on_rocks`), and the player's ship breaks any it flies
+into, the harm by the speed they met at. **The flight's view is the old game's** (2026-11-02,
 `FLIGHT_FOCAL` 320 on the 640-wide screen: +-45 degrees across, as its focal 160 on its 320, measured from its rocks'
 screen places; it was 400, +-39): every placer takes it (ships, shots, missiles, explosions, rocks, the sky), the stars'
 asm too (`STAR_FOCAL`, their number a cell x (320/400)^2: as many on screen); the ships' art keeps its own reference

@@ -1,0 +1,7 @@
+# The second field of the mission, straight through (as rocks-cross.txt; # twice)
+wait 27
+key #
+wait 2
+key #
+wait 1800
+log done
