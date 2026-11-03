@@ -2109,7 +2109,7 @@ static void systems_tick(void)
     }
     /* the afterburner: Tab held, while there is fuel.  The fuel as the old game's: the throttle open burns a little, the
      * afterburner much more, the type's rates in thousandths of a point a step (data/ships.csv fuel: a Hornet's tank is
-     * 49 s of afterburner, 33 minutes of throttle); Kit's reserve first */
+     * 65 s of afterburner, 44 minutes of throttle); Kit's reserve first */
     g_sys.burning = in_key_down(0x0F) && g_sys.fuel > 0 && t && damage_burner_ok();
     rvAfterburner[0] = g_sys.burning;
     if (t) {

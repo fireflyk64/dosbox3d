@@ -23,6 +23,8 @@
 #include "hud.h"
 #include "logic.h"
 
+typedef char wc_frame_check[LOGIC_HZ == WC_FPS * WC_FRAME_STEPS ? 1 : -1];   /* (world.h) */
+
 PilotInput __far g_pilot;
 static int16_t __far g_turn_frac[NUM_SHIP_SLOTS][3];
 
@@ -509,8 +511,9 @@ static uint16_t refill(uint16_t most, uint16_t phase, uint8_t shift)
 
 /* 1. what runs down or builds up by itself: the guns' cooldowns (GUN_STATE), gun energy (gunEnergy), the shields
  * coming back (SHIELD toward SHIELD_MAX), the afterburner's fuel.  (The guns' are M2's.)  The rates are the type's
- * (gun_energy_steps; shield_steps, the old game's stat: a point back on each side every so many steps, the Hornet 5
- * and the Dralthi 6, a 40-point shield in 7 s; a type without it fills in 1 << shield_full_shift steps).  The armour
+ * (gun_energy_steps; shield_steps, the old game's stat: a point back on each side every so many of its frames, each
+ * WC_FRAME_STEPS of ours, the Hornet 5 and the Dralthi 6, a 40-point shield in 13 s; a type without it fills in
+ * 1 << shield_full_shift steps).  The armour
  * doesn't come back in flight; a dying ship's shields stay down; a puppet's are the layer's */
 static void step_timers(void)
 {
@@ -537,7 +540,7 @@ static void step_timers(void)
             if (ship == 0 && rvController[0] == CTL_PLAYER)
                 most = damage_shield_cap(most);   /* (the generator hurt holds less: what is over it goes at once) */
             if (SHIELD(ship, k) != most) {
-                uint16_t steps = type_of_ship && type_of_ship->shield_steps ? type_of_ship->shield_steps : 1;
+                uint16_t steps = type_of_ship && type_of_ship->shield_steps ? type_of_ship->shield_steps * WC_FRAME_STEPS : 1;
                 uint16_t up = type_of_ship && type_of_ship->shield_steps ? (frameCounter % steps == 0)
                               : refill(most, phase, shift);
                 if (ship == 0 && rvController[0] == CTL_PLAYER && systemDamage[SYS_SHIELDS]
@@ -1721,14 +1724,16 @@ typedef struct {
     uint16_t avoid_pct;                 /* another ship ahead within this percent of the two half boxes is steered round
                                            (when coming together at a quarter of the top speed or more) */
     uint8_t turn_pct;                   /* the AI uses this percent of its type's turn rate at most */
-    uint8_t burst;                      /* steps of afterburner at the start of every break (the old games' dash; 0 none) */
+    uint8_t burst;                      /* steps of afterburner at the start of every break (the old games' dash, 6 of its
+                                           frames; 0 none) */
     uint8_t lead_pct;                   /* how much of the lead it aims off (100: the shots meet the target; 0: it aims at
                                            the target itself and its passes come of the target's own motion, as the old
                                            game's fighters shot at 0 degrees off) */
     uint8_t tail_pct;                   /* behind its target within the guns' range it flies this percent of its top
                                            speed (the old game's fighters tailed at some 60%) */
     uint8_t fire_gap;                   /* steps between its volleys with the target in the cone (the old game's
-                                           fighters: a volley every 0.75 s, not every frame their guns were cool) */
+                                           fighters: a volley every 15 frames, 1 s at its 15 a second, not every frame
+                                           their guns were cool) */
     uint8_t fear_up, fear_down;         /* the fear model's c and d (the old game's class bytes: c 2-5, d 6-10) */
     uint8_t flags;                      /* PF_* */
     Pick pick[SIT_COUNT][PICKS];        /* the dice by situation (SIT_IDLE's row is unused: idle says) */
@@ -1751,9 +1756,10 @@ enum { PF_NO_MERCY = 1 };               /* it fires at a player that has it sele
 #define HEALTH_BOLD 75
 #define LEAVE_KM 16000                  /* (the old game's removal distance) */
 #define HOLD_COS 205                    /* the held fire: the player within 37 degrees ahead of its nose (cos x 256) */
-#define AI_REFIRE_STEPS 13              /* the cone rule: an AI's guns no oftener than this (the old game's 13 frames) */
+#define AI_REFIRE_STEPS (13 * WC_FRAME_STEPS)   /* the cone rule: an AI's guns no oftener than this (the old game's 13 frames) */
 
-#define BREAK_OUT_STEPS 54              /* a flat break's straight leg at most (1.2 s: a target that chases keeps near) */
+#define BREAK_OUT_STEPS 72              /* a flat break's straight leg at most (2.4 s: a target that chases keeps near; the
+                                           old game's 1.8 s as measured at 20 frames a second, at its 15) */
 #define AIM_CONE 250                    /* cos x 256 of the usual fire cone: some 7 degrees */
 #define LOCK_CONE 230                   /* a missile locks with the target within this: some 26 degrees */
 #define TAIL_KM 3500                    /* an attacker behind, this near, is on my tail */
@@ -1763,7 +1769,7 @@ enum { PF_NO_MERCY = 1 };               /* it fires at a player that has it sele
 
 static const AiProfile __far k_profiles[P_COUNT] = {
     /* P_INTERCEPTOR: light and fast: head-on passes, flat turns round, runs when hurt */
-    { 25000, 3000, 900, 2500, 0, AIM_CONE, PULL_RIGHT | PULL_LEFT, 1, 40, 40, 50, 0, T_CRUISE, 170, 300, 100, 10, 0, 60, 22, 3, 6, 0,
+    { 25000, 3000, 900, 2500, 0, AIM_CONE, PULL_RIGHT | PULL_LEFT, 1, 40, 40, 50, 0, T_CRUISE, 170, 300, 100, 13, 0, 60, 29, 3, 6, 0,
       { { { 0, 0 } }, { { T_HEADON, 60 }, { T_PURSUE, 40 } }, { { T_PURSUE, 60 }, { T_STRAFE, 40 } },
         { { T_PURSUE, 50 }, { T_BREAK, 30 }, { T_EVADE, 20 } }, { { T_PURSUE, 60 }, { T_BREAK, 40 } },
         { { T_FLEE, 60 }, { T_PURSUE, 40 } } } },
@@ -1778,23 +1784,23 @@ static const AiProfile __far k_profiles[P_COUNT] = {
      * (read in its code, 2026-10-31; the user: keep them as they were, it is fun): far off and in the plain case the
      * silent approach (its maneuver 40) 60% of the time, else its choice (45: the nose on the target with the guns
      * unless the target faces it, then the approach); near, the choice mostly, sometimes the guns at once (29) */
-    { 25000, 4000, 900, 2500, 0, AIM_CONE, PULL_RIGHT | PULL_LEFT, 1, 30, 40, 50, 0, T_CRUISE, 170, 350, 100, 10, 100, 55, 22, 3, 7, 0,
+    { 25000, 4000, 900, 2500, 0, AIM_CONE, PULL_RIGHT | PULL_LEFT, 1, 30, 40, 50, 0, T_CRUISE, 170, 350, 100, 13, 100, 55, 29, 3, 7, 0,
       { { { 0, 0 } }, { { T_APPROACH, 60 }, { T_CLOSE, 40 } }, { { T_CLOSE, 50 }, { T_PURSUE, 30 }, { T_APPROACH, 20 } },
         { { T_PURSUE, 50 }, { T_BREAK, 50 } }, { { T_CLOSE, 60 }, { T_BREAK, 40 } },
         { { T_PURSUE, 70 }, { T_FLEE, 30 } } } },
     /* P_HEAVY: slow and armoured: head on mostly, pulls rather than yaws, rarely runs */
-    { 25000, 3000, 0, 0, 0, AIM_CONE, PULL_ALL, 1, 20, 40, 60, 0, T_CRUISE, 170, 200, 100, 10, 0, 70, 22, 3, 8, 0,
+    { 25000, 3000, 0, 0, 0, AIM_CONE, PULL_ALL, 1, 20, 40, 60, 0, T_CRUISE, 170, 200, 100, 13, 0, 70, 29, 3, 8, 0,
       { { { 0, 0 } }, { { T_HEADON, 80 }, { T_PURSUE, 20 } }, { { T_HEADON, 60 }, { T_PURSUE, 40 } },
         { { T_BREAK, 60 }, { T_EVADE, 40 } }, { { T_BREAK, 70 }, { T_LOOP, 30 } },
         { { T_PURSUE, 80 }, { T_FLEE, 20 } } } },
     /* P_ACE: strafing runs, hard evasion, never scared (scared_pct 0), uses the afterburner half the time, and fires at
      * a player that has it selected (PF_NO_MERCY: the old game's class 11) */
-    { 30000, 3000, 0, 0, 0, AIM_CONE, PULL_ALL, 1, 50, 0, 70, 0, T_CRUISE, 150, 180, 100, 15, 50, 80, 15, 2, 9, PF_NO_MERCY,
+    { 30000, 3000, 0, 0, 0, AIM_CONE, PULL_ALL, 1, 50, 0, 70, 0, T_CRUISE, 150, 180, 100, 20, 50, 80, 20, 2, 9, PF_NO_MERCY,
       { { { 0, 0 } }, { { T_STRAFE, 50 }, { T_PURSUE, 50 } }, { { T_STRAFE, 50 }, { T_PURSUE, 50 } },
         { { T_EVADE, 60 }, { T_BREAK, 20 }, { T_LOOP, 20 } }, { { T_LOOP, 50 }, { T_BREAK, 50 } },
         { { T_PURSUE, 100 } } } },
     /* P_BOMBER: torpedo runs on capital ships (off at 1,500 km once the torpedo is away), else a heavy's fight */
-    { 25000, 2800, 1500, 2500, 0, AIM_CONE, PULL_ALL, 1, 20, 40, 80, 0, T_CRUISE, 170, 200, 100, 10, 100, 70, 22, 2, 8, 0,
+    { 25000, 2800, 1500, 2500, 0, AIM_CONE, PULL_ALL, 1, 20, 40, 80, 0, T_CRUISE, 170, 200, 100, 13, 100, 70, 29, 2, 8, 0,
       { { { 0, 0 } }, { { T_TORPEDO, 70 }, { T_PURSUE, 30 } }, { { T_TORPEDO, 60 }, { T_PURSUE, 40 } },
         { { T_BREAK, 70 }, { T_EVADE, 30 } }, { { T_BREAK, 70 }, { T_LOOP, 30 } },
         { { T_FLEE, 60 }, { T_PURSUE, 40 } } } },
@@ -1803,7 +1809,7 @@ static const AiProfile __far k_profiles[P_COUNT] = {
      * came home; with its own pitching, fleeing row ours fired 6 shots in 69 s and died), but tailed it breaks 90
      * degrees with a dash or loops, as the old game's first named pilot's table has it (a break, else two half
      * loops; tests/wc1/README.md), and its fear falls faster (d 8) */
-    { 12000, 4000, 900, 2500, 0, AIM_CONE, PULL_RIGHT | PULL_LEFT, 1, 30, 40, 50, 0, T_FORMATION, 170, 350, 100, 10, 100, 55, 22, 3, 8, 0,
+    { 12000, 4000, 900, 2500, 0, AIM_CONE, PULL_RIGHT | PULL_LEFT, 1, 30, 40, 50, 0, T_FORMATION, 170, 350, 100, 13, 100, 55, 29, 3, 8, 0,
       { { { 0, 0 } }, { { T_APPROACH, 60 }, { T_CLOSE, 40 } }, { { T_CLOSE, 50 }, { T_PURSUE, 30 }, { T_APPROACH, 20 } },
         { { T_BREAK, 50 }, { T_LOOP, 50 } }, { { T_CLOSE, 60 }, { T_BREAK, 40 } },
         { { T_PURSUE, 70 }, { T_FLEE, 30 } } } },
@@ -1812,12 +1818,12 @@ static const AiProfile __far k_profiles[P_COUNT] = {
       { { { 0, 0 } }, { { T_CRUISE, 100 } }, { { T_CRUISE, 100 } }, { { T_CRUISE, 100 } }, { { T_CRUISE, 100 } },
         { { T_CRUISE, 100 } } } },
     /* P_WAITER: lies still (cloaked) until a target comes near unawares, then a fighter's fight on the afterburner */
-    { 25000, 3000, 900, 2500, 5000, AIM_CONE, PULL_ALL, 0, 60, 40, 50, 30, T_WAIT, 170, 300, 100, 10, 0, 60, 22, 3, 6, 0,
+    { 25000, 3000, 900, 2500, 5000, AIM_CONE, PULL_ALL, 0, 60, 40, 50, 30, T_WAIT, 170, 300, 100, 13, 0, 60, 29, 3, 6, 0,
       { { { 0, 0 } }, { { T_PURSUE, 70 }, { T_HEADON, 30 } }, { { T_PURSUE, 60 }, { T_STRAFE, 40 } },
         { { T_PURSUE, 50 }, { T_BREAK, 30 }, { T_EVADE, 20 } }, { { T_PURSUE, 60 }, { T_BREAK, 40 } },
         { { T_FLEE, 60 }, { T_PURSUE, 40 } } } },
     /* P_NOLEFT: a fighter whose controls cannot turn left: it rolls and pulls instead */
-    { 25000, 3000, 900, 2500, 0, AIM_CONE, PULL_RIGHT | PULL_UP | PULL_DOWN, 0, 30, 40, 50, 0, T_CRUISE, 170, 300, 100, 10, 0, 60, 22, 3, 6, 0,
+    { 25000, 3000, 900, 2500, 0, AIM_CONE, PULL_RIGHT | PULL_UP | PULL_DOWN, 0, 30, 40, 50, 0, T_CRUISE, 170, 300, 100, 13, 0, 60, 29, 3, 6, 0,
       { { { 0, 0 } }, { { T_HEADON, 60 }, { T_PURSUE, 40 } }, { { T_PURSUE, 70 }, { T_HEADON, 30 } },
         { { T_EVADE, 40 }, { T_LOOP, 40 }, { T_BREAK, 20 } }, { { T_LOOP, 50 }, { T_BREAK, 50 } },
         { { T_PURSUE, 60 }, { T_FLEE, 40 } } } },
@@ -1976,6 +1982,16 @@ static int32_t room_of(int16_t a, int16_t b)
     return TO_KM(collide_half(a) + collide_half(b));
 }
 
+/* how far a ship flies sideways turning away at its speed: its turning circle's radius, its speed over its slower turn
+ * (kps x 180 / (pi x dps) km: the speed and the turn come out of the same steps).  A ship turning at the old game's rates
+ * (the Gratha 60 a second, the Jalthi 50) needs this much more room to keep off another than one turning twice as fast */
+static int32_t turn_room(int16_t s)
+{
+    const RvShipType __far *t = slot_type(s);
+    int32_t dps = t ? (t->yaw_dps < t->pitch_dps ? t->yaw_dps : t->pitch_dps) : 0;
+    return dps > 0 ? (int32_t)speedLo[s] * 57 / dps : 0;
+}
+
 /* collision avoidance: another ship (the mind's own target too, unless `target` says so) within the profile's avoid
  * distance and coming together with this one pushes the wanted direction sideways away from it, the harder the
  * nearer */
@@ -1989,7 +2005,7 @@ static void avoid(int16_t s, const AiProfile __far *p, uint8_t target, int32_t *
     for (k = 0; k < NUM_SHIP_SLOTS; k++) {
         if (k == s || k == target || !slot_is_ship(k))
             continue;
-        limit = room_of(s, k) * p->avoid_pct / 100;
+        limit = room_of(s, k) * p->avoid_pct / 100 + turn_room(s);
         if (labs(TO_KM(gPositionVector[k].x - gPositionVector[s].x)) > limit
             || labs(TO_KM(gPositionVector[k].y - gPositionVector[s].y)) > limit
             || labs(TO_KM(gPositionVector[k].z - gPositionVector[s].z)) > limit)
@@ -2011,7 +2027,7 @@ static void avoid(int16_t s, const AiProfile __far *p, uint8_t target, int32_t *
             }
             /* (inside a hull sum and a half, any closing at all: a wingman that drifted across its leader's path at
              * the same speed bumped it, 123 points under the old collision rule) */
-            if (closing * KPS_HZ * 4 < (slot_type(s) ? slot_type(s)->max_kps : 300) && (closing <= 0 || d > limit * 100 / p->avoid_pct * 3 / 2))
+            if (closing * KPS_HZ * 4 < (slot_type(s) ? slot_type(s)->max_kps : 300) && (closing <= 0 || d > room_of(s, k) * 3 / 2))
                 continue;
             /* (the push in proportion to the wanted direction's length: a wingman wanting a target 12,000 km off
              * was pushed 500 km sideways, a 2-degree nudge, and drifted into its leader; now a push of away/limit
@@ -2489,7 +2505,8 @@ static int32_t pass_side(int16_t s, const Mind __far *m, const AiProfile __far *
         }
     if (n)                              /* (lanes -n/2 .. n/2 about the target) */
         lane = (rank * 2 - n) * room / 2;
-    if (passing(s, v) && v->km < v->closing * LOGIC_HZ)   /* (the pass within a second: by its own side of the target) */
+    if (passing(s, v) && v->km < v->closing * LOGIC_HZ + 2 * turn_room(s))   /* (the pass within a second, and the room
+                                           its turning circle wants: by its own side of the target) */
         lane += (int32_t)m->dir * room;
     return lane;
 }
@@ -2704,7 +2721,7 @@ static int16_t avoid_break(int16_t s, Mind __far *m, const AiProfile __far *p)
         RvVec3 r, dv, w;
         if (k == s || !slot_is_ship(k) || maybeEntityType[k] == ET_MISSILE)
             continue;
-        limit = room_of(s, k) * p->avoid_pct / 200;
+        limit = room_of(s, k) * p->avoid_pct / 200 + turn_room(s);
         if (labs(TO_KM(gPositionVector[k].x - gPositionVector[s].x)) > limit
             || labs(TO_KM(gPositionVector[k].y - gPositionVector[s].y)) > limit
             || labs(TO_KM(gPositionVector[k].z - gPositionVector[s].z)) > limit)

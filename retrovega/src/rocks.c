@@ -7,11 +7,11 @@
  * FX_CAP at once (the old game's 20, scaled by the field's density).  A
  * rock is made FX_SPAWN_KM ahead, in a cone about the nose (the old game's
  * +-35 x +-20 degrees of its 90-degree view: the same share of ours) turned
- * where the nose is turning, with the old game's chance a step (the faster
- * the player goes, the sooner).  Most fly at the player at about 250 kps
+ * where the nose is turning, with the old game's chance a frame of its (the
+ * faster the player goes, the sooner).  Most fly at the player at about 250 kps
  * (the user's figure; the old game's drift across) toward a point off them
  * by up to the kind's miss, a fifth keep still, and the old game's share
- * flies at where the player will be after its time (2.8 to 3.5 seconds at
+ * flies at where the player will be after its time (3.7 to 4.7 seconds at
  * 250 kps, sooner the farther the player's speed is from it) to meet them
  * there.  A rock past FX_FAR_KM from the player is gone (passed, or drifted
  * off), and another is made ahead; it grows in from a dot past FX_FADE of
@@ -53,6 +53,7 @@
 #include "shots.h"
 #include "sfx.h"
 #include "rocks.h"
+#include "world.h"
 
 #define FILE_HEAD 24
 #define KINDS_MAX 4
@@ -483,7 +484,7 @@ static void fly_in(LzRock __far *r, long dx, long dy, long dz, long t)
 /* A rock of field fi made km ahead of the nose, in the cone (the old game's +-35 x +-20 degrees, as the same share of
  * our view) turned to where the nose is turning, and its way: the old game's share (asteroids) at the point the
  * player will be at after its time (its frames: 56 to 70, fewer by up to twice how far the player's speed is from 250
- * kps; less up to 4 for the rock's own: 20 a second, as our steps), the field's still ones still, and the rest at the
+ * kps; less up to 4 for the rock's own: each WC_FRAME_STEPS of our steps), the field's still ones still, and the rest at the
  * player at the kind's speed toward a point off them by up to its miss.  0: the way would not come out */
 static int rock_make(LzRock __far *r, const LfBasis *b, int fi, long km)
 {
@@ -518,8 +519,8 @@ static int rock_make(LzRock __far *r, const LfBasis *b, int fi, long km)
         t2 = t - (long)(rnd() % 5);
         if (t2 < 3)
             t2 = 3;
-        t = t * 3 / 2;                  /* (its frames as our steps) */
-        t2 = t2 * 3 / 2;
+        t *= WC_FRAME_STEPS;            /* (its frames as our steps) */
+        t2 *= WC_FRAME_STEPS;
         fly_in(r, gPositionVector[0].x + gVelocityVector[0].x * t - r->x, gPositionVector[0].y + gVelocityVector[0].y * t - r->y,
                gPositionVector[0].z + gVelocityVector[0].z * t - r->z, t2);
         g_aimed++;
@@ -843,7 +844,7 @@ static void hits(int n, const LfBasis *cam)
 }
 
 /* the reaped ones removed, and new ones made while the point ahead is in a field: the old game's three as a field
- * begins, then its chance a step ((speed/10 + 30)/215 a frame of its 20 a second), up to the field's number */
+ * begins, then its chance ((speed/10 + 30)/215 a frame of its, WC_FRAME_STEPS of our steps), up to the field's number */
 static void keep_effect(const LfBasis *b, int nreap)
 {
     int i, fi;
@@ -866,7 +867,8 @@ static void keep_effect(const LfBasis *b, int nreap)
             for (i = 0; i < FX_ENTRY && g_n < cap; i++)
                 if (rock_make(&g_r[g_n], b, fi, FX_SPAWN_KM))
                     g_n++;
-        } else if (g_n < cap && rnd() % 645 < (chance > 322 ? 645U : (unsigned)(2 * chance)))
+        } else if (g_n < cap && rnd() % (215U * WC_FRAME_STEPS) < (chance > 215U * WC_FRAME_STEPS ? 215U * WC_FRAME_STEPS
+                                                                    : (unsigned)chance))
             if (rock_make(&g_r[g_n], b, fi, FX_SPAWN_KM))
                 g_n++;
         g_src = fi;

@@ -90,7 +90,7 @@ The mission's rules (missions.txt `rules`, `g_rule_flags`; docs/engine.md for `h
 
 - `aim=cone` (the old game's, the campaign's default): no lead, the nose steered at the target itself, and every
   ready gun fired whenever the target is within the weapon's own cone (weapons.csv `cone_deg`: the laser 46°, the
-  neutron-class 37°, the mass driver 32°) and in range, no oftener than every 13 steps (`AI_REFIRE_STEPS`); the hits
+  neutron-class 37°, the mass driver 32°) and in range, no oftener than every 13 of the old game's frames, 26 steps (`AI_REFIRE_STEPS`); the hits
   come as the nose sweeps across the target. `aim=lead`: the lead point within the profile's `aim_cos` and within
   `AIM_MISS_KM` of the nose's line, a volley every `fire_gap`, the shots scattered up to 4° (`AI_SCATTER`).
 - `hold=on` (the old game's, the default): the ship a player has selected as a target holds its guns while that
@@ -163,7 +163,7 @@ The rows as they stand:
 |---|---|
 | `P_INTERCEPTOR` | light and fast: head-on passes and pursuits, strafes near, evades when tailed, runs at 30% hull; yaws, no pitch |
 | (every AI) | under `aim=lead`, its shots scatter up to 4 degrees about the nose (`AI_SCATTER`, gun_fire), and it fires when the nose's line passes within 300 km of the lead point (`AIM_MISS_KM`): the old fighters' 13% hits on a hunting player, 28% on a straight one; under `aim=cone` (the default) the old game's own spray: no lead, the weapon's cone |
-| `P_FIGHTER` | the line fighter, as the old game's Dralthi measured (tests/wc1/README.md): straight at the target at full speed, a hard flat yaw away at 900 km with a dash, straight out to 2,500 km, round again (its nose back 2.5 s after a pass, the next 4 s on, as the old fighters' 1.9 and 5.3), a tail at 55% (under a player's cruise, so it falls back rather than creeps up and bumps), the guns from 4,000 km at the lead point, a volley every 0.75 s; runs at 20%. Its rows are the old game's own (read in its code): far off, the silent approach 60% and the choice 40%; near, the choice 50%, the guns at once 30%, the approach 20%; after a pass the choice 60%, a break 40% |
+| `P_FIGHTER` | the line fighter, as the old game's Dralthi measured (tests/wc1/README.md): straight at the target at full speed, a hard flat yaw away at 900 km with a dash, straight out to 2,500 km, round again (its nose back 2.5 s after a pass, the next 4 s on, as the old fighters' 1.9 and 5.3), a tail at 55% (under a player's cruise, so it falls back rather than creeps up and bumps), the guns from 4,000 km at the lead point, a volley about every second (the old game's 15 frames at its 15 a second); runs at 20%. Its rows are the old game's own (read in its code): far off, the silent approach 60% and the choice 40%; near, the choice 50%, the guns at once 30%, the approach 20%; after a pass the choice 60%, a break 40% |
 | `P_HEAVY` | slow and armoured: head on mostly, breaks rather than jinks, rarely runs |
 | `P_ACE` | strafing runs, hard evasion, never scared, fires at a player that has it selected, uses the afterburner half the time |
 | `P_BOMBER` | torpedo runs at capital ships, else a heavy's fight; runs at 25% |

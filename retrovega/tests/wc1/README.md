@@ -28,7 +28,8 @@ speeds, turn rates, distances, how much of the time its nose is on the player, w
 its closest passes, and its AI state words. `digest.py DIR TRACE FPS HULLSUM` (DIR: this directory, for the
 reader) prints the same in a line a ship, with every pass and the time until its nose was back on the player, and
 the damage by (source, target) pairs: a collision shows as a symmetric pair of ship slots, a shot as a slot of 32
-or more. The old game steps 20 times a second; ours 30 (`--fps 30`). The turn rates are angles between the frames'
+or more. The old game steps once a frame, some 15 frames a second on an average machine of its day (the user,
+2026-11-02; the measures in this file until then were read at 20, `--fps 20`); ours 30 (`--fps 30`). The turn rates are angles between the frames'
 front vectors, normalised (the vectors are not quite unit length in either trace).
 
 `fireangles.py TRACE [FRAME:SLOT,...]` (the user's idea, 2026-10-31) takes every F (fire) event and prints, per
@@ -339,6 +340,32 @@ Ours (`src/rocks.c`, docs/engine.md "Nav points and fields") keeps the counts, t
 of a view 2.5 times narrower), the aimed share and its times, in seconds; it makes rocks farther out (6,000 km: our rocks
 show the old game's few pixels there) and gives the others a speed at the player (the user's 250 kps) rather than across,
 so they reach the player in the old game's seconds although our ships are slower against their size.
+
+## At 15 frames a second (2026-11-02)
+
+The user: playtesters "can almost never beat retrovega but can almost always beat wing commander" in the first two
+missions, and the old game runs at 15 frames a second. Everything above was read at 20, so the Nicander had been
+made 4/3 the Dralthi of a real machine, and some of the old game's per-frame rules ran once a step of our 30
+(shield_steps, the cone rule's 13 frames). Now (world.h `WC_FPS`, `WC_FRAME_STEPS`): its stats in ours from its ship
+table (top speed S km a frame: 10 S kps, our kps being its unit at 15 frames; a turn of D degrees a frame: 10 D, a
+dps flying 1.5 times itself a second; the afterburner three times the top speed; the shield's frames a point), for
+every mapped fighter (port.py TYPES): the Schroedinger turns 80/90/80 (was 110/110/180), the Nicander 400 kps and
+100/140/100 (was 530 and 125/105/190), the Agis 480 and 140/120/220; a stat counted in its frames is that many times
+`WC_FRAME_STEPS` steps; what was measured in seconds at 20 (the guns' refire, the fire gap, the dash, the break's
+straight leg, the fuel) is 4/3 as long. A slow turner keeps off other ships by its turning circle (`turn_room`: the
+Gratha-like Convolution flew into the carrier 5 times in 16 without it).
+
+The same scene, the old game traced again and read at 15 (`run-old.sh`: straight, and hunting with `!face=npc` every
+3 s and the trigger held), against ours (`compare.sh`):
+
+| what | the old game, straight / hunting | ours, straight / hunting |
+|---|---|---|
+| speed, median / 90% (km/s) | 395-491 / 607-653; 475-565 / 612-1,382 | 486-494 / 601; 600 / 756-850 |
+| turn, 90% (degrees a second) | 82-142; 117-143 | 35-144; 150 |
+| nose on the player (within 25 degrees) | 22-73%; 41-67% | 90% (all three tail); 27-36% |
+| first shot after the arrival | 20-45 s; 25-30 s | 11-21 s; 22-25 s |
+| shots a fighter | 23-74 (one fought the wingman); 46-82 | 193-208; 15-87 |
+| passes a fighter, the nose back after one | one or none; 7-11, median 2.3 s, a tenth 9-12 s | none; about 25, median 3.3 s, a tenth 7-8 s |
 
 ## What is still to measure
 

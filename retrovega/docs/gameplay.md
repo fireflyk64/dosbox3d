@@ -166,7 +166,7 @@ What the tests expect:
 | M2.15 shots-full | with the shot list full (`SHOTS_MAX`), a fire still sets the cooldown and spends the energy: every machine replaying the call changes the gun the same way |
 | M2.16 volleys | the player's linked guns, from one shot short of a volley's energy, 10 s of held trigger: every step fires none or the whole group, never part of it; the group's cooldowns stay equal; at least three volleys as the energy comes back |
 | M2.17 link-fire | the same for a group of four (the Redeemer's mass drivers), and for the three left with one of them destroyed |
-| M2.19 sustain | the trigger held 10 s from a full bar: 54-66 shots (the old game's Hornet: 60, a volley of two every third of a second) and the energy still at 50 or more: two lasers at 5 a shot and a refire of 10 are sustained by the default of a point a step |
+| M2.19 sustain | the trigger held 10 s from a full bar: 40-50 shots (the old game's Hornet at its 15 frames a second: 45, a volley of two every 0.44 s) and the energy still at 50 or more: two lasers at 5 a shot and a refire of 13 are sustained by the default of a point a step |
 | M2.20 forward-only | a ship sliding 50 km a step sideways with its nose ahead fires a shot that flies along the nose at the laser's speed, nothing sideways; moving 40 km a step ahead, at the laser's speed plus 40 (the old game's bolts: the gun's speed plus the ship's along the gun's line) |
 
 ### M3: damage (`do_damage`, `step_shots`, `step_timers`)
@@ -205,7 +205,7 @@ What the tests expect:
 | M3.10 any-source | a hit of 3 and of 30 does the same with src 0xFFFF, the player's ship and a bolt of the player's |
 | M3.11 shots-hit | 3 s of fire at a ship 1,500 km ahead, side on, hurts it; on the host, the hits name a bolt of the player's |
 | M3.12 recharge | in 20 s the shields come back (never past their most); the armour doesn't |
-| M3.13 type-rates | a type's `gun_energy_steps`, `shield_full_shift` and `shield_steps` set the rates: with 6 and 4, 10 points of energy in 60 steps, and a shield full in 16; with `shield_steps` 4, a shield back 4 points in 16 steps (the old game's stat) |
+| M3.13 type-rates | a type's `gun_energy_steps`, `shield_full_shift` and `shield_steps` set the rates: with 6 and 4, 10 points of energy in 60 steps, and a shield full in 16; with `shield_steps` 4, a shield back 2 points in 16 steps (the old game's stat: a point every 4 of its frames, 8 steps) |
 | M3.14 hit-volumes | a laser bolt (radius 10) stepping past a Nicander's middle: 120 km beside it, the sphere rule alone takes it (160 + 10); 100 km above it, the sphere and the volume box (156 up), not the silhouettes (28); through the middle, all three |
 | M3.15 damage-grows | a laser bolt into a Nicander's middle with all its life does 10, with one step left 25: `damage_near` at the muzzle to `damage` at the end of its reach, a line between by the life left (the old game's bolt) |
 
@@ -267,9 +267,9 @@ What the tests expect (an AI Nicander against a still player):
 | M5.11 old-straight | the old game's first mission measured (tests/wc1/README.md): a line fighter crossing 15,000 km ahead of a player flying straight at the 300 setting fires first from 1,500-6,000 km, a volley at a time (never two within 12 steps), comes within 2,500 km without a collision, and has its nose back on the player within 15 s of a pass (needs M2: the shot) |
 | M5.12 old-hunt | the same fighter against a player whose nose is set onto it every 3 s: five passes or more in 90 s, one collision at most, the nose back in time after all but one, the volleys apart |
 | M5.13 hold-fire | an enemy 3,000 km ahead facing a still player: with `hold=on` and the player's target set on it, no shot in 15 s with the player within 33° of its nose; with the rule off, or the player's target nobody, shots |
-| M5.14 cone-fire | under `aim=cone` the enemy's shots come only within the laser's 46° cone (none past 50°) and its volleys 13 steps apart (the old refire), where under `aim=lead` they come the profile's `fire_gap` (22) apart; the enemy crossing the player's way 45° off, both at 300 kps |
+| M5.14 cone-fire | under `aim=cone` the enemy's shots come only within the laser's 46° cone (none past 50°) and its volleys 13 of the old game's frames apart (26 steps), where under `aim=lead` they come the profile's `fire_gap` (29) apart; the enemy crossing the player's way 45° off, both at 300 kps |
 | M5.15 leave | a fighter with its armour gone and 10 hull points left, 2,000 km ahead of a still player pointing at it, grows afraid over its passes, leaves (down: an odd slot) and is removed beyond 16,000 km of the player within 90 s, not killed |
-| M5.16 home | the same with a destroyer of its side 20,000 km off: it runs to within 5,000 km of the destroyer (`T_HOME`) and is not removed |
+| M5.16 home | the same with a destroyer of its side 15,000 km off: it runs to within 5,000 km of the destroyer (`T_HOME`) and is not removed |
 | M5.17 hold-missiles | the player's selected target on the player's tail (2,500 km behind a player flying straight at 300 kps, the player in its seekers' cone) launches no missile in 40 s under `hold=on`, and does with the rule off: the old wrapper withheld the whole weapons routine |
 | M5.18 dodge-fire | the selected target 3,000 km ahead facing a still player holds its guns, but shoots within the 6 s a missile of the player's homes on it from ahead (the old missile dodge, maneuver 32: a missile within 37° ahead and 8,000 km) |
 | M5.19 approach-silent | under `aim=cone` an enemy 6,000 km ahead facing a still player that faces it fires nothing in its first 7 s (the old approach, `T_APPROACH`, has no guns: it flies past and comes round first) and does by 25 s; under `aim=lead` it fires head on within 4 s |
@@ -385,7 +385,7 @@ nav 0):
 | M8.14 landing-rule | at the launch `logic_request_landing` answers not yet; at nav 1, 20,000 km off, too far; back within 8,000 km, cleared; far off again, still cleared; a mission with nothing to do is cleared at the launch |
 | M8.16 carrier-lost | the carrier destroyed, every nav flown and every enemy dead: `missionStatus` still 0 the next step, 6 within 10 s, `victoryPoints` 0 |
 | M8.17 turrets-off | an enemy 1,500 km from the carrier: its turrets fire; with `turrets=off`, not a shot in 5 s |
-| M8.18 attack-capital | a lone ace from each of 16 sides on a carrier with its turrets off, 90 s each: at most 3 touch its hull (a bump no longer kills an NPC), and they fire |
+| M8.18 attack-capital | a lone ace (the Convolution: the old Gratha's sluggish turn) from each of 16 sides on a carrier with its turrets off, 90 s each: at most 3 touch its hull (a bump no longer kills an NPC; a slow turner keeps off by its turning circle, `turn_room`), and they fire |
 | M8.19 autopilot-apart | a wingman whose offset comes down exactly where the autopilot puts the Ox, at speed: they arrive apart, and in 3 s the Ox takes no hit |
 | M8.27 second-wave | a hidden trigger point's enemies do not come while an enemy fighter is out; when the last one is killed they come; when the last one ran they are called off, and ask nothing of the player (a wave with a capital ship or an escort target always comes) |
 | M8.28 wingman-behind | enemies at the launch: the wingman starts 3,000 km past them, on the far side from the player, facing them; none: beside the player |

@@ -232,10 +232,10 @@ rocks spawn as you move or as the dodged rocks get too far behind"; the old game
 measured the same day: `tests/wc1/README.md`, "The asteroid fields"). While the point 1,400 km ahead of the nose is in a
 field (the old game's 3,050 km at the map's 0.45), `rocks.c` makes rocks 6,000 km ahead, in a cone of the old game's
 +-35 x +-20 degrees taken as the same share of our narrower view and turned to where the nose is turning: three as the
-field begins, then the old game's chance a step, (kps/10 + 30)/215 a frame of its 20 a second, so the faster the player
+field begins, then the old game's chance, (kps/10 + 30)/215 a frame of its 15 a second, so the faster the player
 goes the sooner, up to 20 at once (`density=` scales it: 20 x density / 120). Most come at the player at 200-300 kps
 toward a point up to 1,500 km off them, a fifth keep still, and about one in nine (the old game's share and window)
-flies at where the player will be after the old game's time, 2.8 to 3.5 seconds at 250 kps and less the farther their
+flies at where the player will be after the old game's time, 3.7 to 4.7 seconds at 250 kps and less the farther their
 speed is from 250, to meet them there. A rock past 6,400 km from the player is gone, and it grows in from a dot past
 72% of that. On the first mission's field that is about 8 on screen at cruise, as the old game's 5 to 9. A shot that
 meets a rock is spent and breaks it one time in three (the old game's rule; `shots_on_rocks`), and the player's ship
@@ -837,7 +837,7 @@ the comm menu (C, below), comms muted (U: no comm faces, no hails), the
 afterburner (Tab held: the ship's afterburner speed, and heat; the fuel
 as the old game's: ships.csv `fuel` is the tank in its units, the throttle
 open burns a little, the afterburner much more, so a Schroedinger's tank is
-49 s of afterburner, a Pacifier's 73, and 33 minutes of throttle), eject (Ctrl+E twice within two seconds, or the handle: the mission
+65 s of afterburner, a Pacifier's 97, and 44 minutes of throttle, at its 15 frames a second), eject (Ctrl+E twice within two seconds, or the handle: the mission
 ends ejected; none with the ejector wrecked). The LOCK lamp is the missile
 lock (logic.c's `lock_tick`: the chosen missile's seeker on the target,
 below); MASTER WARN blinks for a damaged system or a shield under a

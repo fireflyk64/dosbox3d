@@ -37,7 +37,17 @@ typedef char rv_sar_check[(INT32_C(-1) >> 1) == -1 ? 1 : -1];   /* >> on a negat
 #define TURN 1024                       /* a whole turn in lf_sin / lf_cos / lf_atan2's angles */
 #define KPS_HZ 20                       /* the step rate a kps is converted at: a kps is KM / KPS_HZ = 12.8 positions a
                                            step (spec 6.1).  The flight steps LOGIC_HZ times a second (logic.h): while
-                                           the two differ everything moves LOGIC_HZ / KPS_HZ times its nominal speed */
+                                           the two differ everything moves LOGIC_HZ / KPS_HZ times its nominal speed.
+                                           At 30 steps that is 1.5 km/s a kps: the old game's own unit (25.6 positions a
+                                           frame) at WC_FPS */
+/* The old game's frame (the user, 2026-11-02: "the game can run at exactly 30 fps but the logic will be equivalent as
+ * someone on an average computer of the era at 15").  Its rules count frames, it ran some 15 of them a second, and we
+ * step LOGIC_HZ: a rule of its N frames is N x WC_FRAME_STEPS of our steps, a rate of its per frame is per
+ * WC_FRAME_STEPS steps.  Its stats in ours (data/ships.csv): a top speed of S km a frame is 10 S kps, a turn of D
+ * degrees a frame 10 D degrees a second (dps x LOGIC_HZ / KPS_HZ is the turn we fly).  The measures of its flights
+ * read before 2026-11-02 took 20 frames a second (tests/wc1/README.md) */
+#define WC_FPS 15
+#define WC_FRAME_STEPS 2                /* LOGIC_HZ / WC_FPS (logic.c checks it) */
 #define NUM_SHIP_SLOTS (RV_MAX_SHIP_SLOT + 1) /* The number of active ship slots, including 0 and RV_MAX_SHIP_SLOT. */
 #define KPS_STEP(kps) ((int32_t)(kps) * KM / KPS_HZ)   /* a speed in kps as positions a step */
 

@@ -2168,8 +2168,8 @@ static void t_forward_only(void)
 static void t_sustain(void)
 {
     static const char __far e_few[] = "%d shots in 10 s of trigger from %d guns: the old game's Hornet fired a volley every "
-        "third of a second (30 a gun) without running down";
-    static const char __far e_many[] = "%d shots in 10 s of trigger from %d guns: more than a volley every third of a second";
+        "0.44 s at its 15 frames a second (22-23 a gun) without running down";
+    static const char __far e_many[] = "%d shots in 10 s of trigger from %d guns: more than a volley every 0.44 s";
     static const char __far e_drained[] = "gun energy down to %d after 10 s of trigger: the lasers are sustained";
     uint16_t a0;
     int16_t guns;
@@ -2180,8 +2180,8 @@ static void t_sustain(void)
     a0 = shots_added();
     if (!pt_steps(10 * SEC))
         return;
-    REQUIRE((uint16_t)(shots_added() - a0) >= guns * 27, e_few, (uint16_t)(shots_added() - a0), guns, 0);
-    REQUIRE((uint16_t)(shots_added() - a0) <= guns * 33, e_many, (uint16_t)(shots_added() - a0), guns, 0);
+    REQUIRE((uint16_t)(shots_added() - a0) >= guns * 20, e_few, (uint16_t)(shots_added() - a0), guns, 0);
+    REQUIRE((uint16_t)(shots_added() - a0) <= guns * 25, e_many, (uint16_t)(shots_added() - a0), guns, 0);
     REQUIRE(gunEnergy[0] >= 50, e_drained, gunEnergy[0], 0, 0);
     g_pilot.guns = 0;
 }
@@ -2263,7 +2263,7 @@ static void t_type_rates(void)
     static const char __far e_energy[] = "gun energy back %d points in 60 steps, a point every 6 is 10";
     static const char __far e_shield[] = "a shield back to %d of %d in 16 steps, shield_full_shift 4 fills it in those";
     static const char __far e_steps[] = "a shield back %d points in 16 steps with shield_steps 4 (the old game's stat: "
-        "a point a side every 4 steps): 4 expected";
+        "a point a side every 4 of its frames, 8 of our steps): 2 expected";
     RvShipType __far *t;
     uint8_t keep_steps, keep_shift, keep_sh;
     uint16_t shield = 0, by_steps = 0;
@@ -2294,7 +2294,7 @@ static void t_type_rates(void)
     if (!ok)
         return;
     REQUIRE(shield == SHIELD_MAX(0, 0), e_shield, shield, SHIELD_MAX(0, 0), 0);
-    REQUIRE(by_steps == 4, e_steps, by_steps, 0, 0);
+    REQUIRE(by_steps == 16 / (4 * WC_FRAME_STEPS), e_steps, by_steps, 0, 0);
     REQUIRE(gunEnergy[0] == 10, e_energy, gunEnergy[0], 0, 0);
 }
 
@@ -2895,8 +2895,8 @@ static void t_hold_fire(void)
     REQUIRE(other > 0, e_other, other, 0, 0);
 }
 
-/* M5.14: aim=cone: the enemy's shots come only within its laser's 46-degree cone and its volleys 13 steps apart (the
- * old game's refire), where under aim=lead they come the profile's fire_gap (22) apart; the enemy crossing the player's
+/* M5.14: aim=cone: the enemy's shots come only within its laser's 46-degree cone and its volleys 13 of the old game's
+ * frames apart (its refire: 26 steps), where under aim=lead they come the profile's fire_gap (29) apart; the enemy crossing the player's
  * way 45 degrees off, both at 300 kps.  (Shots with the nose 20-46 degrees off the target came of the pursuit that
  * fired while flying at the old approach point; with the approach silent, M5.19, the nose is on the target when the
  * guns go, and the cone shows only as the limit) */
@@ -2905,24 +2905,24 @@ static void t_cone_fire(void)
     static const char __far e_none[] = "under aim=cone the enemy fired nothing in 15 s";
     static const char __far e_wide[] = "%d of the enemy's shots came with the player over 50 degrees off its nose: the "
         "cone is 46";
-    static const char __far e_gap[] = "two of the enemy's volleys %d steps apart: under aim=cone no nearer than 13 "
+    static const char __far e_gap[] = "two of the enemy's volleys %d steps apart: under aim=cone no nearer than 26 "
         "(AI_REFIRE_STEPS)";
     static const char __far e_slow[] = "under aim=cone the enemy's volleys came no nearer than %d steps: its guns go "
-        "every 13 (AI_REFIRE_STEPS), not the profile's fire_gap";
+        "every 26 (AI_REFIRE_STEPS), not the profile's fire_gap";
     static const char __far e_lead[] = "under aim=lead two of the enemy's volleys came %d steps apart: the profile's "
-        "fire_gap is 22";
+        "fire_gap is 29";
     int16_t narrow, over, gap;
     narrow = pt_shots_in_cone(RV_RULE_AIM_CONE, 0, 15, 164, &over, &gap, 3500, 0, 3500, TURN * 5 / 8, 300);   /* (164: within 50 degrees) */
     if (narrow < 0)
         return;
     REQUIRE(narrow + over > 0, e_none, 0, 0, 0);
     REQUIRE(over == 0, e_wide, over, 0, 0);
-    REQUIRE(gap >= 12, e_gap, gap, 0, 0);
-    REQUIRE(gap < 20, e_slow, gap, 0, 0);
+    REQUIRE(gap >= 13 * WC_FRAME_STEPS - 1, e_gap, gap, 0, 0);
+    REQUIRE(gap < 13 * WC_FRAME_STEPS + 7, e_slow, gap, 0, 0);
     narrow = pt_shots_in_cone(0, 0, 15, 164, &over, &gap, 3500, 0, 3500, TURN * 5 / 8, 300);
     if (narrow < 0)
         return;
-    REQUIRE(gap >= 21, e_lead, gap, 0, 0);
+    REQUIRE(gap >= 28, e_lead, gap, 0, 0);
 }
 
 /* the enemy's missiles under the hold: the enemy 2,500 km behind an invulnerable player flying straight at 300 kps,
@@ -3121,7 +3121,7 @@ static void t_leave(void)
  * at some point in 30 s), is not removed, and fights on with its fear gone */
 static void t_home(void)
 {
-    static const char __far e_gone[] = "with its side's capital ship 20,000 km off, the scared fighter was removed: it "
+    static const char __far e_gone[] = "with its side's capital ship 15,000 km off, the scared fighter was removed: it "
         "should run to the capital ship (T_HOME), not leave";
     static const char __far e_far[] = "in 90 s the scared fighter never came within 5,000 km of its side's capital ship "
         "(nearest %d00 km): T_HOME";
@@ -3129,7 +3129,8 @@ static void t_home(void)
     int16_t i;
     if (!pt_scared())
         return;
-    pt_ship(2, 0x28, SIDE_AERA, CTL_FROZEN, 0, 0, 20000, TURN / 2);   /* (an Agasicles, a destroyer) */
+    pt_ship(2, 0x28, SIDE_AERA, CTL_FROZEN, 0, 0, 15000, TURN / 2);   /* (an Agasicles, a destroyer: 13,000 km from the
+                                           fighter, a 6 s run home at the Dralthi's afterburner, 1,800 km/s, gets there) */
     for (i = 0; i < 90 * SEC && slot_is_ship(1); i++) {
         if (!pt_step())
             return;
@@ -4694,7 +4695,7 @@ static void t_systems(void)
         "a point a step: 16)";
     static const char __far e_power_cap[] = "the power plant wrecked, the gun energy at %d after 6 s (held to 40)";
     static const char __far e_slow_shield[] = "the Gawain's generator moderately hurt, its front shield came back %d in 3 s "
-        "(a point every 3 steps, a third of them: 10)";
+        "(a point every 3 of the old game's frames, 6 steps, a third of them: 5)";
     int16_t i, k, hurt = 0, guns = 0;
     pt_alone(PT_PLAYER);
     pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 20000, TURN / 2);
@@ -4741,7 +4742,7 @@ static void t_systems(void)
     SHIELD(0, 0) = 0;
     if (!pt_steps(3 * SEC))
         return;
-    REQUIRE(SHIELD(0, 0) >= 9 && SHIELD(0, 0) <= 11, e_slow_shield, SHIELD(0, 0), 0, 0);
+    REQUIRE(SHIELD(0, 0) >= 10 / WC_FRAME_STEPS - 1 && SHIELD(0, 0) <= 10 / WC_FRAME_STEPS + 1, e_slow_shield, SHIELD(0, 0), 0, 0);
     memset(systemDamage, 0, systemDamage_SIZE);
 }
 
@@ -5851,8 +5852,8 @@ static const char __far n_m3_10[] = "M3.10 any-source (do_damage): the same hit 
 static const char __far n_m3_11[] = "M3.11 shots-hit (step_shots): gunfire hurts what it meets, src a bolt of the "
     "shooter's";
 static const char __far n_m3_12[] = "M3.12 recharge (step_timers): shields come back, armour does not";
-static const char __far n_m2_19[] = "M2.19 sustain (step_timers): the trigger held 10 s fires the old game's 60 shots (a volley of two "
-    "every third of a second) and keeps its energy";
+static const char __far n_m2_19[] = "M2.19 sustain (step_timers): the trigger held 10 s fires the old game's 45 shots (a volley of two "
+    "every 0.44 s, at its 15 frames a second) and keeps its energy";
 static const char __far n_m3_13[] = "M3.13 type-rates (step_timers): gun energy and shields come back at the type's rates (a point a side every shield_steps, or the shift)";
 static const char __far n_m3_14[] = "M3.14 hit-volumes (shot_hit): a bolt within the radius, in the volume box, through the silhouettes, as the rule says";
 static const char __far n_m3_15[] = "M3.15 damage-grows (shot_hit): a bolt hurts by its life left: the laser 10 at the muzzle, 25 at the end of its reach";
@@ -5889,7 +5890,7 @@ static const char __far n_m5_11[] = "M5.11 old-straight (aiFighterThink): agains
 static const char __far n_m5_12[] = "M5.12 old-hunt (aiFighterThink): hunted by the player, it passes many times, bumps "
     "once at most, comes round in time, fires a volley at a time";
 static const char __far n_m5_13[] = "M5.13 hold-fire (holds_fire): the player's selected target holds its guns with the player within 37 degrees ahead";
-static const char __far n_m5_14[] = "M5.14 cone-fire (aim_and_fire): under aim=cone the guns go within the weapon's cone, 13 steps apart";
+static const char __far n_m5_14[] = "M5.14 cone-fire (aim_and_fire): under aim=cone the guns go within the weapon's cone, 13 of the old game's frames apart";
 static const char __far n_m5_15[] = "M5.15 leave (fear_step, leave_step): a scared fighter tailed leaves and is removed beyond 16,000 km";
 static const char __far n_m5_16[] = "M5.16 home (T_HOME): with its side's capital ship about it runs there instead and fights on";
 static const char __far n_m5_17[] = "M5.17 hold-missiles (aim_and_fire): the held fire withholds the missiles too";

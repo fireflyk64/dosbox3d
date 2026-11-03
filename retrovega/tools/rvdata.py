@@ -132,13 +132,13 @@ GUN_ENERGY_STEPS = 1                   # blank in ships.csv: the gun energy come
 SHIELD_FULL_SHIFT = 9                  # blank in ships.csv: a shield comes back from nothing in 1 << this steps (512:
                                        # 17 s at LOGIC_HZ, the old game's 15 s), whatever its size (2 points to 900)
 # the afterburner's fuel, as the old game counts it (its code, read 2026-11-02: a type's tank at kShipStats +0x0C, 5 a
-# frame while the throttle is open, ovr143:33E3, and 200 more a frame on the afterburner, ovr141:1B38; its kps is km
-# per twentieth of a second, so a frame is a twentieth): ships.csv `fuel` is the tank in its units, blank the old
+# frame while the throttle is open, ovr143:33E3, and 200 more a frame on the afterburner, ovr141:1B38; a frame is a
+# fifteenth of a second, as it ran on a machine of its day): ships.csv `fuel` is the tank in its units, blank the old
 # game's 200,000 (the Hornet's and every non-Confed type's; the Rapier 250,000, the Scimitar 280,000, the Raptor
 # 300,000).  The game's tank is 1,000 points (the gauge's tenths of a percent): a type's rates are thousandths of a
-# point a step (LOGIC_HZ), so a Hornet's tank is 49 s of afterburner and 33 minutes of throttle, as the old game's
+# point a step (LOGIC_HZ), so a Hornet's tank is 65 s of afterburner and 44 minutes of throttle, as the old game's
 FUEL_TANK = 200000
-FUEL_CRUISE, FUEL_BURN, FUEL_HZ, LOGIC_HZ = 5, 200, 20, 30
+FUEL_CRUISE, FUEL_BURN, FUEL_HZ, LOGIC_HZ = 5, 200, 15, 30   # (its frames: 15 a second on a machine of its day, world.h WC_FPS)
 
 
 def fuel_rates(r):

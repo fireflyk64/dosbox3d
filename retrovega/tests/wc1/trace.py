@@ -156,7 +156,7 @@ def summarise(flight, fi, fps, timeline, only):
 
 def main():
     path = sys.argv[1]
-    fps = float(sys.argv[sys.argv.index('--fps') + 1]) if '--fps' in sys.argv else 20.0
+    fps = float(sys.argv[sys.argv.index('--fps') + 1]) if '--fps' in sys.argv else 15.0   # (its frames on a machine of its day)
     only = int(sys.argv[sys.argv.index('--slot') + 1]) if '--slot' in sys.argv else None
     flights = read(path)
     print('%d flights in %s' % (len(flights), path))
