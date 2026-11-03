@@ -37,6 +37,9 @@ int16_t shots_count(void);
 /* the flight's effects (fx.c) hear of each shot added and each hit found here: set by the flight, 0 elsewhere */
 extern void (*__far shots_on_add)(int16_t owner, uint16_t weapon_type);
 extern void (*__far shots_on_hit)(int16_t slot, const RvVec3 *where, int16_t owner, uint16_t damage);
+/* a field's rocks (rocks.c sets it while a field's rocks are out, 0 elsewhere): 1 when shot s's last step went into
+ * one, and the shot is spent (shots_move removes it) */
+extern int16_t (*__far shots_on_rocks)(const Shot __far *s);
 uint16_t shots_added(void);             /* shots added since the flight began (shot_add's count: the play tests count
                                            a ship's fire by it) */
 Shot __far *shot(int16_t i);            /* 0 .. shots_count()-1 */

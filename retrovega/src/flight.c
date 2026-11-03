@@ -1656,7 +1656,7 @@ void flight_window_open(int room, unsigned seed, int outside)
     rocks_flight_start();
     g_win.rocks = outside == WINDOW_ROCKS;
     if (g_win.rocks)
-        rocks_field_add(RV_FIELD_ASTEROID, 0, 0, WIN_FIELD_Z_KM * 256, WIN_FIELD_R_KM, WIN_FIELD_DENSITY);
+        rocks_field_cluster(0, 0, WIN_FIELD_Z_KM * 256, WIN_FIELD_R_KM, WIN_FIELD_DENSITY);
     rocks_frame(&cam, g_win.cx, g_win.cy, WIN_FOCAL, g_win.y0, g_win.y0 + g_win.rows);
     g_win.nfly = 0;
     g_win.next_fly = (unsigned short)(60 + vrnd() % 120);   /* (the first soon: two to six seconds) */

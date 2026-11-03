@@ -23,6 +23,7 @@ static int16_t __far g_bolts, __far g_balls;   /* the pools' room (0: not ours, 
 static uint16_t __far g_added, __far g_hits;   /* the flight's shots and the hits shot_hit found (logged at its end) */
 void (*__far shots_on_add)(int16_t owner, uint16_t weapon_type);
 void (*__far shots_on_hit)(int16_t slot, const RvVec3 *where, int16_t owner, uint16_t damage);
+int16_t (*__far shots_on_rocks)(const Shot __far *s);
 
 MEM_ARRAY(Shot, g_s_arr, SHOTS_MAX)
 
@@ -128,6 +129,10 @@ void shots_move(void)
         s->x += s->vx;
         s->y += s->vy;
         s->z += s->vz;
+        if (shots_on_rocks && shots_on_rocks(s)) {   /* (into a rock: spent) */
+            shot_remove(i);
+            continue;
+        }
         if (s->fresh)
             s->fresh--;
     }

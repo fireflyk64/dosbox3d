@@ -307,6 +307,39 @@ break (`avoid_break`) and the avoidance's push in proportion to the way wanted t
 other out of the straight run. Still apart: the old approach's spacing (the nearest two 1,746 km apart) and the
 old wingman's bumps (none seen).
 
+## The asteroid fields (the code of overlay 168 read, and three flights measured, 2026-11-02)
+
+The user: the fields "show up as a fixed setup of rocks", where the old game's are "a field effect where while inside
+rocks spawn with velocity towards you". Read with `scripts/wcdis.py dis ovr168:0890 0x356` (and 0000, 036A); measured by
+flying Enyo 1's nav 2 field (`run-old.sh OUT 1 0 "1:!rocks=1,3:!pos=11520000:1792000:-3840000,3.5:@d000,3.7:@d001,..."`,
+a dump every 0.2 s) at the launch's 200 kps, stopped (`3.2:backspace`) and on the burner (`3.2:+tab`), and reading the
+rock slots of each dump (`entitiesToDespawn` dseg:6610, their positions, velocities and `entityCullStatus`).
+
+- **When:** a field is the current one while the player is within its radius + 4,300 km of its middle (ovr168:0B86,
+  every 16 frames; the radii are 5,000 and 7,500 km); as it becomes current, 3 rocks at once (0B13).
+- **How many:** 20 slots (dseg:6610). Each frame, with a slot free, a rock is made when random(215) < speed + 30, the
+  speed in km a frame (= kps / 10; dseg:39A2): 14% a frame stopped, 26% at 250 kps (0AA7).
+- **Where:** 3,050 km ahead of the nose (measured 2,940-3,130), turned at random +-35 degrees across and +-20 up and
+  down (measured: +-36 and +-21), plus the stick's deflection x 10 (the turn led); not made when that point is outside
+  the field (06A9). Its camera's focal length is 160 (fitted from the rocks' screen x, 2,504 points): +-45 degrees
+  across, so the cone is on screen.
+- **Which way:** about one in nine (level 0: the pitch -10..4, the yaw within +-19, then 60%; dseg:39A6/39AA hold the
+  other levels; dseg:BFF4 was 0 in Enyo 1) flies at where the player will be after T frames, T = 56 + random(15) less
+  random(2 |25 - speed|), at least 7; its speed covers the way in T less random(5) frames (measured 33-41 km a frame at
+  200 kps, 96 stopped). The rest face the field's middle and are turned a right angle up, down, left or right (their
+  ways 89-92 degrees from the middle, every axis), a fifth still, the others 10 to 16 km a frame (100-160 kps; 036A,
+  01E8).
+- **Gone:** each rock is looked at every 20 frames: past 4,300 km when drawn, past 4,300 down to 3,100 (by the speed
+  0..20) when not (0890).
+- **Seen:** at 200 kps 20 rocks, 5 to 9 drawn; stopped 17 to 20 drawn; on the burner the player left the field in
+  seconds. Rocks are 100 km in radius, the Hornet's own size. Mines (type 0x21) face the player and drift at it at 2 km
+  a frame, and close in when near (092E).
+
+Ours (`src/rocks.c`, docs/engine.md "Nav points and fields") keeps the counts, the chance, the cone (as the same share
+of a view 2.5 times narrower), the aimed share and its times, in seconds; it makes rocks farther out (6,000 km: our rocks
+show the old game's few pixels there) and gives the others a speed at the player (the user's 250 kps) rather than across,
+so they reach the player in the old game's seconds although our ships are slower against their size.
+
 ## What is still to measure
 
 The other types (the Salthi at nav 3; Krant, Gratha, Jalthi, the capital ships and their turrets in the later

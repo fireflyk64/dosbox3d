@@ -225,9 +225,24 @@ holds a capital ship or an escort target. A hidden point at the launch itself wi
 and waits for the player to have flown a nav point. A wave starts where the old game has it, off its nav point (`at=x,y,z`, km; `tests/wc1/places.py` writes them), and a ship in no
 nav point's list never flies. Enemies at the launch, in four missions, have the wingman start 3,000 km past them
 (`wingman_behind`), to come up behind them. The port took them all for waypoints until 2026-10-31. Fields (`field asteroid|mine x y z radius [density=N]`, km) are read from the old game's mission
-records (types 0x16 and 0x17) at the map's 0.45, which keeps its layout: no waypoint lies inside a field. A mission's
-field stays a cluster in its own place (`FIELD_SMALL`): its rocks drift, seven times the plain density, seen from afar
-and gone round, and every few seconds one ahead is set flying at the player. A mine is the same rock with trackers,
+records (types 0x16 and 0x17) at the map's 0.45, which keeps its layout (six waypoints lie inside a field, as the old
+game's Enyo nav 2 does). **A field is an effect, as the old game's are** (the user, 2026-11-02: "a field effect where
+while inside rocks spawn with velocity towards you ... a few close and a few distant rocks on screen at a time. More
+rocks spawn as you move or as the dodged rocks get too far behind"; the old game's overlay 168 read and its rocks
+measured the same day: `tests/wc1/README.md`, "The asteroid fields"). While the point 1,400 km ahead of the nose is in a
+field (the old game's 3,050 km at the map's 0.45), `rocks.c` makes rocks 6,000 km ahead, in a cone of the old game's
++-35 x +-20 degrees taken as the same share of our narrower view and turned to where the nose is turning: three as the
+field begins, then the old game's chance a step, (kps/10 + 30)/215 a frame of its 20 a second, so the faster the player
+goes the sooner, up to 20 at once (`density=` scales it: 20 x density / 120). Most come at the player at 200-300 kps
+toward a point up to 1,500 km off them, a fifth keep still, and about one in nine (the old game's share and window)
+flies at where the player will be after the old game's time, 2.8 to 3.5 seconds at 250 kps and less the farther their
+speed is from 250, to meet them there. A rock past 6,400 km from the player is gone, and it grows in from a dot past
+72% of that. On the first mission's field that is about 8 on screen at cruise, as the old game's 5 to 9. A shot that
+meets a rock is spent and breaks it one time in three (the old game's rule; `shots_on_rocks`), and the player's ship
+breaks any it flies into, the harm by the speed they met at. Our numbers are not the old game's kilometres: its view is
+2.5 times wider (focal 160) and its rocks as big as its fighters, so ours start farther out and come at the player
+themselves, to show the old game's few pixels and reach the player in its seconds. The bar's window keeps the older
+cluster (`rocks_field_cluster`: rocks that stay in the field and drift). A mine is the same rock with trackers,
 sharing its art (the user: "the diamond is just gray when they are not [mines]... 6 diamonds per mine, one per cube
 face"): every rock has six diamonds painted on it, on the faces of a cube standing on a corner of the spin axis
 (`tools/rocks.py`), in palette entry 255, which nothing else in a flight uses. `tracker_colour` keeps that entry grey in

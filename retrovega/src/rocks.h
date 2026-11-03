@@ -1,20 +1,25 @@
 /* rocks.h: asteroid fields (rocks.c; the per-rock work in rocks.asm).
  *
  * A field is a hazard a nav point may have instead of ships (the user,
- * 2026-10-23): a sphere of space (its middle, its radius) full of tumbling
- * rocks at some density.  The rocks are not ship slots: each machine keeps
- * its own fixed set of them round its own player (as the hook layer has
- * WC1's rocks: every player's field is their own, nothing about a rock is
- * sent), in a bubble about the camera; a rock the player has left behind
- * (out of the bubble) comes back on the bubble's far side ahead, where it
- * grows in from nothing.  The art (tools/rocks.py's ROCKS.DAT, four kinds,
- * 32 tumble frames, every size to 8 px, then a ladder to 128) is read into
- * XMS (its own level, above the mission's) only while the player is near
- * a field, and given back when they leave.  A rock never turns with the
- * camera's roll: it only tumbles and scales.  A row of a big rock is one
- * XMS move straight into the band buffer; a small one (8 px at most) comes
- * from conventional memory as a ball does; one bigger than the ladder is
- * drawn as 2 x 2 .. 4 x 4 blocks of a ladder sprite.
+ * 2026-10-23): a sphere of space (its middle, its radius) where rocks come at
+ * the player, as the old game's fields do (the user, 2026-11-02: "a field
+ * effect where while inside rocks spawn with velocity towards you"): while
+ * the point ahead of their nose is in a field, rocks are made ahead of them,
+ * a few near and a few far on screen, and fly at them; the ones passed or
+ * drifted off are gone and more are made.  The rocks are not ship slots: each
+ * machine makes its own round its own player (as the hook layer has WC1's
+ * rocks: every player's field is their own, nothing about a rock is sent).
+ * A shot that meets one is spent and breaks it now and then (shots.c's
+ * shots_on_rocks); the player flying into one breaks it.  The art
+ * (tools/rocks.py's ROCKS.DAT, four kinds, 32 tumble frames, every size to 8
+ * px, then a ladder to 128) is read into XMS (its own level, above the
+ * mission's) only while the player is near a field, and given back when they
+ * leave.  A rock never turns with the camera's roll: it only tumbles and
+ * scales.  A row of a big rock is one XMS move straight into the band
+ * buffer; a small one (8 px at most) comes from conventional memory as a ball
+ * does; one bigger than the ladder is drawn as 2 x 2 .. 4 x 4 blocks of a
+ * ladder sprite.  The bar's window keeps a cluster instead: rocks that stay
+ * in their field and drift (rocks_field_cluster).
  *
  * The fields are kept where the hook layer looks (rvabi.def): fieldTable,
  * fieldCount, currentField, fieldRockTally; each field has a slot of its own
@@ -80,9 +85,12 @@ void __far __cdecl rv_rocks_copy(const unsigned char __far *hdr, int rows, int x
                                  const unsigned char __far *pix, unsigned char __far *band, int band_y0, int y0,
                                  int y1, const short __far *ext, int ext_y0);
 
-#define ROCK_DENSITY 120                /* a field's rocks per (10,000 km)^3 when the mission does not say */
+#define ROCK_DENSITY 120                /* a field's density when the mission does not say: its rocks at once are
+                                           rocks.c's FX_CAP x density / ROCK_DENSITY (a cluster's: per (10,000 km)^3) */
 
 int rocks_field_add(int type, long x, long y, long z, long radius_km, int density);   /* -> its index, -1 none */
+int rocks_field_cluster(long x, long y, long z, long radius_km, int density);   /* the bar window's: asteroids that
+                                           stay in the field and drift */
 void rocks_flight_start(void);          /* no fields, no rocks */
 void rocks_flight_end(void);            /* every field's rocks and art given back */
 void rocks_want(int on);                /* the flight will want ROCKS.DAT (asked of the page with the ships' sets) */
@@ -91,10 +99,11 @@ unsigned long rocks_room_kb(void);      /* the XMS the rocks will want near a fi
                                            ship sets leave it free */
 
 /* once a frame, after the simulation step: the fields entered and left (the art read in and given back), every
- * rock through the camera (the player's frame), the ones left behind brought round ahead, the player's hits */
+ * rock through the camera (cam: the view's frame; the player's ship's own makes the rocks), the ones gone removed,
+ * new ones made ahead, the player's hits */
 void rocks_frame(const LfBasis *cam, int cx, int cy, int focal, int y0, int y1);
 int rocks_on_screen(int *small, int *big);   /* this frame's */
-int rocks_live(void);                   /* rocks kept round the player now */
+int rocks_live(void);                   /* rocks about the player now */
 void rocks_retry(void);                 /* a field whose art had not come in: tried again at the next frame */
 
 /* per band: the small (far) ones, before the ships; the big ones in depth order with them (rocks_draw_to: those
