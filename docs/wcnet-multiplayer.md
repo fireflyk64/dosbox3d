@@ -1320,7 +1320,9 @@ top-level README for the workflow).  What differs:
   button for five seconds and fades, with how many pilots did not answer
   (a page older than the question does not; the user's first try met
   one).  A pilot who ticks **Private**
-  (beside "Controller buttons and axes", remembered by the browser) gives
+  (beside "Controller buttons and axes"; not remembered between visits
+  since 2026-11-03, the user's: pilots who had ticked it once could not see
+  why nobody ever came through "Join open game") gives
   empty answers, and so does everyone in the room of a host who ticked it
   (the host's hello says `private`): such a room is found only by its code
   or its link.  "Join room" in the room panel joins the code typed there.
@@ -1345,10 +1347,16 @@ top-level README for the workflow).  What differs:
   `game_program_loaded` looks for, read from the file; the registry's
   `build`).  Rooms are not held to this: a link to a room joins it at
   once, so that the host sees the wingman and can say where the files go.
-  Flying leaves the lobby
-  (`hall.shut` in `start()`: a lobby of pilots who are away is no use to
-  those looking for one), and when the game is over on the page, or the
-  page is loaded again, a pilot who was in it is back (`flightOver`).
+  Flying keeps the pilot in the lobby (the user, 2026-11-03: "everyone can
+  always stay in the lobby during game. It's too quiet for the moment to
+  worry--we can deploy lobby departure as a future optimization if it gets
+  too busy"; `hall.shut` is kept for that), and a room with a seat free is
+  advertised as its pilot presses Fly (`hall.advertise({ auto })`, unless
+  Private; the user: "auto-hit the advertise ... That way others can join
+  in at that time"); "Join open game" offers it while it flies.  Whoever
+  comes joins the mission in progress: a host in a lobby room never waits
+  for a pilot who has not come, and after a mission flown together it waits
+  at the briefing for that pilot's game (the lockstep, section 7).
   The connection is `hall.js`'s own, on the lobby server's signaling
   protocol, not the lobbylink client's:
   * links are direct (STUN only) and go through the server's TURN relay only
@@ -1425,9 +1433,24 @@ top-level README for the workflow).  What differs:
   that cannot hold it the wingman's ship flies faster than the host's
   world.  There is no extrapolation of remote ships between frames beyond
   what the game itself does with a ship's velocity.
-* A server with no connected client blocks at the start of every frame until
-  one connects (original behaviour); the same happens if the only client
-  drops mid-mission.
+* Over TCP a server with no connected client blocks at the briefing (and in
+  the barracks) and at the start of every frame until one connects and has
+  had the mission's start state (original behaviour).  In a lobby room (the
+  page) it never waits for a pilot who has not come (the user, 2026-11-03:
+  "the first mission is freewheeling, but once a player has successfully
+  played then they go in lockstep"): it flies, and whoever connects later
+  joins the mission in progress.  After a mission flown together (to its
+  end, or until that pilot died, ejected or landed), the next briefing waits
+  until that pilot's game asks for its own, for as long as the pilot holds a
+  seat in the room (`wait_for_lockstep`: `flownWith_` by room seat,
+  `Listener::seat_held`); the log says "waiting on the other player, X, at
+  the briefing", which the page puts in the room's chat, and RetroVega over
+  its room.  Messages of the last flight queued before the pilot's request
+  are dropped there, as the frame loop drops a past epoch's.  The native
+  emulator does not answer its window's close while it waits.
+  `scripts/rvnet-duo.sh` with `ROOM=1` (an emulator built with lobbylink)
+  flies a pair through a local lobby server: `GUEST_DELAY=20` a late guest,
+  `SCENARIO=retry` the lockstep.
 * A client that died cannot rejoin the mission in progress; it gets the next
   briefing.
 * Two client slots (network ids 1 and 3 when they connect; the slot each

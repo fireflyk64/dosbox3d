@@ -145,7 +145,8 @@ class Check:
             d = self.dump(n, 'moved')
             if d:
                 frames = d.u16('frameCounter')
-                self.need(abs(frames - 8 * fps) <= fps, 'p%d flies at %d frames a second (%d frames in 8 s)' % (n, fps, frames))
+                at = int(os.environ.get('RVNET_HOST_LOOK', '8')) if n == 0 else 8   # (the host's look comes later with a late guest)
+                self.need(abs(frames - at * fps) <= fps, 'p%d flies at %d frames a second (%d frames in %d s)' % (n, fps, frames, at))
         sc = self.scenario
         if sc in ('retry', 'carrier', 'guestdeath'):
             self.logs_say(0, r'our choice on the death screen: fly the mission again', 'the host chose R')

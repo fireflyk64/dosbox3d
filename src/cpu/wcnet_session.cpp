@@ -680,6 +680,7 @@ struct RemoteClient {
     int skipPendingEvents;       // events already covered by the start state
     bool seatSpawnFailed = false;  // a ship made for its seat came to nothing this mission
     int startView = 0;           // a gunner: the view (turret) it starts in
+    int roomSeat = -1;           // its pilot's seat in the lobby room (-1: TCP, no rooms)
     // The last frame of its whose position we took (by either channel), and when (emulated ms).
     Bit64u lastPosition = 0;
     double lastPositionEmu = 0;
@@ -860,6 +861,7 @@ public:
             lastBriefing_.set_player_mission_ship((Bit32u)t.playerMissionShip);
         }
         accept_clients(true);
+        wait_for_lockstep();
         wclog(1, "mission %d/%d starting with %d client slot(s)", mission, series, (int)clients_.size());
         for (size_t i = 0; i < clients_.size(); i++) {
             RemoteClient *c = clients_[i];
@@ -919,6 +921,14 @@ public:
 
     virtual void on_mission_ended() {
         liven_everyone();
+        // (A pilot who flew in this mission, to its end or until they died, ejected or landed, has flown one with
+        // us: the next briefing waits for them.)
+        for (size_t i = 0; i < clients_.size(); i++) {
+            const RemoteClient *c = clients_[i];
+            if (c->connected() && (c->inMission || c->leftThisMission) && c->roomSeat >= 0) {
+                flownWith_[c->roomSeat] = c->callsign;
+            }
+        }
         within_briefed_mission = false;
         int status = rd16(ds::missionStatus);
         wclog(1, "mission ended: %s", status_name(status));
@@ -1433,7 +1443,16 @@ private:
 
     // Accept pending connections.  With blockIfNone the call waits until at
     // least one client is connected: a server alone cannot fly the mission.
+    // Over TCP (the rigs, which start their pair together) a host alone
+    // waits for a first wingman, at the briefing and in flight until one has
+    // had the mission's start state.  In a lobby room it never waits for a
+    // pilot who has not come: the first mission together is freewheeling,
+    // and whoever comes later joins the mission in progress
+    // (wait_for_lockstep has the one wait there is).
     void accept_clients(bool blockIfNone) {
+        if (listener_->has_rooms()) {
+            blockIfNone = false;
+        }
         while (true) {
             bool block = blockIfNone && !any_client_connected();
             if (block) {
@@ -1443,29 +1462,116 @@ private:
             if (!s) {
                 return;
             }
-            RemoteClient *c = allocate_client();
-            if (!c) {
-                wclog(1, "no free player slot; refusing %s", s->describe().c_str());
-                s->close();
-                delete s;
+            if (!adopt_client(s)) {
                 return;
             }
-            c->conn.adopt(s);
-            NetworkMessage msg;
-            if (!c->conn.recv(CAT_GAME, msg).ok() || !msg.has_connect()) {
-                wclog(0, "client did not introduce itself");
-                c->disconnect();
+        }
+    }
+
+    // A new connection made a client; false when there was no seat for it.
+    bool adopt_client(Stream *s) {
+        RemoteClient *c = allocate_client();
+        if (!c) {
+            wclog(1, "no free player slot; refusing %s", s->describe().c_str());
+            s->close();
+            delete s;
+            return false;
+        }
+        c->roomSeat = s->room_seat();
+        c->conn.adopt(s);
+        NetworkMessage msg;
+        if (!c->conn.recv(CAT_GAME, msg).ok() || !msg.has_connect()) {
+            wclog(0, "client did not introduce itself");
+            c->disconnect();
+            return true;
+        }
+        c->callsign = msg.connect().callsign();
+        c->leftThisMission = false;
+        c->missionTreeProgress.clear();
+        wclog(1, "%s connected as player %d (%s)", c->callsign.c_str(), c->net, c->conn.describe().c_str());
+        std::map<int, std::string>::iterator was = flownWith_.find(c->roomSeat);
+        if (was != flownWith_.end() && was->second != c->callsign) {
+            flownWith_.erase(was);  // (somebody else in that seat now: they have not flown with us)
+        }
+        if (within_briefed_mission) {
+            // Joining a mission in progress: bring them in next frame.
+            c->needsMissionStartState = true;
+        }
+        return true;
+    }
+
+    // The lockstep (the user, 2026-11-03: "the first mission is freewheeling, but once a player has successfully
+    // played then they go in lockstep"; "the second in that session whatever number it is"): at a briefing the
+    // host waits for each pilot who has flown a mission with it this session and still holds a seat in the room,
+    // until that pilot's game is at its own briefing.  The callsign waited for, or NULL.
+    const char *lockstep_waits_for() {
+        for (std::map<int, std::string>::iterator it = flownWith_.begin(); it != flownWith_.end();) {
+            if (listener_->seat_held(it->first) == 0) {
+                wclog(1, "%s has left the room: no waiting for them", it->second.c_str());
+                flownWith_.erase(it++);
                 continue;
             }
-            c->callsign = msg.connect().callsign();
-            c->leftThisMission = false;
-            c->missionTreeProgress.clear();
-            wclog(1, "%s connected as player %d (%s)", c->callsign.c_str(), c->net, c->conn.describe().c_str());
-            if (within_briefed_mission) {
-                // Joining a mission in progress: bring them in next frame.
-                c->needsMissionStartState = true;
+            const RemoteClient *c = NULL;
+            for (size_t i = 0; i < clients_.size(); i++) {
+                if (clients_[i]->connected() && clients_[i]->roomSeat == it->first) {
+                    c = clients_[i];
+                }
+            }
+            if (!c || !c->requestedBriefingStart) {
+                return it->second.c_str();
+            }
+            ++it;
+        }
+        return NULL;
+    }
+
+    // A briefing request that came while we wait at ours is kept for the briefing state that goes out after the
+    // wait.  Anything before it is the last flight's traffic (its "out of the flight loop" frame, of the epoch we
+    // are still in: ours moves on only with the next flight), which the frame loop would drop as a past epoch's
+    // once that flight began: dropped here, or it would hold the request behind it for ever.
+    void take_briefing_requests() {
+        NetworkMessage msg;
+        for (size_t i = 0; i < clients_.size(); i++) {
+            RemoteClient *c = clients_[i];
+            for (int n = 0; c->connected() && !c->requestedBriefingStart && n < 64; n++) {
+                RecvStatus st = c->conn.poll(CAT_GAME, msg);   // (poll reads the link; peek only looks at the queue)
+                if (st.failed()) {
+                    wclog(1, "player %d disconnected", c->net);
+                    c->disconnect();    // (a seat still held is waited for again: a reload comes back)
+                    break;
+                }
+                if (!st.ok()) {
+                    break;
+                }
+                if (msg.has_start_briefing_req()) {
+                    c->requestedBriefingStart = true;
+                } else {
+                    wclog(2, "player %d: a message of the last flight dropped at the briefing", c->net);
+                }
             }
         }
+    }
+
+    void wait_for_lockstep() {
+        if (!listener_->has_rooms()) {
+            return;
+        }
+        const char *who = lockstep_waits_for();
+        if (!who) {
+            return;
+        }
+        // (The page says it in the room's chat: web/wc.js noticeWaiting.)
+        std::string last = who;
+        wclog(1, "waiting on the other player, %s, at the briefing", last.c_str());
+        while ((who = lockstep_waits_for()) != NULL) {
+            last = who;
+            Stream *s = listener_->accept_within(250);
+            if (s) {
+                adopt_client(s);
+            }
+            take_briefing_requests();
+        }
+        wclog(1, "the other player is at the briefing: the mission begins");
     }
 
     void handle_briefing_request(RemoteClient *c) {
@@ -2277,6 +2383,7 @@ private:
     Bit32u epoch_;
     Bit64u frameNumber_;
     bool hadClientInMission_;    // a wingman has had this mission's start state
+    std::map<int, std::string> flownWith_;  // room seat -> callsign: pilots who have flown a mission with us (lockstep)
     int seats_;                  // the room's size (room_seats): three has seats made on demand, two the seats of before
     std::set<int> seatSlots_;     // ships the server spawned as seats for humans (slots)
     struct {                       // a seat's spawn in flight (one at a time)

@@ -64,6 +64,11 @@ public:
         (void)bytes;
         return RecvStatus::STATUS_NO_DATA;
     }
+    // The seat in the room of the pilot at the other end (a lobby room's
+    // player number), or -1: a transport with no rooms (TCP).
+    virtual int room_seat() const {
+        return -1;
+    }
     // For log lines, e.g. "tcp 10.0.0.2:13255" or "lobby player 1".
     virtual std::string describe() const = 0;
 };
@@ -75,6 +80,19 @@ public:
     // Next incoming connection (caller owns it), or NULL when none is
     // pending (non-blocking) or on error.
     virtual Stream *accept(bool blocking) = 0;
+    // The same, waiting at most ms for one (a transport that cannot wait
+    // for a while does not: TCP, whose sessions never ask).
+    virtual Stream *accept_within(int ms) {
+        (void)ms;
+        return accept(false);
+    }
+    // Whether somebody holds that seat of the room (1) or nobody does (0);
+    // -1: the transport has no rooms (TCP), and cannot say.
+    virtual int seat_held(int seat) const {
+        (void)seat;
+        return -1;
+    }
+    virtual bool has_rooms() const { return false; }
     virtual std::string describe() const = 0;
 };
 

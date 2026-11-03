@@ -56,6 +56,7 @@ __pycache__/
 # Browser (Emscripten) build tree and its output
 /build-web/
 /build-native/
+/build-lobby/
 /web/dist/
 build-so3/
 /tools/wc2wing/target/

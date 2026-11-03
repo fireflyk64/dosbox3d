@@ -92,8 +92,14 @@ the build, so the game and the emulator in one deploy always agree.
   (`ownRocks`: RetroVega's rocks are each machine's own); the wing bumps stay the host's choice.
 - A room of one (Players 1: `WCSOLO`) is the game alone, as before, and has the mission menu too (the campaign's
   `alone`: the game takes the mission on its own command line), "Campaign from your quarters" picked to begin with:
-  the game as it starts by itself. In a room of two or three the host's game waits in
-  front of the briefing room for its wingmen ("Waiting for your wingmen"), as Wing Commander's waits in its barracks.
+  the game as it starts by itself. In a room of two or three (the user, 2026-11-03: "the first mission is
+  freewheeling, but once a player has successfully played then they go in lockstep") the host's game never waits for a
+  pilot who has not come: it flies, and whoever comes later joins the mission in progress. After a mission flown
+  together, to its end or until the wingman died or landed, the host's game waits in front of the next briefing room
+  ("Waiting on the other player...", and the same in the room's chat on the page) until that wingman's game is at its
+  own, for as long as the wingman holds a seat in the room. A wingman who presses Fly first waits for the host's
+  briefing ("Waiting for the host's mission"). Over TCP (`scripts/rvnet-duo.sh` without `ROOM=1`) a host alone waits
+  for a first wingman, as before: the rigs start their pair together and there is no room to ask.
 - An RV.EXE and an emulator of two interfaces: the page says so in its status line (the layer's "RV ABI mismatch"),
   and the game flies alone.
 - `scripts/web-rv.mjs` (the deploy's RV smoke) flies two pages together: the menu's missions, the 30, the host's

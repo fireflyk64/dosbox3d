@@ -1351,7 +1351,7 @@ static void flight_prepare(void)
     g_prepared = 1;
     if (rvNetRole && g_rooms_shown && (g_mode == MODE_ROOM || g_mode == MODE_DECK)) {   /* (the wait can be long: say
                                            what for, over the room on the screen) */
-        strcpy(g_scene.label, rvNetRole == 2 ? "Waiting for the host's mission" : "Waiting for your wingmen");
+        strcpy(g_scene.label, rvNetRole == 2 ? "Waiting for the host's mission" : "Waiting on the other player...");
         vid_dirty(SCR_H - LABEL_H, SCR_H);
         scene_draw();
     }

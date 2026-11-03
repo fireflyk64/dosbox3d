@@ -124,6 +124,7 @@ public:
     }
 
     virtual std::string describe() const { return name_; }
+    virtual int room_seat() const { return player_; }
 
 private:
     wclobby *h_;
@@ -140,10 +141,12 @@ class LobbyListener : public Listener {
 public:
     LobbyListener(wclobby *h, const std::string &code) : h_(h), code_(code) {}
 
-    virtual Stream *accept(bool blocking) {
+    virtual Stream *accept(bool blocking) { return accept_within(blocking ? -1 : 0); }
+
+    virtual Stream *accept_within(int ms) {
         uint16_t player = 0;
         uint32_t gen = 0;
-        int r = wclobby_accept(h_, blocking ? -1 : 0, &player, &gen);
+        int r = wclobby_accept(h_, ms, &player, &gen);
         if (r == 1) {
             return new LobbyStream(h_, player, gen);
         }
@@ -152,6 +155,11 @@ public:
         }
         return NULL;
     }
+
+    virtual int seat_held(int seat) const {
+        return wclobby_peer_state(h_, (uint16_t)seat, NULL) != WCLOBBY_PEER_ABSENT ? 1 : 0;
+    }
+    virtual bool has_rooms() const { return true; }
 
     virtual std::string describe() const { return "room " + code_; }
 
