@@ -1494,7 +1494,6 @@ static void draw_world(int y0, int y1)
     missiles_draw(y0, y1, ext, ey0, rows);
     if (!g_view)
     {
-        fx_hud((int16_t)g_cam_cx, (int16_t)g_cam_cy, (int16_t)y0, (int16_t)y1);
         logic_hud();                    /* the game's own marks over the view (none from outside) */
         nav_tag(y0, y1, ext, ey0, rows);
         if (g_sim && y0 < ey0 + 24 && y1 > ey0 + 6) {

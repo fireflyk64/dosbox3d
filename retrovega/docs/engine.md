@@ -2029,12 +2029,12 @@ guns, retro but not Game Boy: good retro.
 **What starts them (fx.c).** Nothing in the logic: like the music, fx.c only
 watches the world, once a step after the logic.
 
-Motion cues use the same observer: two faint HUD rails carry ticks outward and down at a rate proportional to actual speed,
-and stop flowing at rest. Starting acceleration or braking gives a brief 2-pixel pitch response, 3 pixels with the afterburner,
-which settles at steady speed. These cues show in the cockpit; the game's motion and aim are unchanged. The rails are drawn
-only in the bands of rows they cross (`fx_hud`), and `hud_line` steps a line a pixel at a time, skipping a band it misses:
-drawn in every band with a 32-bit divide a row, the rails and the wrecks' line fragments had cost 2.8 ms a frame in the
-explosion demo (2026-11-03: 19.47 ms against 16.68 without them; now 16.89 with no card).
+A motion cue uses the same observer: starting acceleration or braking gives a brief 2-pixel pitch response, 3 pixels with
+the afterburner, which settles at steady speed; it shows in the cockpit, and the game's motion and aim are unchanged. Two
+HUD rails beside the gunsight, ticks flowing down them with the speed, went with it for a night and were taken out (the
+user, 2026-11-03: "they don't add to motion and just make it look like I'm on an elevator"). `hud_line` steps a line a
+pixel at a time and skips a band it misses: drawn in every band with a 32-bit divide a row, those rails and the wrecks'
+first line fragments had cost 2.8 ms a frame in the explosion demo.
 
 | it sees | it starts |
 |---|---|

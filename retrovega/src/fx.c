@@ -13,7 +13,6 @@
 #include "damage.h"
 #include "logic.h"
 #include "fx.h"
-#include "hud.h"
 
 #define N (RV_MAX_SHIP_SLOT + 1)
 #define HIDE_AFTER 2                    /* steps after its death a ship's sprite goes: the flash covers it by then */
@@ -68,20 +67,18 @@ static int16_t pitch_jitter(void)
 #define JUMP_FLASH_STEP 8
 static uint8_t __far g_flash, __far g_flash_red;
 
-/* Synthetic flow beside the gunsight, and a short pitch response at the start of acceleration or braking.
+/* A short pitch response at the start of acceleration or braking (the speed rails beside the gunsight that went with
+ * it are gone: the user, 2026-11-03, "they don't add to motion and just make it look like I'm on an elevator").
  * Q8 pixels; only the picture changes, never the ship's motion or the play's random stream. */
-static uint16_t __far g_flow_phase, __far g_motion_speed;
+static uint16_t __far g_motion_speed;
 static int16_t __far g_motion_bob;
 static int8_t __far g_thrust_dir;
 static uint8_t __far g_motion_valid, __far g_motion_cool, __far g_motion_burning, __far g_motion_idle;
 
-static void motion_frame(uint16_t speed, uint16_t top, int16_t burning)
+static void motion_frame(uint16_t speed, int16_t burning)
 {
     int32_t dv = (int32_t)speed - g_motion_speed;
     int16_t dir = dv > 1 ? 1 : dv < -1 ? -1 : 0;
-    uint32_t step = top ? (uint32_t)speed * 384 / top : 0;
-    if (step > 1536) step = 1536;
-    g_flow_phase = (uint16_t)((g_flow_phase + step) % (48U * 256U));
     g_motion_bob = (int16_t)(g_motion_bob * 7 / 8);
     if (g_motion_cool) g_motion_cool--;
     if (g_motion_valid && dir && ((dir != g_thrust_dir && (!g_motion_cool || dir * g_motion_bob < 0))
@@ -98,21 +95,6 @@ static void motion_frame(uint16_t speed, uint16_t top, int16_t burning)
     }
     g_motion_burning = (uint8_t)burning;
     g_motion_valid = 1;
-}
-
-void fx_hud(int16_t cx, int16_t cy, int16_t y0, int16_t y1)
-{
-    int16_t side, i;
-    if (!g_motion_valid || shipAiState[0] == 9 || cy + 26 <= y0 || cy - 24 >= y1)
-        return;                         /* (the rails' rows, cy - 24 .. cy + 25, none of them in this band) */
-    for (side = -1; side <= 1; side += 2) {
-        hud_line(cx + side * 34, cy - 24, cx + side * 50, cy + 24, UI_PANEL_EDGE);
-        for (i = 0; i < 3; i++) {
-            int16_t p = (int16_t)(((g_flow_phase >> 8) + i * 16) % 48);
-            int16_t x = cx + side * (34 + p / 3), y = cy - 24 + p;
-            hud_line(x, y, x + side * 4, y + 1, UI_GREY4);
-        }
-    }
 }
 
 /* --- the player's own hurt: the view shaken, sparks and smoke in the cockpit, the screen's wash, the alarms ---
@@ -310,7 +292,7 @@ void fx_flight_start(void)
     g_klaxon_at = 0;
     _fmemset(g_spark, 0, sizeof g_spark);
     g_seen_valid = 0;
-    g_flow_phase = g_motion_speed = 0;
+    g_motion_speed = 0;
     g_motion_bob = g_thrust_dir = 0;
     g_motion_valid = g_motion_cool = g_motion_burning = g_motion_idle = 0;
     for (s = 0; s < N; s++) {
@@ -368,7 +350,7 @@ void fx_frame(void)
     int16_t s;
     const RvShipType __far *t = slot_type(0);
     if (t && slot_is_ship(0) && shipAiState[0] != 9)
-        motion_frame((uint16_t)speedLo[0], t->max_kps, rvAfterburner[0]);
+        motion_frame((uint16_t)speedLo[0], rvAfterburner[0]);
     else
         g_motion_bob = 0;
     hurt_frame();

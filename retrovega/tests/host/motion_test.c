@@ -35,34 +35,30 @@ int main(void)
     int i, j, n, pixels;
     int32_t x0;
     int16_t ext[200];
-    uint16_t phase, slow;
     uint32_t rng = g_vis;
 
-    motion_frame(0, 400, 0);
-    phase = g_flow_phase;
-    for (i = 0; i < 60; i++) motion_frame(0, 400, 0);
-    assert(g_flow_phase == phase && g_motion_bob == 0);
-    motion_frame(200, 400, 0);
+    motion_frame(0, 0);
+    for (i = 0; i < 60; i++) motion_frame(0, 0);
+    assert(g_motion_bob == 0);
+    motion_frame(200, 0);
     assert(g_motion_bob > 0 && g_motion_bob <= 2 * 256);
-    slow = g_flow_phase;
-    motion_frame(400, 400, 0);
-    assert((uint16_t)(g_flow_phase - slow) > slow - phase);
-    motion_frame(200, 400, 0);
+    motion_frame(400, 0);
+    motion_frame(200, 0);
     assert(g_motion_bob < 0);           /* immediate braking reverses the kick, even during its cooldown */
-    motion_frame(400, 400, 0);
-    for (i = 0; i < 60; i++) motion_frame(400, 400, 0);
+    motion_frame(400, 0);
+    for (i = 0; i < 60; i++) motion_frame(400, 0);
     assert(g_motion_bob == 0);           /* steady speed has no ongoing acceleration kick */
-    motion_frame(200, 400, 0);
+    motion_frame(200, 0);
     assert(g_motion_bob < 0);
-    for (i = 0; i < 60; i++) motion_frame(200, 400, 0);
-    motion_frame(600, 400, 1);
+    for (i = 0; i < 60; i++) motion_frame(200, 0);
+    motion_frame(600, 1);
     assert(g_motion_bob > 2 * 256 && g_motion_bob <= 3 * 256);
-    for (i = 0; i < 60; i++) motion_frame(0, 400, 0);
-    for (i = 0; i < 60; i++) motion_frame((uint16_t)(i / 2 * 10), 400, 0);
+    for (i = 0; i < 60; i++) motion_frame(0, 0);
+    for (i = 0; i < 60; i++) motion_frame((uint16_t)(i / 2 * 10), 0);
     assert(g_motion_bob == 0);           /* repeated samples during smooth acceleration must not restart the kick */
     for (i = 0; i < 10000; i++) {
-        motion_frame((uint16_t)i, 1, i & 1);
-        assert(g_flow_phase < 48 * 256 && abs(g_motion_bob) <= 3 * 256);
+        motion_frame((uint16_t)i, i & 1);
+        assert(abs(g_motion_bob) <= 3 * 256);
     }
     assert(g_vis == rng);
 
@@ -100,7 +96,6 @@ int main(void)
     explode_place(&eye, &cam, 320, 140, 400);
     for (i = 0; i < 100; i++) { ext[2 * i] = 200; ext[2 * i + 1] = 440; }
     hud_band(100, 200, ext, 100, 100);
-    fx_hud(320, 140, 100, 200);
     explode_draw_begin();
     explode_draw_rest(100, 200, ext, 100, 100);   /* (the debris, clipped to the canopy: debris.c) */
     pixels = 0;
@@ -113,7 +108,7 @@ int main(void)
     for (i = 60; i < 210; i++) explode_frame();
     explode_place(&eye, &cam, 320, 140, 400);
     assert(g_n == 0 && g_nord == 0);
-    printf("MOTION OK: speed flow, acceleration settling, bounded wrecks, parallax, lifetime and canopy clipping; "
-           "%d pixels of rails and debris in the band\n", pixels);
+    printf("MOTION OK: acceleration settling, bounded wrecks, parallax, lifetime and canopy clipping; "
+           "%d pixels of debris in the band\n", pixels);
     return 0;
 }
