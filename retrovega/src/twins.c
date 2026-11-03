@@ -1364,20 +1364,28 @@ static void test_rocks(void)
     xms_free_level(XMS_MISSION);
 }
 
+/* a buffer of the self-test's: upper memory first, conventional when it has none (the host: the heap) */
+static void LZ_FAR *tw_take(unsigned n)
+{
+#ifdef RV_HOST
+    return _fmalloc(n);
+#else
+    void __far *p = rv_alloc_high(n);
+    return p ? p : _fmalloc(n);
+#endif
+}
+
 long twins_selftest(void)
 {
     static const char LZ_FAR s_good[] = "every twin agrees with its asm", LZ_FAR s_bad[] = "A TWIN DISAGREES";
     int k, xms;
     g_tw_seed = 4321;
     g_tw_bad = 0;
-    /* (94 KB in all, more than RVP.EXE has left: the big ones in upper memory, which nothing has yet this early) */
-    g_bc = (unsigned char LZ_FAR *)_fmalloc(TW_ROWS * SCR_W + 64);
-    g_ba = (unsigned char LZ_FAR *)_fmalloc(TW_ROWS * SCR_W + 64);
-#ifdef RV_HOST
-    g_mem = (unsigned char LZ_FAR *)_fmalloc(MEM_BYTES);
-#else
-    g_mem = (unsigned char LZ_FAR *)rv_alloc_high(MEM_BYTES);
-#endif
+    /* (94 KB in all, more than RVP.EXE has left: the three big ones in upper memory, 91 KB of DOSBox's 128, which
+       nothing has yet this early; 2026-11-03 the code grown past what the two bands' 51 KB left in conventional) */
+    g_bc = (unsigned char LZ_FAR *)tw_take(TW_ROWS * SCR_W + 64);
+    g_ba = (unsigned char LZ_FAR *)tw_take(TW_ROWS * SCR_W + 64);
+    g_mem = (unsigned char LZ_FAR *)tw_take(MEM_BYTES);
     g_ext = (short LZ_FAR *)_fmalloc(SCR_H * 2 * sizeof(short));
     g_open = (short LZ_FAR *)_fmalloc(SCR_H * 2 * sizeof(short));
     if (!g_bc || !g_ba || !g_mem || !g_ext || !g_open) {
