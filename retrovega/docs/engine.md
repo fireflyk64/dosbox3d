@@ -804,7 +804,9 @@ click below the canopy works the control under the pointer.
 
 **The systems.** EMCON (K): ACTIVE (the radar emitting: every contact
 identified), PASSIVE (the scope unidentified), OFF (a dark scope, the
-running lights off, the smallest signature). The sensor mode (V): the
+running lights off, the smallest signature). On the scope the chosen target
+is a 5-pixel + in its own colour (the user's: a white one hid friend or
+foe), every other contact a dot. The sensor mode (V): the
 lock's seeker, radar (needs EMCON ACTIVE and the IFF) or infrared (needs a
 hot target: its engines toward us, or burning). IFF (I): off, every
 contact one colour. Master arm (M), decoys (X), the target lock (L: the

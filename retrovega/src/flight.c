@@ -2259,8 +2259,9 @@ static void gather(void)
         a = lf_atan2(y, x);
         g_st.contact[n].x = (short)((lf_cos(a) * rr) >> 14);
         g_st.contact[n].y = (short)(-((lf_sin(a) * rr) >> 14));   /* up is up the screen */
-        g_st.contact[n].colour = s == g_sys.target ? UI_WHITE   /* (unidentified without IFF or the radar emitting) */
-                                 : !g_sys.iff || g_sys.emcon != EMCON_ACTIVE || sys_level(SYS_IFF) >= SYS_WRECKED
+        g_st.contact[n].target = (unsigned char)(s == g_sys.target);
+        /* (grey unidentified: without IFF or the radar emitting) */
+        g_st.contact[n].colour = !g_sys.iff || g_sys.emcon != EMCON_ACTIVE || sys_level(SYS_IFF) >= SYS_WRECKED
                                    || (sys_level(SYS_IFF) && (frameCounter >> (5 - sys_level(SYS_IFF))) & 1) ? UI_GREY5
                                  : commAnimInfo[s] == 0 ? UI_HILITE : commAnimInfo[s] == 1 ? UI_RED : UI_AMBER4;
         n++;

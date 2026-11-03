@@ -373,7 +373,11 @@ static void radar(const RvCockpit __far *c, const CockpitState *st, int y0, int 
     for (i = 0; i < st->ncontacts && i < CP_CONTACTS; i++) {
         int x = c->radar_x + (int)((long)st->contact[i].x * (r - 2) / 256);
         int y = c->radar_y + (int)((long)st->contact[i].y * (r - 2) / 256);
-        gfx_fill(x - 1, y - 1, 2, 2, st->contact[i].colour, y0, y1);
+        if (st->contact[i].target) {    /* the chosen target: a 5-pixel + in its own colour, friend or foe (the user's) */
+            gfx_fill(x - 2, y, 5, 1, st->contact[i].colour, y0, y1);
+            gfx_fill(x, y - 2, 1, 5, st->contact[i].colour, y0, y1);
+        } else
+            gfx_fill(x - 1, y - 1, 2, 2, st->contact[i].colour, y0, y1);
     }
 }
 
