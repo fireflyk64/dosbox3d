@@ -1743,8 +1743,14 @@ public:
     virtual bool start() {
         // The vector is the way the blow travels: against our nose for a
         // hit from ahead (front shield and armor), along it from behind.
+        // RetroVega's is the place the hit lands: 100 km off our nose (or
+        // tail), its front vector 256 long and a km 256 positions.
         Vec3 v = read_vec(vec_slot(ds::gOrientationFrontVector, kPlayerSlot));
-        if (!fromBehind_) {
+        if (g_traits.damageAtPlace) {
+            Vec3 p = read_vec(vec_slot(ds::gPositionVector, kPlayerSlot));
+            int k = fromBehind_ ? -100 : 100;
+            v.x = p.x + v.x * k; v.y = p.y + v.y * k; v.z = p.z + v.z * k;
+        } else if (!fromBehind_) {
             v.x = -v.x; v.y = -v.y; v.z = -v.z;
         }
         write_vec(kTmpVectorOff, v);

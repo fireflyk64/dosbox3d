@@ -44,6 +44,7 @@ static GameTraits traits_of(GameId game) {
         t.victoryCalcAlways = true;
         t.restartChoice = true;
         t.netNeedsConfig = true;
+        t.damageAtPlace = true;
         t.defaultFps = 30;          // LOGIC_HZ: a step a frame, as the game runs alone
         break;
     default:

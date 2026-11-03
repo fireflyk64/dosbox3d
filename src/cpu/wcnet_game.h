@@ -77,6 +77,8 @@ struct GameTraits {
     bool victoryCalcAlways;     // missionVictoryCalc follows every ending, a death too (no early reset): RV
     bool restartChoice;         // the death screen's R/C is the host's (restartChoice thunk): RV
     bool netNeedsConfig;        // networking only with a room or a peer configured (WCROOM, WCHOST, WCPORT): RV
+    bool damageAtPlace;         // do_damage's vector is the place the hit lands (positions), not the way the blow
+                                // travels: RV
     int defaultFps;             // frames a second the hooks pace a flight at (WCFPS overrides; 0: the game's own)
 };
 extern GameTraits g_traits;

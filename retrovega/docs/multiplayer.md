@@ -143,4 +143,6 @@ Multiplayer appears in the logic only as who flies a ship (`rvController`, `RV_F
   campaign was never saved has no bunk to write).
 - **Key-script aids** this added (`src/cpu/wcnet_hooks.cpp`): `T:!ds=NAME` dumps the data segment,
   `T:!land[=SLOT]` lands on that ship (or the first capital ship of ours), `T:waitkey=KEY` waits for the next
-  flight tapping KEY (the death screen's R), `T:!ram=SLOT|npc` puts our ship nose to nose with that one.
+  flight tapping KEY (the death screen's R), `T:!ram=SLOT|npc` puts our ship nose to nose with that one; `T:!hit=QTY[:back]` (WC1's) lands a hit 100 km
+  off our nose (or tail): RetroVega's `do_damage` takes the place a hit lands (`GameTraits.damageAtPlace`), not the
+  way the blow travels.

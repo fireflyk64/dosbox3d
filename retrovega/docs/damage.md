@@ -14,6 +14,15 @@ it breaks at least one system. The VDU and the survival display read `CORE HIT` 
 frantic, a klaxon sounds, smoke drifts up through the cockpit, and the view never stops shaking. A hit bigger than all of it
 still kills outright.
 
+**Against the old game (measured 2026-11-02, the user: is the Schroedinger "equivalent to the hornet ... adjust to be
+similar"):** hits of 14 from ahead (the laser's, or the Photon Mk III's, at about 1,000 km), through the layer's
+`!hit`, until the ship is dying. The old game's Hornet past its armour rolls dice for each hit (a point, a system, now
+and then the core), so it varies: 15 to 23 hits with one every 0.2-0.5 s (19 on average), 19 to 35 with one every
+0.7-1.2 s (26). The Schroedinger takes its shields and armour away on the same hit as the Hornet (the same numbers and
+recharge), and dies on hit 20 at one every 0.25 s, 23 at 0.5 s, 25 to 32 at 0.7-1.2 s (28): a hit or two more on
+average, inside the old game's spread, so nothing was changed. (The reserve is what to trim to match it exactly:
+about 95 points instead of 112.)
+
 ## Where a hit lands
 
 The side is the armour side the hit took. `k_odds` is the table: a change of mind is a number.
