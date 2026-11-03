@@ -815,6 +815,15 @@ const ROOM_HINT = $("lobbyHint").textContent;
 const SOLO_HINT = "A room of one, on this page alone: nobody else comes in. Leave it and join a room with Players at 2 or 3 to fly with company.";
 // The seats of a room this page makes: 1, 2 (the default) or 3.
 const seatCount = () => Math.min(3, Math.max(1, Math.round(Number($("seats").value)) || 2));
+// A phone or a tablet makes a room of one to begin with (the user, 2026-11-03,
+// after a host on a phone was dropped at random: "default the number of
+// people per room in mobile to 1..that way mobile players can try the game
+// but have to specifically try multiplayer to get it"): a device whose
+// pointers are all coarse, a finger (a touch-screen laptop or a tablet with
+// a trackpad has a fine one too, and keyboards).  Players 2 or 3 is a
+// choice there; a room's link or "Join open game" still joins a room.
+const phoneLike = () => { try { return matchMedia("(pointer: coarse)").matches && !matchMedia("(any-pointer: fine)").matches; } catch (e) { return false; } };
+if (phoneLike()) $("seats").value = "1";
 
 function encodeLobby(obj) {
   const json = new TextEncoder().encode(JSON.stringify(obj));

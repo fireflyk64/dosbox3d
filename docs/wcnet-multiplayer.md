@@ -1029,7 +1029,9 @@ top-level README for the workflow).  What differs:
   given as `?env.NAME=value` (so `MIS`, `SERIES` and `WCNET_AUTOKEYS` work
   for testing, as in `scripts/web-smoke.sh`).
 * **A room of one.**  Players 1 in the room form (the counter beside the
-  room code: 1, 2 or 3, 2 by default, not remembered) makes a room on the page alone: no lobby server is
+  room code: 1, 2 or 3, 2 by default and 1 on a phone or a tablet, a device with no fine pointer, since
+  2026-11-03, the user's: a host on a phone was dropped at random, and phone pilots should "have to
+  specifically try multiplayer to get it"; not remembered) makes a room on the page alone: no lobby server is
   asked (`soloGame` in `web/wc.js` stands in for the `P2PGame`), nobody
   else can come in, there is no link, no chat input and nothing to
   advertise.  Fly starts the game with `WCSOLO=1` and no `WCROOM`: the game
