@@ -4,6 +4,9 @@
  *   gx_kernel_test equal FILE.RV   every kernel path against the game's own (lightfield.c's lf_rotate_row), on real views
  *   gx_kernel_test fuzz FILE.RV N  N damaged copies decoded and drawn: for the sanitizers (gx_kernel_test.sh builds it so)
  *   gx_kernel_test bench FILE.RV   how many ships a frame the kernel can draw
+ *   gx_kernel_test debris N        N random wreck clouds (debris.c, E730h), wild values among them, each into a buffer
+ *                                  of exactly its rows: no pixel outside the rows, the columns and the extents (and the
+ *                                  sanitizers on every write); then a cloud's time
  */
 #include <chrono>
 #include <stdio.h>
@@ -182,6 +185,107 @@ static int bench(const char *path)
 	return 0;
 }
 
+static int32_t wild(int32_t usual)     /* a value as the game gives, or now and then a wild one */
+{
+	switch (rnd() % 8) {
+	case 0: return (int32_t)(rnd() << 8) ^ (int32_t)rnd();
+	case 1: return -usual;
+	case 2: return 0;
+	default: return (int32_t)(rnd() % (uint32_t)(usual > 0 ? usual : 1));
+	}
+}
+
+static int debris(long n)
+{
+	long bad = 0, drawn = 0;
+	for (long k = 0; k < n; k++) {
+		RvDebris d;
+		const int stride = 320 + (int)(rnd() % 400), fb_y0 = (int)(rnd() % 50), rows = 1 + (int)(rnd() % 120);
+		const int y0 = fb_y0 + (int)(rnd() % 8) - 2, y1 = fb_y0 + rows - (int)(rnd() % 3);
+		const int xa = (int)(rnd() % 80) - 20, xb = stride - (int)(rnd() % 80) + 20;
+		std::vector<uint8_t> fb((size_t)rows * stride);   /* rows fb_y0 .. fb_y0 + rows - 1, no more: ASan's edges */
+		std::vector<int16_t> ext;
+		const bool use_ext = rnd() % 2;
+		const int ext_y0 = fb_y0 + (int)(rnd() % 20) - 10, ext_rows = (int)(rnd() % 140);
+		for (int i = 0; i < ext_rows; i++) {
+			ext.push_back((int16_t)(rnd() % 400 - 50));
+			ext.push_back((int16_t)(rnd() % 800 - 50));
+		}
+		ext.push_back(0);                   /* (past the table: never empty, so a table of no rows is not "none") */
+		ext.push_back(0);
+		d.seed = (uint16_t)rnd();
+		d.age = (uint16_t)(rnd() % 8 ? rnd() % 220 : rnd());
+		d.life = (uint16_t)(rnd() % 8 ? 210 : rnd());
+		d.count = (uint16_t)(rnd() % 8 ? 40 : rnd());
+		d.focal = (int16_t)(rnd() % 8 ? 320 : (int)rnd());
+		d.cx = (int16_t)(rnd() % 8 ? 320 : (int)rnd());
+		d.cy = (int16_t)(rnd() % 8 ? 100 : (int)rnd());
+		d.x = wild(20000);
+		d.y = wild(20000);
+		d.z = rnd() % 4 ? 200 + wild(40000) : wild(100);
+		d.spread = wild(8000);
+		d.piece = wild(200);
+		for (int i = 0; i < 9; i++)
+			d.m[i] = (int16_t)(rnd() % 8 ? (int)(rnd() % 513) - 256 : (int)rnd());
+		for (int i = 0; i < DEBRIS_SHADES; i++) {
+			d.metal[i] = (uint8_t)(1 + i);
+			d.hot[i] = (uint8_t)(101 + i);
+		}
+		drawn += rv_debris_draw(&d, fb.data(), fb_y0, stride, y0, y1, xa, xb, use_ext ? ext.data() : 0, ext_y0,
+		                        use_ext ? ext_rows : 0);
+		for (int r = 0; r < rows; r++) {
+			const int y = fb_y0 + r;
+			int a = xa < 0 ? 0 : xa, b = xb > stride ? stride : xb;
+			bool row_ok = y >= y0 && y < y1;
+			if (use_ext) {
+				const int i = y - ext_y0;
+				if (i < 0 || i >= ext_rows)
+					row_ok = false;
+				else {
+					if (ext[2 * i] > a) a = ext[2 * i];
+					if (ext[2 * i + 1] < b) b = ext[2 * i + 1];
+				}
+			}
+			for (int x = 0; x < stride; x++)
+				if (fb[(size_t)r * stride + x] && (!row_ok || x < a || x >= b)) {
+					if (bad++ < 5)
+						fprintf(stderr, "cloud %ld: a pixel at %d,%d outside rows %d..%d, columns %d..%d\n", k, x, y, y0, y1,
+						        a, b);
+				}
+		}
+	}
+	if (bad) {
+		printf("GX DEBRIS FAIL: %ld pixels outside where they may go\n", bad);
+		return 1;
+	}
+	RvDebris d;
+	memset(&d, 0, sizeof d);
+	d.seed = 77;
+	d.life = 210;
+	d.count = 40;
+	d.focal = 320;
+	d.cx = 320;
+	d.cy = 100;
+	d.z = 16 * 900;                     /* 900 km off, a fighter's cloud */
+	d.piece = 60;
+	d.m[0] = d.m[4] = d.m[8] = 256;
+	for (int i = 0; i < DEBRIS_SHADES; i++)
+		d.metal[i] = d.hot[i] = (uint8_t)(1 + i);
+	std::vector<uint8_t> fb(640 * 350);
+	double ms = 0;
+	long reps = 0, px = 0;
+	for (; reps < 4000 && ms < 300; reps++) {
+		d.age = (uint16_t)(6 + reps % 200);
+		d.spread = 960L * (d.age + 12) / 48;
+		auto t0 = std::chrono::steady_clock::now();
+		px += rv_debris_draw(&d, fb.data(), 0, 640, 0, 350, 0, 640, 0, 0, 0);
+		ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+	}
+	printf("GX DEBRIS OK: %ld clouds, %ld pixels, none outside; a cloud of 40 shards %.1f us (%ld pixels)\n", n, drawn,
+	       ms * 1000 / reps, px / reps);
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	if (argc >= 3 && !strcmp(argv[1], "views")) {
@@ -194,6 +298,7 @@ int main(int argc, char **argv)
 	if (argc >= 3 && !strcmp(argv[1], "equal")) return equal(argv[2]);
 	if (argc >= 4 && !strcmp(argv[1], "fuzz")) return fuzz(argv[2], atol(argv[3]));
 	if (argc >= 3 && !strcmp(argv[1], "bench")) return bench(argv[2]);
+	if (argc >= 3 && !strcmp(argv[1], "debris")) return debris(atol(argv[2]));
 	fprintf(stderr, "usage: gx_kernel_test equal|bench FILE.RV | fuzz FILE.RV N\n");
 	return 2;
 }

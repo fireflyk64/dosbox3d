@@ -16,6 +16,7 @@
 #define GX_NAME 0xE710
 #define GX_STATUS 0xE711
 #define GX_DRAW 0xE720
+#define GX_DEBRIS 0xE730                /* (1.1) a wreck's debris */
 #define GX_SIG_IN_BX 0x5256             /* 'RV' */
 #define GX_SIG_IN_CX 0x4758             /* 'GX' */
 #define GX_SIG_OUT_BX 0x7867            /* 'gx' */
@@ -43,12 +44,15 @@ typedef struct {
     unsigned short pad0, pad1;
     unsigned long stat_draws, stat_px, stat_us;
     unsigned short stat_ready, stat_waiting;
+    RvDebris debris;                    /* (1.1) GX_DEBRIS: the cloud (debris.h, packed) */
 } GxBlock;
 #pragma pack()
-typedef char gx_block_is_64_bytes[sizeof(GxBlock) == 64 ? 1 : -1];
+typedef char gx_block_is_128_bytes[sizeof(GxBlock) == 128 ? 1 : -1];
 
 static GxBlock __far g_block;
 static int g_present, g_setting = 1;    /* (high detail is on by default) */
+static int g_minor;                     /* the card's version's second number: 1 and up draws debris */
+static unsigned long __far g_debris_draws;
 static unsigned long __far g_fell[6];   /* draws refused, by reason: g_fell[1] -1 .. g_fell[5] -5 */
 static unsigned long __far g_drawn;
 
@@ -75,6 +79,7 @@ int gx_init(void)
         return 0;
     }
     RV_LOG("gx: the sprite accelerator answers, version %u.%u", (unsigned)r.h.ch, (unsigned)r.h.cl);
+    g_minor = r.h.cl;
     segread(&s);
     s.es = FP_SEG((GxBlock __far *)&g_block);
     r.x.bx = FP_OFF((GxBlock __far *)&g_block);
@@ -101,6 +106,30 @@ void gx_want(const unsigned char *types, int n)
         g_block.result = GX_E_NO_ANSWER;
         gx_int(GX_NAME);
     }
+}
+
+int gx_debris_on(void) { return g_present && g_setting && g_minor >= 1; }
+
+RvDebris __far *gx_debris_args(void) { return &g_block.debris; }
+
+void gx_debris(int y0, int y1, const short __far *ext, int ext_y0, int ext_rows)
+{
+    GxBlock __far *b = &g_block;
+    if (y0 >= y1 || !gx_debris_on())
+        return;
+    b->fb = vid_row(y0);
+    b->stride = SCR_W;
+    b->fb_y0 = (short)y0;
+    b->y0 = (short)y0;
+    b->y1 = (short)y1;
+    b->xa = 0;
+    b->xb = SCR_W;
+    b->ext = ext;
+    b->ext_y0 = (short)ext_y0;
+    b->ext_rows = (short)ext_rows;
+    b->result = GX_E_NO_ANSWER;
+    gx_int(GX_DEBRIS);
+    g_debris_draws++;
 }
 
 void gx_set(int on)
@@ -164,7 +193,10 @@ void gx_log(void)
     gx_int(GX_STATUS);
     if (g_block.result >= 0)
         rv_logf(s_c, g_block.stat_draws, g_block.stat_px / 1024, g_block.stat_us / 1000, g_block.stat_ready, g_block.stat_waiting);
+    if (g_debris_draws)
+        RV_LOG("gx: this flight %lu runs of wreck debris by the card", g_debris_draws);
     g_drawn = 0;
+    g_debris_draws = 0;
     _fmemset(g_fell, 0, sizeof g_fell);
 }
 

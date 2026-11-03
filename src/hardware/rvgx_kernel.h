@@ -12,6 +12,7 @@
 /* the game's own placement and turn, so a ship lands exactly where the native build's does */
 extern "C" {
 #include "../../retrovega/src/lightfield.c"
+#include "../../retrovega/src/debris.c"   /* (a wreck's debris: E730h) */
 }
 
 #define RVGX_VIEW_MAX 4096              /* a view's width or height: more is a damaged file */

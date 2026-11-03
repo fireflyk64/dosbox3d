@@ -94,6 +94,7 @@ for c in hle fixed flightloop asm_twins fsguard pcm; do
     $CC $CFLAGS -c -o "$OUT/obj/h_$c.o" "host/$c.c"
 done
 $CC $CFLAGS -c -o "$OUT/obj/twins.o" src/twins.c
+$CC $CFLAGS -c -o "$OUT/obj/debris.o" src/debris.c   # (a wreck's debris: the card's code, drawn here; never in RV.EXE)
 $CC $CFLAGS $SDLF -c -o "$OUT/obj/h_play.o" host/play.c
 $CC $ARCHF $OPT -g3 -c -o "$OUT/obj/h_fmt.o" host/fmt.c              # (without rvhost.h: its sprintf is this)
 $CC $CFLAGS -c -o "$OUT/obj/thunks.o" "$OUT/thunks.c"

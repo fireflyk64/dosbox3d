@@ -46,6 +46,7 @@ program that happens to use AH=E7h cannot be mistaken for a card.
 | `E710h` | Name a slot (below): what the slot `bundle` is to hold. Returns at once; nothing waits for the network. |
 | `E711h` | Status: fills the `stat_` fields. |
 | `E720h` | Draw. `result` 0 when drawn. |
+| `E730h` | (1.1) A wreck's debris: the block's frame buffer fields (16 to 38) and its debris part (64 to 127). `result` 0. |
 
 ### The block (64 bytes, packed, little-endian)
 
@@ -68,6 +69,10 @@ program that happens to use AH=E7h cannot be mistaken for a card.
 | 40 | `far name` | `E710h`: offset then segment of the name, NUL-terminated; 0:0 or an empty name empties the slot |
 | 48, 52, 56 | `uint32 stat_draws, stat_px, stat_us` | `E711h`: draws, pixels, host microseconds since the emulator started |
 | 60, 62 | `uint16 stat_ready, stat_waiting` | `E711h`: bundles in, and on the way |
+| 64 .. 127 | `RvDebris` | (1.1, `E730h`) the cloud, as `retrovega/src/debris.h` has it packed: `uint16 seed, age, life, count` (64), `int16 focal, cx, cy` (72), `int32 x, y, z` (78: its centre in camera space, 16ths of a km), `int32 spread, piece` (90), `int16 m[9]` (98: world to camera, 256 = 1), `uint8 metal[6], hot[6]` (116, 122: palette entries, dark to light) |
+
+From 1.1 the block is 128 bytes. A 1.0 card reads none of the second half, and the game draws debris only when the card
+says 1.1 or later (`gx_debris_on`).
 
 The frame buffer must be ordinary conventional or upper memory (not video memory, not an EMS page frame): anything else
 is `-5` and the game draws for itself. Pixels of value 0 in a picture are clear.
@@ -119,6 +124,10 @@ mirrored headings are their pair's, flag 1).
   view checked (the data comes over a network), and `rvgx_draw`, the turn and scale by inverse mapping.
 - It takes `lf_rotate_setup` and `lf_rotate_span` from the game's own `src/lightfield.c`, so a ship lands exactly where
   the native build's does.
+- A wreck's debris (`E730h`) is the game's own `src/debris.c` as well, the same code the native builds draw it with:
+  forty tumbling shards lit as they turn, glowing while hot, and embers, all from the cloud's seed and age, clipped to the
+  rows, the columns and the cockpit's opening like a ship. Only the card draws it: DOS alone shows no debris (the user's
+  design, 2026-11-03). The game makes the call only for the bands the cloud's box reaches.
 - A draw takes no emulated time, and it writes straight into the emulated memory. The game's clock does not see it; if
   it ever cost too much, the emulator would fall behind real time rather than the game slowing down.
 
@@ -147,7 +156,9 @@ several dozen ships are nothing. A view is expanded once (4-9 us) and kept. Ther
 - A ship's box in the zoom scene, this card against the native build's picture: identical in 142 of 142 frames with the
   ship logged at one place (2026-11-01; both builds, `/zoom 1 /bench 0 /record 2`, compare `R*.BMP` where `lightfield:` agrees).
 - `tests/host/gx_kernel_test.sh`: every draw path against the game's `lf_rotate_row` on real art (clips, extents, mirror,
-  rolls, scales), damaged files decoded and drawn under ASan and UBSan, then the table above.
+  rolls, scales), damaged files decoded and drawn under ASan and UBSan, then the table above; and `debris N`: N random
+  clouds, wild values among them, each into a buffer of exactly its rows, with no pixel outside the rows, the columns and
+  the extents (50,000 clean, 2026-11-03), then a cloud's time (9.4 us natively).
 - `GX=1 EXE=RVT.EXE tests/run.sh tests/gxzoom.txt /zoom 1 /bench 0`: the zoom scene with the key flipping, a shot of each.
   `GXDELAY=4000` shows the blocks giving way when the bundle lands; `RVGX_DIR=/empty` stays blocks.
 - `DOSBOX=/usr/bin/dosbox tests/run.sh tests/gx.txt`: a stock DOSBox: `gx: no sprite accelerator`, and the flight as ever.

@@ -100,11 +100,11 @@ static void motion_frame(uint16_t speed, uint16_t top, int16_t burning)
     g_motion_valid = 1;
 }
 
-void fx_hud(int16_t cx, int16_t cy)
+void fx_hud(int16_t cx, int16_t cy, int16_t y0, int16_t y1)
 {
     int16_t side, i;
-    if (!g_motion_valid || shipAiState[0] == 9)
-        return;
+    if (!g_motion_valid || shipAiState[0] == 9 || cy + 26 <= y0 || cy - 24 >= y1)
+        return;                         /* (the rails' rows, cy - 24 .. cy + 25, none of them in this band) */
     for (side = -1; side <= 1; side += 2) {
         hud_line(cx + side * 34, cy - 24, cx + side * 50, cy + 24, UI_PANEL_EDGE);
         for (i = 0; i < 3; i++) {

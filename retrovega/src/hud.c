@@ -45,16 +45,28 @@ void hud_vline(int16_t x, int16_t ya, int16_t yb, int16_t colour)
         hud_run(x, x + 1, ya, colour);
 }
 
+/* a line, a point a step along its longer axis (Bresenham's: no division, a 32-bit one being a library call on DOS),
+ * and nothing at all for a band it does not touch: the flight draws its view in bands and calls the HUD's lines in
+ * each (the rails and the wreck fragments cost 2.6 ms a frame that way, 2026-11-02) */
 void hud_line(int16_t xa, int16_t ya, int16_t xb, int16_t yb, int16_t colour)
 {
-    int16_t dx = xb - xa, dy = yb - ya, n = abs(dx) > abs(dy) ? abs(dx) : abs(dy), i;
-    if (!n)
-        n = 1;
-    if (n > 2000)
+    int16_t dx = abs(xb - xa), dy = abs(yb - ya), sx = xa < xb ? 1 : -1, sy = ya < yb ? 1 : -1, err, n;
+    if ((ya < g_y0 && yb < g_y0) || (ya >= g_y1 && yb >= g_y1))
         return;
-    for (i = 0; i <= n; i++) {
-        int16_t x = xa + (int16_t)((int32_t)dx * i / n), y = ya + (int16_t)((int32_t)dy * i / n);
-        hud_run(x, x + 1, y, colour);
+    if (dx > 2000 || dy > 2000)
+        return;
+    err = (dx > dy ? dx : -dy) / 2;
+    for (n = dx > dy ? dx : dy; n >= 0; n--) {
+        int16_t e = err;
+        hud_run(xa, xa + 1, ya, colour);
+        if (e > -dx) {
+            err -= dy;
+            xa += sx;
+        }
+        if (e < dy) {
+            err += dx;
+            ya += sy;
+        }
     }
 }
 

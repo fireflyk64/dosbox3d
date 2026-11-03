@@ -2029,7 +2029,10 @@ watches the world, once a step after the logic.
 
 Motion cues use the same observer: two faint HUD rails carry ticks outward and down at a rate proportional to actual speed,
 and stop flowing at rest. Starting acceleration or braking gives a brief 2-pixel pitch response, 3 pixels with the afterburner,
-which settles at steady speed. These cues show in the cockpit; the game's motion and aim are unchanged.
+which settles at steady speed. These cues show in the cockpit; the game's motion and aim are unchanged. The rails are drawn
+only in the bands of rows they cross (`fx_hud`), and `hud_line` steps a line a pixel at a time, skipping a band it misses:
+drawn in every band with a 32-bit divide a row, the rails and the wrecks' line fragments had cost 2.8 ms a frame in the
+explosion demo (2026-11-03: 19.47 ms against 16.68 without them; now 16.89 with no card).
 
 | it sees | it starts |
 |---|---|
@@ -2044,11 +2047,18 @@ A death must keep its 9 to the end of a step (the slot may be cleared any
 time after): fx.c looks between steps. The pictures and the sounds take
 their own random stream, never `game_rand`, and are each machine's own.
 Ship destruction blasts use a 40% larger radius relative to the hull, including the six capital-ship bursts and their final blast.
-Each destroyed ship also leaves eight tumbling fragments for seven seconds. Their world positions follow the wreck's last velocity
-and spread from its location, so flying past or turning gives parallax. Three clouds at most reuse the existing 16-effect pool;
-new explosions take priority over old wrecks. A fixed 24-piece projection cache (288 bytes) is depth sorted with the explosions
-and ships, and clipped to the canopy. No extra sprite art or heap allocations. `tests/host/motion_test.sh` checks the limits,
-settling, expiry, parallax and clipping with the host sanitizers.
+Each destroyed ship also leaves a cloud of debris for seven seconds: forty tumbling shards of hull, lit by their faces as
+they turn, glowing while hot (one in four for longer), and embers flying out ahead of them (`src/debris.c`). Every piece
+follows from the wreck's seed and age in world space, about the wreck's coasting position, so flying past or turning gives
+parallax and nothing is kept between frames. Three clouds at most share the 16-effect pool; new explosions take priority
+over old wrecks. The debris is drawn on the host, not by RV.EXE (the user's design, 2026-11-03: "those FX could simply not
+appear for dos-only players ... it's only visual"): in the browser's DOSBox by the sprite accelerator's E730h
+(docs/gx.md), in the native builds by the same `debris.c`; on DOS without the card there is none, and no wreck is even
+placed. A cloud goes in the explosions' depth order (`explode_place`: drawn in its centre's turn, any row when the eye is
+in it), and a band its box misses makes no call. RV.EXE writes the cloud straight into the card's block (`gx_debris_args`):
+the effects cost it 2.3 KB of code with the card's call (free DOS memory before a flight 20 KB, 22 before them); the
+host takes some 9 us a cloud a band (`tests/host/gx_kernel_test.sh`, natively). `tests/host/motion_test.sh` checks the
+limits, settling, expiry, parallax and clipping with the host sanitizers, the debris drawn as the native builds draw it.
 
 **The explosion (explode.c, tools/explode.py, EXPLODE.DAT, 37 KB in XMS).**
 The art is heat, not colour: eight cels of 48 x 48 (0 clear .. 255 white

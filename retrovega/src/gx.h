@@ -8,6 +8,7 @@
 #define GX_H
 
 #include "rv.h"
+#include "debris.h"
 
 #ifdef RV_HOST                          /* (the native builds draw every ship exactly already: no card) */
 #define gx_init() 0
@@ -18,6 +19,12 @@
 #define gx_toggle() ((void)0)
 #define gx_log() ((void)0)
 #define gx_draw(type, view, mirror, x, y, scale, roll, y0, y1, xa, xb, ext, ext_y0, ext_rows) ((void)(view), (void)(mirror), -1)
+/* (the debris drawn here, by the card's own code: debris.c; its arguments explode.c's) */
+extern RvDebris g_host_debris;
+#define gx_debris_on() 1
+#define gx_debris_args() (&g_host_debris)
+#define gx_debris(y0, y1, ext, ext_y0, ext_rows) \
+    ((void)rv_debris_draw(&g_host_debris, vid_row(y0), (y0), SCR_W, (y0), (y1), 0, SCR_W, (ext), (ext_y0), (ext_rows)))
 #else
 
 int gx_init(void);                      /* asks whether the card is there (once): 1 when it is */
@@ -36,6 +43,13 @@ void gx_want(const unsigned char *types, int n);
  * and the caller is to draw it (GX_E_*) */
 int gx_draw(unsigned type, int view, int mirror, int x, int y, int scale, int roll, int y0, int y1, int xa, int xb,
             const short __far *ext, int ext_y0, int ext_rows);
+
+/* a wreck's debris (debris.h): its cloud written into gx_debris_args (the card's own block), then drawn by the card
+ * into the run being drawn, as gx_draw's; nothing without a card of 1.1 or later, or with the setting off: DOS alone
+ * shows no debris (the user's ruling, 2026-11-03) */
+int gx_debris_on(void);
+RvDebris __far *gx_debris_args(void);
+void gx_debris(int y0, int y1, const short __far *ext, int ext_y0, int ext_rows);
 
 void gx_log(void);                      /* the flight's tally, then zero */
 #endif

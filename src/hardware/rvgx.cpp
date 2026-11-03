@@ -60,8 +60,9 @@ enum {
 	FN_NAME = 0x10,       /* the block's bundle: a slot; its name: what it is to hold, replacing what it holds */
 	FN_STATUS = 0x11,     /* the block's stat_* filled in */
 	FN_DRAW = 0x20,       /* the block's bundle .. ext_rows; its result says how it went */
+	FN_DEBRIS = 0x30,     /* (1.1) a wreck's debris: the block's fb .. ext_rows and its debris part; result 0 */
 	RVGX_SIG_IN_BX = 0x5256, RVGX_SIG_IN_CX = 0x4758, RVGX_SIG_OUT_BX = 0x7867,
-	RVGX_VERSION = 0x0100
+	RVGX_VERSION = 0x0101
 };
 
 /* the result word */
@@ -73,7 +74,11 @@ enum {
 	B_FB_OFF = 16, B_FB_SEG = 18, B_STRIDE = 20, B_FB_Y0 = 22, B_Y0 = 24, B_Y1 = 26, B_XA = 28, B_XB = 30,
 	B_EXT_OFF = 32, B_EXT_SEG = 34, B_EXT_Y0 = 36, B_EXT_ROWS = 38,
 	B_NAME_OFF = 40, B_NAME_SEG = 42,
-	B_STAT_DRAWS = 48, B_STAT_PX = 52, B_STAT_US = 56, B_STAT_READY = 60, B_STAT_WAITING = 62
+	B_STAT_DRAWS = 48, B_STAT_PX = 52, B_STAT_US = 56, B_STAT_READY = 60, B_STAT_WAITING = 62,
+	/* (1.1) the debris part, the game's RvDebris (retrovega/src/debris.h) packed */
+	B_D_SEED = 64, B_D_AGE = 66, B_D_LIFE = 68, B_D_COUNT = 70, B_D_FOCAL = 72, B_D_CX = 74, B_D_CY = 76,
+	B_D_X = 78, B_D_Y = 82, B_D_Z = 86, B_D_SPREAD = 90, B_D_PIECE = 94, B_D_M = 98, B_D_METAL = 116, B_D_HOT = 122,
+	B_SIZE = 128
 };
 
 #define RVGX_SLOTS 256
@@ -351,6 +356,59 @@ static int draw(void)
 	return 0;
 }
 
+/* a wreck's debris (E730h): the block's debris part into the kernel's RvDebris, the target checked as draw()'s */
+static int debris(void)
+{
+	const auto t0 = std::chrono::steady_clock::now();
+	const int stride = rw(B_STRIDE), fb_y0 = rs(B_FB_Y0);
+	int y0 = rs(B_Y0), y1 = rs(B_Y1), xa = rs(B_XA), xb = rs(B_XB);
+	RvDebris d;
+	d.seed = rw(B_D_SEED);
+	d.age = rw(B_D_AGE);
+	d.life = rw(B_D_LIFE);
+	d.count = rw(B_D_COUNT);
+	d.focal = rs(B_D_FOCAL);
+	d.cx = rs(B_D_CX);
+	d.cy = rs(B_D_CY);
+	d.x = (int32_t)real_readd(g_block_seg, g_block_off + B_D_X);
+	d.y = (int32_t)real_readd(g_block_seg, g_block_off + B_D_Y);
+	d.z = (int32_t)real_readd(g_block_seg, g_block_off + B_D_Z);
+	d.spread = (int32_t)real_readd(g_block_seg, g_block_off + B_D_SPREAD);
+	d.piece = (int32_t)real_readd(g_block_seg, g_block_off + B_D_PIECE);
+	for (int i = 0; i < 9; i++)
+		d.m[i] = rs(B_D_M + 2 * i);
+	for (int i = 0; i < DEBRIS_SHADES; i++) {
+		d.metal[i] = real_readb(g_block_seg, g_block_off + B_D_METAL + i);
+		d.hot[i] = real_readb(g_block_seg, g_block_off + B_D_HOT + i);
+	}
+	if (y0 < fb_y0) y0 = fb_y0;
+	if (xa < 0) xa = 0;
+	if (xb > stride) xb = stride;
+	if (y0 >= y1 || xa >= xb)
+		return 0;
+	const PhysPt fb = PhysMake(rw(B_FB_SEG), rw(B_FB_OFF));
+	if (stride < 1 || y1 - fb_y0 > RVGX_VIEW_MAX || !plain_ram(fb + (y0 - fb_y0) * stride, (uint32_t)(y1 - y0) * stride))
+		return RVGX_E_TARGET;
+	const uint16_t ext_seg = rw(B_EXT_SEG), ext_off = rw(B_EXT_OFF);
+	int ext_y0 = rs(B_EXT_Y0), ext_rows = rs(B_EXT_ROWS);
+	if (ext_seg || ext_off) {
+		if (y1 - y0 > RVGX_EXT_ROWS)
+			return RVGX_E_TARGET;
+		for (int oy = y0; oy < y1; oy++) {
+			const int i = oy - ext_y0;
+			const bool in = i >= 0 && i < ext_rows;
+			g_ext[2 * (oy - y0)] = in ? (int16_t)real_readw(ext_seg, (uint16_t)(ext_off + 4 * i)) : 0;
+			g_ext[2 * (oy - y0) + 1] = in ? (int16_t)real_readw(ext_seg, (uint16_t)(ext_off + 4 * i + 2)) : 0;
+		}
+		ext_y0 = y0;
+		ext_rows = y1 - y0;
+	}
+	g_px += rv_debris_draw(&d, GetMemBase() + fb, fb_y0, stride, y0, y1, xa, xb, ext_seg || ext_off ? g_ext : 0, ext_y0,
+	                       ext_rows);
+	g_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count();
+	return 0;
+}
+
 static bool RVGX_Multiplex(void)
 {
 	if (reg_ah != RVGX_AH)
@@ -380,6 +438,10 @@ static bool RVGX_Multiplex(void)
 	case FN_DRAW:
 		if (g_attached)
 			put_result(draw());
+		return true;
+	case FN_DEBRIS:
+		if (g_attached)
+			put_result(debris());
 		return true;
 	}
 	return false;
