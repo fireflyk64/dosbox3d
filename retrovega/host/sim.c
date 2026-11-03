@@ -53,7 +53,8 @@ static const char k_usage[] =
     "                   (tests/wc1/README.md): a line a ship, the shots and the hits\n"
     "  --hunt S         the player faces the nearest enemy every S seconds with the trigger held (a test pilot)\n"
     "  --nodamage       the player takes no damage (playerCanBeDamaged 0: a long look at the enemies)\n"
-    "keys: arrows steer, Q E roll, Space fires, Enter a missile, Tab afterburner, + - F S the throttle, A autopilot,\n"
+    "keys: arrows steer, Q E (keypad Ins Del) roll, Space fires, Enter a missile, Tab (keypad *) afterburner,\n"
+    "      + - F S \\ Backspace the throttle, A autopilot,\n"
     "      M mouse steering on/off (or hold the right button), P pause, N a step while paused, Esc ends\n";
 
 static struct {
@@ -213,13 +214,13 @@ static void controls(void)
         g_pilot.steer_y = (int8_t)(oy > 12 ? (oy > 80 ? 9 : oy * 9 / 80) : oy < -12 ? (oy < -80 ? -9 : oy * 9 / 80) : 0);
     } else
         g_pilot.steer_x = g_pilot.steer_y = 0;
-    g_pilot.roll = (int8_t)((k[SDL_SCANCODE_E] != 0) * 9 - (k[SDL_SCANCODE_Q] != 0) * 9);
+    g_pilot.roll = (int8_t)((k[SDL_SCANCODE_E] || k[SDL_SCANCODE_KP_PERIOD]) * 9 - (k[SDL_SCANCODE_Q] || k[SDL_SCANCODE_KP_0]) * 9);
     g_pilot.guns = (uint8_t)(k[SDL_SCANCODE_SPACE] || (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)));
     g_pilot.missile = (uint8_t)g_missile_key;
     g_missile_key = 0;
     g_autopilot = (uint8_t)g_autopilot_key;
     g_autopilot_key = 0;
-    g_pilot.afterburner = (uint8_t)(k[SDL_SCANCODE_TAB] != 0);
+    g_pilot.afterburner = (uint8_t)(k[SDL_SCANCODE_TAB] || k[SDL_SCANCODE_KP_MULTIPLY]);   /* (the game's keys) */
     if (g_throttle_step > 0)
         setSpeed[0] += top / 10;
     else if (g_throttle_step < 0)
@@ -253,7 +254,8 @@ static void events(void)
             case SDLK_PLUS: case SDLK_EQUALS: case SDLK_KP_PLUS: g_throttle_step = 1; break;
             case SDLK_MINUS: case SDLK_KP_MINUS: g_throttle_step = -1; break;
             case SDLK_f: if (slot_type(0)) setSpeed[0] = slot_type(0)->max_kps; break;
-            case SDLK_s: setSpeed[0] = 0; break;
+            case SDLK_s: case SDLK_BACKSPACE: setSpeed[0] = 0; break;
+            case SDLK_BACKSLASH: if (slot_type(0)) setSpeed[0] = slot_type(0)->max_kps; break;
             case SDLK_m: g_mouse_steer = !g_mouse_steer; break;
             case SDLK_p: g_paused = !g_paused; break;
             case SDLK_n: case SDLK_PERIOD: g_step_once = 1; break;

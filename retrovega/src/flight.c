@@ -2110,7 +2110,8 @@ static void systems_tick(void)
     /* the afterburner: Tab held, while there is fuel.  The fuel as the old game's: the throttle open burns a little, the
      * afterburner much more, the type's rates in thousandths of a point a step (data/ships.csv fuel: a Hornet's tank is
      * 65 s of afterburner, 44 minutes of throttle); Kit's reserve first */
-    g_sys.burning = in_key_down(0x0F) && g_sys.fuel > 0 && t && damage_burner_ok();
+    g_sys.burning = (in_key_down(0x0F) || in_key_down(0x37)) && g_sys.fuel > 0 && t && damage_burner_ok();   /* Tab, or
+                                           the keypad's * (the user, 2026-11-03: "keypad asterisk did afterburner") */
     rvAfterburner[0] = g_sys.burning;
     if (t) {
         g_fuel_milli += (setSpeed[0] > 0 ? t->fuel_cruise : 0) + (g_sys.burning ? t->fuel_burn : 0);
@@ -3266,7 +3267,12 @@ unsigned short __far __cdecl flight_keys(void)
                                            a mission is the browser's key, ignored */
     if (in.key == KEY_ESC && vdu_page(0) == VDU_L_COMM)
         comm_key(27);                   /* (the comm menu closed) */
-    if (in.key == KEY_CHAR && in.ch >= '0' && in.ch <= '9' && vdu_page(0) == VDU_L_COMM)
+    if (in.key == KEY_BACKSPACE)
+        setSpeed[0] = 0;                /* Backspace stops and \ is full speed, as in the old game (the user, 2026-11-03: "ensure
+                                           the backspace key also sets desired speed to zero in space"; "and \ sets to full
+                                           speed") */
+    if (in.key == KEY_CHAR && in.ch >= '0' && in.ch <= '9' && vdu_page(0) == VDU_L_COMM && !(in.ch == '0' && in_key_down(0x52)))
+                                        /* (the keypad's Ins with Num Lock on is a 0 too: a roll, not a pick) */
         comm_key(in.ch);                /* (a pick in the comm menu) */
     else if (in.key == KEY_CHAR) {
 #ifdef RV_TESTS
@@ -3278,7 +3284,7 @@ unsigned short __far __cdecl flight_keys(void)
             ships_detail_toggle();
         if (in.ch == '+' || in.ch == '=') setSpeed[0] += g_st.max_speed / 10;
         if (in.ch == '-') setSpeed[0] = setSpeed[0] > (unsigned long)g_st.max_speed / 10 ? setSpeed[0] - g_st.max_speed / 10 : 0;
-        if (in.ch == 'f' || in.ch == 'F') setSpeed[0] = g_st.max_speed;
+        if (in.ch == 'f' || in.ch == 'F' || in.ch == '\\') setSpeed[0] = g_st.max_speed;
         if (in.ch == 's' || in.ch == 'S') setSpeed[0] = 0;
         if (in.ch == 'a' || in.ch == 'A') {
             if (!g_sim)                 /* (nowhere to go, and it is a hook's site) */
@@ -3302,7 +3308,7 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.ch == ')') damage_test_breach();
         if (in.ch == '_') damage_test_some();
         if (in.ch == '^') damage_test_all();
-        if (in.ch == '\\') logic_test_cleared();   /* (a script's way to land: cleared, whatever has been flown) */
+        if (in.ch == '&') logic_test_cleared();    /* (a script's way to land: cleared, whatever has been flown) */
         if (in.ch == '@') {             /* (a clean ship for the scenes after a landing: no benchmark scenery, the armour whole) */
             const RvShipType __far *t = slot_type(0);
             g_damage_at = 0xFFFFFFFFUL;
@@ -3319,7 +3325,7 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.ch == '|') logic_test_kill_carrier();
         if (in.ch == '^') logic_test_jump_out();
         if (in.ch == '~') logic_test_kill_wingman();
-        if (in.ch == '\\' && g_sim) simulator_test_kill();
+        if (in.ch == '&' && g_sim) simulator_test_kill();
 #endif
     }
     {   /* Ctrl+E pulls the eject handle (twice within two seconds ejects); a click on the panel works its control */

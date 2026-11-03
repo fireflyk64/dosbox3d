@@ -264,8 +264,10 @@ static int arrows(void)
     for (i = 0; i < 4; i++)
         if (g_script ? ticks() < g_hold_until[i] : g_down[g_arrow_scan[i]] != 0)
             m |= 1 << i;
-    if (g_script ? ticks() < g_hold_until[4] : g_down[0x10] != 0) m |= 16;
-    if (g_script ? ticks() < g_hold_until[5] : g_down[0x12] != 0) m |= 32;
+    /* the rolls: Q and E, or the keypad's Ins and Del (the user, 2026-11-03: "would be nice if keypad ins and keypad
+       del rolled"; the grey Insert and Delete come in on the same codes after an E0, and roll too) */
+    if (g_script ? ticks() < g_hold_until[4] : g_down[0x10] || g_down[0x52]) m |= 16;
+    if (g_script ? ticks() < g_hold_until[5] : g_down[0x12] || g_down[0x53]) m |= 32;
     return m;
 }
 
