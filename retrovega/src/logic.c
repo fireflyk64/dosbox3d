@@ -74,6 +74,7 @@ static uint8_t __far g_under_fire[NUM_SHIP_SLOTS];   /* the old game's hit count
 static uint16_t __far g_died[NUM_SHIP_SLOTS];     /* the step a ship was seen dying (0: not), its explosion's start */
 static uint16_t __far g_killer[NUM_SHIP_SLOTS];   /* what brought its end about (do_damage's src), for delayedDespawn */
 uint16_t __far logic_splashes;          /* this flight's kills by the local pilot's own guns, missiles and rams (logic.h) */
+uint8_t __far logic_pilot_kills[RV_PILOTS];   /* and by each named pilot the AI flew (logic.h) */
 /* the humans in the flight but the local pilot: the ships people fly on other machines (RV_FLAG_HUMAN), noted at each
  * step's start (humans_note) */
 #define HUMANS_MAX 4
@@ -485,6 +486,7 @@ void logic_start(const RvMission __far *m)
     currentNavPoint = 0;
     victoryPoints = 0;                  /* (over the launch's roll: won when the mission is done, step_mission) */
     logic_splashes = 0;
+    _fmemset(logic_pilot_kills, 0, sizeof logic_pilot_kills);
     g_nhumans = 0;
     /* the player's fighter is the one its record names (camp_load_tables put the save's there; in a shared flight a
      * guest's is the host's choice: docs/multiplayer.md); a test's scene with no player record, the save's */
@@ -3644,9 +3646,15 @@ uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, 
             {                           /* (the local pilot's splash: its bolt, its missile, its own hull, at an enemy) */
                 uint16_t by = RV_SLOT_OK(src) && (src > RV_MAX_SHIP_SLOT || maybeEntityType[src] == ET_MISSILE)
                               && parentShipForShip[src] != 0xFF ? parentShipForShip[src] : src;
-                if (RV_SLOT_OK(by) && by <= RV_MAX_SHIP_SLOT && rvController[by] == CTL_PLAYER
-                    && commAnimInfo[dst] != commAnimInfo[by])
-                    logic_splashes++;
+                if (RV_SLOT_OK(by) && by <= RV_MAX_SHIP_SLOT && commAnimInfo[dst] != commAnimInfo[by]) {
+                    if (rvController[by] == CTL_PLAYER)
+                        logic_splashes++;
+                    else if (rvController[by] == CTL_AI && !(rvFlags[by] & RV_FLAG_HUMAN) && slotMissionShip[by] < 64
+                             && MSHIP(slotMissionShip[by])[16] < RV_PILOTS
+                             && logic_pilot_kills[MSHIP(slotMissionShip[by])[16]] < 255)
+                        logic_pilot_kills[MSHIP(slotMissionShip[by])[16]]++;   /* (an AI wingman's own: a human in its
+                                                       seat keeps its splashes in its own save, camp_guest_sortie) */
+                }
             }
         } else {
             damagePoints[dst] = (uint16_t)(damagePoints[dst] + left);

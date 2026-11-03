@@ -158,8 +158,15 @@ rectangles.
   names, their tally marks), since printed text looked out of place on it;
   a click shows it **up close** (`zoom` in data/places.json: a 16:10 crop
   of the plate around the board, scaled to the screen with its own
-  palette), every pilot in a chalk hand (Caveat, SIL OFL) with tally marks
-  and the count;
+  palette), the hero and every pilot with marks or a sortie in a chalk hand
+  (Caveat, SIL OFL), most first, with tally marks and no number (the user:
+  "the tallies are cooler"), as many as the slate holds (the hero always
+  up, in the last row if not above it); the twins (relations.csv) share a
+  row, "Prime/Anchor", their marks split by a stroke; a new campaign starts
+  each pilot at people.csv's `kills` (3 to 18, by seniority and story), and
+  a flight adds its real splashes: the hero's own, and each named pilot's
+  the AI flew (logic.c `logic_pilot_kills`; they had a random 1 to 3 on a
+  win, and the hero none);
 - **briefing:** the big screen (the mission map);
 - **locker:** the medal case.
 

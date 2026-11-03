@@ -195,19 +195,44 @@ static void talk_overlay(int y0, int y1)
 
 /* --- the tally board: Tally's chalk --- */
 
-/* the pilots, most splashes first */
-static int tally_order(int *order)
+/* The board's rows (the user, 2026-11-02): the hero (the first of the role: the game's `you`) and the pilots with marks
+ * or a sortie, most splashes first, a pair of twins (people.csv's twin, from relations.csv) on one row, "Prime/Anchor",
+ * their marks split by a stroke, while both live; second[] the row's twin, -1 none.  The board was too tall */
+static int person_of(int role);
+static int tally_order(int *order, int *second)
 {
-    int i, k, n = 0;
+    int i, k, n = 0, hero = person_of(RV_ROLE_HERO), rows = 0;
+    int all[RV_PILOTS];
     for (i = 0; i < (int)g_npilots; i++)
-        if (g_pilots[i].role == RV_ROLE_PILOT)
-            order[n++] = i;
+        if (i == hero || (g_pilots[i].role == RV_ROLE_PILOT && (g_camp.pilot[i].kills || g_camp.pilot[i].missions)))
+            all[n++] = i;
     for (i = 0; i < n; i++)
         for (k = i + 1; k < n; k++)
-            if (g_camp.pilot[order[k]].kills > g_camp.pilot[order[i]].kills) {
-                int t = order[i]; order[i] = order[k]; order[k] = t;
+            if (g_camp.pilot[all[k]].kills > g_camp.pilot[all[i]].kills) {
+                int t = all[i]; all[i] = all[k]; all[k] = t;
             }
-    return n;
+    for (i = 0; i < n; i++) {
+        int p = all[i], t = g_pilots[p].twin, taken = 0;
+        for (k = 0; k < rows; k++)
+            if (second[k] == p)
+                taken = 1;
+        if (taken)
+            continue;
+        order[rows] = p;
+        second[rows] = -1;
+        if (t < (int)g_npilots && g_camp.pilot[p].alive && g_camp.pilot[t].alive)
+            for (k = i + 1; k < n; k++)
+                if (all[k] == t)
+                    second[rows] = t;
+        rows++;
+    }
+    return rows;
+}
+
+/* n marks' width at a gap */
+static int tally_width(unsigned n, int gap)
+{
+    return (int)(n / 5) * 6 * gap + (int)(n % 5) * gap;
 }
 
 /* the hand's wobble: -range .. range, the same for the same seed and step */
@@ -260,20 +285,29 @@ static void tally_marks(int x, int y, int h, int gap, int width, unsigned n, uns
 static void chalkboard(int y0, int y1)
 {
     const RvRoom __far *r = dat_room(g_scene.room);
-    int b, i, order[RV_PILOTS], n;
+    int b, i, order[RV_PILOTS], second[RV_PILOTS], n;
     for (b = 0; b < 4; b++) {
         const RvBoard __far *bd = &r->board[b];
         int cx = bd->x + bd->w / 2;
         if (bd->w == 0 || bd->kind != 0 || y1 <= bd->y || y0 >= bd->y + bd->h)
             continue;
-        n = tally_order(order);
+        n = tally_order(order, second);
         scribble(cx - 20, bd->y + 9, 40, 3, 2, 1, y0, y1);
         gfx_chalk(cx - 23, bd->y + 12, cx + 22, bd->y + 11, 1, RV_TEXT_WHITE, y0, y1);
         for (i = 0; i < 4 && i < n; i++) {
             unsigned k = g_camp.pilot[order[i]].kills;
-            scribble(bd->x + 8, bd->y + 22 + i * 8, 10 + (int)strlen(g_pilots[order[i]].callsign) * 2, 2, 1,
-                     7 + order[i], y0, y1);
-            tally_marks(bd->x + 42, bd->y + 18 + i * 8, 4, 2, 1, k < 15 ? k : 15, 31 + order[i], y0, y1);
+            int len = (int)strlen(g_pilots[order[i]].callsign), x = bd->x + 42;
+            if (second[i] >= 0) {       /* (the twins: both names, both counts) */
+                unsigned k2 = g_camp.pilot[second[i]].kills;
+                len += 1 + (int)strlen(g_pilots[second[i]].callsign);
+                k = k < 7 ? k : 7;
+                tally_marks(x, bd->y + 18 + i * 8, 4, 2, 1, k, 31 + order[i], y0, y1);
+                x += tally_width(k, 2) + 3;
+                gfx_chalk(x, bd->y + 23 + i * 8, x + 2, bd->y + 18 + i * 8, 1, RV_TEXT_WHITE, y0, y1);
+                tally_marks(x + 5, bd->y + 18 + i * 8, 4, 2, 1, k2 < 7 ? k2 : 7, 31 + second[i], y0, y1);
+            } else
+                tally_marks(x, bd->y + 18 + i * 8, 4, 2, 1, k < 15 ? k : 15, 31 + order[i], y0, y1);
+            scribble(bd->x + 8, bd->y + 22 + i * 8, 10 + len * 2, 2, 1, 7 + order[i], y0, y1);
         }
     }
 }
@@ -286,22 +320,47 @@ static void board_full(int y0, int y1)
 {
     const RvDatHeader __far *h = dat_header();
     int sx = h->chalk_slate[0], sy = h->chalk_slate[1], sw = h->chalk_slate[2];
-    int order[RV_PILOTS], n = tally_order(order), i, w;
+    int order[RV_PILOTS], second[RV_PILOTS], n = tally_order(order, second), i, w, rows = (h->chalk_slate[3] - 46 - 8) / 29;
     gfx_image(h->chalk_back, 0, 0, y0, y1);
+    if (rows > 8)
+        rows = 8;
+    if (n > rows) {                     /* (the hero always up: in the last row the slate holds, if not above it) */
+        int hero = person_of(RV_ROLE_HERO), at = -1;
+        for (i = 0; i < n; i++)
+            if (order[i] == hero)
+                at = i;
+        if (at >= rows) {
+            order[rows - 1] = hero;
+            second[rows - 1] = -1;
+        }
+    }
     w = gfx_text_width(g_hand, "Splash Count");
     gfx_text(g_hand, sx + (sw - w) / 2, sy + 2, "Splash Count", RV_TEXT_WHITE | TEXT_CHALK, y0, y1);
     gfx_chalk(sx + (sw - w) / 2 - 8, sy + 41, sx + (sw + w) / 2 + 8, sy + 39, 3, RV_TEXT_WHITE, y0, y1);
-    for (i = 0; i < n && i < 8; i++) {
+    for (i = 0; i < n && i < rows; i++) {   /* (as many as the slate holds: the most splashes) */
         int ry = sy + 46 + i * 29;
         unsigned k = g_camp.pilot[order[i]].kills;
-        char num[8];
+        if (second[i] >= 0) {           /* (the twins on one row, the user's: "Prime/Anchor", their marks split the same) */
+            char both[2 * RV_CALLSIGN + 2];
+            unsigned k2 = g_camp.pilot[second[i]].kills;
+            int x;
+            sprintf(both, "%s/%s", g_pilots[order[i]].callsign, g_pilots[second[i]].callsign);
+            gfx_text(g_hand, sx + 28, ry, both, RV_TEXT_WHITE | TEXT_CHALK, y0, y1);
+            x = sx + 28 + gfx_text_width(g_hand, both) + 18;
+            if (x < sx + 176)
+                x = sx + 176;
+            k = k < 15 ? k : 15;
+            tally_marks(x, ry + 9, 22, 7, 3, k, 31 + order[i], y0, y1);
+            x += tally_width(k, 7) + 10;
+            gfx_chalk(x, ry + 31, x + 8, ry + 9, 3, RV_TEXT_WHITE, y0, y1);
+            tally_marks(x + 18, ry + 9, 22, 7, 3, k2 < 15 ? k2 : 15, 31 + second[i], y0, y1);
+            continue;
+        }
         gfx_text(g_hand, sx + 28, ry, g_pilots[order[i]].callsign, RV_TEXT_WHITE | TEXT_CHALK, y0, y1);
-        if (g_camp.pilot[order[i]].alive)
-            tally_marks(sx + 176, ry + 9, 22, 7, 3, k < 30 ? k : 30, 31 + order[i], y0, y1);
-        else                            /* (lost for good: the name stays up, the count beside it) */
-            gfx_text(g_hand, sx + 176, ry, "KIA", RV_TEXT_WHITE | TEXT_CHALK, y0, y1);
-        sprintf(num, "%u", k);
-        gfx_text(g_hand, sx + sw - 28 - gfx_text_width(g_hand, num), ry, num, RV_TEXT_WHITE | TEXT_CHALK, y0, y1);
+        tally_marks(sx + 176, ry + 9, 22, 7, 3, k < 30 ? k : 30, 31 + order[i], y0, y1);
+        if (!g_camp.pilot[order[i]].alive)   /* (lost for good: the name and the marks stay up, KIA beside them; the
+                                           count itself is the marks: the user, "the tallies are cooler") */
+            gfx_text(g_hand, sx + sw - 28 - gfx_text_width(g_hand, "KIA"), ry, "KIA", RV_TEXT_WHITE | TEXT_CHALK, y0, y1);
     }
     gfx_text(FONT_BODY, 14, SCR_H - 18, "click to close", RV_TEXT_GREY | 0x10, y0, y1);
 }
@@ -1878,7 +1937,7 @@ static int debrief_settle(void)
         camp_guest_sortie(g_won, g_guest_splashes);
         return 0;
     }
-    camp_resolve(g_won);
+    camp_resolve(g_won, logic_splashes, logic_pilot_kills);
     return g_camp.ending;
 }
 

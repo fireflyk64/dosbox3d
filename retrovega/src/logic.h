@@ -25,7 +25,10 @@ extern PilotInput __far g_pilot;
 void logic_prepare_spawn(int16_t ship_index);
 void logic_start(const RvMission __far *m);   /* the flight begins: its ships into the slots (before their art loads) */
 void logic_frame(void);                 /* one step (frameCounter is already one more) */
-void logic_hud(void);                   /* a band of the view is drawn: draw over it with hud.h's calls */
+void logic_hud(void);
+extern uint16_t __far logic_splashes;   /* this flight's kills by the local pilot (its guns, missiles and rams) */
+extern uint8_t __far logic_pilot_kills[RV_PILOTS];   /* and by each named pilot the AI flew, by pilot index (the board's
+                                           tallies: camp_resolve) */                   /* a band of the view is drawn: draw over it with hud.h's calls */
 void logic_end(void);                   /* the flight is over (missionStatus says how) */
 int16_t logic_autopilot(void);          /* the A key, between steps: 1 when it flew the player on (to the next nav
                                            point), 0 when it may not (enemies near, nowhere to go) */

@@ -36,7 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 17                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 18                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
                                         # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
@@ -45,7 +45,7 @@ VERSION = 17                            # 2: the ship types' engines; 3: their h
                                         # 12: a weapon's cone, a mission ship's AI profile and fear;
                                         # 13: a mission ship's turrets=off; 14: scenes: 24 lines a
                                         # mission, 120 characters, conditions (say, radio, after=, if=, unless=, dead=);
-                                        # 17: a ship type's fuel rates (fuel_cruise, fuel_burn)
+                                        # 17: a ship type's fuel rates (fuel_cruise, fuel_burn); 18: a pilot's board seed and twin
 LIMITS = {'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 16,
           'SEATS': 3, 'TALKS': 200, 'FIELDS': 7, 'SHIPTYPES': 64, 'SHIPRECORDS': 44, 'WEAPONS': 40}
 TEXT = {'ID': 16, 'TITLE': 48, 'TALK': 108, 'KEY': 10, 'CALLSIGN': 12,
@@ -183,7 +183,10 @@ WEAPON_LOOKS = ['bolt', 'slug', 'plasma', 'fire', 'star', 'beam', 'missile', 'no
 WEAPON_LOCKS = ['none', 'heat', 'image', 'auto', 'proximity']   # (an empty cell: none)
 PILOT = [('char', 'key[RV_KEY]', '%ds' % TEXT['KEY']), ('char', 'callsign[RV_CALLSIGN]', '%ds' % TEXT['CALLSIGN']),
          ('char', 'name[RV_NAME]', '%ds' % TEXT['NAME']), ('unsigned char', 'role', 'B'),
-         ('unsigned char', 'pad', 'B'), ('char', 'line[RV_LINE]', '%ds' % TEXT['LINE'])]
+         ('unsigned char', 'kills', 'B'), ('unsigned char', 'twin', 'B'), ('char', 'line[RV_LINE]', '%ds' % TEXT['LINE'])]
+                                        # (kills: people.csv's, the splashes a pilot brings to the board at a new campaign, by
+                                        # seniority and story; twin: the pilot index of its twin, relations.csv `twins`, 255
+                                        # none: the board puts the two on one row, the user's)
 NODE = [('char', 'id[RV_NODE_ID]', '%ds' % TEXT['NODE_ID']), ('unsigned char', 'layer', 'B'),
         ('signed char', 'col', 'b'), ('unsigned short', 'missions[RV_MISSIONS_PER_NODE]', '4H'),
         ('unsigned char', 'good', 'B'), ('unsigned char', 'bad', 'B'), ('unsigned char', 'outside', 'B'),
@@ -396,6 +399,20 @@ def compile_loadout(r, weapons, hit):
 
 def compile_all():
     people = load_csv('people.csv')
+
+    twin_of = {}
+    for r in load_csv('relations.csv'):
+        if r['relation'] == 'twins':
+            keys = [p['key'] for p in people]
+            if r['a'] not in keys or r['b'] not in keys:
+                raise Fail('relations.csv: twins %s and %s are not both in people.csv' % (r['a'], r['b']))
+            twin_of[r['a']], twin_of[r['b']] = keys.index(r['b']), keys.index(r['a'])
+
+    def seed_kills(p):
+        k = int(p.get('kills') or 0)
+        if not 0 <= k <= 99:
+            raise Fail('people.csv %s: kills %d is not 0 to 99 (the board\'s marks a pilot starts with)' % (p['key'], k))
+        return k
     pilot_index = {p['key']: i for i, p in enumerate(people)}
     if len(people) > LIMITS['PILOTS']:
         raise Fail('people.csv: %d pilots, at most %d' % (len(people), LIMITS['PILOTS']))
@@ -758,7 +775,8 @@ def compile_all():
 
     out_pilots = [struct.pack(fmt(PILOT), text(p['key'], TEXT['KEY'], 'people.csv'),
                               text(p['callsign'] or p['key'].title(), TEXT['CALLSIGN'], 'people.csv'),
-                              text(p['name'], TEXT['NAME'], 'people.csv'), ROLES[p['role']], 0,
+                              text(p['name'], TEXT['NAME'], 'people.csv'), ROLES[p['role']], seed_kills(p),
+                              twin_of.get(p['key'], 255),
                               text(p['line'], TEXT['LINE'], 'people.csv %s line' % p['key'])) for p in people]
     # what Kit says when a fighter comes home, by how badly (data/homecoming.csv): after every mission's lines, in the tiers' order
     home_line = len(out_lines)

@@ -5,7 +5,7 @@
 #include "rvtypes.h"
 
 #define RVGAME_MAGIC "RVGAME"
-#define RVGAME_VERSION 17
+#define RVGAME_VERSION 18
 
 #define RV_PILOTS 16
 #define RV_NODES 32
@@ -203,7 +203,8 @@ typedef struct {
     char callsign[RV_CALLSIGN];
     char name[RV_NAME];
     uint8_t role;
-    uint8_t pad;
+    uint8_t kills;
+    uint8_t twin;
     char line[RV_LINE];
 } RvPilot;
 typedef struct {
@@ -336,7 +337,7 @@ typedef struct {
 #pragma pack()
 
 #define RV_HEADER_SIZE 68
-#define RV_PILOT_SIZE 120
+#define RV_PILOT_SIZE 121
 #define RV_NODE_SIZE 22
 #define RV_MISSION_SIZE 457
 #define RV_SHIPTYPE_SIZE 181

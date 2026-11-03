@@ -130,6 +130,8 @@ void camp_new(void)
     g_camp.seed = ticks();
     for (i = 0; i < RV_PILOTS; i++)
         g_camp.pilot[i].alive = 1;
+    for (i = 0; i < g_npilots; i++)     /* (the board's marks each brings: their splashes before the campaign, people.csv) */
+        g_camp.pilot[i].kills = g_pilots[i].kills;
     campaignNode(g_camp.node, g_camp.mission);
 }
 
@@ -323,7 +325,7 @@ void camp_way_out(int16_t won)
         g_camp_way = way_good(g_camp.wins + (won ? 1 : 0), count, g_camp.trend + (won ? 1 : -1)) ? 1 : 2;
 }
 
-int16_t camp_resolve(int16_t won)
+int16_t camp_resolve(int16_t won, uint16_t hero_kills, const uint8_t __far *pilot_kills)
 {
     RvShip ships[RV_SHIPS];             /* (only these: a whole mission would not fit on the stack) */
     uint32_t at = (uint32_t)camp_mission_index() * sizeof(RvMission);
@@ -336,11 +338,20 @@ int16_t camp_resolve(int16_t won)
     g_camp.flown++;
     g_camp.wins += won ? 1 : 0;
     g_camp.trend += won ? 1 : -1;
+    /* the board's tallies are the flight's own splashes (the user, 2026-11-02: two splashes of the host's went up as
+     * Frost's): the hero's, and each named pilot's the AI flew, whoever it was; a sortie each (they had a random 1 to 3
+     * on a win, and the hero none) */
     for (i = 0; i < nship; i++)
-        if (ships[i].pilot != RV_PILOT_NONE && ships[i].pilot < RV_PILOTS) {
+        if (ships[i].pilot != RV_PILOT_NONE && ships[i].pilot < RV_PILOTS)
             g_camp.pilot[ships[i].pilot].missions++;
-            if (won)
-                g_camp.pilot[ships[i].pilot].kills += 1 + (uint16_t)(ticks() % 3);
+    for (i = 0; i < RV_PILOTS; i++)
+        if (pilot_kills && pilot_kills[i])
+            g_camp.pilot[i].kills = (uint16_t)(g_camp.pilot[i].kills + pilot_kills[i]);
+    for (i = 0; i < g_npilots; i++)
+        if (g_pilots[i].role == RV_ROLE_HERO) {   /* (the first of them: the game's own `you`) */
+            g_camp.pilot[i].missions++;
+            g_camp.pilot[i].kills = (uint16_t)(g_camp.pilot[i].kills + hero_kills);
+            break;
         }
     missionResolved(won ? 1 : 0);
     if (++g_camp.mission < camp_node_missions(g_camp.node)) {
@@ -374,9 +385,10 @@ void camp_guest_sortie(int16_t won, uint16_t splashes)
     uint16_t i;
     g_camp.flown++;
     for (i = 0; i < g_npilots; i++)
-        if (g_pilots[i].role == RV_ROLE_HERO) {
+        if (g_pilots[i].role == RV_ROLE_HERO) {   /* (the first of them: the game's own `you`) */
             g_camp.pilot[i].missions++;
             g_camp.pilot[i].kills = (uint16_t)(g_camp.pilot[i].kills + splashes);
+            break;
         }
     missionResolved(won ? 1 : 0);
     RV_LOG("guest: a sortie (%s) and %u splashes into the save", won ? "won" : "lost", splashes);
