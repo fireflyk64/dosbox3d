@@ -2026,6 +2026,7 @@ watches the world, once a step after the logic.
 A death must keep its 9 to the end of a step (the slot may be cleared any
 time after): fx.c looks between steps. The pictures and the sounds take
 their own random stream, never `game_rand`, and are each machine's own.
+Ship destruction blasts use a 40% larger radius relative to the hull, including the six capital-ship bursts and their final blast.
 
 **The explosion (explode.c, tools/explode.py, EXPLODE.DAT, 37 KB in XMS).**
 The art is heat, not colour: eight cels of 48 x 48 (0 clear .. 255 white

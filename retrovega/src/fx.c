@@ -271,6 +271,7 @@ void fx_flight_start(void)
 static void death(int16_t s)
 {
     int32_t half_km = collide_half(s) / 256;
+    int32_t boom_km = half_km * 7 / 5;   /* 40% larger blasts; burst positions still follow the hull */
     RvVec3 at = gPositionVector[s];
     uint16_t seed = (uint16_t)(frameCounter * 31 + s * 977);
     g_dying[s] = 1;
@@ -287,13 +288,13 @@ static void death(int16_t s)
             p.x = at.x + ((int32_t)(vis_rand() % 512) - 256) * (half_km / 2);
             p.y = at.y + ((int32_t)(vis_rand() % 512) - 256) * (half_km / 6);
             p.z = at.z + ((int32_t)(vis_rand() % 512) - 256) * (half_km / 2);
-            explode_add(&p, &gVelocityVector[s], half_km / 3, BOOM_SHIP, (uint16_t)(k * 9), (uint16_t)(seed + k));
+            explode_add(&p, &gVelocityVector[s], boom_km / 3, BOOM_SHIP, (uint16_t)(k * 9), (uint16_t)(seed + k));
         }
-        explode_add(&at, &gVelocityVector[s], half_km * 5 / 4, BOOM_CAPITAL, 50, seed);
+        explode_add(&at, &gVelocityVector[s], boom_km * 5 / 4, BOOM_CAPITAL, 50, seed);
         sfx_play(RV_SFX_BOOM_CAPITAL, vol_at(km_to(&at), BOOMS_KM * 2), 256);
         return;
     }
-    explode_add(&at, &gVelocityVector[s], half_km * 13 / 10, BOOM_SHIP, 0, seed);
+    explode_add(&at, &gVelocityVector[s], boom_km * 13 / 10, BOOM_SHIP, 0, seed);
     sfx_play(RV_SFX_BOOM_SHIP, vol_at(km_to(&at), BOOMS_KM), pitch_jitter());
 }
 
