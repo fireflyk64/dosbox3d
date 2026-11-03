@@ -170,17 +170,27 @@ void lf_place(const LfVec *rel, const LfBasis *cam, const LfBasis *ship, int16_t
     back.x = -d.x; back.y = -d.y; back.z = -d.z;
     out->view = lf_view_of(-dot(&back, &ship->right) / 256, dot(&back, &ship->up) / 256, dot(&back, &ship->front) / 256,
                            nb, nh);
-    /* the turn on screen, clockwise: a band view is drawn with the ship's up
-     * toward the top of the screen; the top and bottom views lie nose left.
-     * On the screen (y down) the ship's up shows as (ux, -uy). */
-    if (out->view == 0 || out->view == 1 + nb * nh) {
-        ux = dot(&ship->front, &cam->right);
-        uy = dot(&ship->front, &cam->up);
-        out->roll = lf_atan2(uy, -ux);
-    } else {
-        ux = dot(&ship->up, &cam->right);
-        uy = dot(&ship->up, &cam->up);
-        out->roll = lf_atan2(ux, uy);
+    /* A band's vertical is ship-up; the poles keep the nose pointing left.
+     * Project that axis at the ship's screen position: du = axis.right -
+     * (X/Z) * axis.front, dv = axis.up - (Y/Z) * axis.front. The existing
+     * screen point supplies X/Z and Y/Z to within one pixel, without a
+     * distance-sized product. Using only the first dot products treated
+     * every ship as centred and falsely banked elevated ships during yaw. */
+    {
+        int16_t pole = out->view == 0 || out->view == 1 + nb * nh;
+        const LfVec *axis = pole ? &ship->front : &ship->up;
+        int32_t uz = dot(axis, &cam->front);
+        ux = dot(axis, &cam->right);
+        uy = dot(axis, &cam->up);
+        if (focal && uz) {
+            ux -= (int32_t)(out->sx - cx) * uz / focal;
+            uy -= (int32_t)(cy - out->sy) * uz / focal;
+        }
+        /* lf_atan2 multiplies its smaller argument by 16384 in a signed long. */
+        while (ux > 65535 || ux < -65535 || uy > 65535 || uy < -65535) {
+            ux /= 2; uy /= 2;
+        }
+        out->roll = pole ? lf_atan2(uy, -ux) : lf_atan2(ux, uy);
     }
 }
 

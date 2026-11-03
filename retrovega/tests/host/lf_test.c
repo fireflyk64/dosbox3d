@@ -133,6 +133,60 @@ int main(void)
     lf_place(&rel, &cam, &ship, 320, 100, 400, 5, 7, &p);
     CHECK(p.view == 0 && p.roll == 256, "nose up the screen seen from above: the top view, turned 90 so the nose (drawn left) points up (got %d, %d)", p.view, p.roll);
 
+    /* A stationary ship seen from above/below must not bank as the camera
+     * yaws about its own up. True camera roll still turns its image. Test
+     * the carrier's and fighter's lattices, including the pole convention. */
+    {
+        static const int elevations[] = {-90, -60, -35, 0, 35, 60, 90};
+        static const int banks[] = {-23, 0, 23};
+        int lattice, ei, bi, yaw, cases = 0, bad = 0, worst_roll = 0;
+        for (lattice = 0; lattice < 2; lattice++) {
+            int nb = lattice ? 29 : 5, nh = lattice ? 31 : 7;
+            for (ei = 0; ei < 7; ei++) {
+                double e = elevations[ei] * M_PI / 180;
+                double se = sin(e), ce = cos(e);
+                int fixed_view = -1;
+                basis(&ship, 0, 0, 256, 256, 0, 0, 0, 256, 0);
+                rel.x = 0;
+                rel.y = (int32_t)lround(-se * 3500 * 256);
+                rel.z = (int32_t)lround(ce * 3500 * 256);
+                for (yaw = -30; yaw <= 30; yaw += 5) {
+                    double t = yaw * M_PI / 180, st = sin(t), ct = cos(t);
+                    for (bi = 0; bi < 3; bi++) {
+                        double b = banks[bi] * M_PI / 180, sb = sin(b), cb = cos(b);
+                        int want, error, pole;
+                        /* Start aimed down/up at the stationary ship. Local yaw
+                         * rotates front/right, then camera bank rotates right/up. */
+                        basis(&cam,
+                              lround(st * 256), lround(-se * ct * 256), lround(ce * ct * 256),
+                              lround(ct * cb * 256), lround((se * st * cb + ce * sb) * 256),
+                              lround((-ce * st * cb + se * sb) * 256),
+                              lround(-ct * sb * 256), lround((ce * cb - se * st * sb) * 256),
+                              lround((se * cb + ce * st * sb) * 256));
+                        lf_place(&rel, &cam, &ship, 320, 200, 400, nb, nh, &p);
+                        if (fixed_view < 0) fixed_view = p.view;
+                        pole = p.view == 0 || p.view == 1 + nb * nh;
+                        want = (int)lround((banks[bi] + (pole ? (elevations[ei] > 0 ? 90 : -90) : 0))
+                                          * 1024.0 / 360);
+                        want = (want % 1024 + 1024) % 1024;
+                        error = abs(p.roll - want);
+                        if (error > 512) error = 1024 - error;
+                        if (error > worst_roll) worst_roll = error;
+                        if (!p.on_screen || p.view != fixed_view || error > 3) {
+                            if (bad < 4)
+                                printf("     stationary nb %d elev %d yaw %d camera roll %d: view %d/%d roll %d/%d\n",
+                                       nb, elevations[ei], yaw, banks[bi], p.view, fixed_view, p.roll, want);
+                            bad++;
+                        }
+                        cases++;
+                    }
+                }
+            }
+        }
+        CHECK(bad == 0, "stationary ship yaw preserves real camera roll within 3/1024 turns: %d cases, worst %d (%d off)",
+              cases, worst_roll, bad);
+    }
+
     /* the 15-degree lattice (11 bands, 13 headings): 145 views, the mirrored
      * headings at 145..; the pairs of views */
     CHECK(LF_LATTICE_VIEWS(5, 7) == 62 && LF_LATTICE_VIEWS(11, 13) == 266, "lattice sizes: 62 and 266");
@@ -154,13 +208,14 @@ int main(void)
     /* the scaler: a 4 x 4 picture to 2 x 2 keeps every other pixel */
     {
         static const unsigned char src[16] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
-        unsigned short map[2];
+        unsigned short map[5];
         unsigned char out[2] = { 0, 0 };
         lf_colmap(4, 2, map);
         lf_scale_row(src + 8, map, 0, 2, out);
         CHECK(map[0] == 0 && map[1] == 2 && out[0] == 9 && out[1] == 11, "4 -> 2: columns 0 and 2 (%d %d)", out[0], out[1]);
-        lf_colmap(2, 5, map + 0);        /* (only two entries fit: check the first two) */
-        CHECK(map[0] == 0 && map[1] == 0, "2 -> 5: the first two output columns both read column 0");
+        lf_colmap(2, 5, map);
+        CHECK(map[0] == 0 && map[1] == 0 && map[2] == 0 && map[3] == 1 && map[4] == 1,
+              "2 -> 5: columns 0, 0, 0, 1, 1");
         out[0] = 7;
         lf_scale_row(src, map, 0, 1, out);
         CHECK(out[0] == 1, "a drawn pixel replaces what was there");
