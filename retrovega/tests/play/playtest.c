@@ -3951,6 +3951,42 @@ static void t_autopilot_far_wingman(void)
             e_along, pt_km_to(w, gPositionVector[0].x / 256, gPositionVector[0].y / 256, gPositionVector[0].z / 256), 0, 0);
 }
 
+/* M10.10: told to form up, the wingman flies the player's way (the user, 2026-11-03: "when I say form up the wingmate
+ * faces me instead of being parallel"): 2,500 km ahead of its place facing back, with the player still and then under
+ * way, in 20 s its nose is within 25 degrees of the player's way */
+static void t_form_parallel(void)
+{
+    static const char __far e_still[] = "the player still, the wingman put ahead of its place facing back: 20 s on its "
+        "nose is %d (cos x 256) to the player's way: within 25 degrees (over 232)";
+    static const char __far e_moving[] = "the player at 250 kps, the wingman put ahead facing back: 20 s on its nose is %d "
+        "(cos x 256) to the player's way, %ld km off: within 25 degrees (over 232), within 4,000 km";
+    int16_t i;
+    int32_t c;
+    pt_alone(PT_PLAYER);
+    g_sys.armed = 0;
+    playerCanBeDamaged = 0;
+    pt_ship(1, PT_PLAYER, SIDE_TERRAN, CTL_AI, 800, 0, 0, 0);
+    (void)logic_order(1, ORDER_FORMATION);
+    if (!pt_steps(2 * SEC))             /* (its place taken: 800 km to the player's right) */
+        return;
+    pt_put(1, 800, 0, 2500, TURN / 2);
+    pt_speed(1, 0);
+    if (!pt_steps(20 * SEC))
+        return;
+    c = vec_dot(&gOrientationFrontVector[1], &gOrientationFrontVector[0]) / 256;
+    REQUIRE(c > 232, e_still, c, 0, 0);
+    pt_put(1, 1500, 0, 2000, TURN / 2);
+    pt_speed(1, 0);
+    for (i = 0; i < 20 * SEC; i++) {
+        pt_speed(0, 250);
+        if (!pt_step())
+            return;
+    }
+    c = vec_dot(&gOrientationFrontVector[1], &gOrientationFrontVector[0]) / 256;
+    REQUIRE(c > 232 && pt_km(0, 1) < 4000, e_moving, c, pt_km(0, 1), 0);
+    (void)logic_order(1, ORDER_FREE);
+}
+
 /* M8.33: an escort target out with jump=2 goes through nav 1 with the player and jumps only short of nav 2 (the user,
  * 2026-11-03: "the ox should jump at nav 2 not nav 1"): it holds at nav 1 while the enemies there are about, goes on
  * when they are gone, and is out of the world, not killed, by nav 2 */
@@ -6114,6 +6150,7 @@ static const char __far n_m8_29[] = "M8.29 scene-human (step_scene): a ship near
 static const char __far n_m8_30[] = "M8.30 human-seat-lost (logic_wingman_lost): a wingman a person flew, killed, is no named pilot's death";
 static const char __far n_m8_33[] = "M8.33 escort-jump (route_step): an escort target out with jump=2 holds at nav 1 through the fight and jumps only at nav 2";
 static const char __far n_m8_34[] = "M8.34 autopilot-wingman (logic_autopilot): the mission's wingman comes along however far it had gone";
+static const char __far n_m10_10[] = "M10.10 form-parallel (formation_step): told to form up, the wingman flies the player's way, not facing it";
 static const char __far n_m8_32[] = "M8.32 named-hull (do_damage): a named pilot's hull takes a hit past its armour as a share, eight laser hits; a person's seat the hit itself";
 static const char __far n_m8_31[] = "M8.31 dying (delayedDespawn, do_damage): delayedDespawn starts a ship's end; the player's kills are its splashes";
 static const char __far n_m6_6[] = "M6.6 ram-caps (ram): a collision costs the player its shield and armour at most (the hull to 40% with the armour gone) and, cut, a system; a light one the old rule's; an NPC its shield and half its armour; into a capital ship over 100 kps, stopped";
@@ -6190,7 +6227,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m10_10, t_form_parallel, 0 },
 };
 
 /* --- the run --- */

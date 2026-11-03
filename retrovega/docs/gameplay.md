@@ -434,6 +434,7 @@ tests cover them; flight.c's keys (T, Y, L) and its AUTO call them.
 | M10.7 missile-lock | the Lancelot's heat seeker on a target 3,000 km ahead flying away: locked after its 3 s and not before; the target turned to face the player, the lock is gone the next step; the image-recognition missile locks on it facing; the tracking wrecked, no lock; the EMCON off, no heat lock; the Schroedinger's dumbfire never locks |
 | M10.8 break-formation | a wingman 800 km off the player, the only enemy 40,000 km away: left alone it fights nobody; told to fly in formation, nobody, within 3,000 km; told to break formation, the far enemy; the enemy gone, it leaves the formation (over 1,500 km off) and stays round the player (within 6,000) |
 | M10.9 taunt | an enemy beside a Terran ship has that as its target; `logic_taunt` refuses a friend and a capital ship; taunted, its target is the player; put 3,000 km ahead of the player, facing it, selected and under hold=on, it fires |
+| M10.10 form-parallel | the wingman formed up 800 km right of a still player, then put 2,500 km ahead of its place facing back: 20 s on its nose is within 25° of the player's way; again with the player at 250 kps: within 25°, within 4,000 km (the old code sat it facing the player, cos -1) |
 
 ### M12: the player's damage (`src/damage.c`, docs/damage.md)
 

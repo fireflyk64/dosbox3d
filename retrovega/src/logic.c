@@ -2450,7 +2450,9 @@ static void aim_and_fire(int16_t s, Mind __far *m, const AiProfile __far *p, con
 }
 
 /* T_FORMATION: station on the leader (formationOffset, km in its frame: taken from where the ship is when it has
- * none), the leader's heading once there, and a throttle that closes the gap and then matches */
+ * none), the leader's heading near it, and a throttle that closes the gap and then matches */
+#define FORM_NEAR_KM 500                /* within this of its place a wingman flies the leader's way, not at its place */
+#define FORM_LEAD_KM 2000               /* how far ahead along it it aims: its gap across, at most 500 km, 14 degrees */
 static void formation_step(int16_t s, Mind __far *m, const AiProfile __far *p)
 {
     int16_t L = m->leader;
@@ -2479,17 +2481,25 @@ static void formation_step(int16_t s, Mind __far *m, const AiProfile __far *p)
     d = vec3(TO_KM(st.x - gPositionVector[s].x), TO_KM(st.y - gPositionVector[s].y), TO_KM(st.z - gPositionVector[s].z));
     km = len_of(d.x, d.y, d.z);
     along = vec_dot(&d, F) / 256;       /* (the gap along the leader's way: behind it, or ahead of it) */
-    if (km > 200) {
+    if (km > FORM_NEAR_KM) {
         to_body(s, &d, &b);
         steer_to(s, p, b.x, b.y, b.z);
     } else {
-        RvVec3 f = *F;
-        to_body(s, &f, &b);
+        /* near its place: along the leader's way, the nose turned only by the gap across it; the gap along it is the
+         * throttle's (the user, 2026-11-03: "when I say form up the wingmate faces me instead of being parallel") */
+        RvVec3 a = vec3(d.x - FIX_MUL(F->x, along) + FIX_MUL(F->x, FORM_LEAD_KM),
+                        d.y - FIX_MUL(F->y, along) + FIX_MUL(F->y, FORM_LEAD_KM),
+                        d.z - FIX_MUL(F->z, along) + FIX_MUL(F->z, FORM_LEAD_KM));
+        to_body(s, &a, &b);
         steer_to(s, p, b.x, b.y, b.z);
     }
     kps = speedLo[L];
     if (km > 4000)
         kps = 9999;
+    else if (km > FORM_NEAR_KM)         /* (headed for its place: closing on it, whichever way it lies; by the gap along
+                                           the leader's way alone, a place behind it with the player still was no speed,
+                                           and it sat facing its place, and the player, the user's "faces me") */
+        kps += km / 8 + 20;
     else if (along > 0)
         kps += along / 8 + 20;
     else
