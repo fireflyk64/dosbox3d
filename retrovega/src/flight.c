@@ -3347,7 +3347,8 @@ unsigned short __far __cdecl flight_keys(void)
         g_keyboard_steer = 1;
         g_steer_x = g_steer_y = 0;
     } else {
-        int ox = in.x - cx, oy = in.y - cy;
+        int ox = in.x - cx, oy = cy - in.y;   /* (the old games': the pointer above the middle raises the nose; the page's
+                                                 stick and a finger move the same pointer) */
         g_keyboard_steer = 0;
         g_steer_x = ox > STEER_DEAD_X ? (ox > STEER_FULL_X ? 9 : ox * 9 / STEER_FULL_X)
                   : ox < -STEER_DEAD_X ? (ox < -STEER_FULL_X ? -9 : ox * 9 / STEER_FULL_X) : 0;
