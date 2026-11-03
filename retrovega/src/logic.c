@@ -3548,6 +3548,24 @@ static void hit_sides(int16_t dst, const RvVec3 *w, int16_t *sh, int16_t *ar)
     *ar = labs(f) >= labs(r) ? *sh : r >= 0 ? 3 : 2;
 }
 
+/* a ship a named pilot flies (its mission record names one of the cast) and no person: the old game's wingmen.  Its hull
+ * takes a hit past the armour as the old game's did (read in its code, ovr143:0FE0: a named pilot's ship a fortieth of
+ * the hit, at least one, of its hull's count; an unnamed one's a sixth), so a laser's hit is one share of the hull,
+ * whatever its size: NAMED_HULL_HITS of them (measured 2026-11-02: Spirit's Hornet died 7 to 10 hull hits after its
+ * armour, 14 hits in all at the common rates, as the Schroedinger wingman now does).  Any other ship's hull takes the
+ * hit itself.  What the hull is to take of `left` */
+#define NAMED_HULL_HITS 8
+
+static uint16_t hull_take(int16_t s, uint16_t left, uint16_t hull)
+{
+    uint16_t rec = slotMissionShip[s];
+    uint32_t q;
+    if (rec >= 64 || MSHIP(rec)[16] >= RV_PILOTS || (rvFlags[s] & RV_FLAG_HUMAN) || !hull)
+        return left;
+    q = ((uint32_t)hull * (left / 40 ? left / 40 : 1) + NAMED_HULL_HITS - 1) / NAMED_HULL_HITS;
+    return q > 0xFFFFUL ? 0xFFFF : (uint16_t)q;
+}
+
 uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, uint16_t where)
 {
     const RvShipType __far *t;
@@ -3565,6 +3583,8 @@ uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, 
     if (left) {
         const int16_t player = dst == 0 && rvController[0] == CTL_PLAYER;
         const uint16_t room = damagePoints[dst] < t->hull ? (uint16_t)(t->hull - damagePoints[dst]) : 0;
+        if (!player)
+            left = hull_take((int16_t)dst, left, t->hull);   /* (a named pilot's: a share of the hull a hit) */
         /* the hull's last point is not the player's end: the reserve takes what is left over (damage.h) */
         if (player && left >= room && damage_reserve_take((uint16_t)(left - room), t->hull)) {
             damagePoints[dst] = t->hull;

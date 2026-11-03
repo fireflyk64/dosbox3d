@@ -5230,14 +5230,17 @@ static void t_reserve(void)
 {
     static const char __far e_dead[] = "the hull gone after %d points and the player's ship is dying: the reserve takes what is over";
     static const char __far e_flag[] = "the hull is gone and damage_in_reserve says %d";
-    static const char __far e_long[] = "%d more points past the hull and still alive: the reserve is twice the hull (%d)";
-    static const char __far e_short[] = "only %d points past the hull killed the player: the reserve is twice the hull (%d)";
+    static const char __far e_long[] = "%d more points past the hull and still alive: the reserve is %d (1.7 hulls)";
+    static const char __far e_short[] = "only %d points past the hull killed the player: the reserve is %d (1.7 hulls)";
     static const char __far e_npc[] = "a Nicander's hull gone and its state is %d: 9, it has no reserve";
-    uint16_t hull;
+    uint16_t hull, reserve;
     int16_t i, took = 0;
     pt_alone(PT_PLAYER);
     pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 20000, TURN / 2);
     hull = slot_type(0)->hull;
+    reserve = (uint16_t)((uint32_t)hull * DAMAGE_RESERVE_TENTHS / 10);
+    if (reserve < DAMAGE_RESERVE_LEAST)
+        reserve = DAMAGE_RESERVE_LEAST;
     pt_bare();
     (void)pt_hit(0xFFFF, 0, (uint16_t)(hull + 5), 1, 0, 0);
     REQUIRE(shipAiState[0] != 9, e_dead, hull + 5, 0, 0);
@@ -5247,8 +5250,8 @@ static void t_reserve(void)
         (void)pt_hit(0xFFFF, 0, 5, 1, 0, 0);
         took = (int16_t)(took + 5);
     }
-    REQUIRE(took <= 2 * hull + 5, e_long, took, 2 * hull, 0);
-    REQUIRE(took >= 2 * hull - 5, e_short, took, 2 * hull, 0);
+    REQUIRE(took <= reserve + 5, e_long, took, reserve, 0);
+    REQUIRE(took >= reserve - 5, e_short, took, reserve, 0);
     SHIELD(1, 0) = SHIELD(1, 1) = 0;
     for (i = 0; i < 4; i++)
         ARMOR(1, i) = 0;
@@ -5701,6 +5704,51 @@ static void t_human_seat_lost(void)
     REQUIRE(logic_wingman_lost() == -1, e_lost, logic_wingman_lost(), 0, 0);
 }
 
+/* M8.32: a named pilot's hull takes a hit past its armour as a share (the old game's wingmen: eight laser hits, whatever
+ * their size; a big one several shares); a person's wingman seat takes the hit itself */
+static int16_t pt_bare_wingman(void)
+{
+    int16_t wing[2], i;
+    (void)pt_patrol();
+    if (logic_wingmen(wing, 2) < 1 || slotMissionShip[wing[0]] >= 64
+        || (missionShipTable + missionShipTable_SIZE * slotMissionShip[wing[0]])[16] >= RV_PILOTS)
+        return -1;
+    playerCanBeDamaged = 0;
+    SHIELD(wing[0], 0) = SHIELD(wing[0], 1) = 0;
+    for (i = 0; i < 4; i++)
+        ARMOR(wing[0], i) = 0;
+    return wing[0];
+}
+
+static void t_named_hull(void)
+{
+    static const char __far e_none[] = "no wingman with a named pilot in the patrol (slot %d)";
+    static const char __far e_named[] = "a named wingman, bare to its hull (%d), died after %d hits of 14: %d, a share each";
+    static const char __far e_big[] = "a hit of 400 on a named wingman's bare hull left it alive (state %d, hull taken %d of "
+        "%d): ten shares, more than the hull";
+    static const char __far e_human[] = "a person's wingman seat, bare to its hull (%d), died after %d hits of 14: %d, the "
+        "hit itself";
+    int16_t s, i;
+    uint16_t hull, share;
+    if ((s = pt_bare_wingman()) < 0) {
+        REQUIRE(0, e_none, s, 0, 0);
+    }
+    hull = slot_type(s)->hull;
+    share = (uint16_t)((hull + 7) / 8);
+    for (i = 0; i < 100 && shipAiState[s] != 9; i++)
+        (void)pt_hit(0xFFFF, s, 14, 2, 0, 0);
+    REQUIRE(i == (int16_t)((hull + share - 1) / share), e_named, hull, i, (hull + share - 1) / share);
+    s = pt_bare_wingman();
+    (void)pt_hit(0xFFFF, s, 400, 2, 0, 0);
+    REQUIRE(shipAiState[s] == 9, e_big, shipAiState[s], damagePoints[s], hull);
+    s = pt_bare_wingman();
+    rvController[s] = CTL_PUPPET;
+    rvFlags[s] |= RV_FLAG_HUMAN;
+    for (i = 0; i < 100 && shipAiState[s] != 9; i++)
+        (void)pt_hit(0xFFFF, s, 14, 2, 0, 0);
+    REQUIRE(i == (int16_t)((hull + 13) / 14), e_human, hull, i, (hull + 13) / 14);
+}
+
 /* M8.31: delayedDespawn starts a ship's end (the layer's kill on another machine), and the player's own kills are its
  * splashes */
 static void t_dying(void)
@@ -5809,7 +5857,7 @@ static const char __far n_m3_13[] = "M3.13 type-rates (step_timers): gun energy 
 static const char __far n_m3_14[] = "M3.14 hit-volumes (shot_hit): a bolt within the radius, in the volume box, through the silhouettes, as the rule says";
 static const char __far n_m3_15[] = "M3.15 damage-grows (shot_hit): a bolt hurts by its life left: the laser 10 at the muzzle, 25 at the end of its reach";
 static const char __far n_m2_20[] = "M2.20 forward-only (gun_fire): a shot carries the ship's speed along the nose, nothing of its slide";
-static const char __far n_m12_1[] = "M12.1 reserve (damage_reserve_take): past the hull the player lives on twice the hull more; nobody else does";
+static const char __far n_m12_1[] = "M12.1 reserve (damage_reserve_take): past the hull the player lives on 1.7 hulls more; nobody else does";
 static const char __far n_m12_2[] = "M12.2 reserve-breaks (damage_hurt): on the reserve every hit breaks a system";
 static const char __far n_m12_3[] = "M12.3 where (damage_hurt): the rear breaks the engine and tank not the guns, the front the reverse, a side not the other's VDU";
 static const char __far n_m12_4[] = "M12.4 engine (damage_kps): less top speed by its level, no burner wrecked, back when whole";
@@ -5885,6 +5933,7 @@ static const char __far n_m6_7[] = "M6.7 ram-owner (ram): a collision is worked 
 static const char __far n_m7_8[] = "M7.8 puppet-launch (missile_launch, step_fire): a launch by another machine's ship homes on the target that machine published";
 static const char __far n_m8_29[] = "M8.29 scene-human (step_scene): a ship near another machine's pilot stays in the scene";
 static const char __far n_m8_30[] = "M8.30 human-seat-lost (logic_wingman_lost): a wingman a person flew, killed, is no named pilot's death";
+static const char __far n_m8_32[] = "M8.32 named-hull (do_damage): a named pilot's hull takes a hit past its armour as a share, eight laser hits; a person's seat the hit itself";
 static const char __far n_m8_31[] = "M8.31 dying (delayedDespawn, do_damage): delayedDespawn starts a ship's end; the player's kills are its splashes";
 static const char __far n_m6_6[] = "M6.6 ram-caps (ram): a collision costs the player its shield and armour at most (the hull to 40% with the armour gone) and, cut, a system; a light one the old rule's; an NPC its shield and half its armour; into a capital ship over 100 kps, stopped";
 static const char __far n_m8_20[] = "M8.20 jump-told (route_step, logic_on_jump): an escorted ship's jump is told once, friendly, for the star and the flash";
@@ -5960,7 +6009,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 },
 };
 
 /* --- the run --- */

@@ -392,6 +392,7 @@ nav 0):
 | M8.29 scene-human | the carrier 20,000 km from the player but 2,000 km from another machine's pilot (RV_FLAG_HUMAN) stays in the scene; that pilot gone 30,000 km too, it is held off it |
 | M8.30 human-seat-lost | the patrol's wingman flown by a person on another machine (a puppet, RV_FLAG_HUMAN) killed: no named pilot is lost |
 | M8.31 dying | delayedDespawn on a live Nicander makes it dying (shipAiState 9) at once, still a ship, and gone after its explosion; the player's own hull kills a Nicander and an AI another: one splash (logic_splashes) |
+| M8.32 named-hull | a named pilot's wingman, bare to its hull, dies after eight hits of 14 (a share of the hull each, NAMED_HULL_HITS), at once to one of 400; a person's wingman seat takes each hit itself |
 | M8.26 way-ahead | a field across the line: the autopilot stops 500 km short of its edge and will not go from there, and goes again past it; a hidden point on the line: it stops inside its reach and its ships come; hidden points are on no list, and one never come to does not hold the mission up |
 | M8.25 scene | past 7,200 km the home carrier is no ship to anything and cannot be the target; the wing stays; it is back as it was when the player is |
 | M8.24 nav-choice | `g_sys.nav` follows the first waypoint not reached until N (`logic_nav_next`) picks one; N goes down the list and round through home; the autopilot goes to the one chosen, and the choice follows again once it is reached |
@@ -434,7 +435,7 @@ tests cover them; flight.c's keys (T, Y, L) and its AUTO call them.
 
 | test | expects |
 |---|---|
-| M12.1 reserve | past the hull's last point the player lives on, for twice the hull's points more; a Nicander whose hull goes dies |
+| M12.1 reserve | past the hull's last point the player lives on, for 1.7 times the hull's points more (DAMAGE_RESERVE_TENTHS); a Nicander whose hull goes dies |
 | M12.2 reserve-breaks | on the reserve every hit breaks a system |
 | M12.3 where | 300 heavy hits a side: the rear breaks the engine and the tank and never the guns or VDUs, the front the guns and radar and never the engine or tank; a side never the other's VDU |
 | M12.4 engine | each level holds full throttle under its share of the top speed; wrecked no burner; whole again, the top speed |

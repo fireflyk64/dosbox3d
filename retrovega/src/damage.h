@@ -32,8 +32,12 @@ const char __far *logic_system_name(int16_t k);   /* its name for the readout (D
 /* the player's ship is new: every system whole, the reserve full (logic_start; a spawn into slot 0) */
 void damage_reset(void);
 
-/* the reserve: what a hit past the hull's last point draws on.  `over` of it spent: 1 when the reserve holds, 0 when the
- * hit is the end of the ship (hull: the type's) */
+/* the reserve: what a hit past the hull's last point draws on, DAMAGE_RESERVE_TENTHS tenths of the hull (at least
+ * DAMAGE_RESERVE_LEAST).  1.7: the hits a Schroedinger takes are the old game's Hornet's on average (measured
+ * 2026-11-02, docs/damage.md; twice the hull was a hit or two more).  `over` of it spent: 1 when the reserve holds, 0
+ * when the hit is the end of the ship (hull: the type's) */
+#define DAMAGE_RESERVE_TENTHS 17
+#define DAMAGE_RESERVE_LEAST 60
 int16_t damage_reserve_take(uint16_t over, uint16_t hull);
 int16_t damage_reserve_pct(uint16_t hull);    /* what is left of it, in a hundred */
 int16_t damage_in_reserve(void);        /* the hull is gone and it is what is left */

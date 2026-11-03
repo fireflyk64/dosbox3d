@@ -9,19 +9,27 @@ system with odds of `left x 1.5 / hull`, and a further one per 24 points of it, 
 
 ## The reserve
 
-The hull's last point is not the end. Past it the player has **twice the hull again** (at least 60 points), and every hit on
+The hull's last point is not the end. Past it the player has **1.7 times the hull again** (at least 60 points; `DAMAGE_RESERVE_TENTHS`, damage.h), and every hit on
 it breaks at least one system. The VDU and the survival display read `CORE HIT` in place of the hull, the master warning goes
 frantic, a klaxon sounds, smoke drifts up through the cockpit, and the view never stops shaking. A hit bigger than all of it
 still kills outright.
 
-**Against the old game (measured 2026-11-02, the user: is the Schroedinger "equivalent to the hornet ... adjust to be
-similar"):** hits of 14 from ahead (the laser's, or the Photon Mk III's, at about 1,000 km), through the layer's
-`!hit`, until the ship is dying. The old game's Hornet past its armour rolls dice for each hit (a point, a system, now
-and then the core), so it varies: 15 to 23 hits with one every 0.2-0.5 s (19 on average), 19 to 35 with one every
-0.7-1.2 s (26). The Schroedinger takes its shields and armour away on the same hit as the Hornet (the same numbers and
-recharge), and dies on hit 20 at one every 0.25 s, 23 at 0.5 s, 25 to 32 at 0.7-1.2 s (28): a hit or two more on
-average, inside the old game's spread, so nothing was changed. (The reserve is what to trim to match it exactly:
-about 95 points instead of 112.)
+**Against the old game (measured 2026-11-02; the user: "within a shot or two of wc1 so the wingman and the hero feel
+like they did in recollection"):** hits of 14 from ahead (the laser's, or the Photon Mk III's, at about 1,000 km)
+through the layer's `!hit` and `!shoot`, until the ship is dying, a dump after each. Shields and armour go on the same
+hit in both games (the same numbers and recharge); past them the old game rolls dice, so its counts scatter.
+
+| one hit every | 0.25 s | 0.3 | 0.5 | 0.7 | 0.8 | 0.9 | 1.0 |
+|---|---|---|---|---|---|---|---|
+| the old game's Hornet, the player | 19 | 18 | 21 | 28 | 19 | 30 | 35 |
+| the Schroedinger, the player | 19 | 20 | 21 | 24 | 25 | 26 | 27 |
+| the old game's wingman (Spirit's Hornet) | 14 | 16 | 14 | 15 | | | 20 |
+| a Schroedinger wingman | 14 | 14 | 15 | 16 | | | 17 |
+
+Two things made it so: the reserve went from twice the hull to 1.7 times (twice was a hit or two more than the
+Hornet), and a named pilot's ship takes a hit past its armour as a share of its hull, as the old game's wingmen do (its
+code: a named pilot's ship a fortieth of the hit, at least one, of its hull's count; logic.c `hull_take`, eight laser
+hits; before it the wingman died two hits early under fast fire). An unnamed ship's hull takes the hit itself.
 
 ## Where a hit lands
 

@@ -18,10 +18,8 @@ static uint16_t __far g_leak;           /* the tank's leak, carried between step
 static struct { uint8_t sys, level; } __far g_events[8];
 static uint8_t __far g_event_in, __far g_event_out;
 
-/* The reserve, against the type's hull: twice over.  A fighter whose hull has gone has this much again to limp home on
- * (the user's: "an extra reservoir of health"); every hit on it breaks something */
-#define RESERVE_OF_HULL 2
-#define RESERVE_LEAST 60
+/* The reserve, against the type's hull (damage.h: 1.7 times).  A fighter whose hull has gone has this much again to limp
+ * home on (the user's: "an extra reservoir of health"); every hit on it breaks something */
 
 /* a hit through to the hull breaks a system with odds left x 3 / 2 in hull, and a heavy one breaks more */
 #define POINT_QTY 24                    /* a hit breaks a further system per this much */
@@ -144,8 +142,8 @@ void damage_reset(void)
 
 static uint16_t reserve_of(uint16_t hull)
 {
-    uint32_t r = (uint32_t)hull * RESERVE_OF_HULL;
-    return r < RESERVE_LEAST ? RESERVE_LEAST : r > 60000UL ? 60000U : (uint16_t)r;
+    uint32_t r = (uint32_t)hull * DAMAGE_RESERVE_TENTHS / 10;
+    return r < DAMAGE_RESERVE_LEAST ? DAMAGE_RESERVE_LEAST : r > 60000UL ? 60000U : (uint16_t)r;
 }
 
 int16_t damage_reserve_take(uint16_t over, uint16_t hull)
