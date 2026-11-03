@@ -1,5 +1,6 @@
 // The public lobby: one room of the lobby server, WC-LOBBY, where pilots who
-// do not know each other yet say which room they fly in.
+// do not know each other yet say which room they fly in.  RetroVega's pilots
+// have their own, RV-LOBBY: a page is in the loaded game's (opts.code).
 //
 // It is an ordinary lobbylink room of 32 seats (or as many as the server
 // gives a room: it says so, and the page asks again for that many), and its
@@ -51,7 +52,7 @@
 // seats, or with nothing when it has no room with a free seat or its pilot
 // keeps the room private ({t: "room", n, code, game, free}; opts.openRoom
 // says).  The asking page picks one it can fly in (web/wc.js).
-import { checkMessage, checkName, makeBucket, lineEvery, splitCodes, whyText, lobbyCode, isLobbyCode, LOBBY_CODE, RATE, MAX_CHARS, MAX_NAME, GAME_TAGS } from "./chatfilter.js";
+import { checkMessage, checkName, makeBucket, lineEvery, splitCodes, whyText, lobbyCode, isLobbyCode, LOBBY_CODE, LOBBY_CODES, RATE, MAX_CHARS, MAX_NAME, GAME_TAGS } from "./chatfilter.js";
 
 const SEATS = 32;                 // asked for (what the public server gives a room; 32 pilots at a line every ten seconds are three lines a second); a server that gives fewer says how many
 const CLAIM_SEATS = 256;          // a full lobby is asked for seats up to here: another page may have made it bigger
@@ -402,11 +403,12 @@ const store = (s, key, value) => { try { if (value == null) s.removeItem(key); e
 // advertisement, { code, offer } or null (the page joins the room of its
 // room form first when the pilot is in none), openRoom() the room offered to
 // a pilot who asks for an open game, { code, game, free } or null (none, or
-// private), log(line), code (another row of lobbies, for tests).
+// private), log(line), code() the row of lobbies for the game loaded (the
+// first one's code: WC-LOBBY, RetroVega's RV-LOBBY, another for tests).
 export function initHall(opts) {
-  const code = opts.code || LOBBY_CODE;
-  // The lobbies' own codes, this row's and the public one's, are not rooms.
-  const isLobby = (c) => isLobbyCode(c, code) || isLobbyCode(c);
+  const base = () => (typeof opts.code === "function" ? opts.code() : opts.code) || LOBBY_CODE;
+  // The lobbies' own codes, this row's and the public ones', are not rooms.
+  const isLobby = (c) => isLobbyCode(c, base()) || LOBBY_CODES.some((b) => isLobbyCode(c, b));
   const log = opts.log || (() => {});
   const ready = () => !opts.ready || !!opts.ready();
   // wanted: the pilot belongs in the lobby and is not in it for the moment
@@ -490,7 +492,7 @@ export function initHall(opts) {
     if (!inside()) return;
     const there = others();
     // (Named when it is not the first: pilots in another do not hear this one.)
-    box.append(el("span", "count", `${there.length + 1} in the lobby${net.code === code ? "" : " " + net.code}: `));
+    box.append(el("span", "count", `${there.length + 1} in the lobby${net.code === net.base ? "" : " " + net.code}: `));
     const entry = (name, tag, cls) => { const s = el("span", "pilot " + cls, name); if (tag) s.append(" ", el("span", "game", tag)); return s; };
     box.append(entry(myName() + " (you)", myTag(), "me"));
     for (const p of there.slice(0, ROSTER_NAMES)) {
@@ -665,7 +667,7 @@ export function initHall(opts) {
     entering = true;
     $("hallState").textContent = "";
     show();
-    const n = new HallNet({ server: opts.server(), code, log, ...settings,
+    const n = new HallNet({ server: opts.server(), code: base(), log, ...settings,
       on: { roster: renderRoster, link: linkChanged, message: fromPilot, lost: seatLost } });
     attempt = n;
     try {
@@ -686,7 +688,7 @@ export function initHall(opts) {
     store(sessionStorage, "wc:hall", "in");
     $("hallState").textContent = "";
     show();
-    sys(`You are in the lobby${net.code === code ? "" : ` ${net.code} (the ones before it are full)`} as ${myName()}. Advertise sends your room, and /room in a line is its code; a code like WC1-4821 can be clicked to join. ` +
+    sys(`You are in the lobby ${net.code}${net.code === net.base ? "" : " (the ones before it are full)"} as ${myName()}. Advertise sends your room, and /room in a line is its code; a code like WC1-4821 can be clicked to join. ` +
         `Lines are ${MAX_CHARS} characters at most, two to start with and then one every ${RATE.every / 1000} seconds ` +
         `(one a second while fewer than ${settings.busyFrom || RATE.busyFrom} pilots are here); no links.`);
     if (!typedName().ok && typedName().why !== "empty") sys(`Your callsign is not shown here (${whyText(typedName().why)}): you are ${myName()}.`);
@@ -793,6 +795,12 @@ export function initHall(opts) {
         if (was) leave({ keep: true, why: "You left the lobby: it needs a game to fly (step 1)." });
         else show();
         return;
+      }
+      // (A game whose pilots meet in a row of lobbies of their own, RetroVega's: the pilot moves to it, and back.)
+      const at = net || attempt;
+      if (at && at.base !== base()) {
+        leave({ keep: true });
+        wanted = true;
       }
       show();
       if (wanted) void enter();

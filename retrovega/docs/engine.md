@@ -2780,7 +2780,7 @@ as RVT.EXE is built, with the demos, benchmarks and self-tests
 it. https://fireflyk64.github.io/rv/ is this build (`host/web/site.sh` puts
 the page together, `host/web/deploy.sh` publishes it with rvsim at `rv/sim/`).
 It is one player: the multiplayer layer lives in DOSBox, so flying with
-others stays on the DOSBox page (`dosbox/?retrovega`).
+others stays on the DOSBox page (`dosbox/`, where RetroVega is built in).
 
 For a Linux desktop, `desktop/` builds the same game as two sandboxed
 programs: `rv-core`, the game with a seccomp filter and only its own

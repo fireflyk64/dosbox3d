@@ -80,12 +80,18 @@ the build, so the game and the emulator in one deploy always agree.
 
 ## 4. The page
 
-- `web/gamefiles.js`'s `rv` entry flies together (no `noFlight`): the mission menu is "Campaign from the barracks"
+- RetroVega is built into every page (since 2026-11-03, the user: "make the default site include the retrovega flag
+  by default and default to that system if there are no other games"; `?retrovega` no longer changes anything): it is
+  in every "Play" menu and the game of a page with no other. The public lobby is the loaded game's: RetroVega's
+  pilots meet in `RV-LOBBY` (and `RV-LOBBY0` ...), the others in `WC-LOBBY`; a page that switches games moves.
+- `web/gamefiles.js`'s `rv` entry flies together (no `noFlight`): the mission menu is "Campaign from the quarters"
   and every mission of the campaign, read from `rv-campaign.json` (`tools/rvdata.py` writes `RVNET.JSON` from the same
   packed records as `RVGAME.DAT`; `scripts/build-web.sh` puts it beside the page), so the menu follows the campaign.
   A picked mission is `rv /noquit /brief N`. The FPS box: 30 by default, 8-60. The room's asteroid choices are hidden
   (`ownRocks`: RetroVega's rocks are each machine's own); the wing bumps stay the host's choice.
-- A room of one (Players 1: `WCSOLO`) is the game alone, as before. In a room of two or three the host's game waits in
+- A room of one (Players 1: `WCSOLO`) is the game alone, as before, and has the mission menu too (the campaign's
+  `alone`: the game takes the mission on its own command line), "Campaign from your quarters" picked to begin with:
+  the game as it starts by itself. In a room of two or three the host's game waits in
   front of the briefing room for its wingmen ("Waiting for your wingmen"), as Wing Commander's waits in its barracks.
 - An RV.EXE and an emulator of two interfaces: the page says so in its status line (the layer's "RV ABI mismatch"),
   and the game flies alone.

@@ -18,7 +18,7 @@ import { initVoice } from "./voice.js";
 import { loadSo3 } from "./so3.js";
 import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles,
          saveGame, loadGames, forgetGame, totalSize, gameById, gameByTag, programsIn, knownBuild, GAMES } from "./gamefiles.js";
-import { newRoomCode, retagRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS } from "./chatfilter.js";
+import { newRoomCode, retagRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS, LOBBY_CODE, RV_LOBBY_CODE } from "./chatfilter.js";
 import { initHall, OTHER_SERVER, serverDown } from "./hall.js";
 import { createSetProvider, readTarGz } from "./rvsets.js";
 
@@ -31,12 +31,12 @@ const DATA_URL = "wc.tar.gz";
 const GAME_ROOT = "/game";
 const LOBBY_MAGIC = [0x57, 0x43, 0x4c, 0x01]; // "WCL" + version; never a valid protobuf start
 const query = new URLSearchParams(location.search);
-// RetroVega, the registry's built-in game, is a preview for now (the user's
-// call, 2026-10-20): it is in the "Play" menu, and the game of a page with
-// no files, only with ?retrovega (or #retrovega) in the address or a link to
-// an RV- room, and its pilots meet in a lobby of their own (RV-LOBBY).
-// Later it can be every fileless page's game.
-const retrovega = query.has("retrovega") || /retrovega/i.test(location.hash) || /^RV-/i.test(query.get("room") || "");
+// RetroVega, the registry's built-in game, is in every page's "Play" menu and
+// the game of a page with no other (the user, 2026-11-03: "make the default
+// site include the retrovega flag by default and default to that system if
+// there are no other games"; before, only with ?retrovega, which still does
+// no harm).  Its pilots meet in a lobby of their own (RV-LOBBY), the others
+// in WC-LOBBY: the page's lobby is the loaded game's (lobbyName).
 // The "Capship hull" box is offered only with ?capship (or &capship, or
 // #capship) in the address (the user's call, 2026-10-22); a wingman's game
 // takes the host's choice either way.
@@ -62,7 +62,6 @@ function roomLink(code) {
   const url = new URL(location.href);
   url.search = ""; url.hash = "";
   url.searchParams.set("room", code);
-  if (retrovega) url.searchParams.set("retrovega", "");   // (the friend's page offers it too)
   return withServer(url).toString();
 }
 function showServer() {
@@ -254,6 +253,7 @@ function setSource(s, want) {
   $("firstnameLabel").hidden = !(gameInfo() && gameInfo().firstName);
   retagRoom();
   if (lobby.game) { sayHello(); buildMissionMenu(); renderMission(); }
+  showLobbyName();
   hall.gameChanged();
   updateActions();
   joinLinked();
@@ -271,8 +271,8 @@ function holderOf(id) {
   if (copy) return copy;
   return builtins().some((g) => g.id === id) ? "builtin" : null;
 }
-// The games built into the page that this page offers.
-const builtins = () => (retrovega ? GAMES.filter((g) => g.builtin) : []);
+// The games built into the page.
+const builtins = () => GAMES.filter((g) => g.builtin);
 // The game built into the page, picked.
 function useBuiltin(id) {
   const g = gameById(id);
@@ -655,15 +655,20 @@ function loadCampaignManifest(g) {
     if (lobby.game) renderMission();
   }).catch((e) => { log(`the mission menu of ${g.title}: ${e.message || e}`); }));
 }
+// A room of one picks a mission only for a game that takes it on its own
+// command line (the registry's campaign says `alone`); the others fly from
+// their title screen there (the mission is the hooks', and they are not in).
+const missionAlone = () => !!(lobbyCampaign() && lobbyCampaign().alone);
 function buildMissionMenu() {
   const sel = $("mission");
   const c = lobbyCampaign();
-  const key = lobbyGameId();
+  const one = soloRoom();
+  const key = lobbyGameId() + (one ? ":alone" : "");
   if (sel.dataset.game === key && sel.options.length) return;
   sel.dataset.game = key;
   sel.innerHTML = "";
   const add = (value, text) => { const o = document.createElement("option"); o.value = value; o.textContent = text; sel.appendChild(o); };
-  add("", "Campaign from the barracks (the host's save game decides)");
+  add("", (c && c.start && c.start[one ? "alone" : "room"]) || "Campaign from the barracks (the host's save game decides)");
   if (!c) return;
   for (const s of c.series) {
     const n = Array.isArray(s.missions) ? s.missions.length : s.missions;
@@ -686,9 +691,13 @@ function renderMission() {
   sel.value = missionKey(lobby.mission);
   sel.disabled = !isHost() || running;
   // (A room of one flies the game as it is: its own campaign, collisions and
-  // all.  The frame rate stays: the hooks pace a flight alone too.)
+  // all, and a mission picked only where the game takes it itself.  The frame
+  // rate stays: the hooks pace a flight alone too.)
   const one = soloRoom();
-  for (const id of ["mission", "latency", "collisions"]) $(id).parentElement.hidden = one;
+  const pickAlone = one && missionAlone();
+  $("mission").parentElement.hidden = one && !pickAlone;
+  $("mission").parentElement.title = one ? "The mission to start at, or the campaign as the game starts it" : "The mission the host picked for everyone";
+  for (const id of ["latency", "collisions"]) $(id).parentElement.hidden = one;
   // (a game whose asteroids are its own, each machine's: only the wing bumps are the room's to choose)
   const ownRocks = !!(gameById(lobbyGameId()) || {}).ownRocks;
   for (const o of $("collisions").options) o.hidden = ownRocks && !o.value.startsWith("on-");
@@ -711,9 +720,10 @@ function renderMission() {
   $("capHull").disabled = !isHost() || running;
   const hints = (c && c.hints) || {};
   // (One line, cut with an ellipsis; the whole of it is the tooltip.)
-  const hint = one ? "The game from its title screen: its own campaign and saved games, its own wingman."
+  const hint = one && !pickAlone ? "The game from its title screen: its own campaign and saved games, its own wingman."
     : !c ? (lobbyGameId() ? "" : "Load the game files to pick a mission.")
-    : lobby.mission ? `${missionLabel(lobby.mission)[0].toUpperCase()}${missionLabel(lobby.mission).slice(1)}. ${hints.forced || ""}`
+    : lobby.mission ? `${missionLabel(lobby.mission)[0].toUpperCase()}${missionLabel(lobby.mission).slice(1)}. ${(one ? hints.aloneForced : hints.forced) || ""}`
+    : one ? hints.alone || ""
     : (isHost() ? hints.host : hints.wing) || "";
   $("missionHint").textContent = hint;
   $("missionHint").title = hint;
@@ -1146,7 +1156,8 @@ async function joinRoom({ create = true } = {}) {
     $("share").hidden = solo;
     $("chatForm").hidden = solo;
     $("lobbyHint").textContent = solo ? SOLO_HINT : ROOM_HINT;
-    if (game.selfId === 0) lobby.mission = parseMission(query.get("mission")) || { series: 1, mis: 0 };
+    // (A room of one starts with the campaign as the game starts it, a room for more at the first mission.)
+    if (game.selfId === 0) lobby.mission = parseMission(query.get("mission")) || (solo ? null : { series: 1, mis: 0 });
     lobby.rocks = game.selfId === 0 ? rocksMode({ 0: "off", 2: "soft" }[query.get("rocks")] || query.get("rocks")) : "on";
     lobby.wingBumps = game.selfId === 0 ? wingBumpsMode({ 0: "game", 1: "harmless" }[query.get("bumps")] || query.get("bumps")) : "harmless";
     lobby.latency = game.selfId === 0 ? latencyMode(query.get("latency")) : "low";
@@ -1535,7 +1546,7 @@ async function start(fromGesture) {
     // command line (the registry says which).
     const campaign = gameInfo() && gameInfo().campaign;
     let missionArgs = "";
-    if (lobby.mission && together && campaign) {
+    if (lobby.mission && campaign && (together || (solo && campaign.alone && campaign.missionArgs))) {
       if (campaign.missionArgs) {
         missionArgs = " " + campaign.missionArgs(lobby.mission);
       } else {
@@ -1714,14 +1725,16 @@ function steeringPointer() {
            stepsX: steps(1, 639), stepsY: steps(2, 199), edgeX: M._wc_web_steer(3, 0) / 639, edgeY: M._wc_web_steer(3, 1) / 199, top: M._wc_web_steer(3, 2) };
 }
 
-// The public lobby (web/hall.js): RetroVega's preview pilots have their own;
-// ?hall=CODE is another one, for tests.
-const lobbyName = query.get("hall") || (retrovega ? "RV-LOBBY" : undefined);
-if (lobbyName) for (const el of document.querySelectorAll("code.lobbyName")) el.textContent = lobbyName + (el.dataset.n || "");
-if (retrovega) {
-  $("hallNeeds").textContent = "Pick a game under Play (RetroVega is built in) or load Wing Commander or Wing Commander II (step 1) to enter: this page connects to the lobby only with a game to fly.";
-  for (const el of document.querySelectorAll("#dropzone .loaded")) el.firstChild.textContent = "RetroVega is built in (under Play). Wing Commander or Wing Commander II: drop a ";
+// The public lobby (web/hall.js): the loaded game's, RetroVega's pilots in
+// their own row (RV-LOBBY ...), the others in WC-LOBBY's; ?hall=CODE is
+// another one, for tests.
+function lobbyName() {
+  return query.get("hall") || (gameInfo() && gameInfo().id === "rv" ? RV_LOBBY_CODE : LOBBY_CODE);
 }
+function showLobbyName() {
+  for (const el of document.querySelectorAll("code.lobbyName")) el.textContent = lobbyName() + (el.dataset.n || "");
+}
+showLobbyName();
 const hall = initHall({
   code: lobbyName,
   server: serverUrl,

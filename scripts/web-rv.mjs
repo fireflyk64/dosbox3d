@@ -1,15 +1,17 @@
 // RetroVega in the browser build (headless Chrome pages, a local lobby
-// server), as scripts/web-smoke.sh rv runs it.  RetroVega is a preview: a
-// page offers it only with ?retrovega in its address (or a link to an RV-
-// room), and then:
+// server), as scripts/web-smoke.sh rv runs it.  RetroVega is built into
+// every page (since 2026-11-03; ?retrovega in the address changes nothing),
+// and:
 //
-//   0. (without ?retrovega, a page with no files offers nothing and stays
-//      out of the lobby, as before)
+//   0. a page with no game files, ?retrovega or not, plays RetroVega, and
+//      its lobby is RetroVega's own (RV-LOBBY);
 //   1. a page with no game files at all (a fresh browser, a site with no
 //      wc.tar.gz) has RetroVega in its "Play" menu, enters the public lobby
 //      by itself, joins a room and flies alone: the game starts, finds the
 //      OPL3, and the keyboard reaches it (Tab jumps between hotspots, a held
 //      arrow key steers the pointer);
+//   1b. a room of one (Players 1) picks a mission too, the campaign as the
+//      game starts it by default: the game starts at the picked one;
 //   2. a host and a wingman meet in an RV- room by its link; the host's Fly
 //      starts both games;
 //   3. a shared flight (retrovega/docs/multiplayer.md): the host's menu has
@@ -58,9 +60,7 @@ async function open(name, query) {
   u.searchParams.set("hall", hallCode);
   for (const [k, v] of Object.entries(query)) u.searchParams.set(k, v);
   await page.goto(u.toString());
-  if (query.retrovega !== undefined || query.room) {
-    await page.waitForFunction(() => document.getElementById("sourceStatus").dataset.state === "ready", null, { timeout: 60000 });
-  }
+  await page.waitForFunction(() => document.getElementById("sourceStatus").dataset.state === "ready", null, { timeout: 60000 });
   return page;
 }
 const rvlog = (page) => page.evaluate(() => {
@@ -82,12 +82,14 @@ async function keep(name, page) {
   fs.writeFileSync(path.join(shotDir, `rv-${name}-RVLOG.TXT`), await rvlog(page));
 }
 
-// -- 0. without ?retrovega: as before ------------------------------------------
+// -- 0. without ?retrovega: RetroVega all the same ----------------------------------
 console.log(`lobby ${hallCode} at ${lobbyUrl}`);
-const plain = await open("plain", { callsign: "PLAIN" });
-await sleep(3);
-check("without ?retrovega a page with no files offers no RetroVega", !(await plain.$$eval("#program option", (os) => os.some((o) => o.value === "rv"))));
-check("and stays out of the lobby", await plain.evaluate(() => !(window.__wcHall && window.__wcHall.inside())));
+// (hall "": the lobby's own name, which the page shows; lobby=off: it does not go in)
+const plain = await open("plain", { callsign: "PLAIN", hall: "", lobby: "off" });
+check("without ?retrovega a page with no files plays RetroVega", (await plain.$eval("#program", (el) => el.value)) === "rv",
+  await plain.$eval("#program", (el) => [...el.options].map((o) => o.value).join(", ")));
+check("and its lobby is RetroVega's, RV-LOBBY", (await plain.$eval("#hallNote code.lobbyName", (el) => el.textContent)) === "RV-LOBBY",
+  await plain.$eval("#hallNote code.lobbyName", (el) => el.textContent));
 await plain.context().close();
 
 // -- 1. no files: RetroVega, the lobby, a flight alone ---------------------------
@@ -191,6 +193,40 @@ check("the wingman has the host's ship where it is", body > 0 && km(ws.pos[body]
 check("no stop in either game", !/FAIL /.test(await rvlog(h2)) && !/FAIL /.test(await rvlog(w2)));
 await keep("host2", h2);
 await keep("wing2", w2);
+await h2.context().close();
+await w2.context().close();
+
+// -- 1b. a room of one picks a mission -------------------------------------------------
+// (last: it reads the game's campaign place as section 3 does)
+const alone = await open("alone", { callsign: "ALONE" });
+await alone.fill("#seats", "1");
+await alone.dispatchEvent("#seats", "change");
+await alone.click("#join");
+await alone.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 30000 });
+await alone.waitForFunction((n) => document.querySelectorAll("#mission option").length === n + 1, missions, { timeout: 20000 }).catch(() => {});
+const menu = await alone.evaluate(() => {
+  const sel = document.getElementById("mission");
+  return { shown: !document.getElementById("missionRow").hidden && !sel.parentElement.hidden, enabled: !sel.disabled,
+           n: sel.options.length, first: sel.options[0] ? sel.options[0].textContent : "", value: sel.value,
+           hint: document.getElementById("missionHint").textContent };
+});
+check(`a room of one has the mission menu: the campaign, then the ${missions} missions`,
+  menu.shown && menu.enabled && menu.n === missions + 1 && /^Campaign from your quarters/.test(menu.first), JSON.stringify(menu));
+check("to begin with the campaign as the game starts it", menu.value === "" && /quarters/.test(menu.hint), menu.hint);
+const pick = campaign.series[1];       // (the second node's first mission)
+await alone.selectOption("#mission", `${pick.node + 1}/0`);
+const pickedHint = await alone.$eval("#missionHint", (el) => el.textContent);
+const pickName = pick.id.charAt(0) + pick.id.slice(1).toLowerCase();
+check("a picked mission is said beside the menu", pickedHint.startsWith(`${pickName} 1 `) && /You start in the briefing room for it/.test(pickedHint), pickedHint);
+await alone.click("#fly");
+await waitLog(alone, /input: mouse/, 90000);
+check("the game is launched at it", logs.alone.some((l) => l.includes(`rv /noquit /brief ${pick.missions[0].n}`)),
+  logs.alone.filter((l) => /\/brief|alone/.test(l)).join(" | "));
+await sleep(3000);
+const at = { node: (await bytes(alone, rv.RV_DS_currentSeries, 1))[0], mission: (await bytes(alone, rv.RV_DS_currentMission, 1))[0] };
+check("and its campaign is there", at.node === pick.node && at.mission === 0, JSON.stringify(at));
+check("no stop in the game", !/FAIL /.test(await rvlog(alone)));
+await keep("alone", alone);
 
 await browser.close();
 const ok = checks.every((c) => c.ok);

@@ -195,9 +195,16 @@ const RV_HINTS = {
   forced: "Everyone starts in the briefing room for it, the campaign at that mission; your saves stay as they were.",
   host: "Your campaign decides: walk into the briefing room and your wingmen get your mission there.",
   wing: "The host's campaign decides: walk into the briefing room and you get the host's mission there.",
+  // (a room of one: alone below)
+  alone: "You start in your quarters with a new campaign; your saved games are in the bunk.",
+  aloneForced: "You start in the briefing room for it, the campaign at that mission; your saves stay as they were.",
   help: "RetroVega is a campaign of 40 missions: you start in your quarters aboard the TCS Vigilance and walk the ship, bar, briefing room and deck, saving in the bunk, then fly from the deck. Flown together, the host's game runs the mission and each other pilot flies one of its wingmen (a third gets a fighter of their own). A wingman flies the host's mission whatever their own save holds; their sortie and their kills go into their own save, their campaign stays where it was. When anyone dies, or the carrier is lost, everyone's flight ends, and the host's R (fly it again) or C (carry on) decides for everyone. A pilot's bumps into another pilot do no harm. The host's Fly starts everybody's game. Arrow keys steer the pointer, Tab jumps between the things you can use, Enter uses one." };
-// (series: filled from rv-campaign.json by web/wc.js before the menu is made)
-const RV_CAMPAIGN = { series: [], manifest: "rv-campaign.json", missionArgs: rvMission, hints: RV_HINTS };
+// (series: filled from rv-campaign.json by web/wc.js before the menu is made.  alone: a room of one may pick a
+// mission too, since the game takes it on its own command line; the user, 2026-11-03: "We'll need a mission picker
+// (or start at campaign) like the other games".  start: the menu's first entry, the campaign as the game starts it.)
+const RV_CAMPAIGN = { series: [], manifest: "rv-campaign.json", missionArgs: rvMission, hints: RV_HINTS, alone: true,
+                      start: { room: "Campaign from the quarters (the host's save game decides)",
+                               alone: "Campaign from your quarters (your saves are in the bunk)" } };
 
 export const GAMES = [
   { id: "wc1", tag: "WC1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
