@@ -9,8 +9,11 @@
  *
  * It only watches: once a frame (flight_music) it reads the ships' slots and
  * the ship's systems (panel.h), so combat needs to tell it nothing.  A ship
- * splashed is an enemy that was near last frame and is gone now; a friend
- * lost the same for one of ours; the panic is the hull (100% whole):
+ * splashed is an enemy near that has begun to die (shipAiState 9); a friend
+ * lost the same for one of ours (a ship gone from the slots without dying,
+ * left behind by the autopilot, landed, jumped out or run off, is no loss:
+ * the user, 2026-11-02, "it plays the funereal march as soon as I auto to
+ * nav 1"); the panic is the hull (100% whole):
  * under 60, 35, 15 the first, second and third.  The mission is done when
  * the enemies have all gone, and then (or while the player calls the
  * carrier to land) the way home plays: won or lost by the mission's victory
@@ -37,15 +40,14 @@
 enum { CALM, FIGHT, HOME, ROCKS, PANIC, DEAD };
 #define NEAR_KM 4000L                   /* an enemy this near starts a fight (a little beyond its hail) */
 #define STAY_KM 6000L                   /* and one this near keeps it going */
-#define GONE_KM 12000L                  /* a ship gone this near was splashed (farther: it left) */
+#define GONE_KM 12000L                  /* a ship dying this near was splashed, or lost (farther: not heard of) */
 #define CALM_AFTER (12 * 240UL)         /* the music clock's ticks with none within STAY_KM before it is over */
 
 typedef struct {
     int mood, panic;                    /* and how bad the panic (0..2) */
     int cue;                            /* the song playing for it */
     unsigned long quiet_at;             /* the last time an enemy was near */
-    unsigned char side[RV_MAX_SHIP_SLOT + 1];   /* a ship's side + 1 last frame, 0 no ship */
-    unsigned char close[RV_MAX_SHIP_SLOT + 1];  /* and if it was within GONE_KM */
+    unsigned char dying[RV_MAX_SHIP_SLOT + 1];  /* a ship was dying (shipAiState 9) last frame */
     unsigned char hostile_seen;         /* an enemy was out there this flight */
     unsigned char next[2];              /* the next of the cruise and battle songs (kept between flights) */
     int queued;                         /* the follow-on asked for (music_then), -1 none */
@@ -191,7 +193,7 @@ void score_start(const RvMission __far *m)
     g_sc.quiet_at = 0;
     g_sc.hostile_seen = 0;
     for (s = 0; s <= RV_MAX_SHIP_SLOT; s++)
-        g_sc.side[s] = g_sc.close[s] = 0;
+        g_sc.dying[s] = 0;
 #ifdef RV_TESTS
     if (g_score_test == 3)
         g_sc.next[0] = RV_MUSIC_CRUISE7 - RV_MUSIC_CRUISE1;     /* (the test of the cycle's end) */
@@ -221,14 +223,16 @@ void score_tick(int landing)
             if (km < STAY_KM)
                 staying++;
         }
-        if (!ship && g_sc.side[s] && g_sc.close[s]) {       /* gone, and near when last seen */
-            if (g_sc.side[s] == 2)
-                splashed++;
-            else if (g_sc.side[s] == 1)
-                lost++;
+        {
+            int dying = ship && shipAiState[s] == 9;
+            if (dying && !g_sc.dying[s] && km < GONE_KM) {   /* (begun to die this frame, near) */
+                if (side == 1)
+                    splashed++;
+                else if (side == 0)
+                    lost++;
+            }
+            g_sc.dying[s] = (unsigned char)dying;
         }
-        g_sc.side[s] = (unsigned char)(side + 1);
-        g_sc.close[s] = ship && km < GONE_KM;
     }
     if (hostiles)
         g_sc.hostile_seen = 1;
@@ -261,8 +265,13 @@ void score_tick(int landing)
     else if (mood == CALM || mood == FIGHT)
         follow(mood);
     /* the stings over it all */
-    if (lost)
+    if (lost) {
+        static const char __far s_lost[] = "score: a friend lost: the tragic sting";
+        rv_notef(s_lost);
         music_sting(RV_MUSIC_TRAGEDY);
-    else if (splashed)
+    } else if (splashed) {
+        static const char __far s_splash[] = "score: %d splashed: a victory sting";
+        rv_notef(s_splash, splashed);
         music_sting(RV_MUSIC_VICTORY1 + g_sc.victory++ % 3);
+    }
 }

@@ -198,9 +198,12 @@ anything. The rules come in this order:
 
 On top of these:
 
-- **Stings:** an enemy that was within 12,000 km last frame and is gone
-  now was splashed, and gets a victory sting, the three in turn. A friend
-  gone the same way gets the tragedy.
+- **Stings:** an enemy within 12,000 km that begins to die (`shipAiState`
+  9) was splashed, and gets a victory sting, the three in turn. A friend
+  dying the same way gets the tragedy. A ship gone from the slots without
+  dying (left behind by the autopilot and held out of the scene, landed,
+  jumped out, run off) is no loss: it had been, and the tragedy played as
+  the autopilot reached nav 1 (the user, 2026-11-02).
 - **Remixes** (`music_then`, the engine's follow-ons): as each calm song
   comes in, the next of the cruise cycle is asked for after its pass,
   from its loop, so the riser of one lands on the downbeat of the next,
