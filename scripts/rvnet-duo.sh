@@ -29,7 +29,8 @@
 #             way into the host's first mission being some seconds long
 #   OUT       where the instances run and leave their logs and dumps (default /tmp/rvnet-SCENARIO)
 #   PORT      the TCP port (default 13951); DOSBOX the emulator (default this tree's build-native);
-#   GAME      the game's directory (default retrovega/build/dos); WCFPS passes on
+#   GAME      the game's directory (default retrovega/build/dos); WCFPS passes on; RV_ARGS more of the game's switches
+#             (with GAME a copy whose RV.EXE is RVT.EXE: /record N, the test build's screenshots)
 #
 # Every instance gets a directory of its own: symlinks to the game's files but those it writes (RV.EXE is copied:
 # a running EXE is not shared).  One pair at a time on this machine (the sandbox's pid limit).
@@ -142,7 +143,7 @@ start() {
         esac
     done
     sed -n '/^\[autoexec\]/q;p' "$ROOT/retrovega/tests/rv.conf" > "$dir/run.conf"
-    printf '[autoexec]\nmount c "%s"\nc:\nRV.EXE /fly %d /noquit /verbose\nexit\n' "$dir/game" "$mission" >> "$dir/run.conf"
+    printf '[autoexec]\nmount c "%s"\nc:\nRV.EXE /fly %d /noquit /verbose %s\nexit\n' "$dir/game" "$mission" "${RV_ARGS:-}" >> "$dir/run.conf"
     (cd "$dir" && env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy WCRVNET=1 "${NET[@]}" WCPLAYERS="$PLAYERS" \
         WCNET_LOG=2 WCNET_PERF=5 WCNET_DUMP_DIR="$dir/dump" WCNET_KEYSCRIPT="$script" "$@" \
         timeout -k 5 "$SECONDS_RUN" "$DOSBOX" -conf "$dir/run.conf" > "$dir/dosbox.log" 2>&1) &

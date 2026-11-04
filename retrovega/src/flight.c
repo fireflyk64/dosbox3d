@@ -611,6 +611,50 @@ static void arm_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
     (void)panel_tiny(x, row, s, UI_RED, y0, y1);
 }
 
+/* a shared flight's pilot gone (the user, 2026-11-04: "should also say if the other player was disconnected during
+ * flight maybe with a small lightning bolt or disconnected wire indicator at the top"): the ships people fly on other
+ * machines are marked (rvFlags RV_FLAG_HUMAN, the layer's), and the layer takes the mark off a pilot whose link has
+ * gone (the host's: the guest's ship is its AI's again; a guest's, the host lost: every mark, it flies on alone).
+ * Fewer marked than this flight has seen: a bolt and LINK LOST at the top of the view, until they are back */
+static uint8_t __far g_humans_peak;     /* the most ships people fly seen at once this flight */
+static uint8_t __far g_link_lost;       /* fewer now */
+
+static void link_watch(void)
+{
+    int s, n = 0;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
+        n += (rvFlags[s] & RV_FLAG_HUMAN) != 0;
+    if (n > g_humans_peak)
+        g_humans_peak = (uint8_t)n;
+    if ((n < g_humans_peak) != g_link_lost) {
+        static const char __far s_lost[] = "flight: frame %u: %d of the %d pilots on other machines this flight are gone";
+        static const char __far s_back[] = "flight: frame %u: every pilot is back (%d)";
+        g_link_lost = (uint8_t)(n < g_humans_peak);
+        if (g_link_lost)
+            rv_logf(s_lost, frameCounter, g_humans_peak - n, g_humans_peak);
+        else
+            rv_logf(s_back, frameCounter, n);
+    }
+}
+
+static void link_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
+{
+    static const char s[] = "LINK LOST";
+    int w = panel_tiny_width(s), x = g_cam_cx - (w + 12) / 2, row = ey0 + 6, bx = x;
+    if (!g_link_lost || row + 16 > ey0 + rows || x < 0 || x + w + 12 > SCR_W)
+        return;
+    if (ext && (x < ext[2 * (row - ey0)] || x + w + 12 > ext[2 * (row - ey0) + 1]
+                || x < ext[2 * (row + 15 - ey0)] || x + w + 12 > ext[2 * (row + 15 - ey0) + 1]))
+        return;
+    /* (the bolt: down from the top right, a step to the left, down again to a point) */
+    gfx_line(bx + 6, row, bx + 1, row + 8, UI_RED, 0, y0, y1);
+    gfx_line(bx + 7, row, bx + 2, row + 8, UI_RED, 0, y0, y1);
+    gfx_line(bx + 1, row + 8, bx + 6, row + 8, UI_RED, 0, y0, y1);
+    gfx_line(bx + 6, row + 8, bx + 2, row + 15, UI_RED, 0, y0, y1);
+    gfx_line(bx + 7, row + 8, bx + 3, row + 15, UI_RED, 0, y0, y1);
+    (void)panel_tiny(x + 12, row + 5, s, UI_RED, y0, y1);
+}
+
 /* the camera: the player's own frame; a ship's basis as the lightfield wants it */
 static void basis_of(int s, LfBasis *b)
 {
@@ -1512,6 +1556,7 @@ static void draw_world(int y0, int y1)
         logic_hud();                    /* the game's own marks over the view (none from outside) */
         nav_tag(y0, y1, ext, ey0, rows);
         arm_tag(y0, y1, ext, ey0, rows);
+        link_tag(y0, y1, ext, ey0, rows);
         if (g_sim && y0 < ey0 + 24 && y1 > ey0 + 6) {
             char s[64];
             simulator_line(s);
@@ -3233,6 +3278,7 @@ void __far __cdecl flight_startup(void)
         g_frame_t[i] = now;
     g_fps10 = 0;
     memset(&g_st, 0, sizeof g_st);
+    g_humans_peak = g_link_lost = 0;
     g_scene.full = flight_draw;
     g_scene.no_room = 1;
     g_scene.hide_pointer = 1;
@@ -3415,6 +3461,7 @@ unsigned short __far __cdecl flight_keys(void)
         g_arm_warn = LOGIC_HZ;
     else if (g_arm_warn)
         g_arm_warn--;
+    link_watch();
     g_pilot.missile = (unsigned char)(g_view != VIEW_FLYBY && in.key == KEY_ENTER);
     g_pilot.afterburner = g_sys.burning;
     if (in.x != g_scene.px || in.y != g_scene.py) {
