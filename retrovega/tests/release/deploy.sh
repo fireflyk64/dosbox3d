@@ -23,8 +23,13 @@ grep -a -q 'SMOKE OK' $S/smoke-$TAG-wc.log || { echo "WC SMOKE FAILED"; tail -6 
 echo "wc smoke: SMOKE OK"
 ps -eo args | grep -E 'deploy-full|host/web/deploy' | grep -v grep | grep -v fulldeploy && { echo "ANOTHER DEPLOY IS RUNNING"; exit 1; }
 git push -q origin retrovega-gx:retrovega || { echo "PUSH OF THE BRANCH FAILED"; exit 1; }
-git -C $MAIN merge -q --ff-only retrovega-gx || { echo "THE MAIN TREE WOULD NOT FAST-FORWARD"; exit 1; }
-echo "branch: retrovega at $(git -C $MAIN rev-parse --short HEAD)"
+# (the main tree is other sessions' too: fast-forward only, never over their uncommitted work; if their edits overlap
+# ours it stays where it was and says so, and the deploy goes on: the branch is pushed, the Pages come from this tree)
+if git -C $MAIN merge -q --ff-only retrovega-gx 2> $S/ff-$TAG.log; then
+  echo "branch: retrovega at $(git -C $MAIN rev-parse --short HEAD)"
+else
+  echo "branch: retrovega at $(git rev-parse --short HEAD) (pushed); the main tree left at $(git -C $MAIN rev-parse --short HEAD): $(grep -a -c '^	' $S/ff-$TAG.log) of its uncommitted files are ours too"
+fi
 git -C $PAGES pull -q --ff-only || { echo "PAGES PULL FAILED"; exit 1; }
 for f in web/dist/*; do
   n=$(basename "$f")
