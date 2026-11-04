@@ -323,9 +323,9 @@ game's bolt) and takes the bolt's whole step from where it was to where it is. T
 aims (`aim=`), whether a player's selected target holds its guns (`hold=`) and what a collision costs (`ram=`):
 docs/ai.md.
 
-The running lights are a shield gauge: whole shields, steady; as the front shield drains they flicker harder (on
-for the shields' share of every eight frames), and a hit flickers them for eight frames; dark with the power plant
-hit or EMCON off.
+The running lights are steady, a hit flickers them for eight frames, and they are dark with the power plant hit or
+EMCON off. (From 2026-10-31 they were a shield gauge as well, flickering harder as the front shield drained, on for
+its share of every eight frames; the user, 2026-11-03: "the lights flickering when shields charge is annoying".)
 
 When the player dies the flight ends on a screen of its own, "You have died", with R to fly the mission again
 (the tables put back as they were) and C to carry on to the debriefing with the mission lost.
