@@ -376,7 +376,7 @@ nav 0):
 | M8.4 won | `victoryPoints` 0 a second in; nav 1 flown and its ships killed, then nav 2's; home; landed: nonzero |
 | M8.5 skipped | landed after 2 s: 0 |
 | M8.6 enemies-left | both navs flown, nothing killed, landed: 0 |
-| M8.7 layer-spawn | `outerSpawnShipEntity(1, 0)` puts the wingman's record into a free slot at nav 0 (my plumbing: it passes now) |
+| M8.7 layer-spawn | `outerSpawnShipEntity(1, 0)` puts the wingman's record into a free slot at nav 0 (my plumbing: it passes now); a nav point 31,500 km out and a place 3,375 km off it put the ship at 34,875 (DOS's 16-bit sum had wrapped CEPHID2's destroyer round to the far side) |
 | M8.8 autopilot | from the start, to nav 1 (`currentNavPoint` 1); with enemies 4,000 km ahead, returns 0 and moves nothing; with them gone, to nav 2 |
 | M8.9 fighter | the first mission's `fighter` is the Schroedinger (the old campaign's Hornet) and the third's the Franklin (its Scimitar); `camp_load_units` puts the player in it (over the campaign's choice) and the wingman's record is the same type |
 | M8.10 escort-out | an Ox with `role=out` at nav 0, nav 1 6,000 km ahead: 10 s in it is nearer nav 1 and alive; 60 s in it is gone (jumped) without being killed, and the mission is still winnable |

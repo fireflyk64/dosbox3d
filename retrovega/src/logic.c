@@ -4162,10 +4162,13 @@ uint16_t __far __cdecl outerSpawnShipEntity_impl(uint16_t missionShip, uint16_t 
     int16_t s = behaviour == 6 ? 0 : ship_free_slot();
     if (missionShip >= 64 || s < 0)
         return 0xFFFF;
+    /* (the nav point's place and the ship's off it summed in 32 bits: in DOS's 16-bit int CEPHID2's destroyer, 31,500
+     * + 3,375 km, wrapped round to -30,661 and it was 60,000 km away, on the far side of the system; 26 ships of 13
+     * missions were past 32,767 km so) */
     ship_spawn(s, *(const uint16_t *)rec, *(const uint16_t *)(rec + 2), s == 0 ? CTL_PLAYER : CTL_AI,
-               KM * (*(const int16_t *)(nav + 2) + *(const int16_t *)(rec + 10)),
-               KM * (*(const int16_t *)(nav + 4) + *(const int16_t *)(rec + 12)),
-               KM * (*(const int16_t *)(nav + 6) + *(const int16_t *)(rec + 14)), 0);
+               KM * ((int32_t)*(const int16_t *)(nav + 2) + *(const int16_t *)(rec + 10)),
+               KM * ((int32_t)*(const int16_t *)(nav + 4) + *(const int16_t *)(rec + 12)),
+               KM * ((int32_t)*(const int16_t *)(nav + 6) + *(const int16_t *)(rec + 14)), 0);
     slotMissionShip[s] = missionShip;
     shipStateByte[s] = s == 0 ? 8 : rec[16];
     if (rec[17] && rec[17] <= P_COUNT) {   /* (its AI's profile, when the mission names one: docs/ai.md) */

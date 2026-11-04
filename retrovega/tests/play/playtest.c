@@ -3744,14 +3744,23 @@ static void t_layer_spawn(void)
 {
     static const char __far e_slot[] = "outerSpawnShipEntity(%d, 0) returned %d: a free slot";
     static const char __far e_where[] = "the spawned ship is %d km from nav 0: its nav point and its place off it";
+    static const char __far e_far[] = "a ship at a nav point 31,500 km out and 3,375 off it spawned at x %d km: 34,875 "
+        "(the sum past 32,767 km in 32 bits: CEPHID2's destroyer had wrapped round to the far side)";
     uint16_t s;
     int16_t k;
+    uint8_t *nav = navPointTable + navPointTable_SIZE * 1, *rec = missionShipTable + missionShipTable_SIZE * 1;
     pt_patrol();
     for (k = 1; k <= RV_MAX_SHIP_SLOT; k++)
         ship_clear(k);
     s = outerSpawnShipEntity(1, 0);
     REQUIRE(s >= 1 && s <= RV_MAX_SHIP_SLOT && slot_is_ship((int16_t)s), e_slot, 1, s, 0);
     REQUIRE(pt_km_to((int16_t)s, 0, 0, 0) < 5000, e_where, pt_km_to((int16_t)s, 0, 0, 0), 0, 0);
+    ship_clear((int16_t)s);
+    *(int16_t *)(nav + 2) = 31500;
+    *(int16_t *)(rec + 10) = 3375;
+    s = outerSpawnShipEntity(1, 1);
+    REQUIRE(s >= 1 && s <= RV_MAX_SHIP_SLOT && slot_is_ship((int16_t)s), e_slot, 1, s, 0);
+    REQUIRE(labs(TO_KM(gPositionVector[s].x) - 34875L) < 3000, e_far, TO_KM(gPositionVector[s].x), 0, 0);
 }
 
 /* M8.8 */
