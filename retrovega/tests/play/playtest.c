@@ -4118,18 +4118,20 @@ static void t_escort_jump(void)
     REQUIRE(victoryPoints != 0, e_won, victoryPoints, 0, 0);
 }
 
-/* M8.36: an escort target out on its last leg jumps once the player has reached its nav point and the fight there is
- * over, wherever it is; the autopilot leaves it on its way rather than take it where it is not going (the user,
- * 2026-11-03: "The ox does not jump out in mission 2... We had removed all enemies and it just hung around and started
- * flying in a random direction") */
+/* M8.36: an escort target out bears straight for its nav point and jumps only on coming to it (the user, 2026-11-04:
+ * "Ideally it would bear directly for the nav point no matter what and when it arrived (slowly) it would jump"); the
+ * autopilot leaves it on its way rather than take it where it is not going (the user, 2026-11-03: the Ox "just hung
+ * around and started flying in a random direction") */
 static void t_escort_clear(void)
 {
     static const char __far e_there[] = "no Ox after the launch (slot %d)";
-    static const char __far e_on[] = "nav 1 cleared, 5 s on the Ox is gone (alive %d): it goes on to nav 2 (jump=2)";
+    static const char __far e_on[] = "nav 1 flown, 5 s on the Ox is gone (alive %d): it goes on to nav 2 (jump=2)";
     static const char __far e_left[] = "the autopilot home (returned %d) with the Ox on its way to nav 2 moved the Ox %d "
         "km in a second: it goes its own way, at 80 kps";
-    static const char __far e_gone[] = "nav 2 reached and its enemy gone, 5 s on the Ox is still here, %d km from nav 2: "
-        "it jumps out from where it is";
+    static const char __far e_early[] = "nav 2 reached and its enemy gone, the Ox %d km from nav 2 jumped (alive %d): it "
+        "jumps only there";
+    static const char __far e_out[] = "put 3,000 km short of nav 2 facing away, 120 s on the Ox is still here, %d km from "
+        "nav 2: it turns for it and jumps there";
     static const char __far e_won[] = "victoryPoints is %d with the Ox jumped out: nonzero";
     int16_t ox, i, r;
     RvVec3 at;
@@ -4159,12 +4161,65 @@ static void t_escort_clear(void)
     gPositionVector[0].z = (NAV2_Z - 4500) * KM;
     if (!pt_steps(2 * SEC) || !pt_kill_side(SIDE_AERA) || !pt_steps(5 * SEC))
         return;
-    REQUIRE(!slot_is_ship(ox) || gInstanceShipTypes[ox] != PT_OX, e_gone, pt_km_to(ox, NAV2_X, 0, NAV2_Z), 0, 0);
+    REQUIRE(slot_is_ship(ox) && gInstanceShipTypes[ox] == PT_OX, e_early, pt_km_to(ox, NAV2_X, 0, NAV2_Z),
+            slot_is_ship(ox), 0);
+    pt_put(ox, NAV2_X, 0, NAV2_Z - 3000, TURN / 2);   /* (3,000 km short, facing away: it turns and comes in) */
+    for (i = 0; i < 120 * SEC && slot_is_ship(ox) && gInstanceShipTypes[ox] == PT_OX; i++)
+        if (!pt_step())
+            return;
+    REQUIRE(!slot_is_ship(ox) || gInstanceShipTypes[ox] != PT_OX, e_out, pt_km_to(ox, NAV2_X, 0, NAV2_Z), 0, 0);
     if (!pt_go(0, 0))
         return;
     missionStatus = 1;
     logic_end();
     REQUIRE(victoryPoints != 0, e_won, victoryPoints, 0, 0);
+}
+
+/* M8.38: an escort target in, its nav point come to, heads for the home carrier and stops within 150 km of its hull, its
+ * nose the carrier's way; it is home, so its loss there afterwards is no loss of the player's (the user, 2026-11-04:
+ * "inbound ships head to the vigilance", "when the ships arrive within 150km of the vigilance they should stop and
+ * ideally turn in the same direction as the vigilance") */
+static void t_escort_home(void)
+{
+    static const char __far e_none[] = "no carrier (slot %d) or no escort in at nav 1 (slot %d)";
+    static const char __far e_home[] = "60 s on from 3,000 km off, the escort is %d km off the carrier's hull at %d kps: "
+        "within 150 and stopped";
+    static const char __far e_way[] = "home 60 s, its nose is %d (cos x 256) to the carrier's: within 25 degrees (over 232)";
+    static const char __far e_kept[] = "killed beside the carrier, logic_escort_lost says %d: 0 (it was home)";
+    int16_t home = -1, ox = -1, s, i;
+    int32_t gap;
+    pt_mission();
+    pt_nav(1, 0, 0, NAV1_Z);
+    pt_mship(PT_CAPSHIP, SIDE_TERRAN, 0, 1, RV_PILOT_NONE);
+    g_tm.ship[g_tm.nship - 1].role = RV_ESCORT_HOME;
+    pt_mship(PT_OX, SIDE_TERRAN, 1, 1, RV_PILOT_NONE);
+    g_tm.ship[g_tm.nship - 1].role = RV_ESCORT_IN;
+    pt_launch(PT_PLAYER);
+    playerCanBeDamaged = 0;
+    if (!pt_go(0, NAV1_Z - 4500))       /* (nav 1 come to: the escort there, and the player near it) */
+        return;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++) {
+        if (logic_is_home(s))
+            home = s;
+        if (slot_is_ship(s) && gInstanceShipTypes[s] == PT_OX)
+            ox = s;
+    }
+    REQUIRE(home > 0 && ox > 0, e_none, home, ox, 0);
+    pt_put(ox, TO_KM(gPositionVector[home].x) + 3000, 0, TO_KM(gPositionVector[home].z), TURN / 4);
+    for (i = 0; i < 60 * SEC; i++)
+        if (!pt_step())
+            return;
+    gap = pt_km(ox, home) - TO_KM(collide_half(ox)) - TO_KM(collide_half(home));   /* (hull to hull, as the logic's) */
+    REQUIRE(gap <= 160 && speedLo[ox] == 0, e_home, gap, (int32_t)speedLo[ox], 0);
+    if (!pt_steps(60 * SEC))
+        return;
+    REQUIRE(vec_dot(&gOrientationFrontVector[ox], &gOrientationFrontVector[home]) / 256 > 232, e_way,
+            (int)(vec_dot(&gOrientationFrontVector[ox], &gOrientationFrontVector[home]) / 256), 0, 0);
+    for (i = 0; i < 100 && shipAiState[ox] != 9; i++)
+        (void)pt_hit(0xFFFF, ox, 2000, 2, 0, 0);
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(logic_escort_lost() == 0, e_kept, logic_escort_lost(), 0, 0);
 }
 
 /* a patrol with the home carrier: the player, a wingman and the Vigilance (role=home) at nav 0, two Nicanders at nav 1,
@@ -6272,11 +6327,12 @@ static const char __far n_m6_7[] = "M6.7 ram-owner (ram): a collision is worked 
 static const char __far n_m7_8[] = "M7.8 puppet-launch (missile_launch, step_fire): a launch by another machine's ship homes on the target that machine published";
 static const char __far n_m8_29[] = "M8.29 scene-human (step_scene): a ship near another machine's pilot stays in the scene";
 static const char __far n_m8_30[] = "M8.30 human-seat-lost (logic_wingman_lost): a wingman a person flew, killed, is no named pilot's death";
-static const char __far n_m8_33[] = "M8.33 escort-jump (route_step): an escort target out with jump=2 holds at nav 1 through the fight and jumps only at nav 2";
+static const char __far n_m8_33[] = "M8.33 escort-jump (route_step): an escort target out with jump=2 goes with the player to nav 1, on to nav 2, and jumps only there";
 static const char __far n_m8_34[] = "M8.34 autopilot-wingman (logic_autopilot): the mission's wingman comes along however far it had gone";
 static const char __far n_m8_35[] = "M8.35 autopilot-formup (logic_form_up): the flyby closes the wingman up on the player, its way and velocity the player's, kept through the jump";
 static const char __far n_m8_37[] = "M8.37 autopilot-human (logic_form_up): a human's wingman is put in its formation place as the flyby begins, the player's way and speed";
-static const char __far n_m8_36[] = "M8.36 escort-clear (route_step, logic_autopilot): an escort target on its last leg jumps once its nav point is reached and clear, from wherever it is; the autopilot leaves it on its way";
+static const char __far n_m8_36[] = "M8.36 escort-clear (route_step, logic_autopilot): an escort target out bears straight for its nav point and jumps only there; the autopilot leaves it on its way";
+static const char __far n_m8_38[] = "M8.38 escort-home (route_step): an escort target in goes to the home carrier, stops within 150 km of its hull, its nose the carrier's way, and is home";
 static const char __far n_m10_10[] = "M10.10 form-parallel (formation_step): told to form up, the wingman flies the player's way, not facing it";
 static const char __far n_m8_32[] = "M8.32 named-hull (do_damage): a named pilot's hull takes a hit past its armour as a share, eight laser hits; a person's seat the hit itself";
 static const char __far n_m8_31[] = "M8.31 dying (delayedDespawn, do_damage): delayedDespawn starts a ship's end; the player's kills are its splashes";
@@ -6354,7 +6410,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m10_10, t_form_parallel, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 },
 };
 
 /* --- the run --- */
