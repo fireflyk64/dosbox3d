@@ -218,7 +218,14 @@ On top of these:
   is asked for at one of its own blocks, a block or two past what the
   ring holds: so 20-35 s (three to five blocks) of each before the next
   cuts in. The place in each list is kept from flight to flight. A panic
-  comes in on the bar.
+  comes in on the bar. A sting fills the ring with itself, and the
+  follow-on asked for goes with it: the same one is asked for again once
+  the song is back. The list moves on only for a follow-on the engine
+  took (`music_then` says), and one asked for but never heard (the mood
+  changed first) stays the next of its list. It had moved on for every
+  frame a sting's ring refused one, so after Nav 1's victory sting
+  Outbound went on into Far Light instead of Wide Orbit, its riser on the
+  wrong dominant (2026-11-03).
 - **The splice** (`music.c`): music_poll keeps a ring some 20 s ahead of
   the interrupt. When its fill reaches a follow-on's point (the end of the
   pass, or a block's marker, the bar line reached), it puts every

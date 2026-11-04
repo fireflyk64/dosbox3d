@@ -94,14 +94,23 @@ static int in_field(void)
     return 0;
 }
 
+/* the next of the cruise songs (0) or the battles' (1), the list not moved on */
+static int next_of(int list)
+{
+    return list ? RV_MUSIC_BATTLE1 + g_sc.next[1] % 3
+                : RV_MUSIC_CRUISE1 + g_sc.next[0] % (RV_MUSIC_HOMEWARD - RV_MUSIC_CRUISE1);
+}
+
 /* the mood's song: the next of its list (the panic's is its level's) */
 static int song_for(int mood)
 {
     switch (mood) {
     case CALM:
-        return RV_MUSIC_CRUISE1 + g_sc.next[0]++ % (RV_MUSIC_HOMEWARD - RV_MUSIC_CRUISE1);
-    case FIGHT:
-        return RV_MUSIC_BATTLE1 + g_sc.next[1]++ % 3;
+    case FIGHT: {
+        int list = mood == FIGHT, cue = next_of(list);
+        g_sc.next[list]++;
+        return cue;
+    }
     case HOME:
         return victoryPoints ? RV_MUSIC_HOMEWARD : RV_MUSIC_HOMELOSS;
     case ROCKS:
@@ -116,6 +125,8 @@ static void play(int mood)
 {
     static const int fade[] = { 2500, 700, 2000, 1500, 300, 200 };
     int was = g_sc.mood;
+    if (g_sc.queued >= 0 && (was == CALM || was == FIGHT))
+        g_sc.next[was == FIGHT]--;      /* (a follow-on asked for and never heard stays the next of its list) */
     g_sc.mood = mood;
     g_sc.cue = song_for(mood);
     g_sc.queued = -1;                   /* (a cue clears the follow-on) */
@@ -129,10 +140,14 @@ static void play(int mood)
 
 /* the follow-ons: as each calm song comes in, the next of the cycle asked for after its pass, from its loop; as
  * each battle comes in, another at one of its own blocks after a block or two past what the ring holds (it is
- * filled some 20 s ahead: so 20-35 s of each, three to five blocks, before the next cuts in) */
+ * filled some 20 s ahead: so 20-35 s of each, three to five blocks, before the next cuts in).  A sting puts its
+ * own song in the ring and the follow-on asked for goes with it: the same one is asked for again once the song
+ * is back, and the cycle moves on only for a follow-on taken (it had moved on for each frame the sting's ring
+ * refused one: after Nav 1's victory sting Outbound went on into Far Light, not Wide Orbit, and its riser, on
+ * Wide Orbit's dominant, into the wrong key) */
 static void follow(int mood)
 {
-    int now = music_playing(), next;
+    int now = music_playing(), next, took;
     unsigned long r = clock240();
     if (now >= 0 && now != g_sc.cue && now == g_sc.queued) {
         static const char __far came[] = "score: cue %d came in @%lu";
@@ -142,12 +157,15 @@ static void follow(int mood)
     }
     if (now != g_sc.cue || music_then_cue() >= 0)
         return;
-    next = song_for(mood);
+    next = g_sc.queued >= 0 ? g_sc.queued : next_of(mood == FIGHT);   /* (asked for, gone with a sting's ring: again) */
     if (mood == CALM)
-        music_then(next, -1, 0);
+        took = music_then(next, -1, 0);
     else
-        music_then(next, music_sects(next) ? (int)(r % music_sects(next)) : -1, 1 + (int)(r / 7 % 2));
-    g_sc.queued = next;
+        took = music_then(next, music_sects(next) ? (int)(r % music_sects(next)) : -1, 1 + (int)(r / 7 % 2));
+    if (took && g_sc.queued < 0)
+        g_sc.next[mood == FIGHT]++;
+    if (took)
+        g_sc.queued = next;
 }
 
 #ifdef RV_TESTS
@@ -195,6 +213,7 @@ void score_start(const RvMission __far *m)
     g_sc.t0 = clock240();
     g_sc.panic = 0;
     g_sc.quiet_at = 0;
+    g_sc.queued = -1;                   /* (the struct starts zeroed: no follow-on, not cue 0's) */
     for (s = 0; s <= RV_MAX_SHIP_SLOT; s++)
         g_sc.dying[s] = 0;
 #ifdef RV_TESTS

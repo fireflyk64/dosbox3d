@@ -994,19 +994,19 @@ void music_sting(int cue)
 
 static const char __far g_then_fmt[] = "music: then cue %d from %u after event %u of cue %d @%lu";
 
-void music_then(int cue, int from_sect, int at_sects)
+int music_then(int cue, int from_sect, int at_sects)
 {
     int song = playable(cue), k;
     Ring *r;
     const Song __far *s;
     unsigned at;
     if (song < 0 || song >= RV_MUSIC_STINGS)
-        return;
+        return 0;
     _disable();
     r = g_next != -1 ? &g_ring[g_next_ring] : &g_ring[g_play];
     _enable();
     if (r->song < 0 || r->song >= RV_MUSIC_STINGS)
-        return;                         /* (nothing playing, or a sting: no follow-on) */
+        return 0;                       /* (nothing playing, or a sting: no follow-on) */
     s = &g_song[r->song];
     at = s->n;                          /* after its pass, */
     for (k = 0; at_sects > 0 && k < s->nsect; k++)
@@ -1018,6 +1018,7 @@ void music_then(int cue, int from_sect, int at_sects)
     g_then_cue = cue;
     g_last = cue;
     rv_notef(g_then_fmt, cue, r->then_from, at, r->song, g_clock);
+    return 1;
 }
 
 int music_then_cue(void)
