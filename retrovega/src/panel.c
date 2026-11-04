@@ -7,6 +7,7 @@
 #include "lightfield.h"
 #include "panel.h"
 #include "damage.h"
+#include "logic.h"                      /* (logic_nav_seen) */
 
 ShipSystems __far g_sys;
 
@@ -68,6 +69,7 @@ static unsigned short glyph(char ch)
     if (ch == '!') return G(2, 2, 2, 0, 2);
     if (ch == '?') return G(6, 1, 2, 0, 2);
     if (ch == '\'') return G(2, 2, 0, 0, 0);
+    if (ch == '*') return G(0, 5, 2, 5, 0);     /* (a nav point reached: *NAV 1) */
     return 0;
 }
 
@@ -104,8 +106,8 @@ void panel_hull_name(char *s)
 
 void panel_nav_name(char *s)
 {
-    if (g_sys.nav)
-        sprintf(s, "NAV %d", g_sys.nav);
+    if (g_sys.nav)                      /* (one reached already: a star before it, as on the nav page) */
+        sprintf(s, logic_nav_seen(g_sys.nav) ? "*NAV %d" : "NAV %d", g_sys.nav);
     else
         strcpy(s, "HOME");
 }

@@ -220,6 +220,11 @@ int16_t logic_nav_km(int16_t n, int32_t *km)
     return 1;
 }
 
+int16_t logic_nav_seen(int16_t n)
+{
+    return n > 0 && n < NAVS && nav_listed(n) && (g_navs_seen >> n & 1);
+}
+
 /* --- the wingmen's orders (logic.h) --- */
 
 static int16_t is_wingman(int16_t s)
@@ -4217,7 +4222,7 @@ uint16_t __far __cdecl outerSpawnShipEntity_impl(uint16_t missionShip, uint16_t 
     if (missionShip >= 64 || s < 0)
         return 0xFFFF;
     /* (the nav point's place and the ship's off it summed in 32 bits: in DOS's 16-bit int CEPHID2's destroyer, 31,500
-     * + 3,375 km, wrapped round to -30,661 and it was 60,000 km away, on the far side of the system; 26 ships of 13
+     * + 3,375 km, wrapped round to -30,661 and it was 60,000 km away, on the far side of the system; 26 ships of 12
      * missions were past 32,767 km so) */
     ship_spawn(s, *(const uint16_t *)rec, *(const uint16_t *)(rec + 2), s == 0 ? CTL_PLAYER : CTL_AI,
                KM * ((int32_t)*(const int16_t *)(nav + 2) + *(const int16_t *)(rec + 10)),

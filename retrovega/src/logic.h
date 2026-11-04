@@ -61,6 +61,7 @@ int32_t logic_target_km(int16_t s);     /* how far slot s is from the player, hu
 
 /* nav point n of the mission (0 home): 1 and how far the player is from it (km), 0 when there is no such point */
 int16_t logic_nav_km(int16_t n, int32_t *km);   /* a nav point on the player's lists: how far; 0 not one */
+int16_t logic_nav_seen(int16_t n);      /* a waypoint the player has reached already (the lists mark it: *NAV 1) */
 extern uint8_t __far logic_scene_off;   /* 1: nobody leaves the scene (a test's) */
 void logic_nav_next(void);              /* N: the next on the list, chosen */
 int16_t logic_nav_mark(int16_t *x, int16_t *y);   /* the chosen one on the view: 1 in view, 2 pinned at the rim, 0 no mark */

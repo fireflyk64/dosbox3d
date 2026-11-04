@@ -771,7 +771,9 @@ static int menu(const RvRect __far *r, char lines[][20], int n, int from, int li
     return shown;
 }
 
-/* the nav page: the waypoints with how far each is, then home; the chosen one lit (N: the next) */
+/* the nav page: the waypoints with how far each is, then home; the chosen one lit (N: the next), each one reached
+ * already starred (the user, 2026-11-03: "it would be nice if the nav points indicated they had been visited maybe
+ * with a * or character before hand") */
 static void draw_nav(const RvRect __far *r, int y0, int y1)
 {
     char lines[16][20];
@@ -784,7 +786,7 @@ static void draw_nav(const RvRect __far *r, int y0, int y1)
         if (id == g_sys.nav)
             lit = n;
         if (id)
-            sprintf(lines[n], "NAV %d  %ldK", id, (km + 500) / 1000);
+            sprintf(lines[n], logic_nav_seen(id) ? "*NAV %d  %ldK" : "NAV %d  %ldK", id, (km + 500) / 1000);
         else
             sprintf(lines[n], "HOME  %ldK", (km + 500) / 1000);
         n++;
