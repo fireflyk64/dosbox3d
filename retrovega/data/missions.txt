@@ -45,16 +45,16 @@ lose     "The Aera still hold that lane, and the yard crews will pay for it."
 lose     FROST "That's on me as much as the new one, Commander."
 lose     you "No excuses, Commander."
 lose     "Good, because I wouldn't take any. We go again tomorrow."
-nav      1 13500 -2250 6750
-nav      2 20250 4500 -9000
-nav      3 2250 2250 -20250
+nav      1 30000 -5000 15000 reach=15000
+nav      2 45000 10000 -20000 reach=20000
+nav      3 5000 5000 -45000 reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
-ship     NICANDR 1 nav1 count=3 at=-2250,450,2250
-ship     AGIS 1 nav3 count=2 at=2250,900,2250
-field    asteroid 20250 1500 -4000 7500
-field    asteroid -4750 -750 -10250 5000
+ship     NICANDR 1 nav1 count=3 at=-5000,1000,5000
+ship     AGIS 1 nav3 count=2 at=5000,2000,5000
+field    asteroid 45000 7000 -15000 7500
+field    asteroid -2000 2000 -35000 5000
 bar      left=- middle=PRIME right=DRIFTER
 talk     bar DRIFTER PRIME "Ten credits says the next voice on the comm is Prime."
 talk     bar PRIME DRIFTER "Put me down for twenty."
@@ -120,17 +120,17 @@ lose     escort=lost "We lost the Ox. That was a month of repairs for the whole 
 lose     "That was not the job I gave you. Kit will want a word with you. So will I."
 lose     you "Yes, Commander."
 lose     "See that it doesn't happen twice."
-nav      1 -11250 1350 -11250
-nav      2 -4500 2250 -29250
-nav      3 0 0 -15750 hidden
+nav      1 -25000 3000 -25000 reach=10000
+nav      2 -10000 5000 -65000 reach=15000
+nav      3 0 0 -35000 hidden reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
 ship     OX 0 nav0 role=out jump=2
-ship     AGIS 1 nav1 count=2 at=0,0,-2250
-ship     NICANDR 1 nav2 count=2 at=1350,0,2250
-ship     NICANDR 1 nav2 at=-2250,2250,-2250
-field    asteroid -5000 1500 -15750 7202
+ship     AGIS 1 nav1 count=2 at=0,0,-5000
+ship     NICANDR 1 nav2 count=2 at=3000,0,5000
+ship     NICANDR 1 nav2 at=-5000,5000,-5000
+field    asteroid -5000 1500 -35000 7500
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar TORCH ANCHOR "Shmrn's still out there."
 talk     bar PRIME TORCH "So's my luck, and I don't bring it up at every table."
@@ -203,16 +203,16 @@ lose     "You ran into trouble, I hear."
 lose     you "Yes, Commander. It's all on the recorder."
 lose     "Then at least I know where they are. Somebody will have to go back and clear those points."
 lose     DRIFTER "Ten credits says it's us."
-nav      1 -4500 2250 -18000
-nav      2 -13500 0 -9000
-nav      3 -27000 -2250 -2250
-nav      4 -15750 2250 9000
+nav      1 -10000 5000 -40000 reach=15000
+nav      2 -30000 0 -20000 reach=10000
+nav      3 -60000 -5000 -5000 reach=15000
+nav      4 -35000 5000 20000 reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=DRIFTER
 ship     VIGILNC 0 nav0 role=home
-ship     NICANDR 1 nav1 count=3 at=4500,0,0
-ship     AGIS 1 nav4 count=3 at=2250,-2250,0
-field    mine -22000 -2250 -7250 5000 level=2
+ship     NICANDR 1 nav1 count=3 at=10000,0,0
+ship     AGIS 1 nav4 count=3 at=5000,-5000,0
+field    mine -55000 -5000 -10000 5000 level=2
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER TORCH "Fifty to one against Shmrn, Torch. That's me being friendly."
 talk     bar TORCH DRIFTER "Put me down for ten."
@@ -263,7 +263,7 @@ briefing "Things are about to heat up, people. The fleet is mounting an offensiv
 briefing "The supply ships start arriving tomorrow, so I want this system clean tonight."
 briefing after=won "Yesterday's patrols kept the jump points clear. The Aera noticed."
 briefing after=lost "We missed some of those jump points yesterday, and the Aera used them."
-briefing "Tactical has a large bogie jumping in about thirty thousand kilometers out. It's headed this way."
+briefing "Tactical has a large bogie jumping in about eighty thousand kilometers out. It's headed this way."
 briefing "It could be a transport. It's probably not. Wildcard, go and find out, and kill it if you can."
 briefing dead=DRIFTER "You fly it without a wingman, Wildcard. I have nobody to give you."
 briefing "You and Drifter go first, with 3 more Franklins behind you."
@@ -281,16 +281,16 @@ win      "I'll take the result either way. The supply ships come in on schedule.
 lose     "Tell me about it."
 lose     you "It was a destroyer, Commander. We didn't stop it."
 lose     "No. But now I know what it is, and that's something. Get some sleep."
-nav      1 15750 2250 -4500
-nav      2 31500 4500 -9000
+nav      1 35000 5000 -10000 reach=15000
+nav      2 70000 10000 -20000 reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=DRIFTER
 ship     VIGILNC 0 nav0 role=home
-ship     FRANKLN 0 nav0 count=2 at=0,0,1125
-ship     NICANDR 1 nav1 count=2 at=2250,2250,2250
-ship     NICANDR 1 nav1 count=2 at=-2250,-2250,-2250
+ship     FRANKLN 0 nav0 count=2 at=0,0,2500
+ship     NICANDR 1 nav1 count=2 at=5000,5000,5000
+ship     NICANDR 1 nav1 count=2 at=-5000,-5000,-5000
 ship     ARISTON 1 nav2 count=2
-ship     AGASICL 1 nav2 at=3375,0,-1350
+ship     AGASICL 1 nav2 at=7500,0,-3000
 bar      left=TORCH middle=ECHO right=COMET
 talk     bar TORCH COMET "You don't lead a Nicander. You wait for it to break."
 talk     bar COMET TORCH "I lead it, and I'm still here. Who's counting?"
@@ -357,16 +357,16 @@ win      dead=DRIFTER "Drifter would have wanted you to know you still owe him t
 lose     escort=lost "We lost the Ox. That was fuel the whole task force was counting on."
 lose     "We jump in the morning, and we jump short. Go and get some rest, Wildcard."
 lose     DRIFTER "Ten credits you don't sleep."
-nav      1 27000 -6750 -27000
-nav      2 13500 -3375 -13500 hidden
+nav      1 60000 -15000 -60000 reach=20000
+nav      2 30000 -7500 -30000 hidden reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=DRIFTER
 ship     VIGILNC 0 nav0 role=home
 ship     OX 0 nav1 role=in
-ship     ARISTON 1 nav1 count=2 at=2250,900,4500
-ship     ARISTON 1 nav1 count=2 at=-2250,-450,-2250
-ship     AGIS 1 nav2 at=0,900,2250
-ship     AGIS 1 nav2 count=2 at=0,-1350,4500
+ship     ARISTON 1 nav1 count=2 at=5000,2000,10000
+ship     ARISTON 1 nav1 count=2 at=-5000,-1000,-5000
+ship     AGIS 1 nav2 at=0,2000,5000
+ship     AGIS 1 nav2 count=2 at=0,-3000,10000
 bar      left=- middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Who signed for my wingtip?"
 talk     bar ANCHOR PRIME "I did. It's on the form as a bird strike."
@@ -424,16 +424,16 @@ lose     "That isn't the patrol I asked for."
 lose     COMET "I've seen worse. Not this week."
 lose     you "We'll do better, Commander."
 lose     "See that you do. Dismissed."
-nav      1 -13500 2250 4500
-nav      2 -20250 4500 -9000
-nav      3 -6750 2250 -20250
+nav      1 -30000 5000 10000 reach=10000
+nav      2 -45000 10000 -20000 reach=15000
+nav      3 -15000 5000 -45000 reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home
-ship     AGIS 1 nav2 count=2 at=-4500,2250,2250
-ship     AGIS 1 nav2 count=2 at=-2250,0,-2250
-ship     CONVOLN 1 nav3 count=2 at=2250,2250,2250
-field    asteroid -13500 2250 9500 5000
+ship     AGIS 1 nav2 count=2 at=-10000,5000,5000
+ship     AGIS 1 nav2 count=2 at=-5000,0,-5000
+ship     CONVOLN 1 nav3 count=2 at=5000,5000,5000
+field    asteroid -30000 5000 15000 5000
 bar      left=FROST middle=PRIME right=COMET
 talk     bar PRIME COMET "Go straight in on the big ship and pick off the small ones after. It's quicker."
 talk     bar COMET PRIME "It's quicker for the small ones."
@@ -492,15 +492,15 @@ win      "Kit wants her turrets back together, and you out of her way. Dismissed
 lose     "We took hits on the deck, and there are people in the med bay who don't fly."
 lose     you "Yes, Commander."
 lose     "Kit has six hours to put her right. Stay out of her way."
-nav      1 0 0 0 hidden
+nav      1 0 0 0 hidden reach=32500
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home turrets=off
-ship     SCHROED 0 nav0 count=2 at=-1125,0,0
-ship     NICANDR 1 nav0 count=2 at=-6750,-6750,-4500
-ship     NICANDR 1 nav0 count=2 at=4500,2250,-2250
-ship     NICANDR 1 nav1 count=2 at=-11250,0,-6750
-ship     NICANDR 1 nav1 count=2 at=2250,0,-15750
+ship     SCHROED 0 nav0 count=2 at=-2500,0,0
+ship     NICANDR 1 nav0 count=2 at=-15000,-15000,-10000
+ship     NICANDR 1 nav0 count=2 at=10000,5000,-5000
+ship     NICANDR 1 nav1 count=2 at=-25000,0,-15000
+ship     NICANDR 1 nav1 count=2 at=5000,0,-35000
 bar      left=TORCH middle=- right=DRIFTER
 talk     bar DRIFTER TORCH "The line on a Nicander reaching our deck is four to one."
 talk     bar TORCH DRIFTER "You're taking bets on the ship?"
@@ -559,14 +559,14 @@ lose     escort=lost "We lost the Ox, and the fuel it was carrying."
 lose     "We jump when we jump. That's all for now."
 lose     COMET "I told you to stay close, rookie."
 lose     you alive=COMET "Yes, you did."
-nav      1 -32000 4500 -11250
-nav      2 -18000 2250 -2250 hidden
+nav      1 -80000 10000 -25000 reach=20000
+nav      2 -40000 5000 -5000 hidden reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home
 ship     OX 0 nav1 role=in
-ship     CONVOLN 1 nav1 count=2 at=-2250,2250,4500
-ship     AGIS 1 nav2 count=2 at=-2250,2250,-3150
+ship     CONVOLN 1 nav1 count=2 at=-5000,5000,10000
+ship     AGIS 1 nav2 count=2 at=-5000,5000,-7000
 ship     AGIS 1 nav2 count=2
 bar      left=FROST middle=ECHO right=ANCHOR
 talk     bar ECHO FROST "Your Rlaan could fly a convoy through here tomorrow and nobody would stop them."
@@ -626,16 +626,16 @@ lose     ANCHOR "The fault is mine, Commander. I was late on station."
 lose     you alive=ANCHOR "He wasn't, Commander."
 lose     alive=ANCHOR "I know he wasn't. Anchor signs for everything. Dismissed."
 lose     dead=ANCHOR "Dismissed, Wildcard. Get some sleep. That's an order, and I doubt it'll work."
-nav      1 6750 4500 20250
-nav      2 0 0 0 hidden
+nav      1 15000 10000 45000 reach=15000
+nav      2 0 0 0 hidden reach=5000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home turrets=off
-ship     AGIS 1 nav0 count=2 at=2250,1800,6750
-ship     AGIS 1 nav2 count=2 at=0,-2250,0
+ship     AGIS 1 nav0 count=2 at=5000,4000,15000
+ship     AGIS 1 nav2 count=2 at=0,-5000,0
 ship     KAHAN 0 nav1
-ship     CLEOMEN 1 nav1 count=2 at=-3600,-3600,3150
-ship     CLEOMEN 1 nav1 at=3600,3600,-4500
+ship     CLEOMEN 1 nav1 count=2 at=-8000,-8000,7000
+ship     CLEOMEN 1 nav1 at=8000,8000,-10000
 bar      left=TORCH middle=PRIME right=COMET
 talk     bar PRIME COMET "Did you see me come over the deck? Two meters."
 talk     bar COMET PRIME "I saw the form."
@@ -702,17 +702,17 @@ lose     "I gave you the most expensive fighter in the sector, and this is the r
 lose     you "It wasn't the ship, Commander."
 lose     "No. I didn't think it was."
 lose     ANCHOR "The hardware performed to specification, Commander. I'll write it up."
-nav      1 15750 4500 -4500
-nav      2 18000 6750 -20250
-nav      3 -2250 2250 -20250
+nav      1 35000 10000 -10000 reach=10000
+nav      2 40000 15000 -45000 reach=20000
+nav      3 -5000 5000 -45000 reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home
 ship     FRANKLN 0 nav0
-ship     NICANDR 1 nav2 count=2 at=-2250,-2250,-2250
+ship     NICANDR 1 nav2 count=2 at=-5000,-5000,-5000
 ship     NICANDR 1 nav2 count=2
-ship     CONVOLN 1 nav3 count=2 at=-2250,0,6750
-field    asteroid 13250 4500 -7000 5000 level=1
+ship     CONVOLN 1 nav3 count=2 at=-5000,0,15000
+field    asteroid 32500 10000 -12500 5000 level=1
 bar      left=FROST middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Relax, Carbon. If you lose, there's a spare."
 talk     bar ANCHOR PRIME "I know. I've read the contract."
@@ -772,16 +772,16 @@ lose     "They aren't pulling out, are they?"
 lose     you "No, Commander."
 lose     ANCHOR "My position at Nav 1 was poor. Put it on me."
 lose     "We'll be leaving the Crucible the hard way, then. Dismissed."
-nav      1 -15750 -4500 9000
-nav      2 -15750 -4500 9000 hidden
+nav      1 -35000 -10000 20000 reach=25000
+nav      2 -35000 -10000 20000 hidden reach=25000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home
-ship     SCHROED 0 nav0 count=2 at=0,0,1125
+ship     SCHROED 0 nav0 count=2 at=0,0,2500
 ship     SCHROED 0 nav0 count=2
-ship     NICANDR 1 nav1 count=2 at=-6750,0,2250
+ship     NICANDR 1 nav1 count=2 at=-15000,0,5000
 ship     NICANDR 1 nav1 count=3
-ship     NICANDR 1 nav2 count=2 at=0,3150,0
+ship     NICANDR 1 nav2 count=2 at=0,7000,0
 ship     NICANDR 1 nav2 count=2
 bar      left=TORCH middle=- right=COMET
 talk     bar TORCH COMET "You think they're leaving?"
@@ -847,18 +847,18 @@ lose     "A poor patrol. And I have a recording of Prime flying through your shi
 lose     PRIME "We got out of it, didn't we?"
 lose     you alive=PRIME "Barely. He nearly took my wing off."
 lose     "I've told Kit she can say whatever she likes. Dismissed."
-nav      1 15750 0 6750
-nav      2 9000 2250 -13500
-nav      3 -9000 -2250 -11250
-nav      4 15750 0 6750 hidden
+nav      1 35000 0 15000 reach=15000
+nav      2 20000 5000 -30000 reach=15000
+nav      3 -20000 -5000 -25000 reach=10000
+nav      4 35000 0 15000 hidden reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=PRIME
 ship     VIGILNC 0 nav0 role=home turrets=off
-ship     AGIS 1 nav1 at=0,0,-1350
-ship     CONVOLN 1 nav4 count=2 at=0,-5850,0
+ship     AGIS 1 nav1 at=0,0,-3000
+ship     CONVOLN 1 nav4 count=2 at=0,-13000,0
 ship     CONVOLN 1 nav4
-ship     ARISTON 1 nav2 count=2 at=2250,0,0
-field    asteroid 4000 2250 -8500 5000 level=2
+ship     ARISTON 1 nav2 count=2 at=5000,0,0
+field    asteroid 15000 5000 -25000 5000 level=2
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar PRIME TORCH "Sit down, Torch. Let me tell you about the time I took four Nicanders with one wing."
 talk     bar TORCH PRIME "You told me Tuesday."
@@ -914,15 +914,15 @@ win      PRIME "Don't tell anyone."
 lose     escort=lost "We lost a ship I was counting on."
 lose     "That assault's going to cost more now. Go and get some rest."
 lose     PRIME "That one's on me, Commander. Put my name on it. My own."
-nav      1 18000 4500 -20250
-nav      2 0 2250 -15750
+nav      1 40000 10000 -45000 reach=15000
+nav      2 0 5000 -35000 reach=10000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=PRIME
 ship     VIGILNC 0 nav0 role=home
-ship     KAHAN 0 nav1 at=2250,0,-2250
-ship     NICANDR 1 nav1 count=2 at=0,0,4500
+ship     KAHAN 0 nav1 at=5000,0,-5000
+ship     NICANDR 1 nav1 count=2 at=0,0,10000
 ship     NICANDR 1 nav1 count=2
-ship     AGIS 1 nav2 count=2 at=0,0,-2250
+ship     AGIS 1 nav2 count=2 at=0,0,-5000
 ship     AGIS 1 nav2 count=2
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER KESTREL "What's the line on Prime staying sober tonight?"
@@ -975,15 +975,15 @@ lose     "They got through on your side. The second planet has another week in i
 lose     PRIME "I had the angle, Commander. I went for the shot instead of the wing."
 lose     you alive=PRIME "We both did."
 lose     "I know what you did. Dismissed."
-nav      1 -18000 0 -22500
-nav      2 -18000 0 -22500 hidden
+nav      1 -40000 0 -50000 reach=20000
+nav      2 -40000 0 -50000 hidden reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=PRIME
 ship     VIGILNC 0 nav0 role=home turrets=off
-ship     ARISTON 1 nav1 count=2 at=0,4500,2250
+ship     ARISTON 1 nav1 count=2 at=0,10000,5000
 ship     ARISTON 1 nav1 count=2
-ship     AGASICL 1 nav1 at=-2250,6750,-2250
-ship     ARISTON 1 nav2 count=2 at=-2250,4500,0
+ship     AGASICL 1 nav1 at=-5000,15000,-5000
+ship     ARISTON 1 nav2 count=2 at=-5000,10000,0
 bar      left=FROST middle=PRIME right=COMET
 talk     bar PRIME COMET "Tally's got me down for twelve now. You?"
 talk     bar COMET PRIME "Don't ask."
@@ -1039,17 +1039,17 @@ lose     "We have a destroyer in this system, and I don't know where it is."
 lose     COMET "Your Ensign flew straight. I'll give her that."
 lose     alive=COMET "Rowe. Her name was Rowe. You'll say it, or you'll stand there until you do."
 lose     COMET "Rowe."
-nav      1 -15750 4500 18000
-nav      2 -15750 4500 18000 hidden
+nav      1 -35000 10000 40000 reach=20000
+nav      2 -35000 10000 40000 hidden reach=30000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home
 ship     SCHROED 0 nav0
-ship     SCHROED 0 nav1 at=2250,-900,4500
-ship     ARISTON 1 nav1 count=2 at=-3150,0,-3375
+ship     SCHROED 0 nav1 at=5000,-2000,10000
+ship     ARISTON 1 nav1 count=2 at=-7000,0,-7500
 ship     ARISTON 1 nav1 count=2
-ship     ARISTON 1 nav2 count=2 at=2250,0,6750
-ship     AGASICL 1 nav2 at=2250,0,9000
+ship     ARISTON 1 nav2 count=2 at=5000,0,15000
+ship     AGASICL 1 nav2 at=5000,0,20000
 bar      left=- middle=PRIME right=COMET
 talk     bar PRIME COMET "Solberg's looking at you."
 talk     bar COMET PRIME "Solberg looks at everyone. She's writing it all down."
@@ -1105,13 +1105,13 @@ win      COMET "I've learned plenty."
 lose     escort=lost "We lost the Kahan. I'll need the room for a while. I'm going to be writing."
 lose     COMET "Commander. I can do some of those."
 lose     alive=COMET "No, you can't. Not yet. Dismissed."
-nav      1 22500 0 -31500
+nav      1 50000 0 -70000 reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     SCHROED 0 nav0
 ship     KAHAN 0 nav0 role=out
-ship     NICANDR 1 nav1 count=2 at=4500,0,0
+ship     NICANDR 1 nav1 count=2 at=10000,0,0
 ship     NICANDR 1 nav1 count=2
 ship     NICANDR 1 nav1 count=2
 bar      left=FROST middle=- right=COMET
@@ -1165,14 +1165,14 @@ win      "Dismissed, both of you."
 lose     "We're still flying. I don't know how. Kit says I shouldn't ask."
 lose     COMET "They're faster than the last lot, Commander."
 lose     "Then we're faster than we've been. Dismissed."
-nav      1 0 0 0 hidden
+nav      1 0 0 0 hidden reach=32000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     SCHROED 0 nav0
-ship     CONVOLN 1 nav0 count=2 at=6750,0,4500
-ship     CONVOLN 1 nav1 count=2 at=-2250,900,4500
-ship     CONVOLN 1 nav1 count=2 at=2250,0,-4500
+ship     CONVOLN 1 nav0 count=2 at=15000,0,10000
+ship     CONVOLN 1 nav1 count=2 at=-5000,2000,10000
+ship     CONVOLN 1 nav1 count=2 at=5000,0,-10000
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER TORCH "Fifty to one against Shmrn. I may have to lengthen that."
 talk     bar TORCH DRIFTER "Put me down for ten."
@@ -1231,18 +1231,18 @@ lose     escort=lost "We lost an Ox. Some people on that colony won't be alive n
 lose     FROST "I'll go down with what's left, Commander. They're short of hands."
 lose     alive=FROST "I can't spare you, Frost. I know what I'm saying. Dismissed."
 lose     dead=FROST "I'd send a doctor if I had one. Dismissed."
-nav      1 29250 -4500 -9000
-nav      2 15750 0 -24750
+nav      1 65000 -10000 -20000 reach=15000
+nav      2 35000 0 -55000 reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home turrets=off
-ship     GAWAIN 0 nav0 count=2 at=-1125,0,3375
-ship     OX 0 nav0 count=3 at=-2250,0,4500
-ship     ARISTON 1 nav1 count=2 at=0,0,-4500
+ship     GAWAIN 0 nav0 count=2 at=-2500,0,7500
+ship     OX 0 nav0 count=3 at=-5000,0,10000
+ship     ARISTON 1 nav1 count=2 at=0,0,-10000
 ship     ARISTON 1 nav1
 ship     OX 0 nav0 role=out
 ship     OX 0 nav2 role=in
-ship     CLEOMEN 1 nav2 count=3 at=-4500,-1350,-2250
+ship     CLEOMEN 1 nav2 count=3 at=-10000,-3000,-5000
 bar      left=FROST middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Sixty-Four's been asking for me."
 talk     bar ANCHOR PRIME "It hasn't been asking for anyone. It's an Aera fighter pilot."
@@ -1298,22 +1298,22 @@ win      alive=ANCHOR "No, I don't expect it is. Come and see me."
 lose     "That's a report, of a kind. I know they're out there now, and I know how many."
 lose     ANCHOR "Commander, I have a proposal, regarding my brother and myself. It isn't in the regulations."
 lose     alive=ANCHOR "Come and see me, Anchor. It can't get worse."
-nav      1 4500 2250 -15750
-nav      2 -15750 0 -22500
-nav      3 -20250 4500 0
-nav      4 -15750 0 -22500 hidden
+nav      1 10000 5000 -35000 reach=15000
+nav      2 -35000 0 -50000 reach=30000
+nav      3 -45000 10000 0 reach=15000
+nav      4 -35000 0 -50000 hidden reach=30000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home
 ship     GAWAIN 0 nav0
-ship     OX 0 nav0 at=-4500,-2250,-2250
-ship     CONVOLN 1 nav1 count=2 at=4500,0,0
-ship     ARISTON 1 nav2 count=2 at=4500,0,2250
+ship     OX 0 nav0 at=-10000,-5000,-5000
+ship     CONVOLN 1 nav1 count=2 at=10000,0,0
+ship     ARISTON 1 nav2 count=2 at=10000,0,5000
 ship     ARISTON 1 nav2 count=2
-ship     ARISTON 1 nav4 count=2 at=-5625,0,-4500
-ship     AGASICL 1 nav4 at=-6750,0,-5400
-field    asteroid 4500 4250 -10750 5000 level=3
-field    asteroid -20250 6500 5000 5000 level=3
+ship     ARISTON 1 nav4 count=2 at=-12500,0,-10000
+ship     AGASICL 1 nav4 at=-15000,0,-12000
+field    asteroid 10000 7000 -30000 5000 level=3
+field    asteroid -45000 12000 5000 5000 level=3
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar ANCHOR PRIME "It's a bad idea."
 talk     bar PRIME ANCHOR "Say it in my voice."
@@ -1374,21 +1374,21 @@ win      alive=ANCHOR "Noted. It's the first time you've ever said that. Dismiss
 lose     "The convoy got through, and Sixty-Four went home to tell the others."
 lose     ANCHOR "The fault was not mine, Commander."
 lose     alive=ANCHOR "No, I don't believe it was. That's new. Dismissed."
-nav      1 4500 2250 20250
-nav      2 24750 -4500 20250
-nav      3 24750 -4500 20250 hidden
+nav      1 10000 5000 45000 reach=20000
+nav      2 55000 -10000 45000 reach=20000
+nav      3 55000 -10000 45000 hidden reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home
 ship     FRANKLN 0 nav0 count=2
-ship     ARISTON 1 nav1 at=-2250,2250,0
+ship     ARISTON 1 nav1 at=-5000,5000,0
 ship     ARISTON 1 nav1 count=2
 ship     ARISTON 1 nav1 count=2
-ship     AGASICL 1 nav1 at=-2250,2250,2250
-ship     CLEOMEN 1 nav2 count=2 at=-4500,0,2250
-ship     AGASICL 1 nav2 at=-2250,0,2250
-ship     CLEOMEN 1 nav3 count=2 at=-4500,0,-2250
-ship     AGASICL 1 nav3 at=-2250,0,-4500
+ship     AGASICL 1 nav1 at=-5000,5000,5000
+ship     CLEOMEN 1 nav2 count=2 at=-10000,0,5000
+ship     AGASICL 1 nav2 at=-5000,0,5000
+ship     CLEOMEN 1 nav3 count=2 at=-10000,0,-5000
+ship     AGASICL 1 nav3 at=-5000,0,-10000
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar ANCHOR TORCH "Relax. There's a spare."
 talk     bar TORCH ANCHOR "Which one are you?"
@@ -1448,16 +1448,16 @@ lose     escort=lost "We lost the Ox."
 lose     "That was the only ship out of Naxos in four years."
 lose     ECHO "I never saw the manifest."
 lose     alive=ECHO "No. I'll give it to you. I don't know if that's kind. Dismissed."
-nav      1 -4500 0 32000
+nav      1 -10000 0 75000 reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ECHO
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     FRANKLN 0 nav0
-ship     FRANKLN 0 nav0 count=2 at=-4500,900,0
-ship     OX 0 nav0 at=-4500,0,-2250
+ship     FRANKLN 0 nav0 count=2 at=-10000,2000,0
+ship     OX 0 nav0 at=-10000,0,-5000
 ship     OX 0 nav1 role=in
-ship     CLEOMEN 1 nav1 count=2 at=-2250,2250,2250
-ship     CLEOMEN 1 nav1 count=2 at=4500,0,-4500
+ship     CLEOMEN 1 nav1 count=2 at=-5000,5000,5000
+ship     CLEOMEN 1 nav1 count=2 at=10000,0,-10000
 bar      left=FROST middle=ECHO right=COMET
 talk     bar ECHO FROST "Your Rlaan could have got people out of Naxos. They were right there."
 talk     bar FROST ECHO "They were trading partners, Echo. They were scared too."
@@ -1520,22 +1520,22 @@ lose     "That's a report. I wish it was a better one."
 lose     ECHO "I left formation again. I went after it. You were alone."
 lose     you alive=ECHO "Yes, you did."
 lose     alive=ECHO "I've seen your column, Echo. It doesn't look like it's working. Dismissed."
-nav      1 13500 -2250 -6750
-nav      2 6750 2250 -15750
-nav      3 -4500 2250 -15750
-nav      4 -15750 0 -9000
+nav      1 30000 -5000 -15000 reach=10000
+nav      2 15000 5000 -35000 reach=10000
+nav      3 -10000 5000 -35000 reach=20000
+nav      4 -35000 0 -20000 reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ECHO
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     SCHROED 0 nav0 count=2
-ship     NICANDR 1 nav1 count=2 at=0,0,-2250
+ship     NICANDR 1 nav1 count=2 at=0,0,-5000
 ship     NICANDR 1 nav1
-ship     CONVOLN 1 nav3 count=2 at=-2250,2250,-4500
+ship     CONVOLN 1 nav3 count=2 at=-5000,5000,-10000
 ship     CONVOLN 1 nav3 count=2
-ship     ANAXIDM 1 nav3 at=-2250,2250,-6750
-field    mine 6750 2250 -20750 5000 level=2
-field    asteroid -5750 0 -9000 5000 level=2
-field    asteroid -20750 -5000 -4000 7500 level=2
+ship     ANAXIDM 1 nav3 at=-5000,5000,-15000
+field    mine 15000 5000 -40000 5000 level=2
+field    asteroid -25000 0 -20000 5000 level=2
+field    asteroid -40000 -5000 -15000 7500 level=2
 bar      left=TORCH middle=ECHO right=-
 talk     bar TORCH ECHO "Did you go and see them?"
 talk     bar ECHO TORCH "Yes."
@@ -1590,19 +1590,19 @@ win      alive=ECHO "That's between you and Tally. You know what I think. Dismis
 lose     "We held the ship. Barely. The cruiser jumped, so we'll see it again."
 lose     ECHO "I was with them. On the ship. That's where I went."
 lose     alive=ECHO "I know where you were. Dismissed, both of you."
-nav      1 18000 4500 13500
-nav      2 29250 2250 -2250
+nav      1 40000 10000 30000 reach=20000
+nav      2 65000 5000 -5000 reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ECHO
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     FRANKLN 0 nav0
-ship     CLEOMEN 1 nav0 count=2 at=0,0,4500
-ship     CLEOMEN 1 nav0 count=2 at=-2250,-2250,-2250
-ship     FRANKLN 0 nav1 at=0,0,1125
-ship     KAHAN 0 nav1 at=-2250,0,2250
-ship     CONVOLN 1 nav1 count=2 at=-2250,0,-2250
+ship     CLEOMEN 1 nav0 count=2 at=0,0,10000
+ship     CLEOMEN 1 nav0 count=2 at=-5000,-5000,-5000
+ship     FRANKLN 0 nav1 at=0,0,2500
+ship     KAHAN 0 nav1 at=-5000,0,5000
+ship     CONVOLN 1 nav1 count=2 at=-5000,0,-5000
 ship     CONVOLN 1 nav1 count=2
-ship     ARISTON 1 nav2 count=3 at=-2250,0,6750
+ship     ARISTON 1 nav2 count=3 at=-5000,0,15000
 ship     ARISTON 1 nav2
 ship     ANAXIDM 1 nav2 role=out
 bar      left=FROST middle=ECHO right=ANCHOR
@@ -1662,21 +1662,21 @@ win      dead=FROST "We're all flying without her now. Well flown, Wildcard."
 lose     "They got their destroyers through. That makes the relay harder, and it won't get easier."
 lose     FROST "Rlaan traders use that lane, Commander. They might have seen something."
 lose     alive=FROST "I've had that from Command. They're asking me who you've been talking to. Dismissed."
-nav      1 0 2250 24750
-nav      2 13500 6750 31500
-nav      3 0 2250 24750 hidden
+nav      1 0 5000 55000 reach=15000
+nav      2 30000 15000 70000 reach=15000
+nav      3 0 5000 55000 hidden reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     FRANKLN 0 nav0
-ship     NICANDR 1 nav1 count=2 at=-2250,0,-2250
+ship     NICANDR 1 nav1 count=2 at=-5000,0,-5000
 ship     NICANDR 1 nav1 count=2
 ship     NICANDR 1 nav1 count=2
-ship     AGASICL 1 nav1 at=-4500,0,0
-ship     ARISTON 1 nav2 count=2 at=-2250,2250,2250
+ship     AGASICL 1 nav1 at=-10000,0,0
+ship     ARISTON 1 nav2 count=2 at=-5000,5000,5000
 ship     ARISTON 1 nav2
 ship     AGASICL 1 nav2 role=in
-ship     CLEOMEN 1 nav3 count=2 at=2250,1125,2250
+ship     CLEOMEN 1 nav3 count=2 at=5000,2500,5000
 ship     AGASICL 1 nav3 role=in
 bar      left=FROST middle=PRIME right=ANCHOR
 talk     bar PRIME FROST "I hear you've got a promotion and an investigation. Which one do I congratulate?"
@@ -1730,19 +1730,19 @@ win      alive=FROST "I know. Go and talk to him. Take Tally's bottle, not mine.
 lose     "They got her back, or got to her. Either way, it's not going to help the siege."
 lose     FROST "He was calling for me on the comm. He asked me to come."
 lose     alive=FROST "I know what he asked. That's in the file now. Dismissed."
-nav      1 9000 -4500 -32000
-nav      2 6750 -2250 -15750 hidden
+nav      1 20000 -10000 -75000 reach=20000
+nav      2 15000 -5000 -35000 hidden reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
 ship     KAHAN 0 nav0
-ship     AGIS 1 nav2 count=2 at=0,-900,-2250
+ship     AGIS 1 nav2 count=2 at=0,-2000,-5000
 ship     AGIS 1 nav2 count=2
-ship     LANCELT 0 nav1 at=0,1350,2250
-ship     CONVOLN 1 nav1 count=2 at=0,0,4500
-ship     CONVOLN 1 nav1 count=2 at=0,1350,-2250
-ship     AGASICL 0 nav1 at=2250,1125,2250
-field    asteroid 6750 -250 -10750 7500 level=1
+ship     LANCELT 0 nav1 at=0,3000,5000
+ship     CONVOLN 1 nav1 count=2 at=0,0,10000
+ship     CONVOLN 1 nav1 count=2 at=0,3000,-5000
+ship     AGASICL 0 nav1 at=5000,2500,5000
+field    asteroid 15000 -3000 -30000 7500 level=1
 bar      left=FROST middle=KESTREL right=DRIFTER
 talk     bar KESTREL FROST "They're looking at you the way they look at me."
 talk     bar FROST KESTREL "Is that why you sat down here?"
@@ -1795,21 +1795,21 @@ win      "We have a relay to take. Dismissed."
 lose     escort=lost "We lost the Thermopylae, and everyone aboard."
 lose     FROST "I'd like to see the list, Commander."
 lose     alive=FROST "Later, Frost. Let's both of us sit down first."
-nav      1 -15750 0 -29250
-nav      2 -4500 0 -15750 hidden
-nav      3 -15750 0 -29250 hidden
-nav      4 -13500 0 -11250 hidden
+nav      1 -35000 0 -65000 reach=20000
+nav      2 -10000 0 -35000 hidden reach=5000
+nav      3 -35000 0 -65000 hidden reach=20000
+nav      4 -30000 0 -25000 hidden reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
 ship     LANCELT 0 nav0
 ship     KAHAN 0 nav1 role=in
-ship     NICANDR 1 nav1 count=2 at=-4500,0,0
+ship     NICANDR 1 nav1 count=2 at=-10000,0,0
 ship     NICANDR 1 nav1 count=2
-ship     NICANDR 1 nav3 count=2 at=-6750,0,-2250
-ship     ARISTON 1 nav4 count=2 at=0,-2250,-2250
+ship     NICANDR 1 nav3 count=2 at=-15000,0,-5000
+ship     ARISTON 1 nav4 count=2 at=0,-5000,-5000
 ship     ARISTON 1 nav4 count=2
-field    mine -9500 0 -15750 5000 level=1
+field    mine -15000 0 -35000 5000 level=1
 bar      left=TORCH middle=PRIME right=COMET
 talk     bar COMET TORCH "What's Frost got on the Thermopylae?"
 talk     bar TORCH COMET "Ask her. Nobody else will."
@@ -1869,22 +1869,22 @@ lose     "That's most of a map. It'll have to do."
 lose     KESTREL "There were more than we thought. I could have told you sooner."
 lose     alive=KESTREL "Yes, you could. Dismissed."
 lose     you "Yes, Commander."
-nav      1 15750 2250 4500
-nav      2 20250 2250 15750
-nav      3 4500 -2250 20250
-nav      4 -6750 0 13500
-nav      5 4500 -2250 20250 hidden
+nav      1 35000 5000 10000 reach=10000
+nav      2 45000 5000 35000 reach=10000
+nav      3 10000 -5000 45000 reach=15000
+nav      4 -15000 0 30000 reach=10000
+nav      5 10000 -5000 45000 hidden reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=KESTREL
 ship     VIGILNC 0 nav0 role=home
-ship     NICANDR 1 nav2 count=2 at=2250,0,0
-ship     CONVOLN 1 nav3 count=2 at=-2250,1125,-2250
-ship     CONVOLN 1 nav5 count=2 at=2250,-1350,2250
+ship     NICANDR 1 nav2 count=2 at=5000,0,0
+ship     CONVOLN 1 nav3 count=2 at=-5000,2500,-5000
+ship     CONVOLN 1 nav5 count=2 at=5000,-3000,5000
 ship     CONVOLN 1 nav5 count=2
 ship     AGASICL 1 nav5 role=in
-field    asteroid 15750 7250 4500 5000 level=3
-field    asteroid 20250 7250 15750 5000 level=3
-field    asteroid -6750 5000 13500 5000 level=3
+field    asteroid 35000 10000 10000 5000 level=3
+field    asteroid 45000 10000 35000 5000 level=3
+field    asteroid -15000 5000 30000 5000 level=3
 field    asteroid 0 0 15000 5000 level=3
 field    asteroid 10000 2000 0 5000 level=3
 field    asteroid -10000 0 0 5000 level=3
@@ -1944,19 +1944,19 @@ win      "He's fine. They built him to be fine. Dismissed."
 lose     "It's still out there, then."
 lose     KESTREL "I'll go back."
 lose     alive=KESTREL "You'll wait until you've been told to. Dismissed."
-nav      1 6750 0 32000
-nav      2 0 0 18000 hidden
-nav      3 0 0 0 hidden
+nav      1 15000 0 75000 reach=20000
+nav      2 0 0 40000 hidden reach=15000
+nav      3 0 0 0 hidden reach=5000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=KESTREL
 ship     VIGILNC 0 nav0 role=home turrets=off
-ship     AGIS 1 nav2 count=2 at=0,-1125,2250
-ship     AGIS 1 nav3 at=-4500,0,2250
+ship     AGIS 1 nav2 count=2 at=0,-2500,5000
+ship     AGIS 1 nav3 at=-10000,0,5000
 ship     AGIS 1 nav3 count=2
-ship     CLEOMEN 1 nav1 count=2 at=-2250,-4500,0
-ship     CLEOMEN 1 nav1 count=2 at=2250,-450,-2250
+ship     CLEOMEN 1 nav1 count=2 at=-5000,-10000,0
+ship     CLEOMEN 1 nav1 count=2 at=5000,-1000,-5000
 ship     AGASICL 1 nav1
-field    asteroid 5000 2000 23000 5000 level=3
+field    asteroid 5000 2000 45000 5000 level=3
 field    asteroid 0 10000 0 5000 level=3
 field    asteroid 10000 3000 -5000 5000 level=3
 field    asteroid -10000 0 -5000 5000 level=3
@@ -2008,19 +2008,19 @@ win      alive=KESTREL "I know, Kestrel. Tactical knows. Dismissed."
 lose     "She's bigger than I thought, and now she knows we're looking."
 lose     KESTREL "We can't hold here, Commander."
 lose     alive=KESTREL "You're not the first person to tell me that today. Dismissed."
-nav      1 13500 4500 13500
-nav      2 32000 4500 6750
-nav      3 18000 2250 0 hidden
+nav      1 30000 10000 30000 reach=15000
+nav      2 75000 10000 15000 reach=20000
+nav      3 40000 5000 0 hidden reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=KESTREL
 ship     VIGILNC 0 nav0 role=home
-ship     ARISTON 1 nav2 count=2 at=-2250,1125,2250
-ship     ARISTON 1 nav2 count=2 at=0,1125,-2250
+ship     ARISTON 1 nav2 count=2 at=-5000,2500,5000
+ship     ARISTON 1 nav2 count=2 at=0,2500,-5000
 ship     ANAXIDM 1 nav2 role=in
-ship     NICANDR 1 nav3 count=2 at=-4500,0,-2250
+ship     NICANDR 1 nav3 count=2 at=-10000,0,-5000
 ship     NICANDR 1 nav3 count=2
-field    asteroid 23500 4500 18500 5000 level=3
-field    asteroid 13000 4250 5000 5000 level=3
+field    asteroid 40000 10000 35000 5000 level=3
+field    asteroid 35000 7000 5000 5000 level=3
 field    asteroid 10000 0 0 5000 level=3
 field    asteroid 10000 3000 -5000 5000 level=3
 field    asteroid -10000 0 -5000 5000 level=3
@@ -2081,20 +2081,20 @@ win      TECH "I know. I hate it. I'd forgotten how much."
 lose     "We're still flying, and I'm running out of things to say about that."
 lose     TECH "I'll have her rebuilt by morning. You, I can't help."
 lose     alive=TECH "That's more than I can say for the rest of us, Chief. Dismissed."
-nav      1 -15750 2250 9000
-nav      2 -20250 6750 24750
-nav      3 -4500 4500 20250
+nav      1 -35000 5000 20000 reach=15000
+nav      2 -45000 15000 55000 reach=15000
+nav      3 -10000 10000 45000 reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TECH
 ship     VIGILNC 0 nav0 role=home
 ship     FRANKLN 0 nav0
-ship     ARISTON 1 nav1 count=2 at=2250,0,2250
-ship     ARISTON 1 nav1 count=2 at=-2250,1350,0
-ship     AGASICL 1 nav1 at=0,0,4500
-ship     NICANDR 1 nav2 count=2 at=-2250,0,-2250
+ship     ARISTON 1 nav1 count=2 at=5000,0,5000
+ship     ARISTON 1 nav1 count=2 at=-5000,3000,0
+ship     AGASICL 1 nav1 at=0,0,10000
+ship     NICANDR 1 nav2 count=2 at=-5000,0,-5000
 ship     NICANDR 1 nav2 count=2
-ship     AGASICL 1 nav2 count=2 at=-2250,0,0
-field    mine 500 4500 15250 5000 level=2
+ship     AGASICL 1 nav2 count=2 at=-5000,0,0
+field    mine -5000 10000 40000 5000 level=2
 bar      left=TORCH middle=PRIME right=COMET
 talk     bar COMET PRIME "Who's got the book?"
 talk     bar PRIME COMET "Tally."
@@ -2150,21 +2150,21 @@ win      alive=TECH "You'll have it, Chief. And you'll have a hot meal, if you s
 lose     "We'll run on what we have. It won't be long enough."
 lose     TECH "I can cut the deck heaters. I'll take everything that isn't holding a pilot."
 lose     alive=TECH "I know you will. Dismissed."
-nav      1 4500 9000 32000
-nav      2 2250 4500 18000 hidden
-nav      3 2250 4500 18000 hidden
+nav      1 10000 20000 80000 reach=15000
+nav      2 5000 10000 40000 hidden reach=15000
+nav      3 5000 10000 40000 hidden reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TECH
 ship     VIGILNC 0 nav0 role=home
 ship     FRANKLN 0 nav0
-ship     NICANDR 1 nav2 count=2 at=4500,0,-2250
-ship     NICANDR 1 nav2 count=2 at=-2250,0,4500
+ship     NICANDR 1 nav2 count=2 at=10000,0,-5000
+ship     NICANDR 1 nav2 count=2 at=-5000,0,10000
 ship     OX 0 nav1
 ship     OX 0 nav1
-ship     CONVOLN 1 nav1 count=2 at=-2250,2250,2250
+ship     CONVOLN 1 nav1 count=2 at=-5000,5000,5000
 ship     CONVOLN 1 nav1 count=2
-field    mine -7750 4500 18000 5000 level=2
-field    mine 12250 4500 23000 5000 level=2
+field    mine -5000 10000 40000 5000 level=2
+field    mine 15000 10000 45000 5000 level=2
 bar      left=- middle=- right=COMET
 say      bar COMET COMET "I've got a sheet of paper in front of me. It's blank. It's going to stay that way."
 say      bar COMET you "Who's it for?"
@@ -2224,20 +2224,20 @@ lose     system=lost alive=ANCHOR "Anchor got out of the med bay and flew cover 
 lose     system=lost alive=DRIFTER "They reached Drifter's pod too late. He had ten credits in his pocket when they found him."
 lose     system=lost TECH "I've got what's left of the list. I know what it's for now."
 lose     system=lost "Dismissed, all of you. Get whatever rest you can."
-nav      1 15750 0 -15750
-nav      2 0 0 0 hidden
-nav      3 0 0 0 hidden
+nav      1 35000 0 -35000 reach=20000
+nav      2 0 0 0 hidden reach=20000
+nav      3 0 0 0 hidden reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TECH
 ship     VIGILNC 0 nav0 role=home
 ship     FRANKLN 0 nav0
-ship     OX 0 nav0 count=2 at=4500,1125,-2250
-ship     ARISTON 1 nav1 count=3 at=2250,450,2250
-ship     CONVOLN 1 nav2 count=2 at=-2250,-1350,-2250
-ship     CONVOLN 1 nav2 count=2 at=2250,0,-4500
-ship     CLEOMEN 1 nav3 count=2 at=6750,0,4500
-field    asteroid 15750 0 -5750 5000 level=2
-field    asteroid 10750 0 -20750 5000 level=2
+ship     OX 0 nav0 count=2 at=10000,2500,-5000
+ship     ARISTON 1 nav1 count=3 at=5000,1000,5000
+ship     CONVOLN 1 nav2 count=2 at=-5000,-3000,-5000
+ship     CONVOLN 1 nav2 count=2 at=5000,0,-10000
+ship     CLEOMEN 1 nav3 count=2 at=15000,0,10000
+field    asteroid 35000 0 -25000 5000 level=2
+field    asteroid 30000 0 -40000 5000 level=2
 bar      left=FROST middle=KESTREL right=-
 talk     bar FROST KESTREL "You should sleep."
 talk     bar KESTREL FROST "Yes."
@@ -2291,27 +2291,27 @@ win      dead=TORCH "There's a signal from inside the pocket, Wildcard. Old code
 lose     "That's less of a map than I wanted."
 lose     TORCH "I'll go back tomorrow, with a map or without one."
 lose     alive=TORCH "You'll go when you're told. That's tomorrow, as it happens. Dismissed."
-nav      1 18000 2250 4500
-nav      2 24750 4500 -9000
-nav      3 9000 0 -13500
-nav      4 -4500 -2250 -20250
-nav      5 -4500 -2250 -20250 hidden
+nav      1 40000 5000 10000 reach=15000
+nav      2 55000 10000 -20000 reach=15000
+nav      3 20000 0 -30000 reach=10000
+nav      4 -10000 -5000 -45000 reach=20000
+nav      5 -10000 -5000 -45000 hidden reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     LANCELT 0 nav0
-ship     OX 0 nav0 count=2 at=4500,1350,2250
-ship     LANCELT 0 nav1 count=2 at=-2250,-450,-2250
+ship     OX 0 nav0 count=2 at=10000,3000,5000
+ship     LANCELT 0 nav1 count=2 at=-5000,-1000,-5000
 ship     KAHAN 0 nav1
-ship     CLEOMEN 1 nav2 count=2 at=0,2250,-2250
-ship     ARISTON 1 nav4 count=2 at=-2250,1350,2250
+ship     CLEOMEN 1 nav2 count=2 at=0,5000,-5000
+ship     ARISTON 1 nav4 count=2 at=-5000,3000,5000
 ship     ARISTON 1 nav4 count=2
-ship     AGASICL 1 nav4 at=-4500,1350,0
-ship     CONVOLN 1 nav5 count=2 at=-6750,2250,0
+ship     AGASICL 1 nav4 at=-10000,3000,0
+ship     CONVOLN 1 nav5 count=2 at=-15000,5000,0
 ship     CONVOLN 1 nav5 count=2
-field    asteroid 13000 7250 9500 5000 level=1
-field    mine 29750 9500 -4000 5000 level=1
-field    asteroid 9000 0 -18500 5000 level=1
+field    asteroid 35000 10000 15000 5000 level=1
+field    mine 60000 15000 -15000 5000 level=1
+field    asteroid 20000 0 -35000 5000 level=1
 bar      left=FROST middle=PRIME right=DRIFTER
 talk     bar DRIFTER FROST "I've had fifty to one against this for three years."
 talk     bar FROST DRIFTER "I hope you've got the money."
@@ -2376,26 +2376,26 @@ win      alive=TORCH "No. I know they're not. Dismissed."
 lose     "The cruiser's still in the fight, and we've got a long way to go."
 lose     TORCH "Put me back out there. Tonight."
 lose     alive=TORCH "Tomorrow, Torch. You'll be no use to anybody tonight. Dismissed."
-nav      1 13500 -2250 -4500
-nav      2 11250 0 -18000
-nav      3 6750 -6750 -32000
-nav      4 11250 0 -18000 hidden
-nav      5 6750 -6750 -32000 hidden
-nav      6 4500 0 -15750 hidden
-nav      7 4500 0 -15750 hidden
+nav      1 30000 -5000 -10000 reach=10000
+nav      2 25000 0 -40000 reach=15000
+nav      3 15000 -15000 -75000 reach=20000
+nav      4 25000 0 -40000 hidden reach=15000
+nav      5 15000 -15000 -75000 hidden reach=20000
+nav      6 10000 0 -35000 hidden reach=15000
+nav      7 10000 0 -35000 hidden reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home
-ship     LANCELT 0 nav1 count=2 at=2250,1125,0
-ship     AGIS 1 nav3 count=2 at=2250,0,0
+ship     LANCELT 0 nav1 count=2 at=5000,2500,0
+ship     AGIS 1 nav3 count=2 at=5000,0,0
 ship     AGIS 1 nav3 count=2
-ship     ANAXIDM 1 nav3 at=2250,0,-2250
-ship     ARISTON 1 nav5 count=2 at=0,2250,-4500
+ship     ANAXIDM 1 nav3 at=5000,0,-5000
+ship     ARISTON 1 nav5 count=2 at=0,5000,-10000
 ship     ARISTON 1 nav5 count=2
-ship     CONVOLN 1 nav6 count=2 at=-2250,450,-2250
-ship     CONVOLN 1 nav7 count=2 at=0,1125,2250
-field    asteroid 6250 0 -13000 2759 level=1
-field    asteroid 14500 0 -15750 3452 level=1
+ship     CONVOLN 1 nav6 count=2 at=-5000,1000,-5000
+ship     CONVOLN 1 nav7 count=2 at=0,2500,5000
+field    asteroid 20000 0 -35000 5000 level=1
+field    asteroid 20000 0 -35000 5000 level=1
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER TORCH "Long odds against Shmrn."
 talk     bar TORCH DRIFTER "I'm in it, Drifter. I've been in it for a week."
@@ -2459,23 +2459,23 @@ win      alive=TORCH "Yes. Go and find out what you're going to say to her next.
 lose     "We got here, but it cost us. I have people to write to tonight."
 lose     TORCH "She asked who was flying. I told her."
 lose     alive=TORCH "I know what you told her. Dismissed."
-nav      1 -18000 4500 0
-nav      2 -27000 6750 -9000
-nav      3 -22500 9000 -24750
-nav      4 -3375 4500 -13500 hidden
-nav      5 -6750 9000 -27000 hidden
-nav      6 -9000 11250 -32000 hidden
+nav      1 -40000 10000 0 reach=10000
+nav      2 -60000 15000 -20000 reach=15000
+nav      3 -50000 20000 -55000 reach=15000
+nav      4 -7500 10000 -30000 hidden reach=20000
+nav      5 -15000 20000 -60000 hidden reach=20000
+nav      6 -20000 25000 -80000 hidden reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     LANCELT 0 nav4
-ship     CONVOLN 1 nav6 count=2 at=900,-1350,-4500
-ship     CONVOLN 1 nav6 count=2 at=-4500,900,4500
-ship     CLEOMEN 1 nav2 count=2 at=-2250,0,-2250
-ship     NICANDR 1 nav3 count=2 at=0,2250,2250
-ship     AGASICL 1 nav3 at=2250,2250,2250
-field    mine -18000 4500 5000 5000 level=1
-field    mine -32000 5750 -4000 5000 level=1
+ship     CONVOLN 1 nav6 count=2 at=2000,-3000,-10000
+ship     CONVOLN 1 nav6 count=2 at=-10000,2000,10000
+ship     CLEOMEN 1 nav2 count=2 at=-5000,0,-5000
+ship     NICANDR 1 nav3 count=2 at=0,5000,5000
+ship     AGASICL 1 nav3 at=5000,5000,5000
+field    mine -40000 10000 5000 5000 level=1
+field    mine -65000 14000 -15000 5000 level=1
 bar      left=FROST middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Who signed for my wingtip?"
 talk     bar ANCHOR PRIME "You did."
@@ -2541,29 +2541,29 @@ lose     system=won "Go on. Tally says the first round's on him."
 lose     system=lost "It's still there, and we're leaving. We have orders. The lane won't stay open."
 lose     system=lost TORCH "Then I'm staying."
 lose     system=lost alive=TORCH "No, you aren't. You've carried those codes for three years. You can carry them again. Dismissed."
-nav      1 13500 0 -27000
-nav      2 24750 0 -32000
-nav      3 24750 0 -32000
-nav      4 -6750 0 -6750 hidden
-nav      5 -4500 0 -18000 hidden
-nav      6 6750 0 -31500 hidden
-nav      7 6750 0 -13500 hidden
-nav      8 24750 0 -32000 hidden
+nav      1 30000 0 -60000 reach=15000
+nav      2 55000 0 -90000 reach=20000
+nav      3 55000 0 -90000 reach=20000
+nav      4 -15000 0 -15000 hidden reach=20000
+nav      5 -10000 0 -40000 hidden reach=20000
+nav      6 15000 0 -70000 hidden reach=20000
+nav      7 15000 0 -30000 hidden reach=10000
+nav      8 55000 0 -90000 hidden reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home
 ship     GAWAIN 0 nav6
-ship     ARISTON 1 nav1 count=2 at=-2250,0,2250
-ship     ARISTON 1 nav1 count=2 at=0,1125,4500
-ship     ANAXIDM 1 nav1 at=-2250,450,0
+ship     ARISTON 1 nav1 count=2 at=-5000,0,5000
+ship     ARISTON 1 nav1 count=2 at=0,2500,10000
+ship     ANAXIDM 1 nav1 at=-5000,1000,0
 ship     LEONIDS 1 nav2
-ship     CONVOLN 1 nav2 count=2 at=-2250,900,2250
+ship     CONVOLN 1 nav2 count=2 at=-5000,2000,5000
 ship     CONVOLN 1 nav2 count=2
-ship     AGIS 1 nav3 count=2 at=6750,-1125,-2250
+ship     AGIS 1 nav3 count=2 at=15000,-2500,-5000
 ship     AGIS 1 nav3 count=2
-ship     CLEOMEN 1 nav8 count=2 at=2250,0,-6750
+ship     CLEOMEN 1 nav8 count=2 at=5000,0,-15000
 ship     CLEOMEN 1 nav8 count=2
-field    mine 11750 0 -13500 5000 level=1
+field    mine 20000 0 -30000 5000 level=1
 wipe     ECHO
 bar      left=TORCH middle=ECHO right=COMET
 talk     bar COMET ECHO "Your column's gone."
@@ -2630,23 +2630,23 @@ win      dead=TALLY "There are four hundred and twelve people who'll never know 
 lose     escort=lost "We lost the Ox. I have the manifest here. I'll read it later, on my own."
 lose     TALLY "I had it, and I had it, and then I didn't. That's forty years of flying."
 lose     "Get some rest, both of you. Dismissed."
-nav      1 -20250 4500 -22500
-nav      2 -11250 2250 -11250 hidden
-nav      3 -20250 4500 -22500 hidden
-nav      4 -11250 2250 -11250 hidden
+nav      1 -45000 10000 -50000 reach=20000
+nav      2 -25000 5000 -25000 hidden reach=10000
+nav      3 -45000 10000 -50000 hidden reach=20000
+nav      4 -25000 5000 -25000 hidden reach=10000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TALLY
 ship     VIGILNC 0 nav0 role=home
-ship     OX 0 nav0 at=-2250,1350,2250
+ship     OX 0 nav0 at=-5000,3000,5000
 ship     ARISTON 0 nav0
-ship     AGIS 1 nav2 count=2 at=-2250,0,2250
+ship     AGIS 1 nav2 count=2 at=-5000,0,5000
 ship     AGIS 1 nav2 count=2
 ship     OX 0 nav1 role=in
-ship     ARISTON 1 nav1 count=2 at=2250,0,-2250
-ship     ARISTON 1 nav1 at=-4500,450,0
+ship     ARISTON 1 nav1 count=2 at=5000,0,-5000
+ship     ARISTON 1 nav1 at=-10000,1000,0
 ship     ARISTON 1 nav3 count=2
 ship     ARISTON 1 nav3 count=2
-ship     CONVOLN 1 nav4 count=3 at=2250,-1125,0
+ship     CONVOLN 1 nav4 count=3 at=5000,-2500,0
 bar      left=- middle=PRIME right=COMET
 talk     bar PRIME COMET "Pre-flight complete. I read it twice."
 talk     bar COMET PRIME "You don't have to do that."
@@ -2694,7 +2694,7 @@ music    briefing
 fighter  FRANKLN
 briefing "The situation is getting worse. We've lost the last relay at Wolf 359, and they're coming here next."
 briefing alive=TORCH "Torch took a fighter last night and jumped for Shmrn, alone. Nobody stopped him. Nor did I."
-briefing "We have half a dozen fighters circling Nav 1, thirty-four thousand out, waiting for something."
+briefing "We have half a dozen fighters circling Nav 1, seventy-five thousand out, waiting for something."
 briefing "It might be a tanker. It's more likely the first of their cruisers, an Anaxidamus."
 briefing "You and Tally go and look. A Franklin and an Ox stay with us, and the turrets are off."
 briefing "There's an Agis on our deck, 4 Convolutions at Nav 1, and they've mined the way there."
@@ -2708,21 +2708,21 @@ win      TALLY "You owe me."
 lose     "So she's in the system now. We'll have to deal with that as well."
 lose     TALLY "My eyes aren't what they were. Don't tell Solberg."
 lose     alive=TALLY "I signed your medical, Wendell. I know what your eyes are. Dismissed."
-nav      1 9000 9000 31500
-nav      2 4500 4500 15750 hidden
-nav      3 9000 9000 31500 hidden
+nav      1 20000 20000 70000 reach=20000
+nav      2 10000 10000 35000 hidden reach=15000
+nav      3 20000 20000 70000 hidden reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TALLY
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     FRANKLN 0 nav0
-ship     OX 0 nav0 at=4500,0,2250
-ship     AGIS 1 nav2 count=3 at=2250,0,2250
-ship     CONVOLN 1 nav1 count=2 at=2250,-1125,-4500
-ship     CONVOLN 1 nav1 count=2 at=-2250,-2250,-2250
+ship     OX 0 nav0 at=10000,0,5000
+ship     AGIS 1 nav2 count=3 at=5000,0,5000
+ship     CONVOLN 1 nav1 count=2 at=5000,-2500,-10000
+ship     CONVOLN 1 nav1 count=2 at=-5000,-5000,-5000
 ship     ANAXIDM 1 nav1 role=in
-ship     CONVOLN 1 nav3 count=2 at=0,0,6750
-field    mine 9500 4500 10750 7500 level=2
-field    mine -500 4500 20750 5000 level=2
+ship     CONVOLN 1 nav3 count=2 at=0,0,15000
+field    mine 15000 10000 30000 7500 level=2
+field    mine 5000 10000 40000 5000 level=2
 wipe     ALL
 bar      left=- middle=ECHO right=COMET
 talk     bar ECHO COMET "He wiped it."
@@ -2775,24 +2775,24 @@ win      "Dismissed, both of you. Eat something."
 lose     "We've lost the Kahan's escort, and I don't know if we still have the Kahan."
 lose     TALLY "That's not on the kid, Commander. That's on me. Write it down."
 lose     "I'm writing it all down, Wendell. Dismissed."
-nav      1 31500 0 18000
-nav      2 15750 0 9000 hidden
-nav      3 31500 0 18000 hidden
+nav      1 70000 0 40000 reach=20000
+nav      2 35000 0 20000 hidden reach=15000
+nav      3 70000 0 40000 hidden reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TALLY
 ship     VIGILNC 0 nav0 role=home
 ship     SCHROED 0 nav0 count=2
-ship     AGIS 1 nav2 at=-3375,2250,1350
+ship     AGIS 1 nav2 at=-7500,5000,3000
 ship     AGIS 1 nav2 count=2
 ship     AGIS 1 nav2 count=2
-ship     FRANKLN 0 nav1 at=0,0,-2250
+ship     FRANKLN 0 nav1 at=0,0,-5000
 ship     KAHAN 0 nav1
-ship     NICANDR 1 nav1 count=2 at=-2250,1125,-4500
-ship     NICANDR 1 nav1 count=2 at=-4500,-450,0
-ship     CONVOLN 1 nav3 count=2 at=2250,0,6750
+ship     NICANDR 1 nav1 count=2 at=-5000,2500,-10000
+ship     NICANDR 1 nav1 count=2 at=-10000,-1000,0
+ship     CONVOLN 1 nav3 count=2 at=5000,0,15000
 ship     CONVOLN 1 nav3 count=2
-field    mine 15750 0 4000 7500 level=2
-field    mine 15750 0 19000 5000 level=2
+field    mine 35000 0 15000 7500 level=2
+field    mine 35000 0 30000 5000 level=2
 bar      left=- middle=- right=COMET
 say      bar COMET COMET "They came in to see Julian, from the Guild. The family's lawyers. There was a form."
 say      bar COMET you "What did they want?"
@@ -2844,28 +2844,28 @@ win      "Get to a seat, Wildcard. We're leaving the sector. We'll be back. I've
 lose     "We have to jump. I don't know who's still out there. I'm sorry. I'm going to write it down."
 lose     TALLY "We held them as long as we could. Get us out of here, Mira."
 lose     "Get to a seat, Wildcard. We're leaving the sector. I've got all your names."
-nav      1 18000 0 4500
-nav      2 -15750 -2250 -2250 hidden
-nav      3 -31500 -4500 -4500 hidden
-nav      4 -32000 -6750 -6750 hidden
-nav      5 0 0 0 hidden
-nav      6 -15750 -2250 -2250 hidden
-nav      7 -31500 -4500 -4500 hidden
+nav      1 40000 0 10000 reach=15000
+nav      2 -35000 -5000 -5000 hidden reach=20000
+nav      3 -70000 -10000 -10000 hidden reach=20000
+nav      4 -105000 -15000 -15000 hidden reach=20000
+nav      5 0 0 0 hidden reach=15000
+nav      6 -35000 -5000 -5000 hidden reach=20000
+nav      7 -70000 -10000 -10000 hidden reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TALLY
 ship     VIGILNC 0 nav0 role=home
-ship     ARISTON 1 nav4 count=2 at=2250,-1125,-2250
+ship     ARISTON 1 nav4 count=2 at=5000,-2500,-5000
 ship     ARISTON 1 nav4 count=2
-ship     CONVOLN 1 nav1 count=2 at=-2250,0,0
-ship     AGASICL 1 nav1 at=0,0,2250
-ship     AGIS 1 nav5 count=2 at=2250,0,-2250
+ship     CONVOLN 1 nav1 count=2 at=-5000,0,0
+ship     AGASICL 1 nav1 at=0,0,5000
+ship     AGIS 1 nav5 count=2 at=5000,0,-5000
 ship     AGIS 1 nav5 count=2
-ship     NICANDR 1 nav6 at=0,2250,2250
+ship     NICANDR 1 nav6 at=0,5000,5000
 ship     NICANDR 1 nav6 count=2
 ship     NICANDR 1 nav6 count=2
-ship     CLEOMEN 1 nav7 count=3 at=0,0,2250
-field    mine -20750 -2250 -7250 5000 level=2
-field    mine -32000 -1750 -6750 5000 level=2
+ship     CLEOMEN 1 nav7 count=3 at=0,0,5000
+field    mine -40000 -5000 -10000 5000 level=2
+field    mine -75000 -10000 -15000 5000 level=2
 field    asteroid 0 0 10000 5000 level=2
 field    asteroid -5000 0 -5000 5000 level=2
 bar      left=- middle=- right=-

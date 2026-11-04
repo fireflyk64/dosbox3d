@@ -615,9 +615,9 @@ static void load_scene(const char *path)
             *(uint16_t *)rec = (uint16_t)type;
             *(uint16_t *)(rec + 2) = (uint16_t)side;
             *(uint16_t *)(rec + 4) = 0xFFFF;
-            *(int16_t *)(rec + 10) = (int16_t)x;
-            *(int16_t *)(rec + 12) = (int16_t)y;
-            *(int16_t *)(rec + 14) = (int16_t)z;
+            MSHIP_REC_KM(rec, 0) = (int32_t)x;
+            MSHIP_REC_KM(rec, 1) = (int32_t)y;
+            MSHIP_REC_KM(rec, 2) = (int32_t)z;
             rec[16] = RV_PILOT_NONE;
             rec[17] = (uint8_t)profile;
             s = (int16_t)outerSpawnShipEntity((uint16_t)n, 0);

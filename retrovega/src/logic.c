@@ -129,7 +129,7 @@ static struct {
 
 #define NAVS 16                         /* navPointTable's records: nav n is record n (nav 0 the launch, the origin) */
 #define NAV_REC(n) (navPointTable + navPointTable_SIZE * (n))
-#define NAV_AT(n, k) (*(const int16_t *)(NAV_REC(n) + 2 + 2 * (k)))   /* its place, k 0..2: x, y, z in km */
+#define NAV_AT(n, k) NAV_REC_KM(NAV_REC(n), k)                     /* its place, k 0..2: x, y, z in km (32 bits) */
 #define NAV_SHIPS(n) ((const uint16_t *)(NAV_REC(n) + 0x39))         /* its ten mission ships, 0xFFFF ends them */
 #define MSHIP(r) (missionShipTable + missionShipTable_SIZE * ((r) & 63))
 #define MSHIP_SIDE(r) (*(const uint16_t *)(MSHIP(r) + 2))
@@ -145,13 +145,20 @@ static struct {
                                            out) */
 #define ROUTE_TURN_COS 230              /* its way more than some 25 degrees off its nose: a fifth of its speed, so it
                                            turns in rather than round */
-#define ROUTE_WAKE_KM 8000              /* an escort target that waits sets off home when the player is this near */
+#define ROUTE_WAKE_KM 8000              /* an escort target that waits sets off home when the player is this near, or has
+                                           reached its nav point (the player arrives at the point's reach: 10,000 km out
+                                           and more) */
 #define ROUTE_DOCK_KM 150               /* an escort target in, this near the home carrier's hull, is home: it stops there,
                                            its nose turned the carrier's way (the user, 2026-11-04: "when the ships arrive
                                            within 150km of the vigilance they should stop and ideally turn in the same
                                            direction as the vigilance") */
 #define MSHIP_BEHAVIOUR(r) (*(const uint16_t *)(MSHIP(r) + 6))     /* 6 the player, 4 a wingman */
-#define NAV_REACH_KM 5000               /* the player this near a nav point has reached it (enterNavPoint) */
+/* a nav point's reach: the player within it has reached the point (enterNavPoint), and the autopilot stops at it, as
+ * the old game's did: its nav records carry a radius (+43), 10,000 to 32,500 km, and its autopilot stopped 10,389,
+ * 15,189 and 15,335 km short of points of 10,000, 15,000 and 15,000 (traced 2026-11-04, tests/wc1/fullscale.py).  The
+ * launch's is HOME_REACH_KM, its Tiger's Claw's in 36 of its 40 missions */
+#define HOME_REACH_KM 20000
+#define LAUNCH_NEAR_KM 5000             /* a hidden point this near the launch is at the launch (wave_may_come) */
 
 static uint16_t g_wave_held;            /* a bit per trigger point whose wave has waited for the enemies out */
 static uint8_t g_enemy_ran;             /* the last enemy gone left, not killed */
@@ -204,6 +211,21 @@ void logic_nav_next(void)
     }
     g_sys.nav = (uint8_t)k;
     g_nav_chosen = 1;
+}
+
+static int32_t len_of(int32_t x, int32_t y, int32_t z);
+
+/* nav point n's reach, km (the record's: missions.txt reach=) */
+static int32_t nav_reach(int16_t n)
+{
+    return n == 0 ? HOME_REACH_KM : (int32_t)NAV_REC_REACH(NAV_REC(n));
+}
+
+/* the player within nav point n's reach (measured straight, as the autopilot puts it there) */
+static int16_t nav_in_reach(int16_t n)
+{
+    return len_of(NAV_AT(n, 0) - TO_KM(gPositionVector[0].x), NAV_AT(n, 1) - TO_KM(gPositionVector[0].y),
+                  NAV_AT(n, 2) - TO_KM(gPositionVector[0].z)) < nav_reach(n);
 }
 
 /* how far the player is from nav point n, km, roughly (the largest axis and half the rest, as player_km) */
@@ -337,7 +359,8 @@ int16_t logic_is_home(int16_t s)
 
 /* the user's rule (2026-10-31): the carrier takes the player back with the mission finished or at least one nav point
  * flown (nav 0, the launch, does not count), the player within LANDING_RANGE_KM when asking; a clearance stands */
-#define LANDING_RANGE_KM 8000           /* (the autopilot home stops within 6,500 km of the carrier) */
+#define LANDING_RANGE_KM 25000          /* (the autopilot home stops at the launch's reach, 20,000 km, and the carrier is
+                                           2,000 behind the launch: it may be asked on the way in) */
 static int32_t gap_between(int16_t a, int16_t b);
 
 int16_t logic_landing_allowed(void)
@@ -3079,7 +3102,7 @@ static int16_t escorted(int16_t s)
 /* an escort target's own way (its mission record's role): out, to the mission's next nav point after its own (nav 1
  * from the launch) at its top speed, and gone (a jump) there: the old game's transport set off
  * from the carrier for Nav 1 at once, 300 km/s, and vanished there (tests/wc1/README.md); in, still at its own nav
- * point until the player comes within ROUTE_WAKE_KM, then to the home carrier, stopping ROUTE_DOCK_KM off its hull
+ * point until the player reaches it or comes within ROUTE_WAKE_KM, then to the home carrier, stopping ROUTE_DOCK_KM off its hull
  * with its nose the carrier's way, home (with no carrier, to nav 0 and gone there); an enemy's stays where it is.
  * Out, it is there ROUTE_OUT_KM from the nav point.  With the mission's jump=N, it goes with the player waypoint by
  * waypoint and out only at nav N (the user, 2026-11-03: "the ox should jump at nav 2 not nav 1"): at a waypoint before
@@ -3137,7 +3160,8 @@ static void route_step(int16_t s, Mind __far *m, const AiProfile __far *p)
         last = route_last(rec, goal);
         if (m->leg > goal)
             goal = m->leg < last ? m->leg : last;
-    } else if (commAnimInfo[s] == commAnimInfo[0] && (m->phase || player_km(s) < ROUTE_WAKE_KM)) {
+    } else if (commAnimInfo[s] == commAnimInfo[0]
+               && (m->phase || player_km(s) < ROUTE_WAKE_KM || (g_navs_seen >> (MSHIP_NAV(rec) & 15) & 1))) {
         if (!m->phase)
             m->phase = 1;               /* (1 under way, 2 home beside the carrier) */
         goal = last = 0;
@@ -3342,13 +3366,15 @@ static void step_deaths(void)
 
 /* 0. who is in the scene.  The old game took a ship out when it was 16,000 km from the player, and its nav points were
  * far enough apart that the last one's ships were gone before the next one's came (the user: "the previous nav point
- * would leave the scene"; its distances here are 0.45 of its own, so 7,200 km, and the shortest leg between waypoints
- * is 11,250 km with the autopilot stopping 4,500 short).  A capital ship or a friendly fighter that far off is held:
- * its slot keeps it just as it is, but it is no ship to anything (no target, no radar, nothing to run into), and it
- * is back when the player is.  An enemy fighter stays, since it can fly after the player; so does the wing, and a
- * ship the player is escorting, which has its own way to go */
-#define SCENE_KM 7200
-#define SCENE_BACK_KM 7000              /* (a little nearer, so a ship on the line does not flicker) */
+ * would leave the scene"; our map is its own since 2026-11-04).  A capital ship or a friendly fighter that far off is
+ * held: its slot keeps it just as it is, but it is no ship to anything (no target, no radar, nothing to run into), and
+ * it is back when the player is.  An enemy fighter stays, since it can fly after the player; so does the wing, and a
+ * ship the player is escorting, which has its own way to go; and so do the ships of the nav point the player came to
+ * last, and the launch's on the way home: the player arrives at a point's reach, 10,000 to 30,000 km out, and what
+ * it came for is in the scene, however far (the user, 2026-11-04: "I went to nav 2 exactly ... and did not see the
+ * destroyer": the small map's scene of 7,200 km had held it 8,100 km off the autopilot's stop) */
+#define SCENE_KM 16000
+#define SCENE_BACK_KM 15500             /* (a little nearer, so a ship on the line does not flicker) */
 static uint8_t __far g_off_type[NUM_SHIP_SLOTS];
 uint8_t __far logic_scene_off;          /* (the play tests': most of them set a scene with the player well away from it) */
 
@@ -3373,6 +3399,17 @@ static int32_t human_km(int16_t s)
     return best;
 }
 
+/* a ship of the nav point the player came to last (not the launch: the player leaves it), or of the launch with
+ * every waypoint reached, the way home: in the scene however far it is */
+static int16_t nav_point_here(int16_t s)
+{
+    int16_t n;
+    if (slotMissionShip[s] >= 64)
+        return 0;
+    n = (int16_t)(MSHIP_NAV(slotMissionShip[s]) & 15);
+    return n == 0 ? nav_next_unseen() == 0 : n == (int16_t)currentNavPoint;
+}
+
 /* (by the nearest human: alone, the local pilot; in a shared flight a ship near any pilot stays in the scene on every
  * machine, and a human's own ship is never held) */
 static void step_scene(void)
@@ -3382,11 +3419,12 @@ static void step_scene(void)
         return;
     for (s = 1; s < NUM_SHIP_SLOTS; s++) {
         if (maybeEntityType[s] == ET_OFFSCENE) {
-            if (human_km(s) < SCENE_BACK_KM)
+            if (human_km(s) < SCENE_BACK_KM || nav_point_here(s))
                 maybeEntityType[s] = g_off_type[s];
             continue;
         }
-        if (!slot_is_ship(s) || shipAiState[s] == 9 || (rvFlags[s] & RV_FLAG_HUMAN) || human_km(s) <= SCENE_KM)
+        if (!slot_is_ship(s) || shipAiState[s] == 9 || (rvFlags[s] & RV_FLAG_HUMAN) || human_km(s) <= SCENE_KM
+            || nav_point_here(s))
             continue;
         friendly = commAnimInfo[s] == commAnimInfo[0];
         if (maybeEntityType[s] == ET_CAPSHIP ? (friendly && escorted(s))
@@ -3451,7 +3489,7 @@ static int16_t wave_may_come(int16_t n)
     /* a hidden point at the launch itself, with nobody out, is the way home's encounter: the old game's `.Encounter` at
      * the carrier.  Not at the launch: a wave has to have waited there, or the player to have flown a nav point first */
     if (!(g_wave_held >> n & 1) && g_navs_seen == 1
-        && len_of(NAV_AT(n, 0), NAV_AT(n, 1), NAV_AT(n, 2)) < NAV_REACH_KM)
+        && len_of(NAV_AT(n, 0), NAV_AT(n, 1), NAV_AT(n, 2)) < LAUNCH_NEAR_KM)
         return 0;
     if ((g_wave_held >> n & 1) && g_enemy_ran && !stays) {
         rv_notef(s_off, n);
@@ -3478,7 +3516,7 @@ static void step_mission(void)
         }
     if (slot_is_ship(0) && shipAiState[0] != 9)
         for (n = 0; n < NAVS; n++)
-            if (nav_defined(n) && !(g_navs_seen >> n & 1) && nav_km(n) < NAV_REACH_KM && wave_may_come(n))
+            if (nav_defined(n) && !(g_navs_seen >> n & 1) && nav_in_reach(n) && wave_may_come(n))
                 enterNavPoint((uint16_t)n);
     victoryPoints = (uint16_t)mission_done();
 }
@@ -3637,13 +3675,11 @@ void logic_end(void)
     /* (home: at the launch point, or on the home carrier: in a shared flight the pilot who landed may be another,
      * whose landing the layer gives this game: landedOn) */
     int16_t home = landedOn != 0xFFFF && logic_is_home((int16_t)landedOn);
-    victoryPoints = (uint16_t)(missionStatus == 1 && mission_done() && (home || nav_km(0) < NAV_REACH_KM));
+    victoryPoints = (uint16_t)(missionStatus == 1 && mission_done() && (home || nav_in_reach(0)));
 }
 
 #define AUTOPILOT_CLEAR_KM 16000        /* no enemy this near (the engine's autopilot lamp says the same: flight.c): a wave
                                            coming in from WAVE_KM holds it, as the old game's scene did (16,000) */
-#define AUTOPILOT_SHORT_KM 4500         /* it stops this far short of the nav point, facing it (the old game's 10,000 km at
-                                           its scale: the enemies 14,000 km ahead on arrival, tests/wc1/README.md) */
 #define AUTOPILOT_ESCORT_KM 30000       /* an escort target of the player's side this near comes along, AUTOPILOT_BEHIND_KM
                                            behind the player (the old game's transport came along, 1,800 km behind) */
 #define AUTOPILOT_BEHIND_KM 800
@@ -3653,7 +3689,7 @@ void logic_end(void)
 /* the autopilot key (A), between two steps: with no enemy near, the player (and the wing) taken on to the next nav
  * point, as the old games cut to the arrival; 1 when it went, 0 when it may not.  (On a multiplayer client the layer
  * steps over the key's call: the host's autopilot moves everyone).  The next nav point is the first not reached
- * yet, home (nav 0) when all are; the player arrives AUTOPILOT_SHORT_KM short of it, facing it */
+ * yet, home (nav 0) when all are; the player arrives at its reach (nav_reach), facing it */
 #define AUTOPILOT_FIELD_KM 500          /* it stops this far short of a field's edge */
 #define AUTOPILOT_REGION_IN_KM 500      /* and this far inside the reach of a trigger point on its way, so it goes off */
 #define AUTOPILOT_MIN_KM 1000           /* a field nearer than this along the way: it will not go (the old game's: not in
@@ -3686,7 +3722,7 @@ static int16_t nav_has_ships(int16_t n)
 /* the way to nav point `next`, traced as the old game's autopilot does (the user: "raytrace the path along the line to
  * see if enemy spawn regions or asteroid fields are in the way"): how far the player can be taken, km; *region the
  * trigger point or waypoint not yet reached that it stops at (-1 none), *field 1 when a field stops it.  Neither: all
- * the way, AUTOPILOT_SHORT_KM short of the nav point */
+ * the way, to the nav point's reach */
 static int32_t way_stop(int16_t next, int16_t *region, int16_t *field)
 {
     int32_t px = TO_KM(gPositionVector[0].x), py = TO_KM(gPositionVector[0].y), pz = TO_KM(gPositionVector[0].z), d[3], len, best, e;
@@ -3697,7 +3733,7 @@ static int32_t way_stop(int16_t next, int16_t *region, int16_t *field)
     len = (int32_t)lf_sqrt((uint32_t)(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]));
     if (!len)
         len = 1;
-    best = len * 16 - AUTOPILOT_SHORT_KM;
+    best = len * 16 - nav_reach(next);
     *region = -1;
     *field = 0;
     for (i = 0; i < g_nfields; i++) {
@@ -3708,10 +3744,13 @@ static int32_t way_stop(int16_t next, int16_t *region, int16_t *field)
             *field = 1;
         }
     }
-    for (i = 1; i < NAVS; i++) {
-        if (i == next || !nav_defined(i) || (g_navs_seen >> i & 1) || !nav_has_ships(i))
+    for (i = 1; i < NAVS; i++) {         /* (not one the player is in already: its wave waits for the one out, or for a
+                                           nav point flown; SHELTON2's second wave is a point at the launch 32,500 km
+                                           across, and the autopilot would go 500 km a press) */
+        if (i == next || !nav_defined(i) || (g_navs_seen >> i & 1) || !nav_has_ships(i) || nav_in_reach(i))
             continue;
-        e = line_enters(d, len, (NAV_AT(i, 0) - px) >> 4, (NAV_AT(i, 1) - py) >> 4, (NAV_AT(i, 2) - pz) >> 4, NAV_REACH_KM >> 4);
+        e = line_enters(d, len, (NAV_AT(i, 0) - px) >> 4, (NAV_AT(i, 1) - py) >> 4, (NAV_AT(i, 2) - pz) >> 4,
+                        nav_reach(i) >> 4);
         if (e >= 0 && e * 16 + AUTOPILOT_REGION_IN_KM < best) {
             best = e * 16 + AUTOPILOT_REGION_IN_KM;
             *region = i;
@@ -3735,7 +3774,7 @@ int16_t logic_autopilot_ready(void)
             && human_km(s) < AUTOPILOT_CLEAR_KM)
             return -1;
     next = g_nav_chosen ? g_sys.nav : nav_next_unseen();
-    if (nav_km(next) <= AUTOPILOT_SHORT_KM)
+    if (nav_in_reach(next))
         return -1;                      /* (there already) */
     {
         int16_t region, field;
@@ -3895,9 +3934,9 @@ int16_t logic_autopilot(void)
                   (TO_KM(gPositionVector[0].y) + FIX_MUL(gOrientationFrontVector[0].y, stop)) * KM,
                   (TO_KM(gPositionVector[0].z) + FIX_MUL(gOrientationFrontVector[0].z, stop)) * KM);
     else
-        to = vec3((NAV_AT(next, 0) - FIX_MUL(gOrientationFrontVector[0].x, AUTOPILOT_SHORT_KM)) * KM,
-                  (NAV_AT(next, 1) - FIX_MUL(gOrientationFrontVector[0].y, AUTOPILOT_SHORT_KM)) * KM,
-                  (NAV_AT(next, 2) - FIX_MUL(gOrientationFrontVector[0].z, AUTOPILOT_SHORT_KM)) * KM);
+        to = vec3((NAV_AT(next, 0) - FIX_MUL(gOrientationFrontVector[0].x, nav_reach(next))) * KM,
+                  (NAV_AT(next, 1) - FIX_MUL(gOrientationFrontVector[0].y, nav_reach(next))) * KM,
+                  (NAV_AT(next, 2) - FIX_MUL(gOrientationFrontVector[0].z, nav_reach(next))) * KM);
     /* the wing: moved as the player is, facing the same way (player_km while the player is still where it was); an
      * escort target of the player's side put behind it */
     for (s = 1; s < NUM_SHIP_SLOTS; s++) {   /* (a human wingman, on another machine, always comes: the wing is the wing) */
@@ -4172,11 +4211,11 @@ void __far __cdecl delayedDespawn_impl(uint16_t src, uint16_t ship)
 /* (nav): the player has reached nav point `nav`: its ships and hazards come (each of its mission ships through
  * outerSpawnShipEntity, at its place off the nav point), once */
 /* An enemy wave comes in from the old game's distance (traced 2026-11-02: its autopilot stopped 15,200 km short of
- * Enyo's nav 1 and its three Dralthi, 5,000 to 7,000 km beyond the nav, were 15,173 km off; their first shots came 18
- * to 25 s on).  Our map is at 0.45 of its size, so a wave at its nav point came 4,600 km from an arriving player and
- * fired within seconds; the fights are at its full scale (the ships' sizes, speeds, reach).  So the enemy fighters
- * a nav point brings are moved out together, along the way from the player to their middle, until it is WAVE_KM
- * off; their formation and the nav's other ships stay */
+ * Enyo's nav 1, the point's reach, and its three Dralthi were 15,173 km off; their first shots came 18 to 25 s on).
+ * On the small map (0.45 of its size, until 2026-11-04) a wave came 4,600 km from an arriving player and fired within
+ * seconds.  On its own map most come from that far by themselves; a wave nearer than WAVE_KM (a point of 10,000 km's
+ * reach, a wave on the near side of its point) is moved out together, along the way from the player to its middle,
+ * until it is WAVE_KM off; its formation and the nav's other ships stay */
 #define WAVE_KM 15000
 
 static void wave_out(const uint8_t __far *came)
@@ -4317,13 +4356,12 @@ uint16_t __far __cdecl outerSpawnShipEntity_impl(uint16_t missionShip, uint16_t 
     int16_t s = behaviour == 6 ? 0 : ship_free_slot();
     if (missionShip >= 64 || s < 0)
         return 0xFFFF;
-    /* (the nav point's place and the ship's off it summed in 32 bits: in DOS's 16-bit int CEPHID2's destroyer, 31,500
-     * + 3,375 km, wrapped round to -30,661 and it was 60,000 km away, on the far side of the system; 26 ships of 12
-     * missions were past 32,767 km so) */
+    /* (the nav point's place and the ship's off it, 32 bits each: in DOS's 16-bit int CEPHID2's destroyer, 31,500 +
+     * 3,375 km on the small map, had wrapped round to -30,661 and it was 60,000 km away; on the old game's map the nav
+     * points themselves are past 32,767 km) */
     ship_spawn(s, *(const uint16_t *)rec, *(const uint16_t *)(rec + 2), s == 0 ? CTL_PLAYER : CTL_AI,
-               KM * ((int32_t)*(const int16_t *)(nav + 2) + *(const int16_t *)(rec + 10)),
-               KM * ((int32_t)*(const int16_t *)(nav + 4) + *(const int16_t *)(rec + 12)),
-               KM * ((int32_t)*(const int16_t *)(nav + 6) + *(const int16_t *)(rec + 14)), 0);
+               KM * (NAV_REC_KM(nav, 0) + MSHIP_REC_KM(rec, 0)), KM * (NAV_REC_KM(nav, 1) + MSHIP_REC_KM(rec, 1)),
+               KM * (NAV_REC_KM(nav, 2) + MSHIP_REC_KM(rec, 2)), 0);
     slotMissionShip[s] = missionShip;
     shipStateByte[s] = s == 0 ? 8 : rec[16];
     if (rec[17] && rec[17] <= P_COUNT) {   /* (its AI's profile, when the mission names one: docs/ai.md) */

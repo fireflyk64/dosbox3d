@@ -746,8 +746,8 @@ static void situation_display(int y0, int y1)
 {
     const RvRoom __far *r = dat_room(RV_R_BRIEFING);
     const RvBoard __far *b = 0;
-    int i, x0, z0, x1, z1, mx, my, mw, mh;
-    long sx, sz;
+    int i, mx, my, mw, mh;
+    long x0, z0, x1, z1, sx, sz;        /* (the old game's map: 105,000 km out, past an int) */
     for (i = 0; i < 4; i++)
         if (r->board[i].kind == 2 && r->board[i].w)
             b = &r->board[i];
@@ -765,10 +765,10 @@ static void situation_display(int y0, int y1)
     }
     for (i = 0; i < g_m.nfield; i++) {
         const RvField __far *f = &g_m.field[i];
-        if (f->x - f->radius < x0) x0 = f->x - f->radius;
-        if (f->x + f->radius > x1) x1 = f->x + f->radius;
-        if (f->z - f->radius < z0) z0 = f->z - f->radius;
-        if (f->z + f->radius > z1) z1 = f->z + f->radius;
+        if (f->x - (long)f->radius < x0) x0 = f->x - (long)f->radius;
+        if (f->x + (long)f->radius > x1) x1 = f->x + (long)f->radius;
+        if (f->z - (long)f->radius < z0) z0 = f->z - (long)f->radius;
+        if (f->z + (long)f->radius > z1) z1 = f->z + (long)f->radius;
     }
     mx = b->x + 14; my = b->y + 14; mw = b->w - 28; mh = b->h - 28;
     sx = x1 - x0 + 1; sz = z1 - z0 + 1;

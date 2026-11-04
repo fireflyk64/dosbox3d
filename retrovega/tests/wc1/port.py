@@ -23,7 +23,8 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 DATA = os.path.join(ROOT, 'data')
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 
-SCALE = 0.45                            # (its farthest nav points sit 70,000 km out)
+SCALE = 0.45                            # (its farthest nav points sit 70,000 km out; history: since 2026-11-04 missions.txt
+                                        # has the old game's own map, tests/wc1/fullscale.py, and this port's --write is refused)
 # the old game's ship types, by what the dumps showed at each nav point (tests/wc1/README.md), to the author's map
 # (the Terran fighters: the McAuliffe player's record is type 2, and the stats rows put type 2 as the sluggish, thickly
 # armoured one and type 1 as the most agile, type 3 the heaviest: 1 the Rapier, 2 the Scimitar, 3 the Raptor)

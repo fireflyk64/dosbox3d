@@ -12,6 +12,7 @@
 #include "rv.h"
 #include "rvhooks.h"
 #include "campaign.h"
+#include "world.h"
 
 RvSave g_camp;
 uint8_t g_rule_hit, g_rule_flags;
@@ -221,12 +222,12 @@ void camp_mission(uint16_t i, RvMission __far *out)
 
 /* the mission's ships into the tables the layer already reads (spec 4.4):
  * missionShipTable records of 0x2a bytes (+0 type, +2 side, +4 leader,
- * +6 behaviour, +8 nav point, +10 position x y z in km off the nav point,
- * +16 pilot, +17 AI profile, +18 role, +19 fear rates), and the nav points' records of 0x4d bytes, record n for nav n
- * (outerSpawnShipEntity takes a nav's number as its record), nav 0 the launch
- * point at the origin: +0 id, +2 position x y z in km, and at +0x39 the ten
- * mission ships there (0xFFFF none).  A group's ships side by side, 1,500 km
- * apart (a fighter is some 900 km across). */
+ * +6 behaviour, +8 nav point, +16 pilot, +17 AI profile, +18 role, +19 fear rates, +20 turrets off, +21 jump, +22
+ * position x y z in km off the nav point, 32 bits each: MSHIP_REC_KM), and the nav points' records of 0x4d bytes,
+ * record n for nav n (outerSpawnShipEntity takes a nav's number as its record), nav 0 the launch point at the origin:
+ * +0 id, +1 flags, +2 position x y z in km, 32 bits each (NAV_REC_KM: the old game's map, up to 105,000 km out), +14
+ * its reach (NAV_REC_REACH), and at +0x39 the ten mission ships there (0xFFFF none).  A group's ships side by side, 1,500 km apart (a fighter is
+ * some 900 km across). */
 #define HOME_BEHIND_KM 2000
 void camp_load_tables(const RvMission __far *m)
 {
@@ -246,9 +247,10 @@ void camp_load_tables(const RvMission __far *m)
         rec = navs + navPointTable_SIZE * m->nav[i].id;
         rec[0] = m->nav[i].id;
         rec[1] = m->nav[i].flags;       /* (1: hidden, logic.c NAV_HIDDEN) */
-        *(int16_t *)(rec + 2) = m->nav[i].x;
-        *(int16_t *)(rec + 4) = m->nav[i].y;
-        *(int16_t *)(rec + 6) = m->nav[i].z;
+        NAV_REC_KM(rec, 0) = m->nav[i].x;
+        NAV_REC_KM(rec, 1) = m->nav[i].y;
+        NAV_REC_KM(rec, 2) = m->nav[i].z;
+        NAV_REC_REACH(rec) = m->nav[i].reach;
     }
     for (i = 0; i < m->nship; i++) {
         const RvShip __far *s = &m->ship[i];
@@ -265,11 +267,11 @@ void camp_load_tables(const RvMission __far *m)
             *(uint16_t *)(rec + 4) = s->type == RV_SHIP_PLAYER ? 0xFFFF : 0;
             *(uint16_t *)(rec + 6) = s->type == RV_SHIP_PLAYER ? 6 : s->type == RV_SHIP_WINGMAN ? 4 : 0;
             *(uint16_t *)(rec + 8) = s->nav;
-            *(int16_t *)(rec + 10) = (int16_t)(s->x + k * 1500);
-            *(int16_t *)(rec + 12) = s->y;  /* (where the wave starts, off its nav point: at=x,y,z, the old game's) */
-            *(int16_t *)(rec + 14) = s->z;
+            MSHIP_REC_KM(rec, 0) = s->x + (int32_t)k * 1500;
+            MSHIP_REC_KM(rec, 1) = s->y;    /* (where the wave starts, off its nav point: at=x,y,z, the old game's) */
+            MSHIP_REC_KM(rec, 2) = s->z;
             if (s->role == RV_ESCORT_HOME)  /* (the carrier: behind the launch, which faces +z, its hull clear of the player) */
-                *(int16_t *)(rec + 14) = -HOME_BEHIND_KM;
+                MSHIP_REC_KM(rec, 2) = -HOME_BEHIND_KM;
             rec[16] = s->pilot;
             rec[17] = s->ai;                /* (its AI profile, P_* + 1, 0 the type's own; logic.c outerSpawnShipEntity) */
             rec[18] = s->role;              /* (an escort target's, the home carrier's: RV_ESCORT_*; logic.c MSHIP_ROLE) */

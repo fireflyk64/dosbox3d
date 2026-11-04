@@ -29,6 +29,14 @@ typedef char rv_sar_check[(INT32_C(-1) >> 1) == -1 ? 1 : -1];   /* >> on a negat
 #define KM (INT32_C(1) << KM_SHIFT)     /* positions a km */
 #define TO_KM(p) ((p) >> KM_SHIFT)      /* positions as km: a shift, where / KM is a runtime divide on DOS.  Rounds
                                            down (-0.5 km to -1) where / rounds toward zero */
+/* the mission's tables' places, km in 32 bits (campaign.c camp_load_tables writes them; the layer reads neither): the
+ * old game's map is up to 105,000 km across (LUYTEN4's Nav 2) and a wave starts up to 35,000 km off its nav point
+ * (SHELTON2's), past an int16.  A nav point's record (navPointTable) has its place at +2, +6, +10 and its reach at
+ * +14 (km: within it the point is reached, and the autopilot stops at it; missions.txt reach=, the old record's); a
+ * mission ship's (missionShipTable) its place off its nav point at +22, +26, +30.  k 0..2: x, y, z */
+#define NAV_REC_KM(rec, k) (*(int32_t *)((uint8_t *)(rec) + 2 + 4 * (k)))
+#define NAV_REC_REACH(rec) (*(uint16_t *)((uint8_t *)(rec) + 14))
+#define MSHIP_REC_KM(rec, k) (*(int32_t *)((uint8_t *)(rec) + 22 + 4 * (k)))
 #define ONE_SHIFT 8                     /* ONE as a shift */
 #define ONE (1 << ONE_SHIFT)            /* 1.0 in an orientation vector */
 #define FIX_MUL(a, d) (((int32_t)(a) * (d)) >> ONE_SHIFT) /* a times d, one of them in ONEs (an orientation

@@ -223,10 +223,23 @@ were gone, which looked random). The autopilot carries an escort out only to a n
 waypoint up to its last; one taken home with the wing had turned back at 4 degrees a second), and the jump gives it its
 own speed (the flyby lends it the player's: the Ox left it at some 250 kps where its top is 80, and overshot). `in`
 waits at its nav
-point until the player comes within 8,000 km, then flies to the home carrier, slowing as it comes, and stops 150 km
+point until the player reaches the point or comes within 8,000 km, then flies to the home carrier, slowing as it comes, and stops 150 km
 off its hull with its nose the carrier's way, home (the user, 2026-11-04); with no carrier, to nav 0 and gone there (an
 enemy's waits where it is). One of the player's side killed is the mission lost. The autopilot brings one along, 800 km behind the player
-(the wingman beside it), and drops the formation 4,500 km short of the nav point.
+(the wingman beside it), and drops the formation at the nav point's reach.
+
+**The old game's own map** (the user, 2026-11-04: "Yes lets do the full scale"; the nav points had seemed close, and
+CEPHID2's destroyer had not been seen from Nav 2). Until then the map was 0.45 of the old game's, kept in 16 bits of
+km, while the ships flew its speeds, so a leg flown by hand took under half its time. Now every nav point, wave
+offset and field is the old game's own number, read from its mission records by `tests/wc1/fullscale.py` (its
+farthest point is LUYTEN4's Nav 2, 105,000 km out; SHELTON2 has a wave 35,000 km off its nav point), and the tables
+keep them in 32 bits (RVGAME v21, world.h `NAV_REC_KM`, `MSHIP_REC_KM`). **A nav point has a reach** (`reach=KM` on
+its line, the old record's word at +43: 10,000 to 32,500 km): within it the point is reached and its ships come, and
+the autopilot stops at it, facing the point, as the old one did (traced 2026-11-04: it stopped 10,389, 15,189 and
+15,335 km short of points of 10,000, 15,000 and 15,000). The launch's is 20,000 (`HOME_REACH_KM`, its Tiger's Claw's in
+36 of its 40 missions); three hidden points at the launch with 0 in the old records have 5,000, the way home's
+encounters, as before. The carrier may be asked for landing from 25,000 km (`LANDING_RANGE_KM`: the autopilot home
+stops at the launch's reach, the carrier 2,000 behind it).
 
 **Nav points and fields, as the old game has them.** A mission's nav points are its waypoints, numbered from 1 in the
 order the player flies them (`nav ID x y z`), then its hidden trigger points (`nav ID x y z hidden`): the old game's
@@ -239,17 +252,17 @@ and waits for the player to have flown a nav point. A wave starts where the old 
 nav point's list never flies. Enemies at the launch, in four missions, have the wingman start 3,000 km past them
 (`wingman_behind`), to come up behind them. The port took them all for waypoints until 2026-10-31. **An enemy wave
 comes in from the old game's distance** (logic.c `wave_out`, 2026-11-02): its autopilot stopped 15,200 km short of
-Enyo's nav 1 and its Dralthi were 15,173 km off, first firing 18 to 25 s on; at our map's 0.45 a wave came 4,600 km
-from an arriving player and fired within seconds, though the fights are at the old game's full scale. So the enemy
-fighters a nav point brings are moved out together along the way from the player to their middle until it is
-`WAVE_KM` (15,000) off, their formation kept (first shots some 12 s on), and the autopilot waits for no enemy within
+Enyo's nav 1 and its Dralthi were 15,173 km off, first firing 18 to 25 s on; on the small map a wave came 4,600 km
+from an arriving player and fired within seconds. On the old game's own map most come from that far by themselves;
+the enemy fighters a nav point brings that are nearer are moved out together along the way from the player to their
+middle until it is `WAVE_KM` (15,000) off, their formation kept (first shots some 12 s on), and the autopilot waits for no enemy within
 16,000 km (`AUTOPILOT_CLEAR_KM`, the engine's lamp the same). Fields (`field asteroid|mine x y z radius [density=N] [level=L]`, km) are the old game's mission
 records (types 0x16 and 0x17) at its own size since 2026-11-03 (the user: the fields felt "really sparse" and "easy",
 "only require a single juke"; "make sure they are just about the same size as WC1 fields and similar difficult"):
-each lies about its own nav point (ours, at the map's 0.45) by the old game's offset and radius (5,000 or 7,500 km,
-not 0.45 of them as before, when a field was crossed in under half the old game's time at its speed), a point of
-ours kept out of a field it would newly take in (the field made smaller), and the ten fields our port had left out
-(Barnard's three about the launch, a hidden point's) are in. Two waypoints lie inside a field, as in the old game
+each lies about its own nav point by the old game's offset and radius (5,000 or 7,500 km, not 0.45 of them as
+before, when a field was crossed in under half the old game's time at its speed; on the small map three were made
+smaller to keep a point of ours out, and are their own size again on its map), and the ten fields our port had left
+out (Barnard's three about the launch, a hidden point's) are in. Two waypoints lie inside a field, as in the old game
 (ENIGMA1 nav 2, CRUCIBL2 nav 1). `level=` is the old game's rock level (dseg:BFF4, 0 to 3 by series). **A field is
 an effect, as the old game's are** (the user, 2026-11-02: "a field effect where while inside rocks spawn with
 velocity towards you ... a few close and a few distant rocks on screen at a time. More rocks spawn as you move or as
@@ -297,12 +310,14 @@ has gone, put 1,500 km to the player's right (the user, 2026-11-03: "sometimes m
 go it alone"; it was left behind past 10,000 km); a person's wingman always comes. M8.34.
 
 **Who is in the scene** (`step_scene`): the old game took a ship out at 16,000 km from the player, and its nav points
-were far enough apart that the last one's ships were gone before the next one's came. At our 0.45 of its distances
-that is 7,200 km, and the shortest leg between waypoints is 11,250 km. A capital ship or friendly fighter that far off
-is held: `maybeEntityType` is `ET_OFFSCENE`, so it is no ship to anything (no target, no radar, nothing to run into),
-keeps its slot, its damage and its place, and is back within 7,000 km. An enemy fighter stays, since it can fly after
-the player; so do the wing and a ship the player is escorting. So the carrier can be targeted and landed on only when
-it is near.
+were far enough apart that the last one's ships were gone before the next one's came; on its own map, ours since
+2026-11-04, so is `SCENE_KM`. A capital ship or friendly fighter that far off is held: `maybeEntityType` is
+`ET_OFFSCENE`, so it is no ship to anything (no target, no radar, nothing to run into), keeps its slot, its damage and
+its place, and is back within 15,500 km. An enemy fighter stays, since it can fly after the player; so do the wing, a
+ship the player is escorting, the ships of the nav point the player came to last, and the launch's once every waypoint
+is flown (`nav_point_here`: the player arrives at a point's reach, 10,000 to 30,000 km out, and what it came for is in
+the scene however far; on the small map's 7,200 km CEPHID2's destroyer was held 8,100 km off the autopilot's stop, the
+user's "did not see the destroyer"). M8.39.
 
 The views: F5 the chase camera (behind and above the player's ship, looking its way, the ship in the lower
 third of the view; F5 again or F1 back to the cockpit), and the autopilot's flyby: A, when the autopilot may go,

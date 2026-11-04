@@ -381,7 +381,7 @@ nav 0):
 | M8.9 fighter | the first mission's `fighter` is the Schroedinger (the old campaign's Hornet) and the third's the Franklin (its Scimitar); `camp_load_units` puts the player in it (over the campaign's choice) and the wingman's record is the same type |
 | M8.10 escort-out | an Ox with `role=out` at nav 0, nav 1 6,000 km ahead: 10 s in it is nearer nav 1 and alive; 60 s in it is gone (jumped) without being killed, and the mission is still winnable |
 | M8.11 escort-lost | the Ox killed: `mission_done` 0 with every nav flown and every enemy dead |
-| M8.12 escort-along | the autopilot takes the Ox (within 30,000 km) with the player: afterwards it is 800 km behind it, facing the same way; the formation arrives 4,500 km short of the nav point |
+| M8.12 escort-along | the autopilot takes the Ox (within 30,000 km) with the player: afterwards it is 800 km behind it, facing the same way; the formation arrives at the nav point's reach (a test's point: 5,000 km) |
 
 | M8.13 home-carrier | a mission ship with `role=home`: 2,000 km behind the launch, still after 10 s and after the autopilot has gone; with the player 8,000 km behind it, T picks it |
 | M8.14 landing-rule | at the launch `logic_request_landing` answers not yet; at nav 1, 20,000 km off, too far; back within 8,000 km, cleared; far off again, still cleared; a mission with nothing to do is cleared at the launch |
@@ -400,9 +400,11 @@ nav 0):
 | M8.35 autopilot-formup | the patrol's wingman 6,000 km off as the flyby begins (`logic_form_up`): 2 s on it is 350 km off the right wing and 250 back within 20 km, nose and velocity the player's; after the jump still within 60 km of that place |
 | M8.36 escort-clear | the Ox with `jump=2`: nav 1 flown, it goes on; the autopilot home leaves it on its way (moved under 500 km in a second); the player at nav 2 with its enemy gone, the Ox far off is not jumped; put 3,000 km short of nav 2 facing away, it turns, comes in and jumps within 120 s (the user: "bear directly for the nav point no matter what and when it arrived (slowly) it would jump") |
 | M8.38 escort-home | an Ox `role=in` at nav 1, the player there: put 3,000 km off the carrier's beam, within 60 s it is stopped within 150 km of the hull, in 60 s more its nose within 25 degrees of the carrier's; killed there, `logic_escort_lost` says 0 |
+| M8.40 campaign-way | every mission of the campaign launched; its enemies killed and the autopilot pressed (the player put at the next waypoint when it may not go) until every waypoint is reached; gone to a waypoint, the player is within 0.9 to 1.2 of its reach; the autopilot takes most legs (80 of 94 on 2026-11-04) |
+| M8.39 full-map | the old game's own map: nav 1 60,000 km out with a reach of 15,000; the autopilot stops 15,000 short; a destroyer 8,000 km past the point, 23,000 off, is in the scene on arrival; the carrier 47,000 km behind is held with nav 2 still to fly, and in the scene again once nav 2 is reached |
 | M8.37 autopilot-human | a human's wingman (CTL_PUPPET, RV_FLAG_HUMAN) 6,000 km off is put in its formation place (350 km right, 250 back) as the flyby begins, the player's nose and its throttle at the player's speed (the user: "player 2 doesn't get the same forcing function for auto somehow and can't see the leader") |
 | M8.26 way-ahead | a field across the line: the autopilot stops 500 km short of its edge and will not go from there, and goes again past it; a hidden point on the line: it stops inside its reach and its ships come; hidden points are on no list, and one never come to does not hold the mission up |
-| M8.25 scene | past 7,200 km the home carrier is no ship to anything and cannot be the target; the wing stays; it is back as it was when the player is |
+| M8.25 scene | past 16,000 km the home carrier is no ship to anything and cannot be the target; the wing stays; it is back as it was when the player is |
 | M8.24 nav-choice | `g_sys.nav` follows the first waypoint not reached until N (`logic_nav_next`) picks one; N goes down the list and round through home; the autopilot goes to the one chosen, and the choice follows again once it is reached |
 | M8.23 way-out | `camp_way_out`: a debrief's `system=`: nothing before the system's last mission; then good or bad as `camp_resolve` will have it |
 | M8.22 kit-boost | a flight started with `logic_boost`: half as much armour again on each face, or one more round in the first launcher; none without it |
@@ -620,7 +622,7 @@ into `RVGAME.DAT` (run by `build.sh`, and by `host/build.sh` for the harness).
 | `title`, `briefing`, `win`, `lose` | text | the briefing's title and speech, the debriefing's lines (`briefing`, `win` and `lose` may repeat: joined) | 48, 640, 128, 128 characters |
 | `type` | `patrol` | the mission's kind: `RvMission.type`, for your `step_mission` | only `patrol` exists |
 | `music` | a cue | the briefing's music | |
-| `nav` | `N x y z` | nav point N at x, y, z km from the launch point (nav 0) | N 1..15, each once; ±32,767 km; 8 a mission |
+| `nav` | `N x y z [hidden] [reach=KM]` | nav point N at x, y, z km from the launch point (nav 0), the old game's own map; within `reach` (15,000 if none) it is reached and the autopilot stops there | N 1..15, each once; ±1,000,000 km; reach 1,000..60,000; 8 a mission |
 | `ship` | `TYPE side navN [count=N] [pilot=KEY] [role=out\|in\|home] [jump=N] [turrets=off]` | `count` ships of a type (a ships.csv key, `player` or `wingman`) of a side (0 Terran, 1 Aera, 2 Rlaan) at a nav point, with a cast pilot | 12 lines, 64 ships in all |
 | `field` | `asteroid\|mine x z radius [density=N]` | an asteroid or mine field, km (rocks.c flies it) | 4 |
 | `bar`, `lounge`, `talk` | | who sits in the rooms, and what they say | |

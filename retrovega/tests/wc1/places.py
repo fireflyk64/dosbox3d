@@ -7,14 +7,14 @@ Two things the first port (port.py) got wrong, and 2026-11-01's report of wingme
    list, so those never fly: 11 of the 15 missions with "enemies at the launch" had none (Shmrn 3's four Convolutions, the
    wave that killed Torch in 1.7 s, are in no list).  They are dropped.
  - the offset from the nav point (+10, +14, +18, s24) was left out, so a wave spawned on top of its nav point, and at nav 0 on
-   top of the player.  A wave's offset is its leader's, at the map's 0.45: each leader (behaviour not 4) gets its own line.
+   top of the player.  A wave's offset is its leader's (at the map's 0.45 until 2026-11-04, its own since): each leader (behaviour not 4) gets its own line.
 Escort targets keep their place (their routes start from the nav point), and so do lines with no record to match."""
 import os
 import re
 import struct
 import sys
 
-SCALE = 0.45
+SCALE = 1.0                             # (0.45 until 2026-11-04: the map is the old game's own since, tests/wc1/fullscale.py)
 NODES = ['ENIGMA', 'CEPHID', 'SHELTON', 'CRUCIBL', 'OLDZIEY', 'DEFIANC', 'LIXIS', 'ATARAXI', 'RIGEL', 'BARNARD', 'WOLF359',
          'SHMRN', 'LUYTEN']
 TYPES = {0: 'SCHROED', 1: 'LANCELT', 2: 'FRANKLN', 3: 'GAWAIN', 8: 'VIGILNC', 9: 'AGIS', 10: 'NICANDR', 11: 'ARISTON',
@@ -28,7 +28,7 @@ def s24(b, o):
 
 
 def km(v):
-    return max(-32000, min(32000, round(v * SCALE)))
+    return round(v * SCALE)
 
 
 def read(path):
