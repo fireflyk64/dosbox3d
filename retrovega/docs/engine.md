@@ -215,16 +215,17 @@ top speed and jumps out (vanishes) within 1,000 km of it, as the old game's tran
 80 kps and 4 degrees a second, circled the point), at a fifth of its speed while its way is more than 25 degrees off its
 nose, so it turns in. With `jump=N` it goes on with the player waypoint by waypoint and jumps only at nav N (the user:
 "the ox should jump at nav 2 not nav 1"; the Enigma 2 Ox): at each waypoint before N it holds within 1,000 km until the
-player has been there and no
-enemy is within 16,000 km of it, so the fight there is fought round it, then goes on (the autopilot carrying it moves it
-on to its own next waypoint too). Once the player has reached its last nav point and no enemy is within 16,000 km of
-it or of the player, it jumps from wherever it is: the Ox at 80 kps, left behind by an autopilot that stopped short of
-a field, had crawled on for minutes after the fight (the user, 2026-11-03: "The ox does not jump out in mission 2...
-We had removed all enemies and it just hung around"). The autopilot carries an escort out only to a nav point on its
-way (its next waypoint up to its last); one taken home with the wing had turned back at 4 degrees a second ("started
-flying in a random direction"). `in` waits at its nav
-point until the player comes within 8,000 km, then flies home to nav 0 the same way (an enemy's waits where it
-is). One of the player's side killed is the mission lost. The autopilot brings one along, 800 km behind the player
+player has been there (or on at once
+to a later one the player has reached), then bears on whatever is about, and jumps only on coming within 1,000 km of
+its last (the user, 2026-11-04: "Ideally it would bear directly for the nav point no matter what and when it arrived
+(slowly) it would jump"; from 2026-11-03 it had held while enemies were near and jumped from wherever it was once they
+were gone, which looked random). The autopilot carries an escort out only to a nav point on its way (its next
+waypoint up to its last; one taken home with the wing had turned back at 4 degrees a second), and the jump gives it its
+own speed (the flyby lends it the player's: the Ox left it at some 250 kps where its top is 80, and overshot). `in`
+waits at its nav
+point until the player comes within 8,000 km, then flies to the home carrier, slowing as it comes, and stops 150 km
+off its hull with its nose the carrier's way, home (the user, 2026-11-04); with no carrier, to nav 0 and gone there (an
+enemy's waits where it is). One of the player's side killed is the mission lost. The autopilot brings one along, 800 km behind the player
 (the wingman beside it), and drops the formation 4,500 km short of the nav point.
 
 **Nav points and fields, as the old game has them.** A mission's nav points are its waypoints, numbered from 1 in the
