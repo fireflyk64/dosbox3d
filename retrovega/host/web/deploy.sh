@@ -34,7 +34,8 @@ $RUN node host/web/check.mjs http://127.0.0.1:$PORT/ | tee build/hostweb-check.l
 grep -q "RVSIM WEB OK" build/hostweb-check.log || { echo "LOCAL CHECK FAILED (rvsim)"; exit 1; }
 SHOT_DIR=build $RUN node host/web/game-check.mjs http://127.0.0.1:$GPORT/ | tee build/gamesite-check.log
 grep -q "GAME OK" build/gamesite-check.log || { echo "LOCAL CHECK FAILED (the game)"; exit 1; }
-(cd "$PAGES" && git pull -q --ff-only)
+retry() { local i; for i in 1 2 3 4 5 6; do "$@" && return 0; sleep 12; done; return 1; }   # (GitHub's ssh: now and then a refusal)
+(cd "$PAGES" && retry git pull -q --ff-only)
 mkdir -p "$PAGES/rv/sim" "$PAGES/rv/art"
 cp $W/index.html $W/rvsim.js $W/rvsim.wasm $W/rvsim.data "$PAGES/rv/sim/"
 cp $G/index.html $G/game.js $G/rv.js $G/rv.wasm $G/game.tar.gz $G/rvsets.js $G/rvsprites.js $G/rvsprites-worker.js \
@@ -47,7 +48,7 @@ if git diff --cached --quiet; then
     echo "the live pages are already this build"
 else
     git commit -q -m "rv: $1 (from dosbox3d retrovega $H)"
-    git push -q origin main
+    retry git push -q origin main
     echo "pages: $(git log --oneline -1)"
 fi
 cd - > /dev/null

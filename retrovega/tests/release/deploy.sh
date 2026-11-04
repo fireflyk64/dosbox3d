@@ -4,6 +4,8 @@ S=${RV_RELEASE_DIR:-/tmp/rv-release}; mkdir -p $S
 R=$(cd "$(dirname "$0")" && pwd)   # (these scripts)
 WT=/home/sandbox/dev/rv-gx; MAIN=/home/sandbox/dev/dosbox3d; PAGES=/home/sandbox/dev/fireflyk64.github.io
 TAG=$1; MSG=$2
+# (GitHub's ssh turned the key away now and then, 2026-11-04: "Permission denied (publickey)", the next try let in)
+retry() { local i; for i in 1 2 3 4 5 6; do "$@" && return 0; sleep 12; done; return 1; }
 export PLAYWRIGHT_DIR=/home/sandbox/dev/beauty
 cd $WT
 . ~/emsdk/emsdk_env.sh > /dev/null 2>&1
@@ -22,7 +24,7 @@ PORT=8793 LOBBY_PORT=8794 GAME_SOURCE=gog GAME_FILE="$MAIN/setup_wing_commander_
 grep -a -q 'SMOKE OK' $S/smoke-$TAG-wc.log || { echo "WC SMOKE FAILED"; tail -6 $S/smoke-$TAG-wc.log | cut -c1-140; exit 1; }
 echo "wc smoke: SMOKE OK"
 ps -eo args | grep -E 'deploy-full|host/web/deploy' | grep -v grep | grep -v fulldeploy && { echo "ANOTHER DEPLOY IS RUNNING"; exit 1; }
-git push -q origin retrovega-gx:retrovega || { echo "PUSH OF THE BRANCH FAILED"; exit 1; }
+retry git push -q origin retrovega-gx:retrovega || { echo "PUSH OF THE BRANCH FAILED"; exit 1; }
 # (the main tree is other sessions' too: fast-forward only, never over their uncommitted work; if their edits overlap
 # ours it stays where it was and says so, and the deploy goes on: the branch is pushed, the Pages come from this tree)
 if git -C $MAIN merge -q --ff-only retrovega-gx 2> $S/ff-$TAG.log; then
@@ -30,7 +32,7 @@ if git -C $MAIN merge -q --ff-only retrovega-gx 2> $S/ff-$TAG.log; then
 else
   echo "branch: retrovega at $(git rev-parse --short HEAD) (pushed); the main tree left at $(git -C $MAIN rev-parse --short HEAD): $(grep -a -c '^	' $S/ff-$TAG.log) of its uncommitted files are ours too"
 fi
-git -C $PAGES pull -q --ff-only || { echo "PAGES PULL FAILED"; exit 1; }
+retry git -C $PAGES pull -q --ff-only || { echo "PAGES PULL FAILED"; exit 1; }
 for f in web/dist/*; do
   n=$(basename "$f")
   [ "$n" = wc.tar.gz ] && continue
@@ -39,7 +41,7 @@ done
 cd $PAGES
 git add -A dosbox
 git commit -q -m "dosbox: $MSG (from dosbox3d retrovega $H)"
-git push -q origin main || { echo "PAGES PUSH FAILED"; exit 1; }
+retry git push -q origin main || { echo "PAGES PUSH FAILED"; exit 1; }
 echo "pages: $(git log --oneline -1 | cut -c1-90)"
 cd $WT
 for i in $(seq 1 60); do
