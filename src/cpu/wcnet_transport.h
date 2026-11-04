@@ -92,6 +92,12 @@ public:
         (void)seat;
         return -1;
     }
+    // 1 while the seat's game link is up (a room's; -1 no rooms): a seat held with its link down is a page gone
+    // that the lobby keeps the seat for (a reload's, or one that never comes back)
+    virtual int seat_linked(int seat) const {
+        (void)seat;
+        return -1;
+    }
     virtual bool has_rooms() const { return false; }
     virtual std::string describe() const = 0;
 };

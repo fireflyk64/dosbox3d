@@ -139,11 +139,18 @@ private:
 
 class LobbyListener : public Listener {
 public:
-    LobbyListener(wclobby *h, const std::string &code) : h_(h), code_(code) {}
+    LobbyListener(wclobby *h, const std::string &code) : h_(h), code_(code), closed_(false) {}
 
     virtual Stream *accept(bool blocking) { return accept_within(blocking ? -1 : 0); }
 
+    // A closed room (our lobby session over: the room expired, or this session was taken over) answers at once, in
+    // both implementations: it is said once and not asked again, and nobody's seat in it is waited for.  (It had been
+    // logged at every call, and the host's wait at the briefing asked it again and again, never waiting its 250 ms:
+    // in the browser a loop that starved the page, its lobby link's heartbeats and its picture with it.)
     virtual Stream *accept_within(int ms) {
+        if (closed_) {
+            return NULL;
+        }
         uint16_t player = 0;
         uint32_t gen = 0;
         int r = wclobby_accept(h_, ms, &player, &gen);
@@ -151,13 +158,17 @@ public:
             return new LobbyStream(h_, player, gen);
         }
         if (r < 0) {
-            wclog(0, "lobby: room %s is closed", code_.c_str());
+            closed_ = true;
+            wclog(0, "lobby: room %s is closed: nobody new can join, and nobody is waited for", code_.c_str());
         }
         return NULL;
     }
 
     virtual int seat_held(int seat) const {
-        return wclobby_peer_state(h_, (uint16_t)seat, NULL) != WCLOBBY_PEER_ABSENT ? 1 : 0;
+        return !closed_ && wclobby_peer_state(h_, (uint16_t)seat, NULL) != WCLOBBY_PEER_ABSENT ? 1 : 0;
+    }
+    virtual int seat_linked(int seat) const {
+        return !closed_ && wclobby_peer_state(h_, (uint16_t)seat, NULL) == WCLOBBY_PEER_UP ? 1 : 0;
     }
     virtual bool has_rooms() const { return true; }
 
@@ -166,6 +177,7 @@ public:
 private:
     wclobby *h_;
     std::string code_;
+    bool closed_;
 };
 
 // ---------------------------------------------------------------------------

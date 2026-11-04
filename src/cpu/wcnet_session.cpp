@@ -1546,12 +1546,30 @@ private:
     // played then they go in lockstep"; "the second in that session whatever number it is"): at a briefing the
     // host waits for each pilot who has flown a mission with it this session and still holds a seat in the room,
     // until that pilot's game is at its own briefing.  The callsign waited for, or NULL.
+    // (A seat held with no game link for kLinkGoneMs is a page that went and has not come back: the lobby keeps
+    // its seat for a reload, or for whoever claims it; the wait was for ever then.)
+    enum { kLinkGoneMs = 30000 };
     const char *lockstep_waits_for() {
+        double now = perf_now_ms();
         for (std::map<int, std::string>::iterator it = flownWith_.begin(); it != flownWith_.end();) {
             if (listener_->seat_held(it->first) == 0) {
                 wclog(1, "%s has left the room: no waiting for them", it->second.c_str());
+                linkGoneSince_.erase(it->first);
                 flownWith_.erase(it++);
                 continue;
+            }
+            if (listener_->seat_linked(it->first) == 0) {
+                std::map<int, double>::iterator g = linkGoneSince_.find(it->first);
+                if (g == linkGoneSince_.end()) {
+                    linkGoneSince_[it->first] = now;
+                } else if (now - g->second > kLinkGoneMs) {
+                    wclog(1, "%s's game link has been gone %d s: no waiting for them", it->second.c_str(), kLinkGoneMs / 1000);
+                    linkGoneSince_.erase(g);
+                    flownWith_.erase(it++);
+                    continue;
+                }
+            } else {
+                linkGoneSince_.erase(it->first);
             }
             const RemoteClient *c = NULL;
             for (size_t i = 0; i < clients_.size(); i++) {
@@ -2434,6 +2452,7 @@ private:
     Bit64u frameNumber_;
     bool hadClientInMission_;    // a wingman has had this mission's start state
     std::map<int, std::string> flownWith_;  // room seat -> callsign: pilots who have flown a mission with us (lockstep)
+    std::map<int, double> linkGoneSince_;    // room seat -> when its game link was first seen down in the wait (real ms)
     int seats_;                  // the room's size (room_seats): three has seats made on demand, two the seats of before
     std::set<int> seatSlots_;     // ships the server spawned as seats for humans (slots)
     struct {                       // a seat's spawn in flight (one at a time)
