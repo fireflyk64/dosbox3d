@@ -6,7 +6,11 @@
  * Either puts the game in keyboard mode, and the mouse driver is pinned to
  * the pointer.  Mouse motion is then ignored until it adds up to more than
  * KEYBOARD_SLACK mickeys, or a button is pressed: then the mouse has the
- * pointer again.
+ * pointer again.  Only while the arrows steer the pointer (in_steer: the
+ * rooms): in a flight Tab is the afterburner, and a held Tab's repeats had
+ * pinned the mouse, and the page's stick with it, all the while it burned
+ * (the user, 2026-11-04: "when you hit afterburner it freezes or impedes
+ * mouse or joystick control").
  *
  * A test script (RV.EXE /script FILE) replaces both: one command a line,
  *     wait N       N ticks (18.2 a second)
@@ -318,6 +322,8 @@ static int steer(void)
 void in_steer(int on)
 {
     g_steer = on;
+    if (!on)
+        g_keyboard = 0;                 /* (a flight: the mouse has the pointer from the first, however the rooms left it) */
 }
 
 int in_arrows(void) { return arrows(); }
@@ -340,7 +346,7 @@ void in_poll(Input *in)
         } else {
             script_step(in);
         }
-        if (in->key == KEY_TAB || in->key == KEY_BACKTAB)
+        if (g_steer && (in->key == KEY_TAB || in->key == KEY_BACKTAB))
             g_keyboard = 1;
         if (steer())
             g_keyboard = in->moved = 1;
@@ -359,7 +365,7 @@ void in_poll(Input *in)
     key = bios_key(&ch);
     in->key = key;
     in->ch = ch;
-    if (key == KEY_TAB || key == KEY_BACKTAB || steer()) {
+    if ((g_steer && (key == KEY_TAB || key == KEY_BACKTAB)) || steer()) {
         if (key != KEY_TAB && key != KEY_BACKTAB)
             in->moved = 1;
         g_keyboard = 1;
