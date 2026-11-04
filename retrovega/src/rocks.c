@@ -60,6 +60,7 @@
 #include "rocks.h"
 #include "world.h"
 #include "flight.h"
+#include "logic.h"                      /* (logic_rock_harm) */
 
 #define FILE_HEAD 24
 #define KINDS_MAX 4
@@ -881,19 +882,18 @@ static void hits(int n, const LfBasis *cam)
         if (dl < 1)
             dl = 1;
         g_hits_n++;
-        /* the harm: the speed they met at (the player's less the rock's, kps), the more head on the more, and the
-         * rock's size */
+        /* the harm: the speed they met at (the player's less the rock's), as a collision's, capped as one is for the
+         * player (logic_rock_harm: the old game's rule; it had been the speed x how head on x the rock's size / 4,000,
+         * some 7 points head on at 250 kps) */
         wx = (gVelocityVector[0].x - r->vx) / 16;
         wy = (gVelocityVector[0].y - r->vy) / 16;
         wz = (gVelocityVector[0].z - r->vz) / 16;
         speed = lf_sqrt((unsigned long)(wx * wx + wy * wy + wz * wz)) * 16UL * 5 / 64;
         head = (int)(d[2] * 100 / dl);
-        if (head < 20)
-            head = 20;
-        qty = (unsigned short)(speed * head / 100 * R / 4000 + 1);
         ((RvVec3 *)tempVector)->x = gPositionVector[0].x + (c[0] * cam->right.x + c[1] * cam->up.x + c[2] * cam->front.x);
         ((RvVec3 *)tempVector)->y = gPositionVector[0].y + (c[0] * cam->right.y + c[1] * cam->up.y + c[2] * cam->front.y);
         ((RvVec3 *)tempVector)->z = gPositionVector[0].z + (c[0] * cam->right.z + c[1] * cam->up.z + c[2] * cam->front.z);
+        qty = logic_rock_harm((int32_t)lf_sqrt((unsigned long)(wx * wx + wy * wy + wz * wz)) * 16, (const RvVec3 *)tempVector);
         rv_notef(s_hit, frameCounter, (int)(2 * R), r->kind, speed, head, qty);
         do_damage((unsigned short)g_f[g_src].slot, 0, qty, (unsigned short)(unsigned)tempVector);
         /* tossed aside (the user, 2026-10-24): across the player's way, away from the rock (dead ahead: a side

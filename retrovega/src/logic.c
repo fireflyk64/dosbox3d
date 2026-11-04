@@ -1357,14 +1357,14 @@ static void hit_sides(int16_t dst, const RvVec3 *w, int16_t *sh, int16_t *ar);
  * player, on the side the other ship is: with that shield at a tenth or less, the whole of it; with more, at most that
  * shield and that armour, or, that armour gone, that shield and the hull down to 40% of what it is (and when that cut
  * the old game's, a system point besides: ram_hurt) */
-static uint16_t ram_cap_player(uint16_t qty, int16_t other)
+static uint16_t ram_cap_player_at(uint16_t qty, const RvVec3 *where)
 {
     const RvShipType __far *t = slot_type(0);
     int16_t sh, ar;
     uint32_t cap;
     if (!t)
         return qty;
-    hit_sides(0, &gPositionVector[other], &sh, &ar);
+    hit_sides(0, where, &sh, &ar);
     if ((uint32_t)SHIELD(0, sh) * 10 <= SHIELD_MAX(0, sh))
         return qty;
     cap = (uint32_t)SHIELD(0, sh) + ARMOR(0, ar);
@@ -1373,6 +1373,25 @@ static uint16_t ram_cap_player(uint16_t qty, int16_t other)
         cap += room - (uint32_t)room * 2 / 5;
     }
     return cap < qty ? (uint16_t)cap : qty;
+}
+
+static uint16_t ram_cap_player(uint16_t qty, int16_t other)
+{
+    return ram_cap_player_at(qty, &gPositionVector[other]);
+}
+
+uint16_t logic_rock_harm(int32_t closing, const RvVec3 *where)
+{
+    uint16_t qty;
+    if (g_rule_flags & RV_RULE_RAM_SOFT)
+        qty = (uint16_t)(RAM_BASE + closing / RAM_PER);
+    else {
+        int32_t km = TO_KM(closing);
+        if (km > 360)
+            km = 360;
+        qty = (uint16_t)(km * km / 2 + 1);
+    }
+    return ram_cap_player_at(qty, where);
 }
 
 /* an NPC, any (a wingman, an escort, an enemy, a capital ship), on the side the other ship is: at most that shield and

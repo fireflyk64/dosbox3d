@@ -274,7 +274,10 @@ field flown straight through at 200 kps, 2 hits where it was none. Flown straigh
 player before a field, facing its middle): ENIGMA1's 7,500 km field 3 and 9 hits, its 5,000 one 1 and 5 (the old
 game's Enyo 1, `tests/wc1/run-old.sh`: 6 and 7, 1 and 2; ours before: 2 and 2, 3). A shot that meets a rock is spent
 and breaks it one time in three (the old game's rule; `shots_on_rocks`), and the player's ship breaks any it flies
-into, the harm by the speed they met at. **The flight's view is the old game's** (2026-11-02,
+into, the harm a collision's (`logic_rock_harm`: half the square of the closing speed in km a step, the old game's;
+its rocks hit for a thousand and more), capped as a collision is for the player, at most the shield and armour on
+that side: some 80 points at 500 kps closing, the Schroedinger's whole front (the user, 2026-11-04: "the asteroids
+were not hurtful at all"; they had hit for the speed x how head on x the rock's size / 4,000, 12 to 15 points). **The flight's view is the old game's** (2026-11-02,
 `FLIGHT_FOCAL` 320 on the 640-wide screen: +-45 degrees across, as its focal 160 on its 320, measured from its rocks'
 screen places; it was 400, +-39): every placer takes it (ships, shots, missiles, explosions, rocks, the sky), the stars'
 asm too (`STAR_FOCAL`, their number a cell x (320/400)^2: as many on screen); the ships' art keeps its own reference

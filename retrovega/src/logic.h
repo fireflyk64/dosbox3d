@@ -4,6 +4,7 @@
 #define LOGIC_H
 
 #include "rvdata.h"
+#include "rvhooks.h"                    /* (RvVec3) */
 #include "damage.h"                     /* (the player's systems: SYS_*, what each does when hurt) */
 
 #define LOGIC_HZ 30                     /* steps a second: the flight draws a frame a step and waits out the rest of
@@ -99,6 +100,11 @@ int16_t logic_carrier_stopped(void);    /* the hull stopped the player (not clea
 /* an escorted ship jumps away, just before its slot ends (flight.c: fx_jump's star and flash); friendly: the player's side */
 extern void (*__far logic_on_jump)(int16_t slot, int16_t friendly);
 void logic_test_leave(int16_t s);        /* the play tests' way to have an enemy leave, as fear or a jump does */
+/* a rock's hit on the player (rocks.c): its closing speed (positions a step) and where it struck, the harm.  The old
+ * game's for a collision, half the square of the closing speed in km a step (its asteroids hit for a thousand and
+ * more), capped as a collision is for the player: at most the shield and the armour on that side (the user,
+ * 2026-11-04: "the asteroids were not hurtful at all"; they had hit for some 7 points head on at 250 kps) */
+uint16_t logic_rock_harm(int32_t closing, const RvVec3 *where);
 #ifdef RV_TESTS
 void logic_test_cleared(void);           /* the carrier has cleared the player to land, whatever they have flown */
 void logic_test_to_carrier(int16_t where);   /* a script's way there: 0 off its bow, 1 off its beam */
