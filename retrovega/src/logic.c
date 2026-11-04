@@ -396,6 +396,32 @@ void logic_test_kill_enemies(void)
             shipAiState[s] = 9;
 }
 
+/* a script's look at who is where (flight.c's test key %): each ship's type, side, km from the player and whether the
+ * scene holds it (ET_OFFSCENE), and the player takes no damage from then on */
+void logic_test_census(void)
+{
+    static const char __far s_me[] = "census: the player at %ld %ld %ld km, %u kps, nav %d chosen";
+    static const char __far s_line[] = "census: slot %d type %02x side %d %ld km off (%ld ahead, %ld right, %ld up), %u kps%s";
+    int16_t s;
+    playerCanBeDamaged = 0;
+    rv_logf(s_me, (long)TO_KM(gPositionVector[0].x), (long)TO_KM(gPositionVector[0].y), (long)TO_KM(gPositionVector[0].z),
+            (uint16_t)speedLo[0], g_sys.nav);
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (slot_is_ship(s) || maybeEntityType[s] == ET_OFFSCENE) {
+            int32_t dx = TO_KM(gPositionVector[s].x - gPositionVector[0].x), dy = TO_KM(gPositionVector[s].y - gPositionVector[0].y),
+                    dz = TO_KM(gPositionVector[s].z - gPositionVector[0].z);
+            rv_logf(s_line, s, gInstanceShipTypes[s], commAnimInfo[s], (long)player_km(s),
+                    (long)(FIX_MUL(gOrientationFrontVector[0].x, dx) + FIX_MUL(gOrientationFrontVector[0].y, dy)
+                           + FIX_MUL(gOrientationFrontVector[0].z, dz)),
+                    (long)(FIX_MUL(gOrientationRightVector[0].x, dx) + FIX_MUL(gOrientationRightVector[0].y, dy)
+                           + FIX_MUL(gOrientationRightVector[0].z, dz)),
+                    (long)(FIX_MUL(gOrientationUpVector[0].x, dx) + FIX_MUL(gOrientationUpVector[0].y, dy)
+                           + FIX_MUL(gOrientationUpVector[0].z, dz)),
+                    (uint16_t)speedLo[s],
+                    maybeEntityType[s] == ET_OFFSCENE ? ", held off the scene" : shipAiState[s] == 9 ? ", dying" : "");
+        }
+}
+
 /* a script's way to see the carrier die (flight.c's test key) */
 void logic_test_kill_carrier(void)
 {
