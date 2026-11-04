@@ -3326,6 +3326,7 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.ch == '|') logic_test_kill_carrier();
         if (in.ch == '^') logic_test_jump_out();
         if (in.ch == '~') logic_test_kill_wingman();
+        if (in.ch == '$') logic_test_kill_enemies();   /* (a script's way to clear a nav point: tests/navmusic.txt) */
         if (in.ch == '#') rocks_test_to_field();   /* (a script's way through a field: tests/rocks-cross.txt) */
         if (in.ch == '&' && g_sim) simulator_test_kill();
 #endif

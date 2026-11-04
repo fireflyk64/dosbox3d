@@ -100,6 +100,7 @@ void logic_test_cleared(void);           /* the carrier has cleared the player t
 void logic_test_to_carrier(int16_t where);   /* a script's way there: 0 off its bow, 1 off its beam */
 void logic_test_kill_carrier(void);
 void logic_test_kill_wingman(void);
+void logic_test_kill_enemies(void);     /* a script's way to clear a nav point: every enemy ship there dies */
 void logic_test_jump_out(void);         /* a script's way to see a jump: the first escorted ship, ahead of the player */
 #endif
 

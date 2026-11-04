@@ -14,11 +14,16 @@
  * left behind by the autopilot, landed, jumped out or run off, is no loss:
  * the user, 2026-11-02, "it plays the funereal march as soon as I auto to
  * nav 1"); the panic is the hull (100% whole):
- * under 60, 35, 15 the first, second and third.  The mission is done when
- * the enemies have all gone, and then (or while the player calls the
- * carrier to land) the way home plays: won or lost by the mission's victory
- * points (game.c sets them at launch, the roll until combat scores a
- * mission: the number the layer carries to the other players).
+ * under 60, 35, 15 the first, second and third.  Once the mission is done
+ * (the logic's victoryPoints, nonzero once every nav point is reached and
+ * every enemy of the mission killed: the number the layer carries to the
+ * other players) the way home plays, won; while the player calls the
+ * carrier to land (C) with it undone, the way home lost.  Never between
+ * nav points: the way home used to come when the enemies in the slots had
+ * all gone, and a nav point cleared is that, so Enigma 1 played the lost
+ * way home, its slow lament, from Nav 1 to Nav 2 (the user, 2026-11-03,
+ * "the funeral sound plays when I go from nav 1 to nav 2 in mission 1").
+ * Nor for the carrier targeted mid-mission (it was: the lament again).
  *
  * Each mood has its songs (rvdata.h's RV_MUSIC_*).  The third draft's
  * remixes (2026-10-24, the user: "remixable and loopable"): the calm songs
@@ -48,7 +53,6 @@ typedef struct {
     int cue;                            /* the song playing for it */
     unsigned long quiet_at;             /* the last time an enemy was near */
     unsigned char dying[RV_MAX_SHIP_SLOT + 1];  /* a ship was dying (shipAiState 9) last frame */
-    unsigned char hostile_seen;         /* an enemy was out there this flight */
     unsigned char next[2];              /* the next of the cruise and battle songs (kept between flights) */
     int queued;                         /* the follow-on asked for (music_then), -1 none */
     unsigned char victory;
@@ -191,7 +195,6 @@ void score_start(const RvMission __far *m)
     g_sc.t0 = clock240();
     g_sc.panic = 0;
     g_sc.quiet_at = 0;
-    g_sc.hostile_seen = 0;
     for (s = 0; s <= RV_MAX_SHIP_SLOT; s++)
         g_sc.dying[s] = 0;
 #ifdef RV_TESTS
@@ -204,7 +207,7 @@ void score_start(const RvMission __far *m)
 void score_tick(int landing)
 {
     unsigned long now = clock240();
-    int s, nearby = 0, staying = 0, hostiles = 0, mood = g_sc.mood, splashed = 0, lost = 0, target = g_sys.target;
+    int s, nearby = 0, staying = 0, mood = g_sc.mood, splashed = 0, lost = 0;
 #ifdef RV_TESTS
     if (g_score_test) {
         test_tick(now);
@@ -217,7 +220,6 @@ void score_tick(int landing)
         int ship = is_ship(s), side = ship ? commAnimInfo[s] : -1;
         long km = ship ? km_to(s) : 0;
         if (ship && side == 1) {
-            hostiles++;
             if (km < NEAR_KM)
                 nearby++;
             if (km < STAY_KM)
@@ -234,8 +236,6 @@ void score_tick(int landing)
             g_sc.dying[s] = (unsigned char)dying;
         }
     }
-    if (hostiles)
-        g_sc.hostile_seen = 1;
     if (nearby || (staying && mood == FIGHT))
         g_sc.quiet_at = now;
     /* what it should be: dead, a panic, a fight, the way home, or calm */
@@ -253,9 +253,8 @@ void score_tick(int landing)
     }
     if (nearby || (mood == FIGHT && now - g_sc.quiet_at < CALM_AFTER))
         mood = FIGHT;
-    else if (landing || (g_sc.hostile_seen && !hostiles)
-             || (target > 0 && is_ship(target) && commAnimInfo[target] == 0 && maybeEntityType[target] == 0xD))
-        mood = HOME;                    /* the mission done, or the carrier targeted, or calling it */
+    else if (landing || victoryPoints)
+        mood = HOME;                    /* the mission done, or calling the carrier to land */
     else if (in_field())
         mood = ROCKS;
     else

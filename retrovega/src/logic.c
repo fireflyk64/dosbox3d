@@ -375,6 +375,15 @@ void logic_test_kill_wingman(void)
             shipAiState[s] = 9;
 }
 
+/* a script's way to clear a nav point (flight.c's test key): every enemy ship there begins to die */
+void logic_test_kill_enemies(void)
+{
+    int16_t s;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (slot_is_ship(s) && shipAiState[s] != 9 && commAnimInfo[s] != commAnimInfo[0])
+            shipAiState[s] = 9;
+}
+
 /* a script's way to see the carrier die (flight.c's test key) */
 void logic_test_kill_carrier(void)
 {

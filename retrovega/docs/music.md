@@ -184,14 +184,21 @@ anything. The rules come in this order:
 3. **Fight:** an enemy within 4,000 km starts a fight, a little beyond the
    3,000 km of its hail. Twelve seconds with none within 6,000 km end it.
    They spawn some 5,000 km out, so a flight begins calm.
-4. **Home:** the mission is done (every enemy gone, after there were
-   some), or a friendly capital ship is the target, or the player is
-   calling the carrier to land (C). Won, Homeward; lost, Homeward's sadder
-   twin. Which is the mission's `victoryPoints`, the fixed block's word
-   the layer carries to the other players at the mission's end, as in WC1.
-   Until combat scores a mission, game.c rolls it at launch (80% won), so
-   the way home already knows; at the end `missionVictoryCalc` is the
-   layer's moment to put the host's score in, and the debrief follows it.
+4. **Home:** the mission is done, or the player is calling the carrier
+   to land (C). Done is the logic's `victoryPoints` (the fixed block's
+   word the layer carries to the other players at the mission's end, as
+   in WC1): 0 from the launch, nonzero once every nav point is reached and
+   every enemy of the mission killed (logic.c `step_mission`). Done,
+   Homeward; called home with it undone, Homeward's sadder twin. At the
+   end `missionVictoryCalc` is the layer's moment to put the host's score
+   in, and the debrief follows it. It used to be "every enemy in the slots
+   gone, after there were some", and a friendly capital ship targeted: a
+   nav point cleared is the first, so Enigma 1 played the sad twin, a
+   slow lament in B flat minor, from Nav 1 to Nav 2 (the user,
+   2026-11-03: "the funeral sound plays when I go from nav 1 to nav 2 in
+   mission 1"). `tests/navmusic.txt` flies Enigma 1 nav point to nav
+   point (`$` in RVT.EXE kills the enemies about): cruise, the rock
+   field, a fight, cruise, and Homeward only after Nav 3.
 5. **Rocks:** inside an asteroid or mine field of the mission (its centre
    within its radius), the rock field's song.
 6. **Calm:** otherwise, the cruise songs.
