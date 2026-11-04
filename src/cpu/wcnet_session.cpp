@@ -1547,8 +1547,10 @@ private:
     // host waits for each pilot who has flown a mission with it this session and still holds a seat in the room,
     // until that pilot's game is at its own briefing.  The callsign waited for, or NULL.
     // (A seat held with no game link for kLinkGoneMs is a page that went and has not come back: the lobby keeps
-    // its seat for a reload, or for whoever claims it; the wait was for ever then.)
-    enum { kLinkGoneMs = 30000 };
+    // its seat for a reload, or for whoever claims it; the wait was for ever then.  Only the link counts: a pilot
+    // slow in the debrief or the bar has it up, and is waited for however long.  Two minutes, the user's, 2026-11-04:
+    // "can we up the timeout to 120 seconds")
+    enum { kLinkGoneMs = 120000 };
     const char *lockstep_waits_for() {
         double now = perf_now_ms();
         for (std::map<int, std::string>::iterator it = flownWith_.begin(); it != flownWith_.end();) {
