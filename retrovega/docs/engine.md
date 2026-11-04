@@ -1011,7 +1011,9 @@ fixed size, its address in `RV.MAP`, declared where it is used:
 
 A take asking more than the array has stops the game, naming the array. `build.sh` refuses an RV.EXE that links `_fmalloc`.
 RVT.EXE and RVP.EXE have 60 KB more code and no room for the arrays: `RV_HEAP` keeps the far heap there, so what the game does
-is tested with RV.EXE itself. Upper memory holds what it held, the band buffer and the dense slab (`ships_dense_reserve`), both
+is tested with RV.EXE itself. RVP.EXE's play tests take neither the music (47 KB) nor the 32 KB drawing scratch (they draw
+nothing): on 2026-11-03 its heap was left 7 KB, and with M8.36 in the shot list found no room and every gun test failed on DOS
+(a missing shot list now says `MEMORY:` as the other fallbacks do). Upper memory holds what it held, the band buffer and the dense slab (`ships_dense_reserve`), both
 taken at the start and never given back; in the native build the slab is a plain array. If the slab were ever missing the exact draw
 asks again at each draw and the log says so once, and a flight's end counts the draws refused.
 

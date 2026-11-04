@@ -324,6 +324,10 @@ int main(int argc, char **argv)
     log_free("at the start");
     if (!nogx)
         (void)gx_init();                /* is there a sprite accelerator?  (only our DOSBox: docs/gx.md) */
+#ifdef RV_PLAYTEST
+    if (!playtest)                      /* (the play tests draw nothing: their flights' arrays need the 32 KB, RVP.EXE's
+                                           heap being what its 60 KB more code leaves; 2026-11-03 the shot list found 7 KB) */
+#endif
     (void)gfx_scratch();                /* (first: 32 KB in one piece, which the test build had none of by the time it was asked for) */
     ok = camp_load_data("RVGAME.DAT");
     if (ok) {

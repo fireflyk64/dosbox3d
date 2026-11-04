@@ -44,6 +44,10 @@ int16_t shots_flight_start(int16_t own_pools)
         g_balls = balls_init(SHOTS_MAX, 48);
     }
     rv_logf(s_room, g_s ? SHOTS_MAX : 0, g_bolts, g_balls);
+    if (!g_s) {                         /* (a test build's heap short: no shot would ever fly, so say so; the rigs fail on it) */
+        static const char __far s_short[] = "shots: no room for the shot list";
+        mem_short(s_short);
+    }
     return g_s ? SHOTS_MAX : 0;
 }
 
