@@ -446,6 +446,24 @@ static void populate_player_end(PlayerEnd *end, int status) {
 // (its rooms reach no hook site to run one) and no overlay (the user, 2026-11-04: the chat "neither bring[s] up the
 // comm VDU screen nor ... print[s] the text on the other player": the line had gone to a showCommMessage the game
 // never had, and from the briefing on the overlay stood aside for it).
+// What a wait is for, on the emulator's overlay while it lasts (wc_net_wait_note; sdlmain draws it across the
+// middle): the game itself stands still in a wait and can draw nothing.  The user, 2026-11-04: "the base doesn't make
+// it clear why things hang at the launch hangar... should be waiting for player"; "if you go to the cockpit and are
+// waiting on the other player to select ship stuff with the tech, should say waiting for other player".  Said in the
+// log too (the page shows it: web/wc.js noticeWaiting).
+static std::string g_waitNote;
+static void set_wait_note(const std::string &note) {
+    if (note == g_waitNote) {
+        return;
+    }
+    if (!note.empty()) {
+        wclog(1, "the wait: %s", note.c_str());
+    } else {
+        wclog(1, "the wait is over");
+    }
+    g_waitNote = note;
+}
+
 // (local: the speaker's slot here, kInvalidSlot for a notice of the layer's own; the game picks a face by it)
 static void chat_into_block(int local, const std::string &line) {
     if (!ds::known(ds::commGlobalTxt) || !ds::known(ds::commSpeaker) || !ds::known(ds::commTextTimer)) {
@@ -704,6 +722,7 @@ struct RemoteClient {
     bool seatSpawnFailed = false;  // a ship made for its seat came to nothing this mission
     int startView = 0;           // a gunner: the view (turret) it starts in
     int roomSeat = -1;           // its pilot's seat in the lobby room (-1: TCP, no rooms)
+    double startSentAt = -1;     // when its mission start state went (real ms): no frame of its since, it has not launched
     // The last frame of its whose position we took (by either channel), and when (emulated ms).
     Bit64u lastPosition = 0;
     double lastPositionEmu = 0;
@@ -1739,6 +1758,7 @@ private:
             return false;
         }
         c->inMission = true;
+        c->startSentAt = perf_now_ms();
         c->leftThisMission = false;  // it has the mission's start state: it is in it
         list_humans(pendingFrame_.mutable_frame(), NULL);  // (this frame's list was made before it joined)
         // Its frame numbers start again at 1 with this mission (its epoch),
@@ -2318,7 +2338,9 @@ private:
 public:
     // For ClientLagJob: takes in what has arrived; true while a client is
     // still too far behind for the server to go on.
-    bool clients_behind() {
+    // *who: the first waited for, as the note says it ("Waiting for GUEST to launch...": no frame of its since its
+    // start state went, its pilot still on the deck)
+    bool clients_behind(std::string *who = NULL) {
         bool waiting = false;
         for (size_t i = 0; i < clients_.size(); i++) {
             RemoteClient *c = clients_[i];
@@ -2334,6 +2356,11 @@ public:
                 // games.  One out of the flight loop says so (Frame.flying)
                 // and is not waited for; one whose game is gone closes its
                 // link (on_program_ended).
+                if (!waiting && who) {
+                    std::string name = c->callsign.empty() ? std::string("the other player") : c->callsign;
+                    *who = c->lastFrameAt < c->startSentAt ? "Waiting for " + name + " to launch..."
+                                                           : "Waiting for " + name + "...";
+                }
                 waiting = true;
             }
         }
@@ -2441,6 +2468,27 @@ class ClientSession;
 // A client's wait for the server's frame, in emulated time: looks for the
 // frame, and while it is not there lets the emulated CPU idle to the next
 // timer event and looks again.
+// A client's first frame waits for the mission's start state, which the host sends at its own first frame in flight:
+// on the trampoline, in emulated time, so that the emulator runs on (its overlay says what for; a blocking wait here
+// had frozen the picture at the launch while the host's pilot was still on the deck).
+class StartStateJob : public VmJob {
+public:
+    explicit StartStateJob(ClientSession *client, double began = -1)
+        : client_(client), began_(began < 0 ? PIC_FullIndex() : began), done_(false) {}
+    virtual bool start();
+    virtual void finish() {
+        if (!done_) {
+            g_trampoline.enqueue_front(new StartStateJob(client_, began_));
+        }
+    }
+    virtual const char *describe() const { return "mission start state"; }
+
+private:
+    ClientSession *client_;
+    double began_;
+    bool done_;
+};
+
 class ServerFrameJob : public VmJob {
 public:
     explicit ServerFrameJob(ClientSession *client, double began = -1)
@@ -2664,17 +2712,20 @@ public:
         }
         NetworkMessage msg;
         if (hasRestartedMission_) {
-            hasRestartedMission_ = false;
-            wclog(1, "waiting for the mission start state");
-            while (true) {
-                if (!conn_.recv(CAT_GAME, msg).ok()) {
-                    drop("lost the server while waiting for the mission start");
-                    return;
-                }
-                if (msg.has_game()) {
-                    break;
-                }
+            if (start_state_waiting()) {
+                // (StartStateJob waits; when it is here this frame top runs again and takes it)
+                wclog(1, "waiting for the mission start state");
+                g_trampoline.enqueue(new StartStateJob(this));
+                g_trampoline.run_before_current_instruction();
+                return;
             }
+            if (dead_ || !haveStartState_) {
+                return;
+            }
+            hasRestartedMission_ = false;
+            haveStartState_ = false;
+            msg = startState_;
+            startState_.Clear();
             apply_start_state(msg);
         }
         if (isFresh_ && !hasSentConnect_) {
@@ -2743,6 +2794,32 @@ public:
         g_trampoline.run_before_current_instruction();
         ignoreNextFrameTop_ = true;
     }
+
+    // The mission's start state not here yet (what comes before it is not for the start: let go of, as the blocking
+    // wait did); false when it has come (kept in startState_) or the link has gone (dropped)
+    bool start_state_waiting() {
+        if (haveStartState_ || dead_) {
+            return false;
+        }
+        for (int n = 0; n < 256; n++) {
+            NetworkMessage msg;
+            RecvStatus st = conn_.poll(CAT_GAME, msg);
+            if (st.no_data()) {
+                return true;
+            }
+            if (!st.ok()) {
+                drop("lost the server while waiting for the mission start");
+                return false;
+            }
+            if (msg.has_game()) {
+                startState_ = msg;
+                haveStartState_ = true;
+                return false;
+            }
+        }
+        return true;
+    }
+    bool is_dead() const { return dead_; }
 
     // How long the server may be silent in the high-latency mode before we
     // wait for it: the round trip plus a second, at least a second and a half.
@@ -3295,6 +3372,8 @@ private:
     bool ownMissionOver_;
     bool dead_;
     bool sceneDue_;  // host_scene: our pending scene plays at the next frame, which runs without a server frame
+    bool haveStartState_ = false;     // the mission's start state has come (start_state_waiting), not yet applied
+    NetworkMessage startState_;
     int restartChoice_ = 0;           // the host's choice on the death screen, not yet taken (1, 2; 0 none)
     bool restartChoiceAsked_ = false; // (our own key was pressed while we waited: logged once)
     Bit32u epoch_;
@@ -3308,10 +3387,29 @@ private:
 };
 
 bool ClientLagJob::start() {
-    if (g_session != server_ || !server_->clients_behind()) {
+    std::string note;
+    if (g_session != server_ || !server_->clients_behind(&note)) {
         done_ = true;
+        set_wait_note("");
         perf_idle_wait(PIC_FullIndex() - began_);
         return false;
+    }
+    if (PIC_FullIndex() - began_ > 500.0) {   // (half a second: not every hiccup of the link)
+        set_wait_note(note);
+    }
+    idle_call();
+    return true;
+}
+
+bool StartStateJob::start() {
+    if (g_session != client_ || client_->is_dead() || !client_->start_state_waiting()) {
+        done_ = true;
+        set_wait_note("");
+        perf_idle_wait(PIC_FullIndex() - began_);
+        return false;
+    }
+    if (PIC_FullIndex() - began_ > 500.0) {
+        set_wait_note("Waiting for the host to launch...");
     }
     idle_call();
     return true;
@@ -3456,6 +3554,10 @@ const char *wc_net_role() {
         return "";
     }
     return g_session->is_server() ? "server" : "client";
+}
+
+const char *wc_net_wait_note() {
+    return g_waitNote.c_str();
 }
 
 const char *wc_net_status_note() {

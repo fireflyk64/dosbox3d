@@ -125,6 +125,11 @@ function noticeWaiting(line) {
   let m;
   if ((m = /^wcnet: waiting on the other player, (.*), at the briefing$/.exec(line))) {
     setTimeout(() => { chatLine(`Waiting on the other player (${esc(m[1])})…`, "sys"); status(`Waiting on the other player (${m[1]}) at the briefing…`); }, 0);
+  } else if ((m = /^wcnet: the wait: (.*)$/.exec(line))) {
+    // (a wait of the link's at the launch: the picture says it too, across its middle)
+    setTimeout(() => status(m[1]), 0);
+  } else if (/^wcnet: the wait is over$/.test(line)) {
+    setTimeout(() => status(""), 0);
   } else if (/^wcnet: the other player is at the briefing/.test(line)) {
     setTimeout(() => { chatLine("The other player is at the briefing: the mission begins.", "sys"); status(""); }, 0);
   } else if (/^wcnet: asking the server which briefing to load$/.test(line)) {

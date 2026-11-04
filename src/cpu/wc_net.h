@@ -77,6 +77,9 @@ bool in_space();
 // Chat lines and notices go on the emulator's overlay: outside flight, and in
 // flight when the game has no comms display the hooks can write to (WC2).
 bool wc_net_overlay_chat();
+// What a wait of the link's is for ("Waiting for GUEST to launch..."), across the middle of the picture while it
+// lasts; "" none.
+const char *wc_net_wait_note();
 extern bool within_briefed_mission;
 void wcnetSendChatMessage(const std::string &msg);
 // Asteroid and mine fields: 1 on (the default), 0 off (WCROCKS=0), 2 soft

@@ -1634,6 +1634,7 @@ void uninit_network();
 extern bool within_briefed_mission;
 extern bool in_space();
 extern bool wc_net_overlay_chat();
+extern const char *wc_net_wait_note();
 extern bool wc_net_comms_hint();
 std::string outgoing_prefix = "[Transmit Comms] ";
 size_t last_incoming_text_len = 0;
@@ -1690,12 +1691,14 @@ void GFX_EndUpdate( const Bit16u *changedLines ) {
             // only repaints the lines the game changed: when a line of ours
             // changes or goes away, have the whole picture painted again, or
             // the old text stays where the game's picture is still.
-            static std::string lastIncoming, lastOutgoing;
+            static std::string lastIncoming, lastOutgoing, lastWait;
             static bool lastInSpace = false;
-            if (lastIncoming != incoming_text || lastOutgoing != outgoing_text || lastInSpace != in_space()) {
+            if (lastIncoming != incoming_text || lastOutgoing != outgoing_text || lastInSpace != in_space()
+                || lastWait != wc_net_wait_note()) {
                 lastIncoming = incoming_text;
                 lastOutgoing = outgoing_text;
                 lastInSpace = in_space();
+                lastWait = wc_net_wait_note();
                 render.scale.clearCache = true;
             }
         }
@@ -1768,6 +1771,13 @@ void GFX_EndUpdate( const Bit16u *changedLines ) {
                 last_outgoing_text_len = to_write->length();
             }
             DrawText(48,48 + 14 + 14, to_write->c_str(), 0x80, textPixels, textPitch);
+            const char *wait = wc_net_wait_note();
+            if (wait[0]) {
+                // (a wait of the link's: the game stands still and draws nothing, so the overlay says what for)
+                Bitu len = strlen(wait), w = len * 8;
+                Bitu x = sdl.draw.width > w ? (sdl.draw.width - w) / 2 : 0;
+                DrawText(x, sdl.draw.height / 2 - 7, wait, 0x80, textPixels, textPitch);
+            }
         }
         /* The chat overlay may have touched any line, so report the whole
          * frame as changed: changedLines alternates unchanged/changed run
