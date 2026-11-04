@@ -11,6 +11,10 @@
 #include "room.h"
 
 Scene g_scene;
+/* the actor's frame before this one, while the two are stippled together for a step, as a seated pilot's turn is (the
+ * user, 2026-11-03: "the barkeep should also have the transitional stipple pattern like other characters"); -1 none */
+static int __far g_actor_was = -1;
+static unsigned long __far g_actor_mix_end;
 
 static const RvRoom __far *room(void) { return dat_room(g_scene.room); }
 
@@ -53,6 +57,7 @@ void scene_enter(int room_id, const unsigned char *seats)
         }
     }
     g_scene.hover_kind = HOVER_NONE;
+    g_actor_was = -1;                   /* (no frame half in from the last room's actor) */
     g_scene.actor_next = ticks();
     g_scene.glance_at = ticks() + 180;
     gfx_use_palette(r->palette);
@@ -253,7 +258,12 @@ int scene_update(const Input *in, SceneAction *act)
             frame = a->idle[g_scene.actor_step][0];
         }
         if (frame != g_scene.actor_frame) {
+            g_actor_was = g_scene.actor_frame;   /* (the two mixed for two ticks, a seat's turn step) */
+            g_actor_mix_end = now + 2;
             g_scene.actor_frame = frame;
+            vid_dirty(a->y, a->y + a->h);
+        } else if (g_actor_was >= 0 && now >= g_actor_mix_end) {
+            g_actor_was = -1;
             vid_dirty(a->y, a->y + a->h);
         }
     }
@@ -305,8 +315,13 @@ static void draw_band(int y0, int y1)
             gfx_sprite_dither(pose_asset(i, 1), 0, 0, y0, y1, 1);
         }
     }
-    if (r->has_actor && !g_scene.actor_gone)
-        gfx_image(r->actor.frame0 + g_scene.actor_frame, AT_ASSET, AT_ASSET, y0, y1);
+    if (r->has_actor && !g_scene.actor_gone) {
+        if (g_actor_was >= 0) {         /* (between two frames: the one before, the new one stippled over it) */
+            gfx_image(r->actor.frame0 + g_actor_was, AT_ASSET, AT_ASSET, y0, y1);
+            gfx_image_dither(r->actor.frame0 + g_scene.actor_frame, AT_ASSET, AT_ASSET, y0, y1, 1);
+        } else
+            gfx_image(r->actor.frame0 + g_scene.actor_frame, AT_ASSET, AT_ASSET, y0, y1);
+    }
     if (g_scene.overlay)
         g_scene.overlay(y0, y1);
     if (g_scene.label[0] && y1 > SCR_H - LABEL_H) {

@@ -198,6 +198,32 @@ void gfx_image(unsigned a, int x, int y, int y0, int y1)
     }
 }
 
+/* an image's pixels of one checkerboard colour only (which: 1 or 2, as gfx_sprite_dither's), so the picture under it shows
+ * through the others: the barman's next frame stippled over the one before, as a seated pilot's turn is (room.c) */
+void gfx_image_dither(unsigned a, int x, int y, int y0, int y1, int which)
+{
+    const RvAsset __far *as = dat_asset(a);
+    int w = as->w, h = as->h, r, cx0, cx1, k;
+    RV_ASSERT(as->kind == RV_KIND_IMG);
+    need_scratch();
+    if (x == AT_ASSET) x = as->x;
+    if (y == AT_ASSET) y = as->y;
+    if (y0 < y) y0 = y;
+    if (y1 > y + h) y1 = y + h;
+    if (y0 < 0) y0 = 0;
+    if (y1 > SCR_H) y1 = SCR_H;
+    cx0 = x < 0 ? 0 : x;
+    cx1 = x + w > SCR_W ? SCR_W : x + w;
+    if (cx0 >= cx1)
+        return;
+    for (r = y0; r < y1; r++) {
+        unsigned char __far *dst = vid_row(r);
+        dat_read(as->at + (unsigned long)(r - y) * w + (cx0 - x), g_scratch, cx1 - cx0);
+        for (k = cx0 + ((cx0 + r + which) & 1); k < cx1; k += 2)
+            dst[k] = g_scratch[k - cx0];
+    }
+}
+
 /* the rows r0 .. r1-1 of a sprite into the scratch buffer (r1 comes down
  * when they do not all fit): returns the row table, offsets relative to row
  * r0's data, which starts at *data */
