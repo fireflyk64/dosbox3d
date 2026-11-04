@@ -138,9 +138,15 @@ Multiplayer appears in the logic only as who flies a ship (`rvController`, `RV_F
   the host's mission comes (`flight_prepare`), so its cockpit and its sets are the host's fighter's too (they had
   been its own save's: a Schroedinger's cockpit in the Franklin missions, and no Franklin to be seen).
 - **The flight's mission** (`game.c`): `flight_prepare` (once a flight) calls `missionStarting`; a guest then loads
-  the mission the layer named, without compiling its own tables over the host's. After a guest's flight the
-  debrief scores nothing on its campaign: `camp_guest_sortie` adds the sortie and the splashes to the hero's record
-  and writes the guest's own bunk (if it has one). A retry discards the failed attempt, as alone.
+  the mission the layer named, without compiling its own tables over the host's, and its campaign goes to that
+  mission (`camp_follow`: the node and the mission there). After a guest's flight the debrief moves its campaign on
+  as the host's moves (`camp_resolve` with the shared score, a named wingman's loss taken as the host takes it): the
+  next mission's bar, barracks and briefing are the host's story's (the user, 2026-11-03: "For player 2 the
+  characters in the bar and the barracks are still from mission 1--they never advance and the second player can't
+  enjoy the full story"; it had stayed where it was, `camp_guest_sortie`). The sortie and the splashes go on the
+  guest's own pilot record, and its bunk is written if it has one. A node the guest joins partway starts its tally
+  there (the host's wins in it are not carried), so at that node's end the two may branch apart until the next
+  shared mission takes the guest to the host's again. A retry discards the failed attempt, as alone.
 - **Picked missions** (the page's menu): `/brief N`, the campaign at mission N, starting in the briefing room, as
   WC1's picked mission starts at its briefing.
 
@@ -160,7 +166,7 @@ Multiplayer appears in the logic only as who flies a ship (`rvController`, `RV_F
 - **A mismatched interface** (`scripts/rvnet-abi.sh`): copies with the RVHOOK version, then a word of the directory,
   changed are refused and only watched.
 - **Not covered by a rig:** a seat made from the player's own record (a mission whose wingman the host's save lost:
-  every mission has one, and no switch loads a save at boot); the guest's save (`camp_guest_sortie`: a guest whose
+  every mission has one, and no switch loads a save at boot); the guest's save (`debrief_settle`: a guest whose
   campaign was never saved has no bunk to write).
 - **Key-script aids** this added (`src/cpu/wcnet_hooks.cpp`): `T:!ds=NAME` dumps the data segment,
   `T:!land[=SLOT]` lands on that ship (or the first capital ship of ours), `T:waitkey=KEY` waits for the next

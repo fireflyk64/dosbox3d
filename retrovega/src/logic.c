@@ -3968,7 +3968,7 @@ uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, 
                              && MSHIP(slotMissionShip[by])[16] < RV_PILOTS
                              && logic_pilot_kills[MSHIP(slotMissionShip[by])[16]] < 255)
                         logic_pilot_kills[MSHIP(slotMissionShip[by])[16]]++;   /* (an AI wingman's own: a human in its
-                                                       seat keeps its splashes in its own save, camp_guest_sortie) */
+                                                       seat keeps its splashes in its own save: debrief_settle) */
                 }
             }
         } else {

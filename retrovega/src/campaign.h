@@ -68,8 +68,7 @@ void camp_way_out(int16_t won);                          /* works that out for t
 int16_t camp_resolve(int16_t won, uint16_t hero_kills, const uint8_t __far *pilot_kills);   /* scores the mission: the
                                                            hero's splashes and each named pilot's (by index) on the board,
                                                            every one of them a sortie; returns 1 when the node is done */
-void camp_guest_sortie(int16_t won, uint16_t splashes); /* a guest's flight in a shared one: the sortie and the splashes
-                                                           only, then its own bunk saved (docs/multiplayer.md) */
+void camp_follow(uint16_t node, uint16_t mission);      /* a guest's campaign to the host's mission: its story the host's */
 void camp_load_rules(const RvMission __far *m);         /* the mission's rules (camp_load_tables' part a guest takes) */
 uint16_t camp_flight_fighter(void);                     /* the fighter the player's mission record names (the save's,
                                                            or in a shared flight the host's choice) */

@@ -384,23 +384,18 @@ int16_t camp_resolve(int16_t won, uint16_t hero_kills, const uint8_t __far *pilo
     return 1;
 }
 
-/* a guest's flight (the host's mission, flown in a shared flight: docs/multiplayer.md): the sortie and the pilot's own
- * splashes go into the hero's record, and the save to its bunk when it has one; the campaign stays where it was, and
- * nobody's fate in it changes (the user, 2026-11-02: "The splashes get added to that savegame and saved out") */
-void camp_guest_sortie(int16_t won, uint16_t splashes)
+/* a guest's campaign taken to the host's mission (flight_prepare: the node and the mission there that the layer named):
+ * the story is the host's from here, and the debrief moves it on as the host's (camp_resolve).  A node the guest had
+ * not been in starts its tally with this mission (the host's own wins there are not carried) */
+void camp_follow(uint16_t node, uint16_t mission)
 {
-    uint16_t i;
-    g_camp.flown++;
-    for (i = 0; i < g_npilots; i++)
-        if (g_pilots[i].role == RV_ROLE_HERO) {   /* (the first of them: the game's own `you`) */
-            g_camp.pilot[i].missions++;
-            g_camp.pilot[i].kills = (uint16_t)(g_camp.pilot[i].kills + splashes);
-            break;
-        }
-    missionResolved(won ? 1 : 0);
-    RV_LOG("guest: a sortie (%s) and %u splashes into the save", won ? "won" : "lost", splashes);
-    if (g_camp.name[0])                 /* (a campaign never saved has no bunk of its own) */
-        (void)save_write(g_camp.bunk, g_camp.name);
+    if (node >= g_nnodes || mission >= camp_node_missions(node))
+        return;
+    if (node != g_camp.node)
+        g_camp.wins = 0;
+    g_camp.node = (uint8_t)node;
+    g_camp.mission = (uint8_t)mission;
+    RV_LOG("guest: the campaign at the host's mission: node %u, mission %u", node, mission);
 }
 
 /* --- the bunks: BUNK01.SAV .. BUNK08.SAV --- */

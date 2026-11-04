@@ -1371,6 +1371,7 @@ static void flight_prepare(void)
              * 2026-11-03: "in the set with the franklin the wingman kept the schroedinger cockpit and the first mission
              * was not able to see any franklins at all": its own save's fighter had been loaded, not the host's) */
             g_camp.player_ship = (uint8_t)camp_flight_fighter();
+            camp_follow(node, k);       /* (and its story where the host's is: the debrief moves it on with the host's) */
             rocks_want(g_m.nfield > 0 || g_field > 0);
             RV_LOG("guest: the host's mission %.16Fs (node %u, mission %u there)", (char __far *)g_m.id, node, k);
         } else {
@@ -1405,13 +1406,10 @@ static void launch(void)
         if (landed)
             home_note();
         freeze_hold();                  /* (what is unloaded, until the game's loop is back) */
-        if (g_guest) {                  /* (the host's mission: its losses are the host's campaign's, not this one's) */
-            g_lost_wing = -1;
+        if (g_guest)                    /* (the host's mission, the host's story: its losses this one's too) */
             g_guest_splashes = logic_splashes;
-        } else {
-            g_lost_wing = logic_wingman_lost();
-            g_camp.escort_lost = (uint8_t)logic_escort_lost();
-        }
+        g_lost_wing = logic_wingman_lost();
+        g_camp.escort_lost = (uint8_t)logic_escort_lost();
     }
     g_prepared = 0;                     /* (the next flight meets again: a retry, the next mission) */
     if (g_winrate >= 0 || g_route || g_noflight)
@@ -1979,14 +1977,21 @@ static void start_simulator(void)
     message(g_msg);
 }
 
-/* the flight just debriefed goes into the save: alone or as the host, the campaign's move (camp_resolve; nonzero: the
- * campaign has ended); as a guest, the sortie and its splashes only (camp_guest_sortie: the user, 2026-11-02) */
+/* the flight just debriefed goes into the save: the campaign's move (camp_resolve; nonzero: the campaign has ended).  A
+ * guest's campaign was taken to the host's mission (camp_follow), so it moves on as the host's does: the next mission's
+ * bar, barracks and briefing are the host's story's (the user, 2026-11-03: "For player 2 the characters in the bar and
+ * the barracks are still from mission 1--they never advance"); its own pilot's sortie and splashes go on its record,
+ * and its bunk is saved when it has one (camp_guest_sortie had kept the campaign where it was) */
 static int debrief_settle(void)
 {
     if (g_guest) {
         g_guest = 0;
-        camp_guest_sortie(g_won, g_guest_splashes);
-        return 0;
+        camp_resolve(g_won, g_guest_splashes, 0);
+        RV_LOG("guest: the host's mission %s, the campaign on with the host's: node %u, mission %u", g_won ? "won" : "lost",
+               g_camp.node, g_camp.mission);
+        if (g_camp.name[0])             /* (a campaign never saved has no bunk of its own) */
+            (void)save_write(g_camp.bunk, g_camp.name);
+        return g_camp.ending;
     }
     camp_resolve(g_won, logic_splashes, logic_pilot_kills);
     return g_camp.ending;
