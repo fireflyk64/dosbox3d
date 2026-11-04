@@ -2110,8 +2110,9 @@ static void systems_tick(void)
     /* the afterburner: Tab held, while there is fuel.  The fuel as the old game's: the throttle open burns a little, the
      * afterburner much more, the type's rates in thousandths of a point a step (data/ships.csv fuel: a Hornet's tank is
      * 65 s of afterburner, 44 minutes of throttle); Kit's reserve first */
-    g_sys.burning = (in_key_down(0x0F) || in_key_down(0x37)) && g_sys.fuel > 0 && t && damage_burner_ok();   /* Tab, or
-                                           the keypad's * (the user, 2026-11-03: "keypad asterisk did afterburner") */
+    g_sys.burning = (in_key_down(0x0F) || in_key_down(0x37)) && g_sys.fuel > 0 && t && damage_burner_ok()
+                    && g_view != VIEW_FLYBY;   /* Tab, or the keypad's * (the user, 2026-11-03: "keypad asterisk did
+                                                  afterburner"); not in the autopilot's flyby: it has the controls */
     rvAfterburner[0] = g_sys.burning;
     if (t) {
         g_fuel_milli += (setSpeed[0] > 0 ? t->fuel_cruise : 0) + (g_sys.burning ? t->fuel_burn : 0);
@@ -3365,14 +3366,19 @@ unsigned short __far __cdecl flight_keys(void)
         g_steer_y = oy > STEER_DEAD_Y ? (oy > STEER_FULL_Y ? 9 : oy * 9 / STEER_FULL_Y)
                   : oy < -STEER_DEAD_Y ? (oy < -STEER_FULL_Y ? -9 : oy * 9 / STEER_FULL_Y) : 0;
     }
+    if (g_view == VIEW_FLYBY) {         /* the autopilot has the stick through its flyby (ours or another machine's): the
+                                           cluster flies straight, as the old game's autopilot did */
+        g_steer_x = g_steer_y = 0;
+        g_steer_roll = 0;
+    }
     steerInput = ((unsigned long)(unsigned short)(short)g_steer_x << 16) | (unsigned short)(short)g_steer_y;
     /* the pilot's controls for the game's logic (logic.h): the turn, the trigger (Space, or the left button held with
      * the pointer in the view: below it the panel's controls take the clicks), the missile, the afterburner */
     g_pilot.steer_x = (signed char)g_steer_x;
     g_pilot.steer_y = (signed char)g_steer_y;
     g_pilot.roll = (signed char)g_steer_roll;
-    g_pilot.guns = (unsigned char)(in_trigger() || (in_button() && c && in.y < c->open_y1));
-    g_pilot.missile = (unsigned char)(in.key == KEY_ENTER);
+    g_pilot.guns = (unsigned char)(g_view != VIEW_FLYBY && (in_trigger() || (in_button() && c && in.y < c->open_y1)));
+    g_pilot.missile = (unsigned char)(g_view != VIEW_FLYBY && in.key == KEY_ENTER);
     g_pilot.afterburner = g_sys.burning;
     if (in.x != g_scene.px || in.y != g_scene.py) {
         g_scene.px = in.x;
@@ -3574,6 +3580,7 @@ void __far __cdecl flight_autopilot(void)
     if (g_view == VIEW_FLYBY)
         return;
     if (logic_autopilot_ready() >= 0) {   /* the flyby, then the jump (flight_frame) */
+        logic_form_up(FLYBY_FRAMES + 1);  /* (the wing closed up on the player, the cluster flying as one until the jump) */
         fly_by(1);
         /* the camera's start through the thunk: in a shared flight the layer shows it on every machine at once (as the
          * old game's autopilot animation), each around its own ship */

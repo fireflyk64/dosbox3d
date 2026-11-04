@@ -35,6 +35,8 @@ void logic_end(void);                   /* the flight is over (missionStatus say
 int16_t logic_autopilot(void);          /* the A key, between steps: 1 when it flew the player on (to the next nav
                                            point), 0 when it may not (enemies near, nowhere to go) */
 int16_t logic_autopilot_ready(void);    /* the nav point it would go to, -1 not now (the engine asks before its flyby) */
+void logic_form_up(int16_t steps);      /* the autopilot's flyby begins (flight.c): the player faces the nav point, the wing
+                                           and the escort targets close up on it and fly with it for `steps` steps */
 
 /* the player's targeting (flight.c's T, Y and L keys, its AUTO; the user's ruling, 2026-10-31): the target key
  * selects only among the ships in front of the pilot (ahead of the wing line), the one nearest the nose first and

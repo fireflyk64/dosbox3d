@@ -124,7 +124,9 @@ Multiplayer appears in the logic only as who flies a ship (`rvController`, `RV_F
   replays that on every guest at once, which shows the flyby around its own ship and never jumps itself. The host's
   jump ends with `autopilotFinished`, which ends every guest's flyby and takes each ship where the host's game put
   it. A flyby that ends without a jump (an enemy came near) sends `autoAnimation(0, 0, 0)` instead, and a guest's
-  flyby whose end never comes stops two seconds past its own.
+  flyby whose end never comes stops two seconds past its own. The host's AI wing and escort targets close up on the
+  host's ship for the flyby (`logic_form_up`); every machine holds its own pilot's stick through a flyby, so a human
+  wingman flies straight beside them.
 - **The pilots' fates:** a wingman flown by a human (`g_killed` 2) is no named pilot's death.
 - **Splashes:** the local pilot's kills in the flight (`logic_splashes`), for the guest's save.
 - **The player's fighter** is the one its mission record names (`missionShipTable[playerMissionShip]`), which is the

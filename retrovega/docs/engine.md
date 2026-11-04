@@ -292,7 +292,16 @@ it is near.
 The views: F5 the chase camera (behind and above the player's ship, looking its way, the ship in the lower
 third of the view; F5 again or F1 back to the cockpit), and the autopilot's flyby: A, when the autopilot may go,
 shows the formation from outside for three seconds (a camera sliding along its left side from ahead to behind,
-looking at the player's ship) and then jumps it to the nav point. Outside, the world is drawn in the cockpit's
+looking at the player's ship) and then jumps it to the nav point. As the flyby begins the player faces the nav point,
+and the ships the jump takes along that this machine's AI flies close up on it and fly with it, its heading and its
+velocity theirs (logic.c `logic_form_up`, held each step by `form_hold`): the mission's wingman 350 km off the right
+wing and 250 back, the next fighter as far off the left, the rest stepped back to the right, an escort target under
+them and out to the right, its hull 200 km clear. The jump keeps those places, so the cluster arrives as it flew. The
+stick, the trigger and the afterburner are the autopilot's through any flyby, ours or another machine's (the user,
+2026-11-03: "make the wingman and any escort ships automatically form up with the leader and align the velocities
+so that they look like they're flying in a cluster. Right now it looks like the leader wanders off"). A human
+wingman's ship is its own machine's: it flies straight beside the cluster. `tests/formup.txt` takes pictures of
+it. Outside, the world is drawn in the cockpit's
 opening rows at full width between black bars, with no frame and no HUD (`cockpit_external`), and the player's
 own ship is drawn like any other (`flight.c` the view: `cam_pos`, `cam_basis`, `view_frame`).
 

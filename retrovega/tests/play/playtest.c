@@ -3951,6 +3951,49 @@ static void t_autopilot_far_wingman(void)
             e_along, pt_km_to(w, gPositionVector[0].x / 256, gPositionVector[0].y / 256, gPositionVector[0].z / 256), 0, 0);
 }
 
+/* M8.35: the autopilot's flyby closes the wing up on the player (the user, 2026-11-03: "make the wingman and any escort
+ * ships automatically form up with the leader and align the velocities so that they look like they're flying in a
+ * cluster"): the patrol's wingman 6,000 km off, logic_form_up as the flyby begins; two seconds on it is at its place,
+ * 350 km off the right wing and 250 back, nose and velocity the player's, and the jump brings it there */
+static void t_autopilot_formup(void)
+{
+    static const char __far e_wing[] = "no wingman in the patrol (%d)";
+    static const char __far e_place[] = "2 s into the flyby the wingman is %d km right, %d up, %d ahead of the player: "
+        "its place is 350, 0, -250";
+    static const char __far e_with[] = "2 s into the flyby the wingman's nose is %d (cos x 256) to the player's and its "
+        "velocity %d km a step off the player's: the same";
+    static const char __far e_went[] = "the autopilot returned %d after the flyby";
+    static const char __far e_kept[] = "after the jump the wingman is %d km right, %d up, %d ahead of the player: still "
+        "its place, 350, 0, -250";
+    int16_t s, w = -1, r;
+    RvVec3 b;
+    pt_patrol();
+    playerCanBeDamaged = 0;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
+        if (slot_is_ship(s) && commAnimInfo[s] == SIDE_TERRAN && logic_is_wingman(s))
+            w = s;
+    REQUIRE(w > 0, e_wing, w, 0, 0);
+    pt_put(w, 6000, 0, -3000, TURN / 4);
+    if (!pt_steps(SEC))
+        return;
+    logic_form_up(3 * SEC + 1);
+    if (!pt_steps(2 * SEC))
+        return;
+    ship_rel(0, w, &b);
+    REQUIRE(labs(b.x - 350) < 20 && labs(b.y) < 20 && labs(b.z + 250) < 20, e_place, (int)b.x, (int)b.y, (int)b.z);
+    REQUIRE(vec_dot(&gOrientationFrontVector[w], &gOrientationFrontVector[0]) / 256 > 250
+            && labs(gVelocityVector[w].x - gVelocityVector[0].x) + labs(gVelocityVector[w].y - gVelocityVector[0].y)
+               + labs(gVelocityVector[w].z - gVelocityVector[0].z) < 256,
+            e_with, (int)(vec_dot(&gOrientationFrontVector[w], &gOrientationFrontVector[0]) / 256),
+            (int)((labs(gVelocityVector[w].x - gVelocityVector[0].x) + labs(gVelocityVector[w].z - gVelocityVector[0].z)) / 256), 0);
+    if (!pt_steps(SEC))
+        return;
+    r = logic_autopilot();
+    REQUIRE(r, e_went, r, 0, 0);
+    ship_rel(0, w, &b);
+    REQUIRE(labs(b.x - 350) < 60 && labs(b.y) < 60 && labs(b.z + 250) < 60, e_kept, (int)b.x, (int)b.y, (int)b.z);
+}
+
 /* M10.10: told to form up, the wingman flies the player's way (the user, 2026-11-03: "when I say form up the wingmate
  * faces me instead of being parallel"): 2,500 km ahead of its place facing back, with the player still and then under
  * way, in 20 s its nose is within 25 degrees of the player's way */
@@ -6151,6 +6194,7 @@ static const char __far n_m8_29[] = "M8.29 scene-human (step_scene): a ship near
 static const char __far n_m8_30[] = "M8.30 human-seat-lost (logic_wingman_lost): a wingman a person flew, killed, is no named pilot's death";
 static const char __far n_m8_33[] = "M8.33 escort-jump (route_step): an escort target out with jump=2 holds at nav 1 through the fight and jumps only at nav 2";
 static const char __far n_m8_34[] = "M8.34 autopilot-wingman (logic_autopilot): the mission's wingman comes along however far it had gone";
+static const char __far n_m8_35[] = "M8.35 autopilot-formup (logic_form_up): the flyby closes the wingman up on the player, its way and velocity the player's, kept through the jump";
 static const char __far n_m10_10[] = "M10.10 form-parallel (formation_step): told to form up, the wingman flies the player's way, not facing it";
 static const char __far n_m8_32[] = "M8.32 named-hull (do_damage): a named pilot's hull takes a hit past its armour as a share, eight laser hits; a person's seat the hit itself";
 static const char __far n_m8_31[] = "M8.31 dying (delayedDespawn, do_damage): delayedDespawn starts a ship's end; the player's kills are its splashes";
@@ -6228,7 +6272,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m10_10, t_form_parallel, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m10_10, t_form_parallel, 0 },
 };
 
 /* --- the run --- */

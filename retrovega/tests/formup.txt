@@ -1,0 +1,20 @@
+# The autopilot's formation (RVT.EXE: tests/run.sh tests/formup.txt /fly 1 /scoretest 3):
+# Enigma 2's launch with the wingman and the Ox to escort; A, and the flyby's pictures
+# (FORM1-4): the wingman and the transport closed up on the player, flying with it; then
+# the arrival at Nav 1 from the chase camera (FORM5, F5)
+wait 60
+key a
+wait 3
+shot FORM1
+wait 15
+shot FORM2
+wait 15
+shot FORM3
+wait 15
+shot FORM4
+wait 60
+key f5
+wait 4
+shot FORM5
+wait 30
+log done
