@@ -11,7 +11,9 @@ system with odds of `left x 1.5 / hull`, and a further one per 24 points of it, 
 
 The hull's last point is not the end. Past it the player has **1.7 times the hull again** (at least 60 points; `DAMAGE_RESERVE_TENTHS`, damage.h), and every hit on
 it breaks at least one system. The VDU and the survival display read `CORE HIT` in place of the hull, the master warning goes
-frantic, a klaxon sounds, smoke drifts up through the cockpit, and the view never stops shaking. A hit bigger than all of it
+frantic, a klaxon sounds, smoke drifts up through the cockpit, and the view never stops shaking. The klaxon silences
+itself after 15 seconds with no new damage and sounds again at the next hit (the user, 2026-11-03: "it should
+self-silence after about 15 seconds of no damage"; fx.c `KLAXON_QUIET_STEPS`). A hit bigger than all of it
 still kills outright.
 
 **Against the old game (measured 2026-11-02; the user: "within a shot or two of wc1 so the wingman and the hero feel

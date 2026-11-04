@@ -111,7 +111,11 @@ static int16_t __far g_seen_reserve;
 static uint8_t __far g_shake;           /* the view's shake: pixels each way */
 static uint8_t __far g_shake_left;      /* frames until it eases a pixel */
 static uint16_t __far g_klaxon_at;      /* the frame the klaxon next sounds */
+static uint16_t __far g_hurt_at;        /* the frame the ship was last hurt (a hit or a system broken) */
 #define KLAXON_STEPS 45
+#define KLAXON_QUIET_STEPS (15 * LOGIC_HZ)   /* the klaxon silences itself after this long with no new damage, and sounds
+                                           again at the next (the user, 2026-11-03: "it should self-silence after about
+                                           15 seconds of no damage"); the smoke and the shaking go on */
 
 static void spark_add(int16_t x, int16_t y, int16_t smoke)
 {
@@ -168,14 +172,18 @@ static void hurt_frame(void)
     /* a hit: the harder it got through the harder the jolt */
     if (!g_seen_valid) {
         g_seen_valid = 1;
+        g_hurt_at = frameCounter;
     } else if (hull > g_seen_hull || reserve < g_seen_reserve) {
+        g_hurt_at = frameCounter;
         shake_up(reserve < 100 ? 7 : 5);
         g_flash_red = 26;
         sparks_from(-1, 6, 0);
     } else if (armour < g_seen_armour) {
+        g_hurt_at = frameCounter;
         shake_up(3);
         g_flash = g_flash > 12 ? g_flash : 12;
     } else if (shield < g_seen_shield) {
+        g_hurt_at = frameCounter;
         shake_up(1);
     }
     g_seen_shield = shield;
@@ -184,16 +192,19 @@ static void hurt_frame(void)
     g_seen_reserve = reserve;
     /* what broke: sparks from its panel, a spit of sound; a wrecked one a clunk and smoke */
     while (damage_event(&k, &lv)) {
+        g_hurt_at = frameCounter;
         sparks_from(damage_overlay(k), lv >= SYS_WRECKED ? 14 : 8, 0);
         if (lv >= SYS_WRECKED)
             sparks_from(damage_overlay(k), 3, 1);
         sfx_play(lv >= SYS_WRECKED ? RV_SFX_WRECKED : RV_SFX_SPARK, 256, pitch_jitter());
     }
-    /* on the reserve: the klaxon, and the cockpit smoking */
+    /* on the reserve: the klaxon (until KLAXON_QUIET_STEPS have passed unhurt), and the cockpit smoking */
     if (damage_in_reserve() && shipAiState[0] != 9) {
-        if ((int16_t)(frameCounter - g_klaxon_at) >= 0) {
+        if ((int16_t)(frameCounter - g_klaxon_at) >= 0 && (uint16_t)(frameCounter - g_hurt_at) < KLAXON_QUIET_STEPS) {
+            static const char __far s_klaxon[] = "fx: the klaxon @%u";
             sfx_play(RV_SFX_KLAXON, 180, 256);
             g_klaxon_at = (uint16_t)(frameCounter + KLAXON_STEPS);
+            rv_notef(s_klaxon, frameCounter);
         }
         if ((frameCounter & 7) == 0)
             sparks_from(-1, 1, 1);
