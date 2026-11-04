@@ -3032,6 +3032,31 @@ static int16_t route_last(int16_t rec, int16_t first)   /* role=out's last nav p
     return first >= 0 && j > first && j < NAVS && nav_defined(j) ? j : first;
 }
 
+/* no enemy within ROUTE_CLEAR_KM of escort target s, nor of the player: the fight about them is over */
+static int16_t way_clear(int16_t s)
+{
+    int16_t foe = nearest_enemy(s, 0);
+    if (foe >= 0 && km_between(s, foe) < ROUTE_CLEAR_KM)
+        return 0;
+    foe = nearest_enemy(0, 0);
+    return foe < 0 || km_between(0, foe) >= ROUTE_CLEAR_KM;
+}
+
+/* the autopilot's next nav point is on an escort target's way, so it comes along: an escort out's waypoints from the
+ * one it makes for to its last (one in goes home with whoever goes).  Otherwise it goes on its own way (the user,
+ * 2026-11-03: Enigma 2's Ox, taken along with the wing after Nav 2 before it had jumped, turned back for Nav 2 at 4
+ * degrees a second, "just hung around and started flying in a random direction") */
+static int16_t escort_on_way(int16_t s, int16_t next)
+{
+    int16_t rec = slotMissionShip[s] & 63, first = -1, n;
+    if (role_of(s) != RV_ESCORT_OUT)
+        return 1;
+    for (n = (int16_t)(MSHIP_NAV(rec) & 15) + 1; n < NAVS && first < 0; n++)
+        if (nav_defined(n))
+            first = n;
+    return first >= 0 && next >= first && next >= g_mind[s].leg && next <= route_last(rec, first);
+}
+
 static void route_step(int16_t s, Mind __far *m, const AiProfile __far *p)
 {
     static const char __far s_gone[] = "logic: slot %d (mission ship %d) %s at nav %d";
@@ -3073,6 +3098,14 @@ static void route_step(int16_t s, Mind __far *m, const AiProfile __far *p)
     }
     if (len_of(d.x, d.y, d.z) < reach) {
         rv_notef(s_gone, s, rec, role == RV_ESCORT_OUT ? "jumped out" : "home", goal);
+        route_jump(s);
+        return;
+    }
+    if (role == RV_ESCORT_OUT && (g_navs_seen >> last & 1) && way_clear(s)) {
+        /* its last nav point reached by the player and the fight over: it jumps out from where it is, the Ox at 80 kps
+         * however far behind the autopilot's stop short of a field had left it (the user, 2026-11-03: "The ox does not
+         * jump out in mission 2... We had removed all enemies and it just hung around") */
+        rv_notef(s_gone, s, rec, "jumped out (its way clear)", last);
         route_jump(s);
         return;
     }
@@ -3638,14 +3671,15 @@ static void spawn_apart(int16_t s);
 #define FORM_OUT_KM 700                 /* and its near side this far to the right of the player (out from the flyby's camera,
                                            on the left: nearer, a transport went off the bottom of the picture) */
 
-static int16_t form_comes(int16_t s)    /* a ship the jump takes along that this machine's AI flies: 1 a fighter, 2 an escort target */
+static int16_t form_comes(int16_t s, int16_t next)   /* a ship the jump to `next` takes along that this machine's AI
+                                                         flies: 1 a fighter, 2 an escort target */
 {
     if (!slot_is_ship(s) || commAnimInfo[s] != commAnimInfo[0] || shipAiState[s] == 9 || rvController[s] != CTL_AI)
         return 0;
     if (maybeEntityType[s] == ET_SHIP && (player_km(s) < AUTOPILOT_WING_KM
                                           || (slotMissionShip[s] < 64 && MSHIP_BEHAVIOUR(slotMissionShip[s]) == 4)))
         return 1;
-    if (maybeEntityType[s] == ET_CAPSHIP && escorted(s) && player_km(s) < AUTOPILOT_ESCORT_KM)
+    if (maybeEntityType[s] == ET_CAPSHIP && escorted(s) && player_km(s) < AUTOPILOT_ESCORT_KM && escort_on_way(s, next))
         return 2;
     return 0;
 }
@@ -3702,7 +3736,7 @@ void logic_form_up(int16_t steps)
     for (pass = 0; pass < 2; pass++)
         for (s = 1; s < NUM_SHIP_SLOTS; s++) {
             int16_t wing = slotMissionShip[s] < 64 && MSHIP_BEHAVIOUR(slotMissionShip[s]) == 4, __far *o = g_form_off[s];
-            if (form_comes(s) != 1 || (g_formed >> s & 1) || (pass == 0) != (wing != 0))
+            if (form_comes(s, next) != 1 || (g_formed >> s & 1) || (pass == 0) != (wing != 0))
                 continue;
             o[0] = (int16_t)(k == 1 ? -FORM_ACROSS_KM : FORM_ACROSS_KM * (k ? k : 1));
             o[1] = (int16_t)(k < 2 ? 0 : (k & 1) ? -60 : 60);
@@ -3716,7 +3750,7 @@ void logic_form_up(int16_t steps)
     for (s = 1; s < NUM_SHIP_SLOTS; s++) {
         int16_t __far *o = g_form_off[s];
         int32_t half;
-        if (form_comes(s) != 2)
+        if (form_comes(s, next) != 2)
             continue;
         half = TO_KM(collide_half(s));
         o[0] = (int16_t)clamp32(at + half, -6000, 6000);
@@ -3768,7 +3802,8 @@ int16_t logic_autopilot(void)
             gPositionVector[s] = vec3(to.x + FIX_MUL(R->x, AUTOPILOT_WING_SIDE_KM) * KM,
                                       to.y + FIX_MUL(R->y, AUTOPILOT_WING_SIDE_KM) * KM,
                                       to.z + FIX_MUL(R->z, AUTOPILOT_WING_SIDE_KM) * KM);
-        } else if (maybeEntityType[s] == ET_CAPSHIP && escorted(s) && player_km(s) < AUTOPILOT_ESCORT_KM) {
+        } else if (maybeEntityType[s] == ET_CAPSHIP && escorted(s) && player_km(s) < AUTOPILOT_ESCORT_KM
+                   && escort_on_way(s, next)) {
             if (g_formed >> s & 1) {    /* (in the flyby's formation: it keeps its place there) */
                 gPositionVector[s].x += to.x - gPositionVector[0].x;
                 gPositionVector[s].y += to.y - gPositionVector[0].y;

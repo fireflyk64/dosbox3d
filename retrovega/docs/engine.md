@@ -217,7 +217,12 @@ nose, so it turns in. With `jump=N` it goes on with the player waypoint by waypo
 "the ox should jump at nav 2 not nav 1"; the Enigma 2 Ox): at each waypoint before N it holds within 1,000 km until the
 player has been there and no
 enemy is within 16,000 km of it, so the fight there is fought round it, then goes on (the autopilot carrying it moves it
-on to its own next waypoint too); `in` waits at its nav
+on to its own next waypoint too). Once the player has reached its last nav point and no enemy is within 16,000 km of
+it or of the player, it jumps from wherever it is: the Ox at 80 kps, left behind by an autopilot that stopped short of
+a field, had crawled on for minutes after the fight (the user, 2026-11-03: "The ox does not jump out in mission 2...
+We had removed all enemies and it just hung around"). The autopilot carries an escort out only to a nav point on its
+way (its next waypoint up to its last); one taken home with the wing had turned back at 4 degrees a second ("started
+flying in a random direction"). `in` waits at its nav
 point until the player comes within 8,000 km, then flies home to nav 0 the same way (an enemy's waits where it
 is). One of the player's side killed is the mission lost. The autopilot brings one along, 800 km behind the player
 (the wingman beside it), and drops the formation 4,500 km short of the nav point.
