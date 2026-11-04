@@ -72,7 +72,7 @@
                                            since the field became an effect no flight has that many, and by 2026-11-04
                                            RVT.EXE's heap had no room left for the lists at that size: no field at all) */
 #else
-#define ROCK_MAX 128                    /* (the bar window's cluster asks 154; a field FX_CAP at the plain density) */
+#define ROCK_MAX 128                    /* (the bar window's cluster asks 154; an asteroid field 60 at the plain density) */
 #define ROCK_OUT 128
 #endif
 #define ROCK_SMALL_BYTES 6528U          /* rocks.dat's small sprites: 4 kinds x 8 frames x 1 .. 8 px squared */
@@ -95,7 +95,8 @@
 /* The field as an effect: the old game's (ovr168: 20 rocks, made 3,050 km ahead within +-35 x +-20 degrees of the
  * nose, a chance of (speed/10 + 30)/215 a frame, gone past 3,100-4,300 km by the speed; its camera's focal length 160
  * on its 320, ours 320 on our 640; its rocks as big as its fighters, 100 km, as ours) in its own numbers */
-#define FX_CAP 20                       /* rocks at once at the plain density (ROCK_DENSITY; a field's density= scales it) */
+#define FX_CAP 20                       /* the old game's rocks at once (its 20 slots): a kind's cap is a multiple of it,
+                                           at the plain density (ROCK_DENSITY; a field's density= scales it) */
 #define FX_SPAWN_KM 3050L               /* a new rock this far ahead (the old game's 2,940-3,130 measured) */
 #define FX_FAR_KM 4300L                 /* a rock farther than this from the player is gone ... */
 #define FX_FAR_MIN_KM 3100L             /* ... down to this, 60 km less for each of the old game's km a frame (kps / 10)
@@ -118,10 +119,15 @@ typedef struct {
     unsigned char still;                /* percent of them that keep still (the old game's fifth) */
     unsigned char aimed;                /* 1: the old game's share flies at where the player will be */
     unsigned char across;               /* 1: the rest drift across the field (the old game's 036A), 0: at the player */
+    unsigned char times;                /* its cap and its chance a frame of a new one, the old game's times this */
 } FieldKind;
+/* (asteroids three times the old game's: the user, 2026-11-04, "the asteroid field seems still sparser than WC1 can we
+ * increase density while still remaining at 30 fps with 4-5 fighters inside?": its 20 kept some 12 rocks, 4 of them on
+ * screen, flying through at 200 kps; three times it 38 and 11, and the frame with five fighters about 17.6 ms at the
+ * page's 50,000 cycles where it was 17.5.  The mines as many as the old game's: they hunt now, seek_mines) */
 static const FieldKind __far k_kind[2] = {
-    { 100, 60, 0, 20, 1, 1 },           /* asteroids: across at 10 to 16 of its km a frame */
-    { 30, 20, 600, 20, 0, 0 },          /* mines: they drift at the player (the old game's: 2 km a frame, at it) */
+    { 100, 60, 0, 20, 1, 1, 3 },        /* asteroids: across at 10 to 16 of its km a frame */
+    { 30, 20, 600, 20, 0, 0, 1 },       /* mines: they drift at the player (the old game's: 2 km a frame, at it) */
 };
 /* the old game's levels (dseg:BFF4, a mission's): a rock flies at where the player will be when it comes up within
  * the cone's pitch LO < e < HI and yaw +-19 (then 60%: its 06F2, dseg:39AA), after T + random(15) of its frames (its
@@ -463,13 +469,18 @@ static long view_share(int a)
     return t * 320 / FLIGHT_FOCAL;
 }
 
-/* the rocks a field keeps at most: FX_CAP at the plain density, more or fewer by its own */
+/* the rocks a field keeps at most: its kind's at the plain density, more or fewer by its own */
+static long field_cap(const Field __far *f)
+{
+    return (long)FX_CAP * k_kind[f->type == RV_FIELD_MINE].times * f->density / ROCK_DENSITY;
+}
+
 static int cap_of(int fi)
 {
-    long n = (long)FX_CAP * g_f[fi].density / ROCK_DENSITY;
+    long n = field_cap(&g_f[fi]);
     if (n < 1)
         n = 1;
-    return n > g_cap ? g_cap : (int)n;
+    return n > g_cap ? g_cap : (int)n;   /* (never past the list: pool_alloc may have found room for fewer) */
 }
 
 /* the field the point FX_CHECK_KM ahead of the nose is in (the rocks come from it), -1 none (a cluster is none) */
@@ -652,8 +663,8 @@ static void field_enter(int i, int filled, const LfBasis *b)
         g_want_n = (int)((long)f->density * vol1000 / 1000) * CLUSTER_DENSITY;
     } else                              /* (room for the most any of the flight's fields keeps: they share the art) */
         for (j = 0, g_want_n = 1; j < g_nf; j++)
-            if (!g_f[j].cluster && (long)FX_CAP * g_f[j].density / ROCK_DENSITY > g_want_n)
-                g_want_n = (int)((long)FX_CAP * g_f[j].density / ROCK_DENSITY);
+            if (!g_f[j].cluster && field_cap(&g_f[j]) > g_want_n)
+                g_want_n = (int)field_cap(&g_f[j]);
     if (g_want_n < 1)
         g_want_n = 1;
     dat_level(XMS_HAZARD);              /* (first: the art goes at the new level, the archive's reads after it) */
@@ -925,7 +936,7 @@ static void keep_effect(const LfBasis *b, int nreap)
     fi = maybeEntityType[0] == 0xC ? field_ahead(b) : -1;
     if (fi >= 0) {
         int cap = cap_of(fi);
-        unsigned long chance = speedLo[0] / 10 + 30;
+        unsigned long chance = (speedLo[0] / 10 + 30) * k_kind[g_f[fi].type == RV_FIELD_MINE].times;
         if (g_cur != fi) {
             for (i = 0; i < FX_ENTRY && g_n < cap; i++)
                 if (rock_make(&g_r[g_n], b, fi, FX_SPAWN_KM))

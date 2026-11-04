@@ -257,13 +257,19 @@ the dodged rocks get too far behind"; the old game's overlay 168 read and its ro
 its own: while the point 3,050 km ahead of the nose is in a field, `rocks.c` makes rocks 3,050 km ahead, in a cone
 of its +-35 x +-20 degrees turned to where the nose is turning, each only where its point is in the field: three as
 the field begins, then its chance, (kps/10 + 30)/215 a frame of its 15 a second, so the faster the player goes the
-sooner, up to 20 at once (`density=` scales it: 20 x density / 120). Most drift across the field, a right angle off
+sooner, up to 20 at once (`density=` scales it: 20 x density / 120); since 2026-11-04 an asteroid field three times
+that, its chance and its 20 (the user: "the asteroid field seems still sparser than WC1": the old game's numbers kept
+some 12 rocks, 4 on screen, at 200 kps; now 38 and 11, the frame with five fighters about 17.6 ms at the page's
+50,000 cycles, where it was 17.5), a mine field the old game's own. Most drift across the field, a right angle off
 the line to its middle (up, down, left or right of it), at 100-160 kps, a fifth keep still, and some fly at where
 the player will be after its time to meet them there: those come up within a pitch window and a yaw of +-19
 degrees, then 60%, about one in ten at level 0, one in seven at level 2, in 3.7 to 5 s by the level. A rock past
 4,300 km from the player, 60 km less for each 10 kps of the player's speed down to 3,100 (the old game's), is gone,
 and one made at 3,050 is full size. Rocks are 80-120 km in radius, a fighter's, as its 100. Mines come at the
-player. Flown straight through, invulnerable, at 200 kps (tests/rocks-cross.txt: the test build's `#` puts the
+player, and close in as the old game's do (its 092E, every 20 of its frames a mine's turn: at where the player will be
+20 frames on, 2 km a frame, 20 kps, more of speed that way, up to 200 kps, my cap; not within 300 km; the user,
+2026-11-04: "the mine field does not seek towards the player actively": they had been aimed once): CEPHID1's mine
+field flown straight through at 200 kps, 2 hits where it was none. Flown straight through, invulnerable, at 200 kps (tests/rocks-cross.txt: the test build's `#` puts the
 player before a field, facing its middle): ENIGMA1's 7,500 km field 3 and 9 hits, its 5,000 one 1 and 5 (the old
 game's Enyo 1, `tests/wc1/run-old.sh`: 6 and 7, 1 and 2; ours before: 2 and 2, 3). A shot that meets a rock is spent
 and breaks it one time in three (the old game's rule; `shots_on_rocks`), and the player's ship breaks any it flies
