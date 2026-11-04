@@ -24,7 +24,9 @@
 
 #define VOICES 8
 #define CHUNK 512
-#define MASTER 176                      /* the sum's scale, /256 (room for a few loud voices at once) */
+#define MASTER 125                      /* the sum's scale, /256 (room for a few loud voices at once): 176 until the user,
+                                           2026-11-03, "turn down the overall levels of the sfx ... and keep music where
+                                           it is": 3 dB down, the OPL3's music as it was */
 
 typedef struct { uint32_t at, len; } SfxEntry;   /* in the block: a sound's samples */
 typedef struct {

@@ -1,6 +1,6 @@
 type,code,name,faction,kind,look,damage,damage_near,speed_kps,range_km,radius_km,cone_deg,refire_frames,energy,lock,lock_s,sfx,vs_source,notes
 0x00,LAS,Laser,terran,gun,bolt,25,10,2200,4.5,,46,13,3,,,laser,Laser,The light gun everyone starts with
-0x01,MDR,Mass Driver,terran,gun,slug,30,17,1500,4.5,,32,13,5,,,massdriver,MiniDriver,"Slug-thrower: ignores the shield bonus of ION, half damage to shields"
+0x01,MDR,Mass Driver,terran,gun,slug,30,17,1500,4.5,,32,9,5,,,massdriver,MiniDriver,"Slug-thrower: ignores the shield bonus of ION, half damage to shields. Refires in 9 steps to the laser's 13, the old game's 5 frames to its 7 (the user, 2026-11-03: ""the WC1 mass driver had sort of a rapid fire mode""; an AI's guns keep their 26)"
 0x02,PRT,Particle Cannon,terran,gun,bolt,40,30,2000,4.5,,37,16,7,,,particle,ParticleBeam/Reaper,
 0x03,ION,Ion Cannon,terran,gun,plasma,33,,1700,2.4,,37,20,8,,,ion,HeavyIonBeam/ShieldBreaker,"Double damage to shields, half to armour"
 0x04,DSR,Disruptor,terran,gun,bolt,23,,1900,4.5,,,13,6,,,disruptor,LR_Disruptor,Long range

@@ -191,19 +191,17 @@ def disruptor():
 
 
 def massdriver():
-    """the mass driver, kinetic (2026-11-03, the user: "a bit tinny...maybe more like a satisfying thunk"): no ringing
-    metal (its 920, 2,530 and 4,100 Hz partials were the tin) and no 1.7 kHz band of noise; a thump falling 240 to 72 Hz
-    (it fell to 52, below what a small speaker gives), a knock (resonant noise 650 falling to 260 Hz) that carries the
-    weight where it can be heard, a short dark chunk of noise and a softened click on the front.  Under 2% of it over
-    2 kHz where it was 15%"""
-    t = tl(0.30)
-    imp = np.zeros(len(t))
-    imp[0:3] = [1.0, -0.8, 0.4]
-    click = svf(imp, 2200, 0.7)
-    thump = sine(sweep(t, 240, 72, 0.03)) * env(t, 0.001, 0.075)
-    knock = svf(noise(t, 3), sweep(t, 650, 260, 0.035), 3.5, 'bp') * env(t, 0.0005, 0.05) * 2.6
-    chunk = svf(noise(t, 5), sweep(t, 2000, 500, 0.02), 0.9) * env(t, 0.0005, 0.014) * 1.1
-    return echo(drive(1.2 * thump + knock + chunk + 0.6 * click, 1.9), 40, 0.14)
+    """the mass driver, kinetic.  The user, 2026-11-03: "a bit tinny...maybe more like a satisfying thunk" (its ringing
+    metal, 920, 2,530 and 4,100 Hz partials, went), then "a little more tinny", "a little too much ring", and of four
+    tried (a thuck-thunk, a dunk, a chunk, a chuck): "a mix of the last two but maybe a bit quieter".  So a "ch" of
+    noise (3.5 kHz, 17 ms) and a body between the chunk's and the chuck's: a thump falling 245 to 90 Hz and a knock
+    (resonant noise 850 falling to 420 Hz), stopped in some 60 ms; no ring.  Its gain (sounds.csv) puts it as loud as
+    the laser, A-weighted over a shot's first 120 ms"""
+    t = tl(0.26)
+    ch = svf(noise(t, 9), 3500, 0.8, 'bp') * env(t, 0.0005, 0.017) * 1.35
+    thump = sine(sweep(t, 245, 90, 0.025)) * env(t, 0.0035, 0.055)
+    knock = svf(noise(t, 3), sweep(t, 850, 420, 0.03), 3.5, 'bp') * env(t, 0.0025, 0.04) * 2.6
+    return echo(drive(ch + 1.0 * thump + knock, 1.9), 38, 0.12)
 
 
 def photon(light):

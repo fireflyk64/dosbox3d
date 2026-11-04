@@ -5,7 +5,7 @@ particle,0.72,"particle cannon: a crackling square ring-modulated into a zap, no
 particle_t,0.75,"particle turret, anti-capital: the particle cannon an octave down, heavier"
 ion,0.78,"ion cannon: a deep FM plasma whomp, its vibrato quick, a sub under it"
 disruptor,0.70,"disruptor: two saws sweeping past each other (the phasing) through a resonant band"
-massdriver,0.80,"mass driver: kinetic: a thunk: a falling low thump, a resonant knock, a short dark chunk of noise, no ringing metal"
+massdriver,0.60,"mass driver: kinetic: between a chunk and a chuck: a ch of noise, a falling thump and a resonant knock, no ringing metal; as loud as the laser"
 photon2,0.68,"Aera Photon II: an FM bell with inharmonic partials, falling, a breath of noise"
 photon3,0.62,"Aera Photon III: the light bell, fast and high"
 penetrator,0.80,"Aera penetrator: the heavy bell, a tearing chopped noise, a sub"
