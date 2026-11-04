@@ -38,7 +38,7 @@ grep -q "GAME OK" build/gamesite-check.log || { echo "LOCAL CHECK FAILED (the ga
 mkdir -p "$PAGES/rv/sim" "$PAGES/rv/art"
 cp $W/index.html $W/rvsim.js $W/rvsim.wasm $W/rvsim.data "$PAGES/rv/sim/"
 cp $G/index.html $G/game.js $G/rv.js $G/rv.wasm $G/game.tar.gz $G/rvsets.js $G/rvsprites.js $G/rvsprites-worker.js \
-    $G/touch.js "$PAGES/rv/"
+    $G/touch.js $G/touch.css "$PAGES/rv/"   # (touch.css since the touch pad: site.sh builds it, this copied only touch.js)
 rm -f "$PAGES"/rv/art/*
 cp $G/art/* "$PAGES/rv/art/"
 cd "$PAGES"
