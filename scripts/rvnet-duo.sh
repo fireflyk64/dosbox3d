@@ -50,8 +50,8 @@ GAME=${GAME:-$ROOT/retrovega/build/dos}
 # and starts the clock again there, `T:waitkey=r` tapping R meanwhile); every instance stops its own ship first, so
 # where it is holds still for the dumps
 STOP="0.5:s,1:s"
-HOST_MISSION=0
-GUEST_MISSION=3
+HOST_MISSION=${HOST_MISSION:-0}
+GUEST_MISSION=${GUEST_MISSION:-3}
 # (a late guest: the host's look comes as late, so that both are of the same moment: its clock starts at its own
 # first frame in flight, the guest's at the guest's)
 HOST_LOOK=$((GUEST_DELAY > 1 ? 10 + GUEST_DELAY : 8))

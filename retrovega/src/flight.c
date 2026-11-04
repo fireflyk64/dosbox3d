@@ -3598,8 +3598,11 @@ void __far __cdecl autoAnimation_c(unsigned short camShipType, unsigned short ca
     RV_NOTE("flight: autoAnimation(%u, %u, %u) at frame %u", camShipType, camMode, duration, frameCounter);
     if (!g_flying || g_sim)
         return;
-    if (camMode && (g_view == VIEW_COCKPIT || g_view == VIEW_CHASE))
+    if (camMode && (g_view == VIEW_COCKPIT || g_view == VIEW_CHASE)) {
         fly_by(0);
+        speedLo[0] = setSpeed[0];       /* (the host's frame that began it put this ship in its formation place, its throttle
+                                           at the leader's speed: at it now, so it keeps its place: logic_form_up) */
+    }
     else if (!camMode && g_view == VIEW_FLYBY && !g_fly_jump)
         set_view(g_view_back);
 }

@@ -3664,17 +3664,25 @@ static void spawn_apart(int16_t s);
  * fighter as far off the left, the rest stepped back to the right (an echelon); an escort target below them and out to
  * the right, its hull clear of theirs.  Each step of the flyby they are held there, the player's heading and velocity theirs, so the
  * cluster flies as one; the jump moves them as it moves the player and they arrive in their places.  A human
- * wingman's ship is its own machine's to fly (its stick is held through the flyby, flight.c) */
+ * wingman's ship is its own machine's to fly: it is put in its place once, as the flyby begins, flying the player's
+ * way at the player's speed, and the frame that starts the flyby on its machine takes it there (the layer applies a
+ * pilot's own place from a frame with the autopilot in it); its stick is held through the flyby (flight.c), so it
+ * flies on beside them (the user, 2026-11-03: "player 2 doesn't get the same forcing function for auto somehow and
+ * can't see the leader") */
 #define FORM_ACROSS_KM 350              /* a fighter's place off the one ahead of it: across */
 #define FORM_BACK_KM 250                /* and back */
 #define FORM_BELOW_KM 200               /* an escort target's hull this far under the fighters', */
 #define FORM_OUT_KM 700                 /* and its near side this far to the right of the player (out from the flyby's camera,
                                            on the left: nearer, a transport went off the bottom of the picture) */
 
-static int16_t form_comes(int16_t s, int16_t next)   /* a ship the jump to `next` takes along that this machine's AI
-                                                         flies: 1 a fighter, 2 an escort target */
+static int16_t form_comes(int16_t s, int16_t next)   /* a ship the jump to `next` takes along: 1 a fighter this
+                                                         machine's AI flies, 2 an escort target, 3 a human's fighter */
 {
-    if (!slot_is_ship(s) || commAnimInfo[s] != commAnimInfo[0] || shipAiState[s] == 9 || rvController[s] != CTL_AI)
+    if (!slot_is_ship(s) || commAnimInfo[s] != commAnimInfo[0] || shipAiState[s] == 9)
+        return 0;
+    if (rvFlags[s] & RV_FLAG_HUMAN)
+        return maybeEntityType[s] == ET_SHIP ? 3 : 0;
+    if (rvController[s] != CTL_AI)
         return 0;
     if (maybeEntityType[s] == ET_SHIP && (player_km(s) < AUTOPILOT_WING_KM
                                           || (slotMissionShip[s] < 64 && MSHIP_BEHAVIOUR(slotMissionShip[s]) == 4)))
@@ -3682,6 +3690,16 @@ static int16_t form_comes(int16_t s, int16_t next)   /* a ship the jump to `next
     if (maybeEntityType[s] == ET_CAPSHIP && escorted(s) && player_km(s) < AUTOPILOT_ESCORT_KM && escort_on_way(s, next))
         return 2;
     return 0;
+}
+
+static void form_place(int16_t s)       /* slot s at its place off the player, flying the player's way and speed */
+{
+    gPositionVector[s] = off_ship(0, g_form_off[s]);
+    gOrientationFrontVector[s] = gOrientationFrontVector[0];
+    gOrientationRightVector[s] = gOrientationRightVector[0];
+    gOrientationUpVector[s] = gOrientationUpVector[0];
+    gVelocityVector[s] = gVelocityVector[0];
+    speedLo[s] = speedLo[0];
 }
 
 static void form_hold(void)
@@ -3702,12 +3720,7 @@ static void form_hold(void)
             g_formed &= ~((uint32_t)1 << s);   /* (gone, dying or jumped out: out of it) */
             continue;
         }
-        gPositionVector[s] = off_ship(0, g_form_off[s]);
-        gOrientationFrontVector[s] = gOrientationFrontVector[0];
-        gOrientationRightVector[s] = gOrientationRightVector[0];
-        gOrientationUpVector[s] = gOrientationUpVector[0];
-        gVelocityVector[s] = gVelocityVector[0];
-        speedLo[s] = speedLo[0];
+        form_place(s);
     }
 }
 
@@ -3725,7 +3738,7 @@ static void face_nav(int16_t next, int16_t *yaw, int16_t *pitch)
 void logic_form_up(int16_t steps)
 {
     int32_t top = TO_KM(collide_half(0));
-    int16_t s, next, pass, k = 0, e = 0, at, yaw, pitch;
+    int16_t s, next, pass, k = 0, e = 0, h = 0, at, yaw, pitch;
     g_formed = 0;
     g_form_steps = 0;
     if ((next = logic_autopilot_ready()) < 0)
@@ -3736,12 +3749,18 @@ void logic_form_up(int16_t steps)
     for (pass = 0; pass < 2; pass++)
         for (s = 1; s < NUM_SHIP_SLOTS; s++) {
             int16_t wing = slotMissionShip[s] < 64 && MSHIP_BEHAVIOUR(slotMissionShip[s]) == 4, __far *o = g_form_off[s];
-            if (form_comes(s, next) != 1 || (g_formed >> s & 1) || (pass == 0) != (wing != 0))
+            int16_t kind = form_comes(s, next);
+            if ((kind != 1 && kind != 3) || (g_formed >> s & 1) || (pass == 0) != (wing != 0))
                 continue;
             o[0] = (int16_t)(k == 1 ? -FORM_ACROSS_KM : FORM_ACROSS_KM * (k ? k : 1));
             o[1] = (int16_t)(k < 2 ? 0 : (k & 1) ? -60 : 60);
             o[2] = (int16_t)(-FORM_BACK_KM * (k ? k : 1));
-            g_formed |= (uint32_t)1 << s;
+            if (kind == 3) {            /* (a human's: there once, its throttle at the player's speed; not held) */
+                form_place(s);
+                setSpeed[s] = speedLo[0];
+                h++;
+            } else
+                g_formed |= (uint32_t)1 << s;
             k++;
         }
     /* the escort targets: under them and out to the right, side by side (each one's half box clear of the fighters'
@@ -3762,7 +3781,7 @@ void logic_form_up(int16_t steps)
     }
     g_form_steps = steps;
     form_hold();                        /* (in their places for the flyby's first picture) */
-    RV_NOTE("logic: the autopilot's formation: %d fighters, %d escort targets", k, e);
+    RV_NOTE("logic: the autopilot's formation: %d fighters (%d of them humans'), %d escort targets", k, h, e);
 }
 
 int16_t logic_autopilot(void)

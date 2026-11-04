@@ -4003,6 +4003,37 @@ static void t_autopilot_formup(void)
     REQUIRE(labs(b.x - 350) < 60 && labs(b.y) < 60 && labs(b.z + 250) < 60, e_kept, (int)b.x, (int)b.y, (int)b.z);
 }
 
+/* M8.37: a human's wingman is put in its formation place as the flyby begins, flying the player's way, its throttle at
+ * the player's speed (its own machine flies it: the frame that begins the flyby there takes it to the place; the user,
+ * 2026-11-03: "player 2 doesn't get the same forcing function for auto somehow and can't see the leader") */
+static void t_autopilot_human(void)
+{
+    static const char __far e_wing[] = "no wingman in the patrol (%d)";
+    static const char __far e_place[] = "the flyby begun, the human's wingman is %d km right, %d up, %d ahead of the player: "
+        "its place is 350, 0, -250";
+    static const char __far e_with[] = "the flyby begun, the human's wingman's nose is %d (cos x 256) to the player's and its "
+        "throttle %d kps, the player %d: the same";
+    int16_t s, w = -1;
+    RvVec3 b;
+    pt_patrol();
+    playerCanBeDamaged = 0;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
+        if (slot_is_ship(s) && commAnimInfo[s] == SIDE_TERRAN && logic_is_wingman(s))
+            w = s;
+    REQUIRE(w > 0, e_wing, w, 0, 0);
+    if (!pt_steps(SEC))
+        return;
+    rvController[w] = CTL_PUPPET;
+    rvFlags[w] |= RV_FLAG_HUMAN;
+    pt_put(w, 6000, 0, -3000, TURN / 4);
+    logic_form_up(3 * SEC + 1);
+    ship_rel(0, w, &b);
+    REQUIRE(labs(b.x - 350) < 20 && labs(b.y) < 20 && labs(b.z + 250) < 20, e_place, (int)b.x, (int)b.y, (int)b.z);
+    REQUIRE(vec_dot(&gOrientationFrontVector[w], &gOrientationFrontVector[0]) / 256 > 250 && setSpeed[w] == speedLo[0],
+            e_with, (int)(vec_dot(&gOrientationFrontVector[w], &gOrientationFrontVector[0]) / 256), (int)setSpeed[w],
+            (int)speedLo[0]);
+}
+
 /* M10.10: told to form up, the wingman flies the player's way (the user, 2026-11-03: "when I say form up the wingmate
  * faces me instead of being parallel"): 2,500 km ahead of its place facing back, with the player still and then under
  * way, in 20 s its nose is within 25 degrees of the player's way */
@@ -6253,6 +6284,7 @@ static const char __far n_m8_30[] = "M8.30 human-seat-lost (logic_wingman_lost):
 static const char __far n_m8_33[] = "M8.33 escort-jump (route_step): an escort target out with jump=2 holds at nav 1 through the fight and jumps only at nav 2";
 static const char __far n_m8_34[] = "M8.34 autopilot-wingman (logic_autopilot): the mission's wingman comes along however far it had gone";
 static const char __far n_m8_35[] = "M8.35 autopilot-formup (logic_form_up): the flyby closes the wingman up on the player, its way and velocity the player's, kept through the jump";
+static const char __far n_m8_37[] = "M8.37 autopilot-human (logic_form_up): a human's wingman is put in its formation place as the flyby begins, the player's way and speed";
 static const char __far n_m8_36[] = "M8.36 escort-clear (route_step, logic_autopilot): an escort target on its last leg jumps once its nav point is reached and clear, from wherever it is; the autopilot leaves it on its way";
 static const char __far n_m10_10[] = "M10.10 form-parallel (formation_step): told to form up, the wingman flies the player's way, not facing it";
 static const char __far n_m8_32[] = "M8.32 named-hull (do_damage): a named pilot's hull takes a hit past its armour as a share, eight laser hits; a person's seat the hit itself";
@@ -6331,7 +6363,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m10_10, t_form_parallel, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m10_10, t_form_parallel, 0 },
 };
 
 /* --- the run --- */

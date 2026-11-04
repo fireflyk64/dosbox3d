@@ -185,6 +185,14 @@ class Check:
             host, g = self.dump(0, 'moved'), self.dump(0, 'after')
             if host and g:
                 self.need(km(host.pos(0), g.pos(0)) > 5000, 'the host went by autopilot (%.0f km)' % km(host.pos(0), g.pos(0)))
+            # the guest, 7,800 km from the host when the host pressed A, put in the host's formation as the flyby began
+            # (logic_form_up: 350 km off the right wing, 250 back) and come out of the jump beside it
+            for n in range(1, self.players):
+                ga = self.dump(n, 'after')
+                if g and ga:
+                    d = km(g.pos(0), ga.pos(0))
+                    self.need(d < 1500, "p%d came out of the autopilot in the host's formation (%.0f km from the host; "
+                              "its place 430)" % (n, d))
             self.meeting('after')
         if sc == 'ram':
             self.logs_say(1, r'reporting a hit by our own ship', "the guest's collisions went to the host")
