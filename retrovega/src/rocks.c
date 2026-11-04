@@ -188,7 +188,7 @@ static int __far g_wanted;
 static unsigned long __far g_t_place, __far g_t_small, __far g_t_big, __far g_t_keep, __far g_t_blocks;
 static unsigned long __far g_frames_in, __far g_sum_live, __far g_sum_small, __far g_sum_big, __far g_rows;
 static unsigned long __far g_respawned, __far g_hits_n, __far g_aimed, __far g_blocks_n, __far g_made, __far g_shot_n,
-    __far g_broken;
+    __far g_broken, __far g_seeks;
 static int __far g_max_live, __far g_max_on;
 
 static int16_t rocks_shot(const Shot __far *s);
@@ -747,7 +747,7 @@ void rocks_flight_start(void)
         memset(fieldTable + fieldTable_SIZE * i, 0, fieldTable_SIZE);
     g_t_place = g_t_small = g_t_big = g_t_keep = g_t_blocks = 0;
     g_frames_in = g_sum_live = g_sum_small = g_sum_big = g_rows = g_respawned = g_hits_n = g_aimed = g_blocks_n = 0;
-    g_made = g_shot_n = g_broken = 0;
+    g_made = g_shot_n = g_broken = g_seeks = 0;
     g_max_live = g_max_on = 0;
 }
 
@@ -917,6 +917,49 @@ static void hits(int n, const LfBasis *cam)
     }
 }
 
+/* The old game's mines close in (its 092E, called for each mine in turn every 20 of its frames from 09BB): a mine turns
+ * at where the player will be 20 of its frames on and puts 2 km a frame (20 kps) more of speed that way, so a mine
+ * missed comes round again, faster.  Ours had been aimed once, as they were made (the user, 2026-11-04: "the mine field
+ * does not seek towards the player actively").  At most MINE_KPS (my cap: the old game's had none that was found), and
+ * not within MINE_NEAR_KM, where its way is set (its own check of some 1,500 there, read as a distance) */
+#define MINE_SEEK_STEPS (20 * WC_FRAME_STEPS)
+#define MINE_PUSH_KPS 20L
+#define MINE_KPS 200L
+#define MINE_NEAR_KM 300L
+static void seek_mines(void)
+{
+    int i;
+    if (g_src < 0 || g_src >= g_nf || g_f[g_src].type != RV_FIELD_MINE || g_f[g_src].cluster)
+        return;
+    for (i = 0; i < g_n; i++) {
+        LzRock __far *r = &g_r[i];
+        long dx, dy, dz, d, vx, vy, vz, v, cap = MINE_KPS * 64 / 5, push = MINE_PUSH_KPS * 64 / 5;
+        if ((frameCounter + (unsigned)i) % MINE_SEEK_STEPS)
+            continue;
+        dx = (gPositionVector[0].x + gVelocityVector[0].x * MINE_SEEK_STEPS - r->x) / 256;   /* (km) */
+        dy = (gPositionVector[0].y + gVelocityVector[0].y * MINE_SEEK_STEPS - r->y) / 256;
+        dz = (gPositionVector[0].z + gVelocityVector[0].z * MINE_SEEK_STEPS - r->z) / 256;
+        if (labs(dx) > 20000L || labs(dy) > 20000L || labs(dz) > 20000L)
+            continue;                   /* (far past where it would be reaped: nothing to seek) */
+        d = (long)lf_sqrt((unsigned long)(dx * dx + dy * dy + dz * dz));
+        if (d <= MINE_NEAR_KM)
+            continue;
+        vx = r->vx + dx * push / d;     /* (a kps: 12.8 positions a step) */
+        vy = r->vy + dy * push / d;
+        vz = r->vz + dz * push / d;
+        v = (long)lf_sqrt((unsigned long)(vx * vx + vy * vy + vz * vz));
+        if (v > cap) {
+            vx = vx * cap / v;
+            vy = vy * cap / v;
+            vz = vz * cap / v;
+        }
+        r->vx = (short)vx;
+        r->vy = (short)vy;
+        r->vz = (short)vz;
+        g_seeks++;
+    }
+}
+
 /* the reaped ones removed, and new ones made while the point ahead is in a field: the old game's three as a field
  * begins, then its chance ((speed/10 + 30)/215 a frame of its, WC_FRAME_STEPS of our steps), up to the field's number */
 static void keep_effect(const LfBasis *b, int nreap)
@@ -1054,6 +1097,8 @@ void rocks_frame(const LfBasis *cam, int cx, int cy, int focal, int y0, int y1)
     g_rc.dmax = DMAX;
     g_rc.maxreap = ROCK_REAP;
     g_rc.maxclose = ROCK_HITS;
+    if (!cluster)
+        seek_mines();                   /* (before they fly: rv_rocks_place moves them by their velocity) */
     g_no = rv_rocks_place(g_r, g_n, &g_cam, &g_rc, g_o, ROCK_OUT, g_reap, g_hit);
     nreap = g_rc.nreap;
     nhit = g_rc.nclose;
@@ -1204,7 +1249,7 @@ void rocks_report(void)
 {
     static const char __far s_r[] = "rocks: %lu frames in a field: %lu rocks kept on average (%d at most), on screen "
         "%lu small and %lu big (%d at most), %lu made (%lu at where the player would be), %lu gone, %lu hits on the "
-        "player, %lu shots into rocks (%lu broke them)",
+        "player, %lu shots into rocks (%lu broke them), %lu mines' turns at the player",
         __far s_ms[] = "rocks: ms a frame: placed %lu.%02lu, small drawn %lu.%02lu, big drawn %lu.%02lu (%lu rows, %Fs; "
         "of it the nearest, past 128 px, as blocks %lu.%02lu in %lu.%02lu band draws), kept and hit %lu.%02lu",
         __far s_xms[] = "a move a row", __far s_copy[] = "copied";
@@ -1213,7 +1258,7 @@ void rocks_report(void)
     if (!g_frames_in)
         return;
     rv_logf(s_r, g_frames_in, g_sum_live / f, g_max_live, g_sum_small / f, g_sum_big / f, g_max_on, g_made, g_aimed,
-            g_respawned, g_hits_n, g_shot_n, g_broken);
+            g_respawned, g_hits_n, g_shot_n, g_broken, g_seeks);
     rv_logf(s_ms, MS(g_t_place), MS(g_t_small), MS(g_t_big), g_rows / f, g_rock_xms ? s_xms : s_copy, MS(g_t_blocks),
             g_blocks_n / f, g_blocks_n * 100 / f % 100, MS(g_t_keep));
 #undef MS
