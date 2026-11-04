@@ -130,6 +130,10 @@ git) and `art/people/manifest.csv` says which file is which frame.
    to the pilots' olive drab and orange (the Mercer twins began as hero
    portraits).
 
+The male Wildcard's base uses a subtle neck and upper-collar edit (2026-11-03, built-in imagegen), from
+`hero_m/chat-image-001.png` to `hero_m/base-neck-slim.png`. His original mouth and blink stills are realigned
+against that edited base, keeping the neck consistent throughout the talking animation.
+
 For each character `art/people/faces/KEY/` (in git, about 200 KB each)
 holds `base.png` (RGBA), `mouth_0..8.png`, `eyes_0..2.png`, `comm.png` (the
 headset look, where there is one) and `face.json` (the boxes, the fits, the

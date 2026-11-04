@@ -18,69 +18,69 @@
  "missing": [],
  "fits": {
   "mouth_1": {
-   "scale": 1.0,
-   "dx": -0.1,
+   "scale": 0.998,
+   "dx": 0.2,
    "dy": 0.1,
-   "score": 0.976
+   "score": 0.877
   },
   "mouth_2": {
-   "scale": 1.0,
-   "dx": -0.2,
-   "dy": -0.1,
-   "score": 0.968
+   "scale": 0.998,
+   "dx": 0.1,
+   "dy": -0.2,
+   "score": 0.868
   },
   "mouth_3": {
-   "scale": 1.0,
-   "dx": -0.1,
-   "dy": -0.2,
-   "score": 0.948
+   "scale": 0.998,
+   "dx": 0.2,
+   "dy": -0.3,
+   "score": 0.845
   },
   "mouth_4": {
-   "scale": 1.0,
-   "dx": -0.1,
-   "dy": -0.1,
-   "score": 0.964
+   "scale": 0.998,
+   "dx": 0.2,
+   "dy": -0.2,
+   "score": 0.862
   },
   "mouth_5": {
-   "scale": 0.998,
-   "dx": -0.2,
-   "dy": -0.5,
-   "score": 0.895
+   "scale": 0.9973,
+   "dx": 0.1,
+   "dy": -0.6,
+   "score": 0.802
   },
   "mouth_6": {
-   "scale": 1.0,
-   "dx": -0.2,
-   "dy": -0.3,
-   "score": 0.933
+   "scale": 0.9973,
+   "dx": 0.1,
+   "dy": -0.5,
+   "score": 0.835
   },
   "mouth_7": {
-   "scale": 1.0,
-   "dx": -0.2,
-   "dy": -0.1,
-   "score": 0.919
+   "scale": 0.998,
+   "dx": 0.1,
+   "dy": -0.2,
+   "score": 0.82
   },
   "mouth_8": {
-   "scale": 1.0,
-   "dx": -0.2,
-   "dy": -0.1,
-   "score": 0.939
+   "scale": 0.998,
+   "dx": 0.1,
+   "dy": -0.2,
+   "score": 0.841
   },
   "eyes_1": {
-   "scale": 1.0,
-   "dx": -0.2,
-   "dy": -0.3,
-   "score": 0.967
+   "scale": 0.998,
+   "dx": 0.1,
+   "dy": -0.4,
+   "score": 0.864
   },
   "eyes_2": {
-   "scale": 1.0,
-   "dx": -0.1,
+   "scale": 0.998,
+   "dx": 0.2,
    "dy": -0.2,
-   "score": 0.939
+   "score": 0.835
   }
  },
  "source": {
   "files": {
-   "base": "hero_m/chat-image-001.png",
+   "base": "hero_m/base-neck-slim.png",
    "mouth_1": "hero_m/chat-image-002.png",
    "mouth_2": "hero_m/chat-image-003.png",
    "mouth_3": "hero_m/chat-image-004.png",
@@ -95,13 +95,13 @@
   "eye_box": [
    387,
    426,
-   850,
+   849,
    575
   ],
   "mouth_box": [
    490,
    667,
-   747,
+   746,
    824
   ],
   "eyes": [
@@ -110,7 +110,7 @@
     513
    ],
    [
-    722,
+    721,
     513
    ]
   ],
