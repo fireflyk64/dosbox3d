@@ -406,10 +406,10 @@ nav 0):
 | M8.23 way-out | `camp_way_out`: a debrief's `system=`: nothing before the system's last mission; then good or bad as `camp_resolve` will have it |
 | M8.22 kit-boost | a flight started with `logic_boost`: half as much armour again on each face, or one more round in the first launcher; none without it |
 | M8.20 jump-told | the Ox put within reach of its jump: `logic_on_jump` called once, for its slot, friendly; it is gone and it is no kill |
-| M8.15 landing-contact | not cleared, into the bow: stopped, speed 0, shields whole; cleared, into the beam at the deck's height and the stern: stopped; turned away it flies off; into the bow: `missionStatus` 1, `victoryPoints` 0 with the patrol undone and nonzero with it done |
+| M8.15 landing-contact | not cleared, into the bow: stopped, speed 0, shields whole; turned away it flies off; cleared, from its beam: `missionStatus` 1 within 2,000 km of the hull (any side: the bow's own rule went 2026-11-04), `victoryPoints` 0 with the patrol undone and nonzero with it done |
 
 The tests take the player to a nav point by moving it (as the autopilot would) and, but for M8.15, land by setting
-`missionStatus = 1`, as the logic does when a cleared player flies into the carrier's bow.
+`missionStatus = 1`, as the logic does when a cleared player comes within 2,000 km of the carrier.
 
 ### M9: the HUD (`logic_hud`, host only)
 

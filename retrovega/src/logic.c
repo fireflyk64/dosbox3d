@@ -157,7 +157,7 @@ static uint16_t g_navs_seen;            /* a bit per nav point the player has re
 static RvField __far g_fields[RV_FIELDS];   /* the mission's asteroid and mine fields: the autopilot looks out for them */
 static int16_t __far g_nfields;
 static uint8_t __far g_cleared;         /* the carrier cleared the player to land (logic_request_landing) */
-static uint8_t __far g_stopped;         /* the carrier's hull stopped the player: 1 cleared, 2 not (the comm's to say) */
+static uint8_t __far g_stopped;         /* the carrier's hull stopped the player, not cleared: 2 (the comm's to say) */
 /* the autopilot's flyby formation (logic_form_up): */
 static uint32_t __far g_formed;         /* the ships held in the formation, a bit a slot */
 static int16_t __far g_form_steps;      /* the steps it holds yet */
@@ -1286,21 +1286,20 @@ static void ram_shove(int16_t s, const LfVec *push, int16_t part, int16_t into)
     speedLo[s] = speedLo[s] / 4;        /* (a bump takes the way off a ship) */
 }
 
-/* the player against the home carrier (the user, 2026-10-31: "they can land from the front only.  Other sides should
- * just stop the fighter"), on its actual shape (the user: in any setting a capital ship uses the actual map; so the
- * gap under the Vigilance's deck amidships can be flown through): cleared and within LANDING_ARC_DIV of the bow's axis
- * the player has landed, and the flight ends at the loop's next check; anywhere else, or not cleared, the fighter
- * flying into it stops where it was, unhurt, and can fly off again */
-#define LANDING_ARC_DIV 3               /* off the axis by at most 1/3 of the way along it: 18 degrees */
+/* the player against the home carrier, on its actual shape (the user: in any setting a capital ship uses the actual
+ * map; so the gap under the Vigilance's deck amidships can be flown through): cleared, the player has landed (it would
+ * have at LANDING_NEAR_KM: land_near), and the flight ends at the loop's next check; not cleared, the fighter flying
+ * into it stops where it was, unhurt, and can fly off again.  (Until 2026-11-04 only its bow took a cleared fighter,
+ * the user's rule of 2026-10-31; the user then: "lets get rid of all the bow logic and you can land just by distance
+ * to carrier after requesting...hope that saves some code and stops some user frustration") */
 static void carrier_contact(int16_t home)
 {
-    RvVec3 r, *v = &gVelocityVector[0];
+    RvVec3 *v = &gVelocityVector[0];
     LfVec push;
     int32_t depth;
     if (!collide_ships(0, home, &push, &depth))
         return;
-    ship_rel(home, 0, &r);              /* (z along its bow) */
-    if (g_cleared && r.z > 0 && labs(r.x) <= r.z / LANDING_ARC_DIV && labs(r.y) <= r.z / LANDING_ARC_DIV) {
+    if (g_cleared) {
         landedOn = (uint16_t)home;      /* (the engine's cue: the landing seen from outside, Kit at the plate) */
         missionStatus = 1;
         return;
@@ -1314,12 +1313,27 @@ static void carrier_contact(int16_t home)
         gPositionVector[0].z -= v->z;
         *v = vec3(0, 0, 0);
         setSpeed[0] = speedLo[0] = 0;
-        g_stopped = (uint8_t)(g_cleared ? 1 : 2);
+        g_stopped = 2;
     }
 }
 
 /* a collision's damage to each ship: the old game's rule (read in its code, 2026-10-31; the user: sensible), the
  * square of the two ships' closing speed in km a step, halved (two fighters head on at 400 kps close at 53 km a
+/* cleared, the player lands as it comes within LANDING_NEAR_KM of the carrier's hull, from any side (carrier_contact) */
+#define LANDING_NEAR_KM 2000
+static void land_near(void)
+{
+    int16_t s;
+    if (!g_cleared || missionStatus || !slot_is_ship(0) || shipAiState[0] == 9 || rvController[0] != CTL_PLAYER)
+        return;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (logic_is_home(s) && gap_between(0, s) <= LANDING_NEAR_KM) {
+            landedOn = (uint16_t)s;
+            missionStatus = 1;
+            return;
+        }
+}
+
  * step: 1,400 points, death; a 100-kps brush, 18; a touch at rest, nothing), or the soft rule the mission may ask
  * for (ram=soft: a touch's RAM_BASE and a point per RAM_PER of closing) */
 static uint16_t ram_damage(int16_t a, int16_t b)
@@ -3403,6 +3417,7 @@ static void step_mission(void)
  * in its direction, with a tick pointing out (the user: "I still don't see the cross"): 1 and 2 in g_hud.nav */
 #define NAV_PIN_RX 150                  /* the rim: well inside every cockpit's opening, less room below the sight */
 #define NAV_PIN_UP 100
+    land_near();
 #define NAV_PIN_DOWN 50
 #define NAV_PIN_TICK 12
 

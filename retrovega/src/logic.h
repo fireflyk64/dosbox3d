@@ -86,15 +86,16 @@ extern uint16_t __far logic_splashes;   /* this flight's kills by the local pilo
 
 /* the home carrier (the mission's ship with role=home, holding station at nav 0) and landing (the user's rules,
  * 2026-10-31): asked on the comm with the carrier as the target, it clears the player with the mission finished or at
- * least one nav point flown, the player near enough; the player then lands by flying into its bow.  Its other sides,
- * or the bow without a clearance, just stop the fighter, unhurt.  Landing with the mission undone is a loss */
+ * least one nav point flown, the player near enough; the player then lands on coming within 2,000 km of its hull, from
+ * any side (since 2026-11-04: it was into its bow only).  Not cleared, the hull just stops the fighter, unhurt.  Landing
+ * with the mission undone is a loss */
 enum { LANDING_CLEARED, LANDING_NOT_YET, LANDING_TOO_FAR };
 #define MISSION_CARRIER_LOST 6          /* missionStatus: the home carrier was destroyed: the flight ends with it, as the
                                            player's own death does (game.c's screen; the score is a loss) */
 int16_t logic_is_home(int16_t s);       /* slot s is the home carrier, alive */
 int16_t logic_landing_allowed(void);
 int16_t logic_request_landing(void);    /* LANDING_*: a clearance stands for the rest of the flight */
-int16_t logic_carrier_stopped(void);    /* the hull stopped the player since last asked: 1 cleared, 2 not, 0 no */
+int16_t logic_carrier_stopped(void);    /* the hull stopped the player (not cleared) since last asked: 2, 0 no */
 /* an escorted ship jumps away, just before its slot ends (flight.c: fx_jump's star and flash); friendly: the player's side */
 extern void (*__far logic_on_jump)(int16_t slot, int16_t friendly);
 void logic_test_leave(int16_t s);        /* the play tests' way to have an enemy leave, as fear or a jump does */

@@ -403,8 +403,8 @@ static void cam_look(const LfVec *at)
 
 /* --- the landing, from outside (the user, 2026-11-01: "a quick animation for landing like we do for autopilot", "angled above with the
  * carrier occluding the ship", "it effectively will fly behind the carrier; fade to black", and "start with the fighter very big and zoom
- * out so it can become just a few pixels as it docks": a fighter is far smaller than a carrier).  The fighter has touched the carrier's
- * bow, so the flight is over and its result settled (logic.c, carrier_contact).  The camera cuts to close behind the fighter, and pulls
+ * out so it can become just a few pixels as it docks": a fighter is far smaller than a carrier).  The fighter, cleared, has come
+ * in to the carrier, so the flight is over and its result settled (logic.c, carrier_contact).  The camera cuts to close behind the fighter, and pulls
  * back and round, up above the carrier's quarter, while the fighter flies in along the carrier's far side and slips behind the hull (the
  * sprites are drawn far to near, so the carrier covers it).  Nothing is decided in here: the game's logic has stopped, and the rest are
  * taken out of the shot.  A click skips it --- */
@@ -1856,8 +1856,8 @@ static int __far g_flicker;             /* frames of flicker left */
  * The user's asks (2026-10-31): 1 the wingman (fly in formation, break formation, attack my target, help me out,
  * return to base), 2 the target (taunt an enemy; the
  * home carrier: request landing, which it grants with the mission finished or a nav point flown and the player near
- * enough: logic.c).  The landing itself is the player's, into the carrier's bow: the flight ends there (logic.c). */
-static unsigned char __far g_landing;   /* the carrier has cleared the player (who lands by flying into its bow) */
+ * enough: logic.c).  Cleared, the player lands on coming within 2,000 km of its hull: the flight ends there (logic.c). */
+static unsigned char __far g_landing;   /* the carrier has cleared the player (who lands on coming near it) */
 static unsigned long __far g_denied_until;   /* the status line says so till then */
 static unsigned long __far g_stop_said;      /* the carrier's word about a stop: not again till then */
 static int __far g_reply_voice = -1;    /* an answer waiting for the pilot's own comm to end */
@@ -1908,7 +1908,7 @@ static void comm_open(void)
 static void comm_landing(void)
 {
     static const char __far s_ask[] = "Vigilance, Wildcard. Requesting clearance to land.";
-    static const char __far s_yes[] = "Wildcard, Vigilance. Cleared to land. Come in over the bow.";
+    static const char __far s_yes[] = "Wildcard, Vigilance. Cleared to land. Bring it in.";
     static const char __far s_no[] = "Negative, Wildcard. Fly your patrol first.";
     static const char __far s_far[] = "Negative, Wildcard. You're too far out. Come closer.";
     static const char __far s_log[] = "flight: comm: landing %d (0 cleared, 1 not yet, 2 too far)";
@@ -1925,9 +1925,8 @@ static void comm_landing(void)
 /* once a frame: the hull stopped the player (logic.c): the carrier says why, now and then */
 static void comm_stop_tick(void)
 {
-    static const char __far s_side[] = "Wrong side, Wildcard. Come around to the bow.";
     static const char __far s_ask[] = "Watch it, Wildcard! You're not cleared. Call it in.";
-    static const char __far s_log[] = "flight: the carrier's hull stopped the player (%d: 1 cleared, 2 not)";
+    static const char __far s_log[] = "flight: the carrier's hull stopped the player (%d: 2, not cleared)";
     int k = logic_carrier_stopped();
     if (!k)
         return;
@@ -1935,7 +1934,7 @@ static void comm_stop_tick(void)
     if (comm_silent() || clock240() < g_stop_said || g_reply_voice != -1 || comms_on(0) || comms_on(1))
         return;
     g_stop_said = clock240() + 2400;
-    (void)comms_say(role_voice(RV_ROLE_XO), 1, k == 1 ? s_side : s_ask);
+    (void)comms_say(role_voice(RV_ROLE_XO), 1, s_ask);
 }
 
 /* the taunt: the pilot's words, the enemy's answer in its own voice's line, its anger (logic_taunt) */
