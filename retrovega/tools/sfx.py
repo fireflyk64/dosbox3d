@@ -151,12 +151,17 @@ def drive(x, k):
 # --- the recipes ---
 
 def laser(pitch=1.0, dur=0.20):
+    """the Terran laser (2026-11-03, the user: "a bit loud and high pitched... maybe something more pleasant maybe
+    slightly lower frequencies"): the dive from 1,450 Hz (it was 1,800), a sine an octave under the two saws where a
+    narrow pulse was, the filter from 4.8 kHz with a gentle peak (from 7 kHz, a sharp one: the whistle), the click a
+    soft band at 2.8 kHz (a 5 kHz high pass); its centre of brightness 1,200 Hz where it was 2,400, a fifth of its
+    energy over 2 kHz where it was 43%, some 3 dB quieter to the ear"""
     t = tl(dur)
-    f = sweep(t, 1800 * pitch, 380 * pitch, 0.045)
-    osc = 0.5 * saw(f) + 0.5 * saw(f * 1.012) + 0.35 * pulse(f * 0.5, 0.3)
-    body = svf(osc, sweep(t, 7000, 900 * pitch, 0.05), 3.2) * env(t, 0.002, 0.065)
-    click = svf(noise(t, 1), 5000, 0.8, 'hp') * env(t, 0.0005, 0.004)
-    return echo(drive(body + 0.6 * click, 1.6), 55, 0.22)
+    f = sweep(t, 1450 * pitch, 320 * pitch, 0.05)
+    osc = 0.45 * saw(f) + 0.45 * saw(f * 1.007) + 0.45 * sine(f * 0.5)
+    body = svf(osc, sweep(t, 4800, 750 * pitch, 0.05), 1.9) * env(t, 0.003, 0.068)
+    click = svf(noise(t, 1), 2800, 0.9, 'bp') * env(t, 0.0008, 0.004)
+    return echo(drive(body + 0.3 * click, 1.3), 55, 0.22)
 
 
 def particle(pitch=1.0, dur=0.28, seed=2):
@@ -186,14 +191,19 @@ def disruptor():
 
 
 def massdriver():
-    t = tl(0.32)
-    click = np.zeros(len(t))
-    click[0:3] = [1.0, -0.8, 0.4]
-    chunk = svf(noise(t, 3), 1700, 1.6, 'bp') * env(t, 0.0005, 0.028) * 1.6
-    thump = sine(sweep(t, 150, 52, 0.04)) * env(t, 0.001, 0.06)
-    ring = sum(a * sine(fr + 0 * t) * env(t, 0.001, tau)
-               for fr, a, tau in ((920, 0.25, 0.11), (2530, 0.16, 0.08), (4100, 0.1, 0.05)))
-    return echo(drive(click + chunk + thump + ring, 1.4), 45, 0.2)
+    """the mass driver, kinetic (2026-11-03, the user: "a bit tinny...maybe more like a satisfying thunk"): no ringing
+    metal (its 920, 2,530 and 4,100 Hz partials were the tin) and no 1.7 kHz band of noise; a thump falling 240 to 72 Hz
+    (it fell to 52, below what a small speaker gives), a knock (resonant noise 650 falling to 260 Hz) that carries the
+    weight where it can be heard, a short dark chunk of noise and a softened click on the front.  Under 2% of it over
+    2 kHz where it was 15%"""
+    t = tl(0.30)
+    imp = np.zeros(len(t))
+    imp[0:3] = [1.0, -0.8, 0.4]
+    click = svf(imp, 2200, 0.7)
+    thump = sine(sweep(t, 240, 72, 0.03)) * env(t, 0.001, 0.075)
+    knock = svf(noise(t, 3), sweep(t, 650, 260, 0.035), 3.5, 'bp') * env(t, 0.0005, 0.05) * 2.6
+    chunk = svf(noise(t, 5), sweep(t, 2000, 500, 0.02), 0.9) * env(t, 0.0005, 0.014) * 1.1
+    return echo(drive(1.2 * thump + knock + chunk + 0.6 * click, 1.9), 40, 0.14)
 
 
 def photon(light):
