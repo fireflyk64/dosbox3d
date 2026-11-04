@@ -1367,6 +1367,10 @@ static void flight_prepare(void)
         if (node < g_nnodes && k < RV_MISSIONS_PER_NODE && g_nodes[node].missions[k] < g_nmissions) {
             camp_mission(g_nodes[node].missions[k], &g_m);
             camp_load_rules(&g_m);      /* (its rules; its tables are the host's already) */
+            /* the fighter the host's records give this pilot: its cockpit, and its sets among the flight's (the user,
+             * 2026-11-03: "in the set with the franklin the wingman kept the schroedinger cockpit and the first mission
+             * was not able to see any franklins at all": its own save's fighter had been loaded, not the host's) */
+            g_camp.player_ship = (uint8_t)camp_flight_fighter();
             rocks_want(g_m.nfield > 0 || g_field > 0);
             RV_LOG("guest: the host's mission %.16Fs (node %u, mission %u there)", (char __far *)g_m.id, node, k);
         } else {

@@ -134,7 +134,9 @@ Multiplayer appears in the logic only as who flies a ship (`rvController`, `RV_F
 - **The pilots' fates:** a wingman flown by a human (`g_killed` 2) is no named pilot's death.
 - **Splashes:** the local pilot's kills in the flight (`logic_splashes`), for the guest's save.
 - **The player's fighter** is the one its mission record names (`missionShipTable[playerMissionShip]`), which is the
-  save's own in a flight alone and the host's choice in a shared one.
+  save's own in a flight alone and the host's choice in a shared one: a guest takes it as its `g_camp.player_ship` when
+  the host's mission comes (`flight_prepare`), so its cockpit and its sets are the host's fighter's too (they had
+  been its own save's: a Schroedinger's cockpit in the Franklin missions, and no Franklin to be seen).
 - **The flight's mission** (`game.c`): `flight_prepare` (once a flight) calls `missionStarting`; a guest then loads
   the mission the layer named, without compiling its own tables over the host's. After a guest's flight the
   debrief scores nothing on its campaign: `camp_guest_sortie` adds the sortie and the splashes to the hero's record
