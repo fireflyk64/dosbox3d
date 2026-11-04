@@ -4164,6 +4164,7 @@ static void t_escort_clear(void)
     gPositionVector[0].x = NAV2_X * KM;   /* (the player alone at nav 2, the Ox far behind: its wave comes) */
     gPositionVector[0].y = 0;
     gPositionVector[0].z = (NAV2_Z - 4500) * KM;
+    setSpeed[0] = speedLo[0] = 0;       /* (and stays there: an Ox with no pilot within 20,000 km waits for one) */
     if (!pt_steps(2 * SEC) || !pt_kill_side(SIDE_AERA) || !pt_steps(5 * SEC))
         return;
     REQUIRE(slot_is_ship(ox) && gInstanceShipTypes[ox] == PT_OX, e_early, pt_km_to(ox, NAV2_X, 0, NAV2_Z),
@@ -4277,6 +4278,43 @@ static void t_campaign_way(void)
                 REQUIRE(logic_nav_seen(g_tm.nav[k].id), e_way, m, g_tm.nav[k].id, leg);
     }
     EXPECT(went >= 70, e_went, went, put, g_nmissions);   /* (80 legs flown by it, 14 put, on 2026-11-04) */
+    g_camp.player_ship = PT_PLAYER;
+    pt_mission();
+}
+
+/* M8.41: ENIGMA2's Ox (role=out jump=2, the old game's own map), the player lingering at the launch for two and a half
+ * minutes (a pilot waiting for another to join; the user, 2026-11-04: "this time I arrived at nav 1 without the ox
+ * there--just the enemies and [my wingman]"): the Ox waits for the player, not far off, and the autopilot to nav 1
+ * brings it along */
+static void t_escort_waits(void)
+{
+    static const char __far e_there[] = "no Ox after ENIGMA2's launch (slot %d)";
+    static const char __far e_wait[] = "150 s with the player still at the launch, the Ox is %d km off (alive %d): it waits "
+        "within 20,000 km for the player";
+    static const char __far e_went[] = "the autopilot returned %d, the player %d km from nav 1";
+    static const char __far e_along[] = "after the autopilot to nav 1 the Ox is %d km from the player (alive %d): it comes "
+        "along";
+    int16_t ox, r, i;
+    for (i = 0; i < (int16_t)g_nmissions; i++) {
+        camp_mission((uint16_t)i, &g_tm);
+        if (!_fstrncmp(g_tm.id, "ENIGMA2", 8))
+            break;
+    }
+    pt_launch(g_tm.fighter != 0xFF ? g_tm.fighter : PT_PLAYER);
+    playerCanBeDamaged = 0;
+    ox = pt_ox();
+    REQUIRE(ox > 0, e_there, ox, 0, 0);
+    setSpeed[0] = speedLo[0] = 0;       /* (the player holds still by the carrier) */
+    if (!pt_steps(150 * SEC))
+        return;
+    REQUIRE(slot_is_ship(ox) && gInstanceShipTypes[ox] == PT_OX && pt_km(0, ox) < 20500, e_wait, pt_km(0, ox),
+            slot_is_ship(ox), 0);
+    r = logic_autopilot();
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(r == 1, e_went, r, pt_km_to(0, g_tm.nav[0].x, g_tm.nav[0].y, g_tm.nav[0].z), 0);
+    REQUIRE(slot_is_ship(ox) && gInstanceShipTypes[ox] == PT_OX && pt_km(0, ox) < 5000, e_along, pt_km(0, ox),
+            slot_is_ship(ox), 0);
     g_camp.player_ship = PT_PLAYER;
     pt_mission();
 }
@@ -6441,6 +6479,7 @@ static const char __far n_m8_34[] = "M8.34 autopilot-wingman (logic_autopilot): 
 static const char __far n_m8_35[] = "M8.35 autopilot-formup (logic_form_up): the flyby closes the wingman up on the player, its way and velocity the player's, kept through the jump";
 static const char __far n_m8_37[] = "M8.37 autopilot-human (logic_form_up): a human's wingman is put in its formation place as the flyby begins, the player's way and speed";
 static const char __far n_m8_36[] = "M8.36 escort-clear (route_step, logic_autopilot): an escort target out bears straight for its nav point and jumps only there; the autopilot leaves it on its way";
+static const char __far n_m8_41[] = "M8.41 escort-waits (route_step, logic_autopilot): ENIGMA2's Ox waits for a player lingering at the launch, and the autopilot brings it along";
 static const char __far n_m8_40[] = "M8.40 campaign-way (logic_autopilot, the missions): every mission's waypoints reached on the old game's map, the autopilot stopping at their reach";
 static const char __far n_m8_39[] = "M8.39 full-map (logic_autopilot, step_scene): the autopilot stops at a nav point's reach; its ships are in the scene however far, the carrier again on the way home";
 static const char __far n_m8_38[] = "M8.38 escort-home (route_step): an escort target in goes to the home carrier, stops within 150 km of its hull, its nose the carrier's way, and is home";
@@ -6521,7 +6560,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 },
 };
 
 /* --- the run --- */

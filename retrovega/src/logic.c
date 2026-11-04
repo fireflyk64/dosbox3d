@@ -145,6 +145,9 @@ static struct {
                                            out) */
 #define ROUTE_TURN_COS 230              /* its way more than some 25 degrees off its nose: a fifth of its speed, so it
                                            turns in rather than round */
+#define ROUTE_LEASH_KM 20000            /* an escort target out with no pilot this near waits for one (the user, 2026-11-04:
+                                           "I arrived at nav 1 without the ox there": a player 150 s at the launch had let
+                                           it go on alone, 27,000 km out, past the autopilot's reach for it) */
 #define ROUTE_WAKE_KM 8000              /* an escort target that waits sets off home when the player is this near, or has
                                            reached its nav point (the player arrives at the point's reach: 10,000 km out
                                            and more) */
@@ -3144,6 +3147,18 @@ static int16_t escort_on_way(int16_t s, int16_t next)
     return first >= 0 && next >= first && next >= g_mind[s].leg && next <= route_last(rec, first);
 }
 
+/* an escort target of the player's side the autopilot takes along to `next` (its flyby's formation, then the jump):
+ * on its way, and within AUTOPILOT_ESCORT_KM, or however far for one out (as the mission's wingman: the user,
+ * 2026-11-04, the Ox not at nav 1 on arriving there) */
+#define AUTOPILOT_ESCORT_KM 30000
+static int16_t escort_comes(int16_t s, int16_t next)
+{
+    return maybeEntityType[s] == ET_CAPSHIP && escorted(s) && commAnimInfo[s] == commAnimInfo[0]
+        && escort_on_way(s, next) && (role_of(s) == RV_ESCORT_OUT || player_km(s) < AUTOPILOT_ESCORT_KM);
+}
+
+static int32_t human_km(int16_t s);
+
 static void route_step(int16_t s, Mind __far *m, const AiProfile __far *p)
 {
     static const char __far s_gone[] = "logic: slot %d (mission ship %d) %s at nav %d";
@@ -3160,6 +3175,10 @@ static void route_step(int16_t s, Mind __far *m, const AiProfile __far *p)
         last = route_last(rec, goal);
         if (m->leg > goal)
             goal = m->leg < last ? m->leg : last;
+        if (commAnimInfo[s] == commAnimInfo[0] && human_km(s) > ROUTE_LEASH_KM) {
+            throttle(s, 0, 0);          /* (nobody with it: it waits, where it is, for a pilot to come) */
+            return;
+        }
     } else if (commAnimInfo[s] == commAnimInfo[0]
                && (m->phase || player_km(s) < ROUTE_WAKE_KM || (g_navs_seen >> (MSHIP_NAV(rec) & 15) & 1))) {
         if (!m->phase)
@@ -3680,8 +3699,8 @@ void logic_end(void)
 
 #define AUTOPILOT_CLEAR_KM 16000        /* no enemy this near (the engine's autopilot lamp says the same: flight.c): a wave
                                            coming in from WAVE_KM holds it, as the old game's scene did (16,000) */
-#define AUTOPILOT_ESCORT_KM 30000       /* an escort target of the player's side this near comes along, AUTOPILOT_BEHIND_KM
-                                           behind the player (the old game's transport came along, 1,800 km behind) */
+/* (AUTOPILOT_ESCORT_KM: an escort target of the player's side this near comes along, AUTOPILOT_BEHIND_KM behind the
+ * player, one out however far: escort_comes.  The old game's transport came along, 1,800 km behind) */
 #define AUTOPILOT_BEHIND_KM 800
 #define AUTOPILOT_WING_KM 10000         /* the friendly fighters this near come along, keeping their places */
 #define AUTOPILOT_WING_SIDE_KM 1500     /* the mission's wingman, farther than that, comes along this far to the right */
@@ -3820,7 +3839,7 @@ static int16_t form_comes(int16_t s, int16_t next)   /* a ship the jump to `next
     if (maybeEntityType[s] == ET_SHIP && (player_km(s) < AUTOPILOT_WING_KM
                                           || (slotMissionShip[s] < 64 && MSHIP_BEHAVIOUR(slotMissionShip[s]) == 4)))
         return 1;
-    if (maybeEntityType[s] == ET_CAPSHIP && escorted(s) && player_km(s) < AUTOPILOT_ESCORT_KM && escort_on_way(s, next))
+    if (escort_comes(s, next))
         return 2;
     return 0;
 }
@@ -3954,8 +3973,7 @@ int16_t logic_autopilot(void)
             gPositionVector[s] = vec3(to.x + FIX_MUL(R->x, AUTOPILOT_WING_SIDE_KM) * KM,
                                       to.y + FIX_MUL(R->y, AUTOPILOT_WING_SIDE_KM) * KM,
                                       to.z + FIX_MUL(R->z, AUTOPILOT_WING_SIDE_KM) * KM);
-        } else if (maybeEntityType[s] == ET_CAPSHIP && escorted(s) && player_km(s) < AUTOPILOT_ESCORT_KM
-                   && escort_on_way(s, next)) {
+        } else if (escort_comes(s, next)) {
             if (g_formed >> s & 1) {    /* (in the flyby's formation: it keeps its place there) */
                 gPositionVector[s].x += to.x - gPositionVector[0].x;
                 gPositionVector[s].y += to.y - gPositionVector[0].y;

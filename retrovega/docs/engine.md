@@ -225,7 +225,10 @@ own speed (the flyby lends it the player's: the Ox left it at some 250 kps where
 waits at its nav
 point until the player reaches the point or comes within 8,000 km, then flies to the home carrier, slowing as it comes, and stops 150 km
 off its hull with its nose the carrier's way, home (the user, 2026-11-04); with no carrier, to nav 0 and gone there (an
-enemy's waits where it is). One of the player's side killed is the mission lost. The autopilot brings one along, 800 km behind the player
+enemy's waits where it is). One of the player's side killed is the mission lost. An escort out waits where it is while no pilot is within
+20,000 km of it (`ROUTE_LEASH_KM`; the user, 2026-11-04, "I arrived at nav 1 without the ox there": a player 150 s
+at the launch had let it go on alone, 27,000 km out). The autopilot brings one along (one out however far, on its way:
+`escort_comes`; others within 30,000 km), 800 km behind the player
 (the wingman beside it), and drops the formation at the nav point's reach.
 
 **The old game's own map** (the user, 2026-11-04: "Yes lets do the full scale"; the nav points had seemed close, and
