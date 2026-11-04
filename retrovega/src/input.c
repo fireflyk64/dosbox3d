@@ -265,9 +265,11 @@ static int arrows(void)
         if (g_script ? ticks() < g_hold_until[i] : g_down[g_arrow_scan[i]] != 0)
             m |= 1 << i;
     /* the rolls: Q and E, or the keypad's Ins and Del (the user, 2026-11-03: "would be nice if keypad ins and keypad
-       del rolled"; the grey Insert and Delete come in on the same codes after an E0, and roll too) */
-    if (g_script ? ticks() < g_hold_until[4] : g_down[0x10] || g_down[0x52]) m |= 16;
-    if (g_script ? ticks() < g_hold_until[5] : g_down[0x12] || g_down[0x53]) m |= 32;
+       del rolled"; the grey Insert and Delete come in on the same codes after an E0, and roll too), or comma and period,
+       which a controller's roll axis presses on the page (web/gamepad.js ROLL_KEYS: the Wing Commander games' own; the
+       user, 2026-11-04: rolling with the joystick had never worked here) */
+    if (g_script ? ticks() < g_hold_until[4] : g_down[0x10] || g_down[0x52] || g_down[0x33]) m |= 16;
+    if (g_script ? ticks() < g_hold_until[5] : g_down[0x12] || g_down[0x53] || g_down[0x34]) m |= 32;
     return m;
 }
 
