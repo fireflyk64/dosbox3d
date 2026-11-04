@@ -2843,17 +2843,18 @@ static int16_t avoid_break(int16_t s, Mind __far *m, const AiProfile __far *p)
     return 0;
 }
 
-/* An escort target of the player's side about (a transport the player guards): one fighter of its enemies goes for
- * it, the one nearest it, and keeps at it until it is gone or the fighter is; then the next nearest (the user,
- * 2026-11-03: "the enemies don't seem particularly interested in it even though at least one should go for it").  The
- * player's taunt still turns the raider (logic_taunt).  Only the other side's fighters raid: a wingman's targets stay
+/* An escort target of the player's side about (a transport the player guards): half its enemies' fighters near it,
+ * at least one, go for it, the ones nearest it, and keep at it until it is gone or they are; then the next nearest
+ * (the user, 2026-11-03: "the enemies don't seem particularly interested in it even though at least one should go for
+ * it"; 2026-11-04, of one raider at an Ox as hard as a carrier: "The escort wasn't even a bit challenging").  The
+ * player's taunt still turns a raider (logic_taunt).  Only the other side's fighters raid: a wingman's targets stay
  * its orders'.  For s: the escort target to go for, -1 none */
 #define RAID_KM 20000                   /* an escort target this near draws its raider */
 static int16_t escorted(int16_t s);
 
 static int16_t raid_target(int16_t s)
 {
-    int16_t e, k, best = -1;
+    int16_t e, k, best = -1, near_n = 1, ahead = 0;
     int32_t d, bd = INT32_C(0x7FFFFFFF);
     if (commAnimInfo[s] == commAnimInfo[0] || maybeEntityType[s] != ET_SHIP || g_mind[s].leaving)
         return -1;
@@ -2867,12 +2868,17 @@ static int16_t raid_target(int16_t s)
         return -1;
     if (g_mind[s].raiding == best + 1)
         return best;                    /* (already at it) */
-    for (k = 0; k < NUM_SHIP_SLOTS; k++)    /* (one raider an escort target: another at it already, or nearer it) */
-        if (k != s && slot_is_ship(k) && shipAiState[k] != 9 && commAnimInfo[k] == commAnimInfo[s]
-            && maybeEntityType[k] == ET_SHIP && rvController[k] == CTL_AI && !g_mind[k].leaving
-            && (g_mind[k].raiding == best + 1 || km_between(k, best) < bd))
-            return -1;
-    return best;
+    for (k = 0; k < NUM_SHIP_SLOTS; k++) {  /* (half of them near it raid, rounded up: the others at it already, or nearer) */
+        if (k == s || !slot_is_ship(k) || shipAiState[k] == 9 || commAnimInfo[k] != commAnimInfo[s]
+            || maybeEntityType[k] != ET_SHIP || rvController[k] != CTL_AI || g_mind[k].leaving)
+            continue;
+        d = km_between(k, best);
+        if (d < RAID_KM)
+            near_n++;
+        if (g_mind[k].raiding == best + 1 || d < bd)
+            ahead++;
+    }
+    return ahead < (near_n + 1) / 2 ? best : -1;
 }
 
 /* a fighter's mind for a step: its target, its situation, its tactic, its decisions (g_turn, the throttle, fire) */

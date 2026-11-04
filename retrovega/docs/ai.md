@@ -12,10 +12,11 @@ ship is a puppet):
 
 1. **The target.** Its current one is kept while it lives, is an enemy and stays within 1.5 × the profile's
    `engage_km`; else the nearest enemy within `engage_km` (never a cloaked one, `rvFlags` 16). `rvTarget[s]`
-   says which. One fighter of the player's enemies is the **raider** of an escort target of the player's side within
-   `RAID_KM` (20,000 km): the one nearest it, kept at it till one of them is gone, then the next nearest
-   (`raid_target`, `Mind.raiding`); its target is the escort target whoever is nearer (the user, 2026-11-03: "the
-   enemies don't seem particularly interested in it even though at least one should go for it"). The taunt still
+   says which. Half the player's enemies' fighters within `RAID_KM` (20,000 km) of an escort target of the player's side,
+   rounded up, are its **raiders**: the ones nearest it, kept at it till one of them is gone, then the next nearest
+   (`raid_target`, `Mind.raiding`); a raider's target is the escort target whoever is nearer (the user, 2026-11-03:
+   "the enemies don't seem particularly interested in it even though at least one should go for it"; one of two, two
+   of three or four since 2026-11-04: "The escort wasn't even a bit challenging"). The taunt still
    turns it; the player's wingmen never raid. M5.21.
 2. **The view** of the target (`View`): where it is in the ship's own frame (right, up, ahead, km), its lead
    point (where the guns' shots would meet it: the target's move over the shot's time of flight, twice refined),
