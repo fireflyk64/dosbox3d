@@ -17,6 +17,8 @@
 #                         each collision goes to the host's game
 #             kill        the host's autopilot to the enemies, which it destroys (!killfoes): the guest sees them
 #                         explode, then go
+#             chat        each pilot says a line (the 0 key's prompt, !say=): it is on the other's comm VDU, and its
+#                         own
 #   PLAYERS   2 (default) or 3: a third pilot, seated by the host
 #   ROOM      1: the instances meet in a room of a local lobby server (LOBBY_PORT, default 13961), as the pages do,
 #             not over TCP: there the host's first mission never waits for the guest, and after a mission flown
@@ -82,6 +84,9 @@ combat)
 kill)
     HOST="$HOST,10:a,15:!killfoes,15.7:!ds=dying,22:!ds=gone"
     GUEST="$GUEST,15.8:!ds=dying,22:!ds=gone" ;;
+chat)
+    HOST="$HOST,9:!say=hello_from_the_host,12:!shot=chat"
+    GUEST="$GUEST,10:!say=hi_from_the_guest,12:!shot=chat" ;;
 *) echo "rvnet-duo: no scenario $SCENARIO" >&2; exit 2 ;;
 esac
 

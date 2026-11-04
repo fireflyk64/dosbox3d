@@ -2116,6 +2116,7 @@ int game_run(void)
         in_steer(g_mode != MODE_BUNK && g_mode != MODE_NAME);     /* those menus take the arrows */
         in_poll(&in);
         music_poll();
+        scene_chat();                   /* (a shared flight's chat line, over whatever room is up) */
         if (in.key == KEY_F12)
             shot_save("RVSHOT");
         /* Esc never quits (the user's rule, 2026-10-20: it is the browser's key, for leaving full screen);

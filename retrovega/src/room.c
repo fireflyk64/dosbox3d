@@ -291,12 +291,53 @@ static void draw_pointer(int y0, int y1)
     }
 }
 
+/* --- the chat's caption (room.h) --- */
+static uint16_t g_chat_seen;            /* commTextTimer as last taken */
+static char g_chat[84];
+static unsigned long g_chat_until;      /* ticks(): the caption off then */
+
+int chat_take(char *out, int n, uint16_t *speaker)
+{
+    if (commTextTimer == g_chat_seen)
+        return 0;
+    g_chat_seen = commTextTimer;
+    if (n > commGlobalTxt_SIZE + 1)
+        n = commGlobalTxt_SIZE + 1;
+    memcpy(out, commGlobalTxt, n - 1);  /* (near to near: a fixed-block address is a constant, and as a far pointer
+                                           Watcom makes it segment 0) */
+    out[n - 1] = 0;
+    *speaker = commSpeaker;
+    return out[0] != 0;
+}
+
+void scene_chat(void)
+{
+    uint16_t who;
+    if (chat_take(g_chat, sizeof g_chat, &who)) {
+        g_chat_until = ticks() + 55 + strlen(g_chat) * 2;   /* (3 s, and a letter's reading on top) */
+        vid_dirty(0, CHAT_H);
+    } else if (g_chat[0] && ticks() > g_chat_until) {
+        g_chat[0] = 0;
+        vid_dirty(0, CHAT_H);
+    }
+}
+
+static void draw_chat(int y0, int y1)
+{
+    if (g_chat[0] && y0 < CHAT_H) {
+        int w = gfx_text_width(FONT_BODY, g_chat);
+        gfx_shade(0, 0, SCR_W, CHAT_H, y0, y1);
+        gfx_text(FONT_BODY, w < SCR_W - 16 ? (SCR_W - w) / 2 : 8, 4, g_chat, RV_TEXT_AMBER | 0x10, y0, y1);
+    }
+}
+
 static void draw_band(int y0, int y1)
 {
     const RvRoom __far *r = room();
     int i;
     if (g_scene.full) {
         g_scene.full(y0, y1);
+        draw_chat(y0, y1);
         draw_pointer(y0, y1);
         return;
     }
@@ -329,6 +370,7 @@ static void draw_band(int y0, int y1)
         gfx_shade(0, SCR_H - LABEL_H, SCR_W, LABEL_H, y0, y1);
         gfx_text(FONT_BODY, (SCR_W - w) / 2, SCR_H - LABEL_H + 3, g_scene.label, RV_TEXT_AMBER | 0x10, y0, y1);
     }
+    draw_chat(y0, y1);
     draw_pointer(y0, y1);
 }
 

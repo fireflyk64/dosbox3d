@@ -40,4 +40,12 @@ void scene_enter(int room, const unsigned char *seats);
 int scene_update(const Input *in, SceneAction *act);
 void scene_draw(void);
 
+/* a shared flight's chat (the 0 key's prompt, another player's line or the layer's notice; the layer writes it into the
+ * fixed block: commGlobalTxt, commSpeaker, commTextTimer counted on).  chat_take: the next line not yet shown, into out
+ * (n bytes), its speaker's slot (0xFFFF a notice): 1, or 0 none.  scene_chat: once a pass of the rooms' loop, a line
+ * come is shown as a caption across the top of whatever room screen is up, for as long as reading it takes */
+#define CHAT_H 22
+int chat_take(char *out, int n, uint16_t *speaker);
+void scene_chat(void);
+
 #endif

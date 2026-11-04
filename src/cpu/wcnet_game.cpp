@@ -45,6 +45,7 @@ static GameTraits traits_of(GameId game) {
         t.restartChoice = true;
         t.netNeedsConfig = true;
         t.damageAtPlace = true;
+        t.chatInBlock = true;
         t.defaultFps = 30;          // LOGIC_HZ: a step a frame, as the game runs alone
         break;
     default:

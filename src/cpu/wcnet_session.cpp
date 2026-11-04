@@ -441,21 +441,44 @@ static void populate_player_end(PlayerEnd *end, int status) {
     }
 }
 
+// RetroVega shows a line itself, in the rooms and in flight (GameTraits.chatInBlock): the text into commGlobalTxt,
+// the speaker's slot into commSpeaker, then commTextTimer counted on, which the game watches each frame.  No call
+// (its rooms reach no hook site to run one) and no overlay (the user, 2026-11-04: the chat "neither bring[s] up the
+// comm VDU screen nor ... print[s] the text on the other player": the line had gone to a showCommMessage the game
+// never had, and from the briefing on the overlay stood aside for it).
+// (local: the speaker's slot here, kInvalidSlot for a notice of the layer's own; the game picks a face by it)
+static void chat_into_block(int local, const std::string &line) {
+    if (!ds::known(ds::commGlobalTxt) || !ds::known(ds::commSpeaker) || !ds::known(ds::commTextTimer)) {
+        return;
+    }
+    write_cstring(ds::commGlobalTxt, 80, line);
+    wr16(ds::commSpeaker, (Bit16u)(local == kInvalidSlot ? 0xFFFF : local));
+    wr16(ds::commTextTimer, (Bit16u)(rd16(ds::commTextTimer) + 1));
+}
+
 static void handle_incoming_chat(const Chat &chat) {
     std::string formatted = chat.message();
     if (chat.callsign().length() > 1 && chat.callsign() != "BLUEHAIR") {
         formatted = chat.callsign() + ": " + chat.message();
     }
-    incoming_text = formatted;
     if (chat.ship_id() == 0 && g_session && g_session->is_client()) {
         note_leader_callsign(chat.callsign());
     }
+    if (g_traits.chatInBlock) {
+        chat_into_block(NetworkShipId::from_net(chat.ship_id()).to_local(), formatted);
+        return;
+    }
+    incoming_text = formatted;
     enqueue_chat_display(chat.ship_id(), chat.callsign(), chat.message());
 }
 
 // A line of our own: on the comms display in flight (it runs with the next
 // frame's jobs), on the overlay otherwise.
 static void show_notice(const std::string &text) {
+    if (g_traits.chatInBlock) {
+        chat_into_block(kInvalidSlot, text);
+        return;
+    }
     if (!within_briefed_mission) {
         incoming_text = text;
         return;
@@ -3449,7 +3472,7 @@ bool in_space() {
 }
 
 bool wc_net_overlay_chat() {
-    return !in_space() || !ds::known(ds::commGlobalTxt);
+    return !g_traits.chatInBlock && (!in_space() || !ds::known(ds::commGlobalTxt));   // (RV shows its own lines)
 }
 
 void wc_net_set_rocks(int mode) {
@@ -3559,5 +3582,8 @@ void wcnetSendChatMessage(const std::string &msg) {
     }
     if (g_session) {
         g_session->send_chat(msg);
+        if (g_traits.chatInBlock) {    // (and on our own screen: it went)
+            chat_into_block(kPlayerSlot, get_callsign() + ": " + msg);
+        }
     }
 }

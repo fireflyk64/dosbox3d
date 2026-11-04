@@ -79,6 +79,9 @@ struct GameTraits {
     bool netNeedsConfig;        // networking only with a room or a peer configured (WCROOM, WCHOST, WCPORT): RV
     bool damageAtPlace;         // do_damage's vector is the place the hit lands (positions), not the way the blow
                                 // travels: RV
+    bool chatInBlock;           // a chat line goes into the game's fixed block (commGlobalTxt, commSpeaker, a count in
+                                // commTextTimer) for the game to show where it is, rooms or flight: no call, no
+                                // overlay: RV
     int defaultFps;             // frames a second the hooks pace a flight at (WCFPS overrides; 0: the game's own)
 };
 extern GameTraits g_traits;

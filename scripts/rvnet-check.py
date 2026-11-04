@@ -134,6 +134,9 @@ class Check:
     def logs_say(self, n, pattern, what):
         return self.need(re.search(pattern, self.log(n)) is not None, 'p%d: %s' % (n, what))
 
+    def logs_say_game(self, n, pattern, what):
+        return self.need(re.search(pattern, self.game_log(n)) is not None, 'p%d: %s' % (n, what))
+
     def run(self):
         for n in range(self.players):
             self.need('RV ABI mismatch' not in self.log(n), 'p%d: the interface matched' % n)
@@ -201,6 +204,13 @@ class Check:
             self.logs_say(1, r'reporting a hit by our own guns', "the guest's hits went to the host")
             self.logs_say(0, r'reported damage to \d+', "the host took the guest's hits")
             self.logs_say(1, r'replay damage 1 -> ', "the host's word on the guest's hits came back")
+        if sc == 'chat':
+            self.logs_say_game(1, r'a chat line from slot \d+ on the comm: CHEATHOST: hello from the host',
+                               "the host's line on the guest's comm")
+            self.logs_say_game(0, r'a chat line from slot \d+ on the comm: GUEST: hi from the guest',
+                               "the guest's line on the host's comm")
+            self.logs_say_game(0, r'a chat line from slot 0 on the comm: CHEATHOST: hello from the host',
+                               "the host's own line on its own comm")
         if sc == 'kill':
             self.meeting('gone')
             for n in range(1, self.players):

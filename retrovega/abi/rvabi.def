@@ -62,10 +62,10 @@ VAR   steerInput                   4    # pitch (down +), yaw: -9..9 keys, 1..5 
 VAR   steerStepsX                 12    # pointer distances where each turn step begins, logical 320x200 px
 VAR   steerStepsY                 12
 VAR   viewRect                     8    # 3D view left, top, right, bottom in LOGICAL 320x200 coordinates
-VAR   commTextTimer                2
-VAR   commSpeaker                  2
+VAR   commTextTimer                2    # a chat line's count: the layer counts it on after it writes the next two
+VAR   commSpeaker                  2    # the chat line's speaker's slot, 0xFFFF a notice of the layer's own
 VAR   commVdu                     16    # the comm VDU; its screen rectangle is four words at +4 (logical)
-VAR   commGlobalTxt               80
+VAR   commGlobalTxt               80    # the chat line (flight.c and game.c show it: GameTraits.chatInBlock)
 VAR   vduText                    160
 VAR   pilotCallsign               14
 VAR   pilotLastName               14

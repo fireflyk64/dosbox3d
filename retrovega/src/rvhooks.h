@@ -94,13 +94,13 @@ extern uint8_t rv_dgroup[];
 #define steerStepsY_SIZE               12
 #define viewRect                       RV_AT(uint8_t *, 0x0144)  /* 1 x 8 bytes */ /* 3D view left, top, right, bottom in LOGICAL 320x200 coordinates */
 #define viewRect_SIZE                  8
-#define commTextTimer                  (*RV_AT(uint16_t *, 0x014C))
+#define commTextTimer                  (*RV_AT(uint16_t *, 0x014C)) /* a chat line's count: the layer counts it on after it writes the next two */
 #define commTextTimer_SIZE             2
-#define commSpeaker                    (*RV_AT(uint16_t *, 0x014E))
+#define commSpeaker                    (*RV_AT(uint16_t *, 0x014E)) /* the chat line's speaker's slot, 0xFFFF a notice of the layer's own */
 #define commSpeaker_SIZE               2
 #define commVdu                        RV_AT(uint8_t *, 0x0150)  /* 1 x 16 bytes */ /* the comm VDU; its screen rectangle is four words at +4 (logical) */
 #define commVdu_SIZE                   16
-#define commGlobalTxt                  RV_AT(uint8_t *, 0x0160)  /* 1 x 80 bytes */
+#define commGlobalTxt                  RV_AT(uint8_t *, 0x0160)  /* 1 x 80 bytes */ /* the chat line (flight.c and game.c show it: GameTraits.chatInBlock) */
 #define commGlobalTxt_SIZE             80
 #define vduText                        RV_AT(uint8_t *, 0x01B0)  /* 1 x 160 bytes */
 #define vduText_SIZE                   160

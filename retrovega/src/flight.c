@@ -1885,6 +1885,25 @@ static int role_voice(int role)
     return -1;
 }
 
+/* a shared flight's chat (room.h chat_take: the 0 key's prompt, the layer's): on the left VDU, as a comm with its face,
+ * the speaker's words under it (the user, 2026-11-04: it had "neither br[ought] up the comm VDU screen nor ... print[ed]
+ * the text on the other player").  Another player's line and our own echo with a hero's helmet (each pilot is the hero
+ * of their own game), a notice of the layer's with the XO's face; whatever the radio's dials say */
+static void comm_chat(void)
+{
+    static const char __far s_chat[] = "flight: frame %u: a chat line from slot %d on the comm: %Fs";
+    char line[84];
+    uint16_t who;
+    int v;
+    if (!chat_take(line, sizeof line, &who))
+        return;
+    v = who == 0xFFFF ? role_voice(RV_ROLE_XO) : -1;
+    if (v < 0)
+        v = role_voice(RV_ROLE_HERO);
+    rv_notef(s_chat, frameCounter, who == 0xFFFF ? -1 : (int)who, (char __far *)line);
+    (void)comms_say(v, 0, line);
+}
+
 static int comm_silent(void)
 {
     return g_sys.muted || systemDamage[SYS_INTERCOM] >= SYS_WRECKED;
@@ -3433,6 +3452,7 @@ void __far __cdecl flight_frame(void)
     else {
     comm_reply_tick();                  /* (first: an answer waiting goes before a hail takes the VDU) */
     comm_stop_tick();
+    comm_chat();
     if (!g_comm_demo && frameCounter == 90 && !comms_on(0) && !comms_on(1) && g_reply_voice == -1)
         comm_launch();
     else if (!g_comm_demo)
