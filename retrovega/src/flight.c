@@ -596,6 +596,21 @@ static void nav_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
     }
 }
 
+/* "MASTER ARM OFF" under the gunsight while the trigger is pulled with the guns safed.  The master arm is the panel's
+ * ARM knob alone since the user, 2026-11-04, lost their guns in a fight to its key ("I was hitting N and m is next to
+ * it. I think it might be too confusing", "lets unbind that key for now"): nothing said why they were quiet */
+static uint8_t __far g_arm_warn;        /* frames "MASTER ARM OFF" shows yet (the trigger pulled with the guns safed) */
+static void arm_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
+{
+    static const char s[] = "MASTER ARM OFF";
+    int w = panel_tiny_width(s), x = g_cam_cx - w / 2, row = g_cam_cy + 14;
+    if (!g_arm_warn || row < 0 || row + PANEL_TINY_H > SCR_H || x < 0 || x + w > SCR_W)
+        return;
+    if (ext && (row < ey0 || row >= ey0 + rows || x < ext[2 * (row - ey0)] || x + w > ext[2 * (row - ey0) + 1]))
+        return;
+    (void)panel_tiny(x, row, s, UI_RED, y0, y1);
+}
+
 /* the camera: the player's own frame; a ship's basis as the lightfield wants it */
 static void basis_of(int s, LfBasis *b)
 {
@@ -1496,6 +1511,7 @@ static void draw_world(int y0, int y1)
     {
         logic_hud();                    /* the game's own marks over the view (none from outside) */
         nav_tag(y0, y1, ext, ey0, rows);
+        arm_tag(y0, y1, ext, ey0, rows);
         if (g_sim && y0 < ey0 + 24 && y1 > ey0 + 6) {
             char s[64];
             simulator_line(s);
@@ -2193,7 +2209,6 @@ static int system_key(int ch)
         system_action(RV_PF_NAV_KNOB, 0);
         left_page(VDU_L_NAV);
         return 1;   /* (N: the nav page, the next point) */
-    case 'm': system_action(RV_PF_ARM_KNOB, 0); return 1;
     case 't': target_next(); vdu_show(1, VDU_R_TARGET); return 1;   /* (T brings the target page up, changed or not) */
     case 'y': target_nearest(); vdu_show(1, VDU_R_TARGET); return 1;
     case 'l': system_action(RV_PF_LOCK, 0); return 1;
@@ -3377,6 +3392,10 @@ unsigned short __far __cdecl flight_keys(void)
     g_pilot.steer_y = (signed char)g_steer_y;
     g_pilot.roll = (signed char)g_steer_roll;
     g_pilot.guns = (unsigned char)(g_view != VIEW_FLYBY && (in_trigger() || (in_button() && c && in.y < c->open_y1)));
+    if (g_pilot.guns && !g_sys.armed)   /* (the trigger with the guns safed: said while it is held, and a second after) */
+        g_arm_warn = LOGIC_HZ;
+    else if (g_arm_warn)
+        g_arm_warn--;
     g_pilot.missile = (unsigned char)(g_view != VIEW_FLYBY && in.key == KEY_ENTER);
     g_pilot.afterburner = g_sys.burning;
     if (in.x != g_scene.px || in.y != g_scene.py) {

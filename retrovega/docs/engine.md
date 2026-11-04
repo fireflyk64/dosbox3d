@@ -904,7 +904,8 @@ is a 5-pixel + in its own colour (the user's: a white one hid friend or
 foe), every other contact a dot. The sensor mode (V): the
 lock's seeker, radar (needs EMCON ACTIVE and the IFF) or infrared (needs a
 hot target: its engines toward us, or burning). IFF (I): off, every
-contact one colour. Master arm (M), decoys (X), the target lock (L: the
+contact one colour. Master arm (the panel's ARM knob only: its M key went 2026-11-04, the user having safed their guns
+by it, next to N, in a fight; the trigger pulled with the guns safed says MASTER ARM OFF under the gunsight), decoys (X), the target lock (L: the
 chosen target kept through T, Y and AUTO; none with the tracking system
 wrecked), the radar range (R: 4,000 / 8,000 / 16,000 km), the survival
 display's page (H: shields and armour, hull and damage, the nav point),
