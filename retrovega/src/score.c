@@ -258,7 +258,8 @@ void score_tick(int landing)
     if (nearby || (staying && mood == FIGHT))
         g_sc.quiet_at = now;
     /* what it should be: dead, a panic, a fight, the way home, or calm */
-    if (g_sys.hull <= 0) {
+    if (!is_ship(0) || shipAiState[0] == 9) {   /* (the ship dying; with the hull gone and the reserve left, the
+                                           third panic: it was the tragedy and then quiet, the player still flying) */
         play(DEAD);
         return;
     }

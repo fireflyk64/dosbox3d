@@ -178,7 +178,10 @@ The score only watches. Once a frame (`flight_music`) it reads the ships'
 slots and the ship's systems (panel.h), so combat need not tell it
 anything. The rules come in this order:
 
-1. **Dead** (hull 0): the tragedy, once, and then quiet.
+1. **Dead** (the player's ship dying, `shipAiState` 9): the tragedy,
+   once, and then quiet. The hull gone with the reserve left (damage.md)
+   is not dead but the third panic; it used to be "hull 0", and the
+   tragedy played on the reserve with the player still flying.
 2. **Panic:** with the hull under 60%, 35% and 15%, the first, second and
    third panic song. A panic stays, since the hull does not mend in flight.
 3. **Fight:** an enemy within 4,000 km starts a fight, a little beyond the
