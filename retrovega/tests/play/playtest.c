@@ -4319,6 +4319,51 @@ static void t_escort_waits(void)
     pt_mission();
 }
 
+/* M8.42: ENIGMA2 flown by the autopilot (the user, 2026-11-04: "if the player arrives from autopilot on any nav point
+ * on the way to the jump point then the ox should follow.... especially the last one...and should have enough time to
+ * fly to the actual outbound jump point and leave"): each wave killed, the Ox comes along to nav 1 and to nav 2, its
+ * jump's; then the player goes straight home by the autopilot, and the Ox still flies in to its jump point and goes */
+static void t_escort_jump_home(void)
+{
+    static const char __far e_there[] = "no Ox after ENIGMA2's launch (slot %d)";
+    static const char __far e_with[] = "after the autopilot to nav %d the Ox is %d km from the player (alive %d): it comes along";
+    static const char __far e_home[] = "the autopilot home returned %d (nav 2 reached %d)";
+    static const char __far e_gone[] = "the player gone home, 150 s on the Ox is still here, %d km from nav 2: it flies in and "
+        "jumps whoever is with it";
+    static const char __far e_won[] = "the Ox jumped and the waves killed: logic_escort_lost says %d (0)";
+    int16_t ox, r, i, leg;
+    for (i = 0; i < (int16_t)g_nmissions; i++) {
+        camp_mission((uint16_t)i, &g_tm);
+        if (!_fstrncmp(g_tm.id, "ENIGMA2", 8))
+            break;
+    }
+    pt_launch(g_tm.fighter != 0xFF ? g_tm.fighter : PT_PLAYER);
+    playerCanBeDamaged = 0;
+    ox = pt_ox();
+    REQUIRE(ox > 0, e_there, ox, 0, 0);
+    for (leg = 1; leg <= 2; leg++) {
+        r = logic_autopilot();
+        if (!pt_steps(SEC))
+            return;
+        REQUIRE(r == 1 && slot_is_ship(ox) && gInstanceShipTypes[ox] == PT_OX && pt_km(0, ox) < 5000, e_with, leg,
+                pt_km(0, ox), slot_is_ship(ox));
+        if (!pt_kill_side(SIDE_AERA) || !pt_steps(3 * SEC))
+            return;
+    }
+    for (i = 0; i < 8 && g_sys.nav != 0; i++)
+        logic_nav_next();
+    r = logic_autopilot();
+    REQUIRE(r == 1, e_home, r, logic_nav_seen(2), 0);
+    for (i = 0; i < 150 * SEC && slot_is_ship(ox) && gInstanceShipTypes[ox] == PT_OX; i++)
+        if (!pt_step())
+            return;
+    REQUIRE(!slot_is_ship(ox) || gInstanceShipTypes[ox] != PT_OX, e_gone,
+            pt_km_to(ox, g_tm.nav[1].x, g_tm.nav[1].y, g_tm.nav[1].z), 0, 0);
+    REQUIRE(logic_escort_lost() == 0, e_won, logic_escort_lost(), 0, 0);
+    g_camp.player_ship = PT_PLAYER;
+    pt_mission();
+}
+
 /* M8.38: an escort target in, its nav point come to, heads for the home carrier and stops within 150 km of its hull, its
  * nose the carrier's way; it is home, so its loss there afterwards is no loss of the player's (the user, 2026-11-04:
  * "inbound ships head to the vigilance", "when the ships arrive within 150km of the vigilance they should stop and
@@ -4878,8 +4923,11 @@ static void t_nav_choice(void)
 {
     static const char __far e_first[] = "after the launch the chosen nav point is %d: 1, the way ahead";
     static const char __far e_next[] = "N pressed %d times: nav %d chosen, wanted %d";
-    static const char __far e_went[] = "nav 2 chosen, the autopilot left currentNavPoint at %d (returned %d)";
-    static const char __far e_back[] = "nav 2 reached: the chosen nav point is %d, the first not reached (1)";
+    static const char __far e_went[] = "nav 2 chosen, the autopilot left currentNavPoint at %d (returned %d): it goes to "
+        "nav 1 first, in the mission's order, as the old game's does";
+    static const char __far e_back[] = "nav 1 reached: the chosen nav point is %d, the way ahead (2)";
+    static const char __far e_home[] = "home chosen with nav 2 still to fly, the autopilot returned %d and left the player "
+        "%d km from the launch: home is the one choice it takes (giving the mission up)";
     (void)pt_patrol();
     if (!pt_step())
         return;
@@ -4898,11 +4946,22 @@ static void t_nav_choice(void)
             if (slot_is_ship(i) && commAnimInfo[i] != commAnimInfo[0])
                 ship_clear(i);
         r = logic_autopilot();
-        REQUIRE(r == 1 && currentNavPoint == 2, e_went, currentNavPoint, r, 0);
+        REQUIRE(r == 1 && currentNavPoint == 1, e_went, currentNavPoint, r, 0);
     }
     if (!pt_step())
         return;
-    REQUIRE(g_sys.nav == 1, e_back, g_sys.nav, 0, 0);
+    REQUIRE(g_sys.nav == 2, e_back, g_sys.nav, 0, 0);
+    {
+        int16_t i, r;
+        for (i = 1; i < NUM_SHIP_SLOTS; i++)
+            if (slot_is_ship(i) && commAnimInfo[i] != commAnimInfo[0])
+                ship_clear(i);
+        pt_put(0, 0, 0, 40000, 0);      /* (out past the launch's reach, 20,000 km) */
+        for (i = 0; i < 4 && g_sys.nav != 0; i++)
+            logic_nav_next();
+        r = logic_autopilot();
+        REQUIRE(r == 1 && pt_km_to(0, 0, 0, 0) < 21000, e_home, r, pt_km_to(0, 0, 0, 0), 0);
+    }
 }
 
 /* M8.25: the last nav point's ships leave the scene: past 16,000 km (the old game's) the carrier is no ship to
@@ -6479,6 +6538,7 @@ static const char __far n_m8_34[] = "M8.34 autopilot-wingman (logic_autopilot): 
 static const char __far n_m8_35[] = "M8.35 autopilot-formup (logic_form_up): the flyby closes the wingman up on the player, its way and velocity the player's, kept through the jump";
 static const char __far n_m8_37[] = "M8.37 autopilot-human (logic_form_up): a human's wingman is put in its formation place as the flyby begins, the player's way and speed";
 static const char __far n_m8_36[] = "M8.36 escort-clear (route_step, logic_autopilot): an escort target out bears straight for its nav point and jumps only there; the autopilot leaves it on its way";
+static const char __far n_m8_42[] = "M8.42 escort-jump-home (logic_autopilot, route_step): ENIGMA2 by the autopilot, the Ox along to each nav point; the player straight home, the Ox still jumps";
 static const char __far n_m8_41[] = "M8.41 escort-waits (route_step, logic_autopilot): ENIGMA2's Ox waits for a player lingering at the launch, and the autopilot brings it along";
 static const char __far n_m8_40[] = "M8.40 campaign-way (logic_autopilot, the missions): every mission's waypoints reached on the old game's map, the autopilot stopping at their reach";
 static const char __far n_m8_39[] = "M8.39 full-map (logic_autopilot, step_scene): the autopilot stops at a nav point's reach; its ships are in the scene however far, the carrier again on the way home";
@@ -6491,7 +6551,7 @@ static const char __far n_m8_20[] = "M8.20 jump-told (route_step, logic_on_jump)
 static const char __far n_m8_21[] = "M8.21 wingman-lost (logic_wingman_lost, camp_load_units, camp_line_ok): a lost wingman is named, the next mission solo, their lines gone";
 static const char __far n_m8_22[] = "M8.22 kit-boost (kit_boost, logic_boost): talking to Kit before the launch: half as much armour again, or a round more; nothing without it";
 static const char __far n_m8_23[] = "M8.23 way-out (camp_way_out): how a system comes out of the flight just flown: nothing before its last mission, then as camp_resolve has it";
-static const char __far n_m8_24[] = "M8.24 nav-choice (logic_nav_next, logic_autopilot): the chosen nav point follows the way ahead until N picks one; the autopilot goes to it";
+static const char __far n_m8_24[] = "M8.24 nav-choice (logic_nav_next, logic_autopilot): the chosen nav point follows the way ahead until N picks one; the autopilot goes in the mission's order, or home";
 static const char __far n_m8_25[] = "M8.25 scene (step_scene): past 16,000 km the carrier is out of the scene and cannot be targeted; it is back as it was when the player is";
 static const char __far n_m8_27[] = "M8.27 second-wave (wave_may_come): a hidden point's enemies wait for the enemy fighters out, come when the last is killed, are called off when it ran";
 static const char __far n_m8_28[] = "M8.28 wingman-behind (logic_start): enemies at the launch: the wingman starts past them, none: beside the player";
@@ -6560,7 +6620,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 },
 };
 
 /* --- the run --- */

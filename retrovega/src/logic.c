@@ -3175,8 +3175,11 @@ static void route_step(int16_t s, Mind __far *m, const AiProfile __far *p)
         last = route_last(rec, goal);
         if (m->leg > goal)
             goal = m->leg < last ? m->leg : last;
-        if (commAnimInfo[s] == commAnimInfo[0] && human_km(s) > ROUTE_LEASH_KM) {
-            throttle(s, 0, 0);          /* (nobody with it: it waits, where it is, for a pilot to come) */
+        if (commAnimInfo[s] == commAnimInfo[0] && !(g_navs_seen >> last & 1) && human_km(s) > ROUTE_LEASH_KM) {
+            throttle(s, 0, 0);          /* (nobody with it: it waits, where it is, for a pilot to come; not once the
+                                           player has been at its last, the jump's: then it goes there and out, the
+                                           player gone home or not: the user, "should have enough time to fly to the
+                                           actual outbound jump point and leave") */
             return;
         }
     } else if (commAnimInfo[s] == commAnimInfo[0]
@@ -3792,7 +3795,12 @@ int16_t logic_autopilot_ready(void)
         if (slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9
             && human_km(s) < AUTOPILOT_CLEAR_KM)
             return -1;
-    next = g_nav_chosen ? g_sys.nav : nav_next_unseen();
+    /* (the first waypoint not reached, in the mission's order, whatever N has picked: the old game's autopilot goes there
+     * whatever its map shows (traced 2026-11-04: Enyo 2 with Nav 2 picked on the map, then the Tiger's Claw, its
+     * autopilot went to Nav 1 both times), so no wave and no escort's way is cut short (the user: "make sure players
+     * always arrive with the transpo[r]t and never are able to just skip the baddies by taking a we[i]rd route").  Home
+     * picked is the one exception: a pilot may give a mission up without the whole way back by hand) */
+    next = g_nav_chosen && g_sys.nav == 0 ? 0 : nav_next_unseen();
     if (nav_in_reach(next))
         return -1;                      /* (there already) */
     {
@@ -3944,6 +3952,8 @@ int16_t logic_autopilot(void)
     int16_t s, next, yaw, pitch, region, field;
     if ((next = logic_autopilot_ready()) < 0)
         return 0;
+    if (g_nav_chosen && g_sys.nav != next)
+        g_nav_chosen = 0;               /* (a later waypoint picked: the autopilot goes in order, the cross with it) */
     stop = way_stop(next, &region, &field);
     /* (the camera's start was the engine's, at its flyby: flight.c; the jump's end goes through autopilotFinished below:
      * in a shared flight the layer replays it, and every pilot's ship goes where the host's game puts it) */
