@@ -68,7 +68,9 @@
 #define SUM_SQ(n) ((unsigned long)(n) * ((n) + 1) * (2 * (n) + 1) / 6)
 #ifdef RV_HEAP
 #define ROCK_MAX 1200
-#define ROCK_OUT 400                    /* on screen at most */
+#define ROCK_OUT 128                    /* on screen at most, as the game's (400 for the old bubble's benchmarks, 2026-10-24:
+                                           since the field became an effect no flight has that many, and by 2026-11-04
+                                           RVT.EXE's heap had no room left for the lists at that size: no field at all) */
 #else
 #define ROCK_MAX 128                    /* (the bar window's cluster asks 154; a field FX_CAP at the plain density) */
 #define ROCK_OUT 128
