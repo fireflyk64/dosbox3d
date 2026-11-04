@@ -1,7 +1,8 @@
-# The klaxon silences itself (RVT.EXE: EXE=RVT.EXE tests/run.sh tests/klaxon.txt /fly 0): out of the launch, @ stops
-# the test build's benchmark scenery (a point of armour off every 3 s), ) puts the ship on its reserve, the klaxon
-# sounds ("fx: the klaxon" lines) for 15 s with no new damage, then stops; ( breaks a system 25 s later, and it
-# sounds again for 15 s
+# The klaxon silences itself (RVT.EXE: EXE=RVT.EXE tests/run.sh tests/klaxon.txt /fly 0):
+# out of the launch, @ stops the test build's benchmark scenery (a point of armour off
+# every 3 s), ) puts the ship on its reserve, the klaxon sounds ("fx: the klaxon" lines)
+# for 15 s with no new damage, then stops; ( breaks a system later, and it sounds again
+# for 15 s
 wait 33
 key @
 key )

@@ -1,6 +1,8 @@
-# The music from nav point to nav point (RVT.EXE: EXE=RVT.EXE tests/run.sh tests/navmusic.txt /fly 0): Enigma 1's
-# Nav 1 cleared ($ kills its enemies), on to Nav 2 (an asteroid field) and Nav 3, its enemies killed too. The cues
-# are the log's "music:" lines: the way home (HOMEWARD) only once the mission is done, never between its nav points
+# The music from nav point to nav point (EXE=RVT.EXE tests/run.sh tests/navmusic.txt /fly 0):
+# Enigma 1's Nav 1 cleared ($ kills its enemies), on to Nav 2 (an asteroid field) and Nav
+# 3, its enemies killed too. The cues are the log's
+# "music:" lines: the way home (HOMEWARD) only once the mission is done, never between
+# its nav points
 wait 33
 key a
 wait 150
