@@ -1825,34 +1825,67 @@ static void name_input(const Input *in0)
 
 /* --- the campaign log (the desk) --- */
 
+/* the campaign log's lattice: a node's place, its layer down (the rows as far apart as the deepest layer lets them be,
+ * the two endings a row below it) and its column across (the good ways to the left, the bad to the right: the
+ * campaign's own columns, data/campaign.csv; the user, 2026-11-03: "the branching campaign viewable in the barracks
+ * should actually branch like it did before--now somehow it's a long line": the 40 ported missions' 13 systems had
+ * each a layer of its own in column 0) */
+#define LOG_TOP 84
+#define LOG_BOTTOM 312
+#define LOG_MID_X 200
+#define LOG_COL_W 40
+static int log_row_h(void)
+{
+    int i, deepest = 1;
+    for (i = 0; i < (int)g_nnodes; i++)
+        if (g_nodes[i].layer > deepest)
+            deepest = g_nodes[i].layer;
+    return (LOG_BOTTOM - LOG_TOP) / deepest < 38 ? (LOG_BOTTOM - LOG_TOP) / deepest : 38;
+}
+
+static void log_place(int node, int row_h, int *x, int *y)   /* a node, or RV_NODE_GOOD / RV_NODE_BAD: the endings */
+{
+    int i, deepest = 1;
+    if (node == RV_NODE_GOOD || node == RV_NODE_BAD) {
+        for (i = 0; i < (int)g_nnodes; i++)
+            if (g_nodes[i].layer > deepest)
+                deepest = g_nodes[i].layer;
+        *x = LOG_MID_X + (node == RV_NODE_GOOD ? -LOG_COL_W : LOG_COL_W);
+        *y = LOG_TOP + deepest * row_h;
+        return;
+    }
+    *x = LOG_MID_X + g_nodes[node].col * LOG_COL_W;
+    *y = LOG_TOP + (g_nodes[node].layer - 1) * row_h;
+}
+
 static void log_overlay(int y0, int y1)
 {
-    int i, k;
+    int i, k, row_h = log_row_h(), x, y;
     char s[80];
     panel(40, 30, 560, 330, y0, y1);
     gfx_text(FONT_TITLE, 56, 40, "CAMPAIGN LOG", RV_TEXT_AMBER, y0, y1);
     /* the lattice: s at the top, v and l at the bottom */
     for (i = 0; i < (int)g_nnodes; i++) {
-        int x = 200 + g_nodes[i].col * 40, y = 84 + (g_nodes[i].layer - 1) * 38;
         int targets[2], t;
+        log_place(i, row_h, &x, &y);
         targets[0] = g_nodes[i].good;
         targets[1] = g_nodes[i].bad;
         for (t = 0; t < 2; t++) {
             int tx, ty;
-            if (targets[t] == RV_NODE_GOOD) { tx = 160; ty = 84 + 6 * 38; }
-            else if (targets[t] == RV_NODE_BAD) { tx = 240; ty = 84 + 6 * 38; }
-            else { tx = 200 + g_nodes[targets[t]].col * 40; ty = 84 + (g_nodes[targets[t]].layer - 1) * 38; }
+            log_place(targets[t], row_h, &tx, &ty);
             gfx_line(x, y, tx, ty, t ? UI_RED : UI_HILITE, 2, y0, y1);
         }
     }
     for (i = 0; i < (int)g_nnodes; i++) {
-        int x = 200 + g_nodes[i].col * 40, y = 84 + (g_nodes[i].layer - 1) * 38;
+        log_place(i, row_h, &x, &y);
         gfx_fill(x - 4, y - 4, 9, 9, i == g_camp.node ? UI_AMBER4 : UI_GREY3, y0, y1);
     }
-    gfx_text(FONT_BODY, 152, 84 + 6 * 38 + 6, "V", RV_TEXT_WHITE, y0, y1);
-    gfx_text(FONT_BODY, 234, 84 + 6 * 38 + 6, "L", RV_TEXT_WHITE, y0, y1);
-    sprintf(s, "Layer %u, mission %u of 4.  Flown: %u.  Trend: %+d", g_nodes[g_camp.node].layer,
-            g_camp.mission + 1, g_camp.flown, g_camp.trend);
+    log_place(RV_NODE_GOOD, row_h, &x, &y);
+    gfx_text(FONT_BODY, x - 8, y + 6, "V", RV_TEXT_WHITE, y0, y1);
+    log_place(RV_NODE_BAD, row_h, &x, &y);
+    gfx_text(FONT_BODY, x - 6, y + 6, "L", RV_TEXT_WHITE, y0, y1);
+    sprintf(s, "Layer %u, mission %u of %u.  Flown: %u.  Trend: %+d", g_nodes[g_camp.node].layer,
+            g_camp.mission + 1, camp_node_missions(g_camp.node), g_camp.flown, g_camp.trend);
     gfx_text(FONT_BODY, 300, 84, s, RV_TEXT_WHITE, y0, y1);
     gfx_text(FONT_BODY, 300, 110, "SPLASH COUNT", RV_TEXT_AMBER, y0, y1);
     for (i = 0, k = 0; i < (int)g_npilots; i++) {
