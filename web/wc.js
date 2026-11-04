@@ -12,7 +12,7 @@
 // travel as reliable messages tagged with a 4-byte prefix that the game
 // protocol never produces, so the transport filters them out.
 import { P2PGame } from "./p2p-client.js";
-import { initControls, KEY } from "./gamepad.js";
+import { initControls, KEY, stepped } from "./gamepad.js";
 import { initTouch } from "./touch.js";
 import { initVoice } from "./voice.js";
 import { loadSo3 } from "./so3.js";
@@ -1798,11 +1798,17 @@ const voice = initVoice({
 window.__wcVoiceLinks = voice.links;  // (for the page tests)
 window.__wcVoiceReport = voice.report;
 
-// a touch screen's KEYS (the device's keyboard), ESC and FIRE (web/touch.js)
+// The touch stick uses the same cockpit calibration as a controller, without sending a mouse click.
 const touch = initTouch({ log, send: (name, down) => {
   const M = (running && window.DOSBox) || null;
   if (!M || !M._wc_web_key) return false;
   M._wc_web_key(KEY[name], down);
+  return true;
+}, inFlight: () => !!(running && window.DOSBox?._wc_web_in_flight?.()), steer: (x, y) => {
+  const M = running && window.DOSBox, p = M && steeringPointer();
+  if (!p || !M._wc_web_pointer) return false;
+  const axis = (v, steps, reach, edge) => v === 0 ? 0 : steps ? stepped(v, steps, reach, edge, p.top) : v * reach;
+  M._wc_web_pointer(p.x + axis(x, p.stepsX, p.rx, p.edgeX), p.y + axis(y, p.stepsY, p.ry, p.edgeY));
   return true;
 } });
 

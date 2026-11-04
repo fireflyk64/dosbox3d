@@ -133,32 +133,46 @@ try {
   await sleep(4000);
   await shot("flight");
   if (phone) {
-    // a finger dragged across the view steers (the pointer follows it) and never holds the button (the guns)
-    const cdp = await context.newCDPSession(page);
-    const at = (gx, gy) => ({ x: box.x + gx * box.w / 640, y: box.y + gy * box.h / 400 });
-    const touch = (type, p) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: p ? [{ ...p, id: 1 }] : [] });
-    await touch("touchStart", at(320, 110));
-    let held = 0, xs = [];
-    for (let k = 1; k <= 12; k++) {
-      await touch("touchMove", at(320 + k * 15, 110 + k * 4));
-      await sleep(80);
-      const m = await page.evaluate(() => window.RetroVegaPage.module()._rv_page_mouse());
-      held |= m & 3;
-      xs.push((m >> 8) & 0xFFF);
-    }
-    await shot("flight-drag");
-    await touch("touchEnd");
-    ok(!held && xs[xs.length - 1] > xs[0] + 100, `a finger steers without the button held (x ${xs[0]} .. ${xs[xs.length - 1]}, buttons ${held})`);
-    // Fire: Space held while the button is (the page's keys into the game, watched)
+    await page.waitForFunction(() => !document.getElementById("touchMovement").hidden);
     await page.evaluate(() => {
       const M = window.RetroVegaPage.module(), f = M._rv_page_key;
       window.__keys = [];
       M._rv_page_key = (k, d) => { window.__keys.push([k, d]); return f(k, d); };
     });
-    await page.locator("#touchFire").tap();
-    await sleep(500);
-    const keys = await page.evaluate(() => window.__keys);
-    ok(keys.length === 2 && keys[0][0] === 0x39 && keys[0][1] === 1 && keys[1][1] === 0, `Fire: Space down and up (${JSON.stringify(keys)})`);
+    const mouse = () => page.evaluate(() => {
+      const m = window.RetroVegaPage.module()._rv_page_mouse();
+      return { x: (m >>> 8) & 0xFFF, y: (m >>> 20) & 0xFFF, buttons: m & 3 };
+    });
+    const neutral = await mouse();
+    await page.locator("#canvas").tap({ position: { x: 20, y: 20 } });
+    const untouched = await mouse();
+    ok(untouched.x === neutral.x && untouched.y === neutral.y && !untouched.buttons,
+      "cockpit touches neither steer nor press mouse buttons");
+    await page.locator("#touchFire").scrollIntoViewIfNeeded();
+    const pad = await page.locator("#touchStick").boundingBox(), fire = await page.locator("#touchFire").boundingBox();
+    const finger = { x: pad.x + pad.width / 2 + 32, y: pad.y + pad.height / 2, id: 1 };
+    const trigger = { x: fire.x + fire.width / 2, y: fire.y + fire.height / 2, id: 2 };
+    const cdp = await context.newCDPSession(page);
+    const touch = (type, touchPoints) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
+    await touch("touchStart", [finger]);
+    await sleep(200);
+    const turned = await mouse();
+    ok(turned.x > neutral.x + 30 && !turned.buttons, "the left pad steers without a mouse click");
+    await touch("touchStart", [finger, trigger]);
+    await sleep(300);
+    ok(await page.locator("#touchFire").evaluate((b) => b.classList.contains("on")), "a second finger holds Fire while steering");
+    await touch("touchMove", [{ ...finger, x: finger.x - 64 }, trigger]);
+    await sleep(200);
+    ok((await mouse()).x < neutral.x - 30, "steering still responds while Fire is held");
+    await shot("flight-controls", true);
+    await touch("touchEnd", [trigger]);
+    await touch("touchEnd", []);
+    await sleep(300);
+    const released = await mouse(), keys = await page.evaluate(() => window.__keys);
+    ok(released.x === neutral.x && released.y === neutral.y && !released.buttons, "releasing the pad centres steering");
+    ok(JSON.stringify(keys) === JSON.stringify([[0x39, 1], [0x39, 0]]), `Fire: Space down and up (${JSON.stringify(keys)})`);
+    await page.locator("#touchAuto").tap();
+    ok(await page.evaluate(() => window.__keys.some(([k, d]) => k === 0x1E && d === 1)), "Auto sends the game's autopilot key");
     await page.locator("#touchKeys").tap();
     await sleep(300);
     await page.keyboard.insertText("c1");        // the comm menu with the Keys button: 1 the wingman

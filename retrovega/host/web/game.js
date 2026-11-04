@@ -37,6 +37,10 @@ const touch = initTouch({ log, send: (name, down) => {
   if (!running || PC[name] === undefined) return false;
   M._rv_page_key(PC[name], down ? 1 : 0);
   return true;
+}, inFlight: () => !!(running && M?._rv_page_in_flight?.()), steer: (x, y) => {
+  if (!running || !M?._rv_page_steer) return false;
+  M._rv_page_steer(x, y);
+  return true;
 } });
 
 // the saves: the game writes them among its files; the page keeps a copy in IndexedDB (SAVE) after each

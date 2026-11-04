@@ -126,6 +126,26 @@ static void release_all(void)
 EMSCRIPTEN_KEEPALIVE void rv_page_key(int pc, int down) { hle_key(pc, down); }
 /* (for the page's tests) the mouse driver's buttons (bits 0, 1), its x at bit 8 and y at bit 20 */
 EMSCRIPTEN_KEEPALIVE int rv_page_mouse(void) { int x, y, b = hle_mouse_state(&x, &y); return b | x << 8 | y << 20; }
+/* viewRect is cleared outside flight. Its logical 320x200 bounds describe the actual steering area. */
+EMSCRIPTEN_KEEPALIVE int rv_page_in_flight(void) { const short *v = (const short *)viewRect; return v[2] > v[0]; }
+static int touch_axis(double value, int reach, int dead)
+{
+    double magnitude;
+    int offset;
+    if (value == 0) return 0;
+    magnitude = value < 0 ? -value : value;
+    if (magnitude > 1) magnitude = 1;
+    /* Cross flight.c's mouse dead zone for the first turn step, then use the remaining travel. */
+    offset = dead + 1 + (int)(magnitude * (reach - dead - 1));
+    return value < 0 ? -offset : offset;
+}
+EMSCRIPTEN_KEEPALIVE void rv_page_steer(double x, double y)
+{
+    const short *v = (const short *)viewRect;
+    if (!rv_page_in_flight()) return;
+    hle_mouse_at(v[0] + v[2] + touch_axis(x, v[2] - v[0], 16),
+                 v[1] + v[3] + touch_axis(y, v[3] - v[1], 12));
+}
 #endif
 
 static int g_nomouse;                   /* /nomouse: the pointer the desktop's (a debugger beside the window) */

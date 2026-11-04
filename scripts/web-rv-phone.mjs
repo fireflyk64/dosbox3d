@@ -7,6 +7,7 @@
 //   PLAYWRIGHT_DIR=... SHOT_DIR=... node scripts/web-rv-phone.mjs PAGE_URL
 // LOCK=1 keeps Pointer Lock (a desktop browser's touch screen); NOFS=1 takes the Fullscreen API away (an iPhone, which
 // has it for videos only: the touch controls are then a row under the picture).  Prints "PHONE OK" when every step showed.
+// FLIGHT=1 also launches and checks the dedicated stick, two-finger firing, neutral release and autopilot button.
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs";
@@ -139,6 +140,40 @@ try {
   await sleep(500);
   const keys = await page.evaluate(() => window.__keys);
   ok(keys.length === 2 && keys[0][1] === 1 && keys[1][1] === 0 && keys[0][0] === keys[1][0], `Fire: a key down and up (${JSON.stringify(keys)})`);
+  if (process.env.FLIGHT) {
+    await tap(478, 176);
+    t = await waitLog(/flight: \S+, \d+ ships/, 180000);
+    ok(/flight: \S+, \d+ ships/.test(t), "launched into flight");
+    await page.waitForFunction(() => !document.getElementById("touchMovement").hidden);
+    await page.locator("#touchFire").scrollIntoViewIfNeeded();
+    const pad = await page.locator("#touchStick").boundingBox(), fire = await page.locator("#touchFire").boundingBox();
+    let left = { x: pad.x + pad.width * .8, y: pad.y + pad.height / 2, id: 1 };
+    const right = { x: fire.x + fire.width / 2, y: fire.y + fire.height / 2, id: 2 };
+    const cdp = await context.newCDPSession(page);
+    const touch = (type, touchPoints) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
+    const turn = () => page.evaluate(() => [window.DOSBox._wc_web_steer(4, 0), window.DOSBox._wc_web_steer(4, 1)]);
+    await page.evaluate(() => { window.__keys.length = 0; });
+    await touch("touchStart", [left]);
+    await sleep(600);
+    ok((await turn())[0] > 0, "the left pad turns right in the game");
+    ok((await page.evaluate(() => window.__keys)).length === 0, "steering does not press Fire");
+    await touch("touchStart", [left, right]);
+    left = { ...left, x: pad.x + pad.width * .2 };
+    await touch("touchMove", [left, right]);
+    await sleep(600);
+    ok((await turn())[0] < 0 && await page.locator("#touchFire").evaluate((b) => b.classList.contains("on")),
+      "the pilot turns left while the second finger fires");
+    await shot("flight-controls", true);
+    await touch("touchEnd", [right]);
+    await touch("touchEnd", []);
+    await sleep(600);
+    const centred = await turn(), fired = await page.evaluate(() => window.__keys);
+    ok(centred[0] === 0 && centred[1] === 0, "releasing the stick centres the game's steering");
+    ok(fired.length === 2 && fired[0][1] === 1 && fired[1][1] === 0, "the trigger releases independently");
+    await page.evaluate(() => { window.__keys.length = 0; });
+    await page.locator("#touchAuto").tap();
+    ok((await page.evaluate(() => window.__keys)).length === 2, "Auto sends a key press to the game");
+  }
   fs.writeFileSync(path.join(shotDir, "phone-RVLOG.TXT"), await rvlog());
 } finally {
   fs.writeFileSync(path.join(shotDir, "phone-console.log"), logs.join("\n") + "\n");

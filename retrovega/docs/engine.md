@@ -462,6 +462,14 @@ debrief.
 
 ## Input: mouse and keys together
 
+On touch screens, both browser pages show a left-hand **TURN** pad during flight and right-hand buttons for
+**Fire**, **Missile**, **Target**, **Auto** (autopilot), **Boost**, **Speed −/+**, **Comm**, **Nav** and **Weapon**.
+The pad and buttons accept separate fingers: hold Fire while steering. Releasing the pad centres steering;
+Fire, Boost and throttle stay held until released, including when the finger slides off the button. A cancelled
+touch, lost page focus or hidden page releases held controls. Cockpit touches do not steer or fire during flight;
+at the base, tapping the picture still clicks. **Keys** opens the phone keyboard for names and comm-menu digits,
+and **Esc** closes game panels. Controls sit below the picture, or at its edges in fullscreen.
+
 **Escape never quits** (the user's rule, 2026-10-20: "that key is for
 interacting with the browser" — leaving full screen must not end the
 game). Esc closes what is open (a close-up, a dialogue, a briefing page)

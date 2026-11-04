@@ -13,7 +13,7 @@ mkdir -p "$OUT/art"
 REV=$(git rev-parse --short HEAD)$(git diff --quiet HEAD -- src host tools data || echo M)
 sed "s/@REV@/$REV/" host/web/game.html > "$OUT/index.html"
 cp host/web/game.js build/gameweb/rv.js build/gameweb/rv.wasm "$OUT/"
-for f in rvsets.js rvsprites.js rvsprites-worker.js touch.js; do cp "../web/$f" "$OUT/"; done
+for f in rvsets.js rvsprites.js rvsprites-worker.js touch.js touch.css; do cp "../web/$f" "$OUT/"; done
 # (reproducible: the names sorted, the dates and owners fixed, gzip without its time stamp: the same data, the same
 # bytes, so desktop/fetch-data.sh's pinned SHA-256 holds until the data itself changes)
 (cd build/dos && tar --format=ustar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode=a+r,u+w \

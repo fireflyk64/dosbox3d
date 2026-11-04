@@ -1,0 +1,45 @@
+/* Shared phone controls: below the picture, or at the edges of #screen in fullscreen. */
+#touch { margin-top: 8px; color: var(--green); user-select: none; -webkit-user-select: none; }
+#touch[hidden], #touch [hidden] { display: none; }
+#touch button { min-width: 0; min-height: 44px; margin: 0; padding: 6px 8px; font-size: 12px; letter-spacing: 0; touch-action: none; }
+#touch .touch-tools { display: flex; justify-content: space-between; margin-bottom: 8px; }
+#touch .touch-tools button { min-width: 64px; }
+#touch .touch-deck { display: flex; justify-content: space-between; align-items: end; gap: 12px; }
+#touch .touch-actions { width: 216px; max-width: 58%; margin-left: auto; }
+#touch .touch-flight { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-bottom: 5px; }
+#touchFire { width: 100%; min-height: 58px !important; font-weight: bold; }
+#touch button.on { background: var(--green); color: #031a0c; border-color: var(--green); }
+#touchStick { position: relative; width: clamp(104px, 29vw, 140px); aspect-ratio: 1; border: 2px solid var(--green);
+  border-radius: 50%; background: #04140e; touch-action: none; overflow: hidden; }
+#touchStick::before { content: ""; position: absolute; inset: 18%; border: 1px solid var(--line); border-radius: 50%; }
+#touchStick::after { content: "TURN"; position: absolute; top: 8px; width: 100%; text-align: center; font: 10px var(--mono); }
+#touchStick.on { border-color: #d6ffe4; }
+#touchKnob { position: absolute; left: calc(50% - 17px); top: calc(50% - 17px); width: 34px; height: 34px;
+  border: 2px solid var(--green); border-radius: 50%; background: #174e34; pointer-events: none; }
+#touchType { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; font-size: 16px; }
+#screen:fullscreen #touch { position: absolute; inset: 0; margin: 0; pointer-events: none; }
+#screen:fullscreen #touch .touch-tools { position: absolute; top: max(8px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); }
+#screen:fullscreen #touch .touch-deck { position: absolute; bottom: max(8px, env(safe-area-inset-bottom));
+  left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); }
+#screen:fullscreen #touch button, #screen:fullscreen #touchStick { pointer-events: auto; }
+#screen:fullscreen #touch .touch-actions { max-width: 46%; }
+@media (max-width: 380px) {
+  #touch .touch-flight { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  #screen:fullscreen #touchStick { width: 116px; }
+  #screen:fullscreen #touch .touch-flight { gap: 4px; }
+}
+/* Phones without the Fullscreen API still need both thumbs beside a visible cockpit in landscape. */
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 600px) {
+  #screen.touch-flight #canvas { width: min(100%, 160svh); height: auto; margin: auto; }
+  #screen.touch-flight #touch { position: absolute; inset: 0; margin: 0; pointer-events: none; }
+  #screen.touch-flight #touch .touch-tools { position: absolute; top: max(8px, env(safe-area-inset-top));
+    left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); }
+  #screen.touch-flight #touch .touch-deck { position: absolute; bottom: max(8px, env(safe-area-inset-bottom));
+    left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); }
+  #screen.touch-flight #touch button, #screen.touch-flight #touchStick { pointer-events: auto; }
+  #screen.touch-flight #touch .touch-actions { max-width: 46%; }
+  #screen.touch-flight #touchStick { width: 116px; }
+}
