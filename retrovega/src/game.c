@@ -20,6 +20,7 @@
 #include "rocks.h"
 #include "ships.h"
 #include "gx.h"
+#include "explode.h"
 #include "lipsync.h"
 #include "music.h"
 #include "flight.h"
@@ -85,19 +86,21 @@ static int g_talk_speed = 1;
 static int g_low_detail;                /* the ships' detail, the bunk menu's choice (0: high, gx.h; only asked with the card there) */
 static const char *g_detail_names_[] = { "high", "low" };
 static const char *g_diff_names[] = { "normal", "easy" };   /* the difficulty, the bunk menu's choice: g_easy (campaign.c) */
+static const char *g_fx_names[] = { "off", "on" };   /* the extra effects, the bunk menu's choice: g_fx_extra (explode.h) */
 #define SETUP_FILE "RVSETUP.CFG"
 
 static void setup_load(void)
 {
-    unsigned char b[9];
+    unsigned char b[10];
     size_t n;
     FILE *f = fopen(SETUP_FILE, "rb");
     if (!f)
         return;
-    if ((n = fread(b, 1, 9, f)) >= 8 && !memcmp(b, "RVCFG1", 6) && b[6] < RV_COUNT(g_talk_pcts)) {
+    if ((n = fread(b, 1, 10, f)) >= 8 && !memcmp(b, "RVCFG1", 6) && b[6] < RV_COUNT(g_talk_pcts)) {
         g_talk_speed = b[6];
         g_low_detail = b[7] == 1;       /* (older files have 0 here: high detail, the default) */
-        g_easy = n == 9 && b[8] == 1;   /* (older files end before it: normal) */
+        g_easy = n >= 9 && b[8] == 1;   /* (older files end before it: normal) */
+        g_fx_extra = n == 10 && b[9] == 1;   /* (and before this: off) */
     }
     gx_set(!g_low_detail);
     fclose(f);
@@ -105,18 +108,19 @@ static void setup_load(void)
 
 static void setup_save(void)
 {
-    char b[9];
+    char b[10];
     FILE *f = fopen(SETUP_FILE, "wb");
     memcpy(b, "RVCFG1", 6);
     b[6] = (char)g_talk_speed;
     b[7] = (char)g_low_detail;
     b[8] = (char)g_easy;
+    b[9] = (char)g_fx_extra;
     if (f) {
-        fwrite(b, 1, 9, f);
+        fwrite(b, 1, 10, f);
         fclose(f);
     }
-    RV_LOG("setup: talk speed %s, ship detail %s, difficulty %s", g_talk_names[g_talk_speed], g_detail_names_[g_low_detail],
-           g_diff_names[g_easy]);
+    RV_LOG("setup: talk speed %s, ship detail %s, difficulty %s, extra fx %s", g_talk_names[g_talk_speed],
+           g_detail_names_[g_low_detail], g_diff_names[g_easy], g_fx_names[g_fx_extra]);
 }
 
 /* speech runs on the music clock (240 Hz): fine enough for a shape every 25 ms */
@@ -1486,6 +1490,31 @@ static void difficulty_row(int y0, int y1)
     }
 }
 
+/* the bunk menu's extra effects, on the difficulty's row to its right: the wrecks' debris (explode.h; drawn only with
+ * the card on DOS, by the native builds themselves), off by default */
+#define FX_X 372                        /* (past "easy" and its highlight; "on"'s ends inside the panel) */
+#define FX_LABEL "EXTRA FX (E)"
+static int fx_x(int i, int *w)
+{
+    int k, x = FX_X + gfx_text_width(FONT_BODY, FX_LABEL) + 12;
+    for (k = 0; k < i; k++)
+        x += gfx_text_width(FONT_BODY, g_fx_names[k]) + 16;
+    *w = gfx_text_width(FONT_BODY, g_fx_names[i]);
+    return x;
+}
+
+static void fx_row(int y0, int y1)
+{
+    int i;
+    gfx_text(FONT_BODY, FX_X, DIFF_Y, FX_LABEL, RV_TEXT_AMBER, y0, y1);
+    for (i = 0; i < (int)RV_COUNT(g_fx_names); i++) {
+        int w, x = fx_x(i, &w);
+        if (i == g_fx_extra)
+            gfx_fill(x - 6, DIFF_Y - 3, w + 12, 20, UI_PANEL_EDGE, y0, y1);
+        gfx_text(FONT_BODY, x, DIFF_Y, g_fx_names[i], i == g_fx_extra ? RV_TEXT_WHITE : RV_TEXT_GREY, y0, y1);
+    }
+}
+
 /* the bunk menu's row for the ships' detail, beside its title: only with a sprite accelerator to choose it for (gx.h) */
 #define DETAIL_Y 56
 #define DETAIL_X 282
@@ -1605,6 +1634,7 @@ static void bunk_overlay(int y0, int y1)
     }
     if (g_mode != MODE_NAME) {
         difficulty_row(y0, y1);
+        fx_row(y0, y1);
         talk_speed_row(y0, y1);
         if (gx_present())
             detail_row(y0, y1);
@@ -1678,6 +1708,24 @@ static void bunk_input(const Input *in0)
         if (pick >= 0) {
             g_low_detail = pick;
             gx_set(!g_low_detail);
+            setup_save();
+            vid_dirty(30, 350);
+        }
+        return;
+    }
+    /* the extra effects: E for the other, or a click on one (from the next flight) */
+    if (g_mode != MODE_NAME && ((in->key == KEY_CHAR && (in->ch == 'e' || in->ch == 'E'))
+                                || (in->clicked && in->y >= DIFF_Y - 3 && in->y < DIFF_Y + 16 && in->x >= FX_X - 4))) {
+        int i, w, pick = -1;
+        if (!in->clicked)
+            pick = !g_fx_extra;
+        for (i = 0; in->clicked && i < (int)RV_COUNT(g_fx_names); i++) {
+            int x = fx_x(i, &w);
+            if (in->x >= x - 8 && in->x < x + w + 8)
+                pick = i;
+        }
+        if (pick >= 0) {
+            g_fx_extra = (uint8_t)pick;
             setup_save();
             vid_dirty(30, 350);
         }

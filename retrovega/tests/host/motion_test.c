@@ -24,6 +24,7 @@ static void reset_effects(void)
     g_n = g_nord = 0;
     g_nvar = 2;
     g_nramp = 20; g_nspark = 10; g_ndebris = 4;
+    g_fx_extra = 1;                     /* (the bunk menu's EXTRA FX: the wrecks' debris) */
     for (i = 0; i < 34; i++) g_cols[i] = (uint8_t)(64 + i);
 }
 
@@ -62,6 +63,12 @@ int main(void)
     }
     assert(g_vis == rng);
 
+    reset_effects();
+    g_fx_extra = 0;
+    explode_add(&at, &vel, 100, BOOM_WRECK, 0, 1);
+    assert(g_n == 0);                   /* no debris without the extra effects (the default) */
+    explode_add(&at, &vel, 100, BOOM_SHIP, 0, 1);
+    assert(g_n == 1);                   /* (the blast all the same) */
     reset_effects();
     for (i = 0; i < 100; i++) {
         explode_add(&at, &vel, 100, BOOM_WRECK, 0, (uint16_t)i);
@@ -108,7 +115,7 @@ int main(void)
     for (i = 60; i < 210; i++) explode_frame();
     explode_place(&eye, &cam, 320, 140, 400);
     assert(g_n == 0 && g_nord == 0);
-    printf("MOTION OK: acceleration settling, bounded wrecks, parallax, lifetime and canopy clipping; "
+    printf("MOTION OK: acceleration settling, no wrecks without the extra effects, bounded wrecks, parallax, lifetime and canopy clipping; "
            "%d pixels of debris in the band\n", pixels);
     return 0;
 }

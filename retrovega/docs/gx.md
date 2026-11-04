@@ -130,7 +130,8 @@ mirrored headings are their pair's, flag 1).
   seed and age, clipped to the rows, the columns and the cockpit's opening like a ship. The tumble's pictures (8 chunks,
   16 frames, 48, 24 and 12 pixels) are made once when the card is installed (`rv_debris_prepare`, 5 ms natively). Only
   the card draws it: DOS alone shows no debris (the user's design, 2026-11-03). The game makes the call only for the bands
-  the cloud's box reaches.
+  the cloud's box reaches, and only with the bunk menu's EXTRA FX on (off by default since the user found the kills
+  stutter with it, 2026-11-03: `g_fx_extra`, explode.h).
 - A draw takes no emulated time, and it writes straight into the emulated memory. The game's clock does not see it; if
   it ever cost too much, the emulator would fall behind real time rather than the game slowing down.
 

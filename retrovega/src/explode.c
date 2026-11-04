@@ -90,6 +90,7 @@ static int16_t __far g_wm[9], __far g_wfocal, __far g_wcx, __far g_wcy;
 static const uint8_t __far k_wreck_metal[DEBRIS_METAL] = { 161, 168, 180, 186, 192, 197, 201, 203 };
 static const uint8_t __far k_wreck_hot[DEBRIS_HOT] = { 131, 135, 139, 143 };
 #define WRECK_ALL 0x7FFF                /* (a wreck's rpx: the eye is in it, every row may hold a piece) */
+uint8_t __far g_fx_extra;               /* (explode.h: the wrecks' debris only with it) */
 #ifdef RV_HOST
 RvDebris g_host_debris;                 /* (gx_debris_args off DOS: gx.h) */
 #endif
@@ -226,7 +227,7 @@ void explode_add(const RvVec3 *at, const RvVec3 *vel, int32_t radius_km, int16_t
 {
     Boom __far *b;
     int16_t i, old = -1, wrecks = 0;
-    if (!g_ready || kind < 0 || kind >= BOOM_KINDS)
+    if (!g_ready || kind < 0 || kind >= BOOM_KINDS || (kind == BOOM_WRECK && !g_fx_extra))
         return;
     for (i = 0; i < g_n; i++)
         if (g_b[i].kind == BOOM_WRECK) {

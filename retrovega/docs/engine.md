@@ -503,6 +503,16 @@ Alt-X, "so it's rare".
   `RVSETUP.CFG`'s ninth byte (an older eight-byte file reads as normal).
   The bunks' rows are 24 pixels apart to make room for it. The menu does
   not say what easy changes (the user: "better to keep it magic").
+- **EXTRA FX** (the difficulty's row, to its right; E or a click): off, the
+  default, or on, which shows a wreck's debris (the card's on DOS, the
+  native builds' own). The user, 2026-11-03: "the new explosions really
+  slow the game down and make it stutter when they happen. Lets remove the
+  debris for now and keep it as an extra high graphics option off by
+  default". Kept as `RVSETUP.CFG`'s tenth byte (an older file reads as
+  off); RVT.EXE's `/extrafx` turns it on for a test. The cockpit's shake
+  (a hit, the afterburner's kick) stays in the normal setting: forced on
+  in every frame of a fight it cost nothing (5.80 against 5.78 ms a frame,
+  1,707 frames at the page's 50,000 cycles).
 - Close-ups have a 16-pixel battleship steel frame, with beveled edges and corner fasteners, packed into the face sprite.
   Kit alone keeps the rounded shoulders and has no frame. The other portraits keep their original shoulder outlines;
   the frame's bottom rail fits on screen, with the bust ending behind it. The mouth and eye patches keep their positions.

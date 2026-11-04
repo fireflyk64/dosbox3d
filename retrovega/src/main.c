@@ -293,6 +293,8 @@ int main(int argc, char **argv)
             g_capital_blocks_test = atoi(argv[++i]);
         else if (!strcmp(argv[i], "/starbench") && i + 1 < argc)   /* tests: the stars' placing timed, N times over */
             g_star_bench = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "/extrafx"))          /* tests: the bunk menu's EXTRA FX on (explode.h) */
+            g_fx_extra = 1;
         else if (!strcmp(argv[i], "/capital"))          /* tests: the carrier in the flight */
             g_capital = 1;
         else if (!strcmp(argv[i], "/simat") && i + 1 < argc)   /* tests: the simulator starts at this many ships */

@@ -27,6 +27,11 @@ void explode_flight_end(void);
  * sparks) */
 void explode_add(const RvVec3 *at, const RvVec3 *vel, int32_t radius_km, int16_t kind, uint16_t delay, uint16_t seed);
 
+/* the bunk menu's EXTRA FX (RVSETUP.CFG): 1 shows a wreck's debris (BOOM_WRECK), 0 (the default) takes none.  The
+ * user, 2026-11-03: "the new explosions really slow the game down and make it stutter when they happen. Lets remove
+ * the debris for now and keep it as an extra high graphics option off by default" */
+extern uint8_t __far g_fx_extra;
+
 /* a shield taking a hit (the user's brief, 2026-10-31): no cels and no fire, a haze of light blue stipple right where
  * the shot struck, moving with the ship, its pixels new every frame.  strength: how much of that shield the hit left,
  * 0 .. 255: the more, the bigger, denser and brighter; a failing shield's is small and dim and sputters.  A ship keeps
