@@ -56,6 +56,9 @@ extern Bit32s CPU_OldCycleMax;
 extern Bit32s CPU_CyclePercUsed;
 extern Bit32s CPU_CycleLimit;
 extern Bit64s CPU_IODelayRemoved;
+// Emulated ms the CPU has spent halted (hlt) until now: a game that idles with hlt is not busy then
+// (the layer's load figure, wcnet_perf.cpp).
+double CPU_HaltedMs(void);
 extern bool CPU_CycleAutoAdjust;
 extern bool CPU_SkipCycleAutoAdjust;
 extern Bitu CPU_AutoDetermineMode;

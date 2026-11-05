@@ -28,6 +28,7 @@
 #include "setup.h"
 #include "programs.h"
 #include "paging.h"
+#include "pic.h"
 #include "lazyflags.h"
 #include "support.h"
 
@@ -2044,10 +2045,20 @@ bool CPU_CPUID(void) {
 	return true;
 }
 
+static double hlt_total = 0, hlt_since = -1;	// (CPU_HaltedMs)
+
+double CPU_HaltedMs(void) {
+	return hlt_total + (hlt_since >= 0 ? PIC_FullIndex() - hlt_since : 0);
+}
+
 static Bits HLT_Decode(void) {
 	/* Once an interrupt occurs, it should change cpu core */
 	if (reg_eip!=cpu.hlt.eip || SegValue(cs) != cpu.hlt.cs) {
 		cpudecoder=cpu.hlt.old_decoder;
+		if (hlt_since >= 0) {
+			hlt_total += PIC_FullIndex() - hlt_since;
+			hlt_since = -1;
+		}
 	} else {
 		CPU_IODelayRemoved += CPU_Cycles;
 		CPU_Cycles=0;
@@ -2063,6 +2074,7 @@ void CPU_HLT(Bitu oldeip) {
 	cpu.hlt.eip=reg_eip;
 	cpu.hlt.old_decoder=cpudecoder;
 	cpudecoder=&HLT_Decode;
+	if (hlt_since < 0) hlt_since = PIC_FullIndex();
 }
 
 void CPU_ENTER(bool use32,Bitu bytes,Bitu level) {

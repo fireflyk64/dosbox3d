@@ -14,6 +14,7 @@ namespace wc {
 
 static PerfSample g_last = { false, 0, 0, 0, 0, 0, 0, 0, 0 };
 static double g_paced = 0;  // emulated ms of this interval spent waiting for a frame's turn
+static double g_haltedStart = 0;  // CPU_HaltedMs() as the interval began: the game's own idling (RetroVega's hlt)
 static double g_emuStart = -1, g_realStart = 0, g_lastFrameEmu = 0, g_wait = 0, g_worst = 0;
 static double g_ageSum = 0, g_ageWorst = 0;
 static int g_frames = 0, g_ages = 0;
@@ -167,6 +168,7 @@ void perf_frame() {
         // The first frame of a flight (or the first after a cutscene).
         g_emuStart = emu;
         g_realStart = perf_now_ms();
+        g_haltedStart = CPU_HaltedMs();
         g_frames = 0;
         g_wait = 0;
         g_worst = 0;
@@ -191,8 +193,15 @@ void perf_frame() {
     g_last.waitMs = g_wait / g_frames;
     g_last.worstFrameMs = g_worst;
     // (Only where frames are paced: a game that waits by itself, as WC2
-    // does, is busy all the time as far as the CPU can tell.)
-    g_last.load = pace_fps() > 0 ? 1.0 - g_paced / (emu - g_emuStart) : -1.0;
+    // does, is busy all the time as far as the CPU can tell.)  The idle
+    // time is the layer's own waits and the game's halts: RetroVega flying
+    // with nobody else paces its frames itself with hlt (flight.c, its frame
+    // cap), which had read as 100% busy with one ship on the screen (the
+    // user, 2026-11-05: "launched into space at 100% cpu" after the host
+    // left; 35% while the session lasted, the same flight).
+    double halted = CPU_HaltedMs() - g_haltedStart;
+    double idle = g_paced + (halted > 0 ? halted : 0);
+    g_last.load = pace_fps() > 0 ? 1.0 - (idle < emu - g_emuStart ? idle : emu - g_emuStart) / (emu - g_emuStart) : -1.0;
     g_last.cycles = (int)CPU_CycleMax;
     g_last.posAgeMs = g_ages ? g_ageSum / g_ages : -1;
     g_last.posAgeWorstMs = g_ages ? g_ageWorst : -1;
@@ -219,6 +228,7 @@ void perf_frame() {
     g_wait = 0;
     g_worst = 0;
     g_paced = 0;
+    g_haltedStart = CPU_HaltedMs();
     g_ageSum = g_ageWorst = 0;
     g_ages = 0;
 }
