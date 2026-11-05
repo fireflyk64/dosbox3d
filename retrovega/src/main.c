@@ -15,6 +15,7 @@
  * Needs RV.DAT and RVGAME.DAT beside it, 32 MB of XMS (it takes all there is) and VESA mode 100h. */
 #include <stdio.h>
 #include <malloc.h>
+#include <malloc.h>
 #include <string.h>
 #include <stdlib.h>
 #include <dos.h>
@@ -132,6 +133,8 @@ static void names(void)
 #ifdef RV_HOST                          /* (on the host the front end has the program's main, and calls this) */
 #define main rv_main
 #endif
+#define NEAR_KEEP 2048U              /* the near heap kept for stdio (main) */
+
 int main(int argc, char **argv)
 {
     int i, ok, nogx = 0;
@@ -145,6 +148,16 @@ int main(int argc, char **argv)
     rvHello();
     rv_stack_paint();
     mem_settle();                       /* (after a first line: it opens the log) */
+#ifndef RV_HOST
+    {   /* the runtime's near heap, what is left of DGROUP's 64 KB past the data and the stack, given back to DOS but for
+         * NEAR_KEEP: the game takes nothing from it (its arrays are fixed), stdio a 512-byte buffer for each file open at
+         * once (four at most: mem_settle) and the records mem_settle has made.  The user's pick from the memory plan,
+         * 2026-11-04 (some 6.6 KB more free for DOS; measured then: no falls in flight) */
+        void *keep = malloc(NEAR_KEEP);
+        _nheapshrink();
+        free(keep);
+    }
+#endif
 #ifdef RV_TESTS
     RV_LOG("RVT.EXE: the test build (the demos, the benchmarks and the self-tests are in)");
 #endif
