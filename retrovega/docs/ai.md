@@ -218,10 +218,25 @@ carrier, and untouched.
 
 ## A capital ship's turrets
 
-A capital ship fires its turrets at the nearest enemy in range, and they are deadly: the Vigilance has seven aces dead
-in under 15 s. A mission's `turrets=off` (ship line; `ship_think`) keeps them silent: the home carrier has it where
-enemies start at nav 0, so the player has that fight to fly. Then heavies and aces can kill the carrier in anything from
-a minute to nine, unhindered; light fighters do not (measured on the host, 2026-10-31, the player away).
+Since 2026-11-05 a capital ship's turrets are the old game's (the user, of an Agasicles that a Franklin "can't take":
+"I remember the fire rate of the destroyers were very low.... Just enough to take you down a bit but not enough to do
+you in, if you were careful"; read in its code and measured, tests/wc1/README.md "Capital ships"). Once in
+`CAP_TURRET_FRAMES` of the old game's frames (`ship_think`) a capital ship picks one of the enemies within
+`CAP_TURRET_KM` (5,000 km) at random; each turret has one chance in two, and bears on it with 3 in 8 (or on another
+enemy near, as the old game tried them in turn: 1 - (5/8)^n). A turret's shot (`capital_shot`, in the replayed
+`fireGunFromShip`, its dice the step's, the ship's and the gun's) goes to a place about the target, a way off on each
+axis by up to 400 km and `CAP_SPREAD_FRAMES` frames of the target's travel more: mostly a flak burst there (weapon
+`FLAK`, placed, bursting a step later in `step_shots`: `flak_burst` hurts every ship whose hull is within 500 km by
+1000 / k², k from 8 at the hull to 25 at 500 km, the player three quarters of it, nothing at 1), now and then a bolt
+(40 in 100 when the ship is ready for one, else 8; a bolt makes it wait 7 to 16 frames), which dies 5 to 12 frames
+short of that place, so it seldom reaches a fighter. A still pilot 2,250 km off is worn down (M8.44: 352 points in two
+minutes, the old game's 409 on its bigger Scimitar); one at 200 kps is grazed (36; the old 57). A launcher fires at the
+same target one time in 14 when it bears (1 in 4). The hull is the old game's count (`hull_take`: a hit past the armour
+an eighth of itself on the Aera's side, a tenth on the others', at least one; `CAP_HULL_POINTS` 14 points a count):
+an Agasicles dies at its 90th laser hit (M8.45).
+
+A mission's `turrets=off` (ship line; `ship_think`) keeps them silent: the home carrier has it where enemies start at
+nav 0, so the player has that fight to fly.
 
 ## The taunt
 

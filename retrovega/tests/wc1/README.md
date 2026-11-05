@@ -399,8 +399,61 @@ hunted 449 (the old 613; ours die sooner, 42-80 s against 138-180: the Schroedin
 Hornet's two, and our hunter hitting 7.6% against 3.5%). Going on down to 1 degree past 2,000 and none past 2,500 gave
 1,449 points straight: too many.
 
+## Capital ships (2026-11-05)
+
+The user: an Agasicles on CEPHID2 (the old McAuliffe 2) "starts shooting at me my franklin can't take it. I remember
+the fire rate of the destroyers were very low.... 1 laser cannon tops. Just enough to take you down a bit but not
+enough to do you in, if you were careful. Moreover I think the shields were a bit less fast to recharge", and "carry
+over all the stats for capships, so the ox isn't overly strong either and is more like a drayman--same with fralthi and
+exeter and all them".
+
+**The ship table** (dseg:49DC, 0x6F a type; its shields and armour are plain words at +5B..+65, the rows being odd
+in length; a gun list at +28, a count then five bytes a mount: weapon, mount, side), the capital types:
+
+| type | the old ship | radius | mass | shield frames a point | hull count | top / attack kps | turns | shields | armour f/r/l/rt | guns |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 6 | Drayman (ours: Ox) | 240 | 400 | 4 | 60 | 150 / 100 | 2/2/2 | 120/120 | 80/80/60/60 | 1 flak |
+| 7 | Exeter (Kahan) | 500 | 5000 | 2 | 200 | 200 / 150 | 2/2/2 | 240/240 | 220/200/200/200 | 4 flak, 1 image recognition |
+| 8 | Tiger's Claw (Vigilance) | 700 | 10000 | 1 | 560 | 0 | 1/1/1 | 300/300 | 240/200/250/250 | 8 flak |
+| 17 | Ralari (Agasicles) | 325 | 3000 | 3 | 90 | 150 / 100 | 2/2/2 | 200/120 | 200/90/180/180 | 6 flak, 1 IR |
+| 18 | Fralthi (Anaxidamus) | 450 | 10000 | 2 | 110 | 150 / 100 | 2/2/2 | 270/170 | 280/140/260/260 | 6 flak, 2 IR |
+| 21 | a still one (Leonidas) | 400 | 20000 | 4 | 120 | 0 | 0 | 200/200 | 180 all round | 4 flak, 4 friend or foe |
+
+Types 4 and 5 (a Drayman's twin; 70 and 60 counts), 14 (unarmed, 45), 15, 16 and 19, 20 are the rest. Ours (ships.csv)
+take them as they are: the speeds x10 kps, the turns x10, the shields and armour, `shield_steps`, the hull's count x 14,
+the turrets and launchers; our accel and sizes stay (they were never mapped for the fighters either).
+
+**The guns** (weapon 1B, its row: radius 15, energy 15, life 40 frames, damage 50, speed 150 km a frame, +12 1000:
+the flak's numerator). The turret routine (ovr143:284F, from the capital ships' mind, ovr163:15B1): with any enemy
+within 5,000 km, for each mount, one chance in two; an enemy of those near picked at random (the next tried when it does
+not bear); bearing (ovr143:25EE: the mount's outward line dotted with the way to it, 25 or more for a turret, over 50
+and one in 14 for a launcher). The shot (ovr143:26F6): a place about the target, each axis off by
+min(1500, rand(max(400, its distance word / 4)) + its speed x16)... either way; a roll of 100: under 40 with the ship's
+bolt counter clear, else under 8, a bolt from the mount toward that place, its life the way there less 5 to 12 frames
+(spawnShip1B), the counter set to 7 to 16 frames; otherwise a burst there (an entity 0x30) that hurts every ship whose
+hull is within 1,000 km of it (ovr143:1DCF): 1000 / k², k 40 past 750 km, 30 past 500, 8 to 25 within, the player
+three quarters, at least one; only what is over 1 counts. The capital hull (ovr143:0F11): a count, a hit past the
+armour max(1, rest / 8) on the Kilrathi side, / 10 on the others.
+
+**Measured** (`run-old.sh` on McAuliffe 2, series 2 mission 1: the player put near the Ralari with `!pos`, the two
+Krants and, for the clean runs, the wingman killed with `!shoot=SLOT:900`, `!tail=2:2500` each second; the D lines'
+sizes tell flak, at most 11 on the player, from the rest):
+
+| the scene | frames | hits on the player | points |
+|---|---|---|---|
+| still (`backspace` each second), alone | 4,176 | 259: 2 x125, 3 x56, 4 x30, 6 x18, 11 x17 | 950 |
+| at 20 km a frame (200 kps), alone | 4,181 | 62, nearly all 2 | 132 |
+| at 20 km a frame, the wingman about | 4,106 | 148 of flak, 5 others | 490 of flak |
+
+The code's chances taken every frame make some ten times the bursts measured, and its speed term at x16 leaves no hit
+on a pilot at 200 kps where there were 62: a Monte Carlo of the burst's rule fits the still run at 0.07 bursts a frame
+and the moving one at some 6 frames of travel. Ours (logic.c): the turrets' turn once in `CAP_TURRET_FRAMES` 10 frames,
+`CAP_SPREAD_FRAMES` 6, the bearing 3 in 8 a turret (the mounts are the art's placeholders); M8.44 has a lone Franklin
+(smaller than the Scimitar: the bursts count from the hull) at 352 points still and 36 at 200 kps in 1,800 frames,
+the old 409 and 57 on its Scimitar.
+
 ## What is still to measure
 
-The other types (the Salthi at nav 3; Krant, Gratha, Jalthi, the capital ships and their turrets in the later
+The other types (the Salthi at nav 3; Krant, Gratha, Jalthi, the capital ships' guns on each other in the later
 missions: `dump-all.sh` lists which missions have which), the wingman's own behaviour (it flies in formation at 750
 km, breaks to attack, chases far), and the AI state word 8 (a slow-down of a second or two: what for).

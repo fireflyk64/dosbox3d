@@ -450,6 +450,14 @@ static int16_t shield_takes(int16_t slot, const RvVec3 *where, uint16_t damage)
     return damage <= have;
 }
 
+/* a capital ship's flak burst: a small puff where it burst, still (the old game's grey bursts about a fighter near a
+ * capital ship; explode.c keeps a few at once and never lets them take another explosion's place) */
+void fx_flak(const RvVec3 *at)
+{
+    static const RvVec3 still = { 0, 0, 0 };
+    explode_add(at, &still, 45, BOOM_FLAK, 0, (uint16_t)(frameCounter * 13 + (uint16_t)at->x));
+}
+
 void fx_hit(int16_t slot, const RvVec3 *where, int16_t owner, uint16_t damage)
 {
     int16_t v;

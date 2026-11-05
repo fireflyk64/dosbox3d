@@ -77,6 +77,38 @@ static uint8_t __far g_under_fire[NUM_SHIP_SLOTS];   /* the old game's hit count
                                            fear model's "hit" situation while it stands: no calming) */
 static uint16_t __far g_died[NUM_SHIP_SLOTS];     /* the step a ship was seen dying (0: not), its explosion's start */
 static uint16_t __far g_killer[NUM_SHIP_SLOTS];   /* what brought its end about (do_damage's src), for delayedDespawn */
+/* a capital ship's turrets as the old game's fired theirs (ovr143:284F, 26F6, 1DCF: read in its code 2026-11-05, the
+ * user: "I remember the fire rate of the destroyers were very low.... Just enough to take you down a bit but not enough
+ * to do you in, if you were careful"; tests/wc1/README.md "Capital ships"): a turret's shot is a flak burst about its
+ * target, now and then a bolt: one when the ship has none on its way 40 times in 100, else 8, and a bolt makes it wait 7
+ * to 16 of the old game's frames to be ready again.  The step its last bolt went and that wait, on every machine alike
+ * (capital_shot runs in the call the layer replays) */
+static uint16_t __far g_capbolt_at[NUM_SHIP_SLOTS];
+static uint8_t __far g_capbolt_wait[NUM_SHIP_SLOTS];
+#define CAP_TURRET_KM 5000              /* its turrets take aim at an enemy within this (the old game's) */
+#define CAP_TURRET_FRAMES 10            /* its turrets' turn comes once in so many of the old game's frames: measured, a
+                                           still pilot alone 2,500 km behind the old game's Ralari took 259 hits of flak in
+                                           4,176 frames, where the code's chances every frame would make some ten times
+                                           that; the test (M8.44) has ours at 89 in 1,800 on the smaller Franklin, the old
+                                           112 (tests/wc1/README.md "Capital ships") */
+#define CAP_SPREAD_FRAMES 6             /* a burst's place a way off the target by so many frames of its travel more
+                                           (measured: the old game's flak on a pilot at 20 km a frame, 62 hits in 4,181
+                                           frames, fits 6) */
+#define CAP_HULL_POINTS 14              /* a capital hull's count in points, a laser's hit (hull_take; ships.csv: count x 14) */
+#define WEAPON_FLAK 0x1F                /* the burst's own weapon (data/weapons.csv): not drawn, no sound (step_shots) */
+#define FLAK_KM 500                     /* a burst hurts a ship whose hull is within this */
+
+/* the old game's dice for a capital ship's turret: a hash of the step, the ship, the gun and which roll, the same on
+ * every machine the layer replays a call on (as an AI's scatter is: gun_fire) */
+static uint16_t cap_dice(uint16_t ship, uint16_t gun, uint16_t roll)
+{
+    uint32_t h = (uint32_t)frameCounter * UINT32_C(2654435761) ^ (uint32_t)ship * UINT32_C(40503)
+                 ^ (uint32_t)gun * UINT32_C(9973) ^ (uint32_t)roll * UINT32_C(0x9E3779B9);
+    h ^= h >> 15;
+    h *= UINT32_C(2246822519);
+    h ^= h >> 13;
+    return (uint16_t)(h >> 8);
+}
 uint16_t __far logic_splashes;          /* this flight's kills by the local pilot's own guns, missiles and rams (logic.h) */
 uint8_t __far logic_pilot_kills[RV_PILOTS];   /* and by each named pilot the AI flew (logic.h) */
 /* the humans in the flight but the local pilot: the ships people fly on other machines (RV_FLAG_HUMAN), noted at each
@@ -558,6 +590,8 @@ void logic_start(const RvMission __far *m)
     g_lock_steps = 0;
     _fmemset(g_rammed, 0, sizeof g_rammed);
     _fmemset(g_died, 0, sizeof g_died);
+    _fmemset(g_capbolt_at, 0, sizeof g_capbolt_at);
+    _fmemset(g_capbolt_wait, 0, sizeof g_capbolt_wait);
     damage_reset();                     /* the player's systems whole, the reserve full (flight.c clears only the cockpit's) */
     _fmemset(g_killed, 0, sizeof g_killed);
     _fmemset(g_away, 0, sizeof g_away);
@@ -1197,12 +1231,77 @@ static int16_t gun_of(int16_t s)
 /* (ship, gun, its weapon): a gun or a turret fires: a shot from its mount (gun_mount), along the nose at the
  * weapon's speed plus the ship's own along that line (carried_of; a turret's toward rvTarget[ship]'s lead point:
  * the ship's mind aims it); the cooldown into GUN_STATE's low bits, the energy off gunEnergy.  Returns 0xFFFF */
+/* (ship, gun, its weapon, its target): a capital ship's turret fires as the old game's (ovr143:26F6): at a place
+ * about the target, a way off on each axis, up to 400 km (a sixth of the range beyond 2,400) and CAP_SPREAD_FRAMES
+ * frames' travel of the target's more (a target that moves is the harder to hit), 1,500 km at the most, either way; a bolt there from the mount (40 in 100 when the ship
+ * is ready for one, else 8: g_capbolt_at) or, the rest, a flak burst there (WEAPON_FLAK, for step_shots).  Its dice
+ * are the step's, the ship's and the gun's: every machine that runs the call makes the same shot */
+static uint16_t capital_shot(uint16_t ship, uint16_t gun, const RvWeapon __far *w, int16_t target)
+{
+    RvVec3 muzzle, at, zero;
+    int32_t off[3], b, km;
+    int16_t i, r;
+    (void)gun_mount((int16_t)ship, (int16_t)gun, &muzzle);
+    /* (the target's speed in km an old frame, times CAP_SPREAD_FRAMES; positions a step: KM a km) */
+    b = len_of(TO_KM(gVelocityVector[target].x), TO_KM(gVelocityVector[target].y), TO_KM(gVelocityVector[target].z))
+        * WC_FRAME_STEPS * CAP_SPREAD_FRAMES;
+    km = km_between((int16_t)ship, target) / 6;
+    if (km < 400)
+        km = 400;
+    for (i = 0; i < 3; i++) {
+        int32_t a = (int32_t)(cap_dice(ship, gun, (uint16_t)(3 + i)) % (uint16_t)km) + b;
+        if (a > 1500)
+            a = 1500;
+        off[i] = cap_dice(ship, gun, (uint16_t)(6 + i)) & 1 ? -a : a;
+    }
+    at = vec3(gPositionVector[target].x + off[0] * KM, gPositionVector[target].y + off[1] * KM,
+              gPositionVector[target].z + off[2] * KM);
+    r = (int16_t)(cap_dice(ship, gun, 9) % 100);
+    if (r < 8 || (r < 40 && (uint16_t)(frameCounter - g_capbolt_at[ship]) >= g_capbolt_wait[ship]) || !weapon(WEAPON_FLAK)) {
+        RvVec3 d = vec3(TO_KM(at.x - muzzle.x), TO_KM(at.y - muzzle.y), TO_KM(at.z - muzzle.z)), vel;
+        int32_t step = KPS_STEP(w->speed_kps);
+        km = len_of(d.x, d.y, d.z);
+        while (labs(d.x) > 30000L || labs(d.y) > 30000L || labs(d.z) > 30000L) {   /* (a direction: 256 long) */
+            d.x /= 2;
+            d.y /= 2;
+            d.z /= 2;
+            km /= 2;
+        }
+        if (km) {
+            d.x = d.x * 256 / km;
+            d.y = d.y * 256 / km;
+            d.z = d.z * 256 / km;
+        } else
+            d = gOrientationFrontVector[ship];
+        vel = vec3(FIX_MUL(d.x, step), FIX_MUL(d.y, step), FIX_MUL(d.z, step));
+        /* its life the way there less 5 to 12 of the old game's frames (spawnShip1B: the old bolts die short of the
+         * place, and seldom reach a fighter: one hit in 4,176 frames on a pilot 2,500 km off, measured) */
+        km = len_of(TO_KM(at.x - muzzle.x), TO_KM(at.y - muzzle.y), TO_KM(at.z - muzzle.z)) * KM / (step ? step : 1)
+             - (int32_t)(5 + cap_dice(ship, gun, 11) % 8) * WC_FRAME_STEPS;
+        i = shot_add((int16_t)ship, GUN_TYPE(ship, gun), &muzzle, &vel);
+        if (i >= 0)
+            shot(i)->life = (uint16_t)(km > 1 ? (km < 0xFFFFL ? km : 0xFFFF) : 1);
+        g_capbolt_at[ship] = frameCounter;
+        g_capbolt_wait[ship] = (uint8_t)((7 + cap_dice(ship, gun, 10) % 10) * WC_FRAME_STEPS);
+    } else {
+        zero = vec3(0, 0, 0);
+        i = shot_add((int16_t)ship, WEAPON_FLAK, &at, &zero);
+        if (i >= 0)
+            shot(i)->life = 2;          /* (it bursts after one step: step_shots) */
+    }
+    GUN_STATE(ship, gun) = (uint8_t)((GUN_STATE(ship, gun) & GUN_DESTROYED) | (w->refire & 0x7F));
+    gunEnergy[ship] = (uint16_t)(gunEnergy[ship] > w->energy ? gunEnergy[ship] - w->energy : 0);
+    return 0xFFFF;
+}
+
 static uint16_t gun_fire(uint16_t ship, uint16_t gun, const RvWeapon __far *w)
 {
     RvVec3 physical_offset, vel;
     int32_t step = KPS_STEP(w->speed_kps);
     int16_t target = rvTarget[ship];
     RvVec3 front = gOrientationFrontVector[ship];
+    if (w->kind == RV_WK_TURRET && maybeEntityType[ship] == ET_CAPSHIP && target != 0xff && slot_is_ship(target))
+        return capital_shot(ship, gun, w, target);
     (void)gun_mount(ship, gun, &physical_offset);
     if (w->kind == RV_WK_TURRET && target != 0xff && slot_is_ship(target)) {
         /* a turret's shot toward the target's lead point (km from the mount; the shot's time there, twice refined),
@@ -3264,11 +3363,34 @@ static void route_step(int16_t s, Mind __far *m, const AiProfile __far *p)
     }
 }
 
+/* the old game's capital ship's target this frame: one of the enemies within CAP_TURRET_KM (nearest_enemy's), by its
+ * dice; -1 none.  *near_n: how many there are */
+static int16_t cap_pick(int16_t s, int16_t *near_n)
+{
+    int16_t k, n = 0, want;
+    for (want = -1; want < 1; want++) {   /* (counted, then the one picked found) */
+        for (k = 0; k < NUM_SHIP_SLOTS; k++) {
+            if (k == s || !slot_is_ship(k) || commAnimInfo[k] == commAnimInfo[s] || shipAiState[k] == 9 || (rvFlags[k] & 16)
+                || km_between(s, k) > CAP_TURRET_KM)
+                continue;
+            if (want < 0)
+                n++;
+            else if (!n--)
+                return k;
+        }
+        *near_n = n;
+        if (!n)
+            return -1;
+        n = (int16_t)(cap_dice((uint16_t)s, 0xFF, 0) % (uint16_t)n);
+    }
+    return -1;
+}
+
 static void ship_think(int16_t s)
 {
     Mind __far *m = &g_mind[s];
     const RvShipType __far *t = slot_type(s);
-    int16_t near_ = nearest_enemy(s, 0), g;
+    int16_t near_ = nearest_enemy(s, 0), g, pick, near_n = 0;
     if (escorted(s)) {
         route_step(s, m, &k_profiles[m->profile < P_COUNT ? m->profile : P_CAPITAL]);
         if (!slot_is_ship(s))
@@ -3279,15 +3401,37 @@ static void ship_think(int16_t s)
     rvTarget[s] = m->target;
     if (near_ < 0)
         return;
+    /* the turrets and the missiles once in CAP_TURRET_FRAMES frames of the old game's (each WC_FRAME_STEPS of ours), as
+     * its capital ships' (ovr143:284F): the target one of the enemies within CAP_TURRET_KM picked at random; each turret one chance in two,
+     * and bearing on it (its mount's outward line within some 75 degrees of it: here 3 in 8, the mounts being the art's
+     * placeholders) or, the old game trying the others in turn, on another of them (1 - (5/8)^n in all; the shot is at
+     * the pick, one target a ship a frame, as the layer replays a call); a launcher the same chance, bearing (within 60
+     * degrees: 1 in 4) and one in 14.  capital_shot makes a turret's shot */
+    if (frameCounter % WC_FRAME_STEPS || (uint16_t)(frameCounter / WC_FRAME_STEPS + s) % CAP_TURRET_FRAMES)
+        return;
+    pick = cap_pick(s, &near_n);
+    if (pick >= 0) {
+        m->target = (uint8_t)pick;
+        rvTarget[s] = m->target;
+    }
     for (g = 0; g < GUN_COUNT(s) && g < 16; g++) {
         const RvWeapon __far *w = weapon(GUN_TYPE(s, g));
         if (!w || (GUN_STATE(s, g) & GUN_DESTROYED))
             continue;
         if (w->kind == RV_WK_TURRET) {
-            if (!(GUN_STATE(s, g) & 0x7F) && gap_between(s, near_) <= w->range_km
+            int16_t k, bears = 0;
+            for (k = 0; k < near_n && k < 8 && !bears; k++)
+                bears = cap_dice(s, g, (uint16_t)(20 + k)) % 8 < 3;
+            if (pick >= 0 && bears && !(GUN_STATE(s, g) & 0x7F) && !(cap_dice(s, g, 1) & 1)
                 && !(slotMissionShip[s] < 64 && MSHIP_NO_TURRETS(slotMissionShip[s])))   /* (a mission's turrets=off) */
                 m->turrets |= (uint16_t)(1u << g);
-        } else if (w->kind == RV_WK_TORPEDO || w->kind == RV_WK_MISSILE) {
+        } else if (w->kind == RV_WK_MISSILE) {
+            if (pick >= 0 && (GUN_STATE(s, g) & 0x7F) && !(m->fire & FIRE_MISSILE) && !(cap_dice(s, g, 1) & 1)
+                && cap_dice(s, g, 2) % 4 == 0 && cap_dice(s, g, 3) % 14 == 0) {
+                m->fire |= FIRE_MISSILE;
+                m->launcher = (uint8_t)g;
+            }
+        } else if (w->kind == RV_WK_TORPEDO) {
             int16_t cap = nearest_enemy(s, 1);
             if (cap >= 0 && (GUN_STATE(s, g) & 0x7F) && gap_between(s, cap) <= w->range_km
                 && (uint16_t)(frameCounter - m->since) >= (uint16_t)(10 * LOGIC_HZ)) {
@@ -3328,16 +3472,59 @@ static void step_motion(void)
 
 /* 5. the shots fly (shots_move) and hit (shot_hit: the ship and the place; do_damage through its thunk with
  * shot_source(i) as the source; shot_remove).  Backwards: a removed shot's index goes to the last one */
+/* a flak burst where shot i is (the old game's ovr143:1DCF): every ship but its owner's whose hull is within FLAK_KM of
+ * it hurt by 1000 / k^2, k 8 at the hull to 25 at FLAK_KM (15 points to 1), the player by three quarters of that, at
+ * least 1; what comes to 1 or less does nothing.  The puff is the flight's (shots_on_flak) */
+static void flak_burst(int16_t i)
+{
+    const Shot __far *f = shot(i);
+    RvVec3 at;
+    int16_t k, src = -1;
+    at = vec3(f->x, f->y, f->z);
+    for (k = 0; k < NUM_SHIP_SLOTS; k++) {
+        const RvShipType __far *t;
+        int32_t d;
+        uint16_t kk, q;
+        if (k == f->owner || !slot_is_ship(k) || shipAiState[k] == 9 || (t = slot_type(k)) == 0)
+            continue;
+        d = len_of(TO_KM(gPositionVector[k].x - at.x), TO_KM(gPositionVector[k].y - at.y), TO_KM(gPositionVector[k].z - at.z))
+            - (int32_t)t->radius_km;
+        if (d > FLAK_KM)
+            continue;
+        kk = (uint16_t)(8 + (d > 0 ? d : 0) * 17 / FLAK_KM);
+        q = (uint16_t)(1000 / kk / kk);
+        if (k == 0)
+            q = q * 3 / 4 > 1 ? (uint16_t)(q * 3 / 4) : 1;
+        if (q <= 1)
+            continue;
+        if (src < 0)
+            src = shot_source(i);
+        if (k == 0 && shots_on_hit)     /* (the player's: the shield's or the hull's sound; the puff is the picture) */
+            shots_on_hit(0, &at, f->owner, q);
+        (void)do_damage((uint16_t)src, (uint16_t)k, q, RV_WHERE(&at));
+    }
+    if (shots_on_flak)
+        shots_on_flak(&at);
+}
+
 static void step_shots(void)
 {
     int16_t i, slot;
     RvVec3 where;
     shots_move();
-    for (i = shots_count() - 1; i >= 0; i--)
+    for (i = shots_count() - 1; i >= 0; i--) {
+        if (shot(i)->weapon == WEAPON_FLAK) {   /* (a burst's: placed, it bursts a step later: capital_shot) */
+            if (shot(i)->life <= 1) {
+                flak_burst(i);
+                shot_remove(i);
+            }
+            continue;
+        }
         if (shot_hit(i, &slot, &where)) {
             (void)do_damage((uint16_t)shot_source(i), (uint16_t)slot, shot(i)->damage, RV_WHERE(&where));
             shot_remove(i);
         }
+    }
 }
 
 /* 6. missiles (ship slots of ET_MISSILE: they steer like ships, home on missileTarget, burst by a proximity test) */
@@ -4097,6 +4284,14 @@ static uint16_t hull_take(int16_t s, uint16_t left, uint16_t hull)
 {
     uint16_t rec = slotMissionShip[s];
     uint32_t q;
+    if (maybeEntityType[s] == ET_CAPSHIP) {
+        /* a capital ship's hull as the old game's (ovr143:0F11): a count, a hit past the armour an eighth of itself on the
+         * Aera's side and a tenth on the others', at least one; a count CAP_HULL_POINTS of ours (ships.csv: the old
+         * game's count x 14), so a laser's hit is one */
+        uint16_t div = commAnimInfo[s] == SIDE_AERA ? 8 : 10;
+        q = (uint32_t)(left / div ? left / div : 1) * CAP_HULL_POINTS;
+        return q > 0xFFFFUL ? 0xFFFF : (uint16_t)q;
+    }
     if (rec >= 64 || MSHIP(rec)[16] >= RV_PILOTS || (rvFlags[s] & RV_FLAG_HUMAN) || !hull)
         return left;
     q = ((uint32_t)hull * (left / 40 ? left / 40 : 1) + NAMED_HULL_HITS - 1) / NAMED_HULL_HITS;

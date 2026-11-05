@@ -3223,6 +3223,7 @@ void __far __cdecl flight_startup(void)
     fx_flight_start();
     shots_on_add = fx_shot;
     shots_on_hit = fx_hit;
+    shots_on_flak = fx_flak;
     logic_on_jump = fx_jump;
 #ifdef RV_TESTS
     if (g_set_enemy >= 0) {
@@ -3769,6 +3770,7 @@ static void flight_over(unsigned short status)
     sfx_flight_end();
     shots_on_add = 0;
     shots_on_hit = 0;
+    shots_on_flak = 0;
     logic_on_jump = 0;
     vid_flash(0);
     explode_flight_end();

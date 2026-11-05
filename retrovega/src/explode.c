@@ -33,6 +33,8 @@ MEM_ARRAY(uint16_t, g_map_arr, MAP_W)
 #define HAZES_A_SHIP 3                  /* a ship's at once: under fire, the next takes its oldest's place */
 #define HAZE_STEPS 64                   /* its table of density by distance squared */
 #define WRECK_CLOUDS 3                  /* wrecks at once, in the effects' pool */
+#define FLAK_PUFFS 4                    /* flak bursts at once: a capital ship throws a dozen a second, and they must never
+                                           take another explosion's place */
 #define WRECK_SHARDS 40                 /* a wreck's chunks (debris.c: and half as many embers) */
 
 typedef struct { uint8_t cel, thr; uint16_t gain, grow, spark, debris; } Tl;   /* EXPLODE.DAT's timeline records */
@@ -60,6 +62,7 @@ static const struct { uint8_t life, sparks, debris, ball; } __far k_kind[BOOM_KI
     { 16, 0, 0, 0 },                    /* a shield's haze (haze; its life by its strength) */
     { 24, 0, 0, 0 },                    /* a ship's jump: a star (jump_star) */
     { 210, 0, 8, 0 },                   /* wreck fragments: seven seconds, generated in world space */
+    { 12, 5, 0, 1 },                    /* a capital ship's flak burst: a small puff (FLAK_PUFFS at once) */
 };
 /* the haze's colours, cool to hot: light blues to white, from the entries every cockpit's palette keeps */
 static const uint8_t __far k_shield[6] = { 92, 94, 95, 79, 14, 143 };
@@ -229,6 +232,23 @@ void explode_add(const RvVec3 *at, const RvVec3 *vel, int32_t radius_km, int16_t
     int16_t i, old = -1, wrecks = 0;
     if (!g_ready || kind < 0 || kind >= BOOM_KINDS || (kind == BOOM_WRECK && !g_fx_extra))
         return;
+    if (kind == BOOM_FLAK) {            /* (its own few: the oldest of them taken, or a free place, never another's) */
+        int16_t puffs = 0;
+        for (i = 0; i < g_n; i++)
+            if (g_b[i].kind == BOOM_FLAK) {
+                puffs++;
+                if (old < 0 || g_b[i].age > g_b[old].age)
+                    old = i;
+            }
+        if (puffs < FLAK_PUFFS && g_n < EXPLODE_MAX)
+            b = &g_b[g_n++];
+        else if (old >= 0)
+            b = &g_b[old];
+        else
+            return;
+        boom_set(b, at, vel, radius_km, kind, delay, seed);
+        return;
+    }
     for (i = 0; i < g_n; i++)
         if (g_b[i].kind == BOOM_WRECK) {
             wrecks++;

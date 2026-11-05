@@ -4375,6 +4375,99 @@ static void t_escort_jump_home(void)
 /* M8.43: a pick past an escort's next waypoint, the old game's way (the user, 2026-11-04, of its autopilot: "Pick
  * anywhere, Ox left behind"): ENIGMA2 at the launch, nav 2 picked: the autopilot goes to nav 2, the Ox is left
  * behind, and flies its way on alone (past nav 1, which the player has gone beyond, to nav 2) */
+/* M8.44: a capital ship's turrets as the old game's (ship_think, capital_shot, flak_burst): an Agasicles with a Franklin
+ * alone held 2,250 km behind it, two minutes still, then two at 200 kps.  The old game's Ralari, measured the same way
+ * (tests/wc1/README.md "Capital ships": McAuliffe 2, its escorts and the wingman gone, a Scimitar held 2,500 km behind
+ * it): still, 950 points of flak in 4,176 of its frames, the most of the hits 2 to 4 points (409 in the test's 1,800);
+ * at 200 kps 132 (57).  The Franklin is the smaller ship (the bursts are counted from the hull): ours still within half
+ * the Franklin's 275 and twice the Scimitar's 409, a few bolts; moving, at most a third of that and 150 */
+static int32_t pt_capital_flak(int16_t kps, int16_t *bolts, int16_t *flak)
+{
+    PtDamage whole;
+    int32_t total = 0;
+    int16_t i;
+    *bolts = *flak = 0;
+    pt_alone(0x01);                     /* (the Franklin: the old game's Scimitar) */
+    pt_ship(1, 0x28, SIDE_AERA, CTL_AI, 0, 0, 2250, 0);
+    if (!slot_is_ship(1) || gInstanceShipTypes[1] != 0x28)
+        return -1;
+    pt_damage_get(0, &whole);
+    for (i = 0; i < 120 * SEC; i++) {
+        const RvVec3 *F = &gOrientationFrontVector[1];
+        int32_t h0, d;
+        gPositionVector[0].x = gPositionVector[1].x - F->x * (2250 * KM / 256);
+        gPositionVector[0].y = gPositionVector[1].y - F->y * (2250 * KM / 256);
+        gPositionVector[0].z = gPositionVector[1].z - F->z * (2250 * KM / 256);
+        gOrientationFrontVector[0] = *F;   /* (its way, at kps: a target that moves) */
+        gVelocityVector[0].x = F->x * KPS_STEP(kps) / 256;
+        gVelocityVector[0].y = F->y * KPS_STEP(kps) / 256;
+        gVelocityVector[0].z = F->z * KPS_STEP(kps) / 256;
+        h0 = pt_health(0);
+        if (!pt_step())
+            return -2;
+        d = h0 - pt_health(0);
+        if (d > 0) {
+            total += d;
+            if (d > 15)
+                (*bolts)++;
+            else
+                (*flak)++;
+        }
+        pt_damage_set(0, &whole);       /* (held whole: each hit counted as the old game's D lines count it) */
+    }
+    return total;
+}
+
+static void t_capital_flak(void)
+{
+    static const char __far e_ship[] = "no Agasicles in slot 1 (%d)";
+    static const char __far e_still[] = "the Agasicles did %d points to a still player held 2,250 km behind it in 2 minutes (%d "
+        "bolts, %d bursts): the old game's Ralari did some 409 to a Scimitar (140 to 820 expected)";
+    static const char __far e_bolts[] = "%d of its hits on a still player were bolts (over 15 points), %d flak: the old game's "
+        "were one among 259";
+    static const char __far e_move[] = "the Agasicles did %d points to a player at 200 kps in 2 minutes (%d bursts), %d still: "
+        "the old game's Ralari 57 against 409 (at most 150, and a third of the still)";
+    int16_t bolts, flak, bolts2, flak2;
+    int32_t still = pt_capital_flak(0, &bolts, &flak), moving;
+    if (still == -2)
+        return;
+    REQUIRE(still >= 0, e_ship, (int16_t)still, 0, 0);
+    REQUIRE(still >= 140 && still <= 820, e_still, still, bolts, flak);
+    REQUIRE(bolts <= 6, e_bolts, bolts, flak, 0);
+    moving = pt_capital_flak(200, &bolts2, &flak2);
+    if (moving < 0)
+        return;
+    REQUIRE(moving <= 150 && moving * 3 <= still, e_move, moving, flak2, still);
+}
+
+/* M8.45: a capital ship's hull as the old game's (hull_take): a count, a hit past the armour an eighth of itself on the
+ * Aera's side, at least one: an Agasicles (the Ralari's 90) bare to its hull lives through 89 laser hits of 14 and dies
+ * at the 90th; a hit of 40 is five of them */
+static void t_capital_hull(void)
+{
+    static const char __far e_early[] = "the Agasicles died at laser hit %d past its armour: the old game's Ralari takes 90";
+    static const char __far e_late[] = "the Agasicles lived through %d laser hits past its armour: the old game's Ralari dies at 90";
+    static const char __far e_big[] = "a hit of 40 past its armour took %d of its hull's points: five of the old game's counts (70)";
+    int16_t i;
+    uint16_t before;
+    pt_alone(PT_PLAYER);
+    pt_ship(1, 0x28, SIDE_AERA, CTL_FROZEN, 0, 0, 20000, 0);
+    for (i = 1; i <= 90; i++) {
+        SHIELD(1, 0) = SHIELD(1, 1) = 0;
+        ARMOR(1, 0) = ARMOR(1, 1) = ARMOR(1, 2) = ARMOR(1, 3) = 0;
+        (void)do_damage(0, 1, 14, 0);
+        if (i < 90)
+            REQUIRE(shipAiState[1] != 9, e_early, i, 0, 0);
+    }
+    REQUIRE(shipAiState[1] == 9, e_late, 90, 0, 0);
+    pt_ship(1, 0x28, SIDE_AERA, CTL_FROZEN, 0, 0, 20000, 0);
+    SHIELD(1, 0) = SHIELD(1, 1) = 0;
+    ARMOR(1, 0) = ARMOR(1, 1) = ARMOR(1, 2) = ARMOR(1, 3) = 0;
+    before = damagePoints[1];
+    (void)do_damage(0, 1, 40, 0);
+    REQUIRE(damagePoints[1] - before == 70, e_big, damagePoints[1] - before, 0, 0);
+}
+
 static void t_escort_order(void)
 {
     static const char __far e_there[] = "no Ox after ENIGMA2's launch (slot %d)";
@@ -6586,6 +6679,8 @@ static const char __far n_m8_34[] = "M8.34 autopilot-wingman (logic_autopilot): 
 static const char __far n_m8_35[] = "M8.35 autopilot-formup (logic_form_up): the flyby closes the wingman up on the player, its way and velocity the player's, kept through the jump";
 static const char __far n_m8_37[] = "M8.37 autopilot-human (logic_form_up): a human's wingman is put in its formation place as the flyby begins, the player's way and speed";
 static const char __far n_m8_36[] = "M8.36 escort-clear (route_step, logic_autopilot): an escort target out bears straight for its nav point and jumps only there; the autopilot leaves it on its way";
+static const char __far n_m8_44[] = "M8.44 capital-flak (ship_think, capital_shot, flak_burst): an Agasicles' turrets on a lone player held 2,250 km behind it hurt it at the old game's Ralari's rate, flak with a few bolts, and far less at 200 kps";
+static const char __far n_m8_45[] = "M8.45 capital-hull (do_damage, hull_take): a capital ship's hull a count as the old game's: an Agasicles dies at the 90th laser hit past its armour";
 static const char __far n_m8_43[] = "M8.43 escort-skip (logic_autopilot, escort_comes): a pick past an escort's next waypoint is the autopilot's, the escort left behind to fly on alone: ENIGMA2's nav 2 picked";
 static const char __far n_m8_42[] = "M8.42 escort-jump-home (logic_autopilot, route_step): ENIGMA2 by the autopilot, the Ox along to each nav point; the player straight home, the Ox still jumps";
 static const char __far n_m8_41[] = "M8.41 escort-linger (route_step, logic_autopilot): ENIGMA2's Ox goes on alone from a player lingering at the launch, and the autopilot to nav 1 brings it along";
@@ -6669,7 +6764,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 },
 };
 
 /* --- the run --- */

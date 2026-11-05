@@ -19,6 +19,7 @@ extern int16_t g_view_outside;          /* the camera is outside the ship (fligh
 int16_t fx_hidden(int16_t slot);        /* a dying ship the explosion has replaced: not drawn */
 void fx_jump(int16_t slot, int16_t friendly);   /* a ship jumps out: its star, and a friend's a white flash (logic_on_jump) */
 void fx_shot(int16_t owner, uint16_t weapon_type);              /* a shot added (shots.c) */
+void fx_flak(const RvVec3 *at);         /* a capital ship's flak burst there (logic.c flak_burst): a puff */
 void fx_hit(int16_t slot, const RvVec3 *where, int16_t owner, uint16_t damage);   /* a shot met a ship there, its
                                            damage not done yet (shots.c) */
 
