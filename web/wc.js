@@ -1561,8 +1561,16 @@ $("flySolo").addEventListener("click", async () => {
   void start(true);
 });
 $("fullscreen").addEventListener("click", () => goFullscreen());
+// Whether Fly goes full screen: each pilot's own, ticked unless unticked in
+// this tab (the user, 2026-11-05: "The box should default to checked but
+// should be remembered by the browser session"); the Full screen button works
+// either way.
+const FULL_START_KEY = "wc:fullStart";
+try { if (sessionStorage.getItem(FULL_START_KEY) === "off") $("fullStart").checked = false; } catch (e) { /* ticked */ }
+$("fullStart").addEventListener("change", () => { try { sessionStorage.setItem(FULL_START_KEY, $("fullStart").checked ? "on" : "off"); } catch (e) { /* not kept */ } });
 // (#screen, the canvas and the touch controls: they come along into full screen)
 const screenEl = $("screen");
+$("fullStartLabel").hidden = !(screenEl.requestFullscreen || screenEl.webkitRequestFullscreen);   // (an iPhone has none)
 function goFullscreen() {
   const req = screenEl.requestFullscreen || screenEl.webkitRequestFullscreen;
   if (!req) return;
@@ -1772,7 +1780,7 @@ async function start(fromGesture) {
     for (const ev of ["pagehide", "visibilitychange"]) window.addEventListener(ev, keepSaves);
     $("fullscreen").hidden = !(screenEl.requestFullscreen || screenEl.webkitRequestFullscreen);   // (an iPhone has none)
     touch.show(true);
-    if (fromGesture) goFullscreen();
+    if (fromGesture && $("fullStart").checked) goFullscreen();
     status(together
       ? `Room ${cfg.code}. "Copy link" (step 2) gives friends the way in.`
       : `${source.game.title} is running.`);

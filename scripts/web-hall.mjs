@@ -558,6 +558,13 @@ check("a lobby is made with the seats the server allows", (await h.evaluate(() =
   await g2.click("#join");
   check("left, and a room of one made: its Fly opens", await g2.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled
     && /alone in room/.test(document.getElementById("chatLog").textContent), null, { timeout: 30000 }).then(() => true, () => false), await status(g2));
+  // the Full screen box beside Collide: ticked at first, unticked kept in this tab across a reload
+  check("Full screen beside Collide, ticked at first", (await g2.$eval("#fullStart", (el) => el.checked)) && !(await g2.$eval("#fullStartLabel", (el) => el.hidden))
+    && (await g2.$eval("#fullStartLabel", (el) => el.previousElementSibling && el.previousElementSibling.textContent.includes("Collide"))), null);
+  await g2.click("#fullStart");
+  await g2.reload();
+  await g2.waitForFunction(() => document.getElementById("sourceStatus").dataset.state === "ready", null, { timeout: 60000 }).catch(() => {});
+  check("unticked, it stays unticked after a reload of the tab", !(await g2.$eval("#fullStart", (el) => el.checked)), null);
   for (const p of [h2, g2, watcher]) await p.context().close();
 }
 
