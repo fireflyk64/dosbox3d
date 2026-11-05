@@ -1358,6 +1358,13 @@ static void flight_prepare(void)
         strcpy(g_scene.label, rvNetRole == 2 ? "Waiting for the host's mission" : "Waiting on the other player...");
         vid_dirty(SCR_H - LABEL_H, SCR_H);
         scene_draw();
+        /* (and on the screen before the wait: the layer's wait stops the emulator, and the label had gone into video
+         * memory with no frame of the emulator's after it to show it; the user, 2026-11-04: "I still don't see
+         * notification when I click on the briefing that I'm waiting for another player--it just sort of hangs".
+         * Three of the screen's frames go by first) */
+        vid_wait_retrace();
+        vid_wait_retrace();
+        vid_wait_retrace();
     }
     missionStarting();
     g_scene.label[0] = 0;
