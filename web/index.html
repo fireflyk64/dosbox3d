@@ -67,6 +67,9 @@
   button:hover:not(:disabled) { background: #ffd765; }
   button.secondary { background: #0a2015; color: var(--green); border-color: var(--green2); }
   button.secondary:hover:not(:disabled) { background: #113a23; color: #c9ffdc; }
+  /* Fly Alone: there, but quieter than Fly (the user: "a greenish color "Fly Alone" button so it's not as enticing") */
+  button#flySolo { background: #06120b; color: var(--green2); border-color: #1d4d31; }
+  button#flySolo:hover:not(:disabled) { background: #0b2416; color: var(--green); }
   button:disabled { background: #0a120e; color: #41614f; border-color: #1c3327; cursor: default; }
   button:focus-visible { border-color: #ffffff; outline: none; }
   input[type=text], input[type=number], select { height: 26px; padding: 2px 6px; background: var(--dark); color: #dfffe9; border: 1px solid var(--line); border-radius: 0; font: 13px var(--mono); }
@@ -360,7 +363,7 @@
     <h2><b>3</b> Fly</h2>
     <div id="actions">
       <button type="button" id="fly" disabled>Fly</button>
-      <button type="button" class="secondary" id="flySolo" hidden title="Fly the game alone, as it is, with its own wingman: the room becomes a room of one, nobody is told of it in the lobby and nobody can join">Fly single player</button>
+      <button type="button" class="secondary" id="flySolo" hidden title="Fly the game alone, as it is, with its own wingman: the room becomes a room of one, nobody is told of it in the lobby and nobody can join">Fly Alone</button>
       <button type="button" class="secondary" id="fullscreen" hidden>Full screen</button>
       <span id="status">Load the game files and join a room first.</span>
     </div>

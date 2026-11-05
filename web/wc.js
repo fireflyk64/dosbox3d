@@ -1027,7 +1027,8 @@ function updateActions() {
   const wrong = wrongGame();
   const ready = !!source && !!lobby.game && !running && !wrong;
   $("fly").disabled = !ready || guestWaits();
-  $("flySolo").hidden = !ready || !aloneInRoom();
+  // (in a room alone as its host, or in none yet, the lobby's alone: the user's "in a empty lobby")
+  $("flySolo").hidden = !source || running || !!wrong || (lobby.game ? !aloneInRoom() : linkWaits() || $("join").disabled);
   $("advertise").hidden = !lobby.game || !lobbyReady() || !lobby.game.players.some((p) => !p.occupied);   // (in flight too)
   if (!running) {
     if (wrong) status(wrong);
@@ -1035,7 +1036,7 @@ function updateActions() {
     else if (!source) status(`Join succeeded; now load ${codeGame(lobby.game.code) ? codeGame(lobby.game.code).title : "the game files"} above.`);
     else if (!lobby.game) status("Game files ready; join a room to fly with friends.");
     else if (soloRoom()) { $("fly").textContent = "Fly"; status(`Room ${lobby.game.code} is yours alone: press Fly.`); }
-    else if (isHost()) { $("fly").textContent = "Fly (starts everyone)"; status(`You host room ${lobby.game.code}. Press Fly when your wingmen are in.`); }
+    else if (isHost()) { $("fly").textContent = "Fly (starts everyone)"; status(`You host room ${lobby.game.code}.`); }
     else { $("fly").textContent = "Fly"; status(lobby.flying.has(0) ? "The host is already flying: press Fly to join the mission."
                                                 : "Fly opens once the host flies. To fly alone, leave the room and make your own with Players at 1."); }
   }
@@ -1536,13 +1537,13 @@ $("fly").addEventListener("click", () => {
   if (isHost()) sendLobby({ t: "start", game: source.game.id, mission: missionKey(lobby.mission), rocks: lobby.rocks, wingBumps: lobby.wingBumps, latency: lobby.latency, fps: lobby.fps, capHull: lobby.capHull });
   void start(true);
 });
-// Fly single player: the empty room left for a room of one of the same code (soloGame: no lobby server, nobody can
+// Fly Alone: the empty room left for a room of one of the same code (soloGame: no lobby server, nobody can
 // come in, no advertisement), the mission and the settings picked kept, and the flight started as Fly would
 $("flySolo").addEventListener("click", async () => {
-  if (!source || !lobby.game || running || !aloneInRoom()) return;
-  const code = lobby.game.code, seats = $("seats").value;
-  const keep = { mission: lobby.mission, rocks: lobby.rocks, wingBumps: lobby.wingBumps, latency: lobby.latency, fps: lobby.fps, capHull: lobby.capHull };
-  leaveRoom();
+  if (!source || running || (lobby.game && !aloneInRoom())) return;
+  const code = lobby.game ? lobby.game.code : normalizeCode($("room").value.trim()), seats = $("seats").value;
+  const keep = lobby.game ? { mission: lobby.mission, rocks: lobby.rocks, wingBumps: lobby.wingBumps, latency: lobby.latency, fps: lobby.fps, capHull: lobby.capHull } : {};
+  if (lobby.game) leaveRoom();
   $("room").value = code;
   $("seats").value = "1";
   await joinRoom();
