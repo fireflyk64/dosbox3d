@@ -414,7 +414,7 @@ check("each with its game's tag", /^2 in the lobby: ECHO \(you\)\s*WC1 · FOX\s*
 await sleep(6);
 await enter(g);
 check("a third lands in the next lobby, however long the two have been there", (await pilots(g, 1)) && (await lobbyOf(g)) === `FULL-${run}0` && (await lobbyOf(e)) === `FULL-${run}`, await lobbyOf(g));
-check("and is told which", (await text(g, "hallRoster")).trim().replace(/\s+/g, " ") === `1 in the lobby FULL-${run}0: GOLF (you) WC1` && (await text(g, "hallLog")).includes(`You are in the lobby FULL-${run}0 (the ones before it are full) as GOLF`), await text(g, "hallRoster"));
+check("and is told which", (await text(g, "hallRoster")).trim().replace(/\s+/g, " ") === `1 in the lobby FULL-${run}0: GOLF (you) WC1` && (await text(g, "hallLog")).includes(`This is the lobby FULL-${run}0: the ones before it are full.`), await text(g, "hallRoster"));
 // A page that knows of one lobby only is told that it is full.
 const i = await open("INDIA", small);
 await setup(i, { lobbies: 1 });

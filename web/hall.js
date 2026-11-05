@@ -686,9 +686,15 @@ export function initHall(opts) {
     store(sessionStorage, "wc:hall", "in");
     $("hallState").textContent = "";
     show();
-    sys(`You are in the lobby${net.code === code ? "" : ` ${net.code} (the ones before it are full)`} as ${myName()}. Advertise sends your room, and /room in a line is its code; a code like WC1-4821 can be clicked to join. ` +
-        `Lines are ${MAX_CHARS} characters at most, two to start with and then one every ${RATE.every / 1000} seconds ` +
-        `(one a second while fewer than ${settings.busyFrom || RATE.busyFrom} pilots are here); no links.`);
+    // (the user's words, 2026-11-04: the rules of the chat had been here, "not resonating with the users"; the filter
+    // still keeps them, and says so when it turns a line away)
+    const gog = el("a", "", "https://www.gog.com/en/game/wing_commander_1_2");
+    gog.href = "https://www.gog.com/en/game/wing_commander_1_2";
+    gog.target = "_blank";
+    gog.rel = "noopener";
+    line("sys", "Please download Wing Commander from ", gog,
+         " or start a room to play Retro Vega. Click advertise to post your room here for others to join.");
+    if (net.code !== code) sys(`This is the lobby ${net.code}: the ones before it are full.`);
     if (!typedName().ok && typedName().why !== "empty") sys(`Your callsign is not shown here (${whyText(typedName().why)}): you are ${myName()}.`);
     log(`lobby: in ${net.code} as pilot ${net.selfId + 1} of ${net.maxPlayers}`);
     return true;
