@@ -1018,6 +1018,10 @@ function wrongGame() {
 // for a host that is not there, or fly on alone.  The host's hello says it flies (lobby.flying); a host that has said
 // nothing GUEST_HELLO_MS after the guest came in (a native one: its game is the host, always in it) is not waited for.
 const GUEST_HELLO_MS = 5000;
+// The rooms this page has offered in the lobby (its Advertise, "/room": myRoom), for the page's life: Fly Alone is not offered
+// in one of them (the user, 2026-11-05: "can the fly alone button not show up for rooms that the user clicked advertise
+// in the lobby...we can store a small local hashtable in memory that recalls all room ids that have advertised")
+const advertised = new Set();
 const guestWaits = () => !!lobby.game && !soloRoom() && !isHost()
   && (lobby.names.has(0) ? !lobby.flying.has(0) : Date.now() - (lobby.joinedAt || 0) < GUEST_HELLO_MS);
 // A host alone in its room may fly alone instead (the user: "a Fly Single Player button when they are in a empty
@@ -1028,7 +1032,8 @@ function updateActions() {
   const ready = !!source && !!lobby.game && !running && !wrong;
   $("fly").disabled = !ready || guestWaits();
   // (in a room alone as its host, or in none yet, the lobby's alone: the user's "in a empty lobby")
-  $("flySolo").hidden = !source || running || !!wrong || (lobby.game ? !aloneInRoom() : linkWaits() || $("join").disabled);
+  $("flySolo").hidden = !source || running || !!wrong || (lobby.game ? !aloneInRoom() : linkWaits() || $("join").disabled)
+    || advertised.has(normalizeCode(lobby.game ? lobby.game.code : $("room").value.trim()));   // (offered in the lobby: not alone)
   $("advertise").hidden = !lobby.game || !lobbyReady() || !lobby.game.players.some((p) => !p.occupied);   // (in flight too)
   if (!running) {
     if (wrong) status(wrong);
@@ -1332,6 +1337,7 @@ async function myRoom() {
   if (!lobby.game && seatCount() === 1) { status(alone); return null; }
   if (!lobby.game) await joinRoom();
   if (soloRoom()) { status(alone); return null; }
+  if (lobby.game) { advertised.add(normalizeCode(lobby.game.code)); updateActions(); }
   return lobby.game ? { code: lobby.game.code, offer: offerText() } : null;
 }
 $("advertise").addEventListener("click", () => { if (lobby.game) void hall.advertise(); });

@@ -200,7 +200,7 @@ check("the pilot is in no room yet", await a.$eval("#lobby", (el) => el.hidden),
 await a.click("#hallAdvertise");
 check("Advertise joins the pilot's room and sends its code, mission and free seats", (await sees(b, offer)) && !(await a.$eval("#lobby", (el) => el.hidden)) && (await value(a, "hallInput")) === "", [await text(a, "hallHint"), await status(a)]);
 check("the room has the button too, while a seat is free", !(await a.$eval("#advertise", (el) => el.hidden)), null);
-check("a host alone in its room may fly single player", !(await a.$eval("#flySolo", (el) => el.hidden)) && !(await a.$eval("#fly", (el) => el.disabled)), null);
+check("a room offered in the lobby has no Fly Alone, alone in it as the host is", (await a.$eval("#flySolo", (el) => el.hidden)) && !(await a.$eval("#fly", (el) => el.disabled)), null);
 // A pilot whose lines are used up for the moment finds the offer waiting in the box.
 await a.click("#hallAdvertise"); await sleep(0.3); await a.click("#hallAdvertise"); await sleep(0.3);
 check("an advertisement that has to wait waits in the box", (await value(a, "hallInput")) === offer && /You can send again in \d+ s/.test(await text(a, "hallHint")), [await value(a, "hallInput"), await text(a, "hallHint")]);
