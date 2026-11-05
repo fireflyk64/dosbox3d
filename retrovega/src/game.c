@@ -13,6 +13,7 @@
 #include "rv.h"
 #include "rvhooks.h"
 #include "room.h"
+#include "sfx.h"
 #include "logic.h"
 #include "freeze.h"
 #include "campaign.h"
@@ -962,6 +963,7 @@ static int enter_home(void)
     g_scene.full = talk_full;
     g_stage_at = 0;
     g_mode = MODE_HOME;
+    rvWhere = RV_WHERE_DEBRIEF;         /* (home from the flight: Kit at the plate, then the debriefing) */
     music_cue(g_won ? RV_MUSIC_WIN : RV_MUSIC_LOSE, 250);   /* (the debrief's: it carries on under what follows) */
     vid_dirty(0, SCR_H);
     scene_draw();
@@ -980,6 +982,8 @@ static void start_briefing(int debrief)
     g_scene.underlay = xo_underlay;
     g_scene.overlay = brief_overlay;
     g_mode = debrief ? MODE_DEBRIEF : MODE_BRIEF;
+    if (debrief)
+        rvWhere = RV_WHERE_DEBRIEF;
     g_stage = 0;
     if (!debrief)                       /* the flight's sets asked of the page now, fetched while the briefing is read */
         mission_want(-1, 0);
@@ -1125,6 +1129,7 @@ static void dead_full(int y0, int y1)
 
 static void enter_dead(void)
 {
+    rvWhere = RV_WHERE_DOWN;
     vid_fade(0);
     g_scene.full = dead_full;
     g_scene.no_room = 1;
@@ -1387,9 +1392,58 @@ static void flight_prepare(void)
     }
 }
 
+/* the ship's address system (the user, 2026-11-05: "Can we Have a sort of echoy tinny speech clip audio and text when
+ * the host starts the mission... "All pilots report to briefing room" and have it repeat every 45 seconds"): a guest
+ * in the base, its host's mission begun (the layer's rvPeerWhere and rvBriefingLock), hears it and reads it, and again
+ * every PA_EVERY while it stays out of the briefing.  The card plays in flight only: started for the call, and stopped
+ * when it is over or a flight comes (pa_stop) */
+#define PA_EVERY 819                    /* ticks: 45 s */
+#define PA_LONG 100                     /* ticks the call takes, its echo with it: 5.5 s */
+static unsigned long g_pa_at, g_pa_end;
+static uint8_t g_pa_on, g_pa_card;
+
+static void pa_stop(void)
+{
+    if (g_pa_card) {
+        sfx_flight_end();
+        g_pa_card = 0;
+    }
+}
+
+static void pa_tick(void)
+{
+    static const char __far s_call[] = "PA: All pilots report to the briefing room.";
+    int base = rvWhere == RV_R_BAR + 1 || rvWhere == RV_R_LOUNGE + 1 || rvWhere == RV_R_QUARTERS + 1
+               || rvWhere == RV_R_LOCKER + 1;
+    int due = rvNetRole == 2 && peer_where(0) && !rvBriefingLock && base;
+    unsigned long now = ticks();
+    if (g_pa_card) {
+        sfx_poll();
+        if (now >= g_pa_end)
+            pa_stop();
+    }
+    if (!due) {
+        g_pa_on = 0;
+        return;
+    }
+    if (g_pa_on && now - g_pa_at < PA_EVERY)
+        return;
+    g_pa_on = 1;
+    g_pa_at = now;
+    scene_caption(s_call);
+    if (!g_pa_card)
+        g_pa_card = (uint8_t)(sfx_flight_start() != 0);
+    if (g_pa_card) {
+        sfx_play(RV_SFX_PA_REPORT, 256, 256);
+        g_pa_end = now + PA_LONG;
+    }
+    RV_LOG("pa: all pilots to the briefing (the host %d)", peer_where(0));
+}
+
 static void launch(void)
 {
     int won, status, landed = 0;
+    pa_stop();                          /* (the flight starts the card itself) */
     freeze_hold();                      /* (the load, sets the page may be fetching: until the flight's first frame) */
     flight_prepare();
     mission_load_assets();
@@ -1408,6 +1462,7 @@ static void launch(void)
         status = noflight();
         missionEnded();                 /* (as flight_fly's loop returning would) */
     } else {
+        rvWhere = RV_WHERE_FLYING;
         status = flight_fly(&g_m);
         landed = status == 1 && landedOn != 0xFFFF;
         if (landed)
@@ -1987,6 +2042,8 @@ static void start_simulator(void)
     unsigned char ship = g_camp.player_ship;
     int status;
     freeze_hold();                      /* (the load, seven sets the page may be making: until the flight's first frame) */
+    rvWhere = RV_WHERE_SIMULATOR;
+    pa_stop();                          /* (the simulator's flight starts the card itself) */
     strcpy(g_scene.label, "Simulator: powering up");   /* (the page may be making the Rlaan's sets) */
     vid_dirty(SCR_H - LABEL_H, SCR_H);
     scene_draw();
@@ -2041,7 +2098,15 @@ static void hot_action(const SceneAction *a)
 {
     switch (a->action) {
     case RV_ACT_GOTO:
-        if (a->arg == RV_R_BRIEFING)
+        if (a->arg == RV_R_BRIEFING && briefing_locked()) {
+            /* a guest's door stays shut until its host is at its briefing or in its mission (rvBriefingLock): the
+             * guest had gone in and waited there for as long as the host was elsewhere (the user, 2026-11-05: "we
+             * instead don't make the [briefing] clickable until the host has clicked in it") */
+            const char __far *w = peer_where_phrase(0);
+            sprintf(g_msg, "The host chooses the mission: the briefing opens when the host goes in.%s%Fs%s",
+                    w[0] ? " The host is " : "", w, w[0] ? "." : "");
+            message(g_msg);
+        } else if (a->arg == RV_R_BRIEFING)
             start_briefing(0);
         else
             enter_room(a->arg);
@@ -2124,6 +2189,9 @@ int game_run(void)
         in_poll(&in);
         music_poll();
         scene_chat();                   /* (a shared flight's chat line, over whatever room is up) */
+        presence_tick();                /* (where the other pilots are, a guest's briefing door: the layer's) */
+        pa_tick();                      /* (a guest called to the briefing) */
+        rvTyping = g_mode == MODE_NAME; /* (a bunk's name: the 0 key is a letter, not the chat's: the layer's) */
         if (in.key == KEY_F12)
             shot_save("RVSHOT");
         /* Esc never quits (the user's rule, 2026-10-20: it is the browser's key, for leaving full screen);
@@ -2310,6 +2378,7 @@ int game_run(void)
             mem_watch(s_rooms, ++s_frame);
         }
     }
+    pa_stop();
     freeze_stop();
     if (g_mk)
         RV_LOG("monkey: %lu actions, %u leaks on the ledger", g_mk_total, mem_bad());

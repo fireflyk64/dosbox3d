@@ -41,6 +41,13 @@ enum { RV_FLAG_HUMAN = 32 };    // rvFlags: a human flies this ship, on another 
 enum RvRole { RV_ROLE_ALONE = 0, RV_ROLE_HOST = 1, RV_ROLE_GUEST = 2 };
 
 void rv_set_role(int role, int players);
+// Where the pilots are (rvWhere, rvPeerWhere: RV_WHERE_*), a guest's briefing door (rvBriefingLock), the game taking
+// typed text (rvTyping: the 0 key is its own then).  rv_clear_presence: nobody known, the door open (the session over)
+int rv_where();
+void rv_set_peer_where(int player, int place);
+void rv_set_briefing_lock(bool shut);
+bool rv_typing();
+void rv_clear_presence();
 int rv_controller(int slot);
 bool rv_human(int slot);        // rvFlags' human bit
 bool rv_marked(int slot);       // the layer made it a puppet or a human's (rv_mark)

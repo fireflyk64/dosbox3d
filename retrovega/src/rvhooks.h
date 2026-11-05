@@ -136,6 +136,14 @@ extern uint8_t rv_dgroup[];
 #define rvBenchCount_SIZE              2
 #define rvFps                          (*RV_AT(uint16_t *, 0x0364)) /* frames a second x 10, as the game measures them */
 #define rvFps_SIZE                     2
+#define rvWhere                        (*RV_AT(uint8_t *, 0x0366)) /* the game's: where its pilot is (RV_WHERE_*: 1 bar, 2 lounge, 3 briefing, 4 quarters, 5 locker, 6 deck, 7 flying, 8 simulator, 9 debriefing, 10 shot down; 0 none) */
+#define rvWhere_SIZE                   1
+#define rvPeerWhere                    (*RV_AT(uint32_t *, 0x0368)) /* the layer's: where each pilot of the room is by player number (0 the host), RV_WHERE_*, 0 not known (its own 0) */
+#define rvPeerWhere_SIZE               4
+#define rvBriefingLock                 (*RV_AT(uint8_t *, 0x036C)) /* the layer's: 1 a guest's briefing door does not open (its host is neither at its briefing nor in its mission) */
+#define rvBriefingLock_SIZE            1
+#define rvTyping                       (*RV_AT(uint8_t *, 0x036E)) /* the game's: 1 while it takes typed text (a bunk's name): the layer's 0 key (chat) is the game's then */
+#define rvTyping_SIZE                  1
 
 /* --- scratch: 0x0400- --- */
 #define aLoadingWingCom                RV_AT(uint8_t *, 0x0400)  /* 1 x 128 bytes */ /* starts "Loading RETROVEGA" (the layer's signature), then its scratch */

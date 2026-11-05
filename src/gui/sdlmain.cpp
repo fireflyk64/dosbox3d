@@ -1656,6 +1656,7 @@ bool GFX_StartUpdate(Bit8u * & pixels,Bitu & pitch) {
     return ret;
 }
 bool is_wc_connected();
+bool wc_net_chat_ready();
 void uninit_network();
 extern bool within_briefed_mission;
 extern bool in_space();
@@ -2811,7 +2812,7 @@ void GFX_Events() {
 		default:
             {
 			void MAPPER_CheckEvent(SDL_Event * event);
-            if (is_wc_connected()) {
+            if (wc_net_chat_ready() || kGlobalKeyDisable) {   // (a prompt already open is finished whatever came since)
                 if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_0 && !kGlobalKeyDisable) {
                     // '0' opens the comms prompt; Enter stays the game's missile
                     // key and only sends once the prompt is open

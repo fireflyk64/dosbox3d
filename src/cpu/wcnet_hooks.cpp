@@ -2414,6 +2414,12 @@ void wc_net_check_cpu_hooks() {
 #endif
         if (g_session) {
             g_session->on_async_tick();
+        } else if (is_rv() && !solo() && !in_flight()) {
+            // RetroVega in its rooms: the session sought now and then, not only at its start (rvHello) and its
+            // briefing door (missionStarting): a guest whose host's link was not up yet at its start had none until it
+            // clicked the door, so heard nothing of where the host was (presence), and its door could not stay shut
+            ensure_session();
+            rv_publish_role();
         }
     }
     if (!g_watchReady) {

@@ -150,6 +150,42 @@ Multiplayer appears in the logic only as who flies a ship (`rvController`, `RV_F
 - **Picked missions** (the page's menu): `/brief N`, the campaign at mission N, starting in the briefing room, as
   WC1's picked mission starts at its briefing.
 
+## 5a. The base together (2026-11-05)
+
+The user: "Users complain they don't know what the other player is doing. Can we see where the host (or guest) is?
+... if the guest would otherwise wait we instead don't make the [briefing] clickable until the host has clicked in
+it. Also lets add the chat functionality with 0 to the base scenes (except when typing save game names)", and "a sort
+of echoy tinny speech clip audio and text when the host starts the mission... "All pilots report to briefing room"
+and have it repeat every 45 seconds".
+
+- **Where each pilot is.** The game writes its own place in `rvWhere` (1 bar, 2 crew lounge, 3 briefing, 4 quarters,
+  5 locker, 6 deck: a room is its number + 1, set in `scene_enter`; 7 flying, 8 simulator, 9 debriefing, 10 shot
+  down). The layer sends it in a `Presence` message (wc.proto, out of band like chat) when it changes and every 3 s;
+  the host relays a guest's to the other guests with its player number; each machine writes the others' into
+  `rvPeerWhere` (a byte a player number, the host 0). The rooms show it in the top right corner ("HOST: CREW LOUNGE",
+  "GUEST: BRIEFING", two guests "GUEST 1", "GUEST 2"), below the chat's caption while one shows, at the bottom right
+  in the briefing and on the deck (their own titles run across the top).
+- **The briefing door.** The host's `Presence` says whether its mission has begun (`within_briefed_mission`: at its
+  briefing, or flying it; at its briefing door its place reads as the briefing); a guest's layer keeps
+  `rvBriefingLock` 1 while it has not, and the guest's briefing door does not open: its label reads "Briefing: host in
+  the bar", a click says "The host chooses the mission: the briefing opens when the host goes in." The host's own is
+  sent before its waits at the mission's start (`presence_tick(true)` in `on_mission_starting`). No `Presence` from a
+  host (an older one) leaves the door open, as before.
+- **A guest in the base is introduced at once.** The session was sought only at the game's start and at the briefing
+  door, and a guest introduced itself (`send_connect`) only in `on_barracks`, which RetroVega reaches at the door: the
+  host knew nothing of a guest in the bar. Now the layer seeks a session from its periodic tick while RetroVega is in
+  its rooms, and a guest's tick introduces it; the host no longer marks a RetroVega guest as needing the mission's start
+  state when it is adopted (it asks at its briefing door, and `send_briefing_state` brings it in then): the mark had the
+  host wait for the frames of a guest still in the bar.
+- **The call to the briefing.** A guest in the base (bar, lounge, quarters, locker) whose host's mission has begun reads
+  "PA: All pilots report to the briefing room." across the top and hears the ship's address system (sounds.csv
+  `pa_report`: a two-note chime and the voice, art/voice/pa_report.wav, made with eSpeak NG, through a tinny band and a
+  hall's echo: tools/sfx.py), again every 45 s while it stays out (`pa_tick`). The card plays in flight only: started
+  for the call and stopped after it, or before a flight.
+- **Chat with 0 in the base.** The layer's 0 prompt (sdlmain) opens wherever a RetroVega session is, the rooms too
+  (`wc_net_chat_ready`), except while the game takes typed text (`rvTyping`: a bunk's name). The line shows across the
+  top of the other pilots' rooms, as in flight.
+
 ## 6. Checks
 
 - **Play tests** (`tests/play/playtest.sh --dos`, last in the table): M6.7 ram-owner, M7.8 puppet-launch, M8.29

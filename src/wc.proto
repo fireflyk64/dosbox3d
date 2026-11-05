@@ -275,6 +275,14 @@ message Chat {
     optional uint32 ship_id = 2;
     optional string callsign = 3;
 }
+// Where a pilot is in its game (RetroVega's rvWhere: the bar, the briefing, flying, ...), out of band like chat:
+// a pilot sends its own when it changes and every few seconds, the host relays a guest's to the others with its
+// player number, and the host's says whether its mission has begun (a guest's briefing door opens then).
+message Presence {
+    optional uint32 player = 1;     // whose (the host's 0; set by the host when it relays)
+    optional uint32 place = 2;      // RV_WHERE_*, 0 not known
+    optional bool briefed = 3;      // the host's: its mission has begun (at its briefing or flying it)
+}
 message ServerSendBriefingStart {
     optional uint32 mission_id = 1;
     optional bytes mission_tree_progress = 2;
@@ -322,4 +330,5 @@ message NetworkMessage {
     // death screen, out of any flight): the host's choice there, 1 fly the
     // mission again, 2 carry on (RetroVega's restartChoice).
     optional uint32 restart_choice = 19;
+    optional Presence presence = 20;
 }

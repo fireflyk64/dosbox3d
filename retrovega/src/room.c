@@ -6,6 +6,7 @@
  * just those rows, back to front, then flips them.  The game draws its own
  * things (text, boards, menus) through the overlay hook, called for every
  * band drawn. */
+#include <stdio.h>
 #include <string.h>
 #include "rv.h"
 #include "room.h"
@@ -62,8 +63,11 @@ void scene_enter(int room_id, const unsigned char *seats)
     g_scene.glance_at = ticks() + 180;
     gfx_use_palette(r->palette);
     vid_dirty(0, SCR_H);
+    rvWhere = (uint8_t)(room_id + 1);   /* (RV_WHERE_*: a room is its number + 1) */
     roomEntered(room_id);
 }
+
+extern uint8_t g_relabel;
 
 /* what is under the pointer */
 static void find_hover(int x, int y, int *kind, int *index)
@@ -212,11 +216,20 @@ int scene_update(const Input *in, SceneAction *act)
         kind = s_tab_kind;
         index = s_tab_index;
     }
-    if (kind != g_scene.hover_kind || index != g_scene.hover_index) {
+    if (kind != g_scene.hover_kind || index != g_scene.hover_index || g_relabel) {
+        g_relabel = 0;
         g_scene.hover_kind = kind;
         g_scene.hover_index = index;
         g_scene.pointer = kind == HOVER_HOT && r->hot[index].action == RV_ACT_GOTO;
-        if (kind == HOVER_HOT)
+        if (kind == HOVER_HOT && r->hot[index].action == RV_ACT_GOTO && r->hot[index].arg == RV_R_BRIEFING
+            && briefing_locked()) {
+            static char s_shut[40];      /* ("Briefing: host in the crew lounge") */
+            const char __far *w = peer_where_phrase(0);
+            strcpy(s_shut, "Briefing: host ");
+            _fstrncat(s_shut, w[0] ? w : (const char __far *)"not in yet", sizeof s_shut - 16);
+            g_scene.pointer = 0;         /* (no door's pointer: it does not open) */
+            set_label(s_shut);
+        } else if (kind == HOVER_HOT)
             set_label(r->hot[index].label);
         else if (kind == HOVER_SEAT)
             set_label(g_people_names[g_scene.seat[index]]);
@@ -291,9 +304,99 @@ static void draw_pointer(int y0, int y1)
     }
 }
 
+static char g_chat[84];                 /* the chat's caption (below) */
+
+/* --- where the other pilots are (room.h) --- */
+static const char __far s_w1[] = "BAR", s_w2[] = "CREW LOUNGE", s_w3[] = "BRIEFING", s_w4[] = "QUARTERS",
+    s_w5[] = "LOCKER", s_w6[] = "FLIGHT DECK", s_w7[] = "FLYING", s_w8[] = "SIMULATOR", s_w9[] = "DEBRIEFING",
+    s_w10[] = "SHOT DOWN";
+static const char __far *const __far s_where[] = { 0, s_w1, s_w2, s_w3, s_w4, s_w5, s_w6, s_w7, s_w8, s_w9, s_w10 };
+static const char __far s_p1[] = "in the bar", s_p2[] = "in the crew lounge", s_p3[] = "in the briefing",
+    s_p4[] = "in quarters", s_p5[] = "at the locker", s_p6[] = "on the deck", s_p7[] = "flying",
+    s_p8[] = "in the simulator", s_p9[] = "at the debriefing", s_p10[] = "shot down";
+static const char __far *const __far s_phrase[] = { 0, s_p1, s_p2, s_p3, s_p4, s_p5, s_p6, s_p7, s_p8, s_p9, s_p10 };
+#define WHERE_N 11
+static uint8_t g_where_seen[4], g_lock_seen, g_where_chat;
+uint8_t g_relabel;                      /* (scene_update: the hover's label made again) */
+#define PEER_WHERE(k) (((const uint8_t *)&rvPeerWhere)[k])
+
+int peer_where(int player)
+{
+    return player >= 0 && player < 4 ? PEER_WHERE(player) : 0;
+}
+
+int briefing_locked(void)
+{
+    return rvNetRole == 2 && rvBriefingLock;
+}
+
+const char __far *peer_where_phrase(int player)
+{
+    uint8_t w = player >= 0 && player < 4 ? PEER_WHERE(player) : 0;
+    return w && w < WHERE_N ? s_phrase[w] : (const char __far *)"";
+}
+
+/* the corner's line: "HOST: CREW LOUNGE", a guest's "GUEST: BRIEFING" (two guests: "GUEST 1", "GUEST 2"); "" none */
+static int presence_line(char *out, int n)
+{
+    int k, guests = 0, len = 0;
+    out[0] = 0;
+    if (!rvNetRole)
+        return 0;
+    for (k = 1; k < 4; k++)
+        guests += PEER_WHERE(k) && PEER_WHERE(k) < WHERE_N;
+    for (k = 0; k < 4; k++) {
+        uint8_t w = PEER_WHERE(k);
+        char who[10];
+        if (!w || w >= WHERE_N)
+            continue;
+        if (k == 0)
+            strcpy(who, "HOST");
+        else if (guests > 1)
+            sprintf(who, "GUEST %d", k);
+        else
+            strcpy(who, "GUEST");
+        if (len + (int)strlen(who) + 2 + (int)_fstrlen(s_where[w]) + 3 >= n)
+            break;
+        len += sprintf(out + len, "%s%s: %Fs", len ? "   " : "", who, s_where[w]);
+    }
+    return len;
+}
+
+void presence_tick(void)
+{
+    int k, changed = rvBriefingLock != g_lock_seen || (g_chat[0] != 0) != g_where_chat;
+    for (k = 0; k < 4; k++)
+        if (PEER_WHERE(k) != g_where_seen[k]) {
+            g_where_seen[k] = PEER_WHERE(k);
+            changed = 1;
+        }
+    if (rvBriefingLock != g_lock_seen) {
+        g_lock_seen = rvBriefingLock;
+        g_relabel = 1;                  /* (the briefing door's label and pointer again at the next update) */
+    }
+    if (changed) {
+        g_where_chat = g_chat[0] != 0;
+        vid_dirty(0, CHAT_H + 24);
+        vid_dirty(SCR_H - LABEL_H, SCR_H);
+    }
+}
+
+/* in the top right corner, below the chat's caption while it shows; in the briefing and on the deck, whose own titles
+ * run across the top, the bottom right */
+static void draw_presence(int y0, int y1)
+{
+    char line[64];
+    int w, y = g_scene.room == RV_R_BRIEFING || g_scene.room == RV_R_DECK ? SCR_H - LABEL_H + 3 : g_chat[0] ? CHAT_H + 2 : 4;
+    if (!presence_line(line, sizeof line) || y1 <= y - 2 || y0 >= y + 18)
+        return;
+    w = gfx_text_width(FONT_BODY, line);
+    gfx_shade(SCR_W - w - 16, y - 2, w + 12, 18, y0, y1);
+    gfx_text(FONT_BODY, SCR_W - w - 10, y, line, RV_TEXT_AMBER | 0x10, y0, y1);
+}
+
 /* --- the chat's caption (room.h) --- */
 static uint16_t g_chat_seen;            /* commTextTimer as last taken */
-static char g_chat[84];
 static unsigned long g_chat_until;      /* ticks(): the caption off then */
 
 int chat_take(char *out, int n, uint16_t *speaker)
@@ -308,6 +411,14 @@ int chat_take(char *out, int n, uint16_t *speaker)
     out[n - 1] = 0;
     *speaker = commSpeaker;
     return out[0] != 0;
+}
+
+void scene_caption(const char __far *text)
+{
+    _fstrncpy(g_chat, text, sizeof g_chat - 1);
+    g_chat[sizeof g_chat - 1] = 0;
+    g_chat_until = ticks() + 55 + strlen(g_chat) * 2;
+    vid_dirty(0, CHAT_H + 24);
 }
 
 void scene_chat(void)
@@ -371,6 +482,7 @@ static void draw_band(int y0, int y1)
         gfx_text(FONT_BODY, (SCR_W - w) / 2, SCR_H - LABEL_H + 3, g_scene.label, RV_TEXT_AMBER | 0x10, y0, y1);
     }
     draw_chat(y0, y1);
+    draw_presence(y0, y1);
     draw_pointer(y0, y1);
 }
 

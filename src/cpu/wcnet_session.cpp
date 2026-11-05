@@ -804,10 +804,14 @@ private:
 };
 
 class ServerSession : public Session {
+    int presencePlace_;                 // (presence_tick: what was last said, and when)
+    bool presenceBriefed_;
+    double presenceAt_;
 public:
     // Takes ownership of the listener.
     explicit ServerSession(Listener *listener)
-        : listener_(listener), epoch_(1), frameNumber_(0), sendFrameAtIdle_(false), ignoreNextFrameTop_(false),
+        : presencePlace_(-1), presenceBriefed_(false), presenceAt_(0),
+          listener_(listener), epoch_(1), frameNumber_(0), sendFrameAtIdle_(false), ignoreNextFrameTop_(false),
           hadClientInMission_(false),
           wantRocks_(rocks_mode()), wantWingBumps_(wing_bumps_mode()), modeSetting_(mode_from_name(getenv("WCNET_MODE"))), autoMode_(MODE_LOW),
           highWindow_(kHighWindowMin), modeSince_(0), modeTickAt_(0), ownFrames_(0), rtt_(-1) {
@@ -900,6 +904,7 @@ public:
         set_rocks_mode(wantRocks_);
         set_wing_bumps_mode(wantWingBumps_);
         within_briefed_mission = true;
+        presence_tick(true);            // (before the waits: a guest's briefing door opens now)
         MissionEnd end;
         populate_mission_end(&end);
         lastBriefing_.set_mission_tree_progress(end.mission_tree_progress());
@@ -1058,8 +1063,50 @@ public:
         std::sort(out.begin(), out.end());
         return out;
     }
+    // Where the pilots are, RetroVega's (the user, 2026-11-05: "Users complain they don't know what the other player is
+    // doing"): the host's own place to every guest when it changes or its mission begins or ends, and every few seconds,
+    // with whether its mission has begun (a guest's briefing door opens then: rvBriefingLock); a guest gone, its place
+    // forgotten.  Forced at the mission's start: the host may wait at its briefing for a guest (wait_for_lockstep), no
+    // async tick running meanwhile, and that guest's door must open
+    void presence_tick(bool force) {
+        if (!is_rv()) {
+            return;
+        }
+        int place = rv_where();
+        bool briefed = within_briefed_mission;
+        if (briefed && place >= 1 && place <= 5) {
+            place = 3;                      // (its mission begun at the door: the briefing)
+        }
+        for (int n = 1; n < 4; n++) {
+            bool here = false;
+            for (size_t i = 0; i < clients_.size(); i++) {
+                here = here || (clients_[i]->connected() && clients_[i]->net == n);
+            }
+            if (!here) {
+                rv_set_peer_where(n, 0);
+            }
+        }
+        double now = perf_now_ms();
+        if (!force && place == presencePlace_ && briefed == presenceBriefed_ && now - presenceAt_ < 3000.0) {
+            return;
+        }
+        presencePlace_ = place;
+        presenceBriefed_ = briefed;
+        presenceAt_ = now;
+        NetworkMessage msg;
+        msg.mutable_presence()->set_player(0);
+        msg.mutable_presence()->set_place((Bit32u)place);
+        msg.mutable_presence()->set_briefed(briefed);
+        for (size_t i = 0; i < clients_.size(); i++) {
+            if (clients_[i]->connected()) {
+                clients_[i]->conn.send(msg);
+            }
+        }
+    }
+
     virtual void on_async_tick() {
         accept_clients(false);
+        presence_tick(false);
         NetworkMessage msg;
         for (size_t i = 0; i < clients_.size(); i++) {
             RemoteClient *c = clients_[i];
@@ -1068,6 +1115,16 @@ public:
             }
             if (c->conn.poll(CAT_CHAT, msg).ok() && msg.has_chat()) {
                 handle_incoming_chat(msg.chat());
+                for (size_t j = 0; j < clients_.size(); j++) {
+                    if (j != i && clients_[j]->connected()) {
+                        clients_[j]->conn.send(msg);
+                    }
+                }
+            } else if (msg.has_presence()) {
+                // a guest's place (RetroVega's rvWhere): ours to show, and the other guests' (by its player number)
+                rv_set_peer_where(c->net, (int)msg.presence().place());
+                msg.mutable_presence()->set_player((Bit32u)c->net);
+                msg.mutable_presence()->clear_briefed();
                 for (size_t j = 0; j < clients_.size(); j++) {
                     if (j != i && clients_[j]->connected()) {
                         clients_[j]->conn.send(msg);
@@ -1543,14 +1600,17 @@ private:
         }
         c->callsign = msg.connect().callsign();
         c->leftThisMission = false;
+        presencePlace_ = -1;            // (the newcomer told where the host is at the next tick)
         c->missionTreeProgress.clear();
         wclog(1, "%s connected as player %d (%s)", c->callsign.c_str(), c->net, c->conn.describe().c_str());
         std::map<int, std::string>::iterator was = flownWith_.find(c->roomSeat);
         if (was != flownWith_.end() && was->second != c->callsign) {
             flownWith_.erase(was);  // (somebody else in that seat now: they have not flown with us)
         }
-        if (within_briefed_mission) {
-            // Joining a mission in progress: bring them in next frame.
+        if (within_briefed_mission && !is_rv()) {
+            // Joining a mission in progress: bring them in next frame.  (A RetroVega guest is introduced in its base,
+            // long before it may come: it asks at its briefing door, and send_briefing_state brings it in then; the
+            // mark here had the host wait for the frames of a guest still in the bar)
             c->needsMissionStartState = true;
         }
         return true;
@@ -2543,9 +2603,11 @@ private:
 };
 
 class ClientSession : public Session {
+    int presencePlace_;                 // (on_async_tick: our place as last said, and when)
+    double presenceAt_;
 public:
     ClientSession()
-        : shipNet_(0), seat_(SEAT_WINGMAN), chase_(true), seatFrames_(-1), lastServerFrame_(0), lastServerFrameAt_(0),
+        : presencePlace_(-1), presenceAt_(0), shipNet_(0), seat_(SEAT_WINGMAN), chase_(true), seatFrames_(-1), lastServerFrame_(0), lastServerFrameAt_(0),
           lastServerFrameEmu_(-1), mode_(MODE_LOW), lastWrittenMissionStatus_(Proceed), lastVictoryPlusOne_(0),
           isFresh_(true), hasRestartedMission_(false), hasSentConnect_(false),
           ignoreNextFrameTop_(false), ownMissionOver_(false), dead_(false), sceneDue_(false), epoch_(0), frameNumber_(0) {
@@ -2947,10 +3009,37 @@ public:
                   restartChoice_ == 2 ? "carry on" : "?");
         } else if (st.ok() && msg.has_in_flight_scene()) {
             host_scene((int)msg.in_flight_scene().scene());
+        } else if (st.ok() && msg.has_presence()) {
+            // where another pilot is (the host's: whether its mission has begun, our briefing door open then)
+            int player = msg.presence().has_player() ? (int)msg.presence().player() : 0;
+            rv_set_peer_where(player, (int)msg.presence().place());
+            if (player == 0) {
+                rv_set_briefing_lock(!msg.presence().briefed());
+            }
         } else if (st.ok()) {
             handle_incoming_chat(msg.chat());
         } else if (st.failed()) {
             drop("the server went away");
+            return;
+        }
+        // RetroVega in its base: introduced to the host now, not only at the briefing door (on_barracks), so that the
+        // host knows us and says where it is (presence); our stream was opened with the session
+        if (is_rv() && !dead_ && conn_.is_open() && !hasSentConnect_) {
+            if (send_connect()) {
+                wclog(1, "connected to %s as %s (in the base)", conn_.describe().c_str(), callsign_.c_str());
+            }
+        }
+        // our own place to the host when it changes and every few seconds (RetroVega's rvWhere)
+        if (is_rv() && !dead_ && conn_.is_open() && hasSentConnect_) {
+            int place = rv_where();
+            double now = perf_now_ms();
+            if (place != presencePlace_ || now - presenceAt_ >= 3000.0) {
+                presencePlace_ = place;
+                presenceAt_ = now;
+                NetworkMessage mine;
+                mine.mutable_presence()->set_place((Bit32u)place);
+                conn_.send(mine);
+            }
         }
     }
 
@@ -3566,6 +3655,9 @@ void uninit_network() {
     if (g_traits.puppets) {
         rv_unmark_all();    // (a guest flies on alone: the host's ships are its AI's again)
     }
+    if (is_rv()) {
+        rv_clear_presence();   // (nobody's place known, a guest's briefing door open)
+    }
     if (g_session) {
         Session *s = g_session;
         g_session = NULL;
@@ -3582,6 +3674,19 @@ void uninit_network() {
 
 bool is_wc_connected() {
     return g_session != NULL && has_started_up;
+}
+
+// The 0 key's chat prompt (sdlmain.cpp): with a session in flight and the barracks, and in RetroVega's base rooms too
+// (the user, 2026-11-05: "lets add the chat functionality with 0 to the base scenes (except when typing save game
+// names)": RetroVega says it takes typed text in rvTyping)
+bool wc_net_chat_ready() {
+    if (!g_session) {
+        return false;
+    }
+    if (is_rv()) {
+        return !rv_typing();
+    }
+    return has_started_up;
 }
 
 const char *wc_net_role() {

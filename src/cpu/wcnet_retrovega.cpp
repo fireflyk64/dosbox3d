@@ -115,6 +115,42 @@ void rv_set_role(int role, int players) {
     wr8(RV_DS_rvPlayerCount, (Bit8u)players);
 }
 
+enum { kRvPeers = 4 };  // (rvPeerWhere: a byte a player number)
+
+int rv_where() {
+    return rv_compatible() ? rd8(RV_DS_rvWhere) : 0;
+}
+
+void rv_set_peer_where(int player, int place) {
+    if (!rv_compatible() || player < 0 || player >= kRvPeers) {
+        return;
+    }
+    Bit8u was = rd8((Bit16u)(RV_DS_rvPeerWhere + player));
+    if (was != (Bit8u)place) {
+        wclog(2, "RV.EXE: player %d is at place %d now (was %d)", player, place, was);
+        wr8((Bit16u)(RV_DS_rvPeerWhere + player), (Bit8u)place);
+    }
+}
+
+void rv_set_briefing_lock(bool shut) {
+    if (rv_compatible() && rd8(RV_DS_rvBriefingLock) != (Bit8u)(shut ? 1 : 0)) {
+        wclog(1, "RV.EXE: the briefing door %s", shut ? "shut: the host is neither at its briefing nor in its mission"
+                                                       : "open: the host's mission has begun");
+        wr8(RV_DS_rvBriefingLock, shut ? 1 : 0);
+    }
+}
+
+bool rv_typing() {
+    return rv_compatible() && rd8(RV_DS_rvTyping) != 0;
+}
+
+void rv_clear_presence() {
+    for (int k = 0; k < kRvPeers; k++) {
+        rv_set_peer_where(k, 0);
+    }
+    rv_set_briefing_lock(false);
+}
+
 int rv_controller(int slot) {
     return rv_compatible() && slot >= 0 && slot <= RV_MAX_SHIP_SLOT ? rd8((Bit16u)(RV_DS_rvController + slot)) : -1;
 }

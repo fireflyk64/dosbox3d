@@ -148,7 +148,8 @@
 #define RV_SFX_SPARK 27
 #define RV_SFX_KLAXON 28
 #define RV_SFX_WRECKED 29
-#define RV_SFX_COUNT 30
+#define RV_SFX_PA_REPORT 30
+#define RV_SFX_COUNT 31
 #define RV_SFX_NONE 0xFF
 #define RV_WK_GUN 0
 #define RV_WK_TURRET 1

@@ -48,4 +48,18 @@ void scene_draw(void);
 int chat_take(char *out, int n, uint16_t *speaker);
 void scene_chat(void);
 
+/* a shared flight's base: where the other pilots are (the layer's rvPeerWhere by player number, RV_WHERE_*: a line
+ * in the top right corner of every room, the user's 2026-11-05: "Users complain they don't know what the other
+ * player is doing"), and a guest's briefing door shut while its host is neither at its briefing nor in its mission
+ * (rvBriefingLock).  presence_tick once a pass of the rooms' loop: what changed drawn again */
+#define RV_WHERE_FLYING 7
+#define RV_WHERE_SIMULATOR 8
+#define RV_WHERE_DEBRIEF 9
+#define RV_WHERE_DOWN 10
+void presence_tick(void);
+void scene_caption(const char __far *text);   /* a line of the game's own in the chat's strip, a few seconds */
+int peer_where(int player);                   /* RV_WHERE_* of that pilot, 0 not known */
+int briefing_locked(void);
+const char __far *peer_where_phrase(int player);   /* "in the crew lounge": where that pilot is, "" not known */
+
 #endif
