@@ -465,6 +465,16 @@ static void set_wait_note(const std::string &note) {
 }
 
 // (local: the speaker's slot here, kInvalidSlot for a notice of the layer's own; the game picks a face by it)
+// Test aid: the picture as shown when a wait that stops the emulator begins (WCNET_DUMP_DIR/<name>.ppm): what the
+// player looks at all through it
+static void dump_shown(const char *name) {
+    const char *dir = getenv("WCNET_DUMP_DIR");
+    if (dir && dir[0]) {
+        std::string path = std::string(dir) + "/" + name + ".ppm";
+        wclog(1, "the picture shown as the wait begins: %s%s", path.c_str(), ::GFX_DumpLastFrame(path.c_str()) ? "" : " (not written)");
+    }
+}
+
 static void chat_into_block(int local, const std::string &line) {
     if (!ds::known(ds::commGlobalTxt) || !ds::known(ds::commSpeaker) || !ds::known(ds::commTextTimer)) {
         return;
@@ -1499,6 +1509,7 @@ private:
             bool block = blockIfNone && !any_client_connected();
             if (block) {
                 wclog(1, "waiting for a client to connect (%s)", listener_->describe().c_str());
+                dump_shown("waiting");
             }
             Stream *s = listener_->accept(block);
             if (!s) {

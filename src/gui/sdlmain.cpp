@@ -1623,6 +1623,32 @@ static void BlankHelmetName(int vduX, int vduY, Bit8u *surface, Bitu pitch) {
     }
 }
 
+// Test aid: the picture as last shown (the output surface the last frame was drawn into), as a PPM: what a player
+// looks at while the emulator stands still in a wait of the layer's (wcnet_session.cpp, WCNET_DUMP_DIR).  True colour
+// surfaces only.
+bool GFX_DumpLastFrame(const char *path) {
+    if (!textPixels || !textPitch || !sdl.draw.width || textPitch / sdl.draw.width < 3) {
+        return false;
+    }
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        return false;
+    }
+    Bitu step = textPitch / sdl.draw.width;
+    fprintf(f, "P6\n%u %u\n255\n", (unsigned)sdl.draw.width, (unsigned)sdl.draw.height);
+    for (Bitu y = 0; y < sdl.draw.height; y++) {
+        const Bit8u *row = textPixels + y * textPitch;
+        for (Bitu x = 0; x < sdl.draw.width; x++) {
+            const Bit8u *px = row + x * step;   // (BGRA in memory)
+            fputc(px[2], f);
+            fputc(px[1], f);
+            fputc(px[0], f);
+        }
+    }
+    fclose(f);
+    return true;
+}
+
 bool GFX_StartUpdate(Bit8u * & pixels,Bitu & pitch) {
     bool ret = Inner_GFX_StartUpdate(pixels, pitch);
     textPixels = pixels;

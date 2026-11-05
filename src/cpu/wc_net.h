@@ -80,6 +80,8 @@ bool wc_net_overlay_chat();
 // What a wait of the link's is for ("Waiting for GUEST to launch..."), across the middle of the picture while it
 // lasts; "" none.
 const char *wc_net_wait_note();
+// Test aid (sdlmain.cpp): the picture as last shown, as a PPM; false when there is none to write.
+bool GFX_DumpLastFrame(const char *path);
 extern bool within_briefed_mission;
 void wcnetSendChatMessage(const std::string &msg);
 // Asteroid and mine fields: 1 on (the default), 0 off (WCROCKS=0), 2 soft
