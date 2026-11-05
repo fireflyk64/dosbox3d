@@ -21,17 +21,24 @@ static const unsigned char g_text_colour[3] = { UI_WHITE, UI_AMBER4, UI_GREY5 };
 typedef struct {
     unsigned char height, ascent, first, count, packed;     /* packed: 4 pixels a byte, the first lowest */
     unsigned char __far *table;        /* count x (offset word, width, advance) */
-    unsigned char __far *bits;
+    unsigned char __far *bits;         /* the glyphs, or 0: in XMS (xms) */
+    XmsBlock xms;
 } Font;
 static Font g_font[3];                  /* body, title, and the chalk while the tally board shows */
 
 /* The fixed arrays (mem.h).  Sizes from the archive's fonts as built: mem_take stops the game, naming it, if one grows. */
 #define FONT_BODY_BYTES 4096U
-#define FONT_TITLE_BYTES 9984U
+#define FONT_TITLE_BYTES 9984U          /* (the title font's glyphs, in XMS: the user's pick from the memory plan, 2026-11-04;
+                                           it heads a few pages only, YOUR BUNK, the briefing's titles, and a glyph a
+                                           time from XMS costs nothing to see) */
+#define FONT_TITLE_TABLE 1024U          /* its header and table, in memory */
+#define FONT_GLYPH_MOST 2048U           /* a glyph's bytes at most, fetched to draw it */
 #define SHARE_BYTES 14848U              /* the chalk hand while the board shows, or a flight's silhouettes */
 MEM_ARRAY(unsigned char, g_scratch_mem, SCRATCH)
 MEM_ARRAY(unsigned char, g_font_body_mem, FONT_BODY_BYTES)
-MEM_ARRAY(unsigned char, g_font_title_mem, FONT_TITLE_BYTES)
+MEM_ARRAY(unsigned char, g_font_title_mem, FONT_TITLE_TABLE)
+static unsigned char __far g_glyph[FONT_GLYPH_MOST];
+static XmsBlock g_title_xms;
 MEM_ARRAY(unsigned char, g_share_mem, SHARE_BYTES)
 
 static void need_scratch(void)
@@ -70,7 +77,9 @@ void gfx_boot_give(void __far *p) { _ffree(p); }
 void gfx_boot_reset(void) { }
 void gfx_boot_done(void) { }
 #else
-#define BOOT_BIG 34048U                 /* the longest track, BAR.MID's 33,932 bytes */
+#define BOOT_BIG (34048U + 8960U)       /* the longest track, BAR.MID's 33,932 bytes, and what the title font's array lent
+                                           before its glyphs went to XMS (9,984 bytes to 1,024): BAR.MID's tracks, some
+                                           84 KB, all fit the loans with it */
 #ifdef RV_HOST
 static unsigned char g_boot_big[BOOT_BIG];
 #else
@@ -103,7 +112,7 @@ void __far *gfx_boot_take(unsigned long bytes)
     int i, best = -1;
     base[0] = g_scratch_mem.a; size[0] = SCRATCH;
     base[1] = g_share_mem.a; size[1] = SHARE_BYTES;
-    base[2] = g_font_title_mem.a; size[2] = FONT_TITLE_BYTES;
+    base[2] = g_font_title_mem.a; size[2] = FONT_TITLE_TABLE;
     base[3] = g_font_body_mem.a; size[3] = FONT_BODY_BYTES;
     base[4] = 0; size[4] = BOOT_BIG;
     for (i = 0; i < 4; i++)
@@ -394,15 +403,49 @@ static void font_free(int i)
     g_font[i].table = 0;
 }
 
+/* the title font's glyphs' place in XMS, resident: taken with the resident blocks, before a base's (levels nest) */
+void gfx_title_reserve(void)
+{
+    if (!g_title_xms)
+        g_title_xms = xms_alloc(FONT_TITLE_BYTES + 16, XMS_RESIDENT);
+}
+
+/* the title font: its header and table into memory, its glyphs into XMS */
+static int title_read(const RvAsset __far *as)
+{
+    unsigned char __far *p = MEM_TAKE(unsigned char, g_font_title_mem, FONT_TITLE_TABLE);
+    unsigned long head, k;
+    if (!p || !g_title_xms)
+        return 0;
+    dat_read(as->at, p, 4);
+    head = 4 + 4UL * p[3];
+    RV_ASSERT(head <= FONT_TITLE_TABLE && as->size - head <= FONT_TITLE_BYTES);
+    dat_read(as->at + 4, p + 4, head - 4);
+    for (k = head; k < as->size; k += sizeof rv_filebuf) {
+        unsigned m = (unsigned)(as->size - k < sizeof rv_filebuf ? as->size - k : sizeof rv_filebuf);
+        dat_read(as->at + k, rv_filebuf, m);
+        xms_put(g_title_xms, k - head, rv_filebuf, m);
+    }
+    g_font[FONT_TITLE].packed = as->w == 2;
+    g_font[FONT_TITLE].height = p[0];
+    g_font[FONT_TITLE].ascent = p[1];
+    g_font[FONT_TITLE].first = p[2];
+    g_font[FONT_TITLE].count = p[3];
+    g_font[FONT_TITLE].table = p + 4;
+    g_font[FONT_TITLE].bits = 0;
+    g_font[FONT_TITLE].xms = g_title_xms;
+    return 1;
+}
+
 static int font_read(int i, unsigned id)
 {
     const RvAsset __far *as = dat_asset(id);
     unsigned char __far *p;
     font_free(i);                           /* a new base brings its own */
     RV_ASSERT(as->kind == RV_KIND_FONT);
-    p = i == FONT_BODY ? MEM_TAKE(unsigned char, g_font_body_mem, as->size + 1)
-        : i == FONT_TITLE ? MEM_TAKE(unsigned char, g_font_title_mem, as->size + 1)
-        : gfx_share_take(as->size + 1);
+    if (i == FONT_TITLE)
+        return title_read(as);
+    p = i == FONT_BODY ? MEM_TAKE(unsigned char, g_font_body_mem, as->size + 1) : gfx_share_take(as->size + 1);
     if (!p)
         return 0;
     dat_read(as->at, p, as->size);
@@ -413,6 +456,7 @@ static int font_read(int i, unsigned id)
     g_font[i].count = p[3];
     g_font[i].table = p + 4;
     g_font[i].bits = p + 4 + 4 * p[3];
+    g_font[i].xms = 0;
     return 1;
 }
 
@@ -473,9 +517,16 @@ int gfx_text(int font, int x, int y, const char *s, int colour, int y0, int y1)
             unsigned char __far *g;
             if (c >= f->count)
                 continue;
-            g = f->bits + *(unsigned short __far *)(f->table + c * 4);
             w = f->table[c * 4 + 2];
             adv = f->table[c * 4 + 3];
+            if (f->bits)
+                g = f->bits + *(unsigned short __far *)(f->table + c * 4);
+            else {                      /* (in XMS: the glyph fetched) */
+                unsigned long n = f->packed ? ((unsigned long)w * f->height + 3) / 4 : (unsigned long)w * f->height;
+                RV_ASSERT(n <= FONT_GLYPH_MOST);
+                xms_get(f->xms, *(unsigned short __far *)(f->table + c * 4), g_glyph, n);
+                g = g_glyph;
+            }
             for (gy = 0; gy < f->height; gy++) {
                 int ry = y + oy + (int)gy;
                 unsigned char __far *row;

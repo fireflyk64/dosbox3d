@@ -334,6 +334,7 @@ int main(int argc, char **argv)
         return 1;
     }
     /* resident before base: XMS levels nest (xms.c); the songs are resident too */
+    gfx_title_reserve();
     log_free("at the start");
     if (!nogx)
         (void)gx_init();                /* is there a sprite accelerator?  (only our DOSBox: docs/gx.md) */
