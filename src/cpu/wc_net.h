@@ -82,6 +82,7 @@ bool wc_net_overlay_chat();
 const char *wc_net_wait_note();
 // Test aid (sdlmain.cpp): the picture as last shown, as a PPM; false when there is none to write.
 bool GFX_DumpLastFrame(const char *path);
+void GFX_RedrawOverlay(void);  // (include/video.h)
 extern bool within_briefed_mission;
 void wcnetSendChatMessage(const std::string &msg);
 // Asteroid and mine fields: 1 on (the default), 0 off (WCROCKS=0), 2 soft

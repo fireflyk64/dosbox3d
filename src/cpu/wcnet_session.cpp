@@ -462,6 +462,9 @@ static void set_wait_note(const std::string &note) {
         wclog(1, "the wait is over");
     }
     g_waitNote = note;
+    // (the game's picture stands still in the wait: with no line of it changed the renderer drew no frame, and the
+    // note never reached the screen; the whole picture once more, the note on it, and again when it goes)
+    GFX_RedrawOverlay();
 }
 
 // (local: the speaker's slot here, kInvalidSlot for a notice of the layer's own; the game picks a face by it)

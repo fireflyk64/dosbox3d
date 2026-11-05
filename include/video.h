@@ -66,6 +66,9 @@ void GFX_Stop(void);
 void GFX_SwitchFullScreen(void);
 bool GFX_StartUpdate(Bit8u * & pixels,Bitu & pitch);
 void GFX_EndUpdate( const Bit16u *changedLines );
+// The whole picture again at the next frame, with the overlay on it: for an overlay that changes while the game's
+// picture stands still (a wait of the link's), when the renderer would find no line changed and draw nothing.
+void GFX_RedrawOverlay(void);
 void GFX_GetSize(int &width, int &height, bool &fullscreen);
 void GFX_LosingFocus(void);
 

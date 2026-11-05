@@ -1709,6 +1709,47 @@ static void DrawText(Bitu x,Bitu y,const char * text,Bit8u color, Bit8u *surface
 	}
 }
 
+// The bolt RetroVega's cockpit shows when a pilot's link is gone (flight.c link_tag), in red on a darkened box: beside
+// the wait note while the link holds this machine still for another's (the user, 2026-11-05: "when you arrive in space,
+// if you are waiting for the other host maybe we can draw the disconnect link during the wait....then remove it during
+// flight").  The game stands still in such a wait and can draw nothing; the overlay is what is on the screen.
+static void DrawBolt(Bitu x, Bitu y, Bit8u *surface, Bitu pitch) {
+    enum { W = 10, H = 18 };
+    Bitu step = pitch / sdl.draw.width;
+    if (x + W > sdl.draw.width || y + H > sdl.draw.height) {
+        return;
+    }
+    for (Bitu r = 0; r < H; r++) {
+        Bit8u *row = surface + (y + r) * pitch + x * step;
+        for (Bitu i = 0; i < W * step; i++) {
+            row[i] >>= 1;
+        }
+    }
+    static const int kLines[][4] = { { 7, 1, 2, 9 }, { 8, 1, 3, 9 }, { 2, 9, 7, 9 }, { 7, 9, 3, 16 }, { 8, 9, 4, 16 } };
+    for (size_t k = 0; k < sizeof(kLines) / sizeof(kLines[0]); k++) {
+        int x0 = kLines[k][0], y0 = kLines[k][1], x1 = kLines[k][2], y1 = kLines[k][3];
+        int dx = abs(x1 - x0), dy = -abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, err = dx + dy;
+        for (;;) {
+            Bit8u *px = surface + (y + y0) * pitch + (x + x0) * step;
+            if (step >= 3) {
+                px[0] = 0x30; px[1] = 0x30; px[2] = 0xE8;   // (BGRA in memory: red)
+            } else {
+                *px = 0x80;
+            }
+            if (x0 == x1 && y0 == y1) {
+                break;
+            }
+            int e2 = 2 * err;
+            if (e2 >= dy) { err += dy; x0 += sx; }
+            if (e2 <= dx) { err += dx; y0 += sy; }
+        }
+    }
+}
+
+void GFX_RedrawOverlay(void) {
+    render.scale.clearCache = true;
+}
+
 void GFX_EndUpdate( const Bit16u *changedLines ) {
     Bit16u fakeChangedLines[2];
     if (true) {
@@ -1798,11 +1839,25 @@ void GFX_EndUpdate( const Bit16u *changedLines ) {
             }
             DrawText(48,48 + 14 + 14, to_write->c_str(), 0x80, textPixels, textPitch);
             const char *wait = wc_net_wait_note();
+            // (test aid: the picture with the note, once a wait, WCNET_DUMP_DIR/waitnote-N.ppm)
+            static std::string dumped;
+            static int dumps = 0;
             if (wait[0]) {
-                // (a wait of the link's: the game stands still and draws nothing, so the overlay says what for)
-                Bitu len = strlen(wait), w = len * 8;
+                // (a wait of the link's: the game stands still and draws nothing, so the overlay says what for, the link's
+                // bolt before the words)
+                Bitu len = strlen(wait), w = 12 + len * 8;
                 Bitu x = sdl.draw.width > w ? (sdl.draw.width - w) / 2 : 0;
-                DrawText(x, sdl.draw.height / 2 - 7, wait, 0x80, textPixels, textPitch);
+                DrawBolt(x, sdl.draw.height / 2 - 9, textPixels, textPitch);
+                DrawText(x + 12, sdl.draw.height / 2 - 7, wait, 0x80, textPixels, textPitch);
+                const char *dir = getenv("WCNET_DUMP_DIR");
+                if (dir && dir[0] && dumped != wait && dumps < 20) {
+                    dumped = wait;
+                    char path[512];
+                    snprintf(path, sizeof(path), "%s/waitnote-%d.ppm", dir, ++dumps);
+                    GFX_DumpLastFrame(path);
+                }
+            } else {
+                dumped.clear();
             }
         }
         /* The chat overlay may have touched any line, so report the whole
