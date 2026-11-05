@@ -145,9 +145,6 @@ static struct {
                                            out) */
 #define ROUTE_TURN_COS 230              /* its way more than some 25 degrees off its nose: a fifth of its speed, so it
                                            turns in rather than round */
-#define ROUTE_LEASH_KM 20000            /* an escort target out with no pilot this near waits for one (the user, 2026-11-04:
-                                           "I arrived at nav 1 without the ox there": a player 150 s at the launch had let
-                                           it go on alone, 27,000 km out, past the autopilot's reach for it) */
 #define ROUTE_WAKE_KM 8000              /* an escort target that waits sets off home when the player is this near, or has
                                            reached its nav point (the player arrives at the point's reach: 10,000 km out
                                            and more) */
@@ -3147,42 +3144,35 @@ static int16_t escort_on_way(int16_t s, int16_t next)
     return first >= 0 && next >= first && next >= g_mind[s].leg && next <= route_last(rec, first);
 }
 
-/* the first waypoint not yet reached on the way of an escort out of the player's side that is still on it (not jumped,
- * alive): the autopilot goes no further than that (logic_autopilot_ready); -1 none */
-static int16_t escort_next_waypoint(void)
+/* an escort out's next waypoint, as the autopilot carries it: the first on its way (from its own leg on) the player
+ * has not reached, else its last (on to its jump) */
+static int16_t escort_next(int16_t s)
 {
-    int16_t s, n, rec, first, last, best = -1;
-    for (s = 1; s < NUM_SHIP_SLOTS; s++) {
-        if (!slot_is_ship(s) || shipAiState[s] == 9 || role_of(s) != RV_ESCORT_OUT || commAnimInfo[s] != commAnimInfo[0])
-            continue;
-        rec = slotMissionShip[s] & 63;
-        if (g_away[rec])
-            continue;
-        for (first = -1, n = (int16_t)(MSHIP_NAV(rec) & 15) + 1; n < NAVS && first < 0; n++)
-            if (nav_defined(n))
-                first = n;
-        last = route_last(rec, first);
-        for (n = first; n >= 0 && n <= last; n++)
-            if (nav_listed(n) && !(g_navs_seen >> n & 1)) {
-                if (best < 0 || n < best)
-                    best = n;
-                break;
-            }
-    }
-    return best;
+    int16_t rec = slotMissionShip[s] & 63, n, first = -1, last;
+    for (n = (int16_t)(MSHIP_NAV(rec) & 15) + 1; n < NAVS && first < 0; n++)
+        if (nav_defined(n))
+            first = n;
+    last = route_last(rec, first);
+    for (n = g_mind[s].leg > first ? g_mind[s].leg : first; n >= 0 && n <= last; n++)
+        if (nav_listed(n) && !(g_navs_seen >> n & 1))
+            return n;
+    return last;
 }
 
 /* an escort target of the player's side the autopilot takes along to `next` (its flyby's formation, then the jump):
- * on its way, and within AUTOPILOT_ESCORT_KM, or however far for one out (as the mission's wingman: the user,
- * 2026-11-04, the Ox not at nav 1 on arriving there) */
+ * one out to its own next waypoint, however far it is (the user, 2026-11-04, the Ox not at nav 1 on arriving there),
+ * and only there: picked past it, the autopilot goes and the escort is left to fly its way alone, the old game's (its
+ * Enyo 2, Nav 2 taken on the map: its Drayman left 30,500 km behind; the user's pick, "Pick anywhere, Ox left
+ * behind"); one in on its way within AUTOPILOT_ESCORT_KM */
 #define AUTOPILOT_ESCORT_KM 30000
 static int16_t escort_comes(int16_t s, int16_t next)
 {
-    return maybeEntityType[s] == ET_CAPSHIP && escorted(s) && commAnimInfo[s] == commAnimInfo[0]
-        && escort_on_way(s, next) && (role_of(s) == RV_ESCORT_OUT || player_km(s) < AUTOPILOT_ESCORT_KM);
+    if (maybeEntityType[s] != ET_CAPSHIP || !escorted(s) || commAnimInfo[s] != commAnimInfo[0])
+        return 0;
+    if (role_of(s) == RV_ESCORT_OUT)
+        return next != 0 && next == escort_next(s);
+    return escort_on_way(s, next) && player_km(s) < AUTOPILOT_ESCORT_KM;
 }
-
-static int32_t human_km(int16_t s);
 
 static void route_step(int16_t s, Mind __far *m, const AiProfile __far *p)
 {
@@ -3200,13 +3190,6 @@ static void route_step(int16_t s, Mind __far *m, const AiProfile __far *p)
         last = route_last(rec, goal);
         if (m->leg > goal)
             goal = m->leg < last ? m->leg : last;
-        if (commAnimInfo[s] == commAnimInfo[0] && !(g_navs_seen >> last & 1) && human_km(s) > ROUTE_LEASH_KM) {
-            throttle(s, 0, 0);          /* (nobody with it: it waits, where it is, for a pilot to come; not once the
-                                           player has been at its last, the jump's: then it goes there and out, the
-                                           player gone home or not: the user, "should have enough time to fly to the
-                                           actual outbound jump point and leave") */
-            return;
-        }
     } else if (commAnimInfo[s] == commAnimInfo[0]
                && (m->phase || player_km(s) < ROUTE_WAKE_KM || (g_navs_seen >> (MSHIP_NAV(rec) & 15) & 1))) {
         if (!m->phase)
@@ -3821,17 +3804,9 @@ int16_t logic_autopilot_ready(void)
             && human_km(s) < AUTOPILOT_CLEAR_KM)
             return -1;
     /* (the one N picked, else the way ahead: a patrol in any order, as the old game's map lets one (its Enter takes the
-     * pick: traced 2026-11-04, Enyo 1's autopilot to Nav 2 first); but not past an escort's next waypoint, while one
-     * out is on its way: there the old game's took the player on and left its Drayman 30,000 km behind, where ours goes
-     * there with it (the user: "make sure players always arrive with the transpo[r]t and never are able to just skip
-     * the baddies by taking a we[i]rd route"; "I remember being able to sele[c]t the autopilot target--but maybe not
-     * for missions where I had an escort").  Home picked goes home: a pilot may give a mission up) */
+     * pick: traced 2026-11-04, Enyo 1's autopilot to Nav 2 first), an escort mission too: the escort comes along only
+     * to its own next waypoint (escort_comes); the user: "ok can you make the auto system like WC1 in that respect") */
     next = g_nav_chosen ? g_sys.nav : nav_next_unseen();
-    if (next != 0) {
-        int16_t e = escort_next_waypoint();
-        if (e > 0 && next > e)
-            next = e;
-    }
     if (nav_in_reach(next))
         return -1;                      /* (there already) */
     {

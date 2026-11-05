@@ -4284,13 +4284,13 @@ static void t_campaign_way(void)
 
 /* M8.41: ENIGMA2's Ox (role=out jump=2, the old game's own map), the player lingering at the launch for two and a half
  * minutes (a pilot waiting for another to join; the user, 2026-11-04: "this time I arrived at nav 1 without the ox
- * there--just the enemies and [my wingman]"): the Ox waits for the player, not far off, and the autopilot to nav 1
- * brings it along */
+ * there--just the enemies and [my wingman]"): the Ox has gone on alone, as the old game's does, and the autopilot to
+ * nav 1, its next waypoint, brings it along however far it got */
 static void t_escort_waits(void)
 {
     static const char __far e_there[] = "no Ox after ENIGMA2's launch (slot %d)";
-    static const char __far e_wait[] = "150 s with the player still at the launch, the Ox is %d km off (alive %d): it waits "
-        "within 20,000 km for the player";
+    static const char __far e_gone[] = "150 s with the player still at the launch, the Ox is %d km off (alive %d): it goes "
+        "on alone, past 20,000 km";
     static const char __far e_went[] = "the autopilot returned %d, the player %d km from nav 1";
     static const char __far e_along[] = "after the autopilot to nav 1 the Ox is %d km from the player (alive %d): it comes "
         "along";
@@ -4307,7 +4307,7 @@ static void t_escort_waits(void)
     setSpeed[0] = speedLo[0] = 0;       /* (the player holds still by the carrier) */
     if (!pt_steps(150 * SEC))
         return;
-    REQUIRE(slot_is_ship(ox) && gInstanceShipTypes[ox] == PT_OX && pt_km(0, ox) < 20500, e_wait, pt_km(0, ox),
+    REQUIRE(slot_is_ship(ox) && gInstanceShipTypes[ox] == PT_OX && pt_km(0, ox) > 20000, e_gone, pt_km(0, ox),
             slot_is_ship(ox), 0);
     r = logic_autopilot();
     if (!pt_steps(SEC))
@@ -4364,17 +4364,17 @@ static void t_escort_jump_home(void)
     pt_mission();
 }
 
-/* M8.43: a pick past an escort's next waypoint is not the autopilot's (the user, 2026-11-04: "I remember being able
- * to selet the autopilot target--but maybe not for missions where I had an escort only....otehrwsie I could visit a
- * patrol in any order"): ENIGMA2 at the launch, nav 2 picked: the autopilot goes to nav 1, the Ox's next, the Ox
- * along, and the pick goes back to the way ahead */
+/* M8.43: a pick past an escort's next waypoint, the old game's way (the user, 2026-11-04, of its autopilot: "Pick
+ * anywhere, Ox left behind"): ENIGMA2 at the launch, nav 2 picked: the autopilot goes to nav 2, the Ox is left
+ * behind, and flies its way on alone (past nav 1, which the player has gone beyond, to nav 2) */
 static void t_escort_order(void)
 {
     static const char __far e_there[] = "no Ox after ENIGMA2's launch (slot %d)";
     static const char __far e_pick[] = "N pressed: nav %d picked, wanted 2";
-    static const char __far e_went[] = "nav 2 picked, the autopilot returned %d and left currentNavPoint at %d: nav 1 first, "
-        "the Ox's next";
-    static const char __far e_along[] = "the Ox is %d km from the player after it: along";
+    static const char __far e_went[] = "nav 2 picked, the autopilot returned %d, nav 2 reached %d after %d presses: the pick (a "
+        "hidden point on the line on the way)";
+    static const char __far e_left[] = "the Ox is %d km from the player after it: left behind (past 20,000)";
+    static const char __far e_on[] = "60 s on the Ox is %d km nearer nav 2 (alive %d): it flies on alone";
     int16_t ox, r, i;
     for (i = 0; i < (int16_t)g_nmissions; i++) {
         camp_mission((uint16_t)i, &g_tm);
@@ -4389,11 +4389,22 @@ static void t_escort_order(void)
         return;
     logic_nav_next();
     REQUIRE(g_sys.nav == 2, e_pick, g_sys.nav, 0, 0);
-    r = logic_autopilot();
+    r = logic_autopilot();              /* (to the field's hidden point on the line, short of nav 2) */
     if (!pt_steps(SEC))
         return;
-    REQUIRE(r == 1 && currentNavPoint == 1, e_went, r, currentNavPoint, 0);
-    REQUIRE(slot_is_ship(ox) && pt_km(0, ox) < 5000, e_along, pt_km(0, ox), 0, 0);
+    REQUIRE(slot_is_ship(ox) && pt_km(0, ox) > 20000, e_left, pt_km(0, ox), 0, 0);
+    pt_put(0, g_tm.nav[1].x, g_tm.nav[1].y, g_tm.nav[1].z - 10000, 0);   /* (through the field by hand, at nav 2) */
+    if (!pt_steps(2 * SEC))
+        return;
+    i = 1;
+    REQUIRE(r == 1 && logic_nav_seen(2), e_went, r, logic_nav_seen(2), i);
+    {
+        int32_t before = pt_km_to(ox, g_tm.nav[1].x, g_tm.nav[1].y, g_tm.nav[1].z);
+        if (!pt_kill_side(SIDE_AERA) || !pt_steps(60 * SEC))
+            return;
+        REQUIRE(slot_is_ship(ox) && before - pt_km_to(ox, g_tm.nav[1].x, g_tm.nav[1].y, g_tm.nav[1].z) > 5000, e_on,
+                before - pt_km_to(ox, g_tm.nav[1].x, g_tm.nav[1].y, g_tm.nav[1].z), slot_is_ship(ox), 0);
+    }
     g_camp.player_ship = PT_PLAYER;
     pt_mission();
 }
@@ -6572,9 +6583,9 @@ static const char __far n_m8_34[] = "M8.34 autopilot-wingman (logic_autopilot): 
 static const char __far n_m8_35[] = "M8.35 autopilot-formup (logic_form_up): the flyby closes the wingman up on the player, its way and velocity the player's, kept through the jump";
 static const char __far n_m8_37[] = "M8.37 autopilot-human (logic_form_up): a human's wingman is put in its formation place as the flyby begins, the player's way and speed";
 static const char __far n_m8_36[] = "M8.36 escort-clear (route_step, logic_autopilot): an escort target out bears straight for its nav point and jumps only there; the autopilot leaves it on its way";
-static const char __far n_m8_43[] = "M8.43 escort-order (logic_autopilot): with an escort out on its way, a pick past its next waypoint is not the autopilot's: ENIGMA2's nav 2 picked, nav 1 first";
+static const char __far n_m8_43[] = "M8.43 escort-skip (logic_autopilot, escort_comes): a pick past an escort's next waypoint is the autopilot's, the escort left behind to fly on alone: ENIGMA2's nav 2 picked";
 static const char __far n_m8_42[] = "M8.42 escort-jump-home (logic_autopilot, route_step): ENIGMA2 by the autopilot, the Ox along to each nav point; the player straight home, the Ox still jumps";
-static const char __far n_m8_41[] = "M8.41 escort-waits (route_step, logic_autopilot): ENIGMA2's Ox waits for a player lingering at the launch, and the autopilot brings it along";
+static const char __far n_m8_41[] = "M8.41 escort-linger (route_step, logic_autopilot): ENIGMA2's Ox goes on alone from a player lingering at the launch, and the autopilot to nav 1 brings it along";
 static const char __far n_m8_40[] = "M8.40 campaign-way (logic_autopilot, the missions): every mission's waypoints reached on the old game's map, the autopilot stopping at their reach";
 static const char __far n_m8_39[] = "M8.39 full-map (logic_autopilot, step_scene): the autopilot stops at a nav point's reach; its ships are in the scene however far, the carrier again on the way home";
 static const char __far n_m8_38[] = "M8.38 escort-home (route_step): an escort target in goes to the home carrier, stops within 150 km of its hull, its nose the carrier's way, and is home";

@@ -225,13 +225,13 @@ own speed (the flyby lends it the player's: the Ox left it at some 250 kps where
 waits at its nav
 point until the player reaches the point or comes within 8,000 km, then flies to the home carrier, slowing as it comes, and stops 150 km
 off its hull with its nose the carrier's way, home (the user, 2026-11-04); with no carrier, to nav 0 and gone there (an
-enemy's waits where it is). One of the player's side killed is the mission lost. An escort out waits where it is while no pilot is within
-20,000 km of it (`ROUTE_LEASH_KM`; the user, 2026-11-04, "I arrived at nav 1 without the ox there": a player 150 s
-at the launch had let it go on alone, 27,000 km out), until the player has been at its last nav point: then it flies
-in to its jump and goes, whoever is with it (the user: "should have enough time to fly to the actual outbound jump
-point and leave"). The old game's Drayman waits for nobody (traced: a player 150 s at the launch, it went on alone
-and was gone as it came within Nav 1's 10,000 km, the player 22,000 km off); its autopilot brought it 1,800 km
-behind the player, and it flew through each nav point on to the next. The autopilot brings one along (one out however far, on its way:
+enemy's waits where it is). One of the player's side killed is the mission lost. The old game's Drayman waits for nobody (traced 2026-11-04: a player 150 s at the launch, it went on alone and was
+gone as it came within Nav 1's 10,000 km, the player 22,000 km off); its autopilot brought it 1,800 km behind the
+player, and it flew through each nav point on to the next; a later nav point taken on the map, the autopilot went
+there and left it 30,500 km behind. Ours: the autopilot brings an escort out to its own next waypoint however far it
+is (`escort_comes`, `escort_next`: a player who lingered finds it along; the user, "I arrived at nav 1 without the ox
+there"), and only there: picked past it, the escort is left to fly its way alone (the user's pick of the old game's
+way, "Pick anywhere, Ox left behind"), on past the points the player has gone beyond, to its jump. The autopilot brings one along (one out however far, on its way:
 `escort_comes`; others within 30,000 km), 800 km behind the player
 (the wingman beside it), and drops the formation at the nav point's reach.
 
@@ -309,7 +309,7 @@ face"): every rock has six diamonds painted on it, on the faces of a cube standi
 an asteroid field and flashes it red about twice a second in a mine field. They hit like rocks.
 
 **The autopilot traces its line** (`way_stop`; the user: "raytrace the path along the line to see if enemy spawn regions
-or asteroid fields are in the way"): it goes to the chosen nav point (not past an escort's next waypoint), stopping 500 km short of a field across the line,
+or asteroid fields are in the way"): it goes to the chosen nav point, stopping 500 km short of a field across the line,
 or 500 km inside the reach of a point not yet reached that still has ships to come, whose ships then come. It will not
 go with a field less than 1,000 km ahead on the line (nor from inside one): the player flies through, as in the old game.
 It takes along the friendly fighters within 10,000 km, keeping their places, and the mission's wingman however far it
@@ -2037,11 +2037,9 @@ the VDUs take the readouts' small font. vdu.c:
   the nav point's own number: it follows the first waypoint not reached until N picks one,
   and again once that one is reached, and the autopilot goes to it: a patrol in any order, as the old
   game's map lets one (its N picks, its Enter takes the pick: traced 2026-11-04, Enyo 1's autopilot to
-  Nav 2 first). But not past an escort's next waypoint while one out is on its way
-  (`escort_next_waypoint`): the old game's took the player to a later point and left its Drayman 30,000
-  km behind (Enyo 2, traced), where ours goes there with the escort (the user: "never are able to just
-  skip the baddies by taking a weird route"; "maybe not for missions where I had an escort"). Home
-  picked goes home. Its name and distance
+  Nav 2 first), an escort mission too, where an escort out comes along only to its own next waypoint
+  (the old game's: Enyo 2 with Nav 2 taken, its Drayman left 30,500 km behind; the user: "make the auto
+  system like WC1 in that respect"). Its name and distance
   also show on the panel, on the right VDU when there is no target, and beside its mark on
   the view: a white cross where it lies, or off the view a smaller cross at the rim in its
   direction with a tick pointing out (`logic_nav_mark`).
