@@ -2195,9 +2195,26 @@ int game_run(void)
                     }
                 }
             } else if (speech_done() || in.key == KEY_ESC || in.clicked || g_stage == 2) {
+                /* a briefing's last line stays until a click, Enter or Esc: it had gone on to Kit by itself a second
+                 * after, and a pilot who waited at the door for the other (whose click there starts this one) found
+                 * Kit with the briefing unseen (the user, 2026-11-05: "Hold at the last line").  A debrief goes on
+                 * as ever */
+                static const char __far s_go_on[] = "Click to go on";
+                int go = in.key == KEY_ESC || in.key == KEY_ENTER || in.clicked;
+                if (g_mode == MODE_BRIEF && g_stage == 0 && !go) {
+                    if (!g_scene.label[0]) {    /* (said again after a hover took the label) */
+                        _fstrcpy(g_scene.label, s_go_on);
+                        vid_dirty(SCR_H - LABEL_H, SCR_H);
+                    }
+                    break;
+                }
+                if (g_mode == MODE_BRIEF && g_stage == 0) {
+                    g_scene.label[0] = 0;
+                    vid_dirty(SCR_H - LABEL_H, SCR_H);
+                }
                 if (!g_stage_at)
                     g_stage_at = g_now + 18;
-                if (g_now >= g_stage_at || in.key == KEY_ESC || in.clicked) {
+                if (g_now >= g_stage_at || go) {
                     if (g_mode == MODE_BRIEF && g_stage < 2) {
                         g_stage++;
                         g_stage_at = g_now + 7;
