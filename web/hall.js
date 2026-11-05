@@ -51,7 +51,7 @@
 // seats, or with nothing when it has no room with a free seat or its pilot
 // keeps the room private ({t: "room", n, code, game, free}; opts.openRoom
 // says).  The asking page picks one it can fly in (web/wc.js).
-import { checkMessage, checkName, makeBucket, lineEvery, splitCodes, whyText, lobbyCode, isLobbyCode, LOBBY_CODE, RATE, MAX_CHARS, MAX_NAME, GAME_TAGS } from "./chatfilter.js";
+import { checkMessage, checkName, sameName, makeBucket, lineEvery, splitCodes, whyText, lobbyCode, isLobbyCode, LOBBY_CODE, RATE, MAX_CHARS, MAX_NAME, GAME_TAGS } from "./chatfilter.js";
 
 const SEATS = 32;                 // asked for (what the public server gives a room; 32 pilots at a line every ten seconds are three lines a second); a server that gives fewer says how many
 const CLAIM_SEATS = 256;          // a full lobby is asked for seats up to here: another page may have made it bigger
@@ -394,7 +394,10 @@ const stored = (store, key) => { try { return store.getItem(key); } catch (e) { 
 const store = (s, key, value) => { try { if (value == null) s.removeItem(key); else s.setItem(key, value); } catch (e) { /* not kept */ } };
 
 // opts: server() the lobby server's address, link(code) this page's address
-// for a room, name() the callsign typed,
+// for a room, name() the callsign typed, given() the callsign the page gives
+// when none is typed, { name, since } (chatfilter's givesWay), clash(seat,
+// since, mine) another pilot here is called by it: the page gives itself
+// another when it is the one that gives way (true when it did),
 // ready() whether a game is loaded that can be flown with others (the lobby
 // is closed without one), tag() the loaded game's ("WC1", ... or ""),
 // title(tag) a game's name,
@@ -439,14 +442,17 @@ export function initHall(opts) {
   const keepMine = () => store(localStorage, SENT_KEY, JSON.stringify({ tokens: mine.tokens, at: mine.at }));
 
   const inside = () => !!net && net.selfId >= 0 && !entering;
+  // (Another pilot's, until its hello comes, or when the name it sent breaks the rules.)
   const fallbackName = (id) => `Pilot ${id + 1}`;
-  // The callsign as the lobby shows it: the page's, cut to length, or
-  // "Pilot N" when there is none or it breaks the lobby's rules.
+  // The callsign as the lobby shows it: the page's, cut to length, or the
+  // page's given one when there is none or it breaks the lobby's rules.
   const typedName = () => checkName(Array.from(String(opts.name() || "").trim()).slice(0, MAX_NAME).join(""));
+  const givenShown = () => !typedName().ok && !!opts.given;
   function myName() {
     const r = typedName();
-    return r.ok ? r.text : fallbackName(net ? net.selfId : 0);
+    return r.ok ? r.text : givenShown() ? opts.given().name : fallbackName(net ? net.selfId : 0);
   }
+  const names = () => Array.from(pilots.values(), (p) => p.name);
   const myTag = () => (GAME_TAGS.includes(opts.tag()) ? opts.tag() : "");
 
   function line(cls, ...parts) {
@@ -511,7 +517,8 @@ export function initHall(opts) {
   const note = (text) => { noted = text; hint(); };
 
   const hello = (to, reply) => {
-    const m = JSON.stringify({ t: "hello", name: myName(), game: myTag(), reply: !!reply });
+    // (since: when the given callsign was given, for a pilot called the same: givesWay)
+    const m = JSON.stringify({ t: "hello", name: myName(), game: myTag(), reply: !!reply, since: givenShown() ? opts.given().since : undefined });
     if (to != null) net.send(to, m);
     else for (const p of net.players) if (p.id !== net.selfId) net.send(p.id, m);
   };
@@ -527,6 +534,11 @@ export function initHall(opts) {
       if (!hellos.get(id).take(now)) return;
       const name = checkName(typeof m.name === "string" ? m.name : "");
       pilots.set(id, { name: name.ok ? name.text : fallbackName(id), tag: GAME_TAGS.includes(m.game) ? m.game : "" });
+      // Called as this page's given callsign: one of the two takes another.
+      const was = myName();
+      if (name.ok && givenShown() && sameName(name.text, was) && opts.clash && opts.clash(id, m.since, net.selfId)) {
+        sys(`Another pilot here is ${was}: you are ${myName()} now (the Callsign box takes one of your own).`);
+      }
       if (!m.reply) hello(id, true);
       renderRoster();
     } else if (m.t === "chat") {
@@ -787,6 +799,8 @@ export function initHall(opts) {
     // Is this one of the lobbies' own codes (and so no room to fly in)?
     isLobby,
     enter, leave, inside, say,
+    // The callsigns of the pilots here (for a given one that has to be another).
+    names,
     // The page's callsign changed.
     announce() { if (inside()) { hello(null, false); renderRoster(); } },
     // A page that has just been loaded and whose pilot belongs in the lobby

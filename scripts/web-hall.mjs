@@ -25,8 +25,11 @@ const sockets = {};   // per page: the WebSockets it opened (the lobby server's 
 // on that page (8; the pages that try the ten seconds say 2).  A page with
 // a game is in the lobby by itself; wait: false keeps it out (?lobby=off)
 // until the test has set it up and presses "Enter the lobby".
-async function open(name, { hall = "HALL-" + run, game = true, query = {}, busy = 0, wait = true } = {}) {
+// given: the callsign this browser gave before, { name, since } (with
+// query.callsign "" the page goes by it).
+async function open(name, { hall = "HALL-" + run, game = true, query = {}, busy = 0, wait = true, given = null } = {}) {
   const context = await browser.newContext();
+  if (given) await context.addInitScript((g) => { if (!sessionStorage.getItem("t:given")) { localStorage.setItem("wc:name:given", g); sessionStorage.setItem("t:given", "1"); } }, JSON.stringify(given));
   const page = await context.newPage();
   logs[name] = [];
   sockets[name] = [];
@@ -447,6 +450,58 @@ const h = await open("HOTEL", { hall: "BIG-" + run, wait: false });
 await h.evaluate(() => window.__wcHall.test.configure({ seats: 1000 }));
 await enter(h).catch(() => {});
 check("a lobby is made with the seats the server allows", (await h.evaluate(() => { const n = window.__wcHall.test.net(); return n && n.maxPlayers; })) === 256, await text(h, "hallState"));
+
+// -- the callsign given ----------------------------------------------------------
+// A pilot who types none goes by one of the list, kept in the browser; two
+// pilots called the same never stay so: the one given it later (of two given
+// at once, the higher seat) takes another, and a typed callsign stays.
+{
+  const LIST = (await import(new URL("../web/chatfilter.js", import.meta.url))).CALLSIGNS;
+  const roster = (page) => text(page, "hallRoster").then((t) => t.replace(/\s+/g, " ").trim());
+  const meIn = (page) => roster(page).then((t) => (/: (.+?) \(you\)/.exec(t) || [])[1]);
+  const names = { hall: "NAMES-" + run, query: { callsign: "" } };
+  const fresh = await open("FRESH", names);
+  const freshName = await meIn(fresh);
+  check("a pilot who types no callsign goes by one of the list, not Pilot N", LIST.includes(freshName) && (await fresh.$eval("#callsign", (el) => el.placeholder)) === freshName, [freshName, await roster(fresh)]);
+  check("and keeps it in the browser", JSON.parse(await fresh.evaluate(() => localStorage.getItem("wc:name:given"))).name === freshName, null);
+  await fresh.context().close();
+  const old = await open("OLDER", { ...names, given: { name: "Cobalt", since: 1000 } });
+  check("the callsign this browser was given before is the one it goes by", (await meIn(old)) === "Cobalt", await roster(old));
+  const late = await open("LATER", { ...names, given: { name: "Cobalt", since: 2000 } });
+  const apart = async (a, b) => {
+    for (let i = 0; i < 40; i++) { const [x, y] = [await meIn(a), await meIn(b)]; if (x && y && x !== y && (await roster(a)).includes(y) && (await roster(b)).includes(x)) return true; await sleep(0.5); }
+    return false;
+  };
+  check("two pilots given the same callsign meet in the lobby: they are called apart", (await pilots(late, 2)) && (await apart(old, late)), [await roster(old), await roster(late)]);
+  const lateName = await meIn(late);
+  check("the one given it first keeps it, the other has another of the list", (await meIn(old)) === "Cobalt" && LIST.includes(lateName) && lateName !== "Cobalt", [await meIn(old), lateName]);
+  check("and is told so, and keeps that one", (await sees(late, `Another pilot here is Cobalt: you are ${lateName} now`)) && (await late.$eval("#callsign", (el) => el.placeholder)) === lateName
+    && JSON.parse(await late.evaluate(() => localStorage.getItem("wc:name:given"))).name === lateName && !(await text(old, "hallLog")).includes("Another pilot here"), await text(late, "hallLog"));
+  // A pilot who types the callsign another was given keeps it.
+  const typed = await open("Cobalt", { hall: names.hall });
+  check("a typed callsign stays, and the given one moves", (await pilots(typed, 3)) && (await apart(old, typed)) && (await meIn(typed)) === "Cobalt" && LIST.includes(await meIn(old)) && (await meIn(old)) !== "Cobalt" && (await meIn(old)) !== lateName,
+    [await roster(old), await roster(typed)]);
+  for (const p of [old, late, typed]) await p.context().close();
+  // In a room, two tabs of one browser: the same callsign given at the same moment.
+  const code = "WC1-N" + run;
+  const r1 = await open("ROOM1", { wait: false, query: { callsign: "", room: code }, given: { name: "Mako", since: 3000 } });
+  await r1.waitForFunction((c) => new RegExp(`player 1 of 2 in room ${c}`).test(document.getElementById("chatLog").textContent), code, { timeout: 60000 }).catch(() => {});
+  const r2 = await open("ROOM2", { wait: false, query: { callsign: "", room: code }, given: { name: "Mako", since: 3000 } });
+  const seated = (page) => text(page, "roster").then((t) => t.replace(/\s+/g, " "));
+  const roomApart = async () => {
+    for (let i = 0; i < 60; i++) {
+      const [x, y] = [await seated(r1), await seated(r2)];
+      const n2 = await r2.evaluate(() => JSON.parse(localStorage.getItem("wc:name:given")).name);
+      if (n2 !== "Mako" && x.includes(n2) && y.includes("Mako") && /Mako/.test(x)) return n2;
+      await sleep(0.5);
+    }
+    return null;
+  };
+  const moved = await roomApart();
+  check("in a room, the same callsign given at once: the second seat takes another, both rosters say so", !!moved && LIST.includes(moved), [await seated(r1), await seated(r2)]);
+  check("and the room's chat tells that pilot", (await text(r2, "chatLog")).includes(`Another pilot here is Mako: you are ${moved} now`) && !(await text(r1, "chatLog")).includes("Another pilot here"), [await text(r2, "chatLog")]);
+  for (const p of [r1, r2]) await p.context().close();
+}
 
 await browser.close();
 console.log(results.every(Boolean) ? "HALL OK" : "HALL FAILED");

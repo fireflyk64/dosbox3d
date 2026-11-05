@@ -18,7 +18,7 @@ import { initVoice } from "./voice.js";
 import { loadSo3 } from "./so3.js";
 import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles,
          saveGame, loadGames, forgetGame, totalSize, gameById, gameByTag, programsIn, knownBuild, GAMES } from "./gamefiles.js";
-import { newRoomCode, retagRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS } from "./chatfilter.js";
+import { newRoomCode, retagRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS, CALLSIGNS, pickCallsign, givesWay, sameName } from "./chatfilter.js";
 import { initHall, OTHER_SERVER, serverDown } from "./hall.js";
 import { createSetProvider, readTarGz } from "./rvsets.js";
 
@@ -197,6 +197,23 @@ for (const k of ["callsign", "firstname", "lastname"]) {
   else { try { $(k).value = localStorage.getItem(NAME_KEY(k)) || ""; } catch (e) { /* none */ } }
   $(k).addEventListener("change", () => keepName(k));
 }
+// The callsign a pilot goes by until they type one: one of the list, given
+// once and remembered here with the moment it was given (of two pilots called
+// the same, the one given it later takes another: chatfilter's givesWay).
+const GIVEN_KEY = "wc:name:given";
+let given = (() => {
+  try {
+    const g = JSON.parse(localStorage.getItem(GIVEN_KEY) || "null");
+    if (g && CALLSIGNS.includes(g.name) && Number.isFinite(g.since)) return { name: g.name, since: g.since };
+  } catch (e) { /* a fresh one */ }
+  return null;
+})();
+function giveCallsign(taken) {
+  given = { name: pickCallsign(taken), since: Date.now() };
+  try { localStorage.setItem(GIVEN_KEY, JSON.stringify(given)); } catch (e) { /* not kept */ }
+  $("callsign").placeholder = given.name;
+}
+if (given) $("callsign").placeholder = given.name; else giveCallsign([]);
 if (query.get("relay")) $("relay").checked = true;
 if (query.get("verbose")) $("verbose").checked = true;
 // A link to a room (?room=CODE) whose room this page has not tried to join
@@ -805,7 +822,7 @@ let joystickPort = false;  // (the launch put the game port in: a pad was picked
 let seeking = false;  // ("Join open game" is asking the lobby)
 const PRIVATE_KEY = "wc:private";
 const privateOn = () => $("private").checked;  // (the room is kept out of "Join open game")
-const myName = () => $("callsign").value.trim() || "Pilot " + (lobby.game ? lobby.game.selfId + 1 : "?");
+const myName = () => $("callsign").value.trim() || given.name;
 const isHost = () => lobby.game && lobby.game.selfId === 0;
 // A room of one (Players 1): the page's own, with no lobby server and no
 // seat for anybody else.  Its flight is the game alone, as it is (WCSOLO):
@@ -847,12 +864,29 @@ function sendLobby(obj, to) {
   const targets = to != null ? [to] : g.players.filter((p) => p.occupied && p.id !== g.selfId).map((p) => p.id);
   for (const id of targets) g.sendReliable(id, encodeLobby(obj)).catch((e) => log(`lobby: message to player ${id} failed: ${e.message}`));
 }
+// (since: when the given callsign was given, for a pilot called the same: givesWay)
 const sayHello = (to, reply) => sendLobby({ t: "hello", name: myName(), flying: running, reply: !!reply,
+  since: $("callsign").value.trim() ? undefined : given.since,
   game: source ? source.game.id : "", voice: voice.choice(),
   mission: isHost() ? missionKey(lobby.mission) : undefined, rocks: isHost() ? lobby.rocks : undefined,
   wingBumps: isHost() ? lobby.wingBumps : undefined,
   latency: isHost() ? lobby.latency : undefined, fps: isHost() ? lobby.fps : undefined,
   capHull: isHost() ? lobby.capHull : undefined, private: isHost() ? privateOn() : undefined }, to);
+
+// Another pilot (seat `seat` of the lobby or the room this page is seat
+// `mine` of; `since` their given callsign's moment, none for a typed one) is
+// called by this page's given callsign.  When this page is the one to give
+// way it takes another, one that none of the pilots it knows of has, and
+// says so to the room and the lobby.  True when it did.
+function callsignClash(seat, since, mine) {
+  if (!givesWay({ since: given.since, seat: mine }, { since, seat })) return false;
+  const was = given.name;
+  giveCallsign([was, ...lobby.names.values(), ...hall.names()]);
+  log(`callsign: another pilot is ${was}: this one is ${given.name} now`);
+  if (lobby.game) { sayHello(); renderRoster(); }
+  hall.announce();
+  return true;
+}
 
 // Asteroid and mine fields on, soft or off.  The host's page tells the others
 // (for their lobby) and its own running game, which tells every wingman's game.
@@ -1033,6 +1067,11 @@ function onLobbyEvent(ev) {
         lobby.names.set(ev.from, m.name);
         if (m.flying) lobby.flying.add(ev.from); else lobby.flying.delete(ev.from);
         if (fresh) chatLine(`${esc(m.name)} is in the room${m.flying ? " (flying)" : ""}`, "sys");
+        // Called as this page's given callsign: one of the two takes another.
+        const was = myName();
+        if (!$("callsign").value.trim() && typeof m.name === "string" && sameName(m.name, was) && callsignClash(ev.from, m.since, lobby.game.selfId)) {
+          chatLine(`Another pilot here is ${esc(was)}: you are ${esc(myName())} now (the Callsign box takes one of your own).`, "sys");
+        }
         if (typeof m.game === "string" && m.game !== (lobby.games.get(ev.from) || "")) {
           lobby.games.set(ev.from, m.game);
           if (ev.from === 0) { followHost(); renderMission(); }
@@ -1779,6 +1818,8 @@ const hall = initHall({
   server: serverUrl,
   link: roomLink,
   name: () => $("callsign").value,
+  given: () => given,
+  clash: (seat, since, mine) => callsignClash(seat, since, mine),
   ready: lobbyReady,
   tag: () => gameTag(),
   title: (tag) => (gameByTag(tag) ? gameByTag(tag).title : tag),

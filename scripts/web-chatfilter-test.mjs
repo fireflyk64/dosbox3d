@@ -5,7 +5,7 @@
 // What pilots of this game say must pass (ships, systems, callsigns, file
 // names, room codes), and links, the word list and its usual disguises must
 // not.
-import { checkMessage, checkName, hasLink, isProfane, makeBucket, splitCodes, roomTag, normalizeCode, newRoomCode, retagRoomCode, lobbyCode, isLobbyCode, lineEvery, RATE, MAX_CHARS } from "../web/chatfilter.js";
+import { checkMessage, checkName, hasLink, isProfane, makeBucket, splitCodes, roomTag, normalizeCode, newRoomCode, retagRoomCode, lobbyCode, isLobbyCode, lineEvery, RATE, MAX_CHARS, CALLSIGNS, pickCallsign, givesWay, sameName } from "../web/chatfilter.js";
 
 let failed = 0;
 const check = (ok, what) => { if (!ok) { failed++; console.log("FAIL: " + what); } };
@@ -138,6 +138,41 @@ check(newRoomCode("junk").startsWith("WC-") && newRoomCode("SO1").startsWith("SO
       }
     }
   }
+}
+
+// -- the callsigns given ---------------------------------------------------------
+// The user's 64; each one a word of ten letters at most that the lobby takes
+// (and no CHEAT: that callsign makes a ship take no damage).
+check(CALLSIGNS.length === 64, "64 callsigns: " + CALLSIGNS.length);
+check(new Set(CALLSIGNS.map((c) => c.toLowerCase())).size === CALLSIGNS.length, "the callsigns differ");
+for (const c of CALLSIGNS) {
+  if (!/^[A-Z][a-z]{1,9}$/.test(c) || !checkName(c).ok || /cheat/i.test(c) || /^pilot/i.test(c)) check(false, "a callsign the page should not give: " + c);
+}
+for (const gone of ["Undertow", "Quasar", "Moonshot", "Jinx", "Jackal", "Sparrow", "Starling", "Umbra"]) check(!CALLSIGNS.includes(gone), "the user dropped " + gone);
+check(CALLSIGNS.includes("Cobalt") && CALLSIGNS.includes("Obsidian"), "and two colours and stones came instead");
+check(sameName(" cobalt", "COBALT ") && !sameName("Cobalt", "Cobalt 2"), "sameName");
+// Never one that is taken, however the list is drawn from; every one comes up.
+{
+  const seen = new Set();
+  for (let i = 0; i < 4000; i++) {
+    const taken = CALLSIGNS.filter((_, k) => (k * 7 + i) % 3 === 0).map((c) => (i % 2 ? c.toUpperCase() : c));
+    const c = pickCallsign(taken);
+    if (!CALLSIGNS.includes(c) || taken.some((t) => sameName(t, c))) { check(false, `pickCallsign gave a taken one: ${c}`); break; }
+    seen.add(pickCallsign([]));
+  }
+  check(seen.size === CALLSIGNS.length, "pickCallsign comes to every callsign: " + seen.size);
+  check(pickCallsign(CALLSIGNS.slice(1)) === CALLSIGNS[0], "the one left is the one given");
+  check(pickCallsign([], () => 0.9999999999) === CALLSIGNS[CALLSIGNS.length - 1] && pickCallsign([], () => 0) === CALLSIGNS[0], "pickCallsign's ends");
+  const all = pickCallsign(CALLSIGNS, () => 0), more = pickCallsign([...CALLSIGNS, ...CALLSIGNS.map((c) => c + " 2")], () => 0);
+  check(all === CALLSIGNS[0] + " 2" && more === CALLSIGNS[0] + " 3" && checkName(CALLSIGNS.reduce((a, b) => (b.length > a.length ? b : a)) + " 99").ok, "past the list: a number after a name, " + [all, more]);
+}
+// Of two pilots called the same, exactly one takes another name.
+{
+  const pairs = [[{ since: 100, seat: 3 }, { since: 200, seat: 1 }], [{ since: 100, seat: 1 }, { since: 100, seat: 2 }], [{ since: 5, seat: 0 }, { since: 5, seat: 31 }]];
+  for (const [a, b] of pairs) check(givesWay(a, b) !== givesWay(b, a), "exactly one gives way: " + JSON.stringify([a, b]));
+  check(!givesWay({ since: 100, seat: 3 }, { since: 200, seat: 1 }) && givesWay({ since: 200, seat: 1 }, { since: 100, seat: 3 }), "the one given it later moves");
+  check(givesWay({ since: 7, seat: 2 }, { since: 7, seat: 1 }) && !givesWay({ since: 7, seat: 1 }, { since: 7, seat: 2 }), "given at once: the higher seat moves");
+  for (const typed of [undefined, null, "100", NaN, {}]) check(givesWay({ since: 1, seat: 0 }, { since: typed, seat: 5 }), "a typed callsign (or junk) stays: " + typed);
 }
 
 console.log(failed ? `${failed} FAILED` : "chat filter OK");

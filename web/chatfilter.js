@@ -237,6 +237,54 @@ export function checkName(name) {
   return { ok: true, text: t };
 }
 
+// -- the callsign given ----------------------------------------------------------
+
+// What a pilot is called until they type a callsign, in the lobby and in a
+// room (it was "Pilot N" for everybody).  The user's list (2026-11-04): gender
+// neutral, no pilot's of Wing Commander or RetroVega and none of their ships,
+// ten letters at most (WC2's entry screen takes twelve).
+export const CALLSIGNS = [
+  // sky and space
+  "Zenith", "Pulsar", "Nimbus", "Zephyr", "Parallax", "Eclipse", "Meteor", "Orbit", "Xenon", "Equinox", "Jetstream",
+  // fire, weather and light
+  "Tempest", "Vortex", "Cinder", "Mirage", "Thunder", "Glint", "Flux", "Vapor", "Riptide", "Wisp", "Blitz",
+  // colours and stone
+  "Chrome", "Onyx", "Indigo", "Sable", "Cobalt", "Obsidian",
+  // creatures
+  "Rook", "Skylark", "Magpie", "Bluejay", "Lynx", "Mako", "Badger", "Mantis", "Scarab", "Yeti", "Gremlin",
+  // gear
+  "Vector", "Pixel", "Gizmo", "Sprocket", "Kilowatt", "Voltage", "Dynamo", "Nitro", "Ripcord", "Sidewinder",
+  "Overdrive", "Afterburn", "Hex", "Cipher",
+  // attitude
+  "Karma", "Gambit", "Havoc", "Ricochet", "Ruckus", "Oddball", "Longshot", "Quickdraw", "Domino", "Paradox", "Nomad",
+];
+
+// Two callsigns are one whatever their case and spacing.
+export const sameName = (a, b) => cleanText(a).toLowerCase() === cleanText(b).toLowerCase();
+
+// A callsign of the list that is none of `taken`.  The list is longer than a
+// lobby (32 seats) and a room together, so one is always free; were they all
+// taken, a number after a name makes one ("Cobalt 2"): the loop ends by the
+// time n passes taken's length.
+export function pickCallsign(taken = [], random = Math.random) {
+  const used = new Set(Array.from(taken, (n) => cleanText(n).toLowerCase()));
+  for (let n = 1; ; n++) {
+    const free = CALLSIGNS.map((c) => (n === 1 ? c : `${c} ${n}`)).filter((c) => !used.has(c.toLowerCase()));
+    if (free.length) return free[Math.min(free.length - 1, Math.floor(random() * free.length))];
+  }
+}
+
+// Two pilots are called the same and this page's name is the given one: does
+// it take another?  Always when the other pilot typed theirs (theirs.since is
+// not a number: a typed name stays as it is).  Of two given names the one
+// given later takes another, and of two given at the same moment (two tabs
+// of one browser share it) the higher seat's.  Both pages work it out alike,
+// so one of the two moves and the other keeps its name.
+export function givesWay(mine, theirs) {
+  if (typeof theirs.since !== "number" || !Number.isFinite(theirs.since)) return true;
+  return mine.since > theirs.since || (mine.since === theirs.since && mine.seat > theirs.seat);
+}
+
 // -- how often -------------------------------------------------------------------
 
 // Two lines to start with, then one every ten seconds in a lobby of eight
