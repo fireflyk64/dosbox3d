@@ -33,7 +33,7 @@ fi
 # optimised (the flight benchmark found -ox worth half again as many sprites a
 # frame as -od); DEBUG=1 builds -od -d2 for the debugger
 if [ -n "${DEBUG:-}" ]; then OPT="-od -d2"; else OPT="-ox -d1"; fi
-CFLAGS="-q -bt=dos -mm -3 -s -w4 -zq $OPT -i=src"
+CFLAGS="-q -bt=dos -mm -3 -s -w4 -zq -zm $OPT -i=src"   # (-zm: a segment a function, so the link drops the unused: option eliminate)
 nasm -f obj -i src/ -o "$OUT/rvhook.obj" src/rvhook.asm
 nasm -f obj -o "$OUT/lowlevel.obj" src/lowlevel.asm
 nasm -f obj -o "$OUT/lasers_a.obj" src/lasers.asm
@@ -139,7 +139,7 @@ done
 link() {
     name=$1; shift
     wlink system dos name "$OUT/$name" option quiet option map="$OUT/${name%.EXE}.MAP" \
-        option stack=4096 \
+        option stack=4096 option eliminate \
         order clname RVHOOK clname CODE clname FAR_DATA \
               clname BEGDATA segment RVFIXED segment _NULL segment _AFTERNULL \
               clname DATA clname BSS clname STACK \
