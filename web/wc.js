@@ -1072,6 +1072,49 @@ $("topAction").addEventListener("click", () => {
   else $("fly").click();
 });
 
+// The doorbell: a pilot came into the room this page hosts and the host is not
+// flying yet, so it is time to press Fly (the user, 2026-11-05: "would be
+// nice to have a doorbell notif if someone shows up in a lobby you host, so
+// you know to start the game").  A two-note chime made here (no file), and
+// with the tab in the background its title says so until it is looked at.
+// Only a new pilot rings, not one whose socket came back (player-rejoined).
+let bellCtx = null, bellAt = -1e9, bellTitle = "";
+function doorbell() {
+  const now = performance.now();
+  if (now - bellAt < 3000) return;
+  bellAt = now;
+  log("lobby: doorbell: a pilot came into your room");
+  try {
+    bellCtx = bellCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (bellCtx.state === "suspended") void bellCtx.resume();
+    const t0 = bellCtx.currentTime + 0.02;
+    [[659.3, 0], [523.3, 0.42]].forEach(([f, at]) => {
+      const out = bellCtx.createGain();
+      out.connect(bellCtx.destination);
+      out.gain.setValueAtTime(0.0001, t0 + at);
+      out.gain.exponentialRampToValueAtTime(0.22, t0 + at + 0.01);
+      out.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 1.4);
+      for (const [mult, level] of [[1, 1], [2.76, 0.28], [5.4, 0.1]]) {   // (a bell's partials)
+        const o = bellCtx.createOscillator(), g = bellCtx.createGain();
+        o.frequency.value = f * mult;
+        g.gain.value = level;
+        o.connect(g); g.connect(out);
+        o.start(t0 + at); o.stop(t0 + at + 1.5);
+      }
+    });
+    // (a context left running keeps an audio thread busy beside the game)
+    const ctx = bellCtx;
+    setTimeout(() => { if (performance.now() - bellAt >= 2500) void ctx.suspend(); }, 2600);
+  } catch (e) { /* no sound here */ }
+  if (document.hidden && !bellTitle) {
+    bellTitle = document.title;
+    document.title = "\u{1F514} A pilot joined your room";
+  }
+}
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && bellTitle) { document.title = bellTitle; bellTitle = ""; }
+});
+
 function onLobbyEvent(ev) {
   switch (ev.type) {
     case "message": {
@@ -1156,6 +1199,7 @@ function onLobbyEvent(ev) {
       break;
     }
     case "player-joined": case "player-rejoined": case "player-replaced":
+      if (ev.type === "player-joined" && isHost() && !running && ev.playerId !== lobby.game.selfId) doorbell();
       lobby.links.set(ev.playerId, "down"); lobby.names.delete(ev.playerId); lobby.flying.delete(ev.playerId); lobby.games.delete(ev.playerId);
       voice.forget(ev.playerId);
       renderRoster(); updateActions(); break;   // (a host no longer alone: no Fly single player)

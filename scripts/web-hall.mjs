@@ -552,6 +552,8 @@ check("a lobby is made with the seats the server allows", (await h.evaluate(() =
   await g2.click("#join");
   await g2.waitForFunction(() => !document.getElementById("lobby").hidden && document.getElementById("roster").children.length > 1, null, { timeout: 30000 });
   check("a guest's Fly stays shut while its host does not fly", (await g2.$eval("#fly", (el) => el.disabled)), await status(g2));
+  check("the host, not flying, hears the doorbell when the guest comes in; the guest does not", logs.HOSTNOFLY.some((l) => /doorbell/.test(l)) && !logs.GUESTOUT.some((l) => /doorbell/.test(l)),
+    logs.HOSTNOFLY.filter((l) => /doorbell|joined/.test(l)).join(" | "));
   await g2.click("#leave");
   await g2.fill("#seats", "1");
   await g2.dispatchEvent("#seats", "change");
