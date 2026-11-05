@@ -15,7 +15,6 @@
  * Needs RV.DAT and RVGAME.DAT beside it, 32 MB of XMS (it takes all there is) and VESA mode 100h. */
 #include <stdio.h>
 #include <malloc.h>
-#include <malloc.h>
 #include <string.h>
 #include <stdlib.h>
 #include <dos.h>
@@ -145,6 +144,7 @@ int main(int argc, char **argv)
 #if defined(RV_TESTS) || defined(RV_PLAYTEST) || defined(RV_HOST)
     g_rv_verbose = 1;                   /* (RV.EXE keeps quiet in its frames unless /verbose: rv.h) */
 #endif
+    logfmt_exe(argv[0]);                /* (the log's formats are at the EXE's end: util.c) */
     rvHello();
     rv_stack_paint();
     mem_settle();                       /* (after a first line: it opens the log) */
@@ -335,6 +335,7 @@ int main(int argc, char **argv)
     }
     /* resident before base: XMS levels nest (xms.c); the songs are resident too */
     gfx_title_reserve();
+    logfmt_load(argv[0]);               /* (the log's formats, out of conventional memory: util.c) */
     log_free("at the start");
     if (!nogx)
         (void)gx_init();                /* is there a sprite accelerator?  (only our DOSBox: docs/gx.md) */

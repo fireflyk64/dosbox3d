@@ -77,6 +77,7 @@ void xms_shutdown(void)
 }
 
 unsigned long xms_free_kb(void) { return (g_size - g_top) / 1024; }
+int xms_ready(void) { return g_handle != 0; }   /* (after xms_shutdown a block's move would read conventional memory) */
 unsigned xms_blocks(void) { return g_nblocks; }
 
 XmsBlock xms_alloc(unsigned long bytes, int level)

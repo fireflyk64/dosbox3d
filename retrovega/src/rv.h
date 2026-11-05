@@ -25,6 +25,8 @@ void rv_fail(const char *file, int line, const char *what, long value, long limi
 
 void rv_log(const char *fmt, ...);
 void rv_logf(const char __far *fmt, ...);   /* a far format (DGROUP is nearly full) */
+void logfmt_load(const char *exe);      /* the log's formats' table, from the end of the EXE into XMS (util.c) */
+void logfmt_exe(const char *exe);       /* the EXE's path, the first thing: a format read from it till then */
 /* rv_log with its format kept far, out of DGROUP: RV_LOG("format", args...), a literal format only (shorter than
  * rv_logf's 400 bytes); it passes the format one argument more, a 0 it never reads */
 #define RV_LOG(...) do { static const char __far rv_fmt_[] = RV_LOG_FMT_(__VA_ARGS__, 0); \
@@ -59,6 +61,7 @@ extern void (*xms_freed)(unsigned nblocks);   /* (dat.c's: blocks past the first
 unsigned long xms_free_kb(void);       /* free in the arena */
 unsigned xms_blocks(void);             /* blocks taken (mem.c's ledger) */
 XmsBlock xms_alloc(unsigned long bytes, int level);
+int xms_ready(void);                    /* the arena is there (from xms_init to xms_shutdown) */
 void xms_free_level(int level);
 void xms_shrink(XmsBlock b, unsigned long bytes);   /* the block taken last gives back what it did not use */        /* frees that level and all above it */
 int xms_put(XmsBlock b, unsigned long off, const void __far *src, unsigned long n);

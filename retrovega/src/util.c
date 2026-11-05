@@ -28,14 +28,94 @@ void rv_log(const char *fmt, ...)
     fclose(f);
 }
 
+/* The log's formats in XMS (tools/logfmt.py): the DOS build is compiled from copies of its sources with each format
+ * the log alone reads a token, "\001" and its number, and their texts a table at the end of the EXE, past its image.
+ * logfmt_load puts it in XMS at the start; vlogf puts a token's text back.  A token before then, or with no table, is
+ * logged as "[log line N]" */
+static XmsBlock g_logfmt;
+static unsigned g_logfmt_n;
+static unsigned long g_logfmt_len;
+static const char *g_logexe;            /* the EXE's path: the formats read from its end before XMS is up */
+
+void logfmt_exe(const char *exe)
+{
+    g_logexe = exe;
+}
+
+/* (before the table is in XMS: a format read from the EXE's end, the file opened for the one line) */
+static int fmt_from_exe(unsigned id, char *buf, unsigned n)
+{
+    unsigned char tail[12];
+    unsigned long len, off;
+    unsigned got = 0;
+    FILE *f = g_logexe ? fopen(g_logexe, "rb") : 0;
+    if (!f)
+        return 0;
+    if (fseek(f, -12L, SEEK_END) == 0 && fread(tail, 1, 12, f) == 12 && !memcmp(tail + 4, "RVLOGEND", 8)
+        && (len = *(unsigned long *)tail) > 10 + 4UL * id
+        && fseek(f, -12L - (long)len + 10 + 4L * id, SEEK_END) == 0 && fread(&off, 1, 4, f) == 4 && off < len
+        && fseek(f, -12L - (long)len + (long)off, SEEK_END) == 0)
+        got = (unsigned)fread(buf, 1, n - 1, f);
+    fclose(f);
+    buf[got] = 0;
+    return got != 0;
+}
+
+void logfmt_load(const char *exe)
+{
+    unsigned char tail[12];
+    unsigned long k;
+    FILE *f = fopen(exe, "rb");
+    g_logexe = exe;
+    if (!f)
+        return;
+    if (fseek(f, -12L, SEEK_END) == 0 && fread(tail, 1, 12, f) == 12 && !memcmp(tail + 4, "RVLOGEND", 8)
+        && (g_logfmt_len = *(unsigned long *)tail) > 10 && fseek(f, -12L - (long)g_logfmt_len, SEEK_END) == 0
+        && (g_logfmt = xms_alloc(g_logfmt_len + 16, XMS_RESIDENT)) != 0) {
+        for (k = 0; k < g_logfmt_len; k += sizeof rv_filebuf) {
+            unsigned m = (unsigned)(g_logfmt_len - k < sizeof rv_filebuf ? g_logfmt_len - k : sizeof rv_filebuf);
+            if (fread(rv_filebuf, 1, m, f) != m)
+                break;
+            xms_put(g_logfmt, k, rv_filebuf, m);
+        }
+        xms_get(g_logfmt, 0, tail, 10);
+        if (!memcmp(tail, "RVLOGFMT", 8))
+            g_logfmt_n = tail[8] | (unsigned)tail[9] << 8;
+    }
+    fclose(f);
+}
+
+/* a format into buf (n bytes): its own text, or a token's from the table */
+static void fmt_text(const char __far *fmt, char *buf, unsigned n)
+{
+    if (fmt[0] == '\001') {
+        const char __far *p = fmt + 1;
+        unsigned id = 0;
+        unsigned long off, most;
+        while (*p >= '0' && *p <= '9')
+            id = id * 10 + (unsigned)(*p++ - '0');
+        if (id < g_logfmt_n && xms_ready() && xms_get(g_logfmt, 10 + 4UL * id, &off, 4) && off < g_logfmt_len) {
+            most = g_logfmt_len - off < n - 1 ? g_logfmt_len - off : n - 1;
+            xms_get(g_logfmt, off, buf, most);
+            buf[most] = 0;
+            return;
+        }
+        if (fmt_from_exe(id, buf, n))   /* (XMS not up yet, or given back at the end) */
+            return;
+        sprintf(buf, "[log line %u]", id);
+        return;
+    }
+    _fstrncpy(buf, fmt, n - 1);
+    buf[n - 1] = 0;
+}
+
 /* the same with its format far (out of DGROUP, which is nearly full: `static const char __far` formats), copied
  * to the stack for the library */
 static void vlogf(const char __far *fmt, va_list ap)
 {
     char buf[400];
     FILE *f;
-    _fstrncpy(buf, fmt, sizeof buf - 1);
-    buf[sizeof buf - 1] = 0;
+    fmt_text(fmt, buf, sizeof buf);
     f = fopen("RVLOG.TXT", g_log_started ? "a" : "w");
     if (!f)
         return;
