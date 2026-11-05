@@ -368,9 +368,12 @@ def pa_report():
     """The ship's address system, for a guest in the base once the host's mission has begun (the user, 2026-11-05:
     "a sort of echoy tinny speech clip audio and text when the host starts the mission... "All pilots report to
     briefing room" and have it repeat every 45 seconds"): a two-note chime, then the voice through a speaker's narrow
-    band (350 to 3,200 Hz) and a little overdrive (the tin), a quick slap off the bulkheads and a long hall's echo.
-    The voice: art/voice/pa_report.wav, made with eSpeak NG (a tool's output, ours to use):
-        espeak-ng -v en-us+m3 -s 138 -p 38 -g 4 -a 170 -w pa_report.wav "All pilots, report to the briefing room."
+    band (300 to 3,600 Hz) and a touch of overdrive (the tin), a quick slap off the bulkheads and a long hall's echo.
+    The voice: art/voice/pa_report.wav, made with Piper (MIT) and its en_US-norman-medium voice, trained on LibriVox's
+    public-domain recordings (its model card: "Trained from scratch"), so ours to use; the user, 2026-11-05, of the
+    first (eSpeak NG): "sounds a bit too computery--can you make it sound a bit more natural...keep the echo tho":
+        echo "All pilots, report to the briefing room." | piper -m en_US-norman-medium.onnx --length-scale 1.12 \
+            --sentence-silence 0.2 -f pa_report.wav
     """
     with wave.open(os.path.join(ROOT, 'art', 'voice', 'pa_report.wav')) as w:
         rate = w.getframerate()
@@ -379,8 +382,8 @@ def pa_report():
         v = np.interp(np.arange(int(len(v) * SR / rate)) * rate / SR, np.arange(len(v)), v)
     q = np.abs(v) > 0.01                          # (its silences off)
     v = v[np.argmax(q):len(v) - np.argmax(q[::-1])]
-    v = svf(svf(v, 350, 0.8, 'hp'), 3200, 1.1, 'lp')
-    v = drive(v / (np.max(np.abs(v)) or 1) * 2.2, 1.6) * 0.8
+    v = svf(svf(v, 300, 0.75, 'hp'), 3600, 1.0, 'lp')
+    v = drive(v / (np.max(np.abs(v)) or 1) * 1.5, 1.2) * 0.85
     t = tl(0.42)
     bell = lambda f: fm(f + 0 * t, 2.0, 1.2 * env(t, 0.002, 0.25)) * env(t, 0.004, 0.32)
     chime = np.concatenate([bell(988) * 0.5, bell(784) * 0.5])
