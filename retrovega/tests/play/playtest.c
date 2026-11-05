@@ -2395,6 +2395,12 @@ static void t_player_dies(void)
     REQUIRE(victoryPoints == 0, e_score, victoryPoints, 0, 0);
 }
 
+/* (from here on the tests' code is a second segment of its own: in RVP.EXE's medium model a file's code is one
+ * segment, at most 64 KB, and the tests outgrew it on 2026-11-04 by 8 bytes: E2021) */
+#ifdef __WATCOMC__
+#pragma code_seg("playtest2_TEXT", "CODE")
+#endif
+
 /* ======================================================================================================== */
 /* M5: the AI (aiFighterThink, aiShipThink, aiSetSpeed, step_minds) */
 
@@ -4282,6 +4288,18 @@ static void t_campaign_way(void)
     pt_mission();
 }
 
+/* a mission of the campaign launched by its id, as the campaign has it (its fighter) */
+static void pt_launch_named(const char *id)
+{
+    uint16_t i;
+    for (i = 0; i < g_nmissions; i++) {
+        camp_mission(i, &g_tm);
+        if (!_fstrncmp(g_tm.id, id, sizeof g_tm.id))
+            break;
+    }
+    pt_launch(g_tm.fighter != 0xFF ? g_tm.fighter : PT_PLAYER);
+}
+
 /* M8.41: ENIGMA2's Ox (role=out jump=2, the old game's own map), the player lingering at the launch for two and a half
  * minutes (a pilot waiting for another to join; the user, 2026-11-04: "this time I arrived at nav 1 without the ox
  * there--just the enemies and [my wingman]"): the Ox has gone on alone, as the old game's does, and the autopilot to
@@ -4294,13 +4312,8 @@ static void t_escort_waits(void)
     static const char __far e_went[] = "the autopilot returned %d, the player %d km from nav 1";
     static const char __far e_along[] = "after the autopilot to nav 1 the Ox is %d km from the player (alive %d): it comes "
         "along";
-    int16_t ox, r, i;
-    for (i = 0; i < (int16_t)g_nmissions; i++) {
-        camp_mission((uint16_t)i, &g_tm);
-        if (!_fstrncmp(g_tm.id, "ENIGMA2", 8))
-            break;
-    }
-    pt_launch(g_tm.fighter != 0xFF ? g_tm.fighter : PT_PLAYER);
+    int16_t ox, r;
+    pt_launch_named("ENIGMA2");
     playerCanBeDamaged = 0;
     ox = pt_ox();
     REQUIRE(ox > 0, e_there, ox, 0, 0);
@@ -4332,12 +4345,7 @@ static void t_escort_jump_home(void)
         "jumps whoever is with it";
     static const char __far e_won[] = "the Ox jumped and the waves killed: logic_escort_lost says %d (0)";
     int16_t ox, r, i, leg;
-    for (i = 0; i < (int16_t)g_nmissions; i++) {
-        camp_mission((uint16_t)i, &g_tm);
-        if (!_fstrncmp(g_tm.id, "ENIGMA2", 8))
-            break;
-    }
-    pt_launch(g_tm.fighter != 0xFF ? g_tm.fighter : PT_PLAYER);
+    pt_launch_named("ENIGMA2");
     playerCanBeDamaged = 0;
     ox = pt_ox();
     REQUIRE(ox > 0, e_there, ox, 0, 0);
@@ -4376,12 +4384,7 @@ static void t_escort_order(void)
     static const char __far e_left[] = "the Ox is %d km from the player after it: left behind (past 20,000)";
     static const char __far e_on[] = "60 s on the Ox is %d km nearer nav 2 (alive %d): it flies on alone";
     int16_t ox, r, i;
-    for (i = 0; i < (int16_t)g_nmissions; i++) {
-        camp_mission((uint16_t)i, &g_tm);
-        if (!_fstrncmp(g_tm.id, "ENIGMA2", 8))
-            break;
-    }
-    pt_launch(g_tm.fighter != 0xFF ? g_tm.fighter : PT_PLAYER);
+    pt_launch_named("ENIGMA2");
     playerCanBeDamaged = 0;
     ox = pt_ox();
     REQUIRE(ox > 0, e_there, ox, 0, 0);
