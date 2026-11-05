@@ -58,8 +58,19 @@ async function fps(page, s) {
   return ((b - a + 65536) % 65536) / ((Date.now() - t0) / 1000);
 }
 const perfSince = (name, t) => logs[name].filter((l) => /perf: /.test(l) && Number(l.split(" ")[0]) >= t);
+// the page's main thread busy, its share of real time over `s` seconds (Chrome's TaskDuration): a page that never
+// lets go of the thread is 1.0
+async function busy(cdp, s) {
+  const get = async () => Object.fromEntries((await cdp.send("Performance.getMetrics")).metrics.map((m) => [m.name, m.value]));
+  const a = await get(), t0 = Date.now();
+  await sleep(s * 1000);
+  const b = await get();
+  return (b.TaskDuration - a.TaskDuration) / ((Date.now() - t0) / 1000);
+}
 
 const host = await open("host", { callsign: "CHEATHOST", cmd: "rv /noquit /fly 0" });
+const cdp = await host.context().newCDPSession(host);
+await cdp.send("Performance.enable");
 const wing = await open("wing", { callsign: "WINGMAN", cmd: "rv /noquit /fly 3" });
 check("both pilots are in the lobby", (await inLobby(host)) && (await inLobby(wing)));
 await host.click("#join");
@@ -74,6 +85,7 @@ await wing.click("#fly");
 check("the wingman joins the mission in progress", await flying(wing));
 for (const page of [host, wing]) { await page.focus("#canvas"); await page.keyboard.press("s"); }
 await sleep(5000);
+const busyBefore = await busy(cdp, 5);
 const before = await fps(host, 10);
 const tBefore = Date.now() / 1000;
 await sleep(10000);
@@ -82,11 +94,14 @@ console.log(`the host before the drop: ${before.toFixed(1)} frames a second; ${p
 const tDrop = Date.now() / 1000;
 await wing.context().close();
 console.log("the wingman's page is closed");
-await sleep(15000);
+const busyWait = [];
+for (let i = 0; i < 3; i++) busyWait.push(await busy(cdp, 5));   // (the wait for the link to be called gone)
 const samples = [];
 for (let i = 0; i < Math.max(1, Math.floor(after / 10)); i++) samples.push(await fps(host, 10));
 const perfAfter = perfSince("host", tDrop);
 console.log(`the host after the drop: ${samples.map((f) => f.toFixed(1)).join(", ")} frames a second`);
+const busyAfter = await busy(cdp, 5);
+console.log(`the host page's main thread busy: ${busyBefore.toFixed(2)} flying together, ${busyWait.map((b) => b.toFixed(2)).join(", ")} in the 15 s after the drop, ${busyAfter.toFixed(2)} after`);
 for (const l of perfAfter.slice(-4)) console.log("  " + l);
 const lost = logs.host.filter((l) => Number(l.split(" ")[0]) >= tDrop && /lobby|link lost|disconnected|signaling/.test(l));
 for (const l of lost.slice(0, 20)) console.log("  host: " + l);
@@ -94,6 +109,8 @@ const worst = Math.min(...samples);
 check("the host's game keeps its pace after the wingman's page is gone", worst > before * 0.85,
   `${worst.toFixed(1)} against ${before.toFixed(1)} frames a second`);
 check("and its own lobby link stays", !lost.some((l) => /signaling lost|lobby session over/.test(l)));
+check("its page does not spin while it waits for the gone pilot's link", Math.max(...busyWait) < Math.max(0.6, busyBefore * 1.5),
+  `${busyWait.map((b) => b.toFixed(2)).join(", ")} against ${busyBefore.toFixed(2)} before`);
 if (shotDir) {
   fs.writeFileSync(path.join(shotDir, "rvdrop-host.log"), logs.host.join("\n") + "\n");
   fs.writeFileSync(path.join(shotDir, "rvdrop-wing.log"), logs.wing.join("\n") + "\n");
