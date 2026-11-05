@@ -3147,6 +3147,31 @@ static int16_t escort_on_way(int16_t s, int16_t next)
     return first >= 0 && next >= first && next >= g_mind[s].leg && next <= route_last(rec, first);
 }
 
+/* the first waypoint not yet reached on the way of an escort out of the player's side that is still on it (not jumped,
+ * alive): the autopilot goes no further than that (logic_autopilot_ready); -1 none */
+static int16_t escort_next_waypoint(void)
+{
+    int16_t s, n, rec, first, last, best = -1;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++) {
+        if (!slot_is_ship(s) || shipAiState[s] == 9 || role_of(s) != RV_ESCORT_OUT || commAnimInfo[s] != commAnimInfo[0])
+            continue;
+        rec = slotMissionShip[s] & 63;
+        if (g_away[rec])
+            continue;
+        for (first = -1, n = (int16_t)(MSHIP_NAV(rec) & 15) + 1; n < NAVS && first < 0; n++)
+            if (nav_defined(n))
+                first = n;
+        last = route_last(rec, first);
+        for (n = first; n >= 0 && n <= last; n++)
+            if (nav_listed(n) && !(g_navs_seen >> n & 1)) {
+                if (best < 0 || n < best)
+                    best = n;
+                break;
+            }
+    }
+    return best;
+}
+
 /* an escort target of the player's side the autopilot takes along to `next` (its flyby's formation, then the jump):
  * on its way, and within AUTOPILOT_ESCORT_KM, or however far for one out (as the mission's wingman: the user,
  * 2026-11-04, the Ox not at nav 1 on arriving there) */
@@ -3795,12 +3820,18 @@ int16_t logic_autopilot_ready(void)
         if (slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9
             && human_km(s) < AUTOPILOT_CLEAR_KM)
             return -1;
-    /* (the first waypoint not reached, in the mission's order, whatever N has picked: the old game's autopilot goes there
-     * whatever its map shows (traced 2026-11-04: Enyo 2 with Nav 2 picked on the map, then the Tiger's Claw, its
-     * autopilot went to Nav 1 both times), so no wave and no escort's way is cut short (the user: "make sure players
-     * always arrive with the transpo[r]t and never are able to just skip the baddies by taking a we[i]rd route").  Home
-     * picked is the one exception: a pilot may give a mission up without the whole way back by hand) */
-    next = g_nav_chosen && g_sys.nav == 0 ? 0 : nav_next_unseen();
+    /* (the one N picked, else the way ahead: a patrol in any order, as the old game's map lets one (its Enter takes the
+     * pick: traced 2026-11-04, Enyo 1's autopilot to Nav 2 first); but not past an escort's next waypoint, while one
+     * out is on its way: there the old game's took the player on and left its Drayman 30,000 km behind, where ours goes
+     * there with it (the user: "make sure players always arrive with the transpo[r]t and never are able to just skip
+     * the baddies by taking a we[i]rd route"; "I remember being able to sele[c]t the autopilot target--but maybe not
+     * for missions where I had an escort").  Home picked goes home: a pilot may give a mission up) */
+    next = g_nav_chosen ? g_sys.nav : nav_next_unseen();
+    if (next != 0) {
+        int16_t e = escort_next_waypoint();
+        if (e > 0 && next > e)
+            next = e;
+    }
     if (nav_in_reach(next))
         return -1;                      /* (there already) */
     {
