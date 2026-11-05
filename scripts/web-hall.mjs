@@ -200,6 +200,7 @@ check("the pilot is in no room yet", await a.$eval("#lobby", (el) => el.hidden),
 await a.click("#hallAdvertise");
 check("Advertise joins the pilot's room and sends its code, mission and free seats", (await sees(b, offer)) && !(await a.$eval("#lobby", (el) => el.hidden)) && (await value(a, "hallInput")) === "", [await text(a, "hallHint"), await status(a)]);
 check("the room has the button too, while a seat is free", !(await a.$eval("#advertise", (el) => el.hidden)), null);
+check("a host alone in its room may fly single player", !(await a.$eval("#flySolo", (el) => el.hidden)) && !(await a.$eval("#fly", (el) => el.disabled)), null);
 // A pilot whose lines are used up for the moment finds the offer waiting in the box.
 await a.click("#hallAdvertise"); await sleep(0.3); await a.click("#hallAdvertise"); await sleep(0.3);
 check("an advertisement that has to wait waits in the box", (await value(a, "hallInput")) === offer && /You can send again in \d+ s/.test(await text(a, "hallHint")), [await value(a, "hallInput"), await text(a, "hallHint")]);
@@ -211,6 +212,9 @@ await b.click("#hallLog a.roomcode");
 await b.waitForFunction(() => !document.getElementById("lobby").hidden && document.getElementById("roster").children.length > 0, null, { timeout: 30000 }).catch(() => {});
 check("a click joins the room", (await value(b, "room")) === codeA && /player 2 of 3 in room/.test(await text(b, "chatLog")), await status(b));
 check("the host sees the wingman", await a.waitForFunction(() => /BRAVO is in the room/.test(document.getElementById("chatLog").textContent), null, { timeout: 30000 }).then(() => true, () => false), await text(a, "chatLog"));
+check("with a wingman in, no Fly single player", await a.waitForFunction(() => document.getElementById("flySolo").hidden, null, { timeout: 10000 }).then(() => true, () => false), null);
+check("a guest cannot fly before its host does, and is told why", (await b.$eval("#fly", (el) => el.disabled)) && (await b.$eval("#topAction", (el) => el.disabled))
+  && /Fly opens once the host flies/.test(await status(b)) && (await b.$eval("#flySolo", (el) => el.hidden)), await status(b));
 check("the button stays while a seat is free", !(await a.$eval("#advertise", (el) => el.hidden)), null);
 check("the lobby goes on beside the room", (await pilots(a, 2)) && !(await a.$eval("#hallBody", (el) => el.hidden)), null);
 
@@ -501,6 +505,47 @@ check("a lobby is made with the seats the server allows", (await h.evaluate(() =
   check("in a room, the same callsign given at once: the second seat takes another, both rosters say so", !!moved && LIST.includes(moved), [await seated(r1), await seated(r2)]);
   check("and the room's chat tells that pilot", (await text(r2, "chatLog")).includes(`Another pilot here is Mako: you are ${moved} now`) && !(await text(r1, "chatLog")).includes("Another pilot here"), [await text(r2, "chatLog")]);
   for (const p of [r1, r2]) await p.context().close();
+}
+
+// -- flying alone -------------------------------------------------------------------
+// A host alone in a room of two flies single player: a room of one of the same code, nothing said in the lobby, the
+// game as it is (WCSOLO).  A guest whose host does not fly leaves and makes a room of one: its Fly opens.
+{
+  const watcher = await open("WATCHER", { hall: "SOLO-" + run });
+  const solo = await open("SOLOIST", { hall: "SOLO-" + run });
+  await inside(solo);
+  await inside(watcher);
+  await solo.click("#join");
+  await solo.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("flySolo").hidden, null, { timeout: 30000 }).catch(() => {});
+  const soloCode = await value(solo, "room");
+  check("alone in a room of two: Fly and Fly single player", !(await solo.$eval("#flySolo", (el) => el.hidden)) && /player 1 of 2 in room/.test(await text(solo, "chatLog")), await text(solo, "chatLog"));
+  await solo.click("#flySolo");
+  check("Fly single player makes it a room of one of the same code and flies the game alone",
+    await solo.waitForFunction((c) => new RegExp(`alone in room ${c}`).test(document.getElementById("chatLog").textContent), soloCode, { timeout: 30000 }).then(() => true, () => false)
+      && (await value(solo, "room")) === soloCode,
+    await text(solo, "chatLog"));
+  await sleep(6);
+  check("the game starts alone (WCSOLO), and nothing is said in the lobby", logs.SOLOIST.some((l) => / alone: the game as it is/.test(l))
+    && logs.SOLOIST.some((l) => /flown single player/.test(l)) && !(await text(watcher, "hallLog")).includes(soloCode),
+    [logs.SOLOIST.filter((l) => /alone|single player|advertis/.test(l)).join(" | "), (await text(watcher, "hallLog")).slice(-200)]);
+  await solo.context().close();
+  // a guest of a host who does not fly
+  const h2 = await open("HOSTNOFLY", { hall: "SOLO-" + run, wait: false });
+  const g2 = await open("GUESTOUT", { hall: "SOLO-" + run, wait: false });
+  await h2.click("#join");
+  await h2.waitForFunction(() => !document.getElementById("lobby").hidden, null, { timeout: 30000 });
+  const code2 = await value(h2, "room");
+  await g2.fill("#room", code2);
+  await g2.click("#join");
+  await g2.waitForFunction(() => !document.getElementById("lobby").hidden && document.getElementById("roster").children.length > 1, null, { timeout: 30000 });
+  check("a guest's Fly stays shut while its host does not fly", (await g2.$eval("#fly", (el) => el.disabled)), await status(g2));
+  await g2.click("#leave");
+  await g2.fill("#seats", "1");
+  await g2.dispatchEvent("#seats", "change");
+  await g2.click("#join");
+  check("left, and a room of one made: its Fly opens", await g2.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled
+    && /alone in room/.test(document.getElementById("chatLog").textContent), null, { timeout: 30000 }).then(() => true, () => false), await status(g2));
+  for (const p of [h2, g2, watcher]) await p.context().close();
 }
 
 await browser.close();
