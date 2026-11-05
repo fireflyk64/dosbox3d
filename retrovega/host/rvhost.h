@@ -32,6 +32,7 @@ void hle_ffree(void *p);
 #define _fstrlen strlen
 #define _fstrcpy strcpy
 #define _fstrncpy strncpy
+#define _fstrncat strncat
 #define _fstrncmp strncmp
 #define _fstrcmp strcmp
 #define _fstrchr strchr
