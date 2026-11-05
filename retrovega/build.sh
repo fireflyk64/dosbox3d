@@ -97,8 +97,8 @@ fi
 # change; made with CODE=1 too (the code reads them)
 [ "$OUT/EXPLODE.DAT" -nt tools/explode.py ] \
     || ~/.venvs/retrovega-art/bin/python -P tools/explode.py --out "$OUT/EXPLODE.DAT" > /dev/null
-[ "$OUT/SFX.DAT" -nt tools/sfx.py ] && [ "$OUT/SFX.DAT" -nt data/sounds.csv ] \
-    || ~/.venvs/retrovega-art/bin/python -P tools/sfx.py --out "$OUT/SFX.DAT" > /dev/null
+[ "$OUT/SFX.DAT" -nt tools/sfx.py ] && [ "$OUT/SFX.DAT" -nt data/sounds.csv ] && [ "$OUT/SFX.DAT" -nt art/voice/pa_report.wav ] \
+    || ~/.venvs/retrovega-art/bin/python -P tools/sfx.py --out "$OUT/SFX.DAT" > /dev/null   # (the recordings: art/voice)
 ENGINE="mem freeze util xms gx video dat gfx input room lipsync opl music score campaign lightfield ships lasers bolts balls rocks missiles sky collide flames comms panel vdu cockpit world shots hud explode sfx fx damage logic simulator flight game main"
 LOGIC=${LOGIC:-src/logic.c}           # (LOGIC=path: another logic.c in its place, an experiment's; the play tests' check)
 # the log's formats out of conventional memory (tools/logfmt.py; the user's pick from the memory plan, 2026-11-04): the
