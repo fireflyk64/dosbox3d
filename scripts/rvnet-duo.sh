@@ -19,6 +19,8 @@
 #                         explode, then go
 #             chat        each pilot says a line (the 0 key's prompt, !say=): it is on the other's comm VDU, and its
 #                         own
+#             field       (HOST_MISSION=1 GUEST_MISSION=1: ENIGMA2) nav 2 picked first, the host's autopilot stops at
+#                         the asteroid field on that way, and both fly into it: each RVLOG's rocks
 #   PLAYERS   2 (default) or 3: a third pilot, seated by the host
 #   ROOM      1: the instances meet in a room of a local lobby server (LOBBY_PORT, default 13961), as the pages do,
 #             not over TCP: there the host's first mission never waits for the guest, and after a mission flown
@@ -88,6 +90,9 @@ kill)
 chat)
     HOST="$HOST,9:!say=hello_from_the_host,12:!shot=chat"
     GUEST="$GUEST,10:!say=hi_from_the_guest,12:!shot=chat" ;;
+field)                                  # (HOST_MISSION=1 GUEST_MISSION=1: ENIGMA2, its field on the way to nav 2)
+    HOST="$HOST,10:n,11:a,16:f,46:!ds=field"
+    GUEST="$GUEST,16:f,46:!ds=field" ;;
 *) echo "rvnet-duo: no scenario $SCENARIO" >&2; exit 2 ;;
 esac
 
