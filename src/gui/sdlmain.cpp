@@ -1669,7 +1669,7 @@ std::string incoming_text="";
 size_t last_outgoing_text_len = 0;
 // The hint about the 0 key, until the first message is sent; a player who
 // knows (WCNET_NOHINT in the environment, the page's choice) never sees it.
-static const char kCommsHint[] = "To transmit comms use the '0' key";
+static const char kCommsHint[] = "To transmit comms use the '0' key or tap Shift";
 std::string outgoing_text = kCommsHint;
 extern Bit8u int10_font_14[256 * 14];
 static void DrawText(Bitu x,Bitu y,const char * text,Bit8u color, Bit8u *surface, Bitu pitch) {
@@ -2813,7 +2813,38 @@ void GFX_Events() {
             {
 			void MAPPER_CheckEvent(SDL_Event * event);
             if (wc_net_chat_ready() || kGlobalKeyDisable) {   // (a prompt already open is finished whatever came since)
-                if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_0 && !kGlobalKeyDisable) {
+                // A tap of Shift on its own opens the prompt too (the user, 2026-11-06: "Players really aren't
+                // figuring out how to speak. I wonder if the shift key is used or could be used for talking in
+                // addition to zero?"): Shift held with another key (an arrow's full turn, a capital) is not a tap
+                static Bit32u shiftDownAt = 0;
+                static bool shiftAlone = false;
+                bool shiftTap = false;
+                if (!kGlobalKeyDisable && (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP)) {
+                    const bool isShift = event.key.keysym.sym == SDLK_LSHIFT || event.key.keysym.sym == SDLK_RSHIFT;
+                    if (event.type == SDL_KEYDOWN) {
+#if SDL_VERSION_ATLEAST(2,0,0)
+                        const bool repeat = event.key.repeat != 0;
+#else
+                        const bool repeat = false;
+#endif
+                        if (isShift && !repeat) {
+                            shiftDownAt = SDL_GetTicks();
+                            shiftAlone = true;
+                        } else if (!isShift) {
+                            shiftAlone = false;
+                        }
+                    } else if (isShift) {
+                        shiftTap = shiftAlone && SDL_GetTicks() - shiftDownAt < 400;
+                        shiftAlone = false;
+                    }
+                }
+                if (shiftTap) {
+                    kGlobalKeyDisable = true;   // (no text comes with a Shift: nothing to swallow)
+                    outgoing_text = outgoing_prefix;
+#if SDL_VERSION_ATLEAST(2,0,0)
+                    SDL_StartTextInput();
+#endif
+                } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_0 && !kGlobalKeyDisable) {
                     // '0' opens the comms prompt; Enter stays the game's missile
                     // key and only sends once the prompt is open
                     kGlobalKeyDisable = true;
