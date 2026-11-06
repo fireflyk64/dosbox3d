@@ -1922,18 +1922,24 @@ static void t_armour_sides(void)
 /* M3.5 */
 static void t_hull(void)
 {
-    static const char __far e_hull[] = "with its front shield and armour gone a front hit changed %d (hull damage %d to "
-        "%d): the hull (damagePoints, bit 64) takes it";
+    static const char __far e_hull[] = "with its front shield and armour gone %d front hits changed %d (hull damage %d to the "
+        "same): the hull (damagePoints, bit 64) takes them (an unnamed fighter's through the old game's roulette: one "
+        "point in five or so, fighter_roulette)";
     PtHurt a, b;
     uint16_t r;
+    int16_t i;
     pt_target();
     SHIELD(1, 0) = SHIELD(1, 1) = 0;
     ARMOR(1, 0) = 0;
     pt_hurt(1, &a);
-    r = pt_hit(0xFFFF, 1, 3, 2, 0, 0);
-    pt_hurt(1, &b);
-    REQUIRE(r != 0, e_did, 3, 0, 0);
-    REQUIRE(pt_changed(&a, &b) == 64 && b.hull > a.hull, e_hull, pt_changed(&a, &b), a.hull, b.hull);
+    for (i = 1; i <= 40; i++) {
+        r = pt_hit(0xFFFF, 1, 3, 2, 0, 0);
+        REQUIRE(r != 0, e_did, 3, 0, 0);
+        pt_hurt(1, &b);
+        if (b.hull > a.hull)
+            break;
+    }
+    REQUIRE(pt_changed(&a, &b) == 64 && b.hull > a.hull, e_hull, i, pt_changed(&a, &b), a.hull);
 }
 
 /* M3.6 */
@@ -1943,10 +1949,11 @@ static void t_big_hit(void)
         "damage %d): a ship whose hull is gone dies, shipAiState 9";
     static const char __far e_wrap[] = "a shield or armour wrapped past 0 (%d, %d): they stop at 0";
     pt_target();
-    (void)pt_hit(0xFFFF, 1, (uint16_t)(pt_health(1) + slot_type(1)->hull + 10), 2, 0, 0);
+    (void)pt_hit(0xFFFF, 1, 30000, 2, 0, 0);   /* (thirty thousand: past the whole ship many times over, through the
+                                                  roulette of an unnamed fighter's hull too: M8.49) */
     if (!pt_step())
         return;
-    REQUIRE(shipAiState[1] == 9, e_dead, pt_health(1) + slot_type(1)->hull, shipAiState[1], damagePoints[1]);
+    REQUIRE(shipAiState[1] == 9, e_dead, 30000, shipAiState[1], damagePoints[1]);
     REQUIRE(SHIELD(1, 0) <= SHIELD_MAX(1, 0) && ARMOR(1, 0) <= slot_type(1)->armor_f, e_wrap, SHIELD(1, 0), ARMOR(1, 0),
             0);
 }
@@ -4381,7 +4388,7 @@ static void t_escort_jump_home(void)
  * it): still, 950 points of flak in 4,176 of its frames, the most of the hits 2 to 4 points (409 in the test's 1,800);
  * at 200 kps 132 (57).  The Franklin is the smaller ship (the bursts are counted from the hull): ours still within half
  * the Franklin's 275 and twice the Scimitar's 409, a few bolts; moving, at most a third of that and 150 */
-static int32_t pt_capital_flak(int16_t kps, int16_t *bolts, int16_t *flak)
+static int32_t pt_capital_flak(int16_t kps, int16_t *bolts, int16_t *flak, int16_t bearing, int16_t secs)
 {
     PtDamage whole;
     int32_t total = 0;
@@ -4392,12 +4399,13 @@ static int32_t pt_capital_flak(int16_t kps, int16_t *bolts, int16_t *flak)
     if (!slot_is_ship(1) || gInstanceShipTypes[1] != 0x28)
         return -1;
     pt_damage_get(0, &whole);
-    for (i = 0; i < 120 * SEC; i++) {
+    for (i = 0; i < secs * SEC; i++) {
         const RvVec3 *F = &gOrientationFrontVector[1];
-        int32_t h0, d;
-        gPositionVector[0].x = gPositionVector[1].x - F->x * (2250 * KM / 256);
-        gPositionVector[0].y = gPositionVector[1].y - F->y * (2250 * KM / 256);
-        gPositionVector[0].z = gPositionVector[1].z - F->z * (2250 * KM / 256);
+        const RvVec3 *W = bearing == 1 ? &gOrientationRightVector[1] : F;   /* (behind it, abeam, or ahead) */
+        int32_t h0, d, sign = bearing ? 1 : -1;
+        gPositionVector[0].x = gPositionVector[1].x + sign * W->x * (2250 * KM / 256);
+        gPositionVector[0].y = gPositionVector[1].y + sign * W->y * (2250 * KM / 256);
+        gPositionVector[0].z = gPositionVector[1].z + sign * W->z * (2250 * KM / 256);
         gOrientationFrontVector[0] = *F;   /* (its way, at kps: a target that moves) */
         gVelocityVector[0].x = F->x * KPS_STEP(kps) / 256;
         gVelocityVector[0].y = F->y * KPS_STEP(kps) / 256;
@@ -4428,13 +4436,13 @@ static void t_capital_flak(void)
     static const char __far e_move[] = "the Agasicles did %d points to a player at 200 kps in 2 minutes (%d bursts), %d still: "
         "the old game's Ralari 57 against 409 (at most 150, and a third of the still)";
     int16_t bolts, flak, bolts2, flak2;
-    int32_t still = pt_capital_flak(0, &bolts, &flak), moving;
+    int32_t still = pt_capital_flak(0, &bolts, &flak, 0, 120), moving;
     if (still == -2)
         return;
     REQUIRE(still >= 0, e_ship, (int16_t)still, 0, 0);
     REQUIRE(still >= 140 && still <= 820, e_still, still, bolts, flak);
     REQUIRE(bolts <= 6, e_bolts, bolts, flak, 0);
-    moving = pt_capital_flak(200, &bolts2, &flak2);
+    moving = pt_capital_flak(200, &bolts2, &flak2, 0, 120);
     if (moving < 0)
         return;
     REQUIRE(moving <= 150 && moving * 3 <= still, e_move, moving, flak2, still);
@@ -4466,6 +4474,140 @@ static void t_capital_hull(void)
     before = damagePoints[1];
     (void)do_damage(0, 1, 40, 0);
     REQUIRE(damagePoints[1] - before == 70, e_big, damagePoints[1] - before, 0, 0);
+}
+
+/* an unnamed Nicander in slot 1, bare to its hull, hit with 14 from behind (its rear) or from the front until it dies,
+ * at most `most` hits: how many it took; *by_count: the death came of the hull's count (the fatal hit took at most its
+ * two points' two counts), not outright */
+static int16_t pt_roulette_kill(int16_t behind, int16_t most, int16_t *by_count)
+{
+    const RvShipType __far *t;
+    uint16_t step, before;
+    int16_t i;
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 3000, 0);
+    t = slot_type(1);
+    if (!t || !t->hull_hits)
+        return -1;
+    step = (uint16_t)(((uint32_t)t->hull + t->hull_hits) / (t->hull_hits + 1));
+    *by_count = 0;
+    for (i = 1; i <= most; i++) {
+        const RvVec3 *F = &gOrientationFrontVector[1];
+        RvVec3 at;
+        int32_t off = (behind ? -200 : 200) * KM / 256;
+        at = vec3(gPositionVector[1].x + F->x * off, gPositionVector[1].y + F->y * off, gPositionVector[1].z + F->z * off);
+        SHIELD(1, 0) = SHIELD(1, 1) = 0;
+        ARMOR(1, 0) = ARMOR(1, 1) = ARMOR(1, 2) = ARMOR(1, 3) = 0;
+        before = damagePoints[1];
+        (void)do_damage(0, 1, 14, RV_WHERE(&at));
+        if (shipAiState[1] == 9) {
+            *by_count = t->hull - before <= 2 * step;
+            return i;
+        }
+    }
+    return most;
+}
+
+/* M8.49: an unnamed fighter's hull as the old game's roulette (fighter_roulette, read in its code 2026-11-05): each
+ * point past the armour (a hit of 14: two) falls on one of nine systems; from behind one kills outright (the old
+ * game's hits from behind reach the engines: a Dralthi dies to a few laser hits past its rear armour), from the front
+ * only the hull's count (a Nicander dies past seven, its type's hull_hits) among a gun lost, the gun damage and the
+ * engine flag: a head-on kill takes some twenty laser hits past the armour.  Twelve of each: from behind at most 8 a
+ * kill on average, from the front at least 10 and over twice the other; a front kill came of the hull's count (the
+ * fatal hit took at most two), and a hull count is a step of (hull + 7) / 8 points */
+static void t_fighter_roulette(void)
+{
+    static const char __far e_type[] = "the Nicander has no hull_hits in ships.csv (%d)";
+    static const char __far e_behind[] = "from behind twelve Nicanders bare to the hull died after %d laser hits of 14 in all: 8 a "
+        "kill at most (the old game's kill outright, one point in five)";
+    static const char __far e_front[] = "head on twelve Nicanders bare to the hull died after %d laser hits of 14 in all, %d from "
+        "behind: 10 a kill at least, and over twice the kills from behind (the hull's count, one point in five)";
+    static const char __far e_count[] = "a front kill came outright, not of the hull's count: %d of 12 kills took at most two counts in the fatal hit";
+    static const char __far e_step[] = "a hull count took %d points: (hull %d + 7) / 8 = 14";
+    int16_t i, behind = 0, front = 0, full = 0, got, hf;
+    pt_alone(PT_PLAYER);
+    for (i = 0; i < 12; i++) {
+        got = pt_roulette_kill(1, 200, &hf);
+        REQUIRE(got >= 0, e_type, got, 0, 0);
+        behind = (int16_t)(behind + got);
+    }
+    for (i = 0; i < 12; i++) {
+        got = pt_roulette_kill(0, 200, &hf);
+        front = (int16_t)(front + got);
+        full = (int16_t)(full + hf);
+    }
+    REQUIRE(behind <= 8 * 12, e_behind, behind, 0, 0);
+    REQUIRE(front >= 10 * 12 && front > 2 * behind, e_front, front, behind, 0);
+    REQUIRE(full == 12, e_count, full, 0, 0);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 3000, 0);
+    SHIELD(1, 0) = SHIELD(1, 1) = 0;
+    ARMOR(1, 0) = ARMOR(1, 1) = ARMOR(1, 2) = ARMOR(1, 3) = 0;
+    for (i = 0; i < 200 && damagePoints[1] == 0 && shipAiState[1] != 9; i++) {
+        RvVec3 at = vec3(gPositionVector[1].x, gPositionVector[1].y, gPositionVector[1].z + 200 * KM);
+        (void)do_damage(0, 1, 14, RV_WHERE(&at));
+    }
+    REQUIRE(shipAiState[1] == 9 || damagePoints[1] == 14, e_step, damagePoints[1], slot_type(1)->hull, 0);
+}
+
+/* M8.50: the old game's attack orders (missions.txt prey=KEY, its mission records' byte 0x29: at Enyo 2 its Salthi went
+ * for the Drayman with the player nearer; prey_of): a Nicander ordered at the Ox, the Ox 40,000 km from the player and
+ * the player 12,000 km from it, goes for the Ox; hurt under its profile's share of health (a fighter's 55), it turns on
+ * the nearer player */
+static void t_prey(void)
+{
+    static const char __far e_ships[] = "no Nicander (slot %d) or Ox (slot %d) after the launch";
+    static const char __far e_prey[] = "the Nicander ordered at the Ox targets slot %d (the Ox is %d, the player 0, nearer)";
+    static const char __far e_hurt[] = "its armour gone (health under 55%%) the Nicander still targets slot %d: its orders "
+        "lapse (the player, nearer, is %d km off; the Ox %d)";
+    int16_t nic = -1, ox = -1, s;
+    pt_mission();
+    pt_mship(PT_OX, SIDE_TERRAN, 0, 1, RV_PILOT_NONE);
+    g_tm.ship[g_tm.nship - 1].z = 40000;
+    pt_mship(PT_ENEMY, SIDE_AERA, 0, 1, RV_PILOT_NONE);
+    g_tm.ship[g_tm.nship - 1].z = 12000;
+    g_tm.ship[g_tm.nship - 1].prey = PT_OX + 1;
+    pt_launch(PT_PLAYER);
+    playerCanBeDamaged = 0;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++) {
+        if (slot_is_ship(s) && gInstanceShipTypes[s] == PT_ENEMY)
+            nic = s;
+        if (slot_is_ship(s) && gInstanceShipTypes[s] == PT_OX)
+            ox = s;
+    }
+    REQUIRE(nic > 0 && ox > 0, e_ships, nic, ox, 0);
+    if (!pt_steps(2 * SEC))
+        return;
+    REQUIRE(rvTarget[nic] == ox, e_prey, rvTarget[nic], ox, 0);
+    ARMOR(nic, 0) = ARMOR(nic, 1) = ARMOR(nic, 2) = ARMOR(nic, 3) = 0;   /* (the armour gone: health under 55%) */
+    if (!pt_steps(2 * SEC))
+        return;
+    REQUIRE(rvTarget[nic] == 0, e_hurt, rvTarget[nic], pt_km(0, nic), pt_km(ox, nic));
+    g_camp.player_ship = PT_PLAYER;
+    pt_mission();
+}
+
+/* M8.51: a capital ship's turrets bear all round (the user, 2026-11-05: an Agasicles "seems to only shoot to the front";
+ * its mounts had all sat at the bow: gun_mount spreads them along the hull): a still Franklin held 2,250 km behind it,
+ * abeam and ahead for a minute each takes flak at rates within a factor of three of one another, and some from each */
+static void t_capital_bearings(void)
+{
+    static const char __far e_ship[] = "no Agasicles in slot 1 (%d)";
+    static const char __far e_none[] = "a still player held 2,250 km off an Agasicles (bearing %d: 0 behind, 1 abeam, 2 ahead) took %d "
+        "points in a minute: at least 40";
+    static const char __far e_spread[] = "flak behind %d, abeam %d, ahead %d points in a minute each: not within a factor of three";
+    int32_t pts[3], lo, hi;
+    int16_t b, bolts, flak;
+    for (b = 0; b < 3; b++) {
+        pts[b] = pt_capital_flak(0, &bolts, &flak, b, 60);
+        if (pts[b] == -2)
+            return;
+        REQUIRE(pts[b] >= 0, e_ship, (int16_t)pts[b], 0, 0);
+        REQUIRE(pts[b] >= 40, e_none, b, (int16_t)pts[b], 0);
+    }
+    lo = pts[0] < pts[1] ? pts[0] : pts[1];
+    lo = lo < pts[2] ? lo : pts[2];
+    hi = pts[0] > pts[1] ? pts[0] : pts[1];
+    hi = hi > pts[2] ? hi : pts[2];
+    REQUIRE(hi <= 3 * lo, e_spread, (int16_t)pts[0], (int16_t)pts[1], (int16_t)pts[2]);
 }
 
 static void t_escort_order(void)
@@ -6126,7 +6268,7 @@ static void t_reserve(void)
     SHIELD(1, 0) = SHIELD(1, 1) = 0;
     for (i = 0; i < 4; i++)
         ARMOR(1, i) = 0;
-    (void)pt_hit(0xFFFF, 1, (uint16_t)(slot_type(1)->hull + 5), 1, 0, 0);
+    (void)pt_hit(0xFFFF, 1, 30000, 1, 0, 0);   /* (past its hull many times over: its roulette, M8.49, spends a fifth on the hull) */
     REQUIRE(shipAiState[1] == 9, e_npc, shipAiState[1], 0, 0);
 }
 
@@ -6816,6 +6958,9 @@ static const char __far n_m8_45[] = "M8.45 capital-hull (do_damage, hull_take): 
 static const char __far n_m8_46[] = "M8.46 landing-burner (land_near, carrier_contact): cleared but on the afterburner, no landing, the carrier says so, the hull a ram's; the burner off, it lands";
 static const char __far n_m8_47[] = "M8.47 home-arrive (logic_autopilot): the autopilot home stops 4,000 km off the carrier's hull, facing it, the carrier in the scene";
 static const char __far n_m8_48[] = "M8.48 stay-home (logic_autopilot, form_comes, ship_think): a fighter of ours with role=stay is left by the autopilot and keeps round the carrier; one with no role comes along";
+static const char __far n_m8_49[] = "M8.49 fighter-hull (do_damage, fighter_roulette): an unnamed fighter's hull is the old game's roulette: a few laser hits from behind kill a Nicander, head on it takes over twice as many, past seven hull counts";
+static const char __far n_m8_50[] = "M8.50 prey (prey_of): a Nicander ordered at the Ox (prey=OX) goes for it with the player nearer, and turns on the player once hurt under 55% health";
+static const char __far n_m8_51[] = "M8.51 capital-bearings (gun_mount, ship_think): an Agasicles' flak reaches a still player behind it, abeam and ahead alike";
 static const char __far n_m8_43[] = "M8.43 escort-skip (logic_autopilot, escort_comes): a pick past an escort's next waypoint is the autopilot's, the escort left behind to fly on alone: ENIGMA2's nav 2 picked";
 static const char __far n_m8_42[] = "M8.42 escort-jump-home (logic_autopilot, route_step): ENIGMA2 by the autopilot, the Ox along to each nav point; the player straight home, the Ox still jumps";
 static const char __far n_m8_41[] = "M8.41 escort-linger (route_step, logic_autopilot): ENIGMA2's Ox goes on alone from a player lingering at the launch, and the autopilot to nav 1 brings it along";
@@ -6899,7 +7044,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 },
 };
 
 /* --- the run --- */

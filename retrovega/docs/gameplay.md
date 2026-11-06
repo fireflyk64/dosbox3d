@@ -197,7 +197,7 @@ What the tests expect:
 | M3.1-3.2 shield-front, shield-rear | a hit of 3 on the front (rear) takes only that shield, by at most 3; returns nonzero |
 | M3.3 armour | shields down: a front hit takes only the front armour |
 | M3.4 armour-sides | shields down: a hit on the left takes the left armour, the right the right |
-| M3.5 hull | shields and front armour gone: the hull (`damagePoints`) |
+| M3.5 hull | an enemy with its front shield and armour gone, hit from the front with 3 until its hull takes a count (40 hits at most: an unnamed fighter's hull is the old game's roulette, M8.49): only the hull (damagePoints) changed |
 | M3.6 big-hit | 200 on a fresh Nicander: `shipAiState` 9 within a step; nothing wrapped |
 | M3.7 no-wrap | 100 hits of 3 all round: nothing wraps, the ship dies and stays dead |
 | M3.8 player-safe | `playerCanBeDamaged` 0 protects slot 0 (which a hit otherwise hurts), returning 0 |
@@ -412,6 +412,9 @@ nav 0):
 | M8.46 landing-burner | cleared, flown into the carrier's bow at 300 kps on the afterburner: no landing within the 2,000 km, the carrier says why (`logic_carrier_stopped` 3), the hull a ram's (shields and armour less, stopped dead); the burner off, it lands |
 | M8.47 home-arrive | every waypoint flown, the autopilot home stops 4,000 km off the carrier's hull (within 300), facing it, the carrier back in the scene |
 | M8.48 stay-home | a Franklin with role=stay 2,500 km off the launch and a Gawain with no role 1,500 km off: the autopilot to nav 1 takes the Gawain (within 10,000 km of the player after) and leaves the Franklin (its way from the carrier within 1,000 km of what it was); the player home again, after 60 s with nobody to fight the Franklin is within 6,000 km of the carrier |
+| M8.49 fighter-hull | an unnamed Nicander bare to its hull, hit with 14 from behind twelve times over: dead within 8 hits each on average (the old game's roulette: a point in five kills outright from behind); head on at least 10 and over twice that, every one of the hull's count (seven, the type's `hull_hits`), a count (hull + 7) / 8 points |
+| M8.50 prey | a Nicander ordered at the Ox (`prey=OX`), the Ox 40,000 km off and the player 12,000: it targets the Ox; its armour gone (health under 55%), the player |
+| M8.51 capital-bearings | a still Franklin held 2,250 km behind an Agasicles, abeam and ahead, a minute each: 40 points of flak at least from each bearing, the three within a factor of three |
 | M8.43 escort-skip | ENIGMA2 at the launch, nav 2 picked: the autopilot goes that way (to the field's hidden point on the line), the Ox left over 20,000 km behind; the player at nav 2, the Ox flies on alone, 5,000 km and more nearer nav 2 in 60 s |
 | M8.42 escort-jump-home | ENIGMA2 by the autopilot, each wave killed: the Ox within 5,000 km of the player at nav 1 and at nav 2, its jump's; the player straight home by the autopilot, the Ox still flies in and jumps within 150 s, and the escort is not lost |
 | M8.23 way-out | `camp_way_out`: a debrief's `system=`: nothing before the system's last mission; then good or bad as `camp_resolve` will have it |
@@ -631,7 +634,7 @@ into `RVGAME.DAT` (run by `build.sh`, and by `host/build.sh` for the harness).
 | `type` | `patrol` | the mission's kind: `RvMission.type`, for your `step_mission` | only `patrol` exists |
 | `music` | a cue | the briefing's music | |
 | `nav` | `N x y z [hidden] [reach=KM]` | nav point N at x, y, z km from the launch point (nav 0), the old game's own map; within `reach` (15,000 if none) it is reached and the autopilot stops there | N 1..15, each once; ±1,000,000 km; reach 1,000..60,000; 8 a mission |
-| `ship` | `TYPE side navN [count=N] [pilot=KEY] [role=out\|in\|home] [jump=N] [turrets=off]` | `count` ships of a type (a ships.csv key, `player` or `wingman`) of a side (0 Terran, 1 Aera, 2 Rlaan) at a nav point, with a cast pilot | 12 lines, 64 ships in all |
+| `ship` | `TYPE side navN [count=N] [pilot=KEY] [role=out\|in\|home] [jump=N] [turrets=off] [prey=KEY]` | `count` ships of a type (a ships.csv key, `player` or `wingman`) of a side (0 Terran, 1 Aera, 2 Rlaan) at a nav point, with a cast pilot; `prey` the type they are ordered to attack (the old game's orders: logic.c `prey_of`) | 12 lines, 64 ships in all |
 | `field` | `asteroid\|mine x z radius [density=N]` | an asteroid or mine field, km (rocks.c flies it) | 4 |
 | `bar`, `lounge`, `talk` | | who sits in the rooms, and what they say | |
 

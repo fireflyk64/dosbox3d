@@ -452,6 +452,66 @@ and the moving one at some 6 frames of travel. Ours (logic.c): the turrets' turn
 (smaller than the Scimitar: the bursts count from the hull) at 352 points still and 36 at 200 kps in 1,800 frames,
 the old 409 and 57 on its Scimitar.
 
+## The fighters' hulls (the NPC damage routine read, 2026-11-05)
+
+The user: the Aera fighters "are effectively assembled from tissue paper", an Ariston "can be blasted with a few shots"
+where the Krant took "precious tens of seconds". Ours spent a hit past the armour on the hull's points (a Nicander's
+182: 13 laser hits; an Ariston's 84: 6). The old game's NPC routine (ovr143:0EDB, called from do_damage with the slot,
+the quantity past the armour and the shield side) does something else: an unnamed ship's hit is max(1, quantity / 6)
+points (a named pilot's max(1, quantity / 40), its last point always the hull), and each point is spent on one of nine
+systems by rand(9), the loop going round until the points are spent:
+
+| system | what | spends | only when |
+|---|---|---|---|
+| 0 | the core counter (C8B8) down one | yes | |
+| 1 | something more (0x460:B6) | yes | the hit from behind |
+| 2 | delayedDespawn: dead outright | | the hit from behind |
+| 3 | both shields' maxima to 0 (the generator) | no | |
+| 4 | the hull counter (D22C) up one; dead when it passes the ship table's +0x10 | yes | |
+| 5 | a gun of the ship's list destroyed, by the dice | yes | the hit from the front, a gun left |
+| 6 | BD0E up one, to 5 | yes | the hit from the front |
+| 7 | the engine (the speed set from the table; dead if the ship then has no speed) | yes | the hit from behind |
+| 8 | the flag BFD6 set to 0xFF | yes | the hit from the front, once |
+
+The side: do_damage's vector is the bolt's way (hitByWeapon ovr141:209D copies the bolt's velocity; the layer's
+`!hit` says so too), its dot with the ship's front over 0 for a bolt flying the ship's own way, that is one that struck
+from behind; that picks shield index 1 (the aft one: the table's +5D, the Rapier's 75 behind its 80) and is the
+routine's side flag. An earlier note here had the kill "from the front": wrong. The hull counts (+0x10): Hornet 5,
+Rapier 6, Scimitar 7, Raptor 8, Salthi 5, Dralthi 7, Krant 6, Gratha 7, Jalthi 7 (the capital ships' 60 to 560 are
+counts too, by the other rule above). So from behind a point in five kills a fighter outright (the systems 3, 5, 6, 8
+roll again), and a laser hit of 14, two points, kills one in three times past the rear armour: a Dralthi dies to three
+such hits, a Krant to three past its thickest side (rear shield 80, rear armour 100: the whaling). Head on nothing
+kills outright: the hull's count climbs a point in five or so (the gun, gun damage and flag systems spend while they
+last), eight counts for a Dralthi, some twenty laser hits.
+
+Ours now (`fighter_roulette`, ships.csv `hull_hits`; M8.49): the same nine systems with the fixed block's coreHp,
+gunDamage, engineFlag, the guns' destroyed bits and SHIELD_MAX, the hull a count of (hull + hull_hits) / (hull_hits + 1)
+points, the side the hit's place before or behind the ship's middle (ours keeps no bolt direction in do_damage; a bolt
+striking the rear half flew the ship's way). The shields and armour of every mapped type are the table's now (the
+Agis 35/35 30/20/15/15, the Ariston 80/80 90/100/80/80, the Convolution 100/95 140/120/100/100, the Cleomenes 160/160
+200/100/170/170, the Gawain 70/70 100/90/80/80, the Lancelot 80/75 60/55/50/50), their guns the table's counterparts
+(the Krant's two lasers, the Gratha's two lasers and two mass drivers, the Jalthi's six: PH3 for a laser, PH2 for a
+neutron or a mass driver). Still apart, the user's call: the Schroedinger's three lasers against the Hornet's two, and
+our test pilot's hit rate (compare.sh hunted: the three Nicanders dead at 19, 37 and 46 s; the old game's Dralthi
+lived 150-190 s under the same rig, its Hornet hitting 3.5% with two guns against ours 7.6% with three).
+
+## Orders (the mission records' attack orders, 2026-11-05)
+
+The user: in Enigma 2 "the ox is nigh unkillable and the aera minds do not make progress before it can jump out".
+The Ox's stats are the Drayman's to the word (above), and alone against Nicanders in rvsim it dies in 88-105 s (one
+Nicander or three: they get in each other's way); with the wing about, half the Nicanders raided it and it was at
+40% when the wing had killed them. The old game at Enyo 2's nav 1 (run-old.sh 1 1, the dump at 60 s): both Salthi had
+the Drayman (slot 6) as their target with the player 8,000 km off and the Drayman further, and in 118 s of their
+passes it took 108 hits of 12-24, its shields and three armour sides gone and 39 of its 60 counts (the shields came
+back between passes: 3.75 points a side a second). The order is in the mission record: byte +0x29 is the mission ship
+a behaviour-2 ship attacks (the spawn, ovr145:108C, copies it to the slot's D3E6; ovr163:0373 makes it the target
+while divide_armor, 74 for the four armour sides weighted 23/27/12/12 and 26 for the hull's count, is over 70 - 15 x
+min(class, 4), the class byte +0x20); a wingman (behaviour 4) copies its leader's. Of the 44 missions dumped, 72
+enemy ships carry such an order, at the Draymen, Exeters, the Claw, a captured Ralari and now and then the player's
+own ship. missions.txt has them as `prey=KEY` (54 lines: 32 where the type and nav point matched the dump, 22 more by
+hand where the mission's enemies had moved; port.py reads the byte as `target`), logic.c `prey_of` holds the order
+while `health_pct` is at least 55 for a fighter (40 heavy, 10 an ace). M8.50.
+
 ## What is still to measure
 
 The other types (the Salthi at nav 3; Krant, Gratha, Jalthi, the capital ships' guns on each other in the later

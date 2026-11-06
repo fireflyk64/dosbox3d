@@ -238,6 +238,34 @@ an Agasicles dies at its 90th laser hit (M8.45).
 A mission's `turrets=off` (ship line; `ship_think`) keeps them silent: the home carrier has it where enemies start at
 nav 0, so the player has that fight to fly.
 
+The turrets' mounts sit along the hull, the i-th of n from the stern to the bow (`gun_mount`; every mount had sat at the
+bow, so a destroyer's bolts all came from its front: the user, 2026-11-05). A burst is drawn as a puff of 110 km
+(`fx_flak`, the user never saw the 45-km ones). The test holds a still player behind an Agasicles, abeam and ahead: the
+flak reaches all three alike (M8.51).
+
+## The fighters' hulls: the old game's roulette
+
+An unnamed fighter's hull is the old game's (its code read 2026-11-05, ovr143:0EDB; `fighter_roulette`): a hit past the
+armour is max(1, left / 6) points, and each point falls on one of nine systems by `game_rand`: the hull (4), a count,
+dead past the type's `hull_hits` (ships.csv, the old table's: Dralthi 7, Krant 6, Salthi 5, Gratha and Jalthi 7; a
+count is (hull + hull_hits) / (hull_hits + 1) of damagePoints); the core (0), a point of `coreHp`; from behind (the hit
+behind its middle: the old game tested the bolt's way against the nose) one that kills outright (2), the engine (7) and
+one more (1); from the front a gun lost (5, `GUN_DESTROYED` on one of those left), `gunDamage` up to 5 (6) and the
+`engineFlag` (8), each while there is one to lose; the shields' generator (3) puts both `SHIELD_MAX` to 0 for good and
+spends nothing. A point that falls where nothing is to spend is rolled again (`ROULETTE_ROLLS` caps it). So a Nicander
+dies to a few laser hits past its rear armour and to some twenty head on (M8.49); the Krant's rear is its thickest side
+(shield 80, armour 100), which is the "whaling" the user remembers. A named pilot's ship keeps `NAMED_HULL_HITS`; a
+capital ship its count; a human's seat takes the hit itself.
+
+## Orders: the prey
+
+A ship line's `prey=KEY` is the old game's attack order (its mission records' byte 0x29, behaviour 2, read 2026-11-05:
+tests/wc1/README.md "Orders"; the port wrote 54 of them, every escort and carrier raid of the campaign). `prey_of`: the
+nearest living ship of that type of another side is the target, wherever it is and whoever is nearer, while the ship's
+`health_pct` is at least `k_prey_pct` of its profile (the old game's 70 - 15 x class, 0 to 4: a fighter's 55, an ace's
+10); below it the orders lapse and the usual choice stands. A ship at its prey counts as a raider of it (`raiding`);
+without an order, half the fighters near an escort target raid it (`raid_target`). M8.50.
+
 ## The taunt
 
 The comm menu's taunt (`logic_taunt`, an enemy fighter as the player's target) turns it on the player for 20 s: its
