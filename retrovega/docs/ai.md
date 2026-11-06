@@ -237,6 +237,12 @@ an Agasicles dies at its 90th laser hit (M8.45).
 A Terran capital ship calls mayday on 35 in 1,000 of the hits through its armour (the old game's odds, read in its
 capital hull routine: so the Claw's six maydays to the Drayman's one, by their counts), its type's `mayday` line in
 ships.csv, relayed in the carrier's voice on the right VDU (`logic_on_mayday`, flight.c `comm_mayday`; M8.52).
+The old game's Kilrathi side of that routine is a call for help: a capital ship hurt through its armour by an attacker
+that no ship of another side has within 10,000 km (the attacker unengaged) turns every ship of its side on the
+attacker on a coin's toss. Ours (`capital_help`, `HELP_KM`): the AI fighters of the hurt ship's side, their minds'
+target set, which the orders, a raid or a nearer enemy may take back as any target; in the old code the source had to
+be a ship slot, which its bolts are not, so its guns hardly ever rang the bell, where ours rings it for any shooter
+(M8.54).
 
 A mission's `turrets=off` (ship line; `ship_think`) keeps them silent: the home carrier has it where enemies start at
 nav 0, so the player has that fight to fly.

@@ -423,6 +423,7 @@ nav 0):
 | M8.20 jump-told | the Ox put within reach of its jump: `logic_on_jump` called once, for its slot, friendly; it is gone and it is no kill |
 | M8.15 landing-contact | not cleared, into the bow: stopped, speed 0, shields whole; turned away it flies off; cleared, from its beam: `missionStatus` 1 within 2,000 km of the hull (any side: the bow's own rule went 2026-11-04), `victoryPoints` 0 with the patrol undone and nonzero with it done |
 | M8.53 autoland | the patrol: at the launch, with nav 2 unflown, and with both flown but 30,000 km out the trigger's landing is not ready; both flown, their enemies dead, 3,000 km off the carrier it is (the home slot), and logic_autoland lands (status 1, landed on the carrier) |
+| M8.54 capital-help | an Agasicles 30,000 km from a still player (beyond its Nicanders' engage distance), three Nicanders beside it, hit by the player's ship 20 times through its armour: at least one Nicander targets the player; with a Nicander 5,000 km from the player none does |
 
 The tests take the player to a nav point by moving it (as the autopilot would) and, but for M8.15, land by setting
 `missionStatus = 1`, as the logic does when a cleared player comes within 2,000 km of the carrier.

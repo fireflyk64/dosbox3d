@@ -4559,6 +4559,54 @@ static uint16_t hull_take(int16_t s, uint16_t left, const RvShipType __far *t, i
     return q > 0xFFFFUL ? 0xFFFF : (uint16_t)q;
 }
 
+/* the ship behind a do_damage source: a bolt's or a missile's parent, a ship itself; -1 none (the layer's replay may
+ * name 0xFFFF) */
+static int16_t shooter_of(uint16_t src)
+{
+    if (!RV_SLOT_OK(src))
+        return -1;
+    if (src > RV_MAX_SHIP_SLOT || maybeEntityType[src] == ET_MISSILE)
+        return parentShipForShip[src] != 0xFF && slot_is_ship(parentShipForShip[src]) ? (int16_t)parentShipForShip[src] : -1;
+    return slot_is_ship((int16_t)src) ? (int16_t)src : -1;
+}
+
+/* a capital ship's call for help, the old game's Kilrathi side of its capital hull routine (ovr143:0F2A, 0E73, read
+ * 2026-11-06; the user: "lets do that aera capital ship hurting sending fighters to help"): hurt through its armour by
+ * a ship that no ship of another side has within HELP_KM of it (checkIfAnyShipsInRange: the attacker is unengaged),
+ * every ship of its own side turns on the attacker on a coin's toss.  (In the old code the source had to be a ship
+ * slot, which its bolts are not, so its guns hardly ever rang the bell; ours rings it for any shooter.)  Ours: the AI
+ * fighters of the hurt ship's side, their minds' target set; the orders (prey_of), a raid and a nearer enemy by two
+ * thirds may take it back as they do any target.  The coins are tossed whoever the shooter is: the gameplay stream
+ * must run the same on every machine */
+#define HELP_KM 10000
+static void capital_help(int16_t dst, uint16_t src)
+{
+    static const char __far s_help[] = "logic: frame %u: slot %d (a capital ship, side %d) hurt by slot %d: %d of its fighters turn on it";
+    int16_t by = shooter_of(src), k, n = 0, near_ = 0;
+    uint8_t side = commAnimInfo[dst];
+    if (by >= 0) {
+        if (by == dst || commAnimInfo[by] == side)
+            by = -1;
+        else
+            for (k = 0; k < NUM_SHIP_SLOTS && !near_; k++)
+                if (k != by && slot_is_ship(k) && shipAiState[k] != 9 && commAnimInfo[k] != commAnimInfo[by]
+                    && km_between(by, k) < HELP_KM)
+                    near_ = 1;
+    }
+    for (k = 0; k < NUM_SHIP_SLOTS; k++) {
+        int16_t coin = (int16_t)(game_rand() & 1);
+        if (coin && by >= 0 && !near_ && k != dst && slot_is_ship(k) && shipAiState[k] != 9 && commAnimInfo[k] == side
+            && maybeEntityType[k] == ET_SHIP && rvController[k] == CTL_AI && !(rvFlags[k] & RV_FLAG_HUMAN)
+            && !g_mind[k].leaving) {
+            g_mind[k].target = (uint8_t)by;
+            rvTarget[k] = (uint8_t)by;
+            n++;
+        }
+    }
+    if (n)
+        rv_notef(s_help, frameCounter, dst, side, by, n);
+}
+
 uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, uint16_t where)
 {
     const RvShipType __far *t;
@@ -4579,6 +4627,8 @@ uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, 
         if (!player)
             left = hull_take((int16_t)dst, left, t, sh == 1);   /* (a named pilot's: a share of the hull a hit; an
                                                        unnamed fighter's: the old game's roulette; a capital's: a count) */
+        if (!player && maybeEntityType[dst] == ET_CAPSHIP)
+            capital_help((int16_t)dst, src);   /* (its side's fighters on the attacker, by the coins) */
         /* the hull's last point is not the player's end: the reserve takes what is left over (damage.h) */
         if (player && left >= room && damage_reserve_take((uint16_t)(left - room), t->hull)) {
             damagePoints[dst] = t->hull;
