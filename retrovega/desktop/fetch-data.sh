@@ -10,7 +10,7 @@ set -euo pipefail
 [ $# = 1 ] || { echo "usage: desktop/fetch-data.sh DIR"; exit 2; }
 dir=$1
 site=${SITE:-https://fireflyk64.github.io/rv}
-GAME_SHA256=6d6afcdd0868b2ae9e5f1c4bca80b5e30143b09870438d12e08d85164c8afcf4    # game.tar.gz
+GAME_SHA256=9b5ba934bc9f343288eee0968106303c84d513d6bd7c23db15515dd530a67cbd    # game.tar.gz
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 curl -fsSL --proto =https -o "$tmp/game.tar.gz" "$site/game.tar.gz"
