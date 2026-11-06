@@ -452,6 +452,11 @@ static void populate_player_end(PlayerEnd *end, int status) {
 // waiting on the other player to select ship stuff with the tech, should say waiting for other player".  Said in the
 // log too (the page shows it: web/wc.js noticeWaiting).
 static std::string g_waitNote;
+// How long a wait lasts before the note says so: a launch's waits at once (half a second: not every hiccup of the
+// link), a wait in flight only after kWaitNoteMs (the user, 2026-11-06, after a few wireless glitches: "the host got
+// many 'waiting for guest' messages.... we should have that kind of waiting notice give a solid 10-15 seconds before
+// popping up breaking immersion. I'm sure the people will understand it is the network")
+static const double kLaunchNoteMs = 500.0, kWaitNoteMs = 12000.0;
 static void set_wait_note(const std::string &note) {
     if (note == g_waitNote) {
         return;
@@ -2433,8 +2438,8 @@ public:
     // For ClientLagJob: takes in what has arrived; true while a client is
     // still too far behind for the server to go on.
     // *who: the first waited for, as the note says it ("Waiting for GUEST to launch...": no frame of its since its
-    // start state went, its pilot still on the deck)
-    bool clients_behind(std::string *who = NULL) {
+    // start state went, its pilot still on the deck; *launching says which it is)
+    bool clients_behind(std::string *who = NULL, bool *launching = NULL) {
         bool waiting = false;
         for (size_t i = 0; i < clients_.size(); i++) {
             RemoteClient *c = clients_[i];
@@ -2454,6 +2459,9 @@ public:
                     std::string name = c->callsign.empty() ? std::string("the other player") : c->callsign;
                     *who = c->lastFrameAt < c->startSentAt ? "Waiting for " + name + " to launch..."
                                                            : "Waiting for " + name + "...";
+                    if (launching) {
+                        *launching = c->lastFrameAt < c->startSentAt;
+                    }
                 }
                 waiting = true;
             }
@@ -3512,13 +3520,16 @@ private:
 
 bool ClientLagJob::start() {
     std::string note;
-    if (g_session != server_ || !server_->clients_behind(&note)) {
+    bool launching = false;
+    if (g_session != server_ || !server_->clients_behind(&note, &launching)) {
         done_ = true;
         set_wait_note("");
         perf_idle_wait(PIC_FullIndex() - began_);
         return false;
     }
-    if (PIC_FullIndex() - began_ > 500.0) {   // (half a second: not every hiccup of the link)
+    // (a guest still on the deck: said at once; a guest's link glitching in flight: only after a good while, the
+    // picture stands still meanwhile and the players know the network for what it is)
+    if (PIC_FullIndex() - began_ > (launching ? kLaunchNoteMs : kWaitNoteMs)) {
         set_wait_note(note);
     }
     idle_call();
@@ -3532,7 +3543,7 @@ bool StartStateJob::start() {
         perf_idle_wait(PIC_FullIndex() - began_);
         return false;
     }
-    if (PIC_FullIndex() - began_ > 500.0) {
+    if (PIC_FullIndex() - began_ > kLaunchNoteMs) {
         set_wait_note("Waiting for the host to launch...");
     }
     idle_call();
