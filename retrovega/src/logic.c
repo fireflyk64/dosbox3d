@@ -1207,13 +1207,30 @@ static void fly_ahead(int16_t s)
     gVelocityVector[s] = vec3(FIX_MUL(F->x, step), FIX_MUL(F->y, step), FIX_MUL(F->z, step));
 }
 
-/* where a gun record's mount is (positions): across and up in 32nds of the half box, and the nose ahead */
+/* where a gun record's mount is (positions): across and up in 32nds of the half box, and the nose ahead; a capital
+ * ship's turrets along its hull instead, the i-th of n from the stern to the bow (every one had sat at the bow, so a
+ * destroyer's bolts all came from its front: the user, 2026-11-05, "it seems to only shoot to the front") */
 static const RvShipType __far* gun_mount(int16_t s, int16_t g, RvVec3 *out)
 {
     const RvShipType __far *t = slot_type(s);
     int32_t h = collide_half(s), ax = (int32_t)GUN_MOUNT_X(s, g) * (h / 32), ay = (int32_t)GUN_MOUNT_Y(s, g) * (h / 32);
     int32_t az = t ? (int32_t)t->hit[2] * (h / 127) : h / 2;
     const RvVec3 *R = &gOrientationRightVector[s], *U = &gOrientationUpVector[s], *F = &gOrientationFrontVector[s];
+    if (t && maybeEntityType[s] == ET_CAPSHIP) {
+        const RvWeapon __far *w = weapon(GUN_TYPE(s, g));
+        if (w && w->kind == RV_WK_TURRET) {
+            int16_t i = 0, n = 0, k;
+            for (k = 0; k < GUN_COUNT(s) && k < 16; k++) {
+                const RvWeapon __far *wk = weapon(GUN_TYPE(s, k));
+                if (wk && wk->kind == RV_WK_TURRET) {
+                    n++;
+                    if (k < g)
+                        i++;
+                }
+            }
+            az = az * (2 * i + 1 - n) / (n ? n : 1);
+        }
+    }
     out->x = gPositionVector[s].x + FIX_MUL(R->x, ax) + FIX_MUL(U->x, ay) + FIX_MUL(F->x, az);
     out->y = gPositionVector[s].y + FIX_MUL(R->y, ax) + FIX_MUL(U->y, ay) + FIX_MUL(F->y, az);
     out->z = gPositionVector[s].z + FIX_MUL(R->z, ax) + FIX_MUL(U->z, ay) + FIX_MUL(F->z, az);

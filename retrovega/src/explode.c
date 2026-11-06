@@ -62,7 +62,8 @@ static const struct { uint8_t life, sparks, debris, ball; } __far k_kind[BOOM_KI
     { 16, 0, 0, 0 },                    /* a shield's haze (haze; its life by its strength) */
     { 24, 0, 0, 0 },                    /* a ship's jump: a star (jump_star) */
     { 210, 0, 8, 0 },                   /* wreck fragments: seven seconds, generated in world space */
-    { 12, 5, 0, 1 },                    /* a capital ship's flak burst: a small puff (FLAK_PUFFS at once) */
+    { 18, 8, 0, 1 },                    /* a capital ship's flak burst: a puff of 0.6 s (FLAK_PUFFS at once; the user never saw
+                                           the 45-km, 12-step ones of 2026-11-05: fx_flak's 110 km) */
 };
 /* the haze's colours, cool to hot: light blues to white, from the entries every cockpit's palette keeps */
 static const uint8_t __far k_shield[6] = { 92, 94, 95, 79, 14, 143 };

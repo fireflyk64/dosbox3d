@@ -450,12 +450,14 @@ static int16_t shield_takes(int16_t slot, const RvVec3 *where, uint16_t damage)
     return damage <= have;
 }
 
-/* a capital ship's flak burst: a small puff where it burst, still (the old game's grey bursts about a fighter near a
- * capital ship; explode.c keeps a few at once and never lets them take another explosion's place) */
+/* a capital ship's flak burst: a puff where it burst, still (the old game's bursts about a fighter near a capital
+ * ship, which the user remembers from its Ralari fights; explode.c keeps a few at once and never lets them take another
+ * explosion's place).  FLAK_PUFF_KM: at 45 the user never saw one (2026-11-05: a 7-pixel flicker at 2,000 km) */
+#define FLAK_PUFF_KM 110
 void fx_flak(const RvVec3 *at)
 {
     static const RvVec3 still = { 0, 0, 0 };
-    explode_add(at, &still, 45, BOOM_FLAK, 0, (uint16_t)(frameCounter * 13 + (uint16_t)at->x));
+    explode_add(at, &still, FLAK_PUFF_KM, BOOM_FLAK, 0, (uint16_t)(frameCounter * 13 + (uint16_t)at->x));
 }
 
 void fx_hit(int16_t slot, const RvVec3 *where, int16_t owner, uint16_t damage)
