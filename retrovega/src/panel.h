@@ -33,6 +33,7 @@ typedef struct {
     uint8_t digit[3];                   /* the frequency knobs as they stand (they step to the channel's) */
     uint8_t talking;                    /* a transmission coming in */
     uint8_t lock, warn, burning, lights, autopilot_ready, target_hot;
+    unsigned long warn_at;              /* clock240() when a new warning came up: the lamp blinks WARN_BLINK, then is lit */
     uint8_t lock_pct, lock_kind;        /* the missile lock building, 0 .. 100, and the chosen missile's seeker
                                            (RV_LOCK_*: none a dumbfire); logic.c's lock_tick */
     int16_t target;                     /* its slot, -1 none */

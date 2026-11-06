@@ -2237,10 +2237,23 @@ static void systems_tick(void)
     g_sys.hull = t && t->hull ? 100 - (int)((long)damagePoints[0] * 100 / t->hull) : 100;
     if (g_sys.hull < 0) g_sys.hull = 0;
     g_sys.reserve = t && damage_in_reserve() ? damage_reserve_pct(t->hull) : -1;
-    g_sys.warn = rvCockpitDamage != 0 || (SHIELD_MAX(0, 0) && SHIELD(0, 0) * 4 < SHIELD_MAX(0, 0))
-                 || (SHIELD_MAX(0, 1) && SHIELD(0, 1) * 4 < SHIELD_MAX(0, 1));
-    for (k = 0; k < SYS_COUNT && !g_sys.warn; k++)
-        g_sys.warn = sys_level((int16_t)k) != 0;
+    {   /* the master warning: anything wrong (the cockpit hurt, a shield under a quarter, a system damaged); a warning
+           that was not there a moment ago starts its lamp blinking again (panel.c WARN_BLINK) */
+        static unsigned long __far was_cp, was_sys;
+        static uint8_t __far was_sh;
+        unsigned long sys = 0;
+        uint8_t sh = (uint8_t)((SHIELD_MAX(0, 0) && SHIELD(0, 0) * 4 < SHIELD_MAX(0, 0))
+                               | (SHIELD_MAX(0, 1) && SHIELD(0, 1) * 4 < SHIELD_MAX(0, 1)) << 1);
+        for (k = 0; k < SYS_COUNT && k < 32; k++)
+            if (sys_level((int16_t)k) != 0)
+                sys |= 1UL << k;
+        if ((rvCockpitDamage & ~was_cp) || (sys & ~was_sys) || (sh & ~was_sh))
+            g_sys.warn_at = clock240();
+        was_cp = rvCockpitDamage;
+        was_sys = sys;
+        was_sh = sh;
+        g_sys.warn = rvCockpitDamage != 0 || sh != 0 || sys != 0;
+    }
     /* the running lights: off under EMCON OFF or with the power plant damaged; a hit flickers them */
     if (shield < g_shield_was)
         g_flicker = 8;

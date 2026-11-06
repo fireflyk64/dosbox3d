@@ -954,8 +954,10 @@ open burns a little, the afterburner much more, so a Schroedinger's tank is
 65 s of afterburner, a Pacifier's 97, and 44 minutes of throttle, at its 15 frames a second), eject (Ctrl+E twice within two seconds, or the handle: the mission
 ends ejected; none with the ejector wrecked). The LOCK lamp is the missile
 lock (logic.c's `lock_tick`: the chosen missile's seeker on the target,
-below); MASTER WARN blinks for a damaged system or a shield under a
-quarter. The radio tunes itself to
+below); MASTER WARN is lit for a damaged system, the cockpit hurt or a
+shield under a quarter, blinking for 5 s whenever a warning is new and then
+steady (the user, 2026-11-05: "Blink, then steady"; it had blinked for the
+rest of a flight after the first hit). The radio tunes itself to
 whoever starts talking (WING 267 MHz for a pilot, GUARD 243 for an
 alien's hail: the real military distress frequency; CARRIER 315 for the
 carrier), its digit knobs stepping there a notch every third frame. The

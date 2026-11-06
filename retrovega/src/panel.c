@@ -179,6 +179,8 @@ int panel_has(int fn)
     return 0;
 }
 
+#define WARN_BLINK (5 * 240)            /* clock240's: a new warning's blinking, then the lamp steady */
+
 static int blink(int hz2)               /* on and off hz2 / 2 times a second */
 {
     return (int)((clock240() * hz2 / 240) & 1);
@@ -195,7 +197,10 @@ static int state(const RvPanelControl __far *p, const CockpitState *st)
     int a = p->arg, n = p->flags ? p->flags : 1;
     switch (p->fn) {
     case RV_PF_LOCK: return g_sys.lock;
-    case RV_PF_WARN: return g_sys.warn && blink(g_sys.reserve >= 0 ? 12 : 4);   /* (the hull gone: frantic) */
+    case RV_PF_WARN:                    /* (the master warning: it blinks while a warning is new, then is lit, as a master
+                                           caution seen; the hull gone, frantic for good.  The user, 2026-11-05: it had
+                                           blinked for the rest of a flight after the first hit, "Blink, then steady") */
+        return g_sys.warn && (g_sys.reserve >= 0 ? blink(12) : clock240() - g_sys.warn_at < WARN_BLINK ? blink(4) : 1);
     case RV_PF_AB_LAMP: return g_sys.burning;
     case RV_PF_NAV_LAMP: return !(st->damage >> 12 & 1) && (!g_sys.autopilot_ready || blink(2));
     case RV_PF_COM_LAMP: return g_sys.talking && sys_level(SYS_INTERCOM) < SYS_WRECKED;
