@@ -166,15 +166,35 @@ def laser(pitch=1.0, dur=0.20):
     return echo(drive(body + 0.15 * click, 1.15), 55, 0.22)
 
 
-def particle(pitch=1.0, dur=0.28, seed=2):
-    """(2026-11-05, the user's "piercing": its ring modulator down from 2,700 Hz to 1,500, the buzz from 2.8 kHz, not
-    4.2, and less resonant, the drive gentler)"""
+def ricochet(f0, f1, tau, dur, wob=38.0, seed=41):
+    """an old western's ricochet: a whine gliding down as the slug tumbles away (its pitch wobbling, its level
+    fluttering), a breath of air along it"""
     t = tl(dur)
-    f = sweep(t, 900 * pitch, 160 * pitch, 0.08)
-    sq = svf(pulse(f, 0.5), 2200, 0.8) * sine(1500 * pitch + 0 * t)
-    buzz = svf(noise(t, seed), sweep(t, 2800, 600, 0.07), 1.6, 'bp')
-    x = (0.6 * sq + 0.8 * buzz) * env(t, 0.002, 0.09)
-    return echo(drive(x, 1.6), 60, 0.2)
+    f = sweep(t, f0, f1, tau) * (1 + 0.03 * np.sin(2 * math.pi * wob * t))
+    tone = sine(f) + 0.3 * sine(f * 2.01) + 0.12 * sine(f * 2.98)
+    flutter = 0.7 + 0.3 * np.sin(2 * math.pi * (wob * 0.8) * t + 1.0)
+    air = svf(noise(t, seed), np.clip(f, 300, 3300), 5.0, 'bp') * 0.5
+    return (0.6 * tone + air) * flutter * env(t, 0.003, tau * 1.1)
+
+
+def sparkle():
+    """an arc and its spits, soft: an arc in a 2.4 kHz band, a few spits, a low buzz (the particle cannon's impact)"""
+    t = tl(0.38)
+    arc = svf(noise(t, 31), 2400, 1.3, 'bp') * env(t, 0.001, 0.07) * 1.8
+    spit = crackle(t, 1200, 32, 0.14) * 0.5
+    buzz = svf(pulse(118 + 0 * t, 0.3), 1200, 0.8) * env(t, 0.002, 0.06) * 0.5
+    return drive(arc + spit + buzz, 1.4)
+
+
+def particle(pitch=1.0, tau=0.22, dur=0.65):
+    """the particle cannon: a western's ricochet off a spark (the user, 2026-11-05, of a ricochet tried for the spark:
+    "the richochet sparkle sound would be perfect for particle cannons", and of three: "B sounds good"): the sparkle, a
+    ping, then the whine from 3 kHz down to 650 Hz over two thirds of a second.  (Until then a square ring-modulated
+    into a zap; the turret's is this an octave down)"""
+    t = tl(0.06)
+    ping = sine(sweep(t, 3200 * pitch, 2600 * pitch, 0.03)) * env(t, 0.001, 0.015)
+    whine = np.concatenate([np.zeros(int(SR * 0.01)), ricochet(3000 * pitch, 650 * pitch, tau, dur)])
+    return drive(mix(0.8 * sparkle(), 0.4 * ping, 0.9 * whine), 1.2)
 
 
 def ion():
@@ -351,14 +371,29 @@ def hit_hull():
     return drive(crunch + thud + rattle, 1.4)
 
 
+def crackle_tone(t, rate, seed, decay, freqs, q):
+    """sparse clicks, as crackle's, each ringing at one of a few pitches: a tink, not a tick"""
+    rng = np.random.default_rng(seed)
+    out = np.zeros(len(t))
+    hits = rng.random(len(t)) < rate / SR * np.exp(-t / decay)
+    for k, f in enumerate(freqs):
+        c = np.zeros(len(t))
+        pick = hits & (rng.integers(0, len(freqs), len(t)) == k)
+        c[pick] = rng.uniform(-1, 1, pick.sum())
+        out += svf(c, f, q, 'bp')
+    return out * 3
+
+
 def spark():
-    """(2026-11-05: an arc in a 2.4 kHz band, not a sharp 3.4 kHz one; fewer spits; the buzz a low pulse, not
-    ring-modulated by 1.9 kHz; the drive gentler)"""
+    """a system breaking in the cockpit.  The user, 2026-11-05: the first spark (a sharp arc at 3.4 kHz, spits, a buzz
+    ring-modulated by 1.9 kHz) is "better but maybe quieter more subtle", "a bit more tone to the crackle": that one
+    again, most of its spits ringing at 2.2, 2.9 or 3.3 kHz, far quieter (sounds.csv: at the laser's level, it was 15
+    dB over), and through the muffle as every effect"""
     t = tl(0.38)
-    arc = svf(noise(t, 31), 2400, 1.3, 'bp') * env(t, 0.001, 0.07) * 1.8
-    spit = crackle(t, 1200, 32, 0.14) * 0.5
-    buzz = svf(pulse(118 + 0 * t, 0.3), 1200, 0.8) * env(t, 0.002, 0.06) * 0.5
-    return drive(arc + spit + buzz, 1.4)
+    arc = svf(noise(t, 31), 3400, 2.5, 'bp') * env(t, 0.001, 0.07) * 1.8
+    spit = (crackle(t, 1800, 32, 0.14) * 0.2 + crackle_tone(t, 1800, 32, 0.14, (2200, 2900, 3300), 9.0) * 0.8) * 0.9
+    buzz = pulse(118 + 0 * t, 0.3) * sine(1900 + 0 * t) * env(t, 0.002, 0.05) * 0.5
+    return drive(arc + spit + buzz, 2.0)
 
 
 def klaxon():
@@ -418,7 +453,7 @@ RECIPES = {
     'laser': lambda: laser(),
     'laser_t': lambda: laser(0.75, 0.26),
     'particle': lambda: particle(),
-    'particle_t': lambda: particle(0.5, 0.36, 21),
+    'particle_t': lambda: particle(0.5, 0.3, 0.8),
     'ion': ion,
     'disruptor': disruptor,
     'massdriver': massdriver,
