@@ -6,6 +6,9 @@
 
 #define CP_CONTACTS 16
 
+typedef struct { short x, y; unsigned char colour, target; } CockpitContact;   /* radar: 256 = the rim; target: the one
+                                                                                  chosen (a + in its colour) */
+
 typedef struct {
     int shield_f, shield_r;             /* percent */
     int armor[4];                       /* front, rear, left, right: percent */
@@ -16,8 +19,7 @@ typedef struct {
     int lock, warn;                     /* the lamps */
     int ncontacts;
     unsigned char radar_level;          /* its system's damage (damage.h): the scope's noise, none of it left wrecked */
-    struct { short x, y; unsigned char colour, target; } contact[CP_CONTACTS];   /* radar: 256 = the rim; target: the
-                                                                                    one chosen (a + in its colour) */
+    CockpitContact contact[CP_CONTACTS];
     const char *mfd_text[2][4];         /* lines on each MFD (0 left, 1 right), NULL ends */
     void (*mfd_draw)(int which, const RvRect __far *r, int y0, int y1);   /* drawn before the text, or NULL */
 } CockpitState;

@@ -289,7 +289,7 @@ static int bar_value(const RvPanelControl __far *p, const CockpitState *st)
     case RV_PF_POWER_BAR: return st->damage >> 9 & 1 ? 35 : 100;
     case RV_PF_ENGINE_BAR: return pct(st->speed, st->max_speed);
     case RV_PF_SPEED_BAR: return pct(st->speed, st->max_speed);
-    case RV_PF_RANGE_BAR: return g_sys.target_km < 0 ? 0 : 100 - pct(g_sys.target_km, 4000L << g_sys.radar_range);
+    case RV_PF_RANGE_BAR: return g_sys.target_km < 0 ? 0 : 100 - pct(g_sys.target_km, RADAR_BAR_KM(g_sys.radar_range));
     }
     return 0;
 }

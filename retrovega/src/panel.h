@@ -26,7 +26,7 @@ typedef struct {
     uint8_t match, autotarget, autodecoy;   /* AUTO: match the target's speed, keep the nearest enemy
                                            targeted, decoys on a lock (combat) */
     uint8_t decoys;                     /* left (combat: X drops one) */
-    uint8_t radar_range;                /* 0 4,000 km, 1 8,000, 2 16,000 */
+    uint8_t radar_range;                /* RADAR_KM: 0 8,000 km, 1 16,000, 2 the whole scene (the default) */
     uint8_t surv_page;                  /* the survival display's buttons' page */
     uint8_t nav;                        /* the nav point chosen */
     uint8_t chan;                       /* the radio's channel (CHAN_*): the last that talked */
@@ -47,6 +47,15 @@ typedef struct {
     int32_t target_km, nav_km;          /* -1: none */
     char target_name[16];
 } ShipSystems;
+
+/* the radar's range knob: km, 0 every ship in the scene, all that can be targeted (the user, 2026-11-05: "The radar
+ * should show a range of any ships that can block autopilot and generally any ships that are part of the mission
+ * objective when arriving at the nav point...right now they kinda "pop in" but you can somehow target them earlier");
+ * and what the range bar measures against at each */
+#define RADAR_KM(r) ((r) == 0 ? 8000L : (r) == 1 ? 16000L : 0L)
+#define RADAR_BAR_KM(r) ((r) == 0 ? 8000L : (r) == 1 ? 16000L : 32000L)
+#define RADAR_ENEMY_KM 16000L           /* an enemy this near always shows: it holds the autopilot (logic.c
+                                           AUTOPILOT_CLEAR_KM), and a ship off the scope must not */
 extern ShipSystems __far g_sys;
 
 void panel_load(const RvCockpit __far *c);   /* its panel's controls (cockpit_load) */

@@ -2075,7 +2075,7 @@ static void systems_start(void)
     g_sys.iff = 1;
     g_sys.armed = 1;                    /* (out of the launch tube: armed) */
     g_sys.decoys = 6;
-    g_sys.radar_range = 1;
+    g_sys.radar_range = 2;              /* (the whole scene: RADAR_KM) */
     g_sys.chan = CHAN_WING;
     _fmemcpy(g_sys.digit, g_freq[CHAN_WING], 3);
     g_sys.target = -1;
@@ -2298,6 +2298,40 @@ static int system_key(int ch)
     return 0;
 }
 
+/* a radar contact: where slot s is about the nose (the angle off it, 0 the middle .. 256 the rim, behind), its colour;
+ * 0 when it is where the player is */
+static int radar_contact(int s, CockpitContact *c)
+{
+    RvVec3 d;
+    long x, y, z, len, ang;
+    int a, rr;
+    d.x = (gPositionVector[s].x - gPositionVector[0].x) / 16;
+    d.y = (gPositionVector[s].y - gPositionVector[0].y) / 16;
+    d.z = (gPositionVector[s].z - gPositionVector[0].z) / 16;
+    x = vec_dot(&d, &gOrientationRightVector[0]) / 256;
+    y = vec_dot(&d, &gOrientationUpVector[0]) / 256;
+    z = vec_dot(&d, &gOrientationFrontVector[0]) / 256;
+    while (labs(x) > 16383 || labs(y) > 16383 || labs(z) > 16383) {
+        x /= 2;                         /* (the way is all that is wanted: halved till the squares' sum fits a long) */
+        y /= 2;
+        z /= 2;
+    }
+    len = (long)lf_sqrt((unsigned long)(x * x + y * y + z * z));
+    if (!len)
+        return 0;
+    ang = lf_atan2((long)lf_sqrt((unsigned long)(x * x + y * y)), z);
+    rr = (int)(ang * 256 / 512);
+    a = lf_atan2(y, x);
+    c->x = (short)((lf_cos(a) * rr) >> 14);
+    c->y = (short)(-((lf_sin(a) * rr) >> 14));   /* up is up the screen */
+    c->target = (unsigned char)(s == g_sys.target);
+    /* (grey unidentified: without IFF or the radar emitting) */
+    c->colour = !g_sys.iff || g_sys.emcon != EMCON_ACTIVE || sys_level(SYS_IFF) >= SYS_WRECKED
+                || (sys_level(SYS_IFF) && (frameCounter >> (5 - sys_level(SYS_IFF))) & 1) ? UI_GREY5
+                : commAnimInfo[s] == 0 ? UI_HILITE : commAnimInfo[s] == 1 ? UI_RED : UI_AMBER4;
+    return 1;
+}
+
 /* the cockpit's state from the slots */
 static void gather(void)
 {
@@ -2320,43 +2354,41 @@ static void gather(void)
     g_st.damage = rvCockpitDamage;
     g_st.lock = g_sys.lock;
     g_st.warn = g_sys.warn;
-    /* the radar: the nearest contacts, where they are relative to the nose */
-    for (s = 1; s <= RV_MAX_SHIP_SLOT && n < CP_CONTACTS; s++) {
-        RvVec3 d;
-        long x, y, z, len, ang;
-        int a, rr;
-        if (maybeEntityType[s] != 0xC && maybeEntityType[s] != 0xD)
-            continue;
-        /* (EMCON OFF: a dark scope; beyond the range knob's: not shown) */
-        if (g_sys.emcon == EMCON_OFF || player_km(s) > (4000L << g_sys.radar_range) >> (sys_level(SYS_RADAR) >= 2)
-            || sys_level(SYS_RADAR) >= SYS_WRECKED || (sys_level(SYS_RADAR) == 3 && (frameCounter + s * 5) & 16))
-            continue;                   /* (the radar hurt: moderate half the range, heavy contacts come and go, wrecked none) */
-        d.x = (gPositionVector[s].x - gPositionVector[0].x) / 16;
-        d.y = (gPositionVector[s].y - gPositionVector[0].y) / 16;
-        d.z = (gPositionVector[s].z - gPositionVector[0].z) / 16;
-        x = vec_dot(&d, &gOrientationRightVector[0]) / 256;
-        y = vec_dot(&d, &gOrientationUpVector[0]) / 256;
-        z = vec_dot(&d, &gOrientationFrontVector[0]) / 256;
-        while (labs(x) > 16383 || labs(y) > 16383 || labs(z) > 16383) {
-            x /= 2;                     /* (the way is all that is wanted: halved till the squares' sum fits a long) */
-            y /= 2;
-            z /= 2;
+    /* the radar: the nearest contacts, where they are relative to the nose.  What shows: the ships in the scene within
+     * the knob's range (RADAR_KM: at first all of them, all that can be targeted, the nav point's however far), and
+     * whatever the knob, an enemy that holds the autopilot (RADAR_ENEMY_KM); EMCON OFF a dark scope; the radar hurt:
+     * moderate half the range, heavy contacts come and go, wrecked none.  More than the scope holds: the nearest, the
+     * target first */
+    {
+        int16_t cand[RV_MAX_SHIP_SLOT + 1];
+        long ckm[RV_MAX_SHIP_SLOT + 1];
+        int nc = 0, hurt = sys_level(SYS_RADAR) >= 2;
+        long range = RADAR_KM(g_sys.radar_range);
+        range = range ? range >> hurt : hurt ? RADAR_KM(1) : 0;
+        for (s = 1; s <= RV_MAX_SHIP_SLOT; s++) {
+            long km;
+            if (maybeEntityType[s] != 0xC && maybeEntityType[s] != 0xD)
+                continue;
+            if (g_sys.emcon == EMCON_OFF || sys_level(SYS_RADAR) >= SYS_WRECKED
+                || (sys_level(SYS_RADAR) == 3 && (frameCounter + s * 5) & 16))
+                continue;
+            km = player_km(s);
+            if (range && km > range && !(commAnimInfo[s] == 1 && km < RADAR_ENEMY_KM))
+                continue;
+            cand[nc] = (int16_t)s;
+            ckm[nc++] = s == g_sys.target ? -1 : km;
         }
-        len = (long)lf_sqrt((unsigned long)(x * x + y * y + z * z));
-        if (!len)
-            continue;
-        /* the angle off the nose, 0 the middle .. 512 (behind) the rim */
-        ang = lf_atan2((long)lf_sqrt((unsigned long)(x * x + y * y)), z);
-        rr = (int)(ang * 256 / 512);
-        a = lf_atan2(y, x);
-        g_st.contact[n].x = (short)((lf_cos(a) * rr) >> 14);
-        g_st.contact[n].y = (short)(-((lf_sin(a) * rr) >> 14));   /* up is up the screen */
-        g_st.contact[n].target = (unsigned char)(s == g_sys.target);
-        /* (grey unidentified: without IFF or the radar emitting) */
-        g_st.contact[n].colour = !g_sys.iff || g_sys.emcon != EMCON_ACTIVE || sys_level(SYS_IFF) >= SYS_WRECKED
-                                   || (sys_level(SYS_IFF) && (frameCounter >> (5 - sys_level(SYS_IFF))) & 1) ? UI_GREY5
-                                 : commAnimInfo[s] == 0 ? UI_HILITE : commAnimInfo[s] == 1 ? UI_RED : UI_AMBER4;
-        n++;
+        while (n < CP_CONTACTS && nc > 0) {
+            int b = 0;
+            for (i = 1; i < nc; i++)
+                if (ckm[i] < ckm[b])
+                    b = i;
+            s = cand[b];
+            cand[b] = cand[--nc];
+            ckm[b] = ckm[nc];
+            if (radar_contact(s, &g_st.contact[n]))
+                n++;
+        }
     }
     g_st.ncontacts = n;
     g_st.radar_level = (unsigned char)sys_level(SYS_RADAR);
