@@ -31,7 +31,6 @@ static int g_last_valid;
 static int g_cockpit_index = -1;
 static unsigned char __far g_last_page;   /* the survival display's page last drawn */
 
-#define THROTTLE_TRAVEL 14              /* pixels the throttle slides over the speed range */
 #define STICK_DX 4
 #define STICK_DY 3
 
@@ -217,9 +216,16 @@ static int stick_pose(const CockpitState *st)
     return (st->stick_y < 0 ? 0 : st->stick_y > 0 ? 2 : 1) * 3 + st->stick_x + 1;
 }
 
+/* the throttle's handle, by the set speed: its way at full (RvCockpit.throttle_dx, _dy: along the lever, its foot
+ * staying in its track, gfx_sprite_lean), a part of it */
 static int throttle_dy(const CockpitState *st)
 {
-    return st->max_speed ? -(int)((long)st->set_speed * THROTTLE_TRAVEL / st->max_speed) : 0;
+    return st->max_speed ? (int)((long)st->set_speed * g_cp->throttle_dy / st->max_speed) : 0;
+}
+
+static int throttle_dx(const CockpitState *st)
+{
+    return st->max_speed ? (int)((long)st->set_speed * g_cp->throttle_dx / st->max_speed) : 0;
 }
 
 void cockpit_dirty(const CockpitState *st)
@@ -437,7 +443,7 @@ static void damage_layers(const RvCockpit __far *c, const CockpitState *st, int 
 void cockpit_draw(int y0, int y1, const CockpitState *st, void (*world)(int y0, int y1))
 {
     const RvCockpit __far *c = g_cp;
-    int tdy, sdx, sdy;
+    int sdx, sdy;
     if (!c || g_external) {             /* (an outside view: the opening's rows full width between black bars) */
         gfx_fill(0, 0, SCR_W, SCR_H, UI_BLACK, y0, y1);
         if (world)
@@ -468,9 +474,8 @@ void cockpit_draw(int y0, int y1, const CockpitState *st, void (*world)(int y0, 
     mfd(&c->mfd[1], 1, st, y0, y1);
     panel_draw(st, y0, y1);             /* (the lamps, the dials, the readouts: panel.c) */
     damage_layers(c, st, 0, 0, 0, y0, y1);
-    tdy = throttle_dy(st);
-    gfx_sprite(c->throttle.sprite, 0, tdy, y0, y1);
-    damage_layers(c, st, 1, 0, tdy, y0, y1);
+    gfx_sprite_lean(c->throttle.sprite, c->throttle_pivot, throttle_dx(st), throttle_dy(st), y0, y1);
+    damage_layers(c, st, 1, 0, 0, y0, y1);   /* (none are packed: rvpack, no broken throttle) */
     if (c->stick != 0xFFFF) {           /* the pilot's hand on the stick, in its pose */
         gfx_sprite(c->stick + stick_pose(st), 0, 0, y0, y1);
     } else {

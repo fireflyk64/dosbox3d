@@ -123,6 +123,8 @@ void gfx_use_part(unsigned asset, int with_text);  /* a palette part (close-ups)
 void gfx_image(unsigned a, int x, int y, int y0, int y1);
 void gfx_image_dither(unsigned a, int x, int y, int y0, int y1, int which);   /* one checkerboard colour of it */
 void gfx_sprite(unsigned a, int dx, int dy, int y0, int y1);
+void gfx_sprite_lean(unsigned a, int pivot, int tdx, int tdy, int y0, int y1);   /* rows over the screen's row pivot
+                                           leaning, the top by (tdx, tdy), tdy <= 0 (the throttle) */
 void gfx_sprite_dither(unsigned a, int dx, int dy, int y0, int y1, int which);  /* every other pixel */
 int gfx_sprite_hit(unsigned a, int dx, int dy, int px, int py);
 void gfx_fill(int x, int y, int w, int h, unsigned char c, int y0, int y1);

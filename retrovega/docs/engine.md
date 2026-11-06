@@ -784,7 +784,10 @@ RV.DAT, a record each (`RvCockpit`, src/rvasset.h):
   kit called them. The Lancelot kit has no display map: its displays were
   found inside its damage regions by the glass colour.
 - **Controls:** the throttle and the joystick as sprites at their place.
-  The throttle slides up to 14 pixels with `setSpeed`. The joystick is
+  The throttle leans with `setSpeed`: its foot stays in its track and its
+  handle goes up to 14 pixels along the lever (`gfx_sprite_lean`; the way
+  and the foot from `rvpack.py throttle_lean`; the user, 2026-11-05: it had
+  slid up whole, "like it's floating"). The joystick is
   the pilot's hand on it (the user's renders, arm2.zip, 2026-10-23;
   `tools/joysticks.py` into `art/cockpits/KEY/stick/`): nine poses,
   pushed forward (nose down), upright, pulled back (nose up: the pointer

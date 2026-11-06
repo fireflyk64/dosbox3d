@@ -52,7 +52,7 @@ import legs  # noqa: E402
 import panels  # noqa: E402
 import places  # noqa: E402
 
-VERSION = 6
+VERSION = 7
 SCREEN = (640, 400)
 ROOMS = ['bar', 'lounge', 'briefing', 'quarters', 'locker', 'deck']
 FACE = 352                      # close-up face size (the 256 px faces scaled 1.375)
@@ -503,6 +503,32 @@ def rect4(r):
 PANEL_FMT = '<6B6hH'                     # RvPanelControl (header())
 
 
+THROTTLE_TRAVEL = 14            # pixels the throttle's handle goes from nothing to full
+
+
+def throttle_lean(c, im):
+    """the throttle's way (the user, 2026-11-05: the Franklin's "looks kinda weird when moved up and down like it's
+    floating": the whole lever had slid up, its foot off its track): its foot stays, and its handle goes THROTTLE_TRAVEL
+    along the lever, the rows between in proportion (cockpit.c).  -> (the foot's row on the screen, the handle's dx,
+    dy at full).  The foot: 78% of the way down the control; the lever's way: its pixels' long axis above the foot,
+    when it is a lever (long and thin), else straight up; cockpit.json's throttle `pivot` (a row of the control's) and
+    `travel` ([dx, dy]) say otherwise"""
+    a = np.asarray(im)[..., 3] >= 128
+    ys, xs = np.nonzero(a)
+    top, bot = int(ys.min()), int(ys.max())
+    pivot = int(c.get('pivot', top + round(0.78 * (bot - top))))
+    if 'travel' in c:
+        tdx, tdy = c['travel']
+    else:
+        up = ys < pivot
+        pts = np.stack([xs[up], ys[up]], 1).astype(np.float64)
+        ev, evec = np.linalg.eigh(np.cov((pts - pts.mean(0)).T))
+        v = evec[:, 1] if ev[1] >= 8 * max(ev[0], 1e-6) else np.array([0.0, -1.0])
+        v = v if v[1] < 0 else -v
+        tdx, tdy = int(round(v[0] * THROTTLE_TRAVEL)), int(round(v[1] * THROTTLE_TRAVEL))
+    return c['y'] + pivot, tdx, tdy
+
+
 def pack_cockpits(pack, ships_csv, panels_dir):
     """A record per cockpit (data/cockpits.json): returns (records, previews)."""
     cfg = json.load(open(os.path.join(ROOT, 'data', 'cockpits.json')))
@@ -616,7 +642,8 @@ def pack_cockpits(pack, ships_csv, panels_dir):
                     + struct.pack('<Hhh', ctl['throttle'], cj['controls']['throttle']['x'], cj['controls']['throttle']['y'])
                     + struct.pack('<Hhh', ctl['joystick'], cj['controls']['joystick']['x'], cj['controls']['joystick']['y'])
                     + b''.join(struct.pack('<HBB', a, att, 0) for a, att in layer)
-                    + struct.pack('<HHH', panel_i, len(prec), stick_i))
+                    + struct.pack('<HHH', panel_i, len(prec), stick_i)
+                    + struct.pack('<3h', *throttle_lean(cj['controls']['throttle'], controls['throttle'])))
         # the preview: the base as the engine will show it, the controls in place
         shown = idx.copy()
         for cid, im in controls.items():
@@ -1111,6 +1138,8 @@ typedef struct {
     unsigned short stick;           /* SPR: the pilot's hand on the stick, nine poses from here (tools/joysticks.py:
                                        row * 3 + column, rows forward / middle / back, columns left / middle / right);
                                        0xFFFF: the joystick control alone */
+    short throttle_pivot;           /* the throttle's foot, a screen row: it stays, the handle leans (rvpack throttle_lean) */
+    short throttle_dx, throttle_dy; /* the handle's way at full throttle, pixels */
 } RvCockpit;
 typedef struct {
     unsigned char fn, kind, arg;    /* RV_PF_* (data/panels.json's functions), RV_PK_*, which (a lamp of a set...) */

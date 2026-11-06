@@ -335,6 +335,74 @@ def build(key, src, out_root):
     return k, g, drop, scores, hidden
 
 
+def steady_base(key, out_root):
+    """a base that stays put (the user, 2026-11-05: "when the joystick animation is moving the base of the joystick
+    translates"): where the base shows (a set not grown: the Franklin's side stick), the poses' bases are each their own
+    render, a pixel or two apart and of other outlines, so the stick's foot seemed to slide.  Each pose is moved to put
+    its base on the upright pose's (the base's left half, which no sleeve covers, compared over a few pixels' shifts),
+    then the base's rows (its disc: from where the stick's own pixels widen to the disc) take the upright pose's base,
+    under the pose's own hand and sleeve; where the upright pose's hand or sleeve hid its base, the pose's own shows.
+    Rewrites stick/p*.png and stick.json in place"""
+    d = os.path.join(out_root, key, 'stick')
+    sj = json.load(open(os.path.join(d, 'stick.json')))
+    W, H = SCREEN
+    poses = sj['poses']
+
+    def screen(p, dx=0, dy=0):
+        a = np.asarray(Image.open(os.path.join(d, p['file'])).convert('RGBA'))
+        s = np.zeros((H + 40, W + 40, 4), np.uint8)
+        x, y = p['x'] + dx + 20, p['y'] + dy + 20
+        s[y:y + a.shape[0], x:x + a.shape[1]] = a
+        return s[20:20 + H, 20:20 + W].copy()
+
+    def body(s):
+        skin, sleeve, _own = parts(s)
+        lab, n = ndimage.label(skin)
+        if n:
+            skin = lab == np.argmax(ndimage.sum(np.ones(lab.shape), lab, range(1, n + 1))) + 1
+        return ndimage.binary_dilation(skin | sleeve, iterations=1) & (s[..., 3] > 0)
+
+    def lum(s):
+        return (s[..., :3].astype(np.float64) * (s[..., 3:4] / 255.0)).mean(-1)
+
+    c = screen(poses[4])
+    own = parts(c)[2]
+    rows = own.sum(1)
+    ys = np.nonzero(rows)[0]
+    lo = int(ys[-1] - 0.4 * (ys[-1] - ys[0]))
+    y0 = next(y for y in range(lo, ys[-1] + 1) if rows[y] >= 0.6 * rows[lo:].max())
+    xs = np.nonzero(own[y0:].any(0))[0]
+    win = (slice(y0 - 2, H), slice(xs[0] - 3, (xs[0] + xs[-1]) // 2))
+    ref = lum(c)[win]
+    band = np.zeros((H, W), bool)
+    band[y0:] = True
+    cb = body(c)
+    cbase = band & (c[..., 3] > 0) & ~cb
+    moved = []
+    for i, p in enumerate(poses):
+        best = (np.inf, 0, 0)
+        for dy in range(-4, 5):
+            for dx in range(-4, 5):
+                e = ((lum(screen(p, dx, dy))[win] - ref) ** 2).mean()
+                if e < best[0]:
+                    best = (e, dx, dy)
+        s = screen(p, best[1], best[2])
+        b = body(s)
+        out = s.copy()
+        out[band & ~b] = 0
+        out[cbase & ~b] = c[cbase & ~b]
+        hid = band & (s[..., 3] > 0) & ~b & cb & ~cbase
+        out[hid] = s[hid]
+        oy, ox = np.nonzero(out[..., 3] >= 128)
+        cx0, cx1, cy0, cy1 = ox.min(), ox.max() + 1, oy.min(), oy.max() + 1
+        Image.fromarray(out[cy0:cy1, cx0:cx1], 'RGBA').save(os.path.join(d, p['file']))
+        p['x'], p['y'] = int(cx0), int(cy0)
+        moved.append('%s %+d%+d' % (p['pose'], best[1], best[2]))
+    sj['steady'] = {'base_from_row': int(y0), 'moved': moved}
+    json.dump(sj, open(os.path.join(d, 'stick.json'), 'w'), indent=1)
+    return y0, moved
+
+
 def preview(keys, out_root, path):
     """each cockpit with its nine poses, round the stick, magnified"""
     rows = []
@@ -372,19 +440,27 @@ def preview(keys, out_root, path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('keys', nargs='*')
-    ap.add_argument('--zip', required=True)
+    ap.add_argument('--zip', help='the user\'s set (arm2.zip); without it, only --steady on the poses there are')
     ap.add_argument('--out', default=os.path.join(ROOT, 'art', 'cockpits'))
     ap.add_argument('--sheet')
+    ap.add_argument('--steady', action='store_true', help='only steady_base, on the poses already made')
     args = ap.parse_args()
-    src = os.path.join(ROOT, 'build', 'arm2')
-    with zipfile.ZipFile(args.zip) as z:
-        z.extractall(src, [n for n in z.namelist() if '__MACOSX' not in n])
     keys = args.keys or list(SHIPS)
+    if not args.steady:
+        if not args.zip:
+            ap.error('--zip is needed to make the poses')
+        src = os.path.join(ROOT, 'build', 'arm2')
+        with zipfile.ZipFile(args.zip) as z:
+            z.extractall(src, [n for n in z.namelist() if '__MACOSX' not in n])
     for key in keys:
-        k, g, drop, scores, hidden = build(key, src, args.out)
-        print('joysticks: %-8s scale %.3f (grown %.2f), lowered %2d px, poses on their bare ones %s%s'
-              % (key, k, g, drop, ' '.join('%.2f' % v for v in scores),
-                 '; upright, it hides ' + ', '.join(hidden) if hidden else ''))
+        if not args.steady:
+            k, g, drop, scores, hidden = build(key, src, args.out)
+            print('joysticks: %-8s scale %.3f (grown %.2f), lowered %2d px, poses on their bare ones %s%s'
+                  % (key, k, g, drop, ' '.join('%.2f' % v for v in scores),
+                     '; upright, it hides ' + ', '.join(hidden) if hidden else ''))
+        if key in KIT_SIZE:             # (a grown set's base is off the screen)
+            y0, moved = steady_base(key, args.out)
+            print('joysticks: %-8s base steady from row %d; moved %s' % (key, y0, ', '.join(moved)))
     if args.sheet:
         preview(keys, args.out, args.sheet)
 

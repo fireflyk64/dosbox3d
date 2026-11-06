@@ -2,7 +2,7 @@
 #ifndef RVASSET_H
 #define RVASSET_H
 
-#define RVDAT_VERSION 6
+#define RVDAT_VERSION 7
 
 #define RV_HOTS 8
 #define RV_POSES 12
@@ -290,6 +290,8 @@ typedef struct {
     unsigned short stick;           /* SPR: the pilot's hand on the stick, nine poses from here (tools/joysticks.py:
                                        row * 3 + column, rows forward / middle / back, columns left / middle / right);
                                        0xFFFF: the joystick control alone */
+    short throttle_pivot;           /* the throttle's foot, a screen row: it stays, the handle leans (rvpack throttle_lean) */
+    short throttle_dx, throttle_dy; /* the handle's way at full throttle, pixels */
 } RvCockpit;
 typedef struct {
     unsigned char fn, kind, arg;    /* RV_PF_* (data/panels.json's functions), RV_PK_*, which (a lamp of a set...) */
@@ -304,6 +306,6 @@ typedef struct {
 
 #define RV_ROOM_SIZE 562
 #define RV_PERSON_SIZE 22
-#define RV_COCKPIT_SIZE 230
+#define RV_COCKPIT_SIZE 236
 
 #endif

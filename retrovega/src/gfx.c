@@ -254,6 +254,35 @@ static unsigned long __far *sprite_rows(const RvAsset __far *as, int r0, int *r1
 
 static int g_dither;    /* 0: every pixel; 1, 2: only the pixels of one checkerboard colour */
 
+/* one of a sprite's rows (its runs from p) at x, onto the screen's row y */
+static void sprite_row(const unsigned char __far *p, int x, int y)
+{
+    unsigned char __far *dst = vid_row(y);
+    int cx = x;
+    for (;;) {
+        unsigned skip = p[0], n = p[1];
+        p += 2;
+        if (!skip && !n)
+            break;
+        cx += skip;
+        if (n) {
+            int a0 = cx < 0 ? -cx : 0;
+            int a1 = cx + (int)n > SCR_W ? SCR_W - cx : (int)n;
+            if (a1 > a0) {
+                if (!g_dither) {
+                    _fmemcpy(dst + cx + a0, p + a0, a1 - a0);
+                } else {
+                    int i = a0 + ((cx + a0 + y + g_dither) & 1);
+                    for (; i < a1; i += 2)
+                        dst[cx + i] = p[i];
+                }
+            }
+            p += n;
+            cx += n;
+        }
+    }
+}
+
 void gfx_sprite_dither(unsigned a, int dx, int dy, int y0, int y1, int which)
 {
     g_dither = which;
@@ -279,34 +308,56 @@ void gfx_sprite(unsigned a, int dx, int dy, int y0, int y1)
         unsigned char __far *data;
         unsigned long __far *tab = sprite_rows(as, r0, &stop, &data);
         r1 = stop;
-        for (r = r0; r < r1; r++) {
-            unsigned char __far *p = data + (unsigned)(tab[r - r0] - tab[0]);
-            unsigned char __far *dst = vid_row(y + r);
-            int cx = x;
-            for (;;) {
-                unsigned skip = p[0], n = p[1];
-                p += 2;
-                if (!skip && !n)
-                    break;
-                cx += skip;
-                if (n) {
-                    int a0 = cx < 0 ? -cx : 0;
-                    int a1 = cx + (int)n > SCR_W ? SCR_W - cx : (int)n;
-                    if (a1 > a0) {
-                        if (!g_dither) {
-                            _fmemcpy(dst + cx + a0, p + a0, a1 - a0);
-                        } else {
-                            int i = a0 + ((cx + a0 + y + r + g_dither) & 1);
-                            for (; i < a1; i += 2)
-                                dst[cx + i] = p[i];
-                        }
-                    }
-                    p += n;
-                    cx += n;
-                }
-            }
-        }
+        for (r = r0; r < r1; r++)
+            sprite_row(data + (unsigned)(tab[r - r0] - tab[0]), x, y + r);
         r0 = r1;
+    }
+}
+
+/* a sprite whose rows from row `pivot` (the screen's) down stay, and whose rows above it lean: its top row moved by
+ * (tdx, tdy), tdy <= 0, the rows between in proportion to their height over the pivot (stretched to it, a row drawn
+ * twice where it must).  The throttle (cockpit.c): its foot in its track, its handle along the lever */
+void gfx_sprite_lean(unsigned a, int pivot, int tdx, int tdy, int y0, int y1)
+{
+    const RvAsset __far *as = dat_asset(a);
+    long L = (long)pivot - as->y;
+    int yy, c0 = 0, c1 = 0, last;
+    unsigned long __far *tab = 0;
+    unsigned char __far *data = 0;
+    if (L <= 0 || tdy > 0 || (tdx == 0 && tdy == 0)) {
+        gfx_sprite(a, 0, 0, y0, y1);
+        return;
+    }
+    RV_ASSERT(as->kind == RV_KIND_SPR);
+    need_scratch();
+    if (y0 < as->y + tdy) y0 = as->y + tdy;
+    if (y1 > as->y + (int)as->h) y1 = as->y + as->h;
+    if (y0 < 0) y0 = 0;
+    if (y1 > SCR_H) y1 = SCR_H;
+    last = y1 - 1 - as->y;              /* (the last row's source: at or below the pivot, or the nearest under it) */
+    if (y1 - 1 < pivot)
+        last = (int)(L - (long)(pivot - (y1 - 1)) * L / (L - tdy));
+    for (yy = y0; yy < y1; yy++) {
+        long up = (long)pivot - yy, u;  /* (its height over the pivot as drawn; as the sprite has it) */
+        int r, xo = 0;
+        if (up <= 0)
+            r = yy - as->y;
+        else {
+            u = up * L / (L - tdy);
+            r = (int)(L - u);
+            xo = (int)((long)tdx * u / L);
+        }
+        if (r < 0 || r >= (int)as->h)
+            continue;
+        if (!tab || r < c0 || r >= c1) {    /* (rows come in order: the next stretch of them) */
+            int stop = last + 1 > r ? last + 1 : r + 1;
+            if (stop > (int)as->h)
+                stop = as->h;
+            tab = sprite_rows(as, r, &stop, &data);
+            c0 = r;
+            c1 = stop;
+        }
+        sprite_row(data + (unsigned)(tab[r - c0] - tab[0]), as->x + xo, yy);
     }
 }
 
