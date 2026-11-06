@@ -102,6 +102,7 @@ SHIPTYPE = [('char', 'key[RV_KEY]', '%ds' % TEXT['KEY']), ('char', 'name[RV_NAME
             ('unsigned char', 'gun_energy_steps', 'B'), ('unsigned char', 'shield_full_shift', 'B'),
             ('unsigned char', 'shield_steps', 'B'), ('unsigned char', 'hull_hits', 'B'),
             ('char', 'mayday[RV_LINE]', '%ds' % TEXT['LINE']),   # (a capital ship's line when hit through its armour: logic.c hull_take)
+            ('char', 'hail[RV_LINE]', '%ds' % TEXT['LINE']),   # (a capital ship's hail on the player's first approach: flight.c comm_hail_capital)
             ('unsigned short', 'fuel_cruise', 'H'), ('unsigned short', 'fuel_burn', 'H'),
             ('signed char', 'engine[RV_ENGINES][4]', '%db' % (4 * 4)),
             ('unsigned char', 'hit[3]', '3B'), ('unsigned char', 'box[3]', '3B'), ('unsigned char', 'core', 'B'),
@@ -510,6 +511,7 @@ def compile_all():
                                      n('armor_f'), n('armor_r'), n('armor_l'), n('armor_rt'), n('hull'),
                                      n('lod0_px'), radius, rounds, nengines, energy_steps, full_shift, shield_steps, hull_hits,
                                      text(r.get('mayday') or '', TEXT['LINE'], 'ships.csv'),
+                                     text(r.get('hail') or '', TEXT['LINE'], 'ships.csv'),
                                      fuel_cruise, fuel_burn, *eng, *hit,
                                      *volume_box(hit), core, nvitals, *vit, loadout))
     talk_ok = {frozenset((r['a'], r['b'])): r['talk'] == 'yes' for r in load_csv('relations.csv')}

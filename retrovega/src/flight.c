@@ -1306,6 +1306,7 @@ static void flame_test(void)
 
 /* a flight's first comm, three seconds out: the wingman, on the left VDU, in their own line */
 static int wingman_voice(int s);
+static int role_voice(int role);
 
 static void comm_launch(void)
 {
@@ -2010,6 +2011,41 @@ static void comm_landing(void)
         g_denied_until = clock240() + 720;
     if (!comm_silent())
         comm_exchange(s_ask, role_voice(RV_ROLE_XO), r == LANDING_CLEARED ? s_yes : r == LANDING_NOT_YET ? s_no : s_far);
+}
+
+/* a capital ship's hail on the player's first approach (the user, 2026-11-06: "the mission capital ships often talk to
+ * you when you get close for the first time", an enemy's "he's got courage after all", an ally's "Glad to see you
+ * sir"): the first capital ship of another side, or of ours but the home carrier, within CAP_HAIL_KM whose type has a
+ * hail line (ships.csv `hail`), once each a flight, on the right VDU: an enemy's in its side's voice for the type
+ * (an Aera capital's officer has no helm of its own yet: comms_voice_for gives the side's first), an ally's relayed
+ * in the carrier's voice (no captain's face yet) */
+#define CAP_HAIL_KM 8000L
+static uint32_t __far g_cap_hailed;     /* a bit a slot: it has hailed this flight */
+static void comm_hail_capital(void)
+{
+    static const char __far s_hail[] = "flight: frame %u: slot %d (a capital ship, type %02X, side %d) hails, voice %d";
+    int s, v;
+    if (!g_m || g_sys.muted || frameCounter <= 90 || (frameCounter & 7) || comms_on(0) || comms_on(1) || g_reply_voice != -1)
+        return;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++) {
+        const RvShipType __far *t;
+        long dx, dy, dz;
+        if (maybeEntityType[s] != 0xD || (g_cap_hailed >> s & 1) || shipAiState[s] == 9 || logic_is_home(s)
+            || (t = slot_type(s)) == 0 || !t->hail[0])
+            continue;
+        dx = (gPositionVector[s].x - gPositionVector[0].x) / 256;     /* (km) */
+        dy = (gPositionVector[s].y - gPositionVector[0].y) / 256;
+        dz = (gPositionVector[s].z - gPositionVector[0].z) / 256;
+        if (dx > CAP_HAIL_KM || dx < -CAP_HAIL_KM || dy > CAP_HAIL_KM || dy < -CAP_HAIL_KM || dz > CAP_HAIL_KM
+            || dz < -CAP_HAIL_KM || dx * dx + dy * dy + dz * dz > CAP_HAIL_KM * CAP_HAIL_KM)
+            continue;
+        g_cap_hailed |= (uint32_t)1 << s;
+        v = commAnimInfo[s] == commAnimInfo[0] ? role_voice(RV_ROLE_XO) : comms_voice_for(commAnimInfo[s], gInstanceShipTypes[s]);
+        rv_notef(s_hail, frameCounter, s, gInstanceShipTypes[s], commAnimInfo[s], v);
+        if (v >= 0)
+            (void)comms_say(v, 1, t->hail);
+        return;
+    }
 }
 
 /* a capital ship's mayday (logic_on_mayday, the old game's odds: hull_take): its type's line, in the carrier's voice (the
@@ -3401,6 +3437,7 @@ void __far __cdecl flight_startup(void)
     vdu_flight_start();
     score_start(g_m);                   /* (the first calm song: the deck's launch music gives way) */
     g_hailed = 0;
+    g_cap_hailed = 0;
     missiles_init();
     sky_clear();
     rocks_flight_start();
@@ -3603,8 +3640,10 @@ void __far __cdecl flight_frame(void)
     comm_chat();
     if (!g_comm_demo && frameCounter == 90 && !comms_on(0) && !comms_on(1) && g_reply_voice == -1)
         comm_launch();
-    else if (!g_comm_demo)
+    else if (!g_comm_demo) {
         comm_hail();
+        comm_hail_capital();
+    }
     comms_tick();
     sim_step();
     }

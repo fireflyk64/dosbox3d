@@ -1990,6 +1990,11 @@ four, glance aside for half a second. In a flight the launch's comm comes
 three seconds out; after it, the first Aera or Rlaan fighter within 3,000
 km hails the player on the right VDU, once (`comms_voice_for`: the side's
 voice for that ship type, else the side's first).
+A capital ship hails too, once each, on the player's first approach within
+8,000 km (`comm_hail_capital`, its type's `hail` line in ships.csv): an
+enemy's in its side's voice for the type (no capital officer's helm yet: the
+side's first), an ally's relayed in the carrier's voice; the home carrier
+never.
 
 **The bare face** (`RV_COMMS=face ./build.sh`): the pilots' helmet without
 its breathing gear, the face's mouth speaking in lipsync's eight shapes
