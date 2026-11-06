@@ -172,9 +172,25 @@ tech room (220..260, 64..90), film room (272..304, 68..94), registration
 map's "Enter Mission" at (242, 186).  A flight starts 62 s after boot at
 60,000 cycles.
 
-Open: in flight the keys of the script (full throttle, fire, Esc) and the
-emulated stick have not moved the ship yet; the game reads them some way the
-aids do not reach (to be traced through `user_inputforplane`).
+In flight (measured): Backspace is full throttle (not Backslash: the
+ship then ran into the container ring 8,192 units ahead and died,
+`collide_damagecraft(0, 0xFFFF, 1)`), T targets, and the mouse is the
+stick: its mickeys turn the ship (the script's `!mouse` moves, relative)
+and its left button fires; the keyboard arrows do not steer and Space did
+not fire in the Combat Chamber.  A shot is `laser_createprojectile(eax =
+the shooter's object, edx = the hardpoint 0 or 1, ebx = the projectile type
+0x8C, ecx = 0 or 1)`; the bolt is the object in slot 32 on, genus 6 (the
+player's projectile), type 140, speed 900 from rest, its move vector the
+nose (Q15), a death timer of 664 ticks, its craft pointer the warhead record
+(`warheads[]` at 0xE61FC, 8 bytes each), not a CraftData.  A hit is
+`collide_laserhitcraft(eax = the bolt's object, edx = the target's, ebx,
+ecx = 2, 2)` and then `collide_damagecraft(eax = the target's object, edx =
+the component, ebx = the bolt's object, ecx = 0)`; a collision's damage has
+ebx 0xFFFF for the source.  The first Combat Chamber
+mission as the tables show it: eight containers (genus 3, type 29, radius
+7,996, side 2) in a ring 8,192 units out, a platform (type 61) far off;
+`crafts[0]` is the player's (`is_player_craft` 1, throttle 65,535 at full,
+max speed 225).
 
 ## 5. The sync design (the brief, as the layer would do it)
 
