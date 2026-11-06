@@ -2,7 +2,7 @@
 #ifndef RVASSET_H
 #define RVASSET_H
 
-#define RVDAT_VERSION 7
+#define RVDAT_VERSION 8
 
 #define RV_HOTS 8
 #define RV_POSES 12
@@ -80,6 +80,8 @@
 #define RV_FACE_X 24
 #define RV_FACE_Y 62
 #define RV_CP_LAYERS 32
+#define RV_ATTACH_GLASS 3
+#define RV_CRACKS 6
 #define RV_CP_FIRST 208
 
 #define RV_CPD_WEAPONS 0
@@ -272,7 +274,9 @@ typedef struct {
 } RvControl;
 typedef struct {
     unsigned short sprite;      /* 0xFFFF: this cockpit has no such layer */
-    unsigned char attach, pad;  /* 0 fixed, 1 moves with the throttle, 2 with the joystick */
+    unsigned char attach, n;    /* 0 fixed, 1 moves with the throttle, 2 with the joystick, RV_ATTACH_GLASS: n
+                                   cracks from `sprite` on (tools/glasscracks.py), then a RAW of orders, RV_CRACKS
+                                   (crack from `sprite`, dx, dy from where its sprite is) each, u16 s16 s16 */
 } RvDamageLayer;
 typedef struct {
     char key[8];

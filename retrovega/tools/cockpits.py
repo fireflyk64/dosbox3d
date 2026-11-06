@@ -61,6 +61,8 @@ BIT_NAMES = {}
 for _k, _v in BITS.items():
     BIT_NAMES.setdefault(_v, _k)
 ATTACH = {None: 0, 'throttle': 1, 'joystick': 2}
+GLASS = 3                               # (a canopy layer of cracks: tools/glasscracks.py, cockpit.c cracks_update)
+CRACKS = 6                              # (an order's cracks: on the glass at most)
 # the displays: our name, the kits' names for it
 RECTS = {'mfd_left': ('weapons', 'flight'), 'mfd_right': ('targeting', 'systems'),
          'survival': ('survival', 'engineering'), 'speed': ('speed',), 'fuel': ('fuel',)}

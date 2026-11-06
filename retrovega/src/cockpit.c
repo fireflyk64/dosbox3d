@@ -7,7 +7,8 @@
  * on four sides), speed and fuel, the radar's contacts, the MFDs, the
  * throttle slid by the set speed, the joystick at one of nine places, and
  * the damage overlays whose bits are set, each with its control when it is
- * attached to one; the panel's lamps, knobs, needles and readouts (panel.c)
+ * attached to one (a canopy of cracks: random ones at random places, as the
+ * hull gives: cracks_update); the panel's lamps, knobs, needles and readouts (panel.c)
  * over the instruments.  cockpit_dirty marks the rows a frame changes: the
  * opening and the radar always, the rest only when their values moved. */
 #include <stdio.h>
@@ -28,6 +29,18 @@ static short __far *g_ext;
 static int g_ext_y0, g_ext_rows;
 static CockpitState g_last;
 static int g_last_valid;
+
+/* the glass's cracks (tools/glasscracks.py; the user, 2026-11-06: "load in random ones at random places when those
+ * damages hit. Hopefully that makes it feel less wrote"): a cockpit's canopy layer RV_ATTACH_GLASS is a row of cracks
+ * and a table of orders, each RV_CRACKS of them at places spread over the glass (RV.DAT's, so the choosing costs no
+ * conventional memory).  At the canopy's first hurt a random order, its first two; one more every tenth of the hull
+ * lost after and at each of the other canopy bits; they stay till the canopy bits are clear again (a new flight, or the
+ * mission again) */
+#define CANOPY_BITS (1UL << RV_CPD_CANOPY | 1UL << RV_CPD_CANOPY_RIGHT | 1UL << RV_CPD_CANOPY_OVERHEAD)
+typedef struct { unsigned short sprite; short dx, dy; } Crack;   /* (an order's entry: the sprite from the first crack) */
+static Crack g_crack[RV_CRACKS];        /* (the list's cap RV_CRACKS, an order's length: crack_add keeps it) */
+static unsigned char g_ncrack, g_crack_order;
+static uint16_t g_crack_rand = 0x2545;  /* (the cracks' own random stream, never the play's) */
 static int g_cockpit_index = -1;
 static unsigned char __far g_last_page;   /* the survival display's page last drawn */
 
@@ -162,6 +175,7 @@ int cockpit_load(int ship_type)
             }
             g_cockpit_index = (int)i;   /* (the palette goes in with cockpit_palette, once the flight's loading is done) */
             g_last_valid = 0;
+            g_ncrack = 0;
             panel_load(g_cp);
             RV_LOG("cockpit: %.8Fs for ship type %d, rows %d-%d open, %d damage layers", (char __far *)c->key,
                    ship_type, c->open_y0, c->open_y1, c->nlayers);
@@ -207,6 +221,55 @@ static void dirty_sprite(unsigned a, int dy0, int dy1)
         return;
     as = dat_asset(a);
     vid_dirty(as->y + (dy0 < dy1 ? dy0 : dy1), as->y + as->h + (dy0 > dy1 ? dy0 : dy1));
+}
+
+/* a crack more: the next of this flight's order (a random one at the first).  0: none to add */
+static int crack_add(const RvDamageLayer __far *l)
+{
+    const RvAsset __far *o = dat_asset(l->sprite + l->n);
+    unsigned n = (unsigned)o->size / (RV_CRACKS * sizeof(Crack));
+    Crack *c = &g_crack[g_ncrack];
+    if (!n || g_ncrack >= RV_CRACKS)
+        return 0;
+    if (!g_ncrack) {                    /* (when the hit came: a flight's cracks are not the last one's) */
+        g_crack_rand = (uint16_t)((g_crack_rand + frameCounter) * 25173U + 13849U);
+        g_crack_order = (unsigned char)((g_crack_rand >> 8) % n);
+    }
+    dat_read(o->at + sizeof(Crack) * ((unsigned long)g_crack_order * RV_CRACKS + g_ncrack), c, sizeof(Crack));
+    c->sprite += l->sprite;
+    g_ncrack++;
+    dirty_sprite(c->sprite, c->dy, c->dy);
+    return 1;
+}
+
+/* how many cracks the damage asks for */
+static int cracks_wanted(const CockpitState *st)
+{
+    int n;
+    if (!(st->damage & CANOPY_BITS))
+        return 0;
+    n = 2 + (st->hull < 50 ? (50 - st->hull) / 10 : 0);
+    if (st->damage & 1UL << RV_CPD_CANOPY_RIGHT)
+        n++;
+    if (st->damage & 1UL << RV_CPD_CANOPY_OVERHEAD)
+        n++;
+    return n < RV_CRACKS ? n : RV_CRACKS;
+}
+
+static void cracks_update(const RvCockpit __far *c, const CockpitState *st)
+{
+    const RvDamageLayer __far *l = &c->layer[RV_CPD_CANOPY];
+    int want = cracks_wanted(st), i;
+    if (l->sprite == 0xFFFF || l->attach != RV_ATTACH_GLASS)
+        return;
+    if (!want) {
+        for (i = 0; i < g_ncrack; i++)
+            dirty_sprite(g_crack[i].sprite, g_crack[i].dy, g_crack[i].dy);
+        g_ncrack = 0;
+        return;
+    }
+    while (g_ncrack < want && crack_add(l))
+        ;
 }
 
 /* the hand's pose on the stick (RvCockpit.stick): row forward (nose down: the steering's y < 0), upright, pulled
@@ -274,6 +337,7 @@ void cockpit_dirty(const CockpitState *st)
     for (i = 0; i < RV_CP_LAYERS; i++)
         if ((changed >> i) & 1)
             dirty_sprite(c->layer[i].sprite, 0, 0);
+    cracks_update(c, st);
     g_last = *st;
 }
 
@@ -427,6 +491,11 @@ int cockpit_layer_box(int bit, int *x, int *y, int *w, int *h)
     as = dat_asset(g_cp->layer[bit].sprite);
     *x = as->x;
     *y = as->y;
+    if (g_cp->layer[bit].attach == RV_ATTACH_GLASS && g_ncrack) {   /* (cracks: the newest's) */
+        as = dat_asset(g_crack[g_ncrack - 1].sprite);
+        *x = as->x + g_crack[g_ncrack - 1].dx;
+        *y = as->y + g_crack[g_ncrack - 1].dy;
+    }
     *w = as->w;
     *h = as->h;
     return 1;
@@ -443,7 +512,7 @@ static void damage_layers(const RvCockpit __far *c, const CockpitState *st, int 
 void cockpit_draw(int y0, int y1, const CockpitState *st, void (*world)(int y0, int y1))
 {
     const RvCockpit __far *c = g_cp;
-    int sdx, sdy;
+    int sdx, sdy, i;
     if (!c || g_external) {             /* (an outside view: the opening's rows full width between black bars) */
         gfx_fill(0, 0, SCR_W, SCR_H, UI_BLACK, y0, y1);
         if (world)
@@ -474,6 +543,8 @@ void cockpit_draw(int y0, int y1, const CockpitState *st, void (*world)(int y0, 
     mfd(&c->mfd[1], 1, st, y0, y1);
     panel_draw(st, y0, y1);             /* (the lamps, the dials, the readouts: panel.c) */
     damage_layers(c, st, 0, 0, 0, y0, y1);
+    for (i = 0; i < g_ncrack; i++)      /* (the glass's cracks: cracks_update) */
+        gfx_sprite(g_crack[i].sprite, g_crack[i].dx, g_crack[i].dy, y0, y1);
     gfx_sprite_lean(c->throttle.sprite, c->throttle_pivot, throttle_dx(st), throttle_dy(st), y0, y1);
     damage_layers(c, st, 1, 0, 0, y0, y1);   /* (none are packed: rvpack, no broken throttle) */
     if (c->stick != 0xFFFF) {           /* the pilot's hand on the stick, in its pose */

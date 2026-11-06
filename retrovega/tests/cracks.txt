@@ -1,0 +1,20 @@
+# The glass's cracks (tools/glasscracks.py, cockpit.c cracks_update): the Schroedinger's canopy, its cracks coming
+# as the hull goes (_ takes a third of it, ) the hull and half the reserve).
+# EXE=RVT.EXE tests/run.sh tests/cracks.txt /fly 1 /ship 0 /flight 60
+wait 30
+key s
+key _
+wait 4
+shot CRK0
+key _
+wait 4
+shot CRK1
+key _
+wait 4
+shot CRK2
+key )
+wait 6
+shot CRK3
+key esc
+wait 16
+log done

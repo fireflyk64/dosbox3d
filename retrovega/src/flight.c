@@ -2398,6 +2398,8 @@ static void gather(void)
     g_st.stick_x = g_steer_x > 0 ? 1 : g_steer_x < 0 ? -1 : 0;
     g_st.stick_y = g_steer_y > 0 ? 1 : g_steer_y < 0 ? -1 : 0;
     g_st.damage = rvCockpitDamage;
+    g_st.hull = g_my_type && g_my_type->hull && damagePoints[0] < g_my_type->hull
+                ? (int)(100 - (uint32_t)damagePoints[0] * 100 / g_my_type->hull) : g_my_type && g_my_type->hull ? 0 : 100;
     g_st.lock = g_sys.lock;
     g_st.warn = g_sys.warn;
     /* the radar: the nearest contacts, where they are relative to the nose.  What shows: the ships in the scene within

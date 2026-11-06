@@ -48,11 +48,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import cockpits  # noqa: E402
+import glasscracks  # noqa: E402
 import legs  # noqa: E402
 import panels  # noqa: E402
 import places  # noqa: E402
 
-VERSION = 7
+VERSION = 8
 SCREEN = (640, 400)
 ROOMS = ['bar', 'lounge', 'briefing', 'quarters', 'locker', 'deck']
 FACE = 352                      # close-up face size (the 256 px faces scaled 1.375)
@@ -555,7 +556,11 @@ def pack_cockpits(pack, ships_csv, panels_dir):
         controls = {cid: Image.open(os.path.join(d, cid + '.png')).convert('RGBA') for cid in cj['controls']}
         # (no broken stick or throttle: the user's, 2026-10-23 - they are unlikely to break; their systems' damage
         # shows on the panel)
-        layers = [(e, Image.open(os.path.join(d, e['file'])).convert('RGBA')) for e in cj['damage'] if not e['attach']]
+        layers = [(e, Image.open(os.path.join(d, e['file'])).convert('RGBA')) for e in cj['damage']
+                  if not e['attach'] and 'cracks' not in e]
+        # (a canopy of cracks, tools/glasscracks.py: its cracks, each put at random places of its own by cockpit.c)
+        glass = [(e, [Image.open(os.path.join(d, c['file'])).convert('RGBA') for c in e['cracks']])
+                 for e in cj['damage'] if 'cracks' in e]
         lg = legs.load(key)
         if lg:                                  # (a layer moved with its box, or kept off the legs: tools/legs.py)
             kept = []
@@ -573,7 +578,8 @@ def pack_cockpits(pack, ships_csv, panels_dir):
         # (eight of them the hand's own - skin and sleeve - picked from its poses: in the one median cut they came out
         # yellow and grey)
         hand = 8 if stick_ims else 0
-        part = make_palette([base] + list(controls.values()) + [im for _e, im in layers] + list(state_ims.values()),
+        part = make_palette([base] + list(controls.values()) + [im for _e, im in layers]
+                            + [im for _e, ims in glass for im in ims] + list(state_ims.values()),
                             len(CP_FREE) - hand, CP_FREE[0])
         if hand:
             part += make_palette(stick_ims, hand, CP_FREE[0] + len(CP_FREE) - hand)
@@ -602,10 +608,25 @@ def pack_cockpits(pack, ships_csv, panels_dir):
         for cid, im in controls.items():
             c = cj['controls'][cid]
             ctl[cid] = add_sprite(pack, 'cpc_%s_%s' % (key[:7], cid[:3]), im, pal, c['x'], c['y'], allowed)
-        layer = [(0xFFFF, 0)] * CP_LAYERS
+        layer = [(0xFFFF, 0, 0)] * CP_LAYERS
         for e, im in layers:
             layer[e['bit']] = (add_sprite(pack, 'cpd_%s_%02d' % (key[:7], e['bit']), im, pal, e['x'], e['y'], allowed),
-                               cockpits.ATTACH[e['attach']])
+                               cockpits.ATTACH[e['attach']], 0)
+        # the cracks in a row, each at its first place, then the orders (glasscracks.orders): per entry the crack from
+        # the first, its (dx, dy) from that place
+        for e, ims in glass:
+            first = None
+            for i, (c, im) in enumerate(zip(e['cracks'], ims)):
+                j = add_sprite(pack, 'cpg_%s_%d' % (key[:7], i), im, pal, c['x'], c['y'], allowed)
+                assert first is None or j == first + i, 'the cracks are not in a row'
+                first = j if first is None else first
+            assert len(ims) >= cockpits.CRACKS
+            cr = e['cracks']
+            at = pack.add('cpq_' + key, 'RAW', b''.join(struct.pack('<Hhh', k, x - cr[k]['x'], y - cr[k]['y'])
+                                                        for k, x, y in glasscracks.orders(e, cockpits.CRACKS,
+                                                                                          e.get('glass_seed', 7))))
+            assert at == first + len(ims) and len(ims) < 256 and glasscracks.ORDERS < 256
+            layer[e['bit']] = (first, cockpits.GLASS, len(ims))
         # the panel: a record a control (RvPanelControl), its states' sprites one after another (the base's own: empty)
         prec = []
         for n, c in enumerate(panel):
@@ -641,7 +662,7 @@ def pack_cockpits(pack, ships_csv, panels_dir):
                     + struct.pack('<3h', R['radar']['cx'], R['radar']['cy'], R['radar']['r'])
                     + struct.pack('<Hhh', ctl['throttle'], cj['controls']['throttle']['x'], cj['controls']['throttle']['y'])
                     + struct.pack('<Hhh', ctl['joystick'], cj['controls']['joystick']['x'], cj['controls']['joystick']['y'])
-                    + b''.join(struct.pack('<HBB', a, att, 0) for a, att in layer)
+                    + b''.join(struct.pack('<HBB', a, att, n) for a, att, n in layer)
                     + struct.pack('<HHH', panel_i, len(prec), stick_i)
                     + struct.pack('<3h', *throttle_lean(cj['controls']['throttle'], controls['throttle'])))
         # the preview: the base as the engine will show it, the controls in place
@@ -994,7 +1015,8 @@ def header(room_size, person_size, cockpit_size):
                                                                                'SHIELD_R', 'ARMOR_F', 'ARMOR_R',
                                                                                'ARMOR_L', 'ARMOR_RT')]
     lines += ['#define RV_FACE %d' % FACE, '#define RV_FACE_X %d' % FACE_X, '#define RV_FACE_Y %d' % FACE_Y,
-              '#define RV_CP_LAYERS %d' % CP_LAYERS,
+              '#define RV_CP_LAYERS %d' % CP_LAYERS, '#define RV_ATTACH_GLASS %d' % cockpits.GLASS,
+              '#define RV_CRACKS %d' % cockpits.CRACKS,
               '#define RV_CP_FIRST %d' % CP_FREE[0], '']
     for bit in sorted(cockpits.BIT_NAMES):
         lines.append('#define RV_CPD_%s %d' % (cockpits.BIT_NAMES[bit].upper(), bit))
@@ -1120,7 +1142,9 @@ typedef struct {
 } RvControl;
 typedef struct {
     unsigned short sprite;      /* 0xFFFF: this cockpit has no such layer */
-    unsigned char attach, pad;  /* 0 fixed, 1 moves with the throttle, 2 with the joystick */
+    unsigned char attach, n;    /* 0 fixed, 1 moves with the throttle, 2 with the joystick, RV_ATTACH_GLASS: n
+                                   cracks from `sprite` on (tools/glasscracks.py), then a RAW of orders, RV_CRACKS
+                                   (crack from `sprite`, dx, dy from where its sprite is) each, u16 s16 s16 */
 } RvDamageLayer;
 typedef struct {
     char key[8];

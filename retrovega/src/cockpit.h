@@ -16,6 +16,7 @@ typedef struct {
     int fuel;                           /* percent */
     int stick_x, stick_y;               /* -1, 0, 1: the joystick's eight ways and the middle */
     unsigned long damage;               /* rvCockpitDamage: a bit per overlay */
+    int hull;                           /* percent of the hull left (the glass's cracks come with its loss) */
     int lock, warn;                     /* the lamps */
     int ncontacts;
     unsigned char radar_level;          /* its system's damage (damage.h): the scope's noise, none of it left wrecked */
