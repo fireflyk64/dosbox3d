@@ -68,6 +68,10 @@
 // `builtin`: a game the site itself serves (ours to give away), as a
 // .tar.gz beside the page: it is in every browser's "Play" menu with no
 // files dropped, fetched when it is flown.
+// `image`: a CD image among the game's files (GOG's game.gog, the disc as
+// raw sectors), mounted as drive D before the game runs (imgmount, an
+// ISO).  `keep`: files of the game that the installer-junk rule would drop
+// by their extension (TIE Fighter's IMUSE.INI).
 
 // Wing Commander's Vega campaign: series 1.. and mission 0.. within the
 // series (what the MIS / SERIES environment of the hooks takes).  The system
@@ -283,6 +287,18 @@ export const GAMES = [
     // the flight's keys, under the picture (the game listed them on a VDU till the user had them moved out of it)
     keys: "<b>RetroVega in flight:</b> the mouse or the arrow keys steer (a tap turns a little, held they build to the full turn in a third of a second; <kbd>Shift</kbd> with an arrow turns at full at once), <kbd>Q</kbd> and <kbd>E</kbd> (or <kbd>,</kbd> and <kbd>.</kbd>, or the keypad's <kbd>Ins</kbd> and <kbd>Del</kbd>; a controller's roll axis too) roll (the same way), <kbd>Space</kbd> or the left button fires the guns, <kbd>Enter</kbd> a missile, <kbd>Tab</kbd> (or the keypad's <kbd>*</kbd>) the afterburner; <kbd>+</kbd> and <kbd>-</kbd> set the speed, <kbd>F</kbd> or <kbd>\\</kbd> full, <kbd>S</kbd> or <kbd>Backspace</kbd> stop; <kbd>T</kbd> the next target in front of you, <kbd>Y</kbd> the nearest enemy, <kbd>L</kbd> locks the target; <kbd>G</kbd> picks the guns, <kbd>W</kbd> the missile, <kbd>D</kbd> the damage readout; <kbd>N</kbd> the nav points (a white cross marks the one chosen), <kbd>A</kbd> the autopilot; <kbd>`</kbd> or <kbd>~</kbd> the ships between high detail and blocks, at once; <kbd>C</kbd> the comm menu: <kbd>1</kbd> your wingman (fly in formation, break formation, attack your target, help you out, return to base), <kbd>2</kbd> your target (taunt an enemy; with the carrier as your target, request landing within 25,000 km, granted once you have flown a nav point or finished the mission, then come within 2,000 km of it, afterburner off, to land), <kbd>9</kbd> never mind; flying with others, <kbd>0</kbd> (or a tap of <kbd>Shift</kbd>) talks to them. Home with every nav point flown and no enemy about, <b>PRESS FIRE TO LAND</b> shows under the gunsight: the trigger lands you; <kbd>R</kbd> the radar's range; <kbd>F5</kbd> the outside view, <kbd>F1</kbd> the cockpit. The simulator in the bar (click its chair) is Rlaan after Rlaan, on your own: <kbd>Esc</kbd> or <kbd>Caps Lock</kbd> leaves it.",
     dosbox: "[dosbox]\nmemsize=63\n[dos]\nxms=true\nems=false\numb=true\n[sblaster]\nsbtype=sb16\noplmode=opl3\n" },
+  // TIE Fighter (LucasArts, 1995: the Collector's CD-ROM as GOG sells it).
+  // TIE.EXE starts Z_TIE__.EXE, a 32-bit program under DOS/4GW; the disc
+  // (game.gog: the voices, and the check the game makes before anything
+  // else) must be in drive D, or the game quits at once.  Its 594 MB go into
+  // the browser's cache in parts (saveGame).  The machine is the one GOG's
+  // own configuration asks for (an S3 card for its 640x480 flight, 16 MB,
+  // EMS for the extender, a Sound Blaster 16 on IRQ 7).  Single-player
+  // until its hooks are built (docs/tiefighter.md).
+  { id: "tf", tag: "TF", title: "TIE Fighter", detect: ["TIE.EXE"], run: "tie", multiplayer: false,
+    image: "game.gog", keep: ["IMUSE.INI"], cycles: 60000, noFlight: true,
+    help: "TIE Fighter runs single-player for now: its multiplayer is being built (docs/tiefighter.md). Esc skips the opening; the registration screen takes your pilot; the Combat Chamber in the concourse flies a mission without the story.",
+    dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
 ];
 
 // The registry entry of a game id, or null (a game picked by its executable).
@@ -397,9 +413,12 @@ const base = (p) => p.slice(p.lastIndexOf("/") + 1);
 const dir = (p) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
 const ext = (p) => { const b = base(p); return b.includes(".") ? b.slice(b.lastIndexOf(".") + 1).toLowerCase() : ""; };
 
+// (the files a game needs whatever their extension: the registry's `keep`)
+const KEEP = new Set(GAMES.flatMap((g) => g.keep || []).map((n) => n.toUpperCase()));
 function isJunk(path) {
   const parts = path.split("/");
   if (parts.slice(0, -1).some((d) => JUNK_DIRS.has(d.toLowerCase()))) return true;
+  if (KEEP.has(base(path).toUpperCase())) return false;
   return JUNK_EXT.has(ext(path));
 }
 
@@ -448,35 +467,96 @@ export function installFiles(FS, root, files) {
 }
 
 // -- IndexedDB cache ---------------------------------------------------------
+//
+// A game is one record in "games" (its files inline), but a browser holds a
+// record of some 127 MB at most (Chrome: "the serialized keys and/or value
+// are too large"), and TIE Fighter's disc image alone is 594 MB.  So a big
+// file (PART_FROM and up), and every file once the record's inline files
+// reach INLINE_BUDGET, is kept out of the record, in "parts": pieces of
+// PART_SIZE under the keys <game id>/<path>#<n>, the record holding
+// { parts, size } in their place.  Records of the first version (every file
+// inline) read as they are.
 
 const DB = "wc-web";
+const PART_SIZE = 32 * 1048576, PART_FROM = 8 * 1048576, INLINE_BUDGET = 64 * 1048576;
 function openDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore("games", { keyPath: "id" });
+    const req = indexedDB.open(DB, 2);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains("games")) db.createObjectStore("games", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("parts")) db.createObjectStore("parts", { keyPath: "id" });
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
-function tx(db, mode, fn) {
+function tx(db, mode, fn, stores = ["games"]) {
   return new Promise((resolve, reject) => {
-    const t = db.transaction("games", mode);
-    const r = fn(t.objectStore("games"));
+    const t = db.transaction(stores, mode);
+    const r = fn(...stores.map((n) => t.objectStore(n)));
     t.oncomplete = () => resolve(r && r.result);
     t.onerror = () => reject(t.error);
     t.onabort = () => reject(t.error);
   });
 }
+const partKey = (id, path, n) => `${id}/${path}#${n}`;
+const partRange = (id) => IDBKeyRange.bound(`${id}/`, `${id}/\uffff`);
 export async function saveGame(record) {
-  try { const db = await openDb(); await tx(db, "readwrite", (s) => s.put(record)); db.close(); return true; }
-  catch (e) { console.warn("cannot save the game files in this browser:", e); return false; }
+  try {
+    const db = await openDb();
+    let inline = 0;
+    const files = [], parts = [];
+    for (const f of record.files) {
+      const size = f.data.byteLength;
+      if (size >= PART_FROM || inline + size > INLINE_BUDGET) {
+        let n = 0;
+        for (let at = 0; at < size; at += PART_SIZE, n++) parts.push({ id: partKey(record.id, f.path, n), data: f.data.slice(at, Math.min(size, at + PART_SIZE)) });
+        files.push({ path: f.path, parts: n, size });
+      } else {
+        inline += size;
+        files.push(f);
+      }
+    }
+    await tx(db, "readwrite", (games, store) => {
+      store.delete(partRange(record.id));
+      for (const p of parts) store.put(p);
+      games.put({ ...record, files });
+    }, ["games", "parts"]);
+    db.close();
+    return true;
+  } catch (e) { console.warn("cannot save the game files in this browser:", e); return false; }
 }
 export async function loadGames() {
-  try { const db = await openDb(); const all = await tx(db, "readonly", (s) => s.getAll()); db.close(); return all || []; }
-  catch (e) { return []; }
+  try {
+    const db = await openDb();
+    const all = (await tx(db, "readonly", (s) => s.getAll())) || [];
+    for (const g of all) {
+      if (!g.files.some((f) => f.parts)) continue;
+      const parts = (await tx(db, "readonly", (s) => s.getAll(partRange(g.id)), ["parts"])) || [];
+      const byId = new Map(parts.map((p) => [p.id, p.data]));
+      g.files = g.files.map((f) => {
+        if (!f.parts) return f;
+        const data = new Uint8Array(f.size);
+        let at = 0;
+        for (let n = 0; n < f.parts; n++) {
+          const piece = byId.get(partKey(g.id, f.path, n));
+          if (!piece) throw new Error(`${g.title}: ${f.path} is missing part ${n} in this browser's cache`);
+          data.set(new Uint8Array(piece), at); at += piece.byteLength;
+        }
+        return { path: f.path, data };
+      });
+    }
+    db.close();
+    return all;
+  } catch (e) { console.warn("cannot read the saved games in this browser:", e); return []; }
 }
 export async function forgetGame(id) {
-  try { const db = await openDb(); await tx(db, "readwrite", (s) => s.delete(id)); db.close(); } catch (e) { /* ignore */ }
+  try {
+    const db = await openDb();
+    await tx(db, "readwrite", (games, parts) => { parts.delete(partRange(id)); games.delete(id); }, ["games", "parts"]);
+    db.close();
+  } catch (e) { /* ignore */ }
 }
 
 export function totalSize(files) { return files.reduce((n, f) => n + f.data.byteLength, 0); }

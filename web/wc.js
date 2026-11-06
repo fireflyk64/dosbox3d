@@ -1801,7 +1801,10 @@ async function start(fromGesture) {
     // The emulated CPU speed: the game's own good value (the registry), or
     // ?cycles=N; Ctrl+F11 / Ctrl+F12 still adjust it while playing.
     const cycles = Number(query.get("cycles")) || (gameInfo() && gameInfo().cycles) || 0;
-    const args = ["-c", `mount c ${GAME_ROOT}`, "-c", "c:"];
+    const args = ["-c", `mount c ${GAME_ROOT}`];
+    // The game's disc, where it comes with one (the registry's image): drive D.
+    if (gameInfo() && gameInfo().image) args.push("-c", `imgmount d ${GAME_ROOT}/${gameInfo().image} -t iso`);
+    args.push("-c", "c:");
     if (cycles > 0) args.push("-c", `cycles=${Math.round(cycles)}`);
     // What the game's own setup expects of the machine (the registry), as a
     // configuration file: DOSBox's `config -set` rewrites the list of
