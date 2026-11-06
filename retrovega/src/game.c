@@ -126,6 +126,7 @@ static void setup_save(void)
 
 /* speech runs on the music clock (240 Hz): fine enough for a shape every 25 ms */
 static unsigned long g_speech_t0;
+static int g_said_all;                  /* a click showed the rest of the line (speech_finish) */
 
 static int speaking_step(void)
 {
@@ -147,14 +148,27 @@ static void say(int person, const char __far *text)
            g_talk_names[g_talk_speed]);
     g_mouth = g_eyes = g_shown_chars = -1;
     g_gesture = 0;
+    g_said_all = 0;
 }
 
-static int speech_done(void) { return speaking_step() >= g_nlip; }
+/* the words all shown: said to the end, or a click asked for them (speech_finish) */
+static int speech_done(void) { return g_said_all || speaking_step() >= g_nlip; }
+
+/* said to the end at its own pace: what a line's wait to go on by itself counts from */
+static int speech_heard(void) { return speaking_step() >= g_nlip; }
+
+/* a click while a line is being said: the rest of its words at once, the mouth still; the next click goes on (the user,
+ * 2026-11-05: "clicking should actually fill the text to the end instantly. A second click should go to the next
+ * line...that way people can read the whole thing quickly when clicking") */
+static void speech_finish(void)
+{
+    g_said_all = 1;
+}
 
 static int mouth_now(void)
 {
     int s = speaking_step();
-    return s < g_nlip ? g_lip[s] : 0;
+    return s < g_nlip && !g_said_all ? g_lip[s] : 0;
 }
 
 /* --- panels and messages --- */
@@ -2218,7 +2232,9 @@ int game_run(void)
             break;
         case MODE_TALK:
             face_tick();
-            if (in.clicked || in.key == KEY_ENTER || in.key == KEY_ESC) {
+            if ((in.clicked || in.key == KEY_ENTER) && !speech_done())
+                speech_finish();                /* (the first click: the whole line; the next goes on) */
+            else if (in.clicked || in.key == KEY_ENTER || in.key == KEY_ESC) {
                 int k = in.key == KEY_ESC || g_conv_owner < 0 ? -1 : conv_next();
                 if (k >= 0)
                     conv_page(k);
@@ -2242,7 +2258,10 @@ int game_run(void)
                     g_stage = 2;
                     g_stage_at = g_now;
                 } else {
-                    if (!next && speech_done()) {
+                    if (next && !speech_done()) {   /* (the first click: the whole line; the next goes on) */
+                        speech_finish();
+                        next = 0;
+                    } else if (!next && speech_heard()) {   /* (by itself: at the pace it is said, a click or not) */
                         if (!g_stage_at)
                             g_stage_at = g_now + 18;
                         next = g_now >= g_stage_at;
@@ -2342,9 +2361,11 @@ int game_run(void)
         case MODE_HOME:                         /* (her say, and a moment to read it; a click goes on at once) */
             face_tick();
             plate_tick();
-            if (speech_done() && !g_stage_at)
+            if (speech_heard() && !g_stage_at)
                 g_stage_at = g_now + 40;
-            if (in.clicked || in.key == KEY_ENTER || in.key == KEY_ESC || (g_stage_at && g_now >= g_stage_at))
+            if ((in.clicked || in.key == KEY_ENTER) && !speech_done())
+                speech_finish();                /* (the first click: all she says; the next goes on) */
+            else if (in.clicked || in.key == KEY_ENTER || in.key == KEY_ESC || (g_stage_at && g_now >= g_stage_at))
                 start_briefing(1);
             break;
         case MODE_DEAD:
