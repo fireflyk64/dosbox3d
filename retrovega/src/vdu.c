@@ -93,6 +93,13 @@ static int comm_target(void)
     return logic_is_wingman((int16_t)t) ? TARGET_WING : TARGET_FRIEND;
 }
 
+/* a target the menu offers: an enemy (a taunt), the home carrier (landing), one of the wing (orders); none with the
+ * intercom wrecked but the carrier (the user, 2026-11-06: "there's a lot of nonsense choices out there") */
+static int comm_target_useful(int kind)
+{
+    return kind == TARGET_HOME || (!comm_wrecked() && (kind == TARGET_ENEMY || kind == TARGET_WING));
+}
+
 /* the page that can still be shown: the wingman dead, the target gone or the intercom wrecked under an open page puts
  * the menu back at its first (the target's page follows the target: T changes it) */
 static int comm_level(void)
@@ -102,7 +109,7 @@ static int comm_level(void)
         g_comm_level = LEVEL_WHOM;
     if (g_comm_level == LEVEL_TARGET) {
         kind = comm_target();
-        if (kind == TARGET_NONE || (comm_wrecked() && kind != TARGET_HOME))
+        if (!comm_target_useful(kind))
             g_comm_level = LEVEL_WHOM;
     }
     return g_comm_level;
@@ -121,11 +128,12 @@ int vdu_comm_key(int ch, int *who, int *order)
     *order = ORDER_FREE;
     if (g_page[0] != VDU_L_COMM)
         return COMM_NONE;
-    if (ch == 27 || ch == '0') {        /* (Esc, 0: never mind) */
+    if (ch == 27 || ch == '9') {        /* (Esc, 9: never mind.  Not 0, the shared flight's key to talk: the user,
+                                           2026-11-06, "instead of 0 never mind just make it like 9 never mind") */
         g_page[0] = VDU_L_STATUS;
         return COMM_CLOSE;
     }
-    if (ch < '1' || ch > '9')
+    if (ch < '1' || ch > '8')
         return COMM_NONE;
     d = ch - '0';
     level = comm_level();
@@ -139,14 +147,16 @@ int vdu_comm_key(int ch, int *who, int *order)
     }
     kind = comm_target();
     if (level == LEVEL_WINGMAN || kind == TARGET_WING) {
-        if (d > COMM_ORDERS)
-            return COMM_NONE;
         *who = level == LEVEL_WINGMAN ? comm_wingman() : g_sys.target;
+        if (d > COMM_ORDERS || !logic_order_ok((int16_t)*who, k_order_key[d - 1])) {
+            *who = -1;                  /* (an order not on the page) */
+            return COMM_NONE;
+        }
         *order = k_order_key[d - 1];
         g_page[0] = VDU_L_STATUS;
         return COMM_ORDER;
     }
-    if (d != 1 || kind == TARGET_FRIEND)
+    if (d != 1 || !comm_target_useful(kind))
         return COMM_NONE;
     *who = g_sys.target;
     g_page[0] = VDU_L_STATUS;
@@ -802,42 +812,49 @@ static void draw_nav(const RvRect __far *r, int y0, int y1)
 }
 
 /* the comm page: 1 the wingman and 2 the target, or what can be said to the one picked */
+/* (the user, 2026-11-06: "a ton of the comms choices have zero to cancel and there's a lot of nonsense choices out
+ * there. You should always be able to talk to your wingman": only what can be said is listed, the wingman always
+ * first while there is one, the shared flight's 0 to talk to the other pilots, and 9 never mind) */
 static void draw_comm(const RvRect __far *r, int y0, int y1)
 {
-    char lines[COMM_ORDERS + 2][20], name[12];
+    char lines[COMM_ORDERS + 3][20], name[12];
     int n = 0, level = comm_level(), kind = comm_target();
     if (level == LEVEL_WHOM) {
-        int w = comm_wingman();
+        int w = comm_wingman(), some = 0;
         strcpy(lines[n++], comm_wrecked() ? "INTERCOM OUT" : "SEND TO:");
-        if (!comm_wrecked()) {
-            if (w >= 0)
-                ship_name(w, name, 12);
-            else
-                strcpy(name, "NO WINGMAN");
+        if (!comm_wrecked() && w >= 0) {
+            ship_name(w, name, 12);
             sprintf(lines[n++], "1 %s", name);
+            some = 1;
         }
-        if (kind != TARGET_NONE && (!comm_wrecked() || kind == TARGET_HOME)) {
+        if (comm_target_useful(kind)) {
             ship_name(g_sys.target, name, 12);
             sprintf(lines[n++], "2 %s", name);
-        } else if (!comm_wrecked())
-            strcpy(lines[n++], "2 NO TARGET");
+            some = 1;
+        }
+        if (rvNetRole && !comm_wrecked()) {   /* (the 0 key's prompt is the layer's: it opens before the game sees it) */
+            strcpy(lines[n++], "0 TALK TO PILOTS");
+            some = 1;
+        }
+        if (!some)
+            strcpy(lines[n++], "NOBODY TO CALL");
     } else {
-        ship_name(level == LEVEL_WINGMAN ? comm_wingman() : g_sys.target, name, 12);
+        int who = level == LEVEL_WINGMAN ? comm_wingman() : g_sys.target;
+        ship_name(who, name, 12);
         sprintf(lines[n++], "%s:", name);
         if (level == LEVEL_WINGMAN || kind == TARGET_WING) {
             int k;
-            for (k = 0; k < COMM_ORDERS; k++) {
-                sprintf(lines[n], "%d ", k + 1);
-                _fstrcpy(lines[n++] + 2, k_order_line[k]);
-            }
+            for (k = 0; k < COMM_ORDERS; k++)
+                if (logic_order_ok((int16_t)who, k_order_key[k])) {
+                    sprintf(lines[n], "%d ", k + 1);
+                    _fstrcpy(lines[n++] + 2, k_order_line[k]);
+                }
         } else if (kind == TARGET_ENEMY)
             strcpy(lines[n++], "1 TAUNT");
         else if (kind == TARGET_HOME)
             strcpy(lines[n++], "1 REQUEST LANDING");
-        else
-            strcpy(lines[n++], "NOTHING TO SEND");
     }
-    strcpy(lines[n++], "0 NEVER MIND");
+    strcpy(lines[n++], "9 NEVER MIND");
     (void)menu(r, lines, n, 0, -1, y0, y1);
 }
 

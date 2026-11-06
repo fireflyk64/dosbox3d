@@ -3429,9 +3429,9 @@ unsigned short __far __cdecl flight_keys(void)
         setSpeed[0] = 0;                /* Backspace stops and \ is full speed, as in the old game (the user, 2026-11-03: "ensure
                                            the backspace key also sets desired speed to zero in space"; "and \ sets to full
                                            speed") */
-    if (in.key == KEY_CHAR && in.ch >= '0' && in.ch <= '9' && vdu_page(0) == VDU_L_COMM && !(in.ch == '0' && in_key_down(0x52)))
-                                        /* (the keypad's Ins with Num Lock on is a 0 too: a roll, not a pick) */
-        comm_key(in.ch);                /* (a pick in the comm menu) */
+    if (in.key == KEY_CHAR && in.ch >= '1' && in.ch <= '9' && vdu_page(0) == VDU_L_COMM)
+        comm_key(in.ch);                /* (a pick in the comm menu, 9 never mind; 0 is a shared flight's key to talk, the
+                                           layer's prompt: no pick) */
     else if (in.key == KEY_CHAR) {
 #ifdef RV_TESTS
         if (in.ch == '`')               /* (the test build keeps ~ for its own) */

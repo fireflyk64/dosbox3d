@@ -76,6 +76,7 @@ int16_t logic_nav_mark(int16_t *x, int16_t *y);   /* the chosen one on the view:
 enum { ORDER_FREE, ORDER_ATTACK, ORDER_FORMATION, ORDER_HELP, ORDER_RTB, ORDER_BREAK, ORDER_COUNT };
 int16_t logic_wingmen(int16_t *out, int16_t max);   /* the wingmen's slots, in order: n of them */
 int16_t logic_is_wingman(int16_t s);    /* slot s is one of them */
+int16_t logic_order_ok(int16_t s, int16_t order);   /* 1 when slot s would take that order now (the comm menu) */
 int16_t logic_order(int16_t s, int16_t order);      /* 1 when slot s takes it (0: no wingman there, or ATTACK with
                                                        no enemy targeted, or RTB with no capital ship of its side) */
 int16_t logic_order_of(int16_t s);

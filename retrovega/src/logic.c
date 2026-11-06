@@ -291,29 +291,38 @@ int16_t logic_nav_seen(int16_t n)
 
 /* --- the wingmen's orders (logic.h) --- */
 
+static int16_t role_of(int16_t s);
+
 static int16_t is_wingman(int16_t s)
 {
     return s > 0 && s < NUM_SHIP_SLOTS && slot_is_ship(s) && maybeEntityType[s] == ET_SHIP && rvController[s] == CTL_AI
            && shipAiState[s] != 9 && slot_is_ship(0) && commAnimInfo[s] == commAnimInfo[0];
 }
 
+/* the player's wing, as the comm menu and the radio have it: a fighter of ours this machine's AI flies, not the
+ * carrier's patrol (role=stay: it is no wingman of the player's, and ordering it about made no sense); the mission's
+ * own wingman first */
 int16_t logic_is_wingman(int16_t s)
 {
-    return is_wingman(s);
+    return is_wingman(s) && role_of(s) != RV_ESCORT_STAY;
 }
 
 int16_t logic_wingmen(int16_t *out, int16_t max)
 {
-    int16_t s, n = 0;
-    for (s = 1; s < NUM_SHIP_SLOTS && n < max; s++)
-        if (is_wingman(s))
-            out[n++] = s;
+    int16_t s, n = 0, pass;
+    for (pass = 0; pass < 2; pass++)
+        for (s = 1; s < NUM_SHIP_SLOTS && n < max; s++)
+            if (logic_is_wingman(s)
+                && (slotMissionShip[s] < 64 && MSHIP_BEHAVIOUR(slotMissionShip[s]) == 4) == (pass == 0))
+                out[n++] = s;
     return n;
 }
 
 static int16_t nearest_capital(int16_t s);
 
-int16_t logic_order(int16_t s, int16_t order)
+/* an order slot s would take now: ATTACK needs an enemy chosen, RTB a capital ship of its side (the comm menu lists
+ * only these) */
+int16_t logic_order_ok(int16_t s, int16_t order)
 {
     if (!is_wingman(s) || order < 0 || order >= ORDER_COUNT)
         return 0;
@@ -321,6 +330,13 @@ int16_t logic_order(int16_t s, int16_t order)
                                   || commAnimInfo[g_sys.target] == commAnimInfo[s]))
         return 0;
     if (order == ORDER_RTB && nearest_capital(s) < 0)
+        return 0;
+    return 1;
+}
+
+int16_t logic_order(int16_t s, int16_t order)
+{
+    if (!logic_order_ok(s, order))
         return 0;
     g_order[s] = (uint8_t)order;
     g_mind[s].timer = 0;                /* (its tactic over: the next step picks afresh for the order) */
