@@ -91,11 +91,11 @@ chat)
     HOST="$HOST,9:!say=hello_from_the_host,12:!shot=chat"
     GUEST="$GUEST,10:!say=hi_from_the_guest,12:!shot=chat" ;;
 field)                                  # (HOST_MISSION=1 GUEST_MISSION=1: ENIGMA2, its field on the way to nav 2)
-    HOST="$HOST,10:n,11:a,16:f,46:!ds=field"
-    GUEST="$GUEST,16:f,46:!ds=field" ;;
+    HOST="$HOST,14:n,15:a,20:f,50:!ds=field"
+    GUEST="$GUEST,20:f,50:!ds=field" ;;
 field1)                                 # (HOST_MISSION=0 GUEST_MISSION=0: ENIGMA1, whose field covers nav 2)
-    HOST="$HOST,10:a,15:!killfoes,22:a,27:f,80:!ds=field"
-    GUEST="$GUEST,27:f,80:!ds=field" ;;
+    HOST="$HOST,14:a,19:!killfoes,26:a,31:f,84:!ds=field"   # (after every pilot's 8 s look: their clocks start apart)
+    GUEST="$GUEST,31:f,84:!ds=field" ;;
 *) echo "rvnet-duo: no scenario $SCENARIO" >&2; exit 2 ;;
 esac
 

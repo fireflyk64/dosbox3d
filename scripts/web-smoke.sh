@@ -11,6 +11,7 @@
 #   scripts/web-smoke.sh hall     # the public lobby and room codes (scripts/web-hall.mjs; scripts/web-chatfilter-test.mjs first)
 #   scripts/web-smoke.sh rv [s]   # RetroVega with no game files: lobby, a flight alone, a host and a wingman (scripts/web-rv.mjs)
 #   scripts/web-smoke.sh rvdrop [s]   # a wingman's page closed in a shared flight: the host's pace after (scripts/web-rv-drop.mjs)
+#   scripts/web-smoke.sh rvtrio   # three pilots, a room of three: mission 1 flown together to its asteroid field (scripts/web-rv-trio.mjs)
 #
 # With NATIVE_HOST=1 the native DOSBox (NATIVE_DOSBOX, default
 # build-native/src/dosbox or src/dosbox) hosts through the same lobby with
@@ -45,7 +46,7 @@ printf '[rooms]\nmax_players_hard = 256\n' > "$OUT/lobby.toml"
 "$LOBBY" --config "$OUT/lobby.toml" --listen-http "127.0.0.1:$LOBBY_PORT" --allowed-origin "http://localhost:$PORT,http://127.0.0.1:$PORT" \
     --public-url "http://127.0.0.1:$LOBBY_PORT" --allow-no-origin > "$OUT/lobby.log" 2>&1 &
 LOBBY_PID=$!
-if [ "${1:-}" = rv ] || [ "${1:-}" = rvdrop ]; then
+if [ "${1:-}" = rv ] || [ "${1:-}" = rvdrop ] || [ "${1:-}" = rvtrio ]; then
     # (the site as deployed: no wc.tar.gz, so a fresh page has no game files at all)
     export WEB_ROOT="$OUT/rv-dist"
     rm -rf "$WEB_ROOT" && mkdir -p "$WEB_ROOT"
@@ -67,6 +68,10 @@ fi
 
 if [ "${1:-}" = rvdrop ]; then
     PLAYWRIGHT_DIR="$PW" SHOT_DIR="$OUT" node "$ROOT/scripts/web-rv-drop.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" "${2:-40}" 2>&1 | tee "$OUT/rvdrop.log"
+    exit "${PIPESTATUS[0]}"
+fi
+if [ "${1:-}" = rvtrio ]; then
+    PLAYWRIGHT_DIR="$PW" SHOT_DIR="$OUT" node "$ROOT/scripts/web-rv-trio.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" 2>&1 | tee "$OUT/rvtrio.log"
     exit "${PIPESTATUS[0]}"
 fi
 if [ "${1:-}" = rv ]; then

@@ -199,8 +199,14 @@ and have it repeat every 45 seconds".
   screens, the host's R reaching the guest, the mission flown again and met again), `land` (the guest's landing is
   the host's, scored alike), `autopilot` (the host's flyby shown on the guest while the host's runs, then the guest taken along), `kill` (the host's kills explode and go on the
   guest), `combat` (the guest's hits go to the host and come back), `ram` (the guest's share of its collisions
-  goes to the host), `PLAYERS=3` (a seat made for the third), and
-  `WCFPS=15`. One pair at a time; 40-55 s each.
+  goes to the host), `PLAYERS=3` (a seat made for the third), `field` and `field1` (ENIGMA2's and ENIGMA1's
+  asteroid fields flown by every pilot: each RVLOG's rocks), and `WCFPS=15`. One pair at a time; 40-55 s each.
+  `SCENARIO=field1 PLAYERS=3 HOST_MISSION=0 GUEST_MISSION=0` is mission 1 flown by three: 30 checks (2026-11-06).
+- **Three pilots in browser pages** (`scripts/web-smoke.sh rvtrio`, `scripts/web-rv-trio.mjs`; the user, 2026-11-06:
+  "can we up the players to 3 and run a test where they do a mission 1 together"): a room of three seats, two wingmen
+  joining by its code, the host's Fly starting all three on mission 1: one host and two guests, the host counts three,
+  the same mission, every pilot's ship where it is in the other two games (guest to guest too), then the host's
+  autopilot to the asteroid field short of nav 2: the three together, each reading the rocks in. 16 checks.
 - **A mismatched interface** (`scripts/rvnet-abi.sh`): copies with the RVHOOK version, then a word of the directory,
   changed are refused and only watched.
 - **Not covered by a rig:** a seat made from the player's own record (a mission whose wingman the host's save lost:
