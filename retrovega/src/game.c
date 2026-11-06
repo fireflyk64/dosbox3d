@@ -1410,7 +1410,10 @@ static void flight_prepare(void)
  * the host starts the mission... "All pilots report to briefing room" and have it repeat every 45 seconds"): a guest
  * in the base, its host's mission begun (the layer's rvPeerWhere and rvBriefingLock), hears it and reads it, and again
  * every PA_EVERY while it stays out of the briefing.  The card plays in flight only: started for the call, and stopped
- * when it is over or a flight comes (pa_stop) */
+ * when it is over or a flight comes (pa_stop).  Only while the host is in the briefing room or on the deck: once the
+ * host has launched, the call is over and its line comes down (the user, 2026-11-05: "The "All Pilots to Briefing
+ * Room" stays annoyingly during flight"; the door stays open for a late wingman, and the corner line says where the
+ * host is) */
 #define PA_EVERY 819                    /* ticks: 45 s */
 #define PA_LONG 100                     /* ticks the call takes, its echo with it: 5.5 s */
 static unsigned long g_pa_at, g_pa_end;
@@ -1429,7 +1432,8 @@ static void pa_tick(void)
     static const char __far s_call[] = "PA: All pilots report to the briefing room.";
     int base = rvWhere == RV_R_BAR + 1 || rvWhere == RV_R_LOUNGE + 1 || rvWhere == RV_R_QUARTERS + 1
                || rvWhere == RV_R_LOCKER + 1;
-    int due = rvNetRole == 2 && peer_where(0) && !rvBriefingLock && base;
+    int host = peer_where(0);
+    int due = rvNetRole == 2 && (host == RV_R_BRIEFING + 1 || host == RV_R_DECK + 1) && !rvBriefingLock && base;
     unsigned long now = ticks();
     if (g_pa_card) {
         sfx_poll();
@@ -1437,6 +1441,10 @@ static void pa_tick(void)
             pa_stop();
     }
     if (!due) {
+        if (g_pa_on) {
+            scene_caption_off(s_call);
+            pa_stop();
+        }
         g_pa_on = 0;
         return;
     }

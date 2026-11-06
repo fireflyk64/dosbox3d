@@ -421,6 +421,14 @@ void scene_caption(const char __far *text)
     vid_dirty(0, CHAT_H + 24);
 }
 
+void scene_caption_off(const char __far *text)
+{
+    if (g_chat[0] && !_fstrcmp(g_chat, text)) {
+        g_chat[0] = 0;
+        vid_dirty(0, CHAT_H + 24);
+    }
+}
+
 void scene_chat(void)
 {
     uint16_t who;

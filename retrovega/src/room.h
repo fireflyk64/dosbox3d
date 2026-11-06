@@ -58,6 +58,7 @@ void scene_chat(void);
 #define RV_WHERE_DOWN 10
 void presence_tick(void);
 void scene_caption(const char __far *text);   /* a line of the game's own in the chat's strip, a few seconds */
+void scene_caption_off(const char __far *text);   /* that line taken off now, if it is still the one up */
 int peer_where(int player);                   /* RV_WHERE_* of that pilot, 0 not known */
 int briefing_locked(void);
 const char __far *peer_where_phrase(int player);   /* "in the crew lounge": where that pilot is, "" not known */

@@ -179,9 +179,11 @@ and have it repeat every 45 seconds".
   host wait for the frames of a guest still in the bar.
 - **The call to the briefing.** A guest in the base (bar, lounge, quarters, locker) whose host's mission has begun reads
   "PA: All pilots report to the briefing room." across the top and hears the ship's address system (sounds.csv
-  `pa_report`: a two-note chime and the voice, art/voice/pa_report.wav, made with eSpeak NG, through a tinny band and a
-  hall's echo: tools/sfx.py), again every 45 s while it stays out (`pa_tick`). The card plays in flight only: started
-  for the call and stopped after it, or before a flight.
+  `pa_report`: a two-note chime and the voice, art/voice/pa_report.wav, made with Piper's en_US-norman voice, through a tinny band and a
+  hall's echo: tools/sfx.py), again every 45 s while it stays out (`pa_tick`), and only while the host is in the
+  briefing room or on the deck: once the host has launched the call stops and its line comes down (the user,
+  2026-11-05: it "stays annoyingly during flight"). The card plays in flight only: started for the call and stopped
+  after it, or before a flight.
 - **Chat with 0 in the base.** The layer's 0 prompt (sdlmain) opens wherever a RetroVega session is, the rooms too
   (`wc_net_chat_ready`), except while the game takes typed text (`rvTyping`: a bunk's name). The line shows across the
   top of the other pilots' rooms, as in flight.
