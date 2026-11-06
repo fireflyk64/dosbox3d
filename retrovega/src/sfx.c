@@ -154,9 +154,16 @@ static void mix(uint8_t __far *out, uint16_t n)
             uint16_t m = got < n ? got : n;
             for (i = 0; i < m; i++)
                 g_acc[i] += (int16_t)(g_src[i] * vol >> 8);
-        } else {
+        } else {                        /* another pitch: between two samples, in proportion (the nearest one, as it was,
+                                           repeated or skipped a sample in every few: a grit over every shot, the user's
+                                           "piercing", 2026-11-05) */
             uint32_t p = frac;          /* (1/256 samples from start) */
-            for (i = 0; i < n && (p >> 8) < got; i++, p += v->step)
+            for (i = 0; i < n && (p >> 8) + 1 < got; i++, p += v->step) {
+                int16_t a = g_src[p >> 8], d = g_src[(p >> 8) + 1] - a;   /* (a 128th of the way: 255 x 127 fits
+                                           a 16-bit int) */
+                g_acc[i] += (int16_t)((int16_t)(a + (d * (int16_t)((p & 255) >> 1) >> 7)) * vol >> 8);
+            }
+            for (; i < n && (p >> 8) < got; i++, p += v->step)
                 g_acc[i] += (int16_t)(g_src[p >> 8] * vol >> 8);
         }
         v->pos += (uint32_t)v->step * n;

@@ -155,22 +155,26 @@ def laser(pitch=1.0, dur=0.20):
     slightly lower frequencies"): the dive from 1,450 Hz (it was 1,800), a sine an octave under the two saws where a
     narrow pulse was, the filter from 4.8 kHz with a gentle peak (from 7 kHz, a sharp one: the whistle), the click a
     soft band at 2.8 kHz (a 5 kHz high pass); its centre of brightness 1,200 Hz where it was 2,400, a fifth of its
-    energy over 2 kHz where it was 43%, some 3 dB quieter to the ear"""
+    energy over 2 kHz where it was 43%, some 3 dB quieter to the ear.  Then (2026-11-05: "the laser sounds are a bit
+    piercing ... Can we smooth or muddy the sounds just a bit"): the dive from 1,250 Hz, the filter from 3.4 kHz with
+    no peak to speak of, the click a duller 2 kHz and half as loud, a little less drive"""
     t = tl(dur)
-    f = sweep(t, 1450 * pitch, 320 * pitch, 0.05)
-    osc = 0.45 * saw(f) + 0.45 * saw(f * 1.007) + 0.45 * sine(f * 0.5)
-    body = svf(osc, sweep(t, 4800, 750 * pitch, 0.05), 1.9) * env(t, 0.003, 0.068)
-    click = svf(noise(t, 1), 2800, 0.9, 'bp') * env(t, 0.0008, 0.004)
-    return echo(drive(body + 0.3 * click, 1.3), 55, 0.22)
+    f = sweep(t, 1250 * pitch, 300 * pitch, 0.05)
+    osc = 0.45 * saw(f) + 0.45 * saw(f * 1.007) + 0.5 * sine(f * 0.5)
+    body = svf(osc, sweep(t, 3400, 650 * pitch, 0.05), 1.3) * env(t, 0.004, 0.068)
+    click = svf(noise(t, 1), 2000, 0.8, 'bp') * env(t, 0.001, 0.004)
+    return echo(drive(body + 0.15 * click, 1.15), 55, 0.22)
 
 
 def particle(pitch=1.0, dur=0.28, seed=2):
+    """(2026-11-05, the user's "piercing": its ring modulator down from 2,700 Hz to 1,500, the buzz from 2.8 kHz, not
+    4.2, and less resonant, the drive gentler)"""
     t = tl(dur)
     f = sweep(t, 900 * pitch, 160 * pitch, 0.08)
-    sq = pulse(f, 0.5) * sine(2700 * pitch + 0 * t)
-    buzz = svf(noise(t, seed), sweep(t, 4200, 700, 0.07), 2.5, 'bp')
+    sq = svf(pulse(f, 0.5), 2200, 0.8) * sine(1500 * pitch + 0 * t)
+    buzz = svf(noise(t, seed), sweep(t, 2800, 600, 0.07), 1.6, 'bp')
     x = (0.6 * sq + 0.8 * buzz) * env(t, 0.002, 0.09)
-    return echo(drive(x, 2.2), 60, 0.2)
+    return echo(drive(x, 1.6), 60, 0.2)
 
 
 def ion():
@@ -198,15 +202,16 @@ def massdriver():
     (resonant noise 850 falling to 420 Hz), stopped in some 60 ms; no ring.  Its gain (sounds.csv) puts it as loud as
     the laser, A-weighted over a shot's first 120 ms"""
     t = tl(0.26)
-    ch = svf(noise(t, 9), 3500, 0.8, 'bp') * env(t, 0.0005, 0.017) * 1.35
+    # (2026-11-05, "Same with mass drivers": the ch duller, 2.4 kHz not 3.5, and softer; the drive gentler)
+    ch = svf(noise(t, 9), 2400, 0.8, 'bp') * env(t, 0.0008, 0.015) * 0.95
     thump = sine(sweep(t, 245, 90, 0.025)) * env(t, 0.0035, 0.055)
-    knock = svf(noise(t, 3), sweep(t, 850, 420, 0.03), 3.5, 'bp') * env(t, 0.0025, 0.04) * 2.6
-    return echo(drive(ch + 1.0 * thump + knock, 1.9), 38, 0.12)
+    knock = svf(noise(t, 3), sweep(t, 850, 420, 0.03), 3.0, 'bp') * env(t, 0.0025, 0.04) * 2.6
+    return echo(drive(ch + 1.0 * thump + knock, 1.5), 38, 0.12)
 
 
 def photon(light):
     t = tl(0.16 if light else 0.24)
-    f0, f1 = (2400, 1500) if light else (1500, 800)
+    f0, f1 = (1900, 1250) if light else (1500, 800)   # (the light one from 2,400 Hz until 2026-11-05: piercing)
     f = sweep(t, f0, f1, 0.04 if light else 0.06)
     bell = fm(f, 1.41, sweep(t, 3.0, 0.2, 0.05)) + 0.4 * fm(f * 1.5, 2.0, sweep(t, 2.0, 0.0, 0.04))
     x = bell * env(t, 0.001, 0.055 if light else 0.09)
@@ -274,8 +279,9 @@ def gauss():
 
 def icepick():
     t = tl(0.24)
-    tick = svf(noise(t, 11), 6000, 0.8, 'hp') * env(t, 0.0003, 0.003)
-    zing = sine(sweep(t, 3200, 700, 0.05)) * env(t, 0.001, 0.06)
+    # (2026-11-05: the tick a 3 kHz band, not everything over 6 kHz; the zing from 2.4 kHz, not 3.2)
+    tick = svf(noise(t, 11), 3000, 0.9, 'bp') * env(t, 0.0005, 0.003)
+    zing = sine(sweep(t, 2400, 600, 0.05)) * env(t, 0.001, 0.06)
     ring = sine(1900 + 0 * t) * sine(170 + 0 * t) * env(t, 0.002, 0.08) * 0.5
     return echo(tick + 0.8 * zing + ring, 45, 0.25)
 
@@ -308,7 +314,7 @@ def boom(size):
     dur = {'small': 0.9, 'ship': 1.5, 'capital': 3.0}[size]
     t = tl(dur)
     deep = {'small': 1.0, 'ship': 0.75, 'capital': 0.5}[size]
-    crack = svf(noise(t, 14), 5000, 0.9) * env(t, 0.0005, 0.02) * 1.5
+    crack = svf(noise(t, 14), 3200, 0.8) * env(t, 0.0008, 0.02) * 1.5   # (5 kHz until 2026-11-05)
     roar = svf(noise(t, 15), sweep(t, 4500 * deep, 160 * deep, 0.18 / deep), 1.1) * env(t, 0.004, 0.35 / deep) * 1.6
     if size == 'ship':                 # the roar rolls
         roar *= 0.75 + 0.25 * np.sin(2 * math.pi * 3.5 * t)
@@ -325,28 +331,34 @@ def boom(size):
 
 
 def hit_shield():
-    t = tl(0.2)
-    zap = pulse(sweep(t, 1300, 400, 0.03), 0.5) * sine(3100 + 0 * t) * env(t, 0.001, 0.05)
-    fizz = svf(noise(t, 17), 6000, 0.8, 'hp') * env(t, 0.001, 0.07)
-    hum = sine(sweep(t, 660, 600, 0.1)) * env(t, 0.005, 0.08) * 0.4
-    return echo(drive(zap + 0.7 * fizz + hum, 1.6), 35, 0.2)
+    """a hit on the player's shields.  The user, 2026-11-05: "the damage sound is off the charts": it was a 1.3 kHz
+    square ring-modulated by 3.1 kHz and a fizz of everything over 6 kHz, its brightness centred at 7.5 kHz (four
+    fifths of it over 4 kHz), driven hard.  Now the shield takes it with a soft electric thump: a falling saw through
+    a closing filter, a fizz in a 2.2 kHz band, a low hum, gently driven"""
+    t = tl(0.22)
+    zap = svf(saw(sweep(t, 900, 300, 0.03)), sweep(t, 2400, 600, 0.04), 1.2) * env(t, 0.002, 0.05)
+    fizz = svf(noise(t, 17), 2200, 0.9, 'bp') * env(t, 0.002, 0.06) * 0.6
+    hum = sine(sweep(t, 330, 300, 0.1)) * env(t, 0.005, 0.09) * 0.6
+    return echo(drive(zap + fizz + hum, 1.2), 35, 0.18)
 
 
 def hit_hull():
+    """(2026-11-05, "off the charts": its 1,450 Hz ring gone, the rattle lighter, the drive gentler)"""
     t = tl(0.34)
-    crunch = svf(noise(t, 18), 900, 1.8, 'bp') * env(t, 0.0005, 0.05) * 2.0
+    crunch = svf(noise(t, 18), 900, 1.6, 'bp') * env(t, 0.0008, 0.05) * 2.0
     thud = sine(sweep(t, 120, 60, 0.05)) * env(t, 0.001, 0.08)
-    rattle = crackle(t, 600, 19, 0.08) * 0.7
-    ring = sine(1450 + 0 * t) * env(t, 0.001, 0.07) * 0.2
-    return drive(crunch + thud + rattle + ring, 2.0)
+    rattle = crackle(t, 600, 19, 0.08) * 0.4
+    return drive(crunch + thud + rattle, 1.4)
 
 
 def spark():
+    """(2026-11-05: an arc in a 2.4 kHz band, not a sharp 3.4 kHz one; fewer spits; the buzz a low pulse, not
+    ring-modulated by 1.9 kHz; the drive gentler)"""
     t = tl(0.38)
-    arc = svf(noise(t, 31), 3400, 2.5, 'bp') * env(t, 0.001, 0.07) * 1.8
-    spit = crackle(t, 1800, 32, 0.14) * 0.9
-    buzz = pulse(118 + 0 * t, 0.3) * sine(1900 + 0 * t) * env(t, 0.002, 0.05) * 0.5
-    return drive(arc + spit + buzz, 2.0)
+    arc = svf(noise(t, 31), 2400, 1.3, 'bp') * env(t, 0.001, 0.07) * 1.8
+    spit = crackle(t, 1200, 32, 0.14) * 0.5
+    buzz = svf(pulse(118 + 0 * t, 0.3), 1200, 0.8) * env(t, 0.002, 0.06) * 0.5
+    return drive(arc + spit + buzz, 1.4)
 
 
 def klaxon():
@@ -434,9 +446,31 @@ RECIPES = {
 }
 
 
+MUFFLE_HZ = 4000                # every effect's top rounded off (the PA has its own speaker's band)
+
+
+def lowpass(x, cutoff, q=0.6):
+    """a biquad low pass (the audio cookbook's): steady at any cutoff, where svf above about 2 kHz is not (at its
+    3.4 kHz ceiling, q 0.7, it lifts what is over 8 kHz rather than cutting it)"""
+    w = 2 * math.pi * cutoff / SR
+    al = math.sin(w) / (2 * q)
+    a0 = 1 + al
+    b0 = b2 = (1 - math.cos(w)) / 2 / a0
+    b1 = (1 - math.cos(w)) / a0
+    a1, a2 = -2 * math.cos(w) / a0, (1 - al) / a0
+    y = np.empty_like(x)
+    x1 = x2 = y1 = y2 = 0.0
+    for i in range(len(x)):
+        y[i] = b0 * x[i] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
+        x2, x1, y2, y1 = x1, x[i], y1, y[i]
+    return y
+
+
 def render(name, gain):
     x = RECIPES[name]()
     x = x - np.mean(x[:64]) * 0                   # (no offset to remove: the parts are centred)
+    if name != 'pa_report':     # (the user, 2026-11-05: "smooth or muddy the sounds just a bit so they are more pleasant
+        x = lowpass(x, MUFFLE_HZ)                 # on the ear": a gentle low pass, nothing over it sharp)
     peak = np.max(np.abs(x)) or 1.0
     x = x / peak * gain
     # the tail: trimmed where it has fallen under the 8 bits' last step for good
