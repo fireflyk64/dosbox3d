@@ -190,6 +190,11 @@ static struct {
  * 15,189 and 15,335 km short of points of 10,000, 15,000 and 15,000 (traced 2026-11-04, tests/wc1/fullscale.py).  The
  * launch's is HOME_REACH_KM, its Tiger's Claw's in 36 of its 40 missions */
 #define HOME_REACH_KM 20000
+#define HOME_ARRIVE_KM 4000             /* but the autopilot home, with nothing on the way, stops this far off the home
+                                           carrier's hull, facing it (the user, 2026-11-05: "why do we arrive home so far
+                                           away from the carrier... that doesn't seem right": at the reach it was some
+                                           20,000 km, a minute's flying at cruise; 4,000 is my choice: just outside the
+                                           2,000 of a cleared landing, LANDING_NEAR_KM) */
 #define LAUNCH_NEAR_KM 5000             /* a hidden point this near the launch is at the launch (wave_may_come) */
 
 static uint16_t g_wave_held;            /* a bit per trigger point whose wave has waited for the enemies out */
@@ -4094,6 +4099,26 @@ static void form_hold(void)
 }
 
 /* the player turned to nav point `next` (its yaw and pitch out) */
+/* the player turned to face a place (km) */
+static void face_km(int32_t x, int32_t y, int32_t z, int16_t *yaw, int16_t *pitch)
+{
+    RvVec3 d = vec3(x - TO_KM(gPositionVector[0].x), y - TO_KM(gPositionVector[0].y), z - TO_KM(gPositionVector[0].z));
+    int32_t horiz = (int32_t)lf_sqrt((uint32_t)((d.x >> 4) * (d.x >> 4) + (d.z >> 4) * (d.z >> 4))) << 4;
+    *yaw = lf_atan2(d.x, d.z);
+    *pitch = lf_atan2(d.y, horiz);
+    ship_face(0, *yaw, *pitch);
+}
+
+/* the home carrier's slot, in the scene or held off it (far off, the scene holds it: step_scene), -1 none */
+static int16_t home_slot(void)
+{
+    int16_t s;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if ((slot_is_ship(s) || maybeEntityType[s] == ET_OFFSCENE) && shipAiState[s] != 9 && role_of(s) == RV_ESCORT_HOME)
+            return s;
+    return -1;
+}
+
 static void face_nav(int16_t next, int16_t *yaw, int16_t *pitch)
 {
     RvVec3 d = vec3(NAV_AT(next, 0) - TO_KM(gPositionVector[0].x), NAV_AT(next, 1) - TO_KM(gPositionVector[0].y),
@@ -4158,7 +4183,7 @@ int16_t logic_autopilot(void)
     RvVec3 to;
     int32_t stop;
     uint32_t moved = 0;
-    int16_t s, next, yaw, pitch, region, field;
+    int16_t s, next, yaw, pitch, region, field, home;
     if ((next = logic_autopilot_ready()) < 0)
         return 0;
     if (g_nav_chosen && g_sys.nav != next)
@@ -4167,11 +4192,19 @@ int16_t logic_autopilot(void)
     /* (the camera's start was the engine's, at its flyby: flight.c; the jump's end goes through autopilotFinished below:
      * in a shared flight the layer replays it, and every pilot's ship goes where the host's game puts it) */
     face_nav(next, &yaw, &pitch);
+    home = next == 0 && region < 0 && !field ? home_slot() : -1;
     if (region >= 0 || field)
         to = vec3((TO_KM(gPositionVector[0].x) + FIX_MUL(gOrientationFrontVector[0].x, stop)) * KM,
                   (TO_KM(gPositionVector[0].y) + FIX_MUL(gOrientationFrontVector[0].y, stop)) * KM,
                   (TO_KM(gPositionVector[0].z) + FIX_MUL(gOrientationFrontVector[0].z, stop)) * KM);
-    else
+    else if (home >= 0) {               /* home: off the carrier's hull, facing it (HOME_ARRIVE_KM) */
+        const RvShipType __far *ht = slot_type(home);   /* (its radius: collide_half has none for a ship held off) */
+        int32_t back = HOME_ARRIVE_KM + (ht ? (int32_t)ht->radius_km : 0);
+        face_km(TO_KM(gPositionVector[home].x), TO_KM(gPositionVector[home].y), TO_KM(gPositionVector[home].z), &yaw, &pitch);
+        to = vec3(gPositionVector[home].x - FIX_MUL(gOrientationFrontVector[0].x, back) * KM,
+                  gPositionVector[home].y - FIX_MUL(gOrientationFrontVector[0].y, back) * KM,
+                  gPositionVector[home].z - FIX_MUL(gOrientationFrontVector[0].z, back) * KM);
+    } else
         to = vec3((NAV_AT(next, 0) - FIX_MUL(gOrientationFrontVector[0].x, nav_reach(next))) * KM,
                   (NAV_AT(next, 1) - FIX_MUL(gOrientationFrontVector[0].y, nav_reach(next))) * KM,
                   (NAV_AT(next, 2) - FIX_MUL(gOrientationFrontVector[0].z, nav_reach(next))) * KM);

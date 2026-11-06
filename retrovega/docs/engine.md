@@ -245,8 +245,9 @@ its line, the old record's word at +43: 10,000 to 32,500 km): within it the poin
 the autopilot stops at it, facing the point, as the old one did (traced 2026-11-04: it stopped 10,389, 15,189 and
 15,335 km short of points of 10,000, 15,000 and 15,000). The launch's is 20,000 (`HOME_REACH_KM`, its Tiger's Claw's in
 36 of its 40 missions); three hidden points at the launch with 0 in the old records have 5,000, the way home's
-encounters, as before. The carrier may be asked for landing from 25,000 km (`LANDING_RANGE_KM`: the autopilot home
-stops at the launch's reach, the carrier 2,000 behind it).
+encounters, as before. The carrier may be asked for landing from 25,000 km (`LANDING_RANGE_KM`). The autopilot home,
+with nothing on the way, goes on past the launch's reach to 4,000 km off the carrier's hull, facing it
+(`HOME_ARRIVE_KM`; the user, 2026-11-05: "why do we arrive home so far away from the carrier"; play test M8.47).
 
 **Nav points and fields, as the old game has them.** A mission's nav points are its waypoints, numbered from 1 in the
 order the player flies them (`nav ID x y z`), then its hidden trigger points (`nav ID x y z hidden`): the old game's

@@ -4760,6 +4760,46 @@ static void t_landing_burner(void)
     REQUIRE(missionStatus == 1 && landedOn == (uint16_t)home, e_land, logic_target_km(home), missionStatus, 0);
 }
 
+/* M8.47: the autopilot home, nothing on the way, stops 4,000 km off the carrier's hull, facing it (the user,
+ * 2026-11-05: "why do we arrive home so far away from the carrier": it stopped at the launch's reach, 20,000 km); the
+ * carrier held off the scene while the player was far is in it again */
+static void t_home_arrive(void)
+{
+    static const char __far e_home[] = "no home carrier at the launch (%d)";
+    static const char __far e_went[] = "every waypoint flown, the autopilot home returned %d: 1";
+    static const char __far e_gap[] = "the autopilot home left the player %d km off the carrier's hull: 4,000 (HOME_ARRIVE_KM)";
+    static const char __far e_face[] = "the autopilot home left the player facing %d/256 of the way to the carrier: it faces it";
+    static const char __far e_scene[] = "home, the carrier is not in the scene (entity type %d)";
+    int16_t home = -1, s, r;
+    RvVec3 d;
+    int32_t len, dot;
+    pt_mission();
+    pt_nav(1, 0, 0, 60000);
+    g_tm.nav[g_tm.nnav - 1].reach = 15000;
+    pt_mship(PT_CAPSHIP, SIDE_TERRAN, 0, 1, RV_PILOT_NONE);
+    g_tm.ship[g_tm.nship - 1].role = RV_ESCORT_HOME;
+    pt_launch(PT_PLAYER);
+    logic_scene_off = 0;
+    playerCanBeDamaged = 0;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
+        if (logic_is_home(s))
+            home = s;
+    REQUIRE(home > 0, e_home, home, 0, 0);
+    pt_put(0, 0, 0, 60000, 0);          /* (nav 1 come to: every waypoint flown, the way home) */
+    if (!pt_steps(2))
+        return;
+    r = logic_autopilot();
+    REQUIRE(r == 1, e_went, r, 0, 0);
+    REQUIRE(slot_is_ship(home), e_scene, maybeEntityType[home], 0, 0);
+    REQUIRE(labs(logic_target_km(home) - 4000) < 300, e_gap, logic_target_km(home), 0, 0);
+    d = vec3(TO_KM(gPositionVector[home].x - gPositionVector[0].x), TO_KM(gPositionVector[home].y - gPositionVector[0].y),
+             TO_KM(gPositionVector[home].z - gPositionVector[0].z));
+    len = pt_km(0, home);
+    dot = len ? (FIX_MUL(gOrientationFrontVector[0].x, d.x) + FIX_MUL(gOrientationFrontVector[0].y, d.y)
+                 + FIX_MUL(gOrientationFrontVector[0].z, d.z)) * 256 / len : 0;
+    REQUIRE(dot > 245, e_face, dot, 0, 0);
+}
+
 /* M8.16: the carrier destroyed: the flight ends with it (missionStatus 6) when its explosion has run, and it is a loss
  * however well the patrol went */
 static void t_carrier_lost(void)
@@ -6727,6 +6767,7 @@ static const char __far n_m8_36[] = "M8.36 escort-clear (route_step, logic_autop
 static const char __far n_m8_44[] = "M8.44 capital-flak (ship_think, capital_shot, flak_burst): an Agasicles' turrets on a lone player held 2,250 km behind it hurt it at the old game's Ralari's rate, flak with a few bolts, and far less at 200 kps";
 static const char __far n_m8_45[] = "M8.45 capital-hull (do_damage, hull_take): a capital ship's hull a count as the old game's: an Agasicles dies at the 90th laser hit past its armour";
 static const char __far n_m8_46[] = "M8.46 landing-burner (land_near, carrier_contact): cleared but on the afterburner, no landing, the carrier says so, the hull a ram's; the burner off, it lands";
+static const char __far n_m8_47[] = "M8.47 home-arrive (logic_autopilot): the autopilot home stops 4,000 km off the carrier's hull, facing it, the carrier in the scene";
 static const char __far n_m8_43[] = "M8.43 escort-skip (logic_autopilot, escort_comes): a pick past an escort's next waypoint is the autopilot's, the escort left behind to fly on alone: ENIGMA2's nav 2 picked";
 static const char __far n_m8_42[] = "M8.42 escort-jump-home (logic_autopilot, route_step): ENIGMA2 by the autopilot, the Ox along to each nav point; the player straight home, the Ox still jumps";
 static const char __far n_m8_41[] = "M8.41 escort-linger (route_step, logic_autopilot): ENIGMA2's Ox goes on alone from a player lingering at the launch, and the autopilot to nav 1 brings it along";
@@ -6810,7 +6851,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 },
 };
 
 /* --- the run --- */
