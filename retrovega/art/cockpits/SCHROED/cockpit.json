@@ -240,11 +240,33 @@
    "id": "canopy",
    "bit": 23,
    "file": "damage/23-canopy.png",
-   "x": 0,
-   "y": 0,
-   "w": 640,
-   "h": 282,
-   "attach": null
+   "x": 53,
+   "y": 3,
+   "w": 469,
+   "h": 134,
+   "attach": null,
+   "glass": [
+    [
+     122,
+     88,
+     8,
+     70,
+     [
+      12,
+      26
+     ]
+    ],
+    [
+     500,
+     66,
+     6,
+     48,
+     [
+      10
+     ]
+    ]
+   ],
+   "glass_seed": 7
   },
   {
    "id": "survival_vdu",
