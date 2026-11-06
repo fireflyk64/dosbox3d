@@ -93,6 +93,9 @@ chat)
 field)                                  # (HOST_MISSION=1 GUEST_MISSION=1: ENIGMA2, its field on the way to nav 2)
     HOST="$HOST,10:n,11:a,16:f,46:!ds=field"
     GUEST="$GUEST,16:f,46:!ds=field" ;;
+field1)                                 # (HOST_MISSION=0 GUEST_MISSION=0: ENIGMA1, whose field covers nav 2)
+    HOST="$HOST,10:a,15:!killfoes,22:a,27:f,80:!ds=field"
+    GUEST="$GUEST,27:f,80:!ds=field" ;;
 *) echo "rvnet-duo: no scenario $SCENARIO" >&2; exit 2 ;;
 esac
 
