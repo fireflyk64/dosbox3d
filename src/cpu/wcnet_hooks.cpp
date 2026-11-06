@@ -28,6 +28,8 @@
 #include "wcnet_rv.h"
 #include "wcnet_retrovega.h"
 #include "wcnet_lab.h"
+#include "wcnet_tie.h"
+#include "paging.h"
 #include "callback.h"
 #include "cpu.h"
 #include "regs.h"
@@ -41,6 +43,7 @@
 extern std::string incoming_text;
 
 bool wc_net_watch[0x10000];   // IPs with a hook, whatever the segment (tested in line by the CPU cores)
+bool wc_net_watch32[0x10000]; // ... and the low words of a 32-bit program's EIPs (TIE Fighter: wcnet_tie.cpp)
 Bit32s wc_net_countdown = 0;  // instructions until the next periodic call
 
 namespace wc {
@@ -266,19 +269,51 @@ static int rock_onto(int target) {
     return rock;
 }
 
-// Test aid: the game's screen (VGA mode 13h, 320x200, 256 colours) as a PPM
-// file, for runs with no display.
+// Test aid: the game's screen as a PPM file, for runs with no display: VGA
+// mode 13h (320x200 from A000:0) or a 256-colour VESA mode (what the CRTC
+// shows of video memory: TIE Fighter's 640x480).  A text mode goes to the
+// same name with .txt instead: its 80 x 25 characters.
 static bool write_screenshot(const std::string &path) {
+    if (vga.mode == M_TEXT) {
+        std::string txt = path.size() > 4 && path.compare(path.size() - 4, 4, ".ppm") == 0 ? path.substr(0, path.size() - 4) + ".txt" : path + ".txt";
+        FILE *f = fopen(txt.c_str(), "wb");
+        if (!f) {
+            return false;
+        }
+        const Bitu cols = vga.draw.address_add / 2 ? vga.draw.address_add / 2 : 80, rows = 25;
+        for (Bitu y = 0; y < rows; y++) {
+            for (Bitu x = 0; x < cols && x < 132; x++) {
+                Bit8u c = mem_readb(0xB8000 + (PhysPt)(vga.config.real_start * 2 + (y * cols + x) * 2));
+                fputc(c >= 32 && c < 127 ? c : c == 0 ? ' ' : '.', f);
+            }
+            fputc('\n', f);
+        }
+        fclose(f);
+        return true;
+    }
+    Bitu width = 320, height = 200;
+    bool banked = vga.mode == M_VGA;
+    if (vga.mode == M_LIN8) {
+        width = vga.draw.width;
+        height = vga.draw.height;
+    } else if (!banked) {
+        wclog(1, "screenshot: video mode %d is not one the test aid reads", (int)vga.mode);
+        return false;
+    }
     FILE *f = fopen(path.c_str(), "wb");
     if (!f) {
         return false;
     }
-    fprintf(f, "P6\n320 200\n255\n");
-    for (Bit32u i = 0; i < 320 * 200; i++) {
-        const RGBEntry &c = vga.dac.rgb[mem_readb(0xA0000 + i)];
-        fputc((c.red << 2) | (c.red >> 4), f);
-        fputc((c.green << 2) | (c.green >> 4), f);
-        fputc((c.blue << 2) | (c.blue >> 4), f);
+    fprintf(f, "P6\n%u %u\n255\n", (unsigned)width, (unsigned)height);
+    for (Bitu y = 0; y < height; y++) {
+        for (Bitu x = 0; x < width; x++) {
+            Bit8u index = banked ? mem_readb(0xA0000 + (PhysPt)(y * 320 + x))
+                                 : vga.draw.linear_base[(vga.config.real_start + y * vga.draw.address_add + x) & vga.draw.linear_mask];
+            const RGBEntry &c = vga.dac.rgb[index];
+            fputc((c.red << 2) | (c.red >> 4), f);
+            fputc((c.green << 2) | (c.green >> 4), f);
+            fputc((c.blue << 2) | (c.blue >> 4), f);
+        }
     }
     fclose(f);
     return true;
@@ -940,6 +975,39 @@ static void key_script() {
         std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + item.substr(6) + ".ppm";
         wclog(1, "key script %.1fs (t=%.1f): screenshot %s%s", t, now / 1000.0, path.c_str(),
               write_screenshot(path) ? "" : " failed");
+    } else if (item.compare(0, 11, "!tiecursor=") == 0) {
+        // !tiecursor=<x>:<y> puts TIE Fighter's front-end pointer there (its 320x200 screen)
+        int x = 0, y = 0;
+        if (sscanf(item.c_str() + 11, "%d:%d", &x, &y) == 2) {
+            tie_set_cursor(x, y);
+            wclog(1, "key script %.1fs (t=%.1f): TIE Fighter's pointer to %d, %d", t, now / 1000.0, x, y);
+        }
+    } else if (item.compare(0, 9, "!dumplin=") == 0) {
+        // !dumplin=<name>:<hex linear address>:<hex length> writes that memory (a 32-bit program's, as the CPU sees
+        // it; a page not there reads as zero) to WCNET_DUMP_DIR/<name>.bin
+        const char *dir = getenv("WCNET_DUMP_DIR");
+        std::string spec = item.substr(9);
+        size_t c1 = spec.find(':'), c2 = c1 == std::string::npos ? c1 : spec.find(':', c1 + 1);
+        if (c2 == std::string::npos) {
+            wclog(1, "key script %.1fs: !dumplin wants name:start:length", t);
+        } else {
+            Bit32u start = (Bit32u)strtoul(spec.substr(c1 + 1, c2 - c1 - 1).c_str(), NULL, 16);
+            Bit32u len = (Bit32u)strtoul(spec.substr(c2 + 1).c_str(), NULL, 16);
+            std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + spec.substr(0, c1) + ".bin";
+            FILE *f = fopen(path.c_str(), "wb");
+            if (f) {
+                for (Bit32u i = 0; i < len; i++) {
+                    Bit8u b = 0;
+                    if (mem_readb_checked(start + i, &b)) {
+                        b = 0;
+                    }
+                    fputc(b, f);
+                }
+                fclose(f);
+            }
+            wclog(1, "key script %.1fs (t=%.1f): %u bytes from %08x to %s%s", t, now / 1000.0, (unsigned)len, (unsigned)start,
+                  path.c_str(), f ? "" : " failed");
+        }
     } else if (item.compare(0, 5, "!vga=") == 0) {
         // !vga=<name> writes the game's screen as it is in video memory
         // (320x200 palette indices) and the palette (768 bytes) to
@@ -2408,6 +2476,7 @@ void wc_net_check_cpu_hooks() {
         auto_keys();
         key_script();
         joystick_tick();
+        tie_tick();
 #ifdef __EMSCRIPTEN__
         escape_tap();
         web_input_tick();
@@ -2434,7 +2503,14 @@ void wc_net_check_cpu_hooks() {
         }
     }
     Bit32u ip = reg_eip;
-    if (ip >= 0x10000 || !g_watch[ip]) {
+    if (ip >= 0x10000) {
+        // (a 32-bit program's: only TIE Fighter's places are watched there)
+        if (wc_net_watch32[ip & 0xffff]) {
+            tie_check_hooks(ip);
+        }
+        return;
+    }
+    if (!g_watch[ip]) {
         return;
     }
     if (solo()) {
