@@ -706,6 +706,13 @@ static int burning(int s)
     return t && speedLo[s] > (unsigned long)t->max_kps;
 }
 
+/* its engines lit: a throttle above 0 or the afterburner (the user, 2026-11-05: "The engine sprite should not draw if
+ * the ship has 0 kps set speed and no afterburner"; a guest has another machine's ships' throttles from their places) */
+static int engines_lit(int s)
+{
+    return g_flames_demo || setSpeed[s] != 0 || rvAfterburner[s] || burning(s);
+}
+
 /* how the plan has a ship drawn (SHIP_AS_*) */
 static int plan_how(int i)
 {
@@ -821,7 +828,10 @@ static void plan_draws(void)
             /* the view and the turn its picture will have (an exact one's true roll, a set's roll step, the far
              * sizes' none): the flames line up with the ship as drawn */
             ships_drawn(g_plan[i].set, plan_how(i), &rel, &cam, &ship, g_plan[i].scale, &p, &nb, &nh);
-            flames_add(slot_type(sl), &p, nb, nh, g_plan[i].scale, burning(sl), sl, &g_plan[i].fl);
+            if (engines_lit(sl))
+                flames_add(slot_type(sl), &p, nb, nh, g_plan[i].scale, burning(sl), sl, &g_plan[i].fl);
+            else
+                g_plan[i].fl.n = g_plan[i].fl.front = 0;
         }
         g_t_flames += clock240() - t0;
         g_t_flames_set += clock240() - t0;
