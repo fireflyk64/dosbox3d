@@ -223,7 +223,7 @@ void camp_mission(uint16_t i, RvMission __far *out)
 /* the mission's ships into the tables the layer already reads (spec 4.4):
  * missionShipTable records of 0x2a bytes (+0 type, +2 side, +4 leader,
  * +6 behaviour, +8 nav point, +16 pilot, +17 AI profile, +18 role, +19 fear rates, +20 turrets off, +21 jump, +22
- * position x y z in km off the nav point, 32 bits each: MSHIP_REC_KM), and the nav points' records of 0x4d bytes,
+ * position x y z in km off the nav point, 32 bits each: MSHIP_REC_KM, +41 the prey type), and the nav points' records of 0x4d bytes,
  * record n for nav n (outerSpawnShipEntity takes a nav's number as its record), nav 0 the launch point at the origin:
  * +0 id, +1 flags, +2 position x y z in km, 32 bits each (NAV_REC_KM: the old game's map, up to 105,000 km out), +14
  * its reach (NAV_REC_REACH), and at +0x39 the ten mission ships there (0xFFFF none).  A group's ships side by side, 1,500 km apart (a fighter is
@@ -278,6 +278,8 @@ void camp_load_tables(const RvMission __far *m)
             rec[19] = s->fear;              /* (its own fear rates, c | d << 4, 0 the profile's) */
             rec[20] = s->noturrets;         /* (its turrets silent: a mission's turrets=off; logic.c ship_think) */
             rec[21] = s->jump;              /* (role=out's last nav point, jump=N: 0 the next after its own; logic.c route_step) */
+            rec[41] = s->prey;              /* (the type it is ordered to attack + 1, prey=KEY, 0 none: the old game's own byte for
+                                               its orders' target; logic.c prey_of) */
             for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
                 ;
             if (j < 10)

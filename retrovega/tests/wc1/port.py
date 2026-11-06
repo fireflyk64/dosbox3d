@@ -87,7 +87,9 @@ def read_dump(path):
         if not any(rec) or w(r) < 0:
             continue
         ships.append(dict(m=m, type=w(r), side=w(r + 2), leader=w(r + 4), behaviour=w(r + 6), nav=w(r + 8),
-                          x=s24(d, r + 10), y=s24(d, r + 14), pilot=d[r + 16]))
+                          x=s24(d, r + 10), y=s24(d, r + 14), pilot=d[r + 16], cls=d[r + 0x20], target=d[r + 0x29]))
+        # (behaviour 2 = attack `target`, a mission ship (its own byte +0x29; +0x20 its AI class): missions.txt prey=KEY,
+        # the scratch prey.py of 2026-11-05 wrote the 32 lines whose types and nav points matched, and 10 more by hand)
     fields = []
     for f in range(7):
         r = 0xCDF6 + 0x14 * f

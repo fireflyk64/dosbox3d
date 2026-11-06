@@ -169,6 +169,8 @@ static struct {
 #define MSHIP_NO_TURRETS(r) (MSHIP(r)[20])   /* the mission's turrets=off: a capital ship with its turrets silent */
 #define MSHIP_ROLE(r) (MSHIP(r)[18])    /* an escort target's role (RV_ESCORT_OUT, RV_ESCORT_IN; campaign.c), 0 none */
 #define MSHIP_JUMP(r) (MSHIP(r)[21])    /* role=out's last nav point (missions.txt jump=N), 0 the next after its own */
+#define MSHIP_PREY(r) (MSHIP(r)[41])    /* the type of the ship it is ordered to attack (missions.txt prey=KEY) + 1, 0 none: the
+                                           old game's own byte (+0x29) for its orders' target (prey_of) */
 #define ROUTE_JUMP_KM 3000              /* an escort target in this near nav 0 is home (the carrier is there) */
 #define ROUTE_OUT_KM 1000               /* an escort target out this near a nav point is there: it holds at a waypoint
                                            on its way, jumps at its last (the user, 2026-11-03: "lets allow it to be
@@ -3069,6 +3071,34 @@ static int16_t raid_target(int16_t s)
     return ahead < (near_n + 1) / 2 ? best : -1;
 }
 
+/* the ship s is ordered to attack (its mission record's prey type, missions.txt prey=KEY: the old game's behaviour-2
+ * orders, read from its mission records 2026-11-05: at Enyo 2's nav 1 its Salthi went for the Drayman 8,000 km off
+ * with the player at 2,000, and so in every escort of the campaign; tests/wc1/README.md "Orders"), while its health
+ * is at least the profile's share of a hundred (the old game's 70 - 15 x its class, 0 to 4: a fighter's class 1, 55;
+ * an ace's 10) and the prey lives: the nearest living ship of that type of another side; -1 none */
+static const uint8_t __far k_prey_pct[P_COUNT] = { 55, 55, 40, 10, 40, 0, 0, 55, 55 };
+static int16_t prey_of(int16_t s, uint8_t profile)
+{
+    uint16_t rec = slotMissionShip[s];
+    uint8_t type;
+    int16_t k, best = -1;
+    int32_t bd = INT32_C(0x7FFFFFFF), d;
+    if (rec >= 64 || !MSHIP_PREY(rec) || health_pct(s) < k_prey_pct[profile < P_COUNT ? profile : P_FIGHTER])
+        return -1;
+    type = (uint8_t)(MSHIP_PREY(rec) - 1);
+    for (k = 0; k < NUM_SHIP_SLOTS; k++) {
+        if (k == s || !slot_is_ship(k) || commAnimInfo[k] == commAnimInfo[s] || shipAiState[k] == 9 || (rvFlags[k] & 16)
+            || gInstanceShipTypes[k] != type)
+            continue;
+        d = km_between(s, k);
+        if (d < bd) {
+            bd = d;
+            best = k;
+        }
+    }
+    return best;
+}
+
 /* a fighter's mind for a step: its target, its situation, its tactic, its decisions (g_turn, the throttle, fire) */
 static void fighter_think(int16_t s)
 {
@@ -3098,10 +3128,16 @@ static void fighter_think(int16_t s)
         }
     }
     {
-        int16_t raid = raid_target(s);
-        m->raiding = (uint8_t)(raid + 1);
-        if (raid >= 0)
-            m->target = (uint8_t)raid;
+        int16_t prey = prey_of(s, m->profile);
+        if (prey >= 0) {                /* (its orders: at the prey as a raider is, whoever is nearer) */
+            m->target = (uint8_t)prey;
+            m->raiding = (uint8_t)(prey + 1);
+        } else {
+            int16_t raid = raid_target(s);
+            m->raiding = (uint8_t)(raid + 1);
+            if (raid >= 0)
+                m->target = (uint8_t)raid;
+        }
     }
     if (!m->raiding && near_ >= 0 && bd <= p->engage_km && (m->target == 0xFF || bd * 3 < km_between(s, m->target) * 2))
         m->target = (uint8_t)near_;

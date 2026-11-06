@@ -19,6 +19,10 @@
 # four fighters that never left it (its records' behaviour 3, following the Tiger's Claw or nobody, and their
 # followers): those are the role=stay lines at nav0 (the user, 2026-11-05: "missions have to be able to differentiate
 # between autopilotees and stay-homers since at least the vigilence already stays home")
+#
+# A ship line's prey=KEY is the old game's attack order (its mission records' own byte, read 2026-11-05: tests/wc1/README.md
+# "Orders"): the group goes for the nearest ship of that type of the other side, wherever it is and whoever is nearer, until
+# hurt (logic.c prey_of); without one, half the fighters near an escort target raid it (raid_target)
 rules    hit=sphere aim=cone hold=off ram=old
 
 mission  ENIGMA1
@@ -134,9 +138,9 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
 ship     OX 0 nav0 role=out jump=2
-ship     AGIS 1 nav1 count=2 at=0,0,-5000
-ship     NICANDR 1 nav2 count=2 at=3000,0,5000
-ship     NICANDR 1 nav2 at=-5000,5000,-5000
+ship     AGIS 1 nav1 count=2 at=0,0,-5000 prey=OX
+ship     NICANDR 1 nav2 count=2 at=3000,0,5000 prey=OX
+ship     NICANDR 1 nav2 at=-5000,5000,-5000 prey=OX
 field    asteroid -5000 1500 -35000 7500
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar TORCH ANCHOR "Shmrn's still out there."
@@ -370,10 +374,10 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=DRIFTER
 ship     VIGILNC 0 nav0 role=home
 ship     OX 0 nav1 role=in
-ship     ARISTON 1 nav1 count=2 at=5000,2000,10000
-ship     ARISTON 1 nav1 count=2 at=-5000,-1000,-5000
-ship     AGIS 1 nav2 at=0,2000,5000
-ship     AGIS 1 nav2 count=2 at=0,-3000,10000
+ship     ARISTON 1 nav1 count=2 at=5000,2000,10000 prey=OX
+ship     ARISTON 1 nav1 count=2 at=-5000,-1000,-5000 prey=OX
+ship     AGIS 1 nav2 at=0,2000,5000 prey=OX
+ship     AGIS 1 nav2 count=2 at=0,-3000,10000 prey=OX
 bar      left=- middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Who signed for my wingtip?"
 talk     bar ANCHOR PRIME "I did. It's on the form as a bird strike."
@@ -504,10 +508,10 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     SCHROED 0 nav0 count=2 at=-2500,0,0 role=stay
-ship     NICANDR 1 nav0 count=2 at=-15000,-15000,-10000
-ship     NICANDR 1 nav0 count=2 at=10000,5000,-5000
-ship     NICANDR 1 nav1 count=2 at=-25000,0,-15000
-ship     NICANDR 1 nav1 count=2 at=5000,0,-35000
+ship     NICANDR 1 nav0 count=2 at=-15000,-15000,-10000 prey=VIGILNC
+ship     NICANDR 1 nav0 count=2 at=10000,5000,-5000 prey=VIGILNC
+ship     NICANDR 1 nav1 count=2 at=-25000,0,-15000 prey=VIGILNC
+ship     NICANDR 1 nav1 count=2 at=5000,0,-35000 prey=VIGILNC
 bar      left=TORCH middle=- right=DRIFTER
 talk     bar DRIFTER TORCH "The line on a Nicander reaching our deck is four to one."
 talk     bar TORCH DRIFTER "You're taking bets on the ship?"
@@ -572,9 +576,9 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home
 ship     OX 0 nav1 role=in
-ship     CONVOLN 1 nav1 count=2 at=-5000,5000,10000
-ship     AGIS 1 nav2 count=2 at=-5000,5000,-7000
-ship     AGIS 1 nav2 count=2
+ship     CONVOLN 1 nav1 count=2 at=-5000,5000,10000 prey=OX
+ship     AGIS 1 nav2 count=2 at=-5000,5000,-7000 prey=OX
+ship     AGIS 1 nav2 count=2 prey=OX
 bar      left=FROST middle=ECHO right=ANCHOR
 talk     bar ECHO FROST "Your Rlaan could fly a convoy through here tomorrow and nobody would stop them."
 talk     bar FROST ECHO "Nobody would stop them because they've stayed out of it."
@@ -641,8 +645,8 @@ ship     VIGILNC 0 nav0 role=home turrets=off
 ship     AGIS 1 nav0 count=2 at=5000,4000,15000
 ship     AGIS 1 nav2 count=2 at=0,-5000,0
 ship     KAHAN 0 nav1
-ship     CLEOMEN 1 nav1 count=2 at=-8000,-8000,7000
-ship     CLEOMEN 1 nav1 at=8000,8000,-10000
+ship     CLEOMEN 1 nav1 count=2 at=-8000,-8000,7000 prey=KAHAN
+ship     CLEOMEN 1 nav1 at=8000,8000,-10000 prey=KAHAN
 bar      left=TORCH middle=PRIME right=COMET
 talk     bar PRIME COMET "Did you see me come over the deck? Two meters."
 talk     bar COMET PRIME "I saw the form."
@@ -927,8 +931,8 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=PRIME
 ship     VIGILNC 0 nav0 role=home
 ship     KAHAN 0 nav1 at=5000,0,-5000
-ship     NICANDR 1 nav1 count=2 at=0,0,10000
-ship     NICANDR 1 nav1 count=2
+ship     NICANDR 1 nav1 count=2 at=0,0,10000 prey=KAHAN
+ship     NICANDR 1 nav1 count=2 prey=KAHAN
 ship     AGIS 1 nav2 count=2 at=0,0,-5000
 ship     AGIS 1 nav2 count=2
 bar      left=TORCH middle=KESTREL right=DRIFTER
@@ -1118,9 +1122,9 @@ ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     SCHROED 0 nav0 role=stay
 ship     KAHAN 0 nav0 role=out
-ship     NICANDR 1 nav1 count=2 at=10000,0,0
-ship     NICANDR 1 nav1 count=2
-ship     NICANDR 1 nav1 count=2
+ship     NICANDR 1 nav1 count=2 at=10000,0,0 prey=KAHAN
+ship     NICANDR 1 nav1 count=2 prey=KAHAN
+ship     NICANDR 1 nav1 count=2 prey=KAHAN
 bar      left=FROST middle=- right=COMET
 talk     bar COMET FROST "A hundred and forty names."
 talk     bar FROST COMET "She'd know the hundred and forty-first if you asked."
@@ -1177,9 +1181,9 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     SCHROED 0 nav0 role=stay
-ship     CONVOLN 1 nav0 count=2 at=15000,0,10000
-ship     CONVOLN 1 nav1 count=2 at=-5000,2000,10000
-ship     CONVOLN 1 nav1 count=2 at=5000,0,-10000
+ship     CONVOLN 1 nav0 count=2 at=15000,0,10000 prey=VIGILNC
+ship     CONVOLN 1 nav1 count=2 at=-5000,2000,10000 prey=VIGILNC
+ship     CONVOLN 1 nav1 count=2 at=5000,0,-10000 prey=VIGILNC
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER TORCH "Fifty to one against Shmrn. I may have to lengthen that."
 talk     bar TORCH DRIFTER "Put me down for ten."
@@ -1245,11 +1249,11 @@ ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     GAWAIN 0 nav0 count=2 at=-2500,0,7500 role=stay
 ship     OX 0 nav0 count=3 at=-5000,0,10000
-ship     ARISTON 1 nav1 count=2 at=0,0,-10000
-ship     ARISTON 1 nav1
+ship     ARISTON 1 nav1 count=2 at=0,0,-10000 prey=OX
+ship     ARISTON 1 nav1 prey=OX
 ship     OX 0 nav0 role=out
 ship     OX 0 nav2 role=in
-ship     CLEOMEN 1 nav2 count=3 at=-10000,-3000,-5000
+ship     CLEOMEN 1 nav2 count=3 at=-10000,-3000,-5000 prey=OX
 bar      left=FROST middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Sixty-Four's been asking for me."
 talk     bar ANCHOR PRIME "It hasn't been asking for anyone. It's an Aera fighter pilot."
@@ -1463,8 +1467,8 @@ ship     FRANKLN 0 nav0 role=stay
 ship     FRANKLN 0 nav0 count=2 at=-10000,2000,0 role=stay
 ship     OX 0 nav0 at=-10000,0,-5000
 ship     OX 0 nav1 role=in
-ship     CLEOMEN 1 nav1 count=2 at=-5000,5000,5000
-ship     CLEOMEN 1 nav1 count=2 at=10000,0,-10000
+ship     CLEOMEN 1 nav1 count=2 at=-5000,5000,5000 prey=OX
+ship     CLEOMEN 1 nav1 count=2 at=10000,0,-10000 prey=OX
 bar      left=FROST middle=ECHO right=COMET
 talk     bar ECHO FROST "Your Rlaan could have got people out of Naxos. They were right there."
 talk     bar FROST ECHO "They were trading partners, Echo. They were scared too."
@@ -1603,12 +1607,12 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ECHO
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     FRANKLN 0 nav0 role=stay
-ship     CLEOMEN 1 nav0 count=2 at=0,0,10000
-ship     CLEOMEN 1 nav0 count=2 at=-5000,-5000,-5000
+ship     CLEOMEN 1 nav0 count=2 at=0,0,10000 prey=VIGILNC
+ship     CLEOMEN 1 nav0 count=2 at=-5000,-5000,-5000 prey=VIGILNC
 ship     FRANKLN 0 nav1 at=0,0,2500
 ship     KAHAN 0 nav1 at=-5000,0,5000
-ship     CONVOLN 1 nav1 count=2 at=-5000,0,-5000
-ship     CONVOLN 1 nav1 count=2
+ship     CONVOLN 1 nav1 count=2 at=-5000,0,-5000 prey=KAHAN
+ship     CONVOLN 1 nav1 count=2 prey=KAHAN
 ship     ARISTON 1 nav2 count=3 at=-5000,0,15000
 ship     ARISTON 1 nav2
 ship     ANAXIDM 1 nav2 role=out
@@ -1746,8 +1750,8 @@ ship     KAHAN 0 nav0
 ship     AGIS 1 nav2 count=2 at=0,-2000,-5000
 ship     AGIS 1 nav2 count=2
 ship     LANCELT 0 nav1 at=0,3000,5000
-ship     CONVOLN 1 nav1 count=2 at=0,0,10000
-ship     CONVOLN 1 nav1 count=2 at=0,3000,-5000
+ship     CONVOLN 1 nav1 count=2 at=0,0,10000 prey=AGASICL
+ship     CONVOLN 1 nav1 count=2 at=0,3000,-5000 prey=AGASICL
 ship     AGASICL 0 nav1 at=5000,2500,5000
 field    asteroid 15000 -3000 -30000 7500 level=1
 bar      left=FROST middle=KESTREL right=DRIFTER
@@ -1811,9 +1815,9 @@ ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
 ship     LANCELT 0 nav0 role=stay
 ship     KAHAN 0 nav1 role=in
-ship     NICANDR 1 nav1 count=2 at=-10000,0,0
-ship     NICANDR 1 nav1 count=2
-ship     NICANDR 1 nav3 count=2 at=-15000,0,-5000
+ship     NICANDR 1 nav1 count=2 at=-10000,0,0 prey=KAHAN
+ship     NICANDR 1 nav1 count=2 prey=KAHAN
+ship     NICANDR 1 nav3 count=2 at=-15000,0,-5000 prey=KAHAN
 ship     ARISTON 1 nav4 count=2 at=0,-5000,-5000
 ship     ARISTON 1 nav4 count=2
 field    mine -15000 0 -35000 5000 level=1
@@ -2168,8 +2172,8 @@ ship     NICANDR 1 nav2 count=2 at=10000,0,-5000
 ship     NICANDR 1 nav2 count=2 at=-5000,0,10000
 ship     OX 0 nav1
 ship     OX 0 nav1
-ship     CONVOLN 1 nav1 count=2 at=-5000,5000,5000
-ship     CONVOLN 1 nav1 count=2
+ship     CONVOLN 1 nav1 count=2 at=-5000,5000,5000 prey=OX
+ship     CONVOLN 1 nav1 count=2 prey=OX
 field    mine -5000 10000 40000 5000 level=2
 field    mine 15000 10000 45000 5000 level=2
 bar      left=- middle=- right=COMET
@@ -2240,9 +2244,9 @@ ship     VIGILNC 0 nav0 role=home
 ship     FRANKLN 0 nav0 role=stay
 ship     OX 0 nav0 count=2 at=10000,2500,-5000
 ship     ARISTON 1 nav1 count=3 at=5000,1000,5000
-ship     CONVOLN 1 nav2 count=2 at=-5000,-3000,-5000
-ship     CONVOLN 1 nav2 count=2 at=5000,0,-10000
-ship     CLEOMEN 1 nav3 count=2 at=15000,0,10000
+ship     CONVOLN 1 nav2 count=2 at=-5000,-3000,-5000 prey=VIGILNC
+ship     CONVOLN 1 nav2 count=2 at=5000,0,-10000 prey=VIGILNC
+ship     CLEOMEN 1 nav3 count=2 at=15000,0,10000 prey=VIGILNC
 field    asteroid 35000 0 -25000 5000 level=2
 field    asteroid 30000 0 -40000 5000 level=2
 bar      left=FROST middle=KESTREL right=-
@@ -2649,11 +2653,11 @@ ship     ARISTON 0 nav0
 ship     AGIS 1 nav2 count=2 at=-5000,0,5000
 ship     AGIS 1 nav2 count=2
 ship     OX 0 nav1 role=in
-ship     ARISTON 1 nav1 count=2 at=5000,0,-5000
-ship     ARISTON 1 nav1 at=-10000,1000,0
-ship     ARISTON 1 nav3 count=2
-ship     ARISTON 1 nav3 count=2
-ship     CONVOLN 1 nav4 count=3 at=5000,-2500,0
+ship     ARISTON 1 nav1 count=2 at=5000,0,-5000 prey=OX
+ship     ARISTON 1 nav1 at=-10000,1000,0 prey=OX
+ship     ARISTON 1 nav3 count=2 prey=OX
+ship     ARISTON 1 nav3 count=2 prey=OX
+ship     CONVOLN 1 nav4 count=3 at=5000,-2500,0 prey=OX
 bar      left=- middle=PRIME right=COMET
 talk     bar PRIME COMET "Pre-flight complete. I read it twice."
 talk     bar COMET PRIME "You don't have to do that."
@@ -2794,10 +2798,10 @@ ship     AGIS 1 nav2 count=2
 ship     AGIS 1 nav2 count=2
 ship     FRANKLN 0 nav1 at=0,0,-5000
 ship     KAHAN 0 nav1
-ship     NICANDR 1 nav1 count=2 at=-5000,2500,-10000
-ship     NICANDR 1 nav1 count=2 at=-10000,-1000,0
-ship     CONVOLN 1 nav3 count=2 at=5000,0,15000
-ship     CONVOLN 1 nav3 count=2
+ship     NICANDR 1 nav1 count=2 at=-5000,2500,-10000 prey=KAHAN
+ship     NICANDR 1 nav1 count=2 at=-10000,-1000,0 prey=KAHAN
+ship     CONVOLN 1 nav3 count=2 at=5000,0,15000 prey=KAHAN
+ship     CONVOLN 1 nav3 count=2 prey=KAHAN
 field    mine 35000 0 15000 7500 level=2
 field    mine 35000 0 30000 5000 level=2
 bar      left=- middle=- right=COMET
@@ -2861,8 +2865,8 @@ nav      7 -70000 -10000 -10000 hidden reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TALLY
 ship     VIGILNC 0 nav0 role=home
-ship     ARISTON 1 nav4 count=2 at=5000,-2500,-5000
-ship     ARISTON 1 nav4 count=2
+ship     ARISTON 1 nav4 count=2 at=5000,-2500,-5000 prey=VIGILNC
+ship     ARISTON 1 nav4 count=2 prey=VIGILNC
 ship     CONVOLN 1 nav1 count=2 at=-5000,0,0
 ship     AGASICL 1 nav1 at=0,0,5000
 ship     AGIS 1 nav5 count=2 at=5000,0,-5000

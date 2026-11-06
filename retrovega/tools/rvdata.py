@@ -17,7 +17,7 @@ checks every reference and rule (docs/engine.md), and writes:
 missions.txt is one block per mission, a keyword and its value per line,
 '#' comments.  Keywords: mission, node, title, type, music, briefing, win,
 lose, fighter (the player's and the wingman's TYPE), nav (id x y z [hidden] [reach=KM], km, the old game's map: the waypoints numbered from 1, then the hidden trigger points; within reach= of it the point is reached and the autopilot stops there, the old game's 10,000 to 32,500), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home|stay] [jump=N] [turrets=off]
-[pilot=KEY] [ai=PROFILE] [fear=c/d]), rules (hit= aim= hold= ram=: RULES), field (asteroid|mine x y z radius [density=N] [level=L], km; N rocks per (10,000 km)^3, 1..255,
+[pilot=KEY] [ai=PROFILE] [fear=c/d] [prey=KEY]), rules (hit= aim= hold= ram=: RULES), field (asteroid|mine x y z radius [density=N] [level=L], km; N rocks per (10,000 km)^3, 1..255,
 0 or none: the engine's own; L the old game's rock level, 0..3: how many fly at the player, and when), bar and lounge
 (seat=PILOT|- ...), and the lines, docs/engine.md: briefing, win, lose [WHO] [conditions] "line" (or plain text: the XO's,
 split at its sentences), talk, say, radio.
@@ -205,6 +205,7 @@ SHIP = [('unsigned char', 'type', 'B'), ('unsigned char', 'side', 'B'), ('unsign
         ('unsigned char', 'count', 'B'), ('unsigned char', 'pilot', 'B'), ('unsigned char', 'role', 'B'),
         ('unsigned char', 'ai', 'B'), ('unsigned char', 'fear', 'B'), ('unsigned char', 'noturrets', 'B'),
         ('unsigned char', 'jump', 'B'),  # (role=out's jump=N: the nav point it jumps short of, 0 the next after its own)
+        ('unsigned char', 'prey', 'B'),  # (prey=KEY: the type it is ordered to attack, + 1, 0 none: the old game's orders; logic.c prey_of)
         ('long', 'x', 'l'), ('long', 'y', 'l'), ('long', 'z', 'l')]   # (where it starts off its nav point, km: at=x,y,z)
 # a mission ship's AI profile (missions.txt ai=NAME: logic.c's P_* in this order, 1-based in the record, 0 the type's
 # own) and its own fear rates (fear=c/d, 0-15 each: the old game's class bytes; 0: the profile's)
@@ -637,11 +638,18 @@ def compile_all():
                     jump = -1
                 if role != ESCORT_ROLES['out'] or jump <= nav or jump not in nav_ids or jump in hidden_navs:
                     raise Fail('%s: jump=N goes with role=out: N a waypoint after its own nav point' % where)
+            prey = 0
+            if 'prey' in opts:          # (the old game's attack orders, its mission records' byte 0x29: logic.c prey_of)
+                if kind in ('player', 'wingman') or opts['prey'] not in ships:
+                    raise Fail('%s: prey=KEY, a ships.csv key the ship is ordered to attack' % where)
+                prey = ships[opts['prey']] + 1   # (+ 1: a record zeroed, as the harness and the tests make them, orders nothing)
+                if not any(f2[0] == opts['prey'] and f2[1] != f[1] for _w2, f2 in m['ship']):
+                    raise Fail('%s: prey=%s: this mission has no %s of another side' % (where, opts['prey'], opts['prey']))
             at = opts.get('at', '0,0,0').split(',')
             if len(at) != 3 or any(not -MAP_KM <= int(v) <= MAP_KM for v in at):
                 raise Fail('%s: at=x,y,z, km off its nav point, at most %d' % (where, MAP_KM))
             shipr.append(struct.pack(fmt(SHIP), tnum, int(f[1]), nav, int(opts.get('count', 1)), pilot, role, ai, fear,
-                                     opts.get('turrets', 'on') == 'off', jump, int(at[0]), int(at[1]), int(at[2])))
+                                     opts.get('turrets', 'on') == 'off', jump, prey, int(at[0]), int(at[1]), int(at[2])))
         if len(shipr) > LIMITS['SHIPS']:
             raise Fail('%s: %d ships, at most %d' % (w, len(shipr), LIMITS['SHIPS']))
         if wingman is not None:         # (a wingman lost, the XO says this without them: game.c cuts " and NAME")
