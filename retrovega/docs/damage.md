@@ -31,7 +31,10 @@ hit in both games (the same numbers and recharge); past them the old game rolls 
 Two things made it so: the reserve went from twice the hull to 1.7 times (twice was a hit or two more than the
 Hornet), and a named pilot's ship takes a hit past its armour as a share of its hull, as the old game's wingmen do (its
 code: a named pilot's ship a fortieth of the hit, at least one, of its hull's count; logic.c `hull_take`, eight laser
-hits; before it the wingman died two hits early under fast fire). An unnamed ship's hull takes the hit itself.
+hits; before it the wingman died two hits early under fast fire). An unnamed fighter's hull is the old game's
+roulette since 2026-11-05 (docs/ai.md "The fighters' hulls"; `fighter_roulette`, ships.csv `hull_hits`): a few laser
+hits from behind kill it outright, head on it takes some twenty past the armour. Any other ship's hull takes the hit
+itself.
 
 ## Where a hit lands
 

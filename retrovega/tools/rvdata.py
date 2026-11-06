@@ -36,7 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 21                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 22                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
                                         # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
@@ -100,7 +100,7 @@ SHIPTYPE = [('char', 'key[RV_KEY]', '%ds' % TEXT['KEY']), ('char', 'name[RV_NAME
             ('unsigned short', 'radius_km', 'H'),
             ('unsigned short', 'missiles', 'H'), ('unsigned char', 'nengines', 'B'),
             ('unsigned char', 'gun_energy_steps', 'B'), ('unsigned char', 'shield_full_shift', 'B'),
-            ('unsigned char', 'shield_steps', 'B'),
+            ('unsigned char', 'shield_steps', 'B'), ('unsigned char', 'hull_hits', 'B'),
             ('unsigned short', 'fuel_cruise', 'H'), ('unsigned short', 'fuel_burn', 'H'),
             ('signed char', 'engine[RV_ENGINES][4]', '%db' % (4 * 4)),
             ('unsigned char', 'hit[3]', '3B'), ('unsigned char', 'box[3]', '3B'), ('unsigned char', 'core', 'B'),
@@ -481,6 +481,13 @@ def compile_all():
         # the old game's shield stat (read in its code, 2026-10-31): a point back on each side every shield_steps
         # steps (the Hornet 5, the Dralthi 6: a 40-point shield in 7 s); blank 0: by shield_full_shift instead
         shield_steps = int(r.get('shield_steps') or 0)
+        # the old game's hull count (its ship table's +0x10, read in its code 2026-11-05: tests/wc1/README.md "The fighters'
+        # hulls"): an unnamed fighter's hull dies past this many hits of the damage roulette's (logic.c fighter_roulette, a
+        # hit (hull + hull_hits) / (hull_hits + 1) points); blank 0: the hull takes a hit's points itself
+        hull_hits = int(r.get('hull_hits') or 0)
+        if not 0 <= hull_hits <= 255 or (hull_hits and hull_hits * hull_hits >= n('hull')):
+            raise Fail('ships.csv %s: hull_hits %d is not 0 to 255 and under the square root of its hull %d (or its hull dies a hit '
+                       'early)' % (r['key'], hull_hits, n('hull')))
         if not 1 <= energy_steps <= 255:
             raise Fail('ships.csv %s: gun_energy_steps %d is not 1 to 255' % (r['key'], energy_steps))
         if not 0 <= full_shift <= 15:
@@ -499,7 +506,7 @@ def compile_all():
                                      n('cruise_kps'), n('max_kps'), n('ab_kps'), n('accel'), slide, slide_dmg,
                                      n('yaw_dps'), n('pitch_dps'), n('roll_dps'), guns, n('shield_f'), n('shield_r'),
                                      n('armor_f'), n('armor_r'), n('armor_l'), n('armor_rt'), n('hull'),
-                                     n('lod0_px'), radius, rounds, nengines, energy_steps, full_shift, shield_steps,
+                                     n('lod0_px'), radius, rounds, nengines, energy_steps, full_shift, shield_steps, hull_hits,
                                      fuel_cruise, fuel_burn, *eng, *hit,
                                      *volume_box(hit), core, nvitals, *vit, loadout))
     talk_ok = {frozenset((r['a'], r['b'])): r['talk'] == 'yes' for r in load_csv('relations.csv')}

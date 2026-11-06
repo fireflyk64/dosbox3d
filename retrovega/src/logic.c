@@ -4334,9 +4334,91 @@ void logic_damage_snap(int16_t save)
 }
 #endif
 
-static uint16_t hull_take(int16_t s, uint16_t left, uint16_t hull)
+/* an unnamed fighter's hull as the old game's (ovr143:0EDB, read in its code 2026-11-05: tests/wc1/README.md "The
+ * fighters' hulls"): a hit past the armour is max(1, left / 6) points, and each point falls on one of nine systems by
+ * the dice: the hull (4), a count, dead past the type's hull_hits of them (a count (hull + hull_hits) / (hull_hits + 1)
+ * of damagePoints: the old table's Dralthi 7, Krant 6, Salthi 5); the core (0), a point; from behind (the old game's
+ * test is the bolt's way against the nose: a bolt flying the ship's own way struck its rear, where ours take the hit's
+ * place behind its middle) one that kills outright (2), the engine (7) and another (1); from the front a gun lost (5),
+ * gunDamage up to 5 (6) and the engine flag (8), each while there is one to lose; the shields' generator (3) leaves
+ * both shields down for good and spends nothing.  A point that falls where nothing is to spend is rolled again (never
+ * for ever: the hull and the core always spend, two of the nine at the fewest, so a point takes 4.5 rolls on average at
+ * the worst; ROULETTE_ROLLS of them a point, and some, cap it).  So a Dralthi takes some twenty laser hits
+ * past its armour head on, and some three from behind, past the rear armour: the user remembers having "to whale on
+ * those things for precious tens of seconds" (the Krant's rear is its thickest side, 180 points of shield and armour)
+ * where ours had died at the hull's points from any side, 13 hits at most (182) and a Krant's 6.  Returns what
+ * damagePoints takes, 0xFFFF a kill outright */
+#define ROULETTE_ROLLS 8
+static uint16_t fighter_roulette(int16_t s, uint16_t left, const RvShipType __far *t, int16_t behind)
+{
+    uint16_t points = left / 6 ? left / 6 : 1, took = 0;
+    uint16_t hit = (uint16_t)(((uint32_t)t->hull + t->hull_hits) / (t->hull_hits + 1));
+    int32_t rolls, most = (int32_t)points * ROULETTE_ROLLS + 32;
+    for (rolls = 0; points && rolls < most; rolls++) {
+        int16_t r = (int16_t)(game_rand() % 9), g, n;
+        switch (r) {
+        case 0:                         /* (the core) */
+            if (coreHp[s])
+                coreHp[s]--;
+            points--;
+            break;
+        case 1:                         /* (from behind: one more system, and the engine) */
+        case 7:
+            if (behind)
+                points--;
+            break;
+        case 2:                         /* (from behind: the kill) */
+            if (behind)
+                return 0xFFFF;
+            break;
+        case 3:                         /* (the generator: the shields down for good; nothing spent) */
+            SHIELD_MAX(s, 0) = SHIELD_MAX(s, 1) = 0;
+            SHIELD(s, 0) = SHIELD(s, 1) = 0;
+            break;
+        case 4:                         /* (the hull: a count) */
+            points--;
+            took = (uint16_t)(took > 0xFFFFU - hit ? 0xFFFF : took + hit);
+            break;
+        case 5:                         /* (from the front: a gun lost, one of those left by the dice) */
+            if (behind)
+                break;
+            for (g = 0, n = 0; g < GUN_COUNT(s) && g < 16; g++) {
+                const RvWeapon __far *w = weapon(GUN_TYPE(s, g));
+                if (w && w->kind == RV_WK_GUN && !(GUN_STATE(s, g) & GUN_DESTROYED))
+                    n++;
+            }
+            if (!n)
+                break;
+            for (g = 0, n = (int16_t)(game_rand() % n); g < GUN_COUNT(s) && g < 16; g++) {
+                const RvWeapon __far *w = weapon(GUN_TYPE(s, g));
+                if (w && w->kind == RV_WK_GUN && !(GUN_STATE(s, g) & GUN_DESTROYED) && !n--) {
+                    GUN_STATE(s, g) |= GUN_DESTROYED;
+                    break;
+                }
+            }
+            points--;
+            break;
+        case 6:                         /* (from the front: the gun damage, to 5) */
+            if (!behind && gunDamage[s] < 5) {
+                gunDamage[s]++;
+                points--;
+            }
+            break;
+        case 8:                         /* (from the front: the engine flag, once) */
+            if (!behind && engineFlag[s] != 0xFF) {
+                engineFlag[s] = 0xFF;
+                points--;
+            }
+            break;
+        }
+    }
+    return took;
+}
+
+static uint16_t hull_take(int16_t s, uint16_t left, const RvShipType __far *t, int16_t behind)
 {
     uint16_t rec = slotMissionShip[s];
+    uint16_t hull = t->hull;
     uint32_t q;
     if (maybeEntityType[s] == ET_CAPSHIP) {
         /* a capital ship's hull as the old game's (ovr143:0F11): a count, a hit past the armour an eighth of itself on the
@@ -4346,8 +4428,10 @@ static uint16_t hull_take(int16_t s, uint16_t left, uint16_t hull)
         q = (uint32_t)(left / div ? left / div : 1) * CAP_HULL_POINTS;
         return q > 0xFFFFUL ? 0xFFFF : (uint16_t)q;
     }
-    if (rec >= 64 || MSHIP(rec)[16] >= RV_PILOTS || (rvFlags[s] & RV_FLAG_HUMAN) || !hull)
+    if ((rvFlags[s] & RV_FLAG_HUMAN) || !hull)
         return left;
+    if (rec >= 64 || MSHIP(rec)[16] >= RV_PILOTS)   /* (unnamed: the old game's roulette, for a type with its count) */
+        return t->hull_hits ? fighter_roulette(s, left, t, behind) : left;
     q = ((uint32_t)hull * (left / 40 ? left / 40 : 1) + NAMED_HULL_HITS - 1) / NAMED_HULL_HITS;
     return q > 0xFFFFUL ? 0xFFFF : (uint16_t)q;
 }
@@ -4370,7 +4454,8 @@ uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, 
         const int16_t player = dst == 0 && rvController[0] == CTL_PLAYER;
         const uint16_t room = damagePoints[dst] < t->hull ? (uint16_t)(t->hull - damagePoints[dst]) : 0;
         if (!player)
-            left = hull_take((int16_t)dst, left, t->hull);   /* (a named pilot's: a share of the hull a hit) */
+            left = hull_take((int16_t)dst, left, t, sh == 1);   /* (a named pilot's: a share of the hull a hit; an
+                                                       unnamed fighter's: the old game's roulette; a capital's: a count) */
         /* the hull's last point is not the player's end: the reserve takes what is left over (damage.h) */
         if (player && left >= room && damage_reserve_take((uint16_t)(left - room), t->hull)) {
             damagePoints[dst] = t->hull;
