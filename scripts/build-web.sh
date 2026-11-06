@@ -194,12 +194,14 @@ if [ -z "${SKIP_RETROVEGA:-}" ]; then
     say "building RetroVega"
     "$ROOT/retrovega/build.sh" > "$BUILD/retrovega.log" 2>&1 || { tail -20 "$BUILD/retrovega.log"; exit 1; }
     (cd "$ROOT/retrovega/build/dos" && tar --format=ustar -czf "$OUT/retrovega.tar.gz" \
-        RV.EXE RV.DAT RVGAME.DAT BALLS.DAT SKY.DAT SHAPES.DAT EXPLODE.DAT SFX.DAT RVOPL.BNK *.MID)
+        RV.EXE RV.DAT RVGAME.DAT BALLS.DAT SKY.DAT SHAPES.DAT EXPLODE.DAT SFX.DAT ROCKS.DAT RVOPL.BNK *.MID)
     # the campaign for the page's mission menu, made with RVGAME.DAT from the same records (tools/rvdata.py)
     cp "$ROOT/retrovega/build/dos/RVNET.JSON" "$OUT/rv-campaign.json"
-    # the ships' views (SHIPnn.RV, 1-9 MB each at 6 degrees) and the asteroid fields' rocks (ROCKS.DAT, 6 MB):
-    # not in the tarball but beside it, gzipped, fetched by the page for the types a flight needs (and the rocks
-    # when it has a field) when the game asks (RVWANT.TXT; web/rvsets.js),
+    # (the asteroid fields' rocks, ROCKS.DAT, 3.9 MB of the tarball, are in it since 2026-11-06: nearly every mission
+    # has a field, a mine field is the same rocks, and the user: "can we simply include ROCKS.RV in the base game";
+    # they had been fetched with a flight's sets, and a guest saw a mission's field without them)
+    # the ships' views (SHIPnn.RV, 1-9 MB each at 6 degrees): not in the tarball but beside it, gzipped, fetched by
+    # the page for the types a flight needs when the game asks (RVWANT.TXT; web/rvsets.js),
     # with a manifest of what is there (retrovega/tools/artweb.py)
     python3 "$ROOT/retrovega/tools/artweb.py" --out "$OUT/rv" --build "$(git -C "$ROOT" rev-parse --short HEAD)"
 fi

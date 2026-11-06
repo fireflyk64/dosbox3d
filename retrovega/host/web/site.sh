@@ -2,7 +2,7 @@
 # The native build's page, put together in build/gamesite/ (what deploy.sh puts at fireflyk64.github.io/rv/):
 # index.html and game.js (host/web), rv.js and rv.wasm (host/game.sh WEB=1), game.tar.gz (the DOS build's data:
 # what RV.EXE reads at the start), the shared page modules (web/rvsets.js, rvsprites.js and its worker, touch.js)
-# and art/ (the ships' views and the rocks a flight asks for: tools/artweb.py).
+# and art/ (the ships' views a flight asks for: tools/artweb.py; the asteroids' ROCKS.DAT is in game.tar.gz).
 #   host/web/site.sh            then serve build/gamesite (python3 -m http.server -d build/gamesite)
 #   NOBUILD=1                   the browser build as it is (build/gameweb)
 set -e
@@ -17,7 +17,7 @@ for f in rvsets.js rvsprites.js rvsprites-worker.js touch.js touch.css; do cp ".
 # (reproducible: the names sorted, the dates and owners fixed, gzip without its time stamp: the same data, the same
 # bytes, so desktop/fetch-data.sh's pinned SHA-256 holds until the data itself changes)
 (cd build/dos && tar --format=ustar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode=a+r,u+w \
-    -cf - RV.DAT RVGAME.DAT BALLS.DAT SKY.DAT SHAPES.DAT EXPLODE.DAT SFX.DAT RVOPL.BNK *.MID) | gzip -9 -n > "$OUT/game.tar.gz.part" \
+    -cf - RV.DAT RVGAME.DAT BALLS.DAT SKY.DAT SHAPES.DAT EXPLODE.DAT SFX.DAT ROCKS.DAT RVOPL.BNK *.MID) | gzip -9 -n > "$OUT/game.tar.gz.part" \
     && mv "$OUT/game.tar.gz.part" "$OUT/game.tar.gz"
 python3 tools/artweb.py --out "$OUT/art" --build "$REV" > /dev/null
 echo "built $OUT ($REV): $(du -sh "$OUT" | cut -f1)"

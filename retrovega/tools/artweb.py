@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """artweb.py: the files a flight asks the page for (RVWANT.TXT: src/ships.c ships_want), as the web pages serve
-them (web/rvsets.js): each ship type's views (art/ships/SHIPnn.RV) and an asteroid field's rocks
-(build/dos/ROCKS.DAT), gzipped, with ships.json (the build, and each file's size and hash: the page's cache keys).
+them (web/rvsets.js): each ship type's views (art/ships/SHIPnn.RV), gzipped, with ships.json (the build, and each
+file's size and hash: the page's cache keys).  (The asteroid fields' ROCKS.DAT was served here too until 2026-11-06:
+it is in the game's own package now.)
 Both pages use it: the DOSBox one (scripts/build-web.sh, into web/dist/rv) and the native build's
 (host/web/site.sh, into its art/).
 
@@ -46,13 +47,20 @@ def main():
         key = f[:-3]
         ships[key] = {'file': 'rv/' + f + '.gz', 'bytes': len(data), 'sha1': hashlib.sha1(data).hexdigest(),
                       'name': names.get('0x' + key[4:6].lower(), key)}
-    # the game's files a flight asks for as they are: an asteroid field's rocks (ROCKS.DAT, tools/rocks.py)
+    # the game's files a flight asks for as they are (none since 2026-11-06: the asteroid fields' ROCKS.DAT is in the
+    # game's own package, build-web.sh's retrovega.tar.gz and host/web/site.sh's game.tar.gz; web/rvsets.js still
+    # serves any listed here)
     files = {}
-    for f in ['ROCKS.DAT']:
+    for f in []:
         path = os.path.join(ROOT, 'build/dos', f)
         gz(path, os.path.join(a.out, f + '.gz'))
         data = open(path, 'rb').read()
         files[f] = {'file': 'rv/' + f + '.gz', 'bytes': len(data), 'sha1': hashlib.sha1(data).hexdigest()}
+    # (a file served here before and not now, ROCKS.DAT.gz for one, gone: a deploy copies the directory as it is)
+    served = {e['file'][3:] for e in list(ships.values()) + list(files.values())}
+    for f in os.listdir(a.out):
+        if f.endswith('.gz') and f not in served:
+            os.remove(os.path.join(a.out, f))
     json.dump({'build': a.build, 'ships': ships, 'files': files}, open(os.path.join(a.out, 'ships.json'), 'w'), indent=1)
     print('%s/ships.json: %d ships, %.1f MB of views (%.1f MB gzipped)' % (
         a.out, len(ships), sum(s['bytes'] for s in ships.values()) / 1e6,
