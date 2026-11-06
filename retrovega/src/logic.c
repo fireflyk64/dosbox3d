@@ -3145,7 +3145,9 @@ static void fighter_think(int16_t s)
     rvTarget[s] = m->target;
     if (m->target == 0xFF) {            /* nobody to fight: the idle tactic */
         int16_t cap;
-        if (g_order[s] == ORDER_RTB && is_wingman(s) && (cap = nearest_capital(s)) >= 0) {   /* home: round its carrier */
+        if (((g_order[s] == ORDER_RTB && is_wingman(s)) || (role_of(s) == RV_ESCORT_STAY && g_order[s] == ORDER_FREE))
+            && (cap = nearest_capital(s)) >= 0) {   /* home: round its carrier; a fighter that stays (role=stay, the
+                                           carrier's patrol), round the capital ship nearest it */
             m->leader = (uint8_t)cap;
             if (m->tactic != T_ESCORT)
                 take_tactic(s, m, p, T_ESCORT);
@@ -4056,7 +4058,7 @@ static int16_t form_comes(int16_t s, int16_t next)   /* a ship the jump to `next
         return 0;
     if (rvFlags[s] & RV_FLAG_HUMAN)
         return maybeEntityType[s] == ET_SHIP ? 3 : 0;
-    if (rvController[s] != CTL_AI)
+    if (rvController[s] != CTL_AI || role_of(s) == RV_ESCORT_STAY)   /* (one that stays: left where it is) */
         return 0;
     if (maybeEntityType[s] == ET_SHIP && (player_km(s) < AUTOPILOT_WING_KM
                                           || (slotMissionShip[s] < 64 && MSHIP_BEHAVIOUR(slotMissionShip[s]) == 4)))
@@ -4212,7 +4214,10 @@ int16_t logic_autopilot(void)
      * escort target of the player's side put behind it */
     for (s = 1; s < NUM_SHIP_SLOTS; s++) {   /* (a human wingman, on another machine, always comes: the wing is the wing) */
         if (!slot_is_ship(s) || commAnimInfo[s] != commAnimInfo[0] || shipAiState[s] == 9
-            || (rvController[s] != CTL_AI && !(rvFlags[s] & RV_FLAG_HUMAN)))
+            || (rvController[s] != CTL_AI && !(rvFlags[s] & RV_FLAG_HUMAN))
+            || (role_of(s) == RV_ESCORT_STAY && !(rvFlags[s] & RV_FLAG_HUMAN)))   /* (the carrier's patrol stays: the
+                                           user, 2026-11-05: "missions have to be able to differentiate between
+                                           autopilotees and stay-homers"; a human flying one comes, as any human) */
             continue;
         if (maybeEntityType[s] == ET_SHIP && (player_km(s) < AUTOPILOT_WING_KM || (rvFlags[s] & RV_FLAG_HUMAN))) {
             gPositionVector[s].x += to.x - gPositionVector[0].x;

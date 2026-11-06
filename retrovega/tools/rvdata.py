@@ -16,7 +16,7 @@ checks every reference and rule (docs/engine.md), and writes:
 
 missions.txt is one block per mission, a keyword and its value per line,
 '#' comments.  Keywords: mission, node, title, type, music, briefing, win,
-lose, fighter (the player's and the wingman's TYPE), nav (id x y z [hidden] [reach=KM], km, the old game's map: the waypoints numbered from 1, then the hidden trigger points; within reach= of it the point is reached and the autopilot stops there, the old game's 10,000 to 32,500), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home] [jump=N] [turrets=off]
+lose, fighter (the player's and the wingman's TYPE), nav (id x y z [hidden] [reach=KM], km, the old game's map: the waypoints numbered from 1, then the hidden trigger points; within reach= of it the point is reached and the autopilot stops there, the old game's 10,000 to 32,500), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home|stay] [jump=N] [turrets=off]
 [pilot=KEY] [ai=PROFILE] [fear=c/d]), rules (hit= aim= hold= ram=: RULES), field (asteroid|mine x y z radius [density=N] [level=L], km; N rocks per (10,000 km)^3, 1..255,
 0 or none: the engine's own; L the old game's rock level, 0..3: how many fly at the player, and when), bar and lounge
 (seat=PILOT|- ...), and the lines, docs/engine.md: briefing, win, lose [WHO] [conditions] "line" (or plain text: the XO's,
@@ -209,9 +209,12 @@ SHIP = [('unsigned char', 'type', 'B'), ('unsigned char', 'side', 'B'), ('unsign
 # a mission ship's AI profile (missions.txt ai=NAME: logic.c's P_* in this order, 1-based in the record, 0 the type's
 # own) and its own fear rates (fear=c/d, 0-15 each: the old game's class bytes; 0: the profile's)
 PROFILES = ['interceptor', 'fighter', 'heavy', 'ace', 'bomber', 'wingman', 'capital', 'waiter', 'noleft']
-ESCORT_ROLES = {'out': 1, 'in': 2, 'home': 3}   # a mission ship's role (RV_ESCORT_*): an escort target flies out to the
-                                        # next nav point and jumps there, or waits at its own until the player comes
-                                        # and flies home; `home` is the carrier the player lands on: it holds station
+ESCORT_ROLES = {'out': 1, 'in': 2, 'home': 3, 'stay': 4}   # a mission ship's role (RV_ESCORT_*): an escort target
+                                        # flies out to the next nav point and jumps there, or waits at its own until the
+                                        # player comes and flies home; `home` is the carrier the player lands on: it holds
+                                        # station; `stay`, a fighter of the player's side that stays at its nav point (the
+                                        # carrier's patrol, the old game's): the autopilot leaves it, and with nobody to
+                                        # fight it flies round the capital ship nearest it (the user, 2026-11-05)
 FIELD = [('unsigned char', 'type', 'B'), ('unsigned char', 'density', 'B'), ('long', 'x', 'l'), ('long', 'y', 'l'), ('long', 'z', 'l'),
          ('short', 'radius', 'h'), ('unsigned char', 'level', 'B')]
 TALK = [('unsigned char', 'room', 'B'), ('unsigned char', 'speaker', 'B'), ('unsigned char', 'listener', 'B'),
@@ -596,11 +599,13 @@ def compile_all():
             role = 0
             if 'role' in opts:
                 if opts['role'] not in ESCORT_ROLES or kind in ('player', 'wingman'):
-                    raise Fail('%s: role=%s: an escort target is role=out or role=in, the home carrier role=home'
-                               % (where, opts['role']))
+                    raise Fail('%s: role=%s: an escort target is role=out or role=in, the home carrier role=home, a '
+                               'fighter that stays at its nav point role=stay' % (where, opts['role']))
                 role = ESCORT_ROLES[opts['role']]
                 if role == ESCORT_ROLES['home'] and (nav != 0 or int(f[1]) != 0 or int(opts.get('count', 1)) != 1):
                     raise Fail('%s: role=home is one ship of side 0 at nav0' % where)
+                if role == ESCORT_ROLES['stay'] and int(f[1]) != 0:
+                    raise Fail('%s: role=stay is the player\'s side\'s (side 0)' % where)
             ai = 0
             if 'ai' in opts:
                 if opts['ai'] not in PROFILES:
@@ -875,7 +880,7 @@ def header_text(sizes):
             '', '/* mission ship types picked at run time */',
             '#define RV_SHIP_PLAYER 0x%02X' % SHIP_PLAYER, '#define RV_SHIP_WINGMAN 0x%02X' % SHIP_WINGMAN,
             '#define RV_ESCORT_OUT %d' % ESCORT_ROLES['out'], '#define RV_ESCORT_IN %d' % ESCORT_ROLES['in'],
-            '#define RV_ESCORT_HOME %d' % ESCORT_ROLES['home'],
+            '#define RV_ESCORT_HOME %d' % ESCORT_ROLES['home'], '#define RV_ESCORT_STAY %d' % ESCORT_ROLES['stay'],
             '#define RV_PILOT_NONE 0xFF', '#define RV_SPEAKER_YOU 0x%02X' % SPEAKER_YOU,
             '#define RV_ROOM_RADIO %d' % len(ROOMS), '#define RV_ROOM_DECK %d' % (len(ROOMS) + 1)]
     for k, v in BRIEF_ROOMS.items():
