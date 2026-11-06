@@ -313,6 +313,7 @@ typedef struct {
     uint8_t shield_full_shift;
     uint8_t shield_steps;
     uint8_t hull_hits;
+    char mayday[RV_LINE];
     uint16_t fuel_cruise;
     uint16_t fuel_burn;
     int8_t engine[RV_ENGINES][4];
@@ -347,7 +348,7 @@ typedef struct {
 #define RV_PILOT_SIZE 121
 #define RV_NODE_SIZE 22
 #define RV_MISSION_SIZE 698
-#define RV_SHIPTYPE_SIZE 182
+#define RV_SHIPTYPE_SIZE 254
 #define RV_WEAPON_SIZE 44
 #define RV_LINE_SIZE 114
 

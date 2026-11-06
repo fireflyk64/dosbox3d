@@ -1997,6 +1997,24 @@ static void comm_landing(void)
         comm_exchange(s_ask, role_voice(RV_ROLE_XO), r == LANDING_CLEARED ? s_yes : r == LANDING_NOT_YET ? s_no : s_far);
 }
 
+/* a capital ship's mayday (logic_on_mayday, the old game's odds: hull_take): its type's line, in the carrier's voice (the
+ * XO relays it: no ship's captain has a face), on the right VDU as the carrier's own words come, when no comm is on
+ * and none within MAYDAY_GAP_240 */
+#define MAYDAY_GAP_240 1200
+static unsigned long __far g_mayday_said;
+static void comm_mayday(int16_t slot)
+{
+    static const char __far s_log[] = "flight: frame %u: slot %d's mayday (%Fs)";
+    const RvShipType __far *t = slot_type(slot);
+    if (!t || !t->mayday[0])
+        return;
+    rv_notef(s_log, frameCounter, slot, (const char __far *)t->mayday);
+    if (comm_silent() || clock240() < g_mayday_said || g_reply_voice != -1 || comms_on(0) || comms_on(1))
+        return;
+    g_mayday_said = clock240() + MAYDAY_GAP_240;
+    (void)comms_say(role_voice(RV_ROLE_XO), 1, t->mayday);
+}
+
 /* once a frame: the hull stopped the player, or it came in on the afterburner (logic.c): the carrier says why, now and
  * then */
 static void comm_stop_tick(void)
@@ -3283,6 +3301,7 @@ void __far __cdecl flight_startup(void)
     shots_on_hit = fx_hit;
     shots_on_flak = fx_flak;
     logic_on_jump = fx_jump;
+    logic_on_mayday = comm_mayday;
 #ifdef RV_TESTS
     if (g_set_enemy >= 0) {
         /* the benchmark's sprite: the biggest of the type's band views at the sets' first resident step (84 %) */
@@ -3831,6 +3850,7 @@ static void flight_over(unsigned short status)
     shots_on_hit = 0;
     shots_on_flak = 0;
     logic_on_jump = 0;
+    logic_on_mayday = 0;
     vid_flash(0);
     explode_flight_end();
     shots_flight_end();

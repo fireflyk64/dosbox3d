@@ -234,6 +234,9 @@ minutes, the old game's 409 on its bigger Scimitar); one at 200 kps is grazed (3
 same target one time in 14 when it bears (1 in 4). The hull is the old game's count (`hull_take`: a hit past the armour
 an eighth of itself on the Aera's side, a tenth on the others', at least one; `CAP_HULL_POINTS` 14 points a count):
 an Agasicles dies at its 90th laser hit (M8.45).
+A Terran capital ship calls mayday on 35 in 1,000 of the hits through its armour (the old game's odds, read in its
+capital hull routine: so the Claw's six maydays to the Drayman's one, by their counts), its type's `mayday` line in
+ships.csv, relayed in the carrier's voice on the right VDU (`logic_on_mayday`, flight.c `comm_mayday`; M8.52).
 
 A mission's `turrets=off` (ship line; `ship_think`) keeps them silent: the home carrier has it where enemies start at
 nav 0, so the player has that fight to fly.

@@ -4468,6 +4468,15 @@ static uint16_t fighter_roulette(int16_t s, uint16_t left, const RvShipType __fa
     return took;
 }
 
+/* a capital ship's mayday (the user, 2026-11-06: "the tiger's claw could say mayday mayday 6 times.... and the exeter 2
+ * or 3 times ... and the drayman 1 time"): the old game's capital hull routine rolls, at every hit through the armour of
+ * a Confed capital ship, MAYDAY_PER_MILLE in 1,000 for the "Mayday, all Confederate craft please assist" line (ovr143:0F95:
+ * rand(1000) < 35), so the maydays go with the hull's count, 560 : 200 : 60.  Ours: the type's ships.csv mayday line,
+ * through the flight's hook (the carrier's comm relays it).  The dice roll whether or not a hook listens: the gameplay
+ * stream must run the same on every machine, and in the harness */
+#define MAYDAY_PER_MILLE 35
+void (*__far logic_on_mayday)(int16_t slot);
+
 static uint16_t hull_take(int16_t s, uint16_t left, const RvShipType __far *t, int16_t behind)
 {
     uint16_t rec = slotMissionShip[s];
@@ -4479,6 +4488,8 @@ static uint16_t hull_take(int16_t s, uint16_t left, const RvShipType __far *t, i
          * game's count x 14), so a laser's hit is one */
         uint16_t div = commAnimInfo[s] == SIDE_AERA ? 8 : 10;
         q = (uint32_t)(left / div ? left / div : 1) * CAP_HULL_POINTS;
+        if (game_rand() % 1000 < MAYDAY_PER_MILLE && t->mayday[0] && logic_on_mayday)
+            logic_on_mayday(s);
         return q > 0xFFFFUL ? 0xFFFF : (uint16_t)q;
     }
     if ((rvFlags[s] & RV_FLAG_HUMAN) || !hull)

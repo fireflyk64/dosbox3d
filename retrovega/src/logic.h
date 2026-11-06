@@ -99,6 +99,8 @@ int16_t logic_request_landing(void);    /* LANDING_*: a clearance stands for the
 int16_t logic_carrier_stopped(void);    /* the hull stopped the player (not cleared) since last asked: 2, 0 no */
 /* an escorted ship jumps away, just before its slot ends (flight.c: fx_jump's star and flash); friendly: the player's side */
 extern void (*__far logic_on_jump)(int16_t slot, int16_t friendly);
+extern void (*__far logic_on_mayday)(int16_t slot);   /* a capital ship's mayday (its type's line): the old game's
+                                                          35 in 1,000 a hit through the armour (hull_take) */
 void logic_test_leave(int16_t s);        /* the play tests' way to have an enemy leave, as fear or a jump does */
 /* a rock's hit on the player (rocks.c): its closing speed (positions a step) and where it struck, the harm.  The old
  * game's for a collision, half the square of the closing speed in km a step (its asteroids hit for a thousand and

@@ -4585,6 +4585,47 @@ static void t_prey(void)
     pt_mission();
 }
 
+/* M8.52: a capital ship's mayday (hull_take, logic_on_mayday): the old game's 35 in 1,000 at every hit through the
+ * armour of a Confed capital ship, so the maydays go with the hull's count (the Claw's 6, the Exeter's 2 or 3, the
+ * Drayman's 1, the user remembers): an Ox bare to its hull, hit 400 times with 14, calls between 4 and 30 times; an
+ * Agasicles (no line) never */
+static int16_t g_maydays;
+static void pt_mayday(int16_t slot)
+{
+    (void)slot;
+    g_maydays++;
+}
+
+static void t_mayday(void)
+{
+    static const char __far e_ox[] = "an Ox hit 400 times through its armour called mayday on %d of them: 4 to 30 (35 in 1,000 a hit)";
+    static const char __far e_aera[] = "an Agasicles, with no mayday line, called %d times";
+    int16_t i, hits = 0, before;
+    pt_alone(PT_PLAYER);
+    logic_on_mayday = pt_mayday;
+    pt_ship(1, PT_OX, SIDE_TERRAN, CTL_FROZEN, 0, 0, 20000, 0);
+    for (i = 0, g_maydays = 0; i < 400 && shipAiState[1] != 9; i++) {
+        SHIELD(1, 0) = SHIELD(1, 1) = 0;
+        ARMOR(1, 0) = ARMOR(1, 1) = ARMOR(1, 2) = ARMOR(1, 3) = 0;
+        damagePoints[1] = 0;
+        before = g_maydays;
+        (void)do_damage(0, 1, 14, 0);
+        if (g_maydays > before)         /* (the hits that called: the host's src check runs each do_damage twice, with
+                                           the same dice, so the calls come in twos there) */
+            hits++;
+    }
+    REQUIRE(hits >= 4 && hits <= 30, e_ox, hits, 0, 0);
+    pt_ship(1, 0x28, SIDE_AERA, CTL_FROZEN, 0, 0, 20000, 0);
+    for (i = 0, g_maydays = 0; i < 100; i++) {
+        SHIELD(1, 0) = SHIELD(1, 1) = 0;
+        ARMOR(1, 0) = ARMOR(1, 1) = ARMOR(1, 2) = ARMOR(1, 3) = 0;
+        damagePoints[1] = 0;
+        (void)do_damage(0, 1, 14, 0);
+    }
+    REQUIRE(g_maydays == 0, e_aera, g_maydays, 0, 0);
+    logic_on_mayday = 0;
+}
+
 /* M8.51: a capital ship's turrets bear all round (the user, 2026-11-05: an Agasicles "seems to only shoot to the front";
  * its mounts had all sat at the bow: gun_mount spreads them along the hull): a still Franklin held 2,250 km behind it,
  * abeam and ahead for a minute each takes flak at rates within a factor of three of one another, and some from each */
@@ -6961,6 +7002,7 @@ static const char __far n_m8_48[] = "M8.48 stay-home (logic_autopilot, form_come
 static const char __far n_m8_49[] = "M8.49 fighter-hull (do_damage, fighter_roulette): an unnamed fighter's hull is the old game's roulette: a few laser hits from behind kill a Nicander, head on it takes over twice as many, past seven hull counts";
 static const char __far n_m8_50[] = "M8.50 prey (prey_of): a Nicander ordered at the Ox (prey=OX) goes for it with the player nearer, and turns on the player once hurt under 55% health";
 static const char __far n_m8_51[] = "M8.51 capital-bearings (gun_mount, ship_think): an Agasicles' flak reaches a still player behind it, abeam and ahead alike";
+static const char __far n_m8_52[] = "M8.52 mayday (hull_take, logic_on_mayday): an Ox calls mayday on 35 in 1,000 of the hits through its armour, as the old game's capital ships did; an Agasicles never";
 static const char __far n_m8_43[] = "M8.43 escort-skip (logic_autopilot, escort_comes): a pick past an escort's next waypoint is the autopilot's, the escort left behind to fly on alone: ENIGMA2's nav 2 picked";
 static const char __far n_m8_42[] = "M8.42 escort-jump-home (logic_autopilot, route_step): ENIGMA2 by the autopilot, the Ox along to each nav point; the player straight home, the Ox still jumps";
 static const char __far n_m8_41[] = "M8.41 escort-linger (route_step, logic_autopilot): ENIGMA2's Ox goes on alone from a player lingering at the launch, and the autopilot to nav 1 brings it along";
@@ -7044,7 +7086,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 },
 };
 
 /* --- the run --- */
