@@ -230,9 +230,19 @@
     }
   },
   "lounge": {
-    "about": "The crew lounge in the pilots' quarters: a table under a pendant lamp, bunks on both sides, lockers and the hatch at the back.",
+    "about": "The crew lounge in the pilots' quarters: a table under a pendant lamp, bunks on both sides, lockers and the hatch at the back; the long window over the lockers shows space as the bar's does (the user, 2026-11-05: \"The window in the barracks has a static drawing but should see the outside like the lounge and bedroom\").",
     "src": "art/places/src/barracks",
     "background": "Symmetrical sci-fi bunk room.png",
+    "window": [
+      [536, 255],
+      [896, 255],
+      [915, 272],
+      [915, 337],
+      [898, 354],
+      [534, 354],
+      [519, 337],
+      [519, 272]
+    ],
     "crop": [
       0,
       32,
