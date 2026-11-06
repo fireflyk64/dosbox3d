@@ -96,6 +96,9 @@ enum { LANDING_CLEARED, LANDING_NOT_YET, LANDING_TOO_FAR };
                                            player's own death does (game.c's screen; the score is a loss) */
 int16_t logic_is_home(int16_t s);       /* slot s is the home carrier, alive */
 int16_t logic_landing_allowed(void);
+int16_t logic_autoland_ready(void);     /* the landing by the trigger may be had: every waypoint flown, no enemy near, the
+                                           home carrier's hull close (the home slot, -1 not now) */
+int16_t logic_autoland(void);           /* the trigger pulled: landed then (1), as on coming near; 0 not now */
 int16_t logic_request_landing(void);    /* LANDING_*: a clearance stands for the rest of the flight */
 int16_t logic_carrier_stopped(void);    /* the hull stopped the player (not cleared) since last asked: 2, 0 no */
 /* an escorted ship jumps away, just before its slot ends (flight.c: fx_jump's star and flash); friendly: the player's side */

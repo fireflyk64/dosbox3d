@@ -5030,6 +5030,34 @@ static void t_stay_home(void)
     REQUIRE(slot_is_ship(stay) && pt_km(stay, home) < 6000, e_round, pt_km(stay, home), 0, 0);
 }
 
+/* M8.53: the landing by the trigger (the user, 2026-11-06: "autolanding kicked in when there are no enemies present
+ * and are very near the carrier and it can say press fire to land. If all landing conditions are met and all nav
+ * points have been reached"): not at the launch, not with a waypoint unflown, nor far from the carrier; with both
+ * flown, their enemies dead, 3,000 km off the carrier, it is ready, and the trigger lands */
+static void t_autoland(void)
+{
+    static const char __far e_launch[] = "at the launch the landing by the trigger was ready (%d): no waypoint flown yet";
+    static const char __far e_half[] = "with nav 2 unflown it was ready (%d)";
+    static const char __far e_far[] = "every waypoint flown, %d km from the carrier, it was ready (%d): too far";
+    static const char __far e_ready[] = "every waypoint flown, nobody about, %d km off the carrier: not ready (%d)";
+    static const char __far e_land[] = "the trigger: logic_autoland %d, status %d, landed on %d: 1, 1, the carrier";
+    int16_t home = pt_home_patrol(), r;
+    if (home <= 0 || !pt_steps(SEC))
+        return;
+    REQUIRE(logic_autoland_ready() < 0, e_launch, logic_autoland_ready(), 0, 0);
+    if (!pt_go(0, NAV1_Z) || !pt_kill_side(SIDE_AERA) || !pt_go(0, 3000))
+        return;
+    REQUIRE(logic_autoland_ready() < 0, e_half, logic_autoland_ready(), 0, 0);
+    if (!pt_go(NAV2_X, NAV2_Z) || !pt_kill_side(SIDE_AERA) || !pt_go(0, 30000))
+        return;
+    REQUIRE(logic_autoland_ready() < 0, e_far, logic_target_km(home), logic_autoland_ready(), 0);
+    if (!pt_go(0, 3000))
+        return;
+    REQUIRE(logic_autoland_ready() == home, e_ready, logic_target_km(home), logic_autoland_ready(), 0);
+    r = logic_autoland();
+    REQUIRE(r == 1 && missionStatus == 1 && landedOn == (uint16_t)home, e_land, r, missionStatus, (int16_t)landedOn);
+}
+
 /* M8.16: the carrier destroyed: the flight ends with it (missionStatus 6) when its explosion has run, and it is a loss
  * however well the patrol went */
 static void t_carrier_lost(void)
@@ -7003,6 +7031,7 @@ static const char __far n_m8_49[] = "M8.49 fighter-hull (do_damage, fighter_roul
 static const char __far n_m8_50[] = "M8.50 prey (prey_of): a Nicander ordered at the Ox (prey=OX) goes for it with the player nearer, and turns on the player once hurt under 55% health";
 static const char __far n_m8_51[] = "M8.51 capital-bearings (gun_mount, ship_think): an Agasicles' flak reaches a still player behind it, abeam and ahead alike";
 static const char __far n_m8_52[] = "M8.52 mayday (hull_take, logic_on_mayday): an Ox calls mayday on 35 in 1,000 of the hits through its armour, as the old game's capital ships did; an Agasicles never";
+static const char __far n_m8_53[] = "M8.53 autoland (logic_autoland_ready, logic_autoland): the trigger lands with every waypoint flown, nobody about and the carrier close; not before";
 static const char __far n_m8_43[] = "M8.43 escort-skip (logic_autopilot, escort_comes): a pick past an escort's next waypoint is the autopilot's, the escort left behind to fly on alone: ENIGMA2's nav 2 picked";
 static const char __far n_m8_42[] = "M8.42 escort-jump-home (logic_autopilot, route_step): ENIGMA2 by the autopilot, the Ox along to each nav point; the player straight home, the Ox still jumps";
 static const char __far n_m8_41[] = "M8.41 escort-linger (route_step, logic_autopilot): ENIGMA2's Ox goes on alone from a player lingering at the launch, and the autopilot to nav 1 brings it along";
@@ -7086,7 +7115,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 },
 };
 
 /* --- the run --- */

@@ -202,6 +202,8 @@ static struct {
 static uint16_t g_wave_held;            /* a bit per trigger point whose wave has waited for the enemies out */
 static uint8_t g_enemy_ran;             /* the last enemy gone left, not killed */
 static uint16_t g_navs_seen;            /* a bit per nav point the player has reached (nav 0 from the start) */
+static uint16_t __far g_navs_been;      /* a bit per nav point whose reach this machine's pilot has been in (a guest's
+                                           g_navs_seen waits on the host's waves: the landing by the trigger asks this) */
 static RvField __far g_fields[RV_FIELDS];   /* the mission's asteroid and mine fields: the autopilot looks out for them */
 static int16_t __far g_nfields;
 static uint8_t __far g_cleared;         /* the carrier cleared the player to land (logic_request_landing) */
@@ -421,7 +423,7 @@ static int32_t gap_between(int16_t a, int16_t b);
 
 int16_t logic_landing_allowed(void)
 {
-    return (g_navs_seen & ~1u) != 0 || mission_done();
+    return ((g_navs_seen | g_navs_been) & ~1u) != 0 || mission_done();   /* (been: a guest's own, its waves the host's) */
 }
 
 int16_t logic_request_landing(void)
@@ -621,6 +623,7 @@ void logic_start(const RvMission __far *m)
     _fmemset(g_away, 0, sizeof g_away);
     _fmemset(&g_hud, 0, sizeof g_hud);   /* (no marks until the first step works them out) */
     g_navs_seen = 1;
+    g_navs_been = 1;
     g_wave_held = 0;
     g_enemy_ran = 0;
     g_nav_chosen = 0;
@@ -3824,9 +3827,14 @@ static void step_mission(void)
                 g_killed[slotMissionShip[s]] = (uint8_t)(rvFlags[s] & RV_FLAG_HUMAN ? 2 : 1);
         }
     if (slot_is_ship(0) && shipAiState[0] != 9)
-        for (n = 0; n < NAVS; n++)
-            if (nav_defined(n) && !(g_navs_seen >> n & 1) && nav_in_reach(n) && wave_may_come(n))
+        for (n = 0; n < NAVS; n++) {
+            if (!nav_defined(n) || (g_navs_seen >> n & 1 && (g_navs_been >> n & 1 || !nav_listed(n))) || !nav_in_reach(n))
+                continue;
+            if (nav_listed(n))          /* (a waypoint's: a hidden trigger point is no place been) */
+                g_navs_been |= 1u << n;
+            if (!(g_navs_seen >> n & 1) && wave_may_come(n))
                 enterNavPoint((uint16_t)n);
+        }
     victoryPoints = (uint16_t)mission_done();
 }
 
@@ -4344,6 +4352,41 @@ int16_t logic_autopilot(void)
     return 1;
 }
 
+/* the landing by the trigger (the user, 2026-11-06: "could we have autolanding kicked in when there are no enemies
+ * present and are very near the carrier and it can say press fire to land. If all landing conditions are met and all
+ * nav points have been reached"): every waypoint flown, the carrier's own rule met (logic_landing_allowed), no enemy
+ * within AUTOPILOT_CLEAR_KM of a human, and the home carrier's hull within AUTOLAND_KM: the home slot, -1 not now.
+ * The autopilot home stops HOME_ARRIVE_KM off the hull, inside it */
+#define AUTOLAND_KM 6000
+int16_t logic_autoland_ready(void)
+{
+    int16_t s, home;
+    if (missionStatus || !slot_is_ship(0) || shipAiState[0] == 9 || rvController[0] != CTL_PLAYER
+        || !logic_landing_allowed())
+        return -1;
+    for (s = 1; s < NAVS; s++)          /* (every waypoint's reach been in, by this machine's pilot: g_navs_been) */
+        if (nav_listed(s) && !(g_navs_been >> s & 1))
+            return -1;
+    humans_note();
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9 && human_km(s) < AUTOPILOT_CLEAR_KM)
+            return -1;
+    home = home_slot();
+    return home >= 0 && logic_is_home(home) && gap_between(0, home) <= AUTOLAND_KM ? home : -1;
+}
+
+/* the trigger pulled with logic_autoland_ready: cleared and landed, as on coming near (land_near) */
+int16_t logic_autoland(void)
+{
+    int16_t home = logic_autoland_ready();
+    if (home < 0)
+        return 0;
+    g_cleared = 1;
+    landedOn = (uint16_t)home;
+    missionStatus = 1;
+    return 1;
+}
+
 /* --- the thunks' bodies (abi/rvabi.def, spec 5; docs/logic.md has each one's contract) --- */
 
 /* (src, dst, qty, where): a hit of qty on the ship in slot dst at the place `where` (a near RvVec3, positions):
@@ -4714,6 +4757,8 @@ void __far __cdecl enterNavPoint_impl(uint16_t nav)
         return;
     currentNavPoint = nav;
     g_navs_seen |= 1u << nav;
+    if (nav_listed((int16_t)nav))
+        g_navs_been |= 1u << nav;
     if (g_nav_chosen && g_sys.nav == nav)
         g_nav_chosen = 0;               /* (the one the player picked, reached: on along the way) */
     at = NAV_SHIPS(nav);

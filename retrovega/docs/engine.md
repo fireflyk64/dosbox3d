@@ -2028,6 +2028,18 @@ the VDUs take the readouts' small font. vdu.c:
   (comms.c), but the comm menu comes up over a face, the comm going on
   under it. A VDU's own glass and the computer decide what is left of a page
   (docs/damage.md).
+- **The comm menu** lists only what can be said (the user, 2026-11-06: "a ton
+  of the comms choices have zero to cancel and there's a lot of nonsense
+  choices"): 1 the wingman while there is one (the mission's own first, never
+  the carrier's patrol), 2 the target when it is an enemy (taunt), the home
+  carrier (landing) or one of the wing (orders), in a shared flight 0 to talk
+  (the layer's prompt, or a tap of Shift), and 9 never mind; a wingman's page
+  only the orders it would take now (`logic_order_ok`).
+- **The landing by the trigger:** home, with every waypoint's reach flown by
+  this machine's pilot (`g_navs_been`: a guest's own, its waves the host's), no
+  enemy within 16,000 km and the carrier's hull within 6,000 km, PRESS FIRE TO
+  LAND shows under the gunsight and the trigger lands (`logic_autoland`; the
+  user, 2026-11-06). M8.53.
 - **The wireframe** (`vdu_wire`) is the type's silhouette from above
   (collide.c's mask, `collide_mask`): the outline of its solid cells
   fitted to the ship's proportions (`hit`, the silhouettes' half
