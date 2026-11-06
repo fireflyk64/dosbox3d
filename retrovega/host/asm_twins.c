@@ -3,6 +3,8 @@
 #include "rv.h"
 #include "twins.h"
 
+unsigned long rv_tsc(void) { return 0; }   /* (no emulated cycles to count on the host) */
+
 /* lasers.asm's */
 int rv_bolts_place(const LzBolt *b, int n, const LzCam *cam, LzLine *lines, int maxlines, LzFat *fats, int maxfats,
                    int *nfats)
@@ -93,6 +95,16 @@ void rv_blit_row_rev(unsigned char *row, const unsigned char *spans, int right, 
 void rv_scale_row(const unsigned char *line, const unsigned short *map, int xa, int xb, unsigned char *out)
 {
     c_scale_row(line, map, xa, xb, out);
+}
+
+void rv_fill_row(const unsigned char *line, int n, const short *edges, int xa, int xb, unsigned char *out)
+{
+    c_fill_row(line, n, edges, xa, xb, out);
+}
+
+void rv_copy_row(unsigned char *dst, const unsigned char *src, int n)
+{
+    c_copy_row(dst, src, n);
 }
 
 void rv_rotate_row(const unsigned char *dense, int w, int h, const LfRot *r, int y, int xs, int xe, unsigned char *out)

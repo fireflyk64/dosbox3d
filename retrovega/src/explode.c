@@ -17,12 +17,15 @@
 #include "hud.h"
 #include "explode.h"
 #include "gx.h"
+#include "twins.h"
 
 void __far __cdecl rv_scale_row(const unsigned char __far *line, const unsigned short __far *map, int xa, int xb,
                                 unsigned char __far *out);
 
 #define CACHE 4                         /* cels kept at once */
-#define MAP_W 1024                      /* the widest an explosion is drawn, px */
+#define RPX_MAX 511                     /* the biggest radius an explosion is drawn at, px */
+#define MAP_W 128                       /* the column map: the small fireballs' (under 2 x CEL_MAX px: the big ones are
+                                           drawn as runs, CEL_MAX + 1 edges in the same room) */
 #define CACHE_CEL 48                    /* the art's cel, px a side, as built (mem_take stops the game if it grows) */
 MEM_ARRAY(uint8_t, g_cache_arr, CACHE * CACHE_CEL * CACHE_CEL)
 MEM_ARRAY(uint16_t, g_map_arr, MAP_W)
@@ -81,7 +84,20 @@ static int16_t __far g_cache_key[CACHE];
 static uint16_t __far g_cache_used[CACHE], __far g_tick;
 static uint16_t __far *__far g_map;     /* a column map, MAP_W */
 static uint8_t __far g_line[CEL_MAX];
+static int16_t __far g_line_first, __far g_line_last;   /* make_line's: the first and last lit pixel of the row */
+static uint8_t __far g_line_solid;      /* and every pixel between them lit: the row is one run */
 static uint8_t __far g_tab[256];
+static int16_t __far g_tab_for = -1;    /* the timeline entry g_tab was made for (one boom's bands in a row share it) */
+/* a boom's sparks, placed once a frame and drawn from here in every band it crosses: the first SPARKS_KEPT of them
+ * (a fighter's 24, a capital ship's 40: the rest are placed in each band, from the saved state of the random draw;
+ * 1.4 KB of conventional memory, less than the column map gave back).  Keyed by the frame and the radius; a dead
+ * spark's k is 255 */
+#define SPARKS_KEPT 16
+static int16_t __far g_spk_dx[EXPLODE_MAX][SPARKS_KEPT], __far g_spk_dy[EXPLODE_MAX][SPARKS_KEPT];
+static uint8_t __far g_spk_k[EXPLODE_MAX][SPARKS_KEPT];
+static uint16_t __far g_spk_frame[EXPLODE_MAX];
+static int16_t __far g_spk_r[EXPLODE_MAX];
+static uint32_t __far g_spk_st[EXPLODE_MAX];   /* the random draw's state after the kept sparks */
 static uint8_t __far g_haze[HAZE_STEPS];
 static Boom __far g_b[EXPLODE_MAX];
 static int16_t __far g_n;
@@ -95,6 +111,21 @@ static const uint8_t __far k_wreck_metal[DEBRIS_METAL] = { 161, 168, 180, 186, 1
 static const uint8_t __far k_wreck_hot[DEBRIS_HOT] = { 131, 135, 139, 143 };
 #define WRECK_ALL 0x7FFF                /* (a wreck's rpx: the eye is in it, every row may hold a piece) */
 uint8_t __far g_fx_extra;               /* (explode.h: the wrecks' debris only with it) */
+#ifdef RV_TESTS
+/* what a frame's explosions cost, the test build's note (RV_NOTE: /verbose; tests/boom.txt, scratch boomlog.py): the
+ * booms on screen, draw_one's calls (a boom in every band it crosses), the colour tables built, the fireballs' rows
+ * and pixels, the hazes' rows and pixel pairs, and the cycles (rv_tsc) in all and by part */
+static uint16_t __far g_st_on, __far g_st_draws, __far g_st_tabs, __far g_st_rows, __far g_st_haze_rows, __far g_st_frame;
+static uint32_t __far g_st_px, __far g_st_haze_px, __far g_st_cyc;
+static uint32_t __far g_st_c_tab, __far g_st_c_line, __far g_st_c_scale, __far g_st_c_over;   /* (cycles by part) */
+#define ST(x) (x)
+#define T0() (tsc_ = rv_tsc())
+#define T1(acc) ((acc) += rv_tsc() - tsc_)
+#else
+#define ST(x)
+#define T0()
+#define T1(acc)
+#endif
 #ifdef RV_HOST
 RvDebris g_host_debris;                 /* (gx_debris_args off DOS: gx.h) */
 #endif
@@ -189,6 +220,9 @@ int16_t explode_flight_start(void)
     }
     for (i = 0; i < CACHE; i++)
         g_cache_key[i] = -1;
+    g_tab_for = -1;
+    for (i = 0; i < EXPLODE_MAX; i++)
+        g_spk_frame[i] = 0xFFFF;
     g_n = g_nord = 0;
     g_ready = 1;
     rv_logf(s_room, EXPLODE_MAX, CACHE, CACHE * g_size * g_size + MAP_W * 2);
@@ -341,6 +375,15 @@ static void order_in(int16_t i)         /* boom i into the drawing order, far to
 void explode_place(const LfVec *eye, const LfBasis *cam, int16_t cx, int16_t cy, int16_t focal)
 {
     int16_t i, debris = gx_debris_on();
+#ifdef RV_TESTS
+    if (g_st_draws)                     /* (the last frame's cost: the test build's note) */
+        RV_NOTE("explode: frame %u: %u on, drawn %u times, %u tables, fire %u rows %lu px, haze %u rows %lu pairs, %lu cycles (tables %lu, cel rows %lu, scaling %lu, sparks %lu)",
+                g_st_frame, g_st_on, g_st_draws, g_st_tabs, g_st_rows, g_st_px, g_st_haze_rows, g_st_haze_px, g_st_cyc,
+                g_st_c_tab, g_st_c_line, g_st_c_scale, g_st_c_over);
+    g_st_on = g_st_draws = g_st_tabs = g_st_rows = g_st_haze_rows = 0;
+    g_st_px = g_st_haze_px = g_st_cyc = g_st_c_tab = g_st_c_line = g_st_c_scale = g_st_c_over = 0;
+    g_st_frame = frameCounter;
+#endif
     g_nord = 0;
     g_wm[0] = cam->right.x; g_wm[1] = cam->right.y; g_wm[2] = cam->right.z;
     g_wm[3] = cam->up.x; g_wm[4] = cam->up.y; g_wm[5] = cam->up.z;
@@ -391,8 +434,8 @@ void explode_place(const LfVec *eye, const LfBasis *cam, int16_t cx, int16_t cy,
         r = b->r16 * focal / Z;
         sx = cx + X * focal / Z;
         sy = cy - Y * focal / Z;
-        if (r > MAP_W / 2 - 1)
-            r = MAP_W / 2 - 1;
+        if (r > RPX_MAX)
+            r = RPX_MAX;
         if (sx + r * 2 < 0 || sx - r * 2 > SCR_W || sy + r * 2 < 0 || sy - r * 2 > SCR_H)
             continue;                   /* (twice the radius: its sparks fly past it) */
         b->sx = (int16_t)sx;
@@ -402,6 +445,7 @@ void explode_place(const LfVec *eye, const LfBasis *cam, int16_t cx, int16_t cy,
         b->on = 1;
         order_in(i);
     }
+    ST(g_st_on = (uint16_t)g_nord);
 }
 
 /* a cel in the cache (fetched from XMS the first time) */
@@ -439,7 +483,7 @@ static int16_t row_clip(int16_t y, int16_t *ca, int16_t *cb, const int16_t __far
 /* row v of the cel as this explosion turns it, made colours: clear below the dissolve's dithered threshold */
 static void make_line(const uint8_t __far *cel, int16_t v, int16_t orient, int16_t thr)
 {
-    int16_t n = (int16_t)g_size, u, step;
+    int16_t n = (int16_t)g_size, u, step, lit;
     const uint8_t __far *p;
     const uint8_t __far *bay = k_bayer + (v & 3) * 4;
     if (!(orient & 4)) {                /* rows as rows */
@@ -457,19 +501,41 @@ static void make_line(const uint8_t __far *cel, int16_t v, int16_t orient, int16
             step = -n;
         }
     }
+    g_line_first = -1;
+    g_line_last = -2;
+    lit = 0;
     for (u = 0; u < n; u++, p += step) {
         uint8_t h = *p;
-        g_line[u] = (uint8_t)(!h || (int16_t)h + bay[u & 3] * g_dither < thr ? 0 : g_tab[h]);
+        if (!h || (int16_t)h + bay[u & 3] * g_dither < thr)
+            g_line[u] = 0;
+        else {
+            g_line[u] = g_tab[h];
+            if (g_line_first < 0)
+                g_line_first = u;
+            g_line_last = u;
+            lit++;
+        }
     }
+    g_line_solid = (uint8_t)(lit && lit == g_line_last - g_line_first + 1);
 }
 
 static void disc(int16_t cx, int16_t cy, int16_t r, int16_t colour)
 {
-    int16_t dy, dx;
+    int16_t dy, w = 0;                  /* the row's half width, walked out and back (the widest dx with
+                                           dx^2 + dy^2 <= r^2: it only rises to the middle and falls after); the
+                                           squares kept running, no multiplies (Watcom calls a routine for a 32-bit one) */
+    int32_t rr = (int32_t)r * r, w2 = 0, d2 = rr;   /* w^2, dy^2 (dy = -r at first) */
     for (dy = -r; dy <= r; dy++) {
-        for (dx = r; dx > 0 && (int32_t)dx * dx + (int32_t)dy * dy > (int32_t)r * r; dx--)
-            ;
-        hud_run(cx - dx, cx + dx + 1, cy + dy, colour);
+        while (w > 0 && w2 + d2 > rr) {
+            w2 -= 2L * w - 1;           /* (w - 1)^2 */
+            w--;
+        }
+        while (w2 + 2L * w + 1 + d2 <= rr) {
+            w2 += 2L * w + 1;           /* (w + 1)^2 */
+            w++;
+        }
+        hud_run(cx - w, cx + w + 1, cy + dy, colour);
+        d2 += 2L * dy + 1;              /* (dy + 1)^2 */
     }
 }
 
@@ -479,12 +545,19 @@ static uint16_t rnd(uint32_t *st)
     return (uint16_t)(*st >> 16) & 0x7FFF;
 }
 
-/* the flash, the sparks and the debris, over the fireball (the screen's own pixels, the HUD's clipping) */
+/* the flash, the sparks and the debris, over the fireball (the screen's own pixels, the HUD's clipping).  Drawn in
+ * every band the explosion crosses, so the arithmetic is 16-bit but for one random draw and two products a piece
+ * (Watcom calls a routine for every 32-bit multiply or divide: 25 of them a spark had cost 900 cycles, a third of a
+ * big fireball's whole draw) */
 static void overlays(const Boom __far *b, const Tl __far *t)
 {
     const uint8_t __far *spark = g_cols + g_nramp, __far *debris = spark + g_nspark;
     int16_t R = b->rpx, age = b->age, life = b->life, i, n;
+    uint16_t reach = (uint16_t)((uint32_t)t->spark * R / 256) >> 1;   /* the sparks' full reach, half of it (so
+                                           the products below stay in 16 bits: 80 x 562) */
+    uint16_t dreach = (uint16_t)((uint32_t)t->debris * R / 256) >> 1;
     uint32_t st = b->seed;
+    int16_t slot = (int16_t)(b - g_b), placed = g_spk_frame[slot] == frameCounter && g_spk_r[slot] == R;
     if (age < 3) {                      /* the flash: a white core and a four-pointed glint */
         static const uint8_t __far k_core[3] = { 12, 16, 19 }, __far k_arm[3] = { 130, 90, 50 };
         int16_t rr = (int16_t)((int32_t)R * k_core[age] / 100), arm = (int16_t)((int32_t)R * k_arm[age] / 100);
@@ -497,29 +570,57 @@ static void overlays(const Boom __far *b, const Tl __far *t)
         disc(b->sx, b->sy, rr, age < 2 ? c : c2);
     }
     for (i = 0; i < k_kind[b->kind].sparks; i++) {   /* sparks: flying out, cooling white to red */
-        uint16_t a = rnd(&st), sp = rnd(&st), l = rnd(&st);
-        int16_t ang = (int16_t)(a >> 5), lf = (int16_t)((int32_t)life * (90 + (int32_t)l * 115 / 32768) / 256), k;
-        int32_t dist, dx, dy;
-        if (age >= lf || !lf)
-            continue;
-        dist = (int32_t)(90 + (int32_t)sp * 230 / 32768) * t->spark / 256 * R / 256;
-        dx = lf_cos(ang) * dist / 16384;
-        dy = lf_sin(ang) * dist / 16384 * 205 / 256;
-        k = (int16_t)((int32_t)age * g_nspark / lf);
-        hud_dot((int16_t)(b->sx + dx * 225 / 256), (int16_t)(b->sy + dy * 225 / 256),
+        uint16_t sp8, l8, lf, d1, dist, k;
+        int16_t ang, dx, dy;
+        if (i < SPARKS_KEPT && placed) {   /* (placed in an earlier band this frame) */
+            if (i == SPARKS_KEPT - 1 || i + 1 == k_kind[b->kind].sparks)
+                st = g_spk_st[slot];    /* (the draw goes on from there: the rest of the sparks, the debris) */
+            if ((k = g_spk_k[slot][i]) == 255)
+                continue;
+            dx = g_spk_dx[slot][i];
+            dy = g_spk_dy[slot][i];
+        } else {
+            st = st * UINT32_C(1103515245) + 12345;   /* (one draw: its angle, speed and life from its bits) */
+            ang = (int16_t)(st >> 22);  /* 0 .. 1023 */
+            sp8 = (uint16_t)(st >> 14) & 255;
+            l8 = (uint16_t)(st >> 6) & 255;
+            lf = (uint16_t)((uint16_t)life * (90 + l8 * 115 / 256) / 256);   /* its life, 90 .. 205 / 256 of the blast's */
+            d1 = (uint16_t)(90 + sp8 * 230 / 256);   /* its speed, 90 .. 320 / 256 of the reach */
+            dist = (uint16_t)((d1 >> 2) * reach >> 5);   /* (/ 4 and the half reach: / 8 in all, x 256 / 32 back) */
+            dx = (int16_t)((int32_t)lf_cos(ang) * dist >> 14);
+            dy = (int16_t)((int32_t)((int16_t)(lf_sin(ang) >> 8) * 205) * dist >> 14);   /* (x 205 / 256: the screen's aspect) */
+            k = age >= (int16_t)lf || !lf ? 255 : (uint16_t)(age * g_nspark / lf);
+            if (i < SPARKS_KEPT) {
+                g_spk_dx[slot][i] = dx;
+                g_spk_dy[slot][i] = dy;
+                g_spk_k[slot][i] = (uint8_t)k;
+                if (i == SPARKS_KEPT - 1 || i + 1 == k_kind[b->kind].sparks) {
+                    g_spk_st[slot] = st;
+                    g_spk_frame[slot] = frameCounter;
+                    g_spk_r[slot] = R;
+                }
+            }
+            if (k == 255)
+                continue;
+        }
+        hud_dot((int16_t)(b->sx + dx - dx / 8), (int16_t)(b->sy + dy - dy / 8),
                 spark[k + 2 < g_nspark ? k + 2 : g_nspark - 1]);
         hud_dot((int16_t)(b->sx + dx), (int16_t)(b->sy + dy), spark[k < g_nspark ? k : g_nspark - 1]);
     }
     if (age < 3)
         return;
     for (i = 0; i < k_kind[b->kind].debris; i++) {   /* debris: dark chunks tumbling out */
-        uint16_t a = rnd(&st), sp = rnd(&st);
-        int16_t ang = (int16_t)(a >> 5), x, y, w, yy, c;
-        int32_t dist = (int32_t)(102 + (int32_t)sp * 205 / 32768) * t->debris / 256 * R / 256;
+        uint16_t sp8, d1, dist;
+        int16_t ang, x, y, w, yy, c;
+        st = st * UINT32_C(1103515245) + 12345;
+        ang = (int16_t)(st >> 22);
+        sp8 = (uint16_t)(st >> 14) & 255;
+        d1 = (uint16_t)(102 + sp8 * 205 / 256);   /* 102 .. 307 / 256 of the reach */
+        dist = (uint16_t)((d1 >> 2) * dreach >> 5);
         if (age * 20 > life * 17 && ((age + i) & 1))
             continue;                   /* (a dithered fade at the end) */
-        x = (int16_t)(b->sx + lf_cos(ang) * dist / 16384);
-        y = (int16_t)(b->sy + lf_sin(ang) * dist / 16384 * 205 / 256);
+        x = (int16_t)(b->sx + ((int32_t)lf_cos(ang) * dist >> 14));
+        y = (int16_t)(b->sy + ((int32_t)((int16_t)(lf_sin(ang) >> 8) * 205) * dist >> 14));
         n = (age + i) % 3 ? 2 : 3;      /* the tumble: its size flickers */
         w = (int16_t)(n - ((age + i) & 1));
         c = (age + i * 5) % 9 == 0 ? debris[g_ndebris - 1] : debris[(i + age / 4) % (g_ndebris - 1)];
@@ -608,6 +709,8 @@ static void haze(const Boom __far *b, int16_t y0, int16_t y1, const int16_t __fa
         row = vid_row(y);
         x = (int16_t)(b->sx - w);
         xb = (int16_t)(b->sx + w);
+        ST(g_st_haze_rows++);
+        ST(g_st_haze_px += (uint16_t)(w + 1));
         if ((x + y + age) & 1)          /* the checkerboard, flipping each frame */
             x++;
         dx = (int16_t)(x - b->sx);
@@ -659,8 +762,12 @@ static void draw_one(const Boom __far *b, int16_t y0, int16_t y1, const int16_t 
                      int16_t ext_rows)
 {
     const Tl __far *t;
-    int16_t R, size, top, left, ya, yb, y, last_v = -1, h;
+    int16_t R, size, top, left, ya, yb, y, last_v = -1, h, tl;
     const uint8_t __far *cel;
+#ifdef RV_TESTS
+    unsigned long tsc_;
+#endif
+    ST(g_st_draws++);
     if (b->kind == BOOM_WRECK) {
         wreck_draw(b, y0, y1, ext, ext_y0, ext_rows);
         return;
@@ -673,7 +780,8 @@ static void draw_one(const Boom __far *b, int16_t y0, int16_t y1, const int16_t 
         jump_star(b);
         return;
     }
-    t = &g_tl[(uint16_t)b->age * g_ntl / b->life];
+    tl = (int16_t)((uint16_t)b->age * g_ntl / b->life);
+    t = &g_tl[tl];
     if (k_kind[b->kind].ball && (R = (int16_t)((int32_t)b->rpx * t->grow / 256)) >= 1) {
         size = (int16_t)(2 * R);
         top = b->sy - R;
@@ -683,26 +791,70 @@ static void draw_one(const Boom __far *b, int16_t y0, int16_t y1, const int16_t 
         if (ya < 0) ya = 0;
         if (yb > SCR_H) yb = SCR_H;
         if (ya < yb && left < SCR_W && left + size > 0) {
+            int16_t big = size >= 2 * (int16_t)g_size, prev_y = -2, prev_ca = 0, prev_cb = 0;
+            uint8_t __far *row, __far *prev_row = 0;
+            int16_t __far *edges = (int16_t __far *)g_map;   /* (a big one's: the map's first g_size + 1 entries) */
             cel = cel_get(b->variant, t->cel);
-            for (h = 0; h < 256; h++) {  /* heat to colour, as cool as this entry is */
-                int32_t idx = (int32_t)h * t->gain / 256 * g_nramp / 256;
-                g_tab[h] = g_cols[idx < g_nramp ? (int16_t)idx : g_nramp - 1];
+            T0();
+            if (g_tab_for != tl) {      /* heat to colour, as cool as this entry is: h x gain / 256 x nramp / 256, the
+                                           product h x gain kept running (no 32-bit multiply or divide: Watcom calls a
+                                           routine for each) */
+                uint32_t acc = 0;
+                uint16_t gain = t->gain, nr = g_nramp;
+                ST(g_st_tabs++);
+                for (h = 0; h < 256; h++, acc += gain) {
+                    uint16_t idx = (uint16_t)((uint16_t)(acc >> 8) * nr >> 8);
+                    g_tab[h] = g_cols[idx < nr ? idx : nr - 1];
+                }
+                g_tab_for = tl;
             }
-            lf_colmap((int16_t)g_size, size, g_map);
+            if (big) {                  /* the runs' edges: cel pixel u covers the columns x with x x g_size / size = u,
+                                           so from ceil(u x size / g_size): what the scaled draw's map gives, pixel for
+                                           pixel (the products stay under 65,536: size <= 2 x RPX_MAX, g_size <= CEL_MAX) */
+                int16_t u;
+                for (u = 0; u <= (int16_t)g_size; u++)
+                    edges[u] = (int16_t)(left + (uint16_t)((uint16_t)u * (uint16_t)size + g_size - 1) / g_size);
+            } else
+                lf_colmap((int16_t)g_size, size, g_map);
+            T1(g_st_c_tab);
             for (y = ya; y < yb; y++) {
                 int16_t ca = left > 0 ? left : 0, cb = left + size < SCR_W ? left + size : SCR_W, v;
                 if (!row_clip(y, &ca, &cb, ext, ext_y0, ext_rows))
                     continue;
-                v = (int16_t)((int32_t)(y - top) * g_size / size);
+                v = (int16_t)((uint16_t)((uint16_t)(y - top) * g_size) / (uint16_t)size);
                 if (v != last_v) {
+                    T0();
                     make_line(cel, v, b->orient, t->thr);
+                    T1(g_st_c_line);
                     last_v = v;
+                    prev_y = -2;
                 }
-                rv_scale_row(g_line, g_map, ca - left, cb - left, vid_row(y) + left);
+                T0();
+                row = vid_row(y);
+                if (!big)               /* a small one: every pixel through the map */
+                    rv_scale_row(g_line, g_map, ca - left, cb - left, row + left);
+                else if (prev_y == y - 1 && ca == prev_ca && cb == prev_cb && g_line_solid) {
+                    /* the same cel row as the row above, one unbroken run, the same clipping: a copy of it */
+                    int16_t x0 = edges[g_line_first], x1 = edges[g_line_last + 1];
+                    if (x0 < ca) x0 = ca;
+                    if (x1 > cb) x1 = cb;
+                    if (x1 > x0)
+                        rv_copy_row(row + x0, prev_row + x0, x1 - x0);
+                } else                  /* a run a cel pixel */
+                    rv_fill_row(g_line, (int16_t)g_size, edges, ca, cb, row);
+                T1(g_st_c_scale);
+                prev_row = row;
+                prev_y = y;
+                prev_ca = ca;
+                prev_cb = cb;
+                ST(g_st_rows++);
+                ST(g_st_px += (uint16_t)(cb - ca));
             }
         }
     }
+    T0();
     overlays(b, t);
+    T1(g_st_c_over);
 }
 
 void explode_draw_begin(void)
@@ -710,14 +862,26 @@ void explode_draw_begin(void)
     g_next = 0;
 }
 
+#ifdef RV_TESTS
+#define TSC_BEGIN() { unsigned long tsc0_ = rv_tsc();
+#define TSC_END()   g_st_cyc += rv_tsc() - tsc0_; }
+#else
+#define TSC_BEGIN()
+#define TSC_END()
+#endif
+
 void explode_draw_to(int32_t depth, int16_t y0, int16_t y1, const int16_t __far *ext, int16_t ext_y0, int16_t ext_rows)
 {
+    TSC_BEGIN()
     while (g_next < g_nord && g_b[g_order[g_next]].depth > depth)
         draw_one(&g_b[g_order[g_next++]], y0, y1, ext, ext_y0, ext_rows);
+    TSC_END()
 }
 
 void explode_draw_rest(int16_t y0, int16_t y1, const int16_t __far *ext, int16_t ext_y0, int16_t ext_rows)
 {
+    TSC_BEGIN()
     while (g_next < g_nord)
         draw_one(&g_b[g_order[g_next++]], y0, y1, ext, ext_y0, ext_rows);
+    TSC_END()
 }

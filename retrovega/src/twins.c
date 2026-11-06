@@ -333,6 +333,31 @@ void c_scale_row(const unsigned char LZ_FAR *line, const unsigned short LZ_FAR *
     lf_scale_row(line, map, (int16_t)xa, (int16_t)xb, out);
 }
 
+/* explode.c's big fireballs: cel pixel u is the run [edges[u], edges[u + 1]) of the row, the clear (0) left alone,
+ * inside [xa, xb) only */
+void c_fill_row(const unsigned char LZ_FAR *line, int n, const short LZ_FAR *edges, int xa, int xb,
+                unsigned char LZ_FAR *out)
+{
+    int u;
+    for (u = 0; u < n; u++) {
+        unsigned char c = line[u];
+        int x0 = edges[u], x1 = edges[u + 1];
+        if (!c)
+            continue;
+        if (x0 < xa) x0 = xa;
+        if (x1 > xb) x1 = xb;
+        for (; x0 < x1; x0++)
+            out[x0] = c;
+    }
+}
+
+void c_copy_row(unsigned char LZ_FAR *dst, const unsigned char LZ_FAR *src, int n)
+{
+    int x;
+    for (x = 0; x < n; x++)
+        dst[x] = src[x];
+}
+
 /* (lf_rotate_row's bounds test never fails on the span lf_rotate_span gives, the asm's caller's) */
 void c_rotate_row(const unsigned char LZ_FAR *dense, int w, int h, const LfRot *r, int y, int xs, int xe,
                   unsigned char LZ_FAR *out)
@@ -728,6 +753,51 @@ static void test_rows(void)
         sum_mem(g_bc, SCR_W);
     }
     tw_say(g_tw_ok, n_scale, i);
+    {   /* explode.c's big fireballs: a cel row as runs, and a row copied */
+        static const char LZ_FAR n_fill[] = "fill_row", LZ_FAR n_copy[] = "copy_row";
+        short LZ_FAR *edges = (short LZ_FAR *)map;   /* (the map's room: 65 edges) */
+        const unsigned char LZ_FAR *src = g_mem + 2000;
+        int u;
+        g_sum = 0;
+        for (i = 0; i < 300; i++) {
+            int n = tw_in(1, 64), size = tw_in(n, 1022), left = tw_in(-511, 640), xa = tw_in(0, 640), xb = tw_in(0, 640);
+            for (u = 0; u < n; u++)
+                line[u] = (unsigned char)(tw_in(0, 3) ? tw_in(1, 255) : 0);
+            for (u = 0; u <= n; u++)
+                edges[u] = (short)(left + ((long)u * size + n - 1) / n);
+            tw_fill(g_bc, g_ba, SCR_W);
+            c_fill_row(line, n, edges, xa, xb, g_bc);
+            rv_fill_row(line, n, edges, xa, xb, g_ba);
+            if (_fmemcmp(g_bc, g_ba, SCR_W) && tw_differ(n_fill, i, n, size, xa, xb))
+                return;
+            sum_mem(g_bc, SCR_W);
+            {   /* and the runs are what the scaled draw's map gives, pixel for pixel (explode.c's big fireballs) */
+                unsigned short LZ_FAR *smap = (unsigned short LZ_FAR *)(g_mem + 4000);
+                int x, a = xa > left ? xa : left, e = xb < left + size ? xb : left + size;
+                for (x = 0; x < size; x++)
+                    smap[x] = (unsigned short)((long)x * n / size);
+                tw_fill(g_ba, g_ba, SCR_W);
+                if (a < e)
+                    c_scale_row(line, smap, a - left, e - left, g_ba + left);
+                if (_fmemcmp(g_bc, g_ba, SCR_W) && tw_differ(n_scale, -1 - i, n, size, xa, xb))
+                    return;
+            }
+        }
+        tw_say(g_tw_ok, n_fill, i);
+        g_sum = 0;
+        for (u = 0; u < 640; u++)
+            g_mem[2000 + u] = (unsigned char)tw_in(0, 255);
+        for (i = 0; i < 300; i++) {
+            int n = tw_in(0, 640), at = tw_in(0, 640 - n), from = tw_in(0, 640 - n);
+            tw_fill(g_bc, g_ba, SCR_W);
+            c_copy_row(g_bc + at, src + from, n);
+            rv_copy_row(g_ba + at, src + from, n);
+            if (_fmemcmp(g_bc, g_ba, SCR_W) && tw_differ(n_copy, i, n, at, from, 0))
+                return;
+            sum_mem(g_bc, SCR_W);
+        }
+        tw_say(g_tw_ok, n_copy, i);
+    }
 }
 
 /* --- the turned rows: pictures of every shape, every row of them turned and scaled --- */

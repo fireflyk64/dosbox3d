@@ -2200,19 +2200,33 @@ white) and its dissolve (a threshold climbing through the heat, dithered
 by a 4 x 4 ordered pattern in the cel's pixels, slow until the last third).
 So the cels change eight times, but every frame the ball grows, cools and
 thins; the middle clears first and the ring goes last, at the full size.
-Per frame and explosion: a table from heat to colour (256 entries), then
-each screen row's cel row made colours (turned one of eight ways) and
-scaled into the band by `rv_scale_row`, the ships' own (its C twin on the
-host: DOS and the native build draw the same frames, checked to the pixel
-on the boom demo's view). Over it at the screen's pixels: a flash (a white
-core and a four-pointed glint, three frames), sparks (pixels with a streak,
-cooling white to red), debris (hull-grey chunks, their size flickering for
-a tumble). Kinds: a fighter (40 steps), a capital ship's last (75), a
+Per frame and explosion: a table from heat to colour (256 entries, made
+once a timeline entry: `g_tab_for`), then each screen row's cel row made
+colours (turned one of eight ways) and put into the band. A small one
+(under 96 px) is scaled pixel by pixel by `rv_scale_row`, the ships' own;
+a big one as runs: each cel pixel covers the columns from `edges[u]` to
+`edges[u + 1]` (what the scaled draw's map gives, pixel for pixel: the
+twins check it), one `rep stosb` each (`rv_fill_row`), and a row that
+repeats the one above it, the same cel row, one unbroken run and the same
+clipping, is a copy of it by dwords (`rv_copy_row`): most rows of a near
+fireball. Measured on the boom demo at 500 km (a Nicander's 466 px ball,
+the test build's `explode:` note, `rv_tsc`): 937,000 cycles a frame drawn
+as pixels, 180,000 as runs, 18.7 ms to 3.6 of a 33 ms frame at the page's
+50,000 cycles a ms (the user, 2026-11-06: "RetroVega really stutters when
+there's an explosion on screen"). All of it in 16-bit arithmetic: Watcom
+calls a routine for every 32-bit multiply or divide, 40 cycles each, and
+the sparks had 25 of them apiece. Both the asm and its C twins draw the
+same picture (the native build's: DOS and the native build draw the same
+frames). Over it at the screen's pixels: a flash (a white core and a
+four-pointed glint, three frames), sparks (pixels with a streak, cooling
+white to red; placed once a frame for every band, `SPARKS_KEPT`), debris
+(hull-grey chunks, their size flickering for a tumble). Kinds: a fighter (40 steps), a capital ship's last (75), a
 missile's burst (26), a hit (9: the flash and sparks only), a shield's haze
 (10 to 16, below). Sixteen at once; drawn far to near between the ships
 (`explode_draw_to` before each, as the big rocks are). Memory in flight: a
-cache of four cels and a column map, 11 KB, conventional (the upper memory is
-the dense slab's and the band buffer's).
+cache of four cels and the small ones' column map (the big ones' edges in
+the same room), 9.5 KB, conventional (the upper memory is the dense slab's
+and the band buffer's), and the sparks' places, 1.4 KB.
 
 **A shield's haze (explode.c, `haze`).** The user's brief (2026-10-31): not an
 explosion but a blue haze right where the shot struck, stippled, changing
@@ -2264,14 +2278,21 @@ end stamped with its time (`plat_pcm`; the desktop's rv over the pipe as
 (host/pcm.c). `RV_PCM_DUMP=file` makes the native player write the stream.
 
 **Costs.** Code 12 KB and data 5 KB resident (RV.EXE starts with 269 KB
-of conventional memory free, from 287); in flight the explosions' 11 KB
+of conventional memory free, from 287); in flight the explosions' 9.5 KB
 and the DMA ring's 8 KB. DGROUP: 32 bytes.
 
 **Testing.** `tests/run.sh tests/boom.txt /boomdemo /flight 8` (RVT.EXE):
 three ships ahead at 1,500, 4,000 and 9,000 km blown up in turn by setting
 `shipAiState` 9 (as the logic will), guns and hits now and then, a
-missile's burst; `/record N` for the frames. Its log says which card the
-sound found and how many samples it mixed. `tests/run.sh tests/shield.txt
+missile's burst; `/record N` for the frames; `/boomat 500` the nearest at
+500 km, the others in step (a fighter's fireball at 466 px). Its log says
+which card the sound found and how many samples it mixed, and with
+`/verbose` what each frame's explosions cost: `explode: frame N: ...`
+(on screen, draw calls, tables, the fireballs' rows and pixels, the hazes'
+rows and pairs, and the cycles in all and by part: tables, cel rows,
+scaling, sparks) and `flight: frame N: the picture ... cycles` for the
+whole picture, both in the emulator's cycles (`rv_tsc`, RDTSC: the test
+build only). `CYCLES=50000` is the page's speed: 50,000 cycles a ms. `tests/run.sh tests/shield.txt
 /shielddemo /fly /flight 12` (RVT.EXE) is the shields' haze: two ships hit at
 each level of shield in turn, and a third, dead ahead, taking the player's real
 guns until it blows up. `tools/explode.py --preview DIR`

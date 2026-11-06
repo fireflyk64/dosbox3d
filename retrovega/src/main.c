@@ -52,6 +52,7 @@ extern int g_lasers, g_near_bolts, g_far_ships, g_big_ships, g_bolt_demo, g_flam
     g_ball_demo, g_missile_demo, g_sky_demo, g_boxes, g_collide_demo, g_hull_demo, g_hull_type, g_flame_test,
     g_comm_demo, g_test_ship;
 extern int __far g_boom_demo, __far g_shield_demo;
+extern int __far g_boom_km;
 #endif
 
 void __far __cdecl rvHello_impl(void) { RV_LOG("rvHello: DS is ready"); }
@@ -318,6 +319,8 @@ int main(int argc, char **argv)
             g_sky = 1;
         else if (!strcmp(argv[i], "/boomdemo"))         /* tests: ships blown up in turn: the explosions, the sounds */
             g_boom_demo = 1;
+        else if (!strcmp(argv[i], "/boomat"))           /* tests: the boom demo's nearest ship at N km (1500), the others in step */
+            g_boom_km = atoi(argv[++i]);
         else if (!strcmp(argv[i], "/shielddemo"))       /* tests: ships hit at each level of shield: the shields' haze */
             g_shield_demo = 1;
 #endif

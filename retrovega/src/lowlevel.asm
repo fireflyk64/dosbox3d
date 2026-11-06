@@ -140,6 +140,87 @@ _rv_scale_row:
         pop bp
         retf
 
+; void rv_fill_row(const unsigned char far *line, int n, const short far *edges,
+;                  int xa, int xb, unsigned char far *out)
+; explode.c's big fireballs: a cel row of n pixels, each one a run of the
+; screen row from edges[u] to edges[u + 1] (the row's columns, left to right;
+; twins.c's c_fill_row), the clear ones (0) skipped, drawn only inside
+; [xa, xb).  A run is one rep stosb: the emulator charges a cycle a pixel,
+; against the nine of the scaled draw's loop.
+        global _rv_fill_row
+_rv_fill_row:
+        push bp
+        mov bp,sp
+        push si
+        push di
+        push ds
+        mov cx,[bp+10]              ; n
+        or cx,cx
+        jle .done
+        lds si,[bp+6]               ; line
+        mov es,[bp+22]              ; out's segment
+        mov fs,[bp+14]
+        mov bx,[bp+12]              ; fs:bx = edges
+        cld
+.u:     lodsb                       ; the cel's pixel
+        test al,al
+        jz .next
+        mov di,[fs:bx]              ; its run: x0 = edges[u]
+        mov dx,[fs:bx+2]            ; x1 = edges[u + 1]
+        cmp di,[bp+16]
+        jge .a
+        mov di,[bp+16]              ; x0 = max(x0, xa)
+.a:     cmp dx,[bp+18]
+        jle .b
+        mov dx,[bp+18]              ; x1 = min(x1, xb)
+.b:     sub dx,di
+        jle .next                   ; (none of it inside)
+        add di,[bp+20]              ; out + x0
+        push cx
+        mov cx,dx
+        rep stosb
+        pop cx
+.next:  add bx,2
+        dec cx
+        jnz .u
+.done:
+        pop ds
+        pop di
+        pop si
+        pop bp
+        retf
+
+; void rv_copy_row(unsigned char far *dst, const unsigned char far *src, int n)
+; n pixels from one row to another (explode.c: a big fireball's row that
+; repeats the one above it; twins.c's c_copy_row), by dwords: the emulator
+; charges a cycle a dword.
+        global _rv_copy_row
+_rv_copy_row:
+        push bp
+        mov bp,sp
+        push si
+        push di
+        push ds
+        mov cx,[bp+14]              ; n
+        or cx,cx
+        jle .done
+        les di,[bp+6]               ; dst
+        lds si,[bp+10]              ; src
+        cld
+        shr cx,1
+        jnc .w
+        movsb
+.w:     shr cx,1
+        jnc .d
+        movsw
+.d:     rep movsd
+.done:
+        pop ds
+        pop di
+        pop si
+        pop bp
+        retf
+
 ; void rv_rotate_row(const unsigned char far *dense, int w, int h, const LfRot *r,
 ;                    int y, int xs, int xe, unsigned char far *out)
 ; lightfield.c's lf_rotate_row without the bounds test: the caller passes the
@@ -1104,4 +1185,14 @@ _rv_stars_place:
         pop si
         mov sp,bp
         pop bp
+        retf
+
+; unsigned long rv_tsc(void): the processor's time stamp, its low 32 bits (RDTSC: a Pentium's instruction, so the
+; test build's measurements only, never the game's: DOSBox gives the emulated time x the cycles asked for, so a
+; difference is the cycles a stretch of the frame cost).
+        global _rv_tsc
+_rv_tsc:
+        db 0Fh,31h                  ; rdtsc (the file is assembled for a 486)
+        mov edx,eax
+        shr edx,16                  ; dx:ax = the low 32 bits
         retf

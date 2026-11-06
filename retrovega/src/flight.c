@@ -43,6 +43,7 @@
 #include "vdu.h"
 #include "explode.h"
 #include "freeze.h"
+#include "twins.h"
 #include "sfx.h"
 #include "fx.h"
 #include "simulator.h"
@@ -76,10 +77,13 @@ static int __far g_boom_type;
 static const short __far k_boom_at[3][3] = { { 0, 0, 1500 }, { -1300, 350, 4000 }, { 2600, -700, 9000 } };
 static const short __far k_shield_at[3][3] = { { -320, 130, 1100 }, { 340, 120, 1800 }, { 0, 0, 1300 } };
 
+int __far g_boom_km = 1500;             /* RVT.EXE /boomat N: the boom demo's nearest ship at N km, the others in step */
 static void boom_spawn(int s)
 {
     const short __far *at = g_shield_demo ? k_shield_at[s - 1] : k_boom_at[s - 1];
-    ship_spawn(s, g_boom_type, SIDE_AERA, CTL_FROZEN, 256L * at[0], 256L * at[1], 256L * at[2], 512 + 40 * s);
+    int32_t k = g_shield_demo ? 1500 : g_boom_km;
+    ship_spawn(s, g_boom_type, SIDE_AERA, CTL_FROZEN, 256L * at[0] * k / 1500, 256L * at[1] * k / 1500, 256L * at[2] * k / 1500,
+               512 + 40 * s);
     setSpeed[s] = speedLo[s] = 0;
 }
 
@@ -3766,8 +3770,15 @@ void __far __cdecl flight_frame(void)
     cockpit_dirty(&g_st);
     {
         unsigned long t0 = clock240();
+#ifdef RV_TESTS
+        unsigned long tsc0 = rv_tsc();
+#endif
         scene_draw();
         g_t_draw += clock240() - t0;
+#ifdef RV_TESTS
+        if (g_rv_verbose && explode_count())   /* (what the picture cost, in cycles, while explosions are about) */
+            RV_NOTE("flight: frame %u: the picture %lu cycles, %d explosions", frameCounter, rv_tsc() - tsc0, explode_count());
+#endif
     }
     if (g_record && frameCounter % g_record == 0) {
         char name[12];

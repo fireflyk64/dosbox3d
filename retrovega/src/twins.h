@@ -41,6 +41,9 @@ void c_blit_row(unsigned char LZ_FAR *row, const unsigned char LZ_FAR *spans, in
 void c_blit_row_rev(unsigned char LZ_FAR *row, const unsigned char LZ_FAR *spans, int right, int xa, int xb);
 void c_scale_row(const unsigned char LZ_FAR *line, const unsigned short LZ_FAR *map, int xa, int xb,
                  unsigned char LZ_FAR *out);
+void c_fill_row(const unsigned char LZ_FAR *line, int n, const short LZ_FAR *edges, int xa, int xb,
+                unsigned char LZ_FAR *out);
+void c_copy_row(unsigned char LZ_FAR *dst, const unsigned char LZ_FAR *src, int n);
 void c_rotate_row(const unsigned char LZ_FAR *dense, int w, int h, const LfRot *r, int y, int xs, int xe,
                   unsigned char LZ_FAR *out);
 void c_rotate_row2(const unsigned char LZ_FAR *dense, int w, int h, const LfRot *r, int y, int xs, int xe,
@@ -55,9 +58,13 @@ int c_stars_place(unsigned seed, const long LZ_FAR *basis, int cx, int cy, int r
 #if defined(__WATCOMC__) || defined(RV_HOST)
 /* lowlevel.asm's (ships.c and flight.c declare them too), on the host host/asm_twins.c's */
 void __far __cdecl rv_blit_row(unsigned char __far *row, const unsigned char __far *spans, int left, int xa, int xb);
+unsigned long __far __cdecl rv_tsc(void);   /* the test build's measurements: RDTSC's low 32 bits (0 on the host) */
 void __far __cdecl rv_blit_row_rev(unsigned char __far *row, const unsigned char __far *spans, int right, int xa, int xb);
 void __far __cdecl rv_scale_row(const unsigned char __far *line, const unsigned short __far *map, int xa, int xb,
                                 unsigned char __far *out);
+void __far __cdecl rv_fill_row(const unsigned char __far *line, int n, const short __far *edges, int xa, int xb,
+                               unsigned char __far *out);
+void __far __cdecl rv_copy_row(unsigned char __far *dst, const unsigned char __far *src, int n);
 void __far __cdecl rv_rotate_row(const unsigned char __far *dense, int w, int h, const LfRot *r, int y, int xs, int xe,
                                  unsigned char __far *out);
 void __far __cdecl rv_rotate_row2(const unsigned char __far *dense, int w, int h, const LfRot *r, int y, int xs, int xe,
