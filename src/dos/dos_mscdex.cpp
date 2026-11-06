@@ -311,11 +311,11 @@ int CMscdex::AddDrive(Bit16u _drive, char* physicalPath, Bit8u& subUnit)
 #endif
 		} break;
 #endif	// !SDL_VERSION_ATLEAST(2,0,0)
-	case 0x01:	// iso cdrom interface	
+#endif /* !EMSCRIPTEN */
+	case 0x01:	// iso cdrom interface (the browser build too: its games' disc images)
 		LOG(LOG_MISC,LOG_NORMAL)("MSCDEX: Mounting iso file as cdrom: %s", physicalPath);
 		cdrom[numDrives] = new CDROM_Interface_Image((Bit8u)numDrives);
 		break;
-#endif /* !EMSCRIPTEN */
 	case 0x02:	// fake cdrom interface (directories)
 		cdrom[numDrives] = new CDROM_Interface_Fake;
 		LOG(LOG_MISC,LOG_NORMAL)("MSCDEX: Mounting directory as cdrom: %s",physicalPath);

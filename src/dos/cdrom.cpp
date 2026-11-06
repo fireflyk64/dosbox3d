@@ -152,7 +152,6 @@ int CDROM_GetMountType(char* path, int forceCD) {
 // 0 - physical CDROM
 // 1 - Iso file
 // 2 - subdirectory
-#ifndef EMSCRIPTEN
 	// 1. Smells like a real cdrom 
 	// if ((strlen(path)<=3) && (path[2]=='\\') && (strchr(path,'\\')==strrchr(path,'\\')) && 	(GetDriveType(path)==DRIVE_CDROM)) return 0;
 
@@ -181,7 +180,6 @@ int CDROM_GetMountType(char* path, int forceCD) {
 	// Detect ISO
 	struct stat file_stat;
 	if ((stat(path, &file_stat) == 0) && (file_stat.st_mode & S_IFREG)) return 1; 
-#endif /* !EMSCRIPTEN */
 	return 2;
 }
 
