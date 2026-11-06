@@ -198,7 +198,8 @@ static uint16_t g_navs_seen;            /* a bit per nav point the player has re
 static RvField __far g_fields[RV_FIELDS];   /* the mission's asteroid and mine fields: the autopilot looks out for them */
 static int16_t __far g_nfields;
 static uint8_t __far g_cleared;         /* the carrier cleared the player to land (logic_request_landing) */
-static uint8_t __far g_stopped;         /* the carrier's hull stopped the player, not cleared: 2 (the comm's to say) */
+static uint8_t __far g_stopped;         /* the carrier's hull stopped the player, not cleared: 2; cleared but coming
+                                           in on the afterburner: 3 (the comm's to say) */
 /* the autopilot's flyby formation (logic_form_up): */
 static uint32_t __far g_formed;         /* the ships held in the formation, a bit a slot */
 static int16_t __far g_form_steps;      /* the steps it holds yet */
@@ -1442,6 +1443,11 @@ static void ram_shove(int16_t s, const LfVec *push, int16_t part, int16_t into)
  * into it stops where it was, unhurt, and can fly off again.  (Until 2026-11-04 only its bow took a cleared fighter,
  * the user's rule of 2026-10-31; the user then: "lets get rid of all the bow logic and you can land just by distance
  * to carrier after requesting...hope that saves some code and stops some user frustration") */
+static void ram(int16_t a, int16_t b);
+
+/* (the user, 2026-11-05: "check that you don't have afterburner on when landing... if you have afterburner on when
+ * attempting landing it should cause normal collision damage": cleared, but burning, the hull is any capital ship's,
+ * ram's, and the carrier says why: g_stopped 3) */
 static void carrier_contact(int16_t home)
 {
     RvVec3 *v = &gVelocityVector[0];
@@ -1449,6 +1455,11 @@ static void carrier_contact(int16_t home)
     int32_t depth;
     if (!collide_ships(0, home, &push, &depth))
         return;
+    if (g_cleared && rvAfterburner[0]) {
+        g_stopped = 3;
+        ram(0, home);
+        return;
+    }
     if (g_cleared) {
         landedOn = (uint16_t)home;      /* (the engine's cue: the landing seen from outside, Kit at the plate) */
         missionStatus = 1;
@@ -1467,7 +1478,8 @@ static void carrier_contact(int16_t home)
     }
 }
 
-/* cleared, the player lands as it comes within LANDING_NEAR_KM of the carrier's hull, from any side (carrier_contact) */
+/* cleared, the player lands as it comes within LANDING_NEAR_KM of the carrier's hull, from any side (carrier_contact);
+ * not with its afterburner lit (the carrier says so: g_stopped 3), which comes in as a ram */
 #define LANDING_NEAR_KM 2000
 static void land_near(void)
 {
@@ -1476,6 +1488,10 @@ static void land_near(void)
         return;
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
         if (logic_is_home(s) && gap_between(0, s) <= LANDING_NEAR_KM) {
+            if (rvAfterburner[0]) {
+                g_stopped = 3;
+                return;
+            }
             landedOn = (uint16_t)s;
             missionStatus = 1;
             return;

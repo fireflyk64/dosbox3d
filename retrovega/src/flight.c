@@ -408,15 +408,16 @@ static void cam_look(const LfVec *at)
  * back and round, up above the carrier's quarter, while the fighter flies in along the carrier's far side and slips behind the hull (the
  * sprites are drawn far to near, so the carrier covers it).  Nothing is decided in here: the game's logic has stopped, and the rest are
  * taken out of the shot.  A click skips it --- */
-#define LANDING_FRAMES 105              /* three and a half seconds */
-#define LANDING_FADE 22                 /* the last of them, to black */
+#define LANDING_FRAMES 180              /* six seconds (the user, 2026-11-05: "great but goes too fast"; it had been three
+                                           and a half, and in a shared flight not even capped: flight_frame) */
+#define LANDING_FADE 36                 /* the last of them, to black */
 /* in the carrier's frame, km: along its bow, up, to its right */
 #define LANDING_FROM_ALONG 2300         /* the fighter comes from here */
 #define LANDING_TO_ALONG 140            /* to here, well behind the hull */
 #define LANDING_PATH_UP (-70)
 #define LANDING_PATH_RIGHT (-130)
 #define LANDING_D0 (100L * 16)          /* the camera's way from the fighter, 16ths of a km, at first: it fills the view; */
-#define LANDING_GROW 139                /* and 4096ths more of it a frame: 3,300 km by the end, where it is about 12 px */
+#define LANDING_GROW 80                 /* and 4096ths more of it a frame: 3,300 km by the end, where it is about 12 px */
 static int g_landing_t;                 /* its frame; -1 no landing */
 static long g_landing_along, g_landing_d;   /* the fighter along the carrier, the camera's way from it */
 
@@ -1986,11 +1987,13 @@ static void comm_landing(void)
         comm_exchange(s_ask, role_voice(RV_ROLE_XO), r == LANDING_CLEARED ? s_yes : r == LANDING_NOT_YET ? s_no : s_far);
 }
 
-/* once a frame: the hull stopped the player (logic.c): the carrier says why, now and then */
+/* once a frame: the hull stopped the player, or it came in on the afterburner (logic.c): the carrier says why, now and
+ * then */
 static void comm_stop_tick(void)
 {
     static const char __far s_ask[] = "Watch it, Wildcard! You're not cleared. Call it in.";
-    static const char __far s_log[] = "flight: the carrier's hull stopped the player (%d: 2, not cleared)";
+    static const char __far s_hot[] = "Wildcard, you're coming in hot! Cut that afterburner.";
+    static const char __far s_log[] = "flight: the carrier's hull stopped the player (%d: 2, not cleared; 3, the afterburner)";
     int k = logic_carrier_stopped();
     if (!k)
         return;
@@ -1998,7 +2001,7 @@ static void comm_stop_tick(void)
     if (comm_silent() || clock240() < g_stop_said || g_reply_voice != -1 || comms_on(0) || comms_on(1))
         return;
     g_stop_said = clock240() + 2400;
-    (void)comms_say(role_voice(RV_ROLE_XO), 1, s_ask);
+    (void)comms_say(role_voice(RV_ROLE_XO), 1, k == 3 ? s_hot : s_ask);
 }
 
 /* the taunt: the pilot's words, the enemy's answer in its own voice's line, its anger (logic_taunt) */
@@ -3644,8 +3647,9 @@ void __far __cdecl flight_frame(void)
     /* the frame rate capped at FPS_WANT: the simulation is per frame (a kps is 12.8 units a frame), so
      * without the cap a bare flight ran three times too fast natively (the adapting benchmark had been
      * holding it at 30 by loading it; off by default now) */
-    if (g_bench_wanted >= 0 && g_lasers >= 0 && g_balls >= 0 && !rvNetRole) {   /* (the adapting benchmarks: the uncapped
-                                           rate; a shared flight: the layer paces it, WCFPS and the page's FPS box) */
+    if (g_bench_wanted >= 0 && g_lasers >= 0 && g_balls >= 0 && (!rvNetRole || g_landing_t >= 0)) {   /* (the adapting
+                                           benchmarks: the uncapped rate; a shared flight: the layer paces it, WCFPS and the
+                                           page's FPS box, but not the landing's show, after the flight's end) */
         unsigned long t0 = clock240();
         while (clock240() - now < 240 / FPS_WANT)
             rv_halt();

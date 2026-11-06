@@ -4715,6 +4715,51 @@ static void t_landing_contact(void)
     REQUIRE(victoryPoints != 0, e_won, victoryPoints, 0, 0);
 }
 
+/* M8.46: cleared, but coming in on the afterburner (the user, 2026-11-05: "check that you don't have afterburner on when
+ * landing... if you have afterburner on when attempting landing it should cause normal collision damage"): no landing
+ * within the 2,000 km while it burns, the carrier says why (logic_carrier_stopped 3), and the hull is a ram's: the
+ * fighter hurt and stopped; the burner off, it lands */
+static void t_landing_burner(void)
+{
+    static const char __far e_clear[] = "a nav point flown, the request answered %d: 0, cleared";
+    static const char __far e_landed[] = "on the afterburner it landed (status %d, %d km off the hull): it must not";
+    static const char __far e_said[] = "on the afterburner near the carrier, logic_carrier_stopped never said 3 (last %d)";
+    static const char __far e_hurt[] = "into the hull on the afterburner it took nothing: shields and armour %d, then %d";
+    static const char __far e_land[] = "the burner off, %d km off the hull, status %d: 1, landed";
+    int16_t home = pt_home_patrol(), said = 0, last = 0, i, k;
+    int32_t cz, before = 0, after = 0;
+    if (home <= 0 || !pt_go(0, NAV1_Z))
+        return;
+    cz = TO_KM(gPositionVector[home].z);
+    REQUIRE(logic_request_landing() == LANDING_CLEARED, e_clear, logic_request_landing(), 0, 0);
+    playerCanBeDamaged = 1;             /* (pt_home_patrol's player takes none) */
+    pt_put(0, 0, 0, cz + 6000, TURN / 2);   /* (along its length, at its bow: from the beam at this height it would fly
+                                           through the gap under the deck) */
+    pt_speed(0, 300);
+    for (k = 0; k < 2; k++)
+        before += SHIELD(0, k);
+    for (k = 0; k < 4; k++)
+        before += ARMOR(0, k);
+    for (i = 0; i < 20 * SEC && !missionStatus && speedLo[0] != 0; i++) {
+        rvAfterburner[0] = 1;
+        if (!pt_step())
+            return;
+        if ((last = logic_carrier_stopped()) == 3)
+            said = 1;
+    }
+    for (k = 0; k < 2; k++)
+        after += SHIELD(0, k);
+    for (k = 0; k < 4; k++)
+        after += ARMOR(0, k);
+    REQUIRE(missionStatus == 0, e_landed, missionStatus, pt_km(0, home), 0);
+    REQUIRE(said, e_said, last, 0, 0);
+    REQUIRE(after < before, e_hurt, before, after, 0);
+    rvAfterburner[0] = 0;
+    if (!pt_steps(2))
+        return;
+    REQUIRE(missionStatus == 1 && landedOn == (uint16_t)home, e_land, logic_target_km(home), missionStatus, 0);
+}
+
 /* M8.16: the carrier destroyed: the flight ends with it (missionStatus 6) when its explosion has run, and it is a loss
  * however well the patrol went */
 static void t_carrier_lost(void)
@@ -6681,6 +6726,7 @@ static const char __far n_m8_37[] = "M8.37 autopilot-human (logic_form_up): a hu
 static const char __far n_m8_36[] = "M8.36 escort-clear (route_step, logic_autopilot): an escort target out bears straight for its nav point and jumps only there; the autopilot leaves it on its way";
 static const char __far n_m8_44[] = "M8.44 capital-flak (ship_think, capital_shot, flak_burst): an Agasicles' turrets on a lone player held 2,250 km behind it hurt it at the old game's Ralari's rate, flak with a few bolts, and far less at 200 kps";
 static const char __far n_m8_45[] = "M8.45 capital-hull (do_damage, hull_take): a capital ship's hull a count as the old game's: an Agasicles dies at the 90th laser hit past its armour";
+static const char __far n_m8_46[] = "M8.46 landing-burner (land_near, carrier_contact): cleared but on the afterburner, no landing, the carrier says so, the hull a ram's; the burner off, it lands";
 static const char __far n_m8_43[] = "M8.43 escort-skip (logic_autopilot, escort_comes): a pick past an escort's next waypoint is the autopilot's, the escort left behind to fly on alone: ENIGMA2's nav 2 picked";
 static const char __far n_m8_42[] = "M8.42 escort-jump-home (logic_autopilot, route_step): ENIGMA2 by the autopilot, the Ox along to each nav point; the player straight home, the Ox still jumps";
 static const char __far n_m8_41[] = "M8.41 escort-linger (route_step, logic_autopilot): ENIGMA2's Ox goes on alone from a player lingering at the launch, and the autopilot to nav 1 brings it along";
@@ -6764,7 +6810,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 },
 };
 
 /* --- the run --- */

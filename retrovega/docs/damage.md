@@ -78,10 +78,13 @@ gone. Nothing leaves a pilot unable to get home: the nav cross always shows, and
 A landing on the carrier's bow is followed by two things, each skipped by a click (`landedOn` says it was a real landing, set by
 `carrier_contact`; an ejection, a test's exit key or a lost flight has neither). The flight and its result are settled before either starts.
 
-**The landing, from outside** (`landing_show`, flight.c): three and a half seconds. The camera starts close behind the fighter, which fills
+**The landing, from outside** (`landing_show`, flight.c): six seconds (three and a half until 2026-11-05: "goes too fast";
+and in a shared flight it had run uncapped, the layer's pacing over with the flight). The camera starts close behind the fighter, which fills
 the view, and pulls back and round to above the carrier's quarter, while the fighter flies in along the carrier's far side and goes behind
 the hull: the sprites are drawn far to near, so the carrier covers it. Then black. The game's logic is not running; everyone else is taken
-out of the shot.
+out of the shot. Cleared, a fighter on its afterburner does not land: within the 2,000 km it is told to cut it, and
+the hull is a ram's, its damage and its dead stop (the user, 2026-11-05: "if you have afterburner on when attempting
+landing it should cause normal collision damage"; play test M8.46).
 
 **Kit at the plate** (`enter_home`, game.c): her close-up in front of an armour plate, the flank of a fighter curving under into the dark,
 with this flight's damage on it, rolling about 100 pixels into place behind her as the scene opens and slowing to a stop (the user), then the
