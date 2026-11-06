@@ -105,8 +105,10 @@ LOGIC=${LOGIC:-src/logic.c}           # (LOGIC=path: another logic.c in its plac
 # engine compiled from copies in $LF with each format the log alone reads a token, their texts a table appended to each
 # EXE past its load image, which util.c's logfmt_load puts in XMS at the start
 LF="$OUT/lf"
+# (and the play tests' messages, numbered after them, in RVP.EXE's table alone: RVPFMT.BIN)
 python3 tools/logfmt.py "$LF" "$OUT/RVLOGFMT.BIN" $(for c in $ENGINE; do
-    if [ "$c" = logic ]; then printf '%s ' "$LOGIC"; else printf 'src/%s.c ' "$c"; fi; done) > "$OUT/logfmt.log"
+    if [ "$c" = logic ]; then printf '%s ' "$LOGIC"; else printf 'src/%s.c ' "$c"; fi; done) \
+    --then "$OUT/RVPFMT.BIN" tests/play/playtest.c > "$OUT/logfmt.log"
 srcof() { if [ "$1" = logic ]; then printf '%s/%s' "$LF" "$(basename "$LOGIC")"; else printf '%s/%s.c' "$LF" "$1"; fi; }
 for c in $ENGINE; do
     wcc $CFLAGS -fo="$OUT/$c.obj" "$(srcof "$c")"
@@ -130,7 +132,7 @@ HEAPED=$(cd src && grep -lE 'RV_HEAP|MEM_ARRAY' $(for c in $ENGINE; do printf '%
 for c in $HEAPED; do
     wcc $CFLAGS -dRV_HEAP -dRV_PLAYTEST -fo="$OUT/p/$c.obj" "$(srcof "$c")"
 done
-wcc $CFLAGS -fo="$OUT/p/playtest.obj" tests/play/playtest.c
+wcc $CFLAGS -fo="$OUT/p/playtest.obj" "$LF/playtest.c"
 # RVHOOK first (image paragraph 0), the C code, then DGROUP last as Watcom's
 # startup needs it, with the fixed block (RVFIXED) ahead of Watcom's _NULL so
 # it starts at DS:0000 (docs/engine.md).
@@ -158,9 +160,10 @@ link RVP.EXE file "$OUT/lowlevel.obj" file "$OUT/lasers_a.obj" file "$OUT/rocks_
     case " $HEAPED " in *" $c "*) printf ' file %s/p/%s.obj' "$OUT" "$c";; *) printf ' file %s/%s.obj' "$OUT" "$c";; esac; done)
 link RVT.EXE file "$OUT/lowlevel.obj" file "$OUT/lasers_a.obj" file "$OUT/rocks_a.obj" $(for c in $ENGINE; do
     case " $TESTED " in *" $c "*) printf ' file %s/t/%s.obj' "$OUT" "$c";; *) printf ' file %s/%s.obj' "$OUT" "$c";; esac; done)
-for e in HELLO.EXE RV.EXE RVP.EXE RVT.EXE; do
+for e in HELLO.EXE RV.EXE RVT.EXE; do
     python3 tools/logfmt.py --append "$OUT/$e" "$OUT/RVLOGFMT.BIN"
 done
+python3 tools/logfmt.py --append "$OUT/RVP.EXE" "$OUT/RVPFMT.BIN"
 cat "$OUT/logfmt.log"
 # RV.EXE has no heap (mem.h, the user's ruling): a far allocation creeping back in is a build failure
 if grep -qE '(^| )_(fmalloc|ffree|fheapshrink)_( |$)' "$OUT/RV.MAP"; then

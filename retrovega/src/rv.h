@@ -27,6 +27,7 @@ void rv_log(const char *fmt, ...);
 void rv_logf(const char __far *fmt, ...);   /* a far format (DGROUP is nearly full) */
 void logfmt_load(const char *exe);      /* the log's formats' table, from the end of the EXE into XMS (util.c) */
 void logfmt_exe(const char *exe);       /* the EXE's path, the first thing: a format read from it till then */
+void logfmt_text(const char __far *fmt, char *buf, unsigned n);   /* a format's text, a token's put back */
 /* rv_log with its format kept far, out of DGROUP: RV_LOG("format", args...), a literal format only (shorter than
  * rv_logf's 400 bytes); it passes the format one argument more, a 0 it never reads */
 #define RV_LOG(...) do { static const char __far rv_fmt_[] = RV_LOG_FMT_(__VA_ARGS__, 0); \

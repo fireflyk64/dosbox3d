@@ -85,8 +85,9 @@ void logfmt_load(const char *exe)
     fclose(f);
 }
 
-/* a format into buf (n bytes): its own text, or a token's from the table */
-static void fmt_text(const char __far *fmt, char *buf, unsigned n)
+/* a format into buf (n bytes): its own text, or a token's from the table (the play tests' messages too: RVP.EXE's
+ * table has them after the log's, tools/logfmt.py) */
+void logfmt_text(const char __far *fmt, char *buf, unsigned n)
 {
     if (fmt[0] == '\001') {
         const char __far *p = fmt + 1;
@@ -115,7 +116,7 @@ static void vlogf(const char __far *fmt, va_list ap)
 {
     char buf[400];
     FILE *f;
-    fmt_text(fmt, buf, sizeof buf);
+    logfmt_text(fmt, buf, sizeof buf);
     f = fopen("RVLOG.TXT", g_log_started ? "a" : "w");
     if (!f)
         return;

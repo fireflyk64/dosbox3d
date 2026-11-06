@@ -120,11 +120,19 @@ static void ln_x(uint32_t v)
     }
 }
 
-/* a message: %d takes the next of a, b, c */
+/* a message: %d takes the next of a, b, c (in RVP.EXE a token, tools/logfmt.py: the messages' 48 KB are in its
+ * table, past the load image, not in conventional memory) */
 static void ln_f(const char __far *f, int32_t a, int32_t b, int32_t c)
 {
     int32_t v[3];
     int16_t k = 0;
+#ifndef RV_HOST
+    char t[256];
+    if (f[0] == '\001') {
+        logfmt_text(f, t, sizeof t);
+        f = t;
+    }
+#endif
     v[0] = a;
     v[1] = b;
     v[2] = c;
