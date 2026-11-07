@@ -1864,6 +1864,15 @@ async function start(fromGesture) {
     status(`Installing ${source.game.title} (${source.files.length} files)…`);
     installFiles(Module.FS, GAME_ROOT, source.files);
     log(`installed ${source.files.length} files of ${source.game.title} under ${GAME_ROOT}`);
+    // (a game's own settings made fit for the browser: the registry's `prepare`, TIE Fighter's music)
+    if (gameInfo() && gameInfo().prepare) {
+      try {
+        const said = gameInfo().prepare(Module.FS, GAME_ROOT);
+        if (said) log(said);
+      } catch (e) {
+        log(`preparing ${source.game.title}'s settings: ${e.message || e}`);
+      }
+    }
     // RetroVega's sprite sets (SHIPnn.RVH, retrovega/docs/engine.md "Flight")
     // are not installed here: a flight asks for the types it needs and the
     // page fetches their views and makes the sets then (rvSets.poll, below).

@@ -76,6 +76,8 @@
 // fields and wing bumps): none of them for this game, so the page leaves them out.  `screen`: the picture's shape on
 // the page, [width, height] (640 x 400 when none: Wing Commander's 320 x 200 doubled; TIE Fighter flies at 640 x 480,
 // whose rows a 400-row canvas would drop).
+// `prepare(FS, root)`: the game's own settings made fit for the browser after its files are installed (the copy in
+// the emulator's memory only; what it did, for the log).
 
 // Wing Commander's Vega campaign: series 1.. and mission 0.. within the
 // series (what the MIS / SERIES environment of the hooks takes).  The system
@@ -336,6 +338,25 @@ TF_CAMPAIGN.fromFiles = function (files) {
   return worded;
 };
 
+// TIE Fighter's music in the browser (the user: "I don't get any music"): iMUSE plays it through the driver IMUSE.INI
+// names in its first 14 bytes, GOG's GMIDI.MDR, General MIDI to an MPU-401, which the browser build has no synthesizer
+// for: the flight was silent but for its effects.  The Sound Blaster 16 it emulates has an OPL3 too, and iMUSE's own
+// FM4.MDR (on the game's disc) plays the music there, as Wing Commander's does.  Measured natively: GMIDI.MDR no OPL
+// write in a minute of the opening, FM4.MDR some 500 to 1,500 every 6 s and the FM channel sounding.  The digital
+// driver (the next 14 bytes, SB16.WDR) is left as it is.
+function tfMusicOnFm(FS, root) {
+  const path = `${root}/IMUSE.INI`;
+  let data;
+  try { data = FS.readFile(path); } catch (e) { return "TIE Fighter: no IMUSE.INI (its music as the game chooses)"; }
+  const name = String.fromCharCode(...data.subarray(0, 14)).replace(/\0.*$/, "");
+  if (/^FM[24]\.MDR$/i.test(name)) return "";
+  const out = new Uint8Array(data);
+  out.fill(0, 0, 14);
+  for (let i = 0; i < 7; i++) out[i] = "FM4.MDR".charCodeAt(i);
+  FS.writeFile(path, out);
+  return `TIE Fighter's music: ${name || "none"} (General MIDI: no synthesizer in the browser) changed to FM4.MDR, the Sound Blaster's OPL3`;
+}
+
 export const GAMES = [
   { id: "wc1", tag: "WC1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
     build: { para: 0x1231, off: 0x0187, text: "Loading WING COMMANDER" },
@@ -422,7 +443,7 @@ export const GAMES = [
   // EMS for the extender, a Sound Blaster 16 on IRQ 7).  Single-player
   // until its hooks are built (docs/tiefighter.md).
   { id: "tf", tag: "TF", title: "TIE Fighter", detect: ["TIE.EXE"], run: "tie", multiplayer: true,
-    image: "game.gog", keep: ["IMUSE.INI"], cycles: 60000, campaign: TF_CAMPAIGN, noRoomOptions: true, screen: [640, 480],
+    image: "game.gog", keep: ["IMUSE.INI"], cycles: 60000, campaign: TF_CAMPAIGN, noRoomOptions: true, screen: [640, 480], prepare: tfMusicOnFm,
     // (the launcher's own words: the hooks find the game's program in memory by its bytes, not by this file)
     build: { text: "Loading TIE-Fighter CD" },
     help: "TIE Fighter flown together, in its first stage: everybody in the room flies the same mission, each in a craft of the player's flight group, and sees the others' craft where they really are; the rest of the mission (the other craft, the shots, the damage) still runs on each machine on its own. The host may pick a mission for everybody in the room's menu, any of the Combat Chamber's and any battle's: launching any Combat Chamber mission then flies it, briefing and all (the host may change it between flights). With none picked, a guest's Combat Chamber launch flies the host's; the line over the game says where the others are and when the host launches. The tour's own battles stay each pilot's own. Space skips the opening; at the registration desk type a pilot's name (or click one) and take the door; in flight the mouse is the stick and its button fires, Backspace is full throttle. What is done and what comes next: docs/tiefighter.md.",
