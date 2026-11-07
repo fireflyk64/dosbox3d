@@ -82,6 +82,25 @@ enum {
 // The per-instruction dispatcher's call when EIP's low word is watched.
 void tie_check_hooks(Bit32u eip);
 
+// Calls into the program (docs/tiefighter.md, step 6), made at the frame's
+// hook place (move_moveobjects's entry): the CPU's state kept, the place
+// pushed as the return address, the arguments in eax, edx, ebx, ecx
+// (Watcom's register convention), EIP at the function; the place's hook,
+// reached again by the return, gives the state back and makes the next call
+// or lets the frame go on.  CPU state only: no code is written.
+typedef void (*TieCallDone)(int tag, Bit32u eax);
+// `before` runs just before the call is made, the arguments already in the
+// registers (to write what it needs into the program's memory at that very
+// moment, and to change an argument); false: the call is not made.  `done`
+// with its result.
+typedef bool (*TieCallBefore)(int tag);
+void tie_queue_call(Bit32u fnImage, Bit32u eax, Bit32u edx, Bit32u ebx, Bit32u ecx, TieCallBefore before, TieCallDone done, int tag);
+// Inside a call of ours (and whatever it calls).
+bool tie_in_call();
+// At a function's entry (its arguments in registers): return to its caller
+// at once with eax.
+void tie_skip_call(Bit32u eax);
+
 // Test aid: the front end's pointer put at a point of its 320x200 screen
 // (the key script's !tiecursor=x:y; a mouse button then clicks there).
 void tie_set_cursor(int x, int y);

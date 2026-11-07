@@ -21,6 +21,8 @@
 #include "regs.h"
 #include "cpu.h"
 #include "pic.h"
+#include "lazyflags.h"
+#include <deque>
 
 namespace wc {
 
@@ -220,8 +222,11 @@ void report(double now) {
     g_frames = 0;
 }
 
+void clear_calls();     // (the calls into the program: below)
+
 void forget(const char *why) {
     wclog(1, "TIE Fighter: %s", why);
+    clear_calls();
     tie_session_shutdown();
     g_armed = g_found = false;
     g_codeBase = g_dataBase = 0;
@@ -301,6 +306,101 @@ void tie_tick() {
 
 bool tie_found() { return g_found; }
 
+namespace {
+struct Call {
+    Bit32u fn, eax, edx, ebx, ecx;
+    TieCallBefore before;
+    TieCallDone done;
+    int tag;
+};
+std::deque<Call> g_calls;
+struct Saved {
+    bool active;
+    Bit32u place;
+    Bit32u eax, ebx, ecx, edx, esi, edi, ebp, esp, flags;
+} g_saved = { false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
+void clear_calls() {
+    g_calls.clear();
+    g_saved.active = false;
+}
+
+// At the hook place: a call of ours come back (the state given back, its done told), and the next one made.  True
+// while a call is under way: the place's own work waits for the last to come back.
+bool run_calls(Bit32u eip) {
+    if (g_saved.active && eip == g_saved.place && reg_esp == g_saved.esp) {
+        const Bit32u result = reg_eax;
+        Call done = g_calls.front();
+        g_calls.pop_front();
+        reg_eax = g_saved.eax;
+        reg_ebx = g_saved.ebx;
+        reg_ecx = g_saved.ecx;
+        reg_edx = g_saved.edx;
+        reg_esi = g_saved.esi;
+        reg_edi = g_saved.edi;
+        reg_ebp = g_saved.ebp;
+        reg_flags = g_saved.flags;
+        lflags.type = t_UNKNOWN;    // (the flags are reg_flags' again)
+        g_saved.active = false;
+        if (done.done) {
+            done.done(done.tag, result);
+        }
+    } else if (g_saved.active) {
+        return false;               // (the place reached again inside our call: the game's own business)
+    }
+    while (!g_calls.empty() && g_found) {
+        FillFlags();
+        g_saved.active = true;
+        g_saved.place = eip;
+        g_saved.eax = reg_eax;
+        g_saved.ebx = reg_ebx;
+        g_saved.ecx = reg_ecx;
+        g_saved.edx = reg_edx;
+        g_saved.esi = reg_esi;
+        g_saved.edi = reg_edi;
+        g_saved.ebp = reg_ebp;
+        g_saved.esp = reg_esp;
+        g_saved.flags = reg_flags;
+        const Call c = g_calls.front();
+        CPU_Push32(eip);
+        reg_eax = c.eax;
+        reg_edx = c.edx;
+        reg_ebx = c.ebx;
+        reg_ecx = c.ecx;
+        reg_eip = tie_linear(c.fn);
+        if (!c.before || c.before(c.tag)) {
+            return true;
+        }
+        // (not to be made after all: the state as it was, on to the next)
+        g_calls.pop_front();
+        reg_esp = g_saved.esp;
+        reg_eip = eip;
+        reg_eax = g_saved.eax;
+        reg_ebx = g_saved.ebx;
+        reg_ecx = g_saved.ecx;
+        reg_edx = g_saved.edx;
+        g_saved.active = false;
+    }
+    return false;
+}
+}  // namespace
+
+void tie_queue_call(Bit32u fnImage, Bit32u eax, Bit32u edx, Bit32u ebx, Bit32u ecx, TieCallBefore before, TieCallDone done, int tag) {
+    if (g_calls.size() >= 64) {
+        wclog(1, "TIE: calls queued past 64: %05x dropped", (unsigned)fnImage);   // (a list has a cap)
+        return;
+    }
+    Call c = { fnImage, eax, edx, ebx, ecx, before, done, tag };
+    g_calls.push_back(c);
+}
+
+bool tie_in_call() { return g_saved.active; }
+
+void tie_skip_call(Bit32u eax) {
+    reg_eip = CPU_Pop32();
+    reg_eax = eax;
+}
+
 Bit8u tie_r8(Bit32u image) { Bit8u v = 0; if (g_found) rd8(tie_linear(image), &v); return v; }
 Bit16u tie_r16(Bit32u image) { return (Bit16u)tie_r32(image); }
 Bit32u tie_r32(Bit32u image) { Bit32u v = 0; if (g_found) rd32(tie_linear(image), &v); return v; }
@@ -373,9 +473,17 @@ void tie_check_hooks(Bit32u eip) {
         } else if (p.image == 0x16B8C) {
             tie_session_mission_create();
         } else if (p.image == 0x32448) {
-            tie_session_before_move();
+            if (!run_calls(eip)) {
+                tie_session_before_move();
+            }
         } else if (p.image == 0x82504) {
             tie_session_mission_path();
+        } else if (p.image == 0x2E0E4) {
+            tie_session_shot();
+        } else if (p.image == 0x1433C) {
+            tie_session_laser_hit();
+        } else if (p.image == 0x148F0) {
+            tie_session_damage();
         } else if (p.total <= 3) {
             // (Watcom's register convention: the first arguments in eax, edx, ebx, ecx)
             wclog(2, "TIE: %s call %u: eax %08x edx %08x ebx %08x ecx %08x", p.name, p.total, (unsigned)reg_eax, (unsigned)reg_edx,
