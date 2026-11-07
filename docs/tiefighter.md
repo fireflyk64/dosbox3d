@@ -1210,9 +1210,10 @@ things in the docs".
   a speed s covering s x 4660 / 256 world units a second, a bolt its
   shooter's speed plus 1,000) with the trigger held within 1 km (held from
   afar at full throttle the Z-95's lasers ran dry in 24 s before reaching);
-  a click every 10 s (Fly Mission Again after a death).  Each machine's wall
-  reports summed over the run: shots sent and made, hits sent and applied,
-  owner changes, kills, kills credited.
+  a click every 10 s (Fly Mission Again after a death): `scripts/tfnet-aim.sh`.
+  Each machine's wall reports summed over the run (`scripts/tfnet-sum.py`):
+  shots sent and made, hits sent and applied, owner changes, kills, kills
+  credited; the commands at the top of `scripts/tfnet-duo.sh`.
 * **Measured** (challenge missions, the native build, the two machines on
   one computer, 3.5 minutes each):
   * HI2W: every shot of each pilot made on the other (327 of the host's, 245

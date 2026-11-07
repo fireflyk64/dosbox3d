@@ -11,11 +11,16 @@
 #   DOSBOX=      the emulator (default build-native/src/dosbox)
 #   WCNET_TIE_REPORT_MS=250   the reports' period (scripts/tfnet-join.py lines them up)
 #   GUEST_LAG=2  seconds between the host's start and the guest's
+#   HOSTENV= GUESTENV=   more of the environment for one machine (HOSTENV="WCLAB=/tmp/lab": its picture and sound recorded)
+#   WCNET_TIE_MISSION=   the room's pick, as the page's menu sets it (hf3m: the Z-95 challenge's HG3M)
 #
 # Example, the guest at full throttle turning past the host:
 #   t="66:backspace"; for s in 67 68 69 70; do for d in 0 1 2 3 4 5 6 7 8 9; do t="$t,$s.$d:!mickey=40:-12"; done; done
 #   WCNET_TIE_REPORT_MS=250 scripts/tfnet-duo.sh 92 "" "$t"
 #   scripts/tfnet-join.py /tmp/tfnet-duo/host.wall /tmp/tfnet-duo/guest.wall 1
+# Step 15's long tests, both flown by the scripted pilot (scripts/tfnet-aim.sh) and summed (scripts/tfnet-sum.py):
+#   WCNET_TIE_MISSION=hf3m scripts/tfnet-duo.sh 210 "$(scripts/tfnet-aim.sh 76 196 h)" "$(scripts/tfnet-aim.sh 78 196 g)"
+#   scripts/tfnet-sum.py /tmp/tfnet-duo/host.err /tmp/tfnet-duo/guest.err
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/tfnet-duo}; mkdir -p $OUT; rm -f $OUT/*.ppm $OUT/*.png
 DUR=${1:-100}; HOSTX=${2:-}; GUESTX=${3:-}; GUEST2X=${4:-}; PLAYERS=${PLAYERS:-2}
@@ -78,9 +83,9 @@ else
   NET_HOST="WCPORT=$PORT WCPLAYERS=$PLAYERS"; NET_GUEST="WCHOST=127.0.0.1 WCPORT=$PORT"
 fi
 NAMES="host guest"; [ "$PLAYERS" -ge 3 ] && NAMES="host guest guest2"
-run host $NET_HOST WCCALLSIGN=HOST WCNET_KEYSCRIPT="$(echo "$script${HOSTX:+,$HOSTX}" | by_time)"
+run host $NET_HOST ${HOSTENV:-} WCCALLSIGN=HOST WCNET_KEYSCRIPT="$(echo "$script${HOSTX:+,$HOSTX}" | by_time)"
 sleep ${GUEST_LAG:-2}   # (GUEST_LAG=30: the guest still on the ground while the host flies)
-run guest $NET_GUEST WCCALLSIGN=GUEST WCNET_KEYSCRIPT="$(echo "$script${GUESTX:+,$GUESTX}" | by_time)"
+run guest $NET_GUEST ${GUESTENV:-} WCCALLSIGN=GUEST WCNET_KEYSCRIPT="$(echo "$script${GUESTX:+,$GUESTX}" | by_time)"
 if [ "$PLAYERS" -ge 3 ]; then
   sleep ${GUEST_LAG:-2}
   run guest2 $NET_GUEST WCCALLSIGN=GUEST2 WCNET_KEYSCRIPT="$(echo "$script${GUEST2X:+,$GUEST2X}" | by_time)"
