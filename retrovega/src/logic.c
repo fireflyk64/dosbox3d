@@ -267,7 +267,7 @@ static int32_t nav_reach(int16_t n)
  * Such a point is the field (the user, 2026-11-06: "in the very first mission, asteroids were supposed to be entirely
  * surrounding nav 2 ... I saw no asteroids anywhere", "the nav point gets ticked off even though I'm nowhere close to
  * it": its reach, 20,000 km, is nearly three times the field's 7,500, so the autopilot stopped, and the point was
- * reached, far outside it): reached only inside the field, the autopilot taking the player in (nav_stop) */
+ * reached, far outside it): reached in the field, the autopilot taking the player in, facing its middle (nav_goal) */
 static int16_t nav_field(int16_t n)
 {
     int16_t i;
@@ -280,27 +280,36 @@ static int16_t nav_field(int16_t n)
     return -1;
 }
 
-/* how far short of nav point n the autopilot stops, km: its reach; for a point in a field, halfway between the point and
- * the field's edge (so inside the field, whichever way it comes) */
+/* where the autopilot heads for nav point n, km: the point, or for a point in a field the field's middle */
+static void nav_goal(int16_t n, int32_t *x, int32_t *y, int32_t *z)
+{
+    int16_t f = nav_field(n);
+    *x = f >= 0 ? g_fields[f].x : NAV_AT(n, 0);
+    *y = f >= 0 ? g_fields[f].y : NAV_AT(n, 1);
+    *z = f >= 0 ? g_fields[f].z : NAV_AT(n, 2);
+}
+
+/* how far short of its goal (nav_goal) the autopilot stops for nav point n, km: the point's reach; for a point in a
+ * field FIELD_IN_KM short of the field's middle, at most half its radius: the rocks come 3,050 km ahead of the nose
+ * (rocks.c FX_SPAWN_KM) and only while that point is in the field, so the player stops in the field facing its middle
+ * (stopped short of the point itself, facing it, the point ahead was outside the field: no rocks came) */
+#define FIELD_IN_KM 3000
 static int32_t nav_stop(int16_t n)
 {
     int16_t f = nav_field(n);
-    int32_t in;
     if (f < 0)
         return nav_reach(n);
-    in = ((int32_t)g_fields[f].radius
-          - len_of(NAV_AT(n, 0) - g_fields[f].x, NAV_AT(n, 1) - g_fields[f].y, NAV_AT(n, 2) - g_fields[f].z)) / 2;
-    return in < nav_reach(n) ? in : nav_reach(n);
+    return g_fields[f].radius / 2 < FIELD_IN_KM ? g_fields[f].radius / 2 : FIELD_IN_KM;
 }
 
 /* the player within nav point n's reach (measured straight, as the autopilot puts it there); a point in a field, within
- * the field too */
+ * the field */
 static int16_t nav_in_reach(int16_t n)
 {
     int32_t px = TO_KM(gPositionVector[0].x), py = TO_KM(gPositionVector[0].y), pz = TO_KM(gPositionVector[0].z);
     int16_t f = nav_field(n);
-    if (f >= 0 && len_of(g_fields[f].x - px, g_fields[f].y - py, g_fields[f].z - pz) >= g_fields[f].radius)
-        return 0;
+    if (f >= 0)
+        return len_of(g_fields[f].x - px, g_fields[f].y - py, g_fields[f].z - pz) < g_fields[f].radius;
     return len_of(NAV_AT(n, 0) - px, NAV_AT(n, 1) - py, NAV_AT(n, 2) - pz) < nav_reach(n);
 }
 
@@ -4077,10 +4086,12 @@ static int16_t nav_has_ships(int16_t n)
 static int32_t way_stop(int16_t next, int16_t *region, int16_t *field)
 {
     int32_t px = TO_KM(gPositionVector[0].x), py = TO_KM(gPositionVector[0].y), pz = TO_KM(gPositionVector[0].z), d[3], len, best, e;
+    int32_t gx, gy, gz;
     int16_t i, own = nav_field(next);
-    d[0] = (NAV_AT(next, 0) - px) >> 4;
-    d[1] = (NAV_AT(next, 1) - py) >> 4;
-    d[2] = (NAV_AT(next, 2) - pz) >> 4;
+    nav_goal(next, &gx, &gy, &gz);
+    d[0] = (gx - px) >> 4;
+    d[1] = (gy - py) >> 4;
+    d[2] = (gz - pz) >> 4;
     len = (int32_t)lf_sqrt((uint32_t)(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]));
     if (!len)
         len = 1;
@@ -4236,12 +4247,9 @@ static int16_t home_slot(void)
 
 static void face_nav(int16_t next, int16_t *yaw, int16_t *pitch)
 {
-    RvVec3 d = vec3(NAV_AT(next, 0) - TO_KM(gPositionVector[0].x), NAV_AT(next, 1) - TO_KM(gPositionVector[0].y),
-                    NAV_AT(next, 2) - TO_KM(gPositionVector[0].z));
-    int32_t horiz = (int32_t)lf_sqrt((uint32_t)((d.x >> 4) * (d.x >> 4) + (d.z >> 4) * (d.z >> 4))) << 4;
-    *yaw = lf_atan2(d.x, d.z);
-    *pitch = lf_atan2(d.y, horiz);
-    ship_face(0, *yaw, *pitch);
+    int32_t x, y, z;
+    nav_goal(next, &x, &y, &z);         /* (a point in a field: the field's middle) */
+    face_km(x, y, z, yaw, pitch);
 }
 
 void logic_form_up(int16_t steps)
@@ -4319,10 +4327,13 @@ int16_t logic_autopilot(void)
         to = vec3(gPositionVector[home].x - FIX_MUL(gOrientationFrontVector[0].x, back) * KM,
                   gPositionVector[home].y - FIX_MUL(gOrientationFrontVector[0].y, back) * KM,
                   gPositionVector[home].z - FIX_MUL(gOrientationFrontVector[0].z, back) * KM);
-    } else
-        to = vec3((NAV_AT(next, 0) - FIX_MUL(gOrientationFrontVector[0].x, nav_stop(next))) * KM,
-                  (NAV_AT(next, 1) - FIX_MUL(gOrientationFrontVector[0].y, nav_stop(next))) * KM,
-                  (NAV_AT(next, 2) - FIX_MUL(gOrientationFrontVector[0].z, nav_stop(next))) * KM);
+    } else {
+        int32_t gx, gy, gz;
+        nav_goal(next, &gx, &gy, &gz);
+        to = vec3((gx - FIX_MUL(gOrientationFrontVector[0].x, nav_stop(next))) * KM,
+                  (gy - FIX_MUL(gOrientationFrontVector[0].y, nav_stop(next))) * KM,
+                  (gz - FIX_MUL(gOrientationFrontVector[0].z, nav_stop(next))) * KM);
+    }
     /* the wing: moved as the player is, facing the same way (player_km while the player is still where it was); an
      * escort target of the player's side put behind it */
     for (s = 1; s < NUM_SHIP_SLOTS; s++) {   /* (a human wingman, on another machine, always comes: the wing is the wing) */

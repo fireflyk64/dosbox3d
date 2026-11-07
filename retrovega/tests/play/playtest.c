@@ -5670,12 +5670,12 @@ static void pt_field(int16_t x, int16_t y, int16_t z, int16_t r)
 /* M8.55: a waypoint inside a field is the field (the user, 2026-11-06: "in the very first mission, asteroids were
  * supposed to be entirely surrounding nav 2", "the nav point gets ticked off even though I'm nowhere close to it"):
  * Enigma 1's nav 2, reach 20,000, in a field 7,500 across 5,830 from its middle.  The autopilot takes the player into the
- * field, halfway from the point to its edge; the point is not reached within its reach outside the field, and is
- * inside it */
+ * field, 3,000 km short of its middle and facing it (the rocks come 3,050 ahead of the nose, while that point is in the
+ * field); the point is not reached within its reach outside the field, and is inside it */
 static void t_field_nav(void)
 {
     static const char __far e_in[] = "the autopilot to a nav point in a field left the player %d km from the field's "
-        "middle (returned %d): inside its 7,500, about 2,750 short of the point";
+        "middle (returned %d): 3,000 short of it, facing it";
     static const char __far e_seen[] = "brought into the field, nav 1 is not reached (%d)";
     static const char __far e_out[] = "%d km from the point, within its 20,000 reach but outside its field, nav 1 was "
         "reached: only in the field";
@@ -5689,7 +5689,7 @@ static void t_field_nav(void)
     pt_launch(PT_PLAYER);
     r = logic_autopilot();
     z = TO_KM(gPositionVector[0].z);
-    REQUIRE(r == 1 && labs(z - 27250) < 150, e_in, (int)labs(z - 28000), r, 0);
+    REQUIRE(r == 1 && labs(z - 25000) < 150 && gOrientationFrontVector[0].z > 250, e_in, (int)labs(z - 28000), r, 0);
     if (!pt_step())
         return;
     REQUIRE(logic_nav_seen(1), e_seen, logic_nav_seen(1), 0, 0);
