@@ -238,21 +238,101 @@ To be built on the facts above; the Wing Commander session
 
 ## 6. Where this stands, and what comes next
 
-Done (this branch): the page takes the installer, keeps it in parts, mounts
-the disc and runs the game; the emulator finds the program, watches the
-functions above and reports the flight.  Next, in order:
+The step guide.  Each step is done when it is measured; its notes go in
+section 7 as it is worked on.
 
-1. The flight's controls from the test aids (section 4's open point), so a
-   headless pair can fly and shoot; then the per-frame report of the
-   player's own craft and of the objects table, and `laser_createprojectile`'s
-   arguments (the Watcom register convention: `eax`, `edx`, `ebx`, `ecx`).
-2. A `GameId` for TIE Fighter in `wcnet_game.cpp` with traits of its own
-   (today the layer's globals stay at "no game": nothing of the Wing
-   Commander paths runs for it), and the session made for it: the host's
-   mission choice (the Combat Chamber's missions first: no story to walk),
-   the briefing sync, the seats.
-3. The puppets: positions written into `objects[]`, the AI held; then the
-   ownership rule and the round-robin.
-4. Lasers and damage as in section 5; deaths and spawns.
-5. The page: a mission picker (the Combat Chamber's list, then the
-   battles), `multiplayer: true`, the lobby tag TF.
+1. **Done: the flight's controls from the test aids** (section 4): the mouse
+   is the stick, `!mickey=dx:dy` gives the rigs a sustained turn.
+2. **Done: the transport, positions reflected** (section 7, step 2): a
+   session of TIE Fighter's own, the seats in the player's flight group,
+   every pilot's craft sent each frame and written into the others' games.
+3. **Next: notices through DOSBox**, drawn by the emulator over the picture,
+   nothing patched into the game (the user, 2026-11-06): who is in the room
+   and where each pilot is (registration, concourse, briefing, flying), and
+   a call to action when the host leaves the bridge for a flight ("the host
+   is flying: launch the same mission").  The first lines are in (the
+   overlay's line); the places need the front end's scene number.
+4. **The mission everybody flies**: the host's choice carried to the guests
+   (the Combat Chamber's missions first: no story to walk), the guest's game
+   put on the same mission, and a guest that launches another told so.
+5. **Ownership by distance, and the variable rates** (section 5): the AI
+   craft owned by the machine whose pilot is nearest within the lasers'
+   reach, the host's otherwise; near craft every frame, far ones a few a
+   frame (every 10 to 20 s each), all within the best-effort channel's
+   16,000 bytes a message.
+6. **Lasers and damage**: the shooter's machine decides its hits
+   (`collide_laserhitcraft` there), the craft's owner applies them
+   (`collide_damagecraft`); a puppet takes no damage of this machine's own
+   (collisions included); deaths and spawns from the owner and the host.
+7. **The controls the user asked for** (2026-11-06): the arrow keys steering
+   as RetroVega's do, a pointer-steer mode like RetroVega's mouse beside the
+   game's own drag-to-steer (the 90s way, for those who want it), and a
+   selector between them; all of it in the emulator, fed as the mickeys the
+   game reads.
+8. **The page**: the room tag TF, `multiplayer: true`, a mission picker.
+
+## 7. Notes, step by step
+
+### Step 2: the transport, positions reflected (2026-11-06)
+
+`src/cpu/wcnet_tie_session.cpp`.  The Wing Commander session is not used:
+`g_session` stays NULL for TIE Fighter, whose session is started from its
+own tick once the program is found and a room or peer is named (`WCROOM`,
+`WCHOST`/`WCPORT`; none: the game plays alone).  The transports are the
+layer's: a lobby room's WebRTC data channels in the browser and natively
+(lobbylink: a reliable ordered channel and a best-effort one, unordered with
+no retransmits, 16,000 bytes a message at most), or TCP natively for the
+rigs.  Messages (`src/wc.proto`): `TieHello` (a guest's callsign; the host's
+answer gives the guest its seat and the room's seats) and `TieFrame` (a
+pilot's craft, `TieCraft`: object slot, place, heading/pitch/roll, speed,
+move vector, the nine axis words, type).
+
+* **The seats.**  At `create_createmission`'s entry the player's flight
+  group (the record with a player-craft number, +0x42) gets as many craft
+  as the room has seats (+0x33), and a guest's game is told it flies the
+  next craft of the group that is not the host's.  The mission's own setup
+  then makes everybody's craft in the same object slots on every machine:
+  measured, the Combat Chamber's first mission puts the host's T/F in
+  object 0 and the guest's in object 1 on both, the guest starting at
+  (872, -849, 0) beside the host at the origin.
+* **Sending.**  At the top of each flight frame (`tie_updatetime`'s entry)
+  the sockets are read and our own craft sent, best effort, with a reliable
+  copy once a second; the host relays a guest's frames to the other guests
+  with its seat.
+* **Writing.**  At `move_moveobjects`'s entry, after this machine's AI,
+  weapons and dynamics have run and before its move, every puppet is
+  written: its place from a report not yet written, its attitude, speed,
+  move vector and axes every frame.  The move integrates a craft along its
+  move vector (Q15) at its `current_speed`, so between reports the game's
+  own motion carries the puppet (the dead reckoning a sparser rate will need).
+  The local AI is held off a puppet by keeping its planner countdown
+  (CraftData +0x2A, `ai_update_rate_copy`) full: `pai_updateplaneai` runs a
+  craft only when it has run out, and with it go the AI's shots.
+* **Measured** (two native games over TCP on one machine, `tfduo.sh` in the
+  scratchpad: the same front-end script on both, the guest 2 s later; the
+  guest at full throttle climbing and turning past the host with forty
+  `!mickey=40:-12`; reports four times a second stamped with the wall
+  clock, joined by `tfjoin.py`):
+
+  | | samples | place, median / worst | attitude, worst |
+  |---|---|---|---|
+  | the host's copy of the guest | 70 | 7 / 51 units | 28 of 65,536 (0.16 degrees) |
+  | the guest's copy of the host (still) | 70 | 0 / 0 | 0 |
+
+  A T/F is some 1,300 units across: the copy is a fraction of a frame
+  behind.  The guest's craft is on the host's screen where its report puts
+  it (passing the right canopy strut).
+* **Found on the way.**  The session first polled its sockets at every
+  periodic tick (every 999 instructions: some 60 an emulated ms at 60,000
+  cycles), a `select()` each, and the host's emulator ran at about 85% of
+  real time (its flight began 8 s of wall time after the guest's although it
+  started 2 s earlier); polled once a frame and every 4 ms otherwise, both
+  run at 60 frames a second and their flights begin the rig's 2 s apart.
+  A report read at any moment shows a puppet's pitch stepped toward level by
+  this machine's dynamics: between a frame's dynamics and its move a puppet
+  is this machine's own, so the report is taken at the top of a frame, what
+  the last frame drew.
+* **Open.**  A puppet still collides and takes damage on the machine that
+  only shows it (both pilots flew into the container ring once and each
+  died on both machines): step 6.  The rates are one report a frame for
+  every pilot's craft: step 5.  Not yet tried over a lobby room.
