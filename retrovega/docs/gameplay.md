@@ -333,7 +333,11 @@ What to write:
   - **The move:** at its weapon's `speed_kps`.
   - **A hit:** `collide_segment(t, &last, &now, &hit, 0)` against each ship but its parent. On a hit,
     `do_damage(missile_slot, t, damage, RV_WHERE(&hit))`, then the slot cleared (`ship_clear`).
-  - **Its range:** a missile ends when its weapon's range runs out.
+  - **Its range:** a missile ends when its weapon's range runs out; a seeker with a target chases for 40 s
+    (`SEEKER_LIFE_STEPS`: the old game's seekers lived 591 frames and more, ours had died at their range in 3 s;
+    the user, 2026-11-07: "make sure the position converges to the target unless the target jukes or corkscrews
+    at just the right time"), back to what is left of its range once its target is gone; its turn the old game's,
+    a heat seeker 7.5 degrees a frame, image recognition 8 (`k_seeker_dps` 75, 80).
 - **`step_fire`**: the missile key, `g_pilot.missile` (Enter), launches from a launcher with rounds left.
 
 What the tests expect:
@@ -344,9 +348,10 @@ What the tests expect:
 | M7.2 missile-key | Enter launches one; as many presses as the rounds of every launcher, and two more, launch the rounds (the chosen launcher empty, the next one's) |
 | M7.3 missile-flies | a second after launch, a dumbfire moves 80-120% of `KPS_STEP(speed_kps)` a step, straight along the nose |
 | M7.4 missile-hits | a dumbfire at a ship 2,500 km ahead, on its line, hurts it within 10 s, and its slot ends |
-| M7.5 missile-homes | a friend-or-foe from the Gawain, `missileTarget` set at launch, hurts a ship 31째 off its nose |
+| M7.5 missile-homes | a friend-or-foe from the Gawain (its friend-or-foe launcher: it carries two each of four kinds), `missileTarget` set at launch, hurts a ship 31째 off its nose |
 | M7.6 missile-ends | fired into empty space, it ends within twice its range's steps |
 | M7.7 dumbfire-aims | the Schroedinger's dumbfire at its chosen target 8째 off the nose, side on 2,500 km out, hurts it within 10 s; with the target 30째 off it sets off straight along the nose (last in the table: a test's dice are its place) |
+| M7.9 seeker-chases | the Schroedinger's heat seeker, locked, at a still Nicander 5,000 km off and 30� right of the nose (past the heat seeker's range of 4,000): it turns onto it and hits it within 10 s (with the old life it died after 88 steps) |
 | M7.8 puppet-launch | a Gawain flown on another machine (a puppet) launches its seeker with that machine's target (slot 2) in missileTarget: the missile homes on 2; the player's own launch publishes its locked target there first (step_fire), for the layer to carry |
 
 ### M8: the mission (`logic_start`, `step_mission`, `enterNavPoint`, `logic_end`, `logic_autopilot`)

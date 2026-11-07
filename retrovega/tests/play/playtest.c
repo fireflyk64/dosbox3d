@@ -49,7 +49,8 @@ int16_t playtest_run(const char *only);
 /* the ships the tests fly (data/ships.csv) */
 #define PT_PLAYER 0x00                  /* the Schroedinger: three lasers, two dumbfires (its first launcher) and a heat
                                            seeker */
-#define PT_HOMER 0x02                   /* the Gawain: two particle cannons, two friend-or-foe missiles */
+#define PT_HOMER 0x02                   /* the Gawain: two particle cannons; two dumbfires, heat seekers, image recognition and
+                                           friend-or-foe missiles each */
 #define PT_ENEMY 0x08                   /* the Nicander */
 #define PT_WEAK 0x0B                    /* the Agis */
 #define PT_OX 0x24                      /* the Ox: the transport the old campaign's missions escort */
@@ -312,6 +313,16 @@ static int16_t pt_launcher(int16_t s)   /* its first missile launcher, -1 none *
     int16_t g, k;
     for (g = 0; g < GUN_COUNT(s); g++)
         if ((k = pt_kind(s, g)) == RV_WK_MISSILE || k == RV_WK_TORPEDO || k == RV_WK_ROCKET)
+            return g;
+    return -1;
+}
+
+static int16_t pt_launcher_lock(int16_t s, uint8_t lock)   /* its first missile launcher of that lock (RV_LOCK_*), -1 none */
+{
+    int16_t g;
+    const RvWeapon __far *w;
+    for (g = 0; g < GUN_COUNT(s); g++)
+        if (pt_kind(s, g) == RV_WK_MISSILE && (w = weapon(GUN_TYPE(s, g))) != 0 && w->lock == lock)
             return g;
     return -1;
 }
@@ -3023,7 +3034,7 @@ static void t_dodge_fire(void)
     g_sys.target = 1;
     g_sys.lock = 1;
     g_rule_flags = RV_RULE_AIM_CONE | RV_RULE_HOLD_FIRE;
-    REQUIRE((l = pt_launcher(0)) >= 0, e_nolaunch, PT_HOMER, 0, 0);
+    REQUIRE((l = pt_launcher_lock(0, RV_LOCK_AUTO)) >= 0, e_nolaunch, PT_HOMER, 0, 0);   /* (its friend-or-foe) */
     m = fireGunFromShip(0, (uint16_t)l);
     REQUIRE(m <= RV_MAX_SHIP_SLOT && maybeEntityType[m] == ET_MISSILE && missileTarget[m] == 1, e_nohome, m,
             m <= RV_MAX_SHIP_SLOT ? missileTarget[m] : -1, 0);
@@ -3541,7 +3552,7 @@ static void t_missile_at(int16_t type, int32_t x, int32_t z, int16_t homing)
     uint16_t m;
     int32_t h0;
     pt_alone(type);
-    REQUIRE((l = pt_launcher(0)) >= 0, e_nolaunch, type, 0, 0);
+    REQUIRE((l = homing ? pt_launcher_lock(0, RV_LOCK_AUTO) : pt_launcher(0)) >= 0, e_nolaunch, type, 0, 0);
     pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, x + (homing ? 0 : (int32_t)GUN_MOUNT_X(0, l) * collide_half(0) / 32 / 256),
             homing ? 0 : (int32_t)GUN_MOUNT_Y(0, l) * collide_half(0) / 32 / 256, z, TURN / 4);
     playerCanBeDamaged = 0;
@@ -3602,6 +3613,35 @@ static void t_dumbfire_aims(void)
     REQUIRE(m <= RV_MAX_SHIP_SLOT && maybeEntityType[m] == ET_MISSILE, e_nomissile, l, m, 0);
     along = vec_dot(&gOrientationFrontVector[m], &gOrientationFrontVector[0]) / 256;
     REQUIRE(along >= 255, e_straight, along, 0, 0);
+}
+
+/* M7.9: a heat seeker chases as the old game's (seekers lived 591 frames and more there, 37 s; ours had died at their
+ * range, 88 steps; the user, 2026-11-07: "make sure the position converges to the target"): one fired at a Nicander
+ * 5,000 km off, 30 degrees right of the nose (past the old range of 4,000), turns onto it and hits it within 10 s */
+static void t_seeker_chases(void)
+{
+    static const char __far e_noheat[] = "the Schroedinger has no heat seeker (launcher %d)";
+    static const char __far e_miss[] = "the heat seeker did the Nicander 5,000 km off no harm in 10 s (the missile still flying: %d)";
+    int16_t l, i;
+    uint16_t m;
+    int32_t h0;
+    pt_alone(PT_PLAYER);
+    l = pt_launcher_lock(0, RV_LOCK_HEAT);
+    REQUIRE(l >= 0, e_noheat, l, 0, 0);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 2500, 0, 4330, 0);
+    playerCanBeDamaged = 0;
+    g_sys.target = 1;
+    rvTarget[0] = 1;
+    playerTarget = 1;
+    g_sys.lock = 1;
+    h0 = pt_health(1);
+    m = fireGunFromShip(0, (uint16_t)l);
+    REQUIRE(m <= RV_MAX_SHIP_SLOT && maybeEntityType[m] == ET_MISSILE, e_nomissile, l, m, 0);
+    for (i = 0; i < 10 * SEC && pt_health(1) == h0 && slot_is_ship(1) && shipAiState[1] != 9; i++)
+        if (!pt_step())
+            return;
+    REQUIRE(pt_health(1) < h0 || shipAiState[1] == 9 || !slot_is_ship(1), e_miss,
+            (int32_t)(maybeEntityType[m] == ET_MISSILE ? 1 : 0), 0, 0);
 }
 
 /* M7.6 */
@@ -7001,7 +7041,7 @@ static void t_puppet_launch(void)
     pt_ship(1, PT_HOMER, SIDE_TERRAN, CTL_PUPPET, 0, 0, -1000, 0);
     pt_ship(2, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 18000, TURN / 2);
     pt_ship(3, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 3000, 0, 9000, TURN / 2);
-    REQUIRE((l = pt_launcher(1)) >= 0, e_nolaunch, PT_HOMER, 0, 0);
+    REQUIRE((l = pt_launcher_lock(1, RV_LOCK_AUTO)) >= 0, e_nolaunch, PT_HOMER, 0, 0);   /* (its friend-or-foe) */
     missileTarget[1] = 2;
     rvTarget[1] = 0xFF;
     g_sys.target = -1;
@@ -7293,6 +7333,7 @@ static const char __far n_m8_19[] = "M8.19 autopilot-apart (logic_autopilot): th
 static const char __far n_m6_4[] = "M6.4 capital-map (shot_hit): a capital ship is hit on its actual shape under any rule, not its radius";
 static const char __far n_m6_5[] = "M6.5 capital-ram (collide_ships): a fighter against a capital ship is its silhouettes under every hit= and ram= setting";
 static const char __far n_m6_7[] = "M6.7 ram-owner (ram): a collision is worked out where its pilot is, or where no ship in it is another machine's";
+static const char __far n_m7_9[] = "M7.9 seeker-chases (missile_step, SEEKER_LIFE_STEPS): a heat seeker turns onto a target past its range and hits it";
 static const char __far n_m7_8[] = "M7.8 puppet-launch (missile_launch, step_fire): a launch by another machine's ship homes on the target that machine published";
 static const char __far n_m8_29[] = "M8.29 scene-human (step_scene): a ship near another machine's pilot stays in the scene";
 static const char __far n_m8_30[] = "M8.30 human-seat-lost (logic_wingman_lost): a wingman a person flew, killed, is no named pilot's death";
@@ -7398,7 +7439,7 @@ static const PtTest __far k_tests[] = {
     { n_m11_1, t_sim_waves, 0 }, { n_m11_2, t_sim_replenish, 0 }, { n_m11_3, t_sim_win, 0 }, { n_m11_4, t_sim_death, 0 },
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
-    { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
+    { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m7_9, t_seeker_chases, 0 }, { n_m8_29, t_scene_human, 0 },
     { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 }, { n_m8_56, t_nav_switch, 0 }, { n_m8_57, t_escort_arrive, 0 }, { n_m8_58, t_escort_threat, 0 },
 };
 

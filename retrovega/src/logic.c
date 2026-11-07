@@ -1790,9 +1790,17 @@ static void ram(int16_t a, int16_t b)
  * ==================================================================================================================== */
 
 #define MISSILE_HALF_KM 1               /* its half box (gMaybeShipRadius), km */
-/* a seeker's turn rate by its lock (RV_LOCK_*: none, heat, image, auto, proximity), degrees a second; a torpedo's
- * own.  (weapons.csv has no column for it yet) */
-static const uint8_t __far k_seeker_dps[5] = { 0, 70, 60, 90, 0 };
+/* a seeker's turn rate by its lock (RV_LOCK_*: none, heat, image, auto, proximity), degrees a second (of KPS_HZ steps:
+ * a tenth of it a step x 2, the old game's frame two of our steps); a torpedo's own.  The old game's, traced 2026-11-07
+ * (McAuliffe 3, tests/wc1/run-old.sh: its Krants' missiles at the wingman and the player): a heat seeker (its type 29)
+ * turned up to 7.5 degrees a frame, its type 30 8.2; a seeker kept its nose some 3 degrees off its target.  (weapons.csv
+ * has no column for it yet) */
+static const uint8_t __far k_seeker_dps[5] = { 0, 75, 80, 90, 0 };
+/* a seeker's life: the old game's chased for 591 frames and more (37 s: one ran a still player down from 3,600 km),
+ * where ours, its range at its speed, died in 88 steps, 3 s (the user, 2026-11-07: "I fire a heatseeker and it rarely
+ * goes towards the target after the beginning directional aim... make sure the position converges to the target
+ * unless the target jukes or corkscrews at just the right time"); a dumbfire's and a torpedo's are their range's */
+#define SEEKER_LIFE_STEPS (40 * LOGIC_HZ)
 #define TORPEDO_DPS 25
 
 static int16_t missile_dps(const RvWeapon __far *w)
@@ -1911,6 +1919,12 @@ static void dumbfire_aim(int16_t s, int16_t ship, const RvWeapon __far *w)
         ship_orthonormalise(s);
 }
 
+/* steps a missile flies its range in */
+static uint16_t range_life(const RvWeapon __far *w)
+{
+    return (uint16_t)((int32_t)w->range_km * KPS_HZ / (w->speed_kps ? w->speed_kps : 1));
+}
+
 static uint16_t missile_launch(uint16_t ship, uint16_t gun, const RvWeapon __far *w)
 {
     int16_t s = ship_free_slot(), k;
@@ -1954,7 +1968,8 @@ static uint16_t missile_launch(uint16_t ship, uint16_t gun, const RvWeapon __far
     logic_prepare_spawn(s);
     missileTarget[s] = rvTarget[s] = missile_target_of((int16_t)ship, w);
     g_missile[s].weapon = GUN_TYPE(ship, gun);
-    g_missile[s].life = (uint16_t)((int32_t)w->range_km * KPS_HZ / (w->speed_kps ? w->speed_kps : 1));
+    g_missile[s].life = w->kind == RV_WK_MISSILE && missile_dps(w) && missileTarget[s] != 0xFF ? SEEKER_LIFE_STEPS
+                      : range_life(w);   /* (a seeker with nobody to chase: its range, as a dumbfire's) */
     return (uint16_t)s;
 }
 
@@ -2011,6 +2026,8 @@ static void missile_step(int16_t s)
     dps = missile_dps(w);
     if (dps && t != 0xFF && slot_is_ship(t) && shipAiState[t] != 9)
         missile_seek(s, t, dps);
+    else if (g_missile[s].life > range_life(w))
+        g_missile[s].life = range_life(w);   /* (its quarry gone: what is left of its range, not a long chase after nothing) */
     last = gPositionVector[s];
     fly_ahead(s);
     gPositionVector[s].x += gVelocityVector[s].x;
