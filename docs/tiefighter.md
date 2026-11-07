@@ -308,16 +308,23 @@ move vector, the nine axis words, type).
   The local AI is held off a puppet by keeping its planner countdown
   (CraftData +0x2A, `ai_update_rate_copy`) full: `pai_updateplaneai` runs a
   craft only when it has run out, and with it go the AI's shots.
-* **Measured** (two native games over TCP on one machine, `tfduo.sh` in the
-  scratchpad: the same front-end script on both, the guest 2 s later; the
-  guest at full throttle climbing and turning past the host with forty
-  `!mickey=40:-12`; reports four times a second stamped with the wall
-  clock, joined by `tfjoin.py`):
+* **Measured** (two native games on one machine, `scripts/tfnet-duo.sh`:
+  the same front-end script on both, the guest 2 s later; the guest at full
+  throttle climbing and turning past the host with forty `!mickey=40:-12`;
+  reports four times a second stamped with the wall clock, joined by
+  `scripts/tfnet-join.py`; the example in the rig's header):
 
-  | | samples | place, median / worst | attitude, worst |
-  |---|---|---|---|
-  | the host's copy of the guest | 70 | 7 / 51 units | 28 of 65,536 (0.16 degrees) |
-  | the guest's copy of the host (still) | 70 | 0 / 0 | 0 |
+  | link | the copy | samples | place, median / worst | attitude, worst |
+  |---|---|---|---|---|
+  | TCP | the host's of the guest | 70 | 7 / 51 units | 28 of 65,536 (0.16 degrees) |
+  | TCP | the guest's of the host (still) | 70 | 0 / 0 | 0 |
+  | lobby room (WebRTC) | the host's of the guest | 82 | 8 / 68 units | 25 (0.14 degrees) |
+  | lobby room (WebRTC) | the guest's of the host (still) | 82 | 0 / 0 | 0 |
+
+  The room is a local lobby server's (`LOBBY=1`), its game data over
+  lobbylink's WebRTC data channels natively, as the page has them; both
+  emulators kept 60 frames a second (the guest dipped to 47 by the container
+  ring, as it does alone: the game's own drawing).
 
   A T/F is some 1,300 units across: the copy is a fraction of a frame
   behind.  The guest's craft is on the host's screen where its report puts
@@ -335,4 +342,5 @@ move vector, the nine axis words, type).
 * **Open.**  A puppet still collides and takes damage on the machine that
   only shows it (both pilots flew into the container ring once and each
   died on both machines): step 6.  The rates are one report a frame for
-  every pilot's craft: step 5.  Not yet tried over a lobby room.
+  every pilot's craft: step 5.  Not yet tried in the browser itself (two
+  pages in a room: the same channels, the page's own glue).
