@@ -268,6 +268,15 @@ section 7 as it is worked on.
    a little ahead so that it is just on the other's screen; one fires
    lasers, the other ions.  Screenshots: the ions on the laser player's
    screen, and both players' fire on the ion player's.
+6b. **Done: laser fire near and far** (section 7, step 6b; the user,
+   2026-11-06: far fire "simulated by both clients but damage is entirely
+   done by the host"; "have the AIs control them and let them diverge a bit,
+   but smoothly snap to the right place over ten+ seconds between updates";
+   near, "the owner of the laser should apply its damage... allows for
+   precision aiming"): far craft flown by each machine's own AI, their shots
+   for show, their places pulled to the owner's over the time between
+   reports; a hit shown on the shooter's machine at once, applied by the
+   target's owner for good, the damage in the reports.
 7. **Done: the controls the user asked for** (2026-11-06, section 7, step 7): the arrow keys steering
    as RetroVega's do, a pointer-steer mode like RetroVega's mouse beside the
    game's own drag-to-steer (the 90s way, for those who want it), and a
@@ -309,6 +318,15 @@ section 7 as it is worked on.
    made by the emulator from the player's own gunboat cockpit: an A of
    struts instead of the gunboat's V, every instrument working.  Next: the
    second pilot's own flight group in the pairing's craft.
+
+10. **Three pilots** (the user, 2026-11-06: "add another item for three
+   player like in the other game. The third should be same as the guest in
+   all cases. I guess more players also makes sense but we will probably cap
+   it at 3 for now").  The page's Players box already stops at 3 (beta) for
+   every game, and the session already gives the player's flight group a
+   craft a seat.  To do: in a pairing (step 9) the third pilot flies the same
+   craft as the second, in the second's flight group; a three-machine rig and
+   its measurement.
 
 ## 7. Notes, step by step
 
@@ -725,3 +743,63 @@ the Jedi (seen from outside) as the reference.
   gunboat's frame.  The side views are the gunboat's (its V).
 * **Open.**  The second pilot's own flight group in the pairing's craft (the
   table above); the side views' struts.
+
+### Step 6b: laser fire near and far (2026-11-06)
+
+* **What it was** (the user asked to verify it): every craft another machine
+  flies had its AI held here at any distance, so it neither planned nor
+  fired, and its own shots were cancelled here; a craft's shots were made on
+  the others only when within 5 km of another pilot.  A far battle on the
+  host was blank on a guest: in battle 1 mission 2, a guest 7.6 km from the
+  platform's fight and facing it saw no shot at all (0 made in the 27 s it
+  watched).  Near, the shooter's machine decided its hits and the target's
+  owner applied them; the shooter's copy took no damage and nothing carried
+  shields or hull, so a guest's shots at the host's craft left its shields
+  at 100% on the guest until it died.
+* **Far now** (the user's design): another machine's craft beyond 5.5 km of
+  our pilot is flown by this machine's AI (released at once: CraftData +0x2A
+  0), held again within 5 km (there its owner's shots come over).  Its shots
+  are made here for show (laser_createprojectile not cancelled), their hits
+  flash but damage nothing here (collide_damagecraft is skipped for a target
+  not ours and for a bolt whose shooter is not ours).  Its owner's reports
+  pull its place in, the error spread over the time to its next report as the
+  last one came (1 to 15 s: some 15 s for the far ones reported in turn, a
+  second within 10 km); its attitude and speed stay our AI's.  A pilot's own
+  craft is never flown by AI, however far.  `WCNET_TIE_FAR_AI=0` holds them as
+  before.
+* **Near now**: a report within 10 m of where the copy is is written as it is
+  (a near craft, reported every frame); a larger error is blended in at 300
+  m/s at most.  The reports carry each craft's damage (CraftData +0xA2 the
+  hull's, +0xCA and +0xCC the shields, +0xAE the systems), written into the
+  copies.  A hit of a bolt of ours on another machine's craft is shown here at
+  once, by the game's own sums (collide_damagecraft: the bolt's radius as the
+  damage, a quarter on a freighter, a sixteenth on a starship or platform; the
+  struck side's shield first, then the hull), but never a death, a system or
+  an ion bolt's overflow (the owner's), nor a starship's part; the owner's
+  figures wait 600 ms after it, and the owner applies the hit for good as
+  before.  A craft near a guest's crosshairs is the guest's (step 5): its
+  place is never written from the network there, so aiming at it is the
+  game's own motion.
+* **Measured.**  Far (battle 1 mission 2, `!tieface=9` facing the platform
+  from 7.6 km, throttle cut): 305 far shots made on the guest while it
+  watched (the picture: green bolts by the platform); up to 14 far craft
+  flown by its AI; their places 90 m off their owner's reports on average,
+  the worst 2.9 km at a hyperspace arrival.  The first version blended every
+  far report over 10 s: with reports six times a second within 10 km the
+  error settled near 760 m; blending over the time between reports brought it
+  to 90 m.  Near (the Combat Chamber's first mission, the host's target a
+  container, `!tietarget=5`, the guest firing at it): 9 hits sent, 9 shown on
+  the guest, 8 applied by the host (the last came after its death); with 150
+  ms each way (`WCNET_LAG=150`) the guest showed each hit 170 to 190 ms
+  before the host applied it, the two copies' hull the same after
+  (100..700 of 750).
+* **A bug found on the way**: a craft whose AI was held through its
+  hyperspace arrival never died on the other machines.  The game lets a craft
+  die only with its flight flag (CraftData +0x60) clear; an arrival sets it to
+  6 and the craft's own AI clears it at the arrival's end, which a held copy's
+  never did, so the kill's damage calls did nothing and began again with each
+  dying report (359 on a guest in one run).  The flag (not a death's, 3 or 4)
+  is now cleared before each kill call: the four Y-wings the host saw die died
+  once each on the guest.
+* **Aids**: `!tieface=<obj>` turns our craft to face an object;
+  `!tietarget=<obj>` makes it our target.
