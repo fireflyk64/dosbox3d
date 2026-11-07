@@ -204,10 +204,10 @@ void report(double now) {
     if (player < kObjectCount) {
         const Bit32u o = kObjects + player * kObjectSize;
         wclog(1, "TIE: %.1fs: %u frames (%u ticks a frame, rate %u), hyper %u main %u, %d objects live; player #%u type %u at %d %d %d, "
-                 "heading %u pitch %u, speed %d, scene %d; calls:%s",
+                 "heading %u pitch %u, speed %d, scene %d, mission '%s'; calls:%s",
               now / 1000.0, g_frames, r16(kFrameticks), r16(kFramerate), r8(kHyperspaceFlag), r8(kMainGameFlag), live, player,
               r8(o + 4), (int)r32(o + 6), (int)r32(o + 0xA), (int)r32(o + 0xE), r16(o + 0x1E), r16(o + 0x20), (Bit16s)r16(o + 0x26),
-              tie_scene(), counts);
+              tie_scene(), tie_mission_name().c_str(), counts);
     } else {
         wclog(1, "TIE: %.1fs: %u frames (%u ticks a frame, rate %u), hyper %u main %u, %d objects live, no player object (#%u), "
                  "the front end's pointer at %d %d (button %u key %u), scene %d; calls:%s",
@@ -305,6 +305,17 @@ void tie_w8(Bit32u image, Bit8u v) { if (g_found) mem_writeb(tie_linear(image), 
 void tie_w16(Bit32u image, Bit16u v) { if (g_found) mem_writew(tie_linear(image), v); }
 void tie_w32(Bit32u image, Bit32u v) { if (g_found) mem_writed(tie_linear(image), v); }
 bool tie_in_flight() { return g_found && tie_r8(tie::kMainGameFlag) == 1; }
+std::string tie_mission_name() {
+    std::string name;
+    for (int i = 0; g_found && i < 14; i++) {
+        const Bit8u c = tie_r8(tie::kMissionName + i);
+        if (c == 0) {
+            break;
+        }
+        name += (c >= 32 && c < 127) ? (char)c : '?';
+    }
+    return name;
+}
 int tie_scene() {
     const Bit32u head = tie_r32(tie::kSceneHead);
     Bit32u v = 0;

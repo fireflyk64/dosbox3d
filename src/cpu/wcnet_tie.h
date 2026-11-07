@@ -15,6 +15,7 @@
 #ifndef WCNET_TIE_H_
 #define WCNET_TIE_H_
 
+#include <string>
 #include "dosbox.h"
 
 namespace wc {
@@ -48,6 +49,9 @@ int tie_player_object();
 // the concourse, 131/132 the Combat Chamber, 160 the tour desk, 179..183 the
 // briefing, 190.. the debriefing, 2..4 a flight), or -1: none known.
 int tie_scene();
+// The mission the front end launches (shipext's mission_name: the mission
+// file's name, without its extension), or "" when none is known.
+std::string tie_mission_name();
 
 // The flight's tables (image addresses; docs/tiefighter.md section 3).
 namespace tie {
@@ -69,6 +73,9 @@ enum {
     // address a fixup into the data object, 0x356F8 of it): its +0x14 the scene.
     kSceneHead = 0xF56F8,
     kSceneHeadScene = 0x14,
+    // shipext's mission_name, 14 bytes (shipext_Set_Mission_Name 0x822B4): the Combat Chamber fills it from the craft and
+    // mission chosen (shipext_Get_Combat_Mission_Name 0x8149C), the tour desk from the battle's
+    kMissionName = 0xFB3E8,
 };
 }  // namespace tie
 

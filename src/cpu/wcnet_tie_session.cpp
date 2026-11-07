@@ -16,6 +16,7 @@
  *  sections 5 and 6).
  */
 #include <stdio.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
@@ -62,6 +63,17 @@ struct Puppet {
     double at;
 };
 
+// Where each pilot of the room is (its TiePresence), by seat.
+struct Pilot {
+    bool known;
+    std::string callsign;
+    int scene;
+    bool flying;
+    std::string mission;
+    Pilot() : known(false), scene(-1), flying(false) {}
+};
+enum { kMaxSeats = 8, kPresenceEveryMs = 3000, kCallToActionEveryMs = 2000 };
+
 struct TieNet {
     bool host;
     int self;                   // our player number (a guest: -1 until the host's hello)
@@ -76,9 +88,14 @@ struct TieNet {
     int hostCraft;
     std::vector<int> fgObjects; // the group's craft by number (1-based -> index 0..), as object slots
     bool wasFlying;
-    bool saidHostFlying;
+    Pilot pilots[kMaxSeats];
+    int sentScene;              // (our presence as last sent, and when)
+    bool sentFlying;
+    std::string sentMission;
+    double sentAt;
+    std::string callToAction;   // the line shown while the host flies and we do not ("": none)
     TieNet() : host(false), self(-1), seats(2), listener(NULL), frame(0), lastReliableAt(0), playerFg(kPlayerFgNone),
-               hostCraft(1), wasFlying(false), saidHostFlying(false) {
+               hostCraft(1), wasFlying(false), sentScene(-2), sentFlying(false), sentAt(-1e9) {
         memset(puppets, 0, sizeof(puppets));
     }
     ~TieNet() {
@@ -249,9 +266,146 @@ void take_frame(Peer *from, const TieFrame &f) {
             }
         }
     }
-    if (!g_net->host && owner == 0 && f.flying() && !g_net->saidHostFlying && !tie_in_flight()) {
-        g_net->saidHostFlying = true;
-        notice("The host is flying: launch the same mission to join the flight");
+}
+
+// A mission file's name in words: the Combat Chamber's (H, the craft's letter, the number, W or M), a battle's (B<n>M<m>),
+// the training course.
+std::string mission_words(const std::string &raw) {
+    std::string m;
+    for (size_t i = 0; i < raw.size(); i++) {
+        m += (char)toupper((unsigned char)raw[i]);
+    }
+    static const struct { char letter; const char *craft; } kCraft[] = {
+        { 'F', "T/F" }, { 'I', "T/I" }, { 'B', "T/B" }, { 'A', "T/A" }, { 'D', "T/D" }, { 'G', "Gunboat" }, { 'M', "Missile Boat" },
+    };
+    if (m.size() >= 3 && m[0] == 'H' && isdigit((unsigned char)m[2])) {
+        for (size_t k = 0; k < sizeof(kCraft) / sizeof(kCraft[0]); k++) {
+            if (kCraft[k].letter == m[1]) {
+                return std::string("the Combat Chamber's ") + kCraft[k].craft + " mission " + m[2];
+            }
+        }
+    }
+    int battle = 0, mission = 0;
+    if (sscanf(m.c_str(), "B%dM%d", &battle, &mission) == 2) {
+        char out[64];
+        snprintf(out, sizeof(out), "battle %d, mission %d", battle, mission);
+        return out;
+    }
+    if (m == "TRAIN") {
+        return "the training course";
+    }
+    return m.empty() ? std::string("a mission") : "mission " + m;
+}
+
+// Where a scene is, in words ("" for the scenes nobody needs told of: the opening, a cutscene).
+const char *scene_words(int scene) {
+    if (scene >= 2 && scene <= 4) return "flying";
+    if (scene == 100) return "at the registration desk";
+    if (scene == 110) return "on the concourse";
+    if (scene >= 120 && scene <= 123) return "in the training simulator";
+    if (scene >= 130 && scene <= 132) return "in the Combat Chamber";
+    if (scene >= 133 && scene <= 137) return "at a Combat Chamber briefing";
+    if (scene == 140) return "in the film room";
+    if (scene == 150) return "in the tech room";
+    if (scene == 160 || scene == 170) return "at the tour desk";
+    if (scene >= 179 && scene <= 183) return "at a briefing";
+    if (scene >= 190 && scene <= 192) return "at a debriefing";
+    if (scene == 275) return "arming a ship";
+    return "";
+}
+
+std::string pilot_name(int seat) {
+    if (seat >= 0 && seat < kMaxSeats && !g_net->pilots[seat].callsign.empty()) {
+        return g_net->pilots[seat].callsign;
+    }
+    char n[32];
+    snprintf(n, sizeof(n), seat == 0 ? "The host" : "Pilot %d", seat + 1);
+    return n;
+}
+
+// Another pilot's presence: kept, and its changes said (a launch, a flight over, a newcomer).
+void take_presence(const TiePresence &pr, int seat) {
+    if (seat < 0 || seat >= kMaxSeats || seat == g_net->self) {
+        return;
+    }
+    Pilot &p = g_net->pilots[seat];
+    const bool first = !p.known;
+    const bool launched = pr.flying() && (!p.flying || first);
+    const bool landed = !pr.flying() && p.flying && !first;
+    p.known = true;
+    if (!pr.callsign().empty()) {
+        p.callsign = pr.callsign();
+    }
+    p.scene = pr.scene();
+    p.flying = pr.flying();
+    p.mission = pr.mission();
+    if (launched) {
+        notice(pilot_name(seat) + " launched: " + mission_words(p.mission));
+    } else if (landed) {
+        notice(pilot_name(seat) + "'s flight is over");
+    } else if (first && !g_net->host && seat != 0) {
+        const char *where = scene_words(p.scene);
+        notice(pilot_name(seat) + " is in the room" + (where[0] ? std::string(", ") + where : std::string("")));
+    }
+}
+
+// Ours, when it changes and every few seconds: the host's to every guest, a guest's to the host (who relays it).
+void presence_tick(double now) {
+    if (g_net->self < 0) {
+        return;
+    }
+    const int scene = tie_scene();
+    const bool flying = tie_in_flight();
+    const std::string mission = tie_mission_name();
+    if (scene == g_net->sentScene && flying == g_net->sentFlying && mission == g_net->sentMission && now - g_net->sentAt < kPresenceEveryMs) {
+        return;
+    }
+    g_net->sentScene = scene;
+    g_net->sentFlying = flying;
+    g_net->sentMission = mission;
+    g_net->sentAt = now;
+    NetworkMessage msg;
+    TiePresence *pr = msg.mutable_tie_presence();
+    pr->set_player((Bit32u)g_net->self);
+    pr->set_callsign(g_net->callsign);
+    pr->set_scene(scene);
+    pr->set_flying(flying);
+    pr->set_mission(mission);
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
+            g_net->peers[i]->conn.send(msg);
+        }
+    }
+}
+
+// The call to action: a guest out of the flight while the host flies, or is at a briefing, is told which mission to
+// launch, and the line stays (said again every few seconds) until it flies or the host is back.
+void call_to_action(double now) {
+    if (g_net->host) {
+        return;
+    }
+    const Pilot &h = g_net->pilots[0];
+    std::string line;
+    const bool briefing = h.known && ((h.scene >= 133 && h.scene <= 137) || (h.scene >= 179 && h.scene <= 183));
+    if (h.known && !tie_in_flight() && (h.flying || briefing)) {
+        line = pilot_name(0) + (h.flying ? " is flying " : " is at the briefing for ") + mission_words(h.mission) + ": launch it to fly together";
+    }
+    static double shownAt = -1e9;
+    if (line.empty()) {
+        if (!g_net->callToAction.empty() && incoming_text == g_net->callToAction) {
+            incoming_text = "";
+        }
+        g_net->callToAction.clear();
+        return;
+    }
+    if (line != g_net->callToAction || now - shownAt >= kCallToActionEveryMs) {
+        if (line != g_net->callToAction) {
+            wclog(1, "TIE: %s", line.c_str());
+        }
+        g_net->callToAction = line;
+        incoming_text = line;
+        g_noticeAt = now;
+        shownAt = now;
     }
 }
 
@@ -271,6 +425,10 @@ void handle(Peer *p, NetworkMessage &msg) {
             p->player = player;
             p->callsign = h.callsign();
             p->hello = true;
+            if (player < kMaxSeats) {
+                g_net->pilots[player].callsign = h.callsign();
+            }
+            g_net->sentAt = -1e9;   // (our presence to the newcomer at once)
             NetworkMessage reply;
             reply.mutable_tie_hello()->set_callsign(g_net->callsign);
             reply.mutable_tie_hello()->set_player((Bit32u)player);
@@ -284,6 +442,7 @@ void handle(Peer *p, NetworkMessage &msg) {
             p->callsign = h.callsign();
             p->hello = true;
             g_net->self = h.has_player() ? (int)h.player() : 1;
+            g_net->pilots[0].callsign = h.callsign();
             if (h.has_seats() && h.seats() >= 2) {
                 g_net->seats = (int)h.seats();
             }
@@ -300,6 +459,24 @@ void handle(Peer *p, NetworkMessage &msg) {
         }
         if (p->hello) {
             take_frame(p, msg.tie_frame());
+        }
+    } else if (msg.has_tie_presence()) {
+        if (!p->hello) {
+            return;
+        }
+        const int seat = g_net->host ? p->player : (msg.tie_presence().has_player() ? (int)msg.tie_presence().player() : 0);
+        take_presence(msg.tie_presence(), seat);
+        if (g_net->host) {
+            // relayed to the other guests with the sender's seat
+            NetworkMessage out;
+            *out.mutable_tie_presence() = msg.tie_presence();
+            out.mutable_tie_presence()->set_player((Bit32u)p->player);
+            for (size_t i = 0; i < g_net->peers.size(); i++) {
+                Peer *to = g_net->peers[i];
+                if (to != p && to->hello && to->conn.is_open()) {
+                    to->conn.send(out);
+                }
+            }
         }
     } else if (msg.has_chat()) {
         notice(msg.chat().callsign() + ": " + msg.chat().message());
@@ -344,6 +521,9 @@ void poll_peers() {
         }
         if (p->hello) {
             notice(p->callsign + (g_net->host ? " left the room" : " (the host) is gone: flying on alone"));
+            if (p->player >= 0 && p->player < kMaxSeats) {
+                g_net->pilots[p->player] = Pilot();
+            }
         }
         for (int o = 0; o < 120; o++) {
             if (g_net->puppets[o].used && g_net->puppets[o].owner == p->player) {
@@ -495,7 +675,7 @@ void tie_session_tick() {
     const double now = PIC_FullIndex();
     if (g_noticeAt >= 0 && now - g_noticeAt > kNoticeMs && !tie_in_flight()) {
         g_noticeAt = -1;
-        incoming_text = "";
+        incoming_text = "";     // (a call to action standing is said again by call_to_action)
     }
     if (!tie_found()) {
         if (g_net) {
@@ -529,6 +709,8 @@ void tie_session_tick() {
         }
     }
     poll_peers();
+    presence_tick(now);
+    call_to_action(now);
     // the flight's end seen here too (the frame hook stops coming)
     const bool flying = tie_in_flight();
     if (g_net->wasFlying && !flying) {
@@ -635,7 +817,6 @@ void tie_session_mission_create() {
         }
         break;
     }
-    g_net->saidHostFlying = false;
 }
 
 void tie_session_flight_ended() {

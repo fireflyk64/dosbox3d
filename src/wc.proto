@@ -348,6 +348,16 @@ message TieFrame {
     repeated TieCraft craft = 4;
     optional bool flying = 5;       // the sender is in a flight
 }
+// Where a pilot is (TIE Fighter): its front end's scene (OpenTIE's SCENE_*), whether it flies, and the mission its
+// front end launches (the mission file's name).  Sent when it changes and every few seconds; the host relays a guest's
+// to the other guests with its seat.
+message TiePresence {
+    optional uint32 player = 1;
+    optional string callsign = 2;
+    optional sint32 scene = 3;
+    optional bool flying = 4;
+    optional string mission = 5;
+}
 message NetworkMessage {
     optional Connect connect = 1;
     optional Game game = 2;
@@ -368,4 +378,5 @@ message NetworkMessage {
     optional Presence presence = 20;
     optional TieHello tie_hello = 21;
     optional TieFrame tie_frame = 22;
+    optional TiePresence tie_presence = 23;
 }
