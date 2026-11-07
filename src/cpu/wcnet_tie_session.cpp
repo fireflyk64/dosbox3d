@@ -33,6 +33,7 @@
 #include "net_config.h"
 #include "pic.h"
 #include "mem.h"
+#include "regs.h"
 
 extern std::string incoming_text;   // the line the emulator draws over the picture (sdlmain.cpp)
 
@@ -120,9 +121,17 @@ struct TieNet {
     double decidedAt, ownersSentAt;
     int farCursor;
     unsigned sentCraft, sentNear, sentMid, sentFar, sentBytes, ownerChanges;
+    // Step 6: shots and hits for the next frame, hits taken in for this game to apply, deaths being applied.
+    std::vector<TieShot> shotsOut;
+    std::vector<TieHit> hitsOut;
+    TieHit hitsIn[64];
+    int hitsInNext;
+    int killing[kCraftSlots];   // calls made to kill a copy whose owner reported it dying (0: none)
+    unsigned shotsSent, shotsMade, hitsSent, hitsApplied, damageSkipped, kills;
     TieNet() : host(false), self(-1), seats(2), listener(NULL), frame(0), lastReliableAt(0), playerFg(kPlayerFgNone),
                hostCraft(1), wasFlying(false), sentScene(-2), sentFlying(false), sentAt(-1e9), decidedAt(-1e9), ownersSentAt(-1e9),
-               farCursor(0), sentCraft(0), sentNear(0), sentMid(0), sentFar(0), sentBytes(0), ownerChanges(0) {
+               farCursor(0), sentCraft(0), sentNear(0), sentMid(0), sentFar(0), sentBytes(0), ownerChanges(0), hitsInNext(0),
+               shotsSent(0), shotsMade(0), hitsSent(0), hitsApplied(0), damageSkipped(0), kills(0) {
         clear_flight();
     }
     // A puppet table and owners for a new flight (a Puppet holds a protobuf message: never memset).
@@ -144,6 +153,11 @@ struct TieNet {
             pilotSeenAt[k] = -1e9;
         }
         farCursor = 0;
+        shotsOut.clear();
+        hitsOut.clear();
+        for (int o = 0; o < kCraftSlots; o++) {
+            killing[o] = 0;
+        }
     }
     ~TieNet() {
         for (size_t i = 0; i < peers.size(); i++) {
@@ -158,6 +172,9 @@ double g_nextTryMs = 0;
 double g_noticeAt = -1;
 
 void take_owners(const TieOwners &t);
+void begin_kill(int obj);
+void make_shot(const TieShot &shot, int owner);
+void take_hit(const TieHit &hit);
 
 void notice(const std::string &text) {
     incoming_text = text;
@@ -314,6 +331,15 @@ void take_frame(Peer *from, const TieFrame &f) {
         p.fresh = true;
         p.state = c;
         p.at = PIC_FullIndex();
+        if (c.dying() && c.obj() < (Bit32u)kCraftSlots && tie_in_flight()) {
+            begin_kill((int)c.obj());
+        }
+    }
+    for (int i = 0; i < f.shots_size() && sameMission && tie_in_flight(); i++) {
+        make_shot(f.shots(i), owner);
+    }
+    for (int i = 0; i < f.hits_size() && sameMission && tie_in_flight(); i++) {
+        take_hit(f.hits(i));
     }
     if (g_net->host) {
         NetworkMessage msg;
@@ -621,6 +647,17 @@ bool pilot_present(int seat, double now) {
 }
 int pilot_object(int seat) { return seat == g_net->self ? tie_player_object() : g_net->pilotObj[seat]; }
 
+// Who flies a craft for this machine: the table's word, but a craft whose owner is not in this flight (gone, landed,
+// another mission) is ours: a guest whose host stopped flying flies the rest alone.
+int owner_of(int obj) {
+    if (obj < 0 || obj >= kCraftSlots) {
+        return g_net->self;
+    }
+    const int o = g_net->owner[obj];
+    return o == g_net->self || pilot_present(o, PIC_FullIndex()) ? o : g_net->self;
+}
+bool mine(int obj) { return owner_of(obj) == g_net->self || obj == tie_player_object(); }
+
 // A craft this machine is to fly from now on: its AI to plan at once (the countdown held full while another flew it).
 void release_ai(int obj) {
     const Bit32u craft = tie_r32(obj_base(obj) + 0x54);
@@ -628,6 +665,136 @@ void release_ai(int obj) {
         mem_writew(craft + 0x2A, 0);
     }
     g_net->puppets[obj].used = false;
+}
+
+// --- the guns (step 6) ---------------------------------------------------------------------------------------------
+
+enum { kShotReach = 2 * kReach, kKillCalls = 12 };
+// The collision test's bolt segment (tie.c's laserx.. and laserxold..), which collide_laserhitcraft reads.
+enum { kLaserX = 0xEAB94, kLaserY = 0xEAB98, kLaserZ = 0xEAB90, kLaserXOld = 0xEABD4, kLaserYOld = 0xEABD8, kLaserZOld = 0xEABD0 };
+enum { kFnCreateProjectile = 0x2E0E4, kFnLaserHit = 0x1433C, kFnDamage = 0x148F0, kWarheads = 0xE61FC };
+
+bool someone_near(int obj, double reach) {
+    const double now = PIC_FullIndex();
+    for (int k = 0; k < kMaxSeats; k++) {
+        if (k != g_net->self && pilot_present(k, now) && is_craft(pilot_object(k)) && distance(obj, pilot_object(k)) < reach) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Another machine's shot, made here from its craft by the game's own call.
+void shot_made(int tag, Bit32u eax) {
+    (void)tag;
+    if ((eax & 0xFFFF) != 0xFFFF) {
+        g_net->shotsMade++;
+    }
+}
+void make_shot(const TieShot &shot, int owner) {
+    const int obj = (int)shot.obj();
+    if (obj < 0 || obj >= kCraftSlots || owner_of(obj) != owner || !is_craft(obj) || tie_r16(obj_base(obj) + 0x2C) != 0) {
+        return;
+    }
+    tie_queue_call(kFnCreateProjectile, (Bit32u)obj, shot.hardpoint(), shot.type(), 0, NULL, shot_made, 0);
+}
+
+// A hit for us to apply: a stand-in bolt with the shooter's figures in a free projectile slot, the bolt's segment in
+// the collision test's globals, then the game's own collide_laserhitcraft (damage, shields, components, messages,
+// the flash where it struck).
+int standin_slot = -1;
+bool hit_before(int tag) {
+    const TieHit &h = g_net->hitsIn[tag];
+    standin_slot = -1;
+    for (int s = 32; s < 80; s++) {
+        if (tie_r8(obj_base(s) + 4) == 0) {
+            standin_slot = s;
+            break;
+        }
+    }
+    if (standin_slot < 0 || !is_craft((int)h.target()) || !mine((int)h.target())) {
+        standin_slot = -1;
+        return false;       // (no free projectile slot, or the target gone or no longer ours by now)
+    }
+    const Bit32u b = obj_base(standin_slot);
+    for (int k = 0; k < tie::kObjectSize; k += 4) {
+        if (k != 0x54) {
+            tie_w32(b + (Bit32u)k, 0);
+        }
+    }
+    tie_w8(b + 2, 1);                               // category: a projectile
+    tie_w8(b + 3, (Bit8u)h.bolt_genus());
+    tie_w8(b + 4, (Bit8u)h.bolt_type());
+    tie_w32(b + 6, (Bit32u)h.x());
+    tie_w32(b + 0xA, (Bit32u)h.y());
+    tie_w32(b + 0xE, (Bit32u)h.z());
+    tie_w32(b + 0x12, (Bit32u)h.ox());
+    tie_w32(b + 0x16, (Bit32u)h.oy());
+    tie_w32(b + 0x1A, (Bit32u)h.oz());
+    tie_w16(b + 0x2A, (Bit16u)h.bolt_radius());
+    tie_w16(b + 0x2E, 1);                           // age
+    tie_w16(b + 0x30, (Bit16u)h.shooter());
+    tie_w8(b + 0x33, tie_r8(obj_base((int)h.shooter() < 120 ? (int)h.shooter() : 0) + 0x33));   // the shooter's side
+    tie_w32(b + 0x54, tie_linear(kWarheads + 8 * (Bit32u)(standin_slot - 32)));
+    tie_w32(kLaserX, (Bit32u)h.x());
+    tie_w32(kLaserY, (Bit32u)h.y());
+    tie_w32(kLaserZ, (Bit32u)h.z());
+    tie_w32(kLaserXOld, (Bit32u)h.ox());
+    tie_w32(kLaserYOld, (Bit32u)h.oy());
+    tie_w32(kLaserZOld, (Bit32u)h.oz());
+    // the call's first argument is the stand-in (it was not known when the call was queued)
+    reg_eax = (Bit32u)standin_slot;
+    wclog(2, "TIE: applying a hit on obj %u from obj %u: stand-in bolt %d (type %u, radius %u, offset %u)", h.target(), h.shooter(),
+          standin_slot, h.bolt_type(), h.bolt_radius(), h.offset());
+    return true;
+}
+void hit_done(int tag, Bit32u eax) {
+    const TieHit &h = g_net->hitsIn[tag];
+    wclog(2, "TIE: the hit on obj %u applied (returned %08x; the target's hull %u of %u)", h.target(), (unsigned)eax,
+          (unsigned)mem_readw(tie_r32(obj_base((int)h.target()) + 0x54) + 0xA2), (unsigned)mem_readw(tie_r32(obj_base((int)h.target()) + 0x54) + 0xA6));
+    if (standin_slot >= 0) {
+        const Bit32u b = obj_base(standin_slot);
+        if (tie_r8(b + 4) == (Bit8u)h.bolt_type()) {
+            tie_w8(b + 4, 0);                       // (not turned into its flash: gone)
+        }
+        g_net->hitsApplied++;
+    }
+    standin_slot = -1;
+}
+void take_hit(const TieHit &hit) {
+    const int target = (int)hit.target();
+    if (!is_craft(target) || !mine(target) || hit.shooter() >= 120) {
+        wclog(2, "TIE: a hit on obj %d from obj %u not ours to apply (craft %d, ours %d)", target, hit.shooter(), (int)is_craft(target),
+              is_craft(target) ? (int)mine(target) : -1);
+        return;
+    }
+    const int tag = g_net->hitsInNext;
+    g_net->hitsInNext = (g_net->hitsInNext + 1) % 64;
+    g_net->hitsIn[tag] = hit;
+    tie_queue_call(kFnLaserHit, 0, (Bit32u)target, hit.offset(), 0, hit_before, hit_done, tag);
+}
+
+// A copy whose owner reports it dying is killed here by the game's own damage (a collision's, called until its death
+// is under way), so its explosion and the mission's count of it are this game's too.
+void kill_done(int tag, Bit32u eax) {
+    (void)eax;
+    const int obj = tag;
+    if (!is_craft(obj) || tie_r16(obj_base(obj) + 0x2C) != 0 || g_net->killing[obj] >= kKillCalls) {
+        if (g_net->killing[obj] > 0) {
+            g_net->kills++;
+        }
+        g_net->killing[obj] = 0;
+        return;
+    }
+    g_net->killing[obj]++;
+    tie_queue_call(kFnDamage, (Bit32u)obj, 0xFFFF, 0xFFFF, 0, NULL, kill_done, obj);
+}
+void begin_kill(int obj) {
+    if (mine(obj) || g_net->killing[obj] != 0 || !is_craft(obj) || tie_r16(obj_base(obj) + 0x2C) != 0) {
+        return;
+    }
+    g_net->killing[obj] = 1;
+    tie_queue_call(kFnDamage, (Bit32u)obj, 0xFFFF, 0xFFFF, 0, NULL, kill_done, obj);
 }
 
 void send_owners() {
@@ -775,6 +942,9 @@ void fill_craft(TieCraft *c, int obj) {
         axes[k] = (char)tie_r8(o + 0x42 + k);
     }
     c->set_axes(std::string(axes, sizeof(axes)));
+    if (tie_r16(o + 0x2C) != 0 || tie_r8(o + 4) >= 127) {
+        c->set_dying(true);     // (its death timer running, or already its explosion)
+    }
 }
 
 // A puppet into the game, just before the game moves its objects
@@ -787,8 +957,9 @@ void write_puppet(Puppet &p) {
     const TieCraft &c = p.state;
     const int obj = (int)c.obj();
     const Bit32u o = tie::kObjects + obj * tie::kObjectSize;
-    if (tie_r8(o + 4) == 0 || c.type() == 0 || tie_r8(o + 4) != c.type()) {
-        return;             // (not there on this machine, gone on its owner's, or another ship in the slot here: nothing to move)
+    if (tie_r8(o + 4) == 0 || c.type() == 0 || tie_r8(o + 4) != c.type() || tie_r16(o + 0x2C) != 0) {
+        return;             // (not there on this machine, gone on its owner's, another ship in the slot here, or its death under
+                            // way here: nothing to move)
     }
     if (p.fresh) {
         tie_w32(o + 6, (Bit32u)c.x());
@@ -904,10 +1075,13 @@ void report_frame(double now) {
                      (int)tie_r32(ob + 0xE), tie_r16(ob + 0x1E), tie_r16(ob + 0x20), tie_r16(ob + 0x22), (Bit16s)tie_r16(ob + 0x26), tie_r8(ob + 4));
             line += one;
         }
-        char sums[200];
-        snprintf(sums, sizeof(sums), " owners %d/%d/%d; sent %u craft (%u near, %u mid, %u far) in %u bytes, %u owner changes;", owned[0], owned[1],
-                 owned[2], g_net->sentCraft, g_net->sentNear, g_net->sentMid, g_net->sentFar, g_net->sentBytes, g_net->ownerChanges);
+        char sums[400];
+        snprintf(sums, sizeof(sums), " owners %d/%d/%d; sent %u craft (%u near, %u mid, %u far) in %u bytes, %u owner changes; guns: %u shots"
+                 " sent, %u made, %u hits sent, %u applied, %u damage skipped, %u kills;", owned[0], owned[1], owned[2], g_net->sentCraft,
+                 g_net->sentNear, g_net->sentMid, g_net->sentFar, g_net->sentBytes, g_net->ownerChanges, g_net->shotsSent, g_net->shotsMade,
+                 g_net->hitsSent, g_net->hitsApplied, g_net->damageSkipped, g_net->kills);
         g_net->sentCraft = g_net->sentNear = g_net->sentMid = g_net->sentFar = g_net->sentBytes = g_net->ownerChanges = 0;
+        g_net->shotsSent = g_net->shotsMade = g_net->hitsSent = g_net->hitsApplied = g_net->damageSkipped = g_net->kills = 0;
         wclog(1, "TIE: wall %.0f frame %llu as pilot %d, %u peers;%s%s", wall_ms(), (unsigned long long)g_net->frame, g_net->self + 1,
               (unsigned)g_net->peers.size(), sums, line.c_str());
     }
@@ -1040,8 +1214,20 @@ void tie_session_frame() {
             g_net->sentCraft++;
         }
     }
-    // (a reliable copy once a second, and whenever a far craft is in it: its next report is many seconds away)
-    const bool reliable = far || now - g_net->lastReliableAt >= kReliableEveryMs;
+    for (size_t i = 0; i < g_net->shotsOut.size(); i++) {
+        *f->add_shots() = g_net->shotsOut[i];
+    }
+    for (size_t i = 0; i < g_net->hitsOut.size(); i++) {
+        *f->add_hits() = g_net->hitsOut[i];
+    }
+    g_net->shotsSent += (unsigned)g_net->shotsOut.size();
+    g_net->hitsSent += (unsigned)g_net->hitsOut.size();
+    const bool hits = !g_net->hitsOut.empty();
+    g_net->shotsOut.clear();
+    g_net->hitsOut.clear();
+    // (a reliable copy once a second, whenever a far craft is in it, its next report many seconds away, and whenever a
+    // hit is: a hit lost would be damage never done)
+    const bool reliable = far || hits || now - g_net->lastReliableAt >= kReliableEveryMs;
     if (reliable) {
         g_net->lastReliableAt = now;
     }
@@ -1060,7 +1246,7 @@ void tie_session_frame() {
     }
     // This machine's AI kept off every craft another flies (before the planner runs this frame).
     for (int o = 0; o < kCraftSlots; o++) {
-        if (o != own && g_net->owner[o] != g_net->self && is_craft(o)) {
+        if (o != own && !mine(o) && is_craft(o)) {
             hold_ai(o);
         }
     }
@@ -1073,9 +1259,82 @@ void tie_session_before_move() {
     const int own = tie_player_object();
     for (int o = 0; o < 120; o++) {
         Puppet &p = g_net->puppets[o];
-        if (p.used && p.owner != g_net->self && o != own && (o >= kCraftSlots || g_net->owner[o] == p.owner)) {
+        if (p.used && p.owner != g_net->self && o != own && (o >= kCraftSlots || owner_of(o) == p.owner)) {
             write_puppet(p);
         }
+    }
+}
+
+// laser_createprojectile(eax shooter, edx hardpoint, ebx type).  A shot of a craft we fly, near another pilot, goes
+// with our next frame; a craft another machine flies does not shoot here (its owner's shots are made from reports).
+void tie_session_shot() {
+    if (!g_net || g_net->self < 0 || !tie_in_flight() || tie_in_call()) {
+        return;
+    }
+    const int shooter = (int)(reg_eax & 0xFFFF);
+    if (shooter >= kCraftSlots) {
+        return;
+    }
+    if (!mine(shooter)) {
+        tie_skip_call(0xFFFF);      // (no slot: its callers expect that)
+        return;
+    }
+    if (g_net->shotsOut.size() < 32 && someone_near(shooter, kShotReach)) {
+        TieShot shot;
+        shot.set_obj((Bit32u)shooter);
+        shot.set_hardpoint(reg_edx & 0xFFFF);
+        shot.set_type(reg_ebx & 0xFFFF);
+        g_net->shotsOut.push_back(shot);
+    }
+}
+
+// collide_laserhitcraft(eax bolt, edx target, ebx offset).  A hit by a bolt of a craft we fly on a craft another machine
+// flies is that machine's to apply: sent with our next frame (the flash still shows here; the damage is skipped at
+// collide_damagecraft).
+void tie_session_laser_hit() {
+    if (!g_net || g_net->self < 0 || !tie_in_flight() || tie_in_call()) {
+        return;
+    }
+    const int bolt = (int)(reg_eax & 0xFFFF), target = (int)(reg_edx & 0xFFFF);
+    if (bolt < 32 || bolt >= 120 || !is_craft(target)) {
+        return;
+    }
+    const Bit32u b = obj_base(bolt);
+    const int shooter = tie_r16(b + 0x30);
+    if (!mine(shooter) || mine(target) || g_net->hitsOut.size() >= 32) {
+        return;
+    }
+    TieHit h;
+    h.set_target((Bit32u)target);
+    h.set_offset(reg_ebx & 0xFFFF);
+    h.set_bolt_type(tie_r8(b + 4));
+    h.set_bolt_genus(tie_r8(b + 3));
+    h.set_bolt_radius(tie_r16(b + 0x2A));
+    h.set_shooter((Bit32u)shooter);
+    h.set_x((Bit32s)tie_r32(kLaserX));
+    h.set_y((Bit32s)tie_r32(kLaserY));
+    h.set_z((Bit32s)tie_r32(kLaserZ));
+    h.set_ox((Bit32s)tie_r32(kLaserXOld));
+    h.set_oy((Bit32s)tie_r32(kLaserYOld));
+    h.set_oz((Bit32s)tie_r32(kLaserZOld));
+    g_net->hitsOut.push_back(h);
+}
+
+// collide_damagecraft(eax target, edx component, ebx attacker, ecx side).  This game damages only the craft it flies,
+// and from a bolt only one whose shooter it flies (a shot made from another machine's report hits nothing here: its
+// shooter's machine decides).  Our own calls (a hit taken in, a kill) go through.
+void tie_session_damage() {
+    if (!g_net || g_net->self < 0 || !tie_in_flight() || tie_in_call()) {
+        return;
+    }
+    const int target = (int)(reg_eax & 0xFFFF), attacker = (int)(reg_ebx & 0xFFFF);
+    bool skip = target < kCraftSlots && !mine(target);
+    if (!skip && attacker >= 32 && attacker < 120) {
+        skip = !mine(tie_r16(obj_base(attacker) + 0x30));
+    }
+    if (skip) {
+        g_net->damageSkipped++;
+        tie_skip_call(0);
     }
 }
 

@@ -30,6 +30,11 @@ void tie_session_before_move();
 // is made from the front end's mission name: a guest launching from the
 // Combat Chamber flies the host's mission.
 void tie_session_mission_path();
+// The guns (step 6), at the entries of laser_createprojectile, collide_laserhitcraft and collide_damagecraft (the
+// arguments in eax, edx, ebx, ecx).
+void tie_session_shot();
+void tie_session_laser_hit();
+void tie_session_damage();
 // At create_createmission's entry: the player's flight group gets a craft a
 // seat, and a guest flies its own one of them.
 void tie_session_mission_create();

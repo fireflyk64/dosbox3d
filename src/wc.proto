@@ -338,6 +338,28 @@ message TieCraft {
     optional sint32 mz = 12;
     optional uint32 type = 13;      // the ship type; 0: the craft is gone
     optional bytes axes = 14;       // the forward/side/up vectors, 9 int16 (FlightObject +0x42)
+    optional bool dying = 15;       // its death under way on its owner's machine (the others kill their copy)
+}
+// A shot (TIE Fighter): the shooter's object, the hardpoint, the projectile's type, as laser_createprojectile took them.
+message TieShot {
+    optional uint32 obj = 1;
+    optional uint32 hardpoint = 2;
+    optional uint32 type = 3;
+}
+// A hit decided on the shooter's machine, for the target's owner to apply (with a stand-in bolt of these figures).
+message TieHit {
+    optional uint32 target = 1;
+    optional uint32 offset = 2;     // collide_laserhitcraft's hit offset
+    optional uint32 bolt_type = 3;
+    optional uint32 bolt_genus = 4;
+    optional uint32 bolt_radius = 5;
+    optional uint32 shooter = 6;
+    optional sint32 x = 7;          // the bolt's segment (laserx.. and laserxold..)
+    optional sint32 y = 8;
+    optional sint32 z = 9;
+    optional sint32 ox = 10;
+    optional sint32 oy = 11;
+    optional sint32 oz = 12;
 }
 // A frame of craft from their owner, best effort (the next supersedes it);
 // the host relays a guest's to the other guests with its player number.
@@ -350,6 +372,8 @@ message TieFrame {
     optional string mission = 6;    // the mission it flies (a frame of another mission's is not written in)
     optional uint32 own = 7;        // the sender's own craft (its object slot)
     optional uint32 target = 8;     // what the sender has targeted (an object slot; 0xFFFF none)
+    repeated TieShot shots = 9;
+    repeated TieHit hits = 10;
 }
 // The host's word on who flies each craft (object slots 0..31): a seat each, 0 the host's.  Sent when it changes and
 // every 2 s, reliably.
