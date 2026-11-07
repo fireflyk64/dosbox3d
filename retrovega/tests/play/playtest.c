@@ -4674,6 +4674,42 @@ static void t_mayday(void)
  * 25,000 km: none would pick it), hit by the player's ship through its armour twenty times: on the coins, at least one
  * Nicander's target is the player.  With a fourth Nicander 5,000 km from the player (the attacker engaged, HELP_KM),
  * the same hits call nobody */
+/* M8.56: the old game's nav points switched on and off (tests/wc1/navswitch.py; the user, of the Franklin escort: "the
+ * agis spawned on my way TO the transport instead of on my way home"): CEPHID3's shape, a hidden point halfway out,
+ * off at the start with an enemy, and nav 1 beyond it switching it on: crossing it on the way out brings nobody;
+ * after nav 1 it brings its enemy */
+static void t_nav_switch(void)
+{
+    static const char __far e_out[] = "the point off at the start brought %d enemies on the way out: none";
+    static const char __far e_seen[] = "nav 1 is not reached (%d)";
+    static const char __far e_back[] = "switched on by nav 1, the point brought %d enemies on the way back: 1";
+    int16_t i, n;
+    pt_mission();
+    pt_nav(1, 0, 0, 30000);
+    g_tm.nav[0].sw[0] = 0x80 | 2;
+    pt_nav(2, 0, 0, 15000);
+    g_tm.nav[1].flags = 1 | 2;          /* (hidden, off at the start) */
+    pt_mship(PT_WEAK, SIDE_AERA, 2, 1, RV_PILOT_NONE);
+    pt_launch(PT_PLAYER);
+    playerCanBeDamaged = 0;
+    pt_put(0, 0, 0, 15000, 0);
+    if (!pt_steps(SEC))
+        return;
+    for (n = 0, i = 1; i <= RV_MAX_SHIP_SLOT; i++)
+        n += slot_is_ship(i) && commAnimInfo[i] == SIDE_AERA;
+    REQUIRE(n == 0, e_out, n, 0, 0);
+    pt_put(0, 0, 0, 30000, 0);
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(logic_nav_seen(1), e_seen, logic_nav_seen(1), 0, 0);
+    pt_put(0, 0, 0, 15000, 0);
+    if (!pt_steps(SEC))
+        return;
+    for (n = 0, i = 1; i <= RV_MAX_SHIP_SLOT; i++)
+        n += slot_is_ship(i) && commAnimInfo[i] == SIDE_AERA;
+    REQUIRE(n == 1, e_back, n, 0, 0);
+}
+
 static void t_capital_help(void)
 {
     static const char __far e_ships[] = "no Agasicles or Nicanders in slots 1-4 (%d %d)";
@@ -7180,6 +7216,7 @@ static const char __far n_m8_48[] = "M8.48 stay-home (logic_autopilot, form_come
 static const char __far n_m8_49[] = "M8.49 fighter-hull (do_damage, fighter_roulette): an unnamed fighter's hull is the old game's roulette: a few laser hits from behind kill a Nicander, head on it takes over twice as many, past seven hull counts";
 static const char __far n_m8_50[] = "M8.50 prey (prey_of): a Nicander ordered at the Ox (prey=OX) goes for it with the player nearer, and turns on the player once hurt under 55% health";
 static const char __far n_m8_51[] = "M8.51 capital-bearings (gun_mount, ship_think): an Agasicles' flak reaches a still player behind it, abeam and ahead alike";
+static const char __far n_m8_56[] = "M8.56 nav-switch (g_nav_off, NAV_REC_SW): a point off at the start brings nobody till another switches it on";
 static const char __far n_m8_55[] = "M8.55 field-nav (nav_field, nav_stop): a waypoint inside a field is the field: the autopilot takes the player in, and the point is reached only inside it";
 static const char __far n_m8_54[] = "M8.54 capital-help (capital_help): an Aera capital ship hurt through its armour by an unengaged attacker turns half its side's fighters on it; none when a fighter is already near the attacker";
 static const char __far n_m8_52[] = "M8.52 mayday (hull_take, logic_on_mayday): an Ox calls mayday on 35 in 1,000 of the hits through its armour, as the old game's capital ships did; an Agasicles never";
@@ -7267,7 +7304,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 }, { n_m8_56, t_nav_switch, 0 },
 };
 
 /* --- the run --- */

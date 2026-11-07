@@ -132,8 +132,8 @@ lose     "That was not the job I gave you. Kit will want a word with you. So wil
 lose     you "Yes, Commander."
 lose     "See that it doesn't happen twice."
 nav      1 -25000 3000 -25000 reach=10000
-nav      2 -10000 5000 -65000 reach=15000
-nav      3 0 0 -35000 hidden reach=15000
+nav      2 -10000 5000 -65000 reach=15000 switch=+3
+nav      3 0 0 -35000 hidden reach=15000 off
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
@@ -293,7 +293,7 @@ lose     "Tell me about it."
 lose     you "It was a destroyer, Commander. We didn't stop it."
 lose     "No. But now I know what it is, and that's something. Get some sleep."
 nav      1 35000 5000 -10000 reach=15000
-nav      2 70000 10000 -20000 reach=20000
+nav      2 70000 10000 -20000 reach=20000 switch=-1
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=DRIFTER
 ship     VIGILNC 0 nav0 role=home
@@ -368,8 +368,8 @@ win      dead=DRIFTER "Drifter would have wanted you to know you still owe him t
 lose     escort=lost "We lost the Ox. That was fuel the whole task force was counting on."
 lose     "We jump in the morning, and we jump short. Go and get some rest, Wildcard."
 lose     DRIFTER "Ten credits you don't sleep."
-nav      1 60000 -15000 -60000 reach=20000
-nav      2 30000 -7500 -30000 hidden reach=20000
+nav      1 60000 -15000 -60000 reach=20000 switch=+2
+nav      2 30000 -7500 -30000 hidden reach=20000 off switch=-1
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=DRIFTER
 ship     VIGILNC 0 nav0 role=home
@@ -570,8 +570,8 @@ lose     escort=lost "We lost the Ox, and the fuel it was carrying."
 lose     "We jump when we jump. That's all for now."
 lose     COMET "I told you to stay close, rookie."
 lose     you alive=COMET "Yes, you did."
-nav      1 -80000 10000 -25000 reach=20000
-nav      2 -40000 5000 -5000 hidden reach=20000
+nav      1 -80000 10000 -25000 reach=20000 switch=+2
+nav      2 -40000 5000 -5000 hidden reach=20000 off
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home
@@ -1674,8 +1674,8 @@ lose     "They got their destroyers through. That makes the relay harder, and it
 lose     FROST "Rlaan traders use that lane, Commander. They might have seen something."
 lose     alive=FROST "I've had that from Command. They're asking me who you've been talking to. Dismissed."
 nav      1 0 5000 55000 reach=15000
-nav      2 30000 15000 70000 reach=15000
-nav      3 0 5000 55000 hidden reach=15000
+nav      2 30000 15000 70000 reach=15000 switch=-1,+3
+nav      3 0 5000 55000 hidden reach=15000 off
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home turrets=off
@@ -1741,7 +1741,7 @@ win      alive=FROST "I know. Go and talk to him. Take Tally's bottle, not mine.
 lose     "They got her back, or got to her. Either way, it's not going to help the siege."
 lose     FROST "He was calling for me on the comm. He asked me to come."
 lose     alive=FROST "I know what he asked. That's in the file now. Dismissed."
-nav      1 20000 -10000 -75000 reach=20000
+nav      1 20000 -10000 -75000 reach=20000 switch=-2
 nav      2 15000 -5000 -35000 hidden reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
@@ -1806,10 +1806,10 @@ win      "We have a relay to take. Dismissed."
 lose     escort=lost "We lost the Thermopylae, and everyone aboard."
 lose     FROST "I'd like to see the list, Commander."
 lose     alive=FROST "Later, Frost. Let's both of us sit down first."
-nav      1 -35000 0 -65000 reach=20000
+nav      1 -35000 0 -65000 reach=20000 switch=-2,+4
 nav      2 -10000 0 -35000 hidden reach=5000
 nav      3 -35000 0 -65000 hidden reach=20000
-nav      4 -30000 0 -25000 hidden reach=15000
+nav      4 -30000 0 -25000 hidden reach=15000 off
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
@@ -2161,7 +2161,7 @@ win      alive=TECH "You'll have it, Chief. And you'll have a hot meal, if you s
 lose     "We'll run on what we have. It won't be long enough."
 lose     TECH "I can cut the deck heaters. I'll take everything that isn't holding a pilot."
 lose     alive=TECH "I know you will. Dismissed."
-nav      1 10000 20000 80000 reach=15000
+nav      1 10000 20000 80000 reach=15000 switch=-3
 nav      2 5000 10000 40000 hidden reach=15000
 nav      3 5000 10000 40000 hidden reach=15000
 ship     player 0 nav0
@@ -2235,9 +2235,9 @@ lose     system=lost alive=ANCHOR "Anchor got out of the med bay and flew cover 
 lose     system=lost alive=DRIFTER "They reached Drifter's pod too late. He had ten credits in his pocket when they found him."
 lose     system=lost TECH "I've got what's left of the list. I know what it's for now."
 lose     system=lost "Dismissed, all of you. Get whatever rest you can."
-nav      1 35000 0 -35000 reach=20000
+nav      1 35000 0 -35000 reach=20000 switch=+3
 nav      2 0 0 0 hidden reach=20000
-nav      3 0 0 0 hidden reach=20000
+nav      3 0 0 0 hidden reach=20000 off
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TECH
 ship     VIGILNC 0 nav0 role=home
@@ -2389,11 +2389,11 @@ lose     TORCH "Put me back out there. Tonight."
 lose     alive=TORCH "Tomorrow, Torch. You'll be no use to anybody tonight. Dismissed."
 nav      1 30000 -5000 -10000 reach=10000
 nav      2 25000 0 -40000 reach=15000
-nav      3 15000 -15000 -75000 reach=20000
+nav      3 15000 -15000 -75000 reach=20000 switch=-2,-4,+7
 nav      4 25000 0 -40000 hidden reach=15000
 nav      5 15000 -15000 -75000 hidden reach=20000
 nav      6 10000 0 -35000 hidden reach=15000
-nav      7 10000 0 -35000 hidden reach=15000
+nav      7 10000 0 -35000 hidden reach=15000 off
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home
@@ -2470,12 +2470,12 @@ win      alive=TORCH "Yes. Go and find out what you're going to say to her next.
 lose     "We got here, but it cost us. I have people to write to tonight."
 lose     TORCH "She asked who was flying. I told her."
 lose     alive=TORCH "I know what you told her. Dismissed."
-nav      1 -40000 10000 0 reach=10000
-nav      2 -60000 15000 -20000 reach=15000
-nav      3 -50000 20000 -55000 reach=15000
-nav      4 -7500 10000 -30000 hidden reach=20000
-nav      5 -15000 20000 -60000 hidden reach=20000
-nav      6 -20000 25000 -80000 hidden reach=20000
+nav      1 -40000 10000 0 reach=10000 switch=+4,-5,-6
+nav      2 -60000 15000 -20000 reach=15000 switch=-4,+5,-6
+nav      3 -50000 20000 -55000 reach=15000 switch=-4,-5,+6
+nav      4 -7500 10000 -30000 hidden reach=20000 off
+nav      5 -15000 20000 -60000 hidden reach=20000 off
+nav      6 -20000 25000 -80000 hidden reach=20000 off switch=-3
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home turrets=off
@@ -2552,13 +2552,13 @@ lose     system=won "Go on. Tally says the first round's on him."
 lose     system=lost "It's still there, and we're leaving. We have orders. The lane won't stay open."
 lose     system=lost TORCH "Then I'm staying."
 lose     system=lost alive=TORCH "No, you aren't. You've carried those codes for three years. You can carry them again. Dismissed."
-nav      1 30000 0 -60000 reach=15000
+nav      1 30000 0 -60000 reach=15000 switch=-4,+5
 nav      2 55000 0 -90000 reach=20000
-nav      3 55000 0 -90000 reach=20000
-nav      4 -15000 0 -15000 hidden reach=20000
-nav      5 -10000 0 -40000 hidden reach=20000
-nav      6 15000 0 -70000 hidden reach=20000
-nav      7 15000 0 -30000 hidden reach=10000
+nav      3 55000 0 -90000 reach=20000 switch=-5,+6
+nav      4 -15000 0 -15000 hidden reach=20000 off switch=+4
+nav      5 -10000 0 -40000 hidden reach=20000 off switch=-4,+5
+nav      6 15000 0 -70000 hidden reach=20000 off switch=-5,+6
+nav      7 15000 0 -30000 hidden reach=10000 switch=+4
 nav      8 55000 0 -90000 hidden reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
@@ -2641,7 +2641,7 @@ win      dead=TALLY "There are four hundred and twelve people who'll never know 
 lose     escort=lost "We lost the Ox. I have the manifest here. I'll read it later, on my own."
 lose     TALLY "I had it, and I had it, and then I didn't. That's forty years of flying."
 lose     "Get some rest, both of you. Dismissed."
-nav      1 -45000 10000 -50000 reach=20000
+nav      1 -45000 10000 -50000 reach=20000 switch=-4
 nav      2 -25000 5000 -25000 hidden reach=10000
 nav      3 -45000 10000 -50000 hidden reach=20000
 nav      4 -25000 5000 -25000 hidden reach=10000
@@ -2855,13 +2855,13 @@ win      "Get to a seat, Wildcard. We're leaving the sector. We'll be back. I've
 lose     "We have to jump. I don't know who's still out there. I'm sorry. I'm going to write it down."
 lose     TALLY "We held them as long as we could. Get us out of here, Mira."
 lose     "Get to a seat, Wildcard. We're leaving the sector. I've got all your names."
-nav      1 40000 0 10000 reach=15000
+nav      1 40000 0 10000 reach=15000 switch=+6,+5
 nav      2 -35000 -5000 -5000 hidden reach=20000
 nav      3 -70000 -10000 -10000 hidden reach=20000
-nav      4 -105000 -15000 -15000 hidden reach=20000
-nav      5 0 0 0 hidden reach=15000
-nav      6 -35000 -5000 -5000 hidden reach=20000
-nav      7 -70000 -10000 -10000 hidden reach=20000
+nav      4 -105000 -15000 -15000 hidden reach=20000 off
+nav      5 0 0 0 hidden reach=15000 off switch=-6,+7
+nav      6 -35000 -5000 -5000 hidden reach=20000 off
+nav      7 -70000 -10000 -10000 hidden reach=20000 off
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TALLY
 ship     VIGILNC 0 nav0 role=home

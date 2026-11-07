@@ -224,9 +224,23 @@ static int16_t nav_defined(int16_t n)
 
 /* a nav point on the player's lists: home and the mission's waypoints, not its hidden trigger points */
 #define NAV_HIDDEN(n) (NAV_REC(n)[1] & 1)
+#define NAV_OFF_AT_START(n) (NAV_REC(n)[1] & 2)
+
+/* the old game's nav points switched on and off (traced 2026-11-07, tests/wc1/navswitch.py; the user, of the Franklin
+ * escort: "the agis spawned on my way TO the transport instead of on my way home"): a point off (its record's +30 0)
+ * is never reached, however near, until entering another switches it on (+45..+52, NAV_REC_SW): CEPHID3's .Encounter,
+ * on once the Ox's nav 1 is reached, so its Agis are the way home's.  A bit a point, set off */
+static uint16_t __far g_nav_off;
+
+static int16_t nav_on(int16_t n)
+{
+    return !(g_nav_off >> (n & 15) & 1);
+}
+
 static int16_t nav_listed(int16_t n)
 {
-    return nav_defined(n) && (n == 0 || !NAV_HIDDEN(n));
+    /* (a point switched off before it was flown is off the lists: the old game took it from its map; one flown stays) */
+    return nav_defined(n) && (n == 0 || (!NAV_HIDDEN(n) && (nav_on(n) || (g_navs_seen >> n & 1))));
 }
 
 /* the way the player is headed: the first waypoint not reached yet, home when all are */
@@ -315,7 +329,10 @@ static int32_t nav_stop(int16_t n)
 static int16_t nav_in_reach(int16_t n)
 {
     int32_t px = TO_KM(gPositionVector[0].x), py = TO_KM(gPositionVector[0].y), pz = TO_KM(gPositionVector[0].z);
-    int16_t f = nav_field(n);
+    int16_t f;
+    if (!nav_on(n))                     /* (switched off: never near, the old getNearbyNavPoint's +30 test) */
+        return 0;
+    f = nav_field(n);
     if (f >= 0)
         return len_of(g_fields[f].x - px, g_fields[f].y - py, g_fields[f].z - pz) < g_fields[f].radius;
     return len_of(NAV_AT(n, 0) - px, NAV_AT(n, 1) - py, NAV_AT(n, 2) - pz) < nav_reach(n);
@@ -675,6 +692,10 @@ void logic_start(const RvMission __far *m)
     _fmemset(&g_hud, 0, sizeof g_hud);   /* (no marks until the first step works them out) */
     g_navs_seen = 1;
     g_navs_been = 1;
+    g_nav_off = 0;
+    for (j = 1; j < NAVS; j++)
+        if (nav_defined(j) && NAV_OFF_AT_START(j))
+            g_nav_off |= 1u << j;
     g_wave_held = 0;
     g_enemy_ran = 0;
     g_nav_chosen = 0;
@@ -4119,7 +4140,7 @@ static int32_t way_stop(int16_t next, int16_t *region, int16_t *field)
     for (i = 1; i < NAVS; i++) {         /* (not one the player is in already: its wave waits for the one out, or for a
                                            nav point flown; SHELTON2's second wave is a point at the launch 32,500 km
                                            across, and the autopilot would go 500 km a press) */
-        if (i == next || !nav_defined(i) || (g_navs_seen >> i & 1) || !nav_has_ships(i) || nav_in_reach(i))
+        if (i == next || !nav_defined(i) || !nav_on(i) || (g_navs_seen >> i & 1) || !nav_has_ships(i) || nav_in_reach(i))
             continue;
         e = line_enters(d, len, (NAV_AT(i, 0) - px) >> 4, (NAV_AT(i, 1) - py) >> 4, (NAV_AT(i, 2) - pz) >> 4,
                         nav_reach(i) >> 4);
@@ -4859,11 +4880,21 @@ void __far __cdecl enterNavPoint_impl(uint16_t nav)
     static const char __far s_nav[] = "logic: nav %u reached: %d ships came";
     static uint8_t __far came[NUM_SHIP_SLOTS];
     const uint16_t *at;
-    int16_t j, n = 0;
+    int16_t j, n = 0, k;
     if (nav >= NAVS)
         return;
     currentNavPoint = nav;
     g_navs_seen |= 1u << nav;
+    for (k = 0; k < 4; k++) {           /* (its switches: the old game's +45..+52; nav 0 stays as it is) */
+        uint8_t sw = NAV_REC_SW(NAV_REC(nav & 15), k);
+        if (sw != 0xFF && (sw & 15)) {
+            if (sw & 0x80)
+                g_nav_off &= (uint16_t)~(1u << (sw & 15));
+            else
+                g_nav_off |= (uint16_t)(1u << (sw & 15));
+            RV_NOTE("logic: nav %d reached: nav %d switched %s", nav, sw & 15, sw & 0x80 ? "on" : "off");
+        }
+    }
     if (nav_listed((int16_t)nav))
         g_navs_been |= 1u << nav;
     if (g_nav_chosen && g_sys.nav == nav)

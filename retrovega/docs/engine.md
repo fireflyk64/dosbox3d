@@ -249,7 +249,12 @@ nav 2: 1,171 km a moment after its jump; the user: "I thought you had to get wit
 have 'visited' something"). A waypoint inside a field (six in the 40 missions, Enigma 1's nav 2 among them) is the
 field: reached only inside it, the autopilot taking the player 3,000 km short of the field's middle, facing it, where
 the rocks come (`nav_field`, `nav_goal`, `nav_stop`; the user, 2026-11-06: "asteroids were supposed to be entirely
-surrounding nav 2"; play test M8.55). The launch's is 20,000 (`HOME_REACH_KM`, its Tiger's Claw's in
+surrounding nav 2"; play test M8.55). **Points switched on and off** (the old game's, traced 2026-11-07:
+`tests/wc1/navswitch.py`): a nav line's `off` starts the point switched off (its record's +30 0: never reached, however
+near, the old getNearbyNavPoint's test) and `switch=+N,-M` switches nav N on and M off as the point is entered (its
++45..+52 pairs; RvNav.sw, the nav record's bytes 16..19, NAV_REC_SW): CEPHID3's hidden encounter halfway out comes only
+once nav 1, the Ox's, has been reached: the way home's (play test M8.56). Switches of nav 0 (the old Claw moving) and
+of the second waves (state 2) are left out. The launch's is 20,000 (`HOME_REACH_KM`, its Tiger's Claw's in
 36 of its 40 missions); three hidden points at the launch with 0 in the old records have 5,000, the way home's
 encounters, as before. The carrier may be asked for landing from 25,000 km (`LANDING_RANGE_KM`). The autopilot home,
 with nothing on the way, goes on past the launch's reach to 4,000 km off the carrier's hull, facing it

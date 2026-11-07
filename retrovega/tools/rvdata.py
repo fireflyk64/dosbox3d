@@ -36,7 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 22                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 23                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
                                         # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
@@ -200,7 +200,9 @@ NODE = [('char', 'id[RV_NODE_ID]', '%ds' % TEXT['NODE_ID']), ('unsigned char', '
         ('unsigned char', 'good', 'B'), ('unsigned char', 'bad', 'B'), ('unsigned char', 'outside', 'B'),
         ('unsigned char', 'pad', 'B')]
 NAV = [('unsigned char', 'id', 'B'), ('unsigned char', 'flags', 'B'), ('long', 'x', 'l'), ('long', 'y', 'l'),
-       ('long', 'z', 'l'), ('unsigned short', 'reach', 'H')]   # (km, the old game's map: tests/wc1/fullscale.py; reach:
+       ('long', 'z', 'l'), ('unsigned short', 'reach', 'H'), ('unsigned char', 'sw[4]', '4s')]   # (flags: 1 hidden, 2
+                                        # off at the start; sw: what entering it switches, 0x80 | nav on, nav off, 0xFF
+                                        # none: the old game's +30 and +45..+52, tests/wc1/navswitch.py)   # (km, the old game's map: tests/wc1/fullscale.py; reach:
                                         # within it the point is reached, and the autopilot stops at it: the old record's)
 NAV_REACH = 15000                       # a nav line's reach= when it has none (the old game's most usual for a waypoint)
 SHIP = [('unsigned char', 'type', 'B'), ('unsigned char', 'side', 'B'), ('unsigned char', 'nav', 'B'),
@@ -571,18 +573,28 @@ def compile_all():
             raise Fail('%s: type %r / music %r unknown' % (w, m['type'], m['music']))
         navs = []
         for where, f in m['nav']:
-            # nav ID x y z [hidden] [reach=KM]: the player within KM of it has reached it, and the autopilot stops there
+            # nav ID x y z [hidden] [off] [reach=KM] [switch=+N,-M]: the player within KM of it has reached it, and the
+            # autopilot stops there; off: switched off at the start, never reached till a switch turns it on; switch=:
+            # entering it turns nav N on, M off (the old game's: tests/wc1/navswitch.py)
             words = [o for o in f[4:] if '=' not in o]
             opts = dict(o.split('=', 1) for o in f[4:] if '=' in o)
-            if len(f) < 4 or words not in ([], ['hidden']) or set(opts) - {'reach'} \
-                    or not 1000 <= int(opts.get('reach', NAV_REACH)) <= 60000:
-                raise Fail('%s: nav ID x y z [hidden] [reach=KM, 1,000 to 60,000]' % where)
-            navs.append(struct.pack(fmt(NAV), int(f[0]), 1 if words else 0, int(f[1]), int(f[2]), int(f[3]),
-                                    int(opts.get('reach', NAV_REACH))))
+            sw = [o for o in opts.get('switch', '').split(',') if o]
+            if len(f) < 4 or set(words) - {'hidden', 'off'} or set(opts) - {'reach', 'switch'} \
+                    or not 1000 <= int(opts.get('reach', NAV_REACH)) <= 60000 or len(sw) > 4 \
+                    or any(not re.fullmatch(r'[+-]([1-9]|1[0-5])', o) for o in sw):
+                raise Fail('%s: nav ID x y z [hidden] [off] [reach=KM, 1,000 to 60,000] [switch=+N,-M: at most 4, '
+                           'navs 1..15]' % where)
+            swb = bytes((0x80 if o[0] == '+' else 0) | int(o[1:]) for o in sw) + b'\xff' * (4 - len(sw))
+            navs.append(struct.pack(fmt(NAV), int(f[0]), (1 if 'hidden' in words else 0) | (2 if 'off' in words else 0),
+                                    int(f[1]), int(f[2]), int(f[3]), int(opts.get('reach', NAV_REACH)), swb))
         if len(navs) > LIMITS['NAVS']:
             raise Fail('%s: %d nav points, at most %d' % (w, len(navs), LIMITS['NAVS']))
         nav_ids = {0} | {int(f[0]) for _w, f in m['nav']}
         hidden_navs = {int(f[0]) for _w, f in m['nav'] if 'hidden' in f[4:]}
+        for where, f in m['nav']:       # (a switch names a nav point of the mission)
+            for o in dict(o.split('=', 1) for o in f[4:] if '=' in o).get('switch', '').split(','):
+                if o and int(o[1:]) not in nav_ids:
+                    raise Fail('%s: switch=%s names no nav point of the mission' % (where, o))
         listed = [int(f[0]) for _w, f in m['nav']]
         if any(not 1 <= i <= 15 for i in listed) or len(set(listed)) != len(listed):
             raise Fail('%s: nav points are numbered 1..15, each once (navPointTable has a record a number; 0 is the '

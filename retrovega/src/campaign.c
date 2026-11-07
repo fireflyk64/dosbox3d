@@ -246,7 +246,9 @@ void camp_load_tables(const RvMission __far *m)
         RV_CHECK(m->nav[i].id, 16);
         rec = navs + navPointTable_SIZE * m->nav[i].id;
         rec[0] = m->nav[i].id;
-        rec[1] = m->nav[i].flags;       /* (1: hidden, logic.c NAV_HIDDEN) */
+        rec[1] = m->nav[i].flags;       /* (1: hidden, logic.c NAV_HIDDEN; 2: off at the start, NAV_OFF_AT_START) */
+        for (k = 0; k < 4; k++)
+            NAV_REC_SW(rec, k) = m->nav[i].sw[k];
         NAV_REC_KM(rec, 0) = m->nav[i].x;
         NAV_REC_KM(rec, 1) = m->nav[i].y;
         NAV_REC_KM(rec, 2) = m->nav[i].z;

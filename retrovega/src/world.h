@@ -36,6 +36,8 @@ typedef char rv_sar_check[(INT32_C(-1) >> 1) == -1 ? 1 : -1];   /* >> on a negat
  * mission ship's (missionShipTable) its place off its nav point at +22, +26, +30.  k 0..2: x, y, z */
 #define NAV_REC_KM(rec, k) (*(int32_t *)((uint8_t *)(rec) + 2 + 4 * (k)))
 #define NAV_REC_REACH(rec) (*(uint16_t *)((uint8_t *)(rec) + 14))
+#define NAV_REC_SW(rec, k) (((uint8_t *)(rec))[16 + (k)])   /* what entering it switches, k 0..3: 0x80 | nav on, nav off,
+                                                                0xFF none (RvNav.sw, the old game's +45..+52) */
 #define MSHIP_REC_KM(rec, k) (*(int32_t *)((uint8_t *)(rec) + 22 + 4 * (k)))
 #define ONE_SHIFT 8                     /* ONE as a shift */
 #define ONE (1 << ONE_SHIFT)            /* 1.0 in an orientation vector */
