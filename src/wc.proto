@@ -156,6 +156,15 @@ message Copilot {
         optional Action action = 1;
 }
 
+// RetroVega, client -> server: this player taunted an enemy fighter (the comm
+// menu's taunt, C three times, Alt+T): the ship's network id.  The host's AI,
+// which flies it, turns it on that player's ship for its anger's time
+// (logic.c logic_taunt, the fixed block's rvTaunt).  Without it a guest's
+// taunt fell on the guest's own copy of the ship, a puppet nobody thinks for.
+message Taunt {
+        optional uint32 ship_id = 1;
+}
+
 message Event {
   optional Spawn spawn = 2;
   optional Damage damage = 3;
@@ -165,6 +174,7 @@ message Event {
   optional TurretFire turret = 17;
   optional Cloak cloak = 18;
   optional Copilot copilot = 19;
+  optional Taunt taunt = 20;
 }
 
 message MissionEnd {

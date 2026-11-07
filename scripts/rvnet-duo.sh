@@ -15,6 +15,8 @@
 #                         reach the host's game, and come back to it
 #             ram         after the host's autopilot to the enemies, the guest flies into them: its ship's share of
 #                         each collision goes to the host's game
+#             taunt       after the host's autopilot to the enemies, the guest faces one, targets it (Y) and taunts it
+#                         (C three times): the taunt goes to the host, whose AI turns that ship on the guest's
 #             kill        the host's autopilot to the enemies, which it destroys (!killfoes): the guest sees them
 #                         explode, then go
 #             chat        each pilot says a line (the 0 key's prompt, !say=): it is on the other's comm VDU, and its
@@ -82,6 +84,9 @@ land)
 autopilot)
     HOST="$HOST,10:a,11.5:!shot=flyby,14:!ds=after"
     GUEST="$GUEST,11.5:!shot=flyby,14:!ds=after" ;;
+taunt)
+    HOST="$HOST,10:a,18:!ds=taunted"
+    GUEST="$GUEST,13:!face=npc,13.5:y,14:c,14.15:c,14.3:c,18:!ds=taunted" ;;
 ram)
     HOST="$HOST,10:a"
     GUEST="$GUEST,13:f,15:!ram=npc,17:!ram=npc,19:!ram=npc" ;;

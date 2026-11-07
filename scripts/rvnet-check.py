@@ -200,6 +200,17 @@ class Check:
         if sc == 'ram':
             self.logs_say(1, r'reporting a hit by our own ship', "the guest's collisions went to the host")
             self.logs_say(0, r'reported damage to \d+', "the host took the guest's share")
+        if sc == 'taunt':
+            for n in range(1, self.players):
+                self.logs_say(n, r'taunt: ship \d+ \(net \d+\) to the host', "the guest's taunt went to the host")
+            m = re.search(r'player \d+ taunted ship (\d+) \(net \d+\): it turns on slot (\d+)', self.log(0))
+            if self.need(m is not None, "p0: the host took the guest's taunt"):
+                ship, by = int(m.group(1)), int(m.group(2))
+                h = self.dump(0, 'taunted')
+                if h:
+                    self.need(by != 0 and h.u8('rvTarget', ship) == by,
+                              "p0: the taunted ship (slot %d) fights the guest's (slot %d): it targets slot %d" % (
+                                  ship, by, h.u8('rvTarget', ship)))
         if sc == 'combat':
             self.logs_say(1, r'reporting a hit by our own guns', "the guest's hits went to the host")
             self.logs_say(0, r'reported damage to \d+', "the host took the guest's hits")

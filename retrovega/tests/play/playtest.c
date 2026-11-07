@@ -6565,6 +6565,38 @@ static void t_taunt(void)
     rvTarget[0] = 0xFF;
 }
 
+/* M10.11: a guest's taunt (rvTaunt; the user, 2026-11-07: "Will a second player help? Do their taunts make it
+ * through?"): on the host, an enemy fighting the host's pilot 16,000 km off, taunted by a guest's ship (slot 2, a
+ * puppet a human flies) 30,000 km off as the layer writes it (rvTaunt[1] = 2), turns on the guest and stays on it 15 s
+ * on; on a guest, where the enemy is a puppet, its own pilot's taunt waits in rvTaunt (0) for the layer */
+static void t_taunt_guest(void)
+{
+    static const char __far e_first[] = "before the taunt the enemy's target is slot %d: the host's pilot (slot 0)";
+    static const char __far e_turn[] = "taunted by the guest's ship, the enemy's target is slot %d %d s on: the guest's (slot 2)";
+    static const char __far e_wait[] = "a taunt of a puppet (a guest's copy of the host's ship) left rvTaunt at %d: 0, for the layer";
+    pt_alone(PT_PLAYER);
+    playerCanBeDamaged = 0;
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, 0, 0, 16000, TURN / 2);
+    pt_ship(2, PT_PLAYER, SIDE_TERRAN, CTL_PUPPET, 0, 0, -14000, 0);
+    rvFlags[2] |= RV_FLAG_HUMAN;
+    if (!pt_steps(2 * SEC))
+        return;
+    REQUIRE(rvTarget[1] == 0, e_first, rvTarget[1], 0, 0);
+    rvTaunt[1] = 2;
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(rvTarget[1] == 2, e_turn, rvTarget[1], 1, 0);
+    if (!pt_steps(14 * SEC))
+        return;
+    EXPECT(rvTarget[1] == 2, e_turn, rvTarget[1], 15, 0);
+    rvController[1] = CTL_PUPPET;
+    (void)logic_taunt(1);
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(rvTaunt[1] == 0, e_wait, rvTaunt[1], 0, 0);
+    rvTaunt[1] = 0xFF;
+}
+
 /* M10.7: the missile lock: the Gawain's heat seeker on a target 3,000 km ahead flying away locks in its lock time
  * (3 s), and the lock goes the step the target turns to face the player; the image-recognition missile (W) locks on
  * it facing or not; the tracking wrecked, or the EMCON off, no lock; the Schroedinger's dumbfire never locks */
@@ -7557,6 +7589,7 @@ static const char __far n_m8_41[] = "M8.41 escort-linger (route_step, logic_auto
 static const char __far n_m8_40[] = "M8.40 campaign-way (logic_autopilot, the missions): every mission's waypoints reached on the old game's map, the autopilot stopping at their reach";
 static const char __far n_m8_39[] = "M8.39 full-map (logic_autopilot, step_scene): the autopilot stops at a nav point's reach; its ships are in the scene however far, the carrier again on the way home";
 static const char __far n_m8_38[] = "M8.38 escort-home (route_step): an escort target in goes to the home carrier, stops within 150 km of its hull, its nose the carrier's way, and is home";
+static const char __far n_m10_11[] = "M10.11 taunt-guest (rvTaunt, fighter_think): a guest's taunt, carried to the host, turns the enemy on the guest's ship";
 static const char __far n_m10_10[] = "M10.10 form-parallel (formation_step): told to form up, the wingman flies the player's way, not facing it";
 static const char __far n_m8_32[] = "M8.32 named-hull (do_damage): a named pilot's hull takes a hit past its armour as a share, eight laser hits; a person's seat the hit itself";
 static const char __far n_m8_31[] = "M8.31 dying (delayedDespawn, do_damage): delayedDespawn starts a ship's end; the player's kills are its splashes";
@@ -7626,7 +7659,7 @@ static const PtTest __far k_tests[] = {
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
     { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 }, { n_m10_6, t_orders, 0 }, { n_m10_7, t_missile_lock, 0 },
-    { n_m10_8, t_break_formation, 0 }, { n_m10_9, t_taunt, 0 },
+    { n_m10_8, t_break_formation, 0 }, { n_m10_9, t_taunt, 0 }, { n_m10_11, t_taunt_guest, 0 },
     { n_m12_1, t_reserve, 0 }, { n_m12_2, t_reserve_breaks, 0 }, { n_m12_3, t_where, 0 }, { n_m12_4, t_engine, 0 },
     { n_m12_5, t_tank, 0 }, { n_m12_6, t_shield_cap, 0 }, { n_m12_7, t_mounts, 0 }, { n_m12_8, t_thrusters, 0 },
     { n_m12_9, t_repair, 0 }, { n_m12_10, t_damage_reset, 0 }, { n_m12_11, t_home_tier, 0 },

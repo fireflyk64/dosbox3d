@@ -62,6 +62,11 @@ void rv_unmark_all();
 void rv_set_net_id(int slot, int net);
 // rvLastWrite: the frame the layer last wrote the slot's motion.
 void rv_stamp_motion(int slot);
+// The taunts (rvTaunt: a ship's taunter's slot, 0xff none; the game's own pilot writes 0).  A guest takes its own
+// pilot's taunt of a ship the host flies to send it on (the slot, cleared; -1 none); the host puts one in, the
+// guest's ship's slot as the taunter (the host's AI takes it at its next thought).
+int rv_take_own_taunt();
+void rv_put_taunt(int slot, int by);
 
 // --- the mission's compiled records: the host's, which a guest flies by ---
 // missionShipTable and navPointTable as bytes, and which record the player

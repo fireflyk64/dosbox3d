@@ -208,6 +208,25 @@ void rv_set_net_id(int slot, int net) {
     }
 }
 
+int rv_take_own_taunt() {
+    if (!rv_compatible()) {
+        return -1;
+    }
+    for (int slot = 1; slot <= RV_MAX_SHIP_SLOT && slot < 32; slot++) {
+        if (rd8((Bit16u)(RV_DS_rvTaunt + slot)) == 0) {
+            wr8((Bit16u)(RV_DS_rvTaunt + slot), 0xff);
+            return slot;
+        }
+    }
+    return -1;
+}
+
+void rv_put_taunt(int slot, int by) {
+    if (rv_compatible() && slot > 0 && slot <= RV_MAX_SHIP_SLOT && slot < 32 && by >= 0 && by <= RV_MAX_SHIP_SLOT) {
+        wr8((Bit16u)(RV_DS_rvTaunt + slot), (Bit8u)by);
+    }
+}
+
 void rv_stamp_motion(int slot) {
     if (rv_compatible() && slot >= 0 && slot <= RV_MAX_SHIP_SLOT) {
         wr16((Bit16u)(RV_DS_rvLastWrite + 2 * slot), rd16(RV_DS_frameCounter));

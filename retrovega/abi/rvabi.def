@@ -87,6 +87,7 @@ VAR   rvWhere                      1    # the game's: where its pilot is (RV_WHE
 VAR   rvPeerWhere                  4    # the layer's: where each pilot of the room is by player number (0 the host), RV_WHERE_*, 0 not known (its own 0)
 VAR   rvBriefingLock               1    # the layer's: 1 a guest's briefing door does not open (its host is neither at its briefing nor in its mission)
 VAR   rvTyping                     1    # the game's: 1 while it takes typed text (a bunk's name): the layer's 0 key (chat) is the game's then
+VAR   rvTaunt                     32    # a taunt per ship slot 0..31: the slot (this machine's) of the pilot who taunted that ship, 0xff none: the game's own pilot writes 0 (logic_taunt); a guest's comes to the host by the layer, which writes the guest's ship's slot there; the host's AI takes it (fighter_think)
 
 SECTION scratch 0x0400
 VAR   aLoadingWingCom            128    # starts "Loading RETROVEGA" (the layer's signature), then its scratch

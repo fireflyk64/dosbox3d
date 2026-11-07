@@ -144,6 +144,8 @@ extern uint8_t rv_dgroup[];
 #define rvBriefingLock_SIZE            1
 #define rvTyping                       (*RV_AT(uint8_t *, 0x036E)) /* the game's: 1 while it takes typed text (a bunk's name): the layer's 0 key (chat) is the game's then */
 #define rvTyping_SIZE                  1
+#define rvTaunt                        RV_AT(uint8_t *, 0x0370)  /* 1 x 32 bytes */ /* a taunt per ship slot 0..31: the slot (this machine's) of the pilot who taunted that ship, 0xff none: the game's own pilot writes 0 (logic_taunt); a guest's comes to the host by the layer, which writes the guest's ship's slot there; the host's AI takes it (fighter_think) */
+#define rvTaunt_SIZE                   32
 
 /* --- scratch: 0x0400- --- */
 #define aLoadingWingCom                RV_AT(uint8_t *, 0x0400)  /* 1 x 128 bytes */ /* starts "Loading RETROVEGA" (the layer's signature), then its scratch */

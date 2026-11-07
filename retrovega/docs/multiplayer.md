@@ -115,6 +115,14 @@ Multiplayer appears in the logic only as who flies a ship (`rvController`, `RV_F
 - **Missiles:** a ship that fires a launcher publishes the target in `missileTarget[ship]` first (the player's lock,
   or for a dumbfire the chosen target; an AI's own target); `missile_launch` reads it there for every shooter, so a
   launch replayed on another machine homes and aims the same way.
+- **Taunts** (the user, 2026-11-07: "Will a second player help? Do their taunts make it through?"; they had not: a
+  guest's fell on its own copy of the ship, a puppet nobody thinks for, and the AI turned only on slot 0, the host's
+  pilot): a taunt is written into the fixed block's `rvTaunt` (a byte per ship slot: the taunter's slot, 0xff none;
+  this machine's pilot writes 0) and the AI that flies the ship takes it at its next thought, turning on that slot for
+  its anger's time (logic.c `fighter_think`). On a guest the ship is a puppet, so the taunt waits there; the layer takes
+  it (`rv_take_own_taunt`, each frame in `reconcile_puppets`) and sends it in the guest's frame (wc.proto `Taunt`: the
+  ship's network id), and the host writes its own slots in (`rv_put_taunt`: the ship, the guest's ship as the
+  taunter). So each pilot can draw enemies onto its own ship. Play test M10.11; rig scenario `taunt`.
 - **Deaths:** `step_deaths` calls `delayedDespawn` when it first sees a ship dying, and that body starts the dying
   (shipAiState 9, the explosion's time); `despawn` ends it. The layer hears the kill as it did WC.EXE's.
 - **The scene** (`step_scene`): a ship is held off-scene by its distance from the nearest human, not the local

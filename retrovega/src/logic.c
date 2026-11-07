@@ -52,7 +52,8 @@ typedef struct {
     uint8_t gap;                        /* steps since its last volley (saturating): the profile's fire_gap */
     uint8_t leaving;                    /* 1: gone for good (the leave: away and removed far off); 0 not */
     uint8_t fear_up, fear_down;         /* its fear's rates (the profile's, or the mission ship's own: fear=) */
-    int16_t taunt;                      /* steps left of its anger at the player (logic_taunt) */
+    int16_t taunt;                      /* steps left of its anger at the pilot who taunted it (logic_taunt) */
+    uint8_t taunter;                    /* that pilot's ship's slot: this machine's own (0) or a guest's (rvTaunt) */
     uint8_t catching;                   /* 1: closing on its target at full speed (from CATCH_FAR_KM in), 0: at its
                                            attack speed */
     uint8_t burst_left;                 /* the leave's afterburner: steps left of this burst */
@@ -139,6 +140,8 @@ void logic_prepare_spawn(int16_t ship_index)
     _fmemset(&g_turn[ship_index], 0, sizeof(Turn));
     _fmemset(&g_mind[ship_index], 0, sizeof(Mind));
     g_mind[ship_index].target = g_mind[ship_index].leader = 0xFF;
+    if (ship_index < rvTaunt_SIZE)
+        rvTaunt[ship_index] = 0xFF;
     g_mind[ship_index].profile = profile_of(gInstanceShipTypes[ship_index], commAnimInfo[ship_index]);
     mind_rates(ship_index);
     g_missile[ship_index].weapon = 0xFFFF;
@@ -446,15 +449,18 @@ int16_t logic_order_of(int16_t s)
 
 /* an enemy fighter told what the player thinks of it (the comm menu's taunt): it turns on the player and nobody else
  * for TAUNT_STEPS, wherever the player is, and holds no fire for being the player's target (holds_fire).  A ship that
- * has already broken off stays gone (fighter_think); a capital ship does not rise to it: 0 */
+ * has already broken off stays gone (fighter_think); a capital ship does not rise to it: 0.  The taunt goes through
+ * rvTaunt, so a guest's reaches the host's AI (the user, 2026-11-07: "Will a second player help? Do their taunts make it
+ * through?"; they had not: the AI runs on the host and turned on slot 0, the host's pilot): this machine's pilot writes
+ * 0 there, the layer carries a guest's to the host as its ship's slot, and the AI that flies the ship takes it at its
+ * next thought */
 #define TAUNT_STEPS (20 * LOGIC_HZ)
 int16_t logic_taunt(int16_t s)
 {
-    if (s <= 0 || s >= NUM_SHIP_SLOTS || !slot_is_ship(s) || maybeEntityType[s] != ET_SHIP || shipAiState[s] == 9
+    if (s <= 0 || s >= rvTaunt_SIZE || !slot_is_ship(s) || maybeEntityType[s] != ET_SHIP || shipAiState[s] == 9
         || commAnimInfo[s] == commAnimInfo[0])
         return 0;
-    g_mind[s].taunt = TAUNT_STEPS;
-    g_mind[s].timer = 0;                /* (its tactic over: the next step picks afresh, with the player as its target) */
+    rvTaunt[s] = 0;
     return 1;
 }
 
@@ -687,6 +693,7 @@ void logic_start(const RvMission __far *m)
     _fmemset(g_mind, 0, sizeof g_mind);
     _fmemset(g_missile, 0, sizeof g_missile);
     _fmemset(g_order, 0, sizeof g_order);
+    _fmemset(rvTaunt, 0xFF, rvTaunt_SIZE);   /* (no taunts: 0 would be this machine's pilot's) */
     g_formed = 0;
     g_form_steps = 0;
     g_lock_steps = 0;
@@ -3366,6 +3373,12 @@ static void fighter_think(int16_t s)
     int16_t sit, k, near_ = -1;
     int32_t d, bd = INT32_C(0x7FFFFFFF);
     m->leader = leader_of(s);
+    if (rvTaunt[s] != 0xFF) {           /* a taunt: its anger at that pilot (logic_taunt) */
+        m->taunt = TAUNT_STEPS;
+        m->taunter = rvTaunt[s];
+        m->timer = 0;                   /* (its tactic over: picked afresh, with the taunter as its target) */
+        rvTaunt[s] = 0xFF;
+    }
     if (m->leaving) {                   /* (gone for good: the leave, nothing else) */
         leave_step(s, m, p);
         return;
@@ -3399,10 +3412,10 @@ static void fighter_think(int16_t s)
     }
     if (!m->raiding && near_ >= 0 && bd <= p->engage_km && (m->target == 0xFF || bd * 3 < km_between(s, m->target) * 2))
         m->target = (uint8_t)near_;
-    if (m->taunt) {                     /* taunted: the player, wherever it is and whoever is nearer (logic_taunt) */
+    if (m->taunt) {                     /* taunted: the taunter, wherever it is and whoever is nearer (logic_taunt) */
         m->taunt--;
-        if (slot_is_ship(0) && shipAiState[0] != 9)
-            m->target = 0;
+        if (slot_is_ship(m->taunter) && shipAiState[m->taunter] != 9)
+            m->target = m->taunter;
     }
     /* a wingman under orders (logic_order): the player's target wherever it is (ATTACK), the enemy nearest the player,
      * one on the player first (HELP), the enemy nearest it however far (BREAK), or nobody at all (FORMATION, RTB) */

@@ -2152,6 +2152,12 @@ private:
             } else if (ev.has_damage()) {
                 // One of that player's own rocks or mines hit a ship of ours.
                 enqueue_reported_damage(ev.damage());
+            } else if (ev.has_taunt() && is_rv()) {
+                // RetroVega: that player taunted a ship our AI flies: it turns on that player's ship.
+                int ship = NetworkShipId::from_net((int)ev.taunt().ship_id()).to_local();
+                int by = NetworkShipId::from_net(c->net).to_local();
+                rv_put_taunt(ship, by);
+                wclog(1, "player %d taunted ship %d (net %u): it turns on slot %d", c->net, ship, ev.taunt().ship_id(), by);
             } else {
                 wclog(2, "ignoring an event from player %d that is neither fire nor a hit report", c->net);
             }
@@ -3153,6 +3159,15 @@ public:
     virtual void reconcile_puppets() {
         if (seat_ != SEAT_WINGMAN) {
             return;
+        }
+        // Our pilot's taunts of the ships the server flies go to it (wc.proto Taunt): here the ship is a puppet.
+        for (int slot; (slot = rv_take_own_taunt()) > 0;) {
+            if (entities_.is_mapped(entities_.local_to_net(slot)) && entities_.local_to_net(slot) != shipNet_) {
+                Event ev;
+                ev.mutable_taunt()->set_ship_id((Bit32u)entities_.local_to_net(slot));
+                queue_outgoing_event(ev);
+                wclog(1, "taunt: ship %d (net %d) to the host", slot, entities_.local_to_net(slot));
+            }
         }
         rv_set_net_id(kPlayerSlot, shipNet_);
         bool mapped[kShipSlotCap + 1] = {};
