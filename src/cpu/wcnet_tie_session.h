@@ -30,6 +30,10 @@ void tie_session_before_move();
 // is made from the front end's mission name: a guest launching from the
 // Combat Chamber flies the host's mission.
 void tie_session_mission_path();
+// The room's mission (step 8): a mission file's name ("hg2w", "b5m1iw") flown whenever a pilot launches a Combat
+// Chamber mission, or "" for none (the Combat Chamber's own).  WCNET_TIE_MISSION at the launch; the page's
+// wc_web_tie_mission while the game runs.
+void tie_session_set_mission(const char *name);
 // The guns (step 6), at the entries of laser_createprojectile, collide_laserhitcraft and collide_damagecraft (the
 // arguments in eax, edx, ebx, ecx).
 void tie_session_shot();

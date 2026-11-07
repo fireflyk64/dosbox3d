@@ -29,6 +29,7 @@
 #include "wcnet_retrovega.h"
 #include "wcnet_lab.h"
 #include "wcnet_tie.h"
+#include "wcnet_tie_session.h"
 #include "paging.h"
 #include "callback.h"
 #include "cpu.h"
@@ -2059,6 +2060,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_tie_mouse(int mode) {
 }
 extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_stick(double x, double y) {
     wc::tie_controls_stick(x, y);
+}
+// TIE Fighter's room mission (wcnet_tie_session.cpp, step 8): the page's pick, a mission file's name or "" for none.
+extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_tie_mission(const char *name) {
+    wc::tie_session_set_mission(name);
 }
 extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_joy(double x, double y, int buttons) {
     g_webJoyX = x;

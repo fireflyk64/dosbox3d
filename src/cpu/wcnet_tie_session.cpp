@@ -400,6 +400,37 @@ const char *scene_words(int scene) {
     return "";
 }
 
+// The room's mission (docs/tiefighter.md, step 8): the file the page's menu picked for everybody, flown whenever a pilot
+// launches a Combat Chamber mission; none, the Combat Chamber's own.  WCNET_TIE_MISSION at the launch,
+// wc_web_tie_mission while the game runs (the host may change it between flights; its guests' pages follow).
+std::string g_pick;
+bool g_pickRead;
+
+// A mission file's name as the front end keeps it: the Combat Chamber's (h, the craft's letter, its number, w or m)
+// or a battle's (b<n>m<m>, the craft's letter, w or m), lower case.
+bool mission_file_name(const std::string &m) {
+    if (m.size() < 4 || m.size() > 13 || (m[0] != 'h' && m[0] != 'b')) {
+        return false;
+    }
+    for (size_t i = 0; i < m.size(); i++) {
+        if (!islower((unsigned char)m[i]) && !isdigit((unsigned char)m[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+const std::string &picked_mission() {
+    if (!g_pickRead) {
+        g_pickRead = true;
+        const char *env = getenv("WCNET_TIE_MISSION");
+        if (env && env[0]) {
+            tie_session_set_mission(env);
+        }
+    }
+    return g_pick;
+}
+
 std::string pilot_name(int seat) {
     if (seat >= 0 && seat < kMaxSeats && !g_net->pilots[seat].callsign.empty()) {
         return g_net->pilots[seat].callsign;
@@ -474,7 +505,7 @@ void call_to_action(double now) {
     std::string line;
     const bool briefing = h.known && ((h.scene >= 133 && h.scene <= 137) || (h.scene >= 179 && h.scene <= 183));
     if (h.known && !tie_in_flight() && (h.flying || briefing)) {
-        line = pilot_name(0) + (h.flying ? " is flying " : " is at the briefing for ") + mission_words(h.mission) + ": launch it to fly together";
+        line = pilot_name(0) + (h.flying ? " is flying " : " is at the briefing for ") + mission_words(h.mission) + ": launch a Combat Chamber mission to fly it together";
     }
     static double shownAt = -1e9;
     if (line.empty()) {
@@ -1347,32 +1378,62 @@ void tie_session_damage() {
     }
 }
 
-// A guest's game about to name the file of the mission it launches: from the Combat Chamber, the host's Combat Chamber
-// mission instead of its own pick, when the host is at its briefing or flying (a battle's file is the pilot's tour's:
-// not changed).  Only the 14 bytes of mission_name are written; the game makes the file's name from them next.
+void tie_session_set_mission(const char *name) {
+    std::string m;
+    for (const char *c = name ? name : ""; *c; c++) {
+        m += (char)tolower((unsigned char)*c);
+    }
+    g_pickRead = true;
+    if (!m.empty() && !mission_file_name(m)) {
+        wclog(0, "TIE: '%s' is no mission file's name: none picked", m.c_str());
+        m.clear();
+    }
+    if (m != g_pick) {
+        wclog(1, "TIE: the room's mission: %s", m.empty() ? "none (the Combat Chamber's own)" : m.c_str());
+    }
+    g_pick = m;
+}
+
+// The game about to name the file of the mission it launches (the briefing's map loads it, then the flight), from the
+// front end's mission_name.  A launch from the Combat Chamber flies, for a guest, the host's mission when the host is
+// at its briefing or flying; otherwise the room's pick, if any.  A battle launched from the tour is the pilot's tour's:
+// never changed.  Only the 14 bytes of mission_name are written; the game makes the file's name from them next.
 void tie_session_mission_path() {
-    if (!g_net || g_net->host || g_net->self < 0) {
+    if (!g_net || (!g_net->host && g_net->self < 0)) {
         return;
     }
-    const Pilot &h = g_net->pilots[0];
     const std::string ours = tie_mission_name();
-    const bool briefing = (h.scene >= 133 && h.scene <= 137) || (h.scene >= 179 && h.scene <= 183);
     const bool combat = ours.size() >= 2 && (ours[0] == 'h' || ours[0] == 'H');
-    const bool hostCombat = h.mission.size() >= 2 && (h.mission[0] == 'h' || h.mission[0] == 'H') && h.mission.size() < 14;
-    if (!h.known || !(h.flying || briefing) || !combat || !hostCombat) {
-        if (h.known && h.flying && !h.mission.empty() && ours != h.mission) {
-            notice("You launch " + mission_words(ours) + "; " + pilot_name(0) + " flies " + mission_words(h.mission) + ": not together");
+    const std::string &pick = picked_mission();
+    std::string want;
+    bool hostsOwn = false;
+    const Pilot *h = g_net->host ? NULL : &g_net->pilots[0];
+    if (h) {
+        const bool briefing = (h->scene >= 133 && h->scene <= 137) || (h->scene >= 179 && h->scene <= 183);
+        if (h->known && (h->flying || briefing) && combat && mission_file_name(h->mission)) {
+            want = h->mission;
+            hostsOwn = true;
         }
-        return;
     }
-    if (ours == h.mission) {
+    if (want.empty() && combat && !pick.empty()) {
+        want = pick;
+    }
+    const std::string flies = want.empty() ? ours : want;
+    wclog(1, "TIE: the mission's file: ours %s, flown %s (scene %d)", ours.c_str(), flies.c_str(), tie_scene());
+    if (h && h->known && h->flying && !h->mission.empty() && flies != h->mission) {
+        notice("You launch " + mission_words(flies) + "; " + pilot_name(0) + " flies " + mission_words(h->mission) + ": not together");
+    }
+    if (want.empty() || want == ours) {
         return;
     }
     for (size_t i = 0; i < 14; i++) {
-        tie_w8(tie::kMissionName + (Bit32u)i, i < h.mission.size() ? (Bit8u)h.mission[i] : 0);
+        tie_w8(tie::kMissionName + (Bit32u)i, i < want.size() ? (Bit8u)want[i] : 0);
     }
-    wclog(1, "TIE: launching the host's %s instead of our %s", h.mission.c_str(), ours.c_str());
-    notice("Flying " + pilot_name(0) + "'s mission, " + mission_words(h.mission) + " (you had picked " + mission_words(ours) + ")");
+    if (hostsOwn) {
+        notice("Flying " + pilot_name(0) + "'s mission, " + mission_words(want) + " (you had picked " + mission_words(ours) + ")");
+    } else {
+        notice("Flying the room's mission, " + mission_words(want) + " (the Combat Chamber had " + mission_words(ours) + ")");
+    }
 }
 
 void tie_session_mission_create() {
