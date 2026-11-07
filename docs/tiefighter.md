@@ -268,12 +268,12 @@ section 7 as it is worked on.
    a little ahead so that it is just on the other's screen; one fires
    lasers, the other ions.  Screenshots: the ions on the laser player's
    screen, and both players' fire on the ion player's.
-7. **Next: the controls the user asked for** (2026-11-06): the arrow keys steering
+7. **Done: the controls the user asked for** (2026-11-06, section 7, step 7): the arrow keys steering
    as RetroVega's do, a pointer-steer mode like RetroVega's mouse beside the
    game's own drag-to-steer (the 90s way, for those who want it), and a
    selector between them; all of it in the emulator, fed as the mickeys the
    game reads.
-7a. **All four selectable from the page's menu** (the user, 2026-11-06:
+7a. **Done: all four selectable from the page's menu** (the user, 2026-11-06:
    "Make sure the joystick, keyboard mouse and alternative mouse (point to
    aim like a joystick; middle doesn't move just like wc1 and retrovega
    mouse) also are selectable from web menu"): the joystick (a gamepad as
@@ -601,3 +601,47 @@ move vector, the nine axis words, type).
   (the brief: far shots are each game's own).  The impact flash of an
   applied hit sits where the bolt's segment ends (the collision test's
   offset, `collidexoff..`, has no retail address in OpenTIE yet).
+
+### Step 7: the flight controls (2026-11-06)
+
+* **How TIE steers** (OpenTIE `feinput.c`): a frame's mouse motion is the
+  stick, 128 to a mickey across and 64 up and down, with nothing below
+  2,048 (17 mickeys a frame across and 33 up and down are the least that
+  turn; 191 and 127 the most); a joystick is 120 and 50 to a count.  So the
+  emulator steers by adding mickeys once a frame at its top
+  (`Mouse_AddMickeys`, no sensitivity, the pointer left where it is), and
+  by taking things from the game: keys at the keyboard
+  (`wc_net_key_filter`), the host mouse's motion at the mouse driver
+  (`Mouse_CursorMoved`).  Every piece answers only with TIE Fighter found.
+* **The arrows** steer by RetroVega's ramp (WC1's): a step every other
+  frame, 1 to 9 then 8 and 9, Shift 9 at once, the opposite arrow or
+  letting go 0; Up dives as a stick pushed forward.  TIE's own Left and
+  Right roll in flight: taken from it; the keypad's Ins and Del roll
+  instead, passed to the game as its own arrows (TIE's keyboard roll, a
+  step a press and a repeat).  Q, E, comma and period are TIE's own keys.
+* **The mouse**, `WCNET_TIE_MOUSE`: `pointer` (the default) moves a pointer
+  the emulator draws (an amber ring over the gunsight) and its distance from
+  the middle is the stick, held until it moves (above the middle climbs);
+  `drag` is the game's own; `keyboard` and `joystick` let it steer nothing.
+  F12 in flight cycles pointer, drag, keyboard.  A joystick's stick comes
+  from the page (`wc_web_stick`, -1..1, right and climbing positive; one that
+  stops saying for half a second is the middle).
+* **The page**: a "Flight" choice beside Controller with TIE Fighter loaded
+  (point to aim, drag to steer, keyboard alone, joystick / gamepad),
+  remembered in the browser, given at the launch and while flying
+  (`wc_web_tie_mouse`).  A controller steers TIE through the emulator's
+  stick whatever the mouse's mode, rolls on Ins and Del and fires with the
+  mouse's button, TIE's trigger.  The flight's keys are under the game.
+* **Measured** (the Combat Chamber's first mission, from rest, the nose's
+  direction a second before and after): the Right arrow turned the nose
+  right as the game's own mouse motion to the right did (+0.38 against
+  +0.22 across), Up dived as its motion forward did (-0.23 against -0.11),
+  Down climbed (+0.28), Left turned left (-0.36); the pointer left right of
+  the middle held a turn of 50 degrees a second, stopped with the pointer
+  back; in the keyboard's mode eight bursts of mouse motion did nothing.  In
+  the browser the choice showed with the game loaded, defaulted to the
+  pointer, and the page's guest held its turn with the pointer pushed aside.
+* **Open.**  The joystick's buttons beyond fire, roll and the keys (TIE's
+  own gamepad-less button meanings) are WC's mapping (target T, weapon W,
+  speed = and -: TIE's own keys for those); afterburner and missile buttons
+  mean nothing in TIE.
