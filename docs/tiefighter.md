@@ -320,11 +320,22 @@ move vector, the nine axis words, type).
   | TCP | the guest's of the host (still) | 70 | 0 / 0 | 0 |
   | lobby room (WebRTC) | the host's of the guest | 82 | 8 / 68 units | 25 (0.14 degrees) |
   | lobby room (WebRTC) | the guest's of the host (still) | 82 | 0 / 0 | 0 |
+  | room, the guest a browser page | the native host's of the page's | 330 | 18 / 111 units | 27 (0.15 degrees) |
+  | room, the guest a browser page | the page's of the host (still) | 315 | 0 / 0 | 0 |
 
   The room is a local lobby server's (`LOBBY=1`), its game data over
   lobbylink's WebRTC data channels natively, as the page has them; both
   emulators kept 60 frames a second (the guest dipped to 47 by the container
-  ring, as it does alone: the game's own drawing).
+  ring, as it does alone: the game's own drawing).  The browser page
+  (`scripts/web-tf.sh`: a native host and Chrome as the guest; two pages at
+  once would not fit the sandbox's 8 GB beside each other's 685 MB game)
+  took GOG's installer, joined the room, and flew at 59 to 61 frames a
+  second.  Two things the browser rig taught: the page's game has no pilot
+  (GOG's `TOPACE10.TFR` is in `__support/save`, which the page leaves out as
+  installer junk), so the guest types a name at the registration desk as a
+  player does; and a site that serves `wc.tar.gz` makes a fresh page "ready"
+  with Wing Commander before the installer is unpacked, so the rig serves
+  the site as deployed, without it.
 
   A T/F is some 1,300 units across: the copy is a fraction of a frame
   behind.  The guest's craft is on the host's screen where its report puts
@@ -342,5 +353,22 @@ move vector, the nine axis words, type).
 * **Open.**  A puppet still collides and takes damage on the machine that
   only shows it (both pilots flew into the container ring once and each
   died on both machines): step 6.  The rates are one report a frame for
-  every pilot's craft: step 5.  Not yet tried in the browser itself (two
-  pages in a room: the same channels, the page's own glue).
+  every pilot's craft: step 5.
+
+### Step 3: notices through DOSBox (begun 2026-11-06)
+
+* **Where each pilot is: the front end's scene.**  `shellext_Get_Cur_Scene`
+  (0x6621B) reads `mov eax,[0x356F8]; mov ax,[eax+0x14]`: the scene head's
+  pointer at image 0xF56F8 (the address is a fixup into the data object),
+  the scene at +0x14 of it (`tie_scene()`).  Walked from boot: 6 to 80 the
+  opening, 100 the registration desk, 110 the concourse, 130 and 131 the
+  Combat Chamber, 133 its briefing map, 3 its flight (the main-game flag
+  1); OpenTIE's `SCENE_*` names the rest (160 the tour desk, 179 to 183 the
+  briefing, 190 to 192 the debriefing, 2 a training flight, 4 a battle's).
+* **The lines so far** are the overlay's (the emulator draws them over the
+  picture; nothing of the game is touched): a guest's arrival on the host
+  ("NAME joined as pilot 2 of 2"), a guest's own ("In HOST's room as pilot
+  2 of 2"), the host flying while a guest is not ("The host is flying:
+  launch the same mission to join the flight"), a pilot gone.  The Wing
+  Commander comms hint ("use the '0' key") is not shown over TIE Fighter: it
+  has no chat line yet.
