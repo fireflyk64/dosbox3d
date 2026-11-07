@@ -73,6 +73,9 @@ static struct {
     int watch;                          /* RV_BOT_WATCH: the escort nearly gone, turn to see it (a recording's) */   /* RV_BOT_PAUSE: seconds after a kill before the next (a pilot's breath) */   /* RV_BOT_PASSIVE: at the escort, nothing (the wingman kept in formation) */
     long tgt_esc, tgt_player, tgt_other, tgt_none, esc_hits, esc_hits_60;   /* the attackers' targets, frame by frame */
     long esc_shots_60;                  /* bolts fired by ships targeting the escort, the first 60 s */
+    long foe_mis_player, foe_mis_esc;   /* enemy missiles that struck the player, the escort */
+    long foe_launches;                  /* enemy missiles launched */
+    uint32_t missile_slots;             /* the slots holding a missile last frame, a bit a slot */
     uint64_t done_us;
     const char *mode;
 } B;
@@ -529,11 +532,11 @@ static void say_result(void)
         return;
     fprintf(stderr, "bot: result status %u victory %u escort_lost %d escort %ld/%ld seconds %d shots %ld hits %ld "
             "(%.1f%%) missiles %ld missile_hits %ld kills %u hits_taken %ld hull %d seed %u arrival esc %.0f near %.0f "
-            "near_esc %.0f first_at_esc %d esc_dead_at %d targets(60s) esc %ld player %ld other %ld none %ld esc_hits %ld (60s %ld) esc_shots(60s) %ld\n",
+            "near_esc %.0f first_at_esc %d esc_dead_at %d targets(60s) esc %ld player %ld other %ld none %ld esc_hits %ld (60s %ld) esc_shots(60s) %ld foe_missiles player %ld escort %ld launched %ld\n",
             missionStatus, victoryPoints, logic_escort_lost(), B.escort_least, B.escort_start,
             B.flight_frames / LOGIC_HZ, B.shots, B.hits, B.shots ? 100.0 * B.hits / B.shots : 0.0, B.missiles_fired,
             B.missile_hits, logic_splashes, B.hits_taken, g_sys.hull, B.seed, B.arr_esc, B.arr_near, B.arr_near_esc,
-            B.arr_first_at_esc, B.esc_dead_at, B.tgt_esc, B.tgt_player, B.tgt_other, B.tgt_none, B.esc_hits, B.esc_hits_60, B.esc_shots_60);
+            B.arr_first_at_esc, B.esc_dead_at, B.tgt_esc, B.tgt_player, B.tgt_other, B.tgt_none, B.esc_hits, B.esc_hits_60, B.esc_shots_60, B.foe_mis_player, B.foe_mis_esc, B.foe_launches);
     fflush(stderr);
 }
 
@@ -566,6 +569,18 @@ static void flight_tick(void)
             t0 = now;
         fprintf(stderr, "bot: %d s flown, %.0f s on the clock; hull %d%%, escort %ld/%ld\n", B.flight_frames / LOGIC_HZ,
                 now - t0, g_sys.hull, B.escort_least, B.escort_start);
+    }
+    {   /* enemy launches: a slot newly holding an enemy's missile */
+        uint32_t now = 0;
+        int k;
+        for (k = 1; k <= RV_MAX_SHIP_SLOT; k++)
+            if (maybeEntityType[k] == ET_MISSILE) {
+                now |= 1ul << k;
+                if (!(B.missile_slots >> k & 1) && parentShipForShip[k] != 0xFF && parentShipForShip[k] <= RV_MAX_SHIP_SLOT
+                    && commAnimInfo[parentShipForShip[k]] != commAnimInfo[0])
+                    B.foe_launches++;
+            }
+        B.missile_slots = now;
     }
     esc = escort_slot();
     if (esc > 0) {
@@ -848,6 +863,12 @@ void bot_thunk(uint16_t fn, const uint16_t *args)
         }
         if (dst == 0 && shooter != 0)
             B.hits_taken++;
+        if (missile && args[2] >= 60 && shooter > 0 && commAnimInfo[shooter] != commAnimInfo[0]) {
+            if (dst == 0)
+                B.foe_mis_player++;
+            else if (B.escort_slot > 0 && dst == B.escort_slot)
+                B.foe_mis_esc++;
+        }
         if (B.escort_slot > 0 && dst == B.escort_slot && shooter >= 0 && commAnimInfo[shooter] != commAnimInfo[0]) {
             B.esc_hits++;
             if (B.arrived && B.flight_frames - B.arrived < 60 * LOGIC_HZ)
