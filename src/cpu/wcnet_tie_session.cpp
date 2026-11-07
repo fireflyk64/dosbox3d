@@ -1333,7 +1333,7 @@ void report_frame(double now) {
                  g_net->nearBlends, g_net->hitsShown);
         g_net->localAiStarts = g_net->localAiEnds = g_net->localShots = g_net->farReports = g_net->nearBlends = g_net->hitsShown = 0;
         g_net->farErrSum = g_net->farErrMax = 0;
-        wclog(1, "TIE: wall %.0f frame %llu as pilot %d, %u peers;%s%s%s", wall_ms(), (unsigned long long)g_net->frame, g_net->self + 1,
+        wclog(2, "TIE: wall %.0f frame %llu as pilot %d, %u peers;%s%s%s", wall_ms(), (unsigned long long)g_net->frame, g_net->self + 1,
               (unsigned)g_net->peers.size(), sums, far, line.c_str());
     }
 }
@@ -1810,7 +1810,7 @@ void tie_session_mission_path() {
         want = pick;
     }
     const std::string flies = want.empty() ? ours : want;
-    wclog(1, "TIE: the mission's file: ours %s, flown %s (scene %d)", ours.c_str(), flies.c_str(), tie_scene());
+    wclog(2, "TIE: the mission's file: ours %s, flown %s (scene %d)", ours.c_str(), flies.c_str(), tie_scene());
     if (h && h->known && h->flying && !h->mission.empty() && flies != h->mission) {
         notice("You launch " + mission_words(flies) + "; " + pilot_name(0) + " flies " + mission_words(h->mission) + ": not together");
     }
