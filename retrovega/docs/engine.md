@@ -243,7 +243,13 @@ farthest point is LUYTEN4's Nav 2, 105,000 km out; SHELTON2 has a wave 35,000 km
 keep them in 32 bits (RVGAME v21, world.h `NAV_REC_KM`, `MSHIP_REC_KM`). **A nav point has a reach** (`reach=KM` on
 its line, the old record's word at +43: 10,000 to 32,500 km): within it the point is reached and its ships come, and
 the autopilot stops at it, facing the point, as the old one did (traced 2026-11-04: it stopped 10,389, 15,189 and
-15,335 km short of points of 10,000, 15,000 and 15,000). The launch's is 20,000 (`HOME_REACH_KM`, its Tiger's Claw's in
+15,335 km short of points of 10,000, 15,000 and 15,000), where the point has ships still to come; where it has nobody to
+come the autopilot goes on to 1,200 km of it (`NAV_CLOSE_KM`; traced 2026-11-07, the old autopilot to Enyo 1's empty
+nav 2: 1,171 km a moment after its jump; the user: "I thought you had to get within 1500 or 1000 km in the original to
+have 'visited' something"). A waypoint inside a field (six in the 40 missions, Enigma 1's nav 2 among them) is the
+field: reached only inside it, the autopilot taking the player 3,000 km short of the field's middle, facing it, where
+the rocks come (`nav_field`, `nav_goal`, `nav_stop`; the user, 2026-11-06: "asteroids were supposed to be entirely
+surrounding nav 2"; play test M8.55). The launch's is 20,000 (`HOME_REACH_KM`, its Tiger's Claw's in
 36 of its 40 missions); three hidden points at the launch with 0 in the old records have 5,000, the way home's
 encounters, as before. The carrier may be asked for landing from 25,000 km (`LANDING_RANGE_KM`). The autopilot home,
 with nothing on the way, goes on past the launch's reach to 4,000 km off the carrier's hull, facing it

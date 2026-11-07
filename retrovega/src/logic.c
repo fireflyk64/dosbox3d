@@ -289,17 +289,25 @@ static void nav_goal(int16_t n, int32_t *x, int32_t *y, int32_t *z)
     *z = f >= 0 ? g_fields[f].z : NAV_AT(n, 2);
 }
 
-/* how far short of its goal (nav_goal) the autopilot stops for nav point n, km: the point's reach; for a point in a
- * field FIELD_IN_KM short of the field's middle, at most half its radius: the rocks come 3,050 km ahead of the nose
- * (rocks.c FX_SPAWN_KM) and only while that point is in the field, so the player stops in the field facing its middle
- * (stopped short of the point itself, facing it, the point ahead was outside the field: no rocks came) */
+static int16_t nav_has_ships(int16_t n);
+
+/* how far short of its goal (nav_goal) the autopilot stops for nav point n, km.  The old game's (traced 2026-11-07,
+ * Enyo 1, tests/wc1/run-old.sh: the user, "I thought you had to get within 1500 or 1000 km in the original to have
+ * 'visited' something"): at a point with ships still to come, at its reach, where they come (15,000 km short of its
+ * nav 1 and its three Dralthi); at a point with nobody to come, NAV_CLOSE_KM short (its nav 2, a field and no ships,
+ * fields off: 1,171 km a moment after the jump).  For a point in a field FIELD_IN_KM short of the field's middle, at
+ * most half its radius: the rocks come 3,050 km ahead of the nose (rocks.c FX_SPAWN_KM) and only while that point is in
+ * the field, so the player stops in the field facing its middle */
+#define NAV_CLOSE_KM 1200
 #define FIELD_IN_KM 3000
 static int32_t nav_stop(int16_t n)
 {
     int16_t f = nav_field(n);
-    if (f < 0)
-        return nav_reach(n);
-    return g_fields[f].radius / 2 < FIELD_IN_KM ? g_fields[f].radius / 2 : FIELD_IN_KM;
+    if (f >= 0)
+        return g_fields[f].radius / 2 < FIELD_IN_KM ? g_fields[f].radius / 2 : FIELD_IN_KM;
+    if (n > 0 && !nav_has_ships(n) && NAV_CLOSE_KM < nav_reach(n))
+        return NAV_CLOSE_KM;
+    return nav_reach(n);
 }
 
 /* the player within nav point n's reach (measured straight, as the autopilot puts it there); a point in a field, within

@@ -4251,6 +4251,19 @@ static void t_full_map(void)
     REQUIRE(slot_is_ship(home), e_back, pt_km(0, home), maybeEntityType[home], 0);
 }
 
+#define PT_CLOSE_KM 1200                /* (logic.c NAV_CLOSE_KM: the autopilot to a point with nobody to come stops this far
+                                           short of it, the old game's) */
+
+/* a test mission's nav point with ships of its own (logic.c nav_has_ships, before any are killed) */
+static int16_t pt_nav_ships(uint8_t id)
+{
+    int16_t i;
+    for (i = 0; i < (int16_t)g_tm.nship; i++)
+        if (g_tm.ship[i].nav == id)
+            return 1;
+    return 0;
+}
+
 /* the field of the test mission a nav point lies in, -1 none (logic.c nav_field) */
 static int16_t pt_nav_field(const RvNav __far *n)
 {
@@ -4271,11 +4284,13 @@ static void t_campaign_way(void)
     static const char __far e_way[] = "mission %d: waypoint %d not reached after %d legs";
     static const char __far e_stop[] = "mission %d: the autopilot to a waypoint left the player %d km from it: its reach "
         "is %d";
+    static const char __far e_close[] = "mission %d: the autopilot to a waypoint with nobody to come left the player %d km "
+        "from it: 1,200, the old game's";
     static const char __far e_infield[] = "mission %d: the autopilot to a waypoint in a field left the player %d km from "
         "the field's middle: its radius is %d";
     static const char __far e_went[] = "the autopilot went %d times (the player put at the next waypoint %d) in %d missions: "
         "it should take most legs";
-    int16_t i, k, leg, s, next, went = 0, put = 0;
+    int16_t i, k, leg, s, next, went = 0, put = 0, ships;
     uint16_t m;
     for (m = 0; m < g_nmissions; m++) {
         camp_mission(m, &g_tm);
@@ -4294,13 +4309,16 @@ static void t_campaign_way(void)
                 break;
             for (i = 0; i < 8 && g_sys.nav != g_tm.nav[next].id; i++)
                 logic_nav_next();
+            ships = pt_nav_ships(g_tm.nav[next].id);   /* (before the jump: they come as it is reached) */
             if (logic_autopilot()) {
                 int32_t d = pt_km_to(0, g_tm.nav[next].x, g_tm.nav[next].y, g_tm.nav[next].z);
                 int16_t f = pt_nav_field(&g_tm.nav[next]);
                 if (logic_nav_seen(g_tm.nav[next].id) && f >= 0) {   /* (into the waypoint's own field) */
                     d = pt_km_to(0, g_tm.field[f].x, g_tm.field[f].y, g_tm.field[f].z);
                     REQUIRE(d < g_tm.field[f].radius, e_infield, m, d, g_tm.field[f].radius);
-                } else if (logic_nav_seen(g_tm.nav[next].id))   /* (gone all the way: no field nor point stopped it) */
+                } else if (logic_nav_seen(g_tm.nav[next].id) && !ships)   /* (nobody to come: close) */
+                    REQUIRE(d > PT_CLOSE_KM - 200 && d < PT_CLOSE_KM + 300, e_close, m, d, 0);
+                else if (logic_nav_seen(g_tm.nav[next].id))   /* (gone all the way: no field nor point stopped it) */
                     REQUIRE(d > (int32_t)g_tm.nav[next].reach * 9 / 10 && d < (int32_t)g_tm.nav[next].reach * 6 / 5,
                             e_stop, m, d, g_tm.nav[next].reach);
                 went++;
@@ -5712,7 +5730,8 @@ static void t_way_ahead(void)
 {
     static const char __far e_field[] = "a field at 10,000 km, 1,000 across: the autopilot stopped at %d km (returned %d): wanted some 8,500";
     static const char __far e_edge[] = "at the field's edge the autopilot went on to %d km: it should refuse";
-    static const char __far e_past[] = "past the field the autopilot left the player at %d km: wanted some 15,000, at the nav point's reach";
+    static const char __far e_past[] = "past the field the autopilot left the player at %d km: wanted some 18,800, 1,200 "
+        "short of a nav point with nobody to come (the old game's)";
     static const char __far e_hid[] = "a hidden point at 10,000 km: the autopilot stopped at %d km: wanted some 5,500 "
         "(500 inside its reach of 5,000)";
     static const char __far e_came[] = "the hidden point's ships did not come (%d enemies in the world)";
@@ -5729,7 +5748,7 @@ static void t_way_ahead(void)
     REQUIRE(logic_autopilot() == 0, e_edge, (int)TO_KM(gPositionVector[0].z), 0, 0);
     pt_put(0, 0, 0, 12000, 0);
     r = logic_autopilot();
-    REQUIRE(r == 1 && labs(TO_KM(gPositionVector[0].z) - (NAV1_Z - PT_REACH_KM)) < 150, e_past,
+    REQUIRE(r == 1 && labs(TO_KM(gPositionVector[0].z) - (NAV1_Z - PT_CLOSE_KM)) < 150, e_past,
             (int)TO_KM(gPositionVector[0].z), 0, 0);
     pt_mission();
     pt_nav(1, 0, 0, NAV1_Z);
