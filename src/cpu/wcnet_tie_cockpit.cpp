@@ -71,11 +71,12 @@ struct Derived {
     const char *name;           // the spec's internal name: <cockpit dir>\<name>.INT
     const char *forward;        // its forward view's LFD
     int kind;
+    const char *parts;          // its parts file (<name>.PNL) with its own craft's icon; NULL: the gunboat's parts
     bool made;
 };
 Derived g_derived[] = {
-    { kShuttleSpec, "SHUTTLE", "SHUTFWD", kForwardShuttle, false },
-    { 13, "Z95", "Z95FWD", kForwardZ95, false },
+    { kShuttleSpec, "SHUTTLE", "SHUTFWD", kForwardShuttle, NULL, false },
+    { 13, "Z95", "Z95FWD", kForwardZ95, "Z95P", false },
 };
 
 // -- the files' formats ---------------------------------------------------------------------------------------------
@@ -834,6 +835,156 @@ bool make_forward_z95(const std::vector<Bit8u> &gunboat, int w, int h, int depth
     return true;
 }
 
+// -- the parts (step 14) --------------------------------------------------------------------------------------------
+// A parts file (the INT names it at 0x62A, its sprites' count after): the instruments' sprites one after another,
+// each the PANL's opcodes (above), every row ended by 254, the sprite by 255.  The gunboat's 30..33 are the shield
+// display's little picture of the player's own craft (its back: 19x14 at 640x480, 9x9 at 320x200), red, yellow,
+// green and white by the hull's state.
+
+enum { kPartsName = 0x62A, kIconSprite = 30, kIconSprites = 4 };
+
+// Each sprite's first byte, and the file's end last.
+std::vector<size_t> sprite_starts(const std::vector<Bit8u> &d) {
+    std::vector<size_t> starts;
+    size_t p = 0;
+    while (p < d.size()) {
+        starts.push_back(p);
+        while (p < d.size()) {
+            const Bit8u op = d[p++];
+            if (op == 251) p += 1;
+            else if (op == 252 || op == 253) p += 2;
+            else if (op == 255) break;
+        }
+    }
+    starts.push_back(d.size());
+    return starts;
+}
+
+std::vector<std::vector<Bit8u> > sprite_rows(const std::vector<Bit8u> &d, size_t p, size_t end) {
+    std::vector<std::vector<Bit8u> > rows(1);
+    Bit8u base = 0;
+    while (p < end) {
+        const Bit8u op = d[p++];
+        if (op < 251) {
+            for (int k = 0; k <= (op & 3); k++) rows.back().push_back((Bit8u)((op >> 2) + base));
+        } else if (op == 251 && p < end) {
+            base = d[p++];
+        } else if ((op == 252 || op == 253) && p + 1 < end) {
+            const Bit8u a = d[p], b = d[p + 1];
+            p += 2;
+            for (int k = 0; k <= (op == 252 ? b : a); k++) rows.back().push_back(op == 252 ? (Bit8u)(a + (k & 1)) : b);
+        } else if (op == 254) {
+            rows.push_back(std::vector<Bit8u>());
+        } else {
+            break;
+        }
+    }
+    if (rows.back().empty()) rows.pop_back();
+    return rows;
+}
+
+void put_sprite(std::vector<Bit8u> &out, const std::vector<std::vector<Bit8u> > &rows) {
+    for (size_t y = 0; y < rows.size(); y++) {
+        const std::vector<Bit8u> &r = rows[y];
+        for (size_t x = 0; x < r.size();) {
+            size_t n = 1;
+            while (x + n < r.size() && r[x + n] == r[x] && n < 256) n++;
+            out.push_back(253);
+            out.push_back((Bit8u)(n - 1));
+            out.push_back(r[x]);
+            x += n;
+        }
+        out.push_back(254);
+    }
+    out.push_back(255);
+}
+
+// The Z-95 from behind (the user: "the little pixel art gunboat star on the bottom left should be a z-95 shape if
+// possible, or else just squashed somehow like a back view --8[]8--"): wings straight out with a gun at each tip, an
+// engine each side of the fuselage, the canopy on top.  1 the darkest of the icon's shades .. 4 the brightest.
+const char *const kZ95Big[14] = {
+    "...................",
+    "...................",
+    "........141........",
+    ".......14441.......",
+    ".......23332.......",
+    "....43423332434....",
+    "4...31323332313...4",
+    "4333434233324343334",
+    "4...31323332313...4",
+    "....43423332434....",
+    ".......23332.......",
+    ".......12221.......",
+    "........111........",
+    "...................",
+};
+const char *const kZ95Small[9] = {
+    ".........",
+    "....4....",
+    ".4.232.4.",
+    ".3.232.3.",
+    "433333334",
+    ".3.232.3.",
+    ".4.232.4.",
+    "...111...",
+    ".........",
+};
+
+double luminance(const std::vector<Bit8u> &pltt, Bit8u c) {
+    if (pltt.size() < 2 || c < pltt[0] || c > pltt[1] || 2 + (size_t)(c - pltt[0]) * 3 + 2 >= pltt.size()) return c;
+    const Bit8u *rgb = &pltt[2 + (size_t)(c - pltt[0]) * 3];
+    return 0.3 * rgb[0] + 0.59 * rgb[1] + 0.11 * rgb[2];
+}
+
+// The gunboat's parts with the Z-95's icon instead of its own, in each of the icon's colorings: its background (the
+// sprite's first pixel) kept, its other colors by brightness (the view's palette) the shades 1..4.
+bool make_parts_z95(const std::vector<Bit8u> &gunboat, const std::vector<Bit8u> &pltt, std::vector<Bit8u> &out, std::string &why) {
+    const std::vector<size_t> starts = sprite_starts(gunboat);
+    if (starts.size() < kIconSprite + kIconSprites + 1) {
+        why = "too few sprites";
+        return false;
+    }
+    out.assign(gunboat.begin(), gunboat.begin() + (long)starts[kIconSprite]);
+    for (int v = 0; v < kIconSprites; v++) {
+        const std::vector<std::vector<Bit8u> > rows = sprite_rows(gunboat, starts[kIconSprite + v], starts[kIconSprite + v + 1]);
+        if (rows.empty() || rows[0].empty()) {
+            why = "an empty icon";
+            return false;
+        }
+        const int w = (int)rows[0].size(), h = (int)rows.size();
+        const Bit8u bg = rows[0][0];
+        std::vector<Bit8u> shades;
+        for (int y = 0; y < h; y++) {
+            for (size_t x = 0; x < rows[y].size(); x++) {
+                const Bit8u c = rows[y][x];
+                if (c != bg && std::find(shades.begin(), shades.end(), c) == shades.end()) shades.push_back(c);
+            }
+        }
+        if (shades.empty()) {
+            why = "an icon of one color";
+            return false;
+        }
+        for (size_t i = 1; i < shades.size(); i++) {        // (by brightness: a few colors)
+            for (size_t j = i; j > 0 && luminance(pltt, shades[j - 1]) > luminance(pltt, shades[j]); j--) std::swap(shades[j - 1], shades[j]);
+        }
+        const bool big = w >= 19 && h >= 14;
+        const char *const *art = big ? kZ95Big : kZ95Small;
+        const int aw = big ? 19 : 9, ah = big ? 14 : 9, ox = (w - aw) / 2, oy = (h - ah) / 2;
+        std::vector<std::vector<Bit8u> > icon((size_t)h, std::vector<Bit8u>((size_t)w, bg));
+        for (int y = 0; y < ah; y++) {
+            for (int x = 0; x < aw; x++) {
+                const char c = art[y][x];
+                if (c < '1' || c > '4' || y + oy < 0 || y + oy >= h || x + ox < 0 || x + ox >= w) continue;
+                const size_t k = (size_t)((c - '1') * (int)(shades.size() - 1) + 1) / 3;
+                icon[(size_t)(y + oy)][(size_t)(x + ox)] = shades[std::min(k, shades.size() - 1)];
+            }
+        }
+        put_sprite(out, icon);
+    }
+    out.insert(out.end(), gunboat.begin() + (long)starts[kIconSprite + kIconSprites], gunboat.end());
+    return true;
+}
+
 // One cockpit directory's <name>.INT and its forward view's LFD.
 bool make_cockpit(localDrive *drive, const char *dir, int w, int h, const Derived &dv) {
     std::vector<Bit8u> intBytes, fwd;
@@ -859,6 +1010,23 @@ bool make_cockpit(localDrive *drive, const char *dir, int w, int h, const Derive
     if (own) {
         memset(&intBytes[1], 0, 9);
         memcpy(&intBytes[1], dv.forward, strlen(dv.forward));
+    }
+    if (dv.parts) {
+        // (its own parts: the gunboat's with this craft's icon on the shield display; the gunboat's own if not made)
+        char partsName[10] = { 0 };
+        memcpy(partsName, &intBytes[kPartsName], 9);
+        std::vector<Bit8u> gunboatParts, parts;
+        const Resource *pltt = NULL;
+        std::vector<Resource> fwdRes;
+        if (parse_lfd(gunboatFwd, fwdRes)) pltt = find_res(fwdRes, "PLTT");
+        why.clear();
+        if (pltt && read_file(host_path(drive, d + "\\" + partsName + ".PNL"), gunboatParts) &&
+            make_parts_z95(gunboatParts, pltt->body, parts, why) && write_file(host_path(drive, d + "\\" + dv.parts + ".PNL"), parts)) {
+            memset(&intBytes[kPartsName], 0, 9);
+            memcpy(&intBytes[kPartsName], dv.parts, strlen(dv.parts));
+        } else {
+            wclog(1, "TIE: the %s's parts in %s not made (%s): the gunboat's own", dv.name, dir, why.empty() ? "not read" : why.c_str());
+        }
     }
     if (!write_file(host_path(drive, d + "\\" + dv.name + ".INT"), intBytes)) {
         wclog(0, "TIE: %s\\%s.INT could not be written", dir, dv.name);
