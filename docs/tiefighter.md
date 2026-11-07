@@ -354,7 +354,7 @@ section 7 as it is worked on.
    |---|---|---|
    | T/A | T/A + T/A | HA1W |
    | T/D | T/D + T/A | B9M2..B9M6, HD1W, HD2W, HD3M |
-   | T/I | T/F + T/F; T/I + T/F if a T/F is too slow for the mission's timing (to be judged mission by mission) | B5M1 (the minefield, unshielded), HI1W, HI3M |
+   | T/I | T/I + T/F (the user, 2026-11-07: "When we aren't adding ships the types should remain as is") | B5M1 (the minefield, unshielded), HI1W, HI3M |
    | gunboat | gunboat + a standard Imperial shuttle (not the escort shuttle; the gunboat's cockpit for the shuttle for now) | B10M1, B10M2, HG1W, HG3M |
    | T/F | T/F + T/F | B1M1, HF1W, HF3M, HF4M, TRAIN |
    | missile boat | missile boat + a standard Imperial shuttle (the user, later: "otherwise the gunboat could do some ion cannon shenanigans and the designers probably didn't think of that") | B10M5, B10M6, B11M1..B11M7, B12M6, B13M1, B13M4, HM1W, HM2W |
@@ -363,8 +363,8 @@ section 7 as it is worked on.
    How: a flight group has one craft type (+0x32), so a mixed pair is a
    second flight group for the second pilot, a copy of the player's record
    with the other type and a count of 1 (the mission's 48 at most), the
-   goals left on the first; T/I to two T/F changes the group's type and
-   count.  The cockpit follows the craft the pilot flies; the shuttle has
+   goals left on the first.  The mission's own craft keep their type: only
+   a craft added for a pilot is another.  The cockpit follows the craft the pilot flies; the shuttle has
    none of its own.
    **Done: the shuttle's cockpit** (section 7, step 9), made by the
    emulator from the player's own gunboat cockpit: an A of struts instead
@@ -916,9 +916,9 @@ the Jedi (seen from outside) as the reference.
 * **Where.**  At `fediskio_loadspecies`'s entry (the mission read, its craft
   not yet loaded), on every machine alike, before the cockpit's step.  A
   mission whose player flight group is one craft (its +0x33) gets the user's
-  pairing by its craft type (+0x32): T/I (6): the group becomes T/Fs (5), and
-  the seats give each pilot one, as for a group of the same craft; T/B (7) +
-  T/F, T/D (9) + T/A (8), gunboat (16) + shuttle (17), missile boat (12) +
+  pairing by its craft type (+0x32): T/I (6) + T/F (5) (until 2026-11-07 the
+  group became T/Fs; the user: "When we aren't adding ships the types should
+  remain as is"), T/B (7) + T/F, T/D (9) + T/A (8), gunboat (16) + shuttle (17), missile boat (12) +
   shuttle: the player's group copied as a second one at the end of the table
   (the header's count +1) in the guests' craft, one craft for each seat after
   the host's (a third pilot flies the same as the second: "The third should be
@@ -942,9 +942,9 @@ the Jedi (seen from outside) as the reference.
   guest a T/F (flight group 19); battle 5 mission 1 (`b5m1iw`, the minefield):
   both T/Fs side by side, both killed by the mines after a minute and each
   death seen once on the other machine.
-* **Open.**  The copy's goals are the player's group's (usually none); the
-  T/I's timing judgement (the user: "unless there's a timing aspect where T/F
-  is too slow").  (Three machines: measured, step 10.)
+* **Open.**  The copy's goals are the player's group's (usually none).  (The
+  T/I's timing judgement: no longer one, the T/I flies as it is; three
+  machines: measured, step 10.)
 
 ### Step 11: the page's picture and options for TIE Fighter (2026-11-06)
 

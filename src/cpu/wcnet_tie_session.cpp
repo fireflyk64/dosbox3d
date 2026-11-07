@@ -150,7 +150,7 @@ struct TieNet {
     std::string roomMission;
     double waitSaidAt = -1e9;
     int pairedFg = -1;          // this mission's second flight group, the guests' (step 9), or -1
-    int pairedType = 0;         // ... the pairing's craft (the guests', or the T/I's T/F), 0: none
+    int pairedType = 0;         // ... the pairing's craft (the guests'), 0: none
     int hostFg = -1;            // ... and the host's, the mission's player group
     int playerFg;               // this mission's player flight group, and the number (1-based) of the host's craft in it
     int hostCraft;
@@ -1928,8 +1928,11 @@ void tie_session_mission_path() {
 // gunboat (or missile boat + standard imperial shuttle depending on difficulty) / T/B -> T/B + T/F", then for the missile
 // boat "we need to do missile boat + shuttle because otherwise the gunboat could do some ion cannon shenanigans"; a third pilot
 // flies the same as the second ("The third should be same as the guest in all cases").
+// The user, 2026-11-07: "When we aren't adding ships the types should remain as is": the mission's own craft keep their type
+// (the T/I stays a T/I, its partner a T/F beside it); a group with craft for every pilot flies as it is.
 int paired_type(int type) {
     switch (type) {
+    case 6: return 5;       // T/I + T/F (the mission's T/I as it is)
     case 7: return 5;       // T/B + T/F: one flies the torpedo work, the other point defense
     case 9: return 8;       // T/D + T/A
     case 12: return 17;     // missile boat + the standard Imperial shuttle (the user: "otherwise the gunboat could do some ion
@@ -1940,9 +1943,9 @@ int paired_type(int type) {
 }
 
 // At fediskio_loadspecies's entry (the mission read, its craft not yet loaded), on every machine alike: a mission
-// flown alone gets its pairing.  T/I: the player's group becomes T/Fs (the seats then give each pilot one).  A pair of
-// two crafts: the player's group copied as a second one at the end, in the guests' craft, one for each seat after
-// the host's, starting and flying 0.4 km to the side; a guest flies its own craft of it.
+// flown alone gets its pairing.  A pair of two crafts: the player's group copied as a second one at the end, in the
+// guests' craft, one for each seat after the host's, starting and flying 0.4 km to the side; a guest flies its own
+// craft of it.
 // Step 14, the Z-95 challenge (the user, 2026-11-07: "replace all tie fighter missions in the combat trainer with the
 // gunboat missions that don't need ion cannons or the tie interceptor missions if they do, and the ship you fly is the
 // z95 headhunter but do a substitution of imperial equivalents of each rebel craft etc... These are meant to be
@@ -2202,14 +2205,6 @@ void make_pairing(bool again) {
     if (count != 1) {
         return;             // (wingmen of its own: each pilot takes one, the seats' way)
     }
-    if (type == 6) {
-        tie_fly_group_as(pfg, 5);
-        g_net->pairedType = 5;
-        if (!again) {
-            notice("Flown by two: T/Fs for the mission's T/I");
-        }
-        return;
-    }
     const int second = paired_type(type);
     if (!second || numFg >= 48) {
         return;
@@ -2269,11 +2264,6 @@ void keep_pairing() {
         const Bit32u to = tie::kFlightGroups + (Bit32u)g_net->pairedFg * tie::kFlightGroupSize;
         if (numFg == g_net->pairedFg + 1 && tie_r8(to + 0x32) == g_net->pairedType) {
             return;
-        }
-    } else {
-        const int pfg = tie_r8(tie::kPstate + 0x0A);
-        if (pfg < numFg && tie_r8(tie::kFlightGroups + (Bit32u)pfg * tie::kFlightGroupSize + 0x32) == g_net->pairedType) {
-            return;     // (the T/I's group still T/Fs)
         }
     }
     make_pairing(true);
