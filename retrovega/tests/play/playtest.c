@@ -3644,6 +3644,44 @@ static void t_seeker_chases(void)
             (int32_t)(maybeEntityType[m] == ET_MISSILE ? 1 : 0), 0, 0);
 }
 
+/* M7.10: a missile's blast as the old game's (ovr143:1DCF, every missile 6000; the user, 2026-11-07: "do they match
+ * wc1 ... or do they do just a pinprick here"): a dumbfire into a Nicander side on takes 93 off it (its shield's 50 and
+ * its side armour's 30 at least), a second Nicander 450 km beside it loses some 18 (its hull about 320 km from the
+ * blast), a third 1,600 km off nothing */
+static void t_missile_blast(void)
+{
+    static const char __far e_miss[] = "the dumbfire did the Nicander no harm in 10 s";
+    static const char __far e_struck[] = "the Nicander struck lost %d: 80 or more expected (the blast's 93)";
+    static const char __far e_near[] = "the Nicander 450 km off lost %d: 5 to %d expected (93 / k^2 of 6000, k 18)";
+    static const char __far e_far[] = "the Nicander 1,600 km off lost %d: beyond the blast";
+    int16_t l, i;
+    uint16_t m;
+    int32_t x, h1, h2, h3;
+    pt_alone(PT_PLAYER);
+    REQUIRE((l = pt_launcher(0)) >= 0, e_nolaunch, PT_PLAYER, 0, 0);
+    x = (int32_t)GUN_MOUNT_X(0, l) * collide_half(0) / 32 / 256;
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, x, (int32_t)GUN_MOUNT_Y(0, l) * collide_half(0) / 32 / 256, 2500, TURN / 4);
+    pt_ship(2, PT_ENEMY, SIDE_AERA, CTL_FROZEN, x + 450, 0, 2500, TURN / 4);
+    pt_ship(3, PT_ENEMY, SIDE_AERA, CTL_FROZEN, x - 1600, 0, 2500, TURN / 4);
+    playerCanBeDamaged = 0;
+    g_sys.target = 1;
+    rvTarget[0] = 1;
+    playerTarget = 1;
+    h1 = pt_health(1);
+    h2 = pt_health(2);
+    h3 = pt_health(3);
+    m = fireGunFromShip(0, (uint16_t)l);
+    REQUIRE(m <= RV_MAX_SHIP_SLOT && maybeEntityType[m] == ET_MISSILE, e_nomissile, l, m, 0);
+    for (i = 0; i < 10 * SEC && pt_health(1) == h1; i++)
+        if (!pt_step())
+            return;
+    REQUIRE(pt_health(1) < h1, e_miss, 0, 0, 0);
+    EXPECT(h1 - pt_health(1) >= 80, e_struck, h1 - pt_health(1), 0, 0);
+    EXPECT(h2 - pt_health(2) >= 5 && h2 - pt_health(2) < h1 - pt_health(1), e_near, h2 - pt_health(2),
+           h1 - pt_health(1), 0);
+    EXPECT(h3 == pt_health(3), e_far, h3 - pt_health(3), 0, 0);
+}
+
 /* M7.6 */
 static void t_missile_ends(void)
 {
@@ -7334,6 +7372,7 @@ static const char __far n_m6_4[] = "M6.4 capital-map (shot_hit): a capital ship 
 static const char __far n_m6_5[] = "M6.5 capital-ram (collide_ships): a fighter against a capital ship is its silhouettes under every hit= and ram= setting";
 static const char __far n_m6_7[] = "M6.7 ram-owner (ram): a collision is worked out where its pilot is, or where no ship in it is another machine's";
 static const char __far n_m7_9[] = "M7.9 seeker-chases (missile_step, SEEKER_LIFE_STEPS): a heat seeker turns onto a target past its range and hits it";
+static const char __far n_m7_10[] = "M7.10 missile-blast (missile_step, blast): a missile hurts the ship it strikes by 93 and those within 1,000 km by less";
 static const char __far n_m7_8[] = "M7.8 puppet-launch (missile_launch, step_fire): a launch by another machine's ship homes on the target that machine published";
 static const char __far n_m8_29[] = "M8.29 scene-human (step_scene): a ship near another machine's pilot stays in the scene";
 static const char __far n_m8_30[] = "M8.30 human-seat-lost (logic_wingman_lost): a wingman a person flew, killed, is no named pilot's death";
@@ -7439,7 +7478,7 @@ static const PtTest __far k_tests[] = {
     { n_m11_1, t_sim_waves, 0 }, { n_m11_2, t_sim_replenish, 0 }, { n_m11_3, t_sim_win, 0 }, { n_m11_4, t_sim_death, 0 },
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
-    { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m7_9, t_seeker_chases, 0 }, { n_m8_29, t_scene_human, 0 },
+    { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m7_9, t_seeker_chases, 0 }, { n_m7_10, t_missile_blast, 0 }, { n_m8_29, t_scene_human, 0 },
     { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 }, { n_m8_56, t_nav_switch, 0 }, { n_m8_57, t_escort_arrive, 0 }, { n_m8_58, t_escort_threat, 0 },
 };
 

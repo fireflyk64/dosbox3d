@@ -226,8 +226,9 @@ you in, if you were careful"; read in its code and measured, tests/wc1/README.md
 enemy near, as the old game tried them in turn: 1 - (5/8)^n). A turret's shot (`capital_shot`, in the replayed
 `fireGunFromShip`, its dice the step's, the ship's and the gun's) goes to a place about the target, a way off on each
 axis by up to 400 km and `CAP_SPREAD_FRAMES` frames of the target's travel more: mostly a flak burst there (weapon
-`FLAK`, placed, bursting a step later in `step_shots`: `flak_burst` hurts every ship whose hull is within 500 km by
-1000 / k², k from 8 at the hull to 25 at 500 km, the player three quarters of it, nothing at 1), now and then a bolt
+`FLAK`, placed, bursting a step later in `step_shots`: `flak_burst`, a `blast` of 1000, hurts every ship whose hull is
+within 500 km by 1000 / k², k from 8 at the hull to 25 at 500 km, the player three quarters of it, nothing at 1; a
+missile's blast is the same code at 6,000), now and then a bolt
 (40 in 100 when the ship is ready for one, else 8; a bolt makes it wait 7 to 16 frames), which dies 5 to 12 frames
 short of that place, so it seldom reaches a fighter. A still pilot 2,250 km off is worn down (M8.44: 352 points in two
 minutes, the old game's 409 on its bigger Scimitar); one at 200 kps is grazed (36; the old 57). A launcher fires at the

@@ -96,7 +96,7 @@ static uint8_t __far g_capbolt_wait[NUM_SHIP_SLOTS];
                                            frames, fits 6) */
 #define CAP_HULL_POINTS 14              /* a capital hull's count in points, a laser's hit (hull_take; ships.csv: count x 14) */
 #define WEAPON_FLAK 0x1F                /* the burst's own weapon (data/weapons.csv): not drawn, no sound (step_shots) */
-#define FLAK_KM 500                     /* a burst hurts a ship whose hull is within this */
+#define BLAST_KM 1000                   /* a blast (flak, a missile) hurts a ship whose hull is within this: blast() */
 
 /* the old game's dice for a capital ship's turret: a hash of the step, the ship, the gun and which roll, the same on
  * every machine the layer replays a call on (as an AI's scatter is: gun_fire) */
@@ -1973,6 +1973,39 @@ static uint16_t missile_launch(uint16_t ship, uint16_t gun, const RvWeapon __far
     return (uint16_t)s;
 }
 
+/* a blast at `at` (the old game's ovr143:1DCF, a flak burst's and every missile's): each ship but `skip` whose hull is
+ * within BLAST_KM hurt by power / k^2, k 8 at the hull to 25 at 500 km, 30 past it, 40 past 750, at most 100; the
+ * player by three quarters of that, at least 1; what comes to 1 or less does nothing.  The damage's source is src, or
+ * shot_source(shot_i) made when first needed (src -1) */
+static void blast(const RvVec3 *at, int16_t skip, int16_t src, int16_t shot_i, uint16_t power)
+{
+    int16_t k;
+    for (k = 0; k < NUM_SHIP_SLOTS; k++) {
+        const RvShipType __far *t;
+        int32_t d;
+        uint16_t kk, q;
+        if (k == skip || !slot_is_ship(k) || shipAiState[k] == 9 || (t = slot_type(k)) == 0)
+            continue;
+        d = len_of(TO_KM(gPositionVector[k].x - at->x), TO_KM(gPositionVector[k].y - at->y),
+                   TO_KM(gPositionVector[k].z - at->z)) - (int32_t)t->radius_km;
+        if (d > BLAST_KM)
+            continue;
+        kk = d > 750 ? 40 : d > 500 ? 30 : (uint16_t)(8 + (d > 0 ? d : 0) * 17 / 500);
+        q = power / kk / kk;
+        if (q > 100)
+            q = 100;
+        if (k == 0)
+            q = q * 3 / 4 > 1 ? (uint16_t)(q * 3 / 4) : 1;
+        if (q <= 1)
+            continue;
+        if (src < 0)
+            src = shot_source(shot_i);
+        if (k == 0 && shots_on_hit)     /* (the player's: the shield's or the hull's sound; the puff is the picture) */
+            shots_on_hit(0, at, skip, q);
+        (void)do_damage((uint16_t)src, (uint16_t)k, q, RV_WHERE(at));
+    }
+}
+
 /* a seeker's nose toward its target's lead point (where the target will be when it gets there), by at most its rate */
 static void missile_seek(int16_t s, int16_t t, int16_t dps)
 {
@@ -2043,8 +2076,12 @@ static void missile_step(int16_t s)
             || labs(gPositionVector[s].z - gPositionVector[k].z) > h)
             continue;
         if (collide_segment(k, (const LfVec *)&last, (const LfVec *)&gPositionVector[s], &lh, 0)) {
-            hit = vec3(lh.x, lh.y, lh.z);
-            (void)do_damage((uint16_t)s, (uint16_t)k, w->damage, RV_WHERE(&hit));
+            hit = vec3(lh.x, lh.y, lh.z);   /* the ship struck its damage at the place (the player three quarters, as
+                                               the old game's blast at its hull), the rest the blast's: its launcher too */
+            (void)do_damage((uint16_t)s, (uint16_t)k, k || w->kind != RV_WK_MISSILE ? w->damage : w->damage * 3 / 4,
+                            RV_WHERE(&hit));
+            if (w->kind == RV_WK_MISSILE)
+                blast(&hit, k, s, 0, w->damage << 6);   /* (the old game's 6000 = 93 << 6: 93 at the hull) */
             ship_clear(s);
             return;
         }
@@ -3686,37 +3723,14 @@ static void step_motion(void)
 
 /* 5. the shots fly (shots_move) and hit (shot_hit: the ship and the place; do_damage through its thunk with
  * shot_source(i) as the source; shot_remove).  Backwards: a removed shot's index goes to the last one */
-/* a flak burst where shot i is (the old game's ovr143:1DCF): every ship but its owner's whose hull is within FLAK_KM of
- * it hurt by 1000 / k^2, k 8 at the hull to 25 at FLAK_KM (15 points to 1), the player by three quarters of that, at
- * least 1; what comes to 1 or less does nothing.  The puff is the flight's (shots_on_flak) */
+/* a flak burst where shot i is: a blast of 1000 (15 points at the hull, 1 at 500 km) on every ship but its owner's.
+ * The puff is the flight's (shots_on_flak) */
 static void flak_burst(int16_t i)
 {
     const Shot __far *f = shot(i);
     RvVec3 at;
-    int16_t k, src = -1;
     at = vec3(f->x, f->y, f->z);
-    for (k = 0; k < NUM_SHIP_SLOTS; k++) {
-        const RvShipType __far *t;
-        int32_t d;
-        uint16_t kk, q;
-        if (k == f->owner || !slot_is_ship(k) || shipAiState[k] == 9 || (t = slot_type(k)) == 0)
-            continue;
-        d = len_of(TO_KM(gPositionVector[k].x - at.x), TO_KM(gPositionVector[k].y - at.y), TO_KM(gPositionVector[k].z - at.z))
-            - (int32_t)t->radius_km;
-        if (d > FLAK_KM)
-            continue;
-        kk = (uint16_t)(8 + (d > 0 ? d : 0) * 17 / FLAK_KM);
-        q = (uint16_t)(1000 / kk / kk);
-        if (k == 0)
-            q = q * 3 / 4 > 1 ? (uint16_t)(q * 3 / 4) : 1;
-        if (q <= 1)
-            continue;
-        if (src < 0)
-            src = shot_source(i);
-        if (k == 0 && shots_on_hit)     /* (the player's: the shield's or the hull's sound; the puff is the picture) */
-            shots_on_hit(0, &at, f->owner, q);
-        (void)do_damage((uint16_t)src, (uint16_t)k, q, RV_WHERE(&at));
-    }
+    blast(&at, f->owner, -1, i, 1000);
     if (shots_on_flak)
         shots_on_flak(&at);
 }

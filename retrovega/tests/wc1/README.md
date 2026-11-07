@@ -149,7 +149,7 @@ data/weapons.csv; the guns' energy rule is the type's `gun_energy_steps`, blank 
 | guns at the launch | full | full (`gunEnergy` 100 at spawn; it was 0 for every AI ship) |
 | the guns' reach | the Hornet's lasers hit from 3,800-4,000 km (the shot-to-hit pairs), the tailing Dralthi fired from 3,645 km (median) | `range_km` 4.5 for the fighters' guns (was 3.0: the bolts died before a receding target), `fire_km` 4,000 |
 | avoidance | the nearest two Dralthi 1,746 km apart, never a collision | `avoid_pct` 350 (with the lead, 300 left the hunted duel with two bumps in 90 s) |
-| the units (2026-10-31, the user: within a few percent of the old data) | shields 40/40 and armour 45/40/30/30 on the Hornet, 50/50 and 45/35/30/30 on the Dralthi, 60/50 and 85/80/65/65 on the Scimitar, 300/300 and 240/200/250/250 on the carrier (the traces at spawn); a laser hit 13-14, a dumbfire 24-25, the Dralthi's seeker 41 (the D lines); the hull a counter of hits through the armour, quantity/6 a hit on an NPC and quantity>>4 on the player (at least 1), the Dralthi dead at some 27 of them, the player's core 4 (the layer's notes, docs/wcnet-multiplayer.md) | the same numbers in ships.csv and weapons.csv (the untraced types x 14/3 of what they were); the hull as points: the Nicander 182 (13 laser hits), the Schroedinger 56 (4) |
+| the units (2026-10-31, the user: within a few percent of the old data) | shields 40/40 and armour 45/40/30/30 on the Hornet, 50/50 and 45/35/30/30 on the Dralthi, 60/50 and 85/80/65/65 on the Scimitar, 300/300 and 240/200/250/250 on the carrier (the traces at spawn); a laser hit 13-14 (the D lines; the "dumbfire 24-25, the Dralthi's seeker 41" read here then were missile blasts some way off a ship: every missile bursts for 93 on the ship it strikes, "Missiles' blasts" below); the hull a counter of hits through the armour, quantity/6 a hit on an NPC and quantity>>4 on the player (at least 1), the Dralthi dead at some 27 of them, the player's core 4 (the layer's notes, docs/wcnet-multiplayer.md) | the same numbers in ships.csv and weapons.csv (the untraced types x 14/3 of what they were); the hull as points: the Nicander 182 (13 laser hits), the Schroedinger 56 (4) |
 | the hit volume | the hunting Hornet's bolts hit a Dralthi with their line 200-300 km from its middle (hitvol.py over the traces; a crude line, the shot's carried velocity left out) | a bolt hits within the ship's `radius_km` of its middle (shots.c segment_in_sphere) as well as in its silhouettes; ours hardly hit past 150 km before, and the ships felt small and hard to hit |
 | the fighters' inaccuracy | they hit a hunting player with 13% of their shots and a straight one with 28%, firing 545 times in 190 s hunted | an AI's shot scatters up to 4 degrees about the nose (`AI_SCATTER` 18, a hash of the step, the ship and the gun), and it fires when its nose's line passes within 300 km of the lead point (`AIM_MISS_KM`): 13% and 25%, 114 shots hunted |
 | the fine aim | the tailing Dralthi's shots at 0.0 degrees off | the steer mapping gave no steer under 3 units of 1024 a turn (1.1 degrees): a tail's shots passed 45 km over a target 3,000 km ahead, every one (4% hits); the fine aim now steers the last degree too (`steer_of`), and a tail holds at 3,000 km (`TAIL_HOLD_KM`), not at the guns' 4,000-km edge where its bolts died on a receding target: 216 hits of 484 on a straight player (the old tail: 34 of 122) |
@@ -432,7 +432,23 @@ min(1500, rand(max(400, its distance word / 4)) + its speed x16)... either way; 
 bolt counter clear, else under 8, a bolt from the mount toward that place, its life the way there less 5 to 12 frames
 (spawnShip1B), the counter set to 7 to 16 frames; otherwise a burst there (an entity 0x30) that hurts every ship whose
 hull is within 1,000 km of it (ovr143:1DCF): 1000 / k², k 40 past 750 km, 30 past 500, 8 to 25 within, the player
-three quarters, at least one; only what is over 1 counts. The capital hull (ovr143:0F11): a count, a hit past the
+three quarters, at least one; only what is over 1 counts.
+
+**Missiles' blasts** (read 2026-11-07, the user: "do they match wc1 ... or do they do just a pinprick here"). A missile
+does not hurt what it strikes itself: hitByWeapon's case 0xB (ovr141:2331) ends it (delayedDespawn), and its explosion
+(outerSpawnExplosion, ovr143:1D0D: any entity below a ship's) turns the slot into an explosion type, 0x30 or 0x32, and
+bursts for that type's power (kShipStats +0x12): 6,000 for both, whatever the missile (the Dart DF's own 14,500, the
+Javelin HS's 13,500, the Spiculum IR's 11,500 and the Pilum FF's 10,500 are not read there). The burst is the flak's
+routine, ovr143:1DCF, over slots 0-9, the missile's own skipped and its launcher not: 6000 / k², at most 100 (`min`,
+seg002:0000), the player three quarters. So the ship struck (k 8) takes 93 and the player 69: the largest hit of 28 of the 29
+bursts in three traces (McAuliffe 3 twice and a missile run: Darts, Javelins and Pilums alike; the 29th burst far
+from any hull, 11), and those near less: 49 on a wingman 250 km
+from the blast, 10 on the launcher. A dying fighter bursts the same way for its own type's power (ovr143:1CE5: Hornet
+and Salthi 4,000, Rapier, Scimitar, Dralthi and Krant 6,000, Gratha 7,000, Raptor and Jalthi 8,000). Ours (logic.c
+`blast`, 2026-11-07): the four missiles and the Aera seeker 93 at the place struck (the player 69) and the burst on
+the rest at 93 x 64; the fighters' death bursts not built.
+
+The capital hull (ovr143:0F11): a count, a hit past the
 armour max(1, rest / 8) on the Kilrathi side, / 10 on the others.
 
 **Measured** (`run-old.sh` on McAuliffe 2, series 2 mission 1: the player put near the Ralari with `!pos`, the two

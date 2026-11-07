@@ -23,12 +23,12 @@ type,code,name,faction,kind,look,damage,damage_near,speed_kps,range_km,radius_km
 0x1D,FLKT,Flak Turret,terran,turret,bolt,50,30,2060,5.6,,,2,,,,laser_t,,"The old game's capital-ship gun (its weapon 1B, read from its ship table): a flak burst near its target mostly, now and then a bolt (logic.c capital_shot)"
 0x1E,FLKA,Flak Turret,aera,turret,star,50,30,2060,5.6,,,2,,,,penetrator,,"The old game's capital-ship gun (its weapon 1B, read from its ship table): a flak burst near its target mostly, now and then a bolt (logic.c capital_shot)"
 0x1F,FLAK,Flak Burst,terran,special,none,15,,0,0.5,,,0,,,,,,"A capital ship's flak burst (logic.c capital_shot, flak_burst): placed where it bursts, a step later; not drawn, no sound"
-0x20,DF,Dumbfire,terran,missile,missile,25,,1000,3.0,,,20,,none,,launch,Dumbfire,
-0x21,HS,Heat Seeker,terran,missile,missile,30,,900,4.0,,,20,,heat,3.0,launch,HeatSeeker,Locks from the target's rear arc
-0x22,IR,Image Recognition,terran,missile,missile,33,,950,5.0,,,20,,image,2.0,launch,ImageRecognition,
-0x23,FF,Friend or Foe,terran,missile,missile,25,,1000,4.0,,,20,,auto,0.2,launch,FriendOrFoe,Takes the nearest enemy; fooled by Rlaan jamming
+0x20,DF,Dumbfire,terran,missile,missile,93,,1000,3.0,,,20,,none,,launch,Dumbfire,"The old game's: every missile a blast of 6000, 93 on the ship struck (69 on the player), less on those within 1,000 km"
+0x21,HS,Heat Seeker,terran,missile,missile,93,,900,4.0,,,20,,heat,3.0,launch,HeatSeeker,"Locks from the target's rear arc. The old game's: every missile a blast of 6000, 93 on the ship struck (69 on the player), less on those within 1,000 km"
+0x22,IR,Image Recognition,terran,missile,missile,93,,950,5.0,,,20,,image,2.0,launch,ImageRecognition,"The old game's: every missile a blast of 6000, 93 on the ship struck (69 on the player), less on those within 1,000 km"
+0x23,FF,Friend or Foe,terran,missile,missile,93,,1000,4.0,,,20,,auto,0.2,launch,FriendOrFoe,"Takes the nearest enemy; fooled by Rlaan jamming. The old game's: every missile a blast of 6000, 93 on the ship struck (69 on the player), less on those within 1,000 km"
 0x24,TOR,Torpedo,terran,torpedo,missile,560,,400,6.0,,,60,,image,5.0,torpedo,Torpedo,Capital ships only
-0x28,AHS,Seeker,aera,missile,missile,41,,950,4.0,,,20,,heat,2.5,launch,HeatSeeker,
+0x28,AHS,Seeker,aera,missile,missile,93,,950,4.0,,,20,,heat,2.5,launch,HeatSeeker,"The old game's: every missile a blast of 6000, 93 on the ship struck (69 on the player), less on those within 1,000 km"
 0x29,JAV,Javelin Pod,aera,rocket,missile,28,,1300,2.5,,,6,,none,,rocket,Javelin,Four per trigger pull
 0x2A,ATP,Advanced Torpedo,aera,torpedo,missile,747,,500,6.0,,,60,,image,4.0,torpedo,AdvTorpedo,
 0x2B,PRC,Porcupine Mine,aera,mine,none,140,,0,0.5,,,40,,proximity,,mine,PorcupineMine,Dropped behind; lives 60 s

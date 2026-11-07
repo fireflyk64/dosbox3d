@@ -332,7 +332,12 @@ What to write:
   - **Homing:** a seeker steers toward `missileTarget` like a ship, then `ship_orthonormalise`.
   - **The move:** at its weapon's `speed_kps`.
   - **A hit:** `collide_segment(t, &last, &now, &hit, 0)` against each ship but its parent. On a hit,
-    `do_damage(missile_slot, t, damage, RV_WHERE(&hit))`, then the slot cleared (`ship_clear`).
+    `do_damage(missile_slot, t, damage, RV_WHERE(&hit))` (on the player three quarters of it), then for a missile
+    the blast (`blast`, the old game's ovr143:1DCF, flak's too): every other ship whose hull is within 1,000 km,
+    its launcher too, takes `damage x 64 / k²`, k 8 at the hull to 25 at 500 km, 30 past it, 40 past 750, at
+    most 100, the player three quarters; then the slot cleared (`ship_clear`). The old game's missiles all burst
+    for 6,000 (an explosion type's, whatever the missile): 93 on the ship struck, 69 on the player (McAuliffe 3's
+    traces, every direct hit), so ours are 93 (weapons.csv; they had been 25-41, read from hits some way off).
   - **Its range:** a missile ends when its weapon's range runs out; a seeker with a target chases for 40 s
     (`SEEKER_LIFE_STEPS`: the old game's seekers lived 591 frames and more, ours had died at their range in 3 s;
     the user, 2026-11-07: "make sure the position converges to the target unless the target jukes or corkscrews
@@ -351,7 +356,8 @@ What the tests expect:
 | M7.5 missile-homes | a friend-or-foe from the Gawain (its friend-or-foe launcher: it carries two each of four kinds), `missileTarget` set at launch, hurts a ship 31° off its nose |
 | M7.6 missile-ends | fired into empty space, it ends within twice its range's steps |
 | M7.7 dumbfire-aims | the Schroedinger's dumbfire at its chosen target 8° off the nose, side on 2,500 km out, hurts it within 10 s; with the target 30° off it sets off straight along the nose (last in the table: a test's dice are its place) |
-| M7.9 seeker-chases | the Schroedinger's heat seeker, locked, at a still Nicander 5,000 km off and 30� right of the nose (past the heat seeker's range of 4,000): it turns onto it and hits it within 10 s (with the old life it died after 88 steps) |
+| M7.9 seeker-chases | the Schroedinger's heat seeker, locked, at a still Nicander 5,000 km off and 30° right of the nose (past the heat seeker's range of 4,000): it turns onto it and hits it within 10 s (with the old life it died after 88 steps) |
+| M7.10 missile-blast | the Schroedinger's dumbfire into a still Nicander side on, 2,500 km out: it loses 80 or more (its shield's 50 and side armour's 30 at least; the blast's 93), a second Nicander 450 km beside it loses 5 or more and less than the first (its hull some 320 km from the blast: 20), a third 1,600 km off nothing |
 | M7.8 puppet-launch | a Gawain flown on another machine (a puppet) launches its seeker with that machine's target (slot 2) in missileTarget: the missile homes on 2; the player's own launch publishes its locked target there first (step_fire), for the layer to carry |
 
 ### M8: the mission (`logic_start`, `step_mission`, `enterNavPoint`, `logic_end`, `logic_autopilot`)
