@@ -68,6 +68,14 @@
 // `builtin`: a game the site itself serves (ours to give away), as a
 // .tar.gz beside the page: it is in every browser's "Play" menu with no
 // files dropped, fetched when it is flown.
+// `image`: a CD image among the game's files (GOG's game.gog, the disc as
+// raw sectors), mounted as drive D before the game runs (imgmount, an
+// ISO).  `keep`: files of the game that the installer-junk rule would drop
+// by their extension (TIE Fighter's IMUSE.INI).
+// `noRoomOptions`: the room's Conn and Collide choices are Wing Commander's (the frame exchange's mode, the asteroid
+// fields and wing bumps): none of them for this game, so the page leaves them out.  `screen`: the picture's shape on
+// the page, [width, height] (640 x 400 when none: Wing Commander's 320 x 200 doubled; TIE Fighter flies at 640 x 480,
+// whose rows a 400-row canvas would drop).
 
 // Wing Commander's Vega campaign: series 1.. and mission 0.. within the
 // series (what the MIS / SERIES environment of the hooks takes).  The system
@@ -206,6 +214,128 @@ const RV_CAMPAIGN = { series: [], manifest: "rv-campaign.json", missionArgs: rvM
                       start: { room: "Campaign from the quarters (the host's save game decides)",
                                alone: "Campaign from your quarters (your saves are in the bunk)" } };
 
+// (TIE Fighter's menu words) The TEXT resources of a LucasArts LFD file (an RMAP of 16-byte heads, type, name, size, then the bodies): each body a
+// count and that many records, a record a length and its strings, NUL-separated.
+function lfdTexts(data) {
+  const out = [];
+  const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  for (let i = 0; i + 16 <= data.length;) {
+    const type = String.fromCharCode(data[i], data[i + 1], data[i + 2], data[i + 3]);
+    const size = dv.getUint32(i + 12, true);
+    const end = Math.min(data.length, i + 16 + size);
+    if (type === "TEXT" && size >= 2) {
+      const records = [];
+      let p = i + 16;
+      const n = dv.getUint16(p, true);
+      p += 2;
+      for (let k = 0; k < n && p + 2 <= end; k++) {
+        const len = dv.getUint16(p, true);
+        const strs = [];
+        let s = "";
+        for (let q = p + 2; q < Math.min(end, p + 2 + len); q++) {
+          if (data[q] === 0) { if (s) strs.push(s); s = ""; } else s += String.fromCharCode(data[q]);
+        }
+        if (s) strs.push(s);
+        records.push(strs);
+        p += 2 + len;
+      }
+      out.push(records);
+    }
+    i = end;
+  }
+  return out;
+}
+
+// TIE Fighter's missions for the room's menu (docs/tiefighter.md, step 8): the files of its MISSION directory.
+// Series 1..7 are the Combat Chamber's craft in its own order (RESOURCE/SHIP1..7.LFD), four missions each; series
+// 11..23 the tour's battles 1..13 (RESOURCE/BATTLE1..13.LFD).  A picked mission reaches the game as its file's name
+// (WCNET_TIE_MISSION at the launch, wc_web_tie_mission while it runs): the hooks fly it whenever a pilot launches a
+// Combat Chamber mission, briefing and all (src/cpu/wcnet_tie_session.cpp).  None picked: the Combat Chamber's own,
+// the host's pick there flown by everybody.  The page words the menu from the game's own files when it has them
+// (tfMissionTexts: each craft's and battle's name and each mission's first sentence).
+const TF_CHAMBER = [["f", "T/F"], ["i", "T/I"], ["b", "T/B"], ["a", "T/A"], ["g", "Gunboat"], ["d", "T/D"], ["m", "Missile Boat"]];
+const TF_CRAFT = Object.fromEntries(TF_CHAMBER);
+const TF_BATTLES = [
+  ["b1m1fm", "b1m2fm", "b1m3bm", "b1m4im", "b1m5gm", "b1m6gm"],
+  ["b2m1fw", "b2m2bw", "b2m3iw", "b2m4gw", "b2m5fw"],
+  ["b3m1bm", "b3m2bm", "b3m3fm", "b3m4gm", "b3m5bm", "b3m6gm"],
+  ["b4m1fm", "b4m2bm", "b4m3bm", "b4m4im", "b4m5gm"],
+  ["b5m1iw", "b5m2gw", "b5m3gw", "b5m4aw", "b5m5gw"],
+  ["b6m1aw", "b6m2aw", "b6m3gw", "b6m4gw"],
+  ["b7m1am", "b7m2am", "b7m3aw", "b7m4dw", "b7m5dm"],
+  ["b8m1am", "b8m2dm", "b8m3dm", "b8m4dm", "b8m5dm", "b8m6dm"],
+  ["b9m1dw", "b9m2dw", "b9m3dw", "b9m4dw", "b9m5dw", "b9m6dw"],
+  ["b10m1gw", "b10m2gw", "b10m3am", "b10m4mm", "b10m5mm", "b10m6mw"],
+  ["b11m1mw", "b11m2mw", "b11m3mw", "b11m4mw", "b11m5mw", "b11m6mw", "b11m7mw"],
+  ["b12m1am", "b12m2am", "b12m3gm", "b12m4mm", "b12m5mm", "b12m6mm", "b12m7mm"],
+  ["b13m1mm", "b13m2mm", "b13m3mm", "b13m4mm", "b13m5aw", "b13m6aw", "b13m7aw", "b13m8aw"],
+];
+// (the craft a mission file is flown in: the Combat Chamber's second letter, a battle's next to last)
+const tfCraftOf = (file) => TF_CRAFT[file[0] === "h" ? file[1] : file[file.length - 2]] || "";
+const TF_CAMPAIGN = {
+  series: [
+    ...TF_CHAMBER.map(([l, craft], k) => ({ series: k + 1, group: "Combat Chamber", name: craft,
+      files: [1, 2, 3, 4].map((n) => `h${l}${n}${n < 3 ? "w" : "m"}`), missions: [] })),
+    ...TF_BATTLES.map((files, k) => ({ series: 11 + k, group: `Battle ${k + 1}`, name: `B${k + 1}M`, files, missions: [] })),
+  ],
+  noDefault: true,       // (a room for more starts with none picked: the Combat Chamber's own)
+  noneLabel: "the Combat Chamber's own (the host's pick there)",
+  noneShort: "Combat Chamber",
+  live: "wc_web_tie_mission",
+  file: (m) => { const s = TF_CAMPAIGN.series.find((e) => e.series === m.series); return (s && s.files[m.mis]) || ""; },
+  env: (m) => ({ WCNET_TIE_MISSION: TF_CAMPAIGN.file(m) }),
+  label(m, form) {
+    const s = this.series.find((e) => e.series === m.series);
+    const file = s && s.files[m.mis];
+    if (!file) return "no such mission";
+    const chamber = file[0] === "h";
+    const note = s.missions[m.mis] || "";
+    if (form === "short") return chamber ? `${s.name} ${m.mis + 1}` : `B${s.series - 10}M${m.mis + 1}`;
+    if (form === "menu") return `${chamber ? s.name + " " : "Mission "}${m.mis + 1}${chamber ? "" : " (" + tfCraftOf(file) + ")"}${note ? ": " + note : ""}`;
+    return chamber ? `the Combat Chamber's ${s.name} mission ${m.mis + 1}` : `battle ${s.series - 10}${s.title ? " (" + s.title + ")" : ""}, mission ${m.mis + 1}, in a ${tfCraftOf(file)}`;
+  },
+  start: { room: "None: the Combat Chamber's own (the host's pick there)" },
+  hints: {
+    host: "No mission picked: launch from the Combat Chamber and a guest's launch there flies yours. Pick one here to fly a battle's mission together; you may change it between flights.",
+    wing: "No mission picked: launch any Combat Chamber mission while the host is briefed or flying to fly the host's.",
+    forced: "Launching any Combat Chamber mission briefs and flies this one, for everybody (the tour's own battles stay each pilot's).",
+  },
+};
+// The game's own words for the menu, from its files ([{path, data}]): a mission's first sentence, a battle's name
+// ("AFTERMATH OF HOTH" as "Aftermath of Hoth").  Each SHIPn.LFD and BATTLEn.LFD holds one TEXT resource: its craft's or
+// battle's name, then a record of its mission files and a record of each one's description, in that order.
+TF_CAMPAIGN.fromFiles = function (files) {
+  const byPath = new Map(files.map((f) => [f.path.toUpperCase(), f.data]));
+  const sentence = (lines) => {
+    const t = lines.join(" ").replace(/\s+/g, " ").trim();
+    const m = /^.*?[.!?](?=\s|$)/.exec(t);
+    const s = m ? m[0] : t;
+    return s.length > 80 ? s.slice(0, 79).replace(/\s+\S*$/, "") + "…" : s;
+  };
+  const small = new Set(["of", "the", "a", "an", "and", "for", "at", "on", "in", "to"]);
+  // (only a name in capitals is cased again: "T/D Technology" stays; "MYLOK IV" keeps its numeral)
+  const titled = (t) => (t !== t.toUpperCase() ? t : t.toLowerCase().split(" ").map((w, i) => (/^[ivx]+$/.test(w) ? w.toUpperCase()
+    : i && small.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(" "));
+  let worded = 0;
+  for (const s of this.series) {
+    const file = s.series <= 7 ? `RESOURCE/SHIP${s.series}.LFD` : `RESOURCE/BATTLE${s.series - 10}.LFD`;
+    const data = byPath.get(file);
+    if (!(data instanceof Uint8Array)) continue;
+    const recs = (lfdTexts(data)[0] || []);
+    const at = recs.findIndex((r) => r.length && r.every((x) => s.files.includes(x.toLowerCase())));
+    if (at < 0) continue;
+    const list = recs[at].map((x) => x.toLowerCase());
+    for (let i = 0; i < s.files.length; i++) {
+      const k = list.indexOf(s.files[i]);
+      const desc = k >= 0 && recs[at + 1 + k];
+      if (desc && desc.length) s.missions[i] = sentence(desc);
+    }
+    if (s.series > 10 && recs[1] && recs[1][0]) s.title = titled(recs[1][0]);
+    worded++;
+  }
+  return worded;
+};
+
 export const GAMES = [
   { id: "wc1", tag: "WC1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
     build: { para: 0x1231, off: 0x0187, text: "Loading WING COMMANDER" },
@@ -283,6 +413,22 @@ export const GAMES = [
     // the flight's keys, under the picture (the game listed them on a VDU till the user had them moved out of it)
     keys: "<b>RetroVega in flight:</b> the mouse or the arrow keys steer (a tap turns a little, held they build to the full turn in a third of a second; <kbd>Shift</kbd> with an arrow turns at full at once), <kbd>Q</kbd> and <kbd>E</kbd> (or <kbd>,</kbd> and <kbd>.</kbd>, or the keypad's <kbd>Ins</kbd> and <kbd>Del</kbd>; a controller's roll axis too) roll (the same way), <kbd>Space</kbd> or the left button fires the guns, <kbd>Enter</kbd> a missile, <kbd>Tab</kbd> (or the keypad's <kbd>*</kbd>) the afterburner; <kbd>+</kbd> and <kbd>-</kbd> set the speed, <kbd>F</kbd> or <kbd>\\</kbd> full, <kbd>S</kbd> or <kbd>Backspace</kbd> stop; <kbd>T</kbd> the next target in front of you, <kbd>Y</kbd> the nearest enemy, <kbd>L</kbd> locks the target; <kbd>G</kbd> picks the guns, <kbd>W</kbd> the missile, <kbd>D</kbd> the damage readout; <kbd>N</kbd> the nav points (a white cross marks the one chosen), <kbd>A</kbd> the autopilot; <kbd>`</kbd> or <kbd>~</kbd> the ships between high detail and blocks, at once; <kbd>C</kbd> the comm menu: <kbd>1</kbd> your wingman (fly in formation, break formation, attack your target, help you out, return to base), <kbd>2</kbd> your target (taunt an enemy; with the carrier as your target, request landing within 25,000 km, granted once you have flown a nav point or finished the mission, then come within 2,000 km of it, afterburner off, to land), <kbd>9</kbd> never mind; flying with others, <kbd>0</kbd> (or a tap of <kbd>Shift</kbd>) talks to them. Home with every nav point flown and no enemy about, <b>PRESS FIRE TO LAND</b> shows under the gunsight: the trigger lands you; <kbd>R</kbd> the radar's range; <kbd>F5</kbd> the outside view, <kbd>F1</kbd> the cockpit. The simulator in the bar (click its chair) is Rlaan after Rlaan, on your own: <kbd>Esc</kbd> or <kbd>Caps Lock</kbd> leaves it.",
     dosbox: "[dosbox]\nmemsize=63\n[dos]\nxms=true\nems=false\numb=true\n[sblaster]\nsbtype=sb16\noplmode=opl3\n" },
+  // TIE Fighter (LucasArts, 1995: the Collector's CD-ROM as GOG sells it).
+  // TIE.EXE starts Z_TIE__.EXE, a 32-bit program under DOS/4GW; the disc
+  // (game.gog: the voices, and the check the game makes before anything
+  // else) must be in drive D, or the game quits at once.  Its 594 MB go into
+  // the browser's cache in parts (saveGame).  The machine is the one GOG's
+  // own configuration asks for (an S3 card for its 640x480 flight, 16 MB,
+  // EMS for the extender, a Sound Blaster 16 on IRQ 7).  Single-player
+  // until its hooks are built (docs/tiefighter.md).
+  { id: "tf", tag: "TF", title: "TIE Fighter", detect: ["TIE.EXE"], run: "tie", multiplayer: true,
+    image: "game.gog", keep: ["IMUSE.INI"], cycles: 60000, campaign: TF_CAMPAIGN, noRoomOptions: true, screen: [640, 480],
+    // (the launcher's own words: the hooks find the game's program in memory by its bytes, not by this file)
+    build: { text: "Loading TIE-Fighter CD" },
+    help: "TIE Fighter flown together, in its first stage: everybody in the room flies the same mission, each in a craft of the player's flight group, and sees the others' craft where they really are; the rest of the mission (the other craft, the shots, the damage) still runs on each machine on its own. The host may pick a mission for everybody in the room's menu, any of the Combat Chamber's and any battle's: launching any Combat Chamber mission then flies it, briefing and all (the host may change it between flights). With none picked, a guest's Combat Chamber launch flies the host's; the line over the game says where the others are and when the host launches. The tour's own battles stay each pilot's own. Space skips the opening; at the registration desk type a pilot's name (or click one) and take the door; in flight the mouse is the stick and its button fires, Backspace is full throttle. What is done and what comes next: docs/tiefighter.md.",
+    // the flight's controls as the emulator gives them (src/cpu/wcnet_tie_controls.cpp; the "Flight" choice beside Controller)
+    keys: "<b>TIE Fighter in flight:</b> the arrow keys steer (a tap turns a little, held they build to the full turn in a third of a second; <kbd>Shift</kbd> with an arrow turns at full at once; <kbd>Up</kbd> dives as a stick pushed forward), the keypad's <kbd>Ins</kbd> and <kbd>Del</kbd> roll. The mouse, as the <b>Flight</b> choice beside Controller has it: <i>point to aim</i> (a ring shows the pointer; the middle is still, the further the pointer the faster the turn, as in Wing Commander and RetroVega), <i>drag to steer</i> (the game's own, 1994), or nothing (the keyboard alone, or a joystick: a controller picked above, which also rolls and fires); <kbd>F12</kbd> in flight switches between the first three. The left button fires; <kbd>W</kbd> (held a moment) changes weapon, <kbd>Backspace</kbd> full throttle, <kbd>\\</kbd> none, <kbd>[</kbd> and <kbd>]</kbd> a third and two thirds; <kbd>T</kbd> and <kbd>R</kbd> target; <kbd>Esc</kbd> the game's options.",
+    dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
 ];
 
 // The registry entry of a game id, or null (a game picked by its executable).
@@ -307,6 +453,16 @@ export function knownBuild(game, files) {
   const exe = files.find((f) => !f.path.includes("/") && game.detect.includes(f.path.toUpperCase()));
   const d = exe && exe.data;
   if (!d || d.length < 28 || d[0] !== 0x4d || d[1] !== 0x5a) return false;
+  if (sig.para === undefined && !sig.rvhook) {
+    // (no data segment to go by: the words anywhere in the file)
+    const want = Array.from(sig.text, (ch) => ch.charCodeAt(0));
+    for (let i = 0; i + want.length <= d.length; i++) {
+      let k = 0;
+      while (k < want.length && d[i + k] === want[k]) k++;
+      if (k === want.length) return true;
+    }
+    return false;
+  }
   const image = (d[8] | (d[9] << 8)) * 16;
   let para = sig.para;
   if (sig.rvhook) {
@@ -397,9 +553,12 @@ const base = (p) => p.slice(p.lastIndexOf("/") + 1);
 const dir = (p) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
 const ext = (p) => { const b = base(p); return b.includes(".") ? b.slice(b.lastIndexOf(".") + 1).toLowerCase() : ""; };
 
+// (the files a game needs whatever their extension: the registry's `keep`)
+const KEEP = new Set(GAMES.flatMap((g) => g.keep || []).map((n) => n.toUpperCase()));
 function isJunk(path) {
   const parts = path.split("/");
   if (parts.slice(0, -1).some((d) => JUNK_DIRS.has(d.toLowerCase()))) return true;
+  if (KEEP.has(base(path).toUpperCase())) return false;
   return JUNK_EXT.has(ext(path));
 }
 
@@ -448,35 +607,96 @@ export function installFiles(FS, root, files) {
 }
 
 // -- IndexedDB cache ---------------------------------------------------------
+//
+// A game is one record in "games" (its files inline), but a browser holds a
+// record of some 127 MB at most (Chrome: "the serialized keys and/or value
+// are too large"), and TIE Fighter's disc image alone is 594 MB.  So a big
+// file (PART_FROM and up), and every file once the record's inline files
+// reach INLINE_BUDGET, is kept out of the record, in "parts": pieces of
+// PART_SIZE under the keys <game id>/<path>#<n>, the record holding
+// { parts, size } in their place.  Records of the first version (every file
+// inline) read as they are.
 
 const DB = "wc-web";
+const PART_SIZE = 32 * 1048576, PART_FROM = 8 * 1048576, INLINE_BUDGET = 64 * 1048576;
 function openDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore("games", { keyPath: "id" });
+    const req = indexedDB.open(DB, 2);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains("games")) db.createObjectStore("games", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("parts")) db.createObjectStore("parts", { keyPath: "id" });
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
-function tx(db, mode, fn) {
+function tx(db, mode, fn, stores = ["games"]) {
   return new Promise((resolve, reject) => {
-    const t = db.transaction("games", mode);
-    const r = fn(t.objectStore("games"));
+    const t = db.transaction(stores, mode);
+    const r = fn(...stores.map((n) => t.objectStore(n)));
     t.oncomplete = () => resolve(r && r.result);
     t.onerror = () => reject(t.error);
     t.onabort = () => reject(t.error);
   });
 }
+const partKey = (id, path, n) => `${id}/${path}#${n}`;
+const partRange = (id) => IDBKeyRange.bound(`${id}/`, `${id}/\uffff`);
 export async function saveGame(record) {
-  try { const db = await openDb(); await tx(db, "readwrite", (s) => s.put(record)); db.close(); return true; }
-  catch (e) { console.warn("cannot save the game files in this browser:", e); return false; }
+  try {
+    const db = await openDb();
+    let inline = 0;
+    const files = [], parts = [];
+    for (const f of record.files) {
+      const size = f.data.byteLength;
+      if (size >= PART_FROM || inline + size > INLINE_BUDGET) {
+        let n = 0;
+        for (let at = 0; at < size; at += PART_SIZE, n++) parts.push({ id: partKey(record.id, f.path, n), data: f.data.slice(at, Math.min(size, at + PART_SIZE)) });
+        files.push({ path: f.path, parts: n, size });
+      } else {
+        inline += size;
+        files.push(f);
+      }
+    }
+    await tx(db, "readwrite", (games, store) => {
+      store.delete(partRange(record.id));
+      for (const p of parts) store.put(p);
+      games.put({ ...record, files });
+    }, ["games", "parts"]);
+    db.close();
+    return true;
+  } catch (e) { console.warn("cannot save the game files in this browser:", e); return false; }
 }
 export async function loadGames() {
-  try { const db = await openDb(); const all = await tx(db, "readonly", (s) => s.getAll()); db.close(); return all || []; }
-  catch (e) { return []; }
+  try {
+    const db = await openDb();
+    const all = (await tx(db, "readonly", (s) => s.getAll())) || [];
+    for (const g of all) {
+      if (!g.files.some((f) => f.parts)) continue;
+      const parts = (await tx(db, "readonly", (s) => s.getAll(partRange(g.id)), ["parts"])) || [];
+      const byId = new Map(parts.map((p) => [p.id, p.data]));
+      g.files = g.files.map((f) => {
+        if (!f.parts) return f;
+        const data = new Uint8Array(f.size);
+        let at = 0;
+        for (let n = 0; n < f.parts; n++) {
+          const piece = byId.get(partKey(g.id, f.path, n));
+          if (!piece) throw new Error(`${g.title}: ${f.path} is missing part ${n} in this browser's cache`);
+          data.set(new Uint8Array(piece), at); at += piece.byteLength;
+        }
+        return { path: f.path, data };
+      });
+    }
+    db.close();
+    return all;
+  } catch (e) { console.warn("cannot read the saved games in this browser:", e); return []; }
 }
 export async function forgetGame(id) {
-  try { const db = await openDb(); await tx(db, "readwrite", (s) => s.delete(id)); db.close(); } catch (e) { /* ignore */ }
+  try {
+    const db = await openDb();
+    await tx(db, "readwrite", (games, parts) => { parts.delete(partRange(id)); games.delete(id); }, ["games", "parts"]);
+    db.close();
+  } catch (e) { /* ignore */ }
 }
 
 export function totalSize(files) { return files.reduce((n, f) => n + f.data.byteLength, 0); }

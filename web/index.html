@@ -201,7 +201,14 @@
   /* (640 x 400 whatever the game's mode, and narrower on a narrow screen: the
      emulator maps the pointer by the canvas's size on the page.) */
   #screen { position: relative; flex: none; width: min(640px, 100%); }
-  #canvas { display: block; width: 100%; height: auto; aspect-ratio: 8 / 5; background: black; image-rendering: pixelated; outline: 1px solid var(--line); }
+  /* (the game's shape: --screen-w / --screen-h, 640 x 400 or TIE Fighter's 640 x 480: web/wc.js, gameLook) */
+  #canvas { display: block; width: 100%; height: auto; aspect-ratio: var(--screen-w, 640) / var(--screen-h, 400); background: black; image-rendering: pixelated; outline: 1px solid var(--line); }
+  /* Cinema: as large as the window allows (its width, or its height when that is too short), centred on the window
+     (main is centred, so centring on #stage is centring on the window) */
+  body.cinema #screen { width: min(calc(100vw - 40px), calc((100vh - 56px) * var(--screen-w, 640) / var(--screen-h, 400)));
+    left: 50%; transform: translateX(-50%); }
+  body.cinema #stage { display: block; }      /* (the log below the picture: beside it, the picture would cover it) */
+  body.cinema #log { margin-top: 10px; }
   /* (Full screen is #screen's, so the touch controls come along: the picture letterboxed in it, as the emulator
      expects when it places a finger) */
   #screen:fullscreen { width: 100vw; height: 100vh; background: black; }
@@ -282,6 +289,13 @@
         <label id="firstnameLabel" hidden>First name <input type="text" id="firstname" placeholder="Christopher" maxlength="12"></label>
         <label>Last name <input type="text" id="lastname" placeholder="Blair"></label>
         <label>Controller <select id="padSelect"><option value="none">Keyboard + mouse</option></select></label>
+        <label id="tfFlightLabel" hidden title="TIE Fighter's flight: the arrow keys always steer (Shift for a full turn at once; the keypad's Ins and Del roll). The mouse either points to aim, as in Wing Commander and RetroVega (the middle is still, the further the pointer the faster the turn; a ring shows where it is), or drags to steer as the game itself has it (1994), or steers nothing (the keyboard alone, or a joystick: a controller picked above). F12 in flight switches between the first three. Remembered in this browser">Flight
+          <select id="tfFlight">
+            <option value="pointer">mouse: point to aim</option>
+            <option value="drag">mouse: drag to steer (the game's own)</option>
+            <option value="keyboard">keyboard alone</option>
+            <option value="joystick">joystick / gamepad</option>
+          </select></label>
         <label id="voiceLabel" title="Voice between the players, when everybody in the room has opted in">Voice <select id="voice">
           <option value="off">Off</option>
           <option value="listen">Listen only</option>
@@ -366,6 +380,7 @@
       <button type="button" id="fly" disabled>Fly</button>
       <button type="button" class="secondary" id="flySolo" hidden title="Fly the game alone, as it is, with its own wingman: the room becomes a room of one, nobody is told of it in the lobby and nobody can join">Fly Alone</button>
       <button type="button" class="secondary" id="fullscreen" hidden>Full screen</button>
+      <label class="check" id="cinemaLabel" title="Cinema: the picture as large as this window allows, without full screen (the window's width, or its height when the window is too short). Kept in this browser"><input type="checkbox" id="cinema"> Cinema</label>
       <span id="status">Load the game files and join a room first.</span>
     </div>
     <div id="stage">

@@ -28,6 +28,9 @@
 #include "wcnet_rv.h"
 #include "wcnet_retrovega.h"
 #include "wcnet_lab.h"
+#include "wcnet_tie.h"
+#include "wcnet_tie_session.h"
+#include "paging.h"
 #include "callback.h"
 #include "cpu.h"
 #include "regs.h"
@@ -41,6 +44,7 @@
 extern std::string incoming_text;
 
 bool wc_net_watch[0x10000];   // IPs with a hook, whatever the segment (tested in line by the CPU cores)
+bool wc_net_watch32[0x10000]; // ... and the low words of a 32-bit program's EIPs (TIE Fighter: wcnet_tie.cpp)
 Bit32s wc_net_countdown = 0;  // instructions until the next periodic call
 
 namespace wc {
@@ -266,19 +270,51 @@ static int rock_onto(int target) {
     return rock;
 }
 
-// Test aid: the game's screen (VGA mode 13h, 320x200, 256 colours) as a PPM
-// file, for runs with no display.
+// Test aid: the game's screen as a PPM file, for runs with no display: VGA
+// mode 13h (320x200 from A000:0) or a 256-colour VESA mode (what the CRTC
+// shows of video memory: TIE Fighter's 640x480).  A text mode goes to the
+// same name with .txt instead: its 80 x 25 characters.
 static bool write_screenshot(const std::string &path) {
+    if (vga.mode == M_TEXT) {
+        std::string txt = path.size() > 4 && path.compare(path.size() - 4, 4, ".ppm") == 0 ? path.substr(0, path.size() - 4) + ".txt" : path + ".txt";
+        FILE *f = fopen(txt.c_str(), "wb");
+        if (!f) {
+            return false;
+        }
+        const Bitu cols = vga.draw.address_add / 2 ? vga.draw.address_add / 2 : 80, rows = 25;
+        for (Bitu y = 0; y < rows; y++) {
+            for (Bitu x = 0; x < cols && x < 132; x++) {
+                Bit8u c = mem_readb(0xB8000 + (PhysPt)(vga.config.real_start * 2 + (y * cols + x) * 2));
+                fputc(c >= 32 && c < 127 ? c : c == 0 ? ' ' : '.', f);
+            }
+            fputc('\n', f);
+        }
+        fclose(f);
+        return true;
+    }
+    Bitu width = 320, height = 200;
+    bool banked = vga.mode == M_VGA;
+    if (vga.mode == M_LIN8) {
+        width = vga.draw.width;
+        height = vga.draw.height;
+    } else if (!banked) {
+        wclog(1, "screenshot: video mode %d is not one the test aid reads", (int)vga.mode);
+        return false;
+    }
     FILE *f = fopen(path.c_str(), "wb");
     if (!f) {
         return false;
     }
-    fprintf(f, "P6\n320 200\n255\n");
-    for (Bit32u i = 0; i < 320 * 200; i++) {
-        const RGBEntry &c = vga.dac.rgb[mem_readb(0xA0000 + i)];
-        fputc((c.red << 2) | (c.red >> 4), f);
-        fputc((c.green << 2) | (c.green >> 4), f);
-        fputc((c.blue << 2) | (c.blue >> 4), f);
+    fprintf(f, "P6\n%u %u\n255\n", (unsigned)width, (unsigned)height);
+    for (Bitu y = 0; y < height; y++) {
+        for (Bitu x = 0; x < width; x++) {
+            Bit8u index = banked ? mem_readb(0xA0000 + (PhysPt)(y * 320 + x))
+                                 : vga.draw.linear_base[(vga.config.real_start + y * vga.draw.address_add + x) & vga.draw.linear_mask];
+            const RGBEntry &c = vga.dac.rgb[index];
+            fputc((c.red << 2) | (c.red >> 4), f);
+            fputc((c.green << 2) | (c.green >> 4), f);
+            fputc((c.blue << 2) | (c.blue >> 4), f);
+        }
     }
     fclose(f);
     return true;
@@ -333,11 +369,13 @@ static void auto_keys() {
 // "!poke=<hex offset>:<hex byte>", which writes the data segment,
 // "!mouse=<x>:<y>", which puts the pointer there (fractions of the range),
 // "!button=<n>:<1|0>", which presses or releases a mouse button,
+// "!mickey=<dx>:<dy>", relative motion alone (the pointer stays put),
 // "!pos=<x>:<y>:<z>", which moves our own ship, "!face=<slot|npc|rock>",
 // which turns it towards that slot, "!rock=<slot|npc>", which puts one of our
 // field's rocks or mines on that ship (0: dead ahead of our own),
 // "!rocks=<1|0|2>", which switches the asteroid and mine fields (2: soft),
 // "!shot=<name>", which writes the screen to WCNET_DUMP_DIR/<name>.ppm,
+// "!frame=<name>", the picture as the window shows it, the emulator's lines over it (the overlay), the same way,
 // "!hit=<qty>[:back]", which damages our own ship as a hit from ahead would,
 // "!shoot=<slot|npc>:<qty>[:back]", which damages that ship the same way,
 // "!tail=<slot|npc|foe>[:<km>]", which puts our ship that far behind that one, facing its way
@@ -365,7 +403,7 @@ static KBD_KEYS script_key(const std::string &name) {
         { "backspace", KBD_backspace }, { "up", KBD_up }, { "down", KBD_down }, { "left", KBD_left },
         { "right", KBD_right }, { "comma", KBD_comma }, { "period", KBD_period }, { "equals", KBD_equals },
         { "minus", KBD_minus }, { "backslash", KBD_backslash }, { "kp0", KBD_kp0 }, { "kpperiod", KBD_kpperiod },
-        { "kpmultiply", KBD_kpmultiply },
+        { "kpmultiply", KBD_kpmultiply }, { "bracketleft", KBD_leftbracket }, { "bracketright", KBD_rightbracket },
     };
     for (size_t i = 0; i < sizeof(kNamed) / sizeof(kNamed[0]); i++) {
         if (name == kNamed[i].name) return kNamed[i].key;
@@ -387,11 +425,17 @@ static KBD_KEYS script_key(const std::string &name) {
 // An absolute pointer position, 0..1 across the mouse driver's range (what a
 // controller's stick asks for).  The matching relative motion is reported as
 // well, for programs that read mickeys instead of the position.
+static double g_pointerX = 0.5, g_pointerY = 0.5;
 static void set_pointer(double fx, double fy) {
-    static double lastX = 0.5, lastY = 0.5;
-    Mouse_CursorMoved((float)((fx - lastX) * 640.0), (float)((fy - lastY) * 200.0), (float)fx, (float)fy, false);
-    lastX = fx;
-    lastY = fy;
+    Mouse_CursorMoved((float)((fx - g_pointerX) * 640.0), (float)((fy - g_pointerY) * 200.0), (float)fx, (float)fy, false);
+    g_pointerX = fx;
+    g_pointerY = fy;
+}
+// Relative motion alone (the pointer stays where it is): the mickeys a game
+// that steers by the mouse's motion reads, with no edge to stop them
+// (TIE Fighter's flight: each frame's mickeys are that frame's stick).
+static void nudge_pointer(double dx, double dy) {
+    Mouse_CursorMoved((float)dx, (float)dy, (float)g_pointerX, (float)g_pointerY, false);
 }
 
 // How the games read their steering pointer (WC.EXE seg001:0E52, WC2
@@ -953,6 +997,57 @@ static void key_script() {
         std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + item.substr(6) + ".ppm";
         wclog(1, "key script %.1fs (t=%.1f): screenshot %s%s", t, now / 1000.0, path.c_str(),
               write_screenshot(path) ? "" : " failed");
+    } else if (item.compare(0, 7, "!frame=") == 0) {
+        // !frame=<name> writes the last picture the window showed, the overlay's lines on it, to WCNET_DUMP_DIR/<name>.ppm
+        const char *dir = getenv("WCNET_DUMP_DIR");
+        std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + item.substr(7) + ".ppm";
+        wclog(1, "key script %.1fs (t=%.1f): the window's picture %s%s", t, now / 1000.0, path.c_str(),
+              GFX_DumpLastFrame(path.c_str()) ? "" : " failed");
+    } else if (item.compare(0, 8, "!mickey=") == 0) {
+        // !mickey=<dx>:<dy> moves the mouse by that much (host pixels) without moving the pointer
+        double dx = 0, dy = 0;
+        if (sscanf(item.c_str() + 8, "%lf:%lf", &dx, &dy) == 2) {
+            nudge_pointer(dx, dy);
+        }
+    } else if (item.compare(0, 11, "!tiecursor=") == 0) {
+        // !tiecursor=<x>:<y> puts TIE Fighter's front-end pointer there (its 320x200 screen)
+        int x = 0, y = 0;
+        if (sscanf(item.c_str() + 11, "%d:%d", &x, &y) == 2) {
+            tie_set_cursor(x, y);
+            wclog(1, "key script %.1fs (t=%.1f): TIE Fighter's pointer to %d, %d", t, now / 1000.0, x, y);
+        }
+    } else if (item.compare(0, 11, "!tietarget=") == 0) {
+        // !tietarget=<obj> makes that object our TIE Fighter craft's target
+        tie_target(atoi(item.c_str() + 11));
+    } else if (item.compare(0, 9, "!tieface=") == 0) {
+        // !tieface=<obj> turns our TIE Fighter craft to face that object
+        tie_face(atoi(item.c_str() + 9));
+    } else if (item.compare(0, 9, "!dumplin=") == 0) {
+        // !dumplin=<name>:<hex linear address>:<hex length> writes that memory (a 32-bit program's, as the CPU sees
+        // it; a page not there reads as zero) to WCNET_DUMP_DIR/<name>.bin
+        const char *dir = getenv("WCNET_DUMP_DIR");
+        std::string spec = item.substr(9);
+        size_t c1 = spec.find(':'), c2 = c1 == std::string::npos ? c1 : spec.find(':', c1 + 1);
+        if (c2 == std::string::npos) {
+            wclog(1, "key script %.1fs: !dumplin wants name:start:length", t);
+        } else {
+            Bit32u start = (Bit32u)strtoul(spec.substr(c1 + 1, c2 - c1 - 1).c_str(), NULL, 16);
+            Bit32u len = (Bit32u)strtoul(spec.substr(c2 + 1).c_str(), NULL, 16);
+            std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + spec.substr(0, c1) + ".bin";
+            FILE *f = fopen(path.c_str(), "wb");
+            if (f) {
+                for (Bit32u i = 0; i < len; i++) {
+                    Bit8u b = 0;
+                    if (mem_readb_checked(start + i, &b)) {
+                        b = 0;
+                    }
+                    fputc(b, f);
+                }
+                fclose(f);
+            }
+            wclog(1, "key script %.1fs (t=%.1f): %u bytes from %08x to %s%s", t, now / 1000.0, (unsigned)len, (unsigned)start,
+                  path.c_str(), f ? "" : " failed");
+        }
     } else if (item.compare(0, 5, "!vga=") == 0) {
         // !vga=<name> writes the game's screen as it is in video memory
         // (320x200 palette indices) and the palette (768 bytes) to
@@ -1983,6 +2078,18 @@ extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_joystick(int on) {
     }
     return wc::joystick_state();
 }
+// TIE Fighter's flight controls (wcnet_tie_controls.cpp): the page's choice (0 drag, 1 pointer, 2 keyboard, 3 joystick)
+// and its pad's stick (-1..1, right and climbing positive), for the emulator to steer by.
+extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_tie_mouse(int mode) {
+    wc::tie_controls_set_mouse(mode);
+}
+extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_stick(double x, double y) {
+    wc::tie_controls_stick(x, y);
+}
+// TIE Fighter's room mission (wcnet_tie_session.cpp, step 8): the page's pick, a mission file's name or "" for none.
+extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_tie_mission(const char *name) {
+    wc::tie_session_set_mission(name);
+}
 extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_joy(double x, double y, int buttons) {
     g_webJoyX = x;
     g_webJoyY = y;
@@ -2175,7 +2282,7 @@ bool wc_net_helmet_name(int *vduOrigin) {
 // flown together: RetroVega has no comms, and a game flown alone (WCSOLO)
 // nobody to call.
 bool wc_net_comms_hint() {
-    return wc::g_build != wc::BUILD_RV && !wc::solo();
+    return wc::g_build != wc::BUILD_RV && !wc::solo() && !wc::tie_found();   // (TIE Fighter has no chat line yet)
 }
 
 // A drone riding behind the leader looks at the leader's ship through its
@@ -2227,8 +2334,19 @@ bool wc_net_cockpit_dim(int *viewBottom) {
 // the drone's own game, which has no use for them while it rides.  Nothing
 // else is touched: the gunner has a turret to work, and the chat prompt
 // takes its keys before they get here.
+bool wc_net_mouse_divert(float xrel, float yrel) {
+    return wc::tie_controls_mouse(xrel, yrel);
+}
+
+bool wc_net_steer_marker(double *x, double *y) {
+    return wc::tie_controls_marker(x, y);
+}
+
 bool wc_net_key_filter(int kbdKey, bool pressed) {
     using namespace wc;
+    if (tie_controls_key(kbdKey, pressed)) {
+        return true;    // (TIE Fighter's flight: the arrows steer, Ins and Del roll, F12 the mouse's mode)
+    }
     if (!g_session || !g_session->is_copilot() || !in_flight()) {
         return false;
     }
@@ -2427,6 +2545,7 @@ void wc_net_check_cpu_hooks() {
         auto_keys();
         key_script();
         joystick_tick();
+        tie_tick();
 #ifdef __EMSCRIPTEN__
         escape_tap();
         web_input_tick();
@@ -2453,7 +2572,14 @@ void wc_net_check_cpu_hooks() {
         }
     }
     Bit32u ip = reg_eip;
-    if (ip >= 0x10000 || !g_watch[ip]) {
+    if (ip >= 0x10000) {
+        // (a 32-bit program's: only TIE Fighter's places are watched there)
+        if (wc_net_watch32[ip & 0xffff]) {
+            tie_check_hooks(ip);
+        }
+        return;
+    }
+    if (!g_watch[ip]) {
         return;
     }
     if (solo()) {

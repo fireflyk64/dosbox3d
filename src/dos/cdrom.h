@@ -135,7 +135,6 @@ public:
 	bool	LoadUnloadMedia		(bool /*unload*/) { return true; };
 };	
 
-#ifndef EMSCRIPTEN
 class CDROM_Interface_Image : public CDROM_Interface
 {
 private:
@@ -241,7 +240,6 @@ typedef	std::vector<Track>::iterator	track_it;
 	std::string	mcn;
 	Bit8u	subUnit;
 };
-#endif /* !EMSCRIPTEN */
 
 #if !SDL_VERSION_ATLEAST(2,0,0)
 

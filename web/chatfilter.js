@@ -30,7 +30,7 @@ export const MAX_NAME = 16;
 // Special Operations), RV (RetroVega, built into the page).  "WC" alone is
 // a code made before any game files were loaded, or an older one: it says
 // nothing.
-export const GAME_TAGS = ["WC1", "WC2", "SM2", "SO1", "SO2", "SO3", "RV"];
+export const GAME_TAGS = ["WC1", "WC2", "SM2", "SO1", "SO2", "SO3", "RV", "TF"];
 const PREFIX = "WC[12]?|SM2|SO[123]|RV";
 const CODE_IN_TEXT = new RegExp(`(^|[^A-Za-z0-9_-])((${PREFIX})-[A-Za-z0-9_-]{1,60})`, "gi");
 

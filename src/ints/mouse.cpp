@@ -446,8 +446,20 @@ void DrawCursor() {
 	RestoreVgaRegisters();
 }
 
+bool wc_net_mouse_divert(float xrel, float yrel);   // (wc_net.h: TIE Fighter's pointer mode takes the motion)
+
+void Mouse_AddMickeys(float dx,float dy) {
+	mouse.mickey_x += dx;
+	mouse.mickey_y += dy;
+	if (mouse.mickey_x >= 32768.0) mouse.mickey_x -= 65536.0;
+	else if (mouse.mickey_x <= -32769.0) mouse.mickey_x += 65536.0;
+	if (mouse.mickey_y >= 32768.0) mouse.mickey_y -= 65536.0;
+	else if (mouse.mickey_y <= -32769.0) mouse.mickey_y += 65536.0;
+}
+
 void Mouse_CursorMoved(float xrel,float yrel,float x,float y,bool emulate) {
     //return;
+	if (wc_net_mouse_divert(xrel, yrel)) return;
 	float dx = xrel * mouse.pixelPerMickey_x;
 	float dy = yrel * mouse.pixelPerMickey_y;
 

@@ -23,7 +23,8 @@
 namespace wc {
 
 MessageCategory category_of(const NetworkMessage &msg) {
-    return msg.has_chat() || msg.has_in_flight_scene() || msg.has_restart_choice() || msg.has_presence() ? CAT_CHAT : CAT_GAME;
+    return msg.has_chat() || msg.has_in_flight_scene() || msg.has_restart_choice() || msg.has_presence() || msg.has_tie_presence()
+           ? CAT_CHAT : CAT_GAME;
 }
 
 const char *message_type_name(const NetworkMessage &msg) {
@@ -37,6 +38,10 @@ const char *message_type_name(const NetworkMessage &msg) {
     if (msg.has_restart_choice()) return "restart_choice";
     if (msg.has_in_flight_scene()) return "in_flight_scene";
     if (msg.has_presence()) return "presence";
+    if (msg.has_tie_hello()) return "tie_hello";
+    if (msg.has_tie_frame()) return "tie_frame";
+    if (msg.has_tie_presence()) return "tie_presence";
+    if (msg.has_tie_owners()) return "tie_owners";
     return "none";
 }
 

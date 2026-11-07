@@ -290,6 +290,8 @@ function setSource(s, want) {
   // The help under the game is the loaded game's own; so are its keys, where it has a list (RetroVega's flight).
   const keys = s && gameInfo() && gameInfo().keys;
   $("gameKeys").innerHTML = keys || "";
+  $("tfFlightLabel").hidden = !isTf();
+  gameLook();
   $("gameKeys").hidden = !keys;
   const hints = s && gameInfo() && gameInfo().campaign && gameInfo().campaign.hints;
   $("helpMission").textContent = (hints && hints.help) || (gameInfo() && gameInfo().help)
@@ -671,8 +673,10 @@ function parseMission(v) {
 // A game with no flight yet (RetroVega): no mission to pick, no flight options.
 const lobbyFlies = () => { const g = gameById(lobbyGameId()); return !(g && g.noFlight); };
 function missionLabel(m) {
-  if (!m) return lobbyFlies() ? "the campaign from the barracks" : (gameById(lobbyGameId()) || {}).title || "the game";
+  if (!m) return lobbyFlies() ? ((lobbyCampaign() || {}).noneLabel || "the campaign from the barracks") : (gameById(lobbyGameId()) || {}).title || "the game";
   const c = lobbyCampaign();
+  // (a campaign that words its own missions: TIE Fighter's)
+  if (c && c.label) return c.label(m);
   const s = c && c.series.find((e) => e.series === m.series);
   if (!s) return `ch ${m.series}, mission ${m.mis + 1}`;
   const note = Array.isArray(s.missions) ? s.missions[m.mis] : "";
@@ -715,7 +719,23 @@ function buildMissionMenu() {
   const add = (value, text) => { const o = document.createElement("option"); o.value = value; o.textContent = text; sel.appendChild(o); };
   add("", (c && c.start && c.start[one ? "alone" : "room"]) || "Campaign from the barracks (the host's save game decides)");
   if (!c) return;
+  let group = null;
   for (const s of c.series) {
+    // (a campaign with its own words and groups: TIE Fighter's Combat Chamber and battles)
+    if (c.label && s.files) {
+      if (!group || group.label !== (s.title ? `${s.group}: ${s.title}` : s.group)) {
+        group = document.createElement("optgroup");
+        group.label = s.title ? `${s.group}: ${s.title}` : s.group;
+        sel.appendChild(group);
+      }
+      for (let i = 0; i < s.files.length; i++) {
+        const o = document.createElement("option");
+        o.value = `${s.series}/${i}`;
+        o.textContent = c.label({ series: s.series, mis: i }, "menu");
+        group.appendChild(o);
+      }
+      continue;
+    }
     const n = Array.isArray(s.missions) ? s.missions.length : s.missions;
     for (let i = 0; i < n; i++) {
       const note = Array.isArray(s.missions) ? s.missions[i] : "";
@@ -725,16 +745,53 @@ function buildMissionMenu() {
     }
   }
 }
+// A campaign worded from the game's own files (the registry's `campaign.fromFiles`: TIE Fighter's craft, battles
+// and missions in its own words), once, from the loaded copy of the game; the menu is made again after.
+function wordCampaign() {
+  const c = lobbyCampaign();
+  if (!c || !c.fromFiles || c.worded || !source || source.game.id !== lobbyGameId() || !source.files.length) return;
+  c.worded = true;
+  try {
+    c.fromFiles(source.files);
+  } catch (e) {
+    log(`the mission menu's words: ${e.message || e}`);
+  }
+  $("mission").dataset.game = "";
+}
+// A campaign the running game takes while it runs (the registry's `campaign.live`, an export of the emulator taking
+// the mission's name: TIE Fighter flies many missions in one run, so the host may change it between flights).
+let liveMissionSent = null;
+function liveMission() {
+  const c = lobbyCampaign();
+  const M = running && window.DOSBox;
+  if (!M) {
+    liveMissionSent = null;     // (the next run is told at its launch: WCNET_TIE_MISSION)
+    return;
+  }
+  if (!c || !c.live || !M["_" + c.live] || soloRoom()) return;
+  const name = lobby.mission && c.file ? c.file(lobby.mission) : "";
+  if (name === liveMissionSent) return;
+  liveMissionSent = name;
+  const bytes = Array.from(name, (ch) => ch.charCodeAt(0) & 0x7f);
+  const p = M._malloc(bytes.length + 1);
+  bytes.forEach((b, i) => { M.HEAPU8[p + i] = b; });
+  M.HEAPU8[p + bytes.length] = 0;
+  M["_" + c.live](p);
+  M._free(p);
+  log(`the room's mission given to the game: ${name || "none"}`);
+}
 function renderMission() {
   $("missionRow").hidden = !lobbyFlies();
   loadCampaignManifest(gameById(lobbyGameId()));
+  wordCampaign();
   buildMissionMenu();
+  liveMission();
   const sel = $("mission");
   const c = lobbyCampaign();
   // A mission the host's game does not have (the host changed games) is none.
   if (lobby.mission && isHost() && !Array.from(sel.options).some((o) => o.value === missionKey(lobby.mission))) lobby.mission = null;
   sel.value = missionKey(lobby.mission);
-  sel.disabled = !isHost() || running;
+  sel.disabled = !isHost() || (running && !(c && c.live));
   // (A room of one flies the game as it is: its own campaign, collisions and
   // all, and a mission picked only where the game takes it itself.  The frame
   // rate stays: the hooks pace a flight alone too.)
@@ -742,7 +799,10 @@ function renderMission() {
   const pickAlone = one && missionAlone();
   $("mission").parentElement.hidden = one && !pickAlone;
   $("mission").parentElement.title = one ? "The mission to start at, or the campaign as the game starts it" : "The mission the host picked for everyone";
-  for (const id of ["latency", "collisions"]) $(id).parentElement.hidden = one;
+  // (a game with none of the room's options, TIE Fighter's: no Conn, no Collide)
+  const noRoomOptions = !!(gameById(lobbyGameId()) || {}).noRoomOptions;
+  for (const id of ["latency", "collisions"]) $(id).parentElement.hidden = one || noRoomOptions;
+  gameLook();
   // (a game whose asteroids are its own, each machine's: only the wing bumps are the room's to choose)
   const ownRocks = !!(gameById(lobbyGameId()) || {}).ownRocks;
   for (const o of $("collisions").options) o.hidden = ownRocks && !o.value.startsWith("on-");
@@ -1298,7 +1358,7 @@ async function joinRoom({ create = true } = {}) {
     $("chatForm").hidden = solo;
     $("lobbyHint").textContent = solo ? SOLO_HINT : ROOM_HINT;
     // (A room of one starts with the campaign as the game starts it, a room for more at the first mission.)
-    if (game.selfId === 0) lobby.mission = parseMission(query.get("mission")) || (solo ? null : { series: 1, mis: 0 });
+    if (game.selfId === 0) lobby.mission = parseMission(query.get("mission")) || (solo || (lobbyCampaign() || {}).noDefault ? null : { series: 1, mis: 0 });
     lobby.rocks = game.selfId === 0 ? rocksMode({ 0: "off", 2: "soft" }[query.get("rocks")] || query.get("rocks")) : "on";
     lobby.wingBumps = game.selfId === 0 ? wingBumpsMode({ 0: "game", 1: "harmless" }[query.get("bumps")] || query.get("bumps")) : "harmless";
     lobby.latency = game.selfId === 0 ? latencyMode(query.get("latency")) : "low";
@@ -1365,7 +1425,8 @@ function offerText() {
   const free = g.players.filter((p) => !p.occupied).length;
   const c = lobbyCampaign();
   const s = lobby.mission && c && c.series.find((e) => e.series === lobby.mission.series);
-  const what = !lobbyFlies() ? "" : !lobby.mission ? "campaign" : s && s.name ? `${s.name} ${lobby.mission.mis + 1}` : `ch ${lobby.mission.series} mission ${lobby.mission.mis + 1}`;
+  const what = !lobbyFlies() ? "" : !lobby.mission ? (c && c.noneShort) || "campaign" : c && c.label ? c.label(lobby.mission, "short")
+    : s && s.name ? `${s.name} ${lobby.mission.mis + 1}` : `ch ${lobby.mission.series} mission ${lobby.mission.mis + 1}`;
   const seats = free ? `${free} seat${free === 1 ? "" : "s"} free` : "full";
   // (The program, when the room's code was made for another: the code is advisory.)
   const prog = gameTag() && roomTag(g.code) !== gameTag() ? ` ${gameTag()}` : "";
@@ -1605,6 +1666,33 @@ $("flySolo").addEventListener("click", async () => {
   void start(true);
 });
 $("fullscreen").addEventListener("click", () => goFullscreen());
+
+// The picture's shape: the game's own (the registry's `screen`: TIE Fighter's 640 x 480, every row of it), for the game
+// loaded or the room's, whichever is known (the user, 2026-11-06: "TIE Fighter is 640x480 so when not full screen I saw
+// some horizontal rows missing... can we change canvas size when TF is selected or joined").
+function gameLook() {
+  const g = gameById(lobbyGameId()) || (source && gameById(source.game.id));
+  const [w, h] = (g && g.screen) || [640, 400];
+  const st = document.documentElement.style;
+  st.setProperty("--screen-w", String(w));
+  st.setProperty("--screen-h", String(h));
+}
+// Cinema: the picture as large as the window allows, without full screen (the user: "a cinema mode where non-fullscreen
+// canvas gets scaled to fill the horizontal area of the browser window without actually going fullscreen"): the
+// window's width, unless the window is too short for it (then its height decides, so the whole picture shows).
+// Remembered in this browser.
+const CINEMA_KEY = "wc-cinema";
+function setCinema(on) {
+  document.body.classList.toggle("cinema", on);
+  $("cinema").checked = on;
+  try { localStorage.setItem(CINEMA_KEY, on ? "1" : "0"); } catch (e) { /* this browser keeps nothing */ }
+}
+try { setCinema(localStorage.getItem(CINEMA_KEY) === "1"); } catch (e) { setCinema(false); }
+$("cinema").addEventListener("change", () => {
+  setCinema($("cinema").checked);
+  if ($("cinema").checked) $("screen").scrollIntoView({ block: "start", behavior: "smooth" });
+});
+gameLook();
 // Whether Fly goes full screen: each pilot's own, ticked unless unticked in
 // this tab (the user, 2026-11-05: "The box should default to checked but
 // should be remembered by the browser session"); the Full screen button works
@@ -1710,6 +1798,7 @@ async function start(fromGesture) {
     if (fpsInForce()) env.WCFPS = String(fpsInForce());
     if (together && lobbyCapHull() && lobby.capHull) env.WCCAPHULL = String(CAP_HULL);
     if (cfg.callsign && !solo) env.WCCALLSIGN = cfg.callsign;
+    if (isTf()) env.WCNET_TIE_MOUSE = tfFlight();
     if (cfg.lastname && !solo) env.WCLASTNAME = cfg.lastname;
     if (cfg.firstname && !solo) env.WCFIRSTNAME = cfg.firstname;
     // A wingman's game calls the leader's ship by the leader's callsign (the
@@ -1723,6 +1812,8 @@ async function start(fromGesture) {
     if (lobby.mission && campaign && (together || (solo && campaign.alone && campaign.missionArgs))) {
       if (campaign.missionArgs) {
         missionArgs = " " + campaign.missionArgs(lobby.mission);
+      } else if (campaign.env) {
+        Object.assign(env, campaign.env(lobby.mission));
       } else {
         env.MIS = String(lobby.mission.mis);
         env.SERIES = String(lobby.mission.series);
@@ -1801,7 +1892,10 @@ async function start(fromGesture) {
     // The emulated CPU speed: the game's own good value (the registry), or
     // ?cycles=N; Ctrl+F11 / Ctrl+F12 still adjust it while playing.
     const cycles = Number(query.get("cycles")) || (gameInfo() && gameInfo().cycles) || 0;
-    const args = ["-c", `mount c ${GAME_ROOT}`, "-c", "c:"];
+    const args = ["-c", `mount c ${GAME_ROOT}`];
+    // The game's disc, where it comes with one (the registry's image): drive D.
+    if (gameInfo() && gameInfo().image) args.push("-c", `imgmount d ${GAME_ROOT}/${gameInfo().image} -t iso`);
+    args.push("-c", "c:");
     if (cycles > 0) args.push("-c", `cycles=${Math.round(cycles)}`);
     // What the game's own setup expects of the machine (the registry), as a
     // configuration file: DOSBox's `config -set` rewrites the list of
@@ -1950,8 +2044,33 @@ const touch = initTouch({ log, send: (name, down) => {
   return true;
 } });
 
+// TIE Fighter's flight controls (src/cpu/wcnet_tie_controls.cpp): the mouse points to aim, drags to steer (the
+// game's own), or steers nothing (the keyboard alone, a joystick); the arrows always steer.  Remembered in this
+// browser, given to the emulator at the launch (WCNET_TIE_MOUSE) and while flying (wc_web_tie_mouse).
+const TF_FLIGHT = ["drag", "pointer", "keyboard", "joystick"];
+const TF_FLIGHT_KEY = "wc-tf-flight";
+const isTf = () => !!(gameInfo() && gameInfo().id === "tf");
+function tfFlight() {
+  let v = null;
+  try { v = localStorage.getItem(TF_FLIGHT_KEY); } catch (e) { /* none */ }
+  return TF_FLIGHT.includes(v) ? v : "pointer";
+}
+$("tfFlight").value = tfFlight();
+$("tfFlight").addEventListener("change", (e) => {
+  const v = TF_FLIGHT.includes(e.target.value) ? e.target.value : "pointer";
+  try { localStorage.setItem(TF_FLIGHT_KEY, v); } catch (err) { /* this browser keeps nothing */ }
+  const M = running && window.DOSBox;
+  if (M && M._wc_web_tie_mouse) M._wc_web_tie_mouse(TF_FLIGHT.indexOf(v));
+  log(`TIE Fighter's flight controls: ${e.target.selectedOptions[0].textContent}`);
+});
+
 const controls = initControls({
   module: () => (running && window.DOSBox) || null,
+  // (TIE Fighter: a controller steers through the emulator's stick, whatever the mouse does, rolls on the keypad's
+  // Ins and Del as the emulator has it, and fires with the mouse's button, the game's own trigger)
+  directStick: () => isTf(),
+  rollKeys: () => (isTf() ? { left: "kp0", right: "kpperiod" } : null),
+  fireByMouse: () => isTf(),
   // (A controller button without a key of its own is the page's: push to talk.)
   onAction: (id, down) => { if (id === "ptt") voice.ptt(down); },
   pointer: steeringPointer,

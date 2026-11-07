@@ -17,10 +17,11 @@
  */
 
 
-/* Emscripten could theoretically support CD images, but this
- * implementation uses a SDL Mutex, which isn't supported
+/* (The browser build has this too: TIE Fighter's disc image, game.gog, is
+ * what its voices and its disc check read.  The audio player's mutex is the
+ * SDL port's no-op there, and no audio track is ever played: the images the
+ * page mounts are data tracks.)
  */
-#ifndef EMSCRIPTEN
 
 #include <cctype>
 #include <cmath>
@@ -776,4 +777,3 @@ void CDROM_Image_Init(Section* section) {
 #endif
 }
 
-#endif /* !EMSCRIPTEN */

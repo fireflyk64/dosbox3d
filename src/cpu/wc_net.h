@@ -26,6 +26,7 @@
 // A call per instruction costs the browser build about a seventh of its
 // speed, more than anything else the hooks do.
 extern bool wc_net_watch[0x10000];
+extern bool wc_net_watch32[0x10000];   // the same for a 32-bit program's EIPs, by their low word (wcnet_tie.h)
 extern Bit32s wc_net_countdown;
 void wc_net_check_cpu_hooks();
 #if defined(EMSCRIPTEN) && defined(EM_ASYNCIFY)
@@ -41,7 +42,7 @@ void wc_net_check_cpu_hooks();
 // cycle back and fills the flags first).
 Bitu wc_net_hook_exit(Bit32u ip);
 static inline Bitu wc_net_cpu_hook(Bit32u ip) {
-    if (GCC_UNLIKELY(--wc_net_countdown < 0) || (ip < 0x10000 && GCC_UNLIKELY(wc_net_watch[ip]))) {
+    if (GCC_UNLIKELY(--wc_net_countdown < 0) || (ip < 0x10000 ? GCC_UNLIKELY(wc_net_watch[ip]) : GCC_UNLIKELY(wc_net_watch32[ip & 0xffff]))) {
         return wc_net_hook_exit(ip);
     }
     return 0;
@@ -49,7 +50,7 @@ static inline Bitu wc_net_cpu_hook(Bit32u ip) {
 #else
 // Natively the hooks are called in place (no Asyncify to spare the core).
 static inline Bitu wc_net_cpu_hook(Bit32u ip) {
-    if (GCC_UNLIKELY(--wc_net_countdown < 0) || (ip < 0x10000 && GCC_UNLIKELY(wc_net_watch[ip]))) {
+    if (GCC_UNLIKELY(--wc_net_countdown < 0) || (ip < 0x10000 ? GCC_UNLIKELY(wc_net_watch[ip]) : GCC_UNLIKELY(wc_net_watch32[ip & 0xffff]))) {
         wc_net_check_cpu_hooks();
     }
     return 0;
@@ -93,6 +94,10 @@ void wcnetSendChatMessage(const std::string &msg);
 // Called by the keyboard before a key reaches the game: true takes the key
 // (a drone's copilot keys go to the server instead; wcnet_hooks.cpp).
 bool wc_net_key_filter(int kbdKey, bool pressed);
+// The host mouse's motion taken from the game (TIE Fighter's pointer mode: wcnet_tie_controls.cpp), and the pointer
+// the overlay draws for it (-1..1 from the middle of the picture).
+bool wc_net_mouse_divert(float xrel, float yrel);
+bool wc_net_steer_marker(double *x, double *y);
 // A drone riding behind the leader: its dashboard, from that line of the
 // game's 200 down, is to go dark (src/gui/sdlmain.cpp).
 bool wc_net_cockpit_dim(int *dashboardTop);
