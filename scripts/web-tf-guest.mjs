@@ -37,6 +37,11 @@ u.searchParams.set("callsign", "WEBGUEST");
 u.searchParams.set("env.WCNET_KEYSCRIPT", script);
 u.searchParams.set("env.WCNET_KEYSCRIPT_FROM", "boot");
 u.searchParams.set("env.WCNET_TIE_REPORT_MS", process.env.WCNET_TIE_REPORT_MS || "250");
+// (GUEST_ENV="NAME=value ...": more of the emulator's environment for the guest's page, as ?env.NAME=value)
+for (const kv of (process.env.GUEST_ENV || "").split(/\s+/).filter(Boolean)) {
+  const i = kv.indexOf("=");
+  if (i > 0) u.searchParams.set("env." + kv.slice(0, i), kv.slice(i + 1));
+}
 u.searchParams.set("env.WCNET_LOG", "2");
 await page.goto(u.toString());
 await page.setInputFiles("#gamefile", installer);
