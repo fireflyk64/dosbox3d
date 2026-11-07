@@ -209,9 +209,10 @@ void report(double now) {
     if (player < kObjectCount) {
         const Bit32u o = kObjects + player * kObjectSize;
         wclog(1, "TIE: %.1fs: %u frames (%u ticks a frame, rate %u), hyper %u main %u, %d objects live; player #%u type %u at %d %d %d, "
-                 "heading %u pitch %u, speed %d, scene %d, mission '%s'; calls:%s",
+                 "heading %u pitch %u roll %u nose %d %d %d, speed %d, scene %d, mission '%s'; calls:%s",
               now / 1000.0, g_frames, r16(kFrameticks), r16(kFramerate), r8(kHyperspaceFlag), r8(kMainGameFlag), live, player,
-              r8(o + 4), (int)r32(o + 6), (int)r32(o + 0xA), (int)r32(o + 0xE), r16(o + 0x1E), r16(o + 0x20), (Bit16s)r16(o + 0x26),
+              r8(o + 4), (int)r32(o + 6), (int)r32(o + 0xA), (int)r32(o + 0xE), r16(o + 0x1E), r16(o + 0x20), r16(o + 0x22),
+              (Bit16s)r16(o + 0x3A), (Bit16s)r16(o + 0x3C), (Bit16s)r16(o + 0x3E), (Bit16s)r16(o + 0x26),
               tie_scene(), tie_mission_name().c_str(), counts);
     } else {
         wclog(1, "TIE: %.1fs: %u frames (%u ticks a frame, rate %u), hyper %u main %u, %d objects live, no player object (#%u), "
@@ -469,6 +470,7 @@ void tie_check_hooks(Bit32u eip) {
         g_falseHits--;
         if (i == 0) {
             g_frames++;
+            tie_controls_frame();       // (this frame's mickeys, before the game reads them)
             tie_session_frame();
         } else if (p.image == 0x16B8C) {
             tie_session_mission_create();
