@@ -410,7 +410,8 @@ section 7 as it is worked on.
    Z-95 Headhunters against the Empire's own craft (every craft mirrored),
    the cockpit kitbashed from the gunboat's by code; the missions' lines that
    speak for the Empire's side swapped for the game's own lines that fit the
-   mirrored sides; no radio voices.  To do: the briefings' words.
+   mirrored sides, each line in its own voice (the bank made from the
+   CD's).  To do: the briefings' words.
 15. **To do, once the whole system is ready for production: long mission
    tests with an ally** (the user, 2026-11-07: "Do some comprehensive mission
    tests with the ally and make sure the networking works, especially the
@@ -1076,15 +1077,22 @@ X-wing-like cockpit (an arched canopy, a long nose).
   and mines as they are), the IFF of each group kept, the player's group
   Z-95s (the second pilot's too: the seats), each new craft marked to be
   loaded; made again at `create_createmission` after the opening jump.
-* **The line.**  "They're flying Z-95 Headhunters! They're brave..." (the
-  game's own come close: "Tau 2 to Tau 1, there are Z-95 Headhunters right
-  behind us!" in B13M3, "Outstanding, Mu 1! That was some pretty brave
-  flying!" in B11M3) is a radio message of the mission's own (radiomsg
+* **The line.**  The user remembered "They're flying Z-95 Headhunters!
+  They're brave..."; no line of the game's says so (the closest: "Tau 2 to
+  Tau 1, there are Z-95 Headhunters right behind us!" in B13M3, "Outstanding,
+  Mu 1! That was some pretty brave flying!" in B11M3), and the line it was is
+  HA2W's "How pathetic! They must really wish to die flying those Z-95s!"
+  (the user, 2026-11-07: "for a challenge mission it's great").  So the
+  challenge's Imperials say that one, its words read from HA2W and its voice
+  from HA2W's bank (below), as a radio message of the mission's own (radiomsg
   0xE2F24, 90 bytes: the text, two triggers "always", the delay five polls of
   1,180 ticks: 25 s in; at 10 s HG3M's fell under a new craft alert and was
   never seen: a message fired with others shows only if nothing replaces it)
-  where the mission has one of its 16 free (HG3M, HG4M); else the emulator's
-  line (HG1W, HI2W).  In the enemy lines' color (below).
+  where the mission has one of its 16 free and does not say it already
+  (HG4M; HG3M's first line is it); again when the mission is read again after
+  its opening jump (HG4M's: the line was lost there before).  With none free
+  (HG1W, HI2W) the emulator's notice says "They're flying Z-95 Headhunters!
+  They're brave...", unvoiced.  In the enemy lines' color (below).
 * **The missions' lines** (the user: "just replace them with those other side
   lines.... where it talks about the weak z-95 or others where they talk about
   rebel scum. lots of lines can sub in... find extant lines").  Each radio
@@ -1108,8 +1116,35 @@ X-wing-like cockpit (an arched canopy, a long nose).
   going to the mission's messages in order.  In a room, at the craft load
   (before `create_createmission` loads the bank): a chamber mission's file
   `h<letter><n>` sets them (a room's pick played the chamber row's voices over
-  its lines before); the challenge sets the letter 7, past the table, naming
-  no bank: no voices (its lines are others', its sides mirrored).
+  its lines before).
+* **The challenge's voices** (the user, 2026-11-07: "it would be nice to have
+  the audio to match the text in the challenge. Can we make a script to
+  duplicate them in? Especially the z95 line"; "ideally all radio";
+  `src/cpu/wcnet_tie_voice.cpp`).  A bank (`VOICE\<name>\<name>.LFD`, on the
+  CD only) is an RMAP resource: a directory of VOIC entries (a name, a size),
+  then each clip, its entry again and a Creative Voice File.  The game gives
+  the clips to the slots that have text in order: radio messages 0..15, then
+  the two win messages and the loss message (OpenTIE's fsfx_loadvoicelfd).
+  The developers named each clip for its slot (`MAKEVOCE.BAT` on the CD):
+  `<name>r<k>` is message k - 1 (now and then a letter after), `w1`, `w2`,
+  `l1`; checked for the 17 missions the challenge uses.  A chamber mission
+  `h<row><n>` flies `<ROW>M<n>`, a battle's `b<b>m<m>` `<b>M<m>`.  At the
+  challenge's launch the emulator makes its bank from the player's CD: for
+  each slot with text the clip of the mission its line is from (the other
+  mission's for a line replaced, its own for the rest), then its own win and
+  loss clips; written to the game's drive as `Z95VOICE.LFD`.  The voice ids
+  are then G and Z (4 and `'Z' - '1'`), naming `VOICE\GMZ\GMZ.LFD`, and
+  `DOS_OpenFile`'s open of that name, on any drive, is the made file
+  (`tie_voice_open`; every other open, and every other game, untouched).  A
+  clip not found is a tenth of a second of silence, so the rest keep their
+  slots; with no bank read (no CD) the challenge flies without voices, as
+  before (the letter 7, past the table, names no bank).  Measured, HG4M on two
+  machines, the host's sound recorded (WCLAB) and each clip looked for in it
+  (normalized cross-correlation at 4 kHz): 9 clips, 3 of other missions';
+  slot 0's B12M3 clip at 74.3 s (0.64), slot 1's own 6 s later (0.63), the
+  Z-95 line's HA2W clip at 100.4 s (0.46; its words on the screen at 105 s,
+  green), slot 2's B12M6 clip at 108.2 s (0.70); the replaced own clip of
+  slot 0 and the lines not fired at the floor (0.08..0.09).
 * **The cockpit.**  The Z-95's spec (13) is named XWING with the R-41's: when
   the player flies one it is renamed Z95, and Z95.INT and Z95FWD.LFD are made
   from the gunboat's (the shuttle's way, step 9): the struts out, an arched
