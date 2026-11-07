@@ -269,6 +269,29 @@ section 7 as it is worked on.
    selector between them; all of it in the emulator, fed as the mickeys the
    game reads.
 8. **The page**: the room tag TF, `multiplayer: true`, a mission picker.
+9. **Missions flown alone, flown by two** (the user, 2026-11-06).  In 37 of
+   the 105 mission files the player's flight group is a single craft (read
+   from `MISSION/*.TIE`: the group with a player-craft number, +0x42, and a
+   count of 1, +0x33).  Today the second pilot gets a second craft of the same
+   type; the user's pairings instead, the first player's craft kept (the
+   mission's goals may need it), the second's chosen to fit:
+
+   | the mission's craft | flown by two | its solo missions |
+   |---|---|---|
+   | T/A | T/A + T/A | HA1W |
+   | T/D | T/D + T/A | B9M2..B9M6, HD1W, HD2W, HD3M |
+   | T/I | T/F + T/F; T/I + T/F if a T/F is too slow for the mission's timing (to be judged mission by mission) | B5M1 (the minefield, unshielded), HI1W, HI3M |
+   | gunboat | gunboat + a standard Imperial shuttle (not the escort shuttle; the gunboat's cockpit for the shuttle for now) | B10M1, B10M2, HG1W, HG3M |
+   | T/F | T/F + T/F | B1M1, HF1W, HF3M, HF4M, TRAIN |
+   | missile boat | missile boat + gunboat, or missile boat + a standard Imperial shuttle depending on the difficulty | B10M5, B10M6, B11M1..B11M7, B12M6, B13M1, B13M4, HM1W, HM2W |
+   | T/B | T/B + T/F: one flies the torpedo work, the other point defense | B3M1, HB1W |
+
+   How: a flight group has one craft type (+0x32), so a mixed pair is a
+   second flight group for the second pilot, a copy of the player's record
+   with the other type and a count of 1 (the mission's 48 at most), the
+   goals left on the first; T/I to two T/F changes the group's type and
+   count.  The cockpit follows the craft the pilot flies; the shuttle has
+   none of its own (the gunboat's).
 
 ## 7. Notes, step by step
 
