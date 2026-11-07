@@ -37,7 +37,10 @@ export const KEY = (() => {
                       "leftshift", "rightshift", "capslock", "scrolllock", "numlock", "grave", "minus", "equals",
                       "backslash", "leftbracket", "rightbracket", "semicolon", "quote", "period", "comma", "slash",
                       "extra_lt_gt", "printscreen", "pause", "insert", "home", "pageup", "delete", "end", "pagedown",
-                      "left", "up", "down", "right"]) k[name] = n++;
+                      "left", "up", "down", "right",
+                      // (then the keypad, in keyboard.h's order)
+                      "kp1", "kp2", "kp3", "kp4", "kp5", "kp6", "kp7", "kp8", "kp9", "kp0",
+                      "kpdivide", "kpmultiply", "kpminus", "kpplus", "kpenter", "kpperiod"]) k[name] = n++;
   return k;
 })();
 
@@ -81,6 +84,8 @@ export const AXES = [
   { id: "roll", label: "Roll", bind: { axis: 2, invert: false } },
 ];
 const ROLL_KEYS = { left: "comma", right: "period" };
+// (a game that rolls on other keys says so: host.rollKeys(), TIE Fighter's the keypad's Ins and Del)
+const rollKeysOf = (host) => (host.rollKeys && host.rollKeys()) || ROLL_KEYS;
 const BUTTON_NAMES = ["A", "B", "X", "Y", "L1", "R1", "L2 (left trigger)", "R2 (right trigger)", "Back", "Start",
                       "L3 (left stick)", "R3 (right stick)", "D-pad up", "D-pad down", "D-pad left", "D-pad right", "Home"];
 const AXIS_NAMES = ["Left stick, sideways", "Left stick, up/down", "Right stick, sideways", "Right stick, up/down"];
@@ -171,6 +176,9 @@ export function stepped(v, steps, reach, edge, top) {
 //   log(line)
 //   onAction(id, down): an action of the page's own (no key), such as voice
 //              push to talk, pressed or released (optional)
+//   directStick(): the emulator steers the game itself and takes the stick as it is (wc_web_stick: TIE Fighter)
+//   rollKeys(): the game's roll keys, { left, right } (KEY names), when not , and .
+//   fireByMouse(): the guns are the mouse's left button in flight
 //   builtIn(): whether the game reads a joystick itself (pads are offered
 //              "built in" too)
 //   joystickPort(): null before the launch, then whether it put the game
@@ -185,6 +193,7 @@ export function initControls(host) {
   const held = new Map();       // action id -> true while its keys are down
   let rollHeld = null;          // "left" | "right" | null
   let clickHeld = false;
+  let fireClickHeld = false;    // (the guns held as the mouse's button: host.fireByMouse)
   let lastPointer = { x: -1, y: -1, at: 0 };
   let lastJoy = { x: 0, y: 0, b: 0, at: 0 };  // what the game port's stick was last told
   let menu = { x: 0.5, y: 0.5, wasFlight: false, at: 0 };
@@ -342,10 +351,11 @@ export function initControls(host) {
     const M = host.module();
     if (M && M._wc_web_key) {
       for (const a of ACTIONS) if (held.get(a.id)) sendKeys(M, a.keys, false);
-      if (rollHeld) sendKeys(M, [ROLL_KEYS[rollHeld]], false);
+      if (rollHeld) sendKeys(M, [rollKeysOf(host)[rollHeld]], false);
       if (clickHeld) M._wc_web_mouse_button(0, 0);
+      if (fireClickHeld) M._wc_web_mouse_button(0, 0);
     }
-    held.clear(); rollHeld = null; clickHeld = false;
+    held.clear(); rollHeld = null; clickHeld = false; fireClickHeld = false;
     lastJoy = { x: 0, y: 0, b: 0, at: 0 };
   }
 
@@ -390,6 +400,13 @@ export function initControls(host) {
         M._wc_web_joy(jx, jy, jb);
         lastJoy = { x: jx, y: jy, b: jb, at: now };
       }
+    } else if (flying && host.directStick && host.directStick() && M._wc_web_stick) {
+      // A game the emulator steers itself (TIE Fighter: wcnet_tie_controls.cpp): the stick as it is, right and
+      // climbing positive, said every frame (the emulator lets a stick that stops saying go back to the middle).
+      M._wc_web_stick(clamp(yaw * cfg.sensitivity, -1, 1), clamp(pitch * cfg.sensitivity, -1, 1));
+      refresh = 1e9;
+      x = lastPointer.x; y = lastPointer.y;
+      menu.wasFlight = true;
     } else if (flying) {
       const p = host.pointer() || { x: 0.5, y: 0.5, rx: 0.5, ry: 0.5 };
       if (p.stepsX) {
@@ -418,8 +435,8 @@ export function initControls(host) {
     }
     const wantRoll = flying && Math.abs(roll) > 0.5 ? (roll < 0 ? "left" : "right") : null;
     if (wantRoll !== rollHeld) {
-      if (rollHeld) sendKeys(M, [ROLL_KEYS[rollHeld]], false);
-      if (wantRoll) sendKeys(M, [ROLL_KEYS[wantRoll]], true);
+      if (rollHeld) sendKeys(M, [rollKeysOf(host)[rollHeld]], false);
+      if (wantRoll) sendKeys(M, [rollKeysOf(host)[wantRoll]], true);
       rollHeld = wantRoll;
     }
     const joyButtons = port ? [cfg.buttons.joy1, cfg.buttons.joy2] : [];
@@ -431,7 +448,11 @@ export function initControls(host) {
       const on = a.analog ? cfg.burner : 0.5;
       const down = held.get(a.id) ? v > on - 0.1 : v >= on;
       if (down !== !!held.get(a.id)) {
-        if (a.keys.length) sendKeys(M, a.keys, down); else if (host.onAction) host.onAction(a.id, down);
+        if (a.id === "guns" && host.fireByMouse && host.fireByMouse() && (flying || fireClickHeld)) {
+          // (a game whose guns are the mouse's button in flight: TIE Fighter)
+          M._wc_web_mouse_button(0, down ? 1 : 0);
+          fireClickHeld = down;
+        } else if (a.keys.length) sendKeys(M, a.keys, down); else if (host.onAction) host.onAction(a.id, down);
         held.set(a.id, down);
       }
       if (a.click) {

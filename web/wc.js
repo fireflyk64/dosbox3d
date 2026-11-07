@@ -290,6 +290,7 @@ function setSource(s, want) {
   // The help under the game is the loaded game's own; so are its keys, where it has a list (RetroVega's flight).
   const keys = s && gameInfo() && gameInfo().keys;
   $("gameKeys").innerHTML = keys || "";
+  $("tfFlightLabel").hidden = !isTf();
   $("gameKeys").hidden = !keys;
   const hints = s && gameInfo() && gameInfo().campaign && gameInfo().campaign.hints;
   $("helpMission").textContent = (hints && hints.help) || (gameInfo() && gameInfo().help)
@@ -1710,6 +1711,7 @@ async function start(fromGesture) {
     if (fpsInForce()) env.WCFPS = String(fpsInForce());
     if (together && lobbyCapHull() && lobby.capHull) env.WCCAPHULL = String(CAP_HULL);
     if (cfg.callsign && !solo) env.WCCALLSIGN = cfg.callsign;
+    if (isTf()) env.WCNET_TIE_MOUSE = tfFlight();
     if (cfg.lastname && !solo) env.WCLASTNAME = cfg.lastname;
     if (cfg.firstname && !solo) env.WCFIRSTNAME = cfg.firstname;
     // A wingman's game calls the leader's ship by the leader's callsign (the
@@ -1953,8 +1955,33 @@ const touch = initTouch({ log, send: (name, down) => {
   return true;
 } });
 
+// TIE Fighter's flight controls (src/cpu/wcnet_tie_controls.cpp): the mouse points to aim, drags to steer (the
+// game's own), or steers nothing (the keyboard alone, a joystick); the arrows always steer.  Remembered in this
+// browser, given to the emulator at the launch (WCNET_TIE_MOUSE) and while flying (wc_web_tie_mouse).
+const TF_FLIGHT = ["drag", "pointer", "keyboard", "joystick"];
+const TF_FLIGHT_KEY = "wc-tf-flight";
+const isTf = () => !!(gameInfo() && gameInfo().id === "tf");
+function tfFlight() {
+  let v = null;
+  try { v = localStorage.getItem(TF_FLIGHT_KEY); } catch (e) { /* none */ }
+  return TF_FLIGHT.includes(v) ? v : "pointer";
+}
+$("tfFlight").value = tfFlight();
+$("tfFlight").addEventListener("change", (e) => {
+  const v = TF_FLIGHT.includes(e.target.value) ? e.target.value : "pointer";
+  try { localStorage.setItem(TF_FLIGHT_KEY, v); } catch (err) { /* this browser keeps nothing */ }
+  const M = running && window.DOSBox;
+  if (M && M._wc_web_tie_mouse) M._wc_web_tie_mouse(TF_FLIGHT.indexOf(v));
+  log(`TIE Fighter's flight controls: ${e.target.selectedOptions[0].textContent}`);
+});
+
 const controls = initControls({
   module: () => (running && window.DOSBox) || null,
+  // (TIE Fighter: a controller steers through the emulator's stick, whatever the mouse does, rolls on the keypad's
+  // Ins and Del as the emulator has it, and fires with the mouse's button, the game's own trigger)
+  directStick: () => isTf(),
+  rollKeys: () => (isTf() ? { left: "kp0", right: "kpperiod" } : null),
+  fireByMouse: () => isTf(),
   // (A controller button without a key of its own is the page's: push to talk.)
   onAction: (id, down) => { if (id === "ptt") voice.ptt(down); },
   pointer: steeringPointer,

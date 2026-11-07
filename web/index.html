@@ -282,6 +282,13 @@
         <label id="firstnameLabel" hidden>First name <input type="text" id="firstname" placeholder="Christopher" maxlength="12"></label>
         <label>Last name <input type="text" id="lastname" placeholder="Blair"></label>
         <label>Controller <select id="padSelect"><option value="none">Keyboard + mouse</option></select></label>
+        <label id="tfFlightLabel" hidden title="TIE Fighter's flight: the arrow keys always steer (Shift for a full turn at once; the keypad's Ins and Del roll). The mouse either points to aim, as in Wing Commander and RetroVega (the middle is still, the further the pointer the faster the turn; a ring shows where it is), or drags to steer as the game itself has it (1994), or steers nothing (the keyboard alone, or a joystick: a controller picked above). F12 in flight switches between the first three. Remembered in this browser">Flight
+          <select id="tfFlight">
+            <option value="pointer">mouse: point to aim</option>
+            <option value="drag">mouse: drag to steer (the game's own)</option>
+            <option value="keyboard">keyboard alone</option>
+            <option value="joystick">joystick / gamepad</option>
+          </select></label>
         <label id="voiceLabel" title="Voice between the players, when everybody in the room has opted in">Voice <select id="voice">
           <option value="off">Off</option>
           <option value="listen">Listen only</option>
