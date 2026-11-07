@@ -56,6 +56,8 @@ int16_t playtest_run(const char *only);
 #define PT_OX 0x24                      /* the Ox: the transport the old campaign's missions escort */
 #define PT_CAPSHIP 0x20                 /* the Vigilance */
 #define PT_LINKED 0x03                  /* the Redeemer: four mass drivers, linked */
+#define PT_MIXED 0x05                   /* the Lancelot: two particle cannons and two ion guns, two dumbfires, two
+                                           friend-or-foes and an image-recognition missile (the old Rapier's) */
 #define SEC LOGIC_HZ                    /* steps a second */
 
 typedef void (*PtFn)(void);
@@ -243,6 +245,16 @@ static int16_t pt_angle(const RvVec3 *v, const RvVec3 *ax, const RvVec3 *ay)
     return t >= 512 ? t - 1024 : t;
 }
 
+/* the angle between two ways (ONE long), tenths of a degree */
+static int16_t pt_tenths_between(const RvVec3 *a, const RvVec3 *b)
+{
+    RvVec3 c;
+    int32_t sn, cs = vec_dot(a, b) / 256;
+    vec_cross(&c, a, b);
+    sn = (int32_t)lf_sqrt((uint32_t)(c.x * c.x + c.y * c.y + c.z * c.z));
+    return (int16_t)((int32_t)lf_atan2(sn, cs) * 3600 / TURN);
+}
+
 /* a turn's expected size in n steps at dps and a steer of 9ths: TURN a whole turn */
 static int32_t pt_turn_of(int16_t n, int16_t dps, int16_t steer)
 {
@@ -315,6 +327,17 @@ static int16_t pt_launcher(int16_t s)   /* its first missile launcher, -1 none *
         if ((k = pt_kind(s, g)) == RV_WK_MISSILE || k == RV_WK_TORPEDO || k == RV_WK_ROCKET)
             return g;
     return -1;
+}
+
+/* the first of the player's launchers whose seeker is `lock` chosen (W round them): 0 when the ship has none */
+static int16_t pt_launcher_kind(int16_t lock)
+{
+    int16_t n;
+    g_sys.launcher_sel = 0;
+    for (n = 0; n < 16 && logic_launcher() >= 0; n++, (void)logic_missile_next())
+        if (weapon(GUN_TYPE(0, logic_launcher()))->lock == lock)
+            return 1;
+    return 0;
 }
 
 static int16_t pt_launcher_lock(int16_t s, uint8_t lock)   /* its first missile launcher of that lock (RV_LOCK_*), -1 none */
@@ -3682,6 +3705,96 @@ static void t_missile_blast(void)
     EXPECT(h3 == pt_health(3), e_far, h3 - pt_health(3), 0, 0);
 }
 
+/* M7.11: a missile's knock (knock_start; the old game's spin, tests/wc1/README.md "Missiles' knock"): the
+ * Schroedinger's dumbfire strikes an Ariston side on, six times over, the Ariston flown by nobody (a script's, no turn
+ * of its own), each hit with its own dice: within KNOCK_MAX steps of each it is thrown off its line, its nose or its
+ * wings about it (as far as the old game's 10 to 170 degrees), at least once by 30 degrees and more, and after them it
+ * turns no more */
+static void t_missile_knock(void)
+{
+    static const char __far e_miss[] = "the dumbfire never struck the Ariston in 10 s (hit %d)";
+    static const char __far e_thrown[] = "of six hits %d threw the Ariston off its line (its nose or its wings), the most "
+        "%d tenths of a degree: five and more, and once 300 and more expected";
+    static const char __far e_still[] = "a knock over, the Ariston still turned %d tenths of a degree in 10 steps";
+    int16_t l, i, j, pass, thrown = 0, most = 0, still = 0;
+    uint16_t m;
+    int32_t x, y, h;
+    RvVec3 f0, r0;
+    for (pass = 0; pass < 6; pass++) {
+        pt_alone(PT_PLAYER);
+        REQUIRE((l = pt_launcher(0)) >= 0, e_nolaunch, PT_PLAYER, 0, 0);
+        x = (int32_t)GUN_MOUNT_X(0, l) * collide_half(0) / 32 / 256;
+        y = (int32_t)GUN_MOUNT_Y(0, l) * collide_half(0) / 32 / 256;
+        pt_ship(1, 0x09, SIDE_AERA, CTL_SCRIPT, x, y, 2500, TURN / 4);   /* (an Ariston: its shield and armour outlast
+                                           the 93, so the roulette never ends it) */
+        playerCanBeDamaged = 0;
+        g_sys.target = 1;
+        rvTarget[0] = 1;
+        playerTarget = 1;
+        randomSeed = 0x2F6Bu + 7919u * (uint32_t)pass;   /* (each hit its own dice) */
+        h = pt_health(1);
+        m = fireGunFromShip(0, (uint16_t)l);
+        REQUIRE(m <= RV_MAX_SHIP_SLOT && maybeEntityType[m] == ET_MISSILE, e_nomissile, l, m, 0);
+        for (i = 0; i < 10 * SEC && pt_health(1) == h; i++) {
+            f0 = gOrientationFrontVector[1];
+            r0 = gOrientationRightVector[1];
+            if (!pt_step())
+                return;
+        }
+        REQUIRE(pt_health(1) < h, e_miss, pass, 0, 0);
+        if (!pt_steps(12))
+            return;
+        i = pt_tenths_between(&f0, &gOrientationFrontVector[1]);   /* (the nose's turn, or the wings' about it) */
+        j = pt_tenths_between(&r0, &gOrientationRightVector[1]);
+        i = j > i ? j : i;
+        thrown += i >= 20;
+        most = i > most ? i : most;
+        f0 = gOrientationFrontVector[1];
+        r0 = gOrientationRightVector[1];
+        if (!pt_steps(10))
+            return;
+        i = pt_tenths_between(&f0, &gOrientationFrontVector[1]);
+        j = pt_tenths_between(&r0, &gOrientationRightVector[1]);
+        i = j > i ? j : i;
+        still = i > still ? i : still;
+    }
+    EXPECT(thrown >= 5 && most >= 300, e_thrown, thrown, most, 0);
+    EXPECT(still < 5, e_still, still, 0, 0);
+}
+
+/* M7.12: a friend-or-foe's choice (ff_target; the user, 2026-11-07): the Lancelot's FF, a friend chosen as the target
+ * and nearer than any enemy, homes on the nearest enemy, not the target; with the intercom hurt it homes on the
+ * nearest ship of either side, the friend */
+static void t_ff_target(void)
+{
+    static const char __far e_nolaunch_ff[] = "the Lancelot has no friend-or-foe launcher";
+    static const char __far e_enemy[] = "the friend-or-foe homes on slot %d: the nearest enemy (slot 2) expected, not "
+        "the friend targeted (slot 1)";
+    static const char __far e_friend[] = "the intercom hurt, the friend-or-foe homes on slot %d: the nearest ship of "
+        "either side (the friend, slot 1) expected";
+    int16_t l, pass;
+    uint16_t m;
+    for (pass = 0; pass < 2; pass++) {
+        pt_alone(PT_MIXED);
+        REQUIRE(pt_launcher_kind(RV_LOCK_AUTO), e_nolaunch_ff, 0, 0, 0);
+        l = logic_launcher();
+        pt_ship(1, PT_HOMER, SIDE_TERRAN, CTL_FROZEN, 0, 300, 1500, 0);
+        pt_ship(2, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 4000, 0);
+        pt_ship(3, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 3000, 0, 6000, 0);
+        g_sys.target = 1;
+        if (pass)
+            systemDamage[SYS_INTERCOM] = 1;
+        m = fireGunFromShip(0, (uint16_t)l);
+        REQUIRE(m <= RV_MAX_SHIP_SLOT && maybeEntityType[m] == ET_MISSILE, e_nomissile, l, m, 0);
+        if (pass)
+            EXPECT(missileTarget[m] == 1, e_friend, missileTarget[m], 0, 0);
+        else
+            EXPECT(missileTarget[m] == 2, e_enemy, missileTarget[m], 0, 0);
+        systemDamage[SYS_INTERCOM] = 0;
+        g_sys.target = -1;
+    }
+}
+
 /* M7.6 */
 static void t_missile_ends(void)
 {
@@ -6183,8 +6296,6 @@ static void t_systems(void)
     memset(systemDamage, 0, systemDamage_SIZE);
 }
 
-#define PT_MIXED 0x05                   /* the Lancelot: two particle cannons and two ion guns, four heat seekers and
-                                           two image-recognition missiles */
 
 /* M10.4: the weapon choice: G cycles the guns over all and each type the ship carries, and the trigger then fires
  * that type alone; W cycles the launchers, and the missile key fires the chosen one */
@@ -6412,7 +6523,7 @@ static void t_taunt(void)
     rvTarget[0] = 0xFF;
 }
 
-/* M10.7: the missile lock: the Lancelot's heat seeker on a target 3,000 km ahead flying away locks in its lock time
+/* M10.7: the missile lock: the Gawain's heat seeker on a target 3,000 km ahead flying away locks in its lock time
  * (3 s), and the lock goes the step the target turns to face the player; the image-recognition missile (W) locks on
  * it facing or not; the tracking wrecked, or the EMCON off, no lock; the Schroedinger's dumbfire never locks */
 static void t_missile_lock(void)
@@ -6428,11 +6539,11 @@ static void t_missile_lock(void)
     static const char __far e_emcon[] = "the EMCON off, the heat seeker's lock is %d: it needs the sensors on";
     static const char __far e_dumb[] = "a dumbfire chosen, the lock is %d at %d percent: a dumbfire never locks";
     int16_t i, at = -1;
-    pt_alone(PT_MIXED);
+    pt_alone(PT_HOMER);
     g_sys.armed = 0;
     pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 3000, 0);   /* (facing +z: away from the player) */
     g_sys.target = 1;
-    g_sys.launcher_sel = 0;             /* (the first launcher: a heat seeker) */
+    (void)pt_launcher_kind(RV_LOCK_HEAT);
     for (i = 0; i < 100; i++) {
         if (!pt_step())
             return;
@@ -6445,8 +6556,7 @@ static void t_missile_lock(void)
     if (!pt_step())
         return;
     REQUIRE(g_sys.lock == 0 && g_sys.lock_pct == 0, e_face, g_sys.lock, g_sys.lock_pct, 0);
-    while (logic_launcher() >= 0 && weapon(GUN_TYPE(0, logic_launcher()))->lock != RV_LOCK_IMAGE)
-        (void)logic_missile_next();
+    (void)pt_launcher_kind(RV_LOCK_IMAGE);
     if (!pt_steps(100))
         return;
     REQUIRE(g_sys.lock == 1, e_image, g_sys.lock, 0, 0);
@@ -6455,7 +6565,7 @@ static void t_missile_lock(void)
         return;
     REQUIRE(g_sys.lock == 0 && g_sys.lock_pct == 0, e_track, g_sys.lock, g_sys.lock_pct, 0);
     systemDamage[SYS_TRACK] = 0;
-    g_sys.launcher_sel = 0;
+    (void)pt_launcher_kind(RV_LOCK_HEAT);
     pt_put(1, 0, 0, 3000, 0);
     g_sys.emcon = EMCON_OFF;
     if (!pt_steps(100))
@@ -7373,6 +7483,8 @@ static const char __far n_m6_5[] = "M6.5 capital-ram (collide_ships): a fighter 
 static const char __far n_m6_7[] = "M6.7 ram-owner (ram): a collision is worked out where its pilot is, or where no ship in it is another machine's";
 static const char __far n_m7_9[] = "M7.9 seeker-chases (missile_step, SEEKER_LIFE_STEPS): a heat seeker turns onto a target past its range and hits it";
 static const char __far n_m7_10[] = "M7.10 missile-blast (missile_step, blast): a missile hurts the ship it strikes by 93 and those within 1,000 km by less";
+static const char __far n_m7_11[] = "M7.11 missile-knock (knock_start, knock_step): a missile's hit throws a fighter's nose off its line for a few steps";
+static const char __far n_m7_12[] = "M7.12 ff-target (ff_target): a friend-or-foe homes on the nearest enemy, whatever is targeted; with the intercom hurt on the nearest ship";
 static const char __far n_m7_8[] = "M7.8 puppet-launch (missile_launch, step_fire): a launch by another machine's ship homes on the target that machine published";
 static const char __far n_m8_29[] = "M8.29 scene-human (step_scene): a ship near another machine's pilot stays in the scene";
 static const char __far n_m8_30[] = "M8.30 human-seat-lost (logic_wingman_lost): a wingman a person flew, killed, is no named pilot's death";
@@ -7478,7 +7590,7 @@ static const PtTest __far k_tests[] = {
     { n_m11_1, t_sim_waves, 0 }, { n_m11_2, t_sim_replenish, 0 }, { n_m11_3, t_sim_win, 0 }, { n_m11_4, t_sim_death, 0 },
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
-    { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m7_9, t_seeker_chases, 0 }, { n_m7_10, t_missile_blast, 0 }, { n_m8_29, t_scene_human, 0 },
+    { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m7_9, t_seeker_chases, 0 }, { n_m7_10, t_missile_blast, 0 }, { n_m7_11, t_missile_knock, 0 }, { n_m7_12, t_ff_target, 0 }, { n_m8_29, t_scene_human, 0 },
     { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 }, { n_m8_56, t_nav_switch, 0 }, { n_m8_57, t_escort_arrive, 0 }, { n_m8_58, t_escort_threat, 0 },
 };
 

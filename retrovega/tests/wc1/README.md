@@ -448,6 +448,26 @@ and Salthi 4,000, Rapier, Scimitar, Dralthi and Krant 6,000, Gratha 7,000, Rapto
 `blast`, 2026-11-07): the four missiles and the Aera seeker 93 at the place struck (the player 69) and the burst on
 the rest at 93 x 64; the fighters' death bursts not built.
 
+**Missiles' knock** (read 2026-11-07, the user: "I remember missiles were important because they spun ships around").
+Before the burst, hitByWeapon's case 0xB (ovr141:2348) takes the missile's momentum, its velocity by its mass (kShipStats
++0x06, the missiles' 5, a fighter's 120-200) and gives it, with the way from the struck ship's middle to the missile,
+to ovr140:1D32: both into the ship's own frame (ovr140:11F0), their cross product over the ship's inertia by its radius
+(+0x26 over +0x04: the fighters' 900-2,000 over 100-180, some 1/9 for every one; the capital ships' 10,000-20,000 over
+240-700), onto its three turn rates (dseg:BF42, BD9A, D1AC: degrees a frame).  ship_stats_every_frame (ovr143:067C)
+brings each rate back to the one its pilot asks at its angular acceleration (+0x20, +0x22, +0x24: the fighters' 5-14
+degrees a frame each frame), sharing the change among the three by how far each is off; the player's rates are its
+stick's and are not brought back there (si 0 is skipped), and the player's traces show no spin. Traced (wc1-mis,
+wc1-mc3, wc1-mc3h, the S lines' front vectors frame to frame): every one of the 10 direct hits on a fighter (a Krant,
+Scimitars) threw it at once, 10 to 41 degrees a frame, slowing some 5 degrees a frame each frame and gone within 3 to 8
+frames, up to some 170 degrees off its line (the Krant at frame 599 turned from its course nearly to the reverse); no
+laser hit did (209 of them, 13-49), and no capital ship moved. The fit (spinfit.py, scratch): the first frame's turn
+= 0.028 x |r x v| x radius / inertia, r the missile's place off the ship's middle in km, v its velocity in km a frame
+(6 hits, 0.020-0.040). The old missiles struck its spheres anywhere across them: their lines passed 18 to 150 km from
+the middles. Ours (logic.c `knock_start`, 2026-11-07; the user: "The current maneuvering feels right ... maybe have a
+6-12 (cus we run at 30) frame mimic script to get the off course feeling"): the steering as it is, and a fighter struck
+(not the player, not a capital ship) turned by the old throw (w0^2 / 10 degrees, w0 = 0.028 x b x v / 9, b how far off
+the middle by the dice, evenly to its radius) over 6 to 12 steps, slowing evenly; M7.11.
+
 The capital hull (ovr143:0F11): a count, a hit past the
 armour max(1, rest / 8) on the Kilrathi side, / 10 on the others.
 

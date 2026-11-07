@@ -322,7 +322,10 @@ What to write:
   - a free ship slot (`ship_free_slot`), made `ET_MISSILE`, at the launcher's mount, facing the ship's way;
   - `parentShipForShip` the ship;
   - `missileTarget` its target (`g_sys.target` for the player, `rvTarget` for an AI), 0xFF for a dumbfire (lock
-    none);
+    none); a friend-or-foe chooses its own (`ff_target`; the user, 2026-11-07: "the ff missiles should target the
+    nearest enemy if any status or friend with damaged comm or radar or target track subsystem"): the ship of the
+    other side nearest its launcher, whatever is targeted or locked; the player's, with the intercom, the radar or
+    the tracking hurt at all, the nearest ship of either side;
   - a dumbfire sets off toward its shooter's target's lead point when that lies within 15 degrees of the nose, then
     flies straight (`dumbfire_aim`; the user: "tilt towards the target to help aim since you only get one shot");
   - the rounds (`GUN_STATE`'s low bits) one fewer;
@@ -338,6 +341,13 @@ What to write:
     most 100, the player three quarters; then the slot cleared (`ship_clear`). The old game's missiles all burst
     for 6,000 (an explosion type's, whatever the missile): 93 on the ship struck, 69 on the player (McAuliffe 3's
     traces, every direct hit), so ours are 93 (weapons.csv; they had been 25-41, read from hits some way off).
+    Before the damage, a fighter struck (not the player, not a capital ship) is knocked off its line (`knock_start`,
+    the old game's spin, tests/wc1/README.md "Missiles' knock"; the user: "missiles were important because they spun
+    ships around", "a 6-12 (cus we run at 30) frame mimic script to get the off course feeling"): its steering is
+    left alone and over 6 to 12 steps it turns by the old game's throw, slowing evenly (`knock_step` in
+    `step_motion`): w0 = 0.028 x b x v / 9 degrees a frame, b how far off its middle the missile's line passed (the
+    dice's, evenly to its radius: ours home on the middle, the old ones struck anywhere across), v the missile's km a
+    frame; the throw w0² / 10 degrees, at most a half turn; the axis any way across the missile's path.
   - **Its range:** a missile ends when its weapon's range runs out; a seeker with a target chases for 40 s
     (`SEEKER_LIFE_STEPS`: the old game's seekers lived 591 frames and more, ours had died at their range in 3 s;
     the user, 2026-11-07: "make sure the position converges to the target unless the target jukes or corkscrews
@@ -358,6 +368,8 @@ What the tests expect:
 | M7.7 dumbfire-aims | the Schroedinger's dumbfire at its chosen target 8° off the nose, side on 2,500 km out, hurts it within 10 s; with the target 30° off it sets off straight along the nose (last in the table: a test's dice are its place) |
 | M7.9 seeker-chases | the Schroedinger's heat seeker, locked, at a still Nicander 5,000 km off and 30° right of the nose (past the heat seeker's range of 4,000): it turns onto it and hits it within 10 s (with the old life it died after 88 steps) |
 | M7.10 missile-blast | the Schroedinger's dumbfire into a still Nicander side on, 2,500 km out: it loses 80 or more (its shield's 50 and side armour's 30 at least; the blast's 93), a second Nicander 450 km beside it loses 5 or more and less than the first (its hull some 320 km from the blast: 20), a third 1,600 km off nothing |
+| M7.11 missile-knock | the Schroedinger's dumbfire into an Ariston side on (flown by a script: no turn of its own), six times, each with its own dice: five or more throw it 2 degrees and more within 12 steps (its nose or its wings about it), at least one 30 and more, and after those steps it turns no more |
+| M7.12 ff-target | the Lancelot's friend-or-foe, a Gawain targeted 1,500 km ahead and enemies at 4,000 and 6,700 km: it homes on the nearer enemy; the intercom hurt, on the Gawain |
 | M7.8 puppet-launch | a Gawain flown on another machine (a puppet) launches its seeker with that machine's target (slot 2) in missileTarget: the missile homes on 2; the player's own launch publishes its locked target there first (step_fire), for the layer to carry |
 
 ### M8: the mission (`logic_start`, `step_mission`, `enterNavPoint`, `logic_end`, `logic_autopilot`)
@@ -467,7 +479,7 @@ tests cover them; flight.c's keys (T, Y, L) and its AUTO call them.
 | M10.4 weapon-choice | the Lancelot (two particle cannons, two ion guns, heat seekers and image-recognition missiles): G cycles the choice over all, the first type, the second, all again; with the second chosen the trigger fires its two guns and none of the other; W cycles the launchers, and the missile key fires the chosen one |
 | M10.5 nav-cross | (host only) the chosen nav point 5,000 km right of a point 20,000 km ahead: `logic_hud` draws within 8 px of a quarter of the focal length right of the view's middle, and nothing there once the player has turned round |
 | M10.6 orders | a wingman 10,000 km right of the player, an enemy 6,000 km ahead of each: free it fights the one nearest to it; attack my target (the player's, the other) it takes that one, and the order is refused with no target set; help me out, the enemy nearest the player; form on my wing, nobody, and it stays within 3,000 km for 10 s; return to base with a destroyer of its side 20,000 km behind, it comes within 5,000 km of it in 40 s |
-| M10.7 missile-lock | the Lancelot's heat seeker on a target 3,000 km ahead flying away: locked after its 3 s and not before; the target turned to face the player, the lock is gone the next step; the image-recognition missile locks on it facing; the tracking wrecked, no lock; the EMCON off, no heat lock; the Schroedinger's dumbfire never locks |
+| M10.7 missile-lock | the Gawain's heat seeker on a target 3,000 km ahead flying away: locked after its 3 s and not before; the target turned to face the player, the lock is gone the next step; the image-recognition missile locks on it facing; the tracking wrecked, no lock; the EMCON off, no heat lock; the Schroedinger's dumbfire never locks |
 | M10.8 break-formation | a wingman 800 km off the player, the only enemy 40,000 km away: left alone it fights nobody; told to fly in formation, nobody, within 3,000 km; told to break formation, the far enemy; the enemy gone, it leaves the formation (over 1,500 km off) and stays round the player (within 6,000) |
 | M10.9 taunt | an enemy beside a Terran ship has that as its target; `logic_taunt` refuses a friend and a capital ship; taunted, its target is the player; put 3,000 km ahead of the player, facing it, selected and under hold=on, it fires |
 | M10.10 form-parallel | the wingman formed up 800 km right of a still player, then put 2,500 km ahead of its place facing back: 20 s on its nose is within 25° of the player's way; again with the player at 250 kps: within 25°, within 4,000 km (the old code sat it facing the player, cos -1) |
