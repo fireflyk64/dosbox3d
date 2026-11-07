@@ -466,7 +466,8 @@ laser hit did (209 of them, 13-49), and no capital ship moved. The fit (spinfit.
 the middles. Ours (logic.c `knock_start`, 2026-11-07; the user: "The current maneuvering feels right ... maybe have a
 6-12 (cus we run at 30) frame mimic script to get the off course feeling"): the steering as it is, and a fighter struck
 (not the player, not a capital ship) turned by the old throw (w0^2 / 10 degrees, w0 = 0.028 x b x v / 9, b how far off
-the middle by the dice, evenly to its radius) over 6 to 12 steps, slowing evenly; M7.11.
+the middle by the dice, evenly to its radius) over 6 to 12 steps, slowing evenly, the nose any way and the wings a
+little (the exact axis cost 1.2 KB of conventional memory more); M7.11.
 
 The capital hull (ovr143:0F11): a count, a hit past the
 armour max(1, rest / 8) on the Kilrathi side, / 10 on the others.

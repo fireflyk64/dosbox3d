@@ -347,7 +347,9 @@ What to write:
     left alone and over 6 to 12 steps it turns by the old game's throw, slowing evenly (`knock_step` in
     `step_motion`): w0 = 0.028 x b x v / 9 degrees a frame, b how far off its middle the missile's line passed (the
     dice's, evenly to its radius: ours home on the middle, the old ones struck anywhere across), v the missile's km a
-    frame; the throw w0² / 10 degrees, at most a half turn; the axis any way across the missile's path.
+    frame; the throw w0² / 10 degrees, at most a half turn; the nose thrown any way and the wings rolled a little
+    (the old axis lay across the missile's path, its missiles mostly from behind or ahead; worked out exactly it
+    cost 1.2 KB of conventional memory more).
   - **Its range:** a missile ends when its weapon's range runs out; a seeker with a target chases for 40 s
     (`SEEKER_LIFE_STEPS`: the old game's seekers lived 591 frames and more, ours had died at their range in 3 s;
     the user, 2026-11-07: "make sure the position converges to the target unless the target jukes or corkscrews

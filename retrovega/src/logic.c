@@ -1818,25 +1818,9 @@ static int16_t nearest_enemy(int16_t s, int16_t capital_only);
 /* whom a friend-or-foe homes on (the user, 2026-11-07: "The ff missiles should target the nearest enemy if any
  * status or friend with damaged comm or radar or target track subsystem"): the ship nearest its launcher of the
  * other side, whatever is targeted or locked; the player's, with the intercom, the radar or the tracking hurt at
- * all, the nearest ship of either side; -1 none */
-static int16_t ff_target(int16_t ship)
-{
-    int16_t k, best = -1;
-    int32_t bd = INT32_C(0x7FFFFFFF), d;
-    if (rvController[ship] != CTL_PLAYER
-        || (!sys_level(SYS_INTERCOM) && !sys_level(SYS_RADAR) && !sys_level(SYS_TRACK)))
-        return nearest_enemy(ship, 0);
-    for (k = 0; k < NUM_SHIP_SLOTS; k++) {
-        if (k == ship || !slot_is_ship(k) || shipAiState[k] == 9 || (rvFlags[k] & 16))
-            continue;
-        d = km_between(ship, k);
-        if (d < bd) {
-            bd = d;
-            best = k;
-        }
-    }
-    return best;
-}
+ * all, the nearest ship of either side (nearest_enemy's 2); -1 none */
+#define ff_target(ship) nearest_enemy((ship), rvController[ship] == CTL_PLAYER \
+    && (sys_level(SYS_INTERCOM) || sys_level(SYS_RADAR) || sys_level(SYS_TRACK)) ? 2 : 0)
 
 /* whom a missile launched by `ship` homes on: a dumbfire nobody; a friend-or-foe its own choice (ff_target); the
  * player's other seekers the cockpit's lock; an AI's its own target; a puppet's what its own machine published
@@ -2034,7 +2018,6 @@ static void blast(const RvVec3 *at, int16_t skip, int16_t src, int16_t shot_i, u
     }
 }
 
-/* a seeker's nose toward its target's lead point (where the target will be when it gets there), by at most its rate */
 /* a missile's knock (the user, 2026-11-07: "I remember missiles were important because they spun ships around", and
  * "The current maneuvering feels right ... maybe have a 6-12 (cus we run at 30) frame mimic script to get the off course
  * feeling").  The old game's (hitByWeapon's missile case, ovr140:1D32): the missile's momentum about the struck ship's
@@ -2046,50 +2029,32 @@ static void blast(const RvVec3 *at, int16_t skip, int16_t src, int16_t shot_i, u
  * of (how far off the middle the missile's line passed) x (its speed), by radius over inertia (some 1/9 for every old
  * fighter), and the throw as it slowed there (5 degrees a frame each frame: w^2 / 10), at most a half turn.  The old
  * missiles struck its spheres anywhere across them (18 to 150 km off the middle in the traces) where ours home on the
- * middle itself: how far off is the dice's, evenly from the middle to the ship's radius, and the turn's axis any way
- * across the missile's path (the struck place's: r x v) */
+ * middle itself: how far off is the dice's, evenly from the middle to the ship's radius.  The old axis lies across the
+ * missile's path, and its missiles came mostly from behind or ahead: ours throws the nose any way and rolls the wings
+ * a little (the axis worked out exactly cost 1.2 KB of conventional memory more) */
 #define KNOCK_MIN 6
 #define KNOCK_MAX 12
 static void knock_start(int16_t k, int16_t m)
 {
     const RvShipType __far *ty = slot_type(k);
-    RvVec3 vb, e1, e2;
-    int32_t vl, el, b, w0, deg, peak, sn, cs;
-    int16_t n, phi;
+    int16_t w0, deg, n, peak, phi;
     Knock __far *kn = &g_knock[k];
     if (k == 0 || !ty || maybeEntityType[k] != ET_SHIP || rvController[k] == CTL_PUPPET || shipAiState[k] == 9)
         return;
-    /* the missile's way in the ship's own frame (right, up, front), km a frame */
-    vb = vec3(vec_dot(&gVelocityVector[m], &gOrientationRightVector[k]) / ONE,
-              vec_dot(&gVelocityVector[m], &gOrientationUpVector[k]) / ONE,
-              vec_dot(&gVelocityVector[m], &gOrientationFrontVector[k]) / ONE);
-    vb = vec3(TO_KM(vb.x) * WC_FRAME_STEPS, TO_KM(vb.y) * WC_FRAME_STEPS, TO_KM(vb.z) * WC_FRAME_STEPS);
-    vl = len_of(vb.x, vb.y, vb.z);
-    b = (int32_t)ty->radius_km * (int32_t)(game_rand() & 1023) / 1024;   /* (how far off the middle, km) */
-    phi = (int16_t)(game_rand() & (TURN - 1));
-    w0 = b * vl * 28 / 9000;            /* the old game's spin, degrees a frame */
-    if (w0 < 1 || vl < 1)
+    /* the spin, degrees a frame: b km off the middle times the missile's km a frame (its kps / 10) times 0.028 / 9 */
+    w0 = (int16_t)((((int32_t)ty->radius_km * (game_rand() & 1023)) >> 10) * (int32_t)speedLo[m] / 3214);
+    if (w0 < 1)
         return;
-    deg = w0 * w0 / 10;
-    if (deg > 180)
-        deg = 180;
-    n = (int16_t)(w0 * 2 * WC_FRAME_STEPS / 10);   /* (its frames of slowing, in steps) */
+    deg = w0 > 42 ? 180 : w0 * w0 / 10;
+    n = w0 * 2 / 5;                     /* (its frames of slowing, in steps) */
     n = n < KNOCK_MIN ? KNOCK_MIN : n > KNOCK_MAX ? KNOCK_MAX : n;
-    peak = deg * 2 * TURN / (360L * n); /* TURN units the first step: the throw over n steps slowing evenly */
+    peak = (int16_t)((uint16_t)deg * 256u / (uint16_t)(45 * n));   /* TURN units the first step: the throw over n steps */
     if (peak > 127)
         peak = 127;
-    /* two ways across the path, ONE long: e1 = v x (up, or right when v is near up), e2 = v x e1 / |v| */
-    e1 = labs(vb.y) < vl * 7 / 8 ? vec3(-vb.z, 0, vb.x) : vec3(0, vb.z, -vb.y);
-    el = len_of(e1.x, e1.y, e1.z);
-    e1 = vec3(e1.x * ONE / el, e1.y * ONE / el, e1.z * ONE / el);
-    e2 = vec3((vb.y * e1.z - vb.z * e1.y) / vl, (vb.z * e1.x - vb.x * e1.z) / vl, (vb.x * e1.y - vb.y * e1.x) / vl);
-    /* the axis: sin phi e1 - cos phi e2; its parts about the right way (the nose up), up (to the right) and the front
-     * (the right wing up), each scaled to the first step's turn */
-    sn = lf_sin(phi);
-    cs = lf_cos(phi);
-    kn->pitch = (int8_t)((sn * e1.x - cs * e2.x) / 16384 * peak / ONE);
-    kn->yaw = (int8_t)((sn * e1.y - cs * e2.y) / 16384 * peak / ONE);
-    kn->roll = (int8_t)((sn * e1.z - cs * e2.z) / 16384 * peak / ONE);
+    phi = (int16_t)(game_rand() & (TURN - 1));
+    kn->yaw = (int8_t)((int16_t)(lf_cos(phi) >> 7) * peak >> 7);
+    kn->pitch = (int8_t)((int16_t)(lf_sin(phi) >> 7) * peak >> 7);
+    kn->roll = (int8_t)(((int16_t)(game_rand() & 63) - 32) * peak >> 7);
     kn->steps = kn->left = (uint8_t)n;
 }
 
@@ -2105,6 +2070,7 @@ static void knock_step(int16_t s)
     kn->left--;
 }
 
+/* a seeker's nose toward its target's lead point (where the target will be when it gets there), by at most its rate */
 static void missile_seek(int16_t s, int16_t t, int16_t dps)
 {
     RvVec3 d, b;
@@ -2443,14 +2409,15 @@ static void view_of(int16_t s, int16_t t, int16_t lead, View *v)
 }
 
 /* the nearest living ship of another side (not cloaked), or of the capital ships only; -1 none */
-static int16_t nearest_enemy(int16_t s, int16_t capital_only)
+static int16_t nearest_enemy(int16_t s, int16_t capital_only)   /* (capital_only 2: a ship of either side, ff_target's) */
 {
     int16_t k, best = -1;
     int32_t bd = INT32_C(0x7FFFFFFF), d;
     for (k = 0; k < NUM_SHIP_SLOTS; k++) {
-        if (k == s || !slot_is_ship(k) || commAnimInfo[k] == commAnimInfo[s] || shipAiState[k] == 9 || (rvFlags[k] & 16))
+        if (k == s || !slot_is_ship(k) || (commAnimInfo[k] == commAnimInfo[s] && capital_only != 2) || shipAiState[k] == 9
+            || (rvFlags[k] & 16))
             continue;
-        if (capital_only && maybeEntityType[k] != ET_CAPSHIP)
+        if (capital_only == 1 && maybeEntityType[k] != ET_CAPSHIP)
             continue;
         d = km_between(s, k);
         if (d < bd) {
