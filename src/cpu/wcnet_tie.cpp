@@ -204,14 +204,15 @@ void report(double now) {
     if (player < kObjectCount) {
         const Bit32u o = kObjects + player * kObjectSize;
         wclog(1, "TIE: %.1fs: %u frames (%u ticks a frame, rate %u), hyper %u main %u, %d objects live; player #%u type %u at %d %d %d, "
-                 "heading %u pitch %u, speed %d; calls:%s",
+                 "heading %u pitch %u, speed %d, scene %d; calls:%s",
               now / 1000.0, g_frames, r16(kFrameticks), r16(kFramerate), r8(kHyperspaceFlag), r8(kMainGameFlag), live, player,
-              r8(o + 4), (int)r32(o + 6), (int)r32(o + 0xA), (int)r32(o + 0xE), r16(o + 0x1E), r16(o + 0x20), (Bit16s)r16(o + 0x26), counts);
+              r8(o + 4), (int)r32(o + 6), (int)r32(o + 0xA), (int)r32(o + 0xE), r16(o + 0x1E), r16(o + 0x20), (Bit16s)r16(o + 0x26),
+              tie_scene(), counts);
     } else {
         wclog(1, "TIE: %.1fs: %u frames (%u ticks a frame, rate %u), hyper %u main %u, %d objects live, no player object (#%u), "
-                 "the front end's pointer at %d %d (button %u key %u); calls:%s",
+                 "the front end's pointer at %d %d (button %u key %u), scene %d; calls:%s",
               now / 1000.0, g_frames, r16(kFrameticks), r16(kFramerate), r8(kHyperspaceFlag), r8(kMainGameFlag), live, player,
-              (Bit16s)r16(kCursorX), (Bit16s)r16(kCursorY), r16(kDownButton), r16(kKey), counts);
+              (Bit16s)r16(kCursorX), (Bit16s)r16(kCursorY), r16(kDownButton), r16(kKey), tie_scene(), counts);
     }
     g_frames = 0;
 }
@@ -304,6 +305,14 @@ void tie_w8(Bit32u image, Bit8u v) { if (g_found) mem_writeb(tie_linear(image), 
 void tie_w16(Bit32u image, Bit16u v) { if (g_found) mem_writew(tie_linear(image), v); }
 void tie_w32(Bit32u image, Bit32u v) { if (g_found) mem_writed(tie_linear(image), v); }
 bool tie_in_flight() { return g_found && tie_r8(tie::kMainGameFlag) == 1; }
+int tie_scene() {
+    const Bit32u head = tie_r32(tie::kSceneHead);
+    Bit32u v = 0;
+    if (!g_found || head < 0x100000 || mem_readd_checked(head + tie::kSceneHeadScene, &v)) {
+        return -1;
+    }
+    return (Bit16s)(Bit16u)v;
+}
 int tie_player_object() {
     if (!g_found) {
         return -1;

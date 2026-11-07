@@ -44,6 +44,10 @@ void tie_w32(Bit32u image, Bit32u v);
 // (-1: none).
 bool tie_in_flight();
 int tie_player_object();
+// The front end's scene (OpenTIE's SCENE_*: 100 the registration desk, 110
+// the concourse, 131/132 the Combat Chamber, 160 the tour desk, 179..183 the
+// briefing, 190.. the debriefing, 2..4 a flight), or -1: none known.
+int tie_scene();
 
 // The flight's tables (image addresses; docs/tiefighter.md section 3).
 namespace tie {
@@ -61,6 +65,10 @@ enum {
     kMissionHeader = 0xE3534,   // int16 the flight groups' number first
     kFlightGroups = 0xDF6CC,    // EFGStruct fg_array[48], 0x124 each: +0x33 craft, +0x42 the player's craft (1-based)
     kFlightGroupSize = 0x124,
+    // The shell's scene head (shellext_Get_Cur_Scene at 0x6621B reads it: `mov eax,[sHead]; mov ax,[eax+0x14]`, the
+    // address a fixup into the data object, 0x356F8 of it): its +0x14 the scene.
+    kSceneHead = 0xF56F8,
+    kSceneHeadScene = 0x14,
 };
 }  // namespace tie
 

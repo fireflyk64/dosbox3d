@@ -2237,7 +2237,7 @@ bool wc_net_helmet_name(int *vduOrigin) {
 // flown together: RetroVega has no comms, and a game flown alone (WCSOLO)
 // nobody to call.
 bool wc_net_comms_hint() {
-    return wc::g_build != wc::BUILD_RV && !wc::solo();
+    return wc::g_build != wc::BUILD_RV && !wc::solo() && !wc::tie_found();   // (TIE Fighter has no chat line yet)
 }
 
 // A drone riding behind the leader looks at the leader's ship through its
