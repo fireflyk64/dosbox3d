@@ -16,6 +16,7 @@
 #define WCNET_TIE_H_
 
 #include <string>
+#include <vector>
 #include "dosbox.h"
 
 namespace wc {
@@ -120,6 +121,8 @@ void tie_cockpit_before_species();
 void tie_cockpit_forget();
 // A flight group flown in another craft (the mission files' type number), before the flight loads its craft.
 void tie_fly_group_as(int fg, int type);
+// A file of the game's own drive (its DOS name, e.g. MISSION\\HG1W.TIE), read from the host; false if not there.
+bool tie_game_file(const std::string &dosName, std::vector<Bit8u> &out);
 
 // Test aid: the front end's pointer put at a point of its 320x200 screen
 // (the key script's !tiecursor=x:y; a mouse button then clicks there).

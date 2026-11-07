@@ -1151,6 +1151,13 @@ void tie_fly_group_as(int fg, int type) {
 
 // At fediskio_loadspecies's entry: the mission is read (create_loadmission), its craft not yet loaded, the cockpit
 // not yet either.
+bool tie_game_file(const std::string &dosName, std::vector<Bit8u> &out) {
+    localDrive *drive = cockpit_drive();
+    if (!drive) return false;
+    const std::string path = host_path(drive, dosName);
+    return !path.empty() && read_file(path, out);
+}
+
 void tie_cockpit_before_species() {
     const Bit32u pstate = tie_linear(tie::kPstate);
     const int fg = mem_readb(pstate + 0x0A);

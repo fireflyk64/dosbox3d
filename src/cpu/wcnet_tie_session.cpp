@@ -1948,7 +1948,7 @@ int mirror_type(int t) {
 }
 
 // The line the challenge's Imperials say (the user: "ideally we use the line 'They're flying z-95 headhunters they're
-// brave' or something from one of the other missions"), a radio message of the mission's own, 10 s in, where the
+// brave' or something from one of the other missions"), a radio message of the mission's own, 25 s in, where the
 // mission has a free one (16 at most); else the emulator's line.
 const char kBraveLine[] = "They're flying Z-95 Headhunters! They're brave...";
 void challenge_line() {
@@ -1961,12 +1961,102 @@ void challenge_line() {
     for (Bit32u k = 0; k < 90; k++) {
         tie_w8(m + k, 0);
     }
-    for (size_t k = 0; k < sizeof(kBraveLine) && k < 63; k++) {
-        tie_w8(m + (Bit32u)k, (Bit8u)kBraveLine[k]);
+    tie_w8(m, '1');                 // (the enemy says it: the enemy lines' color, '1', green)
+    for (size_t k = 0; k < sizeof(kBraveLine) && k < 62; k++) {
+        tie_w8(m + 1 + (Bit32u)k, (Bit8u)kBraveLine[k]);
     }
-    // (both triggers "always" (condition 0), and: at the first poll; its delay two polls, 1,180 ticks each: 10 s)
-    tie_w8(m + 88, 2);
+    // (both triggers "always" (condition 0), and: at the first poll; its delay five polls, 1,180 ticks each: 25 s, past
+    // the opening's own lines and new craft alerts, which a line fired with them is lost under: HG3M's at 10 s was)
+    tie_w8(m + 88, 5);
     tie_w16(tie::kMissionHeader + 2, (Bit16u)(n + 1));
+}
+
+// The challenge's lines (the user, 2026-11-07: "just replace them with those other side lines.... where it talks about
+// the weak z-95 or others where they talk about rebel scum. lots of lines can sub in... find extant lines"): each
+// radio message of the four missions that speaks for the Empire's side is replaced by a line of another mission, from
+// the player's own files, that fits the mirrored sides: the player's side speaks of Imperial craft as the enemy (the
+// battles against Zaarin's and Harkov's traitors, the Rebels' own lines in B10M1 and B12M6), the enemy of the Z-95s.
+// A foe's line in the missions' own enemy lines' color (its first character '1': green), a friend's without one (the
+// command's red), as each mission's own lines are.  Only
+// where the lines come from is here; their words are read from the mission files at the launch.
+struct ChallengeLine {
+    const char *mission;    // the challenge's source mission
+    int index;              // its radio message
+    const char *from;       // the mission whose line it gets (MISSION\<from>.TIE)
+    int fromIndex;
+    bool foe;
+};
+const ChallengeLine kChallengeLines[] = {
+    // HG1W, Mu 1: the transport that bolts and the fighters with it arrive
+    { "hg1w", 13, "b10m1gw", 2, false },    // (for the rebel scum bolting: the Rebels' own Imperial scum)
+    { "hg1w", 14, "b2m4gw", 11, true },     // (for the ion cannons, a Z-95 has none: the enemy saving its warheads)
+    // HI2W, Gamma 2
+    { "hi2w", 0, "b1m2fm", 1, false },      // (for engaging Rebel fighters: Beta and Gamma engaging the enemy)
+    { "hi2w", 1, "b13m5aw", 3, false },     // (for T/I Gamma and the escaping transport: no traitor escapes)
+    { "hi2w", 2, "hm1w", 12, true },        // (for T/I Eta's no prisoners: the enemy's word of the Z-95s)
+    { "hi2w", 3, "b2m5fw", 4, false },      // (for the Rebels taking the bait: hostile ships in the system)
+    { "hi2w", 4, "b11m6mw", 1, false },     // (for the X-wings, T/Is now: more enemy forces)
+    { "hi2w", 5, "b9m1dw", 1, false },      // (for the Y-wings' torpedoes, T/Bs now: the TIE Bombers first)
+    { "hi2w", 15, "b4m1fm", 4, true },      // (for the A-wings, T/Is now: the enemy launching Interceptors)
+    // HG3M, Tau
+    { "hg3m", 0, "ha2w", 7, true },         // (for surrender or die: the enemy on those who fly Z-95s)
+    { "hg3m", 1, "hm4m", 6, true },         // (for one of our Y-wings: the enemy on you and your wingman)
+    // HG4M, Tau
+    { "hg4m", 0, "b12m3gm", 0, false },     // (for the Imperial Gunboats thanked: Mu leading Tau in)
+    { "hg4m", 2, "b12m6mm", 5, false },     // (for Rebel war craft in the area: the Rebels' own alert of an Imperial)
+};
+
+// A mission file's radio message (its 64 bytes of text), from the player's files; empty if not read.
+std::string mission_line(const std::string &file, int index) {
+    std::string dos = "MISSION\\";
+    for (size_t i = 0; i < file.size(); i++) dos += (char)toupper((unsigned char)file[i]);
+    std::vector<Bit8u> d;
+    if (!tie_game_file(dos + ".TIE", d) || d.size() < 2 + 456) {
+        return std::string();
+    }
+    const size_t base = (Bit16s)(d[0] | d[1] << 8) <= 0 ? 2 : 0;      // (the version word, -1, first)
+    const int numFg = (Bit16s)(d[base] | d[base + 1] << 8), numMsg = (Bit16s)(d[base + 2] | d[base + 3] << 8);
+    if (numFg < 0 || index < 0 || index >= numMsg) {
+        return std::string();
+    }
+    const size_t at = base + 456 + (size_t)numFg * 292 + (size_t)index * 90;
+    std::string t;
+    for (size_t k = 0; k < 64 && at + k < d.size() && d[at + k]; k++) t += (char)d[at + k];
+    return t;
+}
+
+void challenge_lines() {
+    std::string m;
+    for (size_t i = 0; i < g_net->challengeFile.size(); i++) m += (char)tolower((unsigned char)g_net->challengeFile[i]);
+    const int numMsg = (Bit16s)tie_r16(tie::kMissionHeader + 2);
+    int put = 0, missing = 0;
+    for (size_t i = 0; i < sizeof(kChallengeLines) / sizeof(kChallengeLines[0]); i++) {
+        const ChallengeLine &c = kChallengeLines[i];
+        if (m != c.mission || c.index >= numMsg) {
+            continue;
+        }
+        std::string t = mission_line(c.from, c.fromIndex);
+        while (!t.empty() && t[0] >= '1' && t[0] <= '3') t.erase(0, 1);     // (its own speaker's color off)
+        while (!t.empty() && t[t.size() - 1] == ' ') t.erase(t.size() - 1);
+        if (t.empty()) {
+            missing++;
+            continue;
+        }
+        if (c.foe) {
+            t = "1" + t;
+        }
+        if (t.size() > 63) {
+            t.resize(63);
+        }
+        const Bit32u at = kRadioMsg + (Bit32u)c.index * 90;
+        for (Bit32u k = 0; k < 64; k++) {
+            tie_w8(at + k, k < t.size() ? (Bit8u)t[k] : 0);
+        }
+        put++;
+    }
+    if (put || missing) {
+        wclog(1, "TIE: the Z-95 challenge's lines: %d of %s's replaced by other missions'%s", put, m.c_str(), missing ? " (some not read)" : "");
+    }
 }
 
 // The challenge into the mission just read: each flight group's craft mirrored, the player's Z-95s (its spec the
@@ -1989,6 +2079,7 @@ void make_challenge(bool again) {
         }
         changed++;
     }
+    challenge_lines();              // (again too: a mission read again has its own lines again)
     if (!again) {
         challenge_line();
     }
