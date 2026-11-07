@@ -94,6 +94,10 @@ void wcnetSendChatMessage(const std::string &msg);
 // Called by the keyboard before a key reaches the game: true takes the key
 // (a drone's copilot keys go to the server instead; wcnet_hooks.cpp).
 bool wc_net_key_filter(int kbdKey, bool pressed);
+// The host mouse's motion taken from the game (TIE Fighter's pointer mode: wcnet_tie_controls.cpp), and the pointer
+// the overlay draws for it (-1..1 from the middle of the picture).
+bool wc_net_mouse_divert(float xrel, float yrel);
+bool wc_net_steer_marker(double *x, double *y);
 // A drone riding behind the leader: its dashboard, from that line of the
 // game's 200 down, is to go dark (src/gui/sdlmain.cpp).
 bool wc_net_cockpit_dim(int *dashboardTop);

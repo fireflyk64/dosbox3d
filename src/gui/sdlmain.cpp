@@ -1662,6 +1662,7 @@ extern bool within_briefed_mission;
 extern bool in_space();
 extern bool wc_net_overlay_chat();
 extern const char *wc_net_wait_note();
+extern bool wc_net_steer_marker(double *x, double *y);   // (wc_net.h: TIE Fighter's pointer, -1..1 from the middle)
 extern bool wc_net_comms_hint();
 std::string outgoing_prefix = "[Transmit Comms] ";
 size_t last_incoming_text_len = 0;
@@ -1714,6 +1715,30 @@ static void DrawText(Bitu x,Bitu y,const char * text,Bit8u color, Bit8u *surface
 // the wait note while the link holds this machine still for another's (the user, 2026-11-05: "when you arrive in space,
 // if you are waiting for the other host maybe we can draw the disconnect link during the wait....then remove it during
 // flight").  The game stands still in such a wait and can draw nothing; the overlay is what is on the screen.
+// TIE Fighter's pointer in its pointer mode (wcnet_tie_controls.cpp): a small ring with a dot, amber on a dark edge.
+static void DrawMarker(int cx, int cy, Bit8u *surface, Bitu pitch) {
+    const Bitu step = pitch / sdl.draw.width;
+    for (int pass = 0; pass < 2; pass++) {          // (the dark edge first, the amber over it)
+        for (int dy = -6; dy <= 6; dy++) {
+            for (int dx = -6; dx <= 6; dx++) {
+                const int r2 = dx * dx + dy * dy;
+                const bool ring = pass ? (r2 >= 16 && r2 <= 25) : (r2 >= 12 && r2 <= 36);
+                const bool dot = pass ? r2 <= 1 : r2 <= 4;
+                if (!ring && !dot) continue;
+                const int x = cx + dx, y = cy + dy;
+                if (x < 0 || y < 0 || x >= (int)sdl.draw.width || y >= (int)sdl.draw.height) continue;
+                Bit8u *px = surface + y * pitch + x * step;
+                if (step >= 3) {
+                    if (pass) { px[0] = 0x10; px[1] = 0xB0; px[2] = 0xFF; }   // (BGRA in memory: amber)
+                    else { px[0] = 0x10; px[1] = 0x10; px[2] = 0x10; }
+                } else {
+                    *px = pass ? 0x80 : 0x00;
+                }
+            }
+        }
+    }
+}
+
 static void DrawBolt(Bitu x, Bitu y, Bit8u *surface, Bitu pitch) {
     enum { W = 10, H = 18 };
     Bitu step = pitch / sdl.draw.width;
@@ -1785,6 +1810,24 @@ void GFX_EndUpdate( const Bit16u *changedLines ) {
                 int vdu[2];
                 if (wc_net_helmet_name(vdu)) {
                     BlankHelmetName(vdu[0], vdu[1], textPixels, textPitch);
+                }
+            }
+            {
+                // TIE Fighter's pointer mode: where the pointer is, over the gunsight's middle (some 38% of the way down)
+                static int lastX = -1, lastY = -1;
+                double mx = 0, my = 0;
+                if (wc_net_steer_marker(&mx, &my)) {
+                    const int x = (int)(sdl.draw.width * (0.5 + 0.42 * mx));
+                    const int y = (int)(sdl.draw.height * (0.375 + 0.30 * my));
+                    if (x != lastX || y != lastY) {
+                        lastX = x;
+                        lastY = y;
+                        render.scale.clearCache = true;     // (the old ring off the cockpit's still lines)
+                    }
+                    DrawMarker(x, y, textPixels, textPitch);
+                } else if (lastX >= 0) {
+                    lastX = lastY = -1;
+                    render.scale.clearCache = true;
                 }
             }
             if (in_space() && !incoming_text.empty()) {

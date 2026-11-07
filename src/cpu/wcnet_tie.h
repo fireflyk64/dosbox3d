@@ -101,6 +101,15 @@ bool tie_in_call();
 // at once with eax.
 void tie_skip_call(Bit32u eax);
 
+// The flight's controls (wcnet_tie_controls.cpp, step 7): the arrows steer
+// as RetroVega's, the keypad's Ins and Del roll, F12 switches the mouse
+// between the game's own drag-to-steer and a pointer that aims.
+bool tie_controls_key(int kbdKey, bool pressed);     // true: taken from the game
+bool tie_controls_mouse(float xrel, float yrel);     // true: moved our pointer instead of the game's stick
+void tie_controls_frame();                           // at the frame's top: this frame's mickeys
+bool tie_controls_marker(double *x, double *y);      // the pointer to draw, -1..1 from the middle
+void tie_controls_set_mouse(int pointer);
+
 // Test aid: the front end's pointer put at a point of its 320x200 screen
 // (the key script's !tiecursor=x:y; a mouse button then clicks there).
 void tie_set_cursor(int x, int y);

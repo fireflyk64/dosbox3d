@@ -2296,8 +2296,19 @@ bool wc_net_cockpit_dim(int *viewBottom) {
 // the drone's own game, which has no use for them while it rides.  Nothing
 // else is touched: the gunner has a turret to work, and the chat prompt
 // takes its keys before they get here.
+bool wc_net_mouse_divert(float xrel, float yrel) {
+    return wc::tie_controls_mouse(xrel, yrel);
+}
+
+bool wc_net_steer_marker(double *x, double *y) {
+    return wc::tie_controls_marker(x, y);
+}
+
 bool wc_net_key_filter(int kbdKey, bool pressed) {
     using namespace wc;
+    if (tie_controls_key(kbdKey, pressed)) {
+        return true;    // (TIE Fighter's flight: the arrows steer, Ins and Del roll, F12 the mouse's mode)
+    }
     if (!g_session || !g_session->is_copilot() || !in_flight()) {
         return false;
     }
