@@ -631,6 +631,19 @@ static double joystick_port_value(double v, int axis) {
 }
 
 static bool enemy_ship(int slot);
+static bool human_slot(int slot);
+
+// the key script's kills (!killfoes, !killship=, !kill=) go through the game calls queue: a shared flight's server's,
+// or alone (no session: WCNET=0, WCSOLO=1) this machine's, whose frame hook runs the queue, but not RetroVega's alone
+// (rv_check_hooks: only watched)
+static bool kill_here() {
+    return g_session ? g_session->is_server() : g_build != BUILD_RV;
+}
+
+static const char *kill_here_says() {
+    return kill_here() ? (g_session ? "sent" : "alone") : g_session ? "ignored: not the server"
+                                                                     : "ignored: RetroVega alone runs no game calls";
+}
 
 static void key_script() {
     static int parsed = 0;
@@ -969,7 +982,7 @@ static void key_script() {
             const char *p = item.c_str() + 10;
             while (*p) { spare.push_back(atoi(p)); const char *c = strchr(p, ','); if (!c) break; p = c + 1; }
         }
-        bool server = g_session && g_session->is_server();
+        bool server = kill_here();
         int killed = 0, spared = 0;
         for (int s = kPlayerSlot + 1; s <= kMaxShipSlot; s++) {
             if (!enemy_ship(s) || rd16((Bit16u)(ds::commAnimInfo + 2 * s)) != 1) continue;   // the Kilrathi side only: not the scenery (fields are side 2)
@@ -979,7 +992,7 @@ static void key_script() {
             killed++;
         }
         wclog(1, "key script %.1fs (t=%.1f): kill foes: %d ships, %d spared (%s); %s", t, now / 1000.0, killed, spared,
-              server ? "sent" : "ignored: not the server", mission_state_line().c_str());
+              kill_here_says(), mission_state_line().c_str());
     } else if (item.compare(0, 10, "!killship=") == 0) {
         // !killship=<mission ship>: the server destroys the slot flying that mission ship (a pod, a ship that
         // spawned late), whatever slot it took
@@ -987,15 +1000,15 @@ static void key_script() {
         for (int s = kPlayerSlot + 1; s <= kMaxShipSlot && ds::known(ds::slotMissionShip); s++) {
             if (slot_in_use(s) && (Bit16s)rd16((Bit16u)(ds::slotMissionShip + 2 * s)) == ms) slot = s;
         }
-        bool server = g_session && g_session->is_server();
+        bool server = kill_here();
         wclog(1, "key script %.1fs (t=%.1f): kill mission ship %d (%s); %s", t, now / 1000.0, ms,
-              slot < 0 ? "not in a slot" : !server ? "ignored: not the server" : "sent", mission_state_line().c_str());
+              slot < 0 ? "not in a slot" : kill_here_says(), mission_state_line().c_str());
         if (server && slot >= 0) enqueue_test_kill(slot);
     } else if (item.compare(0, 6, "!kill=") == 0) {
         int slot = atoi(item.c_str() + 6);
-        bool server = g_session && g_session->is_server();
+        bool server = kill_here();
         wclog(1, "key script %.1fs (t=%.1f): kill slot %d (%s); %s", t, now / 1000.0, slot,
-              !server ? "ignored: not the server" : slot_in_use(slot) ? "in use" : "empty", mission_state_line().c_str());
+              !server ? kill_here_says() : slot_in_use(slot) ? "in use" : "empty", mission_state_line().c_str());
         if (server && slot_in_use(slot)) {
             enqueue_test_kill(slot);
         }
@@ -1467,7 +1480,7 @@ static double nearest_human_km(int slot, int *who) {
     int nearest = -1;
     double nearestKm = 0;
     for (int s = kPlayerSlot; s <= kMaxShipSlot; s++) {
-        if (s == slot || !g_session->is_player_slot(s) || !slot_in_use(s)) {
+        if (s == slot || !human_slot(s) || !slot_in_use(s)) {
             continue;
         }
         Vec3 p = read_vec(vec_slot(ds::gPositionVector, s));
@@ -1482,8 +1495,14 @@ static double nearest_human_km(int slot, int *who) {
     return nearest < 0 ? -1 : nearestKm;
 }
 
+// a human's ship: the session's players, or alone (no session: WCNET=0, WCSOLO=1) our own.  (enemy_ship asked the
+// session with none there: the key script's !killfoes crashed the emulator in a room of one, 2026-11-07)
+static bool human_slot(int slot) {
+    return g_session ? g_session->is_player_slot(slot) : slot == kPlayerSlot;
+}
+
 static bool enemy_ship(int slot) {
-    return is_ship_slot(slot) && slot_in_use(slot) && !g_session->is_player_slot(slot) && ds::known(ds::commAnimInfo) &&
+    return is_ship_slot(slot) && slot_in_use(slot) && !human_slot(slot) && ds::known(ds::commAnimInfo) &&
            rd16((Bit16u)(ds::commAnimInfo + 2 * slot)) != rd16(ds::commAnimInfo);  // the side word: not the player's side
 }
 
