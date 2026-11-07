@@ -408,6 +408,10 @@ static KBD_KEYS script_key(const std::string &name) {
     for (size_t i = 0; i < sizeof(kNamed) / sizeof(kNamed[0]); i++) {
         if (name == kNamed[i].name) return kNamed[i].key;
     }
+    if (name.size() == 3 && name[0] == 'k' && name[1] == 'p' && name[2] >= '1' && name[2] <= '9') {
+        static const KBD_KEYS kPad[9] = { KBD_kp1, KBD_kp2, KBD_kp3, KBD_kp4, KBD_kp5, KBD_kp6, KBD_kp7, KBD_kp8, KBD_kp9 };
+        return kPad[name[2] - '1'];     // (kp1..kp9: TIE Fighter's views)
+    }
     if (name.size() >= 2 && name[0] == 'f' && atoi(name.c_str() + 1) >= 1 && atoi(name.c_str() + 1) <= 12) {
         return (KBD_KEYS)(KBD_f1 + atoi(name.c_str() + 1) - 1);
     }

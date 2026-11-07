@@ -847,9 +847,44 @@ the Jedi (seen from outside) as the reference.
   `WCNET_TIE_FLY_AS=17`): the cockpit as made, the scopes' contacts, the
   throttle, speed, clock and the laser, shield and engine bars changing, the
   warhead counters, the targeting display's picture of the target inside the
-  gunboat's frame.  The side views are the gunboat's (its V).
-* **Open.**  The side views' struts.  (The second pilot's own flight group in
-  the pairing's craft: done, step 9's pairings below.)
+  gunboat's frame.  The side views were the gunboat's (its V) until
+  2026-11-07: see "The side views" below.
+* **The side views** (2026-11-07; the user: "Side views should have logical
+  struts if other art has it for both z95 and shuttle").  The keypad's 7, 4
+  and 1 look left forward, left and left back (views 1..3 of the INT), 9, 6
+  and 3 the same pictures mirrored by the game (views 5..7, flags 0xC1..0xC3),
+  5 up (view 16), the period the forward view without the cockpit (view 19,
+  GUNBTFL: the scopes only); the fighters' INTs have no pictures for them
+  (flags 0x91), the gunboat's and the missile boat's do.  The gunboat's show
+  its cockpit from inside: at each front corner a side pillar leaning in,
+  beams overhead, the scope on its V strut (left forward: the strut runs from
+  the scope down to the view's right edge, towards the dashboard's middle; its
+  place there fits the forward view's at a focal length of some 455 pixels),
+  its wings, the hull below; up, the V's tops at the bottom corners.  Made
+  from them by code at 640x480 (`make_sides`, `wcnet_tie_cockpit.cpp`; the
+  figures the pictures' own, a picture that is not the one measured left as
+  it is, by its FNV-1a):
+  * the shuttle: left forward, the V's strut out (the scope's housing kept)
+    and the A's left leg in, from the beam overhead to the sill behind the
+    scope where the forward view's leg would be seen (its foot near x 400,
+    its top near 500), drawn from the view's own pillar's rows at 0.6 of its
+    width; up, the V's tops out and the frame's bar along the bottom, 34 rows
+    (the game's own 320x200 up view of the gunboat has such a bar); left and
+    left back as the gunboat's.  `SHUT10`, `SHUTUP`.
+  * the Z-95 (the hoop in front, a bubble canopy): everything above the hull
+    out but the scope (it floats in the forward view too); left forward the
+    hoop's front leg rising from the sill at x 468 and leaving at the top
+    right, left back the canopy's rear hoop (the same hoop mirrored), up the
+    hoop's top along the bottom, the left view clear (the gunboat's wing and
+    pillar out; the pillar's fitting on the hull stays).  `Z9510`, `Z9509`,
+    `Z9508`, `Z95UP`.  The struts' and hoops' pixels are the forward view's
+    left strut's, each color the view's nearest (the views' own colors 0..63
+    differ).
+  * 320x200: the gunboat's side views stay (another rendering, framed
+    otherwise; the page flies at 640x480).
+  Seen in flight (`WCNET_TIE_FLY_AS=17` and 14, the key script's `kp1`..`kp9`).
+* **Open.**  (The second pilot's own flight group in the pairing's craft:
+  done, step 9's pairings below; the side views: done, above.)
 
 ### Step 6b: laser fire near and far (2026-11-06)
 
@@ -1189,8 +1224,8 @@ X-wing-like cockpit (an arched canopy, a long nose).
   its 13 groups mirrored, the line as a notice), a room's pick of T/F mission 3
   flew HG3M (25 of 28 mirrored), both pilots in Z-95s and the Z-95 cockpit,
   through the jump and after.
-* **Open.**  The briefings still speak of the Empire's side; the side views
-  are the gunboat's.
+* **Open.**  The briefings still speak of the Empire's side.  (The side
+  views: made for the Z-95 since 2026-11-07, step 9's "The side views".)
 
 ### Step 15: long mission tests with an ally (2026-11-07)
 

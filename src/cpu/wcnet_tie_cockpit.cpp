@@ -72,11 +72,12 @@ struct Derived {
     const char *forward;        // its forward view's LFD
     int kind;
     const char *parts;          // its parts file (<name>.PNL) with its own craft's icon; NULL: the gunboat's parts
+    const char *side;           // its side views' names' start (SHUT10, Z9509...)
     bool made;
 };
 Derived g_derived[] = {
-    { kShuttleSpec, "SHUTTLE", "SHUTFWD", kForwardShuttle, NULL, false },
-    { 13, "Z95", "Z95FWD", kForwardZ95, "Z95P", false },
+    { kShuttleSpec, "SHUTTLE", "SHUTFWD", kForwardShuttle, NULL, "SHUT", false },
+    { 13, "Z95", "Z95FWD", kForwardZ95, "Z95P", "Z95", false },
 };
 
 // -- the files' formats ---------------------------------------------------------------------------------------------
@@ -1030,6 +1031,382 @@ bool make_parts_z95(const std::vector<Bit8u> &gunboat, const std::vector<Bit8u> 
     return true;
 }
 
+// -- the side views (2026-11-07) ----------------------------------------------------------------------------------------
+// The user: "Side views should have logical struts if other art has it for both z95 and shuttle".  The gunboat's own
+// (640x480; the numeric keypad's 7, 4 and 1 look left forward, left and left back, 9, 6 and 3 the same views mirrored,
+// 5 up) show its cockpit from inside: a side pillar leaning in at each front corner, beams overhead, the scope on its
+// V strut, the gunboat's wings, the hull below.  Made from them, by code, as the forward views are:
+//   the shuttle (an A in front): left forward, the V's strut out and the A's leg in, rising from the sill behind the
+//     scope (the view's own pillar's rows, narrowed); up, the V's tops out and the frame's bar along the bottom (as the
+//     game's own 320x200 up view of the gunboat has it); left and left back as the gunboat's (its pillars and wings
+//     fit a shuttle);
+//   the Z-95 (a hoop in front, a bubble canopy): everything above the hull out but the scope (it floats in the forward
+//     view too), the canopy's hoop in: left forward its front leg, left back its rear hoop, up its top.
+// The figures are the 640x480 pictures' own (measured on them); a picture that is not the one measured (another
+// release's) is left as it is.  At 320x200 the gunboat's (another rendering, framed otherwise) stay.
+enum { kSideW = 640, kSideH = 480 };
+
+struct SidePoint {
+    int x, y;
+};
+
+bool in_polygon(const SidePoint *p, int n, int x, int y) {
+    bool in = false;
+    for (int i = 0, j = n - 1; i < n; j = i++) {
+        if ((p[i].y > y) != (p[j].y > y) && x < (double)(p[j].x - p[i].x) * (y - p[i].y) / (double)(p[j].y - p[i].y) + p[i].x) {
+            in = !in;
+        }
+    }
+    return in;
+}
+
+// The scope's housing in the left forward view (kept) and the V's strut from it to the view's edge.
+const SidePoint kHousing[] = { { 380, 95 }, { 470, 93 }, { 515, 139 }, { 515, 239 }, { 472, 257 }, { 392, 257 }, { 357, 233 }, { 357, 137 } };
+const SidePoint kVBeam[] = { { 476, 50 }, { 640, 160 }, { 640, 252 }, { 516, 178 }, { 516, 139 }, { 470, 93 }, { 476, 93 } };
+const int kHousingN = (int)(sizeof(kHousing) / sizeof(kHousing[0])), kVBeamN = (int)(sizeof(kVBeam) / sizeof(kVBeam[0]));
+
+Bit32u fnv1a(const std::vector<Bit8u> &d) {
+    Bit32u h = 2166136261u;
+    for (size_t i = 0; i < d.size(); i++) {
+        h = (h ^ d[i]) * 16777619u;
+    }
+    return h;
+}
+
+// A strut's pixels as a texture: its rows top down, its run on each, the picture they are in and a color map into the
+// picture drawn on (the views' own colors 0..63 differ; 64.. are the game's).
+struct Texture {
+    std::vector<int> rows;
+    std::vector<Run> runs;
+    const std::vector<Bit8u> *px;
+    Bit8u map[256];
+};
+
+class Side {
+public:
+    Side(std::vector<Bit8u> &px, std::vector<Bit8u> &vis, int depth) : px_(px), vis_(vis), d_(depth) {}
+
+    bool visible(int x, int y) const { return y >= 0 && y < d_ && x >= 0 && x < kSideW && vis_[(size_t)y * kSideW + x]; }
+    void open(int x, int y, Bit8u c) {
+        vis_[(size_t)y * kSideW + x] = 1;
+        px_[(size_t)y * kSideW + x] = c;
+    }
+    void close(int x, int y, Bit8u c) {
+        vis_[(size_t)y * kSideW + x] = 0;
+        px_[(size_t)y * kSideW + x] = c;
+    }
+    Bit8u window_color(int y) const {
+        unsigned count[256] = { 0 };
+        for (int x = 0; x < kSideW; x++) {
+            if (visible(x, y)) count[px_[(size_t)y * kSideW + x]]++;
+        }
+        int best = 0;
+        for (int c = 1; c < 256; c++) {
+            if (count[c] > count[best]) best = c;
+        }
+        return (Bit8u)best;
+    }
+
+    // The hull's top: per column, where the hidden run reaching the view's end starts; across [a, b] (a strut's foot
+    // standing on it) the line between the two ends.
+    std::vector<double> floor(const int (*spans)[2], int n) const {
+        std::vector<double> f(kSideW);
+        for (int x = 0; x < kSideW; x++) {
+            int y = d_ - 1;
+            if (visible(x, y)) {
+                f[x] = d_;
+                continue;
+            }
+            while (y > 0 && !visible(x, y - 1)) y--;
+            f[x] = y;
+        }
+        for (int k = 0; k < n; k++) {
+            const int a = spans[k][0], b = spans[k][1];
+            for (int x = a; x <= b; x++) f[x] = f[a] + (f[b] - f[a]) * (x - a) / (double)(b - a);
+        }
+        return f;
+    }
+
+    // Everything hidden above `floor` opened to space, but inside `keep` (n points; 0: none); `inside`: only there.
+    int open_above(const std::vector<double> &floor, const SidePoint *keep, int nKeep, const SidePoint *inside = NULL, int nInside = 0) {
+        int opened = 0;
+        for (int y = 0; y < d_; y++) {
+            int wc = -1;
+            for (int x = 0; x < kSideW; x++) {
+                if (visible(x, y) || y >= floor[x]) continue;
+                if (nKeep && in_polygon(keep, nKeep, x, y)) continue;
+                if (nInside && !in_polygon(inside, nInside, x, y)) continue;
+                if (wc < 0) wc = window_color(y);
+                open(x, y, (Bit8u)wc);
+                opened++;
+            }
+        }
+        return opened;
+    }
+
+    // A leg from (topX, topY) down to (footX, footY): each row a row of the texture's strut (its rows stretched over
+    // the leg's), its runs narrowed or widened by the slants and by `scale`, drawn where space shows.
+    void leg(const Texture &t, double topX, double topY, double footX, double footY, double scale) {
+        const size_t n = t.rows.size();
+        if (n < 8) return;
+        const double kS = ((t.runs[n - 1].a + t.runs[n - 1].b) - (t.runs[0].a + t.runs[0].b)) / 2.0 / (t.rows[n - 1] - t.rows[0]);
+        const double kN = (footX - topX) / (footY - topY);
+        const double ratio = sqrt(1 + kN * kN) / sqrt(1 + kS * kS) * scale;
+        const int y0 = t.rows[0] + 4, y1 = t.rows[n - 1] - 2;
+        for (int y = topY < 0 ? 0 : (int)topY; y <= (int)footY && y < d_; y++) {
+            const double f = (y - topY) / (footY - topY);
+            const int sy = (int)(y0 + (y1 - y0) * f);
+            size_t i = 0;
+            while (i + 1 < n && t.rows[i] < sy) i++;
+            const Run r = t.runs[i];
+            const int sw = r.b - r.a;
+            int nw = (int)lround(sw * ratio);
+            if (nw < 4) nw = 4;
+            const int x0 = (int)lround(topX + (footX - topX) * f - nw / 2.0);
+            for (int k = 0; k < nw; k++) {
+                const int x = x0 + k;
+                if (!visible(x, y)) continue;
+                int from = r.a + k * sw / nw;
+                if (from > r.b - 1) from = r.b - 1;
+                close(x, y, t.map[(*t.px)[(size_t)t.rows[i] * kSideW + from]]);
+            }
+        }
+    }
+
+    // A bar across the view from row `top`, `thick` rows: each column a row of the strut on its side.
+    void bar(const Texture &t, int top, int thick) {
+        const int n = (int)t.rows.size() - 12;
+        if (n <= 0) return;
+        for (int x = 0; x < kSideW; x++) {
+            const size_t i = 4 + (size_t)((x * 3 / 2) % n);
+            const Run r = t.runs[i];
+            const int sw = r.b - r.a;
+            for (int k = 0; k < thick; k++) {
+                const int y = top + k;
+                if (!visible(x, y)) continue;
+                int from = r.a + k * sw / thick;
+                if (from > r.b - 1) from = r.b - 1;
+                close(x, y, t.map[(*t.px)[(size_t)t.rows[i] * kSideW + from]]);
+            }
+        }
+    }
+
+    // A hoop: an ellipse's band (middle cx, cy; half-axes ax, by; `thick` across), below cy its legs straight down,
+    // each pixel a pixel of a strut's row across its width (the rows taken in turn along the hoop).
+    void hoop(const Texture &t, double cx, double cy, double ax, double by, double thick) {
+        const int n = (int)t.rows.size() - 16;
+        if (n <= 0) return;
+        for (int y = 0; y < d_; y++) {
+            for (int x = 0; x < kSideW; x++) {
+                if (!visible(x, y)) continue;
+                const double dx = (x - cx) / ax, dy = y < cy ? (cy - y) / by : 0.0;
+                const double rr = sqrt(dx * dx + dy * dy);
+                double g = sqrt(dx * dx / (ax * ax) + dy * dy / (by * by));
+                if (g <= 0) g = 1e-9;
+                const double dist = (rr - 1.0) / g;
+                if (fabs(dist) > thick / 2) continue;
+                const size_t i = 4 + (size_t)((int)(fabs(atan2(dy, dx)) * 40) % n);
+                const Run r = t.runs[i];
+                const int sw = r.b - r.a;
+                int k = (int)((dist / thick + 0.5) * (sw - 1));
+                if (k < 0) k = 0;
+                if (k > sw - 1) k = sw - 1;
+                close(x, y, t.map[(*t.px)[(size_t)t.rows[i] * kSideW + r.a + k]]);
+            }
+        }
+    }
+
+    // This view's own strut between rows [y0, y1): on each row the widest hidden run (20 pixels or more) that reaches
+    // into [xa, xb).
+    Texture strut(int y0, int y1, int xa, int xb) const {
+        Texture t;
+        t.px = &px_;
+        for (int c = 0; c < 256; c++) t.map[c] = (Bit8u)c;
+        for (int y = y0; y < y1 && y < d_; y++) {
+            Run best = { 0, 0 };
+            for (int x = 0; x < kSideW;) {
+                const bool v = visible(x, y);
+                int e = x;
+                while (e < kSideW && visible(e, y) == v) e++;
+                if (!v && e > xa && x < xb && e - x >= 20 && e - x > best.b - best.a) {
+                    best.a = x;
+                    best.b = e;
+                }
+                x = e;
+            }
+            if (best.b > best.a) {
+                t.rows.push_back(y);
+                t.runs.push_back(best);
+            }
+        }
+        return t;
+    }
+
+private:
+    std::vector<Bit8u> &px_;
+    std::vector<Bit8u> &vis_;
+    int d_;
+};
+
+// The color map from one view's palette (PLTT: first, last, 8-bit RGB) into another's: each of the source's own
+// colors as the target's nearest of its own; the game's (64..) as they are.
+void map_colors(const std::vector<Bit8u> &from, const std::vector<Bit8u> &to, Bit8u map[256]) {
+    for (int c = 0; c < 256; c++) map[c] = (Bit8u)c;
+    if (from.size() < 2 || to.size() < 2) return;
+    const int f0 = from[0], f1 = from[1], t0 = to[0], t1 = to[1];
+    for (int c = f0; c <= f1 && c < 64; c++) {
+        const size_t o = 2 + (size_t)(c - f0) * 3;
+        if (o + 2 >= from.size()) break;
+        long best = -1;
+        for (int k = t0; k <= t1 && k < 64; k++) {
+            const size_t p = 2 + (size_t)(k - t0) * 3;
+            if (p + 2 >= to.size()) break;
+            const long dr = (long)from[o] - to[p], dg = (long)from[o + 1] - to[p + 1], db = (long)from[o + 2] - to[p + 2];
+            const long dd = dr * dr + dg * dg + db * db;
+            if (best < 0 || dd < best) {
+                best = dd;
+                map[c] = (Bit8u)k;
+            }
+        }
+    }
+}
+
+// One gunboat view (its LFD, the depth of its 3-D view) made over for a craft (`kind`, `view`: 1 left forward, 2 left,
+// 3 left back, 16 up); the forward view's struts are the texture where the view's own are not.
+bool make_side(const std::vector<Bit8u> &gunboat, int depth, int kind, int view, const std::vector<Bit8u> &fwdPx,
+               const Strut &fwdStrut, const std::vector<Bit8u> &fwdPltt, std::vector<Bit8u> &out, std::string &why) {
+    std::vector<Resource> res;
+    if (!parse_lfd(gunboat, res)) {
+        why = "not an LFD";
+        return false;
+    }
+    const Resource *panl = find_res(res, "PANL"), *mask = find_res(res, "MASK"), *pltt = find_res(res, "PLTT");
+    if (!panl || !mask || !pltt) {
+        why = "no PANL, MASK or PLTT";
+        return false;
+    }
+    std::vector<Bit8u> px, vis;
+    const int rows = decode_panl(panl->body, kSideW, kSideH, px);
+    if (rows < depth || !decode_mask(mask->body, kSideW, depth, vis)) {
+        why = "the picture or its mask did not read";
+        return false;
+    }
+    Side s(px, vis, depth);
+    Texture fwd;
+    fwd.rows = fwdStrut.rows;
+    fwd.runs = fwdStrut.runs;
+    fwd.px = &fwdPx;
+    map_colors(fwdPltt, pltt->body, fwd.map);
+    std::vector<double> none(kSideW, depth);
+    if (kind == kForwardShuttle && view == 1) {
+        // (the V's strut out, the scope's housing kept; the A's leg in from the top beam to the sill, the view's own
+        // pillar's clean rows narrowed to 0.6 of its width)
+        static const int foot[1][2] = { { 190, 282 } };
+        const std::vector<double> f = s.floor(foot, 1);
+        s.open_above(none, kHousing, kHousingN, kVBeam, kVBeamN);
+        const Texture pillar = s.strut(250, 366, 150, 360);
+        s.leg(pillar, 497, 30, 408, f[408] + 2, 0.6);
+    } else if (kind == kForwardShuttle && view == 16) {
+        s.open_above(none, NULL, 0);
+        s.bar(fwd, depth - 34, 34);
+    } else if (kind == kForwardZ95 && view == 1) {
+        static const int foot[1][2] = { { 190, 282 } };
+        s.open_above(s.floor(foot, 1), kHousing, kHousingN);
+        s.hoop(fwd, 700, 430, 232, 380, 34);
+    } else if (kind == kForwardZ95 && view == 2) {
+        static const int foot[1][2] = { { 458, 562 } };
+        s.open_above(s.floor(foot, 1), NULL, 0);
+    } else if (kind == kForwardZ95 && view == 3) {
+        std::vector<double> f = s.floor(NULL, 0);
+        for (int x = 0; x < 262; x++) f[x] = 376 + (349 - 376) * x / 262.0;    // (the pillar's base: above the rail)
+        s.open_above(f, NULL, 0);
+        s.hoop(fwd, -60, 430, 232, 380, 34);
+    } else if (kind == kForwardZ95 && view == 16) {
+        s.open_above(none, NULL, 0);
+        s.hoop(fwd, 320, 560, 420, 160, 30);
+    } else {
+        why = "not made over";
+        return false;
+    }
+    std::vector<Resource> outRes;
+    for (size_t k = 0; k < res.size(); k++) {
+        Resource r = res[k];
+        if (!memcmp(r.type, "PANL", 4)) {
+            r.body = encode_panl(px, kSideW, rows);
+        } else if (!memcmp(r.type, "MASK", 4)) {
+            r.body = encode_mask(vis, kSideW, depth);
+        }
+        outRes.push_back(r);
+    }
+    out = write_lfd(outRes);
+    return true;
+}
+
+// The gunboat's forward view's left strut (and its picture and palette): the texture of what the side views draw.
+bool forward_texture(const std::vector<Bit8u> &gunboatFwd, int depth, std::vector<Bit8u> &px, Strut &strut, std::vector<Bit8u> &pltt) {
+    std::vector<Resource> res;
+    if (!parse_lfd(gunboatFwd, res)) return false;
+    const Resource *panl = find_res(res, "PANL"), *mask = find_res(res, "MASK"), *pl = find_res(res, "PLTT");
+    std::vector<Bit8u> vis;
+    if (!panl || !mask || !pl || decode_panl(panl->body, kSideW, kSideH, px) < depth || !decode_mask(mask->body, kSideW, depth, vis)) {
+        return false;
+    }
+    pltt = pl->body;
+    Forward f(px, vis, kSideW, kSideH, depth);
+    return f.find_strut(true, strut);
+}
+
+// The views made over (the INT's view number, the made file's name after the craft's, the gunboat picture's FNV-1a as
+// measured: another is left as it is).
+struct SideView {
+    int kind, view;
+    const char *suffix;
+    Bit32u hash;
+};
+const SideView kSideViews[] = {
+    { kForwardShuttle, 1, "10", 0xcb4eb18au }, { kForwardShuttle, 16, "UP", 0x91a1ca60u },
+    { kForwardZ95, 1, "10", 0xcb4eb18au }, { kForwardZ95, 2, "09", 0x07c5d1e6u }, { kForwardZ95, 3, "08", 0xf5e82001u },
+    { kForwardZ95, 16, "UP", 0x91a1ca60u },
+};
+
+// A craft's side views beside its forward one (640x480 only), the INT's views named after them; the number made.
+int make_sides(localDrive *drive, const std::string &d, std::vector<Bit8u> &intBytes, const std::vector<Bit8u> &gunboatFwd,
+               int fwdDepth, const Derived &dv) {
+    std::vector<Bit8u> fwdPx, fwdPltt;
+    Strut strut;
+    if (!forward_texture(gunboatFwd, fwdDepth, fwdPx, strut, fwdPltt)) {
+        wclog(1, "TIE: the %s's side views not made (the gunboat's forward view's strut not found): the gunboat's", dv.name);
+        return 0;
+    }
+    int made = 0;
+    for (size_t k = 0; k < sizeof(kSideViews) / sizeof(kSideViews[0]); k++) {
+        const SideView &sv = kSideViews[k];
+        if (sv.kind != dv.kind) continue;
+        Bit8u *rec = &intBytes[(size_t)sv.view * 36];
+        char name[10] = { 0 };
+        memcpy(name, rec + 1, 9);
+        const int depth = le16(rec + 1 + 9 + 6);
+        std::vector<Bit8u> gunboat, out;
+        std::string why;
+        if (!read_file(host_path(drive, d + "\\" + name + ".LFD"), gunboat)) {
+            why = "not read";
+        } else if (fnv1a(gunboat) != sv.hash) {
+            why = "not the picture measured";
+        } else if (make_side(gunboat, depth, sv.kind, sv.view, fwdPx, strut, fwdPltt, out, why)) {
+            const std::string made_name = std::string(dv.side) + sv.suffix;
+            if (write_file(host_path(drive, d + "\\" + made_name + ".LFD"), out)) {
+                memset(rec + 1, 0, 9);
+                memcpy(rec + 1, made_name.c_str(), made_name.size());
+                made++;
+                continue;
+            }
+            why = "not written";
+        }
+        wclog(1, "TIE: the %s's view %d (%s) not made (%s): the gunboat's", dv.name, sv.view, name, why.c_str());
+    }
+    return made;
+}
+
 // One cockpit directory's <name>.INT and its forward view's LFD.
 bool make_cockpit(localDrive *drive, const char *dir, int w, int h, const Derived &dv) {
     std::vector<Bit8u> intBytes, fwd;
@@ -1057,6 +1434,10 @@ bool make_cockpit(localDrive *drive, const char *dir, int w, int h, const Derive
     if (own) {
         memset(&intBytes[1], 0, 9);
         memcpy(&intBytes[1], dv.forward, strlen(dv.forward));
+    }
+    if (own && w == kSideW && h == kSideH) {
+        const int sides = make_sides(drive, d, intBytes, gunboatFwd, depth, dv);
+        wclog(1, "TIE: the %s's side views in %s: %d made from the gunboat's", dv.name, dir, sides);
     }
     if (dv.parts) {
         // (its own parts: the gunboat's with this craft's icon on the shield display; the gunboat's own if not made)
