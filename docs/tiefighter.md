@@ -259,11 +259,11 @@ section 7 as it is worked on.
    lasers' reach and in its view, or its target, unless the host has it
    targeted (the user's rule); near craft every frame, within 10 km every
    10th, far ones in turn every 10 to 20 s.
-6. **Next: lasers and damage**: the shooter's machine decides its hits
+6. **Done, first version: lasers and damage** (section 7, step 6): the shooter's machine decides its hits
    (`collide_laserhitcraft` there), the craft's owner applies them
    (`collide_damagecraft`); a puppet takes no damage of this machine's own
    (collisions included); deaths and spawns from the owner and the host.
-6a. **Seen from both cockpits, once the guns are in step** (the user,
+6a. **Done: seen from both cockpits, once the guns are in step** (the user,
    2026-11-06): a gunboat mission, the two players flying side by side, one
    a little ahead so that it is just on the other's screen; one fires
    lasers, the other ions.  Screenshots: the ions on the laser player's
@@ -544,3 +544,52 @@ move vector, the nine axis words, type).
   it (these functions take their arguments in registers), so a hit the
   game was about to apply is not.  Both are CPU state at a hook, no code
   changed (the Wing Commander layer's trampoline does the same in 16 bits).
+
+### Step 6: the guns, built and measured (2026-11-06)
+
+* **The trampoline** (`wcnet_tie.cpp`, `tie_queue_call`): at
+  `move_moveobjects`'s entry the registers are kept, the place is pushed as
+  the return address, the arguments go in `eax`, `edx`, `ebx`, `ecx`, and
+  EIP is set to the function; its `ret` comes back to the place, whose hook
+  gives the state back (the lazy flags too), tells the call's `done`, and
+  makes the next call, the frame going on after the last.  A `before` step
+  runs with the arguments in place (it writes what the call needs at that
+  moment, may change an argument, may call it off).  `tie_skip_call`
+  returns from a function at its entry.  No byte of the game is written:
+  the core loads its fetch address after the hook.
+* **Shots.**  `laser_createprojectile`'s entry: a shot of a craft this
+  machine flies, within 5 km of another pilot, goes with the next frame;
+  the others make it from that craft with the same call (hardpoint, type).
+  A craft another machine flies does not shoot here (0xFFFF, "no slot").
+* **Hits.**  `collide_laserhitcraft`'s entry: a hit by a bolt whose shooter
+  (+0x30) this machine flies, on a craft another flies, goes to that machine
+  reliably (the bolt's type, genus, radius, shooter, segment); the flash
+  still shows here.  The owner applies it with the game's own call and a
+  stand-in bolt in a free projectile slot (the segment in `laserx..` and
+  `laserxold..`, 0xEAB90 to 0xEABD8).  `collide_damagecraft`'s entry: this
+  game damages only the craft it flies, and from a bolt only one whose
+  shooter it flies (collisions included); its own calls go through.
+* **Deaths.**  A craft whose death timer runs (+0x2C) is reported dying;
+  the others kill their copy with the game's own damage (a collision's,
+  called until its death is under way, at most 12 times), so its explosion
+  and the mission's count of it are theirs too.  A craft whose owner is
+  out of the flight is this machine's.
+* **Measured** (HF1W, the containers ahead): the host's eight laser hits on
+  a container the guest flew applied on the guest (its hull 100 to 800 of
+  750), the container's death followed on the host; each side's shots made
+  on the other.
+* **Step 6a, the user's picture** (HG2W, the Combat Chamber's gunboat
+  mission 2: the player's group four gunboats; HG1W, a training mission,
+  holds the gunboat still).  The guest holds W 0.4 s (a 150 ms tap during
+  the hyperspace arrival did nothing): its shots become type 142 from
+  hardpoints 2 and 3, the ion cannons, made on the host as 142.  The host
+  fires lasers (140), made on the guest as 140.  The guest flies ahead along
+  +x, some 8,650 units to the side; from the host's 80 s it is within 30
+  degrees of the host's nose.  The laser player's screen shows the guest's
+  cyan ion bolts ahead and to the right; the ion player's shows the host's
+  laser streak coming up from the left and its own ions going away.
+* **Open.**  Kill credit: a kill the shooter's machine did not apply is not
+  scored there.  A shot of a craft far from every other pilot is not sent
+  (the brief: far shots are each game's own).  The impact flash of an
+  applied hit sits where the bolt's segment ends (the collision test's
+  offset, `collidexoff..`, has no retail address in OpenTIE yet).
