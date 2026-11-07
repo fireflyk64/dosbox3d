@@ -64,12 +64,33 @@ console.log(`${stamp()} mission menu: ` + await page.evaluate(() => {
     `first "${opts[0] && opts[0].textContent}"; ${groups.slice(0, 1).concat(groups.slice(7, 8), groups.slice(-1)).map((g) => `[${g.label}] ` +
     `"${g.querySelector("option") && g.querySelector("option").textContent}"`).join("; ")}; hint "${document.getElementById("missionHint").textContent.slice(0, 120)}"`;
 }).catch((e) => "no menu: " + e.message));
+// the picture's shape and the room's options for TIE Fighter (no Conn, no Collide; Full screen on the mission's line)
+console.log(`${stamp()} picture and options: ` + await page.evaluate(() => {
+  const c = document.getElementById("canvas"), r = c.getBoundingClientRect();
+  const shown = (id) => !document.getElementById(id).parentElement.hidden;
+  const top = (el) => Math.round((el.getBoundingClientRect().top + el.getBoundingClientRect().bottom) / 20);   // (middles, to 10 px)
+  return `canvas ${Math.round(r.width)}x${Math.round(r.height)} on the page; Conn ${shown("latency") ? "shown" : "hidden"}, Collide ${shown("collisions") ? "shown" : "hidden"}; ` +
+    `Full screen ${top(document.getElementById("fullStartLabel")) === top(document.getElementById("mission").parentElement) ? "on the mission's line" : "on a line of its own"}`;
+}));
+await page.screenshot({ path: path.join(shotDir, `web-guest-room.png`), fullPage: true });
+// (cinema is for the page's own picture: the flight not opened full screen)
+if (process.env.CINEMA_AT) await page.evaluate(() => { const b = document.getElementById("fullStart"); if (b.checked) b.click(); });
 await page.click("#fly");
 const seconds = Number(secondsArg);
 await new Promise((r) => setTimeout(r, 5000));
 console.log(`${stamp()} the emulator's calls: wc_web_tie_mouse ${await page.evaluate(() => typeof (window.DOSBox && window.DOSBox._wc_web_tie_mouse))}, ` +
   `wc_web_stick ${await page.evaluate(() => typeof (window.DOSBox && window.DOSBox._wc_web_stick))}`);
+// cinema (the picture as large as the window allows) for one shot, then back
+const cinemaAt = Number(process.env.CINEMA_AT || 0);
 for (let t = 20; t <= seconds; t += 20) {
+  if (cinemaAt && t === cinemaAt) {
+    await page.evaluate(() => document.getElementById("cinema").click());
+    await new Promise((r) => setTimeout(r, 1500));
+    const r = await page.evaluate(() => { const b = document.getElementById("canvas").getBoundingClientRect(); return `${Math.round(b.width)}x${Math.round(b.height)} at ${Math.round(b.left)},${Math.round(b.top)} in ${innerWidth}x${innerHeight}`; });
+    console.log(`${stamp()} cinema on: canvas ${r}`);
+    await page.screenshot({ path: path.join(shotDir, `web-guest-cinema.png`) });
+    await page.evaluate(() => document.getElementById("cinema").click());
+  }
   await new Promise((r) => setTimeout(r, 20000));
   await page.screenshot({ path: path.join(shotDir, `web-guest-${t}.png`) });
   console.log(`${stamp()} status line: ` + await page.$eval("#status", (el) => el.textContent.trim().slice(0, 140)).catch(() => "?"));
