@@ -47,8 +47,14 @@ console.log(`${stamp()} files: ` + await page.$eval("#sourceStatus", (el) => `${
 await page.waitForFunction(() => !document.getElementById("lobby").hidden && document.getElementById("roster").children.length > 0, null, { timeout: 60000 });
 await page.waitForFunction(() => !document.getElementById("fly").disabled, null, { timeout: 60000 });
 console.log(`${stamp()} in the room: ` + await page.$eval("#status", (el) => el.textContent.trim().slice(0, 140)));
+// the flight's controls on the page (src/cpu/wcnet_tie_controls.cpp): the Flight choice shown with TIE Fighter loaded
+console.log(`${stamp()} flight controls: ` + await page.$eval("#tfFlightLabel", (el) => `shown ${!el.hidden}, ${document.getElementById("tfFlight").value}`)
+  .catch((e) => "no Flight choice: " + e.message));
 await page.click("#fly");
 const seconds = Number(secondsArg);
+await new Promise((r) => setTimeout(r, 5000));
+console.log(`${stamp()} the emulator's calls: wc_web_tie_mouse ${await page.evaluate(() => typeof (window.DOSBox && window.DOSBox._wc_web_tie_mouse))}, ` +
+  `wc_web_stick ${await page.evaluate(() => typeof (window.DOSBox && window.DOSBox._wc_web_stick))}`);
 for (let t = 20; t <= seconds; t += 20) {
   await new Promise((r) => setTimeout(r, 20000));
   await page.screenshot({ path: path.join(shotDir, `web-guest-${t}.png`) });
