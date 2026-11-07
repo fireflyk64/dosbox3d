@@ -62,8 +62,20 @@ enum {
     kCmdMask = 0xC61C3,             // ... and at 320x200 (200 bytes)
     kGunboatCmdMask = 0xC628B,
 };
-const char kShuttleName[] = "SHUTTLE";
-const char kForwardName[] = "SHUTFWD";
+// The craft whose cockpits are made from the gunboat's: the shuttle (step 9) and the Z-95 Headhunter (step 14: the
+// Combat Chamber's challenge; its spec, 13, is named XWING as the R-41's is, a cockpit the game never had).
+enum { kForwardShuttle, kForwardZ95 };
+struct Derived {
+    int spec;
+    const char *name;           // the spec's internal name: <cockpit dir>\<name>.INT
+    const char *forward;        // its forward view's LFD
+    int kind;
+    bool made;
+};
+Derived g_derived[] = {
+    { kShuttleSpec, "SHUTTLE", "SHUTFWD", kForwardShuttle, false },
+    { 13, "Z95", "Z95FWD", kForwardZ95, false },
+};
 
 // -- the files' formats ---------------------------------------------------------------------------------------------
 
@@ -573,6 +585,83 @@ public:
         }
     }
 
+    // The Z-95's arch (step 14): an ellipse's upper half from the dashboard's sides over the top, its legs going on
+    // down to `legs`, `thick` across, each pixel of the band a pixel of a strut's row across its width (the rows taken
+    // in turn along the arch), drawn where space shows.
+    void arch(const Strut &src, double cx, double base, double ax, double top, double legs, double thick) {
+        const int n = (int)src.rows.size() - 16;
+        if (n <= 0) return;
+        const double by = base - top;
+        for (int y = 0; y <= (int)legs && y < d_; y++) {
+            for (int x = 0; x < w_; x++) {
+                if (!visible(x, y)) continue;
+                const double dx = (x - cx) / ax, dy = y < base ? (base - y) / by : 0.0;
+                const double rr = sqrt(dx * dx + dy * dy);
+                double g = sqrt(dx * dx / (ax * ax) + dy * dy / (by * by));
+                if (g <= 0) g = 1e-9;
+                const double dist = (rr - 1.0) / g;
+                if (fabs(dist) > thick / 2) continue;
+                const double ang = fabs(atan2(dy, dx));
+                const size_t i = 4 + (size_t)((int)(ang * 40) % n);
+                const Run r = src.runs[i];
+                const int sw = r.b - r.a;
+                int k = (int)((dist / thick + 0.5) * (sw - 1));
+                if (k < 0) k = 0;
+                if (k > sw - 1) k = sw - 1;
+                close(x, y, orig_[(size_t)src.rows[i] * w_ + r.a + k]);
+            }
+        }
+    }
+
+    // The Z-95's long nose (step 14): a trapezoid from the dashboard's middle (y0, w0 wide) towards the horizon (y1,
+    // w1), shaded by `greys` (the struts' own, darkest first): lit along its top, darker at its edges and its far end,
+    // a seam along its ridge, two panel lines and five seams across; drawn where space shows (behind the dashboard).
+    void nose(const std::vector<Bit8u> &greys, double cx, double y0, double y1, double w0, double w1) {
+        if (greys.size() < 2) return;
+        for (int y = (int)y1; y <= (int)y0 && y < d_; y++) {
+            const double t = (y - y1) / (y0 - y1), hw = (w1 + (w0 - w1) * t) / 2;
+            for (int x = (int)(cx - hw); x <= (int)(cx + hw); x++) {
+                if (x < 0 || x >= w_ || !visible(x, y)) continue;
+                const double u = (x - cx) / hw;
+                double shade = 0.85 - 0.55 * pow(fabs(u), 1.6) + 0.12 * t;
+                if (fabs(u) < 0.06) shade -= 0.25;
+                if (fabs(fabs(u) - 0.62) < 0.035) shade -= 0.2;
+                if ((int)((1 - t) * 5) != (int)((1 - t + 0.03) * 5)) shade -= 0.15;
+                int k = (int)(shade * (double)(greys.size() - 1));
+                if (k < 0) k = 0;
+                if (k > (int)greys.size() - 1) k = (int)greys.size() - 1;
+                close(x, y, greys[(size_t)k]);
+            }
+        }
+    }
+
+    // The colors of a strut's pixels, darkest first by the panel's palette (PLTT: its first and last index, then 8-bit
+    // RGB), those neither near black nor near white.
+    std::vector<Bit8u> greys(const Strut &src, const std::vector<Bit8u> &pltt) const {
+        bool seen[256] = { false };
+        std::vector<Bit8u> out;
+        if (pltt.size() < 2) return out;
+        const int first = pltt[0], last = pltt[1];
+        for (size_t i = 0; i < src.rows.size(); i++) {
+            for (int x = src.runs[i].a; x < src.runs[i].b; x++) {
+                const Bit8u c = orig_[(size_t)src.rows[i] * w_ + x];
+                if (seen[c] || c < first || c > last || 2 + (size_t)(c - first) * 3 + 2 >= pltt.size()) continue;
+                seen[c] = true;
+                const Bit8u *rgb = &pltt[2 + (size_t)(c - first) * 3];
+                const double lum = 0.3 * rgb[0] + 0.59 * rgb[1] + 0.11 * rgb[2];
+                if (lum > 40 && lum < 235) out.push_back(c);
+            }
+        }
+        for (size_t i = 1; i < out.size(); i++) {      // (by luminance, insertion: a few dozen colors)
+            for (size_t j = i; j > 0; j--) {
+                const Bit8u *a = &pltt[2 + (size_t)(out[j - 1] - first) * 3], *b = &pltt[2 + (size_t)(out[j] - first) * 3];
+                if (0.3 * a[0] + 0.59 * a[1] + 0.11 * a[2] <= 0.3 * b[0] + 0.59 * b[1] + 0.11 * b[2]) break;
+                std::swap(out[j - 1], out[j]);
+            }
+        }
+        return out;
+    }
+
 private:
     std::vector<Bit8u> &px_;
     std::vector<Bit8u> &vis_;
@@ -648,7 +737,6 @@ bool make_forward(const std::vector<Bit8u> &gunboat, int w, int h, int depth, co
 
 // -- the files beside the game's --------------------------------------------------------------------------------------
 
-bool g_filesMade = false;
 bool g_masksSwapped = false;
 Bit8u g_cmd640[480], g_cmd320[200];     // the default masks, as they were
 
@@ -675,8 +763,64 @@ std::string host_path(localDrive *drive, const std::string &dosName) {
     return sys;
 }
 
-// One cockpit directory's SHUTTLE.INT and SHUTFWD.LFD.
-bool make_cockpit(localDrive *drive, const char *dir, int w, int h) {
+// The Z-95's forward view (step 14; the user: "a cockpit that's a bit like a gunboat but it has a curvey line and the
+// long nose you can see. We'll have to kitbash some of the cockpits"): the gunboat's, its struts out as the shuttle's,
+// an arched canopy frame of the struts' pixels over the top down to the side consoles, and a long nose from the
+// dashboard's middle towards the horizon in the struts' greys.  The figures are 640x480's, scaled.
+bool make_forward_z95(const std::vector<Bit8u> &gunboat, int w, int h, int depth, const int scopes[4], std::vector<Bit8u> &out,
+                      std::string &why) {
+    std::vector<Resource> res;
+    if (!parse_lfd(gunboat, res)) {
+        why = "not an LFD";
+        return false;
+    }
+    const Resource *panl = find_res(res, "PANL"), *mask = find_res(res, "MASK"), *pltt = find_res(res, "PLTT");
+    if (!panl || !mask || !pltt) {
+        why = "no PANL, MASK or PLTT";
+        return false;
+    }
+    std::vector<Bit8u> px, vis;
+    const int rows = decode_panl(panl->body, w, h, px);
+    if (rows < depth || !decode_mask(mask->body, w, depth, vis)) {
+        why = "the picture or its mask did not read";
+        return false;
+    }
+    Forward f(px, vis, w, h, depth);
+    Strut left, right;
+    if (!f.find_strut(true, left) || !f.find_strut(false, right)) {
+        why = "no struts found";
+        return false;
+    }
+    std::vector<Forward::Scope> sc;
+    sc.push_back(f.scope_at(scopes[0], scopes[1]));
+    sc.push_back(f.scope_at(scopes[2], scopes[3]));
+    const int margin = 9 * w / 640;
+    f.remove(left, sc, margin);
+    f.remove(right, sc, margin);
+    std::vector<const Strut *> both;
+    both.push_back(&left);
+    both.push_back(&right);
+    f.clean(both, margin);
+    const double sx = w / 640.0, sy = h / 480.0;
+    f.arch(left, w / 2.0, 262 * sy, 232 * sx, 6 * sy, 312 * sy, 28 * sx);
+    f.nose(f.greys(left, pltt->body), w / 2.0, 262 * sy, 200 * sy, 236 * sx, 40 * sx);
+    wclog(1, "TIE: the Z-95's forward view at %dx%d: the struts out, an arch and a long nose in", w, h);
+    std::vector<Resource> outRes;
+    for (size_t k = 0; k < res.size(); k++) {
+        Resource r = res[k];
+        if (!memcmp(r.type, "PANL", 4)) {
+            r.body = encode_panl(px, w, rows);
+        } else if (!memcmp(r.type, "MASK", 4)) {
+            r.body = encode_mask(vis, w, depth);
+        }
+        outRes.push_back(r);
+    }
+    out = write_lfd(outRes);
+    return true;
+}
+
+// One cockpit directory's <name>.INT and its forward view's LFD.
+bool make_cockpit(localDrive *drive, const char *dir, int w, int h, const Derived &dv) {
     std::vector<Bit8u> intBytes, fwd;
     const std::string d = dir;
     if (!read_file(host_path(drive, d + "\\GUNBOAT.INT"), intBytes) || intBytes.size() < 1589) {
@@ -691,37 +835,38 @@ bool make_cockpit(localDrive *drive, const char *dir, int w, int h) {
     std::string why;
     bool own = false;
     if (intBytes[0] == 1 && read_file(host_path(drive, d + "\\" + fwdName + ".LFD"), gunboatFwd) &&
-        make_forward(gunboatFwd, w, h, depth, scopes, made, why)) {
-        own = write_file(host_path(drive, d + "\\" + kForwardName + ".LFD"), made);
+        (dv.kind == kForwardShuttle ? make_forward(gunboatFwd, w, h, depth, scopes, made, why)
+                                    : make_forward_z95(gunboatFwd, w, h, depth, scopes, made, why))) {
+        own = write_file(host_path(drive, d + "\\" + dv.forward + ".LFD"), made);
     } else {
-        wclog(0, "TIE: the shuttle's forward view in %s not made (%s): the gunboat's own", dir, why.c_str());
+        wclog(1, "TIE: the %s's forward view in %s not made (%s): the gunboat's own", dv.name, dir, why.c_str());
     }
     if (own) {
         memset(&intBytes[1], 0, 9);
-        memcpy(&intBytes[1], kForwardName, strlen(kForwardName));
+        memcpy(&intBytes[1], dv.forward, strlen(dv.forward));
     }
-    if (!write_file(host_path(drive, d + "\\" + kShuttleName + ".INT"), intBytes)) {
-        wclog(0, "TIE: %s\\%s.INT could not be written", dir, kShuttleName);
+    if (!write_file(host_path(drive, d + "\\" + dv.name + ".INT"), intBytes)) {
+        wclog(0, "TIE: %s\\%s.INT could not be written", dir, dv.name);
         return false;
     }
     return true;
 }
 
-bool make_files() {
-    if (g_filesMade) {
+bool make_files(Derived &dv) {
+    if (dv.made) {
         return true;
     }
     localDrive *drive = cockpit_drive();
     if (!drive) {
-        wclog(0, "TIE: no drive with the gunboat's cockpit (CP640\\GUNBOAT.INT): the shuttle has none");
+        wclog(0, "TIE: no drive with the gunboat's cockpit (CP640\\GUNBOAT.INT): the %s has none", dv.name);
         return false;
     }
-    const bool hi = make_cockpit(drive, "CP640", 640, 480);
-    const bool lo = make_cockpit(drive, "CP320", 320, 200);
+    const bool hi = make_cockpit(drive, "CP640", 640, 480, dv);
+    const bool lo = make_cockpit(drive, "CP320", 320, 200, dv);
     drive->EmptyCache();        // (DOS sees the new files)
-    g_filesMade = hi || lo;
-    wclog(1, "TIE: the shuttle's cockpit made from the gunboat's: CP640 %s, CP320 %s", hi ? "yes" : "no", lo ? "yes" : "no");
-    return g_filesMade;
+    dv.made = hi || lo;
+    wclog(1, "TIE: the %s's cockpit made from the gunboat's: CP640 %s, CP320 %s", dv.name, hi ? "yes" : "no", lo ? "yes" : "no");
+    return dv.made;
 }
 
 void copy_mem(Bit32u to, Bit32u from, Bitu n) {
@@ -730,14 +875,14 @@ void copy_mem(Bit32u to, Bit32u from, Bitu n) {
     }
 }
 
-void swap_masks(bool shuttle) {
-    if (shuttle && !g_masksSwapped) {
+void swap_masks(bool gunboats) {
+    if (gunboats && !g_masksSwapped) {
         for (Bitu i = 0; i < sizeof(g_cmd640); i++) g_cmd640[i] = mem_readb(tie_linear(kCmd640Mask) + i);
         for (Bitu i = 0; i < sizeof(g_cmd320); i++) g_cmd320[i] = mem_readb(tie_linear(kCmdMask) + i);
         copy_mem(kCmd640Mask, kGunboatCmd640Mask, sizeof(g_cmd640));
         copy_mem(kCmdMask, kGunboatCmdMask, sizeof(g_cmd320));
         g_masksSwapped = true;
-    } else if (!shuttle && g_masksSwapped) {
+    } else if (!gunboats && g_masksSwapped) {
         for (Bitu i = 0; i < sizeof(g_cmd640); i++) mem_writeb(tie_linear(kCmd640Mask) + i, g_cmd640[i]);
         for (Bitu i = 0; i < sizeof(g_cmd320); i++) mem_writeb(tie_linear(kCmdMask) + i, g_cmd320[i]);
         g_masksSwapped = false;
@@ -782,19 +927,25 @@ void tie_cockpit_before_species() {
     if (fly_as() > 0 && fg < 48) {
         tie_fly_group_as(fg, fly_as());
     }
-    const bool shuttle = mem_readb(pstate + 0x0E) == kShuttleSpec;
-    if (shuttle) {
-        const Bit32u name = tie_linear(kSpecData + kShuttleSpec * kSpecSize + kSpecName);
-        if (!mem_readb(name)) {
-            for (Bitu i = 0; i < sizeof(kShuttleName); i++) mem_writeb(name + i, (Bit8u)kShuttleName[i]);
-        }
-        make_files();
+    // (a craft of ours: its spec named for its cockpit, the cockpit's files made, the targeting display the gunboat's)
+    const int spec = mem_readb(pstate + 0x0E);
+    Derived *dv = NULL;
+    for (size_t k = 0; k < sizeof(g_derived) / sizeof(g_derived[0]); k++) {
+        if (g_derived[k].spec == spec) dv = &g_derived[k];
     }
-    swap_masks(shuttle);
+    if (dv) {
+        const Bit32u name = tie_linear(kSpecData + (Bit32u)dv->spec * kSpecSize + kSpecName);
+        for (Bitu i = 0; i < 9; i++) {
+            mem_writeb(name + i, i < strlen(dv->name) ? (Bit8u)dv->name[i] : 0);
+        }
+        make_files(*dv);
+    }
+    swap_masks(dv != NULL);
 }
 
 void tie_cockpit_forget() {
     g_masksSwapped = false;     // (a new program: its own masks)
+    for (size_t k = 0; k < sizeof(g_derived) / sizeof(g_derived[0]); k++) g_derived[k].made = false;
 }
 
 }  // namespace wc
