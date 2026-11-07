@@ -276,7 +276,8 @@ const TF_BATTLES = [
 const tfCraftOf = (file) => TF_CRAFT[file[0] === "h" ? file[1] : file[file.length - 2]] || "";
 const TF_CAMPAIGN = {
   series: [
-    ...TF_CHAMBER.map(([l, craft], k) => ({ series: k + 1, group: "Combat Chamber", name: craft,
+    // (the T/F row in a room is the Z-95 challenge: src/cpu/wcnet_tie_session.cpp, step 14)
+    ...TF_CHAMBER.map(([l, craft], k) => ({ series: k + 1, group: "Combat Chamber", name: k === 0 ? "Z-95 challenge" : craft,
       files: [1, 2, 3, 4].map((n) => `h${l}${n}${n < 3 ? "w" : "m"}`), missions: [] })),
     ...TF_BATTLES.map((files, k) => ({ series: 11 + k, group: `Battle ${k + 1}`, name: `B${k + 1}M`, files, missions: [] })),
   ],
@@ -309,7 +310,7 @@ const TF_CAMPAIGN = {
 TF_CAMPAIGN.fromFiles = function (files) {
   const byPath = new Map(files.map((f) => [f.path.toUpperCase(), f.data]));
   const sentence = (lines) => {
-    const t = lines.join(" ").replace(/\s+/g, " ").trim();
+    const t = lines.join(" ").replace(/\s+/g, " ").replace(/(\w)- (\w)/g, "$1$2").trim();   // (a word broken at a line's end joined)
     const m = /^.*?[.!?](?=\s|$)/.exec(t);
     const s = m ? m[0] : t;
     return s.length > 80 ? s.slice(0, 79).replace(/\s+\S*$/, "") + "…" : s;
@@ -334,6 +335,15 @@ TF_CAMPAIGN.fromFiles = function (files) {
     }
     if (s.series > 10 && recs[1] && recs[1][0]) s.title = titled(recs[1][0]);
     worded++;
+  }
+  // The T/F row in a room is the Z-95 challenge, each mission flown from another's file (the gunboat's 1, 3 and 4,
+  // the T/I's 2): its words those missions', in two Z-95 Headhunters against the Empire's craft.
+  const source = [[5, 0], [2, 1], [5, 2], [5, 3]];
+  const tf = this.series.find((e) => e.series === 1);
+  for (let i = 0; i < source.length && tf; i++) {
+    const from = this.series.find((e) => e.series === source[i][0]);
+    const note = from && from.missions[source[i][1]];
+    tf.missions[i] = "two Z-95s against the Empire" + (note ? ": " + note : "");
   }
   return worded;
 };
@@ -446,7 +456,7 @@ export const GAMES = [
     image: "game.gog", keep: ["IMUSE.INI"], cycles: 60000, campaign: TF_CAMPAIGN, noRoomOptions: true, screen: [640, 480], prepare: tfMusicOnFm,
     // (the launcher's own words: the hooks find the game's program in memory by its bytes, not by this file)
     build: { text: "Loading TIE-Fighter CD" },
-    help: "TIE Fighter flown together, in its first stage: everybody in the room flies the same mission, each in a craft of the player's flight group, and sees the others' craft where they really are; the rest of the mission (the other craft, the shots, the damage) still runs on each machine on its own. The host may pick a mission for everybody in the room's menu, any of the Combat Chamber's and any battle's: launching any Combat Chamber mission then flies it, briefing and all (the host may change it between flights). With none picked, a guest's Combat Chamber launch flies the host's; the line over the game says where the others are and when the host launches. The tour's own battles stay each pilot's own. Space skips the opening; at the registration desk type a pilot's name (or click one) and take the door; in flight the mouse is the stick and its button fires, Backspace is full throttle. What is done and what comes next: docs/tiefighter.md.",
+    help: "TIE Fighter flown together, in its first stage: everybody in the room flies the same mission, each in a craft of the player's flight group, and sees the others' craft where they really are; the rest of the mission (the other craft, the shots, the damage) still runs on each machine on its own. In a room the Combat Chamber's T/F row is the Z-95 challenge: two Z-95 Headhunters, hopelessly outgunned, flying the gunboat's and the T/I's missions against the Empire's own craft. The host may pick a mission for everybody in the room's menu, any of the Combat Chamber's and any battle's: launching any Combat Chamber mission then flies it, briefing and all (the host may change it between flights). With none picked, a guest's Combat Chamber launch flies the host's; the line over the game says where the others are and when the host launches. The tour's own battles stay each pilot's own. Space skips the opening; at the registration desk type a pilot's name (or click one) and take the door; in flight the mouse is the stick and its button fires, Backspace is full throttle. What is done and what comes next: docs/tiefighter.md.",
     // the flight's controls as the emulator gives them (src/cpu/wcnet_tie_controls.cpp; the "Flight" choice beside Controller)
     keys: "<b>TIE Fighter in flight:</b> the arrow keys steer (a tap turns a little, held they build to the full turn in a third of a second; <kbd>Shift</kbd> with an arrow turns at full at once; <kbd>Up</kbd> dives as a stick pushed forward), the keypad's <kbd>Ins</kbd> and <kbd>Del</kbd> roll. The mouse, as the <b>Flight</b> choice beside Controller has it: <i>point to aim</i> (a ring shows the pointer; the middle is still, the further the pointer the faster the turn, as in Wing Commander and RetroVega), <i>drag to steer</i> (the game's own, 1994), or nothing (the keyboard alone, or a joystick: a controller picked above, which also rolls and fires); <kbd>F12</kbd> in flight switches between the first three. The left button fires; <kbd>W</kbd> (held a moment) changes weapon, <kbd>Backspace</kbd> full throttle, <kbd>\\</kbd> none, <kbd>[</kbd> and <kbd>]</kbd> a third and two thirds; <kbd>T</kbd> and <kbd>R</kbd> target; <kbd>Esc</kbd> the game's options.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
