@@ -686,9 +686,13 @@ bool someone_near(int obj, double reach) {
 
 // Another machine's shot, made here from its craft by the game's own call.
 void shot_made(int tag, Bit32u eax) {
-    (void)tag;
     if ((eax & 0xFFFF) != 0xFFFF) {
         g_net->shotsMade++;
+        static unsigned logged = 0;
+        if (logged < 12) {
+            logged++;
+            wclog(2, "TIE: a shot of obj %d made here: bolt %u of type %u", tag, (unsigned)(eax & 0xFFFF), tie_r8(obj_base((int)(eax & 0xFFFF)) + 4));
+        }
     }
 }
 void make_shot(const TieShot &shot, int owner) {
@@ -696,7 +700,7 @@ void make_shot(const TieShot &shot, int owner) {
     if (obj < 0 || obj >= kCraftSlots || owner_of(obj) != owner || !is_craft(obj) || tie_r16(obj_base(obj) + 0x2C) != 0) {
         return;
     }
-    tie_queue_call(kFnCreateProjectile, (Bit32u)obj, shot.hardpoint(), shot.type(), 0, NULL, shot_made, 0);
+    tie_queue_call(kFnCreateProjectile, (Bit32u)obj, shot.hardpoint(), shot.type(), 0, NULL, shot_made, obj);
 }
 
 // A hit for us to apply: a stand-in bolt with the shooter's figures in a free projectile slot, the bolt's segment in
@@ -1278,6 +1282,11 @@ void tie_session_shot() {
     if (!mine(shooter)) {
         tie_skip_call(0xFFFF);      // (no slot: its callers expect that)
         return;
+    }
+    static unsigned logged = 0;
+    if (logged < 12 && shooter == tie_player_object()) {
+        logged++;
+        wclog(2, "TIE: our shot from obj %d: hardpoint %u, projectile type %u", shooter, (unsigned)(reg_edx & 0xFFFF), (unsigned)(reg_ebx & 0xFFFF));
     }
     if (g_net->shotsOut.size() < 32 && someone_near(shooter, kShotReach)) {
         TieShot shot;
