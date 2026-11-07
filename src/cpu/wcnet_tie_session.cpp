@@ -108,6 +108,8 @@ enum {
     kZ95 = 14,                  // the Z-95 Headhunter's craft type
     kPilotRecord = 0xFABC8,     // the pilot record in memory: +0x66 the Combat Chamber's craft row, +0x67 each row's mission
     kRadioMsg = 0xE2F24,        // the mission's radio messages, 90 bytes each: the text (64), two triggers (+64, +68), the delay (+88), and/or (+89)
+    kVoiceA = 0xD4190,          // the radio voices' bank: the Combat Chamber's craft row (an index of "FIBAGDM"), at each launch
+    kVoiceB = 0xD418E,          // from the pilot record, and the row's mission (VOICE\<letter>M<mission + 1>)
     kSpeciesConvertImage = 0xC1834,
     kSpeciesTableImage = 0xCBBC4,
     // The room's end of a flight (the user, 2026-11-06: "it just delivers you to the debrief room with mission failed and
@@ -2059,6 +2061,26 @@ void challenge_lines() {
     }
 }
 
+// The flight's radio voices: the game's bank is the Combat Chamber's row and its mission, from the pilot record at each
+// launch (the voices of the messages in order).  In a room a picked mission flies its own (a chamber mission's file
+// "h<letter><n>": the letter's index in "FIBAGDM", n - 1); the challenge none, its lines others' and its sides
+// mirrored (7, past the letters, names no bank: no voices); a battle's are the tour's, as they are.
+void room_voices() {
+    std::string m = tie_mission_name();
+    for (size_t i = 0; i < m.size(); i++) m[i] = (char)tolower((unsigned char)m[i]);
+    if (g_net->challenge) {
+        tie_w8(kVoiceA, 7);
+        wclog(2, "TIE: the Z-95 challenge flies without the radio's voices");
+        return;
+    }
+    static const char kLetters[] = "fibagdm";
+    const char *l = m.size() >= 4 && m[0] == 'h' ? strchr(kLetters, m[1]) : NULL;
+    if (l && *l && m[2] >= '1' && m[2] <= '9' && !isdigit((unsigned char)m[3])) {
+        tie_w8(kVoiceA, (Bit8u)(l - kLetters));
+        tie_w8(kVoiceB, (Bit8u)(m[2] - '1'));
+    }
+}
+
 // The challenge into the mission just read: each flight group's craft mirrored, the player's Z-95s (its spec the
 // player's: the Z-95's cockpit comes of it, wcnet_tie_cockpit.cpp), each new craft marked to be loaded.
 void make_challenge(bool again) {
@@ -2153,6 +2175,7 @@ void tie_session_before_species() {
     if (g_net->challenge) {
         make_challenge(false);      // (before the pairing: the Z-95s pair with themselves)
     }
+    room_voices();                  // (before create_createmission loads them)
     make_pairing(false);
 }
 
