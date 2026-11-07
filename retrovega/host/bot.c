@@ -38,7 +38,7 @@
 
 /* scan codes (set 1) */
 enum { K_ESC = 0x01, K_1 = 0x02, K_2 = 0x03, K_3 = 0x04, K_TAB = 0x0F, K_ENTER = 0x1C, K_A = 0x1E, K_C = 0x2E,
-       K_SPACE = 0x39 };
+       K_B = 0x30, K_SPACE = 0x39 };
 
 static struct {
     int on, inited, aim_tenths, taunt, missiles, after_s;
@@ -517,10 +517,14 @@ static void fight_step(void)
             if (shield_pct(0, 0) + shield_pct(0, 1) < 70)
                 continue;
             B.taunted_at[s] = B.flight_frames;
-            queue(-100 - s);            /* (T to it) */
-            queue(K_C);
-            queue(K_2);
-            queue(K_1);
+            queue(-100 - s);            /* (T to it), then C three times quickly: the taunt (RV_BOT_ALTT: Alt+T) */
+            if (getenv("RV_BOT_ALTT"))
+                queue(0x1000 | 0x14);
+            else {
+                queue(K_C);
+                queue(K_C);
+                queue(K_C);
+            }
             break;
         }
     }
@@ -638,7 +642,9 @@ static void flight_tick(void)
     }
     /* a key tapped last frame comes up; the next of the queue goes down */
     if (B.tap_up) {
-        hle_key(B.tap_up, 0);
+        hle_key(B.tap_up & 0xFF, 0);
+        if (B.tap_up & 0x1000)
+            hle_key(0x38, 0);
         B.tap_up = 0;
     } else if (B.nq) {
         int k = B.queue[0];
@@ -647,6 +653,10 @@ static void flight_tick(void)
         if (k <= -100) {
             g_sys.target = (int16_t)(-100 - k);
             B.hold_target = 8;          /* (the comm menu's keys to come talk to it) */
+        } else if (k & 0x1000) {        /* (Alt with a key) */
+            hle_key(0x38, 1);
+            hle_key(k & 0xFF, 1);
+            B.tap_up = k;
         } else {
             hle_key(k, 1);
             B.tap_up = k;
