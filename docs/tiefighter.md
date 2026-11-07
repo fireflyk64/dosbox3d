@@ -291,7 +291,7 @@ section 7 as it is worked on.
    the turn grows with the pointer's distance from it, as in WC1 and
    RetroVega).
 8. **The page**: the room tag TF, `multiplayer: true`, a mission picker.
-9. **Missions flown alone, flown by two** (the user, 2026-11-06).  In 37 of
+9. **Done: missions flown alone, flown by two** (the user, 2026-11-06; section 7, step 9).  In 37 of
    the 105 mission files the player's flight group is a single craft (read
    from `MISSION/*.TIE`: the group with a player-craft number, +0x42, and a
    count of 1, +0x33).  Today the second pilot gets a second craft of the same
@@ -305,7 +305,7 @@ section 7 as it is worked on.
    | T/I | T/F + T/F; T/I + T/F if a T/F is too slow for the mission's timing (to be judged mission by mission) | B5M1 (the minefield, unshielded), HI1W, HI3M |
    | gunboat | gunboat + a standard Imperial shuttle (not the escort shuttle; the gunboat's cockpit for the shuttle for now) | B10M1, B10M2, HG1W, HG3M |
    | T/F | T/F + T/F | B1M1, HF1W, HF3M, HF4M, TRAIN |
-   | missile boat | missile boat + gunboat, or missile boat + a standard Imperial shuttle depending on the difficulty | B10M5, B10M6, B11M1..B11M7, B12M6, B13M1, B13M4, HM1W, HM2W |
+   | missile boat | missile boat + a standard Imperial shuttle (the user, later: "otherwise the gunboat could do some ion cannon shenanigans and the designers probably didn't think of that") | B10M5, B10M6, B11M1..B11M7, B12M6, B13M1, B13M4, HM1W, HM2W |
    | T/B | T/B + T/F: one flies the torpedo work, the other point defense | B3M1, HB1W |
 
    How: a flight group has one craft type (+0x32), so a mixed pair is a
@@ -314,10 +314,10 @@ section 7 as it is worked on.
    goals left on the first; T/I to two T/F changes the group's type and
    count.  The cockpit follows the craft the pilot flies; the shuttle has
    none of its own.
-   **Done, the first part: the shuttle's cockpit** (section 7, step 9),
-   made by the emulator from the player's own gunboat cockpit: an A of
-   struts instead of the gunboat's V, every instrument working.  Next: the
-   second pilot's own flight group in the pairing's craft.
+   **Done: the shuttle's cockpit** (section 7, step 9), made by the
+   emulator from the player's own gunboat cockpit: an A of struts instead
+   of the gunboat's V, every instrument working; **and the pairings**: the
+   guests' own flight group in the pairing's craft.
 
 10. **Three pilots** (the user, 2026-11-06: "add another item for three
    player like in the other game. The third should be same as the guest in
@@ -327,6 +327,14 @@ section 7 as it is worked on.
    craft a seat.  To do: in a pairing (step 9) the third pilot flies the same
    craft as the second, in the second's flight group; a three-machine rig and
    its measurement.
+
+11. **Done: the page for TIE Fighter** (the user, 2026-11-06: "for tie
+   fighter we shouldn't have the asteroids section. that may let
+   fullscreen be on the same line... tie fighter is 640x480 so when not full
+   screen I saw some horizontal rows missing... can we change canvas size
+   when TF is selected or joined. It would also be nice to have a cinema
+   mode"; section 7, step 11): no Conn or Collide for TIE Fighter, the
+   picture 640 x 480, a Cinema checkbox.
 
 ## 7. Notes, step by step
 
@@ -803,3 +811,55 @@ the Jedi (seen from outside) as the reference.
   once each on the guest.
 * **Aids**: `!tieface=<obj>` turns our craft to face an object;
   `!tietarget=<obj>` makes it our target.
+
+### Step 9: the pairings (2026-11-06)
+
+* **Where.**  At `fediskio_loadspecies`'s entry (the mission read, its craft
+  not yet loaded), on every machine alike, before the cockpit's step.  A
+  mission whose player flight group is one craft (its +0x33) gets the user's
+  pairing by its craft type (+0x32): T/I (6): the group becomes T/Fs (5), and
+  the seats give each pilot one, as for a group of the same craft; T/B (7) +
+  T/F, T/D (9) + T/A (8), gunboat (16) + shuttle (17), missile boat (12) +
+  shuttle: the player's group copied as a second one at the end of the table
+  (the header's count +1) in the guests' craft, one craft for each seat after
+  the host's (a third pilot flies the same as the second: "The third should be
+  same as the guest in all cases"), no waves, its start points and route (the
+  first 12 waypoints in use) 0.4 km to the side (64; 160 waypoint units a km),
+  its place reference as create_loadmission sets it (FGStatus 0xDEDCC, 0x30 a
+  group, +6 = 0x8000), its craft marked to be loaded.  A guest flies its own
+  craft of it: the original group's player flag cleared, the copy's set to the
+  guest's seat, the player state's group and spec moved there (a shuttle so
+  gets its cockpit).  T/F and T/A pair with themselves: the seats as before.
+  The goals, orders and arrival are the player's group's.
+* **A mission that begins with a hyperspace jump** (the Combat Chamber's
+  gunboat missions) is read from its file a second time after the jump, its
+  craft not loaded again: the copy vanished and the guest flew the host's
+  gunboat.  The pairing chosen at the loading is made again at
+  `create_createmission` when it is gone.
+* **Measured** (two machines, the room's mission picked): the gunboat's
+  mission 3 (`hg3m`): the host a gunboat (obj 0), the guest a shuttle (obj 2,
+  flight group 28, seen as a shuttle on the host) in the cockpit made from the
+  gunboat's, through the jump and after; the T/B's mission 1 (`hb1w`): the
+  guest a T/F (flight group 19); battle 5 mission 1 (`b5m1iw`, the minefield):
+  both T/Fs side by side, both killed by the mines after a minute and each
+  death seen once on the other machine.
+* **Open.**  The copy's goals are the player's group's (usually none); the
+  T/I's timing judgement (the user: "unless there's a timing aspect where T/F
+  is too slow"); three machines not yet measured (step 10).
+
+### Step 11: the page's picture and options for TIE Fighter (2026-11-06)
+
+* The registry's `screen`: a game's picture shape on the page (TIE Fighter
+  640 x 480; the others 640 x 400, Wing Commander's 320 x 200 doubled), set as
+  CSS variables for the game loaded or the room's.  A 640 x 400 canvas had
+  dropped 80 of the flight's 480 rows.
+* `noRoomOptions`: no Conn (the frame exchange's mode) or Collide (asteroids,
+  wing bumps) for TIE Fighter, whose hooks read neither; Full screen then
+  sits on the mission's line.
+* Cinema, a checkbox beside Full screen, kept in the browser: the picture as
+  large as the window allows without full screen (the window's width, or its
+  height when the window is too short, so the whole picture shows), centred,
+  the log below.
+* Measured in Chrome at 1280 x 720 (scripts/web-tf-guest.mjs): the canvas 640
+  x 480 on the page, Conn and Collide hidden, Full screen on the mission's
+  line; cinema 885 x 664, centred.
