@@ -9,6 +9,7 @@
  *  pointer the program holds are linear addresses, and an image address A
  *  is at linear tie_linear(A).
  */
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -445,6 +446,45 @@ void tie_set_cursor(int x, int y) {
     }
     mem_writew(tie_linear(kCursorX), (Bit16u)x);
     mem_writew(tie_linear(kCursorY), (Bit16u)y);
+}
+
+// Test aid: our craft turned to face another object (the key script's !tieface=<obj>).  An object's heading is its
+// angle in the x-y plane from +y towards +x, its pitch the angle from +z (0x4000 level), 65,536 a turn; the game
+// makes its vectors again from them (+0x40 and +0x38 set), and the craft's own copies of the two (+6, +8) follow.
+void tie_face(int target) {
+    const int own = tie_player_object();
+    if (!g_found || own < 0 || target < 0 || target >= (int)tie::kObjectCount || target == own) {
+        wclog(1, "TIE: nothing to face (ours %d, the object %d)", own, target);
+        return;
+    }
+    const Bit32u a = tie_linear(tie::kObjects + own * tie::kObjectSize), b = tie_linear(tie::kObjects + target * tie::kObjectSize);
+    const double dx = (double)(Bit32s)mem_readd(b + 6) - (Bit32s)mem_readd(a + 6), dy = (double)(Bit32s)mem_readd(b + 0xA) - (Bit32s)mem_readd(a + 0xA),
+                 dz = (double)(Bit32s)mem_readd(b + 0xE) - (Bit32s)mem_readd(a + 0xE);
+    const double len = sqrt(dx * dx + dy * dy + dz * dz);
+    if (len <= 0) {
+        return;
+    }
+    const Bit16u h = (Bit16u)(Bit16s)lround(atan2(dx, dy) * 32768.0 / M_PI), p = (Bit16u)lround(acos(dz / len) * 32768.0 / M_PI);
+    mem_writew(a + 0x1E, h);
+    mem_writew(a + 0x20, p);
+    mem_writew(a + 0x22, 0);
+    mem_writeb(a + 0x40, 1);
+    mem_writeb(a + 0x38, 1);
+    const Bit32u craft = mem_readd(a + 0x54);
+    if (craft >= 0x100000) {
+        mem_writew(craft + 6, p);
+        mem_writew(craft + 8, h);
+    }
+    wclog(1, "TIE: our craft faces obj %d, %.2f km away (heading %u, pitch %u)", target, len / 40960.0, h, p);
+}
+
+// Test aid: our target set (the key script's !tietarget=<obj>; the player state's +0x12).
+void tie_target(int obj) {
+    if (!g_found || obj < 0 || obj >= (int)tie::kObjectCount) {
+        return;
+    }
+    mem_writew(tie_linear(tie::kPstate + 0x12), (Bit16u)obj);
+    wclog(1, "TIE: our target is obj %d", obj);
 }
 
 Bit32u tie_linear(Bit32u image) {

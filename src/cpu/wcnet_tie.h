@@ -122,6 +122,10 @@ void tie_fly_group_as(int fg, int type);
 // Test aid: the front end's pointer put at a point of its 320x200 screen
 // (the key script's !tiecursor=x:y; a mouse button then clicks there).
 void tie_set_cursor(int x, int y);
+// Test aid: our craft turned to face an object (the key script's !tieface=<obj>).
+void tie_face(int obj);
+// Test aid: our target set (the key script's !tietarget=<obj>).
+void tie_target(int obj);
 
 }  // namespace wc
 

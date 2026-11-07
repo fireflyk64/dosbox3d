@@ -1003,6 +1003,12 @@ static void key_script() {
             tie_set_cursor(x, y);
             wclog(1, "key script %.1fs (t=%.1f): TIE Fighter's pointer to %d, %d", t, now / 1000.0, x, y);
         }
+    } else if (item.compare(0, 11, "!tietarget=") == 0) {
+        // !tietarget=<obj> makes that object our TIE Fighter craft's target
+        tie_target(atoi(item.c_str() + 11));
+    } else if (item.compare(0, 9, "!tieface=") == 0) {
+        // !tieface=<obj> turns our TIE Fighter craft to face that object
+        tie_face(atoi(item.c_str() + 9));
     } else if (item.compare(0, 9, "!dumplin=") == 0) {
         // !dumplin=<name>:<hex linear address>:<hex length> writes that memory (a 32-bit program's, as the CPU sees
         // it; a page not there reads as zero) to WCNET_DUMP_DIR/<name>.bin
