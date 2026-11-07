@@ -304,7 +304,11 @@ section 7 as it is worked on.
    with the other type and a count of 1 (the mission's 48 at most), the
    goals left on the first; T/I to two T/F changes the group's type and
    count.  The cockpit follows the craft the pilot flies; the shuttle has
-   none of its own (the gunboat's).
+   none of its own.
+   **Done, the first part: the shuttle's cockpit** (section 7, step 9),
+   made by the emulator from the player's own gunboat cockpit: an A of
+   struts instead of the gunboat's V, every instrument working.  Next: the
+   second pilot's own flight group in the pairing's craft.
 
 ## 7. Notes, step by step
 
@@ -645,3 +649,75 @@ move vector, the nine axis words, type).
   own gamepad-less button meanings) are WC's mapping (target T, weapon W,
   speed = and -: TIE's own keys for those); afterburner and missile buttons
   mean nothing in TIE.
+
+### Step 9: the Imperial shuttle's cockpit (2026-11-06)
+
+The user: "modify the gunboat cockpit to work for the imperial shuttle... widen
+the viewscreen a bit so it looks more like a shuttle. Make sure instruments are
+active too"; "Gunboat cockpit should remain same. Shuttle cockpit should
+originate from gunboat. Make sure that the edits are done with instructions and
+code so we don't include the gunboat cockpit art in the distribution"; "the two
+strut bars should curve in rather than out making the edge of an A character
+rather than the V that we see", with the stolen shuttle's cockpit in Return of
+the Jedi (seen from outside) as the reference.
+
+* **Why there is none.**  A craft's cockpit is `<cockpit dir><its spec's
+  internal name>.INT` (`panel_loadpaneldata`); the shuttle's spec (16, species
+  17, the mission files' craft type 17) has an empty name, so the game would ask
+  for `CP640\.INT`.  The tables (image addresses): `spec_data` 0xC7AB4, 0xEC a
+  record, +0x2C the name; `species_table` 0xCBBC4, 0x16 a record, +1 the load
+  flags, +0x13 the spec; `speciesconvert` 0xC1834; the player state's +0x0A the
+  player's flight group, +0x0E its spec.  The data object is 0x28800 below its
+  file offset in Z_TIE__.EXE.
+* **When.**  `fediskio_loadspecies` (0x218D8, watched now) runs after
+  `create_loadmission` has read the mission and marked its craft types (load
+  flags 0x10) and set the player's spec, before the craft and the cockpit load.
+  At its entry, when the player's spec is the shuttle's, the emulator names it
+  SHUTTLE and makes the files.  `WCNET_TIE_FLY_AS=<craft type>` changes the
+  player's flight group's type there first (+0x32), marks the species and sets
+  the player's spec as the loader would: how the rigs fly a shuttle (and the
+  first half of the pairings).
+* **The files** (`src/cpu/wcnet_tie_cockpit.cpp`), written beside the game's on
+  its drive (the local drive's host path; the drive's cache emptied after):
+  `CP640\SHUTTLE.INT` and `CP320\SHUTTLE.INT`, the gunboat's description with
+  one change, its forward view `SHUTFWD` instead of `GUNBT12`.  Every other view,
+  the 95 instruments' places and the parts (`GUNBOATP.PNL`) are the gunboat's own
+  files, read where they are: the gauges, scopes and displays work as in the
+  gunboat.  The game's files are not touched.
+* **The view's formats.**  An INT: 28 views of 36 bytes (flags, a 9-byte name,
+  x, y, width, depth, y offset, a title), 95 instruments of 6 bytes from 0x3F0,
+  the parts' name.  A view's LFD: PANL, MASK, PLTT, read in that order.  PANL is
+  the game's sprite (0..250 a run of 1 to 4 of the base color plus op>>2, 251 a
+  new base, 252 a run of a color and the next in turn, 253 a run of 1 to 256 of
+  one color, 254 the row's end, 255 the end; color 253 is left out), drawn once
+  when the view comes up.  MASK: for each row of the 3-D view's depth (325 of
+  480 forward), a signed state (not negative: space shows first) and the runs,
+  the state turning at each (past 255: 0, then the rest less 256; past 511: 0,
+  0, the rest less 512; a run of exactly 256 has no code, so one pixel moves).
+  The 3-D view is copied in only where the mask says space.
+* **The change, all code** (the gunboat's art never in our files): the struts
+  are the longest stretch of rows, each side, where a hidden run with space on
+  both sides moves smoothly (rows 117..243 and 120..268 at 640x480); a line is
+  fitted to their middles and widths.  Out: their bands (9 pixels more each
+  side), from the top down, the scopes' disks kept (instruments 0 and 1), below
+  the stretch the strut's own run while it is a strut's width; small hidden
+  pieces left near the bands cleared.  In: two legs, feet just inside the
+  dashboard's top corners (140, 282 at 640x480), tops leaning in (262 at the top
+  row), each row a row of the strut that leans the same way, the strut's length
+  stretched over the leg's and its runs narrowed by the slants, drawn only where
+  space shows (so behind the dashboard and the scopes); a frame bar 24 rows deep
+  along the top, each column a strut's row on its side, the scopes hanging from
+  it.  The same code makes the 320x200 view from the gunboat's own (its
+  figures scaled).
+* **The targeting display**'s mask is chosen by the spec's number in the
+  program (the gunboat's 15 has its own; the shuttle would get the T/F's), so
+  while a shuttle flies the emulator writes the gunboat's 480 bytes (0xC6C63)
+  over the default's (0xC66C3), and its 200 (0xC628B over 0xC61C3) at 320x200,
+  and puts them back when another craft flies.
+* **Measured** (the gunboat's mission 2, HG2W, flown as a shuttle,
+  `WCNET_TIE_FLY_AS=17`): the cockpit as made, the scopes' contacts, the
+  throttle, speed, clock and the laser, shield and engine bars changing, the
+  warhead counters, the targeting display's picture of the target inside the
+  gunboat's frame.  The side views are the gunboat's (its V).
+* **Open.**  The second pilot's own flight group in the pairing's craft (the
+  table above); the side views' struts.
