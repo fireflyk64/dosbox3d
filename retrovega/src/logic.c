@@ -4392,8 +4392,10 @@ int16_t logic_autopilot(void)
  * present and are very near the carrier and it can say press fire to land. If all landing conditions are met and all
  * nav points have been reached"): every waypoint flown, the carrier's own rule met (logic_landing_allowed), no enemy
  * within AUTOPILOT_CLEAR_KM of a human, and the home carrier's hull within AUTOLAND_KM: the home slot, -1 not now.
- * The autopilot home stops HOME_ARRIVE_KM off the hull, inside it */
-#define AUTOLAND_KM 6000
+ * AUTOLAND_KM is a cleared landing's own distance (the user, 2026-11-06: "the whole click fire to land happened when I
+ * was very far away from the carrier--it should only happen when I'm nearly colliding it--definitely within its sphere
+ * of influence": it was 6,000 km); the autopilot home stops HOME_ARRIVE_KM, 4,000, off the hull: a short run in */
+#define AUTOLAND_KM LANDING_NEAR_KM
 int16_t logic_autoland_ready(void)
 {
     int16_t s, home;

@@ -5110,14 +5110,18 @@ static void t_stay_home(void)
  * and are very near the carrier and it can say press fire to land. If all landing conditions are met and all nav
  * points have been reached"): not at the launch, not with a waypoint unflown, nor far from the carrier; with both
  * flown, their enemies dead, 3,000 km off the carrier, it is ready, and the trigger lands */
+#define PT_LAND_KM 2000                 /* (logic.c LANDING_NEAR_KM: a cleared landing's distance, the trigger's too) */
 static void t_autoland(void)
 {
     static const char __far e_launch[] = "at the launch the landing by the trigger was ready (%d): no waypoint flown yet";
     static const char __far e_half[] = "with nav 2 unflown it was ready (%d)";
     static const char __far e_far[] = "every waypoint flown, %d km from the carrier, it was ready (%d): too far";
+    static const char __far e_near[] = "the carrier's hull %d km off, outside a cleared landing's 2,000: ready (%d) (the "
+        "user: \"it should only happen when I'm nearly colliding it\")";
     static const char __far e_ready[] = "every waypoint flown, nobody about, %d km off the carrier: not ready (%d)";
     static const char __far e_land[] = "the trigger: logic_autoland %d, status %d, landed on %d: 1, 1, the carrier";
     int16_t home = pt_home_patrol(), r;
+    int32_t cx, cz, d, g = 0;
     if (home <= 0 || !pt_steps(SEC))
         return;
     REQUIRE(logic_autoland_ready() < 0, e_launch, logic_autoland_ready(), 0, 0);
@@ -5127,9 +5131,19 @@ static void t_autoland(void)
     if (!pt_go(NAV2_X, NAV2_Z) || !pt_kill_side(SIDE_AERA) || !pt_go(0, 30000))
         return;
     REQUIRE(logic_autoland_ready() < 0, e_far, logic_target_km(home), logic_autoland_ready(), 0);
-    if (!pt_go(0, 3000))
-        return;
-    REQUIRE(logic_autoland_ready() == home, e_ready, logic_target_km(home), logic_autoland_ready(), 0);
+    /* (in from in front of the carrier, 500 km at a time: not before its hull is within a cleared landing's distance) */
+    cx = TO_KM(gPositionVector[home].x);
+    cz = TO_KM(gPositionVector[home].z);
+    for (d = 9000; d > 0; d -= 500) {
+        if (!pt_go(cx, cz + d))
+            return;
+        g = logic_target_km(home);
+        if (g > PT_LAND_KM + 100)
+            REQUIRE(logic_autoland_ready() < 0, e_near, g, logic_autoland_ready(), 0);
+        else if (g < PT_LAND_KM - 100)
+            break;
+    }
+    REQUIRE(d > 0 && logic_autoland_ready() == home, e_ready, g, logic_autoland_ready(), 0);
     r = logic_autoland();
     REQUIRE(r == 1 && missionStatus == 1 && landedOn == (uint16_t)home, e_land, r, missionStatus, (int16_t)landedOn);
 }
