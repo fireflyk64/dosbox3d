@@ -211,6 +211,13 @@ class Check:
                                "the guest's line on the host's comm")
             self.logs_say_game(0, r'a chat line from slot 0 on the comm: CHEATHOST: hello from the host',
                                "the host's own line on its own comm")
+        if sc == 'fieldnav':
+            for n in range(self.players):
+                log = self.game_log(n)
+                way = log.find('nav 2 reached')   # (a guest's jump is the host's: its log has no autopilot line)
+                self.need(way >= 0, 'p%d: the autopilot took it to nav 2, reached' % n)
+                self.need(re.search(r'rocks: near field 0', log[way:] if way >= 0 else '') is not None,
+                          'p%d: the field\'s rocks came after the autopilot to nav 2, nobody flying on' % n)
         if sc == 'kill':
             self.meeting('gone')
             for n in range(1, self.players):
