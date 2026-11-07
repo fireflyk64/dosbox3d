@@ -72,6 +72,10 @@
 // raw sectors), mounted as drive D before the game runs (imgmount, an
 // ISO).  `keep`: files of the game that the installer-junk rule would drop
 // by their extension (TIE Fighter's IMUSE.INI).
+// `noRoomOptions`: the room's Conn and Collide choices are Wing Commander's (the frame exchange's mode, the asteroid
+// fields and wing bumps): none of them for this game, so the page leaves them out.  `screen`: the picture's shape on
+// the page, [width, height] (640 x 400 when none: Wing Commander's 320 x 200 doubled; TIE Fighter flies at 640 x 480,
+// whose rows a 400-row canvas would drop).
 
 // Wing Commander's Vega campaign: series 1.. and mission 0.. within the
 // series (what the MIS / SERIES environment of the hooks takes).  The system
@@ -418,7 +422,7 @@ export const GAMES = [
   // EMS for the extender, a Sound Blaster 16 on IRQ 7).  Single-player
   // until its hooks are built (docs/tiefighter.md).
   { id: "tf", tag: "TF", title: "TIE Fighter", detect: ["TIE.EXE"], run: "tie", multiplayer: true,
-    image: "game.gog", keep: ["IMUSE.INI"], cycles: 60000, campaign: TF_CAMPAIGN,
+    image: "game.gog", keep: ["IMUSE.INI"], cycles: 60000, campaign: TF_CAMPAIGN, noRoomOptions: true, screen: [640, 480],
     // (the launcher's own words: the hooks find the game's program in memory by its bytes, not by this file)
     build: { text: "Loading TIE-Fighter CD" },
     help: "TIE Fighter flown together, in its first stage: everybody in the room flies the same mission, each in a craft of the player's flight group, and sees the others' craft where they really are; the rest of the mission (the other craft, the shots, the damage) still runs on each machine on its own. The host may pick a mission for everybody in the room's menu, any of the Combat Chamber's and any battle's: launching any Combat Chamber mission then flies it, briefing and all (the host may change it between flights). With none picked, a guest's Combat Chamber launch flies the host's; the line over the game says where the others are and when the host launches. The tour's own battles stay each pilot's own. Space skips the opening; at the registration desk type a pilot's name (or click one) and take the door; in flight the mouse is the stick and its button fires, Backspace is full throttle. What is done and what comes next: docs/tiefighter.md.",

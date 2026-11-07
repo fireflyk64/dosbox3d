@@ -291,6 +291,7 @@ function setSource(s, want) {
   const keys = s && gameInfo() && gameInfo().keys;
   $("gameKeys").innerHTML = keys || "";
   $("tfFlightLabel").hidden = !isTf();
+  gameLook();
   $("gameKeys").hidden = !keys;
   const hints = s && gameInfo() && gameInfo().campaign && gameInfo().campaign.hints;
   $("helpMission").textContent = (hints && hints.help) || (gameInfo() && gameInfo().help)
@@ -798,7 +799,10 @@ function renderMission() {
   const pickAlone = one && missionAlone();
   $("mission").parentElement.hidden = one && !pickAlone;
   $("mission").parentElement.title = one ? "The mission to start at, or the campaign as the game starts it" : "The mission the host picked for everyone";
-  for (const id of ["latency", "collisions"]) $(id).parentElement.hidden = one;
+  // (a game with none of the room's options, TIE Fighter's: no Conn, no Collide)
+  const noRoomOptions = !!(gameById(lobbyGameId()) || {}).noRoomOptions;
+  for (const id of ["latency", "collisions"]) $(id).parentElement.hidden = one || noRoomOptions;
+  gameLook();
   // (a game whose asteroids are its own, each machine's: only the wing bumps are the room's to choose)
   const ownRocks = !!(gameById(lobbyGameId()) || {}).ownRocks;
   for (const o of $("collisions").options) o.hidden = ownRocks && !o.value.startsWith("on-");
@@ -1662,6 +1666,33 @@ $("flySolo").addEventListener("click", async () => {
   void start(true);
 });
 $("fullscreen").addEventListener("click", () => goFullscreen());
+
+// The picture's shape: the game's own (the registry's `screen`: TIE Fighter's 640 x 480, every row of it), for the game
+// loaded or the room's, whichever is known (the user, 2026-11-06: "TIE Fighter is 640x480 so when not full screen I saw
+// some horizontal rows missing... can we change canvas size when TF is selected or joined").
+function gameLook() {
+  const g = gameById(lobbyGameId()) || (source && gameById(source.game.id));
+  const [w, h] = (g && g.screen) || [640, 400];
+  const st = document.documentElement.style;
+  st.setProperty("--screen-w", String(w));
+  st.setProperty("--screen-h", String(h));
+}
+// Cinema: the picture as large as the window allows, without full screen (the user: "a cinema mode where non-fullscreen
+// canvas gets scaled to fill the horizontal area of the browser window without actually going fullscreen"): the
+// window's width, unless the window is too short for it (then its height decides, so the whole picture shows).
+// Remembered in this browser.
+const CINEMA_KEY = "wc-cinema";
+function setCinema(on) {
+  document.body.classList.toggle("cinema", on);
+  $("cinema").checked = on;
+  try { localStorage.setItem(CINEMA_KEY, on ? "1" : "0"); } catch (e) { /* this browser keeps nothing */ }
+}
+try { setCinema(localStorage.getItem(CINEMA_KEY) === "1"); } catch (e) { setCinema(false); }
+$("cinema").addEventListener("change", () => {
+  setCinema($("cinema").checked);
+  if ($("cinema").checked) $("screen").scrollIntoView({ block: "start", behavior: "smooth" });
+});
+gameLook();
 // Whether Fly goes full screen: each pilot's own, ticked unless unticked in
 // this tab (the user, 2026-11-05: "The box should default to checked but
 // should be remembered by the browser session"); the Full screen button works
