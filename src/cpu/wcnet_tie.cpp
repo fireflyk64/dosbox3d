@@ -13,6 +13,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "wcnet_tie.h"
+#include "wcnet_tie_session.h"
 #include "wcnet_log.h"
 #include "wc_net.h"
 #include "mem.h"
@@ -35,17 +36,7 @@ enum {
     kRankScores = 0xC1E10,
     kResourcePath = 0xC1C98,
 
-    // The flight's state.
-    kObjects = 0xE38BC,         // FlightObject objects[120], 88 bytes each
-    kObjectSize = 88,
-    kObjectCount = 120,
-    kCrafts = 0xE6394,          // CraftData crafts[32], 0x21A bytes each
-    kCraftSize = 0x21A,
-    kPstate = 0xEB158,          // PlayerInFlightState: +8 the player's object slot, +0x12 the target's
-    kFramerate = 0xEB70C,       // 236 / frameticks
-    kFrameticks = 0xEB712,      // 4 ms ticks the last frame took
-    kHyperspaceFlag = 0xEB75D,
-    kMainGameFlag = 0xEB763,
+    // (the flight's tables: tie:: in wcnet_tie.h)
 
     // The front end's (Landru's) pointer: its own, moved by the mouse's
     // mickeys, and what its screens are clicked with.
@@ -94,9 +85,9 @@ bool rd8(Bit32u lin, Bit8u *v) { return mem_readb_checked(lin, v) ? false : true
 bool rd32(Bit32u lin, Bit32u *v) { return mem_readd_checked(lin, v) ? false : true; }
 // (the checked reads answer true on a fault)
 
-Bit32u r32(Bit32u image) { Bit32u v = 0; rd32(tie_linear(image), &v); return v; }
-Bit16u r16(Bit32u image) { return (Bit16u)r32(image); }
-Bit8u r8(Bit32u image) { Bit8u v = 0; rd8(tie_linear(image), &v); return v; }
+Bit32u r32(Bit32u image) { return tie_r32(image); }
+Bit16u r16(Bit32u image) { return tie_r16(image); }
+Bit8u r8(Bit32u image) { return tie_r8(image); }
 
 bool bytes_at(Bit32u lin, const Bit8u *want, size_t n) {
     for (size_t i = 0; i < n; i++) {
@@ -193,6 +184,7 @@ void set_watch() {
 }
 
 void report(double now) {
+    using namespace tie;
     const Bit16u player = r16(kPstate + 8);
     int live = 0;
     for (int i = 0; i < kObjectCount; i++) {
@@ -226,6 +218,7 @@ void report(double now) {
 
 void forget(const char *why) {
     wclog(1, "TIE Fighter: %s", why);
+    tie_session_shutdown();
     g_armed = g_found = false;
     g_codeBase = g_dataBase = 0;
     set_watch();
@@ -257,6 +250,7 @@ bool tie_program_ended(Bit16u psp) {
 
 
 void tie_tick() {
+    tie_session_tick();
     if (!g_armed) {
         return;
     }
@@ -303,6 +297,21 @@ void tie_tick() {
 
 bool tie_found() { return g_found; }
 
+Bit8u tie_r8(Bit32u image) { Bit8u v = 0; if (g_found) rd8(tie_linear(image), &v); return v; }
+Bit16u tie_r16(Bit32u image) { return (Bit16u)tie_r32(image); }
+Bit32u tie_r32(Bit32u image) { Bit32u v = 0; if (g_found) rd32(tie_linear(image), &v); return v; }
+void tie_w8(Bit32u image, Bit8u v) { if (g_found) mem_writeb(tie_linear(image), v); }
+void tie_w16(Bit32u image, Bit16u v) { if (g_found) mem_writew(tie_linear(image), v); }
+void tie_w32(Bit32u image, Bit32u v) { if (g_found) mem_writed(tie_linear(image), v); }
+bool tie_in_flight() { return g_found && tie_r8(tie::kMainGameFlag) == 1; }
+int tie_player_object() {
+    if (!g_found) {
+        return -1;
+    }
+    const Bit16u obj = tie_r16(tie::kPstate + 8);
+    return obj < tie::kObjectCount ? (int)obj : -1;
+}
+
 void tie_set_cursor(int x, int y) {
     if (!g_found) {
         wclog(1, "TIE: no program to put the pointer in");
@@ -335,6 +344,11 @@ void tie_check_hooks(Bit32u eip) {
         p.total++;
         if (i == 0) {
             g_frames++;
+            tie_session_frame();
+        } else if (p.image == 0x16B8C) {
+            tie_session_mission_create();
+        } else if (p.image == 0x32448) {
+            tie_session_before_move();
         } else if (p.total <= 3) {
             // (Watcom's register convention: the first arguments in eax, edx, ebx, ecx)
             wclog(2, "TIE: %s call %u: eax %08x edx %08x ebx %08x ecx %08x", p.name, p.total, (unsigned)reg_eax, (unsigned)reg_edx,

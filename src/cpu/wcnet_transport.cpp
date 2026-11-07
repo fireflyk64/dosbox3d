@@ -37,6 +37,8 @@ const char *message_type_name(const NetworkMessage &msg) {
     if (msg.has_restart_choice()) return "restart_choice";
     if (msg.has_in_flight_scene()) return "in_flight_scene";
     if (msg.has_presence()) return "presence";
+    if (msg.has_tie_hello()) return "tie_hello";
+    if (msg.has_tie_frame()) return "tie_frame";
     return "none";
 }
 

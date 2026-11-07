@@ -313,6 +313,41 @@ message ServerSendBriefingStart {
 message InFlightScene {
     optional uint32 scene = 1;
 }
+// TIE Fighter (docs/tiefighter.md, wcnet_tie_session.cpp).  A guest's hello
+// (its callsign) and the host's answer: the guest's player number, which is
+// its craft in the mission's player flight group, and the room's seats.
+message TieHello {
+    optional string callsign = 1;
+    optional uint32 player = 2;
+    optional uint32 seats = 3;
+}
+// One craft as its owner's game has it.  The object slots are the same on
+// every machine: the same mission file set up in the same order.
+message TieCraft {
+    optional uint32 obj = 1;
+    optional uint32 owner = 2;
+    optional sint32 x = 3;
+    optional sint32 y = 4;
+    optional sint32 z = 5;
+    optional uint32 heading = 6;
+    optional uint32 pitch = 7;
+    optional uint32 roll = 8;
+    optional sint32 speed = 9;
+    optional sint32 mx = 10;        // the move vector (Q15)
+    optional sint32 my = 11;
+    optional sint32 mz = 12;
+    optional uint32 type = 13;      // the ship type; 0: the craft is gone
+    optional bytes axes = 14;       // the forward/side/up vectors, 9 int16 (FlightObject +0x42)
+}
+// A frame of craft from their owner, best effort (the next supersedes it);
+// the host relays a guest's to the other guests with its player number.
+message TieFrame {
+    optional uint32 player = 1;
+    optional uint64 frame = 2;
+    optional uint32 ticks = 3;      // the sender's frameticks
+    repeated TieCraft craft = 4;
+    optional bool flying = 5;       // the sender is in a flight
+}
 message NetworkMessage {
     optional Connect connect = 1;
     optional Game game = 2;
@@ -331,4 +366,6 @@ message NetworkMessage {
     // mission again, 2 carry on (RetroVega's restartChoice).
     optional uint32 restart_choice = 19;
     optional Presence presence = 20;
+    optional TieHello tie_hello = 21;
+    optional TieFrame tie_frame = 22;
 }

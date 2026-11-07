@@ -22,6 +22,7 @@
 #include "wcnet_code.h"
 #include "wcnet_game.h"
 #include "wcnet_retrovega.h"
+#include "wcnet_tie.h"
 #include "wcnet_transport.h"
 #include "wcnet_lobby.h"
 #include "wcnet_log.h"
@@ -3721,7 +3722,7 @@ const char *wc_net_status_note() {
 }
 
 bool in_space() {
-    return g_session != NULL && g_session->in_space();
+    return (g_session != NULL && g_session->in_space()) || tie_in_flight();   // (TIE Fighter: its flight, session or not)
 }
 
 bool wc_net_overlay_chat() {

@@ -33,6 +33,36 @@ void tie_tick();
 // addresses they are loaded at.
 bool tie_found();
 Bit32u tie_linear(Bit32u image);
+// Its memory, by image address (nothing while it is not found: reads 0).
+Bit8u tie_r8(Bit32u image);
+Bit16u tie_r16(Bit32u image);
+Bit32u tie_r32(Bit32u image);
+void tie_w8(Bit32u image, Bit8u v);
+void tie_w16(Bit32u image, Bit16u v);
+void tie_w32(Bit32u image, Bit32u v);
+// A flight runs (the game's maingameflag), and the player's object slot
+// (-1: none).
+bool tie_in_flight();
+int tie_player_object();
+
+// The flight's tables (image addresses; docs/tiefighter.md section 3).
+namespace tie {
+enum {
+    kObjects = 0xE38BC,         // FlightObject objects[120], 88 bytes each
+    kObjectSize = 88,
+    kObjectCount = 120,
+    kCrafts = 0xE6394,          // CraftData crafts[32], 0x21A bytes each
+    kCraftSize = 0x21A,
+    kPstate = 0xEB158,          // +8 the player's object slot, +0x12 the target's
+    kFramerate = 0xEB70C,
+    kFrameticks = 0xEB712,
+    kHyperspaceFlag = 0xEB75D,
+    kMainGameFlag = 0xEB763,
+    kMissionHeader = 0xE3534,   // int16 the flight groups' number first
+    kFlightGroups = 0xDF6CC,    // EFGStruct fg_array[48], 0x124 each: +0x33 craft, +0x42 the player's craft (1-based)
+    kFlightGroupSize = 0x124,
+};
+}  // namespace tie
 
 // The per-instruction dispatcher's call when EIP's low word is watched.
 void tie_check_hooks(Bit32u eip);
