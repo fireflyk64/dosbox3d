@@ -793,6 +793,9 @@ void release_ai(int obj) {
 enum { kShotReach = 2 * kReach, kKillCalls = 12 };
 // The collision test's bolt segment (tie.c's laserx.. and laserxold..), which collide_laserhitcraft reads.
 enum { kLaserX = 0xEAB94, kLaserY = 0xEAB98, kLaserZ = 0xEAB90, kLaserXOld = 0xEABD4, kLaserYOld = 0xEABD8, kLaserZOld = 0xEABD0 };
+// The impact's place along the bolt's segment, from its start (laserxold..), as the collision test leaves it for
+// collide_laserhitcraft, which puts the bolt's flash there (OpenTIE's tie.c: collidexoff 0xEAB7C, y 0xEAB78, z 0xEAB74).
+enum { kCollideXOff = 0xEAB7C, kCollideYOff = 0xEAB78, kCollideZOff = 0xEAB74 };
 enum { kFnCreateProjectile = 0x2E0E4, kFnLaserHit = 0x1433C, kFnDamage = 0x148F0, kFnUpdateKills = 0x16218, kWarheads = 0xE61FC };
 
 bool someone_near(int obj, double reach) {
@@ -867,6 +870,11 @@ bool hit_before(int tag) {
     tie_w32(kLaserXOld, (Bit32u)h.ox());
     tie_w32(kLaserYOld, (Bit32u)h.oy());
     tie_w32(kLaserZOld, (Bit32u)h.oz());
+    if (h.has_cx()) {                               // (the flash where the bolt met the craft on the shooter's machine)
+        tie_w32(kCollideXOff, (Bit32u)h.cx());
+        tie_w32(kCollideYOff, (Bit32u)h.cy());
+        tie_w32(kCollideZOff, (Bit32u)h.cz());
+    }
     // the call's first argument is the stand-in (it was not known when the call was queued)
     reg_eax = (Bit32u)standin_slot;
     wclog(2, "TIE: applying a hit on obj %u from obj %u: stand-in bolt %d (type %u, radius %u, offset %u)", h.target(), h.shooter(),
@@ -878,9 +886,14 @@ void hit_done(int tag, Bit32u eax) {
     wclog(2, "TIE: the hit on obj %u applied (returned %08x; the target's hull %u of %u)", h.target(), (unsigned)eax,
           (unsigned)mem_readw(tie_r32(obj_base((int)h.target()) + 0x54) + 0xA2), (unsigned)mem_readw(tie_r32(obj_base((int)h.target()) + 0x54) + 0xA6));
     if (standin_slot >= 0) {
-        const Bit32u b = obj_base(standin_slot);
+        const Bit32u b = obj_base(standin_slot), t = obj_base((int)h.target());
         if (tie_r8(b + 4) == (Bit8u)h.bolt_type()) {
             tie_w8(b + 4, 0);                       // (not turned into its flash: gone)
+        } else {
+            const double fx = (double)(Bit32s)tie_r32(b + 6) - (Bit32s)tie_r32(t + 6), fy = (double)(Bit32s)tie_r32(b + 0xA) - (Bit32s)tie_r32(t + 0xA),
+                         fz = (double)(Bit32s)tie_r32(b + 0xE) - (Bit32s)tie_r32(t + 0xE);
+            wclog(2, "TIE: its flash %.0f from the target's middle (%d %d %d; the shooter's impact %d %d %d)", sqrt(fx * fx + fy * fy + fz * fz),
+                  (int)tie_r32(b + 6), (int)tie_r32(b + 0xA), (int)tie_r32(b + 0xE), h.ox() + h.cx(), h.oy() + h.cy(), h.oz() + h.cz());
         }
         g_net->hitsApplied++;
     }
@@ -1691,6 +1704,9 @@ void tie_session_laser_hit() {
     h.set_ox((Bit32s)tie_r32(kLaserXOld));
     h.set_oy((Bit32s)tie_r32(kLaserYOld));
     h.set_oz((Bit32s)tie_r32(kLaserZOld));
+    h.set_cx((Bit32s)tie_r32(kCollideXOff));
+    h.set_cy((Bit32s)tie_r32(kCollideYOff));
+    h.set_cz((Bit32s)tie_r32(kCollideZOff));
     g_net->hitsOut.push_back(h);
 }
 

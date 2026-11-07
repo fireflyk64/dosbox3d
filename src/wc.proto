@@ -368,6 +368,9 @@ message TieHit {
     optional sint32 ox = 10;
     optional sint32 oy = 11;
     optional sint32 oz = 12;
+    optional sint32 cx = 13;        // the impact's place from (ox, oy, oz), the collision test's (collidexoff..)
+    optional sint32 cy = 14;
+    optional sint32 cz = 15;
 }
 // A frame of craft from their owner, best effort (the next supersedes it);
 // the host relays a guest's to the other guests with its player number.
