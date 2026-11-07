@@ -102,6 +102,9 @@ enum {
     kLocalAiIn = 204800,        // 5 km
     kLocalAiOut = 225280,       // 5.5 km
     kExactError = 400,          // a near craft's report this close is written as it is (10 m)
+    kPairOffset = 64,           // a pairing's second flight group starts and flies 0.4 km to the side (waypoints: 160 a km)
+    kFgStatus = 0xDEDCC,        // FGStatus fgstatus[48], 0x30 each: +6 its place's reference
+    kFgStatusSize = 0x30,
     kLocalHitHoldMs = 600,      // a hit of ours shown on another's craft: its owner's damage figures wait this long
 };
 const double kCorrectSpeed = 12288.0;       // a place pulled to its owner's at most this fast, units a second (300 m/s)
@@ -120,6 +123,9 @@ struct TieNet {
     Bit64u frame;
     double lastReliableAt;
     Puppet puppets[120];
+    int pairedFg = -1;          // this mission's second flight group, the guests' (step 9), or -1
+    int pairedType = 0;         // ... the pairing's craft (the guests', or the T/I's T/F), 0: none
+    int hostFg = -1;            // ... and the host's, the mission's player group
     int playerFg;               // this mission's player flight group, and the number (1-based) of the host's craft in it
     int hostCraft;
     std::vector<int> fgObjects; // the group's craft by number (1-based -> index 0..), as object slots
@@ -1645,6 +1651,114 @@ void tie_session_mission_path() {
     }
 }
 
+// Step 9, the user's pairings: a mission flown alone (one craft in the player's flight group) gives the other pilots a
+// craft that fits: by the mission's craft type, the guests' (0: the same craft, the seats' craft of the player's group).
+// The user, 2026-11-06: "T/A -> T/A x 2 / T/D -> T/D + T/A / T/I -> T/F + T/F unless there's a timing aspect where T/F is
+// too slow... / Gunboat -> Gunboat + Standard Imperial Shuttle / T/F -> T/F + T/F / Missile boat -> missile boat +
+// gunboat (or missile boat + standard imperial shuttle depending on difficulty) / T/B -> T/B + T/F", then for the missile
+// boat "we need to do missile boat + shuttle because otherwise the gunboat could do some ion cannon shenanigans"; a third pilot
+// flies the same as the second ("The third should be same as the guest in all cases").
+int paired_type(int type) {
+    switch (type) {
+    case 7: return 5;       // T/B + T/F: one flies the torpedo work, the other point defense
+    case 9: return 8;       // T/D + T/A
+    case 12: return 17;     // missile boat + the standard Imperial shuttle (the user: "otherwise the gunboat could do some ion
+                            // cannon shenanigans and the designers probably didn't think of that")
+    case 16: return 17;     // gunboat + the standard Imperial shuttle (the gunboat's cockpit, made over: wcnet_tie_cockpit.cpp)
+    default: return 0;      // T/F, T/A: the same craft
+    }
+}
+
+// At fediskio_loadspecies's entry (the mission read, its craft not yet loaded), on every machine alike: a mission
+// flown alone gets its pairing.  T/I: the player's group becomes T/Fs (the seats then give each pilot one).  A pair of
+// two crafts: the player's group copied as a second one at the end, in the guests' craft, one for each seat after
+// the host's, starting and flying 0.4 km to the side; a guest flies its own craft of it.
+// (Made again at create_createmission when it is gone: a mission that begins with a hyperspace jump is read from its
+// file a second time after the jump, its craft not loaded again.)
+void make_pairing(bool again) {
+    const Bit32u pstate = tie::kPstate;
+    const int pfg = tie_r8(pstate + 0x0A), numFg = (Bit16s)tie_r16(tie::kMissionHeader);
+    if (pfg >= numFg || pfg >= 48) {
+        return;
+    }
+    const Bit32u fg = tie::kFlightGroups + (Bit32u)pfg * tie::kFlightGroupSize;
+    const int type = tie_r8(fg + 0x32), count = tie_r8(fg + 0x33);
+    if (count != 1) {
+        return;             // (wingmen of its own: each pilot takes one, the seats' way)
+    }
+    if (type == 6) {
+        tie_fly_group_as(pfg, 5);
+        g_net->pairedType = 5;
+        if (!again) {
+            notice("Flown by two: T/Fs for the mission's T/I");
+        }
+        return;
+    }
+    const int second = paired_type(type);
+    if (!second || numFg >= 48) {
+        return;
+    }
+    g_net->pairedType = second;
+    const Bit32u to = tie::kFlightGroups + (Bit32u)numFg * tie::kFlightGroupSize;
+    for (Bit32u k = 0; k < tie::kFlightGroupSize; k++) {
+        tie_w8(to + k, tie_r8(fg + k));
+    }
+    tie_w8(to + 0x32, (Bit8u)second);
+    tie_w8(to + 0x33, (Bit8u)(g_net->seats - 1));
+    tie_w8(to + 0x40, 0);                           // (no waves)
+    tie_w8(to + 0x42, 0);
+    for (int w = 0; w < 12; w++) {                  // (the start points and the route, 0.4 km to the side: 160 a km)
+        if (tie_r16(to + 0x102 + 2 * w)) {
+            tie_w16(to + 0xA8 + 2 * w, (Bit16u)((Bit16s)tie_r16(to + 0xA8 + 2 * w) + kPairOffset));
+        }
+    }
+    tie_w16(tie::kMissionHeader, (Bit16u)(numFg + 1));
+    tie_w16(kFgStatus + (Bit32u)numFg * kFgStatusSize + 6, 0x8000);    // (create_loadmission's own: its place by waypoint)
+    g_net->pairedFg = numFg;
+    g_net->hostFg = pfg;
+    if (!g_net->host) {
+        tie_w8(fg + 0x42, 0);
+        tie_w8(to + 0x42, (Bit8u)g_net->self);      // (the self'th guest flies its self'th craft)
+        tie_w8(pstate + 0x0A, (Bit8u)numFg);        // (the player's group now: its spec becomes the player's below)
+    }
+    tie_fly_group_as(numFg, second);                // (its craft marked to be loaded)
+    wclog(1, "TIE: flown by two%s: the mission's craft type %d, the guests' %d in flight group %d (%d craft)%s", again ? " (again: the mission read again)" : "",
+          type, second, numFg, g_net->seats - 1, g_net->host ? "" : ", ours");
+    if (!again) {
+        notice(g_net->host ? "Flown by two: the guests fly beside you in the craft that pairs with yours"
+                           : "Flown by two: you fly beside the host in the craft that pairs with the mission's");
+    }
+}
+
+void tie_session_before_species() {
+    if (!g_net || (!g_net->host && g_net->self < 0) || g_net->seats < 2) {
+        return;
+    }
+    g_net->pairedFg = -1;
+    g_net->pairedType = 0;
+    make_pairing(false);
+}
+
+// The pairing chosen at the species' loading, there still (or made again).
+void keep_pairing() {
+    if (!g_net->pairedType) {
+        return;
+    }
+    const int numFg = (Bit16s)tie_r16(tie::kMissionHeader);
+    if (g_net->pairedFg >= 0) {
+        const Bit32u to = tie::kFlightGroups + (Bit32u)g_net->pairedFg * tie::kFlightGroupSize;
+        if (numFg == g_net->pairedFg + 1 && tie_r8(to + 0x32) == g_net->pairedType) {
+            return;
+        }
+    } else {
+        const int pfg = tie_r8(tie::kPstate + 0x0A);
+        if (pfg < numFg && tie_r8(tie::kFlightGroups + (Bit32u)pfg * tie::kFlightGroupSize + 0x32) == g_net->pairedType) {
+            return;     // (the T/I's group still T/Fs)
+        }
+    }
+    make_pairing(true);
+}
+
 void tie_session_mission_create() {
     if (!g_net) {
         return;
@@ -1652,6 +1766,15 @@ void tie_session_mission_create() {
     g_net->fgObjects.clear();
     g_net->playerFg = kPlayerFgNone;
     g_net->clear_flight();
+    keep_pairing();
+    if (g_net->pairedFg >= 0) {
+        // (a pairing: the guests have their own flight group, made at the species' loading; the host's stays as it is)
+        g_net->playerFg = g_net->host ? tie_r8(tie::kPstate + 0x0A) : g_net->pairedFg;
+        g_net->hostCraft = 1;
+        wclog(1, "TIE: mission set up, paired: the host's flight group %d, the guests' %d (ours %d)", g_net->hostFg, g_net->pairedFg,
+              tie_r8(tie::kPstate + 0x0A));
+        return;
+    }
     const int numFg = (Bit16s)tie_r16(tie::kMissionHeader);
     for (int i = 0; i < numFg && i < 48; i++) {
         const Bit32u fg = tie::kFlightGroups + i * tie::kFlightGroupSize;

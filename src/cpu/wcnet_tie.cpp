@@ -523,6 +523,7 @@ void tie_check_hooks(Bit32u eip) {
         } else if (p.image == 0x82504) {
             tie_session_mission_path();
         } else if (p.image == 0x218D8) {
+            tie_session_before_species();
             tie_cockpit_before_species();
         } else if (p.image == 0x2E0E4) {
             tie_session_shot();

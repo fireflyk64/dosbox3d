@@ -42,6 +42,8 @@ void tie_session_damage();
 // At create_createmission's entry: the player's flight group gets a craft a
 // seat, and a guest flies its own one of them.
 void tie_session_mission_create();
+// At fediskio_loadspecies's entry, before the cockpit's: a mission flown alone gets the user's pairing (step 9).
+void tie_session_before_species();
 // The flight is over (maingameflag off) or the program ended.
 void tie_session_flight_ended();
 void tie_session_shutdown();
