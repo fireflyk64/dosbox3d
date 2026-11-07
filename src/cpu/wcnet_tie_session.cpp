@@ -63,6 +63,14 @@ struct Puppet {
     bool fresh;                 // a report not yet written into the game
     TieCraft state;
     double at;
+    double prevAt;              // the report before it
+    // Far from this machine's pilot a puppet is flown by this machine's AI (the user, 2026-11-06: "have the AIs control
+    // them and let them diverge a bit, but smoothly snap to the right place over ten+ seconds between updates"), its
+    // shots made here for show; its owner's reports pull its place over (the error left to blend in, and the ticks).
+    bool localAi;
+    double ex, ey, ez;
+    double blendTicks;
+    double localHitAt;          // a hit of ours shown on it here (its owner's next reports do not know it yet)
 };
 
 // Where each pilot of the room is (its TiePresence), by seat.
@@ -89,7 +97,18 @@ enum {
     kOwnersEveryMs = 2000,      // the host's whole table, this often
     kDecideEveryMs = 250,
     kPilotStaleMs = 3000,       // a pilot whose frames stopped this long is not counted
+    // Far craft (the user's design): this machine's AI flies another machine's craft beyond kLocalAiOut from our pilot,
+    // and holds it again within kLocalAiIn (there the owner's shots come over).
+    kLocalAiIn = 204800,        // 5 km
+    kLocalAiOut = 225280,       // 5.5 km
+    kExactError = 400,          // a near craft's report this close is written as it is (10 m)
+    kLocalHitHoldMs = 600,      // a hit of ours shown on another's craft: its owner's damage figures wait this long
 };
+const double kCorrectSpeed = 12288.0;       // a place pulled to its owner's at most this fast, units a second (300 m/s)
+const double kFarBlendS = 10.0;             // a craft our AI flies: its first report blended in over this many seconds,
+const double kFarBlendMinS = 1.0;           // ... the next ones over the time since the one before, at least this
+const double kFarBlendMaxS = 15.0;          // ... and at most this
+const double kTicksPerSecond = 236.0;       // (the game's clock: frameticks)
 
 struct TieNet {
     bool host;
@@ -128,6 +147,9 @@ struct TieNet {
     int hitsInNext;
     int killing[kCraftSlots];   // calls made to kill a copy whose owner reported it dying (0: none)
     unsigned shotsSent, shotsMade, hitsSent, hitsApplied, damageSkipped, kills;
+    // far craft and hits shown here (the report)
+    unsigned localAiNow = 0, localAiStarts = 0, localAiEnds = 0, localShots = 0, farReports = 0, nearBlends = 0, hitsShown = 0;
+    double farErrSum = 0, farErrMax = 0;
     TieNet() : host(false), self(-1), seats(2), listener(NULL), frame(0), lastReliableAt(0), playerFg(kPlayerFgNone),
                hostCraft(1), wasFlying(false), sentScene(-2), sentFlying(false), sentAt(-1e9), decidedAt(-1e9), ownersSentAt(-1e9),
                farCursor(0), sentCraft(0), sentNear(0), sentMid(0), sentFar(0), sentBytes(0), ownerChanges(0), hitsInNext(0),
@@ -142,6 +164,11 @@ struct TieNet {
             puppets[o].fresh = false;
             puppets[o].state.Clear();
             puppets[o].at = 0;
+            puppets[o].prevAt = 0;
+            puppets[o].localAi = false;
+            puppets[o].ex = puppets[o].ey = puppets[o].ez = 0;
+            puppets[o].blendTicks = 0;
+            puppets[o].localHitAt = -1e9;
         }
         for (int o = 0; o < kCraftSlots; o++) {
             owner[o] = 0;
@@ -330,6 +357,7 @@ void take_frame(Peer *from, const TieFrame &f) {
         p.owner = owner;
         p.fresh = true;
         p.state = c;
+        p.prevAt = p.at;
         p.at = PIC_FullIndex();
         if (c.dying() && c.obj() < (Bit32u)kCraftSlots && tie_in_flight()) {
             begin_kill((int)c.obj());
@@ -980,6 +1008,13 @@ void fill_craft(TieCraft *c, int obj) {
     if (tie_r16(o + 0x2C) != 0 || tie_r8(o + 4) >= 127) {
         c->set_dying(true);     // (its death timer running, or already its explosion)
     }
+    const Bit32u craft = obj < kCraftSlots ? tie_r32(o + 0x54) : 0;
+    if (craft >= 0x100000) {
+        c->set_hull(mem_readw(craft + 0xA2));
+        c->set_shield_front((Bit16s)mem_readw(craft + 0xCA));
+        c->set_shield_rear((Bit16s)mem_readw(craft + 0xCC));
+        c->set_systems(mem_readw(craft + 0xAE));
+    }
 }
 
 // A puppet into the game, just before the game moves its objects
@@ -996,11 +1031,61 @@ void write_puppet(Puppet &p) {
         return;             // (not there on this machine, gone on its owner's, another ship in the slot here, or its death under
                             // way here: nothing to move)
     }
+    const Bit32u craft = obj < kCraftSlots ? tie_r32(o + 0x54) : 0;
     if (p.fresh) {
-        tie_w32(o + 6, (Bit32u)c.x());
-        tie_w32(o + 0xA, (Bit32u)c.y());
-        tie_w32(o + 0xE, (Bit32u)c.z());
+        // Where its owner has it less where it is here: written at once when small (a near craft, reported every frame),
+        // else blended in, never faster than kCorrectSpeed, and for a craft our AI flies over kFarBlendS at least.
+        const double ex = (double)c.x() - (double)(Bit32s)tie_r32(o + 6), ey = (double)c.y() - (double)(Bit32s)tie_r32(o + 0xA),
+                     ez = (double)c.z() - (double)(Bit32s)tie_r32(o + 0xE);
+        const double err = sqrt(ex * ex + ey * ey + ez * ez);
+        double seconds = err / kCorrectSpeed;
+        if (p.localAi) {
+            // (over the time to its next report, as the last one came: 10 s and more for the far ones reported in turn,
+            // a second for those within 10 km of a pilot, reported every few frames)
+            const double interval = p.prevAt > 0 ? (p.at - p.prevAt) / 1000.0 : kFarBlendS;
+            seconds = fmin(kFarBlendMaxS, fmax(kFarBlendMinS, interval));
+            g_net->farReports++;
+            g_net->farErrSum += err;
+            g_net->farErrMax = fmax(g_net->farErrMax, err);
+        } else if (err <= kExactError) {
+            seconds = 0;
+        }
+        if (seconds <= 0) {
+            tie_w32(o + 6, (Bit32u)c.x());
+            tie_w32(o + 0xA, (Bit32u)c.y());
+            tie_w32(o + 0xE, (Bit32u)c.z());
+            p.blendTicks = 0;
+        } else {
+            p.ex = ex;
+            p.ey = ey;
+            p.ez = ez;
+            p.blendTicks = seconds * kTicksPerSecond;
+            if (!p.localAi) {
+                g_net->nearBlends++;
+            }
+        }
+        // its damage, its owner's (unless a hit of ours here is newer than this report can know)
+        if (craft >= 0x100000 && c.has_hull() && PIC_FullIndex() - p.localHitAt > kLocalHitHoldMs) {
+            mem_writew(craft + 0xA2, (Bit16u)c.hull());
+            mem_writew(craft + 0xCA, (Bit16u)(Bit16s)c.shield_front());
+            mem_writew(craft + 0xCC, (Bit16u)(Bit16s)c.shield_rear());
+            mem_writew(craft + 0xAE, (Bit16u)c.systems());
+        }
         p.fresh = false;
+    }
+    if (p.blendTicks > 0) {
+        const double ticks = fmax(1.0, (double)tie_r16(tie::kFrameticks));
+        const double f = fmin(1.0, ticks / p.blendTicks);
+        tie_w32(o + 6, (Bit32u)(Bit32s)lround((double)(Bit32s)tie_r32(o + 6) + p.ex * f));
+        tie_w32(o + 0xA, (Bit32u)(Bit32s)lround((double)(Bit32s)tie_r32(o + 0xA) + p.ey * f));
+        tie_w32(o + 0xE, (Bit32u)(Bit32s)lround((double)(Bit32s)tie_r32(o + 0xE) + p.ez * f));
+        p.ex *= 1 - f;
+        p.ey *= 1 - f;
+        p.ez *= 1 - f;
+        p.blendTicks -= ticks;
+    }
+    if (p.localAi) {
+        return;             // (our AI flies it: its attitude, speed and course are its own here)
     }
     tie_w16(o + 0x1E, (Bit16u)c.heading());
     tie_w16(o + 0x20, (Bit16u)c.pitch());
@@ -1013,6 +1098,62 @@ void write_puppet(Puppet &p) {
     for (size_t k = 0; k < axes.size() && k < 18; k++) {
         tie_w8(o + 0x42 + (Bit32u)k, (Bit8u)axes[k]);
     }
+}
+
+// A pilot's own craft (a human flies it: never this machine's AI, however far).
+bool pilot_flies(int obj) {
+    const double now = PIC_FullIndex();
+    for (int k = 0; k < kMaxSeats; k++) {
+        if (k != g_net->self && pilot_present(k, now) && g_net->pilotObj[k] == obj) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// WCNET_TIE_FAR_AI=0: every craft another machine flies held here, as before (the rigs' comparison).
+bool far_ai() {
+    static int on = -1;
+    if (on < 0) {
+        const char *env = getenv("WCNET_TIE_FAR_AI");
+        on = env && env[0] == '0' ? 0 : 1;
+    }
+    return on != 0;
+}
+
+// A hit of a bolt of ours on another machine's craft, shown here at once (the user: the laser's owner applies its
+// damage, for precise aiming): the game's own sums (collide_damagecraft: the bolt's radius as the damage, a quarter on a
+// freighter, a sixteenth on a starship or platform; the struck side's shield first, then the hull), but never its death
+// or its systems here: its owner applies the hit for good (sent with our frame) and its reports bring its damage.
+void show_hit(int target, int bolt, int side) {
+    const Bit32u craft = tie_r32(obj_base(target) + 0x54);
+    if (craft < 0x100000 || side < 0 || side > 1) {
+        return;
+    }
+    long dmg = tie_r16(obj_base(bolt) + 0x2A);
+    const int genus = tie_r8(obj_base(target) + 3), boltType = tie_r8(obj_base(bolt) + 4);
+    if (genus == 4 || genus == 5) dmg >>= 4;
+    if (genus == 3) dmg >>= 2;
+    if (genus == 14) dmg = 0;
+    if (dmg >= 0x7FFF) dmg = 32766;
+    const Bit32u shieldAt = craft + 0xCA + 2 * (Bit32u)side;
+    const long shield = (Bit16s)mem_readw(shieldAt);
+    if (shield > dmg) {
+        mem_writew(shieldAt, (Bit16u)(Bit16s)(shield - dmg));
+    } else {
+        const long over = dmg - shield;
+        mem_writew(shieldAt, 0);
+        if (over > 0 && boltType != 141 && boltType != 142) {      // (an ion bolt's overflow goes to systems: the owner's)
+            const long hullMax = mem_readw(craft + 0xA6);
+            long hull = (long)mem_readw(craft + 0xA2) + over;
+            if (hullMax > 0 && hull >= hullMax) {
+                hull = hullMax - 1;                                 // (its death is its owner's to say)
+            }
+            mem_writew(craft + 0xA2, (Bit16u)hull);
+        }
+    }
+    g_net->puppets[target].localHitAt = PIC_FullIndex();
+    g_net->hitsShown++;
 }
 
 // This machine's AI kept off a puppet: the planner runs a craft only when
@@ -1073,6 +1214,15 @@ void report_frame(double now) {
         reportAt = now;
         std::string line;
         const int own = tie_player_object();
+        // our target's damage as this machine has it (the shown hits and the owner's figures)
+        const int tgt = tie_r16(tie::kPstate + 0x12);
+        if (tgt < kCraftSlots && is_craft(tgt) && tie_r32(obj_base(tgt) + 0x54) >= 0x100000) {
+            const Bit32u cr = tie_r32(obj_base(tgt) + 0x54);
+            char one[120];
+            snprintf(one, sizeof(one), " target obj %d (%s): hull %u of %u, shields %d %d;", tgt, mine(tgt) ? "ours" : "another's",
+                     mem_readw(cr + 0xA2), mem_readw(cr + 0xA6), (Bit16s)mem_readw(cr + 0xCA), (Bit16s)mem_readw(cr + 0xCC));
+            line += one;
+        }
         for (int o = 0; o < 120; o++) {
             const Puppet &p = g_net->puppets[o];
             if (!p.used && o != own) {
@@ -1117,8 +1267,15 @@ void report_frame(double now) {
                  g_net->hitsSent, g_net->hitsApplied, g_net->damageSkipped, g_net->kills);
         g_net->sentCraft = g_net->sentNear = g_net->sentMid = g_net->sentFar = g_net->sentBytes = g_net->ownerChanges = 0;
         g_net->shotsSent = g_net->shotsMade = g_net->hitsSent = g_net->hitsApplied = g_net->damageSkipped = g_net->kills = 0;
-        wclog(1, "TIE: wall %.0f frame %llu as pilot %d, %u peers;%s%s", wall_ms(), (unsigned long long)g_net->frame, g_net->self + 1,
-              (unsigned)g_net->peers.size(), sums, line.c_str());
+        char far[240];
+        snprintf(far, sizeof(far), " far: %u flown by our AI (%u began, %u ended), %u of their shots here, %u reports pulled in (error mean %.0f, worst "
+                 "%.0f), %u near ones blended; %u hits of ours shown here;", g_net->localAiNow, g_net->localAiStarts, g_net->localAiEnds,
+                 g_net->localShots, g_net->farReports, g_net->farReports ? g_net->farErrSum / g_net->farReports : 0.0, g_net->farErrMax,
+                 g_net->nearBlends, g_net->hitsShown);
+        g_net->localAiStarts = g_net->localAiEnds = g_net->localShots = g_net->farReports = g_net->nearBlends = g_net->hitsShown = 0;
+        g_net->farErrSum = g_net->farErrMax = 0;
+        wclog(1, "TIE: wall %.0f frame %llu as pilot %d, %u peers;%s%s%s", wall_ms(), (unsigned long long)g_net->frame, g_net->self + 1,
+              (unsigned)g_net->peers.size(), sums, far, line.c_str());
     }
 }
 
@@ -1279,9 +1436,36 @@ void tie_session_frame() {
             p->conn.send_best_effort(msg);
         }
     }
-    // This machine's AI kept off every craft another flies (before the planner runs this frame).
+    // This machine's AI kept off every craft another flies near our pilot (before the planner runs this frame); a far
+    // one is our AI's to fly (its place pulled to its owner's), hysteresis between kLocalAiIn and kLocalAiOut.
+    g_net->localAiNow = 0;
     for (int o = 0; o < kCraftSlots; o++) {
-        if (o != own && !mine(o) && is_craft(o)) {
+        Puppet &p = g_net->puppets[o];
+        if (o == own || mine(o) || !is_craft(o)) {
+            p.localAi = false;
+            continue;
+        }
+        if (pilot_flies(o)) {
+            p.localAi = false;      // (another pilot's own craft: its reports alone move it)
+            hold_ai(o);
+            continue;
+        }
+        const bool was = p.localAi;
+        const double d = distance(o, own);
+        p.localAi = far_ai() && (was ? d >= kLocalAiIn : d >= kLocalAiOut);
+        if (p.localAi) {
+            g_net->localAiNow++;
+            if (!was) {
+                const Bit32u craft = tie_r32(obj_base(o) + 0x54);
+                if (craft >= 0x100000) {
+                    mem_writew(craft + 0x2A, 0);      // (it plans at once)
+                }
+                g_net->localAiStarts++;
+            }
+        } else {
+            if (was) {
+                g_net->localAiEnds++;
+            }
             hold_ai(o);
         }
     }
@@ -1311,6 +1495,10 @@ void tie_session_shot() {
         return;
     }
     if (!mine(shooter)) {
+        if (g_net->puppets[shooter].localAi) {
+            g_net->localShots++;    // (a far craft our AI flies: its shot made here for show; it damages nothing here)
+            return;
+        }
         tie_skip_call(0xFFFF);      // (no slot: its callers expect that)
         return;
     }
@@ -1369,6 +1557,13 @@ void tie_session_damage() {
     }
     const int target = (int)(reg_eax & 0xFFFF), attacker = (int)(reg_ebx & 0xFFFF);
     bool skip = target < kCraftSlots && !mine(target);
+    if (skip && attacker >= 32 && attacker < 120 && mine(tie_r16(obj_base(attacker) + 0x30))) {
+        // (a starship's or platform's part has its own sums, starship_damagecomponent's: left to its owner)
+        const int genus = tie_r8(obj_base(target) + 3);
+        if ((reg_edx & 0xFFFF) == 0xFFFF || (genus != 4 && genus != 5)) {
+            show_hit(target, attacker, (int)(reg_ecx & 0xFFFF));
+        }
+    }
     if (!skip && attacker >= 32 && attacker < 120) {
         skip = !mine(tie_r16(obj_base(attacker) + 0x30));
     }

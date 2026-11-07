@@ -339,6 +339,11 @@ message TieCraft {
     optional uint32 type = 13;      // the ship type; 0: the craft is gone
     optional bytes axes = 14;       // the forward/side/up vectors, 9 int16 (FlightObject +0x42)
     optional bool dying = 15;       // its death under way on its owner's machine (the others kill their copy)
+    // Its damage, its owner's (CraftData): past the shields (+0xA2), the shields (+0xCA, +0xCC), the systems (+0xAE).
+    optional uint32 hull = 16;
+    optional sint32 shield_front = 17;
+    optional sint32 shield_rear = 18;
+    optional uint32 systems = 19;
 }
 // A shot (TIE Fighter): the shooter's object, the hardpoint, the projectile's type, as laser_createprojectile took them.
 message TieShot {
