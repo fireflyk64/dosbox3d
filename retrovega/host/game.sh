@@ -95,7 +95,12 @@ for c in hle fixed flightloop asm_twins fsguard pcm; do
 done
 $CC $CFLAGS -c -o "$OUT/obj/twins.o" src/twins.c
 $CC $CFLAGS -c -o "$OUT/obj/debris.o" src/debris.c   # (a wreck's debris: the card's code, drawn here; never in RV.EXE)
-$CC $CFLAGS $SDLF -c -o "$OUT/obj/h_play.o" host/play.c
+BOTF=""
+if [ -z "${WEB:-}" ]; then              # (the native build's test pilot, host/bot.c: RV_BOT=1; never the page's)
+    BOTF=-DRV_BOT_HOOK
+    $CC $CFLAGS -c -o "$OUT/obj/h_bot.o" host/bot.c
+fi
+$CC $CFLAGS $SDLF $BOTF -c -o "$OUT/obj/h_play.o" host/play.c
 $CC $ARCHF $OPT -g3 -c -o "$OUT/obj/h_fmt.o" host/fmt.c              # (without rvhost.h: its sprintf is this)
 $CC $CFLAGS -c -o "$OUT/obj/thunks.o" "$OUT/thunks.c"
 CXXF="$ARCHF $OPT -g3 -std=c++14 -Ihost $SANF"

@@ -2933,6 +2933,22 @@ the page together, `host/web/deploy.sh` publishes it with rvsim at `rv/sim/`).
 It is one player: the multiplayer layer lives in DOSBox, so flying with
 others stays on the DOSBox page (`dosbox/`, where RetroVega is built in).
 
+Two dev aids in the native build (never the page's, never RV.EXE):
+- **The test pilot** (`host/bot.c`, `RV_BOT=1`; the user, 2026-11-07: is Kurasawa 2's equivalent winnable, and how
+  often): it flies the player's fighter through the player's own controls only, the pointer for the stick and
+  the keys for the trigger, the burner, a missile, the comm menu and the autopilot (the throttle, the target and
+  the launcher as the keys set them), from what a pilot is shown: where each ship and rock is and how it moves.
+  It fights near the escort's attackers first, tells the wingman to break and attack, taunts an attacker it is not
+  fighting, keeps the fight out of an asteroid field and goes round one, hunts what is left, then lands.
+  `RV_BOT_SEED` gives the flight's dice, `RV_BOT_AIM` (tenths of a degree) a wander in its aim, so its hit rate
+  can be set; each flight ends with a `bot: result` line on stderr (how it ended, shots, hits, missiles, kills,
+  the escort's state, the arrival's geometry) and the program exits 0 won, 1 lost. With `RV_VCLOCK=1` and no
+  window a flight takes a few seconds: `rv --data DIR --mute /fly 24`.
+- **The recording** (`RV_CAPTURE=PREFIX` with `RV_VCLOCK=1`): the pictures at exactly 30 a second of the game's own
+  time through ffmpeg into PREFIX.video.mp4 (1280×800, square pixels as the page shows them), the sound beside them
+  in PREFIX.s16 (16-bit stereo at the chip's rate, said on stderr), rendered as the time comes with no sound device;
+  `ffmpeg -i P.video.mp4 -f s16le -ar RATE -ac 2 -i P.s16 -c:v copy -c:a aac P.mp4` joins them.
+
 For a Linux desktop, `desktop/` builds the same game as two sandboxed
 programs: `rv-core`, the game with a seccomp filter and only its own
 directory, and `rv`, its window and sound. Its plain Makefile, the bubblewrap

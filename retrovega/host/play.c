@@ -19,6 +19,9 @@
 #include "opl3.h"
 #include "pcm.h"
 #include "pcscan.h"
+#ifdef RV_BOT_HOOK
+#include "bot.h"
+#endif
 
 int rv_main(int argc, char **argv);
 
@@ -70,6 +73,87 @@ void plat_sleep_us(uint32_t us)
 #endif
 }
 
+/* --- a recording (RV_CAPTURE=PREFIX, a dev aid; with RV_VCLOCK=1): the pictures at exactly 30 a second of the game's
+ * own time, through ffmpeg into PREFIX.video.mp4 (twice the size, square pixels as the page shows them), and the
+ * sound beside them, PREFIX.s16 (16-bit stereo at the chip's rate, said on stderr), rendered as the time comes: no
+ * sound device.  Join them: ffmpeg -i P.video.mp4 -f s16le -ar RATE -ac 2 -i P.s16 -c:v copy -c:a aac P.mp4 */
+
+static FILE *g_cap_v, *g_cap_a;
+static uint64_t g_cap_t0, g_cap_frames, g_cap_samples;
+static int g_cap_have;
+static uint8_t g_cap_rgb[HLE_W * HLE_H * 3];
+static double g_audio_rate;
+static uint32_t g_lag_us;
+
+static FILE *rv_host_fopen_any(const char *path, const char *mode);
+
+static void cap_close(void)
+{
+    if (g_cap_v)
+        pclose(g_cap_v);
+    if (g_cap_a)
+        fclose(g_cap_a);
+    g_cap_v = g_cap_a = 0;
+}
+
+static int cap_open(void)
+{
+    const char *p = getenv("RV_CAPTURE");
+    char cmd[2048];
+    if (!p || !*p)
+        return 0;
+    snprintf(cmd, sizeof cmd, "ffmpeg -loglevel error -y -f rawvideo -pix_fmt rgb24 -s %dx%d -r 30 -i - "
+             "-vf scale=%d:%d:flags=neighbor -c:v libx264 -preset veryfast -crf 14 -pix_fmt yuv420p '%s.video.mp4'",
+             HLE_W, HLE_H, HLE_W * 2, HLE_H * 2, p);
+    g_cap_v = popen(cmd, "w");
+    snprintf(cmd, sizeof cmd, "%s.s16", p);
+    g_cap_a = rv_host_fopen_any(cmd, "wb");
+    if (!g_cap_v || !g_cap_a) {
+        fprintf(stderr, "rv: cannot record to %s\n", p);
+        exit(1);
+    }
+    atexit(cap_close);
+    return 1;
+}
+
+void opl3_render(int16_t *out, int n, uint64_t now_us);
+void pcm_mix(int16_t *out, int n, double out_rate, double t0_us);
+
+static void cap_frame(const uint32_t *pal)
+{
+    uint64_t now = plat_now_us();
+    int i;
+    if (g_cap_have)                     /* the pictures due before now show the last one presented */
+        while (g_cap_t0 + g_cap_frames * 1000000ull / 30 <= now) {
+            fwrite(g_cap_rgb, 1, sizeof g_cap_rgb, g_cap_v);
+            g_cap_frames++;
+        }
+    for (i = 0; i < HLE_W * HLE_H; i++) {
+        uint32_t c = pal[hle_fb[i]];
+        g_cap_rgb[3 * i] = (uint8_t)(c >> 16);
+        g_cap_rgb[3 * i + 1] = (uint8_t)(c >> 8);
+        g_cap_rgb[3 * i + 2] = (uint8_t)c;
+    }
+    if (!g_cap_have) {                  /* (the recording begins at the first picture) */
+        g_cap_have = 1;
+        g_cap_t0 = now;
+        fprintf(stderr, "rv: recording, the sound at %.3f Hz\n", g_audio_rate);
+    }
+    /* the sound up to the lag before now (every chip write and effect of that time is in by then) */
+    if (now > g_cap_t0 + g_lag_us) {
+        uint64_t due = (uint64_t)((double)(now - g_lag_us - g_cap_t0) * g_audio_rate / 1e6);
+        static int16_t buf[2 * 8192];
+        while (g_cap_samples < due) {
+            int n = due - g_cap_samples > 8192 ? 8192 : (int)(due - g_cap_samples);
+            double t = (double)g_cap_t0 + (double)g_cap_samples * 1e6 / g_audio_rate;
+            opl3_render(buf, n, (uint64_t)t + g_lag_us);
+            pcm_mix(buf, n, g_audio_rate, t);
+            fwrite(buf, 4, (size_t)n, g_cap_a);
+            g_cap_samples += (uint64_t)n;
+        }
+    }
+}
+
 /* --- the screen --- */
 
 void plat_present(void)
@@ -78,13 +162,15 @@ void plat_present(void)
     void *pixels;
     int pitch, i, y;
     hle_fb_changed = 0;
-    if (!g_tex)
-        return;
     for (i = 0; i < 256; i++) {
         const uint8_t *c = hle_dac + 3 * i;
         pal[i] = 0xFF000000u | (uint32_t)((c[0] << 2 | c[0] >> 4) << 16) | (uint32_t)((c[1] << 2 | c[1] >> 4) << 8)
                  | (uint32_t)(c[2] << 2 | c[2] >> 4);
     }
+    if (g_cap_v)
+        cap_frame(pal);
+    if (!g_tex)
+        return;
     if (SDL_LockTexture(g_tex, 0, &pixels, &pitch))
         return;
     for (y = 0; y < HLE_H; y++) {
@@ -153,6 +239,9 @@ static int g_nomouse;                   /* /nomouse: the pointer the desktop's (
 void plat_events(void)
 {
     SDL_Event e;
+#ifdef RV_BOT_HOOK
+    bot_tick();
+#endif
     while (SDL_PollEvent(&e)) {
         if (g_nomouse && (e.type == SDL_MOUSEMOTION || e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEBUTTONUP))
             continue;
@@ -193,9 +282,6 @@ void plat_events(void)
 
 void plat_opl_write(uint64_t at_us, uint16_t reg, uint8_t val) { opl3_write(at_us, reg, val); }
 
-static double g_audio_rate;
-static uint32_t g_lag_us;
-
 #undef fopen
 static FILE *rv_host_fopen_any(const char *path, const char *mode) { return fopen(path, mode); }
 #define fopen rv_host_fopen
@@ -235,10 +321,16 @@ void host_thunk_leave(uint16_t fn, const char *name, int16_t nargs, const uint16
 void host_thunk_enter(uint16_t fn, const char *name, int16_t nargs, const uint16_t *args)
 {
     (void)fn; (void)name; (void)nargs; (void)args;
+#ifdef RV_BOT_HOOK
+    bot_thunk(fn, args);
+#endif
 }
 void host_thunk_leave(uint16_t fn, const char *name, int16_t nargs, const uint16_t *args, uint16_t ret)
 {
     (void)name; (void)nargs; (void)args; (void)ret;
+#ifdef RV_BOT_HOOK
+    bot_thunk_leave(fn, args);
+#endif
     if (fn == RV_FN_rvFrameDone)
         hle_frame_done();
     else if (fn == RV_FN_gameSaved)
@@ -327,7 +419,7 @@ int main(int argc, char **argv)
 #endif
     rate = opl3_init(g_lag_us);
     g_audio_rate = rate;
-    if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+    if (!cap_open() && !SDL_InitSubSystem(SDL_INIT_AUDIO)) {
         memset(&want, 0, sizeof want);
         want.freq = (int)(rate + 0.5);
         want.format = AUDIO_S16SYS;

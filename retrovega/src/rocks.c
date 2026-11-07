@@ -1443,3 +1443,20 @@ void rocks_test_to_field(void)
     rv_logf(s_to, back, i, g_f[i].r_km);
 }
 #endif
+
+#ifdef RV_HOST_GAME
+/* (the native build's test pilot, host/bot.c, sees what the view shows: the rocks about the player and where the fields
+ * are; never in RV.EXE) */
+const LzRock __far *rocks_bot_rock(int i) { return i >= 0 && i < g_n && g_r ? &g_r[i] : 0; }
+int rocks_bot_count(void) { return g_r ? g_n : 0; }
+int rocks_bot_field(int i, long *x, long *y, long *z, long *r_km)
+{
+    if (i < 0 || i >= g_nf)
+        return 0;
+    *x = g_f[i].x;
+    *y = g_f[i].y;
+    *z = g_f[i].z;
+    *r_km = g_f[i].r_km;
+    return 1;
+}
+#endif
