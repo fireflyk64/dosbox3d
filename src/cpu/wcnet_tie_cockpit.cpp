@@ -35,6 +35,7 @@
 #include <math.h>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include "dosbox.h"
 #include "dos_inc.h"
 #include "../dos/drives.h"
@@ -613,6 +614,13 @@ public:
         }
     }
 
+    // The first row from y down where the panel hides column x (the depth when space shows to the view's end).
+    int floor_below(int x, int y) const {
+        if (x < 0 || x >= w_) return d_;
+        while (y < d_ && visible(x, y)) y++;
+        return y;
+    }
+
     // The Z-95's long nose (step 14): a trapezoid from the dashboard's middle (y0, w0 wide) towards the horizon (y1,
     // w1), shaded by `greys` (the struts' own, darkest first): lit along its top, darker at its edges and its far end,
     // a seam along its ridge, two panel lines and five seams across; drawn where space shows (behind the dashboard).
@@ -803,8 +811,15 @@ bool make_forward_z95(const std::vector<Bit8u> &gunboat, int w, int h, int depth
     f.clean(both, margin);
     const double sx = w / 640.0, sy = h / 480.0;
     f.arch(left, w / 2.0, 262 * sy, 232 * sx, 6 * sy, 312 * sy, 28 * sx);
-    f.nose(f.greys(left, pltt->body), w / 2.0, 262 * sy, 200 * sy, 236 * sx, 40 * sx);
-    wclog(1, "TIE: the Z-95's forward view at %dx%d: the struts out, an arch and a long nose in", w, h);
+    // (the nose's bottom row on the dashboard's top: its lower corners just above the panel below them, the user:
+    // "translate the long polygon downward so the bottom is flush with the top of the VDU display's bevel"; row 279 of
+    // 480, the side panels' top beside the displays' console, the console itself hiding the nose's middle there)
+    const double noseW = 236 * sx, noseH = 62 * sy, top = 200 * sy;
+    const int floorY = std::min(f.floor_below((int)(w / 2.0 - noseW / 2 + 1), (int)top),
+                                f.floor_below((int)(w / 2.0 + noseW / 2 - 1), (int)top));
+    const double base = floorY < depth ? floorY - 1 : 262 * sy;
+    f.nose(f.greys(left, pltt->body), w / 2.0, base, base - noseH, noseW, 40 * sx);
+    wclog(1, "TIE: the Z-95's forward view at %dx%d: the struts out, an arch and a long nose in (its bottom at row %d)", w, h, (int)base);
     std::vector<Resource> outRes;
     for (size_t k = 0; k < res.size(); k++) {
         Resource r = res[k];
