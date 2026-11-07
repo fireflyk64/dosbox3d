@@ -3,8 +3,9 @@
 # Chamber's first mission (docs/tiefighter.md, section 4's route), then each one's extra key script; the logs, the
 # wall-clock reports and the screenshots land in $OUT (default /tmp/tfnet-duo).
 #
-#   scripts/tfnet-duo.sh [seconds] [the host's extra script] [the guest's extra script]
+#   scripts/tfnet-duo.sh [seconds] [the host's extra script] [the guest's extra script] [the third's extra script]
 #
+#   PLAYERS=3    a room of three: a second guest, GUEST2 (its logs guest2.*), as the page's Players box does (step 10)
 #   LOBBY=1      a lobby room (WebRTC data channels, as the browser's; a local lobby server on LOBBY_PORT, 8841), else TCP
 #   TFDIR=       the game as innoextract unpacks GOG's installer (default: tf/ beside this repository's root)
 #   DOSBOX=      the emulator (default build-native/src/dosbox)
@@ -17,7 +18,7 @@
 #   scripts/tfnet-join.py /tmp/tfnet-duo/host.wall /tmp/tfnet-duo/guest.wall 1
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/tfnet-duo}; mkdir -p $OUT; rm -f $OUT/*.ppm $OUT/*.png
-DUR=${1:-100}; HOSTX=${2:-}; GUESTX=${3:-}
+DUR=${1:-100}; HOSTX=${2:-}; GUESTX=${3:-}; GUEST2X=${4:-}; PLAYERS=${PLAYERS:-2}
 PORT=${PORT:-13455}
 TFDIR=${TFDIR:-$ROOT/tf}
 DOSBOX=${DOSBOX:-$ROOT/build-native/src/dosbox}
@@ -72,17 +73,22 @@ if [ -n "${LOBBY:-}" ]; then
   printf '[rooms]\nmax_players_hard = 8\n' > $OUT/lobby.toml
   "$LOBBYSERVER" --config $OUT/lobby.toml --listen-http 127.0.0.1:$LP --public-url http://127.0.0.1:$LP --allow-no-origin > $OUT/lobby.log 2>&1 &
   LPID=$!; sleep 1
-  NET_HOST="WCROOM=$ROOM WCLOBBY=http://127.0.0.1:$LP WCLOBBY_ORIGIN= WCPLAYERS=2"; NET_GUEST="$NET_HOST"
+  NET_HOST="WCROOM=$ROOM WCLOBBY=http://127.0.0.1:$LP WCLOBBY_ORIGIN= WCPLAYERS=$PLAYERS"; NET_GUEST="$NET_HOST"
 else
-  NET_HOST="WCPORT=$PORT"; NET_GUEST="WCHOST=127.0.0.1 WCPORT=$PORT"
+  NET_HOST="WCPORT=$PORT WCPLAYERS=$PLAYERS"; NET_GUEST="WCHOST=127.0.0.1 WCPORT=$PORT"
 fi
+NAMES="host guest"; [ "$PLAYERS" -ge 3 ] && NAMES="host guest guest2"
 run host $NET_HOST WCCALLSIGN=HOST WCNET_KEYSCRIPT="$(echo "$script${HOSTX:+,$HOSTX}" | by_time)"
 sleep ${GUEST_LAG:-2}   # (GUEST_LAG=30: the guest still on the ground while the host flies)
 run guest $NET_GUEST WCCALLSIGN=GUEST WCNET_KEYSCRIPT="$(echo "$script${GUESTX:+,$GUESTX}" | by_time)"
+if [ "$PLAYERS" -ge 3 ]; then
+  sleep ${GUEST_LAG:-2}
+  run guest2 $NET_GUEST WCCALLSIGN=GUEST2 WCNET_KEYSCRIPT="$(echo "$script${GUEST2X:+,$GUEST2X}" | by_time)"
+fi
 wait $PIDS   # (the games only: a lobby server never ends)
 [ -n "${LPID:-}" ] && kill $LPID 2>/dev/null
-for n in host guest; do grep -a "TIE: wall" $OUT/$n.err > $OUT/$n.wall; done
-for n in host guest; do
+for n in $NAMES; do grep -a "TIE: wall" $OUT/$n.err > $OUT/$n.wall; done
+for n in $NAMES; do
   echo "===== $n ($OUT/$n.err)"
   grep -a "TIE: \|TIE Fighter\|lobby:" $OUT/$n.err | grep -av "TIE: wall\|frames (\|call [0-9]:" | cut -c1-180 | head -20
 done
