@@ -246,13 +246,11 @@ section 7 as it is worked on.
 2. **Done: the transport, positions reflected** (section 7, step 2): a
    session of TIE Fighter's own, the seats in the player's flight group,
    every pilot's craft sent each frame and written into the others' games.
-3. **Next: notices through DOSBox**, drawn by the emulator over the picture,
-   nothing patched into the game (the user, 2026-11-06): who is in the room
-   and where each pilot is (registration, concourse, briefing, flying), and
-   a call to action when the host leaves the bridge for a flight ("the host
-   is flying: launch the same mission").  The first lines are in (the
-   overlay's line); the places need the front end's scene number.
-4. **The mission everybody flies**: the host's choice carried to the guests
+3. **Done: notices through DOSBox**, drawn by the emulator over the picture,
+   nothing patched into the game (the user, 2026-11-06): where each pilot
+   is, launches and flights' ends, and a call to action standing while the
+   host is at a briefing or flying and a guest is not (section 7, step 3).
+4. **Next: the mission everybody flies**: the host's choice carried to the guests
    (the Combat Chamber's missions first: no story to walk), the guest's game
    put on the same mission, and a guest that launches another told so.
 5. **Ownership by distance, and the variable rates** (section 5): the AI
@@ -355,7 +353,7 @@ move vector, the nine axis words, type).
   died on both machines): step 6.  The rates are one report a frame for
   every pilot's craft: step 5.
 
-### Step 3: notices through DOSBox (begun 2026-11-06)
+### Step 3: notices through DOSBox (2026-11-06)
 
 * **Where each pilot is: the front end's scene.**  `shellext_Get_Cur_Scene`
   (0x6621B) reads `mov eax,[0x356F8]; mov ax,[eax+0x14]`: the scene head's
@@ -365,10 +363,31 @@ move vector, the nine axis words, type).
   Combat Chamber, 133 its briefing map, 3 its flight (the main-game flag
   1); OpenTIE's `SCENE_*` names the rest (160 the tour desk, 179 to 183 the
   briefing, 190 to 192 the debriefing, 2 a training flight, 4 a battle's).
-* **The lines so far** are the overlay's (the emulator draws them over the
-  picture; nothing of the game is touched): a guest's arrival on the host
-  ("NAME joined as pilot 2 of 2"), a guest's own ("In HOST's room as pilot
-  2 of 2"), the host flying while a guest is not ("The host is flying:
-  launch the same mission to join the flight"), a pilot gone.  The Wing
-  Commander comms hint ("use the '0' key") is not shown over TIE Fighter: it
-  has no chat line yet.
+* **The mission a front end launches** is named in shipext's
+  `mission_name`, 14 bytes at image 0xFB3E8 (`shipext_Set_Mission_Name`
+  0x822B4; the Combat Chamber fills it from the craft and mission chosen,
+  `shipext_Get_Combat_Mission_Name` 0x8149C, as soon as its screen comes up;
+  the tour desk from the battle's; the mission file's name is made from it
+  before the mission loads).  Its forms: `H` + the craft's letter (F T/F,
+  I T/I, B T/B, A T/A, D T/D, G the gunboat, M the missile boat) + the
+  number + W or M (`hf1w`: the Combat Chamber's T/F mission 1); `B<n>M<m>..`
+  a battle's; `train` the training course (`MISSION/*.TIE`).
+* **Presence** (`TiePresence`: seat, callsign, scene, flying, mission), sent
+  when it changes and every 3 s, the host relaying a guest's to the others
+  with its seat.  On another pilot's launch the overlay's line says so
+  ("GUEST launched: the Combat Chamber's T/F mission 1"), likewise its
+  flight's end and, to a guest, another guest's arrival with where it is.
+* **The call to action** (to a guest): while the host is at a briefing or
+  flying and the guest is not flying, "HOST is at the briefing for <the
+  mission>: launch it to fly together" or "HOST is flying <the mission>:
+  ...", said again every 2 s so it stands, gone once the guest flies or the
+  host is back.  The Wing Commander comms hint is not shown over TIE
+  Fighter: it has no chat line yet.
+* **Measured**: two native games, the guest 25 s behind (`GUEST_LAG=25
+  scripts/tfnet-duo.sh`), the window's pictures dumped with the key
+  script's new `!frame=` (the overlay is drawn after the game's picture:
+  `!shot` reads video memory and never has it) and read back by matching
+  the overlay font's glyphs: the guest's screen at the host's briefing and
+  in its flight carried the two lines above (the line wraps at the picture's
+  edge), the guest's own flight none; the host's carried the guest's
+  launch.
