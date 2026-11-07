@@ -1399,6 +1399,7 @@ static void flight_prepare(void)
     g_scene.label[0] = 0;
     setup_load();                       /* (the difficulty as it is now: the page's dropdown writes RVSETUP.CFG too) */
     camp_load_rules(&g_m);
+    RV_NOTE("setup: the flight's difficulty %s", g_diff_names[diff_index()]);
     g_guest = rvNetRole == 2;
     if (g_guest) {
         uint16_t node = currentSeries, k = currentMission;

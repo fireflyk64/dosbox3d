@@ -615,6 +615,9 @@ function keepSaves() {
     if (!now || (before && sameBytes(before, now))) continue;
     saveSeen.set(rel, now.slice());
     if (storeSave(rel, now)) { log(`save games: kept ${baseName(rel)} in this browser`); describeSaves(); }
+    // (the game's bunk menu changed its difficulty: the menu here follows, and the room hears the host's)
+    const d = difficultyInfo();
+    if (d && rel.toUpperCase() === d.file.toUpperCase() && lobby.game) { renderMission(); if (isHost()) sayHello(); }
   }
 }
 $("saveDownload").addEventListener("click", () => {
@@ -803,6 +806,18 @@ function renderMission() {
   const noRoomOptions = !!(gameById(lobbyGameId()) || {}).noRoomOptions;
   for (const id of ["latency", "collisions"]) $(id).parentElement.hidden = one || noRoomOptions;
   gameLook();
+  // (a game with a difficulty, RetroVega: its Difficulty menu in Collide's place, asteroids on and wing bumps harmless,
+  // in a room of one too: the game's bunk menu or this, either)
+  const diff = (gameById(lobbyGameId()) || {}).difficulty;
+  $("difficultyLabel").hidden = !diff || noRoomOptions;
+  if (diff) {
+    $("collisions").parentElement.hidden = true;
+    lobby.rocks = "on";
+    lobby.wingBumps = "harmless";
+    if (isHost()) lobby.difficulty = difficultyNow();
+    $("difficulty").value = lobby.difficulty;
+    $("difficulty").disabled = !isHost();
+  }
   // (a game whose asteroids are its own, each machine's: only the wing bumps are the room's to choose)
   const ownRocks = !!(gameById(lobbyGameId()) || {}).ownRocks;
   for (const o of $("collisions").options) o.hidden = ownRocks && !o.value.startsWith("on-");
@@ -862,6 +877,9 @@ const lobby = { game: null, names: new Map(), links: new Map(), flying: new Set(
                 // two wingmen's ships touching: "harmless" (the default) or
                 // "game" (the game's collision damage): the host's choice
                 wingBumps: "harmless",
+                // a game's difficulty (its registry's `difficulty`: RetroVega's), "easy", "medium" or "hard": the
+                // host's, as its own game has it (the settings file the game and the menu both write)
+                difficulty: "medium",
                 // the exchange mode, "low" (the default) or "high" latency, or
                 // "auto" (the host's game measures the connection and picks,
                 // which proved disruptive in play): the host's choice
@@ -929,7 +947,7 @@ const sayHello = (to, reply) => sendLobby({ t: "hello", name: myName(), flying: 
   since: $("callsign").value.trim() ? undefined : given.since,
   game: source ? source.game.id : "", voice: voice.choice(),
   mission: isHost() ? missionKey(lobby.mission) : undefined, rocks: isHost() ? lobby.rocks : undefined,
-  wingBumps: isHost() ? lobby.wingBumps : undefined,
+  wingBumps: isHost() ? lobby.wingBumps : undefined, difficulty: isHost() ? lobby.difficulty : undefined,
   latency: isHost() ? lobby.latency : undefined, fps: isHost() ? lobby.fps : undefined,
   capHull: isHost() ? lobby.capHull : undefined, private: isHost() ? privateOn() : undefined }, to);
 
@@ -956,6 +974,7 @@ const wingBumpsMode = (v) => (Object.prototype.hasOwnProperty.call(WING_BUMPS, v
 const wingBumpsLabel = (v) => (v === "game" ? "wing bumps to hurt, as the game has it" : "wing bumps to harmless");
 function setWingBumps(v) {
   if (!isHost()) return;
+  if (difficultyInfo()) { chatLine("This game's wing bumps are always harmless.", "sys"); return; }
   v = wingBumpsMode(v);
   if (lobby.wingBumps === v) return;
   lobby.wingBumps = v;
@@ -966,8 +985,46 @@ function setWingBumps(v) {
 }
 const rocksMode = (v) => (Object.prototype.hasOwnProperty.call(ROCKS, v) ? v : "on");
 const rocksLabel = (v) => (v === "soft" ? "asteroids soft (one will not kill you)" : `asteroids and mines ${v}`);
+// A game's difficulty (RetroVega's: its registry's `difficulty`, a byte of its settings file): this browser's copy
+// of the file as the running game has it, or as it is kept here; "medium" when there is none yet.
+const DIFFICULTIES = ["easy", "medium", "hard"];
+const difficultyInfo = () => { const g = gameInfo(); return (g && g.difficulty) || null; };
+function difficultyBytes() {
+  const d = difficultyInfo();
+  if (!d) return null;
+  const FS = liveFS(), kept = storedSave(d.file);
+  const b = (FS && readSave(FS, d.file)) || (kept && kept.data);
+  const ok = b && b.length > d.at && String.fromCharCode(...b.slice(0, d.magic.length)) === d.magic;
+  return ok ? Uint8Array.from(b) : null;
+}
+function difficultyNow() {
+  const d = difficultyInfo(), b = difficultyBytes();
+  if (!d || !b) return lobby.difficulty || "medium";
+  return DIFFICULTIES.find((k) => d.values[k] === b[d.at]) || "medium";
+}
+// The host (or a room of one) picks it: the byte in the game's file, the running game's and this browser's copy, which
+// the game reads as its next flight begins.
+function setDifficulty(v) {
+  const d = difficultyInfo();
+  if (!d || !DIFFICULTIES.includes(v)) return;
+  if (!isHost()) { chatLine("Only the host sets the difficulty.", "sys"); renderMission(); return; }
+  let b = difficultyBytes();
+  if (!b) { b = Uint8Array.from(d.fresh); }
+  if (b.length <= d.at) { const g = new Uint8Array(d.at + 1); g.set(b); b = g; }
+  b[d.at] = d.values[v];
+  const FS = liveFS();
+  if (FS && writeSave(FS, d.file, b)) saveSeen.set(d.file, b.slice());
+  storeSave(d.file, b);
+  describeSaves();
+  if (lobby.difficulty !== v) chatLine(`You set the difficulty ${v}${running ? " (from the next flight)" : ""}`, "sys");
+  lobby.difficulty = v;
+  renderMission();
+  sayHello();
+}
+
 function setRocks(v) {
   if (!isHost()) { chatLine("Only the host can switch asteroids and mines.", "sys"); renderMission(); return; }
+  if (difficultyInfo()) { chatLine("This game's asteroids are always on.", "sys"); return; }
   v = rocksMode(v);
   if (lobby.rocks === v) return;
   lobby.rocks = v;
@@ -1214,6 +1271,12 @@ function onLobbyEvent(ev) {
         if (ev.from === 0 && !isHost() && typeof m.wingBumps === "string" && wingBumpsMode(m.wingBumps) !== lobby.wingBumps) {
           lobby.wingBumps = wingBumpsMode(m.wingBumps);
           chatLine(`${esc(m.name)} switched ${wingBumpsLabel(lobby.wingBumps)}`, "sys");
+          renderMission();
+        }
+        if (ev.from === 0 && !isHost() && typeof m.difficulty === "string" && DIFFICULTIES.includes(m.difficulty)
+            && m.difficulty !== lobby.difficulty) {
+          lobby.difficulty = m.difficulty;
+          chatLine(`${esc(m.name)} set the difficulty ${lobby.difficulty}`, "sys");
           renderMission();
         }
         if (ev.from === 0 && !isHost() && typeof m.latency === "string" && latencyMode(m.latency) !== lobby.latency) {
@@ -1607,6 +1670,7 @@ $("collisions").addEventListener("change", () => {
   setWingBumps(bumps);
 });
 $("latency").addEventListener("change", () => setLatency($("latency").value));
+$("difficulty").addEventListener("change", () => setDifficulty($("difficulty").value));
 // A terse menu shows a word when closed and the whole of each choice
 // (data-long) while open; its width stays the closed one's meanwhile.
 for (const sel of document.querySelectorAll("select.terse")) {

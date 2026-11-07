@@ -437,6 +437,12 @@ export const GAMES = [
     build: { rvhook: true, off: 0x0400, text: "Loading RETROVEGA" },
     saves: ["BUNK01.SAV", "BUNK02.SAV", "BUNK03.SAV", "BUNK04.SAV", "BUNK05.SAV", "BUNK06.SAV", "BUNK07.SAV", "BUNK08.SAV",
             "RVSETUP.CFG"],   // (its settings: the talk speed)
+    // (its difficulty, the bunk menu's DIFFICULTY row, the page's Difficulty menu in its Collide's place: RVSETUP.CFG's
+    // ninth byte, read by the game as a flight begins; asteroids always on, wing bumps always harmless; the user,
+    // 2026-11-07: "For RetroVega remove the current options from the dropdown and just have easy medium hard. player
+    // collisions should always be off and asteroids should always be on with full damage")
+    difficulty: { file: "RVSETUP.CFG", at: 8, magic: "RVCFG1", values: { easy: 1, medium: 0, hard: 2 },
+                  fresh: [0x52, 0x56, 0x43, 0x46, 0x47, 0x31, 1, 0, 0, 0] },
     // (50000: the flight's frame costs that many; RV.EXE halts while it waits for its next tick, so a
     // machine spends only what the game uses; the browser's emulator does ~70000 on a 2016 desktop core)
     cycles: 50000,
