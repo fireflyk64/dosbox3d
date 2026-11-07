@@ -467,18 +467,38 @@ void tie_set_cursor(int x, int y) {
 // Test aid: our craft turned to face another object (the key script's !tieface=<obj>).  An object's heading is its
 // angle in the x-y plane from +y towards +x, its pitch the angle from +z (0x4000 level), 65,536 a turn; the game
 // makes its vectors again from them (+0x40 and +0x38 set), and the craft's own copies of the two (+6, +8) follow.
-void tie_face(int target) {
+// `lead`: where a laser fired now meets it, as the game's own range test reckons (collide_targetinrange): a speed of s
+// covers s * 4660 / 256 world units a second (math2_mphconvert), a bolt flies at the shooter's speed plus its
+// projectile's (1,000 for the fighters' lasers), the target along its move vector (+0x3A, Q15) at its speed (+0x26).
+double tie_face(int target, bool lead) {
     const int own = tie_player_object();
     if (!g_found || own < 0 || target < 0 || target >= (int)tie::kObjectCount || target == own) {
         wclog(1, "TIE: nothing to face (ours %d, the object %d)", own, target);
-        return;
+        return -1;
     }
     const Bit32u a = tie_linear(tie::kObjects + own * tie::kObjectSize), b = tie_linear(tie::kObjects + target * tie::kObjectSize);
-    const double dx = (double)(Bit32s)mem_readd(b + 6) - (Bit32s)mem_readd(a + 6), dy = (double)(Bit32s)mem_readd(b + 0xA) - (Bit32s)mem_readd(a + 0xA),
-                 dz = (double)(Bit32s)mem_readd(b + 0xE) - (Bit32s)mem_readd(a + 0xE);
+    double dx = (double)(Bit32s)mem_readd(b + 6) - (Bit32s)mem_readd(a + 6), dy = (double)(Bit32s)mem_readd(b + 0xA) - (Bit32s)mem_readd(a + 0xA),
+           dz = (double)(Bit32s)mem_readd(b + 0xE) - (Bit32s)mem_readd(a + 0xE);
+    const double km = sqrt(dx * dx + dy * dy + dz * dz) / 40960.0;
+    if (lead) {
+        const double k = 4660.0 / 256.0, vt = (Bit16s)mem_readw(b + 0x26) * k / 32768.0;
+        const double vx = vt * (Bit16s)mem_readw(b + 0x3A), vy = vt * (Bit16s)mem_readw(b + 0x3C), vz = vt * (Bit16s)mem_readw(b + 0x3E);
+        const double sb = ((Bit16s)mem_readw(a + 0x26) + 1000) * k;
+        // |P + V t| = sb t: (V.V - sb^2) t^2 + 2 P.V t + P.P = 0, its positive root (the bolt the faster: one of each sign)
+        const double qa = vx * vx + vy * vy + vz * vz - sb * sb, qb = 2 * (dx * vx + dy * vy + dz * vz), qc = dx * dx + dy * dy + dz * dz;
+        const double disc = qb * qb - 4 * qa * qc;
+        if (qa < 0 && disc >= 0) {
+            const double t = (-qb - sqrt(disc)) / (2 * qa);
+            if (t > 0 && t < 10) {
+                dx += vx * t;
+                dy += vy * t;
+                dz += vz * t;
+            }
+        }
+    }
     const double len = sqrt(dx * dx + dy * dy + dz * dz);
     if (len <= 0) {
-        return;
+        return km;
     }
     const Bit16u h = (Bit16u)(Bit16s)lround(atan2(dx, dy) * 32768.0 / M_PI), p = (Bit16u)lround(acos(dz / len) * 32768.0 / M_PI);
     mem_writew(a + 0x1E, h);
@@ -492,6 +512,7 @@ void tie_face(int target) {
         mem_writew(craft + 8, h);
     }
     wclog(1, "TIE: our craft faces obj %d, %.2f km away (heading %u, pitch %u)", target, len / 40960.0, h, p);
+    return km;
 }
 
 bool tie_cursor(int *x, int *y) {
@@ -510,6 +531,33 @@ int tie_player_target() {
     }
     const int t = (Bit16s)mem_readw(tie_linear(tie::kPstate + 0x12));
     return t >= 0 && t < (int)tie::kObjectCount ? t : -1;
+}
+
+// Test aid: the nearest craft of a ship index from `ship` to `last` (an object's +4, the mission files' craft types: 5
+// the T/F, 5..9 the Empire's fighters) on another side than ours (+0x33), moving (+0x26: a craft yet to launch sits
+// still) and not dying (+0x2C); -1 if none (the key script's !tietarget=nearest:<n>[-<last>]).
+int tie_nearest(int ship, int last) {
+    const int own = tie_player_object();
+    if (!g_found || own < 0) {
+        return -1;
+    }
+    const Bit32u a = tie_linear(tie::kObjects + own * tie::kObjectSize);
+    int best = -1;
+    double bestD = 0;
+    for (int o = 0; o < 120; o++) {
+        const Bit32u b = tie_linear(tie::kObjects + o * tie::kObjectSize);
+        if (o == own || mem_readb(b + 4) < ship || mem_readb(b + 4) > last || mem_readb(b + 0x33) == mem_readb(a + 0x33) || (Bit16s)mem_readw(b + 0x26) <= 0 ||
+            mem_readw(b + 0x2C) != 0) {
+            continue;
+        }
+        const double dx = (double)(Bit32s)mem_readd(b + 6) - (Bit32s)mem_readd(a + 6), dy = (double)(Bit32s)mem_readd(b + 0xA) - (Bit32s)mem_readd(a + 0xA),
+                     dz = (double)(Bit32s)mem_readd(b + 0xE) - (Bit32s)mem_readd(a + 0xE), d = dx * dx + dy * dy + dz * dz;
+        if (best < 0 || d < bestD) {
+            best = o;
+            bestD = d;
+        }
+    }
+    return best;
 }
 
 // Test aid: our target set (the key script's !tietarget=<obj>; the player state's +0x12).

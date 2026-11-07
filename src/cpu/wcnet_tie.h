@@ -143,14 +143,17 @@ bool tie_voice_open(char *fullname, Bit8u *drive);
 // Test aid: the front end's pointer put at a point of its 320x200 screen
 // (the key script's !tiecursor=x:y; a mouse button then clicks there).
 void tie_set_cursor(int x, int y);
-// Test aid: our craft turned to face an object (the key script's !tieface=<obj>).
-void tie_face(int obj);
+// Test aid: our craft turned to face an object (the key script's !tieface=<obj>); `lead`, where a laser fired now
+// meets it (!tieface=target).
+double tie_face(int obj, bool lead = false);    // (its distance in km, -1: nothing faced)
 // The front end's pointer, in its 320x200 screen (false: no program).
 bool tie_cursor(int *x, int *y);
 // The ship's address system's call to the briefing room, played by the emulator (wcnet_tie_pa.cpp, step 13).
 void tie_pa_play();
 // Test aid: our target set (the key script's !tietarget=<obj>).
 void tie_target(int obj);
+// Test aid: the nearest moving craft of a ship index from `ship` to `last` (5 the T/F) on another side, -1 if none.
+int tie_nearest(int ship, int last);
 // Our target, -1 if none (the key script's !tieface=target).
 int tie_player_target();
 

@@ -1017,12 +1017,36 @@ static void key_script() {
             wclog(1, "key script %.1fs (t=%.1f): TIE Fighter's pointer to %d, %d", t, now / 1000.0, x, y);
         }
     } else if (item.compare(0, 11, "!tietarget=") == 0) {
-        // !tietarget=<obj> makes that object our TIE Fighter craft's target
-        tie_target(atoi(item.c_str() + 11));
+        // !tietarget=<obj> makes that object our TIE Fighter craft's target; !tietarget=nearest:<ship index>[-<last>], the
+        // nearest moving craft of those ship indexes on another side (5: a T/F, 5-9 the Empire's fighters; the game's R
+        // takes craft yet to launch too)
+        if (!item.compare(11, 8, "nearest:")) {
+            int first = 0, last = 0;
+            const int n = sscanf(item.c_str() + 19, "%d-%d", &first, &last);
+            const int o = tie_nearest(first, n == 2 ? last : first);
+            if (o >= 0) {
+                tie_target(o);
+            }
+        } else {
+            tie_target(atoi(item.c_str() + 11));
+        }
     } else if (item.compare(0, 9, "!tieface=") == 0) {
-        // !tieface=<obj> turns our TIE Fighter craft to face that object; !tieface=target, our target (step 15's aimed
-        // shots: the key script's R for the nearest enemy, then this and the fire button, again and again)
-        tie_face(item.compare(9, std::string::npos, "target") ? atoi(item.c_str() + 9) : tie_player_target());
+        // !tieface=<obj> turns our TIE Fighter craft to face that object; !tieface=target, where a laser fired now meets
+        // our target; !tieface=target:<km>, and the fire button held while the target is that near, let go beyond (step
+        // 15's aimed shots in bursts: held from afar, the lasers' bank runs dry before they reach)
+        const bool target = !item.compare(9, 6, "target");
+        const double km = tie_face(target ? tie_player_target() : atoi(item.c_str() + 9), target);
+        const size_t colon = item.find(':');
+        static bool held;
+        if (target && colon != std::string::npos) {
+            const bool fire = km >= 0 && km <= atof(item.c_str() + colon + 1);
+            if (fire) {
+                Mouse_ButtonPressed(0);
+            } else if (held) {
+                Mouse_ButtonReleased(0);
+            }
+            held = fire;
+        }
     } else if (item.compare(0, 9, "!dumplin=") == 0) {
         // !dumplin=<name>:<hex linear address>:<hex length> writes that memory (a 32-bit program's, as the CPU sees
         // it; a page not there reads as zero) to WCNET_DUMP_DIR/<name>.bin
