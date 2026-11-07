@@ -448,6 +448,15 @@ and Salthi 4,000, Rapier, Scimitar, Dralthi and Krant 6,000, Gratha 7,000, Rapto
 `blast`, 2026-11-07): the four missiles and the Aera seeker 93 at the place struck (the player 69) and the burst on
 the rest at 93 x 64; the fighters' death bursts not built.
 
+**The fighters' missiles** (WC1's stats table, a type's mounts at +0x28: a count, then 5 bytes a mount, the weapon type
+first: 0x18 laser, 0x19 neutron, 0x1a mass driver, 0x1c DF, 0x1d HS, 0x1e FF, 0x1f IR, 0x21 a decoy): the Hornet 2 lasers,
+2 DF, 1 HS; the Rapier 2 lasers, 2 neutron, 1 IR, 2 FF, 2 DF; the Scimitar 2 mass drivers, 2 DF, 3 HS; the Raptor 2
+neutron, 2 mass drivers, 2 HS, 2 IR, 1 FF; the Salthi 2 lasers, 1 DF; the Dralthi 2 lasers, 3 decoys, 2 HS; the Gratha 2
+lasers, 2 mass drivers, 1 IR, 2 HS, 3 decoys. In Kurasawa 2 with the player idle its Gratha put 2 missiles into the Ralari
+each run (of 95 hits). Ours (2026-11-07): the Lancelot the Rapier's missiles, the Convolution three Aera seekers (the Aera
+have the one kind); launched on 70% of its locks (P_ACE) they put some 1.2 into the Agasicles and 1.3 into the player a
+flight, 2.7 launched of 12 carried (most of the four die before a lock: 2.5 s in a 26-degree cone within 4,000 km).
+
 **Missiles' knock** (read 2026-11-07, the user: "I remember missiles were important because they spun ships around").
 Before the burst, hitByWeapon's case 0xB (ovr141:2348) takes the missile's momentum, its velocity by its mass (kShipStats
 +0x06, the missiles' 5, a fighter's 120-200) and gives it, with the way from the struck ship's middle to the missile,
