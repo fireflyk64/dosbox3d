@@ -368,7 +368,7 @@ section 7 as it is worked on.
    of the gunboat's V, every instrument working; **and the pairings**: the
    guests' own flight group in the pairing's craft.
 
-10. **Three pilots** (the user, 2026-11-06: "add another item for three
+10. **Done: three pilots** (section 7, step 10; the user, 2026-11-06: "add another item for three
    player like in the other game. The third should be same as the guest in
    all cases. I guess more players also makes sense but we will probably cap
    it at 3 for now").  The page's Players box already stops at 3 (beta) for
@@ -947,3 +947,19 @@ the Jedi (seen from outside) as the reference.
   officer, "The primary mission was a failure", Fly Mission Again (the
   guest's Fly Mission Again put it back in the mission at once).  The guest's
   first answer had a third page, not read.
+
+### Step 10: three pilots (2026-11-06)
+
+* Nothing new was needed in the session: the host's hello gives the room's
+  size, the seats give the player's flight group a craft for each pilot, the
+  pairing gives the guests' group a craft for each seat after the host's
+  (the third the same as the second), and the host relays each guest's
+  frames to the other.  The page's Players box stops at 3 (beta) for every
+  game.  `scripts/tfnet-duo.sh` takes `PLAYERS=3` (a second guest, GUEST2).
+* **Measured.**  The Combat Chamber's first mission: the host, the guest and
+  the third pilot fly craft 1, 2 and 3 of the player's group (objects 0, 1,
+  2), each seen as a T/F on the other two machines, a guest's craft on the
+  other guest reported 14 to 28 ms before (through the host).  The gunboat's
+  mission 3: the host a gunboat (object 0), the two guests shuttles 1 and 2 of
+  the guests' group (objects 2 and 3), each seen in its craft on the others,
+  reports 16 to 20 ms old.
