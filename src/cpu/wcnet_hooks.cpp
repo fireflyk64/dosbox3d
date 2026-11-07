@@ -374,6 +374,7 @@ static void auto_keys() {
 // field's rocks or mines on that ship (0: dead ahead of our own),
 // "!rocks=<1|0|2>", which switches the asteroid and mine fields (2: soft),
 // "!shot=<name>", which writes the screen to WCNET_DUMP_DIR/<name>.ppm,
+// "!frame=<name>", the picture as the window shows it, the emulator's lines over it (the overlay), the same way,
 // "!hit=<qty>[:back]", which damages our own ship as a hit from ahead would,
 // "!shoot=<slot|npc>:<qty>[:back]", which damages that ship the same way,
 // "!tail=<slot|npc|foe>[:<km>]", which puts our ship that far behind that one, facing its way
@@ -982,6 +983,12 @@ static void key_script() {
         std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + item.substr(6) + ".ppm";
         wclog(1, "key script %.1fs (t=%.1f): screenshot %s%s", t, now / 1000.0, path.c_str(),
               write_screenshot(path) ? "" : " failed");
+    } else if (item.compare(0, 7, "!frame=") == 0) {
+        // !frame=<name> writes the last picture the window showed, the overlay's lines on it, to WCNET_DUMP_DIR/<name>.ppm
+        const char *dir = getenv("WCNET_DUMP_DIR");
+        std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + item.substr(7) + ".ppm";
+        wclog(1, "key script %.1fs (t=%.1f): the window's picture %s%s", t, now / 1000.0, path.c_str(),
+              GFX_DumpLastFrame(path.c_str()) ? "" : " failed");
     } else if (item.compare(0, 8, "!mickey=") == 0) {
         // !mickey=<dx>:<dy> moves the mouse by that much (host pixels) without moving the pointer
         double dx = 0, dy = 0;
