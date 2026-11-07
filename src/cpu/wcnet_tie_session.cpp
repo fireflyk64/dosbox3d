@@ -243,7 +243,9 @@ void take_frame(Peer *from, const TieFrame &f) {
     if (!g_net->host || owner == from->player) {
         from->flying = f.flying();
     }
-    for (int i = 0; i < f.craft_size(); i++) {
+    // (a pilot flying another mission: its craft are not this mission's; the host still relays them)
+    const bool sameMission = !f.has_mission() || !tie_in_flight() || f.mission() == tie_mission_name();
+    for (int i = 0; i < f.craft_size() && sameMission; i++) {
         const TieCraft &c = f.craft(i);
         if (c.obj() >= 120) {
             continue;
@@ -737,6 +739,7 @@ void tie_session_frame() {
     f->set_frame(++g_net->frame);
     f->set_ticks(tie_r16(tie::kFrameticks));
     f->set_flying(true);
+    f->set_mission(tie_mission_name());
     fill_craft(f->add_craft(), own);
     const bool reliable = now - g_net->lastReliableAt >= kReliableEveryMs;
     if (reliable) {
@@ -772,6 +775,34 @@ void tie_session_before_move() {
             write_puppet(p);
         }
     }
+}
+
+// A guest's game about to name the file of the mission it launches: from the Combat Chamber, the host's Combat Chamber
+// mission instead of its own pick, when the host is at its briefing or flying (a battle's file is the pilot's tour's:
+// not changed).  Only the 14 bytes of mission_name are written; the game makes the file's name from them next.
+void tie_session_mission_path() {
+    if (!g_net || g_net->host || g_net->self < 0) {
+        return;
+    }
+    const Pilot &h = g_net->pilots[0];
+    const std::string ours = tie_mission_name();
+    const bool briefing = (h.scene >= 133 && h.scene <= 137) || (h.scene >= 179 && h.scene <= 183);
+    const bool combat = ours.size() >= 2 && (ours[0] == 'h' || ours[0] == 'H');
+    const bool hostCombat = h.mission.size() >= 2 && (h.mission[0] == 'h' || h.mission[0] == 'H') && h.mission.size() < 14;
+    if (!h.known || !(h.flying || briefing) || !combat || !hostCombat) {
+        if (h.known && h.flying && !h.mission.empty() && ours != h.mission) {
+            notice("You launch " + mission_words(ours) + "; " + pilot_name(0) + " flies " + mission_words(h.mission) + ": not together");
+        }
+        return;
+    }
+    if (ours == h.mission) {
+        return;
+    }
+    for (size_t i = 0; i < 14; i++) {
+        tie_w8(tie::kMissionName + (Bit32u)i, i < h.mission.size() ? (Bit8u)h.mission[i] : 0);
+    }
+    wclog(1, "TIE: launching the host's %s instead of our %s", h.mission.c_str(), ours.c_str());
+    notice("Flying " + pilot_name(0) + "'s mission, " + mission_words(h.mission) + " (you had picked " + mission_words(ours) + ")");
 }
 
 void tie_session_mission_create() {

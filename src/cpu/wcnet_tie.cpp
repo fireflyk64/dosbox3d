@@ -63,6 +63,7 @@ Place g_places[] = {
     { "collide_damagecraft", 0x148F0, 0, 0 },
     { "create_createcraft", 0x17BF8, 0, 0 },
     { "create_createmission", 0x16B8C, 0, 0 },
+    { "shipext_Get_Mission_Path", 0x82504, 0, 0 },   // the mission file's name made from mission_name
 };
 const Bit8u kUpdateTimeBytes[8] = { 0x53, 0x51, 0x52, 0x56, 0x57, 0x55, 0x8b, 0x2d };
 const Bit8u kCreateProjectileBytes[8] = { 0x51, 0x56, 0x57, 0x55, 0x83, 0xec, 0x1c, 0x89 };
@@ -369,6 +370,8 @@ void tie_check_hooks(Bit32u eip) {
             tie_session_mission_create();
         } else if (p.image == 0x32448) {
             tie_session_before_move();
+        } else if (p.image == 0x82504) {
+            tie_session_mission_path();
         } else if (p.total <= 3) {
             // (Watcom's register convention: the first arguments in eax, edx, ebx, ecx)
             wclog(2, "TIE: %s call %u: eax %08x edx %08x ebx %08x ecx %08x", p.name, p.total, (unsigned)reg_eax, (unsigned)reg_edx,

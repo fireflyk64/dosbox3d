@@ -347,6 +347,7 @@ message TieFrame {
     optional uint32 ticks = 3;      // the sender's frameticks
     repeated TieCraft craft = 4;
     optional bool flying = 5;       // the sender is in a flight
+    optional string mission = 6;    // the mission it flies (a frame of another mission's is not written in)
 }
 // Where a pilot is (TIE Fighter): its front end's scene (OpenTIE's SCENE_*), whether it flies, and the mission its
 // front end launches (the mission file's name).  Sent when it changes and every few seconds; the host relays a guest's

@@ -26,6 +26,10 @@ void tie_session_frame();
 // At move_moveobjects's entry, once a flight frame: the others' craft
 // written into the game, after its AI and dynamics, before its move.
 void tie_session_before_move();
+// At shipext_Get_Mission_Path's entry, just before the mission file's name
+// is made from the front end's mission name: a guest launching from the
+// Combat Chamber flies the host's mission.
+void tie_session_mission_path();
 // At create_createmission's entry: the player's flight group gets a craft a
 // seat, and a guest flies its own one of them.
 void tie_session_mission_create();
