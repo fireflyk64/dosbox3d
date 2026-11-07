@@ -86,6 +86,9 @@ export const AXES = [
 const ROLL_KEYS = { left: "comma", right: "period" };
 // (a game that rolls on other keys says so: host.rollKeys(), TIE Fighter's the keypad's Ins and Del)
 const rollKeysOf = (host) => (host.rollKeys && host.rollKeys()) || ROLL_KEYS;
+// (and a game whose keys mean other things: host.actionKeys(id) and host.actionLabel(id), TIE Fighter's)
+const actionKeysOf = (host, a) => (host.actionKeys && host.actionKeys(a.id)) || a.keys;
+const actionLabelOf = (host, a) => (host.actionLabel && host.actionLabel(a.id)) || a.label;
 const BUTTON_NAMES = ["A", "B", "X", "Y", "L1", "R1", "L2 (left trigger)", "R2 (right trigger)", "Back", "Start",
                       "L3 (left stick)", "R3 (right stick)", "D-pad up", "D-pad down", "D-pad left", "D-pad right", "Home"];
 const AXIS_NAMES = ["Left stick, sideways", "Left stick, up/down", "Right stick, sideways", "Right stick, up/down"];
@@ -178,6 +181,7 @@ export function stepped(v, steps, reach, edge, top) {
 //              push to talk, pressed or released (optional)
 //   directStick(): the emulator steers the game itself and takes the stick as it is (wc_web_stick: TIE Fighter)
 //   rollKeys(): the game's roll keys, { left, right } (KEY names), when not , and .
+//   actionKeys(id), actionLabel(id): an action's keys and its name in the game, when not ACTIONS' (null: those)
 //   fireByMouse(): the guns are the mouse's left button in flight
 //   builtIn(): whether the game reads a joystick itself (pads are offered
 //              "built in" too)
@@ -191,6 +195,7 @@ export function initControls(host) {
   let capture = null;           // { kind: "button" | "axis", id, axes: [...], down: Set } while remapping
   let listed = "";              // the controllers the picker currently shows
   const held = new Map();       // action id -> true while its keys are down
+  const heldKeys = new Map();   // action id -> the keys pressed for it (let go as they were pressed)
   let rollHeld = null;          // "left" | "right" | null
   let clickHeld = false;
   let fireClickHeld = false;    // (the guns held as the mouse's button: host.fireByMouse)
@@ -288,7 +293,7 @@ export function initControls(host) {
       const off = a.port ? !builtIn : builtIn && !a.port && [cfg.buttons.joy1, cfg.buttons.joy2].some((j) => sameBind(j, b));
       const why = a.port ? "Only for a pad picked built in" : "The joystick's button here: the game has it";
       const dis = a.port && off ? " disabled" : "";
-      rows.push(`<tr${off ? ` class="off" title="${why}"` : ""}><td>${a.label}</td><td>${busy ? "press a button…" : bindingText(b)}</td><td></td>` +
+      rows.push(`<tr${off ? ` class="off" title="${why}"` : ""}><td>${actionLabelOf(host, a)}</td><td>${busy ? "press a button…" : bindingText(b)}</td><td></td>` +
                 `<td><button type="button" class="secondary" data-button="${a.id}"${dis}>${busy ? "Cancel" : "Change"}</button>` +
                 (b && !busy ? ` <button type="button" class="secondary" data-clear="${a.id}"${dis}>Clear</button>` : "") + `</td></tr>`);
     }
@@ -350,7 +355,7 @@ export function initControls(host) {
   function releaseAll() {
     const M = host.module();
     if (M && M._wc_web_key) {
-      for (const a of ACTIONS) if (held.get(a.id)) sendKeys(M, a.keys, false);
+      for (const a of ACTIONS) if (held.get(a.id)) sendKeys(M, heldKeys.get(a.id) || actionKeysOf(host, a), false);
       if (rollHeld) sendKeys(M, [rollKeysOf(host)[rollHeld]], false);
       if (clickHeld) M._wc_web_mouse_button(0, 0);
       if (fireClickHeld) M._wc_web_mouse_button(0, 0);
@@ -452,7 +457,11 @@ export function initControls(host) {
           // (a game whose guns are the mouse's button in flight: TIE Fighter)
           M._wc_web_mouse_button(0, down ? 1 : 0);
           fireClickHeld = down;
-        } else if (a.keys.length) sendKeys(M, a.keys, down); else if (host.onAction) host.onAction(a.id, down);
+        } else {
+          const keys = (!down && heldKeys.get(a.id)) || actionKeysOf(host, a);
+          if (keys.length) sendKeys(M, keys, down); else if (host.onAction) host.onAction(a.id, down);
+          if (down) heldKeys.set(a.id, keys); else heldKeys.delete(a.id);
+        }
         held.set(a.id, down);
       }
       if (a.click) {

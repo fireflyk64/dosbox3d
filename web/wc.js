@@ -2137,12 +2137,27 @@ $("tfFlight").addEventListener("change", (e) => {
   log(`TIE Fighter's flight controls: ${e.target.selectedOptions[0].textContent}`);
 });
 
+// TIE Fighter's own meanings for a controller's buttons where Wing Commander's keys mean another thing there, or
+// nothing (docs/tiefighter.md, step 7's open item; its flight keys, OpenTIE's user.c): Enter matches the target's
+// speed, Tab is nothing (Backspace, full throttle, the nearest it has to an afterburner), N the missile boat's SLAM
+// switch, A the target's attacker, G the goals, L the messages, C the flight recorder (the info rooms left out).
+const TF_PAD = {
+  missile: { keys: ["enter"], label: "Fire missile (TIE Fighter: match the target's speed; W picks the warheads)" },
+  burner: { keys: ["backspace"], label: "Afterburner (TIE Fighter: full throttle)" },
+  nav: { keys: [], label: "Navigation map (nothing in TIE Fighter: its map is an info room, not known to keep a shared flight going)" },
+  auto: { keys: ["e"], label: "Autopilot (TIE Fighter: target your closest attacker)" },
+  gunsel: { keys: ["x"], label: "Change guns (TIE Fighter: the lasers linked or not)" },
+  lock: { keys: ["r"], label: "Lock target (TIE Fighter: the nearest enemy)" },
+  comms: { keys: [], label: "Communications (nothing in TIE Fighter)" },
+};
 const controls = initControls({
   module: () => (running && window.DOSBox) || null,
   // (TIE Fighter: a controller steers through the emulator's stick, whatever the mouse does, rolls on the keypad's
   // Ins and Del as the emulator has it, and fires with the mouse's button, the game's own trigger)
   directStick: () => isTf(),
   rollKeys: () => (isTf() ? { left: "kp0", right: "kpperiod" } : null),
+  actionKeys: (id) => (isTf() && TF_PAD[id] ? TF_PAD[id].keys : null),
+  actionLabel: (id) => (isTf() && TF_PAD[id] ? TF_PAD[id].label : null),
   fireByMouse: () => isTf(),
   // (A controller button without a key of its own is the page's: push to talk.)
   onAction: (id, down) => { if (id === "ptt") voice.ptt(down); },
