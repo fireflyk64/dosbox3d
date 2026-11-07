@@ -1229,6 +1229,21 @@ things in the docs".
     there, the second beginning its death, the kill credited to the guest
     (below).
   * HG4M: the radio's voices (step 14).
+  * HI1W (the T/I row, flown by two): an inspection; its B-wings had not come
+    in four minutes, nothing to shoot.
+  * B2M1FW (a battle's mission as the room's pick, two T/Fs against Rebel
+    fighters, 33 flight groups): 46 owner changes; the guest's 19 hits on
+    craft the host flies, 18 applied (the 19th's target dead by then: "not
+    ours to apply"), the host's 5 on the guest's, 5; most of them an AI
+    craft's, flown on one machine, hitting a craft flown on the other.  The
+    far tier at last: the host sent 23,559 near reports, 5,563 mid and 80 far;
+    the guest flew up to 14 far craft by its own AI, 299 of their shots shown
+    there, 3,539 of the host's reports pulled them in, the error a second
+    604 units at the median (15 m); now and then 4 to 16 km (a mission's
+    trigger firing a little apart on the two machines: a craft launched or
+    arrived at another moment), pulled in over the time to its next report as
+    the user's far rule has it.  The host down at 171 s, the room's flight over
+    for both, both flying it again.
 * **Kill credit** (step 6's open item).  The owner of a craft keeps the
   shooter whose hit, applied there, began its death (the death timer running
   after the stand-in bolt's `collide_laserhitcraft`); its dying reports carry

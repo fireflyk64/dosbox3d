@@ -8,7 +8,13 @@ for fn in sys.argv[1:]:
         if 'TIE: wall' not in line: continue
         for k, pat in (('owner changes', r'(\d+) owner changes'), ('shots sent', r'(\d+) shots sent'), ('shots made', r'(\d+) made'),
                        ('hits sent', r'(\d+) hits sent'), ('applied', r'(\d+) applied'), ('damage skipped', r'(\d+) damage skipped'),
+                       ('near sent', r'\((\d+) near'), ('mid sent', r'(\d+) mid,'), ('far sent', r'(\d+) far\)'),
+                       ('far flown by our AI (max)', None),
                        ('kills', r'(\d+) kills'), ('credited', r'(\d+) credited'), ('their shots here', r'(\d+) of their shots here'), ('hits of ours shown', r'(\d+) hits of ours shown')):
+            if pat is None:
+                m = re.search(r'far: (\d+) flown by our AI', line)
+                if m: tot[k] = max(tot.get(k, 0), int(m.group(1)))
+                continue
             m = re.search(pat, line)
             if m: tot[k] = tot.get(k, 0) + int(m.group(1))
         if ' 0 peers' in line: peers0 += 1
