@@ -1949,30 +1949,6 @@ int mirror_type(int t) {
     }
 }
 
-// The line the challenge's Imperials say (the user: "ideally we use the line 'They're flying z-95 headhunters they're
-// brave' or something from one of the other missions"), a radio message of the mission's own, 25 s in, where the
-// mission has a free one (16 at most); else the emulator's line.
-const char kBraveLine[] = "They're flying Z-95 Headhunters! They're brave...";
-void challenge_line() {
-    const int n = (Bit16s)tie_r16(tie::kMissionHeader + 2);
-    if (n < 0 || n >= 16) {
-        notice(kBraveLine);
-        return;
-    }
-    const Bit32u m = kRadioMsg + (Bit32u)n * 90;
-    for (Bit32u k = 0; k < 90; k++) {
-        tie_w8(m + k, 0);
-    }
-    tie_w8(m, '1');                 // (the enemy says it: the enemy lines' color, '1', green)
-    for (size_t k = 0; k < sizeof(kBraveLine) && k < 62; k++) {
-        tie_w8(m + 1 + (Bit32u)k, (Bit8u)kBraveLine[k]);
-    }
-    // (both triggers "always" (condition 0), and: at the first poll; its delay five polls, 1,180 ticks each: 25 s, past
-    // the opening's own lines and new craft alerts, which a line fired with them is lost under: HG3M's at 10 s was)
-    tie_w8(m + 88, 5);
-    tie_w16(tie::kMissionHeader + 2, (Bit16u)(n + 1));
-}
-
 // The challenge's lines (the user, 2026-11-07: "just replace them with those other side lines.... where it talks about
 // the weak z-95 or others where they talk about rebel scum. lots of lines can sub in... find extant lines"): each
 // radio message of the four missions that speaks for the Empire's side is replaced by a line of another mission, from
@@ -2027,33 +2003,41 @@ std::string mission_line(const std::string &file, int index) {
     return t;
 }
 
-void challenge_lines() {
-    std::string m;
-    for (size_t i = 0; i < g_net->challengeFile.size(); i++) m += (char)tolower((unsigned char)g_net->challengeFile[i]);
+// A line as the challenge says it: its own speaker's color off, the foe's on (the missions' enemy lines' '1').
+std::string challenge_text(const ChallengeLine &c) {
+    std::string t = mission_line(c.from, c.fromIndex);
+    while (!t.empty() && t[0] >= '1' && t[0] <= '3') t.erase(0, 1);
+    while (!t.empty() && t[t.size() - 1] == ' ') t.erase(t.size() - 1);
+    if (!t.empty() && c.foe) {
+        t = "1" + t;
+    }
+    if (t.size() > 63) {
+        t.resize(63);
+    }
+    return t;
+}
+
+// Each line the table has for the mission, written over its own; `from` (where each of its 16 is from, its own to
+// begin with) is told.
+void challenge_lines(const std::string &m, std::vector<TieVoiceLine> &from) {
     const int numMsg = (Bit16s)tie_r16(tie::kMissionHeader + 2);
     int put = 0, missing = 0;
     for (size_t i = 0; i < sizeof(kChallengeLines) / sizeof(kChallengeLines[0]); i++) {
         const ChallengeLine &c = kChallengeLines[i];
-        if (m != c.mission || c.index >= numMsg) {
+        if (m != c.mission || c.index >= numMsg || c.index >= 16) {
             continue;
         }
-        std::string t = mission_line(c.from, c.fromIndex);
-        while (!t.empty() && t[0] >= '1' && t[0] <= '3') t.erase(0, 1);     // (its own speaker's color off)
-        while (!t.empty() && t[t.size() - 1] == ' ') t.erase(t.size() - 1);
+        const std::string t = challenge_text(c);
         if (t.empty()) {
             missing++;
             continue;
-        }
-        if (c.foe) {
-            t = "1" + t;
-        }
-        if (t.size() > 63) {
-            t.resize(63);
         }
         const Bit32u at = kRadioMsg + (Bit32u)c.index * 90;
         for (Bit32u k = 0; k < 64; k++) {
             tie_w8(at + k, k < t.size() ? (Bit8u)t[k] : 0);
         }
+        from[c.index].mission = c.from;
+        from[c.index].index = c.fromIndex;
         put++;
     }
     if (put || missing) {
@@ -2061,16 +2045,66 @@ void challenge_lines() {
     }
 }
 
+// The line the challenge's Imperials say of the Z-95s (the user: "ideally we use the line 'They're flying z-95
+// headhunters they're brave' or something from one of the other missions"; 2026-11-07, its voice: "Especially the z95
+// line"): HA2W's taunt of those who fly Z-95s, its words and its voice (no line of the game's says they are brave), a
+// radio message of the mission's own, 25 s in, where the mission has a free one (16 at most) and does not say it
+// already (HG3M's first does); in a mission with none free the emulator's line instead.  Again when the mission is
+// read again (HG4M's after its jump in: the bank, loaded before it, has its voice in that slot still).
+const ChallengeLine kBrave = { "", 0, "ha2w", 7, true };
+const char kBraveNotice[] = "They're flying Z-95 Headhunters! They're brave...";
+void challenge_line(const std::string &m, std::vector<TieVoiceLine> &from, bool again) {
+    const int n = (Bit16s)tie_r16(tie::kMissionHeader + 2);
+    for (size_t i = 0; i < sizeof(kChallengeLines) / sizeof(kChallengeLines[0]); i++) {
+        const ChallengeLine &c = kChallengeLines[i];
+        if (m == c.mission && !strcmp(c.from, kBrave.from) && c.fromIndex == kBrave.fromIndex) {
+            return;
+        }
+    }
+    const std::string t = n >= 0 && n < 16 ? challenge_text(kBrave) : std::string();
+    if (t.empty()) {
+        if (!again) {
+            notice(kBraveNotice);
+        }
+        return;
+    }
+    const Bit32u at = kRadioMsg + (Bit32u)n * 90;
+    for (Bit32u k = 0; k < 90; k++) {
+        tie_w8(at + k, k < t.size() ? (Bit8u)t[k] : 0);
+    }
+    // (both triggers "always" (condition 0), and: at the first poll; its delay five polls, 1,180 ticks each: 25 s, past
+    // the opening's own lines and new craft alerts, which a line fired with them is lost under: HG3M's at 10 s was)
+    tie_w8(at + 88, 5);
+    tie_w16(tie::kMissionHeader + 2, (Bit16u)(n + 1));
+    from[n].mission = kBrave.from;
+    from[n].index = kBrave.fromIndex;
+}
+
+// The challenge's voices: each line that has text in the voice of the mission it is from, the bank made from the CD's
+// (wcnet_tie_voice.cpp); the game's own test of a slot (its first byte), all 16.
+void challenge_voices(const std::string &m, const std::vector<TieVoiceLine> &from) {
+    std::vector<TieVoiceLine> lines;
+    for (int i = 0; i < 16; i++) {
+        if (tie_r8(kRadioMsg + (Bit32u)i * 90)) {
+            lines.push_back(from[i]);
+        }
+    }
+    tie_voice_make(m, lines);
+}
+
 // The flight's radio voices: the game's bank is the Combat Chamber's row and its mission, from the pilot record at each
 // launch (the voices of the messages in order).  In a room a picked mission flies its own (a chamber mission's file
-// "h<letter><n>": the letter's index in "FIBAGDM", n - 1); the challenge none, its lines others' and its sides
-// mirrored (7, past the letters, names no bank: no voices); a battle's are the tour's, as they are.
+// "h<letter><n>": the letter's index in "FIBAGDM", n - 1); the challenge its own bank, made of the CD's
+// (challenge_voices): G and Z (4, 'Z' - '1'), VOICE\GMZ\GMZ.LFD, the name wcnet_tie_voice.cpp answers for; not made
+// (no CD), none (7, past the letters, names no bank); a battle's are the tour's, as they are.
 void room_voices() {
     std::string m = tie_mission_name();
     for (size_t i = 0; i < m.size(); i++) m[i] = (char)tolower((unsigned char)m[i]);
     if (g_net->challenge) {
-        tie_w8(kVoiceA, 7);
-        wclog(2, "TIE: the Z-95 challenge flies without the radio's voices");
+        const bool made = tie_voice_made();
+        tie_w8(kVoiceA, made ? 4 : 7);
+        tie_w8(kVoiceB, (Bit8u)('Z' - '1'));
+        wclog(2, "TIE: the Z-95 challenge flies %s", made ? "in its own voices (GMZ)" : "without the radio's voices");
         return;
     }
     static const char kLetters[] = "fibagdm";
@@ -2101,10 +2135,16 @@ void make_challenge(bool again) {
         }
         changed++;
     }
-    challenge_lines();              // (again too: a mission read again has its own lines again)
-    if (!again) {
-        challenge_line();
+    std::string m;
+    for (size_t i = 0; i < g_net->challengeFile.size(); i++) m += (char)tolower((unsigned char)g_net->challengeFile[i]);
+    std::vector<TieVoiceLine> from(16);
+    for (int i = 0; i < 16; i++) {
+        from[i].mission = m;
+        from[i].index = i;
     }
+    challenge_lines(m, from);       // (again too: a mission read again has its own lines again)
+    challenge_line(m, from, again);
+    challenge_voices(m, from);
     wclog(1, "TIE: the Z-95 challenge%s: %d of %d flight groups' craft mirrored, ours Z-95s", again ? " (again: the mission read again)" : "",
           changed, numFg);
 }

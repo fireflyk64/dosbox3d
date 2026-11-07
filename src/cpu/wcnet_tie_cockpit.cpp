@@ -1158,6 +1158,21 @@ bool tie_game_file(const std::string &dosName, std::vector<Bit8u> &out) {
     return !path.empty() && read_file(path, out);
 }
 
+int tie_game_drive() {
+    localDrive *drive = cockpit_drive();
+    for (int d = 0; drive && d < DOS_DRIVES; d++) {
+        if (Drives[d] == drive) return d;
+    }
+    return -1;
+}
+
+bool tie_game_write(const std::string &dosName, const std::vector<Bit8u> &bytes) {
+    localDrive *drive = cockpit_drive();
+    if (!drive) return false;
+    const std::string path = host_path(drive, dosName);
+    return !path.empty() && write_file(path, bytes);
+}
+
 void tie_cockpit_before_species() {
     const Bit32u pstate = tie_linear(tie::kPstate);
     const int fg = mem_readb(pstate + 0x0A);

@@ -123,6 +123,22 @@ void tie_cockpit_forget();
 void tie_fly_group_as(int fg, int type);
 // A file of the game's own drive (its DOS name, e.g. MISSION\\HG1W.TIE), read from the host; false if not there.
 bool tie_game_file(const std::string &dosName, std::vector<Bit8u> &out);
+// The game's drive, its index in Drives (-1 if not found); a file written to it (its DOS name), false if not.
+int tie_game_drive();
+bool tie_game_write(const std::string &dosName, const std::vector<Bit8u> &bytes);
+
+// The Z-95 challenge's radio voices (wcnet_tie_voice.cpp): a line of a mission (its file's name) and its message.
+struct TieVoiceLine {
+    std::string mission;
+    int index;
+};
+// The challenge's bank made from the CD's, for `lines` (its messages that have text, in order) and `own`'s win and loss
+// clips; false if not made (no CD: no voices).  tie_voice_made: made.
+bool tie_voice_make(const std::string &own, const std::vector<TieVoiceLine> &lines);
+bool tie_voice_made();
+// DOS_OpenFile's: the game's open of the bank the challenge's voice ids name made the bank made (its name and drive
+// rewritten); false for every other.
+bool tie_voice_open(char *fullname, Bit8u *drive);
 
 // Test aid: the front end's pointer put at a point of its 320x200 screen
 // (the key script's !tiecursor=x:y; a mouse button then clicks there).

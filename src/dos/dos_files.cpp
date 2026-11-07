@@ -26,6 +26,7 @@
 #include "bios.h"
 #include "mem.h"
 #include "regs.h"
+#include "../cpu/wcnet_tie.h"
 #include "dos_inc.h"
 #include "drives.h"
 #include "cross.h"
@@ -546,6 +547,7 @@ bool DOS_OpenFile(char const * name,Bit8u flags,Bit16u * entry) {
 	char fullname[DOS_PATHLENGTH];Bit8u drive;Bit8u i;
 	/* First check if the name is correct */
 	if (!DOS_MakeName(name,fullname,&drive)) return false;
+	wc::tie_voice_open(fullname,&drive);	// (TIE Fighter's Z-95 challenge: its own voices' bank, wcnet_tie_voice.cpp)
 	Bit8u handle=255;		
 	/* Check for a free file handle */
 	for (i=0;i<DOS_FILES;i++) {
