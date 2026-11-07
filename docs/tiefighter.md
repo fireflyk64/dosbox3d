@@ -408,9 +408,19 @@ section 7 as it is worked on.
    7, step 14): in a room the Combat Chamber's T/F row flies the gunboat's
    missions that need no ion cannon and the T/I's where they would, in two
    Z-95 Headhunters against the Empire's own craft (every craft mirrored),
-   the cockpit kitbashed from the gunboat's by code.  To do: the missions'
-   own lines reworded for the mirrored sides ("Imperial Gunboat, surrender or
-   die!"), the briefings' words.
+   the cockpit kitbashed from the gunboat's by code; the missions' lines that
+   speak for the Empire's side swapped for the game's own lines that fit the
+   mirrored sides; no radio voices.  To do: the briefings' words.
+15. **To do, once the whole system is ready for production: long mission
+   tests with an ally** (the user, 2026-11-07: "Do some comprehensive mission
+   tests with the ally and make sure the networking works, especially the
+   guest handoffs...and that well aimed shots at tie fighters work. The
+   challenge missions are a good place to start as well as some of the other
+   missions"): two machines through whole missions (the four challenges
+   first, then others of the chamber's rows and a battle), the guest's
+   handoffs of near craft (owner changes as craft come and go within its
+   5 km), aimed shots at T/Fs from both machines landing (the shooter's hits,
+   the damage in the reports, the kill on both), the room's ending each way.
 
 ## 7. Notes, step by step
 
@@ -1070,9 +1080,36 @@ X-wing-like cockpit (an arched canopy, a long nose).
   game's own come close: "Tau 2 to Tau 1, there are Z-95 Headhunters right
   behind us!" in B13M3, "Outstanding, Mu 1! That was some pretty brave
   flying!" in B11M3) is a radio message of the mission's own (radiomsg
-  0xE2F24, 90 bytes: the text, two triggers "always", the delay two polls of
-  1,180 ticks: 10 s in) where the mission has one of its 16 free (HG3M, HG4M);
-  else the emulator's line (HG1W, HI2W).
+  0xE2F24, 90 bytes: the text, two triggers "always", the delay five polls of
+  1,180 ticks: 25 s in; at 10 s HG3M's fell under a new craft alert and was
+  never seen: a message fired with others shows only if nothing replaces it)
+  where the mission has one of its 16 free (HG3M, HG4M); else the emulator's
+  line (HG1W, HI2W).  In the enemy lines' color (below).
+* **The missions' lines** (the user: "just replace them with those other side
+  lines.... where it talks about the weak z-95 or others where they talk about
+  rebel scum. lots of lines can sub in... find extant lines").  Each radio
+  message that speaks for the Empire's side gets another mission's line,
+  read from the player's own mission file at the launch (the program holds
+  only which mission and message, `kChallengeLines`): the player's side
+  speaks of Imperial craft as the enemy (lines of the battles against Zaarin's
+  and Harkov's traitors, the Rebels' own in B10M1 and B12M6), the enemy of the
+  Z-95s (HA2W's "How pathetic! They must really wish to die flying those
+  Z-95s!", B2M4's sparing its warheads, HM1W's Z-95s launched, HM4M's "you and
+  your wingman are toast").  HG1W 2 (13, 14), HI2W 7 (0..5, 15), HG3M 2 (0, 1),
+  HG4M 2 (0, 2); the neutral ones stay (training, shields, the duel's taunts).
+  A message's first character is its color: none the command's red, '1' green
+  (the missions' own enemy speakers: HG3M's challenger, B12M6's Rebels), '2'
+  blue, '3' yellow; a foe's line takes '1', a friend's none, as each mission's
+  own lines do.  Applied again when a jump reads the mission again.  Two
+  lines fired in one poll (HG3M's 0 and 1) show one: the game's own timing.
+* **The voices.**  The game's voice bank is `VOICE\<letter>M<n>`, the letter
+  the Combat Chamber's craft row (`FIBAGDM`) and n its mission, from the pilot
+  record at each launch (voice_id_a 0xD4190, voice_id_b 0xD418E), its clips
+  going to the mission's messages in order.  In a room, at the craft load
+  (before `create_createmission` loads the bank): a chamber mission's file
+  `h<letter><n>` sets them (a room's pick played the chamber row's voices over
+  its lines before); the challenge sets the letter 7, past the table, naming
+  no bank: no voices (its lines are others', its sides mirrored).
 * **The cockpit.**  The Z-95's spec (13) is named XWING with the R-41's: when
   the player flies one it is renamed Z95, and Z95.INT and Z95FWD.LFD are made
   from the gunboat's (the shuttle's way, step 9): the struts out, an arched
@@ -1080,13 +1117,30 @@ X-wing-like cockpit (an arched canopy, a long nose).
   consoles, each pixel a strut's row across its width) and a long nose from
   the dashboard's middle towards the horizon in the struts' own greys (the
   panel's palette by luminance: lit along its top, a ridge seam, panel lines,
-  seams across).  The targeting display gets the gunboat's mask.
+  seams across).  The nose's bottom sits on the dashboard (the user:
+  "translate the long polygon downward so the bottom is flush with the top of
+  the VDU display's bevel"): its lower corners' last row of space in the
+  mask, row 277 of 480.  The targeting display gets the gunboat's mask.
+* **The parts.**  A parts file (the INT names it at 0x62A, the count after) is
+  the instruments' sprites one after another, PANL opcodes, each row ended by
+  254, each sprite by 255.  The Z-95's own, Z95P.PNL, is the gunboat's with
+  sprites 30..33 (the shield display's picture of the player's craft from
+  behind, red, yellow, green, white by the hull; 19x14 at 640, 9x9 at 320)
+  drawn as a Z-95's back (the user: "should be a z-95 shape if possible, or
+  else just squashed somehow like a back view --8[]8--": wings with a gun at
+  each tip, an engine each side, the canopy on top), each in its own colors
+  by brightness.  No ion cannons (the user: "removing the top 2 icons from the
+  crosshair since z-95 does not have ions"): the four gun lights around the
+  targeting box are painted into the forward view itself (masked as panel),
+  the game lighting one over each for weapon groups 0..3 (instruments 37..40,
+  `panel_updatelasers`); Z95FWD.LFD opens the upper two (39 and 40's places)
+  to space, and the box's missile-mode states (sprites 35..37, the lights
+  drawn in) lose them in Z95P.PNL.  The Z-95 has two weapon groups.
 * **The page.**  The room's menu calls the T/F row "Z-95 challenge 1..4: two
   Z-95s against the Empire", with the source missions' words.
 * **Measured** (two machines): T/F mission 1 from the chamber flew HG1W (6 of
   its 13 groups mirrored, the line as a notice), a room's pick of T/F mission 3
   flew HG3M (25 of 28 mirrored), both pilots in Z-95s and the Z-95 cockpit,
   through the jump and after.
-* **Open.**  The missions' own lines and briefings still speak of the Empire's
-  side ("Imperial Gunboat, surrender or die!"); the side views are the
-  gunboat's.
+* **Open.**  The briefings still speak of the Empire's side; the side views
+  are the gunboat's.
