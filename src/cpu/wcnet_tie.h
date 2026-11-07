@@ -111,6 +111,14 @@ bool tie_controls_marker(double *x, double *y);      // the pointer to draw, -1.
 void tie_controls_set_mouse(int mode);              // 0 drag, 1 pointer, 2 keyboard, 3 joystick
 void tie_controls_stick(double x, double y);         // a pad's stick, -1..1, right and climbing positive
 
+// The Imperial shuttle's cockpit, made from the gunboat's (wcnet_tie_cockpit.cpp, step 9): at fediskio_loadspecies's
+// entry, the mission read and its craft not yet loaded.  WCNET_TIE_FLY_AS=<craft type> flies the player's flight group
+// in that craft (17 the shuttle).
+void tie_cockpit_before_species();
+void tie_cockpit_forget();
+// A flight group flown in another craft (the mission files' type number), before the flight loads its craft.
+void tie_fly_group_as(int fg, int type);
+
 // Test aid: the front end's pointer put at a point of its 320x200 screen
 // (the key script's !tiecursor=x:y; a mouse button then clicks there).
 void tie_set_cursor(int x, int y);

@@ -66,6 +66,7 @@ Place g_places[] = {
     { "create_createcraft", 0x17BF8, 0, 0 },
     { "create_createmission", 0x16B8C, 0, 0 },
     { "shipext_Get_Mission_Path", 0x82504, 0, 0 },   // the mission file's name made from mission_name
+    { "fediskio_loadspecies", 0x218D8, 0, 0 },       // the mission read, its craft about to be loaded
 };
 const Bit8u kUpdateTimeBytes[8] = { 0x53, 0x51, 0x52, 0x56, 0x57, 0x55, 0x8b, 0x2d };
 const Bit8u kCreateProjectileBytes[8] = { 0x51, 0x56, 0x57, 0x55, 0x83, 0xec, 0x1c, 0x89 };
@@ -229,6 +230,7 @@ void forget(const char *why) {
     wclog(1, "TIE Fighter: %s", why);
     clear_calls();
     tie_session_shutdown();
+    tie_cockpit_forget();
     g_armed = g_found = false;
     g_codeBase = g_dataBase = 0;
     set_watch();
@@ -480,6 +482,8 @@ void tie_check_hooks(Bit32u eip) {
             }
         } else if (p.image == 0x82504) {
             tie_session_mission_path();
+        } else if (p.image == 0x218D8) {
+            tie_cockpit_before_species();
         } else if (p.image == 0x2E0E4) {
             tie_session_shot();
         } else if (p.image == 0x1433C) {
