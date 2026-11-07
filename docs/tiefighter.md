@@ -250,10 +250,11 @@ section 7 as it is worked on.
    nothing patched into the game (the user, 2026-11-06): where each pilot
    is, launches and flights' ends, and a call to action standing while the
    host is at a briefing or flying and a guest is not (section 7, step 3).
-4. **Next: the mission everybody flies**: the host's choice carried to the guests
-   (the Combat Chamber's missions first: no story to walk), the guest's game
-   put on the same mission, and a guest that launches another told so.
-5. **Ownership by distance, and the variable rates** (section 5): the AI
+4. **Done for the Combat Chamber: the mission everybody flies** (section 7,
+   step 4): a guest launching from the Combat Chamber flies the host's
+   mission whatever it picked.  Battles (the tour's) are still each pilot's
+   own: a guest is told when the two fly apart.
+5. **Next: ownership by distance, and the variable rates** (section 5): the AI
    craft owned by the machine whose pilot is nearest within the lasers'
    reach, the host's otherwise; near craft every frame, far ones a few a
    frame (every 10 to 20 s each), all within the best-effort channel's
@@ -391,3 +392,31 @@ move vector, the nine axis words, type).
   in its flight carried the two lines above (the line wraps at the picture's
   edge), the guest's own flight none; the host's carried the guest's
   launch.
+
+### Step 4: the mission everybody flies (2026-11-06)
+
+* **Where.**  The mission file's name is made from the front end's
+  `mission_name` (image 0xFB3E8) by `shipext_Get_Mission_Path` (0x82504:
+  `"mission/" + mission_name + ".tie"`), called when the briefing map loads
+  the mission and again when the flight does.  At its entry a guest's
+  `mission_name` gets the host's (a 14-byte memory write), when the guest's
+  own is a Combat Chamber mission (`H...`), the host's is too, and the host
+  is at a briefing or flying (its presence says so).  The guest is told:
+  "Flying HOST's mission, the Combat Chamber's T/F mission 1 (you had picked
+  the Combat Chamber's T/F mission 2)".  A battle's file belongs to the
+  pilot's tour record (its battle and mission, what it unlocks), so it is
+  not swapped; a guest launching anything else while the host flies is told
+  the two fly apart.
+* **Frames carry their mission** (`TieFrame.mission`): a pilot flying
+  another mission is relayed but its craft are not written into this
+  game's objects.
+* **Measured** (`GUEST_LAG=6`, the guest clicking the Combat Chamber's
+  "next mission" arrow, (135,167), then the briefing): the guest's front end
+  showed `hf2w`, the swap came as its briefing loaded, it was briefed and
+  flew `hf1w` as the player group's second craft, and its craft on the host
+  was 12 units off (median of 100, worst 48).
+* **The Combat Chamber's buttons** (OpenTIE `combat.c`, ids 1..6 = rects
+  0..5 at 320x200): 1 (32,142)-(54,156) the craft back, 2 (124,142)-(146,156)
+  the craft on, 3 (22,160)-(44,174) the mission back, 4 (124,160)-(146,174)
+  the mission on, 5 (254,142)-(280,158) "Enter Briefing", 6 (10,176)-(38,200)
+  out.
