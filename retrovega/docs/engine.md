@@ -254,7 +254,10 @@ surrounding nav 2"; play test M8.55). **Points switched on and off** (the old ga
 near, the old getNearbyNavPoint's test) and `switch=+N,-M` switches nav N on and M off as the point is entered (its
 +45..+52 pairs; RvNav.sw, the nav record's bytes 16..19, NAV_REC_SW): CEPHID3's hidden encounter halfway out comes only
 once nav 1, the Ox's, has been reached: the way home's (play test M8.56). Switches of nav 0 (the old Claw moving) and
-of the second waves (state 2) are left out. The launch's is 20,000 (`HOME_REACH_KM`, its Tiger's Claw's in
+of the second waves (state 2) are left out. **A ship that comes in later** (`role=in`, the old behaviour 7, every one
+of ours): it waits off the scene at its point after the point is reached, until a pilot comes within 5,000 km
+(`ARRIVE_KM`; the old Drayman came at 4,559 and 5,081 km), then jumps in (its star) and makes for home
+(`arrivals_step`, at most `ARRIVE_MAX` 4 waiting; play test M8.57). The launch's is 20,000 (`HOME_REACH_KM`, its Tiger's Claw's in
 36 of its 40 missions); three hidden points at the launch with 0 in the old records have 5,000, the way home's
 encounters, as before. The carrier may be asked for landing from 25,000 km (`LANDING_RANGE_KM`). The autopilot home,
 with nothing on the way, goes on past the launch's reach to 4,000 km off the carrier's hull, facing it

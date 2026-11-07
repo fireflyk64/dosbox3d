@@ -231,6 +231,9 @@ static int16_t nav_defined(int16_t n)
  * is never reached, however near, until entering another switches it on (+45..+52, NAV_REC_SW): CEPHID3's .Encounter,
  * on once the Ox's nav 1 is reached, so its Agis are the way home's.  A bit a point, set off */
 static uint16_t __far g_nav_off;
+#define ARRIVE_MAX 4                    /* (the ships that come in later: arrivals_step) */
+static struct { uint8_t rec, nav; } __far g_arrive[ARRIVE_MAX];
+static uint8_t __far g_narrive;
 
 static int16_t nav_on(int16_t n)
 {
@@ -693,6 +696,7 @@ void logic_start(const RvMission __far *m)
     g_navs_seen = 1;
     g_navs_been = 1;
     g_nav_off = 0;
+    g_narrive = 0;
     for (j = 1; j < NAVS; j++)
         if (nav_defined(j) && NAV_OFF_AT_START(j))
             g_nav_off |= 1u << j;
@@ -3885,12 +3889,63 @@ static int16_t wave_may_come(int16_t n)
     return 1;
 }
 
+/* the ships that come in later (role=in: the old game's behaviour 7, every one of ours; traced 2026-11-07 in
+ * McAuliffe 3 and Ataraxia 1's old twins, the user: "the ox didn't jump IN 30 seconds after I arrived"): at its nav
+ * point it waits off the scene, out of the fight, until a pilot comes within ARRIVE_KM of where it will be (the
+ * Drayman came at 4,559 and 5,081 km, the player flying in from the autopilot's stop at the 20,000-km reach: some
+ * 30 s), then it jumps in (its star, logic_on_jump) and makes for home.  A list with its cap (ARRIVE_MAX: more than
+ * a nav point's share come at once) */
+#define ARRIVE_KM 5000
+
+/* the nearest human pilot to a place (km), roughly (player_km's measure) */
+static int32_t humans_km_to(int32_t x, int32_t y, int32_t z)
+{
+    int32_t best = -1, km, dx, dy, dz, m;
+    int16_t k, s;
+    for (k = -1; k < g_nhumans; k++) {
+        s = k < 0 ? 0 : g_humans[k];
+        if (!slot_is_ship(s))
+            continue;
+        dx = labs(TO_KM(gPositionVector[s].x) - x);
+        dy = labs(TO_KM(gPositionVector[s].y) - y);
+        dz = labs(TO_KM(gPositionVector[s].z) - z);
+        m = dx > dy ? (dx > dz ? dx : dz) : (dy > dz ? dy : dz);
+        km = m + ((dx + dy + dz - m) >> 1);
+        if (best < 0 || km < best)
+            best = km;
+    }
+    return best < 0 ? 0x7FFFFFFFL : best;
+}
+
+static void arrivals_step(void)
+{
+    static const char __far s_in[] = "logic: mission ship %d jumps in at nav %d (slot %d): a pilot within %ld km";
+    int16_t i = 0;
+    if (!g_narrive)
+        return;
+    humans_note();
+    while (i < g_narrive) {
+        const uint8_t *rec = MSHIP(g_arrive[i].rec), *nav = NAV_REC(g_arrive[i].nav);
+        int32_t km = humans_km_to(NAV_REC_KM(nav, 0) + MSHIP_REC_KM(rec, 0), NAV_REC_KM(nav, 1) + MSHIP_REC_KM(rec, 1),
+                                  NAV_REC_KM(nav, 2) + MSHIP_REC_KM(rec, 2));
+        if (km < ARRIVE_KM) {
+            uint16_t s = outerSpawnShipEntity(g_arrive[i].rec, g_arrive[i].nav);
+            if (s != 0xFFFF && RV_SLOT_OK(s) && logic_on_jump)
+                logic_on_jump((int16_t)s, commAnimInfo[s] == commAnimInfo[0]);
+            rv_notef(s_in, g_arrive[i].rec, g_arrive[i].nav, s == 0xFFFF ? -1 : (int)s, km);
+            g_arrive[i] = g_arrive[--g_narrive];
+        } else
+            i++;
+    }
+}
+
 /* 9. the mission: nav points reached (enterNavPoint), waves, objectives, the score (victoryPoints, nonzero won).
  * A kill is the mission ship seen dying; the score is the mission done, as it stands (logic_end has the last word) */
 static void step_mission(void)
 {
     int16_t s, n;
     land_near();
+    arrivals_step();
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
         if (slot_is_ship(s) && shipAiState[s] == 9 && slotMissionShip[s] < 64) {
             if (!g_killed[slotMissionShip[s]] && commAnimInfo[s] != commAnimInfo[0])
@@ -4903,6 +4958,11 @@ void __far __cdecl enterNavPoint_impl(uint16_t nav)
     _fmemset(came, 0, sizeof came);
     for (j = 0; j < 10 && at[j] != 0xFFFF; j++) {
         uint16_t s;
+        if (MSHIP_ROLE(at[j]) == RV_ESCORT_IN && g_narrive < ARRIVE_MAX) {
+            g_arrive[g_narrive].rec = (uint8_t)(at[j] & 63);   /* (it comes in later: arrivals_step) */
+            g_arrive[g_narrive++].nav = (uint8_t)nav;
+            continue;
+        }
         if (MSHIP_BEHAVIOUR(at[j]) != 6 && (s = outerSpawnShipEntity(at[j], nav)) != 0xFFFF) {
             n++;
             if (s > 0 && s < NUM_SHIP_SLOTS && maybeEntityType[s] == ET_SHIP && commAnimInfo[s] != commAnimInfo[0]
