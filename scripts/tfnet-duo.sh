@@ -22,7 +22,9 @@ PORT=${PORT:-13455}
 TFDIR=${TFDIR:-$ROOT/tf}
 DOSBOX=${DOSBOX:-$ROOT/build-native/src/dosbox}
 [ -f "$TFDIR/game.gog" ] || { echo "no TIE Fighter at $TFDIR (innoextract GOG's installer there)"; exit 2; }
-[ -f "$TFDIR/TOPACE10.TFR" ] || cp "$TFDIR/__support/save/TOPACE10.TFR" "$TFDIR/"   # (a pilot for the registration desk)
+# (a pilot for the registration desk, GOG's own each run: both games share the file, and the Combat Chamber's last
+# mission is kept in it, so a run's clicks would move the next run's start)
+cp "$TFDIR/__support/save/TOPACE10.TFR" "$TFDIR/TOPACE10.TFR"
 # GOG's own machine (its __support/app/dosbox_tiecd.conf), the disc as drive D, no exit after the game
 cat > $OUT/tf.conf <<CONF
 [sdl]
