@@ -368,6 +368,7 @@ static void auto_keys() {
 // "!poke=<hex offset>:<hex byte>", which writes the data segment,
 // "!mouse=<x>:<y>", which puts the pointer there (fractions of the range),
 // "!button=<n>:<1|0>", which presses or releases a mouse button,
+// "!mickey=<dx>:<dy>", relative motion alone (the pointer stays put),
 // "!pos=<x>:<y>:<z>", which moves our own ship, "!face=<slot|npc|rock>",
 // which turns it towards that slot, "!rock=<slot|npc>", which puts one of our
 // field's rocks or mines on that ship (0: dead ahead of our own),
@@ -422,11 +423,17 @@ static KBD_KEYS script_key(const std::string &name) {
 // An absolute pointer position, 0..1 across the mouse driver's range (what a
 // controller's stick asks for).  The matching relative motion is reported as
 // well, for programs that read mickeys instead of the position.
+static double g_pointerX = 0.5, g_pointerY = 0.5;
 static void set_pointer(double fx, double fy) {
-    static double lastX = 0.5, lastY = 0.5;
-    Mouse_CursorMoved((float)((fx - lastX) * 640.0), (float)((fy - lastY) * 200.0), (float)fx, (float)fy, false);
-    lastX = fx;
-    lastY = fy;
+    Mouse_CursorMoved((float)((fx - g_pointerX) * 640.0), (float)((fy - g_pointerY) * 200.0), (float)fx, (float)fy, false);
+    g_pointerX = fx;
+    g_pointerY = fy;
+}
+// Relative motion alone (the pointer stays where it is): the mickeys a game
+// that steers by the mouse's motion reads, with no edge to stop them
+// (TIE Fighter's flight: each frame's mickeys are that frame's stick).
+static void nudge_pointer(double dx, double dy) {
+    Mouse_CursorMoved((float)dx, (float)dy, (float)g_pointerX, (float)g_pointerY, false);
 }
 
 // How the games read their steering pointer (WC.EXE seg001:0E52, WC2
@@ -975,6 +982,12 @@ static void key_script() {
         std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + item.substr(6) + ".ppm";
         wclog(1, "key script %.1fs (t=%.1f): screenshot %s%s", t, now / 1000.0, path.c_str(),
               write_screenshot(path) ? "" : " failed");
+    } else if (item.compare(0, 8, "!mickey=") == 0) {
+        // !mickey=<dx>:<dy> moves the mouse by that much (host pixels) without moving the pointer
+        double dx = 0, dy = 0;
+        if (sscanf(item.c_str() + 8, "%lf:%lf", &dx, &dy) == 2) {
+            nudge_pointer(dx, dy);
+        }
     } else if (item.compare(0, 11, "!tiecursor=") == 0) {
         // !tiecursor=<x>:<y> puts TIE Fighter's front-end pointer there (its 320x200 screen)
         int x = 0, y = 0;
