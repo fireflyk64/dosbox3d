@@ -4706,7 +4706,8 @@ static uint16_t hull_take(int16_t s, uint16_t left, const RvShipType __far *t, i
          * game's count x 14), so a laser's hit is one */
         uint16_t div = commAnimInfo[s] == SIDE_AERA ? 8 : 10;
         q = (uint32_t)(left / div ? left / div : 1) * CAP_HULL_POINTS;
-        if (game_rand() % 1000 < MAYDAY_PER_MILLE && t->mayday[0] && logic_on_mayday)
+        if (game_rand() % 1000 < MAYDAY_PER_MILLE && commAnimInfo[s] == SIDE_TERRAN && logic_on_mayday)   /* (a Terran
+                                           capital ship's: flight.c comm_mayday has its line) */
             logic_on_mayday(s);
         return q > 0xFFFFUL ? 0xFFFF : (uint16_t)q;
     }

@@ -4668,7 +4668,7 @@ static void pt_mayday(int16_t slot)
 static void t_mayday(void)
 {
     static const char __far e_ox[] = "an Ox hit 400 times through its armour called mayday on %d of them: 4 to 30 (35 in 1,000 a hit)";
-    static const char __far e_aera[] = "an Agasicles, with no mayday line, called %d times";
+    static const char __far e_aera[] = "an Agasicles, an Aera ship, called %d times";
     int16_t i, hits = 0, before;
     pt_alone(PT_PLAYER);
     logic_on_mayday = pt_mayday;

@@ -235,8 +235,9 @@ same target one time in 14 when it bears (1 in 4). The hull is the old game's co
 an eighth of itself on the Aera's side, a tenth on the others', at least one; `CAP_HULL_POINTS` 14 points a count):
 an Agasicles dies at its 90th laser hit (M8.45).
 A Terran capital ship calls mayday on 35 in 1,000 of the hits through its armour (the old game's odds, read in its
-capital hull routine: so the Claw's six maydays to the Drayman's one, by their counts), its type's `mayday` line in
-ships.csv, relayed in the carrier's voice on the right VDU (`logic_on_mayday`, flight.c `comm_mayday`; M8.52).
+capital hull routine: so the Claw's six maydays to the Drayman's one, by their counts), one line for them all with
+the ship's name (the home carrier's own its own), relayed in the carrier's voice on the right VDU (`logic_on_mayday`,
+flight.c `comm_mayday`, `cap_line`; M8.52).
 The old game's Kilrathi side of that routine is a call for help: a capital ship hurt through its armour by an attacker
 that no ship of another side has within 10,000 km (the attacker unengaged) turns every ship of its side on the
 attacker on a coin's toss. Ours (`capital_help`, `HELP_KM`): the AI fighters of the hurt ship's side, their minds'

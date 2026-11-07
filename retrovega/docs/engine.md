@@ -2012,7 +2012,9 @@ three seconds out; after it, the first Aera or Rlaan fighter within 3,000
 km hails the player on the right VDU, once (`comms_voice_for`: the side's
 voice for that ship type, else the side's first).
 A capital ship hails too, once each, on the player's first approach within
-8,000 km (`comm_hail_capital`, its type's `hail` line in ships.csv): an
+8,000 km (`comm_hail_capital`, `cap_line`: a few lines for every capital ship, not one a type: a
+Terran's "NAME to Wildcard: glad to see you, sir", the Aera's and the Rlaan's for a small ship and a big
+one, 500 km across or more; the user, 2026-11-07): an
 enemy's in its side's voice for the type (no capital officer's helm yet: the
 side's first), an ally's relayed in the carrier's voice; the home carrier
 never.

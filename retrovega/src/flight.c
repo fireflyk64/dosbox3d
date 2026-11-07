@@ -2017,25 +2017,83 @@ static void comm_landing(void)
         comm_exchange(s_ask, role_voice(RV_ROLE_XO), r == LANDING_CLEARED ? s_yes : r == LANDING_NOT_YET ? s_no : s_far);
 }
 
+/* the capital ships' lines, a few for every one (the user, 2026-11-07: "we could have 'small ship' vs 'big ship' hail
+ * for aera and rlaan and human gets just the hail and mayday"; a line a ship type, 72 bytes twice in each of the 44
+ * records held in memory, had cost 6 KB of conventional memory for 13 lines): a Terran's hail and mayday with its
+ * name, the home carrier's own mayday, and the Aera's and the Rlaan's hails by the size, a big ship's hull 500 km
+ * across or more (a cruiser, a carrier; a destroyer or a transport is small) */
+#define CAP_BIG_KM 500
+static const char __far s_hail_terran[] = "%s to Wildcard: glad to see you, sir. Keep them off us.";
+static const char __far s_hail_aera[2][72] = { "So. The Terran has courage after all. Spend it here, and quickly.",
+                                               "At last, a Terran with courage. It changes nothing." };
+static const char __far s_hail_rlaan[2][72] = { "A lone Terran. You are one, and we are patient.",
+                                                "Turn away, Terran. This ship has outlasted fleets." };
+static const char __far s_mayday_home[] = "%s to all craft: mayday, mayday. We are under attack. Assist.";
+static const char __far s_mayday_other[] = "%s to all craft: the %s is calling mayday. Assist.";
+
+/* the home carrier's name, for the lines it relays ("Vigilance" when it is not in the flight) */
+static const char __far *home_name(void)
+{
+    static const char __far s_vig[] = "Vigilance";
+    const RvShipType __far *t;
+    int s;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
+        if (logic_is_home(s) && (t = slot_type(s)) != 0)
+            return t->name;
+    return s_vig;
+}
+
+/* a capital ship's line into buf (a Terran's with its name and the carrier's): 0 when it has none */
+static int cap_line(int s, int mayday, char *buf, unsigned n)
+{
+    const RvShipType __far *t = slot_type(s);
+    char name[RV_NAME + 1], home[RV_NAME + 1], fmt[80];
+    int big;
+    if (!t || n < 80)
+        return 0;
+    big = t->radius_km >= CAP_BIG_KM;
+    _fstrncpy(name, t->name, RV_NAME);
+    name[RV_NAME] = 0;
+    _fstrncpy(home, home_name(), RV_NAME);
+    home[RV_NAME] = 0;
+    if (mayday) {
+        if (commAnimInfo[s] != SIDE_TERRAN)
+            return 0;
+        _fstrcpy(fmt, logic_is_home(s) ? s_mayday_home : s_mayday_other);
+        if (logic_is_home(s))
+            sprintf(buf, fmt, name);
+        else
+            sprintf(buf, fmt, home, name);
+        return 1;
+    }
+    if (commAnimInfo[s] == SIDE_TERRAN) {
+        _fstrcpy(fmt, s_hail_terran);
+        sprintf(buf, fmt, name);
+    } else
+        _fstrcpy(buf, commAnimInfo[s] == SIDE_AERA ? s_hail_aera[big] : s_hail_rlaan[big]);
+    return 1;
+}
+
 /* a capital ship's hail on the player's first approach (the user, 2026-11-06: "the mission capital ships often talk to
  * you when you get close for the first time", an enemy's "he's got courage after all", an ally's "Glad to see you
- * sir"): the first capital ship of another side, or of ours but the home carrier, within CAP_HAIL_KM whose type has a
- * hail line (ships.csv `hail`), once each a flight, on the right VDU: an enemy's in its side's voice for the type
- * (an Aera capital's officer has no helm of its own yet: comms_voice_for gives the side's first), an ally's relayed
- * in the carrier's voice (no captain's face yet) */
+ * sir"): the first capital ship of another side, or of ours but the home carrier, within CAP_HAIL_KM, once each a
+ * flight, on the right VDU (cap_line): an enemy's in its side's voice for the type (an Aera capital's officer has no
+ * helm of its own yet: comms_voice_for gives the side's first), an ally's relayed in the carrier's voice (no captain's
+ * face yet) */
 #define CAP_HAIL_KM 8000L
 static uint32_t __far g_cap_hailed;     /* a bit a slot: it has hailed this flight */
 static void comm_hail_capital(void)
 {
     static const char __far s_hail[] = "flight: frame %u: slot %d (a capital ship, type %02X, side %d) hails, voice %d";
     int s, v;
+    char line[80];
     if (!g_m || g_sys.muted || frameCounter <= 90 || (frameCounter & 7) || comms_on(0) || comms_on(1) || g_reply_voice != -1)
         return;
     for (s = 1; s <= RV_MAX_SHIP_SLOT; s++) {
         const RvShipType __far *t;
         long dx, dy, dz;
         if (maybeEntityType[s] != 0xD || (g_cap_hailed >> s & 1) || shipAiState[s] == 9 || logic_is_home(s)
-            || (t = slot_type(s)) == 0 || !t->hail[0])
+            || (t = slot_type(s)) == 0)
             continue;
         dx = (gPositionVector[s].x - gPositionVector[0].x) / 256;     /* (km) */
         dy = (gPositionVector[s].y - gPositionVector[0].y) / 256;
@@ -2046,8 +2104,8 @@ static void comm_hail_capital(void)
         g_cap_hailed |= (uint32_t)1 << s;
         v = commAnimInfo[s] == commAnimInfo[0] ? role_voice(RV_ROLE_XO) : comms_voice_for(commAnimInfo[s], gInstanceShipTypes[s]);
         rv_notef(s_hail, frameCounter, s, gInstanceShipTypes[s], commAnimInfo[s], v);
-        if (v >= 0)
-            (void)comms_say(v, 1, t->hail);
+        if (v >= 0 && cap_line(s, 0, line, sizeof line))
+            (void)comms_say(v, 1, line);
         return;
     }
 }
@@ -2059,15 +2117,15 @@ static void comm_hail_capital(void)
 static unsigned long __far g_mayday_said;
 static void comm_mayday(int16_t slot)
 {
-    static const char __far s_log[] = "flight: frame %u: slot %d's mayday (%Fs)";
-    const RvShipType __far *t = slot_type(slot);
-    if (!t || !t->mayday[0])
+    static const char __far s_log[] = "flight: frame %u: slot %d's mayday (%s)";
+    char line[80];
+    if (!cap_line(slot, 1, line, sizeof line))
         return;
-    rv_notef(s_log, frameCounter, slot, (const char __far *)t->mayday);
+    rv_notef(s_log, frameCounter, slot, line);
     if (comm_silent() || clock240() < g_mayday_said || g_reply_voice != -1 || comms_on(0) || comms_on(1))
         return;
     g_mayday_said = clock240() + MAYDAY_GAP_240;
-    (void)comms_say(role_voice(RV_ROLE_XO), 1, t->mayday);
+    (void)comms_say(role_voice(RV_ROLE_XO), 1, line);
 }
 
 /* once a frame: the hull stopped the player, or it came in on the afterburner (logic.c): the carrier says why, now and
