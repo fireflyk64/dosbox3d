@@ -405,6 +405,22 @@ void tie_skip_call(Bit32u eax) {
     reg_eax = eax;
 }
 
+// At a function's entry: back to the near call that made it (E8 and four bytes, before the return address), so the
+// program makes the same call again next: how a launch is held (step 13).  False, and nothing done, for another call.
+bool tie_repeat_call() {
+    const Bit32u ret = mem_readd(SegPhys(ss) + reg_esp);
+    if (ret < 5 || mem_readb(ret - 5) != 0xE8) {
+        return false;
+    }
+    CPU_Pop32();
+    reg_eip = ret - 5;
+    // (and this time slice given up, as a HLT does: the call made again once a slice, not on every instruction, so the
+    // emulator idles meanwhile instead of falling behind real time)
+    CPU_IODelayRemoved += CPU_Cycles;
+    CPU_Cycles = 0;
+    return true;
+}
+
 Bit8u tie_r8(Bit32u image) { Bit8u v = 0; if (g_found) rd8(tie_linear(image), &v); return v; }
 Bit16u tie_r16(Bit32u image) { return (Bit16u)tie_r32(image); }
 Bit32u tie_r32(Bit32u image) { Bit32u v = 0; if (g_found) rd32(tie_linear(image), &v); return v; }
@@ -478,6 +494,15 @@ void tie_face(int target) {
     wclog(1, "TIE: our craft faces obj %d, %.2f km away (heading %u, pitch %u)", target, len / 40960.0, h, p);
 }
 
+bool tie_cursor(int *x, int *y) {
+    if (!g_found) {
+        return false;
+    }
+    *x = (Bit16s)mem_readw(tie_linear(kCursorX));
+    *y = (Bit16s)mem_readw(tie_linear(kCursorY));
+    return true;
+}
+
 // Test aid: our target set (the key script's !tietarget=<obj>; the player state's +0x12).
 void tie_target(int obj) {
     if (!g_found || obj < 0 || obj >= (int)tie::kObjectCount) {
@@ -521,7 +546,9 @@ void tie_check_hooks(Bit32u eip) {
                 tie_session_before_move();
             }
         } else if (p.image == 0x82504) {
-            tie_session_mission_path();
+            if (!(tie_session_mission_wait() && tie_repeat_call())) {
+                tie_session_mission_path();
+            }
         } else if (p.image == 0x218D8) {
             tie_session_before_species();
             tie_cockpit_before_species();

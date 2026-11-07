@@ -2338,12 +2338,19 @@ bool wc_net_mouse_divert(float xrel, float yrel) {
     return wc::tie_controls_mouse(xrel, yrel);
 }
 
+bool wc_net_mouse_button(int button, bool pressed) {
+    return wc::tie_session_click(button, pressed);
+}
+
 bool wc_net_steer_marker(double *x, double *y) {
     return wc::tie_controls_marker(x, y);
 }
 
 bool wc_net_key_filter(int kbdKey, bool pressed) {
     using namespace wc;
+    if (tie_session_key(kbdKey, pressed)) {
+        return true;    // (TIE Fighter: Esc while a guest's launch waits for the host flies alone)
+    }
     if (tie_controls_key(kbdKey, pressed)) {
         return true;    // (TIE Fighter's flight: the arrows steer, Ins and Del roll, F12 the mouse's mode)
     }

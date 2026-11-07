@@ -447,6 +447,7 @@ void DrawCursor() {
 }
 
 bool wc_net_mouse_divert(float xrel, float yrel);   // (wc_net.h: TIE Fighter's pointer mode takes the motion)
+bool wc_net_mouse_button(int button, bool pressed); // (wc_net.h: a TIE Fighter guest's launch held until the host flies)
 
 void Mouse_AddMickeys(float dx,float dy) {
 	mouse.mickey_x += dx;
@@ -518,6 +519,7 @@ void Mouse_CursorSet(float x,float y) {
 }
 
 void Mouse_ButtonPressed(Bit8u button) {
+	if (wc_net_mouse_button(button, true)) return;
 	switch (button) {
 #if (MOUSE_BUTTONS >= 1)
 	case 0:
@@ -546,6 +548,7 @@ void Mouse_ButtonPressed(Bit8u button) {
 }
 
 void Mouse_ButtonReleased(Bit8u button) {
+	if (wc_net_mouse_button(button, false)) return;
 	switch (button) {
 #if (MOUSE_BUTTONS >= 1)
 	case 0:

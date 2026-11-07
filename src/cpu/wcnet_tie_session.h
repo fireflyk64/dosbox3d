@@ -34,6 +34,14 @@ void tie_session_mission_path();
 // Chamber mission, or "" for none (the Combat Chamber's own).  WCNET_TIE_MISSION at the launch; the page's
 // wc_web_tie_mission while the game runs.
 void tie_session_set_mission(const char *name);
+// Step 13 (the user: "it might be simpler if the host did it and guest had to wait"): at shipext_Get_Mission_Path's
+// entry, true while a guest's launch is to wait for the host (the call is then made again); a key while it waits (Esc:
+// fly alone), true when taken.
+bool tie_session_mission_wait();
+bool tie_session_key(int kbdKey, bool pressed);
+// A mouse button for the game (the driver's press or release): true when taken (a guest's launch while the host does
+// not fly).
+bool tie_session_click(int button, bool pressed);
 // The guns (step 6), at the entries of laser_createprojectile, collide_laserhitcraft and collide_damagecraft (the
 // arguments in eax, edx, ebx, ecx).
 void tie_session_shot();

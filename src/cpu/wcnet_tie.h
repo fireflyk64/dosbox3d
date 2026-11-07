@@ -100,6 +100,8 @@ bool tie_in_call();
 // At a function's entry (its arguments in registers): return to its caller
 // at once with eax.
 void tie_skip_call(Bit32u eax);
+// At a function's entry: back to the near call that made it, so the program makes it again (false: not a near call).
+bool tie_repeat_call();
 
 // The flight's controls (wcnet_tie_controls.cpp, step 7): the arrows steer
 // as RetroVega's, the keypad's Ins and Del roll, F12 switches the mouse
@@ -124,6 +126,10 @@ void tie_fly_group_as(int fg, int type);
 void tie_set_cursor(int x, int y);
 // Test aid: our craft turned to face an object (the key script's !tieface=<obj>).
 void tie_face(int obj);
+// The front end's pointer, in its 320x200 screen (false: no program).
+bool tie_cursor(int *x, int *y);
+// The ship's address system's call to the briefing room, played by the emulator (wcnet_tie_pa.cpp, step 13).
+void tie_pa_play();
 // Test aid: our target set (the key script's !tietarget=<obj>).
 void tie_target(int obj);
 

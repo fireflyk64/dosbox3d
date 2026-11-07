@@ -24,6 +24,7 @@
 #include <string>
 #include <vector>
 #include "wcnet_tie_session.h"
+#include "keyboard.h"
 #include "wcnet_tie.h"
 #include "wcnet_transport.h"
 #include "wcnet_lobby.h"
@@ -82,7 +83,7 @@ struct Pilot {
     std::string mission;
     Pilot() : known(false), scene(-1), flying(false) {}
 };
-enum { kMaxSeats = 8, kPresenceEveryMs = 3000, kCallToActionEveryMs = 2000 };
+enum { kMaxSeats = 8, kPresenceEveryMs = 3000, kCallToActionEveryMs = 2000, kPaEveryMs = 20000 };
 
 // Step 5 (docs/tiefighter.md): who flies each craft, and how often its owner reports it.  Distances in world units
 // (40,960 a km).
@@ -132,6 +133,11 @@ struct TieNet {
     double lastReliableAt;
     Puppet puppets[120];
     double endAt = 0;           // this machine's flight ends for the room then (0: not)
+    // a guest's launch waiting for the host (step 13): waiting, Esc said to fly alone, the room's last mission (a launch
+    // of it again, Fly Mission Again, waits too), the notice's last time
+    bool waiting = false, waitCancelled = false;
+    std::string roomMission;
+    double waitSaidAt = -1e9;
     int pairedFg = -1;          // this mission's second flight group, the guests' (step 9), or -1
     int pairedType = 0;         // ... the pairing's craft (the guests', or the T/I's T/F), 0: none
     int hostFg = -1;            // ... and the host's, the mission's player group
@@ -558,6 +564,21 @@ void call_to_action(double now) {
     const bool briefing = h.known && ((h.scene >= 133 && h.scene <= 137) || (h.scene >= 179 && h.scene <= 183));
     if (h.known && !tie_in_flight() && (h.flying || briefing)) {
         line = pilot_name(0) + (h.flying ? " is flying " : " is at the briefing for ") + mission_words(h.mission) + ": launch a Combat Chamber mission to fly it together";
+    }
+    // (every kPaEveryMs while the guest is not at a briefing: the ship's address system, RetroVega's call, with its line)
+    const int mine = tie_scene();
+    const bool atBriefing = (mine >= 133 && mine <= 137) || (mine >= 179 && mine <= 183);
+    static double paAt = -1e9;
+    if (!line.empty() && !atBriefing && now - paAt >= kPaEveryMs) {
+        paAt = now;
+        tie_pa_play();
+        line = "PA: All pilots, report to the briefing room. " + line;
+        g_net->callToAction.clear();    // (said now, with the PA's words)
+    } else if (!line.empty() && g_net->callToAction.compare(0, 4, "PA: ") == 0 && now - paAt < 6000) {
+        line = g_net->callToAction;     // (the PA's words stay up while it speaks)
+    }
+    if (line.empty()) {
+        paAt = -1e9;                    // (the next call comes at once)
     }
     static double shownAt = -1e9;
     if (line.empty()) {
@@ -1659,6 +1680,95 @@ void tie_session_damage() {
     }
 }
 
+// Step 13: a guest's launch of a room's mission (a Combat Chamber mission, or the room's last one again: Fly Mission
+// Again) waits for the host, held where the program asks for the mission's file (the call made again until it may go
+// on): into the briefing until the host is at its briefing or flying, into the flight until the host flies.  The host
+// decides the mission; the guest then flies it (tie_session_mission_path).  Not when no host is known, nor for a tour
+// battle the guest launches (its own), nor after Esc (flown alone).
+bool tie_session_mission_wait() {
+    if (!g_net || g_net->host || g_net->self < 0) {
+        return false;
+    }
+    const Pilot &h = g_net->pilots[0];
+    const std::string ours = tie_mission_name();
+    const bool room = !ours.empty() && (ours[0] == 'h' || ours[0] == 'H' || ours == g_net->roomMission);
+    if (g_net->waitCancelled || !h.known || !room) {
+        g_net->waiting = false;
+        return false;
+    }
+    // (only a flight's start waits: the Combat Chamber asks for the file as its screen opens, the briefing as it loads,
+    // and the guest may look at them; its launch buttons wait at the click, tie_session_click)
+    const int scene = tie_scene();
+    const bool intoFlight = (scene >= 2 && scene <= 4) || (scene >= 190 && scene <= 192);
+    if (h.flying || !intoFlight) {
+        if (g_net->waiting) {
+            g_net->waiting = false;
+            wclog(1, "TIE: the host is in: our launch goes on");
+        }
+        return false;
+    }
+    const double now = PIC_FullIndex();
+    if (!g_net->waiting) {
+        g_net->waiting = true;
+        g_net->waitSaidAt = -1e9;
+        wclog(1, "TIE: our launch waits for the host (our scene %d, the host's %d, flying %d)", scene, h.scene, (int)h.flying);
+    }
+    if (now - g_net->waitSaidAt >= 3000) {
+        g_net->waitSaidAt = now;
+        notice("Waiting for " + pilot_name(0) + (intoFlight ? " to fly" : " to launch") + ": you fly the host's mission (Esc: fly yours alone)");
+    }
+    return true;
+}
+
+// Step 13: a guest's click on a launch while the host is not flying is not given to the game (the user: "it might be
+// simpler if the host did it and guest had to wait or didn't have the option like retro vega until the host is in"):
+// the briefing's and the debriefing officer's bar, its launch button (map.c's map_rect: 225..257 x 172..194: Enter
+// Mission, Fly Mission Again); the briefing room's door to the mission (brief.c: 190..248 x 118..138); the debriefing
+// room's Fly Again (debrief.c: 0..70, the room's left).  Its release goes with it.
+bool tie_session_click(int button, bool pressed) {
+    static bool taken[3];
+    if (button < 0 || button > 2) {
+        return false;
+    }
+    if (!pressed) {
+        const bool was = taken[button];
+        taken[button] = false;
+        return was;
+    }
+    if (!g_net || g_net->host || g_net->self < 0) {
+        return false;
+    }
+    const Pilot &h = g_net->pilots[0];
+    int x = 0, y = 0;
+    if (!h.known || h.flying || !tie_cursor(&x, &y)) {
+        return false;
+    }
+    const int scene = tie_scene();
+    const bool bar = scene == 133 || (scene >= 181 && scene <= 183) || scene == 191 || scene == 192;
+    const bool launch = (bar && x >= 225 && x <= 257 && y >= 172 && y <= 194) || (scene == 180 && x >= 190 && x <= 248 && y >= 118 && y <= 138) ||
+                        (scene == 190 && x <= 70);
+    if (!launch) {
+        return false;
+    }
+    taken[button] = true;
+    wclog(1, "TIE: our launch click (scene %d at %d,%d) waits: the host is not flying", scene, x, y);
+    notice(pilot_name(0) + " has not launched yet: you take off together once " + pilot_name(0) + " is flying");
+    return true;
+}
+
+bool tie_session_key(int kbdKey, bool pressed) {
+    if (!g_net || !g_net->waiting || kbdKey != KBD_esc) {
+        return false;
+    }
+    if (pressed) {
+        g_net->waiting = false;
+        g_net->waitCancelled = true;
+        wclog(1, "TIE: Esc while waiting: our launch goes on alone");
+        notice("Flying alone: your own mission");
+    }
+    return true;
+}
+
 void tie_session_set_mission(const char *name) {
     std::string m;
     for (const char *c = name ? name : ""; *c; c++) {
@@ -1703,6 +1813,9 @@ void tie_session_mission_path() {
     wclog(1, "TIE: the mission's file: ours %s, flown %s (scene %d)", ours.c_str(), flies.c_str(), tie_scene());
     if (h && h->known && h->flying && !h->mission.empty() && flies != h->mission) {
         notice("You launch " + mission_words(flies) + "; " + pilot_name(0) + " flies " + mission_words(h->mission) + ": not together");
+    }
+    if (!want.empty()) {
+        g_net->roomMission = want;
     }
     if (want.empty() || want == ours) {
         return;
@@ -1833,6 +1946,8 @@ void tie_session_mission_create() {
     g_net->playerFg = kPlayerFgNone;
     g_net->clear_flight();
     g_net->endAt = 0;
+    g_net->waiting = false;
+    g_net->waitCancelled = false;       // (Esc flew this one alone; the next launch waits again)
     keep_pairing();
     if (g_net->pairedFg >= 0) {
         // (a pairing: the guests have their own flight group, made at the species' loading; the host's stays as it is)
