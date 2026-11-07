@@ -263,11 +263,62 @@ static int32_t nav_reach(int16_t n)
     return n == 0 ? HOME_REACH_KM : (int32_t)NAV_REC_REACH(NAV_REC(n));
 }
 
-/* the player within nav point n's reach (measured straight, as the autopilot puts it there) */
+/* the field a waypoint lies in, -1 none (six of them in the 40 missions: Enigma 1's nav 2, as the old game's Enyo 1's).
+ * Such a point is the field (the user, 2026-11-06: "in the very first mission, asteroids were supposed to be entirely
+ * surrounding nav 2 ... I saw no asteroids anywhere", "the nav point gets ticked off even though I'm nowhere close to
+ * it": its reach, 20,000 km, is nearly three times the field's 7,500, so the autopilot stopped, and the point was
+ * reached, far outside it): reached in the field, the autopilot taking the player in, facing its middle (nav_goal) */
+static int16_t nav_field(int16_t n)
+{
+    int16_t i;
+    if (n <= 0 || !nav_listed(n))
+        return -1;
+    for (i = 0; i < g_nfields; i++)
+        if (len_of(NAV_AT(n, 0) - g_fields[i].x, NAV_AT(n, 1) - g_fields[i].y, NAV_AT(n, 2) - g_fields[i].z)
+            < g_fields[i].radius)
+            return i;
+    return -1;
+}
+
+/* where the autopilot heads for nav point n, km: the point, or for a point in a field the field's middle */
+static void nav_goal(int16_t n, int32_t *x, int32_t *y, int32_t *z)
+{
+    int16_t f = nav_field(n);
+    *x = f >= 0 ? g_fields[f].x : NAV_AT(n, 0);
+    *y = f >= 0 ? g_fields[f].y : NAV_AT(n, 1);
+    *z = f >= 0 ? g_fields[f].z : NAV_AT(n, 2);
+}
+
+static int16_t nav_has_ships(int16_t n);
+
+/* how far short of its goal (nav_goal) the autopilot stops for nav point n, km.  The old game's (traced 2026-11-07,
+ * Enyo 1, tests/wc1/run-old.sh: the user, "I thought you had to get within 1500 or 1000 km in the original to have
+ * 'visited' something"): at a point with ships still to come, at its reach, where they come (15,000 km short of its
+ * nav 1 and its three Dralthi); at a point with nobody to come, NAV_CLOSE_KM short (its nav 2, a field and no ships,
+ * fields off: 1,171 km a moment after the jump).  For a point in a field FIELD_IN_KM short of the field's middle, at
+ * most half its radius: the rocks come 3,050 km ahead of the nose (rocks.c FX_SPAWN_KM) and only while that point is in
+ * the field, so the player stops in the field facing its middle */
+#define NAV_CLOSE_KM 1200
+#define FIELD_IN_KM 3000
+static int32_t nav_stop(int16_t n)
+{
+    int16_t f = nav_field(n);
+    if (f >= 0)
+        return g_fields[f].radius / 2 < FIELD_IN_KM ? g_fields[f].radius / 2 : FIELD_IN_KM;
+    if (n > 0 && !nav_has_ships(n) && NAV_CLOSE_KM < nav_reach(n))
+        return NAV_CLOSE_KM;
+    return nav_reach(n);
+}
+
+/* the player within nav point n's reach (measured straight, as the autopilot puts it there); a point in a field, within
+ * the field */
 static int16_t nav_in_reach(int16_t n)
 {
-    return len_of(NAV_AT(n, 0) - TO_KM(gPositionVector[0].x), NAV_AT(n, 1) - TO_KM(gPositionVector[0].y),
-                  NAV_AT(n, 2) - TO_KM(gPositionVector[0].z)) < nav_reach(n);
+    int32_t px = TO_KM(gPositionVector[0].x), py = TO_KM(gPositionVector[0].y), pz = TO_KM(gPositionVector[0].z);
+    int16_t f = nav_field(n);
+    if (f >= 0)
+        return len_of(g_fields[f].x - px, g_fields[f].y - py, g_fields[f].z - pz) < g_fields[f].radius;
+    return len_of(NAV_AT(n, 0) - px, NAV_AT(n, 1) - py, NAV_AT(n, 2) - pz) < nav_reach(n);
 }
 
 /* how far the player is from nav point n, km, roughly (the largest axis and half the rest, as player_km) */
@@ -4039,21 +4090,25 @@ static int16_t nav_has_ships(int16_t n)
 /* the way to nav point `next`, traced as the old game's autopilot does (the user: "raytrace the path along the line to
  * see if enemy spawn regions or asteroid fields are in the way"): how far the player can be taken, km; *region the
  * trigger point or waypoint not yet reached that it stops at (-1 none), *field 1 when a field stops it.  Neither: all
- * the way, to the nav point's reach */
+ * the way, to the nav point's reach (nav_stop: for a point in a field, into the field) */
 static int32_t way_stop(int16_t next, int16_t *region, int16_t *field)
 {
     int32_t px = TO_KM(gPositionVector[0].x), py = TO_KM(gPositionVector[0].y), pz = TO_KM(gPositionVector[0].z), d[3], len, best, e;
-    int16_t i;
-    d[0] = (NAV_AT(next, 0) - px) >> 4;
-    d[1] = (NAV_AT(next, 1) - py) >> 4;
-    d[2] = (NAV_AT(next, 2) - pz) >> 4;
+    int32_t gx, gy, gz;
+    int16_t i, own = nav_field(next);
+    nav_goal(next, &gx, &gy, &gz);
+    d[0] = (gx - px) >> 4;
+    d[1] = (gy - py) >> 4;
+    d[2] = (gz - pz) >> 4;
     len = (int32_t)lf_sqrt((uint32_t)(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]));
     if (!len)
         len = 1;
-    best = len * 16 - nav_reach(next);
+    best = len * 16 - nav_stop(next);
     *region = -1;
     *field = 0;
     for (i = 0; i < g_nfields; i++) {
+        if (i == own)                   /* (the point's own field: it goes in, nav_stop) */
+            continue;
         e = line_enters(d, len, (g_fields[i].x - px) >> 4, (g_fields[i].y - py) >> 4, (g_fields[i].z - pz) >> 4,
                         ((int32_t)g_fields[i].radius + AUTOPILOT_FIELD_KM) >> 4);
         if (e >= 0 && e * 16 < best) {
@@ -4200,12 +4255,9 @@ static int16_t home_slot(void)
 
 static void face_nav(int16_t next, int16_t *yaw, int16_t *pitch)
 {
-    RvVec3 d = vec3(NAV_AT(next, 0) - TO_KM(gPositionVector[0].x), NAV_AT(next, 1) - TO_KM(gPositionVector[0].y),
-                    NAV_AT(next, 2) - TO_KM(gPositionVector[0].z));
-    int32_t horiz = (int32_t)lf_sqrt((uint32_t)((d.x >> 4) * (d.x >> 4) + (d.z >> 4) * (d.z >> 4))) << 4;
-    *yaw = lf_atan2(d.x, d.z);
-    *pitch = lf_atan2(d.y, horiz);
-    ship_face(0, *yaw, *pitch);
+    int32_t x, y, z;
+    nav_goal(next, &x, &y, &z);         /* (a point in a field: the field's middle) */
+    face_km(x, y, z, yaw, pitch);
 }
 
 void logic_form_up(int16_t steps)
@@ -4283,10 +4335,13 @@ int16_t logic_autopilot(void)
         to = vec3(gPositionVector[home].x - FIX_MUL(gOrientationFrontVector[0].x, back) * KM,
                   gPositionVector[home].y - FIX_MUL(gOrientationFrontVector[0].y, back) * KM,
                   gPositionVector[home].z - FIX_MUL(gOrientationFrontVector[0].z, back) * KM);
-    } else
-        to = vec3((NAV_AT(next, 0) - FIX_MUL(gOrientationFrontVector[0].x, nav_reach(next))) * KM,
-                  (NAV_AT(next, 1) - FIX_MUL(gOrientationFrontVector[0].y, nav_reach(next))) * KM,
-                  (NAV_AT(next, 2) - FIX_MUL(gOrientationFrontVector[0].z, nav_reach(next))) * KM);
+    } else {
+        int32_t gx, gy, gz;
+        nav_goal(next, &gx, &gy, &gz);
+        to = vec3((gx - FIX_MUL(gOrientationFrontVector[0].x, nav_stop(next))) * KM,
+                  (gy - FIX_MUL(gOrientationFrontVector[0].y, nav_stop(next))) * KM,
+                  (gz - FIX_MUL(gOrientationFrontVector[0].z, nav_stop(next))) * KM);
+    }
     /* the wing: moved as the player is, facing the same way (player_km while the player is still where it was); an
      * escort target of the player's side put behind it */
     for (s = 1; s < NUM_SHIP_SLOTS; s++) {   /* (a human wingman, on another machine, always comes: the wing is the wing) */
@@ -4356,8 +4411,10 @@ int16_t logic_autopilot(void)
  * present and are very near the carrier and it can say press fire to land. If all landing conditions are met and all
  * nav points have been reached"): every waypoint flown, the carrier's own rule met (logic_landing_allowed), no enemy
  * within AUTOPILOT_CLEAR_KM of a human, and the home carrier's hull within AUTOLAND_KM: the home slot, -1 not now.
- * The autopilot home stops HOME_ARRIVE_KM off the hull, inside it */
-#define AUTOLAND_KM 6000
+ * AUTOLAND_KM is a cleared landing's own distance (the user, 2026-11-06: "the whole click fire to land happened when I
+ * was very far away from the carrier--it should only happen when I'm nearly colliding it--definitely within its sphere
+ * of influence": it was 6,000 km); the autopilot home stops HOME_ARRIVE_KM, 4,000, off the hull: a short run in */
+#define AUTOLAND_KM LANDING_NEAR_KM
 int16_t logic_autoland_ready(void)
 {
     int16_t s, home;

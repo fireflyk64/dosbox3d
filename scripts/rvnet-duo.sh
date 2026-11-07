@@ -21,6 +21,10 @@
 #                         own
 #             field       (HOST_MISSION=1 GUEST_MISSION=1: ENIGMA2) nav 2 picked first, the host's autopilot stops at
 #                         the asteroid field on that way, and both fly into it: each RVLOG's rocks
+#             fieldnav    (HOST_MISSION=0 GUEST_MISSION=0: ENIGMA1, nav 2 inside its field) the host's autopilot to nav 1,
+#                         its enemies killed, the autopilot to nav 2 and nobody flies on: the autopilot leaves them in
+#                         the field (logic.c nav_stop), whose rocks come at once (the user, 2026-11-06: "asteroids were
+#                         supposed to be entirely surrounding nav 2 ... I saw no asteroids anywhere")
 #   PLAYERS   2 (default) or 3: a third pilot, seated by the host
 #   ROOM      1: the instances meet in a room of a local lobby server (LOBBY_PORT, default 13961), as the pages do,
 #             not over TCP: there the host's first mission never waits for the guest, and after a mission flown
@@ -96,6 +100,9 @@ field)                                  # (HOST_MISSION=1 GUEST_MISSION=1: ENIGM
 field1)                                 # (HOST_MISSION=0 GUEST_MISSION=0: ENIGMA1, whose field covers nav 2)
     HOST="$HOST,14:a,19:!killfoes,26:a,31:f,84:!ds=field"   # (after every pilot's 8 s look: their clocks start apart)
     GUEST="$GUEST,31:f,84:!ds=field" ;;
+fieldnav)                               # (HOST_MISSION=0 GUEST_MISSION=0: no throttle after the autopilot)
+    HOST="$HOST,14:a,19:!killfoes,26:a,36:!shot=field,40:!ds=field"
+    GUEST="$GUEST,36:!shot=field,40:!ds=field" ;;
 *) echo "rvnet-duo: no scenario $SCENARIO" >&2; exit 2 ;;
 esac
 

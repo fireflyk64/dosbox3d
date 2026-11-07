@@ -4251,18 +4251,46 @@ static void t_full_map(void)
     REQUIRE(slot_is_ship(home), e_back, pt_km(0, home), maybeEntityType[home], 0);
 }
 
+#define PT_CLOSE_KM 1200                /* (logic.c NAV_CLOSE_KM: the autopilot to a point with nobody to come stops this far
+                                           short of it, the old game's) */
+
+/* a test mission's nav point with ships of its own (logic.c nav_has_ships, before any are killed) */
+static int16_t pt_nav_ships(uint8_t id)
+{
+    int16_t i;
+    for (i = 0; i < (int16_t)g_tm.nship; i++)
+        if (g_tm.ship[i].nav == id)
+            return 1;
+    return 0;
+}
+
+/* the field of the test mission a nav point lies in, -1 none (logic.c nav_field) */
+static int16_t pt_nav_field(const RvNav __far *n)
+{
+    int16_t f;
+    for (f = 0; f < (int16_t)g_tm.nfield; f++)
+        if (pt_len(n->x - g_tm.field[f].x, n->y - g_tm.field[f].y, n->z - g_tm.field[f].z) < g_tm.field[f].radius)
+            return f;
+    return -1;
+}
+
 /* M8.40: the whole campaign on the old game's map: each of the missions launched, its enemies killed and the autopilot
  * pressed (the player put at the next waypoint when it may not go: a field at hand) until every waypoint is reached,
- * the world sound throughout; with the autopilot gone to a waypoint, the player is at its reach.  (What a mission's
- * numbers, past 32,767 km, would break on DOS's 16-bit int, the hashes show) */
+ * the world sound throughout; with the autopilot gone to a waypoint, the player is at its reach, or for a waypoint in a
+ * field inside the field (M8.55).  (What a mission's numbers, past 32,767 km, would break on DOS's 16-bit int, the
+ * hashes show) */
 static void t_campaign_way(void)
 {
     static const char __far e_way[] = "mission %d: waypoint %d not reached after %d legs";
     static const char __far e_stop[] = "mission %d: the autopilot to a waypoint left the player %d km from it: its reach "
         "is %d";
+    static const char __far e_close[] = "mission %d: the autopilot to a waypoint with nobody to come left the player %d km "
+        "from it: 1,200, the old game's";
+    static const char __far e_infield[] = "mission %d: the autopilot to a waypoint in a field left the player %d km from "
+        "the field's middle: its radius is %d";
     static const char __far e_went[] = "the autopilot went %d times (the player put at the next waypoint %d) in %d missions: "
         "it should take most legs";
-    int16_t i, k, leg, s, next, went = 0, put = 0;
+    int16_t i, k, leg, s, next, went = 0, put = 0, ships;
     uint16_t m;
     for (m = 0; m < g_nmissions; m++) {
         camp_mission(m, &g_tm);
@@ -4281,9 +4309,16 @@ static void t_campaign_way(void)
                 break;
             for (i = 0; i < 8 && g_sys.nav != g_tm.nav[next].id; i++)
                 logic_nav_next();
+            ships = pt_nav_ships(g_tm.nav[next].id);   /* (before the jump: they come as it is reached) */
             if (logic_autopilot()) {
                 int32_t d = pt_km_to(0, g_tm.nav[next].x, g_tm.nav[next].y, g_tm.nav[next].z);
-                if (logic_nav_seen(g_tm.nav[next].id))   /* (gone all the way: no field nor point stopped it) */
+                int16_t f = pt_nav_field(&g_tm.nav[next]);
+                if (logic_nav_seen(g_tm.nav[next].id) && f >= 0) {   /* (into the waypoint's own field) */
+                    d = pt_km_to(0, g_tm.field[f].x, g_tm.field[f].y, g_tm.field[f].z);
+                    REQUIRE(d < g_tm.field[f].radius, e_infield, m, d, g_tm.field[f].radius);
+                } else if (logic_nav_seen(g_tm.nav[next].id) && !ships)   /* (nobody to come: close) */
+                    REQUIRE(d > PT_CLOSE_KM - 200 && d < PT_CLOSE_KM + 300, e_close, m, d, 0);
+                else if (logic_nav_seen(g_tm.nav[next].id))   /* (gone all the way: no field nor point stopped it) */
                     REQUIRE(d > (int32_t)g_tm.nav[next].reach * 9 / 10 && d < (int32_t)g_tm.nav[next].reach * 6 / 5,
                             e_stop, m, d, g_tm.nav[next].reach);
                 went++;
@@ -5093,14 +5128,18 @@ static void t_stay_home(void)
  * and are very near the carrier and it can say press fire to land. If all landing conditions are met and all nav
  * points have been reached"): not at the launch, not with a waypoint unflown, nor far from the carrier; with both
  * flown, their enemies dead, 3,000 km off the carrier, it is ready, and the trigger lands */
+#define PT_LAND_KM 2000                 /* (logic.c LANDING_NEAR_KM: a cleared landing's distance, the trigger's too) */
 static void t_autoland(void)
 {
     static const char __far e_launch[] = "at the launch the landing by the trigger was ready (%d): no waypoint flown yet";
     static const char __far e_half[] = "with nav 2 unflown it was ready (%d)";
     static const char __far e_far[] = "every waypoint flown, %d km from the carrier, it was ready (%d): too far";
+    static const char __far e_near[] = "the carrier's hull %d km off, outside a cleared landing's 2,000: ready (%d) (the "
+        "user: \"it should only happen when I'm nearly colliding it\")";
     static const char __far e_ready[] = "every waypoint flown, nobody about, %d km off the carrier: not ready (%d)";
     static const char __far e_land[] = "the trigger: logic_autoland %d, status %d, landed on %d: 1, 1, the carrier";
     int16_t home = pt_home_patrol(), r;
+    int32_t cx, cz, d, g = 0;
     if (home <= 0 || !pt_steps(SEC))
         return;
     REQUIRE(logic_autoland_ready() < 0, e_launch, logic_autoland_ready(), 0, 0);
@@ -5110,9 +5149,19 @@ static void t_autoland(void)
     if (!pt_go(NAV2_X, NAV2_Z) || !pt_kill_side(SIDE_AERA) || !pt_go(0, 30000))
         return;
     REQUIRE(logic_autoland_ready() < 0, e_far, logic_target_km(home), logic_autoland_ready(), 0);
-    if (!pt_go(0, 3000))
-        return;
-    REQUIRE(logic_autoland_ready() == home, e_ready, logic_target_km(home), logic_autoland_ready(), 0);
+    /* (in from in front of the carrier, 500 km at a time: not before its hull is within a cleared landing's distance) */
+    cx = TO_KM(gPositionVector[home].x);
+    cz = TO_KM(gPositionVector[home].z);
+    for (d = 9000; d > 0; d -= 500) {
+        if (!pt_go(cx, cz + d))
+            return;
+        g = logic_target_km(home);
+        if (g > PT_LAND_KM + 100)
+            REQUIRE(logic_autoland_ready() < 0, e_near, g, logic_autoland_ready(), 0);
+        else if (g < PT_LAND_KM - 100)
+            break;
+    }
+    REQUIRE(d > 0 && logic_autoland_ready() == home, e_ready, g, logic_autoland_ready(), 0);
     r = logic_autoland();
     REQUIRE(r == 1 && missionStatus == 1 && landedOn == (uint16_t)home, e_land, r, missionStatus, (int16_t)landedOn);
 }
@@ -5636,11 +5685,53 @@ static void pt_field(int16_t x, int16_t y, int16_t z, int16_t r)
     f->radius = r;
 }
 
+/* M8.55: a waypoint inside a field is the field (the user, 2026-11-06: "in the very first mission, asteroids were
+ * supposed to be entirely surrounding nav 2", "the nav point gets ticked off even though I'm nowhere close to it"):
+ * Enigma 1's nav 2, reach 20,000, in a field 7,500 across 5,830 from its middle.  The autopilot takes the player into the
+ * field, 3,000 km short of its middle and facing it (the rocks come 3,050 ahead of the nose, while that point is in the
+ * field); the point is not reached within its reach outside the field, and is inside it */
+static void t_field_nav(void)
+{
+    static const char __far e_in[] = "the autopilot to a nav point in a field left the player %d km from the field's "
+        "middle (returned %d): 3,000 short of it, facing it";
+    static const char __far e_seen[] = "brought into the field, nav 1 is not reached (%d)";
+    static const char __far e_out[] = "%d km from the point, within its 20,000 reach but outside its field, nav 1 was "
+        "reached: only in the field";
+    static const char __far e_field[] = "%d km from the field's middle, inside it, nav 1 is not reached (%d)";
+    int16_t r;
+    int32_t z;
+    pt_mission();
+    pt_nav(1, 0, 0, 30000);
+    g_tm.nav[0].reach = 20000;
+    pt_field(0, 0, 28000, 7500);
+    pt_launch(PT_PLAYER);
+    r = logic_autopilot();
+    z = TO_KM(gPositionVector[0].z);
+    REQUIRE(r == 1 && labs(z - 25000) < 150 && gOrientationFrontVector[0].z > 250, e_in, (int)labs(z - 28000), r, 0);
+    if (!pt_step())
+        return;
+    REQUIRE(logic_nav_seen(1), e_seen, logic_nav_seen(1), 0, 0);
+    pt_mission();
+    pt_nav(1, 0, 0, 30000);
+    g_tm.nav[0].reach = 20000;
+    pt_field(0, 0, 28000, 7500);
+    pt_launch(PT_PLAYER);
+    pt_put(0, 0, 0, 12000, 0);
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(!logic_nav_seen(1), e_out, 18000, 0, 0);
+    pt_put(0, 0, 0, 22000, 0);
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(logic_nav_seen(1), e_field, (int)labs(TO_KM(gPositionVector[0].z) - 28000), logic_nav_seen(1), 0);
+}
+
 static void t_way_ahead(void)
 {
     static const char __far e_field[] = "a field at 10,000 km, 1,000 across: the autopilot stopped at %d km (returned %d): wanted some 8,500";
     static const char __far e_edge[] = "at the field's edge the autopilot went on to %d km: it should refuse";
-    static const char __far e_past[] = "past the field the autopilot left the player at %d km: wanted some 15,000, at the nav point's reach";
+    static const char __far e_past[] = "past the field the autopilot left the player at %d km: wanted some 18,800, 1,200 "
+        "short of a nav point with nobody to come (the old game's)";
     static const char __far e_hid[] = "a hidden point at 10,000 km: the autopilot stopped at %d km: wanted some 5,500 "
         "(500 inside its reach of 5,000)";
     static const char __far e_came[] = "the hidden point's ships did not come (%d enemies in the world)";
@@ -5657,7 +5748,7 @@ static void t_way_ahead(void)
     REQUIRE(logic_autopilot() == 0, e_edge, (int)TO_KM(gPositionVector[0].z), 0, 0);
     pt_put(0, 0, 0, 12000, 0);
     r = logic_autopilot();
-    REQUIRE(r == 1 && labs(TO_KM(gPositionVector[0].z) - (NAV1_Z - PT_REACH_KM)) < 150, e_past,
+    REQUIRE(r == 1 && labs(TO_KM(gPositionVector[0].z) - (NAV1_Z - PT_CLOSE_KM)) < 150, e_past,
             (int)TO_KM(gPositionVector[0].z), 0, 0);
     pt_mission();
     pt_nav(1, 0, 0, NAV1_Z);
@@ -7089,6 +7180,7 @@ static const char __far n_m8_48[] = "M8.48 stay-home (logic_autopilot, form_come
 static const char __far n_m8_49[] = "M8.49 fighter-hull (do_damage, fighter_roulette): an unnamed fighter's hull is the old game's roulette: a few laser hits from behind kill a Nicander, head on it takes over twice as many, past seven hull counts";
 static const char __far n_m8_50[] = "M8.50 prey (prey_of): a Nicander ordered at the Ox (prey=OX) goes for it with the player nearer, and turns on the player once hurt under 55% health";
 static const char __far n_m8_51[] = "M8.51 capital-bearings (gun_mount, ship_think): an Agasicles' flak reaches a still player behind it, abeam and ahead alike";
+static const char __far n_m8_55[] = "M8.55 field-nav (nav_field, nav_stop): a waypoint inside a field is the field: the autopilot takes the player in, and the point is reached only inside it";
 static const char __far n_m8_54[] = "M8.54 capital-help (capital_help): an Aera capital ship hurt through its armour by an unengaged attacker turns half its side's fighters on it; none when a fighter is already near the attacker";
 static const char __far n_m8_52[] = "M8.52 mayday (hull_take, logic_on_mayday): an Ox calls mayday on 35 in 1,000 of the hits through its armour, as the old game's capital ships did; an Agasicles never";
 static const char __far n_m8_53[] = "M8.53 autoland (logic_autoland_ready, logic_autoland): the trigger lands with every waypoint flown, nobody about and the carrier close; not before";
@@ -7175,7 +7267,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 },
 };
 
 /* --- the run --- */
