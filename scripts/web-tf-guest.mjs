@@ -55,6 +55,15 @@ console.log(`${stamp()} in the room: ` + await page.$eval("#status", (el) => el.
 // the flight's controls on the page (src/cpu/wcnet_tie_controls.cpp): the Flight choice shown with TIE Fighter loaded
 console.log(`${stamp()} flight controls: ` + await page.$eval("#tfFlightLabel", (el) => `shown ${!el.hidden}, ${document.getElementById("tfFlight").value}`)
   .catch((e) => "no Flight choice: " + e.message));
+// the room's mission menu (step 8): the Combat Chamber's craft and the battles, in the game's own words
+console.log(`${stamp()} mission menu: ` + await page.evaluate(() => {
+  const sel = document.getElementById("mission");
+  const groups = Array.from(sel.querySelectorAll("optgroup"));
+  const opts = Array.from(sel.options);
+  return `shown ${!document.getElementById("missionRow").hidden}, ${opts.length} entries in ${groups.length} groups, picked "${sel.value}"; ` +
+    `first "${opts[0] && opts[0].textContent}"; ${groups.slice(0, 1).concat(groups.slice(7, 8), groups.slice(-1)).map((g) => `[${g.label}] ` +
+    `"${g.querySelector("option") && g.querySelector("option").textContent}"`).join("; ")}; hint "${document.getElementById("missionHint").textContent.slice(0, 120)}"`;
+}).catch((e) => "no menu: " + e.message));
 await page.click("#fly");
 const seconds = Number(secondsArg);
 await new Promise((r) => setTimeout(r, 5000));
