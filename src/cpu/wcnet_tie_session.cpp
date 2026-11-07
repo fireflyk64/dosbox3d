@@ -838,26 +838,40 @@ void take_hit(const TieHit &hit) {
 }
 
 // A copy whose owner reports it dying is killed here by the game's own damage (a collision's, called until its death
-// is under way), so its explosion and the mission's count of it are this game's too.
+// is under way), so its explosion and the mission's count of it are this game's too.  The game lets a craft die only
+// with its flight flag (CraftData +0x60) clear: a copy whose AI was held here can still have its hyperspace arrival's
+// (6, cleared by its own AI when the arrival ends), so a flag other than a death's (3, 4) is cleared first.
+bool kill_before(int tag) {
+    const Bit32u craft = tie_r32(obj_base(tag) + 0x54);
+    if (craft >= 0x100000) {
+        const Bit8u flag = mem_readb(craft + 0x60);
+        if (flag != 0 && flag != 3 && flag != 4) {
+            mem_writeb(craft + 0x60, 0);
+        }
+    }
+    return true;
+}
 void kill_done(int tag, Bit32u eax) {
     (void)eax;
     const int obj = tag;
     if (!is_craft(obj) || tie_r16(obj_base(obj) + 0x2C) != 0 || g_net->killing[obj] >= kKillCalls) {
         if (g_net->killing[obj] > 0) {
             g_net->kills++;
+            wclog(2, "TIE: obj %d (type %u) killed here after %d calls: %s", obj, tie_r8(obj_base(obj) + 4), g_net->killing[obj],
+                  !is_craft(obj) ? "gone" : tie_r16(obj_base(obj) + 0x2C) != 0 ? "dying" : "NOT dying");
         }
         g_net->killing[obj] = 0;
         return;
     }
     g_net->killing[obj]++;
-    tie_queue_call(kFnDamage, (Bit32u)obj, 0xFFFF, 0xFFFF, 0, NULL, kill_done, obj);
+    tie_queue_call(kFnDamage, (Bit32u)obj, 0xFFFF, 0xFFFF, 0, kill_before, kill_done, obj);
 }
 void begin_kill(int obj) {
     if (mine(obj) || g_net->killing[obj] != 0 || !is_craft(obj) || tie_r16(obj_base(obj) + 0x2C) != 0) {
         return;
     }
     g_net->killing[obj] = 1;
-    tie_queue_call(kFnDamage, (Bit32u)obj, 0xFFFF, 0xFFFF, 0, NULL, kill_done, obj);
+    tie_queue_call(kFnDamage, (Bit32u)obj, 0xFFFF, 0xFFFF, 0, kill_before, kill_done, obj);
 }
 
 void send_owners() {
