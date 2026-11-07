@@ -144,6 +144,55 @@ player's object #0 of type 5 (T/F) at (0, 0, 0), pitch 0x4000, speed 0;
 `create_createmission` once, `create_createcraft` ten times, the input and
 move functions once a frame.
 
+### How the game computes, and what it shares with the Wing Commander hooks
+
+* **The program.**  Z_TIE__.EXE is a 32-bit protected-mode program under
+  DOS/4GW (Watcom C: arguments in eax, edx, ebx, ecx), one flat address
+  space, paging off.  Wing Commander I and II are 16-bit real-mode programs
+  with overlays, their data found by segment.
+* **Its arithmetic is integer and fixed point throughout** (OpenTIE's
+  math2.c: "Fixed-point arithmetic utilities"; no float or double in the
+  flight's core, math2, trig2, dynamix, move, collide, paiman, transfm2;
+  OpenTIE's few floats are its own port's renderer).  Positions are 32-bit
+  integers, 40,960 to a km; angles 16-bit, 65,536 to a turn (heading in the
+  x-y plane from +y towards +x, pitch from +z with 0x4000 level); direction
+  vectors (the move vector, the forward/side/up axes) Q15 in 16 bits; speeds
+  16-bit (a T/F's top 225, 3,600 in hyperspace); damage 16-bit (a bolt's
+  collision radius); time in ticks, 236 to a second, a frame's share in
+  `frameticks` (4 at 59 frames a second); trigonometry by tables
+  (`trig2_ctop`, cartesian to polar); a 16-bit shift-register random
+  (`math2_getrandom`, 0x2357 at start, the backdrop's seed the mission's).
+  The same mission is exactly the same on two machines only with the same
+  inputs at the same frame times, and the frame rate varies (each frame
+  moves things by its `frameticks`): so the sync is by owners and reports
+  (section 5), not a lockstep of frames.
+* **What it shares with the Wing Commander layer**: the transports (TCP for
+  the rigs, the lobby's rooms over WebRTC, the host relaying, `WCNET_LAG` and
+  the rest of the simulated link), the protobuf envelope (wc.proto's
+  NetworkMessage, with TIE Fighter's own TieHello, TieFrame, TieCraft,
+  TieShot, TieHit, TiePresence and TieOwners), the per-instruction hook
+  dispatcher (`wc_net_watch` by 16-bit CS:IP for Wing Commander,
+  `wc_net_watch32` by the low word of a 32-bit EIP for TIE Fighter), the key
+  script and screenshots of the rigs (with TIE Fighter's own items), the
+  line the emulator draws over the picture (its notices), the keyboard and
+  mouse filters (its flight controls plug into them), the logging, the
+  browser page (rooms, the public lobby, chat, voice, controllers, the
+  mission menu's generic hooks) and the release gate.
+* **What is its own** (src/cpu/wcnet_tie*.cpp): the program found in memory
+  after DOS4GW.EXE loads it (by its bytes, not its file); its address map
+  (OpenTIE's, each checked in the program); its session (TieNet; the Wing
+  Commander session, `g_session`, stays NULL); its sync (each craft flown by
+  one owner, reported every frame near, every 10th within 10 km, in turn far
+  off; puppets written before the move; far ones flown by each machine's own
+  AI); the calls into the program (a trampoline of CPU state only, nothing
+  written into its code); its flight controls (mickeys added at the mouse
+  driver); the shuttle's cockpit made from the gunboat's files.  None of the
+  Wing Commander session's machinery fits it: that session paces the game to
+  a fixed frame rate and has the wingmen's games take the host's frames, in
+  16-bit games of a few ships within a sphere; TIE Fighter has its own clock,
+  a varying frame rate, 32-bit code and dozens of craft spread over tens of
+  kilometres.
+
 ## 4. Driving the game headless (the rigs)
 
 `tests/run.sh`-style runs with the key script, from boot
@@ -335,6 +384,15 @@ section 7 as it is worked on.
    when TF is selected or joined. It would also be nice to have a cinema
    mode"; section 7, step 11): no Conn or Collide for TIE Fighter, the
    picture 640 x 480, a Cinema checkbox.
+
+12. **Done: a room's mission ending** (the user, 2026-11-06: "test what
+   happens with campaign missions... we don't want capture or recover
+   scenarios... it should go back to the mission as if you failed it if
+   either of you dies or if you fail it"; "it just delivers you to the
+   debrief room with mission failed and you can quickly try again with your
+   friends"; section 7, step 12): a pilot down or the host's flight over
+   ends everybody's flight, mission failed, Fly Mission Again at the
+   debriefing.
 
 ## 7. Notes, step by step
 
@@ -863,3 +921,29 @@ the Jedi (seen from outside) as the reference.
 * Measured in Chrome at 1280 x 720 (scripts/web-tf-guest.mjs): the canvas 640
   x 480 on the page, Conn and Collide hidden, Full screen on the mission's
   line; cinema 885 x 664, centred.
+
+### Step 12: a room's mission ending (2026-11-06)
+
+* **What the game does.**  A room's missions are all launched from the
+  Combat Chamber (step 8 swaps a battle's file in there), mission mode 1: the
+  pilot record keeps only the chamber's best score for the craft and mission
+  picked (`fediskio_updatepilotrecord`); killed, captured and rescued (the
+  player's status, RUNTIME_MissionState 0xEB29C +0x248: 0, 1, 2) are recorded
+  only for the tour's battles (mode 4).  Within a flight a death sets status
+  0, an ejection 1 or 2 by whether friends are near (`user_isrescued`), and
+  each machine's game went on alone: the other pilots flew on.
+* **The room's rule now.**  A pilot's own craft dying (killed or ejected) or
+  the host's flight over ends every pilot's flight 3 s later the way the
+  game's own quit does: the end flag (+0x249) the flight's loop runs until,
+  the status 3 (the mission ended).  Our own death's status becomes 3 at
+  once, so nobody is killed, captured or rescued in a room's flight.  The
+  debriefing then says the primary mission was a failure (unless its goals
+  were met: the host's successful exit ends the guests' flights the same way
+  and they are debriefed on the goals) and offers Fly Mission Again; leaving
+  goes back to the Combat Chamber.  Only with another pilot flying.
+* **Measured** (the Combat Chamber's first mission, the guest at full
+  throttle into the container ring): the guest's status 2 (rescued) made 3,
+  the host's flight ended 3 s later with a notice; both at the debriefing
+  officer, "The primary mission was a failure", Fly Mission Again (the
+  guest's Fly Mission Again put it back in the mission at once).  The guest's
+  first answer had a third page, not read.
