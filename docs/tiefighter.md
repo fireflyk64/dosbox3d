@@ -254,15 +254,20 @@ section 7 as it is worked on.
    step 4): a guest launching from the Combat Chamber flies the host's
    mission whatever it picked.  Battles (the tour's) are still each pilot's
    own: a guest is told when the two fly apart.
-5. **Next: ownership by distance, and the variable rates** (section 5): the AI
-   craft owned by the machine whose pilot is nearest within the lasers'
-   reach, the host's otherwise; near craft every frame, far ones a few a
-   frame (every 10 to 20 s each), all within the best-effort channel's
-   16,000 bytes a message.
-6. **Lasers and damage**: the shooter's machine decides its hits
+5. **Done, first version: ownership and the variable rates** (section 7,
+   step 5): the host flies most craft; a guest flies those within the
+   lasers' reach and in its view, or its target, unless the host has it
+   targeted (the user's rule); near craft every frame, within 10 km every
+   10th, far ones in turn every 10 to 20 s.
+6. **Next: lasers and damage**: the shooter's machine decides its hits
    (`collide_laserhitcraft` there), the craft's owner applies them
    (`collide_damagecraft`); a puppet takes no damage of this machine's own
    (collisions included); deaths and spawns from the owner and the host.
+6a. **Seen from both cockpits, once the guns are in step** (the user,
+   2026-11-06): a gunboat mission, the two players flying side by side, one
+   a little ahead so that it is just on the other's screen; one fires
+   lasers, the other ions.  Screenshots: the ions on the laser player's
+   screen, and both players' fire on the ion player's.
 7. **The controls the user asked for** (2026-11-06): the arrow keys steering
    as RetroVega's do, a pointer-steer mode like RetroVega's mouse beside the
    game's own drag-to-steer (the 90s way, for those who want it), and a
@@ -443,3 +448,57 @@ move vector, the nine axis words, type).
   the craft on, 3 (22,160)-(44,174) the mission back, 4 (124,160)-(146,174)
   the mission on, 5 (254,142)-(280,158) "Enter Briefing", 6 (10,176)-(38,200)
   out.
+
+### Step 5: ownership and the variable rates (2026-11-06)
+
+* **Who flies a craft.**  The host keeps an owner for each craft slot (0 to
+  31: craft, not debris) and sends the table (`TieOwners`) on a change and
+  every 2 s; a pilot's own craft is its own.  The rule is the user's: "host
+  should own most craft except the ones both within range and on the guests
+  viewport or specifically targeted by guest and not targeted by the host".
+  A guest gets a craft within the lasers' reach of it (2.5 km, 102,400
+  units) and within 45 degrees of its nose (the move vector, +0x3A: a TIE
+  craft does not slide), or one it has targeted within 4 km; a craft the
+  host has targeted (pstate +0x12) stays the host's (read as applying to
+  both cases, in the spirit of the brief's "unless the host has them").  A
+  craft leaves a guest only clearly (1.25 times the reach, 60 degrees off
+  the nose, the target dropped) and changes owner at most once a second; of
+  two guests, the one that targets it first, then the nearer.  An earlier
+  rule (the nearest pilot within reach) was replaced the same day.
+* **Rates.**  Each machine sends its own craft every frame, and the craft
+  it flies for the others by their distance from the nearest other pilot:
+  within 2.5 km every frame, within 10 km every 10th frame, the rest one at
+  a time every 30 frames in turn (so each far craft every 10 to 20 s; a
+  frame with a far craft goes reliably, its next report being far off).
+  Frames name the sender's craft and target (`own`, `target`).
+* **Puppets.**  This machine's AI is held off every craft another flies;
+  a craft it takes over has its AI released (the countdown set to 0: it
+  plans at once).  A report is written only from the craft's owner by this
+  machine's table, and only into a slot holding the same ship.  The puppet
+  table holds protobuf messages and had been cleared with `memset`: cleared
+  field by field now.
+* **Measured** (the Combat Chamber's T/F mission 2, HF2W: a battle under way
+  from the start, 13 craft; the host at full throttle ahead, the guest
+  turning away; `scripts/tfnet-join.py ... all`):
+
+  | the copies | near (2.5 km) | mid (10 km) |
+  |---|---|---|
+  | the guest's of the host's 12 craft | 711 samples, 28 units median (the worst a flight's first frame), attitude within 78 | 1,295 samples, exact (slow or still ships), reports 89 ms old |
+  | the host's of the guest's 5 craft | 393 samples, 31 units median, worst 318, attitude within 277 | none |
+
+  The guest took the 5 craft ahead of it at the start and gave them back
+  one by one as it turned away.  The whole battle sits within 10 km, most
+  of it within 2.5 km: about 23 KB a second from the host when 4 craft are
+  near the guest, about 50 KB a second when 24 are (sending every craft
+  every frame).
+* **Frame rates.**  Unchanged by the session: HF2W ran at 53 to 58 frames a
+  second on both machines, 53 to 60 alone.  HF3M runs at about 33 alone at
+  60,000 cycles (the game's own cost, measured with and without a session
+  and with and without the added craft): it looked like a slowdown until
+  the solo baseline was taken in the same mission.  The 32-bit hook table
+  goes by an EIP's low word, so each place's word matches some ten other
+  addresses: 2,600 to 3,600 such calls a second, nothing to slow anything.
+* **Open.**  Lasers are each machine's own and damage is not shared (step
+  6): a craft killed on one machine flies on, as a puppet, on the other.
+  Mid and far rates were barely exercised (one battle within 10 km); a
+  mission over a larger space is the test for them.
