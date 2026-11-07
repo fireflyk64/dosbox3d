@@ -339,7 +339,10 @@ section 7 as it is worked on.
    steer), and the alternative mouse (point to aim: the middle is still,
    the turn grows with the pointer's distance from it, as in WC1 and
    RetroVega).
-8. **The page**: the room tag TF, `multiplayer: true`, a mission picker.
+8. **Done: the page**: the room tag TF, `multiplayer: true`, a mission picker
+   (the room's menu: every Combat Chamber mission and every battle's,
+   `web/gamefiles.js`'s `TF_CAMPAIGN`); its help says what flying together is
+   (brought up to date in step 15).
 9. **Done: missions flown alone, flown by two** (the user, 2026-11-06; section 7, step 9).  In 37 of
    the 105 mission files the player's flight group is a single craft (read
    from `MISSION/*.TIE`: the group with a player-craft number, +0x42, and a
@@ -412,8 +415,7 @@ section 7 as it is worked on.
    speak for the Empire's side swapped for the game's own lines that fit the
    mirrored sides, each line in its own voice (the bank made from the
    CD's).  To do: the briefings' words.
-15. **To do, once the whole system is ready for production: long mission
-   tests with an ally** (the user, 2026-11-07: "Do some comprehensive mission
+15. **Under way: long mission tests with an ally** (the user, 2026-11-07: "Do some comprehensive mission
    tests with the ally and make sure the networking works, especially the
    guest handoffs...and that well aimed shots at tie fighters work. The
    challenge missions are a good place to start as well as some of the other
@@ -502,10 +504,11 @@ move vector, the nine axis words, type).
   this machine's dynamics: between a frame's dynamics and its move a puppet
   is this machine's own, so the report is taken at the top of a frame, what
   the last frame drew.
-* **Open.**  A puppet still collides and takes damage on the machine that
-  only shows it (both pilots flew into the container ring once and each
-  died on both machines): step 6.  The rates are one report a frame for
-  every pilot's craft: step 5.
+* **Open then, closed since.**  A puppet still collided and took damage on
+  the machine that only shows it (both pilots flew into the container ring
+  once and each died on both machines): closed in step 6 (a puppet takes no
+  damage of this machine's own, collisions included).  The rates were one
+  report a frame for every pilot's craft: step 5's.
 
 ### Step 3: notices through DOSBox (2026-11-06)
 
@@ -623,10 +626,9 @@ move vector, the nine axis words, type).
   the solo baseline was taken in the same mission.  The 32-bit hook table
   goes by an EIP's low word, so each place's word matches some ten other
   addresses: 2,600 to 3,600 such calls a second, nothing to slow anything.
-* **Open.**  Lasers are each machine's own and damage is not shared (step
-  6): a craft killed on one machine flies on, as a puppet, on the other.
-  Mid and far rates were barely exercised (one battle within 10 km); a
-  mission over a larger space is the test for them.
+* **Open then, closed since.**  Lasers were each machine's own and damage
+  not shared: closed in step 6.  Mid and far rates were barely exercised (one
+  battle within 10 km); step 15's long tests measure them.
 
 ### Step 6: the guns (research, 2026-11-06)
 
@@ -713,11 +715,14 @@ move vector, the nine axis words, type).
   degrees of the host's nose.  The laser player's screen shows the guest's
   cyan ion bolts ahead and to the right; the ion player's shows the host's
   laser streak coming up from the left and its own ions going away.
-* **Open.**  Kill credit: a kill the shooter's machine did not apply is not
-  scored there.  A shot of a craft far from every other pilot is not sent
-  (the brief: far shots are each game's own).  The impact flash of an
-  applied hit sits where the bolt's segment ends (the collision test's
-  offset, `collidexoff..`, has no retail address in OpenTIE yet).
+* **Done in step 15.**  Kill credit: a kill the shooter's machine did not
+  apply was not scored there; now the owner's dying reports name the shooter
+  whose hit began the death and that machine calls the game's own
+  `collide_updatekills` (step 15).  The impact flash of an applied hit sat
+  where the bolt's segment ends; now at the shooter's impact (OpenTIE has the
+  collision test's offset now: `collidexoff` 0xEAB7C, step 15).  By design: a
+  shot of a craft far from every other pilot is not sent (the brief: far
+  shots are each game's own).
 
 ### Step 7: the flight controls (2026-11-06)
 
@@ -758,10 +763,17 @@ move vector, the nine axis words, type).
   back; in the keyboard's mode eight bursts of mouse motion did nothing.  In
   the browser the choice showed with the game loaded, defaulted to the
   pointer, and the page's guest held its turn with the pointer pushed aside.
-* **Open.**  The joystick's buttons beyond fire, roll and the keys (TIE's
-  own gamepad-less button meanings) are WC's mapping (target T, weapon W,
-  speed = and -: TIE's own keys for those); afterburner and missile buttons
-  mean nothing in TIE.
+* **Done in step 15.**  The joystick's buttons beyond fire, roll and the
+  keys were WC's mapping (target T, weapon W, speed = and -: TIE's own keys
+  for those), the afterburner and missile buttons meaning nothing in TIE.
+  Now a game may give an action its own keys and name (`host.actionKeys`,
+  `host.actionLabel` in `web/gamepad.js`), TIE's from its flight keys
+  (OpenTIE's `user.c`): the afterburner Backspace (full throttle), Fire
+  missile Enter named for what it is there (match the target's speed; W picks
+  the warheads), Autopilot E (your closest attacker), Change guns X (the
+  lasers linked or not), Lock target R (the nearest enemy); Communications
+  and the navigation map nothing (C is the flight recorder, the map an info
+  room not known to keep a shared flight going).
 
 ### Step 9: the Imperial shuttle's cockpit (2026-11-06)
 
@@ -836,8 +848,8 @@ the Jedi (seen from outside) as the reference.
   throttle, speed, clock and the laser, shield and engine bars changing, the
   warhead counters, the targeting display's picture of the target inside the
   gunboat's frame.  The side views are the gunboat's (its V).
-* **Open.**  The second pilot's own flight group in the pairing's craft (the
-  table above); the side views' struts.
+* **Open.**  The side views' struts.  (The second pilot's own flight group in
+  the pairing's craft: done, step 9's pairings below.)
 
 ### Step 6b: laser fire near and far (2026-11-06)
 
@@ -932,7 +944,7 @@ the Jedi (seen from outside) as the reference.
   death seen once on the other machine.
 * **Open.**  The copy's goals are the player's group's (usually none); the
   T/I's timing judgement (the user: "unless there's a timing aspect where T/F
-  is too slow"); three machines not yet measured (step 10).
+  is too slow").  (Three machines: measured, step 10.)
 
 ### Step 11: the page's picture and options for TIE Fighter (2026-11-06)
 
@@ -1179,3 +1191,64 @@ X-wing-like cockpit (an arched canopy, a long nose).
   through the jump and after.
 * **Open.**  The briefings still speak of the Empire's side; the side views
   are the gunboat's.
+
+### Step 15: long mission tests with an ally (2026-11-07)
+
+The user: "Do some comprehensive mission tests with the ally and make sure the
+networking works, especially the guest handoffs...and that well aimed shots at
+tie fighters work. The challenge missions are a good place to start as well as
+some of the other missions"; then "Let's finish production using it and do the
+things in the docs".
+
+* **The rig.**  `scripts/tfnet-duo.sh`'s two machines through the front end
+  into the room's pick, each flown by a scripted pilot from its launch on
+  (the key script): full throttle (Backspace) and every 2 s the nearest
+  moving enemy of the Empire's fighters targeted (`!tietarget=nearest:5-9`;
+  the game's R took a T/F yet to launch, sitting still, and a container),
+  every 0.2 s the craft turned to where a laser fired now meets the target
+  (`!tieface=target:1.0`: the game's own reckoning, `collide_targetinrange`,
+  a speed s covering s x 4660 / 256 world units a second, a bolt its
+  shooter's speed plus 1,000) with the trigger held within 1 km (held from
+  afar at full throttle the Z-95's lasers ran dry in 24 s before reaching);
+  a click every 10 s (Fly Mission Again after a death).  Each machine's wall
+  reports summed over the run: shots sent and made, hits sent and applied,
+  owner changes, kills, kills credited.
+* **Measured** (challenge missions, the native build, the two machines on
+  one computer, 3.5 minutes each):
+  * HI2W: every shot of each pilot made on the other (327 of the host's, 245
+    of the guest's), 79 to 117 owner changes a run (the guest taking the
+    craft near it and giving them back), an AI T/F's linked fire decided on
+    the host and applied by the guest (four hits, 540 then 770 a hit past its
+    shields: the game's own damage), the guest down, the flight over for
+    both, Fly Mission Again flying both again, five times a run; the guest's
+    hits on the host's craft 20 and 28 a run, every one applied.
+  * HG3M: an AI fighter whose AI ran on the guest (handed to it) killing the
+    host, its hits decided on the guest and applied by the host, its kill
+    credited to nobody; the guest's two hits on a T/B the host flies applied
+    there, the second beginning its death, the kill credited to the guest
+    (below).
+  * HG4M: the radio's voices (step 14).
+* **Kill credit** (step 6's open item).  The owner of a craft keeps the
+  shooter whose hit, applied there, began its death (the death timer running
+  after the stand-in bolt's `collide_laserhitcraft`); its dying reports carry
+  it (`TieCraft.killer`), and the shooter's machine, killing its copy, first
+  calls the game's own `collide_updatekills(our craft, the victim, 1)` (TIE95
+  0x16218): the craft's kills by species, the player's, the congratulations,
+  a friendly kill's message, as for a kill of its own.  A death of the
+  owner's own (its AI's shot, a collision) names none.
+* **The impact flash** (step 6's open item).  OpenTIE now has the collision
+  test's offset (`collidexoff` 0xEAB7C, y 0xEAB78, z 0xEAB74): the shooter's
+  machine sends it with the hit and the owner writes it before its call, so
+  the bolt becomes its flash where it met the craft on the shooter's machine.
+  Measured, HI2W: every applied hit's flash at the shooter's impact to the
+  unit, 264 to 453 units from a fighter's middle, 1,529 to 2,388 from the
+  container's.
+* **The page.**  The help said "in its first stage... the shots, the damage
+  still runs on each machine on its own": now what flying together is.  A
+  controller's buttons mean TIE's own things in TIE (step 7's open item).
+* **Seen, the game's own.**  Two lines fired in one poll show one (HG3M's 0
+  and 1) but both their voices play; the game's R targets craft yet to
+  launch.  The machine running both games and the rig at once, a guest's
+  frame rate fell to 12 to 16 at the busiest moments (60 alone): the
+  computer's load, not the session's (step 5's frame-rate note).
+
