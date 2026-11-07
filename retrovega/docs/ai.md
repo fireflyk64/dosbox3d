@@ -131,7 +131,7 @@ The mission's rules (missions.txt `rules`, `g_rule_flags`; docs/engine.md for `h
   that may pull nowhere flies straight.
 - **Avoidance** (`avoid`, within `steer_to`): every other ship within the profile's `avoid_pct` of the two half
   boxes and coming together with this one pushes the wanted direction sideways, the harder the nearer; and the
-  attackers of one target take lanes a hull apart (`pass_side`).
+  attackers of one target take lanes a hull apart (`pass_side`); at a capital ship there are no lanes and no scatter: every attacker aims at its middle (a capital ship is hit on its own shape; the lanes put four Aristons' aim hundreds of km beside the Ox's long, low hull and they hit it with 13% of their shots, the old Krants half theirs at its sphere; the user, 2026-11-07: "all ships fire at object center with full accuracy"; play test M8.58). The lanes are ours, not the old game's: its fighters keep apart by flying out after a pass and its steer-clear, which ours have too (at the Ox with no lanes the Aristons' nearest pair stayed a median 1,760 km apart, none bumped).
 - **A break** (`T_BREAK`) is not steered: a profile that yaws turns flat at its rate, away from a target still
   ahead and after one gone behind (over as soon as the nose is on a target ahead again: the pursuit takes it from
   there); a banking profile that may pull up or down pulls with a roll toward the target's side. The afterburner

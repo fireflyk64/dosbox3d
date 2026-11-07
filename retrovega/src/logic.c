@@ -2887,10 +2887,17 @@ static int16_t passing(int16_t s, const View *v)
 static int32_t pass_side(int16_t s, const Mind __far *m, const AiProfile __far *p, const View *v)
 {
     int32_t room, lane = 0, n = 0, rank = 0;
-    int16_t k;
+    int16_t k, capital;
     if (m->target == 0xFF)
         return 0;
     room = room_of(s, m->target) * p->pass_pct / 100;
+    /* (a capital ship is hit on its actual shape, not a sphere (shots.c): lanes a hull's width apart put the attackers'
+     * aim hundreds of km beside a long, low hull (the Ox: 152 km across, 120 up), and four Aristons hit it with 13% of
+     * their shots, where the old game's Krants, at its sphere, hit the Drayman with half (the user, 2026-11-07, of the
+     * Franklin escort: "the fighters there weren't even able to harm it badly"; measured with rvsim --shiptrace).  On a
+     * capital ship every attacker aims at its middle (the user: "all ships fire at object center with full accuracy
+     * and don't ever aim off center"; no scatter either, scatter_of); only the pass itself goes by its side */
+    capital = maybeEntityType[m->target] == ET_CAPSHIP;
     for (k = 0; k < NUM_SHIP_SLOTS; k++)
         if (k != s && slot_is_ship(k) && rvController[k] == CTL_AI && shipAiState[k] != 9 && g_mind[k].target == m->target
             && commAnimInfo[k] == commAnimInfo[s] && maybeEntityType[k] == ET_SHIP) {
@@ -2898,7 +2905,7 @@ static int32_t pass_side(int16_t s, const Mind __far *m, const AiProfile __far *
             if (k < s)
                 rank++;
         }
-    if (n)                              /* (lanes -n/2 .. n/2 about the target) */
+    if (n && !capital)                  /* (lanes -n/2 .. n/2 about the target; none on a capital ship) */
         lane = (rank * 2 - n) * room / 2;
     if (passing(s, v) && v->km < v->closing * LOGIC_HZ + 2 * turn_room(s))   /* (the pass within a second, and the room
                                            its turning circle wants: by its own side of the target) */
@@ -4805,7 +4812,9 @@ uint16_t __far __cdecl do_damage_impl(uint16_t src, uint16_t dst, uint16_t qty, 
 static int32_t scatter_of(int16_t ship)
 {
     int32_t nearest = -1;
-    int16_t k;
+    int16_t k = g_mind[ship].target;
+    if (k != 0xFF && k < NUM_SHIP_SLOTS && maybeEntityType[k] == ET_CAPSHIP)
+        return 0;                       /* (at a capital ship: full accuracy, its middle (pass_side), the user's) */
     for (k = 0; k < NUM_SHIP_SLOTS; k++) {
         RvVec3 d;
         int32_t km;
