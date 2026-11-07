@@ -502,3 +502,45 @@ move vector, the nine axis words, type).
   6): a craft killed on one machine flies on, as a puppet, on the other.
   Mid and far rates were barely exercised (one battle within 10 km); a
   mission over a larger space is the test for them.
+
+### Step 6: the guns (research, 2026-11-06)
+
+* **The calls.**  A shot is `laser_createprojectile(eax shooter object,
+  edx hardpoint, ebx projectile type, ecx)` (0x2E0E4; type 0x8C a T/F's
+  laser); the bolt is an object from slot 32 with its shooter in `self_idx`
+  (+0x30).  A bolt meeting a craft is `collide_laserhitcraft(eax bolt, edx
+  target, ebx hit offset)` (0x1433C), which goes on to
+  `collide_damagecraft(eax target, edx component, ebx attacker, ecx shield
+  side)` (0x148F0).  The damage comes from the attacker object itself: its
+  ship type (a laser's, an ion's, a warhead's) and its collision radius
+  (OpenTIE `collide.c`: `damage = collision_radius`, a quarter against a
+  freighter, a sixteenth against a starship or platform); -1 is a collision
+  (0x20000), 0x3800 and up a static object.
+* **The design** (section 5): the shooter's machine decides its bolts' hits
+  and the target's owner applies them; far shots are each machine's own.
+  1. A player's shot is sent (shooter, hardpoint, type) and made on the
+     other machines from that player's craft there, by calling
+     `laser_createprojectile`: the bolt is seen, and flies from where the
+     craft is.  An AI craft's shots likewise from its owner, within the
+     lasers' reach of another pilot.
+  2. On the shooter's machine a hit by its own bolt (its player's, or an AI
+     craft's it flies) on a craft another machine owns is sent to that
+     owner (target, component, the bolt's type and radius, the shooter) and
+     not applied there; the owner applies it by calling
+     `collide_laserhitcraft` with a stand-in bolt (a free projectile slot
+     given the bolt's type, radius and shooter), so the game's own damage,
+     shields, components, kill credit and messages follow.
+  3. A bolt made from another machine's report hits nothing here (its
+     shooter's machine decides), and a craft this machine does not own
+     takes no damage from this machine's collisions.
+* **What the emulator needs.**  A call into the 32-bit program from a
+  hook: at a hook's place (a function's entry the game reaches every frame,
+  `move_moveobjects`), the registers saved, the place itself pushed as the
+  return address, the arguments in `eax`, `edx`, `ebx`, `ecx` (Watcom's
+  register convention), EIP set to the function; when it returns to the
+  place the hook sees itself come back, restores the registers and lets the
+  game go on (or makes the next call).  And an early return: at a
+  function's entry EIP set to the return address on the stack and ESP past
+  it (these functions take their arguments in registers), so a hit the
+  game was about to apply is not.  Both are CPU state at a hook, no code
+  changed (the Wing Commander layer's trampoline does the same in 16 bits).
