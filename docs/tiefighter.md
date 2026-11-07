@@ -701,9 +701,13 @@ the Jedi (seen from outside) as the reference.
   fitted to their middles and widths.  Out: their bands (9 pixels more each
   side), from the top down, the scopes' disks kept (instruments 0 and 1), below
   the stretch the strut's own run while it is a strut's width; small hidden
-  pieces left near the bands cleared.  In: two legs, feet just inside the
-  dashboard's top corners (140, 282 at 640x480), tops leaning in (262 at the top
-  row), each row a row of the strut that leans the same way, the strut's length
+  pieces left near the bands cleared.  In: two legs of an A, mirrored, leaning
+  in 122 pixels over 282 rows at 640x480 (the user's first look), pushed out
+  until each one's outer edge is just past its side of the screen on the last
+  row where space shows there (row 313: the user, "push the struts out so the
+  bottom right of the strut is just beyond the right of the screen"; "symmetric
+  both at the edge of the screen mirrored"), each row a row of the strut that
+  leans the same way, the strut's length
   stretched over the leg's and its runs narrowed by the slants, drawn only where
   space shows (so behind the dashboard and the scopes); a frame bar 24 rows deep
   along the top, each column a strut's row on its side, the scopes hanging from

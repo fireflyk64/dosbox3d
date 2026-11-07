@@ -14,9 +14,9 @@
  *    (GUNBOATP.PNL) stay the gunboat's own files, read where they are: the gauges, scopes and displays all work as
  *    in the gunboat;
  *  - writes SHUTFWD.LFD, the gunboat's forward view changed by the code below: its two struts, a V from the top
- *    corners down to the dashboard, are taken out, and two legs of an A are drawn from the struts' own pixels, their
- *    feet on the dashboard's corners, leaning in towards the top, with a frame bar along the top that the scopes hang
- *    from (the stolen shuttle's cockpit in Return of the Jedi);
+ *    corners down to the dashboard, are taken out, and two legs of an A are drawn from the struts' own pixels, leaning
+ *    in towards the top, pushed out until their lower ends are just past the screen's sides, with a frame bar along
+ *    the top that the scopes hang from (the stolen shuttle's cockpit in Return of the Jedi);
  *  - gives the targeting display the gunboat's mask (the game picks one by the spec's number: the shuttle would get
  *    the T/F's), by writing the gunboat's 480 (and 200) bytes over the default's for as long as a shuttle flies.
  *
@@ -511,7 +511,18 @@ public:
         return cleaned;
     }
 
-    // In with a leg: from its foot (on the dashboard) up to the top row, its middle on the line between, each row a
+    // A leg's width at its foot, as leg() makes it: the source strut's last rows, narrowed or widened by the slants.
+    int leg_width(const Strut &src, double lean) const {
+        const int y1 = src.last() - 2 * h_ / 480;
+        size_t i = 0;
+        while (i < src.rows.size() && src.rows[i] < y1) i++;
+        if (i >= src.rows.size()) i = src.rows.size() - 1;
+        const double ratio = sqrt(1 + lean * lean) / sqrt(1 + src.middle.k * src.middle.k);
+        const int nw = (int)lround((src.runs[i].b - src.runs[i].a) * ratio);
+        return nw < 4 ? 4 : nw;
+    }
+
+    // In with a leg: from its foot (its lowest row) up to the top row, its middle on the line between, each row a
     // row of the source strut (the one leaning the same way), the strut's length stretched over the leg's and its
     // runs narrowed or widened by the slants (a leg as thick as the strut).  Drawn only where space shows: it goes
     // behind the dashboard and the scopes.
@@ -607,9 +618,15 @@ bool make_forward(const std::vector<Bit8u> &gunboat, int w, int h, int depth, co
     both.push_back(&left);
     both.push_back(&right);
     const int cleaned = f.clean(both, margin);
-    // (the legs: feet just inside the dashboard's top corners, tops leaning in; each drawn from the strut that leans
-    // its way: the right one for the left leg)
-    const double footX = 140.0 * w / 640, footY = 282.0 * h / 480, topX = 262.0 * w / 640;
+    // (the legs: the A's lean the user liked, 122 pixels in over 282 rows at 640x480, pushed out until the right
+    // leg's outer edge is just past the screen's side on the last row where space shows at that side (the user,
+    // 2026-11-06: "push the struts out so the bottom right of the strut is just beyond the right of the screen"); the
+    // left leg its mirror; each drawn from the strut that leans its way: the right one for the left leg)
+    const double lean = (122.0 / 282.0) * (w / 640.0) / (h / 480.0);
+    int bottom = depth - 1;
+    while (bottom > 0 && !f.visible(w - 1, bottom)) bottom--;
+    const double rightMiddle = w + 2 - f.leg_width(left, lean) / 2.0;
+    const double footX = w - 1 - rightMiddle, footY = bottom, topX = footX + lean * bottom;
     f.leg(right, footX, footY, topX);
     f.leg(left, w - 1 - footX, footY, w - 1 - topX);
     f.bar(left, 24 * h / 480);
@@ -631,7 +648,6 @@ bool make_forward(const std::vector<Bit8u> &gunboat, int w, int h, int depth, co
 
 // -- the files beside the game's --------------------------------------------------------------------------------------
 
-DOS_Drive *g_drive = NULL;
 bool g_filesMade = false;
 bool g_masksSwapped = false;
 Bit8u g_cmd640[480], g_cmd320[200];     // the default masks, as they were
