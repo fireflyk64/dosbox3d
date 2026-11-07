@@ -394,6 +394,16 @@ section 7 as it is worked on.
    ends everybody's flight, mission failed, Fly Mission Again at the
    debriefing.
 
+13. **Done: the host decides, the guest waits** (the user, 2026-11-07:
+   "It's also sort of strange that the guest can enter the mission first
+   without knowing what mission the host will choose"; "it might be simpler
+   if the host did it and guest had to wait or didn't have the option like
+   retro vega until the host is in"; "send a message to the other player (or
+   also play a loudspeaker sound we can copy from retrovega in dosbox
+   itself) every 20 seconds to guide them to the briefing room"; section 7,
+   step 13): a guest's launch waits until the host flies; the ship's PA
+   calls a guest to the briefing every 20 s.
+
 ## 7. Notes, step by step
 
 ### Step 2: the transport, positions reflected (2026-11-06)
@@ -963,3 +973,49 @@ the Jedi (seen from outside) as the reference.
   mission 3: the host a gunboat (object 0), the two guests shuttles 1 and 2 of
   the guests' group (objects 2 and 3), each seen in its craft on the others,
   reports 16 to 20 ms old.
+
+### The music in the browser (2026-11-07)
+
+The user: "I don't get any music for some reason".  GOG's IMUSE.INI names the
+music driver in its first 14 bytes, GMIDI.MDR (General MIDI to an MPU-401;
+GOG's own DOSBox sends it to Windows' synthesizer), the digital driver in the
+next 14 (SB16.WDR); the browser build has no MIDI synthesizer.  The Sound
+Blaster 16 it emulates has an OPL3, and iMUSE's FM4.MDR (on the game's disc)
+plays the music there: the page writes FM4.MDR into its installed copy (the
+registry's `prepare`, web/gamefiles.js `tfMusicOnFm`).  Measured natively
+(`WCNET_AUDIOLOG=1`): GMIDI.MDR no OPL write in a minute of the opening;
+FM4.MDR 250 to 1,500 OPL writes every 6 s and the FM channel sounding.
+
+### Step 13: the host decides, the guest waits (2026-11-07)
+
+* **Where.**  The Combat Chamber asks for the mission's file (at
+  `shipext_Get_Mission_Path`) as its screen opens, the briefing as it loads,
+  the flight as it starts.  Holding a guest at the first froze the chamber's
+  screen black (the front end's palette is black while it loads, so the
+  emulator's line could not be seen either), so a guest may look at the
+  chamber and its briefing freely, and what waits is the launch:
+* **A guest's click on a launch** while the host is not flying is not given to
+  the game (the mouse driver's press and its release, `wc_net_mouse_button`):
+  the briefing's and the debriefing officer's bar, its launch button (map.c's
+  `map_rect`, 225..257 x 172..194: Enter Mission, Fly Mission Again), the
+  briefing room's door to the mission (brief.c, 190..248 x 118..138), the
+  debriefing room's Fly Again (debrief.c, the room's left 70 columns).  A
+  notice says why: "HOST has not launched yet: you take off together once HOST
+  is flying".
+* **Any other way into a flight** (a key, say) waits where the program asks for
+  the file as the flight starts: the call is made again once a time slice
+  (`tie_repeat_call`: back to the caller's `E8`, the slice given up as a HLT
+  does; made again on every instruction it had the emulator fall behind real
+  time) until the host flies.  Esc flies alone.  A tour battle the guest
+  launches is its own: never held.
+* **The ship's PA**: while the host is briefed or flying and a guest is at
+  neither, the emulator plays RetroVega's `pa_report` (a two-note chime and
+  "All pilots, report to the briefing room." in our own synthesized voice:
+  retrovega/tools/sfx.py, made into src/cpu/wcnet_tie_pa.h at 11,025 Hz by
+  scripts/tf-pa-sound.py) on a mixer channel of its own, every 20 s, with the
+  line "PA: All pilots, report to the briefing room." and where the host is.
+* **Measured** (two machines, the host briefed at 75 s and flying at 88 s):
+  the guest's Enter Mission at 62 s held, the notice over its briefing map;
+  its click at 95 s took off as the host group's second craft.  A guest left on
+  the concourse heard the PA (its channel 4.5 s) at the host's briefing and
+  every 20 s while the host flew.
