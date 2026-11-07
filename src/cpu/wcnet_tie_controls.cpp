@@ -32,6 +32,7 @@
 #include "wc_net.h"
 #include "keyboard.h"
 #include "mouse.h"
+#include "pic.h"
 
 extern std::string incoming_text;   // the line the emulator draws over the picture (sdlmain.cpp)
 
@@ -39,8 +40,18 @@ namespace wc {
 
 namespace {
 
-enum { MOUSE_DRAG = 0, MOUSE_POINTER = 1 };
+// What steers besides the arrows (which always do): the game's own mouse, the pointer, the keyboard alone (the mouse
+// steers nothing in flight), a joystick (the page's pad as the stick: wc_web_stick; the mouse steers nothing).
+enum { MOUSE_DRAG = 0, MOUSE_POINTER = 1, MOUSE_KEYBOARD = 2, MOUSE_JOYSTICK = 3 };
+const char *const kModeNames[] = { "drag", "pointer", "keyboard", "joystick" };
+const char *const kModeLines[] = {
+    "Flight controls: the mouse drags to steer, the game's own (F12: the keyboard alone)",
+    "Flight controls: the mouse points to aim (F12: drag to steer)",
+    "Flight controls: the keyboard alone, the arrows (F12: the mouse points to aim)",
+    "Flight controls: a joystick",
+};
 int g_mode = -1;
+double g_stickX, g_stickY, g_stickAt = -1e9;   // the page's pad (pitch positive climbs), and when it last said
 bool g_left, g_right, g_up, g_down, g_shiftL, g_shiftR, g_rollLeft, g_rollRight;
 int g_stepX, g_stepY;
 double g_px, g_py;                  // the pointer, -1..1 from the middle (down and right positive)
@@ -55,7 +66,12 @@ const double kPointerDeadZone = 0.04;
 int mode() {
     if (g_mode < 0) {
         const char *env = getenv("WCNET_TIE_MOUSE");
-        g_mode = env && !strcmp(env, "drag") ? MOUSE_DRAG : MOUSE_POINTER;
+        g_mode = MOUSE_POINTER;
+        for (int m = 0; env && m < 4; m++) {
+            if (!strcmp(env, kModeNames[m])) {
+                g_mode = m;
+            }
+        }
     }
     return g_mode;
 }
@@ -132,12 +148,11 @@ bool tie_controls_key(int key, bool pressed) {
             add_key(KBD_right, pressed);
         }
         return true;
-    case KBD_f12:
+    case KBD_f12:                           // pointer, drag, keyboard, pointer, ...
         if (pressed) {
-            g_mode = mode() == MOUSE_POINTER ? MOUSE_DRAG : MOUSE_POINTER;
+            g_mode = mode() == MOUSE_POINTER ? MOUSE_DRAG : mode() == MOUSE_DRAG ? MOUSE_KEYBOARD : MOUSE_POINTER;
             g_px = g_py = 0;
-            say(g_mode == MOUSE_POINTER ? "Mouse: the pointer steers (F12: drag to steer, the game's own)"
-                                        : "Mouse: drag to steer, the game's own (F12: the pointer steers)");
+            say(kModeLines[g_mode]);
         }
         return true;
     default:
@@ -146,8 +161,11 @@ bool tie_controls_key(int key, bool pressed) {
 }
 
 bool tie_controls_mouse(float xrel, float yrel) {
-    if (!tie_found() || !tie_in_flight() || mode() != MOUSE_POINTER) {
+    if (!tie_found() || !tie_in_flight() || mode() == MOUSE_DRAG) {
         return false;
+    }
+    if (mode() != MOUSE_POINTER) {
+        return true;                        // (the keyboard's or a joystick's flight: the mouse steers nothing)
     }
     g_px = fmax(-1.0, fmin(1.0, g_px + xrel / (kPointerSpan / 2)));
     g_py = fmax(-1.0, fmin(1.0, g_py + yrel / (kPointerSpan / 2)));
@@ -176,6 +194,11 @@ void tie_controls_frame() {
         dy = fabs(g_py) < kPointerDeadZone ? 0 : g_py;
         dy = -dy;                           // (the pointer above the middle climbs: the mouse's forward dives)
     }
+    // the page's pad, while it keeps saying (a pad gone still is no turn)
+    if (PIC_FullIndex() - g_stickAt < 500) {
+        dx = g_stickX;
+        dy = g_stickY;
+    }
     if (g_stepX) {
         dx = g_stepX / 9.0;
     }
@@ -197,10 +220,16 @@ bool tie_controls_marker(double *x, double *y) {
     return true;
 }
 
-void tie_controls_set_mouse(int pointer) {
-    g_mode = pointer ? MOUSE_POINTER : MOUSE_DRAG;
+void tie_controls_set_mouse(int m) {
+    g_mode = m >= 0 && m < 4 ? m : MOUSE_POINTER;
     g_px = g_py = 0;
-    wclog(1, "TIE: the mouse %s", pointer ? "steers by the pointer" : "drags to steer (the game's own)");
+    wclog(1, "TIE: flight controls: %s", kModeNames[g_mode]);
+}
+
+void tie_controls_stick(double x, double y) {
+    g_stickX = fmax(-1.0, fmin(1.0, x));
+    g_stickY = fmax(-1.0, fmin(1.0, y));
+    g_stickAt = PIC_FullIndex();
 }
 
 }  // namespace wc

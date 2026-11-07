@@ -2052,6 +2052,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_joystick(int on) {
     }
     return wc::joystick_state();
 }
+// TIE Fighter's flight controls (wcnet_tie_controls.cpp): the page's choice (0 drag, 1 pointer, 2 keyboard, 3 joystick)
+// and its pad's stick (-1..1, right and climbing positive), for the emulator to steer by.
+extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_tie_mouse(int mode) {
+    wc::tie_controls_set_mouse(mode);
+}
+extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_stick(double x, double y) {
+    wc::tie_controls_stick(x, y);
+}
 extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_joy(double x, double y, int buttons) {
     g_webJoyX = x;
     g_webJoyY = y;

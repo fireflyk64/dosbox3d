@@ -108,7 +108,8 @@ bool tie_controls_key(int kbdKey, bool pressed);     // true: taken from the gam
 bool tie_controls_mouse(float xrel, float yrel);     // true: moved our pointer instead of the game's stick
 void tie_controls_frame();                           // at the frame's top: this frame's mickeys
 bool tie_controls_marker(double *x, double *y);      // the pointer to draw, -1..1 from the middle
-void tie_controls_set_mouse(int pointer);
+void tie_controls_set_mouse(int mode);              // 0 drag, 1 pointer, 2 keyboard, 3 joystick
+void tie_controls_stick(double x, double y);         // a pad's stick, -1..1, right and climbing positive
 
 // Test aid: the front end's pointer put at a point of its 320x200 screen
 // (the key script's !tiecursor=x:y; a mouse button then clicks there).
