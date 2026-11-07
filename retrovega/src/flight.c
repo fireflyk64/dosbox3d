@@ -1918,7 +1918,8 @@ static int lasers_far(void);
  * GUARD 243 for an alien's hail) and its frequency knobs step there; the afterburner (Tab) burns fuel and heat; the
  * signature is what an enemy will find you by.  Keys: K EMCON, V sensor, I IFF, U comms mute, N nav point, M master
  * arm, T next target, Y the nearest enemy, L hold the lock, G radar range, H the survival display's page, X a decoy,
- * C the comm menu, Tab the afterburner (held), Ctrl+E twice eject; a click on a control works it. */
+ * C the comm menu (three quick taps, or Alt+T, taunt the target), Tab the afterburner (held), Ctrl+E twice eject; a
+ * click on a control works it. */
 static const unsigned char __far g_freq[3][3] = { { 2, 6, 7 }, { 3, 1, 5 }, { 2, 4, 3 } };   /* MHz: WING, CARRIER, GUARD */
 static unsigned long __far g_eject_at;  /* Ctrl+E (or the handle) once: when; a second within 2 s ejects */
 static int __far g_heat10;              /* heat x 10, following the engine with a lag */
@@ -2175,6 +2176,37 @@ static void comm_order(int who, int order)
         comm_exchange(s_said[order], wingman_voice(who), ok ? s_reply[order] : s_refused);
 }
 
+/* the comm menu's taunt at a key (the user, 2026-11-07: "I'm worried a human has trouble managing the taunts. Can we
+ * give an alt t hotkey to do it?"; Alt+B for the wingman's break was dropped: "Forget alt b as bookmark is important"):
+ * Alt+T taunts the target (an enemy's), as the menu would, the intercom whole, the same lines said */
+static void comm_hotkey(int ch)
+{
+    if (ch == 't' && systemDamage[SYS_INTERCOM] < SYS_WRECKED && g_sys.target > 0 && slot_is_ship(g_sys.target)
+        && shipAiState[g_sys.target] != 9 && commAnimInfo[g_sys.target] != commAnimInfo[0])
+        comm_taunt(g_sys.target);
+}
+
+/* C opens the comm menu; three taps within TAP3_STEPS taunt the target at once (the user, 2026-11-07: "Maybe we can say
+ * that triple tap of c gives us a taunt": Alt+T is a browser's menu key outside full screen) */
+#define TAP3_STEPS (LOGIC_HZ * 3 / 4)
+static void comm_key(int ch);
+static void comm_tap(void)
+{
+    static uint16_t __far first;
+    static uint8_t __far taps;
+    if (taps && (uint16_t)(frameCounter - first) > TAP3_STEPS)
+        taps = 0;
+    if (!taps)
+        first = frameCounter;
+    if (++taps < 3) {
+        comm_open();
+        return;
+    }
+    taps = 0;
+    comm_key(27);                       /* (the menu the first two opened, closed) */
+    comm_hotkey('t');
+}
+
 /* a key while the comm menu is up: a digit picks, 0 or Esc closes (vdu_comm_key) */
 static void comm_key(int ch)
 {
@@ -2423,7 +2455,7 @@ static int system_key(int ch)
     case 'k': system_action(RV_PF_EMCON_KNOB, 0); return 1;
     case 'v': g_sys.sensor ^= 1; return 1;
     case 'i': system_action(RV_PF_IFF_KNOB, 0); return 1;
-    case 'c': comm_open(); return 1;    /* (the comm menu: the wingman, the target; the landing request) */
+    case 'c': comm_tap(); return 1;     /* (the comm menu: the wingman, the target; the landing request) */
     case 'u': system_action(RV_PF_VOL_KNOB, 0); return 1;
     case 'n':
         system_action(RV_PF_NAV_KNOB, 0);
@@ -3545,6 +3577,8 @@ unsigned short __far __cdecl flight_keys(void)
         setSpeed[0] = 0;                /* Backspace stops and \ is full speed, as in the old game (the user, 2026-11-03: "ensure
                                            the backspace key also sets desired speed to zero in space"; "and \ sets to full
                                            speed") */
+    if (in.key == KEY_ALT && g_view != VIEW_FLYBY)
+        comm_hotkey(in.ch);             /* Alt+T a taunt */
     if (in.key == KEY_CHAR && in.ch >= '1' && in.ch <= '9' && vdu_page(0) == VDU_L_COMM)
         comm_key(in.ch);                /* (a pick in the comm menu, 9 never mind; 0 is a shared flight's key to talk, the
                                            layer's prompt: no pick) */

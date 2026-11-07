@@ -2049,7 +2049,10 @@ The user's brief (2026-10-31): T (even with the target unchanged) puts
 the target's top-down wireframe with its shields and hull on a VDU; D a
 damage readout, and the damage and weapon-select displays show the
 player's own ship the same way with the live guns and the chosen missile;
-N a nav menu, the chosen point a white cross in the view; C a comm menu;
+N a nav menu, the chosen point a white cross in the view; C a comm menu
+(C three times within 3/4 s, or Alt+T, taunts the target at once: flight.c
+`comm_tap`, `comm_hotkey`; the user, 2026-11-07: "I'm worried a human has
+trouble managing the taunts"; Alt+B was left to the browser's bookmarks);
 the VDUs take the readouts' small font. vdu.c:
 
 - **The right VDU** carries the target page (T, Y); **the left** the status lines,

@@ -151,6 +151,11 @@ static int bios_key(int *ch)
     case 0x3B: return KEY_F1;       /* the views: F1 the cockpit, F5 the chase camera (flight.c) */
     case 0x3F: return KEY_F5;
     case 0x0F: return *ch == 9 ? KEY_TAB : KEY_BACKTAB;
+    case 0x14:                          /* Alt+T (no character: the BIOS's Alt): the taunt's hotkey (flight.c) */
+        if (!*ch) {
+            *ch = 't';
+            return KEY_ALT;
+        }
     }
     return *ch >= 32 && *ch < 127 ? KEY_CHAR : KEY_NONE;
 }
@@ -175,6 +180,10 @@ static int key_named(const char *s, int *ch)
     for (i = 1; i < (int)RV_COUNT(names); i++)
         if (!strcmp(s, names[i]))
             return i;
+    if (!strncmp(s, "alt-", 4)) {       /* (alt-t: Alt with that letter) */
+        *ch = s[4];
+        return KEY_ALT;
+    }
     *ch = s[0];
     return KEY_CHAR;
 }

@@ -1803,6 +1803,15 @@ function capsLockAsEscape(e) {
 }
 window.addEventListener("keydown", capsLockAsEscape, true);
 window.addEventListener("keyup", capsLockAsEscape, true);
+// RetroVega's taunt hotkey, Alt+T, is a browser's own menu key outside full
+// screen (Firefox's Tools): with the game in focus the browser is told to leave
+// it alone, and the game still gets the key.  (Alt+B, the bookmarks, is left
+// to the browser: the user's.)
+window.addEventListener("keydown", (e) => {
+  if (!running || !e.altKey || e.ctrlKey || e.metaKey || e.code !== "KeyT") return;
+  if (document.activeElement !== canvas && document.fullscreenElement !== screenEl) return;
+  e.preventDefault();
+}, true);
 
 async function start(fromGesture) {
   if (running) return;
