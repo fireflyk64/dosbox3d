@@ -615,6 +615,20 @@ public:
         }
     }
 
+    // An n x n box from (x, y) opened to space where the panel hides it (the picture's own lights for guns a craft
+    // does not have); the pixels opened.
+    int open_box(int x, int y, int n) {
+        int opened = 0;
+        for (int j = y; j < y + n && j < d_; j++) {
+            for (int i = x; i < x + n && i < w_; i++) {
+                if (i < 0 || j < 0 || visible(i, j)) continue;
+                open(i, j, window_color(j));
+                opened++;
+            }
+        }
+        return opened;
+    }
+
     // The first row from y down where the panel hides column x (the depth when space shows to the view's end).
     int floor_below(int x, int y) const {
         if (x < 0 || x >= w_) return d_;
@@ -776,8 +790,8 @@ std::string host_path(localDrive *drive, const std::string &dosName) {
 // long nose you can see. We'll have to kitbash some of the cockpits"): the gunboat's, its struts out as the shuttle's,
 // an arched canopy frame of the struts' pixels over the top down to the side consoles, and a long nose from the
 // dashboard's middle towards the horizon in the struts' greys.  The figures are 640x480's, scaled.
-bool make_forward_z95(const std::vector<Bit8u> &gunboat, int w, int h, int depth, const int scopes[4], std::vector<Bit8u> &out,
-                      std::string &why) {
+bool make_forward_z95(const std::vector<Bit8u> &gunboat, int w, int h, int depth, const int scopes[4], const int lights[4],
+                      std::vector<Bit8u> &out, std::string &why) {
     std::vector<Resource> res;
     if (!parse_lfd(gunboat, res)) {
         why = "not an LFD";
@@ -820,7 +834,12 @@ bool make_forward_z95(const std::vector<Bit8u> &gunboat, int w, int h, int depth
                                 f.floor_below((int)(w / 2.0 + noseW / 2 - 1), (int)top));
     const double base = floorY < depth ? floorY - 1 : 262 * sy;
     f.nose(f.greys(left, pltt->body), w / 2.0, base, base - noseH, noseW, 40 * sx);
-    wclog(1, "TIE: the Z-95's forward view at %dx%d: the struts out, an arch and a long nose in (its bottom at row %d)", w, h, (int)base);
+    // (no ion cannons: the targeting box's two upper gun lights, painted in the picture at instruments 39 and 40's
+    // places, opened to space; the user: "removing the top 2 icons from the crosshair since z-95 does not have ions")
+    const int dot = std::max(2, w / 160);
+    const int lit = f.open_box(lights[0], lights[1], dot) + f.open_box(lights[2], lights[3], dot);
+    wclog(1, "TIE: the Z-95's forward view at %dx%d: the struts out, an arch and a long nose in (its bottom at row %d), "
+          "the upper gun lights out (%d pixels)", w, h, (int)base, lit);
     std::vector<Resource> outRes;
     for (size_t k = 0; k < res.size(); k++) {
         Resource r = res[k];
@@ -841,7 +860,7 @@ bool make_forward_z95(const std::vector<Bit8u> &gunboat, int w, int h, int depth
 // display's little picture of the player's own craft (its back: 19x14 at 640x480, 9x9 at 320x200), red, yellow,
 // green and white by the hull's state.
 
-enum { kPartsName = 0x62A, kIconSprite = 30, kIconSprites = 4 };
+enum { kPartsName = 0x62A, kIconSprite = 30, kIconSprites = 4, kSightSprite = 34, kSightSprites = 5 };
 
 // Each sprite's first byte, and the file's end last.
 std::vector<size_t> sprite_starts(const std::vector<Bit8u> &d) {
@@ -940,7 +959,7 @@ double luminance(const std::vector<Bit8u> &pltt, Bit8u c) {
 // sprite's first pixel) kept, its other colors by brightness (the view's palette) the shades 1..4.
 bool make_parts_z95(const std::vector<Bit8u> &gunboat, const std::vector<Bit8u> &pltt, std::vector<Bit8u> &out, std::string &why) {
     const std::vector<size_t> starts = sprite_starts(gunboat);
-    if (starts.size() < kIconSprite + kIconSprites + 1) {
+    if (starts.size() < kSightSprite + kSightSprites + 1) {
         why = "too few sprites";
         return false;
     }
@@ -981,7 +1000,33 @@ bool make_parts_z95(const std::vector<Bit8u> &gunboat, const std::vector<Bit8u> 
         }
         put_sprite(out, icon);
     }
-    out.insert(out.end(), gunboat.begin() + (long)starts[kIconSprite + kIconSprites], gunboat.end());
+    // (the targeting box: its states with the gun lights' unlit dots drawn in, the gunboat's four at its corners, lose
+    // the upper two, the ion cannons'; a dot a small blot of color alone in its corner)
+    out.insert(out.end(), gunboat.begin() + (long)starts[kIconSprite + kIconSprites], gunboat.begin() + (long)starts[kSightSprite]);
+    for (int v = 0; v < kSightSprites; v++) {
+        std::vector<std::vector<Bit8u> > rows = sprite_rows(gunboat, starts[kSightSprite + v], starts[kSightSprite + v + 1]);
+        if (rows.empty() || rows[0].empty()) {
+            why = "an empty targeting box";
+            return false;
+        }
+        const int w = (int)rows[0].size(), h = (int)rows.size(), cw = w / 10 + 1, ch = h / 10 + 1;
+        const Bit8u bg = rows[0][w / 2];
+        int cleared = 0;
+        for (int y = 0; y < ch && y < h; y++) {
+            for (int x = 0; x < cw; x++) {
+                const int xs[2] = { x, w - 1 - x };
+                for (int k = 0; k < 2; k++) {
+                    if (xs[k] < (int)rows[(size_t)y].size() && rows[(size_t)y][(size_t)xs[k]] != bg) {
+                        rows[(size_t)y][(size_t)xs[k]] = bg;
+                        cleared++;
+                    }
+                }
+            }
+        }
+        if (cleared) wclog(2, "TIE: the targeting box's state %d: %d pixels of its upper gun lights cleared", v, cleared);
+        put_sprite(out, rows);
+    }
+    out.insert(out.end(), gunboat.begin() + (long)starts[kSightSprite + kSightSprites], gunboat.end());
     return true;
 }
 
@@ -997,12 +1042,14 @@ bool make_cockpit(localDrive *drive, const char *dir, int w, int h, const Derive
     memcpy(fwdName, &intBytes[1], 9);
     const int depth = le16(&intBytes[1 + 9 + 6]);
     const int scopes[4] = { le16(&intBytes[0x3F0]), le16(&intBytes[0x3F2]), le16(&intBytes[0x3F6]), le16(&intBytes[0x3F8]) };
+    const Bit8u *gun = &intBytes[0x3F0 + 39 * 6];        // (the gun lights of weapon groups 2 and 3: the ion cannons')
+    const int lights[4] = { le16(gun), le16(gun + 2), le16(gun + 6), le16(gun + 8) };
     std::vector<Bit8u> gunboatFwd, made;
     std::string why;
     bool own = false;
     if (intBytes[0] == 1 && read_file(host_path(drive, d + "\\" + fwdName + ".LFD"), gunboatFwd) &&
         (dv.kind == kForwardShuttle ? make_forward(gunboatFwd, w, h, depth, scopes, made, why)
-                                    : make_forward_z95(gunboatFwd, w, h, depth, scopes, made, why))) {
+                                    : make_forward_z95(gunboatFwd, w, h, depth, scopes, lights, made, why))) {
         own = write_file(host_path(drive, d + "\\" + dv.forward + ".LFD"), made);
     } else {
         wclog(1, "TIE: the %s's forward view in %s not made (%s): the gunboat's own", dv.name, dir, why.c_str());
