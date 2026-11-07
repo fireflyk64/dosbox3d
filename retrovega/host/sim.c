@@ -53,6 +53,7 @@ static const char k_usage[] =
     "                   (tests/wc1/README.md): a line a ship, the shots and the hits\n"
     "  --hunt S         the player faces the nearest enemy every S seconds with the trigger held (a test pilot)\n"
     "  --nodamage       the player takes no damage (playerCanBeDamaged 0: a long look at the enemies)\n"
+    "  --autopilot S,.. headless: the autopilot key pressed at those seconds (the old game's rig's `a`)\n"
     "keys: arrows steer, Q E (keypad Ins Del) roll, Space fires, Enter a missile, Tab (keypad *) afterburner,\n"
     "      + - F S \\ Backspace the throttle, A autopilot,\n"
     "      M mouse steering on/off (or hold the right button), P pause, N a step while paused, Esc ends\n";
@@ -63,10 +64,10 @@ static struct {
     int seed_set;
     uint32_t seed, frames, hash_every;
     int headless, scale, frames_set;
-    const char *scene, *shiptrace;
+    const char *scene, *shiptrace, *autopilot;
     int32_t hunt, speed;                /* --hunt's seconds (0 off); the scene's player throttle (-1 the mission's) */
     int nodamage;
-} opt = { 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, -1, 0 };
+} opt = { 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, -1, 0 };
 
 static RvMission g_m;
 static uint16_t g_mission;
@@ -709,6 +710,17 @@ static int step(void)
             g_autopilot = 0;
             if (setSpeed[0] > top)
                 setSpeed[0] = top;
+            if (opt.autopilot) {        /* (--autopilot: the key at those seconds) */
+                const char *p = opt.autopilot;
+                while (*p) {
+                    if (g_steps == (uint32_t)(atof(p) * LOGIC_HZ))
+                        g_autopilot = 1;
+                    p = strchr(p, ',');
+                    if (!p)
+                        break;
+                    p++;
+                }
+            }
             if (opt.hunt) {             /* (the test pilot: onto the nearest enemy every so often, firing) */
                 if (g_steps % (uint32_t)(opt.hunt * LOGIC_HZ) == 0)
                     hunt_face();
@@ -827,6 +839,7 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--shiptrace")) opt.shiptrace = VAL;
         else if (!strcmp(a, "--hunt")) opt.hunt = atoi(VAL);
         else if (!strcmp(a, "--nodamage")) opt.nodamage = 1;
+        else if (!strcmp(a, "--autopilot")) opt.autopilot = VAL;
         else {
             fputs(k_usage, strcmp(a, "--help") && strcmp(a, "-h") ? stderr : stdout);
             return strcmp(a, "--help") && strcmp(a, "-h") ? 2 : 0;

@@ -2758,6 +2758,24 @@ static void aim_and_fire(int16_t s, Mind __far *m, const AiProfile __far *p, con
     if (m->gap < 255)
         m->gap++;
     held = holds_fire(s, p);
+#ifdef RV_HOST
+    if (getenv("RV_FIREGATE")) {        /* (a measurement, host only: RV_FIREGATE=1 rvsim ... logs every 30 s why each AI
+                                           of slots 1..7 did not fire, step by step, by the first gate that held it:
+                                           2026-11-07, the Aristons at the Ox all "off-cone", energy full) */
+        static unsigned long __far why[NUM_SHIP_SLOTS][8];
+        int16_t k = !guns ? 0 : !w ? 1 : v->km > reach ? 2 : gunEnergy[s] == 0 ? 3 : held ? 4
+                  : (g_rule_flags & RV_RULE_AIM_CONE) ? 5
+                  : v->cos_fire < p->aim_cos ? 5 : m->gap < p->fire_gap ? 6 : v->miss_km > AIM_MISS_KM ? 7 : -1;
+        if (k >= 0)
+            why[s][k]++;
+        if (frameCounter % 900 == 0 && s < 8) {
+            static const char __far f[] = "firegate %u: slot %d target %d: no-guns-call %lu, no-weapon %lu, out-of-reach %lu, "
+                "no-energy %lu (now %u), held %lu, off-cone %lu, gap %lu, miss %lu";
+            rv_logf(f, (unsigned)frameCounter, s, m->target, why[s][0], why[s][1], why[s][2], why[s][3], gunEnergy[s],
+                    why[s][4], why[s][5], why[s][6], why[s][7]);
+        }
+    }
+#endif
     if (guns && w && v->km <= reach && gunEnergy[s] > 0 && !held) {
         if (g_rule_flags & RV_RULE_AIM_CONE) {
             if (v->cos_nose >= (int16_t)w->cone_cos && m->gap >= AI_REFIRE_STEPS) {
