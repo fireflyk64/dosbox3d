@@ -81,6 +81,7 @@ struct Pilot {
     int scene;
     bool flying;
     std::string mission;
+    bool challenge = false;     // its mission flown as the Z-95 challenge (step 14)
     Pilot() : known(false), scene(-1), flying(false) {}
 };
 enum { kMaxSeats = 8, kPresenceEveryMs = 3000, kCallToActionEveryMs = 2000, kPaEveryMs = 20000 };
@@ -104,6 +105,11 @@ enum {
     kLocalAiOut = 225280,       // 5.5 km
     kExactError = 400,          // a near craft's report this close is written as it is (10 m)
     kPairOffset = 64,
+    kZ95 = 14,                  // the Z-95 Headhunter's craft type
+    kPilotRecord = 0xFABC8,     // the pilot record in memory: +0x66 the Combat Chamber's craft row, +0x67 each row's mission
+    kRadioMsg = 0xE2F24,        // the mission's radio messages, 90 bytes each: the text (64), two triggers (+64, +68), the delay (+88), and/or (+89)
+    kSpeciesConvertImage = 0xC1834,
+    kSpeciesTableImage = 0xCBBC4,
     // The room's end of a flight (the user, 2026-11-06: "it just delivers you to the debrief room with mission failed and
     // you can quickly try again with your friends"): RUNTIME_MissionState mission, +0x248 the player's status (0 dead,
     // 1 captured, 2 rescued, 3 the mission ended: what create_createmission sets and the game's own quit), +0x249 the
@@ -133,6 +139,9 @@ struct TieNet {
     double lastReliableAt;
     Puppet puppets[120];
     double endAt = 0;           // this machine's flight ends for the room then (0: not)
+    // the Z-95 challenge (step 14): this flight's mission flown as it, its source's file; the presence's last word of it
+    bool challenge = false, sentChallenge = false;
+    std::string challengeFile;
     // a guest's launch waiting for the host (step 13): waiting, Esc said to fly alone, the room's last mission (a launch
     // of it again, Fly Mission Again, waits too), the notice's last time
     bool waiting = false, waitCancelled = false;
@@ -514,6 +523,7 @@ void take_presence(const TiePresence &pr, int seat) {
     p.scene = pr.scene();
     p.flying = pr.flying();
     p.mission = pr.mission();
+    p.challenge = pr.challenge();
     if (launched) {
         notice(pilot_name(seat) + " launched: " + mission_words(p.mission));
     } else if (landed) {
@@ -532,9 +542,11 @@ void presence_tick(double now) {
     const int scene = tie_scene();
     const bool flying = tie_in_flight();
     const std::string mission = tie_mission_name();
-    if (scene == g_net->sentScene && flying == g_net->sentFlying && mission == g_net->sentMission && now - g_net->sentAt < kPresenceEveryMs) {
+    if (scene == g_net->sentScene && flying == g_net->sentFlying && mission == g_net->sentMission && g_net->challenge == g_net->sentChallenge &&
+        now - g_net->sentAt < kPresenceEveryMs) {
         return;
     }
+    g_net->sentChallenge = g_net->challenge;
     g_net->sentScene = scene;
     g_net->sentFlying = flying;
     g_net->sentMission = mission;
@@ -546,6 +558,7 @@ void presence_tick(double now) {
     pr->set_scene(scene);
     pr->set_flying(flying);
     pr->set_mission(mission);
+    pr->set_challenge(g_net->challenge);
     for (size_t i = 0; i < g_net->peers.size(); i++) {
         if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
             g_net->peers[i]->conn.send(msg);
@@ -1789,6 +1802,10 @@ void tie_session_set_mission(const char *name) {
 // front end's mission_name.  A launch from the Combat Chamber flies, for a guest, the host's mission when the host is
 // at its briefing or flying; otherwise the room's pick, if any.  A battle launched from the tour is the pilot's tour's:
 // never changed.  Only the 14 bytes of mission_name are written; the game makes the file's name from them next.
+// (step 14, below) the Combat Chamber's T/F missions and the challenge each is flown from
+const char *const kChallenge[4][2] = { { "hf1w", "hg1w" }, { "hf2w", "hi2w" }, { "hf3m", "hg3m" }, { "hf4m", "hg4m" } };
+std::string challenge_source(const std::string &m);   // (step 14, below)
+
 void tie_session_mission_path() {
     if (!g_net || (!g_net->host && g_net->self < 0)) {
         return;
@@ -1809,8 +1826,39 @@ void tie_session_mission_path() {
     if (want.empty() && combat && !pick.empty()) {
         want = pick;
     }
-    const std::string flies = want.empty() ? ours : want;
-    wclog(2, "TIE: the mission's file: ours %s, flown %s (scene %d)", ours.c_str(), flies.c_str(), tie_scene());
+    std::string flies = want.empty() ? ours : want;
+    // (step 14: in a room the Combat Chamber's T/F row is the Z-95 challenge, flown from its source: in the chamber the
+    // row decides; a guest flying the host's mission takes the host's word; the same launch's later calls keep it)
+    const int scene = tie_scene();
+    if (hostsOwn) {
+        g_net->challenge = h->challenge;
+        g_net->challengeFile = h->challenge ? flies : std::string();
+    } else {
+        // (a T/F mission's file, the room's pick or ours, is the challenge at any of a launch's calls; with none such,
+        // in the chamber its own selection says: the pilot record's craft row, +0x66, 0 the T/F's, and the row's
+        // mission, +0x67 on, the file's name perhaps already ours from the chamber's first call)
+        std::string source = challenge_source(flies);
+        const bool chamber = scene == 130 || scene == 131;
+        if (source.empty() && chamber && want.empty()) {
+            const int row = tie_r8(kPilotRecord + 0x66), course = tie_r8(kPilotRecord + 0x67);
+            if (row == 0 && course < 4) {
+                source = kChallenge[course][1];
+            }
+            wclog(2, "TIE: the Combat Chamber's row %d, mission %d", row, course);
+        }
+        if (!source.empty()) {
+            want = flies = source;
+            if (!g_net->challenge || g_net->challengeFile != source) {
+                notice("The Z-95 challenge: " + mission_words(source) + " flown in Z-95 Headhunters against the Empire's craft");
+            }
+            g_net->challenge = true;
+            g_net->challengeFile = source;
+        } else if (chamber || flies != g_net->challengeFile) {
+            g_net->challenge = false;
+            g_net->challengeFile.clear();
+        }
+    }
+    wclog(2, "TIE: the mission's file: ours %s, flown %s (scene %d)%s", ours.c_str(), flies.c_str(), scene, g_net->challenge ? ", the Z-95 challenge" : "");
     if (h && h->known && h->flying && !h->mission.empty() && flies != h->mission) {
         notice("You launch " + mission_words(flies) + "; " + pilot_name(0) + " flies " + mission_words(h->mission) + ": not together");
     }
@@ -1824,8 +1872,9 @@ void tie_session_mission_path() {
         tie_w8(tie::kMissionName + (Bit32u)i, i < want.size() ? (Bit8u)want[i] : 0);
     }
     if (hostsOwn) {
-        notice("Flying " + pilot_name(0) + "'s mission, " + mission_words(want) + " (you had picked " + mission_words(ours) + ")");
-    } else {
+        notice("Flying " + pilot_name(0) + "'s mission, " + mission_words(want) + (g_net->challenge ? ", the Z-95 challenge" : "") +
+               " (you had picked " + mission_words(ours) + ")");
+    } else if (!g_net->challenge) {
         notice("Flying the room's mission, " + mission_words(want) + " (the Combat Chamber had " + mission_words(ours) + ")");
     }
 }
@@ -1852,6 +1901,101 @@ int paired_type(int type) {
 // flown alone gets its pairing.  T/I: the player's group becomes T/Fs (the seats then give each pilot one).  A pair of
 // two crafts: the player's group copied as a second one at the end, in the guests' craft, one for each seat after
 // the host's, starting and flying 0.4 km to the side; a guest flies its own craft of it.
+// Step 14, the Z-95 challenge (the user, 2026-11-07: "replace all tie fighter missions in the combat trainer with the
+// gunboat missions that don't need ion cannons or the tie interceptor missions if they do, and the ship you fly is the
+// z95 headhunter but do a substitution of imperial equivalents of each rebel craft etc... These are meant to be
+// challenge missions since the z-95 is hopelessly underpowered but there will be two of them").  In a room the
+// Combat Chamber's T/F row flies these: the gunboat's missions where no goal needs its ion cannons (a primary goal
+// to disable, capture or board), else the T/I's (HG2W's primary goals are to disable two craft: HI2W).
+std::string challenge_source(const std::string &m) {
+    std::string l;
+    for (size_t i = 0; i < m.size(); i++) l += (char)tolower((unsigned char)m[i]);
+    for (int k = 0; k < 4; k++) {
+        if (l == kChallenge[k][0]) return kChallenge[k][1];
+    }
+    return std::string();
+}
+
+// The other side's craft for each craft of the mission (the mission files' types): the Rebels' as the Empire's and
+// the Empire's as the Rebels', fighter for fighter by role, capital ship for capital ship; 0: the same (pirates',
+// containers, transports, platforms, mines).  The player's group flies Z-95s.
+int mirror_type(int t) {
+    switch (t) {
+    case 1: return 6;       // X-wing: T/I
+    case 2: return 7;       // Y-wing: T/B
+    case 3: return 6;       // A-wing: T/I
+    case 4: return 16;      // B-wing: gunboat
+    case 13: return 6;      // T-wing: T/I
+    case 14: return 5;      // Z-95: T/F
+    case 15: return 5;      // R-41: T/F
+    case 5: return 14;      // T/F: Z-95
+    case 6: return 3;       // T/I: A-wing
+    case 7: return 2;       // T/B: Y-wing
+    case 8: return 1;       // T/A: X-wing
+    case 9: return 4;       // T/D: B-wing
+    case 12: return 4;      // missile boat: B-wing
+    case 16: return 4;      // gunboat: B-wing
+    case 40: case 41: return 45;    // Corellian corvette, modified: Carrack cruiser
+    case 42: case 43: return 46;    // Nebulon-B frigates: strike cruiser
+    case 49: return 53;     // Calamari cruiser: Imperial Star Destroyer
+    case 50: return 52;     // light Calamari cruiser: Victory Star Destroyer
+    case 45: return 40;     // Carrack cruiser: Corellian corvette
+    case 46: return 42;     // strike cruiser: Nebulon-B frigate
+    case 52: return 50;     // Victory Star Destroyer: light Calamari cruiser
+    case 51: case 53: return 49;    // Interdictor, Imperial Star Destroyer: Calamari cruiser
+    default: return 0;
+    }
+}
+
+// The line the challenge's Imperials say (the user: "ideally we use the line 'They're flying z-95 headhunters they're
+// brave' or something from one of the other missions"), a radio message of the mission's own, 10 s in, where the
+// mission has a free one (16 at most); else the emulator's line.
+const char kBraveLine[] = "They're flying Z-95 Headhunters! They're brave...";
+void challenge_line() {
+    const int n = (Bit16s)tie_r16(tie::kMissionHeader + 2);
+    if (n < 0 || n >= 16) {
+        notice(kBraveLine);
+        return;
+    }
+    const Bit32u m = kRadioMsg + (Bit32u)n * 90;
+    for (Bit32u k = 0; k < 90; k++) {
+        tie_w8(m + k, 0);
+    }
+    for (size_t k = 0; k < sizeof(kBraveLine) && k < 63; k++) {
+        tie_w8(m + (Bit32u)k, (Bit8u)kBraveLine[k]);
+    }
+    // (both triggers "always" (condition 0), and: at the first poll; its delay two polls, 1,180 ticks each: 10 s)
+    tie_w8(m + 88, 2);
+    tie_w16(tie::kMissionHeader + 2, (Bit16u)(n + 1));
+}
+
+// The challenge into the mission just read: each flight group's craft mirrored, the player's Z-95s (its spec the
+// player's: the Z-95's cockpit comes of it, wcnet_tie_cockpit.cpp), each new craft marked to be loaded.
+void make_challenge(bool again) {
+    const int numFg = (Bit16s)tie_r16(tie::kMissionHeader), pfg = tie_r8(tie::kPstate + 0x0A);
+    int changed = 0;
+    for (int i = 0; i < numFg && i < 48; i++) {
+        const Bit32u fg = tie::kFlightGroups + (Bit32u)i * tie::kFlightGroupSize;
+        const int t = tie_r8(fg + 0x32), to = i == pfg ? kZ95 : mirror_type(t);
+        if (!to || to == t) {
+            continue;
+        }
+        tie_w8(fg + 0x32, (Bit8u)to);
+        const int species = tie_r8(kSpeciesConvertImage + (Bit32u)to);
+        const Bit32u sp = kSpeciesTableImage + (Bit32u)species * 0x16;
+        tie_w8(sp + 1, tie_r8(sp + 1) | 0x10);
+        if (i == pfg) {
+            tie_w8(tie::kPstate + 0x0E, tie_r8(sp + 0x13));
+        }
+        changed++;
+    }
+    if (!again) {
+        challenge_line();
+    }
+    wclog(1, "TIE: the Z-95 challenge%s: %d of %d flight groups' craft mirrored, ours Z-95s", again ? " (again: the mission read again)" : "",
+          changed, numFg);
+}
+
 // (Made again at create_createmission when it is gone: a mission that begins with a hyperspace jump is read from its
 // file a second time after the jump, its craft not loaded again.)
 void make_pairing(bool again) {
@@ -1915,6 +2059,9 @@ void tie_session_before_species() {
     }
     g_net->pairedFg = -1;
     g_net->pairedType = 0;
+    if (g_net->challenge) {
+        make_challenge(false);      // (before the pairing: the Z-95s pair with themselves)
+    }
     make_pairing(false);
 }
 
@@ -1948,6 +2095,9 @@ void tie_session_mission_create() {
     g_net->endAt = 0;
     g_net->waiting = false;
     g_net->waitCancelled = false;       // (Esc flew this one alone; the next launch waits again)
+    if (g_net->challenge && tie_r8(tie::kFlightGroups + (Bit32u)tie_r8(tie::kPstate + 0x0A) * tie::kFlightGroupSize + 0x32) != kZ95) {
+        make_challenge(true);           // (the mission read again after a jump: its craft as they were)
+    }
     keep_pairing();
     if (g_net->pairedFg >= 0) {
         // (a pairing: the guests have their own flight group, made at the species' loading; the host's stays as it is)

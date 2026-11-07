@@ -395,6 +395,7 @@ message TiePresence {
     optional sint32 scene = 3;
     optional bool flying = 4;
     optional string mission = 5;
+    optional bool challenge = 6;    // its mission flown as the Z-95 challenge (step 14)
 }
 message NetworkMessage {
     optional Connect connect = 1;
