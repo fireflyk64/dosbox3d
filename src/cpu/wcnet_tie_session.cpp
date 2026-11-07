@@ -178,14 +178,15 @@ struct TieNet {
     TieHit hitsIn[64];
     int hitsInNext;
     int killing[kCraftSlots];   // calls made to kill a copy whose owner reported it dying (0: none)
-    unsigned shotsSent, shotsMade, hitsSent, hitsApplied, damageSkipped, kills;
+    int killer[kCraftSlots];    // a craft of ours: the shooter whose hit, applied here, began its death, + 1 (0: none)
+    unsigned shotsSent, shotsMade, hitsSent, hitsApplied, damageSkipped, kills, credited;
     // far craft and hits shown here (the report)
     unsigned localAiNow = 0, localAiStarts = 0, localAiEnds = 0, localShots = 0, farReports = 0, nearBlends = 0, hitsShown = 0;
     double farErrSum = 0, farErrMax = 0;
     TieNet() : host(false), self(-1), seats(2), listener(NULL), frame(0), lastReliableAt(0), playerFg(kPlayerFgNone),
                hostCraft(1), wasFlying(false), sentScene(-2), sentFlying(false), sentAt(-1e9), decidedAt(-1e9), ownersSentAt(-1e9),
                farCursor(0), sentCraft(0), sentNear(0), sentMid(0), sentFar(0), sentBytes(0), ownerChanges(0), hitsInNext(0),
-               shotsSent(0), shotsMade(0), hitsSent(0), hitsApplied(0), damageSkipped(0), kills(0) {
+               shotsSent(0), shotsMade(0), hitsSent(0), hitsApplied(0), damageSkipped(0), kills(0), credited(0) {
         clear_flight();
     }
     // A puppet table and owners for a new flight (a Puppet holds a protobuf message: never memset).
@@ -216,6 +217,7 @@ struct TieNet {
         hitsOut.clear();
         for (int o = 0; o < kCraftSlots; o++) {
             killing[o] = 0;
+            killer[o] = 0;
         }
     }
     ~TieNet() {
@@ -231,7 +233,7 @@ double g_nextTryMs = 0;
 double g_noticeAt = -1;
 
 void take_owners(const TieOwners &t);
-void begin_kill(int obj);
+void begin_kill(int obj, int killer);
 void room_end(int seat, const char *what);
 void make_shot(const TieShot &shot, int owner);
 void take_hit(const TieHit &hit);
@@ -398,7 +400,7 @@ void take_frame(Peer *from, const TieFrame &f) {
         p.prevAt = p.at;
         p.at = PIC_FullIndex();
         if (c.dying() && c.obj() < (Bit32u)kCraftSlots && tie_in_flight()) {
-            begin_kill((int)c.obj());
+            begin_kill((int)c.obj(), c.has_killer() ? (int)c.killer() : -1);
             if (f.has_own() && c.obj() == f.own()) {
                 room_end(owner, " is down");
             }
@@ -791,7 +793,7 @@ void release_ai(int obj) {
 enum { kShotReach = 2 * kReach, kKillCalls = 12 };
 // The collision test's bolt segment (tie.c's laserx.. and laserxold..), which collide_laserhitcraft reads.
 enum { kLaserX = 0xEAB94, kLaserY = 0xEAB98, kLaserZ = 0xEAB90, kLaserXOld = 0xEABD4, kLaserYOld = 0xEABD8, kLaserZOld = 0xEABD0 };
-enum { kFnCreateProjectile = 0x2E0E4, kFnLaserHit = 0x1433C, kFnDamage = 0x148F0, kWarheads = 0xE61FC };
+enum { kFnCreateProjectile = 0x2E0E4, kFnLaserHit = 0x1433C, kFnDamage = 0x148F0, kFnUpdateKills = 0x16218, kWarheads = 0xE61FC };
 
 bool someone_near(int obj, double reach) {
     const double now = PIC_FullIndex();
@@ -883,6 +885,11 @@ void hit_done(int tag, Bit32u eax) {
         g_net->hitsApplied++;
     }
     standin_slot = -1;
+    const int t = (int)h.target();
+    if (t < kCraftSlots && !g_net->killer[t] && h.shooter() < 120 && (tie_r16(obj_base(t) + 0x2C) != 0 || tie_r8(obj_base(t) + 4) >= 127)) {
+        g_net->killer[t] = (int)h.shooter() + 1;    // (the hit that began its death: its shooter's machine credits the kill)
+        wclog(2, "TIE: obj %d dying of obj %u's hit, applied here", t, h.shooter());
+    }
 }
 void take_hit(const TieHit &hit) {
     const int target = (int)hit.target();
@@ -926,11 +933,23 @@ void kill_done(int tag, Bit32u eax) {
     g_net->killing[obj]++;
     tie_queue_call(kFnDamage, (Bit32u)obj, 0xFFFF, 0xFFFF, 0, kill_before, kill_done, obj);
 }
-void begin_kill(int obj) {
+// The kill credited to our pilot when its shot began the death on the owner's machine (the open item of step 6: "a
+// kill the shooter's machine did not apply is not scored there"): the game's own collide_updatekills(shooter, victim,
+// 1), as its damage does for a kill of its own (the craft's kills, the player's kills by species, the congratulations,
+// a friendly kill's message), before the copy is killed.
+void credit_done(int tag, Bit32u eax) {
+    (void)eax;
+    g_net->credited++;
+    wclog(1, "TIE: obj %d's kill credited to us (our shot began its death on its owner's machine)", tag);
+}
+void begin_kill(int obj, int killer) {
     if (mine(obj) || g_net->killing[obj] != 0 || !is_craft(obj) || tie_r16(obj_base(obj) + 0x2C) != 0) {
         return;
     }
     g_net->killing[obj] = 1;
+    if (killer >= 0 && killer == tie_player_object()) {
+        tie_queue_call(kFnUpdateKills, (Bit32u)killer, (Bit32u)obj, 1, 0, NULL, credit_done, obj);
+    }
     tie_queue_call(kFnDamage, (Bit32u)obj, 0xFFFF, 0xFFFF, 0, kill_before, kill_done, obj);
 }
 
@@ -1081,6 +1100,11 @@ void fill_craft(TieCraft *c, int obj) {
     c->set_axes(std::string(axes, sizeof(axes)));
     if (tie_r16(o + 0x2C) != 0 || tie_r8(o + 4) >= 127) {
         c->set_dying(true);     // (its death timer running, or already its explosion)
+        if (obj < kCraftSlots && g_net->killer[obj]) {
+            c->set_killer((Bit32u)(g_net->killer[obj] - 1));
+        }
+    } else if (obj < kCraftSlots) {
+        g_net->killer[obj] = 0;
     }
     const Bit32u craft = obj < kCraftSlots ? tie_r32(o + 0x54) : 0;
     if (craft >= 0x100000) {
@@ -1336,11 +1360,11 @@ void report_frame(double now) {
         }
         char sums[400];
         snprintf(sums, sizeof(sums), " owners %d/%d/%d; sent %u craft (%u near, %u mid, %u far) in %u bytes, %u owner changes; guns: %u shots"
-                 " sent, %u made, %u hits sent, %u applied, %u damage skipped, %u kills;", owned[0], owned[1], owned[2], g_net->sentCraft,
-                 g_net->sentNear, g_net->sentMid, g_net->sentFar, g_net->sentBytes, g_net->ownerChanges, g_net->shotsSent, g_net->shotsMade,
-                 g_net->hitsSent, g_net->hitsApplied, g_net->damageSkipped, g_net->kills);
+                 " sent, %u made, %u hits sent, %u applied, %u damage skipped, %u kills, %u credited;", owned[0], owned[1], owned[2],
+                 g_net->sentCraft, g_net->sentNear, g_net->sentMid, g_net->sentFar, g_net->sentBytes, g_net->ownerChanges, g_net->shotsSent,
+                 g_net->shotsMade, g_net->hitsSent, g_net->hitsApplied, g_net->damageSkipped, g_net->kills, g_net->credited);
         g_net->sentCraft = g_net->sentNear = g_net->sentMid = g_net->sentFar = g_net->sentBytes = g_net->ownerChanges = 0;
-        g_net->shotsSent = g_net->shotsMade = g_net->hitsSent = g_net->hitsApplied = g_net->damageSkipped = g_net->kills = 0;
+        g_net->shotsSent = g_net->shotsMade = g_net->hitsSent = g_net->hitsApplied = g_net->damageSkipped = g_net->kills = g_net->credited = 0;
         char far[240];
         snprintf(far, sizeof(far), " far: %u flown by our AI (%u began, %u ended), %u of their shots here, %u reports pulled in (error mean %.0f, worst "
                  "%.0f), %u near ones blended; %u hits of ours shown here;", g_net->localAiNow, g_net->localAiStarts, g_net->localAiEnds,

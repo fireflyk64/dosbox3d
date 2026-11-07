@@ -344,6 +344,9 @@ message TieCraft {
     optional sint32 shield_front = 17;
     optional sint32 shield_rear = 18;
     optional uint32 systems = 19;
+    // Dying: the craft whose shot, decided on its own machine and applied here, began the death (that machine's pilot
+    // is credited the kill there; none: a death of this machine's own).
+    optional uint32 killer = 20;
 }
 // A shot (TIE Fighter): the shooter's object, the hardpoint, the projectile's type, as laser_createprojectile took them.
 message TieShot {
