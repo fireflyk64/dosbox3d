@@ -2923,7 +2923,8 @@ static int32_t pass_side(int16_t s, const Mind __far *m, const AiProfile __far *
             if (k < s)
                 rank++;
         }
-    if (n && !capital)                  /* (lanes -n/2 .. n/2 about the target; none on a capital ship) */
+    if (n && !capital && !(g_rule_flags & RV_RULE_NO_LANES))   /* (lanes -n/2 .. n/2 about the target; none on a capital
+                                           ship, none at all under the hard difficulty) */
         lane = (rank * 2 - n) * room / 2;
     if (passing(s, v) && v->km < v->closing * LOGIC_HZ + 2 * turn_room(s))   /* (the pass within a second, and the room
                                            its turning circle wants: by its own side of the target) */

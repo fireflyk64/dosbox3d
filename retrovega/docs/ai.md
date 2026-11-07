@@ -108,7 +108,7 @@ The mission's rules (missions.txt `rules`, `g_rule_flags`; docs/engine.md for `h
   the player in its cone and 146 outside it. `hold=off`: every ship fires. The user's ruling (2026-11-03: a selected
   Shizong circled a still player for 15 minutes without a shot; its Cripplers' 46-degree cone left it only the band
   past 37, and a Taizong's 20-degree beam none at all; the rule never looks at which way the player faces): off for
-  the usual play, on under the bunk menu's DIFFICULTY easy (`g_easy`, RVSETUP.CFG's ninth byte; `camp_load_rules`
+  the usual play, on under the DIFFICULTY easy (`g_difficulty` RV_DIFF_EASY, the bunk menu's or the page's, RVSETUP.CFG's ninth byte; `camp_load_rules`
   adds the flag to every mission's, the simulator's too; in a room the host's choice counts, its AI deciding the
   fire). M5.20 holds it.
 - `ram=old` (the default) or `ram=soft`: docs/logic.md, `ram_damage`.

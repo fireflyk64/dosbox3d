@@ -127,6 +127,8 @@ HIT_MODES = {'': 0, 'silhouette': SHIPTYPE_FLAG_HIT_SILHOUETTE, 'sphere': SHIPTY
 # ram=old (a collision takes the square of the closing speed in km a step, halved: the old game's, deadly) | soft
 # (a touch's 2 points and a point per 125 kps closing)
 RULE_AIM_CONE, RULE_HOLD_FIRE, RULE_RAM_SOFT = 1, 2, 4
+RULE_NO_LANES = 8                      # (not a mission's: the hard difficulty's, campaign.c camp_load_rules: an attack on a
+                                       # fighter aims at its middle, no lanes; logic.c pass_side)
 RULES = {'hit': {'ships': 0, 'silhouette': SHIPTYPE_FLAG_HIT_SILHOUETTE, 'sphere': SHIPTYPE_FLAG_HIT_SPHERE,
                  'box': SHIPTYPE_FLAG_HIT_BOX},
          'aim': {'lead': 0, 'cone': RULE_AIM_CONE}, 'hold': {'off': 0, 'on': RULE_HOLD_FIRE},
@@ -941,6 +943,7 @@ def header_text(sizes):
     out.append('#define RV_RULE_AIM_CONE %d' % RULE_AIM_CONE)
     out.append('#define RV_RULE_HOLD_FIRE %d' % RULE_HOLD_FIRE)
     out.append('#define RV_RULE_RAM_SOFT %d' % RULE_RAM_SOFT)
+    out.append('#define RV_RULE_NO_LANES %d' % RULE_NO_LANES)
     out.append('#define RV_PROFILES %d                 /* missions.txt ai=: %s (logic.c P_*, in this order) */'
                % (len(PROFILES), ', '.join(PROFILES)))
     out.append('#define RV_GUN_ENERGY_STEPS %d' % GUN_ENERGY_STEPS)

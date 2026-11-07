@@ -16,7 +16,7 @@
 
 RvSave g_camp;
 uint8_t g_rule_hit, g_rule_flags;
-uint8_t g_easy;                         /* the bunk menu's difficulty (RVSETUP.CFG): 1 easy, the held fire on in every mission */
+uint8_t g_difficulty;                   /* the bunk menu's or the page's difficulty (RVSETUP.CFG, campaign.h RV_DIFF_*) */
 RvPilot g_pilots[RV_PILOTS];
 RvNode g_nodes[RV_NODES];
 uint16_t g_npilots, g_nnodes, g_nmissions;
@@ -299,11 +299,16 @@ void camp_load_rules(const RvMission __far *m)
 {
     g_rule_hit = m->hit;                /* (its rules: the hit volume, the AI's aim, the held fire, the collisions) */
     g_rule_flags = m->rules;
-    if (g_easy)                         /* (the easy mode: the old game's held fire, a player's selected target holding its
+    if (g_difficulty == RV_DIFF_EASY)   /* (easy: the old game's held fire, a player's selected target holding its
                                            guns while the player is ahead of its nose; off for the usual play, the user's
                                            ruling 2026-11-03: a selected Shizong circled a still player for 15 minutes
                                            and never fired) */
         g_rule_flags |= RV_RULE_HOLD_FIRE;
+    if (g_difficulty == RV_DIFF_HARD)   /* (hard: an attack on a fighter aims at its middle, no lanes (logic.c pass_side):
+                                           the old game's hit rate on a pilot flying straight, 26% of the enemies' shots
+                                           against the lanes' 8% (its 28%), measured 2026-11-07; the user: "there's an
+                                           easy difficulty now. This can be a hard difficulty") */
+        g_rule_flags |= RV_RULE_NO_LANES;
 }
 
 uint16_t camp_flight_fighter(void)

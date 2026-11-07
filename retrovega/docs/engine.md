@@ -552,18 +552,25 @@ Alt-X, "so it's rare".
 - **Clicking a pilot** opens their talking close-up. The words appear as
   the mouth says them (lipsync.c: a shape a step, vowels two, pauses at
   commas and stops), timed on the 240 Hz music clock. The pace is the
-  bunk menu's *talk speed*: slow (the first pace, 100 ms a step, about 8
+  bunk menu's *TALK* row (its label "TALK (T)": the user, 2026-11-07, "TALK SLOW makes sense to people"): slow (the first pace, 100 ms a step, about 8
   letters a second), normal (twice that: the default, since the user found
   the first pace painful to read), fast, very fast (four times). T in the
   bunk menu steps through them, a click picks one; the choice is kept in
   `RVSETUP.CFG` (the browser page keeps it with the bunks). The bar's and
   the lounge's table talk stays up for a second plus its reading time at
   that pace.
-- **The bunk menu's DIFFICULTY row** (above the talk speeds; D or a click):
-  normal, the default, or easy, which turns on the old game's held fire in
-  every mission from the next flight (the ship you have selected holds its
-  guns while you are within 37 degrees of its nose; docs/ai.md). Kept as
-  `RVSETUP.CFG`'s ninth byte (an older eight-byte file reads as normal).
+- **The bunk menu's DIFFICULTY row** (above the talk speeds; D steps, a click
+  picks): easy, med (the default, the old normal), hard (the user,
+  2026-11-07: "just have easy medium hard"). Easy turns on the old game's
+  held fire in every mission (the ship you have selected holds its guns
+  while you are within 37 degrees of its nose; docs/ai.md); hard aims every
+  attack on a fighter at its middle, no lanes (`RV_RULE_NO_LANES`,
+  logic.c pass_side: the old game's 28% of hits on a pilot flying straight,
+  where the lanes left 8%). Kept as `RVSETUP.CFG`'s ninth byte (1 easy,
+  0 med, 2 hard; an older eight-byte file reads as med), which the
+  browser page's Difficulty menu writes too: the game reads it again as
+  the bunk menu opens and as a flight begins, so either one sets it; in a
+  room the host's counts, its AI flying the enemies.
   The bunks' rows are 24 pixels apart to make room for it. The menu does
   not say what easy changes (the user: "better to keep it magic").
 - **EXTRA FX** (the difficulty's row, to its right; E or a click): off, the

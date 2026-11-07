@@ -116,6 +116,7 @@
 #define RV_RULE_AIM_CONE 1
 #define RV_RULE_HOLD_FIRE 2
 #define RV_RULE_RAM_SOFT 4
+#define RV_RULE_NO_LANES 8
 #define RV_PROFILES 9                 /* missions.txt ai=: interceptor, fighter, heavy, ace, bomber, wingman, capital, waiter, noleft (logic.c P_*, in this order) */
 #define RV_GUN_ENERGY_STEPS 1
 #define RV_SHIELD_FULL_SHIFT 9

@@ -86,7 +86,17 @@ static const char *g_talk_names[] = { "slow", "normal", "fast", "very fast" };
 static int g_talk_speed = 1;
 static int g_low_detail;                /* the ships' detail, the bunk menu's choice (0: high, gx.h; only asked with the card there) */
 static const char *g_detail_names_[] = { "high", "low" };
-static const char *g_diff_names[] = { "normal", "easy" };   /* the difficulty, the bunk menu's choice: g_easy (campaign.c) */
+static const char *g_diff_names[] = { "easy", "med", "hard" };   /* the difficulty, the bunk menu's choice (or the
+                                           page's: both write RVSETUP.CFG's ninth byte): g_difficulty (campaign.c), in
+                                           this order on the row */
+static const uint8_t g_diff_value[] = { RV_DIFF_EASY, RV_DIFF_MEDIUM, RV_DIFF_HARD };
+static int diff_index(void)
+{
+    int i;
+    for (i = 0; i < (int)RV_COUNT(g_diff_value) && g_diff_value[i] != g_difficulty; i++)
+        ;
+    return i < (int)RV_COUNT(g_diff_value) ? i : 1;
+}
 static const char *g_fx_names[] = { "off", "on" };   /* the extra effects, the bunk menu's choice: g_fx_extra (explode.h) */
 #define SETUP_FILE "RVSETUP.CFG"
 
@@ -100,7 +110,7 @@ static void setup_load(void)
     if ((n = fread(b, 1, 10, f)) >= 8 && !memcmp(b, "RVCFG1", 6) && b[6] < RV_COUNT(g_talk_pcts)) {
         g_talk_speed = b[6];
         g_low_detail = b[7] == 1;       /* (older files have 0 here: high detail, the default) */
-        g_easy = n >= 9 && b[8] == 1;   /* (older files end before it: normal) */
+        g_difficulty = n >= 9 && b[8] <= RV_DIFF_HARD ? b[8] : RV_DIFF_MEDIUM;   /* (older files end before it) */
         g_fx_extra = n == 10 && b[9] == 1;   /* (and before this: off) */
     }
     gx_set(!g_low_detail);
@@ -114,14 +124,14 @@ static void setup_save(void)
     memcpy(b, "RVCFG1", 6);
     b[6] = (char)g_talk_speed;
     b[7] = (char)g_low_detail;
-    b[8] = (char)g_easy;
+    b[8] = (char)g_difficulty;
     b[9] = (char)g_fx_extra;
     if (f) {
         fwrite(b, 1, 10, f);
         fclose(f);
     }
     RV_LOG("setup: talk speed %s, ship detail %s, difficulty %s, extra fx %s", g_talk_names[g_talk_speed],
-           g_detail_names_[g_low_detail], g_diff_names[g_easy], g_fx_names[g_fx_extra]);
+           g_detail_names_[g_low_detail], g_diff_names[diff_index()], g_fx_names[g_fx_extra]);
 }
 
 /* speech runs on the music clock (240 Hz): fine enough for a shape every 25 ms */
@@ -1387,6 +1397,8 @@ static void flight_prepare(void)
     }
     missionStarting();
     g_scene.label[0] = 0;
+    setup_load();                       /* (the difficulty as it is now: the page's dropdown writes RVSETUP.CFG too) */
+    camp_load_rules(&g_m);
     g_guest = rvNetRole == 2;
     if (g_guest) {
         uint16_t node = currentSeries, k = currentMission;
@@ -1529,10 +1541,19 @@ static char g_name[24];
 
 /* the bunk menu's row of talk speeds: where each choice is, for drawing and clicking */
 #define SPEED_Y 292
-#define SPEED_LABEL "TALK SPEED (T)"
+#define SPEED_LABEL "TALK (T)"              /* (the user, 2026-11-07: "TALK SPEED can be just TALK", "TALK SLOW makes sense to
+                                               people") */
+#define DIFF_LABEL "DIFFICULTY (D)"
+/* where the choices of the talk and difficulty rows begin: past the wider of the two labels */
+static int choices_x(void)
+{
+    int a = gfx_text_width(FONT_BODY, SPEED_LABEL), b = gfx_text_width(FONT_BODY, DIFF_LABEL);
+    return 110 + (a > b ? a : b) + 20;
+}
+
 static int speed_x(int i, int *w)
 {
-    int k, x = 110 + gfx_text_width(FONT_BODY, SPEED_LABEL) + 20;
+    int k, x = choices_x();
     for (k = 0; k < i; k++)
         x += gfx_text_width(FONT_BODY, g_talk_names[k]) + 22;
     *w = gfx_text_width(FONT_BODY, g_talk_names[i]);
@@ -1554,12 +1575,12 @@ static void talk_speed_row(int y0, int y1)
 /* the bunk menu's row of difficulties, between the bunks and the talk speeds (what easy changes is not said: the
  * user, 2026-11-03: "better to keep it magic") */
 #define DIFF_Y 272
-#define DIFF_LABEL "DIFFICULTY (D)"
 static int diff_x(int i, int *w)
 {
-    int k, x = 110 + gfx_text_width(FONT_BODY, SPEED_LABEL) + 20;   /* (its choices under the talk speeds') */
+    int k, x = choices_x();             /* (its choices over the talk speeds') */
     for (k = 0; k < i; k++)
-        x += gfx_text_width(FONT_BODY, g_diff_names[k]) + 22;
+        x += gfx_text_width(FONT_BODY, g_diff_names[k]) + 14;   /* (three now: closer, so EXTRA FX's "on" ends inside
+                                                                    the panel) */
     *w = gfx_text_width(FONT_BODY, g_diff_names[i]);
     return x;
 }
@@ -1570,21 +1591,26 @@ static void difficulty_row(int y0, int y1)
     gfx_text(FONT_BODY, 110, DIFF_Y, DIFF_LABEL, RV_TEXT_AMBER, y0, y1);
     for (i = 0; i < (int)RV_COUNT(g_diff_names); i++) {
         int w, x = diff_x(i, &w);
-        if (i == g_easy)
+        if (i == diff_index())
             gfx_fill(x - 6, DIFF_Y - 3, w + 12, 20, UI_PANEL_EDGE, y0, y1);
-        gfx_text(FONT_BODY, x, DIFF_Y, g_diff_names[i], i == g_easy ? RV_TEXT_WHITE : RV_TEXT_GREY, y0, y1);
+        gfx_text(FONT_BODY, x, DIFF_Y, g_diff_names[i], i == diff_index() ? RV_TEXT_WHITE : RV_TEXT_GREY, y0, y1);
     }
 }
 
 /* the bunk menu's extra effects, on the difficulty's row to its right: the wrecks' debris (explode.h; drawn only with
  * the card on DOS, by the native builds themselves), off by default */
-#define FX_X 372                        /* (past "easy" and its highlight; "on"'s ends inside the panel) */
 #define FX_LABEL "EXTRA FX (E)"
+static int fx_base(void)                /* (past the difficulty's last choice and its highlight) */
+{
+    int w, x = diff_x((int)RV_COUNT(g_diff_names) - 1, &w);
+    return x + w + 16;
+}
+
 static int fx_x(int i, int *w)
 {
-    int k, x = FX_X + gfx_text_width(FONT_BODY, FX_LABEL) + 12;
+    int k, x = fx_base() + gfx_text_width(FONT_BODY, FX_LABEL) + 10;
     for (k = 0; k < i; k++)
-        x += gfx_text_width(FONT_BODY, g_fx_names[k]) + 16;
+        x += gfx_text_width(FONT_BODY, g_fx_names[k]) + 12;
     *w = gfx_text_width(FONT_BODY, g_fx_names[i]);
     return x;
 }
@@ -1592,7 +1618,7 @@ static int fx_x(int i, int *w)
 static void fx_row(int y0, int y1)
 {
     int i;
-    gfx_text(FONT_BODY, FX_X, DIFF_Y, FX_LABEL, RV_TEXT_AMBER, y0, y1);
+    gfx_text(FONT_BODY, fx_base(), DIFF_Y, FX_LABEL, RV_TEXT_AMBER, y0, y1);
     for (i = 0; i < (int)RV_COUNT(g_fx_names); i++) {
         int w, x = fx_x(i, &w);
         if (i == g_fx_extra)
@@ -1748,6 +1774,7 @@ static void bunk_overlay(int y0, int y1)
 static void open_bunks(void)
 {
     int i;
+    setup_load();                       /* (the page may have set the difficulty since: RVSETUP.CFG) */
     for (i = 0; i < BUNKS; i++)
         g_bunk_full[i] = save_read(i, &g_bunk_info[i]);
     g_bunk_sel = -1;
@@ -1801,7 +1828,7 @@ static void bunk_input(const Input *in0)
     }
     /* the extra effects: E for the other, or a click on one (from the next flight) */
     if (g_mode != MODE_NAME && ((in->key == KEY_CHAR && (in->ch == 'e' || in->ch == 'E'))
-                                || (in->clicked && in->y >= DIFF_Y - 3 && in->y < DIFF_Y + 16 && in->x >= FX_X - 4))) {
+                                || (in->clicked && in->y >= DIFF_Y - 3 && in->y < DIFF_Y + 16 && in->x >= fx_base() - 4))) {
         int i, w, pick = -1;
         if (!in->clicked)
             pick = !g_fx_extra;
@@ -1821,14 +1848,14 @@ static void bunk_input(const Input *in0)
     if ((in->key == KEY_CHAR && (in->ch == 'd' || in->ch == 'D')) || (in->clicked && in->y >= DIFF_Y - 3 && in->y < DIFF_Y + 16)) {
         int i, w, pick = -1;
         if (!in->clicked)
-            pick = !g_easy;
+            pick = (diff_index() + 1) % (int)RV_COUNT(g_diff_names);
         for (i = 0; in->clicked && i < (int)RV_COUNT(g_diff_names); i++) {
             int x = diff_x(i, &w);
             if (in->x >= x - 8 && in->x < x + w + 8)
                 pick = i;
         }
         if (pick >= 0) {
-            g_easy = (uint8_t)pick;
+            g_difficulty = g_diff_value[pick];
             setup_save();
             vid_dirty(30, 350);
         }
@@ -2077,6 +2104,7 @@ static void start_simulator(void)
     logic_boost = 0;
     {
         const RvMission __far *sim = simulator_mission(&g_m);
+        setup_load();                   /* (the difficulty as it is now: the page's dropdown writes RVSETUP.CFG too) */
         camp_load_tables(sim);
         mission_load_assets();
         status = g_noflight ? 0 : flight_simulator(sim);   /* (the test rig's /noflight: no flying here either) */
