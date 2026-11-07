@@ -672,8 +672,10 @@ function parseMission(v) {
 // A game with no flight yet (RetroVega): no mission to pick, no flight options.
 const lobbyFlies = () => { const g = gameById(lobbyGameId()); return !(g && g.noFlight); };
 function missionLabel(m) {
-  if (!m) return lobbyFlies() ? "the campaign from the barracks" : (gameById(lobbyGameId()) || {}).title || "the game";
+  if (!m) return lobbyFlies() ? ((lobbyCampaign() || {}).noneLabel || "the campaign from the barracks") : (gameById(lobbyGameId()) || {}).title || "the game";
   const c = lobbyCampaign();
+  // (a campaign that words its own missions: TIE Fighter's)
+  if (c && c.label) return c.label(m);
   const s = c && c.series.find((e) => e.series === m.series);
   if (!s) return `ch ${m.series}, mission ${m.mis + 1}`;
   const note = Array.isArray(s.missions) ? s.missions[m.mis] : "";
@@ -716,7 +718,23 @@ function buildMissionMenu() {
   const add = (value, text) => { const o = document.createElement("option"); o.value = value; o.textContent = text; sel.appendChild(o); };
   add("", (c && c.start && c.start[one ? "alone" : "room"]) || "Campaign from the barracks (the host's save game decides)");
   if (!c) return;
+  let group = null;
   for (const s of c.series) {
+    // (a campaign with its own words and groups: TIE Fighter's Combat Chamber and battles)
+    if (c.label && s.files) {
+      if (!group || group.label !== (s.title ? `${s.group}: ${s.title}` : s.group)) {
+        group = document.createElement("optgroup");
+        group.label = s.title ? `${s.group}: ${s.title}` : s.group;
+        sel.appendChild(group);
+      }
+      for (let i = 0; i < s.files.length; i++) {
+        const o = document.createElement("option");
+        o.value = `${s.series}/${i}`;
+        o.textContent = c.label({ series: s.series, mis: i }, "menu");
+        group.appendChild(o);
+      }
+      continue;
+    }
     const n = Array.isArray(s.missions) ? s.missions.length : s.missions;
     for (let i = 0; i < n; i++) {
       const note = Array.isArray(s.missions) ? s.missions[i] : "";
@@ -726,16 +744,53 @@ function buildMissionMenu() {
     }
   }
 }
+// A campaign worded from the game's own files (the registry's `campaign.fromFiles`: TIE Fighter's craft, battles
+// and missions in its own words), once, from the loaded copy of the game; the menu is made again after.
+function wordCampaign() {
+  const c = lobbyCampaign();
+  if (!c || !c.fromFiles || c.worded || !source || source.game.id !== lobbyGameId() || !source.files.length) return;
+  c.worded = true;
+  try {
+    c.fromFiles(source.files);
+  } catch (e) {
+    log(`the mission menu's words: ${e.message || e}`);
+  }
+  $("mission").dataset.game = "";
+}
+// A campaign the running game takes while it runs (the registry's `campaign.live`, an export of the emulator taking
+// the mission's name: TIE Fighter flies many missions in one run, so the host may change it between flights).
+let liveMissionSent = null;
+function liveMission() {
+  const c = lobbyCampaign();
+  const M = running && window.DOSBox;
+  if (!M) {
+    liveMissionSent = null;     // (the next run is told at its launch: WCNET_TIE_MISSION)
+    return;
+  }
+  if (!c || !c.live || !M["_" + c.live] || soloRoom()) return;
+  const name = lobby.mission && c.file ? c.file(lobby.mission) : "";
+  if (name === liveMissionSent) return;
+  liveMissionSent = name;
+  const bytes = Array.from(name, (ch) => ch.charCodeAt(0) & 0x7f);
+  const p = M._malloc(bytes.length + 1);
+  bytes.forEach((b, i) => { M.HEAPU8[p + i] = b; });
+  M.HEAPU8[p + bytes.length] = 0;
+  M["_" + c.live](p);
+  M._free(p);
+  log(`the room's mission given to the game: ${name || "none"}`);
+}
 function renderMission() {
   $("missionRow").hidden = !lobbyFlies();
   loadCampaignManifest(gameById(lobbyGameId()));
+  wordCampaign();
   buildMissionMenu();
+  liveMission();
   const sel = $("mission");
   const c = lobbyCampaign();
   // A mission the host's game does not have (the host changed games) is none.
   if (lobby.mission && isHost() && !Array.from(sel.options).some((o) => o.value === missionKey(lobby.mission))) lobby.mission = null;
   sel.value = missionKey(lobby.mission);
-  sel.disabled = !isHost() || running;
+  sel.disabled = !isHost() || (running && !(c && c.live));
   // (A room of one flies the game as it is: its own campaign, collisions and
   // all, and a mission picked only where the game takes it itself.  The frame
   // rate stays: the hooks pace a flight alone too.)
@@ -1299,7 +1354,7 @@ async function joinRoom({ create = true } = {}) {
     $("chatForm").hidden = solo;
     $("lobbyHint").textContent = solo ? SOLO_HINT : ROOM_HINT;
     // (A room of one starts with the campaign as the game starts it, a room for more at the first mission.)
-    if (game.selfId === 0) lobby.mission = parseMission(query.get("mission")) || (solo ? null : { series: 1, mis: 0 });
+    if (game.selfId === 0) lobby.mission = parseMission(query.get("mission")) || (solo || (lobbyCampaign() || {}).noDefault ? null : { series: 1, mis: 0 });
     lobby.rocks = game.selfId === 0 ? rocksMode({ 0: "off", 2: "soft" }[query.get("rocks")] || query.get("rocks")) : "on";
     lobby.wingBumps = game.selfId === 0 ? wingBumpsMode({ 0: "game", 1: "harmless" }[query.get("bumps")] || query.get("bumps")) : "harmless";
     lobby.latency = game.selfId === 0 ? latencyMode(query.get("latency")) : "low";
@@ -1366,7 +1421,8 @@ function offerText() {
   const free = g.players.filter((p) => !p.occupied).length;
   const c = lobbyCampaign();
   const s = lobby.mission && c && c.series.find((e) => e.series === lobby.mission.series);
-  const what = !lobbyFlies() ? "" : !lobby.mission ? "campaign" : s && s.name ? `${s.name} ${lobby.mission.mis + 1}` : `ch ${lobby.mission.series} mission ${lobby.mission.mis + 1}`;
+  const what = !lobbyFlies() ? "" : !lobby.mission ? (c && c.noneShort) || "campaign" : c && c.label ? c.label(lobby.mission, "short")
+    : s && s.name ? `${s.name} ${lobby.mission.mis + 1}` : `ch ${lobby.mission.series} mission ${lobby.mission.mis + 1}`;
   const seats = free ? `${free} seat${free === 1 ? "" : "s"} free` : "full";
   // (The program, when the room's code was made for another: the code is advisory.)
   const prog = gameTag() && roomTag(g.code) !== gameTag() ? ` ${gameTag()}` : "";
@@ -1725,6 +1781,8 @@ async function start(fromGesture) {
     if (lobby.mission && campaign && (together || (solo && campaign.alone && campaign.missionArgs))) {
       if (campaign.missionArgs) {
         missionArgs = " " + campaign.missionArgs(lobby.mission);
+      } else if (campaign.env) {
+        Object.assign(env, campaign.env(lobby.mission));
       } else {
         env.MIS = String(lobby.mission.mis);
         env.SERIES = String(lobby.mission.series);
