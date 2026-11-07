@@ -13,6 +13,10 @@
 # A ship line's turrets=off keeps a capital ship's turrets silent: the home carrier with enemies at nav 0 has it, or
 # its turrets would have those fighters dead in seconds, with the player only watching (measured 2026-10-31)
 #
+# A ship line's role=back is an escort target that is there when its nav point is reached and makes for home at once
+# (the old game's behaviour 10: Kurasawa 2's captured Ralari, RIGEL2's Agasicles); role=in's waits off the scene until a
+# pilot comes within 5,000 km (its behaviour 7, the Draymen); either one killed loses the mission
+#
 # A ship line's role=stay keeps a fighter of ours where it is: the autopilot leaves it (it takes the wingman, a human's
 # fighter, the escort targets on their way and the other friendly fighters near the player), and with nobody to fight
 # it flies round the capital ship nearest it.  The old game's carrier kept a patrol of its own at the launch, two or
@@ -1752,7 +1756,7 @@ ship     AGIS 1 nav2 count=2
 ship     LANCELT 0 nav1 at=0,3000,5000
 ship     CONVOLN 1 nav1 count=2 at=0,0,10000 prey=AGASICL
 ship     CONVOLN 1 nav1 count=2 at=0,3000,-5000 prey=AGASICL
-ship     AGASICL 0 nav1 at=5000,2500,5000
+ship     AGASICL 0 nav1 at=5000,2500,5000 role=back
 field    asteroid 15000 -3000 -30000 7500 level=1
 bar      left=FROST middle=KESTREL right=DRIFTER
 talk     bar KESTREL FROST "They're looking at you the way they look at me."

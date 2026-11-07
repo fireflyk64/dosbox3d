@@ -214,9 +214,11 @@ SHIP = [('unsigned char', 'type', 'B'), ('unsigned char', 'side', 'B'), ('unsign
 # a mission ship's AI profile (missions.txt ai=NAME: logic.c's P_* in this order, 1-based in the record, 0 the type's
 # own) and its own fear rates (fear=c/d, 0-15 each: the old game's class bytes; 0: the profile's)
 PROFILES = ['interceptor', 'fighter', 'heavy', 'ace', 'bomber', 'wingman', 'capital', 'waiter', 'noleft']
-ESCORT_ROLES = {'out': 1, 'in': 2, 'home': 3, 'stay': 4}   # a mission ship's role (RV_ESCORT_*): an escort target
-                                        # flies out to the next nav point and jumps there, or waits at its own until the
-                                        # player comes and flies home; `home` is the carrier the player lands on: it holds
+ESCORT_ROLES = {'out': 1, 'in': 2, 'home': 3, 'stay': 4, 'back': 5}   # a mission ship's role (RV_ESCORT_*): an escort
+                                        # target flies out to the next nav point and jumps there, or waits at its own until the
+                                        # player comes and flies home (`in`: it jumps in when a pilot is near, the old
+                                        # behaviour 7; `back`: it is there from the point's reaching and makes for home at
+                                        # once, the old behaviour 10, Kurasawa 2's Ralari); `home` is the carrier the player lands on: it holds
                                         # station; `stay`, a fighter of the player's side that stays at its nav point (the
                                         # carrier's patrol, the old game's): the autopilot leaves it, and with nobody to
                                         # fight it flies round the capital ship nearest it (the user, 2026-11-05)
@@ -621,7 +623,7 @@ def compile_all():
             role = 0
             if 'role' in opts:
                 if opts['role'] not in ESCORT_ROLES or kind in ('player', 'wingman'):
-                    raise Fail('%s: role=%s: an escort target is role=out or role=in, the home carrier role=home, a '
+                    raise Fail('%s: role=%s: an escort target is role=out, role=in or role=back, the home carrier role=home, a '
                                'fighter that stays at its nav point role=stay' % (where, opts['role']))
                 role = ESCORT_ROLES[opts['role']]
                 if role == ESCORT_ROLES['home'] and (nav != 0 or int(f[1]) != 0 or int(opts.get('count', 1)) != 1):
@@ -910,6 +912,7 @@ def header_text(sizes):
             '#define RV_SHIP_PLAYER 0x%02X' % SHIP_PLAYER, '#define RV_SHIP_WINGMAN 0x%02X' % SHIP_WINGMAN,
             '#define RV_ESCORT_OUT %d' % ESCORT_ROLES['out'], '#define RV_ESCORT_IN %d' % ESCORT_ROLES['in'],
             '#define RV_ESCORT_HOME %d' % ESCORT_ROLES['home'], '#define RV_ESCORT_STAY %d' % ESCORT_ROLES['stay'],
+            '#define RV_ESCORT_BACK %d' % ESCORT_ROLES['back'],
             '#define RV_PILOT_NONE 0xFF', '#define RV_SPEAKER_YOU 0x%02X' % SPEAKER_YOU,
             '#define RV_ROOM_RADIO %d' % len(ROOMS), '#define RV_ROOM_DECK %d' % (len(ROOMS) + 1)]
     for k, v in BRIEF_ROOMS.items():

@@ -3541,11 +3541,12 @@ static int16_t role_of(int16_t s)
     return slotMissionShip[s] < 64 ? MSHIP_ROLE(slotMissionShip[s]) : 0;
 }
 
-/* an escort target: a ship with a route of its own and the autopilot's company (the home carrier has neither) */
+/* an escort target: a ship with a route of its own and the autopilot's company (the home carrier has neither); back
+ * is in's route, there from the start (the old behaviour 10: Kurasawa 2's Ralari turned for home as it came) */
 static int16_t escorted(int16_t s)
 {
     int16_t r = role_of(s);
-    return r == RV_ESCORT_OUT || r == RV_ESCORT_IN;
+    return r == RV_ESCORT_OUT || r == RV_ESCORT_IN || r == RV_ESCORT_BACK;
 }
 
 /* an escort target's own way (its mission record's role): out, to the mission's next nav point after its own (nav 1

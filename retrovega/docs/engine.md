@@ -257,7 +257,9 @@ once nav 1, the Ox's, has been reached: the way home's (play test M8.56). Switch
 of the second waves (state 2) are left out. **A ship that comes in later** (`role=in`, the old behaviour 7, every one
 of ours): it waits off the scene at its point after the point is reached, until a pilot comes within 5,000 km
 (`ARRIVE_KM`; the old Drayman came at 4,559 and 5,081 km), then jumps in (its star) and makes for home
-(`arrivals_step`, at most `ARRIVE_MAX` 4 waiting; play test M8.57). The launch's is 20,000 (`HOME_REACH_KM`, its Tiger's Claw's in
+(`arrivals_step`, at most `ARRIVE_MAX` 4 waiting; play test M8.57). **One there at once** (`role=back`, the old
+behaviour 10: Kurasawa 2's captured Ralari, RIGEL2's Agasicles, which the port had left with no role, so its loss lost
+nothing; found 2026-11-07): it comes with its point's ships and makes for home at once, in's route (play test M8.59). The launch's is 20,000 (`HOME_REACH_KM`, its Tiger's Claw's in
 36 of its 40 missions); three hidden points at the launch with 0 in the old records have 5,000, the way home's
 encounters, as before. The carrier may be asked for landing from 25,000 km (`LANDING_RANGE_KM`). The autopilot home,
 with nothing on the way, goes on past the launch's reach to 4,000 km off the carrier's hull, facing it
