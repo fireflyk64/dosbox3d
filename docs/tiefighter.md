@@ -268,11 +268,19 @@ section 7 as it is worked on.
    a little ahead so that it is just on the other's screen; one fires
    lasers, the other ions.  Screenshots: the ions on the laser player's
    screen, and both players' fire on the ion player's.
-7. **The controls the user asked for** (2026-11-06): the arrow keys steering
+7. **Next: the controls the user asked for** (2026-11-06): the arrow keys steering
    as RetroVega's do, a pointer-steer mode like RetroVega's mouse beside the
    game's own drag-to-steer (the 90s way, for those who want it), and a
    selector between them; all of it in the emulator, fed as the mickeys the
    game reads.
+7a. **All four selectable from the page's menu** (the user, 2026-11-06:
+   "Make sure the joystick, keyboard mouse and alternative mouse (point to
+   aim like a joystick; middle doesn't move just like wc1 and retrovega
+   mouse) also are selectable from web menu"): the joystick (a gamepad as
+   the stick), the keyboard (the arrows), the game's own mouse (drag to
+   steer), and the alternative mouse (point to aim: the middle is still,
+   the turn grows with the pointer's distance from it, as in WC1 and
+   RetroVega).
 8. **The page**: the room tag TF, `multiplayer: true`, a mission picker.
 9. **Missions flown alone, flown by two** (the user, 2026-11-06).  In 37 of
    the 105 mission files the player's flight group is a single craft (read
