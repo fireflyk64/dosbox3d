@@ -1020,8 +1020,9 @@ static void key_script() {
         // !tietarget=<obj> makes that object our TIE Fighter craft's target
         tie_target(atoi(item.c_str() + 11));
     } else if (item.compare(0, 9, "!tieface=") == 0) {
-        // !tieface=<obj> turns our TIE Fighter craft to face that object
-        tie_face(atoi(item.c_str() + 9));
+        // !tieface=<obj> turns our TIE Fighter craft to face that object; !tieface=target, our target (step 15's aimed
+        // shots: the key script's R for the nearest enemy, then this and the fire button, again and again)
+        tie_face(item.compare(9, std::string::npos, "target") ? atoi(item.c_str() + 9) : tie_player_target());
     } else if (item.compare(0, 9, "!dumplin=") == 0) {
         // !dumplin=<name>:<hex linear address>:<hex length> writes that memory (a 32-bit program's, as the CPU sees
         // it; a page not there reads as zero) to WCNET_DUMP_DIR/<name>.bin

@@ -151,6 +151,8 @@ bool tie_cursor(int *x, int *y);
 void tie_pa_play();
 // Test aid: our target set (the key script's !tietarget=<obj>).
 void tie_target(int obj);
+// Our target, -1 if none (the key script's !tieface=target).
+int tie_player_target();
 
 }  // namespace wc
 

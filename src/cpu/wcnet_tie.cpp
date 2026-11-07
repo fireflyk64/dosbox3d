@@ -503,6 +503,15 @@ bool tie_cursor(int *x, int *y) {
     return true;
 }
 
+// Our target (the player state's +0x12), -1 if none.
+int tie_player_target() {
+    if (!g_found) {
+        return -1;
+    }
+    const int t = (Bit16s)mem_readw(tie_linear(tie::kPstate + 0x12));
+    return t >= 0 && t < (int)tie::kObjectCount ? t : -1;
+}
+
 // Test aid: our target set (the key script's !tietarget=<obj>; the player state's +0x12).
 void tie_target(int obj) {
     if (!g_found || obj < 0 || obj >= (int)tie::kObjectCount) {
