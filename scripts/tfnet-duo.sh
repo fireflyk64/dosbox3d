@@ -9,6 +9,7 @@
 #   TFDIR=       the game as innoextract unpacks GOG's installer (default: tf/ beside this repository's root)
 #   DOSBOX=      the emulator (default build-native/src/dosbox)
 #   WCNET_TIE_REPORT_MS=250   the reports' period (scripts/tfnet-join.py lines them up)
+#   GUEST_LAG=2  seconds between the host's start and the guest's
 #
 # Example, the guest at full throttle turning past the host:
 #   t="66:backspace"; for s in 67 68 69 70; do for d in 0 1 2 3 4 5 6 7 8 9; do t="$t,$s.$d:!mickey=40:-12"; done; done
@@ -53,6 +54,8 @@ script=""; for t in $(seq 6 2 32); do script="$script${script:+,}$t:space"; done
 script="$script,36:!tiecursor=100:105,36.3:!button=0:1,36.6:!button=0:0,38:!tiecursor=280:115,38.3:!button=0:1,38.6:!button=0:0"
 script="$script,44:!tiecursor=149:96,44.3:!button=0:1,44.6:!button=0:0,52:!tiecursor=268:148,52.3:!button=0:1,52.6:!button=0:0"
 script="$script,62:!tiecursor=242:186,62.3:!button=0:1,62.6:!button=0:0"
+# (the key script runs its steps in their order: a route and its extras are merged by time)
+by_time() { tr ',' '\n' | sort -t: -k1,1 -g -s | paste -sd, -; }
 PIDS=""
 run() {  # name, extra env...
   local name=$1; shift
@@ -71,9 +74,9 @@ if [ -n "${LOBBY:-}" ]; then
 else
   NET_HOST="WCPORT=$PORT"; NET_GUEST="WCHOST=127.0.0.1 WCPORT=$PORT"
 fi
-run host $NET_HOST WCCALLSIGN=HOST WCNET_KEYSCRIPT="$script${HOSTX:+,$HOSTX}"
-sleep 2
-run guest $NET_GUEST WCCALLSIGN=GUEST WCNET_KEYSCRIPT="$script${GUESTX:+,$GUESTX}"
+run host $NET_HOST WCCALLSIGN=HOST WCNET_KEYSCRIPT="$(echo "$script${HOSTX:+,$HOSTX}" | by_time)"
+sleep ${GUEST_LAG:-2}   # (GUEST_LAG=30: the guest still on the ground while the host flies)
+run guest $NET_GUEST WCCALLSIGN=GUEST WCNET_KEYSCRIPT="$(echo "$script${GUESTX:+,$GUESTX}" | by_time)"
 wait $PIDS   # (the games only: a lobby server never ends)
 [ -n "${LPID:-}" ] && kill $LPID 2>/dev/null
 for n in host guest; do grep -a "TIE: wall" $OUT/$n.err > $OUT/$n.wall; done
