@@ -295,9 +295,11 @@ export const GAMES = [
   // own configuration asks for (an S3 card for its 640x480 flight, 16 MB,
   // EMS for the extender, a Sound Blaster 16 on IRQ 7).  Single-player
   // until its hooks are built (docs/tiefighter.md).
-  { id: "tf", tag: "TF", title: "TIE Fighter", detect: ["TIE.EXE"], run: "tie", multiplayer: false,
+  { id: "tf", tag: "TF", title: "TIE Fighter", detect: ["TIE.EXE"], run: "tie", multiplayer: true,
     image: "game.gog", keep: ["IMUSE.INI"], cycles: 60000, noFlight: true,
-    help: "TIE Fighter runs single-player for now: its multiplayer is being built (docs/tiefighter.md). Esc skips the opening; the registration screen takes your pilot; the Combat Chamber in the concourse flies a mission without the story.",
+    // (the launcher's own words: the hooks find the game's program in memory by its bytes, not by this file)
+    build: { text: "Loading TIE-Fighter CD" },
+    help: "TIE Fighter flown together, in its first stage: everybody in the room flies the same mission, each in a craft of the player's flight group, and sees the others' craft where they really are; the rest of the mission (the other craft, the shots, the damage) still runs on each machine on its own. The host flies first, and a guest launches the same mission (the Combat Chamber's, or the battle's) to join it. Space skips the opening; at the registration desk type a pilot's name (or click one) and take the door; in flight the mouse is the stick and its button fires, Backspace is full throttle. What is done and what comes next: docs/tiefighter.md.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
 ];
 
@@ -323,6 +325,16 @@ export function knownBuild(game, files) {
   const exe = files.find((f) => !f.path.includes("/") && game.detect.includes(f.path.toUpperCase()));
   const d = exe && exe.data;
   if (!d || d.length < 28 || d[0] !== 0x4d || d[1] !== 0x5a) return false;
+  if (sig.para === undefined && !sig.rvhook) {
+    // (no data segment to go by: the words anywhere in the file)
+    const want = Array.from(sig.text, (ch) => ch.charCodeAt(0));
+    for (let i = 0; i + want.length <= d.length; i++) {
+      let k = 0;
+      while (k < want.length && d[i + k] === want[k]) k++;
+      if (k === want.length) return true;
+    }
+    return false;
+  }
   const image = (d[8] | (d[9] << 8)) * 16;
   let para = sig.para;
   if (sig.rvhook) {
