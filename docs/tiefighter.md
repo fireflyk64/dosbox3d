@@ -404,6 +404,14 @@ section 7 as it is worked on.
    step 13): a guest's launch waits until the host flies; the ship's PA
    calls a guest to the briefing every 20 s.
 
+14. **First version done: the Z-95 challenge** (the user, 2026-11-07; section
+   7, step 14): in a room the Combat Chamber's T/F row flies the gunboat's
+   missions that need no ion cannon and the T/I's where they would, in two
+   Z-95 Headhunters against the Empire's own craft (every craft mirrored),
+   the cockpit kitbashed from the gunboat's by code.  To do: the missions'
+   own lines reworded for the mirrored sides ("Imperial Gunboat, surrender or
+   die!"), the briefings' words.
+
 ## 7. Notes, step by step
 
 ### Step 2: the transport, positions reflected (2026-11-06)
@@ -1019,3 +1027,66 @@ FM4.MDR 250 to 1,500 OPL writes every 6 s and the FM channel sounding.
   its click at 95 s took off as the host group's second craft.  A guest left on
   the concourse heard the PA (its channel 4.5 s) at the host's briefing and
   every 20 s while the host flew.
+
+### Step 14: the Z-95 challenge (2026-11-07)
+
+The user: "replace all tie fighter missions in the combat trainer with the
+gunboat missions that don't need ion cannons or the tie interceptor missions
+if they do, and the ship you fly is the z95 headhunter but do a substitution of
+imperial equivalents of each rebel craft etc, which has a cockpit that's a bit
+like a gunboat but it has a curvey line and the long nose you can see. We'll
+have to kitbash some of the cockpits to achieve that. ideally we use the line
+'They're flying z-95 headhunters they're brave' or something from one of the
+other missions. These are meant to be challenge missions since the z-95 is
+hopelessly underpowered but there will be two of them", with a picture of an
+X-wing-like cockpit (an arched canopy, a long nose).
+
+* **The missions.**  The goals read from the files (a flight group's goal
+  conditions at +0x9E, +0xA0, +0xA4: 4 capture, 6 board and 8 disable need ion
+  cannons): HG1W's primary goals destroy mines (a capture only secondary),
+  HG2W's disable two craft, HG3M's are dogfights, HG4M an escort.  So the T/F
+  row's four are HG1W, HI2W (the T/I's mission 2, for HG2W), HG3M and HG4M.  A
+  mission file begins with a version word (-1), then the 456-byte header (the
+  flight groups', messages' and goals' counts), the 292-byte flight groups,
+  the 90-byte radio messages.
+* **When the challenge is flown.**  In a room (a session), at
+  `shipext_Get_Mission_Path`: a T/F mission's file (a room's pick, or the
+  chamber's own) maps to its source at any of a launch's calls; with none
+  picked, in the chamber, the pilot record in memory (0xFABC8) says the row
+  (+0x66, 0 the T/F's) and its mission (+0x67): the chamber asks for the file
+  as its screen opens and again at Enter Briefing, by when the name is already
+  the source's.  A guest takes the host's word (TiePresence.challenge).
+* **The craft.**  Before the craft load (`fediskio_loadspecies`), on every
+  machine: each flight group's craft mirrored, the Rebels' by the Empire's and
+  the Empire's by the Rebels' (X-wing T/I, Y-wing T/B, A-wing T/I, B-wing
+  gunboat, T-wing T/I, Z-95 and R-41 T/F; T/F Z-95, T/I A-wing, T/B Y-wing, T/A
+  X-wing, T/D, missile boat and gunboat B-wing; the corvettes the Carrack, the
+  Nebulon-Bs the strike cruiser, the Calamari cruiser the Star Destroyer, the
+  light one the Victory, and back; pirates', containers, transports, platforms
+  and mines as they are), the IFF of each group kept, the player's group
+  Z-95s (the second pilot's too: the seats), each new craft marked to be
+  loaded; made again at `create_createmission` after the opening jump.
+* **The line.**  "They're flying Z-95 Headhunters! They're brave..." (the
+  game's own come close: "Tau 2 to Tau 1, there are Z-95 Headhunters right
+  behind us!" in B13M3, "Outstanding, Mu 1! That was some pretty brave
+  flying!" in B11M3) is a radio message of the mission's own (radiomsg
+  0xE2F24, 90 bytes: the text, two triggers "always", the delay two polls of
+  1,180 ticks: 10 s in) where the mission has one of its 16 free (HG3M, HG4M);
+  else the emulator's line (HG1W, HI2W).
+* **The cockpit.**  The Z-95's spec (13) is named XWING with the R-41's: when
+  the player flies one it is renamed Z95, and Z95.INT and Z95FWD.LFD are made
+  from the gunboat's (the shuttle's way, step 9): the struts out, an arched
+  canopy frame (an ellipse's upper half over the top, its legs down to the side
+  consoles, each pixel a strut's row across its width) and a long nose from
+  the dashboard's middle towards the horizon in the struts' own greys (the
+  panel's palette by luminance: lit along its top, a ridge seam, panel lines,
+  seams across).  The targeting display gets the gunboat's mask.
+* **The page.**  The room's menu calls the T/F row "Z-95 challenge 1..4: two
+  Z-95s against the Empire", with the source missions' words.
+* **Measured** (two machines): T/F mission 1 from the chamber flew HG1W (6 of
+  its 13 groups mirrored, the line as a notice), a room's pick of T/F mission 3
+  flew HG3M (25 of 28 mirrored), both pilots in Z-95s and the Z-95 cockpit,
+  through the jump and after.
+* **Open.**  The missions' own lines and briefings still speak of the Empire's
+  side ("Imperial Gunboat, surrender or die!"); the side views are the
+  gunboat's.
