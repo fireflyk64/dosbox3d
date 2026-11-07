@@ -102,7 +102,15 @@ enum {
     kLocalAiIn = 204800,        // 5 km
     kLocalAiOut = 225280,       // 5.5 km
     kExactError = 400,          // a near craft's report this close is written as it is (10 m)
-    kPairOffset = 64,           // a pairing's second flight group starts and flies 0.4 km to the side (waypoints: 160 a km)
+    kPairOffset = 64,
+    // The room's end of a flight (the user, 2026-11-06: "it just delivers you to the debrief room with mission failed and
+    // you can quickly try again with your friends"): RUNTIME_MissionState mission, +0x248 the player's status (0 dead,
+    // 1 captured, 2 rescued, 3 the mission ended: what create_createmission sets and the game's own quit), +0x249 the
+    // end flag the flight's loop runs until.
+    kMission = 0xEB29C,
+    kMissionStatus = 0x248,
+    kMissionEnd = 0x249,
+    kRoomEndMs = 3000,          // (a moment to see the explosion)           // a pairing's second flight group starts and flies 0.4 km to the side (waypoints: 160 a km)
     kFgStatus = 0xDEDCC,        // FGStatus fgstatus[48], 0x30 each: +6 its place's reference
     kFgStatusSize = 0x30,
     kLocalHitHoldMs = 600,      // a hit of ours shown on another's craft: its owner's damage figures wait this long
@@ -123,6 +131,7 @@ struct TieNet {
     Bit64u frame;
     double lastReliableAt;
     Puppet puppets[120];
+    double endAt = 0;           // this machine's flight ends for the room then (0: not)
     int pairedFg = -1;          // this mission's second flight group, the guests' (step 9), or -1
     int pairedType = 0;         // ... the pairing's craft (the guests', or the T/I's T/F), 0: none
     int hostFg = -1;            // ... and the host's, the mission's player group
@@ -206,6 +215,7 @@ double g_noticeAt = -1;
 
 void take_owners(const TieOwners &t);
 void begin_kill(int obj);
+void room_end(int seat, const char *what);
 void make_shot(const TieShot &shot, int owner);
 void take_hit(const TieHit &hit);
 
@@ -339,8 +349,13 @@ void take_frame(Peer *from, const TieFrame &f) {
     }
     from->lastFrame = f.frame();
     from->lastFrameAt = PIC_FullIndex();
+    // (the host's flight over: every guest's ends too)
+    const bool hostEnded = owner == 0 && !g_net->host && from->flying && !f.flying() && from->player == 0;
     if (!g_net->host || owner == from->player) {
         from->flying = f.flying();
+    }
+    if (hostEnded) {
+        room_end(0, "'s flight is over");
     }
     // (a pilot flying another mission: its craft are not this mission's; the host still relays them)
     const bool sameMission = !f.has_mission() || !tie_in_flight() || f.mission() == tie_mission_name();
@@ -367,6 +382,9 @@ void take_frame(Peer *from, const TieFrame &f) {
         p.at = PIC_FullIndex();
         if (c.dying() && c.obj() < (Bit32u)kCraftSlots && tie_in_flight()) {
             begin_kill((int)c.obj());
+            if (f.has_own() && c.obj() == f.own()) {
+                room_end(owner, " is down");
+            }
         }
     }
     for (int i = 0; i < f.shots_size() && sameMission && tie_in_flight(); i++) {
@@ -1349,11 +1367,59 @@ void tie_session_tick() {
     g_net->wasFlying = flying;
 }
 
+namespace {
+
+// The room's end of a flight: a pilot down (its craft dying: killed, or ejected) or the host's flight over ends every
+// pilot's, after a moment, as the game's own quit does: the debriefing, the mission failed (unless its goals were met),
+// and from there the Combat Chamber to fly it again together.  Our own death too: no killed, captured or rescued here.
+// Only with another pilot in the room.
+bool others_flying() {
+    const double now = PIC_FullIndex();
+    for (int k = 0; k < kMaxSeats; k++) {
+        if (k != g_net->self && pilot_present(k, now)) {
+            return true;
+        }
+    }
+    return false;
+}
+void room_end(int seat, const char *what) {
+    if (!tie_in_flight() || g_net->endAt > 0 || !others_flying()) {
+        return;
+    }
+    g_net->endAt = PIC_FullIndex() + kRoomEndMs;
+    const std::string who = seat == g_net->self ? std::string("You") : pilot_name(seat);
+    wclog(1, "TIE: %s%s: the flight ends for everybody", who.c_str(), seat == g_net->self && !strcmp(what, " is down") ? " are down" : what);
+    notice(who + (seat == g_net->self && !strcmp(what, " is down") ? " are down" : what) + ": the flight ends for everybody, mission failed");
+}
+void room_end_frame() {
+    const int own = tie_player_object();
+    const Bit32u m = tie_linear(kMission);
+    // (our own death: killed, captured or rescued becomes the mission's end at once, for the debriefing; our craft by
+    // then perhaps its explosion already)
+    const bool down = mem_readb(m + kMissionStatus) < 3 || (own >= 0 && own < kCraftSlots && is_craft(own) && tie_r16(obj_base(own) + 0x2C) != 0);
+    if (down && others_flying()) {
+        if (mem_readb(m + kMissionStatus) < 3) {
+            wclog(1, "TIE: our status %u (0 killed, 1 captured, 2 rescued) made 3, the mission's end, for the room", mem_readb(m + kMissionStatus));
+            mem_writeb(m + kMissionStatus, 3);
+        }
+        room_end(g_net->self, " is down");
+    }
+    if (g_net->endAt > 0 && PIC_FullIndex() >= g_net->endAt) {
+        g_net->endAt = 0;
+        mem_writeb(m + kMissionStatus, 3);
+        mem_writeb(m + kMissionEnd, 1);
+        wclog(1, "TIE: the flight ended for the room (the mission's end flag set, its status 3)");
+    }
+}
+
+}  // namespace
+
 void tie_session_frame() {
     if (!g_net || g_net->self < 0 || !tie_in_flight()) {
         return;
     }
     poll_peers();       // (what came in since the last frame: written before this frame's move)
+    room_end_frame();
     map_group();
     report_frame(PIC_FullIndex());
     const int own = tie_player_object();
@@ -1766,6 +1832,7 @@ void tie_session_mission_create() {
     g_net->fgObjects.clear();
     g_net->playerFg = kPlayerFgNone;
     g_net->clear_flight();
+    g_net->endAt = 0;
     keep_pairing();
     if (g_net->pairedFg >= 0) {
         // (a pairing: the guests have their own flight group, made at the species' loading; the host's stays as it is)
