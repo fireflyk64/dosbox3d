@@ -16,6 +16,7 @@
  *  sections 5 and 6).
  */
 #include <stdio.h>
+#include <math.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
@@ -74,6 +75,21 @@ struct Pilot {
 };
 enum { kMaxSeats = 8, kPresenceEveryMs = 3000, kCallToActionEveryMs = 2000 };
 
+// Step 5 (docs/tiefighter.md): who flies each craft, and how often its owner reports it.  Distances in world units
+// (40,960 a km).
+enum {
+    kCraftSlots = 32,
+    kReach = 102400,            // 2.5 km, the lasers' reach: within it a craft is near
+    kTargetReach = 163840,      // 4 km: a pilot's target within it is that pilot's to fly
+    kMidReach = 409600,         // 10 km: a craft within it is reported every kMidEvery frames
+    kMidEvery = 10,
+    kFarEvery = 30,             // one far craft every this many frames, in turn: 30 far craft, each every 15 s
+    kOwnerHoldMs = 1000,        // a craft changes owner at most this often
+    kOwnersEveryMs = 2000,      // the host's whole table, this often
+    kDecideEveryMs = 250,
+    kPilotStaleMs = 3000,       // a pilot whose frames stopped this long is not counted
+};
+
 struct TieNet {
     bool host;
     int self;                   // our player number (a guest: -1 until the host's hello)
@@ -94,9 +110,40 @@ struct TieNet {
     std::string sentMission;
     double sentAt;
     std::string callToAction;   // the line shown while the host flies and we do not ("": none)
+    // Step 5: the owner of each craft slot (a seat; the host's word), when it last changed, each pilot's own craft and
+    // target and when its frames were last seen (this mission's), the far craft's turn, and what was sent (the report).
+    int owner[kCraftSlots];
+    double ownerAt[kCraftSlots];
+    int pilotObj[kMaxSeats];
+    int pilotTarget[kMaxSeats];
+    double pilotSeenAt[kMaxSeats];
+    double decidedAt, ownersSentAt;
+    int farCursor;
+    unsigned sentCraft, sentNear, sentMid, sentFar, sentBytes, ownerChanges;
     TieNet() : host(false), self(-1), seats(2), listener(NULL), frame(0), lastReliableAt(0), playerFg(kPlayerFgNone),
-               hostCraft(1), wasFlying(false), sentScene(-2), sentFlying(false), sentAt(-1e9) {
-        memset(puppets, 0, sizeof(puppets));
+               hostCraft(1), wasFlying(false), sentScene(-2), sentFlying(false), sentAt(-1e9), decidedAt(-1e9), ownersSentAt(-1e9),
+               farCursor(0), sentCraft(0), sentNear(0), sentMid(0), sentFar(0), sentBytes(0), ownerChanges(0) {
+        clear_flight();
+    }
+    // A puppet table and owners for a new flight (a Puppet holds a protobuf message: never memset).
+    void clear_flight() {
+        for (int o = 0; o < 120; o++) {
+            puppets[o].used = false;
+            puppets[o].owner = -1;
+            puppets[o].fresh = false;
+            puppets[o].state.Clear();
+            puppets[o].at = 0;
+        }
+        for (int o = 0; o < kCraftSlots; o++) {
+            owner[o] = 0;
+            ownerAt[o] = -1e9;
+        }
+        for (int k = 0; k < kMaxSeats; k++) {
+            pilotObj[k] = -1;
+            pilotTarget[k] = 0xFFFF;
+            pilotSeenAt[k] = -1e9;
+        }
+        farCursor = 0;
     }
     ~TieNet() {
         for (size_t i = 0; i < peers.size(); i++) {
@@ -109,6 +156,8 @@ struct TieNet {
 TieNet *g_net = NULL;
 double g_nextTryMs = 0;
 double g_noticeAt = -1;
+
+void take_owners(const TieOwners &t);
 
 void notice(const std::string &text) {
     incoming_text = text;
@@ -245,10 +294,19 @@ void take_frame(Peer *from, const TieFrame &f) {
     }
     // (a pilot flying another mission: its craft are not this mission's; the host still relays them)
     const bool sameMission = !f.has_mission() || !tie_in_flight() || f.mission() == tie_mission_name();
+    if (sameMission && f.flying() && owner >= 0 && owner < kMaxSeats && f.has_own() && f.own() < (Bit32u)kCraftSlots) {
+        g_net->pilotObj[owner] = (int)f.own();
+        g_net->pilotTarget[owner] = f.has_target() ? (int)f.target() : 0xFFFF;
+        g_net->pilotSeenAt[owner] = PIC_FullIndex();
+        g_net->owner[f.own()] = owner;      // (a pilot's own craft is its own)
+    }
     for (int i = 0; i < f.craft_size() && sameMission; i++) {
         const TieCraft &c = f.craft(i);
         if (c.obj() >= 120) {
             continue;
+        }
+        if (c.obj() < (Bit32u)kCraftSlots && g_net->owner[c.obj()] != owner && !(f.has_own() && c.obj() == f.own())) {
+            continue;   // (not its craft by the owners we have: a report of a former owner's, or ahead of the host's word)
         }
         Puppet &p = g_net->puppets[c.obj()];
         p.used = true;
@@ -480,6 +538,10 @@ void handle(Peer *p, NetworkMessage &msg) {
                 }
             }
         }
+    } else if (msg.has_tie_owners()) {
+        if (p->hello && !g_net->host) {
+            take_owners(msg.tie_owners());
+        }
     } else if (msg.has_chat()) {
         notice(msg.chat().callsign() + ": " + msg.chat().message());
     }
@@ -537,6 +599,162 @@ void poll_peers() {
     }
 }
 
+// The craft slots' state as this machine has them.
+Bit32u obj_base(int obj) { return tie::kObjects + obj * tie::kObjectSize; }
+bool is_craft(int obj) {
+    const Bit32u o = obj_base(obj);
+    return obj >= 0 && obj < kCraftSlots && tie_r8(o + 4) != 0 && tie_r8(o + 2) == 0;     // (a ship, not debris: category 0)
+}
+double distance(int a, int b) {
+    const Bit32u oa = obj_base(a), ob = obj_base(b);
+    const double dx = (double)(Bit32s)tie_r32(oa + 6) - (double)(Bit32s)tie_r32(ob + 6);
+    const double dy = (double)(Bit32s)tie_r32(oa + 0xA) - (double)(Bit32s)tie_r32(ob + 0xA);
+    const double dz = (double)(Bit32s)tie_r32(oa + 0xE) - (double)(Bit32s)tie_r32(ob + 0xE);
+    return sqrt(dx * dx + dy * dy + dz * dz);
+}
+// The pilots flying this mission now (their frames seen lately), ourselves among them.
+bool pilot_present(int seat, double now) {
+    if (seat == g_net->self) {
+        return tie_player_object() >= 0;
+    }
+    return seat >= 0 && seat < kMaxSeats && g_net->pilotObj[seat] >= 0 && now - g_net->pilotSeenAt[seat] < kPilotStaleMs;
+}
+int pilot_object(int seat) { return seat == g_net->self ? tie_player_object() : g_net->pilotObj[seat]; }
+
+// A craft this machine is to fly from now on: its AI to plan at once (the countdown held full while another flew it).
+void release_ai(int obj) {
+    const Bit32u craft = tie_r32(obj_base(obj) + 0x54);
+    if (obj < kCraftSlots && craft >= 0x100000) {
+        mem_writew(craft + 0x2A, 0);
+    }
+    g_net->puppets[obj].used = false;
+}
+
+void send_owners() {
+    NetworkMessage msg;
+    TieOwners *t = msg.mutable_tie_owners();
+    for (int o = 0; o < kCraftSlots; o++) {
+        t->add_owner((Bit32u)g_net->owner[o]);
+    }
+    t->set_mission(tie_mission_name());
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
+            g_net->peers[i]->conn.send(msg);
+        }
+    }
+}
+
+// A guest: the host's table.  A craft that becomes ours is released to our AI; one that leaves us is a puppet from the
+// next report on (its AI held from the next frame).
+void take_owners(const TieOwners &t) {
+    if (!tie_in_flight() || (t.has_mission() && t.mission() != tie_mission_name())) {
+        return;
+    }
+    const int own = tie_player_object();
+    for (int o = 0; o < kCraftSlots && o < t.owner_size(); o++) {
+        const int now = (int)t.owner(o);
+        if (o == own || now == g_net->owner[o]) {
+            continue;
+        }
+        if (now == g_net->self) {
+            release_ai(o);
+        }
+        g_net->owner[o] = now;
+    }
+}
+
+// Is a craft in a pilot's view?  Within kViewCone of the nose: the pilot's craft's move vector (+0x3A, Q15) is its
+// heading, a TIE craft does not slide.  `cone` the cosine to beat.
+bool in_view(int pilotObj, int obj, double cone) {
+    const Bit32u pb = obj_base(pilotObj), ob = obj_base(obj);
+    const double fx = (Bit16s)tie_r16(pb + 0x3A), fy = (Bit16s)tie_r16(pb + 0x3C), fz = (Bit16s)tie_r16(pb + 0x3E);
+    const double dx = (double)(Bit32s)tie_r32(ob + 6) - (double)(Bit32s)tie_r32(pb + 6);
+    const double dy = (double)(Bit32s)tie_r32(ob + 0xA) - (double)(Bit32s)tie_r32(pb + 0xA);
+    const double dz = (double)(Bit32s)tie_r32(ob + 0xE) - (double)(Bit32s)tie_r32(pb + 0xE);
+    const double fl = sqrt(fx * fx + fy * fy + fz * fz), dl = sqrt(dx * dx + dy * dy + dz * dz);
+    if (fl < 1 || dl < 1) {
+        return dl < 1;
+    }
+    return (fx * dx + fy * dy + fz * dz) / (fl * dl) >= cone;
+}
+
+// The host's rule (the user, 2026-11-06): "host should own most craft except the ones both within range and on the
+// guests viewport or specifically targeted by guest and not targeted by the host".  A guest gets a craft that is
+// within the lasers' reach of it and in its view, or that it has targeted (within 4 km); a craft the host has targeted
+// stays the host's.  To leave a guest a craft must be clearly out (1.25 times the reach, 60 degrees off the nose, or
+// no longer its target), and a craft changes owner at most once a second.  Two guests wanting one craft: its target's
+// first, then the nearer.
+enum { kViewCone45 = 7071, kViewCone60 = 5000 };   // (cosines times 10,000)
+bool guest_wants(int k, int o, bool keep) {
+    const int po = pilot_object(k);
+    const double d = distance(o, po);
+    if (g_net->pilotTarget[k] == o && d < kTargetReach * (keep ? 1.25 : 1.0)) {
+        return true;
+    }
+    return d < kReach * (keep ? 1.25 : 1.0) && in_view(po, o, (keep ? kViewCone60 : kViewCone45) / 10000.0);
+}
+void decide_owners(double now) {
+    if (!g_net->host || now - g_net->decidedAt < kDecideEveryMs) {
+        return;
+    }
+    g_net->decidedAt = now;
+    int guests[kMaxSeats], n = 0;
+    for (int k = 0; k < kMaxSeats; k++) {
+        if (k != g_net->self && pilot_present(k, now) && is_craft(pilot_object(k))) {
+            guests[n++] = k;
+        }
+    }
+    const int hostObj = tie_player_object();
+    const int hostTarget = tie_r16(tie::kPstate + 0x12);
+    bool changed = false;
+    for (int o = 0; o < kCraftSlots; o++) {
+        bool someonesOwn = o == hostObj;
+        for (int i = 0; i < n; i++) {
+            someonesOwn = someonesOwn || pilot_object(guests[i]) == o;
+        }
+        if (someonesOwn || !is_craft(o)) {
+            continue;
+        }
+        const int cur = g_net->owner[o];
+        int want = 0;
+        if (o != hostTarget) {
+            int bestScore = -1;
+            double bestDist = 1e30;
+            for (int i = 0; i < n; i++) {
+                const int k = guests[i];
+                if (!guest_wants(k, o, k == cur)) {
+                    continue;
+                }
+                const int score = (g_net->pilotTarget[k] == o ? 2 : 0) + (k == cur ? 1 : 0);
+                const double d = distance(o, pilot_object(k));
+                if (score > bestScore || (score == bestScore && d < bestDist)) {
+                    bestScore = score;
+                    bestDist = d;
+                    want = k;
+                }
+            }
+        }
+        bool curPresent = cur == 0;
+        for (int i = 0; i < n; i++) {
+            curPresent = curPresent || guests[i] == cur;
+        }
+        if (want != cur && (now - g_net->ownerAt[o] >= kOwnerHoldMs || !curPresent)) {
+            g_net->owner[o] = want;
+            g_net->ownerAt[o] = now;
+            g_net->ownerChanges++;
+            changed = true;
+            if (want == g_net->self) {
+                release_ai(o);
+            }
+            wclog(2, "TIE: obj %d to pilot %d (was pilot %d)", o, want + 1, cur + 1);
+        }
+    }
+    if (changed || now - g_net->ownersSentAt >= kOwnersEveryMs) {
+        g_net->ownersSentAt = now;
+        send_owners();
+    }
+}
+
 void fill_craft(TieCraft *c, int obj) {
     const Bit32u o = tie::kObjects + obj * tie::kObjectSize;
     c->set_obj((Bit32u)obj);
@@ -569,8 +787,8 @@ void write_puppet(Puppet &p) {
     const TieCraft &c = p.state;
     const int obj = (int)c.obj();
     const Bit32u o = tie::kObjects + obj * tie::kObjectSize;
-    if (tie_r8(o + 4) == 0 || c.type() == 0) {
-        return;             // (not there on this machine, or gone on its owner's: nothing to move)
+    if (tie_r8(o + 4) == 0 || c.type() == 0 || tie_r8(o + 4) != c.type()) {
+        return;             // (not there on this machine, gone on its owner's, or another ship in the slot here: nothing to move)
     }
     if (p.fresh) {
         tie_w32(o + 6, (Bit32u)c.x());
@@ -659,6 +877,8 @@ void report_frame(double now) {
             if (o == own) {
                 snprintf(one, sizeof(one), " own obj %d: %d %d %d hpr %u %u %u speed %d;", o, (int)tie_r32(ob + 6), (int)tie_r32(ob + 0xA),
                          (int)tie_r32(ob + 0xE), tie_r16(ob + 0x1E), tie_r16(ob + 0x20), tie_r16(ob + 0x22), (Bit16s)tie_r16(ob + 0x26));
+            } else if (o < kCraftSlots && g_net->owner[o] == g_net->self && !p.used) {
+                continue;
             } else {
                 snprintf(one, sizeof(one), " obj %d of pilot %d: here %d %d %d hpr %u %u %u speed %d type %u, reported %d %d %d %.0f ms ago;", o,
                          p.owner + 1, (int)tie_r32(ob + 6), (int)tie_r32(ob + 0xA), (int)tie_r32(ob + 0xE), tie_r16(ob + 0x1E), tie_r16(ob + 0x20),
@@ -666,8 +886,30 @@ void report_frame(double now) {
             }
             line += one;
         }
-        wclog(1, "TIE: wall %.0f frame %llu as pilot %d, %u peers;%s", wall_ms(), (unsigned long long)g_net->frame, g_net->self + 1,
-              (unsigned)g_net->peers.size(), line.c_str());
+        // the craft this machine flies for the others, as its game has them (scripts/tfnet-join.py's truth for them)
+        int owned[kMaxSeats] = { 0 };
+        for (int o = 0; o < kCraftSlots; o++) {
+            if (!is_craft(o)) {
+                continue;
+            }
+            if (g_net->owner[o] >= 0 && g_net->owner[o] < kMaxSeats) {
+                owned[g_net->owner[o]]++;
+            }
+            if (o == own || g_net->owner[o] != g_net->self) {
+                continue;
+            }
+            const Bit32u ob = obj_base(o);
+            char one[160];
+            snprintf(one, sizeof(one), " mine obj %d: %d %d %d hpr %u %u %u speed %d type %u;", o, (int)tie_r32(ob + 6), (int)tie_r32(ob + 0xA),
+                     (int)tie_r32(ob + 0xE), tie_r16(ob + 0x1E), tie_r16(ob + 0x20), tie_r16(ob + 0x22), (Bit16s)tie_r16(ob + 0x26), tie_r8(ob + 4));
+            line += one;
+        }
+        char sums[200];
+        snprintf(sums, sizeof(sums), " owners %d/%d/%d; sent %u craft (%u near, %u mid, %u far) in %u bytes, %u owner changes;", owned[0], owned[1],
+                 owned[2], g_net->sentCraft, g_net->sentNear, g_net->sentMid, g_net->sentFar, g_net->sentBytes, g_net->ownerChanges);
+        g_net->sentCraft = g_net->sentNear = g_net->sentMid = g_net->sentFar = g_net->sentBytes = g_net->ownerChanges = 0;
+        wclog(1, "TIE: wall %.0f frame %llu as pilot %d, %u peers;%s%s", wall_ms(), (unsigned long long)g_net->frame, g_net->self + 1,
+              (unsigned)g_net->peers.size(), sums, line.c_str());
     }
 }
 
@@ -733,6 +975,8 @@ void tie_session_frame() {
         return;
     }
     const double now = PIC_FullIndex();
+    decide_owners(now);
+    g_net->owner[own] = g_net->self;
     NetworkMessage msg;
     TieFrame *f = msg.mutable_tie_frame();
     f->set_player((Bit32u)g_net->self);
@@ -740,26 +984,84 @@ void tie_session_frame() {
     f->set_ticks(tie_r16(tie::kFrameticks));
     f->set_flying(true);
     f->set_mission(tie_mission_name());
+    f->set_own((Bit32u)own);
+    f->set_target(tie_r16(tie::kPstate + 0x12));
     fill_craft(f->add_craft(), own);
-    const bool reliable = now - g_net->lastReliableAt >= kReliableEveryMs;
+    g_net->sentCraft++;
+    // The craft we fly for the others, each as often as its distance from the nearest other pilot asks: near every
+    // frame, within 10 km every kMidEvery frames, the far ones one at a time every kFarEvery frames in turn.
+    int others[kMaxSeats], n = 0;
+    for (int k = 0; k < kMaxSeats; k++) {
+        if (k != g_net->self && pilot_present(k, now) && is_craft(pilot_object(k))) {
+            others[n++] = k;
+        }
+    }
+    bool far = false;
+    if (n > 0) {
+        int farPick = -1;
+        if (g_net->frame % kFarEvery == 0) {
+            // the next far craft of ours after the last one sent
+            for (int step = 1; step <= kCraftSlots && farPick < 0; step++) {
+                const int o = (g_net->farCursor + step) % kCraftSlots;
+                if (o == own || g_net->owner[o] != g_net->self || !is_craft(o)) {
+                    continue;
+                }
+                double d = 1e30;
+                for (int i = 0; i < n; i++) {
+                    d = fmin(d, distance(o, pilot_object(others[i])));
+                }
+                if (d >= kMidReach) {
+                    farPick = o;
+                }
+            }
+            if (farPick >= 0) {
+                g_net->farCursor = farPick;
+            }
+        }
+        for (int o = 0; o < kCraftSlots; o++) {
+            if (o == own || g_net->owner[o] != g_net->self || !is_craft(o)) {
+                continue;
+            }
+            double d = 1e30;
+            for (int i = 0; i < n; i++) {
+                d = fmin(d, distance(o, pilot_object(others[i])));
+            }
+            if (d < kReach) {
+                g_net->sentNear++;
+            } else if (d < kMidReach && (g_net->frame + o) % kMidEvery == 0) {
+                g_net->sentMid++;
+            } else if (o == farPick) {
+                g_net->sentFar++;
+                far = true;
+            } else {
+                continue;
+            }
+            fill_craft(f->add_craft(), o);
+            g_net->sentCraft++;
+        }
+    }
+    // (a reliable copy once a second, and whenever a far craft is in it: its next report is many seconds away)
+    const bool reliable = far || now - g_net->lastReliableAt >= kReliableEveryMs;
     if (reliable) {
         g_net->lastReliableAt = now;
     }
+    const unsigned bytes = (unsigned)msg.ByteSizeLong();
     for (size_t i = 0; i < g_net->peers.size(); i++) {
         Peer *p = g_net->peers[i];
         if (!p->hello || !p->conn.is_open()) {
             continue;
         }
+        g_net->sentBytes += bytes;
         if (reliable) {
             p->conn.send(msg);
         } else {
             p->conn.send_best_effort(msg);
         }
     }
-    for (int o = 0; o < 120; o++) {
-        const Puppet &p = g_net->puppets[o];
-        if (p.used && p.owner != g_net->self && o != own) {
-            hold_ai(o);     // (before the planner runs this frame)
+    // This machine's AI kept off every craft another flies (before the planner runs this frame).
+    for (int o = 0; o < kCraftSlots; o++) {
+        if (o != own && g_net->owner[o] != g_net->self && is_craft(o)) {
+            hold_ai(o);
         }
     }
 }
@@ -771,7 +1073,7 @@ void tie_session_before_move() {
     const int own = tie_player_object();
     for (int o = 0; o < 120; o++) {
         Puppet &p = g_net->puppets[o];
-        if (p.used && p.owner != g_net->self && o != own) {
+        if (p.used && p.owner != g_net->self && o != own && (o >= kCraftSlots || g_net->owner[o] == p.owner)) {
             write_puppet(p);
         }
     }
@@ -811,7 +1113,7 @@ void tie_session_mission_create() {
     }
     g_net->fgObjects.clear();
     g_net->playerFg = kPlayerFgNone;
-    memset(g_net->puppets, 0, sizeof(g_net->puppets));
+    g_net->clear_flight();
     const int numFg = (Bit16s)tie_r16(tie::kMissionHeader);
     for (int i = 0; i < numFg && i < 48; i++) {
         const Bit32u fg = tie::kFlightGroups + i * tie::kFlightGroupSize;
@@ -867,7 +1169,7 @@ void tie_session_flight_ended() {
     }
     g_net->fgObjects.clear();
     g_net->playerFg = kPlayerFgNone;
-    memset(g_net->puppets, 0, sizeof(g_net->puppets));
+    g_net->clear_flight();
 }
 
 void tie_session_shutdown() {

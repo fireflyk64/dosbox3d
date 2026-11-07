@@ -348,6 +348,14 @@ message TieFrame {
     repeated TieCraft craft = 4;
     optional bool flying = 5;       // the sender is in a flight
     optional string mission = 6;    // the mission it flies (a frame of another mission's is not written in)
+    optional uint32 own = 7;        // the sender's own craft (its object slot)
+    optional uint32 target = 8;     // what the sender has targeted (an object slot; 0xFFFF none)
+}
+// The host's word on who flies each craft (object slots 0..31): a seat each, 0 the host's.  Sent when it changes and
+// every 2 s, reliably.
+message TieOwners {
+    repeated uint32 owner = 1;
+    optional string mission = 2;
 }
 // Where a pilot is (TIE Fighter): its front end's scene (OpenTIE's SCENE_*), whether it flies, and the mission its
 // front end launches (the mission file's name).  Sent when it changes and every few seconds; the host relays a guest's
@@ -380,4 +388,5 @@ message NetworkMessage {
     optional TieHello tie_hello = 21;
     optional TieFrame tie_frame = 22;
     optional TiePresence tie_presence = 23;
+    optional TieOwners tie_owners = 24;
 }

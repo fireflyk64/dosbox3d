@@ -41,6 +41,7 @@ const char *message_type_name(const NetworkMessage &msg) {
     if (msg.has_tie_hello()) return "tie_hello";
     if (msg.has_tie_frame()) return "tie_frame";
     if (msg.has_tie_presence()) return "tie_presence";
+    if (msg.has_tie_owners()) return "tie_owners";
     return "none";
 }
 
