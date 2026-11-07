@@ -81,6 +81,7 @@ Bit32u g_dataBase = 0;          // ... and of the data object
 double g_nextScanMs = 0;
 double g_nextReportMs = 0;
 unsigned g_frames = 0;
+unsigned g_falseHits = 0;       // hook calls at an EIP whose low word is watched but which is no place of ours (the report)
 
 bool rd8(Bit32u lin, Bit8u *v) { return mem_readb_checked(lin, v) ? false : true; }
 bool rd32(Bit32u lin, Bit32u *v) { return mem_readd_checked(lin, v) ? false : true; }
@@ -193,8 +194,9 @@ void report(double now) {
             live++;
         }
     }
-    char counts[256];
-    counts[0] = 0;
+    char counts[320];
+    snprintf(counts, sizeof(counts), " false hits %u", g_falseHits);
+    g_falseHits = 0;
     for (size_t i = 1; i < sizeof(g_places) / sizeof(g_places[0]); i++) {
         char one[48];
         snprintf(one, sizeof(one), " %s %u", g_places[i].name + (strchr(g_places[i].name, '_') ? strchr(g_places[i].name, '_') - g_places[i].name + 1 : 0),
@@ -350,6 +352,7 @@ void tie_check_hooks(Bit32u eip) {
     if (!g_found) {
         return;
     }
+    g_falseHits++;      // (taken back below when it is one of ours)
     for (unsigned i = 0; i < g_traces; i++) {
         if (eip == tie_linear(g_trace[i])) {
             wclog(1, "TIE trace %05x: eax %08x ebx %08x ecx %08x edx %08x esi %08x edi %08x esp %08x", g_trace[i], (unsigned)reg_eax,
@@ -363,6 +366,7 @@ void tie_check_hooks(Bit32u eip) {
         }
         p.calls++;
         p.total++;
+        g_falseHits--;
         if (i == 0) {
             g_frames++;
             tie_session_frame();
