@@ -18,6 +18,10 @@
  *   RV_BOT_ESC_END=S    end the run S seconds after the escort is lost (exit 1)
  *   RV_BOT_WATCH=P      the escort under P percent of itself: turn to look at it (a recording's)
  *   RV_BOT_DEBUG=1      a line a second: what it is doing, where, how it stands
+ *   RV_BOT_KEYS=1       steer by the arrow keys, held and let go as a pilot does (the game draws no steering cross then:
+ *                       the recordings' choice, the user: "a little more natural and don't jitter all around"), Alt+T
+ *                       taunts, the target kept longer
+ *   RV_BOT_TURNLOG=F    the nose's turn each frame (yaw, pitch, degrees) and what it was doing, into F
  * Each flight ends with a line "bot: result ..." on stderr: how it ended and the pilot's numbers. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -69,6 +73,7 @@ static struct {
     int arr_first_at_esc;               /* seconds after the arrival an attacker came within 1,500 km of the escort */
     int passive, passive_told, esc_dead_at;
     int pause_s, pause, target_alive;
+    int keys;                           /* RV_BOT_KEYS: steer by the arrows (no steering cross drawn), Alt+T taunts */
     int esc_end_s, esc_lost_frame;      /* RV_BOT_ESC_END: end the run that many seconds after the escort's loss */
     int watch;                          /* RV_BOT_WATCH: the escort nearly gone, turn to see it (a recording's) */   /* RV_BOT_PAUSE: seconds after a kill before the next (a pilot's breath) */   /* RV_BOT_PASSIVE: at the escort, nothing (the wingman kept in formation) */
     long tgt_esc, tgt_player, tgt_other, tgt_none, esc_hits, esc_hits_60;   /* the attackers' targets, frame by frame */
@@ -79,6 +84,10 @@ static struct {
     uint64_t done_us;
     const char *mode;
 } B;
+
+#undef fopen
+static FILE *host_fopen_raw(const char *p, const char *m) { return fopen(p, m); }   /* (a dev log: not the game's guarded fopen) */
+#define fopen rv_host_fopen
 
 static unsigned rnd(void)
 {
@@ -215,14 +224,54 @@ static void queue(int k)
 /* the pointer for a steer (-9 .. 9) on each axis: the middle of that steer's band (flight.c STEER_DEAD_*, STEER_FULL_*),
  * wiggled 4 pixels either side each frame so the driver always sees it move (a key's press pins the pointer until it
  * moves: input.c KEYBOARD_SLACK) */
+static void keys_off(void);
 static void steer_to(int sx, int sy)
 {
-    const RvCockpit __far *c = cockpit_record();
+    const RvCockpit __far *c;
+    if (B.keys) {                       /* (only ever asked for none: let go) */
+        keys_off();
+        return;
+    }
+    c = cockpit_record();
     int cx = 320, cy = c ? (c->open_y0 + c->open_y1) / 2 : 200, ox, oy;
     ox = sx == 0 ? 0 : sx >= 9 ? 130 : sx <= -9 ? -130 : (sx * 120 + (sx > 0 ? 60 : -60)) / 9;
     oy = sy == 0 ? 0 : sy >= 9 ? 88 : sy <= -9 ? -88 : (sy * 80 + (sy > 0 ? 40 : -40)) / 9;
     B.wiggle = !B.wiggle;
     hle_mouse_at(cx + ox + (B.wiggle ? 4 : -4), cy - oy);
+}
+
+/* the keyboard's steering (RV_BOT_KEYS=1, a recording's: the game draws no steering cross then, and the pointer never
+ * moves): an arrow held toward the point as a pilot holds it, the turn building a ninth a frame (flight.c key_ramp),
+ * let go when the next frame's turn would carry the nose past; a small error waits a few frames, then a short press */
+enum { K_LEFT = 0x14B, K_RIGHT = 0x14D, K_UP = 0x148, K_DOWN = 0x150 };
+static struct { int held, ramp, idle; } g_ax[2];   /* yaw, pitch: the arrow held (-1, 0, +1), frames held, frames let go */
+static void key_axis(int a, double err, double per)
+{
+    int want, dir = err > 0 ? 1 : -1, k_neg = a ? K_UP : K_LEFT, k_pos = a ? K_DOWN : K_RIGHT;   /* (Down lifts the nose) */
+    double next = (g_ax[a].held == dir ? (g_ax[a].ramp < 9 ? g_ax[a].ramp + 1 : 8.5) : 1) * per;
+    if (g_ax[a].held == dir)
+        want = fabs(err) > next ? dir : 0;
+    else
+        want = fabs(err) > 6 || (fabs(err) > 2.0 && g_ax[a].idle >= 6) ? dir : 0;
+    if (want != g_ax[a].held) {
+        if (g_ax[a].held)
+            hle_key(g_ax[a].held > 0 ? k_pos : k_neg, 0);
+        if (want)
+            hle_key(want > 0 ? k_pos : k_neg, 1);
+        g_ax[a].held = want;
+        g_ax[a].ramp = 0;
+    }
+    if (want) {
+        g_ax[a].ramp++;
+        g_ax[a].idle = 0;
+    } else
+        g_ax[a].idle++;
+}
+
+static void keys_off(void)
+{
+    key_axis(0, 0, 1);
+    key_axis(1, 0, 1);
 }
 
 /* steer toward a point (km, world) relative to the player: returns the angle off the nose, degrees */
@@ -245,6 +294,13 @@ static double steer_at(V d, int hard)
     f = vdot(d, F), u = vdot(d, U), r = vdot(d, R);
     yaw = atan2(r, f) * 180 / M_PI, pitch = atan2(u, f) * 180 / M_PI;
     off = acos(fmax(-1, fmin(1, f / fmax(1e-6, vlen(d))))) * 180 / M_PI;
+    if (B.keys) {
+        if (f < 0)                      /* (behind: round the way it lies, the other arrow let go) */
+            yaw = r >= 0 ? 90 : -90, pitch = fabs(u) > fabs(r) ? (u > 0 ? 90 : -90) : 0;
+        key_axis(0, yaw, per);
+        key_axis(1, pitch, per);
+        return off;
+    }
     if (f < 0 || hard) {                /* (behind: the stick hard over toward it) */
         if (fabs(r) >= fabs(u) * 0.4) {
             sx = r >= 0 ? 9 : -9;
@@ -294,7 +350,7 @@ static int pick_target(void)
         if (rvTarget[s] == 0 && d < 2500)
             sc -= 1500;
         if (s == B.target)
-            sc -= 2000;
+            sc -= B.keys ? 5000 : 2000;     /* (a recording's pilot keeps its target longer) */
         if (sc < bs) {
             bs = sc;
             best = s;
@@ -518,7 +574,7 @@ static void fight_step(void)
                 continue;
             B.taunted_at[s] = B.flight_frames;
             queue(-100 - s);            /* (T to it), then C three times quickly: the taunt (RV_BOT_ALTT: Alt+T) */
-            if (getenv("RV_BOT_ALTT"))
+            if (getenv("RV_BOT_ALTT") || B.keys)
                 queue(0x1000 | 0x14);
             else {
                 queue(K_C);
@@ -561,6 +617,8 @@ static void flight_tick(void)
         B.target = -1;
         B.missile_at = -1000;
         fprintf(stderr, "bot: flight begins, seed %u\n", B.seed);
+        if (B.keys)
+            queue(K_LEFT);              /* (an arrow's tap: the keyboard's steering from the start, no cross drawn) */
     }
     B.flight_frames++;
     if (B.flight_frames % 900 == 0) {   /* (how fast the machine runs it) */
@@ -642,7 +700,7 @@ static void flight_tick(void)
     }
     /* a key tapped last frame comes up; the next of the queue goes down */
     if (B.tap_up) {
-        hle_key(B.tap_up & 0xFF, 0);
+        hle_key(B.tap_up & ~0x1000, 0);
         if (B.tap_up & 0x1000)
             hle_key(0x38, 0);
         B.tap_up = 0;
@@ -655,12 +713,24 @@ static void flight_tick(void)
             B.hold_target = 8;          /* (the comm menu's keys to come talk to it) */
         } else if (k & 0x1000) {        /* (Alt with a key) */
             hle_key(0x38, 1);
-            hle_key(k & 0xFF, 1);
+            hle_key(k & ~0x1000, 1);
             B.tap_up = k;
         } else {
             hle_key(k, 1);
             B.tap_up = k;
         }
+    }
+    if (getenv("RV_BOT_TURNLOG")) {      /* (a look at the flying's smoothness: the nose's turn each frame, its yaw and pitch) */
+        static FILE *tl;
+        static V f0, r0, u0;
+        static int have;
+        V f = fwd(0);
+        if (!tl)
+            tl = host_fopen_raw(getenv("RV_BOT_TURNLOG"), "w");
+        if (tl && have)
+            fprintf(tl, "%d %.3f %.3f %s\n", B.flight_frames, atan2(vdot(f, r0), vdot(f, f0)) * 180 / M_PI,
+                    atan2(vdot(f, u0), vdot(f, f0)) * 180 / M_PI, B.mode ? B.mode : "-");
+        f0 = f, r0 = rightv(0), u0 = upv(0), have = 1;
     }
     if (B.hold_target)
         B.hold_target--;
@@ -816,6 +886,7 @@ void bot_tick(void)
         B.debug = getenv("RV_BOT_DEBUG") != 0;
         B.passive = getenv("RV_BOT_PASSIVE") ? atoi(getenv("RV_BOT_PASSIVE")) : 0;
         B.pause_s = getenv("RV_BOT_PAUSE") ? atoi(getenv("RV_BOT_PAUSE")) : 0;
+        B.keys = getenv("RV_BOT_KEYS") ? atoi(getenv("RV_BOT_KEYS")) : 0;
         B.esc_end_s = getenv("RV_BOT_ESC_END") ? atoi(getenv("RV_BOT_ESC_END")) : 0;
         B.watch = getenv("RV_BOT_WATCH") ? atoi(getenv("RV_BOT_WATCH")) : 0;
     }
