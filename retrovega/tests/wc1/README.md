@@ -625,6 +625,19 @@ found flying it: the inbound Ox (role=in) waits off the scene till a pilot comes
 mission counted as won without it (the pilot came home from Nav 2's fight without flying in): mission_done now asks
 that it has come (M8.57).
 
+## The ships that come in later (2026-11-08)
+
+The user, flying CEPHID3 (the old game's McAuliffe 3): the inbound Ox "jumped perfectly when at 5000km as planned...but
+I was able to use that to win without having enemies risk attacking the ox. I remember in WC1 there was a timeout".
+Ours brought a `role=in` ship when a pilot came within 5,000 km of its place, from the 2026-11-07 trace of a player
+flying in from the autopilot's stop (4,559 and 5,081 km). McAuliffe 3 flown again (`run-old.sh OUT 2 2 ...`, the
+Drayman its type 6, arrival read as its slot's first line at entity 13; scratch arrival.py): the autopilot's arrival
+at frame 238 and the Drayman at 1237 with the player sitting at the autopilot's stop 15,900 km out, with the player
+put at the launch 86,000 km away (`!pos=0:0:0`), and with the player put 5,000 km from its place; at 10 frames a
+second (`WCFPS=10`) the arrival at 178 and the Drayman at 1177. So: 999 frames after the point is entered, counted
+in frames, wherever anybody is; the 2026-11-07 distances were where the flying-in player happened to be when the
+timer ran out. Ours since (logic.c `ARRIVE_WAIT`, 999 x WC_FRAME_STEPS steps: 67 s at its 15 frames a second; M8.57).
+
 ## What is still to measure
 
 The other types (the Salthi at nav 3; Krant, Gratha, Jalthi, the capital ships' guns on each other in the later

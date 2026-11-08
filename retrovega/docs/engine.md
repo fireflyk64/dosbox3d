@@ -258,9 +258,12 @@ near, the old getNearbyNavPoint's test) and `switch=+N,-M` switches nav N on and
 +45..+52 pairs; RvNav.sw, the nav record's bytes 16..19, NAV_REC_SW): CEPHID3's hidden encounter halfway out comes only
 once nav 1, the Ox's, has been reached: the way home's (play test M8.56). Switches of nav 0 (the old Claw moving) and
 of the second waves (state 2) are left out. **A ship that comes in later** (`role=in`, the old behaviour 7, every one
-of ours): it waits off the scene at its point after the point is reached, until a pilot comes within 5,000 km
-(`ARRIVE_KM`; the old Drayman came at 4,559 and 5,081 km), then jumps in (its star) and makes for home
-(`arrivals_step`, at most `ARRIVE_MAX` 4 waiting; play test M8.57). **One there at once** (`role=back`, the old
+of ours): it waits off the scene at its point from the moment the point is reached, 999 of the old game's frames
+(`ARRIVE_WAIT`, 1,998 steps: 67 s), wherever the pilots are, then jumps in (its star) and makes for home
+(`arrivals_step`, at most `ARRIVE_MAX` 4 waiting; play test M8.57). The old Drayman came 999 frames after the
+autopilot's arrival at 20 and at 10 frames a second, with the player at the autopilot's stop, 86,000 km away or
+5,000 km from its place (traced 2026-11-08, tests/wc1/README.md); until then ours came as a pilot came within 5,000
+km, which a player could hold off while keeping the escorts busy (the user: "I remember in WC1 there was a timeout"). **One there at once** (`role=back`, the old
 behaviour 10: Kurasawa 2's captured Ralari, RIGEL2's Agasicles, which the port had left with no role, so its loss lost
 nothing; found 2026-11-07): it comes with its point's ships and makes for home at once, in's route (play test M8.59). The launch's is 20,000 (`HOME_REACH_KM`, its Tiger's Claw's in
 36 of its 40 missions); three hidden points at the launch with 0 in the old records have 5,000, the way home's

@@ -243,7 +243,7 @@ static int16_t nav_defined(int16_t n)
  * on once the Ox's nav 1 is reached, so its Agis are the way home's.  A bit a point, set off */
 static uint16_t __far g_nav_off;
 #define ARRIVE_MAX 4                    /* (the ships that come in later: arrivals_step) */
-static struct { uint8_t rec, nav; } __far g_arrive[ARRIVE_MAX];
+static struct { uint8_t rec, nav; uint16_t wait; } __far g_arrive[ARRIVE_MAX];   /* (wait: steps since its point) */
 static uint8_t __far g_narrive;
 
 static int16_t nav_on(int16_t n)
@@ -4106,15 +4106,20 @@ static int16_t wave_may_come(int16_t n)
     return 1;
 }
 
-/* the ships that come in later (role=in: the old game's behaviour 7, every one of ours; traced 2026-11-07 in
- * McAuliffe 3 and Ataraxia 1's old twins, the user: "the ox didn't jump IN 30 seconds after I arrived"): at its nav
- * point it waits off the scene, out of the fight, until a pilot comes within ARRIVE_KM of where it will be (the
- * Drayman came at 4,559 and 5,081 km, the player flying in from the autopilot's stop at the 20,000-km reach: some
- * 30 s), then it jumps in (its star, logic_on_jump) and makes for home.  A list with its cap (ARRIVE_MAX: more than
- * a nav point's share come at once) */
-#define ARRIVE_KM 5000
+/* the ships that come in later (role=in: the old game's behaviour 7, every one of ours): from the moment its nav point
+ * is entered it waits off the scene, out of the fight, ARRIVE_WAIT steps, then it jumps in (its star, logic_on_jump)
+ * and makes for home, wherever the pilots are.  The old game's (traced 2026-11-08, McAuliffe 3 = CEPHID3,
+ * tests/wc1/run-old.sh; the user: "I was able to use that to win without having enemies risk attacking the ox. I
+ * remember in WC1 there was a timeout", "everythign was done inf rames for wc1"): its Drayman came 999 frames after
+ * the autopilot's arrival at Nav 1, at 20 and at 10 frames a second alike (frames 238 -> 1237, 178 -> 1177), with the
+ * player sitting at the autopilot's stop, 86,000 km away, or 5,000 km from its place: a timer, not a distance.  Until
+ * then ours came as a pilot came within 5,000 km (traced 2026-11-07 flying in: 4,559 and 5,081 km, the timer running
+ * out on the way), and a player could keep the escorts busy far off for as long as it took.  A fast pilot now has
+ * about a minute with them before it comes (the user: "that way a fast player would get some time to play tag before
+ * the ship arrived").  A list with its cap (ARRIVE_MAX: more than a nav point's share come at once) */
+#define ARRIVE_WAIT ((uint16_t)(999 * WC_FRAME_STEPS))   /* (the old game's 999 frames: 67 s at its 15 a second) */
 
-/* the nearest human pilot to a place (km), roughly (player_km's measure) */
+/* the nearest human pilot to a place (km), roughly (player_km's measure): the log's */
 static int32_t humans_km_to(int32_t x, int32_t y, int32_t z)
 {
     int32_t best = -1, km, dx, dy, dz, m;
@@ -4136,20 +4141,19 @@ static int32_t humans_km_to(int32_t x, int32_t y, int32_t z)
 
 static void arrivals_step(void)
 {
-    static const char __far s_in[] = "logic: mission ship %d jumps in at nav %d (slot %d): a pilot within %ld km";
+    static const char __far s_in[] = "logic: mission ship %d jumps in at nav %d (slot %d), %u steps after it, the nearest "
+                                     "pilot %ld km off";
     int16_t i = 0;
-    if (!g_narrive)
-        return;
-    humans_note();
     while (i < g_narrive) {
-        const uint8_t *rec = MSHIP(g_arrive[i].rec), *nav = NAV_REC(g_arrive[i].nav);
-        int32_t km = humans_km_to(NAV_REC_KM(nav, 0) + MSHIP_REC_KM(rec, 0), NAV_REC_KM(nav, 1) + MSHIP_REC_KM(rec, 1),
-                                  NAV_REC_KM(nav, 2) + MSHIP_REC_KM(rec, 2));
-        if (km < ARRIVE_KM) {
+        if (++g_arrive[i].wait >= ARRIVE_WAIT) {
+            const uint8_t *rec = MSHIP(g_arrive[i].rec), *nav = NAV_REC(g_arrive[i].nav);
             uint16_t s = outerSpawnShipEntity(g_arrive[i].rec, g_arrive[i].nav);
+            humans_note();
             if (s != 0xFFFF && RV_SLOT_OK(s) && logic_on_jump)
                 logic_on_jump((int16_t)s, commAnimInfo[s] == commAnimInfo[0]);
-            rv_notef(s_in, g_arrive[i].rec, g_arrive[i].nav, s == 0xFFFF ? -1 : (int)s, km);
+            rv_notef(s_in, g_arrive[i].rec, g_arrive[i].nav, s == 0xFFFF ? -1 : (int)s, g_arrive[i].wait,
+                     humans_km_to(NAV_REC_KM(nav, 0) + MSHIP_REC_KM(rec, 0), NAV_REC_KM(nav, 1) + MSHIP_REC_KM(rec, 1),
+                                  NAV_REC_KM(nav, 2) + MSHIP_REC_KM(rec, 2)));
             g_arrive[i] = g_arrive[--g_narrive];
         } else
             i++;
@@ -5200,6 +5204,7 @@ void __far __cdecl enterNavPoint_impl(uint16_t nav)
                                            whichever is reached first, as the old game's: missions.txt also=N) */
         if (MSHIP_ROLE(at[j]) == RV_ESCORT_IN && g_narrive < ARRIVE_MAX) {
             g_arrive[g_narrive].rec = (uint8_t)(at[j] & 63);   /* (it comes in later: arrivals_step) */
+            g_arrive[g_narrive].wait = 0;
             g_arrive[g_narrive++].nav = (uint8_t)nav;
             continue;
         }

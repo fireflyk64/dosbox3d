@@ -4927,18 +4927,31 @@ static void t_nav_switch(void)
     REQUIRE(n == 1, e_back, n, 0, 0);
 }
 
-/* M8.57: a ship that comes in later (role=in, the old game's behaviour 7: its Drayman waited off the scene at its
- * nav point until the player came within some 5,000 km, traced 2026-11-07): with nav 1 reached 18,000 km out the
- * Ox is not in the world, and the mission is not done (it is still to be met: LIXIS1 was won without it); 4,000 km
- * from it, it is, and the mission is done */
+/* M8.57: a ship that comes in later (role=in, the old game's behaviour 7: its Drayman came 999 frames after its nav
+ * point was entered, wherever the player was, traced 2026-11-08): with nav 1 reached 18,000 km out the Ox is not in the
+ * world, and the mission is not done (it is still to be met: LIXIS1 was won without it); flown to 4,000 km of it, it is
+ * still not (no distance brings it: the user, "a fast player would get some time to play tag before the ship
+ * arrived"), nor 2 s short of the 999 frames; a second after them it is, and the mission is done */
+#define PT_ARRIVE_STEPS (999L * WC_FRAME_STEPS)
+static int16_t pt_find_type(uint16_t type)   /* (the first ship of that type in the world, -1 none) */
+{
+    int16_t i;
+    for (i = 1; i <= RV_MAX_SHIP_SLOT; i++)
+        if (slot_is_ship(i) && gInstanceShipTypes[i] == type)
+            return i;
+    return -1;
+}
+
 static void t_escort_arrive(void)
 {
     static const char __far e_seen[] = "18,000 km from nav 1 (reach 20,000) it is not reached (%d)";
-    static const char __far e_early[] = "the Ox is in the world (slot %d) with the player 18,000 km from it: it waits";
-    static const char __far e_came[] = "the player 4,000 km from it, the Ox did not come";
+    static const char __far e_early[] = "the Ox is in the world (slot %d) %d steps after nav 1, the player %d km from it: "
+        "it waits 999 frames";
+    static const char __far e_came[] = "%d steps after nav 1 was reached the Ox did not come: after 999 frames it does";
     static const char __far e_unmet[] = "the Ox not met yet, the mission's score is %d: not done (0)";
     static const char __far e_met[] = "the Ox met, the mission's score is %d: done (nonzero)";
-    int16_t i, ox = -1;
+    int16_t ox;
+    int32_t t;
     pt_mission();
     pt_nav(1, 0, 0, 30000);
     g_tm.nav[0].reach = 20000;
@@ -4947,21 +4960,28 @@ static void t_escort_arrive(void)
     pt_launch(PT_PLAYER);
     playerCanBeDamaged = 0;
     pt_put(0, 0, 0, 12000, 0);
-    if (!pt_steps(SEC))
+    if (!pt_step())                     /* (the point entered on this step) */
         return;
     REQUIRE(logic_nav_seen(1), e_seen, logic_nav_seen(1), 0, 0);
-    for (i = 1; i <= RV_MAX_SHIP_SLOT; i++)
-        if (slot_is_ship(i) && gInstanceShipTypes[i] == PT_OX)
-            ox = i;
-    REQUIRE(ox < 0, e_early, ox, 0, 0);
+    ox = pt_find_type(PT_OX);
+    REQUIRE(ox < 0, e_early, ox, 1, 18000);
     REQUIRE(victoryPoints == 0, e_unmet, victoryPoints, 0, 0);
     pt_put(0, 0, 0, 26000, 0);
     if (!pt_steps(SEC))
         return;
-    for (i = 1; i <= RV_MAX_SHIP_SLOT; i++)
-        if (slot_is_ship(i) && gInstanceShipTypes[i] == PT_OX)
-            ox = i;
-    REQUIRE(ox > 0, e_came, 0, 0, 0);
+    ox = pt_find_type(PT_OX);
+    REQUIRE(ox < 0, e_early, ox, 1 + SEC, 4000);
+    for (t = 1 + SEC; t < PT_ARRIVE_STEPS - 2 * SEC; t++) {
+        pt_put(0, 0, 0, 26000, 0);      /* (held there) */
+        if (!pt_step())
+            return;
+    }
+    ox = pt_find_type(PT_OX);
+    REQUIRE(ox < 0, e_early, ox, (int)t, 4000);
+    if (!pt_steps(3 * SEC))
+        return;
+    ox = pt_find_type(PT_OX);
+    REQUIRE(ox > 0, e_came, (int)(t + 3 * SEC), 0, 0);
     REQUIRE(victoryPoints != 0, e_met, victoryPoints, 0, 0);
 }
 
@@ -5223,7 +5243,8 @@ static void t_escort_home(void)
     g_tm.ship[g_tm.nship - 1].role = RV_ESCORT_IN;
     pt_launch(PT_PLAYER);
     playerCanBeDamaged = 0;
-    if (!pt_go(0, NAV1_Z - 4500))       /* (nav 1 come to: the escort there, and the player near it) */
+    if (!pt_go(0, NAV1_Z - 4500) || !pt_steps(999 * WC_FRAME_STEPS))   /* (nav 1 come to, and the escort's 999 old
+                                           frames waited out: there, and the player near it) */
         return;
     for (s = 1; s <= RV_MAX_SHIP_SLOT; s++) {
         if (logic_is_home(s))
@@ -7735,7 +7756,7 @@ static const char __far n_m8_49[] = "M8.49 fighter-hull (do_damage, fighter_roul
 static const char __far n_m8_50[] = "M8.50 prey (prey_of): a Nicander ordered at the Ox (prey=OX) goes for it with the player nearer, and turns on the player once hurt under 55% health";
 static const char __far n_m8_51[] = "M8.51 capital-bearings (gun_mount, ship_think): an Agasicles' flak reaches a still player behind it, abeam and ahead alike";
 static const char __far n_m8_56[] = "M8.56 nav-switch (g_nav_off, NAV_REC_SW): a point off at the start brings nobody till another switches it on";
-static const char __far n_m8_57[] = "M8.57 escort-arrive (arrivals_step, mission_done): a ship that comes in later waits till a pilot is within 5,000 km of it; till then the mission is not done";
+static const char __far n_m8_57[] = "M8.57 escort-arrive (arrivals_step, mission_done): a ship that comes in later jumps in 999 old frames after its point is entered, however near the pilots are; till then the mission is not done";
 static const char __far n_m8_58[] = "M8.58 escort-threat (pass_side, scatter_of): fighters at a capital ship aim at its middle: four Aristons kill an Ox within 60 s";
 static const char __far n_m8_59[] = "M8.59 escort-back (role=back, escorted): an escort target there when its point is reached makes for home at once, and its loss is the mission's";
 static const char __far n_m8_60[] = "M8.60 wave-also (also=N, mship_brought): a wave listed at a hidden point and a waypoint comes once, at whichever is reached first";

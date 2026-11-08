@@ -14,8 +14,9 @@
 # its turrets would have those fighters dead in seconds, with the player only watching (measured 2026-10-31)
 #
 # A ship line's role=back is an escort target that is there when its nav point is reached and makes for home at once
-# (the old game's behaviour 10: Kurasawa 2's captured Ralari, RIGEL2's Agasicles); role=in's waits off the scene until a
-# pilot comes within 5,000 km (its behaviour 7, the Draymen); either one killed loses the mission
+# (the old game's behaviour 10: Kurasawa 2's captured Ralari, RIGEL2's Agasicles); role=in's waits off the scene 999 of
+# the old game's frames (67 s) from its point's being reached, wherever the pilots are (its behaviour 7, the Draymen);
+# either one killed loses the mission
 #
 # A ship line's role=stay keeps a fighter of ours where it is: the autopilot leaves it (it takes the wingman, a human's
 # fighter, the escort targets on their way and the other friendly fighters near the player), and with nobody to fight
