@@ -8,6 +8,8 @@
 #   LOBBY=1         a local lobby room (WebRTC data channels, as the browser's; LOBBY_PORT, 8851), else TCP (PORT, 13471)
 #   GUEST_LAG=2     seconds between the starts
 #   GUEST2X=..      a script of its own for guest 2 (GUEST3X ... too)
+#   HOSTENV=.. GUESTENV=..  more of the environment for the host / every guest ("WCPRIVFACE=MER_DP:14")
+#   DOSBOX=..       the emulator (privrun.sh's default: build-native/src/dosbox)
 # Example, the guest engaging the autopilot (A) after the host's presence:
 #   scripts/privnet.sh 60 "" "40:a"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -28,12 +30,12 @@ fi
 PIDS=""
 # (each machine its own copy of the game's directory: two games in one fight over its temporary files)
 export COPY=1
-OUT=$OUT/host ENV="$NET_HOST WCCALLSIGN=HOST" "$ROOT/scripts/privrun.sh" $DUR "$HOSTX" > /dev/null &
+OUT=$OUT/host ENV="$NET_HOST WCCALLSIGN=HOST ${HOSTENV:-}" "$ROOT/scripts/privrun.sh" $DUR "$HOSTX" > /dev/null &
 PIDS="$PIDS $!"
 for g in $(seq 1 $((PLAYERS - 1))); do
   sleep ${GUEST_LAG:-2}
   var="GUEST${g}X"; X="${!var:-$GUESTX}"
-  OUT=$OUT/guest$g ENV="$NET_GUEST WCCALLSIGN=GUEST$g" "$ROOT/scripts/privrun.sh" $DUR "$X" > /dev/null &
+  OUT=$OUT/guest$g ENV="$NET_GUEST WCCALLSIGN=GUEST$g ${GUESTENV:-}" "$ROOT/scripts/privrun.sh" $DUR "$X" > /dev/null &
   PIDS="$PIDS $!"
 done
 wait $PIDS
