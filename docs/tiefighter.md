@@ -355,7 +355,7 @@ section 7 as it is worked on.
    | T/A | T/A + T/A | HA1W |
    | T/D | T/D + T/A | B9M2..B9M6, HD1W, HD2W, HD3M |
    | T/I | T/F + T/F for B5M1 and HI1W; T/I + T/F for HI3M (the user, 2026-11-07: "When we aren't adding ships the types should remain as is", then "for the harkov minefield it would be best to replace the 1 T/I with 2 T/F ... examine other solo t/i missions and see if they are beatable with 2 t/f"; step 9's "The T/I missions") | B5M1 (the minefield, unshielded), HI1W, HI3M |
-   | gunboat | gunboat + a standard Imperial shuttle (not the escort shuttle; the gunboat's cockpit for the shuttle for now) | B10M1, B10M2, HG1W, HG3M |
+   | gunboat | gunboat + a standard Imperial shuttle (not the escort shuttle; the gunboat's cockpit for the shuttle for now); two shuttles for B10M2 (the user, 2026-11-07: "see if any are beatable ... with a pair of imperial shuttles"; step 9's "The gunboat missions") | B10M1, B10M2, HG1W, HG3M |
    | T/F | T/F + T/F | B1M1, HF1W, HF3M, HF4M, TRAIN |
    | missile boat | missile boat + a standard Imperial shuttle (the user, later: "otherwise the gunboat could do some ion cannon shenanigans and the designers probably didn't think of that") | B10M5, B10M6, B11M1..B11M7, B12M6, B13M1, B13M4, HM1W, HM2W |
    | T/B | T/B + T/F: one flies the torpedo work, the other point defense | B3M1, HB1W |
@@ -1018,7 +1018,63 @@ they are beatable with 2 t/f ? make sure there are some non solo t/i missions".
 * **So**: B5M1 and HI1W fly as two T/Fs (`ti_flown_as_tfs`; the group retyped,
   a craft for each pilot); HI3M stays T/I + T/F (its goal is the ten mines:
   as T/I + T/F the T/I can clear them while the T/F keeps clear).
-  `WCNET_TIE_TI_AS_TF=<missions>` (or `none`) replaces the list for a rig.
+  `WCNET_TIE_SOLO_AS=<mission>:<type>,...` (or `none`) replaces the table for a rig.
+* **Speed and the bonus** (the user: "We need to be able to get the bonus
+  objective and I'm worried tf is too slow"; "If one does shield down and goes
+  right for it can it be done... And laser down").  Power taken from the
+  lasers and shields goes to the engines (dynamix.c: the top speed plus an
+  eighth for each point of 6 less the beam's, shields' and lasers' settings,
+  each 2 at the start, F8/F9/F10 cycling 0..4): a T/F has no shields to turn
+  down (F10: "no such system"; their setting stays 2), its lasers at 0 give
+  it a quarter more, 125 m/s from 100 (a T/I 111, 138 with its own down).
+  B5M1's goal that a T/F must reach in time is the shuttle Lambda (inspected:
+  a secret-order goal; destroyed: a bonus), 67 m/s, which appears 20 s after
+  the cruiser Margaret (45 s after the frigate Osprey) some 4.7 km from the
+  pilots and enters Margaret's hangar 107 s later.  Measured (both T/Fs kept
+  from harm by the rigs' `!tiegod=1`, the guest calling reinforcements with
+  Shift+S): the T/F with its lasers down was within 0.26 km 30 s after Lambda
+  appeared, the other at normal power within 0.3 km after 45 s; both stayed on
+  it until it docked, and an inspection by either counted on both machines.
+
+### Step 9: the gunboat missions (2026-11-07)
+
+The user: "go through solo gunboat missions where there's just one and see if
+any are beatable (including bonus and secondary objectives) with a pair of
+imperial shuttles. (i.e. they don't require disabling something or potentially
+faster gunboats). If so it could be an interesting way to balance it. Of
+course missions which already have 2 gunboats should stay as written. Ensure
+we have at least a few gunboat missions around."
+
+* **The gunboat's missions.**  Eighteen put the player in gunboats: four
+  alone (B10M1, B10M2, HG1W, HG3M) and fourteen in groups of two to six
+  (B1M5, B1M6, B2M4, B3M4, B3M6, B4M5, B5M2, B5M3, B5M5, B6M3, B6M4, B12M3,
+  HG2W, HG4M), which fly as written, a gunboat for each pilot.
+* **The craft** (spec_data): the gunboat 5000 shields, 2500 hull, speed 203,
+  two lasers and two ion cannons; the shuttle 5000 shields, 2000 hull, speed
+  150, four lasers, no ions, the slowest to turn of the two (heading 8960 to
+  10560, pitch 3328 to 3840).
+* **The four** (their goals: the flight groups' and the mission's own):
+  * B10M1: the transport Ibutho captured (primary) and the Choora disabled
+    (secondary): ion cannons.  Stays gunboat + shuttle.
+  * HG1W: the mines (primary), the container Pi inspected and the transport
+    Weet captured (secondary): ion cannons.  Stays.
+  * B10M2: the Interdictor Red Claw boarded and kept alive, the Chemetis'
+    work done (primary), twelve T/Ds and nine T/As destroyed (bonus), nothing
+    to disable or capture; the attackers come to the pilots (neither craft
+    catches a T/D, 350, or a T/A, 327).  Two shuttles.
+  * HG3M: every Rebel fighter group destroyed, the capital ships a bonus; no
+    disabling, but its B-wings carry 10,000 shields and 6,300 hull, and its
+    A-wings (270) come in many waves.  Stays gunboat + shuttle.
+* **Measured** (both pilots in shuttles, `WCNET_TIE_SOLO_AS`, the rigs' pilot
+  at the nearest enemy fighter, kept from harm by `!tiegod=1`, ten minutes
+  each): B10M2, seven of the twelve T/Ds, three of the bombers and three of the
+  interceptors destroyed and the flight going on; HG3M, the Y-wing, the Z-95s
+  and the X-wings of the first waves destroyed, then 400 s on a B-wing at 0.2
+  to 0.8 km, mostly 30 to 140 degrees off the nose, and few shots: a
+  shuttle could not pin it down (the gunboat's ions are its answer).  Both
+  runs: every flight group's state the same on both machines.
+* **So**: B10M2 flies as two shuttles (`kSoloAs`); B10M1, HG1W and HG3M as
+  gunboat + shuttle; the fourteen as written.
 
 ### Step 11: the page's picture and options for TIE Fighter (2026-11-06)
 
@@ -1375,6 +1431,35 @@ things in the docs".
   friend in the line).  Each machine's hyperspace arrival plays on its own (a
   guest launches once the host flies: its arrival a moment later).  The rig's
   chamber click at 44 s missed once (the guest a second click at 47 s).
+* **Mission events kept by one machine** (found measuring B5M1, the user: "If it
+  fails to show up for a player that's a serious bug").  The mission's
+  triggers run on every machine alike, the craft matched by their object
+  slots; four things reached only the machine where they happened:
+  * reinforcements called (Shift+S, then Space: the mission's penalty flag,
+    0xEB29C + 0x2E0, which a "reinforced" arrival waits for): the frigate
+    Osprey came only for the pilot who called;
+  * a craft inspected (the pilot's target within reach, collide.c: the craft's
+    +0xB8 and its group's inspected count, FGStatus +0x11 and the special
+    craft's +0x23);
+  * a death of a craft far from the other pilots: a death lasts some 60 ticks,
+    which reports every 10th frame or fewer could miss, so the copy lived on,
+    and later arrivals took different object slots on the two machines
+    (Lambda was obj 2 on one, 10 on the other);
+  * a departure through hyperspace or into a hangar (score_craftexitscoring's
+    kinds 3 and 4): a held copy flies no AI and never left.
+  Each is now sent, reliably, as a `TieEvent` (wc.proto) the moment it
+  happens, and the others do the game's own bookkeeping: the flag set; the
+  craft's inspected flag, its group's counts and the game's "has been
+  inspected" message (msg_craftmessage 0x33D10); the death begun (begin_kill);
+  the game's own exit (its message 0x61 or 0x6D, score_craftexitscoring
+  0x52A9C, the slot freed).  The per-second report has each flight group's
+  state, a letter each (`groups`: not yet, arrived, active, its dead,
+  inspected), so two machines' logs show any group that differs.  Measured,
+  B5M1 ten minutes, the guest calling: the Osprey, Theta's T/Is and Margaret
+  arrived on both; every group's state the same on both machines throughout;
+  Lambda inspected by either pilot counted on both, its hangar exit made on
+  the guest.  B10M2: a T/I's hangar exit and the transport Chemeti 1's jump
+  made on the guest as on the host.
 * **Seen, the game's own.**  Two lines fired in one poll show one (HG3M's 0
   and 1) but both their voices play; the game's R targets craft yet to
   launch.  The machine running both games and the rig at once, a guest's

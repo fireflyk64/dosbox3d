@@ -2179,26 +2179,42 @@ void tie_session_mission_path() {
 // flies the same as the second ("The third should be same as the guest in all cases").
 // The user, 2026-11-07: "When we aren't adding ships the types should remain as is": the mission's own craft keep their type
 // (the T/I stays a T/I, its partner a T/F beside it); a group with craft for every pilot flies as it is.
-// ... except where the user chose two T/Fs for a T/I flown alone (2026-11-07: "for the harkov minefield it would be best
-// to replace the 1 T/I with 2 T/F more fitting in some ways can you examine other solo t/i missions and see if they are
-// beatable with 2 t/f"): the player's group retyped T/F, a craft for each pilot.  B5M1 (Harkov's minefield: its goals
-// inspections and the frigate's arrival, the mines a danger, not a goal) and HI1W (customs inspections: nothing leaves,
-// no mines, its B-wings late and a bonus).  Not HI3M: its goal is every one of ten mines destroyed, which a T/F (half a
-// T/I's hull and guns) would face with half the margin; as T/I + T/F the T/I can do it while the T/F keeps clear.
-// WCNET_TIE_TI_AS_TF=<missions, comma-separated> (or "none") replaces the list (the rigs' comparisons).
-bool ti_flown_as_tfs(const std::string &mission) {
-    static const char *const kMissions[] = { "b5m1iw", "hi1w" };
+// ... except where the user chose another craft for both pilots of a mission flown alone: the player's group retyped,
+// a craft of it for each pilot (the mission's own type checked, so the Z-95 challenge, which flies HG3M's file in Z-95s,
+// is left alone).  The user, 2026-11-07:
+//   two T/Fs for a T/I: "for the harkov minefield it would be best to replace the 1 T/I with 2 T/F more fitting in some
+//   ways can you examine other solo t/i missions and see if they are beatable with 2 t/f": B5M1 (Harkov's minefield:
+//   its goals inspections and the frigate's arrival, the mines a danger, not a goal) and HI1W (customs inspections:
+//   nothing leaves, no mines, its B-wings late and a bonus); not HI3M (every one of ten mines to destroy, which a T/F,
+//   half a T/I's hull and guns, would face with half the margin: as T/I + T/F the T/I can do it);
+//   two Imperial shuttles for a gunboat: "go through solo gunboat missions where there's just one and see if any are
+//   beatable (including bonus and secondary objectives) with a pair of imperial shuttles (i.e. they don't require
+//   disabling something or potentially faster gunboats)": B10M2 (the Red Claw defended: nothing to disable or capture,
+//   its attackers come to the pilots); not B10M1 (the transport Ibutho to capture, the Choora to disable: ion cannons),
+//   HG1W (the transport Weet to capture), HG3M (B-wings' 10,000 shields, which a shuttle could not pin down in 400 s,
+//   and A-wings at 270: the gunboat's ions are its answer) (docs, step 9's gunboat missions).
+// WCNET_TIE_SOLO_AS=<mission>:<type>,... (or "none") replaces the table (the rigs' comparisons).
+struct SoloAs {
+    const char *mission;
+    int from, to;
+};
+const SoloAs kSoloAs[] = {
+    { "b5m1iw", 6, 5 }, { "hi1w", 6, 5 }, { "b10m2gw", 16, 17 },
+};
+
+int solo_flown_as(const std::string &mission, int type) {
     std::string m;
     for (size_t i = 0; i < mission.size(); i++) m += (char)tolower((unsigned char)mission[i]);
-    const char *env = getenv("WCNET_TIE_TI_AS_TF");
+    const char *env = getenv("WCNET_TIE_SOLO_AS");
     if (env) {
-        const std::string list = std::string(",") + env + ",";
-        return list.find("," + m + ",") != std::string::npos;
+        const std::string list = std::string(",") + env;
+        const size_t at = list.find("," + m + ":");
+        return at == std::string::npos ? 0 : atoi(list.c_str() + at + 2 + m.size());
     }
-    for (size_t k = 0; k < sizeof(kMissions) / sizeof(kMissions[0]); k++) {
-        if (m == kMissions[k]) return true;
+    for (size_t k = 0; k < sizeof(kSoloAs) / sizeof(kSoloAs[0]); k++) {
+        if (m == kSoloAs[k].mission && type == kSoloAs[k].from) return kSoloAs[k].to;
     }
-    return false;
+    return 0;
 }
 
 int paired_type(int type) {
@@ -2476,13 +2492,15 @@ void make_pairing(bool again) {
     if (count != 1) {
         return;             // (wingmen of its own: each pilot takes one, the seats' way)
     }
-    if (type == 6 && ti_flown_as_tfs(tie_mission_name())) {
-        tie_fly_group_as(pfg, 5);   // (the seats then give each pilot a T/F of the group)
-        g_net->pairedType = 5;
+    const int as = solo_flown_as(tie_mission_name(), type);
+    if (as) {
+        tie_fly_group_as(pfg, as);  // (the seats then give each pilot a craft of the group)
+        g_net->pairedType = as;
         if (!again) {
-            notice("Flown by two: T/Fs for the mission's T/I");
+            notice(as == 5 ? "Flown by two: T/Fs for the mission's T/I" : as == 17 ? "Flown by two: Imperial shuttles for the mission's gunboat"
+                           : "Flown by two: the pair's own craft for the mission's");
         }
-        wclog(1, "TIE: flown by two%s: the mission's T/I a T/F, a T/F for each pilot", again ? " (again: the mission read again)" : "");
+        wclog(1, "TIE: flown by two%s: the mission's craft type %d as %d, one for each pilot", again ? " (again: the mission read again)" : "", type, as);
         return;
     }
     const int second = paired_type(type);
