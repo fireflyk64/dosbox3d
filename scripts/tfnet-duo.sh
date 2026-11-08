@@ -21,6 +21,11 @@
 # Step 15's long tests, both flown by the scripted pilot (scripts/tfnet-aim.sh) and summed (scripts/tfnet-sum.py):
 #   WCNET_TIE_MISSION=hf3m scripts/tfnet-duo.sh 210 "$(scripts/tfnet-aim.sh 76 196 h)" "$(scripts/tfnet-aim.sh 78 196 g)"
 #   scripts/tfnet-sum.py /tmp/tfnet-duo/host.err /tmp/tfnet-duo/guest.err
+# The videos (step 15): both recorded, flown by the video rig's pilot (!tiesteer=, natural turns; the guest at the
+# second-nearest), cut with scripts/tfnet-sheet.py and scripts/tfnet-video.py:
+#   mkdir -p /tmp/v/h /tmp/v/g; OUT=/tmp/v WCNET_TIE_MISSION=hf3m HOSTENV="WCLAB=/tmp/v/h" GUESTENV="WCLAB=/tmp/v/g" \
+#     scripts/tfnet-duo.sh 420 "80:!tiesteer=5-9:1.0" "82:!tiesteer=5-9:1.0:2nd"      (mines: !tiesteer=mines:1.3)
+#   scripts/tfnet-video.py /tmp/v/h /tmp/v/g /tmp/v/full.mp4 --seg 66:221:host
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/tfnet-duo}; mkdir -p $OUT; rm -f $OUT/*.ppm $OUT/*.png
 DUR=${1:-100}; HOSTX=${2:-}; GUESTX=${3:-}; GUEST2X=${4:-}; PLAYERS=${PLAYERS:-2}
