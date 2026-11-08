@@ -1297,6 +1297,45 @@ things in the docs".
 * **The page.**  The help said "in its first stage... the shots, the damage
   still runs on each machine on its own": now what flying together is.  A
   controller's buttons mean TIE's own things in TIE (step 7's open item).
+* **The videos** (the user, 2026-11-07: "do some test runs and record compelling
+  videos. Maybe of the Haarkin minefield one and of one of the z95 ones and of a
+  arbitrary gunboat + shuttle one and ensure no other oddities in two player";
+  "a single video where it's top and bottom ... 15-30 seconds of action with
+  audio. The z95 mission should include the famous line"; "it has to look like a
+  natural flight ... casual banks and turns, no jittery stuff").  Both machines
+  recorded (`WCLAB`, the recorder now writing the wall clock every 200 ms),
+  flown by the video rig's pilot (`!tiesteer=`: the game's own controls only, a
+  bank and pull into a turn, the stick eased, the throttle keys on a change;
+  the second pilot at the second-nearest target), cut by
+  `scripts/tfnet-video.py` into 1080x1920, the host on top and the guest below,
+  a full flight and a 20-30 s reel each:
+  * the Z-95 challenge, HG3M (T/F mission 3 in a room): 2:35; HA2W's "How
+    pathetic! They must really wish to die flying those Z-95s!" on both screens
+    6 s after the arrival, its voice some 4 s before its text (the game's way;
+    found at 0.46..0.49 by the clip's cross-correlation, the other clips at the
+    floor); the guest's T/B kill credited on the guest; the guest shot down by
+    a T/F 2.5 minutes in, the room's flight over.
+  * Harkov's minefield, B5M1 (battle 5 mission 1): the T/I and a T/F beside it
+    (the new pairing); the T/I, unshielded, shot down by the mines some 13 s
+    after it began on them, in each of three takes (0:37).  The mines are
+    static objects (`staticobjects`, 0xEA6D4, 18 bytes, class 8; a target
+    number 0x3800 + index), not synced: the other pilot's shots made on each
+    machine destroy the same mines there (the counts went 8, 7, 6 on both, the
+    guest's 2 s behind by its later start).
+  * a gunboat and the shuttle, B10M1 (battle 10 mission 1): 4:38 against R-41
+    Starchasers; 245 owner changes, the escorted shuttle lost, a collision,
+    the host's gunboat shot down at the end; the shuttle's cockpit and side views
+    as made (above).
+* **Oddities found and what became of them.**  A guest's Enter Mission clicked
+  a moment before the host's launch was swallowed for good (the guest stayed in
+  the briefing while its notice said "you take off together once HOST is
+  flying"): the click is now given to the game when the host flies (measured:
+  "the host flies: our held launch click ... given to the game").  A pilot's
+  lead shots at a craft another pilot sits behind hit that pilot (the game's
+  friendly fire, applied as any hit; the rig's pilot now holds fire with a
+  friend in the line).  Each machine's hyperspace arrival plays on its own (a
+  guest launches once the host flies: its arrival a moment later).  The rig's
+  chamber click at 44 s missed once (the guest a second click at 47 s).
 * **Seen, the game's own.**  Two lines fired in one poll show one (HG3M's 0
   and 1) but both their voices play; the game's R targets craft yet to
   launch.  The machine running both games and the rig at once, a guest's
