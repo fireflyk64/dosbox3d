@@ -439,6 +439,23 @@ def pa_report():
     return echo(x, 230, 0.34, 3)                  # (the hall)
 
 
+def comm_cut():
+    """a comm cut off, its speaker killed mid-word (the user, 2026-11-08: "the comms need to cutoff immediately, ideally
+    with a burst of static"): a squelch's click, then a radio's hiss in a speaker's band, broken up as a signal lost,
+    crackling, falling away in under half a second"""
+    t = tl(0.42)
+    hiss = svf(svf(noise(t, 51), 1100, 0.7, 'bp'), 1800, 0.7) * env(t, 0.002, 0.13, 0.12)
+    rng = np.random.default_rng(52)
+    chop = np.repeat(0.35 + 0.65 * (rng.random(len(t) // 330 + 1) > 0.3), 330)[:len(t)]   # (15 ms grains, some lost)
+    chop = np.convolve(chop, np.ones(66) / 66, 'same')   # (their edges softened: 3 ms)
+    pops = np.zeros(len(t))
+    hits = rng.random(len(t)) < 500 / SR * np.exp(-t / 0.25)
+    pops[hits] = rng.uniform(-1, 1, hits.sum())
+    crack = svf(pops, 1300, 1.4, 'bp') * 2.0
+    click = svf(noise(t, 54), 700, 1.2, 'bp') * env(t, 0.0005, 0.006) * 2.5
+    return drive(hiss * chop + crack + click, 1.6)
+
+
 def hit_far():
     t = tl(0.16)
     pop = svf(noise(t, 20), sweep(t, 2500, 500, 0.03), 1.2) * env(t, 0.0008, 0.035) * 1.5
@@ -478,6 +495,7 @@ RECIPES = {
     'hit_hull': hit_hull,
     'hit_far': hit_far,
     'pa_report': pa_report,
+    'comm_cut': comm_cut,
 }
 
 

@@ -25,6 +25,12 @@
 static uint8_t __far g_type[N];         /* each slot's EntityType last step */
 static uint8_t __far g_dying[N];        /* its explosion started */
 static uint16_t __far g_died[N];        /* the step it began */
+static uint16_t __far g_foes_down;      /* the player's enemies seen begin to die (fx_foes_down) */
+
+uint16_t fx_foes_down(void)
+{
+    return g_foes_down;
+}
 static RvVec3 __far g_pos[N], __far g_vel[N];   /* a missile's last place and velocity: its burst's */
 static uint16_t __far g_last_frame[RV_SFX_COUNT];   /* a volley: one sound of a weapon a step and ship */
 static uint8_t __far g_last_owner[RV_SFX_COUNT];
@@ -322,6 +328,8 @@ static void death(int16_t s)
     uint16_t seed = (uint16_t)(frameCounter * 31 + s * 977);
     g_dying[s] = 1;
     g_died[s] = frameCounter;
+    if (commAnimInfo[s] != commAnimInfo[0])
+        g_foes_down++;
     if (s == 0) {                       /* the player's own: the camera is in it; only the sound */
         sfx_play(RV_SFX_BOOM_SHIP, 256, 256);
         return;

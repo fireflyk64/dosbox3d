@@ -13,6 +13,8 @@
 #define MAX_STEPS 200                   /* mouth shapes a line (20 s) */
 #define STEP_TICKS 24                   /* one a step: lipsync's 100 ms, on the music clock (240 a second) */
 #define TAIL_TICKS 240                  /* the face stays a second after the line */
+#define CUT_TICKS 96                    /* a comm cut off: the static's burst, 0.4 s (comms_cut) */
+#define SNOW 256                        /* the static's shades, a row's run read from anywhere in them */
 #define LINE 80
 
 /* the 4 x 6 font the callsign is stencilled in (tools/comms.py's): a glyph's width (3, 4 or 5), then its six rows,
@@ -43,8 +45,9 @@ static char __far g_line[LINE];                   /* the line being said */
 static unsigned char __far g_kept[COMMS_W];       /* a kept row's shades */
 static unsigned char __far g_part[COMMS_W];       /* (an asset's row) */
 static unsigned char __far g_out[2][COMMS_W];     /* a kept row as drawn: its two rows */
+static unsigned char __far g_snow[SNOW + COMMS_W];   /* the static's shades (comms_flight_start) */
 static struct {
-    int vdu, on, nsteps, cols, sx;
+    int vdu, on, cut, nsteps, cols, sx;
     RvCommVoice v;                      /* who speaks */
     int eyes;                           /* shown: 0 open, 1 half, 2 shut, 3 left, 4 right */
     int mouth;                          /* shown: 0 at rest, else its mouth patch (1 .. v.nmouth) */
@@ -78,6 +81,10 @@ void comms_flight_start(void)
     g_c.rnd = 7;
     g_pic = 0;
     g_ncast = 0;
+    for (i = 0; i < SNOW + COMMS_W; i++) {   /* (the middle shades the most, black and white the least) */
+        unsigned c = rnd();
+        g_snow[i] = (unsigned char)((c % LEVELS + (c >> 6) % LEVELS) / 2);
+    }
     if (hd->comm_cast == 0xFFFF || hd->comm_ramp == 0xFFFF)
         return;
     g_ncast = (int)(dat_asset(hd->comm_cast)->size / sizeof(RvCommVoice));
@@ -216,6 +223,7 @@ int comms_say(int voice, int vdu, const char __far *text)
     }
     text = g_line;
     g_c.vdu = vdu;
+    g_c.cut = 0;
     g_c.cols = dat_asset(g_c.v.base)->w;
     g_c.sx = g_c.cols ? COMMS_W / g_c.cols : 1;
     g_c.nsteps = lip_steps(text, g_steps, MAX_STEPS);
@@ -279,6 +287,22 @@ void comms_stop(void)
     g_c.on = 0;
 }
 
+/* cut off mid-word: the line gone, the face gone, CUT_TICKS of static where it was (draw), then nothing */
+int comms_cut(void)
+{
+    if (!g_c.on || g_c.cut)
+        return 0;
+    g_c.cut = 1;
+    g_c.until = clock240() + CUT_TICKS;
+    g_line[0] = 0;
+    return 1;
+}
+
+int comms_voice_side(int voice)
+{
+    return voice >= 0 && voice < g_ncast ? g_cast[voice].side : -1;
+}
+
 void comms_tick(void)
 {
     unsigned long now = clock240();
@@ -294,6 +318,8 @@ void comms_tick(void)
         g_c.on = 0;
         return;
     }
+    if (g_c.cut)                        /* (static: no face to move) */
+        return;
     /* the eyes: open; now and then a blink (half, shut, half) or a glance aside, half a second */
     if (g_c.look) {
         unsigned long k = now - g_c.eyes_at;
@@ -356,11 +382,43 @@ int comms_draw(int vdu, const RvRect __far *r, int y0, int y1)
     return draw(vdu, r, y0, y1);
 }
 
+/* the static of a comm cut off, over the whole VDU: each row a run of the snow's shades from a place of its own, every
+ * frame anew, fading to the link's black as it ends (a table of the shades it is now: no sum a pixel) */
+static void snow(const RvRect __far *r, int y0, int y1)
+{
+    unsigned long now = clock240();
+    unsigned char lut[2][LEVELS];
+    int k, y, x, left = now < g_c.until ? (int)(g_c.until - now) : 0;
+    for (k = 0; k < LEVELS; k++) {
+        int s = k * left / CUT_TICKS + (left > CUT_TICKS / 2 ? 1 : 0);   /* (the first half brighter) */
+        if (s >= LEVELS)
+            s = LEVELS - 1;
+        lut[0][k] = g_ramp[s];
+        lut[1][k] = g_ramp[LEVELS + s];
+    }
+    if (y0 < r->y) y0 = r->y;
+    if (y1 > r->y + r->h) y1 = r->y + r->h;
+    for (y = y0; y < y1; y++) {
+        unsigned char __far *d = vid_row(y) + r->x;
+        const unsigned char __far *from = g_snow + rnd() % SNOW;
+        const unsigned char *to = lut[y & 1];
+        int w = r->w < COMMS_W ? r->w : COMMS_W;   /* (the run's length: a VDU is narrower than the link) */
+        for (x = 0; x < w; x++)
+            d[x] = to[from[x]];
+        for (; x < r->w; x++)
+            d[x] = to[0];
+    }
+}
+
 static int draw(int vdu, const RvRect __far *r, int y0, int y1)
 {
     int px, py, y, sx0, sx1, lit = 0;
     if (!g_c.on || vdu != g_c.vdu || !g_pic || !r->w)
         return 0;
+    if (g_c.cut) {
+        snow(r, y0, y1);
+        return 1;
+    }
     px = r->x + (r->w - COMMS_W) / 2;   /* (centred: cropped on a smaller VDU, the link's ground round a bigger; */
     py = r->y + (r->h < COMMS_H ? (r->h - COMMS_H) / 4 : (r->h - COMMS_H) / 2);   /*  a short one loses the
                                            most at the bottom, the chin bar, keeping the callsign) */

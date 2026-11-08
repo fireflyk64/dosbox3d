@@ -37,6 +37,9 @@ const char __far *comms_text(void);     /* what it is saying (flight.c shows it 
 int comms_side(void);                   /* who talks now: their side (0 Terran, 1 Aera, 2 Rlaan), -1 no one */
 void comms_tick(void);                  /* once a frame: the mouth, the blinks, the end */
 void comms_stop(void);                  /* the comm off now */
+int comms_cut(void);                    /* the comm cut off: its words and face gone, a burst of static on its VDU (an
+                                           enemy's, an enemy ship destroyed: flight.c); 0 none on, or cut already */
+int comms_voice_side(int voice);        /* a voice's side (0 Terran, 1 Aera, 2 Rlaan), -1 no such voice */
 
 /* the comm into the run y0 .. y1-1 of VDU rect r: 1 when it drew it (the VDU's other content is not drawn) */
 int comms_draw(int vdu, const RvRect __far *r, int y0, int y1);

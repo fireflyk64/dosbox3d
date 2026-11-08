@@ -1340,8 +1340,8 @@ static void comm_hail(void)
         return;
     for (s = 1; s <= RV_MAX_SHIP_SLOT; s++) {
         long dx, dy, dz;
-        if (maybeEntityType[s] != 0xC || commAnimInfo[s] < 1 || commAnimInfo[s] > 2)
-            continue;
+        if (maybeEntityType[s] != 0xC || commAnimInfo[s] < 1 || commAnimInfo[s] > 2 || shipAiState[s] == 9)
+            continue;                   /* (not a dying one: its comm would be cut off, comm_cut_tick) */
         dx = (gPositionVector[s].x - gPositionVector[0].x) / 256;     /* (km) */
         dy = (gPositionVector[s].y - gPositionVector[0].y) / 256;
         dz = (gPositionVector[s].z - gPositionVector[0].z) / 256;
@@ -2218,6 +2218,26 @@ static void comm_key(int ch)
     }
 }
 
+/* once a frame, first: an enemy ship destroyed stops every enemy comm (the user, 2026-11-08: "When a foe is defeated,
+ * even if they are taunting, the comms need to cutoff immediately, ideally with a burst of static. it makes a big
+ * diffeerenece", then "any destroyed enemy ship stops all enemy comms": which pilot spoke is not followed).  The one on
+ * is cut to static, with its sound; an enemy's answer still to come is dropped */
+static uint16_t __far g_foes_heard;     /* fx_foes_down when last looked */
+static void comm_cut_tick(void)
+{
+    static const char __far s_log[] = "flight: frame %u: an enemy ship destroyed: the enemy comm cut off";
+    uint16_t n = fx_foes_down();
+    if (n == g_foes_heard)
+        return;
+    g_foes_heard = n;
+    if (g_reply_voice != -1 && comms_voice_side(g_reply_voice) > 0)
+        g_reply_voice = -1;
+    if (comms_side() > 0 && comms_cut()) {
+        rv_notef(s_log, frameCounter);
+        sfx_play(RV_SFX_COMM_CUT, 256, 256);
+    }
+}
+
 /* once a frame: the answer when the VDUs are free */
 static void comm_reply_tick(void)
 {
@@ -2234,6 +2254,7 @@ static void systems_start(void)
     g_denied_until = 0;
     g_stop_said = 0;
     g_reply_voice = -1;
+    g_foes_heard = fx_foes_down();
     g_sys.emcon = EMCON_ACTIVE;
     g_sys.iff = 1;
     g_sys.armed = 1;                    /* (out of the launch tube: armed) */
@@ -3731,7 +3752,8 @@ void __far __cdecl flight_frame(void)
     if (g_landing_t >= 0)
         landing_step();
     else {
-    comm_reply_tick();                  /* (first: an answer waiting goes before a hail takes the VDU) */
+    comm_cut_tick();                    /* (first: an enemy destroyed silences the enemy) */
+    comm_reply_tick();                  /* (then: an answer waiting goes before a hail takes the VDU) */
     comm_stop_tick();
     comm_chat();
     if (!g_comm_demo && frameCounter == 90 && !comms_on(0) && !comms_on(1) && g_reply_voice == -1)

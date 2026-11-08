@@ -2021,6 +2021,14 @@ enemy's in its side's voice for the type (no capital officer's helm yet: the
 side's first), an ally's relayed in the carrier's voice; the home carrier
 never.
 
+**Cut off.** Any enemy ship destroyed stops every enemy comm at once (the user, 2026-11-08: "When a foe is defeated,
+even if they are taunting, the comms need to cutoff immediately, ideally with a burst of static", then "any destroyed
+enemy ship stops all enemy comms": which pilot spoke is not followed). fx.c counts the enemies it sees begin to die
+(`fx_foes_down`); when the count moves, flight.c's `comm_cut_tick` cuts an Aera or Rlaan comm that is on
+(`comms_cut`: the face and the subtitle gone, 0.4 s of static over the VDU, each row a run of a table of shades from a
+place of its own, fading to black) with the `comm_cut` sound (a squelch's click, a hiss in a speaker's band broken
+up), and drops an enemy's answer to a taunt still waiting for the pilot's own line to end. A dying fighter never hails.
+
 **The bare face** (`RV_COMMS=face ./build.sh`): the pilots' helmet without
 its breathing gear, the face's mouth speaking in lipsync's eight shapes
 (the portraits' mouth frames), no regulator's light; the engine is the

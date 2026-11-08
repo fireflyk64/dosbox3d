@@ -17,6 +17,8 @@ void fx_shake(int16_t *dx, int16_t *dy);   /* once a frame: damage shake and the
 void fx_cockpit_draw(int y0, int y1);   /* a band of the cockpit is drawn: the sparks and smoke over it */
 extern int16_t g_view_outside;          /* the camera is outside the ship (flight.c) */
 int16_t fx_hidden(int16_t slot);        /* a dying ship the explosion has replaced: not drawn */
+uint16_t fx_foes_down(void);            /* how many of the player's enemies it has seen begin to die (a count that
+                                           only grows: flight.c's comm cut-off watches it change) */
 void fx_jump(int16_t slot, int16_t friendly);   /* a ship jumps out: its star, and a friend's a white flash (logic_on_jump) */
 void fx_shot(int16_t owner, uint16_t weapon_type);              /* a shot added (shots.c) */
 void fx_flak(const RvVec3 *at);         /* a capital ship's flak burst there (logic.c flak_burst): a puff */
