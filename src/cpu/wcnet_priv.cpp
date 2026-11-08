@@ -868,6 +868,20 @@ bool priv_script_item(const std::string &item, double t) {
         wclog(1, "key script %.1fs: turning toward the nearest %s at %d degrees a second for %d s", t, g_turn.pod ? "pod" : "ship", degs, secs);
         return true;
     }
+    if (item.compare(0, 10, "!privpeace") == 0 && g_found) {
+        // !privpeace: every ship of the scene but ours and the puppets dies (a test aid: the launch point's encounter out
+        // of the way of the autopilot)
+        Bit16u ships[48];
+        const int n = priv_scene_ships(ships, 48);
+        int killed = 0;
+        for (int i = 0; i < n; i++) {
+            if (ships[i] == priv_player_ship() || priv_session_is_puppet(ships[i], 0)) continue;
+            priv_ship_kill(ships[i]);
+            killed++;
+        }
+        wclog(1, "key script %.1fs: !privpeace: %d ships of the scene killed", t, killed);
+        return true;
+    }
     if (item.compare(0, 9, "!privkill") == 0 && g_found) {
         // !privkill: the last ship a spawn of ours made dies (the game's own death: explosion, pods, the reaping)
         const Bit16u ship = priv_last_spawned();

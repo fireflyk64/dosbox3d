@@ -359,5 +359,18 @@ Where that spawn goes through the encounter spawn (seg077:0265) the nav point's 
 drone a nav point as the user asked; its target is then the owner's own ship, not the lowest seat's.  Untestable
 without a late campaign (the drone comes after the Steltek gun); left as it is.
 
+**A jump with puppets about** (the user's recipe read for this version: sell the Missile Launcher, 7,500, and the
+Plasteel Armor, 500 -- not the laser or the shields, the launch point's encounter kills an unarmed Tarsus -- and buy
+the Jump Drive, 10,000).  Found so far, alone and on two machines: the nav map (N) selects a nav point by its
+numbered button at the bottom (the "1" button at 0.115, 0.95; a click on the map itself did not), Esc closes it, A
+then flies the autopilot's cutscene and drops the ship 11 km from it ("Navpoint near"); the map's Nav 1 is sphere
+id 0, where the jump object sits (JUMPTYPE, appearance JUMP, name "JMPPYRI", at 30,000, 40,000, 20,000 m in Troy);
+the autopilot refuses while an encounter is about (`!privpeace`, a test aid, kills every ship of the scene but ours
+and the puppets; the guest's puppets of them die with the owner's reports).  J pressed from 3-8 km out five times did
+not jump: the ship flies past the point after the drop, so it must be steered into the sphere first (the next try:
+`!privpos` beside it, world units = metres x 256).  On the two-machine run the host's flight ended of itself at
+119 s, its heap at 16 KB and no error reported -- a death between frames, most likely (the jump point's own wing);
+untested beyond that.
+
 **The face on the comm screen** (section 11): open.
 
