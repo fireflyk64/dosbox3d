@@ -56,6 +56,8 @@ const char *const kModeLines[] = {
 int g_mode = -1;
 double g_stickX, g_stickY, g_stickAt = -1e9;   // the page's pad (pitch positive climbs), and when it last said
 bool g_left, g_right, g_up, g_down, g_shiftL, g_shiftR, g_rollLeft, g_rollRight;
+int g_rollStep;                     // the roll keys' ramp (the arrows' own): -9..9
+double g_rollOwed;                  // ... the roll events it owes, a fraction of one a frame
 int g_stepX, g_stepY;
 double g_px, g_py;                  // the pointer, -1..1 from the middle (down and right positive)
 unsigned g_frames;
@@ -139,17 +141,11 @@ bool tie_controls_key(int key, bool pressed) {
         return true;
     case KBD_up: g_up = pressed; return true;
     case KBD_down: g_down = pressed; return true;
-    case KBD_kp0:                           // Ins: roll as the game's Left arrow does
-        if (pressed != g_rollLeft) {
-            g_rollLeft = pressed;
-            add_key(KBD_left, pressed);
-        }
+    case KBD_kp0:                           // Ins: roll as the game's Left arrow does (tie_controls_frame)
+        g_rollLeft = pressed;
         return true;
     case KBD_kpperiod:                      // Del: roll as its Right arrow does
-        if (pressed != g_rollRight) {
-            g_rollRight = pressed;
-            add_key(KBD_right, pressed);
-        }
+        g_rollRight = pressed;
         return true;
     case KBD_f12:                           // pointer, drag, keyboard, pointer, ...
         if (pressed) {
@@ -561,14 +557,27 @@ void tie_controls_frame() {
     if (flying && g_mind.state == 1 && !g_steer.on) {
         mind_frame();
     }
-    // (the keypad's Ins and Del, a controller's roll buttons: a roll event every frame while held.  The game rolls a
-    // step a key event, its own arrows' as each frame's; held, the keyboard's own repeat gave one step, then nothing for
-    // half a second, then some 30 a second: a twitch and a pause before the roll)
-    if (flying && g_rollLeft) {
-        add_key(KBD_left, true);
-    }
-    if (flying && g_rollRight) {
-        add_key(KBD_right, true);
+    // (the keypad's Ins and Del, a controller's roll buttons.  The game rolls a step a key event, its own arrows' as
+    // each frame's: held, the keyboard's own repeat gave one step, then nothing for half a second, then some 30 a second.
+    // Now the arrows' own ramp (RetroVega's, WC1's: a notch further every other frame, 1 to 9, Shift 9 at once; the user:
+    // "Do we need the retrovega or privateer style key ramp for a few frames?"): an event on the frame of the press, then
+    // the ramp's ninths of one a frame, full in some 0.3 s; each a press and its release, so that the keyboard's repeat
+    // adds none)
+    const int rollDir = (g_rollRight ? 1 : 0) - (g_rollLeft ? 1 : 0);
+    if (!flying || !rollDir) {
+        g_rollStep = 0;
+        g_rollOwed = 1;                     // (the next press rolls at once)
+    } else {
+        if (!g_rollStep || g_frames % 2 == 0) {
+            g_rollStep = key_ramp(g_rollStep, rollDir, g_shiftL || g_shiftR);
+        }
+        g_rollOwed += abs(g_rollStep) / 9.0;
+        if (g_rollOwed >= 1) {
+            g_rollOwed -= 1;
+            const KBD_KEYS arrow = rollDir < 0 ? KBD_left : KBD_right;
+            add_key(arrow, true);
+            add_key(arrow, false);
+        }
     }
     if (flying != g_wasFlying) {
         g_wasFlying = flying;

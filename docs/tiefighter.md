@@ -745,7 +745,13 @@ move vector, the nine axis words, type).
   held, the keyboard's own repeat gave one step, nothing for half a second,
   then some 30 a second.  Measured, a T/F at 60 frames a second: Ins held 2 s
   rolls 143 degrees from the first frame (some 72 a second), Del held 2 s rolls
-  it back, a 150 ms tap some 11 degrees.  A controller's roll buttons press the
+  it back, a 150 ms tap some 11 degrees.  Then the arrows' own ramp (the user:
+  "Do we need the retrovega or privateer style key ramp for a few frames?"): an
+  event on the press's frame, then the ramp's ninths of one a frame (a notch
+  further every other frame, full in some 0.3 s; Shift full at once), each a
+  press and its release so that the keyboard's repeat adds none.  Measured: Ins
+  held 2 s 128 degrees, Del back exactly, a 150 ms tap 3.8 degrees (a fine
+  correction), Shift+Ins held 1 s 70.  A controller's roll buttons press the
   same keys.  Q, E, comma and period are TIE's own keys.
 * **The mouse**, `WCNET_TIE_MOUSE`: `pointer` (the default) moves a pointer
   the emulator draws (an amber ring over the gunsight) and its distance from
