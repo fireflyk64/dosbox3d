@@ -80,6 +80,7 @@ enum {
                                     // bytes, "Iron"), a word -3 and the block's own segment; the record's +0 points back at the block
     kCargoRecordAt = 0x10,
     kFarMalloc = 0x089D,            // seg000:089D(size dword): the game's far malloc, dx:ax
+    kCredits = 0x655A,              // the player's credits, a 32-bit global (the exchange's add and sub at ovr286:103C)
     kNearHeapTop = 0x3FFC,          // the near heap's end (the game's own allocator, seg142:012B: error 1308 when SP is below it)
     kNearFreeList = 0x3FF8,
     kNearHeapLock = 0x4001,         // set by the allocator while it works on the ring (a walk then could see it torn)         // the head of its free blocks' ring (a block: size at +0, bit 0 used; +2 the block before; +4/+6 the ring)
@@ -283,7 +284,7 @@ bool queue_call(const PrivCall &c) {
 // alone), which no flight reads.  The type's and appearance's names go on the stack with the call's data.
 enum { kScratch = 0x0074 + 28, kScratchSize = 29 };
 // The AI held for these ships' controllers (puppets: wcnet_priv_session.cpp): their think, seg042:0944, returns at once.
-enum { kSeg042 = 0x1DFE, kNpcThink = 0x0944, kHeldCap = 16, kSeg053 = 0x23BA };
+enum { kSeg042 = 0x1DFE, kNpcThink = 0x0944, kHeldCap = 32, kSeg053 = 0x23BA };   // (held: 7 pilots and 16 encounter ships at most)
 // The game's error report, seg050:0006(code): 1303 is its near heap with no block big enough (the program then ends,
 // and PRIV.EXE starts it again at its title).
 enum { kSeg050 = 0x20F8, kGameError = 0x0006 };
@@ -588,11 +589,22 @@ void priv_tick() {
         int total, largest, blocks, pilots, npcs, pods;
         if (!priv_near_heap_read(total, largest, blocks)) total = largest = blocks = -1;
         priv_session_counts(pilots, npcs, pods);
+        // the scene's ships alive but ours, and of them the pirates (a measure for the co-op tests)
+        Bit16u ships[48];
+        const int n = priv_scene_ships(ships, 48);
+        int alive = 0, pirates = 0;
+        for (int i = 0; i < n; i++) {
+            if (ships[i] == priv_player_ship() || !priv_ship_is_alive(ships[i])) continue;
+            alive++;
+            if (priv_ship_cast_name(ships[i]).compare(0, 3, "PIR") == 0) pirates++;
+        }
         wclog(2, "Privateer: t=%.1f, %u keyboard frames, controls: %s, near heap free %d (lowest this second %d, ever %d; largest block %d, %d blocks); "
-                 "ours here: %d pilots, %d encounter ships, %d pods; %d allocations, the largest %d (ever %d); stack headroom at one: the game's %d, ours %d",
+                 "ours here: %d pilots, %d encounter ships, %d pods; %d allocations, the largest %d (ever %d); stack headroom at one: the game's %d, ours %d; "
+                 "ships in the scene %d, pirates %d; in %s",
               now / 1000.0, frames - lastFrames, priv_control_mode(), total, g_heapLowSecond < (1 << 30) ? g_heapLowSecond : -1,
               priv_near_heap_lowest(), largest, blocks, pilots, npcs, pods, g_alloc.count, g_alloc.largestSecond, g_alloc.largest,
-              g_alloc.headroomGame < (1 << 30) ? g_alloc.headroomGame : -1, g_alloc.headroomOurs < (1 << 30) ? g_alloc.headroomOurs : -1);
+              g_alloc.headroomGame < (1 << 30) ? g_alloc.headroomGame : -1, g_alloc.headroomOurs < (1 << 30) ? g_alloc.headroomOurs : -1, alive, pirates,
+              priv_in_flight() ? priv_system_name().c_str() : "(not flying)");
         g_alloc.count = 0;
         g_alloc.largestSecond = 0;
         lastFrames = frames;
@@ -602,7 +614,7 @@ void priv_tick() {
 
 // The video aid's steady turn (!privturn): each frame our matrix is rotated toward the target by at most the rate,
 // about the axis perpendicular to our forward and the target's direction (the second row is forward).
-struct { bool pod; double rate, until; } g_turn = { true, 0, -1e9 };
+struct { bool pod; double rate, until; bool pirate; } g_turn = { true, 0, -1e9, false };
 
 static void turn_step() {
     const double now = PIC_FullIndex();
@@ -616,7 +628,8 @@ static void turn_step() {
     priv_player_pos(pos);
     double best = 1e18, tgt[3] = { 0, 0, 0 };
     for (int i = 0; i < n; i++) {
-        if (objs[i] == own) continue;
+        if (objs[i] == own || (g_turn.pirate && priv_ship_cast_name(objs[i]).compare(0, 3, "PIR") != 0)) continue;
+        if (g_turn.pirate && !priv_ship_is_alive(objs[i])) continue;
         Bit32s p[3];
         priv_ship_pos(objs[i], p);
         const double d = sqrt((double)(p[0] - pos[0]) * (p[0] - pos[0]) + (double)(p[1] - pos[1]) * (p[1] - pos[1]) + (double)(p[2] - pos[2]) * (p[2] - pos[2]));
@@ -1004,7 +1017,8 @@ bool priv_script_item(const std::string &item, double t) {
         char what[8] = "pod";
         int degs = 30, secs = 4;
         sscanf(item.c_str() + 10, "%7[a-z]:%d:%d", what, &degs, &secs);
-        g_turn.pod = strcmp(what, "ship") != 0;
+        g_turn.pod = strcmp(what, "ship") != 0 && strcmp(what, "pirate") != 0;
+        g_turn.pirate = strcmp(what, "pirate") == 0;
         g_turn.rate = degs * 3.14159265 / 180.0;
         g_turn.until = PIC_FullIndex() + 1000.0 * secs;
         wclog(1, "key script %.1fs: turning toward the nearest %s at %d degrees a second for %d s", t, g_turn.pod ? "pod" : "ship", degs, secs);
@@ -1013,6 +1027,31 @@ bool priv_script_item(const std::string &item, double t) {
     if (item.compare(0, 12, "!privrelease") == 0 && g_found) {
         wclog(1, "key script %.1fs: one puppet to be given back (near heap free %d)", t, priv_near_free());
         priv_session_force_release();
+        return true;
+    }
+    if (item.compare(0, 13, "!privcredits=") == 0 && g_found) {
+        // !privcredits=<n>: the player's credits set (a test rig's aid only: the 32-bit global ds:655A the commodity
+        // exchange adds to and takes from, ovr286:103C)
+        const Bit32u v = (Bit32u)strtoul(item.c_str() + 13, NULL, 0);
+        wclog(1, "key script %.1fs: credits %u -> %u", t, priv_r32(kCredits), v);
+        mem_writed(ds_at(kCredits), v);
+        return true;
+    }
+    if (item.compare(0, 10, "!privfind=") == 0 && g_found) {
+        // !privfind=<value>: every place in the data segment holding that value as a 32-bit word (a test aid), and the
+        // player record's offset (ds:66B2) for reference
+        const Bit32u v = (Bit32u)strtoul(item.c_str() + 10, NULL, 0);
+        std::string at;
+        int n = 0;
+        for (Bit32u a = 0; a + 3 < 0x10000 && n < 40; a++) {
+            if (priv_r32((Bit16u)a) == v) {
+                char b[8];
+                snprintf(b, sizeof b, "%04X ", a);
+                at += b;
+                n++;
+            }
+        }
+        wclog(1, "key script %.1fs: %u found at %s(the player record at %04X)", t, v, at.c_str(), priv_r16(kPlayerRecord));
         return true;
     }
     if (item.compare(0, 10, "!privpeace") == 0 && g_found) {
@@ -1121,13 +1160,15 @@ bool priv_spawn_ship(const char *type, const char *appearance, const char *cast,
     return queue_call(c);
 }
 
-void priv_hold_ai(Bit16u controller, bool hold) {
+bool priv_hold_ai(Bit16u controller, bool hold) {
     std::vector<Bit16u>::iterator it = std::find(g_heldAi.begin(), g_heldAi.end(), controller);
     if (hold && it == g_heldAi.end() && controller && g_heldAi.size() < kHeldCap) {
         g_heldAi.push_back(controller);
+        return true;
     } else if (!hold && it != g_heldAi.end()) {
         g_heldAi.erase(it);
     }
+    return !hold || it != g_heldAi.end();
 }
 
 void priv_hold_ai_none() {

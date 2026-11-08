@@ -374,3 +374,85 @@ untested beyond that.
 
 **The face on the comm screen** (section 11): open.
 
+## 15. Stability: the game's memory, our calls, the limits (2026-11-08)
+
+The user: "Highest priority is any stability issues.  We need to either solve them or limit the number of players such
+that they won't happen."  Everything here was measured natively with rooms of up to 8 (scripts/privtests/).
+
+**The game's near heap** is its own allocator (seg142:012B) in its 64 KB data segment: from the end of its static data
+(`[0163]`, 6C04) to `0xFFF6 - _stklen` (`ds:620A` = 0x1000: the stack EFF6-FFF6), some 33.8 KB of which 17 KB are free
+as a flight begins.  Nothing grows it, and a request no block can meet is its error 1303 and the end of the program.
+More conventional or upper memory (fewer drivers, high memory) does not reach it -- it is inside the data segment --
+and helps only the far heap and the overlays, which never ran short.  The only bytes that could be moved to it are
+the stack's never-used bottom: painted at the program's load (`PRIVSTACK=1`), the stack never came within 956 bytes
+of the heap's end through intro, menus, booths, conversations, autopilot, fights and deaths; ~500 of those (3% of the
+heap) are not worth a silent corruption should a rare path go deeper, so it stays as it is.
+
+**Watched** (every 1,000 instructions, the allocator's lock byte ds:4001 respected; the per-second log line): the
+heap's free and its lowest this second and ever, the largest block, our puppets, the allocations (1,000-2,000 a
+second in a fight, the largest 142 bytes, 1,593 once), the stack's headroom at each allocation (the game's own deepest
+1,404 bytes over the heap's end; ours, inside our calls, never below 2,700), the scene's ships, the system; every
+error the game reports (seg050:0006) with the heap's state; our own ship's death.
+
+**Found and fixed:**
+1. *Cargo multiplied.*  A ship dying in the owner's game died as a puppet in every other game too, each dropped its
+   own pods and shared them: one death's cargo some N x N times in every game (the owner's heap went to 3,240).  A
+   puppet's death now skips the game's cargo ejection (seg053:0C0B -> seg036:1692; the dying ship's allocation in DI,
+   our pointer 2 bytes in): the owner's real pods are the only ones, shared.
+2. *Puppets took local damage.*  A hit on another's ship was sent to its owner and applied here as well: under fire
+   puppets died, exploded and were made again over and over.  A puppet takes no damage here; its owner's game
+   decides.  A pilot's own destruction is told to the room (`PrivState.destroyed`, reliable) and its puppets die
+   with it.
+3. *Calls outliving their object.*  Each queued call of ours (spawns, the hit chain's calls with a ship's far damage
+   model, a pod's cargo) carries a guard -- its ship or pod still of its kind, in the scene, its model the same --
+   checked as it starts; a failed one is cancelled cleanly.  The queue is flushed at every flight change: a landing,
+   a death, a new flight, a jump (a jump now forgets the puppets too: the game rebuilds the scene).
+4. *More puppets than held AIs.*  The held-AI list had room for 16; 7 pilots and 12 encounter puppets need 19.  Now 32,
+   and a puppet whose AI cannot be held is taken away again.
+
+**The memory governor** (`govern_memory`, every frame).  A puppet is made only while the last 5 s' low stays 8,000
+over its cost (600 a ship, 200 a pod), one at a time, 2 s apart, none within 10 s of a give-back; encounter ships
+first (co-op: an enemy not shown still shoots).  Below 6,000 one puppet a second is given back (four a second below
+4,500): moved far off, its AI let go, killed -- the game's own death path frees it, without cargo -- parked ones first,
+then the other pilots, then encounter ships, the farthest first; pods are never chosen (a pod's death frees nothing).
+And the game's own encounter first: when the owner's game is about to spawn one of its wings while our puppets have
+squeezed its heap (the last 2 s' low under 9,000), the wing waits -- the game calls its spawn again every frame -- and
+a puppet is given back; with none of ours left the wing spawns whatever the heap says, as alone.
+
+**Measured** (8 players at Achilles' nav point, everyone firing guns and missiles at the nearest pirate; the owner
+is the host).  Before the fixes, against 4 added pirates: guests 7,900-11,000 free at their lowest, the owner
+3,240-4,760; the same fight with the owner alone: 6,672-7,714.  After:
+
+| added to the natural encounter (3) | guests' lowest | the owner's lowest | the owner shows of the 7 others |
+|---|---|---|---|
+| 4 pirates (three runs) | 9,400-11,500 | 4,884-5,614 | 5-6 through the fight |
+| 3 pirates, co-op | 10,250 | 5,302 | 2-7 |
+| 5 pirates, co-op | 6,380 | 3,834 | none at the peak |
+| 12 pirates, co-op | 6,650-8,570 | its game ran out (1303) | none |
+
+The binding limit is the owner's game: a fighting AI ship costs it about 1 KB, a held puppet anywhere 450-850 bytes
+(a ship type not yet loaded some 300 more, once).  With all 8 together the natural encounter and about 3 more ships
+are safe, 5 more the edge; 12 more is more fighting AI than the game itself ever puts in one place, and its own heap
+cannot hold them whatever we do.  Players spread over several nav points each have their own owner and encounter.
+4 players: guests >= 11,160, the owner >= 5,276.  The game's own encounters (2-6 ships) are within this; anything
+that adds enemies for a bigger room must keep under it.
+
+**The jump test** (scripts/privtests/jump.sh).  Three pilots in Troy; one buys a jump drive (credits from the rig's
+`!privcredits`, its laser kept), jumps Troy -> Pyrenees -> Troy 15 s after each arrival: 6 jumps, then J does nothing
+(the fuel, the ship 163 m from the jump point); a second jumps with its third trip out and stays.  The host, 2 km
+from the jump point, held at 17,830 bytes the whole time (the jumper's puppet parked and taken up again, never made
+again); the jumper's heap at its arrivals 17,314 / 18,140 / 18,278 in Troy and 18,318 / 15,526 / 15,540 in Pyrenees
+(the encounter it cleared there): no drift; the two in Pyrenees saw each other and its nav 0 passed to the second
+when the first jumped home.  No error, no death, the program never restarted.  A jump is made from within 500 m of
+the jump point (1,500 m: nothing); the jump points are scene objects (JUMPTYPE, named JMP<system>: Troy's JMPPYRI at
+30,000, 40,000, 20,000 m; Pyrenees' JMPTROY at 25,000, 45,000, 15,000 m), and an arrival is beside the one back.
+
+**The rigs' aids** (key scripts only, never the page): `!privcredits=N` (the credits, a 32-bit global at ds:655A),
+`!privfind=V` (where a value lies in the data segment), `!privrelease`, `!privpeace`, `!privturn=pirate|ship|pod:
+deg/s:secs`, `!privpos=x:y:z` (world units, 256 a metre), `!privscene`; `PRIVSTACK=1`.  The tests:
+`scripts/privtests/load.sh` (PLAYERS, PIRATES) and `scripts/privtests/jump.sh`.
+
+**Open.**  Every ship our layer spawns points its cast name (+0xE) at one shared 8-byte scratch (the tail of the
+program's unused usage line), so all our puppets read as the last cast written; it is used only when a ship is made,
+as far as is known, but should be one name per cast.
+

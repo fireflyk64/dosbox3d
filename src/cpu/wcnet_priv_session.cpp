@@ -31,6 +31,8 @@ extern std::string incoming_text;   // the line the emulator draws over the pict
 
 namespace wc {
 
+void release_obj(Bit16u obj);       // (below: a puppet given back)
+
 namespace {
 
 enum {
@@ -46,7 +48,7 @@ enum Why { WHY_PERIOD = 0, WHY_AUTOPILOT = 1, WHY_JUMP = 2, WHY_LAUNCH = 3, WHY_
 // Step 5: a nav point's owner (the user's rule): of the pilots present at it, one with a mission objective there, the
 // host first (the lowest seat), each in turn once everybody has left and come back, until all have had it.  Step 6:
 // the owner's encounter ships are the others' puppets (PrivScene, kSceneEveryMs), hits on a ship cross to its owner.
-enum { kOwnersEveryMs = 3000, kDecideEveryMs = 500, kSceneEveryMs = 100, kNpcCap = 12, kNpcStaleMs = 3000, kFireMs = 60,
+enum { kOwnersEveryMs = 3000, kDecideEveryMs = 500, kSceneEveryMs = 100, kNpcCap = 16, kNpcStaleMs = 3000, kFireMs = 60,
        kShotEveryMs = 120, kCastSlots = 7, kCastAt = 0x0074 };
 const double kUnitsPerMetre = 256.0;    // (the destination display's range: the distance in world units, >> 8)
 const double kNearMetres = 20000.0;     // a pilot this near is "near" (a nav point's sphere: 12,000 to 17,000)
@@ -72,7 +74,8 @@ const char kPuppetCast[] = "MER_DP";
 // ones first, then the encounter ships, then the pilots, the farthest first: our footprint goes to nothing before
 // the game's own needs do.
 enum { kShipNearBytes = 600, kPodNearBytes = 200, kCreateFloor = 8000, kReleaseFloor = 6000, kReleaseEveryMs = 1000,
-       kUrgentFloor = 4500, kUrgentEveryMs = 250, kCreateEveryMs = 2000, kCreateAfterReleaseMs = 10000, kLowWindows = 5 };
+       kUrgentFloor = 4500, kUrgentEveryMs = 250, kCreateEveryMs = 2000, kCreateAfterReleaseMs = 10000, kLowWindows = 5,
+       kWingFloor = 9000 };            // (a wing of the game's own is some 3-4 ships: 3-4 KB as they fight)
 enum { kSayThinkFrames = 60 };          // 3 s of the page's 20 a second
 const char kPodCast[] = "CARGO";        // (a pod's name at +0xE, where a ship has its cast's)
 
@@ -919,6 +922,11 @@ void priv_session_tick() {
             const bool jumped = !g_system.empty() && g_wasFlying;
             g_system = sys;
             if (jumped) {
+                // a new system, a new scene: the old one's ships (ours among them) are the game's to free; what we
+                // had queued for them is dropped
+                if (g_net) {
+                    forget_puppets("a jump");
+                }
                 priv_session_event(WHY_JUMP);
             }
         }
@@ -1099,10 +1107,16 @@ void puppet_made(int seat, Bit16u obj) {
         wclog(1, "Privateer: pilot %d's ship could not be made", seat + 1);
         return;
     }
-    p.obj = obj;
     p.type = priv_ship_type(obj);
     p.parked = false;
-    priv_hold_ai(priv_ship_controller(obj), true);
+    if (!priv_hold_ai(priv_ship_controller(obj), true)) {
+        // (its AI cannot be held: it would fly as it likes; taken away again)
+        if (g_net->dying.size() < 32) g_net->dying.push_back(std::make_pair(obj, p.type));
+        release_obj(obj);
+        wclog(1, "Privateer: pilot %d's ship could not be held: not shown", seat + 1);
+        return;
+    }
+    p.obj = obj;
     const std::string who = g_net->pilots[seat].callsign.empty() ? "a pilot" : g_net->pilots[seat].callsign;
     tell(who + "'s " + (p.appearance == "TUG" ? "Orion" : p.appearance == "FIGHTER" ? "Centurion" : p.appearance == "MERCHANT" ? "Galaxy" : "Tarsus")
          + " is in your space");
@@ -1374,8 +1388,13 @@ void npc_made(int tag, Bit16u obj) {
     p.parked = false;
     if (p.pod) {
         priv_pod_fill(obj, cargo_records(p), p.units);
-    } else {
-        priv_hold_ai(priv_ship_controller(obj), true);
+    } else if (!priv_hold_ai(priv_ship_controller(obj), true)) {
+        if (g_net->dying.size() < 32) g_net->dying.push_back(std::make_pair(obj, p.otype));
+        release_obj(obj);
+        p.obj = 0;
+        p.used = false;
+        wclog(1, "Privateer: pilot %d's %s could not be held: not shown", p.seat + 1, p.type.c_str());
+        return;
     }
     wclog(2, "Privateer: pilot %d's %s (%s, %s) is ds:%04X here", p.seat + 1, p.type.c_str(), p.appearance.c_str(), p.cast.c_str(), obj);
 }
@@ -1567,13 +1586,40 @@ void frame_npcs(double now, const Bit32s pos[3]) {
 
 }  // namespace
 
+// The game's own wing first: about to spawn while our puppets squeeze its heap, it waits (the game calls the spawn
+// again every frame while the wing is armed) and a puppet of ours is given back; with none of ours left it spawns
+// whatever the heap says (the game as it is alone)
+bool wing_waits_for_memory(int sphereId) {
+    int pilots, npcs, pods;
+    priv_session_counts(pilots, npcs, pods);
+    if (pilots + npcs == 0) {
+        return false;
+    }
+    const int low = heap_low_recent(2);
+    if (low >= (1 << 30) || low >= kWingFloor) {
+        return false;
+    }
+    static double forcedAt = -1e9;
+    if (PIC_FullIndex() - forcedAt > kUrgentEveryMs) {
+        forcedAt = PIC_FullIndex();
+        priv_session_force_release();       // (one at a time: the wing asks again every frame)
+    }
+    static double saidAt = -1e9;
+    if (PIC_FullIndex() - saidAt > 3000) {
+        saidAt = PIC_FullIndex();
+        wclog(1, "Privateer: nav %d's wing waits for the game's memory (%d free at the lowest; %d pilots, %d encounter ships of others' here: one given back)",
+              sphereId, low, pilots, npcs);
+    }
+    return true;
+}
+
 bool priv_session_allow_wing(int sphereId) {
     if (!g_net || g_net->self < 0 || g_system.empty()) {
         return true;
     }
     const int owner = owner_of(g_system, sphereId);
     if (owner == g_net->self) {
-        return true;
+        return !wing_waits_for_memory(sphereId);
     }
     if (owner >= 0) {
         static double saidAt = -1e9;
@@ -1584,7 +1630,10 @@ bool priv_session_allow_wing(int sphereId) {
         return false;
     }
     // nobody's word yet: with another pilot already there, the host decides first
-    return (present_at(g_system, sphereId) & ~(g_net->self >= 0 ? 1u << g_net->self : 0)) == 0;
+    if ((present_at(g_system, sphereId) & ~(g_net->self >= 0 ? 1u << g_net->self : 0)) != 0) {
+        return false;
+    }
+    return !wing_waits_for_memory(sphereId);
 }
 
 bool priv_session_chat(const std::string &text) {
@@ -1698,14 +1747,14 @@ void govern_memory(double now, const Bit32s pos[3]) {
         const NpcPuppet &p = g_net->npcs[k];
         if (!p.used || !p.obj || p.killed || p.pod) continue;     // (a pod is not freed by its death: it waits out its time)
         double d = sqrt((p.x - pos[0]) * (p.x - pos[0]) + (p.y - pos[1]) * (p.y - pos[1]) + (p.z - pos[2]) * (p.z - pos[2]));
-        const double score = (p.parked ? 3e12 : 2e12) + d;
+        const double score = (p.parked ? 3e12 : 1e12) + d;      // (encounter ships last: an enemy not shown still shoots)
         if (score > best) { best = score; bestNpc = k; bestSeat = -1; }
     }
     for (int s = 0; s < kMaxSeats; s++) {
         const Puppet &p = g_net->puppets[s];
         if (!p.obj) continue;
         double d = sqrt((p.x - pos[0]) * (p.x - pos[0]) + (p.y - pos[1]) * (p.y - pos[1]) + (p.z - pos[2]) * (p.z - pos[2]));
-        const double score = (p.parked ? 3e12 : 1e12) + d;
+        const double score = (p.parked ? 3e12 : 2e12) + d;
         if (score > best) { best = score; bestSeat = s; bestNpc = -1; }
     }
     if (bestNpc < 0 && bestSeat < 0) {
@@ -1769,7 +1818,9 @@ void priv_session_frame() {
         send_scene(now, g_net->nav >= 0 && owner_of(g_system, g_net->nav) == g_net->self);
     }
     govern_memory(now, pos);
-    // theirs, in our space (before the encounter ships: the first claim on the game's memory)
+    // the encounter ships first (the first claim on the game's memory: co-op, an enemy not shown still shoots), then
+    // the other pilots
+    frame_npcs(now, pos);
     for (int s = 0; s < kMaxSeats; s++) {
         if (s == g_net->self) {
             continue;
@@ -1807,7 +1858,6 @@ void priv_session_frame() {
             wclog(2, "Privateer: pilot %d's ship parked (%s)", s + 1, fresh ? "out of reach" : "no reports");
         }
     }
-    frame_npcs(now, pos);
     frame_chats_and_shots();
 }
 

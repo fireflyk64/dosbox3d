@@ -73,7 +73,7 @@ std::string priv_player_appearance();
 bool priv_spawn_ship(const char *type, const char *appearance, const char *cast, const Bit32s pos[3], const Bit32s m[9],
                      void (*done)(int tag, Bit16u obj), int tag);
 // Its AI held (its think returns at once) or let go; none held (a flight's end).
-void priv_hold_ai(Bit16u controller, bool hold);
+bool priv_hold_ai(Bit16u controller, bool hold);    // false: not held (the list is full)
 void priv_hold_ai_none();
 void priv_let_think(Bit16u controller, int frames);   // a held controller thinks for this many frames (its pilot speaks)
 bool priv_thinking(Bit16u controller);
