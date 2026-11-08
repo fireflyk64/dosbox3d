@@ -1625,6 +1625,29 @@ void launch_when_host_flies(double now) {
     g_net->heldScene = -1;
 }
 
+int tie_session_partner(int *target) {
+    *target = 0xFFFF;
+    if (!g_net || !tie_in_flight()) {
+        return -1;
+    }
+    const int own = tie_player_object();
+    const double now = PIC_FullIndex();
+    int best = -1;
+    double bestD = 1e30;
+    for (int k = 0; k < kMaxSeats; k++) {
+        if (k == g_net->self || !pilot_present(k, now)) continue;
+        const int o = g_net->pilotObj[k];
+        if (o < 0 || o >= kCraftSlots || !is_craft(o)) continue;
+        const double d = own >= 0 ? distance(own, o) : 0;
+        if (d < bestD) {
+            bestD = d;
+            best = o;
+            *target = g_net->pilotTarget[k];
+        }
+    }
+    return best;
+}
+
 void tie_session_tick() {
     const double now = PIC_FullIndex();
     if (g_noticeAt >= 0 && now - g_noticeAt > kNoticeMs && !tie_in_flight()) {

@@ -25,9 +25,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <math.h>
 #include <string>
 #include "wcnet_tie.h"
+#include "wcnet_tie_session.h"
 #include "wcnet_log.h"
 #include "wc_net.h"
 #include "keyboard.h"
@@ -224,6 +226,92 @@ void steer_tap(KBD_KEYS key) {
     g_steer.tap = (int)key;
 }
 
+void throttle_to(int want) {
+    if (want != g_steer.throttle && !g_steer.tap) {
+        steer_tap(want == 1 ? KBD_backspace : want == 2 ? KBD_enter : KBD_backslash);
+        g_steer.throttle = want;
+    }
+}
+
+// The pilot's hands, from where the point to fly at lies off the nose (right, climb, radians) and how far (km): a bank
+// and a pull far off the nose, the fine aim near it, the stick eased and given as mickeys from nothing, the roll keys,
+// the fire button (allowed: `fireOk`, within `fireKm` and 2 degrees, no friend in the line); within `breakKm` (0: never)
+// up and away 1.2 s and straight on 1.6 s.  !have: the stick let go.
+void hands(bool have, double right, double climb, double km, bool still, bool fireOk, double fireKm, double breakKm) {
+    const double now = PIC_FullIndex();
+    double wantX = 0, wantY = 0;
+    int roll = 0;
+    if (have && (now < g_steer.breakUntil || (breakKm > 0 && km < breakKm))) {
+        if (now >= g_steer.breakUntil) {
+            g_steer.breakUntil = now + 2800;    // (too near: up and away for 1.2 s, straight on 1.6 s, then at it again)
+        }
+        wantY = g_steer.breakUntil - now > 1600 ? 1.0 : 0;
+        g_steer.rolling = 0;
+        fireOk = false;
+    } else if (have) {
+        // (where it is around the nose: theta off it, phi round it from straight up, right positive)
+        const double f = cos(climb) * cos(right), sd = cos(climb) * sin(right), u = sin(climb);
+        const double theta = acos(fmax(-1.0, fmin(1.0, f))), phi = atan2(sd, u);
+        if (!g_steer.rolling && theta > 0.35 && fabs(phi) > 0.44) {
+            g_steer.rolling = phi > 0 ? 1 : -1;     // (far off the nose and not above it: bank towards it, the way
+        }                                           // chosen kept until it is above, however it swings round...)
+        // (... and stopped once it is within some 15 degrees of overhead or past it: the roll turns more than a narrow
+        // window a frame, which it would roll past for ever; not judged near straight below, where the angle flips)
+        if (g_steer.rolling && (theta < 0.2 || (fabs(phi) < 2.6 && ((g_steer.rolling > 0 && phi < 0.25) ||
+                                                                   (g_steer.rolling < 0 && phi > -0.25))))) {
+            g_steer.rolling = 0;
+        }
+        roll = g_steer.rolling;
+        if (theta > 0.2) {
+            // (... and pull once it is above the nose, the more the further off, some rudder its way when not banking:
+            // a pilot's turn)
+            const double k = fmin(1.0, theta / 0.6);
+            wantY = cos(phi) > 0.5 ? k * cos(phi) : 0;
+            // (banking: the stick across rolls while the second button is held, the game's own X-roll, a bank the
+            // faster the further round it is)
+            wantX = roll ? roll * fmin(1.0, 0.35 + fabs(phi) / 2.0) : 0.35 * k * sin(phi);
+        } else {
+            // (near the nose: the fine aim, nothing within 0.7 degree)
+            const double dead = still ? 0.004 : 0.012;
+            wantX = fabs(right) < dead ? 0 : fmax(-1.0, fmin(1.0, right / 0.35));
+            wantY = fabs(climb) < dead ? 0 : fmax(-1.0, fmin(1.0, climb / 0.35));
+        }
+        static double loggedAt;
+        if (now - loggedAt > 500) {
+            loggedAt = now;
+            wclog(2, "TIE: the steering aid: obj %d %.2f km, %.1f deg off, %.0f round, roll %d, stick %.2f %.2f", g_steer.target, km,
+                  theta * 57.3, phi * 57.3, roll, g_steer.sx, g_steer.sy);
+        }
+    } else {
+        g_steer.rolling = 0;
+    }
+    // (the stick eased, 0.05 a frame at most: no snatching)
+    g_steer.sx += fmax(-0.05, fmin(0.05, wantX - g_steer.sx));
+    g_steer.sy += fmax(-0.05, fmin(0.05, wantY - g_steer.sy));
+    if (wantX == 0 && fabs(g_steer.sx) < 0.03) g_steer.sx = 0;
+    if (wantY == 0 && fabs(g_steer.sy) < 0.03) g_steer.sy = 0;
+    // (the stick as mickeys from nothing, not from the game's least deflection: below it that least is given now and
+    // then, so a slow drift is followed slowly, not by turns at the least rate and stops)
+    const int mx = steer_mickeys(g_steer.sx * 191, 17, g_steer.accX), my = steer_mickeys(g_steer.sy * 127, 33, g_steer.accY);
+    if (mx || my) {
+        Mouse_AddMickeys((float)mx, (float)my);
+    }
+    // (the roll: the game's X-roll, the second button held while banking; TIE's arrow keys roll a step a key event, so
+    // a key held rolls next to nothing)
+    if ((roll != 0) != (g_steer.rollHeld != 0)) {
+        if (roll) Mouse_ButtonPressed(1);
+        else Mouse_ButtonReleased(1);
+    }
+    g_steer.rollHeld = roll;
+    const bool fire = have && fireOk && km >= 0 && km <= fireKm && fabs(right) < 0.035 && fabs(climb) < 0.035 &&
+                      !tie_friend_in_line(right, climb, km);
+    if (fire != g_steer.firing) {
+        if (fire) Mouse_ButtonPressed(0);
+        else Mouse_ButtonReleased(0);
+        g_steer.firing = fire;
+    }
+}
+
 void steer_frame() {
     const double now = PIC_FullIndex();
     if (g_steer.tap) {
@@ -243,77 +331,195 @@ void steer_frame() {
         }
         g_steer.target = o;
     }
-    double right = 0, climb = 0, km = -1, wantX = 0, wantY = 0;
-    int roll = 0;
-    if (g_steer.target < 0 || !tie_aim(g_steer.target, &right, &climb, &km)) {
+    double right = 0, climb = 0, km = -1;
+    const bool have = g_steer.target >= 0 && tie_aim(g_steer.target, &right, &climb, &km);
+    if (!have) {
         g_steer.target = -1;
-    } else if (now < g_steer.breakUntil || km < (tie_speed(g_steer.target) > 0 ? 0.15 : 0.2)) {
-        if (now >= g_steer.breakUntil) {
-            g_steer.breakUntil = now + 2800;    // (too near: up and away for 1.2 s, straight on 1.6 s, then at it again)
+    }
+    const bool still = have && (g_steer.mines || tie_speed(g_steer.target) <= 0);
+    if (have) {
+        // (the throttle: full while far, the target's speed near: on its tail, or still before a still one, a
+        // kilometre off a mine, shot from there)
+        throttle_to(km > (still ? 1.5 : 1.2) ? 1 : km < (still ? 1.05 : 0.7) ? 2 : g_steer.throttle);
+    }
+    hands(have, right, climb, km, still, have, g_steer.km, have ? (still ? 0.2 : 0.15) : 0);
+}
+
+// The DEMO pilot's wingman (the user, 2026-11-08: "if I sign in with pilot DEMO for tie fighter can you give my controls
+// to the mind you created to record the demo reels? that way I can do two player tests where I fly one and the other
+// flies the other... please make it work with both host and guest... ideally it at least works well enough to stay out of
+// trouble and help where possible"; then "can we not use the CALLSIGN field on the webpage... could pass a flag to
+// dosbox?").  A room's callsign with DEMO in it (any case; WCCALLSIGN, as Wing Commander's CHEAT is read; the rigs:
+// WCNET_TIE_DEMO=1) has that machine's craft flown by the video rig's pilot
+// (the same hands: banks, pulls, an eased stick, the game's own keys), deciding each frame:
+//   out of trouble first: away from a mine within 1.6 km, and from a capital ship, container or platform its own size
+//     and 0.35 km off;
+//   then help, the first of: an enemy at the other pilot (its AI's target), the other pilot's own target if hostile, an
+//     enemy at us, an enemy within 3 km of the other pilot (or of us, alone); hostile: a ship of the mission's other side
+//     (0 and 1, the Rebels' and the Empire's) or one attacking our side, so neutrals to inspect are left alone;
+//   else on the other pilot's wing, 0.35 km out and a little behind, at its speed (Enter, the other pilot its target).
+// Its fire only at a hostile target, within 1 km and 2 degrees, no friend in the line.
+struct Mind {
+    int state;          // -1 not yet decided this flight, 0 off, 1 on
+    double flightAt;
+    int target, prio, mode;
+    double pickedAt;
+} g_mind = { -1, 0, -1, 9, 0, 0 };
+
+const double kKm = 40960.0;
+
+bool mind_hostile(int o, const TieObjInfo &t, int ourSide) {
+    if (!t.alive || t.type < 1 || t.type > 25 || t.side == ourSide || o == tie_player_object()) return false;
+    if ((ourSide == 1 && t.side == 0) || (ourSide == 0 && t.side == 1)) return true;
+    TieObjInfo v;
+    return t.aiTarget >= 0 && t.aiTarget < 120 && tie_obj_info(t.aiTarget, &v) && v.side == ourSide;
+}
+
+double mind_km(const TieObjInfo &a, const TieObjInfo &b) {
+    return sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z)) / kKm;
+}
+
+void mind_said(int mode) {
+    static int said = -1;
+    if (mode != said) {
+        said = mode;
+        static const char *const kModes[] = { "idle", "out of trouble", "attacking", "on the other pilot's wing" };
+        wclog(1, "TIE: the DEMO wingman: %s", kModes[mode & 3]);
+    }
+}
+
+void mind_frame() {
+    const double now = PIC_FullIndex();
+    if (g_steer.tap) {
+        add_key((KBD_KEYS)g_steer.tap, false);
+        g_steer.tap = 0;
+    }
+    if (now - g_mind.flightAt < 3000) {
+        return;     // (the arrival, the opening's lines)
+    }
+    const int own = tie_player_object();
+    TieObjInfo me;
+    if (own < 0 || !tie_obj_info(own, &me) || !me.alive) {
+        hands(false, 0, 0, 0, false, false, 0, 0);
+        return;
+    }
+    int ptarget = 0xFFFF;
+    const int partner = tie_session_partner(&ptarget);
+    TieObjInfo pal;
+    const bool havePal = partner >= 0 && tie_obj_info(partner, &pal) && pal.alive;
+    int mode = 0;
+    double right = 0, climb = 0, km = -1;
+    // out of trouble: a mine near, a big ship near
+    const int mine = tie_nearest_mine();
+    double mr = 0, mc = 0, mk = -1;
+    if (mine >= 0 && tie_aim(mine, &mr, &mc, &mk, false) && mk < 1.6) {
+        right = mr > 0 ? mr - M_PI : mr + M_PI;
+        climb = -mc;
+        km = 2;
+        mode = 1;
+    }
+    for (int o = 0; o < 120 && !mode; o++) {
+        TieObjInfo t;
+        if (o == own || !tie_obj_info(o, &t) || !t.alive || t.type < 26 || t.type == 75) continue;
+        const double d = mind_km(me, t), size = t.radius / kKm;
+        if (d - size < 0.35) {
+            double r = 0, c = 0;
+            tie_aim_dir(t.x - me.x, t.y - me.y, t.z - me.z, &r, &c);
+            if (fabs(r) < 1.2) {        // (ahead of us: turn away; behind, flying on takes us off)
+                right = r > 0 ? r - M_PI : r + M_PI;
+                climb = -c;
+                km = 2;
+                mode = 1;
+            }
         }
-        wantY = g_steer.breakUntil - now > 1600 ? 1.0 : 0;
-        g_steer.rolling = 0;
-        right = climb = 1;                      // (no fire meanwhile)
-    } else {
-        // (the throttle: full while far, the target's speed near: on its tail, or still before a still one)
-        // (a still one, a mine: stopped a kilometre off, shot from there)
-        const bool still = g_steer.mines || tie_speed(g_steer.target) <= 0;
-        const int want = km > (still ? 1.5 : 1.2) ? 1 : km < (still ? 1.05 : 0.7) ? 2 : g_steer.throttle;
-        if (want != g_steer.throttle && !g_steer.tap) {
-            steer_tap(want == 1 ? KBD_backspace : KBD_enter);
-            g_steer.throttle = want;
+    }
+    if (mode == 1) {
+        throttle_to(1);
+        hands(true, right, climb, km, false, false, 0, 0);
+        g_mind.mode = 1;
+        mind_said(1);
+        return;
+    }
+    // help: the target, picked again each second (kept unless a more pressing one has come)
+    if (now - g_mind.pickedAt > 1000 || g_mind.target < 0) {
+        g_mind.pickedAt = now;
+        int best = -1, bestPrio = 9;
+        double bestD = 1e30;
+        for (int o = 0; o < 32; o++) {
+            TieObjInfo t;
+            if (!tie_obj_info(o, &t) || !mind_hostile(o, t, me.side)) continue;
+            int prio = 9;
+            if (havePal && t.aiTarget == partner) prio = 1;
+            else if (havePal && o == ptarget) prio = 2;
+            else if (t.aiTarget == own) prio = 3;
+            else if (mind_km(havePal ? pal : me, t) < 3.0) prio = 4;
+            if (prio > 4) continue;
+            const double d = mind_km(me, t);
+            if (prio < bestPrio || (prio == bestPrio && d < bestD)) {
+                best = o;
+                bestPrio = prio;
+                bestD = d;
+            }
         }
-        // (where it is around the nose: theta off it, phi round it from straight up, right positive)
-        const double f = cos(climb) * cos(right), sd = cos(climb) * sin(right), u = sin(climb);
-        const double theta = acos(fmax(-1.0, fmin(1.0, f))), phi = atan2(sd, u);
-        if (!g_steer.rolling && theta > 0.35 && fabs(phi) > 0.44) {
-            g_steer.rolling = phi > 0 ? 1 : -1;     // (far off the nose and not above it: bank towards it, the way
-        }                                           // chosen kept until it is above, however it swings round...)
-        if (g_steer.rolling && (fabs(phi) < 0.14 || theta < 0.2)) {
-            g_steer.rolling = 0;
+        TieObjInfo cur;
+        const bool keep = g_mind.target >= 0 && tie_obj_info(g_mind.target, &cur) && mind_hostile(g_mind.target, cur, me.side) &&
+                          g_mind.prio <= bestPrio;
+        if (!keep) {
+            if (best != g_mind.target && best >= 0) {
+                tie_target(best);
+                wclog(2, "TIE: the DEMO wingman's target obj %d (type %d, %s)", best, -1, bestPrio == 1 ? "at the other pilot"
+                      : bestPrio == 2 ? "the other pilot's target" : bestPrio == 3 ? "at us" : "near");
+            }
+            g_mind.target = best;
+            g_mind.prio = bestPrio;
         }
-        roll = g_steer.rolling;
-        if (theta > 0.2) {
-            // (... and pull, the more the further off, some rudder its way: a pilot's turn)
-            const double k = fmin(1.0, theta / 0.6);
-            wantY = k * fmax(0.0, cos(phi));
-            wantX = 0.35 * k * sin(phi);
-        } else {
-            // (near the nose: the fine aim, nothing within 0.7 degree)
-            const double dead = still ? 0.004 : 0.012;
-            wantX = fabs(right) < dead ? 0 : fmax(-1.0, fmin(1.0, right / 0.35));
-            wantY = fabs(climb) < dead ? 0 : fmax(-1.0, fmin(1.0, climb / 0.35));
+    }
+    if (g_mind.target >= 0 && tie_aim(g_mind.target, &right, &climb, &km)) {
+        g_steer.target = g_mind.target;
+        throttle_to(km > 1.2 ? 1 : km < 0.7 ? 2 : g_steer.throttle);
+        hands(true, right, climb, km, false, true, 1.0, 0.15);
+        g_mind.mode = 2;
+        mind_said(2);
+        return;
+    }
+    g_mind.target = -1;
+    if (havePal) {
+        // on its wing: 0.35 km out to its side, 0.15 km behind; near the spot, its heading
+        const double px = pal.x + (pal.sx * 0.35 - pal.fx * 0.15) * kKm, py = pal.y + (pal.sy * 0.35 - pal.fy * 0.15) * kKm,
+                     pz = pal.z + (pal.sz * 0.35 - pal.fz * 0.15) * kKm;
+        const double dx = px - me.x, dy = py - me.y, dz = pz - me.z, d = sqrt(dx * dx + dy * dy + dz * dz) / kKm;
+        if (g_mind.mode != 3) {
+            tie_target(partner);    // (Enter matches the other pilot's speed)
         }
+        if (d < 0.15) tie_aim_dir(pal.fx, pal.fy, pal.fz, &right, &climb);
+        else tie_aim_dir(dx, dy, dz, &right, &climb);
+        throttle_to(d > 1.0 ? 1 : d < 0.4 ? 2 : g_steer.throttle);
+        hands(true, right, climb, d, false, false, 0, 0);
+        g_mind.mode = 3;
+        mind_said(3);
         static double loggedAt;
-        if (now - loggedAt > 500) {
+        if (now - loggedAt > 2000) {
             loggedAt = now;
-            wclog(2, "TIE: the steering aid: obj %d %.2f km, %.1f deg off, %.0f round, roll %d, stick %.2f %.2f", g_steer.target, km,
-                  theta * 57.3, phi * 57.3, roll, g_steer.sx, g_steer.sy);
+            wclog(2, "TIE: the DEMO wingman on obj %d's wing, %.2f km from its spot", partner, d);
         }
+        return;
     }
-    // (the stick eased, 0.05 a frame at most: no snatching)
-    g_steer.sx += fmax(-0.05, fmin(0.05, wantX - g_steer.sx));
-    g_steer.sy += fmax(-0.05, fmin(0.05, wantY - g_steer.sy));
-    if (wantX == 0 && fabs(g_steer.sx) < 0.03) g_steer.sx = 0;
-    if (wantY == 0 && fabs(g_steer.sy) < 0.03) g_steer.sy = 0;
-    // (the stick as mickeys from nothing, not from the game's least deflection: below it that least is given now and
-    // then, so a slow drift is followed slowly, not by turns at the least rate and stops)
-    const int mx = steer_mickeys(g_steer.sx * 191, 17, g_steer.accX), my = steer_mickeys(g_steer.sy * 127, 33, g_steer.accY);
-    if (mx || my) {
-        Mouse_AddMickeys((float)mx, (float)my);
-    }
-    if (roll != g_steer.rollHeld) {
-        if (g_steer.rollHeld) add_key(g_steer.rollHeld > 0 ? KBD_right : KBD_left, false);
-        if (roll) add_key(roll > 0 ? KBD_right : KBD_left, true);
-        g_steer.rollHeld = roll;
-    }
-    const bool fire = g_steer.target >= 0 && km >= 0 && km <= g_steer.km && fabs(right) < 0.035 && fabs(climb) < 0.035 &&
-                      !tie_friend_in_line(right, climb, km);
-    if (fire != g_steer.firing) {
-        if (fire) Mouse_ButtonPressed(0);
-        else Mouse_ButtonReleased(0);
-        g_steer.firing = fire;
-    }
+    hands(false, 0, 0, 0, false, false, 0, 0);
+    g_mind.mode = 0;
+    mind_said(0);
+}
+
+void mind_stop() {
+    if (g_steer.firing) Mouse_ButtonReleased(0);
+    if (g_steer.rollHeld) Mouse_ButtonReleased(1);
+    if (g_steer.tap) add_key((KBD_KEYS)g_steer.tap, false);
+    g_steer.firing = false;
+    g_steer.rollHeld = g_steer.rolling = 0;
+    g_steer.tap = 0;
+    g_steer.sx = g_steer.sy = 0;
+    g_steer.throttle = 0;
+    g_mind.target = -1;
+    g_mind.mode = 0;
 }
 
 // Test aid (the key script's !tiegod=1, 0 off): the game's damage calls on our craft skipped (the session's damage gate,
@@ -333,6 +539,27 @@ void tie_controls_frame() {
     const bool flying = tie_in_flight();
     if (g_steer.on && flying) {
         steer_frame();
+    }
+    // (a DEMO callsign: decided at each flight's start, its wingman's mind on while it flies)
+    if (flying && g_mind.state < 0) {
+        // (the room's callsign, the page's Callsign box: WCCALLSIGN, as Wing Commander's CHEAT is read)
+        const char *cs = getenv("WCCALLSIGN"), *env = getenv("WCNET_TIE_DEMO");
+        std::string callsign = cs ? cs : "";
+        for (size_t i = 0; i < callsign.size(); i++) callsign[i] = (char)toupper((unsigned char)callsign[i]);
+        g_mind.state = callsign.find("DEMO") != std::string::npos || (env && env[0] == '1') ? 1 : 0;
+        wclog(1, "TIE: %s flies (the pilot %s)%s", cs ? cs : "we", tie_pilot_name().c_str(),
+              g_mind.state ? ": the DEMO wingman flies its craft" : "");
+        g_mind.flightAt = PIC_FullIndex();
+        if (g_mind.state == 1) {
+            mind_stop();
+            say("DEMO flies itself: a wingman stays out of trouble and helps the other pilot");
+        }
+    } else if (!flying && g_mind.state >= 0) {
+        if (g_mind.state == 1) mind_stop();
+        g_mind.state = -1;
+    }
+    if (flying && g_mind.state == 1 && !g_steer.on) {
+        mind_frame();
     }
     if (flying != g_wasFlying) {
         g_wasFlying = flying;
@@ -389,7 +616,7 @@ void tie_controls_set_mouse(int m) {
 void tie_controls_steer(const std::string &spec) {
     if (spec == "off") {
         if (g_steer.firing) Mouse_ButtonReleased(0);
-        if (g_steer.rollHeld) add_key(g_steer.rollHeld > 0 ? KBD_right : KBD_left, false);
+        if (g_steer.rollHeld) Mouse_ButtonReleased(1);
         g_steer.rollHeld = g_steer.rolling = 0;
         g_steer.on = g_steer.firing = false;
         wclog(1, "TIE: the steering aid off");

@@ -1444,6 +1444,40 @@ things in the docs".
   friend in the line).  Each machine's hyperspace arrival plays on its own (a
   guest launches once the host flies: its arrival a moment later).  The rig's
   chamber click at 44 s missed once (the guest a second click at 47 s).
+* **The DEMO wingman** (the user, 2026-11-08: "if I sign in with pilot DEMO for
+  tie fighter can you give my controls to the mind you created to record the
+  demo reels? that way I can do two player tests where I fly one and the other
+  flies the other... please make it work with both host and guest... ideally
+  it at least works well enough to stay out of trouble and help where
+  possible"; then "can we not use the CALLSIGN field on the webpage... could
+  pass a flag to dosbox?").  A room's callsign with DEMO in it (any case; the
+  page's Callsign box, WCCALLSIGN, as Wing Commander's CHEAT is read; the rigs
+  `WCNET_TIE_DEMO=1`, or tfnet-duo.sh's `GUEST_CALLSIGN`) gives that machine's
+  craft, host's or guest's, to the video rig's pilot as a wingman
+  (`wcnet_tie_controls.cpp`, `mind_frame`), deciding each frame, 3 s after the
+  flight begins: away from a mine within 1.6 km and from a ship of type 26 and
+  up (containers, capital ships, platforms) within its size and 0.35 km
+  ahead; then the first of an enemy whose AI is at the other pilot, the other
+  pilot's own target if hostile, an enemy at us, an enemy within 3 km of the
+  other pilot; else on the other pilot's wing, 0.35 km out and 0.15 km
+  behind, its speed matched (Enter, the other pilot its target).  Hostile: the
+  mission's other side (0 and 1) or a ship whose AI is at our side, so
+  neutrals to inspect are left alone; fire only at a hostile target, within 1
+  km and 2 degrees, no friend in the line.  The session gives it the other
+  pilot (`tie_session_partner`: its craft and its target).
+  **The bank**: TIE rolls a step a key event (user.c's arrows), so a held
+  roll key rolls next to nothing (the first wingman banked for ever, its rudder
+  flipping, and froze when it waited on the key alone); its own X-roll does:
+  the stick across rolls while the second button is held ((inputbuttons & 0xE)
+  == 2), so a bank holds the right button and moves the stick its way, stopped
+  once the target is within some 15 degrees of overhead or past it.  The video
+  rig's pilot shares these hands.
+  Measured, the Z-95 challenge's HG3M, the host flown by the rig's pilot, the
+  guest's callsign Demo-Wing: "the DEMO wingman flies its craft" and its
+  notice; on the host's wing from 72 s, at the host's targets from 81 s, held
+  within 0.3 to 1 degree of them while closing, out of trouble twice by a
+  capital ship and back, two kills credited to it and one to the host before
+  the host went down at 198 s.
 * **Mission events kept by one machine** (found measuring B5M1, the user: "If it
   fails to show up for a player that's a serious bug").  The mission's
   triggers run on every machine alike, the craft matched by their object

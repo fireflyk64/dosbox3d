@@ -568,6 +568,15 @@ bool tie_aim(int target, double *right, double *climb, double *km, bool lead) {
             dz += vz * t;
         }
     }
+    return tie_aim_dir(dx, dy, dz, right, climb);
+}
+
+bool tie_aim_dir(double dx, double dy, double dz, double *right, double *climb) {
+    const int own = tie_player_object();
+    if (!g_found || own < 0) {
+        return false;
+    }
+    const Bit32u a = tie_linear(tie::kObjects + own * tie::kObjectSize);
     double ax[9];
     for (int i = 0; i < 9; i++) ax[i] = (Bit16s)mem_readw(a + 0x42 + 2 * i) / 32768.0;
     const double mv = ax[0] * (Bit16s)mem_readw(a + 0x3A) + ax[1] * (Bit16s)mem_readw(a + 0x3C) + ax[2] * (Bit16s)mem_readw(a + 0x3E);
@@ -575,6 +584,40 @@ bool tie_aim(int target, double *right, double *climb, double *km, bool lead) {
     const double f = sf * (dx * ax[0] + dy * ax[1] + dz * ax[2]), s = dx * ax[3] + dy * ax[4] + dz * ax[5], u = dx * ax[6] + dy * ax[7] + dz * ax[8];
     *right = atan2(s, f);
     *climb = atan2(u, sqrt(f * f + s * s));
+    return true;
+}
+
+std::string tie_pilot_name() {
+    std::string n;
+    if (!g_found) return n;
+    for (int i = 0; i < 14; i++) {
+        const Bit8u c = mem_readb(tie_linear(0xD14D6 + i));
+        if (!c) break;
+        n += (char)c;
+    }
+    return n;
+}
+
+bool tie_obj_info(int obj, TieObjInfo *out) {
+    if (!g_found || obj < 0 || obj >= (int)tie::kObjectCount) return false;
+    const Bit32u b = tie_linear(tie::kObjects + obj * tie::kObjectSize);
+    if (mem_readb(b + 4) == 0 || mem_readb(b + 2) != 0) return false;
+    out->x = (Bit32s)mem_readd(b + 6);
+    out->y = (Bit32s)mem_readd(b + 0xA);
+    out->z = (Bit32s)mem_readd(b + 0xE);
+    double ax[6];
+    for (int i = 0; i < 6; i++) ax[i] = (Bit16s)mem_readw(b + 0x42 + 2 * i) / 32768.0;
+    const double mv = ax[0] * (Bit16s)mem_readw(b + 0x3A) + ax[1] * (Bit16s)mem_readw(b + 0x3C) + ax[2] * (Bit16s)mem_readw(b + 0x3E);
+    const double sf = mv < 0 ? -1 : 1;
+    out->fx = sf * ax[0]; out->fy = sf * ax[1]; out->fz = sf * ax[2];
+    out->sx = ax[3]; out->sy = ax[4]; out->sz = ax[5];
+    out->type = mem_readb(b + 4);
+    out->side = mem_readb(b + 0x33);
+    out->speed = (Bit16s)mem_readw(b + 0x26);
+    out->radius = (Bit16s)mem_readw(b + 0x2A);
+    out->alive = mem_readw(b + 0x2C) == 0 && out->type < 127;
+    const Bit32u craft = obj < 32 ? mem_readd(b + 0x54) : 0;
+    out->aiTarget = craft >= 0x100000 ? (Bit16s)mem_readw(craft + 0x2C) : -1;
     return true;
 }
 

@@ -12,6 +12,7 @@
 #   WCNET_TIE_REPORT_MS=250   the reports' period (scripts/tfnet-join.py lines them up)
 #   GUEST_LAG=2  seconds between the host's start and the guest's
 #   HOSTENV= GUESTENV=   more of the environment for one machine (HOSTENV="WCLAB=/tmp/lab": its picture and sound recorded)
+#   HOST_CALLSIGN= GUEST_CALLSIGN=   the room's callsigns (default HOST, GUEST; one with DEMO in it: that machine's craft flown by the wingman)
 #   WCNET_TIE_MISSION=   the room's pick, as the page's menu sets it (hf3m: the Z-95 challenge's HG3M)
 #
 # Example, the guest at full throttle turning past the host:
@@ -88,9 +89,9 @@ else
   NET_HOST="WCPORT=$PORT WCPLAYERS=$PLAYERS"; NET_GUEST="WCHOST=127.0.0.1 WCPORT=$PORT"
 fi
 NAMES="host guest"; [ "$PLAYERS" -ge 3 ] && NAMES="host guest guest2"
-run host $NET_HOST ${HOSTENV:-} WCCALLSIGN=HOST WCNET_KEYSCRIPT="$(echo "$script${HOSTX:+,$HOSTX}" | by_time)"
+run host $NET_HOST ${HOSTENV:-} WCCALLSIGN=${HOST_CALLSIGN:-HOST} WCNET_KEYSCRIPT="$(echo "$script${HOSTX:+,$HOSTX}" | by_time)"
 sleep ${GUEST_LAG:-2}   # (GUEST_LAG=30: the guest still on the ground while the host flies)
-run guest $NET_GUEST ${GUESTENV:-} WCCALLSIGN=GUEST WCNET_KEYSCRIPT="$(echo "$script${GUESTX:+,$GUESTX}" | by_time)"
+run guest $NET_GUEST ${GUESTENV:-} WCCALLSIGN=${GUEST_CALLSIGN:-GUEST} WCNET_KEYSCRIPT="$(echo "$script${GUESTX:+,$GUESTX}" | by_time)"
 if [ "$PLAYERS" -ge 3 ]; then
   sleep ${GUEST_LAG:-2}
   run guest2 $NET_GUEST WCCALLSIGN=GUEST2 WCNET_KEYSCRIPT="$(echo "$script${GUEST2X:+,$GUEST2X}" | by_time)"

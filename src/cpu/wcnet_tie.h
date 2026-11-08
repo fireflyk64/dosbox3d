@@ -163,6 +163,18 @@ int tie_nearest(int ship, int last, bool any = false, int nth = 0);    // (any: 
 bool tie_aim(int obj, double *right, double *climb, double *km, bool lead = true);
 bool tie_friend_in_line(double right, double climb, double km);   // (a craft of our side nearer, within 4 degrees of there)
 bool tie_alive(int obj);
+// The pilot signed in at the registration desk (shipext's pilot_name, image 0xD14D6: the .TFR file's name).
+std::string tie_pilot_name();
+// A craft's state as the DEMO pilot's wingman reads it (wcnet_tie_controls.cpp): false when the slot holds no ship.
+struct TieObjInfo {
+    double x, y, z;             // world units (40,960 a km)
+    double fx, fy, fz, sx, sy, sz;  // its forward and side axes (the move vector's way for forward)
+    int type, side, speed, radius, aiTarget;
+    bool alive;                 // a ship (category 0), not dying
+};
+bool tie_obj_info(int obj, TieObjInfo *out);
+// Where a world direction lies from our nose: the turn right and the climb to it (radians); false: no craft of ours.
+bool tie_aim_dir(double dx, double dy, double dz, double *right, double *climb);
 int tie_nearest_mine();      // (the nearest mine still there, as a target number: 0x3800 + its index; -1 none)
 int tie_mines();             // (the mines still there)     // (a craft there, not dying: its +0x2C death timer 0)
 int tie_speed(int obj);      // (its +0x26)

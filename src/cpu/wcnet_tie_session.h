@@ -20,6 +20,9 @@ namespace wc {
 // The periodic tick (wcnet_tie.cpp's, every 999 instructions): the room
 // joined, hellos answered, frames taken in, notices shown.
 void tie_session_tick();
+// The other pilot nearest ours flying this mission now: its craft's object slot (-1: none) and what it has targeted
+// (0xFFFF: nothing); the DEMO pilot's wingman follows and helps it (wcnet_tie_controls.cpp).
+int tie_session_partner(int *target);
 // At tie_updatetime, once a flight frame: our craft sent, the others'
 // written into the game.
 void tie_session_frame();
