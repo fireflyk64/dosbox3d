@@ -2179,9 +2179,9 @@ void tie_session_mission_path() {
 // flies the same as the second ("The third should be same as the guest in all cases").
 // The user, 2026-11-07: "When we aren't adding ships the types should remain as is": the mission's own craft keep their type
 // (the T/I stays a T/I, its partner a T/F beside it); a group with craft for every pilot flies as it is.
-// ... except where the user chose another craft for both pilots of a mission flown alone: the player's group retyped,
-// a craft of it for each pilot (the mission's own type checked, so the Z-95 challenge, which flies HG3M's file in Z-95s,
-// is left alone).  The user, 2026-11-07:
+// ... except where the user chose another craft for the pilots: the player's group retyped, a craft of it for each pilot
+// (the mission's own type checked, so the Z-95 challenge, which flies HG3M's and HG4M's files in Z-95s, is left alone).
+// The user, 2026-11-07:
 //   two T/Fs for a T/I: "for the harkov minefield it would be best to replace the 1 T/I with 2 T/F more fitting in some
 //   ways can you examine other solo t/i missions and see if they are beatable with 2 t/f": B5M1 (Harkov's minefield:
 //   its goals inspections and the frigate's arrival, the mines a danger, not a goal) and HI1W (customs inspections:
@@ -2192,14 +2192,19 @@ void tie_session_mission_path() {
 //   disabling something or potentially faster gunboats)": B10M2 (the Red Claw defended: nothing to disable or capture,
 //   its attackers come to the pilots); not B10M1 (the transport Ibutho to capture, the Choora to disable: ion cannons),
 //   HG1W (the transport Weet to capture), HG3M (B-wings' 10,000 shields, which a shuttle could not pin down in 400 s,
-//   and A-wings at 270: the gunboat's ions are its answer) (docs, step 9's gunboat missions).
+//   and A-wings at 270: the gunboat's ions are its answer) (docs, step 9's gunboat missions);
+//   2026-11-08, the Combat Chamber's gunboat row half in shuttles: "Can we replace a half of the gunboat combat chamber
+//   mission with shuttle... so we can try it right away--pick ones that have no objectives involving disabling craft":
+//   HG3M (alone; its fighters to destroy) and HG4M (two gunboats; the Rugle transports escorted, half the Rebels
+//   destroyed, the corvette Dodger and the shuttle Leap a bonus), both pilots in shuttles; not HG1W (the transport Weet
+//   to capture) nor HG2W (the Filcher and the Riirdo to disable).
 // WCNET_TIE_SOLO_AS=<mission>:<type>,... (or "none") replaces the table (the rigs' comparisons).
 struct SoloAs {
     const char *mission;
     int from, to;
 };
 const SoloAs kSoloAs[] = {
-    { "b5m1iw", 6, 5 }, { "hi1w", 6, 5 }, { "b10m2gw", 16, 17 },
+    { "b5m1iw", 6, 5 }, { "hi1w", 6, 5 }, { "b10m2gw", 16, 17 }, { "hg3m", 16, 17 }, { "hg4m", 16, 17 },
 };
 
 int solo_flown_as(const std::string &mission, int type) {
@@ -2489,9 +2494,6 @@ void make_pairing(bool again) {
     }
     const Bit32u fg = tie::kFlightGroups + (Bit32u)pfg * tie::kFlightGroupSize;
     const int type = tie_r8(fg + 0x32), count = tie_r8(fg + 0x33);
-    if (count != 1) {
-        return;             // (wingmen of its own: each pilot takes one, the seats' way)
-    }
     const int as = solo_flown_as(tie_mission_name(), type);
     if (as) {
         tie_fly_group_as(pfg, as);  // (the seats then give each pilot a craft of the group)
@@ -2502,6 +2504,9 @@ void make_pairing(bool again) {
         }
         wclog(1, "TIE: flown by two%s: the mission's craft type %d as %d, one for each pilot", again ? " (again: the mission read again)" : "", type, as);
         return;
+    }
+    if (count != 1) {
+        return;             // (wingmen of its own: each pilot takes one, the seats' way)
     }
     const int second = paired_type(type);
     if (!second || numFg >= 48) {

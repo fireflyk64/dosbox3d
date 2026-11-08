@@ -355,7 +355,7 @@ section 7 as it is worked on.
    | T/A | T/A + T/A | HA1W |
    | T/D | T/D + T/A | B9M2..B9M6, HD1W, HD2W, HD3M |
    | T/I | T/F + T/F for B5M1 and HI1W; T/I + T/F for HI3M (the user, 2026-11-07: "When we aren't adding ships the types should remain as is", then "for the harkov minefield it would be best to replace the 1 T/I with 2 T/F ... examine other solo t/i missions and see if they are beatable with 2 t/f"; step 9's "The T/I missions") | B5M1 (the minefield, unshielded), HI1W, HI3M |
-   | gunboat | gunboat + a standard Imperial shuttle (not the escort shuttle; the gunboat's cockpit for the shuttle for now); two shuttles for B10M2 (the user, 2026-11-07: "see if any are beatable ... with a pair of imperial shuttles"; step 9's "The gunboat missions") | B10M1, B10M2, HG1W, HG3M |
+   | gunboat | gunboat + a standard Imperial shuttle (not the escort shuttle; the gunboat's cockpit for the shuttle for now); two shuttles for B10M2 and HG3M, and for HG4M's two gunboats too (the user, 2026-11-07 and 08: "see if any are beatable ... with a pair of imperial shuttles", "replace a half of the gunboat combat chamber mission with shuttle"; step 9's "The gunboat missions") | B10M1, B10M2, HG1W, HG3M |
    | T/F | T/F + T/F | B1M1, HF1W, HF3M, HF4M, TRAIN |
    | missile boat | missile boat + a standard Imperial shuttle (the user, later: "otherwise the gunboat could do some ion cannon shenanigans and the designers probably didn't think of that") | B10M5, B10M6, B11M1..B11M7, B12M6, B13M1, B13M4, HM1W, HM2W |
    | T/B | T/B + T/F: one flies the torpedo work, the other point defense | B3M1, HB1W |
@@ -1075,6 +1075,19 @@ we have at least a few gunboat missions around."
   runs: every flight group's state the same on both machines.
 * **So**: B10M2 flies as two shuttles (`kSoloAs`); B10M1, HG1W and HG3M as
   gunboat + shuttle; the fourteen as written.
+* **The Combat Chamber's gunboat row, half in shuttles** (the user, 2026-11-08:
+  "Can we replace a half of the gunboat combat chamber mission with shuttle...
+  so we can try it right away--pick ones that have no objectives involving
+  disabling craft"): HG3M (alone; its fighters to destroy) and HG4M (two
+  gunboats; the Rugle transports escorted, half the Rebels destroyed, the
+  corvette Dodger and the shuttle Leap a bonus) are flown by both pilots in
+  shuttles; HG1W (the transport Weet to capture) and HG2W (the Filcher and the
+  Riirdo to disable) keep their gunboats.  The table now applies whatever the
+  group's size (HG4M's two gunboats are two shuttles), and again after the
+  missions' opening jump reads them a second time.  Measured, HG4M with two
+  pilots: "Imperial shuttles for the mission's gunboat", the shuttle's cockpit
+  on both, both still in shuttles after the jump.  The Z-95 challenge, which
+  flies the same two files, is left alone (its craft are Z-95s by then).
 
 ### Step 11: the page's picture and options for TIE Fighter (2026-11-06)
 
