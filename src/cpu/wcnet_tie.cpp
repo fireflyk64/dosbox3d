@@ -9,6 +9,9 @@
  *  pointer the program holds are linear addresses, and an image address A
  *  is at linear tie_linear(A).
  */
+#include <algorithm>
+#include <utility>
+#include <vector>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -211,11 +214,11 @@ void report(double now) {
     if (player < kObjectCount) {
         const Bit32u o = kObjects + player * kObjectSize;
         wclog(2, "TIE: %.1fs: %u frames (%u ticks a frame, rate %u), hyper %u main %u, %d objects live; player #%u type %u at %d %d %d, "
-                 "heading %u pitch %u roll %u nose %d %d %d, speed %d, scene %d, mission '%s'; calls:%s",
+                 "heading %u pitch %u roll %u nose %d %d %d, speed %d, scene %d, mission '%s', %d mines; calls:%s",
               now / 1000.0, g_frames, r16(kFrameticks), r16(kFramerate), r8(kHyperspaceFlag), r8(kMainGameFlag), live, player,
               r8(o + 4), (int)r32(o + 6), (int)r32(o + 0xA), (int)r32(o + 0xE), r16(o + 0x1E), r16(o + 0x20), r16(o + 0x22),
               (Bit16s)r16(o + 0x3A), (Bit16s)r16(o + 0x3C), (Bit16s)r16(o + 0x3E), (Bit16s)r16(o + 0x26),
-              tie_scene(), tie_mission_name().c_str(), counts);
+              tie_scene(), tie_mission_name().c_str(), tie_mines(), counts);
     } else {
         wclog(2, "TIE: %.1fs: %u frames (%u ticks a frame, rate %u), hyper %u main %u, %d objects live, no player object (#%u), "
                  "the front end's pointer at %d %d (button %u key %u), scene %d; calls:%s",
@@ -515,6 +518,104 @@ double tie_face(int target, bool lead) {
     return km;
 }
 
+// Test aid (the video rig's pilot, !tiesteer=): the target's lead point (tie_face's) in our craft's frame, by its
+// axes (+0x42 forward, +0x48 side, +0x4E up, Q15; the forward one turned to the move vector's way if it is not).
+bool tie_aim(int target, double *right, double *climb, double *km, bool lead) {
+    const int own = tie_player_object();
+    const bool still = target >= (int)tie::kStaticRef && target < (int)tie::kStaticRef + (int)tie::kStaticCount;
+    if (!g_found || own < 0 || target < 0 || (target >= (int)tie::kObjectCount && !still) || target == own) {
+        return false;
+    }
+    const Bit32u a = tie_linear(tie::kObjects + own * tie::kObjectSize), b = tie_linear(tie::kObjects + (still ? 0 : target) * tie::kObjectSize);
+    double dx, dy, dz;
+    if (still) {
+        const Bit32u st = tie_linear(tie::kStatics + (target - tie::kStaticRef) * tie::kStaticSize);
+        dx = (double)((Bit16s)mem_readw(st + 4) * 256) - (Bit32s)mem_readd(a + 6);
+        dy = (double)((Bit16s)mem_readw(st + 6) * 256) - (Bit32s)mem_readd(a + 0xA);
+        dz = (double)((Bit16s)mem_readw(st + 8) * 256) - (Bit32s)mem_readd(a + 0xE);
+    } else {
+        dx = (double)(Bit32s)mem_readd(b + 6) - (Bit32s)mem_readd(a + 6);
+        dy = (double)(Bit32s)mem_readd(b + 0xA) - (Bit32s)mem_readd(a + 0xA);
+        dz = (double)(Bit32s)mem_readd(b + 0xE) - (Bit32s)mem_readd(a + 0xE);
+    }
+    *km = sqrt(dx * dx + dy * dy + dz * dz) / 40960.0;
+    const double k = 4660.0 / 256.0, vt = still ? 0.0 : (Bit16s)mem_readw(b + 0x26) * k / 32768.0;
+    const double vx = vt * (Bit16s)mem_readw(b + 0x3A), vy = vt * (Bit16s)mem_readw(b + 0x3C), vz = vt * (Bit16s)mem_readw(b + 0x3E);
+    const double sb = ((Bit16s)mem_readw(a + 0x26) + 1000) * k;
+    const double qa = vx * vx + vy * vy + vz * vz - sb * sb, qb = 2 * (dx * vx + dy * vy + dz * vz), qc = dx * dx + dy * dy + dz * dz;
+    const double disc = qb * qb - 4 * qa * qc;
+    if (lead && qa < 0 && disc >= 0) {
+        const double t = (-qb - sqrt(disc)) / (2 * qa);
+        if (t > 0 && t < 10) {
+            dx += vx * t;
+            dy += vy * t;
+            dz += vz * t;
+        }
+    }
+    double ax[9];
+    for (int i = 0; i < 9; i++) ax[i] = (Bit16s)mem_readw(a + 0x42 + 2 * i) / 32768.0;
+    const double mv = ax[0] * (Bit16s)mem_readw(a + 0x3A) + ax[1] * (Bit16s)mem_readw(a + 0x3C) + ax[2] * (Bit16s)mem_readw(a + 0x3E);
+    const double sf = mv < 0 ? -1 : 1;
+    const double f = sf * (dx * ax[0] + dy * ax[1] + dz * ax[2]), s = dx * ax[3] + dy * ax[4] + dz * ax[5], u = dx * ax[6] + dy * ax[7] + dz * ax[8];
+    *right = atan2(s, f);
+    *climb = atan2(u, sqrt(f * f + s * s));
+    return true;
+}
+
+bool tie_friend_in_line(double right, double climb, double km) {
+    const int own = tie_player_object();
+    if (!g_found || own < 0) return false;
+    const Bit8u side = mem_readb(tie_linear(tie::kObjects + own * tie::kObjectSize) + 0x33);
+    for (int o = 0; o < 120; o++) {
+        const Bit32u b = tie_linear(tie::kObjects + o * tie::kObjectSize);
+        const int ship = mem_readb(b + 4);
+        if (o == own || ship < 1 || ship > 30 || mem_readb(b + 3) == 11 || mem_readb(b + 0x33) != side || mem_readw(b + 0x2C) != 0) continue;
+        double r = 0, c = 0, d = -1;
+        if (tie_aim(o, &r, &c, &d, false) && d < km + 0.1 && fabs(r - right) < 0.07 && fabs(c - climb) < 0.07) return true;
+    }
+    return false;
+}
+
+int tie_mines() {
+    if (!g_found) return 0;
+    int n = 0;
+    for (int i = 0; i < (int)tie::kStaticCount; i++) {
+        const Bit32u st = tie_linear(tie::kStatics + i * tie::kStaticSize);
+        if (mem_readb(st + 2) == 8 && mem_readb(st + 3) != 0) n++;
+    }
+    return n;
+}
+
+int tie_nearest_mine() {
+    if (!g_found || tie_player_object() < 0) return -1;
+    int best = -1;
+    double bestKm = 0;
+    for (int i = 0; i < (int)tie::kStaticCount; i++) {
+        const Bit32u st = tie_linear(tie::kStatics + i * tie::kStaticSize);
+        double r = 0, c = 0, km = -1;
+        if (mem_readb(st + 2) != 8 || mem_readb(st + 3) == 0 || !tie_aim((int)tie::kStaticRef + i, &r, &c, &km, false)) continue;
+        if (best < 0 || km < bestKm) {
+            best = (int)tie::kStaticRef + i;
+            bestKm = km;
+        }
+    }
+    return best;
+}
+
+bool tie_alive(int obj) {
+    if (g_found && obj >= (int)tie::kStaticRef && obj < (int)tie::kStaticRef + (int)tie::kStaticCount) {
+        return mem_readb(tie_linear(tie::kStatics + (obj - tie::kStaticRef) * tie::kStaticSize) + 3) != 0;
+    }
+    if (!g_found || obj < 0 || obj >= (int)tie::kObjectCount) return false;
+    const Bit32u b = tie_linear(tie::kObjects + obj * tie::kObjectSize);
+    return mem_readb(b + 4) != 0 && mem_readw(b + 0x2C) == 0;
+}
+
+int tie_speed(int obj) {
+    if (!g_found || obj < 0 || obj >= (int)tie::kObjectCount) return 0;     // (a static object: none)
+    return (Bit16s)mem_readw(tie_linear(tie::kObjects + obj * tie::kObjectSize) + 0x26);
+}
+
 bool tie_cursor(int *x, int *y) {
     if (!g_found) {
         return false;
@@ -536,33 +637,33 @@ int tie_player_target() {
 // Test aid: the nearest craft of a ship index from `ship` to `last` (an object's +4, the mission files' craft types: 5
 // the T/F, 5..9 the Empire's fighters) on another side than ours (+0x33), moving (+0x26: a craft yet to launch sits
 // still) and not dying (+0x2C); -1 if none (the key script's !tietarget=nearest:<n>[-<last>]).
-int tie_nearest(int ship, int last) {
+int tie_nearest(int ship, int last, bool any, int nth) {
     const int own = tie_player_object();
     if (!g_found || own < 0) {
         return -1;
     }
     const Bit32u a = tie_linear(tie::kObjects + own * tie::kObjectSize);
-    int best = -1;
-    double bestD = 0;
+    std::vector<std::pair<double, int> > found;
     for (int o = 0; o < 120; o++) {
         const Bit32u b = tie_linear(tie::kObjects + o * tie::kObjectSize);
-        if (o == own || mem_readb(b + 4) < ship || mem_readb(b + 4) > last || mem_readb(b + 0x33) == mem_readb(a + 0x33) || (Bit16s)mem_readw(b + 0x26) <= 0 ||
-            mem_readw(b + 0x2C) != 0) {
+        if (o == own || mem_readb(b + 4) < ship || mem_readb(b + 4) > last || mem_readw(b + 0x2C) != 0 ||
+            (!any && (mem_readb(b + 0x33) == mem_readb(a + 0x33) || (Bit16s)mem_readw(b + 0x26) <= 0))) {
             continue;
         }
         const double dx = (double)(Bit32s)mem_readd(b + 6) - (Bit32s)mem_readd(a + 6), dy = (double)(Bit32s)mem_readd(b + 0xA) - (Bit32s)mem_readd(a + 0xA),
-                     dz = (double)(Bit32s)mem_readd(b + 0xE) - (Bit32s)mem_readd(a + 0xE), d = dx * dx + dy * dy + dz * dz;
-        if (best < 0 || d < bestD) {
-            best = o;
-            bestD = d;
-        }
+                     dz = (double)(Bit32s)mem_readd(b + 0xE) - (Bit32s)mem_readd(a + 0xE);
+        found.push_back(std::make_pair(dx * dx + dy * dy + dz * dz, o));
     }
-    return best;
+    if (found.empty()) {
+        return -1;
+    }
+    std::sort(found.begin(), found.end());
+    return found[(size_t)nth < found.size() ? (size_t)nth : found.size() - 1].second;
 }
 
 // Test aid: our target set (the key script's !tietarget=<obj>; the player state's +0x12).
 void tie_target(int obj) {
-    if (!g_found || obj < 0 || obj >= (int)tie::kObjectCount) {
+    if (!g_found || obj < 0 || (obj >= (int)tie::kObjectCount && (obj < (int)tie::kStaticRef || obj >= (int)tie::kStaticRef + (int)tie::kStaticCount))) {
         return;
     }
     mem_writew(tie_linear(tie::kPstate + 0x12), (Bit16u)obj);

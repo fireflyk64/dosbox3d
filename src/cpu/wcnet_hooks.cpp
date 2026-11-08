@@ -1034,6 +1034,12 @@ static void key_script() {
         } else {
             tie_target(atoi(item.c_str() + 11));
         }
+    } else if (item.compare(0, 10, "!tiesteer=") == 0) {
+        // !tiesteer=<ship index>[-<last>][:<km>][:any] flies our TIE Fighter craft by the game's own stick at the nearest
+        // moving craft of those indexes on another side (any: still ones and ours too: mines), each frame, the fire
+        // button held while the lead point is within 2 degrees and <km> (default 1.0); !tiesteer=off stops (the video
+        // rig's pilot: turns as the craft turns, where !tieface snaps)
+        tie_controls_steer(item.substr(10));
     } else if (item.compare(0, 9, "!tieface=") == 0) {
         // !tieface=<obj> turns our TIE Fighter craft to face that object; !tieface=target, where a laser fired now meets
         // our target; !tieface=target:<km>, and the fire button held while the target is that near, let go beyond (step

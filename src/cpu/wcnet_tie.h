@@ -60,6 +60,10 @@ enum {
     kObjects = 0xE38BC,         // FlightObject objects[120], 88 bytes each
     kObjectSize = 88,
     kObjectCount = 120,
+    kStatics = 0xEA6D4,         // StaticObject staticobjects[64], 18 bytes each: +2 class (8 a mine), +3 species (0: none), +4 x y z (int16, << 8)
+    kStaticSize = 18,
+    kStaticCount = 64,
+    kStaticRef = 0x3800,        // (a static object's number as a target: 0x3800 + its index)
     kCrafts = 0xE6394,          // CraftData crafts[32], 0x21A bytes each
     kCraftSize = 0x21A,
     kPstate = 0xEB158,          // +8 the player's object slot, +0x12 the target's
@@ -153,7 +157,16 @@ void tie_pa_play();
 // Test aid: our target set (the key script's !tietarget=<obj>).
 void tie_target(int obj);
 // Test aid: the nearest moving craft of a ship index from `ship` to `last` (5 the T/F) on another side, -1 if none.
-int tie_nearest(int ship, int last);
+int tie_nearest(int ship, int last, bool any = false, int nth = 0);    // (any: still craft and our side's too: mines; nth: 1 the second nearest...)
+// Test aid: where a laser fired now meets `obj` (lead), in our craft's own frame: the turn right and the climb to it
+// (radians) and its distance (km); false: nothing there.
+bool tie_aim(int obj, double *right, double *climb, double *km, bool lead = true);
+bool tie_friend_in_line(double right, double climb, double km);   // (a craft of our side nearer, within 4 degrees of there)
+bool tie_alive(int obj);
+int tie_nearest_mine();      // (the nearest mine still there, as a target number: 0x3800 + its index; -1 none)
+int tie_mines();             // (the mines still there)     // (a craft there, not dying: its +0x2C death timer 0)
+int tie_speed(int obj);      // (its +0x26)
+void tie_controls_steer(const std::string &spec);   // the key script's !tiesteer= (wcnet_tie_controls.cpp)
 // Our target, -1 if none (the key script's !tieface=target).
 int tie_player_target();
 
