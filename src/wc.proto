@@ -400,12 +400,17 @@ message TieFrame {
 // A pilot's doing that the mission's state keeps on that pilot's machine alone (the user, 2026-11-07: "If it fails to
 // show up for a player that's a serious bug"): 1, reinforcements called (the S key and Space: the mission's penalty
 // flag, which the "reinforced" arrivals wait for); 2, a craft inspected (it targeted near enough: the craft's flag and
-// its flight group's inspected count, which goals and arrivals read).
+// its flight group's inspected count, which goals and arrivals read); 3, a craft of the sender's begun to die (its
+// owner's word, whatever the craft's distance: a death lasts some 60 ticks, which the reports of a craft far from the
+// other pilots, every 10th frame or fewer, could miss); 4, a craft of the sender's gone through hyperspace (exit 3) or into a
+// hangar (exit 4): its owner's AI took it, a held copy never would.
 message TieEvent {
     optional uint32 kind = 1;
-    optional uint32 obj = 2;        // (2) the craft's object slot
-    optional uint32 type = 3;       // (2) its ship index there (the same craft: +4)
-    optional uint32 fg = 4;         // (2) and its flight group (+0x35)
+    optional uint32 obj = 2;        // (2, 3) the craft's object slot
+    optional uint32 type = 3;       // (2, 3) its ship index there (the same craft: +4)
+    optional uint32 fg = 4;         // (2, 3) and its flight group (+0x35)
+    optional uint32 killer = 5;     // (3) the craft whose hit began the death (its object slot), when known
+    optional uint32 exit = 6;       // (4) 3 hyperspace, 4 a hangar (score_craftexitscoring's kind)
 }
 // The host's word on who flies each craft (object slots 0..31): a seat each, 0 the host's.  Sent when it changes and
 // every 2 s, reliably.

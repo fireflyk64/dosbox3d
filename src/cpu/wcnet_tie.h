@@ -167,7 +167,8 @@ int tie_nearest_mine();      // (the nearest mine still there, as a target numbe
 int tie_mines();             // (the mines still there)     // (a craft there, not dying: its +0x2C death timer 0)
 int tie_speed(int obj);      // (its +0x26)
 void tie_controls_steer(const std::string &spec);
-void tie_controls_god(bool on);     // the key script's !tiegod= (a rig's measurement: our hull kept)   // the key script's !tiesteer= (wcnet_tie_controls.cpp)
+void tie_controls_god(bool on);     // the key script's !tiegod= (a rig's measurement: no damage to our craft)
+bool tie_controls_godly();   // the key script's !tiesteer= (wcnet_tie_controls.cpp)
 // Our target, -1 if none (the key script's !tieface=target).
 int tie_player_target();
 
