@@ -30,6 +30,7 @@
 #include "wcnet_lab.h"
 #include "wcnet_tie.h"
 #include "wcnet_tie_session.h"
+#include "wcnet_priv.h"
 #include "paging.h"
 #include "callback.h"
 #include "cpu.h"
@@ -1175,6 +1176,8 @@ static void key_script() {
         int status = atoi(item.c_str() + 8);
         wclog(1, "key script %.1fs (t=%.1f): mission status %d -> %d", t, now / 1000.0, rd16(ds::missionStatus), status);
         wr16(ds::missionStatus, (Bit16u)status);
+    } else if (priv_script_item(item, t)) {
+        // (Privateer's aids: wcnet_priv.cpp)
     } else if (lab_script_item(item, t)) {
         // (the walkthrough recorder's items: wcnet_lab.cpp)
     } else {
@@ -1200,6 +1203,9 @@ static void build_watch_list() {
 #undef X
     if (g_game != GAME_NONE) {
         watch(Trampoline::hook_ip());
+    }
+    if (priv_found()) {
+        priv_watch_list(watch);
     }
     g_watchReady = true;
 }
@@ -2317,7 +2323,8 @@ bool wc_net_helmet_name(int *vduOrigin) {
 // flown together: RetroVega has no comms, and a game flown alone (WCSOLO)
 // nobody to call.
 bool wc_net_comms_hint() {
-    return wc::g_build != wc::BUILD_RV && !wc::solo() && !wc::tie_found();   // (TIE Fighter has no chat line yet)
+    return wc::g_build != wc::BUILD_RV && !wc::solo() && !wc::tie_found()   // (TIE Fighter has no chat line yet)
+           && !wc::priv_found();                                            // (nor Privateer)
 }
 
 // A drone riding behind the leader looks at the leader's ship through its
@@ -2383,6 +2390,9 @@ bool wc_net_steer_marker(double *x, double *y) {
 
 bool wc_net_key_filter(int kbdKey, bool pressed) {
     using namespace wc;
+    if (priv_controls_key(kbdKey, pressed)) {
+        return true;    // (Privateer's flight: the arrows ramped, wcnet_priv_controls.cpp)
+    }
     if (tie_session_key(kbdKey, pressed)) {
         return true;    // (TIE Fighter: Esc while a guest's launch waits for the host flies alone)
     }
@@ -2588,6 +2598,7 @@ void wc_net_check_cpu_hooks() {
         key_script();
         joystick_tick();
         tie_tick();
+        priv_tick();
 #ifdef __EMSCRIPTEN__
         escape_tap();
         web_input_tick();
@@ -2622,6 +2633,10 @@ void wc_net_check_cpu_hooks() {
         return;
     }
     if (!g_watch[ip]) {
+        return;
+    }
+    if (priv_found()) {
+        priv_check_hooks(ip);   // (Privateer: its own places, wcnet_priv.cpp; nothing of Wing Commander's)
         return;
     }
     if (solo()) {

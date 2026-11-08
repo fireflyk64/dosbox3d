@@ -519,8 +519,36 @@ async function initSources() {
 // local storage, keyed by game: it is put back into the game directory at
 // every start and refreshed whenever the running game changes the file.
 const gameInfo = () => (source && gameById(source.game.id)) || null;
-const saveFiles = () => { const g = gameInfo(); return (g && g.saves) || []; };
 const saveKey = (rel) => `wcsave:${source.game.id}:${rel.toUpperCase()}`;
+// A registry entry's saves may be patterns ("*.SAV": Privateer names its saved games after what the player types):
+// then they are the files at the top of the game directory that match, and the copies of such files this browser
+// keeps.  A game with names only (every other) gets its list as it is.
+const savePatterns = () => { const g = gameInfo(); return (g && g.saves) || []; };
+const isSavePattern = (rel) => rel.includes("*");
+const savesByPattern = () => savePatterns().some(isSavePattern);
+const savePatternRe = (pat) => new RegExp("^" + pat.toUpperCase().replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
+function keptSaveNames() {
+  const prefix = source ? `wcsave:${source.game.id}:` : null;
+  const out = [];
+  try {
+    for (let i = 0; prefix && i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(prefix)) out.push(k.slice(prefix.length));
+    }
+  } catch (e) { /* none kept */ }
+  return out;
+}
+const saveFiles = () => {
+  const list = savePatterns();
+  if (!list.some(isSavePattern)) return list;
+  const names = new Set(list.filter((p) => !isSavePattern(p)));
+  const pats = list.filter(isSavePattern).map(savePatternRe);
+  const FS = liveFS();
+  let here = [];
+  try { here = FS ? FS.readdir(GAME_ROOT) : []; } catch (e) { here = []; }
+  for (const n of [...here, ...keptSaveNames()]) if (pats.some((r) => r.test(n.toUpperCase()))) names.add(n.toUpperCase());
+  return [...names];
+};
 const baseName = (p) => p.slice(p.lastIndexOf("/") + 1);
 const sameBytes = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 const saveSeen = new Map();  // file -> its bytes as last seen in the running game
@@ -588,11 +616,12 @@ function showFreeze() {
 
 function describeSaves() {
   const files = saveFiles();
-  $("saves").hidden = files.length === 0;
-  if (!files.length) return;
+  $("saves").hidden = savePatterns().length === 0;
+  if (!savePatterns().length) return;
   const kept = files.map(storedSave).filter(Boolean);
   saveStatus(kept.length
-    ? `This browser keeps your save games (last change ${new Date(Math.max(...kept.map((k) => k.when))).toLocaleString()}).`
+    ? `This browser keeps your save games (${savesByPattern() ? `${kept.length}, ` : ""}last change ${new Date(Math.max(...kept.map((k) => k.when))).toLocaleString()}).`
+    : savesByPattern() ? "No save game of yours is kept here yet: save in the game and it will be."
     : "No save game of yours is kept here yet: save in a bunk and it will be.");
 }
 // At start: put the kept copies back, and note what the game starts with.
@@ -643,8 +672,14 @@ $("saveFile").addEventListener("change", async (e) => {
   const file = e.target.files && e.target.files[0];
   e.target.value = "";
   const files = saveFiles();
-  if (!file || !files.length) return;
-  const rel = files.find((p) => baseName(p).toUpperCase() === file.name.toUpperCase()) || files[0];
+  if (!file || !savePatterns().length) return;
+  // (a game whose saves are patterns takes any file of a matching name, as itself)
+  const byName = savesByPattern() && savePatterns().filter(isSavePattern).some((p) => savePatternRe(p).test(file.name.toUpperCase()));
+  if (savesByPattern() && !byName && !files.some((p) => baseName(p).toUpperCase() === file.name.toUpperCase())) {
+    saveStatus(`${file.name} is not one of this game's saved games (${savePatterns().join(", ")}).`);
+    return;
+  }
+  const rel = byName ? file.name.toUpperCase() : files.find((p) => baseName(p).toUpperCase() === file.name.toUpperCase()) || files[0];
   const data = new Uint8Array(await file.arrayBuffer());
   const pristine = source.files.find((f) => f.path.toUpperCase() === rel.toUpperCase());
   if (!data.length || (pristine && data.length !== pristine.data.length)) {
