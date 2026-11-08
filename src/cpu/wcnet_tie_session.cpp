@@ -25,6 +25,7 @@
 #include <vector>
 #include "wcnet_tie_session.h"
 #include "keyboard.h"
+#include "mouse.h"
 #include "wcnet_tie.h"
 #include "wcnet_transport.h"
 #include "wcnet_lobby.h"
@@ -147,6 +148,10 @@ struct TieNet {
     // a guest's launch waiting for the host (step 13): waiting, Esc said to fly alone, the room's last mission (a launch
     // of it again, Fly Mission Again, waits too), the notice's last time
     bool waiting = false, waitCancelled = false;
+    // a guest's launch click held while the host was not flying, given to the game once the host flies (its scene
+    // and the pointer's place; scene -1: none) and its button let go after
+    int heldScene = -1, heldX = 0, heldY = 0;
+    double heldReleaseAt = -1;
     std::string roomMission;
     double waitSaidAt = -1e9;
     int pairedFg = -1;          // this mission's second flight group, the guests' (step 9), or -1
@@ -1392,6 +1397,31 @@ void report_frame(double now) {
 
 }  // namespace
 
+// A guest's launch click held (tie_session_click), given to the game once the host flies, as the notice said ("you
+// take off together once the host is flying"; until 2026-11-07 it was dropped and the guest had to click again): the
+// pointer put back where it was and the button pressed, let go 150 ms later; forgotten if the guest left that screen.
+void launch_when_host_flies(double now) {
+    if (g_net->heldReleaseAt >= 0 && now >= g_net->heldReleaseAt) {
+        g_net->heldReleaseAt = -1;
+        Mouse_ButtonReleased(0);
+    }
+    if (g_net->heldScene < 0 || g_net->host) {
+        return;
+    }
+    if (tie_in_flight() || tie_scene() != g_net->heldScene) {
+        g_net->heldScene = -1;
+        return;
+    }
+    if (!g_net->pilots[0].flying) {
+        return;
+    }
+    wclog(1, "TIE: the host flies: our held launch click (scene %d at %d,%d) given to the game", g_net->heldScene, g_net->heldX, g_net->heldY);
+    tie_set_cursor(g_net->heldX, g_net->heldY);
+    Mouse_ButtonPressed(0);
+    g_net->heldReleaseAt = now + 150;
+    g_net->heldScene = -1;
+}
+
 void tie_session_tick() {
     const double now = PIC_FullIndex();
     if (g_noticeAt >= 0 && now - g_noticeAt > kNoticeMs && !tie_in_flight()) {
@@ -1432,6 +1462,7 @@ void tie_session_tick() {
     poll_peers();
     presence_tick(now);
     call_to_action(now);
+    launch_when_host_flies(now);
     // the flight's end seen here too (the frame hook stops coming)
     const bool flying = tie_in_flight();
     if (g_net->wasFlying && !flying) {
@@ -1806,6 +1837,11 @@ bool tie_session_click(int button, bool pressed) {
         return false;
     }
     taken[button] = true;
+    if (button == 0) {
+        g_net->heldScene = scene;       // (given to the game when the host flies: launch_when_host_flies)
+        g_net->heldX = x;
+        g_net->heldY = y;
+    }
     wclog(1, "TIE: our launch click (scene %d at %d,%d) waits: the host is not flying", scene, x, y);
     notice(pilot_name(0) + " has not launched yet: you take off together once " + pilot_name(0) + " is flying");
     return true;
