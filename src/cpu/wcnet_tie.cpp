@@ -192,6 +192,22 @@ void set_watch() {
     }
 }
 
+// The flight groups' states, a letter each (FGStatus 0xDEDCC, 0x30 each: +0 active, +4 its arrival triggered, counts
+// from +8: +0xA destroyed, +0x11 inspected): '.' not yet, 'a' arrived, 'A' active, then a digit, its craft destroyed
+// (the two machines' logs compared show a group come or go on one alone).
+std::string group_states() {
+    const int n = (Bit16s)r16(tie::kMissionHeader);
+    std::string out;
+    for (int i = 0; i < n && i < 48; i++) {
+        const Bit32u st = 0xDEDCC + (Bit32u)i * 0x30;
+        out += r8(st) ? 'A' : r8(st + 4) ? 'a' : '.';
+        const int dead = r8(st + 8 + 2), seen = r8(st + 8 + 9);
+        if (dead) out += (char)('0' + (dead > 9 ? 9 : dead));
+        if (seen) out += 'i';
+    }
+    return out;
+}
+
 void report(double now) {
     using namespace tie;
     const Bit16u player = r16(kPstate + 8);
@@ -214,11 +230,11 @@ void report(double now) {
     if (player < kObjectCount) {
         const Bit32u o = kObjects + player * kObjectSize;
         wclog(2, "TIE: %.1fs: %u frames (%u ticks a frame, rate %u), hyper %u main %u, %d objects live; player #%u type %u at %d %d %d, "
-                 "heading %u pitch %u roll %u nose %d %d %d, speed %d, scene %d, mission '%s', %d mines; calls:%s",
+                 "heading %u pitch %u roll %u nose %d %d %d, speed %d, scene %d, mission '%s', %d mines, groups %s; calls:%s",
               now / 1000.0, g_frames, r16(kFrameticks), r16(kFramerate), r8(kHyperspaceFlag), r8(kMainGameFlag), live, player,
               r8(o + 4), (int)r32(o + 6), (int)r32(o + 0xA), (int)r32(o + 0xE), r16(o + 0x1E), r16(o + 0x20), r16(o + 0x22),
               (Bit16s)r16(o + 0x3A), (Bit16s)r16(o + 0x3C), (Bit16s)r16(o + 0x3E), (Bit16s)r16(o + 0x26),
-              tie_scene(), tie_mission_name().c_str(), tie_mines(), counts);
+              tie_scene(), tie_mission_name().c_str(), tie_mines(), group_states().c_str(), counts);
     } else {
         wclog(2, "TIE: %.1fs: %u frames (%u ticks a frame, rate %u), hyper %u main %u, %d objects live, no player object (#%u), "
                  "the front end's pointer at %d %d (button %u key %u), scene %d; calls:%s",

@@ -700,6 +700,7 @@ static void key_script() {
     static size_t next = 0;
     static double startMs = -1;
     static KBD_KEYS held = KBD_NONE;
+    static bool heldShift = false;  // ("shift+<key>": Shift held with it, let go after it)
     static double releaseAt = 0;
     if (!parsed) {
         parsed = 1;
@@ -729,6 +730,10 @@ static void key_script() {
         if (now >= releaseAt) {
             KEYBOARD_AddKey(held, false);
             held = KBD_NONE;
+            if (heldShift) {
+                KEYBOARD_AddKey(KBD_leftshift, false);
+                heldShift = false;
+            }
         }
         return;
     }
@@ -1035,6 +1040,9 @@ static void key_script() {
         } else {
             tie_target(atoi(item.c_str() + 11));
         }
+    } else if (item.compare(0, 8, "!tiegod=") == 0) {
+        // !tiegod=1 keeps our TIE Fighter craft's hull as it is now, every frame; !tiegod=0 stops (a rig's measurement)
+        tie_controls_god(atoi(item.c_str() + 8) != 0);
     } else if (item.compare(0, 10, "!tiesteer=") == 0) {
         // !tiesteer=<ship index>[-<last>][:<km>][:any] flies our TIE Fighter craft by the game's own stick at the nearest
         // moving craft of those indexes on another side (any: still ones and ours too: mines), each frame, the fire
@@ -1181,11 +1189,16 @@ static void key_script() {
     } else if (lab_script_item(item, t)) {
         // (the walkthrough recorder's items: wcnet_lab.cpp)
     } else {
-        KBD_KEYS k = script_key(item);
+        const bool shift = item.compare(0, 6, "shift+") == 0;     // (shift+s: TIE Fighter's reinforcements)
+        KBD_KEYS k = script_key(shift ? item.substr(6) : item);
         if (k == KBD_NONE) {
             wclog(0, "key script: unknown key \"%s\"", item.c_str());
         } else {
             wclog(1, "key script %.1fs (t=%.1f): press %s", t, now / 1000.0, item.c_str());
+            if (shift) {
+                KEYBOARD_AddKey(KBD_leftshift, true);
+                heldShift = true;
+            }
             KEYBOARD_AddKey(k, true);
             held = k;
             releaseAt = now + 150;

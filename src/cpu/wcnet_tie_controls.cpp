@@ -32,6 +32,7 @@
 #include "wc_net.h"
 #include "keyboard.h"
 #include "mouse.h"
+#include "mem.h"
 #include "pic.h"
 
 extern std::string incoming_text;   // the line the emulator draws over the picture (sdlmain.cpp)
@@ -315,8 +316,27 @@ void steer_frame() {
     }
 }
 
+// Test aid (the key script's !tiegod=1, 0 off): our craft's hull kept as it was when said, every frame (a rig's
+// measurement of speed and reach, not of a fight: never the page's).
+int g_godHull = -1;
+
+void tie_controls_god(bool on) {
+    g_godHull = -1;
+    if (on) {
+        const int own = tie_player_object();
+        const Bit32u craft = own >= 0 ? mem_readd(tie_linear(tie::kObjects + (Bit32u)own * tie::kObjectSize) + 0x54) : 0;
+        g_godHull = craft >= 0x100000 ? mem_readw(craft + 0xA2) : -1;
+    }
+    wclog(1, "TIE: the hull aid %s (%d)", g_godHull >= 0 ? "on" : "off", g_godHull);
+}
+
 void tie_controls_frame() {
     const bool flying = tie_in_flight();
+    if (g_godHull >= 0 && flying) {
+        const int own = tie_player_object();
+        const Bit32u craft = own >= 0 ? mem_readd(tie_linear(tie::kObjects + (Bit32u)own * tie::kObjectSize) + 0x54) : 0;
+        if (craft >= 0x100000) mem_writew(craft + 0xA2, (Bit16u)g_godHull);
+    }
     if (g_steer.on && flying) {
         steer_frame();
     }
