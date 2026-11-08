@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <chrono>
 #include <string>
 #include <vector>
 #include "wc_net.h"
@@ -182,6 +183,16 @@ void inject_2016() {
 
 void WCLAB_VideoFrame(Bitu width, Bitu height, Bitu bpp, Bitu pitch, const Bit8u *data, const Bit8u *pal) {
     if (!g_rec || bpp != 8 || width > 1024 || height > 1024) return;
+    // (the wall clock, the machine's steady one, every 200 ms: two machines' takes of one flight line up by it)
+    static long long lastWall = -1000000;
+    const long long wall = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (wall - lastWall >= 200) {
+        lastWall = wall;
+        char e[64];
+        snprintf(e, sizeof(e), "{\"t\":\"wall\",\"ms\":%lld}", wall);
+        event(e);
+    }
     std::vector<Bit8u> pic(768 + width * height);
     for (int i = 0; i < 256; i++) {  // render.pal.rgb: r, g, b, unused
         pic[3 * i] = pal[4 * i];
