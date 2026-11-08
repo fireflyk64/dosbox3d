@@ -286,8 +286,16 @@ void camp_load_tables(const RvMission __far *m)
                                                against a taunt: the old game's behaviour 2 and 4; logic.c MSHIP_FOLLOWS) */
             for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
                 ;
-            if (j < 10)
+            if (j < 10)                 /* (ten a list: tools/rvdata.py refuses a mission with more) */
                 at[j] = n;
+            if (s->also && s->also < 16) {  /* (also=N: listed at a second point too, whichever brings it first: the
+                                               old game's way, tests/wc1/waves.py; logic.c enterNavPoint) */
+                at = (uint16_t *)(navs + navPointTable_SIZE * s->also + 0x39);
+                for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
+                    ;
+                if (j < 10)
+                    at[j] = n;
+            }
         }
     }
     playerMissionShip = 0;

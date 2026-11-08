@@ -4929,12 +4929,15 @@ static void t_nav_switch(void)
 
 /* M8.57: a ship that comes in later (role=in, the old game's behaviour 7: its Drayman waited off the scene at its
  * nav point until the player came within some 5,000 km, traced 2026-11-07): with nav 1 reached 18,000 km out the
- * Ox is not in the world; 4,000 km from it, it is */
+ * Ox is not in the world, and the mission is not done (it is still to be met: LIXIS1 was won without it); 4,000 km
+ * from it, it is, and the mission is done */
 static void t_escort_arrive(void)
 {
     static const char __far e_seen[] = "18,000 km from nav 1 (reach 20,000) it is not reached (%d)";
     static const char __far e_early[] = "the Ox is in the world (slot %d) with the player 18,000 km from it: it waits";
     static const char __far e_came[] = "the player 4,000 km from it, the Ox did not come";
+    static const char __far e_unmet[] = "the Ox not met yet, the mission's score is %d: not done (0)";
+    static const char __far e_met[] = "the Ox met, the mission's score is %d: done (nonzero)";
     int16_t i, ox = -1;
     pt_mission();
     pt_nav(1, 0, 0, 30000);
@@ -4951,6 +4954,7 @@ static void t_escort_arrive(void)
         if (slot_is_ship(i) && gInstanceShipTypes[i] == PT_OX)
             ox = i;
     REQUIRE(ox < 0, e_early, ox, 0, 0);
+    REQUIRE(victoryPoints == 0, e_unmet, victoryPoints, 0, 0);
     pt_put(0, 0, 0, 26000, 0);
     if (!pt_steps(SEC))
         return;
@@ -4958,6 +4962,61 @@ static void t_escort_arrive(void)
         if (slot_is_ship(i) && gInstanceShipTypes[i] == PT_OX)
             ox = i;
     REQUIRE(ox > 0, e_came, 0, 0, 0);
+    REQUIRE(victoryPoints != 0, e_met, victoryPoints, 0, 0);
+}
+
+/* M8.60: a wave the old game lists at two points (missions.txt also=N; its Dakota 1's Salthi and the like, the user,
+ * 2026-11-07: "The hidden nav points are key"): two Nicanders at a hidden point 20,000 km out, also=1 a waypoint at
+ * 40,000: the hidden point reached first brings them, and the waypoint after it brings no more; flown again straight to
+ * the waypoint, the waypoint brings them */
+static int16_t pt_foes(void)
+{
+    int16_t i, n = 0;
+    for (i = 1; i <= RV_MAX_SHIP_SLOT; i++)
+        n += slot_is_ship(i) && commAnimInfo[i] == SIDE_AERA;
+    return n;
+}
+
+static void pt_wave_also_mission(void)
+{
+    pt_mission();
+    pt_nav(1, 0, 0, 40000);
+    g_tm.nav[0].reach = 5000;
+    pt_nav(2, 0, 0, 20000);
+    g_tm.nav[1].reach = 5000;
+    g_tm.nav[1].flags = 1;              /* (hidden) */
+    pt_mship(PT_ENEMY, SIDE_AERA, 2, 2, RV_PILOT_NONE);
+    g_tm.ship[g_tm.nship - 1].also = 1;
+    pt_launch(PT_PLAYER);
+    playerCanBeDamaged = 0;
+}
+
+static void t_wave_also(void)
+{
+    static const char __far e_first[] = "the hidden point reached first: %d enemies came (2)";
+    static const char __far e_once[] = "the waypoint after it: %d enemies about (2: they come once)";
+    static const char __far e_way[] = "flown straight to the waypoint: %d enemies came (2), %d km from it at the most";
+    int16_t i;
+    int32_t far_km = 0;
+    pt_wave_also_mission();
+    pt_put(0, 0, 0, 18000, 0);
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(pt_foes() == 2, e_first, pt_foes(), 0, 0);
+    pt_put(0, 0, 0, 38000, 0);
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(logic_nav_seen(1) && pt_foes() == 2, e_once, pt_foes(), 0, 0);
+    pt_wave_also_mission();
+    pt_put(0, 0, 0, 38000, 0);
+    if (!pt_steps(SEC))
+        return;
+    for (i = 1; i <= RV_MAX_SHIP_SLOT; i++)
+        if (slot_is_ship(i) && commAnimInfo[i] == SIDE_AERA && TO_KM(labs(gPositionVector[i].z - 40000L * KM)) > far_km)
+            far_km = TO_KM(labs(gPositionVector[i].z - 40000L * KM));
+    REQUIRE(pt_foes() == 2 && far_km < 20000, e_way, pt_foes(), (int)far_km, 0);
+    g_camp.player_ship = PT_PLAYER;
+    pt_mission();
 }
 
 /* M8.59: an escort target there at once (role=back, the old game's behaviour 10: Kurasawa 2's captured Ralari came
@@ -7658,9 +7717,10 @@ static const char __far n_m8_49[] = "M8.49 fighter-hull (do_damage, fighter_roul
 static const char __far n_m8_50[] = "M8.50 prey (prey_of): a Nicander ordered at the Ox (prey=OX) goes for it with the player nearer, and turns on the player once hurt under 55% health";
 static const char __far n_m8_51[] = "M8.51 capital-bearings (gun_mount, ship_think): an Agasicles' flak reaches a still player behind it, abeam and ahead alike";
 static const char __far n_m8_56[] = "M8.56 nav-switch (g_nav_off, NAV_REC_SW): a point off at the start brings nobody till another switches it on";
-static const char __far n_m8_57[] = "M8.57 escort-arrive (arrivals_step): a ship that comes in later waits till a pilot is within 5,000 km of it";
+static const char __far n_m8_57[] = "M8.57 escort-arrive (arrivals_step, mission_done): a ship that comes in later waits till a pilot is within 5,000 km of it; till then the mission is not done";
 static const char __far n_m8_58[] = "M8.58 escort-threat (pass_side, scatter_of): fighters at a capital ship aim at its middle: four Aristons kill an Ox within 60 s";
 static const char __far n_m8_59[] = "M8.59 escort-back (role=back, escorted): an escort target there when its point is reached makes for home at once, and its loss is the mission's";
+static const char __far n_m8_60[] = "M8.60 wave-also (also=N, mship_brought): a wave listed at a hidden point and a waypoint comes once, at whichever is reached first";
 static const char __far n_m8_55[] = "M8.55 field-nav (nav_field, nav_stop): a waypoint inside a field is the field: the autopilot takes the player in, and the point is reached only inside it";
 static const char __far n_m8_54[] = "M8.54 capital-help (capital_help): an Aera capital ship hurt through its armour by an unengaged attacker turns half its side's fighters on it; none when a fighter is already near the attacker";
 static const char __far n_m8_52[] = "M8.52 mayday (hull_take, logic_on_mayday): an Ox calls mayday on 35 in 1,000 of the hits through its armour, as the old game's capital ships did; an Agasicles never";
@@ -7750,7 +7810,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m7_9, t_seeker_chases, 0 }, { n_m7_10, t_missile_blast, 0 }, { n_m7_11, t_missile_knock, 0 }, { n_m7_12, t_ff_target, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 }, { n_m8_56, t_nav_switch, 0 }, { n_m8_57, t_escort_arrive, 0 }, { n_m8_58, t_escort_threat, 0 }, { n_m8_59, t_escort_back, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 }, { n_m8_56, t_nav_switch, 0 }, { n_m8_57, t_escort_arrive, 0 }, { n_m8_58, t_escort_threat, 0 }, { n_m8_59, t_escort_back, 0 }, { n_m8_60, t_wave_also, 0 },
 };
 
 /* --- the run --- */

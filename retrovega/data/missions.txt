@@ -26,7 +26,13 @@
 #
 # A ship line's prey=KEY is the old game's attack order (its mission records' own byte, read 2026-11-05: tests/wc1/README.md
 # "Orders"): the group goes for the nearest ship of that type of the other side, wherever it is and whoever is nearer, until
-# hurt (logic.c prey_of); without one, half the fighters near an escort target raid it (raid_target)
+# hurt (logic.c prey_of); without one, half the fighters near an escort target raid it (raid_target).  The line's first
+# ship carries the order against a taunt; its others follow it (the old game's behaviour 2 and 4: logic.c order_hold)
+#
+# A ship line's also=N lists the wave at a second nav point too: it comes at whichever is reached first, once (the old
+# game lists some waves at two points: an ambush on the way or the nav point itself, a nav point or the way home).
+# tests/wc1/waves.py checks every mission's waves against the old game's records (the user, 2026-11-07, after LIXIS1's
+# ambush of 5 Agis was found missing: "The hidden nav points are key")
 rules    hit=sphere aim=cone hold=off ram=old
 
 mission  ENIGMA1
@@ -931,14 +937,15 @@ lose     "That assault's going to cost more now. Go and get some rest."
 lose     PRIME "That one's on me, Commander. Put my name on it. My own."
 nav      1 40000 10000 -45000 reach=15000
 nav      2 0 5000 -35000 reach=10000
+nav      3 20000 5000 -25000 hidden reach=10000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=PRIME
 ship     VIGILNC 0 nav0 role=home
 ship     KAHAN 0 nav1 at=5000,0,-5000
 ship     NICANDR 1 nav1 count=2 at=0,0,10000 prey=KAHAN
 ship     NICANDR 1 nav1 count=2 prey=KAHAN
-ship     AGIS 1 nav2 count=2 at=0,0,-5000
-ship     AGIS 1 nav2 count=2
+ship     AGIS 1 nav3 count=3 at=0,0,-5000 also=2
+ship     AGIS 1 nav3 also=2
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER KESTREL "What's the line on Prime staying sober tonight?"
 talk     bar KESTREL DRIFTER "He isn't drinking."
@@ -980,7 +987,7 @@ briefing "They're sending everything to break through to the second planet. Our 
 briefing "You and Prime are first up. We have a large bogie at Nav 1, probably a supply run under guard."
 briefing dead=PRIME "You're first up, Wildcard. I'm sorry. I don't have a wingman to give you."
 briefing "Intelligence expects 4 Aristons at Nav 1, with an Agasicles destroyer."
-briefing "There are 2 Cleomenes looking for our deck as well, and the turrets are out again. See to those first."
+briefing "There are 2 Cleomenes out between here and Nav 1 as well. See to those first."
 briefing "Every ship that gets past us drags this out another week. Don't let yours get past. Dismissed."
 win      "The blockade held on your side, Wildcard. That's all I can ask."
 win      PRIME "That Agasicles went up like my fourth birthday, Commander."
@@ -992,13 +999,15 @@ lose     you alive=PRIME "We both did."
 lose     "I know what you did. Dismissed."
 nav      1 -40000 0 -50000 reach=20000
 nav      2 -40000 0 -50000 hidden reach=20000
+nav      3 -20000 0 -25000 hidden reach=10000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=PRIME
-ship     VIGILNC 0 nav0 role=home turrets=off
+ship     VIGILNC 0 nav0 role=home
 ship     ARISTON 1 nav1 count=2 at=0,10000,5000
 ship     ARISTON 1 nav1 count=2
 ship     AGASICL 1 nav1 at=-5000,15000,-5000
 ship     ARISTON 1 nav2 count=2 at=-5000,10000,0
+ship     CLEOMEN 1 nav3 count=2 at=-5000,0,0
 bar      left=FROST middle=PRIME right=COMET
 talk     bar PRIME COMET "Tally's got me down for twelve now. You?"
 talk     bar COMET PRIME "Don't ask."
@@ -1106,7 +1115,7 @@ briefing after=won "Ensign Rowe's data found us that destroyer, so that's one pr
 briefing after=lost "We still don't know where that destroyer is, and we've got a job to do anyway."
 briefing "You and Comet have the Kahan. She has orders to leave for the next jump, and she leaves now."
 briefing "She's hurt and slow. She sets off as you launch, and she'll jump just short of Nav 1."
-briefing "We have 4 Agis on top of us already, and no turrets. Then 6 Nicanders at Nav 1, waiting for her."
+briefing "We have 4 Agis out on her way already. Then 6 Nicanders at Nav 1, waiting for her."
 briefing COMET "Commander, six Nicanders against one destroyer that can't turn?"
 briefing "Yes. I'm sorry. A Schroedinger flies with you."
 briefing dead=COMET "It's you and that Schroedinger, Wildcard."
@@ -1121,14 +1130,17 @@ lose     escort=lost "We lost the Kahan. I'll need the room for a while. I'm goi
 lose     COMET "Commander. I can do some of those."
 lose     alive=COMET "No, you can't. Not yet. Dismissed."
 nav      1 50000 0 -70000 reach=20000
+nav      2 30000 0 -30000 hidden reach=20000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
-ship     VIGILNC 0 nav0 role=home turrets=off
+ship     VIGILNC 0 nav0 role=home
 ship     SCHROED 0 nav0 role=stay
 ship     KAHAN 0 nav0 role=out
 ship     NICANDR 1 nav1 count=2 at=10000,0,0 prey=KAHAN
 ship     NICANDR 1 nav1 count=2 prey=KAHAN
 ship     NICANDR 1 nav1 count=2 prey=KAHAN
+ship     AGIS 1 nav2 count=3 at=5000,5000,10000
+ship     AGIS 1 nav2
 bar      left=FROST middle=- right=COMET
 talk     bar COMET FROST "A hundred and forty names."
 talk     bar FROST COMET "She'd know the hundred and forty-first if you asked."
@@ -1230,7 +1242,7 @@ briefing "All of them, Frost, if we don't get a vaccine down there. You'd know t
 briefing "We've been ordered to cover the medical transports, going out and coming in."
 briefing "You and Anchor have the job. I'm counting on you, and so are they. You'll have Gawains."
 briefing dead=ANCHOR "You'll have Gawains, Wildcard. I'm short a pilot since we lost Anchor, so you lead 2 of them alone."
-briefing "We're under attack here already, and the turrets are off. 5 Agis, an Ariston and a Cleomenes off our bow."
+briefing "There are 5 Agis somewhere between here and Nav 1, and they know about the Ox."
 briefing "An Ox hospital ship leaves as you launch, and it jumps out just short of Nav 1. Stay with it to the jump."
 briefing "Intelligence expects 3 Aristons at Nav 1."
 briefing "Then go to Nav 2 and meet the other Ox. Bring it home. That's the one with the vaccine."
@@ -1248,13 +1260,17 @@ lose     alive=FROST "I can't spare you, Frost. I know what I'm saying. Dismisse
 lose     dead=FROST "I'd send a doctor if I had one. Dismissed."
 nav      1 65000 -10000 -20000 reach=15000
 nav      2 35000 0 -55000 reach=15000
+nav      3 35000 -5000 -10000 hidden reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
-ship     VIGILNC 0 nav0 role=home turrets=off
+ship     VIGILNC 0 nav0 role=home
 ship     GAWAIN 0 nav0 count=2 at=-2500,0,7500 role=stay
 ship     OX 0 nav0 count=3 at=-5000,0,10000
 ship     ARISTON 1 nav1 count=2 at=0,0,-10000 prey=OX
 ship     ARISTON 1 nav1 prey=OX
+ship     AGIS 1 nav3 count=3 at=5000,0,5000 prey=OX
+ship     AGIS 1 nav3 prey=OX
+ship     AGIS 1 nav3 prey=OX
 ship     OX 0 nav0 role=out
 ship     OX 0 nav2 role=in
 ship     CLEOMEN 1 nav2 count=3 at=-10000,-3000,-5000 prey=OX
@@ -1447,8 +1463,8 @@ briefing "That'll be enough, Prime. First wing's up."
 briefing you "(You wait while she works down to your wing.)"
 briefing "You and Echo have escort. An Ox is coming in at Nav 1, with passengers. We have orders to bring it home."
 briefing dead=ECHO "You have the escort, Wildcard, and you're flying it on your own."
-briefing "We're under attack right here, too. 3 Convolutions on the ship and our turrets are off."
-briefing "You've got 3 Franklins and an Ox staying with the ship. Get clear of the Convolutions and go to Nav 1."
+briefing "There are 3 Convolutions out there too, somewhere between us and Nav 1."
+briefing "You've got 3 Franklins and an Ox staying with the ship. Go to Nav 1."
 briefing "When you reach it, it comes straight home. Stay with it. Lose it, and you've lost the mission."
 briefing you "You said passengers, Commander. Who are they?"
 briefing "Survivors, off a colony nobody's heard from since the first push. Naxos."
@@ -1464,15 +1480,18 @@ lose     "That was the only ship out of Naxos in four years."
 lose     ECHO "I never saw the manifest."
 lose     alive=ECHO "No. I'll give it to you. I don't know if that's kind. Dismissed."
 nav      1 -10000 0 75000 reach=20000
+nav      2 0 0 37500 hidden reach=15000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ECHO
-ship     VIGILNC 0 nav0 role=home turrets=off
+ship     VIGILNC 0 nav0 role=home
 ship     FRANKLN 0 nav0 role=stay
 ship     FRANKLN 0 nav0 count=2 at=-10000,2000,0 role=stay
 ship     OX 0 nav0 at=-10000,0,-5000
 ship     OX 0 nav1 role=in
 ship     CLEOMEN 1 nav1 count=2 at=-5000,5000,5000 prey=OX
 ship     CLEOMEN 1 nav1 count=2 at=10000,0,-10000 prey=OX
+ship     CONVOLN 1 nav2 count=2 at=0,0,2500
+ship     CONVOLN 1 nav2
 bar      left=FROST middle=ECHO right=COMET
 talk     bar ECHO FROST "Your Rlaan could have got people out of Naxos. They were right there."
 talk     bar FROST ECHO "They were trading partners, Echo. They were scared too."
@@ -1822,8 +1841,8 @@ ship     KAHAN 0 nav1 role=in
 ship     NICANDR 1 nav1 count=2 at=-10000,0,0 prey=KAHAN
 ship     NICANDR 1 nav1 count=2 prey=KAHAN
 ship     NICANDR 1 nav3 count=2 at=-15000,0,-5000 prey=KAHAN
-ship     ARISTON 1 nav4 count=2 at=0,-5000,-5000
-ship     ARISTON 1 nav4 count=2
+ship     ARISTON 1 nav2 count=3 at=0,-5000,-5000 also=4
+ship     ARISTON 1 nav2 also=4
 field    mine -15000 0 -35000 5000 level=1
 bar      left=TORCH middle=PRIME right=COMET
 talk     bar COMET TORCH "What's Frost got on the Thermopylae?"
@@ -2407,8 +2426,8 @@ ship     AGIS 1 nav3 count=2
 ship     ANAXIDM 1 nav3 at=5000,0,-5000
 ship     ARISTON 1 nav5 count=2 at=0,5000,-10000
 ship     ARISTON 1 nav5 count=2
-ship     CONVOLN 1 nav6 count=2 at=-5000,1000,-5000
-ship     CONVOLN 1 nav7 count=2 at=0,2500,5000
+ship     CONVOLN 1 nav2 count=2 at=0,2500,5000 also=7
+ship     CONVOLN 1 nav4 count=2 at=-5000,1000,-5000 also=6
 field    asteroid 20000 0 -35000 5000 level=1
 field    asteroid 20000 0 -35000 5000 level=1
 bar      left=TORCH middle=KESTREL right=DRIFTER
@@ -2459,7 +2478,7 @@ fighter  LANCELT
 briefing "The Vigilance is moving up to the pocket, and we're going to take fire on the way."
 briefing you "(She gives out the flanks: above, below, port.)"
 briefing "You and Torch have the starboard side. Three legs, then you meet us at the far end."
-briefing "4 Convolutions are on us already, and the turrets are off. A Lancelot stays with the ship."
+briefing "4 Convolutions are hunting the ship, and the turrets are off. A Lancelot stays with the ship."
 briefing "Past that, Intelligence expects 2 Cleomenes at Nav 2 and 2 Nicanders at Nav 3."
 briefing "There's an Agasicles at Nav 3 as well. Assume anything you see is coming for the ship, and engage it."
 briefing you "What are we looking at out there, Commander?"
@@ -2484,8 +2503,8 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     LANCELT 0 nav4
-ship     CONVOLN 1 nav6 count=2 at=2000,-3000,-10000
-ship     CONVOLN 1 nav6 count=2 at=-10000,2000,10000
+ship     CONVOLN 1 nav5 count=2 at=2000,-3000,-10000 also=6
+ship     CONVOLN 1 nav5 count=2 at=-10000,2000,10000 also=6
 ship     CLEOMEN 1 nav2 count=2 at=-5000,0,-5000
 ship     NICANDR 1 nav3 count=2 at=0,5000,5000
 ship     AGASICL 1 nav3 at=5000,5000,5000

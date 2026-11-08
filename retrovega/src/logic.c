@@ -483,6 +483,11 @@ static int16_t mission_done(void)
     for (j = 0; j < 64; j++)            /* (an escort target of the player's side killed: lost, whatever else was done) */
         if (g_killed[j] && !g_away[j] && MSHIP_ROLE(j) && MSHIP_SIDE(j) == commAnimInfo[0])
             return 0;
+    for (j = 0; j < g_narrive; j++)     /* (one still to come in, not met: the player's to fetch, as the briefing says
+                                           "bring it home"; the user, 2026-11-07, of LIXIS1: the pilot came home without
+                                           the vaccine's Ox and won) */
+        if (MSHIP_SIDE(g_arrive[j].rec) == commAnimInfo[0])
+            return 0;
     for (n = 0; n < NAVS; n++) {
         if (!nav_defined(n))
             continue;
@@ -5115,6 +5120,20 @@ static void wave_out(const uint8_t __far *came)
     rv_notef(s_out, n, (long)d, (long)WAVE_KM);
 }
 
+/* the mission ship rec already brought in: in a slot now, killed, or gone its way */
+static int16_t mship_brought(uint16_t rec)
+{
+    int16_t k;
+    if (rec >= 64)
+        return 0;
+    if (g_killed[rec] || g_away[rec])
+        return 1;
+    for (k = 0; k < NUM_SHIP_SLOTS; k++)
+        if (slot_is_ship(k) && slotMissionShip[k] == rec)
+            return 1;
+    return 0;
+}
+
 void __far __cdecl enterNavPoint_impl(uint16_t nav)
 {
     static const char __far s_nav[] = "logic: nav %u reached: %d ships came";
@@ -5143,6 +5162,9 @@ void __far __cdecl enterNavPoint_impl(uint16_t nav)
     _fmemset(came, 0, sizeof came);
     for (j = 0; j < 10 && at[j] != 0xFFFF; j++) {
         uint16_t s;
+        if (mship_brought(at[j]))
+            continue;                   /* (in play, killed or gone already: a wave listed at two points comes once, at
+                                           whichever is reached first, as the old game's: missions.txt also=N) */
         if (MSHIP_ROLE(at[j]) == RV_ESCORT_IN && g_narrive < ARRIVE_MAX) {
             g_arrive[g_narrive].rec = (uint8_t)(at[j] & 63);   /* (it comes in later: arrivals_step) */
             g_arrive[g_narrive++].nav = (uint8_t)nav;

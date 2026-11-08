@@ -15,7 +15,12 @@
  *   RV_BOT_AFTER=S      seconds to go on after the flight ends (default 4), then exit with 0 won, 1 lost
  *   RV_BOT_PAUSE=S      seconds of a breath after each kill before the next target (the user: "If the ai takes 2 second
  *                       victory pauses between ships does that turn tables")
- *   RV_BOT_PASSIVE=1    at the escort: nothing, and the player not hurt (the old game's CHEAT rig): the escort's own odds
+ *   RV_BOT_PASSIVE=1    at the escort under attack: nothing, and the player not hurt (the old game's CHEAT rig): the
+ *                       escort's own odds; an escort gone safely (jumped, home), on to the next ("bot: t N escort: ..."
+ *                       lines: each escort's slot, when it is attacked, lost or gone)
+ * The escort is a ship of ours with an escort's role (out, in, back), else the capital ship farthest from home.  Every nav
+ * point flown, nobody about and the mission not done: on in to the middle of the points flown (an Ox role=in waits there
+ * till a pilot comes within 5,000 km).  A ship close ahead is turned from the sooner the faster the two close.
  *   RV_BOT_ESC_END=S    end the run S seconds after the escort is lost (exit 1)
  *   RV_BOT_WATCH=P      the escort under P percent of itself: turn to look at it (a recording's)
  *   RV_BOT_DEBUG=1      a line a second: what it is doing, where, how it stands
@@ -63,6 +68,9 @@ static struct {
                                            game's rule, logic.c logic_taunt), and a pilot who saw it taunts it no more;
                                            2 it turned; 0 not yet seen */
     int taunts, refusals;
+    int centered[16];                   /* nav points flown to the middle of (fetching a ship that waits there) */
+    int esc_attacked_at;                /* the frame enemies first came within 10,000 km of this escort, 0 not yet */
+    int esc_gone_said;
     int missile_at;                     /* the frame of the last missile */
     int landing_asked, landing_frames;
     int jink;                           /* frames of a break left */
@@ -189,13 +197,31 @@ static int enemy(int s) { return alive_ship(s) && commAnimInfo[s] != commAnimInf
 static int fighter(int s) { return maybeEntityType[s] == ET_SHIP; }
 static double radius_of(int s) { const RvShipType __far *t = slot_type((int16_t)s); return t ? t->radius_km : 100; }
 
-/* the escort: the capital ship of the player's side, not the home carrier, farthest from home (a capital ship kept at
- * the launch is no escort) within 30,000 km of the player */
+/* the escort: a ship of the player's side whose mission line gives it an escort's role (out, in, back: missions.txt
+ * role=), the nearest the player within 30,000 km; else the capital ship of the player's side, not the home carrier,
+ * farthest from home (a capital ship kept at the launch is no escort) within 30,000 km of the player */
 static int home_slot(void);
+static int escort_role(int s)
+{
+    uint16_t rec = slotMissionShip[s];
+    uint8_t r;
+    if (rec >= 64)
+        return 0;
+    r = missionShipTable[missionShipTable_SIZE * rec + 18];
+    return r == RV_ESCORT_OUT || r == RV_ESCORT_IN || r == RV_ESCORT_BACK ? r : 0;
+}
 static int escort_slot(void)
 {
     int s, best = -1, h = home_slot();
     double bd = -1;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
+        if (alive_ship(s) && commAnimInfo[s] == commAnimInfo[0] && escort_role(s) && km(0, s) < 30000
+            && (best < 0 || km(0, s) < bd)) {
+            bd = km(0, s);
+            best = s;
+        }
+    if (best > 0)
+        return best;
     for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
         if (alive_ship(s) && commAnimInfo[s] == commAnimInfo[0] && maybeEntityType[s] == ET_CAPSHIP
             && !logic_is_home((int16_t)s) && km(0, s) < 30000 && (h < 0 || km(h, s) > 30000) && (h < 0 || km(h, s) > bd)) {
@@ -489,8 +515,10 @@ static void fight_step(void)
                 continue;
             p = vsub(pos(s), pos(0));
             dd = vlen(p);
-            room = radius_of(s) + radius_of(0) + (maybeEntityType[s] == ET_CAPSHIP ? 900 : 250);
             rv = vsub(vel(s), vel(0));
+            /* (and the more, the faster the two close: some 0.7 s of it, room to turn away) */
+            room = radius_of(s) + radius_of(0) + (maybeEntityType[s] == ET_CAPSHIP ? 900 : 250)
+                   + fmax(0, -vdot(p, rv) / fmax(1, dd)) * 20;
             if (dd < room && vdot(p, rv) < 0 && vdot(p, fwd(0)) > dd * 0.3) {
                 V away = vsub(vmul(upv(0), dd), p);   /* (up and over it) */
                 B.mode = "ram-avoid";
@@ -637,6 +665,7 @@ static void flight_tick(void)
             randomSeed = B.seed;
         memset(B.taunted_at, 0, sizeof B.taunted_at);
         memset(B.refused, 0, sizeof B.refused);
+        memset(B.centered, 0, sizeof B.centered);
         B.taunts = B.refusals = 0;
         B.target = -1;
         B.missile_at = -1000;
@@ -697,14 +726,33 @@ static void flight_tick(void)
             B.arr_first_at_esc = (B.flight_frames - B.arrived) / LOGIC_HZ + 1;
     }
     if (esc > 0) {
-        int h = escort_health(esc);
+        int h = escort_health(esc), k;
         if (B.escort_slot != esc) {
             B.escort_slot = esc;
             B.escort_start = B.escort_least = h;
+            B.esc_attacked_at = B.esc_gone_said = 0;
+            fprintf(stderr, "bot: t %d escort: slot %d (role %d)\n", B.flight_frames / LOGIC_HZ, esc, escort_role(esc));
         }
         if (h < B.escort_least)
             B.escort_least = h;
-    } else if (B.escort_slot > 0 && logic_escort_lost()) {
+        for (k = 1; k <= RV_MAX_SHIP_SLOT && !B.esc_attacked_at; k++)
+            if (enemy(k) && fighter(k) && km(esc, k) < 10000) {
+                B.esc_attacked_at = B.flight_frames;
+                fprintf(stderr, "bot: t %d escort: slot %d attacked (slot %d within 10,000 km)\n", B.flight_frames / LOGIC_HZ,
+                        esc, k);
+            }
+    } else if (B.escort_slot > 0 && !B.esc_gone_said && !logic_escort_lost()
+               && !(alive_ship(B.escort_slot) && escort_role(B.escort_slot))) {
+        B.esc_gone_said = 1;            /* (gone, not lost: it jumped out or came home) */
+        fprintf(stderr, "bot: t %d escort: slot %d gone safely (health %ld of %ld at the least)\n", B.flight_frames / LOGIC_HZ,
+                B.escort_slot, B.escort_least, B.escort_start);
+    }
+    if (esc <= 0 && B.escort_slot > 0 && logic_escort_lost() && B.esc_gone_said != 2) {
+        B.esc_gone_said = 2;
+        fprintf(stderr, "bot: t %d escort: slot %d lost, %d s after it was attacked\n", B.flight_frames / LOGIC_HZ,
+                B.escort_slot, B.esc_attacked_at ? (B.flight_frames - B.esc_attacked_at) / LOGIC_HZ : -1);
+    }
+    if (esc <= 0 && B.escort_slot > 0 && logic_escort_lost()) {
         B.escort_least = 0;
         if (!B.esc_lost_frame)
             B.esc_lost_frame = B.flight_frames;
@@ -790,7 +838,11 @@ static void flight_tick(void)
         setSpeed[0] = vlen(d) < 6000 ? 0 : slot_type(0)->max_kps;
         return;
     }
-    if (B.passive && (esc > 0 || B.escort_slot > 0)) {   /* (a look at the escort's own chances) */
+    if (B.passive && esc <= 0 && B.escort_slot > 0 && logic_escort_lost()) {
+        say_result();
+        exit(1);
+    }
+    if (B.passive && esc > 0 && B.esc_attacked_at) {   /* (a look at the escort's own chances, under attack) */
         int16_t w[1];
         B.mode = "passive";
         playerCanBeDamaged = 0;         /* (as the old game's CHEAT rig: the escort's fight alone) */
@@ -802,7 +854,7 @@ static void flight_tick(void)
             B.passive_told = 1;
             queue(K_C), queue(K_1), queue(K_1);
         }
-        if (B.esc_dead_at || B.flight_frames - B.arrived > 240 * LOGIC_HZ) {
+        if (B.flight_frames - B.esc_attacked_at > 240 * LOGIC_HZ) {
             say_result();
             exit(1);
         }
@@ -827,6 +879,44 @@ static void flight_tick(void)
         setSpeed[0] = slot_type(0)->max_kps;
         key_hold(K_TAB, &B.held_tab, g_sys.fuel > 300);
         return;
+    }
+    /* every point flown, nobody about, and the mission not done: a ship still to meet (an Ox role=in waits off the scene
+     * at its point until a pilot comes within 5,000 km; the autopilot stops at the point's reach, 15,000 km and more
+     * out): on in to the middle of the points flown, the nearest first, as a pilot told to meet it there */
+    if (!navs_left() && ne <= 0 && !victoryPoints) {
+        int n, bn = -1;
+        double bd = 1e18;
+        V at = v3(0, 0, 0), c, away;
+        double r;
+        for (n = 1; n < 16; n++) {
+            const uint8_t *rec = (const uint8_t *)navPointTable + navPointTable_SIZE * n;
+            V np;
+            double dn;
+            if (!logic_nav_seen((int16_t)n) || (rec[1] & 1) || B.centered[n])
+                continue;
+            np = v3(NAV_REC_KM(rec, 0), NAV_REC_KM(rec, 1), NAV_REC_KM(rec, 2));
+            dn = vlen(vsub(np, pos(0)));
+            if (dn < 3000) {
+                B.centered[n] = 1;
+                fprintf(stderr, "bot: t %d at the middle of nav %d\n", B.flight_frames / LOGIC_HZ, n);
+            } else if (dn < bd) {
+                bd = dn;
+                bn = n;
+                at = np;
+            }
+        }
+        if (bn > 0) {
+            B.mode = "fetch";
+            if (rock_threat(&away))
+                steer_at(away, 0);
+            else if (field_on_way(at, 1500, &c, &r))
+                steer_at(vsub(vadd(c, vmul(upv(0), r + 3500)), pos(0)), 0);
+            else
+                steer_at(vsub(at, pos(0)), 0);
+            setSpeed[0] = slot_type(0)->max_kps;
+            key_hold(K_TAB, &B.held_tab, 0);
+            return;
+        }
     }
     if (navs_left() || home_slot() < 0 || km(0, home_slot()) > 22000) {
         /* on to the next point (or home): the autopilot, else by hand round any field on the way */

@@ -587,6 +587,34 @@ or not, turn on the taunter for 20 s whatever else happened; ported the same day
 logic.c `order_hold` (the first ship of a `prey=` line carries the order; healthy it shrugs the taunt off, hurt it
 goes back 1 step in 50), `tailer_of` (one on its tail within 7,000 km takes it), no time limit; M10.12.
 
+## The waves at the hidden points (2026-11-07)
+
+The user, testing LIXIS1 (the old game's Dakota 1: an outbound Drayman, then an inbound one with the vaccine): "Can we
+check how the wc1 equivalent manages it", then "I'm worried this is a systemic problem ... The hidden nav points are
+key". Dakota 1 flown in the old game (`run-old.sh 7 0`, the player idle and CHEAT, autopilot nav to nav): 5 Salthi at a
+hidden point halfway to Nav 1 stopped the autopilot 8 s out, three of them under orders on the outbound Drayman, and it
+died 19 s later; at Nav 2 the inbound Drayman came 33 s after the Jalthi and died 20 s after it came. Our LIXIS1 had
+no such ambush: the record of that point has an EMPTY name, and port.py and places.py skipped a nameless record
+(`if not name`), so its ships fell to "the launch", where the briefing was written around them ("We're under attack
+here already, and the turrets are off. 5 Agis...") and places.py then dropped them as in no list.
+
+`tests/wc1/waves.py DUMPDIR` checks every mission against the old records, by distinct ship and by place (the old
+lists name some ships twice, and some waves at two points). It found 8 missions: 14 enemies missing outright, at
+four nameless points halfway along the first leg (OLDZIEY3 2 Cleomenes, DEFIANC2 4 Agis, LIXIS1 5 Agis, ATARAXI1 3
+Convolutions), and four waves the old game lists at two points (an ambush on the way or the nav point, Nav 1 or the way
+home, the carrier's third place or the rendezvous), which come at whichever is reached first, but ours only at the
+later one (OLDZIEY2, RIGEL3, SHMRN2, SHMRN3: port.py kept the last list). Fixed: the hidden points and their lines
+(missions.txt), `also=N` for a wave at two points (RVGAME.DAT 25; campaign.c lists it at both; logic.c enterNavPoint
+brings no mission ship twice, `mship_brought`; M8.60), the briefings and `turrets=off` that told of attacks at the
+launch that the old game never made. ATARAXI1's ambushers have no prey=: their old orders are on the Ox still to
+come, and ours, by type, would have turned back for the Ox at the ship. waves.py now finds none.
+
+Our LIXIS1 after it (the test pilot, 12 flights a cell): the pilot idle at the escort, the outbound Ox lasts 30 to 34 s
+under the 5 Agis (the old one 19 s); flown at 9 degrees of aim wander 9 of 12 won, 13 degrees 6, 18 degrees 4. Also
+found flying it: the inbound Ox (role=in) waits off the scene till a pilot comes within 5,000 km of its place, and the
+mission counted as won without it (the pilot came home from Nav 2's fight without flying in): mission_done now asks
+that it has come (M8.57).
+
 ## What is still to measure
 
 The other types (the Salthi at nav 3; Krant, Gratha, Jalthi, the capital ships' guns on each other in the later

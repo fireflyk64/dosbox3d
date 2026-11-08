@@ -76,8 +76,8 @@ def read_dump(path):
             continue
         name = rec[:16].split(b'\0')[0].decode('latin-1')
         ships = [uw(r + 0x39 + 2 * k) for k in range(10)]
-        if not name:
-            continue
+        # (a record with no name is a hidden trigger point all the same, with ships in its list: Dakota 1's ambush of 5
+        # Salthi. Skipping it, as this did until 2026-11-07, lost 14 enemies in 4 missions: tests/wc1/waves.py)
         navs.append(dict(n=n, name=name, x=s24(d, r + 32), y=s24(d, r + 36), z=s24(d, r + 40),
                          ships=[s for s in ships if s != 0xFFFF]))
     ships = []

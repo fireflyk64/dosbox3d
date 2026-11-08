@@ -38,9 +38,9 @@ def read(path):
         r = 0x687C + 0x4D * n
         rec = d[r:r + 0x4D]
         name = rec[:16].split(b'\0')[0].decode('latin-1')
-        if name:
+        if any(rec):                    # (a record with no name is a hidden point too: tests/wc1/waves.py)
             navs[n] = dict(at=(km(s24(d, r + 32)), km(s24(d, r + 36)), km(s24(d, r + 40))),
-                           hidden=name.startswith('.') or rec[30] == 0,
+                           hidden=not name or name.startswith('.') or rec[30] == 0,
                            ships=[s for s in struct.unpack_from('<10H', d, r + 0x39) if s != 0xFFFF])
     ships = {}
     for m in range(32):

@@ -17,7 +17,7 @@ checks every reference and rule (docs/engine.md), and writes:
 missions.txt is one block per mission, a keyword and its value per line,
 '#' comments.  Keywords: mission, node, title, type, music, briefing, win,
 lose, fighter (the player's and the wingman's TYPE), nav (id x y z [hidden] [reach=KM], km, the old game's map: the waypoints numbered from 1, then the hidden trigger points; within reach= of it the point is reached and the autopilot stops there, the old game's 10,000 to 32,500), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home|stay] [jump=N] [turrets=off]
-[pilot=KEY] [ai=PROFILE] [fear=c/d] [prey=KEY]), rules (hit= aim= hold= ram=: RULES), field (asteroid|mine x y z radius [density=N] [level=L], km; N rocks per (10,000 km)^3, 1..255,
+[pilot=KEY] [ai=PROFILE] [fear=c/d] [prey=KEY] [also=N]), rules (hit= aim= hold= ram=: RULES), field (asteroid|mine x y z radius [density=N] [level=L], km; N rocks per (10,000 km)^3, 1..255,
 0 or none: the engine's own; L the old game's rock level, 0..3: how many fly at the player, and when), bar and lounge
 (seat=PILOT|- ...), and the lines, docs/engine.md: briefing, win, lose [WHO] [conditions] "line" (or plain text: the XO's,
 split at its sentences), talk, say, radio.
@@ -36,7 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 24                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 25                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
                                         # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
@@ -50,6 +50,8 @@ VERSION = 24                            # 2: the ship types' engines; 3: their h
                                         # 20: a field's level=L (the old game's rock level, dseg:BFF4)
                                         # 21: the map at the old game's own size: nav points, ship offsets and
                                         # fields in 32 bits of km (its farthest point 105,000 km out)
+                                        # 25: a mission ship's also=N (a second nav point that brings it, whichever
+                                        # is reached first: the old game's ships listed at two points)
 LIMITS = {'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 16,
           'SEATS': 3, 'TALKS': 200, 'FIELDS': 7, 'SHIPTYPES': 64, 'SHIPRECORDS': 44, 'WEAPONS': 40}
 TEXT = {'ID': 16, 'TITLE': 48, 'TALK': 108, 'KEY': 10, 'CALLSIGN': 12,
@@ -204,12 +206,15 @@ NAV = [('unsigned char', 'id', 'B'), ('unsigned char', 'flags', 'B'), ('long', '
                                         # off at the start; sw: what entering it switches, 0x80 | nav on, nav off, 0xFF
                                         # none: the old game's +30 and +45..+52, tests/wc1/navswitch.py)   # (km, the old game's map: tests/wc1/fullscale.py; reach:
                                         # within it the point is reached, and the autopilot stops at it: the old record's)
+NAV_LIST = 10                           # a nav point's list of mission ships (navPointTable +0x39: ten words)
 NAV_REACH = 15000                       # a nav line's reach= when it has none (the old game's most usual for a waypoint)
 SHIP = [('unsigned char', 'type', 'B'), ('unsigned char', 'side', 'B'), ('unsigned char', 'nav', 'B'),
         ('unsigned char', 'count', 'B'), ('unsigned char', 'pilot', 'B'), ('unsigned char', 'role', 'B'),
         ('unsigned char', 'ai', 'B'), ('unsigned char', 'fear', 'B'), ('unsigned char', 'noturrets', 'B'),
         ('unsigned char', 'jump', 'B'),  # (role=out's jump=N: the nav point it jumps short of, 0 the next after its own)
         ('unsigned char', 'prey', 'B'),  # (prey=KEY: the type it is ordered to attack, + 1, 0 none: the old game's orders; logic.c prey_of)
+        ('unsigned char', 'also', 'B'),  # (also=N: a second nav point whose reaching brings it too, whichever first, 0 none:
+                                         # the old game lists some waves at two points, tests/wc1/waves.py; campaign.c)
         ('long', 'x', 'l'), ('long', 'y', 'l'), ('long', 'z', 'l')]   # (where it starts off its nav point, km: at=x,y,z)
 # a mission ship's AI profile (missions.txt ai=NAME: logic.c's P_* in this order, 1-based in the record, 0 the type's
 # own) and its own fear rates (fear=c/d, 0-15 each: the old game's class bytes; 0: the profile's)
@@ -602,7 +607,7 @@ def compile_all():
         for where, f in m['nav']:
             if any(not -MAP_KM <= int(v) <= MAP_KM for v in f[1:4]):
                 raise Fail('%s: a nav point is at most %d km out on each axis' % (where, MAP_KM))
-        shipr, wingman = [], None
+        shipr, wingman, listed = [], None, {}
         for where, f in m['ship']:
             opts = dict(o.split('=', 1) for o in f[3:])
             kind = f[0]
@@ -661,24 +666,37 @@ def compile_all():
                 prey = ships[opts['prey']] + 1   # (+ 1: a record zeroed, as the harness and the tests make them, orders nothing)
                 if not any(f2[0] == opts['prey'] and f2[1] != f[1] for _w2, f2 in m['ship']):
                     raise Fail('%s: prey=%s: this mission has no %s of another side' % (where, opts['prey'], opts['prey']))
+            also = 0
+            if 'also' in opts:          # (a wave the old game lists at two points: it comes at whichever is reached first)
+                try:
+                    also = int(opts['also'])
+                except ValueError:
+                    also = -1
+                if also not in nav_ids or also in (0, nav) or role or kind in ('player', 'wingman') or int(f[1]) == 0:
+                    raise Fail('%s: also=N: another nav point (not the launch) that brings this enemy wave too' % where)
             at = opts.get('at', '0,0,0').split(',')
             if len(at) != 3 or any(not -MAP_KM <= int(v) <= MAP_KM for v in at):
                 raise Fail('%s: at=x,y,z, km off its nav point, at most %d' % (where, MAP_KM))
+            for n in (nav, also) if also else (nav,):   # (a nav point's list holds ten mission ships: campaign.c)
+                listed[n] = listed.get(n, 0) + int(opts.get('count', 1))
+                if listed[n] > NAV_LIST:
+                    raise Fail('%s: nav %d brings %d ships, its list holds %d' % (where, n, listed[n], NAV_LIST))
             shipr.append(struct.pack(fmt(SHIP), tnum, int(f[1]), nav, int(opts.get('count', 1)), pilot, role, ai, fear,
-                                     opts.get('turrets', 'on') == 'off', jump, prey, int(at[0]), int(at[1]), int(at[2])))
+                                     opts.get('turrets', 'on') == 'off', jump, prey, also, int(at[0]), int(at[1]), int(at[2])))
         if len(shipr) > LIMITS['SHIPS']:
             raise Fail('%s: %d ships, at most %d' % (w, len(shipr), LIMITS['SHIPS']))
         if wingman is not None:         # (a wingman lost, the XO says this without them: game.c cuts " and NAME")
             you = 'You and %s' % people[pilot_index[wingman]]['callsign']
             if you not in ' '.join(f[-1] for _w, k_, f in m['talk'] if k_ == 'briefing'):
                 raise Fail('%s: the briefing must say "%s": it is cut when the wingman is dead' % (w, you))
-        # what the XO says is there is there: "3 Nicanders at Nav 1" against the mission's ship lines
+        # what the XO says is there is there: "3 Nicanders at Nav 1" against the mission's ship lines (also=N: a wave
+        # that may come there, or on the way at a hidden point)
         named = {r['name']: r['key'] for r in load_csv('ships.csv')}
         for _w, k_, f in m['talk']:
             for n_, say_, nav_ in re.findall(r'(\d+) ([A-Z][a-z]+) at Nav (\d)', f[-1]) if k_ == 'briefing' else ():
                 key_ = named.get(say_) or named.get(say_[:-1]) if say_ not in named else named[say_]
                 have = sum(int(next((o[6:] for o in g[3:] if o.startswith('count=')), 1)) for _x, g in m['ship']
-                           if g[0] == key_ and g[1] == '1' and g[2] == 'nav' + nav_)
+                           if g[0] == key_ and g[1] == '1' and (g[2] == 'nav' + nav_ or 'also=' + nav_ in g[3:]))
                 if int(nav_) in hidden_navs:
                     raise Fail('%s: the briefing names Nav %s, a hidden trigger point the player has no list of' % (_w, nav_))
                 if have != int(n_):
