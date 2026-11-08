@@ -561,6 +561,15 @@ void tie_controls_frame() {
     if (flying && g_mind.state == 1 && !g_steer.on) {
         mind_frame();
     }
+    // (the keypad's Ins and Del, a controller's roll buttons: a roll event every frame while held.  The game rolls a
+    // step a key event, its own arrows' as each frame's; held, the keyboard's own repeat gave one step, then nothing for
+    // half a second, then some 30 a second: a twitch and a pause before the roll)
+    if (flying && g_rollLeft) {
+        add_key(KBD_left, true);
+    }
+    if (flying && g_rollRight) {
+        add_key(KBD_right, true);
+    }
     if (flying != g_wasFlying) {
         g_wasFlying = flying;
         g_px = g_py = 0;                    // (a flight starts with the pointer in the middle)

@@ -1190,7 +1190,14 @@ static void key_script() {
         // (the walkthrough recorder's items: wcnet_lab.cpp)
     } else {
         const bool shift = item.compare(0, 6, "shift+") == 0;     // (shift+s: TIE Fighter's reinforcements)
-        KBD_KEYS k = script_key(shift ? item.substr(6) : item);
+        std::string name = shift ? item.substr(6) : item;
+        double holdMs = 150;                                        // (<key>*<seconds>: held that long)
+        const size_t star = name.find('*');
+        if (star != std::string::npos) {
+            holdMs = atof(name.c_str() + star + 1) * 1000;
+            name = name.substr(0, star);
+        }
+        KBD_KEYS k = script_key(name);
         if (k == KBD_NONE) {
             wclog(0, "key script: unknown key \"%s\"", item.c_str());
         } else {
@@ -1201,7 +1208,7 @@ static void key_script() {
             }
             KEYBOARD_AddKey(k, true);
             held = k;
-            releaseAt = now + 150;
+            releaseAt = now + holdMs;
         }
     }
     next++;

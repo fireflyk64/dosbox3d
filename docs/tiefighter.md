@@ -739,8 +739,14 @@ move vector, the nine axis words, type).
   frame, 1 to 9 then 8 and 9, Shift 9 at once, the opposite arrow or
   letting go 0; Up dives as a stick pushed forward.  TIE's own Left and
   Right roll in flight: taken from it; the keypad's Ins and Del roll
-  instead, passed to the game as its own arrows (TIE's keyboard roll, a
-  step a press and a repeat).  Q, E, comma and period are TIE's own keys.
+  instead, passed to the game as its own arrows, one a frame while held
+  (2026-11-08; the user: "does the banking need to be fixed to play
+  keyboard?").  TIE rolls a step a key event (user.c), each a frame's roll;
+  held, the keyboard's own repeat gave one step, nothing for half a second,
+  then some 30 a second.  Measured, a T/F at 60 frames a second: Ins held 2 s
+  rolls 143 degrees from the first frame (some 72 a second), Del held 2 s rolls
+  it back, a 150 ms tap some 11 degrees.  A controller's roll buttons press the
+  same keys.  Q, E, comma and period are TIE's own keys.
 * **The mouse**, `WCNET_TIE_MOUSE`: `pointer` (the default) moves a pointer
   the emulator draws (an amber ring over the gunsight) and its distance from
   the middle is the stick, held until it moves (above the middle climbs);
