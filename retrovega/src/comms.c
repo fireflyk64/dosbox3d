@@ -14,7 +14,6 @@
 #define STEP_TICKS 24                   /* one a step: lipsync's 100 ms, on the music clock (240 a second) */
 #define TAIL_TICKS 240                  /* the face stays a second after the line */
 #define CUT_TICKS 96                    /* a comm cut off: the static's burst, 0.4 s (comms_cut) */
-#define SNOW 256                        /* the static's shades, a row's run read from anywhere in them */
 #define LINE 80
 
 /* the 4 x 6 font the callsign is stencilled in (tools/comms.py's): a glyph's width (3, 4 or 5), then its six rows,
@@ -45,7 +44,6 @@ static char __far g_line[LINE];                   /* the line being said */
 static unsigned char __far g_kept[COMMS_W];       /* a kept row's shades */
 static unsigned char __far g_part[COMMS_W];       /* (an asset's row) */
 static unsigned char __far g_out[2][COMMS_W];     /* a kept row as drawn: its two rows */
-static unsigned char __far g_snow[SNOW + COMMS_W];   /* the static's shades (comms_flight_start) */
 static struct {
     int vdu, on, cut, nsteps, cols, sx;
     RvCommVoice v;                      /* who speaks */
@@ -81,10 +79,6 @@ void comms_flight_start(void)
     g_c.rnd = 7;
     g_pic = 0;
     g_ncast = 0;
-    for (i = 0; i < SNOW + COMMS_W; i++) {   /* (the middle shades the most, black and white the least) */
-        unsigned c = rnd();
-        g_snow[i] = (unsigned char)((c % LEVELS + (c >> 6) % LEVELS) / 2);
-    }
     if (hd->comm_cast == 0xFFFF || hd->comm_ramp == 0xFFFF)
         return;
     g_ncast = (int)(dat_asset(hd->comm_cast)->size / sizeof(RvCommVoice));
@@ -382,8 +376,9 @@ int comms_draw(int vdu, const RvRect __far *r, int y0, int y1)
     return draw(vdu, r, y0, y1);
 }
 
-/* the static of a comm cut off, over the whole VDU: each row a run of the snow's shades from a place of its own, every
- * frame anew, fading to the link's black as it ends (a table of the shades it is now: no sum a pixel) */
+/* the static of a comm cut off, over the whole VDU: every pixel a shade of the link's generator, two a draw of it (the
+ * middle shades the most, black and white the least: the sum of two), every frame anew, fading to the link's black as
+ * it ends (a table of the shades it is now: no product a pixel; no table of shades kept: conventional memory is short) */
 static void snow(const RvRect __far *r, int y0, int y1)
 {
     unsigned long now = clock240();
@@ -400,13 +395,13 @@ static void snow(const RvRect __far *r, int y0, int y1)
     if (y1 > r->y + r->h) y1 = r->y + r->h;
     for (y = y0; y < y1; y++) {
         unsigned char __far *d = vid_row(y) + r->x;
-        const unsigned char __far *from = g_snow + rnd() % SNOW;
         const unsigned char *to = lut[y & 1];
-        int w = r->w < COMMS_W ? r->w : COMMS_W;   /* (the run's length: a VDU is narrower than the link) */
-        for (x = 0; x < w; x++)
-            d[x] = to[from[x]];
-        for (; x < r->w; x++)
-            d[x] = to[0];
+        for (x = 0; x < r->w; x += 2) {
+            unsigned c = rnd();         /* (12 bits: three shades' worth) */
+            d[x] = to[((c & 7) + (c >> 3 & 7)) >> 1];
+            if (x + 1 < r->w)
+                d[x + 1] = to[((c >> 6 & 7) + (c >> 9 & 7)) >> 1];
+        }
     }
 }
 
