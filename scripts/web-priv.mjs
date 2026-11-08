@@ -6,6 +6,8 @@
 //
 //   PLAYWRIGHT_DIR=... SHOT_DIR=... node scripts/web-priv.mjs PAGE_URL LOBBY_URL INSTALLER [seconds]
 //   RF=1: Righteous Fire (the menu's other program)
+//   ROOM=<code>: the page joins that room as a guest (scripts/web-priv.sh ROOM=1 makes a native host's) and checks the
+//   room's presence lines (src/cpu/wcnet_priv_session.cpp) instead of flying alone
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs";
@@ -45,6 +47,7 @@ const u = new URL(pageUrl);
 u.searchParams.set("server", lobbyUrl);
 u.searchParams.set("hall", "PRVHALL-" + Math.random().toString(36).slice(2, 6).toUpperCase());
 u.searchParams.set("callsign", "PRIVTEST");
+if (process.env.ROOM) u.searchParams.set("room", process.env.ROOM);
 u.searchParams.set("env.WCNET_KEYSCRIPT", route);
 u.searchParams.set("env.WCNET_KEYSCRIPT_FROM", "boot");
 u.searchParams.set("env.WCNET_LOG", "3");
@@ -65,11 +68,19 @@ check("the flight's keys under the game", /Privateer in flight/.test(keys) || wa
 const saves = await page.$eval("#saves", (el) => (el.hidden ? "hidden" : document.getElementById("saveStatus").textContent));
 check("the saved-game panel", /save in the game/.test(saves), saves);
 await page.screenshot({ path: path.join(shotDir, "web-priv-page.png"), fullPage: true });
-// a room of one (Players 1): the game alone, as it is
-await page.fill("#seats", "1");
-await page.dispatchEvent("#seats", "change");
-await page.click("#join");
-await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 30000 });
+if (process.env.ROOM) {
+  // the room's link joined it on load: Fly once the page lets a guest (a native host never says it flies: 5 s)
+  await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 60000 });
+  console.log(`${stamp()} in the room: ` + await page.$eval("#status", (el) => el.textContent.trim().slice(0, 140)));
+  const max = await page.$eval("#seats", (el) => el.max);
+  check("the Players box takes 8 for Privateer", max === "8", max);
+} else {
+  // a room of one (Players 1): the game alone, as it is
+  await page.fill("#seats", "1");
+  await page.dispatchEvent("#seats", "change");
+  await page.click("#join");
+  await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 30000 });
+}
 await page.click("#fly");
 const waitLog = async (re, ms) => {
   const until = Date.now() + ms;
@@ -101,6 +112,13 @@ const ramp = logs.slice(before).filter((l) => /arrows [+-]/.test(l)).map((l) => 
 check("the arrow ramped from a ninth of the stop", ramp.length > 0 && ramp[0] === -28, ramp.slice(0, 12).join(" "));
 check("... to the stop when held", ramp.includes(-256), `${ramp.filter((v) => v === -256).length} frames at the stop`);
 await page.screenshot({ path: path.join(shotDir, "web-priv-turned.png"), clip: box });
+if (process.env.ROOM) {
+  check("in the host's room", await waitLog(/Privateer: In \S+'s room as pilot 2/, 20000), (logs.find((l) => /room as pilot/.test(l)) || "").slice(0, 140));
+  check("the host's presence: in Troy with us", await waitLog(/Privateer: (HOST launched in Troy|HOST in Troy, [\d,]+ m from you|In Troy with you: HOST)/, 40000),
+    (logs.filter((l) => /Privateer: (HOST|In Troy)/.test(l)).pop() || "").slice(0, 140));
+  // (the host's side, told of this autopilot, is checked by web-priv.sh from the host's log)
+  await page.keyboard.press("a");
+}
 const seconds = Number(secondsArg);
 const until = t0 + seconds * 1000;
 while (Date.now() < until) await sleep(2000);

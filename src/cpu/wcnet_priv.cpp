@@ -27,6 +27,11 @@ enum {
     kDgroupPara = 0x6E4D,           // DGROUP, paragraphs from the image's start
     kSeg088 = 0x3632,               // seg088's paragraph: the controls (wcnet_priv_controls.cpp)
     kAfterKeyboard = 0x0BAD,        // seg088:0BAD, after the call of the keyboard's routine
+    kPlayerShip = 0x66B4,           // the player's ship object (a near pointer: the objects are in DGROUP's heap); 0 at a base
+    kPlayerRecord = 0x66B2,         // the player's record in flight ("PLAYTYPE", "PLAYER"); 0 at a base
+    kRecordSystemName = 0x54,       // ... its near pointer to the system's name (the destination display's "System")
+    kShipPos = 0x14,                // its place, int32 x, y, z (z up; Troy's Achilles at 15360000, 0, -10240000)
+    kShipMatrix = 0x21,             // its attitude, 3x3 int32 (1.0 = 1 << 24), at an odd offset
     kSignatureOff = 0x0074,         // "Type PRIV to run Privateer, or RF to run Righteous Fire."
 };
 const char kSignature[] = "Type PRIV to run Privateer";
@@ -123,6 +128,7 @@ bool priv_program_ended(Bit16u psp) {
 }
 
 void priv_tick() {
+    priv_session_tick();
     if (!g_found) {
         return;
     }
@@ -184,11 +190,46 @@ bool priv_script_item(const std::string &item, double t) {
         wclog(1, "key script %.1fs: Privateer's code traced to %s.trace", t, g_traceName.c_str());
         return true;
     }
+    if (item.compare(0, 9, "!privpos=") == 0 && g_found) {
+        // !privpos=<x>:<y>:<z>: the player's ship put there (the world's units; a nav sphere's place from SECTORS.IFF)
+        const Bit16u ship = priv_r16(kPlayerShip);
+        Bit32s v[3] = { 0, 0, 0 };
+        sscanf(item.c_str() + 9, "%d:%d:%d", &v[0], &v[1], &v[2]);
+        for (int i = 0; ship && i < 3; i++) {
+            mem_writed(ds_at((Bit16u)(ship + kShipPos + 4 * i)), (Bit32u)v[i]);
+        }
+        wclog(1, "key script %.1fs: the player's ship (ds:%04X) put at %d, %d, %d", t, ship, v[0], v[1], v[2]);
+        return true;
+    }
     return false;
 }
 
 bool priv_in_flight() {
-    return false;
+    return g_found && priv_r16(kPlayerShip) != 0 && priv_r16(kPlayerRecord) != 0;
+}
+
+void priv_player_pos(Bit32s pos[3]) {
+    const Bit16u ship = priv_in_flight() ? priv_r16(kPlayerShip) : 0;
+    for (int i = 0; i < 3; i++) {
+        pos[i] = ship ? (Bit32s)priv_r32((Bit16u)(ship + kShipPos + 4 * i)) : 0;
+    }
+}
+
+std::string priv_system_name() {
+    const Bit16u rec = priv_in_flight() ? priv_r16(kPlayerRecord) : 0;
+    const Bit16u name = rec ? priv_r16((Bit16u)(rec + kRecordSystemName)) : 0;
+    std::string out;
+    for (int i = 0; name && i < 32; i++) {
+        const Bit8u c = priv_r8((Bit16u)(name + i));
+        if (!c) {
+            return out;
+        }
+        if (c < 32 || c >= 127) {
+            return "";      // (not a name: a pointer the game has not set yet)
+        }
+        out += (char)c;
+    }
+    return "";
 }
 
 }  // namespace wc

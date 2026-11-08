@@ -413,6 +413,26 @@ message TiePresence {
     optional string mission = 5;
     optional bool challenge = 6;    // its mission flown as the Z-95 challenge (step 14)
 }
+// Wing Commander: Privateer (docs/privateer.md).  A guest's hello, and the host's answer: the guest's seat and the
+// room's seats.
+message PrivHello {
+    optional string callsign = 1;
+    optional uint32 player = 2;
+    optional uint32 seats = 3;
+}
+// Where a pilot is (Privateer): flying or not, its system (the name the game shows), its place in the system (the
+// game's world units: 256 to the game's metre), and why it was sent now (PrivWhy).  Sent on those occasions and every
+// 15 s; the host relays a guest's to the other guests with its seat.
+message PrivPresence {
+    optional uint32 player = 1;
+    optional string callsign = 2;
+    optional bool flying = 3;
+    optional string system = 4;
+    optional sint32 x = 5;
+    optional sint32 y = 6;
+    optional sint32 z = 7;
+    optional uint32 why = 8;        // 0 the period, 1 the autopilot engaged (A), 2 a jump, 3 a launch, 4 a landing, 5 a hello
+}
 message NetworkMessage {
     optional Connect connect = 1;
     optional Game game = 2;
@@ -435,4 +455,7 @@ message NetworkMessage {
     optional TieFrame tie_frame = 22;
     optional TiePresence tie_presence = 23;
     optional TieOwners tie_owners = 24;
+    // Privateer's (field numbers from 40: TIE Fighter's grow from 25)
+    optional PrivHello priv_hello = 40;
+    optional PrivPresence priv_presence = 41;
 }

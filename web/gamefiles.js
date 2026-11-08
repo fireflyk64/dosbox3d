@@ -471,19 +471,19 @@ export const GAMES = [
   // (GAME.GOG: PRIV.TRE and RF.TRE, all of the game's data) must be in drive D.  The machine is the one GOG's own
   // configuration asks for (dosboxPRIV.conf: an S3, 16 MB, EMS and XMS, a Sound Blaster 16 on IRQ 5).  Saved games
   // are named by the player: *.SAV (Privateer) and *.PRS (Righteous Fire), kept by the page whatever their names.
-  // Single-player until its hooks are built (docs/privateer.md); the emulator ramps its arrow keys
-  // (src/cpu/wcnet_priv_controls.cpp).
-  { id: "priv", tag: "PRV", title: "Wing Commander: Privateer", detect: ["PRCD.EXE"], run: "priv", multiplayer: false,
+  // Flown together loosely (docs/privateer.md: rooms of up to 8, `maxSeats`, everybody's own career, presence so far;
+  // src/cpu/wcnet_priv_session.cpp); the emulator ramps its arrow keys (src/cpu/wcnet_priv_controls.cpp).
+  { id: "priv", tag: "PRV", title: "Wing Commander: Privateer", detect: ["PRCD.EXE"], run: "priv", multiplayer: true, maxSeats: 8,
     image: "GAME.GOG", cycles: 30000, saves: ["*.SAV"], noFlight: true, noRoomOptions: true,
     build: { para: 0x6E4D, off: 0x0074, text: "Type PRIV to run Privateer" },
-    help: "Privateer as it is, on your own for now: flying together is being built (docs/privateer.md). Esc skips the opening; NEW registers a pilot (type a name and a callsign, Enter after each); click your ship on the landing pad to launch. Save in a base with the Quine 4000's SAVE: the page keeps your saved games in this browser.",
+    help: "Privateer flown together loosely, rooms of up to 8: everybody plays their own career, goes where they like and keeps their own saved games, and the room tells everybody where the others are: each pilot's system and place is sent when it engages the autopilot (A), jumps, launches or lands, and every 15 s, and a line over the game says who is in your system and how far (in the game's metres, as its Range readout gives them). Seeing each other in space, sharing a nav point's fights, cargo and the Steltek drone come next (docs/privateer.md). Esc skips the opening; NEW registers a pilot (type a name and a callsign, Enter after each); click your ship on the landing pad to launch. Save in a base with the Quine 4000's SAVE: the page keeps your saved games in this browser.",
     keys: "<b>Privateer in flight:</b> the arrow keys steer (a tap turns a little, held they build to the full turn in a third of a second; <kbd>Shift</kbd> with an arrow turns at full at once), <kbd>Home</kbd> and <kbd>PgUp</kbd> (the keypad's <kbd>7</kbd> and <kbd>9</kbd>) roll the same way; <kbd>Space</kbd> fires the guns, <kbd>Enter</kbd> the weapon picked with <kbd>W</kbd> (a missile, or the tractor beam), <kbd>Tab</kbd> the afterburner; <kbd>+</kbd> and <kbd>-</kbd> set the speed, <kbd>Backspace</kbd> stops; <kbd>T</kbd> targets, <kbd>N</kbd> the nav map, <kbd>A</kbd> the autopilot, <kbd>J</kbd> jumps, <kbd>X</kbd> expels your cargo, <kbd>C</kbd> the comms; <kbd>Alt</kbd>+<kbd>O</kbd> the options, where the mouse or a joystick can be the stick instead (the ramp is the keyboard's).",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=5\ndma=1\nhdma=5\n" },
   // Righteous Fire: the same program and disc, started as GOG's menu starts it ("priv r"), its saved games *.PRS.
-  { id: "privrf", tag: "PRF", partOf: "priv", title: "Wing Commander: Privateer - Righteous Fire", detect: ["PRCD.EXE"], run: "priv r", multiplayer: false,
+  { id: "privrf", tag: "PRF", partOf: "priv", title: "Wing Commander: Privateer - Righteous Fire", detect: ["PRCD.EXE"], run: "priv r", multiplayer: true, maxSeats: 8,
     image: "GAME.GOG", cycles: 30000, saves: ["*.PRS"], noFlight: true, noRoomOptions: true,
     build: { para: 0x6E4D, off: 0x0074, text: "Type PRIV to run Privateer" },
-    help: "Righteous Fire, Privateer's sequel campaign, as it is, on your own for now. It starts from a pilot of its own (a new one, or a Privateer pilot who finished the game). The page keeps your saved games in this browser.",
+    help: "Righteous Fire, Privateer's sequel campaign, flown together the way Privateer is (rooms of up to 8, each pilot its own career, where everybody is told). It starts from a pilot of its own (a new one, or a Privateer pilot who finished the game). The page keeps your saved games in this browser.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=5\ndma=1\nhdma=5\n" },
 ];
 

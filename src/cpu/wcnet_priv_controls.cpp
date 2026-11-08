@@ -22,6 +22,7 @@
 #include "mem.h"
 #include "regs.h"
 #include "pic.h"
+#include "keyboard.h"
 
 namespace wc {
 
@@ -69,9 +70,11 @@ int axis_dir(int plus, int minus) {
 }  // namespace
 
 bool priv_controls_key(int kbdKey, bool pressed) {
-    (void)kbdKey;
-    (void)pressed;
-    return false;               // (the keys go to the game as they are: the ramp works on what it read)
+    // (the keys go to the game as they are: the ramp works on what it read; A in flight is an occasion for the room)
+    if (pressed && kbdKey == KBD_a && priv_in_flight()) {
+        priv_session_event(1);
+    }
+    return false;
 }
 
 // At seg088:0BAD, the keyboard's routine just returned: the control record as it wrote it.

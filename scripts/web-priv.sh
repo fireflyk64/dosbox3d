@@ -6,6 +6,8 @@
 #   scripts/web-priv.sh [seconds]
 #   GAME_FILE=  GOG's installer (default: the one beside this repository's root, or the main tree's)
 #   PORT= LOBBY_PORT=  (default 8853, 8854)   RF=1  Righteous Fire
+#   ROOM=1      a native host (build-lobby's emulator, scripts/privrun.sh's route) makes a room of 8 in the local lobby
+#               and the page joins it as a guest: presence both ways (the host's log: $OUT/host/run.err)
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/web-priv}; mkdir -p $OUT; rm -f $OUT/*.png
@@ -28,5 +30,18 @@ python3 "$ROOT/web/serve.py" $PORT > $OUT/http.log 2>&1 &
 HPID=$!
 trap 'kill $LPID $HPID 2>/dev/null' EXIT
 sleep 1
+if [ -n "${ROOM:-}" ]; then
+  ROOM=PRV-$((1000 + RANDOM % 9000)); export ROOM
+  OUT=$OUT/host DOSBOX=${DOSBOX:-$ROOT/build-lobby/src/dosbox} ENV="WCROOM=$ROOM WCLOBBY=http://127.0.0.1:$LOBBY_PORT WCLOBBY_ORIGIN= WCPLAYERS=8 WCCALLSIGN=HOST" \
+    "$ROOT/scripts/privrun.sh" $((DUR + 60)) > /dev/null &
+  NPID=$!
+  sleep 4
+fi
 PLAYWRIGHT_DIR="$PW" SHOT_DIR=$OUT timeout -s KILL $((DUR + 700)) node "$ROOT/scripts/web-priv.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" \
     "$GAME_FILE" $DUR 2>&1 | tee $OUT/run.log
+if [ -n "${NPID:-}" ]; then
+  kill $NPID 2>/dev/null; sleep 1
+  echo "===== the native host"
+  grep -a "Privateer: PRIVTEST\|Privateer: [A-Z]* joined\|In Troy with you" $OUT/host/run.err | cut -c1-150 | head -8
+  grep -a -q "Privateer: PRIVTEST on autopilot" $OUT/host/run.err && echo "ok   the host told of the page's autopilot" || echo "FAIL the host never heard of the page's autopilot"
+fi

@@ -297,6 +297,9 @@ function setSource(s, want) {
   $("helpMission").textContent = (hints && hints.help) || (gameInfo() && gameInfo().help)
     || (s ? "The multiplayer hooks do not know this program: it runs single-player." : "Load the game files (step 1): the help is the game's own.");
   describeSaves();
+  // (the Players box: as many seats as the game's rooms take)
+  $("seats").max = String(maxSeats());
+  if (Number($("seats").value) > maxSeats()) $("seats").value = String(maxSeats());
   // (Wing Commander II's people use a first name; the first game has none.)
   $("firstnameLabel").hidden = !(gameInfo() && gameInfo().firstName);
   retagRoom();
@@ -519,6 +522,9 @@ async function initSources() {
 // local storage, keyed by game: it is put back into the game directory at
 // every start and refreshed whenever the running game changes the file.
 const gameInfo = () => (source && gameById(source.game.id)) || null;
+// A room's seats at most: 3, or as many as the game's registry entry allows (`maxSeats`: Privateer's rooms of up to 8,
+// each pilot flying its own career: docs/privateer.md).
+const maxSeats = () => (gameInfo() && gameInfo().maxSeats) || 3;
 const saveKey = (rel) => `wcsave:${source.game.id}:${rel.toUpperCase()}`;
 // A registry entry's saves may be patterns ("*.SAV": Privateer names its saved games after what the player types):
 // then they are the files at the top of the game directory that match, and the copies of such files this browser
@@ -948,8 +954,8 @@ function soloGame(code) {
 }
 const ROOM_HINT = $("lobbyHint").textContent;
 const SOLO_HINT = "A room of one, on this page alone: nobody else comes in. Leave it and join a room with Players at 2 or 3 to fly with company.";
-// The seats of a room this page makes: 1, 2 (the default) or 3.
-const seatCount = () => Math.min(3, Math.max(1, Math.round(Number($("seats").value)) || 2));
+// The seats of a room this page makes: 1, 2 (the default) or 3; a game's registry may allow more (maxSeats).
+const seatCount = () => Math.min(maxSeats(), Math.max(1, Math.round(Number($("seats").value)) || 2));
 // A phone or a tablet makes a room of one to begin with (the user, 2026-11-03,
 // after a host on a phone was dropped at random: "default the number of
 // people per room in mobile to 1..that way mobile players can try the game
@@ -1660,8 +1666,8 @@ window.addEventListener("beforeunload", (ev) => { if (running && !leavingForGood
 
 $("setup").addEventListener("submit", (ev) => { ev.preventDefault(); void joinRoom(); });
 // (Players: 1, 2 or 3, whatever is typed; three is in beta.)
-$("seats").addEventListener("input", () => { $("seatsBeta").hidden = seatCount() !== 3; });
-$("seats").addEventListener("change", () => { $("seats").value = seatCount(); $("seatsBeta").hidden = seatCount() !== 3; });
+$("seats").addEventListener("input", () => { $("seatsBeta").hidden = seatCount() < 3; });
+$("seats").addEventListener("change", () => { $("seats").value = seatCount(); $("seatsBeta").hidden = seatCount() < 3; });
 $("leave").addEventListener("click", leaveButton);
 // The link to this room, to the clipboard (shown in the status line where
 // the clipboard is out of reach).

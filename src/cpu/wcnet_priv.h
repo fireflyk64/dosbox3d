@@ -52,8 +52,18 @@ void priv_controls_frame();
 // Frames seen (the controls' place), and the game's control mode ("keyboard", "mouse", "joystick").
 unsigned priv_controls_frames();
 const char *priv_control_mode();
-// In flight (the cockpit or a view of space): what the controls ask.
+// In flight: the player's ship exists (ds:66B4; 0 at a base, set in flight, the nav map's pauses too).
 bool priv_in_flight();
+// The player's ship's place (world units: 256 to the game's metre; z up), zeros when not flying.
+void priv_player_pos(Bit32s pos[3]);
+// The name of the system the player flies in (the game's own copy, as its displays show it), "" when not flying.
+std::string priv_system_name();
+
+// The session (wcnet_priv_session.cpp): the room, presence; its tick (from priv_tick, every 999 instructions) and an
+// occasion to say where we are (1 the autopilot engaged).
+void priv_session_tick();
+void priv_session_event(int why);
+bool priv_session_active();
 
 }  // namespace wc
 

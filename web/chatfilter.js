@@ -27,11 +27,11 @@ export const MAX_NAME = 16;
 // A room's code starts with the game it is for, so that a code said in the
 // lobby tells who can join: WC1 (Wing Commander and The Secret Missions),
 // SM2 (The Secret Missions 2), WC2, SO1 and SO2 (Wing Commander II and its
-// Special Operations), RV (RetroVega, built into the page).  "WC" alone is
+// Special Operations), RV (RetroVega, built into the page), TF (TIE Fighter), PRV and PRF (Privateer and Righteous Fire).  "WC" alone is
 // a code made before any game files were loaded, or an older one: it says
 // nothing.
-export const GAME_TAGS = ["WC1", "WC2", "SM2", "SO1", "SO2", "SO3", "RV", "TF"];
-const PREFIX = "WC[12]?|SM2|SO[123]|RV";
+export const GAME_TAGS = ["WC1", "WC2", "SM2", "SO1", "SO2", "SO3", "RV", "TF", "PRV", "PRF"];
+const PREFIX = "WC[12]?|SM2|SO[123]|RV|PRV|PRF";
 const CODE_IN_TEXT = new RegExp(`(^|[^A-Za-z0-9_-])((${PREFIX})-[A-Za-z0-9_-]{1,60})`, "gi");
 
 // The public lobby's own codes are not rooms to fly in: WC-LOBBY, and
