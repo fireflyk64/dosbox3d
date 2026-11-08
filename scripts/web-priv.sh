@@ -44,4 +44,5 @@ if [ -n "${NPID:-}" ]; then
   echo "===== the native host"
   grep -a "Privateer: PRIVTEST\|Privateer: [A-Z]* joined\|In Troy with you" $OUT/host/run.err | cut -c1-150 | head -8
   grep -a -q "Privateer: PRIVTEST on autopilot" $OUT/host/run.err && echo "ok   the host told of the page's autopilot" || echo "FAIL the host never heard of the page's autopilot"
+  grep -a -q "Privateer: PRIVTEST's [A-Za-z]* is in your space" $OUT/host/run.err && echo "ok   the page's ship in the host's space" || echo "FAIL the page's ship never in the host's space"
 fi

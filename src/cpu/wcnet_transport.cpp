@@ -44,6 +44,7 @@ const char *message_type_name(const NetworkMessage &msg) {
     if (msg.has_tie_owners()) return "tie_owners";
     if (msg.has_priv_hello()) return "priv_hello";
     if (msg.has_priv_presence()) return "priv_presence";
+    if (msg.has_priv_state()) return "priv_state";
     return "none";
 }
 

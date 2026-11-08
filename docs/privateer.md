@@ -26,7 +26,8 @@ The user's brief (2026-11-07):
 
 This document is the reference for what is built, what was found in the program, and the plan.  Status: the page
 takes GOG's installer and runs Privateer and Righteous Fire, the arrow keys ramped (section 4), in rooms of up to 8
-that say where everybody is (section 7); the pilots in each other's space and the rest are the plan of section 6.
+that say where everybody is (section 7), the pilots near each other seeing each other's ships (section 8); the nav
+points' owners and the rest are the plan of section 6.
 
 ## 1. The game as installed
 
@@ -135,7 +136,7 @@ other games (Privateer's module is its own: `wcnet_priv*.cpp`, its messages its 
 3. **Done (section 7) -- presence (rooms of up to 8):** a Privateer room; every player broadcasts its system, nav point and position
    when it engages the autopilot (A), jumps, launches or lands, and every 15 s otherwise; the overlay lists who is
    where ("ACE in Troy near Achilles, 4,000 km from you").
-4. **Others in space:** a player in the same system within reach of another (the same nav point's sphere) appears
+4. **Done (section 8) -- others in space:** a player in the same system within reach of another (the same nav point's sphere) appears
    as a ship of its own type in the other's game, flown by its own machine (place, attitude, speed sent many times a
    second while near, as RetroVega and TIE Fighter do).
 5. **Nav point ownership:** the players present at a nav point have one owner, who simulates what happens there
@@ -160,3 +161,42 @@ with you: GUEST1 2,143 m, GUEST2 2,143 m".  Near = within 20,000 m.  The page: `
 allows 8 for Privateer, 3 for every other game, as before), room codes PRV- and PRF-.  Measured: two native machines
 over TCP, three in a local lobby room, a native host and a browser guest in a room of 8 (both ways, the page's
 autopilot heard by the host), and on the live site a page hosting a room of 8 through the public lobby.
+
+## 8. The others' ships (step 4)
+
+How the game makes a ship, found by watching its calls (the key script's `PRIVWATCH=para:off,...` logs each call
+of those places with its caller and arguments):
+
+| place | what |
+|---|---|
+| seg099:0074 | `place(this, type far, cast near, appearance far, pos near, matrix near)`: spawn, the place and attitude set, the object added to the scene's list (`seg081:000E(ds:66CE, obj)`); returns the object.  Every ship at a launch and at a nav point comes through it (callers seg077:049C, the encounters; seg085:038D, the player's own) |
+| seg111:07B1 | `spawn(scene ds:67F7, type far, appearance far, cast near)`: the type found or loaded (`seg111:0184`: `DATA/TYPES/<name>.IFF`), its factory (the type's second vtable, ds:2197: `seg053:064B`, a ship of 0x8F bytes), the appearance attached |
+| seg053:064B | the ship's constructor: vtables at +2 (0x20EF) and +0x4C; what a near pointer to a ship points at is its +2 |
+| ship +0x06 / +0x0E / +0x4C | its type / its cast name (8 bytes: "PLAYER", "MER_DP" a merchant, "MIL_DA" militia, "PIR_DA" a pirate: the AI's and side's file in DATA/AIDS) / its controller |
+| vtable +0x8C | the attitude set from a matrix (copied to +0x23) |
+| seg042:0944 | an AI controller's think (vtable 0x14A8), once a frame; returns AL 1 |
+| player record +0x75 / +0x7E | the player's appearance ("CLUNKER") and type ("PLAYTYPE") |
+
+The player ships: TARSTYPE / CLUNKER (Tarsus), ORIOTYPE / TUG (Orion), CENTTYPE / FIGHTER (Centurion), GLXYTYPE /
+MERCHANT (Galaxy) -- the type an NPC of that ship is made as, and the appearance the player record names.
+
+**Calls from the layer.**  At seg088:0B2E's entry (the player's controls: once a frame in flight, a root segment) the
+registers are kept, the call's data put on the stack (SS is DGROUP there: the game passes stack addresses as near
+pointers to seg099:0074 itself), the arguments pushed and a far return to that same entry, and the function
+entered; back at the entry with the stack where it was left, its result is taken and everything given back
+(TIE Fighter's way).  The cast name must outlive the call (the ship keeps a pointer to it): it is written into the
+tail of the program's usage line at DGROUP:0074 ("..., or RF to run Righteous Fire.", which no flight reads).  Test
+aids: `!privspawn=TARSTYPE:CLUNKER:MER_DP:dx:dy:dz` (a merchant's Tarsus beside us: the game made it, its target
+display named it, its AI hailed "MAYBE WE CAN DO BUSINESS SOMETIME" and flew off), `!privpos=x:y:z`.
+
+**Puppets** (src/cpu/wcnet_priv_session.cpp).  While another pilot shares our system within 60,000 m we send our
+ship's state (`PrivState`: place, attitude, velocity from the last frames, appearance) at most 15 times a second,
+best effort, relayed by the host.  A pilot whose state is fresh (5 s), in our system and within 30,000 m is a ship
+in our game: made by `place` as the NPC type of its appearance, cast MER_DP, its AI held (its think returns at once),
+its place and attitude written every frame from its last report carried on by its velocity (1 s at most).  Past
+40,000 m or with its reports stopped it is parked far off (kept for its return); a new flight of ours (launch,
+jump, load) forgets them all (the scene they were in is gone); a puppet the game destroyed is made again.  The
+overlay says "GUEST1's Tarsus is in your space".  Measured: two native machines, the host stopped, the guest flying
+out to 10 km and back: each saw the other's Tarsus, targeted as "Tarsus" at the right range throughout (3 minutes,
+nothing amiss).  Open: shots between pilots (step 6), the cast (a merchant: shooting the other's ship counts against
+the merchants for now), a jump with a puppet about (the starting Tarsus has no jump drive).

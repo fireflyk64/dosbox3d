@@ -40,11 +40,19 @@ enum {
     kPollMs = 20,                   // the sockets looked at this often (emulated ms)
     kPresenceEveryMs = 15000,       // the user's 15 seconds
     kNoticeMs = 10000,              // a notice stays this long
-    kSameSystemEveryMs = 15000,     // the line of who shares our system, this often while somebody does
+    kSameSystemEveryMs = 60000,     // the line of who shares our system: when they change, else this often while somebody does
 };
 enum Why { WHY_PERIOD = 0, WHY_AUTOPILOT = 1, WHY_JUMP = 2, WHY_LAUNCH = 3, WHY_LAND = 4, WHY_HELLO = 5 };
 const double kUnitsPerMetre = 256.0;    // (the destination display's range: the distance in world units, >> 8)
 const double kNearMetres = 20000.0;     // a pilot this near is "near" (a nav point's sphere: 12,000 to 17,000)
+// Step 4: the others in our space (puppets).  A pilot sends its ship's state while somebody shares its system within
+// kStateMetres (at most kStatesPerSecond); a pilot within kPuppetMetres is a ship in our game, gone again past
+// kPuppetGoneMetres (parked far off, kept for its return), or when its reports stop for kStateStaleMs.
+const double kStateMetres = 60000.0;
+const double kPuppetMetres = 30000.0;
+const double kPuppetGoneMetres = 40000.0;
+enum { kStatesPerSecond = 15, kStateStaleMs = 5000, kExtrapolateMs = 1000 };
+const char kPuppetCast[] = "MER_DP";    // (the AI and side its ship is made with: a merchant's; its AI is held)
 
 struct Peer {
     Connection conn;
@@ -65,6 +73,21 @@ struct Pilot {
     Pilot() : known(false), flying(false), x(0), y(0), z(0), at(-1e9) {}
 };
 
+// A pilot's ship as its reports say (PrivState), and the puppet it is in our game.
+struct Puppet {
+    bool reported;
+    double at;                  // the last report's time (emulated ms)
+    std::string system, appearance;
+    double x, y, z, vx, vy, vz;
+    Bit32s m[9];
+    Bit16u obj, type;           // the ship in our game (0: none)
+    bool pending;               // a spawn queued
+    bool parked;                // out of reach: put far off, kept
+    Puppet() : reported(false), at(-1e9), x(0), y(0), z(0), vx(0), vy(0), vz(0), obj(0), type(0), pending(false), parked(false) {
+        for (int i = 0; i < 9; i++) m[i] = i % 4 == 0 ? 256 : 0;
+    }
+};
+
 struct PrivNet {
     bool host;
     int self;                   // our seat (a guest: -1 until the host's hello)
@@ -73,8 +96,15 @@ struct PrivNet {
     Listener *listener;
     std::vector<Peer *> peers;
     Pilot pilots[kMaxSeats];
+    Puppet puppets[kMaxSeats];
     double sentAt;              // our last presence
-    PrivNet() : host(false), self(-1), seats(2), listener(NULL), sentAt(-1e9) {}
+    double stateAt;             // our last state
+    Bit64u frame;
+    Bit16u flightShip;          // the player's ship pointer the puppets were made under (a new flight: they are gone)
+    double lastX, lastY, lastZ, lastAt;     // our place at the last frame (for our velocity)
+    double vx, vy, vz;
+    PrivNet() : host(false), self(-1), seats(2), listener(NULL), sentAt(-1e9), stateAt(-1e9), frame(0), flightShip(0), lastX(0), lastY(0),
+                lastZ(0), lastAt(-1e9), vx(0), vy(0), vz(0) {}
     ~PrivNet() {
         for (size_t i = 0; i < peers.size(); i++) {
             delete peers[i];
@@ -84,6 +114,7 @@ struct PrivNet {
 };
 
 PrivNet *g_net;
+void forget_puppets(const char *why);
 double g_nextTryMs;
 double g_noticeAt = -1;
 double g_sameSystemAt = -1e9;
@@ -328,7 +359,7 @@ void take_presence(const PrivPresence &pr, int seat) {
             what = p.system.empty() ? "is at a base" : "landed in " + p.system;
         }
     } else if (d >= 0) {
-        if (!wasKnown || !wasFlying || wasSystem != p.system || why != WHY_PERIOD || d < kNearMetres) {
+        if (!wasKnown || !wasFlying || wasSystem != p.system || why != WHY_PERIOD) {
             what = std::string(why == WHY_AUTOPILOT ? "on autopilot " : why == WHY_JUMP ? "jumped in " : why == WHY_LAUNCH ? "launched " : "")
                    + "in " + p.system + ", " + metres(d) + " from you" + (d < kNearMetres ? " (near)" : "");
         }
@@ -337,6 +368,26 @@ void take_presence(const PrivPresence &pr, int seat) {
     }
     if (!what.empty()) {
         notice(p.callsign + " " + what);
+    }
+}
+
+void take_state(const PrivState &st, int seat) {
+    if (seat < 0 || seat >= kMaxSeats || seat == g_net->self) {
+        return;
+    }
+    Puppet &p = g_net->puppets[seat];
+    p.reported = true;
+    p.at = PIC_FullIndex();
+    p.system = st.system();
+    p.appearance = st.appearance();
+    p.x = st.x();
+    p.y = st.y();
+    p.z = st.z();
+    p.vx = st.vx();
+    p.vy = st.vy();
+    p.vz = st.vz();
+    for (int i = 0; i < 9 && i < st.m_size(); i++) {
+        p.m[i] = st.m(i);
     }
 }
 
@@ -415,6 +466,23 @@ void handle(Peer *p, NetworkMessage &msg) {
                 }
             }
         }
+    } else if (msg.has_priv_state()) {
+        if (!p->hello) {
+            return;
+        }
+        const int seat = g_net->host ? p->player : (msg.priv_state().has_player() ? (int)msg.priv_state().player() : 0);
+        take_state(msg.priv_state(), seat);
+        if (g_net->host) {
+            NetworkMessage out;
+            *out.mutable_priv_state() = msg.priv_state();
+            out.mutable_priv_state()->set_player((Bit32u)p->player);
+            for (size_t i = 0; i < g_net->peers.size(); i++) {
+                Peer *to = g_net->peers[i];
+                if (to != p && to->hello && to->conn.is_open()) {
+                    to->conn.send_best_effort(out);
+                }
+            }
+        }
     } else if (msg.has_chat()) {
         notice(msg.chat().callsign() + ": " + msg.chat().message());
     }
@@ -441,6 +509,13 @@ void poll_peers() {
             }
             handle(p, msg);
         }
+        for (int n = 0; n < 64 && p->conn.is_open(); n++) {
+            RecvStatus st = p->conn.poll_best_effort(msg);
+            if (!st.ok()) {
+                break;
+            }
+            handle(p, msg);
+        }
     }
     for (size_t i = 0; i < g_net->peers.size();) {
         Peer *p = g_net->peers[i];
@@ -452,6 +527,8 @@ void poll_peers() {
             notice(p->callsign + (g_net->host ? " left the room" : " (the host) is gone: the room is closed"));
             if (p->player >= 0 && p->player < kMaxSeats) {
                 g_net->pilots[p->player] = Pilot();
+                Puppet &pp = g_net->puppets[p->player];
+                pp.reported = false;    // (its ship parked at the next frame, kept)
             }
         }
         delete p;
@@ -508,6 +585,10 @@ void priv_session_tick() {
     if (flying != g_wasFlying) {
         priv_session_event(flying ? WHY_LAUNCH : WHY_LAND);
         g_wasFlying = flying;
+        if (!flying && g_net) {
+            forget_puppets("landed");
+            g_net->flightShip = 0;
+        }
     }
     if (!g_net) {
         if (!configured() || now < g_nextTryMs) {
@@ -549,11 +630,167 @@ void priv_session_tick() {
     } else if (now - g_net->sentAt >= kPresenceEveryMs) {
         send_presence(WHY_PERIOD);
     }
-    if (now - g_sameSystemAt >= kSameSystemEveryMs && priv_in_flight()) {
+    // who shares our system: said when that changes (a pilot in or out), else once a minute while somebody does
+    static std::string lastWho;
+    std::string who;
+    for (int s = 0; s < kMaxSeats; s++) {
+        if (s != g_net->self && g_net->pilots[s].known && distance_to(g_net->pilots[s]) >= 0) {
+            who += (char)('0' + s);
+        }
+    }
+    if ((who != lastWho || now - g_sameSystemAt >= kSameSystemEveryMs) && priv_in_flight()) {
         g_sameSystemAt = now;
+        lastWho = who;
         const std::string line = same_system_line();
         if (!line.empty() && (g_noticeAt < 0 || now - g_noticeAt > 3000)) {
             notice(line);
+        }
+    }
+}
+
+namespace {
+
+// The NPC type the game makes a player's ship as, by the player's appearance.
+const char *type_of(const std::string &appearance) {
+    if (appearance == "TUG") return "ORIOTYPE";
+    if (appearance == "FIGHTER") return "CENTTYPE";
+    if (appearance == "MERCHANT") return "GLXYTYPE";
+    return "TARSTYPE";
+}
+
+void puppet_made(int seat, Bit16u obj) {
+    if (!g_net || seat < 0 || seat >= kMaxSeats) {
+        return;
+    }
+    Puppet &p = g_net->puppets[seat];
+    p.pending = false;
+    if (!obj) {
+        wclog(1, "Privateer: pilot %d's ship could not be made", seat + 1);
+        return;
+    }
+    p.obj = obj;
+    p.type = priv_ship_type(obj);
+    p.parked = false;
+    priv_hold_ai(priv_ship_controller(obj), true);
+    const std::string who = g_net->pilots[seat].callsign.empty() ? "a pilot" : g_net->pilots[seat].callsign;
+    notice(who + "'s " + (p.appearance == "TUG" ? "Orion" : p.appearance == "FIGHTER" ? "Centurion" : p.appearance == "MERCHANT" ? "Galaxy" : "Tarsus")
+           + " is in your space");
+    wclog(2, "Privateer: pilot %d's ship is ds:%04X (type ds:%04X, controller ds:%04X held)", seat + 1, obj, p.type, priv_ship_controller(obj));
+}
+
+void forget_puppets(const char *why) {
+    bool any = false;
+    for (int s = 0; s < kMaxSeats; s++) {
+        Puppet &p = g_net->puppets[s];
+        any = any || p.obj;
+        p.obj = 0;
+        p.type = 0;
+        p.pending = false;
+        p.parked = false;
+    }
+    priv_hold_ai_none();
+    if (any) {
+        wclog(2, "Privateer: the puppets forgotten (%s)", why);
+    }
+}
+
+void send_state(double now) {
+    Bit32s pos[3], m[9];
+    priv_player_pos(pos);
+    priv_player_matrix(m);
+    NetworkMessage msg;
+    PrivState *st = msg.mutable_priv_state();
+    st->set_player((Bit32u)g_net->self);
+    st->set_frame(++g_net->frame);
+    st->set_system(g_system);
+    st->set_x(pos[0]);
+    st->set_y(pos[1]);
+    st->set_z(pos[2]);
+    for (int i = 0; i < 9; i++) {
+        st->add_m(m[i]);
+    }
+    st->set_appearance(priv_player_appearance());
+    st->set_vx((Bit32s)g_net->vx);
+    st->set_vy((Bit32s)g_net->vy);
+    st->set_vz((Bit32s)g_net->vz);
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
+            g_net->peers[i]->conn.send_best_effort(msg);
+        }
+    }
+    g_net->stateAt = now;
+}
+
+}  // namespace
+
+void priv_session_frame() {
+    if (!g_net || g_net->self < 0 || !priv_in_flight()) {
+        return;
+    }
+    const double now = PIC_FullIndex();
+    // a new flight (a launch, a jump, a load): the old scene's ships are gone
+    const Bit16u ship = priv_player_ship();
+    if (ship != g_net->flightShip) {
+        forget_puppets("a new flight");
+        g_net->flightShip = ship;
+        g_net->lastAt = -1e9;
+    }
+    Bit32s pos[3];
+    priv_player_pos(pos);
+    if (now > g_net->lastAt && now - g_net->lastAt < 1000) {
+        const double dt = (now - g_net->lastAt) / 1000.0;
+        g_net->vx = (pos[0] - g_net->lastX) / dt;
+        g_net->vy = (pos[1] - g_net->lastY) / dt;
+        g_net->vz = (pos[2] - g_net->lastZ) / dt;
+    }
+    g_net->lastX = pos[0];
+    g_net->lastY = pos[1];
+    g_net->lastZ = pos[2];
+    g_net->lastAt = now;
+    // ours, while somebody shares our system near enough
+    bool wanted = false;
+    for (int s = 0; s < kMaxSeats && !wanted; s++) {
+        const double d = s == g_net->self ? -1 : distance_to(g_net->pilots[s]);
+        wanted = d >= 0 && d < kStateMetres;
+    }
+    if (wanted && now - g_net->stateAt >= 1000.0 / kStatesPerSecond) {
+        send_state(now);
+    }
+    // theirs, in our space
+    for (int s = 0; s < kMaxSeats; s++) {
+        if (s == g_net->self) {
+            continue;
+        }
+        Puppet &p = g_net->puppets[s];
+        if (p.obj && !priv_ship_alive(p.obj, p.type)) {
+            wclog(1, "Privateer: pilot %d's ship is gone from our game (destroyed?)", s + 1);
+            priv_hold_ai(priv_ship_controller(p.obj), false);
+            p.obj = 0;
+        }
+        const double age = now - p.at;
+        const bool fresh = p.reported && age < kStateStaleMs && p.system == g_system && !g_system.empty();
+        double ex = 0, ey = 0, ez = 0, d = -1;
+        if (fresh) {
+            const double t = (age < kExtrapolateMs ? age : kExtrapolateMs) / 1000.0;
+            ex = p.x + p.vx * t;
+            ey = p.y + p.vy * t;
+            ez = p.z + p.vz * t;
+            d = sqrt((ex - pos[0]) * (ex - pos[0]) + (ey - pos[1]) * (ey - pos[1]) + (ez - pos[2]) * (ez - pos[2])) / kUnitsPerMetre;
+        }
+        const bool near = fresh && d < (p.obj && !p.parked ? kPuppetGoneMetres : kPuppetMetres);
+        Bit32s at[3] = { (Bit32s)ex, (Bit32s)ey, (Bit32s)ez };
+        if (near && !p.obj && !p.pending) {
+            p.pending = priv_spawn_ship(type_of(p.appearance), p.appearance.empty() ? "CLUNKER" : p.appearance.c_str(), kPuppetCast, at, p.m,
+                                        puppet_made, s);
+        } else if (near && p.obj) {
+            priv_ship_set(p.obj, at, p.m);
+            p.parked = false;
+        } else if (p.obj && !p.parked) {
+            // out of reach: far off, kept for its return
+            Bit32s away[3] = { 0x3FFFFFFF, 0x3FFFFFFF, 0x3FFFFFFF };
+            priv_ship_set(p.obj, away, NULL);
+            p.parked = true;
+            wclog(2, "Privateer: pilot %d's ship parked (%s)", s + 1, fresh ? "out of reach" : "no reports");
         }
     }
 }

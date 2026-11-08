@@ -127,7 +127,9 @@ if (process.env.ROOM) {
   check("in the host's room", await waitLog(/Privateer: In \S+'s room as pilot 2/, 20000), (logs.find((l) => /room as pilot/.test(l)) || "").slice(0, 140));
   check("the host's presence: in Troy with us", await waitLog(/Privateer: (HOST launched in Troy|HOST in Troy, [\d,]+ m from you|In Troy with you: HOST)/, 40000),
     (logs.filter((l) => /Privateer: (HOST|In Troy)/.test(l)).pop() || "").slice(0, 140));
-  // (the host's side, told of this autopilot, is checked by web-priv.sh from the host's log)
+  check("the host's ship in our space (a puppet)", await waitLog(/Privateer: HOST's \w+ is in your space/, 30000),
+    (logs.find((l) => /is in your space/.test(l)) || "").slice(0, 140));
+  // (the host's side, told of this autopilot and given our ship, is checked by web-priv.sh from the host's log)
   await page.keyboard.press("a");
 }
 const seconds = Number(secondsArg);

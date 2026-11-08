@@ -11,6 +11,9 @@
 #include <string.h>
 #include <string>
 #include <map>
+#include <vector>
+#include <deque>
+#include <algorithm>
 #include "wcnet_priv.h"
 #include "wcnet_log.h"
 #include "wcnet_game.h"
@@ -18,6 +21,8 @@
 #include "mem.h"
 #include "regs.h"
 #include "pic.h"
+#include "cpu.h"
+#include "lazyflags.h"
 
 namespace wc {
 
@@ -27,11 +32,21 @@ enum {
     kDgroupPara = 0x6E4D,           // DGROUP, paragraphs from the image's start
     kSeg088 = 0x3632,               // seg088's paragraph: the controls (wcnet_priv_controls.cpp)
     kAfterKeyboard = 0x0BAD,        // seg088:0BAD, after the call of the keyboard's routine
+    kControlsEntry = 0x0B2E,        // seg088:0B2E, the player's controls, once a frame in flight: where our calls are made
+    kSeg099 = 0x3D67,               // seg099: placing an object (seg099:0074)
+    kPlace = 0x0074,                // seg099:0074(this, type far, cast near, appearance far, pos near, matrix near): spawn
+                                    // (seg111:07B1: the type found or loaded, its factory, the appearance), the place and the
+                                    // attitude set, the object added to the scene's list (ds:66CE); returns the object
     kPlayerShip = 0x66B4,           // the player's ship object (a near pointer: the objects are in DGROUP's heap); 0 at a base
     kPlayerRecord = 0x66B2,         // the player's record in flight ("PLAYTYPE", "PLAYER"); 0 at a base
     kRecordSystemName = 0x54,       // ... its near pointer to the system's name (the destination display's "System")
     kShipPos = 0x14,                // its place, int32 x, y, z (z up; Troy's Achilles at 15360000, 0, -10240000)
-    kShipMatrix = 0x21,             // its attitude, 3x3 int32 (1.0 = 1 << 24), at an odd offset
+    kShipMatrix = 0x23,             // its attitude, 3x3 int32 (1.0 = 256: the constructor seg053:064B makes it at +0x25 of
+                                    // the object, which begins 2 bytes before what ds:66B4 points at)
+    kShipVtable = 0x20EF,           // a ship's vtable (at the pointer's +0)
+    kShipType = 0x06,               // its type object (near: "TARSTYPE" at the type's +2)
+    kShipController = 0x4C,         // its controller (near: the AI's, vtable 0x14A8; the player's, 0x2A06)
+    kRecordAppearance = 0x75,       // the player record's appearance name ("CLUNKER" the Tarsus), what the game spawns us with
     kSignatureOff = 0x0074,         // "Type PRIV to run Privateer, or RF to run Righteous Fire."
 };
 const char kSignature[] = "Type PRIV to run Privateer";
@@ -69,6 +84,176 @@ void trace_step(double now) {
 }
 
 PhysPt ds_at(Bit16u off) { return ((PhysPt)g_ds << 4) + off; }
+
+// Calls of the game's functions from the layer (TIE Fighter's way, for a 16-bit program): at seg088:0B2E's entry the
+// registers are kept, the call's data put on the stack (SS is DGROUP there: the game passes stack addresses as near
+// pointers itself), its arguments pushed and a far return to that same entry, and the function entered; back at the
+// entry with the stack where it was left, its result is taken, everything given back, and the game's own call goes on.
+struct PrivCall {
+    Bit16u para, off;               // the function (a root segment's paragraph, as scripts/wcexe.py gives it)
+    std::vector<Bit8u> data;        // put on the stack first; an argument kStackArg + n is the address of data[n]
+    std::vector<Bit32u> args;       // the words in the order the function declares them
+    void (*done)(int tag, Bit16u ax, Bit16u dx);
+    void (*doneObj)(int tag, Bit16u obj);      // (a spawn's: the object made, 0 none)
+    int tag;
+    PrivCall() : para(0), off(0), done(NULL), doneObj(NULL), tag(0) {}
+};
+enum { kStackArg = 0x10000 };
+std::deque<PrivCall> g_calls;
+struct Saved {
+    bool active;
+    Bit16u ip, cs, sp, back;        // the place, the stack pointer before and after our part
+    Bit32u eax, ebx, ecx, edx, esi, edi, ebp, flags;
+    Bit16u ds, es;
+} g_saved;
+
+bool run_calls() {
+    if (g_saved.active && reg_ip == g_saved.ip && SegValue(cs) == g_saved.cs && reg_sp == g_saved.back) {
+        const Bit16u ax = reg_ax, dx = reg_dx;
+        PrivCall done = g_calls.front();
+        g_calls.pop_front();
+        reg_esp = (reg_esp & 0xffff0000) | g_saved.sp;
+        reg_eax = g_saved.eax;
+        reg_ebx = g_saved.ebx;
+        reg_ecx = g_saved.ecx;
+        reg_edx = g_saved.edx;
+        reg_esi = g_saved.esi;
+        reg_edi = g_saved.edi;
+        reg_ebp = g_saved.ebp;
+        SegSet16(ds, g_saved.ds);
+        SegSet16(es, g_saved.es);
+        reg_flags = g_saved.flags;
+        lflags.type = t_UNKNOWN;
+        g_saved.active = false;
+        if (done.done) {
+            done.done(done.tag, ax, dx);
+        }
+        if (done.doneObj) {
+            done.doneObj(done.tag, ax);
+        }
+    } else if (g_saved.active) {
+        return false;               // (the place reached again inside our call: the game's own business)
+    }
+    if (g_calls.empty()) {
+        return false;
+    }
+    FillFlags();
+    const PrivCall &c = g_calls.front();
+    g_saved.active = true;
+    g_saved.ip = reg_ip;
+    g_saved.cs = SegValue(cs);
+    g_saved.sp = reg_sp;
+    g_saved.eax = reg_eax;
+    g_saved.ebx = reg_ebx;
+    g_saved.ecx = reg_ecx;
+    g_saved.edx = reg_edx;
+    g_saved.esi = reg_esi;
+    g_saved.edi = reg_edi;
+    g_saved.ebp = reg_ebp;
+    g_saved.ds = SegValue(ds);
+    g_saved.es = SegValue(es);
+    g_saved.flags = reg_flags;
+    const Bit16u dataAt = (Bit16u)((reg_sp - c.data.size()) & ~1u);
+    for (size_t i = 0; i < c.data.size(); i++) {
+        mem_writeb(SegPhys(ss) + (Bit16u)(dataAt + i), c.data[i]);
+    }
+    reg_sp = dataAt;
+    for (size_t i = c.args.size(); i-- > 0;) {
+        const Bit32u a = c.args[i];
+        CPU_Push16(a >= kStackArg ? (Bit16u)(dataAt + (a - kStackArg)) : (Bit16u)a);
+    }
+    g_saved.back = reg_sp;
+    CPU_Push16(g_saved.cs);
+    CPU_Push16(g_saved.ip);
+    SegSet16(ds, g_ds);
+    SegSet16(cs, (Bit16u)(g_privLoadSeg + c.para));
+    reg_eip = c.off;
+    return true;
+}
+
+bool queue_call(const PrivCall &c) {
+    if (g_calls.size() >= 16) {
+        wclog(1, "Privateer: calls queued past 16: %04X:%04X dropped", c.para, c.off);   // (a list has a cap)
+        return false;
+    }
+    g_calls.push_back(c);
+    return true;
+}
+
+// The cast name a spawn of ours gives its ship (the ship keeps a near pointer to it, so it must stay): in the tail of
+// the program's usage line at DGROUP:0074 ("..., or RF to run Righteous Fire.", printed only when PRCD.EXE is run
+// alone), which no flight reads.  The type's and appearance's names go on the stack with the call's data.
+enum { kScratch = 0x0074 + 28, kScratchSize = 29 };
+// The AI held for these ships' controllers (puppets: wcnet_priv_session.cpp): their think, seg042:0944, returns at once.
+enum { kSeg042 = 0x1DFE, kNpcThink = 0x0944, kHeldCap = 16 };
+std::vector<Bit16u> g_heldAi;
+void spawn_done(int tag, Bit16u ax, Bit16u dx) {
+    (void)dx;
+    wclog(1, "Privateer: spawn %d made the object ds:%04X", tag, ax);
+}
+
+// The castnames' scratch: written once the first time (a cast name, 8 bytes; the rest unused).
+Bit16u cast_name_at(const char *cast) {
+    for (int i = 0; i < 8; i++) {
+        priv_w8((Bit16u)(kScratch + i), (Bit8u)(i < (int)strlen(cast) ? cast[i] : 0));
+    }
+    return kScratch;
+}
+
+// A test aid: PRIVWATCH=seg053:064B,seg029:0277,... (root segments, scripts/wcexe.py's names) logs each call of those
+// places with its caller (the far return address, as a segment name) and its first four argument words.
+struct WatchPlace {
+    Bit16u para, off;
+    std::string name;
+};
+std::vector<WatchPlace> g_watchPlaces;
+bool g_watchParsed;
+
+const std::vector<WatchPlace> &watch_places() {
+    if (!g_watchParsed) {
+        g_watchParsed = true;
+        const char *env = getenv("PRIVWATCH");
+        std::string all = env ? env : "";
+        size_t pos = 0;
+        while (pos < all.size()) {
+            size_t comma = all.find(',', pos);
+            if (comma == std::string::npos) comma = all.size();
+            std::string tok = all.substr(pos, comma - pos);
+            unsigned para = 0, off = 0;
+            // "para:off" in hex (the paragraph from scripts/wcexe.py segs)
+            if (sscanf(tok.c_str(), "%x:%x", &para, &off) == 2) {
+                WatchPlace w = { (Bit16u)para, (Bit16u)off, tok };
+                g_watchPlaces.push_back(w);
+            }
+            pos = comma + 1;
+        }
+    }
+    return g_watchPlaces;
+}
+
+// (a far pointer's text, for the watch's log: up to 12 printable characters, or "")
+std::string far_text(Bit16u off, Bit16u seg) {
+    std::string out;
+    for (int i = 0; i < 12; i++) {
+        const Bit8u c = mem_readb(((PhysPt)seg << 4) + (Bit16u)(off + i));
+        if (!c) break;
+        if (c < 32 || c >= 127) return "";
+        out += (char)c;
+    }
+    return out;
+}
+
+void log_watched(const WatchPlace &w) {
+    const PhysPt sp = SegPhys(ss) + (reg_esp & 0xffff);
+    const Bit16u retIp = mem_readw(sp), retCs = mem_readw(sp + 2);
+    Bit16u a[6];
+    for (int i = 0; i < 6; i++) {
+        a[i] = mem_readw(sp + 4 + 2 * i);
+    }
+    wclog(1, "Privateer: watch %s from %04X:%04X (para %04X) args %04X %04X %04X %04X %04X %04X (\"%s\" \"%s\"); si %04X di %04X",
+          w.name.c_str(), retCs, retIp, (Bit16u)(retCs - g_privLoadSeg), a[0], a[1], a[2], a[3], a[4], a[5],
+          far_text(a[1], a[2]).c_str(), far_text(a[3], a[4]).c_str(), reg_si, reg_di);
+}
 
 }  // namespace
 
@@ -157,11 +342,44 @@ bool priv_check_hooks(Bit32u ip) {
         priv_controls_frame();
         return true;
     }
+    if (ip == kControlsEntry && codeSeg == (Bit16u)(g_privLoadSeg + kSeg088)) {
+        if (!g_saved.active) {
+            priv_session_frame();       // (once a frame in flight: the puppets placed, our state sent)
+        }
+        run_calls();
+        return true;
+    }
+    if (ip == kNpcThink && codeSeg == (Bit16u)(g_privLoadSeg + kSeg042) && !g_heldAi.empty()) {
+        const PhysPt sp = SegPhys(ss) + reg_sp;
+        const Bit16u self = mem_readw(sp + 4);
+        if (std::find(g_heldAi.begin(), g_heldAi.end(), self) != g_heldAi.end()) {
+            // a puppet's AI: its think returns at once, as it would (AL 1), and the ship flies as its reports say
+            reg_al = 1;
+            reg_eip = mem_readw(sp);
+            SegSet16(cs, mem_readw(sp + 2));
+            reg_sp += 4;
+            return true;
+        }
+        return false;
+    }
+    const std::vector<WatchPlace> &w = watch_places();
+    for (size_t i = 0; i < w.size(); i++) {
+        if (ip == w[i].off && codeSeg == (Bit16u)(g_privLoadSeg + w[i].para)) {
+            log_watched(w[i]);
+            return true;
+        }
+    }
     return false;
 }
 
 void priv_watch_list(void (*watch)(Bit16u ip)) {
     watch(kAfterKeyboard);
+    watch(kControlsEntry);
+    watch(kNpcThink);
+    const std::vector<WatchPlace> &w = watch_places();
+    for (size_t i = 0; i < w.size(); i++) {
+        watch(w[i].off);
+    }
 }
 
 bool priv_script_item(const std::string &item, double t) {
@@ -190,6 +408,28 @@ bool priv_script_item(const std::string &item, double t) {
         wclog(1, "key script %.1fs: Privateer's code traced to %s.trace", t, g_traceName.c_str());
         return true;
     }
+    if (item.compare(0, 11, "!privspawn=") == 0 && g_found) {
+        // !privspawn=<type>:<appearance>:<cast>:<dx>:<dy>:<dz>: a ship of that type placed that far from ours (world
+        // units), our attitude, by the game's own seg099:0074 (TARSTYPE:CLUNKER:MER_DP: a merchant's Tarsus)
+        char type[16] = "", app[16] = "", cast[16] = "";
+        int dx = 0, dy = 0, dz = 0;
+        sscanf(item.c_str() + 11, "%15[^:]:%15[^:]:%15[^:]:%d:%d:%d", type, app, cast, &dx, &dy, &dz);
+        const Bit16u ship = priv_r16(kPlayerShip);
+        if (!ship) {
+            wclog(1, "key script %.1fs: !privspawn: not in flight", t);
+            return true;
+        }
+        Bit32s pos[3], m[9];
+        priv_player_pos(pos);
+        pos[0] += dx;
+        pos[1] += dy;
+        pos[2] += dz;
+        priv_player_matrix(m);
+        static int spawns;
+        const bool ok = priv_spawn_ship(type, app, cast, pos, m, NULL, ++spawns);
+        wclog(1, "key script %.1fs: spawn %d %s: %s (%s, cast %s) at %d, %d, %d from us", t, spawns, ok ? "queued" : "refused", type, app, cast, dx, dy, dz);
+        return true;
+    }
     if (item.compare(0, 9, "!privpos=") == 0 && g_found) {
         // !privpos=<x>:<y>:<z>: the player's ship put there (the world's units; a nav sphere's place from SECTORS.IFF)
         const Bit16u ship = priv_r16(kPlayerShip);
@@ -204,8 +444,100 @@ bool priv_script_item(const std::string &item, double t) {
     return false;
 }
 
+bool priv_spawn_ship(const char *type, const char *appearance, const char *cast, const Bit32s pos[3], const Bit32s m[9],
+                     void (*done)(int tag, Bit16u obj), int tag) {
+    if (!priv_in_flight() || strlen(type) > 8 || strlen(appearance) > 8 || strlen(cast) > 8) {
+        return false;
+    }
+    PrivCall c;
+    c.para = kSeg099;
+    c.off = kPlace;
+    c.done = done ? (void (*)(int, Bit16u, Bit16u))NULL : spawn_done;
+    c.doneObj = done;
+    c.tag = tag;
+    // the data on the stack: the place (3 int32), the attitude (9 int32), the type's name, the appearance's
+    for (int i = 0; i < 3; i++) {
+        for (int b = 0; b < 4; b++) c.data.push_back((Bit8u)(pos[i] >> (8 * b)));
+    }
+    for (int i = 0; i < 9; i++) {
+        for (int b = 0; b < 4; b++) c.data.push_back((Bit8u)(m[i] >> (8 * b)));
+    }
+    const size_t typeAt = c.data.size();
+    for (size_t i = 0; i <= strlen(type); i++) c.data.push_back((Bit8u)type[i]);
+    const size_t appAt = c.data.size();
+    for (size_t i = 0; i <= strlen(appearance); i++) c.data.push_back((Bit8u)appearance[i]);
+    if (c.data.size() & 1) c.data.push_back(0);
+    const Bit16u rec = priv_r16(kPlayerRecord);
+    c.args.push_back(rec ? (Bit16u)(rec + 0x2C) : 0);   // this (the game's own callers pass the player record's +0x2C)
+    c.args.push_back(kStackArg + (Bit32u)typeAt);
+    c.args.push_back(g_ds);                             // (SS is DGROUP where the call is made)
+    c.args.push_back(cast_name_at(cast));
+    c.args.push_back(kStackArg + (Bit32u)appAt);
+    c.args.push_back(g_ds);
+    c.args.push_back(kStackArg + 0);                    // the place
+    c.args.push_back(kStackArg + 12);                   // the attitude
+    return queue_call(c);
+}
+
+void priv_hold_ai(Bit16u controller, bool hold) {
+    std::vector<Bit16u>::iterator it = std::find(g_heldAi.begin(), g_heldAi.end(), controller);
+    if (hold && it == g_heldAi.end() && controller && g_heldAi.size() < kHeldCap) {
+        g_heldAi.push_back(controller);
+    } else if (!hold && it != g_heldAi.end()) {
+        g_heldAi.erase(it);
+    }
+}
+
+void priv_hold_ai_none() {
+    g_heldAi.clear();
+}
+
+Bit16u priv_ship_controller(Bit16u obj) {
+    return priv_r16((Bit16u)(obj + kShipController));
+}
+
+bool priv_ship_alive(Bit16u obj, Bit16u type) {
+    return obj && priv_r16(obj) == kShipVtable && priv_r16((Bit16u)(obj + kShipType)) == type;
+}
+
+Bit16u priv_ship_type(Bit16u obj) {
+    return priv_r16((Bit16u)(obj + kShipType));
+}
+
+void priv_ship_set(Bit16u obj, const Bit32s pos[3], const Bit32s m[9]) {
+    for (int i = 0; i < 3; i++) {
+        mem_writed(ds_at((Bit16u)(obj + kShipPos + 4 * i)), (Bit32u)pos[i]);
+    }
+    for (int i = 0; m && i < 9; i++) {
+        mem_writed(ds_at((Bit16u)(obj + kShipMatrix + 4 * i)), (Bit32u)m[i]);
+    }
+}
+
+void priv_player_matrix(Bit32s m[9]) {
+    const Bit16u ship = priv_in_flight() ? priv_r16(kPlayerShip) : 0;
+    for (int i = 0; i < 9; i++) {
+        m[i] = ship ? (Bit32s)priv_r32((Bit16u)(ship + kShipMatrix + 4 * i)) : (i % 4 == 0 ? 256 : 0);
+    }
+}
+
+std::string priv_player_appearance() {
+    const Bit16u rec = priv_in_flight() ? priv_r16(kPlayerRecord) : 0;
+    std::string out;
+    for (int i = 0; rec && i < 8; i++) {
+        const Bit8u c = priv_r8((Bit16u)(rec + kRecordAppearance + i));
+        if (!c) break;
+        if (c < 32 || c >= 127) return "";
+        out += (char)c;
+    }
+    return out;
+}
+
 bool priv_in_flight() {
     return g_found && priv_r16(kPlayerShip) != 0 && priv_r16(kPlayerRecord) != 0;
+}
+
+Bit16u priv_player_ship() {
+    return priv_in_flight() ? priv_r16(kPlayerShip) : 0;
 }
 
 void priv_player_pos(Bit32s pos[3]) {

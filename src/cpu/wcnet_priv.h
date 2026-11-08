@@ -54,15 +54,39 @@ unsigned priv_controls_frames();
 const char *priv_control_mode();
 // In flight: the player's ship exists (ds:66B4; 0 at a base, set in flight, the nav map's pauses too).
 bool priv_in_flight();
+// The player's ship object (a near pointer, ds:66B4; 0 at a base): a new one is a new flight.
+Bit16u priv_player_ship();
 // The player's ship's place (world units: 256 to the game's metre; z up), zeros when not flying.
 void priv_player_pos(Bit32s pos[3]);
 // The name of the system the player flies in (the game's own copy, as its displays show it), "" when not flying.
 std::string priv_system_name();
 
+// The player's attitude (3x3 int32, 1.0 = 256; identity when not flying) and appearance ("CLUNKER" the Tarsus, "TUG"
+// the Orion, "FIGHTER" the Centurion, "MERCHANT" the Galaxy; "" when not flying).
+void priv_player_matrix(Bit32s m[9]);
+std::string priv_player_appearance();
+
+// Ships of ours in the game's space (puppets): a ship of that type (TARSTYPE...), appearance and cast name (its AI and
+// side: MER_DP a merchant's), placed by the game's own seg099:0074 at the next frame (false: not in flight, or the
+// queue full); done is told the object (a near pointer, as ds:66B4's; 0: none made).
+bool priv_spawn_ship(const char *type, const char *appearance, const char *cast, const Bit32s pos[3], const Bit32s m[9],
+                     void (*done)(int tag, Bit16u obj), int tag);
+// Its AI held (its think returns at once) or let go; none held (a flight's end).
+void priv_hold_ai(Bit16u controller, bool hold);
+void priv_hold_ai_none();
+Bit16u priv_ship_controller(Bit16u obj);
+Bit16u priv_ship_type(Bit16u obj);
+// The object is still a ship of that type (not destroyed and its memory taken for another).
+bool priv_ship_alive(Bit16u obj, Bit16u type);
+// Its place and attitude (m may be NULL: the place alone).
+void priv_ship_set(Bit16u obj, const Bit32s pos[3], const Bit32s m[9]);
+
 // The session (wcnet_priv_session.cpp): the room, presence; its tick (from priv_tick, every 999 instructions) and an
 // occasion to say where we are (1 the autopilot engaged).
 void priv_session_tick();
 void priv_session_event(int why);
+// Once a frame in flight (seg088:0B2E's entry, before the player's controls): the puppets placed, our state sent.
+void priv_session_frame();
 bool priv_session_active();
 
 }  // namespace wc

@@ -449,6 +449,23 @@ message PrivPresence {
     optional sint32 z = 7;
     optional uint32 why = 8;        // 0 the period, 1 the autopilot engaged (A), 2 a jump, 3 a launch, 4 a landing, 5 a hello
 }
+// A pilot's ship as its own machine flies it (Privateer), best effort, while another pilot shares its system: its place
+// (world units), attitude (3x3, 1.0 = 256), velocity (units a second, from its last places) and appearance (what the
+// others make it as: CLUNKER a Tarsus, TUG an Orion, FIGHTER a Centurion, MERCHANT a Galaxy).  The host relays a
+// guest's with its seat.
+message PrivState {
+    optional uint32 player = 1;
+    optional uint64 frame = 2;
+    optional string system = 3;
+    optional sint32 x = 4;
+    optional sint32 y = 5;
+    optional sint32 z = 6;
+    repeated sint32 m = 7 [packed = true];
+    optional string appearance = 8;
+    optional sint32 vx = 9;
+    optional sint32 vy = 10;
+    optional sint32 vz = 11;
+}
 message NetworkMessage {
     optional Connect connect = 1;
     optional Game game = 2;
@@ -474,4 +491,5 @@ message NetworkMessage {
     // Privateer's (field numbers from 40: TIE Fighter's grow from 25)
     optional PrivHello priv_hello = 40;
     optional PrivPresence priv_presence = 41;
+    optional PrivState priv_state = 42;
 }
