@@ -1933,7 +1933,7 @@ static int __far g_flicker;             /* frames of flicker left */
  * The user's asks (2026-10-31): 1 the wingman (fly in formation, break formation, attack my target, help me out,
  * return to base), 2 the target (taunt an enemy; the
  * home carrier: request landing, which it grants with the mission finished or a nav point flown and the player near
- * enough: logic.c).  Cleared, the player lands on coming within 2,000 km of its hull: the flight ends there (logic.c). */
+ * enough: logic.c).  Cleared, the player lands on coming within 100 km of its hull: the flight ends there (logic.c). */
 static unsigned char __far g_landing;   /* the carrier has cleared the player (who lands on coming near it) */
 static unsigned long __far g_denied_until;   /* the status line says so till then */
 static unsigned long __far g_stop_said;      /* the carrier's word about a stop: not again till then */

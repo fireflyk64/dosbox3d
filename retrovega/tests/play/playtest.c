@@ -5353,9 +5353,12 @@ static int16_t pt_fly_in(int32_t x, int32_t z, int16_t yaw)
     return pt_fly_at(x, 0, z, yaw);
 }
 
+#define PT_LAND_KM 100                  /* (logic.c LANDING_NEAR_KM: a cleared landing's distance, the trigger's too) */
+
 /* M8.15: not cleared, the hull stops the fighter unhurt, and it can fly off again; cleared, the player lands on coming
- * within 2,000 km of the carrier's hull from any side (the user, 2026-11-04: "lets get rid of all the bow logic and you
- * can land just by distance to carrier after requesting"); a landing with the mission undone is lost, with it done won */
+ * within 100 km of the carrier's hull from any side (the user, 2026-11-04: "lets get rid of all the bow logic and you
+ * can land just by distance to carrier after requesting"; 2026-11-08, of the trigger's landing at the same distance,
+ * then 2,000: "only a 100km"); a landing with the mission undone is lost, with it done won */
 static void t_landing_contact(void)
 {
     static const char __far e_bow_shut[] = "not cleared, into the bow: status %d, stopped %d (0, and 2: the hull stops it)";
@@ -5364,7 +5367,7 @@ static void t_landing_contact(void)
     static const char __far e_stuck[] = "stopped, then turned away at 300 kps, it is %d km from the carrier after 3 s: it "
         "flies off (it was %d)";
     static const char __far e_clear[] = "a nav point flown, the request answered %d: 0, cleared";
-    static const char __far e_near[] = "cleared, flown in from its beam: status %d, %d km off its hull: 1, landed, within 2,000";
+    static const char __far e_near[] = "cleared, flown in from its beam: status %d, %d km off its hull: 1, landed, within 100";
     static const char __far e_lost[] = "victoryPoints is %d after landing with the mission undone: 0";
     static const char __far e_won[] = "victoryPoints is %d after landing with the mission done: nonzero";
     int16_t home = pt_home_patrol(), sh0, yaw_in;
@@ -5393,8 +5396,8 @@ static void t_landing_contact(void)
     yaw_in = gOrientationFrontVector[0].x < 0 ? TURN / 4 : 3 * TURN / 4;
     if (!pt_fly_at(6000, 0, cz, yaw_in))
         return;
-    REQUIRE(missionStatus == 1 && landedOn == (uint16_t)home && pt_km(0, home) > 1500, e_near, missionStatus,
-            pt_km(0, home), 0);
+    REQUIRE(missionStatus == 1 && landedOn == (uint16_t)home && logic_target_km(home) <= PT_LAND_KM + 30, e_near,
+            missionStatus, logic_target_km(home), 0);
     logic_end();
     REQUIRE(victoryPoints == 0, e_lost, victoryPoints, 0, 0);
     /* flown and killed: landed, won */
@@ -5407,14 +5410,14 @@ static void t_landing_contact(void)
     REQUIRE(logic_request_landing() == LANDING_CLEARED, e_clear, logic_request_landing(), 0, 0);
     if (!pt_fly_in(0, cz + 6000, TURN / 2))
         return;
-    REQUIRE(missionStatus == 1, e_near, missionStatus, pt_km(0, home), 0);
+    REQUIRE(missionStatus == 1, e_near, missionStatus, logic_target_km(home), 0);
     logic_end();
     REQUIRE(victoryPoints != 0, e_won, victoryPoints, 0, 0);
 }
 
 /* M8.46: cleared, but coming in on the afterburner (the user, 2026-11-05: "check that you don't have afterburner on when
  * landing... if you have afterburner on when attempting landing it should cause normal collision damage"): no landing
- * within the 2,000 km while it burns, the carrier says why (logic_carrier_stopped 3), and the hull is a ram's: the
+ * within the 100 km while it burns, the carrier says why (logic_carrier_stopped 3), and the hull is a ram's: the
  * fighter hurt and stopped; the burner off, it lands */
 static void t_landing_burner(void)
 {
@@ -5548,14 +5551,13 @@ static void t_stay_home(void)
  * and are very near the carrier and it can say press fire to land. If all landing conditions are met and all nav
  * points have been reached"): not at the launch, not with a waypoint unflown, nor far from the carrier; with both
  * flown, their enemies dead, 3,000 km off the carrier, it is ready, and the trigger lands */
-#define PT_LAND_KM 2000                 /* (logic.c LANDING_NEAR_KM: a cleared landing's distance, the trigger's too) */
 static void t_autoland(void)
 {
     static const char __far e_launch[] = "at the launch the landing by the trigger was ready (%d): no waypoint flown yet";
     static const char __far e_half[] = "with nav 2 unflown it was ready (%d)";
     static const char __far e_far[] = "every waypoint flown, %d km from the carrier, it was ready (%d): too far";
-    static const char __far e_near[] = "the carrier's hull %d km off, outside a cleared landing's 2,000: ready (%d) (the "
-        "user: \"it should only happen when I'm nearly colliding it\")";
+    static const char __far e_near[] = "the carrier's hull %d km off, outside a cleared landing's 100: ready (%d) (the "
+        "user: \"it should be very very close to where I would otherwise crash\")";
     static const char __far e_ready[] = "every waypoint flown, nobody about, %d km off the carrier: not ready (%d)";
     static const char __far e_land[] = "the trigger: logic_autoland %d, status %d, landed on %d: 1, 1, the carrier";
     int16_t home = pt_home_patrol(), r;
@@ -5569,16 +5571,17 @@ static void t_autoland(void)
     if (!pt_go(NAV2_X, NAV2_Z) || !pt_kill_side(SIDE_AERA) || !pt_go(0, 30000))
         return;
     REQUIRE(logic_autoland_ready() < 0, e_far, logic_target_km(home), logic_autoland_ready(), 0);
-    /* (in from in front of the carrier, 500 km at a time: not before its hull is within a cleared landing's distance) */
+    /* (in from in front of the carrier, 500 km at a time, the last thousand 40 at a time: not before its hull is within a
+     * cleared landing's distance) */
     cx = TO_KM(gPositionVector[home].x);
     cz = TO_KM(gPositionVector[home].z);
-    for (d = 9000; d > 0; d -= 500) {
+    for (d = 9000; d > 0; d -= g > 1000 ? 500 : 40) {
         if (!pt_go(cx, cz + d))
             return;
         g = logic_target_km(home);
-        if (g > PT_LAND_KM + 100)
+        if (g > PT_LAND_KM + 25)
             REQUIRE(logic_autoland_ready() < 0, e_near, g, logic_autoland_ready(), 0);
-        else if (g < PT_LAND_KM - 100)
+        else if (g < PT_LAND_KM - 25)
             break;
     }
     REQUIRE(d > 0 && logic_autoland_ready() == home, e_ready, g, logic_autoland_ready(), 0);
@@ -7762,7 +7765,7 @@ static const char __far n_m8_27[] = "M8.27 second-wave (wave_may_come): a hidden
 static const char __far n_m8_28[] = "M8.28 wingman-behind (logic_start): enemies at the launch: the wingman starts past them, none: beside the player";
 static const char __far n_m8_26[] = "M8.26 way-ahead (logic_autopilot): the autopilot stops short of a field and at a hidden point on its line; hidden points are on no list and ask nothing";
 static const char __far n_m8_16[] = "M8.16 carrier-lost (step_deaths, logic_end): the carrier destroyed ends the flight when its explosion has run: a loss";
-static const char __far n_m8_15[] = "M8.15 landing-contact (land_near, carrier_contact, logic_end): not cleared the hull stops it unhurt; cleared it lands within 2,000 km of the hull, from any side; undone lost, done won";
+static const char __far n_m8_15[] = "M8.15 landing-contact (land_near, carrier_contact, logic_end): not cleared the hull stops it unhurt; cleared it lands within 100 km of the hull, from any side; undone lost, done won";
 static const char __far n_m9_1[] = "M9.1 gunsight (logic_hud): a mark at the view's middle";
 static const char __far n_m9_2[] = "M9.2 brackets (logic_hud): marks round the target";
 static const char __far n_m10_1[] = "M10.1 target-front (logic_target_next): T picks only in front of the pilot, nearest the nose first, round";

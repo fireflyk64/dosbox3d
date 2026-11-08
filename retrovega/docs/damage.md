@@ -85,7 +85,7 @@ A landing on the carrier's bow is followed by two things, each skipped by a clic
 and in a shared flight it had run uncapped, the layer's pacing over with the flight). The camera starts close behind the fighter, which fills
 the view, and pulls back and round to above the carrier's quarter, while the fighter flies in along the carrier's far side and goes behind
 the hull: the sprites are drawn far to near, so the carrier covers it. Then black. The game's logic is not running; everyone else is taken
-out of the shot. Cleared, a fighter on its afterburner does not land: within the 2,000 km it is told to cut it, and
+out of the shot. Cleared, a fighter on its afterburner does not land: within the 100 km it is told to cut it, and
 the hull is a ram's, its damage and its dead stop (the user, 2026-11-05: "if you have afterburner on when attempting
 landing it should cause normal collision damage"; play test M8.46).
 

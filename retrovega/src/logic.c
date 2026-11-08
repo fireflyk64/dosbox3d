@@ -206,8 +206,8 @@ static struct {
 #define HOME_ARRIVE_KM 4000             /* but the autopilot home, with nothing on the way, stops this far off the home
                                            carrier's hull, facing it (the user, 2026-11-05: "why do we arrive home so far
                                            away from the carrier... that doesn't seem right": at the reach it was some
-                                           20,000 km, a minute's flying at cruise; 4,000 is my choice: just outside the
-                                           2,000 of a cleared landing, LANDING_NEAR_KM) */
+                                           20,000 km, a minute's flying at cruise; 4,000 is my choice: outside a cleared
+                                           landing's LANDING_NEAR_KM, then 2,000) */
 #define LAUNCH_NEAR_KM 5000             /* a hidden point this near the launch is at the launch (wave_may_come) */
 
 static uint16_t g_wave_held;            /* a bit per trigger point whose wave has waited for the enemies out */
@@ -1637,8 +1637,10 @@ static void carrier_contact(int16_t home)
 }
 
 /* cleared, the player lands as it comes within LANDING_NEAR_KM of the carrier's hull, from any side (carrier_contact);
- * not with its afterburner lit (the carrier says so: g_stopped 3), which comes in as a ram */
-#define LANDING_NEAR_KM 2000
+ * not with its afterburner lit (the carrier says so: g_stopped 3), which comes in as a ram.  The trigger's landing too
+ * (AUTOLAND_KM).  100 km: all but touching (the user, 2026-11-08: "when I went to land i could click way too far away--
+ * it should be very very close to where I would otherwise crash that it's fire-to-land... only a 100km"; it was 2,000) */
+#define LANDING_NEAR_KM 100
 static void land_near(void)
 {
     int16_t s;
@@ -4689,7 +4691,8 @@ int16_t logic_autopilot(void)
  * within AUTOPILOT_CLEAR_KM of a human, and the home carrier's hull within AUTOLAND_KM: the home slot, -1 not now.
  * AUTOLAND_KM is a cleared landing's own distance (the user, 2026-11-06: "the whole click fire to land happened when I
  * was very far away from the carrier--it should only happen when I'm nearly colliding it--definitely within its sphere
- * of influence": it was 6,000 km); the autopilot home stops HOME_ARRIVE_KM, 4,000, off the hull: a short run in */
+ * of influence": it was 6,000 km, then 2,000; since 2026-11-08 100, "very very close to where I would otherwise crash");
+ * the autopilot home stops HOME_ARRIVE_KM, 4,000, off the hull: a short run in */
 #define AUTOLAND_KM LANDING_NEAR_KM
 int16_t logic_autoland_ready(void)
 {

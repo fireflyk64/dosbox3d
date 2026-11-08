@@ -514,7 +514,7 @@ The scan for this guide, most needed first:
 7. **Mission flow:**
    - nav points carry no hazards or waves into the flight (the placeholder spawns the whole mission at once);
    - the autopilot is the logic's to write (`logic_autopilot`);
-   - landing is a clearance asked of the home carrier on the comm (the carrier as the target, within 8,000 km, the mission finished or a nav point flown: `logic_request_landing`), then the player's own flight to within 2,000 km of its hull, from any side (`land_near`, `carrier_contact`; since 2026-11-04, the bow alone before); not cleared, the hull just stops the fighter;
+   - landing is a clearance asked of the home carrier on the comm (the carrier as the target, within 8,000 km, the mission finished or a nav point flown: `logic_request_landing`), then the player's own flight to within 100 km of its hull, from any side (2,000 until 2026-11-08: the user, "only a 100km"), or the trigger there with every waypoint flown and nobody about (`logic_autoland`) (`land_near`, `carrier_contact`; since 2026-11-04, the bow alone before); not cleared, the hull just stops the fighter;
    - ejection only sets `missionStatus`.
 8. **Text on the MFDs from the logic**, such as a weapon or missile display: no call yet.
 9. **Smaller items:**

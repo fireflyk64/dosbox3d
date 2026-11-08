@@ -2081,9 +2081,11 @@ the VDUs take the readouts' small font. vdu.c:
   only the orders it would take now (`logic_order_ok`).
 - **The landing by the trigger:** home, with every waypoint's reach flown by
   this machine's pilot (`g_navs_been`: a guest's own, its waves the host's), no
-  enemy within 16,000 km and the carrier's hull within 6,000 km, PRESS FIRE TO
-  LAND shows under the gunsight and the trigger lands (`logic_autoland`; the
-  user, 2026-11-06). M8.53.
+  enemy within 16,000 km and the carrier's hull within 100 km (a cleared
+  landing's `LANDING_NEAR_KM`; 6,000, then 2,000, until the user, 2026-11-08:
+  "it should be very very close to where I would otherwise crash ... only a
+  100km"), PRESS FIRE TO LAND shows under the gunsight and the trigger lands
+  (`logic_autoland`; the user, 2026-11-06). M8.53.
 - **The wireframe** (`vdu_wire`) is the type's silhouette from above
   (collide.c's mask, `collide_mask`): the outline of its solid cells
   fitted to the ship's proportions (`hit`, the silhouettes' half
