@@ -42,7 +42,12 @@ enum {
     kNoticeMs = 10000,              // a notice stays this long
     kSameSystemEveryMs = 60000,     // the line of who shares our system: when they change, else this often while somebody does
 };
-enum Why { WHY_PERIOD = 0, WHY_AUTOPILOT = 1, WHY_JUMP = 2, WHY_LAUNCH = 3, WHY_LAND = 4, WHY_HELLO = 5 };
+enum Why { WHY_PERIOD = 0, WHY_AUTOPILOT = 1, WHY_JUMP = 2, WHY_LAUNCH = 3, WHY_LAND = 4, WHY_HELLO = 5, WHY_NAV = 6 };
+// Step 5: a nav point's owner (the user's rule): of the pilots present at it, one with a mission objective there, the
+// host first (the lowest seat), each in turn once everybody has left and come back, until all have had it.  Step 6:
+// the owner's encounter ships are the others' puppets (PrivScene, kSceneEveryMs), hits on a ship cross to its owner.
+enum { kOwnersEveryMs = 3000, kDecideEveryMs = 500, kSceneEveryMs = 100, kNpcCap = 24, kNpcStaleMs = 3000, kFireMs = 60,
+       kShotEveryMs = 120, kCastSlots = 7, kCastAt = 0x0074 };
 const double kUnitsPerMetre = 256.0;    // (the destination display's range: the distance in world units, >> 8)
 const double kNearMetres = 20000.0;     // a pilot this near is "near" (a nav point's sphere: 12,000 to 17,000)
 // Step 4: the others in our space (puppets).  A pilot sends its ship's state while somebody shares its system within
@@ -70,7 +75,47 @@ struct Pilot {
     std::string system;
     double x, y, z;
     double at;
-    Pilot() : known(false), flying(false), x(0), y(0), z(0), at(-1e9) {}
+    int nav;                    // the nav sphere it is in (-1 none)
+    unsigned missions;          // the nav spheres it has a mission at (a bit each)
+    Pilot() : known(false), flying(false), x(0), y(0), z(0), at(-1e9), nav(-1), missions(0) {}
+};
+
+// A nav point and who runs it (the host decides; everybody keeps the host's word).
+struct NavOwner {
+    std::string system;
+    int nav;
+    int owner;                  // a seat, -1 nobody (vacant)
+    unsigned done;              // the seats that have owned it this round
+    bool occupied;              // somebody there (the host's view)
+};
+
+// An encounter ship of another machine's as its reports say (PrivNpc), and the puppet it is in our game.
+struct NpcPuppet {
+    bool used;
+    int seat;
+    Bit32u id;
+    std::string type, appearance, cast;
+    double at;
+    double x, y, z, vx, vy, vz;
+    Bit32s m[9];
+    bool alive;
+    Bit32s armor[4];
+    Bit16u obj, otype;          // the ship in our game (0: none)
+    bool pending, parked, killed;
+    double fireUntil;           // its guns' fire bit held until then
+    NpcPuppet() : used(false), seat(-1), id(0), at(-1e9), x(0), y(0), z(0), vx(0), vy(0), vz(0), alive(true), obj(0), otype(0),
+                  pending(false), parked(false), killed(false), fireUntil(-1e9) {
+        for (int i = 0; i < 9; i++) m[i] = i % 4 == 0 ? 256 : 0;
+        for (int i = 0; i < 4; i++) armor[i] = 0;
+    }
+};
+
+// Our own encounter ships' last places (their velocities for the reports), by near pointer.
+struct NpcTrack {
+    Bit16u obj;
+    double x, y, z, at;
+    double vx, vy, vz;
+    double shotAt;
 };
 
 // A pilot's ship as its reports say (PrivState), and the puppet it is in our game.
@@ -97,14 +142,20 @@ struct PrivNet {
     std::vector<Peer *> peers;
     Pilot pilots[kMaxSeats];
     Puppet puppets[kMaxSeats];
+    NpcPuppet npcs[kNpcCap];
+    std::vector<NavOwner> owners;
+    std::vector<NpcTrack> tracks;
+    double ownersAt, decidedAt, sceneAt;
+    Bit64u sceneFrame;
+    int nav;                    // the nav sphere we are in (-1 none)
     double sentAt;              // our last presence
     double stateAt;             // our last state
     Bit64u frame;
     Bit16u flightShip;          // the player's ship pointer the puppets were made under (a new flight: they are gone)
     double lastX, lastY, lastZ, lastAt;     // our place at the last frame (for our velocity)
     double vx, vy, vz;
-    PrivNet() : host(false), self(-1), seats(2), listener(NULL), sentAt(-1e9), stateAt(-1e9), frame(0), flightShip(0), lastX(0), lastY(0),
-                lastZ(0), lastAt(-1e9), vx(0), vy(0), vz(0) {}
+    PrivNet() : host(false), self(-1), seats(2), listener(NULL), ownersAt(-1e9), decidedAt(-1e9), sceneAt(-1e9), sceneFrame(0), nav(-1),
+                sentAt(-1e9), stateAt(-1e9), frame(0), flightShip(0), lastX(0), lastY(0), lastZ(0), lastAt(-1e9), vx(0), vy(0), vz(0) {}
     ~PrivNet() {
         for (size_t i = 0; i < peers.size(); i++) {
             delete peers[i];
@@ -115,6 +166,9 @@ struct PrivNet {
 
 PrivNet *g_net;
 void forget_puppets(const char *why);
+void take_scene(const PrivScene &sc, int seat);
+void take_hit(const PrivHit &h);
+void take_shot(int seat, Bit32u id);
 double g_nextTryMs;
 double g_noticeAt = -1;
 double g_sameSystemAt = -1e9;
@@ -275,7 +329,126 @@ PrivPresence own_presence(int why) {
         pr.set_z(pos[2]);
     }
     pr.set_why((Bit32u)why);
+    pr.set_nav(flying ? g_net->nav : -1);
     return pr;
+}
+
+// Who is at (system, nav) by the presences we hold (ourselves too), as a bitmask of seats.
+unsigned present_at(const std::string &system, int nav) {
+    unsigned mask = 0;
+    for (int s = 0; s < kMaxSeats; s++) {
+        if (s == g_net->self) {
+            if (priv_in_flight() && g_system == system && g_net->nav == nav) mask |= 1u << s;
+        } else if (g_net->pilots[s].known && g_net->pilots[s].flying && g_net->pilots[s].system == system && g_net->pilots[s].nav == nav) {
+            mask |= 1u << s;
+        }
+    }
+    return mask;
+}
+
+NavOwner *owner_entry(const std::string &system, int nav, bool make) {
+    for (size_t i = 0; i < g_net->owners.size(); i++) {
+        if (g_net->owners[i].system == system && g_net->owners[i].nav == nav) return &g_net->owners[i];
+    }
+    if (!make || g_net->owners.size() >= 256) {
+        return NULL;
+    }
+    NavOwner o = { system, nav, -1, 0, false };
+    g_net->owners.push_back(o);
+    return &g_net->owners.back();
+}
+
+int owner_of(const std::string &system, int nav) {
+    NavOwner *o = owner_entry(system, nav, false);
+    return o ? o->owner : -1;
+}
+
+// The host's decision for every nav point somebody is at (the user's rule).
+void decide_owners(double now, bool &changed) {
+    for (int s = 0; s < kMaxSeats; s++) {
+        const bool me = s == g_net->self;
+        const bool flying = me ? priv_in_flight() : g_net->pilots[s].known && g_net->pilots[s].flying;
+        const int nav = me ? g_net->nav : g_net->pilots[s].nav;
+        const std::string &system = me ? g_system : g_net->pilots[s].system;
+        if (!flying || nav < 0 || system.empty()) continue;
+        owner_entry(system, nav, true);
+    }
+    for (size_t i = 0; i < g_net->owners.size(); i++) {
+        NavOwner &o = g_net->owners[i];
+        const unsigned present = present_at(o.system, o.nav);
+        if (!present) {
+            if (o.owner >= 0 || o.occupied) {
+                o.owner = -1;           // (vacant: the next comers choose again)
+                o.occupied = false;
+                changed = true;
+            }
+            continue;
+        }
+        o.occupied = true;
+        if (o.owner >= 0 && (present & (1u << o.owner))) {
+            continue;                   // (the owner is still there: it stays)
+        }
+        // candidates: those present with a mission here, else all present; of them one that has not owned it this
+        // round, the lowest seat; everybody done: a new round
+        unsigned mission = 0;
+        for (int s = 0; s < kMaxSeats; s++) {
+            const unsigned m = s == g_net->self ? 0 : g_net->pilots[s].missions;
+            if ((present & (1u << s)) && o.nav >= 0 && o.nav < 32 && (m & (1u << o.nav))) mission |= 1u << s;
+        }
+        unsigned cands = mission ? mission : present;
+        if (!(cands & ~o.done)) {
+            o.done = 0;
+        }
+        cands &= ~o.done;
+        int pick = -1;
+        for (int s = 0; s < kMaxSeats && pick < 0; s++) {
+            if (cands & (1u << s)) pick = s;
+        }
+        if (pick >= 0 && pick != o.owner) {
+            o.owner = pick;
+            o.done |= 1u << pick;
+            changed = true;
+            wclog(1, "Privateer: %s nav %d: pilot %d owns it (present %02x, with a mission %02x, had it %02x)", o.system.c_str(), o.nav,
+                  pick + 1, present, mission, o.done);
+        }
+    }
+    (void)now;
+}
+
+void send_owners() {
+    NetworkMessage msg;
+    PrivOwners *po = msg.mutable_priv_owners();
+    for (size_t i = 0; i < g_net->owners.size(); i++) {
+        if (g_net->owners[i].owner < 0 && !g_net->owners[i].occupied) continue;
+        PrivOwner *o = po->add_owners();
+        o->set_system(g_net->owners[i].system);
+        o->set_nav(g_net->owners[i].nav);
+        o->set_owner((Bit32u)(g_net->owners[i].owner < 0 ? 0xFF : g_net->owners[i].owner));
+    }
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
+            g_net->peers[i]->conn.send(msg);
+        }
+    }
+    g_net->ownersAt = PIC_FullIndex();
+}
+
+void take_owners(const PrivOwners &po) {
+    for (size_t i = 0; i < g_net->owners.size(); i++) {
+        g_net->owners[i].owner = -1;
+    }
+    for (int i = 0; i < po.owners_size(); i++) {
+        const PrivOwner &o = po.owners(i);
+        NavOwner *e = owner_entry(o.system(), (int)o.nav(), true);
+        if (e) {
+            const int was = e->owner;
+            e->owner = o.owner() == 0xFF ? -1 : (int)o.owner();
+            e->occupied = true;
+            if (e->owner != was && (e->owner == g_net->self || was == g_net->self)) {
+                wclog(1, "Privateer: %s nav %d: %s", o.system().c_str(), (int)o.nav(), e->owner == g_net->self ? "ours to run" : "another's to run");
+            }
+        }
+    }
 }
 
 void send_presence(int why) {
@@ -348,6 +521,11 @@ void take_presence(const PrivPresence &pr, int seat) {
     p.y = pr.y();
     p.z = pr.z();
     p.at = PIC_FullIndex();
+    p.nav = pr.has_nav() ? (int)pr.nav() : -1;
+    p.missions = 0;
+    for (int i = 0; i < pr.missions_size(); i++) {
+        if (pr.missions(i) < 32) p.missions |= 1u << pr.missions(i);
+    }
     const int why = (int)pr.why();
     wclog(2, "Privateer: %s (pilot %d) %s in %s at %d, %d, %d (why %d)", p.callsign.c_str(), seat + 1, p.flying ? "flying" : "landed",
           p.system.c_str(), (int)pr.x(), (int)pr.y(), (int)pr.z(), why);
@@ -360,8 +538,10 @@ void take_presence(const PrivPresence &pr, int seat) {
         }
     } else if (d >= 0) {
         if (!wasKnown || !wasFlying || wasSystem != p.system || why != WHY_PERIOD) {
+            char nav[24] = "";
+            if (p.nav >= 0) snprintf(nav, sizeof(nav), " at Nav %d", p.nav);
             what = std::string(why == WHY_AUTOPILOT ? "on autopilot " : why == WHY_JUMP ? "jumped in " : why == WHY_LAUNCH ? "launched " : "")
-                   + "in " + p.system + ", " + metres(d) + " from you" + (d < kNearMetres ? " (near)" : "");
+                   + "in " + p.system + nav + ", " + metres(d) + " from you" + (d < kNearMetres ? " (near)" : "");
         }
     } else if (!wasKnown || !wasFlying || wasSystem != p.system || why == WHY_JUMP || why == WHY_LAUNCH) {
         what = (why == WHY_JUMP ? "jumped to " : why == WHY_LAUNCH ? "launched in " : "in ") + p.system;
@@ -483,6 +663,62 @@ void handle(Peer *p, NetworkMessage &msg) {
                 }
             }
         }
+    } else if (msg.has_priv_owners()) {
+        if (p->hello && !g_net->host) {
+            take_owners(msg.priv_owners());
+        }
+    } else if (msg.has_priv_scene()) {
+        if (!p->hello) {
+            return;
+        }
+        const int seat = g_net->host ? p->player : (msg.priv_scene().has_player() ? (int)msg.priv_scene().player() : 0);
+        take_scene(msg.priv_scene(), seat);
+        if (g_net->host) {
+            NetworkMessage out;
+            *out.mutable_priv_scene() = msg.priv_scene();
+            out.mutable_priv_scene()->set_player((Bit32u)p->player);
+            for (size_t i = 0; i < g_net->peers.size(); i++) {
+                Peer *to = g_net->peers[i];
+                if (to != p && to->hello && to->conn.is_open()) {
+                    to->conn.send_best_effort(out);
+                }
+            }
+        }
+    } else if (msg.has_priv_hit()) {
+        if (!p->hello) {
+            return;
+        }
+        const PrivHit &h = msg.priv_hit();
+        if ((int)h.owner() == g_net->self) {
+            take_hit(h);
+        } else if (g_net->host) {
+            NetworkMessage out;
+            *out.mutable_priv_hit() = h;
+            out.mutable_priv_hit()->set_player((Bit32u)p->player);
+            for (size_t i = 0; i < g_net->peers.size(); i++) {
+                Peer *to = g_net->peers[i];
+                if (to != p && to->hello && to->conn.is_open() && to->player == (int)h.owner()) {
+                    to->conn.send(out);
+                }
+            }
+        }
+    } else if (msg.has_priv_shot()) {
+        if (!p->hello) {
+            return;
+        }
+        const int seat = g_net->host ? p->player : (msg.priv_shot().has_player() ? (int)msg.priv_shot().player() : 0);
+        take_shot(seat, msg.priv_shot().id());
+        if (g_net->host) {
+            NetworkMessage out;
+            *out.mutable_priv_shot() = msg.priv_shot();
+            out.mutable_priv_shot()->set_player((Bit32u)p->player);
+            for (size_t i = 0; i < g_net->peers.size(); i++) {
+                Peer *to = g_net->peers[i];
+                if (to != p && to->hello && to->conn.is_open()) {
+                    to->conn.send_best_effort(out);
+                }
+            }
+        }
     } else if (msg.has_chat()) {
         notice(msg.chat().callsign() + ": " + msg.chat().message());
     }
@@ -529,6 +765,9 @@ void poll_peers() {
                 g_net->pilots[p->player] = Pilot();
                 Puppet &pp = g_net->puppets[p->player];
                 pp.reported = false;    // (its ship parked at the next frame, kept)
+                for (int k = 0; k < kNpcCap; k++) {
+                    if (g_net->npcs[k].used && g_net->npcs[k].seat == p->player) g_net->npcs[k].at = -1e9;
+                }
             }
         }
         delete p;
@@ -620,6 +859,27 @@ void priv_session_tick() {
         shutdown();     // (the host gone: tried again later, as at the start)
         return;
     }
+    // our nav sphere, an occasion when it changes
+    if (priv_in_flight()) {
+        Bit32s pos[3];
+        priv_player_pos(pos);
+        const int nav = priv_nav_at(pos);
+        if (nav != g_net->nav) {
+            wclog(1, "Privateer: %s nav %d (was %d)", nav >= 0 ? "at" : "left", nav >= 0 ? nav : g_net->nav, g_net->nav);
+            g_net->nav = nav;
+            priv_session_event(WHY_NAV);
+        }
+    } else if (g_net->nav >= 0) {
+        g_net->nav = -1;
+    }
+    if (g_net->host && now - g_net->decidedAt >= kDecideEveryMs) {
+        g_net->decidedAt = now;
+        bool changed = false;
+        decide_owners(now, changed);
+        if (changed || now - g_net->ownersAt >= kOwnersEveryMs) {
+            send_owners();
+        }
+    }
     if (g_pendingWhy >= 0) {
         const int why = g_pendingWhy;
         g_pendingWhy = -1;
@@ -688,6 +948,11 @@ void forget_puppets(const char *why) {
         p.pending = false;
         p.parked = false;
     }
+    for (int k = 0; k < kNpcCap; k++) {
+        any = any || g_net->npcs[k].obj;
+        g_net->npcs[k] = NpcPuppet();
+    }
+    g_net->tracks.clear();
     priv_hold_ai_none();
     if (any) {
         wclog(2, "Privateer: the puppets forgotten (%s)", why);
@@ -721,7 +986,340 @@ void send_state(double now) {
     g_net->stateAt = now;
 }
 
+// The cast names our puppets keep a pointer to (an encounter ship's "PIR_DA"...): seven of 8 bytes in the program's
+// usage line at DGROUP:0074, which no flight reads (its signature was checked at the load).
+Bit16u cast_slot(const std::string &cast) {
+    static std::string names[kCastSlots];
+    for (int i = 0; i < kCastSlots; i++) {
+        if (names[i] == cast) return (Bit16u)(kCastAt + 8 * i);
+    }
+    for (int i = 0; i < kCastSlots; i++) {
+        if (names[i].empty()) {
+            names[i] = cast;
+            for (int k = 0; k < 8; k++) {
+                priv_w8((Bit16u)(kCastAt + 8 * i + k), (Bit8u)(k < (int)cast.size() ? cast[k] : 0));
+            }
+            return (Bit16u)(kCastAt + 8 * i);
+        }
+    }
+    return (Bit16u)kCastAt;      // (all seven taken: the first's)
+}
+
+NpcTrack *track_of(Bit16u obj, bool make) {
+    for (size_t i = 0; i < g_net->tracks.size(); i++) {
+        if (g_net->tracks[i].obj == obj) return &g_net->tracks[i];
+    }
+    if (!make || g_net->tracks.size() >= 48) return NULL;
+    NpcTrack t = { obj, 0, 0, 0, -1e9, 0, 0, 0, -1e9 };
+    g_net->tracks.push_back(t);
+    return &g_net->tracks.back();
+}
+
+bool is_puppet_obj(Bit16u obj) {
+    for (int s = 0; s < kMaxSeats; s++) {
+        if (g_net->puppets[s].obj == obj) return true;
+    }
+    for (int k = 0; k < kNpcCap; k++) {
+        if (g_net->npcs[k].used && g_net->npcs[k].obj == obj) return true;
+    }
+    return false;
+}
+
+// Another pilot flying in our system within d metres of us.
+bool somebody_within(double d) {
+    for (int s = 0; s < kMaxSeats; s++) {
+        if (s == g_net->self) continue;
+        const double x = distance_to(g_net->pilots[s]);
+        if (x >= 0 && x < d) return true;
+    }
+    return false;
+}
+
+// Our encounter ships to the others (the owner of the nav we are in): every ship of the scene that is not ours and
+// not a puppet, within reach of us.
+void send_scene(double now) {
+    Bit16u ships[48];
+    const int n = priv_scene_ships(ships, 48);
+    const Bit16u own = priv_player_ship();
+    Bit32s pos[3];
+    priv_player_pos(pos);
+    NetworkMessage msg;
+    PrivScene *sc = msg.mutable_priv_scene();
+    sc->set_player((Bit32u)g_net->self);
+    sc->set_frame(++g_net->sceneFrame);
+    sc->set_system(g_system);
+    for (int i = 0; i < n; i++) {
+        const Bit16u o = ships[i];
+        if (o == own || is_puppet_obj(o)) continue;
+        Bit32s p[3], m[9], a[4];
+        priv_ship_pos(o, p);
+        const double d = sqrt((double)(p[0] - pos[0]) * (p[0] - pos[0]) + (double)(p[1] - pos[1]) * (p[1] - pos[1])
+                              + (double)(p[2] - pos[2]) * (p[2] - pos[2])) / kUnitsPerMetre;
+        if (d > kStateMetres) continue;
+        priv_ship_matrix(o, m);
+        priv_ship_armor(o, a);
+        NpcTrack *t = track_of(o, true);
+        if (t) {
+            if (now > t->at && now - t->at < 1000) {
+                const double dt = (now - t->at) / 1000.0;
+                t->vx = (p[0] - t->x) / dt;
+                t->vy = (p[1] - t->y) / dt;
+                t->vz = (p[2] - t->z) / dt;
+            }
+            t->x = p[0]; t->y = p[1]; t->z = p[2]; t->at = now;
+        }
+        PrivNpc *c = sc->add_npc();
+        c->set_id(o);
+        c->set_type(priv_ship_type_name(o));
+        c->set_appearance(priv_ship_appearance_name(o));
+        c->set_cast(priv_ship_cast_name(o));
+        c->set_x(p[0]); c->set_y(p[1]); c->set_z(p[2]);
+        for (int k = 0; k < 9; k++) c->add_m(m[k]);
+        if (t) { c->set_vx((Bit32s)t->vx); c->set_vy((Bit32s)t->vy); c->set_vz((Bit32s)t->vz); }
+        c->set_alive(priv_ship_is_alive(o));
+        for (int k = 0; k < 4; k++) c->add_armor(a[k]);
+    }
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
+            g_net->peers[i]->conn.send_best_effort(msg);
+        }
+    }
+    g_net->sceneAt = now;
+}
+
+NpcPuppet *npc_of(int seat, Bit32u id, bool make) {
+    for (int k = 0; k < kNpcCap; k++) {
+        if (g_net->npcs[k].used && g_net->npcs[k].seat == seat && g_net->npcs[k].id == id) return &g_net->npcs[k];
+    }
+    if (!make) return NULL;
+    for (int k = 0; k < kNpcCap; k++) {
+        if (!g_net->npcs[k].used) {
+            g_net->npcs[k] = NpcPuppet();
+            g_net->npcs[k].used = true;
+            g_net->npcs[k].seat = seat;
+            g_net->npcs[k].id = id;
+            return &g_net->npcs[k];
+        }
+    }
+    return NULL;        // (a list has a cap: 24 encounter ships of others' at once)
+}
+
+void take_scene(const PrivScene &sc, int seat) {
+    if (seat < 0 || seat >= kMaxSeats || seat == g_net->self) {
+        return;
+    }
+    const double now = PIC_FullIndex();
+    for (int i = 0; i < sc.npc_size(); i++) {
+        const PrivNpc &c = sc.npc(i);
+        NpcPuppet *p = npc_of(seat, c.id(), true);
+        if (!p) continue;
+        p->at = now;
+        p->type = c.type();
+        p->appearance = c.appearance();
+        p->cast = c.cast();
+        p->x = c.x(); p->y = c.y(); p->z = c.z();
+        p->vx = c.vx(); p->vy = c.vy(); p->vz = c.vz();
+        for (int k = 0; k < 9 && k < c.m_size(); k++) p->m[k] = c.m(k);
+        p->alive = c.alive();
+        for (int k = 0; k < 4 && k < c.armor_size(); k++) p->armor[k] = c.armor(k);
+    }
+}
+
+void npc_made(int tag, Bit16u obj) {
+    if (!g_net || tag < 0 || tag >= kNpcCap) return;
+    NpcPuppet &p = g_net->npcs[tag];
+    p.pending = false;
+    if (!obj) {
+        wclog(1, "Privateer: an encounter ship of pilot %d's (%s) could not be made", p.seat + 1, p.type.c_str());
+        p.used = false;
+        return;
+    }
+    p.obj = obj;
+    p.otype = priv_ship_type(obj);
+    p.parked = false;
+    priv_hold_ai(priv_ship_controller(obj), true);
+    wclog(2, "Privateer: pilot %d's %s (%s, %s) is ds:%04X here", p.seat + 1, p.type.c_str(), p.appearance.c_str(), p.cast.c_str(), obj);
+}
+
+void take_hit(const PrivHit &h) {
+    Bit16u obj = 0;
+    if (h.id() == 0) {
+        obj = priv_player_ship();
+    } else {
+        Bit16u ships[48];
+        const int n = priv_scene_ships(ships, 48);
+        for (int i = 0; i < n && !obj; i++) {
+            if (ships[i] == (Bit16u)h.id() && !is_puppet_obj(ships[i])) obj = ships[i];
+        }
+    }
+    if (!obj) {
+        return;
+    }
+    wclog(2, "Privateer: a hit from pilot %d on %s (ds:%04X): quadrant %d, %d", (int)h.player() + 1, h.id() ? "an encounter ship of ours" : "our ship",
+          obj, (int)h.loc(), (int)h.damage());
+    priv_hit_apply(obj, (int)h.loc(), (int)h.damage());
+}
+
+void take_shot(int seat, Bit32u id) {
+    NpcPuppet *p = npc_of(seat, id, false);
+    static unsigned shots;
+    if (p && p->obj && !p->parked) {
+        priv_ship_fire(p->obj, true);
+        p->fireUntil = PIC_FullIndex() + kFireMs;
+        if (++shots % 20 == 1) {
+            wclog(2, "Privateer: pilot %d's %s (ds:%04X) fires here (%u shots of theirs so far)", seat + 1, p->type.c_str(), p->obj, shots);
+        }
+    }
+}
+
+void frame_npcs(double now, const Bit32s pos[3]) {
+    for (int k = 0; k < kNpcCap; k++) {
+        NpcPuppet &p = g_net->npcs[k];
+        if (!p.used) continue;
+        if (p.obj && !priv_ship_alive(p.obj, p.otype)) {
+            p.obj = 0;          // (gone from our game: exploded, or the game took it)
+            if (p.killed) p.used = false;
+        }
+        if (p.obj && p.fireUntil > -1e8 && now >= p.fireUntil) {
+            priv_ship_fire(p.obj, false);
+            p.fireUntil = -1e9;
+        }
+        const double age = now - p.at;
+        const bool fresh = age < kNpcStaleMs && priv_in_flight();
+        if (!p.alive && p.obj && !p.killed) {
+            priv_ship_kill(p.obj);
+            p.killed = true;
+            priv_hold_ai(priv_ship_controller(p.obj), false);
+            wclog(2, "Privateer: pilot %d's %s (ds:%04X) destroyed, as its owner says", p.seat + 1, p.type.c_str(), p.obj);
+            continue;
+        }
+        if (p.killed) {
+            if (!p.obj) p.used = false;
+            continue;
+        }
+        double ex = 0, ey = 0, ez = 0, d = -1;
+        if (fresh) {
+            const double t = (age < kExtrapolateMs ? age : kExtrapolateMs) / 1000.0;
+            ex = p.x + p.vx * t;
+            ey = p.y + p.vy * t;
+            ez = p.z + p.vz * t;
+            d = sqrt((ex - pos[0]) * (ex - pos[0]) + (ey - pos[1]) * (ey - pos[1]) + (ez - pos[2]) * (ez - pos[2])) / kUnitsPerMetre;
+        }
+        const bool near = fresh && d < (p.obj && !p.parked ? kPuppetGoneMetres : kPuppetMetres);
+        Bit32s at[3] = { (Bit32s)ex, (Bit32s)ey, (Bit32s)ez };
+        if (near && !p.obj && !p.pending) {
+            // a parked ship of the same kind is taken over, else a new one made
+            for (int j = 0; j < kNpcCap && !p.obj; j++) {
+                NpcPuppet &q = g_net->npcs[j];
+                if (j != k && q.used && q.obj && q.parked && q.type == p.type && q.appearance == p.appearance && q.cast == p.cast && !q.killed) {
+                    p.obj = q.obj;
+                    p.otype = q.otype;
+                    q.obj = 0;
+                    q.used = false;
+                }
+            }
+            if (!p.obj) {
+                p.pending = priv_spawn_ship(p.type.c_str(), p.appearance.c_str(), p.cast.c_str(), at, p.m, npc_made, k);
+            }
+        }
+        if (near && p.obj) {
+            priv_ship_set(p.obj, at, p.m);
+            priv_ship_set_armor(p.obj, p.armor);
+            p.parked = false;
+        } else if (p.obj && !p.parked) {
+            Bit32s away[3] = { 0x3FFFFFFF, 0x3FFFFFFF, 0x3FFFFFFF };
+            priv_ship_set(p.obj, away, NULL);
+            p.parked = true;
+            wclog(2, "Privateer: pilot %d's %s (ds:%04X) parked (%s)", p.seat + 1, p.type.c_str(), p.obj, fresh ? "out of reach" : "no reports");
+        }
+        if (!fresh && !p.obj) {
+            p.used = false;
+        }
+    }
+}
+
 }  // namespace
+
+bool priv_session_allow_wing(int sphereId) {
+    if (!g_net || g_net->self < 0 || g_system.empty()) {
+        return true;
+    }
+    const int owner = owner_of(g_system, sphereId);
+    if (owner == g_net->self) {
+        return true;
+    }
+    if (owner >= 0) {
+        static double saidAt = -1e9;
+        if (PIC_FullIndex() - saidAt > 5000) {
+            saidAt = PIC_FullIndex();
+            wclog(2, "Privateer: nav %d's wings are pilot %d's to spawn, not ours", sphereId, owner + 1);
+        }
+        return false;
+    }
+    // nobody's word yet: with another pilot already there, the host decides first
+    return (present_at(g_system, sphereId) & ~(g_net->self >= 0 ? 1u << g_net->self : 0)) == 0;
+}
+
+bool priv_session_is_puppet(Bit16u a, Bit16u b) {
+    return g_net && g_net->self >= 0 && ((a && is_puppet_obj(a)) || (b && is_puppet_obj(b)));
+}
+
+void priv_session_hit(Bit16u target, int loc, int damage) {
+    if (!g_net || g_net->self < 0 || damage <= 0) {
+        return;
+    }
+    int owner = -1;
+    Bit32u id = 0;
+    for (int s = 0; s < kMaxSeats && owner < 0; s++) {
+        if (g_net->puppets[s].obj == target && target) owner = s;
+    }
+    for (int k = 0; k < kNpcCap && owner < 0; k++) {
+        if (g_net->npcs[k].used && g_net->npcs[k].obj == target && target) {
+            owner = g_net->npcs[k].seat;
+            id = g_net->npcs[k].id;
+        }
+    }
+    if (owner < 0) {
+        return;
+    }
+    NetworkMessage msg;
+    PrivHit *h = msg.mutable_priv_hit();
+    h->set_player((Bit32u)g_net->self);
+    h->set_owner((Bit32u)owner);
+    h->set_id(id);
+    h->set_loc(loc);
+    h->set_damage(damage);
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        Peer *p = g_net->peers[i];
+        if (p->hello && p->conn.is_open() && (!g_net->host || p->player == owner)) {
+            p->conn.send(msg);
+        }
+    }
+    wclog(2, "Privateer: our hit on pilot %d's %s (ds:%04X): quadrant %d, %d, sent", owner + 1, id ? "encounter ship" : "ship", target, loc, damage);
+}
+
+void priv_session_fired(Bit16u ship) {
+    if (!g_net || g_net->self < 0 || !ship || ship == priv_player_ship() || is_puppet_obj(ship)) {
+        return;
+    }
+    if (!somebody_within(kStateMetres)) {
+        return;
+    }
+    const double now = PIC_FullIndex();
+    NpcTrack *t = track_of(ship, true);
+    if (t && now - t->shotAt < kShotEveryMs) {
+        return;
+    }
+    if (t) t->shotAt = now;
+    NetworkMessage msg;
+    msg.mutable_priv_shot()->set_player((Bit32u)g_net->self);
+    msg.mutable_priv_shot()->set_id(ship);
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
+            g_net->peers[i]->conn.send_best_effort(msg);
+        }
+    }
+}
 
 void priv_session_frame() {
     if (!g_net || g_net->self < 0 || !priv_in_flight()) {
@@ -756,6 +1354,11 @@ void priv_session_frame() {
     if (wanted && now - g_net->stateAt >= 1000.0 / kStatesPerSecond) {
         send_state(now);
     }
+    // the encounter ships of a nav point we own, to the others near
+    if (wanted && g_net->nav >= 0 && owner_of(g_system, g_net->nav) == g_net->self && now - g_net->sceneAt >= kSceneEveryMs) {
+        send_scene(now);
+    }
+    frame_npcs(now, pos);
     // theirs, in our space
     for (int s = 0; s < kMaxSeats; s++) {
         if (s == g_net->self) {

@@ -81,6 +81,44 @@ bool priv_ship_alive(Bit16u obj, Bit16u type);
 // Its place and attitude (m may be NULL: the place alone).
 void priv_ship_set(Bit16u obj, const Bit32s pos[3], const Bit32s m[9]);
 
+// The nav spheres of the system the player flies in (the game's list, ds:66C2: the nav points, ids 0..7, their
+// centres in world units and radii in the game's metres), and the one the player (or any place) is inside, or -1.
+struct PrivSphere {
+    int id;
+    Bit32s x, y, z;
+    int radius;
+};
+int priv_spheres(PrivSphere out[], int cap);
+void priv_spheres_refresh();        // (at the frame's top)
+int priv_nav_at(const Bit32s pos[3]);
+// Every ship in the scene (the game's list ds:66CE; the player's too), as near pointers.
+int priv_scene_ships(Bit16u out[], int cap);
+// A ship's names (type "TALNWIMP", appearance "TALMIL", cast "PIR_DA"), its place, attitude, armour (the four
+// quadrants of its damage model), whether it lives; its death (the game's own: the alive flag cleared, the game
+// explodes and removes it); its guns fired (the control record's fire bit, held a frame).
+std::string priv_ship_type_name(Bit16u obj);
+std::string priv_ship_appearance_name(Bit16u obj);
+std::string priv_ship_cast_name(Bit16u obj);
+void priv_ship_pos(Bit16u obj, Bit32s pos[3]);
+void priv_ship_matrix(Bit16u obj, Bit32s m[9]);
+bool priv_ship_is_alive(Bit16u obj);
+void priv_ship_armor(Bit16u obj, Bit32s a[4]);
+void priv_ship_set_armor(Bit16u obj, const Bit32s a[4]);
+void priv_ship_kill(Bit16u obj);
+void priv_ship_fire(Bit16u obj, bool on);
+// A hit applied to a ship of ours (our own, or an encounter ship we run) the game's way: the shields take it
+// (seg101:0CF0), the rest goes to the armour (0C7D), the cockpit's damage display for our own ship, and a quadrant
+// gone kills it.
+void priv_hit_apply(Bit16u obj, int loc, int damage);
+
+// The session's side of the hooks: may this encounter wing (at that nav sphere) spawn here; a hit decided here on a
+// ship (the target's near pointer, the quadrant, the damage); a ship of the game's fired its guns here.
+bool priv_session_allow_wing(int sphereId);
+// Either ship is another machine's (a puppet).
+bool priv_session_is_puppet(Bit16u a, Bit16u b);
+void priv_session_hit(Bit16u target, int loc, int damage);
+void priv_session_fired(Bit16u ship);
+
 // The session (wcnet_priv_session.cpp): the room, presence; its tick (from priv_tick, every 999 instructions) and an
 // occasion to say where we are (1 the autopilot engaged).
 void priv_session_tick();

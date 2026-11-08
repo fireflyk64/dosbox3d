@@ -45,6 +45,10 @@ const char *message_type_name(const NetworkMessage &msg) {
     if (msg.has_priv_hello()) return "priv_hello";
     if (msg.has_priv_presence()) return "priv_presence";
     if (msg.has_priv_state()) return "priv_state";
+    if (msg.has_priv_owners()) return "priv_owners";
+    if (msg.has_priv_scene()) return "priv_scene";
+    if (msg.has_priv_hit()) return "priv_hit";
+    if (msg.has_priv_shot()) return "priv_shot";
     return "none";
 }
 

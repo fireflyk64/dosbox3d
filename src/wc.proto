@@ -447,7 +447,57 @@ message PrivPresence {
     optional sint32 x = 5;
     optional sint32 y = 6;
     optional sint32 z = 7;
-    optional uint32 why = 8;        // 0 the period, 1 the autopilot engaged (A), 2 a jump, 3 a launch, 4 a landing, 5 a hello
+    optional uint32 why = 8;        // 0 the period, 1 the autopilot engaged (A), 2 a jump, 3 a launch, 4 a landing, 5 a hello, 6 a nav point entered or left
+    optional sint32 nav = 9;        // the nav sphere the pilot is in (the game's sphere id, 0..7; -1 none)
+    repeated uint32 missions = 10 [packed = true];  // the nav spheres the pilot has a mission objective at
+}
+// A nav point's owner (the host's word, docs/privateer.md section 9): of the pilots present at it, the one whose game
+// runs its encounter for everybody.  Sent reliably when it changes and every few seconds.
+message PrivOwner {
+    optional string system = 1;
+    optional sint32 nav = 2;
+    optional uint32 owner = 3;      // a seat
+}
+message PrivOwners {
+    repeated PrivOwner owners = 1;
+}
+// A ship of the game's own (an encounter's) as its owner's machine flies it: its identity (the owner's near pointer),
+// what to make it as (type, appearance, cast: the AI's file), place, attitude, velocity, whether it lives, its armour.
+message PrivNpc {
+    optional uint32 id = 1;
+    optional string type = 2;
+    optional string appearance = 3;
+    optional string cast = 4;
+    optional sint32 x = 5;
+    optional sint32 y = 6;
+    optional sint32 z = 7;
+    repeated sint32 m = 8 [packed = true];
+    optional sint32 vx = 9;
+    optional sint32 vy = 10;
+    optional sint32 vz = 11;
+    optional bool alive = 12;
+    repeated sint32 armor = 13 [packed = true];     // the four quadrants
+}
+// The owner's encounter ships, best effort, while another pilot is near; the host relays a guest's with its seat.
+message PrivScene {
+    optional uint32 player = 1;
+    optional uint64 frame = 2;
+    optional string system = 3;
+    repeated PrivNpc npc = 4;
+}
+// A hit decided on one machine on a ship another machine flies (a pilot's own ship, or an encounter ship its owner
+// runs): the owner applies it (reliable; the host relays).  id 0: the owner's own ship.
+message PrivHit {
+    optional uint32 player = 1;     // the sender
+    optional uint32 owner = 2;      // the seat whose ship it is
+    optional uint32 id = 3;
+    optional sint32 loc = 4;        // the quadrant hit (0..3)
+    optional sint32 damage = 5;
+}
+// An encounter ship of the sender's fired its guns (best effort): the others' copies fire too.
+message PrivShot {
+    optional uint32 player = 1;
+    optional uint32 id = 2;
 }
 // A pilot's ship as its own machine flies it (Privateer), best effort, while another pilot shares its system: its place
 // (world units), attitude (3x3, 1.0 = 256), velocity (units a second, from its last places) and appearance (what the
@@ -492,4 +542,8 @@ message NetworkMessage {
     optional PrivHello priv_hello = 40;
     optional PrivPresence priv_presence = 41;
     optional PrivState priv_state = 42;
+    optional PrivOwners priv_owners = 43;
+    optional PrivScene priv_scene = 44;
+    optional PrivHit priv_hit = 45;
+    optional PrivShot priv_shot = 46;
 }

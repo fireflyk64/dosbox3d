@@ -23,6 +23,8 @@
 #include "pic.h"
 #include "cpu.h"
 #include "lazyflags.h"
+#include "paging.h"
+#include <math.h>
 
 namespace wc {
 
@@ -47,6 +49,27 @@ enum {
     kShipType = 0x06,               // its type object (near: "TARSTYPE" at the type's +2)
     kShipController = 0x4C,         // its controller (near: the AI's, vtable 0x14A8; the player's, 0x2A06)
     kRecordAppearance = 0x75,       // the player record's appearance name ("CLUNKER" the Tarsus), what the game spawns us with
+    kShipAlive = 0x20,              // its alive flag (base+0x22: cleared by the hit routine's death path, seg053:1385)
+    kShipAppearance = 0x10,         // its appearance object (far; the name at +0x18)
+    kShipModel = 0x56,              // its damage model (far; base+0x58, seg053:175F): armour quadrants int16 at +0x35+6q
+    kModelArmor = 0x35,
+    kSphereList = 0x66C2,           // the system's spheres: a count, then (+2) an array of far pointers to 19-byte records
+    kSceneList = 0x66CE,            // the scene's objects: +2 the first node; a node is {next, object}
+    kSeg077 = 0x31D3,               // seg077: the encounter wings
+    kWingSpawn = 0x0265,            // seg077:0265(wing far): the wing's ships made (the user's nav-point owner decides)
+    kWingSphere = 0x18,             // the wing's sphere id (a byte; the next the system's)
+    kHitPlace = 0x1206,             // seg053:1206, in the hit routine (0F6D) just before the damage goes to the model:
+                                    // [bp+0xA] the ship, [bp+0xC] the quadrant, [bp-6] the damage
+    kSeg101 = 0x3EF1,               // seg101: the damage model
+    kModelShields = 0x0CF0,         //   (model far, quadrant, damage) -> what the shields let through
+    kModelArmorHit = 0x0C7D,        //   (model far, quadrant, damage): off the armour
+    kModelIntact = 0x0C53,          //   (model far) -> AL 1 while every quadrant's armour holds
+    kSeg034 = 0x1835,
+    kDamageDisplay = 0x0489,        // seg034:0489(0x6803, quadrant, damage): the cockpit's damage display (the player's)
+    kDamageDisplayObj = 0x6803,
+    kSeg120 = 0x489B,
+    kFireGuns = 0x0004,             // seg120:0004(weapons far, n): a ship's guns fired (the weapons' +0xA is the ship)
+    kControlFire = 0x1E,            // the control record's fire bits: 4 the guns, 2 the launcher
     kSignatureOff = 0x0074,         // "Type PRIV to run Privateer, or RF to run Righteous Fire."
 };
 const char kSignature[] = "Type PRIV to run Privateer";
@@ -185,8 +208,74 @@ bool queue_call(const PrivCall &c) {
 // alone), which no flight reads.  The type's and appearance's names go on the stack with the call's data.
 enum { kScratch = 0x0074 + 28, kScratchSize = 29 };
 // The AI held for these ships' controllers (puppets: wcnet_priv_session.cpp): their think, seg042:0944, returns at once.
-enum { kSeg042 = 0x1DFE, kNpcThink = 0x0944, kHeldCap = 16 };
+enum { kSeg042 = 0x1DFE, kNpcThink = 0x0944, kHeldCap = 16, kSeg053 = 0x23BA };
 std::vector<Bit16u> g_heldAi;
+
+// A hit applied in steps, each a call of the game's (priv_hit_apply): the shields, the armour, the display, the
+// death check.
+struct HitJob {
+    Bit16u obj, modelOff, modelSeg;
+    int loc, damage, left;
+    bool ours;                  // the player's own ship (the cockpit's display)
+};
+std::vector<HitJob> g_hits;     // (by tag; a slot is reused when its job is done)
+void hit_step(int tag, Bit16u ax, Bit16u dx);
+
+bool queue_call(const PrivCall &c);
+void hit_call(int tag, Bit16u para, Bit16u off, const std::vector<Bit32u> &args) {
+    PrivCall c;
+    c.para = para;
+    c.off = off;
+    c.args = args;
+    c.done = hit_step;
+    c.tag = tag;
+    if (!queue_call(c)) {
+        g_hits[tag].obj = 0;
+    }
+}
+
+// tag's step done: the result ax (dx) of the last call; the next call queued.  The off/seg words of the call's data
+// tell which step it was by the job's own state (left < 0: the shields' call is out).
+void hit_step(int tag, Bit16u ax, Bit16u dx) {
+    (void)dx;
+    if (tag < 0 || tag >= (int)g_hits.size() || !g_hits[tag].obj) {
+        return;
+    }
+    HitJob &h = g_hits[tag];
+    std::vector<Bit32u> a;
+    if (h.left == -1) {
+        // the shields' word: what they let through
+        h.left = (Bit16s)ax;
+        if (h.left > 0) {
+            a.push_back(h.modelOff); a.push_back(h.modelSeg); a.push_back((Bit16u)h.loc); a.push_back((Bit16u)h.left);
+            hit_call(tag, kSeg101, kModelArmorHit, a);
+            h.left = -2;
+            return;
+        }
+        h.left = -3;        // (nothing through: no armour call; the display still)
+    }
+    if (h.left == -2 || h.left == -3) {
+        h.left = -4;
+        if (h.ours) {
+            a.push_back(kDamageDisplayObj); a.push_back((Bit16u)h.loc); a.push_back((Bit16u)h.damage);
+            hit_call(tag, kSeg034, kDamageDisplay, a);
+            return;
+        }
+    }
+    if (h.left == -4) {
+        h.left = -5;
+        a.push_back(h.modelOff); a.push_back(h.modelSeg);
+        hit_call(tag, kSeg101, kModelIntact, a);
+        return;
+    }
+    if (h.left == -5) {
+        if ((ax & 0xff) == 0 && priv_ship_is_alive(h.obj)) {
+            priv_ship_kill(h.obj);
+            wclog(1, "Privateer: a hit from another machine destroyed ds:%04X", h.obj);
+        }
+        h.obj = 0;
+    }
+}
 void spawn_done(int tag, Bit16u ax, Bit16u dx) {
     (void)dx;
     wclog(1, "Privateer: spawn %d made the object ds:%04X", tag, ax);
@@ -253,6 +342,16 @@ void log_watched(const WatchPlace &w) {
     wclog(1, "Privateer: watch %s from %04X:%04X (para %04X) args %04X %04X %04X %04X %04X %04X (\"%s\" \"%s\"); si %04X di %04X",
           w.name.c_str(), retCs, retIp, (Bit16u)(retCs - g_privLoadSeg), a[0], a[1], a[2], a[3], a[4], a[5],
           far_text(a[1], a[2]).c_str(), far_text(a[3], a[4]).c_str(), reg_si, reg_di);
+    // (PRIVWATCH_FAR=1: the first argument as a far pointer, 0x60 bytes of it, as words)
+    const char *far = getenv("PRIVWATCH_FAR");
+    if (far && far[0] == '1') {
+        char line[400];
+        int n = 0;
+        for (int i = 0; i < 0x30 && n < (int)sizeof(line) - 6; i++) {
+            n += snprintf(line + n, sizeof(line) - n, "%04X ", mem_readw(((PhysPt)a[1] << 4) + (Bit16u)(a[0] + 2 * i)));
+        }
+        wclog(1, "Privateer:   %04X:%04X: %s", a[1], a[0], line);
+    }
 }
 
 }  // namespace
@@ -344,9 +443,39 @@ bool priv_check_hooks(Bit32u ip) {
     }
     if (ip == kControlsEntry && codeSeg == (Bit16u)(g_privLoadSeg + kSeg088)) {
         if (!g_saved.active) {
+            priv_spheres_refresh();
             priv_session_frame();       // (once a frame in flight: the puppets placed, our state sent)
         }
         run_calls();
+        return true;
+    }
+    if (ip == kWingSpawn && codeSeg == (Bit16u)(g_privLoadSeg + kSeg077)) {
+        const PhysPt sp = SegPhys(ss) + reg_sp;
+        const Bit16u off = mem_readw(sp + 4), seg = mem_readw(sp + 6);
+        const int sphere = mem_readb(((PhysPt)seg << 4) + (Bit16u)(off + kWingSphere));
+        if (!priv_session_allow_wing(sphere)) {
+            // (the wing stays armed: it spawns when this machine owns the nav point)
+            reg_eip = mem_readw(sp);
+            SegSet16(cs, mem_readw(sp + 2));
+            reg_sp += 4;
+        }
+        return true;
+    }
+    if (ip == kHitPlace && codeSeg == (Bit16u)(g_privLoadSeg + kSeg053)) {
+        const PhysPt bp = SegPhys(ss) + reg_bp;
+        const Bit16u target = mem_readw(bp + 0xA), hitter = mem_readw(bp + 0xE);
+        // (a ship bumping a ship: harmless when either is another machine's, as RetroVega's wing bumps are: two
+        // pilots launch from the same pad into the same place)
+        if (hitter && priv_r16(hitter) == kShipVtable && priv_session_is_puppet(target, hitter)) {
+            mem_writew(bp - 6, 0);
+        }
+        priv_session_hit(target, (Bit16s)mem_readw(bp + 0xC), (Bit16s)mem_readw(bp - 6));
+        return true;
+    }
+    if (ip == kFireGuns && codeSeg == (Bit16u)(g_privLoadSeg + kSeg120)) {
+        const PhysPt sp = SegPhys(ss) + reg_sp;
+        const Bit16u off = mem_readw(sp + 4), seg = mem_readw(sp + 6);
+        priv_session_fired(mem_readw(((PhysPt)seg << 4) + (Bit16u)(off + 0xA)));
         return true;
     }
     if (ip == kNpcThink && codeSeg == (Bit16u)(g_privLoadSeg + kSeg042) && !g_heldAi.empty()) {
@@ -376,6 +505,9 @@ void priv_watch_list(void (*watch)(Bit16u ip)) {
     watch(kAfterKeyboard);
     watch(kControlsEntry);
     watch(kNpcThink);
+    watch(kWingSpawn);
+    watch(kHitPlace);
+    watch(kFireGuns);
     const std::vector<WatchPlace> &w = watch_places();
     for (size_t i = 0; i < w.size(); i++) {
         watch(w[i].off);
@@ -530,6 +662,219 @@ std::string priv_player_appearance() {
         out += (char)c;
     }
     return out;
+}
+
+// (The records are in the game's far heap, in the EMS window at D000: read at the frame's top, where the game itself
+// reads them, and kept for the flight; a read at another moment can see another page there.)
+static PrivSphere g_spheres[16];
+static int g_nSpheres;
+static Bit16u g_spheresShip;
+
+static int read_spheres(PrivSphere out[], int cap) {
+    const int n = priv_r16(kSphereList);
+    const Bit16u arr = priv_r16((Bit16u)(kSphereList + 2));
+    int k = 0;
+    for (int i = 0; i < n && i < 32 && k < cap; i++) {
+        const Bit16u off = priv_r16((Bit16u)(arr + 4 * i)), seg = priv_r16((Bit16u)(arr + 4 * i + 2));
+        if (!seg) continue;
+        const PhysPt rec = ((PhysPt)seg << 4) + off;
+        Bit8u b[19];
+        bool ok = true;
+        for (int j = 0; j < 19 && ok; j++) {
+            ok = !mem_readb_checked(rec + j, &b[j]);
+        }
+        if (!ok || b[16] != 0xFF) {
+            continue;       // (a jump point or a base in the sphere: not the sphere itself)
+        }
+        PrivSphere &s = out[k++];
+        s.id = b[0];
+        s.x = (Bit32s)(b[2] | (b[3] << 8) | (b[4] << 16) | ((Bit32u)b[5] << 24));
+        s.y = (Bit32s)(b[6] | (b[7] << 8) | (b[8] << 16) | ((Bit32u)b[9] << 24));
+        s.z = (Bit32s)(b[10] | (b[11] << 8) | (b[12] << 16) | ((Bit32u)b[13] << 24));
+        s.radius = b[14] | (b[15] << 8);
+    }
+    return k;
+}
+
+void priv_spheres_refresh() {
+    const Bit16u ship = priv_player_ship();
+    if (ship && (ship != g_spheresShip || g_nSpheres == 0)) {
+        g_nSpheres = read_spheres(g_spheres, 16);
+        g_spheresShip = ship;
+        if (g_nSpheres) {
+            wclog(2, "Privateer: %d nav spheres read (ids %d..%d)", g_nSpheres, g_spheres[0].id, g_spheres[g_nSpheres - 1].id);
+        }
+    } else if (!ship) {
+        g_nSpheres = 0;
+        g_spheresShip = 0;
+    }
+}
+
+int priv_spheres(PrivSphere out[], int cap) {
+    if (!priv_in_flight()) {
+        return 0;
+    }
+    const int n = g_nSpheres < cap ? g_nSpheres : cap;
+    for (int i = 0; i < n; i++) {
+        out[i] = g_spheres[i];
+    }
+    return n;
+}
+
+int priv_nav_at(const Bit32s pos[3]) {
+    PrivSphere sp[16];
+    const int n = priv_spheres(sp, 16);
+    int best = -1;
+    double bestD = 0;
+    for (int i = 0; i < n; i++) {
+        const double dx = (double)pos[0] - sp[i].x, dy = (double)pos[1] - sp[i].y, dz = (double)pos[2] - sp[i].z;
+        const double d = sqrt(dx * dx + dy * dy + dz * dz) / 256.0;
+        if (d < sp[i].radius && (best < 0 || d < bestD)) {
+            best = sp[i].id;
+            bestD = d;
+        }
+    }
+    return best;
+}
+
+int priv_scene_ships(Bit16u out[], int cap) {
+    if (!priv_in_flight()) {
+        return 0;
+    }
+    int k = 0;
+    Bit16u node = priv_r16((Bit16u)(kSceneList + 2));
+    for (int guard = 0; node && guard < 256 && k < cap; guard++) {
+        const Bit16u obj = priv_r16((Bit16u)(node + 2));
+        if (obj && priv_r16(obj) == kShipVtable) {
+            out[k++] = obj;
+        }
+        node = priv_r16(node);
+    }
+    return k;
+}
+
+static std::string ds_name(Bit16u at, int max) {
+    std::string out;
+    for (int i = 0; at && i < max; i++) {
+        const Bit8u c = priv_r8((Bit16u)(at + i));
+        if (!c) break;
+        if (c < 32 || c >= 127) return "";
+        out += (char)c;
+    }
+    return out;
+}
+
+std::string priv_ship_type_name(Bit16u obj) {
+    const Bit16u type = priv_r16((Bit16u)(obj + kShipType));
+    return type ? ds_name((Bit16u)(type + 2), 8) : "";
+}
+
+std::string priv_ship_appearance_name(Bit16u obj) {
+    const Bit16u off = priv_r16((Bit16u)(obj + kShipAppearance)), seg = priv_r16((Bit16u)(obj + kShipAppearance + 2));
+    std::string out;
+    for (int i = 0; seg && i < 8; i++) {
+        Bit8u c = 0;
+        if (mem_readb_checked(((PhysPt)seg << 4) + (Bit16u)(off + 0x18 + i), &c) || c < 32 || c >= 127) {
+            return c ? "" : out;
+        }
+        out += (char)c;
+    }
+    return out;
+}
+
+std::string priv_ship_cast_name(Bit16u obj) {
+    return ds_name(priv_r16((Bit16u)(obj + 0x0E)), 8);
+}
+
+void priv_ship_pos(Bit16u obj, Bit32s pos[3]) {
+    for (int i = 0; i < 3; i++) {
+        pos[i] = (Bit32s)priv_r32((Bit16u)(obj + kShipPos + 4 * i));
+    }
+}
+
+void priv_ship_matrix(Bit16u obj, Bit32s m[9]) {
+    for (int i = 0; i < 9; i++) {
+        m[i] = (Bit32s)priv_r32((Bit16u)(obj + kShipMatrix + 4 * i));
+    }
+}
+
+bool priv_ship_is_alive(Bit16u obj) {
+    return obj && priv_r16(obj) == kShipVtable && priv_r8((Bit16u)(obj + kShipAlive)) != 0;
+}
+
+static PhysPt ship_model(Bit16u obj) {
+    const Bit16u off = priv_r16((Bit16u)(obj + kShipModel)), seg = priv_r16((Bit16u)(obj + kShipModel + 2));
+    return seg ? ((PhysPt)seg << 4) + off : 0;
+}
+
+void priv_ship_armor(Bit16u obj, Bit32s a[4]) {
+    const PhysPt model = ship_model(obj);
+    for (int q = 0; q < 4; q++) {
+        Bit16u v = 0;
+        if (!model || mem_readw_checked(model + kModelArmor + 6 * q, &v)) {
+            v = 0;
+        }
+        a[q] = (Bit16s)v;
+    }
+}
+
+void priv_ship_set_armor(Bit16u obj, const Bit32s a[4]) {
+    const PhysPt model = ship_model(obj);
+    for (int q = 0; model && q < 4; q++) {
+        mem_writew(model + kModelArmor + 6 * q, (Bit16u)a[q]);
+    }
+}
+
+void priv_ship_kill(Bit16u obj) {
+    if (priv_ship_is_alive(obj)) {
+        priv_w8((Bit16u)(obj + kShipAlive), 0);
+    }
+}
+
+void priv_ship_fire(Bit16u obj, bool on) {
+    const Bit16u ctl = priv_ship_controller(obj);
+    const Bit16u off = ctl ? priv_r16((Bit16u)(ctl + 2)) : 0, seg = ctl ? priv_r16((Bit16u)(ctl + 4)) : 0;
+    if (!seg) {
+        return;
+    }
+    const PhysPt rec = ((PhysPt)seg << 4) + off;
+    Bit8u b = 0;
+    if (mem_readb_checked(rec + kControlFire, &b)) {
+        return;
+    }
+    mem_writeb(rec + kControlFire, on ? (Bit8u)(b | 4) : (Bit8u)(b & ~4));
+}
+
+void priv_hit_apply(Bit16u obj, int loc, int damage) {
+    if (!priv_ship_is_alive(obj) || loc < 0 || loc > 3 || damage <= 0) {
+        return;
+    }
+    const Bit16u off = priv_r16((Bit16u)(obj + kShipModel)), seg = priv_r16((Bit16u)(obj + kShipModel + 2));
+    if (!seg) {
+        return;
+    }
+    int tag = -1;
+    for (size_t i = 0; i < g_hits.size() && tag < 0; i++) {
+        if (!g_hits[i].obj) tag = (int)i;
+    }
+    if (tag < 0) {
+        if (g_hits.size() >= 32) {
+            return;         // (a list has a cap: a hit beyond 32 in flight is dropped)
+        }
+        g_hits.push_back(HitJob());
+        tag = (int)g_hits.size() - 1;
+    }
+    HitJob &h = g_hits[tag];
+    h.obj = obj;
+    h.modelOff = off;
+    h.modelSeg = seg;
+    h.loc = loc;
+    h.damage = damage;
+    h.left = -1;
+    h.ours = obj == priv_player_ship();
+    std::vector<Bit32u> a;
+    a.push_back(off); a.push_back(seg); a.push_back((Bit16u)loc); a.push_back((Bit16u)damage);
+    hit_call(tag, kSeg101, kModelShields, a);
 }
 
 bool priv_in_flight() {
