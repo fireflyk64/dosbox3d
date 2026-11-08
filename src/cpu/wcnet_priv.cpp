@@ -484,6 +484,54 @@ void priv_tick() {
     }
 }
 
+// The video aid's steady turn (!privturn): each frame our matrix is rotated toward the target by at most the rate,
+// about the axis perpendicular to our forward and the target's direction (the second row is forward).
+struct { bool pod; double rate, until; } g_turn = { true, 0, -1e9 };
+
+static void turn_step() {
+    const double now = PIC_FullIndex();
+    if (now > g_turn.until || !priv_in_flight()) {
+        return;
+    }
+    Bit16u objs[48];
+    const int n = g_turn.pod ? priv_scene_pods(objs, 48) : priv_scene_ships(objs, 48);
+    const Bit16u own = priv_player_ship();
+    Bit32s pos[3];
+    priv_player_pos(pos);
+    double best = 1e18, tgt[3] = { 0, 0, 0 };
+    for (int i = 0; i < n; i++) {
+        if (objs[i] == own) continue;
+        Bit32s p[3];
+        priv_ship_pos(objs[i], p);
+        const double d = sqrt((double)(p[0] - pos[0]) * (p[0] - pos[0]) + (double)(p[1] - pos[1]) * (p[1] - pos[1]) + (double)(p[2] - pos[2]) * (p[2] - pos[2]));
+        if (d > 256.0 * 100000) continue;       // (a parked one, far off)
+        if (d < best) { best = d; for (int k = 0; k < 3; k++) tgt[k] = (p[k] - pos[k]) / d; }
+    }
+    if (best > 1e17) return;
+    Bit32s m[9];
+    priv_player_matrix(m);
+    double r[3], f[3], u[3];
+    for (int k = 0; k < 3; k++) { r[k] = m[k] / 256.0; f[k] = m[3 + k] / 256.0; u[k] = m[6 + k] / 256.0; }
+    const double dot = f[0] * tgt[0] + f[1] * tgt[1] + f[2] * tgt[2];
+    const double ang = acos(dot > 1 ? 1 : dot < -1 ? -1 : dot);
+    const double step = g_turn.rate / 20.0;         // (a frame of the page's 20)
+    if (ang < 0.002) return;
+    double axis[3] = { f[1] * tgt[2] - f[2] * tgt[1], f[2] * tgt[0] - f[0] * tgt[2], f[0] * tgt[1] - f[1] * tgt[0] };
+    const double al = sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+    if (al < 1e-6) { axis[0] = u[0]; axis[1] = u[1]; axis[2] = u[2]; } else { for (int k = 0; k < 3; k++) axis[k] /= al; }
+    const double th = ang < step ? ang : step, c = cos(th), sn = sin(th);
+    double *rows[3] = { r, f, u };
+    for (int i = 0; i < 3; i++) {
+        double *v = rows[i];
+        const double ad = axis[0] * v[0] + axis[1] * v[1] + axis[2] * v[2];
+        const double cr[3] = { axis[1] * v[2] - axis[2] * v[1], axis[2] * v[0] - axis[0] * v[2], axis[0] * v[1] - axis[1] * v[0] };
+        double o[3];
+        for (int k = 0; k < 3; k++) o[k] = v[k] * c + cr[k] * sn + axis[k] * ad * (1 - c);
+        for (int k = 0; k < 3; k++) m[3 * i + k] = (Bit32s)(o[k] * 256.0 + (o[k] < 0 ? -0.5 : 0.5));
+    }
+    priv_ship_set(own, pos, m);
+}
+
 bool priv_check_hooks(Bit32u ip) {
     if (!g_found) {
         return false;
@@ -496,6 +544,7 @@ bool priv_check_hooks(Bit32u ip) {
     if (ip == kControlsEntry && codeSeg == (Bit16u)(g_privLoadSeg + kSeg088)) {
         g_frameSp = reg_sp;
         if (!g_saved.active) {
+            turn_step();
             priv_spheres_refresh();
             priv_session_frame();       // (once a frame in flight: the puppets placed, our state sent)
         }
@@ -776,6 +825,38 @@ bool priv_script_item(const std::string &item, double t) {
         for (int i = 0; i < 3; i++) at[i] = (Bit32s)(p[i] - f[i] * metres * 256.0);
         priv_ship_set(priv_player_ship(), at, m);
         wclog(1, "key script %.1fs: !privaim: at %d m from pod ds:%04X (was %d m), variant %d", t, metres, best, (int)(bestD / 256), variant);
+        return true;
+    }
+    if (item.compare(0, 12, "!privspheres") == 0 && g_found) {
+        // !privspheres: every record of the system's sphere list (ds:66C2; far), 32 bytes each: the nav spheres
+        // (kind 0xFF at +16), jump points, bases
+        const int n = priv_r16(kSphereList);
+        const Bit16u arr = priv_r16((Bit16u)(kSphereList + 2));
+        for (int i = 0; i < n && i < 32; i++) {
+            const Bit16u off = priv_r16((Bit16u)(arr + 4 * i)), seg = priv_r16((Bit16u)(arr + 4 * i + 2));
+            std::string hex;
+            for (int j = 0; seg && j < 32; j++) {
+                Bit8u b = 0;
+                char bb[4];
+                if (mem_readb_checked(((PhysPt)seg << 4) + off + j, &b)) break;
+                snprintf(bb, sizeof bb, "%02X", b);
+                hex += bb;
+                if (j % 2 == 1) hex += ' ';
+            }
+            wclog(1, "key script %.1fs: sphere %d at %04X:%04X: %s", t, i, seg, off, hex.c_str());
+        }
+        return true;
+    }
+    if (item.compare(0, 10, "!privturn=") == 0 && g_found) {
+        // !privturn=<pod|ship>:<degrees a second>:<seconds>: our ship turned steadily toward the nearest pod (or other
+        // ship) for that long, a video aid (the matrix's second row is "forward")
+        char what[8] = "pod";
+        int degs = 30, secs = 4;
+        sscanf(item.c_str() + 10, "%7[a-z]:%d:%d", what, &degs, &secs);
+        g_turn.pod = strcmp(what, "ship") != 0;
+        g_turn.rate = degs * 3.14159265 / 180.0;
+        g_turn.until = PIC_FullIndex() + 1000.0 * secs;
+        wclog(1, "key script %.1fs: turning toward the nearest %s at %d degrees a second for %d s", t, g_turn.pod ? "pod" : "ship", degs, secs);
         return true;
     }
     if (item.compare(0, 9, "!privkill") == 0 && g_found) {

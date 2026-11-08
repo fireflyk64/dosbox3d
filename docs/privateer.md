@@ -281,3 +281,70 @@ error 0404; after the scene removal: the heap ring corrupted; with the owner wor
 ship out of reach is parked far off and reused by the next of its kind, and the test aid `!privdel=<mode>` stays
 for another look.  The far heap (the EMS window: types, appearances, casts) has not been measured.
 
+## 13. Cargo pods (step 7)
+
+**The game's pod.**  X in flight expels the hold as one pod (seg036:0C90, from the hold's list: one pod a unit for
+cargo of kind 0x29, else one pod of all; a ship's death makes pods the same way): type CDBRTYPE, appearance from the
+commodity (RAWMAT for iron and uranium), name "CARGO" (dseg:13AA), vtable 0x1584; a ship's layout up to the alive
+flag at +0x20 (the place at +0x14), then at +0x4B its cargo list -- a word, the first node (far) at +2, the last at +6;
+a node {next far, record far}; a record 0x28 bytes at +0x10 of a 0x38-byte far block that begins with the commodity's
+name ("Iron", 12 bytes), a word -3 and the block's own segment: the record's +0 points back at its block, +4 the
+pod's type name, +0xD its appearance's, +0x16 the category, +0x17 the kind, +0x18 the units -- and at +0x56 the units
+of all its records.  A pod drifts with the ship's velocity and a push, and lives some minutes (a counter at +2).  The
+tractor beam (7,500 at the dealer's Repair and Upgrade; the new Tarsus's Shield Generator 1 sells for the same) is a
+weapon of the W key's cycle ("W: Tractor beam", with the missiles; G cycles the guns alone) fired with Enter: held
+on a pod 120 m ahead, the pod is drawn in within some seconds, its records into the hold, the pod deleted (measured
+alone: the pod gone from the scene list; !privaim=120:1 had put the ship facing it, the matrix's second row being
+"forward").
+
+**Shared.**  Every pilot's `PrivScene` (the owner's with its encounter ships; anybody's with pods alone, nothing sent
+when there is none) carries each pod of its scene within 60,000 m that is not a puppet and not taken: its id, type,
+appearance, cast "CARGO", place and velocity, `pod`, every record's 0x38-byte block (`cargo`) and the `units`.  The
+others make it by the game's own place as any encounter ship (within 30,000 m, the memory reserve kept at 256 bytes
+a pod), then give it its cargo: for each record the game's far malloc (seg000:089D, a call for the block and one for
+the node), the block written with its own address in the record's +0 and the word before it, the node at the list's
+tail, the units at +0x56; placed every frame from the reports, no AI to hold, no armour, never killed: parked far off
+when its owner stops reporting it (taken, expired, or the owner gone).  A pod puppet gone from our scene while it
+was here and fresh -- our tractor beam took it (the game moved its records into our hold and deleted it) -- is told
+to its owner (`PrivPodTaken`, reliable, relayed to the owner), who puts its own pod far off (never deleted: the game
+lets it expire there) and reports it no more; the other pilots' puppets of it go stale and are parked.  So the first
+to tractor a pod has it; two tractoring the same pod within the same instant would both have it (loose coupling).
+Measured, two native machines: the guest's pod of 2 iron and 1 uranium made on the host with both records in the
+host's own far heap ("Iron" 2, "Uranium" 1, 3 units), following the pod's drift.
+
+**Base screens** (Achilles; the pad's "Main Concourse" at 0.93, 0.50): the concourse's Hangar (0.15, 0.45), Ship
+Dealer (0.50, 0.45), Merchants' Guild (0.70, 0.35), Bar (0.70, 0.50), Mission Computer (0.80, 0.55), Mercenaries'
+Guild (0.90, 0.30), Commodity Exchange (0.90, 0.50); a booth is left by a click at the screen's bottom (0.5, 0.96).
+The exchange: BUY (0.24, 0.40) then the item picture (0.18, 0.22) a unit; SELL (0.12, 0.40); Next Item (0.39, 0.15),
+Previous (0.39, 0.29); 2,000 credits to begin with, iron 46, uranium 403.  The dealer: Repair and Upgrade (0.60,
+0.22), Purchase Orion / Centurion / Galaxy, Main Concourse (0.39, 0.08); its upgrade screen: SELL (0.15, 0.96), BUY
+(0.30, 0.96), the next item (0.43, 0.80) and the previous (0.43, 0.68), the item picture (0.18, 0.72) buys or sells,
+"Ship Dealer" (0.04, 0.29) leaves, the Software Booth (0.50, 0.25) sells maps.  For sale: Laser 1,000, Cargo
+Expansion 5,000, ECM 3/2/1 30,000/15,000/5,000, Repair Droid 30,000, Jump Drive 10,000, Tractor Beam 7,500, Tungsten
+Armor 1,500, Plasteel Armor 1,000, Afterburner 3,000, Engine Upgrade 1 10,000, Shield Generator 2/1 30,000/10,000, FF
+Missile 100.  The new Tarsus sells its Laser for 750, Plasteel Armor 500, Shield Generator 1 7,500, 5 DF Missiles 10
+each, Missile Launcher 7,500: a jump drive and a tractor beam are had for the shields and the launcher (the user's
+recipe, "sell your mk2 iris and get a mk1 iris", read for this version).  Test aids: `!privscene` (every object of
+the scene list: ships, pods with their records, the rest with their bytes), `!privaim=<metres>:<variant>` (our ship
+put that far from the nearest pod, facing it), `!privkill`, `!privhold`.
+
+## 14. Open: mission objectives, the Steltek drone, the face
+
+**Mission objectives** (step 5's "one with a mission objective there, first"): the presence message carries
+`missions` (a bit a nav sphere) and the host's decision honours it, but nothing fills it yet.  The Mission Computer
+(concourse 0.80, 0.55; the palm plate 0.70, 0.80; arrows 0.22 / 0.33, 0.80; Accept 0.47, 0.80; Exit at the bottom)
+gives missions such as "ATTACK MISSION ... Retro ships at Nav 7" in Troy, and the nav map (N) rings Nav 7 in orange
+for it: the game knows the objective's nav point from the accepted mission's SCEN form.  The sphere records (ds:66C2:
+16 in Troy, 0-7 bases and jump points with a kind at +16, 8-15 the nav spheres, kind 0xFF, radius at +14) carry no
+mark of it (compared with and without two missions accepted: the same 19 bytes); the accepted missions' list in
+memory, and its objectives' nav points, remain to be found (`!privspheres` dumps the records).
+
+**The Steltek drone** (step 8): DRONTYPE.IFF is a type like any; no mission file names it (the mission files name
+their ships in lower case, "demntypedemon", and none says "dron"), so the game's code spawns it (the string at
+dseg:362C, whose references the disassembler cannot place: the segments that hold them have no function prologues).
+Where that spawn goes through the encounter spawn (seg077:0265) the nav point's owner alone makes it, so it is one
+drone a nav point as the user asked; its target is then the owner's own ship, not the lowest seat's.  Untestable
+without a late campaign (the drone comes after the Steltek gun); left as it is.
+
+**The face on the comm screen** (section 11): open.
+
