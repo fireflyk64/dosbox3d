@@ -62,6 +62,10 @@ int32_t logic_target_km(int16_t s);     /* how far slot s is from the player, hu
 
 /* nav point n of the mission (0 home): 1 and how far the player is from it (km), 0 when there is no such point */
 int16_t logic_nav_km(int16_t n, int32_t *km);   /* a nav point on the player's lists: how far; 0 not one */
+/* a mission goal met by the flight just ended (campaign.c camp_points; missions.txt `goal`, RV_GOAL_*): kind, a (the
+ * nav point, or the ship type), its nav point, and which of the goals of that kind, type and place it is (0 the first:
+ * the nth such ship) */
+int16_t logic_goal(uint8_t kind, uint8_t a, uint8_t nav, uint8_t nth);
 void logic_nav_goal(int16_t n, int32_t *x, int32_t *y, int32_t *z);   /* where nav point n is to be reached, km: its place,
                                            or for a point in a field the field's middle (the host's test pilot) */
 int16_t logic_nav_seen(int16_t n);      /* a waypoint the player has reached already (the lists mark it: *NAV 1) */

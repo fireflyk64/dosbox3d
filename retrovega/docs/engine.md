@@ -109,7 +109,15 @@ lancelot missions", "I wonder if winning and losing paths got mixed up"). Laid o
 (layers 1 to 8, every branch a layer or more down), wins to the left: Enigma; Cephid, Shelton; the Crucible,
 Defiance; Oldziey; Lixis, Ataraxia; Rigel, Wolf 359; Barnard; Shmrn, Luyten. A perfect run is Enigma, Cephid, the
 Crucible, Lixis, Rigel, Shmrn (Frost, Drifter, Comet, Anchor, Frost, Torch: the user's "option B" gave the Crucible to
-Comet, whose Shelton and Defiance are on the losing side, so that Anchor does not fly two systems in a row). Below, the
+Comet, whose Shelton and Defiance are on the losing side, so that Anchor does not fly two systems in a row). **The way
+out is the old game's too: points.** A mission's `goal` lines (its old objectives: a nav point reached and its wave
+gone, the landing, an escort through, a ship come, a ship killed; tests/wc1/goals.py) are scored as the flight ends
+(campaign.c `camp_points`, logic.c `logic_goal`) and summed over the system (the save's `points`, version 3); at its
+end the good way when they reach its `pass` (campaign.csv, the old CAMP.000 +3), else the bad: Rigel's 40 of 20 + 15 +
+15 makes a lost Rigel 2 the way to Barnard (the user: "we want people to experience more unless they are experts at
+Rigel 2"), and a lost flight's goals met still count. Shmrn and Luyten, which end the campaign, and a system begun in
+an older save (`POINTS_UNKNOWN`), go by missions won as before. The campaign log shows the points against the pass
+mark. Below, the
 lattice as first sketched; `tools/campaign.py` (the placeholder campaign) no longer writes the file.
 
 `tools/campaign.py` wrote `data/campaign.csv`; the engine only follows its

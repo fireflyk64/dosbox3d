@@ -5027,6 +5027,47 @@ static void t_held_wave(void)
     REQUIRE(victoryPoints != 0, e_done, victoryPoints, 0, 0);
 }
 
+/* M8.61: the old game's goals (missions.txt `goal`, logic_goal, campaign.c camp_points; the user, 2026-11-08: a lost
+ * Kurasawa 2 to Rostov, "we want people to experience more unless they are experts at Rigel 2"): nav 1 with two
+ * Nicanders is met only once reached and both are gone (the old objective 0: Enyo 1 traced, its Nav 1 reached with
+ * the Salthi alive not met); a kill goal's nth is met with n + 1 of the type there killed; the landing, missionStatus 1 */
+static void t_goals(void)
+{
+    static const char __far e_far[] = "nav 1 not reached, its goal is met (%d)";
+    static const char __far e_alive[] = "nav 1 reached with its Nicanders alive, its goal is met (%d)";
+    static const char __far e_one[] = "one Nicander of two killed: the kill goals %d and %d (1, 0), the nav's %d (0)";
+    static const char __far e_two[] = "both killed: the nav goal %d, the second kill goal %d (1, 1)";
+    static const char __far e_land[] = "the landing goal %d with missionStatus %d (met only at 1, landed)";
+    int16_t s, i, first = -1;
+    pt_mission();
+    pt_nav(1, 0, 0, NAV1_Z);
+    pt_mship(PT_ENEMY, SIDE_AERA, 1, 2, RV_PILOT_NONE);
+    pt_launch(PT_PLAYER);
+    playerCanBeDamaged = 0;
+    REQUIRE(!logic_goal(RV_GOAL_NAV, 1, 1, 0), e_far, logic_goal(RV_GOAL_NAV, 1, 1, 0), 0, 0);
+    if (!pt_go(0, NAV1_Z))
+        return;
+    REQUIRE(!logic_goal(RV_GOAL_NAV, 1, 1, 0), e_alive, logic_goal(RV_GOAL_NAV, 1, 1, 0), 0, 0);
+    for (s = 1; s <= RV_MAX_SHIP_SLOT && first < 0; s++)
+        if (slot_is_ship(s) && commAnimInfo[s] == SIDE_AERA)
+            first = s;
+    for (i = 0; i < 100 && first > 0 && shipAiState[first] != 9; i++)
+        (void)pt_hit(0xFFFF, first, 2000, 2, 0, 0);
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(logic_goal(RV_GOAL_KILL, PT_ENEMY, 1, 0) && !logic_goal(RV_GOAL_KILL, PT_ENEMY, 1, 1)
+            && !logic_goal(RV_GOAL_NAV, 1, 1, 0), e_one, logic_goal(RV_GOAL_KILL, PT_ENEMY, 1, 0),
+            logic_goal(RV_GOAL_KILL, PT_ENEMY, 1, 1), logic_goal(RV_GOAL_NAV, 1, 1, 0));
+    if (!pt_kill_side(SIDE_AERA))
+        return;
+    REQUIRE(logic_goal(RV_GOAL_NAV, 1, 1, 0) && logic_goal(RV_GOAL_KILL, PT_ENEMY, 1, 1), e_two,
+            logic_goal(RV_GOAL_NAV, 1, 1, 0), logic_goal(RV_GOAL_KILL, PT_ENEMY, 1, 1), 0);
+    REQUIRE(!logic_goal(RV_GOAL_LAND, 0, 0, 0), e_land, logic_goal(RV_GOAL_LAND, 0, 0, 0), missionStatus, 0);
+    missionStatus = 1;
+    REQUIRE(logic_goal(RV_GOAL_LAND, 0, 0, 0), e_land, logic_goal(RV_GOAL_LAND, 0, 0, 0), missionStatus, 0);
+    missionStatus = 0;
+}
+
 /* M8.60: a wave the old game lists at two points (missions.txt also=N; its Dakota 1's Salthi and the like, the user,
  * 2026-11-07: "The hidden nav points are key"): two Nicanders at a hidden point 20,000 km out, also=1 a waypoint at
  * 40,000: the hidden point reached first brings them, and the waypoint after it brings no more; flown again straight to
@@ -5967,32 +6008,43 @@ static void t_kit_boost(void)
     REQUIRE(again == plain[0], e_plain, again, plain[0], 0);
 }
 
-/* M8.23: how a system comes out of the flight just flown (a debrief's system=): nothing until its last mission; then
- * good with more won than lost, bad with fewer, an even split by the running total, as camp_resolve will have it */
+/* M8.23: how a system comes out of the flight just flown (a debrief's system=): nothing until its last mission; then,
+ * as camp_resolve will have it, by points against the system's pass mark (the old game's: campaign.csv `pass`); a
+ * system begun before the points (an older save's, POINTS_UNKNOWN) good with more won than lost, bad with fewer */
 static void t_way_out(void)
 {
     static const char __far e_way[] = "wins %d, the flight %d: system= says %d";
+    static const char __far e_pts[] = "points %d of the pass mark %d with the last flight's: system= says %d";
     RvSave keep = g_camp;
-    int16_t node, count, nb, ng, ne;
-    for (node = 0; node < (int16_t)g_nnodes && camp_node_missions(node) != 3; node++)
+    int16_t node, count, nb, ng, ne, pg, pb, pass;
+    for (node = 0; node < (int16_t)g_nnodes && (camp_node_missions(node) != 3 || !g_nodes[node].pass_mark); node++)
         ;
     g_camp.node = (uint8_t)node;
     count = camp_node_missions(node);
+    pass = g_nodes[node].pass_mark;
     g_camp.trend = 0;
     g_camp.mission = 0;
     g_camp.wins = 0;
-    camp_way_out(1);
+    g_camp.points = POINTS_UNKNOWN;
+    camp_way_out(1, 0);
     ne = g_camp_way;
     g_camp.mission = (uint8_t)(count - 1);
     g_camp.wins = 1;
-    camp_way_out(1);
+    camp_way_out(1, 0);
     ng = g_camp_way;
-    camp_way_out(0);
+    camp_way_out(0, 0);
     nb = g_camp_way;
+    g_camp.points = (uint16_t)(pass - 5);
+    camp_way_out(0, 5);                 /* (a lost flight's goals met can still carry it, as the old game's) */
+    pg = g_camp_way;
+    camp_way_out(1, 4);
+    pb = g_camp_way;
     g_camp = keep;
     REQUIRE(ne == 0, e_way, 0, 1, ne);
     REQUIRE(ng == 1, e_way, 1, 1, ng);
     REQUIRE(nb == 2, e_way, 1, 0, nb);
+    REQUIRE(pg == 1, e_pts, pass, pass, pg);
+    REQUIRE(pb == 2, e_pts, pass - 1, pass, pb);
 }
 
 /* M8.24: the chosen nav point: it follows the way ahead until N picks one; N goes down the list and round through home;
@@ -7802,6 +7854,7 @@ static const char __far n_m8_57[] = "M8.57 escort-arrive (arrivals_step, mission
 static const char __far n_m8_58[] = "M8.58 escort-threat (pass_side, scatter_of): fighters at a capital ship aim at its middle: four Aristons kill an Ox within 60 s";
 static const char __far n_m8_59[] = "M8.59 escort-back (role=back, escorted): an escort target there when its point is reached makes for home at once, and its loss is the mission's";
 static const char __far n_m8_60[] = "M8.60 wave-also (also=N, mship_brought): a wave listed at a hidden point and a waypoint comes once, at whichever is reached first";
+static const char __far n_m8_61[] = "M8.61 goals (logic_goal): a nav point met once reached and its enemies gone; the nth kill goal with n + 1 killed; the landing";
 static const char __far n_m8_62[] = "M8.62 held-wave (mission_done, wave_may_come): a wave held at a hidden point at the launch keeps the mission undone till it has come and gone";
 static const char __far n_m8_55[] = "M8.55 field-nav (nav_field, nav_stop, nav_in_reach): a waypoint inside a field is the field's middle: the autopilot takes the player in, and the point is reached only within 1,200 km of the middle";
 static const char __far n_m8_54[] = "M8.54 capital-help (capital_help): an Aera capital ship hurt through its armour by an unengaged attacker turns half its side's fighters on it; none when a fighter is already near the attacker";
@@ -7822,7 +7875,7 @@ static const char __far n_m6_6[] = "M6.6 ram-caps (ram): a collision costs the p
 static const char __far n_m8_20[] = "M8.20 jump-told (route_step, logic_on_jump): an escorted ship's jump is told once, friendly, for the star and the flash";
 static const char __far n_m8_21[] = "M8.21 wingman-lost (logic_wingman_lost, camp_load_units, camp_line_ok): a lost wingman is named, the next mission solo, their lines gone";
 static const char __far n_m8_22[] = "M8.22 kit-boost (kit_boost, logic_boost): talking to Kit before the launch: half as much armour again, or a round more; nothing without it";
-static const char __far n_m8_23[] = "M8.23 way-out (camp_way_out): how a system comes out of the flight just flown: nothing before its last mission, then as camp_resolve has it";
+static const char __far n_m8_23[] = "M8.23 way-out (camp_way_out): how a system comes out of the flight just flown: nothing before its last mission, then by its points against the pass mark (by wins for a save from before them)";
 static const char __far n_m8_24[] = "M8.24 nav-choice (logic_nav_next, logic_autopilot): the chosen nav point follows the way ahead until N picks one; the autopilot goes to it, home too";
 static const char __far n_m8_25[] = "M8.25 scene (step_scene): past 16,000 km the carrier is out of the scene and cannot be targeted; it is back as it was when the player is";
 static const char __far n_m8_27[] = "M8.27 second-wave (wave_may_come): a hidden point's enemies wait for the enemy fighters out, come when the last is killed, are called off when it ran";
@@ -7892,7 +7945,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m7_9, t_seeker_chases, 0 }, { n_m7_10, t_missile_blast, 0 }, { n_m7_11, t_missile_knock, 0 }, { n_m7_12, t_ff_target, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 }, { n_m8_56, t_nav_switch, 0 }, { n_m8_57, t_escort_arrive, 0 }, { n_m8_58, t_escort_threat, 0 }, { n_m8_59, t_escort_back, 0 }, { n_m8_60, t_wave_also, 0 }, { n_m8_62, t_held_wave, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 }, { n_m8_56, t_nav_switch, 0 }, { n_m8_57, t_escort_arrive, 0 }, { n_m8_58, t_escort_threat, 0 }, { n_m8_59, t_escort_back, 0 }, { n_m8_60, t_wave_also, 0 }, { n_m8_61, t_goals, 0 }, { n_m8_62, t_held_wave, 0 },
 };
 
 /* --- the run --- */

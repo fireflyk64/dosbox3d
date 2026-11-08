@@ -36,7 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 25                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 26                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
                                         # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
@@ -51,8 +51,9 @@ VERSION = 25                            # 2: the ship types' engines; 3: their h
                                         # 21: the map at the old game's own size: nav points, ship offsets and
                                         # fields in 32 bits of km (its farthest point 105,000 km out)
                                         # 25: a mission ship's also=N (a second nav point that brings it, whichever
-                                        # is reached first: the old game's ships listed at two points)
-LIMITS = {'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 16,
+                                        # is reached first: the old game's ships listed at two points); 26: a
+                                        # mission's goals and a node's pass mark (the old game's points)
+LIMITS = {'GOALS': 12, 'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 16,
           'SEATS': 3, 'TALKS': 200, 'FIELDS': 7, 'SHIPTYPES': 64, 'SHIPRECORDS': 44, 'WEAPONS': 40}
 TEXT = {'ID': 16, 'TITLE': 48, 'TALK': 108, 'KEY': 10, 'CALLSIGN': 12,
         'NAME': 24, 'NODE_ID': 8, 'LINE': 72, 'CODE': 6, 'WNAME': 20}
@@ -200,7 +201,13 @@ PILOT = [('char', 'key[RV_KEY]', '%ds' % TEXT['KEY']), ('char', 'callsign[RV_CAL
 NODE = [('char', 'id[RV_NODE_ID]', '%ds' % TEXT['NODE_ID']), ('unsigned char', 'layer', 'B'),
         ('signed char', 'col', 'b'), ('unsigned short', 'missions[RV_MISSIONS_PER_NODE]', '4H'),
         ('unsigned char', 'good', 'B'), ('unsigned char', 'bad', 'B'), ('unsigned char', 'outside', 'B'),
-        ('unsigned char', 'pad', 'B')]
+        ('unsigned char', 'pass_mark', 'B')]   # (campaign.csv pass: the points its missions' goals must reach for the
+                                        # good way out, the old game's CAMP.000 +3; 0: by missions won, campaign.c)
+# a mission's goal (missions.txt `goal`, the old game's objectives and their points: tests/wc1/goals.py): kind, a (the
+# nav point, or the ship type), its nav point, the points it is worth (logic.c logic_goal says whether it was met)
+GOAL = [('unsigned char', 'kind', 'B'), ('unsigned char', 'a', 'B'), ('unsigned char', 'nav', 'B'),
+        ('unsigned char', 'pts', 'B')]
+GOAL_KINDS = {'nav': 0, 'land': 1, 'escort': 2, 'meet': 3, 'kill': 4}
 NAV = [('unsigned char', 'id', 'B'), ('unsigned char', 'flags', 'B'), ('long', 'x', 'l'), ('long', 'y', 'l'),
        ('long', 'z', 'l'), ('unsigned short', 'reach', 'H'), ('unsigned char', 'sw[4]', '4s')]   # (flags: 1 hidden, 2
                                         # off at the start; sw: what entering it switches, 0x80 | nav on, nav off, 0xFF
@@ -247,7 +254,42 @@ MISSION = [('char', 'id[RV_ID]', '%ds' % TEXT['ID']), ('unsigned char', 'node', 
            ('RvNav', 'nav[RV_NAVS]', None), ('RvShip', 'ship[RV_SHIPS]', None),
            ('unsigned char', 'seat[RV_ROOMS][RV_SEATS]', '6B'), ('unsigned char', 'wipe', 'B'), ('unsigned char', 'hit', 'B'),
            ('unsigned char', 'rules', 'B'),
-           ('unsigned short', 'talk0', 'H'), ('RvField', 'field[RV_FIELDS]', None)]
+           ('unsigned short', 'talk0', 'H'), ('RvField', 'field[RV_FIELDS]', None),
+           ('unsigned char', 'ngoal', 'B'), ('RvGoal', 'goal[RV_GOALS]', None)]
+
+
+def pass_mark(n, where):
+    """campaign.csv's pass: the points that take the node's good way (0 or none: by missions won)"""
+    v = int(n.get('pass') or 0)
+    if not 0 <= v <= 255:
+        raise Fail('%s: pass %d, 0 to 255' % (where, v))
+    return v
+
+
+def mission_goals(m, ships, nav_ids):
+    """a mission's goal lines: nav N PTS; land PTS; escort|meet|kill TYPE navN PTS (a ship line of that type there)"""
+    out = []
+    for where, f in m['goal']:
+        kind = f[0] if f else ''
+        if kind not in GOAL_KINDS or len(f) != {'nav': 3, 'land': 2}.get(kind, 4) or not f[-1].isdigit() \
+                or not 1 <= int(f[-1]) <= 255:
+            raise Fail('%s: goal nav N PTS | land PTS | escort|meet|kill TYPE navN PTS (PTS 1 to 255)' % where)
+        a = nav = 0
+        if kind == 'nav':
+            a = nav = int(f[1]) if f[1].isdigit() else -1
+        elif kind != 'land':
+            nav = int(f[2][3:]) if f[2].startswith('nav') and f[2][3:].isdigit() else -1
+            if f[1] not in ships:
+                raise Fail('%s: goal: no ship type %r' % (where, f[1]))
+            a = ships[f[1]]
+            if not any(g[0] == f[1] and (g[2] == 'nav%d' % nav or 'also=%d' % nav in g[3:]) for _w, g in m['ship']):
+                raise Fail('%s: goal: no %s line at nav %d' % (where, f[1], nav))
+        if nav not in nav_ids:
+            raise Fail('%s: goal: no nav point %s in the mission' % (where, nav))
+        out.append(struct.pack(fmt(GOAL), GOAL_KINDS[kind], a, nav, int(f[-1])))
+    if len(out) > LIMITS['GOALS']:
+        raise Fail('%s: %d goals, at most %d' % (m['where'], len(out), LIMITS['GOALS']))
+    return out
 
 
 def fmt(fields):
@@ -311,7 +353,7 @@ def parse_missions(path):
         where = '%s:%d' % (os.path.basename(path), lineno)
         if key == 'mission':
             cur = {'id': val, 'where': where, 'nav': [], 'ship': [], 'talk': [], 'seats': {}, 'field': [],
-                   'rules': dict(defaults)}
+                   'goal': [], 'rules': dict(defaults)}
             missions.append(cur)
         elif key == 'rules':            # (before any mission: every mission's; in one: its own)
             parse_rules(where, val, defaults if cur is None else cur['rules'])
@@ -329,6 +371,8 @@ def parse_missions(path):
             cur['ship'].append((where, val.split()))
         elif key == 'field':
             cur['field'].append((where, val.split()))
+        elif key == 'goal':
+            cur['goal'].append((where, val.split()))
         elif key in ROOMS:
             cur['seats'][key] = (where, dict(kv.split('=', 1) for kv in val.split()))
         elif key in ('talk', 'say', 'radio'):   # (one list: their order is the order they are said in)
@@ -560,7 +604,8 @@ def compile_all():
                 raise Fail('%s: mission %s says it belongs to %s' % (where, m, missions[mission_index[m]].get('node')))
         out_nodes.append(struct.pack(fmt(NODE), text(n['node'], TEXT['NODE_ID'], where), int(n['layer']),
                                      int(n['col']), *([mission_index[m] for m in ms] + [0xFFFF] * (LIMITS['MISSIONS_PER_NODE'] - len(ms))),
-                                     edge(n['good'], where), edge(n['bad'], where), OUTSIDE.index(n.get('outside') or ''), 0))
+                                     edge(n['good'], where), edge(n['bad'], where), OUTSIDE.index(n.get('outside') or ''),
+                                     pass_mark(n, where)))
         if n['good'] == n['bad']:
             print('%s: both ways out go to %s' % (where, n['good']), file=sys.stderr)
     check_dag(nodes)
@@ -855,6 +900,8 @@ def compile_all():
         rec += struct.pack('<H', len(out_lines))        # (its lines are their own table: XMS, read one at a time)
         out_lines += talks
         rec += b''.join(fields).ljust(LIMITS['FIELDS'] * struct.calcsize(fmt(FIELD)), b'\0')
+        goals = mission_goals(m, ships, nav_ids)
+        rec += struct.pack('<B', len(goals)) + b''.join(goals).ljust(LIMITS['GOALS'] * struct.calcsize(fmt(GOAL)), b'\0')
         out_missions.append(rec)
 
     out_pilots = [struct.pack(fmt(PILOT), text(p['key'], TEXT['KEY'], 'people.csv'),
@@ -938,6 +985,8 @@ def header_text(sizes):
     for k, v in TALK_BOOSTS.items():
         out.append('#define RV_BOOST_%s %d' % (k.upper(), v))
     out.append('')
+    for k, v in GOAL_KINDS.items():
+        out.append('#define RV_GOAL_%s %d' % (k.upper(), v))
     for k, v in TALK_FLAGS.items():
         out.append('#define RV_TALK_%s %d' % (k, v))
     for i, r in enumerate(ROOMS):
@@ -974,7 +1023,7 @@ def header_text(sizes):
             out.append('#define %s%s %d' % (prefix, k.upper(), i))
     out += ['', '#pragma pack(1)', c_struct('RvGameHeader', HEADER), c_struct('RvPilot', PILOT),
             c_struct('RvNode', NODE), c_struct('RvNav', NAV), c_struct('RvShip', SHIP), c_struct('RvTalk', TALK),
-            c_struct('RvField', FIELD),
+            c_struct('RvField', FIELD), c_struct('RvGoal', GOAL),
             c_struct('RvMission', MISSION), c_struct('RvShipType', SHIPTYPE), c_struct('RvWeapon', WEAPON),
             '#pragma pack()', '']
     for k, v in sizes.items():

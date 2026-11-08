@@ -6,7 +6,8 @@
 
 #define BUNKS 8
 #define SAVE_MAGIC "RVSAVE"
-#define SAVE_VERSION 2                   /* (a version 1 save is read too: the fields at the end start empty) */
+#define SAVE_VERSION 3                   /* (versions 1 and 2 are read too: the fields at the end they lack start empty) */
+#define POINTS_UNKNOWN 0xFFFF           /* RvSave.points of a save from before the points: this node goes by its wins */
 enum { ENDING_NONE, ENDING_GOOD, ENDING_BAD };
 
 #pragma pack(1)
@@ -34,6 +35,8 @@ typedef struct {
     uint16_t systems;                   /* a bit per campaign node flown (the scenes' if= and unless=) */
     uint8_t last;                       /* the last mission: 0 none yet, 1 won, 2 lost (the scenes' after=) */
     uint8_t escort_lost;                /* the last flight lost a ship it was escorting (the scenes' escort=lost) */
+    uint16_t points;                    /* this node's points so far (its missions' goals met: camp_points), or
+                                           POINTS_UNKNOWN (the node was begun before the points) */
 } RvSave;
 #pragma pack()
 
@@ -69,8 +72,10 @@ void camp_mission(uint16_t i, RvMission __far *out);
 void camp_load_tables(const RvMission __far *m);   /* camp_load_units without telling the layer (missionLoaded): the simulator's */
 void camp_load_units(const RvMission __far *m);   /* missionShipTable and navPointTable, then missionLoaded */
 extern uint8_t g_camp_way;                               /* a debrief's system=: 1 won, 2 lost, 0 the system goes on */
-void camp_way_out(int16_t won);                          /* works that out for the flight just flown, before camp_resolve */
-int16_t camp_resolve(int16_t won, uint16_t hero_kills, const uint8_t __far *pilot_kills);   /* scores the mission: the
+uint16_t camp_points(int16_t whole);    /* the points of the mission just flown: its goals met (logic_goal), or with
+                                           whole 1 / 0 all of them / none (a flight a test decided) */
+void camp_way_out(int16_t won, uint16_t points);                          /* works that out for the flight just flown, before camp_resolve */
+int16_t camp_resolve(int16_t won, uint16_t hero_kills, const uint8_t __far *pilot_kills, uint16_t points);   /* scores the mission: the
                                                            hero's splashes and each named pilot's (by index) on the board,
                                                            every one of them a sortie; returns 1 when the node is done */
 void camp_follow(uint16_t node, uint16_t mission);      /* a guest's campaign to the host's mission: its story the host's */

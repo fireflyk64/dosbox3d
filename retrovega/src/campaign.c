@@ -13,6 +13,7 @@
 #include "rvhooks.h"
 #include "campaign.h"
 #include "world.h"
+#include "logic.h"                      /* (logic_goal: camp_points) */
 
 RvSave g_camp;
 uint8_t g_rule_hit, g_rule_flags;
@@ -180,11 +181,45 @@ const char __far *camp_home_line(int16_t tier, int16_t k)
     return line_at(at + k)->text;
 }
 
-/* the way out of a node: good with more missions won than lost, bad with fewer, and an even split by the campaign's
- * running total (a node of four: three or four won good, none or one bad, two by the total) */
-static int16_t way_good(int16_t wins, uint16_t count, int16_t trend)
+/* the way out of a node: as the old game's (the user, 2026-11-08: a lost Kurasawa 2 should take the player to Rostov,
+ * "we want people to experience more unless they are experts at Rigel 2"), by points: its missions' goals met
+ * (missions.txt `goal`, the old objectives, camp_points) reaching the node's pass mark (campaign.csv `pass`, its
+ * CAMP.000 +3; ovr161 compute_victory); a node with none (the last two), or begun before the points
+ * (POINTS_UNKNOWN), by missions won: good with more won than lost, bad with fewer, an even split by the campaign's
+ * running total */
+static int16_t way_good(int16_t wins, uint16_t count, int16_t trend, uint16_t points)
 {
+    uint8_t pass = g_nodes[g_camp.node].pass_mark;
+    if (pass && points != POINTS_UNKNOWN)
+        return points >= pass;
     return wins * 2 > (int16_t)count || (wins * 2 == (int16_t)count && trend >= 0);
+}
+
+/* the points of the mission just flown: its goals that logic_goal says were met; the nth goal of one kind, type and
+ * place is the nth such ship (the old game's objectives name one ship each: Crucible 3's nine Nicanders, a point apiece) */
+uint16_t camp_points(int16_t whole)
+{
+    RvGoal goals[RV_GOALS];
+    uint32_t at = (uint32_t)camp_mission_index() * sizeof(RvMission);
+    uint8_t n;
+    uint16_t sum = 0, i, j, nth;
+    xms_get(g_missions, at + offsetof(RvMission, ngoal), &n, 1);
+    xms_get(g_missions, at + offsetof(RvMission, goal), goals, sizeof goals);
+    if (n > RV_GOALS)
+        n = RV_GOALS;
+    for (i = 0; i < n; i++) {
+        for (nth = 0, j = 0; j < i; j++)
+            if (goals[j].kind == goals[i].kind && goals[j].a == goals[i].a && goals[j].nav == goals[i].nav)
+                nth++;
+        if (whole > 0 || (whole < 0 && logic_goal(goals[i].kind, goals[i].a, goals[i].nav, (uint8_t)nth)))
+            sum = (uint16_t)(sum + goals[i].pts);
+    }
+    return sum;
+}
+
+static uint16_t points_after(uint16_t points)
+{
+    return g_camp.points == POINTS_UNKNOWN ? POINTS_UNKNOWN : (uint16_t)(g_camp.points + points);
 }
 
 uint8_t g_camp_way;
@@ -344,16 +379,17 @@ uint16_t camp_node_missions(uint16_t node)
     return k ? k : 1;
 }
 
-void camp_way_out(int16_t won)
+void camp_way_out(int16_t won, uint16_t points)
 {
     uint16_t count = camp_node_missions(g_camp.node);
     if (g_camp.mission + 1u < count)
         g_camp_way = 0;
     else
-        g_camp_way = way_good(g_camp.wins + (won ? 1 : 0), count, g_camp.trend + (won ? 1 : -1)) ? 1 : 2;
+        g_camp_way = way_good(g_camp.wins + (won ? 1 : 0), count, g_camp.trend + (won ? 1 : -1), points_after(points))
+                     ? 1 : 2;
 }
 
-int16_t camp_resolve(int16_t won, uint16_t hero_kills, const uint8_t __far *pilot_kills)
+int16_t camp_resolve(int16_t won, uint16_t hero_kills, const uint8_t __far *pilot_kills, uint16_t points)
 {
     RvShip ships[RV_SHIPS];             /* (only these: a whole mission would not fit on the stack) */
     uint32_t at = (uint32_t)camp_mission_index() * sizeof(RvMission);
@@ -366,6 +402,7 @@ int16_t camp_resolve(int16_t won, uint16_t hero_kills, const uint8_t __far *pilo
     g_camp.flown++;
     g_camp.wins += won ? 1 : 0;
     g_camp.trend += won ? 1 : -1;
+    g_camp.points = points_after(points);
     /* the board's tallies are the flight's own splashes (the user, 2026-11-02: two splashes of the host's went up as
      * Frost's): the hero's, and each named pilot's the AI flew, whoever it was; a sortie each (they had a random 1 to 3
      * on a win, and the hero none) */
@@ -389,12 +426,14 @@ int16_t camp_resolve(int16_t won, uint16_t hero_kills, const uint8_t __far *pilo
     {
         const RvNode *n = &g_nodes[g_camp.node];
         uint16_t count = camp_node_missions(g_camp.node);
-        int16_t good = way_good(g_camp.wins, count, g_camp.trend);
+        int16_t good = way_good(g_camp.wins, count, g_camp.trend, g_camp.points);
         next = good ? n->good : n->bad;
-        RV_LOG("node %.8s: %u of %u won, trend %d -> %s", n->id, g_camp.wins, count, g_camp.trend, good ? "good" : "bad");
+        RV_LOG("node %.8s: %u of %u won, trend %d, %u points of %u -> %s", n->id, g_camp.wins, count, g_camp.trend,
+               g_camp.points, n->pass_mark, good ? "good" : "bad");
     }
     g_camp.mission = 0;
     g_camp.wins = 0;
+    g_camp.points = 0;
     if (next == RV_NODE_GOOD || next == RV_NODE_BAD) {
         g_camp.ending = next == RV_NODE_GOOD ? ENDING_GOOD : ENDING_BAD;
     } else {
@@ -412,8 +451,10 @@ void camp_follow(uint16_t node, uint16_t mission)
 {
     if (node >= g_nnodes || mission >= camp_node_missions(node))
         return;
-    if (node != g_camp.node)
+    if (node != g_camp.node) {
         g_camp.wins = 0;
+        g_camp.points = 0;
+    }
     g_camp.node = (uint8_t)node;
     g_camp.mission = (uint8_t)mission;
     RV_LOG("guest: the campaign at the host's mission: node %u, mission %u", node, mission);
@@ -447,6 +488,7 @@ int16_t save_write(int16_t bunk, const char *name)
 }
 
 #define SAVE_V2_MORE 4                  /* the bytes version 2 added at the end: systems, last, escort_lost */
+#define SAVE_V3_MORE 2                  /* and version 3: points */
 int16_t save_read(int16_t bunk, RvSave __far *out)
 {
     char path[16];
@@ -459,9 +501,11 @@ int16_t save_read(int16_t bunk, RvSave __far *out)
         return 0;
     {
         size_t got = fread(&s, 1, sizeof s, f);
-        /* (version 1: the same but for the fields at the end, which start empty) */
-        if (got == sizeof s - SAVE_V2_MORE && s.version == 1 && s.size == sizeof s - SAVE_V2_MORE) {
-            memset((char *)&s + got, 0, SAVE_V2_MORE);
+        /* (versions 1 and 2: the same but for the fields at the end, which start empty; their node's points unknown) */
+        uint16_t lack = s.version == 1 ? SAVE_V2_MORE + SAVE_V3_MORE : s.version == 2 ? SAVE_V3_MORE : 0;
+        if (lack && got == sizeof s - lack && s.size == sizeof s - lack) {
+            memset((char *)&s + got, 0, lack);
+            s.points = POINTS_UNKNOWN;
             s.version = SAVE_VERSION;
             s.size = sizeof s;
         } else if (got != sizeof s)

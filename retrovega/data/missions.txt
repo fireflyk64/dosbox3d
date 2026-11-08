@@ -10,6 +10,12 @@
 # mission), and what a collision costs (ram=old: the square of the closing speed in km a step, halved, the old
 # game's; soft: a dozen points head on)
 #
+# A mission's goal lines are the old game's objectives and their points (tests/wc1/goals.py writes them from its
+# records and CAMP.000): goal nav N PTS (nav point N reached and every enemy it brings killed or gone), goal land PTS
+# (landed on the carrier), goal escort|meet|kill TYPE navN PTS (that type's ship at that point got through, came into
+# play, was killed; several of one kind, type and point are its ships in turn).  A system's points against its pass
+# mark (campaign.csv `pass`, the old game's) take the good way out or the bad (campaign.c way_good)
+#
 # A ship line's turrets=off keeps a capital ship's turrets silent: the home carrier with enemies at nav 0 has it, or
 # its turrets would have those fighters dead in seconds, with the player only watching (measured 2026-10-31)
 #
@@ -77,6 +83,10 @@ ship     wingman 0 nav0 pilot=FROST
 ship     VIGILNC 0 nav0 role=home
 ship     NICANDR 1 nav1 count=3 at=-5000,1000,5000
 ship     AGIS 1 nav3 count=2 at=5000,2000,5000
+goal     nav 1 2
+goal     nav 2 1
+goal     nav 3 2
+goal     land 1
 field    asteroid 45000 7000 -15000 7500
 field    asteroid -2000 2000 -35000 5000
 bar      left=- middle=PRIME right=DRIFTER
@@ -154,6 +164,10 @@ ship     OX 0 nav0 role=out jump=2
 ship     AGIS 1 nav1 count=2 at=0,0,-5000 prey=OX
 ship     NICANDR 1 nav2 count=2 at=3000,0,5000 prey=OX
 ship     NICANDR 1 nav2 at=-5000,5000,-5000 prey=OX
+goal     nav 1 1
+goal     nav 2 1
+goal     escort OX nav0 6
+goal     land 1
 field    asteroid -5000 1500 -35000 7500
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar TORCH ANCHOR "Shmrn's still out there."
@@ -236,6 +250,11 @@ ship     wingman 0 nav0 pilot=DRIFTER
 ship     VIGILNC 0 nav0 role=home
 ship     NICANDR 1 nav1 count=3 at=10000,0,0
 ship     AGIS 1 nav4 count=3 at=5000,-5000,0
+goal     nav 1 2
+goal     nav 2 2
+goal     nav 3 2
+goal     nav 4 2
+goal     land 2
 field    mine -55000 -5000 -10000 5000 level=2
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER TORCH "Fifty to one against Shmrn, Torch. That's me being friendly."
@@ -315,6 +334,9 @@ ship     NICANDR 1 nav1 count=2 at=5000,5000,5000
 ship     NICANDR 1 nav1 count=2 at=-5000,-5000,-5000
 ship     ARISTON 1 nav2 count=2
 ship     AGASICL 1 nav2 at=7500,0,-3000
+goal     nav 2 1
+goal     kill AGASICL nav2 10
+goal     land 1
 bar      left=TORCH middle=ECHO right=COMET
 talk     bar TORCH COMET "You don't lead a Nicander. You wait for it to break."
 talk     bar COMET TORCH "I lead it, and I'm still here. Who's counting?"
@@ -391,6 +413,11 @@ ship     ARISTON 1 nav1 count=2 at=5000,2000,10000 prey=OX
 ship     ARISTON 1 nav1 count=2 at=-5000,-1000,-5000 prey=OX
 ship     AGIS 1 nav2 at=0,2000,5000 prey=OX
 ship     AGIS 1 nav2 count=2 at=0,-3000,10000 prey=OX
+goal     nav 1 1
+goal     meet OX nav1 2
+goal     escort OX nav1 8
+goal     kill AGIS nav2 5
+goal     land 1
 bar      left=- middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Who signed for my wingtip?"
 talk     bar ANCHOR PRIME "I did. It's on the form as a bird strike."
@@ -457,6 +484,10 @@ ship     VIGILNC 0 nav0 role=home
 ship     AGIS 1 nav2 count=2 at=-10000,5000,5000
 ship     AGIS 1 nav2 count=2 at=-5000,0,-5000
 ship     CONVOLN 1 nav3 count=2 at=5000,5000,5000
+goal     nav 1 2
+goal     nav 2 2
+goal     nav 3 2
+goal     land 2
 field    asteroid -30000 5000 15000 5000
 bar      left=FROST middle=PRIME right=COMET
 talk     bar PRIME COMET "Go straight in on the big ship and pick off the small ones after. It's quicker."
@@ -525,6 +556,7 @@ ship     NICANDR 1 nav0 count=2 at=-15000,-15000,-10000 prey=VIGILNC
 ship     NICANDR 1 nav0 count=2 at=10000,5000,-5000 prey=VIGILNC
 ship     NICANDR 1 nav1 count=2 at=-25000,0,-15000 prey=VIGILNC
 ship     NICANDR 1 nav1 count=2 at=5000,0,-35000 prey=VIGILNC
+goal     escort VIGILNC nav0 20
 bar      left=TORCH middle=- right=DRIFTER
 talk     bar DRIFTER TORCH "The line on a Nicander reaching our deck is four to one."
 talk     bar TORCH DRIFTER "You're taking bets on the ship?"
@@ -592,6 +624,9 @@ ship     OX 0 nav1 role=in
 ship     CONVOLN 1 nav1 count=2 at=-5000,5000,10000 prey=OX
 ship     AGIS 1 nav2 count=2 at=-5000,5000,-7000 prey=OX
 ship     AGIS 1 nav2 count=2 prey=OX
+goal     meet OX nav1 5
+goal     escort OX nav1 10
+goal     kill AGIS nav2 1
 bar      left=FROST middle=ECHO right=ANCHOR
 talk     bar ECHO FROST "Your Rlaan could fly a convoy through here tomorrow and nobody would stop them."
 talk     bar FROST ECHO "Nobody would stop them because they've stayed out of it."
@@ -661,6 +696,8 @@ ship     AGIS 1 nav2 count=2 at=0,-5000,0
 ship     KAHAN 0 nav1
 ship     CLEOMEN 1 nav1 count=2 at=-8000,-8000,7000 prey=KAHAN
 ship     CLEOMEN 1 nav1 at=8000,8000,-10000 prey=KAHAN
+goal     escort KAHAN nav1 10
+goal     land 2
 bar      left=TORCH middle=PRIME right=COMET
 talk     bar PRIME COMET "Did you see me come over the deck? Two meters."
 talk     bar COMET PRIME "I saw the form."
@@ -737,6 +774,10 @@ ship     FRANKLN 0 nav0 role=stay
 ship     NICANDR 1 nav2 count=2 at=-5000,-5000,-5000
 ship     NICANDR 1 nav2 count=2
 ship     CONVOLN 1 nav3 count=2 at=-5000,0,15000
+goal     nav 1 1
+goal     nav 2 3
+goal     nav 3 3
+goal     kill CONVOLN nav3 3
 field    asteroid 32500 10000 -12500 5000 level=1
 bar      left=FROST middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Relax, Carbon. If you lose, there's a spare."
@@ -809,6 +850,16 @@ ship     NICANDR 1 nav1 count=2 at=-15000,0,5000
 ship     NICANDR 1 nav1 count=3
 ship     NICANDR 1 nav2 count=2 at=0,7000,0
 ship     NICANDR 1 nav2 count=2
+goal     kill NICANDR nav1 1
+goal     kill NICANDR nav1 1
+goal     kill NICANDR nav1 1
+goal     kill NICANDR nav1 1
+goal     kill NICANDR nav1 1
+goal     meet NICANDR nav2 1
+goal     kill NICANDR nav2 4
+goal     kill NICANDR nav2 1
+goal     kill NICANDR nav2 1
+goal     kill NICANDR nav2 1
 bar      left=TORCH middle=- right=COMET
 talk     bar TORCH COMET "You think they're leaving?"
 talk     bar COMET TORCH "Nobody leaves."
@@ -886,6 +937,10 @@ ship     AGIS 1 nav1 at=0,0,-3000
 ship     CONVOLN 1 nav4 count=2 at=0,-13000,0
 ship     CONVOLN 1 nav4
 ship     ARISTON 1 nav2 count=2 at=5000,0,0
+goal     nav 1 3
+goal     nav 2 3
+goal     nav 3 1
+goal     land 1
 field    asteroid 15000 5000 -25000 5000 level=2
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar PRIME TORCH "Sit down, Torch. Let me tell you about the time I took four Nicanders with one wing."
@@ -953,6 +1008,8 @@ ship     NICANDR 1 nav1 count=2 at=0,0,10000 prey=KAHAN
 ship     NICANDR 1 nav1 count=2 prey=KAHAN
 ship     AGIS 1 nav3 count=3 at=0,0,-5000 also=2
 ship     AGIS 1 nav3 also=2
+goal     meet KAHAN nav1 2
+goal     escort KAHAN nav1 10
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER KESTREL "What's the line on Prime staying sober tonight?"
 talk     bar KESTREL DRIFTER "He isn't drinking."
@@ -1015,6 +1072,7 @@ ship     ARISTON 1 nav1 count=2
 ship     AGASICL 1 nav1 at=-5000,15000,-5000
 ship     ARISTON 1 nav2 count=2 at=-5000,10000,0
 ship     CLEOMEN 1 nav3 count=2 at=-5000,0,0
+goal     kill AGASICL nav1 10
 bar      left=FROST middle=PRIME right=COMET
 talk     bar PRIME COMET "Tally's got me down for twelve now. You?"
 talk     bar COMET PRIME "Don't ask."
@@ -1081,6 +1139,9 @@ ship     ARISTON 1 nav1 count=2 at=-7000,0,-7500
 ship     ARISTON 1 nav1 count=2
 ship     ARISTON 1 nav2 count=2 at=5000,0,15000
 ship     AGASICL 1 nav2 at=5000,0,20000
+goal     meet SCHROED nav1 1
+goal     escort SCHROED nav1 5
+goal     kill AGASICL nav2 5
 bar      left=- middle=PRIME right=COMET
 talk     bar PRIME COMET "Solberg's looking at you."
 talk     bar COMET PRIME "Solberg looks at everyone. She's writing it all down."
@@ -1148,6 +1209,8 @@ ship     NICANDR 1 nav1 count=2 prey=KAHAN
 ship     NICANDR 1 nav1 count=2 prey=KAHAN
 ship     AGIS 1 nav2 count=3 at=5000,5000,10000
 ship     AGIS 1 nav2
+goal     nav 1 2
+goal     meet KAHAN nav0 10
 bar      left=FROST middle=- right=COMET
 talk     bar COMET FROST "A hundred and forty names."
 talk     bar FROST COMET "She'd know the hundred and forty-first if you asked."
@@ -1207,6 +1270,12 @@ ship     SCHROED 0 nav0 role=stay
 ship     CONVOLN 1 nav0 count=2 at=15000,0,10000 prey=VIGILNC
 ship     CONVOLN 1 nav1 count=2 at=-5000,2000,10000 prey=VIGILNC
 ship     CONVOLN 1 nav1 count=2 at=5000,0,-10000 prey=VIGILNC
+goal     kill CONVOLN nav0 3
+goal     kill CONVOLN nav0 3
+goal     kill CONVOLN nav1 3
+goal     kill CONVOLN nav1 3
+goal     kill CONVOLN nav1 3
+goal     kill CONVOLN nav1 3
 bar      left=TORCH middle=KESTREL right=DRIFTER
 talk     bar DRIFTER TORCH "Fifty to one against Shmrn. I may have to lengthen that."
 talk     bar TORCH DRIFTER "Put me down for ten."
@@ -1281,6 +1350,10 @@ ship     AGIS 1 nav3 prey=OX
 ship     OX 0 nav0 role=out
 ship     OX 0 nav2 role=in
 ship     CLEOMEN 1 nav2 count=3 at=-10000,-3000,-5000 prey=OX
+goal     escort OX nav0 5
+goal     meet OX nav2 5
+goal     escort OX nav2 5
+goal     land 2
 bar      left=FROST middle=PRIME right=ANCHOR
 talk     bar PRIME ANCHOR "Sixty-Four's been asking for me."
 talk     bar ANCHOR PRIME "It hasn't been asking for anyone. It's an Aera fighter pilot."
@@ -1352,6 +1425,11 @@ ship     ARISTON 1 nav2 count=2 at=10000,0,5000
 ship     ARISTON 1 nav2 count=2
 ship     ARISTON 1 nav4 count=2 at=-12500,0,-10000
 ship     AGASICL 1 nav4 at=-15000,0,-12000
+goal     nav 1 2
+goal     nav 2 2
+goal     kill AGASICL nav4 15
+goal     nav 3 2
+goal     land 2
 field    asteroid 10000 7000 -30000 5000 level=3
 field    asteroid -45000 12000 5000 5000 level=3
 bar      left=TORCH middle=PRIME right=ANCHOR
@@ -1429,6 +1507,11 @@ ship     CLEOMEN 1 nav2 count=2 at=-10000,0,5000
 ship     AGASICL 1 nav2 at=-5000,0,5000
 ship     CLEOMEN 1 nav3 count=2 at=-10000,0,-5000
 ship     AGASICL 1 nav3 at=-5000,0,-10000
+goal     kill AGASICL nav1 5
+goal     kill AGASICL nav2 5
+goal     kill CLEOMEN nav2 10
+goal     kill AGASICL nav3 5
+goal     land 2
 bar      left=TORCH middle=PRIME right=ANCHOR
 talk     bar ANCHOR TORCH "Relax. There's a spare."
 talk     bar TORCH ANCHOR "Which one are you?"
@@ -1501,6 +1584,9 @@ ship     CLEOMEN 1 nav1 count=2 at=-5000,5000,5000 prey=OX
 ship     CLEOMEN 1 nav1 count=2 at=10000,0,-10000 prey=OX
 ship     CONVOLN 1 nav2 count=2 at=0,0,2500 prey=OX ai=heavy
 ship     CONVOLN 1 nav2 prey=OX ai=fighter
+goal     meet OX nav1 3
+goal     escort OX nav1 10
+goal     land 2
 bar      left=FROST middle=ECHO right=COMET
 talk     bar ECHO FROST "Your Rlaan could have got people out of Naxos. They were right there."
 talk     bar FROST ECHO "They were trading partners, Echo. They were scared too."
@@ -1576,6 +1662,12 @@ ship     NICANDR 1 nav1
 ship     CONVOLN 1 nav3 count=2 at=-5000,5000,-10000
 ship     CONVOLN 1 nav3 count=2
 ship     ANAXIDM 1 nav3 at=-5000,5000,-15000
+goal     nav 1 2
+goal     nav 2 2
+goal     nav 3 2
+goal     kill ANAXIDM nav3 10
+goal     nav 4 2
+goal     land 2
 field    mine 15000 5000 -40000 5000 level=2
 field    asteroid -25000 0 -20000 5000 level=2
 field    asteroid -40000 -5000 -15000 7500 level=2
@@ -1648,6 +1740,9 @@ ship     CONVOLN 1 nav1 count=2 prey=KAHAN
 ship     ARISTON 1 nav2 count=3 at=-5000,0,15000
 ship     ARISTON 1 nav2
 ship     ANAXIDM 1 nav2 role=out
+goal     meet KAHAN nav1 5
+goal     escort KAHAN nav1 10
+goal     kill ANAXIDM nav2 15
 bar      left=FROST middle=ECHO right=ANCHOR
 talk     bar ECHO FROST "You could talk to your Rlaan."
 talk     bar FROST ECHO "Yes. I've been thinking about that."
@@ -1721,6 +1816,9 @@ ship     ARISTON 1 nav2
 ship     AGASICL 1 nav2 role=in
 ship     CLEOMEN 1 nav3 count=2 at=5000,2500,5000
 ship     AGASICL 1 nav3 role=in
+goal     kill AGASICL nav1 10
+goal     kill AGASICL nav2 5
+goal     kill AGASICL nav3 5
 bar      left=FROST middle=PRIME right=ANCHOR
 talk     bar PRIME FROST "I hear you've got a promotion and an investigation. Which one do I congratulate?"
 talk     bar FROST PRIME "It's the same office."
@@ -1785,6 +1883,7 @@ ship     LANCELT 0 nav1 at=0,3000,5000
 ship     CONVOLN 1 nav1 count=2 at=0,0,10000 prey=AGASICL
 ship     CONVOLN 1 nav1 count=2 at=0,3000,-5000 prey=AGASICL
 ship     AGASICL 0 nav1 at=5000,2500,5000 role=back
+goal     escort AGASICL nav1 15
 field    asteroid 15000 -3000 -30000 7500 level=1
 bar      left=FROST middle=KESTREL right=DRIFTER
 talk     bar KESTREL FROST "They're looking at you the way they look at me."
@@ -1852,6 +1951,7 @@ ship     NICANDR 1 nav1 count=2 prey=KAHAN
 ship     NICANDR 1 nav3 count=2 at=-15000,0,-5000 prey=KAHAN
 ship     ARISTON 1 nav2 count=3 at=0,-5000,-5000 also=4
 ship     ARISTON 1 nav2 also=4
+goal     escort KAHAN nav1 15
 field    mine -15000 0 -35000 5000 level=1
 bar      left=TORCH middle=PRIME right=COMET
 talk     bar COMET TORCH "What's Frost got on the Thermopylae?"
@@ -1925,6 +2025,12 @@ ship     CONVOLN 1 nav3 count=2 at=-5000,2500,-5000
 ship     CONVOLN 1 nav5 count=2 at=5000,-3000,5000
 ship     CONVOLN 1 nav5 count=2
 ship     AGASICL 1 nav5 role=in
+goal     nav 1 1
+goal     nav 2 1
+goal     nav 3 1
+goal     kill AGASICL nav5 10
+goal     nav 4 1
+goal     land 1
 field    asteroid 35000 10000 10000 5000 level=3
 field    asteroid 45000 10000 35000 5000 level=3
 field    asteroid -15000 5000 30000 5000 level=3
@@ -1999,6 +2105,7 @@ ship     AGIS 1 nav3 count=2
 ship     CLEOMEN 1 nav1 count=2 at=-5000,-10000,0
 ship     CLEOMEN 1 nav1 count=2 at=5000,-1000,-5000
 ship     AGASICL 1 nav1
+goal     kill AGASICL nav1 15
 field    asteroid 5000 2000 45000 5000 level=3
 field    asteroid 0 10000 0 5000 level=3
 field    asteroid 10000 3000 -5000 5000 level=3
@@ -2062,6 +2169,11 @@ ship     ARISTON 1 nav2 count=2 at=0,2500,-5000
 ship     ANAXIDM 1 nav2 role=in
 ship     NICANDR 1 nav3 count=2 at=-10000,0,-5000
 ship     NICANDR 1 nav3 count=2
+goal     nav 1 2
+goal     nav 2 2
+goal     meet ANAXIDM nav2 10
+goal     kill ANAXIDM nav2 10
+goal     land 2
 field    asteroid 40000 10000 35000 5000 level=3
 field    asteroid 35000 7000 5000 5000 level=3
 field    asteroid 10000 0 0 5000 level=3
@@ -2137,6 +2249,10 @@ ship     AGASICL 1 nav1 at=0,0,10000
 ship     NICANDR 1 nav2 count=2 at=-5000,0,-5000
 ship     NICANDR 1 nav2 count=2
 ship     AGASICL 1 nav2 count=2 at=-5000,0,0
+goal     kill AGASICL nav1 15
+goal     kill AGASICL nav2 10
+goal     kill AGASICL nav2 10
+goal     kill NICANDR nav2 15
 field    mine -5000 10000 40000 5000 level=2
 bar      left=TORCH middle=PRIME right=COMET
 talk     bar COMET PRIME "Who's got the book?"
@@ -2206,6 +2322,8 @@ ship     OX 0 nav1
 ship     OX 0 nav1
 ship     CONVOLN 1 nav1 count=2 at=-5000,5000,5000 prey=OX
 ship     CONVOLN 1 nav1 count=2 prey=OX
+goal     escort OX nav1 10
+goal     escort OX nav1 10
 field    mine -5000 10000 40000 5000 level=2
 field    mine 15000 10000 45000 5000 level=2
 bar      left=- middle=- right=COMET
@@ -2279,6 +2397,10 @@ ship     ARISTON 1 nav1 count=3 at=5000,1000,5000
 ship     CONVOLN 1 nav2 count=2 at=-5000,-3000,-5000 prey=VIGILNC
 ship     CONVOLN 1 nav2 count=2 at=5000,0,-10000 prey=VIGILNC
 ship     CLEOMEN 1 nav3 count=2 at=15000,0,10000 prey=VIGILNC
+goal     meet ARISTON nav1 2
+goal     nav 0 2
+goal     kill CLEOMEN nav3 10
+goal     land 10
 field    asteroid 35000 0 -25000 5000 level=2
 field    asteroid 30000 0 -40000 5000 level=2
 bar      left=FROST middle=KESTREL right=-

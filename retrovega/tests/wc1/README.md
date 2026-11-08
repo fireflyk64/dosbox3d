@@ -635,7 +635,17 @@ container; its entry 1 is a 90-byte record a series: +0 the wingman, +2 the miss
 the fields were read. `camptree.py GAMEDAT/CAMP.000` checks campaign.csv against it (11 of 13 systems had differed).
 The series' result (ovr161 `compute_victory`): the points of the objectives met (`navPointState` +1 bit 2) summed
 over its missions, a win when the sum reaches +3 (Kurasawa: 40 of 20 + 15 + 15, so a lost Kurasawa 2 is Rostov).
-Ours still goes by missions won; the points are to come.
+
+The objectives (the user: "we want people to experience more unless they are experts at Rigel 2"): a mission's table at
+dseg:D25B, a 0x19-byte record each (how many: dseg:BD18), +0 the type, +2 the subject, +3 flags (0x4 reached, 0x1
+met, 0x2 scored); ovr139's check every frame (a switch at 01E6: types 0, 1, 3 at 005B, 2 at 0077, 4 at 01AC) scores an
+objective once: 0, a nav point reached and its wave gone (Enyo 1 flown: Nav 1 reached with its Salthi alive, flags 04;
+the empty Nav 2, 05); 1, the carrier (main_loop on a landing); 2, a mission ship through (an escort out jumped, one in
+or back home; another, met and alive); 3, a ship come to its point; 4, a ship destroyed. `goals.py DUMPDIR CAMP.000
+[--write]` matches each to our nav points and ship lines by place and type (hidden points to hidden ones, as waves.py)
+and writes missions.txt's `goal` lines: 116 in the 32 missions before the last two series, every point placed;
+campaign.csv's `pass` is +3 (camptree.py checks it). Ours: logic.c `logic_goal`, campaign.c `camp_points` and
+`way_good` (the last two series, and a system begun in a save from before the points, still by missions won).
 
 ## The ships that come in later (2026-11-08)
 

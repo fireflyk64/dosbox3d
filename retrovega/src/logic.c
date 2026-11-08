@@ -4110,6 +4110,50 @@ static int16_t wave_may_come(int16_t n)
     return 1;
 }
 
+/* the goals the old game scored a mission by (ovr139's check, tests/wc1/goals.py): a nav point reached with every enemy
+ * it brings killed or gone (the old objective 0: its flags 0x4, reached, and 0x1, met: Enyo 1 traced 2026-11-08, Nav 1
+ * with its Salthi alive reached but not met, the empty Nav 2 both); the landing (1); an escort target through, jumped
+ * out or home (2: g_away, and not killed; a ship of ours that stays, met and alive); one come into play (3); a ship of
+ * the type there killed (4) */
+static int16_t mship_brought(uint16_t rec);
+
+int16_t logic_goal(uint8_t kind, uint8_t a, uint8_t nav, uint8_t nth)
+{
+    const uint16_t *at;
+    int16_t j, n = 0;
+    if (nav >= NAVS || !nav_defined(nav))
+        return 0;
+    at = NAV_SHIPS(nav);
+    if (kind == RV_GOAL_LAND)
+        return missionStatus == 1;
+    if (kind == RV_GOAL_NAV) {
+        if (nav && !((g_navs_been | g_navs_seen) >> nav & 1))
+            return 0;
+        for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
+            if (MSHIP_SIDE(at[j]) != commAnimInfo[0] && !g_killed[at[j] & 63] && !g_away[at[j] & 63])
+                return 0;
+        return 1;
+    }
+    for (j = 0; j < 10 && at[j] != 0xFFFF; j++) {   /* (the ships of the type there, in the list's order) */
+        uint16_t r = at[j] & 63;
+        if (*(const uint16_t *)MSHIP(r) != a)
+            continue;
+        if (kind == RV_GOAL_KILL) {     /* (the nth goal: n of them killed, whichever) */
+            if (g_killed[r] && n++ == nth)
+                return 1;
+        } else if (n++ == nth) {
+            if (kind == RV_GOAL_MEET)
+                return mship_brought(r);
+            if (MSHIP_ROLE(r) == RV_ESCORT_OUT || MSHIP_ROLE(r) == RV_ESCORT_IN || MSHIP_ROLE(r) == RV_ESCORT_BACK)
+                return g_away[r] && !g_killed[r];
+            return mship_brought(r) && !g_killed[r];   /* (one that stays, the carrier, a destroyer: met and alive, the
+                                           old check's state 0 with the objective reached: Gateway 2's Claw, Brimstone
+                                           1's destroyer) */
+        }
+    }
+    return 0;
+}
+
 /* the ships that come in later (role=in: the old game's behaviour 7, every one of ours): from the moment its nav point
  * is entered it waits off the scene, out of the fight, ARRIVE_WAIT steps, then it jumps in (its star, logic_on_jump)
  * and makes for home, wherever the pilots are.  The old game's (traced 2026-11-08, McAuliffe 3 = CEPHID3,

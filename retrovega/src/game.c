@@ -37,6 +37,7 @@ static RvMission __far g_m;
 static unsigned long g_now;
 static char g_msg[400];
 static int g_won;
+static uint16_t __far g_points;         /* the mission's points (camp_points), worked out as the flight ends */
 static int g_base;                          /* the ship the player lives on: 0 the carrier */
 static int change_base(int base);
 static void mission_load_assets(void);
@@ -1013,7 +1014,7 @@ static void start_briefing(int debrief)
         mission_want(-1, 0);
     g_line_room = !debrief ? RV_ROOM_BRIEF : g_won ? RV_ROOM_WIN : RV_ROOM_LOSE;
     if (debrief)
-        camp_way_out(g_won);
+        camp_way_out(g_won, g_points);
     g_line_at = -1;
     g_lines_left = 1;
     g_line_face = 0;
@@ -1515,6 +1516,7 @@ static void launch(void)
     missionVictoryCalc();                           /* the layer's moment: a wingman's score becomes the host's (after
                                                        missionEnded, which flight_fly calls as the loop returns) */
     g_won = victoryPoints != 0;
+    g_points = camp_points(g_winrate >= 0 || g_route || g_noflight ? g_won : -1);   /* (a test's flight: all or none) */
     mission_free_assets();
     RV_LOG("mission %.16Fs %s", (char __far *)g_m.id, g_won ? "won" : "lost");
     g_now = ticks();
@@ -1999,13 +2001,17 @@ static void log_overlay(int y0, int y1)
     sprintf(s, "Layer %u, mission %u of %u.  Flown: %u.  Trend: %+d", g_nodes[g_camp.node].layer,
             g_camp.mission + 1, camp_node_missions(g_camp.node), g_camp.flown, g_camp.trend);
     gfx_text(FONT_BODY, 300, 84, s, RV_TEXT_WHITE, y0, y1);
-    gfx_text(FONT_BODY, 300, 110, "SPLASH COUNT", RV_TEXT_AMBER, y0, y1);
+    if (g_nodes[g_camp.node].pass_mark && g_camp.points != POINTS_UNKNOWN) {   /* (the old game's points: camp_points) */
+        sprintf(s, "Points here: %u of the %u that win it.", g_camp.points, g_nodes[g_camp.node].pass_mark);
+        gfx_text(FONT_BODY, 300, 100, s, RV_TEXT_WHITE, y0, y1);
+    }
+    gfx_text(FONT_BODY, 300, 120, "SPLASH COUNT", RV_TEXT_AMBER, y0, y1);
     for (i = 0, k = 0; i < (int)g_npilots; i++) {
         if (g_pilots[i].role != RV_ROLE_PILOT)
             continue;
         sprintf(s, "%-10.10s %3u kills  %2u missions", g_pilots[i].callsign, g_camp.pilot[i].kills,
                 g_camp.pilot[i].missions);
-        gfx_text(FONT_BODY, 300, 130 + k * 18, s, RV_TEXT_GREY, y0, y1);
+        gfx_text(FONT_BODY, 300, 140 + k * 18, s, RV_TEXT_GREY, y0, y1);
         k++;
     }
     gfx_text(FONT_BODY, 56, 336, "click to close", RV_TEXT_GREY, y0, y1);
@@ -2134,14 +2140,14 @@ static int debrief_settle(void)
 {
     if (g_guest) {
         g_guest = 0;
-        camp_resolve(g_won, g_guest_splashes, 0);
+        camp_resolve(g_won, g_guest_splashes, 0, g_points);
         RV_LOG("guest: the host's mission %s, the campaign on with the host's: node %u, mission %u", g_won ? "won" : "lost",
                g_camp.node, g_camp.mission);
         if (g_camp.name[0])             /* (a campaign never saved has no bunk of its own) */
             (void)save_write(g_camp.bunk, g_camp.name);
         return g_camp.ending;
     }
-    camp_resolve(g_won, logic_splashes, logic_pilot_kills);
+    camp_resolve(g_won, logic_splashes, logic_pilot_kills, g_points);
     return g_camp.ending;
 }
 

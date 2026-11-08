@@ -5,8 +5,9 @@
 #include "rvtypes.h"
 
 #define RVGAME_MAGIC "RVGAME"
-#define RVGAME_VERSION 25
+#define RVGAME_VERSION 26
 
+#define RV_GOALS 12
 #define RV_PILOTS 16
 #define RV_NODES 32
 #define RV_MISSIONS 128
@@ -60,6 +61,11 @@
 #define RV_BOOST_FUEL 2
 #define RV_BOOST_MISSILE 3
 
+#define RV_GOAL_NAV 0
+#define RV_GOAL_LAND 1
+#define RV_GOAL_ESCORT 2
+#define RV_GOAL_MEET 3
+#define RV_GOAL_KILL 4
 #define RV_TALK_SAY 1
 #define RV_TALK_WON 2
 #define RV_TALK_LOST 4
@@ -220,7 +226,7 @@ typedef struct {
     uint8_t good;
     uint8_t bad;
     uint8_t outside;
-    uint8_t pad;
+    uint8_t pass_mark;
 } RvNode;
 typedef struct {
     uint8_t id;
@@ -267,6 +273,12 @@ typedef struct {
     uint8_t level;
 } RvField;
 typedef struct {
+    uint8_t kind;
+    uint8_t a;
+    uint8_t nav;
+    uint8_t pts;
+} RvGoal;
+typedef struct {
     char id[RV_ID];
     uint8_t node;
     uint8_t type;
@@ -285,6 +297,8 @@ typedef struct {
     uint8_t rules;
     uint16_t talk0;
     RvField field[RV_FIELDS];
+    uint8_t ngoal;
+    RvGoal goal[RV_GOALS];
 } RvMission;
 typedef struct {
     char key[RV_KEY];
@@ -351,7 +365,7 @@ typedef struct {
 #define RV_HEADER_SIZE 68
 #define RV_PILOT_SIZE 121
 #define RV_NODE_SIZE 22
-#define RV_MISSION_SIZE 746
+#define RV_MISSION_SIZE 795
 #define RV_SHIPTYPE_SIZE 182
 #define RV_WEAPON_SIZE 44
 #define RV_LINE_SIZE 114
