@@ -101,7 +101,18 @@ The first slice adds these thunks, appended so no old thunk moves:
 
 ## The campaign: a DAG in layers
 
-`tools/campaign.py` writes `data/campaign.csv`; the engine only follows its
+**Since 2026-11-08 the tree is the old game's own**, read from its CAMP.000 (entry 1, a 90-byte record a series: +6
+the series a win goes to and +7 the fighter flown there, +8 and +9 a loss's; `tests/wc1/camptree.py GAMEDAT/CAMP.000`
+checks data/campaign.csv against it). The port had written the branches "as recalled", and nearly all were wrong: a
+win at Cephid 17 led to Shelton in Schroedingers (the user: "I was expecting more franklin missions or some gawain or
+lancelot missions", "I wonder if winning and losing paths got mixed up"). Laid out by longest path from the start
+(layers 1 to 8, every branch a layer or more down), wins to the left: Enigma; Cephid, Shelton; the Crucible,
+Defiance; Oldziey; Lixis, Ataraxia; Rigel, Wolf 359; Barnard; Shmrn, Luyten. A perfect run is Enigma, Cephid, the
+Crucible, Lixis, Rigel, Shmrn (Frost, Drifter, Comet, Anchor, Frost, Torch: the user's "option B" gave the Crucible to
+Comet, whose Shelton and Defiance are on the losing side, so that Anchor does not fly two systems in a row). Below, the
+lattice as first sketched; `tools/campaign.py` (the placeholder campaign) no longer writes the file.
+
+`tools/campaign.py` wrote `data/campaign.csv`; the engine only follows its
 edges. The shape is the user's sketch, a triangular lattice from the start
 (s) to victory (v) and loss (l), and **every node has exactly two ways
 out**: one towards v (`good`), one towards l (`bad`).

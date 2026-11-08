@@ -625,6 +625,18 @@ found flying it: the inbound Ox (role=in) waits off the scene till a pilot comes
 mission counted as won without it (the pilot came home from Nav 2's fight without flying in): mission_done now asks
 that it has come (M8.57).
 
+## The campaign tree (2026-11-08)
+
+port.py wrote data/campaign.csv's branches "as recalled", and a player on the winning path found Shelton in
+Schroedingers (the user: "I wonder if winning and losing paths got mixed up"). GAMEDAT/CAMP.000 is briefing.py's
+container; its entry 1 is a 90-byte record a series: +0 the wingman, +2 the missions, +3 the points a win needs, +6 and
++7 the series a win goes to (1-based) and the fighter flown there, +8 and +9 a loss's, then a 20-byte record a mission
+(+4.. a mission's points by objective). Every branch's fighter agrees with the series' own player record, which is how
+the fields were read. `camptree.py GAMEDAT/CAMP.000` checks campaign.csv against it (11 of 13 systems had differed).
+The series' result (ovr161 `compute_victory`): the points of the objectives met (`navPointState` +1 bit 2) summed
+over its missions, a win when the sum reaches +3 (Kurasawa: 40 of 20 + 15 + 15, so a lost Kurasawa 2 is Rostov).
+Ours still goes by missions won; the points are to come.
+
 ## The ships that come in later (2026-11-08)
 
 The user, flying CEPHID3 (the old game's McAuliffe 3): the inbound Ox "jumped perfectly when at 5000km as planned...but

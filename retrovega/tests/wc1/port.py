@@ -35,18 +35,18 @@ CAPITALS = {4, 5, 6, 7, 8, 14, 15, 16, 17, 18, 19, 21}
 FIELDS = {22: 'asteroid', 23: 'mine'}
 # the systems, in the old campaign's order, as places of the Aera war: (node id, name, good next, bad next)
 OUTSIDE = {'BARNARD': 'rocks', 'CEPHID': 'edge', 'OLDZIEY': 'edge', 'RIGEL': 'empty'}   # (the bar's window, data/campaign.csv)
-SERIES = [
-    ('ENIGMA', 'the Enigma shipyards', 'CEPHID', 'CEPHID'),
-    ('CEPHID', 'Cephid 17', 'SHELTON', 'CRUCIBL'),
-    ('SHELTON', 'Shelton', 'LIXIS', 'OLDZIEY'),
-    ('CRUCIBL', 'the Crucible picket', 'OLDZIEY', 'DEFIANC'),
+SERIES = [                              # (good and bad: the old game's own, CAMP.000; tests/wc1/camptree.py checks
+    ('ENIGMA', 'the Enigma shipyards', 'CEPHID', 'SHELTON'),   # campaign.csv against it: these were "as recalled"
+    ('CEPHID', 'Cephid 17', 'CRUCIBL', 'OLDZIEY'),             # until 2026-11-08, nearly every one wrong)
+    ('SHELTON', 'Shelton', 'OLDZIEY', 'DEFIANC'),
+    ('CRUCIBL', 'the Crucible picket', 'LIXIS', 'OLDZIEY'),
     ('OLDZIEY', 'Oldziey', 'LIXIS', 'ATARAXI'),
-    ('DEFIANC', 'Defiance', 'ATARAXI', 'BARNARD'),
-    ('LIXIS', 'the Lixis beacon', 'SHMRN', 'RIGEL'),
-    ('ATARAXI', 'Ataraxia', 'RIGEL', 'BARNARD'),
+    ('DEFIANC', 'Defiance', 'OLDZIEY', 'ATARAXI'),
+    ('LIXIS', 'the Lixis beacon', 'RIGEL', 'BARNARD'),
+    ('ATARAXI', 'Ataraxia', 'BARNARD', 'WOLF359'),
     ('RIGEL', 'the Rigel relay', 'SHMRN', 'BARNARD'),
-    ('BARNARD', "Barnard's Star", 'SHMRN', 'WOLF359'),
-    ('WOLF359', 'Wolf 359', 'SHMRN', 'LUYTEN'),
+    ('BARNARD', "Barnard's Star", 'SHMRN', 'LUYTEN'),
+    ('WOLF359', 'Wolf 359', 'BARNARD', 'LUYTEN'),
     ('SHMRN', 'the Shmrn pocket', 'GOOD', 'BAD'),
     ('LUYTEN', "Luyten's Star", 'BAD', 'BAD'),
 ]

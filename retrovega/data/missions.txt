@@ -428,8 +428,8 @@ type     patrol
 music    briefing
 fighter  SCHROED
 briefing "Welcome to Shelton. The Aera hold the next two jumps, and we intend to change that."
-briefing after=won "We came out of Cephid 17 fat on fuel. Let's not waste it."
-briefing after=lost "Cephid 17 ended badly, so we are short on fuel. Fly like it."
+briefing after=won "The yards held, but not well enough. The fleet has sent us the long way round, through Shelton."
+briefing after=lost "We lost the Enigma lane, so the fleet has sent us the long way round, through Shelton."
 briefing you "(She runs through the first wings. Yours comes next.)"
 briefing "Wildcard, you lead. You and Comet will fly Nav 1, Nav 2, Nav 3 and come home, in Schroedingers."
 briefing COMET "Who's Wildcard?"
@@ -634,26 +634,27 @@ briefing after=won "Cephid 17 went well for us. It didn't go well for the fleet,
 briefing after=lost "We came out of Cephid 17 short of fuel and shorter of friends, so nobody here gets a rest."
 briefing "The Aera have held the Crucible for a month. We aren't the first ship in, but the others are under attack."
 briefing you "(She hands out the wings. Yours is sixth, and you've stopped listening by the fourth.)"
-briefing "Wildcard, you lead. You and Anchor go to the Kahan, the destroyer at Nav 1. You'll have Gawains."
+briefing "Wildcard, you lead. You and Comet go to the Kahan, the destroyer at Nav 1. You'll have Gawains."
 briefing "There are 4 Agis already sniffing round the ship."
 briefing "Our turrets are down for repair, so clear those before you go."
 briefing "Then it's 3 Cleomenes at Nav 1, on top of her. Those are heavy assault ships, and they're in no hurry."
-briefing ANCHOR "Commander, the procedure is local defense first, then relief. Is that the order?"
-briefing "That's the order, Anchor. Dismissed."
+briefing COMET "Who's Wildcard?"
+briefing alive=COMET "Your lead, Comet. You'll remember the name by tonight. Dismissed."
+briefing dead=COMET "Dismissed."
 win      "The Kahan's captain says thank you. She doesn't say that, so I had it checked."
-win      ANCHOR "Wildcard's fire discipline was correct, Commander. I have it on the form."
-win      you alive=ANCHOR "There's a form for that?"
-win      ANCHOR "There's a form for everything."
-win      dead=ANCHOR "He wrote up the whole flight plan before he launched. It's on my desk. It was correct."
+win      COMET "The rookie didn't get in my way."
+win      you alive=COMET "Is that a compliment?"
+win      COMET "It's a report."
+win      dead=COMET "She'd have said you didn't get in her way. From Comet, that's a medal. I'll write her letter."
 lose     "The Kahan will live. She won't fight again for a month."
-lose     ANCHOR "The fault is mine, Commander. I was late on station."
-lose     you alive=ANCHOR "He wasn't, Commander."
-lose     alive=ANCHOR "I know he wasn't. Anchor signs for everything. Dismissed."
-lose     dead=ANCHOR "Dismissed, Wildcard. Get some sleep. That's an order, and I doubt it'll work."
+lose     COMET "I've seen worse, Commander. Not this month."
+lose     you alive=COMET "We were both late on that first pass."
+lose     alive=COMET "Then you'll both be early tomorrow. Dismissed."
+lose     dead=COMET "Dismissed, Wildcard. Get some sleep. That's an order, and I doubt it'll work."
 nav      1 15000 10000 45000 reach=15000
 nav      2 0 0 0 hidden reach=5000
 ship     player 0 nav0
-ship     wingman 0 nav0 pilot=ANCHOR
+ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home turrets=off
 ship     AGIS 1 nav0 count=2 at=5000,4000,15000
 ship     AGIS 1 nav2 count=2 at=0,-5000,0
@@ -665,7 +666,7 @@ talk     bar PRIME COMET "Did you see me come over the deck? Two meters."
 talk     bar COMET PRIME "I saw the form."
 talk     bar PRIME COMET "Whose name was on it?"
 talk     bar COMET PRIME "Not yours."
-say      bar PRIME PRIME "You're on my brother's wing? Good. He'll read you the checklist. Somebody should hear it."
+say      bar PRIME PRIME "You're on Comet's wing? She called me Rookie for a year. I'd been flying for six."
 say      bar PRIME you "Did you really come over the deck at two meters?"
 say      bar PRIME PRIME "Ask him. He signed for it."
 say      bar PRIME TALLY "Kit's still sweeping up. I'd stay out of the hangar, Julian."
@@ -697,7 +698,7 @@ talk     deck TECH you "A Gawain. A proper interceptor. Don't get used to it."
 say      deck TECH TECH boost=fuel "I've put a reserve tank in her. It's a long run to the Kahan."
 say      deck TECH you "What's this dent on the wing root?"
 say      deck TECH TECH "The form says Anchor did that. Anchor doesn't fly like that. Read his log sometime. I read them all."
-radio    "Anchor to Wildcard. Pre-flight complete. Yours took forty seconds less than mine. I've noted it."
+radio    "Comet. On your wing, Rookie. Don't talk on the comm and we'll get along."
 
 mission  CRUCIBL2
 node     CRUCIBL
@@ -706,13 +707,13 @@ type     patrol
 music    briefing
 fighter  LANCELT
 briefing you "(Twenty minutes into the briefing, she reaches the last patrol.)"
-briefing "...and the last patrol is yours. You and Anchor will fly Nav 1, Nav 2, Nav 3 and come home."
+briefing "...and the last patrol is yours. You and Comet will fly Nav 1, Nav 2, Nav 3 and come home."
 briefing "Just fly the points and tell me what you see. Now, there's one more thing about this one."
 briefing "We've been sent a pair of Lancelots, prototypes. The brass wants to know how they do under fire."
 briefing PRIME "You lucky so-and-so. Tell me how she feels!"
 briefing "Don't go mad out there, Wildcard. Nobody knows yet what that ship can do, or what it can't."
-briefing ANCHOR "The manual is eleven pages, Commander. I've read them."
-briefing alive=ANCHOR "I'm sure you have."
+briefing COMET "Who flew them before us, Commander?"
+briefing alive=COMET "Test pilots, Comet. Every one of them is still with us."
 briefing "There's a field of what look like asteroids around Nav 1, so watch yourself there."
 briefing "A Franklin flies top cover on the way out."
 briefing "Intelligence expects 4 Nicanders at Nav 2 and 2 Convolutions at Nav 3."
@@ -720,17 +721,17 @@ briefing you "Understood, Commander. Nothing fancy."
 briefing "Good. Dismissed."
 win      "Well? Tell me about the Lancelot."
 win      you "She's quick, Commander, and she bites."
-win      ANCHOR "Turn rate is eleven percent over the manual. I've noted it."
+win      COMET "She turns inside a Convolution. Don't tell the brass, or they'll want her back."
 win      "Send it to the brass. They'll ignore it, but you'll have sent it. Get some sleep."
 lose     "I gave you the most expensive fighter in the sector, and this is the report?"
 lose     you "It wasn't the ship, Commander."
 lose     "No. I didn't think it was."
-lose     ANCHOR "The hardware performed to specification, Commander. I'll write it up."
+lose     COMET "The ship was fine, Commander. We weren't."
 nav      1 35000 10000 -10000 reach=10000
 nav      2 40000 15000 -45000 reach=20000
 nav      3 -5000 5000 -45000 reach=20000
 ship     player 0 nav0
-ship     wingman 0 nav0 pilot=ANCHOR
+ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home
 ship     FRANKLN 0 nav0 role=stay
 ship     NICANDR 1 nav2 count=2 at=-5000,-5000,-5000
@@ -769,7 +770,7 @@ talk     deck TECH you "Not one patch on her. I don't like it. It's like meeting
 say      deck TECH TECH boost=missile "I've found room on her rack for one more. There's always room."
 say      deck TECH you "If she's brand new, where did the extra one come from?"
 say      deck TECH TECH "She's new. The missile isn't."
-radio    "Anchor to Wildcard. Manual says stay under eighty percent for the first minute. I'm saying it too."
+radio    "Comet. She's new, Rookie, and so are you. Don't fly her like you stole her."
 
 mission  CRUCIBL3
 node     CRUCIBL
@@ -780,8 +781,8 @@ fighter  GAWAIN
 briefing "Listen up, people. We have several groups of bogies on the move."
 briefing "Either the Aera are pulling out of the Crucible, or they're getting ready to push us out."
 briefing "Either way, I have to know. First up is what looks like a squadron of Nicanders."
-briefing "You and Anchor go and look. 4 Schroedingers go with you, so make use of them."
-briefing dead=ANCHOR "We can't replace Anchor, Wildcard. You lead the Schroedingers alone."
+briefing "You and Comet go and look. 4 Schroedingers go with you, so make use of them."
+briefing dead=COMET "We can't replace Comet, Wildcard. You lead the Schroedingers alone."
 briefing "Intelligence expects 5 Nicanders at Nav 1, and there may be more behind them."
 briefing "If you can take them, engage. If it's too big, break off. I need the information more than I need heroes."
 briefing you "I've heard Sixty-Four is at the Crucible, Commander. Is that true?"
@@ -789,17 +790,18 @@ briefing "It may be. It's very dangerous, and I want to know if it's here, so br
 briefing you "(She sends four more wings after the other bogies.)"
 briefing "That's everyone. Dismissed."
 win      "So they're pulling back. Tactical owes me a drink."
-win      ANCHOR "My log is attached, Commander."
-win      alive=ANCHOR "I've read your log, Anchor. It's the cleanest on this ship. It's too clean, and I know why. Dismissed."
-win      dead=ANCHOR "I've read his logs. All of them. Someday I'll tell you what I found. Dismissed."
+win      COMET "The rookie shot straight."
+win      you alive=COMET "You said my name out there. Right at the end."
+win      COMET "Comm noise."
+win      dead=COMET "She said your name on the comm, right at the end. I heard it. Dismissed."
 lose     "They aren't pulling out, are they?"
 lose     you "No, Commander."
-lose     ANCHOR "My position at Nav 1 was poor. Put it on me."
+lose     COMET "They were waiting for us, Commander. I should have seen it."
 lose     "We'll be leaving the Crucible the hard way, then. Dismissed."
 nav      1 -35000 -10000 20000 reach=25000
 nav      2 -35000 -10000 20000 hidden reach=25000
 ship     player 0 nav0
-ship     wingman 0 nav0 pilot=ANCHOR
+ship     wingman 0 nav0 pilot=COMET
 ship     VIGILNC 0 nav0 role=home
 ship     SCHROED 0 nav0 count=2 at=0,0,2500 role=stay
 ship     SCHROED 0 nav0 count=2 role=stay
@@ -812,8 +814,10 @@ talk     bar TORCH COMET "You think they're leaving?"
 talk     bar COMET TORCH "Nobody leaves."
 talk     bar TORCH COMET "I did."
 say      bar COMET COMET "Five Nicanders, then four. You're going to want to stop counting and start shooting."
-say      bar COMET you "You count everything."
-say      bar COMET COMET "Afterwards."
+say      bar COMET you "Why Rookie? We've flown together twice now."
+say      bar COMET COMET "Homeland Security. Eight pilots, one wing. I knew all their names."
+say      bar COMET TORCH "Ask her who wrote the letters."
+say      bar COMET COMET "That's enough, Torch."
 say      bar TORCH TORCH "Every time we jump, I look at the star chart. Shmrn gets a little further off."
 say      bar TORCH you "Someone will go back."
 say      bar TORCH TORCH "That's what I told them."
@@ -837,7 +841,7 @@ talk     deck TECH you "You've been reading logs. I can tell. You've got that lo
 say      deck TECH TECH boost=armor "There's extra plate on her. That's nine Nicanders you're going to see, so you'll want it."
 say      deck TECH you "You knew about Anchor's log."
 say      deck TECH TECH "I know who bends what. I fix it. I don't sign anything."
-radio    "Anchor to Wildcard. Nine Nicanders on the estimate. I have the checklist open. Say the word."
+radio    "Comet. Nine Nicanders on the estimate. Shoot first, Rookie. Count them afterwards."
 
 mission  OLDZIEY1
 node     OLDZIEY
@@ -1299,6 +1303,8 @@ talk     lounge COMET DRIFTER "It's always Prime."
 talk     lounge DRIFTER COMET "That's the only reason anyone bets."
 talk     lounge DRIFTER COMET if=SHELTON "I hear you used a name out there once."
 talk     lounge COMET DRIFTER if=SHELTON "Comm noise."
+talk     lounge DRIFTER COMET if=CRUCIBL "I hear you used a name out there once."
+talk     lounge COMET DRIFTER if=CRUCIBL "Comm noise."
 say      lounge DRIFTER DRIFTER "A plague. There's no line on a plague. I checked."
 say      lounge DRIFTER you "Are you all right?"
 say      lounge DRIFTER DRIFTER "My mother's freighter caught something like this. We sat in orbit for three weeks. Fly straight."
