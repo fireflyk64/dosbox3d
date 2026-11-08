@@ -46,7 +46,7 @@ enum Why { WHY_PERIOD = 0, WHY_AUTOPILOT = 1, WHY_JUMP = 2, WHY_LAUNCH = 3, WHY_
 // Step 5: a nav point's owner (the user's rule): of the pilots present at it, one with a mission objective there, the
 // host first (the lowest seat), each in turn once everybody has left and come back, until all have had it.  Step 6:
 // the owner's encounter ships are the others' puppets (PrivScene, kSceneEveryMs), hits on a ship cross to its owner.
-enum { kOwnersEveryMs = 3000, kDecideEveryMs = 500, kSceneEveryMs = 100, kNpcCap = 24, kNpcStaleMs = 3000, kFireMs = 60,
+enum { kOwnersEveryMs = 3000, kDecideEveryMs = 500, kSceneEveryMs = 100, kNpcCap = 12, kNpcStaleMs = 3000, kFireMs = 60,
        kShotEveryMs = 120, kCastSlots = 7, kCastAt = 0x0074 };
 const double kUnitsPerMetre = 256.0;    // (the destination display's range: the distance in world units, >> 8)
 const double kNearMetres = 20000.0;     // a pilot this near is "near" (a nav point's sphere: 12,000 to 17,000)
@@ -57,7 +57,16 @@ const double kStateMetres = 60000.0;
 const double kPuppetMetres = 30000.0;
 const double kPuppetGoneMetres = 40000.0;
 enum { kStatesPerSecond = 15, kStateStaleMs = 5000, kExtrapolateMs = 1000 };
-const char kPuppetCast[] = "MER_DP";    // (the AI and side its ship is made with: a merchant's; its AI is held)
+// (the AI and side a pilot's ship is made with here, its face on the comm screen: the pilot's own choice, a merchant's
+// by default; its AI is held)
+const char kPuppetCast[] = "MER_DP";
+// The game's near heap (wcnet_priv.cpp, priv_near_heap): some 17 KB free as a flight begins at Achilles, 15 KB once it
+// settles, nothing growing it, and the program ends when a request finds no block (its error 1303); a ship of ours
+// with what its AI allocates takes some 850 bytes (measured, 12 merchants spawned one by one: 16,966 to 6,698).  So a
+// puppet is made only while the heap keeps a reserve for the game's own ships, missiles and pods after it; what
+// cannot be made is not shown (the pilots' own ships first, the encounter ships after); nothing is ever deleted
+// (the game's destructor on a ship of ours crashes it): a parked ship is reused.
+enum { kShipNearBytes = 1024, kNearReserve = 6144 };
 
 struct Peer {
     Connection conn;
@@ -77,7 +86,9 @@ struct Pilot {
     double at;
     int nav;                    // the nav sphere it is in (-1 none)
     unsigned missions;          // the nav spheres it has a mission at (a bit each)
-    Pilot() : known(false), flying(false), x(0), y(0), z(0), at(-1e9), nav(-1), missions(0) {}
+    std::string cast;           // the cast its ship is made with here, its face on our comm screen (its hello)
+    int faceId;                 // the portrait id wanted (-1: as the game makes it)
+    Pilot() : known(false), flying(false), x(0), y(0), z(0), at(-1e9), nav(-1), missions(0), cast("MER_DP"), faceId(-1) {}
 };
 
 // A nav point and who runs it (the host decides; everybody keeps the host's word).
@@ -146,6 +157,9 @@ struct PrivNet {
     std::vector<NavOwner> owners;
     std::vector<NpcTrack> tracks;
     double ownersAt, decidedAt, sceneAt;
+    // (what the frame applies: the far heap's EMS window is the game's own at the frame's top, not at a tick)
+    std::vector<std::pair<int, std::string> > chats;    // seat, line
+    std::vector<std::pair<int, Bit32u> > shots;         // seat, id
     Bit64u sceneFrame;
     int nav;                    // the nav sphere we are in (-1 none)
     double sentAt;              // our last presence
@@ -169,6 +183,8 @@ void forget_puppets(const char *why);
 void take_scene(const PrivScene &sc, int seat);
 void take_hit(const PrivHit &h);
 void take_shot(int seat, Bit32u id);
+void take_chat(const Chat &c, int seat);
+void frame_chats_and_shots();
 double g_nextTryMs;
 double g_noticeAt = -1;
 double g_sameSystemAt = -1e9;
@@ -176,10 +192,30 @@ int g_pendingWhy = -1;          // an occasion to send at the next tick (the A k
 bool g_wasFlying;
 std::string g_system;           // our system, as last seen in flight (a base's is the system it is in)
 
+// The emulator's line over the picture: only what cannot go anywhere else (the room's open, a hello, the host gone);
+// where the others are stays in the log (the user, 2026-11-08: "we shouldn't do that overlay thing with guest
+// close--it kinda breaks immersion. Players can communicate themselves using the 0 key").
 void notice(const std::string &text) {
     incoming_text = text;
     g_noticeAt = PIC_FullIndex();
     wclog(1, "Privateer: %s", text.c_str());
+}
+void tell(const std::string &text) {
+    wclog(1, "Privateer: %s", text.c_str());
+}
+
+// "<cast>:<id>" from WCPRIVFACE (the page's Face choice), MER_DP:-1 without.
+std::string own_face() {
+    const char *env = getenv("WCPRIVFACE");
+    std::string f = env && env[0] ? env : "MER_DP:-1";
+    if (f.find(':') == std::string::npos) f += ":-1";
+    return f;
+}
+void parse_face(const std::string &f, std::string &cast, int &id) {
+    const size_t c = f.find(':');
+    cast = f.substr(0, c);
+    id = c == std::string::npos ? -1 : atoi(f.c_str() + c + 1);
+    if (cast.empty() || cast.size() > 8) cast = "MER_DP";
 }
 
 std::string own_callsign() {
@@ -271,6 +307,7 @@ bool start() {
         n->host = false;
         NetworkMessage msg;
         msg.mutable_priv_hello()->set_callsign(n->callsign);
+        msg.mutable_priv_hello()->set_face(own_face());
         p->conn.send(msg);
     } else {
         Listener *l = NULL;
@@ -295,7 +332,7 @@ bool start() {
     g_net = n;
     wclog(1, "Privateer: %s at %s, %d seats, callsign %s", n->host ? "HOST" : "GUEST", where.c_str(), n->seats, n->callsign.c_str());
     if (n->host) {
-        notice("Room open: everybody flies their own Privateer; the others show up here as they go");
+        notice("Room open: everybody flies their own Privateer");
     }
     return true;
 }
@@ -330,6 +367,7 @@ PrivPresence own_presence(int why) {
     }
     pr.set_why((Bit32u)why);
     pr.set_nav(flying ? g_net->nav : -1);
+    pr.set_face(own_face());
     return pr;
 }
 
@@ -464,7 +502,7 @@ void send_presence(int why) {
     }
     g_net->sentAt = PIC_FullIndex();
     if (why != WHY_PERIOD) {
-        static const char *const kWhy[] = { "the period", "the autopilot", "a jump", "a launch", "a landing", "a hello" };
+        static const char *const kWhy[] = { "the period", "the autopilot", "a jump", "a launch", "a landing", "a hello", "a nav point" };
         wclog(2, "Privateer: our presence sent (%s): %s, %s", kWhy[why], msg.priv_presence().flying() ? "flying" : "not flying",
               g_system.c_str());
     }
@@ -522,6 +560,9 @@ void take_presence(const PrivPresence &pr, int seat) {
     p.z = pr.z();
     p.at = PIC_FullIndex();
     p.nav = pr.has_nav() ? (int)pr.nav() : -1;
+    if (pr.has_face() && !pr.face().empty()) {
+        parse_face(pr.face(), p.cast, p.faceId);
+    }
     p.missions = 0;
     for (int i = 0; i < pr.missions_size(); i++) {
         if (pr.missions(i) < 32) p.missions |= 1u << pr.missions(i);
@@ -547,7 +588,7 @@ void take_presence(const PrivPresence &pr, int seat) {
         what = (why == WHY_JUMP ? "jumped to " : why == WHY_LAUNCH ? "launched in " : "in ") + p.system;
     }
     if (!what.empty()) {
-        notice(p.callsign + " " + what);
+        tell(p.callsign + " " + what);
     }
 }
 
@@ -588,10 +629,12 @@ void handle(Peer *p, NetworkMessage &msg) {
             p->callsign = h.callsign();
             p->hello = true;
             g_net->pilots[player].callsign = h.callsign();
+            parse_face(h.face(), g_net->pilots[player].cast, g_net->pilots[player].faceId);
             NetworkMessage reply;
             reply.mutable_priv_hello()->set_callsign(g_net->callsign);
             reply.mutable_priv_hello()->set_player((Bit32u)player);
             reply.mutable_priv_hello()->set_seats((Bit32u)g_net->seats);
+            reply.mutable_priv_hello()->set_face(own_face());
             p->conn.send(reply);
             // (everybody known so far, to the newcomer: their presences as the host has them)
             for (int s = 0; s < kMaxSeats; s++) {
@@ -609,6 +652,7 @@ void handle(Peer *p, NetworkMessage &msg) {
                 pr->set_y((Bit32s)q.y);
                 pr->set_z((Bit32s)q.z);
                 pr->set_why(WHY_HELLO);
+                pr->set_face(q.cast + ":" + std::to_string(q.faceId));
                 p->conn.send(out);
             }
             g_pendingWhy = WHY_HELLO;      // (ours to everybody, the newcomer with them)
@@ -620,13 +664,13 @@ void handle(Peer *p, NetworkMessage &msg) {
             p->hello = true;
             g_net->self = h.has_player() ? (int)h.player() : 1;
             g_net->pilots[0].callsign = h.callsign();
+            parse_face(h.face(), g_net->pilots[0].cast, g_net->pilots[0].faceId);
             if (h.has_seats() && h.seats() >= 2) {
                 g_net->seats = (int)h.seats();
             }
             g_pendingWhy = WHY_HELLO;
             char line[160];
-            snprintf(line, sizeof(line), "In %s's room as pilot %d of %d: fly where you like, the others show up here as they go",
-                     p->callsign.c_str(), g_net->self + 1, g_net->seats);
+            snprintf(line, sizeof(line), "In %s's room as pilot %d of %d", p->callsign.c_str(), g_net->self + 1, g_net->seats);
             notice(line);
         }
     } else if (msg.has_priv_presence()) {
@@ -720,7 +764,18 @@ void handle(Peer *p, NetworkMessage &msg) {
             }
         }
     } else if (msg.has_chat()) {
-        notice(msg.chat().callsign() + ": " + msg.chat().message());
+        if (!p->hello) {
+            return;
+        }
+        take_chat(msg.chat(), g_net->host ? p->player : -1);
+        if (g_net->host) {
+            for (size_t i = 0; i < g_net->peers.size(); i++) {
+                Peer *to = g_net->peers[i];
+                if (to != p && to->hello && to->conn.is_open()) {
+                    to->conn.send(msg);
+                }
+            }
+        }
     }
 }
 
@@ -902,8 +957,8 @@ void priv_session_tick() {
         g_sameSystemAt = now;
         lastWho = who;
         const std::string line = same_system_line();
-        if (!line.empty() && (g_noticeAt < 0 || now - g_noticeAt > 3000)) {
-            notice(line);
+        if (!line.empty()) {
+            tell(line);
         }
     }
 }
@@ -916,6 +971,21 @@ const char *type_of(const std::string &appearance) {
     if (appearance == "FIGHTER") return "CENTTYPE";
     if (appearance == "MERCHANT") return "GLXYTYPE";
     return "TARSTYPE";
+}
+
+// Room in the game's near heap for one more ship of ours, the reserve kept (logged when there is none, every 10 s)
+bool room_for_a_ship(const char *whose) {
+    int total, largest, blocks;
+    priv_near_heap(total, largest, blocks);
+    if (total - kShipNearBytes >= kNearReserve) {
+        return true;
+    }
+    static double saidAt = -1e9;
+    if (PIC_FullIndex() - saidAt > 10000) {
+        saidAt = PIC_FullIndex();
+        wclog(1, "Privateer: no room in the game's memory for %s (near heap free %d, the reserve %d): not shown", whose, total, (int)kNearReserve);
+    }
+    return false;
 }
 
 void puppet_made(int seat, Bit16u obj) {
@@ -933,8 +1003,8 @@ void puppet_made(int seat, Bit16u obj) {
     p.parked = false;
     priv_hold_ai(priv_ship_controller(obj), true);
     const std::string who = g_net->pilots[seat].callsign.empty() ? "a pilot" : g_net->pilots[seat].callsign;
-    notice(who + "'s " + (p.appearance == "TUG" ? "Orion" : p.appearance == "FIGHTER" ? "Centurion" : p.appearance == "MERCHANT" ? "Galaxy" : "Tarsus")
-           + " is in your space");
+    tell(who + "'s " + (p.appearance == "TUG" ? "Orion" : p.appearance == "FIGHTER" ? "Centurion" : p.appearance == "MERCHANT" ? "Galaxy" : "Tarsus")
+         + " is in your space");
     wclog(2, "Privateer: pilot %d's ship is ds:%04X (type ds:%04X, controller ds:%04X held)", seat + 1, obj, p.type, priv_ship_controller(obj));
 }
 
@@ -1101,7 +1171,7 @@ NpcPuppet *npc_of(int seat, Bit32u id, bool make) {
             return &g_net->npcs[k];
         }
     }
-    return NULL;        // (a list has a cap: 24 encounter ships of others' at once)
+    return NULL;        // (a list has a cap: 12 encounter ships of others' at once; the game's near heap is some 30 KB)
 }
 
 void take_scene(const PrivScene &sc, int seat) {
@@ -1160,12 +1230,50 @@ void take_hit(const PrivHit &h) {
     priv_hit_apply(obj, (int)h.loc(), (int)h.damage());
 }
 
+// A line of the room's chat: said by the sender's ship in our game when it is here (its name on the comm screen,
+// the game's own merchant face), else on the emulator's line.
+void take_chat(const Chat &c, int seat) {
+    std::string who = c.callsign();
+    for (int s = 0; s < kMaxSeats && seat < 0; s++) {
+        if (g_net->pilots[s].known && g_net->pilots[s].callsign == who) seat = s;
+    }
+    if (who.empty() && seat >= 0) {
+        who = g_net->pilots[seat].callsign;
+    }
+    wclog(1, "Privateer: %s: %s", who.c_str(), c.message().c_str());
+    if (seat >= 0 && seat < kMaxSeats && g_net->puppets[seat].obj && !g_net->puppets[seat].parked && g_net->chats.size() < 8) {
+        g_net->chats.push_back(std::make_pair(seat, c.message()));     // (said at the frame)
+        return;
+    }
+    notice(who + ": " + c.message());
+}
+
+void frame_chats_and_shots() {
+    for (size_t i = 0; i < g_net->chats.size(); i++) {
+        const int seat = g_net->chats[i].first;
+        Puppet &p = g_net->puppets[seat];
+        const std::string &who = g_net->pilots[seat].callsign;
+        if (!(p.obj && !p.parked && priv_ship_say(p.obj, who.c_str(), g_net->chats[i].second.c_str(), g_net->pilots[seat].faceId))) {
+            notice(who + ": " + g_net->chats[i].second);
+        }
+    }
+    g_net->chats.clear();
+    const double now = PIC_FullIndex();
+    for (size_t i = 0; i < g_net->shots.size(); i++) {
+        NpcPuppet *p = npc_of(g_net->shots[i].first, g_net->shots[i].second, false);
+        if (p && p->obj && !p->parked) {
+            priv_ship_fire(p->obj, true);
+            p->fireUntil = now + kFireMs;
+        }
+    }
+    g_net->shots.clear();
+}
+
 void take_shot(int seat, Bit32u id) {
     NpcPuppet *p = npc_of(seat, id, false);
     static unsigned shots;
-    if (p && p->obj && !p->parked) {
-        priv_ship_fire(p->obj, true);
-        p->fireUntil = PIC_FullIndex() + kFireMs;
+    if (p && p->obj && !p->parked && g_net->shots.size() < 32) {
+        g_net->shots.push_back(std::make_pair(seat, id));              // (fired at the frame)
         if (++shots % 20 == 1) {
             wclog(2, "Privateer: pilot %d's %s (ds:%04X) fires here (%u shots of theirs so far)", seat + 1, p->type.c_str(), p->obj, shots);
         }
@@ -1218,7 +1326,7 @@ void frame_npcs(double now, const Bit32s pos[3]) {
                     q.used = false;
                 }
             }
-            if (!p.obj) {
+            if (!p.obj && room_for_a_ship("an encounter ship of another's")) {
                 p.pending = priv_spawn_ship(p.type.c_str(), p.appearance.c_str(), p.cast.c_str(), at, p.m, npc_made, k);
             }
         }
@@ -1258,6 +1366,22 @@ bool priv_session_allow_wing(int sphereId) {
     }
     // nobody's word yet: with another pilot already there, the host decides first
     return (present_at(g_system, sphereId) & ~(g_net->self >= 0 ? 1u << g_net->self : 0)) == 0;
+}
+
+bool priv_session_chat(const std::string &text) {
+    if (!g_net || g_net->self < 0) {
+        return false;
+    }
+    NetworkMessage msg;
+    msg.mutable_chat()->set_callsign(g_net->callsign);
+    msg.mutable_chat()->set_message(text);
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
+            g_net->peers[i]->conn.send(msg);
+        }
+    }
+    wclog(1, "Privateer: said \"%s\"", text.c_str());
+    return true;
 }
 
 bool priv_session_is_puppet(Bit16u a, Bit16u b) {
@@ -1358,8 +1482,7 @@ void priv_session_frame() {
     if (wanted && g_net->nav >= 0 && owner_of(g_system, g_net->nav) == g_net->self && now - g_net->sceneAt >= kSceneEveryMs) {
         send_scene(now);
     }
-    frame_npcs(now, pos);
-    // theirs, in our space
+    // theirs, in our space (before the encounter ships: the first claim on the game's memory)
     for (int s = 0; s < kMaxSeats; s++) {
         if (s == g_net->self) {
             continue;
@@ -1382,9 +1505,9 @@ void priv_session_frame() {
         }
         const bool near = fresh && d < (p.obj && !p.parked ? kPuppetGoneMetres : kPuppetMetres);
         Bit32s at[3] = { (Bit32s)ex, (Bit32s)ey, (Bit32s)ez };
-        if (near && !p.obj && !p.pending) {
-            p.pending = priv_spawn_ship(type_of(p.appearance), p.appearance.empty() ? "CLUNKER" : p.appearance.c_str(), kPuppetCast, at, p.m,
-                                        puppet_made, s);
+        if (near && !p.obj && !p.pending && room_for_a_ship("a pilot's ship")) {
+            p.pending = priv_spawn_ship(type_of(p.appearance), p.appearance.empty() ? "CLUNKER" : p.appearance.c_str(),
+                                        g_net->pilots[s].cast.c_str(), at, p.m, puppet_made, s);
         } else if (near && p.obj) {
             priv_ship_set(p.obj, at, p.m);
             p.parked = false;
@@ -1396,6 +1519,8 @@ void priv_session_frame() {
             wclog(2, "Privateer: pilot %d's ship parked (%s)", s + 1, fresh ? "out of reach" : "no reports");
         }
     }
+    frame_npcs(now, pos);
+    frame_chats_and_shots();
 }
 
 bool priv_session_active() {

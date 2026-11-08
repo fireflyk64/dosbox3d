@@ -25,6 +25,7 @@
 #include "lazyflags.h"
 #include "paging.h"
 #include <math.h>
+#include <ctype.h>
 
 namespace wc {
 
@@ -70,12 +71,33 @@ enum {
     kSeg120 = 0x489B,
     kFireGuns = 0x0004,             // seg120:0004(weapons far, n): a ship's guns fired (the weapons' +0xA is the ship)
     kControlFire = 0x1E,            // the control record's fire bits: 4 the guns, 2 the launcher
+    kNearHeapTop = 0x3FFC,          // the near heap's end (the game's own allocator, seg142:012B: error 1308 when SP is below it)
+    kNearFreeList = 0x3FF8,         // the head of its free blocks' ring (a block: size at +0, bit 0 used; +2 the block before; +4/+6 the ring)
+    // A ship's cast (its AI file, DATA/AIDS: name, lines, face), the ship's own copy in the far heap: the controller's
+    // +0xA is a far pointer to it; the name block (far) at its +0xA ("Merchant", 12 bytes), its face at +0xE (the
+    // cast file's INFO; 14 the merchant woman), the message sets (far) at +0xF.. : the lines the player may send
+    // (friendly, neutral, hostile), then the lines received (+0x1B, +0x1F, +0x23), then the fight's; a set is a
+    // count and a far pointer to its block of that many ids and the strings.  The pilot object (near) is at the plan's +0x23
+    // (the plan: the controller's +2, far): +6 the line said, +8 its timer, +0xA bit 0 speaking.
+    kCtlCast = 0x0A,
+    kCtlPlan = 0x02,
+    kCastName = 0x0A,
+    kCastRecv0 = 0x1B,
+    kPlanPilot = 0x23,
+    kPilotLine = 0x06,
+    kPilotTimer = 0x08,
+    kPilotFlags = 0x0A,
+    kCastFace = 0x0E,               // the cast copy's portrait id (chosen as the ship is made: a merchant's 14 or 47)
+    kSeg081 = 0x332F,
+    kSceneRemove = 0x00AD,          // seg081:00AD(list, object): the object out of the scene
+    kShipDelete = 0x3BA7,           // seg053:3BA7(ship, 1): the ship's destructor (the vtable's +4), its memory given back
     kSignatureOff = 0x0074,         // "Type PRIV to run Privateer, or RF to run Righteous Fire."
 };
 const char kSignature[] = "Type PRIV to run Privateer";
 
 bool g_found;
 bool g_rf;
+Bit16u g_frameSp;
 Bit16u g_privLoadSeg, g_ds, g_psp;
 double g_nextReportMs;
 
@@ -209,6 +231,9 @@ bool queue_call(const PrivCall &c) {
 enum { kScratch = 0x0074 + 28, kScratchSize = 29 };
 // The AI held for these ships' controllers (puppets: wcnet_priv_session.cpp): their think, seg042:0944, returns at once.
 enum { kSeg042 = 0x1DFE, kNpcThink = 0x0944, kHeldCap = 16, kSeg053 = 0x23BA };
+// The game's error report, seg050:0006(code): 1303 is its near heap with no block big enough (the program then ends,
+// and PRIV.EXE starts it again at its title).
+enum { kSeg050 = 0x20F8, kGameError = 0x0006 };
 std::vector<Bit16u> g_heldAi;
 
 // A hit applied in steps, each a call of the game's (priv_hit_apply): the shields, the armour, the display, the
@@ -276,8 +301,10 @@ void hit_step(int tag, Bit16u ax, Bit16u dx) {
         h.obj = 0;
     }
 }
+Bit16u g_lastSpawned;
 void spawn_done(int tag, Bit16u ax, Bit16u dx) {
     (void)dx;
+    g_lastSpawned = ax;
     wclog(1, "Privateer: spawn %d made the object ds:%04X", tag, ax);
 }
 
@@ -333,6 +360,17 @@ std::string far_text(Bit16u off, Bit16u seg) {
 }
 
 void log_watched(const WatchPlace &w) {
+    // (PRIVWATCH_TRACE=<seconds>: the first watched call starts a code trace of that long, "watched.trace")
+    static bool traced;
+    const char *tr = getenv("PRIVWATCH_TRACE");
+    if (tr && tr[0] && !traced) {
+        traced = true;
+        g_traceName = "watched";
+        g_traceEndMs = PIC_FullIndex() + 1000.0 * atof(tr);
+        g_tracing = true;
+        g_trace.clear();
+        wc_net_countdown = 0;
+    }
     const PhysPt sp = SegPhys(ss) + (reg_esp & 0xffff);
     const Bit16u retIp = mem_readw(sp), retCs = mem_readw(sp + 2);
     Bit16u a[6];
@@ -427,7 +465,10 @@ void priv_tick() {
     static unsigned lastFrames;
     const unsigned frames = priv_controls_frames();
     if (frames != lastFrames) {
-        wclog(2, "Privateer: t=%.1f, %u keyboard frames, controls: %s", now / 1000.0, frames - lastFrames, priv_control_mode());
+        int total, largest, blocks;
+        priv_near_heap(total, largest, blocks);
+        wclog(2, "Privateer: t=%.1f, %u keyboard frames, controls: %s, near heap free %d (largest block %d, %d blocks)", now / 1000.0,
+              frames - lastFrames, priv_control_mode(), total, largest, blocks);
         lastFrames = frames;
     }
 }
@@ -442,11 +483,20 @@ bool priv_check_hooks(Bit32u ip) {
         return true;
     }
     if (ip == kControlsEntry && codeSeg == (Bit16u)(g_privLoadSeg + kSeg088)) {
+        g_frameSp = reg_sp;
         if (!g_saved.active) {
             priv_spheres_refresh();
             priv_session_frame();       // (once a frame in flight: the puppets placed, our state sent)
         }
         run_calls();
+        return true;
+    }
+    if (ip == kGameError && codeSeg == (Bit16u)(g_privLoadSeg + kSeg050)) {
+        const Bit16u code = mem_readw(SegPhys(ss) + reg_sp + 4);
+        int total, largest, blocks;
+        priv_near_heap(total, largest, blocks);
+        wclog(1, "Privateer: the game reports error %04X%s (near heap free %d, largest block %d)", code,
+              code == 0x1303 ? ": its near heap has no block big enough (out of memory: the program ends)" : "", total, largest);
         return true;
     }
     if (ip == kWingSpawn && codeSeg == (Bit16u)(g_privLoadSeg + kSeg077)) {
@@ -468,6 +518,10 @@ bool priv_check_hooks(Bit32u ip) {
         // pilots launch from the same pad into the same place)
         if (hitter && priv_r16(hitter) == kShipVtable && priv_session_is_puppet(target, hitter)) {
             mem_writew(bp - 6, 0);
+        }
+        if (wclog_level() >= 3) {
+            wclog(3, "Privateer: hit on ds:%04X (%s) by ds:%04X (vtable %04X): quadrant %d, %d", target, priv_ship_cast_name(target).c_str(), hitter,
+                  hitter ? priv_r16(hitter) : 0, (Bit16s)mem_readw(bp + 0xC), (Bit16s)mem_readw(bp - 6));
         }
         priv_session_hit(target, (Bit16s)mem_readw(bp + 0xC), (Bit16s)mem_readw(bp - 6));
         return true;
@@ -506,6 +560,7 @@ void priv_watch_list(void (*watch)(Bit16u ip)) {
     watch(kControlsEntry);
     watch(kNpcThink);
     watch(kWingSpawn);
+    watch(kGameError);
     watch(kHitPlace);
     watch(kFireGuns);
     const std::vector<WatchPlace> &w = watch_places();
@@ -560,6 +615,51 @@ bool priv_script_item(const std::string &item, double t) {
         static int spawns;
         const bool ok = priv_spawn_ship(type, app, cast, pos, m, NULL, ++spawns);
         wclog(1, "key script %.1fs: spawn %d %s: %s (%s, cast %s) at %d, %d, %d from us", t, spawns, ok ? "queued" : "refused", type, app, cast, dx, dy, dz);
+        return true;
+    }
+    if (item.compare(0, 8, "!privdel") == 0 && g_found) {
+        // !privdel=mode: the last ship a spawn of ours made is deleted (0: the destructor alone; 1: out of the scene,
+        // then the destructor; 2: out of the scene, its owner word cleared, the destructor)
+        const Bit16u ship = priv_last_spawned();
+        const int mode = item.size() > 9 ? atoi(item.c_str() + 9) : 1;
+        wclog(1, "key script %.1fs: ds:%04X deleted, mode %d (near heap free %d)", t, ship, mode, priv_near_free());
+        if (priv_ship_is_alive(ship)) priv_ship_delete(ship, mode);     // (every mode has crashed the game so far: section 12)
+        return true;
+    }
+    if (item.compare(0, 10, "!privface=") == 0 && g_found) {
+        // !privface=<n>: the first ship of the scene that is not ours gets face n in its cast copy (+0xE)
+        Bit16u ships[48];
+        const int n = priv_scene_ships(ships, 48);
+        for (int i = 0; i < n; i++) {
+            if (ships[i] == priv_player_ship()) continue;
+            const Bit16u ctl = priv_ship_controller(ships[i]);
+            const Bit16u off = ctl ? priv_r16((Bit16u)(ctl + kCtlCast)) : 0, seg = ctl ? priv_r16((Bit16u)(ctl + kCtlCast + 2)) : 0;
+            if (seg) {
+                const PhysPt cast = ((PhysPt)seg << 4) + off;
+                wclog(1, "key script %.1fs: ds:%04X's cast byte +0xE %d -> %d", t, ships[i], mem_readb(cast + 0x0E), atoi(item.c_str() + 10));
+                mem_writeb(cast + 0x0E, (Bit8u)atoi(item.c_str() + 10));
+            }
+            break;
+        }
+        return true;
+    }
+    if (item.compare(0, 9, "!privsay=") == 0 && g_found) {
+        // !privsay=<name>:<text with _ for spaces>: the last ship a spawn of ours made (else the first of the scene that
+        // is not ours) says it
+        std::string spec = item.substr(9);
+        const size_t c1 = spec.find(':');
+        std::string name = spec.substr(0, c1), text = c1 == std::string::npos ? "" : spec.substr(c1 + 1);
+        for (size_t i = 0; i < text.size(); i++) if (text[i] == '_') text[i] = ' ';
+        Bit16u ships[48];
+        const int n = priv_scene_ships(ships, 48);
+        bool said = false;
+        for (int i = -1; i < n && !said; i++) {
+            const Bit16u ship = i < 0 ? priv_last_spawned() : ships[i];
+            if (!ship || ship == priv_player_ship() || !priv_ship_is_alive(ship)) continue;
+            said = priv_ship_say(ship, name.c_str(), text.c_str(), -1);
+            wclog(1, "key script %.1fs: ds:%04X (%s, face %d) says \"%s\" as %s: %s", t, ship, priv_ship_cast_name(ship).c_str(),
+                  priv_ship_face(ship), text.c_str(), name.c_str(), said ? "told" : "no cast");
+        }
         return true;
     }
     if (item.compare(0, 9, "!privpos=") == 0 && g_found) {
@@ -737,6 +837,8 @@ int priv_nav_at(const Bit32s pos[3]) {
     return best;
 }
 
+Bit16u priv_last_spawned() { return g_lastSpawned; }
+
 int priv_scene_ships(Bit16u out[], int cap) {
     if (!priv_in_flight()) {
         return 0;
@@ -845,6 +947,120 @@ void priv_ship_fire(Bit16u obj, bool on) {
     mem_writeb(rec + kControlFire, on ? (Bit8u)(b | 4) : (Bit8u)(b & ~4));
 }
 
+static bool far_of(Bit16u at, PhysPt *out) {
+    const Bit16u off = priv_r16(at), seg = priv_r16((Bit16u)(at + 2));
+    if (!seg) {
+        return false;
+    }
+    *out = ((PhysPt)seg << 4) + off;
+    return true;
+}
+
+static bool far_at(PhysPt at, PhysPt *out) {
+    Bit16u off = 0, seg = 0;
+    if (mem_readw_checked(at, &off) || mem_readw_checked(at + 2, &seg) || !seg) {
+        return false;
+    }
+    *out = ((PhysPt)seg << 4) + off;
+    return true;
+}
+
+static int g_sayMask = 7;       // (a test aid: PRIVSAY=<mask> leaves out the name (1), the lines (2), the pilot (4))
+
+int priv_ship_face(Bit16u obj) {
+    const Bit16u ctl = priv_ship_controller(obj);
+    PhysPt cast;
+    Bit8u b = 0;
+    if (!ctl || !far_of((Bit16u)(ctl + kCtlCast), &cast) || mem_readb_checked(cast + kCastFace, &b)) {
+        return -1;
+    }
+    return b;
+}
+
+void priv_ship_delete(Bit16u obj, int mode) {
+    if (mode != 0) {
+        PrivCall c;
+        c.para = kSeg081;
+        c.off = kSceneRemove;
+        c.args.push_back(kSceneList);
+        c.args.push_back(obj);
+        queue_call(c);
+    }
+    if (mode == 2) {
+        priv_w16((Bit16u)(obj - 2), 0);
+    }
+    PrivCall d;
+    d.para = kSeg053;
+    d.off = kShipDelete;
+    d.args.push_back(obj);
+    d.args.push_back(1);
+    queue_call(d);
+}
+
+bool priv_ship_say(Bit16u obj, const char *name, const char *text, int face) {
+    const Bit16u ctl = priv_ship_controller(obj);
+    PhysPt cast, plan, block;
+    if (!ctl || !far_of((Bit16u)(ctl + kCtlCast), &cast) || !far_of((Bit16u)(ctl + kCtlPlan), &plan)) {
+        return false;
+    }
+    // the portrait: the cast's +0xE, which the game itself sets again at its own hails (a merchant's a woman's, 14, or
+    // a man's, 47, at random), so it is written at every line; only one of the cast's own (a foreign id crashes the game)
+    if (face >= 0 && face < 256) {
+        mem_writeb(cast + kCastFace, (Bit8u)face);
+    }
+    if (getenv("PRIVSAY")) g_sayMask = atoi(getenv("PRIVSAY"));
+    Bit16u pilot = 0;
+    if (mem_readw_checked(plan + kPlanPilot, &pilot) || !pilot) {
+        return false;
+    }
+    // the name: the block's 12 bytes
+    if ((g_sayMask & 1) && far_at(cast + kCastName, &block)) {
+        for (int i = 0; i < 12; i++) {
+            mem_writeb(block + i, (Bit8u)(i < 11 && i < (int)strlen(name) ? toupper((unsigned char)name[i]) : 0));
+        }
+    }
+    // the first received line of each attitude's set (friendly, neutral, hostile: the sets' objects at the cast's
+    // +0x1B, +0x1F, +0x23: a count, then a far pointer to the block of that many ids and the strings): the text
+    // over the set's strings, the first id the line said
+    int firstId = 1;
+    for (int k = 0; k < 3 && (g_sayMask & 2); k++) {
+        PhysPt setObj, blk;
+        if (!far_at(cast + kCastRecv0 + 4 * k, &setObj)) {
+            continue;
+        }
+        Bit16u count = 0;
+        if (mem_readw_checked(setObj, &count) || count < 1 || count > 8 || !far_at(setObj + 2, &blk)) {
+            continue;
+        }
+        const PhysPt strings = blk + 2 * count;
+        Bit32u room = 0;
+        for (int n = 0; n < count && room < 400; n++) {
+            Bit8u c = 1;
+            while (c && room < 400) {
+                if (mem_readb_checked(strings + room, &c)) { c = 0; break; }
+                room++;
+            }
+        }
+        if (room < 8) {
+            continue;
+        }
+        if (k == 1) {
+            firstId = mem_readw(blk);
+        }
+        wclog(2, "Privateer: say: set %d at %05x: %u ids, strings at %05x, room %u", k, (unsigned)setObj, count, (unsigned)strings, (unsigned)room);
+        for (Bit32u i = 0; i < room; i++) {
+            mem_writeb(strings + i, i < strlen(text) && i + 1 < room ? (Bit8u)text[i] : 0);
+        }
+    }
+    if (!(g_sayMask & 4)) {
+        return true;
+    }
+    priv_w16((Bit16u)(pilot + kPilotLine), (Bit16u)firstId);
+    priv_w16((Bit16u)(pilot + kPilotTimer), 1);
+    priv_w8((Bit16u)(pilot + kPilotFlags), (Bit8u)(priv_r8((Bit16u)(pilot + kPilotFlags)) | 1));
+    return true;
+}
+
 void priv_hit_apply(Bit16u obj, int loc, int damage) {
     if (!priv_ship_is_alive(obj) || loc < 0 || loc > 3 || damage <= 0) {
         return;
@@ -875,6 +1091,32 @@ void priv_hit_apply(Bit16u obj, int loc, int damage) {
     std::vector<Bit32u> a;
     a.push_back(off); a.push_back(seg); a.push_back((Bit16u)loc); a.push_back((Bit16u)damage);
     hit_call(tag, kSeg101, kModelShields, a);
+}
+
+void priv_near_heap(int &total, int &largest, int &blocks) {
+    // The game's near heap (seg142:012B, its own allocator, not Borland's): a ring of free blocks from ds:3FF8, each
+    // its size at +0 and the next at +6; a request walks the ring for the first block big enough (error 1303 when
+    // there is none).  Nothing grows it: what the ring holds is all there is.
+    total = largest = blocks = 0;
+    if (!g_found) {
+        return;
+    }
+    const Bit16u head = priv_r16(kNearFreeList);
+    Bit16u b = head;
+    for (int i = 0; b && i < 4000; i++) {
+        const int size = priv_r16(b) & ~1;
+        total += size;
+        blocks++;
+        if (size > largest) largest = size;
+        b = priv_r16((Bit16u)(b + 6));
+        if (b == head) break;
+    }
+}
+
+int priv_near_free() {
+    int total, largest, blocks;
+    priv_near_heap(total, largest, blocks);
+    return g_found ? total : -1;
 }
 
 bool priv_in_flight() {

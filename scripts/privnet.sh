@@ -26,6 +26,8 @@ else
   NET_HOST="WCPORT=$PORT WCPLAYERS=$PLAYERS"; NET_GUEST="WCHOST=127.0.0.1 WCPORT=$PORT"
 fi
 PIDS=""
+# (each machine its own copy of the game's directory: two games in one fight over its temporary files)
+export COPY=1
 OUT=$OUT/host ENV="$NET_HOST WCCALLSIGN=HOST" "$ROOT/scripts/privrun.sh" $DUR "$HOSTX" > /dev/null &
 PIDS="$PIDS $!"
 for g in $(seq 1 $((PLAYERS - 1))); do

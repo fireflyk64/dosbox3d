@@ -23,6 +23,7 @@
 #include "wcnet_game.h"
 #include "wcnet_retrovega.h"
 #include "wcnet_tie.h"
+#include "wcnet_priv.h"
 #include "wcnet_transport.h"
 #include "wcnet_lobby.h"
 #include "wcnet_log.h"
@@ -3788,6 +3789,9 @@ double wc_net_rtt_ms() {
 
 void wcnetSendChatMessage(const std::string &msg) {
     wclog(1, "comms: message sent");  // (the page remembers: the hint about the 0 key is not needed again)
+    if (wc::priv_session_chat(msg)) {
+        return;                     // (Privateer's room: wcnet_priv_session.cpp)
+    }
     // "/rocks on", "/rocks soft" and "/rocks off" in the comms prompt are a
     // command, not a message.
     if (strncasecmp(msg.c_str(), "/rocks", 6) == 0) {

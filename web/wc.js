@@ -851,6 +851,8 @@ function renderMission() {
   // in a room of one too: the game's bunk menu or this, either)
   const diff = (gameById(lobbyGameId()) || {}).difficulty;
   $("difficultyLabel").hidden = !diff || noRoomOptions;
+  // (Privateer: Face, yours on the others' comm screens, in the Conn and Collide choices' place)
+  $("privFaceLabel").hidden = !isPriv();
   if (diff) {
     $("collisions").parentElement.hidden = true;
     lobby.rocks = "on";
@@ -1802,6 +1804,12 @@ gameLook();
 // this tab (the user, 2026-11-05: "The box should default to checked but
 // should be remembered by the browser session"); the Full screen button works
 // either way.
+// Privateer: the face the others see when you talk (the user, 2026-11-08: "ideally they could select from any of the
+// faces in a dropdown ... browser should remember but they can change every time they launch again"): a cast of the
+// game's and a portrait id, src/cpu/wcnet_priv_session.cpp.
+const PRIV_FACE_KEY = "wc:privFace";
+try { const f = localStorage.getItem(PRIV_FACE_KEY); if (f && [...$("privFace").options].some((o) => o.value === f)) $("privFace").value = f; } catch (e) { /* the first */ }
+$("privFace").addEventListener("change", () => { try { localStorage.setItem(PRIV_FACE_KEY, $("privFace").value); } catch (e) { /* not kept */ } });
 const FULL_START_KEY = "wc:fullStart";
 try { if (sessionStorage.getItem(FULL_START_KEY) === "off") $("fullStart").checked = false; } catch (e) { /* ticked */ }
 $("fullStart").addEventListener("change", () => { try { sessionStorage.setItem(FULL_START_KEY, $("fullStart").checked ? "on" : "off"); } catch (e) { /* not kept */ } });
@@ -1913,6 +1921,7 @@ async function start(fromGesture) {
     if (together && lobbyCapHull() && lobby.capHull) env.WCCAPHULL = String(CAP_HULL);
     if (cfg.callsign && !solo) env.WCCALLSIGN = cfg.callsign;
     if (isTf()) env.WCNET_TIE_MOUSE = tfFlight();
+    if (isPriv()) env.WCPRIVFACE = $("privFace").value;
     if (cfg.lastname && !solo) env.WCLASTNAME = cfg.lastname;
     if (cfg.firstname && !solo) env.WCFIRSTNAME = cfg.firstname;
     // A wingman's game calls the leader's ship by the leader's callsign (the
@@ -2173,6 +2182,7 @@ const touch = initTouch({ log, send: (name, down) => {
 const TF_FLIGHT = ["drag", "pointer", "keyboard", "joystick"];
 const TF_FLIGHT_KEY = "wc-tf-flight";
 const isTf = () => !!(gameInfo() && gameInfo().id === "tf");
+const isPriv = () => !!(gameInfo() && (gameInfo().id === "priv" || gameInfo().id === "privrf"));
 function tfFlight() {
   let v = null;
   try { v = localStorage.getItem(TF_FLIGHT_KEY); } catch (e) { /* none */ }

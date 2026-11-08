@@ -155,7 +155,8 @@ A session of its own, as TIE Fighter's: the host is player 0 (the room's, or the
 and is given its seat and the room's seats (`PrivHello`); the host relays a guest's messages to the other guests.
 Where a pilot is (`PrivPresence`: flying, its system's name, its place, why) goes out when it engages the autopilot
 (the A key in flight), jumps (the system's name changes), launches or lands (ds:66B4 set or cleared), and every
-15 s.  The overlay: "GUEST1 launched in Troy, 531 m from you (near)", "GUEST2 on autopilot in Troy, 680 m from
+15 s.  The emulator's log (level 1; the overlay showed these until the user had it stopped, 2026-11-08: "it kinda
+breaks immersion"; what the game shows is in section 11): "GUEST1 launched in Troy, 531 m from you (near)", "GUEST2 on autopilot in Troy, 680 m from
 you", "GUEST1 is at a base", "GUEST1 jumped to Pyrenees", and every 15 s while somebody shares our system, "In Troy
 with you: GUEST1 2,143 m, GUEST2 2,143 m".  Near = within 20,000 m.  The page: `maxSeats: 8` (the Players box
 allows 8 for Privateer, 3 for every other game, as before), room codes PRV- and PRF-.  Measured: two native machines
@@ -200,3 +201,79 @@ overlay says "GUEST1's Tarsus is in your space".  Measured: two native machines,
 out to 10 km and back: each saw the other's Tarsus, targeted as "Tarsus" at the right range throughout (3 minutes,
 nothing amiss).  Open: shots between pilots (step 6), the cast (a merchant: shooting the other's ship counts against
 the merchants for now), a jump with a puppet about (the starting Tarsus has no jump drive).
+
+## 9. Nav point owners and the others' encounter ships (step 5)
+
+**The owner.**  Every 500 ms the host looks at each nav point somebody flies at (a pilot's `nav` in its presence:
+the sphere it is within, read at the frame from the system's sphere list, ds:66C2) and names its owner: of those
+present, the ones with a mission there (their presence's `missions`, a bit a sphere: not yet filled, section 12),
+else all present; of those, the lowest seat that has not owned the point this round; everyone having had it, a new
+round.  The owner stays while it stays; a point left by all is vacant, and the next comers choose again.  The
+decisions go out as `PrivOwners` (every 3 s, and at once on a change); a game that has no word yet spawns nothing
+while another pilot is already there, the host's word first.  Alone, a game is single-player as it is.
+
+**What an owner's game does.**  Its wings spawn as they would alone (seg077:0265, the encounter spawn, is let
+through); a game that does not own the point returns from that spawn with nothing made ("nav 1's wings are pilot
+1's to spawn, not ours").  Ten times a second the owner sends every ship in its scene list within 60,000 m of itself
+that is not a puppet -- `PrivScene`: for each, the game's object address (its id), its type, appearance and cast
+names, place, attitude, velocity (from its last two reports), alive, and its four armour quadrants -- to everybody,
+best effort.
+
+**The others' games** make each such ship as a puppet of its own kind (`spawn` with the owner's type, appearance
+and cast, the AI held, placed every frame from the last report carried on by its velocity for a second at most),
+12 at once at most (`kNpcCap`: a list has a cap), parked far off when 40,000 m away or when the reports stop for 3 s
+(a parked ship of the same kind is taken over by the next one), killed by the game's own death (section 10) when
+the owner says it is no longer alive, and forgotten at a new flight.  Measured natively, two machines, the host at
+nav 1 first: the host owned it and its pirates came; the guest, arriving, made none of its own and saw the host's
+("pilot 1's TALNWIMP (TALMIL, PIR_DA) is ds:9B4A here"), the pirate as the host flew it.
+
+## 10. Shots and damage (step 6)
+
+The shooter's game decides the hit (seg053:1206, the game's hit on a ship: the ship at [bp+0xA], the quadrant at
+[bp+0xC], the damage at [bp-6]); when the ship hit is a puppet (another pilot's ship or one of its encounter ships)
+the hit is sent to its owner (`PrivHit`: owner, id, quadrant, damage; the host relays), and the owner's game applies
+it to the real ship by the game's own calls at its next frame (shields, then armour, then the display when the ship
+is ours, then whether it is intact, then its death: a chain of calls each at a frame's entry, section 3).  The
+puppet's armour follows the owner's reports (the scene's four quadrants, and the state's for a pilot's ship), so a
+hit shows on both sides.  A ship's guns fired (seg120:0004, the weapons record's ship at +0xA) by a ship of an
+owner's scene is reported (`PrivShot`, at most one a ship per 120 ms, best effort) and its puppet fires its guns in
+the other games (the control record's fire bit, set for a frame), so that the others see the shots.  Ship-on-ship
+bumps with a puppet do no damage (everybody launches from the same pad).  Measured: the guest's puppet of the host's
+pirate killed the guest's Tarsus with hits forwarded to the host, 121 shots replicated.
+
+## 11. Talking: the room's chat on the comm screen, and faces
+
+A line typed at the 0 key's chat prompt (the layer's, as in every game) goes to the room (`Chat`); in a game where the
+sender's ship is present it is said by that ship: the sender's callsign and the line written into the ship's own
+copy of its cast (the cast's name at +0xA, 11 characters, and the text over the three RECV message sets' strings),
+its pilot's line set to the first id of the neutral set with the timer at 1 (`priv_ship_say`, at the frame: the
+game's comm screen then shows the face, the name and the line, and the line's own speech if any is not played).
+Without the sender's ship about, the line goes to the emulator's chat line as before.
+
+The face is the pilot's choice: the page's Face box (Privateer only, remembered by the browser, changeable at every
+launch; `WCPRIVFACE=<cast>:<portrait>`): a merchant woman (MER_DP, portrait 14), a merchant man (47), a militia
+pilot (MIL_AA), a Confed officer (CON_SA), a hunter (BOU_AA).  A puppet is made with that cast; the portrait is the
+cast copy's +0xE, which the game sets again at its own hails (a merchant's a woman's or a man's at random: a ship
+made with 14 was 47 at its next hail), so the one asked for is written there at every line said (one of the cast's
+own only: a foreign id crashes the game, 1510-FFFF).  Measured natively: "ACE: HELLO THERE PILOT" on the comm screen
+with the merchant woman's face, and the man's when 47 was written.
+
+## 12. Limits: the game's near heap
+
+The game's near heap is its own allocator (seg142:012B, not Borland's): a ring of free blocks from ds:3FF8 (a
+block: its size at +0 with bit 0 for used, the block before at +2, the ring at +4/+6), first fit, nothing growing
+it; a request with no block big enough is its error 1303 (seg050:0006, every code logged by the layer: "the game
+reports error 1303"), and the program ends -- PRIV.EXE starts it again at its title.  `priv_near_heap` walks the
+ring (free bytes, the largest block, the count; in the log's line every second).  Measured at Achilles: 17,284
+bytes free as the flight begins, 15,202 once it settles; a Tarsus of ours with what its AI allocates some 850 bytes
+(12 merchants spawned one by one, 16,966 to 6,698, the game running on at 13 ships with 6 KB free; 30 spawned 3 s
+apart, the game ended at the tenth ship).  So a puppet -- a pilot's ship or an encounter ship of another's -- is
+made only while the heap would keep 6 KB after it (`kNearReserve`, for the game's own wings, missiles and pods),
+the pilots' ships first; what cannot be made is not shown ("no room in the game's memory for a pilot's ship ...:
+not shown"), the mission going on with the ships that fit (the user: "It's ok if the limit is less than 8").  At
+Achilles that is some nine ships of ours.  Nothing of ours is ever deleted: the game's own destructor (seg053:3540,
+the vtable's second entry through the thunk 3BA7) on a ship of ours ended the game in every way tried (alone: its
+error 0404; after the scene removal: the heap ring corrupted; with the owner word cleared: ended, no report), so a
+ship out of reach is parked far off and reused by the next of its kind, and the test aid `!privdel=<mode>` stays
+for another look.  The far heap (the EMS window: types, appearances, casts) has not been measured.
+

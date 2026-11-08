@@ -106,6 +106,16 @@ void priv_ship_armor(Bit16u obj, Bit32s a[4]);
 void priv_ship_set_armor(Bit16u obj, const Bit32s a[4]);
 void priv_ship_kill(Bit16u obj);
 void priv_ship_fire(Bit16u obj, bool on);
+// A ship of the game's speaks a line of ours in the game's own comms (the user, 2026-11-08: the room's chat "would
+// show up in comms as a merchant face"): the name and the first line of each of its cast's received sets are
+// rewritten in the ship's own copy of the cast, and its pilot told to say line 1.  False: no cast (not a ship of a
+// cast with lines).
+bool priv_ship_say(Bit16u obj, const char *name, const char *text, int face);   // face: the cast's portrait id, -1 as it is
+// Its face: the portrait id its cast copy holds (chosen when the ship was made: a merchant's 14, a woman, or 47, a
+// man), -1 none; and the ship taken out of the scene without a sound (the game's own removal, queued).
+int priv_ship_face(Bit16u obj);
+// The last ship a spawn of the key script's made (test aids).
+Bit16u priv_last_spawned();
 // A hit applied to a ship of ours (our own, or an encounter ship we run) the game's way: the shields take it
 // (seg101:0CF0), the rest goes to the armour (0C7D), the cockpit's damage display for our own ship, and a quadrant
 // gone kills it.
@@ -118,6 +128,13 @@ bool priv_session_allow_wing(int sphereId);
 bool priv_session_is_puppet(Bit16u a, Bit16u b);
 void priv_session_hit(Bit16u target, int loc, int damage);
 void priv_session_fired(Bit16u ship);
+// The room's chat: a line typed here (the 0 key's prompt) to the others; true when a session takes it.
+bool priv_session_chat(const std::string &text);
+
+// The game's near heap: the bytes free between its top and the frame's stack (a ship costs some 600).
+int priv_near_free();
+void priv_near_heap(int &total, int &largest, int &blocks);   // the game's near heap: free bytes, its largest free block, blocks
+void priv_ship_delete(Bit16u obj, int mode);                   // (a test aid: the game's destructor on a ship of ours)
 
 // The session (wcnet_priv_session.cpp): the room, presence; its tick (from priv_tick, every 999 instructions) and an
 // occasion to say where we are (1 the autopilot engaged).
