@@ -220,7 +220,13 @@ On top of these:
   spliced on the bar line with no fade. As each battle comes in, another
   is asked for at one of its own blocks, a block or two past what the
   ring holds: so 20-35 s (three to five blocks) of each before the next
-  cuts in. The place in each list is kept from flight to flight. A panic
+  cuts in. The place in each list is kept from flight to flight, and a
+  run's first flight starts each list where the campaign has got to: the
+  cruise list three songs on for every mission flown (three and eight
+  share no factor: each song in turn), the battles one on, both offset by
+  the campaign's seed (score_start; the user, 2026-11-08: "it seems the
+  game favors some songs over others. I feel we need that variety": every
+  run had begun at Waypoint and Battle 1). A panic
   comes in on the bar. A sting fills the ring with itself, and the
   follow-on asked for goes with it: the same one is asked for again once
   the song is back. The list moves on only for a follow-on the engine

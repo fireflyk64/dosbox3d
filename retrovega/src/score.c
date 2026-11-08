@@ -41,6 +41,7 @@
 #include "music.h"
 #include "panel.h"
 #include "score.h"
+#include "campaign.h"                   /* (g_camp: where the cycles start) */
 
 enum { CALM, FIGHT, HOME, ROCKS, PANIC, DEAD };
 #define NEAR_KM 4000L                   /* an enemy this near starts a fight (a little beyond its hail) */
@@ -54,6 +55,7 @@ typedef struct {
     unsigned long quiet_at;             /* the last time an enemy was near */
     unsigned char dying[RV_MAX_SHIP_SLOT + 1];  /* a ship was dying (shipAiState 9) last frame */
     unsigned char next[2];              /* the next of the cruise and battle songs (kept between flights) */
+    unsigned char begun;                /* the cycles have their start this run (score_start) */
     int queued;                         /* the follow-on asked for (music_then), -1 none */
     unsigned char victory;
     unsigned char step;                 /* the test's (/scoretest) */
@@ -216,6 +218,16 @@ void score_start(const RvMission __far *m)
     g_sc.queued = -1;                   /* (the struct starts zeroed: no follow-on, not cue 0's) */
     for (s = 0; s <= RV_MAX_SHIP_SLOT; s++)
         g_sc.dying[s] = 0;
+    /* the run's first flight starts each cycle where the campaign has got to (the user, 2026-11-08: "it seems the game
+     * favors some songs over others. I feel we need that variety": each run began them at their first, so a session of
+     * a mission or two heard Waypoint and its follow-on, and Battle 1, again and again).  Three cruise songs on a mission
+     * flown (three and eight have no factor in common: every one in turn), the campaign's seed for the rest; the order
+     * itself stays, as the songs follow each other in key */
+    if (!g_sc.begun) {
+        g_sc.begun = 1;
+        g_sc.next[0] = (unsigned char)((g_camp.seed + 3UL * g_camp.flown) % (RV_MUSIC_HOMEWARD - RV_MUSIC_CRUISE1));
+        g_sc.next[1] = (unsigned char)((g_camp.seed / 8 + g_camp.flown) % 3);
+    }
 #ifdef RV_TESTS
     if (g_score_test == 3)
         g_sc.next[0] = RV_MUSIC_CRUISE7 - RV_MUSIC_CRUISE1;     /* (the test of the cycle's end) */
