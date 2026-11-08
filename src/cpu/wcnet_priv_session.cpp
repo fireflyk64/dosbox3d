@@ -166,6 +166,8 @@ struct PrivNet {
     std::vector<std::pair<int, std::string> > chats;    // seat, line
     std::vector<std::pair<int, Bit32u> > shots;         // seat, id
     std::vector<Bit32u> podsTaken;                      // pods of ours another pilot's tractor beam took (put away, not reported)
+    std::vector<std::pair<Bit32u, double> > podsGone;   // (seat << 16 | id, when) pods of others' our tractor took: their owner's
+                                                        // next reports, already on their way, are not to make them again
     Bit64u sceneFrame;
     int nav;                    // the nav sphere we are in (-1 none)
     double sentAt;              // our last presence
@@ -1056,6 +1058,7 @@ void forget_puppets(const char *why) {
     }
     g_net->tracks.clear();
     g_net->podsTaken.clear();
+    g_net->podsGone.clear();
     priv_hold_ai_none();
     if (any) {
         wclog(2, "Privateer: the puppets forgotten (%s)", why);
@@ -1258,6 +1261,13 @@ void take_scene(const PrivScene &sc, int seat) {
     const double now = PIC_FullIndex();
     for (int i = 0; i < sc.npc_size(); i++) {
         const PrivNpc &c = sc.npc(i);
+        if (c.pod()) {
+            bool gone = false;
+            for (size_t g = 0; g < g_net->podsGone.size() && !gone; g++) {
+                gone = g_net->podsGone[g].first == (((Bit32u)seat << 16) | c.id()) && now - g_net->podsGone[g].second < 5000;
+            }
+            if (gone) continue;
+        }
         NpcPuppet *p = npc_of(seat, c.id(), true);
         if (!p) continue;
         p->at = now;
@@ -1409,7 +1419,10 @@ void frame_npcs(double now, const Bit32s pos[3]) {
         if (!p.used) continue;
         if (p.obj && p.pod && !(priv_pod_is(p.obj) && priv_scene_has(p.obj))) {
             // a pod gone from our scene: taken by our tractor beam (or let go by the game) while it was here
-            if (!p.parked && now - p.at < kNpcStaleMs) send_pod_taken(p.seat, p.id);
+            if (!p.parked && now - p.at < kNpcStaleMs) {
+                send_pod_taken(p.seat, p.id);
+                if (g_net->podsGone.size() < 32) g_net->podsGone.push_back(std::make_pair(((Bit32u)p.seat << 16) | p.id, now));
+            }
             p.obj = 0;
             p.used = false;
             continue;

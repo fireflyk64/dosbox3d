@@ -331,6 +331,16 @@ recipe, "sell your mk2 iris and get a mk1 iris", read for this version).  Test a
 the scene list: ships, pods with their records, the rest with their bytes), `!privaim=<metres>:<variant>` (our ship
 put that far from the nearest pod, facing it), `!privkill`, `!privhold`.
 
+**The video** (the user: "record the system in action to a video").  Two native machines recorded (`WCLAB=<dir>`
+through privnet.sh's HOSTENV / GUESTENV), the host having sold its shields for a tractor beam, the guest having
+bought three iron; both launch from Achilles, the guest's turn (left held 3 s) carries it across the host's nose at
+some 100 m while its "HELLO THERE HOST" sits under the host's cockpit, the host's "WELCOME TO TROY" under the
+guest's; the guest stops and expels the pod (X), the host turns to it (`!privturn=pod:40:24`), closes at 72 kps
+(`equals` thrice) holding Enter, and the beam draws the pod in; the guest's game puts its own pod away.  Cut by
+scripts/tfnet-video.py (1080x1920, the host above, the guest below, the two recordings lined up by their wall
+clocks) into 28 s: `scratchpad/privateer-together.mp4`.  Frames of the game's comm line are found in a recording
+with scratchpad/commline.py (the light box at the picture's bottom).
+
 ## 14. Open: mission objectives, the Steltek drone, the face
 
 **Mission objectives** (step 5's "one with a mission objective there, first"): the presence message carries
