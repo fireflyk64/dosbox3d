@@ -255,8 +255,12 @@ launch; `WCPRIVFACE=<cast>:<portrait>`): a merchant woman (MER_DP, portrait 14),
 pilot (MIL_AA), a Confed officer (CON_SA), a hunter (BOU_AA).  A puppet is made with that cast; the portrait is the
 cast copy's +0xE, which the game sets again at its own hails (a merchant's a woman's or a man's at random: a ship
 made with 14 was 47 at its next hail), so the one asked for is written there at every line said (one of the cast's
-own only: a foreign id crashes the game, 1510-FFFF).  Measured natively: "ACE: HELLO THERE PILOT" on the comm screen
-with the merchant woman's face, and the man's when 47 was written.
+own only: a foreign id crashes the game, 1510-FFFF).  Measured, two native machines: each line in the other's game's
+own comm line ("GUEST1: HELLO FROM THE GUEST" under the cockpit, 4 s).  **Open:** the face on the comm screen.  A
+spawned merchant with its AI running showed one for a line of ours once; a puppet (its AI held) never has, nor with
+its AI let think for 60 frames, nor with the two more flags the game's own hail functions set (seg013:0A60..:
++0x1D |= 0x10 and ds:0E23 = 1).  Something else of the hail's remains to be found (a code trace through a pirate's
+taunt against one through our say).
 
 ## 12. Limits: the game's near heap
 

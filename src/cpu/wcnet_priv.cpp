@@ -87,6 +87,8 @@ enum {
     kPilotLine = 0x06,
     kPilotTimer = 0x08,
     kPilotFlags = 0x0A,
+    kPilotFlags2 = 0x1D,            // bit 4 set as the game's own hail functions (seg013:0A60..) set a line
+    kCommPending = 0x0E23,          // ds:0E23: a byte the same functions set to 1 when 0 (a hail waits to be played)
     kCastFace = 0x0E,               // the cast copy's portrait id (chosen as the ship is made: a merchant's 14 or 47)
     kSeg081 = 0x332F,
     kSceneRemove = 0x00AD,          // seg081:00AD(list, object): the object out of the scene
@@ -569,6 +571,8 @@ void priv_watch_list(void (*watch)(Bit16u ip)) {
     }
 }
 
+static std::string ds_name(Bit16u at, int max);
+
 bool priv_script_item(const std::string &item, double t) {
     if (item.compare(0, 8, "!privds=") == 0 && g_found) {
         const char *dir = getenv("WCNET_DUMP_DIR");
@@ -624,6 +628,60 @@ bool priv_script_item(const std::string &item, double t) {
         const int mode = item.size() > 9 ? atoi(item.c_str() + 9) : 1;
         wclog(1, "key script %.1fs: ds:%04X deleted, mode %d (near heap free %d)", t, ship, mode, priv_near_free());
         if (priv_ship_is_alive(ship)) priv_ship_delete(ship, mode);     // (every mode has crashed the game so far: section 12)
+        return true;
+    }
+    if (item.compare(0, 10, "!privscene") == 0 && g_found) {
+        // !privscene: every object of the scene list (ds:66CE): a ship with its names, place and life; anything else
+        // with its first 48 bytes
+        Bit16u node = priv_r16((Bit16u)(kSceneList + 2));
+        int n = 0;
+        for (int guard = 0; node && guard < 256; guard++, n++) {
+            const Bit16u obj = priv_r16((Bit16u)(node + 2));
+            if (obj && priv_r16(obj) == kShipVtable) {
+                Bit32s p[3];
+                priv_ship_pos(obj, p);
+                wclog(1, "key script %.1fs: scene ds:%04X ship %s (%s, %s) at %d, %d, %d m, alive %d%s", t, obj, priv_ship_type_name(obj).c_str(),
+                      priv_ship_appearance_name(obj).c_str(), priv_ship_cast_name(obj).c_str(), p[0] / 256, p[1] / 256, p[2] / 256,
+                      priv_ship_is_alive(obj), obj == priv_player_ship() ? " (ours)" : "");
+            } else if (obj) {
+                std::string hex, rec;
+                for (int i = 0; i < 0x70; i++) {
+                    char b[4];
+                    snprintf(b, sizeof b, "%02X", priv_r8((Bit16u)(obj + i)));
+                    hex += b;
+                    if (i % 2 == 1) hex += ' ';
+                }
+                const Bit16u type = priv_r16((Bit16u)(obj + kShipType));
+                for (int i = 0; type && i < 64; i++) {
+                    char b[4];
+                    snprintf(b, sizeof b, "%02X", priv_r8((Bit16u)(type + i)));
+                    rec += b;
+                    if (i % 2 == 1) rec += ' ';
+                }
+                Bit32s p[3];
+                priv_ship_pos(obj, p);
+                wclog(1, "key script %.1fs: scene ds:%04X vtable %04X: %s", t, obj, priv_r16(obj), hex.c_str());
+                wclog(1, "key script %.1fs:   as a ship: type %s, appearance %s, name at +0xE \"%s\", at %d, %d, %d m; its +6 record ds:%04X: %s", t,
+                      priv_ship_type_name(obj).c_str(), priv_ship_appearance_name(obj).c_str(), ds_name(priv_r16((Bit16u)(obj + 0xE)), 16).c_str(),
+                      p[0] / 256, p[1] / 256, p[2] / 256, type, rec.c_str());
+            }
+            node = priv_r16(node);
+        }
+        wclog(1, "key script %.1fs: %d objects in the scene", t, n);
+        return true;
+    }
+    if (item.compare(0, 9, "!privhold") == 0 && g_found) {
+        // !privhold: the last ship a spawn of ours made has its AI held, as a puppet's is
+        const Bit16u ship = priv_last_spawned();
+        wclog(1, "key script %.1fs: ds:%04X's AI (controller ds:%04X) held", t, ship, priv_ship_controller(ship));
+        if (priv_ship_is_alive(ship)) priv_hold_ai(priv_ship_controller(ship), true);
+        return true;
+    }
+    if (item.compare(0, 9, "!privkill") == 0 && g_found) {
+        // !privkill: the last ship a spawn of ours made dies (the game's own death: explosion, pods, the reaping)
+        const Bit16u ship = priv_last_spawned();
+        wclog(1, "key script %.1fs: ds:%04X killed", t, ship);
+        if (priv_ship_is_alive(ship)) priv_ship_kill(ship);
         return true;
     }
     if (item.compare(0, 10, "!privface=") == 0 && g_found) {
@@ -1056,8 +1114,11 @@ bool priv_ship_say(Bit16u obj, const char *name, const char *text, int face) {
         return true;
     }
     priv_w16((Bit16u)(pilot + kPilotLine), (Bit16u)firstId);
-    priv_w16((Bit16u)(pilot + kPilotTimer), 1);
+    priv_w16((Bit16u)(pilot + kPilotTimer), 0);
     priv_w8((Bit16u)(pilot + kPilotFlags), (Bit8u)(priv_r8((Bit16u)(pilot + kPilotFlags)) | 1));
+    // as the game's own hail does (seg013:0AA0): its second flag byte's bit 4, and the comm's pending byte
+    priv_w8((Bit16u)(pilot + kPilotFlags2), (Bit8u)(priv_r8((Bit16u)(pilot + kPilotFlags2)) | 0x10));
+    if (priv_r8(kCommPending) == 0) priv_w8(kCommPending, 1);
     return true;
 }
 
