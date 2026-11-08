@@ -246,6 +246,9 @@ enum { kSeg042 = 0x1DFE, kNpcThink = 0x0944, kHeldCap = 16, kSeg053 = 0x23BA };
 // and PRIV.EXE starts it again at its title).
 enum { kSeg050 = 0x20F8, kGameError = 0x0006 };
 std::vector<Bit16u> g_heldAi;
+// A held controller let think for some frames: a puppet's line is played (its text on the comm line) only as its
+// own AI's think runs; the ship's place and attitude are ours again at the next frame, and its guns are kept quiet
+std::vector<std::pair<Bit16u, int> > g_thinkFrames;
 
 // A hit applied in steps, each a call of the game's (priv_hit_apply): the shields, the armour, the display, the
 // death check.
@@ -596,6 +599,12 @@ bool priv_check_hooks(Bit32u ip) {
         const PhysPt sp = SegPhys(ss) + reg_sp;
         const Bit16u self = mem_readw(sp + 4);
         if (std::find(g_heldAi.begin(), g_heldAi.end(), self) != g_heldAi.end()) {
+            for (size_t i = 0; i < g_thinkFrames.size(); i++) {
+                if (g_thinkFrames[i].first == self) {
+                    if (--g_thinkFrames[i].second <= 0) g_thinkFrames.erase(g_thinkFrames.begin() + i);
+                    return false;           // (let think this frame)
+                }
+            }
             // a puppet's AI: its think returns at once, as it would (AL 1), and the ship flies as its reports say
             reg_al = 1;
             reg_eip = mem_readw(sp);
@@ -962,6 +971,24 @@ void priv_hold_ai(Bit16u controller, bool hold) {
 
 void priv_hold_ai_none() {
     g_heldAi.clear();
+    g_thinkFrames.clear();
+}
+
+void priv_let_think(Bit16u controller, int frames) {
+    for (size_t i = 0; i < g_thinkFrames.size(); i++) {
+        if (g_thinkFrames[i].first == controller) {
+            g_thinkFrames[i].second = frames;
+            return;
+        }
+    }
+    if (controller && g_thinkFrames.size() < kHeldCap) g_thinkFrames.push_back(std::make_pair(controller, frames));
+}
+
+bool priv_thinking(Bit16u controller) {
+    for (size_t i = 0; i < g_thinkFrames.size(); i++) {
+        if (g_thinkFrames[i].first == controller) return true;
+    }
+    return false;
 }
 
 Bit16u priv_ship_controller(Bit16u obj) {

@@ -75,6 +75,8 @@ bool priv_spawn_ship(const char *type, const char *appearance, const char *cast,
 // Its AI held (its think returns at once) or let go; none held (a flight's end).
 void priv_hold_ai(Bit16u controller, bool hold);
 void priv_hold_ai_none();
+void priv_let_think(Bit16u controller, int frames);   // a held controller thinks for this many frames (its pilot speaks)
+bool priv_thinking(Bit16u controller);
 Bit16u priv_ship_controller(Bit16u obj);
 Bit16u priv_ship_type(Bit16u obj);
 // The object is still a ship of that type (not destroyed and its memory taken for another).

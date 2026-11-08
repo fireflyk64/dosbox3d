@@ -246,9 +246,12 @@ pirate killed the guest's Tarsus with hits forwarded to the host, 121 shots repl
 A line typed at the 0 key's chat prompt (the layer's, as in every game) goes to the room (`Chat`); in a game where the
 sender's ship is present it is said by that ship: the sender's callsign and the line written into the ship's own
 copy of its cast (the cast's name at +0xA, 11 characters, and the text over the three RECV message sets' strings),
-its pilot's line set to the first id of the neutral set with the timer at 1 (`priv_ship_say`, at the frame: the
-game's comm screen then shows the face, the name and the line, and the line's own speech if any is not played).
-Without the sender's ship about, the line goes to the emulator's chat line as before.
+its pilot's line set to the first id of the neutral set with the timer at 0 and the hail's flags (`priv_ship_say`,
+at the frame), and the ship's AI -- held, as a puppet's is -- let think for 60 frames (its guns kept quiet
+meanwhile): the line is played only as the pilot's own think runs, and then the game's comm line under the cockpit
+shows "GUEST1: HELLO FROM THE GUEST" for some 3 s (measured on two machines, both ways; with the think held nothing
+showed though the sets were written).  Without the sender's ship about, the line goes to the emulator's chat line
+as before.
 
 The face is the pilot's choice: the page's Face box (Privateer only, remembered by the browser, changeable at every
 launch; `WCPRIVFACE=<cast>:<portrait>`): a merchant woman (MER_DP, portrait 14), a merchant man (47), a militia

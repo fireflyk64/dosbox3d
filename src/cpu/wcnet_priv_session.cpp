@@ -67,6 +67,7 @@ const char kPuppetCast[] = "MER_DP";
 // cannot be made is not shown (the pilots' own ships first, the encounter ships after); nothing is ever deleted
 // (the game's destructor on a ship of ours crashes it): a parked ship is reused.
 enum { kShipNearBytes = 1024, kPodNearBytes = 256, kNearReserve = 6144 };
+enum { kSayThinkFrames = 60 };          // 3 s of the page's 20 a second
 const char kPodCast[] = "CARGO";        // (a pod's name at +0xE, where a ship has its cast's)
 
 struct Peer {
@@ -1371,7 +1372,11 @@ void frame_chats_and_shots() {
         const int seat = g_net->chats[i].first;
         Puppet &p = g_net->puppets[seat];
         const std::string &who = g_net->pilots[seat].callsign;
-        if (!(p.obj && !p.parked && priv_ship_say(p.obj, who.c_str(), g_net->chats[i].second.c_str(), g_net->pilots[seat].faceId))) {
+        if (p.obj && !p.parked && priv_ship_say(p.obj, who.c_str(), g_net->chats[i].second.c_str(), g_net->pilots[seat].faceId)) {
+            // (the line is played -- its text on the comm line -- only as the pilot's own AI thinks: let it, a while;
+            // without this the sets are written and nothing shows)
+            priv_let_think(priv_ship_controller(p.obj), kSayThinkFrames);
+        } else {
             notice(who + ": " + g_net->chats[i].second);
         }
     }
@@ -1639,6 +1644,7 @@ void priv_session_frame() {
                                         g_net->pilots[s].cast.c_str(), at, p.m, puppet_made, s);
         } else if (near && p.obj) {
             priv_ship_set(p.obj, at, p.m);
+            if (priv_thinking(priv_ship_controller(p.obj))) priv_ship_fire(p.obj, false);
             p.parked = false;
         } else if (p.obj && !p.parked) {
             // out of reach: far off, kept for its return
