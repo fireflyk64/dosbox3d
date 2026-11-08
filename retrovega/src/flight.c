@@ -619,6 +619,8 @@ static void arm_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
 /* "PRESS FIRE TO LAND" under the gunsight while the trigger would land (logic_autoland_ready: home, every waypoint
  * flown, nobody to fight, the carrier close) */
 static uint8_t __far g_autoland;
+static uint8_t __far g_land_armed;      /* the trigger let go while the prompt shows: the next pull lands (one held
+                                           through the last kill was a shot, and landed the player: the user, SHELTON2) */
 static void land_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
 {
     static const char s[] = "PRESS FIRE TO LAND";
@@ -3708,7 +3710,11 @@ unsigned short __far __cdecl flight_keys(void)
     g_pilot.roll = (signed char)g_steer_roll;
     g_pilot.guns = (unsigned char)(g_view != VIEW_FLYBY && (in_trigger() || (in_button() && c && in.y < c->open_y1)));
     g_autoland = !g_sim && logic_autoland_ready() >= 0;   /* (PRESS FIRE TO LAND under the gunsight: land_tag) */
-    if (g_autoland && g_pilot.guns) {   /* (the trigger lands: nothing out here to shoot) */
+    if (!g_autoland)
+        g_land_armed = 0;
+    else if (!g_pilot.guns)
+        g_land_armed = 1;
+    if (g_autoland && g_land_armed && g_pilot.guns) {   /* (the trigger lands: nothing out here to shoot) */
         g_pilot.guns = 0;
         if (logic_autoland())
             RV_NOTE("flight: landed by the trigger");

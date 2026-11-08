@@ -211,6 +211,7 @@ static struct {
 #define LAUNCH_NEAR_KM 5000             /* a hidden point this near the launch is at the launch (wave_may_come) */
 
 static uint16_t g_wave_held;            /* a bit per trigger point whose wave has waited for the enemies out */
+static uint16_t g_quiet;                /* steps since an enemy was last within AUTOPILOT_CLEAR_KM of a pilot (autoland) */
 static uint8_t g_enemy_ran;             /* the last enemy gone left, not killed */
 static uint16_t g_navs_seen;            /* a bit per nav point the player has reached (nav 0 from the start) */
 static uint16_t __far g_navs_been;      /* a bit per nav point whose reach this machine's pilot has been in (a guest's
@@ -504,7 +505,9 @@ static int16_t mission_done(void)
             continue;
         if (!(g_navs_seen >> n & 1)) {
             if (NAV_HIDDEN(n))
-                continue;               /* (a trigger point not come to: it asks nothing of the player) */
+                continue;               /* (a trigger point not come to: it asks nothing of the player.  A wave held there
+                                           for the enemies out comes in the step the last of them goes, so the mission is
+                                           never done between: play test M8.62) */
             return 0;
         }
         at = NAV_SHIPS(n);
@@ -757,6 +760,7 @@ void logic_start(const RvMission __far *m)
         if (nav_defined(j) && NAV_OFF_AT_START(j))
             g_nav_off |= 1u << j;
     g_wave_held = 0;
+    g_quiet = 0;
     g_enemy_ran = 0;
     g_nav_chosen = 0;
     g_cleared = 0;
@@ -4160,6 +4164,19 @@ static void arrivals_step(void)
     }
 }
 
+/* an enemy, not dying, within AUTOPILOT_CLEAR_KM of a human pilot (the landing by the trigger waits for none) */
+#define AUTOPILOT_CLEAR_KM 16000
+static int32_t human_km(int16_t s);
+static int16_t enemy_near_humans(void)
+{
+    int16_t s;
+    humans_note();
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9 && human_km(s) < AUTOPILOT_CLEAR_KM)
+            return 1;
+    return 0;
+}
+
 /* 9. the mission: nav points reached (enterNavPoint), waves, objectives, the score (victoryPoints, nonzero won).
  * A kill is the mission ship seen dying; the score is the mission done, as it stands (logic_end has the last word) */
 static void step_mission(void)
@@ -4184,6 +4201,10 @@ static void step_mission(void)
                 enterNavPoint((uint16_t)n);
         }
     victoryPoints = (uint16_t)mission_done();
+    if (enemy_near_humans())
+        g_quiet = 0;
+    else if (g_quiet < 0xFFFF)
+        g_quiet++;
 }
 
 /* --- over the view: a band of rows at a time (hud.h's calls are clipped to it and to the opening) --- */
@@ -4344,7 +4365,7 @@ void logic_end(void)
     victoryPoints = (uint16_t)(missionStatus == 1 && mission_done() && (home || nav_in_reach(0)));
 }
 
-#define AUTOPILOT_CLEAR_KM 16000        /* no enemy this near (the engine's autopilot lamp says the same: flight.c): a wave
+/* (AUTOPILOT_CLEAR_KM 16000, defined above: no enemy this near (the engine's autopilot lamp says the same: flight.c): a wave
                                            coming in from WAVE_KM holds it, as the old game's scene did (16,000) */
 /* (AUTOPILOT_ESCORT_KM: an escort target of the player's side this near comes along, AUTOPILOT_BEHIND_KM behind the
  * player, one out however far: escort_comes.  The old game's transport came along, 1,800 km behind) */
@@ -4715,6 +4736,10 @@ int16_t logic_autopilot(void)
  * of influence": it was 6,000 km, then 2,000; since 2026-11-08 100, "very very close to where I would otherwise crash");
  * the autopilot home stops HOME_ARRIVE_KM, 4,000, off the hull: a short run in */
 #define AUTOLAND_KM LANDING_NEAR_KM
+#define AUTOLAND_QUIET (10 * LOGIC_HZ)  /* steps with no enemy within AUTOPILOT_CLEAR_KM before the trigger may land (the
+                                           user, 2026-11-08: "have the fire to land take at least some time after the
+                                           last enemy was destroyed"; 10 s is my choice): a wave held for the last of
+                                           them has come by then, and the prompt is no surprise */
 int16_t logic_autoland_ready(void)
 {
     int16_t s, home;
@@ -4724,10 +4749,8 @@ int16_t logic_autoland_ready(void)
     for (s = 1; s < NAVS; s++)          /* (every waypoint's reach been in, by this machine's pilot: g_navs_been) */
         if (nav_listed(s) && !(g_navs_been >> s & 1))
             return -1;
-    humans_note();
-    for (s = 1; s < NUM_SHIP_SLOTS; s++)
-        if (slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9 && human_km(s) < AUTOPILOT_CLEAR_KM)
-            return -1;
+    if (g_quiet < AUTOLAND_QUIET || enemy_near_humans())   /* (nobody about, and for a while) */
+        return -1;
     home = home_slot();
     return home >= 0 && logic_is_home(home) && gap_between(0, home) <= AUTOLAND_KM ? home : -1;
 }

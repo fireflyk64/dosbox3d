@@ -2098,8 +2098,12 @@ the VDUs take the readouts' small font. vdu.c:
   enemy within 16,000 km and the carrier's hull within 100 km (a cleared
   landing's `LANDING_NEAR_KM`; 6,000, then 2,000, until the user, 2026-11-08:
   "it should be very very close to where I would otherwise crash ... only a
-  100km"), PRESS FIRE TO LAND shows under the gunsight and the trigger lands
-  (`logic_autoland`; the user, 2026-11-06). M8.53.
+  100km"), and none for 10 s (`AUTOLAND_QUIET`, `g_quiet`, counted in the logic's
+  step), PRESS FIRE TO LAND shows under the gunsight and the trigger lands
+  (`logic_autoland`; the user, 2026-11-06), on a pull after the prompt has
+  shown (flight.c `g_land_armed`: a trigger held through the last kill had
+  landed the player at once, the user on SHELTON2, 2026-11-08: "I landed right
+  away. Thought another wave was expected"; its second wave had come). M8.53, M8.62.
 - **The wireframe** (`vdu_wire`) is the type's silhouette from above
   (collide.c's mask, `collide_mask`): the outline of its solid cells
   fitted to the ship's proportions (`hit`, the silhouettes' half
