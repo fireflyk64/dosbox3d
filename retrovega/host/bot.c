@@ -9,7 +9,8 @@
  *   RV_BOT=1            fly
  *   RV_BOT_SEED=N       the flight's gameplay dice (randomSeed at its first step) and the pilot's own
  *   RV_BOT_AIM=D        the pilot's aim wanders by up to D tenths of a degree (default 0: as steady as the stick)
- *   RV_BOT_TAUNT=0      never taunt (default 1: taunt an enemy at the escort it is not fighting)
+ *   RV_BOT_TAUNT=0      never taunt (default 1: taunt an enemy at the escort it is not fighting; one that stays at
+ *                       the escort a second on is not taunted again, as a pilot who saw it ignore the taunt)
  *   RV_BOT_MISSILES=0   never fire a missile
  *   RV_BOT_AFTER=S      seconds to go on after the flight ends (default 4), then exit with 0 won, 1 lost
  *   RV_BOT_PAUSE=S      seconds of a breath after each kill before the next target (the user: "If the ai takes 2 second
@@ -58,6 +59,10 @@ static struct {
     int target, target_frames, hold_target;
     int fight;                          /* enemies about: a fight on (the wingman told once a fight) */
     int taunted_at[NUM_SHIP_SLOTS];
+    int refused[NUM_SHIP_SLOTS];        /* its last taunt, a second on: 1 it stayed at the escort (its orders: the old
+                                           game's rule, logic.c logic_taunt), and a pilot who saw it taunts it no more;
+                                           2 it turned; 0 not yet seen */
+    int taunts, refusals;
     int missile_at;                     /* the frame of the last missile */
     int landing_asked, landing_frames;
     int jink;                           /* frames of a break left */
@@ -562,17 +567,34 @@ static void fight_step(void)
             B.missiles_fired++;
         }
     }
-    /* a taunt: an enemy at the escort that is not ours, now and then */
+    /* a taunt: an enemy at the escort that is not ours, now and then; not one seen to ignore it */
+    if (B.taunt) {
+        int s;
+        for (s = 1; s <= RV_MAX_SHIP_SLOT; s++) {
+            int since = B.flight_frames - B.taunted_at[s];
+            if (!alive_ship(s))
+                B.refused[s] = 0;
+            else if (B.taunted_at[s] > 0 && since >= LOGIC_HZ && !B.refused[s]) {
+                B.refused[s] = esc > 0 && rvTarget[s] == esc ? 1 : 2;
+                if (B.refused[s] == 1) {
+                    B.refusals++;
+                    fprintf(stderr, "bot: slot %d ignored the taunt (still at the escort a second on)\n", s);
+                }
+            }
+        }
+    }
     if (B.taunt && esc > 0 && B.nq == 0) {
         int s;
         for (s = 1; s <= RV_MAX_SHIP_SLOT; s++) {
-            if (s == t || !enemy(s) || !fighter(s) || rvTarget[s] != esc || km(s, esc) > 4000)
+            if (s == t || !enemy(s) || !fighter(s) || rvTarget[s] != esc || km(s, esc) > 4000 || B.refused[s] == 1)
                 continue;
             if (B.flight_frames - B.taunted_at[s] < 25 * LOGIC_HZ || B.taunted_at[s] < 0)
                 continue;
             if (shield_pct(0, 0) + shield_pct(0, 1) < 70)
                 continue;
             B.taunted_at[s] = B.flight_frames;
+            B.refused[s] = 0;
+            B.taunts++;
             queue(-100 - s);            /* (T to it), then C three times quickly: the taunt (RV_BOT_ALTT: Alt+T) */
             if (getenv("RV_BOT_ALTT") || B.keys)
                 queue(0x1000 | 0x14);
@@ -592,11 +614,11 @@ static void say_result(void)
         return;
     fprintf(stderr, "bot: result status %u victory %u escort_lost %d escort %ld/%ld seconds %d shots %ld hits %ld "
             "(%.1f%%) missiles %ld missile_hits %ld kills %u hits_taken %ld hull %d seed %u arrival esc %.0f near %.0f "
-            "near_esc %.0f first_at_esc %d esc_dead_at %d targets(60s) esc %ld player %ld other %ld none %ld esc_hits %ld (60s %ld) esc_shots(60s) %ld foe_missiles player %ld escort %ld launched %ld\n",
+            "near_esc %.0f first_at_esc %d esc_dead_at %d targets(60s) esc %ld player %ld other %ld none %ld esc_hits %ld (60s %ld) esc_shots(60s) %ld foe_missiles player %ld escort %ld launched %ld taunts %d ignored %d\n",
             missionStatus, victoryPoints, logic_escort_lost(), B.escort_least, B.escort_start,
             B.flight_frames / LOGIC_HZ, B.shots, B.hits, B.shots ? 100.0 * B.hits / B.shots : 0.0, B.missiles_fired,
             B.missile_hits, logic_splashes, B.hits_taken, g_sys.hull, B.seed, B.arr_esc, B.arr_near, B.arr_near_esc,
-            B.arr_first_at_esc, B.esc_dead_at, B.tgt_esc, B.tgt_player, B.tgt_other, B.tgt_none, B.esc_hits, B.esc_hits_60, B.esc_shots_60, B.foe_mis_player, B.foe_mis_esc, B.foe_launches);
+            B.arr_first_at_esc, B.esc_dead_at, B.tgt_esc, B.tgt_player, B.tgt_other, B.tgt_none, B.esc_hits, B.esc_hits_60, B.esc_shots_60, B.foe_mis_player, B.foe_mis_esc, B.foe_launches, B.taunts, B.refusals);
     fflush(stderr);
 }
 
@@ -614,6 +636,8 @@ static void flight_tick(void)
         if (B.seed)
             randomSeed = B.seed;
         memset(B.taunted_at, 0, sizeof B.taunted_at);
+        memset(B.refused, 0, sizeof B.refused);
+        B.taunts = B.refusals = 0;
         B.target = -1;
         B.missile_at = -1000;
         fprintf(stderr, "bot: flight begins, seed %u\n", B.seed);

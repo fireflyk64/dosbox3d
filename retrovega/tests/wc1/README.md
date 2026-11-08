@@ -582,8 +582,10 @@ every frame:
   the player is within 5,000 km. Kurasawa 2's Salthi: three of four on the player within 10 s of arriving.
 
 So the taunt did not work on what an escort mission sends at the escort: Kurasawa 2's Ralari encounter has four
-Gratha (type 12), two with the order on the Ralari and two following them. Ours (logic.c `fighter_think`,
-2026-11-07): every enemy fighter, under orders or not, turns on the taunter for 20 s whatever else happens.
+Gratha (type 12), two with the order on the Ralari and two following them. Ours had every enemy fighter, under orders
+or not, turn on the taunter for 20 s whatever else happened; ported the same day (the user: "Port the wc1 rule"):
+logic.c `order_hold` (the first ship of a `prey=` line carries the order; healthy it shrugs the taunt off, hurt it
+goes back 1 step in 50), `tailer_of` (one on its tail within 7,000 km takes it), no time limit; M10.12.
 
 ## What is still to measure
 

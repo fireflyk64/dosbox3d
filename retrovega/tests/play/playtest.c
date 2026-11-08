@@ -6597,6 +6597,88 @@ static void t_taunt_guest(void)
     rvTaunt[1] = 0xFF;
 }
 
+/* M10.12: the taunt against orders, the old game's (its code read and flown 2026-11-07, tests/wc1/README.md "The
+ * taunt"; the user: "Port the wc1 rule"): two Nicanders of one line ordered at the Ox (prey=OX, count=2), the Ox 40,000
+ * km off and the player 12,000 km from them: taunted, the line's first (the order's carrier) stays on the Ox and its
+ * follower turns on the player, and is on it still 25 s on (no time limit); a Terran fighter put on its tail with it as
+ * its target takes it; that one gone, its anger is over and it is at the Ox again; the carrier hurt under 55% health
+ * turns on a taunt, and goes back within 10 s (1 step in 50: the player put out of its reach to see it) */
+static void t_taunt_orders(void)
+{
+    static const char __far e_ships[] = "no order carrier (slot %d), follower (slot %d) or Ox (slot %d) after the launch";
+    static const char __far e_prey[] = "before the taunt the Nicanders target slots %d and %d: the Ox (%d)";
+    static const char __far e_lead[] = "taunted, the order's carrier, healthy, targets slot %d: the Ox (%d), not the player";
+    static const char __far e_fol[] = "taunted, the follower targets slot %d %d s on: the player (0)";
+    static const char __far e_tail[] = "a Terran fighter (slot %d) on the follower's tail with it as its target: the "
+        "follower targets slot %d";
+    static const char __far e_back[] = "the tailer gone, the follower targets slot %d: its order's Ox (%d)";
+    static const char __far e_hurt[] = "the carrier hurt under 55%% and taunted targets slot %d: the player (0)";
+    static const char __far e_drift[] = "the hurt carrier was still on the player (%d steps of %d): it goes back 1 step "
+        "in 50";
+    int16_t lead = -1, fol = -1, ox = -1, tail = -1, s, i, on = 0;
+    pt_mission();
+    pt_mship(PT_OX, SIDE_TERRAN, 0, 1, RV_PILOT_NONE);
+    g_tm.ship[g_tm.nship - 1].z = 40000;
+    pt_mship(PT_ENEMY, SIDE_AERA, 0, 2, RV_PILOT_NONE);
+    g_tm.ship[g_tm.nship - 1].z = 12000;
+    g_tm.ship[g_tm.nship - 1].prey = PT_OX + 1;
+    pt_launch(PT_PLAYER);
+    playerCanBeDamaged = 0;
+    g_sys.armed = 0;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++) {
+        if (slot_is_ship(s) && gInstanceShipTypes[s] == PT_ENEMY && slotMissionShip[s] < 64) {
+            if (missionShipTable[missionShipTable_SIZE * slotMissionShip[s] + 40])
+                fol = s;
+            else
+                lead = s;
+        }
+        if (slot_is_ship(s) && gInstanceShipTypes[s] == PT_OX)
+            ox = s;
+        if (!slot_is_ship(s))
+            tail = s;
+    }
+    REQUIRE(lead > 0 && fol > 0 && ox > 0 && tail > 0, e_ships, lead, fol, ox);
+    if (!pt_steps(2 * SEC))
+        return;
+    REQUIRE(rvTarget[lead] == ox && rvTarget[fol] == ox, e_prey, rvTarget[lead], rvTarget[fol], ox);
+    (void)logic_taunt(lead);
+    (void)logic_taunt(fol);
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(rvTarget[lead] == ox, e_lead, rvTarget[lead], ox, 0);
+    REQUIRE(rvTarget[fol] == 0, e_fol, rvTarget[fol], 1, 0);
+    if (!pt_steps(24 * SEC))
+        return;
+    REQUIRE(rvTarget[fol] == 0, e_fol, rvTarget[fol], 25, 0);
+    /* a fighter of ours on its tail, its nose on it, 2,000 km behind, with it as its target */
+    pt_put(fol, 0, 0, 30000, 0);
+    pt_ship(tail, PT_PLAYER, SIDE_TERRAN, CTL_FROZEN, 0, 0, 28000, 0);
+    rvTarget[tail] = (uint8_t)fol;
+    if (!pt_steps(2))
+        return;
+    REQUIRE(rvTarget[fol] == tail, e_tail, tail, rvTarget[fol], 0);
+    ship_clear(tail);
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(rvTarget[fol] == ox, e_back, rvTarget[fol], ox, 0);
+    /* the carrier hurt (its orders lapse) and taunted from 60,000 km behind the launch, out of its reach: its anger
+       over, it takes the Ox beside it again */
+    ARMOR(lead, 0) = ARMOR(lead, 1) = ARMOR(lead, 2) = ARMOR(lead, 3) = 0;
+    pt_put(0, 0, 0, -60000, 0);
+    (void)logic_taunt(lead);
+    if (!pt_steps(2))
+        return;
+    REQUIRE(rvTarget[lead] == 0, e_hurt, rvTarget[lead], 0, 0);
+    for (i = 0; i < 10 * SEC; i++) {
+        if (!pt_step())
+            return;
+        on += rvTarget[lead] == 0;
+    }
+    REQUIRE(on < 10 * SEC, e_drift, on, 10 * SEC, 0);
+    g_camp.player_ship = PT_PLAYER;
+    pt_mission();
+}
+
 /* M10.7: the missile lock: the Gawain's heat seeker on a target 3,000 km ahead flying away locks in its lock time
  * (3 s), and the lock goes the step the target turns to face the player; the image-recognition missile (W) locks on
  * it facing or not; the tracking wrecked, or the EMCON off, no lock; the Schroedinger's dumbfire never locks */
@@ -7590,6 +7672,7 @@ static const char __far n_m8_40[] = "M8.40 campaign-way (logic_autopilot, the mi
 static const char __far n_m8_39[] = "M8.39 full-map (logic_autopilot, step_scene): the autopilot stops at a nav point's reach; its ships are in the scene however far, the carrier again on the way home";
 static const char __far n_m8_38[] = "M8.38 escort-home (route_step): an escort target in goes to the home carrier, stops within 150 km of its hull, its nose the carrier's way, and is home";
 static const char __far n_m10_11[] = "M10.11 taunt-guest (rvTaunt, fighter_think): a guest's taunt, carried to the host, turns the enemy on the guest's ship";
+static const char __far n_m10_12[] = "M10.12 taunt-orders (order_hold, tailer_of): a taunt leaves an order's healthy carrier on its prey, turns its follower for good, a fighter on its tail takes it; hurt, the carrier turns and goes back";
 static const char __far n_m10_10[] = "M10.10 form-parallel (formation_step): told to form up, the wingman flies the player's way, not facing it";
 static const char __far n_m8_32[] = "M8.32 named-hull (do_damage): a named pilot's hull takes a hit past its armour as a share, eight laser hits; a person's seat the hit itself";
 static const char __far n_m8_31[] = "M8.31 dying (delayedDespawn, do_damage): delayedDespawn starts a ship's end; the player's kills are its splashes";
@@ -7659,7 +7742,7 @@ static const PtTest __far k_tests[] = {
     { n_m9_1, t_gunsight, 1 }, { n_m9_2, t_brackets, 1 },
     { n_m10_1, t_target_front, 0 }, { n_m10_2, t_target_lock, 0 }, { n_m10_3, t_systems, 0 },
     { n_m10_4, t_weapon_choice, 0 }, { n_m10_5, t_nav_cross, 1 }, { n_m10_6, t_orders, 0 }, { n_m10_7, t_missile_lock, 0 },
-    { n_m10_8, t_break_formation, 0 }, { n_m10_9, t_taunt, 0 }, { n_m10_11, t_taunt_guest, 0 },
+    { n_m10_8, t_break_formation, 0 }, { n_m10_9, t_taunt, 0 }, { n_m10_11, t_taunt_guest, 0 }, { n_m10_12, t_taunt_orders, 0 },
     { n_m12_1, t_reserve, 0 }, { n_m12_2, t_reserve_breaks, 0 }, { n_m12_3, t_where, 0 }, { n_m12_4, t_engine, 0 },
     { n_m12_5, t_tank, 0 }, { n_m12_6, t_shield_cap, 0 }, { n_m12_7, t_mounts, 0 }, { n_m12_8, t_thrusters, 0 },
     { n_m12_9, t_repair, 0 }, { n_m12_10, t_damage_reset, 0 }, { n_m12_11, t_home_tier, 0 },

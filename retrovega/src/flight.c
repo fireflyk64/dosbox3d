@@ -2155,7 +2155,7 @@ static void comm_taunt(int who)
     };
     static const char __far s_log[] = "flight: comm: taunted slot %d: %s";
     int ok = logic_taunt((int16_t)who);
-    rv_notef(s_log, who, ok ? "it turns on the player" : "no effect");
+    rv_notef(s_log, who, ok ? "heard (its orders decide)" : "no effect");
     if (!comm_silent())
         comm_exchange(s_taunts[frameCounter & 3], comms_voice_for(commAnimInfo[who], gInstanceShipTypes[who]), NULL);
 }

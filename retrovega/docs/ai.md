@@ -279,10 +279,19 @@ without an order, half the fighters near an escort target raid it (`raid_target`
 
 ## The taunt
 
-The comm menu's taunt (`logic_taunt`, an enemy fighter as the player's target) turns it on the player for 20 s: its
-target is the player wherever the player is and whoever is nearer, and it holds no fire for being the player's
-selected target (`holds_fire`), so a taunt draws a fighter off a wingman or an escort (the raider too) at the taunter's own risk. A ship
-already breaking off for good stays gone; a capital ship does not rise to it, though it answers. M10.9 checks it.
+The comm menu's taunt (`logic_taunt`, an enemy fighter as the player's target) works as the old game's (its code read
+and flown 2026-11-07, tests/wc1/README.md "The taunt"; the user: "I remember taunting usually didn't work in the
+original... it might be too effective now", then "Port the wc1 rule"). It turns the fighter on the taunter, wherever
+the taunter is and whoever is nearer, with no time limit, and it holds no fire for being the player's selected target
+(`holds_fire`), so a taunt draws a fighter off a wingman or an escort's raid at the taunter's own risk. The anger ends
+when the taunter is gone or the fighter breaks off for good; a fighter of the taunter's side that has it as its target
+and sits on its tail (behind it, its nose on it, within 7,000 km: `tailer_of`) takes it over, the same way.
+
+Orders beat it (`order_hold`): the first ship of a mission line with `prey=` carries the attack order (the old game's
+behaviour 2; the line's later ships, `count=`, follow it, its behaviour 4) and shrugs a taunt off while healthy enough
+to hold the order (`k_prey_pct`: the old game's is on its prey again the next frame); hurt under that, a taunt turns
+it, and each step 1 in 50 ends its anger (the old game's 1 frame in 25). The followers take a taunt like any other
+fighter. A capital ship does not rise to it, though it answers. M10.9 and M10.12 check it.
 
 ## Adding a behaviour
 

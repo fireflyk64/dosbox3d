@@ -282,6 +282,8 @@ void camp_load_tables(const RvMission __far *m)
             rec[21] = s->jump;              /* (role=out's last nav point, jump=N: 0 the next after its own; logic.c route_step) */
             rec[41] = s->prey;              /* (the type it is ordered to attack + 1, prey=KEY, 0 none: the old game's own byte for
                                                its orders' target; logic.c prey_of) */
+            rec[40] = (uint8_t)(k != 0);    /* (a later ship of its line follows the first, which alone carries the order
+                                               against a taunt: the old game's behaviour 2 and 4; logic.c MSHIP_FOLLOWS) */
             for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
                 ;
             if (j < 10)

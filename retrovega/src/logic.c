@@ -52,7 +52,7 @@ typedef struct {
     uint8_t gap;                        /* steps since its last volley (saturating): the profile's fire_gap */
     uint8_t leaving;                    /* 1: gone for good (the leave: away and removed far off); 0 not */
     uint8_t fear_up, fear_down;         /* its fear's rates (the profile's, or the mission ship's own: fear=) */
-    int16_t taunt;                      /* steps left of its anger at the pilot who taunted it (logic_taunt) */
+    int16_t taunt;                      /* 1 while it is angry at the pilot who taunted it, 0 not (logic_taunt) */
     uint8_t taunter;                    /* that pilot's ship's slot: this machine's own (0) or a guest's (rvTaunt) */
     uint8_t catching;                   /* 1: closing on its target at full speed (from CATCH_FAR_KM in), 0: at its
                                            attack speed */
@@ -179,6 +179,9 @@ static struct {
 #define MSHIP_JUMP(r) (MSHIP(r)[21])    /* role=out's last nav point (missions.txt jump=N), 0 the next after its own */
 #define MSHIP_PREY(r) (MSHIP(r)[41])    /* the type of the ship it is ordered to attack (missions.txt prey=KEY) + 1, 0 none: the
                                            old game's own byte (+0x29) for its orders' target (prey_of) */
+#define MSHIP_FOLLOWS(r) (MSHIP(r)[40]) /* 1: a later ship of its mission line (count=N), following the line's first, which
+                                           alone carries a prey= order against a taunt (the old game's behaviour 2, its
+                                           followers' 4: order_hold) */
 #define ROUTE_JUMP_KM 3000              /* an escort target in this near nav 0 is home (the carrier is there) */
 #define ROUTE_OUT_KM 1000               /* an escort target out this near a nav point is there: it holds at a waypoint
                                            on its way, jumps at its last (the user, 2026-11-03: "lets allow it to be
@@ -447,14 +450,22 @@ int16_t logic_order_of(int16_t s)
     return s > 0 && s < NUM_SHIP_SLOTS ? g_order[s] : ORDER_FREE;
 }
 
-/* an enemy fighter told what the player thinks of it (the comm menu's taunt): it turns on the player and nobody else
- * for TAUNT_STEPS, wherever the player is, and holds no fire for being the player's target (holds_fire).  A ship that
- * has already broken off stays gone (fighter_think); a capital ship does not rise to it: 0.  The taunt goes through
- * rvTaunt, so a guest's reaches the host's AI (the user, 2026-11-07: "Will a second player help? Do their taunts make it
- * through?"; they had not: the AI runs on the host and turned on slot 0, the host's pilot): this machine's pilot writes
- * 0 there, the layer carries a guest's to the host as its ship's slot, and the AI that flies the ship takes it at its
- * next thought */
-#define TAUNT_STEPS (20 * LOGIC_HZ)
+/* an enemy fighter told what the player thinks of it (the comm menu's taunt): as the old game's (its code read and
+ * flown 2026-11-07, tests/wc1/README.md "The taunt"; the user: "I remember taunting usually didn't work in the
+ * original... it might be too effective now", then "Port the wc1 rule"), it turns on the taunter, wherever that is and
+ * whoever is nearer, with no time limit, and holds no fire for being the player's target (holds_fire), until the
+ * taunter is gone, it breaks off, or a fighter of the taunter's side that has it as its target sits on its tail
+ * (tailer_of), which it then fights the same way; but a ship that carries its mission line's attack order (prey=, the
+ * line's first ship) shrugs it off while healthy enough to hold the order, and hurt under that goes back to its usual
+ * choice 1 step in TAUNT_BACK (order_hold, fighter_think).  A capital ship does not rise to it: 0.  The taunt goes
+ * through rvTaunt, so a guest's reaches the host's AI (the user, 2026-11-07: "Will a second player help? Do their taunts
+ * make it through?"; they had not: the AI runs on the host and turned on slot 0, the host's pilot): this machine's
+ * pilot writes 0 there, the layer carries a guest's to the host as its ship's slot, and the AI that flies the ship takes
+ * it at its next thought */
+#define TAUNT_BACK (25 * WC_FRAME_STEPS)    /* the old game's 1 frame in 25 */
+#define TAUNT_TAIL_KM 7000              /* a fighter on its tail: this near (the old game's ovr165:07F0 and 075B), */
+#define TAUNT_BEHIND (-154)             /* behind it (the cosine of its nose to that one under -0.6, x 256) */
+#define TAUNT_NOSE 218                  /* and that one's nose on it (over 0.85) */
 int16_t logic_taunt(int16_t s)
 {
     if (s <= 0 || s >= rvTaunt_SIZE || !slot_is_ship(s) || maybeEntityType[s] != ET_SHIP || shipAiState[s] == 9
@@ -3342,13 +3353,14 @@ static int16_t raid_target(int16_t s)
  * is at least the profile's share of a hundred (the old game's 70 - 15 x its class, 0 to 4: a fighter's class 1, 55;
  * an ace's 10) and the prey lives: the nearest living ship of that type of another side; -1 none */
 static const uint8_t __far k_prey_pct[P_COUNT] = { 55, 55, 40, 10, 40, 0, 0, 55, 55 };
-static int16_t prey_of(int16_t s, uint8_t profile)
+#define PREY_PCT(profile) k_prey_pct[(profile) < P_COUNT ? (profile) : P_FIGHTER]
+static int16_t prey_of(int16_t s, uint8_t pct)     /* (pct: the health it needs, PREY_PCT; 0 whatever its health) */
 {
     uint16_t rec = slotMissionShip[s];
     uint8_t type;
     int16_t k, best = -1;
     int32_t bd = INT32_C(0x7FFFFFFF), d;
-    if (rec >= 64 || !MSHIP_PREY(rec) || health_pct(s) < k_prey_pct[profile < P_COUNT ? profile : P_FIGHTER])
+    if (rec >= 64 || !MSHIP_PREY(rec) || health_pct(s) < pct)
         return -1;
     type = (uint8_t)(MSHIP_PREY(rec) - 1);
     for (k = 0; k < NUM_SHIP_SLOTS; k++) {
@@ -3364,6 +3376,30 @@ static int16_t prey_of(int16_t s, uint8_t profile)
     return best;
 }
 
+/* the old game's taunt against orders (logic_taunt): 2 when s carries its line's attack order (prey=, the line's first
+ * ship) with its prey about and is healthy enough to hold it (a taunt turns it not at all: the old game's is on its
+ * prey again the next frame), 1 when it carries it hurt under that (a taunt turns it, TAUNT_BACK), 0 no order on it */
+static int16_t order_hold(int16_t s, uint8_t profile)
+{
+    uint16_t rec = slotMissionShip[s];
+    if (rec >= 64 || MSHIP_FOLLOWS(rec) || prey_of(s, 0) < 0)
+        return 0;
+    return health_pct(s) >= PREY_PCT(profile) ? 2 : 1;
+}
+
+/* a fighter of another side than s's that has s as its target and sits on its tail (behind it, its nose on s) within
+ * TAUNT_TAIL_KM, the first by slot as the old game's (ovr165:07F0): the one a taunted s turns on instead; -1 none */
+static int16_t tailer_of(int16_t s)
+{
+    int16_t k;
+    for (k = 0; k < NUM_SHIP_SLOTS; k++)
+        if (k != s && slot_is_ship(k) && maybeEntityType[k] == ET_SHIP && shipAiState[k] != 9
+            && commAnimInfo[k] != commAnimInfo[s] && rvTarget[k] == s && km_between(s, k) < TAUNT_TAIL_KM
+            && cos_nose_to(s, k) < TAUNT_BEHIND && cos_nose_to(k, s) > TAUNT_NOSE)
+            return k;
+    return -1;
+}
+
 /* a fighter's mind for a step: its target, its situation, its tactic, its decisions (g_turn, the throttle, fire) */
 static void fighter_think(int16_t s)
 {
@@ -3373,10 +3409,12 @@ static void fighter_think(int16_t s)
     int16_t sit, k, near_ = -1;
     int32_t d, bd = INT32_C(0x7FFFFFFF);
     m->leader = leader_of(s);
-    if (rvTaunt[s] != 0xFF) {           /* a taunt: its anger at that pilot (logic_taunt) */
-        m->taunt = TAUNT_STEPS;
-        m->taunter = rvTaunt[s];
-        m->timer = 0;                   /* (its tactic over: picked afresh, with the taunter as its target) */
+    if (rvTaunt[s] != 0xFF) {           /* a taunt: its anger at that pilot, unless its orders hold it (logic_taunt) */
+        if (order_hold(s, m->profile) < 2) {
+            m->taunt = 1;
+            m->taunter = rvTaunt[s];
+            m->timer = 0;               /* (its tactic over: picked afresh, with the taunter as its target) */
+        }
         rvTaunt[s] = 0xFF;
     }
     if (m->leaving) {                   /* (gone for good: the leave, nothing else) */
@@ -3399,7 +3437,7 @@ static void fighter_think(int16_t s)
         }
     }
     {
-        int16_t prey = prey_of(s, m->profile);
+        int16_t prey = prey_of(s, PREY_PCT(m->profile));
         if (prey >= 0) {                /* (its orders: at the prey as a raider is, whoever is nearer) */
             m->target = (uint8_t)prey;
             m->raiding = (uint8_t)(prey + 1);
@@ -3413,8 +3451,13 @@ static void fighter_think(int16_t s)
     if (!m->raiding && near_ >= 0 && bd <= p->engage_km && (m->target == 0xFF || bd * 3 < km_between(s, m->target) * 2))
         m->target = (uint8_t)near_;
     if (m->taunt) {                     /* taunted: the taunter, wherever it is and whoever is nearer (logic_taunt) */
-        m->taunt--;
-        if (slot_is_ship(m->taunter) && shipAiState[m->taunter] != 9)
+        int16_t tk = tailer_of(s), o = order_hold(s, m->profile);
+        if (tk >= 0)
+            m->taunter = (uint8_t)tk;   /* (one on its tail that has it as its target: that one, the same way) */
+        if (!slot_is_ship(m->taunter) || shipAiState[m->taunter] == 9 || commAnimInfo[m->taunter] == commAnimInfo[s]
+            || o == 2 || (o == 1 && game_rand() % TAUNT_BACK == 0))
+            m->taunt = 0;
+        else
             m->target = m->taunter;
     }
     /* a wingman under orders (logic_order): the player's target wherever it is (ATTACK), the enemy nearest the player,
