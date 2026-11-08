@@ -395,6 +395,17 @@ message TieFrame {
     optional uint32 target = 8;     // what the sender has targeted (an object slot; 0xFFFF none)
     repeated TieShot shots = 9;
     repeated TieHit hits = 10;
+    repeated TieEvent events = 11;  // what a pilot did to the mission on its own machine (sent reliably)
+}
+// A pilot's doing that the mission's state keeps on that pilot's machine alone (the user, 2026-11-07: "If it fails to
+// show up for a player that's a serious bug"): 1, reinforcements called (the S key and Space: the mission's penalty
+// flag, which the "reinforced" arrivals wait for); 2, a craft inspected (it targeted near enough: the craft's flag and
+// its flight group's inspected count, which goals and arrivals read).
+message TieEvent {
+    optional uint32 kind = 1;
+    optional uint32 obj = 2;        // (2) the craft's object slot
+    optional uint32 type = 3;       // (2) its ship index there (the same craft: +4)
+    optional uint32 fg = 4;         // (2) and its flight group (+0x35)
 }
 // The host's word on who flies each craft (object slots 0..31): a seat each, 0 the host's.  Sent when it changes and
 // every 2 s, reliably.

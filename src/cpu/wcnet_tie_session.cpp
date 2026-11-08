@@ -180,6 +180,11 @@ struct TieNet {
     // Step 6: shots and hits for the next frame, hits taken in for this game to apply, deaths being applied.
     std::vector<TieShot> shotsOut;
     std::vector<TieHit> hitsOut;
+    std::vector<TieEvent> eventsOut;    // the mission's events of ours to send (watch_events)
+    bool reinforcedKnown = false;       // reinforcements called this flight, here or by another pilot
+    bool inspectKnown[kCraftSlots];     // each craft slot's last-seen state: there, its idnumber, inspected
+    Bit16u inspectId[kCraftSlots];
+    Bit8u inspectWas[kCraftSlots];
     TieHit hitsIn[64];
     int hitsInNext;
     int killing[kCraftSlots];   // calls made to kill a copy whose owner reported it dying (0: none)
@@ -220,6 +225,11 @@ struct TieNet {
         farCursor = 0;
         shotsOut.clear();
         hitsOut.clear();
+        eventsOut.clear();
+        reinforcedKnown = false;
+        for (int o = 0; o < kCraftSlots; o++) {
+            inspectKnown[o] = false;
+        }
         for (int o = 0; o < kCraftSlots; o++) {
             killing[o] = 0;
             killer[o] = 0;
@@ -366,6 +376,8 @@ int free_player() {
 
 // A frame of craft from a peer: into the puppets, and (the host) on to the
 // other guests with the sender's number.
+void take_event(const TieEvent &e, int from);   // (below: the game's functions' addresses)
+
 void take_frame(Peer *from, const TieFrame &f) {
     const int owner = g_net->host ? from->player : (f.has_player() ? (int)f.player() : 0);
     if (owner == g_net->self) {
@@ -416,6 +428,9 @@ void take_frame(Peer *from, const TieFrame &f) {
     }
     for (int i = 0; i < f.hits_size() && sameMission && tie_in_flight(); i++) {
         take_hit(f.hits(i));
+    }
+    for (int i = 0; i < f.events_size() && sameMission && tie_in_flight(); i++) {
+        take_event(f.events(i), owner);
     }
     if (g_net->host) {
         NetworkMessage msg;
@@ -802,6 +817,92 @@ enum { kLaserX = 0xEAB94, kLaserY = 0xEAB98, kLaserZ = 0xEAB90, kLaserXOld = 0xE
 // collide_laserhitcraft, which puts the bolt's flash there (OpenTIE's tie.c: collidexoff 0xEAB7C, y 0xEAB78, z 0xEAB74).
 enum { kCollideXOff = 0xEAB7C, kCollideYOff = 0xEAB78, kCollideZOff = 0xEAB74 };
 enum { kFnCreateProjectile = 0x2E0E4, kFnLaserHit = 0x1433C, kFnDamage = 0x148F0, kFnUpdateKills = 0x16218, kWarheads = 0xE61FC };
+
+// -- the mission's events a pilot causes on its own machine (the user, 2026-11-07: "If it fails to show up for a player
+// that's a serious bug") ---------------------------------------------------------------------------------------------
+// The mission's triggers run on every machine alike, and most of what they read is the same everywhere (the time, a
+// craft's arrival or death: deaths are the owners' and sent).  Two things a pilot does are kept by its machine alone:
+// reinforcements called (S, then Space: the mission's penalty flag, +0x2E0, which a "reinforced" arrival waits for;
+// B5M1's frigate Osprey came only for the pilot who called) and a craft inspected (COLLIDE_collisions: the pilot's
+// target near enough, the craft's +0xB8 set, its flight group's inspected count, +0x11 of its FGStatus, and the
+// special craft's, +0x23; goals and arrivals read them).  Each is watched here every frame and sent; the others do the
+// game's own bookkeeping and show its own message.
+enum {
+    kPenaltyFlag = 0x2E0,           // (of the mission's state, kMission)
+    kInspected = 0xB8,              // (of a craft's CraftData)
+    kCraftIndexInFg = 0x90,
+    kFgSpecialCraft = 0x30,         // (of a flight group's record)
+    kFgInspectedCount = 0x08 + 9,   // FGStatus counts[FG_COUNT_INSPECTED]
+    kFgInspectedSpecial = 0x1A + 9, // ... special_counts[FG_COUNT_INSPECTED]
+    kFnCraftMessage = 0x33D10,      // msg_craftmessage(obj, craft, template): 0xAB "has been inspected"
+    kMsgInspected = 0xAB,
+};
+
+void watch_events() {
+    const Bit32u m = tie_linear(kMission);
+    if (!g_net->reinforcedKnown && mem_readb(m + kPenaltyFlag)) {
+        g_net->reinforcedKnown = true;
+        TieEvent e;
+        e.set_kind(1);
+        g_net->eventsOut.push_back(e);
+        wclog(1, "TIE: we called for reinforcements: sent");
+    }
+    for (int o = 0; o < kCraftSlots; o++) {
+        const Bit32u b = tie_linear(tie::kObjects + (Bit32u)o * tie::kObjectSize);
+        const bool there = mem_readb(b + 4) != 0;
+        const Bit16u id = mem_readw(b);
+        const Bit32u craft = mem_readd(b + 0x54);
+        const Bit8u inspected = there && craft >= 0x100000 ? mem_readb(craft + kInspected) : 0;
+        if (there && g_net->inspectKnown[o] && g_net->inspectId[o] == id && !g_net->inspectWas[o] && inspected) {
+            TieEvent e;
+            e.set_kind(2);
+            e.set_obj((Bit32u)o);
+            e.set_type(mem_readb(b + 4));
+            e.set_fg(mem_readb(b + 0x35));
+            g_net->eventsOut.push_back(e);
+            wclog(1, "TIE: obj %d (type %u, flight group %u) inspected here: sent", o, mem_readb(b + 4), mem_readb(b + 0x35));
+        }
+        g_net->inspectKnown[o] = there;
+        g_net->inspectId[o] = id;
+        g_net->inspectWas[o] = inspected;
+    }
+}
+
+void take_event(const TieEvent &e, int from) {
+    if (e.kind() == 1) {
+        const Bit32u m = tie_linear(kMission);
+        g_net->reinforcedKnown = true;
+        if (!mem_readb(m + kPenaltyFlag)) {
+            mem_writeb(m + kPenaltyFlag, 1);
+            notice(pilot_name(from) + " called for reinforcements");
+            wclog(1, "TIE: pilot %d called for reinforcements: the mission's flag set here", from);
+        }
+        return;
+    }
+    if (e.kind() != 2 || e.obj() >= (Bit32u)kCraftSlots) {
+        return;
+    }
+    const int o = (int)e.obj();
+    const Bit32u b = tie_linear(tie::kObjects + (Bit32u)o * tie::kObjectSize);
+    const Bit32u craft = mem_readd(b + 0x54);
+    const int fg = mem_readb(b + 0x35);
+    if (mem_readb(b + 4) != e.type() || (Bit32u)fg != e.fg() || fg >= 48 || craft < 0x100000) {
+        wclog(1, "TIE: obj %d inspected by pilot %d: not the same craft here (type %u, flight group %d)", o, from, mem_readb(b + 4), fg);
+        return;
+    }
+    g_net->inspectWas[o] = 1;       // (ours to apply, not to send back)
+    if (mem_readb(craft + kInspected)) {
+        return;                     // (inspected here too)
+    }
+    mem_writeb(craft + kInspected, 1);
+    const Bit32u st = tie_linear(kFgStatus + (Bit32u)fg * kFgStatusSize);
+    mem_writeb(st + kFgInspectedCount, (Bit8u)(mem_readb(st + kFgInspectedCount) + 1));
+    if ((Bit8s)tie_r8(tie::kFlightGroups + (Bit32u)fg * tie::kFlightGroupSize + kFgSpecialCraft) == (Bit8s)mem_readb(craft + kCraftIndexInFg)) {
+        mem_writeb(st + kFgInspectedSpecial, 1);
+    }
+    tie_queue_call(kFnCraftMessage, (Bit32u)o, craft, kMsgInspected, 0, NULL, NULL, o);
+    wclog(1, "TIE: obj %d (flight group %d) inspected by pilot %d: counted here", o, fg, from);
+}
 
 bool someone_near(int obj, double reach) {
     const double now = PIC_FullIndex();
@@ -1602,11 +1703,16 @@ void tie_session_frame() {
     for (size_t i = 0; i < g_net->hitsOut.size(); i++) {
         *f->add_hits() = g_net->hitsOut[i];
     }
+    watch_events();
+    for (size_t i = 0; i < g_net->eventsOut.size(); i++) {
+        *f->add_events() = g_net->eventsOut[i];
+    }
     g_net->shotsSent += (unsigned)g_net->shotsOut.size();
     g_net->hitsSent += (unsigned)g_net->hitsOut.size();
-    const bool hits = !g_net->hitsOut.empty();
+    const bool hits = !g_net->hitsOut.empty() || !g_net->eventsOut.empty();
     g_net->shotsOut.clear();
     g_net->hitsOut.clear();
+    g_net->eventsOut.clear();
     // (a reliable copy once a second, whenever a far craft is in it, its next report many seconds away, and whenever a
     // hit is: a hit lost would be damage never done)
     const bool reliable = far || hits || now - g_net->lastReliableAt >= kReliableEveryMs;
