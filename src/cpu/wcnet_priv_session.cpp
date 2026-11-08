@@ -61,12 +61,18 @@ enum { kStatesPerSecond = 15, kStateStaleMs = 5000, kExtrapolateMs = 1000 };
 // by default; its AI is held)
 const char kPuppetCast[] = "MER_DP";
 // The game's near heap (wcnet_priv.cpp, priv_near_heap): some 17 KB free as a flight begins at Achilles, 15 KB once it
-// settles, nothing growing it, and the program ends when a request finds no block (its error 1303); a ship of ours
-// with what its AI allocates takes some 850 bytes (measured, 12 merchants spawned one by one: 16,966 to 6,698).  So a
-// puppet is made only while the heap keeps a reserve for the game's own ships, missiles and pods after it; what
-// cannot be made is not shown (the pilots' own ships first, the encounter ships after); nothing is ever deleted
-// (the game's destructor on a ship of ours crashes it): a parked ship is reused.
-enum { kShipNearBytes = 1024, kPodNearBytes = 256, kNearReserve = 6144 };
+// settles, nothing growing it, and the program ends when a request finds no block (its error 1303).  A puppet (its AI
+// held) costs some 400-550 bytes; an AI-flown ship 850 and more as it fights.  Measured, a room of 8 in a dogfight
+// with 4 pirates added (docs section 15): the guests' heaps never below 10,800 with 7 pilots and 7 encounter ships of
+// others'; the owner of the nav point -- the real encounter's AI at work, with 7 pilots' puppets -- down to 3,402,
+// where the game alone in the same fight went to 6,920; 1,000-1,600 requests a second, the largest 142 bytes in a
+// fight (1,593 once).  So the memory governor (govern_memory, every frame): a puppet is made only while the last 5
+// seconds' low stays kCreateFloor above its cost, and below kReleaseFloor one puppet a second is given back -- moved
+// far off and killed, the game's own death path freeing it (its destructor called by us crashed the game) -- parked
+// ones first, then the encounter ships, then the pilots, the farthest first: our footprint goes to nothing before
+// the game's own needs do.
+enum { kShipNearBytes = 600, kPodNearBytes = 200, kCreateFloor = 8000, kReleaseFloor = 6000, kReleaseEveryMs = 1000,
+       kUrgentFloor = 4500, kUrgentEveryMs = 250, kCreateEveryMs = 2000, kCreateAfterReleaseMs = 10000, kLowWindows = 5 };
 enum { kSayThinkFrames = 60 };          // 3 s of the page's 20 a second
 const char kPodCast[] = "CARGO";        // (a pod's name at +0xE, where a ship has its cast's)
 
@@ -166,6 +172,7 @@ struct PrivNet {
     std::vector<std::pair<int, std::string> > chats;    // seat, line
     std::vector<std::pair<int, Bit32u> > shots;         // seat, id
     std::vector<Bit32u> podsTaken;                      // pods of ours another pilot's tractor beam took (put away, not reported)
+    std::vector<std::pair<Bit16u, Bit16u> > dying;      // (ship, type) puppets given back, until the game has freed them
     std::vector<std::pair<Bit32u, double> > podsGone;   // (seat << 16 | id, when) pods of others' our tractor took: their owner's
                                                         // next reports, already on their way, are not to make them again
     Bit64u sceneFrame;
@@ -618,6 +625,18 @@ void take_state(const PrivState &st, int seat) {
     for (int i = 0; i < 9 && i < st.m_size(); i++) {
         p.m[i] = st.m(i);
     }
+    if (st.destroyed()) {
+        // its ship destroyed in its own game: ours dies here too (an explosion; no cargo: its real pods are its game's)
+        p.reported = false;
+        p.pending = false;
+        if (p.obj && !p.parked && priv_ship_alive(p.obj, p.type)) {
+            if (g_net->dying.size() < 32) g_net->dying.push_back(std::make_pair(p.obj, p.type));
+            priv_hold_ai(priv_ship_controller(p.obj), false);
+            priv_ship_kill(p.obj);
+            wclog(1, "Privateer: pilot %d's ship destroyed, as its game says", seat + 1);
+        }
+        p.obj = 0;
+    }
 }
 
 void take_pod_taken(const PrivPodTaken &t);
@@ -713,7 +732,7 @@ void handle(Peer *p, NetworkMessage &msg) {
             for (size_t i = 0; i < g_net->peers.size(); i++) {
                 Peer *to = g_net->peers[i];
                 if (to != p && to->hello && to->conn.is_open()) {
-                    to->conn.send_best_effort(out);
+                    if (msg.priv_state().destroyed()) to->conn.send(out); else to->conn.send_best_effort(out);
                 }
             }
         }
@@ -1001,17 +1020,65 @@ const char *type_of(const std::string &appearance) {
     return "TARSTYPE";
 }
 
-// Room in the game's near heap for one more ship of ours, the reserve kept (logged when there is none, every 10 s)
+// The governor's view of the near heap: the lowest free of each second, the last kLowWindows of them
+struct HeapWindows {
+    double start;
+    int low;                    // this second's
+    int past[kLowWindows];      // the seconds before (1 << 30: none)
+    double releasedAt, createdAt;
+    int released;               // puppets given back in this flight
+    int lowSinceRelease;        // the lowest since the last give-back (what the next one is decided on)
+    HeapWindows() : start(-1e9), low(1 << 30), releasedAt(-1e9), createdAt(-1e9), released(0), lowSinceRelease(1 << 30) {
+        for (int i = 0; i < kLowWindows; i++) past[i] = 1 << 30;
+    }
+} g_heap;
+
+void heap_windows_frame(double now) {
+    const int low = priv_near_heap_low_take();
+    if (low >= 0 && low < g_heap.low) g_heap.low = low;
+    if (low >= 0 && low < g_heap.lowSinceRelease) g_heap.lowSinceRelease = low;
+    if (now - g_heap.start >= 1000 || now < g_heap.start) {
+        for (int i = kLowWindows - 1; i > 0; i--) g_heap.past[i] = g_heap.past[i - 1];
+        g_heap.past[0] = g_heap.low;
+        g_heap.low = 1 << 30;
+        g_heap.start = now;
+    }
+}
+
+int heap_low_recent(int seconds) {
+    int low = g_heap.low;
+    for (int i = 0; i < seconds && i < kLowWindows; i++) {
+        if (g_heap.past[i] < low) low = g_heap.past[i];
+    }
+    return low;
+}
+
+// Room in the game's near heap for one more ship of ours: the last seconds' low kCreateFloor above its cost, and now's
+// too (logged when there is none, every 10 s)
 bool room_for_a_ship(const char *whose, int bytes = kShipNearBytes) {
+    // one at a time: a spawn queued and not yet made has not shown in the heap yet
+    const double now = PIC_FullIndex();
+    if (now - g_heap.createdAt < kCreateEveryMs || now - g_heap.releasedAt < kCreateAfterReleaseMs) {
+        return false;
+    }
+    for (int s = 0; s < kMaxSeats; s++) {
+        if (g_net->puppets[s].pending) return false;
+    }
+    for (int k = 0; k < kNpcCap; k++) {
+        if (g_net->npcs[k].used && g_net->npcs[k].pending) return false;
+    }
     int total, largest, blocks;
-    priv_near_heap(total, largest, blocks);
-    if (total - bytes >= kNearReserve) {
+    const bool known = priv_near_heap_read(total, largest, blocks);
+    const int recent = heap_low_recent(kLowWindows);
+    if (known && total - bytes >= kCreateFloor && (recent >= (1 << 30) || recent - bytes >= kCreateFloor)) {
+        g_heap.createdAt = now;
         return true;
     }
     static double saidAt = -1e9;
     if (PIC_FullIndex() - saidAt > 10000) {
         saidAt = PIC_FullIndex();
-        wclog(1, "Privateer: no room in the game's memory for %s (near heap free %d, the reserve %d): not shown", whose, total, (int)kNearReserve);
+        wclog(1, "Privateer: no room in the game's memory for %s (near heap free %d, the last %d s' low %d, wanted %d over its %d bytes): not shown",
+              whose, known ? total : -1, (int)kLowWindows, recent < (1 << 30) ? recent : -1, (int)kCreateFloor, bytes);
     }
     return false;
 }
@@ -1043,6 +1110,7 @@ void puppet_made(int seat, Bit16u obj) {
 }
 
 void forget_puppets(const char *why) {
+    priv_calls_flush(why);
     bool any = false;
     for (int s = 0; s < kMaxSeats; s++) {
         Puppet &p = g_net->puppets[s];
@@ -1059,6 +1127,7 @@ void forget_puppets(const char *why) {
     g_net->tracks.clear();
     g_net->podsTaken.clear();
     g_net->podsGone.clear();
+    g_net->dying.clear();
     priv_hold_ai_none();
     if (any) {
         wclog(2, "Privateer: the puppets forgotten (%s)", why);
@@ -1122,6 +1191,9 @@ NpcTrack *track_of(Bit16u obj, bool make) {
 }
 
 bool is_puppet_obj(Bit16u obj) {
+    for (size_t i = 0; i < g_net->dying.size(); i++) {
+        if (g_net->dying[i].first == obj) return true;
+    }
     for (int s = 0; s < kMaxSeats; s++) {
         if (g_net->puppets[s].obj == obj) return true;
     }
@@ -1592,6 +1664,73 @@ void priv_session_fired(Bit16u ship) {
     }
 }
 
+// One puppet given back: moved far off, its AI let go, killed (the game frees it after its death)
+void release_obj(Bit16u obj) {
+    Bit32s away[3] = { 0x3FFFFFFF, 0x3FFFFFFF, 0x3FFFFFFF };
+    if (priv_pod_is(obj)) {
+        priv_pod_set(obj, away);
+    } else {
+        priv_ship_set(obj, away, NULL);
+        priv_hold_ai(priv_ship_controller(obj), false);
+    }
+    priv_ship_kill(obj);
+}
+
+int g_forceRelease;                 // (a test aid's: !privrelease gives one back at the next frame)
+
+void govern_memory(double now, const Bit32s pos[3]) {
+    heap_windows_frame(now);
+    for (size_t i = 0; i < g_net->dying.size(); ) {
+        if (priv_ship_alive(g_net->dying[i].first, g_net->dying[i].second)) i++;
+        else g_net->dying.erase(g_net->dying.begin() + i);     // (freed by the game)
+    }
+    int low = g_heap.lowSinceRelease;
+    if (g_forceRelease > 0) {
+        g_forceRelease--;
+        low = 0;
+    } else if (low >= (1 << 30) || low >= kReleaseFloor || now - g_heap.releasedAt < (low < kUrgentFloor ? kUrgentEveryMs : kReleaseEveryMs)) {
+        return;
+    }
+    // the one to give back: parked first, then encounter ships and pods, then pilots; of a kind the farthest
+    double best = -1;
+    int bestSeat = -1, bestNpc = -1;
+    for (int k = 0; k < kNpcCap; k++) {
+        const NpcPuppet &p = g_net->npcs[k];
+        if (!p.used || !p.obj || p.killed || p.pod) continue;     // (a pod is not freed by its death: it waits out its time)
+        double d = sqrt((p.x - pos[0]) * (p.x - pos[0]) + (p.y - pos[1]) * (p.y - pos[1]) + (p.z - pos[2]) * (p.z - pos[2]));
+        const double score = (p.parked ? 3e12 : 2e12) + d;
+        if (score > best) { best = score; bestNpc = k; bestSeat = -1; }
+    }
+    for (int s = 0; s < kMaxSeats; s++) {
+        const Puppet &p = g_net->puppets[s];
+        if (!p.obj) continue;
+        double d = sqrt((p.x - pos[0]) * (p.x - pos[0]) + (p.y - pos[1]) * (p.y - pos[1]) + (p.z - pos[2]) * (p.z - pos[2]));
+        const double score = (p.parked ? 3e12 : 1e12) + d;
+        if (score > best) { best = score; bestSeat = s; bestNpc = -1; }
+    }
+    if (bestNpc < 0 && bestSeat < 0) {
+        return;                 // (nothing of ours left: the game's own needs)
+    }
+    g_heap.releasedAt = now;
+    g_heap.released++;
+    g_heap.lowSinceRelease = 1 << 30;
+    if (bestNpc >= 0) {
+        NpcPuppet &p = g_net->npcs[bestNpc];
+        wclog(1, "Privateer: the game's memory low (%d free at the lowest): pilot %d's %s (ds:%04X) given back", low, p.seat + 1,
+              p.pod ? "cargo pod" : p.type.c_str(), p.obj);
+        release_obj(p.obj);
+        p.killed = true;        // (its record goes when the game has freed it; made again when there is room)
+    } else {
+        Puppet &p = g_net->puppets[bestSeat];
+        wclog(1, "Privateer: the game's memory low (%d free at the lowest): pilot %d's ship (ds:%04X) given back", low, bestSeat + 1, p.obj);
+        if (g_net->dying.size() < 32) g_net->dying.push_back(std::make_pair(p.obj, p.type));
+        release_obj(p.obj);
+        p.obj = 0;              // (made again when there is room)
+        p.pending = false;
+        p.parked = false;
+    }
+}
+
 void priv_session_frame() {
     if (!g_net || g_net->self < 0 || !priv_in_flight()) {
         return;
@@ -1629,6 +1768,7 @@ void priv_session_frame() {
     if (wanted && now - g_net->sceneAt >= kSceneEveryMs) {
         send_scene(now, g_net->nav >= 0 && owner_of(g_system, g_net->nav) == g_net->self);
     }
+    govern_memory(now, pos);
     // theirs, in our space (before the encounter ships: the first claim on the game's memory)
     for (int s = 0; s < kMaxSeats; s++) {
         if (s == g_net->self) {
@@ -1669,6 +1809,44 @@ void priv_session_frame() {
     }
     frame_npcs(now, pos);
     frame_chats_and_shots();
+}
+
+void priv_session_force_release() { g_forceRelease++; }
+
+void priv_session_our_death() {
+    if (!g_net || g_net->self < 0) {
+        return;
+    }
+    NetworkMessage msg;
+    PrivState *st = msg.mutable_priv_state();
+    st->set_player((Bit32u)g_net->self);
+    st->set_frame(++g_net->frame);
+    st->set_system(g_system);
+    st->set_x((Bit32s)g_net->lastX);
+    st->set_y((Bit32s)g_net->lastY);
+    st->set_z((Bit32s)g_net->lastZ);
+    st->set_destroyed(true);
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
+            g_net->peers[i]->conn.send(msg);
+        }
+    }
+    wclog(1, "Privateer: our ship's destruction told to the room");
+}
+
+void priv_session_counts(int &pilots, int &npcs, int &pods) {
+    pilots = npcs = pods = 0;
+    if (!g_net) {
+        return;
+    }
+    for (int s = 0; s < kMaxSeats; s++) {
+        if (g_net->puppets[s].obj) pilots++;
+    }
+    for (int k = 0; k < kNpcCap; k++) {
+        if (g_net->npcs[k].used && g_net->npcs[k].obj) {
+            if (g_net->npcs[k].pod) pods++; else npcs++;
+        }
+    }
 }
 
 bool priv_session_active() {

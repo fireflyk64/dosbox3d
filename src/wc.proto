@@ -527,6 +527,7 @@ message PrivState {
     optional sint32 vx = 9;
     optional sint32 vy = 10;
     optional sint32 vz = 11;
+    optional bool destroyed = 12;       // its last: the ship was destroyed (reliable; its puppets die too)
 }
 message NetworkMessage {
     optional Connect connect = 1;

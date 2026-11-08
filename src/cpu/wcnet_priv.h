@@ -136,7 +136,14 @@ bool priv_session_chat(const std::string &text);
 
 // The game's near heap: the bytes free between its top and the frame's stack (a ship costs some 600).
 int priv_near_free();
-void priv_near_heap(int &total, int &largest, int &blocks);   // the game's near heap: free bytes, its largest free block, blocks
+void priv_near_heap(int &total, int &largest, int &blocks);
+bool priv_near_heap_read(int &total, int &largest, int &blocks);   // false: the ring not to be trusted at this moment
+int priv_near_heap_lowest();                                        // the lowest free seen in flight, -1 none yet
+int priv_near_heap_low_take();                                      // the lowest free since the last call (the governor's)
+void priv_session_counts(int &pilots, int &npcs, int &pods);        // our puppets made in this flight
+void priv_calls_flush(const char *why);                            // every queued call of ours dropped (the flight is over)
+void priv_session_our_death();                                    // (our ship was destroyed: the others are told)
+void priv_session_force_release();                                // (a test aid: one puppet given back at the next frame)   // the game's near heap: free bytes, its largest free block, blocks
 void priv_ship_delete(Bit16u obj, int mode);
 // Cargo pods (type CDBRTYPE, vtable 0x1584: section 13): a ship's layout up to the alive flag; at +0x4B a list of
 // cargo records (far; each given as its 0x38-byte block: the commodity's name, then the record), at +0x56 the units

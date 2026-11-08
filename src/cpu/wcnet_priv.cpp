@@ -81,7 +81,8 @@ enum {
     kCargoRecordAt = 0x10,
     kFarMalloc = 0x089D,            // seg000:089D(size dword): the game's far malloc, dx:ax
     kNearHeapTop = 0x3FFC,          // the near heap's end (the game's own allocator, seg142:012B: error 1308 when SP is below it)
-    kNearFreeList = 0x3FF8,         // the head of its free blocks' ring (a block: size at +0, bit 0 used; +2 the block before; +4/+6 the ring)
+    kNearFreeList = 0x3FF8,
+    kNearHeapLock = 0x4001,         // set by the allocator while it works on the ring (a walk then could see it torn)         // the head of its free blocks' ring (a block: size at +0, bit 0 used; +2 the block before; +4/+6 the ring)
     // A ship's cast (its AI file, DATA/AIDS: name, lines, face), the ship's own copy in the far heap: the controller's
     // +0xA is a far pointer to it; the name block (far) at its +0xA ("Merchant", 12 bytes), its face at +0xE (the
     // cast file's INFO; 14 the merchant woman), the message sets (far) at +0xF.. : the lines the player may send
@@ -151,8 +152,12 @@ struct PrivCall {
     std::vector<Bit32u> args;       // the words in the order the function declares them
     void (*done)(int tag, Bit16u ax, Bit16u dx);
     void (*doneObj)(int tag, Bit16u obj);      // (a spawn's: the object made, 0 none)
+    void (*cancel)(int tag);                    // the call dropped before it ran (its guard failed, or the flight changed)
     int tag;
-    PrivCall() : para(0), off(0), done(NULL), doneObj(NULL), tag(0) {}
+    // the object the call works on: checked just before it runs (still that kind, in the scene, its damage model the
+    // same): what was queued in one frame may have died, been freed or been left behind by the next
+    Bit16u guardObj, guardVtable, guardModelOff, guardModelSeg;
+    PrivCall() : para(0), off(0), done(NULL), doneObj(NULL), cancel(NULL), tag(0), guardObj(0), guardVtable(0), guardModelOff(0), guardModelSeg(0) {}
 };
 enum { kStackArg = 0x10000 };
 std::deque<PrivCall> g_calls;
@@ -162,6 +167,38 @@ struct Saved {
     Bit32u eax, ebx, ecx, edx, esi, edi, ebp, flags;
     Bit16u ds, es;
 } g_saved;
+
+static bool call_guard_ok(const PrivCall &c) {
+    if (!c.guardObj) {
+        return true;
+    }
+    if (priv_r16(c.guardObj) != c.guardVtable || !priv_scene_has(c.guardObj)) {
+        return false;
+    }
+    if (c.guardModelSeg && (priv_r16((Bit16u)(c.guardObj + 0x56)) != c.guardModelOff || priv_r16((Bit16u)(c.guardObj + 0x58)) != c.guardModelSeg)) {
+        return false;
+    }
+    return true;
+}
+
+static void call_dropped(const PrivCall &c, const char *why) {
+    wclog(2, "Privateer: a call of ours to %04X:%04X dropped (%s)", c.para, c.off, why);
+    if (c.cancel) {
+        c.cancel(c.tag);
+    } else if (c.doneObj) {
+        c.doneObj(c.tag, 0);
+    }
+}
+
+// Every call queued and not yet running dropped: the flight they were queued in is over (a landing, a death, a jump)
+void calls_flush(const char *why) {
+    const size_t keep = g_saved.active ? 1 : 0;     // (the one running finishes: it returns to our place)
+    while (g_calls.size() > keep) {
+        PrivCall c = g_calls.back();
+        g_calls.pop_back();
+        call_dropped(c, why);
+    }
+}
 
 bool run_calls() {
     if (g_saved.active && reg_ip == g_saved.ip && SegValue(cs) == g_saved.cs && reg_sp == g_saved.back) {
@@ -189,6 +226,11 @@ bool run_calls() {
         }
     } else if (g_saved.active) {
         return false;               // (the place reached again inside our call: the game's own business)
+    }
+    while (!g_calls.empty() && !call_guard_ok(g_calls.front())) {
+        PrivCall c = g_calls.front();
+        g_calls.pop_front();
+        call_dropped(c, "its object is gone");
     }
     if (g_calls.empty()) {
         return false;
@@ -245,6 +287,56 @@ enum { kSeg042 = 0x1DFE, kNpcThink = 0x0944, kHeldCap = 16, kSeg053 = 0x23BA };
 // The game's error report, seg050:0006(code): 1303 is its near heap with no block big enough (the program then ends,
 // and PRIV.EXE starts it again at its title).
 enum { kSeg050 = 0x20F8, kGameError = 0x0006 };
+// The game's near malloc, seg142:012B(size): watched for the largest request and the stack's headroom at each (SP less
+// the heap's end at ds:3FFC: the allocator's own test, error 1308 when SP is below it), ours (a call of the layer's in
+// progress) apart from the game's
+enum { kSeg142 = 0x4E42, kNearMalloc = 0x012B };
+// A dying ship's hold ejected as cargo pods: seg053:0C0B calls seg036:1692(hold far, scene, 1) with the ship's
+// allocation in DI (the ship less 2; measured with PRIVWATCH: a merchant killed, its 3-4 pods made by seg036:0C90).  A puppet's death must drop nothing: its owner's game drops the real pods and shares
+// them (else every game drops its own and shares them too: the cargo of one death in every game times every game)
+enum { kDeathEject = 0x0C0B, kDeathEjectAfter = 0x0C10 };
+// The stack's high-water mark (a measurement): DGROUP's top 0xFFF6 - _stklen (ds:620A) up is the stack, below it the
+// heap (seg142:0004).  At a frame's entry the unused stack below SP (less 256 bytes) is painted with a pattern; the
+// lowest byte no longer the pattern is the deepest the stack has been since, interrupts and all.
+enum { kStackLen = 0x620A, kStackPaint = 0x5A };
+struct StackPaint {
+    bool painted;
+    Bit16u from, to;            // painted [from, to)
+    int deepest;                // the lowest headroom over the heap's end seen (1 << 30: none)
+    StackPaint() : painted(false), from(0), to(0), deepest(1 << 30) {}
+} g_paint;
+
+static void stack_paint_load() {
+    // at the program's load, before anything ran: the stack's place below its top 1 KB
+    if (!getenv("PRIVSTACK")) return;
+    const Bit16u stklen = priv_r16(kStackLen);
+    g_paint.from = (Bit16u)((0xFFF6 - stklen) & ~1) + 16;
+    g_paint.to = 0xFFF6 - 1024;
+    for (Bit32u a = g_paint.from; a < g_paint.to; a++) priv_w8((Bit16u)a, kStackPaint);
+    g_paint.painted = true;
+    g_paint.deepest = 1 << 30;
+    wclog(1, "Privateer: stack painted %04X-%04X at the load (_stklen %04X: the stack %04X-FFF6; the heap from [0163] %04X)", g_paint.from,
+          g_paint.to, stklen, (Bit16u)(0xFFF6 - stklen), priv_r16(0x0163));
+}
+
+static void stack_paint_frame() {
+    if (g_paint.painted) {
+        Bit32u a = g_paint.from;
+        while (a < g_paint.to && priv_r8((Bit16u)a) == kStackPaint) a++;
+        const int headroom = (int)a - (int)g_paint.from;
+        if (headroom < g_paint.deepest) {
+            g_paint.deepest = headroom;
+            wclog(1, "Privateer: the stack has been within %d bytes of the heap's end (%04X; painted down to %04X, SP now %04X)", headroom + 16,
+                  (Bit16u)a, g_paint.from, reg_sp);
+        }
+    }
+}
+
+struct AllocWatch {
+    int largest, largestSecond, count;
+    int headroomGame, headroomOurs;     // the lowest seen (1 << 30: none yet)
+    AllocWatch() : largest(0), largestSecond(0), count(0), headroomGame(1 << 30), headroomOurs(1 << 30) {}
+} g_alloc;
 std::vector<Bit16u> g_heldAi;
 // A held controller let think for some frames: a puppet's line is played (its text on the comm line) only as its
 // own AI's think runs; the ship's place and attitude are ours again at the next frame, and its guns are kept quiet
@@ -259,6 +351,9 @@ struct HitJob {
 };
 std::vector<HitJob> g_hits;     // (by tag; a slot is reused when its job is done)
 void hit_step(int tag, Bit16u ax, Bit16u dx);
+void hit_cancel(int tag) {
+    if (tag >= 0 && tag < (int)g_hits.size()) g_hits[tag].obj = 0;
+}
 
 bool queue_call(const PrivCall &c);
 void hit_call(int tag, Bit16u para, Bit16u off, const std::vector<Bit32u> &args) {
@@ -267,6 +362,11 @@ void hit_call(int tag, Bit16u para, Bit16u off, const std::vector<Bit32u> &args)
     c.off = off;
     c.args = args;
     c.done = hit_step;
+    c.cancel = hit_cancel;
+    c.guardObj = g_hits[tag].obj;
+    c.guardVtable = kShipVtable;
+    c.guardModelOff = g_hits[tag].modelOff;
+    c.guardModelSeg = g_hits[tag].modelSeg;
     c.tag = tag;
     if (!queue_call(c)) {
         g_hits[tag].obj = 0;
@@ -447,6 +547,7 @@ void priv_program_loaded(const char *name, Bit16u loadSeg, Bit16u psp) {
     g_ds = ds;
     g_psp = psp;
     g_nextReportMs = PIC_FullIndex() + 1000;
+    stack_paint_load();
     hooks_game_changed();       // (the dispatcher's table: our places)
     wclog(1, "Privateer%s: PRCD.EXE loaded at %04X (PSP %04X, data segment %04X), command line \"%s\"",
           g_rf ? " (Righteous Fire)" : "", loadSeg, psp, ds, tail.c_str());
@@ -463,6 +564,9 @@ bool priv_program_ended(Bit16u psp) {
     return true;
 }
 
+extern int g_heapLowSecond;
+static void watch_tick();
+
 void priv_tick() {
     priv_session_tick();
     if (!g_found) {
@@ -472,19 +576,28 @@ void priv_tick() {
     if (g_tracing) {
         trace_step(now);
     }
+    watch_tick();
     if (now < g_nextReportMs) {
         return;
     }
     g_nextReportMs = now + 1000;
+    stack_paint_frame();
     static unsigned lastFrames;
     const unsigned frames = priv_controls_frames();
     if (frames != lastFrames) {
-        int total, largest, blocks;
-        priv_near_heap(total, largest, blocks);
-        wclog(2, "Privateer: t=%.1f, %u keyboard frames, controls: %s, near heap free %d (largest block %d, %d blocks)", now / 1000.0,
-              frames - lastFrames, priv_control_mode(), total, largest, blocks);
+        int total, largest, blocks, pilots, npcs, pods;
+        if (!priv_near_heap_read(total, largest, blocks)) total = largest = blocks = -1;
+        priv_session_counts(pilots, npcs, pods);
+        wclog(2, "Privateer: t=%.1f, %u keyboard frames, controls: %s, near heap free %d (lowest this second %d, ever %d; largest block %d, %d blocks); "
+                 "ours here: %d pilots, %d encounter ships, %d pods; %d allocations, the largest %d (ever %d); stack headroom at one: the game's %d, ours %d",
+              now / 1000.0, frames - lastFrames, priv_control_mode(), total, g_heapLowSecond < (1 << 30) ? g_heapLowSecond : -1,
+              priv_near_heap_lowest(), largest, blocks, pilots, npcs, pods, g_alloc.count, g_alloc.largestSecond, g_alloc.largest,
+              g_alloc.headroomGame < (1 << 30) ? g_alloc.headroomGame : -1, g_alloc.headroomOurs < (1 << 30) ? g_alloc.headroomOurs : -1);
+        g_alloc.count = 0;
+        g_alloc.largestSecond = 0;
         lastFrames = frames;
     }
+    g_heapLowSecond = 1 << 30;
 }
 
 // The video aid's steady turn (!privturn): each frame our matrix is rotated toward the target by at most the rate,
@@ -547,11 +660,33 @@ bool priv_check_hooks(Bit32u ip) {
     if (ip == kControlsEntry && codeSeg == (Bit16u)(g_privLoadSeg + kSeg088)) {
         g_frameSp = reg_sp;
         if (!g_saved.active) {
+            stack_paint_frame();
             turn_step();
             priv_spheres_refresh();
             priv_session_frame();       // (once a frame in flight: the puppets placed, our state sent)
         }
         run_calls();
+        return true;
+    }
+    if (ip == kDeathEject && codeSeg == (Bit16u)(g_privLoadSeg + kSeg053)) {
+        const Bit16u ship = (Bit16u)(reg_di + 2);       // (DI is the ship's allocation; our pointers are 2 bytes in)
+        if (priv_session_is_puppet(ship, 0)) {
+            reg_eip = kDeathEjectAfter;     // (its add sp,8 cleans the call's arguments)
+            static unsigned skipped;
+            if (++skipped % 10 == 1) {
+                wclog(2, "Privateer: a puppet's death (ds:%04X) drops no cargo here: its owner's game shares the real pods (%u so far)", ship, skipped);
+            }
+        }
+        return true;
+    }
+    if (ip == kNearMalloc && codeSeg == (Bit16u)(g_privLoadSeg + kSeg142)) {
+        const int size = mem_readw(SegPhys(ss) + reg_sp + 4);
+        const int headroom = (int)reg_sp - (int)priv_r16(kNearHeapTop);
+        if (size > g_alloc.largest) g_alloc.largest = size;
+        if (size > g_alloc.largestSecond) g_alloc.largestSecond = size;
+        g_alloc.count++;
+        int &low = g_saved.active ? g_alloc.headroomOurs : g_alloc.headroomGame;
+        if (headroom < low) low = headroom;
         return true;
     }
     if (ip == kGameError && codeSeg == (Bit16u)(g_privLoadSeg + kSeg050)) {
@@ -587,6 +722,11 @@ bool priv_check_hooks(Bit32u ip) {
                   hitter ? priv_r16(hitter) : 0, (Bit16s)mem_readw(bp + 0xC), (Bit16s)mem_readw(bp - 6));
         }
         priv_session_hit(target, (Bit16s)mem_readw(bp + 0xC), (Bit16s)mem_readw(bp - 6));
+        // a puppet takes no damage here: its owner's game applies the hit (sent above) and says how it stands (else it
+        // would die here alone, explode and be made again over and over under fire)
+        if (priv_session_is_puppet(target, 0)) {
+            mem_writew(bp - 6, 0);
+        }
         return true;
     }
     if (ip == kFireGuns && codeSeg == (Bit16u)(g_privLoadSeg + kSeg120)) {
@@ -630,6 +770,8 @@ void priv_watch_list(void (*watch)(Bit16u ip)) {
     watch(kNpcThink);
     watch(kWingSpawn);
     watch(kGameError);
+    watch(kNearMalloc);
+    watch(kDeathEject);
     watch(kHitPlace);
     watch(kFireGuns);
     const std::vector<WatchPlace> &w = watch_places();
@@ -866,6 +1008,11 @@ bool priv_script_item(const std::string &item, double t) {
         g_turn.rate = degs * 3.14159265 / 180.0;
         g_turn.until = PIC_FullIndex() + 1000.0 * secs;
         wclog(1, "key script %.1fs: turning toward the nearest %s at %d degrees a second for %d s", t, g_turn.pod ? "pod" : "ship", degs, secs);
+        return true;
+    }
+    if (item.compare(0, 12, "!privrelease") == 0 && g_found) {
+        wclog(1, "key script %.1fs: one puppet to be given back (near heap free %d)", t, priv_near_free());
+        priv_session_force_release();
         return true;
     }
     if (item.compare(0, 10, "!privpeace") == 0 && g_found) {
@@ -1215,6 +1362,10 @@ struct PodFill {
 };
 std::vector<PodFill> g_podFills;
 
+static void pod_fill_cancel(int tag) {
+    if (tag >= 0 && tag < (int)g_podFills.size()) g_podFills[tag].obj = 0;
+}
+
 static void pod_fill_step(int tag, Bit16u ax, Bit16u dx) {
     if (tag < 0 || tag >= (int)g_podFills.size() || !g_podFills[tag].obj) {
         return;
@@ -1235,8 +1386,15 @@ static void pod_fill_step(int tag, Bit16u ax, Bit16u dx) {
         c.args.push_back(8);
         c.args.push_back(0);
         c.done = pod_fill_step;
+        c.cancel = pod_fill_cancel;
+        c.guardObj = f.obj;
+        c.guardVtable = kPodVtable;
         c.tag = tag;
         if (!queue_call(c)) f.obj = 0;
+        return;
+    }
+    if (!priv_pod_is(f.obj) || !priv_scene_has(f.obj)) {
+        f.obj = 0;          // (the pod gone while its blocks were given: they stay the game's far heap's, unused)
         return;
     }
     // the node given: the block written (its own address in it: the record's +0 and the word before the record),
@@ -1270,6 +1428,9 @@ static void pod_fill_step(int tag, Bit16u ax, Bit16u dx) {
         c.args.push_back(kCargoBlockBytes);
         c.args.push_back(0);
         c.done = pod_fill_step;
+        c.cancel = pod_fill_cancel;
+        c.guardObj = f.obj;
+        c.guardVtable = kPodVtable;
         c.tag = tag;
         if (!queue_call(c)) f.obj = 0;
         return;
@@ -1321,6 +1482,9 @@ void priv_pod_fill(Bit16u obj, const std::vector<std::vector<Bit8u> > &records, 
     c.args.push_back(kCargoBlockBytes);
     c.args.push_back(0);
     c.done = pod_fill_step;
+    c.cancel = pod_fill_cancel;
+    c.guardObj = f.obj;
+    c.guardVtable = kPodVtable;
     c.tag = (int)tag;
     if (!queue_call(c)) f.obj = 0;
 }
@@ -1534,6 +1698,10 @@ bool priv_ship_say(Bit16u obj, const char *name, const char *text, int face) {
     return true;
 }
 
+void priv_calls_flush(const char *why) {
+    calls_flush(why);
+}
+
 void priv_hit_apply(Bit16u obj, int loc, int damage) {
     if (!priv_ship_is_alive(obj) || loc < 0 || loc > 3 || damage <= 0) {
         return;
@@ -1566,24 +1734,77 @@ void priv_hit_apply(Bit16u obj, int loc, int damage) {
     hit_call(tag, kSeg101, kModelShields, a);
 }
 
-void priv_near_heap(int &total, int &largest, int &blocks) {
+bool priv_near_heap_read(int &total, int &largest, int &blocks) {
     // The game's near heap (seg142:012B, its own allocator, not Borland's): a ring of free blocks from ds:3FF8, each
     // its size at +0 and the next at +6; a request walks the ring for the first block big enough (error 1303 when
-    // there is none).  Nothing grows it: what the ring holds is all there is.
+    // there is none).  Nothing grows it: what the ring holds is all there is.  False: not to be trusted (the
+    // allocator at work, or a ring that does not close)
     total = largest = blocks = 0;
-    if (!g_found) {
-        return;
+    if (!g_found || priv_r8(kNearHeapLock)) {
+        return false;
     }
     const Bit16u head = priv_r16(kNearFreeList);
+    if (!head) {
+        return true;        // (nothing free at all)
+    }
     Bit16u b = head;
-    for (int i = 0; b && i < 4000; i++) {
+    for (int i = 0; i < 1000; i++) {
         const int size = priv_r16(b) & ~1;
+        if (size <= 0 || size >= 0x8000) return false;
         total += size;
         blocks++;
         if (size > largest) largest = size;
         b = priv_r16((Bit16u)(b + 6));
-        if (b == head) break;
+        if (b == head) return true;
+        if (!b) return false;
     }
+    return false;
+}
+
+void priv_near_heap(int &total, int &largest, int &blocks) {
+    priv_near_heap_read(total, largest, blocks);
+}
+
+// The low-water mark of the near heap, sampled every tick (the allocator's lock respected), and our ship's death
+int g_heapLowSecond = 1 << 30, g_heapLowEver = 1 << 30, g_heapLowTake = 1 << 30;
+Bit16u g_watchShip;
+bool g_watchAlive;
+
+static void watch_tick() {
+    int total, largest, blocks;
+    if (priv_in_flight() && priv_near_heap_read(total, largest, blocks)) {
+        if (total < g_heapLowSecond) g_heapLowSecond = total;
+        if (total < g_heapLowEver) g_heapLowEver = total;
+        if (total < g_heapLowTake) g_heapLowTake = total;
+    }
+    const Bit16u ship = priv_r16(kPlayerShip);
+    if (ship != g_watchShip) {
+        g_watchShip = ship;
+        g_watchAlive = ship && priv_r8((Bit16u)(ship + kShipAlive)) != 0;
+    } else if (ship) {
+        const bool alive = priv_r8((Bit16u)(ship + kShipAlive)) != 0;
+        if (g_watchAlive && !alive) {
+            priv_session_our_death();
+            int pilots, npcs, pods;
+            priv_session_counts(pilots, npcs, pods);
+            wclog(1, "Privateer: our ship was destroyed (near heap free %d, its lowest %d; ships of others here: %d pilots, %d encounter ships, %d pods)",
+                  priv_near_free(), g_heapLowEver, pilots, npcs, pods);
+        }
+        g_watchAlive = alive;
+    }
+}
+
+int priv_near_heap_lowest() { return g_heapLowEver < (1 << 30) ? g_heapLowEver : -1; }
+
+int priv_near_heap_low_take() {
+    // the lowest free since the last call (every tick's sample), or now's when none was taken; -1 unknown
+    int low = g_heapLowTake;
+    g_heapLowTake = 1 << 30;
+    if (low >= (1 << 30)) {
+        int total, largest, blocks;
+        low = priv_near_heap_read(total, largest, blocks) ? total : -1;
+    }
+    return low;
 }
 
 int priv_near_free() {
