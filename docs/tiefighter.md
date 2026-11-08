@@ -354,7 +354,7 @@ section 7 as it is worked on.
    |---|---|---|
    | T/A | T/A + T/A | HA1W |
    | T/D | T/D + T/A | B9M2..B9M6, HD1W, HD2W, HD3M |
-   | T/I | T/I + T/F (the user, 2026-11-07: "When we aren't adding ships the types should remain as is") | B5M1 (the minefield, unshielded), HI1W, HI3M |
+   | T/I | T/F + T/F for B5M1 and HI1W; T/I + T/F for HI3M (the user, 2026-11-07: "When we aren't adding ships the types should remain as is", then "for the harkov minefield it would be best to replace the 1 T/I with 2 T/F ... examine other solo t/i missions and see if they are beatable with 2 t/f"; step 9's "The T/I missions") | B5M1 (the minefield, unshielded), HI1W, HI3M |
    | gunboat | gunboat + a standard Imperial shuttle (not the escort shuttle; the gunboat's cockpit for the shuttle for now) | B10M1, B10M2, HG1W, HG3M |
    | T/F | T/F + T/F | B1M1, HF1W, HF3M, HF4M, TRAIN |
    | missile boat | missile boat + a standard Imperial shuttle (the user, later: "otherwise the gunboat could do some ion cannon shenanigans and the designers probably didn't think of that") | B10M5, B10M6, B11M1..B11M7, B12M6, B13M1, B13M4, HM1W, HM2W |
@@ -980,6 +980,45 @@ the Jedi (seen from outside) as the reference.
 * **Open.**  The copy's goals are the player's group's (usually none).  (The
   T/I's timing judgement: no longer one, the T/I flies as it is; three
   machines: measured, step 10.)
+
+### Step 9: the T/I missions (2026-11-07)
+
+The user: "for the harkov minefield it would be best to replace the 1 T/I with 2
+T/F more fitting in some ways can you examine other solo t/i missions and see if
+they are beatable with 2 t/f ? make sure there are some non solo t/i missions".
+
+* **The T/I's missions.**  Eight put the player in T/Is: three alone (B5M1,
+  HI1W, HI3M) and five in a group of three (B1M4, B2M3, B4M4, HI2W, HI4M; the
+  Combat Chamber's T/I row's HI2W too, the challenge's own being the T/F row's):
+  those fly as they are, a T/I for each pilot.
+* **The craft** (spec_data, 0xC7AB4, in the program): the T/F 500 hull, speed
+  225, two lasers; the T/I 1000 hull, speed 249, four lasers; neither has
+  shields.  Two T/Fs have a T/I's guns and hull between them, 10% slower.  A
+  room's flight ends with either pilot down, so a pair is as strong as its
+  weaker craft: a T/F in T/I + T/F as in T/F + T/F.
+* **The goals** (the flight groups' and the mission's own, the three records
+  after the messages: a trigger's type 3 is the ship class by genusconvert,
+  class 6 the mines):
+  * B5M1 (win type 3, the secret order): inspect the shuttle Lambda and the
+    containers Chi and Psi, the frigate Osprey arrived (on reinforcements
+    called, or the containers inspected, 25 s later); the mines a bonus.  No
+    craft of a goal leaves.
+  * HI1W: inspect six craft that never leave; a Sunnida captured (secondary);
+    B-wings 80 s after a boarding, and more when they die (bonus).
+  * HI3M: 100% of the mines destroyed (ten), bombers and T/Is on our side, three
+    B-wings at 20 s.
+  No T/F mission in the game has mines (every minefield is flown in a shielded
+  craft but these two T/I missions).
+* **Measured** (the video rig's pilot at the mines, `!tiesteer=mines:1.3`,
+  both pilots; it closes to a kilometre and shoots, no human's care): HI3M as
+  two T/Fs, the first down at 90.5 s, 2 of 10 mines destroyed; as T/I + T/F,
+  the T/F down at 83.5 s, none; B5M1 as two T/Fs, the first down at 92.5 s, 3
+  of 8 (as T/I + T/F, 93.5 s, 3).  HI1W as two T/Fs: Gamma 1 and Gamma 2, one a
+  pilot, four minutes without a loss.
+* **So**: B5M1 and HI1W fly as two T/Fs (`ti_flown_as_tfs`; the group retyped,
+  a craft for each pilot); HI3M stays T/I + T/F (its goal is the ten mines:
+  as T/I + T/F the T/I can clear them while the T/F keeps clear).
+  `WCNET_TIE_TI_AS_TF=<missions>` (or `none`) replaces the list for a rig.
 
 ### Step 11: the page's picture and options for TIE Fighter (2026-11-06)
 

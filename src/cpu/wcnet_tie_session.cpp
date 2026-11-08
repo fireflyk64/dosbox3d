@@ -1966,6 +1966,28 @@ void tie_session_mission_path() {
 // flies the same as the second ("The third should be same as the guest in all cases").
 // The user, 2026-11-07: "When we aren't adding ships the types should remain as is": the mission's own craft keep their type
 // (the T/I stays a T/I, its partner a T/F beside it); a group with craft for every pilot flies as it is.
+// ... except where the user chose two T/Fs for a T/I flown alone (2026-11-07: "for the harkov minefield it would be best
+// to replace the 1 T/I with 2 T/F more fitting in some ways can you examine other solo t/i missions and see if they are
+// beatable with 2 t/f"): the player's group retyped T/F, a craft for each pilot.  B5M1 (Harkov's minefield: its goals
+// inspections and the frigate's arrival, the mines a danger, not a goal) and HI1W (customs inspections: nothing leaves,
+// no mines, its B-wings late and a bonus).  Not HI3M: its goal is every one of ten mines destroyed, which a T/F (half a
+// T/I's hull and guns) would face with half the margin; as T/I + T/F the T/I can do it while the T/F keeps clear.
+// WCNET_TIE_TI_AS_TF=<missions, comma-separated> (or "none") replaces the list (the rigs' comparisons).
+bool ti_flown_as_tfs(const std::string &mission) {
+    static const char *const kMissions[] = { "b5m1iw", "hi1w" };
+    std::string m;
+    for (size_t i = 0; i < mission.size(); i++) m += (char)tolower((unsigned char)mission[i]);
+    const char *env = getenv("WCNET_TIE_TI_AS_TF");
+    if (env) {
+        const std::string list = std::string(",") + env + ",";
+        return list.find("," + m + ",") != std::string::npos;
+    }
+    for (size_t k = 0; k < sizeof(kMissions) / sizeof(kMissions[0]); k++) {
+        if (m == kMissions[k]) return true;
+    }
+    return false;
+}
+
 int paired_type(int type) {
     switch (type) {
     case 6: return 5;       // T/I + T/F (the mission's T/I as it is)
@@ -2241,6 +2263,15 @@ void make_pairing(bool again) {
     if (count != 1) {
         return;             // (wingmen of its own: each pilot takes one, the seats' way)
     }
+    if (type == 6 && ti_flown_as_tfs(tie_mission_name())) {
+        tie_fly_group_as(pfg, 5);   // (the seats then give each pilot a T/F of the group)
+        g_net->pairedType = 5;
+        if (!again) {
+            notice("Flown by two: T/Fs for the mission's T/I");
+        }
+        wclog(1, "TIE: flown by two%s: the mission's T/I a T/F, a T/F for each pilot", again ? " (again: the mission read again)" : "");
+        return;
+    }
     const int second = paired_type(type);
     if (!second || numFg >= 48) {
         return;
@@ -2300,6 +2331,11 @@ void keep_pairing() {
         const Bit32u to = tie::kFlightGroups + (Bit32u)g_net->pairedFg * tie::kFlightGroupSize;
         if (numFg == g_net->pairedFg + 1 && tie_r8(to + 0x32) == g_net->pairedType) {
             return;
+        }
+    } else {
+        const int pfg = tie_r8(tie::kPstate + 0x0A);
+        if (pfg < numFg && tie_r8(tie::kFlightGroups + (Bit32u)pfg * tie::kFlightGroupSize + 0x32) == g_net->pairedType) {
+            return;     // (the T/I's group still T/Fs)
         }
     }
     make_pairing(true);
