@@ -10,10 +10,10 @@
 #include "logic.h"
 #include "vdu.h"
 #include "vduparts.h"
+#include "lightfield.h"                 /* (lf_sqrt) */
 
 #define SHIELD_LIT 79                   /* the survival display's colours (panel.c; the user's, 2026-10-23) */
 #define ARMOUR_LIT 70
-#define WIRE UI_WHITE
 #define TEXT UI_AMBER3                  /* the pages' text: the readouts' small font (panel_tiny; the user: the VDUs
                                            take the small font, 2026-10-31), amber, the chosen line white */
 #define FH (PANEL_TINY_H + 1)           /* a line of it: five rows and a gap */
@@ -22,8 +22,6 @@ static int text(int x, int y, const char *s, int lit, int y0, int y1)
 {
     return panel_tiny(x, y, s, lit ? UI_WHITE : TEXT, y0, y1);
 }
-#define BAR 2                           /* an armour bar's thickness, px */
-#define GAP 2                           /* between the wire and the armour, the armour and the shield */
 
 /* a line cut to a width: the text's last characters dropped until it fits */
 static void fit(char *s, int w)
@@ -251,10 +249,11 @@ static void wire_box(int type, int x, int y, int w, int h, int *bx, int *by, int
     *by = y + (h - *bh) / 2;
 }
 
-/* the outline: a pixel of the ship with a side that is not.  (This runs every frame a page shows a ship: the columns are worked out
- * once, not per pixel.) */
+/* the outline: a pixel of the ship with a side that is not, in four colours (c: the front's, the rear's, the left's, the
+ * right's), the box cut along its diagonals: the nose's part, the tail's, the left wing's and the right's (uneven, but
+ * no pixel in two).  (This runs every frame a page shows a ship: the columns are worked out once, not per pixel.) */
 #define WIRE_MOST 128                   /* the widest box it draws; a VDU's is under 90 */
-void vdu_wire(int type, int x, int y, int w, int h, unsigned char colour, int y0, int y1)
+static void wire4(int type, int x, int y, int w, int h, const unsigned char *c, int y0, int y1)
 {
     const unsigned char __far *m = collide_mask((uint16_t)type);
     unsigned char col[WIRE_MOST];
@@ -263,13 +262,18 @@ void vdu_wire(int type, int x, int y, int w, int h, unsigned char colour, int y0
         return;
     wire_box(type, x, y, w, h, &bx, &by, &bw, &bh);
     if (!m || bw > WIRE_MOST) {         /* (no silhouettes: its box) */
-        gfx_frame(bx, by, bw, bh, colour, y0, y1);
+        gfx_fill(bx, by, bw, 1, c[0], y0, y1);
+        gfx_fill(bx, by + bh - 1, bw, 1, c[1], y0, y1);
+        gfx_fill(bx, by + 1, 1, bh - 2, c[2], y0, y1);
+        gfx_fill(bx + bw - 1, by + 1, 1, bh - 2, c[3], y0, y1);
         return;
     }
     for (px = 0; px < bw; px++)
         col[px] = (unsigned char)col_of(px, bw);
     for (py = 0; py < bh; py++) {
         unsigned char __far *d;
+        unsigned dy = (unsigned)(2 * py + 1 > bh ? 2 * py + 1 - bh : bh - 2 * py - 1) * (unsigned)bw;   /* (each at the
+                                           box's scale: under 256 x 128) */
         if (by + py < y0 || by + py >= y1)
             continue;
         d = vid_row(by + py) + bx;
@@ -279,9 +283,18 @@ void vdu_wire(int type, int x, int y, int w, int h, unsigned char colour, int y0
         for (px = 0; px < bw; px++)
             if (TOP(m, here, col[px])
                 && (!px || !TOP(m, here, col[px - 1]) || px + 1 == bw || !TOP(m, here, col[px + 1])
-                    || up < 0 || !TOP(m, up, col[px]) || down < 0 || !TOP(m, down, col[px])))
-                d[px] = colour;
+                    || up < 0 || !TOP(m, up, col[px]) || down < 0 || !TOP(m, down, col[px]))) {
+                unsigned dx = (unsigned)(2 * px + 1 > bw ? 2 * px + 1 - bw : bw - 2 * px - 1) * (unsigned)bh;
+                d[px] = dy >= dx ? c[2 * py >= bh] : c[2 + (2 * px >= bw)];
+            }
     }
+}
+
+void vdu_wire(int type, int x, int y, int w, int h, unsigned char colour, int y0, int y1)
+{
+    unsigned char c[4];
+    c[0] = c[1] = c[2] = c[3] = colour;
+    wire4(type, x, y, w, h, c, y0, y1);
 }
 
 /* a level in a hundred: 0 .. 100 */
@@ -294,54 +307,73 @@ static int pct_of(unsigned long have, unsigned long most)
     return (int)(have * 100 / most);
 }
 
+/* a quarter of a circle about (cx, cy), r px across: the top one (45 to 135 degrees) when dir is -1, the bottom when 1
+ * (the midpoint circle's two octants either side of the upright) */
+static void quarter(int cx, int cy, int r, int dir, unsigned char colour, int y0, int y1)
+{
+    int x = r, y = 0, err = 1 - r;
+    while (y <= x) {
+        int row = cy + dir * x;
+        if (row >= y0 && row < y1) {
+            unsigned char __far *d = vid_row(row);
+            d[cx - y] = d[cx + y] = colour;
+        }
+        y++;
+        if (err < 0)
+            err += 2 * y + 1;
+        else {
+            x--;
+            err += 2 * (y - x) + 1;
+        }
+    }
+}
+
+/* the target as the pilot reads it (the user, 2026-11-08: "the display of the target is way too comprehensive showing
+ * armor and hull. Instead it should show either normal or red if the armor is mostly depleted on one side. Shields
+ * should have 3 strength levels in concentric quarter circles on the back and front like ((( and ))) (except
+ * vertical) ... The rest the player needs to use their imagination"): the outline green, red with any armour face
+ * under ARMOUR_LOW_PCT, then "the armor damage should show which sides are damaged... we may need 4 subquadrants to
+ * draw... it's ok if they aren't even... so the boxes can avoid overlap": the outline green, its part on a side red
+ * when that side's armour face is under ARMOUR_LOW_PCT (wire4: the nose's part the front's, the tail's the rear's, a
+ * wing's its side's); each shield as up to three quarter circles about the ship's middle, over the nose and under the
+ * tail, a third of the shield each (rounded up), none when it is down.  The first is two pixels clear of the corners
+ * of the ship's box, so the outline is fitted smaller to leave them room */
+#define ARMOUR_LOW_PCT 34               /* (the cockpit's own armour bars turn red under it: panel.c armour_colour) */
+#define ARC_GAP 3                       /* the quarter circles' spacing, px */
 void vdu_ship(int type, int s, int x, int y, int side, int y0, int y1)
 {
     const RvShipType __far *t = ship_type((uint16_t)type);
-    int inner = side - 2 * (BAR + GAP) - 2 * (2 + GAP), ix, iy, k, n, pct[6];
-    if (!t || inner < 8)
+    int most, diag, inner, cx = x + side / 2, cy = y + side / 2, r0, k, n;
+    unsigned char c[4];
+    if (!t)
         return;
-    ix = x + (side - inner) / 2;
-    iy = y + (side - inner) / 2;
-    vdu_wire(type, ix, iy, inner, inner, WIRE, y0, y1);
-    /* the levels: the front and rear shields, the front, rear, left and right armour */
-    pct[0] = pct_of(SHIELD(s, 0), SHIELD_MAX(s, 0));
-    pct[1] = pct_of(SHIELD(s, 1), SHIELD_MAX(s, 1));
-    pct[2] = pct_of(ARMOR(s, 0), t->armor_f);
-    pct[3] = pct_of(ARMOR(s, 1), t->armor_r);
-    pct[4] = pct_of(ARMOR(s, 2), t->armor_l);
-    pct[5] = pct_of(ARMOR(s, 3), t->armor_rt);
-    /* the armour: bars just outside the wire, as long as what is left, centred on their side */
-    n = (int)((long)inner * pct[2] / 100);
-    gfx_fill(ix + (inner - n) / 2, iy - GAP - BAR, n, BAR, ARMOUR_LIT, y0, y1);
-    n = (int)((long)inner * pct[3] / 100);
-    gfx_fill(ix + (inner - n) / 2, iy + inner + GAP, n, BAR, ARMOUR_LIT, y0, y1);
-    n = (int)((long)inner * pct[4] / 100);
-    gfx_fill(ix - GAP - BAR, iy + (inner - n) / 2, BAR, n, ARMOUR_LIT, y0, y1);
-    n = (int)((long)inner * pct[5] / 100);
-    gfx_fill(ix + inner + GAP, iy + (inner - n) / 2, BAR, n, ARMOUR_LIT, y0, y1);
-    /* the shields: a bar beyond the front and the rear armour, the full side wide */
-    k = side - 4;
-    n = (int)((long)k * pct[0] / 100);
-    gfx_fill(x + (side - n) / 2, y, n, 2, SHIELD_LIT, y0, y1);
-    n = (int)((long)k * pct[1] / 100);
-    gfx_fill(x + (side - n) / 2, y + side - 2, n, 2, SHIELD_LIT, y0, y1);
+    most = t->hit[0] > t->hit[2] ? t->hit[0] : t->hit[2];
+    diag = (int)lf_sqrt((uint32_t)((long)t->hit[0] * t->hit[0] + (long)t->hit[2] * t->hit[2]));
+    if (most < 1)
+        most = 1;
+    if (diag < most)
+        diag = most;
+    inner = (int)((long)(side - 6 - 4 * ARC_GAP) * most / diag);   /* (the box's half diagonal, 2 px, the arcs: side / 2) */
+    if (inner < 8)
+        return;
+    c[0] = (unsigned char)(pct_of(ARMOR(s, 0), t->armor_f) < ARMOUR_LOW_PCT ? UI_RED : ARMOUR_LIT);
+    c[1] = (unsigned char)(pct_of(ARMOR(s, 1), t->armor_r) < ARMOUR_LOW_PCT ? UI_RED : ARMOUR_LIT);
+    c[2] = (unsigned char)(pct_of(ARMOR(s, 2), t->armor_l) < ARMOUR_LOW_PCT ? UI_RED : ARMOUR_LIT);
+    c[3] = (unsigned char)(pct_of(ARMOR(s, 3), t->armor_rt) < ARMOUR_LOW_PCT ? UI_RED : ARMOUR_LIT);
+    wire4(type, cx - inner / 2, cy - inner / 2, inner, inner, c, y0, y1);
+    r0 = (int)((long)inner * diag / (2L * most)) + 2;
+    for (k = 0; k < 2; k++) {           /* the front shield over the nose, the rear under the tail */
+        int pct = pct_of(SHIELD(s, k), SHIELD_MAX(s, k));
+        for (n = 0; n < (pct * 3 + 99) / 100; n++)
+            quarter(cx, cy, r0 + n * ARC_GAP, k ? 1 : -1, SHIELD_LIT, y0, y1);
+    }
 }
 
 /* --- the pages --- */
 
-/* the hull left, in a hundred */
-static int hull_pct(int s)
-{
-    const RvShipType __far *t = slot_type((int16_t)s);
-    if (!t || !t->hull)
-        return 100;
-    return damagePoints[s] >= t->hull ? 0 : (int)(100 - (long)damagePoints[s] * 100 / t->hull);
-}
-
-
-/* a ship's page (the target's, the own ship's): the wire with its bars, and three lines of text beside it on a wide
- * VDU, else one above and one below */
-static void ship_page(int s, int type, const RvRect __far *r, char *top, const char *a, const char *b, int y0, int y1)
+/* the target's page: the ship (vdu_ship) and two lines of text, its name and its range: beside it on a wide VDU, else
+ * one above and one below */
+static void ship_page(int s, int type, const RvRect __far *r, char *top, const char *a, int y0, int y1)
 {
     int side, x, y;
     if (r->w >= 2 * r->h) {             /* wide and short: the ship at the left, the lines at the right */
@@ -352,7 +384,6 @@ static void ship_page(int s, int type, const RvRect __far *r, char *top, const c
         fit(top, r->x + r->w - 3 - x);
         text(x, y, top, 0, y0, y1);
         text(x, y + FH + 1, a, 0, y0, y1);
-        text(x, y + 2 * (FH + 1), b, 0, y0, y1);
     } else {                            /* a line above, the ship, a line below */
         side = r->h - 2 * (FH + 2) - 2;
         if (side > r->w - 4)
@@ -360,14 +391,12 @@ static void ship_page(int s, int type, const RvRect __far *r, char *top, const c
         fit(top, r->w - 6);
         text(r->x + 3, r->y + 3, top, 0, y0, y1);
         vdu_ship(type, s, r->x + (r->w - side) / 2, r->y + FH + 3, side, y0, y1);
-        x = r->x + 3;
-        y = r->y + r->h - FH - 2;
-        text(x, y, a, 0, y0, y1);
-        text(x + panel_tiny_width(a) + 6, y, b, 0, y0, y1);
+        text(r->x + 3, r->y + r->h - FH - 2, a, 0, y0, y1);
     }
 }
 
-/* the target page: its name, its range, its hull and the ship */
+/* the target page: its name, its range and the ship (no hull, no armour: the user, 2026-11-08, "The rest the player
+ * needs to use their imagination") */
 static void draw_target(const RvRect __far *r, int y0, int y1)
 {
     char name[16], a[16], b[16];
@@ -388,11 +417,7 @@ static void draw_target(const RvRect __far *r, int y0, int y1)
         sprintf(a, "%ld KM", g_sys.target_km);
     else
         strcpy(a, "-");
-    if (sys_level(SYS_TRACK) < 3)
-        sprintf(b, "HULL %d%%", hull_pct(s));
-    else
-        strcpy(b, "HULL -");
-    ship_page(s, gInstanceShipTypes[s], r, name, a, b, y0, y1);
+    ship_page(s, gInstanceShipTypes[s], r, name, a, y0, y1);
 }
 
 /* --- the own ship's pages, damage and weapons (the user's, 2026-11-01): the wire with the whole of its square, no bars (the survival

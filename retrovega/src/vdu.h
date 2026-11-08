@@ -36,9 +36,9 @@ int vdu_draw(int which, const RvRect __far *r, int y0, int y1);
 /* a ship type's top-down outline (its silhouette from above, collide.c's mask; its box when it has none) fitted in
  * the w x h box at (x, y), the nose up, in `colour`; rows y0 .. y1-1 only */
 void vdu_wire(int type, int x, int y, int w, int h, unsigned char colour, int y0, int y1);
-/* a ship (type, in slot s: its shields and armour) as the target and the own-ship pages show it: the wireframe
- * with the front and rear shields as bars outside it and the four armour faces as bars inside, each as long as
- * what is left (the survival display's colours: lit shield, lit armour, spent black) */
+/* a ship (type, in slot s) as the target page shows it, in a side x side square at (x, y): its outline green, the
+ * part of it on a side (nose, tail, either wing) red with that side's armour under a third; its front and rear shields each as up to three quarter circles over the nose
+ * and under the tail, a third of the shield each, none when it is down (the user, 2026-11-08) */
 void vdu_ship(int type, int s, int x, int y, int side, int y0, int y1);
 
 #endif

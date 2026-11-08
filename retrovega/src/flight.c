@@ -3655,6 +3655,7 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.ch == '^') logic_test_jump_out();
         if (in.ch == '~') logic_test_kill_wingman();
         if (in.ch == '$') logic_test_kill_enemies();   /* (a script's way to clear a nav point: tests/navmusic.txt) */
+        if (in.ch == '*') logic_test_hurt((int16_t)g_sys.target);   /* (a script's look at the target page worn down) */
         if (in.ch == '%') logic_test_census();     /* (a script's look at who is where, the player unhurt after) */
         if (in.ch == '#') rocks_test_to_field();   /* (a script's way through a field: tests/rocks-cross.txt) */
         if (in.ch == '&' && g_sim) simulator_test_kill();

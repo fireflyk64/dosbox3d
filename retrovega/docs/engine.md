@@ -2089,13 +2089,23 @@ the VDUs take the readouts' small font. vdu.c:
 - **The wireframe** (`vdu_wire`) is the type's silhouette from above
   (collide.c's mask, `collide_mask`): the outline of its solid cells
   fitted to the ship's proportions (`hit`, the silhouettes' half
-  extents), the nose up, in white; a type without silhouettes draws its
-  box. Round it (`vdu_ship`) the front and rear shields are bars outside
-  and the four armour faces bars inside, each as long as what is left,
-  in the survival display's colours (lit shield 79, lit armour 70, spent
-  black: the user's rulings of 2026-10-23).
-- **The target page:** the target's name (its type's), its range, its
-  hull left, and the ship. **The weapons pages** (G the guns, W the missile) and
+  extents), the nose up; a type without silhouettes draws its box.
+- **The target page:** the target's name (its type's), its range and the
+  ship, nothing more (the user, 2026-11-08: "the display of the target is way
+  too comprehensive showing armor and hull ... The rest the player needs to use
+  their imagination"; it had bars for the shields and the four armour faces and
+  a HULL line). `vdu_ship`: the outline green (70), cut along its box's
+  diagonals into the nose's part, the tail's and each wing's (`wire4`: uneven,
+  no pixel in two), each red when that side's armour face is under a third
+  (`ARMOUR_LOW_PCT` 34, where the cockpit's own armour bars turn red; the user:
+  "the armor damage should show which sides are damaged... we may need 4
+  subquadrants to draw... it's ok if they aren't even"); each shield up to three concentric quarter circles about the ship's
+  middle (`quarter`: the midpoint circle's two octants either side of the
+  upright), over the nose and under the tail, ((( and ))) on end, a third of
+  the shield each, rounded up, none when it is down, 3 px apart in the shield
+  colour (79); the first is two pixels clear of the corners of the ship's box,
+  so the outline is fitted smaller to leave them room. The own ship's displays
+  (the survival display, the pages below) are as they were. **The weapons pages** (G the guns, W the missile) and
   **the damage page** (D) draw the own ship without the bars, for the room: docs/damage.md
   has what they show. Their shapes are 11 x 11 pixel art in `tools/vduparts.py`, which writes
   `src/vduparts.h` (run by hand, the header is checked in), one by `SYS_` in its order.

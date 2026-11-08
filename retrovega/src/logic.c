@@ -586,6 +586,23 @@ void logic_test_kill_enemies(void)
             shipAiState[s] = 9;
 }
 
+/* a script's way to see a target's page worn down (flight.c's test key *): each press takes a third of the ship's
+ * shields, and once they are down a third of its rear armour, and once that is under a third, of its left */
+void logic_test_hurt(int16_t s)
+{
+    const RvShipType __far *t = slot_type(s);
+    int16_t k;
+    if (s <= 0 || s >= NUM_SHIP_SLOTS || !slot_is_ship(s) || !t)
+        return;
+    if (SHIELD(s, 0) || SHIELD(s, 1))
+        for (k = 0; k < 2; k++)
+            SHIELD(s, k) = (uint16_t)(SHIELD(s, k) > SHIELD_MAX(s, k) / 3 + 1 ? SHIELD(s, k) - SHIELD_MAX(s, k) / 3 - 1 : 0);
+    else if (ARMOR(s, 1) * 3L >= t->armor_r)
+        ARMOR(s, 1) = (uint16_t)(ARMOR(s, 1) > t->armor_r / 3 + 1 ? ARMOR(s, 1) - t->armor_r / 3 - 1 : 0);
+    else
+        ARMOR(s, 2) = (uint16_t)(ARMOR(s, 2) > t->armor_l / 3 + 1 ? ARMOR(s, 2) - t->armor_l / 3 - 1 : 0);
+}
+
 /* a script's look at who is where (flight.c's test key %): each ship's type, side, km from the player and whether the
  * scene holds it (ET_OFFSCENE), and the player takes no damage from then on */
 void logic_test_census(void)
