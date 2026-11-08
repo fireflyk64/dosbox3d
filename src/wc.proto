@@ -479,6 +479,9 @@ message PrivNpc {
     optional sint32 vz = 11;
     optional bool alive = 12;
     repeated sint32 armor = 13 [packed = true];     // the four quadrants
+    optional bool pod = 14;                         // a cargo pod (type CDBRTYPE): its cargo record and units follow
+    repeated bytes cargo = 15;                      // its cargo records (0x28 bytes each)
+    optional uint32 units = 16;
 }
 // The owner's encounter ships, best effort, while another pilot is near; the host relays a guest's with its seat.
 message PrivScene {
@@ -497,6 +500,13 @@ message PrivHit {
     optional sint32 damage = 5;
 }
 // An encounter ship of the sender's fired its guns (best effort): the others' copies fire too.
+// A cargo pod of another's (its owner's game made it: expelled, or a ship's death) taken by our tractor beam: its
+// owner puts its own away (reliable; the host relays to the owner).
+message PrivPodTaken {
+    optional uint32 player = 1;
+    optional uint32 owner = 2;
+    optional uint32 id = 3;
+}
 message PrivShot {
     optional uint32 player = 1;
     optional uint32 id = 2;
@@ -548,4 +558,5 @@ message NetworkMessage {
     optional PrivScene priv_scene = 44;
     optional PrivHit priv_hit = 45;
     optional PrivShot priv_shot = 46;
+    optional PrivPodTaken priv_pod_taken = 47;
 }

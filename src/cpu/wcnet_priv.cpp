@@ -71,6 +71,15 @@ enum {
     kSeg120 = 0x489B,
     kFireGuns = 0x0004,             // seg120:0004(weapons far, n): a ship's guns fired (the weapons' +0xA is the ship)
     kControlFire = 0x1E,            // the control record's fire bits: 4 the guns, 2 the launcher
+    kPodVtable = 0x1584,            // a cargo pod (CDBRTYPE, made by seg036:0C90 as cargo is expelled or a ship dies)
+    kPodList = 0x4B,                // its cargo list: a word, the first record's node (far) at +2, the last at +6; a node
+                                    // is {next far, record far}; a record (the commodity, its names, its units) some 0x28 bytes
+    kPodUnits = 0x56,               // the units in the pod (the records' sum)
+    kCargoRecordBytes = 0x28,
+    kCargoBlockBytes = 0x38,        // a cargo record lives at +0x10 of a far block that begins with the commodity's name (12
+                                    // bytes, "Iron"), a word -3 and the block's own segment; the record's +0 points back at the block
+    kCargoRecordAt = 0x10,
+    kFarMalloc = 0x089D,            // seg000:089D(size dword): the game's far malloc, dx:ax
     kNearHeapTop = 0x3FFC,          // the near heap's end (the game's own allocator, seg142:012B: error 1308 when SP is below it)
     kNearFreeList = 0x3FF8,         // the head of its free blocks' ring (a block: size at +0, bit 0 used; +2 the block before; +4/+6 the ring)
     // A ship's cast (its AI file, DATA/AIDS: name, lines, face), the ship's own copy in the far heap: the controller's
@@ -572,6 +581,8 @@ void priv_watch_list(void (*watch)(Bit16u ip)) {
 }
 
 static std::string ds_name(Bit16u at, int max);
+static bool far_of(Bit16u at, PhysPt *out);
+static bool far_at(PhysPt at, PhysPt *out);
 
 bool priv_script_item(const std::string &item, double t) {
     if (item.compare(0, 8, "!privds=") == 0 && g_found) {
@@ -643,6 +654,42 @@ bool priv_script_item(const std::string &item, double t) {
                 wclog(1, "key script %.1fs: scene ds:%04X ship %s (%s, %s) at %d, %d, %d m, alive %d%s", t, obj, priv_ship_type_name(obj).c_str(),
                       priv_ship_appearance_name(obj).c_str(), priv_ship_cast_name(obj).c_str(), p[0] / 256, p[1] / 256, p[2] / 256,
                       priv_ship_is_alive(obj), obj == priv_player_ship() ? " (ours)" : "");
+            } else if (priv_pod_is(obj)) {
+                std::vector<std::vector<Bit8u> > records;
+                int units = 0;
+                Bit32s p[3];
+                priv_ship_pos(obj, p);
+                std::string hex;
+                if (priv_pod_cargo(obj, records, units)) {
+                    for (size_t r = 0; r < records.size(); r++) {
+                        std::string name;
+                        for (int i = 0; i < 12 && records[r][i]; i++) name += (char)records[r][i];
+                        hex += "\"" + name + "\" ";
+                        for (size_t i = kCargoRecordAt; i < records[r].size(); i++) {
+                            char b[4];
+                            snprintf(b, sizeof b, "%02X", records[r][i]);
+                            hex += b;
+                            if (i % 2 == 1) hex += ' ';
+                        }
+                        hex += "| ";
+                    }
+                }
+                wclog(1, "key script %.1fs: scene ds:%04X pod %s (%s) at %d, %d, %d m, %d units, record %s", t, obj, priv_ship_type_name(obj).c_str(),
+                      priv_ship_appearance_name(obj).c_str(), p[0] / 256, p[1] / 256, p[2] / 256, units, hex.empty() ? "(none)" : hex.c_str());
+                // the record's first far pointer: what it points at (0x40 bytes)
+                PhysPt node, rec, target;
+                std::string hex2;
+                if (far_of((Bit16u)(obj + kPodList + 2), &node) && far_at(node + 4, &rec) && far_at(rec, &target)) {
+                    for (int i = 0; i < 0x40; i++) {
+                        Bit8u b = 0;
+                        char bb[4];
+                        if (mem_readb_checked(target + i, &b)) break;
+                        snprintf(bb, sizeof bb, "%02X", b);
+                        hex2 += bb;
+                        if (i % 2 == 1) hex2 += ' ';
+                    }
+                    wclog(1, "key script %.1fs:   its record's +0 -> %05X: %s", t, (unsigned)target, hex2.c_str());
+                }
             } else if (obj) {
                 std::string hex, rec;
                 for (int i = 0; i < 0x70; i++) {
@@ -675,6 +722,60 @@ bool priv_script_item(const std::string &item, double t) {
         const Bit16u ship = priv_last_spawned();
         wclog(1, "key script %.1fs: ds:%04X's AI (controller ds:%04X) held", t, ship, priv_ship_controller(ship));
         if (priv_ship_is_alive(ship)) priv_hold_ai(priv_ship_controller(ship), true);
+        return true;
+    }
+    if (item.compare(0, 9, "!privaim=") == 0 && g_found) {
+        // !privaim=<metres>:<variant>: our ship put that far from the nearest cargo pod, turned to face it (a test aid:
+        // the variant says which of the matrix's rows or columns is "forward", 0..5, until the convention is known)
+        int metres = 150, variant = 0;
+        sscanf(item.c_str() + 9, "%d:%d", &metres, &variant);
+        Bit16u pods[16];
+        const int n = priv_scene_pods(pods, 16);
+        Bit32s pos[3];
+        priv_player_pos(pos);
+        Bit16u best = 0;
+        double bestD = 1e18;
+        for (int i = 0; i < n; i++) {
+            Bit32s p[3];
+            priv_ship_pos(pods[i], p);
+            const double d = sqrt((double)(p[0] - pos[0]) * (p[0] - pos[0]) + (double)(p[1] - pos[1]) * (p[1] - pos[1]) + (double)(p[2] - pos[2]) * (p[2] - pos[2]));
+            if (d < bestD) { bestD = d; best = pods[i]; }
+        }
+        if (!best) {
+            wclog(1, "key script %.1fs: !privaim: no pod in the scene", t);
+            return true;
+        }
+        Bit32s p[3];
+        priv_ship_pos(best, p);
+        double f[3] = { (double)(p[0] - pos[0]), (double)(p[1] - pos[1]), (double)(p[2] - pos[2]) };
+        const double len = sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+        if (len < 1) return true;
+        for (int i = 0; i < 3; i++) f[i] /= len;
+        // an "up" not along f, the right-hand side from it
+        double u[3] = { 0, 0, 1 };
+        if (fabs(f[2]) > 0.9) { u[0] = 0; u[1] = 1; u[2] = 0; }
+        double r[3] = { u[1] * f[2] - u[2] * f[1], u[2] * f[0] - u[0] * f[2], u[0] * f[1] - u[1] * f[0] };
+        const double rl = sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
+        for (int i = 0; i < 3; i++) r[i] /= rl;
+        u[0] = f[1] * r[2] - f[2] * r[1]; u[1] = f[2] * r[0] - f[0] * r[2]; u[2] = f[0] * r[1] - f[1] * r[0];
+        // the three axes in the order the variant says, as rows (variants 0-2) or columns (3-5)
+        const double *axes[3];
+        switch (variant % 3) {
+            case 0: axes[0] = r; axes[1] = u; axes[2] = f; break;
+            case 1: axes[0] = r; axes[1] = f; axes[2] = u; break;
+            default: axes[0] = f; axes[1] = r; axes[2] = u; break;
+        }
+        Bit32s m[9];
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                const double v = axes[i][j];
+                if (variant < 3) m[3 * i + j] = (Bit32s)(v * 256); else m[3 * j + i] = (Bit32s)(v * 256);
+            }
+        }
+        Bit32s at[3];
+        for (int i = 0; i < 3; i++) at[i] = (Bit32s)(p[i] - f[i] * metres * 256.0);
+        priv_ship_set(priv_player_ship(), at, m);
+        wclog(1, "key script %.1fs: !privaim: at %d m from pod ds:%04X (was %d m), variant %d", t, metres, best, (int)(bestD / 256), variant);
         return true;
     }
     if (item.compare(0, 9, "!privkill") == 0 && g_found) {
@@ -911,6 +1012,195 @@ int priv_scene_ships(Bit16u out[], int cap) {
         node = priv_r16(node);
     }
     return k;
+}
+
+static int scene_objects(Bit16u out[], int cap, Bit16u vtable) {
+    if (!priv_in_flight()) {
+        return 0;
+    }
+    int k = 0;
+    Bit16u node = priv_r16((Bit16u)(kSceneList + 2));
+    for (int guard = 0; node && guard < 256 && k < cap; guard++) {
+        const Bit16u obj = priv_r16((Bit16u)(node + 2));
+        if (obj && priv_r16(obj) == vtable) {
+            out[k++] = obj;
+        }
+        node = priv_r16(node);
+    }
+    return k;
+}
+
+int priv_scene_pods(Bit16u out[], int cap) { return scene_objects(out, cap, kPodVtable); }
+
+bool priv_scene_has(Bit16u obj) {
+    if (!obj || !priv_in_flight()) {
+        return false;
+    }
+    Bit16u node = priv_r16((Bit16u)(kSceneList + 2));
+    for (int guard = 0; node && guard < 256; guard++) {
+        if (priv_r16((Bit16u)(node + 2)) == obj) return true;
+        node = priv_r16(node);
+    }
+    return false;
+}
+
+bool priv_pod_is(Bit16u obj) { return obj && priv_r16(obj) == kPodVtable; }
+
+bool priv_pod_cargo(Bit16u obj, std::vector<std::vector<Bit8u> > &records, int &units) {
+    records.clear();
+    units = 0;
+    PhysPt node;
+    if (!priv_pod_is(obj) || !far_of((Bit16u)(obj + kPodList + 2), &node)) {
+        return false;
+    }
+    for (int n = 0; node && n < 8; n++) {
+        PhysPt rec, block;
+        if (!far_at(node + 4, &rec)) break;
+        // the block from its name; a record not at +0x10 of what it points at: the record alone after 16 zero bytes
+        const bool whole = far_at(rec, &block) && block + kCargoRecordAt == rec;
+        std::vector<Bit8u> record;
+        for (int i = 0; i < kCargoBlockBytes; i++) {
+            Bit8u b = 0;
+            if (whole) {
+                if (mem_readb_checked(block + i, &b)) return false;
+            } else if (i >= kCargoRecordAt) {
+                if (mem_readb_checked(rec + i - kCargoRecordAt, &b)) return false;
+            }
+            record.push_back(b);
+        }
+        records.push_back(record);
+        if (!far_at(node, &node)) break;        // the next node (none: the end)
+    }
+    units = (Bit16s)priv_r16((Bit16u)(obj + kPodUnits));
+    return !records.empty();
+}
+
+void priv_pod_set(Bit16u obj, const Bit32s pos[3]) {
+    for (int i = 0; i < 3; i++) {
+        mem_writed(ds_at((Bit16u)(obj + kShipPos + 4 * i)), (Bit32u)pos[i]);
+    }
+}
+
+// A pod of ours given its cargo: a record already there (a pod reused) is written over; else the game's far heap
+// gives a record and a node (two calls, one after the other), and the list is made of them.
+struct PodFill {
+    Bit16u obj;
+    std::vector<std::vector<Bit8u> > records;
+    size_t next;                // the record being made
+    int units;
+    Bit16u recOff, recSeg;      // the record's far address once given
+    int step;
+};
+std::vector<PodFill> g_podFills;
+
+static void pod_fill_step(int tag, Bit16u ax, Bit16u dx) {
+    if (tag < 0 || tag >= (int)g_podFills.size() || !g_podFills[tag].obj) {
+        return;
+    }
+    PodFill &f = g_podFills[tag];
+    if (!ax && !dx) {
+        wclog(1, "Privateer: the game's far heap gave nothing for a pod's cargo (ds:%04X)", f.obj);
+        f.obj = 0;
+        return;
+    }
+    if (f.step == 1) {
+        f.recOff = ax;
+        f.recSeg = dx;
+        f.step = 2;
+        PrivCall c;
+        c.para = 0;
+        c.off = kFarMalloc;
+        c.args.push_back(8);
+        c.args.push_back(0);
+        c.done = pod_fill_step;
+        c.tag = tag;
+        if (!queue_call(c)) f.obj = 0;
+        return;
+    }
+    // the node given: the block written (its own address in it: the record's +0 and the word before the record),
+    // the node appended to the list (its tail's next, or the head when empty)
+    const PhysPt node = ((PhysPt)dx << 4) + ax, block = ((PhysPt)f.recSeg << 4) + f.recOff;
+    const std::vector<Bit8u> &record = f.records[f.next];
+    for (size_t i = 0; i < record.size() && i < (size_t)kCargoBlockBytes; i++) {
+        mem_writeb(block + i, record[i]);
+    }
+    mem_writew(block + kCargoRecordAt - 2, f.recSeg);
+    mem_writew(block + kCargoRecordAt, f.recOff);
+    mem_writew(block + kCargoRecordAt + 2, f.recSeg);
+    mem_writed(node, 0);
+    mem_writew(node + 4, (Bit16u)(f.recOff + kCargoRecordAt));
+    mem_writew(node + 6, f.recSeg);
+    PhysPt last;
+    if (far_of((Bit16u)(f.obj + kPodList + 6), &last)) {
+        mem_writew(last, ax);
+        mem_writew(last + 2, dx);
+    } else {
+        priv_w16((Bit16u)(f.obj + kPodList + 2), ax);
+        priv_w16((Bit16u)(f.obj + kPodList + 4), dx);
+    }
+    priv_w16((Bit16u)(f.obj + kPodList + 6), ax);
+    priv_w16((Bit16u)(f.obj + kPodList + 8), dx);
+    if (++f.next < f.records.size()) {
+        f.step = 1;
+        PrivCall c;
+        c.para = 0;
+        c.off = kFarMalloc;
+        c.args.push_back(kCargoBlockBytes);
+        c.args.push_back(0);
+        c.done = pod_fill_step;
+        c.tag = tag;
+        if (!queue_call(c)) f.obj = 0;
+        return;
+    }
+    priv_w16((Bit16u)(f.obj + kPodUnits), (Bit16u)f.units);
+    wclog(2, "Privateer: pod ds:%04X given its cargo (%d units in %d records)", f.obj, f.units, (int)f.records.size());
+    f.obj = 0;
+}
+
+void priv_pod_fill(Bit16u obj, const std::vector<std::vector<Bit8u> > &records, int units) {
+    if (!priv_pod_is(obj) || records.empty()) {
+        return;
+    }
+    PhysPt node, rec;
+    if (far_of((Bit16u)(obj + kPodList + 2), &node) && far_at(node + 4, &rec)) {
+        // records there already (the pod reused): the first written over (its name and its record's fields, not its
+        // pointers), the units set (more than one record of a reused pod: only the first kept; the rest's units go to it)
+        const std::vector<Bit8u> &record = records[0];
+        for (size_t i = 0; i < record.size() && i < (size_t)kCargoBlockBytes; i++) {
+            if (i < 12) mem_writeb(rec - kCargoRecordAt + i, record[i]);
+            else if (i >= (size_t)kCargoRecordAt + 4) mem_writeb(rec - kCargoRecordAt + i, record[i]);
+        }
+        PhysPt next;
+        if (far_at(node, &next) && next) {
+            mem_writed(node, 0);
+            priv_w16((Bit16u)(obj + kPodList + 6), priv_r16((Bit16u)(obj + kPodList + 2)));
+            priv_w16((Bit16u)(obj + kPodList + 8), priv_r16((Bit16u)(obj + kPodList + 4)));
+        }
+        if (records.size() > 1) mem_writew(rec + 0x18, (Bit16u)units);
+        priv_w16((Bit16u)(obj + kPodUnits), (Bit16u)units);
+        return;
+    }
+    size_t tag = 0;
+    while (tag < g_podFills.size() && g_podFills[tag].obj) tag++;
+    if (tag == g_podFills.size()) {
+        if (tag >= 16) return;      // (a list has a cap)
+        g_podFills.push_back(PodFill());
+    }
+    PodFill &f = g_podFills[tag];
+    f.obj = obj;
+    f.records = records;
+    f.next = 0;
+    f.units = units;
+    f.recOff = f.recSeg = 0;
+    f.step = 1;
+    PrivCall c;
+    c.para = 0;
+    c.off = kFarMalloc;
+    c.args.push_back(kCargoBlockBytes);
+    c.args.push_back(0);
+    c.done = pod_fill_step;
+    c.tag = (int)tag;
+    if (!queue_call(c)) f.obj = 0;
 }
 
 static std::string ds_name(Bit16u at, int max) {

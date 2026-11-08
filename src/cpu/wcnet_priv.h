@@ -11,6 +11,7 @@
 #define WCNET_PRIV_H_
 
 #include <string>
+#include <vector>
 #include "dosbox.h"
 
 namespace wc {
@@ -134,7 +135,15 @@ bool priv_session_chat(const std::string &text);
 // The game's near heap: the bytes free between its top and the frame's stack (a ship costs some 600).
 int priv_near_free();
 void priv_near_heap(int &total, int &largest, int &blocks);   // the game's near heap: free bytes, its largest free block, blocks
-void priv_ship_delete(Bit16u obj, int mode);                   // (a test aid: the game's destructor on a ship of ours)
+void priv_ship_delete(Bit16u obj, int mode);
+// Cargo pods (type CDBRTYPE, vtable 0x1584: section 13): a ship's layout up to the alive flag; at +0x4B a list of
+// cargo records (far; each given as its 0x38-byte block: the commodity's name, then the record), at +0x56 the units
+int priv_scene_pods(Bit16u out[], int cap);
+bool priv_scene_has(Bit16u obj);                               // the object is in the scene list
+bool priv_pod_is(Bit16u obj);
+bool priv_pod_cargo(Bit16u obj, std::vector<std::vector<Bit8u> > &records, int &units);   // (at the frame: far data)
+void priv_pod_fill(Bit16u obj, const std::vector<std::vector<Bit8u> > &records, int units);   // the pod given that cargo (the game's far heap)
+void priv_pod_set(Bit16u obj, const Bit32s pos[3]);                   // (a test aid: the game's destructor on a ship of ours)
 
 // The session (wcnet_priv_session.cpp): the room, presence; its tick (from priv_tick, every 999 instructions) and an
 // occasion to say where we are (1 the autopilot engaged).

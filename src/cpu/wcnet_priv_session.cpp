@@ -66,7 +66,8 @@ const char kPuppetCast[] = "MER_DP";
 // puppet is made only while the heap keeps a reserve for the game's own ships, missiles and pods after it; what
 // cannot be made is not shown (the pilots' own ships first, the encounter ships after); nothing is ever deleted
 // (the game's destructor on a ship of ours crashes it): a parked ship is reused.
-enum { kShipNearBytes = 1024, kNearReserve = 6144 };
+enum { kShipNearBytes = 1024, kPodNearBytes = 256, kNearReserve = 6144 };
+const char kPodCast[] = "CARGO";        // (a pod's name at +0xE, where a ship has its cast's)
 
 struct Peer {
     Connection conn;
@@ -114,8 +115,11 @@ struct NpcPuppet {
     Bit16u obj, otype;          // the ship in our game (0: none)
     bool pending, parked, killed;
     double fireUntil;           // its guns' fire bit held until then
+    bool pod;                   // a cargo pod (section 13): no AI, no armour, never killed; its cargo records and units
+    std::vector<std::string> cargo;
+    int units;
     NpcPuppet() : used(false), seat(-1), id(0), at(-1e9), x(0), y(0), z(0), vx(0), vy(0), vz(0), alive(true), obj(0), otype(0),
-                  pending(false), parked(false), killed(false), fireUntil(-1e9) {
+                  pending(false), parked(false), killed(false), fireUntil(-1e9), pod(false), units(0) {
         for (int i = 0; i < 9; i++) m[i] = i % 4 == 0 ? 256 : 0;
         for (int i = 0; i < 4; i++) armor[i] = 0;
     }
@@ -160,6 +164,7 @@ struct PrivNet {
     // (what the frame applies: the far heap's EMS window is the game's own at the frame's top, not at a tick)
     std::vector<std::pair<int, std::string> > chats;    // seat, line
     std::vector<std::pair<int, Bit32u> > shots;         // seat, id
+    std::vector<Bit32u> podsTaken;                      // pods of ours another pilot's tractor beam took (put away, not reported)
     Bit64u sceneFrame;
     int nav;                    // the nav sphere we are in (-1 none)
     double sentAt;              // our last presence
@@ -612,6 +617,8 @@ void take_state(const PrivState &st, int seat) {
     }
 }
 
+void take_pod_taken(const PrivPodTaken &t);
+
 void handle(Peer *p, NetworkMessage &msg) {
     if (msg.has_priv_hello()) {
         const PrivHello &h = msg.priv_hello();
@@ -746,6 +753,24 @@ void handle(Peer *p, NetworkMessage &msg) {
                 }
             }
         }
+    } else if (msg.has_priv_pod_taken()) {
+        if (!p->hello) {
+            return;
+        }
+        PrivPodTaken t = msg.priv_pod_taken();
+        if (g_net->host) {
+            t.set_player((Bit32u)p->player);
+            if ((int)t.owner() != g_net->self) {
+                NetworkMessage out;
+                *out.mutable_priv_pod_taken() = t;
+                for (size_t i = 0; i < g_net->peers.size(); i++) {
+                    Peer *q = g_net->peers[i];
+                    if (q->hello && q->conn.is_open() && q->player == (int)t.owner()) q->conn.send(out);
+                }
+                return;
+            }
+        }
+        take_pod_taken(t);
     } else if (msg.has_priv_shot()) {
         if (!p->hello) {
             return;
@@ -974,10 +999,10 @@ const char *type_of(const std::string &appearance) {
 }
 
 // Room in the game's near heap for one more ship of ours, the reserve kept (logged when there is none, every 10 s)
-bool room_for_a_ship(const char *whose) {
+bool room_for_a_ship(const char *whose, int bytes = kShipNearBytes) {
     int total, largest, blocks;
     priv_near_heap(total, largest, blocks);
-    if (total - kShipNearBytes >= kNearReserve) {
+    if (total - bytes >= kNearReserve) {
         return true;
     }
     static double saidAt = -1e9;
@@ -986,6 +1011,12 @@ bool room_for_a_ship(const char *whose) {
         wclog(1, "Privateer: no room in the game's memory for %s (near heap free %d, the reserve %d): not shown", whose, total, (int)kNearReserve);
     }
     return false;
+}
+
+std::vector<std::vector<Bit8u> > cargo_records(const NpcPuppet &p) {
+    std::vector<std::vector<Bit8u> > out;
+    for (size_t r = 0; r < p.cargo.size(); r++) out.push_back(std::vector<Bit8u>(p.cargo[r].begin(), p.cargo[r].end()));
+    return out;
 }
 
 void puppet_made(int seat, Bit16u obj) {
@@ -1023,6 +1054,7 @@ void forget_puppets(const char *why) {
         g_net->npcs[k] = NpcPuppet();
     }
     g_net->tracks.clear();
+    g_net->podsTaken.clear();
     priv_hold_ai_none();
     if (any) {
         wclog(2, "Privateer: the puppets forgotten (%s)", why);
@@ -1107,9 +1139,15 @@ bool somebody_within(double d) {
 
 // Our encounter ships to the others (the owner of the nav we are in): every ship of the scene that is not ours and
 // not a puppet, within reach of us.
-void send_scene(double now) {
-    Bit16u ships[48];
-    const int n = priv_scene_ships(ships, 48);
+bool pod_taken(Bit32u id) {
+    return std::find(g_net->podsTaken.begin(), g_net->podsTaken.end(), id) != g_net->podsTaken.end();
+}
+
+// The owner's encounter ships (withShips), and anybody's cargo pods (expelled, or a ship's death's: section 13)
+void send_scene(double now, bool withShips) {
+    Bit16u ships[48], pods[16];
+    const int n = withShips ? priv_scene_ships(ships, 48) : 0;
+    const int np = priv_scene_pods(pods, 16);
     const Bit16u own = priv_player_ship();
     Bit32s pos[3];
     priv_player_pos(pos);
@@ -1118,6 +1156,44 @@ void send_scene(double now) {
     sc->set_player((Bit32u)g_net->self);
     sc->set_frame(++g_net->sceneFrame);
     sc->set_system(g_system);
+    int sent = 0;
+    for (int i = 0; i < np; i++) {
+        const Bit16u o = pods[i];
+        if (is_puppet_obj(o) || pod_taken(o)) continue;
+        Bit32s p[3];
+        priv_ship_pos(o, p);
+        const double d = sqrt((double)(p[0] - pos[0]) * (p[0] - pos[0]) + (double)(p[1] - pos[1]) * (p[1] - pos[1])
+                              + (double)(p[2] - pos[2]) * (p[2] - pos[2])) / kUnitsPerMetre;
+        if (d > kStateMetres) continue;
+        std::vector<std::vector<Bit8u> > records;
+        int units = 0;
+        if (!priv_pod_cargo(o, records, units)) continue;
+        NpcTrack *t = track_of(o, true);
+        if (t) {
+            if (now > t->at && now - t->at < 1000) {
+                const double dt = (now - t->at) / 1000.0;
+                t->vx = (p[0] - t->x) / dt;
+                t->vy = (p[1] - t->y) / dt;
+                t->vz = (p[2] - t->z) / dt;
+            }
+            t->x = p[0]; t->y = p[1]; t->z = p[2]; t->at = now;
+        }
+        PrivNpc *c = sc->add_npc();
+        c->set_id(o);
+        c->set_type(priv_ship_type_name(o));
+        c->set_appearance(priv_ship_appearance_name(o));
+        c->set_cast(kPodCast);
+        c->set_x(p[0]); c->set_y(p[1]); c->set_z(p[2]);
+        if (t) { c->set_vx((Bit32s)t->vx); c->set_vy((Bit32s)t->vy); c->set_vz((Bit32s)t->vz); }
+        c->set_alive(true);
+        c->set_pod(true);
+        for (size_t r = 0; r < records.size(); r++) c->add_cargo(std::string(records[r].begin(), records[r].end()));
+        c->set_units((Bit32u)units);
+        sent++;
+    }
+    if (!withShips && !sent) {
+        return;             // (nothing of ours to tell)
+    }
     for (int i = 0; i < n; i++) {
         const Bit16u o = ships[i];
         if (o == own || is_puppet_obj(o)) continue;
@@ -1192,6 +1268,12 @@ void take_scene(const PrivScene &sc, int seat) {
         for (int k = 0; k < 9 && k < c.m_size(); k++) p->m[k] = c.m(k);
         p->alive = c.alive();
         for (int k = 0; k < 4 && k < c.armor_size(); k++) p->armor[k] = c.armor(k);
+        p->pod = c.pod();
+        if (p->pod) {
+            p->cargo.clear();
+            for (int k = 0; k < c.cargo_size(); k++) p->cargo.push_back(c.cargo(k));
+            p->units = (int)c.units();
+        }
     }
 }
 
@@ -1207,8 +1289,44 @@ void npc_made(int tag, Bit16u obj) {
     p.obj = obj;
     p.otype = priv_ship_type(obj);
     p.parked = false;
-    priv_hold_ai(priv_ship_controller(obj), true);
+    if (p.pod) {
+        priv_pod_fill(obj, cargo_records(p), p.units);
+    } else {
+        priv_hold_ai(priv_ship_controller(obj), true);
+    }
     wclog(2, "Privateer: pilot %d's %s (%s, %s) is ds:%04X here", p.seat + 1, p.type.c_str(), p.appearance.c_str(), p.cast.c_str(), obj);
+}
+
+// A pod of another's gone from our scene while it was here and fresh: our tractor beam took it (or the game let it
+// go); its owner is told, to put its own away (section 13)
+void send_pod_taken(int owner, Bit32u id) {
+    NetworkMessage msg;
+    PrivPodTaken *t = msg.mutable_priv_pod_taken();
+    t->set_player((Bit32u)g_net->self);
+    t->set_owner((Bit32u)owner);
+    t->set_id(id);
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        Peer *p = g_net->peers[i];
+        if (p->hello && p->conn.is_open() && (!g_net->host || p->player == owner)) {
+            p->conn.send(msg);
+        }
+    }
+    wclog(1, "Privateer: pilot %d's cargo pod (%u) taken here: told", owner + 1, id);
+}
+
+void take_pod_taken(const PrivPodTaken &t) {
+    if ((int)t.owner() != g_net->self) {
+        return;
+    }
+    const Bit16u obj = (Bit16u)t.id();
+    if (!priv_pod_is(obj) || !priv_scene_has(obj) || is_puppet_obj(obj)) {
+        return;
+    }
+    // (never deleted: put far off, where the game lets it expire; not reported any more)
+    Bit32s away[3] = { 0x3FFFFFFF, 0x3FFFFFFF, 0x3FFFFFFF };
+    priv_pod_set(obj, away);
+    if (!pod_taken(obj) && g_net->podsTaken.size() < 64) g_net->podsTaken.push_back(obj);
+    wclog(1, "Privateer: our cargo pod ds:%04X taken by pilot %d: put away", obj, (int)t.player() + 1);
 }
 
 void take_hit(const PrivHit &h) {
@@ -1261,7 +1379,7 @@ void frame_chats_and_shots() {
     const double now = PIC_FullIndex();
     for (size_t i = 0; i < g_net->shots.size(); i++) {
         NpcPuppet *p = npc_of(g_net->shots[i].first, g_net->shots[i].second, false);
-        if (p && p->obj && !p->parked) {
+        if (p && p->obj && !p->parked && !p->pod) {
             priv_ship_fire(p->obj, true);
             p->fireUntil = now + kFireMs;
         }
@@ -1284,7 +1402,14 @@ void frame_npcs(double now, const Bit32s pos[3]) {
     for (int k = 0; k < kNpcCap; k++) {
         NpcPuppet &p = g_net->npcs[k];
         if (!p.used) continue;
-        if (p.obj && !priv_ship_alive(p.obj, p.otype)) {
+        if (p.obj && p.pod && !(priv_pod_is(p.obj) && priv_scene_has(p.obj))) {
+            // a pod gone from our scene: taken by our tractor beam (or let go by the game) while it was here
+            if (!p.parked && now - p.at < kNpcStaleMs) send_pod_taken(p.seat, p.id);
+            p.obj = 0;
+            p.used = false;
+            continue;
+        }
+        if (p.obj && !p.pod && !priv_ship_alive(p.obj, p.otype)) {
             p.obj = 0;          // (gone from our game: exploded, or the game took it)
             if (p.killed) p.used = false;
         }
@@ -1294,7 +1419,7 @@ void frame_npcs(double now, const Bit32s pos[3]) {
         }
         const double age = now - p.at;
         const bool fresh = age < kNpcStaleMs && priv_in_flight();
-        if (!p.alive && p.obj && !p.killed) {
+        if (!p.alive && p.obj && !p.killed && !p.pod) {
             priv_ship_kill(p.obj);
             p.killed = true;
             priv_hold_ai(priv_ship_controller(p.obj), false);
@@ -1319,24 +1444,28 @@ void frame_npcs(double now, const Bit32s pos[3]) {
             // a parked ship of the same kind is taken over, else a new one made
             for (int j = 0; j < kNpcCap && !p.obj; j++) {
                 NpcPuppet &q = g_net->npcs[j];
-                if (j != k && q.used && q.obj && q.parked && q.type == p.type && q.appearance == p.appearance && q.cast == p.cast && !q.killed) {
+                if (j != k && q.used && q.obj && q.parked && q.pod == p.pod && q.type == p.type && q.appearance == p.appearance && q.cast == p.cast && !q.killed) {
                     p.obj = q.obj;
                     p.otype = q.otype;
                     q.obj = 0;
                     q.used = false;
+                    if (p.pod) priv_pod_fill(p.obj, cargo_records(p), p.units);
                 }
             }
-            if (!p.obj && room_for_a_ship("an encounter ship of another's")) {
+            if (!p.obj && room_for_a_ship(p.pod ? "a cargo pod of another's" : "an encounter ship of another's", p.pod ? kPodNearBytes : kShipNearBytes)) {
                 p.pending = priv_spawn_ship(p.type.c_str(), p.appearance.c_str(), p.cast.c_str(), at, p.m, npc_made, k);
             }
         }
-        if (near && p.obj) {
+        if (near && p.obj && p.pod) {
+            priv_pod_set(p.obj, at);
+            p.parked = false;
+        } else if (near && p.obj) {
             priv_ship_set(p.obj, at, p.m);
             priv_ship_set_armor(p.obj, p.armor);
             p.parked = false;
         } else if (p.obj && !p.parked) {
             Bit32s away[3] = { 0x3FFFFFFF, 0x3FFFFFFF, 0x3FFFFFFF };
-            priv_ship_set(p.obj, away, NULL);
+            if (p.pod) priv_pod_set(p.obj, away); else priv_ship_set(p.obj, away, NULL);
             p.parked = true;
             wclog(2, "Privateer: pilot %d's %s (ds:%04X) parked (%s)", p.seat + 1, p.type.c_str(), p.obj, fresh ? "out of reach" : "no reports");
         }
@@ -1478,9 +1607,9 @@ void priv_session_frame() {
     if (wanted && now - g_net->stateAt >= 1000.0 / kStatesPerSecond) {
         send_state(now);
     }
-    // the encounter ships of a nav point we own, to the others near
-    if (wanted && g_net->nav >= 0 && owner_of(g_system, g_net->nav) == g_net->self && now - g_net->sceneAt >= kSceneEveryMs) {
-        send_scene(now);
+    // the encounter ships of a nav point we own, and our cargo pods, to the others near
+    if (wanted && now - g_net->sceneAt >= kSceneEveryMs) {
+        send_scene(now, g_net->nav >= 0 && owner_of(g_system, g_net->nav) == g_net->self);
     }
     // theirs, in our space (before the encounter ships: the first claim on the game's memory)
     for (int s = 0; s < kMaxSeats; s++) {
