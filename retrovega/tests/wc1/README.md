@@ -558,6 +558,33 @@ own ship. missions.txt has them as `prey=KEY` (54 lines: 32 where the type and n
 hand where the mission's enemies had moved; port.py reads the byte as `target`), logic.c `prey_of` holds the order
 while `health_pct` is at least 55 for a fighter (40 heavy, 10 an ace). M8.50.
 
+## The taunt (read and flown 2026-11-07)
+
+The user: "is this the same taunting behavior in WC1... I remember taunting usually didn't work in the original... it
+might be too effective now". The comm menu's three taunts are its messages 4-6 (`ovr139:0583`, the switch in
+`breakAndAttackInner`): the enemy answers 7 times in 10 (a named Kilrathi ace, pilot byte D1A2 9-12, always), and
+then, unless it already has the taunter as its target or is leaving (order 5), `ovr165:1627` sets its sub-state to
+6 (attack) and its target to the taunter. No dice for that and no timer. What follows is its order's own thinking,
+every frame:
+
+- **A ship that carries the mission's attack order** (behaviour 2, AI order 2, `ovr163:10B7`) runs `ovr163:0373` in
+  sub-state 6 too: while its armour is over 70 - 15 x class percent its target is its prey again at once; below it,
+  1 frame in 25 sends it back to the prey. Flown (Enyo 2's nav 1, `run-old.sh 1 1`, the Salthi with the order on the
+  Drayman given the taunt's state with `!poke=CDE6:06` and `!poke=C286:00` at 33 s and 45 s): back on the Drayman the
+  next frame both times.
+- **Any other fighter** (the order's wingmen, behaviour 4, and the free ones) keeps the taunter (`ovr163:0329`) until
+  it dies, the fighter flees, or a fighter of the taunter's side that has it as its target sits on its tail within
+  7,000 km (behind it, nose on it: `ovr165:07F0`), which then becomes its target. Flown: Kurasawa 2's hidden first
+  encounter (`run-old.sh 9 1`, four Salthi; T pressed four times selects slot 3, on Bossman), the taunt turned it
+  on the player the frame it went out and it stayed 36 s, until it was gone; Enyo 2's order wingman stayed 6 s,
+  until Spirit got on its tail.
+- **Most were already on the player**: with no order, its pick (`ovr164:04B0`) takes the player half the time when
+  the player is within 5,000 km. Kurasawa 2's Salthi: three of four on the player within 10 s of arriving.
+
+So the taunt did not work on what an escort mission sends at the escort: Kurasawa 2's Ralari encounter has four
+Gratha (type 12), two with the order on the Ralari and two following them. Ours (logic.c `fighter_think`,
+2026-11-07): every enemy fighter, under orders or not, turns on the taunter for 20 s whatever else happens.
+
 ## What is still to measure
 
 The other types (the Salthi at nav 3; Krant, Gratha, Jalthi, the capital ships' guns on each other in the later
