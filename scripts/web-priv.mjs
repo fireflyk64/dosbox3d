@@ -74,6 +74,13 @@ if (process.env.ROOM) {
   console.log(`${stamp()} in the room: ` + await page.$eval("#status", (el) => el.textContent.trim().slice(0, 140)));
   const max = await page.$eval("#seats", (el) => el.max);
   check("the Players box takes 8 for Privateer", max === "8", max);
+} else if (process.env.SEATS) {
+  // a room of SEATS made by this page, its host, alone in it (the lobby server's own limit on a room's seats)
+  await page.fill("#seats", process.env.SEATS);
+  await page.dispatchEvent("#seats", "change");
+  await page.click("#join");
+  await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 30000 });
+  console.log(`${stamp()} in the room: ` + await page.$eval("#status", (el) => el.textContent.trim().slice(0, 140)));
 } else {
   // a room of one (Players 1): the game alone, as it is
   await page.fill("#seats", "1");
@@ -112,6 +119,10 @@ const ramp = logs.slice(before).filter((l) => /arrows [+-]/.test(l)).map((l) => 
 check("the arrow ramped from a ninth of the stop", ramp.length > 0 && ramp[0] === -28, ramp.slice(0, 12).join(" "));
 check("... to the stop when held", ramp.includes(-256), `${ramp.filter((v) => v === -256).length} frames at the stop`);
 await page.screenshot({ path: path.join(shotDir, "web-priv-turned.png"), clip: box });
+if (process.env.SEATS) {
+  check(`the room's session: the host of ${process.env.SEATS} seats`, await waitLog(new RegExp(`Privateer: HOST at room \\S+, ${process.env.SEATS} seats`), 20000),
+    (logs.find((l) => /Privateer: HOST at/.test(l)) || "").slice(0, 140));
+}
 if (process.env.ROOM) {
   check("in the host's room", await waitLog(/Privateer: In \S+'s room as pilot 2/, 20000), (logs.find((l) => /room as pilot/.test(l)) || "").slice(0, 140));
   check("the host's presence: in Troy with us", await waitLog(/Privateer: (HOST launched in Troy|HOST in Troy, [\d,]+ m from you|In Troy with you: HOST)/, 40000),

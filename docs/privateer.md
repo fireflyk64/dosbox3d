@@ -25,8 +25,8 @@ The user's brief (2026-11-07):
 > this one is pretty niche.
 
 This document is the reference for what is built, what was found in the program, and the plan.  Status: the page
-takes GOG's installer and runs Privateer and Righteous Fire single-player, with the arrow keys ramped (section 4);
-the shared flight is the plan of section 6.
+takes GOG's installer and runs Privateer and Righteous Fire, the arrow keys ramped (section 4), in rooms of up to 8
+that say where everybody is (section 7); the pilots in each other's space and the rest are the plan of section 6.
 
 ## 1. The game as installed
 
@@ -76,6 +76,21 @@ What is known so far:
 | seg088:0B2E | the player's controls, once a frame (see section 4) |
 | seg087:000D | clears the control record |
 | dseg:13EF/13F0/13F1 | the control mode: joystick, mouse, keyboard |
+| dseg:66B4 | the player's ship object (a near pointer: objects live in DGROUP's heap); 0 at a base |
+| ship +0x00 | its vtable (0x20EF for the class of the player's and three others in Troy) |
+| ship +0x06 | its type (a near pointer: "PLAYTYPE" for the player's) |
+| ship +0x14 | its place: int32 x, y, z, world units (z up) |
+| ship +0x21 | its attitude: 3x3 int32, 1.0 = 1 << 24 (an odd offset: the class is packed) |
+| dseg:66B2 | the player's record in flight ("PLAYTYPE", "PLAYER"); 0 at a base |
+| record +0x54 | a near pointer to the system's name (the game's copy: "Troy"), what the destination display shows |
+| dseg:CA74 | the player's controller (vtable dseg:2A06, "PLAYPLAN"; its per-frame method seg088:0C62 calls the controls) |
+
+Units: the world's are 256 to the game's metre (the destination display's "Range: 70515m" is the distance in world
+units >> 8, by the game's own approximate magnitude, seg128:0296).  At 150 KPS the ship covers some 34,300 units a
+second.  A nav sphere's radius in SECTORS.IFF is in metres (12,000 and 17,000 for nav points, 2,000 for a jump
+point or a base).  The 19-byte `SPHR` records: an id, the system's id (QUADRANT.IFF's: Troy 0x3A), int32 x, y, z,
+the radius (int16), then kind (2 a jump point, 1 a base or planet), what (a jump point's destination system),
+the nav point's number.  Troy's Achilles is at 15,360,000, 0, -10,240,000, where a new pilot launches.
 
 The world's objects live mostly in EMS (pages mapped at D000): the cockpit's gauges there are C++ objects in Origin's
 own heap (paragraph blocks with a size and back link), "KPS" and "SET" with their numbers.
@@ -99,6 +114,10 @@ analog already).  `WCNET_PRIV_RAMP=0` leaves the game's own.
 
 ## 5. The rigs
 
+* `scripts/privnet.sh [seconds] [host's extra] [guests' extra]`: a host and guests (`PLAYERS=2..8`), each flown by
+  privrun.sh's route, over TCP or a local lobby room (`LOBBY=1`, with build-lobby's emulator: `DOSBOX=`).
+* `scripts/web-priv.sh`: the page's test (`ROOM=1`: a native host's room and the page its guest; `SEATS=8` with
+  web-priv.mjs alone: the page hosting a room of that many, the lobby server's limit).
 * `scripts/privrun.sh [seconds] [extra key script]`: one machine headless, booted, the opening skipped (Esc at 4 s),
   a new pilot (NEW at 0.14, 0.94; "joe" / "ace"), launched from Achilles's pad (the Tarsus at 0.45, 0.6, clicked at
   16 s): in flight in Troy at ~22 s.  `RF=1` Righteous Fire, `NOROUTE=1` from boot only, `PRIVDIR=` the game
@@ -113,7 +132,7 @@ other games (Privateer's module is its own: `wcnet_priv*.cpp`, its messages its 
 2. **The map of the world in memory:** the player's system, position, attitude and speed; the nav points of the
    system and the one nearest; the objects in space (ships, cargo, missiles) and how the game makes and removes
    them; the player's missions and their nav points (the mission computer's list); the Steltek drone.
-3. **Presence (rooms of up to 8):** a Privateer room; every player broadcasts its system, nav point and position
+3. **Done (section 7) -- presence (rooms of up to 8):** a Privateer room; every player broadcasts its system, nav point and position
    when it engages the autopilot (A), jumps, launches or lands, and every 15 s otherwise; the overlay lists who is
    where ("ACE in Troy near Achilles, 4,000 km from you").
 4. **Others in space:** a player in the same system within reach of another (the same nav point's sphere) appears
@@ -128,3 +147,16 @@ other games (Privateer's module is its own: `wcnet_priv*.cpp`, its messages its 
 7. **Cargo:** a pod a player expels is in every present game, and the first to tractor it has it.
 8. **The Steltek drone:** following a player, it is made at most once at a nav point (by its owner), and it goes
    for the lowest-numbered player there.
+
+## 7. Presence (src/cpu/wcnet_priv_session.cpp)
+
+A session of its own, as TIE Fighter's: the host is player 0 (the room's, or the TCP listener), a guest says hello
+and is given its seat and the room's seats (`PrivHello`); the host relays a guest's messages to the other guests.
+Where a pilot is (`PrivPresence`: flying, its system's name, its place, why) goes out when it engages the autopilot
+(the A key in flight), jumps (the system's name changes), launches or lands (ds:66B4 set or cleared), and every
+15 s.  The overlay: "GUEST1 launched in Troy, 531 m from you (near)", "GUEST2 on autopilot in Troy, 680 m from
+you", "GUEST1 is at a base", "GUEST1 jumped to Pyrenees", and every 15 s while somebody shares our system, "In Troy
+with you: GUEST1 2,143 m, GUEST2 2,143 m".  Near = within 20,000 m.  The page: `maxSeats: 8` (the Players box
+allows 8 for Privateer, 3 for every other game, as before), room codes PRV- and PRF-.  Measured: two native machines
+over TCP, three in a local lobby room, a native host and a browser guest in a room of 8 (both ways, the page's
+autopilot heard by the host), and on the live site a page hosting a room of 8 through the public lobby.
