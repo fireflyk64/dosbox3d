@@ -27,7 +27,9 @@
 # A ship line's prey=KEY is the old game's attack order (its mission records' own byte, read 2026-11-05: tests/wc1/README.md
 # "Orders"): the group goes for the nearest ship of that type of the other side, wherever it is and whoever is nearer, until
 # hurt (logic.c prey_of); without one, half the fighters near an escort target raid it (raid_target).  The line's first
-# ship carries the order against a taunt; its others follow it (the old game's behaviour 2 and 4: logic.c order_hold)
+# ship carries the order against a taunt; its others follow it (the old game's behaviour 2 and 4: logic.c order_hold).
+# The old orders name one ship, ours a type: where a mission escorts an Ox, the old game's Draymen that only wait at the
+# carrier are Goddards here (the user's idea, 2026-11-07: "We can make it the Goddard"), so prey=OX means the escort
 #
 # A ship line's also=N lists the wave at a second nav point too: it comes at whichever is reached first, once (the old
 # game lists some waves at two points: an ambush on the way or the nav point itself, a nav point or the way home).
@@ -1265,7 +1267,7 @@ ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
 ship     VIGILNC 0 nav0 role=home
 ship     GAWAIN 0 nav0 count=2 at=-2500,0,7500 role=stay
-ship     OX 0 nav0 count=3 at=-5000,0,10000
+ship     GODDARD 0 nav0 count=3 at=-5000,0,10000
 ship     ARISTON 1 nav1 count=2 at=0,0,-10000 prey=OX
 ship     ARISTON 1 nav1 prey=OX
 ship     AGIS 1 nav3 count=3 at=5000,0,5000 prey=OX
@@ -1464,7 +1466,7 @@ briefing you "(You wait while she works down to your wing.)"
 briefing "You and Echo have escort. An Ox is coming in at Nav 1, with passengers. We have orders to bring it home."
 briefing dead=ECHO "You have the escort, Wildcard, and you're flying it on your own."
 briefing "There are 3 Convolutions out there too, somewhere between us and Nav 1."
-briefing "You've got 3 Franklins and an Ox staying with the ship. Go to Nav 1."
+briefing "You've got 3 Franklins and a Goddard staying with the ship. Go to Nav 1."
 briefing "When you reach it, it comes straight home. Stay with it. Lose it, and you've lost the mission."
 briefing you "You said passengers, Commander. Who are they?"
 briefing "Survivors, off a colony nobody's heard from since the first push. Naxos."
@@ -1486,12 +1488,12 @@ ship     wingman 0 nav0 pilot=ECHO
 ship     VIGILNC 0 nav0 role=home
 ship     FRANKLN 0 nav0 role=stay
 ship     FRANKLN 0 nav0 count=2 at=-10000,2000,0 role=stay
-ship     OX 0 nav0 at=-10000,0,-5000
+ship     GODDARD 0 nav0 at=-10000,0,-5000
 ship     OX 0 nav1 role=in
 ship     CLEOMEN 1 nav1 count=2 at=-5000,5000,5000 prey=OX
 ship     CLEOMEN 1 nav1 count=2 at=10000,0,-10000 prey=OX
-ship     CONVOLN 1 nav2 count=2 at=0,0,2500
-ship     CONVOLN 1 nav2
+ship     CONVOLN 1 nav2 count=2 at=0,0,2500 prey=OX
+ship     CONVOLN 1 nav2 prey=OX
 bar      left=FROST middle=ECHO right=COMET
 talk     bar ECHO FROST "Your Rlaan could have got people out of Naxos. They were right there."
 talk     bar FROST ECHO "They were trading partners, Echo. They were scared too."
@@ -2654,7 +2656,7 @@ briefing TALLY "Don't get up. Try to keep up, kid."
 briefing "You and Tally have the first run. An Ox is waiting at Nav 1, and it starts for home when you reach it."
 briefing "It's heavy, so it's slow. That's civilians on board, children and old people. I want you very careful."
 briefing "Intelligence expects 3 Aristons at Nav 1. The patrols around the jump points will be heavy."
-briefing "There's an Ariston on our deck already. An Ox stays with us until you've seen to that."
+briefing "There's an Ariston on our deck already. A Goddard stays with us until you've seen to that."
 briefing "If you lose the Ox, you've lost the mission. I'll read you the manifest myself. Dismissed."
 win      "The Ox is in, with four hundred and twelve people on it. I've got them on a list."
 win      TALLY "Still got it."
@@ -2671,7 +2673,7 @@ nav      4 -25000 5000 -25000 hidden reach=10000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TALLY
 ship     VIGILNC 0 nav0 role=home
-ship     OX 0 nav0 at=-5000,3000,5000
+ship     GODDARD 0 nav0 at=-5000,3000,5000
 ship     ARISTON 0 nav0
 ship     AGIS 1 nav2 count=2 at=-5000,0,5000
 ship     AGIS 1 nav2 count=2

@@ -606,8 +606,13 @@ home, the carrier's third place or the rendezvous), which come at whichever is r
 later one (OLDZIEY2, RIGEL3, SHMRN2, SHMRN3: port.py kept the last list). Fixed: the hidden points and their lines
 (missions.txt), `also=N` for a wave at two points (RVGAME.DAT 25; campaign.c lists it at both; logic.c enterNavPoint
 brings no mission ship twice, `mship_brought`; M8.60), the briefings and `turrets=off` that told of attacks at the
-launch that the old game never made. ATARAXI1's ambushers have no prey=: their old orders are on the Ox still to
-come, and ours, by type, would have turned back for the Ox at the ship. waves.py now finds none.
+launch that the old game never made. waves.py now finds none.
+
+The old orders name one mission ship, ours a type (prey=OX: the nearest Ox of the other side). In three missions an
+Ox only waits at the carrier beside the escorted one (LIXIS1 three, ATARAXI1, LUYTEN1: the old game's Draymen, its
+type 6 like the escort's), so an order could fall on it: ATARAXI1's ambushers, whose old orders are on the Ox still to
+come, would have turned back for the one at the ship. The user: "We can make it the Goddard": those waiting ships are
+Goddards (SHIP25.RV packed from build/sprites' 37 views), and ATARAXI1's ambushers have their prey=OX.
 
 Our LIXIS1 after it (the test pilot, 12 flights a cell): the pilot idle at the escort, the outbound Ox lasts 30 to 34 s
 under the 5 Agis (the old one 19 s); flown at 9 degrees of aim wander 9 of 12 won, 13 degrees 6, 18 degrees 4. Also
