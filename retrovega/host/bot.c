@@ -936,15 +936,17 @@ static void flight_tick(void)
                     bk = k;
                     bn = n;
                 }
-            if (bn > 0) {
-                const uint8_t *rec = (const uint8_t *)navPointTable + navPointTable_SIZE * bn;
-                at = v3(NAV_REC_KM(rec, 0), NAV_REC_KM(rec, 1), NAV_REC_KM(rec, 2));
+            if (bn > 0) {               /* (a point in a field: the field's middle, reached in it) */
+                int32_t gx, gy, gz;
+                logic_nav_goal((int16_t)bn, &gx, &gy, &gz);
+                at = v3(gx, gy, gz);
             } else if (home_slot() > 0)
                 at = pos(home_slot());
             else
                 at = vadd(pos(0), vmul(fwd(0), 10000));
             go = at;
-            if (field_on_way(at, 1500, &c, &r)) {   /* (round the field, not through it) */
+            if (!field_near(at, 0, &c, &r) && field_on_way(at, 1500, &c, &r)) {   /* (round a field, not through it;
+                                           into the one the point is in) */
                 V u = vsub(at, pos(0)), off = vsub(pos(0), c), perp;
                 double ul = vlen(u);
                 u = vmul(u, 1 / fmax(1, ul));

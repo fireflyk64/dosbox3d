@@ -6105,21 +6105,29 @@ static void pt_field(int16_t x, int16_t y, int16_t z, int16_t r)
     f->radius = r;
 }
 
-/* M8.55: a waypoint inside a field is the field (the user, 2026-11-06: "in the very first mission, asteroids were
- * supposed to be entirely surrounding nav 2", "the nav point gets ticked off even though I'm nowhere close to it"):
- * Enigma 1's nav 2, reach 20,000, in a field 7,500 across 5,830 from its middle.  The autopilot takes the player into the
- * field, 3,000 km short of its middle and facing it (the rocks come 3,050 ahead of the nose, while that point is in the
- * field); the point is not reached within its reach outside the field, and is inside it */
+/* M8.55: a waypoint inside a field is the field's middle (the user, 2026-11-06: "in the very first mission, asteroids
+ * were supposed to be entirely surrounding nav 2", "the nav point gets ticked off even though I'm nowhere close to it";
+ * 2026-11-08: "nav 2 was visited as soon as I exited autopilot--I could have steered around the field. The nav point
+ * needs to be in the middle of the field"): Enigma 1's nav 2, reach 20,000, in a field 7,500 across 5,830 from its
+ * middle.  The autopilot takes the player into the field, 3,000 km short of its middle and facing it (the rocks come
+ * 3,050 ahead of the nose, while that point is in the field), and will not go again from there; the point's distance is
+ * the middle's; it is reached neither there, nor within its reach outside the field, nor 6,000 km into the field, and
+ * is within 1,200 km of the middle */
 static void t_field_nav(void)
 {
     static const char __far e_in[] = "the autopilot to a nav point in a field left the player %d km from the field's "
         "middle (returned %d): 3,000 short of it, facing it";
-    static const char __far e_seen[] = "brought into the field, nav 1 is not reached (%d)";
+    static const char __far e_km[] = "at the autopilot's stop the point is %d km off (%d): the field's middle's, 3,000";
+    static const char __far e_again[] = "at the autopilot's stop in the point's own field it would go again (%d): no";
+    static const char __far e_stop[] = "brought into the field, 3,000 km short of its middle, nav 1 was reached (%d): "
+        "only within 1,200 of the middle";
     static const char __far e_out[] = "%d km from the point, within its 20,000 reach but outside its field, nav 1 was "
-        "reached: only in the field";
-    static const char __far e_field[] = "%d km from the field's middle, inside it, nav 1 is not reached (%d)";
+        "reached: only at the field's middle";
+    static const char __far e_part[] = "%d km from the field's middle, 1,500 inside it, nav 1 was reached: only within "
+        "1,200 of the middle";
+    static const char __far e_mid[] = "%d km from the field's middle nav 1 is not reached (%d)";
     int16_t r;
-    int32_t z;
+    int32_t z, km = 0;
     pt_mission();
     pt_nav(1, 0, 0, 30000);
     g_tm.nav[0].reach = 20000;
@@ -6128,9 +6136,12 @@ static void t_field_nav(void)
     r = logic_autopilot();
     z = TO_KM(gPositionVector[0].z);
     REQUIRE(r == 1 && labs(z - 25000) < 150 && gOrientationFrontVector[0].z > 250, e_in, (int)labs(z - 28000), r, 0);
+    r = logic_nav_km(1, &km);
+    REQUIRE(r && labs(km - 3000) < 150, e_km, (int)km, r, 0);
+    REQUIRE(logic_autopilot_ready() < 0, e_again, logic_autopilot_ready(), 0, 0);
     if (!pt_step())
         return;
-    REQUIRE(logic_nav_seen(1), e_seen, logic_nav_seen(1), 0, 0);
+    REQUIRE(!logic_nav_seen(1), e_stop, logic_nav_seen(1), 0, 0);
     pt_mission();
     pt_nav(1, 0, 0, 30000);
     g_tm.nav[0].reach = 20000;
@@ -6143,7 +6154,11 @@ static void t_field_nav(void)
     pt_put(0, 0, 0, 22000, 0);
     if (!pt_steps(SEC))
         return;
-    REQUIRE(logic_nav_seen(1), e_field, (int)labs(TO_KM(gPositionVector[0].z) - 28000), logic_nav_seen(1), 0);
+    REQUIRE(!logic_nav_seen(1), e_part, (int)labs(TO_KM(gPositionVector[0].z) - 28000), 0, 0);
+    pt_put(0, 0, 0, 27000, 0);
+    if (!pt_steps(SEC))
+        return;
+    REQUIRE(logic_nav_seen(1), e_mid, (int)labs(TO_KM(gPositionVector[0].z) - 28000), logic_nav_seen(1), 0);
 }
 
 static void t_way_ahead(void)
@@ -7721,7 +7736,7 @@ static const char __far n_m8_57[] = "M8.57 escort-arrive (arrivals_step, mission
 static const char __far n_m8_58[] = "M8.58 escort-threat (pass_side, scatter_of): fighters at a capital ship aim at its middle: four Aristons kill an Ox within 60 s";
 static const char __far n_m8_59[] = "M8.59 escort-back (role=back, escorted): an escort target there when its point is reached makes for home at once, and its loss is the mission's";
 static const char __far n_m8_60[] = "M8.60 wave-also (also=N, mship_brought): a wave listed at a hidden point and a waypoint comes once, at whichever is reached first";
-static const char __far n_m8_55[] = "M8.55 field-nav (nav_field, nav_stop): a waypoint inside a field is the field: the autopilot takes the player in, and the point is reached only inside it";
+static const char __far n_m8_55[] = "M8.55 field-nav (nav_field, nav_stop, nav_in_reach): a waypoint inside a field is the field's middle: the autopilot takes the player in, and the point is reached only within 1,200 km of the middle";
 static const char __far n_m8_54[] = "M8.54 capital-help (capital_help): an Aera capital ship hurt through its armour by an unengaged attacker turns half its side's fighters on it; none when a fighter is already near the attacker";
 static const char __far n_m8_52[] = "M8.52 mayday (hull_take, logic_on_mayday): an Ox calls mayday on 35 in 1,000 of the hits through its armour, as the old game's capital ships did; an Agasicles never";
 static const char __far n_m8_53[] = "M8.53 autoland (logic_autoland_ready, logic_autoland): the trigger lands with every waypoint flown, nobody about and the carrier close; not before";

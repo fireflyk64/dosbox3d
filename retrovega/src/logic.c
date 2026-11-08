@@ -291,11 +291,13 @@ static int32_t nav_reach(int16_t n)
     return n == 0 ? HOME_REACH_KM : (int32_t)NAV_REC_REACH(NAV_REC(n));
 }
 
-/* the field a waypoint lies in, -1 none (six of them in the 40 missions: Enigma 1's nav 2, as the old game's Enyo 1's).
- * Such a point is the field (the user, 2026-11-06: "in the very first mission, asteroids were supposed to be entirely
- * surrounding nav 2 ... I saw no asteroids anywhere", "the nav point gets ticked off even though I'm nowhere close to
- * it": its reach, 20,000 km, is nearly three times the field's 7,500, so the autopilot stopped, and the point was
- * reached, far outside it): reached in the field, the autopilot taking the player in, facing its middle (nav_goal) */
+/* the field a waypoint lies in, -1 none (two of them in the 40 missions: Enigma 1's nav 2, as the old game's Enyo 1's,
+ * and Crucible 2's nav 1).  Such a point is the field's middle (the user, 2026-11-06: "in the very first mission,
+ * asteroids were supposed to be entirely surrounding nav 2 ... I saw no asteroids anywhere", "the nav point gets ticked
+ * off even though I'm nowhere close to it": its reach, 20,000 km, is nearly three times the field's 7,500, so the
+ * autopilot stopped, and the point was reached, far outside it; then, 2026-11-08, reached anywhere in the field: "The
+ * nav point needs to be in the middle of the field"): the autopilot takes the player into the field facing its middle,
+ * the cross and the distance are the middle's (nav_goal), and it is reached within NAV_CLOSE_KM of it (nav_in_reach) */
 static int16_t nav_field(int16_t n)
 {
     int16_t i;
@@ -339,25 +341,34 @@ static int32_t nav_stop(int16_t n)
 }
 
 /* the player within nav point n's reach (measured straight, as the autopilot puts it there); a point in a field, within
- * the field */
+ * NAV_CLOSE_KM of the field's middle (the user, 2026-11-08, of Enigma 1's nav 2: "nav 2 was visited as soon as I exited
+ * autopilot--I could have steered around the field. The nav point needs to be in the middle of the field": it was
+ * reached anywhere in the field, and the autopilot stops in it) */
 static int16_t nav_in_reach(int16_t n)
 {
-    int32_t px = TO_KM(gPositionVector[0].x), py = TO_KM(gPositionVector[0].y), pz = TO_KM(gPositionVector[0].z);
-    int16_t f;
+    int32_t px = TO_KM(gPositionVector[0].x), py = TO_KM(gPositionVector[0].y), pz = TO_KM(gPositionVector[0].z), x, y, z;
     if (!nav_on(n))                     /* (switched off: never near, the old getNearbyNavPoint's +30 test) */
         return 0;
-    f = nav_field(n);
-    if (f >= 0)
-        return len_of(g_fields[f].x - px, g_fields[f].y - py, g_fields[f].z - pz) < g_fields[f].radius;
-    return len_of(NAV_AT(n, 0) - px, NAV_AT(n, 1) - py, NAV_AT(n, 2) - pz) < nav_reach(n);
+    nav_goal(n, &x, &y, &z);
+    return len_of(x - px, y - py, z - pz) < (nav_field(n) >= 0 ? NAV_CLOSE_KM : nav_reach(n));
 }
 
-/* how far the player is from nav point n, km, roughly (the largest axis and half the rest, as player_km) */
+/* how far the player is from nav point n (a point in a field: the field's middle, nav_goal), km, roughly (the largest
+ * axis and half the rest, as player_km) */
 static int32_t nav_km(int16_t n)
 {
-    int32_t dx = labs(TO_KM(gPositionVector[0].x) - NAV_AT(n, 0)), dy = labs(TO_KM(gPositionVector[0].y) - NAV_AT(n, 1)),
-            dz = labs(TO_KM(gPositionVector[0].z) - NAV_AT(n, 2)), m = dx > dy ? (dx > dz ? dx : dz) : (dy > dz ? dy : dz);
+    int32_t x, y, z, dx, dy, dz, m;
+    nav_goal(n, &x, &y, &z);
+    dx = labs(TO_KM(gPositionVector[0].x) - x);
+    dy = labs(TO_KM(gPositionVector[0].y) - y);
+    dz = labs(TO_KM(gPositionVector[0].z) - z);
+    m = dx > dy ? (dx > dz ? dx : dz) : (dy > dz ? dy : dz);
     return m + ((dx + dy + dz - m) >> 1);
+}
+
+void logic_nav_goal(int16_t n, int32_t *x, int32_t *y, int32_t *z)
+{
+    nav_goal(n, x, y, z);
 }
 
 int16_t logic_nav_km(int16_t n, int32_t *km)
@@ -4166,10 +4177,11 @@ static void step_mission(void)
 
 static void nav_mark(const RvCamera *cam)
 {
-    int32_t rx, ry, rz, X, Y, Z, len;
-    rx = ((int32_t)NAV_AT(g_sys.nav, 0) * KM - cam->pos.x) >> 4;
-    ry = ((int32_t)NAV_AT(g_sys.nav, 1) * KM - cam->pos.y) >> 4;
-    rz = ((int32_t)NAV_AT(g_sys.nav, 2) * KM - cam->pos.z) >> 4;
+    int32_t rx, ry, rz, X, Y, Z, len, gx, gy, gz;
+    nav_goal(g_sys.nav, &gx, &gy, &gz);  /* (a point in a field: its middle) */
+    rx = (gx * KM - cam->pos.x) >> 4;
+    ry = (gy * KM - cam->pos.y) >> 4;
+    rz = (gz * KM - cam->pos.z) >> 4;
     while (labs(rx) > 0x7FFFFF || labs(ry) > 0x7FFFFF || labs(rz) > 0x7FFFFF) {
         rx /= 2;
         ry /= 2;
@@ -4417,8 +4429,9 @@ int16_t logic_autopilot_ready(void)
     {
         int16_t region, field;
         int32_t stop = way_stop(next, &region, &field);
-        if (field && stop < AUTOPILOT_MIN_KM)
-            return -1;
+        if ((field || nav_field(next) >= 0) && stop < AUTOPILOT_MIN_KM)
+            return -1;                  /* (a field across the way; or the point's own field, the player at the autopilot's
+                                           stop in it or nearer its middle: flown in by hand) */
     }
     return next;
 }
@@ -4663,7 +4676,7 @@ int16_t logic_autopilot(void)
     if (region >= 0) {
         if (wave_may_come(region))
             enterNavPoint((uint16_t)region);
-    } else if (next && !field) {
+    } else if (next && !field && nav_field(next) < 0) {   /* (a point in a field: flown in to its middle, step_mission) */
         enterNavPoint((uint16_t)next);
     }
     autopilotFinished();
