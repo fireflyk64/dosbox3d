@@ -1492,8 +1492,8 @@ ship     GODDARD 0 nav0 at=-10000,0,-5000
 ship     OX 0 nav1 role=in
 ship     CLEOMEN 1 nav1 count=2 at=-5000,5000,5000 prey=OX
 ship     CLEOMEN 1 nav1 count=2 at=10000,0,-10000 prey=OX
-ship     CONVOLN 1 nav2 count=2 at=0,0,2500 prey=OX
-ship     CONVOLN 1 nav2 prey=OX
+ship     CONVOLN 1 nav2 count=2 at=0,0,2500 prey=OX ai=heavy
+ship     CONVOLN 1 nav2 prey=OX ai=fighter
 bar      left=FROST middle=ECHO right=COMET
 talk     bar ECHO FROST "Your Rlaan could have got people out of Naxos. They were right there."
 talk     bar FROST ECHO "They were trading partners, Echo. They were scared too."

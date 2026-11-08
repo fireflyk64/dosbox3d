@@ -614,6 +614,11 @@ type 6 like the escort's), so an order could fall on it: ATARAXI1's ambushers, w
 come, would have turned back for the one at the ship. The user: "We can make it the Goddard": those waiting ships are
 Goddards (SHIP25.RV packed from build/sprites' 37 views), and ATARAXI1's ambushers have their prey=OX.
 
+ATARAXI1's restored ambush was 3 Convolutions flying the type's ace profile; the old game's are AI classes 2, 1 and 1
+(its records' +0x20; Kurasawa 2's Gratha are 2 to 4). The user: "yes lower skill class at ataraxi1": the class-2 leader's
+line ai=heavy (its orders lapse under 40% health, the old 70 - 15 x 2), the class-1 one ai=fighter (55). At 9 degrees of
+aim wander, 1 of 8 won before, 5 of 16 after (11 pilots killed, the Ox never lost).
+
 Our LIXIS1 after it (the test pilot, 12 flights a cell): the pilot idle at the escort, the outbound Ox lasts 30 to 34 s
 under the 5 Agis (the old one 19 s); flown at 9 degrees of aim wander 9 of 12 won, 13 degrees 6, 18 degrees 4. Also
 found flying it: the inbound Ox (role=in) waits off the scene till a pilot comes within 5,000 km of its place, and the
