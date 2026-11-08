@@ -424,7 +424,11 @@ void take_frame(Peer *from, const TieFrame &f) {
         p.state = c;
         p.prevAt = p.at;
         p.at = PIC_FullIndex();
-        if (c.dying() && c.obj() < (Bit32u)kCraftSlots && tie_in_flight()) {
+        // (a report's death only for the craft it was: once dying its owner's slot shows the explosion's type, and a new
+        // craft may have this slot here by then, killed in the explosion's stead until 2026-11-07, as HG3M's B-wing was;
+        // the death itself comes as an event, TieEvent kind 3, with the craft's type and group checked)
+        const bool same = c.type() == tie_r8(tie::kObjects + c.obj() * tie::kObjectSize + 4);
+        if (c.dying() && c.obj() < (Bit32u)kCraftSlots && tie_in_flight() && (same || (f.has_own() && c.obj() == f.own()))) {
             begin_kill((int)c.obj(), c.has_killer() ? (int)c.killer() : -1);
             if (f.has_own() && c.obj() == f.own()) {
                 room_end(owner, " is down");
