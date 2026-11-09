@@ -796,6 +796,11 @@ move vector, the nine axis words, type).
     line 0xD4C04 and 0xD4C00, half the view's width and depth 0xD4C18 and
     0xD4C16, `transfm2_screenyoffset` 0xEC170): at 640x480, 320 and 162 (the
     ring had been put 37.5% down, line 180, the gunsight's bottom mark).
+  * **Space fires**: the mouse's left button, the game's trigger, held while
+    it is.  TIE's own Space confirms what waits for it
+    (`pstate.space_confirm_action`, 0xEB17E: a warhead's target, the
+    flight's end, the reinforcements after Shift+S): then it is the game's.
+    Measured: Space held 1.5 s, five shots.
 * **The page**: a "Flight" choice beside Controller with TIE Fighter loaded
   (point to aim, drag to steer, keyboard alone, joystick / gamepad),
   remembered in the browser, given at the launch and while flying

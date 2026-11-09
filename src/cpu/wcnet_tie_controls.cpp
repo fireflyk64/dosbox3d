@@ -65,6 +65,7 @@ unsigned g_frames;
 bool g_wasFlying;
 double g_accX, g_accY;              // the pointer's turns below the game's least: what is owed (pointer_mickeys)
 double g_sightX = 0.5, g_sightY = 0.375;    // the gunsight's middle, a share of the screen (the game's projection's)
+bool g_spaceFire, g_spaceGame;      // Space held: the fire button; or the game's own (a confirmation waits)
 bool g_adding;                      // our own keys going in: not ours to filter
 
 // The pointer's travel for the whole width: host pixels (after DOSBox's sensitivity).
@@ -140,6 +141,31 @@ bool tie_controls_key(int key, bool pressed) {
     case KBD_leftshift: g_shiftL = pressed; return false;
     case KBD_rightshift: g_shiftR = pressed; return false;
     default: break;
+    }
+    if (key == KBD_space) {
+        // Space fires (the user: "space would be ideal"): the mouse's button held while it is, the game's trigger.  The
+        // game's own Space confirms what waits for it (pstate.space_confirm_action: a warhead's target, the flight's
+        // end, the reinforcements after Shift+S): then it is the game's
+        if (!pressed) {
+            if (g_spaceFire) {
+                g_spaceFire = false;
+                Mouse_ButtonReleased(0);
+                return true;
+            }
+            const bool game = g_spaceGame;
+            g_spaceGame = false;
+            return !game && tie_in_flight();
+        }
+        if (g_spaceFire) {
+            return true;                    // (its repeats)
+        }
+        if (g_spaceGame || !tie_in_flight() || tie_r8(tie::kPstate + 0x26)) {
+            g_spaceGame = true;
+            return false;
+        }
+        g_spaceFire = true;
+        Mouse_ButtonPressed(0);
+        return true;
     }
     if (!tie_in_flight()) {
         g_left = g_right = g_up = g_down = false;
@@ -624,6 +650,10 @@ void tie_controls_frame() {
     }
     if (flying != g_wasFlying) {
         g_wasFlying = flying;
+        if (g_spaceFire) {
+            g_spaceFire = false;
+            Mouse_ButtonReleased(0);
+        }
         g_accX = g_accY = 0;
         g_px = g_py = 0;                    // (a flight starts with the pointer in the middle)
         g_stepX = g_stepY = 0;
