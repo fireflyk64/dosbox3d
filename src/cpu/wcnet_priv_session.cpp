@@ -110,7 +110,7 @@ struct Pilot {
     int nav;                    // the nav sphere it is in (-1 none)
     unsigned missions;          // the nav spheres it has a mission at (a bit each)
     std::string cast;           // the cast its ship is made with here, its face on our comm screen (its hello)
-    int faceId;                 // the portrait id wanted (-1: as the game makes it)
+    int faceId;                 // the head wanted: 0x21 and over the cast's other head (a woman), else its first (a man)
     Pilot() : known(false), flying(false), x(0), y(0), z(0), at(-1e9), nav(-1), missions(0), cast("MER_DP"), faceId(-1) {}
 };
 
@@ -253,7 +253,7 @@ void parse_face(const std::string &f, std::string &cast, int &id) {
     const size_t c = f.find(':');
     cast = f.substr(0, c);
     id = c == std::string::npos ? -1 : atoi(f.c_str() + c + 1);
-    if (cast.empty() || cast.size() > 8) cast = "MER_DP";
+    if (cast != "MER_DP" && cast != "MIL_AA" && cast != "CON_SA" && cast != "BOU_AA") cast = "MER_DP";   // (the page's four)
 }
 
 std::string own_callsign() {

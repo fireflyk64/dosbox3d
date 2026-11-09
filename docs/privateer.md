@@ -254,16 +254,30 @@ showed though the sets were written).  Without the sender's ship about, the line
 as before.
 
 The face is the pilot's choice: the page's Face box (Privateer only, remembered by the browser, changeable at every
-launch; `WCPRIVFACE=<cast>:<portrait>`): a merchant woman (MER_DP, portrait 14), a merchant man (47), a militia
-pilot (MIL_AA), a Confed officer (CON_SA), a hunter (BOU_AA).  A puppet is made with that cast; the portrait is the
-cast copy's +0xE, which the game sets again at its own hails (a merchant's a woman's or a man's at random: a ship
-made with 14 was 47 at its next hail), so the one asked for is written there at every line said (one of the cast's
-own only: a foreign id crashes the game, 1510-FFFF).  Measured, two native machines: each line in the other's game's
-own comm line ("GUEST1: HELLO FROM THE GUEST" under the cockpit, 4 s).  **Open:** the face on the comm screen.  A
-spawned merchant with its AI running showed one for a line of ours once; a puppet (its AI held) never has, nor with
-its AI let think for 60 frames, nor with the two more flags the game's own hail functions set (seg013:0A60..:
-+0x1D |= 0x10 and ds:0E23 = 1).  Something else of the hail's remains to be found (a code trace through a pirate's
-taunt against one through our say).
+launch; `WCPRIVFACE=<cast>:<head>`): a merchant (MER_DP), a militia pilot (MIL_AA), a Confed officer (CON_SA) or a
+hunter (BOU_AA), each a woman (head 33 and over: the page sends 47 for the merchant, 33 for the others) or a man
+(-1 or under 33); another machine's cast is taken only from those four.  A puppet is made with that cast.
+
+**Where a line shows** (the user: "the lines of written text should go as text in the hud not in the vdu itself").
+The game's comm line is one object, ds:67E4 (seg098): 01F9 takes a line (the speaker, the line, its kind), 03A0 runs
+it every frame -- it makes the string "NAME: text" (02C8, +0xC) and its time (+0xF, 0x333) -- and the comm screen's
+mode (ovr359) draws the speaker's face, copying the string to the cockpit's message bar under the screens.  The
+speaker's comm record is its controller + 8 (seg042:0AA0): +2 the cast, +8 the face picture's frame, +0xA its voice.
+The game picks the frame the first time the face is drawn (seg096:0168 -> seg097:007F): a random one of the cast's
+frames (the cast's +2 first, +4 count; the last +6 of them the other head -- in all four casts the first a man, the
+other a woman) and with it the voice, the cast's portrait id (+0xE, +0x21 for the other head).  With a voice, Sound
+Blaster and SPEECH.PAK (the CD game's, ds:13EB and ds:6930 set) a line is played as the recorded speech of its kind,
+another sentence than ours, the bar's text left out and the line ended when the speech does; and as the voice was
+picked in the middle of our first line, that line ended at once (03A0 found a voice and no speech playing) and its
+face never showed.  So `priv_ship_say` sets the frame itself (the first head, or the other's first frame for a woman)
+and the voice to none (0xFF) before every line: from the first line on, the face on the comm screen and the text on
+the message bar together for the line's 3-4 s (measured, one machine and two: "GUEST1: HELLO FROM GUEST ONE" under a
+hunter's face, "HOST: HELLO FROM THE HOST" under a Confed officer's, both ways).  The text goes over the three RECV
+sets' strings with their size kept (the rest spaces: a later, longer line is not cut to an earlier one's length;
+measured 87/111/108 bytes, unchanged after "HI"); the bar shows a 48-character line whole.  Aids: `PRIVCOMMLOG=1`
+(the comm object every change, the speaker's frame and voice), `PRIVSAYFACE=<head>` for `!privsay`,
+`!privwatchctl=<offset>:<seconds>` (the instruction that changes a word of the last spawned ship's controller, with
+the code trace; it found seg097:0126 writing the voice).
 
 ## 12. Limits: the game's near heap
 

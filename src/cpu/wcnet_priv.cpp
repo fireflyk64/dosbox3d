@@ -106,6 +106,8 @@ enum {
     kPilotFlags = 0x0A,
     kPilotFlags2 = 0x1D,            // bit 4 set as the game's own hail functions (seg013:0A60..) set a line
     kCommPending = 0x0E23,          // ds:0E23: a byte the same functions set to 1 when 0 (a hail waits to be played)
+    kComm = 0x67E4,                 // ds:67E4: the comm line (seg098: 01F9 takes a line, 03A0 runs it each frame)
+    kCtlComm = 0x08,                // a controller's comm record (the speaker: +8 its face frame, +0xA its voice)
     kCastFace = 0x0E,               // the cast copy's portrait id (chosen as the ship is made: a merchant's 14 or 47)
     kSeg081 = 0x332F,
     kSceneRemove = 0x00AD,          // seg081:00AD(list, object): the object out of the scene
@@ -127,13 +129,26 @@ double g_traceEndMs;
 std::string g_traceName;
 std::map<Bit32u, unsigned> g_trace;
 
+Bit16u g_watch, g_watchLast;     // (with the trace: "!privwatchctl=<offset>:<seconds>" logs who changes a word of the
+Bit32u g_watchPrev;             // last spawned ship's controller)
 void trace_step(double now) {
-    g_trace[((Bit32u)SegValue(cs) << 16) | (reg_eip & 0xffff)]++;
+    const Bit32u here = ((Bit32u)SegValue(cs) << 16) | (reg_eip & 0xffff);
+    if (g_watch) {
+        const Bit16u v = priv_r16(g_watch);
+        if (v != g_watchLast) {
+            wclog(1, "Privateer: watch ds:%04X %04X -> %04X by %04x:%04x (load segment %04X)", g_watch, g_watchLast, v, g_watchPrev >> 16,
+                  g_watchPrev & 0xffff, g_privLoadSeg);
+            g_watchLast = v;
+        }
+        g_watchPrev = here;
+    }
+    g_trace[here]++;
     if (now < g_traceEndMs) {
         wc_net_countdown = 0;   // (the next instruction comes here too)
         return;
     }
     g_tracing = false;
+    g_watch = 0;
     const char *dir = getenv("WCNET_DUMP_DIR");
     std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + g_traceName + ".trace";
     FILE *f = fopen(path.c_str(), "w");
@@ -489,6 +504,37 @@ static void pilot_dump_frame() {
         if (i % 2 == 1) hex += ' ';
     }
     wclog(1, "Privateer: pilot of ds:%04X at ds:%04X: %s", ship, pilot, hex.c_str());
+}
+
+// (a test aid: PRIVCOMMLOG=1 logs the game's comm line object, ds:67E4..67F7, whenever it changes: +0 the speaker (its
+// ship's controller + 8), +2 the line (far), +6 its category, +7 the line's time, +0xB bit 0 a line on, bit 1 free,
+// +0xC the "NAME: text" string (near), +0xE bit 1 shown, +0xF the string's time; and the speaker's voice, +0xA)
+static void comm_log_frame() {
+    static int on = -1;
+    if (on < 0) on = getenv("PRIVCOMMLOG") ? 1 : 0;
+    if (!on) return;
+    static std::string last;
+    std::string hex;
+    for (int i = 0; i < 0x13; i++) {
+        char b[4];
+        snprintf(b, sizeof b, "%02X", priv_r8((Bit16u)(kComm + i)));
+        hex += b;
+    }
+    const Bit16u k = priv_r16(kComm);
+    char more[96] = "";
+    if (k) { const Bit16u c = priv_ship_controller(k); if (c) snprintf(more, sizeof more, " frame %u voice %04X", priv_r16((Bit16u)(c + kCtlComm + 8)), priv_r16((Bit16u)(c + kCtlComm + 0xA))); }
+    const Bit16u str = priv_r16((Bit16u)(kComm + 0xC));
+    std::string text;
+    for (int i = 0; str && i < 60; i++) {
+        const Bit8u c = priv_r8((Bit16u)(str + i));
+        if (!c) break;
+        text += (char)c;
+    }
+    const std::string now = hex + more + " \"" + text + "\"";
+    if (now != last) {
+        wclog(1, "Privateer: comm %s (speech.pak %d, digital %d)", now.c_str(), priv_r8(0x13EB), priv_r8(0x6930));
+        last = now;
+    }
 }
 
 static void anger_frame() {
@@ -981,6 +1027,7 @@ bool priv_check_hooks(Bit32u ip) {
         g_frameSp = reg_sp;
         if (!g_saved.active) {
             pilot_dump_frame();
+            comm_log_frame();
             wing_arrays_frame();
             anger_frame();
             retarget_frame();
@@ -1127,6 +1174,21 @@ bool priv_script_item(const std::string &item, double t) {
             fclose(f);
         }
         wclog(1, "key script %.1fs: Privateer's data segment (%04X) to %s%s", t, g_ds, path.c_str(), f ? "" : " failed");
+        return true;
+    }
+    if (item.compare(0, 14, "!privwatchctl=") == 0 && g_found) {
+        unsigned off = 0;
+        double secs = 1;
+        sscanf(item.c_str() + 14, "%x:%lf", &off, &secs);
+        const Bit16u ctl = priv_ship_controller(priv_last_spawned());
+        g_watch = ctl ? (Bit16u)(ctl + off) : 0;
+        g_watchLast = g_watch ? priv_r16(g_watch) : 0;
+        g_traceName = "watch";
+        g_traceEndMs = PIC_FullIndex() + 1000.0 * secs;
+        g_tracing = g_watch != 0;
+        g_trace.clear();
+        wc_net_countdown = 0;
+        wclog(1, "key script %.1fs: watching ds:%04X (%04X) for %.1f s", t, g_watch, g_watchLast, secs);
         return true;
     }
     if (item.compare(0, 11, "!privtrace=") == 0 && g_found) {
@@ -1489,7 +1551,7 @@ bool priv_script_item(const std::string &item, double t) {
         for (int i = -1; i < n && !said; i++) {
             const Bit16u ship = i < 0 ? priv_last_spawned() : ships[i];
             if (!ship || ship == priv_player_ship() || !priv_ship_is_alive(ship)) continue;
-            said = priv_ship_say(ship, name.c_str(), text.c_str(), -1);
+            said = priv_ship_say(ship, name.c_str(), text.c_str(), getenv("PRIVSAYFACE") ? atoi(getenv("PRIVSAYFACE")) : -1);
             if (said) priv_let_think(priv_ship_controller(ship), getenv("PRIVTHINK") ? atoi(getenv("PRIVTHINK")) : 60);
             wclog(1, "key script %.1fs: ds:%04X (%s, face %d) says \"%s\" as %s: %s", t, ship, priv_ship_cast_name(ship).c_str(),
                   priv_ship_face(ship), text.c_str(), name.c_str(), said ? "told" : "no cast");
@@ -2124,11 +2186,8 @@ bool priv_ship_say(Bit16u obj, const char *name, const char *text, int face) {
     if (!ctl || !far_of((Bit16u)(ctl + kCtlCast), &cast) || !far_of((Bit16u)(ctl + kCtlPlan), &plan)) {
         return false;
     }
-    // the portrait: the cast's +0xE, which the game itself sets again at its own hails (a merchant's a woman's, 14, or
-    // a man's, 47, at random), so it is written at every line; only one of the cast's own (a foreign id crashes the game)
-    if (face >= 0 && face < 256) {
-        mem_writeb(cast + kCastFace, (Bit8u)face);
-    }
+    // (the face: below, the comm record's frame; the cast's portrait id at +0xE is left as the game has it -- it is only
+    // the speech's voice, and a foreign id there crashed the game)
     if (getenv("PRIVSAY")) g_sayMask = atoi(getenv("PRIVSAY"));
     Bit16u pilot = 0;
     if (mem_readw_checked(plan + kPlanPilot, &pilot) || !pilot) {
@@ -2176,14 +2235,42 @@ bool priv_ship_say(Bit16u obj, const char *name, const char *text, int face) {
         }
         wclog(2, "Privateer: say: set %d at %05x: %u ids (%s), strings at %05x, room %u", k, (unsigned)setObj, count, ids.c_str(), (unsigned)strings,
               (unsigned)room);
+        // the text as the first string; the set's size kept for the next line (the strings are measured again then):
+        // the rest of the room spaces, as the second string (or the first's tail when there is one), the others empty
+        const Bit32u len = (Bit32u)std::min(strlen(text), (size_t)(room - count));
         for (Bit32u i = 0; i < room; i++) {
-            mem_writeb(strings + i, i < strlen(text) && i + 1 < room ? (Bit8u)text[i] : 0);
+            Bit8u b;
+            if (i < len) b = (Bit8u)text[i];
+            else if (count == 1) b = i + 1 < room ? ' ' : 0;
+            else if (i == len) b = 0;
+            else b = i < room - (count - 1) ? ' ' : 0;
+            mem_writeb(strings + i, b);
         }
     }
     if (!(g_sayMask & 4)) {
         return true;
     }
     if (const char *e = getenv("PRIVSAYID")) firstId = (int)strtoul(e, NULL, 0);     // (a test's: another line id)
+    // The text on the cockpit's message bar, the face on the comm screen (the user: "the lines of written text should go
+    // as text in the hud not in the vdu itself").  The speaker's comm record is its controller + 8 (seg042:0AA0): +2 the
+    // cast (far), +8 the face picture's frame, +0xA its voice.  The game picks the frame once, the first time the face
+    // is drawn (seg096:0168 -> seg097:007F: a random frame of the cast's +2 first, +4 count, the last +6 of them the
+    // other head; the voice then the cast's portrait id, +0x21 for the other head), and with a voice and speech.pak a
+    // line is played as the recorded speech of its kind (another sentence: ours not shown, measured) and the bar's text
+    // dropped as the speech ends (seg098:03A0).  So the frame is ours, the head the pilot chose, and the voice none
+    // (0xFF: the text on the bar for the line's time, measured from the first line on, the face beside it).
+    {
+        const Bit16u rec = (Bit16u)(ctl + kCtlComm);
+        const Bit16u first = mem_readw(cast + 2), count = mem_readw(cast + 4), other = mem_readw(cast + 6);
+        Bit16u frame = first;
+        if (face >= 0x21 && other > 0 && other < count) frame = (Bit16u)(first + count - other);    // (a woman in each of
+                                                                        // MER_DP, MIL_AA, CON_SA, BOU_AA; the first a man)
+        const Bit16u had = priv_r16((Bit16u)(rec + 8));
+        if (face >= 0 || had < first || had >= first + count) priv_w16((Bit16u)(rec + 8), frame);
+        wclog(2, "Privateer: say: ds:%04X's face frames %u+%u (other head %u): frame %u -> %u, voice %04X -> none", obj, first, count, other, had,
+              priv_r16((Bit16u)(rec + 8)), priv_r16((Bit16u)(rec + 0xA)));
+        priv_w16((Bit16u)(rec + 0xA), 0xFF);
+    }
     priv_w16((Bit16u)(pilot + kPilotLine), (Bit16u)firstId);
     priv_w16((Bit16u)(pilot + kPilotTimer), 0);
     priv_w8((Bit16u)(pilot + kPilotFlags), (Bit8u)(priv_r8((Bit16u)(pilot + kPilotFlags)) | 1));
