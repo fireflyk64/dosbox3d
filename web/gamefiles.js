@@ -367,6 +367,24 @@ function tfMusicOnFm(FS, root) {
   return `TIE Fighter's music: ${name || "none"} (General MIDI: no synthesizer in the browser) changed to FM4.MDR, the Sound Blaster's OPL3`;
 }
 
+// Privateer's music made the Sound Blaster's (the user, 2026-11-09: "also zero music here").  SOUND.CFG's first line is
+// the music card and the speech card (PRCD.EXE, ovr392:05BB: "%d %d", then each card's four settings): music card 1
+// or 3 loads the "roland" driver (General MIDI: GOG's file says 3, for Windows' own synthesizer; there is none in the
+// browser: no music at all), 2 the "adlib" one with the settings of the second line, the Sound Blaster's OPL (measured
+// natively: the title's music at once, where 3 was silent).  The speech card and its line are kept.
+function privMusicOnFm(FS, root) {
+  const path = `${root}/SOUND.CFG`;
+  let text;
+  try { text = new TextDecoder().decode(FS.readFile(path)); } catch (e) { return "Privateer: no SOUND.CFG (its music as the game chooses)"; }
+  const lines = text.split(/\r?\n/);
+  const first = (lines[0] || "").trim().split(/\s+/);
+  if (first[0] === "2") return "";
+  const speech = first[1] || "1";
+  const out = [`2 ${speech}`, "904 -1 -1 -1", (lines[2] || "544 5 1 -1").trim(), (lines[3] || "0 0").trim(), ""].join("\r\n");
+  FS.writeFile(path, new TextEncoder().encode(out));
+  return `Privateer's music: card ${first[0] || "none"} (General MIDI: no synthesizer in the browser) changed to 2, the Sound Blaster's FM`;
+}
+
 export const GAMES = [
   { id: "wc1", tag: "WC1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
     build: { para: 0x1231, off: 0x0187, text: "Loading WING COMMANDER" },
@@ -475,14 +493,14 @@ export const GAMES = [
   // others' ships near by so far;
   // src/cpu/wcnet_priv_session.cpp); the emulator ramps its arrow keys (src/cpu/wcnet_priv_controls.cpp).
   { id: "priv", tag: "PRV", title: "Wing Commander: Privateer", detect: ["PRCD.EXE"], run: "priv", multiplayer: true, maxSeats: 8,
-    image: "GAME.GOG", cycles: 30000, saves: ["*.SAV"], noFlight: true, noRoomOptions: true,
+    image: "GAME.GOG", cycles: 30000, saves: ["*.SAV"], noFlight: true, noRoomOptions: true, prepare: privMusicOnFm,
     build: { para: 0x6E4D, off: 0x0074, text: "Type PRIV to run Privateer" },
-    help: "Privateer flown together loosely, rooms of up to 8: everybody plays their own career, goes where they like and keeps their own saved games, and the room tells everybody where the others are: each pilot's system and place is sent when it engages the autopilot (A), jumps, launches or lands, and every 15 s, and a line over the game says who is in your system and how far (in the game's metres, as its Range readout gives them). Within 30,000 m of each other you see each other's ships, flown by their own pilots (the T key targets them like any ship; shots between you do nothing on the other's machine yet). Sharing a nav point's fights, cargo and the Steltek drone come next (docs/privateer.md). Esc skips the opening; NEW registers a pilot (type a name and a callsign, Enter after each); click your ship on the landing pad to launch. Save in a base with the Quine 4000's SAVE: the page keeps your saved games in this browser.",
+    help: "Privateer flown together loosely, rooms of up to 8: everybody plays their own career, goes where they like and keeps their own saved games. Each pilot's system and place goes to the room when they launch, land, jump, engage the autopilot (A), and every 15 s; a line over the game says who is in your system and how far. Near each other you see each other's ships as the ships they fly, and a nav point's encounter is run by one pilot's game and shown to the others: everybody fights the same pirates, your hits count, and a wing about to spawn gets up to 3 more ships when several of you are there. A mission's nav points wait for the pilot who has the mission, and what flies with a pilot (an escort's charge) is seen by all. Talking: in flight press 0 (or tap Shift), type, Enter: the line shows on the others' message bar under your face (the Face box above, in the room), said by your ship when it is near; at a base use the room's chat beside this panel. Cargo you expel can be tractored by the others. Esc skips the opening; NEW registers a pilot (a name and a callsign, Enter after each); click your ship on the landing pad to launch. Save in a base with the Quine 4000's SAVE: the page keeps your saved games in this browser.",
     keys: "<b>Privateer in flight:</b> the arrow keys steer (a tap turns a little, held they build to the full turn in a third of a second; <kbd>Shift</kbd> with an arrow turns at full at once), <kbd>Home</kbd> and <kbd>PgUp</kbd> (the keypad's <kbd>7</kbd> and <kbd>9</kbd>) roll the same way; <kbd>Space</kbd> fires the guns, <kbd>Enter</kbd> the weapon picked with <kbd>W</kbd> (a missile, or the tractor beam), <kbd>Tab</kbd> the afterburner; <kbd>+</kbd> and <kbd>-</kbd> set the speed, <kbd>Backspace</kbd> stops; <kbd>T</kbd> targets, <kbd>N</kbd> the nav map, <kbd>A</kbd> the autopilot, <kbd>J</kbd> jumps, <kbd>X</kbd> expels your cargo, <kbd>C</kbd> the comms; <kbd>Alt</kbd>+<kbd>O</kbd> the options, where the mouse or a joystick can be the stick instead (the ramp is the keyboard's).",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=5\ndma=1\nhdma=5\n" },
   // Righteous Fire: the same program and disc, started as GOG's menu starts it ("priv r"), its saved games *.PRS.
   { id: "privrf", tag: "PRF", partOf: "priv", title: "Wing Commander: Privateer - Righteous Fire", detect: ["PRCD.EXE"], run: "priv r", multiplayer: true, maxSeats: 8,
-    image: "GAME.GOG", cycles: 30000, saves: ["*.PRS"], noFlight: true, noRoomOptions: true,
+    image: "GAME.GOG", cycles: 30000, saves: ["*.PRS"], noFlight: true, noRoomOptions: true, prepare: privMusicOnFm,
     build: { para: 0x6E4D, off: 0x0074, text: "Type PRIV to run Privateer" },
     help: "Righteous Fire, Privateer's sequel campaign, flown together the way Privateer is (rooms of up to 8, each pilot its own career, where everybody is told). It starts from a pilot of its own (a new one, or a Privateer pilot who finished the game). The page keeps your saved games in this browser.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=5\ndma=1\nhdma=5\n" },

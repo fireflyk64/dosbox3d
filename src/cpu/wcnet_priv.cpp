@@ -742,16 +742,36 @@ void spawn_done(int tag, Bit16u ax, Bit16u dx) {
     wclog(1, "Privateer: spawn %d made the object ds:%04X", tag, ax);
 }
 
-// The cast names' slots (above): the slot of a cast (one of the 16, the oldest taken over when they are all used: a
-// ship made long ago with that slot's old cast then reads the new one, as all of them did before)
+// The cast names' slots (above): the slot of a cast, or -1 when none is free.  A ship keeps the pointer to its cast's
+// name (+0xE) and the game reads the name again later (a comm's cast loaded by it), so a slot is given to another cast
+// only when no ship of the scene points at it and it was not given out in the last 5 s (a spawn queued with it): a slot
+// taken over under a ship gave that ship another cast's name -- its face one cast's, its voice another's (the user,
+// 2026-11-09: "a random drayman I met had a male face but female voice--I worry this could be corruption")
+double g_castGiven[kCastSlots];
+static bool cast_slot_in_use(int slot) {
+    const Bit16u at = cast_slot_address(slot);
+    if (!at) return false;
+    if (PIC_FullIndex() - g_castGiven[slot] < 5000) return true;
+    Bit16u ships[48];
+    const int n = priv_scene_ships(ships, 48);
+    for (int i = 0; i < n; i++) {
+        if (priv_r16((Bit16u)(ships[i] + 0xE)) == at) return true;
+    }
+    return false;
+}
 int cast_slot(const char *cast) {
     for (int i = 0; i < kCastSlots; i++) {
-        if (g_castNames[i] == cast) return i;
+        if (g_castNames[i] == cast) { g_castGiven[i] = PIC_FullIndex(); return i; }
     }
-    const int slot = g_castNext;
-    g_castNext = (g_castNext + 1) % kCastSlots;
-    g_castNames[slot] = cast;
-    return slot;
+    for (int k = 0; k < kCastSlots; k++) {
+        const int slot = (g_castNext + k) % kCastSlots;
+        if (!g_castNames[slot].empty() && cast_slot_in_use(slot)) continue;
+        g_castNext = (slot + 1) % kCastSlots;
+        g_castNames[slot] = cast;
+        g_castGiven[slot] = PIC_FullIndex();
+        return slot;
+    }
+    return -1;
 }
 
 void cast_block_made(int tag, Bit16u ax, Bit16u dx) {
@@ -912,7 +932,7 @@ void priv_program_loaded(const char *name, Bit16u loadSeg, Bit16u psp) {
     g_wingsExtended.clear();
     g_castBlock = 0;
     g_castBlockAsked = false;
-    for (int i = 0; i < kCastSlots; i++) g_castNames[i].clear();
+    for (int i = 0; i < kCastSlots; i++) { g_castNames[i].clear(); g_castGiven[i] = -1e9; }
     g_castNext = 0;
     g_privLoadSeg = loadSeg;
     g_ds = ds;
@@ -1797,6 +1817,15 @@ bool priv_spawn_ship(const char *type, const char *appearance, const char *cast,
     c.args.push_back(kStackArg + (Bit32u)typeAt);
     c.args.push_back(g_ds);                             // (SS is DGROUP where the call is made)
     c.castSlot = cast_slot(cast);
+    if (c.castSlot < 0) {
+        // (every slot names the cast of a ship still about: this one is not made now -- a list has a cap)
+        static double saidAt = -1e9;
+        if (PIC_FullIndex() - saidAt > 10000) {
+            saidAt = PIC_FullIndex();
+            wclog(1, "Privateer: no cast name slot free for %s (all %d name ships still about): not made", cast, (int)kCastSlots);
+        }
+        return false;
+    }
     c.args.push_back(kCastArg);
     c.args.push_back(kStackArg + (Bit32u)appAt);
     c.args.push_back(g_ds);

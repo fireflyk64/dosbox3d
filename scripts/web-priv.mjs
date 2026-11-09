@@ -103,6 +103,10 @@ const waitLog = async (re, ms) => {
   }
   return false;
 };
+// the music made the Sound Blaster's FM before the launch (GOG's SOUND.CFG asks for General MIDI: none in the browser; the
+// user, 2026-11-09: "also zero music here")
+check("Privateer's music on the Sound Blaster's FM", logs.some((l) => /Privateer's music: .* changed to 2/.test(l)) || await waitLog(/Privateer's music: .* changed to 2/, 5000),
+  (logs.find((l) => /Privateer's music/.test(l)) || "no word of the music").slice(0, 140));
 check("PRCD.EXE found by the layer", await waitLog(/Privateer.*PRCD\.EXE loaded at/, 60000),
   (logs.find((l) => /PRCD\.EXE loaded/.test(l)) || "").slice(0, 120));
 const flying = await waitLog(/keyboard frames, controls: keyboard/, 90000);
