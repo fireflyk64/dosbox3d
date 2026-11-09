@@ -809,7 +809,11 @@ move vector, the nine axis words, type).
     prompt's (an `h` typed hyperspaced out).  A tap of Shift's release is
     still given to the game (held there, the arrows turned at full at once).
     Measured: "HOST: hello from host" on the guest, "GUEST: hi from guest" on
-    the host.
+    the host; then by a browser's own keys (scripts/web-tf-guest.mjs
+    `CHAT=`), a page guest in flight with a native host: 0, "hello from the
+    browser", Enter, and a tap of Shift, "hi again", Enter, both on the
+    host's screen and the guest's own, the guest flying on (its `h` the
+    prompt's).
   * **A flight's end** (the user: "when I end the mission (eg hitting h) with
     the aim to fly option my cursor still appears on the combat chamber. The
     fly mission again button is highlighted but I cannot move the in-game
@@ -1350,8 +1354,18 @@ X-wing-like cockpit (an arched canopy, a long nose).
   where the mission has one of its 16 free and does not say it already
   (HG4M; HG3M's first line is it); again when the mission is read again after
   its opening jump (HG4M's: the line was lost there before).  With none free
-  (HG1W, HI2W) the emulator's notice says "They're flying Z-95 Headhunters!
-  They're brave...", unvoiced.  In the enemy lines' color (below).
+  (HG1W, HI2W) the emulator's notice had said "They're flying Z-95
+  Headhunters! They're brave...", unvoiced, until the user (2026-11-09):
+  "I don't like the arbitrary message about z-95 being brave. Only want in
+  game audio for that kind of thing. That area should be reserved for
+  messaging", then "Ya swap a line for it": now one of their own lines is
+  it, by the table (below): HG1W's 14, the enemy's answer 5 s after the
+  bolting transport and its fighters come (after our side's "Imperial
+  scum!..."; it had been B2M4GW's "Try not to waste any on the Z-95s. Use
+  cannons instead"), HI2W's 2, the enemy's first word of the Z-95s 10 s in
+  (it had been HM1W's "Z-95 Headhunters have been launched in response to
+  your attack!").  With no slot at all, nothing.  In the enemy lines' color
+  (below).
 * **The missions' lines** (the user: "just replace them with those other side
   lines.... where it talks about the weak z-95 or others where they talk about
   rebel scum. lots of lines can sub in... find extant lines").  Each radio
