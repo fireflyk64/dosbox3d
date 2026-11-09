@@ -32,6 +32,7 @@
 #include "setup.h"
 #include "serialport.h"
 #include <time.h>
+#include <stdlib.h>
 
 #if defined(DB_HAVE_CLOCK_GETTIME) && ! defined(WIN32)
 //time.h is already included
@@ -519,6 +520,18 @@ static void BIOS_HostTimeSync() {
 	loctime->tm_year = 2007 - 1900;
 	*/
 
+	// (a test rig's: WCNET_BOOTCLOCK=HH:MM:SS boots every run at that time of 2026-01-01, so that a game seeding its
+	// random numbers from the clock -- Privateer's offered missions -- deals the same hand each run)
+	if (const char *fixedClock = getenv("WCNET_BOOTCLOCK")) {
+		int hh = 12, mm = 0, ss = 0;
+		sscanf(fixedClock, "%d:%d:%d", &hh, &mm, &ss);
+		static struct tm fixedTm;
+		fixedTm = *loctime;
+		fixedTm.tm_hour = hh; fixedTm.tm_min = mm; fixedTm.tm_sec = ss;
+		fixedTm.tm_mday = 1; fixedTm.tm_mon = 0; fixedTm.tm_year = 2026 - 1900;
+		loctime = &fixedTm;
+		milli = 0;
+	}
 	dos.date.day=(Bit8u)loctime->tm_mday;
 	dos.date.month=(Bit8u)loctime->tm_mon+1;
 	dos.date.year=(Bit16u)loctime->tm_year+1900;

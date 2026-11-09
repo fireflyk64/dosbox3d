@@ -74,6 +74,10 @@ if (process.env.ROOM) {
   console.log(`${stamp()} in the room: ` + await page.$eval("#status", (el) => el.textContent.trim().slice(0, 140)));
   const max = await page.$eval("#seats", (el) => el.max);
   check("the Players box takes 8 for Privateer", max === "8", max);
+  // the Face box seen in a room (it sat in the room's row of choices, hidden for a game the room does not fly: the user,
+  // 2026-11-09, "I also don't see an option to select comm portrait")
+  const face = await page.evaluate(() => { const el = document.getElementById("privFace"); return el && el.offsetParent !== null ? el.options.length : 0; });
+  check("the Face box shows in the room, with its 8 faces", face === 8, face);
 } else if (process.env.SEATS) {
   // a room of SEATS made by this page, its host, alone in it (the lobby server's own limit on a room's seats)
   await page.fill("#seats", process.env.SEATS);
@@ -81,6 +85,8 @@ if (process.env.ROOM) {
   await page.click("#join");
   await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 30000 });
   console.log(`${stamp()} in the room: ` + await page.$eval("#status", (el) => el.textContent.trim().slice(0, 140)));
+  const face = await page.evaluate(() => { const el = document.getElementById("privFace"); return el && el.offsetParent !== null ? el.options.length : 0; });
+  check("the Face box shows in the room, with its 8 faces", face === 8, face);
 } else {
   // a room of one (Players 1): the game alone, as it is
   await page.fill("#seats", "1");

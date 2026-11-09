@@ -825,7 +825,10 @@ function liveMission() {
   log(`the room's mission given to the game: ${name || "none"}`);
 }
 function renderMission() {
-  $("missionRow").hidden = !lobbyFlies();
+  // (a game the room does not fly, Privateer's: the row for its Face box alone -- and Full screen -- the room's own
+  // choices hidden; the Face box was hidden with the whole row before: the user, 2026-11-09, "I also don't see an
+  // option to select comm portrait")
+  $("missionRow").hidden = !lobbyFlies() && !isPriv();
   loadCampaignManifest(gameById(lobbyGameId()));
   wordCampaign();
   buildMissionMenu();
@@ -841,7 +844,7 @@ function renderMission() {
   // rate stays: the hooks pace a flight alone too.)
   const one = soloRoom();
   const pickAlone = one && missionAlone();
-  $("mission").parentElement.hidden = one && !pickAlone;
+  $("mission").parentElement.hidden = (one && !pickAlone) || !lobbyFlies();
   $("mission").parentElement.title = one ? "The mission to start at, or the campaign as the game starts it" : "The mission the host picked for everyone";
   // (a game with none of the room's options, TIE Fighter's: no Conn, no Collide)
   const noRoomOptions = !!(gameById(lobbyGameId()) || {}).noRoomOptions;

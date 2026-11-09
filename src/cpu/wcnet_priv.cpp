@@ -24,6 +24,7 @@
 #include "cpu.h"
 #include "lazyflags.h"
 #include "paging.h"
+#include "keyboard.h"
 #include <math.h>
 #include <ctype.h>
 
@@ -989,7 +990,9 @@ static bool hostile_cast_name(const std::string &c) {
     return c.compare(0, 3, "PIR") == 0 || c.compare(0, 3, "KIL") == 0 || c.compare(0, 3, "RET") == 0 || c.compare(0, 3, "BOU") == 0;
 }
 
-struct { bool pod; double rate, until; bool pirate; } g_turn = { true, 0, -1e9, false };
+struct { bool pod; double rate, until; bool pirate, hunt; } g_turn = { true, 0, -1e9, false, false };
+// (the hunt mode's state: the target's last place, for its lead; the trigger held; the last missile)
+struct { Bit16u obj; double x, y, z, at; bool firing; double missileAt; } g_hunt = { 0, 0, 0, 0, 0, false, -1e9 };
 
 // (a test aid: "!privfollow=<cast>:<metres>:<seconds>[:<sphere>]" keeps our ship that far beside the ship of that cast --
 // an escort flown at its charge's side, at its pace -- every frame, until the time is up, a hostile ship comes within
@@ -1041,9 +1044,17 @@ static void follow_step() {
     for (int k = 0; k < 3; k++) mem_writed(ds_at((Bit16u)(own + kShipPos + 4 * k)), (Bit32u)at[k]);
 }
 
+static void hunt_trigger(bool on) {
+    if (on != g_hunt.firing) {
+        KEYBOARD_AddKey(KBD_space, on);
+        g_hunt.firing = on;
+    }
+}
+
 static void turn_step() {
     const double now = PIC_FullIndex();
     if (now > g_turn.until || !priv_in_flight()) {
+        if (g_hunt.firing) hunt_trigger(false);
         return;
     }
     Bit16u objs[48];
@@ -1052,6 +1063,8 @@ static void turn_step() {
     Bit32s pos[3];
     priv_player_pos(pos);
     double best = 1e18, tgt[3] = { 0, 0, 0 };
+    Bit16u bestObj = 0;
+    Bit32s bestP[3] = { 0, 0, 0 };
     for (int i = 0; i < n; i++) {
         if (objs[i] == own || (g_turn.pirate && !hostile_cast_name(priv_ship_cast_name(objs[i])))) continue;
         if (g_turn.pirate && !priv_ship_is_alive(objs[i])) continue;
@@ -1059,9 +1072,22 @@ static void turn_step() {
         priv_ship_pos(objs[i], p);
         const double d = sqrt((double)(p[0] - pos[0]) * (p[0] - pos[0]) + (double)(p[1] - pos[1]) * (p[1] - pos[1]) + (double)(p[2] - pos[2]) * (p[2] - pos[2]));
         if (d > 256.0 * 100000) continue;       // (a parked one, far off)
-        if (d < best) { best = d; for (int k = 0; k < 3; k++) tgt[k] = (p[k] - pos[k]) / d; }
+        if (d < best) { best = d; bestObj = objs[i]; for (int k = 0; k < 3; k++) { tgt[k] = (p[k] - pos[k]) / d; bestP[k] = p[k]; } }
     }
-    if (best > 1e17) return;
+    if (best > 1e17) { if (g_hunt.firing) hunt_trigger(false); return; }
+    if (g_turn.hunt) {
+        // the lead: the target's velocity from its last place, the bolt's flight at some 1,500 m/s
+        double aim[3] = { (double)bestP[0], (double)bestP[1], (double)bestP[2] };
+        if (bestObj == g_hunt.obj && now > g_hunt.at && now - g_hunt.at < 500) {
+            const double dt = (now - g_hunt.at) / 1000.0, tof = best / (1500.0 * 256);
+            aim[0] += (bestP[0] - g_hunt.x) / dt * tof;
+            aim[1] += (bestP[1] - g_hunt.y) / dt * tof;
+            aim[2] += (bestP[2] - g_hunt.z) / dt * tof;
+        }
+        g_hunt.obj = bestObj; g_hunt.x = bestP[0]; g_hunt.y = bestP[1]; g_hunt.z = bestP[2]; g_hunt.at = now;
+        const double ax = aim[0] - pos[0], ay = aim[1] - pos[1], az = aim[2] - pos[2], ad = sqrt(ax * ax + ay * ay + az * az);
+        if (ad > 1) { tgt[0] = ax / ad; tgt[1] = ay / ad; tgt[2] = az / ad; }
+    }
     Bit32s m[9];
     priv_player_matrix(m);
     double r[3], f[3], u[3];
@@ -1069,6 +1095,30 @@ static void turn_step() {
     const double dot = f[0] * tgt[0] + f[1] * tgt[1] + f[2] * tgt[2];
     const double ang = acos(dot > 1 ? 1 : dot < -1 ? -1 : dot);
     const double step = g_turn.rate / 20.0;         // (a frame of the page's 20)
+    if (g_turn.hunt) {
+        // the trigger held only when the lead is within 3 degrees and 2 km, and no ship that is not hostile lies nearer
+        // in the line of fire (a pilot, a puppet, an escort's charge); a missile (W selects one, Enter fires) every 4 s
+        // within 6 degrees and 4 km
+        bool clear = true;
+        Bit16u all[48];
+        const int na = priv_scene_ships(all, 48);
+        for (int i = 0; i < na && clear; i++) {
+            if (all[i] == own || !priv_ship_is_alive(all[i]) || hostile_cast_name(priv_ship_cast_name(all[i]))) continue;
+            Bit32s p[3];
+            priv_ship_pos(all[i], p);
+            const double dx = (double)p[0] - pos[0], dy = (double)p[1] - pos[1], dz = (double)p[2] - pos[2];
+            const double d = sqrt(dx * dx + dy * dy + dz * dz);
+            if (d < 1 || d > best + 256 * 200) continue;
+            const double c = (f[0] * dx + f[1] * dy + f[2] * dz) / d;
+            if (c > cos(8.0 * 3.14159265 / 180)) clear = false;
+        }
+        hunt_trigger(clear && ang < 3.0 * 3.14159265 / 180 && best < 2000.0 * 256);
+        if (clear && ang < 6.0 * 3.14159265 / 180 && best < 4000.0 * 256 && now - g_hunt.missileAt > 4000) {
+            KEYBOARD_AddKey(KBD_enter, true);
+            KEYBOARD_AddKey(KBD_enter, false);
+            g_hunt.missileAt = now;
+        }
+    }
     if (ang < 0.002) return;
     double axis[3] = { f[1] * tgt[2] - f[2] * tgt[1], f[2] * tgt[0] - f[0] * tgt[2], f[0] * tgt[1] - f[1] * tgt[0] };
     const double al = sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
@@ -1466,13 +1516,15 @@ bool priv_script_item(const std::string &item, double t) {
         return true;
     }
     if (item.compare(0, 10, "!privturn=") == 0 && g_found) {
-        // !privturn=<pod|ship>:<degrees a second>:<seconds>: our ship turned steadily toward the nearest pod (or other
-        // ship) for that long, a video aid (the matrix's second row is "forward")
+        // !privturn=<pod|ship|pirate|hunt>:<degrees a second>:<seconds>: our ship turned steadily toward the nearest pod
+        // (or other ship, or hostile ship) for that long, a video aid (the matrix's second row is "forward"); hunt: the
+        // nearest hostile led by its speed, the guns held and missiles fired when lined up (a rig's fighter pilot)
         char what[8] = "pod";
         int degs = 30, secs = 4;
         sscanf(item.c_str() + 10, "%7[a-z]:%d:%d", what, &degs, &secs);
-        g_turn.pod = strcmp(what, "ship") != 0 && strcmp(what, "pirate") != 0;
-        g_turn.pirate = strcmp(what, "pirate") == 0;
+        g_turn.pod = strcmp(what, "ship") != 0 && strcmp(what, "pirate") != 0 && strcmp(what, "hunt") != 0;
+        g_turn.hunt = strcmp(what, "hunt") == 0;
+        g_turn.pirate = strcmp(what, "pirate") == 0 || g_turn.hunt;   // (hunt: the nearest hostile, led, fired at)
         g_turn.rate = degs * 3.14159265 / 180.0;
         g_turn.until = PIC_FullIndex() + 1000.0 * secs;
         wclog(1, "key script %.1fs: turning toward the nearest %s at %d degrees a second for %d s", t, g_turn.pod ? "pod" : "ship", degs, secs);
