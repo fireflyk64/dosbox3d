@@ -537,6 +537,22 @@ static void comm_log_frame() {
     }
 }
 
+bool g_armorDump;
+static void armor_dump_frame() {
+    if (!g_armorDump) return;
+    g_armorDump = false;
+    const Bit16u ship = priv_player_ship();
+    const Bit16u moff = ship ? priv_r16((Bit16u)(ship + kShipModel)) : 0, mseg = ship ? priv_r16((Bit16u)(ship + kShipModel + 2)) : 0;
+    const PhysPt model = mseg ? ((PhysPt)mseg << 4) + moff : 0;
+    std::string hex;
+    for (int i = 0x20; model && i < 0x50; i += 2) {
+        char b[8];
+        snprintf(b, sizeof b, "%04X ", mem_readw(model + i));
+        hex += b;
+    }
+    wclog(1, "Privateer: our ship's damage model at %05X, words +0x20..+0x4E: %s", (unsigned)model, hex.c_str());
+}
+
 static void anger_frame() {
     for (size_t i = 0; i < g_angers.size(); i++) {
         const Bit16u ship = g_angers[i];
@@ -953,11 +969,11 @@ void priv_tick() {
         }
         wclog(2, "Privateer: t=%.1f, %u keyboard frames, controls: %s, near heap free %d (lowest this second %d, ever %d; largest block %d, %d blocks); "
                  "ours here: %d pilots, %d encounter ships, %d pods; %d allocations, the largest %d (ever %d); stack headroom at one: the game's %d, ours %d; "
-                 "ships in the scene %d, pirates %d; in %s",
+                 "ships in the scene %d, pirates %d, ours a %s; in %s",
               now / 1000.0, frames - lastFrames, priv_control_mode(), total, g_heapLowSecond < (1 << 30) ? g_heapLowSecond : -1,
               priv_near_heap_lowest(), largest, blocks, pilots, npcs, pods, g_alloc.count, g_alloc.largestSecond, g_alloc.largest,
               g_alloc.headroomGame < (1 << 30) ? g_alloc.headroomGame : -1, g_alloc.headroomOurs < (1 << 30) ? g_alloc.headroomOurs : -1, alive, pirates,
-              priv_in_flight() ? priv_system_name().c_str() : "(not flying)");
+              priv_player_ship() ? priv_player_appearance().c_str() : "-", priv_in_flight() ? priv_system_name().c_str() : "(not flying)");
         g_alloc.count = 0;
         g_alloc.largestSecond = 0;
         lastFrames = frames;
@@ -1028,6 +1044,7 @@ bool priv_check_hooks(Bit32u ip) {
         if (!g_saved.active) {
             pilot_dump_frame();
             comm_log_frame();
+            armor_dump_frame();
             wing_arrays_frame();
             anger_frame();
             retarget_frame();
@@ -1445,9 +1462,21 @@ bool priv_script_item(const std::string &item, double t) {
         return true;
     }
     if (item.compare(0, 11, "!privgonav=") == 0 && g_found) {
-        // !privgonav=<sphere>[:<metres>]: our ship put in that nav sphere (its centre, offset along x)
+        // !privgonav=<sphere>[:<metres>]: our ship put in that nav sphere (its centre, offset along x); m<seat> for the
+        // sphere: the first of that pilot's mission nav points as we know them (seat 0 = the host), m alone ours
         int id = 0, off = 0;
-        sscanf(item.c_str() + 11, "%d:%d", &id, &off);
+        if (item[11] == 'm') {
+            int seat = -1;
+            const char *rest = item.c_str() + 12;
+            if (isdigit((unsigned char)*rest)) seat = (int)strtol(rest, (char **)&rest, 10);
+            if (*rest == ':') off = atoi(rest + 1);
+            const unsigned navs = priv_session_pilot_missions(seat);
+            id = -1;
+            for (int b = 0; b < 32 && id < 0; b++) if (navs & (1u << b)) id = b;
+            wclog(1, "key script %.1fs: pilot %d's mission nav points %08X: sphere %d", t, seat + 1, navs, id);
+        } else {
+            sscanf(item.c_str() + 11, "%d:%d", &id, &off);
+        }
         PrivSphere sp[16];
         const int n = priv_spheres(sp, 16);
         for (int i = 0; i < n; i++) {
@@ -1512,6 +1541,18 @@ bool priv_script_item(const std::string &item, double t) {
             killed++;
         }
         wclog(1, "key script %.1fs: !privpeace: %d ships of the scene killed", t, killed);
+        return true;
+    }
+    if (item.compare(0, 10, "!privarmor") == 0 && g_found) {
+        g_armorDump = true;             // (at the frame: the damage model is far data)
+        return true;
+    }
+    if (item.compare(0, 9, "!privhit=") == 0 && g_found) {
+        // !privhit=<quadrant>:<damage>: a hit on our own ship as another machine's hit is applied (a test aid)
+        int loc = 0, dmg = 0;
+        sscanf(item.c_str() + 9, "%d:%d", &loc, &dmg);
+        wclog(1, "key script %.1fs: a hit on our ship, quadrant %d, %d", t, loc, dmg);
+        priv_hit_apply(priv_player_ship(), loc, dmg);
         return true;
     }
     if (item.compare(0, 9, "!privkill") == 0 && g_found) {

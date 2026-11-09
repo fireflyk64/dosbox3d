@@ -468,9 +468,30 @@ unsigned mission_holders(unsigned present, int nav) {
     return mission;
 }
 
-int choose_owner(unsigned present, int nav, unsigned &done, unsigned *missionOut) {
+// The pilots flying in the system with a mission objective at the nav, present or not
+unsigned mission_holders_flying(const std::string &system, int nav) {
+    unsigned holders = 0;
+    for (int s = 0; s < kMaxSeats && nav >= 0 && nav < 32; s++) {
+        const bool me = s == g_net->self;
+        const bool flying = me ? priv_in_flight() : g_net->pilots[s].known && g_net->pilots[s].flying;
+        const std::string &sys = me ? g_system : g_net->pilots[s].system;
+        const unsigned m = me ? priv_mission_navs() : g_net->pilots[s].missions;
+        if (flying && sys == system && (m & (1u << nav))) holders |= 1u << s;
+    }
+    return holders;
+}
+
+enum { kOwnerReserved = -2 };
+
+// kOwnerReserved: nobody present has a mission there but a pilot flying in the system has -- the nav point waits for
+// it (its game is the one that makes the mission's ships there: an escort's ship to meet, a target; a wing refused is
+// lost, so a helper there first must not take the nav's spawn)
+int choose_owner(unsigned present, int nav, unsigned &done, unsigned *missionOut, const std::string &system) {
     const unsigned mission = mission_holders(present, nav);
     if (missionOut) *missionOut = mission;
+    if (!mission && mission_holders_flying(system, nav)) {
+        return kOwnerReserved;
+    }
     unsigned cands = mission ? mission : present;
     if (!(cands & ~done)) {
         done = 0;
@@ -508,7 +529,12 @@ void decide_owners(double now, bool &changed) {
             continue;                   // (the owner is still there: it stays)
         }
         unsigned mission = 0;
-        const int pick = choose_owner(present, o.nav, o.done, &mission);
+        const int pick = choose_owner(present, o.nav, o.done, &mission, o.system);
+        if (pick == kOwnerReserved && o.owner >= 0) {
+            o.owner = -1;               // (its owner gone, a mission holder's to come)
+            changed = true;
+            continue;
+        }
         if (pick >= 0 && pick != o.owner) {
             o.owner = pick;
             o.done |= 1u << pick;
@@ -1041,6 +1067,13 @@ void priv_session_tick() {
     } else if (g_net->nav >= 0) {
         g_net->nav = -1;
     }
+    // our missions' nav points, told when they change (read at the frame in flight: a mission taken at a base shows
+    // after the launch; the others reserve those nav points for us)
+    static unsigned toldMissions;
+    if (priv_mission_navs() != toldMissions) {
+        toldMissions = priv_mission_navs();
+        priv_session_event(WHY_NAV);
+    }
     if (g_net->host && now - g_net->decidedAt >= kDecideEveryMs) {
         g_net->decidedAt = now;
         bool changed = false;
@@ -1293,10 +1326,11 @@ bool pod_taken(Bit32u id) {
     return std::find(g_net->podsTaken.begin(), g_net->podsTaken.end(), id) != g_net->podsTaken.end();
 }
 
-// The owner's encounter ships (withShips), and anybody's cargo pods (expelled, or a ship's death's: section 13)
-void send_scene(double now, bool withShips) {
+// Our game's own ships near us (a nav point's encounter where we own it; what came with us anywhere) and our cargo pods (expelled,
+// or a ship's death's: section 13)
+void send_scene(double now) {
     Bit16u ships[48], pods[16];
-    int n = withShips ? priv_scene_ships(ships, 48) : 0;
+    const int n = priv_scene_ships(ships, 48);
     const int np = priv_scene_pods(pods, 16);
     const Bit16u own = priv_player_ship();
     Bit32s pos[3];
@@ -1341,20 +1375,10 @@ void send_scene(double now, bool withShips) {
         c->set_units((Bit32u)units);
         sent++;
     }
-    // a Steltek drone of ours is shared by whichever machine runs it, as the pods are (the user: "if a steltek drone is
+    // (a Steltek drone of ours is among the ships: shared by whichever machine runs it, the user: "if a steltek drone is
     // following a player it should spawn but not more than 1.  And it should target the lowest player number in that
     // region")
-    if (!withShips) {
-        Bit16u all[48];
-        const int na = priv_scene_ships(all, 48);
-        for (int i = 0; i < na; i++) {
-            if (all[i] != own && !is_puppet_obj(all[i]) && priv_ship_is_alive(all[i]) && priv_ship_type_name(all[i]) == kDroneType) {
-                ships[n < 48 ? n : 47] = all[i];
-                if (n < 48) n++;
-            }
-        }
-    }
-    if (!withShips && !sent && !n) {
+    if (!sent && !n) {
         return;             // (nothing of ours to tell)
     }
     for (int i = 0; i < n; i++) {
@@ -1777,7 +1801,12 @@ bool priv_session_allow_wing(int sphereId) {
         NavOwner *o = owner_entry(g_system, sphereId, true);
         unsigned done = o ? o->done : 0;
         const unsigned present = present_at(g_system, sphereId) | (1u << g_net->self);
-        owner = choose_owner(present, sphereId, done, NULL);
+        owner = choose_owner(present, sphereId, done, NULL, g_system);
+        if (owner == kOwnerReserved) {
+            wclog(1, "Privateer: %s nav %d is a mission's of a pilot not here yet: its wings are left to that pilot's game (present %02x, "
+                     "holders %02x)", g_system.c_str(), sphereId, present, mission_holders_flying(g_system, sphereId));
+            return false;
+        }
         if (o && owner >= 0) {
             o->owner = owner;
             o->occupied = true;
@@ -1790,6 +1819,14 @@ bool priv_session_allow_wing(int sphereId) {
     (void)now;
     if (owner == g_net->self) {
         make_room_for_wing(sphereId);   // (never refused: the game's own encounter first; ours give way)
+        return true;
+    }
+    if (sphereId >= 0 && sphereId < 32 && (priv_mission_navs() & (1u << sphereId))) {
+        // one of our missions' nav points that another owns (it came first, our mission not known to it yet): its
+        // wings ours too -- a mission's ships are made by its holder's game alone (refused, they are lost), and every
+        // game's own ships are shown to the others (a nav's own encounter may then stand twice: the lesser harm)
+        wclog(1, "Privateer: %s nav %d is our mission's, owned by pilot %d: its wings made here too", g_system.c_str(), sphereId, owner + 1);
+        make_room_for_wing(sphereId);
         return true;
     }
     if (owner >= 0) {
@@ -1987,7 +2024,10 @@ void priv_session_frame() {
     }
     // the encounter ships of a nav point we own, and our cargo pods, to the others near
     if (wanted && now - g_net->sceneAt >= kSceneEveryMs) {
-        send_scene(now, g_net->nav >= 0 && owner_of(g_system, g_net->nav) == g_net->self);
+        // every ship of our game's own near us: a nav point's encounter where we own it, and wherever we are what
+        // came with us -- an escort's ship, a mission's, pursuers (a game not owning the nav has no others: its wings
+        // there were refused; measured, a guest's scene = its puppets)
+        send_scene(now);
     }
     govern_memory(now, pos);
     // the encounter ships first (the first claim on the game's memory: co-op, an enemy not shown still shoots), then
@@ -2036,6 +2076,12 @@ void priv_session_frame() {
 }
 
 void priv_session_force_release() { g_forceRelease++; }
+
+// A pilot's mission nav points as we know them (seat < 0 or ours: our own)
+unsigned priv_session_pilot_missions(int seat) {
+    if (!g_net || seat < 0 || seat >= kMaxSeats || seat == g_net->self) return priv_mission_navs();
+    return g_net->pilots[seat].missions;
+}
 
 // A pilot's ship in our game: ours, or its puppet (0 none here)
 Bit16u priv_session_pilot_ship(int seat) {
