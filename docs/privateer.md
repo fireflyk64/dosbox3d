@@ -355,23 +355,13 @@ scripts/tfnet-video.py (1080x1920, the host above, the guest below, the two reco
 clocks) into 28 s: `scratchpad/privateer-together.mp4`.  Frames of the game's comm line are found in a recording
 with scratchpad/commline.py (the light box at the picture's bottom).
 
-## 14. Open: mission objectives, the Steltek drone, the face
+## 14. Mission objectives, the Steltek drone, the face (were open; section 16)
 
-**Mission objectives** (step 5's "one with a mission objective there, first"): the presence message carries
-`missions` (a bit a nav sphere) and the host's decision honours it, but nothing fills it yet.  The Mission Computer
-(concourse 0.80, 0.55; the palm plate 0.70, 0.80; arrows 0.22 / 0.33, 0.80; Accept 0.47, 0.80; Exit at the bottom)
-gives missions such as "ATTACK MISSION ... Retro ships at Nav 7" in Troy, and the nav map (N) rings Nav 7 in orange
-for it: the game knows the objective's nav point from the accepted mission's SCEN form.  The sphere records (ds:66C2:
-16 in Troy, 0-7 bases and jump points with a kind at +16, 8-15 the nav spheres, kind 0xFF, radius at +14) carry no
-mark of it (compared with and without two missions accepted: the same 19 bytes); the accepted missions' list in
-memory, and its objectives' nav points, remain to be found (`!privspheres` dumps the records).
-
-**The Steltek drone** (step 8): DRONTYPE.IFF is a type like any; no mission file names it (the mission files name
-their ships in lower case, "demntypedemon", and none says "dron"), so the game's code spawns it (the string at
-dseg:362C, whose references the disassembler cannot place: the segments that hold them have no function prologues).
-Where that spawn goes through the encounter spawn (seg077:0265) the nav point's owner alone makes it, so it is one
-drone a nav point as the user asked; its target is then the owner's own ship, not the lowest seat's.  Untestable
-without a late campaign (the drone comes after the Steltek gun); left as it is.
+Mission objectives, the drone and the face on the comm screen were open here; they are done (section 16 for the
+missions and the drone, section 11 for the face).  The search that came first: the Mission Computer (concourse 0.80,
+0.55; the palm plate 0.72, 0.82; arrows 0.25 / 0.34, 0.82; Accept 0.47, 0.81; out at the bottom) gives missions such
+as "ATTACK MISSION ... Retro ships at Nav 7" in Troy and rings the nav point in orange on the map; the sphere records
+(ds:66C2) carry no mark of it -- the objectives are the accepted missions' own (section 16).
 
 **A jump with puppets about** (the user's recipe read for this version: sell the Missile Launcher, 7,500, and the
 Plasteel Armor, 500 -- not the laser or the shields, the launch point's encounter kills an unarmed Tarsus -- and buy
@@ -385,8 +375,6 @@ not jump: the ship flies past the point after the drop, so it must be steered in
 `!privpos` beside it, world units = metres x 256).  On the two-machine run the host's flight ended of itself at
 119 s, its heap at 16 KB and no error reported -- a death between frames, most likely (the jump point's own wing);
 untested beyond that.
-
-**The face on the comm screen** (section 11): open.
 
 ## 15. Stability: the game's memory, our calls, the limits (2026-11-08)
 
@@ -463,10 +451,87 @@ the jump point (1,500 m: nothing); the jump points are scene objects (JUMPTYPE, 
 
 **The rigs' aids** (key scripts only, never the page): `!privcredits=N` (the credits, a 32-bit global at ds:655A),
 `!privfind=V` (where a value lies in the data segment), `!privrelease`, `!privpeace`, `!privturn=pirate|ship|pod:
-deg/s:secs`, `!privpos=x:y:z` (world units, 256 a metre), `!privscene`; `PRIVSTACK=1`.  The tests:
-`scripts/privtests/load.sh` (PLAYERS, PIRATES) and `scripts/privtests/jump.sh`.
+deg/s:secs`, `!privpos=x:y:z` (world units, 256 a metre), `!privscene`, `!privgonav=<sphere>|m<seat>[:<metres>]`
+(into a nav sphere, or a pilot's first mission nav point), `!privarmor` (our damage model's words), `!privhit=<quadrant>:
+<damage>` (a forwarded hit on ourselves), `!privsay=<name>:<text>` with `PRIVSAYFACE`, `!privwatchctl=<offset>:<secs>`;
+`PRIVSTACK=1`, `PRIVCOMMLOG=1`, `PRIVMISSIONS=<sphere,...>`.  The tests: `scripts/privtests/load.sh` (PLAYERS,
+PIRATES), `scripts/privtests/jump.sh`, `scripts/privtests/ships.sh` (PLAYERS: the four ships bought and outfitted) and
+`scripts/privtests/mission.sh` (MODE=first|reserved: a mission's nav point with helpers).
 
-**Open.**  Every ship our layer spawns points its cast name (+0xE) at one shared 8-byte scratch (the tail of the
-program's unused usage line), so all our puppets read as the last cast written; it is used only when a ship is made,
-as far as is known, but should be one name per cast.
+**Cast names** (were open: every ship we spawned pointed its cast name at one shared scratch, so all read the last
+written): now 16 slots of 9 bytes in a block taken from the game's own near heap at the program's load, a cast a slot,
+the oldest slot taken over when all are used.
 
+## 16. Co-op, missions, escorts, the drone, the four ships (2026-11-08)
+
+The user: "See how many random encounters can spawn in addition to the 8 players.  This is mostly coop not PvP and
+if no one can spawn when players are present then it may be boring"; "ensure that escort missions like Oxford
+function with several helpers.  Also grant enough money for a test rig to buy each of the four ships and make sure
+that the multiple players at the same nav works".
+
+**The game asks once.**  A nav point's wings spawn as the player's ship enters its sphere: seg077:0265(wing far) once
+a wing (measured: a refused wing is never asked for again on that visit).  So the owner is decided at that call by
+every machine alike: the host's word when it has one, else the same rule (`choose_owner`) over who is there by
+presences and fresh positions; `PrivOwners` carries each nav point's owner and who has had it this round (`done`).
+The wing valve no longer refuses a wing for memory: our puppets are given back to make room (`make_room_for_wing`).
+
+**Co-op extras** (more enemies for more pilots, made by the game itself).  As a hostile wing (cast PIR, KIL, RET, BOU)
+is about to spawn in the owner's game, its ship array (wing +0x3B, near; the count at +0x53, 8 words at most) is
+replaced by a larger one from the game's own allocator and the count raised: +1 for 2-3 pilots present or within
+20 km of the sphere, +2 for 4-5, +3 for 6-8 (`extras_for`), as many as the heap affords (its last low minus 8,000,
+1,200 bytes a ship).  The game then makes them as its own -- formation, orders, attack (measured: a pirate wing of
+2 got 2 more and they attacked; at nav 6 the heap allowed 1); the old array is freed (seg000:03BA) at the next frame.
+Ships placed by our layer instead (spawned and angered) only idled: no orders.
+
+**Missions.**  The player record (ds:66B2) +0x5D holds 4 near pointers to the accepted missions; a mission's
+objectives are at +0x2C (far, 5-byte entries: a far pointer and a byte; the count at +0x2E); an objective whose byte
+2 is 9 names a nav point, byte 3 the map's Nav N (sphere N-1) -- read at the frame in flight (`missions_refresh`,
+checked against the nav map's rings), sent in the presence (`missions`) whenever they change.  The owner rule prefers
+a mission holder present.  Two more rules for missions (scripts/privtests/mission.sh):
+- **Reserved:** a nav point that is a mission's of a pilot flying in the system is left to that pilot's game while
+  it is not there (`kOwnerReserved`): a helper arriving first spawns nothing ("a mission's of a pilot not here yet"),
+  since a mission's ships are made by its holder's game alone and a refused wing is lost.
+- **The holder spawns:** at its own mission's nav point a holder's game spawns its wings even when another pilot
+  owns it (its mission not yet known when that one came): the nav's own encounter may then stand twice, the lesser
+  harm.
+Measured, three machines (the holder's mission taken at the Mission Computer, PRIVMISSIONS=2 fixing the nav point:
+the list is random): reserved -- the helper there first spawned nothing, the holder's wing (two merchants) came with
+it and showed on the helper; first -- the host's own encounter and the holder's wings both, shown everywhere.
+
+**Escorts: every game's own ships are shown.**  Every game now sends the others all of its own ships within 60 km of
+it (not puppets), wherever it is -- not only the owner of a nav point its encounter.  A game that does not own the
+nav point has no others there (its wings were refused; measured, a guest's scene was its puppets alone), so what it
+sends is what came with it: an escort's ship, a mission's ship met at a nav point, pursuers.  The holder's game flies
+them; the others show them as puppets and send their hits to it.  Measured: the holder's own merchant (an escort's
+stand-in) shown on both helpers at Achilles, a nav point it did not own.  The Oxford escorts (the plot's third series,
+S3MA / S3MC / S3MD: "Meet with ... at Oxford system, Nav 3 [or 1] and escort ... safely to Oxford") are reached only
+late in the plot and were not flown; they are mission ships at a mission nav point, which these two rules cover.
+
+**The Steltek drone.**  A drone (DRONTYPE, appearance DRONE, cast SDRONE) is shared by the game that runs it like any
+own ship; one a place: a drone reported by a lower seat within 30 km of our own makes ours its puppet (`drone_adopt`).
+Each second the game running it aims it at the lowest seat present within 30 km, by replacing the old target's ship
+pointer and damage-model segment in its AI plan (far, the controller's +2; the words found in its maneuver records)
+-- measured on pirates retargeted at the guest: hits on the guest 1 before, 51 after.
+
+**The four ships** (scripts/privtests/ships.sh; 500,000 credits from the rig's `!privcredits`).  At Achilles' Ship
+Dealer (concourse 0.50, 0.45) Purchase Orion (0.32, 0.71), Centurion (0.10, 0.35), Galaxy (0.67, 0.64): the
+salesman's twelve-line pitch (Esc skips a line), then a hand, Accept (0.5, 0.9); the new ship waits on the pad.  A new
+ship comes bare: no shields, no armour (its damage model all zero; the Tarsus 250 a quadrant), and the game's own rule
+(seg053:1366 -> seg101:0C53: a quadrant's armour at 0 or less after a hit is death) kills it at the first hit through
+-- measured, one forwarded hit of 20 killed a bare Orion; in a test of 8 bare ships 6 died at the launch's first
+pirate.  So the rig outfits it as a pilot must: Repair and Upgrade (0.60, 0.22), the list's down arrow (0.43, 0.80)
+to Tungsten Armor (the Orion's and Galaxy's item 8, the Centurion's 7) and then the best shield generator (the
+Orion's 5, item 17; the Centurion's and Galaxy's 3, items 14 and 16), each bought by a click on its picture (0.18,
+0.72); a gun needs a mount chosen (not bought).  The puppet of a pilot's ship is made by its appearance (TUG an
+Orion, FIGHTER a Centurion, MERCHANT a Galaxy, CLUNKER a Tarsus).
+
+Measured with the outfitted ships (no error, no death, the program never restarted anywhere):
+
+| test | the owner's lowest free | the guests' lowest | shown |
+|---|---|---|---|
+| 4 pilots (Tarsus, Orion, Centurion, Galaxy), 3 pirates added | 7,540 | 11,734 | each the other three, as their kinds |
+| 8 pilots (two of each), 3 pirates added | 6,434 | 9,924 | each machine all 7 others, as their kinds |
+| load.sh again after "every game's own ships shown", 8 Tarsus, 3 pirates | 6,048 | 10,878 | 7 pilots and 6 encounter ships on every guest |
+
+The last is no worse than before the change (section 15: the owner 5,302, guests 10,250): with nobody's escort about,
+a game that does not own the nav point has nothing of its own to send.
