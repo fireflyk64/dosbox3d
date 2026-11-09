@@ -475,6 +475,13 @@ every machine alike: the host's word when it has one, else the same rule (`choos
 presences and fresh positions; `PrivOwners` carries each nav point's owner and who has had it this round (`done`).
 The wing valve no longer refuses a wing for memory: our puppets are given back to make room (`make_room_for_wing`).
 
+**Pilots flying together.**  A game deciding at the wing's call with no word from the host yet counts as present the
+pilots inside the sphere by their fresh reports and, since 2026-11-09, those within 5 km of its own ship
+(`pilots_with_us`): a formation crossing a sphere's edge together otherwise saw itself alone in every game and each
+spawned the encounter (measured with four pilots arriving at Nav 4 together: the host's pirate wing and guest 3's).
+After: four pilots gathered 4.5 km out and entering together -- every machine chose pilot 1, one wing.  (The nav
+spheres' radii, now in the log: 12,000 m, the bases' 17,000 m.)
+
 **Co-op extras** (more enemies for more pilots, made by the game itself).  As a hostile wing (cast PIR, KIL, RET, BOU)
 is about to spawn in the owner's game, its ship array (wing +0x3B, near; the count at +0x53, 8 words at most) is
 replaced by a larger one from the game's own allocator and the count raised: +1 for 2-3 pilots present or within
@@ -535,3 +542,12 @@ Measured with the outfitted ships (no error, no death, the program never restart
 
 The last is no worse than before the change (section 15: the owner 5,302, guests 10,250): with nobody's escort about,
 a game that does not own the nav point has nothing of its own to send.
+
+**The video** (2026-11-09, `scratchpad/privateer-coop.mp4`, 44 s, cut by scripts/tfnet-video.py from the host's and
+guest 1's recordings).  Four pilots from Achilles (faces: the host a Confed officer, woman; guest 1 a hunter, man):
+guest 1's "HELLO FROM GUEST ONE" on the host's message bar under the hunter's face, the host's "WELCOME TO TROY
+PILOTS" on guest 1's under the officer's; a Steltek drone made beside the group goes after pilot 1, the lowest seat
+(the host's target screen, 1-4 km); the four gather outside Nav 1 and enter together, the host's game spawns its pirate
+wing of 2 with 2 more for the four, and all fly it (the four Talons destroyed in 35 s).  The take's script:
+scratchpad/vidtake.sh (`!privgonav` gather at 13.5 km, enter at 11 km, then 300 m; `!privturn=pirate`; the drone by
+`!privspawn=DRONTYPE:DRONE:SDRONE`, removed by `!privpeace`).

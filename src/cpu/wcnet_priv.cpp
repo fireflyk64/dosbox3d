@@ -1820,7 +1820,13 @@ void priv_spheres_refresh() {
         g_nSpheres = read_spheres(g_spheres, 16);
         g_spheresShip = ship;
         if (g_nSpheres) {
-            wclog(2, "Privateer: %d nav spheres read (ids %d..%d)", g_nSpheres, g_spheres[0].id, g_spheres[g_nSpheres - 1].id);
+            std::string radii;
+            for (int i = 0; i < g_nSpheres; i++) {
+                char b[24];
+                snprintf(b, sizeof b, " %d:%dm", g_spheres[i].id, g_spheres[i].radius);
+                radii += b;
+            }
+            wclog(2, "Privateer: %d nav spheres read (ids %d..%d; radii%s)", g_nSpheres, g_spheres[0].id, g_spheres[g_nSpheres - 1].id, radii.c_str());
         }
     } else if (!ship) {
         g_nSpheres = 0;
