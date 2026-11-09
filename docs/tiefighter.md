@@ -760,6 +760,32 @@ move vector, the nine axis words, type).
   F12 in flight cycles pointer, drag, keyboard.  A joystick's stick comes
   from the page (`wc_web_stick`, -1..1, right and climbing positive; one that
   stops saying for half a second is the middle).
+* **The user's flight test (2026-11-09)**: "when I go left with either arrows
+  it turns left then rapidly turns right", "moving the mouse just a bit away
+  from the center results in a huge turn already", "the center of the mouse
+  is the bottom of the crosshair instead of the dot", "when I use [the
+  keyboard] enter won't fire the blasters" ("space would be ideal"), "hitting
+  shift or 0 doesn't let me chat".
+  * **The stick's sign** (the game's own bug): `user_inputforplane` scales
+    the stick by the craft's turn rate with `xor eax,eax; mov ax,inputdelta;
+    imul eax,ebx; sar eax,15` (0x5F7F3 across, scale percentage(roll rate,
+    0x3000)/2; 0x5F823 up and down, pitch rate and 0x1000), the axis read
+    unsigned: a stick left or down came out as 2 x scale - |delta| x scale /
+    32768, kept as 16 bits, which is the signed product only for a scale
+    near 0x8000.  The Empire's fighters have it (a T/F's roll 0x3000 and pitch
+    0x1400: 0x7FFF); the Z-95 (roll 0x2000: 0x5555) got a hard left for the
+    least left and, past some two thirds of the stick, a hard right; the
+    shuttle (0x6AAA, 0x6800) and the Y-wing likewise; the gunboat's pitch
+    (0x0F00: 0x7800) a bias of 4,096 down.  Measured, a Z-95's least left
+    (-4,608): the game's -24,918, the signed product -3,071.  Now the product
+    is made signed at the instruction after each `sar` (0x5F801, 0x5F831:
+    CPU state at a hook, the bytes before them checked once; OpenTIE's port
+    does the same, `TieAxisInputHook_Scale`), for the mouse, the arrows and
+    a joystick alike.  Measured, a Z-95: Left held 3 s, then Right 3 s, back
+    to within a quarter of a degree of its heading and 1.3 of its pitch.  A stick across still rolls the
+    craft as it turns (the game's own bank into the turn, `roll -=
+    x_per_tick`): a turn held is a spiral; the clean turn is a roll (Ins and
+    Del, or the right button held with the stick across) and a pull.
 * **The page**: a "Flight" choice beside Controller with TIE Fighter loaded
   (point to aim, drag to steer, keyboard alone, joystick / gamepad),
   remembered in the browser, given at the launch and while flying

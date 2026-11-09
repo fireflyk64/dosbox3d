@@ -71,6 +71,8 @@ Place g_places[] = {
     { "create_createmission", 0x16B8C, 0, 0 },
     { "shipext_Get_Mission_Path", 0x82504, 0, 0 },   // the mission file's name made from mission_name
     { "fediskio_loadspecies", 0x218D8, 0, 0 },       // the mission read, its craft about to be loaded
+    { "user_axisx", 0x5F801, 0, 0 },     // (user_inputforplane: the stick across scaled, about to be kept: tie_controls_axis)
+    { "user_axisy", 0x5F831, 0, 0 },     // (... and up and down)
 };
 const Bit8u kUpdateTimeBytes[8] = { 0x53, 0x51, 0x52, 0x56, 0x57, 0x55, 0x8b, 0x2d };
 const Bit8u kCreateProjectileBytes[8] = { 0x51, 0x56, 0x57, 0x55, 0x83, 0xec, 0x1c, 0x89 };
@@ -775,6 +777,18 @@ void tie_check_hooks(Bit32u eip) {
             tie_session_laser_hit();
         } else if (p.image == 0x148F0) {
             tie_session_damage();
+        } else if (p.image == 0x5F801 || p.image == 0x5F831) {
+            // (imul eax,ebx; sar eax,15 just done on the axis read unsigned: the product signed instead)
+            static const Bit8u kScaled[6] = { 0x0f, 0xaf, 0xc3, 0xc1, 0xf8, 0x0f };
+            static int checked = -1;
+            if (checked < 0) {
+                checked = bytes_at(tie_linear(0x5F7FB), kScaled, 6) && bytes_at(tie_linear(0x5F82B), kScaled, 6) ? 1 : 0;
+                wclog(1, "TIE: the stick's axes %s", checked ? "taken signed (user_inputforplane)" : "left as they are: not the build known");
+            }
+            if (checked) {
+                reg_eax = (Bit32u)tie_controls_axis(p.image == 0x5F801, (Bit16s)r16(p.image == 0x5F801 ? 0xEB6D2 : 0xEB6CE),
+                                                    (int)(reg_ebx & 0xFFFF), (Bit32s)reg_eax);
+            }
         } else if (p.total <= 3) {
             // (Watcom's register convention: the first arguments in eax, edx, ebx, ecx)
             wclog(2, "TIE: %s call %u: eax %08x edx %08x ebx %08x ecx %08x", p.name, p.total, (unsigned)reg_eax, (unsigned)reg_edx,

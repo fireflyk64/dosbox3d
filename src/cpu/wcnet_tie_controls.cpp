@@ -616,6 +616,25 @@ void tie_controls_frame() {
     }
 }
 
+// The game's stick, scaled by the craft's turn rate (user_inputforplane, at its `imul eax,ebx; sar eax,15`): the axis is
+// read unsigned there (xor eax,eax; mov ax,inputdelta), so a stick left or down came out as 2 x scale - |delta| x
+// scale / 32768, kept as 16 bits.  That is the signed product only for a scale near 0x8000, the Empire's fighters' (a
+// T/F's roll 0x3000 and pitch 0x1400 give 0x7FFF): a craft slower to roll or pitch was given a wrong turn to the left
+// and down, the Z-95 (roll 0x2000: scale 0x5555) a hard left for the least left and, past some two thirds of the stick,
+// a hard right (the user, 2026-11-09: "when I go left with either arrows it turns left then rapidly turns right"), the
+// shuttle and the gunboat's pitch a bias down of 4,096 and more.  The product signed, as OpenTIE's port has it
+// (TieAxisInputHook_Scale): the same both ways.
+int tie_controls_axis(bool across, int delta, int scale, int game) {
+    const int fixed = scale * delta / 32768;
+    static int told[2];
+    if ((Bit16s)game != fixed && abs((Bit16s)game - fixed) > 64 && told[across ? 0 : 1] < 1) {
+        told[across ? 0 : 1]++;
+        wclog(1, "TIE: the stick %s %d, scale %04x: the game's %d, signed %d", across ? "across" : "up and down", delta, scale,
+              (Bit16s)game, fixed);
+    }
+    return fixed;
+}
+
 bool tie_controls_marker(double *x, double *y) {
     if (!tie_found() || !tie_in_flight() || mode() != MOUSE_POINTER) {
         return false;
