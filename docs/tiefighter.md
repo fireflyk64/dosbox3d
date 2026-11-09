@@ -810,6 +810,26 @@ move vector, the nine axis words, type).
     still given to the game (held there, the arrows turned at full at once).
     Measured: "HOST: hello from host" on the guest, "GUEST: hi from guest" on
     the host.
+  * **A flight's end** (the user: "when I end the mission (eg hitting h) with
+    the aim to fly option my cursor still appears on the combat chamber. The
+    fly mission again button is highlighted but I cannot move the in-game
+    mouse"): the DOS build leaves `maingameflag` 1 from a flight's end until
+    the next flight is set up (TIE95's own clears it; OpenTIE's tie.c), so
+    the layer's "in flight" held through the Mission Goals screen, the
+    debriefing and the Combat Chamber: the pointer took the mouse there, the
+    arrows and Space too (Mission Goals asks for Space), and the room's
+    session thought the pilot still flying (the host's `h` did not end the
+    guest's flight until the host flew again; a guest's Fly Mission Again
+    was not held for the host).  Now a flight also needs the mission's end
+    flag (0xEB4E5, the mission's state +0x249: the flight's loop runs until
+    it is set, `create_createmission` clears it) not set for 1.5 s: the
+    hyperspace arrival is a scene of its own that ends with the flag too, the
+    mission made again at once (measured, the flag set 153 and 156 ms there).
+    Measured, two machines: the host's `h`, the guest's flight ended 3 s
+    later for the room; the ring gone on Mission Goals, Space taking it on;
+    the debriefing room's pointer moved by the mouse off Fly Mission Again;
+    Fly Mission Again flying both again (the end flag held 15.5 and 13.8 s
+    over the debriefing), the pointer steering in the second flight.
 * **The page**: a "Flight" choice beside Controller with TIE Fighter loaded
   (point to aim, drag to steer, keyboard alone, joystick / gamepad),
   remembered in the browser, given at the launch and while flying

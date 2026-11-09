@@ -448,7 +448,31 @@ Bit32u tie_r32(Bit32u image) { Bit32u v = 0; if (g_found) rd32(tie_linear(image)
 void tie_w8(Bit32u image, Bit8u v) { if (g_found) mem_writeb(tie_linear(image), v); }
 void tie_w16(Bit32u image, Bit16u v) { if (g_found) mem_writew(tie_linear(image), v); }
 void tie_w32(Bit32u image, Bit32u v) { if (g_found) mem_writed(tie_linear(image), v); }
-bool tie_in_flight() { return g_found && tie_r8(tie::kMainGameFlag) == 1; }
+// A flight runs: maingameflag, and the mission's end flag (which the flight's loop runs until and create_createmission
+// clears) not set for good.  The DOS build leaves maingameflag 1 from a flight's end until the next is set up, through
+// the debriefing and the front end (the user, 2026-11-09: "when I end the mission (eg hitting h) with the aim to fly
+// option my cursor still appears on the combat chamber ... I cannot move the in-game mouse"); and the hyperspace arrival
+// is a scene of its own that ends with the end flag too, the mission made again at once: so a flag set for kEndHeldMs.
+const double kEndHeldMs = 1500;
+
+bool tie_in_flight() {
+    if (!g_found || tie_r8(tie::kMainGameFlag) != 1) {
+        return false;
+    }
+    static double endSince = -1;
+    const double now = PIC_FullIndex();
+    if (tie_r8(tie::kMissionEndFlag) == 0) {
+        if (endSince >= 0) {
+            wclog(2, "TIE: the mission's end flag was set %.0f ms", now - endSince);
+            endSince = -1;
+        }
+        return true;
+    }
+    if (endSince < 0) {
+        endSince = now;
+    }
+    return now - endSince < kEndHeldMs;
+}
 std::string tie_mission_name() {
     std::string name;
     for (int i = 0; g_found && i < 14; i++) {

@@ -42,7 +42,7 @@ Bit32u tie_r32(Bit32u image);
 void tie_w8(Bit32u image, Bit8u v);
 void tie_w16(Bit32u image, Bit16u v);
 void tie_w32(Bit32u image, Bit32u v);
-// A flight runs (the game's maingameflag), and the player's object slot
+// A flight runs (the game's maingameflag, the mission's end flag not yet set), and the player's object slot
 // (-1: none).
 bool tie_in_flight();
 int tie_player_object();
@@ -71,6 +71,7 @@ enum {
     kFrameticks = 0xEB712,
     kHyperspaceFlag = 0xEB75D,
     kMainGameFlag = 0xEB763,
+    kMissionEndFlag = 0xEB4E5,  // the mission's state (0xEB29C) +0x249: the flight's loop runs until it is set
     kMissionHeader = 0xE3534,   // int16 the flight groups' number first
     kFlightGroups = 0xDF6CC,    // EFGStruct fg_array[48], 0x124 each: +0x33 craft, +0x42 the player's craft (1-based)
     kFlightGroupSize = 0x124,
