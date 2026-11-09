@@ -46,13 +46,19 @@ namespace {
 
 // What steers besides the arrows (which always do): the game's own mouse, the pointer, the keyboard alone (the mouse
 // steers nothing in flight), a joystick (the page's pad as the stick: wc_web_stick; the mouse steers nothing).
-enum { MOUSE_DRAG = 0, MOUSE_POINTER = 1, MOUSE_KEYBOARD = 2, MOUSE_JOYSTICK = 3 };
-const char *const kModeNames[] = { "drag", "pointer", "keyboard", "joystick" };
+// The pointer two ways (the user, 2026-11-09: "mouse aim to move should use yaw and pitch only and have roll happen with
+// mouse button held instead...it's more retro-vega like and makes it easier to drop the dot over where it needs to go.
+// Maybe we can have another menu where it is mouse aim roll which is what is happening today"): "pointer" turns and
+// climbs only (the game's bank into a turn left out: tie_controls_bank), the right button held with the mouse across
+// rolls; "pointerbank" is the game's turn with its bank.
+enum { MOUSE_DRAG = 0, MOUSE_POINTER = 1, MOUSE_KEYBOARD = 2, MOUSE_JOYSTICK = 3, MOUSE_POINTER_BANK = 4, MOUSE_MODES = 5 };
+const char *const kModeNames[] = { "drag", "pointer", "keyboard", "joystick", "pointerbank" };
 const char *const kModeLines[] = {
     "Flight controls: the mouse drags to steer, the game's own (F12: the keyboard alone)",
-    "Flight controls: the mouse points to aim (F12: drag to steer)",
+    "Flight controls: the mouse points to aim, no bank: hold the right button and move across to roll (F12: aim with the bank)",
     "Flight controls: the keyboard alone, the arrows (F12: the mouse points to aim)",
     "Flight controls: a joystick",
+    "Flight controls: the mouse points to aim, banking as it turns (F12: drag to steer)",
 };
 int g_mode = -1;
 double g_stickX, g_stickY, g_stickAt = -1e9;   // the page's pad (pitch positive climbs), and when it last said
@@ -61,6 +67,8 @@ int g_rollStep;                     // the roll keys' ramp (the arrows' own): -9
 double g_rollOwed;                  // ... the roll events it owes, a fraction of one a frame
 int g_stepX, g_stepY;
 double g_px, g_py;                  // the pointer, -1..1 from the middle (down and right positive)
+double g_rx;                        // ... and while the right button is held (no bank's pointer): the roll's, -1..1
+bool g_rightHeld;                   // the mouse's right button (the game's X-roll)
 unsigned g_frames;
 bool g_wasFlying;
 double g_accX, g_accY;              // the pointer's turns below the game's least: what is owed (pointer_mickeys)
@@ -76,13 +84,18 @@ int mode() {
     if (g_mode < 0) {
         const char *env = getenv("WCNET_TIE_MOUSE");
         g_mode = MOUSE_POINTER;
-        for (int m = 0; env && m < 4; m++) {
+        for (int m = 0; env && m < MOUSE_MODES; m++) {
             if (!strcmp(env, kModeNames[m])) {
                 g_mode = m;
             }
         }
     }
     return g_mode;
+}
+
+// The pointer's modes: aiming, with or without the bank.
+bool pointer_mode() {
+    return mode() == MOUSE_POINTER || mode() == MOUSE_POINTER_BANK;
 }
 
 // RetroVega's key_ramp (flight.c), WC1's: the step an axis's arrow gives this time.
@@ -190,7 +203,9 @@ bool tie_controls_key(int key, bool pressed) {
         return true;
     case KBD_f12:                           // pointer, drag, keyboard, pointer, ...
         if (pressed) {
-            g_mode = mode() == MOUSE_POINTER ? MOUSE_DRAG : mode() == MOUSE_DRAG ? MOUSE_KEYBOARD : MOUSE_POINTER;
+            g_mode = mode() == MOUSE_POINTER ? MOUSE_POINTER_BANK : mode() == MOUSE_POINTER_BANK ? MOUSE_DRAG
+                     : mode() == MOUSE_DRAG ? MOUSE_KEYBOARD : MOUSE_POINTER;
+            g_rx = 0;
             g_px = g_py = 0;
             say(kModeLines[g_mode]);
         }
@@ -204,12 +219,32 @@ bool tie_controls_mouse(float xrel, float yrel) {
     if (!tie_found() || !tie_in_flight() || mode() == MOUSE_DRAG) {
         return false;
     }
-    if (mode() != MOUSE_POINTER) {
+    if (!pointer_mode()) {
         return true;                        // (the keyboard's or a joystick's flight: the mouse steers nothing)
+    }
+    if (g_rightHeld && mode() == MOUSE_POINTER) {
+        // (rolling: the motion across is the roll's own pointer, back to the middle when the button is let go; the aim
+        // stays where it was, and up and down is nothing: the game's X-roll takes the stick's up and down as throttle)
+        g_rx = fmax(-1.0, fmin(1.0, g_rx + xrel / (kPointerSpan / 2)));
+        return true;
     }
     g_px = fmax(-1.0, fmin(1.0, g_px + xrel / (kPointerSpan / 2)));
     g_py = fmax(-1.0, fmin(1.0, g_py + yrel / (kPointerSpan / 2)));
     return true;
+}
+
+// A mouse button for the game (taken nowhere here): the right one held is the game's X-roll.
+void tie_controls_button(int button, bool pressed) {
+    if (button == 1) {
+        g_rightHeld = pressed;
+        g_rx = 0;
+    }
+}
+
+// At user_inputforplane's bank into a turn (`test si,si; je` before `sub roll,si`): the pointer without the bank
+// leaves it out (the turn's low word given as 0: the function's own way out).
+bool tie_controls_bank() {
+    return !(tie_found() && mode() == MOUSE_POINTER);
 }
 
 // Test aid (the video rig's pilot, the key script's !tiesteer=; scripts/tfnet-video.py): flown through the game's own
@@ -655,7 +690,7 @@ void tie_controls_frame() {
             Mouse_ButtonReleased(0);
         }
         g_accX = g_accY = 0;
-        g_px = g_py = 0;                    // (a flight starts with the pointer in the middle)
+        g_px = g_py = g_rx = 0;             // (a flight starts with the pointer in the middle)
         g_stepX = g_stepY = 0;
         g_left = g_right = g_up = g_down = false;
     }
@@ -671,7 +706,10 @@ void tie_controls_frame() {
     // this frame's mickeys: the pointer's from nothing (below the game's least, that least now and then: a slow turn
     // for a fine aim, the game's own easing of its stick smoothing it), a pad's and the arrows' from the least
     int mx = 0, my = 0;
-    if (mode() == MOUSE_POINTER) {
+    if (pointer_mode() && g_rightHeld && mode() == MOUSE_POINTER) {
+        mx = steer_mickeys(pointer_curve(g_rx) * 191, 17, g_accX);      // (the right button held: rolling)
+        g_accY = 0;
+    } else if (pointer_mode()) {
         // (the pointer above the middle climbs: the mouse's forward dives)
         mx = steer_mickeys(pointer_curve(g_px) * 191, 17, g_accX);
         my = steer_mickeys(-pointer_curve(g_py) * 127, 33, g_accY);
@@ -712,7 +750,7 @@ int tie_controls_axis(bool across, int delta, int scale, int game) {
 }
 
 bool tie_controls_marker(double *x, double *y) {
-    if (!tie_found() || !tie_in_flight() || mode() != MOUSE_POINTER) {
+    if (!tie_found() || !tie_in_flight() || !pointer_mode()) {
         return false;
     }
     // (round the gunsight's middle, where the stick is still: the user, 2026-11-09: "the center of the mouse is the bottom
@@ -723,8 +761,8 @@ bool tie_controls_marker(double *x, double *y) {
 }
 
 void tie_controls_set_mouse(int m) {
-    g_mode = m >= 0 && m < 4 ? m : MOUSE_POINTER;
-    g_px = g_py = 0;
+    g_mode = m >= 0 && m < MOUSE_MODES ? m : MOUSE_POINTER;
+    g_px = g_py = g_rx = 0;
     wclog(1, "TIE: flight controls: %s", kModeNames[g_mode]);
 }
 

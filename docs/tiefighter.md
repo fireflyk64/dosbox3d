@@ -830,6 +830,28 @@ move vector, the nine axis words, type).
     the debriefing room's pointer moved by the mouse off Fly Mission Again;
     Fly Mission Again flying both again (the end flag held 15.5 and 13.8 s
     over the debriefing), the pointer steering in the second flight.
+  * **The pointer without the bank** (the user: "I think mouse aim to move
+    should use yaw and pitch only and have roll happen with mouse button held
+    instead...it's more retro-vega like and makes it easier to drop the dot
+    over where it needs to go. Maybe we can have another menu where it is
+    mouse aim roll which is what is happening today"): the game banks into
+    every turn (`user_inputforplane`, after the turn: `test si,si; je` out at
+    0x5FAE1, then `sub` the turn from the object's roll at 0x5FB01).  The
+    Flight choice "point to aim" (`pointer`, the default) now leaves the bank
+    out: at 0x5FAE1 the turn's low word is given as 0 there, the function's
+    own way out (its bytes checked once), so the craft turns and climbs
+    only; the right button held with the mouse moved across rolls (the
+    game's X-roll), the motion then a roll's own pointer, back to the middle
+    when the button is let go (the aim's stays where it was; up and down is
+    nothing then, as the game's X-roll takes the stick's up and down as
+    throttle).  "point to aim, banking" (`pointerbank`, mode 4) is the turn
+    as the game has it.  F12 cycles aim, aim banking, drag, the keyboard.
+    Measured, two machines, a Z-95 each, the host's "point to aim" and the
+    guest's "banking": the pointer held right 4 s turned the host 45 degrees
+    with its roll and pitch as they were, the guest 43 degrees banked 43 and
+    its nose up 17; the right button held with the mouse across rolled the
+    host 56 degrees with its heading as it was, and let go it flew straight
+    on.
 * **The page**: a "Flight" choice beside Controller with TIE Fighter loaded
   (point to aim, drag to steer, keyboard alone, joystick / gamepad),
   remembered in the browser, given at the launch and while flying

@@ -73,6 +73,7 @@ Place g_places[] = {
     { "fediskio_loadspecies", 0x218D8, 0, 0 },       // the mission read, its craft about to be loaded
     { "user_axisx", 0x5F801, 0, 0 },     // (user_inputforplane: the stick across scaled, about to be kept: tie_controls_axis)
     { "user_axisy", 0x5F831, 0, 0 },     // (... and up and down)
+    { "user_bank", 0x5FAE1, 0, 0 },      // (... the bank into a turn: test si,si; je out; sub roll,si)
 };
 const Bit8u kUpdateTimeBytes[8] = { 0x53, 0x51, 0x52, 0x56, 0x57, 0x55, 0x8b, 0x2d };
 const Bit8u kCreateProjectileBytes[8] = { 0x51, 0x56, 0x57, 0x55, 0x83, 0xec, 0x1c, 0x89 };
@@ -812,6 +813,17 @@ void tie_check_hooks(Bit32u eip) {
             if (checked) {
                 reg_eax = (Bit32u)tie_controls_axis(p.image == 0x5F801, (Bit16s)r16(p.image == 0x5F801 ? 0xEB6D2 : 0xEB6CE),
                                                     (int)(reg_ebx & 0xFFFF), (Bit32s)reg_eax);
+            }
+        } else if (p.image == 0x5FAE1) {
+            // (the pointer without the bank: the turn's low word 0 here takes the function's own way out, past the roll)
+            static const Bit8u kBank[9] = { 0x66, 0x85, 0xf6, 0x0f, 0x84, 0x5b, 0x01, 0x00, 0x00 };
+            static int checked = -1;
+            if (checked < 0) {
+                checked = bytes_at(tie_linear(0x5FAE1), kBank, 9) ? 1 : 0;
+                wclog(1, "TIE: the bank into a turn %s", checked ? "found (user_inputforplane)" : "not where the build known has it: left");
+            }
+            if (checked == 1 && !tie_controls_bank()) {
+                reg_esi &= 0xFFFF0000;
             }
         } else if (p.total <= 3) {
             // (Watcom's register convention: the first arguments in eax, edx, ebx, ecx)

@@ -117,7 +117,9 @@ bool tie_controls_mouse(float xrel, float yrel);     // true: moved our pointer 
 void tie_controls_frame();                           // at the frame's top: this frame's mickeys
 int tie_controls_axis(bool across, int delta, int scale, int game);   // the stick's axis scaled, signed (the game's: `game`)
 bool tie_controls_marker(double *x, double *y);      // the pointer to draw: its shares of the screen, round the gunsight
-void tie_controls_set_mouse(int mode);              // 0 drag, 1 pointer, 2 keyboard, 3 joystick
+void tie_controls_set_mouse(int mode);              // 0 drag, 1 pointer, 2 keyboard, 3 joystick, 4 pointer banking
+void tie_controls_button(int button, bool pressed);  // a mouse button for the game (the right: the X-roll)
+bool tie_controls_bank();                            // false: the game's bank into a turn left out (the pointer's)
 void tie_controls_stick(double x, double y);         // a pad's stick, -1..1, right and climbing positive
 
 // The Imperial shuttle's cockpit, made from the gunboat's (wcnet_tie_cockpit.cpp, step 9): at fediskio_loadspecies's

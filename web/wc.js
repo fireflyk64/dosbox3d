@@ -2182,7 +2182,7 @@ const touch = initTouch({ log, send: (name, down) => {
 // TIE Fighter's flight controls (src/cpu/wcnet_tie_controls.cpp): the mouse points to aim, drags to steer (the
 // game's own), or steers nothing (the keyboard alone, a joystick); the arrows always steer.  Remembered in this
 // browser, given to the emulator at the launch (WCNET_TIE_MOUSE) and while flying (wc_web_tie_mouse).
-const TF_FLIGHT = ["drag", "pointer", "keyboard", "joystick"];
+const TF_FLIGHT = ["drag", "pointer", "keyboard", "joystick", "pointerbank"];   // (the emulator's mode numbers)
 const TF_FLIGHT_KEY = "wc-tf-flight";
 const isTf = () => !!(gameInfo() && gameInfo().id === "tf");
 const isPriv = () => !!(gameInfo() && (gameInfo().id === "priv" || gameInfo().id === "privrf"));

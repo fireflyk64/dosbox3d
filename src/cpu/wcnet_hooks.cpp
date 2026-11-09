@@ -2401,6 +2401,7 @@ bool wc_net_mouse_divert(float xrel, float yrel) {
 }
 
 bool wc_net_mouse_button(int button, bool pressed) {
+    wc::tie_controls_button(button, pressed);
     return wc::tie_session_click(button, pressed);
 }
 
