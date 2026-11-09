@@ -1005,14 +1005,16 @@ void priv_tick() {
 
 // The video aid's steady turn (!privturn): each frame our matrix is rotated toward the target by at most the rate,
 // about the axis perpendicular to our forward and the target's direction (the second row is forward).
-// A hostile cast (pirates, Kilrathi, Retros, hunters): the co-op tests' "pirates" (as the session's hostile_cast)
+// A hostile cast (pirates, Kilrathi, Retros -- RETRO1/2 and COM_*, the missions' -- hunters): the co-op tests'
+// "pirates" (as the session's hostile_cast)
 static bool hostile_cast_name(const std::string &c) {
-    return c.compare(0, 3, "PIR") == 0 || c.compare(0, 3, "KIL") == 0 || c.compare(0, 3, "RET") == 0 || c.compare(0, 3, "BOU") == 0;
+    return c.compare(0, 3, "PIR") == 0 || c.compare(0, 3, "KIL") == 0 || c.compare(0, 3, "RET") == 0 || c.compare(0, 3, "BOU") == 0 ||
+           c.compare(0, 3, "COM") == 0;       // (COM_AF, COM_DF, COM_SF: Retros -- "This attitude not possible" but hostile)
 }
 
-struct { bool pod; double rate, until; bool pirate, hunt; } g_turn = { true, 0, -1e9, false, false };
+struct { bool pod; double rate, until; bool pirate, hunt, stalk; } g_turn = { true, 0, -1e9, false, false, false };
 // (the hunt mode's state: the target's last place, for its lead; the trigger held; the last missile)
-struct { Bit16u obj; double x, y, z, at; bool firing; double missileAt; } g_hunt = { 0, 0, 0, 0, 0, false, -1e9 };
+struct { Bit16u obj; double x, y, z, at; bool firing; double missileAt; bool burning; } g_hunt = { 0, 0, 0, 0, 0, false, -1e9, false };
 
 // (a test aid: "!privfollow=<cast>:<metres>:<seconds>[:<sphere>]" keeps our ship that far beside the ship of that cast --
 // an escort flown at its charge's side, at its pace -- every frame, until the time is up, a hostile ship comes within
@@ -1070,11 +1072,18 @@ static void hunt_trigger(bool on) {
         g_hunt.firing = on;
     }
 }
+static void hunt_burner(bool on) {         // (Tab held: the afterburner, to close on a faster ship)
+    if (on != g_hunt.burning) {
+        KEYBOARD_AddKey(KBD_tab, on);
+        g_hunt.burning = on;
+    }
+}
 
 static void turn_step() {
     const double now = PIC_FullIndex();
     if (now > g_turn.until || !priv_in_flight()) {
         if (g_hunt.firing) hunt_trigger(false);
+        if (g_hunt.burning) hunt_burner(false);
         return;
     }
     Bit16u objs[48];
@@ -1088,13 +1097,34 @@ static void turn_step() {
     for (int i = 0; i < n; i++) {
         if (objs[i] == own || (g_turn.pirate && !hostile_cast_name(priv_ship_cast_name(objs[i])))) continue;
         if (g_turn.pirate && !priv_ship_is_alive(objs[i])) continue;
+        if (priv_session_puppet_parked(objs[i])) continue;      // (parked far off: not where its ship is)
         Bit32s p[3];
         priv_ship_pos(objs[i], p);
         const double d = sqrt((double)(p[0] - pos[0]) * (p[0] - pos[0]) + (double)(p[1] - pos[1]) * (p[1] - pos[1]) + (double)(p[2] - pos[2]) * (p[2] - pos[2]));
         if (d > 256.0 * 100000) continue;       // (a parked one, far off)
         if (d < best) { best = d; bestObj = objs[i]; for (int k = 0; k < 3; k++) { tgt[k] = (p[k] - pos[k]) / d; bestP[k] = p[k]; } }
     }
-    if (best > 1e17) { if (g_hunt.firing) hunt_trigger(false); return; }
+    if (best > 1e17) { if (g_hunt.firing) hunt_trigger(false); if (g_hunt.burning) hunt_burner(false); return; }
+    if (g_turn.stalk) {
+        // stalk: our ship put 350 m behind the nearest hostile, facing as it faces, the guns held, a missile every 4 s
+        // -- a test of what a hit does (sent to the ship's owner, its death the owner's), not of piloting
+        Bit32s tm[9];
+        priv_ship_matrix(bestObj, tm);
+        double fw[3] = { tm[3] / 256.0, tm[4] / 256.0, tm[5] / 256.0 };
+        const double fl = sqrt(fw[0] * fw[0] + fw[1] * fw[1] + fw[2] * fw[2]);
+        if (fl > 0.1) {
+            Bit32s at[3];
+            for (int k = 0; k < 3; k++) at[k] = bestP[k] - (Bit32s)(fw[k] / fl * 350.0 * 256);
+            priv_ship_set(own, at, tm);
+            hunt_trigger(true);
+            if (now - g_hunt.missileAt > 4000) {
+                KEYBOARD_AddKey(KBD_enter, true);
+                KEYBOARD_AddKey(KBD_enter, false);
+                g_hunt.missileAt = now;
+            }
+        }
+        return;
+    }
     if (g_turn.hunt) {
         // the lead: the target's velocity from its last place, the bolt's flight at some 1,500 m/s
         double aim[3] = { (double)bestP[0], (double)bestP[1], (double)bestP[2] };
@@ -1133,6 +1163,7 @@ static void turn_step() {
             if (c > cos(8.0 * 3.14159265 / 180)) clear = false;
         }
         hunt_trigger(clear && ang < 3.0 * 3.14159265 / 180 && best < 2000.0 * 256);
+        hunt_burner(best > 1500.0 * 256 && ang < 30.0 * 3.14159265 / 180);
         if (clear && ang < 6.0 * 3.14159265 / 180 && best < 4000.0 * 256 && now - g_hunt.missileAt > 4000) {
             KEYBOARD_AddKey(KBD_enter, true);
             KEYBOARD_AddKey(KBD_enter, false);
@@ -1390,7 +1421,7 @@ bool priv_script_item(const std::string &item, double t) {
                 priv_ship_pos(obj, p);
                 wclog(1, "key script %.1fs: scene ds:%04X ship %s (%s, %s) at %d, %d, %d m, alive %d%s", t, obj, priv_ship_type_name(obj).c_str(),
                       priv_ship_appearance_name(obj).c_str(), priv_ship_cast_name(obj).c_str(), p[0] / 256, p[1] / 256, p[2] / 256,
-                      priv_ship_is_alive(obj), obj == priv_player_ship() ? " (ours)" : "");
+                      priv_ship_is_alive(obj), obj == priv_player_ship() ? " (ours)" : priv_session_is_puppet(obj, obj) ? " (a puppet)" : "");
             } else if (priv_pod_is(obj)) {
                 std::vector<std::vector<Bit8u> > records;
                 int units = 0;
@@ -1542,9 +1573,11 @@ bool priv_script_item(const std::string &item, double t) {
         char what[8] = "pod";
         int degs = 30, secs = 4;
         sscanf(item.c_str() + 10, "%7[a-z]:%d:%d", what, &degs, &secs);
-        g_turn.pod = strcmp(what, "ship") != 0 && strcmp(what, "pirate") != 0 && strcmp(what, "hunt") != 0;
+        g_turn.pod = strcmp(what, "ship") != 0 && strcmp(what, "pirate") != 0 && strcmp(what, "hunt") != 0 && strcmp(what, "stalk") != 0;
         g_turn.hunt = strcmp(what, "hunt") == 0;
-        g_turn.pirate = strcmp(what, "pirate") == 0 || g_turn.hunt;   // (hunt: the nearest hostile, led, fired at)
+        g_turn.stalk = strcmp(what, "stalk") == 0;
+        g_turn.pirate = strcmp(what, "pirate") == 0 || g_turn.hunt || g_turn.stalk;   // (hunt: the nearest hostile, led,
+                                                                                       // fired at; stalk: behind it)
         g_turn.rate = degs * 3.14159265 / 180.0;
         g_turn.until = PIC_FullIndex() + 1000.0 * secs;
         wclog(1, "key script %.1fs: turning toward the nearest %s at %d degrees a second for %d s", t, g_turn.pod ? "pod" : "ship", degs, secs);

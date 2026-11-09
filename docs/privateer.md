@@ -579,3 +579,58 @@ PILOTS" on guest 1's under the officer's; a Steltek drone made beside the group 
 wing of 2 with 2 more for the four, and all fly it (the four Talons destroyed in 35 s).  The take's script:
 scratchpad/vidtake.sh (`!privgonav` gather at 13.5 km, enter at 11 km, then 300 m; `!privturn=pirate`; the drone by
 `!privspawn=DRONTYPE:DRONE:SDRONE`, removed by `!privpeace`).
+
+## 17. Missions with several helpers; the page's fixes (2026-11-09)
+
+The user: "now test with some of those defend nav point missions and a few other missions with multiple helpers"; on
+the page: "I also don't see an option to select comm portrait", "0 also doesn't seem to do comms", "also zero music
+here", "a random drayman I met had a male face but female voice".
+
+**The same missions every run.**  The Mission Computer's offers come from the random numbers, seeded by the clock;
+`WCNET_BOOTCLOCK=HH:MM:SS` (a rig's: src/ints/bios.cpp) boots at that time of 2026-01-01, and the lists are then the
+same each run (measured twice, Oxford with the user's save and Achilles with a new pilot).  At 12:00:00 Oxford deals
+2 ATTACK (CMF A), 3 CARGO (Troy), 4 DEFEND BASE ("Oxford in Oxford system seeks reinforcements ... strong Kilrathi
+blockade", 3,890), 5 CARGO (Padre), 6 PATROL (Perry); Achilles deals 1 DEFEND BASE (Retros at Helen, 6,539), 2 DEFEND
+BASE (Hector, 6,351), 3 and 4 CARGO (Newcastle), 5 ATTACK (Retros at Nav 5, 5,765), 6 SCOUT (Nav 7, 2,976).
+Objectives (the missions line gives each entry's state byte, 1 when met): D0 a nav point to visit, D6 a nav point to
+clear, E2/NN the base to land at for the pay (01 Achilles, 02 Oxford).  The Retros of these missions are cast COM_AF,
+COM_DF, COM_SF ("This attitude not possible" but hostile): now hostile to the co-op extras and the rigs' aids too.
+
+**Measured** (no error, no death unless said, the program never restarted):
+- scripts/privtests/defend.sh: Oxford's defence, four machines from the user's save, the host the holder, three
+  helpers.  The two Dralthi (KIL_AF) come with the launch, in the holder's game (its mission's nav point: the helpers'
+  games refused their wings there and showed the holder's two, then their deaths); the attack ended (the rig's
+  stand-in), every pilot docked: paid 189,187 -> 193,027 credits (3,890 less the landing's 50).
+- scripts/privtests/missions.sh: two holders and two helpers, new pilots at Achilles: the host takes the scout and
+  Helen's defence, guest 1 the attack at Nav 5; together to Nav 5, Nav 7, Helen.  Paid: the host 2,000 -> 11,465 (the
+  scout 2,976 and the defence 6,539), guest 1 2,000 -> 7,715 (the attack 5,765); each nav point owned by its holder,
+  the others' wings refused there; every mission ship, and its death, on all four machines; the helpers' hits (9 sent)
+  applied in the holders' games.
+- The escort (section 16) with one helper; the Oxford defence's helpers before the fix below, likewise.
+
+**Found and fixed: dead ships kept alive in the others' games.**  A ship that died in its owner's game left the scene
+before a report said it was dead, so the others kept its puppet: parked when the reports stopped, but alive and
+hostile in their game for good.  Helen's defence ("when calm returns") was never met with another pilot's long-dead
+Retro so kept in the holder's game (measured: the Helen Retro killed, the objective still 0; alone, met at once).  Now
+a ship sent in the last 2 s and gone from its owner's scene is told dead (the receivers kill its puppet: "destroyed, as
+its owner says"; a death told of a ship never shown makes nothing), and an encounter puppet with no word for 20 s is
+given back (the game's own death, no cargo).  With the fix the defence was met (2,000 -> 11,465 above).
+
+**The rigs' fighting.**  `!privturn=hunt` leads the nearest hostile by its speed, holds the guns when lined up within
+2 km and nothing friendly is in the line, fires a missile every 4 s within 4 km and the afterburner beyond 1.5 km --
+still no match for a Dralthi; `!privturn=stalk` puts the ship 350 m behind the nearest hostile (a test of what a hit
+does), but by a base it carried helpers into the landing zone, which landed them (a defended base's attackers fight by
+it: the holder hunting one landed too); so the fights are ended by `!privkillhostile` in the holder's game, after the
+pilots' own shots.  At a base the autopilot will not fly ("Destination: Oxford"): the rigs dock by `!privgonav=<base
+sphere>:0`.
+
+**The page** (live): the Face box shows in a Privateer room (it sat in the room's row of choices, hidden for a game the
+room does not fly); a TIE Fighter room code turns PRV when Privateer is picked (the codes' pattern lacked TF); the 0
+key and a Shift tap open the chat prompt in flight (it opened only for Wing Commander's session; the room test types a
+line and the native host hears it); the music plays (GOG's SOUND.CFG names music card 3, the "roland" driver: General
+MIDI for Windows' synthesizer, none in the browser; the page's `prepare` makes it card 2, "adlib", the Sound Blaster's
+OPL at 0x388: measured, the title's music at once); the help says how to talk.  Cast names: a slot is given to another
+cast only when no ship of the scene points at it (a ship reads its cast's name again later: a slot taken from under it
+gave it another cast's), else the puppet is not made.  The drayman the user met with a man's face and a woman's voice:
+not one of our puppets with a chat line (those have no voice) nor a pilot's (those fly the four player ships); a ship
+of the game's own, or another's encounter ship given another cast's name by the old slots.

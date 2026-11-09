@@ -196,6 +196,10 @@ struct PrivNet {
     int extrasNav;
     Bit16u extrasFlight;
     int extrasMade;
+    // our ships sent in the scene lately (id, its names, its last place, when): one gone from our scene is told dead for
+    // 2 s -- a ship's death took it out of the scene before a report said so, and the others kept its puppet alive
+    struct SentShip { Bit32u id; std::string type, appearance, cast; Bit32s x, y, z; double at; };
+    std::vector<SentShip> sentShips;
     std::vector<std::pair<Bit32u, double> > podsGone;   // (seat << 16 | id, when) pods of others' our tractor took: their owner's
                                                         // next reports, already on their way, are not to make them again
     Bit64u sceneFrame;
@@ -1411,6 +1415,29 @@ void send_scene(double now) {
         if (t) { c->set_vx((Bit32s)t->vx); c->set_vy((Bit32s)t->vy); c->set_vz((Bit32s)t->vz); }
         c->set_alive(priv_ship_is_alive(o));
         for (int k = 0; k < 4; k++) c->add_armor(a[k]);
+        bool had = false;
+        for (size_t j = 0; j < g_net->sentShips.size() && !had; j++) {
+            PrivNet::SentShip &e = g_net->sentShips[j];
+            if (e.id == o) { e.type = c->type(); e.appearance = c->appearance(); e.cast = c->cast(); e.x = p[0]; e.y = p[1]; e.z = p[2]; e.at = now; had = true; }
+        }
+        if (!had && g_net->sentShips.size() < 48) {
+            PrivNet::SentShip e = { o, c->type(), c->appearance(), c->cast(), p[0], p[1], p[2], now };
+            g_net->sentShips.push_back(e);
+        }
+    }
+    // the ships sent lately and gone from our scene now (dead, or the game took them): told dead for 2 s
+    for (size_t j = 0; j < g_net->sentShips.size(); ) {
+        PrivNet::SentShip &e = g_net->sentShips[j];
+        if (e.at >= now) { j++; continue; }             // (sent just now: still here)
+        if (now - e.at > 2000) { g_net->sentShips.erase(g_net->sentShips.begin() + j); continue; }
+        PrivNpc *c = sc->add_npc();
+        c->set_id(e.id);
+        c->set_type(e.type);
+        c->set_appearance(e.appearance);
+        c->set_cast(e.cast);
+        c->set_x(e.x); c->set_y(e.y); c->set_z(e.z);
+        c->set_alive(false);
+        j++;
     }
     for (size_t i = 0; i < g_net->peers.size(); i++) {
         if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
@@ -1518,7 +1545,7 @@ void take_scene(const PrivScene &sc, int seat) {
             }
             if (gone) continue;
         }
-        NpcPuppet *p = npc_of(seat, c.id(), true);
+        NpcPuppet *p = npc_of(seat, c.id(), c.alive() || c.pod());      // (a death told of a ship we never had: nothing made)
         if (!p) continue;
         p->at = now;
         p->type = c.type();
@@ -1751,6 +1778,16 @@ void frame_npcs(double now, const Bit32s pos[3]) {
             if (p.pod) priv_pod_set(p.obj, away); else priv_ship_set(p.obj, away, NULL);
             p.parked = true;
             wclog(2, "Privateer: pilot %d's %s (ds:%04X) parked (%s)", p.seat + 1, p.type.c_str(), p.obj, fresh ? "out of reach" : "no reports");
+        }
+        if (!p.pod && p.obj && p.parked && age > 20000 && !p.pending) {
+            // no word of it for 20 s: given back (the game's own death, no cargo) -- a puppet kept parked stayed alive in
+            // our game, a hostile one too, after its ship was long gone in its owner's (a mission's "calm returns"
+            // waits on every hostile ship: measured, Helen's defence never done with another pilot's dead Retro kept)
+            wclog(2, "Privateer: pilot %d's %s (ds:%04X): no word of it for 20 s, given back", p.seat + 1, p.type.c_str(), p.obj);
+            release_obj(p.obj);
+            p.obj = 0;
+            p.used = false;
+            continue;
         }
         if (!fresh && !p.obj) {
             p.used = false;
@@ -2097,6 +2134,18 @@ void priv_session_frame() {
 
 void priv_session_force_release() { g_forceRelease++; }
 
+// A puppet of ours parked far off (a pilot's ship or an encounter ship out of reach): not where its ship is
+bool priv_session_puppet_parked(Bit16u obj) {
+    if (!g_net || !obj) return false;
+    for (int s = 0; s < kMaxSeats; s++) {
+        if (g_net->puppets[s].obj == obj) return g_net->puppets[s].parked;
+    }
+    for (int k = 0; k < kNpcCap; k++) {
+        if (g_net->npcs[k].used && g_net->npcs[k].obj == obj) return g_net->npcs[k].parked;
+    }
+    return false;
+}
+
 // A pilot's latest reported place in our system (false: none fresh, under 5 s)
 bool priv_session_pilot_pos(int seat, Bit32s out[3]) {
     if (!g_net || seat < 0 || seat >= kMaxSeats || seat == g_net->self) return false;
@@ -2130,7 +2179,8 @@ enum { kExtrasMax = 3, kExtraNearBytes = 1200 };
 const double kComingMetres = 20000.0;
 
 bool hostile_cast(const std::string &cast) {
-    return cast.compare(0, 3, "PIR") == 0 || cast.compare(0, 3, "KIL") == 0 || cast.compare(0, 3, "RET") == 0 || cast.compare(0, 3, "BOU") == 0;
+    return cast.compare(0, 3, "PIR") == 0 || cast.compare(0, 3, "KIL") == 0 || cast.compare(0, 3, "RET") == 0 || cast.compare(0, 3, "BOU") == 0 ||
+           cast.compare(0, 3, "COM") == 0;      // (COM_AF, COM_DF, COM_SF: the Retros of the Mission Computer's missions)
 }
 
 int extras_for(int pilots) {
