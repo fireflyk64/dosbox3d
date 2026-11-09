@@ -73,7 +73,9 @@ std::string priv_player_appearance();
 bool priv_spawn_ship(const char *type, const char *appearance, const char *cast, const Bit32s pos[3], const Bit32s m[9],
                      void (*done)(int tag, Bit16u obj), int tag);
 // Its AI held (its think returns at once) or let go; none held (a flight's end).
-bool priv_hold_ai(Bit16u controller, bool hold);    // false: not held (the list is full)
+bool priv_hold_ai(Bit16u controller, bool hold);
+void priv_ship_set_target(Bit16u ship, Bit16u target);
+void priv_ship_anger(Bit16u ship);                         // angry at the player, as a hit from the player makes it (at the next frame)    // its AI's target (written at the next frame: the plan is far data)    // false: not held (the list is full)
 void priv_hold_ai_none();
 void priv_let_think(Bit16u controller, int frames);   // a held controller thinks for this many frames (its pilot speaks)
 bool priv_thinking(Bit16u controller);
@@ -92,7 +94,8 @@ struct PrivSphere {
     int radius;
 };
 int priv_spheres(PrivSphere out[], int cap);
-void priv_spheres_refresh();        // (at the frame's top)
+void priv_spheres_refresh();
+unsigned priv_mission_navs();       // the nav points (bits) of our accepted missions' objectives (read at the frame)        // (at the frame's top)
 int priv_nav_at(const Bit32s pos[3]);
 // Every ship in the scene (the game's list ds:66CE; the player's too), as near pointers.
 int priv_scene_ships(Bit16u out[], int cap);
@@ -142,7 +145,11 @@ int priv_near_heap_lowest();                                        // the lowes
 int priv_near_heap_low_take();                                      // the lowest free since the last call (the governor's)
 void priv_session_counts(int &pilots, int &npcs, int &pods);        // our puppets made in this flight
 void priv_calls_flush(const char *why);                            // every queued call of ours dropped (the flight is over)
-void priv_session_our_death();                                    // (our ship was destroyed: the others are told)
+void priv_session_our_death();
+int priv_session_wing_extras(int sphereId, const char *cast, int count);   // a wing about to spawn: how many more ships it gets
+void priv_session_wing_extended(int sphereId, int extras);
+void priv_wings_flight_changed();                                    // (our ship was destroyed: the others are told)
+Bit16u priv_session_pilot_ship(int seat);                          // a pilot's ship in our game (ours or its puppet), 0 none
 void priv_session_force_release();                                // (a test aid: one puppet given back at the next frame)   // the game's near heap: free bytes, its largest free block, blocks
 void priv_ship_delete(Bit16u obj, int mode);
 // Cargo pods (type CDBRTYPE, vtable 0x1584: section 13): a ship's layout up to the alive flag; at +0x4B a list of

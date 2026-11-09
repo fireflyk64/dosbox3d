@@ -8,7 +8,8 @@
 #   LOBBY=1         a local lobby room (WebRTC data channels, as the browser's; LOBBY_PORT, 8851), else TCP (PORT, 13471)
 #   GUEST_LAG=2     seconds between the starts
 #   GUEST2X=..      a script of its own for guest 2 (GUEST3X ... too)
-#   HOSTENV=.. GUESTENV=..  more of the environment for the host / every guest ("WCPRIVFACE=MER_DP:14")
+#   HOSTENV=.. GUESTENV=..  more of the environment for the host / every guest ("WCPRIVFACE=MER_DP:14"); GUEST2ENV=..
+#                   for guest 2 alone (GUEST1ENV ... too)
 #   DOSBOX=..       the emulator (privrun.sh's default: build-native/src/dosbox)
 # Example, the guest engaging the autopilot (A) after the host's presence:
 #   scripts/privnet.sh 60 "" "40:a"
@@ -35,7 +36,8 @@ PIDS="$PIDS $!"
 for g in $(seq 1 $((PLAYERS - 1))); do
   sleep ${GUEST_LAG:-2}
   var="GUEST${g}X"; X="${!var:-$GUESTX}"
-  OUT=$OUT/guest$g ENV="$NET_GUEST WCCALLSIGN=GUEST$g ${GUESTENV:-}" "$ROOT/scripts/privrun.sh" $DUR "$X" > /dev/null &
+  var="GUEST${g}ENV"; E="${!var:-${GUESTENV:-}}"
+  OUT=$OUT/guest$g ENV="$NET_GUEST WCCALLSIGN=GUEST$g $E" "$ROOT/scripts/privrun.sh" $DUR "$X" > /dev/null &
   PIDS="$PIDS $!"
 done
 wait $PIDS

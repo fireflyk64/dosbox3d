@@ -33,6 +33,14 @@ namespace wc {
 
 void release_obj(Bit16u obj);       // (below: a puppet given back)
 
+// Far off, each object at its own spot (by its address: 4 km apart): objects piled at one point cost the game's
+// collision handling some 8 KB at once (measured: 16 puppets parked together as their owner died)
+void park_pos(Bit16u obj, Bit32s out[3]) {
+    out[0] = 0x30000000 + (Bit32s)(obj >> 1) * 0x100000 / 64;
+    out[1] = 0x30000000 + (Bit32s)((obj >> 1) % 64) * 0x100000;
+    out[2] = 0x30000000;
+}
+
 namespace {
 
 enum {
@@ -73,6 +81,10 @@ const char kPuppetCast[] = "MER_DP";
 // far off and killed, the game's own death path freeing it (its destructor called by us crashed the game) -- parked
 // ones first, then the encounter ships, then the pilots, the farthest first: our footprint goes to nothing before
 // the game's own needs do.
+enum { kPodShown = 6 };
+const char kDroneType[] = "DRONTYPE";   // the Steltek drone (appearance DRONE, cast SDRONE)
+const double kDroneMetres = 30000.0;    // "that region": the pilots within this of the drone, and two drones within it are one
+enum { kArriveSettleMs = 1500 };        // a nav point's wing waits this long after our arrival when others are in the system                 // pods of others' shown at once (the rest wait their turn)
 enum { kShipNearBytes = 600, kPodNearBytes = 200, kCreateFloor = 8000, kReleaseFloor = 6000, kReleaseEveryMs = 1000,
        kUrgentFloor = 4500, kUrgentEveryMs = 250, kCreateEveryMs = 2000, kCreateAfterReleaseMs = 10000, kLowWindows = 5,
        kWingFloor = 9000 };            // (a wing of the game's own is some 3-4 ships: 3-4 KB as they fight)
@@ -153,7 +165,8 @@ struct Puppet {
     Bit16u obj, type;           // the ship in our game (0: none)
     bool pending;               // a spawn queued
     bool parked;                // out of reach: put far off, kept
-    Puppet() : reported(false), at(-1e9), x(0), y(0), z(0), vx(0), vy(0), vz(0), obj(0), type(0), pending(false), parked(false) {
+    double deadUntil;           // its death told: reports still in flight are not to make it again
+    Puppet() : reported(false), at(-1e9), x(0), y(0), z(0), vx(0), vy(0), vz(0), obj(0), type(0), pending(false), parked(false), deadUntil(-1e9) {
         for (int i = 0; i < 9; i++) m[i] = i % 4 == 0 ? 256 : 0;
     }
 };
@@ -176,6 +189,13 @@ struct PrivNet {
     std::vector<std::pair<int, Bit32u> > shots;         // seat, id
     std::vector<Bit32u> podsTaken;                      // pods of ours another pilot's tractor beam took (put away, not reported)
     std::vector<std::pair<Bit16u, Bit16u> > dying;      // (ship, type) puppets given back, until the game has freed them
+    double navSince;                                    // when we came to our nav point
+    int wingWaitNav;                                    // (a guest waiting for the host's word on a nav point's wing: which, since)
+    double wingWaitSince;
+    std::string extrasSystem;                           // the co-op extras made at this nav point in this flight
+    int extrasNav;
+    Bit16u extrasFlight;
+    int extrasMade;
     std::vector<std::pair<Bit32u, double> > podsGone;   // (seat << 16 | id, when) pods of others' our tractor took: their owner's
                                                         // next reports, already on their way, are not to make them again
     Bit64u sceneFrame;
@@ -186,7 +206,7 @@ struct PrivNet {
     Bit16u flightShip;          // the player's ship pointer the puppets were made under (a new flight: they are gone)
     double lastX, lastY, lastZ, lastAt;     // our place at the last frame (for our velocity)
     double vx, vy, vz;
-    PrivNet() : host(false), self(-1), seats(2), listener(NULL), ownersAt(-1e9), decidedAt(-1e9), sceneAt(-1e9), sceneFrame(0), nav(-1),
+    PrivNet() : navSince(-1e9), wingWaitNav(-1), wingWaitSince(-1e9), extrasNav(-1), extrasFlight(0), extrasMade(0), host(false), self(-1), seats(2), listener(NULL), ownersAt(-1e9), decidedAt(-1e9), sceneAt(-1e9), sceneFrame(0), nav(-1),
                 sentAt(-1e9), stateAt(-1e9), frame(0), flightShip(0), lastX(0), lastY(0), lastZ(0), lastAt(-1e9), vx(0), vy(0), vz(0) {}
     ~PrivNet() {
         for (size_t i = 0; i < peers.size(); i++) {
@@ -385,18 +405,36 @@ PrivPresence own_presence(int why) {
     }
     pr.set_why((Bit32u)why);
     pr.set_nav(flying ? g_net->nav : -1);
+    const unsigned navs = priv_mission_navs();
+    for (int n = 0; n < 32; n++) {
+        if (navs & (1u << n)) pr.add_missions((Bit32u)n);
+    }
     pr.set_face(own_face());
     return pr;
 }
 
-// Who is at (system, nav) by the presences we hold (ourselves too), as a bitmask of seats.
+// Who is at (system, nav) by the presences we hold (ourselves too), as a bitmask of seats; in our own system a pilot
+// whose latest reported place (its state, 15 a second when near) is inside the sphere counts too: fresher than its
+// presence, which goes out as it arrives (pilots arriving together)
 unsigned present_at(const std::string &system, int nav) {
     unsigned mask = 0;
+    PrivSphere sp[16];
+    const int ns = system == g_system ? priv_spheres(sp, 16) : 0;
+    const PrivSphere *sphere = NULL;
+    for (int i = 0; i < ns; i++) {
+        if (sp[i].id == nav) sphere = &sp[i];
+    }
+    const double now = PIC_FullIndex();
     for (int s = 0; s < kMaxSeats; s++) {
         if (s == g_net->self) {
             if (priv_in_flight() && g_system == system && g_net->nav == nav) mask |= 1u << s;
         } else if (g_net->pilots[s].known && g_net->pilots[s].flying && g_net->pilots[s].system == system && g_net->pilots[s].nav == nav) {
             mask |= 1u << s;
+        } else if (sphere && g_net->puppets[s].reported && now - g_net->puppets[s].at < 2000 && g_net->puppets[s].system == system) {
+            const Puppet &p = g_net->puppets[s];
+            const double dx = p.x - sphere->x, dy = p.y - sphere->y, dz = p.z - sphere->z;
+            const double r = (double)sphere->radius * kUnitsPerMetre;
+            if (dx * dx + dy * dy + dz * dz <= r * r) mask |= 1u << s;
         }
     }
     return mask;
@@ -417,6 +455,31 @@ NavOwner *owner_entry(const std::string &system, int nav, bool make) {
 int owner_of(const std::string &system, int nav) {
     NavOwner *o = owner_entry(system, nav, false);
     return o ? o->owner : -1;
+}
+
+// The owner by the user's rule, the same on every machine: of those present, the ones with a mission objective there
+// (else all present); of them the lowest seat that has not owned it this round; everybody done: a new round.
+unsigned mission_holders(unsigned present, int nav) {
+    unsigned mission = 0;
+    for (int s = 0; s < kMaxSeats; s++) {
+        const unsigned m = s == g_net->self ? priv_mission_navs() : g_net->pilots[s].missions;
+        if ((present & (1u << s)) && nav >= 0 && nav < 32 && (m & (1u << nav))) mission |= 1u << s;
+    }
+    return mission;
+}
+
+int choose_owner(unsigned present, int nav, unsigned &done, unsigned *missionOut) {
+    const unsigned mission = mission_holders(present, nav);
+    if (missionOut) *missionOut = mission;
+    unsigned cands = mission ? mission : present;
+    if (!(cands & ~done)) {
+        done = 0;
+    }
+    cands &= ~done;
+    for (int s = 0; s < kMaxSeats; s++) {
+        if (cands & (1u << s)) return s;
+    }
+    return -1;
 }
 
 // The host's decision for every nav point somebody is at (the user's rule).
@@ -444,22 +507,8 @@ void decide_owners(double now, bool &changed) {
         if (o.owner >= 0 && (present & (1u << o.owner))) {
             continue;                   // (the owner is still there: it stays)
         }
-        // candidates: those present with a mission here, else all present; of them one that has not owned it this
-        // round, the lowest seat; everybody done: a new round
         unsigned mission = 0;
-        for (int s = 0; s < kMaxSeats; s++) {
-            const unsigned m = s == g_net->self ? 0 : g_net->pilots[s].missions;
-            if ((present & (1u << s)) && o.nav >= 0 && o.nav < 32 && (m & (1u << o.nav))) mission |= 1u << s;
-        }
-        unsigned cands = mission ? mission : present;
-        if (!(cands & ~o.done)) {
-            o.done = 0;
-        }
-        cands &= ~o.done;
-        int pick = -1;
-        for (int s = 0; s < kMaxSeats && pick < 0; s++) {
-            if (cands & (1u << s)) pick = s;
-        }
+        const int pick = choose_owner(present, o.nav, o.done, &mission);
         if (pick >= 0 && pick != o.owner) {
             o.owner = pick;
             o.done |= 1u << pick;
@@ -475,11 +524,12 @@ void send_owners() {
     NetworkMessage msg;
     PrivOwners *po = msg.mutable_priv_owners();
     for (size_t i = 0; i < g_net->owners.size(); i++) {
-        if (g_net->owners[i].owner < 0 && !g_net->owners[i].occupied) continue;
+        if (g_net->owners[i].owner < 0 && !g_net->owners[i].occupied && !g_net->owners[i].done) continue;
         PrivOwner *o = po->add_owners();
         o->set_system(g_net->owners[i].system);
         o->set_nav(g_net->owners[i].nav);
         o->set_owner((Bit32u)(g_net->owners[i].owner < 0 ? 0xFF : g_net->owners[i].owner));
+        o->set_done(g_net->owners[i].done);
     }
     for (size_t i = 0; i < g_net->peers.size(); i++) {
         if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
@@ -499,7 +549,8 @@ void take_owners(const PrivOwners &po) {
         if (e) {
             const int was = e->owner;
             e->owner = o.owner() == 0xFF ? -1 : (int)o.owner();
-            e->occupied = true;
+            e->occupied = e->owner >= 0;
+            e->done = o.done();
             if (e->owner != was && (e->owner == g_net->self || was == g_net->self)) {
                 wclog(1, "Privateer: %s nav %d: %s", o.system().c_str(), (int)o.nav(), e->owner == g_net->self ? "ours to run" : "another's to run");
             }
@@ -610,6 +661,8 @@ void take_presence(const PrivPresence &pr, int seat) {
     }
 }
 
+double now_ms() { return PIC_FullIndex(); }
+
 void take_state(const PrivState &st, int seat) {
     if (seat < 0 || seat >= kMaxSeats || seat == g_net->self) {
         return;
@@ -628,8 +681,13 @@ void take_state(const PrivState &st, int seat) {
     for (int i = 0; i < 9 && i < st.m_size(); i++) {
         p.m[i] = st.m(i);
     }
+    if (now_ms() < p.deadUntil) {
+        p.reported = false;         // (reports sent before its death, still arriving)
+        return;
+    }
     if (st.destroyed()) {
         // its ship destroyed in its own game: ours dies here too (an explosion; no cargo: its real pods are its game's)
+        p.deadUntil = now_ms() + 5000;
         p.reported = false;
         p.pending = false;
         if (p.obj && !p.parked && priv_ship_alive(p.obj, p.type)) {
@@ -977,6 +1035,7 @@ void priv_session_tick() {
         if (nav != g_net->nav) {
             wclog(1, "Privateer: %s nav %d (was %d)", nav >= 0 ? "at" : "left", nav >= 0 ? nav : g_net->nav, g_net->nav);
             g_net->nav = nav;
+            g_net->navSince = now;
             priv_session_event(WHY_NAV);
         }
     } else if (g_net->nav >= 0) {
@@ -1125,6 +1184,7 @@ void puppet_made(int seat, Bit16u obj) {
 
 void forget_puppets(const char *why) {
     priv_calls_flush(why);
+    priv_wings_flight_changed();
     bool any = false;
     for (int s = 0; s < kMaxSeats; s++) {
         Puppet &p = g_net->puppets[s];
@@ -1236,7 +1296,7 @@ bool pod_taken(Bit32u id) {
 // The owner's encounter ships (withShips), and anybody's cargo pods (expelled, or a ship's death's: section 13)
 void send_scene(double now, bool withShips) {
     Bit16u ships[48], pods[16];
-    const int n = withShips ? priv_scene_ships(ships, 48) : 0;
+    int n = withShips ? priv_scene_ships(ships, 48) : 0;
     const int np = priv_scene_pods(pods, 16);
     const Bit16u own = priv_player_ship();
     Bit32s pos[3];
@@ -1281,7 +1341,20 @@ void send_scene(double now, bool withShips) {
         c->set_units((Bit32u)units);
         sent++;
     }
-    if (!withShips && !sent) {
+    // a Steltek drone of ours is shared by whichever machine runs it, as the pods are (the user: "if a steltek drone is
+    // following a player it should spawn but not more than 1.  And it should target the lowest player number in that
+    // region")
+    if (!withShips) {
+        Bit16u all[48];
+        const int na = priv_scene_ships(all, 48);
+        for (int i = 0; i < na; i++) {
+            if (all[i] != own && !is_puppet_obj(all[i]) && priv_ship_is_alive(all[i]) && priv_ship_type_name(all[i]) == kDroneType) {
+                ships[n < 48 ? n : 47] = all[i];
+                if (n < 48) n++;
+            }
+        }
+    }
+    if (!withShips && !sent && !n) {
         return;             // (nothing of ours to tell)
     }
     for (int i = 0; i < n; i++) {
@@ -1340,6 +1413,70 @@ NpcPuppet *npc_of(int seat, Bit32u id, bool make) {
     return NULL;        // (a list has a cap: 12 encounter ships of others' at once; the game's near heap is some 30 KB)
 }
 
+// One drone a place: a drone of a lower seat's machine reported near our own (one our game made itself) makes ours its
+// puppet -- our drone kept (the game's own object: its mission sees it live and die), its AI held, flown by the reports
+void drone_adopt(int seat, const PrivNpc &c) {
+    NpcPuppet *had = npc_of(seat, c.id(), false);
+    if (had && had->obj) {
+        return;
+    }
+    Bit16u ships[48];
+    const int n = priv_scene_ships(ships, 48);
+    for (int i = 0; i < n; i++) {
+        const Bit16u d = ships[i];
+        if (is_puppet_obj(d) || !priv_ship_is_alive(d) || priv_ship_type_name(d) != kDroneType) continue;
+        Bit32s p[3];
+        priv_ship_pos(d, p);
+        const double dx = (double)p[0] - c.x(), dy = (double)p[1] - c.y(), dz = (double)p[2] - c.z();
+        if (dx * dx + dy * dy + dz * dz > kDroneMetres * kDroneMetres * kUnitsPerMetre * kUnitsPerMetre) continue;
+        NpcPuppet *np = npc_of(seat, c.id(), true);
+        if (!np) return;
+        np->obj = d;
+        np->otype = priv_ship_type(d);
+        np->type = c.type();
+        np->appearance = c.appearance();
+        np->cast = c.cast();
+        np->parked = false;
+        np->pending = false;
+        priv_hold_ai(priv_ship_controller(d), true);
+        wclog(1, "Privateer: our Steltek drone ds:%04X is now pilot %d's (one a place): its puppet here", d, seat + 1);
+        return;
+    }
+}
+
+// Our real drones (not puppets) given the lowest-numbered pilot within kDroneMetres as their target, each second
+void drones_frame(double now) {
+    static double at = -1e9;
+    if (now - at < 1000) return;
+    at = now;
+    Bit16u ships[48];
+    const int n = priv_scene_ships(ships, 48);
+    for (int i = 0; i < n; i++) {
+        const Bit16u d = ships[i];
+        if (is_puppet_obj(d) || !priv_ship_is_alive(d) || priv_ship_type_name(d) != kDroneType) continue;
+        Bit32s dp[3];
+        priv_ship_pos(d, dp);
+        Bit16u target = 0;
+        int seat = -1;
+        for (int s = 0; s < kMaxSeats && !target; s++) {
+            const Bit16u ship = priv_session_pilot_ship(s);
+            if (!ship || !priv_ship_is_alive(ship)) continue;
+            Bit32s p[3];
+            priv_ship_pos(ship, p);
+            const double dx = (double)p[0] - dp[0], dy = (double)p[1] - dp[1], dz = (double)p[2] - dp[2];
+            if (dx * dx + dy * dy + dz * dz <= kDroneMetres * kDroneMetres * kUnitsPerMetre * kUnitsPerMetre) { target = ship; seat = s; }
+        }
+        if (target) {
+            priv_ship_set_target(d, target);    // (re-aimed only when it is after someone else: wcnet_priv.cpp)
+            static Bit16u saidFor;
+            if (saidFor != target) {
+                saidFor = target;
+                wclog(1, "Privateer: the Steltek drone ds:%04X is after pilot %d (the lowest here)", d, seat + 1);
+            }
+        }
+    }
+}
+
 void take_scene(const PrivScene &sc, int seat) {
     if (seat < 0 || seat >= kMaxSeats || seat == g_net->self) {
         return;
@@ -1347,6 +1484,9 @@ void take_scene(const PrivScene &sc, int seat) {
     const double now = PIC_FullIndex();
     for (int i = 0; i < sc.npc_size(); i++) {
         const PrivNpc &c = sc.npc(i);
+        if (c.type() == kDroneType && seat < g_net->self) {
+            drone_adopt(seat, c);
+        }
         if (c.pod()) {
             bool gone = false;
             for (size_t g = 0; g < g_net->podsGone.size() && !gone; g++) {
@@ -1425,7 +1565,8 @@ void take_pod_taken(const PrivPodTaken &t) {
         return;
     }
     // (never deleted: put far off, where the game lets it expire; not reported any more)
-    Bit32s away[3] = { 0x3FFFFFFF, 0x3FFFFFFF, 0x3FFFFFFF };
+    Bit32s away[3];
+    park_pos(obj, away);
     priv_pod_set(obj, away);
     if (!pod_taken(obj) && g_net->podsTaken.size() < 64) g_net->podsTaken.push_back(obj);
     wclog(1, "Privateer: our cargo pod ds:%04X taken by pilot %d: put away", obj, (int)t.player() + 1);
@@ -1505,9 +1646,15 @@ void take_shot(int seat, Bit32u id) {
 }
 
 void frame_npcs(double now, const Bit32s pos[3]) {
+    int podsShown = 0;
+    for (int k = 0; k < kNpcCap; k++) {
+        if (g_net->npcs[k].used && g_net->npcs[k].pod && g_net->npcs[k].obj && !g_net->npcs[k].parked) podsShown++;
+    }
+    // two passes: the encounter ships first, then the pods (the ships' claim on the game's memory comes first)
+    for (int pass = 0; pass < 2; pass++)
     for (int k = 0; k < kNpcCap; k++) {
         NpcPuppet &p = g_net->npcs[k];
-        if (!p.used) continue;
+        if (!p.used || (p.pod ? 1 : 0) != pass) continue;
         if (p.obj && p.pod && !(priv_pod_is(p.obj) && priv_scene_has(p.obj))) {
             // a pod gone from our scene: taken by our tractor beam (or let go by the game) while it was here
             if (!p.parked && now - p.at < kNpcStaleMs) {
@@ -1549,7 +1696,9 @@ void frame_npcs(double now, const Bit32s pos[3]) {
         }
         const bool near = fresh && d < (p.obj && !p.parked ? kPuppetGoneMetres : kPuppetMetres);
         Bit32s at[3] = { (Bit32s)ex, (Bit32s)ey, (Bit32s)ez };
-        if (near && !p.obj && !p.pending) {
+        if (near && !p.obj && !p.pending && p.pod && podsShown >= kPodShown) {
+            // (a pod beyond the ones shown: its turn comes when one of them goes)
+        } else if (near && !p.obj && !p.pending) {
             // a parked ship of the same kind is taken over, else a new one made
             for (int j = 0; j < kNpcCap && !p.obj; j++) {
                 NpcPuppet &q = g_net->npcs[j];
@@ -1573,7 +1722,8 @@ void frame_npcs(double now, const Bit32s pos[3]) {
             priv_ship_set_armor(p.obj, p.armor);
             p.parked = false;
         } else if (p.obj && !p.parked) {
-            Bit32s away[3] = { 0x3FFFFFFF, 0x3FFFFFFF, 0x3FFFFFFF };
+            Bit32s away[3];
+            park_pos(p.obj, away);
             if (p.pod) priv_pod_set(p.obj, away); else priv_ship_set(p.obj, away, NULL);
             p.parked = true;
             wclog(2, "Privateer: pilot %d's %s (ds:%04X) parked (%s)", p.seat + 1, p.type.c_str(), p.obj, fresh ? "out of reach" : "no reports");
@@ -1586,40 +1736,61 @@ void frame_npcs(double now, const Bit32s pos[3]) {
 
 }  // namespace
 
-// The game's own wing first: about to spawn while our puppets squeeze its heap, it waits (the game calls the spawn
-// again every frame while the wing is armed) and a puppet of ours is given back; with none of ours left it spawns
-// whatever the heap says (the game as it is alone)
-bool wing_waits_for_memory(int sphereId) {
+// The game's own wing first: it spawns as it would (the game asks once: refused, it would be lost), and when our
+// puppets squeeze the heap (the last 2 s' low under kWingFloor) some of ours are given back at once to make room
+// (one each kWingFloor - low / 700 bytes, at the next frames)
+void make_room_for_wing(int sphereId) {
     int pilots, npcs, pods;
     priv_session_counts(pilots, npcs, pods);
-    if (pilots + npcs == 0) {
-        return false;
-    }
     const int low = heap_low_recent(2);
-    if (low >= (1 << 30) || low >= kWingFloor) {
-        return false;
+    if (pilots + npcs == 0 || low >= (1 << 30) || low >= kWingFloor) {
+        return;
     }
-    static double forcedAt = -1e9;
-    if (PIC_FullIndex() - forcedAt > kUrgentEveryMs) {
-        forcedAt = PIC_FullIndex();
-        priv_session_force_release();       // (one at a time: the wing asks again every frame)
+    const int n = (kWingFloor - low) / 700 + 1;
+    for (int i = 0; i < n; i++) priv_session_force_release();
+    wclog(1, "Privateer: nav %d's wing comes while the game's memory is low (%d at the lowest): %d of ours given back", sphereId, low, n);
+}
+
+bool somebody_else_in_system() {
+    for (int s = 0; s < kMaxSeats; s++) {
+        if (s != g_net->self && g_net->pilots[s].known && g_net->pilots[s].flying && g_net->pilots[s].system == g_system) return true;
     }
-    static double saidAt = -1e9;
-    if (PIC_FullIndex() - saidAt > 3000) {
-        saidAt = PIC_FullIndex();
-        wclog(1, "Privateer: nav %d's wing waits for the game's memory (%d free at the lowest; %d pilots, %d encounter ships of others' here: one given back)",
-              sphereId, low, pilots, npcs);
-    }
-    return true;
+    return false;
 }
 
 bool priv_session_allow_wing(int sphereId) {
     if (!g_net || g_net->self < 0 || g_system.empty()) {
         return true;
     }
-    const int owner = owner_of(g_system, sphereId);
+    const double now = PIC_FullIndex();
+    if (g_net->nav != sphereId) {
+        // (the game spawns this sphere's wing as we enter it: before our tick has seen us there)
+        g_net->nav = sphereId;
+        g_net->navSince = now;
+        priv_session_event(WHY_NAV);
+    }
+    // The game asks once, as we enter the sphere (a refusal loses the wing for this visit: measured), so the owner is
+    // chosen now: the host's word when there is one, else by the same rule every machine follows, with what we know of
+    // who is here (their presences, and their latest places: pilots arriving together)
+    int owner = owner_of(g_system, sphereId);
+    if (owner < 0) {
+        NavOwner *o = owner_entry(g_system, sphereId, true);
+        unsigned done = o ? o->done : 0;
+        const unsigned present = present_at(g_system, sphereId) | (1u << g_net->self);
+        owner = choose_owner(present, sphereId, done, NULL);
+        if (o && owner >= 0) {
+            o->owner = owner;
+            o->occupied = true;
+            o->done = done | (1u << owner);
+            wclog(1, "Privateer: %s nav %d: pilot %d owns it by the rule, no word yet (present %02x)", g_system.c_str(), sphereId, owner + 1,
+                  present);
+            if (g_net->host) send_owners();
+        }
+    }
+    (void)now;
     if (owner == g_net->self) {
-        return !wing_waits_for_memory(sphereId);
+        make_room_for_wing(sphereId);   // (never refused: the game's own encounter first; ours give way)
+        return true;
     }
     if (owner >= 0) {
         static double saidAt = -1e9;
@@ -1629,11 +1800,7 @@ bool priv_session_allow_wing(int sphereId) {
         }
         return false;
     }
-    // nobody's word yet: with another pilot already there, the host decides first
-    if ((present_at(g_system, sphereId) & ~(g_net->self >= 0 ? 1u << g_net->self : 0)) != 0) {
-        return false;
-    }
-    return !wing_waits_for_memory(sphereId);
+    return true;        // (no owner could be chosen: as alone)
 }
 
 bool priv_session_chat(const std::string &text) {
@@ -1663,10 +1830,14 @@ void priv_session_hit(Bit16u target, int loc, int damage) {
     int owner = -1;
     Bit32u id = 0;
     for (int s = 0; s < kMaxSeats && owner < 0; s++) {
-        if (g_net->puppets[s].obj == target && target) owner = s;
+        if (g_net->puppets[s].obj == target && target) {
+            if (g_net->puppets[s].parked) return;      // (far off: no hit there is real)
+            owner = s;
+        }
     }
     for (int k = 0; k < kNpcCap && owner < 0; k++) {
         if (g_net->npcs[k].used && g_net->npcs[k].obj == target && target) {
+            if (g_net->npcs[k].parked) return;
             owner = g_net->npcs[k].seat;
             id = g_net->npcs[k].id;
         }
@@ -1715,7 +1886,8 @@ void priv_session_fired(Bit16u ship) {
 
 // One puppet given back: moved far off, its AI let go, killed (the game frees it after its death)
 void release_obj(Bit16u obj) {
-    Bit32s away[3] = { 0x3FFFFFFF, 0x3FFFFFFF, 0x3FFFFFFF };
+    Bit32s away[3];
+    park_pos(obj, away);
     if (priv_pod_is(obj)) {
         priv_pod_set(obj, away);
     } else {
@@ -1852,16 +2024,94 @@ void priv_session_frame() {
             p.parked = false;
         } else if (p.obj && !p.parked) {
             // out of reach: far off, kept for its return
-            Bit32s away[3] = { 0x3FFFFFFF, 0x3FFFFFFF, 0x3FFFFFFF };
+            Bit32s away[3];
+            park_pos(p.obj, away);
             priv_ship_set(p.obj, away, NULL);
             p.parked = true;
             wclog(2, "Privateer: pilot %d's ship parked (%s)", s + 1, fresh ? "out of reach" : "no reports");
         }
     }
     frame_chats_and_shots();
+    drones_frame(now);
 }
 
 void priv_session_force_release() { g_forceRelease++; }
+
+// A pilot's ship in our game: ours, or its puppet (0 none here)
+Bit16u priv_session_pilot_ship(int seat) {
+    if (!g_net || seat < 0 || seat >= kMaxSeats) return 0;
+    if (seat == g_net->self) return priv_player_ship();
+    const Puppet &p = g_net->puppets[seat];
+    return p.obj && !p.parked ? p.obj : 0;
+}
+
+// Co-op (the user: "This is mostly coop not PvP and if no one can spawn when players are present then it may be
+// boring"): a hostile wing the game spawns where other pilots are present gets more ships of its own, made by the game
+// itself (wcnet_priv.cpp, wing_extend: a larger ship array, a higher count, its orders and formation): +1 for 2-3
+// pilots, +2 for 4-5, +3 for 6-8, at most that many a nav point a flight, and only while the owner's heap can take
+// some 1.2 KB each over the create floor (measured, docs section 15: 8 pilots together and the natural encounter + 3
+// is safe, + 5 the edge).
+enum { kExtrasMax = 3, kExtraNearBytes = 1200 };
+const double kComingMetres = 20000.0;
+
+bool hostile_cast(const std::string &cast) {
+    return cast.compare(0, 3, "PIR") == 0 || cast.compare(0, 3, "KIL") == 0 || cast.compare(0, 3, "RET") == 0 || cast.compare(0, 3, "BOU") == 0;
+}
+
+int extras_for(int pilots) {
+    return pilots <= 1 ? 0 : (pilots / 2 < kExtrasMax ? pilots / 2 : kExtrasMax);
+}
+
+int priv_session_wing_extras(int sphereId, const char *cast, int count) {
+    if (!g_net || g_net->self < 0 || !priv_in_flight() || !hostile_cast(cast)) {
+        return 0;
+    }
+    // the pilots here or coming: present, or within 20 km of the sphere's edge by their latest places (a group flying
+    // together arrives seconds apart, and the game spawns the encounter as the first one enters)
+    unsigned present = present_at(g_system, sphereId) | (1u << g_net->self);
+    PrivSphere sp[16];
+    const int ns = priv_spheres(sp, 16);
+    const double now = PIC_FullIndex();
+    for (int i = 0; i < ns; i++) {
+        if (sp[i].id != sphereId) continue;
+        const double reach = ((double)sp[i].radius + kComingMetres) * kUnitsPerMetre;
+        for (int s = 0; s < kMaxSeats; s++) {
+            const Puppet &p = g_net->puppets[s];
+            if (s == g_net->self || !p.reported || now - p.at > 2000 || p.system != g_system) continue;
+            const double dx = p.x - sp[i].x, dy = p.y - sp[i].y, dz = p.z - sp[i].z;
+            if (dx * dx + dy * dy + dz * dz <= reach * reach) present |= 1u << s;
+        }
+    }
+    int pilots = 0;
+    for (int s = 0; s < kMaxSeats; s++) {
+        if (present & (1u << s)) pilots++;
+    }
+    if (g_net->extrasSystem != g_system || g_net->extrasNav != sphereId || g_net->extrasFlight != g_net->flightShip) {
+        g_net->extrasSystem = g_system;
+        g_net->extrasNav = sphereId;
+        g_net->extrasFlight = g_net->flightShip;
+        g_net->extrasMade = 0;
+    }
+    int n = extras_for(pilots) - g_net->extrasMade;
+    if (n <= 0) {
+        return 0;
+    }
+    const int low = heap_low_recent(2);
+    const int afford = low >= (1 << 30) ? n : (low - kCreateFloor) / kExtraNearBytes;
+    if (afford < n) {
+        wclog(1, "Privateer: co-op: %d pilots at nav %d; the game's memory (%d at the lowest) takes %d more ships of %d", pilots, sphereId, low,
+              afford < 0 ? 0 : afford, n);
+        n = afford;
+    }
+    (void)count;
+    return n > 0 ? n : 0;
+}
+
+void priv_session_wing_extended(int sphereId, int extras) {
+    if (!g_net) return;
+    g_net->extrasMade += extras;
+    (void)sphereId;
+}
 
 void priv_session_our_death() {
     if (!g_net || g_net->self < 0) {

@@ -59,6 +59,12 @@ enum {
     kSeg077 = 0x31D3,               // seg077: the encounter wings
     kWingSpawn = 0x0265,            // seg077:0265(wing far): the wing's ships made (the user's nav-point owner decides)
     kWingSphere = 0x18,             // the wing's sphere id (a byte; the next the system's)
+    kWingCastIndex = 0x16,          // the wing's cast: its index in the list at +0x1A (near: +0x12 the count, +0x14 8-byte names)
+    kWingCastList = 0x1A,
+    kWingShips = 0x3B,              // its ships (a near array, one word a ship, 0 not yet made)
+    kWingCount = 0x53,              // how many (the spawn's loop bound; the formation is made for that many, seg077:003B)
+    kWingMaxCount = 8,              // (no wing extended past 8: the formations')
+    kWingArrayWords = 8,
     kHitPlace = 0x1206,             // seg053:1206, in the hit routine (0F6D) just before the damage goes to the model:
                                     // [bp+0xA] the ship, [bp+0xC] the quadrant, [bp-6] the damage
     kSeg101 = 0x3EF1,               // seg101: the damage model
@@ -155,12 +161,23 @@ struct PrivCall {
     void (*doneObj)(int tag, Bit16u obj);      // (a spawn's: the object made, 0 none)
     void (*cancel)(int tag);                    // the call dropped before it ran (its guard failed, or the flight changed)
     int tag;
+    int castSlot;                               // (a spawn's cast name: its slot, -1 none)
     // the object the call works on: checked just before it runs (still that kind, in the scene, its damage model the
     // same): what was queued in one frame may have died, been freed or been left behind by the next
     Bit16u guardObj, guardVtable, guardModelOff, guardModelSeg;
-    PrivCall() : para(0), off(0), done(NULL), doneObj(NULL), cancel(NULL), tag(0), guardObj(0), guardVtable(0), guardModelOff(0), guardModelSeg(0) {}
+    PrivCall() : para(0), off(0), done(NULL), doneObj(NULL), cancel(NULL), tag(0), castSlot(-1), guardObj(0), guardVtable(0), guardModelOff(0),
+                 guardModelSeg(0) {}
 };
-enum { kStackArg = 0x10000 };
+enum { kStackArg = 0x10000, kCastArg = 0x40000 };     // kCastArg + slot: the near address of that cast's name
+// Our ships' cast names (a ship keeps a near pointer to its cast's name, +0xE): one 9-byte slot a cast in a block of the
+// game's own near heap (16 slots, 144 bytes, made once a program run by its malloc, seg000:0861, at the first spawn);
+// until it is there, or should it fail, the old scratch in the program's unused usage line (one name for all)
+enum { kCastSlots = 16, kCastSlotBytes = 9, kNearMallocRoot = 0x0861 };
+Bit16u g_castBlock;
+bool g_castBlockAsked;
+std::string g_castNames[kCastSlots];
+int g_castNext;
+Bit16u cast_slot_address(int slot);
 std::deque<PrivCall> g_calls;
 struct Saved {
     bool active;
@@ -238,6 +255,7 @@ bool run_calls() {
     }
     FillFlags();
     const PrivCall &c = g_calls.front();
+    const Bit16u castAt = cast_slot_address(c.castSlot);
     g_saved.active = true;
     g_saved.ip = reg_ip;
     g_saved.cs = SegValue(cs);
@@ -259,7 +277,7 @@ bool run_calls() {
     reg_sp = dataAt;
     for (size_t i = c.args.size(); i-- > 0;) {
         const Bit32u a = c.args[i];
-        CPU_Push16(a >= kStackArg ? (Bit16u)(dataAt + (a - kStackArg)) : (Bit16u)a);
+        CPU_Push16(a >= kCastArg ? castAt : a >= kStackArg ? (Bit16u)(dataAt + (a - kStackArg)) : (Bit16u)a);
     }
     g_saved.back = reg_sp;
     CPU_Push16(g_saved.cs);
@@ -306,6 +324,243 @@ struct StackPaint {
     int deepest;                // the lowest headroom over the heap's end seen (1 << 30: none)
     StackPaint() : painted(false), from(0), to(0), deepest(1 << 30) {}
 } g_paint;
+
+// A ship's AI target (found by the scan below): its plan (far, the controller's +2) is a chain of maneuver records, and
+// the target appears in several of them -- its ship (near) and its damage model's segment (the ship's +0x58; far, at
+// offset 4) -- at offsets that vary with the plan (a pirate on a militia ship: +114 +13A +170 +2CA, the model at +146
+// +1AE; another: +2F0, +32E).  So a new target is given by replacing the old one wherever it stands in the plan's first
+// 1 KB, ship and model alike.  Written at the frame.
+enum { kPlanScan = 0x400 };
+std::vector<std::pair<Bit16u, Bit16u> > g_retargets;    // (ship, target) to write at the next frame
+
+// The ship its AI is after: the first near pointer in its plan to a live ship of the scene (0 none)
+static Bit16u plan_target(Bit16u ship) {
+    const Bit16u ctl = priv_r16((Bit16u)(ship + 0x4C));
+    const Bit16u poff = ctl ? priv_r16((Bit16u)(ctl + 2)) : 0, pseg = ctl ? priv_r16((Bit16u)(ctl + 4)) : 0;
+    if (!pseg) return 0;
+    const PhysPt plan = ((PhysPt)pseg << 4) + poff;
+    for (int i = 0; i < kPlanScan; i += 2) {
+        Bit16u w = 0;
+        if (mem_readw_checked(plan + i, &w)) break;
+        if (w && w != ship && w > 0x6C00 && w < 0xF000 && priv_r16(w) == kShipVtable && priv_ship_is_alive(w) && priv_scene_has(w)) {
+            // (the model's segment beside it in the same record confirms it: the word 0x32-0x40 on)
+            return w;
+        }
+    }
+    return 0;
+}
+
+static void retarget_frame() {
+    for (size_t i = 0; i < g_retargets.size(); i++) {
+        const Bit16u ship = g_retargets[i].first, target = g_retargets[i].second;
+        if (!priv_ship_is_alive(ship) || !priv_ship_is_alive(target)) continue;
+        const Bit16u old = plan_target(ship);
+        if (!old || old == target) continue;
+        const Bit16u ctl = priv_r16((Bit16u)(ship + 0x4C));
+        const Bit16u poff = priv_r16((Bit16u)(ctl + 2)), pseg = priv_r16((Bit16u)(ctl + 4));
+        const PhysPt plan = ((PhysPt)pseg << 4) + poff;
+        const Bit16u oldSeg = priv_r16((Bit16u)(old + 0x58)), newSeg = priv_r16((Bit16u)(target + 0x58));
+        int n = 0;
+        for (int k = 0; k < kPlanScan; k += 2) {
+            Bit16u w = 0;
+            if (mem_readw_checked(plan + k, &w)) break;
+            if (w == old) { mem_writew(plan + k, target); n++; }
+            else if (w == oldSeg && oldSeg) { mem_writew(plan + k, newSeg); n++; }
+        }
+        wclog(2, "Privateer: ds:%04X's AI turned from ds:%04X to ds:%04X (%d words)", ship, old, target, n);
+    }
+    g_retargets.clear();
+}
+
+Bit16u priv_ship_target_now(Bit16u ship) { return plan_target(ship); }
+
+void retarget_queue(Bit16u ship, Bit16u target) {
+    if (g_retargets.size() < 16) g_retargets.push_back(std::make_pair(ship, target));
+}
+
+// Co-op extras (wcnet_priv_session.cpp, priv_session_wing_extras): the wing about to spawn is given more ships of its
+// own -- a larger ship array from the game's heap, the old entries copied, its count raised -- so that the game itself
+// makes them, with the wing's orders, in its formation, counted wherever the wing is (a mission's objectives too).
+// Arrays are taken from the game's heap ahead of time (its malloc, seg000:0861, at a frame's entry: two kept ready
+// while in a room); the old array is given back by its free (seg000:03BA) at the next frame.
+std::vector<Bit16u> g_wingArrays, g_wingFrees;
+bool g_wingArrayAsked;
+std::vector<PhysPt> g_wingsExtended;        // (this flight's: a wing extended once)
+
+void wing_array_made(int tag, Bit16u ax, Bit16u dx) {
+    (void)tag; (void)dx;
+    g_wingArrayAsked = false;
+    if (ax && g_wingArrays.size() < 4) g_wingArrays.push_back(ax);
+}
+
+void wing_array_cancel(int tag) {
+    (void)tag;
+    g_wingArrayAsked = false;
+}
+
+bool queue_call(const PrivCall &c);
+static void wing_arrays_frame() {
+    // the old arrays given back
+    for (size_t i = 0; i < g_wingFrees.size(); i++) {
+        PrivCall c;
+        c.para = 0;
+        c.off = 0x03BA;
+        c.args.push_back(g_wingFrees[i]);
+        queue_call(c);
+    }
+    g_wingFrees.clear();
+    if (!priv_session_active() || g_wingArrays.size() >= 2 || g_wingArrayAsked) {
+        return;
+    }
+    PrivCall c;
+    c.para = 0;
+    c.off = kNearMallocRoot;
+    c.args.push_back(kWingArrayWords * 2);
+    c.done = wing_array_made;
+    c.cancel = wing_array_cancel;
+    if (queue_call(c)) g_wingArrayAsked = true;
+}
+
+static void wing_extend(PhysPt wing, int sphere) {
+    if (std::find(g_wingsExtended.begin(), g_wingsExtended.end(), wing) != g_wingsExtended.end()) {
+        return;                 // (the game calls the spawn again while the wing is armed: extended once)
+    }
+    const int count = (Bit16s)mem_readw(wing + kWingCount);
+    const Bit16u ships = mem_readw(wing + kWingShips);
+    // the wing's cast: hostile ones only
+    const Bit16u list = mem_readw(wing + kWingCastList), idx = mem_readw(wing + kWingCastIndex);
+    std::string cast;
+    if (list && idx < priv_r16((Bit16u)(list + 0x12))) {
+        const Bit16u at = (Bit16u)(priv_r16((Bit16u)(list + 0x14)) + 8 * idx);
+        for (int i = 0; i < 8; i++) {
+            const Bit8u c = priv_r8((Bit16u)(at + i));
+            if (!c) break;
+            cast += (char)c;
+        }
+    }
+    wclog(2, "Privateer: a wing of %d (%s) spawns at nav %d", count, cast.c_str(), sphere);
+    int extras = priv_session_wing_extras(sphere, cast.c_str(), count);
+    if (extras <= 0 || count <= 0 || !ships) {
+        return;
+    }
+    if (count + extras > kWingMaxCount) extras = kWingMaxCount - count;
+    if (extras <= 0 || g_wingArrays.empty()) {
+        wclog(1, "Privateer: co-op: the wing at nav %d (%d %s) not extended: %s", sphere, count, cast.c_str(),
+              g_wingArrays.empty() ? "no array ready" : "it is full");
+        return;
+    }
+    const Bit16u arr = g_wingArrays.back();
+    g_wingArrays.pop_back();
+    for (int i = 0; i < kWingArrayWords; i++) {
+        priv_w16((Bit16u)(arr + 2 * i), i < count ? priv_r16((Bit16u)(ships + 2 * i)) : 0);
+    }
+    mem_writew(wing + kWingShips, arr);
+    mem_writew(wing + kWingCount, (Bit16u)(count + extras));
+    g_wingFrees.push_back(ships);
+    if (g_wingsExtended.size() < 64) g_wingsExtended.push_back(wing);
+    priv_session_wing_extended(sphere, extras);
+    wclog(1, "Privateer: co-op: the wing at nav %d (%d %s) gets %d more of its own", sphere, count, cast.c_str(), extras);
+}
+
+void wings_flight_changed() {
+    g_wingsExtended.clear();
+}
+
+// A ship made angry at the player, as a hit from the player does (seg053:116A: its pilot -- the plan's +0x23, near --
+// has +0x1A raised past the threshold at ds:0E1E and +0x19 bit 1 set); at the frame (the plan is far data)
+enum { kPilotAnger = 0x1A, kPilotMood = 0x19, kAngerThreshold = 0x0E1E };
+std::vector<Bit16u> g_angers;
+
+bool g_pilotDump;
+extern Bit16u g_lastSpawned;
+static void pilot_dump_frame() {
+    if (!g_pilotDump) return;
+    g_pilotDump = false;
+    const Bit16u ship = g_lastSpawned;
+    const Bit16u ctl = priv_r16((Bit16u)(ship + 0x4C));
+    const Bit16u poff = ctl ? priv_r16((Bit16u)(ctl + 2)) : 0, pseg = ctl ? priv_r16((Bit16u)(ctl + 4)) : 0;
+    Bit16u pilot = 0;
+    if (pseg) mem_readw_checked(((PhysPt)pseg << 4) + (Bit16u)(poff + kPlanPilot), &pilot);
+    std::string hex;
+    for (int i = 0; pilot && i < 0x40; i++) {
+        char b[4];
+        snprintf(b, sizeof b, "%02X", priv_r8((Bit16u)(pilot + i)));
+        hex += b;
+        if (i % 2 == 1) hex += ' ';
+    }
+    wclog(1, "Privateer: pilot of ds:%04X at ds:%04X: %s", ship, pilot, hex.c_str());
+}
+
+static void anger_frame() {
+    for (size_t i = 0; i < g_angers.size(); i++) {
+        const Bit16u ship = g_angers[i];
+        if (!priv_ship_is_alive(ship)) continue;
+        const Bit16u ctl = priv_r16((Bit16u)(ship + 0x4C));
+        const Bit16u poff = ctl ? priv_r16((Bit16u)(ctl + 2)) : 0, pseg = ctl ? priv_r16((Bit16u)(ctl + 4)) : 0;
+        if (!pseg) continue;
+        Bit16u pilot = 0;
+        if (mem_readw_checked(((PhysPt)pseg << 4) + (Bit16u)(poff + kPlanPilot), &pilot) || !pilot) continue;
+        const Bit8u threshold = priv_r8(kAngerThreshold);
+        if (priv_r8((Bit16u)(pilot + kPilotAnger)) <= threshold) priv_w8((Bit16u)(pilot + kPilotAnger), (Bit8u)(threshold + 1));
+        priv_w8((Bit16u)(pilot + kPilotMood), (Bit8u)(priv_r8((Bit16u)(pilot + kPilotMood)) | 2));
+        wclog(2, "Privateer: ds:%04X's pilot (ds:%04X) angry at the player (anger %d over %d)", ship, pilot, priv_r8((Bit16u)(pilot + kPilotAnger)), threshold);
+    }
+    g_angers.clear();
+}
+
+// A test aid's scan for where a ship's AI keeps its target (!privtargetscan=<value>, run at the next frame: the plan
+// is far data): the last spawned ship's object, controller and plan searched for a word (our ship by default)
+int g_targetScan = -1;
+extern Bit16u g_lastSpawned, g_prevSpawned;
+static void target_scan_frame() {
+    if (g_targetScan < 0) return;
+    const Bit16u own = g_targetScan == 1 ? g_prevSpawned : priv_r16(kPlayerShip);     // (=prev: the ship spawned before the last)
+    g_targetScan = -1;
+    // what of ours the AI may hold: the ship (and its allocation), its controller, the player record and its +0x2C
+    Bit16u wants[12];
+    int nw = 0;
+    wants[nw++] = own;
+    wants[nw++] = (Bit16u)(own - 2);
+    wants[nw++] = priv_r16((Bit16u)(own + 0x4C));
+    wants[nw++] = priv_r16(kPlayerRecord);
+    wants[nw++] = (Bit16u)(priv_r16(kPlayerRecord) + 0x2C);
+    wants[nw++] = priv_r16((Bit16u)(own + 0x58));       // our damage model (far: its segment word)
+    wants[nw++] = priv_r16((Bit16u)(priv_r16((Bit16u)(own + 0x4C)) + 0xC));   // our cast copy (far: its segment)
+    wants[nw++] = priv_r16((Bit16u)(priv_r16((Bit16u)(own + 0x4C)) + 0x4));   // our plan (far: its segment)
+    const Bit16u ship = g_lastSpawned;
+    std::string at;
+    char b[48];
+    auto check = [&](const char *where, int i, Bit16u w) {
+        for (int k = 0; k < nw; k++) {
+            if (w == wants[k] && w) { snprintf(b, sizeof b, " %s+%02X=%04X(%d)", where, i, w, k); at += b; }
+        }
+    };
+    for (int i = 0; i < 0x90; i++) check("ship", i, priv_r16((Bit16u)(ship + i)));
+    const Bit16u ctl = priv_r16((Bit16u)(ship + 0x4C));
+    for (int i = 0; ctl && i < 0x80; i++) check("ctl", i, priv_r16((Bit16u)(ctl + i)));
+    const Bit16u poff = ctl ? priv_r16((Bit16u)(ctl + 2)) : 0, pseg = ctl ? priv_r16((Bit16u)(ctl + 4)) : 0;
+    for (int i = 0; pseg && i < 0x400; i++) {
+        Bit16u w = 0;
+        if (mem_readw_checked(((PhysPt)pseg << 4) + (Bit16u)(poff + i), &w)) break;
+        check("plan", i, w);
+    }
+    // the near objects the plan points at (a word pair DS-segment far pointer in the plan)
+    for (int i = 0; pseg && i + 3 < 0x400; i += 2) {
+        Bit16u o = 0, sg = 0;
+        mem_readw_checked(((PhysPt)pseg << 4) + (Bit16u)(poff + i), &o);
+        mem_readw_checked(((PhysPt)pseg << 4) + (Bit16u)(poff + i + 2), &sg);
+        if (sg == g_ds && o > 0x6C00 && o < 0xF000) {
+            for (int j = 0; j < 0x40; j++) {
+                const Bit16u w = priv_r16((Bit16u)(o + j));
+                for (int k = 0; k < nw; k++) {
+                    if (w == wants[k] && w) { snprintf(b, sizeof b, " plan+%02X->%04X+%02X(%d)", i, o, j, k); at += b; }
+                }
+            }
+        }
+    }
+    wclog(1, "Privateer: target scan of ds:%04X (controller %04X, plan %04X:%04X) for %04X/%04X/%04X/%04X/%04X/%04X/%04X/%04X:%s", ship, ctl, pseg,
+          poff, wants[0], wants[1], wants[2], wants[3], wants[4], wants[5], wants[6], wants[7], at.empty() ? " nothing" : at.c_str());
+}
 
 static void stack_paint_load() {
     // at the program's load, before anything ran: the stack's place below its top 1 KB
@@ -416,19 +671,63 @@ void hit_step(int tag, Bit16u ax, Bit16u dx) {
         h.obj = 0;
     }
 }
-Bit16u g_lastSpawned;
+Bit16u g_lastSpawned, g_prevSpawned;
 void spawn_done(int tag, Bit16u ax, Bit16u dx) {
     (void)dx;
+    g_prevSpawned = g_lastSpawned;
     g_lastSpawned = ax;
     wclog(1, "Privateer: spawn %d made the object ds:%04X", tag, ax);
 }
 
-// The castnames' scratch: written once the first time (a cast name, 8 bytes; the rest unused).
-Bit16u cast_name_at(const char *cast) {
-    for (int i = 0; i < 8; i++) {
-        priv_w8((Bit16u)(kScratch + i), (Bit8u)(i < (int)strlen(cast) ? cast[i] : 0));
+// The cast names' slots (above): the slot of a cast (one of the 16, the oldest taken over when they are all used: a
+// ship made long ago with that slot's old cast then reads the new one, as all of them did before)
+int cast_slot(const char *cast) {
+    for (int i = 0; i < kCastSlots; i++) {
+        if (g_castNames[i] == cast) return i;
     }
-    return kScratch;
+    const int slot = g_castNext;
+    g_castNext = (g_castNext + 1) % kCastSlots;
+    g_castNames[slot] = cast;
+    return slot;
+}
+
+void cast_block_made(int tag, Bit16u ax, Bit16u dx) {
+    (void)tag; (void)dx;
+    g_castBlock = ax;
+    wclog(1, "Privateer: our ships' cast names at ds:%04X (%d slots)%s", ax, (int)kCastSlots, ax ? "" : ": none given, the old scratch");
+}
+
+// The slot's name written (each time a call uses it: cheap, and the block is ours alone) and its address
+Bit16u cast_slot_address(int slot) {
+    if (slot < 0 || slot >= kCastSlots) {
+        return 0;
+    }
+    const std::string &name = g_castNames[slot];
+    const Bit16u at = g_castBlock ? (Bit16u)(g_castBlock + kCastSlotBytes * slot) : (Bit16u)kScratch;
+    for (int i = 0; i < kCastSlotBytes; i++) {
+        priv_w8((Bit16u)(at + i), (Bit8u)(i < (int)name.size() && i < 8 ? name[i] : 0));
+    }
+    return at;
+}
+
+void cast_block_cancel(int tag) {
+    (void)tag;
+    g_castBlockAsked = false;   // (dropped with a flight's calls: asked again at the next spawn)
+}
+
+bool queue_call(const PrivCall &c);
+// The block asked for (once a program run) before the first spawn's call
+void cast_block_ask() {
+    if (g_castBlock || g_castBlockAsked) {
+        return;
+    }
+    PrivCall c;
+    c.para = 0;
+    c.off = kNearMallocRoot;
+    c.args.push_back(kCastSlots * kCastSlotBytes);
+    c.done = cast_block_made;
+    c.cancel = cast_block_cancel;
+    if (queue_call(c)) g_castBlockAsked = true;
 }
 
 // A test aid: PRIVWATCH=seg053:064B,seg029:0277,... (root segments, scripts/wcexe.py's names) logs each call of those
@@ -544,6 +843,14 @@ void priv_program_loaded(const char *name, Bit16u loadSeg, Bit16u psp) {
         }
     }
     g_found = true;
+    g_wingArrays.clear();       // (a new run of the program: a new heap)
+    g_wingFrees.clear();
+    g_wingArrayAsked = false;
+    g_wingsExtended.clear();
+    g_castBlock = 0;
+    g_castBlockAsked = false;
+    for (int i = 0; i < kCastSlots; i++) g_castNames[i].clear();
+    g_castNext = 0;
     g_privLoadSeg = loadSeg;
     g_ds = ds;
     g_psp = psp;
@@ -673,6 +980,11 @@ bool priv_check_hooks(Bit32u ip) {
     if (ip == kControlsEntry && codeSeg == (Bit16u)(g_privLoadSeg + kSeg088)) {
         g_frameSp = reg_sp;
         if (!g_saved.active) {
+            pilot_dump_frame();
+            wing_arrays_frame();
+            anger_frame();
+            retarget_frame();
+            target_scan_frame();
             stack_paint_frame();
             turn_step();
             priv_spheres_refresh();
@@ -714,11 +1026,17 @@ bool priv_check_hooks(Bit32u ip) {
         const PhysPt sp = SegPhys(ss) + reg_sp;
         const Bit16u off = mem_readw(sp + 4), seg = mem_readw(sp + 6);
         const int sphere = mem_readb(((PhysPt)seg << 4) + (Bit16u)(off + kWingSphere));
-        if (!priv_session_allow_wing(sphere)) {
+        static unsigned wingCalls;
+        const bool allowed = priv_session_allow_wing(sphere);
+        wclog(2, "Privateer: the game's wing spawn at nav %d (call %u, flags %02X): %s", sphere, ++wingCalls,
+              mem_readb(((PhysPt)seg << 4) + (Bit16u)(off + 0x2A)), allowed ? "allowed" : "refused");
+        if (!allowed) {
             // (the wing stays armed: it spawns when this machine owns the nav point)
             reg_eip = mem_readw(sp);
             SegSet16(cs, mem_readw(sp + 2));
             reg_sp += 4;
+        } else {
+            wing_extend((((PhysPt)seg << 4) + off), sphere);
         }
         return true;
     }
@@ -1029,6 +1347,58 @@ bool priv_script_item(const std::string &item, double t) {
         priv_session_force_release();
         return true;
     }
+    if (item.compare(0, 18, "!privretargetpirates=") == 0 || item.compare(0, 21, "!privretargetpirates=") == 0) {
+        // !privretargetpirates=<pilot>: every live pirate of our scene (not a puppet) given that pilot's ship as target
+        const int seat = atoi(item.c_str() + 21) - 1;
+        const Bit16u target = priv_session_pilot_ship(seat);
+        Bit16u ships[48];
+        const int n = priv_scene_ships(ships, 48);
+        int k = 0;
+        for (int i = 0; target && i < n; i++) {
+            if (!priv_ship_is_alive(ships[i]) || priv_session_is_puppet(ships[i], 0) || priv_ship_cast_name(ships[i]).compare(0, 3, "PIR")) continue;
+            retarget_queue(ships[i], target);
+            k++;
+        }
+        wclog(1, "key script %.1fs: %d pirates given pilot %d's ship ds:%04X as target", t, k, seat + 1, target);
+        return true;
+    }
+    if (item.compare(0, 14, "!privpilotdump") == 0 && g_found) {
+        g_pilotDump = true;         // (at the next frame: the plan is far data)
+        return true;
+    }
+    if (item.compare(0, 10, "!privanger") == 0 && g_found) {
+        priv_ship_anger(g_lastSpawned);
+        return true;
+    }
+    if (item.compare(0, 14, "!privretarget=") == 0 && g_found) {
+        // !privretarget=me|prev: the last spawned ship's AI given our ship (or the ship spawned before it) as its target
+        const bool prev = item.compare(14, 4, "prev") == 0;
+        retarget_queue(g_lastSpawned, prev ? g_prevSpawned : priv_player_ship());
+        wclog(1, "key script %.1fs: ds:%04X's target: %s (its plan's now ds:%04X)", t, g_lastSpawned, prev ? "the ship before it" : "our ship",
+              plan_target(g_lastSpawned));
+        return true;
+    }
+    if (item.compare(0, 15, "!privtargetscan") == 0 && g_found) {
+        g_targetScan = item.compare(15, 5, "=prev") == 0 ? 1 : 0;
+        return true;
+    }
+    if (item.compare(0, 11, "!privgonav=") == 0 && g_found) {
+        // !privgonav=<sphere>[:<metres>]: our ship put in that nav sphere (its centre, offset along x)
+        int id = 0, off = 0;
+        sscanf(item.c_str() + 11, "%d:%d", &id, &off);
+        PrivSphere sp[16];
+        const int n = priv_spheres(sp, 16);
+        for (int i = 0; i < n; i++) {
+            if (sp[i].id != id) continue;
+            const Bit16u ship = priv_r16(kPlayerShip);
+            const Bit32s v[3] = { sp[i].x + off * 256, sp[i].y, sp[i].z };
+            for (int k = 0; ship && k < 3; k++) mem_writed(ds_at((Bit16u)(ship + kShipPos + 4 * k)), (Bit32u)v[k]);
+            wclog(1, "key script %.1fs: put in nav sphere %d (%d m off)", t, id, off);
+            return true;
+        }
+        wclog(1, "key script %.1fs: !privgonav: no sphere %d", t, id);
+        return true;
+    }
     if (item.compare(0, 13, "!privcredits=") == 0 && g_found) {
         // !privcredits=<n>: the player's credits set (a test rig's aid only: the 32-bit global ds:655A the commodity
         // exchange adds to and takes from, ovr286:103C)
@@ -1052,6 +1422,20 @@ bool priv_script_item(const std::string &item, double t) {
             }
         }
         wclog(1, "key script %.1fs: %u found at %s(the player record at %04X)", t, v, at.c_str(), priv_r16(kPlayerRecord));
+        return true;
+    }
+    if (item.compare(0, 14, "!privwingtest=") == 0 && g_found) {
+        // !privwingtest=<n>: as if the game spawned a wing of n pirates here (a test aid for the co-op extras: the
+        // scene noted, n pirates spawned 2.5 km ahead, the extras' reckoning a second later)
+        const int n = atoi(item.c_str() + 14);
+        Bit32s pos[3], m[9];
+        priv_player_pos(pos);
+        priv_player_matrix(m);
+        for (int i = 0; i < n && i < 8; i++) {
+            Bit32s at[3] = { pos[0] + (i - n / 2) * 60000, pos[1] + 640000, pos[2] + (i % 2) * 40000 };
+            priv_spawn_ship("TALNWIMP", "TALPIR", "PIR_DA", at, m, NULL, 100 + i);
+        }
+        wclog(1, "key script %.1fs: a wing of %d pirates as if the game's", t, n);
         return true;
     }
     if (item.compare(0, 10, "!privpeace") == 0 && g_found) {
@@ -1106,6 +1490,7 @@ bool priv_script_item(const std::string &item, double t) {
             const Bit16u ship = i < 0 ? priv_last_spawned() : ships[i];
             if (!ship || ship == priv_player_ship() || !priv_ship_is_alive(ship)) continue;
             said = priv_ship_say(ship, name.c_str(), text.c_str(), -1);
+            if (said) priv_let_think(priv_ship_controller(ship), getenv("PRIVTHINK") ? atoi(getenv("PRIVTHINK")) : 60);
             wclog(1, "key script %.1fs: ds:%04X (%s, face %d) says \"%s\" as %s: %s", t, ship, priv_ship_cast_name(ship).c_str(),
                   priv_ship_face(ship), text.c_str(), name.c_str(), said ? "told" : "no cast");
         }
@@ -1130,6 +1515,7 @@ bool priv_spawn_ship(const char *type, const char *appearance, const char *cast,
     if (!priv_in_flight() || strlen(type) > 8 || strlen(appearance) > 8 || strlen(cast) > 8) {
         return false;
     }
+    cast_block_ask();
     PrivCall c;
     c.para = kSeg099;
     c.off = kPlace;
@@ -1152,7 +1538,8 @@ bool priv_spawn_ship(const char *type, const char *appearance, const char *cast,
     c.args.push_back(rec ? (Bit16u)(rec + 0x2C) : 0);   // this (the game's own callers pass the player record's +0x2C)
     c.args.push_back(kStackArg + (Bit32u)typeAt);
     c.args.push_back(g_ds);                             // (SS is DGROUP where the call is made)
-    c.args.push_back(cast_name_at(cast));
+    c.castSlot = cast_slot(cast);
+    c.args.push_back(kCastArg);
     c.args.push_back(kStackArg + (Bit32u)appAt);
     c.args.push_back(g_ds);
     c.args.push_back(kStackArg + 0);                    // the place
@@ -1265,7 +1652,66 @@ static int read_spheres(PrivSphere out[], int cap) {
     return k;
 }
 
+// The player's accepted missions' nav points (the nav map's NAV/MIS page, ovr375:1782..: ovr371:054F gives the
+// index-th of 4 near mission pointers at the player record's +0x5D; a mission's objectives are 5-byte entries -- a far
+// pointer and a byte -- at its +0x2C, their count at +0x2E (seg078:0117); an objective's byte 0 its kind (0xD0-0xE2),
+// byte 1 the same for a mission's objectives in Troy (0x58: its system's number, as far as is known), byte 2 9 for a
+// nav point and byte 3 then its "Nav N").  Read at the frame (the objectives are far data), cached.  Measured: a
+// scout mission "Nav 3 in Troy" D0/58/09/03, a base defence D6/58/09/04 and E2/01/00/00; the map rang Nav 3 and Nav 4.
+enum { kRecordMissions = 0x5D, kMissionObjectives = 0x2C, kMissionSlots = 4 };
+unsigned g_missionNavs;
+std::string g_missionText;
+
+static void missions_refresh() {
+    const Bit16u rec = priv_r16(kPlayerRecord);
+    unsigned navs = 0;
+    std::string text;
+    for (int m = 0; rec && m < kMissionSlots; m++) {
+        const Bit16u mission = priv_r16((Bit16u)(rec + kRecordMissions + 2 * m));
+        if (!mission) continue;
+        const Bit16u arr = priv_r16((Bit16u)(mission + kMissionObjectives));
+        const int count = (Bit16s)priv_r16((Bit16u)(mission + kMissionObjectives + 2));
+        char b[32];
+        snprintf(b, sizeof b, "%smission %d:", text.empty() ? "" : "; ", m);
+        text += b;
+        for (int i = 0; arr && i < count && i < 24; i++) {
+            const Bit16u off = priv_r16((Bit16u)(arr + 5 * i)), seg = priv_r16((Bit16u)(arr + 5 * i + 2));
+            if (!seg) continue;
+            const PhysPt o = ((PhysPt)seg << 4) + off;
+            Bit8u kind = 0, nav = 0xFF, k2 = 0, k3 = 0;
+            if (mem_readb_checked(o, &kind) || mem_readb_checked(o + 1, &nav)) continue;
+            mem_readb_checked(o + 2, &k2);
+            mem_readb_checked(o + 3, &k3);
+            snprintf(b, sizeof b, " %02X/%02X/%02X/%02X", kind, nav, k2, k3);
+            text += b;
+            // a nav point's objective: byte 2 is 9 and byte 3 the map's "Nav N" (the nav map tests the same,
+            // seg078:0153), the sphere N - 1 (Troy's Nav 1, the jump point, is sphere 0; Achilles, Nav 2, sphere 1)
+            if (k2 == 9 && k3 >= 1 && k3 <= 32) navs |= 1u << (k3 - 1);
+        }
+    }
+    if (navs != g_missionNavs || text != g_missionText) {
+        wclog(2, "Privateer: our missions: %s (their nav points %08X)", text.empty() ? "none" : text.c_str(), navs);
+    }
+    g_missionNavs = navs;
+    g_missionText = text;
+}
+
+unsigned priv_mission_navs() {
+    // (PRIVMISSIONS=<sphere,...>: a test rig's missions, added to the real ones)
+    unsigned extra = 0;
+    if (const char *e = getenv("PRIVMISSIONS")) {
+        for (const char *q = e; *q; ) {
+            const int n = atoi(q);
+            if (n >= 0 && n < 32) extra |= 1u << n;
+            while (*q && *q != ',') q++;
+            if (*q == ',') q++;
+        }
+    }
+    return g_missionNavs | extra;
+}
+
 void priv_spheres_refresh() {
+    missions_refresh();
     const Bit16u ship = priv_player_ship();
     if (ship && (ship != g_spheresShip || g_nSpheres == 0)) {
         g_nSpheres = read_spheres(g_spheres, 16);
@@ -1722,7 +2168,14 @@ bool priv_ship_say(Bit16u obj, const char *name, const char *text, int face) {
         if (k == 1) {
             firstId = mem_readw(blk);
         }
-        wclog(2, "Privateer: say: set %d at %05x: %u ids, strings at %05x, room %u", k, (unsigned)setObj, count, (unsigned)strings, (unsigned)room);
+        std::string ids;
+        for (int n = 0; n < count; n++) {
+            char b[8];
+            snprintf(b, sizeof b, " %02X", mem_readw(blk + 2 * n));
+            ids += b;
+        }
+        wclog(2, "Privateer: say: set %d at %05x: %u ids (%s), strings at %05x, room %u", k, (unsigned)setObj, count, ids.c_str(), (unsigned)strings,
+              (unsigned)room);
         for (Bit32u i = 0; i < room; i++) {
             mem_writeb(strings + i, i < strlen(text) && i + 1 < room ? (Bit8u)text[i] : 0);
         }
@@ -1730,6 +2183,7 @@ bool priv_ship_say(Bit16u obj, const char *name, const char *text, int face) {
     if (!(g_sayMask & 4)) {
         return true;
     }
+    if (const char *e = getenv("PRIVSAYID")) firstId = (int)strtoul(e, NULL, 0);     // (a test's: another line id)
     priv_w16((Bit16u)(pilot + kPilotLine), (Bit16u)firstId);
     priv_w16((Bit16u)(pilot + kPilotTimer), 0);
     priv_w8((Bit16u)(pilot + kPilotFlags), (Bit8u)(priv_r8((Bit16u)(pilot + kPilotFlags)) | 1));
@@ -1741,6 +2195,18 @@ bool priv_ship_say(Bit16u obj, const char *name, const char *text, int face) {
 
 void priv_calls_flush(const char *why) {
     calls_flush(why);
+}
+
+void priv_ship_set_target(Bit16u ship, Bit16u target) {
+    retarget_queue(ship, target);
+}
+
+void priv_wings_flight_changed() {
+    wings_flight_changed();
+}
+
+void priv_ship_anger(Bit16u ship) {
+    if (g_angers.size() < 16) g_angers.push_back(ship);
 }
 
 void priv_hit_apply(Bit16u obj, int loc, int damage) {

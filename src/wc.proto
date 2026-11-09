@@ -459,6 +459,7 @@ message PrivOwner {
     optional string system = 1;
     optional sint32 nav = 2;
     optional uint32 owner = 3;      // a seat
+    optional uint32 done = 4;       // the seats that have owned it this round (every machine chooses by the same rule)
 }
 message PrivOwners {
     repeated PrivOwner owners = 1;
