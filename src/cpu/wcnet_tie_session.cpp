@@ -2337,11 +2337,13 @@ struct ChallengeLine {
 const ChallengeLine kChallengeLines[] = {
     // HG1W, Mu 1: the transport that bolts and the fighters with it arrive
     { "hg1w", 13, "b10m1gw", 2, false },    // (for the rebel scum bolting: the Rebels' own Imperial scum)
-    { "hg1w", 14, "b2m4gw", 11, true },     // (for the ion cannons, a Z-95 has none: the enemy saving its warheads)
+    { "hg1w", 14, "ha2w", 7, true },        // (for the ion cannons, a Z-95 has none: the enemy's answer, the taunt of those
+                                            // who fly Z-95s; its 16 all used, the user: "Ya swap a line for it")
     // HI2W, Gamma 2
     { "hi2w", 0, "b1m2fm", 1, false },      // (for engaging Rebel fighters: Beta and Gamma engaging the enemy)
     { "hi2w", 1, "b13m5aw", 3, false },     // (for T/I Gamma and the escaping transport: no traitor escapes)
-    { "hi2w", 2, "hm1w", 12, true },        // (for T/I Eta's no prisoners: the enemy's word of the Z-95s)
+    { "hi2w", 2, "ha2w", 7, true },         // (for T/I Eta's no prisoners, 10 s in: the enemy's first word of the Z-95s, the
+                                            // taunt; its 16 all used)
     { "hi2w", 3, "b2m5fw", 4, false },      // (for the Rebels taking the bait: hostile ships in the system)
     { "hi2w", 4, "b11m6mw", 1, false },     // (for the X-wings, T/Is now: more enemy forces)
     { "hi2w", 5, "b9m1dw", 1, false },      // (for the Y-wings' torpedoes, T/Bs now: the TIE Bombers first)
@@ -2408,6 +2410,8 @@ void challenge_lines(const std::string &m, std::vector<TieVoiceLine> &from) {
         }
         from[c.index].mission = c.from;
         from[c.index].index = c.fromIndex;
+        wclog(2, "TIE: the Z-95 challenge's line %d of %s: %s's %d, \"%s\"", c.index, m.c_str(), c.from, c.fromIndex,
+              t.c_str() + (t[0] >= '1' && t[0] <= '3' ? 1 : 0));
         put++;
     }
     if (put || missing) {
@@ -2419,10 +2423,11 @@ void challenge_lines(const std::string &m, std::vector<TieVoiceLine> &from) {
 // headhunters they're brave' or something from one of the other missions"; 2026-11-07, its voice: "Especially the z95
 // line"): HA2W's taunt of those who fly Z-95s, its words and its voice (no line of the game's says they are brave), a
 // radio message of the mission's own, 25 s in, where the mission has a free one (16 at most) and does not say it
-// already (HG3M's first does); in a mission with none free the emulator's line instead.  Again when the mission is
-// read again (HG4M's after its jump in: the bank, loaded before it, has its voice in that slot still).
+// already (HG3M's first does); in a mission with none free, nothing (the user, 2026-11-09: "I don't like the arbitrary
+// message about z-95 being brave. Only want in game audio for that kind of thing. That area should be reserved for
+// messaging": the emulator's line over the picture had said it).  Again when the mission is read again (HG4M's after
+// its jump in: the bank, loaded before it, has its voice in that slot still).
 const ChallengeLine kBrave = { "", 0, "ha2w", 7, true };
-const char kBraveNotice[] = "They're flying Z-95 Headhunters! They're brave...";
 void challenge_line(const std::string &m, std::vector<TieVoiceLine> &from, bool again) {
     const int n = (Bit16s)tie_r16(tie::kMissionHeader + 2);
     for (size_t i = 0; i < sizeof(kChallengeLines) / sizeof(kChallengeLines[0]); i++) {
@@ -2434,7 +2439,7 @@ void challenge_line(const std::string &m, std::vector<TieVoiceLine> &from, bool 
     const std::string t = n >= 0 && n < 16 ? challenge_text(kBrave) : std::string();
     if (t.empty()) {
         if (!again) {
-            notice(kBraveNotice);
+            wclog(1, "TIE: the Z-95 challenge's taunt left out of %s: its 16 radio messages are all used", m.c_str());
         }
         return;
     }
