@@ -1782,6 +1782,26 @@ bool somebody_else_in_system() {
     return false;
 }
 
+// Pilots flying with us: fresh reports (under 2 s) in our system within kWithUsMetres of our ship, about to enter the
+// sphere we enter -- counted present at the wing's call, so that a formation crossing a sphere's edge together chooses
+// the same owner on every machine (without, each game crossing first saw itself alone there and spawned the wing: two
+// encounters, measured with four pilots arriving together)
+const double kWithUsMetres = 5000;
+unsigned pilots_with_us() {
+    unsigned mask = 0;
+    if (!priv_in_flight()) return 0;
+    Bit32s pos[3];
+    priv_player_pos(pos);
+    const double now = PIC_FullIndex();
+    for (int s = 0; s < kMaxSeats; s++) {
+        const Puppet &p = g_net->puppets[s];
+        if (s == g_net->self || !p.reported || now - p.at > 2000 || p.system != g_system) continue;
+        const double dx = p.x - pos[0], dy = p.y - pos[1], dz = p.z - pos[2];
+        if (sqrt(dx * dx + dy * dy + dz * dz) / kUnitsPerMetre < kWithUsMetres) mask |= 1u << s;
+    }
+    return mask;
+}
+
 bool priv_session_allow_wing(int sphereId) {
     if (!g_net || g_net->self < 0 || g_system.empty()) {
         return true;
@@ -1800,7 +1820,7 @@ bool priv_session_allow_wing(int sphereId) {
     if (owner < 0) {
         NavOwner *o = owner_entry(g_system, sphereId, true);
         unsigned done = o ? o->done : 0;
-        const unsigned present = present_at(g_system, sphereId) | (1u << g_net->self);
+        const unsigned present = present_at(g_system, sphereId) | (1u << g_net->self) | pilots_with_us();
         owner = choose_owner(present, sphereId, done, NULL, g_system);
         if (owner == kOwnerReserved) {
             wclog(1, "Privateer: %s nav %d is a mission's of a pilot not here yet: its wings are left to that pilot's game (present %02x, "
