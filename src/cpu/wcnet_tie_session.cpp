@@ -722,7 +722,19 @@ void handle(Peer *p, NetworkMessage &msg) {
             take_owners(msg.tie_owners());
         }
     } else if (msg.has_chat()) {
+        if (!p->hello) {
+            return;
+        }
         notice(msg.chat().callsign() + ": " + msg.chat().message());
+        if (g_net->host) {
+            // (the other guests', as the presence is)
+            for (size_t i = 0; i < g_net->peers.size(); i++) {
+                Peer *to = g_net->peers[i];
+                if (to != p && to->hello && to->conn.is_open()) {
+                    to->conn.send(msg);
+                }
+            }
+        }
     }
 }
 
@@ -2697,6 +2709,28 @@ void tie_session_shutdown() {
 }
 
 bool tie_session_active() { return g_net != NULL && (g_net->host || g_net->self >= 0); }
+
+// (the user, 2026-11-09: "hitting shift or 0 doesn't let me chat--of course if I type h for hello then it hyperspaces and
+// ends the mission": the prompt was the Wing Commander session's alone)
+void tie_session_chat(const std::string &text) {
+    if (!g_net || text.empty()) {
+        return;
+    }
+    NetworkMessage msg;
+    Chat *chat = msg.mutable_chat();
+    chat->set_ship_id(0);
+    chat->set_message(text);
+    chat->set_callsign(g_net->callsign);
+    int told = 0;
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        Peer *to = g_net->peers[i];
+        if (to->hello && to->conn.is_open() && to->conn.send(msg)) {
+            told++;
+        }
+    }
+    wclog(1, "TIE: comms: a line to %d pilot%s", told, told == 1 ? "" : "s");
+    notice(g_net->callsign + ": " + text);
+}
 
 bool tie_is_puppet(int obj) {
     return g_net != NULL && obj >= 0 && obj < 120 && g_net->puppets[obj].used && g_net->puppets[obj].owner != g_net->self;

@@ -2882,6 +2882,11 @@ void GFX_Events() {
                     }
                 }
                 if (shiftTap) {
+                    // (the Shift's release still the game's in TIE Fighter: held there, the arrows turn at full at once)
+                    extern bool wc_net_tie_running();
+                    if (wc_net_tie_running()) {
+                        MAPPER_CheckEvent(&event);
+                    }
                     kGlobalKeyDisable = true;   // (no text comes with a Shift: nothing to swallow)
                     outgoing_text = outgoing_prefix;
 #if SDL_VERSION_ATLEAST(2,0,0)

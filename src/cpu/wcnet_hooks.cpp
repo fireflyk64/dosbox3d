@@ -2404,6 +2404,10 @@ bool wc_net_mouse_button(int button, bool pressed) {
     return wc::tie_session_click(button, pressed);
 }
 
+bool wc_net_tie_running() {
+    return wc::tie_found();
+}
+
 bool wc_net_steer_marker(double *x, double *y) {
     return wc::tie_controls_marker(x, y);
 }

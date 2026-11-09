@@ -24,6 +24,7 @@
 #include "wcnet_retrovega.h"
 #include "wcnet_tie.h"
 #include "wcnet_priv.h"
+#include "wcnet_tie_session.h"
 #include "wcnet_transport.h"
 #include "wcnet_lobby.h"
 #include "wcnet_log.h"
@@ -3712,8 +3713,9 @@ bool wc_net_chat_ready() {
         // Privateer's room (its own session, wcnet_priv_session.cpp): in flight, where the game types nothing -- at a
         // base it takes typed names (a pilot's, a saved game's: a 0 or a Shift there is the game's), and the page's
         // room chat is there for that (the user, 2026-11-09: "0 also doesn't seem to do comms", "I don't know how to
-        // chat with my buddy": the prompt opened only for Wing Commander's session)
-        return wc::priv_session_active() && wc::priv_in_flight();
+        // chat with my buddy": the prompt opened only for Wing Commander's session).  TIE Fighter's room likewise (the
+        // user, 2026-11-09: "hitting shift or 0 doesn't let me chat"): in flight (its registration desk takes a typed name)
+        return (wc::priv_session_active() && wc::priv_in_flight()) || (tie_session_active() && tie_in_flight());
     }
     if (is_rv()) {
         return !rv_typing();
@@ -3795,6 +3797,10 @@ void wcnetSendChatMessage(const std::string &msg) {
     wclog(1, "comms: message sent");  // (the page remembers: the hint about the 0 key is not needed again)
     if (wc::priv_session_chat(msg)) {
         return;                     // (Privateer's room: wcnet_priv_session.cpp)
+    }
+    if (!g_session && tie_session_active()) {
+        tie_session_chat(msg);          // (TIE Fighter's room: its own session, none of the commands below)
+        return;
     }
     // "/rocks on", "/rocks soft" and "/rocks off" in the comms prompt are a
     // command, not a message.

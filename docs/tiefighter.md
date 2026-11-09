@@ -801,6 +801,15 @@ move vector, the nine axis words, type).
     (`pstate.space_confirm_action`, 0xEB17E: a warhead's target, the
     flight's end, the reinforcements after Shift+S): then it is the game's.
     Measured: Space held 1.5 s, five shots.
+  * **The comms prompt** (0 or a tap of Shift, Enter sends) was the Wing
+    Commander session's alone (`wc_net_chat_ready` asked `g_session`): now a
+    TIE room's too in flight (as Privateer's: the registration desk takes a
+    typed name; the page's room chat is there in the menus), the line sent to every pilot (the host passing a guest's
+    on) and shown on our own screen; while it is open the keys are the
+    prompt's (an `h` typed hyperspaced out).  A tap of Shift's release is
+    still given to the game (held there, the arrows turned at full at once).
+    Measured: "HOST: hello from host" on the guest, "GUEST: hi from guest" on
+    the host.
 * **The page**: a "Flight" choice beside Controller with TIE Fighter loaded
   (point to aim, drag to steer, keyboard alone, joystick / gamepad),
   remembered in the browser, given at the launch and while flying
