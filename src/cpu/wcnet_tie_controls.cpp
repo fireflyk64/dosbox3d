@@ -36,6 +36,7 @@
 #include "mouse.h"
 #include "mem.h"
 #include "pic.h"
+#include "vga.h"
 
 extern std::string incoming_text;   // the line the emulator draws over the picture (sdlmain.cpp)
 
@@ -62,6 +63,8 @@ int g_stepX, g_stepY;
 double g_px, g_py;                  // the pointer, -1..1 from the middle (down and right positive)
 unsigned g_frames;
 bool g_wasFlying;
+double g_accX, g_accY;              // the pointer's turns below the game's least: what is owed (pointer_mickeys)
+double g_sightX = 0.5, g_sightY = 0.375;    // the gunsight's middle, a share of the screen (the game's projection's)
 bool g_adding;                      // our own keys going in: not ours to filter
 
 // The pointer's travel for the whole width: host pixels (after DOSBox's sensitivity).
@@ -102,6 +105,18 @@ int mickeys(double d, int least, int most) {
     }
     const double m = least + (most - least) * fmin(1.0, fabs(d));
     return (int)(d < 0 ? -m : m);
+}
+
+// The pointer's deflection (-1..1) as the share of the game's full turn: nothing within the dead zone, then the square
+// of the way out (the user, 2026-11-09: "moving the mouse just a bit away from the center results in a huge turn
+// already--it's hard to fine tune"): a quarter of the turn with the pointer half way, the whole at the edge.
+double pointer_curve(double p) {
+    const double a = fabs(p);
+    if (a < kPointerDeadZone) {
+        return 0;
+    }
+    const double e = (a - kPointerDeadZone) / (1.0 - kPointerDeadZone);
+    return p < 0 ? -e * e : e * e;
 }
 
 void say(const std::string &line) {
@@ -531,6 +546,34 @@ bool tie_controls_godly() {
     return g_god;
 }
 
+// The gunsight's middle as a share of the screen: the projection's centre (transfm2_getscreenx and y: displaycorner's
+// column and line, half the view's width and depth, transfm2_screenyoffset), read at the frame's top (the CMD's picture
+// in a picture has its own while it is drawn).
+void sample_sight() {
+    double w = 320, h = 200;
+    if (vga.mode == M_LIN8) {
+        w = (double)vga.draw.width;
+        h = (double)vga.draw.height;
+    } else if (vga.mode != M_VGA) {
+        return;
+    }
+    const Bit32u cols = tie_r32(0xD4C04), lines = tie_r32(0xD4C00);
+    const int halfW = tie_r16(0xD4C18), halfD = tie_r16(0xD4C16), yoff = (Bit32s)tie_r32(0xEC170);
+    if (w < 1 || h < 1 || cols > 4096 || lines > 4096) {
+        return;
+    }
+    const double sx = (cols + halfW) / w, sy = (lines + halfD + yoff) / h;
+    if (sx < 0.2 || sx > 0.8 || sy < 0.1 || sy > 0.8) {
+        return;     // (not a view's)
+    }
+    if (fabs(sx - g_sightX) > 0.002 || fabs(sy - g_sightY) > 0.002) {
+        wclog(1, "TIE: the gunsight's middle at %u+%d, %u+%d%+d of %.0fx%.0f: %.3f, %.3f of the screen", (unsigned)cols, halfW,
+              (unsigned)lines, halfD, yoff, w, h, sx, sy);
+    }
+    g_sightX = sx;
+    g_sightY = sy;
+}
+
 void tie_controls_frame() {
     const bool flying = tie_in_flight();
     if (g_steer.on && flying) {
@@ -581,6 +624,7 @@ void tie_controls_frame() {
     }
     if (flying != g_wasFlying) {
         g_wasFlying = flying;
+        g_accX = g_accY = 0;
         g_px = g_py = 0;                    // (a flight starts with the pointer in the middle)
         g_stepX = g_stepY = 0;
         g_left = g_right = g_up = g_down = false;
@@ -593,24 +637,26 @@ void tie_controls_frame() {
         g_stepX = key_ramp(g_stepX, (g_right ? 1 : 0) - (g_left ? 1 : 0), shift);
         g_stepY = key_ramp(g_stepY, (g_down ? 1 : 0) - (g_up ? 1 : 0), shift);
     }
-    double dx = 0, dy = 0;
+    sample_sight();
+    // this frame's mickeys: the pointer's from nothing (below the game's least, that least now and then: a slow turn
+    // for a fine aim, the game's own easing of its stick smoothing it), a pad's and the arrows' from the least
+    int mx = 0, my = 0;
     if (mode() == MOUSE_POINTER) {
-        dx = fabs(g_px) < kPointerDeadZone ? 0 : g_px;
-        dy = fabs(g_py) < kPointerDeadZone ? 0 : g_py;
-        dy = -dy;                           // (the pointer above the middle climbs: the mouse's forward dives)
+        // (the pointer above the middle climbs: the mouse's forward dives)
+        mx = steer_mickeys(pointer_curve(g_px) * 191, 17, g_accX);
+        my = steer_mickeys(-pointer_curve(g_py) * 127, 33, g_accY);
     }
     // the page's pad, while it keeps saying (a pad gone still is no turn)
     if (PIC_FullIndex() - g_stickAt < 500) {
-        dx = g_stickX;
-        dy = g_stickY;
+        mx = mickeys(g_stickX, 17, 191);
+        my = mickeys(g_stickY, 33, 127);
     }
     if (g_stepX) {
-        dx = g_stepX / 9.0;
+        mx = mickeys(g_stepX / 9.0, 17, 191);
     }
     if (g_stepY) {
-        dy = g_stepY / 9.0;                 // (Up dives, Down climbs: the mouse's forward, negative, dives, as a stick pushed)
+        my = mickeys(g_stepY / 9.0, 33, 127);   // (Up dives, Down climbs: the mouse's forward, negative, dives, as a stick pushed)
     }
-    const int mx = mickeys(dx, 17, 191), my = mickeys(dy, 33, 127);
     if (mx || my) {
         Mouse_AddMickeys((float)mx, (float)my);
     }
@@ -639,8 +685,10 @@ bool tie_controls_marker(double *x, double *y) {
     if (!tie_found() || !tie_in_flight() || mode() != MOUSE_POINTER) {
         return false;
     }
-    *x = g_px;
-    *y = g_py;
+    // (round the gunsight's middle, where the stick is still: the user, 2026-11-09: "the center of the mouse is the bottom
+    // of the crosshair instead of the dot in the center...but the blasters do fire against the dot")
+    *x = fmax(0.01, fmin(0.99, g_sightX + 0.42 * g_px));
+    *y = fmax(0.01, fmin(0.99, g_sightY + 0.30 * g_py));
     return true;
 }
 

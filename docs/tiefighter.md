@@ -786,6 +786,16 @@ move vector, the nine axis words, type).
     craft as it turns (the game's own bank into the turn, `roll -=
     x_per_tick`): a turn held is a spiral; the clean turn is a roll (Ins and
     Del, or the right button held with the stick across) and a pull.
+  * **The pointer** steers by the square of its way out past the dead zone
+    (a quarter of the turn half way, the whole at the edge), given as mickeys
+    from nothing: below the game's least (17 a frame across, 33 up and down)
+    that least now and then, the game's own easing of its stick smoothing it.
+    Measured, a Z-95: the pointer 40 pixels out turned 0.8 degree a second,
+    140 out (near half way) some 15.  Its ring is drawn round the gunsight's middle, the
+    projection's centre read at the frame's top (displaycorner's column and
+    line 0xD4C04 and 0xD4C00, half the view's width and depth 0xD4C18 and
+    0xD4C16, `transfm2_screenyoffset` 0xEC170): at 640x480, 320 and 162 (the
+    ring had been put 37.5% down, line 180, the gunsight's bottom mark).
 * **The page**: a "Flight" choice beside Controller with TIE Fighter loaded
   (point to aim, drag to steer, keyboard alone, joystick / gamepad),
   remembered in the browser, given at the launch and while flying

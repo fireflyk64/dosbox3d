@@ -1662,7 +1662,7 @@ extern bool within_briefed_mission;
 extern bool in_space();
 extern bool wc_net_overlay_chat();
 extern const char *wc_net_wait_note();
-extern bool wc_net_steer_marker(double *x, double *y);   // (wc_net.h: TIE Fighter's pointer, -1..1 from the middle)
+extern bool wc_net_steer_marker(double *x, double *y);   // (wc_net.h: TIE Fighter's pointer, shares of the picture)
 extern bool wc_net_comms_hint();
 std::string outgoing_prefix = "[Transmit Comms] ";
 size_t last_incoming_text_len = 0;
@@ -1813,12 +1813,12 @@ void GFX_EndUpdate( const Bit16u *changedLines ) {
                 }
             }
             {
-                // TIE Fighter's pointer mode: where the pointer is, over the gunsight's middle (some 38% of the way down)
+                // TIE Fighter's pointer mode: where the pointer is, round the gunsight's middle (its shares of the picture)
                 static int lastX = -1, lastY = -1;
                 double mx = 0, my = 0;
                 if (wc_net_steer_marker(&mx, &my)) {
-                    const int x = (int)(sdl.draw.width * (0.5 + 0.42 * mx));
-                    const int y = (int)(sdl.draw.height * (0.375 + 0.30 * my));
+                    const int x = (int)(sdl.draw.width * mx);
+                    const int y = (int)(sdl.draw.height * my);
                     if (x != lastX || y != lastY) {
                         lastX = x;
                         lastY = y;
