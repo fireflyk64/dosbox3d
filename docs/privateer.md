@@ -456,7 +456,12 @@ deg/s:secs`, `!privpos=x:y:z` (world units, 256 a metre), `!privscene`, `!privgo
 <damage>` (a forwarded hit on ourselves), `!privsay=<name>:<text>` with `PRIVSAYFACE`, `!privwatchctl=<offset>:<secs>`;
 `PRIVSTACK=1`, `PRIVCOMMLOG=1`, `PRIVMISSIONS=<sphere,...>`.  The tests: `scripts/privtests/load.sh` (PLAYERS,
 PIRATES), `scripts/privtests/jump.sh`, `scripts/privtests/ships.sh` (PLAYERS: the four ships bought and outfitted) and
-`scripts/privtests/mission.sh` (MODE=first|reserved: a mission's nav point with helpers).
+`scripts/privtests/mission.sh` (MODE=first|reserved: a mission's nav point with helpers), `scripts/privtests/escort.sh`
+(the Oxford escort from a save, two machines).  More aids: `!privcredits` (read), `!privfollow=<cast>:<metres>:<secs>
+[:<sphere>]`, `!privgopilot=<seat>:<metres>`, `!privkillhostile`; privrun.sh's `SAVE=<file>` (a save into the copied
+game directory; the title's LOAD at 0.38, 0.94, the name at 0.31, 0.405, into the box at 0.31, 0.345, LOAD at 0.85,
+0.345).  The per-second log's "pirates" counts every hostile cast (pirates, Kilrathi, Retros, hunters), as
+`!privturn=pirate` turns on any of them; the missions line gives each objective's state byte.
 
 **Cast names** (were open: every ship we spawned pointed its cast name at one shared scratch, so all read the last
 written): now 16 slots of 9 bytes in a block taken from the game's own near heap at the program's load, a cast a slot,
@@ -513,6 +518,29 @@ them; the others show them as puppets and send their hits to it.  Measured: the 
 stand-in) shown on both helpers at Achilles, a nav point it did not own.  The Oxford escorts (the plot's third series,
 S3MA / S3MC / S3MD: "Meet with ... at Oxford system, Nav 3 [or 1] and escort ... safely to Oxford") are reached only
 late in the plot and were not flown; they are mission ships at a mission nav point, which these two rules cover.
+
+**The Oxford escort, flown with a helper** (2026-11-09; the user's save OXFORD01.SAV with Masterson's series open,
+loaded by both machines; scripts/privtests/escort.sh).  The holder takes S3MA from Masterson in Oxford's Library (the
+pad's "Train to Oxford University" at 0.95, 0.45; the campus's Library at its top right, 0.88, 0.20; his lines skipped
+with Esc, the hand's Accept): "Meet with Hunter Toth's ship at Oxford system, Nav 3 and escort him safely to Oxford",
+objectives E0 (Nav 3), D5, D3 (Nav 4, Oxford; each entry's own byte turns 1 as it is reached).  The mission plays as
+the user described it: at Nav 3 (sphere 2) the Drayman "toth" waits (the mission makes it itself: no wing call); the
+talk is the comm (C), its list -- the base and the nearest ship -- "2" for Toth, and his menus in turn: "Hey, I'm no
+Retro." / "Sir, I'm here to escort you to Oxford." / "Don't worry.  You're in good hands." (TOTH.IFF's PLOT sets);
+"Of that I'm sure", and two Retros (talrelig, cast RETRO1) come ("Hunter Toth!  You are hereby sentenced to death for
+your heresy!"); when they are gone, three more; then the autopilot home, Toth following at his own pace (some 165 m/s:
+the autopilot leaves him 3 minutes behind), and the landing zone lands you.  Measured, two machines: the holder owned
+Nav 3 (its mission's), the helper's game spawned nothing there; Toth and every Retro shown on the helper as the
+holder's (its hostile count 2, 3, 0 with the holder's); the helper's hit on a Retro (175) applied in the holder's game;
+Toth home, the holder landed, paid: 189,187 credits to 199,137 (10,000 less the landing's 50).  No error, no death.
+The fight itself was the rig's weak part: its gunnery is a turn toward the nearest hostile and a held trigger, which
+sprayed the helper (13 hits sent) and, left to it, the second wave killed Toth in 12 s and then the holder; so the
+waves are ended by `!privkillhostile` (the game's own death for every hostile ship of the holder's game) after the
+helper's real fight -- a won fight's stand-in.  Rig lessons: Oxford's own hostiles keep the autopilot from flying
+(`!privpeace` first), a ship drifting into a base's landing zone cannot take the autopilot, the comm's list offers the
+nearest ship only (with the helper beside the holder "2" was the helper: it joins after the talk, `!privgopilot`),
+key names: `equals` for the throttle, W selects a missile, Enter fires it.  Two players who both take the mission each
+get their own Toth and Retros (each game's mission makes its own; each is shown to the other): not flown.
 
 **The Steltek drone.**  A drone (DRONTYPE, appearance DRONE, cast SDRONE) is shared by the game that runs it like any
 own ship; one a place: a drone reported by a lower seat within 30 km of our own makes ours its puppet (`drone_adopt`).

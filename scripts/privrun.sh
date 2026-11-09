@@ -12,6 +12,8 @@
 #   ENV=        more of the environment ("WCLAB=/tmp/lab": picture and sound recorded)
 #   COPY=1      the game's files copied into $OUT/game first (runs side by side: two games in one directory fight
 #               over its temporary files and crash at a load, "Program halted by code")
+#   SAVE=<file> a saved game copied into the game's directory first (COPY=1), under its own name upper-cased (the
+#               title's LOAD lists the *.SAV there)
 #
 # The route (from boot): Esc skips the opening at 4 s; NEW on the title (0.14, 0.94) at 8 s; the name "joe" and the
 # callsign "ace" typed at 10-12.5 s; the pad's ship (0.45, 0.6) clicked at 16 s: in flight near Achilles at ~22 s.
@@ -25,6 +27,7 @@ DOSBOX=${DOSBOX:-$ROOT/build-native/src/dosbox}
 if [ -n "${COPY:-}" ]; then
   mkdir -p $OUT/game; for f in "$PRIVDIR"/*; do n=$(basename "$f"); case "$n" in [Gg][Aa][Mm][Ee].[Gg][Oo][Gg]) ln -sf "$(readlink -f "$f")" $OUT/game/$n;; *) [ -f "$f" ] && cp -f "$f" $OUT/game/;; esac; done
   PRIVDIR=$OUT/game
+  [ -n "${SAVE:-}" ] && cp -f "$SAVE" "$OUT/game/$(basename "$SAVE" | sed 's/^[0-9a-f]*-//' | tr a-z A-Z)"
 fi
 IMG=$(ls "$PRIVDIR" | grep -i '^game.gog$' | head -1)
 RUN="priv.exe"; [ -n "${RF:-}" ] && RUN="priv.exe r"

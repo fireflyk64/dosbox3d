@@ -937,6 +937,7 @@ bool priv_program_ended(Bit16u psp) {
 extern int g_heapLowSecond;
 static void watch_tick();
 
+static bool hostile_cast_name(const std::string &c);
 void priv_tick() {
     priv_session_tick();
     if (!g_found) {
@@ -965,7 +966,7 @@ void priv_tick() {
         for (int i = 0; i < n; i++) {
             if (ships[i] == priv_player_ship() || !priv_ship_is_alive(ships[i])) continue;
             alive++;
-            if (priv_ship_cast_name(ships[i]).compare(0, 3, "PIR") == 0) pirates++;
+            if (hostile_cast_name(priv_ship_cast_name(ships[i]))) pirates++;     // (pirates, Kilrathi, Retros, hunters)
         }
         wclog(2, "Privateer: t=%.1f, %u keyboard frames, controls: %s, near heap free %d (lowest this second %d, ever %d; largest block %d, %d blocks); "
                  "ours here: %d pilots, %d encounter ships, %d pods; %d allocations, the largest %d (ever %d); stack headroom at one: the game's %d, ours %d; "
@@ -983,7 +984,62 @@ void priv_tick() {
 
 // The video aid's steady turn (!privturn): each frame our matrix is rotated toward the target by at most the rate,
 // about the axis perpendicular to our forward and the target's direction (the second row is forward).
+// A hostile cast (pirates, Kilrathi, Retros, hunters): the co-op tests' "pirates" (as the session's hostile_cast)
+static bool hostile_cast_name(const std::string &c) {
+    return c.compare(0, 3, "PIR") == 0 || c.compare(0, 3, "KIL") == 0 || c.compare(0, 3, "RET") == 0 || c.compare(0, 3, "BOU") == 0;
+}
+
 struct { bool pod; double rate, until; bool pirate; } g_turn = { true, 0, -1e9, false };
+
+// (a test aid: "!privfollow=<cast>:<metres>:<seconds>[:<sphere>]" keeps our ship that far beside the ship of that cast --
+// an escort flown at its charge's side, at its pace -- every frame, until the time is up, a hostile ship comes within
+// 6 km, or the charge comes within 3 km of the sphere's edge... of its centre plus our distance)
+struct { std::string cast; double metres, until; int sphere; } g_follow = { "", 0, -1e9, -1 };
+static void follow_step() {
+    const double now = PIC_FullIndex();
+    if (now > g_follow.until) return;
+    const Bit16u own = priv_player_ship();
+    Bit16u ships[48];
+    const int n = priv_scene_ships(ships, 48);
+    Bit16u charge = 0;
+    Bit32s me[3], at[3];
+    priv_player_pos(me);
+    for (int i = 0; i < n; i++) {
+        if (ships[i] == own || !priv_ship_is_alive(ships[i])) continue;
+        const std::string c = priv_ship_cast_name(ships[i]);
+        if (hostile_cast_name(c)) {
+            Bit32s p[3];
+            priv_ship_pos(ships[i], p);
+            const double dx = (double)p[0] - me[0], dy = (double)p[1] - me[1], dz = (double)p[2] - me[2];
+            if (sqrt(dx * dx + dy * dy + dz * dz) < 6000.0 * 256) {
+                wclog(1, "Privateer: follow: a hostile ship (%s) within 6 km: following ends", c.c_str());
+                g_follow.until = -1e9;
+                return;
+            }
+        }
+        if (strcasecmp(c.c_str(), g_follow.cast.c_str()) == 0) charge = ships[i];
+    }
+    if (!own || !charge) return;
+    priv_ship_pos(charge, at);
+    double ux = 1, uy = 0, uz = 0;          // (beside it along x, or on its side toward a nav sphere: it keeps station on
+    PrivSphere sp[16];                      // us, so it is drawn that way at its own pace)
+    const int ns = g_follow.sphere >= 0 ? priv_spheres(sp, 16) : 0;
+    for (int i = 0; i < ns; i++) {
+        if (sp[i].id != g_follow.sphere) continue;
+        const double dx = (double)sp[i].x - at[0], dy = (double)sp[i].y - at[1], dz = (double)sp[i].z - at[2];
+        const double d = sqrt(dx * dx + dy * dy + dz * dz);
+        if (d < (g_follow.metres + 3000) * 256) {
+            wclog(1, "Privateer: follow: %s within %.0f m of nav sphere %d: following ends", g_follow.cast.c_str(), d / 256, g_follow.sphere);
+            g_follow.until = -1e9;
+            return;
+        }
+        ux = dx / d; uy = dy / d; uz = dz / d;
+    }
+    at[0] += (Bit32s)(g_follow.metres * 256 * ux);
+    at[1] += (Bit32s)(g_follow.metres * 256 * uy);
+    at[2] += (Bit32s)(g_follow.metres * 256 * uz);
+    for (int k = 0; k < 3; k++) mem_writed(ds_at((Bit16u)(own + kShipPos + 4 * k)), (Bit32u)at[k]);
+}
 
 static void turn_step() {
     const double now = PIC_FullIndex();
@@ -997,7 +1053,7 @@ static void turn_step() {
     priv_player_pos(pos);
     double best = 1e18, tgt[3] = { 0, 0, 0 };
     for (int i = 0; i < n; i++) {
-        if (objs[i] == own || (g_turn.pirate && priv_ship_cast_name(objs[i]).compare(0, 3, "PIR") != 0)) continue;
+        if (objs[i] == own || (g_turn.pirate && !hostile_cast_name(priv_ship_cast_name(objs[i])))) continue;
         if (g_turn.pirate && !priv_ship_is_alive(objs[i])) continue;
         Bit32s p[3];
         priv_ship_pos(objs[i], p);
@@ -1051,6 +1107,7 @@ bool priv_check_hooks(Bit32u ip) {
             target_scan_frame();
             stack_paint_frame();
             turn_step();
+            follow_step();
             priv_spheres_refresh();
             priv_session_frame();       // (once a frame in flight: the puppets placed, our state sent)
         }
@@ -1461,6 +1518,33 @@ bool priv_script_item(const std::string &item, double t) {
         g_targetScan = item.compare(15, 5, "=prev") == 0 ? 1 : 0;
         return true;
     }
+    if (item.compare(0, 12, "!privfollow=") == 0 && g_found) {
+        char cast[16] = "";
+        double metres = 400, secs = 60;
+        int sphere = -1;
+        sscanf(item.c_str() + 12, "%15[^:]:%lf:%lf:%d", cast, &metres, &secs, &sphere);
+        g_follow.sphere = sphere;
+        g_follow.cast = cast;
+        g_follow.metres = metres;
+        g_follow.until = PIC_FullIndex() + secs * 1000;
+        wclog(1, "key script %.1fs: following the ship of cast %s at %.0f m for %.0f s", t, cast, metres, secs);
+        return true;
+    }
+    if (item.compare(0, 13, "!privgopilot=") == 0 && g_found) {
+        // !privgopilot=<seat>:<metres>: our ship put that far (along x) from another pilot's latest reported place
+        int seat = 0, off = 2000;
+        sscanf(item.c_str() + 13, "%d:%d", &seat, &off);
+        const Bit16u ship = priv_r16(kPlayerShip);
+        Bit32s p[3];
+        if (!ship || !priv_session_pilot_pos(seat, p)) {
+            wclog(1, "key script %.1fs: !privgopilot: no fresh report of pilot %d", t, seat + 1);
+            return true;
+        }
+        p[0] += off * 256;
+        for (int k = 0; k < 3; k++) mem_writed(ds_at((Bit16u)(ship + kShipPos + 4 * k)), (Bit32u)p[k]);
+        wclog(1, "key script %.1fs: put %d m from pilot %d's ship", t, off, seat + 1);
+        return true;
+    }
     if (item.compare(0, 11, "!privgonav=") == 0 && g_found) {
         // !privgonav=<sphere>[:<metres>]: our ship put in that nav sphere (its centre, offset along x); m<seat> for the
         // sphere: the first of that pilot's mission nav points as we know them (seat 0 = the host), m alone ours
@@ -1543,6 +1627,10 @@ bool priv_script_item(const std::string &item, double t) {
         wclog(1, "key script %.1fs: !privpeace: %d ships of the scene killed", t, killed);
         return true;
     }
+    if (item == "!privcredits" && g_found) {
+        wclog(1, "key script %.1fs: our credits %u", t, (unsigned)mem_readd(ds_at(kCredits)));
+        return true;
+    }
     if (item.compare(0, 10, "!privarmor") == 0 && g_found) {
         g_armorDump = true;             // (at the frame: the damage model is far data)
         return true;
@@ -1553,6 +1641,21 @@ bool priv_script_item(const std::string &item, double t) {
         sscanf(item.c_str() + 9, "%d:%d", &loc, &dmg);
         wclog(1, "key script %.1fs: a hit on our ship, quadrant %d, %d", t, loc, dmg);
         priv_hit_apply(priv_player_ship(), loc, dmg);
+        return true;
+    }
+    if (item == "!privkillhostile" && g_found) {
+        // !privkillhostile: every hostile ship of our own game (pirates, Kilrathi, Retros, hunters; not the puppets of
+        // others' games) dies the game's own death -- a won fight's stand-in, for a test of what comes after it
+        Bit16u ships[48];
+        const int n = priv_scene_ships(ships, 48);
+        int k = 0;
+        for (int i = 0; i < n; i++) {
+            if (ships[i] == priv_player_ship() || !priv_ship_is_alive(ships[i]) || priv_session_is_puppet(ships[i], ships[i])) continue;
+            if (!hostile_cast_name(priv_ship_cast_name(ships[i]))) continue;
+            priv_ship_kill(ships[i]);
+            k++;
+        }
+        wclog(1, "key script %.1fs: !privkillhostile: %d hostile ships of ours killed", t, k);
         return true;
     }
     if (item.compare(0, 9, "!privkill") == 0 && g_found) {
@@ -1785,7 +1888,8 @@ static void missions_refresh() {
             if (mem_readb_checked(o, &kind) || mem_readb_checked(o + 1, &nav)) continue;
             mem_readb_checked(o + 2, &k2);
             mem_readb_checked(o + 3, &k3);
-            snprintf(b, sizeof b, " %02X/%02X/%02X/%02X", kind, nav, k2, k3);
+            const Bit8u state = priv_r8((Bit16u)(arr + 5 * i + 4));      // (the entry's own byte: the objective's state?)
+            snprintf(b, sizeof b, " %02X/%02X/%02X/%02X:%02X", kind, nav, k2, k3, state);
             text += b;
             // a nav point's objective: byte 2 is 9 and byte 3 the map's "Nav N" (the nav map tests the same,
             // seg078:0153), the sphere N - 1 (Troy's Nav 1, the jump point, is sphere 0; Achilles, Nav 2, sphere 1)

@@ -126,7 +126,8 @@ Bit16u priv_last_spawned();
 // (seg101:0CF0), the rest goes to the armour (0C7D), the cockpit's damage display for our own ship, and a quadrant
 // gone kills it.
 void priv_hit_apply(Bit16u obj, int loc, int damage);
-unsigned priv_session_pilot_missions(int seat);   // (a rig aid's: a pilot's mission nav points as we know them)
+unsigned priv_session_pilot_missions(int seat);
+bool priv_session_pilot_pos(int seat, Bit32s out[3]);      // (a rig aid's: a pilot's latest reported place)   // (a rig aid's: a pilot's mission nav points as we know them)
 
 // The session's side of the hooks: may this encounter wing (at that nav sphere) spawn here; a hit decided here on a
 // ship (the target's near pointer, the quadrant, the damage); a ship of the game's fired its guns here.

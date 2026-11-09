@@ -2097,6 +2097,15 @@ void priv_session_frame() {
 
 void priv_session_force_release() { g_forceRelease++; }
 
+// A pilot's latest reported place in our system (false: none fresh, under 5 s)
+bool priv_session_pilot_pos(int seat, Bit32s out[3]) {
+    if (!g_net || seat < 0 || seat >= kMaxSeats || seat == g_net->self) return false;
+    const Puppet &p = g_net->puppets[seat];
+    if (!p.reported || PIC_FullIndex() - p.at > 5000 || p.system != g_system) return false;
+    out[0] = (Bit32s)p.x; out[1] = (Bit32s)p.y; out[2] = (Bit32s)p.z;
+    return true;
+}
+
 // A pilot's mission nav points as we know them (seat < 0 or ours: our own)
 unsigned priv_session_pilot_missions(int seat) {
     if (!g_net || seat < 0 || seat >= kMaxSeats || seat == g_net->self) return priv_mission_navs();
