@@ -30,7 +30,7 @@ const logs = [];
 page.on("console", (m) => {
   const t = m.text();
   logs.push(`${stamp()} ${t}`);
-  if (/Privateer|could not|Aborted|RuntimeError|save games/.test(t) && !/arrows [+-]/.test(t)) console.log(`${stamp()} [page] ${t.slice(0, 200)}`);
+  if (/Privateer|could not|Aborted|RuntimeError|save games|comms:/.test(t) && !/arrows [+-]/.test(t)) console.log(`${stamp()} [page] ${t.slice(0, 200)}`);
 });
 page.on("pageerror", (e) => console.log(`${stamp()} PAGE ERROR: ${e.message}`));
 page.on("crash", () => console.log(`${stamp()} PAGE CRASHED`));
@@ -135,6 +135,15 @@ if (process.env.ROOM) {
     (logs.filter((l) => /Privateer: (HOST|In Troy)/.test(l)).pop() || "").slice(0, 140));
   check("the host's ship in our space (a puppet)", await waitLog(/Privateer: HOST's \w+ is in your space/, 30000),
     (logs.find((l) => /is in your space/.test(l)) || "").slice(0, 140));
+  // the 0 key's chat prompt in flight, as a player types (the user, 2026-11-09: "0 also doesn't seem to do comms": it
+  // opened only for Wing Commander's session)
+  await page.focus("#canvas");
+  await page.keyboard.press("0");
+  await sleep(500);
+  await page.keyboard.type("HELLO HOST", { delay: 60 });
+  await page.keyboard.press("Enter");
+  check("the 0 key's prompt: our line said to the room", await waitLog(/Privateer: said "HELLO HOST"/, 10000),
+    (logs.filter((l) => /Privateer: said/.test(l)).pop() || "nothing said").slice(0, 140));
   // (the host's side, told of this autopilot and given our ship, is checked by web-priv.sh from the host's log)
   await page.keyboard.press("a");
 }

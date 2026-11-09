@@ -3709,7 +3709,11 @@ bool is_wc_connected() {
 // names)": RetroVega says it takes typed text in rvTyping)
 bool wc_net_chat_ready() {
     if (!g_session) {
-        return false;
+        // Privateer's room (its own session, wcnet_priv_session.cpp): in flight, where the game types nothing -- at a
+        // base it takes typed names (a pilot's, a saved game's: a 0 or a Shift there is the game's), and the page's
+        // room chat is there for that (the user, 2026-11-09: "0 also doesn't seem to do comms", "I don't know how to
+        // chat with my buddy": the prompt opened only for Wing Commander's session)
+        return wc::priv_session_active() && wc::priv_in_flight();
     }
     if (is_rv()) {
         return !rv_typing();
