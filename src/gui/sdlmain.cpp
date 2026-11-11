@@ -2863,6 +2863,11 @@ void GFX_Events() {
                 if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_0 && !kGlobalKeyDisable) {
                     // '0' opens the comms prompt; Enter stays the game's missile
                     // key and only sends once the prompt is open
+                    // Every key the game holds is let go first, as when the window loses the focus: while the prompt
+                    // is open no release reaches the game, so an arrow held as 0 was pressed kept the ship turning
+                    // to the end of the line and on (the user, 2026-11-10: "the arrow keys would hold down with no
+                    // recourse"; the Shift tap's own release was swallowed so, Shift held for good)
+                    MAPPER_LosingFocus();
                     kGlobalKeyDisable = true;
                     // the '0' that opens the prompt also arrives as text input
                     kSwallowOpeningKeyText = true;
