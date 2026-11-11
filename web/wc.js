@@ -95,7 +95,7 @@ function status(text) { $("status").textContent = text; }
 // "Copy log" takes the whole log to the clipboard for a report.
 let endNotice = null;
 let emulatorStarted = false;   // (declared here: an error can come before the rest of this file has run)
-// The game's one line of help, "To transmit comms use the '0' key or tap Shift", is for
+// The game's one line of help, "To transmit comms use the '0' key", is for
 // a player who has never chatted: once a message has gone out from this
 // browser it is not shown again, and the box in the room form turns it off
 // before that.

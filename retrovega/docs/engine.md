@@ -2099,7 +2099,8 @@ the VDUs take the readouts' small font. vdu.c:
   choices"): 1 the wingman while there is one (the mission's own first, never
   the carrier's patrol), 2 the target when it is an enemy (taunt), the home
   carrier (landing) or one of the wing (orders), in a shared flight 0 to talk
-  (the layer's prompt, or a tap of Shift), and 9 never mind; a wingman's page
+  (the layer's prompt; a tap of Shift no longer
+  opens it, 2026-11-10: pilots brushing the right Shift lost the stick), and 9 never mind; a wingman's page
   only the orders it would take now (`logic_order_ok`).
 - **The landing by the trigger:** home, with every waypoint's reach flown by
   this machine's pilot (`g_navs_been`: a guest's own, its waves the host's), no

@@ -3,7 +3,8 @@
 // (scripts/tfnet-duo.sh), and its wall-clock reports go to SHOT_DIR/guest.wall for scripts/tfnet-join.py.
 //
 //   PLAYWRIGHT_DIR=... SHOT_DIR=... node scripts/web-tf-guest.mjs PAGE_URL LOBBY_URL ROOM INSTALLER SCRIPT [seconds]
-//   CHAT="110:0:hello there;130:shift:again": lines typed at the comms prompt that many seconds after Fly
+//   CHAT="110:0:hello there;130:shift": lines typed at the comms prompt that many seconds after Fly (shift: a bare tap,
+//   which must open nothing since 2026-11-10)
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs";
@@ -81,14 +82,22 @@ const seconds = Number(secondsArg);
 await new Promise((r) => setTimeout(r, 5000));
 console.log(`${stamp()} the emulator's calls: wc_web_tie_mouse ${await page.evaluate(() => typeof (window.DOSBox && window.DOSBox._wc_web_tie_mouse))}, ` +
   `wc_web_stick ${await page.evaluate(() => typeof (window.DOSBox && window.DOSBox._wc_web_stick))}`);
-// CHAT="<seconds after Fly>:<0|shift>:<text>;...": the comms prompt as a player opens it (the 0 key or a tap of Shift),
-// the line typed and Enter, by the browser's own keys; a screenshot a second after
+// CHAT="<seconds after Fly>:<0|shift>:<text>;...": the comms prompt as a player opens it (the 0 key), the line typed and
+// Enter, by the browser's own keys; a screenshot a second after.  "shift" only taps Shift and types nothing: a tap of
+// Shift opened the prompt until 2026-11-10 (pilots brushing the right Shift lost the stick), and now must not
 for (const one of (process.env.CHAT || "").split(";").filter(Boolean)) {
   const [at, how, ...rest] = one.split(":");
   const text = rest.join(":");
   setTimeout(async () => {
     await page.focus("#canvas");
-    await page.keyboard.press(how === "shift" ? "Shift" : "0");
+    if (how === "shift") {
+      await page.keyboard.press("Shift");
+      console.log(`${stamp()} Shift tapped (no prompt should open)`);
+      await new Promise((r) => setTimeout(r, 1000));
+      await page.screenshot({ path: path.join(shotDir, `web-guest-chat-${at}.png`) });
+      return;
+    }
+    await page.keyboard.press("0");
     await new Promise((r) => setTimeout(r, 300));
     await page.keyboard.type(text, { delay: 80 });
     await page.keyboard.press("Enter");

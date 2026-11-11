@@ -801,7 +801,9 @@ move vector, the nine axis words, type).
     (`pstate.space_confirm_action`, 0xEB17E: a warhead's target, the
     flight's end, the reinforcements after Shift+S): then it is the game's.
     Measured: Space held 1.5 s, five shots.
-  * **The comms prompt** (0 or a tap of Shift, Enter sends) was the Wing
+  * **The comms prompt** (0, Enter sends; a tap of Shift opened it too until
+    2026-11-10, when the user had it taken out: "Shift is right above the
+    keypad and people are losing control all the time") was the Wing
     Commander session's alone (`wc_net_chat_ready` asked `g_session`): now a
     TIE room's too in flight (as Privateer's: the registration desk takes a
     typed name; the page's room chat is there in the menus), the line sent to every pilot (the host passing a guest's

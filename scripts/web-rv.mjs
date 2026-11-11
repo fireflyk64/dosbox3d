@@ -204,6 +204,23 @@ check("the host has the wingman's ship, a human's puppet, where it is", me >= 1 
 const body = ws.net.findIndex((n, i) => i > 0 && n === 0 && ws.ctl[i] === 2);
 check("the wingman has the host's ship where it is", body > 0 && km(ws.pos[body], hs.pos[0]) < 150, body > 0 ? `${km(ws.pos[body], hs.pos[0]).toFixed(0)} km off` : "none");
 check("no stop in either game", !/FAIL /.test(await rvlog(h2)) && !/FAIL /.test(await rvlog(w2)));
+// only 0 opens the comms prompt: a tap of Shift did too, and pilots brushing the right Shift above the arrows lost the
+// stick to it (the user, 2026-11-10: "Shift is right above the keypad and people are losing control all the time")
+const said = () => logs.wing2.filter((l) => /comms: message sent/.test(l)).length;
+const saidBefore = said();
+await w2.focus("#canvas");
+await w2.keyboard.press("Shift");
+await sleep(400);
+await w2.keyboard.type("zz", { delay: 80 });
+await w2.keyboard.press("Enter");
+await sleep(1500);
+check("a tap of Shift opens no comms prompt", said() === saidBefore, `${said() - saidBefore} line(s) sent`);
+await w2.keyboard.press("0");
+await sleep(400);
+await w2.keyboard.type("hello room", { delay: 80 });
+await w2.keyboard.press("Enter");
+await sleep(1500);
+check("the 0 key's prompt sends a line", said() === saidBefore + 1, `${said() - saidBefore} line(s) sent`);
 await keep("host2", h2);
 await keep("wing2", w2);
 await h2.context().close();

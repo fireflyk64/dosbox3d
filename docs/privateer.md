@@ -626,7 +626,7 @@ sphere>:0`.
 
 **The page** (live): the Face box shows in a Privateer room (it sat in the room's row of choices, hidden for a game the
 room does not fly); a TIE Fighter room code turns PRV when Privateer is picked (the codes' pattern lacked TF); the 0
-key and a Shift tap open the chat prompt in flight (it opened only for Wing Commander's session; the room test types a
+key opens the chat prompt in flight (a Shift tap did too until 2026-11-10) (it opened only for Wing Commander's session; the room test types a
 line and the native host hears it); the music plays (GOG's SOUND.CFG names music card 3, the "roland" driver: General
 MIDI for Windows' synthesizer, none in the browser; the page's `prepare` makes it card 2, "adlib", the Sound Blaster's
 OPL at 0x388: measured, the title's music at once); the help says how to talk.  Cast names: a slot is given to another

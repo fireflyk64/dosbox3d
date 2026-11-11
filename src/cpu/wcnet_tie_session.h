@@ -60,7 +60,7 @@ void tie_session_before_species();
 void tie_session_flight_ended();
 void tie_session_shutdown();
 bool tie_session_active();
-// A line typed at the comms prompt (sdlmain.cpp's 0 or a tap of Shift): to every pilot in the room, and on our screen.
+// A line typed at the comms prompt (sdlmain.cpp's 0): to every pilot in the room, and on our screen.
 void tie_session_chat(const std::string &text);
 // An object flown by another pilot's machine.
 bool tie_is_puppet(int obj);
