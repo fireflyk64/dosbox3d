@@ -93,6 +93,29 @@ void hud_brackets(int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_t colour
     hud_vline(x1 - 1, y1 - ah, y1, colour);
 }
 
+/* the missile lock's reticle (the user, 2026-11-12: "an octagon with crosses on the four cardinal directions and some
+ * cross hatches ... not too slow"): a quarter of it in eighths of r, drawn four times a right angle apart: the arm
+ * across a flat side, that side, the slanted side after it, a hatch across that (16 lines, a few pixels each) */
+static const signed char g_reticle[16] = { 4, 0, 11, 0,   8, -3, 8, 3,   8, 3, 3, 8,   4, 4, 7, 7 };
+
+void hud_reticle(int16_t x, int16_t y, int16_t r, int16_t colour)
+{
+    int16_t ux = r, uy = 0, k, n, t, p[4];
+    for (k = 0; k < 16; k++) {
+        const signed char *s = g_reticle + 4 * (k & 3);
+        for (n = 0; n < 4; n += 2) {
+            p[n] = (int16_t)(x + (s[n] * ux - s[n + 1] * uy) / 8);
+            p[n + 1] = (int16_t)(y + (s[n] * uy + s[n + 1] * ux) / 8);
+        }
+        hud_line(p[0], p[1], p[2], p[3], colour);
+        if ((k & 3) == 3) {
+            t = ux;
+            ux = (int16_t)-uy;
+            uy = t;
+        }
+    }
+}
+
 void hud_diamond(int16_t x, int16_t y, int16_t r, int16_t colour)
 {
     int16_t k;

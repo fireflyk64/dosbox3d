@@ -6874,17 +6874,19 @@ static void t_taunt_orders(void)
 }
 
 /* M10.7: the missile lock, a crosshair chasing the target's box (the user, 2026-11-12): the Gawain's heat seeker on a
- * target 3,000 km dead ahead flying away locks once its crosshair has held on the box a quarter of its lock time (3 s);
- * on one 22 degrees off the nose the crosshair has the way there to go first, so it locks later, and a box that jumps
- * away loses the lock until the crosshair has caught it again; the lock goes the step the target turns to face the
+ * target 3,000 km dead ahead flying away locks in about its lock time (3 s, 91 steps): the crosshair sets off from the
+ * bottom corner farther from it (the user: "Start bottom left or bottom right corner depending on which is farther"),
+ * 250 px off at 4 px a step, then holds on the box a quarter of the lock time; on one 22 degrees off the nose (160 px
+ * right) it sets off from the left corner, 410 px to go, so it locks later, and a box that jumps away loses the lock
+ * until the crosshair has caught it again; the lock goes the step the target turns to face the
  * player (a heat seeker sees engines); the image-recognition missile (W) locks on it facing or not; the tracking
  * wrecked, or the EMCON off, no lock; the Schroedinger's dumbfire never locks */
 static void t_missile_lock(void)
 {
     static const char __far e_heat[] = "the heat seeker on a target flying away 3,000 km dead ahead: the lock is %d at %d "
-        "percent after 100 steps, first locked at step %d (the crosshair starts on it: a quarter of 3 s, some 25)";
+        "percent after 150 steps, first locked at step %d (from the corner some 62 steps, held 25: between 70 and 100)";
     static const char __far e_side[] = "the target 22 degrees off the nose: the lock first at step %d, at step 40 %d at %d "
-        "percent (the crosshair still on its way: 1 percent); it must lock between steps 50 and 100";
+        "percent (the crosshair still on its way: 1 percent); it must lock between steps 110 and 160 (410 px at 4, held 25)";
     static const char __far e_jump[] = "the target jumped to the other side: the lock %d at %d percent the step after, %d "
         "steps to lock again (lost at once; caught again within 200)";
     static const char __far e_face[] = "the target turned to face the player and the heat seeker's lock stayed (%d, %d "
@@ -6900,20 +6902,20 @@ static void t_missile_lock(void)
     pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 3000, 0);   /* (facing +z: away from the player) */
     g_sys.target = 1;
     (void)pt_launcher_kind(RV_LOCK_HEAT);
-    for (i = 0; i < 100; i++) {
+    for (i = 0; i < 150; i++) {
         if (!pt_step())
             return;
         if (g_sys.lock && at < 0)
             at = i;
     }
-    REQUIRE(g_sys.lock == 1 && g_sys.lock_pct == 100 && at >= 15 && at <= 40, e_heat, g_sys.lock, g_sys.lock_pct, at);
-    /* 22 degrees off: the crosshair, back on the nose (the target lost a step), has 160 px to go */
+    REQUIRE(g_sys.lock == 1 && g_sys.lock_pct == 100 && at >= 70 && at <= 100, e_heat, g_sys.lock, g_sys.lock_pct, at);
+    /* 22 degrees off: the target lost a step, the next chase sets off from the corner farther from it */
     g_sys.target = -1;
     if (!pt_step())
         return;
     g_sys.target = 1;
     pt_put(1, 1200, 0, 3000, 0);
-    for (at = -1, i = 0; i < 100; i++) {
+    for (at = -1, i = 0; i < 200; i++) {
         if (!pt_step())
             return;
         if (i == 40) {
@@ -6923,7 +6925,7 @@ static void t_missile_lock(void)
         if (g_sys.lock && at < 0)
             at = i;
     }
-    REQUIRE(at >= 50 && !mid && mid_pct == 1, e_side, at, mid, mid_pct);
+    REQUIRE(at >= 110 && at <= 160 && !mid && mid_pct == 1, e_side, at, mid, mid_pct);
     pt_put(1, -1200, 0, 3000, 0);
     if (!pt_step())
         return;
@@ -8061,7 +8063,7 @@ static const char __far n_m10_3[] = "M10.3 systems (damage_hurt, step_timers): h
 static const char __far n_m10_4[] = "M10.4 weapon-choice (logic_guns_next, logic_missile_next): G picks the guns the trigger fires, W the launcher";
 static const char __far n_m10_5[] = "M10.5 nav-cross (logic_hud): a white cross where the chosen nav point lies on the view";
 static const char __far n_m10_6[] = "M10.6 orders (logic_order): attack my target, help me out, form on my wing, return to base";
-static const char __far n_m10_7[] = "M10.7 missile-lock (lock_tick): the crosshair chases the box, locks held on it (on the nose sooner, off it later, lost when it jumps); heat from behind, image anyhow, none wrecked or dark, a dumbfire never";
+static const char __far n_m10_7[] = "M10.7 missile-lock (lock_tick): the crosshair chases the box from the farther bottom corner, locks held on it (on the nose in the lock time, off it later, lost when it jumps); heat from behind, image anyhow, none wrecked or dark, a dumbfire never";
 static const char __far n_m10_13[] = "M10.13 cloak (logic_cloak_key, cloak_step): Alt+C on, the shields down; the burner and a transmission disrupt it; a shot or Alt+C off, the shields back; none without one";
 static const char __far n_m10_14[] = "M10.14 cloak-ai (fighter_think, missile_step): the enemy lets a cloaked pilot go and fires no more, has it again disrupted; a seeker loses it";
 

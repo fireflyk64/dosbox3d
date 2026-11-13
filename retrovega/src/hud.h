@@ -18,5 +18,6 @@ void hud_cross(int16_t x, int16_t y, int16_t arm, int16_t colour);   /* a + of a
 /* corner brackets round x0 .. x1-1, y0 .. y1-1 */
 void hud_brackets(int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_t colour);
 void hud_diamond(int16_t x, int16_t y, int16_t r, int16_t colour);   /* an outline, r px from the middle to a corner */
+void hud_reticle(int16_t x, int16_t y, int16_t r, int16_t colour);   /* the lock's octagon, r px to a flat side */
 
 #endif

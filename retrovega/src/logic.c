@@ -73,6 +73,7 @@ static Knock __far g_knock[NUM_SHIP_SLOTS];
 static uint8_t __far g_order[NUM_SHIP_SLOTS];   /* the wingmen's orders (ORDER_*, logic.h) */
 static uint16_t __far g_lock_steps;     /* the player's missile lock: steps its crosshair has held inside the target's box */
 static int16_t __far g_lock_xy[2];      /* the lock's crosshair: px right of and below the nose in the seeker's picture */
+#define LOCK_UNSET 0x7FFF               /* (in g_lock_xy[1]: no chase under way, the next sets off from a corner) */
 static uint8_t __far g_cloak_quiet;     /* steps until a transmission's disruption of the cloak is over */
 
 #define RAM_STEPS 10                    /* a ship hurt by a ram is not hurt by one again for this many steps */
@@ -747,6 +748,7 @@ void logic_start(const RvMission __far *m)
     g_formed = 0;
     g_form_steps = 0;
     g_lock_steps = 0;
+    g_lock_xy[1] = LOCK_UNSET;
     _fmemset(g_rammed, 0, sizeof g_rammed);
     _fmemset(g_died, 0, sizeof g_died);
     _fmemset(g_capbolt_at, 0, sizeof g_capbolt_at);
@@ -1966,14 +1968,18 @@ static uint8_t launch_target(int16_t ship, const RvWeapon __far *w)
  * the radar on and the IFF; each needs the target within PLAYER_LOCK_CONE and the weapon's range for its lock time
  * (weapons.csv lock_s), and is lost out of them; a dumbfire never locks; none with the tracking wrecked.
  * The lock itself (the user, 2026-11-12: "the missile lock should be a crosshair that pursues the target rectangle
- * to get missile lock ... with few extra bytes"): while the seeker can see the target a crosshair leaves the nose
- * and chases the target's box in the seeker's own picture (the cockpit's, LOCK_FOCAL: the ship's state alone, not
- * the view's), LOCK_SWEEP px in the lock time; held inside the box for a quarter of that time (LOCK_HOLD_MIN steps at
- * the least) it locks, and a box that gets away from it (the target turning across, the nose swung) loses the lock
- * while it chases on.  The seeker blind, it is back on the nose.  g_sys.lock, lock_pct (1 .. 100 while it tracks)
- * and lock_kind say where it stands (the HUD's crosshair, the lock lamp, the launch) */
+ * to get missile lock ... with few extra bytes"): while the seeker can see the target a crosshair sets off from the
+ * bottom corner of the view farther from the target (the user: "Start bottom left or bottom right corner depending
+ * on which is farther") and chases the target's box in the seeker's own picture (the cockpit's, LOCK_FOCAL: the
+ * ship's state alone, not the view's), LOCK_TRIP px in the lock time; held inside the box for a quarter of that time
+ * (LOCK_HOLD_MIN steps at the least) it locks: a target dead ahead in about the lock time, one off the nose later.  A
+ * box that gets away from it (the target turning across, the nose swung) loses the lock while it chases on.  The
+ * seeker blind, the next chase sets off from a corner again.  g_sys.lock, lock_pct (1 .. 100 while it tracks) and
+ * lock_kind say where it stands (the HUD's reticle, the lock lamp, the launch) */
 #define LOCK_FOCAL 400                  /* px: the cockpit's focal length at 640 across */
-#define LOCK_SWEEP 195                  /* px: PLAYER_LOCK_CONE's edge (26 degrees) in that picture */
+#define LOCK_TRIP 330                   /* px the crosshair runs in the lock time: a corner to the nose in 3/4 of it */
+#define LOCK_CORNER_X 250               /* px: the corners it sets off from (200 px from the view's middle at the */
+#define LOCK_CORNER_Y 90                /* flight's focal 320, 72 below it: inside most canopies, under a strut in some) */
 #define LOCK_HOLD_MIN 3
 #define LOCK_BOX_MIN 4                  /* px: a box no tighter (HUD_BRACKET_MIN's) */
 static void lock_tick(void)
@@ -2002,10 +2008,15 @@ static void lock_tick(void)
     }
     if (ok) {
         int16_t half = (int16_t)clamp32((int32_t)gMaybeShipRadius[t] * LOCK_FOCAL / r.z, LOCK_BOX_MIN, 999);
-        v = (int16_t)(LOCK_SWEEP / need + 1);
+        v = (int16_t)(LOCK_TRIP / need + 1);
         for (k = 0; k < 2; k++) {       /* (the target's place in the picture, px right then down: within the cone, under
-                                           LOCK_SWEEP) */
-            int16_t p = (int16_t)((k ? -r.y : r.x) * LOCK_FOCAL / r.z), gap = p - g_lock_xy[k];
+                                           195 px) */
+            int16_t p = (int16_t)((k ? -r.y : r.x) * LOCK_FOCAL / r.z), gap;
+            if (g_lock_xy[1] == LOCK_UNSET) {
+                g_lock_xy[0] = p < 0 ? LOCK_CORNER_X : -LOCK_CORNER_X;
+                g_lock_xy[1] = LOCK_CORNER_Y;
+            }
+            gap = p - g_lock_xy[k];
             g_lock_xy[k] += gap > v ? v : gap < -v ? -v : gap;
             gap = g_lock_xy[k] - p;
             g_hud.lock_d[k] = gap;
@@ -2015,7 +2026,7 @@ static void lock_tick(void)
         g_lock_steps = in ? g_lock_steps + (g_lock_steps < (uint16_t)hold) : 0;
     } else {
         g_lock_steps = 0;
-        g_lock_xy[0] = g_lock_xy[1] = 0;
+        g_lock_xy[1] = LOCK_UNSET;
     }
     g_sys.lock = (uint8_t)(ok && g_lock_steps >= (uint16_t)hold);
     g_sys.lock_pct = (uint8_t)(ok ? 1 + (int32_t)g_lock_steps * 99 / hold : 0);
@@ -4467,11 +4478,8 @@ void logic_hud(void)
     }
     if (g_hud.target)
         hud_brackets(g_hud.x0, g_hud.y0, g_hud.x1, g_hud.y1, g_hud.colour);
-    if (g_hud.target && g_hud.lock) {   /* (the lock's crosshair: an X, where the gunsight's + is where it starts) */
-        int16_t x = g_hud.lock_d[0], y = g_hud.lock_d[1], a = g_hud.arm, c = g_hud.lock == 2 ? UI_WHITE : UI_AMBER2;
-        hud_line((int16_t)(x - a), (int16_t)(y - a), (int16_t)(x + a), (int16_t)(y + a), c);
-        hud_line((int16_t)(x - a), (int16_t)(y + a), (int16_t)(x + a), (int16_t)(y - a), c);
-    }
+    if (g_hud.target && g_hud.lock)     /* (the lock's crosshair: an octagon reticle, amber chasing, white locked) */
+        hud_reticle(g_hud.lock_d[0], g_hud.lock_d[1], (int16_t)(g_hud.arm * 3 / 2), g_hud.lock == 2 ? UI_WHITE : UI_AMBER2);
     if (g_hud.target && g_hud.lock == 2) {
         hud_diamond(g_hud.sx, g_hud.sy, (int16_t)(g_hud.half + 3), UI_WHITE);
         hud_diamond(g_hud.sx, g_hud.sy, (int16_t)(g_hud.half + 4), UI_WHITE);

@@ -1002,12 +1002,19 @@ open burns a little, the afterburner much more, so a Schroedinger's tank is
 65 s of afterburner, a Pacifier's 97, and 44 minutes of throttle, at its 15 frames a second), eject (Ctrl+E twice within two seconds, or the handle: the mission
 ends ejected; none with the ejector wrecked). The LOCK lamp is the missile
 lock (logic.c's `lock_tick`: the chosen missile's seeker on the target, a
-crosshair that leaves the nose and chases the target's box in the seeker's
-own picture, the cockpit's 400 px focal length, crossing the lock cone in
-the weapon's lock time; held on the box a quarter of that time it locks,
-and a box that gets away from it loses the lock while it chases on: the
-user's, 2026-11-12, "a crosshair that pursues the target rectangle"; the
-HUD draws it as an amber X, white in the white diamond locked); the cloak
+crosshair that sets off from the bottom corner farther from the target
+(250 px out and 90 down in the seeker's own picture, the cockpit's 400 px
+focal length: 200 and 72 on the screen, behind the dash in the narrow
+canopies) and chases the target's box, 330 px in the weapon's lock time;
+held on the box a quarter of that time it locks, so a target dead ahead
+locks in about the lock time and one off the nose later, and a box that
+gets away from it loses the lock while it chases on: the user's,
+2026-11-12, "a crosshair that pursues the target rectangle" and "Start
+bottom left or bottom right corner depending on which is farther"; the HUD
+draws it as an octagon reticle, hud.c's `hud_reticle`, the user's "octagon
+with crosses on the four cardinal directions and some cross hatches", a
+quarter of it in a 16-byte table drawn four times turned, amber chasing,
+white in the white diamond locked); the cloak
 (the Schroedinger's, ships.csv `cloak`: Alt+C on and off; on, the ship is
 drawn as half its pixels in diagonal stripes, `(x + y) & 2`, by the game's
 own turned rows and never by the sprite card, with no engine flame; no AI
