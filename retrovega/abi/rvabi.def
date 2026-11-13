@@ -126,7 +126,7 @@ SLOT  entityScreenY                2
 SLOT  damageProperty               2    # bolts: damage; ships: AI timers
 SLOT  rvController                 1    # 0 AI, 1 the local player, 2 puppet (a remote human), 3 script, 4 frozen
 SLOT  rvNetId                      1    # network id, 0xff none: the layer's, the engine never reads it
-SLOT  rvFlags                      2    # 1 invulnerable, 2 local-only hazard, 4 docked, 8 jamming, 16 cloaked, 32 a human's (another machine's)
+SLOT  rvFlags                      2    # 1 invulnerable, 2 local-only hazard, 4 docked, 8 jamming, 16 cloaked, 32 a human's (another machine's), 64|128 the cloak (bits 6-7: 0 off, 1 on, 2 disrupted)
 SLOT  rvLastWrite                  2    # frameCounter when the layer last wrote the slot's motion
 SLOT  rvTarget                     1    # what this ship targets, 0xff none
 SLOT  rvAfterburner                1    # 0 off, 1 on

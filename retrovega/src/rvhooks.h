@@ -218,7 +218,7 @@ extern uint8_t rv_dgroup[];
 #define rvController_SIZE              1
 #define rvNetId                        RV_AT(uint8_t *, 0x5B80)  /* [128] */ /* network id, 0xff none: the layer's, the engine never reads it */
 #define rvNetId_SIZE                   1
-#define rvFlags                        RV_AT(uint16_t *, 0x5C00)  /* [128] */ /* 1 invulnerable, 2 local-only hazard, 4 docked, 8 jamming, 16 cloaked, 32 a human's (another machine's) */
+#define rvFlags                        RV_AT(uint16_t *, 0x5C00)  /* [128] */ /* 1 invulnerable, 2 local-only hazard, 4 docked, 8 jamming, 16 cloaked, 32 a human's (another machine's), 64|128 the cloak (bits 6-7: 0 off, 1 on, 2 disrupted) */
 #define rvFlags_SIZE                   2
 #define rvLastWrite                    RV_AT(uint16_t *, 0x5D00)  /* [128] */ /* frameCounter when the layer last wrote the slot's motion */
 #define rvLastWrite_SIZE               2

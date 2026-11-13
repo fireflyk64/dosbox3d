@@ -1001,8 +1001,22 @@ as the old game's: ships.csv `fuel` is the tank in its units, the throttle
 open burns a little, the afterburner much more, so a Schroedinger's tank is
 65 s of afterburner, a Pacifier's 97, and 44 minutes of throttle, at its 15 frames a second), eject (Ctrl+E twice within two seconds, or the handle: the mission
 ends ejected; none with the ejector wrecked). The LOCK lamp is the missile
-lock (logic.c's `lock_tick`: the chosen missile's seeker on the target,
-below); MASTER WARN is lit for a damaged system, the cockpit hurt or a
+lock (logic.c's `lock_tick`: the chosen missile's seeker on the target, a
+crosshair that leaves the nose and chases the target's box in the seeker's
+own picture, the cockpit's 400 px focal length, crossing the lock cone in
+the weapon's lock time; held on the box a quarter of that time it locks,
+and a box that gets away from it loses the lock while it chases on: the
+user's, 2026-11-12, "a crosshair that pursues the target rectangle"; the
+HUD draws it as an amber X, white in the white diamond locked); the cloak
+(the Schroedinger's, ships.csv `cloak`: Alt+C on and off; on, the ship is
+drawn as half its pixels in diagonal stripes, `(x + y) & 2`, by the game's
+own turned rows and never by the sprite card, with no engine flame; no AI
+picks it or keeps it, a seeker loses it, the shields are down and the
+SIGNATURE reads 2%, the E/M lamp dark and STEALTH lit; the afterburner or a
+transmission (the comm's lines, a chat line: 3 s) disrupts it, seen with the
+shields still down, CLOAK DISRUPTED under the gunsight; a shot or Alt+C ends
+it and the shields come back; logic.c `cloak_*`, rvFlags bits 6-7);
+MASTER WARN is lit for a damaged system, the cockpit hurt or a
 shield under a quarter, blinking for 5 s whenever a warning is new and then
 steady (the user, 2026-11-05: "Blink, then steady"; it had blinked for the
 rest of a flight after the first hit). The radio tunes itself to

@@ -156,6 +156,12 @@ static int bios_key(int *ch)
             *ch = 't';
             return KEY_ALT;
         }
+        break;
+    case 0x2E:                          /* Alt+C: the cloak (flight.c) */
+        if (!*ch) {
+            *ch = 'c';
+            return KEY_ALT;
+        }
     }
     return *ch >= 32 && *ch < 127 ? KEY_CHAR : KEY_NONE;
 }

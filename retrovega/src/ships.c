@@ -87,7 +87,36 @@ static unsigned long g_dc_hits, g_dc_expands, g_dc_refused;   /* (the flight's t
 MEM_ARRAY(unsigned short, g_cmap_arr, LINE)
 MEM_ARRAY(unsigned char, g_line_arr, LINE)
 static unsigned short __far *g_cmap;    /* the scaled draw's column map, LINE entries */
-static unsigned char __far *g_line;     /* one source row expanded, LINE pixels */
+static unsigned char __far *g_line;     /* one source row expanded, LINE pixels; a cloaked ship's row before its half
+                                           goes out (stipple_row) */
+static unsigned char __far g_stipple;   /* the ships drawn now are cloaked (ships_stipple) */
+
+/* a cloaked ship (the user, 2026-11-12: "only draws half the pixels in a stipple pattern with diagonals"): its rows are
+ * drawn into g_line, every pixel turned (no row copied from the screen's row above: that row is half the ship), and
+ * of each only the pixels where (x + y) & 2 is 0 go out: half of them, in stripes running down to the left.  Not by
+ * the sprite card (its picture is whole) nor scaled (g_line is that draw's own) */
+void ships_stipple(int on)
+{
+    g_stipple = (unsigned char)on;
+}
+
+static void need_buffers(void);
+
+static unsigned char __far *stipple_line(int a, int b)   /* (g_line cleared from a to b: drawn into first) */
+{
+    need_buffers();
+    _fmemset(g_line + a, 0, b - a);
+    return g_line;
+}
+
+static void stipple_row(unsigned char __far *dst, int x0, int a, int b, int y)
+{
+    const unsigned char __far *src = g_line;
+    int x;
+    for (x = a; x < b; x++)
+        if (src[x] && !((x0 + x + y) & 2))
+            dst[x] = src[x];
+}
 
 
 void __far __cdecl rv_blit_row(unsigned char __far *row, const unsigned char __far *spans, int left, int xa, int xb);
@@ -883,12 +912,17 @@ void ships_blit_view(const ShipView __far *fv, int flags, int x, int y, int y0, 
         dst = vid_row(flip ? top + (h - 1 - r0) : top + r0);
         for (r = r0; r < r1; r++, dst += flip ? -SCR_W : SCR_W) {
             int ry = flip ? top + (h - 1 - r) : top + r, ca = xa, cb = xb;
+            unsigned char __far *to = dst;
             if (!row_clip(ry, &ca, &cb, ext, ext_y0, ext_rows))
                 continue;
+            if (g_stipple)
+                to = stipple_line(ca, cb);
             if (mir)
-                rv_blit_row_rev(dst, data + (unsigned)(tab[r - r0] - tab[0]), right, ca, cb);
+                rv_blit_row_rev(to, data + (unsigned)(tab[r - r0] - tab[0]), right, ca, cb);
             else
-                rv_blit_row(dst, data + (unsigned)(tab[r - r0] - tab[0]), left, ca, cb);
+                rv_blit_row(to, data + (unsigned)(tab[r - r0] - tab[0]), left, ca, cb);
+            if (g_stipple)
+                stipple_row(dst, 0, ca, cb, ry);
         }
         r0 = r1;
     }
@@ -1267,6 +1301,11 @@ static void turn_rows(int w, int h, int ox, int oy_, int x, int y, int scale256,
             continue;
         }
         row = vid_row(oy) + left;
+        if (g_stipple) {
+            rv_rotate_row(g_dense, w, h, &r, oy - top, xs, xe, stipple_line(xs, xe));
+            stipple_row(row, left, xs, xe, oy);
+            continue;
+        }
         if (detail < 2) {
             rv_rotate_row(g_dense, w, h, &r, oy - top, xs, xe, row);
             continue;
@@ -1507,8 +1546,10 @@ int ships_draw(int set_i, const LfVec *rel, const LfBasis *cam, const LfBasis *s
         drawn(1, p.view, 0);
         return 1;
     }
-    if (rq == 0 || !draw_turned(s, set_i, p.view, p.sx, p.sy, scale256 > 256 ? 256 : scale256, rq * 64, 1, y0, y1, xa, xb,
-                                ext, ext_y0, ext_rows)) {
+    if ((rq == 0 && !g_stipple) || !draw_turned(s, set_i, p.view, p.sx, p.sy, scale256 > 256 ? 256 : scale256, rq * 64, 1,
+                                                y0, y1, xa, xb, ext, ext_y0, ext_rows)) {
+        if (g_stipple)
+            return 0;
         draw_scaled(s, p.view, p.sx, p.sy, scale256 > 256 ? 256 : scale256, y0, y1, xa, xb, ext, ext_y0, ext_rows);
         drawn(SHIP_PATH_SCALED, p.view, 0);
         return SHIP_PATH_SCALED;
@@ -1533,7 +1574,7 @@ int ships_draw_exact(int set_i, const LfVec *rel, const LfBasis *cam, const LfBa
     lf_place(rel, cam, ship, g_cx, g_cy, g_focal, s->nb0, s->nh0, &p);
     if (!p.on_screen || scale256 < 8)
         return 1;
-    if (s->factor > 1 && gx_on()) {
+    if (s->factor > 1 && gx_on() && !g_stipple) {
         /* the sprite accelerator's picture, a pixel a pixel, when it has one (a roll this near none at full size is
          * none, as a native draw and ships_drawn have it); anything else it answers, the blocks below */
         int mir, src = stored_view(s, p.view, &mir);

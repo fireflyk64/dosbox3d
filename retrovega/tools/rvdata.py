@@ -111,6 +111,7 @@ SHIPTYPE = [('char', 'key[RV_KEY]', '%ds' % TEXT['KEY']), ('char', 'name[RV_NAME
             ('signed char', 'vital[RV_VITALS][3]', '%db' % (3 * 8)),
             ('unsigned char', 'loadout[RV_GUNTABLE]', '%ds' % 0x33)]
 SHIPTYPE_FLAG_PLAYER = 1               # the player may fly it (a cockpit kit exists)
+SHIPTYPE_FLAG_CLOAK = 16               # it has a cloak (ships.csv `cloak` 1: the Schroedinger's, Alt+C; logic.c cloak_*)
 # what a bolt must do to hit a type (ships.csv `hit`; a mission's `rules hit=` overrides every type's: the user's
 # ruling of 2026-10-31, a game or a mission picks its look and feel): blank, pass within its radius (the old game's
 # volume, shots.c segment_in_sphere) or through its silhouettes; silhouette, the silhouettes alone; sphere, the
@@ -526,6 +527,8 @@ def compile_all():
         if (r.get('hit') or '') not in HIT_MODES:
             raise Fail('ships.csv %s: hit is blank (within its radius or through its silhouettes), silhouette, sphere or '
                        'box' % r['key'])
+        if (r.get('cloak') or '') not in ('', '1'):
+            raise Fail('ships.csv %s: cloak is blank (none) or 1 (Alt+C cloaks it)' % r['key'])
         radius = n('radius_km') or (n('lod0_px') * (700 if int(r['type'], 16) >= 0x20 else 100) // (640 if int(r['type'], 16) >= 0x20 else 128))
         # the speed above which a full-rate turn slides, and that with the acceleration absorbers damaged; blank:
         # its top speed (it slides on the afterburner only), and its cruise
@@ -557,7 +560,8 @@ def compile_all():
         out_types.append(struct.pack(fmt(SHIPTYPE), text(r['key'], TEXT['KEY'], 'ships.csv'),
                                      text(r['name'], TEXT['NAME'], 'ships.csv'), int(r['type'], 16), n('side'),
                                      (SHIPTYPE_FLAG_PLAYER if r['key'] in cockpit_keys else 0)
-                                     | HIT_MODES[r.get('hit') or ''],
+                                     | HIT_MODES[r.get('hit') or '']
+                                     | (SHIPTYPE_FLAG_CLOAK if (r.get('cloak') or '') == '1' else 0),
                                      cockpit_keys.index(r['key']) if r['key'] in cockpit_keys else 0xFF,
                                      n('cruise_kps'), n('max_kps'), n('ab_kps'), n('accel'), slide, slide_dmg,
                                      n('yaw_dps'), n('pitch_dps'), n('roll_dps'), guns, n('shield_f'), n('shield_r'),
@@ -1001,6 +1005,7 @@ def header_text(sizes):
     for k, v in ROLES.items():
         out.append('#define RV_ROLE_%s %d' % (k.upper(), v))
     out.append('#define RV_SHIPTYPE_FLAG_PLAYER %d' % SHIPTYPE_FLAG_PLAYER)
+    out.append('#define RV_SHIPTYPE_FLAG_CLOAK %d' % SHIPTYPE_FLAG_CLOAK)
     out.append('#define RV_SHIPTYPE_FLAG_HIT_SILHOUETTE %d' % SHIPTYPE_FLAG_HIT_SILHOUETTE)
     out.append('#define RV_SHIPTYPE_FLAG_HIT_SPHERE %d' % SHIPTYPE_FLAG_HIT_SPHERE)
     out.append('#define RV_SHIPTYPE_FLAG_HIT_BOX %d' % SHIPTYPE_FLAG_HIT_BOX)

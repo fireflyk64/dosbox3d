@@ -87,6 +87,8 @@ int16_t logic_order(int16_t s, int16_t order);      /* 1 when slot s takes it (0
                                                        no enemy targeted, or RTB with no capital ship of its side) */
 int16_t logic_order_of(int16_t s);
 int16_t logic_taunt(int16_t s);         /* an enemy fighter turns on the player for a while: 1 when it does */
+void logic_cloak_key(void);             /* Alt+C: the player's cloak on (a type with one) or off (world.h RV_CLOAK_*) */
+void logic_cloak_disrupt(void);         /* the player transmitted: a cloak that is on is seen for a while */
 extern uint8_t __far logic_boost;       /* RV_BOOST_*: what Kit did to the fighter for this mission's flights; 0 none */
 int16_t logic_escort_lost(void);        /* a ship the player was escorting was killed this flight */
 int16_t logic_wingman_lost(void);       /* the mission's wingman was killed this flight: their pilot (people.csv row), -1 no */

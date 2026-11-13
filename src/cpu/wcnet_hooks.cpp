@@ -405,6 +405,7 @@ static KBD_KEYS script_key(const std::string &name) {
         { "right", KBD_right }, { "comma", KBD_comma }, { "period", KBD_period }, { "equals", KBD_equals },
         { "minus", KBD_minus }, { "backslash", KBD_backslash }, { "kp0", KBD_kp0 }, { "kpperiod", KBD_kpperiod },
         { "kpmultiply", KBD_kpmultiply }, { "bracketleft", KBD_leftbracket }, { "bracketright", KBD_rightbracket },
+        { "alt", KBD_leftalt },         // (+alt, a letter, -alt: RetroVega's Alt+C cloak)
     };
     for (size_t i = 0; i < sizeof(kNamed) / sizeof(kNamed[0]); i++) {
         if (name == kNamed[i].name) return kNamed[i].key;

@@ -123,6 +123,14 @@ Multiplayer appears in the logic only as who flies a ship (`rvController`, `RV_F
   it (`rv_take_own_taunt`, each frame in `reconcile_puppets`) and sends it in the guest's frame (wc.proto `Taunt`: the
   ship's network id), and the host writes its own slots in (`rv_put_taunt`: the ship, the guest's ship as the
   taunter). So each pilot can draw enemies onto its own ship. Play test M10.11; rig scenario `taunt`.
+- **The cloak** (the user, 2026-11-12: "The cloak status (cloak off or cloak on or cloak disrupted by afterburner or
+  comms) should be sent across the wire. The game just needs to store it in a fixed 2 bit region"): the pilot's game
+  keeps it in its own slot's `rvFlags` bits 6-7 (0 off, 1 on, 2 disrupted; with 1 also `RV_FLAG_UNSEEN`, 16, which no
+  mind targets). The layer sends it with each of the ship's places (wc.proto `ShipUpdate.cloak`, absent when off: a
+  guest's own update and its best-effort copy; the host's frame for every slot, so a guest's goes on to the others)
+  and writes it on the ship's puppet in every other game (`rv_put_cloak`, only when it changes: a waiter's own unseen
+  bit is left alone), where the ship is drawn half seen and the host's AI lets it go. Rig scenario `cloak`
+  (PLAYERS=3 too).
 - **Deaths:** `step_deaths` calls `delayedDespawn` when it first sees a ship dying, and that body starts the dying
   (shipAiState 9, the explosion's time); `despawn` ends it. The layer hears the kill as it did WC.EXE's.
 - **The scene** (`step_scene`): a ship is held off-scene by its distance from the nearest human, not the local

@@ -17,6 +17,8 @@
 #                         each collision goes to the host's game
 #             taunt       after the host's autopilot to the enemies, the guest faces one, targets it (Y) and taunts it
 #                         (C three times): the taunt goes to the host, whose AI turns that ship on the guest's
+#             cloak       the guest's Alt+C: its cloak on the host's puppet of its ship (and a third pilot's), disrupted
+#                         while its afterburner burns, on again after, off with its shot
 #             kill        the host's autopilot to the enemies, which it destroys (!killfoes): the guest sees them
 #                         explode, then go
 #             chat        each pilot says a line (the 0 key's prompt, !say=): it is on the other's comm VDU, and its
@@ -87,6 +89,9 @@ autopilot)
 taunt)
     HOST="$HOST,10:a,18:!ds=taunted"
     GUEST="$GUEST,13:!face=npc,13.5:y,14:c,14.15:c,14.3:c,18:!ds=taunted" ;;
+cloak)
+    HOST="$HOST,13:!ds=cloaked,17.5:!ds=burning,22:!ds=recloaked,26:!ds=uncloaked"
+    GUEST="$GUEST,10:+alt,10.2:c,10.5:-alt,13:!ds=cloaked,15:+tab,17.5:!ds=burning,19:-tab,22:!ds=recloaked,23:+space,23.4:-space,26:!ds=uncloaked" ;;
 ram)
     HOST="$HOST,10:a"
     GUEST="$GUEST,13:f,15:!ram=npc,17:!ram=npc,19:!ram=npc" ;;

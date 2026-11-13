@@ -71,7 +71,9 @@ typedef struct { int8_t pitch, yaw, roll; uint8_t left, steps; } Knock;   /* a m
                                            has left of its `steps` */
 static Knock __far g_knock[NUM_SHIP_SLOTS];
 static uint8_t __far g_order[NUM_SHIP_SLOTS];   /* the wingmen's orders (ORDER_*, logic.h) */
-static uint16_t __far g_lock_steps;     /* the player's missile lock building (lock_tick) */
+static uint16_t __far g_lock_steps;     /* the player's missile lock: steps its crosshair has held inside the target's box */
+static int16_t __far g_lock_xy[2];      /* the lock's crosshair: px right of and below the nose in the seeker's picture */
+static uint8_t __far g_cloak_quiet;     /* steps until a transmission's disruption of the cloak is over */
 
 #define RAM_STEPS 10                    /* a ship hurt by a ram is not hurt by one again for this many steps */
 #define AI_SCATTER 18                   /* an AI's shot's scatter about the nose, 256ths each way (18: 4 degrees; gun_fire), up
@@ -161,8 +163,9 @@ static struct {
     int16_t x0, y0, x1, y1, colour;
     int16_t nav;                        /* the chosen nav point's cross: 1 when it is on the view (the user's white cross) */
     int16_t nav_x, nav_y, nav_dx, nav_dy;
-    int16_t lock;                       /* the missile lock's reticle: 0 none, 1 building (closing on the target), 2 locked */
-    int16_t sx, sy, half, lock_r;
+    int16_t lock;                       /* the missile lock's crosshair: 0 none, 1 chasing the target's box, 2 locked */
+    int16_t sx, sy, half, lock_d[2];    /* (lock_d: the crosshair from the target's middle: lock_tick's picture px,
+                                           then hud_marks' screen px) */
 } __far g_hud;
 
 /* --- the mission: its nav points and ships, as camp_load_units put them in the tables the layer reads --- */
@@ -827,6 +830,8 @@ static void step_timers(void)
             uint16_t most = SHIELD_MAX(ship, k);
             if (ship == 0 && rvController[0] == CTL_PLAYER)
                 most = damage_shield_cap(most);   /* (the generator hurt holds less: what is over it goes at once) */
+            if (ship == 0 && CLOAK_OF(0) != RV_CLOAK_OFF)
+                most = 0;               /* (the cloak on, disrupted or not: the shields down; off, they come back) */
             if (SHIELD(ship, k) != most) {
                 uint16_t steps = type_of_ship && type_of_ship->shield_steps ? type_of_ship->shield_steps * WC_FRAME_STEPS : 1;
                 uint16_t up = type_of_ship && type_of_ship->shield_steps ? (frameCounter % steps == 0)
@@ -1105,9 +1110,50 @@ static void fire_launcher(int16_t ship, int16_t g)
     (void)fireGunFromShip((uint16_t)ship, (uint16_t)g);
 }
 
+/* --- the pilot's cloak (the user, 2026-11-12: "a shroedinger cloak that only draws half the pixels in a stipple
+ * pattern with diagonals"): Alt+C puts it on (a type with RV_SHIPTYPE_FLAG_CLOAK) or off; on, the ship is drawn as
+ * half its pixels (flight.c), no mind sees it (RV_FLAG_UNSEEN: no AI picks it, one that had it lets it go, a seeker
+ * loses it) and its shields are down; the afterburner (its heat, its signature) or a transmission (the comm's lines,
+ * a chat line: CLOAK_QUIET_STEPS) disrupts it: seen again, the shields still down, until they are over; a shot, or
+ * Alt+C, puts it off and the shields come back.  The state is rvFlags' two bits (world.h RV_CLOAK_*), which the layer
+ * sends to the other machines --- */
+#define CLOAK_QUIET_STEPS (LOGIC_HZ * 3)
+
+static void cloak_set(int16_t s, uint16_t st)
+{
+    rvFlags[s] = (uint16_t)((rvFlags[s] & ~((3U << RV_CLOAK_SHIFT) | RV_FLAG_UNSEEN)) | (st << RV_CLOAK_SHIFT)
+                            | (st == RV_CLOAK_ON ? RV_FLAG_UNSEEN : 0));
+}
+
+void logic_cloak_key(void)
+{
+    const RvShipType __far *t = slot_type(0);
+    g_cloak_quiet = 0;
+    cloak_set(0, !CLOAK_OF(0) && t && (t->flags & RV_SHIPTYPE_FLAG_CLOAK) && shipAiState[0] != 9 ? RV_CLOAK_ON : RV_CLOAK_OFF);
+}
+
+void logic_cloak_disrupt(void)
+{
+    if (CLOAK_OF(0) != RV_CLOAK_OFF)
+        g_cloak_quiet = CLOAK_QUIET_STEPS;
+}
+
+/* each step (step_fire, before the player's shots): off with a shot (the trigger with the guns armed, or a missile)
+ * or the ship lost; disrupted while the afterburner burns or a transmission is fresh, else on */
+static void cloak_step(void)
+{
+    if (CLOAK_OF(0) == RV_CLOAK_OFF)
+        return;
+    if (g_cloak_quiet)
+        g_cloak_quiet--;
+    cloak_set(0, shipAiState[0] == 9 || (g_sys.armed && (g_pilot.guns || g_pilot.missile)) ? RV_CLOAK_OFF
+                 : g_pilot.afterburner || g_cloak_quiet ? RV_CLOAK_BROKEN : RV_CLOAK_ON);
+}
+
 static void step_fire(void)
 {
     int16_t s, g;
+    cloak_step();
     /* the player: the missile and gun key */
     if (slot_is_ship(0) && rvController[0] == CTL_PLAYER && shipAiState[0] != 9 &&  g_sys.armed)
     {
@@ -1919,10 +1965,21 @@ static uint8_t launch_target(int16_t ship, const RvWeapon __far *w)
  * player, or its afterburner lit) with the EMCON not off; image recognition with the radar on; friend-or-foe with
  * the radar on and the IFF; each needs the target within PLAYER_LOCK_CONE and the weapon's range for its lock time
  * (weapons.csv lock_s), and is lost out of them; a dumbfire never locks; none with the tracking wrecked.
- * g_sys.lock, lock_pct and lock_kind say where it stands (the HUD's reticle, the lock lamp, the launch) */
+ * The lock itself (the user, 2026-11-12: "the missile lock should be a crosshair that pursues the target rectangle
+ * to get missile lock ... with few extra bytes"): while the seeker can see the target a crosshair leaves the nose
+ * and chases the target's box in the seeker's own picture (the cockpit's, LOCK_FOCAL: the ship's state alone, not
+ * the view's), LOCK_SWEEP px in the lock time; held inside the box for a quarter of that time (LOCK_HOLD_MIN steps at
+ * the least) it locks, and a box that gets away from it (the target turning across, the nose swung) loses the lock
+ * while it chases on.  The seeker blind, it is back on the nose.  g_sys.lock, lock_pct (1 .. 100 while it tracks)
+ * and lock_kind say where it stands (the HUD's crosshair, the lock lamp, the launch) */
+#define LOCK_FOCAL 400                  /* px: the cockpit's focal length at 640 across */
+#define LOCK_SWEEP 195                  /* px: PLAYER_LOCK_CONE's edge (26 degrees) in that picture */
+#define LOCK_HOLD_MIN 3
+#define LOCK_BOX_MIN 4                  /* px: a box no tighter (HUD_BRACKET_MIN's) */
 static void lock_tick(void)
 {
-    int16_t l = launcher_of(0), t = g_sys.target, ok = 0;
+    int16_t l = launcher_of(0), t = g_sys.target, ok = 0, k, v, hold, in = 1;
+    RvVec3 r;
     const RvWeapon __far *w = l >= 0 ? weapon(GUN_TYPE(0, l)) : 0;
     int16_t factor = damage_lock_factor();   /* (the tracking and the computer hurt: a lock takes longer; wrecked, never) */
     uint16_t need = (w ? (uint16_t)(w->lock_tenths * 3 + 1) : 1) * (uint16_t)(factor ? factor : 1);
@@ -1938,13 +1995,30 @@ static void lock_tick(void)
         else
             ok = g_sys.emcon == EMCON_ACTIVE && g_sys.iff && sys_level(SYS_IFF) < SYS_WRECKED;
     }
+    hold = (int16_t)(need / 4 + LOCK_HOLD_MIN);
     if (ok) {
-        if (g_lock_steps < need)
-            g_lock_steps++;
-    } else
+        ship_rel(0, t, &r);             /* (the target as the nose sees it: right, up, ahead, km) */
+        ok = r.z > 0;
+    }
+    if (ok) {
+        int16_t half = (int16_t)clamp32((int32_t)gMaybeShipRadius[t] * LOCK_FOCAL / r.z, LOCK_BOX_MIN, 999);
+        v = (int16_t)(LOCK_SWEEP / need + 1);
+        for (k = 0; k < 2; k++) {       /* (the target's place in the picture, px right then down: within the cone, under
+                                           LOCK_SWEEP) */
+            int16_t p = (int16_t)((k ? -r.y : r.x) * LOCK_FOCAL / r.z), gap = p - g_lock_xy[k];
+            g_lock_xy[k] += gap > v ? v : gap < -v ? -v : gap;
+            gap = g_lock_xy[k] - p;
+            g_hud.lock_d[k] = gap;
+            if ((uint16_t)(gap + half) > (uint16_t)(2 * half))
+                in = 0;
+        }
+        g_lock_steps = in ? g_lock_steps + (g_lock_steps < (uint16_t)hold) : 0;
+    } else {
         g_lock_steps = 0;
-    g_sys.lock = (uint8_t)(ok && g_lock_steps >= need);
-    g_sys.lock_pct = (uint8_t)(ok ? (int32_t)g_lock_steps * 100 / need : 0);
+        g_lock_xy[0] = g_lock_xy[1] = 0;
+    }
+    g_sys.lock = (uint8_t)(ok && g_lock_steps >= (uint16_t)hold);
+    g_sys.lock_pct = (uint8_t)(ok ? 1 + (int32_t)g_lock_steps * 99 / hold : 0);
 }
 
 /* (ship, gun, its weapon): a launcher fires: a round fewer, and the missile into a free ship slot at the mount,
@@ -2178,7 +2252,7 @@ static void missile_step(int16_t s)
     g_missile[s].life--;
     t = missileTarget[s];
     dps = missile_dps(w);
-    if (dps && t != 0xFF && slot_is_ship(t) && shipAiState[t] != 9)
+    if (dps && t != 0xFF && slot_is_ship(t) && shipAiState[t] != 9 && CLOAK_OF(t) != RV_CLOAK_ON)
         missile_seek(s, t, dps);
     else if (g_missile[s].life > range_life(w))
         g_missile[s].life = range_life(w);   /* (its quarry gone: what is left of its range, not a long chase after nothing) */
@@ -3464,7 +3538,7 @@ static void fighter_think(int16_t s)
         take_tactic(s, m, p, T_WAIT);
     /* the target: kept while it lives and stays in reach, else the nearest enemy within the engage distance */
     if (m->target != 0xFF && (!slot_is_ship(m->target) || shipAiState[m->target] == 9 || commAnimInfo[m->target] == commAnimInfo[s]
-                              || km_between(s, m->target) > (int32_t)p->engage_km * 3 / 2))
+                              || CLOAK_OF(m->target) == RV_CLOAK_ON || km_between(s, m->target) > (int32_t)p->engage_km * 3 / 2))
         m->target = 0xFF;
     for (k = 0; k < NUM_SHIP_SLOTS; k++) {
         if (k == s || !slot_is_ship(k) || commAnimInfo[k] == commAnimInfo[s] || shipAiState[k] == 9 || (rvFlags[k] & 16))
@@ -4347,17 +4421,19 @@ static void hud_marks(void)
     g_hud.x1 = (int16_t)(b.sx + half + 1);
     g_hud.y1 = (int16_t)(b.sy + half + 1);
     g_hud.colour = sys_level(SYS_IFF) >= SYS_WRECKED ? UI_GREY5 : commAnimInfo[g_sys.target] == commAnimInfo[0] ? UI_HILITE : UI_RED;
-    /* the lock's reticle (the user's Top Gun display): a diamond closing on the target as the lock builds, from four
-     * halves out to the brackets; locked, a second one tight about it */
+    /* the lock's crosshair (lock_tick) where it is about the target, scaled from the seeker's picture to the view's;
+     * locked, white, and a diamond tight about the target (the user's Top Gun display): logic_hud */
     g_hud.sx = b.sx;
     g_hud.sy = b.sy;
     g_hud.half = half;
     g_hud.lock = 0;
     if (g_sys.lock_kind != RV_LOCK_NONE && g_sys.lock_kind != RV_LOCK_PROXIMITY && (g_sys.lock || g_sys.lock_pct)) {
         g_hud.lock = (int16_t)(g_sys.lock ? 2 : 1);
-        g_hud.lock_r = (int16_t)(half + 3 + (int32_t)(100 - g_sys.lock_pct) * (3 * half + 12) / 100);
+        g_hud.lock_d[0] = (int16_t)(b.sx + (int32_t)g_hud.lock_d[0] * cam.focal / LOCK_FOCAL);
+        g_hud.lock_d[1] = (int16_t)(b.sy + (int32_t)g_hud.lock_d[1] * cam.focal / LOCK_FOCAL);
     }
 }
+
 
 void logic_frame(void)
 {
@@ -4391,8 +4467,11 @@ void logic_hud(void)
     }
     if (g_hud.target)
         hud_brackets(g_hud.x0, g_hud.y0, g_hud.x1, g_hud.y1, g_hud.colour);
-    if (g_hud.target && g_hud.lock == 1)
-        hud_diamond(g_hud.sx, g_hud.sy, g_hud.lock_r, UI_AMBER2);
+    if (g_hud.target && g_hud.lock) {   /* (the lock's crosshair: an X, where the gunsight's + is where it starts) */
+        int16_t x = g_hud.lock_d[0], y = g_hud.lock_d[1], a = g_hud.arm, c = g_hud.lock == 2 ? UI_WHITE : UI_AMBER2;
+        hud_line((int16_t)(x - a), (int16_t)(y - a), (int16_t)(x + a), (int16_t)(y + a), c);
+        hud_line((int16_t)(x - a), (int16_t)(y + a), (int16_t)(x + a), (int16_t)(y - a), c);
+    }
     if (g_hud.target && g_hud.lock == 2) {
         hud_diamond(g_hud.sx, g_hud.sy, (int16_t)(g_hud.half + 3), UI_WHITE);
         hud_diamond(g_hud.sx, g_hud.sy, (int16_t)(g_hud.half + 4), UI_WHITE);

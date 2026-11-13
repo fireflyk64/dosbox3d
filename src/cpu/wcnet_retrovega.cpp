@@ -227,6 +227,25 @@ void rv_put_taunt(int slot, int by) {
     }
 }
 
+int rv_cloak(int slot) {
+    return rv_compatible() && slot >= 0 && slot <= RV_MAX_SHIP_SLOT ? rd16((Bit16u)(RV_DS_rvFlags + 2 * slot)) >> RV_CLOAK_SHIFT & 3 : 0;
+}
+
+void rv_put_cloak(int slot, int status) {
+    if (!rv_compatible() || slot < 0 || slot > RV_MAX_SHIP_SLOT || status < 0 || status > 2) {
+        return;
+    }
+    // (only a change touches the unseen bit: a ship waiting in ambush has it with no cloak, the game's own)
+    const Bit16u at = (Bit16u)(RV_DS_rvFlags + 2 * slot), was = rd16(at);
+    const Bit16u flags = (Bit16u)((was & ~((3u << RV_CLOAK_SHIFT) | RV_FLAG_UNSEEN)) | (status << RV_CLOAK_SHIFT)
+                                  | (status == 1 ? RV_FLAG_UNSEEN : 0));
+    if ((was >> RV_CLOAK_SHIFT & 3) != status) {
+        static const char *const kName[] = { "off", "on", "disrupted" };
+        wclog(1, "RV.EXE: slot %d's cloak %s (its pilot's machine)", slot, kName[status]);
+        wr16(at, flags);
+    }
+}
+
 void rv_stamp_motion(int slot) {
     if (rv_compatible() && slot >= 0 && slot <= RV_MAX_SHIP_SLOT) {
         wr16((Bit16u)(RV_DS_rvLastWrite + 2 * slot), rd16(RV_DS_frameCounter));

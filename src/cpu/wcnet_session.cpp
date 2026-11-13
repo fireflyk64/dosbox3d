@@ -1984,6 +1984,9 @@ private:
             }
             ShipUpdate *su = update_for(frame, slot);
             populate_location(su->mutable_loc(), slot);
+            if (is_rv() && rv_cloak(slot)) {
+                su->set_cloak((Bit32u)rv_cloak(slot));   // (RetroVega: a pilot's cloak, ours or a guest's passed on)
+            }
             RemoteClient *rc = client_for_slot(slot);
             if (rc && rc->hasLastLoc) {
                 // (debugging) the angle between the heading it reported last and our copy's now
@@ -2047,6 +2050,9 @@ private:
                 const ShipUpdate &su = msg.frame().update(i);
                 if (su.has_ship_id() && (int)su.ship_id() == c->net && su.has_loc()) {
                     merge_client_location(c, msg.frame_number(), su.loc());
+                    if (is_rv()) {
+                        rv_put_cloak(c->net, (int)su.cloak());
+                    }
                 }
             }
         }
@@ -2134,6 +2140,9 @@ private:
             if (su.has_loc() && frameNo > c->lastPosition) {
                 // (A fresher one may have come by the best-effort channel.)
                 merge_client_location(c, frameNo, su.loc());
+                if (is_rv()) {
+                    rv_put_cloak(c->net, (int)su.cloak());   // (RetroVega: its pilot's cloak; none sent, off)
+                }
             }
             if (su.has_health()) {
                 ShipHealthState h;
@@ -2496,6 +2505,9 @@ private:
                     ShipUpdate *out = lite->add_update();
                     out->set_ship_id(su.ship_id());
                     *out->mutable_loc() = su.loc();
+                    if (su.has_cloak()) {
+                        out->set_cloak(su.cloak());
+                    }
                 }
             }
             if (lite->update_size() == 0) {
@@ -2879,6 +2891,9 @@ public:
             ShipUpdate *su = positions.mutable_frame()->add_update();
             su->set_ship_id(shipNet_);
             populate_location(su->mutable_loc(), kPlayerSlot);
+            if (is_rv() && rv_cloak(kPlayerSlot)) {
+                su->set_cloak((Bit32u)rv_cloak(kPlayerSlot));
+            }
             conn_.send_best_effort(positions);
         }
         pendingFrame_.Clear();
@@ -3398,6 +3413,9 @@ private:
         }
         ShipUpdate *su = update_for(pendingFrame_.mutable_frame(), shipNet_);
         populate_location(su->mutable_loc(), kPlayerSlot);
+        if (is_rv() && rv_cloak(kPlayerSlot)) {
+            su->set_cloak((Bit32u)rv_cloak(kPlayerSlot));   // (RetroVega: our pilot's cloak, with our place)
+        }
         health_.next_frame();
         ShipHealthState h;
         if (health_.should_send(kPlayerSlot, &h)) {
@@ -3486,6 +3504,9 @@ private:
             }
             if (su.has_loc() && applyLoc && (!own || applyOwnLocation)) {
                 apply_location(su.loc(), slot);
+            }
+            if (su.has_loc() && applyLoc && !own && is_rv()) {
+                rv_put_cloak(slot, (int)su.cloak());   // (RetroVega: another pilot's cloak; none sent, off)
             }
             if (su.has_health() && !own) {
                 pendingHealth_.push_back(su);

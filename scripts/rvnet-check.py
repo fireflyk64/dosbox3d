@@ -211,6 +211,34 @@ class Check:
                     self.need(by != 0 and h.u8('rvTarget', ship) == by,
                               "p0: the taunted ship (slot %d) fights the guest's (slot %d): it targets slot %d" % (
                                   ship, by, h.u8('rvTarget', ship)))
+        if sc == 'cloak':
+            # (the guest's Alt+C: rvFlags' bits 6-7 on its own slot 0, on the host's puppet of its ship and on a third
+            # pilot's; RV_FLAG_UNSEEN (16) with it while on.  The afterburner disrupts it (2), it comes back (1), a shot
+            # ends it (0))
+            self.logs_say(0, r"slot \d+'s cloak on \(its pilot's machine\)", "the host put the guest's cloak on its puppet")
+            for tag, want in (('cloaked', 1), ('burning', 2), ('recloaked', 1), ('uncloaked', 0)):
+                g, h = self.dump(1, tag), self.dump(0, tag)
+                if not g or not h:
+                    continue
+                net = g.u8('rvNetId', 0)
+                own = g.u16('rvFlags', 0) >> 6 & 3
+                self.need(own == want, "p1 %s: its own cloak is %d (%d wanted)" % (tag, own, want))
+                f = h.u16('rvFlags', net)
+                self.need((f >> 6 & 3) == want and bool(f & 16) == (want == 1),
+                          "p0 %s: the guest's ship (slot %d) has the cloak %d, flags %d (%d wanted, unseen with 1)" % (
+                              tag, net, f >> 6 & 3, f, want))
+            # (a third pilot: the same changes of p1's ship, passed on by the host, in their order; its clock starts at its
+            # own first frame, so its dumps are not of p1's moments)
+            for m in range(2, self.players):
+                g = self.dump(m, 'cloaked')
+                p1 = self.dump(1, 'cloaked')
+                if not g or not p1:
+                    continue
+                s = [k for k in g.ships() if k and g.u8('rvNetId', k) == p1.u8('rvNetId', 0)]
+                if self.need(len(s) == 1, "p%d has p1's ship (net %d)" % (m, p1.u8('rvNetId', 0))):
+                    seen = re.findall(r"slot %d's cloak (\w+) \(its pilot's machine\)" % s[0], self.log(m))
+                    self.need(seen[:4] == ['on', 'disrupted', 'on', 'off'],
+                              "p%d: p1's ship (slot %d) cloak on, disrupted, on, off (seen: %s)" % (m, s[0], seen))
         if sc == 'combat':
             self.logs_say(1, r'reporting a hit by our own guns', "the guest's hits went to the host")
             self.logs_say(0, r'reported damage to \d+', "the host took the guest's hits")

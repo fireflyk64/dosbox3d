@@ -8,6 +8,7 @@
 #include "panel.h"
 #include "damage.h"
 #include "logic.h"                      /* (logic_nav_seen) */
+#include "world.h"                      /* (CLOAK_OF) */
 
 ShipSystems __far g_sys;
 
@@ -206,8 +207,8 @@ static int state(const RvPanelControl __far *p, const CockpitState *st)
     case RV_PF_COM_LAMP: return g_sys.talking && sys_level(SYS_INTERCOM) < SYS_WRECKED;
     case RV_PF_COM_ON: return !g_sys.muted;
     case RV_PF_IFF_LAMP: return g_sys.iff && sys_level(SYS_IFF) < SYS_WRECKED;
-    case RV_PF_EM_LAMP: return g_sys.emcon == EMCON_ACTIVE;
-    case RV_PF_EMCON_LAMP: return a == 3 ? g_sys.emcon != EMCON_ACTIVE : g_sys.emcon == a;
+    case RV_PF_EM_LAMP: return g_sys.emcon == EMCON_ACTIVE && CLOAK_OF(0) != RV_CLOAK_ON;   /* (cloaked: nothing goes out) */
+    case RV_PF_EMCON_LAMP: return a == 3 ? g_sys.emcon != EMCON_ACTIVE || CLOAK_OF(0) == RV_CLOAK_ON : g_sys.emcon == a;
     case RV_PF_SENSOR_LAMP: return g_sys.sensor == a;
     case RV_PF_TARGET_LAMP: return g_sys.target >= 0;
     case RV_PF_STATUS_LAMP:

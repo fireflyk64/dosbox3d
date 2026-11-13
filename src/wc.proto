@@ -96,6 +96,9 @@ message ShipUpdate {
         optional uint32 ship_id = 1; // 16 bits
         optional Location loc = 2;
         optional ShipHealth health = 3; // only from the ship's owner
+        // RetroVega: a pilot's cloak (rvFlags bits 6-7: 1 on, 2 disrupted; absent, off), from the ship's owner
+        // with each of its places, the host passing each guest's on with the rest
+        optional uint32 cloak = 4;
 }
 
 enum GameState {

@@ -4782,7 +4782,8 @@ static void t_fighter_roulette(void)
     static const char __far e_front[] = "head on twelve Nicanders bare to the hull died after %d laser hits of 14 in all, %d from "
         "behind: 10 a kill at least, and over twice the kills from behind (the hull's count, one point in five)";
     static const char __far e_count[] = "a front kill came outright, not of the hull's count: %d of 12 kills took at most two counts in the fatal hit";
-    static const char __far e_step[] = "a hull count took %d points: (hull %d + 7) / 8 = 14";
+    static const char __far e_step[] = "the first hull counts took %d points: (hull %d + 7) / 8 = 14 a count, one or two "
+        "in the hit (its 14 is two points, each on the roulette)";
     int16_t i, behind = 0, front = 0, full = 0, got, hf;
     pt_alone(PT_PLAYER);
     for (i = 0; i < 12; i++) {
@@ -4805,7 +4806,8 @@ static void t_fighter_roulette(void)
         RvVec3 at = vec3(gPositionVector[1].x, gPositionVector[1].y, gPositionVector[1].z + 200 * KM);
         (void)do_damage(0, 1, 14, RV_WHERE(&at));
     }
-    REQUIRE(shipAiState[1] == 9 || damagePoints[1] == 14, e_step, damagePoints[1], slot_type(1)->hull, 0);
+    REQUIRE(shipAiState[1] == 9 || damagePoints[1] == 14 || damagePoints[1] == 28, e_step, damagePoints[1],
+            slot_type(1)->hull, 0);
 }
 
 /* M8.50: the old game's attack orders (missions.txt prey=KEY, its mission records' byte 0x29: at Enyo 2 its Salthi went
@@ -6871,14 +6873,20 @@ static void t_taunt_orders(void)
     pt_mission();
 }
 
-/* M10.7: the missile lock: the Gawain's heat seeker on a target 3,000 km ahead flying away locks in its lock time
- * (3 s), and the lock goes the step the target turns to face the player; the image-recognition missile (W) locks on
- * it facing or not; the tracking wrecked, or the EMCON off, no lock; the Schroedinger's dumbfire never locks */
+/* M10.7: the missile lock, a crosshair chasing the target's box (the user, 2026-11-12): the Gawain's heat seeker on a
+ * target 3,000 km dead ahead flying away locks once its crosshair has held on the box a quarter of its lock time (3 s);
+ * on one 22 degrees off the nose the crosshair has the way there to go first, so it locks later, and a box that jumps
+ * away loses the lock until the crosshair has caught it again; the lock goes the step the target turns to face the
+ * player (a heat seeker sees engines); the image-recognition missile (W) locks on it facing or not; the tracking
+ * wrecked, or the EMCON off, no lock; the Schroedinger's dumbfire never locks */
 static void t_missile_lock(void)
 {
-    static const char __far e_heat[] = "the heat seeker on a target flying away 3,000 km ahead: after 100 steps the lock "
-        "is %d at %d percent (its lock time 3 s)";
-    static const char __far e_early[] = "the heat seeker locked after %d steps: its lock time is 3 s (90 steps)";
+    static const char __far e_heat[] = "the heat seeker on a target flying away 3,000 km dead ahead: the lock is %d at %d "
+        "percent after 100 steps, first locked at step %d (the crosshair starts on it: a quarter of 3 s, some 25)";
+    static const char __far e_side[] = "the target 22 degrees off the nose: the lock first at step %d, at step 40 %d at %d "
+        "percent (the crosshair still on its way: 1 percent); it must lock between steps 50 and 100";
+    static const char __far e_jump[] = "the target jumped to the other side: the lock %d at %d percent the step after, %d "
+        "steps to lock again (lost at once; caught again within 200)";
     static const char __far e_face[] = "the target turned to face the player and the heat seeker's lock stayed (%d, %d "
         "percent): a heat seeker locks from behind only";
     static const char __far e_image[] = "the image-recognition missile on the facing target: after 100 steps the lock is "
@@ -6886,7 +6894,7 @@ static void t_missile_lock(void)
     static const char __far e_track[] = "the tracking wrecked, the lock is %d at %d percent: none";
     static const char __far e_emcon[] = "the EMCON off, the heat seeker's lock is %d: it needs the sensors on";
     static const char __far e_dumb[] = "a dumbfire chosen, the lock is %d at %d percent: a dumbfire never locks";
-    int16_t i, at = -1;
+    int16_t i, at = -1, mid = 0, mid_pct = 0;
     pt_alone(PT_HOMER);
     g_sys.armed = 0;
     pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 3000, 0);   /* (facing +z: away from the player) */
@@ -6898,8 +6906,36 @@ static void t_missile_lock(void)
         if (g_sys.lock && at < 0)
             at = i;
     }
-    REQUIRE(g_sys.lock == 1 && g_sys.lock_pct == 100, e_heat, g_sys.lock, g_sys.lock_pct, 0);
-    REQUIRE(at >= 85, e_early, at, 0, 0);
+    REQUIRE(g_sys.lock == 1 && g_sys.lock_pct == 100 && at >= 15 && at <= 40, e_heat, g_sys.lock, g_sys.lock_pct, at);
+    /* 22 degrees off: the crosshair, back on the nose (the target lost a step), has 160 px to go */
+    g_sys.target = -1;
+    if (!pt_step())
+        return;
+    g_sys.target = 1;
+    pt_put(1, 1200, 0, 3000, 0);
+    for (at = -1, i = 0; i < 100; i++) {
+        if (!pt_step())
+            return;
+        if (i == 40) {
+            mid = g_sys.lock;
+            mid_pct = g_sys.lock_pct;
+        }
+        if (g_sys.lock && at < 0)
+            at = i;
+    }
+    REQUIRE(at >= 50 && !mid && mid_pct == 1, e_side, at, mid, mid_pct);
+    pt_put(1, -1200, 0, 3000, 0);
+    if (!pt_step())
+        return;
+    mid = g_sys.lock;
+    mid_pct = g_sys.lock_pct;
+    for (at = -1, i = 0; i < 200 && at < 0; i++) {
+        if (!pt_step())
+            return;
+        if (g_sys.lock)
+            at = i;
+    }
+    REQUIRE(!mid && mid_pct == 1 && at > 0, e_jump, mid, mid_pct, at);
     pt_put(1, 0, 0, 3000, TURN / 2);
     if (!pt_step())
         return;
@@ -6927,6 +6963,140 @@ static void t_missile_lock(void)
         return;
     REQUIRE(g_sys.lock == 0 && g_sys.lock_pct == 0, e_dumb, g_sys.lock, g_sys.lock_pct, 0);
     g_sys.target = -1;
+}
+
+/* M10.13: the cloak (the user, 2026-11-12): Alt+C on the Schroedinger puts it on (unseen, the shields down at once and
+ * kept down); the afterburner disrupts it while it burns, a transmission for 3 s (seen, the shields still down); a
+ * shot puts it off and the shields come back; Alt+C twice is on and off; a type without one has none */
+static void t_cloak(void)
+{
+    static const char __far e_on[] = "Alt+C: the cloak is %d (1 on), unseen %d, the front shield %d (down)";
+    static const char __far e_down[] = "cloaked 5 s: the shields are %d and %d (held down)";
+    static const char __far e_burn[] = "the afterburner lit: the cloak is %d (2 disrupted), unseen %d, the shield %d";
+    static const char __far e_unburn[] = "the afterburner out: the cloak is %d (1 on again)";
+    static const char __far e_talk[] = "a transmission: the cloak %d after 2 s (2 disrupted), %d after 3.5 s (1 on again)";
+    static const char __far e_shot[] = "the trigger with the guns armed: the cloak is %d (0 off), unseen %d";
+    static const char __far e_back[] = "off 20 s: the front shield is back to %d of %d";
+    static const char __far e_twice[] = "Alt+C twice: the cloak %d after the first (1), %d after the second (0)";
+    static const char __far e_none[] = "Alt+C in the Gawain, which has no cloak: the cloak is %d";
+    int16_t c2, c35;
+    pt_alone(PT_PLAYER);
+    g_sys.armed = 0;
+    if (!pt_steps(SEC))
+        return;
+    logic_cloak_key();
+    if (!pt_step())
+        return;
+    REQUIRE(CLOAK_OF(0) == RV_CLOAK_ON && (rvFlags[0] & RV_FLAG_UNSEEN) && SHIELD(0, 0) == 0, e_on, CLOAK_OF(0),
+            (rvFlags[0] & RV_FLAG_UNSEEN) != 0, SHIELD(0, 0));
+    if (!pt_steps(5 * SEC))
+        return;
+    REQUIRE(SHIELD(0, 0) == 0 && SHIELD(0, 1) == 0, e_down, SHIELD(0, 0), SHIELD(0, 1), 0);
+    g_pilot.afterburner = g_sys.burning = 1;
+    if (!pt_step())
+        return;
+    REQUIRE(CLOAK_OF(0) == RV_CLOAK_BROKEN && !(rvFlags[0] & RV_FLAG_UNSEEN) && SHIELD(0, 0) == 0, e_burn, CLOAK_OF(0),
+            (rvFlags[0] & RV_FLAG_UNSEEN) != 0, SHIELD(0, 0));
+    g_pilot.afterburner = g_sys.burning = 0;
+    if (!pt_step())
+        return;
+    REQUIRE(CLOAK_OF(0) == RV_CLOAK_ON, e_unburn, CLOAK_OF(0), 0, 0);
+    logic_cloak_disrupt();
+    if (!pt_steps(2 * SEC))
+        return;
+    c2 = CLOAK_OF(0);
+    if (!pt_steps(3 * SEC / 2))
+        return;
+    c35 = CLOAK_OF(0);
+    REQUIRE(c2 == RV_CLOAK_BROKEN && c35 == RV_CLOAK_ON, e_talk, c2, c35, 0);
+    g_sys.armed = 1;
+    g_pilot.guns = 1;
+    if (!pt_step())
+        return;
+    g_pilot.guns = 0;
+    g_sys.armed = 0;
+    REQUIRE(CLOAK_OF(0) == RV_CLOAK_OFF && !(rvFlags[0] & RV_FLAG_UNSEEN), e_shot, CLOAK_OF(0),
+            (rvFlags[0] & RV_FLAG_UNSEEN) != 0, 0);
+    if (!pt_steps(20 * SEC))
+        return;
+    REQUIRE(SHIELD(0, 0) > 0, e_back, SHIELD(0, 0), SHIELD_MAX(0, 0), 0);
+    logic_cloak_key();
+    c2 = CLOAK_OF(0);
+    logic_cloak_key();
+    REQUIRE(c2 == RV_CLOAK_ON && CLOAK_OF(0) == RV_CLOAK_OFF, e_twice, c2, CLOAK_OF(0), 0);
+    pt_alone(PT_HOMER);
+    logic_cloak_key();
+    REQUIRE(CLOAK_OF(0) == RV_CLOAK_OFF, e_none, CLOAK_OF(0), 0, 0);
+}
+
+/* (M10.14) the Gawain's heat seeker locked on an enemy 22 degrees off the nose and launched; its target given a
+ * pilot's cloak (as the layer puts one on a puppet) or not: how far right the missile is 1 s on (km; -1 the step
+ * failed, -2 no missile) */
+static int16_t pt_seeker_x(int16_t cloaked)
+{
+    int16_t i, m, x = -2;
+    pt_alone(PT_HOMER);
+    g_sys.armed = 0;
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 1200, 0, 3000, 0);
+    g_sys.target = 1;
+    (void)pt_launcher_kind(RV_LOCK_HEAT);
+    for (i = 0; i < 150 && !g_sys.lock; i++)
+        if (!pt_step())
+            return -1;
+    if (cloaked)
+        rvFlags[1] |= RV_CLOAK_ON << RV_CLOAK_SHIFT;
+    g_sys.armed = 1;
+    g_pilot.missile = 1;
+    i = pt_step();
+    g_pilot.missile = 0;
+    g_sys.armed = 0;
+    if (!i)
+        return -1;
+    if ((m = pt_missile_of(0)) >= 0) {
+        if (!pt_steps(SEC))
+            return -1;
+        if (maybeEntityType[m] == ET_MISSILE)
+            x = (int16_t)TO_KM(gPositionVector[m].x);
+    }
+    g_sys.target = -1;
+    return x;
+}
+
+/* M10.14: no mind sees a cloaked pilot: an enemy fighter on the player lets it go when the cloak comes on and fires
+ * no more, and has it again when the afterburner disrupts it; a seeker loses a cloaked quarry and flies on straight */
+static void t_cloak_ai(void)
+{
+    static const char __far e_first[] = "before the cloak the enemy's target is slot %d: the player (0)";
+    static const char __far e_lost[] = "cloaked 2 s: the enemy's target is slot %d (not the player), %d shots since";
+    static const char __far e_again[] = "the cloak disrupted by the afterburner: the enemy's target is slot %d (0: the "
+        "player again)";
+    static const char __far e_seek[] = "a heat seeker 1 s after its launch at a target 22 degrees right: %d km right of "
+        "the nose's line on a cloaked target (it flies on straight: under 150), %d on one not cloaked (it turns: over 150)";
+    int16_t xc, xo;
+    uint16_t a0;
+    pt_alone(PT_PLAYER);
+    g_sys.armed = 0;
+    playerCanBeDamaged = 0;
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, 0, 0, 3000, TURN / 2);
+    if (!pt_steps(2 * SEC))
+        return;
+    REQUIRE(rvTarget[1] == 0, e_first, rvTarget[1], 0, 0);
+    logic_cloak_key();
+    if (!pt_step())
+        return;
+    a0 = shots_added();
+    if (!pt_steps(2 * SEC))
+        return;
+    REQUIRE(rvTarget[1] != 0 && shots_added() == a0, e_lost, rvTarget[1], (uint16_t)(shots_added() - a0), 0);
+    g_pilot.afterburner = g_sys.burning = 1;
+    if (!pt_steps(2 * SEC))
+        return;
+    g_pilot.afterburner = g_sys.burning = 0;
+    REQUIRE(rvTarget[1] == 0, e_again, rvTarget[1], 0, 0);
+    logic_cloak_key();
+    xc = pt_seeker_x(1);
+    xo = pt_seeker_x(0);
+    REQUIRE(xc >= -150 && xc < 150 && xo > 150, e_seek, xc, xo, 0);
 }
 
 /* --- M11: the simulator (simulator.c; the user, 2026-11-01) --- */
@@ -7891,7 +8061,9 @@ static const char __far n_m10_3[] = "M10.3 systems (damage_hurt, step_timers): h
 static const char __far n_m10_4[] = "M10.4 weapon-choice (logic_guns_next, logic_missile_next): G picks the guns the trigger fires, W the launcher";
 static const char __far n_m10_5[] = "M10.5 nav-cross (logic_hud): a white cross where the chosen nav point lies on the view";
 static const char __far n_m10_6[] = "M10.6 orders (logic_order): attack my target, help me out, form on my wing, return to base";
-static const char __far n_m10_7[] = "M10.7 missile-lock (lock_tick): a heat seeker from behind in its time, image recognition anyhow, none wrecked or dark, a dumbfire never";
+static const char __far n_m10_7[] = "M10.7 missile-lock (lock_tick): the crosshair chases the box, locks held on it (on the nose sooner, off it later, lost when it jumps); heat from behind, image anyhow, none wrecked or dark, a dumbfire never";
+static const char __far n_m10_13[] = "M10.13 cloak (logic_cloak_key, cloak_step): Alt+C on, the shields down; the burner and a transmission disrupt it; a shot or Alt+C off, the shields back; none without one";
+static const char __far n_m10_14[] = "M10.14 cloak-ai (fighter_think, missile_step): the enemy lets a cloaked pilot go and fires no more, has it again disrupted; a seeker loses it";
 
 static const char __far n_m10_8[] = "M10.8 break-formation (logic_order): fly in formation fights nobody; break formation goes for any enemy, else round the player";
 static const char __far n_m11_1[] = "M11.1 sim-waves (simulator_frame): one of each Rlaan fighter type in turn, then two of the first";
@@ -7946,6 +8118,7 @@ static const PtTest __far k_tests[] = {
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m7_9, t_seeker_chases, 0 }, { n_m7_10, t_missile_blast, 0 }, { n_m7_11, t_missile_knock, 0 }, { n_m7_12, t_ff_target, 0 }, { n_m8_29, t_scene_human, 0 },
     { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 }, { n_m8_56, t_nav_switch, 0 }, { n_m8_57, t_escort_arrive, 0 }, { n_m8_58, t_escort_threat, 0 }, { n_m8_59, t_escort_back, 0 }, { n_m8_60, t_wave_also, 0 }, { n_m8_61, t_goals, 0 }, { n_m8_62, t_held_wave, 0 },
+    { n_m10_13, t_cloak, 0 }, { n_m10_14, t_cloak_ai, 0 },
 };
 
 /* --- the run --- */

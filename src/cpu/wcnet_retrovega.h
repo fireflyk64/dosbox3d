@@ -38,6 +38,9 @@ GameParams rv_params();
 // --- the fields RV publishes for the layer (abi/rvabi.def "RV's own") ---
 enum RvController { RV_CTL_AI = 0, RV_CTL_PLAYER = 1, RV_CTL_PUPPET = 2, RV_CTL_SCRIPT = 3, RV_CTL_FROZEN = 4 };
 enum { RV_FLAG_HUMAN = 32 };    // rvFlags: a human flies this ship, on another machine
+// rvFlags' cloak (retrovega/src/world.h RV_CLOAK_*): bits 6-7, 0 off, 1 on, 2 on but disrupted; on also sets
+// RV_FLAG_UNSEEN (16: no mind sees it)
+enum { RV_FLAG_UNSEEN = 16, RV_CLOAK_SHIFT = 6 };
 enum RvRole { RV_ROLE_ALONE = 0, RV_ROLE_HOST = 1, RV_ROLE_GUEST = 2 };
 
 void rv_set_role(int role, int players);
@@ -67,6 +70,10 @@ void rv_stamp_motion(int slot);
 // guest's ship's slot as the taunter (the host's AI takes it at its next thought).
 int rv_take_own_taunt();
 void rv_put_taunt(int slot, int by);
+// A pilot's cloak (the Schroedinger's, Alt+C): its owner's game keeps it in rvFlags, the layer sends it with the
+// ship's place (wc.proto ShipUpdate.cloak) and puts it on the ship's puppet in every other game.  0 when not RV
+int rv_cloak(int slot);
+void rv_put_cloak(int slot, int status);
 
 // --- the mission's compiled records: the host's, which a guest flies by ---
 // missionShipTable and navPointTable as bytes, and which record the player

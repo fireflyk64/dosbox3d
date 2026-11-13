@@ -69,6 +69,9 @@ static const struct { int v; LfVec dir; int scale; } g_sky_sprites[3] = {
 };
 int g_zoom = 0;                         /* RV.EXE /zoom: one ship ahead, rolling, swinging in and out (a test aid) */
 #ifdef RV_TESTS
+int g_zoom_cloak = 0;                    /* RVT.EXE /cloakzoom: its ship's cloak (world.h RV_CLOAK_*) */
+#endif
+#ifdef RV_TESTS
 int __far g_boom_demo = 0;              /* RV.EXE /boomdemo: three ships ahead blown up in turn, guns and hits (fx.c's
                                            check: the explosions and the sounds) */
 int __far g_shield_demo = 0;            /* RV.EXE /shielddemo: three ships ahead hit in step at each level of shield in
@@ -311,6 +314,9 @@ static int test_motion(int s)
         else
             vec_turn(&gOrientationFrontVector[s], &gOrientationRightVector[s], turn_step(12, 9));
         gPositionVector[s].z = gPositionVector[0].z + d;
+#ifdef RV_TESTS
+        rvFlags[s] = (uint16_t)((rvFlags[s] & ~(3U << RV_CLOAK_SHIFT)) | ((unsigned)g_zoom_cloak << RV_CLOAK_SHIFT));
+#endif
         return 1;
     }
     return 0;
@@ -623,13 +629,19 @@ static uint8_t __far g_land_armed;      /* the trigger let go while the prompt s
                                            through the last kill was a shot, and landed the player: the user, SHELTON2) */
 static void land_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
 {
-    static const char s[] = "PRESS FIRE TO LAND";
-    int w = panel_tiny_width(s), x = g_cam_cx - w / 2, row = g_cam_cy + 14;
-    if (!g_autoland || g_arm_warn || row < 0 || row + PANEL_TINY_H > SCR_H || x < 0 || x + w > SCR_W)
+    static const char s_land[] = "PRESS FIRE TO LAND", s_on[] = "CLOAKED", s_broken[] = "CLOAK DISRUPTED";
+    int c = CLOAK_OF(0), blink = (frameCounter >> 4) & 1, w, x, row = g_cam_cy + 14;
+    const char *s = g_autoland ? s_land : c == RV_CLOAK_ON ? s_on : c == RV_CLOAK_BROKEN ? s_broken : 0;
+    if (!s || g_arm_warn || row < 0 || row + PANEL_TINY_H > SCR_H)
+        return;
+    w = panel_tiny_width(s);
+    x = g_cam_cx - w / 2;
+    if (x < 0 || x + w > SCR_W)
         return;
     if (ext && (row < ey0 || row >= ey0 + rows || x < ext[2 * (row - ey0)] || x + w > ext[2 * (row - ey0) + 1]))
         return;
-    (void)panel_tiny(x, row, s, (frameCounter >> 4) & 1 ? UI_WHITE : UI_HILITE, y0, y1);
+    (void)panel_tiny(x, row, s, s == s_on ? UI_HILITE : s == s_broken ? (blink ? UI_RED : UI_AMBER2)
+                                : blink ? UI_WHITE : UI_HILITE, y0, y1);
 }
 
 /* a shared flight's pilot gone (the user, 2026-11-04: "should also say if the other player was disconnected during
@@ -848,7 +860,7 @@ static void plan_draws(void)
             /* the view and the turn its picture will have (an exact one's true roll, a set's roll step, the far
              * sizes' none): the flames line up with the ship as drawn */
             ships_drawn(g_plan[i].set, plan_how(i), &rel, &cam, &ship, g_plan[i].scale, &p, &nb, &nh);
-            if (engines_lit(sl))
+            if (engines_lit(sl) && CLOAK_OF(sl) != RV_CLOAK_ON)   /* (a cloaked ship shows no flame) */
                 flames_add(slot_type(sl), &p, nb, nh, g_plan[i].scale, burning(sl), sl, &g_plan[i].fl);
             else
                 g_plan[i].fl.n = g_plan[i].fl.front = 0;
@@ -1555,6 +1567,7 @@ static void draw_world(int y0, int y1)
         g_t_flames += clock240() - t0;
         t0 = clock240();
         /* (an exact one whose full-size views did not fit: from the sets) */
+        ships_stipple(CLOAK_OF(s) == RV_CLOAK_ON);   /* (a cloaked one as half its pixels: off after the loop) */
         path = ships_draw_as(set, plan_how(i), g_plan[i].exact ? g_plan[i].exact : 1, &rel, &cam, &ship,
                              g_plan[i].scale, y0, y1, 0, SCR_W, ext, ey0, rows);
         if (path == SHIP_PATH_EXACT_BLIT || path == SHIP_PATH_EXACT)
@@ -1575,6 +1588,7 @@ static void draw_world(int y0, int y1)
                    frameCounter, s, gInstanceShipTypes[s], rel.x, rel.y, rel.z, p.view, p.roll, g_plan[i].scale, p.sx, p.sy, path);
         }
     }
+    ships_stipple(0);
     rocks_draw_rest(y0, y1, ext, ey0, rows);   /* the big rocks before every ship */
     explode_draw_rest(y0, y1, ext, ey0, rows);   /* and the explosions */
     if (g_lasers)                       /* the near bolts last: nearest of all */
@@ -1840,11 +1854,13 @@ void flight_window_draw(int y0, int y1)
         rocks_draw_to(g_plan[i].depth, y0, y1, ext, ey0, rows);
         if (!g_plan[i].fl.front)
             flames_draw(&g_plan[i].fl, y0, y1, ext, ey0, rows);
+        ships_stipple(CLOAK_OF(s) == RV_CLOAK_ON);
         ships_draw_as(set, plan_how(i), g_plan[i].exact ? g_plan[i].exact : 1, &rel, &cam, &ship, g_plan[i].scale, y0, y1,
                       0, SCR_W, ext, ey0, rows);
         if (g_plan[i].fl.front)
             flames_draw(&g_plan[i].fl, y0, y1, ext, ey0, rows);
     }
+    ships_stipple(0);
     rocks_draw_rest(y0, y1, ext, ey0, rows);
 }
 
@@ -1976,6 +1992,8 @@ static void comm_chat(void)
     int v;
     if (!chat_take(line, sizeof line, &who))
         return;
+    if (who == 0)
+        logic_cloak_disrupt();          /* (our own line, gone out to the others: a transmission) */
     v = who == 0xFFFF ? role_voice(RV_ROLE_XO) : -1;
     if (v < 0)
         v = role_voice(RV_ROLE_HERO);
@@ -1991,6 +2009,7 @@ static int comm_silent(void)
 /* the pilot's line now, the other's answer when it is over */
 static void comm_exchange(const char __far *line, int voice, const char __far *reply)
 {
+    logic_cloak_disrupt();              /* (a transmission: a cloak is seen a while) */
     (void)comms_say(role_voice(RV_ROLE_HERO), 0, line);
     g_reply_voice = voice;
     g_reply_text = reply;
@@ -2412,6 +2431,8 @@ static void systems_tick(void)
     g_sys.heat = g_heat10 / 10;
     g_sys.signature = (g_sys.emcon == EMCON_ACTIVE ? 50 : g_sys.emcon == EMCON_PASSIVE ? 20 : 5) + g_sys.heat / 2;
     if (g_sys.signature > 100) g_sys.signature = 100;
+    if (CLOAK_OF(0) == RV_CLOAK_ON)
+        g_sys.signature = 2;            /* (cloaked: next to nothing to find it by; disrupted, the burner's heat shows) */
     {   /* (the HEAT and SIGNATURE displays take theirs every 5 s: a sensor's sweep, the user's pick) */
         static unsigned long __far taken;
         if (frameCounter < 3 || clock240() - taken >= 5 * 240) {
@@ -3600,8 +3621,12 @@ unsigned short __far __cdecl flight_keys(void)
         setSpeed[0] = 0;                /* Backspace stops and \ is full speed, as in the old game (the user, 2026-11-03: "ensure
                                            the backspace key also sets desired speed to zero in space"; "and \ sets to full
                                            speed") */
-    if (in.key == KEY_ALT && g_view != VIEW_FLYBY)
-        comm_hotkey(in.ch);             /* Alt+T a taunt */
+    if (in.key == KEY_ALT && g_view != VIEW_FLYBY) {
+        if (in.ch == 'c')
+            logic_cloak_key();          /* Alt+C the cloak, a Schroedinger's (logic.c cloak_*) */
+        else
+            comm_hotkey(in.ch);         /* Alt+T a taunt */
+    }
     if (in.key == KEY_CHAR && in.ch >= '1' && in.ch <= '9' && vdu_page(0) == VDU_L_COMM)
         comm_key(in.ch);                /* (a pick in the comm menu, 9 never mind; 0 is a shared flight's key to talk, the
                                            layer's prompt: no pick) */

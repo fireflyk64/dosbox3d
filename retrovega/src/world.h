@@ -19,6 +19,15 @@ enum { ET_NONE = 0, ET_OFFSCENE = 1 /* a ship left behind: held, not in the worl
 enum { CTL_AI, CTL_PLAYER, CTL_PUPPET, CTL_SCRIPT, CTL_FROZEN };
 /* rvFlags: what the layer and the logic say of a ship (abi/rvabi.def) */
 #define RV_FLAG_HUMAN 32                /* a person flies it, on another machine (the layer's: a shared flight) */
+#define RV_FLAG_UNSEEN 16               /* cloaked: no mind sees it (a waiter lying in wait, a pilot's cloak on) */
+/* a pilot's cloak (the Schroedinger's, Alt+C: logic.c cloak_*), bits 6-7 of rvFlags: 0 off, 1 on (drawn as half its
+ * pixels, RV_FLAG_UNSEEN too), 2 on but disrupted (the afterburner or a transmission: seen, the shields still down).
+ * A puppet's is the layer's, from its pilot's machine (wc.proto ShipUpdate.cloak) */
+#define RV_CLOAK_SHIFT 6
+#define RV_CLOAK_OFF 0
+#define RV_CLOAK_ON 1
+#define RV_CLOAK_BROKEN 2
+#define CLOAK_OF(s) ((rvFlags[s] >> RV_CLOAK_SHIFT) & 3)
 /* commAnimInfo: the side */
 enum { SIDE_TERRAN, SIDE_AERA, SIDE_RLAAN };
 #define RV_PI 3.141592653589793238462643383279
