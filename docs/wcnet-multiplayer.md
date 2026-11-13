@@ -1088,6 +1088,26 @@ top-level README for the workflow).  What differs:
   a window that is visible but not focused keeps flying: two windows side by
   side are a split screen.  The DOS game-port joystick is off in this build
   (`joysticktype=none`), or a gamepad would reach the game twice.
+* **Scan for joysticks** (`web/usbpad.js`, a Mac with WebUSB only).  An
+  Xbox 360-style pad (the wired 360 protocol: interface class ff/5d/01; a
+  Logitech F310, F510 or F710 with its switch on X) has no driver on macOS,
+  and Chrome's own Xbox support there takes only Microsoft's controllers, so
+  `navigator.getGamepads()` never lists it; Linux (xpad) and Windows (XInput)
+  have drivers, and there the button is not shown.  Nothing of WebUSB runs
+  until the button is pressed: the scan opens the pads the browser allowed
+  before (`getDevices`, no chooser), and when none is new it shows the
+  browser's chooser (`requestDevice`, filtered by that class and Logitech's
+  three X-mode products).  An opened pad is claimed, its player light set
+  (`01 03 06`), and its 20-byte input reports (sent only on a change; byte 0
+  is 0x00, other messages are left alone) read into a Gamepad in the
+  standard layout, index 4 on: the picker, the mapping table and the rest of
+  this section treat it as any other.  A pad it finds becomes the window's
+  controller unless one that is there is chosen; unplugged it leaves the
+  list (the choice kept, "not connected") until the next scan.  Checked by
+  `scripts/web-usbpad.mjs` (no game: the panel, every button and stick, the
+  chooser, unplugging, a reload) and `PAD=usb scripts/web-smoke.sh pad` (the
+  stick in flight through the pad's reports), both against a stand-in Mac
+  and pad (`scripts/usbpad-mock.js`); no real Mac or pad was tried.
 * **A pad "built in"** (all five programs, and SO3: the registry's
   `joystick`).  Each pad is in the picker a second time, "Built in: ...":
   the pad is then the game port's stick A, which the game reads and makes

@@ -26,6 +26,8 @@
 // keyboard until the next launch.  Two more exports: wc_web_joystick (the
 // stick on or off the port) and wc_web_joy (where it is, its buttons).
 
+import { usbScanOffered, usbPads, scanUsbPads } from "./usbpad.js";
+
 // DOSBox's KBD_KEYS numbering (include/keyboard.h; a static_assert next to
 // wc_web_key checks the order).
 export const KEY = (() => {
@@ -139,8 +141,11 @@ function saveConfig(cfg) {
 const padKey = (pad) => `${pad.index}:${pad.id}`;
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 function pads() {
-  try { return Array.from(navigator.getGamepads ? navigator.getGamepads() : []).filter((p) => p && p.connected); }
-  catch (e) { return []; }
+  let list = [];
+  try { list = Array.from(navigator.getGamepads ? navigator.getGamepads() : []).filter((p) => p && p.connected); }
+  catch (e) { /* none of the browser's */ }
+  // (and the pads the page reads itself over USB, after a scan: usbpad.js)
+  return list.concat(usbPads());
 }
 
 // Wing Commander II turns in steps by how far the pointer is from the middle
@@ -275,7 +280,8 @@ export function initControls(host) {
           : pad.mapping === "standard" ? "Using the standard gamepad layout; change any button or axis below."
                                        : "This controller does not report the standard layout: check the buttons and axes below.")
       : (list.length ? "Pick a controller, or press one of its buttons while this window has the focus."
-                     : "No controller seen yet: plug one in and press one of its buttons.");
+                     : "No controller seen yet: plug one in and press one of its buttons." +
+                       (usbScanOffered() ? " One that still does not show (an Xbox 360-style pad, such as a Logitech with its switch on X): Scan for joysticks." : ""));
 
     const rows = [];
     for (const a of AXES) {
@@ -330,6 +336,27 @@ export function initControls(host) {
   $("padPointer").addEventListener("change", (e) => { cfg.pointer = e.target.checked; saveConfig(cfg); });
   $("padCurve").addEventListener("change", (e) => { cfg.curve = e.target.checked; saveConfig(cfg); });
   $("padReset").addEventListener("click", () => { cfg = defaultConfig(); saveConfig(cfg); capture = null; releaseAll(); render(); });
+  // Scan for joysticks: offered only where the browser leaves some pads out (a
+  // Mac: usbpad.js), and nothing of it runs until it is pressed.  A pad it
+  // finds becomes this window's controller unless one that is there is chosen.
+  const scan = $("padScan");
+  if (scan) {
+    scan.hidden = !usbScanOffered();
+    scan.addEventListener("click", async () => {
+      const state = $("padScanState");
+      scan.disabled = true;
+      state.textContent = "Scanning…";
+      let r;
+      try { r = await scanUsbPads(); } catch (e) { r = { added: [], message: `The scan failed: ${(e && e.message) || e}` }; }
+      scan.disabled = false;
+      state.textContent = r.message;
+      host.log(`controller scan: ${r.message}`);
+      listed = "";
+      const found = usbPads().find((p) => r.added.includes(p.id));
+      if (found && !selected()) choose(padKey(found), "found by the scan");
+      else render();
+    });
+  }
 
   // -- reading the controller ---------------------------------------------------
 

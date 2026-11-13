@@ -10,8 +10,13 @@
 //
 //   GAME_FILE=wc2.zip node scripts/web-pad.mjs PAGE_URL LOBBY_URL wc2
 //   node scripts/web-pad.mjs PAGE_URL LOBBY_URL wc1
+//
+// PAD=usb: the pad is an Xbox 360-style one on a Mac, which the browser does
+// not list, read by the page after "Scan for joysticks" (web/usbpad.js, the
+// stand-in scripts/usbpad-mock.js): the same checks through its reports.
 import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 const [pageUrl, lobbyUrl, game = "wc2"] = process.argv.slice(2);
 const require = createRequire(path.join(process.env.PLAYWRIGHT_DIR || process.cwd(), "package.json"));
 const { chromium } = require("playwright");
@@ -19,10 +24,26 @@ const browser = await chromium.launch({ headless: true, executablePath: process.
   args: ["--no-sandbox", "--autoplay-policy=no-user-gesture-required", "--use-fake-device-for-media-stream"] });
 const results = [];
 const check = (what, ok, detail) => { results.push(ok); console.log(`${ok ? "ok  " : "FAIL"} ${what}: ${JSON.stringify(detail)}`); };
-const mock = () => {
+const mockPad = () => {
   window.__pad = { id: "Mock Pad (STANDARD GAMEPAD)", index: 0, connected: true, mapping: "standard", timestamp: 0,
                    axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })) };
   navigator.getGamepads = () => [window.__pad];
+};
+const USB = process.env.PAD === "usb";
+const mock = USB ? { path: path.join(path.dirname(fileURLToPath(import.meta.url)), "usbpad-mock.js") } : mockPad;
+const PADKEY = USB ? "4:Logitech Gamepad F310 (USB Vendor: 046d Product: c21d)" : "0:Mock Pad (STANDARD GAMEPAD)";
+const PADNAME = USB ? "5: Logitech Gamepad F310" : "1: Mock Pad";
+// (the stick and the buttons: the stand-in's report, or the Gamepad itself)
+const controls = (page) => USB
+  ? { axis: (i, v) => page.evaluate(([i, v]) => window.__usb.axis(i, v), [i, v]),
+      button: (i, v) => page.evaluate(([i, v]) => window.__usb.button(i, v), [i, v]) }
+  : { axis: (i, v) => page.evaluate(([i, v]) => { window.__pad.axes[i] = v; }, [i, v]),
+      button: (i, v) => page.evaluate(([i, v]) => { window.__pad.buttons[i] = { pressed: v > 0.1, touched: v > 0, value: v }; }, [i, v]) };
+const scan = async (page) => {
+  if (!USB) return;
+  await page.click("#padScan");
+  await page.waitForFunction(() => !/^Scanning|^$/.test(document.getElementById("padScanState").textContent), null, { timeout: 10000 });
+  console.log(`scan: ${await page.textContent("#padScanState")}`);
 };
 
 // Cockpits with windows of different heights: WC2's series 1 is flown in a
@@ -45,12 +66,12 @@ for (const [ship, how] of COCKPITS[game]) {
   for (const [k, v] of Object.entries({ room: "PAD-" + Math.random().toString(36).slice(2, 8).toUpperCase(), server: lobbyUrl, callsign: "HOST",
                                         "env.WCROOM": "", ...how, ...wc1 })) u.searchParams.set(k, v);
   await page.goto(u.toString());
-  const axis = (i, v) => page.evaluate(([i, v]) => { window.__pad.axes[i] = v; }, [i, v]);
-  const button = (i, v) => page.evaluate(([i, v]) => { window.__pad.buttons[i] = { pressed: v > 0.1, touched: v > 0, value: v }; }, [i, v]);
+  const { axis, button } = controls(page);
   if (process.env.GAME_FILE) await page.setInputFiles("#gamefile", process.env.GAME_FILE);
   await page.waitForFunction(() => /^(ready|error)$/.test(document.getElementById("sourceStatus").dataset.state || ""), null, { timeout: 300000 });
+  await scan(page);
   await button(0, 1); await page.waitForTimeout(300); await button(0, 0);
-  check(`${ship}: a button press picks the controller up`, (await page.inputValue("#padSelect")).startsWith("0:Mock Pad"), await page.inputValue("#padSelect"));
+  check(`${ship}: ${USB ? "the scan" : "a button press"} picks the controller up`, (await page.inputValue("#padSelect")) === PADKEY, await page.inputValue("#padSelect"));
   await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 60000 });
   await page.click("#fly");
   await page.waitForFunction(() => window.DOSBox && window.DOSBox._wc_web_in_flight && window.DOSBox._wc_web_in_flight() === 1, null, { timeout: 240000 });
@@ -99,7 +120,7 @@ for (const [ship, how] of COCKPITS[game]) {
   // Picked "built in" after the launch, a pad is the game's mouse and
   // keyboard until the next one: the game port was never put in.
   {
-    await page.selectOption("#padSelect", "joy|0:Mock Pad (STANDARD GAMEPAD)");
+    await page.selectOption("#padSelect", "joy|" + PADKEY);
     await page.waitForTimeout(300);
     const hint = await page.textContent("#padHint");
     check(`${ship}: built in after the launch waits for the next one, the port untouched`,
@@ -130,14 +151,14 @@ for (const [ship, how] of COCKPITS[game]) {
   for (const [k, v] of Object.entries({ room: "PAD-" + Math.random().toString(36).slice(2, 8).toUpperCase(), server: lobbyUrl, callsign: "HOST",
                                         "env.WCROOM": "", ...how })) u.searchParams.set(k, v);
   await page.goto(u.toString());
-  const axis = (i, v) => page.evaluate(([i, v]) => { window.__pad.axes[i] = v; }, [i, v]);
-  const button = (i, v) => page.evaluate(([i, v]) => { window.__pad.buttons[i] = { pressed: v > 0.1, touched: v > 0, value: v }; }, [i, v]);
+  const { axis, button } = controls(page);
   if (process.env.GAME_FILE) await page.setInputFiles("#gamefile", process.env.GAME_FILE);
   await page.waitForFunction(() => /^(ready|error)$/.test(document.getElementById("sourceStatus").dataset.state || ""), null, { timeout: 300000 });
+  await scan(page);
   await page.waitForFunction(() => Array.from(document.querySelectorAll("#padSelect option")).some((o) => o.value.startsWith("joy|")), null, { timeout: 10000 });
   const options = await page.$$eval("#padSelect option", (os) => os.map((o) => o.textContent));
-  check(`${ship}: the pad is offered built in too`, options.some((t) => /^Built in: 1: Mock Pad/.test(t)), options);
-  await page.selectOption("#padSelect", "joy|0:Mock Pad (STANDARD GAMEPAD)");
+  check(`${ship}: the pad is offered built in too`, options.some((t) => t.startsWith("Built in: " + PADNAME)), options);
+  await page.selectOption("#padSelect", "joy|" + PADKEY);
   const greyed = await page.$$eval("#padRows tr", (rows) => rows.filter((r) => r.classList.contains("off")).map((r) => r.cells[0].textContent));
   check(`${ship}: the actions on the joystick's two buttons are greyed`, greyed.includes("Fire guns") && greyed.includes("Fire missile") && !greyed.some((t) => /Joystick button/.test(t)), greyed);
   await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 60000 });
@@ -170,7 +191,7 @@ for (const [ship, how] of COCKPITS[game]) {
   await page.waitForTimeout(600);
   const s0 = await state(); t = await turn();
   check(`${ship}: keyboard + mouse takes the stick off the port without a turn`, s0 === 0 && t[0] === 0 && t[1] === 0, [s0, t]);
-  await page.selectOption("#padSelect", "joy|0:Mock Pad (STANDARD GAMEPAD)");
+  await page.selectOption("#padSelect", "joy|" + PADKEY);
   await page.waitForTimeout(600);
   const s1 = await state(), again = await held(0, -1);
   check(`${ship}: picked built in again it is the game's joystick again`, s1 === 2 && again[0] === -steps, [s1, again]);
