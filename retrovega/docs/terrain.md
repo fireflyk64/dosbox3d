@@ -115,9 +115,23 @@ Still to do for 30 fps on the page:
     Nicanders come for it), over the mesas to Nav 3 (two Agis), and home.
   - `RVT.EXE /fly 40` flies it; `/planet N` is the test scene (the planet N km under the player, an arch ahead).
 
+## In the browser
+
+The page built from this branch, headless Chrome on this box, Mirage by the autopilot to Nav 2 and its fight
+(scratch rig: a room of one, `?cmd=rv /noquit /verbose /fly 40&env.WCNET_PERF=4`):
+
+- 30.0 fps throughout, its worst frame 34 to 43 ms.
+- Load 32% in orbit and 46 to 53% over the ground with six ships.
+- The emulator at 100% of real time.
+
+The HUD has `ALT n` under the gunsight over a planet (km over the ground, red under 100).
+
 ## Still to do
 
-- The approach and straight-down views: 2 to 3 times over budget natively (the card's detail adapts).
+- The approach and straight-down views: 2 to 3 times over budget natively (the card's detail adapts; the page held
+  30 fps in Mirage regardless).
+- Close up, an arch's feet and inner wall are as blocky as the ground's cells (49 km).
+- RV.EXE: 2,928 bytes left for DOS (6,144 before the planets).
 - Missions with planets are kept from DOS without the card only by being off the campaign's way.
 
 Done since step 4:

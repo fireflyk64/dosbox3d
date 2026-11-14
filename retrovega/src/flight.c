@@ -609,6 +609,21 @@ static void nav_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
     }
 }
 
+/* over a planet (planet.h): the height over the ground under the gunsight, km, red under 100 km */
+static long __far g_alt_km = -1;        /* (the frame's: -1 no planet, or too high to tell) */
+static void alt_tag(int y0, int y1)
+{
+    char s[16];
+    int w, x, row = g_cam_cy + 26;
+    if (g_alt_km < 0)
+        return;
+    sprintf(s, "ALT %ld", g_alt_km);
+    w = panel_tiny_width(s);
+    x = g_cam_cx - w / 2;
+    if (row >= 0 && row + PANEL_TINY_H <= SCR_H && x >= 0)
+        (void)panel_tiny(x, row, s, g_alt_km < 100 ? UI_RED : UI_WHITE, y0, y1);
+}
+
 /* "MASTER ARM OFF" under the gunsight while the trigger is pulled with the guns safed.  The master arm is the panel's
  * ARM knob alone since the user, 2026-11-04, lost their guns in a fight to its key ("I was hitting N and m is next to
  * it. I think it might be too confusing", "lets unbind that key for now"): nothing said why they were quiet */
@@ -1607,6 +1622,7 @@ static void draw_world(int y0, int y1)
         logic_hud();                    /* the game's own marks over the view (none from outside) */
         nav_tag(y0, y1, ext, ey0, rows);
         arm_tag(y0, y1, ext, ey0, rows);
+        alt_tag(y0, y1);
         land_tag(y0, y1, ext, ey0, rows);
         link_tag(y0, y1, ext, ey0, rows);
         if (g_sim && y0 < ey0 + 24 && y1 > ey0 + 6) {
@@ -3922,6 +3938,11 @@ void __far __cdecl flight_frame(void)
         cam_basis(&cam);
         sky_place(&cam, g_cam_cx, g_cam_cy, FLIGHT_FOCAL);
         planet_frame(cam_pos(), &cam, g_cam_cx, g_cam_cy, FLIGHT_FOCAL);   /* (the card makes the frame's ground now) */
+        if (planet_on()) {
+            long roof, over = planet_over((const LfVec *)&gPositionVector[0], &roof);
+            g_alt_km = over < 0 ? 0 : over < 20000L * 256 ? over / 256 : -1;
+        } else
+            g_alt_km = -1;
     }
     {
         unsigned long t0 = clock240();

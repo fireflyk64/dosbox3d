@@ -1079,6 +1079,9 @@ static TrDither tr_dither(const TrPlanet *p, const float rgb[3])
         }
     }
     r.t = (uint8_t)best;
+    /* (two far apart, a yellow and a green for an olive: dithered they read as noise; one near enough does better) */
+    if (best && tr_d2(p->pal_lab[a], p->pal_lab[b]) > 45 * 45 && tr_d2(t, p->pal_lab[a]) < 22 * 22)
+        r.t = 0;
     return r;
 }
 

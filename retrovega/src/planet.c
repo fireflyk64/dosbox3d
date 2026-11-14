@@ -201,9 +201,9 @@ int planet_load(const TrPlanetRec __far *pr, const TrNavRec __far *navs, int nna
     }
     g_pl.on = 1;
     g_pl.made = 0;
-    g_pl.centre.x = pr->x << 8;
-    g_pl.centre.y = pr->y << 8;
-    g_pl.centre.z = pr->z << 8;
+    g_pl.centre.x = pr->x * 256L;
+    g_pl.centre.y = pr->y * 256L;
+    g_pl.centre.z = pr->z * 256L;
     return 0;
 }
 
@@ -249,9 +249,9 @@ void planet_frame(const LfVec *eye, const LfBasis *b, int cx, int cy, int focal)
         return;
     rel(eye, v.eye);
     for (k = 0; k < 6; k++)
-        v.m[k] = (short)(f[3 + k] << 6);
+        v.m[k] = (short)(f[3 + k] * 64);
     for (k = 0; k < 3; k++)
-        v.m[6 + k] = (short)(f[k] << 6);
+        v.m[6 + k] = (short)(f[k] * 64);
     v.focal = (short)focal;
     v.cx = (short)cx;
     v.cy = (short)cy;
