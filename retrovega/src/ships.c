@@ -91,17 +91,12 @@ static unsigned char __far *g_line;     /* one source row expanded, LINE pixels;
                                            goes out (stipple_row) */
 static unsigned char __far g_stipple;   /* the ships drawn now are cloaked (ships_stipple) */
 
-/* a cloaked ship (the user, 2026-11-12: "only draws half the pixels in a stipple pattern"; then, of the first look's
- * diagonal stripes, "doesn't look great. Ideally it'd be a stipple pattern or a checkerboard or else kind randomish"):
- * its rows are drawn into g_line, every pixel turned (no row copied from the screen's row above: that row is half the
- * ship), and of each only the pixels g_stip_tile lets through go out: half of them, scattered.  The tile is 16 x 16
- * bits of blue noise (void and cluster, tools: none, the numbers below; 8 a row near enough, no run past 4), fixed to
- * the screen, so a ship moving under it shimmers.  Not by the sprite card (its picture is whole) nor scaled (g_line
- * is that draw's own) */
-static const unsigned short g_stip_tile[16] = {
-    0x5969, 0xA596, 0x5A71, 0x328F, 0xCD54, 0x3565, 0xCB5A, 0x5895,
-    0xA6B4, 0xAD55, 0x932A, 0x6CD4, 0x8B2B, 0x74D4, 0x8B55, 0x66AA
-};
+/* a cloaked ship (the user, 2026-11-12: "only draws half the pixels in a stipple pattern"; of the first look's
+ * diagonal stripes, "doesn't look great. Ideally it'd be a stipple pattern or a checkerboard or else kind randomish",
+ * and of a blue-noise stipple beside a checkerboard, "Let's go checkerboard"): its rows are drawn into g_line, every
+ * pixel turned (no row copied from the screen's row above: that row is half the ship), and of each only the pixels
+ * where (x + y) & 1 is 0 go out: half of them, a checkerboard fixed to the screen (no table: the stripes' own test).
+ * Not by the sprite card (its picture is whole) nor scaled (g_line is that draw's own) */
 void ships_stipple(int on)
 {
     g_stipple = (unsigned char)on;
@@ -119,10 +114,9 @@ static unsigned char __far *stipple_line(int a, int b)   /* (g_line cleared from
 static void stipple_row(unsigned char __far *dst, int x0, int a, int b, int y)
 {
     const unsigned char __far *src = g_line;
-    unsigned short m = g_stip_tile[y & 15];
     int x;
     for (x = a; x < b; x++)
-        if (src[x] && (m >> ((x0 + x) & 15)) & 1)
+        if (src[x] && !((x0 + x + y) & 1))
             dst[x] = src[x];
 }
 

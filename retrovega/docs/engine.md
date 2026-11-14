@@ -1016,10 +1016,10 @@ with crosses on the four cardinal directions and some cross hatches", a
 quarter of it in a 16-byte table drawn four times turned, amber chasing,
 white in the white diamond locked); the cloak
 (the Schroedinger's, ships.csv `cloak`: Alt+C on and off; on, the ship is
-drawn as half its pixels in a scattered stipple, a 16 x 16 tile of blue
-noise fixed to the screen (ships.c `g_stip_tile`, 32 bytes; the first
-look's diagonal stripes "doesn't look great", the user), by the game's
-own turned rows and never by the sprite card, with no engine flame; no AI
+drawn as half its pixels in a checkerboard fixed to the screen,
+`(x + y) & 1` (the user's pick: the first look's diagonal stripes "doesn't
+look great", and of a blue-noise stipple beside it "Let's go
+checkerboard"), by the game's own turned rows and never by the sprite card, with no engine flame; no AI
 picks it or keeps it, a seeker loses it, the shields are down and the
 SIGNATURE reads 2%, the E/M lamp dark and STEALTH lit; the afterburner or a
 transmission (the comm's lines, a chat line: 3 s) disrupts it, seen with the
