@@ -115,13 +115,28 @@ Still to do for 30 fps on the page:
     Nicanders come for it), over the mesas to Nav 3 (two Agis), and home.
   - `RVT.EXE /fly 40` flies it; `/planet N` is the test scene (the planet N km under the player, an arch ahead).
 
+## Detail patches
+
+Where a mission puts a pad or an arch, the card keeps the ground again on a finer grid of its own:
+
+- **Size:** 384 cells a side over up to 4,800 km of the tangent plane there, some 8 to 12 km a cell where the
+  planet's are 49.
+- **Making it:** it is made from the planet's ground before the shapes, plus a finer octave of noise. The shapes are
+  drawn on it again at that grain; one shape function serves the planet's grid and the patches.
+- **Light:** lit from its own slopes, with the planet's shadows and its own (an arch's soft shadow on its pad).
+- **Queries:** they read it in integers (the patch's frame in 2^30ths, a point's place by divisions, bilinear
+  heights), so collisions and nav points over a base are its, the same on every machine. The play tests' hashes
+  agree, host against card.
+- **The picture:** it reads the patch out to level 2. The march's step there is the patch's cells', and it looks only
+  on lines whose plane passes near a patch.
+
 ## In the browser
 
 The page built from this branch, headless Chrome on this box, Mirage by the autopilot to Nav 2 and its fight
 (scratch rig: a room of one, `?cmd=rv /noquit /verbose /fly 40&env.WCNET_PERF=4`):
 
-- 30.0 fps throughout, its worst frame 34 to 43 ms.
-- Load 32% in orbit and 46 to 53% over the ground with six ships.
+- 30.0 fps throughout, its worst frame 34 to 43 ms, before and after the detail patches.
+- Load 32% in orbit and 46 to 55% over the ground with six or seven ships.
 - The emulator at 100% of real time.
 
 The HUD has `ALT n` under the gunsight over a planet (km over the ground, red under 100).
@@ -130,7 +145,7 @@ The HUD has `ALT n` under the gunsight over a planet (km over the ground, red un
 
 - The approach and straight-down views: 2 to 3 times over budget natively (the card's detail adapts; the page held
   30 fps in Mirage regardless).
-- Close up, an arch's feet and inner wall are as blocky as the ground's cells (49 km).
+- From right under an arch, the outer edge of its underside still shows a patch cell's steps.
 - RV.EXE: 2,928 bytes left for DOS (6,144 before the planets).
 - Missions with planets are kept from DOS without the card only by being off the campaign's way.
 
