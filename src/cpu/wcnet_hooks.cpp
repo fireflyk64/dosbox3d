@@ -31,6 +31,7 @@
 #include "wcnet_tie.h"
 #include "wcnet_tie_session.h"
 #include "wcnet_priv.h"
+#include "wcnet_tv.h"
 #include "paging.h"
 #include "callback.h"
 #include "cpu.h"
@@ -1067,6 +1068,15 @@ static void key_script() {
             }
             held = fire;
         }
+    } else if (item == "!regs") {
+        // !regs logs the CPU's registers and the segments' bases (a 32-bit program's: where its objects are, Terminal
+        // Velocity's each with a base of its own)
+        wclog(1, "key script %.1fs: %s CS %04x base %08x EIP %08x  DS %04x base %08x  ES %04x base %08x  SS %04x base %08x ESP %08x  "
+                 "EAX %08x EBX %08x ECX %08x EDX %08x ESI %08x EDI %08x EBP %08x, paging %s", t, cpu.pmode ? "pmode" : "real mode",
+              (unsigned)SegValue(cs), (unsigned)SegPhys(cs), (unsigned)reg_eip, (unsigned)SegValue(::ds), (unsigned)SegPhys(::ds),
+              (unsigned)SegValue(es), (unsigned)SegPhys(es), (unsigned)SegValue(ss), (unsigned)SegPhys(ss), (unsigned)reg_esp,
+              (unsigned)reg_eax, (unsigned)reg_ebx, (unsigned)reg_ecx, (unsigned)reg_edx, (unsigned)reg_esi, (unsigned)reg_edi,
+              (unsigned)reg_ebp, PAGING_Enabled() ? "on" : "off");
     } else if (item.compare(0, 9, "!dumplin=") == 0) {
         // !dumplin=<name>:<hex linear address>:<hex length> writes that memory (a 32-bit program's, as the CPU sees
         // it; a page not there reads as zero) to WCNET_DUMP_DIR/<name>.bin
@@ -1185,6 +1195,8 @@ static void key_script() {
         int status = atoi(item.c_str() + 8);
         wclog(1, "key script %.1fs (t=%.1f): mission status %d -> %d", t, now / 1000.0, rd16(ds::missionStatus), status);
         wr16(ds::missionStatus, (Bit16u)status);
+    } else if (tv_script_item(item, t)) {
+        // (Terminal Velocity's aids: wcnet_tv.cpp)
     } else if (priv_script_item(item, t)) {
         // (Privateer's aids: wcnet_priv.cpp)
     } else if (lab_script_item(item, t)) {
@@ -2625,6 +2637,7 @@ void wc_net_check_cpu_hooks() {
         joystick_tick();
         tie_tick();
         priv_tick();
+        tv_tick();
 #ifdef __EMSCRIPTEN__
         escape_tap();
         web_input_tick();
@@ -2655,6 +2668,7 @@ void wc_net_check_cpu_hooks() {
         // (a 32-bit program's: only TIE Fighter's places are watched there)
         if (wc_net_watch32[ip & 0xffff]) {
             tie_check_hooks(ip);
+            tv_check_hooks(ip);     // (Terminal Velocity's, wcnet_tv.cpp: each looks only at its own places)
         }
         return;
     }

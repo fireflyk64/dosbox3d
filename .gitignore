@@ -60,3 +60,4 @@ __pycache__/
 /web/dist/
 build-so3/
 /tools/wc2wing/target/
+tvgame/

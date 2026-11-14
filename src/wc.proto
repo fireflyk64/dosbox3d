@@ -434,6 +434,64 @@ message TiePresence {
 }
 // Wing Commander: Privateer (docs/privateer.md).  A guest's hello, and the host's answer: the guest's seat and the
 // room's seats.
+// Terminal Velocity (src/cpu/wcnet_tv_session.cpp).  A pilot's hello: the host answers with the guest's seat and the
+// room's seats.  `look`: the model the others draw the pilot's ship with ("ship.bin" the TV-202, "icebrd.bin" the
+// Ymir IceRider: the page's Ship choice, WCTVLOOK).
+message TvHello {
+    optional string callsign = 1;
+    optional uint32 player = 2;
+    optional uint32 seats = 3;
+    optional string look = 4;
+}
+// A pilot's ship, some 15 times a second while it flies: the level, x y z and the three angles, their rates
+// (per second), the shield.  The host relays a guest's to the others (`player` the seat).
+message TvState {
+    optional uint32 player = 1;
+    optional sint32 level = 2;
+    optional bool flying = 3;
+    repeated sint32 pos = 4 [packed = true];
+    repeated sint32 rate = 5 [packed = true];
+    optional sint32 shield = 6;
+    optional string level_name = 7;
+    optional string look = 8;
+}
+// A shot of a pilot's: the game's fire call's arguments (16 words of place, angles and matrix, the weapon, its
+// damage, its kind), remade on the others' machines.
+message TvShot {
+    optional uint32 player = 1;
+    repeated sint32 posmat = 2 [packed = true];
+    optional uint32 weapon = 3;
+    optional sint32 damage = 4;
+    optional uint32 kind = 5;
+}
+// The level's objects a machine flies (their AI and movers run there), as they are now: each object's index, then
+// x y z and the three angles, its hit points and its state word; the others' copies are puppets.
+message TvObject {
+    optional uint32 index = 1;
+    repeated sint32 pos = 2 [packed = true];
+    optional sint32 hp = 3;
+    optional sint32 state = 4;
+}
+message TvObjects {
+    optional uint32 player = 1;
+    optional sint32 level = 2;
+    repeated TvObject objects = 3;
+}
+// The host's word on who flies which object (the nearest pilot's machine): objects not listed are the host's.
+message TvOwners {
+    optional sint32 level = 1;
+    repeated uint32 index = 2 [packed = true];
+    repeated uint32 owner = 3 [packed = true];
+}
+// A shot of ours hit an object another machine flies: its owner applies the damage.
+message TvHit {
+    optional uint32 player = 1;
+    optional sint32 level = 2;
+    optional uint32 index = 3;
+    optional sint32 damage = 4;
+    optional uint32 owner = 5;
+}
+
 message PrivHello {
     optional string callsign = 1;
     optional uint32 player = 2;
@@ -564,4 +622,11 @@ message NetworkMessage {
     optional PrivHit priv_hit = 45;
     optional PrivShot priv_shot = 46;
     optional PrivPodTaken priv_pod_taken = 47;
+    // Terminal Velocity's (from 60: docs/terminalvelocity.md)
+    optional TvHello tv_hello = 60;
+    optional TvState tv_state = 61;
+    optional TvShot tv_shot = 62;
+    optional TvObjects tv_objects = 63;
+    optional TvOwners tv_owners = 64;
+    optional TvHit tv_hit = 65;
 }

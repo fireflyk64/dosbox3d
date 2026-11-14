@@ -14,6 +14,7 @@
 #include "wcnet_retrovega.h"
 #include "wcnet_tie.h"
 #include "wcnet_priv.h"
+#include "wcnet_tv.h"
 
 namespace wc {
 
@@ -356,6 +357,7 @@ void game_program_loaded(const char *path, Bit16u loadSeg, Bit16u psp) {
     }
     tie_program_loaded(name.c_str(), psp);     // (TIE Fighter's extender: the game itself is looked for later)
     priv_program_loaded(name.c_str(), loadSeg, psp);   // (Privateer: PRCD.EXE, a module of its own: wcnet_priv.cpp)
+    tv_program_loaded(name.c_str(), psp);      // (Terminal Velocity: GAME.EXE, its extender bound in: wcnet_tv.cpp)
     for (size_t i = 0; i < sizeof(kGames) / sizeof(kGames[0]); i++) {
         const KnownGame &g = kGames[i];
         if (name != g.exe) {
