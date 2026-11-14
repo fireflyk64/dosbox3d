@@ -87,6 +87,9 @@ The map (shareware image addresses; the hooks read them out of the code, these a
 | the keys | 0x7CDB8 + scan code | a byte each, down/up |
 | a model put in the draw list | 0x1E640 (posang, model, scale) | the frame's list at 0xAFE48, 0x48 each, `[0xB464C]` long, 256 at most |
 | a model loaded | 0x402E0 (name) | a handle; a name not in the archives ends the program |
+| the ship's attitude | 0x81C94, a 3x3 float matrix (0x81C90 a word before it) | its columns the ship's right, up and forward in the world; the flight step (0x11CD0, from the input handler) turns it by the spin rates (0x64EB0.., the ship's own axes), then makes the angles at 0x7CA84 and the fixed-point matrix at 0x7CA94 from it: writing those two does nothing |
+| the afterburner | weapon slot 22 ("FLY" on the HUD) | taken while the key at `[0x64D58]` (VOX.INI's weaponKey: 56, Left Alt) is held and its fuel `[0xA7A34]` is above 0 (0 at a start; a bunker's pickup gives 120, the cheat TRIBURN some) |
+| the high-resolution mode | `[0x64CFC]`, `[0x64D00]` = 640, 240 | the Options menu's "Res: SVGA (Pentium)": the view drawn 640 x 240, doubled to the 640 x 480 screen (VOX.INI's gamePIXX,gamePIXY 640,240; 640,480 there draws the terrain broken); needs 3,000,000 bytes free, else 320 x 200 |
 
 The game's own network play (modem, serial, IPX; up to 4 players, its own `multi%d.lvl` levels): a Doom-like
 driver (`COMMIT.EXE`) behind a block whose pointer is at 0x113DF4 (+2 the command, 1 send / 2 receive, +4 the node,
@@ -106,6 +109,14 @@ by their rates (0x4CEC0) and drawn by 0x4E840 with the draw-list call.  The laye
   it on the screen).
 * Key-script aids: `!tvpos` (the player), `!tvobjs[=range]` (the objects within that many world units: class, name,
   place, hit points, state), `!regs` (the CPU's registers and segment bases), `!dumplin=name:start:length`.
+* The rigs' pilot (src/cpu/wcnet_tv_pilot.cpp): `!tvfly=obj:N | near:CLASS[:range] | partner[:right:up:back] |
+  head:DEG:DEG | off` flies the ship by writing its attitude (eased turns, banked into them, over the hills to a
+  ground target and down onto it), `!tvfire=1|hold|0` (fires when lined up within 140 units, or always),
+  `!tvburn=SECONDS` (the afterburner's key held), `!tvfuel=N`, `!tvgod=1` (the shield kept full).
+* `SVGA=1 CYCLES=60000` for the rigs: the high-resolution mode in each copy (60+ frames a second natively).
+* The video: `WCLAB=<dir>` in each machine's environment (HOSTENV/GUESTENV), then `scripts/tfnet-sheet.py` (contact
+  sheets of both recordings lined up by the wall clock) and `scripts/tfnet-video.py ... --title` (one vertical
+  video, host on top); both import walkthrough/labrec.py (the main tree's walkthrough/: a symlink in a worktree).
 * The game's files: the shareware unpacked into `tvgame/` (untracked) and set up once (`SETUP.EXE`: Sound Setup,
   Sound Blaster 16, then Save and launch TV).
 
@@ -118,8 +129,22 @@ second past its report, as the model the room chose for that pilot.  A pilot's s
 (TvShot), made again on the others' machines as their own player's shots: they fly and hit the same objects there.
 
 The level's objects are the same on every machine (placed at the level's load, in the same order): an object is
-named by its index.  Next (section 6): who flies which awake object (the nearest pilot's machine), the others' copies
-puppets (their update skipped, their place from the owner's reports), hits and deaths through the owner.
+named by its index (a level adds objects as it goes, a bunker's pickup: those can differ, the level's own come first).
+
+* **Hits are told by the shooter.**  A pilot's own shot's hit on an object (0x292B0, the hook at its confirmation) is
+  applied in its game and sent (TvHit: the object, the damage); every other machine applies it the game's way, the
+  hit points less the damage and, at none left, the object's next stage (`0x28E70(obj, type)`, called at the frame's
+  top).  A copy of another pilot's shot never applies its own hits (the hook answers "skip": the shot is spent, the
+  hit counted, nothing applied).  So every machine sees the same hits and the same stages (a bunker blown open, a
+  craft going down), its own explosions included; measured, a SnowScout shot down by the guest died on the host.
+* **Moving objects have an owner.**  The host gives each moving object (a craft, a ground vehicle, anything seen
+  moving) within 600 units of a pilot to the nearest pilot's machine (a fifth nearer to change hands, not twice in
+  1.5 s; TvOwners on each change and every 2 s); the owner's game runs its AI and sends its place ten times a second
+  (TvObjects), and the others' copies are puppets: their update skipped (the objects' loop's call jumped over) and
+  their place written at each frame's top, carried on by their last two reports.  Static objects (installations,
+  turrets) run in every game, at every machine's own pilot.
+* **The afterburner shows.**  A pilot whose afterburner fuel is going down reports `boost`; the others draw a flame
+  behind its ship (the game's own `fireball.bin`, loaded once a level, flickering in size).
 
 ## 6. Where this stands, and what comes next
 
@@ -127,9 +152,11 @@ Done (step 1-2, 2026-11-14): the program found and watched, the room (TCP and th
 drawn in the others' games, shots remade.  Measured: two machines on one host over TCP, the guest 3 s behind on the
 same route sees the host's TV-202 some 24 world units ahead.
 
+Done (step 3, 2026-11-14): hits and stages through the shooter, moving objects' owners and puppets, the afterburner's
+flame, the rigs' pilot, the high-resolution mode in the rigs.
+
 Next:
 
-3. The objects: owners (the nearest pilot's machine flies an awake object), puppets, hits sent to the owner, deaths.
 4. The level: a guest flies the host's level (the campaign loop's call held until the host flies, its index set);
    the host's level done ends everybody's; a pilot's death and "Retry Mission" rejoin the level as it stands.
 5. The craft: the host picks each pilot's craft (the TV-202, a level's own, any craft in the game's archives); a

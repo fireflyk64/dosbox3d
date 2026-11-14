@@ -14,6 +14,8 @@
 #   BRIEF=1     the level briefings and cinematics as the game has them (the copy's VOX.INI: off by default, the route's
 #               timing assumes them off: in flight at ~62 s)
 #   PROG=       what runs (default "tv")
+#   SVGA=1      the game's high-resolution mode (its own setting: 640 x 240 drawn on a 640 x 480 screen; VOX.INI's
+#               gamePIXX,gamePIXY) in the copy, at CYCLES (60000 is good)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/tvrun}; mkdir -p $OUT; rm -f $OUT/*.ppm $OUT/*.txt
 DUR=${1:-90}; EXTRA=${2:-}
@@ -23,13 +25,16 @@ DOSBOX=${DOSBOX:-$ROOT/build-native/src/dosbox}
 if [ -n "${COPY:-}" ]; then
   mkdir -p $OUT/game; cp -f "$TVDIR"/* $OUT/game/ 2>/dev/null
   TVDIR=$OUT/game
-  if [ -z "${BRIEF:-}" ] && [ -f $TVDIR/VOX.INI ]; then
-    python3 - "$TVDIR/VOX.INI" <<'PY'
+  if [ -f $TVDIR/VOX.INI ]; then
+    python3 - "$TVDIR/VOX.INI" "${BRIEF:-}" "${SVGA:-}" <<'PY'
 import sys
-p = sys.argv[1]; lines = open(p, newline='').read().split('\r\n')
+p, brief, svga = sys.argv[1], sys.argv[2], sys.argv[3]
+lines = open(p, newline='').read().split('\r\n')
 for i, l in enumerate(lines):
-    if l.startswith('difficulty,briefingFlag') and i + 1 < len(lines):
+    if l.startswith('difficulty,briefingFlag') and i + 1 < len(lines) and not brief:
         v = lines[i + 1].split(','); v[1] = '0'; v[2] = '0'; v[3] = '0'; lines[i + 1] = ','.join(v)
+    if l.startswith('gamePIXX') and i + 1 < len(lines):
+        v = lines[i + 1].split(','); v[0], v[1] = ('640', '240') if svga else ('320', '200'); lines[i + 1] = ','.join(v)
 open(p, 'w', newline='').write('\r\n'.join(lines))
 PY
   fi

@@ -51,6 +51,7 @@ int tv_object_count();
 Bit32u tv_object_addr(int i);   // linear (0: none)
 int tv_object_class(int i);     // its type's class (7 a craft, 9 an installation, 10 a ground vehicle, 33 a tree...)
 std::string tv_object_name(int i);
+Bit32u tv_object_type_addr(int i);   // its type's record (linear)
 
 // The game's memory, by linear address (fault-free reads; 0 for a page not there).
 Bit32u tv_r32(Bit32u lin);
@@ -64,7 +65,7 @@ const Bit32u TV_SCRATCH = 0xFFFFFFF0u;
 typedef void (*TvCallDone)(int tag, Bit32u eax);
 void tv_queue_call(int where, Bit32u fn, const std::vector<Bit32u> &args, const std::vector<Bit32u> &scratch, TvCallDone done, int tag);
 bool tv_in_call();              // one of ours is under way (its effects are not the player's)
-enum TvFn { TV_FN_FIRE = 0, TV_FN_DRAW_MODEL = 1, TV_FN_HIT = 2, TV_FN_LOAD_MODEL = 3 };
+enum TvFn { TV_FN_FIRE = 0, TV_FN_DRAW_MODEL = 1, TV_FN_HIT = 2, TV_FN_LOAD_MODEL = 3, TV_FN_DESTROY = 4 };
 Bit32u tv_fn(TvFn f);           // the function's linear address (0: none)
 Bit32u tv_data(int dataId);     // a tvsig::D_* address (0: none)
 
@@ -77,10 +78,16 @@ void tv_session_frame();                            // the level loop's frame to
 void tv_session_draw();                             // the remote-ship place: the others' ships into the draw list
 bool tv_session_puppet(int obj);                    // an object another machine flies (its update skipped here)
 void tv_session_fired(const Bit32u posmat[16], Bit32u weapon, Bit32u damage, Bit32u kind);  // the player's shot
-void tv_session_hit(int obj, Bit32s damage);        // a shot of ours on an object, about to be applied
+bool tv_session_hit(int obj, Bit32s damage, Bit32u projectile);   // a hit on an object about to be applied: true, apply it
+void tv_session_updated(int obj);                   // an object's update made here this frame (not a puppet)
 void tv_session_level(int index, const std::string &name);  // a level about to be flown
 void tv_session_shutdown();
 bool tv_session_active();
+bool tv_session_partner(TvShip *out);              // the nearest other pilot flying our level, carried on to now
+
+// The rigs' pilot (wcnet_tv_pilot.cpp): key-script items !tvfly= !tvfire= !tvburn=, run at the frame's top.
+void tv_pilot_frame();
+bool tv_pilot_item(const std::string &item, double t);
 
 }  // namespace wc
 

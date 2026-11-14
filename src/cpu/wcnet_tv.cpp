@@ -44,6 +44,7 @@ double g_lastFrameMs = -1e9;
 unsigned g_counts[8];           // hook calls since the last report: frame, draw, update, skipped, hit, fire, level, false
 int g_level = -1;
 std::string g_levelName;
+Bit32u g_hitSkip = 0;
 
 // The places watched (linear), by what they are.
 enum Place { P_FRAME, P_DRAW, P_UPDATE, P_HIT, P_FIRE, P_LEVEL, P_COUNT };
@@ -145,6 +146,9 @@ bool scan() {
     g_places[P_HIT] = place_of(A_HIT_APPLY);
     g_places[P_FIRE] = place_of(A_FIRE_FN);
     g_places[P_LEVEL] = place_of(A_CAMPAIGN) + (0x2EC79 - 0x2EC58);      // (the level's call: ebx its index)
+    // the test's end, where a hit we answer "skip" goes on (counted, nothing applied): the same function's, as the
+    // shareware has it, or none (every hit applied)
+    g_hitSkip = place_of(A_HIT_END) - place_of(A_HIT_APPLY) == 0x2937F - 0x29327 ? place_of(A_HIT_END) : 0;
     return true;
 }
 
@@ -354,6 +358,7 @@ void tv_check_hooks(Bit32u eip) {
         g_frames++;
         g_lastFrameMs = PIC_FullIndex();
         g_counts[0]++;
+        tv_pilot_frame();
         tv_session_frame();
         call_next(TV_AT_FRAME, eip);
     } else if (eip == g_places[P_DRAW]) {
@@ -375,15 +380,24 @@ void tv_check_hooks(Bit32u eip) {
             if (tv_session_puppet(i)) {
                 g_counts[3]++;
                 reg_eip = eip + 5;          // (its update not made: the call skipped, its argument popped by the caller)
+            } else {
+                tv_session_updated(i);
             }
         }
     } else if (eip == g_places[P_HIT]) {
+        // (a hit confirmed: ebx the object, [esp+0x1c] the damage, [esp+0x10] the caller's ebx -- the projectile, when
+        // the projectiles' loop made the test; our answer: the game applies it, or it is counted and skipped)
         g_counts[4]++;
         const Bit32u obj = reg_ebx;
-        const Bit32s damage = (Bit32s)mem_readd(SegPhys(ss) + reg_esp + 0x1c);
+        const Bit32u sp = SegPhys(ss) + reg_esp;
+        const Bit32s damage = (Bit32s)mem_readd(sp + 0x1c);
         const Bit32u table = tv_r32(g_data[D_OBJ_TABLE]);
         if (obj >= table && (obj - table) % kTvObjSize == 0 && !g_saved.active) {
-            tv_session_hit((int)((obj - table) / kTvObjSize), damage);
+            const bool apply = tv_session_hit((int)((obj - table) / kTvObjSize), damage, mem_readd(sp + 0x10));
+            if (!apply && g_hitSkip) {
+                mem_writed(sp, mem_readd(sp) + 1);     // (a hit all the same: the projectile is spent)
+                reg_eip = g_hitSkip;
+            }
         }
     } else if (eip == g_places[P_FIRE]) {
         g_counts[5]++;
@@ -458,6 +472,11 @@ int tv_object_class(int i) {
 }
 
 // A type's words: its model files, then its name and what the briefing says of it ("CRAFT", "Ymir", "SnowScout")
+Bit32u tv_object_type_addr(int i) {
+    const Bit32u o = tv_object_addr(i);
+    return o ? tv_r32(g_data[D_OBJ_TYPES]) + tv_r32(o + 0x18) * kTvTypeSize : 0;
+}
+
 std::string tv_object_name(int i) {
     const Bit32u o = tv_object_addr(i);
     if (!o) return "";
@@ -508,6 +527,7 @@ Bit32u tv_fn(TvFn f) {
     case TV_FN_DRAW_MODEL: return place_of(A_DRAW_MODEL_FN);
     case TV_FN_HIT: return place_of(A_HIT_FN);
     case TV_FN_LOAD_MODEL: return place_of(A_LOAD_MODEL_FN);
+    case TV_FN_DESTROY: return place_of(A_DESTROY_FN);
     }
     return 0;
 }
@@ -515,6 +535,9 @@ Bit32u tv_fn(TvFn f) {
 Bit32u tv_data(int id) { return g_found && id >= 0 && id < D_COUNT ? g_data[id] : 0; }
 
 bool tv_script_item(const std::string &item, double t) {
+    if (tv_pilot_item(item, t)) {
+        return true;
+    }
     if (item == "!tvpos") {
         TvShip s;
         tv_player(&s);
