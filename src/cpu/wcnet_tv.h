@@ -83,6 +83,7 @@ void tv_session_updated(int obj);                   // an object's update made h
 void tv_session_level(int index, const std::string &name);  // a level about to be flown
 // The campaign's call of a level: true, held (made again later); *index may be changed (the host's level).
 bool tv_session_level_call(int *index);
+void tv_session_level_end();                       // the campaign's level over (done, a death, a quit)
 void tv_session_shutdown();
 bool tv_session_active();
 bool tv_session_partner(TvShip *out);              // the nearest other pilot flying our level, carried on to now

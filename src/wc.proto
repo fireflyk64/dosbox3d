@@ -457,6 +457,7 @@ message TvState {
     optional bool boost = 9;            // the afterburner burning (its fuel going down)
     optional bool done = 10;            // the level done (its exit flown): everybody's ends with it
     optional sint32 difficulty = 11;
+    optional bool in_level = 12;        // a level of the campaign under way (its briefing too: from the level's call to its end)
 }
 // The host's choice of each seat's craft (the page's Craft menus, WCTVLOOKS): the model each pilot's ship is drawn
 // with by the others, by seat ("ship.bin" the TV-202, "icebrd.bin", "snowftr.bin", "hawk.bin", "gull1.bin", or

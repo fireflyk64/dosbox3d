@@ -104,8 +104,9 @@ struct Remote {
     int difficulty;
     std::string levelName;
     double flyingSince;         // since when it flies its level (a start of it: a death's retry, a late start)
+    bool inLevel;               // a level of its campaign under way (its briefing, its flight)
     Remote() : known(false), look("ship.bin"), at(-1e9), flying(false), level(-1), shield(0), boost(false), done(false),
-               difficulty(-1), flyingSince(-1e9) {
+               difficulty(-1), flyingSince(-1e9), inLevel(false) {
         memset(pos, 0, sizeof(pos));
         memset(rate, 0, sizeof(rate));
     }
@@ -160,6 +161,7 @@ std::vector<std::pair<Bit32u, double> > g_remoteShots;  // our copies of others'
 double g_objectsAt = -1e9, g_ownersAt = -1e9, g_decidedAt = -1e9;
 double g_boostAt = -1e9;
 double g_levelStartAt = -1e9;   // when we started flying our level (its start, a retry's)
+bool g_inLevel = false;         // our campaign's level under way (from its call to its end: its briefing too)
 unsigned g_levelStarts = 0;     // the level function's starts (a retry of a level is a new start: everything of the last
                                 // one's forgotten, its models the game's to free)
 double g_holdSince = -1;        // a guest's level held since (waiting for the host to fly)
@@ -342,6 +344,7 @@ void take_state(const TvState &st, int seat) {
     r.shield = st.shield();
     r.boost = st.boost();
     r.done = st.done();
+    r.inLevel = st.in_level();
     if (st.has_difficulty()) r.difficulty = st.difficulty();
     if (st.has_level_name()) r.levelName = st.level_name();
     if (r.flying && (!wasFlying || st.level() != lastLevel)) r.flyingSince = PIC_FullIndex();
@@ -590,6 +593,7 @@ void send_state(double now) {
     st->set_look(g_net->look);
     st->set_boost(now - g_boostAt < 300);
     st->set_done(flying && tv_r32(tv_data(tvsig::D_LEVEL_DONE)) != 0);
+    st->set_in_level(g_inLevel);
     st->set_difficulty((Bit32s)tv_r32(tv_data(tvsig::D_DIFFICULTY)));
     static int lastLevel = -2;
     if (tv_level() != lastLevel || (int)(now / 1000) % 5 == 0) {
@@ -835,7 +839,7 @@ void level_together(double now, int level) {
         }
     }
     const Remote &h = g_net->remotes[0];
-    if (!g_net->host && h.known && now - h.at < kStateStaleMs && h.flying && h.level != level && !done) {
+    if (!g_net->host && h.known && now - h.at < kStateStaleMs && h.inLevel && h.level != level && !done) {
         if (g_offLevelSince < 0) g_offLevelSince = now;
         if (now - g_offLevelSince > 3000) {
             tv_w32(doneAt, 1);
@@ -860,7 +864,7 @@ bool tv_session_level_call(int *index) {
     }
     if (!hostHere) return false;
     const Remote &h = g_net->remotes[0];
-    if (h.known && now - h.at < kStateStaleMs && h.flying && h.level >= 0) {
+    if (h.known && now - h.at < kStateStaleMs && (h.flying || h.inLevel) && h.level >= 0) {
         if (*index != h.level) wclog(1, "Terminal Velocity: the host's level %d (%s) flown, not %d", h.level, h.levelName.c_str(), *index);
         *index = h.level;
         if (!h.levelName.empty() && h.levelName.size() < 0x27) {
@@ -1090,6 +1094,13 @@ void tv_session_level(int index, const std::string &name) {
     (void)name;
     g_levelStarts++;
     g_levelStartAt = PIC_FullIndex();
+    g_inLevel = true;
+    if (g_net) g_net->stateAt = -1e9;       // (the others told at once: a guest held waits for this)
+}
+
+void tv_session_level_end() {
+    g_inLevel = false;
+    if (g_net) g_net->stateAt = -1e9;
 }
 
 void tv_session_shutdown() { shutdown(); }

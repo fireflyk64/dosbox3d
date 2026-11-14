@@ -47,7 +47,7 @@ std::string g_levelName;
 Bit32u g_hitSkip = 0;
 
 // The places watched (linear), by what they are.
-enum Place { P_FRAME, P_DRAW, P_UPDATE, P_HIT, P_FIRE, P_LEVEL, P_COUNT };
+enum Place { P_FRAME, P_DRAW, P_UPDATE, P_HIT, P_FIRE, P_LEVEL, P_LEVEL_END, P_COUNT };
 Bit32u g_campaignCall = 0;     // the campaign loop's call of the level function (its return address: + 5)
 Bit32u g_places[P_COUNT];
 
@@ -148,6 +148,7 @@ bool scan() {
     g_places[P_FIRE] = place_of(A_FIRE_FN);
     g_places[P_LEVEL] = place_of(A_LEVEL_FN);                             // (the level function's entry)
     g_campaignCall = place_of(A_CAMPAIGN) + (0x2EC79 - 0x2EC58);          // (the campaign's call of it: ebx its index)
+    g_places[P_LEVEL_END] = g_campaignCall + 5;                             // (... and where it comes back: the level over)
     // the test's end, where a hit we answer "skip" goes on (counted, nothing applied): the same function's, as the
     // shareware has it, or none (every hit applied)
     g_hitSkip = place_of(A_HIT_END) - place_of(A_HIT_APPLY) == 0x2937F - 0x29327 ? place_of(A_HIT_END) : 0;
@@ -411,6 +412,8 @@ void tv_check_hooks(Bit32u eip) {
             for (int i = 0; i < 16; i++) posmat[i] = tv_r32(p + (Bit32u)i * 4);
             tv_session_fired(posmat, mem_readd(sp + 8), mem_readd(sp + 0xc), mem_readd(sp + 0x14));
         }
+    } else if (eip == g_places[P_LEVEL_END]) {
+        tv_session_level_end();
     } else if (eip == g_places[P_LEVEL]) {
         // The level function's entry: from the campaign's call (its return address), a level of the campaign about to be
         // flown, ebx its index, [esp+4] its file's name.  The session may give it another index (a guest flies the
