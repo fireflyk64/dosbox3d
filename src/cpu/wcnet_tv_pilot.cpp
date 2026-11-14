@@ -13,6 +13,8 @@
  *    !tvburn=<seconds>           hold the afterburner's key that long (it burns only with fuel: TRIBURN gives some)
  *    !tvgod=1 / 0                the shield kept full (a take that must not end in a death)
  *    !tvfuel=<n>                 the afterburner's fuel set (a pickup gives 120)
+ *    !tvdone                     the level done, as the exit flown (TRINEXT's doing)
+ *    !tvdie                      the shield gone: the player's ship dies (the game asks "Retry Mission")
  *
  *  A target on the ground is flown at from above: the aim held kAbove world units over it until within kDive of it
  *  (hills between: the game's terrain is not looked at).
@@ -223,6 +225,17 @@ bool tv_pilot_item(const std::string &item, double t) {
     if (item.compare(0, 8, "!tvfire=") == 0) {
         const std::string a = item.substr(8);
         g_fire = a == "hold" ? 2 : atoi(a.c_str()) ? 1 : 0;
+        return true;
+    }
+    if (item == "!tvdone") {
+        tv_w32(tv_data(tvsig::D_LEVEL_DONE), 1);
+        wclog(1, "key script %.1fs: Terminal Velocity: the level done", t);
+        return true;
+    }
+    if (item == "!tvdie") {
+        g_god = false;
+        tv_w32(tv_data(tvsig::D_PLAYER_SHIELD), 0);
+        wclog(1, "key script %.1fs: Terminal Velocity: the shield gone", t);
         return true;
     }
     if (item.compare(0, 8, "!tvfuel=") == 0) {

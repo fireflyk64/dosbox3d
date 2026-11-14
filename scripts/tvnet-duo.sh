@@ -8,6 +8,7 @@
 #   PORT=        the TCP port (default 7471)
 #   HOSTENV= / GUESTENV=   more of each one's environment (WCTVLOOK=icebrd.bin ...)
 #   GUEST_LATE=  seconds the guest starts after the host (default 2)
+#   HOST_ROUTE_DELAY= / GUEST_ROUTE_DELAY=   seconds added to one machine's route (it launches its level later)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/tvduo}; mkdir -p $OUT/host $OUT/guest
 DUR=${1:-110}; HX=${2:-}; GX=${3:-}
@@ -16,10 +17,10 @@ PORT=${PORT:-7471}
 BIN=$OUT/dosbox
 cp -f ${DOSBOX:-$ROOT/build-native/src/dosbox} $BIN
 TOP=$OUT
-OUT=$TOP/host COPY=1 DOSBOX=$BIN ENV="WCPORT=$PORT WCCALLSIGN=HOST ${HOSTENV:-}" SHOW=0 $ROOT/scripts/tvrun.sh $DUR "$HX" &
+ROUTE_DELAY=${HOST_ROUTE_DELAY:-} OUT=$TOP/host COPY=1 DOSBOX=$BIN ENV="WCPORT=$PORT WCCALLSIGN=HOST ${HOSTENV:-}" SHOW=0 $ROOT/scripts/tvrun.sh $DUR "$HX" &
 HPID=$!
 sleep ${GUEST_LATE:-2}
-OUT=$TOP/guest COPY=1 DOSBOX=$BIN ENV="WCHOST=127.0.0.1 WCPORT=$PORT WCCALLSIGN=GUEST ${GUESTENV:-}" SHOW=0 $ROOT/scripts/tvrun.sh $DUR "$GX" &
+ROUTE_DELAY=${GUEST_ROUTE_DELAY:-} OUT=$TOP/guest COPY=1 DOSBOX=$BIN ENV="WCHOST=127.0.0.1 WCPORT=$PORT WCCALLSIGN=GUEST ${GUESTENV:-}" SHOW=0 $ROOT/scripts/tvrun.sh $DUR "$GX" &
 GPID=$!
 wait $HPID $GPID
 for w in host guest; do

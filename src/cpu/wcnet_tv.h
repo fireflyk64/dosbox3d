@@ -65,7 +65,7 @@ const Bit32u TV_SCRATCH = 0xFFFFFFF0u;
 typedef void (*TvCallDone)(int tag, Bit32u eax);
 void tv_queue_call(int where, Bit32u fn, const std::vector<Bit32u> &args, const std::vector<Bit32u> &scratch, TvCallDone done, int tag);
 bool tv_in_call();              // one of ours is under way (its effects are not the player's)
-enum TvFn { TV_FN_FIRE = 0, TV_FN_DRAW_MODEL = 1, TV_FN_HIT = 2, TV_FN_LOAD_MODEL = 3, TV_FN_DESTROY = 4 };
+enum TvFn { TV_FN_FIRE = 0, TV_FN_DRAW_MODEL = 1, TV_FN_HIT = 2, TV_FN_LOAD_MODEL = 3, TV_FN_DESTROY = 4, TV_FN_POD_LOOKUP = 5 };
 Bit32u tv_fn(TvFn f);           // the function's linear address (0: none)
 Bit32u tv_data(int dataId);     // a tvsig::D_* address (0: none)
 
@@ -81,6 +81,8 @@ void tv_session_fired(const Bit32u posmat[16], Bit32u weapon, Bit32u damage, Bit
 bool tv_session_hit(int obj, Bit32s damage, Bit32u projectile);   // a hit on an object about to be applied: true, apply it
 void tv_session_updated(int obj);                   // an object's update made here this frame (not a puppet)
 void tv_session_level(int index, const std::string &name);  // a level about to be flown
+// The campaign's call of a level: true, held (made again later); *index may be changed (the host's level).
+bool tv_session_level_call(int *index);
 void tv_session_shutdown();
 bool tv_session_active();
 bool tv_session_partner(TvShip *out);              // the nearest other pilot flying our level, carried on to now

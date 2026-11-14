@@ -59,13 +59,23 @@ const double kTurn = 65536.0 / (2 * 3.14159265358979);
 const double kOwnRange = 600.0;     // (world units) an object farther than this from every pilot keeps its owner
 const char kFlame[] = "fireball.bin";   // the afterburner's flame (STARTUP.POD, the game's own)
 
-// The models a pilot's ship may be drawn as (the page's Ship choice): the game's own files.  Only these are ever
-// loaded (a model the game cannot find ends the program).
-const char *const kLooks[] = { "ship.bin", "icebrd.bin", "snowftr.bin" };
-const char *const kLookNames[] = { "TV-202", "Ymir IceRider", "Ymir SnowScout" };
-const int kLookCount = 3;
+// The craft a pilot's ship may be drawn as (the host's choice for each seat: the page's Craft menus, WCTVLOOKS): the
+// game's own models.  A model is looked up in the game's archives before it is loaded (the loader ends the program on
+// a name it cannot find); one not there, or "planet", is drawn as the level's own craft (its first craft type's
+// model, loaded with the level), else as the TV-202.
+const char *const kLooks[] = { "ship.bin", "icebrd.bin", "snowftr.bin", "hawk.bin", "gull1.bin", "planet" };
+const char *const kLookNames[] = { "TV-202", "Ymir IceRider", "Ymir SnowScout", "Hawk", "Gull", "the level's own craft" };
+const int kLookCount = 6;
+enum { LOOK_TV202 = 0, LOOK_PLANET = 5 };
 
-int look_index(const std::string &look) {
+int look_index(const std::string &look0) {
+    std::string look = look0;
+    for (size_t i = 0; i < look.size(); i++) look[i] = (char)tolower((unsigned char)look[i]);
+    static const char *const kAlias[][2] = { { "tv-202", "ship.bin" }, { "tv202", "ship.bin" }, { "icerider", "icebrd.bin" },
+        { "snowscout", "snowftr.bin" }, { "hawk", "hawk.bin" }, { "gull", "gull1.bin" }, { "level", "planet" } };
+    for (size_t i = 0; i < sizeof(kAlias) / sizeof(kAlias[0]); i++) {
+        if (look == kAlias[i][0]) look = kAlias[i][1];
+    }
     for (int i = 0; i < kLookCount; i++) {
         if (look == kLooks[i]) return i;
     }
@@ -90,7 +100,12 @@ struct Remote {
     Bit32s pos[6], rate[6];
     Bit32s shield;
     bool boost;
-    Remote() : known(false), look("ship.bin"), at(-1e9), flying(false), level(-1), shield(0), boost(false) {
+    bool done;                  // its level done (its exit flown)
+    int difficulty;
+    std::string levelName;
+    double flyingSince;         // since when it flies its level (a start of it: a death's retry, a late start)
+    Remote() : known(false), look("ship.bin"), at(-1e9), flying(false), level(-1), shield(0), boost(false), done(false),
+               difficulty(-1), flyingSince(-1e9) {
         memset(pos, 0, sizeof(pos));
         memset(rate, 0, sizeof(rate));
     }
@@ -107,11 +122,11 @@ struct TvNet {
     double stateAt;
     // the models loaded for this level (by look; 0: not yet), the level they belong to
     Bit32u models[kLookCount + 1];  // (the last: the flame)
-    bool loading[kLookCount + 1];
+    int modelState[kLookCount + 1]; // MODEL_*
     Bit32u modelsFrame;         // the frame count at the level's start (a new level: loaded again)
     TvNet() : host(false), self(-1), seats(2), listener(NULL), stateAt(-1e9), modelsFrame(0) {
         memset(models, 0, sizeof(models));
-        memset(loading, 0, sizeof(loading));
+        memset(modelState, 0, sizeof(modelState));
     }
     ~TvNet() {
         for (size_t i = 0; i < peers.size(); i++) delete peers[i];
@@ -120,6 +135,9 @@ struct TvNet {
 };
 
 TvNet *g_net;
+enum { MODEL_UNKNOWN = 0, MODEL_LOOKING, MODEL_LOADING, MODEL_READY, MODEL_MISSING };
+// The craft of each seat (the host's word; the host's own from WCTVLOOKS: "<its own>,<the others'>" or one per seat).
+std::string g_looks[4] = { "ship.bin", "ship.bin", "ship.bin", "ship.bin" };
 
 // The level's objects as the room flies them, by index.
 struct ObjSync {
@@ -141,6 +159,12 @@ std::vector<std::pair<int, Bit32s> > g_hits;            // others' hits, applied
 std::vector<std::pair<Bit32u, double> > g_remoteShots;  // our copies of others' shots (the projectile, until)
 double g_objectsAt = -1e9, g_ownersAt = -1e9, g_decidedAt = -1e9;
 double g_boostAt = -1e9;
+double g_levelStartAt = -1e9;   // when we started flying our level (its start, a retry's)
+unsigned g_levelStarts = 0;     // the level function's starts (a retry of a level is a new start: everything of the last
+                                // one's forgotten, its models the game's to free)
+double g_holdSince = -1;        // a guest's level held since (waiting for the host to fly)
+double g_offLevelSince = -1;    // the host flying another level than ours, since
+double g_deadSentFor[4] = { -1e9, -1e9, -1e9, -1e9 };   // (a seat's start we sent the gone objects for)
 Bit32s g_lastFuel = 0;
 unsigned g_hitsSent = 0, g_hitsTaken = 0, g_kills = 0, g_skipped = 0;
 double g_nextTryMs;
@@ -161,12 +185,36 @@ std::string own_callsign() {
 
 std::string own_look() {
     const char *env = getenv("WCTVLOOK");
-    std::string l = env && env[0] ? env : "ship.bin";
-    for (size_t i = 0; i < l.size(); i++) l[i] = (char)tolower((unsigned char)l[i]);
-    if (l == "icerider") l = "icebrd.bin";
-    if (l == "snowscout") l = "snowftr.bin";
-    if (l == "tv-202" || l == "tv202") l = "ship.bin";
-    return kLooks[look_index(l)];
+    return kLooks[look_index(env && env[0] ? env : "ship.bin")];
+}
+
+// The host's craft for each seat (the page's Craft menus): WCTVLOOKS = "<seat 0's>,<seat 1's>,...", the last given
+// for the seats after it ("icebrd.bin,snowftr.bin": the host an IceRider, every guest a SnowScout); none, WCTVLOOK
+// for every seat.
+void host_looks() {
+    const char *env = getenv("WCTVLOOKS");
+    std::vector<std::string> parts;
+    if (env && env[0]) {
+        std::string cur;
+        for (const char *c = env;; c++) {
+            if (*c == ',' || !*c) {
+                parts.push_back(cur);
+                cur.clear();
+                if (!*c) break;
+            } else {
+                cur += *c;
+            }
+        }
+    } else {
+        parts.push_back(own_look());
+    }
+    for (int i = 0; i < 4; i++) g_looks[i] = kLooks[look_index(parts[std::min((size_t)i, parts.size() - 1)])];
+}
+
+void send_looks(Peer *to) {
+    NetworkMessage msg;
+    for (int i = 0; i < 4; i++) msg.mutable_tv_looks()->add_look(g_looks[i]);
+    to->conn.send(msg);
 }
 
 bool configured() {
@@ -251,8 +299,10 @@ bool start() {
         n->self = 0;
     }
     g_net = n;
-    wclog(1, "Terminal Velocity: %s at %s, %d seats, callsign %s, flying as a %s", n->host ? "HOST" : "GUEST", where.c_str(),
-          n->seats, n->callsign.c_str(), kLookNames[look_index(n->look)]);
+    if (n->host) host_looks();
+    wclog(1, "Terminal Velocity: %s at %s, %d seats, callsign %s%s", n->host ? "HOST" : "GUEST", where.c_str(), n->seats,
+          n->callsign.c_str(), n->host ? (std::string(", the host's craft ") + kLookNames[look_index(g_looks[0])] + ", the guests' " +
+          kLookNames[look_index(g_looks[1])]).c_str() : "");
     if (n->host) notice("Room open: fly a level and the others fly it with you");
     return true;
 }
@@ -279,6 +329,7 @@ void take_state(const TvState &st, int seat) {
     if (seat < 0 || seat >= kMaxSeats || seat == g_net->self) return;
     Remote &r = g_net->remotes[seat];
     const bool wasFlying = r.flying && PIC_FullIndex() - r.at < kStateStaleMs;
+    const int lastLevel = r.level;
     r.known = true;
     r.at = PIC_FullIndex();
     r.flying = st.flying();
@@ -290,6 +341,10 @@ void take_state(const TvState &st, int seat) {
     }
     r.shield = st.shield();
     r.boost = st.boost();
+    r.done = st.done();
+    if (st.has_difficulty()) r.difficulty = st.difficulty();
+    if (st.has_level_name()) r.levelName = st.level_name();
+    if (r.flying && (!wasFlying || st.level() != lastLevel)) r.flyingSince = PIC_FullIndex();
     if (r.flying && !wasFlying) {
         wclog(1, "Terminal Velocity: %s flies level %d (%s)", r.callsign.c_str(), r.level, st.level_name().c_str());
     }
@@ -299,9 +354,9 @@ void take_state(const TvState &st, int seat) {
 // starts over), grown as the level adds objects (a pickup a bunker drops: such additions can differ from machine to
 // machine, the level's own objects before them are the same everywhere).
 bool objs_ready() {
-    const int level = tv_level();
+    const int level = (int)g_levelStarts;
     const int n = tv_object_count();
-    if (level != g_objsLevel || tv_frames() < g_objsFrames || n < (int)g_objs.size()) {
+    if (level != g_objsLevel || n < (int)g_objs.size()) {
         g_objs.clear();
         g_objsLevel = level;
         g_hits.clear();
@@ -314,6 +369,39 @@ bool objs_ready() {
     }
     g_objsFrames = tv_frames();
     return n > 0;
+}
+
+void send_all(NetworkMessage &msg, bool bestEffort);
+
+// A newcomer to our level: the objects gone in the others' games go in ours (their hit points none: the objects'
+// loop leaves them out, drawn no more, counted gone by the level's goals).
+void take_dead(const TvDead &d) {
+    const double now = PIC_FullIndex();
+    if (d.level() != tv_level() || !tv_in_flight() || now - g_levelStartAt > 20000) return;
+    int gone = 0;
+    const int n = tv_object_count();
+    for (int k = 0; k < d.index_size(); k++) {
+        const int i = (int)d.index(k);
+        const Bit32u o = i < n ? tv_object_addr(i) : 0;
+        if (o && (Bit32s)tv_r32(o + 0x1c) > 0) {
+            tv_w32(o + 0x1c, 0);
+            gone++;
+        }
+    }
+    wclog(1, "Terminal Velocity: joined the level as it stands: %d of %d objects gone already", gone, d.index_size());
+}
+
+void send_dead(int forSeat) {
+    NetworkMessage msg;
+    TvDead *d = msg.mutable_tv_dead();
+    d->set_level(tv_level());
+    const int n = tv_object_count();
+    for (int i = 0; i < n; i++) {
+        const Bit32u o = tv_object_addr(i);
+        if (o && (Bit32s)tv_r32(o + 0x1c) <= 0) d->add_index((Bit32u)i);
+    }
+    send_all(msg, false);
+    wclog(1, "Terminal Velocity: %s starts our level: told the %d objects gone", g_net->remotes[forSeat].callsign.c_str(), d->index_size());
 }
 
 void take_objects(const TvObjects &o, int seat) {
@@ -377,9 +465,10 @@ void handle(Peer *p, NetworkMessage &msg) {
             reply.mutable_tv_hello()->set_seats((Bit32u)g_net->seats);
             reply.mutable_tv_hello()->set_look(g_net->look);
             p->conn.send(reply);
+            send_looks(p);
             char line[160];
             snprintf(line, sizeof(line), "%s joined as pilot %d of %d (in a %s)", p->callsign.c_str(), player + 1, g_net->seats,
-                     kLookNames[look_index(h.look())]);
+                     kLookNames[look_index(g_looks[player])]);
             notice(line);
         } else {
             p->callsign = h.callsign();
@@ -401,6 +490,17 @@ void handle(Peer *p, NetworkMessage &msg) {
         *out.mutable_tv_state() = msg.tv_state();
         out.mutable_tv_state()->set_player((Bit32u)seat);
         relay(p, [&](Peer *to) { to->conn.send_best_effort(out); });
+    } else if (msg.has_tv_looks()) {
+        if (!p->hello || g_net->host) return;
+        for (int i = 0; i < 4 && i < msg.tv_looks().look_size(); i++) g_looks[i] = kLooks[look_index(msg.tv_looks().look(i))];
+        wclog(1, "Terminal Velocity: the host's craft: %s for the host, %s for the guests", kLookNames[look_index(g_looks[0])],
+              kLookNames[look_index(g_looks[1])]);
+    } else if (msg.has_tv_dead()) {
+        if (!p->hello) return;
+        take_dead(msg.tv_dead());
+        NetworkMessage out;
+        *out.mutable_tv_dead() = msg.tv_dead();
+        relay(p, [&](Peer *to) { to->conn.send(out); });
     } else if (msg.has_tv_hit()) {
         if (!p->hello) return;
         const TvHit &h = msg.tv_hit();
@@ -489,6 +589,8 @@ void send_state(double now) {
     st->set_shield(s.shield);
     st->set_look(g_net->look);
     st->set_boost(now - g_boostAt < 300);
+    st->set_done(flying && tv_r32(tv_data(tvsig::D_LEVEL_DONE)) != 0);
+    st->set_difficulty((Bit32s)tv_r32(tv_data(tvsig::D_DIFFICULTY)));
     static int lastLevel = -2;
     if (tv_level() != lastLevel || (int)(now / 1000) % 5 == 0) {
         st->set_level_name(tv_level_name());
@@ -514,27 +616,66 @@ void shutdown() {
 
 const char *model_name(int look) { return look == kLookCount ? kFlame : kLooks[look]; }
 
+// The level's own craft (its first type of class 7 among its objects): its model awake (the type's +4).
+Bit32u planet_model() {
+    const int n = tv_object_count();
+    for (int i = 0; i < n; i++) {
+        if (tv_object_class(i) == 7) return tv_r32(tv_object_type_addr(i) + 4);
+    }
+    return 0;
+}
+Bit32u fallback_model() {
+    const Bit32u m = planet_model();
+    return m ? m : tv_r32(tv_data(tvsig::D_SHIP_MODEL));
+}
+
 void model_loaded(int look, Bit32u eax) {
     if (!g_net || look < 0 || look > kLookCount) return;
     g_net->models[look] = eax;
-    g_net->loading[look] = false;
+    g_net->modelState[look] = eax ? MODEL_READY : MODEL_MISSING;
     wclog(1, "Terminal Velocity: the model %s loaded: %08x", model_name(look), (unsigned)eax);
 }
 
-// The model a look is drawn with in this level (kLookCount: the flame): the player's own ship's is the game's
-// (ship.bin, loaded with the level); another is loaded once a level, by the game's loader, at a frame's top.
-Bit32u model_for(int look) {
-    if (look == 0) return tv_r32(tv_data(tvsig::D_SHIP_MODEL));
-    if (g_net->models[look]) return g_net->models[look];
-    if (!g_net->loading[look]) {
-        const std::string name = model_name(look);
-        std::vector<Bit32u> scratch((name.size() + 4) / 4, 0);
-        memcpy(&scratch[0], name.c_str(), name.size());
-        std::vector<Bit32u> args(1, TV_SCRATCH);
-        g_net->loading[look] = true;
-        tv_queue_call(TV_AT_FRAME, tv_fn(TV_FN_LOAD_MODEL), args, scratch, model_loaded, look);
+std::vector<Bit32u> name_scratch(const std::string &name) {
+    std::vector<Bit32u> scratch((name.size() + 4) / 4, 0);
+    memcpy(&scratch[0], name.c_str(), name.size());
+    return scratch;
+}
+
+// The archives' answer for a model: its size (0: not there, never to be loaded: the loader would end the program).
+void model_looked(int look, Bit32u eax) {
+    if (!g_net || look < 0 || look > kLookCount) return;
+    if (!eax) {
+        g_net->modelState[look] = MODEL_MISSING;
+        wclog(1, "Terminal Velocity: the model %s is not in this game's archives: %s", model_name(look),
+              look == kLookCount ? "no flame" : "drawn as the level's own craft");
+        return;
     }
-    return 0;
+    g_net->modelState[look] = MODEL_LOADING;
+    tv_queue_call(TV_AT_FRAME, tv_fn(TV_FN_LOAD_MODEL), std::vector<Bit32u>(1, TV_SCRATCH), name_scratch(model_name(look)), model_loaded, look);
+}
+
+// The model a look is drawn with in this level (kLookCount: the flame): the TV-202 is the player's own ship's (ship.bin,
+// loaded with the level), "planet" the level's own craft; another is looked up in the archives and loaded once a
+// level at a frame's top, drawn as the level's own craft meanwhile and when the archives have none.
+Bit32u model_for(int look) {
+    if (look == LOOK_TV202) return tv_r32(tv_data(tvsig::D_SHIP_MODEL));
+    if (look == LOOK_PLANET) return fallback_model();
+    int &st = g_net->modelState[look];
+    if (st == MODEL_READY) return g_net->models[look];
+    if (st == MODEL_UNKNOWN) {
+        const Bit32u lookup = tv_fn(TV_FN_POD_LOOKUP);
+        if (lookup) {
+            st = MODEL_LOOKING;
+            std::vector<Bit32u> args;
+            args.push_back(tv_data(tvsig::D_POD_TABLE));
+            args.push_back(TV_SCRATCH);
+            tv_queue_call(TV_AT_FRAME, lookup, args, name_scratch(model_name(look)), model_looked, look);
+        } else {
+            st = MODEL_MISSING;     // (no lookup known: never a blind load)
+        }
+    }
+    return look == kLookCount ? 0 : fallback_model();
 }
 
 // One of the others' shots made here: the projectile kept as theirs (its hits are told by its shooter).
@@ -608,8 +749,9 @@ void decide_owners(double now) {
             const double d = dist2(at, where[s]);
             if (d < bd) { bd = d; best = s; }
         }
-        if (best < 0 || best == os.owner || bd > kOwnRange * kOwnRange || now - os.ownedAt < kOwnerHoldMs) continue;
         const bool ownerHere = os.owner >= 0 && os.owner < kMaxSeats && flying[os.owner];
+        if (best < 0 || best == os.owner || now - os.ownedAt < kOwnerHoldMs) continue;
+        if (ownerHere && bd > kOwnRange * kOwnRange) continue;     // (an owner gone from the level gives up its objects)
         if (ownerHere && bd > 0.64 * dist2(at, where[os.owner])) continue;
         os.owner = best;
         os.ownedAt = now;
@@ -674,7 +816,76 @@ void place_puppets(double now) {
     }
 }
 
+// The level flown together: any pilot's level done (its exit flown) ends everybody's, as done; a guest whose host flies
+// another level for 3 s ends its own (the campaign's next call takes the host's); a pilot who starts our level after us
+// (a retry after a death, a late start) is told the objects already gone.
+void level_together(double now, int level) {
+    const Bit32u doneAt = tv_data(tvsig::D_LEVEL_DONE);
+    const bool done = tv_r32(doneAt) != 0;
+    for (int s = 0; s < kMaxSeats; s++) {
+        const Remote &r = g_net->remotes[s];
+        if (s == g_net->self || !r.known || now - r.at > kStateStaleMs || !r.flying) continue;
+        if (r.level == level && r.done && !done) {
+            tv_w32(doneAt, 1);
+            notice(r.callsign + " flew the exit: the level is done");
+        }
+        if (r.level == level && r.flyingSince > g_levelStartAt + 3000 && r.flyingSince > g_deadSentFor[s]) {
+            g_deadSentFor[s] = r.flyingSince;
+            send_dead(s);
+        }
+    }
+    const Remote &h = g_net->remotes[0];
+    if (!g_net->host && h.known && now - h.at < kStateStaleMs && h.flying && h.level != level && !done) {
+        if (g_offLevelSince < 0) g_offLevelSince = now;
+        if (now - g_offLevelSince > 3000) {
+            tv_w32(doneAt, 1);
+            g_offLevelSince = -1;
+            notice(h.callsign + " flies another level: yours ends, theirs is next");
+        }
+    } else {
+        g_offLevelSince = -1;
+    }
+}
+
 }  // namespace
+
+// A guest's campaign: the host's level, at the host's difficulty, once the host flies one (held meanwhile, the
+// overlay saying so); the host's own, and a guest alone, as the game has it.
+bool tv_session_level_call(int *index) {
+    if (!g_net || g_net->host) return false;
+    const double now = PIC_FullIndex();
+    bool hostHere = false;
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        hostHere = hostHere || (g_net->peers[i]->hello && g_net->peers[i]->player == 0 && g_net->peers[i]->conn.is_open());
+    }
+    if (!hostHere) return false;
+    const Remote &h = g_net->remotes[0];
+    if (h.known && now - h.at < kStateStaleMs && h.flying && h.level >= 0) {
+        if (*index != h.level) wclog(1, "Terminal Velocity: the host's level %d (%s) flown, not %d", h.level, h.levelName.c_str(), *index);
+        *index = h.level;
+        if (!h.levelName.empty() && h.levelName.size() < 0x27) {
+            // (the host's level file under that index: the same game, an episode of other levels chosen here)
+            const Bit32u at = tv_data(tvsig::D_LEVEL_NAMES) + (Bit32u)h.level * 0x28;
+            Bit32u words[10] = { 0 };
+            memcpy(words, h.levelName.c_str(), h.levelName.size());
+            for (int k = 0; k < 10; k++) tv_w32(at + 4 * k, words[k]);
+        }
+        if (h.difficulty >= 0) tv_w32(tv_data(tvsig::D_DIFFICULTY), (Bit32u)h.difficulty);
+        notice("Flying " + (h.levelName.empty() ? std::string("the host's level") : h.levelName) + " with " + h.callsign);
+        g_holdSince = -1;
+        return false;
+    }
+    if (g_holdSince < 0) {
+        g_holdSince = now;
+        notice("Waiting for " + (h.callsign.empty() ? std::string("the host") : h.callsign) + " to launch a level: you fly it together");
+    }
+    if (!h.known && now - g_holdSince > 15000) {
+        g_holdSince = -1;
+        return false;               // (no word from the host at all: as the game has it)
+    }
+    if (g_noticeAt >= 0 && now - g_noticeAt > kNoticeMs - 1000) g_noticeAt = now;     // (the line stays while it waits)
+    return true;
+}
 
 void tv_session_tick() {
     const double now = PIC_FullIndex();
@@ -736,16 +947,16 @@ void tv_session_tick() {
 void tv_session_frame() {
     if (!g_net) return;
     const double now = PIC_FullIndex();
-    // a new level: its models are the game's to free; ours loaded again
+    // a new start of a level: its models are the game's to free; ours loaded again
     const int level = tv_level();
-    static int modelsLevel = -2;
-    static Bit32u lastFrames = 0;
-    if (level != modelsLevel || tv_frames() < lastFrames) {
-        modelsLevel = level;
+    static unsigned modelsStart = 0;
+    if (g_levelStarts != modelsStart) {
+        modelsStart = g_levelStarts;
         memset(g_net->models, 0, sizeof(g_net->models));
-        memset(g_net->loading, 0, sizeof(g_net->loading));
+        memset(g_net->modelState, 0, sizeof(g_net->modelState));
+        g_offLevelSince = -1;
     }
-    lastFrames = tv_frames();
+    level_together(now, level);
     // the afterburner burning: its fuel going down
     const Bit32s fuel = (Bit32s)tv_r32(tv_data(tvsig::D_BURN_FUEL));
     if (fuel < g_lastFuel) g_boostAt = now;
@@ -795,7 +1006,7 @@ void tv_session_draw() {
     for (int s = 0; s < kMaxSeats; s++) {
         const Remote &r = g_net->remotes[s];
         if (s == g_net->self || !r.known || !r.flying || r.level != level || now - r.at > kStateStaleMs) continue;
-        const int look = look_index(r.look);
+        const int look = look_index(g_looks[s]);
         const Bit32u model = model_for(look);
         if (!model) continue;
         const double dt = std::min(now - r.at, (double)kCarryMs) / 1000.0;
@@ -877,6 +1088,8 @@ bool tv_session_hit(int obj, Bit32s damage, Bit32u projectile) {
 void tv_session_level(int index, const std::string &name) {
     (void)index;
     (void)name;
+    g_levelStarts++;
+    g_levelStartAt = PIC_FullIndex();
 }
 
 void tv_session_shutdown() { shutdown(); }

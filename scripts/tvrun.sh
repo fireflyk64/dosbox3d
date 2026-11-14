@@ -14,6 +14,9 @@
 #   BRIEF=1     the level briefings and cinematics as the game has them (the copy's VOX.INI: off by default, the route's
 #               timing assumes them off: in flight at ~62 s)
 #   PROG=       what runs (default "tv")
+#   JOY=1       the game port's stick on, as the page's "Built in" pad has it ([joystick] joysticktype=none
+#               timed=false, WCJOY=1; the key script's !joy=x:y and !joybutton=n:1|0 move it)
+#   ROUTE_DELAY=  seconds added to the route's times (a machine that launches its level later)
 #   SVGA=1      the game's high-resolution mode (its own setting: 640 x 240 drawn on a 640 x 480 screen; VOX.INI's
 #               gamePIXX,gamePIXY) in the copy, at CYCLES (60000 is good)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,15 +29,20 @@ if [ -n "${COPY:-}" ]; then
   mkdir -p $OUT/game; cp -f "$TVDIR"/* $OUT/game/ 2>/dev/null
   TVDIR=$OUT/game
   if [ -f $TVDIR/VOX.INI ]; then
-    python3 - "$TVDIR/VOX.INI" "${BRIEF:-}" "${SVGA:-}" <<'PY'
+    python3 - "$TVDIR/VOX.INI" "${BRIEF:-}" "${SVGA:-}" "${JOY:-}" <<'PY'
 import sys
-p, brief, svga = sys.argv[1], sys.argv[2], sys.argv[3]
+p, brief, svga, joy = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 lines = open(p, newline='').read().split('\r\n')
 for i, l in enumerate(lines):
     if l.startswith('difficulty,briefingFlag') and i + 1 < len(lines) and not brief:
         v = lines[i + 1].split(','); v[1] = '0'; v[2] = '0'; v[3] = '0'; lines[i + 1] = ','.join(v)
     if l.startswith('gamePIXX') and i + 1 < len(lines):
         v = lines[i + 1].split(','); v[0], v[1] = ('640', '240') if svga else ('320', '200'); lines[i + 1] = ','.join(v)
+    # (the game's Gamepad control, calibrated to DOSBox's counting port: the page's "Built in" pad)
+    if l.startswith('joystickActive,') and i + 1 < len(lines):
+        lines[i + 1] = '1,64,64,0,0' if joy else '0,0,0,0,0'
+    if l.startswith('xStickMin,') and i + 1 < len(lines):
+        lines[i + 1] = '0,0,128,128' if joy else '0,0,0,0'
 open(p, 'w', newline='').write('\r\n'.join(lines))
 PY
   fi
@@ -53,6 +61,7 @@ sbtype=sb16
 irq=5
 dma=1
 hdma=5
+$( [ -n "${JOY:-}" ] && printf '[joystick]\njoysticktype=none\ntimed=false\n' )
 [autoexec]
 @echo off
 mount c $TVDIR
@@ -63,8 +72,11 @@ CONF
 # sign 52-56, the story's page 61: in flight at ~62 s.
 route="38:enter,42:enter,46:enter,50:enter,52:a,52.3:c,52.6:e,53:enter,55:a,55.3:c,55.6:e,56:enter,61:enter"
 [ -n "${NOROUTE:-}" ] && route=""
+if [ -n "${ROUTE_DELAY:-}" ]; then
+  route=$(echo "$route" | tr ',' '\n' | awk -F: -v d=$ROUTE_DELAY '{ printf "%s%g:%s", (NR>1?",":""), $1+d, substr($0, index($0, ":")+1) }')
+fi
 by_time() { tr ',' '\n' | grep -v '^$' | sort -t: -k1,1 -g -s | paste -sd, -; }
 script="$(echo "$route${EXTRA:+,$EXTRA}" | by_time)"
-( cd $OUT && env ${ENV:-} SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy WCNET_LOG=${WCNET_LOG:-2} WCNET_KEYSCRIPT_FROM=boot \
+( cd $OUT && env ${ENV:-} ${JOY:+WCJOY=1} SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy WCNET_LOG=${WCNET_LOG:-2} WCNET_KEYSCRIPT_FROM=boot \
     WCNET_DUMP_DIR=$OUT WCNET_KEYSCRIPT="$script" timeout -s KILL $DUR $DOSBOX -conf $OUT/tv.conf > $OUT/run.out 2> $OUT/run.err )
 grep -a "Terminal Velocity" $OUT/run.err | grep -v ' 0 frames' | cut -c1-220 | tail -${SHOW:-8}

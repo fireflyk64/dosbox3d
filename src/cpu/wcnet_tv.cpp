@@ -48,6 +48,7 @@ Bit32u g_hitSkip = 0;
 
 // The places watched (linear), by what they are.
 enum Place { P_FRAME, P_DRAW, P_UPDATE, P_HIT, P_FIRE, P_LEVEL, P_COUNT };
+Bit32u g_campaignCall = 0;     // the campaign loop's call of the level function (its return address: + 5)
 Bit32u g_places[P_COUNT];
 
 bool rd8(Bit32u lin, Bit8u *v) { return mem_readb_checked(lin, v) ? false : true; }
@@ -145,7 +146,8 @@ bool scan() {
     g_places[P_UPDATE] = place_of(A_OBJ_UPDATE);
     g_places[P_HIT] = place_of(A_HIT_APPLY);
     g_places[P_FIRE] = place_of(A_FIRE_FN);
-    g_places[P_LEVEL] = place_of(A_CAMPAIGN) + (0x2EC79 - 0x2EC58);      // (the level's call: ebx its index)
+    g_places[P_LEVEL] = place_of(A_LEVEL_FN);                             // (the level function's entry)
+    g_campaignCall = place_of(A_CAMPAIGN) + (0x2EC79 - 0x2EC58);          // (the campaign's call of it: ebx its index)
     // the test's end, where a hit we answer "skip" goes on (counted, nothing applied): the same function's, as the
     // shareware has it, or none (every hit applied)
     g_hitSkip = place_of(A_HIT_END) - place_of(A_HIT_APPLY) == 0x2937F - 0x29327 ? place_of(A_HIT_END) : 0;
@@ -410,10 +412,32 @@ void tv_check_hooks(Bit32u eip) {
             tv_session_fired(posmat, mem_readd(sp + 8), mem_readd(sp + 0xc), mem_readd(sp + 0x14));
         }
     } else if (eip == g_places[P_LEVEL]) {
+        // The level function's entry: from the campaign's call (its return address), a level of the campaign about to be
+        // flown, ebx its index, [esp+4] its file's name.  The session may give it another index (a guest flies the
+        // host's level), or hold it: the call made again a time slice later (the program idles meanwhile), as long
+        // as the session says so.
+        const Bit32u ret = mem_readd(SegPhys(ss) + reg_esp);
+        if (ret != g_campaignCall + 5) {
+            return;
+        }
+        int index = (int)reg_ebx;
+        if (tv_session_level_call(&index)) {
+            CPU_Pop32();
+            reg_eip = ret - 5;
+            CPU_IODelayRemoved += CPU_Cycles;
+            CPU_Cycles = 0;
+            return;
+        }
+        if (index != (int)reg_ebx && index >= 0 && index < (int)tv_r32(g_data[D_LEVEL_COUNT])) {
+            reg_ebx = (Bit32u)index;
+            tv_w32(g_data[D_LEVEL_INDEX], (Bit32u)index);
+            mem_writed(SegPhys(ss) + reg_esp + 4, g_data[D_LEVEL_NAMES] + (Bit32u)index * 0x28);
+        }
         g_counts[6]++;
         g_level = (int)reg_ebx;
         g_levelName = tv_level_name();
-        wclog(1, "Terminal Velocity: level %d (%s) about to be flown", g_level, g_levelName.c_str());
+        wclog(1, "Terminal Velocity: level %d (%s) about to be flown, difficulty %d", g_level, g_levelName.c_str(),
+              (int)tv_r32(g_data[D_DIFFICULTY]));
         tv_session_level(g_level, g_levelName);
     }
 }
@@ -528,6 +552,13 @@ Bit32u tv_fn(TvFn f) {
     case TV_FN_HIT: return place_of(A_HIT_FN);
     case TV_FN_LOAD_MODEL: return place_of(A_LOAD_MODEL_FN);
     case TV_FN_DESTROY: return place_of(A_DESTROY_FN);
+    case TV_FN_POD_LOOKUP: {
+        // (the model loader's first call: the archives' lookup, by its near call's offset)
+        const Bit32u call = place_of(A_LOAD_MODEL_FN) + (0x402F1 - 0x402E0);
+        Bit8u op = 0;
+        rd8(call, &op);
+        return op == 0xE8 ? call + 5 + tv_r32(call + 1) : 0;
+    }
     }
     return 0;
 }

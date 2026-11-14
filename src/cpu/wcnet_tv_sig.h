@@ -21,9 +21,12 @@ enum AnchorId {
     A_WEAPONS = 11,     // the weapons' frame: the afterburner (slot 22) taken while its key is held and it has fuel, the fire key
     A_FLIGHT = 12,     // the flight's attitude step: the spin rates made a rotation, the attitude turned by it
     A_HIT_END = 13,     // the shot-against-objects test's end: the hits counted returned
-    A_LOAD_MODEL_FN = 14,     // a model loaded from the game's files, by name: its handle (a name it cannot find ends the program)
-    A_CAMPAIGN = 15,     // the campaign loop: the level index, the count, the level's file name, the level flown
-    A_COUNT = 16
+    A_LEVEL_FN = 14,     // the level flown: (its file's name), the campaign's call ebx its index; 1 back for a level done
+    A_SETTINGS = 15,     // the settings' writer: the difficulty and the briefing, cinema and demo flags
+    A_LEVEL_END = 16,     // the level loop's end of a frame: the level done (the exit flown, or TRINEXT), else a death
+    A_LOAD_MODEL_FN = 17,     // a model loaded from the game's files, by name: its handle (a name it cannot find ends the program)
+    A_CAMPAIGN = 18,     // the campaign loop: the level index, the count, the level's file name, the level flown
+    A_COUNT = 19
 };
 static const Bit8u k_frame_top_bytes[48] = { 0xe8, 0x0a, 0x67, 0xfe, 0xff, 0x85, 0xc0, 0x74, 0x0c, 0xc6, 0x05, 0xb9, 0xcd, 0x07, 0x00, 0x01, 0xe9, 0x3e, 0x08, 0x00, 0x00, 0xe8, 0x34, 0x3f, 0xfe, 0xff, 0xe8, 0x5f, 0x67, 0x00, 0x00, 0xe8, 0xaa, 0xa8, 0xfe, 0xff, 0xe8, 0xa5, 0xe9, 0xfe, 0xff, 0xe8, 0x10, 0xef, 0xfe, 0xff, 0xe8, 0xeb };
 static const Bit8u k_frame_top_mask[48] = { 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1 };
@@ -53,6 +56,12 @@ static const Bit8u k_flight_bytes[152] = { 0xa1, 0xb0, 0x4e, 0x06, 0x00, 0xa3, 0
 static const Bit8u k_flight_mask[152] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0 };
 static const Bit8u k_hit_end_bytes[27] = { 0xd0, 0xaf, 0x0d, 0x00, 0x46, 0x83, 0xc7, 0x04, 0x39, 0xce, 0x0f, 0x8c, 0x4f, 0xff, 0xff, 0xff, 0x8b, 0x04, 0x24, 0x83, 0xc4, 0x04, 0x5d, 0x5f, 0x5e, 0x5b, 0xc3 };
 static const Bit8u k_hit_end_mask[27] = { 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+static const Bit8u k_level_fn_bytes[55] = { 0x53, 0x56, 0x57, 0x55, 0x81, 0xec, 0xa8, 0x00, 0x00, 0x00, 0x31, 0xed, 0x8b, 0x1d, 0xa4, 0x4d, 0x06, 0x00, 0x89, 0xac, 0x24, 0xa0, 0x00, 0x00, 0x00, 0x85, 0xdb, 0x74, 0x0a, 0xe8, 0xce, 0x87, 0xfe, 0xff, 0xe9, 0x30, 0x01, 0x00, 0x00, 0xbe, 0x00, 0x00, 0x01, 0x00, 0xbf, 0x01, 0x00, 0x00, 0x00, 0x89, 0x2d, 0x6c, 0x65, 0x10, 0x00 };
+static const Bit8u k_level_fn_mask[55] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0 };
+static const Bit8u k_settings_bytes[48] = { 0x8b, 0x3d, 0x48, 0x4d, 0x06, 0x00, 0x57, 0x8b, 0x2d, 0x44, 0x4d, 0x06, 0x00, 0x55, 0xa1, 0x40, 0x4d, 0x06, 0x00, 0x50, 0x8b, 0x15, 0x1c, 0x4d, 0x06, 0x00, 0x52, 0x68, 0xd0, 0x31, 0x06, 0x00, 0x53, 0xe8, 0x86, 0xf0, 0x01, 0x00, 0x83, 0xc4, 0x18, 0x68, 0x50, 0x33, 0x06, 0x00, 0x53, 0xe8 };
+static const Bit8u k_settings_mask[48] = { 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1 };
+static const Bit8u k_level_end_bytes[45] = { 0x83, 0x3d, 0xc8, 0x4c, 0x06, 0x00, 0x00, 0x74, 0x24, 0xe8, 0xda, 0xf2, 0xfe, 0xff, 0x83, 0x3d, 0x24, 0x4d, 0x06, 0x00, 0x00, 0x75, 0x46, 0xe8, 0x8c, 0xc7, 0x01, 0x00, 0xe8, 0x87, 0xce, 0x01, 0x00, 0xe8, 0x42, 0xe1, 0x01, 0x00, 0xe8, 0xbd, 0xe1, 0x01, 0x00, 0xeb, 0x30 };
+static const Bit8u k_level_end_mask[45] = { 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1 };
 static const Bit8u k_load_model_fn_bytes[48] = { 0x53, 0x56, 0x57, 0x55, 0x83, 0xec, 0x50, 0x8b, 0x7c, 0x24, 0x64, 0x57, 0x68, 0x9c, 0x3d, 0x06, 0x00, 0xe8, 0x3a, 0xac, 0xfe, 0xff, 0x83, 0xc4, 0x08, 0x89, 0xc6, 0x85, 0xc0, 0x75, 0x1e, 0x57, 0x68, 0xa4, 0x3d, 0x06, 0x00, 0x8d, 0x44, 0x24, 0x08, 0x50, 0xe8, 0x94, 0x02, 0x01, 0x00, 0x83 };
 static const Bit8u k_load_model_fn_mask[48] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1 };
 static const Bit8u k_campaign_bytes[40] = { 0x8b, 0x1d, 0x74, 0xdd, 0x0d, 0x00, 0x3b, 0x1d, 0x78, 0xdd, 0x0d, 0x00, 0x0f, 0x8d, 0x8f, 0xf8, 0xff, 0xff, 0x6b, 0xc3, 0x28, 0x05, 0x30, 0xc7, 0x0d, 0x00, 0x50, 0x89, 0x1d, 0x74, 0xdd, 0x0d, 0x00, 0xe8, 0x72, 0xe1, 0xff, 0xff, 0x8b, 0x1d };
@@ -72,6 +81,9 @@ static const Anchor kAnchors[A_COUNT] = {
     { "weapons", 0x1BAB7, 0, 96, k_weapons_bytes, k_weapons_mask, 43, 14 },
     { "flight", 0x1228C, 0, 152, k_flight_bytes, k_flight_mask, 120, 28 },
     { "hit_end", 0x2937F, 16, 27, k_hit_end_bytes, k_hit_end_mask, 4, 23 },
+    { "level_fn", 0x2CDF0, 0, 55, k_level_fn_bytes, k_level_fn_mask, 0, 14 },
+    { "settings", 0x329AF, 0, 48, k_settings_bytes, k_settings_mask, 38, 4 },
+    { "level_end", 0x2D8B8, 0, 45, k_level_end_bytes, k_level_end_mask, 6, 4 },
     { "load_model_fn", 0x402E0, 0, 48, k_load_model_fn_bytes, k_load_model_fn_mask, 0, 13 },
     { "campaign", 0x2EC58, 0, 40, k_campaign_bytes, k_campaign_mask, 18, 4 },
 };
@@ -97,10 +109,13 @@ enum DataId {
     D_BURN_FUEL = 18,     // the afterburner's fuel (0 at the start; a pickup or TRIBURN gives some)
     D_LOCAL_SPIN = 19,     // the ship's turn rates about its own axes (the stick's and keys' doing)
     D_ATTITUDE = 20,     // the ship's attitude: a word, then a 3x3 float matrix (columns its right, up, forward)
-    D_LEVEL_INDEX = 21,     // the campaign's level, 0..
-    D_LEVEL_COUNT = 22,     // the campaign's level count
-    D_LEVEL_NAMES = 23,     // the levels' file names, 0x28 bytes each
-    D_COUNT = 24
+    D_DIFFICULTY = 21,     // the difficulty (0..3, Easy..Terminal)
+    D_LEVEL_DONE = 22,     // the level done: set, the level loop ends at the frame's end as completed (alive)
+    D_POD_TABLE = 23,     // the archives' table the model loader looks a name up in
+    D_LEVEL_INDEX = 24,     // the campaign's level, 0..
+    D_LEVEL_COUNT = 25,     // the campaign's level count
+    D_LEVEL_NAMES = 26,     // the levels' file names, 0x28 bytes each
+    D_COUNT = 27
 };
 static const Data kData[D_COUNT] = {
     { "netgame", A_REMOTE_DRAW, 12, 0x7CE48 },
@@ -124,6 +139,9 @@ static const Data kData[D_COUNT] = {
     { "burn_fuel", A_WEAPONS, 30, 0xA7A34 },
     { "local_spin", A_FLIGHT, 1, 0x64EB0 },
     { "attitude", A_FLIGHT, 116, 0x81C90 },
+    { "difficulty", A_SETTINGS, 22, 0x64D1C },
+    { "level_done", A_LEVEL_END, 2, 0x64CC8 },
+    { "pod_table", A_LOAD_MODEL_FN, 13, 0x63D9C },
     { "level_index", A_CAMPAIGN, 2, 0xDDD74 },
     { "level_count", A_CAMPAIGN, 8, 0xDDD78 },
     { "level_names", A_CAMPAIGN, 22, 0xDC730 },

@@ -455,6 +455,20 @@ message TvState {
     optional string level_name = 7;
     optional string look = 8;
     optional bool boost = 9;            // the afterburner burning (its fuel going down)
+    optional bool done = 10;            // the level done (its exit flown): everybody's ends with it
+    optional sint32 difficulty = 11;
+}
+// The host's choice of each seat's craft (the page's Craft menus, WCTVLOOKS): the model each pilot's ship is drawn
+// with by the others, by seat ("ship.bin" the TV-202, "icebrd.bin", "snowftr.bin", "hawk.bin", "gull1.bin", or
+// "planet": the level's own craft).
+message TvLooks {
+    repeated string look = 1;
+}
+// The objects of a level that are gone (no hit points left), from a pilot who has flown it a while to one who has just
+// started it (a retry after a death, a late start): the newcomer's copies go too.
+message TvDead {
+    optional sint32 level = 1;
+    repeated uint32 index = 2 [packed = true];
 }
 // A shot of a pilot's: the game's fire call's arguments (16 words of place, angles and matrix, the weapon, its
 // damage, its kind), remade on the others' machines.
@@ -630,4 +644,6 @@ message NetworkMessage {
     optional TvObjects tv_objects = 63;
     optional TvOwners tv_owners = 64;
     optional TvHit tv_hit = 65;
+    optional TvLooks tv_looks = 66;
+    optional TvDead tv_dead = 67;
 }
