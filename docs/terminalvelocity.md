@@ -115,8 +115,13 @@ by their rates (0x4CEC0) and drawn by 0x4E840 with the draw-list call.  The laye
   `!tvburn=SECONDS` (the afterburner's key held), `!tvfuel=N`, `!tvgod=1` (the shield kept full).
 * `SVGA=1 CYCLES=60000` for the rigs: the high-resolution mode in each copy (60+ frames a second natively).
 * The video: `WCLAB=<dir>` in each machine's environment (HOSTENV/GUESTENV), then `scripts/tfnet-sheet.py` (contact
-  sheets of both recordings lined up by the wall clock) and `scripts/tfnet-video.py ... --title` (one vertical
-  video, host on top); both import walkthrough/labrec.py (the main tree's walkthrough/: a symlink in a worktree).
+  sheets of both recordings lined up by the wall clock) and `scripts/tvnet-video.py` (tfnet-video.py's vertical
+  video, host on top, with `--zoom FROM:TO:host|guest:FACTOR[:CX:CY]` punch-ins: a ship 30 world units off is a few
+  pixels); both import walkthrough/labrec.py (the main tree's walkthrough/: a symlink in a worktree).  The first
+  video (2026-11-14, the user: "two people blast a building and a flier and can see each other and one can see the
+  other boost"): SVGA=1 CYCLES=60000 GUEST_LATE=1, both at bunker 408 with fire, then the host to object 5 with a 3 s
+  burn and the guest on its wing (partner:2:0.5:7), the guest's 4 s burn past it, then the SnowScouts (near:7); the
+  bunker blew at 75.5 s on both, the kills at 131-140 s told across (8 stages).
 * The game's files: the shareware unpacked into `tvgame/` (untracked) and set up once (`SETUP.EXE`: Sound Setup,
   Sound Blaster 16, then Save and launch TV).
 
@@ -144,7 +149,8 @@ named by its index (a level adds objects as it goes, a bunker's pickup: those ca
   their place written at each frame's top, carried on by their last two reports.  Static objects (installations,
   turrets) run in every game, at every machine's own pilot.
 * **The afterburner shows.**  A pilot whose afterburner fuel is going down reports `boost`; the others draw a flame
-  behind its ship (the game's own `fireball.bin`, loaded once a level, flickering in size).
+  behind its ship: a trail of three of the game's own `fireball.bin` (loaded once a level), smaller and smaller,
+  flickering in size and place.
 
 ## 6. Where this stands, and what comes next
 

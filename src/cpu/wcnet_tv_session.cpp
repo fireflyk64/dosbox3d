@@ -808,19 +808,23 @@ void tv_session_draw() {
         tv_queue_call(TV_AT_DRAW, tv_fn(TV_FN_DRAW_MODEL), args, scratch, NULL, s);
         g_drawn++;
         if (r.boost && now - r.at < 500) {
-            // the afterburner: a flame behind it, flickering
+            // the afterburner: a trail of flame behind it, three fireballs smaller and smaller, flickering
             const Bit32u flame = model_for(kLookCount);
             if (!flame) continue;
             const double h = (Bit32s)scratch[5] / kTurn, p = -(Bit16s)(Bit16u)scratch[3] / kTurn;
             const double fwd[3] = { sin(h) * cos(p), sin(p), cos(h) * cos(p) };
-            const double back = 1.1 + 0.25 * ((tv_frames() * 7) % 5) / 4.0;
-            std::vector<Bit32u> fs(scratch);
-            for (int k = 0; k < 3; k++) fs[k] = (Bit32u)((Bit32s)scratch[k] - (Bit32s)(fwd[k] * back * kUnit));
-            std::vector<Bit32u> fa;
-            fa.push_back(TV_SCRATCH);
-            fa.push_back(flame);
-            fa.push_back(0x7000 + ((tv_frames() * 13) % 7) * 0x0C00);
-            tv_queue_call(TV_AT_DRAW, tv_fn(TV_FN_DRAW_MODEL), fa, fs, NULL, s);
+            for (int k = 0; k < 3; k++) {
+                const unsigned flick = (tv_frames() * (7 + 4 * k) + 3 * k) % 9;     // (0..8)
+                const double back = 0.9 + 0.75 * k + 0.08 * flick;
+                const double scale = (1.15 - 0.3 * k) * (0.8 + 0.05 * flick);
+                std::vector<Bit32u> fs(scratch);
+                for (int c = 0; c < 3; c++) fs[c] = (Bit32u)((Bit32s)scratch[c] - (Bit32s)(fwd[c] * back * kUnit));
+                std::vector<Bit32u> fa;
+                fa.push_back(TV_SCRATCH);
+                fa.push_back(flame);
+                fa.push_back((Bit32u)(scale * 0x10000));
+                tv_queue_call(TV_AT_DRAW, tv_fn(TV_FN_DRAW_MODEL), fa, fs, NULL, s);
+            }
         }
     }
 }
