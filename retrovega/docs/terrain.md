@@ -118,9 +118,14 @@ Still to do for 30 fps on the page:
 ## Still to do
 
 - The approach and straight-down views: 2 to 3 times over budget natively (the card's detail adapts).
-- The minds know nothing of the ground: an enemy chasing low skims it, its step undone.
-- Shots, missiles and explosions are not yet hidden by the ground.
-- Missions with planets are not yet kept from DOS without the card except by being off the campaign's way.
+- Missions with planets are kept from DOS without the card only by being off the campaign's way.
+
+Done since step 4:
+
+- Shots, missiles and blasts behind the ground are hidden too.
+- An AI fighter within 400 km of the ground with its nose going down (or within 200 km) pulls up.
+- Arches thin out to their edges, and material edges change half way between samples on gentle ground.
+- The card read the mission record into padded structs (Mirage's arch was misplaced): packed now, checked by size.
 
 ## The plan
 
