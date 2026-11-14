@@ -40,7 +40,7 @@ for i, l in enumerate(lines):
         v = lines[i + 1].split(','); v[0], v[1] = ('640', '240') if svga else ('320', '200'); lines[i + 1] = ','.join(v)
     # (the game's Gamepad control, calibrated to DOSBox's counting port: the page's "Built in" pad)
     if l.startswith('joystickActive,') and i + 1 < len(lines):
-        lines[i + 1] = '1,64,64,0,0' if joy else '0,0,0,0,0'
+        lines[i + 1] = '2,64,64,0,0' if joy else '0,0,0,0,0'
     if l.startswith('xStickMin,') and i + 1 < len(lines):
         lines[i + 1] = '0,0,128,128' if joy else '0,0,0,0'
 open(p, 'w', newline='').write('\r\n'.join(lines))

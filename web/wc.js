@@ -16,7 +16,7 @@ import { initControls, KEY, stepped } from "./gamepad.js";
 import { initTouch } from "./touch.js";
 import { initVoice } from "./voice.js";
 import { loadSo3 } from "./so3.js";
-import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles,
+import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles, expandSplitZips,
          saveGame, loadGames, forgetGame, totalSize, gameById, gameByTag, programsIn, knownBuild, GAMES } from "./gamefiles.js";
 import { newRoomCode, retagRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS, CALLSIGNS, pickCallsign, givesWay, sameName } from "./chatfilter.js";
 import { initHall, OTHER_SERVER, serverDown } from "./hall.js";
@@ -382,6 +382,8 @@ $("program").addEventListener("change", () => {
 const gameTag = () => (gameInfo() && gameInfo().tag) || "";
 
 async function useFiles(files, label, { persist = true } = {}) {
+  // (a game in pieces, Terminal Velocity's shareware: its split archive unpacked)
+  files = await expandSplitZips(files);
   const id = identifyGame(files);
   if (!id.game) {
     $("pickerLabel").hidden = false;
@@ -828,7 +830,7 @@ function renderMission() {
   // (a game the room does not fly, Privateer's: the row for its Face box alone -- and Full screen -- the room's own
   // choices hidden; the Face box was hidden with the whole row before: the user, 2026-11-09, "I also don't see an
   // option to select comm portrait")
-  $("missionRow").hidden = !lobbyFlies() && !isPriv();
+  $("missionRow").hidden = !lobbyFlies() && !isPriv() && !isTvRoom();
   loadCampaignManifest(gameById(lobbyGameId()));
   wordCampaign();
   buildMissionMenu();
@@ -856,6 +858,9 @@ function renderMission() {
   $("difficultyLabel").hidden = !diff || noRoomOptions;
   // (Privateer: Face, yours on the others' comm screens, in the Conn and Collide choices' place)
   $("privFaceLabel").hidden = !isPriv();
+  // (Terminal Velocity: the craft each pilot flies as in the others' games, the host's choice)
+  $("tvCraftLabel").hidden = $("tvCraftGuestLabel").hidden = !isTvRoom() || one;
+  $("tvCraftHost").disabled = $("tvCraftGuest").disabled = !isHost() || running;
   if (diff) {
     $("collisions").parentElement.hidden = true;
     lobby.rocks = "on";
@@ -1813,6 +1818,12 @@ gameLook();
 const PRIV_FACE_KEY = "wc:privFace";
 try { const f = localStorage.getItem(PRIV_FACE_KEY); if (f && [...$("privFace").options].some((o) => o.value === f)) $("privFace").value = f; } catch (e) { /* the first */ }
 $("privFace").addEventListener("change", () => { try { localStorage.setItem(PRIV_FACE_KEY, $("privFace").value); } catch (e) { /* not kept */ } });
+// Terminal Velocity's craft menus, remembered in this browser
+for (const id of ["tvCraftHost", "tvCraftGuest"]) {
+  const key = "wc:" + id;
+  try { const v = localStorage.getItem(key); if (v && [...$(id).options].some((o) => o.value === v)) $(id).value = v; } catch (e) { /* the first */ }
+  $(id).addEventListener("change", () => { try { localStorage.setItem(key, $(id).value); } catch (e) { /* not kept */ } });
+}
 const FULL_START_KEY = "wc:fullStart";
 try { if (sessionStorage.getItem(FULL_START_KEY) === "off") $("fullStart").checked = false; } catch (e) { /* ticked */ }
 $("fullStart").addEventListener("change", () => { try { sessionStorage.setItem(FULL_START_KEY, $("fullStart").checked ? "on" : "off"); } catch (e) { /* not kept */ } });
@@ -1925,6 +1936,7 @@ async function start(fromGesture) {
     if (cfg.callsign && !solo) env.WCCALLSIGN = cfg.callsign;
     if (isTf()) env.WCNET_TIE_MOUSE = tfFlight();
     if (isPriv()) env.WCPRIVFACE = $("privFace").value;
+    if (isTv() && together && isHost()) env.WCTVLOOKS = `${$("tvCraftHost").value},${$("tvCraftGuest").value}`;
     if (cfg.lastname && !solo) env.WCLASTNAME = cfg.lastname;
     if (cfg.firstname && !solo) env.WCFIRSTNAME = cfg.firstname;
     // A wingman's game calls the leader's ship by the leader's callsign (the
@@ -1993,7 +2005,7 @@ async function start(fromGesture) {
     // (a game's own settings made fit for the browser: the registry's `prepare`, TIE Fighter's music)
     if (gameInfo() && gameInfo().prepare) {
       try {
-        const said = gameInfo().prepare(Module.FS, GAME_ROOT);
+        const said = gameInfo().prepare(Module.FS, GAME_ROOT, { joystick: joystickPort });
         if (said) log(said);
       } catch (e) {
         log(`preparing ${source.game.title}'s settings: ${e.message || e}`);
@@ -2186,6 +2198,9 @@ const TF_FLIGHT = ["drag", "pointer", "keyboard", "joystick", "pointerbank"];   
 const TF_FLIGHT_KEY = "wc-tf-flight";
 const isTf = () => !!(gameInfo() && gameInfo().id === "tf");
 const isPriv = () => !!(gameInfo() && (gameInfo().id === "priv" || gameInfo().id === "privrf"));
+const isTv = () => !!(gameInfo() && gameInfo().id === "tv");
+// (the room's game, the loaded one's or the lobby's)
+function isTvRoom() { return lobbyGameId() === "tv" || isTv(); }
 function tfFlight() {
   let v = null;
   try { v = localStorage.getItem(TF_FLIGHT_KEY); } catch (e) { /* none */ }

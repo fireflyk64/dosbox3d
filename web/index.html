@@ -376,6 +376,10 @@
               <option value="BOU_AA:33">Hunter (woman)</option>
               <option value="BOU_AA:-1">Hunter (man)</option>
             </select></label>
+          <label id="tvCraftLabel" hidden title="The craft the host flies as, in the others' games (the host's choice, before a launch): the TV-202, a craft of the game's own, or each level's own craft. A model the game lacks is drawn as the level's own craft">Host's craft
+            <select id="tvCraftHost"><option value="ship.bin">TV-202</option><option value="icebrd.bin">Ymir IceRider</option><option value="snowftr.bin">Ymir SnowScout</option><option value="hawk.bin">Hawk</option><option value="gull1.bin">Gull</option><option value="planet">the level's own craft</option></select></label>
+          <label id="tvCraftGuestLabel" hidden title="The craft every other pilot flies as, in the others' games (the host's choice, before a launch)">Wingmen's craft
+            <select id="tvCraftGuest"><option value="ship.bin">TV-202</option><option value="icebrd.bin">Ymir IceRider</option><option value="snowftr.bin">Ymir SnowScout</option><option value="hawk.bin">Hawk</option><option value="gull1.bin">Gull</option><option value="planet">the level's own craft</option></select></label>
           <label class="check" id="capHullLabel" hidden title="Capital ships (carriers, destroyers, cruisers, transports, friend and foe) take three times the damage before they are destroyed. The host picks it before the launch"><input type="checkbox" id="capHull"> Capship hull</label>
           <div class="hint" id="missionHint"></div>
         </div>

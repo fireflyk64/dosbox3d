@@ -385,6 +385,87 @@ function privMusicOnFm(FS, root) {
   return `Privateer's music: card ${first[0] || "none"} (General MIDI: no synthesizer in the browser) changed to 2, the Sound Blaster's FM`;
 }
 
+// Terminal Velocity's shareware (3dtv12.zip, 3D Realms' BBS release) holds an installer, INSTALL.EXE, and the game in
+// pieces, TV12BBS._1, ._2, ._3: put end to end they are a zip (the installer's own header before it) of the game's
+// files, which INSTALL.EXE unpacks to C:\TV.  expandSplitZips does the same in the browser: every set of pieces
+// <name>._1, ._2, ... (any case, the same directory) that reads as a zip is replaced by the files in it.
+export async function expandSplitZips(files) {
+  const groups = new Map();
+  for (const f of files) {
+    const m = /^(.*)\._(\d+)$/.exec(f.path);
+    if (!m) continue;
+    const key = m[1].toLowerCase();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ n: Number(m[2]), f });
+  }
+  let out = files;
+  for (const [, parts] of groups) {
+    parts.sort((a, b) => a.n - b.n);
+    if (parts[0].n !== 1 || parts.some((p, i) => p.n !== i + 1)) continue;
+    const size = parts.reduce((t, p) => t + p.f.data.length, 0);
+    const whole = new Uint8Array(size);
+    let at = 0;
+    for (const p of parts) { whole.set(p.f.data, at); at += p.f.data.length; }
+    let inside;
+    try { inside = await readZip(whole); } catch (e) { continue; }
+    const dirOf = parts[0].f.path.includes("/") ? parts[0].f.path.slice(0, parts[0].f.path.lastIndexOf("/") + 1) : "";
+    const drop = new Set(parts.map((p) => p.f));
+    out = out.filter((f) => !drop.has(f)).concat(inside.map((f) => ({ path: dirOf + f.path, data: f.data })));
+  }
+  return out;
+}
+
+// Terminal Velocity's own settings made for the browser at each launch (src/cpu/wcnet_tv.cpp; docs/terminalvelocity.md):
+// the Sound Blaster 16's DIGPAK driver as SOUNDRV.COM (SETUP.EXE's Sound Setup copies the card's driver there; TV.EXE
+// loads it, the music and the effects both through it), SETUP.CFG as SETUP.EXE's "Save and launch TV" writes it (TV.EXE
+// asks for setup without one), and in VOX.INI (the game's settings, written by the game) the high-resolution mode (the
+// game's own "Res: SVGA": 640 x 240 drawn on a 640 x 480 screen; 640,480 there breaks the terrain) and the control:
+// with a pad picked "Built in" (opts.joystick: the game port has it), the game's Gamepad control (2) calibrated to
+// DOSBox's port as the game's own Calibrate measures it (centre 64, 0 to 128); else a Gamepad control left from an
+// earlier launch goes back to the keyboard (the port is empty), the mouse kept.
+const TV_SETUP_CFG = [";Setup File for TV", ";Version 1.2", "", "", "[Screen Modes]", "ScreenMode = 0", "", "", "[Sound Setup]",
+  "FXDevice = 0", "MusicDevice = 0", "FXVolume = 128", "MusicVolume = 128", "", "", "[Comm Setup]", "ComPort = 2", "IrqNumber = ~",
+  "UartAddress = ~", "PortSpeed = 9600", "ToneDial = 1", "SocketNumber = ~", "NumberPlayers = 2", 'InitString = "ATZ"',
+  'HangupString = "ATH0"', 'DialoutString = ""', "",
+  ...Array.from({ length: 10 }, (_, i) => `CommbatMacro#${i} = "No Macro #${i + 1}"`), "",
+  ...Array.from({ length: 10 }, (_, i) => [`PhoneName#${i} = ""`, `PhoneNumber#${i} = ""`]).flat(), ""].join("\r\n");
+const TV_VOX_INI = ["musicFlag", "1", "soundFlag", "1", "mixSpeed", "11025", "skyTextureFlag", "1",
+  "joystickActive,xcenter,ycenter,throttleMin,throttleMax", "0,0,0,0,0", "perspectiveFlag,airShadowFlag", "0,0",
+  "gamePIXX,gamePIXY,gameX1,gameY1,gameX2,gameY2", "640,240,0,0,0,0", "localBusVideo", "1", "aspectRatio,flipVideo", "0,0",
+  "textureResolution", "0", "difficulty,briefingFlag,cinemaFlag,showDemoFlag", "1,1,1,1",
+  "xStickMin,yStickMin,xStickMax,yStickMax", "0,0,0,0", "notebookStickFlag", "0", "stereoFlag,musicVolume,soundVolume",
+  "0,65536,65536", "weaponKey,fireKey,leftKey,rightKey,upKey,downKey,throtUp,throtDown", "56,57,75,77,72,80,30,44",
+  "buttonFire,buttonWeapon,buttonThrottleUp,buttonThrottleDown", "1,2,8,4", "boomZoom", "65536",
+  "autoLevel,mouseControl,rollLeftKey,rollRightKey,partsFlag,mouseFlip", "1,0,71,73,1,1",
+  "mouseSenseX,mouseSenseY,mouseMotion,mouseLeftButton,mouseRightButton", "8,16,1,0,1", ""].join("\r\n");
+function tvPrepare(FS, root, opts = {}) {
+  const said = [];
+  const read = (name) => { try { return FS.readFile(`${root}/${name}`); } catch (e) { return null; } };
+  const has = (name) => read(name) !== null;
+  if (!has("SOUNDRV.COM")) {
+    const sb = read("SB16.COM");
+    if (sb) { FS.writeFile(`${root}/SOUNDRV.COM`, sb); said.push("the Sound Blaster 16's driver as SOUNDRV.COM"); }
+  }
+  if (!has("SETUP.CFG")) { FS.writeFile(`${root}/SETUP.CFG`, new TextEncoder().encode(TV_SETUP_CFG)); said.push("SETUP.CFG"); }
+  const vox = read("VOX.INI");
+  const lines = new TextDecoder().decode(vox || new TextEncoder().encode(TV_VOX_INI)).split(/\r?\n/);
+  const set = (head, fn) => {
+    const i = lines.findIndex((l) => l.startsWith(head));
+    if (i >= 0 && i + 1 < lines.length) lines[i + 1] = fn(lines[i + 1].split(",")).join(",");
+  };
+  set("gamePIXX,", (v) => { v[0] = "640"; v[1] = "240"; return v; });
+  let control = "";
+  set("joystickActive,", (v) => {
+    if (opts.joystick) { control = "the gamepad (built in)"; return ["2", "64", "64", v[3] || "0", v[4] || "0"]; }
+    if (Number(v[0]) >= 2) { control = "the keyboard (no pad built in)"; v[0] = "0"; }
+    return v;
+  });
+  if (opts.joystick) set("xStickMin,", () => ["0", "0", "128", "128"]);
+  FS.writeFile(`${root}/VOX.INI`, new TextEncoder().encode(lines.join("\r\n")));
+  said.push(`VOX.INI: 640 x 480${control ? ", " + control : ""}${vox ? "" : " (made)"}`);
+  return `Terminal Velocity's settings: ${said.join("; ")}`;
+}
+
 export const GAMES = [
   { id: "wc1", tag: "WC1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
     build: { para: 0x1231, off: 0x0187, text: "Loading WING COMMANDER" },
@@ -504,6 +585,19 @@ export const GAMES = [
     build: { para: 0x6E4D, off: 0x0074, text: "Type PRIV to run Privateer" },
     help: "Righteous Fire, Privateer's sequel campaign, flown together the way Privateer is (rooms of up to 8, each pilot its own career, where everybody is told). It starts from a pilot of its own (a new one, or a Privateer pilot who finished the game). The page keeps your saved games in this browser.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=5\ndma=1\nhdma=5\n" },
+  // Terminal Velocity (Terminal Reality / 3D Realms, 1995): the shareware zip as 3D Realms released it (its split
+  // archive unpacked by expandSplitZips) or the game's installed directory.  TV.EXE loads the sound driver and runs
+  // GAME.EXE, a 32-bit program bound with DOS/4G that the hooks find in memory by its code (src/cpu/wcnet_tv.cpp).
+  // Flown together: the host's level for everybody, each pilot's ship in the others' games as the host's Craft menus
+  // choose, hits and kills and the level's craft shared (docs/terminalvelocity.md).  The machine of its own setup: an
+  // S3 for its 640 x 480 mode, a Sound Blaster 16 at 220, IRQ 5.
+  { id: "tv", tag: "TV", title: "Terminal Velocity", detect: ["TV.EXE"], run: "tv", multiplayer: true, maxSeats: 4,
+    build: { text: "Terminal Velocity Operating System" },
+    cycles: 60000, screen: [640, 480], noFlight: true, noRoomOptions: true, joystick: true, prepare: tvPrepare,
+    saves: ["SAVE*.DAT", "SCORE.DAT", "VOX.INI"],
+    help: "Terminal Velocity flown together: the host plays the game as it comes (New Game, an episode, a difficulty) and everybody else flies the host's level with them: a guest's game waits for the host's launch, then flies the same level at the same difficulty. Everybody sees everybody else's ship (the host picks each pilot's craft in the room: the TV-202, a craft of the game's own, or the level's own); every hit and kill counts in every game, and the level's craft are flown by the nearest pilot's machine. Whoever flies the exit ends the level for everybody (the statistics: Space for the next level). A pilot who dies can retry: the level is flown again as it stands, what was destroyed stays destroyed. The afterburner (held Alt, once you have fuel for it) shows to the others as a flame. Pick a controller \"Built in\" (above) for the game's own gamepad control.",
+    keys: "<b>Terminal Velocity in flight:</b> the arrow keys steer, <kbd>A</kbd> and <kbd>Z</kbd> set the speed, <kbd>Space</kbd> fires, <kbd>Alt</kbd> held the afterburner (when you have picked one up), the keypad's <kbd>7</kbd> and <kbd>9</kbd> roll; <kbd>B</kbd> changes the view; <kbd>Esc</kbd> the game's menu. A controller picked \"Built in\": the stick steers, button 1 fires, button 2 the afterburner, buttons 3 and 4 the speed.",
+    dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=5\ndma=1\nhdma=5\n" },
 ];
 
 // The registry entry of a game id, or null (a game picked by its executable).
@@ -566,8 +660,12 @@ export async function readZip(bytes) {
   }
   if (eocd < 0) throw new Error("not a zip file (no end-of-central-directory record)");
   const count = dv.getUint16(eocd + 10, true);
+  const cdSize = dv.getUint32(eocd + 12, true);
   let off = dv.getUint32(eocd + 16, true);
   if (off === 0xffffffff) throw new Error("zip64 archives are not supported");
+  // (a zip with bytes before it, an installer's header or a stub: its offsets count from the zip's own start)
+  const shift = eocd - cdSize - off > 0 ? eocd - cdSize - off : 0;
+  off += shift;
   const files = [];
   for (let n = 0; n < count; n++) {
     if (dv.getUint32(off, true) !== 0x02014b50) throw new Error("corrupt zip central directory");
@@ -578,7 +676,7 @@ export async function readZip(bytes) {
     const nlen = dv.getUint16(off + 28, true);
     const elen = dv.getUint16(off + 30, true);
     const clen = dv.getUint16(off + 32, true);
-    const local = dv.getUint32(off + 42, true);
+    const local = dv.getUint32(off + 42, true) + shift;
     const utf8 = (flags & 0x800) !== 0;
     const name = new TextDecoder(utf8 ? "utf-8" : "latin1").decode(bytes.subarray(off + 46, off + 46 + nlen));
     off += 46 + nlen + elen + clen;
