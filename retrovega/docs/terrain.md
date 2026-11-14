@@ -56,13 +56,35 @@ like `debris.c`.
   queries, draws eight views (orbit, approach, low, banked, the arch, under it, straight down, looking up) and writes
   PNGs and a contact sheet.
 
-**Measured** (this box, native, -O2):
+**Measured** (this box, native -O2, the best of 8 frames; wasm under node about 1.3 times these):
 
-- Making the planet takes 3.1 s.
-- A view takes 4 to 17 ms to make and 1 to 2.5 ms to blit.
+| View | View | Blit |
+|---|---|---|
+| Orbit | 2.9 ms | 1.8 ms |
+| Approach, 8,000 km up | 10.5 ms | 1.1 ms |
+| Low and level | 3.8 ms | 1.0 ms |
+| Banked | 4.7 ms | 1.2 ms |
+| Straight down | 8.1 ms | 1.9 ms |
+| Looking up | 2.1 ms | 1.8 ms |
 
-That is still too slow for the page: the target is about 3 ms natively for the two together. Next is to make it faster
-(cheaper samples, a cache-friendlier grid, fewer lines where they bunch) and to make the planet in the background.
+Making the planet takes 3.1 s.
+
+The speed-ups so far:
+
+- Each cell keeps its height, colour and slab mark together.
+- The frame's picture is kept a row at a time, which suits both the march and the blit.
+- Hidden ground is skipped against a coarse grid of the highest ground near each cell (levels 2 on).
+- The lines are thinned near V, where they bunch up.
+- Steps grow as the ray grazes the ground.
+- The haze comes from tables.
+- The sky's glow is worked out per screen row in the blit, every 8th pixel and weighed between.
+- Rows between two samples are filled with their light and haze weighed between the two, so shading is smooth.
+
+Still to do for 30 fps on the page:
+
+- The approach and straight-down views are 2 to 3 times over budget.
+- A frame-time budget that coarsens the step when a frame runs long.
+- Making the planet in the background.
 
 ## The plan
 

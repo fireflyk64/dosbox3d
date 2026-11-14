@@ -22,6 +22,12 @@
 #include <string.h>
 #include "terrain.h"
 
+#if defined(__GNUC__) || defined(__clang__)
+#define TR_HOT static inline __attribute__((always_inline))   /* (the march's helpers: in the loop) */
+#else
+#define TR_HOT static
+#endif
+
 #define TR_N TR_FACE
 #define TR_S (TR_N + 2)                 /* a face's grid with a cell of border all round (the next faces' ground) */
 #define TR_LEVELS 8                     /* the grid and its halvings, for the far ground: 1024 .. 8 cells a side */
@@ -33,6 +39,10 @@
 #define TR_LIGHTS 64                    /* a material's levels of light: colour id = material * 64 + light */
 #define TR_FOGS 32                      /* levels of haze */
 #define TR_LINES_MAX 4096
+#define TR_BLIT_W 1024                  /* the widest screen drawn */
+#define TR_THIN_MAX 12                  /* lines thinned to every 4096th at most */
+#define TR_STEP_PX 2.0                  /* the march's step in the far ground: pixels' worth of the distance */
+#define TR_SKIP_FIRST 2                 /* the finest level the march skips hidden ground by */
 #define TR_FOG_HS_ 1024                 /* (tr_fog's tables' sizes) */
 #define TR_FOG_TAUS_ 2048               /* a quarter's lines at most (more: spaced wider than a pixel) */
 
@@ -41,6 +51,12 @@ enum { TR_SAND, TR_ROCK, TR_GREEN, TR_UNDER };
 typedef struct {
     int16_t lo[TR_TILE * TR_TILE], hi[TR_TILE * TR_TILE];   /* over the datum, height units; lo >= hi: none */
 } TrSlabTile;
+
+typedef struct {                        /* a cell of a level's grid */
+    int16_t h;                          /* over the datum, height units */
+    uint8_t c;                          /* colour id: material * TR_LIGHTS + light */
+    uint8_t slab;                       /* 1: a slab lies over it (level 0), or over a cell under it (the next levels) */
+} TrCell;
 
 typedef struct { uint8_t a, b, t; } TrDither;   /* a colour as two of the palette's: b where the screen's 4 x 4
                                                    threshold is under t (of 16), else a */
@@ -56,18 +72,34 @@ typedef struct {                        /* one of the screen's four quarters rou
     int lines, len;                     /* lines, and the pixels each keeps */
     uint16_t *px;                       /* lines x len: what each pixel is (TR_PX_*), from `near` outward */
     size_t cap;
+    uint8_t *thin;                      /* len: at each pixel from `near`, the lines kept are those that are multiples
+                                           of 1 << thin (near V the lines bunch up: only enough to be a pixel apart are
+                                           marched there) */
+    int thin_cap;
 } TrQuarter;
 
 #define TR_PX_EMPTY 0xFFFF              /* not reached: the sky as it is */
 #define TR_PX_SKY 0x8000                /* | haze level: no ground, the sky's pixel hazed */
                                         /* else colour id | haze level << 8 */
 
+typedef struct { double x, y, z; } TrV;
+
+typedef struct {                        /* the frame's eye, worked out once for all the lines (tr_view) */
+    TrV eye, up, cr, cu, cf;            /* the eye; straight up there; the camera's right, up and front */
+    double D, alt, rt, theta_max;       /* the eye from the centre; its height; the highest ground's radius; how far
+                                           round the planet any ground may show */
+    double near_ds, far_k;              /* the march's step: the least, and per position of distance */
+    double level_d2[TR_LEVELS];         /* the squared distance past which the march takes the next level */
+    double skip_dth[TR_LEVELS];         /* half a cell of a level, as an angle (the skips) */
+} TrFrameK;
+
 struct TrPlanet {
     TrPlanetDesc desc;
     int32_t radius;                     /* the datum, positions */
     int32_t top, bottom;                /* the highest (a slab's top too) and lowest ground, height units */
-    int16_t *h[TR_LEVELS][6];           /* heights over the datum, height units, bordered (tr_side) */
-    uint8_t *c[TR_LEVELS][6];           /* colour ids */
+    TrCell *g[TR_LEVELS][6];            /* the grids, bordered (tr_side) */
+    int16_t *hmax[TR_LEVELS][6];        /* (levels TR_SKIP_FIRST on) the highest any ground or slab gets within a cell
+                                           of each cell (tr_maxes): what the march may skip */
     int32_t *tiles[6];                  /* TR_TILES x TR_TILES: an index into slabs + 1, or 0 */
     TrSlabTile *slabs;
     int nslabs, slabs_cap;
@@ -76,19 +108,25 @@ struct TrPlanet {
     double fog_density, fog_height;     /* the haze per position at the datum; its scale height, positions */
     double atmo_top;                    /* where the air is taken to end, over the datum, positions */
     double fog_h0, fog_hstep, fog_e[TR_FOG_HS_], fog_ea;   /* (tr_fog's tables; fog_ea: the frame's eye's) */
-    uint8_t fog_lev[TR_FOG_TAUS_];
+    float fog_lev[TR_FOG_TAUS_];
     double cell;                        /* a level-0 cell's side, about, positions */
     uint8_t pal[256][3];                /* the game's palette, 8 bits */
     float pal_lab[256][3];              /* the same in L*a*b* */
     TrDither ground[TR_FOGS][256];      /* a colour id at a haze level, as the palette's two */
     TrDither sky[TR_FOGS][256];         /* a palette entry at a haze level */
-    uint8_t skytab[1024];               /* the frame's: the sky's glow by a ray's angle from straight up (tr_sky_table) */
+    uint16_t skytab[1024];              /* the frame's: the sky's glow by a ray's angle from straight up, 256ths of a
+                                           haze level (tr_sky_table) */
+    int sky_any;                        /* the frame's: some of the sky glows */
+    uint16_t glow[TR_BLIT_W];           /* (tr_blit's: a row's sky glow) */
+    double sky_f, sky_r, sky_u;         /* the frame's: straight up dotted with the eye's front, right and up */
+    double lv_half[TR_LEVELS], lv_off[TR_LEVELS];   /* a level's n / 2 and (n - 1) / 2 (tr_sample) */
     /* the frame's picture */
     TrCam cam;
     double vx, vy;                      /* V on the screen */
     int nadir;                          /* 1: V is the point below (the ground lies out from it), 0: above */
     TrQuarter q[4];                     /* top, bottom, left, right */
-    uint32_t samples;                   /* (the last frame's march, for timing) */
+    TrFrameK fk;
+    uint32_t samples, skips;            /* (the last frame's march, for timing) */
 };
 
 /* --------------------------------------------------------------------------------------------------------------- */
@@ -144,7 +182,7 @@ static int32_t tr_fbm(const int32_t d[3], int32_t freq, int octaves, uint32_t se
         amp >>= 1;
         freq <<= 1;
     }
-    return (int32_t)(((int64_t)acc << 14) / total);
+    return (int32_t)(((int64_t)acc * 16384) / total);
 }
 
 static uint32_t tr_isqrt(uint64_t n)
@@ -253,15 +291,13 @@ static TrGround tr_desert(const int32_t d[3], int32_t relief, uint32_t seed)
 int32_t tr_radius(const TrPlanet *p) { return p->radius; }
 int32_t tr_top(const TrPlanet *p) { return p->radius + p->top * TR_HU; }
 
-static int16_t *tr_hp(const TrPlanet *p, int level, int f, int i, int j)   /* (i, j: -1 .. n, the border included) */
+static TrCell *tr_cell(const TrPlanet *p, int level, int f, int i, int j)   /* (i, j: -1 .. n, the border included) */
 {
-    return p->h[level][f] + (j + 1) * tr_side(level) + (i + 1);
+    return p->g[level][f] + (j + 1) * tr_side(level) + (i + 1);
 }
 
-static uint8_t *tr_cp(const TrPlanet *p, int level, int f, int i, int j)
-{
-    return p->c[level][f] + (j + 1) * tr_side(level) + (i + 1);
-}
+static int16_t *tr_hp(const TrPlanet *p, int level, int f, int i, int j) { return &tr_cell(p, level, f, i, j)->h; }
+static uint8_t *tr_cp(const TrPlanet *p, int level, int f, int i, int j) { return &tr_cell(p, level, f, i, j)->c; }
 
 static TrSlabTile *tr_tile(const TrPlanet *p, int f, int i, int j)   /* (interior cells only) */
 {
@@ -310,14 +346,14 @@ static int tr_slab(const TrPlanet *p, int f, int i, int j, int *lo, int *hi)
 static int32_t tr_height_at(const TrPlanet *p, int f, int32_t gi, int32_t gj)
 {
     int32_t i = gi >> 16, j = gj >> 16, fi = gi & 0xFFFF, fj = gj & 0xFFFF, a, b;
-    const int16_t *r;
+    const TrCell *r;
     if (i < -1) { i = -1; fi = 0; }
     if (j < -1) { j = -1; fj = 0; }
     if (i > TR_N - 1) { i = TR_N - 1; fi = 65535; }
     if (j > TR_N - 1) { j = TR_N - 1; fj = 65535; }
-    r = tr_hp(p, 0, f, i, j);
-    a = TR_LERP(r[0] * TR_HU, r[1] * TR_HU, fi);
-    b = TR_LERP(r[TR_S] * TR_HU, r[TR_S + 1] * TR_HU, fi);
+    r = tr_cell(p, 0, f, i, j);
+    a = TR_LERP(r[0].h * TR_HU, r[1].h * TR_HU, fi);
+    b = TR_LERP(r[TR_S].h * TR_HU, r[TR_S + 1].h * TR_HU, fi);
     return TR_LERP(a, b, fj);
 }
 
@@ -588,6 +624,8 @@ static void tr_mips(TrPlanet *p)
                         light += *tr_cp(p, l - 1, f, ci, cj) % TR_LIGHTS;
                     }
                     *tr_hp(p, l, f, i, j) = (int16_t)(sum >> 2);
+                    tr_cell(p, l, f, i, j)->slab = (uint8_t)(tr_cell(p, l - 1, f, 2 * i, 2 * j)->slab | tr_cell(p, l - 1, f, 2 * i + 1, 2 * j)->slab
+                                                             | tr_cell(p, l - 1, f, 2 * i, 2 * j + 1)->slab | tr_cell(p, l - 1, f, 2 * i + 1, 2 * j + 1)->slab);
                     *tr_cp(p, l, f, i, j) = (uint8_t)(*tr_cp(p, l - 1, f, 2 * i, 2 * j) / TR_LIGHTS * TR_LIGHTS + light / 4);
                 }
         /* the border: each cell from the face it really lies on */
@@ -607,10 +645,94 @@ static void tr_mips(TrPlanet *p)
                     if (cj < 0) cj = 0;
                     if (ci > n - 1) ci = n - 1;
                     if (cj > n - 1) cj = n - 1;
-                    *tr_hp(p, l, f, i, j) = *tr_hp(p, l, f2, ci, cj);
-                    *tr_cp(p, l, f, i, j) = *tr_cp(p, l, f2, ci, cj);
+                    *tr_cell(p, l, f, i, j) = *tr_cell(p, l, f2, ci, cj);
                 }
     }
+}
+
+/* the highest the ground (or a slab's top) gets near each cell of the levels TR_SKIP_FIRST on: over the level-0
+ * cells under it and one more all round (a sample's four cells reach that far), then over its eight neighbours too
+ * (the next faces' through the border), so that anywhere in the cell, a cell's width either way is under it.  The
+ * march skips ground whose bound stays under the ray it would have to rise above */
+static int tr_maxes(TrPlanet *p)
+{
+    int16_t *raw[TR_LEVELS][6];
+    int l, f, i, j, ok = 1;
+    memset(raw, 0, sizeof raw);
+    for (l = TR_SKIP_FIRST; l < TR_LEVELS; l++) {
+        int n = TR_N >> l, side = n + 2;
+        for (f = 0; f < 6; f++) {
+            raw[l][f] = (int16_t *)malloc((size_t)side * side * sizeof(int16_t));
+            p->hmax[l][f] = (int16_t *)malloc((size_t)n * n * sizeof(int16_t));
+            if (!raw[l][f] || !p->hmax[l][f])
+                ok = 0;
+        }
+    }
+    if (!ok)
+        goto out;
+    for (l = TR_SKIP_FIRST; l < TR_LEVELS; l++) {
+        int n = TR_N >> l, side = n + 2;
+        for (f = 0; f < 6; f++)
+            for (j = 0; j < n; j++)
+                for (i = 0; i < n; i++) {
+                    int16_t m = -32768;
+                    if (l == TR_SKIP_FIRST) {
+                        int a, b, w = 1 << l, lo, hi;
+                        for (b = j * w - 1; b <= (j + 1) * w; b++)
+                            for (a = i * w - 1; a <= (i + 1) * w; a++) {
+                                const TrCell *c = tr_cell(p, 0, f, a, b);
+                                if (c->h > m)
+                                    m = c->h;
+                                if (c->slab && tr_slab(p, f, a, b, &lo, &hi) && hi > m)
+                                    m = (int16_t)hi;
+                            }
+                    } else {
+                        int ps = 2 * n + 2;    /* (the level below's side) */
+                        const int16_t *r = raw[l - 1][f] + (2 * j + 1) * ps + (2 * i + 1);
+                        m = r[0];
+                        if (r[1] > m) m = r[1];
+                        if (r[ps] > m) m = r[ps];
+                        if (r[ps + 1] > m) m = r[ps + 1];
+                    }
+                    raw[l][f][(j + 1) * side + (i + 1)] = m;
+                }
+        /* the border, from the faces the cells really lie on */
+        for (f = 0; f < 6; f++)
+            for (j = -1; j <= n; j++)
+                for (i = -1; i <= n; i++) {
+                    int64_t v[3];
+                    int32_t gi, gj;
+                    int f2, ci, cj;
+                    if (i >= 0 && j >= 0 && i < n && j < n)
+                        continue;
+                    tr_cell_vec(f, i, j, n, v);
+                    f2 = tr_locate(v[0], v[1], v[2], n, &gi, &gj);
+                    ci = (gi + 32768) >> 16;
+                    cj = (gj + 32768) >> 16;
+                    if (ci < 0) ci = 0;
+                    if (cj < 0) cj = 0;
+                    if (ci > n - 1) ci = n - 1;
+                    if (cj > n - 1) cj = n - 1;
+                    raw[l][f][(j + 1) * side + (i + 1)] = raw[l][f2][(cj + 1) * side + (ci + 1)];
+                }
+        for (f = 0; f < 6; f++)
+            for (j = 0; j < n; j++)
+                for (i = 0; i < n; i++) {
+                    const int16_t *r = raw[l][f] + j * side + i;   /* (the 3 x 3 round (i, j), bordered) */
+                    int16_t m = r[0];
+                    int a, b;
+                    for (b = 0; b < 3; b++)
+                        for (a = 0; a < 3; a++)
+                            if (r[b * side + a] > m)
+                                m = r[b * side + a];
+                    p->hmax[l][f][j * n + i] = m;
+                }
+    }
+out:
+    for (l = 0; l < TR_LEVELS; l++)
+        for (f = 0; f < 6; f++)
+            free(raw[l][f]);
+    return ok;
 }
 
 /* colours compared as the eye does: CIE L*a*b* (from sRGB), so a darkened tan finds a darker tan, not a grey */
@@ -712,6 +834,7 @@ static void tr_tables(TrPlanet *p)
 }
 
 static void tr_fog_tables(TrPlanet *p);
+static int tr_maxes(TrPlanet *p);
 
 TrPlanet *tr_make(const TrPlanetDesc *d, const TrStamp *stamps, const uint8_t *pal)
 {
@@ -724,9 +847,8 @@ TrPlanet *tr_make(const TrPlanetDesc *d, const TrStamp *stamps, const uint8_t *p
     p->radius = d->radius;
     for (l = 0; l < TR_LEVELS; l++)
         for (f = 0; f < 6; f++) {
-            p->h[l][f] = (int16_t *)malloc((size_t)tr_side(l) * tr_side(l) * sizeof(int16_t));
-            p->c[l][f] = (uint8_t *)malloc((size_t)tr_side(l) * tr_side(l));
-            if (!p->h[l][f] || !p->c[l][f]) {
+            p->g[l][f] = (TrCell *)calloc((size_t)tr_side(l) * tr_side(l), sizeof(TrCell));
+            if (!p->g[l][f]) {
                 tr_free(p);
                 return 0;
             }
@@ -768,6 +890,12 @@ TrPlanet *tr_make(const TrPlanetDesc *d, const TrStamp *stamps, const uint8_t *p
             tr_stamp_arch(p, &stamps[k]);
             break;
         }
+    for (f = 0; f < 6; f++)
+        for (j = 0; j < TR_N; j++)
+            for (i = 0; i < TR_N; i++) {
+                int lo, hi;
+                tr_cell(p, 0, f, i, j)->slab = (uint8_t)tr_slab(p, f, i, j, &lo, &hi);
+            }
     p->top = -32768;
     p->bottom = 32767;
     for (f = 0; f < 6; f++)
@@ -780,6 +908,10 @@ TrPlanet *tr_make(const TrPlanetDesc *d, const TrStamp *stamps, const uint8_t *p
                 if (*tr_hp(p, 0, f, i, j) < p->bottom) p->bottom = *tr_hp(p, 0, f, i, j);
             }
     p->cell = 2.0 * 3.14159265 * p->radius / 4 / TR_N;
+    for (l = 0; l < TR_LEVELS; l++) {
+        p->lv_half[l] = (TR_N >> l) * 0.5;
+        p->lv_off[l] = ((TR_N >> l) - 1) * 0.5;
+    }
     /* the air: a warm haze (the user: "atmospheric fog effect that depends on height to camera") */
     p->fog_rgb[0] = 222;
     p->fog_rgb[1] = 184;
@@ -799,6 +931,10 @@ TrPlanet *tr_make(const TrPlanetDesc *d, const TrStamp *stamps, const uint8_t *p
     tr_fog_tables(p);
     tr_light(p);
     tr_mips(p);
+    if (!tr_maxes(p)) {
+        tr_free(p);
+        return 0;
+    }
     tr_tables(p);
     return p;
 }
@@ -810,21 +946,21 @@ void tr_free(TrPlanet *p)
         return;
     for (l = 0; l < TR_LEVELS; l++)
         for (f = 0; f < 6; f++) {
-            free(p->h[l][f]);
-            free(p->c[l][f]);
+            free(p->g[l][f]);
+            free(p->hmax[l][f]);
         }
     for (f = 0; f < 6; f++)
         free(p->tiles[f]);
     free(p->slabs);
-    for (l = 0; l < 4; l++)
+    for (l = 0; l < 4; l++) {
         free(p->q[l].px);
+        free(p->q[l].thin);
+    }
     free(p);
 }
 
 /* --------------------------------------------------------------------------------------------------------------- */
 /* the picture */
-
-typedef struct { double x, y, z; } TrV;
 
 static TrV tr_v(double x, double y, double z) { TrV v; v.x = x; v.y = y; v.z = z; return v; }
 static double tr_dot(TrV a, TrV b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
@@ -836,30 +972,36 @@ static TrV tr_norm(TrV a)
     return l > 0 ? tr_v(a.x / l, a.y / l, a.z / l) : a;
 }
 
-/* a sample of the ground at a unit direction, from the grid of a level: its height over the datum (positions) and
- * its colour id, the light weighed between the four cells round it where they are of one material, and at level 0 a
- * finer grain of light inside a cell (the picture only); *f, *ci, *cj the nearest cell, in that level's numbering */
-static double tr_sample(const TrPlanet *p, TrV d, int level, uint8_t *id, int *f, int *ci, int *cj)
+typedef struct {                        /* what a sample of the ground found */
+    double h;                           /* the height over the datum, positions (the four cells round it weighed) */
+    float light;                        /* 0 .. TR_LIGHTS-1, weighed too where the four are of one material */
+    int mat;
+    int f, ci, cj;                      /* the nearest cell, in its level's numbering */
+    int slab;                           /* that cell's slab mark */
+} TrHit;
+
+/* a sample of the ground at a unit direction, from the grid of a level */
+TR_HOT void tr_sample(const TrPlanet *p, double dx, double dy, double dz, int level, TrHit *o)
 {
-    double ax = fabs(d.x), ay = fabs(d.y), az = fabs(d.z), m, u, v, gi, gj, fi, fj;
-    int a, n = TR_N >> level, i, j, side = tr_side(level);
-    const int16_t *h;
-    const uint8_t *c;
+    double ax = fabs(dx), ay = fabs(dy), az = fabs(dz), m, gi, gj, fi, fj, off = p->lv_off[level];
+    int n = TR_N >> level, i, j, side = n + 2, k, c0, diff;
+    const TrCell *g;
     if (ax >= ay && ax >= az) {
-        a = 0;
-        m = ax;
+        m = p->lv_half[level] / ax;
+        gi = dy * m + off;
+        gj = dz * m + off;
+        o->f = dx < 0;
     } else if (ay >= az) {
-        a = 1;
-        m = ay;
+        m = p->lv_half[level] / ay;
+        gi = dz * m + off;
+        gj = dx * m + off;
+        o->f = 2 + (dy < 0);
     } else {
-        a = 2;
-        m = az;
+        m = p->lv_half[level] / az;
+        gi = dx * m + off;
+        gj = dy * m + off;
+        o->f = 4 + (dz < 0);
     }
-    *f = 2 * a + ((a == 0 ? d.x : a == 1 ? d.y : d.z) < 0);
-    u = (a == 0 ? d.y : a == 1 ? d.z : d.x) / m;
-    v = (a == 0 ? d.z : a == 1 ? d.x : d.y) / m;
-    gi = (u * n + n - 1) * 0.5;
-    gj = (v * n + n - 1) * 0.5;
     i = (int)(gi + 2) - 2;              /* (floor: gi is over -2) */
     j = (int)(gj + 2) - 2;
     fi = gi - i;
@@ -868,32 +1010,28 @@ static double tr_sample(const TrPlanet *p, TrV d, int level, uint8_t *id, int *f
     if (j < -1) { j = -1; fj = 0; }
     if (i > n - 1) { i = n - 1; fi = 1; }
     if (j > n - 1) { j = n - 1; fj = 1; }
-    h = p->h[level][*f] + (j + 1) * side + (i + 1);
-    c = p->c[level][*f] + (j + 1) * side + (i + 1);
-    *ci = fi < 0.5 ? i : i + 1;
-    *cj = fj < 0.5 ? j : j + 1;
-    if (c[0] / TR_LIGHTS == c[1] / TR_LIGHTS && c[0] / TR_LIGHTS == c[side] / TR_LIGHTS && c[0] / TR_LIGHTS == c[side + 1] / TR_LIGHTS) {
-        double l = ((c[0] % TR_LIGHTS) * (1 - fi) + (c[1] % TR_LIGHTS) * fi) * (1 - fj)
-                   + ((c[side] % TR_LIGHTS) * (1 - fi) + (c[side + 1] % TR_LIGHTS) * fi) * fj;
-        int k;
-        if (level == 0) {
-            /* grain: a quarter of a cell's light flecks, fixed to the ground */
-            uint32_t g = tr_mix((uint32_t)(*f * 0x10000 + (int)(gj * 4 + 8)) * 0x9E3779B1U + (uint32_t)(int)(gi * 4 + 8));
-            l += (double)(g & 7) * 0.6 - 2.1;
-        }
-        k = (int)(l + 0.5);
-        *id = (uint8_t)(c[0] / TR_LIGHTS * TR_LIGHTS + (k < 0 ? 0 : k > TR_LIGHTS - 1 ? TR_LIGHTS - 1 : k));
-    } else
-        *id = c[(*cj - j) * side + (*ci - i)];
-    return ((h[0] * (1 - fi) + h[1] * fi) * (1 - fj) + (h[side] * (1 - fi) + h[side + 1] * fi) * fj) * TR_HU;
+    g = p->g[level][o->f] + (j + 1) * side + (i + 1);
+    k = (fj >= 0.5 ? side : 0) + (fi >= 0.5);
+    o->ci = i + (fi >= 0.5);
+    o->cj = j + (fj >= 0.5);
+    c0 = g[k].c;
+    o->slab = g[k].slab;
+    o->mat = c0 >> 6;
+    diff = (g[0].c ^ c0) | (g[1].c ^ c0) | (g[side].c ^ c0) | (g[side + 1].c ^ c0);
+    if (diff < TR_LIGHTS)               /* the four of one material: their light weighed */
+        o->light = (float)(((g[0].c & 63) * (1 - fi) + (g[1].c & 63) * fi) * (1 - fj)
+                           + ((g[side].c & 63) * (1 - fi) + (g[side + 1].c & 63) * fi) * fj);
+    else
+        o->light = (float)(c0 & 63);
+    o->h = ((g[0].h * (1 - fi) + g[1].h * fi) * (1 - fj) + (g[side].h * (1 - fi) + g[side + 1].h * fi) * fj) * TR_HU;
 }
 
-/* the haze between the eye and a point: a level 0 .. TR_FOGS-1.  The air thins with height as e^(-h/H); along a
- * straight line from height a to height b its sum is L * (e^(-a/H) - e^(-b/H)) / ((b - a) / H) (the planet taken as
- * flat for it).  From tables: e^(-h/H) over the ground's heights, and the level by that sum (a frame's eye's own
- * e^(-a/H) is worked out once, in tr_view) */
-#define TR_FOG_HS TR_FOG_HS_             /* e^(-h/H) at heights bottom .. top */
-#define TR_FOG_TAUS TR_FOG_TAUS_         /* the level by the sum, 256 steps to each 1 */
+/* the haze between the eye and a point: a level 0 .. TR_FOGS-1 (a fraction too).  The air thins with height as
+ * e^(-h/H); along a straight line from height a to height b its sum is L * (e^(-a/H) - e^(-b/H)) / ((b - a) / H)
+ * (the planet taken as flat for it).  From tables: e^(-h/H) over the ground's heights, and the level by that sum (a
+ * frame's eye's own e^(-a/H) is worked out once, in tr_view) */
+#define TR_FOG_HS TR_FOG_HS_            /* e^(-h/H) at heights bottom .. top */
+#define TR_FOG_TAUS TR_FOG_TAUS_        /* the level by the sum, 256 steps to each 1 */
 
 static void tr_fog_tables(TrPlanet *p)
 {
@@ -902,13 +1040,11 @@ static void tr_fog_tables(TrPlanet *p)
     p->fog_hstep = (double)(p->top - p->bottom + 1) * TR_HU / (TR_FOG_HS - 1);
     for (k = 0; k < TR_FOG_HS; k++)
         p->fog_e[k] = exp(-(p->fog_h0 + k * p->fog_hstep) / p->fog_height);
-    for (k = 0; k < TR_FOG_TAUS; k++) {
-        int lev = (int)((1 - exp(-(k + 0.5) / 256.0)) * (TR_FOGS - 1) + 0.5);
-        p->fog_lev[k] = (uint8_t)(lev > TR_FOGS - 1 ? TR_FOGS - 1 : lev);
-    }
+    for (k = 0; k < TR_FOG_TAUS; k++)
+        p->fog_lev[k] = (float)((1 - exp(-(k + 0.5) / 256.0)) * (TR_FOGS - 1));
 }
 
-static int tr_fog(const TrPlanet *p, double dist, double ha, double hb)
+TR_HOT float tr_fog(const TrPlanet *p, double dist, double ha, double hb)
 {
     double x = (hb - ha) / p->fog_height, eb, tau;
     int k = (int)((hb - p->fog_h0) / p->fog_hstep + 0.5);
@@ -918,12 +1054,12 @@ static int tr_fog(const TrPlanet *p, double dist, double ha, double hb)
     else
         tau = p->fog_density * dist * (p->fog_ea - eb) / x;
     k = (int)(tau * 256);
-    return k < 0 ? 0 : k >= TR_FOG_TAUS ? TR_FOGS - 1 : p->fog_lev[k];
+    return k < 0 ? 0 : k >= TR_FOG_TAUS ? (float)(TR_FOGS - 1) : p->fog_lev[k];
 }
 
 /* the sky's glow along a ray that meets no ground, by the cosine of its angle from straight up (TR_SKY_STEPS over
- * -1 .. 1): the air it passes through to the air's edge, made to glow brighter than it dims the ground (the light it
- * scatters) */
+ * -1 .. 1), in 256ths of a haze level: the air it passes through to the air's edge, made to glow brighter than it dims
+ * the ground (the light it scatters) */
 #define TR_SKY_STEPS 1024
 #define TR_SKY_GLOW 8.0
 
@@ -931,6 +1067,7 @@ static void tr_sky_table(TrPlanet *p, double D)
 {
     double ra = p->radius + p->atmo_top;
     int k, s;
+    p->sky_any = 0;
     for (k = 0; k < TR_SKY_STEPS; k++) {
         double cz = -1 + 2.0 * (k + 0.5) / TR_SKY_STEPS, sz = sqrt(1 - cz * cz), b = D * cz, c = D * D - ra * ra;
         double disc = b * b - c, s0, s1, ds, tau = 0, w;
@@ -952,7 +1089,9 @@ static void tr_sky_table(TrPlanet *p, double D)
         }
         tau *= p->fog_density * ds * TR_SKY_GLOW;
         w = 1 - exp(-tau);
-        p->skytab[k] = (uint8_t)(w * (TR_FOGS - 1) + 0.5);
+        p->skytab[k] = (uint16_t)(w * (TR_FOGS - 1) * 256);
+        if (p->skytab[k] >= 128)
+            p->sky_any = 1;
     }
 }
 
@@ -964,7 +1103,9 @@ static TrV tr_ray(const TrCam *c, double x, double y)
     return tr_add(r, tr_v(c->up[0], c->up[1], c->up[2]), -(y - c->cy) / c->focal);
 }
 
-/* a quarter set up for the frame: which of the screen's pixels are in it, its lines */
+/* a quarter set up for the frame: which of the screen's pixels are in it, its lines.  Its pixels are kept a row at a
+ * time (all its lines' pixels at one distance from V together): the march fills them a line after another, nearby,
+ * and the blit reads a screen row's straight along */
 static void tr_quarter(TrPlanet *p, int which)
 {
     TrQuarter *q = &p->q[which];
@@ -1022,28 +1163,29 @@ static void tr_quarter(TrPlanet *p, int which)
         q->px = px;
         q->cap = (size_t)q->lines * q->len;
     }
+    memset(q->px, 0xFF, (size_t)q->lines * q->len * sizeof(uint16_t));   /* TR_PX_EMPTY */
+    if (q->len > q->thin_cap) {
+        uint8_t *t = (uint8_t *)realloc(q->thin, (size_t)q->len);
+        if (!t)
+            return;
+        q->thin = t;
+        q->thin_cap = q->len;
+    }
+    {
+        /* the lines' spacing at pixel k is step (k + |near - V|) / |edge - V|; a line whose index has m trailing
+         * zero bits is marched from where twice 2^m of that spacing reaches a pixel (tr_line) */
+        double L = fabs(q->edge - q->v_along), rn = q->s * (q->near - q->v_along);
+        int kk = TR_THIN_MAX;
+        for (k = 0; k < q->len; k++) {
+            double sp = q->step * (k + rn) / L;
+            while (kk > 0 && sp * (1 << kk) >= 1)
+                kk--;
+            while (kk < TR_THIN_MAX && sp * (2 << kk) < 1)
+                kk++;
+            q->thin[k] = (uint8_t)kk;
+        }
+    }
     q->on = 1;
-}
-
-/* a line's pixels a .. b (indices from `near`, clamped) that nothing has filled yet: 1 when there are any */
-static int tr_gap(const uint16_t *px, int len, double a, double b, int *i0, int *i1)
-{
-    int k;
-    *i0 = (int)ceil(a);
-    *i1 = (int)floor(b);
-    if (*i0 < 0) *i0 = 0;
-    if (*i1 > len - 1) *i1 = len - 1;
-    for (k = *i0; k <= *i1; k++)
-        if (px[k] == TR_PX_EMPTY)
-            return 1;
-    return 0;
-}
-
-static void tr_fill(uint16_t *px, int i0, int i1, uint16_t v)
-{
-    for (; i0 <= i1; i0++)
-        if (px[i0] == TR_PX_EMPTY)
-            px[i0] = v;
 }
 
 /* where a ray from the eye along unit w first comes within radius r of the centre: 1 and the angle there from the
@@ -1064,114 +1206,266 @@ static int tr_enter(TrV eye, TrV up, TrV t, TrV w, double r, double *theta)
     return 1;
 }
 
+/* the pixels a .. b of a line, a and b in pixels from `near` (clamped to the line: they may be far off it) */
+TR_HOT int tr_span(double a, double b, int lo, int len, int *i0, int *i1)
+{
+    if (a < -1) a = -1;
+    if (b > len) b = len;
+    if (a > b)
+        return 0;
+    *i0 = (int)(a + 2) - 1;             /* ceil(a) .. floor(b), a and b over -2 */
+    if (*i0 - 1 >= a)
+        (*i0)--;
+    *i1 = (int)(b + 2) - 2;
+    if (*i0 < lo) *i0 = lo;
+    if (*i1 > len - 1) *i1 = len - 1;
+    return *i0 <= *i1;
+}
+
+/* the bound on the ground near a unit direction at level l (TR_SKIP_FIRST on): tr_maxes', in positions over the
+ * datum */
+TR_HOT double tr_bound(const TrPlanet *p, double dx, double dy, double dz, int l)
+{
+    double ax = fabs(dx), ay = fabs(dy), az = fabs(dz), m, gi, gj;
+    int n = TR_N >> l, f, i, j;
+    if (ax >= ay && ax >= az) {
+        m = p->lv_half[l] / ax;
+        gi = dy * m + p->lv_off[l];
+        gj = dz * m + p->lv_off[l];
+        f = dx < 0;
+    } else if (ay >= az) {
+        m = p->lv_half[l] / ay;
+        gi = dz * m + p->lv_off[l];
+        gj = dx * m + p->lv_off[l];
+        f = 2 + (dy < 0);
+    } else {
+        m = p->lv_half[l] / az;
+        gi = dx * m + p->lv_off[l];
+        gj = dy * m + p->lv_off[l];
+        f = 4 + (dz < 0);
+    }
+    i = (int)(gi + 2.5) - 2;
+    j = (int)(gj + 2.5) - 2;
+    if (i < 0) i = 0;
+    if (j < 0) j = 0;
+    if (i > n - 1) i = n - 1;
+    if (j > n - 1) j = n - 1;
+    return (double)p->hmax[l][f][j * n + i] * TR_HU;
+}
+
+/* a ray of the line's plane, from the eye at (D, 0) along unit (wu, wt) (up, t): how far from the centre it is where
+ * it crosses the radial line at the angle whose cosine and sine are c, s (very far where it never does) */
+TR_HOT double tr_ray_r2(double D, double wu, double wt, double c, double s)
+{
+    double den = wt * c - wu * s, k, x, y;
+    if (den <= 1e-12)
+        return 1e300;
+    k = D * s / den;
+    if (k < 0)
+        return 1e300;
+    x = D + k * wu;
+    y = k * wt;
+    return x * x + y * y;
+}
+
+/* fill a line's pixels i0 .. i1 that are still empty with the ground between two samples: the light and the haze
+ * weighed from one to the other along the rows (b's material throughout) */
+TR_HOT void tr_fill_ground(uint16_t *px, int stride, int i0, int i1, double ra, double rb, float la, float lb,
+                           float fa, float fb, int mat)
+{
+    double span = rb - ra, t0, dt;
+    int32_t l, dl, f, df;
+    uint16_t *e = px + (size_t)i0 * stride;
+    int k, base = mat * TR_LIGHTS;
+    if (span < 1e-6 && span > -1e-6) {
+        t0 = 1;
+        dt = 0;
+    } else {
+        t0 = (i0 - ra) / span;
+        dt = 1 / span;
+        if (t0 < 0) t0 = 0;
+        if (t0 > 1) t0 = 1;
+        if (t0 + dt * (i1 - i0) > 1.0001 || t0 + dt * (i1 - i0) < -0.0001)
+            dt = i1 > i0 ? (1 - t0) / (i1 - i0) : 0;   /* (rounding: never past b) */
+    }
+    l = (int32_t)((la + (lb - la) * t0) * 65536 + 32768);
+    dl = (int32_t)((lb - la) * dt * 65536);
+    f = (int32_t)((fa + (fb - fa) * t0) * 65536 + 32768);
+    df = (int32_t)((fb - fa) * dt * 65536);
+    for (k = i0; k <= i1; k++, e += stride, l += dl, f += df)
+        if (*e == TR_PX_EMPTY)
+            *e = (uint16_t)((base + (l >> 16)) | (f >> 16) << 8);
+}
+
+TR_HOT void tr_fill(uint16_t *px, int stride, int i0, int i1, uint16_t v)
+{
+    for (; i0 <= i1; i0++)
+        if (px[(size_t)i0 * stride] == TR_PX_EMPTY)
+            px[(size_t)i0 * stride] = v;
+}
+
 /* one line of a quarter: march out along its great circle, filling its pixels front to back */
 static void tr_line(TrPlanet *p, TrQuarter *q, int line)
 {
     const TrCam *c = &p->cam;
-    uint16_t *px = q->px + (size_t)line * q->len;
-    TrV eye = tr_v(c->pos[0], c->pos[1], c->pos[2]), up, t, w, cr, cu, cf, dir, w0, w1;
-    double D = sqrt(tr_dot(eye, eye)), X = q->first + line * q->step, theta, theta_max, rb, rt, horizon, alt;
-    double rho_near = q->s * (q->near - q->v_along), prev_lo = 0, prev_hi = 0;
-    int prev_slab = 0, k, n = 0;
-    for (k = 0; k < q->len; k++)
-        px[k] = TR_PX_EMPTY;
-    up = tr_scale(eye, 1 / D);
-    cr = tr_v(c->right[0], c->right[1], c->right[2]);
-    cu = tr_v(c->up[0], c->up[1], c->up[2]);
-    cf = tr_v(c->fwd[0], c->fwd[1], c->fwd[2]);
+    const TrFrameK *fk = &p->fk;
+    uint16_t *px = q->px + line;
+    const int stride = q->lines, len = q->len, nadir = p->nadir;
+    const double D = fk->D, R = p->radius;
+    TrV up = fk->up, t, w, w0, w1, wk;
+    double X = q->first + line * q->step, theta, horizon, rho_near = q->s * (q->near - q->v_along);
+    double prev_lo = 0, prev_hi = 0, prev_rho = 0, prev_dist = 0, prev_h = 0;
+    float prev_light = 0, prev_fog = 0;
+    int prev_slab = 0, prev_ok = 0, prev_mat = 0, n = 0, skips = 0, kmin;
     /* the rays of the line's first and last pixels (the line's pixel at `along` a is at across
      * v_across + (X - v_across) (a - v_along) / (edge - v_along)) */
     {
-        double a0 = q->near, a1 = q->near + q->s * (q->len - 1);
+        double a0 = q->near, a1 = q->near + q->s * (len - 1);
         double c0 = q->v_across + (X - q->v_across) * (a0 - q->v_along) / (q->edge - q->v_along);
         double c1 = q->v_across + (X - q->v_across) * (a1 - q->v_along) / (q->edge - q->v_along);
         w0 = q->vert ? tr_ray(c, c0, a0) : tr_ray(c, a0, c0);
         w1 = q->vert ? tr_ray(c, c1, a1) : tr_ray(c, a1, c1);
     }
+    {
+        /* the first pixel this line is wanted for (the lines bunch up near V: q->thin) */
+        int m = 0;
+        while (m < TR_THIN_MAX && !((line >> m) & 1))
+            m++;
+        kmin = 0;
+        while (kmin < len && q->thin[kmin] > m)
+            kmin++;
+        if (kmin >= len)
+            return;
+        wk = tr_add(w0, tr_add(w1, w0, -1), len > 1 ? (double)kmin / (len - 1) : 0);
+    }
     w = q->vert ? tr_ray(c, X, q->edge) : tr_ray(c, q->edge, X);
     t = tr_add(w, up, -tr_dot(w, up));
     if (tr_dot(t, t) < 1e-18)
-        goto sky;
+        return;
     t = tr_norm(t);
-    alt = D - p->radius;
-    rb = p->radius + p->bottom * TR_HU;
-    rt = p->radius + p->top * TR_HU;
-    theta_max = D > rb ? acos(rb / D) + acos(rb / rt) : 3.14159265;
-    if (theta_max > 3.14159265)
-        theta_max = 3.14159265;
     theta = 0;
-    if (D > rt) {
+    if (D > fk->rt) {
         /* above every hill: nothing before the lowest of the line's rays reaches the highest ground can show */
-        if (!tr_enter(eye, up, t, tr_norm(p->nadir ? w0 : w1), rt, &theta))
-            goto sky;
+        if (!tr_enter(fk->eye, up, t, tr_norm(nadir ? wk : w1), fk->rt, &theta))
+            return;
     }
-    horizon = p->nadir ? -1 : q->len;
+    horizon = nadir ? kmin - 1 : len;
     /* everything on the line lies in the plane of up and t: a point's place there is (along up, along t) from the
-     * planet's centre, the eye at (D, 0); a screen place along the line from such a pair with four numbers */
+     * planet's centre, the eye at (D, 0); its pixel on the line, rho = ra_ + rb_ (a us + b ts) / (a uf + b tf) */
     {
-        double uf = tr_dot(up, cf), tf = tr_dot(t, cf), us, ts, a_base, fsign, cth = cos(theta), sth = sin(theta);
+        const double uf = tr_dot(up, fk->cf), tf = tr_dot(t, fk->cf), alt = fk->alt, theta_max = fk->theta_max;
+        const double near_ds = fk->near_ds, far_k = fk->far_k;
+        double us, ts, ra_, rb_, cth = cos(theta), sth = sin(theta);
+        double hr_u = 0, hr_t = 0, hr_phi = 0, hr_rmin2 = 0;   /* the ray through the filled part's edge, in the plane */
+        int hr_dirty = 1, hidden = 0, level = 0;
         if (q->vert) {
-            us = tr_dot(up, cu);
-            ts = tr_dot(t, cu);
-            a_base = c->cy;
-            fsign = -c->focal;
+            us = tr_dot(up, fk->cu);
+            ts = tr_dot(t, fk->cu);
+            ra_ = q->s * (c->cy - q->v_along) - rho_near;
+            rb_ = -q->s * c->focal;
         } else {
-            us = tr_dot(up, cr);
-            ts = tr_dot(t, cr);
-            a_base = c->cx;
-            fsign = c->focal;
+            us = tr_dot(up, fk->cr);
+            ts = tr_dot(t, fk->cr);
+            ra_ = q->s * (c->cx - q->v_along) - rho_near;
+            rb_ = q->s * c->focal;
         }
-#define TR_RHO(a, b) (q->s * (a_base + fsign * ((a) * us + (b) * ts) / ((a) * uf + (b) * tf) - q->v_along) - rho_near)
+#define TR_RHO(a, b) (ra_ + rb_ * ((a) * us + (b) * ts) / ((a) * uf + (b) * tf))
         while (theta < theta_max) {
-            double h, ra, rb2, z, rho, dist, ds, dt, cd, sd, x;
-            int level, f, ci, cj, lo, hi, i0, i1;
-            uint8_t id;
-            /* the step: three quarters of a cell near, then about two pixels' worth of the distance */
-            ra = p->radius * cth - D;
-            rb2 = p->radius * sth;
-            dist = sqrt(ra * ra + rb2 * rb2);
-            /* ground seen edge on is squeezed into few rows: steps grow as the ray grazes it (up to 4 times) */
-            ds = dist * 2.0 / c->focal;
-            if (ds < p->cell * 0.75)
-                ds = p->cell * 0.75;
-            for (level = 0; level < TR_LEVELS - 1 && ds > p->cell * (2 << level); level++)
-                ;                               /* (the grid's detail by the distance alone) */
-            x = -(ra * cth + rb2 * sth) / dist;    /* the sine of the ray's angle to the ground there */
-            if (x < 1)
-                ds /= x > 0.25 ? x : 0.25;
-            dir = tr_add(tr_scale(up, cth), t, sth);
-            h = tr_sample(p, dir, level, &id, &f, &ci, &cj);
-            ra = (p->radius + h) * cth - D;
-            rb2 = (p->radius + h) * sth;
-            z = ra * uf + rb2 * tf;
+            TrHit s;
+            double ra, rb, z, rho, dist2, dist, ds, dt, cd, sd, x, g, dx, dy, dz;
+            int i0, i1, lo, hi;
+            float fog = -1;
+            /* the step: three quarters of a cell near, then about two pixels' worth of the distance, longer as the
+             * ray grazes the ground (edge on it is squeezed into few rows; up to 4 times) */
+            ra = R * cth - D;
+            rb = R * sth;
+            dist2 = ra * ra + rb * rb;
+            while (level < TR_LEVELS - 1 && dist2 > fk->level_d2[level])
+                level++;                        /* (the grid's detail by the distance alone) */
+            while (level > 0 && dist2 <= fk->level_d2[level - 1])
+                level--;
+            dist = sqrt(dist2);
+            ds = dist * far_k;
+            if (ds < near_ds)
+                ds = near_ds;
+            g = -(ra * cth + rb * sth);         /* the distance times the sine of the ray's angle to the ground */
+            if (g < dist)
+                ds = ds * dist / (g > 0.25 * dist ? g : 0.25 * dist);
+            dx = up.x * cth + t.x * sth;
+            dy = up.y * cth + t.y * sth;
+            dz = up.z * cth + t.z * sth;
+            /* in a stretch of hidden ground: skip it while a coarse bound on the ground stays under the ray it would
+             * have to rise above (half a coarse cell at a time) */
+            if (hidden) {
+                int L = level + 1 < TR_SKIP_FIRST ? TR_SKIP_FIRST : level + 1;
+                double dth, lim, c1, s1;
+                while (L < TR_LEVELS - 1 && fk->skip_dth[L] * R < 4 * ds)
+                    L++;                        /* (a skip worth about four steps) */
+                dth = fk->skip_dth[L];
+                if (hr_dirty) {
+                    double hk = horizon < kmin ? kmin : horizon > len - 1 ? len - 1 : horizon;
+                    TrV wr = tr_add(w0, tr_add(w1, w0, -1), len > 1 ? hk / (len - 1) : 0);
+                    double l2 = sqrt(tr_dot(wr, wr));
+                    hr_u = tr_dot(wr, up) / l2;
+                    hr_t = tr_dot(wr, t) / l2;
+                    hr_phi = -D * hr_u > 0 ? atan2(-D * hr_u * hr_t, D - D * hr_u * hr_u) : -1;
+                    hr_rmin2 = D * D * hr_t * hr_t;
+                    hr_dirty = 0;
+                }
+                lim = R + tr_bound(p, dx, dy, dz, L);
+                lim *= lim;
+                c1 = cth * (1 - dth * dth * 0.5) - sth * dth;
+                s1 = sth * (1 - dth * dth * 0.5) + cth * dth;
+                if (tr_ray_r2(D, hr_u, hr_t, cth, sth) > lim && tr_ray_r2(D, hr_u, hr_t, c1, s1) > lim
+                    && !(hr_phi >= theta && hr_phi <= theta + dth && hr_rmin2 <= lim)) {
+                    cth = c1;
+                    sth = s1;
+                    theta += dth;
+                    prev_ok = prev_slab = 0;
+                    skips++;
+                    continue;
+                }
+            }
+            tr_sample(p, dx, dy, dz, level, &s);
+            ra = (R + s.h) * cth - D;
+            rb = (R + s.h) * sth;
+            z = ra * uf + rb * tf;
             n++;
             if (z > 1) {
-                int fog = -1;
-                rho = TR_RHO(ra, rb2);
-                if (p->nadir ? rho > horizon : rho < horizon) {
-                    if (p->nadir ? tr_gap(px, q->len, horizon + 1e-9, rho, &i0, &i1) : tr_gap(px, q->len, rho, horizon - 1e-9, &i0, &i1)) {
-                        fog = tr_fog(p, sqrt(ra * ra + rb2 * rb2), alt, h);
-                        tr_fill(px, i0, i1, (uint16_t)(id | fog << 8));
+                rho = TR_RHO(ra, rb);
+                hidden = 1;
+                if (nadir ? rho > horizon : rho < horizon) {
+                    hidden = 0;
+                    hr_dirty = 1;
+                    if (nadir ? tr_span(horizon + 1e-9, rho, kmin, len, &i0, &i1) : tr_span(rho, horizon - 1e-9, kmin, len, &i0, &i1)) {
+                        fog = tr_fog(p, dist, alt, s.h);
+                        if (prev_ok && prev_mat == s.mat) {
+                            if (prev_fog < 0)
+                                prev_fog = tr_fog(p, prev_dist, alt, prev_h);
+                            tr_fill_ground(px, stride, i0, i1, prev_rho, rho, prev_light, s.light, prev_fog, fog, s.mat);
+                        } else
+                            tr_fill_ground(px, stride, i0, i1, rho, rho, s.light, s.light, fog, fog, s.mat);
                     }
                     horizon = rho;
                 }
                 /* the second layer, near enough to be drawn as itself */
-                if (level < TR_SLAB_LEVELS && tr_slab(p, f, ci << level, cj << level, &lo, &hi)) {
-                    double la = (p->radius + lo * TR_HU) * cth - D, lb = (p->radius + lo * TR_HU) * sth;
-                    double ha = (p->radius + hi * TR_HU) * cth - D, hb = (p->radius + hi * TR_HU) * sth;
+                if (s.slab && level < TR_SLAB_LEVELS && tr_slab(p, s.f, s.ci << level, s.cj << level, &lo, &hi)) {
+                    double la = (R + lo * TR_HU) * cth - D, lb = (R + lo * TR_HU) * sth;
+                    double ha = (R + hi * TR_HU) * cth - D, hb = (R + hi * TR_HU) * sth;
                     if (la * uf + lb * tf > 1 && ha * uf + hb * tf > 1) {
                         double r0 = TR_RHO(la, lb), r1 = TR_RHO(ha, hb);
                         double s0 = r0 < r1 ? r0 : r1, s1 = r0 < r1 ? r1 : r0;
                         int mat = alt < lo * TR_HU ? TR_UNDER : TR_ROCK;
-                        int light = alt > hi * TR_HU ? id % TR_LIGHTS : TR_LIGHTS / 3;
+                        int light = alt > hi * TR_HU ? (int)s.light : TR_LIGHTS / 3;
+                        hidden = 0;
                         if (prev_slab) {
                             if (prev_lo < s0) s0 = prev_lo;
                             if (prev_hi > s1) s1 = prev_hi;
                         }
-                        if (tr_gap(px, q->len, s0, s1, &i0, &i1)) {
+                        if (tr_span(s0, s1, kmin, len, &i0, &i1)) {
                             if (fog < 0)
-                                fog = tr_fog(p, sqrt(ha * ha + hb * hb), alt, hi * TR_HU);
-                            tr_fill(px, i0, i1, (uint16_t)((mat * TR_LIGHTS + light) | fog << 8));
+                                fog = tr_fog(p, dist, alt, hi * TR_HU);
+                            tr_fill(px, stride, i0, i1, (uint16_t)((mat * TR_LIGHTS + light) | (int)(fog + 0.5f) << 8));
                         }
                         prev_lo = r0 < r1 ? r0 : r1;
                         prev_hi = r0 < r1 ? r1 : r0;
@@ -1180,16 +1474,23 @@ static void tr_line(TrPlanet *p, TrQuarter *q, int line)
                         prev_slab = 0;
                 } else
                     prev_slab = 0;
-                if (p->nadir ? horizon >= q->len - 1 : horizon <= 0)
+                prev_ok = 1;
+                prev_rho = rho;
+                prev_light = s.light;
+                prev_fog = fog;   /* (-1: worked out only if the next sample needs it) */
+                prev_dist = dist;
+                prev_h = s.h;
+                prev_mat = s.mat;
+                if (nadir ? horizon >= len - 1 : horizon <= kmin)
                     break;
             } else
-                prev_slab = 0;
+                prev_slab = prev_ok = 0;
             /* nothing farther can show once the ray through the filled part's edge has left the highest ground's
              * sphere behind (asked now and then) */
             if ((n & 15) == 0) {
-                double hk = p->nadir ? (horizon < 0 ? 0 : horizon) : (horizon > q->len - 1 ? q->len - 1 : horizon);
-                TrV wr = tr_norm(tr_add(w0, tr_add(w1, w0, -1), q->len > 1 ? hk / (q->len - 1) : 0));
-                double wu = tr_dot(wr, up), wt = tr_dot(wr, t), b = D * wu, cc = D * D - rt * rt, disc = b * b - cc, s1;
+                double hk = horizon < kmin ? kmin : horizon > len - 1 ? len - 1 : horizon;
+                TrV wr = tr_norm(tr_add(w0, tr_add(w1, w0, -1), len > 1 ? hk / (len - 1) : 0));
+                double wu = tr_dot(wr, up), wt = tr_dot(wr, t), b = D * wu, cc = D * D - fk->rt * fk->rt, disc = b * b - cc, s1;
                 if (disc <= 0)
                     break;
                 s1 = -b + sqrt(disc);
@@ -1197,7 +1498,7 @@ static void tr_line(TrPlanet *p, TrQuarter *q, int line)
                     break;
             }
             /* on round the great circle by dt (small: its sine and cosine to the third power) */
-            dt = ds / p->radius;
+            dt = ds / R;
             cd = 1 - dt * dt * 0.5;
             sd = dt - dt * dt * dt / 6;
             x = cth * cd - sth * sd;
@@ -1207,22 +1508,8 @@ static void tr_line(TrPlanet *p, TrQuarter *q, int line)
         }
 #undef TR_RHO
     }
-sky:
     p->samples += n;
-    /* what no ground filled: the sky, its glow by the ray's angle from straight up (the line's rays all lie in a
-     * plane with straight up in it) */
-    {
-        TrV dw = tr_scale(tr_add(w1, w0, -1), q->len > 1 ? 1.0 / (q->len - 1) : 0);
-        double a0 = tr_dot(w0, up), da = tr_dot(dw, up), b0 = tr_dot(w0, w0), b1 = 2 * tr_dot(w0, dw), b2 = tr_dot(dw, dw);
-        for (k = 0; k < q->len; k++)
-            if (px[k] == TR_PX_EMPTY) {
-                double cz = (a0 + da * k) / sqrt(b0 + (b1 + b2 * k) * k);
-                int s = (int)((cz + 1) * 0.5 * TR_SKY_STEPS), fog;
-                fog = p->skytab[s < 0 ? 0 : s > TR_SKY_STEPS - 1 ? TR_SKY_STEPS - 1 : s];
-                if (fog)
-                    px[k] = (uint16_t)(TR_PX_SKY | fog);
-            }
-    }
+    p->skips += skips;
 }
 
 void tr_view(TrPlanet *p, const TrCam *cam)
@@ -1231,7 +1518,7 @@ void tr_view(TrPlanet *p, const TrCam *cam)
     double D = sqrt(tr_dot(eye, eye)), nx, ny, nz;
     int k, i;
     p->cam = *cam;
-    p->samples = 0;
+    p->samples = p->skips = 0;
     n = tr_v(-eye.x / D, -eye.y / D, -eye.z / D);
     nx = tr_dot(n, tr_v(cam->right[0], cam->right[1], cam->right[2]));
     ny = tr_dot(n, tr_v(cam->up[0], cam->up[1], cam->up[2]));
@@ -1242,7 +1529,33 @@ void tr_view(TrPlanet *p, const TrCam *cam)
     p->vx = cam->cx + cam->focal * nx / nz;
     p->vy = cam->cy - cam->focal * ny / nz;
     tr_sky_table(p, D);
+    p->sky_f = tr_dot(tr_scale(n, -1), tr_v(cam->fwd[0], cam->fwd[1], cam->fwd[2]));
+    p->sky_r = tr_dot(tr_scale(n, -1), tr_v(cam->right[0], cam->right[1], cam->right[2]));
+    p->sky_u = tr_dot(tr_scale(n, -1), tr_v(cam->up[0], cam->up[1], cam->up[2]));
     p->fog_ea = exp(-((D - p->radius) < p->bottom * TR_HU ? p->bottom * TR_HU : D - p->radius) / p->fog_height);
+    {
+        TrFrameK *fk = &p->fk;
+        double rb = p->radius + p->bottom * TR_HU;
+        fk->eye = eye;
+        fk->D = D;
+        fk->up = tr_scale(eye, 1 / D);
+        fk->cr = tr_v(cam->right[0], cam->right[1], cam->right[2]);
+        fk->cu = tr_v(cam->up[0], cam->up[1], cam->up[2]);
+        fk->cf = tr_v(cam->fwd[0], cam->fwd[1], cam->fwd[2]);
+        fk->alt = D - p->radius;
+        fk->rt = p->radius + p->top * TR_HU;
+        fk->theta_max = D > rb ? acos(rb / D) + acos(rb / fk->rt) : 3.14159265;
+        if (fk->theta_max > 3.14159265)
+            fk->theta_max = 3.14159265;
+        fk->near_ds = p->cell * 0.75;
+        fk->far_k = TR_STEP_PX / cam->focal;
+        for (k = 0; k < TR_LEVELS; k++) {
+            /* level k + 1 once the step's pixels' worth of the distance passes two of level k's cells */
+            double d = p->cell * (2 << k) / fk->far_k;
+            fk->level_d2[k] = d * d;
+            fk->skip_dth[k] = p->cell * (1 << k) * 0.5 / p->radius;
+        }
+    }
     for (k = 0; k < 4; k++) {
         tr_quarter(p, k);
         if (p->q[k].on)
@@ -1252,25 +1565,52 @@ void tr_view(TrPlanet *p, const TrCam *cam)
 }
 
 uint32_t tr_samples(const TrPlanet *p) { return p->samples; }
+uint32_t tr_skips(const TrPlanet *p) { return p->skips; }
 
 static const uint8_t tr_bayer[4][4] = { { 0, 8, 2, 10 }, { 12, 4, 14, 6 }, { 3, 11, 1, 9 }, { 15, 7, 13, 5 } };
 
-static uint8_t tr_pick(const TrDither *d, int x, int y) { return tr_bayer[y & 3][x & 3] < d->t ? d->b : d->a; }
-
-static uint32_t tr_put(TrPlanet *p, uint8_t *row, int x, int y, uint16_t v)
+/* a pixel the ground did not fill: the sky's pixel there hazed by its glow g (256ths of a level), dithered between
+ * the two levels it lies between and then as the palette's two */
+static void tr_sky_px(const TrPlanet *p, uint8_t *row, int x, int th, int g)
 {
-    if (v == TR_PX_EMPTY)
-        return 0;
-    if (v & TR_PX_SKY)
-        row[x] = tr_pick(&p->sky[v & 0x1F][row[x]], x, y);
-    else
-        row[x] = tr_pick(&p->ground[(v >> 8) & 0x1F][v & 0xFF], x, y);
-    return 1;
+    int lev = g >> 8;
+    const TrDither *d;
+    if (th < ((g >> 4) & 15) && lev < TR_FOGS - 1)
+        lev++;
+    d = &p->sky[lev][row[x]];
+    row[x] = th < d->t ? d->b : d->a;
+}
+
+/* a row's sky glow, 256ths of a level, for its columns a .. b-1: from the ray's angle from straight up, worked out
+ * every 8th column and weighed between */
+static void tr_sky_row(const TrPlanet *p, int y, int a, int b, uint16_t *out)
+{
+    const TrCam *c = &p->cam;
+    double dy = (y - c->cy) / c->focal, k0 = p->sky_f - dy * p->sky_u, x;
+    int x0, g0 = 0, g1;
+    for (x0 = a; x0 < b; x0 += 8) {
+        int x1 = x0 + 8 < b ? x0 + 8 : b, si, k;
+        if (x0 == a) {
+            x = (x0 - c->cx) / c->focal;
+            si = (int)(((k0 + x * p->sky_r) / sqrt(1 + x * x + dy * dy) + 1) * 0.5 * TR_SKY_STEPS);
+            g0 = p->skytab[si < 0 ? 0 : si > TR_SKY_STEPS - 1 ? TR_SKY_STEPS - 1 : si];
+        }
+        x = (x1 - c->cx) / c->focal;
+        si = (int)(((k0 + x * p->sky_r) / sqrt(1 + x * x + dy * dy) + 1) * 0.5 * TR_SKY_STEPS);
+        g1 = p->skytab[si < 0 ? 0 : si > TR_SKY_STEPS - 1 ? TR_SKY_STEPS - 1 : si];
+        {
+            int gg = g0 * 8, dg = g1 - g0;
+            for (k = x0; k < x1; k++, gg += dg)
+                out[k] = (uint16_t)(gg >> 3);
+        }
+        g0 = g1;
+    }
 }
 
 uint32_t tr_blit(TrPlanet *p, uint8_t *fb, int fb_y0, int stride, int y0, int y1, int xa, int xb, const int16_t *ext,
                  int ext_y0, int ext_rows)
 {
+    const TrDither *gt = &p->ground[0][0];
     uint32_t n = 0;
     int y;
     if (y0 < fb_y0)
@@ -1281,8 +1621,12 @@ uint32_t tr_blit(TrPlanet *p, uint8_t *fb, int fb_y0, int stride, int y0, int y1
         xa = 0;
     if (xb > p->cam.w)
         xb = p->cam.w;
+    if (xb > TR_BLIT_W)
+        xb = TR_BLIT_W;
     for (y = y0; y < y1; y++) {
         uint8_t *row = fb + (size_t)(y - fb_y0) * stride;
+        const uint8_t *bay = tr_bayer[y & 3];
+        uint16_t *glow = p->glow;
         int ca = xa, cb = xb, x, k;
         double dy = y - p->vy, half = fabs(dy);
         if (ext) {
@@ -1293,14 +1637,19 @@ uint32_t tr_blit(TrPlanet *p, uint8_t *fb, int fb_y0, int stride, int y0, int y1
         }
         if (ca >= cb)
             continue;
+        if (p->sky_any)
+            tr_sky_row(p, y, ca, cb, glow);
         for (k = 0; k < 4; k++) {
             TrQuarter *q = &p->q[k];
             int a0, a1;
             if (!q->on)
                 continue;
             if (q->vert) {
-                /* the row's part within the wedge above (below) V: a line a pixel, found by adding */
+                /* the row's part within the wedge above (below) V: its pixels' lines one after another, in 65536ths
+                 * by adding */
+                const uint16_t *src;
                 double fi, dfi;
+                int32_t fx, dfx;
                 int idx;
                 if (q->s * dy <= 0)
                     continue;
@@ -1313,15 +1662,48 @@ uint32_t tr_blit(TrPlanet *p, uint8_t *fb, int fb_y0, int stride, int y0, int y1
                 if (a1 > cb - 1) a1 = cb - 1;
                 if (a0 > a1)
                     continue;
+                src = q->px + (size_t)idx * q->lines;
                 dfi = (q->edge - p->vy) / dy / q->step;
                 fi = (p->vx + (a0 - p->vx) * (q->edge - p->vy) / dy - q->first) / q->step + 0.5;
-                for (x = a0; x <= a1; x++, fi += dfi) {
-                    int i = (int)fi;
-                    if (i >= 0 && i < q->lines)
-                        n += tr_put(p, row, x, y, q->px[(size_t)i * q->len + idx]);
+                while (a0 <= a1 && (fi < 0 || fi >= q->lines)) {   /* (the ends may fall just off the lines) */
+                    a0++;
+                    fi += dfi;
+                }
+                while (a1 >= a0 && (fi + dfi * (a1 - a0) < 0 || fi + dfi * (a1 - a0) >= q->lines))
+                    a1--;
+                fx = (int32_t)(fi * 65536);
+                dfx = (int32_t)(dfi * 65536);
+                if (q->thin[idx]) {
+                    /* (lines thinned here: the nearest kept one, a multiple of 1 << thin) */
+                    int th = q->thin[idx];
+                    fx += (32768 << th) - 32768;
+                    for (x = a0; x <= a1; x++, fx += dfx) {
+                        int i = (fx >> (16 + th)) << th;
+                        uint16_t v = src[i < q->lines ? i : i - (1 << th)];
+                        if (v != TR_PX_EMPTY) {
+                            const TrDither *d = gt + v;
+                            row[x] = bay[x & 3] < d->t ? d->b : d->a;
+                            n++;
+                        } else if (p->sky_any && glow[x] >= 128) {
+                            tr_sky_px(p, row, x, bay[x & 3], glow[x]);
+                            n++;
+                        }
+                    }
+                    continue;
+                }
+                for (x = a0; x <= a1; x++, fx += dfx) {
+                    uint16_t v = src[fx >> 16];
+                    if (v != TR_PX_EMPTY) {
+                        const TrDither *d = gt + v;
+                        row[x] = bay[x & 3] < d->t ? d->b : d->a;
+                        n++;
+                    } else if (p->sky_any && glow[x] >= 128) {
+                        tr_sky_px(p, row, x, bay[x & 3], glow[x]);
+                        n++;
+                    }
                 }
             } else {
-                /* the parts left (right) of the wedges: a division a pixel */
+                /* the parts left (right) of the wedges: a column a pixel, its line by a division */
                 if (q->s < 0) {
                     a0 = ca;
                     a1 = (int)ceil(p->vx - half) - 1;
@@ -1334,11 +1716,27 @@ uint32_t tr_blit(TrPlanet *p, uint8_t *fb, int fb_y0, int stride, int y0, int y1
                 for (x = a0; x <= a1; x++) {
                     double dx = x - p->vx;
                     int idx = q->s * (x - q->near), i;
+                    uint16_t v;
                     if (dx == 0 || idx < 0 || idx >= q->len)
                         continue;
                     i = (int)((p->vy + dy * (q->edge - p->vx) / dx - q->first) / q->step + 0.5);
-                    if (i >= 0 && i < q->lines)
-                        n += tr_put(p, row, x, y, q->px[(size_t)i * q->len + idx]);
+                    if (q->thin[idx]) {
+                        int th = q->thin[idx];
+                        i = ((i + (1 << th >> 1)) >> th) << th;
+                        if (i >= q->lines)
+                            i -= 1 << th;
+                    }
+                    if (i < 0 || i >= q->lines)
+                        continue;
+                    v = q->px[(size_t)idx * q->lines + i];
+                    if (v != TR_PX_EMPTY) {
+                        const TrDither *d = gt + v;
+                        row[x] = bay[x & 3] < d->t ? d->b : d->a;
+                        n++;
+                    } else if (p->sky_any && glow[x] >= 128) {
+                        tr_sky_px(p, row, x, bay[x & 3], glow[x]);
+                        n++;
+                    }
                 }
             }
         }
@@ -1368,15 +1766,15 @@ int tr_seen(const TrPlanet *p, const double eye[3], const double pt[3])
         s1 = len - p->cell;   /* (not the point's own ground) */
     while (s < s1 && guard++ < 4000) {
         TrV q = tr_add(e, d, s);
-        double r = sqrt(tr_dot(q, q)), h, step;
-        int f, ci, cj, lo, hi;
-        uint8_t id;
-        h = tr_sample(p, tr_v(q.x / r, q.y / r, q.z / r), 0, &id, &f, &ci, &cj);
-        if (r < p->radius + h)
+        double r = sqrt(tr_dot(q, q)), step;
+        int lo, hi;
+        TrHit hit;
+        tr_sample(p, q.x / r, q.y / r, q.z / r, 0, &hit);
+        if (r < p->radius + hit.h)
             return 0;
-        if (tr_slab(p, f, ci, cj, &lo, &hi) && r >= p->radius + lo * TR_HU && r <= p->radius + hi * TR_HU)
+        if (hit.slab && tr_slab(p, hit.f, hit.ci, hit.cj, &lo, &hi) && r >= p->radius + lo * TR_HU && r <= p->radius + hi * TR_HU)
             return 0;
-        step = (r - p->radius - h) * 0.3;
+        step = (r - p->radius - hit.h) * 0.3;
         if (step < p->cell * 0.5)
             step = p->cell * 0.5;
         s += step;

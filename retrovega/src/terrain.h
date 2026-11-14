@@ -98,6 +98,7 @@ uint32_t tr_blit(TrPlanet *p, uint8_t *fb, int fb_y0, int stride, int y0, int y1
 int tr_seen(const TrPlanet *p, const double eye[3], const double pt[3]);
 
 uint32_t tr_samples(const TrPlanet *p);  /* the last tr_view's samples of the ground (for timing) */
+uint32_t tr_skips(const TrPlanet *p);    /* and its skips of hidden ground */
 
 #ifdef __cplusplus
 }

@@ -117,14 +117,21 @@ static void shot(TrPlanet *p, const TrCam *c, const char *dir, const char *name)
     double t0, t1, t2;
     int y;
     uint32_t px = 0;
-    sky();
-    t0 = now_ms();
-    tr_view(p, c);
-    t1 = now_ms();
-    for (y = 0; y < H; y += 100)
-        px += tr_blit(p, g_fb + y * W, y, W, y, y + 100, 0, W, 0, 0, 0);
-    t2 = now_ms();
-    printf("%-14s view %6.2f ms  blit %5.2f ms  %6u px  %7u samples\n", name, t1 - t0, t2 - t1, (unsigned)px, (unsigned)tr_samples(p));
+    double best_v = 1e9, best_b = 1e9;
+    int rep;
+    for (rep = 0; rep < 8; rep++) {         /* (the best of 8: the game draws one frame after another) */
+        sky();
+        px = 0;
+        t0 = now_ms();
+        tr_view(p, c);
+        t1 = now_ms();
+        for (y = 0; y < H; y += 100)
+            px += tr_blit(p, g_fb + y * W, y, W, y, y + 100, 0, W, 0, 0, 0);
+        t2 = now_ms();
+        if (t1 - t0 < best_v) best_v = t1 - t0;
+        if (t2 - t1 < best_b) best_b = t2 - t1;
+    }
+    printf("%-14s view %6.2f ms  blit %5.2f ms  %6u px  %7u samples %6u skips\n", name, best_v, best_b, (unsigned)px, (unsigned)tr_samples(p), (unsigned)tr_skips(p));
     save(dir, name);
 }
 
