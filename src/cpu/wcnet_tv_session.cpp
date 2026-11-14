@@ -376,6 +376,24 @@ bool objs_ready() {
 
 void send_all(NetworkMessage &msg, bool bestEffort);
 
+// A line on the game's own screen, as its net game shows another player's (5 s), in flight; the emulator's line
+// over the picture otherwise.
+void show_line(const std::string &line0) {
+    std::string line = line0.substr(0, 70);
+    for (size_t i = 0; i < line.size(); i++) if ((unsigned char)line[i] < 32 || (unsigned char)line[i] > 126) line[i] = '?';
+    wclog(1, "Terminal Velocity: comms: %s", line.c_str());
+    if (!tv_in_flight() || !tv_fn(TV_FN_MESSAGE)) {
+        notice(line);
+        return;
+    }
+    std::vector<Bit32u> scratch((line.size() + 4) / 4, 0);
+    memcpy(&scratch[0], line.c_str(), line.size());
+    std::vector<Bit32u> args;
+    args.push_back(TV_SCRATCH);
+    args.push_back(0x50000);
+    tv_queue_call(TV_AT_FRAME, tv_fn(TV_FN_MESSAGE), args, scratch, NULL, 0);
+}
+
 // A newcomer to our level: the objects gone in the others' games go in ours (their hit points none: the objects'
 // loop leaves them out, drawn no more, counted gone by the level's goals).
 void take_dead(const TvDead &d) {
@@ -493,6 +511,10 @@ void handle(Peer *p, NetworkMessage &msg) {
         *out.mutable_tv_state() = msg.tv_state();
         out.mutable_tv_state()->set_player((Bit32u)seat);
         relay(p, [&](Peer *to) { to->conn.send_best_effort(out); });
+    } else if (msg.has_chat()) {
+        if (!p->hello) return;
+        show_line(msg.chat().callsign() + ": " + msg.chat().message());
+        relay(p, [&](Peer *to) { to->conn.send(msg); });
     } else if (msg.has_tv_looks()) {
         if (!p->hello || g_net->host) return;
         for (int i = 0; i < 4 && i < msg.tv_looks().look_size(); i++) g_looks[i] = kLooks[look_index(msg.tv_looks().look(i))];
@@ -546,6 +568,11 @@ void poll_peers() {
                 if (st.failed()) p->conn.close();
                 break;
             }
+            handle(p, msg);
+        }
+        for (int n = 0; n < 64 && p->conn.is_open(); n++) {
+            RecvStatus st = p->conn.poll(CAT_CHAT, msg);        // (the 0 key's lines go on a channel of their own)
+            if (!st.ok()) break;
             handle(p, msg);
         }
         for (int n = 0; n < 64 && p->conn.is_open(); n++) {
@@ -1106,6 +1133,17 @@ void tv_session_level_end() {
 void tv_session_shutdown() { shutdown(); }
 
 bool tv_session_active() { return g_net != NULL; }
+
+void tv_session_chat(const std::string &text) {
+    if (!g_net || text.empty()) return;
+    NetworkMessage msg;
+    Chat *chat = msg.mutable_chat();
+    chat->set_ship_id(0);
+    chat->set_message(text);
+    chat->set_callsign(g_net->callsign);
+    send_all(msg, false);
+    show_line(g_net->callsign + ": " + text);
+}
 
 bool tv_session_partner(TvShip *out) {
     memset(out, 0, sizeof(*out));

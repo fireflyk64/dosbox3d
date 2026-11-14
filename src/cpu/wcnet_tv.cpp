@@ -555,6 +555,7 @@ Bit32u tv_fn(TvFn f) {
     case TV_FN_HIT: return place_of(A_HIT_FN);
     case TV_FN_LOAD_MODEL: return place_of(A_LOAD_MODEL_FN);
     case TV_FN_DESTROY: return place_of(A_DESTROY_FN);
+    case TV_FN_MESSAGE: return place_of(A_MESSAGE_FN);
     case TV_FN_POD_LOOKUP: {
         // (the model loader's first call: the archives' lookup, by its near call's offset)
         const Bit32u call = place_of(A_LOAD_MODEL_FN) + (0x402F1 - 0x402E0);

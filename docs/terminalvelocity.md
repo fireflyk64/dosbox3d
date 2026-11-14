@@ -46,7 +46,26 @@ planet Ymir: 476 objects.  Cheats (the game's own, typed in flight): TRWARPn (to
 
 ## 2. The page
 
-(Step 7: not yet.)
+`web/gamefiles.js` registers `tv` (detected by `TV.EXE`, run as `tv`, rooms of up to 4, room codes TV-, 60,000 cycles,
+the 640 x 480 picture, an S3 and a Sound Blaster 16 at 220/5/1/5, the game's own joystick offered "Built in", saved
+games `SAVE*.DAT`, `SCORE.DAT` and `VOX.INI`).  A dropped `3dtv12.zip` is the installer and the split archive:
+`expandSplitZips` puts `TV12BBS._1`, `._2`, `._3` end to end and reads the zip in them (`readZip` now takes a zip with
+bytes before it, the installer's header), which leaves the game's 41 files.  The registered game's installed directory
+is recognised the same way (by `TV.EXE`).
+
+`prepare` (at every launch, after the files are installed): `SOUNDRV.COM` from `SB16.COM` when there is none (what
+SETUP.EXE's Sound Setup does for a Sound Blaster 16), `SETUP.CFG` as SETUP.EXE's "Save and launch TV" writes it when
+there is none (TV.EXE asks for setup without one), and in `VOX.INI` (made with the game's defaults when there is none:
+briefings, cinemas and demos on) the high-resolution mode (640,240) and the control: a pad picked "Built in" (the
+launch puts the game port in) makes it the game's Gamepad control (2: the flight applies the stick only above 1)
+calibrated as the game's own Calibrate measures DOSBox's counting port (centre 64, 0 to 128); without one, a Gamepad
+control left from before goes back to the keyboard (the port is empty), the mouse is kept.  Measured natively with
+the scripted stick: the calibration screen reads 128/0 at the stick's ends and 64 in the middle, and in flight the
+ship turns with it, button 1 fires.
+
+The room: the host's Host's craft and Wingmen's craft menus (the TV-202, the Ymir IceRider, the Ymir SnowScout, the
+Hawk, the Gull, the level's own craft; remembered by the browser) become `WCTVLOOKS` on the host's game, which tells
+the guests' (TvLooks).  No mission menu: the host plays the game as it comes and the others fly the host's level.
 
 ## 3. The program in memory (src/cpu/wcnet_tv.cpp)
 
@@ -101,6 +120,9 @@ by their rates (0x4CEC0) and drawn by 0x4E840 with the draw-list call.  The laye
 (it turns off the level's goals and loads the net levels): it uses the same calls with the room's reports.
 
 ## 4. The rigs
+
+* `scripts/web-tv.sh [seconds]`: two browser pages in a room of a local lobby server (the built page, the shareware's
+  zip dropped into each, the host's craft menus, Fly on both, each page's key script from boot): "TV PAGE OK".
 
 * `scripts/tvrun.sh [seconds] [key script]`: one machine, booted, routed into the first level (briefings off in its
   copy's `VOX.INI`): in flight at 62 s.  `COPY=1` a copy of the game per run, `ENV=` more environment.
@@ -161,11 +183,30 @@ same route sees the host's TV-202 some 24 world units ahead.
 Done (step 3, 2026-11-14): hits and stages through the shooter, moving objects' owners and puppets, the afterburner's
 flame, the rigs' pilot, the high-resolution mode in the rigs.
 
+**The mission flown together (step 4, 2026-11-14).**  A guest's campaign call of a level (the level function's
+entry, 0x2CDF0, its return address the campaign's) is held, the overlay saying "Waiting for <host> to launch a
+level", until the host's level is under way (TvState.in_level: from the level function's call to its return, briefing
+and flight and the death's Retry question); then the guest flies the host's level: its index (ebx, `[0xDDD74]`, the
+pushed name), the host's file name under that index, the host's difficulty (`[0x64D1C]`, which may decide the level's
+objects).  Any pilot's level done (`[0x64CC8]`: the exit flown, or TRINEXT; the level loop then ends as completed and
+the campaign goes on) ends everybody's level as done; a guest whose host is in another level for 3 s ends its own and
+takes the host's at the campaign's next call.  The statistics screen after a level waits for Space.  A death: the game
+asks "Retry Mission (Y/N)"; Y flies the same level again from its start, and a pilot who starts our level after us
+(a retry, a late start) is told the objects already gone (TvDead: their hit points none in its game).  Level starts
+are counted at the level function (a retry keeps the index): objects, owners and loaded models are forgotten at each.
+Measured, two machines over TCP: the guest held then flying the host's artic.lvl 1.5 s after it; the host's exit
+ending both levels, both then on artic3.lvl; the guest's death and retry with "1 of 1 objects gone already".
+
+**Talking (2026-11-14).**  In flight the 0 key (no key of the game's: 1 to 7 pick weapons) opens the emulator's comms
+prompt; the line goes to the room (Chat, the host relaying) and shows on every screen in the game's own big letters,
+"CALLSIGN: text", for 5 s (the message call 0x2CC00 its net game shows another player's line with); out of flight it
+is the emulator's line over the picture.
+
+**The craft (step 5, 2026-11-14).**  The host's choice for each seat (TvLooks); a model is looked up in the game's
+archives first (the loader's own lookup, found by its call's offset in the loader: the loader ends the program on a
+name it cannot find) and loaded once a level; one not there, and "planet", is drawn as the level's own craft (its first
+craft type's model).  Measured: the host as an IceRider and the guest as a SnowScout in each other's games.
+
 Next:
 
-4. The level: a guest flies the host's level (the campaign loop's call held until the host flies, its index set);
-   the host's level done ends everybody's; a pilot's death and "Retry Mission" rejoin the level as it stands.
-5. The craft: the host picks each pilot's craft (the TV-202, a level's own, any craft in the game's archives); a
-   model not in this level's set and not loadable falls back to the level's own craft.
-6. The page: the shareware's zip (the split archive), the registered game's files, `SOUNDRV.COM`, `SETUP.CFG`,
-   `VOX.INI` (640x480, briefings, the joystick), the room's options.
+6. The registered game: its GAME.EXE untested (none at hand); a build whose windows do not all match is left alone.

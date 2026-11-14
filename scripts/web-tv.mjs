@@ -74,8 +74,9 @@ for (const p of [host, guest]) {
   await p.page.evaluate(() => { const b = document.getElementById("fullStart"); if (b && b.checked) b.click(); });
 }
 await host.page.click("#fly");
-await new Promise((r) => setTimeout(r, 1500));
-await guest.page.click("#fly");
+// (the host's Fly starts everybody's game in a room; a guest's own Fly only if it did not)
+await new Promise((r) => setTimeout(r, 4000));
+if (await guest.page.$eval("#fly", (b) => !b.disabled)) await guest.page.click("#fly");
 const seconds = Number(secondsArg);
 for (let t = 20; t <= seconds; t += 20) {
   await new Promise((r) => setTimeout(r, 20000));

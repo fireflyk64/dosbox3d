@@ -35,6 +35,7 @@ ANCHORS = [
     ('level_fn', 0x2CDF0, 0, 0x37, "the level flown: (its file's name), the campaign's call ebx its index; 1 back for a level done"),
     ('settings', 0x329AF, 0, 0x30, "the settings' writer: the difficulty and the briefing, cinema and demo flags"),
     ('level_end', 0x2D8B8, 0, 0x2D, "the level loop's end of a frame: the level done (the exit flown, or TRINEXT), else a death"),
+    ('message_fn', 0x2CC00, 0, 40, "a line of the game's own on the screen for a while: (text, 16.16 seconds); the net game's chat shows so"),
     ('load_model_fn', 0x402E0, 0, 48, "a model loaded from the game's files, by name: its handle (a name it cannot find ends the program)"),
     ('campaign', 0x2EC58, 0, 40, "the campaign loop: the level index, the count, the level's file name, the level flown"),
 ]
