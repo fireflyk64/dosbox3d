@@ -1387,7 +1387,9 @@ typedef struct {                        /* what a sample of the ground found */
     int i, j;                           /* the cell below and left of the point, and the point's place past it */
     float fi, fj;
     float gx, gy;                       /* the point's place on its face's level-0 grid, in cells */
+    float slo, shi;                     /* (tr_slab4's: the slab there, weighed) */
     int slab;                           /* that cell's slab mark */
+    int slab4;                          /* any of the four cells round the point has one */
 } TrHit;
 
 /* a sample of the ground at a unit direction, from the grid of a level */
@@ -1432,6 +1434,7 @@ TR_HOT void tr_sample(const TrPlanet *p, double dx, double dy, double dz, int le
     o->cj = j + (fj >= 0.5);
     c0 = g[k].c;
     o->slab = g[k].slab;
+    o->slab4 = g[0].slab | g[1].slab | g[side].slab | g[side + 1].slab;
     o->mat = c0 >> TR_LSHIFT;
     diff = (g[0].c ^ c0) | (g[1].c ^ c0) | (g[side].c ^ c0) | (g[side + 1].c ^ c0);
     if (diff < TR_LIGHTS)               /* the four of one material: their light weighed */
@@ -1440,6 +1443,41 @@ TR_HOT void tr_sample(const TrPlanet *p, double dx, double dy, double dz, int le
     else
         o->light = (float)(c0 & (TR_LIGHTS - 1));
     o->h = ((g[0].h * (1 - fi) + g[1].h * fi) * (1 - fj) + (g[side].h * (1 - fi) + g[side + 1].h * fi) * fj) * TR_HU;
+}
+
+/* the slab at a level-0 sample, its underside and top weighed between the four cells round it; a cell without one
+ * counts as the slab pinched to nothing at the middle of the others, so the rock thins out to its edge rather than
+ * ending in a cell's step.  0 where it has thinned away */
+static int tr_slab4(const TrPlanet *p, TrHit *s, int *lo, int *hi)
+{
+    int l[4], h[4], has[4], k, n = 0;
+    double mid = 0, w[4], a, b;
+    for (k = 0; k < 4; k++) {
+        has[k] = tr_slab(p, s->f, s->i + (k & 1), s->j + (k >> 1), &l[k], &h[k]);
+        if (has[k]) {
+            mid += (l[k] + h[k]) * 0.5;
+            n++;
+        }
+    }
+    if (!n)
+        return 0;
+    mid /= n;
+    w[0] = (1 - s->fi) * (1 - s->fj);
+    w[1] = s->fi * (1 - s->fj);
+    w[2] = (1 - s->fi) * s->fj;
+    w[3] = s->fi * s->fj;
+    a = b = 0;
+    for (k = 0; k < 4; k++) {
+        a += w[k] * (has[k] ? l[k] : mid);
+        b += w[k] * (has[k] ? h[k] : mid);
+    }
+    if (b - a < 0.5)
+        return 0;
+    s->slo = (float)a;
+    s->shi = (float)b;
+    *lo = (int)a;
+    *hi = (int)b;
+    return 1;
 }
 
 /* the haze between the eye and a point: a level 0 .. TR_FOGS-1 (a fraction too).  The air thins with height as
@@ -1772,7 +1810,7 @@ static void tr_line(TrPlanet *p, TrQuarter *q, int line)
     const double D = fk->D, R = p->radius;
     TrV up = fk->up, t, w, w0, w1, wk;
     double X = q->first + line * q->step, theta, horizon, rho_near = q->s * (q->near - q->v_along);
-    double prev_lo = 0, prev_hi = 0, prev_rho = 0, prev_dist = 0, prev_h = 0;
+    double prev_lo = 0, prev_hi = 0, prev_rho = 0, prev_dist = 0, prev_h = 0, prev_ds = 0;
     float prev_g[2] = { 0, 0 };
     int prev_f = -1, prev_level = 99;
     float prev_light = 0, prev_fog = 0;
@@ -1910,20 +1948,28 @@ static void tr_line(TrPlanet *p, TrQuarter *q, int line)
                             g[3] = s.gy;
                             tr_fill_ground(p, px, stride, i0, i1, prev_rho, rho, prev_light, s.light, prev_fog, fog, s.mat,
                                            level == 0 && prev_level == 0 && prev_f == s.f ? g : 0);
+                        } else if (prev_ok && fabs(s.h - prev_h) < prev_ds * 0.5) {
+                            /* (another material on gentle ground: the rows nearer the last sample its, the rest this
+                             * one's; up a steep face it is all this one's) */
+                            double midr = (prev_rho + rho) * 0.5;
+                            int m0, m1;
+                            if (prev_fog < 0)
+                                prev_fog = tr_fog(p, prev_dist, alt, prev_h);
+                            if (nadir ? tr_span(horizon + 1e-9, midr, kmin, len, &m0, &m1) : tr_span(midr, horizon - 1e-9, kmin, len, &m0, &m1))
+                                tr_fill_ground(p, px, stride, m0, m1, prev_rho, prev_rho, prev_light, prev_light, prev_fog, prev_fog, prev_mat, 0);
+                            tr_fill_ground(p, px, stride, i0, i1, rho, rho, s.light, s.light, fog, fog, s.mat, 0);
                         } else
                             tr_fill_ground(p, px, stride, i0, i1, rho, rho, s.light, s.light, fog, fog, s.mat, 0);
                     }
                     horizon = rho;
                 }
                 /* the second layer, near enough to be drawn as itself */
-                if (s.slab && level < TR_SLAB_LEVELS && tr_slab(p, s.f, s.ci << level, s.cj << level, &lo, &hi)) {
+                if (level == 0 ? s.slab4 && tr_slab4(p, &s, &lo, &hi)
+                               : s.slab && level < TR_SLAB_LEVELS && tr_slab(p, s.f, s.ci << level, s.cj << level, &lo, &hi)) {
                     double flo = lo, fhi = hi, la, lb, ha, hb;
-                    int l1, h1, l2, h2, l3, h3, l4, h4;
-                    if (level == 0 && tr_slab(p, s.f, s.i, s.j, &l1, &h1) && tr_slab(p, s.f, s.i + 1, s.j, &l2, &h2)
-                        && tr_slab(p, s.f, s.i, s.j + 1, &l3, &h3) && tr_slab(p, s.f, s.i + 1, s.j + 1, &l4, &h4)) {
-                        /* (inside the slab: its underside and top weighed between the four, no steps) */
-                        flo = (l1 * (1 - s.fi) + l2 * s.fi) * (1 - s.fj) + (l3 * (1 - s.fi) + l4 * s.fi) * s.fj;
-                        fhi = (h1 * (1 - s.fi) + h2 * s.fi) * (1 - s.fj) + (h3 * (1 - s.fi) + h4 * s.fi) * s.fj;
+                    if (level == 0) {
+                        flo = s.slo;
+                        fhi = s.shi;
                     }
                     la = (R + flo * TR_HU) * cth - D;
                     lb = (R + flo * TR_HU) * sth;
@@ -1959,6 +2005,7 @@ static void tr_line(TrPlanet *p, TrQuarter *q, int line)
                 prev_fog = fog;   /* (-1: worked out only if the next sample needs it) */
                 prev_dist = dist;
                 prev_h = s.h;
+                prev_ds = ds;
                 prev_mat = s.mat;
                 prev_g[0] = s.gx;
                 prev_g[1] = s.gy;
