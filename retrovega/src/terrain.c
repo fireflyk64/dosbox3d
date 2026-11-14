@@ -106,6 +106,7 @@ struct TrPlanet {
     TrStamp stamps[TR_STAMPS_MAX];      /* (a copy, for the making) */
     int phase, piece;                   /* the making: where it has got to (tr_build) */
     int32_t relief;                     /* the highest mountain over the lowest basin, about, height units */
+    float step_px;                      /* the march's far step, pixels (tr_detail; 0: TR_STEP_PX) */
     int32_t *coarse;                    /* (the making's: a face's broad octaves, tr_coarse) */
     float *shadow[6];                   /* the sun's share at each cell of level TR_SHADOW_LEVEL, 0 .. 1 */
     int nslabs, slabs_cap;
@@ -119,6 +120,7 @@ struct TrPlanet {
     double cell;                        /* a level-0 cell's side, about, positions */
     uint8_t pal[256][3];                /* the game's palette, 8 bits */
     float pal_lab[256][3];              /* the same in L*a*b* */
+    int8_t grain[TR_MATS][64][64];      /* the near ground's grain (tr_grain_make), 16ths of a light level */
     TrDither ground[TR_FOGS][256];      /* a colour id at a haze level, as the palette's two */
     TrDither sky[TR_FOGS][256];         /* a palette entry at a haze level */
     uint16_t skytab[1024];              /* the frame's: the sky's glow by a ray's angle from straight up, 256ths of a
@@ -419,11 +421,74 @@ void tr_column(const TrPlanet *p, int32_t x, int32_t y, int32_t z, TrColumn *out
     int f = tr_locate(x, y, z, TR_N, &gi, &gj), lo, hi;
     out->ground = p->radius + tr_height_at(p, f, gi, gj);
     out->slab_lo = out->slab_hi = 0;
+    out->r = (int32_t)tr_isqrt((uint64_t)((int64_t)x * x + (int64_t)y * y + (int64_t)z * z));
     ci = (gi + 32768) >> 16;
     cj = (gj + 32768) >> 16;
     if (tr_slab(p, f, ci, cj, &lo, &hi)) {
         out->slab_lo = p->radius + lo * TR_HU;
         out->slab_hi = p->radius + hi * TR_HU;
+    }
+}
+
+/* a planet-relative point moved along its line from the centre to `over` positions over the ground under it (integers:
+ * a game's logic places nav points and ships so, the same on every machine) */
+void tr_place(const TrPlanet *p, int32_t v[3], int32_t over)
+{
+    TrColumn col;
+    int64_t r, want;
+    int k;
+    tr_column(p, v[0], v[1], v[2], &col);
+    r = col.r;
+    if (r <= 0)
+        return;
+    want = (int64_t)col.ground + over;
+    for (k = 0; k < 3; k++)
+        v[k] = (int32_t)(((int64_t)v[k] * want) / r);
+}
+
+int tr_from_km(const TrMissionKm *m, TrPlanetDesc *d, TrStamp st[TR_STAMPS_MAX])
+{
+    int k, i, n = m->n > 4 ? 4 : m->n;
+    memset(d, 0, sizeof *d);
+    d->seed = m->seed;
+    d->radius = m->radius * 256;
+    d->kind = m->kind;
+    d->nstamps = (uint8_t)n;
+    for (k = 0; k < n; k++) {
+        const TrGroundKm *g = &m->ground[k];
+        memset(&st[k], 0, sizeof st[k]);
+        st[k].kind = g->kind;
+        st[k].heading = g->heading;
+        for (i = 0; i < 3; i++)
+            st[k].at[i] = st[k].to[i] = (g->at[i] - m->centre[i]) * 256;
+        st[k].to[0] += 1000 * 256;
+        for (i = 0; i < 4; i++)
+            st[k].size[i] = (int32_t)g->size[i] * 256;
+    }
+    return n;
+}
+
+void tr_from_records(const TrPlanetRec *pr, const TrNavRec *navs, int nnav, TrMissionKm *out)
+{
+    int k, i;
+    memset(out, 0, sizeof *out);
+    out->seed = pr->seed;
+    out->radius = pr->radius;
+    out->centre[0] = pr->x;
+    out->centre[1] = pr->y;
+    out->centre[2] = pr->z;
+    out->n = pr->n > 4 ? 4 : pr->n;
+    for (k = 0; k < out->n; k++) {
+        out->ground[k].kind = pr->g[k].kind;
+        out->ground[k].heading = pr->g[k].heading;
+        for (i = 0; i < 4; i++)
+            out->ground[k].size[i] = pr->g[k].size[i];
+        for (i = 0; i < nnav; i++)      /* (nav 0, the launch: the world's origin) */
+            if (navs[i].id == pr->g[k].nav) {
+                out->ground[k].at[0] = navs[i].x;
+                out->ground[k].at[1] = navs[i].y;
+                out->ground[k].at[2] = navs[i].z;
+            }
     }
 }
 
@@ -459,6 +524,15 @@ static void tr_frame(const TrStamp *s, TrFrame *fr)
     fr->b[0] = fr->c[1] * fr->a[2] - fr->c[2] * fr->a[1];
     fr->b[1] = fr->c[2] * fr->a[0] - fr->c[0] * fr->a[2];
     fr->b[2] = fr->c[0] * fr->a[1] - fr->c[1] * fr->a[0];
+    if (s->heading) {                   /* turned about the ground's up */
+        double h = s->heading * 3.14159265358979 / 180, ch = cos(h), sh = sin(h), a2[3];
+        for (k = 0; k < 3; k++)
+            a2[k] = fr->a[k] * ch + fr->b[k] * sh;
+        for (k = 0; k < 3; k++) {
+            fr->b[k] = fr->b[k] * ch - fr->a[k] * sh;
+            fr->a[k] = a2[k];
+        }
+    }
 }
 
 /* a cell's place in a stamp's frame, positions along a and b over the ground (on the tangent plane: stamps are small) */
@@ -526,6 +600,8 @@ static void tr_stamp_pad(TrPlanet *p, const TrStamp *s)
                 w = w * w * (3 - 2 * w);
                 h = tr_hp(p, 0, f, i, j);
                 *h = (int16_t)floor(*h + (mid - *h) * w + 0.5);
+                if (w > 0.6)
+                    tr_cell(p, 0, f, i, j)->c = TR_PALE;   /* (a pad: packed pale ground, water and all) */
             }
     }
 }
@@ -572,8 +648,10 @@ static void tr_stamp_arch(TrPlanet *p, const TrStamp *s)
                             t->hi[k] = (int16_t)floor(hi + 0.5);
                         }
                     }
-                } else if (hi > *h)
+                } else if (hi > *h) {
                     *h = (int16_t)floor(hi + 0.5);   /* a foot: solid down to the ground */
+                    tr_cell(p, 0, f, i, j)->c = TR_ROCK;
+                }
             }
     }
 }
@@ -586,7 +664,7 @@ static const float tr_mat_rgb[TR_MATS][3] = {
     { 176, 100, 62 },                   /* rock, red */
     { 84, 132, 50 },                    /* green */
     { 92, 60, 44 },                     /* the underside of rock */
-    { 230, 206, 162 },                  /* pale: mesa tops, salt flats */
+    { 214, 190, 148 },                  /* pale: mesa tops, salt flats, pads */
     { 166, 150, 88 },                   /* scrub, olive */
     { 46, 104, 122 },                   /* water */
     { 112, 74, 60 }                     /* dark crests */
@@ -772,7 +850,7 @@ static void tr_colours(TrPlanet *p)
 
 /* the halvings of the grid for the far ground.  The march draws the second layer as itself down to level
  * TR_SLAB_LEVELS - 1; past that a slab counts as solid rock to its top */
-#define TR_SLAB_LEVELS 3
+#define TR_SLAB_LEVELS 5
 
 static void tr_border(TrPlanet *p, int l)   /* a level's border cells, from the faces they really lie on */
 {
@@ -941,10 +1019,12 @@ static void tr_lab(const float rgb[3], float lab[3])
     lab[2] = (float)(200 * (y - z));
 }
 
+/* (lightness counts less than hue: a shaded tan is better as a darker warm entry dithered than as a cool grey of the
+ * right lightness; the palette's greys lean blue) */
 static double tr_d2(const float a[3], const float b[3])
 {
     double x = a[0] - b[0], y = a[1] - b[1], z = a[2] - b[2];
-    return x * x + y * y + z * z;
+    return x * x + 3 * (y * y + z * z);
 }
 
 /* the palette's entries a picture may use: the ones every mission has the same (the cockpit's own are 208 on, 255
@@ -1024,6 +1104,7 @@ static void tr_tables(TrPlanet *p)
 
 static void tr_fog_tables(TrPlanet *p);
 static int tr_maxes(TrPlanet *p);
+static void tr_grain_make(TrPlanet *p);
 
 /* the making, a piece at a time (tr_build), so the card can make a planet between frames without the game waiting:
  * the ground of each face a row at a time from the seed (its broad octaves first), the stamps, the halvings, the
@@ -1083,7 +1164,7 @@ TrPlanet *tr_begin(const TrPlanetDesc *d, const TrStamp *stamps, const uint8_t *
     p->zenith_rgb[1] = 112;
     p->zenith_rgb[2] = 84;
     p->fog_height = p->relief * TR_HU / 3.5;
-    p->fog_density = 0.35 / p->fog_height;   /* straight up from the datum, a third of the way to thick haze */
+    p->fog_density = 0.22 / p->fog_height;   /* straight up from the datum, a fifth of the way to thick haze */
     p->atmo_top = p->fog_height * 7;
     for (i = 0; i < 256; i++)
         for (k = 0; k < 3; k++)
@@ -1204,6 +1285,7 @@ int tr_build(TrPlanet *p)
         return 1;
     case TR_P_TABLES:
         tr_colours(p);
+        tr_grain_make(p);
         tr_tables(p);
         free(p->coarse);
         p->coarse = 0;
@@ -1214,6 +1296,37 @@ int tr_build(TrPlanet *p)
 }
 
 int tr_ready(const TrPlanet *p) { return p && p->phase == TR_P_DONE; }
+
+int tr_progress(const TrPlanet *p)       /* how far the making has got, 0 .. 99 (the ground's rows the most of it) */
+{
+    if (!p)
+        return 0;
+    if (p->phase == TR_P_GROUND)
+        return 60 * p->piece / (6 * (TR_N + 3));
+    return p->phase >= TR_P_DONE ? 100 : 60 + 4 * p->phase;
+}
+
+void tr_palette(TrPlanet *p, const uint8_t *pal)
+{
+    int i, k;
+    if (!p || !pal)
+        return;
+    for (i = 0; i < 256; i++) {
+        float c[3];
+        for (k = 0; k < 3; k++) {
+            p->pal[i][k] = (uint8_t)((pal[3 * i + k] & 63) * 255 / 63);
+            c[k] = p->pal[i][k];
+        }
+        tr_lab(c, p->pal_lab[i]);
+    }
+    if (p->phase == TR_P_DONE)
+        tr_tables(p);
+}
+
+void tr_detail(TrPlanet *p, float step_px)
+{
+    p->step_px = step_px < 1 ? 1 : step_px > 8 ? 8 : step_px;
+}
 
 TrPlanet *tr_make(const TrPlanetDesc *d, const TrStamp *stamps, const uint8_t *pal)
 {
@@ -1273,6 +1386,7 @@ typedef struct {                        /* what a sample of the ground found */
     int f, ci, cj;                      /* the nearest cell, in its level's numbering */
     int i, j;                           /* the cell below and left of the point, and the point's place past it */
     float fi, fj;
+    float gx, gy;                       /* the point's place on its face's level-0 grid, in cells */
     int slab;                           /* that cell's slab mark */
 } TrHit;
 
@@ -1311,6 +1425,8 @@ TR_HOT void tr_sample(const TrPlanet *p, double dx, double dy, double dz, int le
     o->j = j;
     o->fi = (float)fi;
     o->fj = (float)fj;
+    o->gx = (float)((i + fi) * (1 << level));
+    o->gy = (float)((j + fj) * (1 << level));
     k = (fj >= 0.5 ? side : 0) + (fi >= 0.5);
     o->ci = i + (fi >= 0.5);
     o->cj = j + (fj >= 0.5);
@@ -1570,8 +1686,37 @@ TR_HOT double tr_ray_r2(double D, double wu, double wt, double c, double s)
 
 /* fill a line's pixels i0 .. i1 that are still empty with the ground between two samples: the light and the haze
  * weighed from one to the other along the rows (b's material throughout) */
-TR_HOT void tr_fill_ground(uint16_t *px, int stride, int i0, int i1, double ra, double rb, float la, float lb,
-                           float fa, float fb, int mat)
+/* the fine grain of the near ground, finer than a cell (the picture only): light added per pixel from a 64 x 64
+ * tile of each material's own (sand: ripples across the wind; rock: cracks and grit; green: clumps; water: little
+ * waves), at 16 texels a cell and again at 64 */
+#define TR_GRAIN 64
+
+static void tr_grain_make(TrPlanet *p)
+{
+    int m, x, y;
+    for (m = 0; m < TR_MATS; m++)
+        for (y = 0; y < TR_GRAIN; y++)
+            for (x = 0; x < TR_GRAIN; x++) {
+                uint32_t h = tr_mix((uint32_t)(m * 7919 + y * TR_GRAIN + x) * 0x9E3779B1U);
+                double n = (double)(h & 255) / 255 - 0.5, v;
+                double ripple = sin((x + y * 0.45 + 3 * sin(y * 0.4)) * 6.2831853 / 5.3);
+                switch (m) {
+                case TR_SAND: v = ripple * 1.3 + n * 1.0; break;
+                case TR_PALE: v = ripple * 0.5 + n * 0.9; break;
+                case TR_GREEN: v = (h >> 8 & 7) < 3 ? -2.4 : n * 1.6; break;   /* (clumps' shadows) */
+                case TR_SCRUB: v = (h >> 8 & 15) < 3 ? -2.0 : n * 1.2; break;
+                case TR_WATER: v = sin((x * 0.9 + y * 0.3) * 6.2831853 / 7) * 0.8; break;
+                default: v = n * 2.2 + ((h >> 9 & 31) == 0 ? -2.5 : 0);   /* rock: grit and cracks */
+                }
+                p->grain[m][y][x] = (int8_t)floor(v * 16 + 0.5);   /* (16ths of a light level) */
+            }
+}
+
+/* fill a line's pixels i0 .. i1 that are still empty with the ground between two samples a and b: the light and the
+ * haze weighed from one to the other along the rows (b's material throughout); near ground (g: the samples' places on
+ * a face's level-0 grid, in cells) gets the grain too */
+TR_HOT void tr_fill_ground(const TrPlanet *p, uint16_t *px, int stride, int i0, int i1, double ra, double rb, float la,
+                           float lb, float fa, float fb, int mat, const float *g)
 {
     double span = rb - ra, t0, dt;
     int32_t l, dl, f, df;
@@ -1592,6 +1737,19 @@ TR_HOT void tr_fill_ground(uint16_t *px, int stride, int i0, int i1, double ra, 
     dl = (int32_t)((lb - la) * dt * 65536);
     f = (int32_t)((fa + (fb - fa) * t0) * 65536 + 32768);
     df = (int32_t)((fb - fa) * dt * 65536);
+    if (g) {
+        /* the place on the grid, in 64ths of a cell, by adding */
+        const int8_t (*gr)[TR_GRAIN] = p->grain[mat];
+        int32_t gx = (int32_t)((g[0] + (g[2] - g[0]) * t0) * 1024), gy = (int32_t)((g[1] + (g[3] - g[1]) * t0) * 1024);
+        int32_t dgx = (int32_t)((g[2] - g[0]) * dt * 1024), dgy = (int32_t)((g[3] - g[1]) * dt * 1024);
+        for (k = i0; k <= i1; k++, e += stride, l += dl, f += df, gx += dgx, gy += dgy)
+            if (*e == TR_PX_EMPTY) {
+                int lv = (l + ((gr[(gy >> 6) & 63][(gx >> 6) & 63] + gr[(gy >> 4) & 63][(gx >> 4) & 63]) << 12)) >> 16;
+                lv = lv < 0 ? 0 : lv > TR_LIGHTS - 1 ? TR_LIGHTS - 1 : lv;
+                *e = (uint16_t)((base + lv) | (f >> 16) << 8);
+            }
+        return;
+    }
     for (k = i0; k <= i1; k++, e += stride, l += dl, f += df)
         if (*e == TR_PX_EMPTY)
             *e = (uint16_t)((base + (l >> 16)) | (f >> 16) << 8);
@@ -1615,6 +1773,8 @@ static void tr_line(TrPlanet *p, TrQuarter *q, int line)
     TrV up = fk->up, t, w, w0, w1, wk;
     double X = q->first + line * q->step, theta, horizon, rho_near = q->s * (q->near - q->v_along);
     double prev_lo = 0, prev_hi = 0, prev_rho = 0, prev_dist = 0, prev_h = 0;
+    float prev_g[2] = { 0, 0 };
+    int prev_f = -1, prev_level = 99;
     float prev_light = 0, prev_fog = 0;
     int prev_slab = 0, prev_ok = 0, prev_mat = 0, n = 0, skips = 0, kmin;
     /* the rays of the line's first and last pixels (the line's pixel at `along` a is at across
@@ -1742,9 +1902,16 @@ static void tr_line(TrPlanet *p, TrQuarter *q, int line)
                         if (prev_ok && prev_mat == s.mat) {
                             if (prev_fog < 0)
                                 prev_fog = tr_fog(p, prev_dist, alt, prev_h);
-                            tr_fill_ground(px, stride, i0, i1, prev_rho, rho, prev_light, s.light, prev_fog, fog, s.mat);
+                            /* (the grain where both samples are near, on one face) */
+                            float g[4];
+                            g[0] = prev_g[0];
+                            g[1] = prev_g[1];
+                            g[2] = s.gx;
+                            g[3] = s.gy;
+                            tr_fill_ground(p, px, stride, i0, i1, prev_rho, rho, prev_light, s.light, prev_fog, fog, s.mat,
+                                           level == 0 && prev_level == 0 && prev_f == s.f ? g : 0);
                         } else
-                            tr_fill_ground(px, stride, i0, i1, rho, rho, s.light, s.light, fog, fog, s.mat);
+                            tr_fill_ground(p, px, stride, i0, i1, rho, rho, s.light, s.light, fog, fog, s.mat, 0);
                     }
                     horizon = rho;
                 }
@@ -1793,6 +1960,10 @@ static void tr_line(TrPlanet *p, TrQuarter *q, int line)
                 prev_dist = dist;
                 prev_h = s.h;
                 prev_mat = s.mat;
+                prev_g[0] = s.gx;
+                prev_g[1] = s.gy;
+                prev_f = s.f;
+                prev_level = level;
                 if (nadir ? horizon >= len - 1 : horizon <= kmin)
                     break;
             } else
@@ -1860,7 +2031,7 @@ void tr_view(TrPlanet *p, const TrCam *cam)
         if (fk->theta_max > 3.14159265)
             fk->theta_max = 3.14159265;
         fk->near_ds = p->cell * 0.75;
-        fk->far_k = TR_STEP_PX / cam->focal;
+        fk->far_k = (p->step_px > 0 ? p->step_px : TR_STEP_PX) / cam->focal;
         for (k = 0; k < TR_LEVELS; k++) {
             /* level k + 1 once the step's pixels' worth of the distance passes two of level k's cells */
             double d = p->cell * (2 << k) / fk->far_k;

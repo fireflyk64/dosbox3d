@@ -36,7 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 26                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 27                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
                                         # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
@@ -53,7 +53,7 @@ VERSION = 26                            # 2: the ship types' engines; 3: their h
                                         # 25: a mission ship's also=N (a second nav point that brings it, whichever
                                         # is reached first: the old game's ships listed at two points); 26: a
                                         # mission's goals and a node's pass mark (the old game's points)
-LIMITS = {'GOALS': 12, 'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 16,
+LIMITS = {'GROUNDS': 4, 'GOALS': 12, 'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 16,
           'SEATS': 3, 'TALKS': 200, 'FIELDS': 7, 'SHIPTYPES': 64, 'SHIPRECORDS': 44, 'WEAPONS': 40}
 TEXT = {'ID': 16, 'TITLE': 48, 'TALK': 108, 'KEY': 10, 'CALLSIGN': 12,
         'NAME': 24, 'NODE_ID': 8, 'LINE': 72, 'CODE': 6, 'WNAME': 20}
@@ -248,6 +248,13 @@ SPEAKER_YOU = 0xFE                      # the player, in a conversation
 TALK_BOOSTS = {'armor': 1, 'fuel': 2, 'missile': 3}
 # the rooms of the lines past the seated ones (RV_ROOM_RADIO = len(ROOMS), the wingman at the launch; then the deck)
 BRIEF_ROOMS = {'briefing': len(ROOMS) + 2, 'win': len(ROOMS) + 3, 'lose': len(ROOMS) + 4}
+# a planet mission's ground shapes (missions.txt `ground`): a pad made flat or a stone arch at a nav point's place,
+# its sizes in km (pad: a radius, b the slope round it; arch: a half its span, b its width, c the air under its crown,
+# d its thickness), heading degrees from the world's x across the ground (terrain.h TrStamp, the card's)
+GROUND = [('unsigned char', 'kind', 'B'), ('unsigned char', 'nav', 'B'), ('unsigned short', 'a', 'H'),
+          ('unsigned short', 'b', 'H'), ('unsigned short', 'c', 'H'), ('unsigned short', 'd', 'H'),
+          ('short', 'heading', 'h')]
+GROUND_KINDS = {'pad': 1, 'arch': 2}    # (terrain.h's TR_STAMP_PAD, TR_STAMP_ARCH)
 MISSION = [('char', 'id[RV_ID]', '%ds' % TEXT['ID']), ('unsigned char', 'node', 'B'), ('unsigned char', 'type', 'B'),
            ('unsigned char', 'music', 'B'), ('unsigned char', 'nnav', 'B'), ('unsigned char', 'nship', 'B'),
            ('unsigned char', 'ntalk', 'B'), ('unsigned char', 'nfield', 'B'), ('unsigned char', 'fighter', 'B'),
@@ -256,7 +263,40 @@ MISSION = [('char', 'id[RV_ID]', '%ds' % TEXT['ID']), ('unsigned char', 'node', 
            ('unsigned char', 'seat[RV_ROOMS][RV_SEATS]', '6B'), ('unsigned char', 'wipe', 'B'), ('unsigned char', 'hit', 'B'),
            ('unsigned char', 'rules', 'B'),
            ('unsigned short', 'talk0', 'H'), ('RvField', 'field[RV_FIELDS]', None),
-           ('unsigned char', 'ngoal', 'B'), ('RvGoal', 'goal[RV_GOALS]', None)]
+           ('unsigned char', 'ngoal', 'B'), ('RvGoal', 'goal[RV_GOALS]', None),
+           # (a planet mission's: its planet's centre, km, its radius, km (0: none), its seed, its ground shapes)
+           ('long', 'px', 'l'), ('long', 'py', 'l'), ('long', 'pz', 'l'), ('unsigned short', 'pradius', 'H'),
+           ('unsigned short', 'pseed', 'H'), ('unsigned char', 'nground', 'B'), ('RvGround', 'ground[RV_GROUNDS]', None)]
+
+
+def planet_record(m, nav_ids):
+    """a mission's planet and its ground shapes (missions.txt planet, ground): the record's tail"""
+    grounds = []
+    if 'planet' not in m:
+        if m['ground']:
+            raise Fail('%s: ground shapes in a mission with no planet' % m['ground'][0][0])
+        return struct.pack('<lllHHB', 0, 0, 0, 0, 0, 0) + b'\0' * (LIMITS['GROUNDS'] * struct.calcsize(fmt(GROUND)))
+    where, f = m['planet']
+    if len(f) != 5 or not all(re.fullmatch(r'-?\d+', v) for v in f):
+        raise Fail('%s: planet SEED x y z RADIUS (km)' % where)
+    seed, x, y, z, radius = (int(v) for v in f)
+    if not 0 <= seed <= 65535 or not 1000 <= radius <= 65535 or any(not -MAP_KM <= v <= MAP_KM for v in (x, y, z)):
+        raise Fail('%s: a planet\'s seed is 0..65535, its radius 1,000..65,535 km, its centre within %d km' % (where, MAP_KM))
+    for where, g in m['ground']:
+        opts = dict(o.split('=', 1) for o in g[2:] if '=' in o)
+        keys = {'pad': ('radius', 'slope'), 'arch': ('span', 'width', 'air', 'thick')}.get(g[0] if g else '')
+        if not keys or len(g) < 2 or not re.fullmatch(r'nav(\d+)', g[1]) or int(g[1][3:]) not in nav_ids \
+                or set(opts) - set(keys) - {'heading'} or any(not opts.get(k, '1').isdigit() for k in keys):
+            raise Fail('%s: ground pad navN radius=KM slope=KM, or ground arch navN span=KM width=KM air=KM thick=KM;'
+                       ' heading=DEG' % where)
+        size = [int(opts.get(k, 0)) for k in keys] + [0] * (4 - len(keys))
+        if any(not 0 <= v <= 20000 for v in size) or not -360 <= int(opts.get('heading', 0)) <= 360:
+            raise Fail('%s: a ground shape\'s sizes are 0..20,000 km, its heading -360..360' % where)
+        grounds.append(struct.pack(fmt(GROUND), GROUND_KINDS[g[0]], int(g[1][3:]), *size, int(opts.get('heading', 0))))
+    if len(grounds) > LIMITS['GROUNDS']:
+        raise Fail('%s: %d ground shapes, at most %d' % (m['where'], len(grounds), LIMITS['GROUNDS']))
+    return struct.pack('<lllHHB', x, y, z, radius, seed, len(grounds)) \
+        + b''.join(grounds).ljust(LIMITS['GROUNDS'] * struct.calcsize(fmt(GROUND)), b'\0')
 
 
 def pass_mark(n, where):
@@ -354,7 +394,7 @@ def parse_missions(path):
         where = '%s:%d' % (os.path.basename(path), lineno)
         if key == 'mission':
             cur = {'id': val, 'where': where, 'nav': [], 'ship': [], 'talk': [], 'seats': {}, 'field': [],
-                   'goal': [], 'rules': dict(defaults)}
+                   'goal': [], 'rules': dict(defaults), 'ground': []}
             missions.append(cur)
         elif key == 'rules':            # (before any mission: every mission's; in one: its own)
             parse_rules(where, val, defaults if cur is None else cur['rules'])
@@ -374,6 +414,10 @@ def parse_missions(path):
             cur['field'].append((where, val.split()))
         elif key == 'goal':
             cur['goal'].append((where, val.split()))
+        elif key == 'planet':           # planet SEED x y z RADIUS (km): the card's (only with one: docs/terrain.md)
+            cur['planet'] = (where, val.split())
+        elif key == 'ground':           # ground pad|arch navN key=KM ... [heading=DEG]
+            cur['ground'].append((where, val.split()))
         elif key in ROOMS:
             cur['seats'][key] = (where, dict(kv.split('=', 1) for kv in val.split()))
         elif key in ('talk', 'say', 'radio'):   # (one list: their order is the order they are said in)
@@ -633,13 +677,16 @@ def compile_all():
             words = [o for o in f[4:] if '=' not in o]
             opts = dict(o.split('=', 1) for o in f[4:] if '=' in o)
             sw = [o for o in opts.get('switch', '').split(',') if o]
-            if len(f) < 4 or set(words) - {'hidden', 'off'} or set(opts) - {'reach', 'switch'} \
+            if len(f) < 4 or set(words) - {'hidden', 'off', 'ground'} or set(opts) - {'reach', 'switch'} \
                     or not 1000 <= int(opts.get('reach', NAV_REACH)) <= 60000 or len(sw) > 4 \
                     or any(not re.fullmatch(r'[+-]([1-9]|1[0-5])', o) for o in sw):
                 raise Fail('%s: nav ID x y z [hidden] [off] [reach=KM, 1,000 to 60,000] [switch=+N,-M: at most 4, '
                            'navs 1..15]' % where)
             swb = bytes((0x80 if o[0] == '+' else 0) | int(o[1:]) for o in sw) + b'\xff' * (4 - len(sw))
-            navs.append(struct.pack(fmt(NAV), int(f[0]), (1 if 'hidden' in words else 0) | (2 if 'off' in words else 0),
+            if 'ground' in words and 'planet' not in m:
+                raise Fail('%s: a ground nav point in a mission with no planet' % where)
+            navs.append(struct.pack(fmt(NAV), int(f[0]), (1 if 'hidden' in words else 0) | (2 if 'off' in words else 0)
+                                    | (4 if 'ground' in words else 0),
                                     int(f[1]), int(f[2]), int(f[3]), int(opts.get('reach', NAV_REACH)), swb))
         if len(navs) > LIMITS['NAVS']:
             raise Fail('%s: %d nav points, at most %d' % (w, len(navs), LIMITS['NAVS']))
@@ -906,6 +953,7 @@ def compile_all():
         rec += b''.join(fields).ljust(LIMITS['FIELDS'] * struct.calcsize(fmt(FIELD)), b'\0')
         goals = mission_goals(m, ships, nav_ids)
         rec += struct.pack('<B', len(goals)) + b''.join(goals).ljust(LIMITS['GOALS'] * struct.calcsize(fmt(GOAL)), b'\0')
+        rec += planet_record(m, nav_ids)
         out_missions.append(rec)
 
     out_pilots = [struct.pack(fmt(PILOT), text(p['key'], TEXT['KEY'], 'people.csv'),
@@ -943,7 +991,8 @@ def check_dag(nodes):
             visit(w)
         state[v] = 2
     visit(nodes[0]['node'])
-    left = [n['node'] for n in nodes if n['node'] not in state]
+    # (a node in layer 0 is aside from the campaign's way: its missions are flown from the page's menu alone, Mirage's)
+    left = [n['node'] for n in nodes if n['node'] not in state and int(n['layer']) != 0]
     if left:
         raise Fail('campaign.csv: unreachable %s' % left)
 
@@ -997,6 +1046,9 @@ def header_text(sizes):
         out.append('#define RV_ROOM_%s %d' % (r.upper(), i))
     for k, v in FIELDS.items():
         out.append('#define RV_FIELD_%s %d' % (k.upper(), v))
+    for k, v in GROUND_KINDS.items():
+        out.append('#define RV_GROUND_%s %d' % (k.upper(), v))
+    out.append('#define RV_NAV_GROUND 4')
     for k, v in MUSIC.items():
         out.append('#define RV_MUSIC_%s %d' % (k.upper(), v))
     out.append('#define RV_MUSIC_COUNT %d' % len(MUSIC_FILES))
@@ -1028,7 +1080,7 @@ def header_text(sizes):
             out.append('#define %s%s %d' % (prefix, k.upper(), i))
     out += ['', '#pragma pack(1)', c_struct('RvGameHeader', HEADER), c_struct('RvPilot', PILOT),
             c_struct('RvNode', NODE), c_struct('RvNav', NAV), c_struct('RvShip', SHIP), c_struct('RvTalk', TALK),
-            c_struct('RvField', FIELD), c_struct('RvGoal', GOAL),
+            c_struct('RvField', FIELD), c_struct('RvGoal', GOAL), c_struct('RvGround', GROUND),
             c_struct('RvMission', MISSION), c_struct('RvShipType', SHIPTYPE), c_struct('RvWeapon', WEAPON),
             '#pragma pack()', '']
     for k, v in sizes.items():

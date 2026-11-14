@@ -33,6 +33,7 @@
 #include "rocks.h"
 #include "missiles.h"
 #include "sky.h"
+#include "planet.h"
 #include "collide.h"
 #include "score.h"
 #include "flight.h"
@@ -62,6 +63,7 @@ int g_star_bench;                       /* RVT.EXE /starbench N */
 #endif
 int g_capital_blocks_test = 0;          /* RVT.EXE /capblocks N: capital ships in N x N blocks, however many there are */
 int g_capital = 0;                      /* RV.EXE /capital: the carrier in the flight (a test aid) */
+int g_planet_test = 0;                  /* RVT.EXE /planet N: a desert planet N km under the player, an arch ahead */
 int g_sky = 0;                          /* RV.EXE /sky: three ship views painted on the sky, to roll and turn round (a test aid) */
 /* the sky test scene's sprites: the enemy type's views, painted on the sky at these directions and sizes */
 static const struct { int v; LfVec dir; int scale; } g_sky_sprites[3] = {
@@ -776,6 +778,8 @@ static void plan_draws(void)
         px[g_nplan] = ships_size_of(set, &rel, &cam, &ship, g_plan[g_nplan].scale, &p);
         if (!p.on_screen)
             continue;
+        if (planet_on() && planet_hides((const LfVec *)&gPositionVector[s]))
+            continue;                   /* (behind the ground: all or nothing, the user's rule) */
         g_plan[g_nplan].slot = (unsigned char)s;
         g_plan[g_nplan].set = (unsigned char)set;
         g_plan[g_nplan].depth = p.depth;
@@ -1536,6 +1540,7 @@ static void draw_world(int y0, int y1)
                                            over them (planets) */
     draw_stars(y0, y1);
     sky_draw(1, y0, y1, ext, ey0, rows);
+    planet_band(y0, y1, ext, ey0, rows);   /* a planet's ground and air (the card's), over the sky */
 #ifdef RV_TESTS
     if (g_lasers)
         lasers_draw_far(y0, y1, ext, ey0, rows);
@@ -3347,6 +3352,55 @@ static void balls_report(void)
 #define STEER_FULL_X 120
 #define STEER_FULL_Y 80
 
+#ifdef RV_TESTS
+/* RVT.EXE /planet N: the test planet, 32,000 km round, its ground N km under the player (a pad), an arch 4,000 km
+ * ahead over a pad of its own */
+static void planet_test_setup(void)
+{
+    static TrPlanetRec __far pr;
+    static TrNavRec __far nav[2];
+    int k;
+    _fmemset(&pr, 0, sizeof pr);
+    _fmemset(nav, 0, sizeof nav);
+    pr.seed = 1;
+    pr.radius = 32000;
+    pr.x = gPositionVector[0].x / 256;
+    pr.y = gPositionVector[0].y / 256 - 32000 - g_planet_test;
+    pr.z = gPositionVector[0].z / 256;
+    pr.n = 3;
+    for (k = 0; k < 2; k++) {           /* nav 1 on the ground under the player, nav 2 4,000 km ahead */
+        nav[k].id = (uint8_t)(k + 1);
+        nav[k].x = pr.x;
+        nav[k].y = pr.y + 32000;
+        nav[k].z = pr.z + 4000 * k;
+    }
+    for (k = 0; k < 3; k++) {           /* under the player a pad; 4,000 km ahead a pad and the arch over it */
+        pr.g[k].kind = k == 2 ? TR_STAMP_ARCH : TR_STAMP_PAD;
+        pr.g[k].nav = (uint8_t)(k ? 2 : 1);
+    }
+    pr.g[0].size[0] = 1200;
+    pr.g[0].size[1] = 600;
+    pr.g[1].size[0] = 500;
+    pr.g[1].size[1] = 400;
+    pr.g[2].size[0] = 400;
+    pr.g[2].size[1] = 250;
+    pr.g[2].size[2] = 300;
+    pr.g[2].size[3] = 120;
+    if (planet_load(&pr, nav, 2) < 0)
+        return;
+    /* looking 20 degrees down, along +z */
+    gOrientationRightVector[0].x = 256;
+    gOrientationRightVector[0].y = gOrientationRightVector[0].z = 0;
+    gOrientationUpVector[0].x = 0;
+    gOrientationUpVector[0].y = 241;
+    gOrientationUpVector[0].z = 88;
+    gOrientationFrontVector[0].x = 0;
+    gOrientationFrontVector[0].y = -88;
+    gOrientationFrontVector[0].z = 241;
+    RV_LOG("planet: the test planet %d km under the player: made %d", g_planet_test, planet_make(0));
+}
+#endif
+
 void __far __cdecl flight_startup(void)
 {
     const RvMission __far *m = g_m;
@@ -3578,6 +3632,15 @@ void __far __cdecl flight_startup(void)
     g_cap_hailed = 0;
     missiles_init();
     sky_clear();
+#ifdef RV_TESTS
+    if (g_planet_test)
+        planet_test_setup();
+    else
+#endif
+    {
+        planet_ready();                 /* (a planet mission's: the rest of it made now, coloured as the flight is) */
+        planet_navs();
+    }
     rocks_flight_start();
     if (g_m) {                          /* the mission's asteroid and mine fields */
         int fi;
@@ -3858,6 +3921,7 @@ void __far __cdecl flight_frame(void)
         LfBasis cam;
         cam_basis(&cam);
         sky_place(&cam, g_cam_cx, g_cam_cy, FLIGHT_FOCAL);
+        planet_frame(cam_pos(), &cam, g_cam_cx, g_cam_cy, FLIGHT_FOCAL);   /* (the card makes the frame's ground now) */
     }
     {
         unsigned long t0 = clock240();

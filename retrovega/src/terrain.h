@@ -38,7 +38,7 @@ enum {                                  /* TrStamp.kind */
 #endif
 typedef struct {
     uint8_t kind, flags;
-    int16_t pad_;
+    int16_t heading;                    /* degrees: the shape turned so about the ground's up, from `to`'s way */
     int32_t at[3];                      /* a point over the ground (planet-relative positions): its direction only */
     int32_t to[3];                      /* a second one: which way the shape lies */
     int32_t size[4];                    /* positions (256 a km), as the kind says */
@@ -60,6 +60,7 @@ enum { TR_KIND_DESERT = 0 };
 typedef struct {                        /* what is under a point: radii from the planet's centre, in positions */
     int32_t ground;                     /* the ground's surface */
     int32_t slab_lo, slab_hi;           /* the second layer's underside and top; both 0 where there is none */
+    int32_t r;                          /* the point's own radius */
 } TrColumn;
 
 typedef struct TrPlanet TrPlanet;       /* (terrain.c's: the grids, the frame's picture) */
@@ -82,6 +83,11 @@ TrPlanet *tr_make(const TrPlanetDesc *d, const TrStamp *stamps, const uint8_t *p
 TrPlanet *tr_begin(const TrPlanetDesc *d, const TrStamp *stamps, const uint8_t *pal);
 int tr_build(TrPlanet *p);
 int tr_ready(const TrPlanet *p);
+int tr_progress(const TrPlanet *p);     /* how far the making has got, in percent */
+/* the picture's detail: the march's step in the far ground, in pixels (2 by default; longer is faster and coarser) */
+void tr_detail(TrPlanet *p, float step_px);
+/* the palette the picture is coloured from (256 colours, 6 bits each), at any time: the flight's own at the launch */
+void tr_palette(TrPlanet *p, const uint8_t *pal);
 void tr_free(TrPlanet *p);
 int32_t tr_radius(const TrPlanet *p);
 int32_t tr_top(const TrPlanet *p);      /* the highest the ground or a slab gets, as a radius */
@@ -89,6 +95,52 @@ int32_t tr_top(const TrPlanet *p);      /* the highest the ground or a slab gets
 /* the ground and the slab under (or over) a point, planet-relative in positions (the world's units, 256 a km):
  * integers only, the same answer on every machine */
 void tr_column(const TrPlanet *p, int32_t x, int32_t y, int32_t z, TrColumn *out);
+/* a planet-relative point moved along its line from the centre to `over` positions over the ground (integers too) */
+void tr_place(const TrPlanet *p, int32_t v[3], int32_t over);
+
+/* the game's request for a mission's planet (gx's PL_LOAD, and the native builds'): km, the world's own frame; each
+ * ground shape at its nav point's place, turned by its heading from the world's x (the card makes TrStamps of them) */
+#ifdef __WATCOMC__
+#pragma pack(1)
+#endif
+typedef struct {
+    uint8_t kind, pad_;
+    int16_t heading;                    /* degrees */
+    int32_t at[3];                      /* its nav point, km */
+    uint16_t size[4];                   /* km, as TrStamp's */
+} TrGroundKm;                           /* 24 bytes */
+typedef struct {
+    uint32_t seed;
+    int32_t radius;                     /* km */
+    int32_t centre[3];                  /* km */
+    uint8_t kind, n;
+    int16_t pad_;
+    TrGroundKm ground[4];
+} TrMissionKm;                          /* 120 bytes */
+#ifdef __WATCOMC__
+#pragma pack()
+#endif
+
+/* that request as a planet's description and stamps, planet-relative positions (the card's and the native builds') */
+int tr_from_km(const TrMissionKm *m, TrPlanetDesc *d, TrStamp st[TR_STAMPS_MAX]);
+
+/* the game's mission record as the card reads it: its planet tail (rvdata.h RvMission's px .. ground[], 65 bytes) and
+ * its nav points (RvNav, 19 bytes each); the same layouts as tools/rvdata.py packs (GROUND, NAV) */
+#ifdef __WATCOMC__
+#pragma pack(1)
+#endif
+typedef struct { uint8_t kind, nav; uint16_t size[4]; int16_t heading; } TrGroundRec;   /* 12 bytes */
+typedef struct {
+    int32_t x, y, z;                    /* the centre, km */
+    uint16_t radius, seed;              /* km */
+    uint8_t n;
+    TrGroundRec g[4];
+} TrPlanetRec;                          /* 65 bytes */
+typedef struct { uint8_t id, flags; int32_t x, y, z; uint16_t reach; uint8_t sw[4]; } TrNavRec;   /* 19 bytes */
+#ifdef __WATCOMC__
+#pragma pack()
+#endif
+void tr_from_records(const TrPlanetRec *pr, const TrNavRec *navs, int nnav, TrMissionKm *out);
 
 /* the frame's picture made for an eye (tr_view), then put into the frame buffer a band of rows at a time (tr_blit:
  * the rows y0 .. y1-1 and columns xa .. xb-1 of the screen, fb the first byte of screen row fb_y0; ext, when not 0,

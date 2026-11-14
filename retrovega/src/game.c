@@ -1981,6 +1981,8 @@ static void log_overlay(int y0, int y1)
     /* the lattice: s at the top, v and l at the bottom */
     for (i = 0; i < (int)g_nnodes; i++) {
         int targets[2], t;
+        if (!g_nodes[i].layer)          /* (aside from the campaign's way: Mirage's) */
+            continue;
         log_place(i, row_h, &x, &y);
         targets[0] = g_nodes[i].good;
         targets[1] = g_nodes[i].bad;

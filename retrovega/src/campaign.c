@@ -12,6 +12,7 @@
 #include "rv.h"
 #include "rvhooks.h"
 #include "campaign.h"
+#include "planet.h"
 #include "world.h"
 #include "logic.h"                      /* (logic_goal: camp_points) */
 
@@ -366,6 +367,7 @@ void camp_load_units(const RvMission __far *m)
 {
     camp_load_tables(m);
     missionLoaded(camp_mission_index());
+    planet_mission(m);                  /* (a planet mission's: begun now, made by the launch) */
 }
 
 /* a node's missions: up to RV_MISSIONS_PER_NODE, the unused entries 0xFFFF (a node of the old campaign's shape has two

@@ -86,6 +86,42 @@ Still to do for 30 fps on the page:
 - A frame-time budget that coarsens the step when a frame runs long.
 - Making the planet in the background.
 
+## In the game (steps 3 and 4)
+
+- **The card (RVGX 1.3).** `src/hardware/rvgx.cpp`, `E740h` to `E749h` (docs/gx.md, *Planets*). It makes the planet a
+  piece at a time between frames, and adapts the detail to hold the frame rate.
+- **The game (planet.c).**
+  - A mission's planet is begun as the mission loads (`camp_load_units`).
+  - The rooms make 8 ms of it a frame (`scene_update`).
+  - The launch finishes it and colours it from the flight's palette.
+  - The ground nav points are put over the ground.
+  - Each frame: the view after the camera; the ground in each band after the sky and before the ships.
+  - A ship the ground hides is not drawn.
+  - `step_ground`: a ship that flies into the ground, or into an arch's rock, has its step undone. The player is
+    stopped too and knocked as by a rock.
+  - The autopilot raises anyone it puts under the ground to 300 km over it.
+- **The native builds** answer the same requests with terrain.c (`planet.c` under `RV_HOST`; rvsim without the
+  picture).
+- **What it costs RV.EXE:** about 2.2 KB of conventional memory (3,936 bytes left for DOS).
+- **The missions.** In missions.txt:
+  - `planet SEED x y z RADIUS` (km);
+  - `ground pad navN radius= slope=` and `ground arch navN span= width= air= thick= [heading=]`;
+  - `nav ... ground`: a nav point as high over the ground as the mission puts it over the radius.
+
+  A campaign node in layer 0 is aside from the campaign's way: the page's mission menu flies its missions alone.
+- **Mirage** (`MIRAGE1`, node MIRAGE, the menu's mission 40).
+  - The Vigilance holds 8,000 km over the desert planet.
+  - The patrol goes down over the dunes to Nav 1, then to the Ox depot parked under a stone arch at Nav 2 (three
+    Nicanders come for it), over the mesas to Nav 3 (two Agis), and home.
+  - `RVT.EXE /fly 40` flies it; `/planet N` is the test scene (the planet N km under the player, an arch ahead).
+
+## Still to do
+
+- The approach and straight-down views: 2 to 3 times over budget natively (the card's detail adapts).
+- The minds know nothing of the ground: an enemy chasing low skims it, its step undone.
+- Shots, missiles and explosions are not yet hidden by the ground.
+- Missions with planets are not yet kept from DOS without the card except by being off the campaign's way.
+
 ## The plan
 
 1. ~~The terrain, its queries and its picture, tested without the game.~~ (above)

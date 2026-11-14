@@ -17,6 +17,7 @@
 #include "campaign.h"
 #include "panel.h"
 #include "collide.h"
+#include "planet.h"
 #include "flight.h"
 #include "world.h"
 #include "shots.h"
@@ -4031,6 +4032,39 @@ static void step_collisions(void)
     }
 }
 
+/* 7b. a planet's ground (planet.h, the card's): a ship that flies into it, or into an arch's rock, has the step that
+ * took it there undone; the player is stopped too and knocked by how fast it was going (as a rock's knock, capped
+ * the same: a graze is not death) */
+#define GROUND_CLEAR 2560               /* a ship's centre over the ground at least, positions: 10 km */
+
+static void step_ground(void)
+{
+    int16_t s;
+    if (!planet_on())
+        return;
+    for (s = 0; s < NUM_SHIP_SLOTS; s++) {
+        RvVec3 *p = &gPositionVector[s], *v = &gVelocityVector[s];
+        long roof, over;
+        if (!slot_is_ship(s))
+            continue;
+        over = planet_over((const LfVec *)p, &roof);
+#ifdef RV_TESTS
+        if (s == 0 && frameCounter % 30 == 0)
+            RV_LOG("planet: frame %u, the player %ld km over the ground, roof %ld", frameCounter, over / 256, roof / 256);
+#endif
+        if (over >= GROUND_CLEAR && roof >= GROUND_CLEAR)
+            continue;
+        p->x -= v->x;                   /* (the step that took it there undone) */
+        p->y -= v->y;
+        p->z -= v->z;
+        if (s == 0 && shipAiState[0] != 9) {
+            (void)do_damage(0, 0, logic_rock_harm(len_of(v->x, v->y, v->z), p), RV_WHERE(p));
+            *v = vec3(0, 0, 0);
+            setSpeed[0] = speedLo[0] = 0;
+        }
+    }
+}
+
 /* 8. the dying (shipAiState 9: an explosion's time, then despawn) and the player's end (missionStatus 4) */
 static void step_deaths(void)
 {
@@ -4459,6 +4493,7 @@ void logic_frame(void)
     step_shots();
     step_missiles();
     step_collisions();
+    step_ground();
     step_deaths();
     step_mission();
     hud_marks();
@@ -4847,6 +4882,10 @@ int16_t logic_autopilot(void)
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
         if (moved >> s & 1)
             spawn_apart(s);
+    if (planet_on())                    /* (a line that ran into a planet: whoever it put under the ground raised) */
+        for (s = 0; s < NUM_SHIP_SLOTS; s++)
+            if (!s || moved >> s & 1)
+                planet_raise((LfVec *)&gPositionVector[s], 300);
     step_scene();                       /* (what was here gone, what is there back, before the next picture) */
     if (region >= 0) {
         if (wave_may_come(region))

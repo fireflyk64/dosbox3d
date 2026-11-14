@@ -61,8 +61,18 @@ enum {
 	FN_STATUS = 0x11,     /* the block's stat_* filled in */
 	FN_DRAW = 0x20,       /* the block's bundle .. ext_rows; its result says how it went */
 	FN_DEBRIS = 0x30,     /* (1.2) a wreck's debris: the block's fb .. ext_rows and its debris part; result 0 */
+	FN_PLANET = 0x40,     /* (1.3) a planet to make (terrain.c), from its seed, stamps and palette */
+	FN_VIEW = 0x41,       /* the frame's eye: the picture made */
+	FN_GROUND = 0x42,     /* a band of it: the block's fb .. ext_rows */
+	FN_COLUMN = 0x43,     /* the ground under a point */
+	FN_SEEN = 0x44,       /* is a point hidden by the ground: result 1 seen, 0 hidden */
+	FN_MAKE = 0x45,       /* make more of it: result how far it has got, 100 made */
+	FN_DROP = 0x46,       /* no planet */
+	FN_PALETTE = 0x47,    /* the palette its picture is coloured from: a far pointer to 768 bytes at 64 */
+	FN_PLACE = 0x48,      /* a nav point put over the ground */
+	FN_RAISE = 0x49,      /* a ship raised over the ground */
 	RVGX_SIG_IN_BX = 0x5256, RVGX_SIG_IN_CX = 0x4758, RVGX_SIG_OUT_BX = 0x7867,
-	RVGX_VERSION = 0x0102
+	RVGX_VERSION = 0x0103
 };
 
 /* the result word */
@@ -78,6 +88,11 @@ enum {
 	/* (1.2) the debris part, the game's RvDebris (retrovega/src/debris.h) packed (1.1's had six colours a ramp) */
 	B_D_SEED = 64, B_D_AGE = 66, B_D_LIFE = 68, B_D_COUNT = 70, B_D_FOCAL = 72, B_D_CX = 74, B_D_CY = 76,
 	B_D_X = 78, B_D_Y = 82, B_D_Z = 86, B_D_SPREAD = 90, B_D_PIECE = 94, B_D_M = 98, B_D_METAL = 116, B_D_HOT = 124,
+	/* (1.3) the planet's calls' own second half (the game's GxBlock union) */
+	B_V_EYE = 64, B_V_M = 76, B_V_FOCAL = 94, B_V_CX = 96, B_V_CY = 98, B_V_W = 100, B_V_H = 102,
+	B_C_AT = 64, B_C_GROUND = 76, B_C_LO = 80, B_C_HI = 84, B_C_R = 88,
+	B_S_EYE = 64, B_S_PT = 76,
+	B_M_MS = 64,
 	B_SIZE = 128
 };
 
@@ -409,6 +424,254 @@ static int debris(void)
 	return 0;
 }
 
+/* --- (1.3) a planet: terrain.c's, one at a time.  Made a piece at a time between frames (FN_MAKE, and some of every
+ * view asked for before it is made) so the game never stalls for it; the queries a game's logic makes (FN_COLUMN) make
+ * the rest at once, since they must have an answer --- */
+
+static TrPlanet *g_planet;
+static bool g_planet_viewed;            /* a view made since the planet was: FN_GROUND has a picture */
+static double g_view_ms;                /* (the views' cost, smoothed, and the detail it sets: tr_detail) */
+static float g_step = 2.0f;
+
+static int32_t rd(unsigned at) { return (int32_t)real_readd(g_block_seg, g_block_off + at); }
+
+/* make more of the planet for up to ms of the host's (0: until it is made): how far it has got, 100 made */
+static int planet_make(unsigned ms)
+{
+	if (!g_planet)
+		return RVGX_E_INDEX;
+	const auto t0 = std::chrono::steady_clock::now();
+	while (!tr_ready(g_planet)) {
+		if (tr_build(g_planet) < 0) {
+			tr_free(g_planet);
+			g_planet = 0;
+			LOG_MSG("RVGX: no memory for the planet");
+			return RVGX_E_NOT_FOUND;
+		}
+		if (ms && std::chrono::steady_clock::now() - t0 > std::chrono::milliseconds(ms))
+			break;
+	}
+	g_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count();
+	if (tr_ready(g_planet) && ms != 1)
+		LOG_MSG("RVGX: the planet is made");
+	return tr_ready(g_planet) ? 100 : tr_progress(g_planet);
+}
+
+static int32_t g_centre[3];             /* the planet's centre, km, the game's world (PL_PLACE, PL_RAISE) */
+
+/* the game's mission record's planet tail (terrain.h TrPlanetRec, at the far pointer at 64) and its nav points (TrNavRec,
+ * at 68, as many as the word at 76 says), and its palette (72) */
+static int planet_load(void)
+{
+	TrPlanetRec pr;
+	TrNavRec navs[16];
+	TrMissionKm m;
+	TrPlanetDesc d;
+	TrStamp st[TR_STAMPS_MAX];
+	uint8_t pal[768];
+	const uint16_t r_off = rw(64), r_seg = rw(66), n_off = rw(68), n_seg = rw(70), p_off = rw(72), p_seg = rw(74);
+	unsigned nnav = rw(76);
+	if (nnav > 16)
+		return RVGX_E_VIEW;
+	for (unsigned i = 0; i < sizeof pr; i++)
+		((uint8_t *)&pr)[i] = real_readb(r_seg, (uint16_t)(r_off + i));
+	for (unsigned i = 0; i < nnav * sizeof(TrNavRec); i++)
+		((uint8_t *)navs)[i] = real_readb(n_seg, (uint16_t)(n_off + i));
+	if (pr.radius < 1000 || pr.n > 4)
+		return RVGX_E_VIEW;             /* (anything else is a damaged record) */
+	for (unsigned i = 0; i < 768; i++)
+		pal[i] = (uint8_t)(real_readb(p_seg, (uint16_t)(p_off + i)) & 63);
+	tr_from_records(&pr, navs, (int)nnav, &m);
+	tr_from_km(&m, &d, st);
+	memcpy(g_centre, m.centre, sizeof g_centre);
+	if (g_planet)
+		tr_free(g_planet);
+	g_planet = tr_begin(&d, st, pal);
+	g_planet_viewed = false;
+	if (!g_planet)
+		return RVGX_E_NOT_FOUND;
+	LOG_MSG("RVGX: a planet to make: seed %u, radius %d km, %u ground shapes", (unsigned)m.seed, (int)m.radius, (unsigned)m.n);
+	return 0;
+}
+
+/* a nav point (world km at 64) put as high over the ground under it as it is over the planet's radius (at 76) */
+static int planet_place(void)
+{
+	int32_t v[3];
+	TrColumn col;
+	if (!g_planet)
+		return RVGX_E_INDEX;
+	if (!tr_ready(g_planet) && planet_make(0) != 100)
+		return RVGX_E_NOT_FOUND;
+	for (int k = 0; k < 3; k++)
+		v[k] = (rd(64 + 4 * k) - g_centre[k]) * 256;
+	tr_column(g_planet, v[0], v[1], v[2], &col);
+	tr_place(g_planet, v, col.r - tr_radius(g_planet));
+	for (int k = 0; k < 3; k++)
+		real_writed(g_block_seg, g_block_off + 76 + 4 * k, (uint32_t)(v[k] / 256 + g_centre[k]));
+	return 0;
+}
+
+/* a ship (world positions at 64) raised to the km at 76 over the ground if it is under that; back at 76 */
+static int planet_raise(void)
+{
+	int32_t v[3], km = rd(76);
+	TrColumn col;
+	if (!g_planet)
+		return RVGX_E_INDEX;
+	if (!tr_ready(g_planet) && planet_make(0) != 100)
+		return RVGX_E_NOT_FOUND;
+	for (int k = 0; k < 3; k++)
+		v[k] = rd(64 + 4 * k) - g_centre[k] * 256;
+	tr_column(g_planet, v[0], v[1], v[2], &col);
+	if (col.r - col.ground < km * 256)
+		tr_place(g_planet, v, km * 256);
+	for (int k = 0; k < 3; k++)
+		real_writed(g_block_seg, g_block_off + 76 + 4 * k, (uint32_t)(v[k] + g_centre[k] * 256));
+	return 0;
+}
+
+/* the frame's eye; a view asked for before the planet is made makes some more of it (8 ms) instead */
+static int planet_view(void)
+{
+	if (!g_planet)
+		return RVGX_E_INDEX;
+	if (!tr_ready(g_planet)) {
+		planet_make(8);
+		g_planet_viewed = false;
+		return RVGX_E_NOT_YET;
+	}
+	TrCam c;
+	double m[9];
+	for (int k = 0; k < 3; k++)
+		c.pos[k] = rd(B_V_EYE + 4 * k);
+	for (int k = 0; k < 9; k++)
+		m[k] = rs(B_V_M + 2 * k) / 16384.0;
+	/* the game's frame is 256 = 1 and not quite square: made so, front first */
+	double f[3] = { m[6], m[7], m[8] }, u[3] = { m[3], m[4], m[5] }, r[3];
+	double l = sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+	if (l < 1e-6)
+		return RVGX_E_VIEW;
+	for (int k = 0; k < 3; k++)
+		f[k] /= l;
+	double d = u[0] * f[0] + u[1] * f[1] + u[2] * f[2];
+	for (int k = 0; k < 3; k++)
+		u[k] -= d * f[k];
+	l = sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
+	if (l < 1e-6)
+		return RVGX_E_VIEW;
+	for (int k = 0; k < 3; k++)
+		u[k] /= l;
+	r[0] = u[1] * f[2] - u[2] * f[1];
+	r[1] = u[2] * f[0] - u[0] * f[2];
+	r[2] = u[0] * f[1] - u[1] * f[0];
+	if (r[0] * m[0] + r[1] * m[1] + r[2] * m[2] < 0)   /* (whichever way the game's axes turn) */
+		for (int k = 0; k < 3; k++)
+			r[k] = -r[k];
+	for (int k = 0; k < 3; k++) {
+		c.fwd[k] = (float)f[k];
+		c.up[k] = (float)u[k];
+		c.right[k] = (float)r[k];
+	}
+	c.focal = rs(B_V_FOCAL);
+	c.cx = rs(B_V_CX);
+	c.cy = rs(B_V_CY);
+	c.w = rs(B_V_W);
+	c.h = rs(B_V_H);
+	if (c.focal < 16 || c.w < 1 || c.h < 1 || c.w > 1024 || c.h > 1024)
+		return RVGX_E_VIEW;
+	const auto t0 = std::chrono::steady_clock::now();
+	tr_detail(g_planet, g_step);
+	tr_view(g_planet, &c);
+	g_planet_viewed = true;
+	const double ms = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count() / 1000.0;
+	g_ns += (uint64_t)(ms * 1e6);
+	/* the detail by what the views cost: the march's step longer while they run over 6 ms, shorter again under 3 */
+	g_view_ms = g_view_ms * 0.8 + ms * 0.2;
+	if (g_view_ms > 6 && g_step < 4)
+		g_step *= 1.08f;
+	else if (g_view_ms < 3 && g_step > 2)
+		g_step /= 1.05f;
+	if (g_step < 2)
+		g_step = 2;
+	return 0;
+}
+
+static int planet_ground(void)
+{
+	if (!g_planet || !g_planet_viewed)
+		return RVGX_E_NOT_YET;
+	const auto t0 = std::chrono::steady_clock::now();
+	const int stride = rw(B_STRIDE), fb_y0 = rs(B_FB_Y0);
+	int y0 = rs(B_Y0), y1 = rs(B_Y1), xa = rs(B_XA), xb = rs(B_XB);
+	if (y0 < fb_y0) y0 = fb_y0;
+	if (xa < 0) xa = 0;
+	if (xb > stride) xb = stride;
+	if (y0 >= y1 || xa >= xb)
+		return 0;
+	const PhysPt fb = PhysMake(rw(B_FB_SEG), rw(B_FB_OFF));
+	if (stride < 1 || y1 - fb_y0 > RVGX_VIEW_MAX || !plain_ram(fb + (y0 - fb_y0) * stride, (uint32_t)(y1 - y0) * stride))
+		return RVGX_E_TARGET;
+	const uint16_t ext_seg = rw(B_EXT_SEG), ext_off = rw(B_EXT_OFF);
+	int ext_y0 = rs(B_EXT_Y0), ext_rows = rs(B_EXT_ROWS);
+	if (ext_seg || ext_off) {
+		if (y1 - y0 > RVGX_EXT_ROWS)
+			return RVGX_E_TARGET;
+		for (int oy = y0; oy < y1; oy++) {
+			const int i = oy - ext_y0;
+			const bool in = i >= 0 && i < ext_rows;
+			g_ext[2 * (oy - y0)] = in ? (int16_t)real_readw(ext_seg, (uint16_t)(ext_off + 4 * i)) : 0;
+			g_ext[2 * (oy - y0) + 1] = in ? (int16_t)real_readw(ext_seg, (uint16_t)(ext_off + 4 * i + 2)) : 0;
+		}
+		ext_y0 = y0;
+		ext_rows = y1 - y0;
+	}
+	g_px += tr_blit(g_planet, GetMemBase() + fb, fb_y0, stride, y0, y1, xa, xb, ext_seg || ext_off ? g_ext : 0, ext_y0, ext_rows);
+	g_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count();
+	return 0;
+}
+
+static int planet_column(void)
+{
+	TrColumn col;
+	if (!g_planet)
+		return RVGX_E_INDEX;
+	if (!tr_ready(g_planet) && planet_make(0) != 100)   /* (a query must have its answer: the rest made now) */
+		return RVGX_E_NOT_FOUND;
+	tr_column(g_planet, rd(B_C_AT), rd(B_C_AT + 4), rd(B_C_AT + 8), &col);
+	real_writed(g_block_seg, g_block_off + B_C_GROUND, (uint32_t)col.ground);
+	real_writed(g_block_seg, g_block_off + B_C_LO, (uint32_t)col.slab_lo);
+	real_writed(g_block_seg, g_block_off + B_C_HI, (uint32_t)col.slab_hi);
+	real_writed(g_block_seg, g_block_off + B_C_R, (uint32_t)col.r);
+	return 0;
+}
+
+static int planet_seen(void)
+{
+	double e[3], q[3];
+	if (!g_planet)
+		return RVGX_E_INDEX;
+	if (!tr_ready(g_planet))
+		return RVGX_E_NOT_YET;
+	for (int k = 0; k < 3; k++) {
+		e[k] = rd(B_S_EYE + 4 * k);
+		q[k] = rd(B_S_PT + 4 * k);
+	}
+	return tr_seen(g_planet, e, q);
+}
+
+static int planet_palette(void)
+{
+	uint8_t pal[768];
+	const uint16_t off = rw(64), seg = rw(66);
+	if (!g_planet)
+		return RVGX_E_INDEX;
+	for (unsigned i = 0; i < 768; i++)
+		pal[i] = (uint8_t)(real_readb(seg, (uint16_t)(off + i)) & 63);
+	tr_palette(g_planet, pal);
+	return 0;
+}
+
 static bool RVGX_Multiplex(void)
 {
 	if (reg_ah != RVGX_AH)
@@ -442,6 +705,50 @@ static bool RVGX_Multiplex(void)
 	case FN_DEBRIS:
 		if (g_attached)
 			put_result(debris());
+		return true;
+	case FN_PLANET:
+		if (g_attached)
+			put_result(planet_load());
+		return true;
+	case FN_VIEW:
+		if (g_attached)
+			put_result(planet_view());
+		return true;
+	case FN_GROUND:
+		if (g_attached)
+			put_result(planet_ground());
+		return true;
+	case FN_COLUMN:
+		if (g_attached)
+			put_result(planet_column());
+		return true;
+	case FN_SEEN:
+		if (g_attached)
+			put_result(planet_seen());
+		return true;
+	case FN_MAKE:
+		if (g_attached)
+			put_result(planet_make(rw(B_M_MS)));
+		return true;
+	case FN_PLACE:
+		if (g_attached)
+			put_result(planet_place());
+		return true;
+	case FN_RAISE:
+		if (g_attached)
+			put_result(planet_raise());
+		return true;
+	case FN_PALETTE:
+		if (g_attached)
+			put_result(planet_palette());
+		return true;
+	case FN_DROP:
+		if (g_planet)
+			tr_free(g_planet);
+		g_planet = 0;
+		g_planet_viewed = false;
+		if (g_attached)
+			put_result(0);
 		return true;
 	}
 	return false;

@@ -3048,3 +3048,36 @@ say      deck TECH you "What's on your list now?"
 say      deck TECH TECH "Nothing. It all went on the fighters. You two are the list."
 radio    "Tally here. Wendell Greer, Vigilance. Last flight's a long way out. Let's keep the count going, kid."
 
+
+# Mirage: a desert planet (docs/terrain.md: the card draws it, so only with the card; not on the campaign's way, the
+# page's mission menu flies it alone).  The Vigilance holds 8,000 km over the planet; the patrol goes down over the
+# dunes, to the Ox depot parked under the stone arch, over the mesas, and home
+mission  MIRAGE1
+node     MIRAGE
+title    Patrol: Mirage, the depot under the arch
+type     patrol
+music    briefing
+fighter  SCHROED
+briefing "Mirage. Sand, rock, and a stone arch big enough to hide a supply ship under. The Ox is parked there."
+briefing "The Aera found the depot last night. They'll be back for it."
+briefing "Fly down over the dunes to Nav 1, then the depot at Nav 2, then the mesas at Nav 3, and come home."
+briefing "Keep your nose up down there. The ground is the one thing out there that never misses."
+briefing you "Under the arch, Commander?"
+briefing "Under it, around it, through it if you have to. Just bring the depot through the day. Dismissed."
+win      "The depot's still under its arch. Nice flying, Wildcard."
+lose     "The Aera had the run of Mirage today. We go again tomorrow."
+planet   7 0 -40000 0 32000
+nav      1 0 -7209 5194 ground reach=3000
+nav      2 2811 -9457 9966 ground reach=3000
+nav      3 -6861 -11144 14466 ground reach=3000
+ground   pad nav2 radius=1100 slope=600
+ground   arch nav2 span=900 width=500 air=600 thick=220 heading=0
+ship     player 0 nav0
+ship     VIGILNC 0 nav0 role=home
+ship     OX 0 nav2
+ship     NICANDR 1 nav2 count=3 at=-2500,700,3000
+ship     AGIS 1 nav3 count=2 at=1500,600,2000
+goal     nav 1 1
+goal     nav 2 2
+goal     nav 3 1
+goal     land 1

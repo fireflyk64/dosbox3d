@@ -17,6 +17,7 @@
 #define GX_STATUS 0xE711
 #define GX_DRAW 0xE720
 #define GX_DEBRIS 0xE730                /* (1.1) a wreck's debris */
+#define GX_PLANET_GROUND 0xE742         /* (1.3) a band of a planet's ground: the rest of its calls are planet.c's */
 #define GX_SIG_IN_BX 0x5256             /* 'RV' */
 #define GX_SIG_IN_CX 0x4758             /* 'GX' */
 #define GX_SIG_OUT_BX 0x7867            /* 'gx' */
@@ -44,7 +45,11 @@ typedef struct {
     unsigned short pad0, pad1;
     unsigned long stat_draws, stat_px, stat_us;
     unsigned short stat_ready, stat_waiting;
-    RvDebris debris;                    /* (1.2) GX_DEBRIS: the cloud (debris.h, packed) */
+    union {                             /* (the second half: the call's own) */
+        RvDebris debris;                /* (1.2) GX_DEBRIS: the cloud (debris.h, packed) */
+        /* (1.3) the planet's calls: planet.c's requests and answers (gx_planet_call) */
+        unsigned char raw[64];
+    } u;
 } GxBlock;
 #pragma pack()
 typedef char gx_block_is_128_bytes[sizeof(GxBlock) == 128 ? 1 : -1];
@@ -110,13 +115,12 @@ void gx_want(const unsigned char *types, int n)
 
 int gx_debris_on(void) { return g_present && g_setting && g_minor >= 2; }
 
-RvDebris __far *gx_debris_args(void) { return &g_block.debris; }
+RvDebris __far *gx_debris_args(void) { return &g_block.u.debris; }
 
-void gx_debris(int y0, int y1, const short __far *ext, int ext_y0, int ext_rows)
+/* the block's frame buffer fields for a band of the run being drawn, the whole width (debris, a planet's ground) */
+static void band(int y0, int y1, const short __far *ext, int ext_y0, int ext_rows)
 {
     GxBlock __far *b = &g_block;
-    if (y0 >= y1 || !gx_debris_on())
-        return;
     b->fb = vid_row(y0);
     b->stride = SCR_W;
     b->fb_y0 = (short)y0;
@@ -128,8 +132,39 @@ void gx_debris(int y0, int y1, const short __far *ext, int ext_y0, int ext_rows)
     b->ext_y0 = (short)ext_y0;
     b->ext_rows = (short)ext_rows;
     b->result = GX_E_NO_ANSWER;
+}
+
+void gx_debris(int y0, int y1, const short __far *ext, int ext_y0, int ext_rows)
+{
+    if (y0 >= y1 || !gx_debris_on())
+        return;
+    band(y0, y1, ext, ext_y0, ext_rows);
     gx_int(GX_DEBRIS);
     g_debris_draws++;
+}
+
+/* --- (1.3) a planet: the card makes it from its seed and draws it; the game asks it about the ground --- */
+
+int gx_planet_on(void) { return g_present && g_minor >= 3; }
+
+int gx_planet_call(unsigned ax, const void __far *in, int n_in, void __far *out, int n_out)
+{
+    if (!gx_planet_on())
+        return GX_E_INDEX;
+    _fmemcpy(g_block.u.raw, in, n_in);
+    g_block.result = GX_E_NO_ANSWER;
+    gx_int(ax);
+    if (out)
+        _fmemcpy(out, g_block.u.raw + 12, n_out);   /* (the answers follow the 12 bytes of a point) */
+    return g_block.result;
+}
+
+void gx_ground(int y0, int y1, const short __far *ext, int ext_y0, int ext_rows)
+{
+    if (y0 >= y1)
+        return;
+    band(y0, y1, ext, ext_y0, ext_rows);
+    gx_int(GX_PLANET_GROUND);
 }
 
 void gx_set(int on)

@@ -95,6 +95,10 @@ for c in hle fixed flightloop asm_twins fsguard pcm; do
 done
 $CC $CFLAGS -c -o "$OUT/obj/twins.o" src/twins.c
 $CC $CFLAGS -c -o "$OUT/obj/debris.o" src/debris.c   # (a wreck's debris: the card's code, drawn here; never in RV.EXE)
+# (a planet's ground: the card's code too; SSE2 doubles on a 32-bit host, so a mission's stamps come out the same as
+# the card's on every machine)
+TRF=""; case "$ARCHF" in *-m32*) TRF="-msse2 -mfpmath=sse";; esac
+$CC $CFLAGS $TRF -c -o "$OUT/obj/terrain.o" src/terrain.c
 BOTF=""
 if [ -z "${WEB:-}" ]; then              # (the native build's test pilot, host/bot.c: RV_BOT=1; never the page's)
     BOTF=-DRV_BOT_HOOK

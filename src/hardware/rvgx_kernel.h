@@ -13,6 +13,7 @@
 extern "C" {
 #include "../../retrovega/src/lightfield.c"
 #include "../../retrovega/src/debris.c"   /* (a wreck's debris: E730h) */
+#include "../../retrovega/src/terrain.c"  /* (1.3: planets, E740h on) */
 }
 
 #define RVGX_VIEW_MAX 4096              /* a view's width or height: more is a damaged file */

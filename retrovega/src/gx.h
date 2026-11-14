@@ -54,4 +54,13 @@ void gx_debris(int y0, int y1, const short __far *ext, int ext_y0, int ext_rows)
 void gx_log(void);                      /* the flight's tally, then zero */
 #endif
 
+/* (1.3) a planet (terrain.h), made by the card from its seed and drawn by it, one at a time (planet.c makes the calls,
+ * docs/gx.md lists them).  On DOS without a 1.3 card there are no planets (the user's ruling, 2026-11-14: "This kind
+ * of mission should only be available if there is hardware acceleration"); the native builds make and draw it
+ * themselves (planet.c).  gx_planet_call: the request copied into the block's second half, the call, then n_out bytes
+ * of the answer from its 12th byte on; the result word back (negative: no planet, not made yet: -3) */
+int gx_planet_on(void);
+int gx_planet_call(unsigned ax, const void __far *in, int n_in, void __far *out, int n_out);
+void gx_ground(int y0, int y1, const short __far *ext, int ext_y0, int ext_rows);   /* a band of it */
+
 #endif
