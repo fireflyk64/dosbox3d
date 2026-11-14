@@ -75,8 +75,13 @@ typedef struct {                        /* the eye, for drawing (floats: only th
 extern "C" {
 #endif
 
-/* a planet made from its description and its stamps; pal: the game's 256 colours, 6 bits each (VGA's); 0 if no memory */
+/* a planet made from its description and its stamps; pal: the game's 256 colours, 6 bits each (VGA's); 0 if no memory.
+ * tr_make makes it whole; tr_begin starts it and each tr_build makes a piece (a few ms natively): 1 while there is
+ * more, 0 when it is ready, -1 when memory ran out (tr_free it).  Nothing else may be asked of it until it is ready */
 TrPlanet *tr_make(const TrPlanetDesc *d, const TrStamp *stamps, const uint8_t *pal);
+TrPlanet *tr_begin(const TrPlanetDesc *d, const TrStamp *stamps, const uint8_t *pal);
+int tr_build(TrPlanet *p);
+int tr_ready(const TrPlanet *p);
 void tr_free(TrPlanet *p);
 int32_t tr_radius(const TrPlanet *p);
 int32_t tr_top(const TrPlanet *p);      /* the highest the ground or a slab gets, as a radius */
