@@ -1567,7 +1567,7 @@ static void draw_world(int y0, int y1)
         g_t_flames += clock240() - t0;
         t0 = clock240();
         /* (an exact one whose full-size views did not fit: from the sets) */
-        ships_stipple(CLOAK_OF(s) == RV_CLOAK_ON);   /* (a cloaked one as half its pixels: off after the loop) */
+        ships_stipple(CLOAK_OF(s) == RV_CLOAK_ON);   /* (a cloaked one as a quarter of its pixels: off after the loop) */
         path = ships_draw_as(set, plan_how(i), g_plan[i].exact ? g_plan[i].exact : 1, &rel, &cam, &ship,
                              g_plan[i].scale, y0, y1, 0, SCR_W, ext, ey0, rows);
         if (path == SHIP_PATH_EXACT_BLIT || path == SHIP_PATH_EXACT)

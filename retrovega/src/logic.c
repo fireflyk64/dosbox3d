@@ -1114,7 +1114,7 @@ static void fire_launcher(int16_t ship, int16_t g)
 
 /* --- the pilot's cloak (the user, 2026-11-12: "a shroedinger cloak that only draws half the pixels in a stipple
  * pattern with diagonals"): Alt+C puts it on (a type with RV_SHIPTYPE_FLAG_CLOAK) or off; on, the ship is drawn as
- * half its pixels, a checkerboard (ships.c), no mind sees it (RV_FLAG_UNSEEN: no AI picks it, one that had it lets it go, a seeker
+ * a quarter of its pixels, every other pixel of every other row (ships.c), no mind sees it (RV_FLAG_UNSEEN: no AI picks it, one that had it lets it go, a seeker
  * loses it) and its shields are down; the afterburner (its heat, its signature) or a transmission (the comm's lines,
  * a chat line: CLOAK_QUIET_STEPS) disrupts it: seen again, the shields still down, until they are over; a shot, or
  * Alt+C, puts it off and the shields come back.  The state is rvFlags' two bits (world.h RV_CLOAK_*), which the layer

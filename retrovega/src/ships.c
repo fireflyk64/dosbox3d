@@ -93,10 +93,13 @@ static unsigned char __far g_stipple;   /* the ships drawn now are cloaked (ship
 
 /* a cloaked ship (the user, 2026-11-12: "only draws half the pixels in a stipple pattern"; of the first look's
  * diagonal stripes, "doesn't look great. Ideally it'd be a stipple pattern or a checkerboard or else kind randomish",
- * and of a blue-noise stipple beside a checkerboard, "Let's go checkerboard"): its rows are drawn into g_line, every
- * pixel turned (no row copied from the screen's row above: that row is half the ship), and of each only the pixels
- * where (x + y) & 1 is 0 go out: half of them, a checkerboard fixed to the screen (no table: the stripes' own test).
- * Not by the sprite card (its picture is whole) nor scaled (g_line is that draw's own) */
+ * and of a blue-noise stipple beside a checkerboard, "Let's go checkerboard", then 2026-11-14 "can the cloak
+ * checkerboard also do interlacing as well then maybe it doesn't need to alternate patterns since every other row
+ * will be gone"): only the even screen rows are drawn (STIPPLE_GONE: an odd one is not turned at all), each into
+ * g_line, every pixel turned (no row copied from the screen's row above: that row is not the ship's), and of each
+ * only the pixels at an even x go out: a quarter of the ship, a grid of dots fixed to the screen.  Not by the sprite
+ * card (its picture is whole) nor scaled (g_line is that draw's own) */
+#define STIPPLE_GONE(y) ((y) & 1)
 void ships_stipple(int on)
 {
     g_stipple = (unsigned char)on;
@@ -111,12 +114,12 @@ static unsigned char __far *stipple_line(int a, int b)   /* (g_line cleared from
     return g_line;
 }
 
-static void stipple_row(unsigned char __far *dst, int x0, int a, int b, int y)
+static void stipple_row(unsigned char __far *dst, int x0, int a, int b)   /* (x0 + x: the screen's column) */
 {
     const unsigned char __far *src = g_line;
     int x;
-    for (x = a; x < b; x++)
-        if (src[x] && !((x0 + x + y) & 1))
+    for (x = a + ((x0 + a) & 1); x < b; x += 2)
+        if (src[x])
             dst[x] = src[x];
 }
 
@@ -917,14 +920,17 @@ void ships_blit_view(const ShipView __far *fv, int flags, int x, int y, int y0, 
             unsigned char __far *to = dst;
             if (!row_clip(ry, &ca, &cb, ext, ext_y0, ext_rows))
                 continue;
-            if (g_stipple)
+            if (g_stipple) {
+                if (STIPPLE_GONE(ry))
+                    continue;
                 to = stipple_line(ca, cb);
+            }
             if (mir)
                 rv_blit_row_rev(to, data + (unsigned)(tab[r - r0] - tab[0]), right, ca, cb);
             else
                 rv_blit_row(to, data + (unsigned)(tab[r - r0] - tab[0]), left, ca, cb);
             if (g_stipple)
-                stipple_row(dst, 0, ca, cb, ry);
+                stipple_row(dst, 0, ca, cb);
         }
         r0 = r1;
     }
@@ -1304,8 +1310,10 @@ static void turn_rows(int w, int h, int ox, int oy_, int x, int y, int scale256,
         }
         row = vid_row(oy) + left;
         if (g_stipple) {
-            rv_rotate_row(g_dense, w, h, &r, oy - top, xs, xe, stipple_line(xs, xe));
-            stipple_row(row, left, xs, xe, oy);
+            if (!STIPPLE_GONE(oy)) {
+                rv_rotate_row(g_dense, w, h, &r, oy - top, xs, xe, stipple_line(xs, xe));
+                stipple_row(row, left, xs, xe);
+            }
             continue;
         }
         if (detail < 2) {
