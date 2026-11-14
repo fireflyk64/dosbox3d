@@ -26,6 +26,7 @@ void planet_band(int y0, int y1, const short __far *ext, int ext_y0, int ext_row
 
 /* the ground hides a world point from the frame's eye: a ship there is not drawn (all or nothing) */
 int planet_hides(const LfVec *pos);
+int planet_hides_at(long x, long y, long z);   /* (the same, for a far record's point: a shot, a missile, a blast) */
 
 /* how high a world point is over the ground, positions (negative: under it, or inside an arch's rock); *roof: how far
  * under a slab over it (an arch, a tunnel's roof), a large number when none */

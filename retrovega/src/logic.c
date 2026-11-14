@@ -867,6 +867,24 @@ static void step_timers(void)
 /* 2. each ship's mind, by its rvController: CTL_PLAYER flies by g_pilot; CTL_AI thinks through the aiFighterThink
  * or aiShipThink thunk (ET_CAPSHIP); CTL_PUPPET is the layer's (it writes the slot: nothing here); CTL_SCRIPT the
  * mission's; CTL_FROZEN nothing.  A mind decides: where to turn, the throttle (aiSetSpeed), whom to target */
+/* a planet's ground (planet.h): the minds know nothing of it, so a fighter low over it with its nose going down, or
+ * very low, pulls up (the way up that is nearer its own) */
+#define GROUND_AVOID (400L * 256)       /* positions over the ground */
+static void ground_mind(int16_t s)
+{
+    const LfVec *c = planet_centre();
+    long roof, over, ux, uy, uz;
+    if (!planet_on() || (over = planet_over((const LfVec *)&gPositionVector[s], &roof)) > GROUND_AVOID)
+        return;
+    ux = (gPositionVector[s].x - c->x) >> 8;   /* (straight up there, km: under 2^17, its products with 256 fit) */
+    uy = (gPositionVector[s].y - c->y) >> 8;
+    uz = (gPositionVector[s].z - c->z) >> 8;
+    if (over > GROUND_AVOID / 2
+        && ux * gOrientationFrontVector[s].x + uy * gOrientationFrontVector[s].y + uz * gOrientationFrontVector[s].z > 0)
+        return;                         /* (climbing already) */
+    g_turn[s].y = ux * gOrientationUpVector[s].x + uy * gOrientationUpVector[s].y + uz * gOrientationUpVector[s].z >= 0 ? 9 : -9;
+}
+
 static void step_minds(void)
 {
     int16_t s;
@@ -893,8 +911,10 @@ static void step_minds(void)
         case CTL_AI:                    /* (always the thunk: the layer skips it where the ship is a puppet) */
             if (maybeEntityType[s] == ET_CAPSHIP)
                 aiShipThink((uint16_t)s);
-            else
+            else {
                 aiFighterThink((uint16_t)s);
+                ground_mind(s);
+            }
             break;
         default:                        /* a puppet (the layer flies it), a script's, a frozen one: nothing of its own */
             break;

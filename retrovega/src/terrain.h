@@ -125,10 +125,9 @@ typedef struct {
 int tr_from_km(const TrMissionKm *m, TrPlanetDesc *d, TrStamp st[TR_STAMPS_MAX]);
 
 /* the game's mission record as the card reads it: its planet tail (rvdata.h RvMission's px .. ground[], 65 bytes) and
- * its nav points (RvNav, 19 bytes each); the same layouts as tools/rvdata.py packs (GROUND, NAV) */
-#ifdef __WATCOMC__
+ * its nav points (RvNav, 20 bytes each); the same layouts as tools/rvdata.py packs (GROUND, NAV), packed for every
+ * compiler (the card copies DOS's bytes into them) */
 #pragma pack(1)
-#endif
 typedef struct { uint8_t kind, nav; uint16_t size[4]; int16_t heading; } TrGroundRec;   /* 12 bytes */
 typedef struct {
     int32_t x, y, z;                    /* the centre, km */
@@ -136,10 +135,10 @@ typedef struct {
     uint8_t n;
     TrGroundRec g[4];
 } TrPlanetRec;                          /* 65 bytes */
-typedef struct { uint8_t id, flags; int32_t x, y, z; uint16_t reach; uint8_t sw[4]; } TrNavRec;   /* 19 bytes */
-#ifdef __WATCOMC__
+typedef struct { uint8_t id, flags; int32_t x, y, z; uint16_t reach; uint8_t sw[4]; } TrNavRec;   /* 20 bytes */
 #pragma pack()
-#endif
+typedef char tr_planet_rec_is_65[sizeof(TrPlanetRec) == 65 ? 1 : -1];
+typedef char tr_nav_rec_is_20[sizeof(TrNavRec) == 20 ? 1 : -1];
 void tr_from_records(const TrPlanetRec *pr, const TrNavRec *navs, int nnav, TrMissionKm *out);
 
 /* the frame's picture made for an eye (tr_view), then put into the frame buffer a band of rows at a time (tr_blit:

@@ -16,6 +16,7 @@
 #include "lightfield.h"
 #include "hud.h"
 #include "explode.h"
+#include "planet.h"
 #include "gx.h"
 #include "twins.h"
 
@@ -398,6 +399,8 @@ void explode_place(const LfVec *eye, const LfBasis *cam, int16_t cx, int16_t cy,
         b->on = 0;
         if (b->kind == BOOM_WRECK && (!debris || b->age < DEBRIS_SHOW_AGE))
             continue;                   /* (no card to draw the debris: nothing to place) */
+        if (planet_hides_at(b->x, b->y, b->z))
+            continue;                   /* (behind a planet's ground) */
         if (b->wait || rx > INT32_C(2000000) || rx < -INT32_C(2000000) || ry > INT32_C(2000000)
             || ry < -INT32_C(2000000) || rz > INT32_C(2000000) || rz < -INT32_C(2000000))
             continue;

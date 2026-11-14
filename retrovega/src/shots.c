@@ -16,6 +16,7 @@
 #include "collide.h"
 #include "world.h"
 #include "shots.h"
+#include "planet.h"
 
 static Shot __far *__far g_s;           /* the list (SHOTS_MAX), or 0 */
 static int16_t __far g_n;
@@ -254,6 +255,8 @@ void shots_place(const LfVec *eye, const LfBasis *cam, int16_t cx, int16_t cy, i
          * head").  Half the step, x16: sixteenths of a km (a step under 4,000 km) */
         int16_t mx = s->fresh == 1 ? (int16_t)(s->vx / 32) : 0, my = s->fresh == 1 ? (int16_t)(s->vy / 32) : 0,
                 mz = s->fresh == 1 ? (int16_t)(s->vz / 32) : 0;
+        if (planet_hides_at(s->x, s->y, s->z))
+            continue;                   /* (behind a planet's ground) */
         if (s->look == RV_LOOK_BOLT || s->look == RV_LOOK_BEAM) {
             if (!b || nb >= g_bolts)
                 continue;

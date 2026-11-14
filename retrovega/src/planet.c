@@ -269,7 +269,7 @@ void planet_band(int y0, int y1, const short __far *ext, int ext_y0, int ext_row
         gx_ground(y0, y1, ext, ext_y0, ext_rows);
 }
 
-int planet_hides(const LfVec *pos)
+int planet_hides_at(long x, long y, long z)
 {
     long q[6];
     if (!planet_on())
@@ -277,9 +277,13 @@ int planet_hides(const LfVec *pos)
     q[0] = g_pl.eye[0];
     q[1] = g_pl.eye[1];
     q[2] = g_pl.eye[2];
-    rel(pos, q + 3);
+    q[3] = x - g_pl.centre.x;
+    q[4] = y - g_pl.centre.y;
+    q[5] = z - g_pl.centre.z;
     return gx_planet_call(PL_SEEN, q, sizeof q, 0, 0) == 0;
 }
+
+int planet_hides(const LfVec *pos) { return planet_hides_at(pos->x, pos->y, pos->z); }
 
 long planet_over(const LfVec *pos, long *roof)
 {
