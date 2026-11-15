@@ -30,8 +30,8 @@ typedef unsigned long long u64;
 
 #define PV_DEN_MIN (1L << 26)           /* a direction with less than this along the plane's middle is past its levels */
 #define PV_NEAR_DS 192                  /* the least step, plane units (three quarters of level 0's cell) */
-#define PV_STEP_PX 3                    /* the step: about this many pixels' worth of the distance */
 #define PV_SUBS 16                      /* a step's samples at most where it crosses a slab's grid */
+#define PV_SUBS_WIDE 6                  /* (the coarser details': pv_detail) */
 
 /* the arrays' places: buf (64,000 bytes) and scr (32,768) */
 #define PV_O_PIC 0
@@ -449,7 +449,7 @@ void c_pv_steps(PvFrame PV_FAR *f)
         int32_t a = (int32_t)(M64(R, c) >> 30) - D, b = (int32_t)(M64(R, s) >> 30), dist, ds, g, dt, cd, sd, x;
         int l;
         dist = (int32_t)pv_isqrt((u64)(M64(a, a) + M64(b, b)));
-        ds = pv_div(M64(dist, PV_STEP_PX * 256), f->lf);
+        ds = pv_div(M64(dist, (int32_t)f->step_px * 256), f->lf);   /* (about step_px pixels' worth of the distance) */
         if (ds < PV_NEAR_DS)
             ds = PV_NEAR_DS;
         g = -(int32_t)((M64(a, c) + M64(b, s)) >> 30);   /* (the distance times the sine of the ray's angle to the ground) */
@@ -526,6 +526,8 @@ void c_pv_lines(PvFrame PV_FAR *f, const PvQuarter PV_FAR *q, const uint8_t PV_F
     int i;
     for (i = 0; i < q->lines && f->nlines < f->max_lines; i++) {
         PvLine PV_FAR *ln = &lines[f->nlines];
+        if (f->wide && (i & 1))
+            continue;                   /* (wide: every other line, each filling its neighbour's pixels: pv_fill) */
         int32_t X = (int32_t)(q->first + i) * 256, e8 = (int32_t)q->edge * 256 - q->va, c0, col, dcol, k0, k1;
         int32_t w[3], T[3], t[3], wup, tl, kh, kl, ta, tb, qx, qy;
         const int32_t PV_FAR *cv = q->vert ? f->cu : f->cr;
@@ -697,12 +699,18 @@ static void pv_fill(const PvFrame PV_FAR *f, const PvLine PV_FAR *ln, int32_t i0
     col = ln->col + i0 * ln->dcol;
     for (i = i0; i <= i1; i++, row += ln->drow, col += ln->dcol, acc += dacc) {
         int32_t x = (ln->flags & PV_L_VERT) ? col >> 16 : row, y = (ln->flags & PV_L_VERT) ? row : col >> 16;
-        uint16_t PV_FAR *p;
+        uint16_t PV_FAR *p, v;
         if ((uint32_t)x >= PV_LW || (uint32_t)y >= PV_LH)
             continue;
         p = &pic[y * PV_LW + x];
+        v = (uint16_t)((base + ((acc >> 8) & 255)) | (acc >> 24) << 8);
         if (*p == PV_EMPTY)
-            *p = (uint16_t)((base + ((acc >> 8) & 255)) | (acc >> 24) << 8);
+            *p = v;
+        if (f->wide) {                  /* (and the next pixel across: the line not marched between this and the next) */
+            int32_t x2 = (ln->flags & PV_L_VERT) ? x + 1 : x, y2 = (ln->flags & PV_L_VERT) ? y : y + 1;
+            if (x2 < PV_LW && y2 < PV_LH && pic[y2 * PV_LW + x2] == PV_EMPTY)
+                pic[y2 * PV_LW + x2] = v;
+        }
     }
 }
 
@@ -1039,9 +1047,10 @@ void c_pv_march(PvFrame PV_FAR *f)
                     pY = f->py + (int32_t)(M64(ln->ky, m0) >> 16);
                     dx = X - pX;
                     dy = Y - pY;
-                    ns = ((dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy)) >> (f->slab_shift - 1);
-                    if (ns > PV_SUBS)
-                        ns = PV_SUBS;
+                    ns = ((dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy)) >> (f->slab_shift - 1 + f->wide);   /* (wide:
+                                           a slab cell apart, PV_SUBS_WIDE at most) */
+                    if (ns > (f->wide ? PV_SUBS_WIDE : PV_SUBS))
+                        ns = f->wide ? PV_SUBS_WIDE : PV_SUBS;
                     for (j = 1; j < ns && !(ln->flags & PV_L_DONE); j++) {
                         PvStep t;
                         int32_t mj, Xj, Yj;
@@ -1449,6 +1458,50 @@ int c_pv_setup(PvFrame PV_FAR *f, const PvCam PV_FAR *cam, const PvHead PV_FAR *
 
 #endif
 
+/* --- the detail (pv_pace) --- */
+static const uint8_t PV_FAR g_step_px[PV_DETAILS] = { 2, 3, 4, 4, 6, 8 };
+#define PV_DETAIL_WIDE 3                /* (this level on: wide) */
+static struct {
+    uint16_t avg;                       /* a frame's work, 16ths of a tick, weighed over some 8 frames */
+    uint8_t level, hold;                /* the detail; frames before it may move again */
+    uint8_t lo, hi;                     /* (the finest and coarsest since the last report: pv_pace_report) */
+} PV_FAR g_pace = { 0, 1, 0, 1, 1 };
+
+#ifndef __WATCOMC__                     /* (the host's tools': RV.EXE's frames set it, pv_pace) */
+void pv_detail(int level) { g_pace.level = (uint8_t)(level < 0 ? 0 : level >= PV_DETAILS ? PV_DETAILS - 1 : level); }
+int pv_detail_now(void) { return g_pace.level; }
+#endif
+
+void pv_pace(unsigned ticks)
+{
+    unsigned t = ticks > 30 ? 30 * 16 : ticks * 16;
+    g_pace.avg = (uint16_t)(g_pace.avg - (g_pace.avg >> 3) + (t >> 3));
+    if (g_pace.hold) {
+        g_pace.hold--;
+        return;
+    }
+    if (g_pace.avg > 8 * 16 + 8 && g_pace.level < PV_DETAILS - 1) {   /* (past 8 ticks, 1 / 30 s: coarser) */
+        g_pace.level++;
+        g_pace.hold = 15;
+    } else if (g_pace.avg < 5 * 16 && g_pace.level > 0) {   /* (under 5: finer, and two seconds before it moves again) */
+        g_pace.level--;
+        g_pace.hold = 60;
+    }
+    if (g_pace.level < g_pace.lo)
+        g_pace.lo = g_pace.level;
+    if (g_pace.level > g_pace.hi)
+        g_pace.hi = g_pace.level;
+}
+
+#ifdef __WATCOMC__
+void pv_pace_report(void)
+{
+    RV_LOG("pview: the picture's detail %d to %d this flight, %d at its end (0 the finest, %d the coarsest)", g_pace.lo,
+           g_pace.hi, g_pace.level, PV_DETAILS - 1);
+    g_pace.lo = g_pace.hi = g_pace.level;
+}
+#endif
+
 void pv_frame(const PvCam *cam)
 {
     PvFrame PV_FAR *f = &g_f;
@@ -1478,6 +1531,8 @@ void pv_frame(const PvCam *cam)
     f->o_under = PV_O_UNDER;
     f->max_steps = PV_STEPS;
     f->max_lines = PV_LINES;
+    f->step_px = g_step_px[g_pace.level];
+    f->wide = g_pace.level >= PV_DETAIL_WIDE;
     _fmemset(f->buf + f->o_pic, 0xFF, PV_LW * PV_LH * 2);
     f->nlines = f->nsteps = 0;
     if (!g_pv.on || !pv_setup(f, cam, &g_pv.h))

@@ -538,6 +538,20 @@ void planet_mission(const RvMission __far *m)
     (void)planet_set((const TrPlanetRec __far *)&m->px, (const TrNavRec __far *)m->nav, m->nnav, m->id);
 }
 
+void planet_pace(unsigned ticks)
+{
+#ifdef __WATCOMC__
+    if (g_pl.pv) {
+        if (ticks == PL_PACE_REPORT)
+            pv_pace_report();
+        else
+            pv_pace(ticks);
+    }
+#else
+    (void)ticks;
+#endif
+}
+
 int planet_file(char *name)
 {
     int i;

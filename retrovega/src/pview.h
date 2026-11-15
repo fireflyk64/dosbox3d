@@ -213,9 +213,11 @@ typedef struct {
                                            highest, the haze's levels and rates, the glow, the slabs' undersides */
     uint8_t PV_FAR *buf;                /* 312 (DOS: a far pointer, the asm's segment) */
     uint8_t PV_FAR *scr;                /* 316 */
+    int16_t step_px, wide;              /* 320: the detail (pv_detail): the steps about this many pixels apart; wide:
+                                           every other line marched, each filling its neighbour's pixels too */
 } PvFrame;
 #ifdef __WATCOMC__
-typedef char pv_frame_is_320[sizeof(PvFrame) == 320 ? 1 : -1];
+typedef char pv_frame_is_324[sizeof(PvFrame) == 324 ? 1 : -1];
 #endif
 typedef char pv_step_is_28[sizeof(PvStep) == 28 ? 1 : -1];
 typedef char pv_line_is_64[sizeof(PvLine) == 64 ? 1 : -1];
@@ -252,6 +254,16 @@ void pv_frame(const PvCam *cam);
 const uint16_t PV_FAR *pv_picture(void);   /* (the host's: the picture made) */
 const PvFrame PV_FAR *pv_frame_now(void);
 void pv_blit_host(uint8_t *fb, int stride, int y0, int y1);
+
+/* the picture's detail, 0 the finest: its steps about 2, 3, 4 pixels apart, then every other line marched (wide) with
+ * steps 4, 6, 8 apart; from the next frame on.  pv_pace: a flight frame's work (clock240 ticks, the wait for the frame
+ * rate left out), weighed over the last frames: the detail coarser while frames run past 1 / 30 s, finer again when
+ * they have room to spare */
+#define PV_DETAILS 6
+void pv_detail(int level);              /* (the host's tools) */
+int pv_detail_now(void);
+void pv_pace(unsigned ticks);
+void pv_pace_report(void);              /* (the details a flight's frames had: logged at its end) */
 
 /* the parts that run a line, a step or a pixel at a time: the C twins (c_: the host's), and on DOS pview.asm's run
  * from PVIEW.BIN (rv_: pv_bind); RVP.EXE /twins logs the asm's sums, the host's must be the same */

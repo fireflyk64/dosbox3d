@@ -4028,6 +4028,7 @@ void __far __cdecl flight_frame(void)
         missionStatus = 1;              /* landed */
     if (g_flames_demo && g_record && ++g_flames_frames >= FLAMES_FRAMES)
         missionStatus = 1;              /* (its recording is so many frames, however slowly they are made) */
+    planet_pace((unsigned)(clock240() - now));   /* (the frame's work: RV.EXE's own picture of a planet kept within it) */
     /* the frame rate capped at FPS_WANT: the simulation is per frame (a kps is 12.8 units a frame), so
      * without the cap a bare flight ran three times too fast natively (the adapting benchmark had been
      * holding it at 30 by loading it; off by default now) */
@@ -4106,6 +4107,7 @@ static void flight_over(unsigned short status)
                 per_frame(g_t_exact, f) % 100, per_frame(g_t_sets, f) / 100, per_frame(g_t_sets, f) % 100,
                 per_frame(frame, f) / 100, per_frame(frame, f) % 100);
     }
+    planet_pace(PL_PACE_REPORT);
     if (g_t_planet + g_t_planet_draw) {
         static const char __far s_p[] = "flight: the planet's picture took %lu.%02lu ms a frame to make and %lu.%02lu to draw";
         rv_logf(s_p, per_frame(g_t_planet, frameCounter) / 100, per_frame(g_t_planet, frameCounter) % 100,

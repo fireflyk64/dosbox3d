@@ -1814,6 +1814,8 @@ static void test_pview(void)
         f.o_under = TP_O_UNDER;
         f.max_steps = TP_STEPS;
         f.max_lines = TP_LINES;
+        f.step_px = (int16_t)(2 + cs % 4);   /* (the details' steps 2 .. 5, and wide in two cases of six) */
+        f.wide = (int16_t)(cs % 3 == 2);
         _fmemset(buf, 0xFF, PV_LW * PV_LH * 2);
         ok = rv_pv_setup(&f, &cam, &h);
         g_sum = sums[0];

@@ -8,6 +8,7 @@
  *     ONLY=nav1   the eyes whose names have this
  *     OPEN=x0,y0,x1,y1   the screen's part the ground is wanted in (the cockpit's opening)
  *     FOGDBG=1 SLABDBG=1   numbers
+ *     DETAIL=n   the picture's detail (pv_detail: 0 the finest, 1 as RV.EXE begins)
  *     PVEYES=file   each eye's PvCam written there, and each picture's sum (RV.EXE's bench renders the same eyes)
  * OUTDIR/NN-eye-card.ppm and -pv.ppm; tools/pvsheet.py puts them side by side. */
 #include <stdio.h>
@@ -133,6 +134,8 @@ static void shot(TrPlanet *p, const TrCam *c, const char *what)
     sky();
     t0 = clock();
     g_p = p;
+    if (getenv("DETAIL"))
+        pv_detail(atoi(getenv("DETAIL")));
     pv_frame(&pc);
     if (getenv("PVEYES")) {             /* (the eye for RV.EXE's bench, and the picture's sum: DOS's must be the same) */
         static FILE *ef;

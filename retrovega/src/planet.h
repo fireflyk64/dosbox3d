@@ -44,6 +44,10 @@ long planet_over(const LfVec *pos, long *roof);
 /* a mission's planet (missions.txt planet, ground): begun as the mission loads (next_mission), made and coloured at
  * the launch (planet_ready), its ground nav points put over the ground (planet_navs, after the tables are loaded) */
 void planet_mission(const RvMission __far *m);
+void planet_pace(unsigned ticks);       /* a flight frame's work, clock240 ticks (the wait for the frame rate left out):
+                                           RV.EXE's own picture's detail held to the frame rate (pv_pace); at the
+                                           flight's end PL_PACE_REPORT: the details it had logged */
+#define PL_PACE_REPORT 0xFFFFU
 int planet_file(char *name);            /* the mission's ground's file (ID.PLN) into name (13 bytes): 1, or 0 when none
                                            (ships_want lists it for the page) */
 void planet_ready(void);

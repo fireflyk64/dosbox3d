@@ -26,7 +26,7 @@ segment PVIEW_TEXT public align=16 class=CODE use16
 %endif
 
 ; --- PvFrame (pview.h), on the stack at bp-316 ---
-%define FSZ 320
+%define FSZ 324
 %define FR(x) [bp-FSZ+(x)]
 %define O_FR(x) (-FSZ+(x))
 %define F_R 0
@@ -94,6 +94,8 @@ segment PVIEW_TEXT public align=16 class=CODE use16
 %define F_O_UNDER 310
 %define F_BUF 312
 %define F_SCR 316
+%define F_STEP_PX 320
+%define F_WIDE 322
 
 ; --- PvStep (28 bytes) ---
 %define S_C 0
@@ -175,8 +177,8 @@ segment PVIEW_TEXT public align=16 class=CODE use16
 %define PV_SLABS 4
 %define PV_DEN_MIN 0x4000000
 %define PV_NEAR_DS 192
-%define PV_STEP_PX 3
 %define PV_SUBS 16
+%define PV_SUBS_WIDE 6
 
 ; --- the locals, below the frame: dwords L(1) .. ---
 %define L(k) [bp-FSZ-4*(k)]
@@ -436,7 +438,8 @@ _rv_pv_steps:
         adc edx,ecx
         call isqrt64
         mov ST_DIST,eax
-        mov ecx,PV_STEP_PX*256          ; ds = dist 512 / lf, at least PV_NEAR_DS
+        movsx ecx,word FR(F_STEP_PX)    ; ds = dist step_px 256 / lf, at least PV_NEAR_DS
+        shl ecx,8
         imul ecx
         idiv dword FR(F_LF)
         cmp eax,PV_NEAR_DS
@@ -812,7 +815,12 @@ _rv_pv_lines:
         cmp ax,FR(F_MAX_LINES)
         jl .room
         jmp .done
-.room:  mov ax,FR(F_NLINES)             ; the line's place
+.room:  cmp word FR(F_WIDE),0            ; (wide: every other line, each filling its neighbour's pixels too)
+        je .room1
+        test byte LN_I,1
+        jz .room1
+        jmp .skip
+.room1: mov ax,FR(F_NLINES)             ; the line's place
         mov bx,LINE_BYTES
         mul bx
         add ax,FR(F_O_LN)
@@ -1727,6 +1735,7 @@ _rv_pv_quarter:
 %define G_GX L(6)
 %define G_GY L(7)
 %define G_ROW L(8)
+%define G_D L(9)                        ; (a grid segment's step, eighths of an index a pixel)
 
 ; the glow's table index for the picture point (eax, edx), pixels: eax (pv_glow_index; ecx edx edi used)
 gidx:   push edx
@@ -1833,43 +1842,57 @@ _rv_pv_glow:
         add bx,2
         cmp bx,(PV_LW/8+1)*2
         jl .rk
-        mov ax,G_Y                      ; its pixels
-        shl ax,7
+        mov ax,G_Y                      ; its pixels, a grid segment at a time: the index r[k] + ((r[k+1] - r[k]) j >> 3)
+        shl ax,7                        ; as a running sum of eighths (the same numbers: c_pv_glow's)
         add ax,FR(F_BX0)
         shl ax,1
         add ax,FR(F_O_PIC)
         mov si,ax
         movsx eax,word FR(F_BX0)
         mov G_X,eax
-.px:    mov eax,G_X
+.seg:   mov eax,G_X
         cmp ax,FR(F_BX1)
-        jge .rowd
-        cmp word [es:si],PV_EMPTY
-        jne .nx
-        mov ebx,eax
+        jl .sg1
+        jmp .rowd
+.sg1:   mov ebx,eax
         shr ebx,3
-        shl ebx,1
+        shl bx,1
         lea di,[bp+GLOWR]
-        add di,bx
-        movsx ecx,word [di]
-        movsx edx,word [di+2]
-        sub edx,ecx
-        and eax,7
-        imul edx,eax
-        sar edx,3
-        add ecx,edx
-        add cx,FR(F_O_GLOW)
-        mov di,cx
-        movzx eax,byte [gs:di]
-        cmp eax,4
-        jl .nx
-        add eax,4
-        shr eax,3
+        movsx edx,word [di+bx]          ; r[k]
+        movsx ecx,word [di+bx+2]
+        sub ecx,edx                     ; d
+        mov G_D,ecx
+        shl edx,3
+        mov ebx,eax
+        and ebx,7
+        imul ebx,ecx
+        add edx,ebx                     ; the index's eighths at x
+        mov ecx,eax                     ; the segment: x .. its 8 pixels' end, the part's at most
+        or ecx,7
+        inc ecx
+        movsx ebx,word FR(F_BX1)
+        cmp ecx,ebx
+        jle .sg2
+        mov ecx,ebx
+.sg2:   mov G_X,ecx
+        sub ecx,eax
+        movzx edi,word FR(F_O_GLOW)
+.p:     cmp word [es:si],PV_EMPTY
+        jne .pn
+        mov ebx,edx
+        sar ebx,3
+        movzx eax,byte [gs:edi+ebx]
+        cmp ax,4
+        jb .pn
+        add ax,4
+        shr ax,3
         or ax,PV_GLOW
         mov [es:si],ax
-.nx:    add si,2
-        inc dword G_X
-        jmp .px
+.pn:    add si,2
+        add edx,G_D
+        dec ecx
+        jnz .p
+        jmp .seg
 .rowd:  inc dword G_Y
         jmp .row
 .done:  PV_LEAVE
@@ -2425,6 +2448,8 @@ fill_px:
         shl edi,8                       ; vertical: the row's place, 256 bytes a row
         add edi,ebx
         shl dword P_DROW,8
+        cmp word FR(F_WIDE),0
+        jne .vw
 .vp:    mov ebx,esi
         sar ebx,16
         cmp ebx,PV_LW
@@ -2442,9 +2467,34 @@ fill_px:
         dec ecx
         jnz .vp
         jmp .end
+.vw:    mov ebx,esi                     ; (wide: the pixel and the next across, each where still empty)
+        sar ebx,16
+        cmp ebx,PV_LW
+        jae .vwn
+        mov eax,edx
+        shr eax,16
+        mov al,dh
+        add al,P_BASE
+        cmp word [es:edi+ebx*2],PV_EMPTY
+        jne .vw2
+        mov [es:edi+ebx*2],ax
+.vw2:   inc ebx
+        cmp ebx,PV_LW
+        jae .vwn
+        cmp word [es:edi+ebx*2],PV_EMPTY
+        jne .vwn
+        mov [es:edi+ebx*2],ax
+.vwn:   add esi,P_DCOL
+        add edi,P_DROW
+        add edx,P_DSUM
+        dec ecx
+        jnz .vw
+        jmp .end
 .hz:    shl edi,1                       ; horizontal: the column's place, 2 bytes a column
         add edi,ebx
         shl dword P_DROW,1
+        cmp word FR(F_WIDE),0
+        jne .hw
 .hp:    mov ebx,esi
         sar ebx,16
         cmp ebx,PV_LH
@@ -2462,6 +2512,29 @@ fill_px:
         add edx,P_DSUM
         dec ecx
         jnz .hp
+        jmp .end
+.hw:    mov ebx,esi
+        sar ebx,16
+        cmp ebx,PV_LH
+        jae .hwn
+        mov eax,edx
+        shr eax,16
+        mov al,dh
+        add al,P_BASE
+        shl ebx,8
+        cmp word [es:edi+ebx],PV_EMPTY
+        jne .hw2
+        mov [es:edi+ebx],ax
+.hw2:   cmp ebx,(PV_LH-1)*256
+        jae .hwn
+        cmp word [es:edi+ebx+256],PV_EMPTY
+        jne .hwn
+        mov [es:edi+ebx+256],ax
+.hwn:   add esi,P_DCOL
+        add edi,P_DROW
+        add edx,P_DSUM
+        dec ecx
+        jnz .hw
 .end:   pop si
         pop bx
         PEND 4
@@ -3511,10 +3584,15 @@ _rv_pv_march:
         add eax,edx
         mov cl,FR(F_SLAB_SHIFT)
         dec cl
+        add cl,FR(F_WIDE)               ; (wide: a slab cell apart)
         sar eax,cl
-        cmp eax,PV_SUBS
+        mov ecx,PV_SUBS                 ; (wide: PV_SUBS_WIDE at most)
+        cmp word FR(F_WIDE),0
+        je .ns0
+        mov ecx,PV_SUBS_WIDE
+.ns0:   cmp eax,ecx
         jle .ns1
-        mov eax,PV_SUBS
+        mov eax,ecx
 .ns1:   mov M_NS,eax
         mov eax,M_X
         mov M_PX,eax
