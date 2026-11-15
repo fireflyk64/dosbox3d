@@ -39,6 +39,7 @@
 #include "regs.h"
 #include "cpu.h"
 #include "pic.h"
+#include "lazyflags.h"
 #include "wcnet_tv_sig.h"
 
 namespace wc {
@@ -546,6 +547,9 @@ bool fill(Run &m, Bit32u esi_, Bit32u edi_, Bit32u ebx_) {
     return true;
 }
 
+// 0x42F13: no pixels (push esi; push edi; pop edi; pop esi; ret)
+bool none(Run &, Bit32u, Bit32u, Bit32u) { return true; }
+
 typedef bool (*Twin)(Run &m, Bit32u esi, Bit32u edi, Bit32u ebx);
 
 Twin twin_of(int s) {
@@ -558,6 +562,7 @@ Twin twin_of(int s) {
     case S_AFFINE_CLEAR: return &affine_clear;
     case S_ZBUF_LIT: return &zbuf_lit;
     case S_FILL: return &fill;
+    case S_NONE: return &none;
     }
     return NULL;
 }
@@ -612,28 +617,178 @@ bool cockpit_copy(Run &m, Regs &r) {
     return true;
 }
 
+// --- the terrain's height (an entry) ------------------------------------------------------------------------------
+
+const Bit32u I_HMAP = 0x104DA0;    // the level's height map (256 x 256 bytes: a row by x, a byte by z)
+
+// imul then shrd eax, edx, 16: the product's bits 16..47; hi its high dword (edx after the imul)
+inline Bit32u imul16(Bit32u a, Bit32u b, Bit32u &hi) {
+    const Bit64s p = (Bit64s)(Bit32s)a * (Bit64s)(Bit32s)b;
+    hi = (Bit32u)((Bit64u)p >> 32);
+    return (Bit32u)(Bit64u)(p >> 16);
+}
+
+// 0x3C7E0 (x, z): the ground's height under a point (20 bits of a cell's fraction, 8 of the cell): the cell's four
+// heights (<< 15) interpolated over the half of the cell the point is in, the cell cut along the diagonal its
+// parities choose.  Pure: it reads the map, writes only its own stack.  eax the height; ecx and edx as it leaves them.
+bool height(Run &m, Bit32u a, Bit32u b, Regs &o) {
+    const Bit32u map = m.r32(D(I_HMAP));
+    if (m.bad || !ram(map, 0x10000)) return false;
+    const Bit8u *H = MemBase + map;
+    const Bit32u fb = (b & 0xFFFFFu) >> 4, fa = (a & 0xFFFFFu) >> 4;
+    const Bit32u ib = b >> 20, ia = a >> 20;
+    const Bit32u ib8 = ib & 0xFFu, ia8 = ia & 0xFFu, ib1 = (ib8 + 1) & 0xFFu, ia1 = (ia8 + 1) & 0xFFu;
+    const Bit32u i00 = (ia8 << 8) + ib8, i01 = (ia8 << 8) + ib1, i11 = (ia1 << 8) + ib1, i10 = ib8 + (ia1 << 8);
+    Bit32u hi, ecx, edx, base, eax = fb;
+    if ((ib & 1) == (ia & 1)) {
+        if ((Bit32s)fb > (Bit32s)fa) {
+            const Bit32u h00 = (Bit32u)H[i00] << 15, h01 = (Bit32u)H[i01] << 15, h11 = (Bit32u)H[i11] << 15;
+            base = h00 + imul16(eax, h01 - h00, hi);
+            ecx = h11 - h01;
+        } else {
+            const Bit32u h00 = (Bit32u)H[i00] << 15, h11 = (Bit32u)H[i11] << 15, h10 = (Bit32u)H[i10] << 15;
+            base = h00 + imul16(eax, h11 - h10, hi);
+            ecx = h10 - h00;
+        }
+    } else {
+        eax = 0x10000u - fb;
+        if ((Bit32s)eax > (Bit32s)fa) {
+            const Bit32u h00 = (Bit32u)H[i00] << 15, h01 = (Bit32u)H[i01] << 15, h10 = (Bit32u)H[i10] << 15;
+            base = h01 + imul16(eax, h00 - h01, hi);
+            ecx = h10 - h00;
+        } else {
+            const Bit32u h01 = (Bit32u)H[i01] << 15, h11 = (Bit32u)H[i11] << 15, h10 = (Bit32u)H[i10] << 15;
+            base = h01 + imul16(eax, h10 - h11, hi);
+            ecx = h11 - h01;
+        }
+    }
+    o.eax = imul16(fa, ecx, edx) + base;
+    o.ecx = ecx;
+    o.edx = edx;
+    return true;
+}
+
+// --- the polygon filler (an entry) --------------------------------------------------------------------------------
+
+const Bit32u I_EDGES = 0x104DA8;   // the edges: 16 of 0x28 bytes (+0 top row, +4 bottom row, +8 x, +0x10 w, +0x18 u,
+                                   // +0x20 v, each value's step a row after it), then the filler's own:
+const Bit32u I_F_SPANS = 0x105028; // spans drawn (a count)
+const Bit32u I_F_POLYS = 0x10502C; // polygons filled (a count)
+const Bit32u I_F_YMAX = 0x105030;  // the polygon's bottom row
+const Bit32u I_F_NEDGE = 0x105034; // its edges
+const Bit32u I_F_YMIN = 0x105038;  // its top row
+const Bit32u I_F_END = 0x10503C;
+const Bit32u I_KX = 0x7CF30, I_KY = 0x7CF34, I_CX = 0x7CF40, I_CY = 0x7CF48;     // the projection
+const Bit32u I_VIEW_W = 0x64D34, I_VIEW_H = 0x64D38;                              // the view's size
+enum { kMaxEdges = 16 };
+
+// 0x3E510's 16.16 divide: |a| (one's complement: a ^ its sign) / d unsigned, the whole part at most 0x7FFF, the
+// fraction from the remainder, the sign put back the same way.
+inline Bit32u sdiv16(Bit32u a, Bit32u d) {
+    const Bit32u s = (Bit32s)a < 0 ? 0xFFFFFFFFu : 0;
+    const Bit32u x = a ^ s;
+    Bit32u q = x / d;
+    const Bit32u r = x % d;
+    if (q >= 0x7FFFu) q = 0x7FFFu;
+    const Bit32u q2 = (Bit32u)(((Bit64u)r << 32) / d);
+    return ((q << 16) | (q2 >> 16)) ^ s;
+}
+
+inline Bit32u rd(Bit32u a) { return host_readd(MemBase + a); }
+inline void wr(Bit32u a, Bit32u v) { host_writed(MemBase + a, v); }
+
+// 0x3E510 (A, B): the edge from A to B (its rows' ends, the polygon's top and bottom kept), its values at A and their
+// steps a row (B's less A's over the rows' 16.16 distance), stepped on to the first row's centre; none if A and B are
+// on one row.  (Never faults: the distance is not 0 between two rows.)
+void poly_edge(Bit32u A, Bit32u B) {
+    Bit32s top = (Bit32s)rd(A + 0x1C) >> 16, bot = (Bit32s)rd(B + 0x1C) >> 16;
+    if (top == bot) return;
+    if ((Bit32s)rd(A + 0x1C) > (Bit32s)rd(B + 0x1C)) {
+        std::swap(A, B);
+        std::swap(top, bot);
+    }
+    const Bit32u idx = rd(D(I_F_NEDGE)), e = D(I_EDGES) + idx * 0x28;
+    wr(e, (Bit32u)top);
+    wr(e + 4, (Bit32u)bot);
+    if (top < (Bit32s)rd(D(I_F_YMIN))) wr(D(I_F_YMIN), (Bit32u)top);
+    if (bot > (Bit32s)rd(D(I_F_YMAX))) wr(D(I_F_YMAX), (Bit32u)bot);
+    wr(e + 8, rd(A + 0x18));
+    wr(e + 0x18, rd(A + 0xC));
+    wr(e + 0x20, rd(A + 0x10));
+    wr(e + 0x10, rd(A + 0x14));
+    const Bit32u dy = rd(B + 0x1C) - rd(A + 0x1C);
+    wr(e + 0xC, sdiv16(rd(B + 0x18) - rd(A + 0x18), dy));
+    wr(e + 0x1C, sdiv16(rd(B + 0xC) - rd(A + 0xC), dy));
+    wr(e + 0x24, sdiv16(rd(B + 0x10) - rd(A + 0x10), dy));
+    wr(e + 0x14, sdiv16(rd(B + 0x14) - rd(A + 0x14), dy));
+    const Bit32u f = (rd(A + 0x1C) & 0xFFFFu) ^ 0xFFFFu;
+    Bit32u hi;
+    wr(e + 8, rd(e + 8) + imul16(f, rd(e + 0xC), hi));
+    wr(e + 0x18, rd(e + 0x18) + imul16(f, rd(e + 0x1C), hi));
+    wr(e + 0x20, rd(e + 0x20) + imul16(f, rd(e + 0x24), hi));
+    wr(e + 0x10, rd(e + 0x10) + imul16(f, rd(e + 0x14), hi));
+    wr(D(I_F_NEDGE), idx + 1);
+}
+
+// 0x3E6E0 (row, but): the first edge starting at the row that is not `but` (0: none)
+Bit32u poly_find(Bit32u y, Bit32u but) {
+    const Bit32s n = (Bit32s)rd(D(I_F_NEDGE));
+    for (Bit32s i = 0; i < n; i++) {
+        const Bit32u e = D(I_EDGES) + 0x28 * (Bit32u)i;
+        if (rd(e) == y && e != but) return e;
+    }
+    return 0;
+}
+
+// an edge a row on: x, u, v, w by their steps
+inline void poly_step(Bit32u e) {
+    wr(e + 8, rd(e + 8) + rd(e + 0xC));
+    wr(e + 0x18, rd(e + 0x18) + rd(e + 0x1C));
+    wr(e + 0x20, rd(e + 0x20) + rd(e + 0x24));
+    wr(e + 0x10, rd(e + 0x10) + rd(e + 0x14));
+}
+
+// The memory a check keeps: regions and what they held.
+struct Snap {
+    std::vector<Region> reg;
+    std::vector<std::vector<Bit8u> > saved;
+    void add(Bit32u lo, Bit32u len) {
+        if (!len || !ram(lo, len)) return;
+        Region r = { lo, len };
+        reg.push_back(r);
+        saved.push_back(std::vector<Bit8u>(MemBase + lo, MemBase + lo + len));
+    }
+    void put_back() {
+        for (size_t i = reg.size(); i-- > 0;) memcpy(MemBase + reg[i].lo, &saved[i][0], reg[i].len);
+    }
+};
+
 // --- the calls -----------------------------------------------------------------------------------------------------
 
 struct Stats {
     unsigned native[S_COUNT], given[S_COUNT];       // calls made by the twin; given back to the game's code
     Bit64u pixels[S_COUNT];
+    unsigned resumed;                               // polygons handed to the game's code at a row (a span given back)
+    unsigned polySpans;                             // spans drawn inside native polygons
     std::map<Bit32u, unsigned> other;               // spans of routines not twinned, by image address
 };
 Stats g_st;
-unsigned g_checked = 0, g_differed = 0;
+unsigned g_checked = 0, g_differed = 0, g_unchecked = 0;
 double g_nextLogMs = 0;
 
 // the check: the memory the twin may change as it left it, the registers it left, where the game's code comes back
 struct Check {
     bool pending;
     int s;
+    bool entry;                     // an entry: its ret (esp + 4), eax ecx edx as the twin left them
     Bit32u ret;                     // the game's code back here: compared
-    Bit32u in[7];                   // the registers at the call (eax ecx edx ebx esp ebp esi edi, less esp)
+    Bit32u in[7];                   // the registers at the call (eax ecx edx ebx ebp esi edi)
     Bit32u esp;
-    Regs out;                       // an entry twin's eax, ecx, edx
-    Region reg[4];
-    int nreg;
-    std::vector<Bit8u> after[4];
+    Regs out;
+    bool flagsKnown;                // the flags the twin left (FMASK_TEST), compared
+    Bit32u flags;
+    std::vector<Region> reg;
+    std::vector<std::vector<Bit8u> > after;
 } g_check;
 unsigned g_logged = 0;
 
@@ -652,8 +807,9 @@ void log_stats(double now) {
     std::string line;
     for (int s = 1; s < S_COUNT; s++) {
         if (!g_st.native[s] && !g_st.given[s]) continue;
-        char b[160];
-        if (s == S_COCKPIT_COPY) snprintf(b, sizeof(b), " %s %u", kSpans[s].name, g_st.native[s]);
+        char b[200];
+        if (s == S_POLY) snprintf(b, sizeof(b), " %s %u (%u spans in them, %u handed over at a row)", kSpans[s].name, g_st.native[s], g_st.polySpans, g_st.resumed);
+        else if (s == S_COCKPIT_COPY || s == S_HEIGHT) snprintf(b, sizeof(b), " %s %u", kSpans[s].name, g_st.native[s]);
         else snprintf(b, sizeof(b), " %s %u (%.0f px each)", kSpans[s].name, g_st.native[s], g_st.native[s] ? (double)g_st.pixels[s] / g_st.native[s] : 0.0);
         line += b;
         if (g_st.given[s]) {
@@ -667,8 +823,8 @@ void log_stats(double now) {
         snprintf(b, sizeof(b), " %05x:%u", it->first, it->second);
         other += b;
     }
-    char chk[96] = "";
-    if (g_mode == 2) snprintf(chk, sizeof(chk), "; checked %u, %u differed", g_checked, g_differed);
+    char chk[128] = "";
+    if (g_mode == 2) snprintf(chk, sizeof(chk), "; checked %u, %u differed, %u not checked", g_checked, g_differed, g_unchecked);
     wclog(2, "Terminal Velocity native drawing (10 s): %s:%s; the game's own spans (no twin):%s%s",
           g_mode == 2 ? "checked" : "native", line.empty() ? " none" : line.c_str(), other.empty() ? " none" : other.c_str(), chk);
     g_st = Stats();
@@ -678,25 +834,180 @@ bool flat() {
     return SegPhys(ds) == 0 && SegPhys(es) == 0 && SegPhys(ss) == 0 && SegPhys(cs) == 0 && cpu.stack.big;
 }
 
-// The check's first half: the twin has run; what it left in its regions kept, the regions put back as they were,
-// the game's code to run and be compared at `ret`.
-void check_begin(int s, Run &m, Bit32u ret, const Regs *out) {
+// add's flags (CF PF AF ZF SF OF) for a + b
+Bit32u add_flags(Bit32u a, Bit32u b) {
+    const Bit32u r = a + b;
+    Bit32u f = 0;
+    if (r < a) f |= FLAG_CF;
+    if (r == 0) f |= FLAG_ZF;
+    if (r & 0x80000000u) f |= FLAG_SF;
+    if ((~(a ^ b) & (a ^ r)) & 0x80000000u) f |= FLAG_OF;
+    if ((a ^ b ^ r) & 0x10u) f |= FLAG_AF;
+    Bit32u p = r & 0xFFu;
+    p ^= p >> 4;
+    p ^= p >> 2;
+    p ^= p >> 1;
+    if (!(p & 1)) f |= FLAG_PF;
+    return f;
+}
+
+void set_flags(Bit32u f) {
+    reg_flags = (reg_flags & ~FMASK_TEST) | f;
+    lflags.type = t_UNKNOWN;
+}
+
+// The check's first half: the twin has run; what it left in the regions kept, the regions put back as they were
+// (snap), the game's code to run and be compared at `ret`.
+void check_begin(int s, Snap &snap, Bit32u ret, bool entry, const Regs *out, bool flagsKnown, Bit32u flags) {
     g_check.pending = true;
     g_check.s = s;
+    g_check.entry = entry;
     g_check.ret = ret;
     g_check.in[0] = reg_eax; g_check.in[1] = reg_ecx; g_check.in[2] = reg_edx; g_check.in[3] = reg_ebx;
     g_check.in[4] = reg_ebp; g_check.in[5] = reg_esi; g_check.in[6] = reg_edi;
     g_check.esp = reg_esp;
     if (out) g_check.out = *out;
-    g_check.nreg = m.nreg;
-    for (int i = 0; i < m.nreg; i++) {
-        g_check.reg[i] = m.reg[i];
-        g_check.after[i].assign(MemBase + m.reg[i].lo, MemBase + m.reg[i].lo + m.reg[i].len);
+    g_check.flagsKnown = flagsKnown;
+    g_check.flags = flags;
+    g_check.reg = snap.reg;
+    g_check.after.resize(snap.reg.size());
+    for (size_t i = 0; i < snap.reg.size(); i++) {
+        g_check.after[i].assign(MemBase + snap.reg[i].lo, MemBase + snap.reg[i].lo + snap.reg[i].len);
     }
-    // (put back: every region as it was before the twin, all kept before its first write)
-    for (int i = 0; i < m.nreg; i++) memcpy(MemBase + m.reg[i].lo, &m.saved[i][0], m.reg[i].len);
-    // (the game's own code back at ret: watched)
-    wc_net_watch32[ret & 0xFFFF] = true;
+    snap.put_back();
+    wc_net_watch32[ret & 0xFFFF] = true;    // (the game's own code back at ret: watched)
+}
+
+// a span routine's Run as a Snap (its regions, as kept before its first write)
+void snap_of(Run &m, Snap &snap) {
+    for (int i = 0; i < m.nreg; i++) {
+        snap.reg.push_back(m.reg[i]);
+        snap.saved.push_back(m.saved[i]);
+    }
+}
+
+// The polygon filler, natively.  -1: given back at its entry (nothing written); 0: handed to the game's code at a
+// row's span call (a span twin gave back: the filler's frame and registers made as its own code has them there);
+// 1: filled, returned from.  snap (the check): the memory it may change kept first; a hand-over there is -2 (all put
+// back, the game's code fills the polygon from its entry).  handAt >= 0 (the check's test of the hand-over): handed
+// over before that many rows are drawn, as if the span twin had given back there.
+int poly(Snap *snap, Regs &out, int handAt = -1) {
+    const Bit32u E = reg_esp;
+    if (!ram(E, 12)) return -1;
+    const Bit32u verts = rd(E + 4), n = rd(E + 8);
+    if ((Bit32s)n > kMaxEdges || ((Bit32s)n > 0 && !ram(verts, n * 0x20))) return -1;
+    if (!ram(D(I_EDGES), I_F_END - I_EDGES) || !ram(D(I_VARS), I_VARS_END - I_VARS)) return -1;
+    if (!ram(g_ptr, 4)) return -1;
+    const int s = routine_at(rd(g_ptr));
+    Twin t = s > 0 ? twin_of(s) : NULL;
+    if (!t) return -1;
+    // the projection of the vertices not yet projected (x 0x18, y 0x1C = k * x / z + the centre): its divides first
+    const Bit32u kx = rd(D(I_KX)), ky = rd(D(I_KY)), cx = rd(D(I_CX)), cy = rd(D(I_CY));
+    Bit32u px[kMaxEdges], py[kMaxEdges];
+    for (Bit32s i = 0; i < (Bit32s)n; i++) {
+        const Bit32u v = verts + 0x20 * (Bit32u)i;
+        if (rd(v + 0x18) != 0xFFFFFFFFu) continue;
+        const Bit32s z = (Bit32s)rd(v + 8);
+        if (z == 0) return -1;
+        const Bit64s qx = (Bit64s)(Bit32s)rd(v) * (Bit32s)kx / z, qy = (Bit64s)(Bit32s)rd(v + 4) * (Bit32s)ky / z;
+        if (qx < -(Bit64s)0x80000000LL || qx > 0x7FFFFFFFLL || qy < -(Bit64s)0x80000000LL || qy > 0x7FFFFFFFLL) return -1;
+        px[i] = (Bit32u)(Bit32s)qx + cx;
+        py[i] = (Bit32u)(Bit32s)qy + cy;
+    }
+    if (snap) {
+        if ((Bit32s)n > 0) snap->add(verts, n * 0x20);
+        snap->add(D(I_EDGES), I_F_END - I_EDGES);
+        snap->add(D(I_VARS), I_VARS_END - I_VARS);
+    }
+    wr(D(I_F_POLYS), rd(D(I_F_POLYS)) + 1);
+    for (Bit32s i = 0; i < (Bit32s)n; i++) {
+        const Bit32u v = verts + 0x20 * (Bit32u)i;
+        if (rd(v + 0x18) != 0xFFFFFFFFu) continue;
+        wr(v + 0x18, px[i]);
+        wr(v + 0x1C, py[i]);
+    }
+    wr(D(I_F_YMIN), rd(D(I_VIEW_H)));
+    wr(D(I_F_YMAX), 0);
+    wr(D(I_F_NEDGE), 0);
+    for (Bit32s i = 0; i < (Bit32s)n; i++) {
+        const Bit32s j = i + 1 < (Bit32s)n ? i + 1 : 0;
+        poly_edge(verts + 0x20 * (Bit32u)i, verts + 0x20 * (Bit32u)j);
+    }
+    if (snap) {
+        // the rows it may draw (the frame buffer's, and the depth buffer's for the craft's spans), 64 bytes either side
+        const Bit32s y0 = (Bit32s)rd(D(I_F_YMIN)), y1 = (Bit32s)rd(D(I_F_YMAX)), h = (Bit32s)rd(D(I_VIEW_H));
+        const Bit32u w = rd(D(I_VIEW_W));
+        if (y0 < 0 || y1 >= h || w > 4096) {
+            snap->put_back();
+            return -2;
+        }
+        for (int z = 0; z < (s == S_ZBUF_LIT ? 2 : 1); z++) {
+            Bit32u lo = 0xFFFFFFFFu, hi = 0;
+            const Bit32u tab = D(z ? I_ZROWS : I_ROWS), rowLen = z ? 4 * w : w;
+            for (Bit32s y = y0; y <= y1; y++) {
+                if (!ram(tab + 4 * (Bit32u)y, 4)) continue;
+                lo = std::min(lo, rd(tab + 4 * (Bit32u)y));
+                hi = std::max(hi, rd(tab + 4 * (Bit32u)y) + rowLen);
+            }
+            if (hi > lo) {
+                const Bit32u a = lo >= kCheckMargin ? lo - kCheckMargin : 0;
+                snap->add(a, hi + kCheckMargin - a);
+            }
+        }
+    }
+    // the rows: each the span between the two edges at it, the edges stepped; an edge past its bottom row replaced by
+    // the next starting there
+    Bit32u y = rd(D(I_F_YMIN));
+    Bit32u e1 = poly_find(y, 0), e2 = e1 ? poly_find(y, e1) : 0;
+    int rows = 0;
+    while (e1 && e2) {
+        if ((Bit32s)y >= (Bit32s)rd(e1 + 4)) {
+            wr(e1, 0xFFFFFFFFu);
+            e1 = poly_find(y, e2);
+            if (!e1) break;
+        }
+        if ((Bit32s)y >= (Bit32s)rd(e2 + 4)) {
+            wr(e2, 0xFFFFFFFFu);
+            e2 = poly_find(y, e1);
+            if (!e2) break;
+        }
+        Run sm;
+        if (rows++ == handAt || !t(sm, e1, e2, y)) {
+            if (rows - 1 != handAt) g_st.given[s]++;
+            if (snap) {
+                snap->put_back();
+                return -2;
+            }
+            // the filler's frame at its span call (0x3E85D): ebx esi edi ebp pushed, [esp] the row, [esp+4] the first
+            // edge; esi the first edge, edi and ebp the second, ebx the row
+            wr(E - 4, reg_ebx);
+            wr(E - 8, reg_esi);
+            wr(E - 12, reg_edi);
+            wr(E - 16, reg_ebp);
+            wr(E - 20, e1);
+            wr(E - 24, y);
+            reg_esp = E - 24;
+            reg_esi = e1;
+            reg_edi = reg_ebp = e2;
+            reg_ebx = y;
+            reg_eax = y;
+            g_st.resumed++;
+            return 0;
+        }
+        g_st.native[s]++;
+        g_st.pixels[s] += sm.first;
+        g_st.polySpans++;
+        wr(D(I_F_SPANS), rd(D(I_F_SPANS)) + 1);
+        poly_step(e1);
+        poly_step(e2);
+        y++;
+    }
+    // (returned: eax 0 from the last edge sought, ecx and edx the edges' count as its loop left them)
+    const Bit32u ne = rd(D(I_F_NEDGE));
+    out.eax = 0;
+    out.ecx = ne;
+    out.edx = (Bit32s)ne > 0 ? ne : 0;
+    return 1;
 }
 
 }  // namespace
@@ -757,7 +1068,7 @@ bool tv_span_setup(Bit32u codeDelta) {
     g_ready = true;
     g_nextLogMs = 0;
     g_st = Stats();
-    wclog(1, "Terminal Velocity: drawn natively%s: %s (the data moved by %08x)", g_mode == 2 ? " and checked against the game's own code" : "",
+    wclog(1, "Terminal Velocity: made natively%s: %s (the data moved by %08x)", g_mode == 2 ? " and checked against the game's own code" : "",
           names.c_str(), g_delta);
     return true;
 }
@@ -772,7 +1083,13 @@ Bit32u tv_span_spare() {
     return MemBase[at - 1] == 0xC3 ? at : 0;
 }
 
-Bit32u tv_native_entry_place() { return g_ready ? g_entry[S_COCKPIT_COPY] : 0; }
+int tv_native_entry_places(Bit32u out[3]) {
+    if (!g_ready) return 0;
+    out[0] = g_entry[S_COCKPIT_COPY];
+    out[1] = g_entry[S_HEIGHT];
+    out[2] = g_entry[S_POLY] ? g_entry[S_POLY] + (0x3E720 - kSpans[S_POLY].image) : 0;
+    return 3;
+}
 
 bool tv_span_call() {
     if (!g_ready || g_check.pending) return false;
@@ -799,75 +1116,152 @@ bool tv_span_call() {
     g_st.native[s]++;
     g_st.pixels[s] += m.first;
     if (g_mode == 2) {
-        check_begin(s, m, reg_eip + 5, NULL);
+        Snap snap;
+        snap_of(m, snap);
+        check_begin(s, snap, reg_eip + 5, false, NULL, false, 0);
         return false;
     }
     return true;
 }
 
 bool tv_native_entry() {
-    if (!g_ready || g_check.pending || reg_eip != g_entry[S_COCKPIT_COPY]) return false;
-    const int s = S_COCKPIT_COPY;
-    if (!flat()) {
+    if (!g_ready || g_check.pending) return false;
+    const Bit32u eip = reg_eip, E = reg_esp;
+    int s = -1;
+    if (eip == g_entry[S_COCKPIT_COPY]) s = S_COCKPIT_COPY;
+    else if (eip == g_entry[S_HEIGHT]) s = S_HEIGHT;
+    else if (g_entry[S_POLY] && eip == g_entry[S_POLY] + (0x3E720 - kSpans[S_POLY].image)) s = S_POLY;
+    if (s < 0) return false;
+    if (!flat() || !ram(E, 12)) {
         g_st.given[s]++;
         return false;
     }
-    Run m;
-    m.snap = g_mode == 2;
+    const bool check = g_mode == 2;
     Regs r = { reg_eax, reg_ecx, reg_edx };
-    if (!cockpit_copy(m, r)) {
-        g_st.given[s]++;
-        return false;
+    bool flagsKnown = false;
+    Bit32u flags = 0;
+    Snap snap;
+    if (s == S_COCKPIT_COPY) {
+        Run m;
+        m.snap = check;
+        if (!cockpit_copy(m, r)) {
+            g_st.given[s]++;
+            return false;
+        }
+        snap_of(m, snap);
+        g_st.native[s]++;
+    } else if (s == S_HEIGHT) {
+        Run m;
+        if (!height(m, rd(E + 4), rd(E + 8), r)) {
+            g_st.given[s]++;
+            return false;
+        }
+        // (its last flags: add esp, 0xc before its pops)
+        flagsKnown = true;
+        flags = add_flags(E - 0x1C, 0xC);
+        g_st.native[s]++;
+    } else {
+        log_stats(PIC_FullIndex());
+        static const bool handTest = getenv("WCNET_TV_RESUME_TEST") != NULL;
+        if (check && handTest) {
+            // (the hand-over tested: the twin's whole polygon kept as what the game's code must end with, put back,
+            // the twin again handing over after 1..3 rows, the game's code finishing it, compared at its return)
+            const int got = poly(&snap, r);
+            if (got < 0) {
+                if (got == -1) g_st.given[s]++;
+                else g_unchecked++;
+                return false;
+            }
+            check_begin(s, snap, rd(E), true, &r, true, add_flags(E - 0x18, 8));
+            static unsigned turn = 0;
+            Regs r2 = { reg_eax, reg_ecx, reg_edx };
+            const int got2 = poly(NULL, r2, 1 + (int)(turn++ % 3));
+            if (got2 == 0) {
+                reg_eip = g_entry[S_POLY] + (0x3E85D - kSpans[S_POLY].image);
+                return true;
+            }
+            // (too few rows to hand over: filled natively again; returned from as in play)
+            g_check.pending = false;
+            g_unchecked++;
+            reg_eax = r2.eax;
+            reg_ecx = r2.ecx;
+            reg_edx = r2.edx;
+            set_flags(add_flags(E - 0x18, 8));
+            reg_eip = CPU_Pop32();
+            return true;
+        }
+        const int got = poly(check ? &snap : NULL, r);
+        if (got == -1) {
+            g_st.given[s]++;
+            return false;
+        }
+        if (got == -2) {
+            g_unchecked++;
+            return false;
+        }
+        if (got == 0) {
+            reg_eip = g_entry[S_POLY] + (0x3E85D - kSpans[S_POLY].image);    // (its span call, in its own code)
+            return true;
+        }
+        // (its last flags: add esp, 8 before its pops)
+        flagsKnown = true;
+        flags = add_flags(E - 0x18, 8);
+        g_st.native[s]++;
     }
-    g_st.native[s]++;
-    if (g_mode == 2) {
-        check_begin(s, m, host_readd(MemBase + reg_esp), &r);
+    if (check) {
+        check_begin(s, snap, rd(E), true, &r, flagsKnown, flags);
         return false;
     }
     reg_eax = r.eax;
     reg_ecx = r.ecx;
     reg_edx = r.edx;
+    if (flagsKnown) set_flags(flags);
     reg_eip = CPU_Pop32();          // (its ret)
     return true;
 }
 
 bool tv_span_returned(Bit32u eip) {
     if (!g_check.pending || eip != g_check.ret) return false;
+    if (reg_esp != g_check.esp + (g_check.entry ? 4 : 0)) return false;    // (a deeper call's return to the same place)
     g_check.pending = false;
     g_checked++;
     int firstDiff = -1, diffs = 0, where = -1;
-    for (int i = 0; i < g_check.nreg; i++) {
+    for (size_t i = 0; i < g_check.reg.size(); i++) {
         const Region &R = g_check.reg[i];
         for (Bit32u k = 0; k < R.len; k++) {
             if (MemBase[R.lo + k] != g_check.after[i][k]) {
                 if (firstDiff < 0) {
                     firstDiff = (int)k;
-                    where = i;
+                    where = (int)i;
                 }
                 diffs++;
             }
         }
     }
-    // the registers: those the routine keeps; an entry's eax, ecx, edx as the twin left them
+    // the registers: those the routine keeps; an entry's eax, ecx, edx as the twin left them, and its flags
     const Bit32u nowIn[7] = { reg_eax, reg_ecx, reg_edx, reg_ebx, reg_ebp, reg_esi, reg_edi };
     int regDiff = -1;
-    const bool entry = g_check.s == S_COCKPIT_COPY;
+    const bool entry = g_check.entry;
     for (int i = entry ? 0 : 4; i < 7 && regDiff < 0; i++) {
         const Bit32u want = entry && i < 3 ? (i == 0 ? g_check.out.eax : i == 1 ? g_check.out.ecx : g_check.out.edx) : g_check.in[i];
         if (!entry && (i == 5 || i == 6)) continue;     // (the filler reloads esi and edi; the routines keep ebp)
         if (nowIn[i] != want) regDiff = i;
     }
-    if (reg_esp != g_check.esp + (entry ? 4 : 0)) regDiff = 7;
+    if (g_check.flagsKnown && regDiff < 0) {
+        FillFlags();
+        if ((reg_flags & FMASK_TEST) != g_check.flags) regDiff = 8;
+    }
     if (!diffs && regDiff < 0) return true;
     g_differed++;
     if (g_logged < 20) {
         g_logged++;
-        const Region &R = g_check.reg[where < 0 ? 0 : where];
-        wclog(1, "Terminal Velocity check: %s (esi %08x edi %08x ebx %08x): %d bytes differ, the first at %08x (game %02x twin %02x); "
-                 "register %d %s",
-              kSpans[g_check.s].name, g_check.in[5], g_check.in[6], g_check.in[3], diffs,
+        const Region &R = g_check.reg.empty() ? Region() : g_check.reg[where < 0 ? 0 : where];
+        wclog(1, "Terminal Velocity check: %s (eax %08x esi %08x edi %08x ebx %08x): %d bytes differ, the first at %08x (game %02x twin %02x); "
+                 "register %d %s (game eax %08x ecx %08x edx %08x flags %03x; twin %08x %08x %08x %03x)",
+              kSpans[g_check.s].name, g_check.in[0], g_check.in[5], g_check.in[6], g_check.in[3], diffs,
               firstDiff >= 0 ? R.lo + (Bit32u)firstDiff : 0, firstDiff >= 0 ? MemBase[R.lo + firstDiff] : 0,
-              firstDiff >= 0 ? g_check.after[where][firstDiff] : 0, regDiff, regDiff >= 0 ? "differs" : "the same");
+              firstDiff >= 0 ? g_check.after[where][firstDiff] : 0, regDiff, regDiff >= 0 ? "differs" : "the same",
+              reg_eax, reg_ecx, reg_edx, (unsigned)(reg_flags & FMASK_TEST), g_check.out.eax, g_check.out.ecx, g_check.out.edx, g_check.flags);
     }
     return true;
 }

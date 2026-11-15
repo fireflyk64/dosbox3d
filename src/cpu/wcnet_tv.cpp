@@ -49,7 +49,7 @@ Bit32u g_hitSkip = 0;
 
 // The places watched (linear), by what they are.
 enum Place { P_FRAME, P_DRAW, P_UPDATE, P_HIT, P_FIRE, P_LEVEL, P_LEVEL_END, P_LAUNCH, P_LAUNCH_END, P_GENERATE, P_GENERATE_END,
-             P_REINFORCE, P_REINFORCE_END, P_REINFORCE_CAP, P_REINFORCE_CLOCK, P_SPAN, P_COCKPIT, P_PACE, P_COUNT };
+             P_REINFORCE, P_REINFORCE_END, P_REINFORCE_CAP, P_REINFORCE_CLOCK, P_SPAN, P_COCKPIT, P_HEIGHT, P_POLY, P_PACE, P_COUNT };
 Bit32u g_campaignCall = 0;     // the campaign loop's call of the level function (its return address: + 5)
 Bit32u g_places[P_COUNT];
 
@@ -180,13 +180,17 @@ bool scan() {
     g_hitSkip = place_of(A_HIT_END) - place_of(A_HIT_APPLY) == 0x2937F - 0x29327 ? place_of(A_HIT_END) : 0;
     // the polygon filler's call of a span routine and the cockpit copy's entry, made natively where a twin is
     // (wcnet_tv_span.cpp)
-    g_places[P_SPAN] = g_places[P_COCKPIT] = g_places[P_PACE] = 0;
+    g_places[P_SPAN] = g_places[P_COCKPIT] = g_places[P_HEIGHT] = g_places[P_POLY] = g_places[P_PACE] = 0;
     g_paceStub = 0;
     g_paceLast = 0;
     g_paceResume = false;
     if (tv_span_setup(place_of(A_FIRE_FN) - kAnchors[A_FIRE_FN].image)) {
         g_places[P_SPAN] = place_of(A_SPAN_CALL);
-        g_places[P_COCKPIT] = tv_native_entry_place();
+        Bit32u entries[3] = { 0, 0, 0 };
+        tv_native_entry_places(entries);
+        g_places[P_COCKPIT] = entries[0];
+        g_places[P_HEIGHT] = entries[1];
+        g_places[P_POLY] = entries[2];
         if (g_paceFps < 0) {
             const char *e = getenv("WCNET_TV_FPS");
             g_paceFps = e && e[0] ? atof(e) : 60;
@@ -482,7 +486,7 @@ bool tv_fast_hook(Bit32u eip) {
         }
         return true;
     }
-    if (eip == g_places[P_COCKPIT]) {
+    if (eip == g_places[P_HEIGHT] || eip == g_places[P_POLY] || eip == g_places[P_COCKPIT]) {
         tv_native_entry();
         return true;
     }

@@ -82,7 +82,7 @@ void tv_span_reset();
 bool tv_span_setup(Bit32u codeDelta);
 bool tv_span_checking();
 bool tv_span_call();
-Bit32u tv_native_entry_place();
+int tv_native_entry_places(Bit32u out[3]);     // the cockpit copy, the height lookup, the polygon filler (0: none)
 bool tv_native_entry();
 bool tv_span_returned(Bit32u eip);
 Bit32u tv_span_spare();
