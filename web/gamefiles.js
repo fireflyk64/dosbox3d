@@ -596,10 +596,12 @@ export const GAMES = [
   // GAME.EXE, a 32-bit program bound with DOS/4G that the hooks find in memory by its code (src/cpu/wcnet_tv.cpp).
   // Flown together: the host's level for everybody, each pilot's ship in the others' games as the host's Craft menus
   // choose, hits and kills and the level's craft shared (docs/terminalvelocity.md).  The machine of its own setup: an
-  // S3 for its 640 x 480 mode, a Sound Blaster 16 at 220, IRQ 5.
+  // S3 for its 640 x 480 mode, a Sound Blaster 16 at 220, IRQ 5.  55,000 cycles: with its pixels drawn natively
+  // (wcnet_tv_span.cpp) and its frames capped at 60 a second, two pages on one 5-core machine keep 100% of real time
+  // at 54-55 frames a second (60,000: 97-98%, the same frames a wall second).
   { id: "tv", tag: "TV", title: "Terminal Velocity", detect: ["TV.EXE"], run: "tv", multiplayer: true, maxSeats: 4,
     build: { text: "Terminal Velocity Operating System" },
-    cycles: 60000, screen: [640, 480], noFlight: true, noRoomOptions: true, joystick: true, prepare: tvPrepare,
+    cycles: 55000, screen: [640, 480], noFlight: true, noRoomOptions: true, joystick: true, prepare: tvPrepare,
     saves: ["SAVE*.DAT", "SCORE.DAT", "VOX.INI"],
     help: "Terminal Velocity flown together: the host plays the game as it comes (New Game, an episode, a difficulty) and everybody else flies the host's level with them: a guest's game waits for the host's launch, then flies the same level at the same difficulty. Everybody sees everybody else's ship (the host picks each pilot's craft in the room: the TV-202, a craft of the game's own, or the level's own); every hit and kill counts in every game, and the level's craft are flown by the nearest pilot's machine. Whoever flies the exit ends the level for everybody (the statistics: Space for the next level). A pilot who dies can retry: the level is flown again as it stands, what was destroyed stays destroyed. The afterburner (held Alt, once you have fuel for it) shows to the others as a flame. Pick a controller \"Built in\" (above) for the game's own gamepad control.",
     keys: "<b>Terminal Velocity in flight:</b> the arrow keys steer, <kbd>A</kbd> and <kbd>Z</kbd> set the speed, <kbd>Space</kbd> fires, <kbd>1</kbd> to <kbd>7</kbd> pick a weapon, <kbd>Alt</kbd> held the afterburner (when you have picked one up), the keypad's <kbd>7</kbd> and <kbd>9</kbd> roll; <kbd>B</kbd> changes the view; <kbd>0</kbd> opens the comms prompt (<kbd>Enter</kbd> sends the line to the others' screens); <kbd>Esc</kbd> the game's menu. A controller picked \"Built in\": the stick steers, button 1 fires, button 2 the afterburner, buttons 3 and 4 the speed.",

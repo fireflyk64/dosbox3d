@@ -46,7 +46,7 @@ planet Ymir: 476 objects.  Cheats (the game's own, typed in flight): TRWARPn (to
 
 ## 2. The page
 
-`web/gamefiles.js` registers `tv` (detected by `TV.EXE`, run as `tv`, rooms of up to 4, room codes TV-, 60,000 cycles,
+`web/gamefiles.js` registers `tv` (detected by `TV.EXE`, run as `tv`, rooms of up to 4, room codes TV-, 55,000 cycles (60,000 before the pixels were drawn natively),
 the 640 x 480 picture, an S3 and a Sound Blaster 16 at 220/5/1/5, the game's own joystick offered "Built in", saved
 games `SAVE*.DAT`, `SCORE.DAT` and `VOX.INI`).  A dropped `3dtv12.zip` is the installer and the split archive:
 `expandSplitZips` puts `TV12BBS._1`, `._2`, `._3` end to end and reads the zip in them (`readZip` now takes a zip with
@@ -159,15 +159,30 @@ doubled into the 640-wide frame) a fixed few percent more; they are now made by 
   twin is used.  A twin gives the call back to the game's code, before writing anything, where it cannot be exact:
   a divide the CPU would fault on, memory outside the game's RAM (conventional memory and extended memory from 1
   MB), a span over 4096 pixels, a segment not flat, the direction flag set.
-* `WCNET_TV_SPANS`: unset or 1 the twins; 0 the game's own code; `check`: each twin runs first with its writes
-  journalled, the memory it declared (the span's row and 64 bytes either side, the depth buffer's row, the routines'
-  variables 0x68520-0x689A0, the cockpit's whole picture) is kept as the twin left it and put back, the game's code
-  runs, and at its return all of it and the registers are compared.  Measured, a dogfight at 640 x 240 and the best
-  detail: 2,819,588 calls of the nine (the cockpit's 3,800 frames among them), 0 differing in a byte or a register.
-  Every 10 s the log counts each twin's calls and pixels, the calls given back, the routines not twinned.
-* Measured natively, solo at 60,000 cycles, the page's settings (frames a game second): the level's start 21.3 ->
-  128.0, flying and fighting 39.5 -> 130.8 (the two flights part as the frame rates differ); two machines in co-op
-  (each flying, the guest on the host's wing): ~20 -> 86 (host) and 56 (guest).  What is left is spread out: the
+* `WCNET_TV_SPANS`: unset or 1 the twins; 0 the game's own code; `check`: each twin runs first, as it runs in play,
+  the memory it declared (the span's row, the depth buffer's row, the routines' variables 0x68520-0x689A0, the
+  cockpit's whole picture), widened by 64 bytes either side, is kept as the twin left it and put back as it was, the
+  game's code runs, and at its return all of it and the registers are compared.  Measured, dogfights at 640 x 240
+  and the best detail: 2,819,588 and 2,087,754 calls of the nine (thousands of the cockpit's frames among them), at
+  320 x 200 771,856: 0 differing in a byte or a register.  Every 10 s the log counts each twin's calls and pixels,
+  the calls given back, the routines not twinned.
+* In the browser these places (the span call, the cockpit copy, the cap's idle below) are made in the CPU core
+  itself, as natively (`wc_net_hook_exit` takes `tv_fast_hook` first): they wait on nothing, and going out to the main
+  loop for each of some 2,000 spans a frame cost the page 10-15% of its time.
+* The frame cap (`WCNET_TV_FPS`, default 60 frames a game second, 0 none): with its pixels native the game made 85
+  and more frames a game second, past what a screen shows, each costing the browser its drawing.  A frame top reached
+  sooner than 1/60 s after the last goes to an idle in the padding after the empty function 0x49710 (checked zero
+  with the dispatch; `jmp $; jmp <frame top>` written there), where each slice's cycles are skipped as DOSBox's own
+  HLT skips them (the interrupts still taken) until the time is up, then on to the frame top (its hooks ran before
+  the idle: a flag keeps them from running twice).  The game's frame time counts the idle, as any wait.  Each second's
+  report ends "the cap's idle N ms in M frames".
+* Measured natively, solo at 60,000 cycles, the page's settings, no cap (frames a game second): the level's start
+  21.3 -> 128.0, flying and fighting 39.5 -> 130.8 (the two flights part as the frame rates differ); two machines in
+  co-op (each flying, the guest on the host's wing): ~20 -> 86 (host) and 56 (guest).  With the cap: 60 where the
+  game can (dips to ~40 in the busiest fighting), ~450 ms of each second idle.
+* Two browser pages on this 5-core machine (scripts/web-tv.sh, the same build; percent of real time, frames a wall
+  second): the game's own drawing 100%, 21.1 and 27.8; the twins at 60,000 cycles with the cap 98% and 97%, 55.8 and
+  54.7; at 55,000 cycles 100%, 53.8 and 55.1 -- the page's setting since.  What is left is spread out: the
   filler and its edges (0x3E720, 0x3E510: ~16%), the terrain's height (0x3C7E0, ~11%: game logic, not drawing),
   the vector math, the objects' loop.
 
