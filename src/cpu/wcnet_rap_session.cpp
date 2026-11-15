@@ -26,6 +26,7 @@
 #include "wc_net.h"
 #include "net_config.h"
 #include "pic.h"
+#include "dos_inc.h"
 
 extern std::string incoming_text;   // the line the emulator draws over the picture (sdlmain.cpp)
 
@@ -419,7 +420,19 @@ void launch_think(double now) {
         const bool hostLaunching = fresh(h) && h.launch && h.game >= 0;
         const bool hostJustGone = fresh(h) && !h.launch && h.run && h.run != g_run && h.game >= 0 &&
                                   (!h.inWave || h.frame < 140);
-        if (hostLaunching || hostJustGone) {
+        // The shareware has the Bravo sector only (FILE0001.GLB); Tango is the registered game's FILE0002.GLB, the
+        // Outer Regions its FILE0003.GLB and FILE0004.GLB.  A sector this game has no files for is not taken (its
+        // load would end the program): the launch waits, the line saying why; Esc flies our own wave alone.
+        const int sector = h.game >= 0 ? h.game >> 4 : 0;
+        const bool have = sector <= 0 || (sector == 1 ? DOS_FileExists("FILE0002.GLB")
+                                                      : DOS_FileExists("FILE0003.GLB") && DOS_FileExists("FILE0004.GLB"));
+        if ((hostLaunching || hostJustGone) && !have) {
+            if (now - g_noticeAt > 4000) {
+                wclog(1, "Raptor: the host's sector %d is not in this game (the shareware): not taken", sector);
+                notice(h.callsign + " flies " + (sector == 1 ? "the Tango sector" : "the Outer Regions") +
+                       ", of the registered game: the shareware has Bravo only (Esc: fly alone)");
+            }
+        } else if (hostLaunching || hostJustGone) {
             g_go = true;
             g_run = hostLaunching ? h.launch : h.run;
             rap_set_wave(h.game >> 4, h.game & 15, h.diff, h.plrdiff);

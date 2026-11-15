@@ -191,10 +191,68 @@ keyboard, the control the page's SETUP.INI gives it.
 
 ## 7. Open
 
-* The registered game (more sectors: FILE0002-4.GLB) is untested; none at hand. Its RAP.EXE is the same source built
-  with REG_VERSION: the windows should find it if the hooked functions are unchanged. A build whose windows do not all
-  match is left alone (the log says so).
+* The registered game: done (section 8).
 * Enemies' shots aim at each machine's own pilot. A kamikaze chases its own machine's pilot.
 * No "Built in" pad choice (the game's own joystick, Control 2): a controller plays through the keyboard, which steers
   the same.
 * A pilot who chooses a sector while the other is already in a wave waits for the other's next launch.
+
+## 8. The registered game (Steam's 1994 Classic Edition)
+
+The user, 2026-11-15: "I need help figuring out how to allow players to play the full raptor call of the shadows
+together. It is not available on gog so players will have to look elsewhere. I did steam show files and zipped it up as
+steam_version_of_raptor.zip and I did raptor_steam_backup.zip through the UI where it said export files ... for now
+lets make sure the full edition also works like the demo so that players can indeed look at the demo be like 'I wanna
+buy this' and go to steam to buy it and then actually play multiplayer".
+
+**The two archives.**
+* `steam_version_of_raptor.zip` (Steam: right-click the game, Manage, Browse local files; the folder zipped) is the
+  game: `Raptor Call of the Shadows/Raptor - Call of the Shadows/` with `RAP.EXE` (474,359 bytes), `FILE0000.GLB` and
+  `FILE0001.GLB` (byte for byte the shareware's), `FILE0002.GLB` to `FILE0004.GLB` (the Tango sector and the Outer
+  Regions), `FILE_ID.DIZ`, `SETUP.EXE`, `SETUP.INI`, and Steam's own DOSBox beside it (`Dosbox/`, `RAPTOR.CONF`:
+  left out by the page).  This is what the page takes.
+* `raptor_steam_backup.zip` (Steam's Backup game files) is no use: `sku.sis`, a `.csm` index and a `.csd` of
+  compressed chunks named by their hashes; the files' names and which chunks make them are in a manifest Steam
+  fetches, not in the backup.
+
+**Its program** is another build of 1.2: functions from `ENEMY_Think` on up to 0x24 lower, the data 0x10 higher.
+`scripts/rapsig.py SHAREWARE/RAP.EXE REGISTERED/RAP.EXE` now tries every window against the second program too.  23
+of the 25 were in it as they were; `frame_top` and `game_end` were not, and not because the code differs: their
+windows started inside an instruction, so the bytes were read wrongly from there and a call's offset in each was kept
+as code.  Both now start at an instruction (the generator refuses a window whose reading does not come to its place),
+and all 25 match both programs once; the hooks, the session and the drawing are untouched.
+
+**It will not start without `FILE_ID.DIZ`** ("Critical file FILE_ID.DIZ missing or modified"): the page keeps it
+(and looks for it anywhere in the archive, below).
+
+**A shareware pilot and the other sectors.**  The guest takes the host's sector before its map loads; a sector whose
+files this game lacks (Tango: `FILE0002.GLB`; the Outer Regions: `FILE0003.GLB`, `FILE0004.GLB`; asked of DOS in the
+game's directory) is not taken: the launch goes on waiting with "HOST flies the Tango sector, of the registered game:
+the shareware has Bravo only (Esc: fly alone)".  Bravo is flown together by both.
+
+**The page.**  `rapPrepare` now reads a `SETUP.INI` that came with the game: Steam's has the music on General MIDI
+(`CardType=8`, port 330: the browser has no synthesizer), so `[Music]` and `[SoundFX]` are made the machine's Sound
+Blaster (220, IRQ 7, DMA 1), the keys and the rest kept.  The words under "Free to play now" say how to get the
+folder out of Steam.
+
+**The loose finder** (the user, the same day: "very loose on finding the .EXE and supporting files so that if users
+compress one level deeper or shallower or with different subfolder names or from their original DOS backups it still
+works ... a find/search sort of situation to ground ourselves in whatever zip is passed").  `identifyGame` already
+found the program at any depth, any case, its folder the game's.  Now (`web/gamefiles.js`):
+* `gatherFiles`: each file the game wants by name (the registry's `gather`: for Raptor the `FILEnnnn.GLB`, `FILE_ID.DIZ`,
+  `SETUP.EXE`/`.INI`, the saved pilots; for Terminal Velocity `GAME.EXE`, the `.POD`, `.VOX`, the drivers, the settings,
+  and `*.TVI` into `TVI\`) that is not where the game looks is searched for through the whole archive and put there:
+  of several, the one under the program's folder, else the one sharing most of its path, else the shallowest.  The
+  page's log says what was moved.
+* `expandInnerZips`: an archive with no game at its own level but a zip inside that holds a known program is opened
+  one level further.
+* Terminal Velocity's `CDROM.INI` is written when the cinematics are there without it.
+* `node scripts/web-gather.mjs STEAM_RAPTOR.zip TV_FOLDER`: nine layouts (at the top, four folders deep, lower case, the
+  program in one folder and its files in three others, a file twice, a zip in a zip; TV a level deeper and scattered):
+  GATHER OK.
+
+**Measured** (native, `RAPDIR=~/dev/rap-reg`): two registered machines, Bravo and (`SECTOR=tango`) Tango: "everybody at
+the launch", "the wave begins together", damage told both ways, each ship on the other's screen (both screens
+captured at the same moment with the ships flown apart: two ships on each, the other's with the pale-blue flames).
+A registered host and a shareware guest: Bravo together; Tango: the guest held with the line above while the host
+flies.

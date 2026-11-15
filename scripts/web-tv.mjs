@@ -114,6 +114,14 @@ console.log(`${stamp()} host's last report: ${hs.slice(0, 260)}`);
 console.log(`${stamp()} guest's last report: ${gs.slice(0, 260)}`);
 check(/drawn [1-9]/.test(hs) && /drawn [1-9]/.test(gs), "both pages drew the other's ship");
 check(/hits sent [1-9]/.test(hs) || /hits sent [1-9]/.test(gs), "hits shared");
+// Both games still flying at the end: each page's last second-by-second line says so.  (A game that ended -- the
+// shareware's loader on a model its archives lack, "Unable to open model", 2026-11-15 -- had passed every check
+// above, all of them counts made before it ended.)
+for (const p of [host, guest]) {
+  const l = all(p, /Terminal Velocity: [0-9.]+s: \d+ frames/);
+  const last = l.length ? l[l.length - 1] : "";
+  check(/ frames, flying/.test(last), `${p.who}: still flying at the end (${last.slice(0, 70)})`);
+}
 // how fast each page ran: emulated seconds against the wall clock while flying, and the game's frames a second
 for (const p of [host, guest]) {
   const f = p.frames.slice(5);

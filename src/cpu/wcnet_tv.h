@@ -67,7 +67,7 @@ typedef void (*TvCallDone)(int tag, Bit32u eax);
 void tv_queue_call(int where, Bit32u fn, const std::vector<Bit32u> &args, const std::vector<Bit32u> &scratch, TvCallDone done, int tag);
 bool tv_in_call();              // one of ours is under way (its effects are not the player's)
 enum TvFn { TV_FN_FIRE = 0, TV_FN_DRAW_MODEL = 1, TV_FN_HIT = 2, TV_FN_LOAD_MODEL = 3, TV_FN_DESTROY = 4, TV_FN_POD_LOOKUP = 5, TV_FN_MESSAGE = 6,
-            TV_FN_TUNNEL_ENTER = 7 };
+            TV_FN_TUNNEL_ENTER = 7, TV_FN_POD_LENGTH = 8 };
 Bit32u tv_fn(TvFn f);           // the function's linear address (0: none)
 Bit32u tv_data(int dataId);     // a tvsig::D_* address (0: none)
 

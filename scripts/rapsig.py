@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Raptor: Call of the Shadows: the hooks' signatures, made from the shareware RAP.EXE 1.2 (docs/raptor.md).
 
-    scripts/rapsig.py RAP.EXE > src/cpu/wcnet_rap_sig.h
+    scripts/rapsig.py SHAREWARE/RAP.EXE [REGISTERED/RAP.EXE] > src/cpu/wcnet_rap_sig.h
+
+The registered game's RAP.EXE (the 1994 Classic Edition on Steam: 474,359 bytes, another build of 1.2, its functions
+up to 0x24 lower, its data 0x10 higher) given too is tried against every window: each must be in it once, each data
+operand relocated.
 
 As scripts/tvsig.py does for Terminal Velocity (its window() and matches() are used here): each ANCHOR is a window
 of the code object's bytes about one place (the bytes the loader relocates and the offsets of calls out of it
@@ -20,13 +24,13 @@ ANCHORS = [
     ('game_entry', 0x11128, 0, 0x50, "Do_Game (): a wave flown, its loop to its end; srand (1024 * game_wave [cur_game]) at its start"),
     ('game_init', 0x111BF, 0, 0x30, "Do_Game: playerx, playery to their start (144, 160)"),
     ('buffers', 0x11226, 0, 0x6A, "Do_Game: displaybuffer cleared, local_cnt = FRAME_COUNT, start_score = plr.score"),
-    ('frame_top', 0x112A4, -0x1C, 0x40, "Do_Game's loop: its top (SHADOW_Clear, then IPT_MovePlayer)"),
+    ('frame_top', 0x112A4, -0x19, 0x3D, "Do_Game's loop: its top (SHADOW_Clear, then IPT_MovePlayer)"),
     ('think', 0x11606, 0, 0x50, "Do_Game's loop: startendwave counted down (end_wave at 0), gl_cnt++, the Think () calls"),
     ('draw_player', 0x11651, 0, 0x30, "Do_Game's loop: draw_player, the ship's shadow from curship [playerpic + g_flash]"),
     ('draw_flames', 0x116B9, 0, 0x40, "Do_Game's loop: the ship's engine flames at player_cx, player_cy"),
     ('draw_point', 0x11775, -0x34, 0x40, "Do_Game's loop: ANIMS_DisplayHigh () called, the ship drawn by then: the others' ships drawn here"),
     ('wait', 0x11839, -0x12, 0x2A, "Do_Game's loop: the frame's wait (FRAME_COUNT - local_cnt < 3: 140 Hz / 3) done"),
-    ('game_end', 0x11ABB, -0x10, 0x20, "Do_Game's loop left: the wave over (its end, an abort, a death)"),
+    ('game_end', 0x11ABB, -0x0F, 0x1F, "Do_Game's loop left: the wave over (its end, an abort, a death)"),
     ('enemy_spawn', 0x1845C, -0x52, 0x66, "ENEMY_Think: the wave's next sprites at the scroll's row: ENEMY_Add (cur_enemy) called"),
     ('enemy_list', 0x1849A, 0, 0x30, "ENEMY_Think: the live enemies (first_enemy.next .. &last_enemy)"),
     ('kill', 0x18F81, 0, 0x30, "ENEMY_Think: an enemy's hits gone (<= 0): plr.score += curlib->money, its explosion, its bonus"),
@@ -94,7 +98,15 @@ def main():
     o = le.objs[0]
     lo, hi = o['base'], o['base'] + o['vsize']
     rows, ok = [], True
+    import capstone
+    md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
     for name, place, start, length, what in ANCHORS:
+        # (a window must start at an instruction: one that starts inside one is read wrongly, and a call's offset
+        # in it kept -- found so: two windows the registered game did not match.  Read from its start, the
+        # instructions must come to the place.)
+        if start < 0 and place not in [i.address for i in md.disasm(bytes(img[place + start:place + 16]), place + start)]:
+            sys.stderr.write('anchor %s: its window does not start at an instruction\n' % name)
+            ok = False
         data, mask = window(le, img, place, start, length)
         found, kstart, klen = matches(img, lo, hi, data, mask)
         if found != [place + start]:
@@ -110,6 +122,22 @@ def main():
         if not (0 <= k and k + 4 <= len(a[3])) or any(a[4][k:k + 4]):
             sys.stderr.write('data %s: offset %d of %s is not a relocated operand\n' % (name, off, anchor))
             ok = False
+    # the other programs given (the registered game's RAP.EXE): every window in each once, every operand relocated
+    for path in sys.argv[2:]:
+        le2 = tvexe.LE(path)
+        img2 = le2.load()
+        o2 = le2.objs[0]
+        for r in rows:
+            found, _, _ = matches(img2, o2['base'], o2['base'] + o2['vsize'], r[3], r[4])
+            if len(found) != 1:
+                sys.stderr.write('%s: anchor %s found %d times\n' % (path, r[0], len(found)))
+                ok = False
+                continue
+            for dname, anchor, off, what in DATA:
+                at = found[0] - r[2] + off
+                if anchor == r[0] and not all(at + k in le2.fixed for k in range(4)):
+                    sys.stderr.write('%s: data %s is not a relocated operand\n' % (path, dname))
+                    ok = False
     if not ok:
         sys.exit(1)
     out = []

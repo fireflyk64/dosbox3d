@@ -784,11 +784,24 @@ Bit32u tv_fn(TvFn f) {
     case TV_FN_MESSAGE: return place_of(A_MESSAGE_FN);
     case TV_FN_TUNNEL_ENTER: return place_of(A_TUNNEL_ENTER_FN);
     case TV_FN_POD_LOOKUP: {
-        // (the model loader's first call: the archives' lookup, by its near call's offset)
+        // (the model loader's first call: a file's length (directory, name), by its near call's offset)
         const Bit32u call = place_of(A_LOAD_MODEL_FN) + (0x402F1 - 0x402E0);
         Bit8u op = 0;
         rd8(call, &op);
         return op == 0xE8 ? call + 5 + tv_r32(call + 1) : 0;
+    }
+    case TV_FN_POD_LENGTH: {
+        // The archives' own answer for a path ("models\\name"): its length, -1 when no archive has it.  The length
+        // function above (0x2AF30) makes the path, asks this (its call at +0x51: "mov eax, esp; push eax; call;
+        // add esp, 4; cmp eax, -1") and, at -1, asks DOS for the file's size without looking at whether DOS found
+        // it: for a file nowhere it returns what was on its stack, mostly not 0, and the loader then ends the
+        // program ("Unable to open model").  So a model's presence is asked here, never there.
+        const Bit32u fn = tv_fn(TV_FN_POD_LOOKUP);
+        if (!fn) return 0;
+        static const Bit8u before[4] = { 0x89, 0xE0, 0x50, 0xE8 }, after[6] = { 0x83, 0xC4, 0x04, 0x83, 0xF8, 0xFF };
+        for (int i = 0; i < 4; i++) { Bit8u b = 0; if (!rd8(fn + 0x4E + (Bit32u)i, &b) || b != before[i]) return 0; }
+        for (int i = 0; i < 6; i++) { Bit8u b = 0; if (!rd8(fn + 0x56 + (Bit32u)i, &b) || b != after[i]) return 0; }
+        return fn + 0x56 + tv_r32(fn + 0x52);
     }
     }
     return 0;

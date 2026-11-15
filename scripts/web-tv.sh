@@ -34,7 +34,9 @@ ROOM=TV-$((1000 + RANDOM % 9000))
 route="38:enter,42:enter,46:enter,50:enter,52:a,52.3:c,52.6:e,53:enter,55:a,55.3:c,55.6:e,56:enter,61:enter"
 # (the briefing's slides at the page's best detail take longer: Enter through 148 s, flying from 155 s)
 for t in $(seq 64 4 148); do route="$route,$t:enter"; done
-hs="$route,155:!tvgod=1,156:!tvfly=obj:408,156.5:!tvfire=1"
-gs="$route,155:!tvgod=1,156:!tvfly=partner:3:1:8,170:!tvfly=obj:408,170.5:!tvfire=1"
+# (HOST_FLY= / GUEST_FLY=: each pilot's flying, in the default's place: "215:!tvfly=partner:0:1:8" a guest kept behind
+# the host for a picture of it)
+hs="$route,${HOST_FLY:-155:!tvgod=1,156:!tvfly=obj:408,156.5:!tvfire=1}"
+gs="$route,${GUEST_FLY:-155:!tvgod=1,156:!tvfly=partner:3:1:8,170:!tvfly=obj:408,170.5:!tvfire=1}"
 PLAYWRIGHT_DIR="$PW" SHOT_DIR=$OUT timeout -s KILL $((DUR + 300)) node "$ROOT/scripts/web-tv.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" \
     $ROOM "$ZIP" "$hs" "$gs" $DUR 2>&1 | tee $OUT/run.log

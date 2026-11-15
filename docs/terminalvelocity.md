@@ -451,3 +451,14 @@ draws the level's own craft, as before.
 **The page**: the `tv` entry takes the installer as it takes the zip (detected by `TV.EXE`); `keep` holds `CDROM.INI`
 and `VOX.INI` through the installer's junk filter (an `.ini` is otherwise GOG's own).  `ZIP=<the installer>
 scripts/web-tv.sh` flies two pages from it; `GUEST_ZIP=` gives the guest another (the shareware).
+
+**A model that is not there (found 2026-11-15, a crash).**  The check before a craft's model is loaded called the
+loader's first function, the file's length (0x2AF30: directory, name).  That function asks the archives (0x499B0:
+the path's length, -1 when no archive has it) and at -1 asks DOS for the file's size *without looking at whether DOS
+found it*: for a file nowhere it returns what was on its stack, mostly not 0.  So a shareware guest of a registered
+host flying a registered craft (`dogg.bin`) "found" the model, loaded it, and its game ended: "Unable to open model:
+dogg.bin".  The page test had printed TV PAGE OK over it (every check a count made before the game ended; the picture
+showed it).  Now the archives are asked themselves (`TV_FN_POD_LENGTH`: the call inside the length function, its
+shape checked), -1 or 0 a model not there ("drawn as the level's own craft"); `scripts/web-tv.mjs` fails a run whose
+games are not both flying at its end.  The same flaw was there for the shareware alone with a craft its archives
+lack.

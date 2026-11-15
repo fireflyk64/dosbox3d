@@ -824,10 +824,11 @@ std::vector<Bit32u> name_scratch(const std::string &name) {
     return scratch;
 }
 
-// The archives' answer for a model: its size (0: not there, never to be loaded: the loader would end the program).
+// The archives' answer for a model: its size (-1, or 0: not there, never to be loaded: the loader would end the
+// program).
 void model_looked(int look, Bit32u eax) {
     if (!g_net || look < 0 || look > kLookCount) return;
-    if (!eax) {
+    if (!eax || eax == 0xFFFFFFFFu) {
         g_net->modelState[look] = MODEL_MISSING;
         wclog(1, "Terminal Velocity: the model %s is not in this game's archives: %s", model_name(look),
               look == kLookCount ? "no flame" : "drawn as the level's own craft");
@@ -846,13 +847,12 @@ Bit32u model_for(int look) {
     int &st = g_net->modelState[look];
     if (st == MODEL_READY) return g_net->models[look];
     if (st == MODEL_UNKNOWN) {
-        const Bit32u lookup = tv_fn(TV_FN_POD_LOOKUP);
+        // (asked of the archives themselves, the path as the loader makes it: see TV_FN_POD_LENGTH)
+        const Bit32u lookup = tv_fn(TV_FN_POD_LENGTH);
         if (lookup) {
             st = MODEL_LOOKING;
-            std::vector<Bit32u> args;
-            args.push_back(tv_data(tvsig::D_POD_TABLE));
-            args.push_back(TV_SCRATCH);
-            tv_queue_call(TV_AT_FRAME, lookup, args, name_scratch(model_name(look)), model_looked, look);
+            tv_queue_call(TV_AT_FRAME, lookup, std::vector<Bit32u>(1, TV_SCRATCH), name_scratch(std::string("models\\") + model_name(look)),
+                          model_looked, look);
         } else {
             st = MODEL_MISSING;     // (no lookup known: never a blind load)
         }

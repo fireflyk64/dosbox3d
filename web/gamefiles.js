@@ -509,6 +509,12 @@ function tvPrepare(FS, root, opts = {}) {
     if (sb) { FS.writeFile(`${root}/SOUNDRV.COM`, sb); said.push("the Sound Blaster 16's driver as SOUNDRV.COM"); }
   }
   if (!has("SETUP.CFG")) { FS.writeFile(`${root}/SETUP.CFG`, new TextEncoder().encode(TV_SETUP_CFG)); said.push("SETUP.CFG"); }
+  // (the registered game's cinematics without the line that says where they are: an archive that lost CDROM.INI)
+  if (has("CDROM.POD") && !has("CDROM.INI")) {
+    let tvi = false;
+    try { tvi = FS.readdir(`${root}/TVI`).some((n) => /\.TVI$/i.test(n)); } catch (e) { /* no cinematics */ }
+    if (tvi) { FS.writeFile(`${root}/CDROM.INI`, new TextEncoder().encode(".\\TVI")); said.push("CDROM.INI (the cinematics in TVI)"); }
+  }
   const vox = read("VOX.INI");
   const lines = new TextDecoder().decode(vox || new TextEncoder().encode(TV_VOX_INI)).split(/\r?\n/);
   const set = (head, fn) => {
@@ -540,9 +546,44 @@ function tvPrepare(FS, root, opts = {}) {
 const RAP_SETUP_INI = ["[Setup]", "Detail=1", "Control=0", "[Music]", "CardType=5", "BasePort=220", "Irq=7", "Dma=1",
   "Volume=127", "[SoundFX]", "CardType=5", "BasePort=220", "Irq=7", "Dma=1", "Channels=4", "Volume=127", ""].join("\r\n");
 function rapPrepare(FS, root) {
-  try { FS.readFile(`${root}/SETUP.INI`); return ""; } catch (e) { /* none: made */ }
-  FS.writeFile(`${root}/SETUP.INI`, new TextEncoder().encode(RAP_SETUP_INI));
-  return "Raptor's settings: SETUP.INI (the Sound Blaster for the music and the effects, the keyboard and the mouse)";
+  let ini = null;
+  try { ini = new TextDecoder().decode(FS.readFile(`${root}/SETUP.INI`)); } catch (e) { /* none: made */ }
+  if (ini === null) {
+    FS.writeFile(`${root}/SETUP.INI`, new TextEncoder().encode(RAP_SETUP_INI));
+    return "Raptor's settings: SETUP.INI (the Sound Blaster for the music and the effects, the keyboard and the mouse)";
+  }
+  // A SETUP.INI that came with the game (Steam's 1994 Classic Edition: the music on General MIDI at port 330, which
+  // the browser has no synthesizer for; the effects on the Sound Blaster): its [Music] and [SoundFX] cards made the
+  // machine's Sound Blaster (220, IRQ 7, DMA 1), everything else (the keys, the volumes, the detail) kept.
+  const lines = ini.split(/\r?\n/);
+  const section = (name) => {
+    const a = lines.findIndex((l) => l.trim().toLowerCase() === `[${name.toLowerCase()}]`);
+    if (a < 0) return null;
+    let b = lines.findIndex((l, i) => i > a && /^\s*\[/.test(l));
+    if (b < 0) b = lines.length;
+    return [a, b];
+  };
+  const value = (name, key) => {
+    const r = section(name);
+    if (!r) return null;
+    for (let i = r[0] + 1; i < r[1]; i++) { const m = /^\s*(\w+)\s*=\s*(.*?)\s*$/.exec(lines[i]); if (m && m[1].toLowerCase() === key.toLowerCase()) return m[2]; }
+    return null;
+  };
+  const put = (name, key, v) => {
+    let r = section(name);
+    if (!r) { lines.push(`[${name}]`); r = [lines.length - 1, lines.length]; }
+    for (let i = r[0] + 1; i < r[1]; i++) { if (new RegExp(`^\\s*${key}\\s*=`, "i").test(lines[i])) { lines[i] = `${key}=${v}`; return; } }
+    lines.splice(r[0] + 1, 0, `${key}=${v}`);
+  };
+  let said = "";
+  for (const name of ["Music", "SoundFX"]) {
+    if (value(name, "CardType") === "5" && value(name, "BasePort") === "220" && value(name, "Irq") === "7" && value(name, "Dma") === "1") continue;
+    put(name, "CardType", "5"); put(name, "BasePort", "220"); put(name, "Irq", "7"); put(name, "Dma", "1");
+    said += (said ? " and " : "") + (name === "Music" ? "the music" : "the effects");
+  }
+  if (!said) return "";
+  FS.writeFile(`${root}/SETUP.INI`, new TextEncoder().encode(lines.join("\r\n")));
+  return `Raptor's settings: ${said} on the Sound Blaster (the SETUP.INI that came with the game had another card)`;
 }
 
 export const GAMES = [
@@ -679,12 +720,19 @@ export const GAMES = [
     build: { text: "Terminal Velocity Operating System" },
     cycles: 55000, screen: [640, 480], noFlight: true, noRoomOptions: true, joystick: true, prepare: tvPrepare,
     keep: ["CDROM.INI", "VOX.INI"],
+    // (what the game reads, wherever the archive has it: the program proper, the archives, the episodes' lists, the
+    // sound drivers, the settings; the registered game's cinematics belong in TVI\)
+    gather: [{ name: /^(GAME|SETUP|COMMIT)\.EXE$/i }, { name: /\.(POD|VOX|COM|ADV)$/i }, { name: /^(SETUP\.CFG|VOX\.INI|CDROM\.INI)$/i },
+             { name: /^SAVE.*\.DAT$|^SCORE\.DAT$/i }, { name: /\.TVI$/i, to: "TVI/" }],
     saves: ["SAVE*.DAT", "SCORE.DAT", "VOX.INI"],
     help: "Terminal Velocity flown together: the host plays the game as it comes (New Game, an episode, a difficulty) and everybody else flies the host's level with them: a guest's game waits for the host's launch, then flies the same level at the same difficulty. The shareware (episode one) and the registered game (all three episodes: drop GOG's installer or a zip of the game's folder) fly together in episode one; a shareware pilot waits out a level of the other episodes. Everybody sees everybody else's ship (the host picks each pilot's craft in the room: the TV-202, a craft of the game's own, or the level's own); every hit and kill counts in every game, and the level's craft are flown by the nearest pilot's machine. Whoever flies the exit ends the level for everybody (the statistics: Space for the next level). A pilot who dies can retry: the level is flown again as it stands, what was destroyed stays destroyed. The afterburner (held Alt, once you have fuel for it) shows to the others as a flame. Pick a controller \"Built in\" (above) for the game's own gamepad control.",
     keys: "<b>Terminal Velocity in flight:</b> the arrow keys steer, <kbd>A</kbd> and <kbd>Z</kbd> set the speed, <kbd>Space</kbd> fires, <kbd>1</kbd> to <kbd>7</kbd> pick a weapon, <kbd>Alt</kbd> held the afterburner (when you have picked one up), the keypad's <kbd>7</kbd> and <kbd>9</kbd> roll; <kbd>B</kbd> changes the view; <kbd>0</kbd> opens the comms prompt (<kbd>Enter</kbd> sends the line to the others' screens); <kbd>Esc</kbd> the game's menu. A controller picked \"Built in\": the stick steers, button 1 fires, button 2 the afterburner, buttons 3 and 4 the speed.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=32\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=5\ndma=1\nhdma=5\n" },
   // Raptor: Call of the Shadows (Cygnus Studios / Apogee, 1994): the shareware zip as Apogee released it (1rap12.zip:
-  // its installer and RAPSW12.SHR, unpacked by expandSplitZips) or the game's installed directory.  RAP.EXE is a
+  // its installer and RAPSW12.SHR, unpacked by expandSplitZips) or the game's installed directory.  The registered game
+  // (Steam's 1994 Classic Edition: its folder zipped, "Browse local files"; a Steam *backup* is chunks without file
+  // names, no use) is another build of 1.2 that the same signatures find (scripts/rapsig.py checks both programs):
+  // three sectors, FILE0002 to FILE0004.GLB; it will not start without its FILE_ID.DIZ.  RAP.EXE is a
   // 32-bit program bound with DOS/4GW that the hooks find in memory by its code (src/cpu/wcnet_rap.cpp).  Flown
   // together: the host's wave for both, launched together; each pilot's own ship, weapons, money and shop; the
   // enemies' and the ground's damage shared, the money the killer's, each game's bonuses its own pilot's; a pilot shot
@@ -692,8 +740,13 @@ export const GAMES = [
   { id: "rap", tag: "RAP", title: "Raptor: Call of the Shadows", detect: ["RAP.EXE"], run: "rap", multiplayer: true, maxSeats: 2,
     build: { text: "ENEMY_Think() - Invalid ANIMTYPE1" },
     cycles: 40000, screen: [320, 200], noFlight: true, noRoomOptions: true, prepare: rapPrepare,
+    // (the game's archives -- FILE0000 and FILE0001 the shareware's, FILE0002 to FILE0004 the registered game's other
+    // sectors -- FILE_ID.DIZ, which the registered game will not start without ("Critical file FILE_ID.DIZ missing
+    // or modified"), the setup and the saved pilots, wherever the archive has them)
+    keep: ["SETUP.INI"],
+    gather: [{ name: /^FILE\d{4}\.GLB$/i }, { name: /^FILE_ID\.DIZ$/i }, { name: /^SETUP\.(EXE|INI)$/i }, { name: /^CHAR\d*\.FIL$/i }],
     saves: ["CHAR*.FIL", "SETUP.INI"],
-    help: "Raptor flown together: each pilot plays a game of their own (a new pilot or a saved one, their own ship, weapons, money and shop), and the waves are flown together: when a pilot chooses a sector at the ship computer (the hangar's Fly Mission), their game waits there for the other, then both fly the host's wave. Both ships are on both screens (the other pilot's with blue engine flames, yours with the game's own, each casting its shadow); the enemies are the same, and what either pilot shoots down is shot down in both games: the money goes to whoever did it, and each pilot picks up their own bonuses. If either pilot is shot down, the mission is over for both.",
+    help: "Raptor flown together: each pilot plays a game of their own (a new pilot or a saved one, their own ship, weapons, money and shop), and the waves are flown together: when a pilot chooses a sector at the ship computer (the hangar's Fly Mission), their game waits there for the other, then both fly the host's wave. Both ships are on both screens (the other pilot's with blue engine flames, yours with the game's own, each casting its shadow); the enemies are the same, and what either pilot shoots down is shot down in both games: the money goes to whoever did it, and each pilot picks up their own bonuses. If either pilot is shot down, the mission is over for both. The shareware (the Bravo sector) and the registered game (all three sectors: a zip of the game's folder, from Steam's Browse local files) fly Bravo together; a shareware pilot cannot follow into the other two (Esc there flies their own wave alone).",
     keys: "<b>Raptor:</b> the arrow keys fly the ship (the mouse is for its menus), <kbd>Ctrl</kbd> fires, <kbd>Alt</kbd> fires the special weapon, <kbd>Space</kbd> picks the next special weapon, the right <kbd>Shift</kbd> the mega bomb; <kbd>Esc</kbd> aborts the mission (the other pilot flies on alone), <kbd>P</kbd> pauses. A controller picked above: the left stick or the D-pad flies the ship, A fires, B the special weapon, X the next special, Y the mega bomb, Start pauses, Back is Esc; in the menus the stick moves the pointer and A clicks (the D-pad and Start, Enter, work them as the keys do).",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
   // The TIE Fighter demo (LucasArts, early 1994: one mission, flown in a build from before the game's release, given
@@ -910,7 +963,68 @@ export function identifyGame(files) {
   const gameFiles = normalized
     .filter((f) => f.path.startsWith(prefix) && !isJunk(f.path.slice(prefix.length)))
     .map((f) => ({ path: f.path.slice(prefix.length), data: f.data }));
-  return { game: best.game, root: best.root, files: gameFiles };
+  const gathered = gatherFiles(best.game, best.root, normalized, gameFiles);
+  return { game: best.game, root: best.root, files: gameFiles, gathered };
+}
+
+// A game whose files are not all beside its program (the user, 2026-11-15: "very loose on finding the .EXE and
+// supporting files so that if users compress one level deeper or shallower or with different subfolder names or from
+// their original DOS backups it still works ... a find/search sort of situation to ground ourselves in whatever zip
+// is passed").  The program is already found wherever it is, its folder the game's; here every file the game wants
+// by name (the registry's `gather`: a pattern for the name, and the game's folder it belongs in, "" its top) that is
+// not where the game looks is searched for through the whole archive, any folder, any case, and put there: of
+// several, the one nearest the program (under its folder first, then the longest shared path, then the shallowest).
+// Returns what was moved, for the page's log.
+function gatherFiles(game, root, all, gameFiles) {
+  const rules = game.gather || [];
+  if (!rules.length) return [];
+  const have = new Set(gameFiles.map((f) => f.path.toUpperCase()));
+  const rootParts = root ? root.split("/") : [];
+  const near = (path) => {
+    const parts = dir(path) ? dir(path).split("/") : [];
+    let shared = 0;
+    while (shared < parts.length && shared < rootParts.length && parts[shared].toUpperCase() === rootParts[shared].toUpperCase()) shared++;
+    // (under the program's folder: best; else the more of the path shared the better, the shallower the better)
+    return [shared === rootParts.length ? 0 : 1, -shared, parts.length];
+  };
+  const better = (a, b) => { const x = near(a), y = near(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i]; return false; };
+  const picked = new Map();     // (where it belongs, upper case) -> the file
+  for (const f of all) {
+    const parts = f.path.split("/");
+    if (parts.slice(0, -1).some((d) => JUNK_DIRS.has(d.toLowerCase()))) continue;
+    const name = base(f.path);
+    const rule = rules.find((r) => r.name.test(name));
+    if (!rule) continue;
+    const to = (rule.to || "") + name;
+    if (have.has(to.toUpperCase())) continue;
+    const was = picked.get(to.toUpperCase());
+    if (!was || better(f.path, was.from)) picked.set(to.toUpperCase(), { to, from: f.path, data: f.data });
+  }
+  const out = [];
+  for (const g of picked.values()) {
+    gameFiles.push({ path: g.to, data: g.data });
+    out.push(`${g.from} -> ${g.to}`);
+  }
+  return out;
+}
+
+// Zips inside the dropped archive (a backup of a backup, a download wrapped once more): each that reads as a zip and
+// holds a program the registry knows is replaced by its files, in a folder of its name.  For an archive no game was
+// found in; the shareware's own inner zips (other games' adverts) hold no such program and stay as they are.
+export async function expandInnerZips(files) {
+  const known = new Set(GAMES.flatMap((g) => g.detect));
+  let out = files, n = 0;
+  for (const f of files) {
+    if (ext(f.path) !== "zip" || n >= 8) continue;
+    let inside;
+    try { inside = await readZip(f.data); } catch (e) { continue; }
+    inside = await expandSplitZips(inside);
+    if (!inside.some((g) => known.has(base(g.path.replace(/\\/g, "/")).toUpperCase()))) continue;
+    const at = f.path.replace(/\\/g, "/").replace(/\.zip$/i, "") + "/";
+    out = out.filter((g) => g !== f).concat(inside.map((g) => ({ path: at + g.path.replace(/\\/g, "/"), data: g.data })));
+    n++;
+  }
+  return out;
 }
 
 export function installFiles(FS, root, files) {

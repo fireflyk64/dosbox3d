@@ -16,7 +16,7 @@ import { initControls, KEY, stepped } from "./gamepad.js";
 import { initTouch } from "./touch.js";
 import { initVoice } from "./voice.js";
 import { loadSo3 } from "./so3.js";
-import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles, expandSplitZips,
+import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles, expandSplitZips, expandInnerZips,
          saveGame, loadGames, forgetGame, totalSize, gameById, gameByTag, programsIn, knownBuild, legacyOf, legacyAdvice, GAMES } from "./gamefiles.js";
 import { newRoomCode, retagRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS, CALLSIGNS, pickCallsign, givesWay, sameName } from "./chatfilter.js";
 import { initHall, OTHER_SERVER, serverDown } from "./hall.js";
@@ -396,7 +396,15 @@ const gameTag = () => (gameInfo() && gameInfo().tag) || "";
 async function useFiles(files, label, { persist = true } = {}) {
   // (a game in pieces, Terminal Velocity's shareware: its split archive unpacked)
   files = await expandSplitZips(files);
-  const id = identifyGame(files);
+  let id = identifyGame(files);
+  if (!id.game) {
+    // (no game at the archive's own level: a zip inside it that holds one, a backup wrapped once more)
+    const more = await expandInnerZips(files);
+    if (more !== files) { files = more; id = identifyGame(files); }
+  }
+  if (id.game && id.gathered && id.gathered.length) {
+    log(`${id.game.title}: ${id.gathered.length} of its files found elsewhere in ${label} and put with the program: ${id.gathered.slice(0, 12).join(", ")}${id.gathered.length > 12 ? ", ..." : ""}`);
+  }
   if (!id.game) {
     $("pickerLabel").hidden = false;
     const sel = $("exePicker");
