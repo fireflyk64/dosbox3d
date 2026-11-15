@@ -52,10 +52,56 @@ def read(path, record=0):
     return recs[record] if record < len(recs) else []
 
 
+def obj_parts(path):
+    """A Wavefront .obj as one mesh, its maps its .mtl's (map_Kd the diffuse, map_Ks the specular): for a model Vega
+    Strike made but never converted to .bfxm (the Anaxander: its Maya source in Assets-Masters, tools/dae2obj.py).
+    A corner's position and normal make its vertex; polygons are fanned into triangles; texture v is flipped to the
+    .bfxm's (t down the image)."""
+    pos, nrm, uv, faces, maps, here = [], [], [], [], {}, os.path.dirname(path)
+    for line in open(path, encoding='latin-1'):
+        f = line.split()
+        if not f:
+            continue
+        if f[0] == 'v':
+            pos.append([float(x) for x in f[1:4]])
+        elif f[0] == 'vn':
+            nrm.append([float(x) for x in f[1:4]])
+        elif f[0] == 'vt':
+            uv.append([float(f[1]), 1.0 - float(f[2])])
+        elif f[0] == 'f':
+            faces.append([[int(x) - 1 if x else -1 for x in (c.split('/') + ['', ''])[:3]] for c in f[1:]])
+        elif f[0] == 'mtllib':
+            for ml in open(os.path.join(here, f[1]), encoding='latin-1'):
+                g = ml.split()
+                if len(g) == 2 and g[0] in ('map_Kd', 'map_Ks'):
+                    maps[0 if g[0] == 'map_Kd' else 1] = [(2, g[1])]
+    m = Mesh()
+    verts, index, tri_index, tri_uv = [], {}, [], []
+    for face in faces:
+        ids = []
+        for v, t, n in face:
+            if (v, n) not in index:
+                index[(v, n)] = len(verts)
+                verts.append((v, n))
+            ids.append((index[(v, n)], uv[t] if t >= 0 else [0.0, 0.0]))
+        for k in range(1, len(ids) - 1):
+            tri_index.append([ids[0][0], ids[k][0], ids[k + 1][0]])
+            tri_uv.append([ids[0][1], ids[k][1], ids[k + 1][1]])
+    m.positions = np.array([pos[v] for v, _n in verts], dtype=np.float64)
+    m.normals = np.array([nrm[n] if n >= 0 else [0.0, 1.0, 0.0] for _v, n in verts], dtype=np.float64)
+    m.tri_index = np.array(tri_index, dtype=np.int64)
+    m.tri_uv = np.array(tri_uv, dtype=np.float64)
+    m.textures = maps
+    m.unit_dir = here
+    return [m]
+
+
 def parts(path):
     """The finest mesh of every record that has a real texture: the ship's whole hull.
 
-    A record whose texture is an animation (`.ani`, type 1) is a running light."""
+    A record whose texture is an animation (`.ani`, type 1) is a running light.  (An .obj: obj_parts.)"""
+    if path.endswith('.obj'):
+        return obj_parts(path)
     out = []
     for rec in records(path):
         if rec and any(t == 2 for ts in rec[0].textures.values() for t, _ in ts):

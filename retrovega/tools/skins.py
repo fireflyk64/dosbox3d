@@ -15,6 +15,16 @@ The skin's diffuse and specular maps are made once and cached.
             bright accent blue laid along some of the lines, as the Ariston
             and the Nicander carry them; specular from its own shading,
             strong enough for their metal sheen, less on the paint.
+    anaxander  made, not read: the Anaxander's paint (Vega Strike's hammer-head
+            cruiser, its own map's colours measured: khaki 134 129 99, its
+            darker panels 103 98 75, purple 106 82 143, cyan 4 207 205) for
+            the Aera capital ships whose maps are missing (the user,
+            2026-11-14: "let's add similarly artful textures to the untextured
+            craft ... To match the anaxander style"): panels of khaki ruled in
+            thin dark lines, a few darker; purple brush strokes laid
+            diagonally in twos, threes and fours (its service markings); a few
+            thin cyan lines along panel edges.  Specular from the khaki,
+            less on the paint.
 """
 import hashlib
 import os
@@ -24,6 +34,9 @@ from PIL import Image
 from scipy import ndimage
 
 SKINS = {
+    'anaxander': {'make': 'anaxander', 'tile': 6.0, 'size': 1024, 'seed': 11,
+                  'base': (134, 129, 99), 'dark': (103, 98, 75), 'line': (40, 38, 30), 'purple': (106, 82, 143),
+                  'cyan': (4, 207, 205), 'panels': 24, 'groups': 15, 'cyan_lines': 14, 'spec': 0.6},
     'aera': {'diffuse': 'textures/AeraHull2.bmp', 'tile': 4.0,
              # the fighters' hull median, (74, 65, 57) in Ariston's map, as a cast
              'tint': (1.14, 1.0, 0.88), 'gain': 1.25, 'spec': 0.75,
@@ -34,6 +47,69 @@ SKINS = {
 }
 
 
+def anaxander(s):
+    """The Anaxander's style as a tiling map, (rgb 0..1, specular 0..1): see SKINS."""
+    from PIL import ImageDraw
+    n, rng = s['size'], np.random.default_rng(s['seed'])
+    col = lambda c: np.array(c, np.float32) / 255
+    out = np.ones((n, n, 3), np.float32) * col(s['base'])
+    # panels: the square cut again and again (wrapping), each a little lighter or darker, a few the darker khaki
+    lines = np.zeros((n, n), np.float32)
+    cuts = [(0, 0, n, n)]
+    while len(cuts) < s['panels']:
+        k = int(rng.integers(len(cuts)))
+        x, y, w, h = cuts.pop(k)
+        if w >= h and w > 128:
+            c = int(rng.integers(w // 4, 3 * w // 4)) // 16 * 16
+            cuts += [(x, y, c, h), (x + c, y, w - c, h)]
+        elif h > 128:
+            c = int(rng.integers(h // 4, 3 * h // 4)) // 16 * 16
+            cuts += [(x, y, w, c), (x, y + c, w, h - c)]
+        else:
+            cuts.append((x, y, w, h))
+    for x, y, w, h in cuts:
+        tone = col(s['dark']) if rng.random() < 0.18 else col(s['base']) * float(rng.uniform(0.95, 1.04))
+        out[y:y + h, x:x + w] = tone
+        lines[y, x:x + w] = lines[y:y + h, x] = 1
+    grain = ndimage.gaussian_filter(rng.standard_normal((n, n)).astype(np.float32), 3, mode='wrap')
+    out *= (1 + 0.05 * grain / max(1e-6, float(grain.std())))[..., None]
+    lines = np.clip(ndimage.uniform_filter(lines, 2, mode='wrap') * 2, 0, 1)
+    out = out * (1 - 0.7 * lines[..., None]) + col(s['line']) * 0.7 * lines[..., None]
+    # the purple strokes: groups of 2-4 parallel diagonal brush strokes, tapered, drawn wrapping round
+    paint = Image.new('L', (n, n), 0)
+    d = ImageDraw.Draw(paint)
+    for _g in range(s['groups']):
+        cx, cy = rng.uniform(0, n, 2)
+        ang = np.radians(rng.uniform(52, 72)) * (1 if rng.random() < 0.5 else -1)
+        length, width, gap = rng.uniform(110, 230), rng.uniform(11, 17), rng.uniform(24, 34)
+        ax, ay = np.cos(ang), np.sin(ang)
+        for k in range(int(rng.integers(2, 5))):
+            ox, oy = cx + k * gap * ay, cy - k * gap * ax
+            half = length * rng.uniform(0.75, 1.0) / 2
+            for t in np.linspace(-1, 1, 24):          # (a stroke: discs along it, thinner at its ends)
+                r = width / 2 * (1 - 0.6 * abs(t) ** 3)
+                px, py = ox + t * half * ax, oy + t * half * ay
+                for wx in (-n, 0, n):
+                    for wy in (-n, 0, n):
+                        d.ellipse((px + wx - r, py + wy - r, px + wx + r, py + wy + r), fill=255)
+    purple = ndimage.gaussian_filter(np.asarray(paint, np.float32) / 255, 1.2, mode='wrap')
+    out = out * (1 - purple[..., None]) + col(s['purple']) * purple[..., None]
+    # the cyan lines: thin, along part of a few panel edges
+    cyan = np.zeros((n, n), np.float32)
+    for _c in range(s['cyan_lines']):
+        x, y, w, h = cuts[int(rng.integers(len(cuts)))]
+        if rng.random() < 0.5:
+            a = int(rng.integers(x, x + max(1, w // 2)))
+            cyan[(y + 4) % n, a:a + int(rng.integers(w // 4 + 1, w // 2 + 2))] = 1
+        else:
+            a = int(rng.integers(y, y + max(1, h // 2)))
+            cyan[a:a + int(rng.integers(h // 4 + 1, h // 2 + 2)), (x + 4) % n] = 1
+    cyan = np.clip(ndimage.uniform_filter(cyan, 3, mode='wrap') * 3, 0, 1)
+    out = out * (1 - cyan[..., None]) + col(s['cyan']) * cyan[..., None]
+    spec = np.clip(out.mean(axis=2) * s['spec'] * (1 - 0.5 * purple) + 0.3 * cyan, 0, 1)
+    return np.clip(out, 0, 1), spec
+
+
 def maps(name, assets, cache):
     """(diffuse path, specular path) of a skin, made if missing."""
     s = SKINS[name]
@@ -41,6 +117,10 @@ def maps(name, assets, cache):
     tag = hashlib.md5(repr(sorted(s.items())).encode()).hexdigest()[:8]    # remade when the recipe changes
     dpath = os.path.join(cache, 'skin-%s-%s.png' % (name, tag))
     spath = os.path.join(cache, 'skin-%s-%s-spec.png' % (name, tag))
+    if s.get('make') == 'anaxander' and not (os.path.exists(dpath) and os.path.exists(spath)):
+        out, spec = anaxander(s)
+        Image.fromarray((out * 255 + 0.5).astype(np.uint8)).save(dpath)
+        Image.fromarray((spec * 255 + 0.5).astype(np.uint8)).convert('RGB').save(spath)
     if not (os.path.exists(dpath) and os.path.exists(spath)):
         a = np.asarray(Image.open(os.path.join(assets, s['diffuse'])).convert('RGB')).astype(np.float32) / 255
         lum = a.mean(axis=2, keepdims=True)
