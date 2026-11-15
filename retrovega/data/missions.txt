@@ -33,6 +33,12 @@
 # A capital ship's role=stay (either side) holds station where it is put: a depot ship on its pad, an Ox parked under an
 # arch (the planet missions: without it a capital ship cruises off ahead at its cruise speed)
 #
+# A ship line's role=stream jump=N keeps its count of ships in the world from its nav point's reaching until nav N is
+# reached: one killed or gone comes again ahead of the player on the way to the next nav point, down at the way's height
+# or high over it, 2 s after the last came (logic.c stream_step; the user, 2026-11-14, the canyon run: "keep around 2 or 3
+# raining down upon the player ... Once the player takes one out another shows up ahead either in the canyon or above").
+# A stream's ships hold no wave and no nav point's goal waits for them
+#
 # A ship line's prey=KEY is the old game's attack order (its mission records' own byte, read 2026-11-05: tests/wc1/README.md
 # "Orders"): the group goes for the nearest ship of that type of the other side, wherever it is and whoever is nearer, until
 # hurt (logic.c prey_of); without one, half the fighters near an escort target raid it (raid_target).  The line's first
@@ -3067,6 +3073,7 @@ briefing "Past the stone bridge at Nav 3 a cruiser waits for the next load. It w
 briefing "Catch it before Nav 5. If it gets there it jumps, and we lose it."
 briefing "Expect 2 Nicanders at Nav 1, 3 Agis at Nav 2, 2 Aristons at Nav 3 and 3 Nicanders at Nav 4."
 briefing "You and Comet go in low, between the walls. They're three thousand kilometres high, so mind the bends."
+briefing "They'll see you go in. Nicanders will come down over the rim all the way, a new one for each you kill."
 briefing you "And if they come at us from over the rim?"
 briefing "Then you'll see them before they see you. Dismissed."
 win      "The depot's burning and the cruiser never made its jump. That canyon is ours."
@@ -3089,6 +3096,7 @@ ship     AGIS 1 nav2 count=3 at=280,-1236,3796
 ship     ANAXIDM 1 nav3 role=out jump=5 at=124,-844,1808
 ship     ARISTON 1 nav3 count=2 at=372,-2532,5424
 ship     NICANDR 1 nav4 count=3 at=264,-1581,2535
+ship     NICANDR 1 nav1 count=3 role=stream jump=5
 goal     nav 1 1
 goal     kill AGASICL nav2 3
 goal     nav 2 1

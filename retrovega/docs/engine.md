@@ -56,7 +56,8 @@ is left. The same day (the user's picks, from a breakdown of what was near):
 the log's formats went far (`RV_LOG("format", ...)` in rv.h, a static far
 format handed to `rv_logf`: 3.6 KB in RV.EXE; logic.c still uses `rv_log`); the
 fixed block ends at 0x7400, not 0x8000 (`END` in abi/rvabi.def: the 3 KB after
-the mission tables were never used, and no offset moved); the screenshots'
+the mission tables were never used, and no offset moved; since 2026-11-14 it is 62 slots, not 128, the mission tables
+at 0x3200 and the end at 0x4200: 12.5 KB more for DOS, ABI 3, the user's "Should be 64 probably ... Or like 62"); the screenshots'
 row, the music's file reads and VESA's mode information go through
 `rv_filebuf`, and the briefing's two text copies are one (game.c `g_shown`). The stack was 8 KB until
 2026-10-31 (the user's call): the deepest use seen is 1.7 KB, a fight to the

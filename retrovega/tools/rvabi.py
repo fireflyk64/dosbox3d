@@ -190,7 +190,7 @@ def main():
 
 
 CTYPE = {1: 'uint8_t', 2: 'uint16_t', 4: 'uint32_t'}
-ABI_VERSION = 2
+ABI_VERSION = 3                         # (3: 62 slots, the mission tables at 0x3200, 2026-11-14)
 ASM_BODIES = ('autoAnimation',)        # thunks whose _impl is in src/rvflight.inc (a site inside it)
 SIGNATURE = 'Loading RETROVEGA'
 

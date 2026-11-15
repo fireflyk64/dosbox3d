@@ -235,6 +235,27 @@ of real time.
   it from each nav point, from over each, high over the first and straight down. `--map OUT.PNG SEED RADIUS CX CY CZ
   X0 Z0 [SPAN]` draws the seed's ground from over the world's +y with a 5,000 km grid, for laying out nav points.
 
+## Fighters raining down along the canyon (the user, 2026-11-14)
+
+> Can we have aera ships continuously spawning from above to keep around 2 or 3 raining down upon the player in the
+> canyon mission. Once the player takes one out another shows up ahead either in the canyon or above
+
+- **`role=stream`** (missions.txt; `jump=N` its last nav point): `ship NICANDR 1 nav1 count=3 role=stream jump=5` in
+  the canyon run. From its nav point's reaching until Nav 5 is reached, each of its records keeps a ship in the world
+  (logic.c `stream_step`).
+- **Where one comes:** one killed or gone, its record comes again 2 s after the last one came, ahead of the player on
+  the way to the next nav point (6,000 to 9,000 km on). It comes down at the way's height or, one in two, 2,500 to
+  4,500 km over it, its nose on the player, raised over the ground.
+- **Through the layer:** it comes by `outerSpawnShipEntity`, the waves' hook, so the host's ships are its guests'
+  puppets.
+- **What it holds up:** a stream's ships hold no wave (`enemy_fighters_out`), and no nav point's goal waits for them.
+- **Play test M8.64:** three come within 8 s of Nav 1, ahead of the player and over the ground; one killed, another
+  within 3 s; none after Nav 5.
+
+**DOS memory:** the stream cost about 1.5 KB of RV.EXE, which left 1,248 bytes, and the build refused that. The slots
+went from 128 to 62 at the same time (the user: "Should be 64 probably ... Or like 62 in case power of two is
+wasteful"; abi/rvabi.def, ABI 3): the fixed block ends at 0x4200, not 0x7400. RV.EXE now leaves 14,032 bytes for DOS.
+
 ## Still to do
 
 - A guest that comes into a planet mission after the host's launch holds the host's game while it makes the planet
@@ -247,7 +268,7 @@ of real time.
 - The approach and straight-down views: 2 to 3 times over budget natively (the card's detail adapts; the page held
   30 fps in Mirage regardless).
 - From right under an arch, the outer edge of its underside still shows a patch cell's steps.
-- RV.EXE: 2,832 bytes left for DOS (6,144 before the planets).
+- RV.EXE: 14,032 bytes left for DOS since the slots went to 62 (2,816 before; 6,144 before the planets).
 - Missions with planets are kept from DOS without the card only by being off the campaign's way.
 
 Done since step 4:

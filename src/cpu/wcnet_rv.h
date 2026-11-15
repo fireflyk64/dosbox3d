@@ -15,17 +15,17 @@
 #define RV_HOOK_NSITE 0x0E            // word: how many sites
 #define RV_SIGNATURE "Loading RETROVEGA"
 #define RV_SIGNATURE_OFF 0x0400       // in DGROUP
-#define RV_ABI_VERSION 2
+#define RV_ABI_VERSION 3
 
 // The puppet header (DS:0010): "RVPUPPET", then words: the ABI version, the slots, the last ship slot, the
 // first temporary slot, the camera slot, the mission-ship and nav-point records' sizes, the gun table's and a
 // gun record's.  The directory after it: every item's offset, in rvabi.def's order (kRvDirectory).
 #define RV_PUPPET_HEADER 0x0010
 #define RV_PUPPET_MAGIC "RVPUPPET"
-#define RV_SLOTS 128
+#define RV_SLOTS 62
 #define RV_MAX_SHIP_SLOT 31
 #define RV_FIRST_TEMP_SLOT 32
-#define RV_CAMERA_SLOT 125
+#define RV_CAMERA_SLOT 59
 #define RV_MISSION_SHIP_SIZE 0x2A
 #define RV_NAV_POINT_SIZE 0x4D
 #define RV_MISSION_SHIPS 64
@@ -90,45 +90,45 @@
 #define RV_DS_aLoadingWingCom                0x0400
 #define RV_DS_aSorryAnErrorHasOccured        0x0480
 #define RV_DS_maybeEntityType                0x0600
-#define RV_DS_gInstanceShipTypes             0x0700
-#define RV_DS_parentShipForShip              0x0800
-#define RV_DS_commAnimInfo                   0x0880
-#define RV_DS_shipStateByte                  0x0980
-#define RV_DS_slotMissionShip                0x0A00
-#define RV_DS_gPositionVector                0x0B00
-#define RV_DS_gVelocityVector                0x1100
-#define RV_DS_gOrientationRightVector        0x1700
-#define RV_DS_gOrientationUpVector           0x1D00
-#define RV_DS_gOrientationFrontVector        0x2300
-#define RV_DS_setSpeed                       0x2900
-#define RV_DS_speedLo                        0x2B00
-#define RV_DS_curShield                      0x2D00
-#define RV_DS_shieldMax                      0x2F00
-#define RV_DS_armorState                     0x3100
-#define RV_DS_damagePoints                   0x3500
-#define RV_DS_coreHp                         0x3600
-#define RV_DS_hullCounter                    0x3680
-#define RV_DS_gunDamage                      0x3700
-#define RV_DS_engineFlag                     0x3780
-#define RV_DS_gunEnergy                      0x3800
-#define RV_DS_gunTable                       0x3900
-#define RV_DS_missileTarget                  0x5280
-#define RV_DS_shipAiState                    0x5300
-#define RV_DS_gMaybeShipRadius               0x5400
-#define RV_DS_formationOffset                0x5500
-#define RV_DS_entityCullStatus               0x5800
-#define RV_DS_entityScreenY                  0x5900
-#define RV_DS_damageProperty                 0x5A00
-#define RV_DS_rvController                   0x5B00
-#define RV_DS_rvNetId                        0x5B80
-#define RV_DS_rvFlags                        0x5C00
-#define RV_DS_rvLastWrite                    0x5D00
-#define RV_DS_rvTarget                       0x5E00
-#define RV_DS_rvAfterburner                  0x5E80
-#define RV_DS_rvLivery                       0x5F00
-#define RV_DS_navPointTable                  0x6400
-#define RV_DS_missionShipTable               0x68D0
-#define RV_DS_fieldTable                     0x7350
+#define RV_DS_gInstanceShipTypes             0x067C
+#define RV_DS_parentShipForShip              0x06F8
+#define RV_DS_commAnimInfo                   0x0736
+#define RV_DS_shipStateByte                  0x07B2
+#define RV_DS_slotMissionShip                0x07F0
+#define RV_DS_gPositionVector                0x086C
+#define RV_DS_gVelocityVector                0x0B54
+#define RV_DS_gOrientationRightVector        0x0E3C
+#define RV_DS_gOrientationUpVector           0x1124
+#define RV_DS_gOrientationFrontVector        0x140C
+#define RV_DS_setSpeed                       0x16F4
+#define RV_DS_speedLo                        0x17EC
+#define RV_DS_curShield                      0x18E4
+#define RV_DS_shieldMax                      0x19DC
+#define RV_DS_armorState                     0x1AD4
+#define RV_DS_damagePoints                   0x1CC4
+#define RV_DS_coreHp                         0x1D40
+#define RV_DS_hullCounter                    0x1D7E
+#define RV_DS_gunDamage                      0x1DBC
+#define RV_DS_engineFlag                     0x1DFA
+#define RV_DS_gunEnergy                      0x1E38
+#define RV_DS_gunTable                       0x1EB4
+#define RV_DS_missileTarget                  0x2B0E
+#define RV_DS_shipAiState                    0x2B4C
+#define RV_DS_gMaybeShipRadius               0x2BC8
+#define RV_DS_formationOffset                0x2C44
+#define RV_DS_entityCullStatus               0x2DB8
+#define RV_DS_entityScreenY                  0x2E34
+#define RV_DS_damageProperty                 0x2EB0
+#define RV_DS_rvController                   0x2F2C
+#define RV_DS_rvNetId                        0x2F6A
+#define RV_DS_rvFlags                        0x2FA8
+#define RV_DS_rvLastWrite                    0x3024
+#define RV_DS_rvTarget                       0x30A0
+#define RV_DS_rvAfterburner                  0x30DE
+#define RV_DS_rvLivery                       0x311C
+#define RV_DS_navPointTable                  0x3200
+#define RV_DS_missionShipTable               0x36D0
+#define RV_DS_fieldTable                     0x4150
 
 static const unsigned short kRvDirectory[] = {
     0x0000, 0x0010, 0x0040, 0x0100, 0x0102, 0x0104, 0x0106, 0x010A,
@@ -137,12 +137,12 @@ static const unsigned short kRvDirectory[] = {
     0x0138, 0x0144, 0x014C, 0x014E, 0x0150, 0x0160, 0x01B0, 0x0250,
     0x025E, 0x026C, 0x027C, 0x028C, 0x0296, 0x029E, 0x02A0, 0x02AC,
     0x02C0, 0x0358, 0x035A, 0x035C, 0x035E, 0x0362, 0x0364, 0x0366,
-    0x0368, 0x036C, 0x036E, 0x0370, 0x0400, 0x0480, 0x0600, 0x0700,
-    0x0800, 0x0880, 0x0980, 0x0A00, 0x0B00, 0x1100, 0x1700, 0x1D00,
-    0x2300, 0x2900, 0x2B00, 0x2D00, 0x2F00, 0x3100, 0x3500, 0x3600,
-    0x3680, 0x3700, 0x3780, 0x3800, 0x3900, 0x5280, 0x5300, 0x5400,
-    0x5500, 0x5800, 0x5900, 0x5A00, 0x5B00, 0x5B80, 0x5C00, 0x5D00,
-    0x5E00, 0x5E80, 0x5F00, 0x6400, 0x68D0, 0x7350,
+    0x0368, 0x036C, 0x036E, 0x0370, 0x0400, 0x0480, 0x0600, 0x067C,
+    0x06F8, 0x0736, 0x07B2, 0x07F0, 0x086C, 0x0B54, 0x0E3C, 0x1124,
+    0x140C, 0x16F4, 0x17EC, 0x18E4, 0x19DC, 0x1AD4, 0x1CC4, 0x1D40,
+    0x1D7E, 0x1DBC, 0x1DFA, 0x1E38, 0x1EB4, 0x2B0E, 0x2B4C, 0x2BC8,
+    0x2C44, 0x2DB8, 0x2E34, 0x2EB0, 0x2F2C, 0x2F6A, 0x2FA8, 0x3024,
+    0x30A0, 0x30DE, 0x311C, 0x3200, 0x36D0, 0x4150,
 };
 
 // The layer's names (wcnet_ds.def) in the fixed block: X(name, offset).  Not in it: the rv* items (RV_DS_*),
@@ -188,38 +188,38 @@ static const unsigned short kRvDirectory[] = {
     X(aLoadingWingCom, 0x0400) \
     X(aSorryAnErrorHasOccured, 0x0480) \
     X(maybeEntityType, 0x0600) \
-    X(gInstanceShipTypes, 0x0700) \
-    X(parentShipForShip, 0x0800) \
-    X(commAnimInfo, 0x0880) \
-    X(shipStateByte, 0x0980) \
-    X(slotMissionShip, 0x0A00) \
-    X(gPositionVector, 0x0B00) \
-    X(gVelocityVector, 0x1100) \
-    X(gOrientationRightVector, 0x1700) \
-    X(gOrientationUpVector, 0x1D00) \
-    X(gOrientationFrontVector, 0x2300) \
-    X(setSpeed, 0x2900) \
-    X(speedLo, 0x2B00) \
-    X(curShield, 0x2D00) \
-    X(shieldMax, 0x2F00) \
-    X(armorState, 0x3100) \
-    X(damagePoints, 0x3500) \
-    X(coreHp, 0x3600) \
-    X(hullCounter, 0x3680) \
-    X(gunDamage, 0x3700) \
-    X(engineFlag, 0x3780) \
-    X(gunEnergy, 0x3800) \
-    X(gunTable, 0x3900) \
-    X(missileTarget, 0x5280) \
-    X(shipAiState, 0x5300) \
-    X(gMaybeShipRadius, 0x5400) \
-    X(formationOffset, 0x5500) \
-    X(entityCullStatus, 0x5800) \
-    X(entityScreenY, 0x5900) \
-    X(damageProperty, 0x5A00) \
-    X(navPointTable, 0x6400) \
-    X(missionShipTable, 0x68D0) \
-    X(fieldTable, 0x7350) \
+    X(gInstanceShipTypes, 0x067C) \
+    X(parentShipForShip, 0x06F8) \
+    X(commAnimInfo, 0x0736) \
+    X(shipStateByte, 0x07B2) \
+    X(slotMissionShip, 0x07F0) \
+    X(gPositionVector, 0x086C) \
+    X(gVelocityVector, 0x0B54) \
+    X(gOrientationRightVector, 0x0E3C) \
+    X(gOrientationUpVector, 0x1124) \
+    X(gOrientationFrontVector, 0x140C) \
+    X(setSpeed, 0x16F4) \
+    X(speedLo, 0x17EC) \
+    X(curShield, 0x18E4) \
+    X(shieldMax, 0x19DC) \
+    X(armorState, 0x1AD4) \
+    X(damagePoints, 0x1CC4) \
+    X(coreHp, 0x1D40) \
+    X(hullCounter, 0x1D7E) \
+    X(gunDamage, 0x1DBC) \
+    X(engineFlag, 0x1DFA) \
+    X(gunEnergy, 0x1E38) \
+    X(gunTable, 0x1EB4) \
+    X(missileTarget, 0x2B0E) \
+    X(shipAiState, 0x2B4C) \
+    X(gMaybeShipRadius, 0x2BC8) \
+    X(formationOffset, 0x2C44) \
+    X(entityCullStatus, 0x2DB8) \
+    X(entityScreenY, 0x2E34) \
+    X(damageProperty, 0x2EB0) \
+    X(navPointTable, 0x3200) \
+    X(missionShipTable, 0x36D0) \
+    X(fieldTable, 0x4150) \
 
 
 // Thunks: `jmp far` at RVHOOK:off, entered by a far cdecl call (arguments above the return address).

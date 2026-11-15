@@ -16,7 +16,7 @@ checks every reference and rule (docs/engine.md), and writes:
 
 missions.txt is one block per mission, a keyword and its value per line,
 '#' comments.  Keywords: mission, node, title, type, music, briefing, win,
-lose, fighter (the player's and the wingman's TYPE), nav (id x y z [hidden] [reach=KM], km, the old game's map: the waypoints numbered from 1, then the hidden trigger points; within reach= of it the point is reached and the autopilot stops there, the old game's 10,000 to 32,500), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home|stay] [jump=N] [turrets=off]
+lose, fighter (the player's and the wingman's TYPE), nav (id x y z [hidden] [reach=KM], km, the old game's map: the waypoints numbered from 1, then the hidden trigger points; within reach= of it the point is reached and the autopilot stops there, the old game's 10,000 to 32,500), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home|stay|stream] [jump=N] [turrets=off]
 [pilot=KEY] [ai=PROFILE] [fear=c/d] [prey=KEY] [also=N]), rules (hit= aim= hold= ram=: RULES), field (asteroid|mine x y z radius [density=N] [level=L], km; N rocks per (10,000 km)^3, 1..255,
 0 or none: the engine's own; L the old game's rock level, 0..3: how many fly at the player, and when), bar and lounge
 (seat=PILOT|- ...), and the lines, docs/engine.md: briefing, win, lose [WHO] [conditions] "line" (or plain text: the XO's,
@@ -227,7 +227,7 @@ SHIP = [('unsigned char', 'type', 'B'), ('unsigned char', 'side', 'B'), ('unsign
 # a mission ship's AI profile (missions.txt ai=NAME: logic.c's P_* in this order, 1-based in the record, 0 the type's
 # own) and its own fear rates (fear=c/d, 0-15 each: the old game's class bytes; 0: the profile's)
 PROFILES = ['interceptor', 'fighter', 'heavy', 'ace', 'bomber', 'wingman', 'capital', 'waiter', 'noleft']
-ESCORT_ROLES = {'out': 1, 'in': 2, 'home': 3, 'stay': 4, 'back': 5}   # a mission ship's role (RV_ESCORT_*): an escort
+ESCORT_ROLES = {'out': 1, 'in': 2, 'home': 3, 'stay': 4, 'back': 5, 'stream': 6}   # a mission ship's role (RV_ESCORT_*): an escort
                                         # target flies out to the next nav point and jumps there, or waits at its own until the
                                         # player comes and flies home (`in`: it jumps in when a pilot is near, the old
                                         # behaviour 7; `back`: it is there from the point's reaching and makes for home at
@@ -769,8 +769,9 @@ def compile_all():
                     jump = int(opts['jump'])
                 except ValueError:
                     jump = -1
-                if role != ESCORT_ROLES['out'] or jump <= nav or jump not in nav_ids or jump in hidden_navs:
-                    raise Fail('%s: jump=N goes with role=out: N a waypoint after its own nav point' % where)
+                if role not in (ESCORT_ROLES['out'], ESCORT_ROLES['stream']) or jump <= nav or jump not in nav_ids \
+                        or jump in hidden_navs:
+                    raise Fail('%s: jump=N goes with role=out or role=stream: N a waypoint after its own nav point' % where)
             prey = 0
             if 'prey' in opts:          # (the old game's attack orders, its mission records' byte 0x29: logic.c prey_of)
                 if kind in ('player', 'wingman') or opts['prey'] not in ships:
@@ -808,7 +809,8 @@ def compile_all():
             for n_, say_, nav_ in re.findall(r'(\d+) ([A-Z][a-z]+) at Nav (\d)', f[-1]) if k_ == 'briefing' else ():
                 key_ = named.get(say_) or named.get(say_[:-1]) if say_ not in named else named[say_]
                 have = sum(int(next((o[6:] for o in g[3:] if o.startswith('count=')), 1)) for _x, g in m['ship']
-                           if g[0] == key_ and g[1] == '1' and (g[2] == 'nav' + nav_ or 'also=' + nav_ in g[3:]))
+                           if g[0] == key_ and g[1] == '1' and (g[2] == 'nav' + nav_ or 'also=' + nav_ in g[3:])
+                           and 'role=stream' not in g[3:])   # (a stream is no nav point's wave)
                 if int(nav_) in hidden_navs:
                     raise Fail('%s: the briefing names Nav %s, a hidden trigger point the player has no list of' % (_w, nav_))
                 if have != int(n_):
@@ -1046,7 +1048,7 @@ def header_text(sizes):
             '#define RV_SHIP_PLAYER 0x%02X' % SHIP_PLAYER, '#define RV_SHIP_WINGMAN 0x%02X' % SHIP_WINGMAN,
             '#define RV_ESCORT_OUT %d' % ESCORT_ROLES['out'], '#define RV_ESCORT_IN %d' % ESCORT_ROLES['in'],
             '#define RV_ESCORT_HOME %d' % ESCORT_ROLES['home'], '#define RV_ESCORT_STAY %d' % ESCORT_ROLES['stay'],
-            '#define RV_ESCORT_BACK %d' % ESCORT_ROLES['back'],
+            '#define RV_ESCORT_BACK %d' % ESCORT_ROLES['back'], '#define RV_ESCORT_STREAM %d' % ESCORT_ROLES['stream'],
             '#define RV_PILOT_NONE 0xFF', '#define RV_SPEAKER_YOU 0x%02X' % SPEAKER_YOU,
             '#define RV_ROOM_RADIO %d' % len(ROOMS), '#define RV_ROOM_DECK %d' % (len(ROOMS) + 1)]
     for k, v in BRIEF_ROOMS.items():

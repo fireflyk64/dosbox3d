@@ -216,6 +216,7 @@ static struct {
 #define LAUNCH_NEAR_KM 5000             /* a hidden point this near the launch is at the launch (wave_may_come) */
 
 static uint16_t g_wave_held;            /* a bit per trigger point whose wave has waited for the enemies out */
+static uint16_t g_stream_at;            /* (stream_step: frameCounter when a stream's ship last came) */
 static uint16_t g_quiet;                /* steps since an enemy was last within AUTOPILOT_CLEAR_KM of a pilot (autoland) */
 static uint8_t g_enemy_ran;             /* the last enemy gone left, not killed */
 static uint16_t g_navs_seen;            /* a bit per nav point the player has reached (nav 0 from the start) */
@@ -766,6 +767,7 @@ void logic_start(const RvMission __far *m)
         if (nav_defined(j) && NAV_OFF_AT_START(j))
             g_nav_off |= 1u << j;
     g_wave_held = 0;
+    g_stream_at = 0;
     g_quiet = 0;
     g_enemy_ran = 0;
     g_nav_chosen = 0;
@@ -4196,7 +4198,7 @@ static int16_t enemy_fighters_out(void)
     int16_t s;
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
         if (slot_is_ship(s) && shipAiState[s] != 9 && commAnimInfo[s] != commAnimInfo[0]
-            && gInstanceShipTypes[s] < 0x20)
+            && gInstanceShipTypes[s] < 0x20 && role_of(s) != RV_ESCORT_STREAM)   /* (a stream's never are: stream_step) */
             return 1;
     return 0;
 }
@@ -4270,7 +4272,8 @@ int16_t logic_goal(uint8_t kind, uint8_t a, uint8_t nav, uint8_t nth)
         if (nav && !((g_navs_been | g_navs_seen) >> nav & 1))
             return 0;
         for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
-            if (MSHIP_SIDE(at[j]) != commAnimInfo[0] && !g_killed[at[j] & 63] && !g_away[at[j] & 63])
+            if (MSHIP_SIDE(at[j]) != commAnimInfo[0] && !g_killed[at[j] & 63] && !g_away[at[j] & 63]
+                && MSHIP_ROLE(at[j]) != RV_ESCORT_STREAM)
                 return 0;
         return 1;
     }
@@ -4361,6 +4364,84 @@ static int16_t enemy_near_humans(void)
     return 0;
 }
 
+/* a stream (missions.txt role=stream; the user, 2026-11-14, the canyon run: "Can we have aera ships continuously
+ * spawning from above to keep around 2 or 3 raining down upon the player ... Once the player takes one out another
+ * shows up ahead either in the canyon or above"): from its nav point's reaching until the nav point its jump= names is
+ * reached (or to the end), each of its records keeps a ship in the world.  One killed or gone, its record comes again
+ * (outerSpawnShipEntity: the host's, which its guests are given) STREAM_GAP steps after the last one came: ahead of the
+ * player on the way to the next nav point, STREAM_AHEAD_KM to 3,000 km more, down at the way's height or, one in two,
+ * 2,500 to 4,500 km over it, its nose on the player; over a planet raised over the ground.  A stream's ships hold no
+ * wave and no nav point's goal waits for them */
+#define STREAM_GAP (2 * LOGIC_HZ)
+#define STREAM_AHEAD_KM 6000
+
+static void stream_step(void)
+{
+    static const char __far s_came[] = "logic: the stream's ship %d came again (slot %d), %ld km ahead%s";
+    int16_t r, s, n, next;
+    int32_t px = TO_KM(gPositionVector[0].x), py = TO_KM(gPositionVector[0].y), pz = TO_KM(gPositionVector[0].z);
+    int32_t dx, dy, dz, l, k, ux, uy, uz;
+    uint16_t d;
+    if ((uint16_t)(frameCounter - g_stream_at) < STREAM_GAP || !slot_is_ship(0))
+        return;
+    for (r = 0; r < 64; r++) {
+        if (MSHIP_ROLE(r) != RV_ESCORT_STREAM || !(g_navs_seen >> (MSHIP_NAV(r) & 15) & 1)
+            || (MSHIP_JUMP(r) && (g_navs_seen >> (MSHIP_JUMP(r) & 15) & 1)))
+            continue;
+        for (s = 1; s < NUM_SHIP_SLOTS; s++)
+            if (slot_is_ship(s) && slotMissionShip[s] == r && shipAiState[s] != 9)
+                break;
+        if (s < NUM_SHIP_SLOTS)
+            continue;                   /* (its ship is in the world) */
+        /* the way: to the next nav point of its stretch the player has not reached (nearer than 3,000 km: the one
+         * after) */
+        for (next = -1, n = (int16_t)(MSHIP_NAV(r) & 15) + 1; n < NAVS && next < 0; n++)
+            if (nav_defined(n) && !(g_navs_seen >> n & 1)
+                && len_of(NAV_AT(n, 0) - px, NAV_AT(n, 1) - py, NAV_AT(n, 2) - pz) > 3000)
+                next = n;
+        if (next < 0)
+            return;
+        dx = NAV_AT(next, 0) - px;
+        dy = NAV_AT(next, 1) - py;
+        dz = NAV_AT(next, 2) - pz;
+        l = len_of(dx, dy, dz);
+        d = cap_dice((uint16_t)r, 0xFE, 1);
+        k = STREAM_AHEAD_KM + (int32_t)(d % 3000);
+        if (k > l)
+            k = l;
+        px += dx * k / l;               /* (km: under 100,000 times under 9,000) */
+        py += dy * k / l;
+        pz += dz * k / l;
+        if (d & 0x8000) {               /* above: along the way up there (the planet's, else the world's y) */
+            const LfVec __far *c = planet_on() ? planet_centre() : 0;
+            int32_t up = 2500 + (int32_t)(d >> 4 & 2047);
+            ux = c ? px - TO_KM(c->x) : 0;
+            uy = c ? py - TO_KM(c->y) : 1;
+            uz = c ? pz - TO_KM(c->z) : 0;
+            l = len_of(ux, uy, uz);
+            px += ux * up / l;
+            py += uy * up / l;
+            pz += uz * up / l;
+        }
+        s = (int16_t)outerSpawnShipEntity((uint16_t)r, MSHIP_NAV(r) & 15);
+        if (s <= 0 || s >= NUM_SHIP_SLOTS)
+            return;                     /* (a guest's: the host's comes) */
+        g_stream_at = frameCounter;
+        g_killed[r] = g_away[r] = 0;    /* (its kill counts again: step_mission) */
+        gPositionVector[s] = vec3(px * KM, py * KM, pz * KM);
+        planet_raise((LfVec *)&gPositionVector[s], 500);
+        dx = TO_KM(gPositionVector[0].x - gPositionVector[s].x);   /* (its nose on the player: a vector some 256 long) */
+        dy = TO_KM(gPositionVector[0].y - gPositionVector[s].y);
+        dz = TO_KM(gPositionVector[0].z - gPositionVector[s].z);
+        l = len_of(dx, dy, dz) / 256 + 1;
+        gOrientationFrontVector[s] = vec3(dx / l, dy / l, dz / l);
+        gOrientationRightVector[s] = vec3(256, 0, 0);
+        ship_orthonormalise(s);
+        rv_notef(s_came, r, s, (long)k, d & 0x8000 ? ", above" : "");
+        return;                         /* (one a step at most) */
+    }
+}
+
 /* 9. the mission: nav points reached (enterNavPoint), waves, objectives, the score (victoryPoints, nonzero won).
  * A kill is the mission ship seen dying; the score is the mission done, as it stands (logic_end has the last word) */
 static void step_mission(void)
@@ -4368,6 +4449,7 @@ static void step_mission(void)
     int16_t s, n;
     land_near();
     arrivals_step();
+    stream_step();
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
         if (slot_is_ship(s) && shipAiState[s] == 9 && slotMissionShip[s] < 64) {
             if (!g_killed[slotMissionShip[s]] && commAnimInfo[s] != commAnimInfo[0])
@@ -5413,8 +5495,9 @@ void __far __cdecl enterNavPoint_impl(uint16_t nav)
     _fmemset(came, 0, sizeof came);
     for (j = 0; j < 10 && at[j] != 0xFFFF; j++) {
         uint16_t s;
-        if (mship_brought(at[j]))
-            continue;                   /* (in play, killed or gone already: a wave listed at two points comes once, at
+        if (mship_brought(at[j]) || MSHIP_ROLE(at[j]) == RV_ESCORT_STREAM)
+            continue;                   /* (a stream's come by stream_step.  In play, killed or gone already: a wave
+                                           listed at two points comes once, at
                                            whichever is reached first, as the old game's: missions.txt also=N) */
         if (MSHIP_ROLE(at[j]) == RV_ESCORT_IN && g_narrive < ARRIVE_MAX) {
             g_arrive[g_narrive].rec = (uint8_t)(at[j] & 63);   /* (it comes in later: arrivals_step) */

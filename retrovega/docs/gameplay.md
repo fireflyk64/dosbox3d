@@ -458,6 +458,7 @@ nav 0):
 | M8.61 goals | two Nicanders at nav 1: its goal is not met before nav 1 is reached, nor once reached with them alive; one killed, the first kill goal is and the second is not; both killed, the nav's and the second kill goal are; the landing goal only with missionStatus 1 (`logic_goal`, the old game's objectives: the user, 2026-11-08) |
 | M8.62 held-wave | two Nicanders on the carrier and two more at a hidden point there, reach 32,500 (SHELTON2's shape): the first two killed, the mission is not done in any step before the second two are in the world; those killed too, it is (the user, 2026-11-08: "I landed right away. Thought another wave was expected": the trigger held through the last kill had landed the player; the landing by the trigger now waits 10 s with nobody about, and for a pull after its prompt shows) |
 | M8.63 planet | the canyon run (MIRAGE1): its planet made and its nav points put 700 km over the canyon's floor; the player diving at the floor at Nav 2 is stopped over it, climbing into the stone bridge at Nav 3 is stopped under its rock, an Aera fighter diving at the floor at Nav 4 stays over it. The world is left as it is, so its hash holds the ground's answers: the card's on DOS (the DOS run turns the card on) against terrain.c's natively |
+| M8.64 stream | the canyon run's stream (`role=stream`, three Nicanders from Nav 1 to Nav 5: logic.c `stream_step`): Nav 1 reached, the three come within 8 s, each ahead of the player and over the ground; one killed, another within 3 s; Nav 5 reached and the three killed, none comes (the user, 2026-11-14: "keep around 2 or 3 raining down upon the player ... Once the player takes one out another shows up ahead either in the canyon or above") |
 | M8.58 escort-threat | four Aristons ordered at an Ox (`prey=OX`) 5,000 km beyond it kill it within 60 s (the old game's four Krants killed its Drayman in some 25 s; with the lanes a hull's width apart the Ox lived 200 s in CEPHID3 and this test failed, its shields 120/110 after 60 s) |
 
 The tests take the player to a nav point by moving it (as the autopilot would) and, but for M8.15, land by setting
@@ -557,8 +558,9 @@ writes it by offset, so the offsets are fixed for good. `abi/rvabi.def` is the o
 
 ### A ship: the slot arrays
 
-128 slots. Slot 0 is the player; 1..31 (`RV_MAX_SHIP_SLOT`) are ships, capital ships and missiles; 32 is the shots'
-stand-in bolt; 33..117 are kept free; 118..124 are the fields' hazards; 125 is the camera.
+62 slots (128 until 2026-11-14). Slot 0 is the player; 1..31 (`RV_MAX_SHIP_SLOT`) are ships, capital ships and
+missiles; 32 is the shots' stand-in bolt; 33..51 are kept free (the layer drops a shot with fewer than 5 temporaries
+free); 52..58 are the fields' hazards; 59 is the camera; 61 the scratch vector.
 
 | DS: (slot 0) | name | bytes | meaning, units | written by |
 |---|---|---|---|---|
