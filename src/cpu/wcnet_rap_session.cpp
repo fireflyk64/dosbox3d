@@ -60,11 +60,11 @@ struct Remote {
     int game, plrdiff;
     Bit32u diff;
     bool inWave, drawn;
-    int x, y, shield;
+    int x, y, shield, bank;
     Bit32u pic;
     std::vector<Bit32u> shots;
     Remote() : known(false), at(-1e9), launch(0), run(0), frame(0), game(-1), plrdiff(0), diff(0), inWave(false), drawn(false),
-               x(0), y(0), shield(0), pic(0) {}
+               x(0), y(0), shield(0), bank(3), pic(0) {}
 };
 
 struct RapNet {
@@ -230,6 +230,7 @@ void take_state(const RapState &st, int seat) {
     r.x = st.x();
     r.y = st.y();
     r.pic = st.pic();
+    r.bank = st.has_bank() ? (int)st.bank() : 3;
     r.shield = st.shield();
     r.shots.assign(st.shot().begin(), st.shot().end());
     if (r.inWave && r.run && !wasIn) wclog(1, "Raptor: %s flies run %u (sector %d wave %d)", r.callsign.c_str(), r.run, r.game >> 4, r.game & 15);
@@ -375,6 +376,7 @@ void send_state(double now) {
     st->set_x(l.x);
     st->set_y(l.y);
     st->set_pic(l.pic);
+    st->set_bank((Bit32u)l.bank);
     st->set_drawn(l.drawn);
     st->set_shield(l.shield);
     if (l.inWave && g_run) {
@@ -575,9 +577,19 @@ void rap_session_draw() {
         if (!fresh(r) || r.run != g_run || !r.inWave) continue;
         rap_draw_shots(r.shots, r.x, r.y);
         if (r.drawn) {
+            rap_draw_flames(r.bank, r.x, r.y);
             rap_draw_ship(r.pic, r.x, r.y);
             g_drawn++;
         }
+    }
+}
+
+void rap_session_shadows() {
+    if (!g_net || !g_run) return;
+    for (int s = 0; s < kMaxSeats; s++) {
+        if (s == g_net->self) continue;
+        const Remote &r = g_net->remotes[s];
+        if (fresh(r) && r.run == g_run && r.inWave && r.drawn) rap_add_shadow(r.pic, r.x, r.y);
     }
 }
 

@@ -705,6 +705,7 @@ message RapState {
     // its shots: (kind << 28 | item), x | y << 16 (kind 0 a sprite; 1 a line from the ship to x, y, no item; 2 a beam:
     // the sprite from a third dword's y down to y)
     repeated uint32 shot = 14 [packed=true];
+    optional uint32 bank = 15;          // its bank (playerpic: 0..6, 3 level), which spreads its engines' flames
 }
 
 // The damage a pilot's weapons (and its ship's crashes) did to the wave's enemies since its last: (the enemy's index

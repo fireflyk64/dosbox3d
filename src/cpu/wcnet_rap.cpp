@@ -59,6 +59,7 @@ enum Place { P_GAME, P_FRAME, P_DRAW, P_WAIT, P_GAME_END, P_ADD, P_ADD_AFTER, P_
              P_TILE_MONEY, P_COUNT };
 Bit32u g_places[P_COUNT];
 Bit32u g_waitLoop = 0, g_killSkip = 0;
+Bit32s g_maxShadows = 0;        // MAX_SHADOWS, as SHADOW_Add's cmp has it
 
 // the wave
 bool g_inWave = false;
@@ -182,6 +183,7 @@ bool scan() {
     MemBase[idle + 2] = 0xE9;
     host_writed(MemBase + idle + 3, g_places[P_LAUNCH] - (idle + 7));
     g_places[P_IDLE] = idle;
+    g_maxShadows = MemBase[place_of(A_SHADOW_ADD) + (0x172EB - 0x172BF)];     // (cmp [num_shadows], MAX_SHADOWS: its byte)
     return true;
 }
 
@@ -336,6 +338,56 @@ void put_line(int x0, int y0, int x1, int y1, Bit8u colour) {
     }
 }
 
+// The other pilots' engine flames: the game's own (FLAME_Down: two flames 4 pixels wide under the ship, 8 or 12 rows by
+// the frame's parity, each row's pixels lightened through one of 8 light tables, the brightest at the ship) in another
+// colour and shape, so that the two ships tell apart (the user: "Ideally other players flames are slightly different
+// shape or color"): each row's pixels taken towards a pale blue (kTint) instead of lightened, the flame narrowing to 2
+// pixels for its last third.  The tables are made from the game's palette the way GFX_MakeLightTable makes the game's
+// (GFX_Remap: the nearest colour by the sum of the differences, the last of equals) over colours 0..239 (from 240 the
+// palette's rotating colours), again whenever the palette is not the one they were made from.
+const int kTint[3] = { 30, 46, 63 };
+Bit8u g_flameTab[8][256];
+Bit8u g_flamePal[768];
+bool g_flameTabOk = false;
+
+bool flame_tables() {
+    const Bit32u pal = r32(D(D_PALETTE));
+    if (!ram(pal, 768)) return false;
+    if (g_flameTabOk && memcmp(g_flamePal, MemBase + pal, 768) == 0) return true;
+    memcpy(g_flamePal, MemBase + pal, 768);
+    for (int k = 0; k < 8; k++) {
+        const int a = (8 - k) * 13;                 // (of 128: the row at the ship 81% of the way to the tint, the last 10%)
+        for (int c = 0; c < 256; c++) {
+            int want[3];
+            for (int i = 0; i < 3; i++) {
+                const int v = g_flamePal[3 * c + i] & 63;
+                want[i] = v + (kTint[i] - v) * a / 128;
+            }
+            int best = 0, low = 1 << 30;
+            for (int n = 0; n < 240; n++) {
+                const Bit8u *q = g_flamePal + 3 * n;
+                const int d = abs((q[0] & 63) - want[0]) + abs((q[1] & 63) - want[1]) + abs((q[2] & 63) - want[2]);
+                if (d <= low) {
+                    low = d;
+                    best = n;
+                }
+            }
+            g_flameTab[k][c] = (Bit8u)best;
+        }
+    }
+    g_flameTabOk = true;
+    return true;
+}
+
+void shade_row(Bit32u buf, int x, int y, int w, const Bit8u *tab) {
+    if (y < 0 || y >= 200) return;
+    const int a = std::max(x, (int)kMapLeft), b = std::min(x + w, (int)kMapRight);
+    for (int i = a; i < b; i++) {
+        Bit8u &p = MemBase[buf + (Bit32u)(y * 320 + i)];
+        p = tab[p];
+    }
+}
+
 // The game's frame (its display buffer, the VGA's palette) as a PPM
 void write_frame(const std::string &name) {
     const Bit32u buf = r32(D(D_DISPLAYBUFFER));
@@ -433,8 +485,11 @@ bool rap_local(RapLocal *out) {
     out->drawn = r32(D(D_DRAW_PLAYER)) != 0;
     const Bit32u energy = r32(D(D_P_OBJS) + 4 * kEnergy);
     out->shield = energy ? (int)r32(energy + 8) : 0;
+    out->bank = (int)r32(D(D_PLAYERPIC));
     return true;
 }
+
+bool rap_in_wave() { return g_found && g_inWave; }
 
 // Our shots as RapState carries them: (kind << 28 | item), x | y << 16 [, a beam's top]
 void rap_shots(std::vector<Bit32u> &out, int max) {
@@ -497,6 +552,40 @@ void rap_blow_up() {
 
 bool rap_esc_down() {
     return g_found && r32(D(D_KEYBOARD_X) - 4 * 0x2D + 4 * 1) != 0;     // (keyboard [SC_ESC])
+}
+
+// (FLAME_Down at player_cx -/+ o_engine [playerpic] - 3/2, player_cy + 15: the ship's middle, PLAYERWIDTH and
+// PLAYERHEIGHT 32)
+void rap_draw_flames(int bank, int x, int y) {
+    if (!g_found || !flame_tables()) return;
+    const Bit32u buf = r32(D(D_DISPLAYBUFFER));
+    if (!ram(buf, 64000)) return;
+    const Bit32s spread = (Bit32s)r32(D(D_O_ENGINE) + 4 * (Bit32u)(bank < 0 ? 0 : bank > 7 ? 7 : bank));
+    if (spread < -16 || spread > 16) return;
+    const int cx = x + 16, cy = y + 16;
+    const int h = (r32(D(D_GL_CNT)) & 1) ? 12 : 8;     // (FLAME_Down's height [gl_cnt % 2])
+    const int left[2] = { cx - spread - 3, cx + spread - 2 };
+    for (int e = 0; e < 2; e++) {
+        for (int r = 0; r < h; r++) {
+            const bool tip = r * 3 >= h * 2;
+            shade_row(buf, left[e] + (tip ? 1 : 0), cy + 15 + r, tip ? 2 : 4, g_flameTab[r * 8 / h]);
+        }
+    }
+}
+
+// Put in the game's air shadows (SHADOW_Add's way, within its MAX_SHADOWS): SHADOW_DisplaySky draws it with the
+// game's own, in the game's 3D perspective, under the enemies in the air.  A frame not in memory here is our own
+// ship's current one (the game would load it from its archive in the middle of the frame).
+void rap_add_shadow(Bit32u item, int x, int y) {
+    if (!g_found) return;
+    if (!item_mem(item, NULL)) item = r32(D(D_CURSHIP) + 4 * r32(D(D_PLAYERPIC)));
+    const Bit32s n = (Bit32s)r32(D(D_NUM_SHADOWS));
+    if (n < 0 || n >= g_maxShadows) return;
+    const Bit32u at = D(D_SHADS) + 12 * (Bit32u)n;
+    w32(at, item);
+    w32(at + 4, (Bit32u)x);
+    w32(at + 8, (Bit32u)y);
+    w32(D(D_NUM_SHADOWS), (Bit32u)(n + 1));
 }
 
 void rap_draw_ship(Bit32u item, int x, int y) {
@@ -615,6 +704,7 @@ void rap_check_hooks(Bit32u eip) {
         const Bit32u th = D(D_TILE_HITS);
         if (rap_session_run() && ram(th, 2 * kMapSize)) memcpy(g_tileBefore, MemBase + th, sizeof(g_tileBefore));
     } else if (eip == g_places[P_SHOTS_AFTER]) {
+        if (rap_session_run()) rap_session_shadows();       // (before the ship's own: SHADOW_DisplaySky draws them all)
         const Bit32u th = D(D_TILE_HITS);
         if (rap_session_run() && ram(th, 2 * kMapSize)) {
             for (int spot = 0; spot < kMapSize; spot++) {

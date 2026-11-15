@@ -30,7 +30,9 @@ enum AnchorId {
     A_SHOTS_DISPLAY = 20,     // SHOTS_Display: the player's shots (first_shots.next .. &last_shots)
     A_ALT_X = 21,     // Do_Game's loop: KBD_Key (SC_X) && KBD_Key (SC_ALT) (the keys down: a BOOL a scan code)
     A_TILE_KILL = 22,     // TILE_Think: a tile's hits gone (< 0) and not dead: plr.score += money [mapspot] (the map spot in [ebp - 0x14])
-    A_COUNT = 23
+    A_SHADOW_ADD = 23,     // SHADOW_Add (item, x, y): an air ship's shadow put in shads [num_shadows] (at most MAX_SHADOWS, the cmp's byte), drawn by SHADOW_DisplaySky
+    A_FLAME_SHADES = 24,     // FLAME_InitShades: the flames' light tables made from the game's palette
+    A_COUNT = 25
 };
 static const Bit8u k_begtext_bytes[16] = { 0xcc, 0xeb, 0xfd, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
 static const Bit8u k_begtext_mask[16] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
@@ -78,6 +80,10 @@ static const Bit8u k_alt_x_bytes[32] = { 0x83, 0x3d, 0x38, 0xe0, 0x07, 0x00, 0x0
 static const Bit8u k_alt_x_mask[32] = { 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1 };
 static const Bit8u k_tile_kill_bytes[90] = { 0x66, 0x83, 0xb8, 0xfc, 0x8e, 0x06, 0x00, 0x00, 0x7d, 0x0f, 0x8b, 0x45, 0xec, 0x01, 0xc0, 0x66, 0x83, 0xb8, 0x68, 0x84, 0x06, 0x00, 0x00, 0x74, 0x02, 0xeb, 0x68, 0x8b, 0x5d, 0xe4, 0x83, 0xc3, 0x10, 0x8b, 0x55, 0xe8, 0x83, 0xc2, 0x10, 0xb8, 0x0f, 0x00, 0x00, 0x00, 0xe8, 0x91, 0xa2, 0x00, 0x00, 0xba, 0x05, 0x00, 0x00, 0x00, 0x8b, 0x45, 0xfc, 0x8b, 0x40, 0x0c, 0xe8, 0x57, 0xfa, 0xff, 0xff, 0x8b, 0x45, 0xec, 0x01, 0xc0, 0x8b, 0x80, 0xd2, 0x79, 0x06, 0x00, 0xc1, 0xf8, 0x10, 0x01, 0x05, 0xc8, 0x42, 0x06, 0x00, 0xba, 0x0a, 0x00, 0x00, 0x00 };
 static const Bit8u k_tile_kill_mask[90] = { 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1 };
+static const Bit8u k_shadow_add_bytes[48] = { 0x51, 0x56, 0x57, 0x55, 0x89, 0xe5, 0x81, 0xec, 0x10, 0x00, 0x00, 0x00, 0x89, 0x45, 0xf0, 0x89, 0x55, 0xf4, 0x89, 0x5d, 0xf8, 0x6b, 0x05, 0xf0, 0x16, 0x06, 0x00, 0x0c, 0xba, 0x44, 0xde, 0x06, 0x00, 0x01, 0xc2, 0x89, 0x55, 0xfc, 0x83, 0x3d, 0xf0, 0x16, 0x06, 0x00, 0x32, 0x7d, 0x20, 0x8b };
+static const Bit8u k_shadow_add_mask[48] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1 };
+static const Bit8u k_flame_shades_bytes[68] = { 0x53, 0x51, 0x52, 0x56, 0x57, 0x55, 0x89, 0xe5, 0x81, 0xec, 0x04, 0x00, 0x00, 0x00, 0xc7, 0x45, 0xfc, 0x00, 0x00, 0x00, 0x00, 0x83, 0x7d, 0xfc, 0x08, 0x7c, 0x07, 0xeb, 0x27, 0xff, 0x45, 0xfc, 0xeb, 0xf3, 0xbb, 0x08, 0x00, 0x00, 0x00, 0x2b, 0x5d, 0xfc, 0x01, 0xdb, 0x8b, 0x45, 0xfc, 0xc1, 0xe0, 0x02, 0x8b, 0x90, 0x8c, 0x0c, 0x07, 0x00, 0xa1, 0x40, 0x43, 0x06, 0x00, 0xe8, 0x9e, 0xfa, 0x00, 0x00, 0xeb, 0xd9 };
+static const Bit8u k_flame_shades_mask[68] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1 };
 static const Anchor kAnchors[A_COUNT] = {
     { "begtext", 0x10000, 0, 16, k_begtext_bytes, k_begtext_mask, 0, 16 },
     { "game_entry", 0x11128, 0, 80, k_game_entry_bytes, k_game_entry_mask, 0, 51 },
@@ -102,6 +108,8 @@ static const Anchor kAnchors[A_COUNT] = {
     { "shots_display", 0x15E9D, 0, 64, k_shots_display_bytes, k_shots_display_mask, 37, 27 },
     { "alt_x", 0x1192F, 0, 32, k_alt_x_bytes, k_alt_x_mask, 6, 5 },
     { "tile_kill", 0x12D7C, 79, 90, k_tile_kill_bytes, k_tile_kill_mask, 22, 23 },
+    { "shadow_add", 0x172BF, 0, 48, k_shadow_add_bytes, k_shadow_add_mask, 0, 23 },
+    { "flame_shades", 0x19760, 0, 68, k_flame_shades_bytes, k_flame_shades_mask, 0, 52 },
 };
 enum DataId {
     D_CUR_GAME = 0,     // the sector flown (0 Bravo, 1 Tango, 2 Outer Regions)
@@ -140,7 +148,11 @@ enum DataId {
     D_KEYBOARD_X = 33,     // keyboard [SC_X]: the keys down (a BOOL a scan code, from keyboard [0] 0xB4 before it)
     D_TILE_HITS = 34,     // the map's tiles' hits (a SHORT a map spot: 9 a row, 150 rows)
     D_TILE_DEAD = 35,     // the map's tiles destroyed (a SHORT a map spot)
-    D_COUNT = 36
+    D_NUM_SHADOWS = 36,     // num_shadows: the air shadows of this frame
+    D_SHADS = 37,     // shads [MAX_SHADOWS]: the air shadows (item, x, y: 12 bytes each)
+    D_O_ENGINE = 38,     // o_engine [8]: how far each engine's flame is from the ship's middle at each bank
+    D_PALETTE = 39,     // palette: the pointer to the game's palette (768 bytes, 0..63 each)
+    D_COUNT = 40
 };
 static const Data kData[D_COUNT] = {
     { "cur_game", A_GAME_ENTRY, 60, 0x61484 },
@@ -179,6 +191,10 @@ static const Data kData[D_COUNT] = {
     { "keyboard_x", A_ALT_X, 2, 0x7E038 },
     { "tile_hits", A_TILE_KILL, 3, 0x68EFC },
     { "tile_dead", A_TILE_KILL, 18, 0x68468 },
+    { "num_shadows", A_SHADOW_ADD, 23, 0x616F0 },
+    { "shads", A_SHADOW_ADD, 29, 0x6DE44 },
+    { "o_engine", A_DRAW_FLAMES, 51, 0x613D4 },
+    { "palette", A_FLAME_SHADES, 57, 0x64340 },
 };
 } }  // namespace wc::rapsig
 #endif

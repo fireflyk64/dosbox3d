@@ -2199,6 +2199,7 @@ const TF_FLIGHT_KEY = "wc-tf-flight";
 const isTf = () => !!(gameInfo() && gameInfo().id === "tf");
 const isPriv = () => !!(gameInfo() && (gameInfo().id === "priv" || gameInfo().id === "privrf"));
 const isTv = () => !!(gameInfo() && gameInfo().id === "tv");
+const isRap = () => !!(gameInfo() && gameInfo().id === "rap");
 // (the room's game, the loaded one's or the lobby's)
 function isTvRoom() { return lobbyGameId() === "tv" || isTv(); }
 function tfFlight() {
@@ -2228,14 +2229,43 @@ const TF_PAD = {
   lock: { keys: ["r"], label: "Lock target (TIE Fighter: the nearest enemy)" },
   comms: { keys: [], label: "Communications (nothing in TIE Fighter)" },
 };
+// Raptor's keys for a controller's buttons (the user: "Please add gamepad support if selected on the menu"): Ctrl fires,
+// Alt the special weapon, Space picks the next special, the right Shift the mega bomb (its own keys, SETUP.INI's
+// defaults); Start is Enter in its menus and P (pause) in a wave, Back is Esc.  The stick and the D-pad are its arrows
+// (stickKeys below): the game's own joystick is no more than its arrows (full speed past a third of the stick, in its
+// INPUT.C), and its menus take the arrows too.
+const RAP_PAD = {
+  guns: { keys: ["leftctrl"], label: "Fire guns (Raptor: fire; in its menus a click)" },
+  missile: { keys: ["leftalt"], label: "Fire missile (Raptor: the special weapon)" },
+  target: { keys: ["space"], label: "Change target (Raptor: the next special weapon)" },
+  weapon: { keys: ["rightshift"], label: "Change weapon (Raptor: the mega bomb)" },
+  faster: { keys: [], label: "Speed up (nothing in Raptor)" },
+  slower: { keys: [], label: "Slow down (nothing in Raptor)" },
+  burner: { keys: [], label: "Afterburner (nothing in Raptor)" },
+  nav: { keys: ["esc"], label: "Navigation map (Raptor: Esc: out of a menu; in a wave it asks to abort the mission)" },
+  auto: { keys: ["enter"], flight: ["p"], label: "Autopilot (Raptor: Enter in its menus, pause in a wave)" },
+  up: { keys: [], label: "Up (Raptor: the D-pad and the stick fly the ship)" },
+  down: { keys: [], label: "Down (Raptor: the D-pad and the stick fly the ship)" },
+  gunsel: { keys: [], label: "Change guns (nothing in Raptor)" },
+  lock: { keys: [], label: "Lock target (nothing in Raptor)" },
+  comms: { keys: [], label: "Communications (nothing in Raptor)" },
+};
+const rapKeys = (id) => {
+  const k = RAP_PAD[id];
+  if (!k) return null;
+  const M = running && window.DOSBox;
+  return k.flight && M && M._wc_web_in_flight && M._wc_web_in_flight() ? k.flight : k.keys;
+};
 const controls = initControls({
   module: () => (running && window.DOSBox) || null,
   // (TIE Fighter: a controller steers through the emulator's stick, whatever the mouse does, rolls on the keypad's
   // Ins and Del as the emulator has it, and fires with the mouse's button, the game's own trigger)
   directStick: () => isTf(),
   rollKeys: () => (isTf() ? { left: "kp0", right: "kpperiod" } : null),
-  actionKeys: (id) => (isTf() && TF_PAD[id] ? TF_PAD[id].keys : null),
-  actionLabel: (id) => (isTf() && TF_PAD[id] ? TF_PAD[id].label : null),
+  actionKeys: (id) => (isTf() && TF_PAD[id] ? TF_PAD[id].keys : isRap() ? rapKeys(id) : null),
+  actionLabel: (id) => (isTf() && TF_PAD[id] ? TF_PAD[id].label : isRap() && RAP_PAD[id] ? RAP_PAD[id].label : null),
+  // (Raptor: the stick in a wave and the D-pad everywhere are its arrow keys, the stick past 30% of its travel)
+  stickKeys: () => (isRap() ? { left: "left", right: "right", up: "up", down: "down", at: 0.3 } : null),
   fireByMouse: () => isTf(),
   // (A controller button without a key of its own is the page's: push to talk.)
   onAction: (id, down) => { if (id === "ptt") voice.ptt(down); },

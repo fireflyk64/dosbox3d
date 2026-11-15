@@ -17,7 +17,9 @@ can have their own upgrades, etc. This should be designed in a way that does not
 * **Kept in step.** Each frame's wait holds a machine that is more than two frames ahead of the other. The enemies
   come by the scroll, the same on both machines.
 * **Both ships on both screens.** The other pilot's ship and shots (sprites, the turret's lines, the lasers' beams) are
-  drawn into each game's frame.
+  drawn into each game's frame, the ship with its engines' flames and its shadow (section 2's "The other ship's flames
+  and shadow").  The user, 2026-11-14: "Also flames and shadow. Ideally other players flames are slightly different
+  shape or color": its flames are pale blue and narrow to a point; ours are the game's own.
 * **Shared damage, the killer's money.**
   * Each pilot's damage to the wave's enemies and to the ground's buildings and bridges is told to the other and taken
     off the same enemy or tile there.
@@ -25,6 +27,8 @@ can have their own upgrades, etc. This should be designed in a way that does not
 * **"GG for both."** A pilot shot down blows the other pilot's ship up too, through the game's own death and its
   death screen.
 * Rooms of 2 (`maxSeats`); room codes start `RAP-`.
+* **A controller** picked in the page's Controller menu flies the ship (the user, 2026-11-14: "Please add gamepad support
+  if selected on the menu"): section 4's "A controller".
 
 ## 2. The program (src/cpu/wcnet_rap.cpp)
 
@@ -32,7 +36,7 @@ can have their own upgrades, etc. This should be designed in a way that does not
   * The extender loads its LE into extended memory, flat.
   * The game's 1.2 source has been published under the GPL (github.com/skynettx/dosraptor). It was the map: the names
     below are its own, the addresses the shareware's image.
-* **Finding it.** `scripts/rapsig.py RAP.EXE > src/cpu/wcnet_rap_sig.h` makes 23 code windows: relocated bytes and
+* **Finding it.** `scripts/rapsig.py RAP.EXE > src/cpu/wcnet_rap_sig.h` makes 25 code windows: relocated bytes and
   outside calls masked, each checked to match once. The data addresses come from their operands.
   * It reuses `scripts/tvsig.py`'s `window()` and `matches()` and `scripts/tvexe.py`'s LE loader.
   * The search runs as Terminal Velocity's does: Do_Game's window first, then the others within 512 KB. A copy is the
@@ -51,6 +55,8 @@ can have their own upgrades, etc. This should be designed in a way that does not
 | TILE_Think's kill | 0x12D7C | a tile's `hits < 0`: `plr.score += money[spot]` skipped for the other's |
 | WIN_MainLoop | 0x257F4 | the sector chosen: the launch (held, the wave set) |
 | the code's first bytes | 0x10003 | never run (`int 3; jmp`, nops): the launch's idle written there (`jmp $; jmp <the launch>`) |
+| SHADOW_Add | 0x172BF | (not watched: its window gives `shads`, `num_shadows` and MAX_SHADOWS, the cmp's byte) |
+| FLAME_InitShades | 0x19760 | (not watched: its window gives `palette`) |
 
 The data:
 * `playerx/y` 0x61474/8 and `playerpic` 0x61480; `curship` 0x64214 (the ship's frames as archive items);
@@ -61,6 +67,8 @@ The data:
 * The tiles: `hits` 0x68EFC and `tdead` 0x68468 (a SHORT per map spot, 9 × 150).
 * `keyboard[]` 0x7DF84; the archives' entries `filedesc[f].item` 0x7C5C4 (0xA0 per archive, 0x28 per entry,
   +0x10 its memory).
+* The air shadows: `shads` 0x6DE44 (12 bytes each: item, x, y), `num_shadows` 0x616F0, at most 50; `o_engine` 0x613D4
+  (8 dwords: the engines' spread at each bank); `palette` 0x64340 (a pointer to the 768 bytes, 0..63 each).
 
 **Damage.** An enemy's damage is measured each frame:
 * its hits less than we left them, told as (its index in the wave's script, damage);
@@ -73,6 +81,18 @@ on both machines, and must not be told twice.
 **Drawing.** The game's sprite format is a GFX_PIC header, then segments {x, y, offset, length} and their pixels,
 ending at offset −1. Sprites are drawn as GFX_PutSprite's clipped path does, within the map (x 16..304). A frame not in
 memory here is drawn as our ship's current frame.
+
+**The other ship's flames and shadow.**
+* *Its shadow* is put among the game's own air shadows after SHOTS_Think's call (`shads [num_shadows]`, as SHADOW_Add
+  puts ours, within MAX_SHADOWS). SHADOW_DisplaySky draws it with the others: in the game's 3D perspective, under the
+  enemies in the air, only at the detail that draws shadows.
+* *Its flames* are drawn natively just before its ship, where FLAME_Down puts ours: two flames under the ship, at the
+  ship's middle −/+ `o_engine [its bank]` (RapState carries the bank), 8 or 12 rows by `gl_cnt`'s parity.
+* The game's flame lightens each pixel through 8 light tables, the brightest at the ship. The other's takes each pixel
+  towards a pale blue (30, 46, 63 of 63) instead: 81% of the way in the row at the ship, 10% in the last. Its last third
+  is 2 pixels wide, not 4.
+* Its 8 tables are made from the game's `palette` as GFX_MakeLightTable makes the game's (GFX_Remap: the nearest colour
+  by the sum of the differences). They use colours 0..239 (240 on rotate), made again whenever the palette changes.
 
 ## 3. The room (src/cpu/wcnet_rap_session.cpp)
 
@@ -98,6 +118,23 @@ any `*.SHR` that reads as a zip. `rapPrepare` writes `SETUP.INI` as SETUP.EXE do
 start without one): the Sound Blaster for the music (its FM) and the effects, the keyboard and the mouse.
 `web/chatfilter.js` knows the tag RAP. The overlay's "0 key" chat hint is not shown (Raptor has no chat line).
 
+**A controller.** A pad picked in the Controller menu (or picked up by a press of its buttons) plays Raptor through its
+keyboard, the control the page's SETUP.INI gives it.
+* Raptor's own joystick (SETUP's Control 2) is no more than its arrows (INPUT.C: full speed past a third of the stick).
+  It costs the mouse in the menus and asks for a three-press calibration in text at every start, so no "Built in" choice
+  is offered.
+* *The stick and the D-pad are the arrow keys* (`host.stickKeys` in web/gamepad.js):
+  * the stick in a wave, past 30% of its travel (`wc_web_in_flight` is 1 while Do_Game runs: `rap_in_wave`);
+  * the D-pad everywhere (the menus take the arrows too);
+  * in the menus the stick moves the pointer and A clicks, as for every game.
+* *The buttons are Raptor's keys* (`RAP_PAD` in web/wc.js):
+  * A: Ctrl (fire);
+  * B: Alt (the special weapon);
+  * X: Space (the next special);
+  * Y: the right Shift (the mega bomb);
+  * Start: Enter in the menus, P (pause) in a wave;
+  * Back: Esc.
+
 ## 5. The rigs
 
 * `scripts/raprun.sh [seconds] [key script]`: one machine, a copy of the game with its SETUP.INI. The route from boot
@@ -105,7 +142,8 @@ start without one): the Sound Blaster for the music (its FM) and the effects, th
   the Bravo sector 63, in the wave at ~64 s.
 * `scripts/rapnet-duo.sh [seconds] [host's script] [guest's]`: two machines over TCP, both routed into the wave.
 * `scripts/web-rap.sh [seconds]`: two browser pages in a room of a local lobby, the zip dropped into each. Ends
-  "RAP PAGE OK".
+  "RAP PAGE OK". `PAD=1`: the guest flies by a simulated standard gamepad picked in its Controller menu. In the wave the
+  stick left, the stick right and the D-pad up must move its ship that way, and A held must fire.
 * Aids:
   * `!rapenergy=N` (our energy);
   * `!rapgod=1` (kept full);
@@ -129,12 +167,19 @@ start without one): the Sound Blaster for the music (its FM) and the effects, th
   * Each drew the other's ship 1,852 frames; 309 damage told, 307 taken.
   * Both at 100% of real time, 23.3 frames a second (the game's own rate).
 
+* **Flames and shadow, two native machines:** the frames at the same wave frames show the other's ship with its blue,
+  narrowing flames (12 rows and 8 by the parity) and its shadow, below and to the right of it in the game's
+  perspective; our own ship has the game's flames.
+* **A controller, two browser pages (`PAD=1`):** the guest's ship at (144, 160), the stick left took it to x 5, the stick
+  right to x 282, the D-pad up to y 0; A held fired (its damage told). RAP PAGE OK: both pages at 100% of real time,
+  23.3 frames a second.
+
 ## 7. Open
 
 * The registered game (more sectors: FILE0002-4.GLB) is untested; none at hand. Its RAP.EXE is the same source built
   with REG_VERSION: the windows should find it if the hooked functions are unchanged. A build whose windows do not all
   match is left alone (the log says so).
-* The other's ship has no engine flames or shadow.
 * Enemies' shots aim at each machine's own pilot. A kamikaze chases its own machine's pilot.
-* No pad built in (the keyboard and the mouse).
+* No "Built in" pad choice (the game's own joystick, Control 2): a controller plays through the keyboard, which steers
+  the same.
 * A pilot who chooses a sector while the other is already in a wave waits for the other's next launch.

@@ -188,6 +188,8 @@ export function stepped(v, steps, reach, edge, top) {
 //   rollKeys(): the game's roll keys, { left, right } (KEY names), when not , and .
 //   actionKeys(id), actionLabel(id): an action's keys and its name in the game, when not ACTIONS' (null: those)
 //   fireByMouse(): the guns are the mouse's left button in flight
+//   stickKeys(): a game flown by its arrow keys, { left, right, up, down } (KEY names) and `at`, the share of the
+//              stick's travel that presses them: the stick presses them in flight and the D-pad everywhere (null: none)
 //   builtIn(): whether the game reads a joystick itself (pads are offered
 //              "built in" too)
 //   joystickPort(): null before the launch, then whether it put the game
@@ -202,6 +204,7 @@ export function initControls(host) {
   const held = new Map();       // action id -> true while its keys are down
   const heldKeys = new Map();   // action id -> the keys pressed for it (let go as they were pressed)
   let rollHeld = null;          // "left" | "right" | null
+  const stickHeld = new Set();  // the arrow keys the stick or the D-pad holds down (host.stickKeys)
   let clickHeld = false;
   let fireClickHeld = false;    // (the guns held as the mouse's button: host.fireByMouse)
   let lastPointer = { x: -1, y: -1, at: 0 };
@@ -386,8 +389,9 @@ export function initControls(host) {
       if (rollHeld) sendKeys(M, [rollKeysOf(host)[rollHeld]], false);
       if (clickHeld) M._wc_web_mouse_button(0, 0);
       if (fireClickHeld) M._wc_web_mouse_button(0, 0);
+      if (stickHeld.size) sendKeys(M, Array.from(stickHeld), false);
     }
-    held.clear(); rollHeld = null; clickHeld = false; fireClickHeld = false;
+    held.clear(); rollHeld = null; clickHeld = false; fireClickHeld = false; stickHeld.clear();
     lastJoy = { x: 0, y: 0, b: 0, at: 0 };
   }
 
@@ -420,6 +424,7 @@ export function initControls(host) {
     const pitchOf = (id) => { const b = cfg.axes[id]; const v = shaped(pad.axes[b.axis] || 0); return b.invert ? v : -v; };
     const pitch = clamp(pitchOf("pitch") + pitchOf("pitch2"), -1, 1);
     const roll = axisValue(pad, "roll");
+    const sk = !port && host.stickKeys ? host.stickKeys() : null;
     let x, y, refresh;
     if (port) {
       // The game port's stick, -1..1: right, and back (towards the pilot),
@@ -438,6 +443,10 @@ export function initControls(host) {
       M._wc_web_stick(clamp(yaw * cfg.sensitivity, -1, 1), clamp(pitch * cfg.sensitivity, -1, 1));
       refresh = 1e9;
       x = lastPointer.x; y = lastPointer.y;
+      menu.wasFlight = true;
+    } else if (flying && sk) {
+      // (a game flown by its arrows: the stick presses them, below; the pointer stays)
+      x = lastPointer.x; y = lastPointer.y; refresh = 1e9;
       menu.wasFlight = true;
     } else if (flying) {
       const p = host.pointer() || { x: 0.5, y: 0.5, rx: 0.5, ry: 0.5 };
@@ -465,7 +474,19 @@ export function initControls(host) {
       M._wc_web_pointer(x, y);
       lastPointer = { x, y, at: now };
     }
-    const wantRoll = flying && Math.abs(roll) > 0.5 ? (roll < 0 ? "left" : "right") : null;
+    // A game flown by its arrow keys (host.stickKeys: Raptor): in flight the stick holds them down past `at` of its
+    // travel (right and down the screen positive, as in the menus), the D-pad (the standard layout's 12-15) everywhere.
+    const arrows = new Set();
+    if (sk) {
+      const dpad = (i) => !!(pad.buttons[i] && pad.buttons[i].pressed);
+      const sx = flying ? axisValue(pad, "yaw") : 0;
+      const sy = flying ? clamp(shaped(pad.axes[cfg.axes.pitch.axis] || 0) + shaped(pad.axes[cfg.axes.pitch2.axis] || 0), -1, 1) : 0;
+      if (sx < -sk.at || dpad(14)) arrows.add(sk.left); else if (sx > sk.at || dpad(15)) arrows.add(sk.right);
+      if (sy < -sk.at || dpad(12)) arrows.add(sk.up); else if (sy > sk.at || dpad(13)) arrows.add(sk.down);
+    }
+    for (const k of Array.from(stickHeld)) if (!arrows.has(k)) { sendKeys(M, [k], false); stickHeld.delete(k); }
+    for (const k of arrows) if (!stickHeld.has(k)) { sendKeys(M, [k], true); stickHeld.add(k); }
+    const wantRoll = flying && !sk && Math.abs(roll) > 0.5 ? (roll < 0 ? "left" : "right") : null;
     if (wantRoll !== rollHeld) {
       if (rollHeld) sendKeys(M, [rollKeysOf(host)[rollHeld]], false);
       if (wantRoll) sendKeys(M, [rollKeysOf(host)[wantRoll]], true);

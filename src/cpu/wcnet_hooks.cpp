@@ -2202,7 +2202,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_link(int what) {
 // Nonzero while a mission's frame loop runs (flying, autopilot included):
 // the page steers with the stick then, and moves a menu pointer otherwise.
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_in_flight() {
-    return wc::stick_flying() ? 1 : 0;
+    return wc::stick_flying() || wc::rap_in_wave() ? 1 : 0;     // (Raptor's: a wave under way, flown by the arrows)
 }
 // the page's keys and mouse buttons, into DOSBox's keyboard and mouse driver: every game's (RetroVega's too)
 static void web_keys_and_buttons() {

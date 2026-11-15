@@ -5,6 +5,7 @@
 #
 #   scripts/web-rap.sh [seconds]
 #   ZIP= the shareware (default ~/dev/rap-dl/1rap12.zip); PORT, LOBBY_PORT; ROUTE= the key script into the wave
+#   PAD=1: the guest flies with a simulated controller picked in its Controller menu (no keys of its script in the wave)
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/web-rap}; mkdir -p $OUT; rm -f $OUT/*.png
@@ -32,5 +33,6 @@ ROOM=RAP-$((1000 + RANDOM % 9000))
 route="${ROUTE:-41:enter,45:a,45.3:c,45.6:e,46:enter,49:a,49.3:c,49.6:e,50:enter,53:enter,57:down,59:enter,63:enter}"
 hs="$route,70:!rapgod=1,72:+ctrl"
 gs="$route,70:!rapgod=1,73:right*0.6,74:+ctrl"
+[ -n "${PAD:-}" ] && gs="$route,70:!rapgod=1"
 PLAYWRIGHT_DIR="$PW" SHOT_DIR=$OUT timeout -s KILL $((DUR + 300)) node "$ROOT/scripts/web-rap.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" \
     $ROOM "$ZIP" "$hs" "$gs" $DUR 2>&1 | tee $OUT/run.log

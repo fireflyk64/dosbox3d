@@ -39,6 +39,8 @@ ANCHORS = [
     ('shots_display', 0x15E9D, 0, 0x40, "SHOTS_Display: the player's shots (first_shots.next .. &last_shots)"),
     ('alt_x', 0x1192F, 0, 0x20, "Do_Game's loop: KBD_Key (SC_X) && KBD_Key (SC_ALT) (the keys down: a BOOL a scan code)"),
     ('tile_kill', 0x12D7C, -0x4F, 0x5A, "TILE_Think: a tile's hits gone (< 0) and not dead: plr.score += money [mapspot] (the map spot in [ebp - 0x14])"),
+    ('shadow_add', 0x172BF, 0, 0x30, "SHADOW_Add (item, x, y): an air ship's shadow put in shads [num_shadows] (at most MAX_SHADOWS, the cmp's byte), drawn by SHADOW_DisplaySky"),
+    ('flame_shades', 0x19760, 0, 0x44, "FLAME_InitShades: the flames' light tables made from the game's palette"),
 ]
 
 # name, anchor, offset of the operand from the anchor's place, what the address is
@@ -79,6 +81,10 @@ DATA = [
     ('keyboard_x', 'alt_x', 2, "keyboard [SC_X]: the keys down (a BOOL a scan code, from keyboard [0] 0xB4 before it)"),
     ('tile_hits', 'tile_kill', 0x12D2D - 0x12D7C + 3, "the map's tiles' hits (a SHORT a map spot: 9 a row, 150 rows)"),
     ('tile_dead', 'tile_kill', 0x12D3C - 0x12D7C + 3, "the map's tiles destroyed (a SHORT a map spot)"),
+    ('num_shadows', 'shadow_add', 0x172D4 - 0x172BF + 2, "num_shadows: the air shadows of this frame"),
+    ('shads', 'shadow_add', 0x172DB - 0x172BF + 1, "shads [MAX_SHADOWS]: the air shadows (item, x, y: 12 bytes each)"),
+    ('o_engine', 'draw_flames', 0x116EA - 0x116B9 + 2, "o_engine [8]: how far each engine's flame is from the ship's middle at each bank"),
+    ('palette', 'flame_shades', 0x19798 - 0x19760 + 1, "palette: the pointer to the game's palette (768 bytes, 0..63 each)"),
 ]
 
 

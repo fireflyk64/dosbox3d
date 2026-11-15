@@ -6,8 +6,11 @@
 // together, each page drawing the other's ship, damage told and taken; screenshots of both pictures every 20 s in
 // SHOT_DIR.  Ends "RAP PAGE OK" when every check passed.
 //
+// PAD=1: the guest flies with a controller (a simulated standard gamepad picked in its Controller menu): in the wave
+// the stick left, the stick right and the D-pad up must move its ship that way, and A held must fire (its damage told).
+//
 //   node web-rap.mjs PAGE_URL LOBBY_URL ROOM ZIP HOST_SCRIPT GUEST_SCRIPT [seconds]
-//   env: PLAYWRIGHT_DIR, CHROME, SHOT_DIR, CYCLES, PAGE_ENV
+//   env: PLAYWRIGHT_DIR, CHROME, SHOT_DIR, CYCLES, PAGE_ENV, PAD
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs";
@@ -27,8 +30,16 @@ const stamp = () => ((Date.now() - t0) / 1000).toFixed(1);
 let failed = 0;
 const check = (ok, what) => { console.log(`${stamp()} ${ok ? "OK  " : "FAIL"} ${what}`); if (!ok) failed++; };
 
-async function openPage(who, script, callsign) {
+const PAD = !!process.env.PAD;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const mockPad = () => {
+  window.__pad = { id: "Mock Pad (STANDARD GAMEPAD)", index: 0, connected: true, mapping: "standard", timestamp: 0,
+                   axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })) };
+  navigator.getGamepads = () => [window.__pad];
+};
+async function openPage(who, script, callsign, pad = false) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 1100 } });
+  if (pad) await page.addInitScript(mockPad);
   const logs = [], frames = [];
   page.on("console", (m) => {
     const t = m.text();
@@ -60,13 +71,21 @@ async function openPage(who, script, callsign) {
     .catch(() => {});
   const st = await page.$eval("#sourceStatus", (el) => `${el.dataset.state}: ${el.textContent.slice(0, 110)}`);
   check(st.startsWith("ready") && await page.$eval("#program", (el) => el.value) === "rap", `${who}: the zip recognised as Raptor (${st})`);
+  if (pad) {
+    const key = "0:Mock Pad (STANDARD GAMEPAD)";
+    await page.waitForFunction((k) => Array.from(document.getElementById("padSelect").options).some((o) => o.value === k), key, { timeout: 20000 })
+      .catch(() => {});
+    await page.selectOption("#padSelect", key).catch(() => {});
+    check(await page.inputValue("#padSelect") === key, `${who}: the controller picked in the Controller menu`);
+  }
   return { page, logs, who, frames };
 }
+const all = (p, re) => p.logs.filter((l) => re.test(l));
 
 const host = await openPage("host", hostScript, "HOSTPILOT");
 await host.page.waitForFunction(() => !document.getElementById("lobby").hidden && document.getElementById("roster").children.length > 0, null, { timeout: 60000 });
 await new Promise((r) => setTimeout(r, 2000));
-const guest = await openPage("guest", guestScript, "GUESTPILOT");
+const guest = await openPage("guest", guestScript, "GUESTPILOT", PAD);
 await guest.page.waitForFunction(() => document.getElementById("roster").children.length > 1, null, { timeout: 60000 });
 await host.page.waitForFunction(() => document.getElementById("roster").children.length > 1, null, { timeout: 60000 });
 await host.page.screenshot({ path: path.join(shotDir, "web-host-room.png"), fullPage: true });
@@ -76,6 +95,32 @@ for (const p of [host, guest]) {
 await host.page.click("#fly");
 await new Promise((r) => setTimeout(r, 4000));
 if (await guest.page.$eval("#fly", (b) => !b.disabled)) await guest.page.click("#fly");
+// (the guest's controller in the wave: where its ship is, from the per-second report)
+const padTest = PAD ? (async () => {
+  const g = guest.page;
+  const ship = () => {
+    const l = all(guest, /Raptor: [0-9.]+s: .* run [1-9]/).pop();
+    const m = l && /ship at (-?\d+) (-?\d+)/.exec(l);
+    return m ? [Number(m[1]), Number(m[2])] : [NaN, NaN];
+  };
+  const axis = (i, v) => g.evaluate(([i, v]) => { window.__pad.axes[i] = v; }, [i, v]);
+  const button = (i, v) => g.evaluate(([i, v]) => { window.__pad.buttons[i] = { pressed: v > 0.1, touched: v > 0, value: v }; }, [i, v]);
+  for (let n = 0; n < 240 && !all(guest, /the wave begins together/).length; n++) await sleep(500);
+  await sleep(5000);
+  const a = ship();
+  await axis(0, -1); await sleep(2500); await axis(0, 0); await sleep(1500);
+  const b = ship();
+  await axis(0, 1); await sleep(2500); await axis(0, 0); await sleep(1500);
+  const c = ship();
+  await button(12, 1); await sleep(2000); await button(12, 0); await sleep(1500);
+  const d = ship();
+  console.log(`${stamp()} guest's ship: ${a} -> stick left ${b} -> stick right ${c} -> D-pad up ${d}`);
+  check(b[0] < a[0] - 30, "guest: the controller's stick to the left flew the ship left");
+  check(c[0] > b[0] + 60, "guest: the stick to the right flew it right");
+  check(d[1] < c[1] - 30, "guest: the D-pad up flew it up the screen");
+  await button(0, 1);                                   // (A held from here: the guns)
+  return Date.now();
+})() : null;
 const seconds = Number(secondsArg);
 for (let t = 20; t <= seconds; t += 20) {
   await new Promise((r) => setTimeout(r, 20000));
@@ -83,7 +128,6 @@ for (let t = 20; t <= seconds; t += 20) {
     await p.page.locator("#canvas").screenshot({ path: path.join(shotDir, `web-${p.who}-${t}.png`) }).catch(() => {});
   }
 }
-const all = (p, re) => p.logs.filter((l) => re.test(l));
 check(all(host, /Raptor's settings: SETUP\.INI/).length > 0, "host: the settings written (SETUP.INI)");
 check(all(host, /Raptor: the program's code at/).length > 0, "host: the hooks found the program");
 check(all(guest, /Raptor: the program's code at/).length > 0, "guest: the hooks found the program");
@@ -97,6 +141,13 @@ const taken = sum(host, /taken (\d+)/) + sum(guest, /taken (\d+)/);
 console.log(`${stamp()} the other's ship drawn: host ${hd} frames, guest ${gd}; damage told ${told}, taken ${taken}`);
 check(hd > 100 && gd > 100, "both pages drew the other's ship");
 check(told > 0 && taken > 0, "damage told and taken");
+if (padTest) {
+  const firing = await padTest;
+  const after = all(guest, /Raptor: [0-9.]+s: .* run [1-9]/).slice(-Math.max(1, Math.floor((Date.now() - firing) / 1000) - 1));
+  const gt = after.reduce((s, l) => s + Number((/damage told (\d+)/.exec(l) || [0, 0])[1]), 0);
+  console.log(`${stamp()} guest: damage told with A held: ${gt}`);
+  check(gt > 0, "guest: the controller's A fired (the guest's damage told)");
+}
 for (const p of [host, guest]) {
   const f = p.frames.slice(3);
   if (f.length > 10) {

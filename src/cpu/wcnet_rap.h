@@ -41,6 +41,7 @@ struct RapLocal {
     Bit32u pic;                 // its frame (an item)
     bool drawn;
     int shield;                 // the energy (0..100)
+    int bank;                   // its bank (playerpic: 0..6, 3 level), which spreads its engines' flames
 };
 bool rap_local(RapLocal *out);
 void rap_shots(std::vector<Bit32u> &out, int max);         // our shots, as RapState carries them
@@ -49,7 +50,11 @@ void rap_set_wave(int game, int wave, Bit32u diff, int plrdiff);   // a guest's 
 void rap_take_hits(const std::vector<std::pair<int, int> > &hits);  // others' damage (the enemy's index, the damage)
 void rap_blow_up();                                         // our ship's energy to none (another pilot blown up)
 bool rap_esc_down();                                        // the game's Esc key down
-// a pilot's ship and shots drawn in our frame (Do_Game's draw point)
+bool rap_in_wave();                                         // Do_Game under way (the page's pad steers by the arrows)
+// a pilot's ship and shots drawn in our frame (Do_Game's draw point), its engines' flames under it (another colour and
+// shape than ours: rap_draw_flames), its shadow put among the game's own (rap_add_shadow: drawn by SHADOW_DisplaySky)
+void rap_draw_flames(int bank, int x, int y);
+void rap_add_shadow(Bit32u pic, int x, int y);
 void rap_draw_ship(Bit32u pic, int x, int y);
 void rap_draw_shots(const std::vector<Bit32u> &shots, int shipX, int shipY);
 
@@ -67,6 +72,7 @@ bool rap_session_hold_frame(Bit32u frame);  // the frame hold: ahead of a pilot 
 void rap_session_damage(int index, int damage);    // our damage to an enemy (sent at the next tick)
 void rap_session_dead();                    // our ship blown up
 void rap_session_draw();                    // the others' ships and shots, at the draw point
+void rap_session_shadows();                 // the others' ships' shadows, before the game draws its shadows
 unsigned rap_session_drawn();               // the others' ships drawn since the last asked
 
 }  // namespace wc
