@@ -676,6 +676,9 @@ message NetworkMessage {
     optional RapState rap_state = 81;
     optional RapHits rap_hits = 82;
     optional RapDead rap_dead = 83;
+    // the TIE Fighter demo's (from 90: docs/tiedemo.md)
+    optional TdmHello tdm_hello = 90;
+    optional TdmState tdm_state = 91;
 }
 
 // Raptor: Call of the Shadows (docs/raptor.md).  A pilot says hello; the host answers with its seat.
@@ -720,4 +723,21 @@ message RapHits {
 message RapDead {
     optional uint32 player = 1;
     optional uint32 run = 2;
+}
+
+// The TIE Fighter demo (docs/tiedemo.md).  A pilot says hello; the host answers with its seat.
+message TdmHello {
+    optional string callsign = 1;
+    optional uint32 player = 2;
+    optional uint32 seats = 3;
+}
+
+// A pilot's craft, every frame of its flight (else twice a second): its object's record as the game keeps it, the
+// bytes of its place (+0x06: x, y, z, then the last frame's), its angles and speed (+0x1E..+0x27) and its attitude's
+// unit vectors (+0x3A..+0x53): `rec` those three runs end to end.
+message TdmState {
+    optional uint32 player = 1;
+    optional bool in_flight = 2;
+    optional uint32 frame = 3;          // frames into the flight
+    optional bytes rec = 4;
 }

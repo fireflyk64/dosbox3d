@@ -33,6 +33,7 @@
 #include "wcnet_priv.h"
 #include "wcnet_tv.h"
 #include "wcnet_rap.h"
+#include "wcnet_tiedemo.h"
 #include "paging.h"
 #include "callback.h"
 #include "cpu.h"
@@ -1199,8 +1200,8 @@ static void key_script() {
         wr16(ds::missionStatus, (Bit16u)status);
     } else if (tv_script_item(item, t)) {
         // (Terminal Velocity's aids: wcnet_tv.cpp)
-    } else if (rap_script_item(item, t)) {
-        // (Raptor's aids: wcnet_rap.cpp)
+    } else if (rap_script_item(item, t) || tdm_script_item(item, t)) {
+        // (Raptor's aids: wcnet_rap.cpp; the TIE Fighter demo's: wcnet_tiedemo.cpp)
     } else if (priv_script_item(item, t)) {
         // (Privateer's aids: wcnet_priv.cpp)
     } else if (lab_script_item(item, t)) {
@@ -1244,6 +1245,7 @@ static void build_watch_list() {
     if (priv_found()) {
         priv_watch_list(watch);
     }
+    tdm_watch_list(watch);      // (the TIE Fighter demo's, wcnet_tiedemo.cpp)
     g_watchReady = true;
 }
 
@@ -2362,7 +2364,8 @@ bool wc_net_helmet_name(int *vduOrigin) {
 bool wc_net_comms_hint() {
     return wc::g_build != wc::BUILD_RV && !wc::solo() && !wc::tie_found()   // (TIE Fighter has no chat line yet)
            && !wc::priv_found()                                             // (nor Privateer)
-           && !wc::rap_found();                                             // (nor Raptor)
+           && !wc::rap_found()                                              // (nor Raptor)
+           && !wc::tdm_found();                                             // (nor the TIE Fighter demo)
 }
 
 // A drone riding behind the leader looks at the leader's ship through its
@@ -2661,6 +2664,7 @@ void wc_net_check_cpu_hooks() {
         priv_tick();
         tv_tick();
         rap_tick();
+        tdm_tick();
 #ifdef __EMSCRIPTEN__
         escape_tap();
         web_input_tick();
@@ -2701,6 +2705,10 @@ void wc_net_check_cpu_hooks() {
     }
     if (priv_found()) {
         priv_check_hooks(ip);   // (Privateer: its own places, wcnet_priv.cpp; nothing of Wing Commander's)
+        return;
+    }
+    if (tdm_found()) {
+        tdm_check_hooks(ip);    // (the TIE Fighter demo: its own places, wcnet_tiedemo.cpp)
         return;
     }
     if (solo()) {
