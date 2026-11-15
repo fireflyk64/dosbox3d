@@ -17,7 +17,7 @@ import { initTouch } from "./touch.js";
 import { initVoice } from "./voice.js";
 import { loadSo3 } from "./so3.js";
 import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles, expandSplitZips,
-         saveGame, loadGames, forgetGame, totalSize, gameById, gameByTag, programsIn, knownBuild, GAMES } from "./gamefiles.js";
+         saveGame, loadGames, forgetGame, totalSize, gameById, gameByTag, programsIn, knownBuild, legacyOf, legacyAdvice, looksLikeAnniversary, GAMES } from "./gamefiles.js";
 import { newRoomCode, retagRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS, CALLSIGNS, pickCallsign, givesWay, sameName } from "./chatfilter.js";
 import { initHall, OTHER_SERVER, serverDown } from "./hall.js";
 import { createSetProvider, readTarGz } from "./rvsets.js";
@@ -182,6 +182,16 @@ $("copyLog").addEventListener("click", async () => {
 // ready says nothing there (the "Play" menu shows it); data-state tells the
 // page tests what the text no longer does: "busy", "ready" or "error".
 function sourceStatus(text, state) { const el = $("sourceStatus"); el.textContent = text; el.removeAttribute("title"); if (state) el.dataset.state = state; }
+// ... with the advice for a Wing Commander that is not the release the hooks know (gamefiles.js, LEGACY): which
+// one to download instead, and its store page.
+function sourceAdvice(text, state, which) {
+  sourceStatus(text, state);
+  const a = legacyAdvice(which);
+  if (!a) return;
+  const link = document.createElement("a");
+  link.href = a.link; link.target = "_blank"; link.rel = "noopener"; link.textContent = a.linkText;
+  $("sourceStatus").append(" ", a.text, " ", link, ".");
+}
 const mb = (n) => (n / 1048576).toFixed(1) + " MB";
 
 // Prefill from the URL (?room=CODE&callsign=...) so a link can be shared.
@@ -280,8 +290,10 @@ function setSource(s, want) {
     // Ready: the "Play" menu says which, and the line under it speaks only
     // of what runs single-player.  (Where the files came from and how many
     // is the menu's tooltip: the panel stays a few lines, and Fly in view.)
-    sourceStatus(!s.game.multiplayer ? `${s.game.title}: the multiplayer hooks do not know this program, so it runs single-player.`
-                 : !s.known ? `${s.game.title}: its ${gameById(s.game.id).detect[0]} is not the build the multiplayer hooks know: it runs single-player, and the public lobby stays closed.` : "", "ready");
+    // (a Wing Commander of another release: which one to get, said with it)
+    sourceAdvice(!s.game.multiplayer ? `${s.game.title}: the multiplayer hooks do not know this program, so it runs single-player.`
+                 : !s.known ? `${s.game.title}: its ${gameById(s.game.id).detect[0]} is not the build the multiplayer hooks know: it runs single-player, and the public lobby stays closed.` : "", "ready",
+                 s.game.multiplayer && !s.known ? legacyOf("", s.files) : "");
     $("programLabel").title = (s.builtin ? `${s.game.title} is built into this page: its files come from the site when you fly.`
                                : `From ${s.label}: ${s.files.length} files, ${mb(totalSize(s.files))}.`)
                               + " The menu has every program of the games this browser holds; in a room everyone plays the host's.";
@@ -390,9 +402,13 @@ async function useFiles(files, label, { persist = true } = {}) {
     const sel = $("exePicker");
     sel.innerHTML = "";
     for (const c of id.candidates) { const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o); }
-    sourceStatus(id.candidates.length
-      ? `${label}: no game I recognise (${files.length} files). Pick the executable to run.`
-      : `${label}: no DOS executable found among ${files.length} files.`, "error");
+    // (a Wing Commander by its name or its data files, but none of its programs: another release)
+    const which = legacyOf(label, files);
+    const said = () => sourceAdvice(id.candidates.length
+      ? (which ? `${label}: not a release of ${which === "wc2" ? "Wing Commander II" : "Wing Commander"} this page knows (${files.length} files).`
+               : `${label}: no game I recognise (${files.length} files). Pick the executable to run.`)
+      : `${label}: no DOS executable found among ${files.length} files.`, "error", which);
+    said();
     sel.onchange = () => {
       const exe = sel.value;
       const root = exe.includes("/") ? exe.slice(0, exe.lastIndexOf("/")) : "";
@@ -403,7 +419,7 @@ async function useFiles(files, label, { persist = true } = {}) {
       setSource({ label, game, root, files: sub });
       if (persist) void saveGame({ id: game.id, title: game.title, run: game.run, multiplayer: false, label, files: sub, when: Date.now() });
     };
-    if (id.candidates.length) sel.onchange();
+    if (id.candidates.length) { sel.onchange(); if (which) said(); }   // (the advice stays in view over the picked program's line)
     return;
   }
   $("pickerLabel").hidden = true;
@@ -424,7 +440,8 @@ async function handleFile(file) {
       files = await readZip(bytes);
       log(`read ${files.length} files from ${file.name}`);
     } else if (looksLikeInstaller(bytes)) {
-      sourceStatus(`Unpacking the installer ${file.name} in your browser… (innoextract)`);
+      // (an Anniversary Edition's installer takes minutes and may not fit: what to get instead is said meanwhile)
+      sourceAdvice(`Unpacking the installer ${file.name} in your browser… (innoextract)`, "busy", looksLikeAnniversary(file.name, file.size) ? legacyOf(file.name) : "");
       files = await extractInstaller(bytes, log);
     } else {
       throw new Error(`${file.name} is neither a .zip nor a Windows installer`);
@@ -432,8 +449,9 @@ async function handleFile(file) {
     await useFiles(files, file.name);
   } catch (e) {
     log("game files: " + (e && e.message ? e.message : e));
-    sourceStatus(`Could not use ${file.name}: ${e && e.message ? e.message : e}. ` +
-                 `A .zip of the installed game folder always works; for a GOG installer you can also unpack it with innoextract and zip the result.`, "error");
+    const which = legacyOf(file.name);
+    sourceAdvice(`Could not use ${file.name}: ${e && e.message ? e.message : e}.` +
+                 (which ? "" : ` A .zip of the installed game folder always works; for a GOG installer you can also unpack it with innoextract and zip the result.`), "error", which);
   } finally {
     sourceButtons(true);
   }

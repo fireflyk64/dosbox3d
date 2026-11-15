@@ -737,6 +737,37 @@ export function knownBuild(game, files) {
   return true;
 }
 
+// The Wing Commanders GOG sells since 2026-11-05 are packs, "Wing Commander: 35th Anniversary Edition" and "Wing
+// Commander II: Vengeance of the Kilrathi: 35th Anniversary Edition" (installers of 1.1 GB and 850 MB), each with the
+// release sold until then beside it in the buyer's library: "Wing Commander - Legacy Edition" (an installer of 34 MB)
+// and "Wing Commander II - Legacy Edition" (27 MB).  The Legacy Editions are the builds the hooks know; the old
+// "Wing Commander 1+2" store page is gone.  (The user, 2026-11-15: "If you detect a strange version can you instruct
+// the user to download Legacy Edition from GOG instead ... right now people are struggling with legacy edition".)
+export const LEGACY = {
+  wc1: { title: "Wing Commander", legacy: "Wing Commander - Legacy Edition", mb: 34,
+         pack: "Wing Commander: 35th Anniversary Edition", url: "https://www.gog.com/en/game/wing_commander_35th_anniversary_edition" },
+  wc2: { title: "Wing Commander II", legacy: "Wing Commander II - Legacy Edition", mb: 27,
+         pack: "Wing Commander II: 35th Anniversary Edition", url: "https://www.gog.com/en/game/wing_commander_ii_vengeance_of_the_kilrathi_35th_anniversary_edition" },
+};
+// Which of the two a dropped file is, by its name and by what is in it: "wc1", "wc2" or "" (neither: the later Wing
+// Commanders and Privateer are games of their own).  For a file the page could not make a known game of.
+export function legacyOf(name, files = []) {
+  const names = new Set(files.map((f) => base(f.path.replace(/\\/g, "/")).toUpperCase()));
+  if (["WC2.EXE", "SO1.EXE", "SO2.EXE", "ALTSHIPS.000", "ARTDATA.V00"].some((n) => names.has(n))) return "wc2";
+  if (["WC.EXE", "SM2.EXE"].some((n) => names.has(n)) || (names.has("CAMP.000") && names.has("BRIEFING.000"))) return "wc1";
+  const n = String(name || "").toLowerCase();
+  if (!/wing[\s_.-]*commander/.test(n) || /commander[\s_.-]*(iii|iv|[345])(?![a-z\d])|privateer|armada|academy|prophecy|saga/.test(n)) return "";
+  return /commander[\s_.-]*(ii|2)(?![a-z\d])|vengeance/.test(n) ? "wc2" : "wc1";
+}
+// What to tell the pilot: the words, and the store page they name.
+export function legacyAdvice(which) {
+  const l = LEGACY[which];
+  return l ? { text: `This page flies GOG's Legacy Edition: in your GOG library download "${l.legacy}" (an installer of about ${l.mb} MB; it comes with ${l.pack}) and drop that here.`,
+               link: l.url, linkText: `${l.title} on GOG` } : null;
+}
+// A GOG installer far bigger than a Legacy Edition's under a Wing Commander's name: an Anniversary Edition's.
+export const looksLikeAnniversary = (name, size) => !!legacyOf(name) && /\.exe$/i.test(name) && (size > 200 * 1048576 || /anniversary/i.test(name));
+
 // Directories and file types an installer leaves behind that a DOS game
 // never reads (GOG's own DOSBox, redistributables, manuals, icons).
 const JUNK_DIRS = new Set(["dosbox", "__redist", "__support", "commonappdata", "tmp", "__macosx"]);
