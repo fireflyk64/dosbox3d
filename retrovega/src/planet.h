@@ -44,6 +44,8 @@ long planet_over(const LfVec *pos, long *roof);
 /* a mission's planet (missions.txt planet, ground): begun as the mission loads (next_mission), made and coloured at
  * the launch (planet_ready), its ground nav points put over the ground (planet_navs, after the tables are loaded) */
 void planet_mission(const RvMission __far *m);
+int planet_file(char *name);            /* the mission's ground's file (ID.PLN) into name (13 bytes): 1, or 0 when none
+                                           (ships_want lists it for the page) */
 void planet_ready(void);
 void planet_navs(void);
 void planet_raise(LfVec *pos, long km);   /* (the autopilot's: a ship it put under the ground raised km over it) */

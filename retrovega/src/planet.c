@@ -225,7 +225,8 @@ void planet_xms_freed(unsigned nblocks)
 }
 
 /* the set planet's file read into XMS and taken as the ground: 1 when the ground is in (it may be already) */
-static int ground_load(void)
+static int ground_load(int say)        /* (say: the file missing logged: the last try, after the page has had the
+                                           launch to fetch it) */
 {
     BkHead h;
     char name[13];                      /* (near: DOS wants it so) */
@@ -246,7 +247,8 @@ static int ground_load(void)
         static unsigned char part[32768];
         FILE *f = fopen(name, "rb");
         if (!f) {
-            RV_LOG("planet: no %s here: no ground", name);
+            if (say)
+                RV_LOG("planet: no %s here: no ground", name);
             return 0;
         }
         got = (unsigned)fread(&h, 1, sizeof h, f);
@@ -260,7 +262,8 @@ static int ground_load(void)
         unsigned char *part = rv_filebuf;
         int fd;
         if (_dos_open(name, O_RDONLY, &fd) != 0) {
-            RV_LOG("planet: no %s here: no ground", name);
+            if (say)
+                RV_LOG("planet: no %s here: no ground", name);
             return 0;
         }
         if (_dos_read(fd, part, sizeof h, &got) != 0)
@@ -398,7 +401,7 @@ int planet_make(unsigned ms)
     if (!g_pl.set)
         return -1;
     r = pic_make(ms);
-    if (ms == 0 && !ground_load() && g_pl.file[0])
+    if (ms == 0 && !ground_load(0) && g_pl.file[0])
         return -1;                      /* (a mission's planet with no ground to fly over) */
     return r;
 }
@@ -535,12 +538,22 @@ void planet_mission(const RvMission __far *m)
     (void)planet_set((const TrPlanetRec __far *)&m->px, (const TrNavRec __far *)m->nav, m->nnav, m->id);
 }
 
+int planet_file(char *name)
+{
+    int i;
+    for (i = 0; i < 12 && g_pl.file[i]; i++)
+        name[i] = g_pl.file[i];
+    name[i] = 0;
+    return g_pl.set && i > 0;
+}
+
 void planet_ready(void)
 {
     const unsigned char __far *pal = PL_PALETTE_NOW();
     if (!g_pl.set)
         return;
-    (void)planet_make(0);
+    (void)pic_make(0);
+    (void)ground_load(1);
     if (g_pl.pic)
         (void)gx_planet_call(PL_PALETTE, &pal, sizeof pal, 0, 0);
 }
