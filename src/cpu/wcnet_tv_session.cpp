@@ -66,9 +66,16 @@ const char kFlame[] = "fireball.bin";   // the afterburner's flame (STARTUP.POD,
 // game's own models.  A model is looked up in the game's archives before it is loaded (the loader ends the program on
 // a name it cannot find); one not there, or "planet", is drawn as the level's own craft (its first craft type's
 // model, loaded with the level), else as the TV-202.
-const char *const kLooks[] = { "ship.bin", "icebrd.bin", "snowftr.bin", "hawk.bin", "gull1.bin", "planet" };
-const char *const kLookNames[] = { "TV-202", "Ymir IceRider", "Ymir SnowScout", "Hawk", "Gull", "the level's own craft" };
-const int kLookCount = 6;
+// The first six are the shareware's (episode one's craft); the rest the registered game's, of its other planets
+// (their models in CDROM.POD, the names the briefings': the levels' .DEF files): in a game without them (the
+// shareware, in a room with the registered game's host) they are drawn as the level's own craft.
+const char *const kLooks[] = { "ship.bin", "icebrd.bin", "snowftr.bin", "hawk.bin", "gull1.bin", "planet",
+    "ddcshp.bin", "afighter.bin", "dogg.bin", "pooh.bin", "deboss.bin", "lavash.bin", "triship.bin", "volship.bin",
+    "litecr.bin", "bugship.bin", "podgun1.bin", "pincher.bin" };
+const char *const kLookNames[] = { "TV-202", "Ymir IceRider", "Ymir SnowScout", "Hawk", "Gull", "the level's own craft",
+    "Crythanian Shockstar", "WSF Razor-4", "TTA Sandstorm", "TTA Dustdevil", "TTA Penetrator", "OSO Phoenix", "Ositsho Wedge",
+    "Ositsho Quadram", "Erigonean Shriek", "CAF Attack Fighter", "DTS-1", "XI Coreguard" };
+const int kLookCount = (int)(sizeof(kLooks) / sizeof(kLooks[0]));
 enum { LOOK_TV202 = 0, LOOK_PLANET = 5 };
 
 int look_index(const std::string &look0) {
@@ -186,6 +193,7 @@ double g_joinAt = -1e9;         // our last start of a place (the level's start,
 bool g_inLevel = false;         // our campaign's level under way (from its call to its end: its briefing too)
 unsigned g_levelStarts = 0;     // the level function's starts (a retry of a level is a new start: everything of the last
                                 // one's forgotten, its models the game's to free)
+bool g_holdNoLevel = false;     // ... held because the host's level is not in this game (the shareware)
 double g_holdSince = -1;        // a guest's level held since (waiting for the host to fly)
 double g_offLevelSince = -1;    // the host flying another level than ours, since
 double g_deadSentFor[4] = { -1e9, -1e9, -1e9, -1e9 };   // (a seat's start we sent the gone objects for)
@@ -1117,6 +1125,20 @@ bool tv_session_level_call(int *index) {
     }
     if (!hostHere) return false;
     const Remote &h = g_net->remotes[0];
+    if (h.known && now - h.at < kStateStaleMs && (h.flying || h.inLevel) && h.level >= 0 && !h.levelName.empty() &&
+        !tv_registered() && !tv_level_listed(h.levelName)) {
+        // The shareware has one episode: a host with the registered game flying a level of the other two (a file the
+        // shareware's archives do not have: loading it would end the program) is waited for, the line saying why.
+        if (g_holdSince < 0 || !g_holdNoLevel) {
+            g_holdSince = now;
+            g_holdNoLevel = true;
+            wclog(1, "Terminal Velocity: the host's level %s is not in this game (the shareware): held", h.levelName.c_str());
+            notice(h.callsign + " flies " + h.levelName + ", a level of the registered game: the shareware has episode one only");
+        }
+        if (g_noticeAt >= 0 && now - g_noticeAt > kNoticeMs - 1000) g_noticeAt = now;
+        return true;
+    }
+    g_holdNoLevel = false;
     if (h.known && now - h.at < kStateStaleMs && (h.flying || h.inLevel) && h.level >= 0) {
         if (*index != h.level) wclog(1, "Terminal Velocity: the host's level %d (%s) flown, not %d", h.level, h.levelName.c_str(), *index);
         *index = h.level;

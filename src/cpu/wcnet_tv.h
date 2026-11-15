@@ -79,7 +79,7 @@ bool tv_script_item(const std::string &item, double t);
 // drawn, the call to be stepped over); at the cockpit copy's entry (its place; true: made, returned from); the check
 // mode's return to the game's code after its own (WCNET_TV_SPANS=check: true if it was the one awaited).
 void tv_span_reset();
-bool tv_span_setup(Bit32u codeDelta);
+bool tv_span_setup(Bit32u codeDelta, Bit32u codeLo, Bit32u codeHi);
 bool tv_span_checking();
 bool tv_span_call();
 int tv_native_entry_places(Bit32u out[3]);     // the cockpit copy, the height lookup, the polygon filler (0: none)
@@ -106,6 +106,8 @@ bool tv_session_reinforce_begin();                  // the level's reinforcement
 int tv_session_reinforce_pilots();                  // the pilots our game reinforces for (1 alone; 0: another's game does)
 void tv_session_level(int index, const std::string &name);  // a level about to be flown
 // The campaign's call of a level: true, held (made again later); *index may be changed (the host's level).
+bool tv_registered();           // the registered game's program (its campaign loop's shape), not the shareware's
+bool tv_level_listed(const std::string &name);     // a level file among the campaign's table's now
 bool tv_session_level_call(int *index);
 void tv_session_level_end();                       // the campaign's level over (done, a death, a quit)
 void tv_session_shutdown();

@@ -4,7 +4,9 @@
 # craft menus, the page's settings, the session over the pages' WebRTC data channels.  Ends "TV PAGE OK".
 #
 #   scripts/web-tv.sh [seconds]
-#   ZIP= the shareware (default ~/dev/tv-dl/3dtv12.zip); PORT, LOBBY_PORT; HOST_CRAFT / GUEST_CRAFT
+#   ZIP= the shareware (default ~/dev/tv-dl/3dtv12.zip), or the registered game's installer as GOG sells it
+#   (setup_terminal_velocity_1.2_*.exe: unpacked by the page); GUEST_ZIP= the guest's own (the shareware beside the
+#   host's registered game); PORT, LOBBY_PORT; HOST_CRAFT / GUEST_CRAFT
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/web-tv}; mkdir -p $OUT; rm -f $OUT/*.png

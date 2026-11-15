@@ -38,6 +38,7 @@ double g_armedUntilMs = 0;
 double g_nextScanMs = 0;
 double g_nextReportMs = 0;
 Bit32u g_anchor[A_COUNT];       // each anchor's window, linear
+int g_variant[A_COUNT];         // ... and which window it is: -1 the first (the shareware's), else kVariants' index
 Bit32u g_data[D_COUNT];         // each data address, linear
 Bit32u g_frames = 0, g_framesReported = 0;
 double g_lastFrameMs = -1e9;
@@ -69,7 +70,9 @@ double g_paceIdleMs = 0;
 bool rd8(Bit32u lin, Bit8u *v) { return mem_readb_checked(lin, v) ? false : true; }
 bool rd32(Bit32u lin, Bit32u *v) { return mem_readd_checked(lin, v) ? false : true; }
 
-Bit32u place_of(int anchor) { return g_anchor[anchor] + (Bit32u)kAnchors[anchor].place; }
+// An anchor's window as found: its first (the shareware's shape), or the variant (the registered game's).
+const Anchor &window_of(int anchor) { return g_variant[anchor] < 0 ? kAnchors[anchor] : kVariants[g_variant[anchor]].window; }
+Bit32u place_of(int anchor) { return g_anchor[anchor] + (Bit32u)window_of(anchor).place; }
 
 // Does the anchor's window stand at lin (its kept bytes equal)?
 bool window_at(const Anchor &a, Bit32u lin) {
@@ -114,13 +117,22 @@ bool resolve(Bit32u fire) {
     const Bit32u lo = fire > 0x100000 + 0x80000 ? fire - 0x80000 : 0x100000;
     const Bit32u hi = std::min(top, fire + 0x80000);
     for (int i = 0; i < A_COUNT; i++) {
+        // (the anchor's first window, else its variants in turn: the registered game's shape of the same code)
         Bit32u at[8];
-        const int k = find_anchor(kAnchors[i], lo, hi, at, 8);
+        const Anchor *a = &kAnchors[i];
+        g_variant[i] = -1;
+        int k = find_anchor(*a, lo, hi, at, 8);
+        for (int v = 0; k < 1 && v < V_COUNT; v++) {
+            if (kVariants[v].anchor != i) continue;
+            a = &kVariants[v].window;
+            g_variant[i] = v;
+            k = find_anchor(*a, lo, hi, at, 8);
+        }
         if (k < 1) {
             wclog(1, "Terminal Velocity: code near %08x, but '%s' was not found: not a build the hooks know", fire, kAnchors[i].name);
             return false;
         }
-        const Bit32s want = (Bit32s)(kAnchors[i].image - kAnchors[i].place) - (Bit32s)kAnchors[A_FIRE_FN].image;
+        const Bit32s want = (Bit32s)(a->image - a->place) - (Bit32s)a->fire;
         int best = 0;
         for (int j = 1; j < std::min(k, 8); j++) {
             if (labs((Bit32s)(at[j] - fire) - want) < labs((Bit32s)(at[best] - fire) - want)) best = j;
@@ -129,7 +141,11 @@ bool resolve(Bit32u fire) {
     }
     for (int i = 0; i < D_COUNT; i++) {
         Bit32u v = 0;
-        rd32(g_anchor[kData[i].anchor] + (Bit32u)kData[i].at, &v);
+        int at = kData[i].at;
+        for (int k = 0; k < VD_COUNT; k++) {
+            if (kVariantData[k].data == i && kVariantData[k].variant == g_variant[kData[i].anchor]) at = kVariantData[k].at;
+        }
+        rd32(g_anchor[kData[i].anchor] + (Bit32u)at, &v);
         if (v < 0x100000 || v >= top) {
             return false;
         }
@@ -137,6 +153,10 @@ bool resolve(Bit32u fire) {
     }
     return true;
 }
+
+// Where the program's code can be: within 512 KB of its fire function.
+Bit32u lo_of_code() { const Bit32u f = place_of(A_FIRE_FN); return f > 0x100000 + 0x80000 ? f - 0x80000 : 0x100000; }
+Bit32u hi_of_code() { return std::min((Bit32u)MEM_TotalPages() << 12, place_of(A_FIRE_FN) + 0x80000); }
 
 bool scan() {
     static unsigned attempts = 0;
@@ -162,7 +182,7 @@ bool scan() {
     g_places[P_HIT] = place_of(A_HIT_APPLY);
     g_places[P_FIRE] = place_of(A_FIRE_FN);
     g_places[P_LEVEL] = place_of(A_LEVEL_FN);                             // (the level function's entry)
-    g_campaignCall = place_of(A_CAMPAIGN) + (0x2EC79 - 0x2EC58);          // (the campaign's call of it: ebx its index)
+    g_campaignCall = place_of(A_CAMPAIGN);                                // (the campaign's call of it: its index in memory)
     g_places[P_LEVEL_END] = g_campaignCall + 5;                             // (... and where it comes back: the level over)
     // the two ways the game makes an object in flight (a launcher's craft, a generator's), and their ends: a launch
     // not ours goes straight to its function's end
@@ -184,7 +204,7 @@ bool scan() {
     g_paceStub = 0;
     g_paceLast = 0;
     g_paceResume = false;
-    if (tv_span_setup(place_of(A_FIRE_FN) - kAnchors[A_FIRE_FN].image)) {
+    if (tv_span_setup(place_of(A_FIRE_FN) - kAnchors[A_FIRE_FN].image, lo_of_code(), hi_of_code())) {
         g_places[P_SPAN] = place_of(A_SPAN_CALL);
         Bit32u entries[3] = { 0, 0, 0 };
         tv_native_entry_places(entries);
@@ -597,14 +617,16 @@ void tv_check_hooks(Bit32u eip) {
         tv_session_level_end();
     } else if (eip == g_places[P_LEVEL]) {
         // The level function's entry: from the campaign's call (its return address), a level of the campaign about to be
-        // flown, ebx its index, [esp+4] its file's name.  The session may give it another index (a guest flies the
+        // flown, its index in memory (the shareware's loop has it in ebx too, and takes it from memory again after
+        // the call; the registered game's only in memory), [esp+4] its file's name.  The session may give it another index (a guest flies the
         // host's level), or hold it: the call made again a time slice later (the program idles meanwhile), as long
         // as the session says so.
         const Bit32u ret = mem_readd(SegPhys(ss) + reg_esp);
         if (ret != g_campaignCall + 5) {
             return;
         }
-        int index = (int)reg_ebx;
+        const int mine = (int)tv_r32(g_data[D_LEVEL_INDEX]);
+        int index = mine;
         if (tv_session_level_call(&index)) {
             CPU_Pop32();
             reg_eip = ret - 5;
@@ -612,13 +634,12 @@ void tv_check_hooks(Bit32u eip) {
             CPU_Cycles = 0;
             return;
         }
-        if (index != (int)reg_ebx && index >= 0 && index < (int)tv_r32(g_data[D_LEVEL_COUNT])) {
-            reg_ebx = (Bit32u)index;
+        if (index != mine && index >= 0 && index < (int)tv_r32(g_data[D_LEVEL_COUNT])) {
             tv_w32(g_data[D_LEVEL_INDEX], (Bit32u)index);
             mem_writed(SegPhys(ss) + reg_esp + 4, g_data[D_LEVEL_NAMES] + (Bit32u)index * 0x28);
         }
         g_counts[6]++;
-        g_level = (int)reg_ebx;
+        g_level = (int)tv_r32(g_data[D_LEVEL_INDEX]);
         g_levelName = tv_level_name();
         wclog(1, "Terminal Velocity: level %d (%s) about to be flown, difficulty %d", g_level, g_levelName.c_str(),
               (int)tv_r32(g_data[D_DIFFICULTY]));
@@ -646,6 +667,25 @@ bool tv_player(TvShip *out) {
 }
 
 int tv_level() { return g_found ? g_level : -1; }
+
+// The levels this game has under their names now: the campaign's table (the shareware's is all it has: SHARE.VOX's
+// one episode; the registered game's is the episode chosen, of its three and the hidden mission).
+bool tv_registered() { return g_found && g_variant[A_CAMPAIGN] >= 0; }
+
+bool tv_level_listed(const std::string &name) {
+    if (!g_found) return false;
+    const int n = std::min(64, (int)tv_r32(g_data[D_LEVEL_COUNT]));
+    for (int i = 0; i < n; i++) {
+        std::string s;
+        for (Bit32u k = 0; k < 0x28; k++) {
+            Bit8u c = 0;
+            if (!rd8(g_data[D_LEVEL_NAMES] + (Bit32u)i * 0x28 + k, &c) || !c) break;
+            s += (char)c;
+        }
+        if (strcasecmp(s.c_str(), name.c_str()) == 0) return true;
+    }
+    return false;
+}
 
 int tv_space() {
     if (!g_found || tv_r32(g_data[D_IN_TUNNEL]) != 1) return 0;

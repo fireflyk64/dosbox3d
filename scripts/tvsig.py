@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Terminal Velocity: the hooks' signatures, made from the shareware GAME.EXE (docs/terminalvelocity.md).
+"""Terminal Velocity: the hooks' signatures, made from the shareware GAME.EXE and, where the registered game's code
+is another shape, from the registered GAME.EXE too (docs/terminalvelocity.md).
 
-    scripts/tvsig.py GAME.EXE > src/cpu/wcnet_tv_sig.h
+    scripts/tvsig.py SHAREWARE/GAME.EXE REGISTERED/GAME.EXE > src/cpu/wcnet_tv_sig.h
 
 The emulator finds the program in memory by its code, not by its file, and reads every data address it uses out
 of the code itself: each ANCHOR below is a window of the code object's bytes around one place (the bytes the
@@ -10,7 +11,14 @@ each DATA item is the 32-bit operand at a fixed distance into one anchor's windo
 linear address the game uses.  A build whose windows all match once (the registered game, if its code is the
 same but for where things are) is flown as this one; any window not found leaves the game alone.
 
-Each window must match exactly once in this GAME.EXE's code object: checked here, the header not written otherwise.
+The registered game (the CD-ROM edition's GAME.EXE, as GOG sells it) is another compile of the same source: 30 of
+the 31 windows and every natively drawn routine are in it byte for byte (but where things are); its campaign loop
+keeps the level's index in memory, not in ebx, so that anchor has a second window (VARIANTS), made from the
+registered program, with its own data offsets.  The emulator tries an anchor's first window, then its variants.
+
+Each window must match exactly once in its own GAME.EXE's code object, and every anchor (by its first window or a
+variant) and every routine once in each program given: checked here, the header not written otherwise.
+scripts/tvsigcheck.py tries another build's GAME.EXE the same way.
 """
 import os, sys, struct
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -47,8 +55,15 @@ ANCHORS = [
     ('reinforce', 0x23EF1, -0xB1, 0xB8, "the level's reinforcements (0x23E40, after the objects' loop): its 4 s clock taken, a craft about to be put near the player if few hostiles are awake near it (1/2/4 by difficulty)"),
     ('reinforce_end', 0x241CA, -0x19, 0x27, "the reinforcements' end: a craft made by then"),
     ('load_model_fn', 0x402E0, 0, 48, "a model loaded from the game's files, by name: its handle (a name it cannot find ends the program)"),
-    ('campaign', 0x2EC58, 0, 40, "the campaign loop: the level index, the count, the level's file name, the level flown"),
+    ('campaign', 0x2EC79, 0x2EC58 - 0x2EC79, 0x2EC8F - 0x2EC58, "the campaign loop's call of the level function (the level's index in memory, its file's name pushed): the index, the count, the names"),
     ('span_call', 0x3E85D, -9, 0x30, "the polygon filler's call of a scanline's span routine (through the pointer the polygon's kind set): esi, edi its two edges, ebx the row"),
+]
+
+# An anchor's other windows, from another program: anchor, the program (1: the registered GAME.EXE, the second
+# argument), place, window start, length, and its data items' offsets from the place.
+VARIANTS = [
+    ('campaign', 1, 0x2ED8E, 0x2ED74 - 0x2ED8E, 0x2ED9E - 0x2ED74,
+     {'level_index': 0x2ED74 + 1 - 0x2ED8E, 'level_count': 0x2ED79 + 2 - 0x2ED8E, 'level_names': 0x2ED88 + 1 - 0x2ED8E}),
 ]
 
 # The span routines drawn natively (src/cpu/wcnet_tv_span.cpp): name, image start, image end, what it is.  Each is
@@ -104,9 +119,9 @@ DATA = [
     ('tunnel_length', 'tunnel_frame', 0x42AB1 - 0x42A90, "the tunnel's length in 16-unit steps of z (the way out past it)"),
     ('awake_hostiles', 'reinforce', 0x23E87 + 2 - 0x23EF1, "the hostiles awake near the player this frame (the objects' loop counts them): the reinforcements' measure"),
     ('reinforce_clock', 'reinforce', 0x23EB8 + 2 - 0x23EF1, "the reinforcements' clock (16.16: a quarter of the frame time added, one at 1.0)"),
-    ('level_index', 'campaign', 0x2EC58 - 0x2EC58 + 2, "the campaign's level, 0.."),
-    ('level_count', 'campaign', 0x2EC5E - 0x2EC58 + 2, "the campaign's level count"),
-    ('level_names', 'campaign', 0x2EC6D - 0x2EC58 + 1, "the levels' file names, 0x28 bytes each"),
+    ('level_index', 'campaign', 0x2EC58 + 2 - 0x2EC79, "the campaign's level, 0.."),
+    ('level_count', 'campaign', 0x2EC5E + 2 - 0x2EC79, "the campaign's level count"),
+    ('level_names', 'campaign', 0x2EC6D + 1 - 0x2EC79, "the levels' file names, 0x28 bytes each"),
 ]
 
 
@@ -120,7 +135,11 @@ def window(le, img, place, start, length):
     # near calls and jumps out of the window: their offsets differ with the layout
     import capstone
     md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
-    for ins in md.disasm(data, a):
+    # (the window read on a little past its end: an instruction its end cuts is still told, a near call's offset
+    # bytes inside the window masked like any other's)
+    for ins in md.disasm(bytes(img[a:a + length + 16]), a):
+        if ins.address >= a + length:
+            break
         b = ins.bytes
         rel = None
         if b[0] in (0xE8, 0xE9) and ins.size == 5:
@@ -138,16 +157,7 @@ def window(le, img, place, start, length):
 
 def matches(img, lo, hi, data, mask):
     # the longest run of kept bytes as the key, then the rest compared
-    best, run, bstart, rstart = 0, 0, 0, 0
-    for i, m in enumerate(mask):
-        if m:
-            if run == 0:
-                rstart = i
-            run += 1
-            if run > best:
-                best, bstart = run, rstart
-        else:
-            run = 0
+    bstart, best = key_of(mask)
     key = data[bstart:bstart + best]
     out = []
     j = img.find(key, lo, hi)
@@ -159,51 +169,158 @@ def matches(img, lo, hi, data, mask):
     return out, bstart, best
 
 
-def main():
-    le = tvexe.LE(sys.argv[1])
-    img = le.load()
-    o = le.objs[0]
-    lo, hi = o['base'], o['base'] + o['vsize']
+def key_of(mask):
+    """The longest run of kept bytes: (start, length)."""
+    best, run, bstart, rstart = 0, 0, 0, 0
+    for i, m in enumerate(mask):
+        if m:
+            if run == 0:
+                rstart = i
+            run += 1
+            if run > best:
+                best, bstart = run, rstart
+        else:
+            run = 0
+    return bstart, best
+
+
+def span_window(le, img, a, b):
+    return bytes(img[a:b]), bytes(0 if a + i in le.fixed else 0xff for i in range(b - a))
+
+
+def build(les, imgs, err):
+    """The anchors' windows: rows of (name, place, start, data, mask, key start, key length, what, program, data
+    offsets or None): each anchor's first window (program 0), then the variants.  False too if a check failed."""
     rows, ok = [], True
-    for name, place, start, length, what in ANCHORS:
+    fire = [None] * len(les)
+    todo = [(n, 0, p, s, l, w, None) for n, p, s, l, w in ANCHORS]
+    for n, prog, p, s, l, offs in VARIANTS:
+        todo.append((n, prog, p, s, l, [a[4] for a in ANCHORS if a[0] == n][0], offs))
+    for name, prog, place, start, length, what, offs in todo:
+        if prog >= len(les):
+            err('anchor %s: its variant needs program %d (the registered GAME.EXE)' % (name, prog))
+            return rows, False
+        le, img = les[prog], imgs[prog]
+        o = le.objs[0]
         data, mask = window(le, img, place, start, length)
-        found, kstart, klen = matches(img, lo, hi, data, mask)
+        found, kstart, klen = matches(img, o['base'], o['base'] + o['vsize'], data, mask)
         if found != [place + start]:
-            sys.stderr.write('anchor %s: found at %s, not once at %x\n' % (name, [hex(f) for f in found], place + start))
+            err('anchor %s: found at %s, not once at %x' % (name, [hex(f) for f in found], place + start))
             ok = False
         if klen < 4:
-            sys.stderr.write('anchor %s: its longest kept run is %d bytes\n' % (name, klen))
+            err('anchor %s: its longest kept run is %d bytes' % (name, klen))
             ok = False
-        rows.append((name, place, start, data, mask, kstart, klen, what))
+        rows.append((name, place, start, data, mask, kstart, klen, what, prog, offs))
     for name, anchor, off, what in DATA:
-        a = [r for r in rows if r[0] == anchor][0]
-        k = off - a[2]
-        if not (0 <= k and k + 4 <= len(a[3])) or any(a[4][k:k + 4]):
-            sys.stderr.write('data %s: offset %d of %s is not a relocated operand\n' % (name, off, anchor))
+        for r in rows:
+            if r[0] != anchor:
+                continue
+            if r[9] is not None and name not in r[9]:
+                err('data %s: the variant of %s has no offset for it' % (name, anchor))
+                ok = False
+                continue
+            k = (off if r[9] is None else r[9][name]) - r[2]
+            if not (0 <= k and k + 4 <= len(r[3])) or any(r[4][k:k + 4]):
+                err('data %s: offset %d of %s (program %d) is not a relocated operand' % (name, k + r[2], anchor, r[8]))
+                ok = False
+    return rows, ok
+
+
+def locate(rows, les, imgs, prog, say=None):
+    """Program prog tried as the emulator tries memory: each anchor by its first window that is there once, each
+    data operand relocated, each routine once (or the nearest to where the dispatch's move puts it).  The count of
+    what was not found."""
+    le, img = les[prog], imgs[prog]
+    o = le.objs[0]
+    lo, hi = o['base'], o['base'] + o['vsize']
+    bad = 0
+    for name, place, start, length, what in ANCHORS:
+        got = None
+        for v, r in enumerate([r for r in rows if r[0] == name]):
+            found, _, _ = matches(img, lo, hi, r[3], r[4])
+            if len(found) == 1:
+                got = (v, r, found[0] - r[2])
+                break
+        if say:
+            say('%-18s %s' % (name, 'MISSING <<<' if not got else '%05X%s' % (got[2], ' (variant %d)' % got[0] if got[0] else '')))
+        if not got:
+            bad += 1
+            continue
+        for dname, anchor, off, dwhat in DATA:
+            if anchor != name:
+                continue
+            at = got[2] + (off if got[1][9] is None else got[1][9][dname])
+            fixed = all(at + k in le.fixed for k in range(4))
+            bad += not fixed
+            if say:
+                say('  data %-16s %05X %s' % (dname, struct.unpack_from('<I', img, at)[0], '' if fixed else 'NOT RELOCATED <<<'))
+    shift = None
+    for name, s, e, what in SPANS:
+        data, mask = span_window(les[0], imgs[0], s, e)
+        found, _, _ = matches(img, lo, hi, data, mask)
+        if shift is not None:
+            found = sorted(found, key=lambda f: abs(f - s - shift))[:1]
+        elif len(found) == 1:
+            shift = found[0] - s
+        bad += len(found) != 1
+        if say:
+            say('span %-18s %05X -> %s' % (name, s, ' '.join('%05X' % f for f in found) if len(found) == 1 else 'MISSING or not once <<<'))
+    return bad
+
+
+def main():
+    err = lambda t: sys.stderr.write(t + '\n')
+    les = [tvexe.LE(p) for p in sys.argv[1:3]]
+    imgs = [le.load() for le in les]
+    le, img = les[0], imgs[0]
+    rows, ok = build(les, imgs, err)
+    for prog in range(len(les)):
+        if ok and locate(rows, les, imgs, prog):
+            locate(rows, les, imgs, prog, err)
+            err('program %d: not all found' % prog)
             ok = False
     if not ok:
         sys.exit(1)
+    fire = [[r[1] for r in rows if r[0] == 'fire_fn'][0]]
+    for prog in range(1, len(les)):
+        r = [r for r in rows if r[0] == 'fire_fn'][0]
+        o = les[prog].objs[0]
+        fire.append(matches(imgs[prog], o['base'], o['base'] + o['vsize'], r[3], r[4])[0][0] - r[2])
+    first = [r for r in rows if r[9] is None]
+    variants = [r for r in rows if r[9] is not None]
     out = []
     w = out.append
-    w('// Made by scripts/tvsig.py from the shareware GAME.EXE (Terminal Velocity 1.2): do not edit.')
+    w('// Made by scripts/tvsig.py from the shareware GAME.EXE and the registered one (Terminal Velocity 1.2): do not edit.')
     w('// Each anchor: a window of the code object (mask 0: a byte the loader relocates, or a near call\'s offset),')
-    w('// the place it stands for (from the window\'s start), and its longest run of kept bytes (the search key).')
+    w('// the place it stands for (from the window\'s start), its longest run of kept bytes (the search key), and the')
+    w('// fire function\'s image address in the program the window is from.  A variant: an anchor\'s other window, from')
+    w('// the registered program, tried when the first is not found, with its own data offsets.')
     w('#ifndef WCNET_TV_SIG_H')
     w('#define WCNET_TV_SIG_H')
     w('namespace wc { namespace tvsig {')
-    w('struct Anchor { const char *name; Bit32u image; int place; int len; const Bit8u *bytes; const Bit8u *mask; int key; int keyLen; };')
+    w('struct Anchor { const char *name; Bit32u image; int place; int len; const Bit8u *bytes; const Bit8u *mask; int key; int keyLen; Bit32u fire; };')
     w('struct Data { const char *name; int anchor; int at; Bit32u image; };')
+    w('struct Variant { int anchor; Anchor window; };')
+    w('struct VariantData { int variant; int data; int at; };')
     w('enum AnchorId {')
-    for i, r in enumerate(rows):
+    for i, r in enumerate(first):
         w('    A_%s = %d,     // %s' % (r[0].upper(), i, r[7]))
-    w('    A_COUNT = %d' % len(rows))
+    w('    A_COUNT = %d' % len(first))
     w('};')
+    tag = lambda r: r[0] if r[9] is None else '%s_v%d' % (r[0], variants.index(r))
     for r in rows:
-        w('static const Bit8u k_%s_bytes[%d] = { %s };' % (r[0], len(r[3]), ', '.join('0x%02x' % b for b in r[3])))
-        w('static const Bit8u k_%s_mask[%d] = { %s };' % (r[0], len(r[4]), ', '.join('%d' % (1 if b else 0) for b in r[4])))
+        w('static const Bit8u k_%s_bytes[%d] = { %s };' % (tag(r), len(r[3]), ', '.join('0x%02x' % b for b in r[3])))
+        w('static const Bit8u k_%s_mask[%d] = { %s };' % (tag(r), len(r[4]), ', '.join('%d' % (1 if b else 0) for b in r[4])))
+    row = lambda r: '{ "%s", 0x%X, %d, %d, k_%s_bytes, k_%s_mask, %d, %d, 0x%X }' % (r[0], r[1], -r[2], len(r[3]), tag(r), tag(r), r[5], r[6], fire[r[8]])
     w('static const Anchor kAnchors[A_COUNT] = {')
-    for r in rows:
-        w('    { "%s", 0x%X, %d, %d, k_%s_bytes, k_%s_mask, %d, %d },' % (r[0], r[1], -r[2], len(r[3]), r[0], r[0], r[5], r[6]))
+    for r in first:
+        w('    %s,' % row(r))
+    w('};')
+    w('enum { V_COUNT = %d };' % len(variants))
+    w('static const Variant kVariants[V_COUNT + 1] = {')
+    for r in variants:
+        w('    { A_%s, %s },' % (r[0].upper(), row(r)))
+    w('    { -1, { 0, 0, 0, 0, 0, 0, 0, 0, 0 } }')
     w('};')
     w('enum DataId {')
     for i, d in enumerate(DATA):
@@ -212,18 +329,28 @@ def main():
     w('};')
     w('static const Data kData[D_COUNT] = {')
     for name, anchor, off, what in DATA:
-        a = [r for r in rows if r[0] == anchor][0]
+        a = [r for r in first if r[0] == anchor][0]
         val = struct.unpack_from('<I', img, a[1] + off)[0]
         w('    { "%s", A_%s, %d, 0x%X },' % (name, anchor.upper(), off - a[2], val))
     w('};')
+    vd = []
+    for v, r in enumerate(variants):
+        for i, d in enumerate(DATA):
+            if d[1] == r[0]:
+                vd.append('    { %d, D_%s, %d },' % (v, d[0].upper(), r[9][d[0]] - r[2]))
+    w('enum { VD_COUNT = %d };' % len(vd))
+    w('static const VariantData kVariantData[VD_COUNT + 1] = {')
+    out.extend(vd)
+    w('    { -1, -1, 0 }')
+    w('};')
     # the span routines, whole: bytes, mask (0 a relocated byte), and each relocated operand's offset and image value
-    w('struct Span { const char *name; Bit32u image; int len; const Bit8u *bytes; const Bit8u *mask; int nrel; const Bit32u *rel; };')
+    w('struct Span { const char *name; Bit32u image; int len; const Bit8u *bytes; const Bit8u *mask; int nrel; const Bit32u *rel; int key; int keyLen; };')
     w('enum SpanId {')
     for i, (name, a, b, what) in enumerate(SPANS):
         w('    S_%s = %d,     // %s' % (name.upper(), i, what))
     w('    S_COUNT = %d' % len(SPANS))
     w('};')
-    nrels = {}
+    nrels, keys = {}, {}
     for name, a, b, what in SPANS:
         data = bytes(img[a:b])
         mask = bytes(0 if a + i in le.fixed else 1 for i in range(b - a))
@@ -242,12 +369,13 @@ def main():
             sys.stderr.write('span %s: does not end with its ret\n' % name)
             sys.exit(1)
         nrels[name] = len(rel) // 2
+        keys[name] = key_of(mask)
         w('static const Bit8u k_span_%s_bytes[%d] = { %s };' % (name, len(data), ', '.join('0x%02x' % x for x in data)))
         w('static const Bit8u k_span_%s_mask[%d] = { %s };' % (name, len(mask), ', '.join('%d' % x for x in mask)))
         w('static const Bit32u k_span_%s_rel[%d] = { %s };' % (name, max(1, len(rel)), ', '.join('0x%X' % x for x in rel) or '0'))
     w('static const Span kSpans[S_COUNT] = {')
     for name, a, b, what in SPANS:
-        w('    { "%s", 0x%X, %d, k_span_%s_bytes, k_span_%s_mask, %d, k_span_%s_rel },' % (name, a, b - a, name, name, nrels[name], name))
+        w('    { "%s", 0x%X, %d, k_span_%s_bytes, k_span_%s_mask, %d, k_span_%s_rel, %d, %d },' % (name, a, b - a, name, name, nrels[name], name, keys[name][0], keys[name][1]))
     w('};')
     w('} }  // namespace wc::tvsig')
     w('#endif')

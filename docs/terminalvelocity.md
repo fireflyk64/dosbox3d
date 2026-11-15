@@ -101,9 +101,11 @@ the same from run to run.  So the layer finds it by its code, every 500 ms for a
   other window within 512 KB of it.  Memory holds a second copy of the code as the file has it (found twice: the
   extender's read buffer), whose windows match too: of each window's matches the one nearest where the shareware's
   layout puts it is taken, and a copy is the program only when every data operand is relocated (past 1 MB).
-* A build whose code is the same but for where things are (the registered game, if it is so) is found the same way;
-  any window not found leaves the game alone ("not a build the hooks know" in the log).  No registered copy was at
-  hand: untested.
+* A build whose code is the same but for where things are is found the same way; any window not found leaves the
+  game alone ("not a build the hooks know" in the log).
+* An anchor can have variants (`VARIANTS` in tvsig.py: another window for the same place, from another program, with
+  its own data offsets), tried when its first window is not there: the registered game's campaign loop is one
+  (section 7).
 
 The tool for the rest: `scripts/tvexe.py GAME.EXE info|image|dis ADDR N|str TEXT|xref ADDR|funcs|callers ADDR|func
 ADDR` (the LE laid out at its image addresses with its fixups applied; Capstone).
@@ -389,4 +391,63 @@ game had 96 craft to the host's 93) until they were made once (above).
 
 Next:
 
-6. The registered game: its GAME.EXE untested (none at hand); a build whose windows do not all match is left alone.
+6. The registered game: done (section 7).
+
+## 7. The registered game (GOG's installer)
+
+The user, 2026-11-15: "I've purchased terminal velocity called setup_terminal_velocity_1.2_*.exe and I'd like to make
+it so that if users drag and drop that into our site that it also works.  Try to reuse as much code from the demo as
+possible, ideally all of it--but at least the logic maybe with different tables".
+
+**What it is.**  `setup_terminal_velocity_1.2_(28045).exe` (86 MB, Inno Setup; the page's innoextract unpacks it) is the
+CD-ROM edition installed: the same `TV.EXE`, `SETUP.CFG` and sound drivers as the shareware (byte for byte),
+`STARTUP.POD` (3.9 MB), `CDROM.POD` (32 MB, 2,349 files: all the levels) in `SHARE.POD`'s place, the episodes' lists
+(`SHARE.VOX`, `RETAIL1.VOX`, `RETAIL2.VOX`: Tactical Strike, Heavy Fire, The Mad God, nine, nine and eight levels;
+`GEIGER.VOX` the hidden mission), `TVI\` (68 MB of cinematics) and `CDROM.INI` (one line, `.\TVI`: where they are).
+GOG runs it with no CD drive, an S3, 16 MB and a Sound Blaster 16; nothing of the page's machine had to change.
+
+**Its program.**  `GAME.EXE` (624,695 bytes; the shareware's 620,459) is another compile of the same source: the code
+object 0x4B073 bytes (0x4AC7F), functions moved by -0x20 to +0x190, the data by -0x24, +0x6C or +0x8C.
+`scripts/tvsigcheck.py SHAREWARE/GAME.EXE REGISTERED/GAME.EXE` tries it as the emulator tries memory:
+
+* 30 of the 31 anchors' windows are in it once, byte for byte but for the relocated operands and the near calls'
+  offsets, and every data operand read from them is a relocated one.  (One window, `remote_draw`, had kept the first
+  byte of a call's offset that its end cut off; tvsig.py now masks a cut instruction's offset too.)
+* The campaign loop is the one place compiled to another shape: the shareware's keeps the level's index in ebx (and
+  in memory), the registered game's only in memory.  The anchor is now the loop's call of the level function, with a
+  variant window from the registered program and its own offsets for the index, the count and the names; the level
+  hook takes the index from memory in both (the shareware's loop stores ebx there before the call and takes it back
+  after: writing ebx was never needed).
+* Every natively drawn routine (the nine span routines, the filler, the height lookup, the cockpit copy, the
+  dispatch) is in it whole.  They are now looked for (where the shareware's layout puts them, else the nearest copy
+  of their bytes: the dispatch first, the rest by its move), and the data they use is placed by stretches: every
+  relocated operand of the routines found gives (image address, delta), a new stretch where the delta changes (one
+  for the shareware; two for the registered game, +0x6C up to 0x689A0 and +0x8C from 0x7CF14).
+
+Nothing else changed: the hooks, the session and the twins are the shareware's code.  `src/cpu/wcnet_tv_sig.h` is made
+from both programs (`scripts/tvsig.py SHAREWARE/GAME.EXE REGISTERED/GAME.EXE`), each anchor checked to be found once in
+each.
+
+**Measured** (native, `TVDIR=tvgame-reg`: the installer's files unpacked there):
+
+* One machine, 640 x 240, `WCNET_TV_SPANS=check`: in flight in `artic.lvl` at 62 s by the shareware's route; 870,000
+  routine calls compared with the game's own code in 40 s, 0 differed (the shareware beside it: the same).
+* Two machines, the host choosing Episode Two (`45:down`), the guest Episode One: both fly `desert.lvl` (the host's
+  level's name written under the guest's index, as before); shots, hits, stages and the level's reinforcements told
+  both ways (objects 377-379 made by the host's game written in the guest's).
+* The registered game's host and a shareware guest in episode one: `artic.lvl` together, 476 objects each, hits both
+  ways.  With the host in Episode Two the shareware has no such level (loading it would end the program): the guest's
+  game is held at its level call with the line "HOST flies desert.lvl, a level of the registered game: the shareware
+  has episode one only" (`tv_level_listed`: the level's name is not in the shareware's one list).
+
+**The craft** (the brief: "Would be nice for the non demo to have it select any of the craft"): twelve more looks after
+the shareware's six, the other planets' craft by their briefings' names (the levels' `.DEF` files in CDROM.POD):
+Crythanian Shockstar `ddcshp.bin`, WSF Razor-4 `afighter.bin`, TTA Sandstorm `dogg.bin`, TTA Dustdevil `pooh.bin`, TTA
+Penetrator `deboss.bin`, OSO Phoenix `lavash.bin`, Ositsho Wedge `triship.bin`, Ositsho Quadram `volship.bin`,
+Erigonean Shriek `litecr.bin`, CAF Attack Fighter `bugship.bin`, DTS-1 `podgun1.bin`, XI Coreguard `pincher.bin`.  The
+page offers them while its game has `CDROM.POD`; a game without a model (the shareware beside the registered host)
+draws the level's own craft, as before.
+
+**The page**: the `tv` entry takes the installer as it takes the zip (detected by `TV.EXE`); `keep` holds `CDROM.INI`
+and `VOX.INI` through the installer's junk filter (an `.ini` is otherwise GOG's own).  `ZIP=<the installer>
+scripts/web-tv.sh` flies two pages from it; `GUEST_ZIP=` gives the guest another (the shareware).

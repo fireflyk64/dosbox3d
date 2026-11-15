@@ -1,11 +1,15 @@
-// Made by scripts/tvsig.py from the shareware GAME.EXE (Terminal Velocity 1.2): do not edit.
+// Made by scripts/tvsig.py from the shareware GAME.EXE and the registered one (Terminal Velocity 1.2): do not edit.
 // Each anchor: a window of the code object (mask 0: a byte the loader relocates, or a near call's offset),
-// the place it stands for (from the window's start), and its longest run of kept bytes (the search key).
+// the place it stands for (from the window's start), its longest run of kept bytes (the search key), and the
+// fire function's image address in the program the window is from.  A variant: an anchor's other window, from
+// the registered program, tried when the first is not found, with its own data offsets.
 #ifndef WCNET_TV_SIG_H
 #define WCNET_TV_SIG_H
 namespace wc { namespace tvsig {
-struct Anchor { const char *name; Bit32u image; int place; int len; const Bit8u *bytes; const Bit8u *mask; int key; int keyLen; };
+struct Anchor { const char *name; Bit32u image; int place; int len; const Bit8u *bytes; const Bit8u *mask; int key; int keyLen; Bit32u fire; };
 struct Data { const char *name; int anchor; int at; Bit32u image; };
+struct Variant { int anchor; Anchor window; };
+struct VariantData { int variant; int data; int at; };
 enum AnchorId {
     A_FRAME_TOP = 0,     // the level loop's frame: the call of the input handler, at the top of each frame
     A_REMOTE_DRAW = 1,     // the level loop, after the world's objects are put in the draw list: where a net game draws the other players
@@ -36,14 +40,14 @@ enum AnchorId {
     A_REINFORCE = 26,     // the level's reinforcements (0x23E40, after the objects' loop): its 4 s clock taken, a craft about to be put near the player if few hostiles are awake near it (1/2/4 by difficulty)
     A_REINFORCE_END = 27,     // the reinforcements' end: a craft made by then
     A_LOAD_MODEL_FN = 28,     // a model loaded from the game's files, by name: its handle (a name it cannot find ends the program)
-    A_CAMPAIGN = 29,     // the campaign loop: the level index, the count, the level's file name, the level flown
+    A_CAMPAIGN = 29,     // the campaign loop's call of the level function (the level's index in memory, its file's name pushed): the index, the count, the names
     A_SPAN_CALL = 30,     // the polygon filler's call of a scanline's span routine (through the pointer the polygon's kind set): esi, edi its two edges, ebx the row
     A_COUNT = 31
 };
 static const Bit8u k_frame_top_bytes[48] = { 0xe8, 0x0a, 0x67, 0xfe, 0xff, 0x85, 0xc0, 0x74, 0x0c, 0xc6, 0x05, 0xb9, 0xcd, 0x07, 0x00, 0x01, 0xe9, 0x3e, 0x08, 0x00, 0x00, 0xe8, 0x34, 0x3f, 0xfe, 0xff, 0xe8, 0x5f, 0x67, 0x00, 0x00, 0xe8, 0xaa, 0xa8, 0xfe, 0xff, 0xe8, 0xa5, 0xe9, 0xfe, 0xff, 0xe8, 0x10, 0xef, 0xfe, 0xff, 0xe8, 0xeb };
-static const Bit8u k_frame_top_mask[48] = { 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1 };
+static const Bit8u k_frame_top_mask[48] = { 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0 };
 static const Bit8u k_remote_draw_bytes[40] = { 0xe8, 0x76, 0x28, 0x01, 0x00, 0xe8, 0xe1, 0x2d, 0x01, 0x00, 0x83, 0x3d, 0x48, 0xce, 0x07, 0x00, 0x00, 0x74, 0x05, 0xe8, 0x33, 0x17, 0x02, 0x00, 0xe8, 0xae, 0x45, 0x01, 0x00, 0x83, 0x3d, 0x48, 0xce, 0x07, 0x00, 0x00, 0x75, 0x05, 0xe8, 0xd0 };
-static const Bit8u k_remote_draw_mask[40] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1 };
+static const Bit8u k_remote_draw_mask[40] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0 };
 static const Bit8u k_obj_update_bytes[48] = { 0x00, 0x53, 0xe8, 0x2e, 0x51, 0x00, 0x00, 0x8b, 0x15, 0xd4, 0x4c, 0x06, 0x00, 0x83, 0xc4, 0x04, 0x85, 0xd2, 0x0f, 0x85, 0xa2, 0x00, 0x00, 0x00, 0x85, 0xc0, 0x0f, 0x85, 0x89, 0x00, 0x00, 0x00, 0x53, 0xe8, 0xaf, 0x43, 0x00, 0x00, 0x69, 0x43, 0x18, 0x44, 0x02, 0x00, 0x00, 0x8b, 0x15, 0xe8 };
 static const Bit8u k_obj_update_mask[48] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0 };
 static const Bit8u k_obj_loop_bytes[72] = { 0x53, 0x56, 0x57, 0x55, 0x83, 0xec, 0x40, 0x8b, 0x0d, 0xd4, 0xaf, 0x0d, 0x00, 0x31, 0xd2, 0x31, 0xff, 0x89, 0x15, 0xc8, 0xaf, 0x0d, 0x00, 0x89, 0x15, 0xd0, 0xaf, 0x0d, 0x00, 0x85, 0xc9, 0x0f, 0x8e, 0x25, 0x01, 0x00, 0x00, 0x31, 0xf6, 0x8b, 0x1d, 0xec, 0x80, 0x06, 0x00, 0x01, 0xf3, 0x69, 0x43, 0x18, 0x44, 0x02, 0x00, 0x00, 0xc7, 0x83, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x8b, 0x15, 0xe8, 0x80, 0x06, 0x00, 0x8b, 0x6b };
@@ -83,7 +87,7 @@ static const Bit8u k_tunnel_enter_fn_mask[64] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 static const Bit8u k_tunnel_loop_bytes[112] = { 0x53, 0x56, 0x57, 0x55, 0x83, 0xec, 0x30, 0x8b, 0x15, 0x6c, 0x65, 0x10, 0x00, 0x8d, 0x04, 0x95, 0x00, 0x00, 0x00, 0x00, 0x01, 0xd0, 0x8d, 0x04, 0xc5, 0x00, 0x00, 0x00, 0x00, 0x01, 0xd0, 0x83, 0x3c, 0x85, 0xa4, 0x50, 0x10, 0x00, 0x05, 0x0f, 0x84, 0x29, 0x01, 0x00, 0x00, 0xa1, 0x78, 0xca, 0x07, 0x00, 0x89, 0x44, 0x24, 0x24, 0xa1, 0x7c, 0xca, 0x07, 0x00, 0x8b, 0x0d, 0xd4, 0x12, 0x10, 0x00, 0x89, 0x44, 0x24, 0x28, 0xa1, 0x80, 0xca, 0x07, 0x00, 0x31, 0xdb, 0x89, 0x44, 0x24, 0x2c, 0x85, 0xc9, 0x0f, 0x8e, 0xfe, 0x00, 0x00, 0x00, 0xbd, 0x50, 0x44, 0x0e, 0x00, 0x81, 0xc5, 0x88, 0x00, 0x00, 0x00, 0x69, 0xd3, 0x3c, 0x17, 0x00, 0x00, 0x8b, 0x82, 0x80, 0x44, 0x0e, 0x00, 0x89 };
 static const Bit8u k_tunnel_loop_mask[112] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1 };
 static const Bit8u k_tunnel_frame_bytes[48] = { 0x83, 0x3d, 0xdc, 0x4c, 0x06, 0x00, 0x01, 0x0f, 0x85, 0xa3, 0xfa, 0xff, 0xff, 0xa1, 0x80, 0xca, 0x07, 0x00, 0x89, 0xc2, 0xc1, 0xfa, 0x1f, 0xc1, 0xe2, 0x14, 0x1b, 0xc2, 0xc1, 0xf8, 0x14, 0x3b, 0x05, 0xf4, 0x4c, 0x06, 0x00, 0x7c, 0x9f, 0xe8, 0x04, 0xff, 0xff, 0xff, 0xe9, 0x9f, 0xcd, 0xff };
-static const Bit8u k_tunnel_frame_mask[48] = { 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1 };
+static const Bit8u k_tunnel_frame_mask[48] = { 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0 };
 static const Bit8u k_launch_spawn_bytes[128] = { 0x53, 0x56, 0x57, 0x55, 0x83, 0xec, 0x44, 0x8b, 0x3d, 0xec, 0x80, 0x06, 0x00, 0x8b, 0x6c, 0x24, 0x58, 0xa1, 0x24, 0xcf, 0x07, 0x00, 0x89, 0xc2, 0xc1, 0xfa, 0x1f, 0xc1, 0xe2, 0x02, 0x1b, 0xc2, 0xc1, 0xf8, 0x02, 0x8b, 0x5d, 0x70, 0x01, 0xc3, 0x89, 0x5d, 0x70, 0x81, 0xfb, 0x00, 0x00, 0x01, 0x00, 0x0f, 0x8e, 0x46, 0x02, 0x00, 0x00, 0x8b, 0x55, 0x58, 0x8d, 0x04, 0x95, 0x00, 0x00, 0x00, 0x00, 0x29, 0xd0, 0x8d, 0x04, 0x85, 0x00, 0x00, 0x00, 0x00, 0x89, 0xc2, 0xc1, 0xe0, 0x04, 0x29, 0xd0, 0x66, 0xc7, 0x45, 0x72, 0x00, 0x00, 0x01, 0xf8, 0x8b, 0x75, 0x4c, 0x3b, 0x30, 0x75, 0x0c, 0x8b, 0x40, 0x08, 0x3b, 0x45, 0x54, 0x0f, 0x84, 0x11, 0x02, 0x00, 0x00, 0xb9, 0xff, 0xff, 0xff, 0xff, 0x8b, 0x35, 0xd4, 0xaf, 0x0d, 0x00, 0x31, 0xdb, 0x89, 0x4c, 0x24, 0x40, 0x85, 0xf6, 0x7e };
 static const Bit8u k_launch_spawn_mask[128] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 static const Bit8u k_launch_end_bytes[43] = { 0xa1, 0xe8, 0x80, 0x06, 0x00, 0x8b, 0x74, 0x02, 0x08, 0x56, 0x8d, 0x44, 0x24, 0x04, 0x50, 0xe8, 0x7c, 0x4e, 0xff, 0xff, 0x8b, 0x3d, 0xec, 0x80, 0x06, 0x00, 0x83, 0xc4, 0x08, 0x89, 0x3d, 0xec, 0x80, 0x06, 0x00, 0x83, 0xc4, 0x44, 0x5d, 0x5f, 0x5e, 0x5b, 0xc3 };
@@ -98,42 +102,49 @@ static const Bit8u k_reinforce_end_bytes[39] = { 0x8b, 0x15, 0x80, 0xca, 0x07, 0
 static const Bit8u k_reinforce_end_mask[39] = { 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1 };
 static const Bit8u k_load_model_fn_bytes[48] = { 0x53, 0x56, 0x57, 0x55, 0x83, 0xec, 0x50, 0x8b, 0x7c, 0x24, 0x64, 0x57, 0x68, 0x9c, 0x3d, 0x06, 0x00, 0xe8, 0x3a, 0xac, 0xfe, 0xff, 0x83, 0xc4, 0x08, 0x89, 0xc6, 0x85, 0xc0, 0x75, 0x1e, 0x57, 0x68, 0xa4, 0x3d, 0x06, 0x00, 0x8d, 0x44, 0x24, 0x08, 0x50, 0xe8, 0x94, 0x02, 0x01, 0x00, 0x83 };
 static const Bit8u k_load_model_fn_mask[48] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1 };
-static const Bit8u k_campaign_bytes[40] = { 0x8b, 0x1d, 0x74, 0xdd, 0x0d, 0x00, 0x3b, 0x1d, 0x78, 0xdd, 0x0d, 0x00, 0x0f, 0x8d, 0x8f, 0xf8, 0xff, 0xff, 0x6b, 0xc3, 0x28, 0x05, 0x30, 0xc7, 0x0d, 0x00, 0x50, 0x89, 0x1d, 0x74, 0xdd, 0x0d, 0x00, 0xe8, 0x72, 0xe1, 0xff, 0xff, 0x8b, 0x1d };
-static const Bit8u k_campaign_mask[40] = { 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1 };
+static const Bit8u k_campaign_bytes[55] = { 0x8b, 0x1d, 0x74, 0xdd, 0x0d, 0x00, 0x3b, 0x1d, 0x78, 0xdd, 0x0d, 0x00, 0x0f, 0x8d, 0x8f, 0xf8, 0xff, 0xff, 0x6b, 0xc3, 0x28, 0x05, 0x30, 0xc7, 0x0d, 0x00, 0x50, 0x89, 0x1d, 0x74, 0xdd, 0x0d, 0x00, 0xe8, 0x72, 0xe1, 0xff, 0xff, 0x8b, 0x1d, 0x74, 0xdd, 0x0d, 0x00, 0x83, 0xc4, 0x04, 0x85, 0xc0, 0x0f, 0x84, 0x6a, 0xf8, 0xff, 0xff };
+static const Bit8u k_campaign_mask[55] = { 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0 };
 static const Bit8u k_span_call_bytes[48] = { 0x8b, 0x74, 0x24, 0x04, 0x8b, 0x1c, 0x24, 0x89, 0xef, 0xe8, 0xa5, 0xae, 0x00, 0x00, 0x8b, 0x15, 0x28, 0x50, 0x10, 0x00, 0x42, 0x8b, 0x44, 0x24, 0x04, 0x89, 0x15, 0x28, 0x50, 0x10, 0x00, 0x8b, 0x54, 0x24, 0x04, 0x8b, 0x40, 0x0c, 0x8b, 0x5a, 0x08, 0x8b, 0x4a, 0x18, 0x8b, 0x72, 0x20, 0x8b };
 static const Bit8u k_span_call_mask[48] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+static const Bit8u k_campaign_v0_bytes[42] = { 0xa1, 0x00, 0xde, 0x0d, 0x00, 0x3b, 0x05, 0x04, 0xde, 0x0d, 0x00, 0x0f, 0x8d, 0xd4, 0xf7, 0xff, 0xff, 0x6b, 0xc0, 0x28, 0x05, 0xbc, 0xc7, 0x0d, 0x00, 0x50, 0xe8, 0x3d, 0xe0, 0xff, 0xff, 0x83, 0xc4, 0x04, 0x85, 0xc0, 0x0f, 0x84, 0xbb, 0xf7, 0xff, 0xff };
+static const Bit8u k_campaign_v0_mask[42] = { 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0 };
 static const Anchor kAnchors[A_COUNT] = {
-    { "frame_top", 0x2D0D7, 21, 48, k_frame_top_bytes, k_frame_top_mask, 5, 6 },
-    { "remote_draw", 0x2D0FF, 10, 40, k_remote_draw_bytes, k_remote_draw_mask, 35, 5 },
-    { "obj_update", 0x2427C, 33, 48, k_obj_update_bytes, k_obj_update_mask, 0, 9 },
-    { "obj_loop", 0x241E0, 0, 72, k_obj_loop_bytes, k_obj_loop_mask, 45, 21 },
-    { "hit_apply", 0x29327, 59, 64, k_hit_apply_bytes, k_hit_apply_mask, 38, 14 },
-    { "hit_fn", 0x292B0, 0, 40, k_hit_fn_bytes, k_hit_fn_mask, 13, 11 },
-    { "destroy_fn", 0x28E70, 0, 32, k_destroy_fn_bytes, k_destroy_fn_mask, 13, 11 },
-    { "fire_fn", 0x19080, 0, 80, k_fire_fn_bytes, k_fire_fn_mask, 0, 47 },
-    { "draw_model_fn", 0x1E640, 0, 64, k_draw_model_fn_bytes, k_draw_model_fn_mask, 0, 25 },
-    { "send_state", 0x4CC30, 0, 176, k_send_state_bytes, k_send_state_mask, 0, 8 },
-    { "ship_model", 0x11820, 0, 75, k_ship_model_bytes, k_ship_model_mask, 48, 4 },
-    { "weapons", 0x1BAB7, 0, 96, k_weapons_bytes, k_weapons_mask, 43, 14 },
-    { "flight", 0x1228C, 0, 152, k_flight_bytes, k_flight_mask, 120, 28 },
-    { "hit_end", 0x2937F, 16, 27, k_hit_end_bytes, k_hit_end_mask, 4, 23 },
-    { "level_fn", 0x2CDF0, 0, 55, k_level_fn_bytes, k_level_fn_mask, 0, 14 },
-    { "settings", 0x329AF, 0, 48, k_settings_bytes, k_settings_mask, 38, 4 },
-    { "level_end", 0x2D8B8, 0, 45, k_level_end_bytes, k_level_end_mask, 6, 4 },
-    { "message_fn", 0x2CC00, 0, 40, k_message_fn_bytes, k_message_fn_mask, 0, 19 },
-    { "view_keys", 0x1147C, 0, 64, k_view_keys_bytes, k_view_keys_mask, 40, 7 },
-    { "tunnel_enter_fn", 0x42380, 0, 64, k_tunnel_enter_fn_bytes, k_tunnel_enter_fn_mask, 0, 24 },
-    { "tunnel_loop", 0x42540, 0, 112, k_tunnel_loop_bytes, k_tunnel_loop_mask, 13, 21 },
-    { "tunnel_frame", 0x42A90, 0, 48, k_tunnel_frame_bytes, k_tunnel_frame_mask, 18, 15 },
-    { "launch_spawn", 0x274FC, 108, 128, k_launch_spawn_bytes, k_launch_spawn_mask, 55, 49 },
-    { "launch_end", 0x2770D, 29, 43, k_launch_end_bytes, k_launch_end_mask, 5, 11 },
-    { "generate_spawn", 0x2838D, 61, 72, k_generate_spawn_bytes, k_generate_spawn_mask, 22, 19 },
-    { "generate_end", 0x28530, 36, 50, k_generate_end_bytes, k_generate_end_mask, 5, 18 },
-    { "reinforce", 0x23EF1, 177, 184, k_reinforce_bytes, k_reinforce_mask, 107, 15 },
-    { "reinforce_end", 0x241CA, 25, 39, k_reinforce_end_bytes, k_reinforce_end_mask, 13, 14 },
-    { "load_model_fn", 0x402E0, 0, 48, k_load_model_fn_bytes, k_load_model_fn_mask, 0, 13 },
-    { "campaign", 0x2EC58, 0, 40, k_campaign_bytes, k_campaign_mask, 18, 4 },
-    { "span_call", 0x3E85D, 9, 48, k_span_call_bytes, k_span_call_mask, 31, 17 },
+    { "frame_top", 0x2D0D7, 21, 48, k_frame_top_bytes, k_frame_top_mask, 5, 6, 0x19080 },
+    { "remote_draw", 0x2D0FF, 10, 40, k_remote_draw_bytes, k_remote_draw_mask, 16, 4, 0x19080 },
+    { "obj_update", 0x2427C, 33, 48, k_obj_update_bytes, k_obj_update_mask, 0, 9, 0x19080 },
+    { "obj_loop", 0x241E0, 0, 72, k_obj_loop_bytes, k_obj_loop_mask, 45, 21, 0x19080 },
+    { "hit_apply", 0x29327, 59, 64, k_hit_apply_bytes, k_hit_apply_mask, 38, 14, 0x19080 },
+    { "hit_fn", 0x292B0, 0, 40, k_hit_fn_bytes, k_hit_fn_mask, 13, 11, 0x19080 },
+    { "destroy_fn", 0x28E70, 0, 32, k_destroy_fn_bytes, k_destroy_fn_mask, 13, 11, 0x19080 },
+    { "fire_fn", 0x19080, 0, 80, k_fire_fn_bytes, k_fire_fn_mask, 0, 47, 0x19080 },
+    { "draw_model_fn", 0x1E640, 0, 64, k_draw_model_fn_bytes, k_draw_model_fn_mask, 0, 25, 0x19080 },
+    { "send_state", 0x4CC30, 0, 176, k_send_state_bytes, k_send_state_mask, 0, 8, 0x19080 },
+    { "ship_model", 0x11820, 0, 75, k_ship_model_bytes, k_ship_model_mask, 48, 4, 0x19080 },
+    { "weapons", 0x1BAB7, 0, 96, k_weapons_bytes, k_weapons_mask, 43, 14, 0x19080 },
+    { "flight", 0x1228C, 0, 152, k_flight_bytes, k_flight_mask, 120, 28, 0x19080 },
+    { "hit_end", 0x2937F, 16, 27, k_hit_end_bytes, k_hit_end_mask, 4, 23, 0x19080 },
+    { "level_fn", 0x2CDF0, 0, 55, k_level_fn_bytes, k_level_fn_mask, 0, 14, 0x19080 },
+    { "settings", 0x329AF, 0, 48, k_settings_bytes, k_settings_mask, 38, 4, 0x19080 },
+    { "level_end", 0x2D8B8, 0, 45, k_level_end_bytes, k_level_end_mask, 6, 4, 0x19080 },
+    { "message_fn", 0x2CC00, 0, 40, k_message_fn_bytes, k_message_fn_mask, 0, 19, 0x19080 },
+    { "view_keys", 0x1147C, 0, 64, k_view_keys_bytes, k_view_keys_mask, 40, 7, 0x19080 },
+    { "tunnel_enter_fn", 0x42380, 0, 64, k_tunnel_enter_fn_bytes, k_tunnel_enter_fn_mask, 0, 24, 0x19080 },
+    { "tunnel_loop", 0x42540, 0, 112, k_tunnel_loop_bytes, k_tunnel_loop_mask, 13, 21, 0x19080 },
+    { "tunnel_frame", 0x42A90, 0, 48, k_tunnel_frame_bytes, k_tunnel_frame_mask, 18, 15, 0x19080 },
+    { "launch_spawn", 0x274FC, 108, 128, k_launch_spawn_bytes, k_launch_spawn_mask, 55, 49, 0x19080 },
+    { "launch_end", 0x2770D, 29, 43, k_launch_end_bytes, k_launch_end_mask, 5, 11, 0x19080 },
+    { "generate_spawn", 0x2838D, 61, 72, k_generate_spawn_bytes, k_generate_spawn_mask, 22, 19, 0x19080 },
+    { "generate_end", 0x28530, 36, 50, k_generate_end_bytes, k_generate_end_mask, 5, 18, 0x19080 },
+    { "reinforce", 0x23EF1, 177, 184, k_reinforce_bytes, k_reinforce_mask, 107, 15, 0x19080 },
+    { "reinforce_end", 0x241CA, 25, 39, k_reinforce_end_bytes, k_reinforce_end_mask, 13, 14, 0x19080 },
+    { "load_model_fn", 0x402E0, 0, 48, k_load_model_fn_bytes, k_load_model_fn_mask, 0, 13, 0x19080 },
+    { "campaign", 0x2EC79, 33, 55, k_campaign_bytes, k_campaign_mask, 44, 7, 0x19080 },
+    { "span_call", 0x3E85D, 9, 48, k_span_call_bytes, k_span_call_mask, 31, 17, 0x19080 },
+};
+enum { V_COUNT = 1 };
+static const Variant kVariants[V_COUNT + 1] = {
+    { A_CAMPAIGN, { "campaign", 0x2ED8E, 26, 42, k_campaign_v0_bytes, k_campaign_v0_mask, 31, 7, 0x19070 } },
+    { -1, { 0, 0, 0, 0, 0, 0, 0, 0, 0 } }
 };
 enum DataId {
     D_NETGAME = 0,     // nonzero in a net game (the level loop's test)
@@ -210,7 +221,14 @@ static const Data kData[D_COUNT] = {
     { "level_count", A_CAMPAIGN, 8, 0xDDD78 },
     { "level_names", A_CAMPAIGN, 22, 0xDC730 },
 };
-struct Span { const char *name; Bit32u image; int len; const Bit8u *bytes; const Bit8u *mask; int nrel; const Bit32u *rel; };
+enum { VD_COUNT = 3 };
+static const VariantData kVariantData[VD_COUNT + 1] = {
+    { 0, D_LEVEL_INDEX, 1 },
+    { 0, D_LEVEL_COUNT, 7 },
+    { 0, D_LEVEL_NAMES, 21 },
+    { -1, -1, 0 }
+};
+struct Span { const char *name; Bit32u image; int len; const Bit8u *bytes; const Bit8u *mask; int nrel; const Bit32u *rel; int key; int keyLen; };
 enum SpanId {
     S_DISPATCH = 0,     // the span call's jump through the routine pointer (and the padding after the empty function 0x49710: the frame cap's idle)
     S_PERSP32_T64_FOGA = 1,     // perspective, a divide every 32 pixels, a 64x64 texture, the depth fog (w*4)
@@ -267,19 +285,19 @@ static const Bit8u k_span_cockpit_copy_bytes[103] = { 0x53, 0x56, 0x57, 0x55, 0x
 static const Bit8u k_span_cockpit_copy_mask[103] = { 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 static const Bit32u k_span_cockpit_copy_rel[12] = { 0x6, 0x6828C, 0x14, 0xE2DF8, 0x1A, 0xE2DFC, 0x23, 0xDDDF8, 0x32, 0x7CF44, 0x56, 0x6828C };
 static const Span kSpans[S_COUNT] = {
-    { "dispatch", 0x49707, 25, k_span_dispatch_bytes, k_span_dispatch_mask, 1, k_span_dispatch_rel },
-    { "persp32_t64_fogA", 0x4732E, 3494, k_span_persp32_t64_fogA_bytes, k_span_persp32_t64_fogA_mask, 275, k_span_persp32_t64_fogA_rel },
-    { "persp32_t256_fogB", 0x44C97, 3133, k_span_persp32_t256_fogB_bytes, k_span_persp32_t256_fogB_mask, 275, k_span_persp32_t256_fogB_rel },
-    { "persp16_t64_fogA", 0x46552, 2118, k_span_persp16_t64_fogA_bytes, k_span_persp16_t64_fogA_mask, 179, k_span_persp16_t64_fogA_rel },
-    { "persp16_t256_fogB", 0x444FA, 1949, k_span_persp16_t256_fogB_bytes, k_span_persp16_t256_fogB_mask, 179, k_span_persp16_t256_fogB_rel },
-    { "affine_lit", 0x42F18, 678, k_span_affine_lit_bytes, k_span_affine_lit_mask, 23, k_span_affine_lit_rel },
-    { "affine_clear", 0x480D4, 677, k_span_affine_clear_bytes, k_span_affine_clear_mask, 2, k_span_affine_clear_rel },
-    { "zbuf_lit", 0x48693, 1021, k_span_zbuf_lit_bytes, k_span_zbuf_lit_mask, 44, k_span_zbuf_lit_rel },
-    { "fill", 0x49503, 71, k_span_fill_bytes, k_span_fill_mask, 2, k_span_fill_rel },
-    { "none", 0x42F13, 5, k_span_none_bytes, k_span_none_mask, 0, k_span_none_rel },
-    { "height", 0x3C7E0, 395, k_span_height_bytes, k_span_height_mask, 4, k_span_height_rel },
-    { "poly", 0x3E510, 979, k_span_poly_bytes, k_span_poly_mask, 26, k_span_poly_rel },
-    { "cockpit_copy", 0x2FAB0, 103, k_span_cockpit_copy_bytes, k_span_cockpit_copy_mask, 6, k_span_cockpit_copy_rel },
+    { "dispatch", 0x49707, 25, k_span_dispatch_bytes, k_span_dispatch_mask, 1, k_span_dispatch_rel, 6, 19 },
+    { "persp32_t64_fogA", 0x4732E, 3494, k_span_persp32_t64_fogA_bytes, k_span_persp32_t64_fogA_mask, 275, k_span_persp32_t64_fogA_rel, 2017, 33 },
+    { "persp32_t256_fogB", 0x44C97, 3133, k_span_persp32_t256_fogB_bytes, k_span_persp32_t256_fogB_mask, 275, k_span_persp32_t256_fogB_rel, 182, 38 },
+    { "persp16_t64_fogA", 0x46552, 2118, k_span_persp16_t64_fogA_bytes, k_span_persp16_t64_fogA_mask, 179, k_span_persp16_t64_fogA_rel, 1425, 33 },
+    { "persp16_t256_fogB", 0x444FA, 1949, k_span_persp16_t256_fogB_bytes, k_span_persp16_t256_fogB_mask, 179, k_span_persp16_t256_fogB_rel, 182, 38 },
+    { "affine_lit", 0x42F18, 678, k_span_affine_lit_bytes, k_span_affine_lit_mask, 23, k_span_affine_lit_rel, 35, 145 },
+    { "affine_clear", 0x480D4, 677, k_span_affine_clear_bytes, k_span_affine_clear_mask, 2, k_span_affine_clear_rel, 189, 488 },
+    { "zbuf_lit", 0x48693, 1021, k_span_zbuf_lit_bytes, k_span_zbuf_lit_mask, 44, k_span_zbuf_lit_rel, 186, 302 },
+    { "fill", 0x49503, 71, k_span_fill_bytes, k_span_fill_mask, 2, k_span_fill_rel, 38, 33 },
+    { "none", 0x42F13, 5, k_span_none_bytes, k_span_none_mask, 0, k_span_none_rel, 0, 5 },
+    { "height", 0x3C7E0, 395, k_span_height_bytes, k_span_height_mask, 4, k_span_height_rel, 0, 136 },
+    { "poly", 0x3E510, 979, k_span_poly_bytes, k_span_poly_mask, 26, k_span_poly_rel, 120, 317 },
+    { "cockpit_copy", 0x2FAB0, 103, k_span_cockpit_copy_bytes, k_span_cockpit_copy_mask, 6, k_span_cockpit_copy_rel, 54, 32 },
 };
 } }  // namespace wc::tvsig
 #endif

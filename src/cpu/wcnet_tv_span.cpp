@@ -50,8 +50,10 @@ using namespace tvsig;
 
 enum { kMaxSpan = 4096, kCheckMargin = 64 };
 
-// The shareware's image addresses of the data the routines use (their relocated operands checked to point at these,
-// moved by one delta).
+// The shareware's image addresses of the data the routines use.  Where the program has them is read from the
+// routines' own relocated operands: the shareware's data all moved by one delta (where the extender loaded it), the
+// registered game's by two (another compile: its variables up to 0x689A0 are 0x6C further on, those from 0x7CF14
+// 0x8C), so the deltas are kept by stretches of image addresses (D()).
 const Bit32u I_ROWS = 0x81CE8;     // the frame buffer's row pointers
 const Bit32u I_ZROWS = 0x928E8;    // the depth buffer's row pointers (a dword a pixel)
 const Bit32u I_TEX = 0x7CF18;      // the polygon's texture (its high 16 bits; the texel's v the next 8, u the low 8)
@@ -69,11 +71,18 @@ const Bit32u I_CP_DEST = 0x7CF44;  // ... and the 640-wide frame's start
 
 int g_mode = -1;                   // 0 the game's own, 1 the twins, 2 checked
 bool g_ready = false;
-Bit32u g_delta = 0;                // linear - image, for the data
+enum { kMaxStretch = 8 };
+struct Stretch { Bit32u from, delta; };
+Stretch g_stretch[kMaxStretch];    // linear - image for the data, by stretches of image addresses (ascending `from`)
+int g_stretches = 1;               // (never none: one stretch of delta 0 until the routines are found)
 Bit32u g_ptr = 0;                  // the routine pointer (linear)
 Bit32u g_entry[S_COUNT];           // each routine's entry (linear; 0: not twinned)
 Bit32u g_top = 0;                  // the end of memory (linear)
-inline Bit32u D(Bit32u image) { return image + g_delta; }
+inline Bit32u D(Bit32u image) {
+    int i = g_stretches - 1;
+    while (i > 0 && image < g_stretch[i].from) i--;
+    return image + g_stretch[i].delta;
+}
 
 // --- memory: the game's RAM is conventional memory (below 0xA0000: the frame buffer the extender gave it there)
 // and extended memory (from 1 MB: its code and data) ---------------------------------------------------------------
@@ -1019,7 +1028,38 @@ void tv_span_reset() {
     g_check.pending = false;
 }
 
-bool tv_span_setup(Bit32u codeDelta) {
+// A routine's bytes at lin (but its relocated operands)?
+static bool span_at(const Span &sp, Bit32u lin) {
+    if (!ram(lin, (Bit32u)sp.len)) return false;
+    for (int i = 0; i < sp.len; i++) {
+        if (sp.mask[i] && MemBase[lin + (Bit32u)i] != sp.bytes[i]) return false;
+    }
+    return true;
+}
+
+// The routine in the code [lo, hi): where the shareware's layout puts it (`want`), or, in another build of the
+// same code, the copy of its bytes nearest that (within 64 KB).  0: none.
+static Bit32u span_find(const Span &sp, Bit32u want, Bit32u lo, Bit32u hi) {
+    if (span_at(sp, want)) return want;
+    if (hi > g_top) hi = g_top;
+    lo = std::max(lo, want > 0x10000u ? want - 0x10000u : 0u);
+    hi = std::min(hi, want + 0x10000u + (Bit32u)sp.len);
+    const Bit8u *key = sp.bytes + sp.key;
+    Bit32u best = 0;
+    for (Bit32u p = lo + (Bit32u)sp.key; p + (Bit32u)sp.keyLen <= hi; p++) {
+        const Bit8u *hit = (const Bit8u *)memchr(MemBase + p, key[0], hi - (Bit32u)sp.keyLen - p + 1);
+        if (!hit) break;
+        p = (Bit32u)(hit - MemBase);
+        const Bit32u at = p - (Bit32u)sp.key;
+        if (memcmp(hit, key, (size_t)sp.keyLen) == 0 && span_at(sp, at)) {
+            const Bit32u d = at > want ? at - want : want - at, bd = best > want ? best - want : want - best;
+            if (!best || d < bd) best = at;
+        }
+    }
+    return best;
+}
+
+bool tv_span_setup(Bit32u codeDelta, Bit32u codeLo, Bit32u codeHi) {
     tv_span_reset();
     if (g_mode < 0) {
         const char *e = getenv("WCNET_TV_SPANS");
@@ -1030,46 +1070,70 @@ bool tv_span_setup(Bit32u codeDelta) {
         return false;
     }
     g_top = (Bit32u)MEM_TotalPages() << 12;
-    bool haveDelta = false;
-    std::string names;
+    // Each routine found (the dispatch first: the others are looked for where its move from the shareware's place
+    // puts them), then the data's deltas from every relocated operand of the routines found: (image address, delta)
+    // pairs in order, a stretch from each address where the delta changes.  An operand whose delta is not its
+    // stretch's (the same variable told two ways, or more stretches than the table holds) leaves the game's own code.
+    Bit32u shift = 0;
+    Bit32u found[S_COUNT];
+    std::vector<std::pair<Bit32u, Bit32u> > ops;
     for (int s = 0; s < S_COUNT; s++) {
         const Span &sp = kSpans[s];
-        const Bit32u lin = sp.image + codeDelta;
-        if (!ram(lin, (Bit32u)sp.len)) continue;
-        bool same = true;
-        for (int i = 0; i < sp.len && same; i++) {
-            if (sp.mask[i] && MemBase[lin + (Bit32u)i] != sp.bytes[i]) same = false;
-        }
-        for (int r = 0; r < sp.nrel && same; r++) {
-            const Bit32u d = host_readd(MemBase + lin + sp.rel[2 * r]) - sp.rel[2 * r + 1];
-            if (!haveDelta) {
-                g_delta = d;
-                haveDelta = true;
-            } else if (d != g_delta) {
-                same = false;
-            }
-        }
-        if (!same) {
+        found[s] = span_find(sp, sp.image + codeDelta + shift, codeLo, codeHi);
+        if (!found[s]) {
             wclog(1, "Terminal Velocity: the routine '%s' (image %05x) is not the shareware's: the game's own code makes it", sp.name, sp.image);
             continue;
         }
-        g_entry[s] = lin;
-        if (s == S_DISPATCH) {
-            g_ptr = sp.rel[1] + g_delta;
-        } else {
-            names += names.empty() ? "" : ", ";
-            names += sp.name;
+        if (s == S_DISPATCH) shift = found[s] - (sp.image + codeDelta);
+        for (int r = 0; r < sp.nrel; r++) {
+            ops.push_back(std::make_pair(sp.rel[2 * r + 1], host_readd(MemBase + found[s] + sp.rel[2 * r]) - sp.rel[2 * r + 1]));
         }
     }
-    if (!g_entry[S_DISPATCH] || names.empty()) {
+    std::sort(ops.begin(), ops.end());
+    g_stretches = 0;
+    bool ok = !ops.empty() && found[S_DISPATCH];
+    for (size_t i = 0; i < ops.size() && ok; i++) {
+        if (i && ops[i].first == ops[i - 1].first && ops[i].second != ops[i - 1].second) ok = false;
+        if (g_stretches && ops[i].second == g_stretch[g_stretches - 1].delta) continue;
+        if (g_stretches == kMaxStretch) {
+            ok = false;
+            break;
+        }
+        g_stretch[g_stretches].from = ops[i].first;
+        g_stretch[g_stretches].delta = ops[i].second;
+        g_stretches++;
+    }
+    std::string names;
+    if (ok) {
+        for (int s = 0; s < S_COUNT; s++) {
+            if (!found[s]) continue;
+            g_entry[s] = found[s];
+            if (s == S_DISPATCH) {
+                g_ptr = D(kSpans[s].rel[1]);
+            } else {
+                names += names.empty() ? "" : ", ";
+                names += kSpans[s].name;
+            }
+        }
+    }
+    if (!ok || names.empty()) {
+        memset(g_entry, 0, sizeof(g_entry));
+        g_stretches = 1;
+        g_stretch[0].from = g_stretch[0].delta = 0;
         wclog(1, "Terminal Velocity: the routines are not the shareware's: the game's own code draws everything");
         return false;
     }
     g_ready = true;
     g_nextLogMs = 0;
     g_st = Stats();
-    wclog(1, "Terminal Velocity: made natively%s: %s (the data moved by %08x)", g_mode == 2 ? " and checked against the game's own code" : "",
-          names.c_str(), g_delta);
+    std::string moved;
+    for (int i = 0; i < g_stretches; i++) {
+        char b[48];
+        snprintf(b, sizeof(b), "%s%08x from %05x", i ? ", " : "", g_stretch[i].delta, g_stretch[i].from);
+        moved += b;
+    }
+    wclog(1, "Terminal Velocity: made natively%s: %s (the code moved by %08x%s, the data by %s)", g_mode == 2 ? " and checked against the game's own code" : "",
+          names.c_str(), codeDelta + shift, shift ? ": not the shareware's layout" : "", moved.c_str());
     return true;
 }
 

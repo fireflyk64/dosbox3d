@@ -7,6 +7,8 @@
 #
 #   PORT=        the TCP port (default 7471)
 #   HOSTENV= / GUESTENV=   more of each one's environment (WCTVLOOK=icebrd.bin ...)
+#   TVDIR=       the game both fly (default tvgame/); HOST_TVDIR= / GUEST_TVDIR= each one's (the registered game
+#                against the shareware)
 #   GUEST_LATE=  seconds the guest starts after the host (default 2)
 #   HOST_ROUTE_DELAY= / GUEST_ROUTE_DELAY=   seconds added to one machine's route (it launches its level later)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,10 +19,10 @@ PORT=${PORT:-7471}
 BIN=$OUT/dosbox
 cp -f ${DOSBOX:-$ROOT/build-native/src/dosbox} $BIN
 TOP=$OUT
-ROUTE_DELAY=${HOST_ROUTE_DELAY:-} OUT=$TOP/host COPY=1 DOSBOX=$BIN ENV="WCPORT=$PORT WCCALLSIGN=HOST ${HOSTENV:-}" SHOW=0 $ROOT/scripts/tvrun.sh $DUR "$HX" &
+TVDIR=${HOST_TVDIR:-${TVDIR:-}} ROUTE_DELAY=${HOST_ROUTE_DELAY:-} OUT=$TOP/host COPY=1 DOSBOX=$BIN ENV="WCPORT=$PORT WCCALLSIGN=HOST ${HOSTENV:-}" SHOW=0 $ROOT/scripts/tvrun.sh $DUR "$HX" &
 HPID=$!
 sleep ${GUEST_LATE:-2}
-ROUTE_DELAY=${GUEST_ROUTE_DELAY:-} OUT=$TOP/guest COPY=1 DOSBOX=$BIN ENV="WCHOST=127.0.0.1 WCPORT=$PORT WCCALLSIGN=GUEST ${GUESTENV:-}" SHOW=0 $ROOT/scripts/tvrun.sh $DUR "$GX" &
+TVDIR=${GUEST_TVDIR:-${TVDIR:-}} ROUTE_DELAY=${GUEST_ROUTE_DELAY:-} OUT=$TOP/guest COPY=1 DOSBOX=$BIN ENV="WCHOST=127.0.0.1 WCPORT=$PORT WCCALLSIGN=GUEST ${GUESTENV:-}" SHOW=0 $ROOT/scripts/tvrun.sh $DUR "$GX" &
 GPID=$!
 wait $HPID $GPID
 for w in host guest; do

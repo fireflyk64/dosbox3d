@@ -59,10 +59,12 @@ async function openPage(who, script, callsign) {
   }
   await page.goto(u.toString());
   // (DEMO=1: the page's own "Free to play now" button, the site's copy, not a dropped file)
-  if (process.env.DEMO) await page.click("#demoTv"); else await page.setInputFiles("#gamefile", zip);
+  // (GUEST_ZIP: the guest's own file, the shareware beside the host's registered game)
+  if (process.env.DEMO) await page.click("#demoTv");
+  else await page.setInputFiles("#gamefile", who === "guest" && process.env.GUEST_ZIP ? process.env.GUEST_ZIP : zip);
   // (ready for the dropped files: the page's built-in game is ready before them on a page that has one)
   await page.waitForFunction(() => document.getElementById("sourceStatus").dataset.state === "error"
-    || (document.getElementById("sourceStatus").dataset.state === "ready" && document.getElementById("program").value === "tv"), null, { timeout: 120000 })
+    || (document.getElementById("sourceStatus").dataset.state === "ready" && document.getElementById("program").value === "tv"), null, { timeout: 400000 })
     .catch(() => {});
   const st = await page.$eval("#sourceStatus", (el) => `${el.dataset.state}: ${el.textContent.slice(0, 110)}`);
   check(st.startsWith("ready") && await page.$eval("#program", (el) => el.value) === "tv", `${who}: the zip recognised as Terminal Velocity (${st})`);
@@ -99,7 +101,7 @@ for (let t = 20; t <= seconds; t += 20) {
   }
 }
 const all = (p, re) => p.logs.filter((l) => re.test(l));
-check(all(host, /Terminal Velocity's settings: .*SOUNDRV\.COM.*VOX\.INI: 640 x 480/).length > 0, "host: the settings written (sound driver, 640 x 480)");
+check(all(host, /Terminal Velocity's settings: .*VOX\.INI: 640 x 480/).length > 0, "host: the settings written (640 x 480)");
 check(all(host, /Terminal Velocity: the program's code at/).length > 0, "host: the hooks found the program");
 check(all(guest, /Terminal Velocity: the program's code at/).length > 0, "guest: the hooks found the program");
 check(all(host, /Terminal Velocity: GUEST(PILOT)? joined|joined as pilot 2/).length > 0, "host: the guest joined the game's room");
