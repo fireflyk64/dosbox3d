@@ -183,7 +183,8 @@ void gx_ground(int y0, int y1, const short *ext, int ext_y0, int ext_rows)
 }
 #endif
 
-int planet_can(void) { return gx_planet_on(); }
+int g_planet_off;
+int planet_can(void) { return !g_planet_off && gx_planet_on(); }
 
 int planet_load(const TrPlanetRec __far *pr, const TrNavRec __far *navs, int nnav)
 {

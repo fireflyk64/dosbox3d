@@ -63,7 +63,13 @@ typedef struct {
 #pragma pack()
 #endif
 
-enum { TR_KIND_DESERT = 0 };
+enum {                                  /* TrPlanetDesc.kind: a planet's look (terrain.c tr_looks: the colours of its
+                                           ground, haze and sky, and how wet its land is), one a system (the user,
+                                           2026-11-14: "Different systems should have different planets (color
+                                           scheme. Rostov should be green)") */
+    TR_KIND_DESERT, TR_KIND_GREEN, TR_KIND_ICE, TR_KIND_RED, TR_KIND_ASH, TR_KIND_SAVANNA, TR_KIND_VIOLET,
+    TR_KIND_OCHRE, TR_KIND_JUNGLE, TR_KIND_OCEAN, TR_KIND_TUNDRA, TR_KIND_STEPPE, TR_KIND_GREY, TR_KINDS
+};
 
 typedef struct {                        /* what is under a point: radii from the planet's centre, in positions */
     int32_t ground;                     /* the ground's surface */
@@ -144,7 +150,7 @@ typedef struct { uint8_t kind, nav; uint16_t size[4]; int16_t heading; } TrGroun
 typedef struct {
     int32_t x, y, z;                    /* the centre, km */
     uint16_t radius, seed;              /* km */
-    uint8_t n;
+    uint8_t n;                          /* the ground shapes (0 .. 4), and over them (n >> 4) the planet's kind */
     TrGroundRec g[4];
 } TrPlanetRec;                          /* 65 bytes */
 typedef struct { uint8_t id, flags; int32_t x, y, z; uint16_t reach; uint8_t sw[4]; } TrNavRec;   /* 20 bytes */

@@ -5,14 +5,14 @@
 #include "rvtypes.h"
 
 #define RVGAME_MAGIC "RVGAME"
-#define RVGAME_VERSION 27
+#define RVGAME_VERSION 28
 
 #define RV_GROUNDS 4
 #define RV_GOALS 12
 #define RV_PILOTS 16
-#define RV_NODES 32
+#define RV_NODES 16
 #define RV_MISSIONS 128
-#define RV_MISSIONS_PER_NODE 4
+#define RV_MISSIONS_PER_NODE 6
 #define RV_NAVS 8
 #define RV_SHIPS 16
 #define RV_SEATS 3
@@ -52,6 +52,7 @@
 #define RV_ESCORT_STAY 4
 #define RV_ESCORT_BACK 5
 #define RV_ESCORT_STREAM 6
+#define RV_ESCORT_GUARD 7
 #define RV_PILOT_NONE 0xFF
 #define RV_SPEAKER_YOU 0xFE
 #define RV_ROOM_RADIO 2
@@ -387,7 +388,7 @@ typedef struct {
 
 #define RV_HEADER_SIZE 68
 #define RV_PILOT_SIZE 121
-#define RV_NODE_SIZE 22
+#define RV_NODE_SIZE 26
 #define RV_MISSION_SIZE 860
 #define RV_SHIPTYPE_SIZE 182
 #define RV_WEAPON_SIZE 44

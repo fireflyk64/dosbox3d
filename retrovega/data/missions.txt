@@ -31,7 +31,19 @@
 # followers): those are the role=stay lines at nav0 (the user, 2026-11-05: "missions have to be able to differentiate
 # between autopilotees and stay-homers since at least the vigilence already stays home")
 # A capital ship's role=stay (either side) holds station where it is put: a depot ship on its pad, an Ox parked under an
-# arch (the planet missions: without it a capital ship cruises off ahead at its cruise speed)
+# arch (the planet missions: without it a capital ship cruises off ahead at its cruise speed). One of ours that is lost
+# costs its goal's points (goal escort TYPE navN: met and alive), never the mission (the user, 2026-11-14, of the
+# miners' hauler: "Keep hauler protection but don't cause failure if user fails it")
+#
+# A ship line's role=guard is an enemy fighter wave that keeps its nav point (logic.c guard_return): it fights what it
+# sees within 6,000 km and goes back to its post with nobody to fight; idle at its post it holds neither the autopilot
+# nor the landing nor a waiting wave, and the mission is done without it, so it may be slipped past (the cloak strike,
+# ENIGMAP: the user, 2026-11-14, "Stay cloaked. Arrive at the target lightly defended. Or hit each heavy bad with
+# surprise"); its nav point's goal is met only with it gone
+#
+# A mission's planet line takes kind=NAME, its look (desert, green, ice, red, ash, savanna, violet, ochre, jungle,
+# ocean, tundra, steppe, grey: terrain.c tr_looks), one a system (the user, 2026-11-14: "Different systems should have
+# different planets"); a planet mission is flown only where the card draws planets (campaign.c camp_slot)
 #
 # A ship line's role=stream jump=N keeps its count of ships in the world from its nav point's reaching until nav N is
 # reached: one killed or gone comes again ahead of the player on the way to the next nav point, down at the way's height
@@ -3060,24 +3072,27 @@ radio    "Tally here. Wendell Greer, Vigilance. Last flight's a long way out. Le
 # Mirage: a desert planet (docs/terrain.md: the card draws it, so only with the card; not on the campaign's way, the
 # page's mission menu flies it alone).  The Vigilance holds 8,000 km over the planet; the patrol goes down over the
 # dunes, to the Ox depot parked under the stone arch, over the mesas, and home
-mission  MIRAGE1
-node     MIRAGE
+mission  SHMRNC
+node     SHMRN
 title    Canyon run: Mirage, the long gorge
 type     patrol
 music    briefing
-fighter  SCHROED
-briefing "Back to Mirage. The Aera have been moving supplies up the long canyon in the north, on the canyon floor."
+fighter  LANCELT
+briefing "Back to Mirage. The Aera are moving the Leonidas's stores up the long canyon in the north, on its floor."
 briefing "Nav 1 is the canyon's mouth. From there it winds north through the mountains to Nav 5."
 briefing "At Nav 2 an Agasicles sits on a pad by the river, loading the depot's stores. Burn it."
 briefing "Past the stone bridge at Nav 3 a cruiser waits for the next load. It will run for the end of the canyon."
 briefing "Catch it before Nav 5. If it gets there it jumps, and we lose it."
 briefing "Expect 2 Nicanders at Nav 1, 3 Agis at Nav 2, 2 Aristons at Nav 3 and 3 Nicanders at Nav 4."
-briefing "You and Comet go in low, between the walls. They're three thousand kilometres high, so mind the bends."
+briefing "You and Torch go in low, between the walls. They're three thousand kilometres high, so mind the bends."
 briefing "They'll see you go in. Nicanders will come down over the rim all the way, a new one for each you kill."
 briefing you "And if they come at us from over the rim?"
-briefing "Then you'll see them before they see you. Dismissed."
+briefing "Then you'll see them before they see you. Tomorrow we go for the Leonidas. Dismissed."
 win      "The depot's burning and the cruiser never made its jump. That canyon is ours."
-lose     "The load got out of the canyon. We'll be going back down there."
+win      TORCH "Between the walls the whole way. I didn't think the Lancelot would fit."
+win      alive=TORCH "Neither did I. Get some sleep, both of you. Tomorrow's the big one."
+lose     "The load got out of the canyon. The Leonidas will be ready for us."
+lose     TORCH "We'll go in anyway, Commander."
 planet   7 0 -72000 0 64000
 nav      1 0 -8649 13142 ground reach=3000
 nav      2 -3538 -10642 20219 ground reach=3000
@@ -3088,7 +3103,7 @@ ground   canyon nav1 to=nav5 width=1800 wall=1300 depth=3000 rise=1800
 ground   pad nav2 radius=800 slope=500
 ground   arch nav3 span=1500 width=700 air=1900 thick=500 heading=4
 ship     player 0 nav0
-ship     wingman 0 nav0 pilot=COMET
+ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home
 ship     NICANDR 1 nav1 count=2 at=-1305,-549,2646
 ship     AGASICL 1 nav2 role=stay
@@ -3105,21 +3120,39 @@ goal     nav 3 1
 goal     nav 4 1
 goal     nav 5 1
 goal     land 1
+bar      left=FROST middle=PRIME right=ANCHOR
+say      bar ANCHOR ANCHOR "A canyon three thousand kilometres deep. Stay on the floor and the walls cover you."
+say      bar ANCHOR you "And the bends?"
+say      bar ANCHOR ANCHOR "The bends are where the walls stop covering you."
+say      bar PRIME PRIME "A canyon run. They gave Torch a canyon run. I'm going to sulk."
+lounge   left=KESTREL middle=TORCH right=-
+say      lounge TORCH TORCH "Tomorrow's the Leonidas. Tonight's a canyon. I'd like to get to tomorrow."
+say      lounge TORCH you "We'll get there."
+say      lounge TORCH TORCH "Say it like you mean it, and I'll believe you."
+talk     deck TECH you "Lancelots in a canyon. I'm putting a bet in with Drifter on the walls."
+say      deck TECH TECH boost=armor "Double plate. The walls don't care what you're flying."
+radio    "Torch. Between the walls. Stay on me, and mind the bends."
 
-mission  MIRAGE2
-node     MIRAGE
-title    Patrol: Mirage, the depot under the arch
+mission  SHMRNP
+node     SHMRN
+title    Strike: Mirage, the supply ship under the arch
 type     patrol
 music    briefing
-fighter  SCHROED
-briefing "Mirage. Sand, rock, and a stone arch big enough to hide a supply ship under. The Ox is parked there."
-briefing "The Aera found the depot last night. They'll be back for it."
-briefing "Fly down over the dunes to Nav 1, then the depot at Nav 2, then the mesas at Nav 3, and come home."
-briefing "Keep your nose up down there. The ground is the one thing out there that never misses."
-briefing you "Under the arch, Commander?"
-briefing "Under it, around it, through it if you have to. Just bring the depot through the day. Dismissed."
-win      "The depot's still under its arch. Nice flying, Wildcard."
-lose     "The Aera had the run of Mirage today. We go again tomorrow."
+fighter  REDEEMR
+briefing "Before we go after anything big, we cut what feeds it."
+briefing "There's a planet in the pocket, Mirage. A Charillus sits under a stone arch at Nav 2, loading stores."
+briefing "Everything it loads goes to the Leonidas."
+briefing "The fleet's sent us a flight of Redeemers for it. They're old and slow, and their shields are paper."
+briefing "Four mass drivers and four dumbfires each. They were built for this sort of work."
+briefing "You and Torch take the Redeemers down. Intelligence expects 2 Aristons at Nav 1 and 2 Nicanders at Nav 2."
+briefing "Burn the Charillus, fly Nav 3, and come home. There will be 3 Agis at Nav 3."
+briefing "Don't try to dogfight in those things. Let them come to your guns."
+briefing TORCH "Paper shields. Lovely."
+briefing alive=TORCH "Then don't get hit, Torch. Dismissed."
+briefing dead=TORCH "Dismissed."
+win      "The Charillus is burning under its arch. The Leonidas just got hungrier. Good work."
+win      TORCH "Those Redeemers fly like pigs. I want one."
+lose     "The supply ship's still loading. The Leonidas eats tonight."
 planet   7 0 -72000 0 64000
 nav      1 0 -7807 -8088 ground reach=3000
 nav      2 2527 -9033 -14659 ground reach=3000
@@ -3127,11 +3160,616 @@ nav      3 -4044 -10509 -19713 ground reach=3000
 ground   pad nav2 radius=1700 slope=800
 ground   arch nav2 span=1400 width=700 air=1400 thick=350 heading=0
 ship     player 0 nav0
+ship     wingman 0 nav0 pilot=TORCH
 ship     VIGILNC 0 nav0 role=home
-ship     OX 0 nav2 role=stay
-ship     NICANDR 1 nav2 count=3 at=-2500,700,-3000
-ship     AGIS 1 nav3 count=2 at=-1500,600,-2000
+ship     ARISTON 1 nav1 count=2 at=-1500,500,2500
+ship     CHARILS 1 nav2 role=stay
+ship     NICANDR 1 nav2 count=2 at=-2500,700,-3000
+ship     AGIS 1 nav3 count=3 at=-1500,600,-2000
 goal     nav 1 1
+goal     kill CHARILS nav2 6
+goal     nav 2 1
+goal     nav 3 1
+goal     land 1
+bar      left=TORCH middle=KESTREL right=DRIFTER
+say      bar KESTREL KESTREL "Redeemers. I flew one at the academy. It flies like a brick and hits like a bigger one."
+say      bar DRIFTER DRIFTER "Three to one the Redeemers come back with more holes than paint."
+say      bar DRIFTER you "And the Charillus?"
+say      bar DRIFTER DRIFTER "No odds on the Charillus. That's a sure thing."
+lounge   left=COMET middle=ECHO right=FROST
+say      lounge COMET COMET "Don't turn with anything in a Redeemer. Point it, shoot it and keep going."
+say      lounge ECHO ECHO "I've seen them on the deck. They look like Kit built them out of spare doors."
+talk     deck TECH you "Redeemers. Older than me, and in better shape. I was up all night with them."
+say      deck TECH TECH boost=armor "Extra plate. The shields won't save you in one of these, so the plate has to."
+radio    "Torch. Big guns, paper shields. Let's get it done."
+
+mission  ENIGMAP
+node     ENIGMA
+title    Strike: Enigma's ice moon, the listening post
+type     patrol
+music    briefing
+fighter  SCHROED
+briefing "One more job before we leave Enigma, and it's a quiet one."
+briefing "The Aera have a listening post on the ice moon under the yards. Every ship we launch, they hear."
+briefing "It's a Charillus, parked on a pad at Nav 3, and it passes everything it hears to their fleet."
+briefing "The way down is guarded. Intelligence expects 2 Cleomenes at Nav 1 and 1 Cleomenes at Nav 2."
+briefing "Another one patrols between them, and there will be 2 Aristons at Nav 2, under an ice arch."
+briefing "Those are heavy fighters. One Schroedinger won't last against six of them, so they won't see you."
+briefing "Your Schroedinger has a cloak. Alt and C. While it's on, nothing out there knows you're there."
+briefing "Firing drops it. The afterburner and the comm let them see you while you use them. Your shields are down."
+briefing "Go in cloaked. Slip past them, or take them one at a time from behind, before they know you're there."
+briefing "They keep to their posts. Get clear of one and it won't follow you far."
+briefing "At Nav 3 there are 2 Agis. That's all they think the post needs."
+briefing "Burn the Charillus, then come home the way you went."
+briefing you "Alone, Commander?"
+briefing alive=FROST "Frost asked to go. I said no. Two fighters can't hide as well as one."
+briefing dead=FROST "Two fighters can't hide as well as one, and it's a job for one."
+briefing "Cloaked, the autopilot takes you past them. Let one see you and you fly it yourself. Dismissed."
+win      "The listening post has gone quiet. So did you. Well done, Wildcard."
+win      "We can leave Enigma without them hearing which way we went."
+lose     "They're still listening. We'll leave Enigma louder than I'd like."
+lose     you "They never saw me, Commander. That was the trouble. Neither did I see enough."
+lose     "Get some rest. We go again tomorrow."
+planet   101 0 -72000 0 64000 kind=ice
+nav      1 3164 -4980 -7383 ground reach=3000
+nav      2 -2047 -7694 -12281 ground reach=3000
+nav      3 1011 -10891 -21230 ground reach=3000
+nav      4 520 -6239 -9871 ground hidden reach=2500
+ground   arch nav2 span=1500 width=700 air=2000 thick=450 heading=-167
+ground   pad nav3 radius=1400 slope=700
+ship     player 0 nav0
+ship     VIGILNC 0 nav0 role=home
+ship     CLEOMEN 1 nav1 at=3500,400,1500 role=guard
+ship     CLEOMEN 1 nav1 at=-3500,-300,-1500 role=guard
+ship     CLEOMEN 1 nav4 at=1500,300,0 role=guard
+ship     CLEOMEN 1 nav2 at=-1200,300,1800 role=guard
+ship     ARISTON 1 nav2 count=2 role=guard
+ship     CHARILS 1 nav3 role=stay
+ship     AGIS 1 nav3 count=2 at=1500,600,-1500
+goal     nav 1 1
+goal     nav 2 1
+goal     kill CHARILS nav3 6
+goal     nav 3 1
+goal     land 1
+bar      left=TORCH middle=PRIME right=ANCHOR
+say      bar PRIME PRIME "A cloak! They give the new one a cloak. I've been asking for one for a year."
+say      bar PRIME TALLY "They know what you'd do with it, Prime."
+say      bar PRIME PRIME "I'd be very quiet."
+say      bar PRIME TALLY "For about a minute."
+say      bar ANCHOR ANCHOR "Shields down while it's on. Remember that before you open fire, not after."
+lounge   left=COMET middle=- right=FROST
+say      lounge FROST FROST "They're giving you the cloak job. Don't let it make you careless. Unseen isn't the same as safe."
+say      lounge FROST you "Did you ever fly one cloaked?"
+say      lounge FROST FROST "Once. The quiet gets to you. Talk to yourself if you have to. Just not on the comm."
+say      lounge COMET COMET "Cloaks. In my day you hid behind a rock."
+talk     deck TECH you "Cloak's tuned. Don't use the comm, don't burn, and don't shoot until you mean it."
+say      deck TECH TECH boost=missile "Here's an extra missile. A Charillus takes some killing, and you only get the one surprise."
+say      deck TECH you "Thanks, Kit."
+say      deck TECH TECH "Bring her back with the paint on. Cloaked paint is still paint."
+
+mission  CEPHIDP
+node     CEPHID
+title    Strike: Cephid 17, the tanker in the dust
+type     patrol
+music    briefing
+fighter  FRANKLN
+briefing "Before the supply ships come in, there's one more thing on my list."
+briefing "The Aera have been fuelling their ships here from the red planet under us. Tactical has found where."
+briefing "A Charillus tanker sits on a pad at Nav 3, in the dust. Burn it, and their fighters here go thirsty."
+briefing "You and Drifter take it. Nav 1, Nav 2, the tanker at Nav 3, and home."
+briefing "Intelligence expects 3 Nicanders at Nav 1, 2 Aristons at Nav 2 and 2 Agis at Nav 3."
+briefing "Mind the ground down there. A Franklin doesn't bounce."
+briefing DRIFTER "What are the odds on the tanker, Commander?"
+briefing alive=DRIFTER "Better than the odds on you, Drifter. Dismissed."
+briefing dead=DRIFTER "Dismissed."
+win      "That tanker lit up half the dust bowl. Their fighters will be flying on fumes. Good work."
+win      you alive=DRIFTER "Drifter called it before we got there."
+win      DRIFTER "I had it at three to one. I should have gone higher."
+lose     "The tanker's still down there. Their fighters will be full tomorrow."
+lose     DRIFTER "I'd have given you long odds on that, Commander. I didn't take them."
+planet   211 0 -72000 0 64000 kind=red
+nav      1 -5234 -5501 6281 ground reach=3000
+nav      2 -11206 -7778 -1019 ground reach=3000
+nav      3 -15117 -9817 -8062 ground reach=3000
+ground   pad nav3 radius=1500 slope=700
+ship     player 0 nav0
+ship     wingman 0 nav0 pilot=DRIFTER
+ship     VIGILNC 0 nav0 role=home
+ship     NICANDR 1 nav1 count=3 at=-1500,500,2500
+ship     ARISTON 1 nav2 count=2 at=1000,300,2000
+ship     CHARILS 1 nav3 role=stay
+ship     AGIS 1 nav3 count=2 at=1500,600,-1500
+goal     nav 1 1
+goal     nav 2 1
+goal     kill CHARILS nav3 5
+goal     nav 3 1
+goal     land 1
+bar      left=TORCH middle=ECHO right=COMET
+say      bar ECHO ECHO "Red planet, red dust. You'll be picking it out of the vents for a week."
+say      bar ECHO you "Have you been down there?"
+say      bar ECHO ECHO "Over it. Low. It gets into everything, even the way you think."
+say      bar COMET COMET "A tanker. Hit it in the middle and get clear. Don't stop to watch."
+lounge   left=KESTREL middle=DRIFTER right=PRIME
+say      lounge DRIFTER DRIFTER "Tanker job. Lovely. The bigger they are, the brighter they burn."
+say      lounge DRIFTER you "Is that a bet?"
+say      lounge DRIFTER DRIFTER "That's not a bet, that's science. The bet is whether Prime asks to come along."
+say      lounge PRIME PRIME "I'm not asking. I'm just saying I'd be good at it."
+talk     deck TECH you "A tanker. Don't fly through the fireball. I've seen people try."
+say      deck TECH TECH boost=missile "One more missile. Tankers burn, but they're thick. Put it in the middle."
+radio    "Drifter here. Red dirt and a fat tanker. I've seen worse days. Not many."
+
+mission  SHELTONP
+node     SHELTON
+title    Patrol: Shelton, the strip in the grass
+type     patrol
+music    briefing
+fighter  SCHROED
+briefing "Those Nicanders on our deck didn't come from a carrier. Tactical traced them to the planet."
+briefing "There's a strip in the grass down there. A Charillus brings them fuel and parts."
+briefing "It's parked at Nav 2, under a rock arch. They think we can't get at it there."
+briefing "You and Comet fly Nav 1, the strip at Nav 2, then Nav 3, and come home."
+briefing "Intelligence expects 2 Nicanders at Nav 1, 3 Nicanders at Nav 2 and 2 Aristons at Nav 3."
+briefing "Burn the Charillus if you can get a shot at it. The rest is a patrol."
+briefing COMET "We can get at it."
+briefing alive=COMET "I know you can, Comet. Take Wildcard with you, and both of you come back. Dismissed."
+briefing dead=COMET "Dismissed."
+win      "The strip's burning. That's the last time they come at the deck from Shelton."
+win      COMET "The Rookie flew under the arch. I didn't tell the Rookie to."
+win      alive=COMET "Neither did I. Get some rest, both of you."
+lose     "The strip's still there. Kit will have to put the turrets back together faster."
+lose     COMET "Next time, Commander."
+planet   307 0 -72000 0 64000 kind=savanna
+nav      1 6234 -5923 4156 ground reach=3000
+nav      2 11120 -8391 -4044 ground reach=3000
+nav      3 3094 -6884 -10312 ground reach=3000
+ground   pad nav2 radius=1700 slope=800
+ground   arch nav2 span=1500 width=800 air=1700 thick=400 heading=-169
+ship     player 0 nav0
+ship     wingman 0 nav0 pilot=COMET
+ship     VIGILNC 0 nav0 role=home
+ship     NICANDR 1 nav1 count=2 at=-1500,500,2500
+ship     CHARILS 1 nav2 role=stay
+ship     NICANDR 1 nav2 count=3 at=-2500,700,-3000
+ship     ARISTON 1 nav3 count=2 at=-1500,600,-2000
+goal     nav 1 1
+goal     kill CHARILS nav2 4
 goal     nav 2 2
 goal     nav 3 1
 goal     land 1
+bar      left=TORCH middle=- right=DRIFTER
+say      bar DRIFTER DRIFTER "Two to one Comet doesn't say a word to you the whole flight. Want some of that?"
+say      bar DRIFTER you "No."
+say      bar DRIFTER DRIFTER "Smart. She'll say one. It'll be 'Rookie'."
+say      bar TORCH TORCH "Grass all the way to the mountains. Somebody could farm that, after."
+lounge   left=COMET middle=ECHO right=FROST
+say      lounge COMET COMET "You did all right yesterday. Don't tell anyone I said so."
+say      lounge COMET you "I won't."
+say      lounge COMET COMET "Good. Under the arch, the strip's the easy part. Getting out is the hard part."
+say      lounge FROST FROST "If you go under that arch, go slow. Nobody ever crashed from going slow."
+talk     deck TECH you "Turrets are half done. The other half is in that strip, I'd bet."
+say      deck TECH TECH boost=armor "Extra plate. Nothing on the ground shoots back down there, but the ground itself is hard."
+radio    "Comet. Down we go, Rookie. Watch the rock."
+
+mission  CRUCIBLP
+node     CRUCIBL
+title    Escort: the Crucible's ash world, the lifeboat
+type     patrol
+music    briefing
+fighter  GAWAIN
+briefing "When the Kahan was hit, she put a lifeboat down on the ash world. Eleven of her crew are alive down there."
+briefing "An Ox went down for them last night. It's on the ground at Nav 2, in the lava fields, and it can't lift."
+briefing "The Aera are overhead, and they know what it is."
+briefing "You and Comet clear Nav 1, then go down to the Ox. When you reach it, it lifts and comes straight home."
+briefing "Intelligence expects 3 Nicanders at Nav 1 and 2 Areus at Nav 2. Bombers. They want the Ox, not you."
+briefing "Stay with it all the way. There may be more on the way up."
+briefing COMET "An Ox. Slow, fat and full of people."
+briefing alive=COMET "That's why it has you, Comet. Dismissed."
+briefing dead=COMET "Dismissed."
+win      "Eleven of the Kahan's people are on our deck. Her captain called. Twice."
+win      COMET "The Rookie stayed on the Ox. I stayed on the Rookie."
+lose     escort=lost "We lost the Ox, and everyone on it. I'll write to the Kahan myself."
+lose     "Go and get some rest."
+planet   401 0 -72000 0 64000 kind=ash
+nav      1 -4188 -5534 7328 ground reach=3000
+nav      2 -10094 -9778 14131 ground reach=3000
+nav      3 -4000 -3000 6000 hidden reach=5000
+ground   pad nav2 radius=1400 slope=700
+ship     player 0 nav0
+ship     wingman 0 nav0 pilot=COMET
+ship     VIGILNC 0 nav0 role=home
+ship     NICANDR 1 nav1 count=3 at=-1500,500,2500
+ship     OX 0 nav2 role=back
+ship     AREUS 1 nav2 count=2 at=2500,1500,2500 prey=OX
+ship     NICANDR 1 nav3 count=2 at=2000,1000,-2000 prey=OX
+goal     nav 1 1
+goal     meet OX nav2 3
+goal     escort OX nav2 6
+goal     land 1
+bar      left=TORCH middle=PRIME right=COMET
+say      bar COMET COMET "A rescue. Fine. Just don't talk to me about the lava."
+say      bar COMET you "Why not?"
+say      bar COMET COMET "Because I'll be thinking about it already."
+say      bar PRIME PRIME "Ash and fire, and an Ox full of people. I'd have liked that one."
+lounge   left=KESTREL middle=DRIFTER right=ANCHOR
+say      lounge ANCHOR ANCHOR "An Ox climbs slowly. Fly above it, not ahead. The bombers come in from above."
+say      lounge DRIFTER DRIFTER "Eleven people. I'm not betting on that one. Some things you don't."
+talk     deck TECH you "An Ox out of a lava field. I'd like to see that Ox after, if there's any of it left."
+say      deck TECH TECH boost=fuel "Reserve tank. Down, up and home with an Ox. That's a long day in a Gawain."
+radio    "Comet. Ox first, Rookie. Then us. Then you."
+
+mission  OLDZIEYP
+node     OLDZIEY
+title    Strike: Oldziey's second planet, the north base
+type     patrol
+music    briefing
+fighter  FRANKLN
+briefing "The assault on the second planet goes in tomorrow. Tonight we take one of the four bases off the board."
+briefing "The north base is a Charillus on a pad at Nav 2, in the hills, feeding the other three."
+briefing "You and Prime take it. Intelligence expects 4 Agis at Nav 1 and 2 Nicanders at Nav 2."
+briefing "Burn it, fly Nav 3, and come straight home. There may be company on the way back."
+briefing PRIME "One base? We could do all four."
+briefing alive=PRIME "You'll do one, Prime, and you'll do it by the plan. Dismissed."
+briefing dead=PRIME "Dismissed."
+win      "The north base is dark. The assault goes in tomorrow with one problem fewer."
+win      PRIME "Told you. All four next time."
+win      alive=PRIME "One at a time, Prime. Get some rest, both of you."
+lose     "The base is still lit. The assault will pay for that."
+lose     PRIME "Put that one on me, Commander."
+planet   503 0 -72000 0 64000 kind=ochre
+nav      1 4188 -5427 -6281 ground reach=3000
+nav      2 -2019 -8779 -13122 ground reach=3000
+nav      3 5195 -8100 -17664 ground reach=3000
+ground   pad nav2 radius=1500 slope=800
+ship     player 0 nav0
+ship     wingman 0 nav0 pilot=PRIME
+ship     VIGILNC 0 nav0 role=home
+ship     AGIS 1 nav1 count=4 at=-1500,500,2500
+ship     CHARILS 1 nav2 role=stay
+ship     NICANDR 1 nav2 count=2 at=2000,600,-1500
+ship     ARISTON 1 nav3 count=2 at=-1500,800,-2000
+goal     nav 1 1
+goal     kill CHARILS nav2 5
+goal     nav 2 1
+goal     nav 3 1
+goal     land 1
+bar      left=TORCH middle=KESTREL right=DRIFTER
+say      bar KESTREL KESTREL "The hills down there are yellow. Sulphur. Don't breathe in, and don't go low for long."
+say      bar DRIFTER DRIFTER "Even money Prime asks for all four bases in the briefing."
+say      bar DRIFTER you "That's not much of a bet."
+say      bar DRIFTER DRIFTER "No. That's why it's even money."
+lounge   left=- middle=- right=PRIME
+say      lounge PRIME PRIME "A ground strike. In a Franklin. The brass has a sense of humour."
+say      lounge PRIME you "You'll be fine."
+say      lounge PRIME PRIME "I'll be magnificent. You just stay where I can see you."
+talk     deck TECH you "A base. In a Franklin. I'm not even going to ask whose idea that was."
+say      deck TECH TECH boost=missile "One more missile. Franklins weren't built for this. Neither was I."
+radio    "Prime here. North base. By the plan. I can do a plan."
+
+mission  DEFIANCP
+node     DEFIANC
+title    Patrol: Defiance, the depot under the arch
+type     patrol
+music    briefing
+fighter  SCHROED
+briefing "Defiance keeps a supply depot on the planet: an Ox, parked under a stone arch, full of what we'll need."
+briefing after=won "Ensign Rowe flew over it on her way in, and so did the Aristons on her tail."
+briefing after=lost "The Aristons that chased that Schroedinger flew right over it."
+briefing "The Aera know it's there now. They'll be back for it."
+briefing "You and Comet fly Nav 1, the depot at Nav 2, Nav 3 and home."
+briefing "Intelligence expects 3 Nicanders at Nav 2 and 2 Agis at Nav 3."
+briefing "Keep your nose up down there. The ground is the one thing out there that never misses."
+briefing you "Under the arch, Commander?"
+briefing "Under it, around it, through it if you have to. Just bring the depot through the day. Dismissed."
+win      "The depot's still under its arch. Nice flying, Wildcard."
+win      COMET "The Rookie went under the arch. Twice."
+lose     "The Aera had the run of that planet today. We'll be short of everything for a while."
+planet   607 0 -72000 0 64000 kind=violet
+nav      1 5156 -6331 -4125 ground reach=3000
+nav      2 8088 -8964 -12131 ground reach=3000
+nav      3 2047 -8613 -16375 ground reach=3000
+ground   pad nav2 radius=1700 slope=800
+ground   arch nav2 span=1400 width=700 air=1400 thick=350 heading=-162
+ship     player 0 nav0
+ship     wingman 0 nav0 pilot=COMET
+ship     VIGILNC 0 nav0 role=home
+ship     OX 0 nav2 role=stay
+ship     NICANDR 1 nav2 count=3 at=-2500,700,-3000 prey=OX
+ship     AGIS 1 nav3 count=2 at=-1500,600,-2000
+goal     nav 1 1
+goal     nav 2 2
+goal     escort OX nav2 3
+goal     nav 3 1
+goal     land 1
+bar      left=- middle=PRIME right=COMET
+say      bar COMET COMET "A depot under a rock. Somebody thought that was clever. It was, until yesterday."
+say      bar PRIME PRIME "Purple. The whole planet's purple. I want a picture of me in front of it."
+lounge   left=KESTREL middle=TORCH right=ANCHOR
+say      lounge ANCHOR ANCHOR "Fourteen hundred kilometres of air under that arch, by the survey. Fly the middle."
+say      lounge ANCHOR you "And if I can't?"
+say      lounge ANCHOR ANCHOR "Then go round. The survey doesn't care how you get there."
+talk     deck TECH you "If you bring that Ox back scratched, I'm the one who has to look at it."
+say      deck TECH TECH boost=fuel "Reserve tank. It's a long way down and a long way back up."
+radio    "Comet. Down to the depot, Rookie. Mind the arch."
+
+mission  LIXISP
+node     LIXIS
+title    Escort: Lixis, the settlement in the jungle
+type     patrol
+music    briefing
+fighter  GAWAIN
+briefing "The vaccine reached the colony's main town. There's a second settlement in the jungle, and nothing has."
+briefing "An Ox is taking it down. It leaves with you, and it sets down on the settlement's pad at Nav 3."
+briefing "You and Anchor take it down. Intelligence expects 2 Aristons at Nav 1 and 3 Agis at Nav 2."
+briefing "They'll go for the Ox. Stay between them and it."
+briefing ANCHOR "Approach heights, Commander?"
+briefing alive=ANCHOR "Whatever keeps the Ox off the trees and out of their sights, Anchor. Dismissed."
+briefing dead=ANCHOR "Dismissed."
+win      "The Ox is down at the settlement, and so is the vaccine. They're lining up in the rain for it."
+win      you alive=ANCHOR "Anchor flew it by the book."
+win      alive=ANCHOR "He always does. Get some rest, both of you."
+lose     escort=lost "The Ox never got down. I'll have to tell the settlement there's another wait."
+lose     "Get some sleep."
+planet   709 0 -72000 0 64000 kind=jungle
+nav      1 -3141 -5369 6281 ground reach=3000
+nav      2 -8188 -8185 12281 ground reach=3000
+nav      3 -12112 -11202 18169 ground reach=3000
+ground   pad nav3 radius=1500 slope=700
+ship     player 0 nav0
+ship     wingman 0 nav0 pilot=ANCHOR
+ship     VIGILNC 0 nav0 role=home
+ship     OX 0 nav0 role=out jump=3
+ship     ARISTON 1 nav1 count=2 at=-1500,500,2500 prey=OX
+ship     AGIS 1 nav2 count=3 at=2000,600,2000 prey=OX
+goal     escort OX nav0 8
+goal     nav 1 1
+goal     nav 2 1
+goal     land 1
+bar      left=FROST middle=PRIME right=ANCHOR
+say      bar FROST FROST "Harrow fever. I nursed it once. The vaccine works in a day, if it gets there."
+say      bar FROST you "Then it'll get there."
+say      bar FROST FROST "That's what I said, the last time. Make it true this time."
+say      bar ANCHOR ANCHOR "Jungle. Low cloud, wet air, nowhere to put down. I've read the survey twice."
+lounge   left=COMET middle=DRIFTER right=-
+say      lounge DRIFTER DRIFTER "I'm not taking bets on the Ox. Some things you just don't."
+say      lounge COMET COMET "Escort's simple, Rookie. You're the wall. Walls don't chase."
+talk     deck TECH you "The Ox is loaded. Every crate says FRAGILE. Every one."
+say      deck TECH TECH boost=armor "Extra plate. Bombers go for the Ox, and you'll be in the way. That's the job."
+radio    "Anchor to Wildcard. Ox in the middle, one of us on either side. It's a good plan. Let's fly it."
+
+mission  ATARAXIP
+node     ATARAXI
+title    Patrol: Ataraxia, the island chain
+type     patrol
+music    briefing
+fighter  FRANKLN
+briefing "The concert's been moved to the hangar deck, and nobody goes to it until the planet's clear."
+briefing "Tactical thinks the Aera have a supply ship hidden on one of the islands, under the rock."
+briefing "You and Echo fly the island chain. Nav 1, Nav 2, Nav 3 and home."
+briefing "Intelligence expects 2 Nicanders at Nav 1, 2 Nicanders at Nav 2 and 3 Agis at Nav 3."
+briefing "If you find the ship, burn it."
+briefing ECHO "And if it isn't there?"
+briefing alive=ECHO "Then you'll have had a nice flight over the sea, Echo. Dismissed."
+briefing dead=ECHO "Dismissed."
+win      "A Charillus, under an arch, on an island. Tactical owes me a drink. Well flown."
+win      ECHO "Wildcard spotted it. I'd have flown straight past."
+lose     "Whatever's down there is still down there. The concert's off."
+planet   811 0 -72000 0 64000 kind=ocean
+nav      1 4094 -6829 5117 ground reach=3000
+nav      2 -3033 -8167 10109 ground reach=3000
+nav      3 -11258 -7605 4094 ground reach=3000
+ground   pad nav2 radius=1700 slope=800
+ground   arch nav2 span=1500 width=800 air=1700 thick=400 heading=-90
+ship     player 0 nav0
+ship     wingman 0 nav0 pilot=ECHO
+ship     VIGILNC 0 nav0 role=home
+ship     NICANDR 1 nav1 count=2 at=-1500,500,2500
+ship     CHARILS 1 nav2 role=stay
+ship     NICANDR 1 nav2 count=2 at=2500,700,-2500
+ship     AGIS 1 nav3 count=3 at=-1500,600,-2000
+goal     nav 1 1
+goal     kill CHARILS nav2 4
+goal     nav 2 1
+goal     nav 3 1
+goal     land 1
+bar      left=TORCH middle=ECHO right=-
+say      bar ECHO ECHO "Islands. Water everywhere. I grew up on a planet like that. I hated it."
+say      bar ECHO you "Why?"
+say      bar ECHO ECHO "Nowhere to go but the sea. So I went up."
+say      bar TORCH TORCH "Water's flat. Flat is good. Flat doesn't hit you."
+lounge   left=COMET middle=DRIFTER right=FROST
+say      lounge FROST FROST "Three hundred and six people aboard who want a concert. No pressure."
+say      lounge DRIFTER DRIFTER "Five to one there's nothing on those islands but birds."
+talk     deck TECH you "If you ditch in that sea, I'm not coming to get the fighter. You, maybe."
+say      deck TECH TECH boost=fuel "Reserve tank. It's a lot of water to cross, and you can't land on it."
+radio    "Echo. Islands. Lovely. Let's go and find something to burn."
+
+mission  RIGELP
+node     RIGEL
+title    Strike: the Rigel relay's ground stations
+type     patrol
+music    briefing
+fighter  LANCELT
+briefing "The relay doesn't only talk from orbit. It has two ground stations on the frozen planet."
+briefing "Each one is a Charillus on a pad, one at Nav 2 and one at Nav 3. Command wants them both quiet."
+briefing "You and Frost take them. Intelligence expects 3 Aristons at Nav 1 and 2 Nicanders at Nav 2."
+briefing "There will be 2 Cleomenes at Nav 3. Heavy, slow, and they hit hard. Don't let them get behind you."
+briefing FROST "Are there Rlaan at the stations, Commander?"
+briefing alive=FROST "Not by our reports, Frost. Fly it as you find it. Dismissed."
+briefing dead=FROST "Dismissed."
+win      "Both stations are off the air. The relay's half deaf. Good flying."
+win      FROST "No Rlaan, Commander. Only Aera."
+win      alive=FROST "Good. Get some rest, both of you."
+lose     "The relay's still talking. We'll be hearing about it."
+planet   919 0 -72000 0 64000 kind=tundra
+nav      1 -5234 -5410 -5234 ground reach=3000
+nav      2 -10109 -9070 -11120 ground reach=3000
+nav      3 -6066 -9920 -17186 ground reach=3000
+ground   pad nav2 radius=1500 slope=700
+ground   pad nav3 radius=1500 slope=700
+ship     player 0 nav0
+ship     wingman 0 nav0 pilot=FROST
+ship     VIGILNC 0 nav0 role=home
+ship     ARISTON 1 nav1 count=3 at=-1500,500,2500
+ship     CHARILS 1 nav2 role=stay
+ship     NICANDR 1 nav2 count=2 at=2000,600,-1500
+ship     CHARILS 1 nav3 role=stay
+ship     CLEOMEN 1 nav3 count=2 at=-2000,700,1500
+goal     nav 1 1
+goal     kill CHARILS nav2 3
+goal     nav 2 1
+goal     kill CHARILS nav3 3
+goal     nav 3 1
+goal     land 1
+bar      left=FROST middle=PRIME right=ANCHOR
+say      bar FROST FROST "I asked about the Rlaan. They don't know. Nobody ever knows."
+say      bar FROST you "Would it change anything?"
+say      bar FROST FROST "Not the job. Me, maybe."
+say      bar PRIME PRIME "Ice and a Lancelot. I'd trade you."
+lounge   left=COMET middle=TORCH right=-
+say      lounge TORCH TORCH "Two stations, two pads. Hit one, and the other one knows you're coming."
+say      lounge COMET COMET "So hit the second one harder."
+talk     deck TECH you "Lancelots don't like the cold. Neither do I. Bring her back warm."
+say      deck TECH TECH boost=missile "One more missile. Two stations, and you'd only brought enough for one and a half."
+radio    "Frost to Wildcard. Two stations. I'll take the fighters, you take the ships."
+
+mission  BARNARDP
+node     BARNARD
+title    Patrol: Barnard's Star, the miners' camp
+type     patrol
+music    briefing
+fighter  GAWAIN
+briefing "Barnard's Star has one planet anybody would want to live on, and somebody does."
+briefing after=won "Your map found us the rest of the miners. They have a camp on the planet, at Nav 3."
+briefing after=lost "The miners we didn't find have a camp on the planet, at Nav 3. The Aera found it first."
+briefing "They have an Ox there for a hauler, their only way off. The Aera came over the camp this morning."
+briefing "Keep the Ox in one piece if you can. If you can't, clear the camp anyway, and come home."
+briefing "You and Kestrel go through the asteroids at Nav 1, then down over the forest to Nav 2 and the camp."
+briefing "Intelligence expects 2 Nicanders at Nav 1, 2 Agis at Nav 2 and 3 Nicanders at Nav 3."
+briefing KESTREL "Through the field, Commander? Or round it?"
+briefing alive=KESTREL "Through it, Kestrel. You'd only go through it anyway. Dismissed."
+briefing dead=KESTREL "Dismissed."
+win      "The miners are still mining. They've sent up a crate of something. Kit's opened it. I didn't ask."
+win      KESTREL "Green. Everything down there is green, Commander. I'd forgotten."
+lose     escort=lost "They lost their Ox. They'll have to sit it out down there, and that's on us."
+lose     "The camp's gone quiet. I don't know if that means hiding, or worse."
+planet   1013 0 -72000 0 64000 kind=green
+nav      1 2000 -500 11000 reach=6000
+nav      2 6141 -9755 19445 ground reach=3000
+nav      3 -2022 -12475 25273 ground reach=3000
+ground   pad nav3 radius=1600 slope=800
+ground   arch nav3 span=1400 width=700 air=1500 thick=400 heading=-52
+field    asteroid 2000 -500 11000 6000
+ship     player 0 nav0
+ship     wingman 0 nav0 pilot=KESTREL
+ship     VIGILNC 0 nav0 role=home
+ship     NICANDR 1 nav1 count=2 at=-1500,500,2500
+ship     AGIS 1 nav2 count=2 at=2000,600,2000
+ship     OX 0 nav3 role=stay
+ship     NICANDR 1 nav3 count=3 at=-2500,700,-2500 prey=OX
+goal     nav 1 1
+goal     nav 2 1
+goal     nav 3 2
+goal     escort OX nav3 3
+goal     land 1
+bar      left=TORCH middle=KESTREL right=ANCHOR
+say      bar KESTREL KESTREL "A green planet. Trees, water, air. And they mine it. People."
+say      bar KESTREL you "You sound like you miss it."
+say      bar KESTREL KESTREL "I sound like I've never had it."
+say      bar ANCHOR ANCHOR "Asteroids first, ground at the end. Take the field slowly. The ground won't move."
+lounge   left=COMET middle=DRIFTER right=PRIME
+say      lounge DRIFTER DRIFTER "Kestrel through a field. That's not a bet. That's a certainty."
+say      lounge PRIME PRIME "I'd like to see a tree. Bring me a picture of a tree."
+talk     deck TECH you "Rocks out of the launch tube, then trees. You'll come back with both on the paint."
+say      deck TECH TECH boost=armor "Extra plate. Rocks first, then the ground, and both of them hit hard."
+radio    "Kestrel. Rocks, then forest. Stay high in the field, and keep low over the trees."
+
+mission  WOLF359P
+node     WOLF359
+title    Patrol: Wolf 359, the colony on the steppe
+type     patrol
+music    briefing
+fighter  FRANKLN
+briefing "There are four thousand colonists on the planet, and the Aera have started bombing them."
+briefing "The bombers hit the colony at Nav 2 every few hours, and refuel at a strip in the hills at Nav 3."
+briefing "You and Kit go down. Intelligence expects 2 Nicanders at Nav 1, 3 Areus at Nav 2 and 2 Agis at Nav 3."
+briefing "Keep the colony's Ox in one piece if you can. It's the only way off they have."
+briefing "And burn the Charillus at the strip on the way home."
+briefing TECH "I'll keep her flying, Commander. You keep the bombers off."
+briefing "Dismissed."
+win      "The colony's still standing, and the strip's gone. They're cheering on the comm. I left it on for a minute."
+win      TECH "Not a scratch on her. Well. One."
+lose     "The bombers will be back, and we won't always be there."
+planet   1117 0 -72000 0 64000 kind=steppe
+nav      1 -3094 -6364 6187 ground reach=3000
+nav      2 -8088 -8964 12131 ground reach=3000
+nav      3 2022 -8899 14153 ground reach=3000
+ground   pad nav2 radius=1600 slope=800
+ground   pad nav3 radius=1400 slope=700
+ship     player 0 nav0
+ship     wingman 0 nav0 pilot=TECH
+ship     VIGILNC 0 nav0 role=home
+ship     NICANDR 1 nav1 count=2 at=-1500,500,2500
+ship     OX 0 nav2 role=stay
+ship     AREUS 1 nav2 count=3 at=2500,1500,2500 prey=OX
+ship     CHARILS 1 nav3 role=stay
+ship     AGIS 1 nav3 count=2 at=-1500,600,-2000
+goal     nav 1 1
+goal     nav 2 3
+goal     escort OX nav2 3
+goal     kill CHARILS nav3 3
+goal     nav 3 1
+goal     land 1
+bar      left=TORCH middle=PRIME right=COMET
+say      bar TORCH TORCH "Colonists. My grandmother was one. They don't leave. They dig in deeper."
+say      bar TORCH you "Did she?"
+say      bar TORCH TORCH "Every time. She outlived three wars and a husband."
+say      bar COMET COMET "Bombers don't turn. Come at them from the side, and don't sit behind their guns."
+lounge   left=KESTREL middle=ECHO right=FROST
+say      lounge FROST FROST "If you find people hurt down there, call it in. I'll go down with the medics."
+say      lounge ECHO ECHO "Colonists. I've flown cover for them before. They wave. Every time, they wave."
+radio    "Kit here. Low and slow over the colony. And don't scratch her."
+
+mission  LUYTENP
+node     LUYTEN
+title    Escort: Luyten's Star, the grey moon's miners
+type     patrol
+music    briefing
+fighter  FRANKLN
+briefing "There's one more lot of civilians in the system, and they're on the grey moon."
+briefing "Two hundred miners who wouldn't leave until their shift was done. Their shift's done."
+briefing "An Ox is down on their pad at Nav 2. It lifts as soon as you get there and comes straight home."
+briefing "You and Tally bring it in. Intelligence expects 2 Nicanders at Nav 1 and 2 Areus at Nav 2."
+briefing "There may be more on the way back up. Stay with the Ox."
+briefing TALLY "Two hundred of them. I'll have a rematch with every one."
+briefing alive=TALLY "Bring them home first, Tally. Dismissed."
+briefing dead=TALLY "Dismissed."
+win      "Two hundred and four miners on the deck. They brought their own coffee. Well flown."
+win      TALLY "The kid flew like there was a rematch riding on it."
+lose     escort=lost "The Ox didn't make it. I have the list of names. I'll read it tonight."
+lose     "Get some rest."
+planet   1301 0 -72000 0 64000 kind=grey
+nav      1 4156 -5923 6234 ground reach=3000
+nav      2 10094 -9354 12113 ground reach=3000
+nav      3 4000 -3000 5000 hidden reach=5000
+ground   pad nav2 radius=1400 slope=700
+ship     player 0 nav0
+ship     wingman 0 nav0 pilot=TALLY
+ship     VIGILNC 0 nav0 role=home
+ship     NICANDR 1 nav1 count=2 at=-1500,500,2500
+ship     OX 0 nav2 role=back
+ship     AREUS 1 nav2 count=2 at=2500,1500,2500 prey=OX
+ship     ARISTON 1 nav3 count=2 at=2000,1000,-2000 prey=OX
+goal     nav 1 1
+goal     meet OX nav2 2
+goal     escort OX nav2 6
+goal     land 1
+bar      left=- middle=- right=COMET
+say      bar COMET COMET "Miners. Stubborn. I like them already."
+say      bar COMET you "Tally's flying it."
+say      bar COMET COMET "Then they'll be home in time for his rematch. He'll make sure of that."
+lounge   left=KESTREL middle=- right=PRIME
+say      lounge PRIME PRIME "A grey moon. They've run out of colours for us out here."
+say      lounge KESTREL KESTREL "An Ox climbs slowly. Fly over it, not ahead of it."
+talk     deck TECH you "Last Ox in the system. I'd like it back, with its people in it."
+say      deck TECH TECH boost=fuel "Reserve tank. Last one. Bring the Ox home and I'll call it even."
+radio    "Tally here. Grey moon, slow Ox. Stay with me, kid."

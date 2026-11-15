@@ -11,6 +11,7 @@
 #include "rvdata.h"
 
 int planet_can(void);                   /* there is a card that draws planets (1.3), or this is a native build */
+extern int g_planet_off;                /* (the play tests: as if there were no card, for the campaign's planet missions) */
 
 /* a planet for the coming flight, from a mission record's planet tail and nav points (terrain.h TrPlanetRec,
  * TrNavRec: km, the world's frame); made a piece at a time from now (planet_make) */

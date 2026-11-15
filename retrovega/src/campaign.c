@@ -122,6 +122,8 @@ const RvWeapon __far *weapon(uint16_t type)
     return type < RV_WEAPON_TYPES ? g_weapon_of[type] : 0;
 }
 
+static void camp_settle(void);
+
 void camp_new(void)
 {
     uint16_t i;
@@ -136,7 +138,43 @@ void camp_new(void)
         g_camp.pilot[i].alive = 1;
     for (i = 0; i < g_npilots; i++)     /* (the board's marks each brings: their splashes before the campaign, people.csv) */
         g_camp.pilot[i].kills = g_pilots[i].kills;
+    camp_settle();
     campaignNode(g_camp.node, g_camp.mission);
+}
+
+/* a mission over a planet (its record has one: missions.txt `planet`) */
+static int16_t camp_planet(uint16_t m)
+{
+    uint16_t r = 0;
+    xms_get(g_missions, (uint32_t)m * sizeof(RvMission) + offsetof(RvMission, pradius), &r, 2);
+    return r != 0;
+}
+
+/* A set's missions as this machine flies them: a planet mission only where the card draws planets (the user,
+ * 2026-11-14, of a terrain mission in every set: "Count; skipped without card").  g_camp.mission stays the mission's
+ * place in the set's list (campaign.csv's order), the same on every machine (the layer's currentMission, a guest's
+ * flight, a save); only the way on skips what this machine does not fly */
+static int16_t camp_flies(uint16_t m)
+{
+    return planet_can() || !camp_planet(m);
+}
+
+/* the first place at or after k in the node's list that this machine flies; RV_MISSIONS_PER_NODE none */
+uint16_t camp_flown_from(uint16_t node, uint16_t k)
+{
+    for (; k < RV_MISSIONS_PER_NODE && g_nodes[node].missions[k] != 0xFFFF; k++)
+        if (camp_flies(g_nodes[node].missions[k]))
+            return k;
+    return RV_MISSIONS_PER_NODE;
+}
+
+/* place k's number among the node's missions this machine flies, from 1 (the screens' "mission N of M") */
+uint16_t camp_place(uint16_t node, uint16_t k)
+{
+    uint16_t j, n = 1;
+    for (j = 0; j < k && j < RV_MISSIONS_PER_NODE; j++)
+        n += g_nodes[node].missions[j] != 0xFFFF && camp_flies(g_nodes[node].missions[j]);
+    return n;
 }
 
 uint16_t camp_mission_index(void)
@@ -144,6 +182,19 @@ uint16_t camp_mission_index(void)
     RV_CHECK(g_camp.node, g_nnodes);
     RV_CHECK(g_camp.mission, RV_MISSIONS_PER_NODE);
     return g_nodes[g_camp.node].missions[g_camp.mission];
+}
+
+/* g_camp.mission on to the first place at or after its own that this machine flies (a node begun, a save loaded):
+ * else the last it flies before it */
+static void camp_settle(void)
+{
+    uint16_t k = camp_flown_from(g_camp.node, g_camp.mission);
+    while (k == RV_MISSIONS_PER_NODE && g_camp.mission > 0) {
+        g_camp.mission--;
+        if (camp_flown_from(g_camp.node, g_camp.mission) == g_camp.mission)
+            k = g_camp.mission;
+    }
+    g_camp.mission = (uint8_t)(k == RV_MISSIONS_PER_NODE ? 0 : k);
 }
 
 /* a line of the mission's: every scene, briefing and debrief lives in XMS and comes down a line at a time, so the
@@ -370,21 +421,17 @@ void camp_load_units(const RvMission __far *m)
     planet_mission(m);                  /* (a planet mission's: begun now, made by the launch) */
 }
 
-/* a node's missions: up to RV_MISSIONS_PER_NODE, the unused entries 0xFFFF (a node of the old campaign's shape has two
- * or three) */
+/* how many of a node's missions this machine flies (camp_flies): 1 .. RV_MISSIONS_PER_NODE */
 uint16_t camp_node_missions(uint16_t node)
 {
-    uint16_t k;
-    for (k = 0; k < RV_MISSIONS_PER_NODE; k++)
-        if (g_nodes[node].missions[k] == 0xFFFF)
-            break;
-    return k ? k : 1;
+    uint16_t n = camp_place(node, RV_MISSIONS_PER_NODE) - 1;
+    return n ? n : 1;
 }
 
 void camp_way_out(int16_t won, uint16_t points)
 {
     uint16_t count = camp_node_missions(g_camp.node);
-    if (g_camp.mission + 1u < count)
+    if (camp_flown_from(g_camp.node, g_camp.mission + 1u) < RV_MISSIONS_PER_NODE)
         g_camp_way = 0;
     else
         g_camp_way = way_good(g_camp.wins + (won ? 1 : 0), count, g_camp.trend + (won ? 1 : -1), points_after(points))
@@ -399,7 +446,9 @@ int16_t camp_resolve(int16_t won, uint16_t hero_kills, const uint8_t __far *pilo
     uint16_t i, next;
     xms_get(g_missions, at + offsetof(RvMission, nship), &nship, 1);
     xms_get(g_missions, at + offsetof(RvMission, ship), ships, sizeof ships);
-    g_camp.last = (uint8_t)(won ? 1 : 2);
+    if (!camp_planet(camp_mission_index()))
+        g_camp.last = (uint8_t)(won ? 1 : 2);   /* (a planet mission leaves it: the next briefing's after=won|lost is
+                                                   about the mission before, flown with the card or without it) */
     g_camp.systems |= (uint16_t)(1u << g_camp.node);
     g_camp.flown++;
     g_camp.wins += won ? 1 : 0;
@@ -421,7 +470,9 @@ int16_t camp_resolve(int16_t won, uint16_t hero_kills, const uint8_t __far *pilo
             break;
         }
     missionResolved(won ? 1 : 0);
-    if (++g_camp.mission < camp_node_missions(g_camp.node)) {
+    next = camp_flown_from(g_camp.node, g_camp.mission + 1u);
+    if (next < RV_MISSIONS_PER_NODE) {
+        g_camp.mission = (uint8_t)next;
         campaignNode(g_camp.node, g_camp.mission);
         return 0;
     }
@@ -441,6 +492,7 @@ int16_t camp_resolve(int16_t won, uint16_t hero_kills, const uint8_t __far *pilo
     } else {
         RV_CHECK(next, g_nnodes);
         g_camp.node = (uint8_t)next;
+        camp_settle();
         campaignNode(g_camp.node, g_camp.mission);
     }
     return 1;
@@ -451,7 +503,7 @@ int16_t camp_resolve(int16_t won, uint16_t hero_kills, const uint8_t __far *pilo
  * not been in starts its tally with this mission (the host's own wins there are not carried) */
 void camp_follow(uint16_t node, uint16_t mission)
 {
-    if (node >= g_nnodes || mission >= camp_node_missions(node))
+    if (node >= g_nnodes || mission >= RV_MISSIONS_PER_NODE || g_nodes[node].missions[mission] == 0xFFFF)
         return;
     if (node != g_camp.node) {
         g_camp.wins = 0;
@@ -530,6 +582,7 @@ int16_t save_load(int16_t bunk)
     if (!save_read(bunk, &s))
         return 0;
     _fmemcpy(&g_camp, &s, sizeof s);
+    camp_settle();                      /* (one saved at a planet mission, loaded without the card: the next it flies) */
     RV_LOG("loaded bunk %d '%s': node %u mission %u", bunk + 1, g_camp.name, g_camp.node, g_camp.mission);
     gameLoaded(bunk);
     return 1;

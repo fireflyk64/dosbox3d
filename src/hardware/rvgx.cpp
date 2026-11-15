@@ -477,7 +477,7 @@ static int planet_load(void)
 		((uint8_t *)&pr)[i] = real_readb(r_seg, (uint16_t)(r_off + i));
 	for (unsigned i = 0; i < nnav * sizeof(TrNavRec); i++)
 		((uint8_t *)navs)[i] = real_readb(n_seg, (uint16_t)(n_off + i));
-	if (pr.radius < 1000 || pr.n > 4)
+	if (pr.radius < 1000 || (pr.n & 15) > 4 || (pr.n >> 4) >= TR_KINDS)
 		return RVGX_E_VIEW;             /* (anything else is a damaged record) */
 	for (unsigned i = 0; i < 768; i++)
 		pal[i] = (uint8_t)(real_readb(p_seg, (uint16_t)(p_off + i)) & 63);
@@ -494,7 +494,8 @@ static int planet_load(void)
 	g_planet_viewed = false;
 	if (!g_planet)
 		return RVGX_E_NOT_FOUND;
-	LOG_MSG("RVGX: a planet to make: seed %u, radius %d km, %u ground shapes", (unsigned)m.seed, (int)m.radius, (unsigned)m.n);
+	LOG_MSG("RVGX: a planet to make: seed %u, kind %u, radius %d km, %u ground shapes", (unsigned)m.seed, (unsigned)m.kind,
+	        (int)m.radius, (unsigned)m.n);
 	return 0;
 }
 

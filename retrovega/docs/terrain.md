@@ -105,16 +105,13 @@ Still to do for 30 fps on the page:
   picture).
 - **What it costs RV.EXE:** about 2.2 KB of conventional memory (3,936 bytes left for DOS).
 - **The missions.** In missions.txt:
-  - `planet SEED x y z RADIUS` (km);
+  - `planet SEED x y z RADIUS [kind=NAME]` (km; the kind is its look, below);
   - `ground pad navN radius= slope=` and `ground arch navN span= width= air= thick= [heading=]`;
   - `nav ... ground`: a nav point as high over the ground as the mission puts it over the radius.
 
-  A campaign node in layer 0 is aside from the campaign's way: the page's mission menu flies its missions alone.
-- **Mirage** (`MIRAGE1`, node MIRAGE, the menu's mission 40).
+- **Mirage**, the first planet (now Shmrn's: below, "A terrain mission in every set").
   - The Vigilance holds 8,000 km over the desert planet.
-  - The patrol goes down over the dunes to Nav 1, then to the Ox depot parked under a stone arch at Nav 2 (three
-    Nicanders come for it), over the mesas to Nav 3 (two Agis), and home.
-  - `RVT.EXE /fly 40` flies it; `/planet N` is the test scene (the planet N km under the player, an arch ahead).
+  - `/planet N` is the test scene (the planet N km under the player, an arch ahead).
 
 ## Detail patches
 
@@ -217,8 +214,9 @@ of real time.
     off at its cruise speed.
   - rvdata refuses a mission ship with no views in art/ships (a Charillus has none: the flight waited for the
     page's set of it for ever).
-- **The missions** (node MIRAGE, after the victory missions in the page's menu: "Mirage 1", "Mirage 2"):
-  - **MIRAGE1, the canyon run** (`/fly 40`). With Comet:
+- **The missions** (node MIRAGE then, after the victory missions in the page's menu; since the third brief, below,
+  Shmrn's):
+  - **MIRAGE1, the canyon run** (`/fly 40`, now SHMRNC). With Comet then, Torch now:
     - Nav 1 is the canyon's mouth on the plain north of the carrier, two Nicanders there;
     - Nav 2: an Agasicles loading on a pad by the river (kill it), three Agis;
     - Nav 3: a stone bridge across the canyon, a cruiser waiting past it with two Aristons. It runs for Nav 5 when
@@ -229,11 +227,96 @@ of real time.
 
     The canyon runs about 37,000 km, 3,000 km deep, its floor 1,800 km wide, its walls 1,300 km across each.
   - **MIRAGE2, the depot patrol** (`/fly 41`): the first mission re-laid south of the carrier, its arch and pad grown
-    with the planet (1,400 km of air under the crown, so the Ox at Nav 2 sits under it).
+    with the planet (1,400 km of air under the crown, so the Ox at Nav 2 sits under it). Now Defiance's, on a planet
+    of its own; its place on Mirage is Shmrn's Redeemer strike (SHMRNP).
 - **Check:** `tests/host/planet_view.sh MISSION [OUTDIR]` makes a mission's planet from the packed RVGAME.DAT as the
   card does, puts its nav points over the ground, prints how far each line between them clears the ground, and draws
   it from each nav point, from over each, high over the first and straight down. `--map OUT.PNG SEED RADIUS CX CY CZ
   X0 Z0 [SPAN]` draws the seed's ground from over the world's +y with a 5,000 km grid, for laying out nav points.
+
+## A terrain mission in every set (the user's third brief, 2026-11-14)
+
+> Can we make one terrain mission per set. That way players get to play terrain with each fighter type. Final set one
+> should have two terrain including redeemer (for six total in that set). Final terrain mission should be the canyon
+> one. We can have escort and other mission types. Patrol. Strike.
+
+The user's answers: Shmrn is the set with two; each mission wherever it fits the set's story; they count for the set's
+points and are skipped without the card; the Mirage series in the menu removed. Then: "The first terrain mission with
+the shroedinger should make use of cloak ... Maybe lots of heavy bad on the way. Stay cloaked. Arrive at the target
+lightly defended. Or hit each heavy bad with surprise"; "Different systems should have different planets (color
+scheme. Rostov should be green). Rostov needs to have asteroids en route. Maybe near the carrier so we don't need to
+render both"; of the sets with the captured destroyer and the asteroids, no escorts there ("it will frustrate players
+who want to find themselves to the winning path"), but "We want an escort mission though"; and of the miners' hauler,
+"Keep hauler protection but don't cause failure if user fails it".
+
+| Set | Mission | Fighter, wingman | Planet (seed, look) | What |
+|---|---|---|---|---|
+| Enigma | ENIGMAP, third | Schroedinger, alone | 101, ice | Strike: the listening post. Cloaked past four Cleomenes and two Aristons that guard their posts (`role=guard`), or one at a time from behind; a Charillus on a pad and two Agis at Nav 3 |
+| Cephid 17 | CEPHIDP, third | Franklin, Drifter | 211, red | Strike: a Charillus tanker on a pad in the dust |
+| Shelton | SHELTONP, third | Schroedinger, Comet | 307, savanna | Patrol: the strip the Nicanders on the deck came from, a Charillus under an arch |
+| Crucible | CRUCIBLP, second | Gawain, Comet | 401, ash (lava pools) | Escort: an Ox lifts the Kahan's lifeboat crew out of the lava fields (`role=back`) |
+| Oldziey | OLDZIEYP, third | Franklin, Prime | 503, ochre | Strike: the north base, one of the second planet's four |
+| Defiance | DEFIANCP, second | Schroedinger, Comet | 607, violet | Patrol: the depot under the arch (MIRAGE2), its Ox a bonus |
+| Lixis | LIXISP, second | Gawain, Anchor | 709, jungle | Escort: the vaccine's Ox down to the jungle settlement (`role=out jump=3`) |
+| Ataraxia | ATARAXIP, third | Franklin, Echo | 811, ocean | Patrol: the island chain, a Charillus under an island's arch |
+| Rigel | RIGELP, second | Lancelot, Frost | 919, tundra | Strike: the relay's two ground stations |
+| Barnard's Star | BARNARDP, second | Gawain, Kestrel | 1013, green | Patrol: asteroids out of the launch (Nav 1, a field 11,000 km off the carrier, 8,800 km over the ground), then the forest and the miners' camp, their Ox a bonus |
+| Wolf 359 | WOLF359P, second | Franklin, Kit | 1117, steppe | Patrol: the colony (its Ox a bonus) and the bombers' strip |
+| Shmrn | SHMRNP, third | Redeemer, Torch | 7, desert (Mirage) | Strike: the Leonidas's supply ship under the arch |
+| Shmrn | SHMRNC, fifth | Lancelot, Torch | 7, desert (Mirage) | The canyon run (MIRAGE1), the last terrain mission, the day before the Leonidas |
+| Luyten's Star | LUYTENP, fourth | Franklin, Tally | 1301, grey | Escort: the grey moon's miners home in an Ox (`role=back`) |
+
+- **Without the card** (campaign.c `camp_slot`): a set's missions are counted as this machine flies them, a planet
+  mission only where the card draws planets, so a set is one shorter without it (`camp_node_missions`, the briefing's
+  "mission N of M", the way out by points or by wins). RVGAME 28: six missions a node, 16 nodes (the save's `systems`
+  has a bit a node).
+- **The story's yesterday:** a planet mission leaves the campaign's last result alone (`g_camp.last`), so the next
+  briefing's `after=won|lost` lines are about the mission before it, flown with the card or without it.
+- **Their place in the story:** each comes where its set has a gap for it (after the destroyer at Cephid, before the
+  assault at Oldziey, after Rowe at Defiance, the day before the Leonidas at Shmrn), and its lines name only what is
+  true there with the wingman alive or dead (`alive=`, `dead=`).
+- **Points:** they add to the set's points against its pass mark (the old game's marks unchanged), so the card's
+  players have more ways to the good path, never fewer.
+
+### The planets' looks
+
+`planet ... kind=NAME`: desert, green, ice, red, ash, savanna, violet, ochre, jungle, ocean, tundra, steppe, grey
+(terrain.h `TR_KIND_*`, terrain.c `tr_looks`). A look is the eight materials' colours (on a green world the sand's slot
+is meadow and the dark crests are snow), the haze's and the high sky's, and how wet the land is: more green and scrub
+lower or higher, and the pools' level (an ocean world is mostly sea; the dry ones have none; ash has lava). The wet
+lean changes where the materials go and the green's water table only, in integers, so the heights stay the same on
+every machine. The record carries it in its ground count's high nibble (no size change). Mirage keeps the desert, its
+heights as they were. `PV_KIND=N PV_SHOTS=DIR tests/host/planet_view.sh --map ...` draws a seed in a look from low,
+high and orbit.
+
+### Guards (`role=guard`)
+
+An enemy fighter wave that keeps its nav point (logic.c `guard_return`): it fights what it sees within 6,000 km of
+itself and lets it go at 9,000 (a fighter's engage distance is some 25,000 km: before the guards, Enigma's Cleomenes
+went for the Vigilance 9,000 km off as soon as the player cloaked); with nobody to fight it flies back to its post
+(its nav point and `at=`) and loiters within 1,500 km of it. It has no orders and raids nothing. An idle guard does not
+hold the autopilot or the landing, nor a wave waiting for the last to go, and the mission is done without it: it may
+be slipped past. Its nav point's goal is met only with it gone (points for a fight won).
+
+### A parked ship of ours
+
+A capital ship with `role=stay` on our side (the miners' Ox, the colony's, the depot's) is worth its goal's points
+alive (`goal escort OX navN`: met and alive), and its loss never loses the mission (logic.c `mship_must_live`).
+
+### The cloak strike, flown (play test M8.65)
+
+Cloaked at Nav 1 its two Cleomenes come and neither sees the player nor leaves its post; a surprise from 600 km
+behind one turns only that one (the other guards 7,000 km off), and from its tail it died in about 5 s, the player
+unhurt (twenty runs of the test pilot: 20 kills, no deaths; the old game's hull roulette from behind); Alt+C again and
+it lets go; the patrol between Nav 1 and Nav 2 comes at its hidden point (reach 2,500 km); cloaked at Nav 2 and Nav 3
+nobody sees the player; uncloaked at the post for 40 s no heavy comes (the nearest 10,300 km off); with the post's Agis
+gone the autopilot goes home past the guards.
+
+### Checks
+
+`tests/host/planet_view.sh` for each of the fourteen: every line between nav points clears the ground (the least,
+Rigel's 432 km and Wolf 359's 396), and the escorts' climbs home clear it by 4,300 km and more. Play tests M8.63 and
+M8.64 fly SHMRNC now.
 
 ## Fighters raining down along the canyon (the user, 2026-11-14)
 
@@ -262,14 +345,18 @@ wasteful"; abi/rvabi.def, ABI 3): the fixed block ends at 0x4200, not 0x7400. RV
   (about 5 s natively), the layer waiting for its first frame ("Waiting for GUEST to launch..."). In the rooms both make
   it during the briefing. The two-emulator rig starts that way (`/fly`): on the canyon run with the card, the autopilot
   scenario passes 35 of 37 checks and combat 18 of 20, the two failing ones its clock-timed look at 8 s and the host's
-  frame count then (all 37 pass without the card).
+  frame count then (all 37 pass without the card). The same on Enigma's cloak strike (2026-11-14): meet 16 of 17,
+  and the cloak scenario's clock-timed looks each see the guest's cloak one step late (on, disrupted, on again, in
+  order); on the missions without a planet it passes 26 of 26.
 - Close to a canyon wall (tens of km) its patch's 21 km cells show as long smooth streaks.
 
 - The approach and straight-down views: 2 to 3 times over budget natively (the card's detail adapts; the page held
   30 fps in Mirage regardless).
 - From right under an arch, the outer edge of its underside still shows a patch cell's steps.
-- RV.EXE: 14,032 bytes left for DOS since the slots went to 62 (2,816 before; 6,144 before the planets).
-- Missions with planets are kept from DOS without the card only by being off the campaign's way.
+- RV.EXE: 13,200 bytes left for DOS with the 24 KB balloon held (37,776 without), after the missions in every set.
+- Missions with planets are skipped where there is no card (`camp_slot`). A save keeps its place in a set as a
+  number counted this machine's way: one made with the card and loaded without it can stand a mission on (or past
+  the set's end: then it flies the set's first).
 
 Done since step 4:
 

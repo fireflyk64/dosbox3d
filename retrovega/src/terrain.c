@@ -351,10 +351,63 @@ static void tr_coarse(const TrPlanet *p, int f, int32_t *out, int b0, int b1)
         }
 }
 
-static TrGround tr_desert(const int32_t d[3], const int32_t co[TR_COARSE], int32_t relief, uint32_t seed)
+/* a planet's look (TR_KIND_*): its materials' colours (TR_SAND .. TR_DARK, the slots the ground's shaping fills: on
+ * a green world TR_SAND is meadow and TR_DARK the snow on the crests), its haze's and its high sky's, and how its land
+ * is wet: `wet` added to the wet noise where the materials are picked, `basin` how much higher the green and scrub
+ * reach, `sea` how much higher the pools stand (in 64ths of the relief).  Integers where the ground is shaped, so the
+ * heights stay the same on every machine; the colours are only the picture's */
+typedef struct {
+    float rgb[TR_MATS][3], fog[3], zenith[3];
+    int32_t wet, basin, sea;
+} TrLook;
+
+static const TrLook tr_looks[TR_KINDS] = {
+    {   /* desert: golden sand, red rock, a warm haze (Mirage) */
+        { { 228, 188, 128 }, { 176, 100, 62 }, { 84, 132, 50 }, { 92, 60, 44 }, { 214, 190, 148 }, { 166, 150, 88 },
+          { 46, 104, 122 }, { 112, 74, 60 } }, { 224, 186, 144 }, { 176, 112, 84 }, 0, 0, 0 },
+    {   /* green: meadows, woods, lakes, grey rock and snow on the high crests, a blue sky */
+        { { 132, 160, 72 }, { 128, 118, 104 }, { 62, 124, 48 }, { 58, 54, 50 }, { 178, 182, 140 }, { 42, 88, 42 },
+          { 40, 92, 142 }, { 236, 240, 244 } }, { 196, 212, 226 }, { 92, 136, 200 }, 7000, 6000, -4 },
+    {   /* ice: snow fields, blue ice, slate rock, frozen pools */
+        { { 230, 236, 244 }, { 104, 114, 132 }, { 150, 192, 222 }, { 50, 56, 70 }, { 246, 248, 252 }, { 150, 154, 150 },
+          { 70, 110, 150 }, { 58, 62, 74 } }, { 212, 224, 238 }, { 118, 148, 200 }, 0, 0, 0 },
+    {   /* red: rust dust, dark red rock, pink flats, a salmon haze */
+        { { 194, 108, 68 }, { 128, 60, 42 }, { 150, 84, 60 }, { 68, 34, 28 }, { 220, 168, 130 }, { 158, 94, 64 },
+          { 80, 46, 40 }, { 88, 46, 38 } }, { 214, 150, 112 }, { 148, 82, 68 }, -6000, 0, -20 },
+    {   /* ash: grey ash, black basalt, sulphur, pools of lava */
+        { { 146, 142, 136 }, { 76, 72, 70 }, { 188, 176, 78 }, { 40, 38, 38 }, { 196, 192, 184 }, { 148, 138, 98 },
+          { 236, 112, 36 }, { 44, 42, 46 } }, { 168, 162, 156 }, { 98, 94, 98 }, -2000, 0, 0 },
+    {   /* savanna: golden grass, tan rock, olive bush, a pale blue sky */
+        { { 198, 172, 92 }, { 150, 118, 88 }, { 92, 130, 56 }, { 78, 62, 50 }, { 222, 208, 160 }, { 118, 118, 58 },
+          { 50, 100, 120 }, { 100, 84, 70 } }, { 222, 208, 172 }, { 128, 150, 182 }, 2500, 3000, -2 },
+    {   /* violet: lilac sand, slate rock, teal growth, purple scrub */
+        { { 172, 150, 182 }, { 110, 88, 122 }, { 40, 140, 128 }, { 56, 44, 66 }, { 212, 200, 222 }, { 118, 70, 130 },
+          { 30, 90, 112 }, { 70, 56, 86 } }, { 192, 180, 212 }, { 110, 90, 150 }, 4000, 4000, 0 },
+    {   /* ochre: yellow sulphur sand, ochre rock, a pale yellow haze */
+        { { 214, 190, 96 }, { 172, 128, 52 }, { 110, 128, 56 }, { 88, 64, 34 }, { 232, 222, 170 }, { 170, 150, 72 },
+          { 60, 110, 96 }, { 120, 92, 50 } }, { 226, 214, 160 }, { 170, 150, 100 }, -3000, 0, -20 },
+    {   /* jungle: green all over, deep woods, rivers and lakes, dark rock, a damp haze */
+        { { 70, 132, 52 }, { 96, 90, 78 }, { 46, 112, 40 }, { 44, 42, 36 }, { 150, 168, 110 }, { 30, 74, 34 },
+          { 36, 86, 118 }, { 70, 66, 60 } }, { 176, 200, 182 }, { 96, 140, 160 }, 12000, 9000, -1 },
+    {   /* ocean: islands in a sea, white beaches, green hills */
+        { { 222, 214, 176 }, { 120, 112, 100 }, { 70, 140, 64 }, { 52, 50, 46 }, { 236, 230, 200 }, { 58, 104, 50 },
+          { 30, 84, 150 }, { 230, 234, 238 } }, { 200, 220, 236 }, { 80, 128, 206 }, 14000, 12000, 10 },
+    {   /* tundra: grey-green moss, slate, snow on the crests, cold pools */
+        { { 134, 144, 112 }, { 98, 100, 104 }, { 96, 124, 92 }, { 46, 48, 52 }, { 214, 220, 224 }, { 110, 112, 88 },
+          { 52, 86, 112 }, { 232, 236, 242 } }, { 196, 206, 214 }, { 110, 130, 164 }, 3000, 2000, 0 },
+    {   /* steppe: brown earth, grey-green grass, white rock, a cold blue sky */
+        { { 150, 132, 96 }, { 186, 180, 168 }, { 118, 136, 82 }, { 80, 74, 66 }, { 206, 196, 166 }, { 128, 132, 90 },
+          { 54, 96, 130 }, { 150, 140, 124 } }, { 206, 206, 200 }, { 100, 128, 176 }, 1500, 2000, -2 },
+    {   /* grey: a dead moon's dust, darker rock, pale flats, almost no air's colour */
+        { { 164, 162, 158 }, { 110, 108, 106 }, { 128, 126, 120 }, { 46, 46, 48 }, { 208, 206, 202 }, { 140, 138, 132 },
+          { 70, 70, 74 }, { 78, 78, 82 } }, { 176, 176, 180 }, { 70, 72, 84 }, -8000, 0, -20 }
+};
+
+static TrGround tr_desert(const int32_t d[3], const int32_t co[TR_COARSE], int32_t relief, uint32_t seed,
+                          const TrLook *lk)
 {
     TrGround g;
-    int32_t basin = co[TR_CO_BASIN], mesa = co[TR_CO_MESA], wet = co[TR_CO_WET];
+    int32_t basin = co[TR_CO_BASIN], mesa = co[TR_CO_MESA], wet = co[TR_CO_WET] + lk->wet;
     /* (the ridges' octaves' sum over its whole weight: five of 16384 halving, 31744) */
     int32_t ridge = (int32_t)(((int64_t)(co[TR_CO_RIDGE] + tr_fbm_acc(d, 12, 3, 5, seed ^ 0xA5170002U)) * 16384) / 31744);
     int32_t hills = co[TR_CO_HILLS];
@@ -364,7 +417,7 @@ static TrGround tr_desert(const int32_t d[3], const int32_t co[TR_COARSE], int32
     int32_t sand = 65536 - (mount > table ? mount : table);
     int32_t ridged = 32767 - 2 * (ridge < 0 ? -ridge : ridge);       /* sharp crests where the noise crosses 0 */
     int32_t gorge = co[TR_CO_GORGE] < 0 ? -co[TR_CO_GORGE] : co[TR_CO_GORGE];
-    int32_t cut = 0, dune, h, water = -relief / 11;
+    int32_t cut = 0, dune, h, water = -relief / 11 + relief / 64 * lk->sea;
     int64_t phase;
     h = tr_mul(relief / 4, basin * 2);                                 /* +- a quarter */
     h += tr_mul(tr_mul(relief, (ridged + 32768) * 2 / 3), mount);
@@ -372,7 +425,7 @@ static TrGround tr_desert(const int32_t d[3], const int32_t co[TR_COARSE], int32
     /* rolling hills everywhere, lower among the mountains (theirs are the ridges) */
     h += tr_mul(tr_mul(relief / 7, hills * 2), 65536 - mount / 2);
     /* dunes: long ridges across a wind, bent by the noise, only on the sand */
-    phase = ((int64_t)d[0] * 140 + (int64_t)d[1] * 86 + (int64_t)basin * 3 + (int64_t)wet * 2) & 0xFFFF;
+    phase = ((int64_t)d[0] * 140 + (int64_t)d[1] * 86 + (int64_t)basin * 3 + (int64_t)co[TR_CO_WET] * 2) & 0xFFFF;
     dune = (int32_t)(phase < 0x8000 ? phase : 0xFFFF - phase) * 2;    /* a triangle wave 0 .. 65535 */
     dune = tr_mul(dune, dune);
     h += tr_mul(tr_mul(tr_mul(relief / 80, dune), sand), tr_smooth(-5000, 7000, hills));   /* (fields of them, not
@@ -380,7 +433,7 @@ static TrGround tr_desert(const int32_t d[3], const int32_t co[TR_COARSE], int32
     h += tr_mul(relief / 140, fine * 2);
     /* dry canyons, steep sided, cut into the high dry land where the gorge noise crosses 0 */
     if (gorge < 2000) {
-        int32_t land = tr_mul(tr_smooth(-6000, 2000, basin), tr_smooth(-4000, 1000, -wet));
+        int32_t land = tr_mul(tr_smooth(-6000, 2000, basin), tr_smooth(-4000, 1000, -co[TR_CO_WET]));
         cut = tr_mul(65536 - tr_smooth(700, 2000, gorge), land);
         h -= tr_mul(tr_mul(relief / 4, cut), 65536 - mount / 3);
     }
@@ -391,14 +444,14 @@ static TrGround tr_desert(const int32_t d[3], const int32_t co[TR_COARSE], int32
         g.mat = mount > 52000 && ridged > 18000 ? TR_DARK : TR_ROCK;   /* dark crests on the high mountains */
     else if (table > 30000)
         g.mat = TR_PALE;                                               /* the mesas' tops (their sides: rock by slope) */
-    else if (basin < -2000 && wet > 6000)
+    else if (basin < -2000 + lk->basin && wet > 6000)
         g.mat = TR_GREEN;                                              /* the green, low and wet */
-    else if (basin < 1000 && wet > 2500)
+    else if (basin < 1000 + lk->basin && wet > 2500)
         g.mat = TR_SCRUB;                                              /* round it, scrub */
     else if (basin < -9000 && wet < -5000)
         g.mat = TR_PALE;                                               /* dry salt flats in the lowest dry basins */
     if (g.mat == TR_GREEN) {
-        h -= tr_mul(relief / 25, tr_smooth(6000, 14000, wet));         /* lower: the water table */
+        h -= tr_mul(relief / 25, tr_smooth(6000, 14000, co[TR_CO_WET]));   /* lower: the water table */
         if (h < water) {
             g.mat = TR_WATER;                                          /* and pools where it dips under it, flat */
             h = water;
@@ -541,7 +594,7 @@ int tr_from_km(const TrMissionKm *m, TrPlanetDesc *d, TrStamp st[TR_STAMPS_MAX])
     memset(d, 0, sizeof *d);
     d->seed = m->seed;
     d->radius = m->radius * 256;
-    d->kind = m->kind;
+    d->kind = m->kind < TR_KINDS ? m->kind : TR_KIND_DESERT;
     d->nstamps = (uint8_t)n;
     for (k = 0; k < n; k++) {
         const TrGroundKm *g = &m->ground[k];
@@ -578,9 +631,10 @@ static int tr_nav_at(const TrNavRec *navs, int nnav, int id, int32_t at[3])
 
 void tr_from_records(const TrPlanetRec *pr, const TrNavRec *navs, int nnav, TrMissionKm *out)
 {
-    int k, i, n = pr->n > 4 ? 4 : pr->n, id, last;
+    int k, i, n = (pr->n & 15) > 4 ? 4 : pr->n & 15, id, last;
     memset(out, 0, sizeof *out);
     out->seed = pr->seed;
+    out->kind = (uint8_t)(pr->n >> 4);
     out->radius = pr->radius;
     out->centre[0] = pr->x;
     out->centre[1] = pr->y;
@@ -1315,16 +1369,7 @@ static void tr_patch_top(TrPlanet *p, int n, int j0, int j1)
 /* --------------------------------------------------------------------------------------------------------------- */
 /* the colours (floats: only the picture uses them) */
 
-static const float tr_mat_rgb[TR_MATS][3] = {
-    { 228, 188, 128 },                  /* sand, golden */
-    { 176, 100, 62 },                   /* rock, red */
-    { 84, 132, 50 },                    /* green */
-    { 92, 60, 44 },                     /* the underside of rock */
-    { 214, 190, 148 },                  /* pale: mesa tops, salt flats, pads */
-    { 166, 150, 88 },                   /* scrub, olive */
-    { 46, 104, 122 },                   /* water */
-    { 112, 74, 60 }                     /* dark crests */
-};
+/* (each material's: tr_looks, by the planet's kind) */
 
 /* the light: always from above, leaning the way the sun lies (no night side: a mission may be anywhere), at about
  * 35 degrees over the horizon */
@@ -1672,7 +1717,7 @@ static void tr_colours(TrPlanet *p)
         int mat = i / TR_LIGHTS;
         double b = 0.18 + 1.05 * (double)(i % TR_LIGHTS) / (TR_LIGHTS - 1);
         for (k = 0; k < 3; k++) {
-            double x = tr_mat_rgb[mat][k] * b;
+            double x = tr_looks[p->desc.kind].rgb[mat][k] * b;
             /* shadows a little bluer (the sky's light), the sunlit a little warmer */
             x = x * (0.82 + 0.18 * b) + (k == 2 ? 18 : k == 1 ? 8 : 4) * (1 - b > 0 ? 1 - b : 0);
             p->rgb[i][k] = (float)(x > 255 ? 255 : x < 0 ? 0 : x);
@@ -1958,6 +2003,8 @@ TrPlanet *tr_begin(const TrPlanetDesc *d, const TrStamp *stamps, const uint8_t *
     if (!p)
         return 0;
     p->desc = *d;
+    if (p->desc.kind >= TR_KINDS)
+        p->desc.kind = TR_KIND_DESERT;
     p->radius = d->radius;
     if (p->desc.nstamps > TR_STAMPS_MAX)
         p->desc.nstamps = TR_STAMPS_MAX;
@@ -1997,12 +2044,10 @@ TrPlanet *tr_begin(const TrPlanetDesc *d, const TrStamp *stamps, const uint8_t *
     }
     /* the air: a warm haze (the user: "atmospheric fog effect that depends on height to camera"), and above the
      * haze a deeper sky */
-    p->fog_rgb[0] = 224;
-    p->fog_rgb[1] = 186;
-    p->fog_rgb[2] = 144;
-    p->zenith_rgb[0] = 176;
-    p->zenith_rgb[1] = 112;
-    p->zenith_rgb[2] = 84;
+    for (k = 0; k < 3; k++) {
+        p->fog_rgb[k] = tr_looks[p->desc.kind].fog[k];
+        p->zenith_rgb[k] = tr_looks[p->desc.kind].zenith[k];
+    }
     p->fog_height = p->relief * TR_HU / 3.5;
     p->fog_density = 0.22 / p->fog_height;   /* straight up from the datum, a fifth of the way to thick haze */
     p->atmo_top = p->fog_height * 7;
@@ -2036,7 +2081,7 @@ static void tr_ground_row(TrPlanet *p, int f, int j)
             co[k] = (int32_t)(((int64_t)c00[k] * (4 - wa) * (4 - wb) + (int64_t)c10[k] * wa * (4 - wb)
                                + (int64_t)c01[k] * (4 - wa) * wb + (int64_t)c11[k] * wa * wb) / 16);
         tr_cell_dir(f, i, j, d);
-        g = tr_desert(d, co, p->relief, p->desc.seed);
+        g = tr_desert(d, co, p->relief, p->desc.seed, &tr_looks[p->desc.kind]);
         if (g.h > 32000) g.h = 32000;
         if (g.h < -32000) g.h = -32000;
         cell->h = (int16_t)g.h;

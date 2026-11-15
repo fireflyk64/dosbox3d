@@ -5,7 +5,7 @@
  * next, from high over the first, and low beside a canyon's wall; PPMs in the game's palette, the times printed.
  *
  *   planet_view RVGAME.DAT PALETTE.BIN OUTDIR MISSION_ID
- *   planet_view --map PALETTE.BIN OUT.PPM SEED RADIUS_KM CX CY CZ X0 Z0 SPAN_KM   (the ground seen from straight over
+ *   [PV_KIND=N] planet_view --map PALETTE.BIN OUT.PPM SEED RADIUS_KM CX CY CZ X0 Z0 SPAN_KM   (the ground seen from straight over
  *       the world's +y, the seed's alone: heights shaded, a line every 5,000 km of the world's x and z, the launch
  *       marked: for laying out a mission's nav points) */
 #include <math.h>
@@ -146,6 +146,7 @@ static int map_mode(int argc, char **argv)
         return 2;
     memset(&d, 0, sizeof d);
     d.seed = (uint32_t)atoi(argv[4]);
+    d.kind = (uint8_t)(getenv("PV_KIND") ? atoi(getenv("PV_KIND")) : 0);   /* (PV_KIND=N: a look, terrain.h TR_KIND_*) */
     d.radius = (int32_t)(atof(argv[5]) * KM);
     R = atof(argv[5]);
     cx = atof(argv[6]);
@@ -192,6 +193,23 @@ static int map_mode(int argc, char **argv)
     save_ppm(argv[3], rgb, N, N);
     printf("x %.0f .. %.0f, z %.0f (top) .. %.0f, a line each 5,000 km (white: 20,000), the launch red\n",
            x0 - span / 2, x0 + span / 2, z0 + span / 2, z0 - span / 2);
+    if (getenv("PV_SHOTS")) {           /* (PV_SHOTS=DIR: the look as the game draws it, over the map's middle) */
+        static const double ups[3] = { 1500, 6000, 20000 };
+        static const char *names[3] = { "low", "high", "orbit" };
+        double up[3] = { x0 - cx, 0, z0 - cz }, eye[3], fwd[3], north[3] = { 0, 0, 1 };
+        TrCam c;
+        int s, k;
+        up[1] = sqrt(R * R - up[0] * up[0] - up[2] * up[2]);
+        unit(up);
+        for (s = 0; s < 3; s++) {
+            for (k = 0; k < 3; k++) {
+                eye[k] = up[k] * (R + ups[s]) * KM - north[k] * ups[s] * 1.2 * KM;
+                fwd[k] = north[k] - up[k] * (s == 2 ? 0.9 : 0.35);
+            }
+            look(&c, eye, fwd, up, 0);
+            shot(p, &c, getenv("PV_SHOTS"), names[s]);
+        }
+    }
     tr_free(p);
     return 0;
 }

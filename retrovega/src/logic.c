@@ -454,11 +454,20 @@ int16_t logic_wingman_lost(void)
     return -1;
 }
 
+/* a mission ship of the player's side whose loss loses the mission: one with a role (an escort target, a fighter that
+ * stays home), but not a capital ship parked with role=stay (a hauler at a camp, an Ox at a depot: the user,
+ * 2026-11-14, "Keep hauler protection but don't cause failure if user fails it": its goal's points are the reward) */
+static int16_t mship_must_live(int16_t j)
+{
+    return MSHIP_ROLE(j) && !(MSHIP_ROLE(j) == RV_ESCORT_STAY && *(const uint16_t *)MSHIP(j) >= 0x20)
+           && MSHIP_SIDE(j) == commAnimInfo[0];
+}
+
 int16_t logic_escort_lost(void)
 {
     int16_t j;
     for (j = 0; j < 64; j++)
-        if (g_killed[j] && !g_away[j] && MSHIP_ROLE(j) && MSHIP_ROLE(j) != RV_ESCORT_HOME && MSHIP_SIDE(j) == commAnimInfo[0])
+        if (g_killed[j] && !g_away[j] && MSHIP_ROLE(j) != RV_ESCORT_HOME && mship_must_live(j))
             return 1;
     return 0;
 }
@@ -499,7 +508,7 @@ static int16_t mission_done(void)
     const uint16_t *at;
     int16_t n, j;
     for (j = 0; j < 64; j++)            /* (an escort target of the player's side killed: lost, whatever else was done) */
-        if (g_killed[j] && !g_away[j] && MSHIP_ROLE(j) && MSHIP_SIDE(j) == commAnimInfo[0])
+        if (g_killed[j] && !g_away[j] && mship_must_live(j))
             return 0;
     for (j = 0; j < g_narrive; j++)     /* (one still to come in, not met: the player's to fetch, as the briefing says
                                            "bring it home"; the user, 2026-11-07, of LIXIS1: the pilot came home without
@@ -517,8 +526,10 @@ static int16_t mission_done(void)
             return 0;
         }
         at = NAV_SHIPS(n);
-        for (j = 0; j < 10 && at[j] != 0xFFFF; j++)   /* (an enemy that left, afraid, is not in the way) */
-            if (MSHIP_SIDE(at[j]) != commAnimInfo[0] && !g_killed[at[j] & 63] && !g_away[at[j] & 63])
+        for (j = 0; j < 10 && at[j] != 0xFFFF; j++)   /* (an enemy that left, afraid, is not in the way; nor a guard: it
+                                                         may be slipped past, logic.c guard_*) */
+            if (MSHIP_SIDE(at[j]) != commAnimInfo[0] && !g_killed[at[j] & 63] && !g_away[at[j] & 63]
+                && MSHIP_ROLE(at[j]) != RV_ESCORT_GUARD)
                 return 0;
     }
     return 1;
@@ -3547,6 +3558,44 @@ static int16_t tailer_of(int16_t s)
     return -1;
 }
 
+/* A guard (missions.txt role=guard: an enemy wave that keeps its nav point; the user, 2026-11-14, of the cloak strike:
+ * "Maybe lots of heavy bad on the way. Stay cloaked. Arrive at the target lightly defended. Or hit each heavy bad with
+ * surprise"): it fights what it sees within GUARD_KM of itself, and lets it go past half as far again, where a fighter's
+ * engage distance is some 25,000 km (a wave left with the player cloaked went for the carrier 9,000 km off); with
+ * nobody to fight it flies back to its post (its nav point and its at= place) and loiters round it.  It has no orders
+ * and raids nothing.  A guard idle at its post does not hold the autopilot or the landing (enemy_awake), nor a wave
+ * waiting for the last to go (enemy_fighters_out), and the mission is done without it (mission_done): it may be
+ * slipped past.  Its nav point's goal is still met only with it gone */
+#define GUARD_KM 6000
+#define GUARD_RING_KM 1500              /* (farther than this from its post, it turns back) */
+
+static int16_t guard_return(int16_t s, const AiProfile __far *p)
+{
+    uint16_t r = slotMissionShip[s];
+    const uint8_t *rec, *nav;
+    RvVec3 d, b;
+    if (r >= 64)
+        return 0;
+    rec = MSHIP(r);
+    nav = NAV_REC(MSHIP_NAV(r) & 15);
+    d = vec3(NAV_REC_KM(nav, 0) + MSHIP_REC_KM(rec, 0) - TO_KM(gPositionVector[s].x),
+             NAV_REC_KM(nav, 1) + MSHIP_REC_KM(rec, 1) - TO_KM(gPositionVector[s].y),
+             NAV_REC_KM(nav, 2) + MSHIP_REC_KM(rec, 2) - TO_KM(gPositionVector[s].z));
+    if (len_of(d.x, d.y, d.z) < GUARD_RING_KM)
+        return 0;                       /* (at its post: its idle tactic carries it out, and back it comes) */
+    to_body(s, &d, &b);
+    steer_to(s, p, b.x, b.y, b.z);
+    throttle(s, slot_type(s) ? slot_type(s)->cruise_kps : 200, 0);
+    return 1;
+}
+
+/* an enemy that keeps the autopilot and the landing waiting: any not dying, but a guard that has nobody to fight */
+static int16_t enemy_awake(int16_t s)
+{
+    return slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9
+           && !(role_of(s) == RV_ESCORT_GUARD && rvTarget[s] == 0xFF);
+}
+
 /* a fighter's mind for a step: its target, its situation, its tactic, its decisions (g_turn, the throttle, fire) */
 static void fighter_think(int16_t s)
 {
@@ -3554,7 +3603,7 @@ static void fighter_think(int16_t s)
     const AiProfile __far *p = &k_profiles[m->profile < P_COUNT ? m->profile : P_FIGHTER];
     View v;
     int16_t sit, k, near_ = -1;
-    int32_t d, bd = INT32_C(0x7FFFFFFF);
+    int32_t d, bd = INT32_C(0x7FFFFFFF), reach;
     m->leader = leader_of(s);
     if (rvTaunt[s] != 0xFF) {           /* a taunt: its anger at that pilot, unless its orders hold it (logic_taunt) */
         if (order_hold(s, m->profile) < 2) {
@@ -3570,9 +3619,11 @@ static void fighter_think(int16_t s)
     }
     if (m->tactic == T_IDLE && p->idle == T_WAIT)   /* (its first thought: one that waits lies in wait from the start) */
         take_tactic(s, m, p, T_WAIT);
-    /* the target: kept while it lives and stays in reach, else the nearest enemy within the engage distance */
+    /* the target: kept while it lives and stays in reach, else the nearest enemy within the engage distance (a guard's:
+     * GUARD_KM, wherever it is) */
+    reach = role_of(s) == RV_ESCORT_GUARD ? GUARD_KM : (int32_t)p->engage_km;
     if (m->target != 0xFF && (!slot_is_ship(m->target) || shipAiState[m->target] == 9 || commAnimInfo[m->target] == commAnimInfo[s]
-                              || CLOAK_OF(m->target) == RV_CLOAK_ON || km_between(s, m->target) > (int32_t)p->engage_km * 3 / 2))
+                              || CLOAK_OF(m->target) == RV_CLOAK_ON || km_between(s, m->target) > reach * 3 / 2))
         m->target = 0xFF;
     for (k = 0; k < NUM_SHIP_SLOTS; k++) {
         if (k == s || !slot_is_ship(k) || commAnimInfo[k] == commAnimInfo[s] || shipAiState[k] == 9 || (rvFlags[k] & 16))
@@ -3583,7 +3634,7 @@ static void fighter_think(int16_t s)
             near_ = k;
         }
     }
-    {
+    if (role_of(s) != RV_ESCORT_GUARD) {   /* (a guard has no orders and raids nothing: it keeps its post) */
         int16_t prey = prey_of(s, PREY_PCT(m->profile));
         if (prey >= 0) {                /* (its orders: at the prey as a raider is, whoever is nearer) */
             m->target = (uint8_t)prey;
@@ -3595,7 +3646,7 @@ static void fighter_think(int16_t s)
                 m->target = (uint8_t)raid;
         }
     }
-    if (!m->raiding && near_ >= 0 && bd <= p->engage_km && (m->target == 0xFF || bd * 3 < km_between(s, m->target) * 2))
+    if (!m->raiding && near_ >= 0 && bd <= reach && (m->target == 0xFF || bd * 3 < km_between(s, m->target) * 2))
         m->target = (uint8_t)near_;
     if (m->taunt) {                     /* taunted: the taunter, wherever it is and whoever is nearer (logic_taunt) */
         int16_t tk = tailer_of(s), o = order_hold(s, m->profile);
@@ -3642,6 +3693,8 @@ static void fighter_think(int16_t s)
     rvTarget[s] = m->target;
     if (m->target == 0xFF) {            /* nobody to fight: the idle tactic */
         int16_t cap;
+        if (role_of(s) == RV_ESCORT_GUARD && guard_return(s, p))
+            return;
         if (((g_order[s] == ORDER_RTB && is_wingman(s)) || (role_of(s) == RV_ESCORT_STAY && g_order[s] == ORDER_FREE))
             && (cap = nearest_capital(s)) >= 0) {   /* home: round its carrier; a fighter that stays (role=stay, the
                                            carrier's patrol), round the capital ship nearest it */
@@ -4198,7 +4251,8 @@ static int16_t enemy_fighters_out(void)
     int16_t s;
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
         if (slot_is_ship(s) && shipAiState[s] != 9 && commAnimInfo[s] != commAnimInfo[0]
-            && gInstanceShipTypes[s] < 0x20 && role_of(s) != RV_ESCORT_STREAM)   /* (a stream's never are: stream_step) */
+            && gInstanceShipTypes[s] < 0x20 && role_of(s) != RV_ESCORT_STREAM   /* (a stream's never are: stream_step) */
+            && role_of(s) != RV_ESCORT_GUARD)   /* (nor a guard's: it keeps its post) */
             return 1;
     return 0;
 }
@@ -4359,7 +4413,7 @@ static int16_t enemy_near_humans(void)
     int16_t s;
     humans_note();
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
-        if (slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9 && human_km(s) < AUTOPILOT_CLEAR_KM)
+        if (enemy_awake(s) && human_km(s) < AUTOPILOT_CLEAR_KM)
             return 1;
     return 0;
 }
@@ -4730,8 +4784,7 @@ int16_t logic_autopilot_ready(void)
         return -1;                      /* (the nav computer wrecked: the pilot flies home by hand, the cross still shows) */
     humans_note();
     for (s = 1; s < NUM_SHIP_SLOTS; s++)   /* (near any human: a wingman in a fight on another machine holds it too) */
-        if (slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9
-            && human_km(s) < AUTOPILOT_CLEAR_KM)
+        if (enemy_awake(s) && human_km(s) < AUTOPILOT_CLEAR_KM)
             return -1;
     /* (the one N picked, else the way ahead: a patrol in any order, as the old game's map lets one (its Enter takes the
      * pick: traced 2026-11-04, Enyo 1's autopilot to Nav 2 first), an escort mission too: the escort comes along only

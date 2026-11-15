@@ -1405,8 +1405,9 @@ static void flight_prepare(void)
     g_guest = rvNetRole == 2;
     if (g_guest) {
         uint16_t node = currentSeries, k = currentMission;
-        if (node < g_nnodes && k < RV_MISSIONS_PER_NODE && g_nodes[node].missions[k] < g_nmissions) {
-            camp_mission(g_nodes[node].missions[k], &g_m);
+        uint16_t mi = node < g_nnodes && k < RV_MISSIONS_PER_NODE ? g_nodes[node].missions[k] : 0xFFFF;
+        if (mi < g_nmissions) {
+            camp_mission(mi, &g_m);
             camp_load_rules(&g_m);      /* (its rules; its tables are the host's already) */
             /* the fighter the host's records give this pilot: its cockpit, and its sets among the flight's (the user,
              * 2026-11-03: "in the set with the franklin the wingman kept the schroedinger cockpit and the first mission
@@ -1907,7 +1908,7 @@ static void bunk_input(const Input *in0)
             close_bunks();
             enter_room(RV_R_QUARTERS);
             sprintf(g_msg, "Bunk %d loaded: %s. Layer %u, mission %u.", g_bunk_sel + 1, g_camp.name,
-                    g_nodes[g_camp.node].layer, g_camp.mission + 1);
+                    g_nodes[g_camp.node].layer, camp_place(g_camp.node, g_camp.mission));
             message(g_msg);
         }
     }
@@ -2003,7 +2004,7 @@ static void log_overlay(int y0, int y1)
     log_place(RV_NODE_BAD, row_h, &x, &y);
     gfx_text(FONT_BODY, x - 6, y + 6, "L", RV_TEXT_WHITE, y0, y1);
     sprintf(s, "Layer %u, mission %u of %u.  Flown: %u.  Trend: %+d", g_nodes[g_camp.node].layer,
-            g_camp.mission + 1, camp_node_missions(g_camp.node), g_camp.flown, g_camp.trend);
+            camp_place(g_camp.node, g_camp.mission), camp_node_missions(g_camp.node), g_camp.flown, g_camp.trend);
     gfx_text(FONT_BODY, 300, 84, s, RV_TEXT_WHITE, y0, y1);
     if (g_nodes[g_camp.node].pass_mark && g_camp.points != POINTS_UNKNOWN) {   /* (the old game's points: camp_points) */
         sprintf(s, "Points here: %u of the %u that win it.", g_camp.points, g_nodes[g_camp.node].pass_mark);

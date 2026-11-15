@@ -82,7 +82,11 @@ void camp_follow(uint16_t node, uint16_t mission);      /* a guest's campaign to
 void camp_load_rules(const RvMission __far *m);         /* the mission's rules (camp_load_tables' part a guest takes) */
 uint16_t camp_flight_fighter(void);                     /* the fighter the player's mission record names (the save's,
                                                            or in a shared flight the host's choice) */
-uint16_t camp_node_missions(uint16_t node);             /* how many missions a node holds (1 .. RV_MISSIONS_PER_NODE) */
+uint16_t camp_node_missions(uint16_t node);             /* how many missions a node holds (1 .. RV_MISSIONS_PER_NODE) as
+                                                           this machine flies them (a planet mission only with the card) */
+uint16_t camp_flown_from(uint16_t node, uint16_t k);    /* the first place at or after k in its list this machine flies
+                                                           (RV_MISSIONS_PER_NODE none) */
+uint16_t camp_place(uint16_t node, uint16_t k);         /* place k's number among those it flies, from 1 */
 const char *camp_ending_text(void);
 
 int16_t save_write(int16_t bunk, const char *name);
