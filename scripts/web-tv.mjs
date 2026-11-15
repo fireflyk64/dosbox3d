@@ -94,8 +94,10 @@ await host.page.click("#fly");
 await new Promise((r) => setTimeout(r, 4000));
 if (await guest.page.$eval("#fly", (b) => !b.disabled)) await guest.page.click("#fly");
 const seconds = Number(secondsArg);
-for (let t = 20; t <= seconds; t += 20) {
-  await new Promise((r) => setTimeout(r, 20000));
+// (SHOT_EVERY=4: a picture of each page every 4 s, not every 20: to catch the other pilot in view)
+const every = Number(process.env.SHOT_EVERY || 20);
+for (let t = every; t <= seconds; t += every) {
+  await new Promise((r) => setTimeout(r, every * 1000));
   for (const p of [host, guest]) {
     await p.page.locator("#canvas").screenshot({ path: path.join(shotDir, `web-${p.who}-${t}.png`) }).catch(() => {});
   }

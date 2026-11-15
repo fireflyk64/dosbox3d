@@ -129,7 +129,7 @@ for (let t = 20; t <= seconds; t += 20) {
     await p.page.locator("#canvas").screenshot({ path: path.join(shotDir, `web-${p.who}-${t}.png`) }).catch(() => {});
   }
 }
-check(all(host, /Raptor's settings: SETUP\.INI/).length > 0, "host: the settings written (SETUP.INI)");
+check(all(host, /Raptor's settings: (SETUP\.INI|the music|the effects)/).length > 0, "host: the settings written (SETUP.INI made, or its cards made the Sound Blaster)");
 check(all(host, /Raptor: the program's code at/).length > 0, "host: the hooks found the program");
 check(all(guest, /Raptor: the program's code at/).length > 0, "guest: the hooks found the program");
 check(all(host, /joined as pilot 2/).length > 0, "host: the guest joined the game's room");
