@@ -671,4 +671,52 @@ message NetworkMessage {
     optional TvLooks tv_looks = 66;
     optional TvDead tv_dead = 67;
     optional TvSpawn tv_spawn = 68;
+    // Raptor: Call of the Shadows' (from 80: docs/raptor.md)
+    optional RapHello rap_hello = 80;
+    optional RapState rap_state = 81;
+    optional RapHits rap_hits = 82;
+    optional RapDead rap_dead = 83;
+}
+
+// Raptor: Call of the Shadows (docs/raptor.md).  A pilot says hello; the host answers with its seat.
+message RapHello {
+    optional string callsign = 1;
+    optional uint32 player = 2;
+    optional uint32 seats = 3;
+}
+
+// A pilot's state: every frame of a wave, else ten times a second.  The launch: a pilot at the ship computer's
+// sector chosen, waiting for the others (`launch` non-zero; the host's its launch's serial, with the wave it flies);
+// `run` the serial of the wave flown together (the host's, taken at the launch: 0 a wave flown alone).
+message RapState {
+    optional uint32 player = 1;
+    optional uint32 launch = 2;
+    optional sint32 game = 3;           // the sector (cur_game) and wave: game * 16 + wave (-1 none)
+    optional uint32 diff = 4;           // the wave's sprites (cur_diff)
+    optional sint32 plrdiff = 5;        // the difficulty (curplr_diff)
+    optional uint32 run = 6;
+    optional bool in_wave = 7;
+    optional uint32 frame = 8;          // frames into the wave
+    optional sint32 x = 9;              // the ship's top left
+    optional sint32 y = 10;
+    optional uint32 pic = 11;           // its frame (an item of the game's archives)
+    optional bool drawn = 12;           // shown (not blown up)
+    optional sint32 shield = 13;
+    // its shots: (kind << 28 | item), x | y << 16 (kind 0 a sprite; 1 a line from the ship to x, y, no item; 2 a beam:
+    // the sprite from a third dword's y down to y)
+    repeated uint32 shot = 14 [packed=true];
+}
+
+// The damage a pilot's weapons (and its ship's crashes) did to the wave's enemies since its last: (the enemy's index
+// in the wave's sprites, the damage) pairs.  Every machine takes it off the same enemy.
+message RapHits {
+    optional uint32 player = 1;
+    optional uint32 run = 2;
+    repeated uint32 hit = 3 [packed=true];
+}
+
+// A pilot blown up in the wave flown together: everybody's is over (the user's rule).
+message RapDead {
+    optional uint32 player = 1;
+    optional uint32 run = 2;
 }

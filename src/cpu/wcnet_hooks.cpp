@@ -32,6 +32,7 @@
 #include "wcnet_tie_session.h"
 #include "wcnet_priv.h"
 #include "wcnet_tv.h"
+#include "wcnet_rap.h"
 #include "paging.h"
 #include "callback.h"
 #include "cpu.h"
@@ -407,6 +408,7 @@ static KBD_KEYS script_key(const std::string &name) {
         { "minus", KBD_minus }, { "backslash", KBD_backslash }, { "kp0", KBD_kp0 }, { "kpperiod", KBD_kpperiod },
         { "kpmultiply", KBD_kpmultiply }, { "bracketleft", KBD_leftbracket }, { "bracketright", KBD_rightbracket },
         { "alt", KBD_leftalt },         // (+alt, a letter, -alt: RetroVega's Alt+C cloak)
+        { "ctrl", KBD_leftctrl }, { "shift", KBD_rightshift },     // (Raptor's fire and mega bomb)
     };
     for (size_t i = 0; i < sizeof(kNamed) / sizeof(kNamed[0]); i++) {
         if (name == kNamed[i].name) return kNamed[i].key;
@@ -1197,6 +1199,8 @@ static void key_script() {
         wr16(ds::missionStatus, (Bit16u)status);
     } else if (tv_script_item(item, t)) {
         // (Terminal Velocity's aids: wcnet_tv.cpp)
+    } else if (rap_script_item(item, t)) {
+        // (Raptor's aids: wcnet_rap.cpp)
     } else if (priv_script_item(item, t)) {
         // (Privateer's aids: wcnet_priv.cpp)
     } else if (lab_script_item(item, t)) {
@@ -2593,7 +2597,7 @@ static Bitu hook_callback() {
 Bitu wc_net_hook_exit(Bit32u ip) {
     // (Terminal Velocity's native drawing and frame cap: made here in the core, as natively -- they wait on nothing
     // -- not from the main loop: some thousands a frame)
-    if (ip >= 0x10000 && wc_net_countdown >= 0 && wc::tv_fast_hook(ip)) {
+    if (ip >= 0x10000 && wc_net_countdown >= 0 && (wc::tv_fast_hook(ip) || wc::rap_fast_hook(ip))) {
         return 0;
     }
     PhysPt at = SegPhys(cs) + ip;
@@ -2655,6 +2659,7 @@ void wc_net_check_cpu_hooks() {
         tie_tick();
         priv_tick();
         tv_tick();
+        rap_tick();
 #ifdef __EMSCRIPTEN__
         escape_tap();
         web_input_tick();
@@ -2686,6 +2691,7 @@ void wc_net_check_cpu_hooks() {
         if (wc_net_watch32[ip & 0xffff]) {
             tie_check_hooks(ip);
             tv_check_hooks(ip);     // (Terminal Velocity's, wcnet_tv.cpp: each looks only at its own places)
+            rap_check_hooks(ip);    // (Raptor's, wcnet_rap.cpp)
         }
         return;
     }
