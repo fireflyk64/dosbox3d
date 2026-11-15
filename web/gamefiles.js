@@ -79,6 +79,8 @@
 // `prepare(FS, root)`: the game's own settings made fit for the browser after its files are installed (the copy in
 // the emulator's memory only; what it did, for the log).
 
+import { unpackPvm } from "./pvm.js";
+
 // Wing Commander's Vega campaign: series 1.. and mission 0.. within the
 // series (what the MIS / SERIES environment of the hooks takes).  The system
 // of each series and the number of missions were read off the game's own
@@ -420,7 +422,42 @@ export async function expandSplitZips(files) {
     const dirOf = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/") + 1) : "";
     out = out.filter((g) => g !== f).concat(inside.map((g) => ({ path: dirOf + g.path, data: g.data })));
   }
+  // (the TIE Fighter demo, tiedemo.zip as DOS Games Archive has it: the zips of its two floppies, tiedem1.zip and
+  // tiedem2.zip, whose TIEDEMO.001 and TIEDEMO.002 hold the game's files compressed; unpacked as its installer does
+  // (web/pvm.js), the floppies' own files left out but for the READ.ME and the FLIGHT.HLP)
+  for (const f of out.slice()) {
+    if (!/(^|\/)tiedem\d\.zip$/i.test(f.path)) continue;
+    let inside;
+    try { inside = await readZip(f.data); } catch (e) { continue; }
+    const dirOf = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/") + 1) : "";
+    out = out.filter((g) => g !== f).concat(inside.map((g) => ({ path: dirOf + g.path, data: g.data })));
+  }
+  const v1 = out.find((f) => /(^|\/)tiedemo\.001$/i.test(f.path)), v2 = out.find((f) => /(^|\/)tiedemo\.002$/i.test(f.path));
+  if (v1 && v2) {
+    const dirOf = v1.path.includes("/") ? v1.path.slice(0, v1.path.lastIndexOf("/") + 1) : "";
+    const files = unpackPvm([v1.data, v2.data], dirOf);
+    const floppy = /(^|\/)(tiedemo\.00\d|tiedemo\.inf|disk\.id|install\.exe|detect\.exe)$/i;
+    out = out.filter((f) => !floppy.test(f.path) || !f.path.startsWith(dirOf)).concat(files);
+  }
   return out;
+}
+
+// The TIE Fighter demo's own settings, as its installer writes them when there are none (docs/tiedemo.md):
+// LANDRU.CFG, the sound (the music on the AdLib, the effects and the voices on a Sound Blaster at 220: "adlib_w", its
+// ADLIB_W.IMS), the machine's speed (FAST), "ems" and "diff"; OPTIONS.CFG, the in-flight options of a FAST machine with
+// the digitized sound on (the installer's FASTYES.CFG).
+function tdPrepare(FS, root) {
+  const said = [];
+  const has = (name) => { try { FS.readFile(`${root}/${name}`); return true; } catch (e) { return false; } };
+  if (!has("LANDRU.CFG")) {
+    FS.writeFile(`${root}/LANDRU.CFG`, new TextEncoder().encode("adlib_w\r\nFAST\r\nems\r\ndiff\r\n"));
+    said.push("LANDRU.CFG (the AdLib's music, the Sound Blaster's effects, a fast machine)");
+  }
+  if (!has("OPTIONS.CFG") && has("FASTYES.CFG")) {
+    FS.writeFile(`${root}/OPTIONS.CFG`, FS.readFile(`${root}/FASTYES.CFG`));
+    said.push("OPTIONS.CFG (the installer's FASTYES.CFG)");
+  }
+  return said.length ? `The TIE Fighter demo's settings, as its installer writes them: ${said.join(", ")}` : "";
 }
 
 // Terminal Velocity's own settings made for the browser at each launch (src/cpu/wcnet_tv.cpp; docs/terminalvelocity.md):
@@ -637,6 +674,18 @@ export const GAMES = [
     saves: ["CHAR*.FIL", "SETUP.INI"],
     help: "Raptor flown together: each pilot plays a game of their own (a new pilot or a saved one, their own ship, weapons, money and shop), and the waves are flown together: when a pilot chooses a sector at the ship computer (the hangar's Fly Mission), their game waits there for the other, then both fly the host's wave. Both ships are on both screens (the other pilot's with blue engine flames, yours with the game's own, each casting its shadow); the enemies are the same, and what either pilot shoots down is shot down in both games: the money goes to whoever did it, and each pilot picks up their own bonuses. If either pilot is shot down, the mission is over for both.",
     keys: "<b>Raptor:</b> the arrow keys fly the ship (the mouse is for its menus), <kbd>Ctrl</kbd> fires, <kbd>Alt</kbd> fires the special weapon, <kbd>Space</kbd> picks the next special weapon, the right <kbd>Shift</kbd> the mega bomb; <kbd>Esc</kbd> aborts the mission (the other pilot flies on alone), <kbd>P</kbd> pauses. A controller picked above: the left stick or the D-pad flies the ship, A fires, B the special weapon, X the next special, Y the mega bomb, Start pauses, Back is Esc; in the menus the stick moves the pointer and A clicks (the D-pad and Start, Enter, work them as the keys do).",
+    dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
+  // The TIE Fighter demo (LucasArts, early 1994: one mission, flown in a build from before the game's release, given
+  // away to advertise the Dodge Neon): tiedemo.zip as DOS Games Archive has it (its two floppies' zips, unpacked by
+  // expandSplitZips and web/pvm.js as its installer does) or its installed directory.  TIEDEMO.BAT runs the opening
+  // (DEMO.EXE), the mission (TIEMISS.EXE: a 16-bit real-mode program, EMS for its music, sound and cockpits) and the
+  // ending.  Not multiplayer yet: docs/tiedemo.md.
+  { id: "tiedemo", tag: "TFD", title: "TIE Fighter (the 1994 demo)", detect: ["TIEMISS.EXE"], run: "tiedemo", multiplayer: false,
+    build: { text: "TIE Fighter Demo V1.0 12/04/93" },
+    cycles: 30000, screen: [320, 200], noFlight: true, noRoomOptions: true, prepare: tdPrepare,
+    saves: ["OPTIONS.CFG"],
+    help: "The TIE Fighter demo of early 1994, the one given away with the Dodge Neon: a single mission (T/F Alpha against the Rebel repair yard at Remitik, the Rebels fleeing Hoth after), in a build from before the game's release. The opening plays first (Esc skips it), then the mission, then the ending. Download tiedemo.zip from DOS Games Archive (the link under step 1) and drop it on step 1: the page unpacks its two floppies as its installer does. It flies alone for now: the multiplayer hooks for this build are being found.",
+    keys: "<b>TIE Fighter demo in flight:</b> the mouse (or a joystick) steers, its button fires; <kbd>+</kbd> and <kbd>-</kbd> the throttle, <kbd>Backspace</kbd> full, <kbd>\\</kbd> none, <kbd>[</kbd> and <kbd>]</kbd> a third and two thirds; <kbd>X</kbd> single, dual or quad fire, <kbd>F9</kbd> the lasers' recharge rate; <kbd>R</kbd> the nearest enemy fighter, <kbd>T</kbd> and <kbd>Y</kbd> the next and previous target, <kbd>U</kbd> the ship in the sight; <kbd>Space</kbd> approves the onboard computer's suggestions; <kbd>Ctrl</kbd> the threat display; the keypad's digits look around; <kbd>Esc</kbd> ends the demo.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
 ];
 
