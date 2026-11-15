@@ -49,7 +49,10 @@ async function openPage(who, script, callsign) {
   u.searchParams.set("env.WCNET_LOG", "2");
   await page.goto(u.toString());
   await page.setInputFiles("#gamefile", zip);
-  await page.waitForFunction(() => ["error", "ready"].includes(document.getElementById("sourceStatus").dataset.state), null, { timeout: 120000 });
+  // (ready for the dropped files: the page's built-in game is ready before them on a page that has one)
+  await page.waitForFunction(() => document.getElementById("sourceStatus").dataset.state === "error"
+    || (document.getElementById("sourceStatus").dataset.state === "ready" && document.getElementById("program").value === "tv"), null, { timeout: 120000 })
+    .catch(() => {});
   const st = await page.$eval("#sourceStatus", (el) => `${el.dataset.state}: ${el.textContent.slice(0, 110)}`);
   check(st.startsWith("ready") && await page.$eval("#program", (el) => el.value) === "tv", `${who}: the zip recognised as Terminal Velocity (${st})`);
   return { page, logs, who };
