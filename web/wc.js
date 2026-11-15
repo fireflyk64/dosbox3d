@@ -639,6 +639,10 @@ async function initSources() {
   let serverCopy = false;
   try { serverCopy = (await fetch(DATA_URL, { method: "HEAD" })).ok; } catch (e) { /* none */ }
   $("useServer").hidden = !serverCopy;
+  // (a game dropped or fetched while the saved copies and the server were asked is the player's pick: no default over
+  // it.  On the site the server's question can take a second or more, and a zip dropped as the page opened was
+  // replaced by the page's own game)
+  if (source || fetching.size) return;
   // (A link to a room for one game picks that game among the saved copies.)
   // (Nothing saved and no server copy: the game built into the page, so
   // that everybody can fly, and meet in the lobby, with nothing to bring.)

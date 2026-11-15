@@ -7,7 +7,8 @@
 // "TDM PAGE OK" when every check passed.
 //
 //   node web-tdm.mjs PAGE_URL LOBBY_URL ROOM ZIP|fetch HOST_SCRIPT GUEST_SCRIPT [seconds]   (fetch: the page's button)
-//   env: PLAYWRIGHT_DIR, CHROME, SHOT_DIR, CYCLES, PAGE_ENV
+//   env: PLAYWRIGHT_DIR, CHROME, SHOT_DIR, CYCLES, PAGE_ENV, OVERRIDE_WC_JS (a wc.js served in place of the page's),
+//        SLOW_SERVER_COPY (ms: the page's question for wc.tar.gz answered that late, a 404; "read": once the zip is read)
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs";
@@ -39,6 +40,22 @@ async function openPage(who, script, callsign) {
   });
   page.on("pageerror", (e) => console.log(`${stamp()} [${who}] PAGE ERROR: ${e.message}`));
   page.on("crash", () => console.log(`${stamp()} [${who}] PAGE CRASHED`));
+  if (process.env.OVERRIDE_WC_JS) {
+    // (this tree's page script in place of the served one: a fix tried on the live site first)
+    const js = fs.readFileSync(process.env.OVERRIDE_WC_JS);
+    await page.route(/\/wc\.js(\?.*)?$/, (route) => route.fulfill({ status: 200, body: js, headers: { "content-type": "text/javascript" } }));
+  }
+  if (process.env.SLOW_SERVER_COPY) {
+    // (the page's question for the server's copy of the game answered late, as the site can: the zip is dropped and
+    // installed before it is answered; the page's own game must not then replace it)
+    // ("read": answered the moment the dropped zip has been read, before its copy is kept: the window the site hit)
+    await page.route(/\/wc\.tar\.gz(\?.*)?$/, async (route) => {
+      if (process.env.SLOW_SERVER_COPY === "read") {
+        for (let i = 0; i < 600 && !logs.some((l) => /^read \d+ files from/.test(l)); i++) await new Promise((r) => setTimeout(r, 5));
+      } else await new Promise((r) => setTimeout(r, Number(process.env.SLOW_SERVER_COPY)));
+      route.fulfill({ status: 404, body: "" });
+    });
+  }
   const u = new URL(pageUrl);
   u.searchParams.set("room", room);
   u.searchParams.set("server", lobbyUrl);
