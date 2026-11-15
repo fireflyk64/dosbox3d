@@ -312,8 +312,8 @@ function setSource(s, want) {
   // (the Players box: as many seats as the game's rooms take)
   $("seats").max = String(maxSeats());
   if (Number($("seats").value) > maxSeats()) $("seats").value = String(maxSeats());
-  // (Wing Commander II's people use a first name; the first game has none.)
-  $("firstnameLabel").hidden = !(gameInfo() && gameInfo().firstName);
+  // (Wing Commander II's people use a first name; the first game has none: the box is there for every game, optional,
+  // the user's call, 2026-11-15)
   retagRoom();
   if (lobby.game) { sayHello(); buildMissionMenu(); renderMission(); }
   hall.gameChanged();
@@ -348,6 +348,18 @@ function switchTo(holder, id) {
   else if (holder === "shelved") { const s = shelved; shelved = null; setSource(s, id); }
   else if (holder === "builtin") useBuiltin(id);
   else if (holder) useSavedCopy(holder, id);
+}
+// ?game=: a game's id, tag or everyday name (the user, 2026-11-15: "if they pass in a game=tv or game=tf or
+// game=raptor or game=rv flag it defaults to those games"): "tf" is TIE Fighter, the CD's when this browser has it,
+// else the 1994 demo.
+function gameParam(v) {
+  const k = String(v || "").trim().toLowerCase();
+  if (!k) return null;
+  const named = { raptor: "rap", retrovega: "rv", tie: "tf", tfd: "tiedemo", tiefighter: "tf", privateer: "priv", terminalvelocity: "tv" };
+  let id = named[k] || k;
+  if (!gameById(id)) { const byTag = GAMES.find((g) => g.tag.toLowerCase() === k); id = byTag ? byTag.id : null; }
+  if (id === "tf" && !holderOf("tf")) id = "tiedemo";
+  return id && gameById(id) ? id : null;
 }
 // The "Play" menu: every program of every game this browser holds (the
 // loaded files and the saved copies), by game, the loaded one selected.
@@ -473,32 +485,100 @@ const rvSets = createSetProvider({ base: "rv/", root: GAME_ROOT, status, log });
 // The buttons that change the game files: off while a file is being read
 // and once the game runs.
 function sourceButtons(on) {
-  for (const el of [$("useServer"), $("program"), $("demoRap"), $("demoTv"), $("demoTfd"), ...$("savedList").querySelectorAll("button")]) el.disabled = !on;
+  for (const el of [$("useServer"), $("program"), ...DEMOS.map((d) => $(d.button)), ...$("savedList").querySelectorAll("button")]) el.disabled = !on;
 }
-// The shareware this site offers to play at once (web/demos: the archives exactly as Apogee and 3D Realms released them,
-// their VENDOR.DOC letting anyone pass them around unchanged and free of charge), and the TIE Fighter demo from the
-// Internet Archive (its CORS address: the Dodge Neon preview's two floppies, 1.7 MB): a copy this browser kept is used
-// as it is (nothing fetched again); else the archive is fetched and read as a dropped file is (and kept).
-const DEMOS = { demoRap: { id: "rap", file: "1rap12.zip", title: "Raptor's shareware" },
-                demoTv: { id: "tv", file: "3dtv12.zip", title: "Terminal Velocity's shareware" },
-                demoTfd: { id: "tiedemo", file: "TIE_Fighter_Preview__Dodge_Neon.zip", title: "the TIE Fighter demo", from: "the Internet Archive",
-                           url: "https://archive.org/cors/StarWarsTIEFighter_1020/TIE_Fighter_Preview__Dodge_Neon.zip" } };
-async function useDemo(d) {
-  const kept = saved.find((g) => programsIn(g.files).some((p) => p.id === d.id));
-  if (kept) { useSavedCopy(kept, d.id); return; }
-  let file;
-  try {
-    sourceButtons(false);
-    sourceStatus(`Fetching ${d.title} (${d.file}) from ${d.from || "this site"}…`, "busy");
-    const r = await fetch(d.url || "demos/" + d.file);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    file = new File([await r.blob()], d.file, { type: "application/zip" });
-  } catch (e) {
-    sourceStatus(`Could not fetch ${d.title}: ${e && e.message ? e.message : e}`, "error");
-    sourceButtons(true);
-    return;
+// The games anyone can play at once, the "Free to play now" row: RetroVega (built into the page), the shareware this
+// site offers (web/demos: the archives exactly as Apogee and 3D Realms released them, their VENDOR.DOC letting anyone
+// pass them around unchanged and free of charge), and the TIE Fighter demo from the Internet Archive (its CORS address:
+// the Dodge Neon preview's two floppies, 1.7 MB).  A copy this browser kept is used as it is (nothing fetched again);
+// else the archive is fetched and read as a dropped file is (and kept).  A button then finds company (playTogether).
+const DEMOS = [
+  { button: "demoRv", id: "rv", title: "RetroVega", builtin: true },
+  { button: "demoRap", id: "rap", file: "1rap12.zip", title: "Raptor's shareware" },
+  { button: "demoTv", id: "tv", file: "3dtv12.zip", title: "Terminal Velocity's shareware" },
+  { button: "demoTfd", id: "tiedemo", file: "TIE_Fighter_Preview__Dodge_Neon.zip", title: "the TIE Fighter demo", from: "the Internet Archive",
+    url: "https://archive.org/cors/StarWarsTIEFighter_1020/TIE_Fighter_Preview__Dodge_Neon.zip" },
+];
+const demoOf = (id) => DEMOS.find((d) => d.id === id) || null;
+// The game picked wherever this browser has it, else fetched (one fetch at a time for each): true once it is the
+// source.
+const fetching = new Map();   // game id -> its fetch under way
+async function getGame(d) {
+  if (d.builtin) { useBuiltin(d.id); return true; }
+  const holder = holderOf(d.id);
+  if (holder) { switchTo(holder, d.id); return runs(source, d.id); }
+  if (!fetching.has(d.id)) {
+    fetching.set(d.id, (async () => {
+      let file;
+      try {
+        sourceButtons(false);
+        sourceStatus(`Fetching ${d.title} (${d.file}) from ${d.from || "this site"}…`, "busy");
+        const r = await fetch(d.url || "demos/" + d.file);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        file = new File([await r.blob()], d.file, { type: "application/zip" });
+      } catch (e) {
+        sourceStatus(`Could not fetch ${d.title}: ${e && e.message ? e.message : e}`, "error");
+        sourceButtons(true);
+        return;
+      }
+      await handleFile(file);
+    })().finally(() => fetching.delete(d.id)));
   }
-  await handleFile(file);
+  await fetching.get(d.id);
+  return runs(source, d.id);
+}
+
+// A free game's button: the game (getGame), then company: an open room of that game in the public lobby is joined,
+// and with none a room of the game's own is made and offered there (the user, 2026-11-15: "can all these fetch and keep
+// buttons also join an open room or else start a new room ... and advertise"; "they still can get a fly solo button if
+// no one joins in the end": Fly Alone stays for such a room, freeRooms).  A pilot alone in another room leaves it for
+// this; one with company is told to leave first.
+const freeRooms = new Set();  // (the rooms these buttons made and offered: Fly Alone is not hidden for them)
+async function playTogether(d) {
+  const tell = (text) => { status(text); hall.note(text); topNote(text); };
+  if (running) { tell(`Reload the page to play another game: this page's game has been started.`); return; }
+  if (seeking || $("join").disabled) return;
+  const g = gameById(d.id);
+  if (lobby.game) {
+    if (lobbyGameId() === d.id) { tell(`You are in room ${lobby.game.code}, a ${g.title} room, already (step 2).`); return; }
+    const company = lobby.game.players.some((p) => p.occupied && p.id !== lobby.game.selfId);
+    if (company) { tell(`You are in room ${lobby.game.code} with somebody: leave it (step 2) to play ${g.title}.`); return; }
+    chatLine(`You left room ${esc(lobby.game.code)} for ${esc(g.title)}`, "sys");
+    leaveRoom();
+  }
+  seeking = true;
+  renderTopAction();
+  try {
+    if (!(await getGame(d))) return;
+    // (in the lobby: the pilots there are asked; a pilot who had left it comes back for this)
+    if (!hall.inside()) await hall.enter();
+    status(`Asking the pilots in the lobby for an open ${g.title} room…`);
+    const found = hall.inside() ? await hall.findRooms() : null;
+    const fit = (found ? found.rooms : []).filter((r) => r.game === d.id && canFly(r));
+    for (let i = fit.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [fit[i], fit[j]] = [fit[j], fit[i]]; }
+    for (const r of fit) {
+      if (lobby.game || running) return;
+      $("room").value = r.code;
+      await joinRoom({ create: false });
+      if (lobby.game) { tell(`You are in room ${r.code}, an open ${g.title} room from the lobby: its host presses Fly.`); return; }
+    }
+    if (lobby.game || running) return;
+    // (none: a room of its own, as many seats as the game's rooms take, offered in the lobby)
+    autoCode = newRoomCode(gameTag());
+    $("room").value = autoCode;
+    $("seats").value = String(maxSeats());
+    await joinRoom();
+    if (!lobby.game) return;
+    freeRooms.add(normalizeCode(lobby.game.code));
+    const offered = await hall.advertise();
+    updateActions();
+    tell(offered ? `No open ${g.title} room in the lobby: you are in room ${lobby.game.code}, offered there. Fly when somebody joins, or Fly Alone.`
+      : `You are in room ${lobby.game.code} (it could not be offered in the lobby: "Copy link" for friends). Fly when somebody joins, or Fly Alone.`);
+    $("setup").scrollIntoView({ block: "nearest", behavior: "smooth" });
+  } finally {
+    seeking = false;
+    renderTopAction();
+  }
 }
 // (Said with its date and its file: a game that is simply there on the
 // next visit is the copy this browser kept, not one the site has.)
@@ -545,7 +625,7 @@ async function initSources() {
   for (const ev of ["dragleave", "drop"]) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); });
   drop.addEventListener("drop", (e) => { const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) void handleFile(f); });
   $("gamefile").addEventListener("change", (e) => { const f = e.target.files && e.target.files[0]; if (f) void handleFile(f); });
-  for (const [id, d] of Object.entries(DEMOS)) $(id).addEventListener("click", () => void useDemo(d));
+  for (const d of DEMOS) $(d.button).addEventListener("click", () => void playTogether(d));
 
   $("useServer").addEventListener("click", async () => {
     try {
@@ -563,6 +643,11 @@ async function initSources() {
   // that everybody can fly, and meet in the lobby, with nothing to bring.)
   const wanted = codeGame(lobby.game ? lobby.game.code : $("room").value.trim());
   const fits = wanted && saved.find((g) => programsIn(g.files).includes(wanted));
+  // (?game=: the page opened for a game, "rv", "tv", "raptor", "tf" (the CD's when this browser has it, else the demo):
+  // that one, wherever this browser has it, a free one fetched; a room's link names its own)
+  const asked = !query.get("room") && gameParam(query.get("game"));
+  if (asked && holderOf(asked)) { switchTo(holderOf(asked), asked); return; }
+  if (asked && demoOf(asked)) { void getGame(demoOf(asked)); return; }
   if (wanted && builtins().includes(wanted)) useBuiltin(wanted.id);
   else if (saved.length) useSavedCopy(fits || saved[0]);
   else if (serverCopy) $("useServer").click();
@@ -1254,7 +1339,8 @@ function updateActions() {
   $("fly").disabled = !ready || guestWaits();
   // (in a room alone as its host, or in none yet, the lobby's alone: the user's "in a empty lobby")
   $("flySolo").hidden = !source || running || !!wrong || (lobby.game ? !aloneInRoom() : linkWaits() || $("join").disabled)
-    || advertised.has(normalizeCode(lobby.game ? lobby.game.code : $("room").value.trim()));   // (offered in the lobby: not alone)
+    || (advertised.has(normalizeCode(lobby.game ? lobby.game.code : $("room").value.trim()))   // (offered in the lobby: not alone,
+        && !freeRooms.has(normalizeCode(lobby.game ? lobby.game.code : $("room").value.trim())));  // but for a free game's room)
   $("advertise").hidden = !lobby.game || !lobbyReady() || !lobby.game.players.some((p) => !p.occupied);   // (in flight too)
   if (!running) {
     if (wrong) status(wrong);
@@ -1470,6 +1556,13 @@ function fitsRoom(code) {
     chatLine(`Room ${esc(code)} is a ${esc(theirs.title)} room: switched to ${holder === "builtin" ? "it (built into this page)" : holder === "shelved" ? "the files dropped here" : "the saved copy that has it"}.`, "sys");
     return true;
   }
+  const d = demoOf(theirs.id);
+  if (d) {
+    // (a free game: fetched now; a room's link joins once it is there, setSource's joinLinked)
+    status(`${code} is a ${theirs.title} room: fetching ${d.title} first…`);
+    void getGame(d);
+    return false;
+  }
   status(`${code} is a ${theirs.title} room, and you have ${source.game.title} loaded. Load ${theirs.title} above (step 1) to join it.`);
   return false;
 }
@@ -1569,6 +1662,12 @@ async function joinFromLobby(code) {
     left = lobby.game.code;
     chatLine(`You left room ${esc(left)} for ${esc(code)}`, "sys");
     leaveRoom();
+  }
+  // (a room of a free game this browser has not got: the game fetched first)
+  const theirs = codeGame(code), d = theirs && demoOf(theirs.id);
+  if (d && !holderOf(theirs.id)) {
+    tell(`Fetching ${d.title} for room ${code}…`);
+    if (!(await getGame(d))) { tell(`Could not get ${d.title} for room ${code}.`); return; }
   }
   const typed = $("room").value;
   $("room").value = code;

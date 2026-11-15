@@ -50,7 +50,7 @@ async function open(name, callsign, before) {
   await page.setInputFiles("#gamefile", process.env.GAME_FILE);
   await page.waitForFunction(() => /^(ready|error)$/.test(document.getElementById("sourceStatus").dataset.state || ""), null, { timeout: 300000 });
   console.log(`[${name}] ` + (await page.$eval("#sourceStatus", (el) => `${el.dataset.state}: ${el.textContent || "plays " + document.getElementById("program").value}`)).slice(0, 200));
-  if (name === "host") check("the first-name field appears with Wing Commander II", hiddenBefore && !(await page.$eval("#firstnameLabel", (el) => el.hidden)), hiddenBefore);
+  if (name === "host") check("the first-name field is there (optional, for every game since 2026-11-15)", !hiddenBefore && !(await page.$eval("#firstnameLabel", (el) => el.hidden)), hiddenBefore);
   check(`${name}: the room's code picks the program`, (await page.$eval("#program", (el) => el.value)) === game.id && (await page.$eval("#program", (el) => el.selectedOptions[0] && el.selectedOptions[0].textContent)) === game.title,
         await page.$eval("#program", (el) => el.value));
   await page.waitForFunction(() => !document.getElementById("lobby").hidden && document.getElementById("roster").children.length > 0, null, { timeout: 60000 });

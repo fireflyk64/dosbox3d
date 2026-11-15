@@ -1348,6 +1348,36 @@ top-level README for the workflow).  What differs:
   empty answers, and so does everyone in the room of a host who ticked it
   (the host's hello says `private`): such a room is found only by its code
   or its link.  "Join room" in the room panel joins the code typed there.
+  **The "Free to play now" buttons** (RetroVega, Raptor, Terminal Velocity,
+  the TIE Fighter demo; the user, 2026-11-15: "can all these fetch and keep
+  buttons also join an open room or else start a new room ... and
+  advertise"; "they still can get a fly solo button if no one joins in the
+  end"; "same pattern should happen for retrovega") do make a room, unlike
+  "Join open game" (`playTogether` in `web/wc.js`): the game is got (the
+  built-in, a copy this browser kept, or fetched and kept: `getGame`), the
+  pilot enters the lobby if out of it, the pilots there are asked for open
+  rooms and one of that game is joined at random; with none a room of the
+  game's own is made (its tag and four digits, as many seats as its rooms
+  take) and advertised at once.  "Fly Alone" stays offered in such a room
+  (`freeRooms`; a room advertised by hand still hides it).  A pilot alone
+  in another room leaves it for the button; one with company is told to
+  leave first.  A room of one of these games reached by a link or by a code
+  clicked in the lobby gets its game first when this browser has none (the
+  user: "if someone clicks on a link for these things can they be fetched at
+  that time before joining the room": `fitsRoom` starts the fetch and the
+  link joins when the game is there; `joinFromLobby` waits for it).
+  `?game=` picks the page's game when no room's link names one ("rv", "tv",
+  "raptor"/"rap", "tf": the CD's when this browser has it, else the 1994
+  demo; the user: "if they pass in a game=tv or game=tf or game=raptor or
+  game=rv flag it defaults to those games").  scripts/web-together.sh
+  checks it all with a local lobby server (TOGETHER OK).
+  **The callsign** has a strip of its own at the page's top, above the game
+  files and the lobby (the user, 2026-11-15: "promote the callsign part above
+  everything ... then we can perhaps save a line in the room"): Callsign,
+  Pilot chosen name (optional), Pilot surname (optional), the given
+  callsign shown in its box (still a placeholder: a typed one stays, a given
+  one gives way when two pilots are called the same).  The first name is
+  there for every game; only the games that use one take it.
   A pilot who opens the page is in the
   lobby (the user's choice of default; it connects the browser directly to
   strangers', which the panel says), unless a link to a room brought the
