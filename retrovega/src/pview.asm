@@ -13,9 +13,12 @@
 %ifdef BLOB
         bits 16
         org 0
-        db 'PVB1'
-        dw _rv_pv_steps, _rv_pv_lines, _rv_pv_march, _rv_pv_far, _rv_pv_glow, _rv_pv_setup, _rv_pv_quarter
-        dw blob_end, blit_start, blit_end   ; (the blit runs from its own copy: the band buffer is the band's then)
+        db 'PVB2'
+        dw _rv_pv_steps, _rv_pv_lines, _rv_pv_march, _rv_pv_far, _rv_pv_glow, _rv_pv_setup, _rv_pv_quarter, _rv_pv_blit
+        dw set_start, set_end, march_start, march_end, blit_start, blit_end, blob_end
+; (three parts, each calling only within itself, each run from where pview.c puts it: the set-up's from the scratch
+; buffer's start before any window is in it, the march's from the band buffer's tail, the blit's from the scratch
+; buffer's tail at a band)
 %define EXPORT(x)
 %else
 segment PVIEW_TEXT public align=16 class=CODE use16
@@ -172,13 +175,13 @@ segment PVIEW_TEXT public align=16 class=CODE use16
 %define PV_SLABS 4
 %define PV_DEN_MIN 0x4000000
 %define PV_NEAR_DS 192
-%define PV_STEP_PX 2
+%define PV_STEP_PX 3
 %define PV_SUBS 16
 
 ; --- the locals, below the frame: dwords L(1) .. ---
 %define L(k) [bp-FSZ-4*(k)]
 %define O_L(k) (-FSZ-4*(k))
-%define NLOCAL 92                       ; dwords
+%define NLOCAL 97                       ; dwords
 %define EXTRA (-FSZ-4*NLOCAL-512)       ; 512 bytes, each function's own:
 %define TSTEP EXTRA                     ;   the march's step between two (28 bytes, at bp+TSTEP)
 %define QCOPY EXTRA                     ;   the lines' quarter (24 bytes)
@@ -278,6 +281,7 @@ segment PVIEW_TEXT public align=16 class=CODE use16
 %endmacro
 %endif
 
+set_start:
 ; the floor of the root of edx:eax (under 2^62) in eax: Newton's steps down from a power of two over the root
 ; (pview.c pv_isqrt's, bake.asm isqrt's).  ecx edx used
 isqrt64:
@@ -1152,1808 +1156,6 @@ _rv_pv_lines:
         PV_LEAVE
 
 ; ================================================================================================================
-; the march's parts (es buf, gs scr; es:si the line, fs:bx the step)
-; ================================================================================================================
-%define M_M L(1)
-%define M_X L(2)
-%define M_Y L(3)
-%define M_H L(4)
-%define M_C0 L(5)
-%define M_LIGHT L(6)
-%define M_FX L(7)
-%define M_FY L(8)
-%define M_L0 L(9)
-%define M_PA L(10)                      ; place's: the point from the eye
-%define M_PB L(11)
-%define M_PLH L(12)
-%define M_ALO L(13)
-%define M_AHI L(14)
-%define M_RHO L(15)
-%define M_I0 L(16)
-%define M_I1 L(17)
-%define M_SI0 L(18)
-%define M_SI1 L(19)
-%define F_I0_ L(20)                     ; fill's
-%define F_I1_ L(21)
-%define F_RA_ L(22)
-%define F_RB_ L(23)
-%define F_LA_ L(24)
-%define F_LB_ L(25)
-%define F_FA_ L(26)
-%define F_FB_ L(27)
-%define F_MAT_ L(28)
-%define F_SPAN L(29)
-%define F_T0 L(30)
-%define F_DT L(31)
-%define F_LL L(32)
-%define F_DL L(33)
-%define F_FF L(34)
-%define F_DF L(35)
-%define F_ROW L(36)
-%define F_COLX L(37)
-%define S_H_ L(38)                      ; sample's
-%define S_MAT_ L(39)
-%define S_LIGHT_ L(40)
-%define S_SB L(41)
-%define S_LO L(42)
-%define S_HI L(43)
-%define S_FOG L(44)
-%define S_R0 L(45)
-%define S_R1 L(46)
-%define S_S0 L(47)
-%define S_S1 L(48)
-%define S_SL L(49)
-%define S_SM L(50)
-%define FG_DIST L(51)
-%define M_PLACESH L(52)                 ; (byte: 28 + vsh)
-%define M_N L(53)                       ; the line's number (march)
-%define M_STEPOFF L(54)                 ; (word: the step's place, buf)
-%define M_INR L(55)
-%define M_NS L(56)                      ; sub-samples
-%define M_J L(57)
-%define M_PX L(58)
-%define M_PY L(59)
-%define K_I L(60)                       ; skip's
-%define K_BX L(61)
-%define K_BY L(62)
-%define K_HB L(63)
-%define K_MX L(64)
-%define K_MY L(65)
-%define K_J L(66)
-%define O_NN L(67)                      ; over's
-%define O_B L(68)
-%define O_S1 L(69)
-%define O_X L(70)
-%define O_Y L(71)
-%define SL_K L(72)                      ; slab_at's
-%define SL_N L(73)
-%define SL_MID L(74)
-%define SL_A L(75)
-%define SL_B L(76)
-%define SL_FX L(77)
-%define SL_FY L(78)
-%define SL_W0 L(79)
-%define SL_W1 L(80)
-%define SL_W2 L(81)
-%define SL_W3 L(82)
-%define SL_PTR L(83)
-%define SL_WROW L(84)
-%define M_A0OFF L(85)
-%define M_FARC L(86)
-%define M_CELL L(87)
-%define S_HAVE L(88)
-%define M_SBX0 L(89)                    ; (the slab grids' box on the plane)
-%define M_SBX1 L(90)
-%define M_SBY0 L(91)
-%define M_SBY1 L(92)
-
-; m for the line (es:si) at the step (fs:bx): eax, carry when the step is past the plane's reach (pv_m)
-pm:     mov eax,[es:si+L_TE]
-        imul dword [fs:bx+S_S]
-        shrd eax,edx,30
-        add eax,[fs:bx+S_UC]
-        cmp eax,PV_DEN_MIN
-        jl .no
-        mov ecx,eax
-        mov eax,[fs:bx+S_S]
-        cdq
-        shld edx,eax,16
-        shl eax,16
-        idiv ecx
-        clc
-        ret
-.no:    stc
-        ret
-
-; the line's plane point at m (eax): eax X, edx Y (ecx used)
-plane:  mov ecx,eax
-        mov eax,[es:si+L_KY]
-        imul ecx
-        shrd eax,edx,16
-        add eax,FR(F_PY)
-        push eax
-        mov eax,[es:si+L_KX]
-        imul ecx
-        shrd eax,edx,16
-        add eax,FR(F_PX)
-        pop edx
-        ret
-
-; the ground at (M_X, M_Y) from the window: M_H, M_C0, M_LIGHT; carry when the window has none (pv_ground)
-ground: mov cl,FR(F_SH)
-        mov eax,M_X
-        sar eax,cl
-        sub eax,FR(F_OX)
-        cmp eax,PV_W-1
-        jae .no
-        mov edi,eax
-        mov eax,M_Y
-        sar eax,cl
-        sub eax,FR(F_OY)
-        cmp eax,PV_W-1
-        jae .no
-        imul eax,eax,PV_W
-        add eax,edi
-        lea eax,[eax+eax*2]
-        add ax,FR(F_O_WIN)
-        mov di,ax
-        cmp byte [gs:di+1],PV_ABSENT
-        je .no
-        sub cl,8
-        mov eax,M_X
-        sar eax,cl
-        and eax,255
-        mov M_FX,eax
-        mov eax,M_Y
-        sar eax,cl
-        and eax,255
-        mov M_FY,eax
-        movsx eax,word [gs:di]          ; h0 = a + ((b - a) fx >> 8)
-        movsx ecx,word [gs:di+3]
-        sub ecx,eax
-        imul ecx,M_FX
-        sar ecx,8
-        add ecx,eax
-        movsx eax,word [gs:di+PV_W*3]   ; h1 = c + ((d - c) fx >> 8)
-        movsx edx,word [gs:di+PV_W*3+3]
-        sub edx,eax
-        imul edx,M_FX
-        sar edx,8
-        add edx,eax
-        sub edx,ecx                     ; h = h0 + ((h1 - h0) fy >> 8)
-        imul edx,M_FY
-        sar edx,8
-        add edx,ecx
-        mov M_H,edx
-        mov M_CELL,edi                  ; (the colour and light later, if the sample is seen: colour)
-        clc
-        ret
-.no:    stc
-        ret
-
-; the colour id and light of the ground found last (M_CELL, M_FX, M_FY): S_MAT_, S_LIGHT_ (di used)
-colour: mov di,M_CELL
-        push bx                         ; the colour: the nearest cell's
-        mov bx,di
-        cmp dword M_FY,128
-        jl .c1
-        add bx,PV_W*3
-.c1:    cmp dword M_FX,128
-        jl .c2
-        add bx,3
-.c2:    movzx eax,byte [gs:bx+2]
-        pop bx
-        mov M_C0,eax
-        mov cl,al                       ; the four of one material: their light weighed
-        mov ch,[gs:di+2]
-        xor ch,cl
-        mov dl,[gs:di+5]
-        xor dl,cl
-        or ch,dl
-        mov dl,[gs:di+PV_W*3+2]
-        xor dl,cl
-        or ch,dl
-        mov dl,[gs:di+PV_W*3+5]
-        xor dl,cl
-        or ch,dl
-        cmp ch,PV_LIGHTS
-        jae .flat
-        movzx eax,byte [gs:di+2]
-        and eax,31
-        mov ecx,256
-        sub ecx,M_FX
-        imul eax,ecx
-        movzx edx,byte [gs:di+5]
-        and edx,31
-        imul edx,M_FX
-        add eax,edx
-        mov ecx,256
-        sub ecx,M_FY
-        imul eax,ecx
-        mov M_L0,eax
-        movzx eax,byte [gs:di+PV_W*3+2]
-        and eax,31
-        mov ecx,256
-        sub ecx,M_FX
-        imul eax,ecx
-        movzx edx,byte [gs:di+PV_W*3+5]
-        and edx,31
-        imul edx,M_FX
-        add eax,edx
-        imul eax,M_FY
-        add eax,M_L0
-        sar eax,8
-        mov M_LIGHT,eax
-        jmp .done
-.flat:  mov eax,M_C0
-        and eax,31
-        shl eax,8
-        mov M_LIGHT,eax
-.done:  mov eax,M_C0
-        shr eax,5
-        mov S_MAT_,eax
-        mov eax,M_LIGHT
-        mov S_LIGHT_,eax
-        mov dword S_HAVE,1
-        ret
-
-; the point at the step at height eax (BK_HU) from the eye: M_PA, M_PB (pv_place)
-place:  mov M_PLH,eax
-        imul dword [fs:bx+S_C]
-        mov cl,M_PLACESH
-        shrd eax,edx,cl
-        add eax,[fs:bx+S_A]
-        mov M_PA,eax
-        mov eax,M_PLH
-        imul dword [fs:bx+S_S]
-        shrd eax,edx,cl
-        add eax,[fs:bx+S_B]
-        mov M_PB,eax
-        ret
-
-; carry when (M_PA, M_PB) is above the horizon's ray: a ht - b hu > 0 (pv_above)
-above:  mov eax,M_PA
-        imul dword [es:si+L_HT]
-        mov M_ALO,eax
-        mov M_AHI,edx
-        mov eax,M_PB
-        imul dword [es:si+L_HU]
-        sub M_ALO,eax
-        sbb M_AHI,edx
-        cmp dword M_AHI,0
-        jg .yes
-        jl .no
-        cmp dword M_ALO,0
-        jne .yes
-.no:    clc
-        ret
-.yes:   stc
-        ret
-
-; (M_PA, M_PB)'s pixel on the line, 256ths, held to 16 bits: eax; carry when it is behind the eye (pv_rho)
-rho:    movsx ecx,word [es:si+L_UF]
-        imul ecx,M_PA
-        movsx edx,word [es:si+L_TF]
-        imul edx,M_PB
-        add ecx,edx
-        jle .behind
-        movsx eax,word [es:si+L_US]
-        imul eax,M_PA
-        movsx edx,word [es:si+L_TS]
-        imul edx,M_PB
-        add eax,edx
-        mov edx,eax
-        sar edx,31
-        mov edi,eax
-        xor edi,edx
-        sub edi,edx
-        shr edi,16
-        cmp edi,ecx
-        jae .big
-        movsx edx,word [es:si+L_RB]
-        imul edx
-        idiv ecx
-        jmp .add
-.big:   movsx edx,word [es:si+L_RB]
-        xor edx,eax
-        mov eax,0x40000000
-        test edx,edx
-        jns .add
-        neg eax
-.add:   movsx edx,word [es:si+L_RA]
-        add eax,edx
-        cmp eax,-32768
-        jge .c1
-        mov eax,-32768
-.c1:    cmp eax,32767
-        jle .c2
-        mov eax,32767
-.c2:    clc
-        ret
-.behind:
-        stc
-        ret
-
-; the haze's level for distance FG_DIST and height edx: eax (pv_fog_at; di used)
-fog_at: mov eax,edx
-        sub eax,FR(F_FOG_H0)
-        imul dword FR(F_FOG_RCP)
-        shrd eax,edx,16
-        cmp eax,0
-        jge .b1
-        xor eax,eax
-.b1:    cmp eax,PV_FOG_HB-1
-        jle .b2
-        mov eax,PV_FOG_HB-1
-.b2:    shl ax,2
-        add ax,FR(F_O_FOGM)
-        mov di,ax
-        mov eax,FG_DIST
-        imul dword [gs:di]
-        shrd eax,edx,24
-        cmp eax,0
-        jge .k1
-        xor eax,eax
-.k1:    cmp eax,PV_FOG_TAUS-1
-        jle .k2
-        mov eax,PV_FOG_TAUS-1
-.k2:    add ax,FR(F_O_FOGLEV)
-        mov di,ax
-        movzx eax,byte [gs:di]
-        ret
-
-; the pixels between the horizon and eax (rho): M_I0, M_I1; carry when none (pv_span)
-span:   cmp word FR(F_NADIR),0
-        je .z
-        movsx ecx,word [es:si+L_HORIZON]
-        sar ecx,8
-        inc ecx
-        mov edx,eax
-        sar edx,8
-        jmp .clip
-.z:     mov ecx,eax
-        neg ecx
-        sar ecx,8
-        neg ecx
-        movsx edx,word [es:si+L_HORIZON]
-        neg edx
-        sar edx,8
-        neg edx
-        dec edx
-.clip:  movzx eax,byte [es:si+L_K0]
-        cmp ecx,eax
-        jge .a
-        mov ecx,eax
-.a:     movzx eax,byte [es:si+L_K1]
-        cmp edx,eax
-        jle .b
-        mov edx,eax
-.b:     mov M_I0,ecx
-        mov M_I1,edx
-        cmp ecx,edx
-        jg .none
-        clc
-        ret
-.none:  stc
-        ret
-
-; the line's pixels F_I0_ .. F_I1_ still empty filled from F_RA_ (light F_LA_, haze F_FA_) to F_RB_ (F_LB_, F_FB_),
-; material F_MAT_ (pv_fill)
-fill:   PSTART 4
-        mov eax,F_RB_
-        sub eax,F_RA_
-        mov F_SPAN,eax
-        jnz .sp
-        mov dword F_T0,65536
-        mov dword F_DT,0
-        jmp .lf
-.sp:    mov ecx,F_I0_                   ; num = i0 256 - ra
-        shl ecx,8
-        sub ecx,F_RA_
-        jz .t0z
-        mov edx,ecx
-        xor edx,eax
-        js .t0z                         ; (opposite signs: 0)
-        mov edx,ecx                     ; |num| >= |span|: 65536
-        sar edx,31
-        mov edi,ecx
-        xor edi,edx
-        sub edi,edx
-        mov edx,eax
-        sar edx,31
-        xor eax,edx
-        sub eax,edx
-        cmp edi,eax
-        jae .t0f
-        mov eax,ecx
-        cdq
-        shld edx,eax,16
-        shl eax,16
-        idiv dword F_SPAN
-        mov F_T0,eax
-        jmp .dt
-.t0z:   mov dword F_T0,0
-        jmp .dt
-.t0f:   mov dword F_T0,65536
-.dt:    mov eax,256*65536
-        cdq
-        idiv dword F_SPAN
-        mov F_DT,eax
-        mov ecx,F_I1_                   ; dt (i1 - i0) + t0 outside -7 .. 65543: dt = (65536 - t0) / (i1 - i0)
-        sub ecx,F_I0_
-        imul ecx
-        add eax,F_T0
-        adc edx,0
-        test edx,edx
-        jg .fix
-        jl .neg
-        cmp eax,65536+7
-        ja .fix
-        jmp .lf
-.neg:   cmp edx,-1
-        jl .fix
-        cmp eax,-7
-        jb .fix
-        jmp .lf
-.fix:   mov ecx,F_I1_
-        sub ecx,F_I0_
-        jle .dt0
-        mov eax,65536
-        sub eax,F_T0
-        cdq
-        idiv ecx
-        mov F_DT,eax
-        jmp .lf
-.dt0:   mov dword F_DT,0
-.lf:    mov eax,F_LB_                   ; l = la 256 + ((lb - la) t0 >> 8) + 32768, dl = (lb - la) dt >> 8
-        sub eax,F_LA_
-        imul eax,F_T0
-        sar eax,8
-        mov ecx,F_LA_
-        shl ecx,8
-        add eax,ecx
-        add eax,32768
-        mov F_LL,eax
-        mov eax,F_LB_
-        sub eax,F_LA_
-        imul dword F_DT
-        shrd eax,edx,8
-        mov F_DL,eax
-        mov eax,F_FB_                   ; the haze the same
-        sub eax,F_FA_
-        imul eax,F_T0
-        sar eax,8
-        mov ecx,F_FA_
-        shl ecx,8
-        add eax,ecx
-        add eax,32768
-        mov F_FF,eax
-        mov eax,F_FB_
-        sub eax,F_FA_
-        imul dword F_DT
-        shrd eax,edx,8
-        mov F_DF,eax
-        movsx eax,byte [es:si+L_DROW]   ; row and col at i0
-        imul eax,F_I0_
-        movzx ecx,byte [es:si+L_ROW]
-        add eax,ecx
-        mov F_ROW,eax
-        mov eax,[es:si+L_DCOL]
-        imul eax,F_I0_
-        add eax,[es:si+L_COL]
-        mov F_COLX,eax
-        mov ecx,F_I0_
-.px:    cmp ecx,F_I1_
-        jg .done
-        mov eax,F_COLX
-        sar eax,16
-        mov edx,F_ROW
-        test byte [es:si+L_FLAGS],LF_VERT
-        jnz .v
-        xchg eax,edx
-.v:     cmp eax,PV_LW
-        jae .nx
-        cmp edx,PV_LH
-        jae .nx
-        shl edx,7
-        add edx,eax
-        shl edx,1
-        add dx,FR(F_O_PIC)
-        mov di,dx
-        cmp word [es:di],PV_EMPTY
-        jne .nx
-        mov eax,F_LL
-        sar eax,16
-        jns .l1
-        xor eax,eax
-.l1:    cmp eax,PV_LIGHTS-1
-        jle .l2
-        mov eax,PV_LIGHTS-1
-.l2:    mov edx,F_FF
-        sar edx,16
-        jns .f1
-        xor edx,edx
-.f1:    cmp edx,PV_FOGS-1
-        jle .f2
-        mov edx,PV_FOGS-1
-.f2:    shl edx,8
-        add eax,F_MAT_
-        or eax,edx
-        mov [es:di],ax
-.nx:    inc ecx
-        movsx eax,byte [es:si+L_DROW]
-        add F_ROW,eax
-        mov eax,[es:si+L_DCOL]
-        add F_COLX,eax
-        mov eax,F_DL
-        add F_LL,eax
-        mov eax,F_DF
-        add F_FF,eax
-        jmp .px
-.done:  PEND 4
-        ret
-
-; is the line over (pv_over): carry when its horizon's ray has left the top sphere behind (the step at fs:bx)
-over:   mov eax,[es:si+L_HU]
-        imul eax
-        mov ecx,eax
-        mov edi,edx
-        mov eax,[es:si+L_HT]
-        imul eax
-        add eax,ecx
-        adc edx,edi
-        call isqrt64
-        test eax,eax
-        jz .yes
-        mov O_NN,eax
-        mov eax,FR(F_D)                 ; b = D hu / nn
-        imul dword [es:si+L_HU]
-        idiv dword O_NN
-        mov O_B,eax
-        imul eax                        ; disc = b^2 - (D^2 - rt^2)
-        mov ecx,eax
-        mov edi,edx
-        mov eax,FR(F_D)
-        imul eax
-        sub ecx,eax
-        sbb edi,edx
-        mov eax,FR(F_RT)
-        imul eax
-        add ecx,eax
-        adc edi,edx
-        test edi,edi
-        js .yes
-        jnz .pos
-        test ecx,ecx
-        jz .yes
-.pos:   mov eax,ecx
-        mov edx,edi
-        call isqrt64
-        sub eax,O_B                     ; s1 = -b + root
-        jle .yes
-        mov O_S1,eax
-        imul dword [es:si+L_HU]         ; x = D + s1 hu / nn, y = s1 ht / nn
-        idiv dword O_NN
-        add eax,FR(F_D)
-        mov O_X,eax
-        mov eax,O_S1
-        imul dword [es:si+L_HT]
-        idiv dword O_NN
-        mov O_Y,eax
-        mov eax,[fs:bx+S_S]             ; s x - c y > 0
-        imul dword O_X
-        mov ecx,eax
-        mov edi,edx
-        mov eax,[fs:bx+S_C]
-        imul dword O_Y
-        sub ecx,eax
-        sbb edi,edx
-        test edi,edi
-        js .no
-        jnz .yes
-        test ecx,ecx
-        jnz .yes
-.no:    clc
-        ret
-.yes:   stc
-        ret
-
-; a sample (pv_sample): S_H_, S_MAT_, S_LIGHT_, and the slab S_SB (S_LO .. S_HI), at the step fs:bx, the line es:si
-sample: inc dword FR(F_SAMPLES)
-        mov eax,S_H_
-        call place
-        call above
-        jnc sample_hid
-; (the march's fast path comes in here: counted, placed, seen above the horizon's ray)
-sample_seen:
-        call rho
-        jc sample_hid
-        mov M_RHO,eax
-        cmp dword S_HAVE,0              ; (seen: its colour and light now)
-        jne .hv
-        call colour
-.hv:    mov eax,[fs:bx+S_DIST]          ; fog = its level << 8
-        mov FG_DIST,eax
-        mov edx,S_H_
-        call fog_at
-        shl eax,8
-        mov S_FOG,eax
-        inc dword FR(F_SEEN)
-        mov eax,M_RHO
-        call span
-        jc .after
-        mov eax,M_I0
-        mov M_SI0,eax
-        mov eax,M_I1
-        mov M_SI1,eax
-        test byte [es:si+L_FLAGS],LF_POK
-        jz .flat
-        movzx eax,byte [es:si+L_MAT]
-        cmp eax,S_MAT_
-        jne .gentle
-        mov eax,M_SI0                   ; the same material: weighed from the last sample
-        mov F_I0_,eax
-        mov eax,M_SI1
-        mov F_I1_,eax
-        movsx eax,word [es:si+L_PRHO]
-        mov F_RA_,eax
-        mov eax,M_RHO
-        mov F_RB_,eax
-        movsx eax,word [es:si+L_PLIGHT]
-        mov F_LA_,eax
-        mov eax,S_LIGHT_
-        mov F_LB_,eax
-        movsx eax,word [es:si+L_PFOG]
-        mov F_FA_,eax
-        mov eax,S_FOG
-        mov F_FB_,eax
-        mov eax,S_MAT_
-        shl eax,5
-        mov F_MAT_,eax
-        call fill
-        jmp .after
-.gentle:
-        movsx ecx,word [es:si+L_PDS]    ; (h - ph) 4 < pds / 2 and (ph - h) 4 < pds / 2
-        sar ecx,1
-        movsx edx,word [es:si+L_PH]
-        mov eax,S_H_
-        sub eax,edx
-        shl eax,2
-        cmp eax,ecx
-        jge .flat
-        mov eax,edx
-        sub eax,S_H_
-        shl eax,2
-        cmp eax,ecx
-        jge .flat
-        movsx eax,word [es:si+L_PRHO]   ; mid = (prho + rho) / 2: the pixels nearer the last sample its
-        add eax,M_RHO
-        cdq
-        sub eax,edx
-        sar eax,1
-        call span
-        jc .flat
-        mov eax,M_I0
-        mov F_I0_,eax
-        mov eax,M_I1
-        mov F_I1_,eax
-        movsx eax,word [es:si+L_PRHO]
-        mov F_RA_,eax
-        mov F_RB_,eax
-        movsx eax,word [es:si+L_PLIGHT]
-        mov F_LA_,eax
-        mov F_LB_,eax
-        movsx eax,word [es:si+L_PFOG]
-        mov F_FA_,eax
-        mov F_FB_,eax
-        movzx eax,byte [es:si+L_MAT]
-        shl eax,5
-        mov F_MAT_,eax
-        call fill
-.flat:  mov eax,M_SI0                   ; this sample's own
-        mov F_I0_,eax
-        mov eax,M_SI1
-        mov F_I1_,eax
-        mov eax,M_RHO
-        mov F_RA_,eax
-        mov F_RB_,eax
-        mov eax,S_LIGHT_
-        mov F_LA_,eax
-        mov F_LB_,eax
-        mov eax,S_FOG
-        mov F_FA_,eax
-        mov F_FB_,eax
-        mov eax,S_MAT_
-        shl eax,5
-        mov F_MAT_,eax
-        call fill
-.after: mov eax,S_FOG
-        mov [es:si+L_PFOG],ax
-        mov eax,M_RHO
-        mov [es:si+L_HORIZON],ax
-        mov [es:si+L_PRHO],ax
-        mov eax,M_PA
-        mov [es:si+L_HU],eax
-        mov eax,M_PB
-        mov [es:si+L_HT],eax
-        mov al,[es:si+L_FLAGS]
-        and al,~LF_HID
-        or al,LF_POK
-        mov ecx,M_RHO
-        cmp word FR(F_NADIR),0
-        je .dz
-        movzx edx,byte [es:si+L_K1]
-        shl edx,8
-        cmp ecx,edx
-        jl .dn
-        or al,LF_DONE
-        jmp .dn
-.dz:    movzx edx,byte [es:si+L_K0]
-        shl edx,8
-        cmp ecx,edx
-        jg .dn
-        or al,LF_DONE
-.dn:    mov [es:si+L_FLAGS],al
-        mov eax,S_LIGHT_
-        mov [es:si+L_PLIGHT],ax
-        mov eax,S_H_
-        mov [es:si+L_PH],ax
-        mov eax,S_MAT_
-        mov [es:si+L_MAT],al
-        mov ax,[fs:bx+S_DS]
-        mov [es:si+L_PDS],ax
-        jmp sample_slab
-sample_hid:
-        mov al,[es:si+L_FLAGS]
-        or al,LF_HID
-        and al,~LF_POK
-        mov [es:si+L_FLAGS],al
-sample_slab:
-        cmp dword S_SB,0
-        je .noslab
-        mov eax,S_LO                    ; the slab: its underside's and top's pixels
-        call place
-        call rho
-        jc .noslab
-        mov S_R0,eax
-        mov eax,S_HI
-        call place
-        call rho
-        jc .noslab
-        mov S_R1,eax
-        mov ecx,S_R0
-        mov edx,eax
-        cmp ecx,edx
-        jle .o1
-        xchg ecx,edx
-.o1:    test byte [es:si+L_FLAGS],LF_PSLAB
-        jz .o3
-        movsx eax,word [es:si+L_PLO]
-        cmp eax,ecx
-        jge .o2
-        mov ecx,eax
-.o2:    movsx eax,word [es:si+L_PHI]
-        cmp eax,edx
-        jle .o3
-        mov edx,eax
-.o3:    mov S_S0,ecx
-        mov S_S1,edx
-        mov eax,FR(F_ALT)               ; the underside seen from under it, else the top
-        mov dword S_SM,3*32
-        cmp eax,S_LO
-        jl .m1
-        mov dword S_SM,1*32
-.m1:    cmp eax,S_HI
-        jle .ul
-        cmp dword S_HAVE,0              ; (over it: the ground's light)
-        jne .hv2
-        call colour
-.hv2:   mov eax,S_LIGHT_
-        sar eax,8
-        jmp .sl
-.ul:    xor eax,eax                     ; the underside's glow by its height over the ground
-        mov ecx,S_LO
-        cmp ecx,S_H_
-        jle .g0
-        sub ecx,S_H_
-        shl ecx,4
-        mov eax,ecx
-        cdq
-        idiv dword FR(F_UNDER_DIV)
-        cmp eax,63
-        jle .g0
-        mov eax,63
-.g0:    add ax,FR(F_O_UNDER)
-        mov di,ax
-        movzx eax,byte [gs:di]
-.sl:    mov S_SL,eax
-        mov eax,[fs:bx+S_DIST]
-        mov FG_DIST,eax
-        mov edx,S_HI
-        call fog_at
-        shl eax,8
-        mov F_FA_,eax
-        mov F_FB_,eax
-        mov eax,S_S0                    ; i0 = ceil(s0), i1 = floor(s1), within k0 .. k1
-        neg eax
-        sar eax,8
-        neg eax
-        movzx ecx,byte [es:si+L_K0]
-        cmp eax,ecx
-        jge .p1
-        mov eax,ecx
-.p1:    mov F_I0_,eax
-        mov eax,S_S1
-        sar eax,8
-        movzx ecx,byte [es:si+L_K1]
-        cmp eax,ecx
-        jle .p2
-        mov eax,ecx
-.p2:    mov F_I1_,eax
-        cmp eax,F_I0_
-        jl .p3
-        xor eax,eax
-        mov F_RA_,eax
-        mov F_RB_,eax
-        mov eax,S_SL
-        shl eax,8
-        mov F_LA_,eax
-        mov F_LB_,eax
-        mov eax,S_SM
-        mov F_MAT_,eax
-        call fill
-.p3:    mov ecx,S_R0
-        mov edx,S_R1
-        cmp ecx,edx
-        jle .p4
-        xchg ecx,edx
-.p4:    mov [es:si+L_PLO],cx
-        mov [es:si+L_PHI],dx
-        or byte [es:si+L_FLAGS],LF_PSLAB
-        movsx eax,word [es:si+L_HORIZON]   ; some of it past the filled part: it may hide what follows
-        cmp word FR(F_NADIR),0
-        je .hz
-        cmp S_S1,eax
-        jle .ret
-        and byte [es:si+L_FLAGS],~LF_HID
-        ret
-.hz:    cmp S_S0,eax
-        jge .ret
-        and byte [es:si+L_FLAGS],~LF_HID
-.ret:   ret
-.noslab:
-        and byte [es:si+L_FLAGS],~LF_PSLAB
-        ret
-
-; (M_X, M_Y) within one of the slab grids: carry (pv_in_slabs)
-in_slabs:
-        xor di,di
-.k:     cmp di,FR(F_NSLAB)
-        jge .no
-        push di
-        shl di,4
-        mov cl,FR(F_SLAB_SHIFT)
-        mov eax,M_X
-        sar eax,cl
-        sub eax,FR(F_SLAB+di)
-        movzx edx,word FR(F_SLAB+8+di)
-        cmp eax,edx
-        jae .n
-        mov eax,M_Y
-        sar eax,cl
-        sub eax,FR(F_SLAB+4+di)
-        movzx edx,word FR(F_SLAB+10+di)
-        cmp eax,edx
-        jae .n
-        pop di
-        stc
-        ret
-.n:     pop di
-        inc di
-        jmp .k
-.no:    clc
-        ret
-
-; one corner of a slab cell (di: its place, %1 its offset): to the middle's sum and count when it has a slab
-%macro SLAB_MID 1
-        movsx eax,word [es:di+%1]
-        movsx edx,word [es:di+%1+2]
-        cmp eax,edx
-        jge %%none
-        add eax,edx
-        add SL_MID,eax
-        inc dword SL_N
-%%none:
-%endmacro
-; and its share: SL_A += (w lo') >> 8, SL_B += (w hi') >> 8, lo' and hi' its own 256ths or the middle
-%macro SLAB_ADD 2
-        movsx ecx,word [es:di+%1]
-        movsx edx,word [es:di+%1+2]
-        cmp ecx,edx
-        jl %%has
-        mov ecx,SL_MID
-        mov edx,ecx
-        jmp %%go
-%%has:  shl ecx,8
-        shl edx,8
-%%go:   push edx
-        mov eax,%2
-        imul ecx
-        shrd eax,edx,8
-        add SL_A,eax
-        pop ecx
-        mov eax,%2
-        imul ecx
-        shrd eax,edx,8
-        add SL_B,eax
-%endmacro
-
-; the slab over (M_X, M_Y): S_LO, S_HI, carry when there is one (pv_slab_at; di used)
-slab_at:
-        mov dword SL_K,0
-.k:     mov eax,SL_K
-        cmp ax,FR(F_NSLAB)
-        jl .k1
-        jmp .no
-.k1:    shl ax,4
-        mov di,ax                       ; di: the grid's record in the frame
-        mov cl,FR(F_SLAB_SHIFT)
-        mov eax,M_X
-        sar eax,cl
-        sub eax,FR(F_SLAB+di)
-        movzx edx,word FR(F_SLAB+8+di)
-        dec edx
-        cmp eax,edx
-        jae .next
-        mov SL_A,eax                    ; sx
-        mov eax,M_Y
-        sar eax,cl
-        sub eax,FR(F_SLAB+4+di)
-        movzx edx,word FR(F_SLAB+10+di)
-        dec edx
-        cmp eax,edx
-        jae .next
-        movzx edx,word FR(F_SLAB+8+di)  ; the cell: at + sy w + sx, 4 bytes each
-        mov SL_WROW,edx
-        imul eax,edx
-        add eax,SL_A
-        add eax,FR(F_SLAB+12+di)
-        shl eax,2
-        add ax,FR(F_O_SLAB)
-        mov SL_PTR,eax
-        shl dword SL_WROW,2
-        xor eax,eax
-        mov SL_MID,eax
-        mov SL_N,eax
-        mov di,SL_PTR
-        SLAB_MID 0
-        SLAB_MID 4
-        add di,SL_WROW
-        SLAB_MID 0
-        SLAB_MID 4
-        cmp dword SL_N,0
-        je .no
-        mov eax,SL_MID                  ; the middle, 256ths
-        shl eax,7
-        cdq
-        idiv dword SL_N
-        mov SL_MID,eax
-        mov cl,FR(F_SLAB_SHIFT)
-        sub cl,8
-        mov eax,M_X
-        sar eax,cl
-        and eax,255
-        mov SL_FX,eax
-        mov eax,M_Y
-        sar eax,cl
-        and eax,255
-        mov SL_FY,eax
-        mov ecx,256                     ; the weights
-        sub ecx,SL_FX
-        mov edx,256
-        sub edx,SL_FY
-        mov eax,ecx
-        imul eax,edx
-        mov SL_W0,eax
-        mov eax,SL_FX
-        imul eax,edx
-        mov SL_W1,eax
-        mov eax,ecx
-        imul eax,SL_FY
-        mov SL_W2,eax
-        mov eax,SL_FX
-        imul eax,SL_FY
-        mov SL_W3,eax
-        xor eax,eax
-        mov SL_A,eax
-        mov SL_B,eax
-        mov di,SL_PTR
-        SLAB_ADD 0,SL_W0
-        SLAB_ADD 4,SL_W1
-        add di,SL_WROW
-        SLAB_ADD 0,SL_W2
-        SLAB_ADD 4,SL_W3
-        mov eax,SL_B                    ; (65536ths of a height unit: half a unit at least)
-        sub eax,SL_A
-        cmp eax,32768
-        jl .no
-        mov eax,SL_A
-        sar eax,16
-        mov S_LO,eax
-        mov eax,SL_B
-        sar eax,16
-        mov S_HI,eax
-        stc
-        ret
-.next:  inc dword SL_K
-        jmp .k
-.no:    clc
-        ret
-
-; hidden ground skipped (pv_skip): the sample at step K_I (fs:bx) in block (K_BX, K_BY), its highest K_HB: eax, the
-; step after the samples that cannot be seen, or K_I (di used)
-skip:   mov eax,K_HB
-        call place
-        call above
-        jnc .try
-        mov eax,K_I
-        ret
-.try:   mov dword K_MX,0x7FFFFFFF
-        mov dword K_MY,0x7FFFFFFF
-        cmp dword [es:si+L_KX],0        ; where the line leaves the block (m)
-        je .my
-        mov eax,K_BX
-        shl eax,2
-        add eax,FR(F_OX)
-        mov cl,FR(F_SH)
-        cmp dword [es:si+L_KX],0
-        jl .xn
-        add eax,4
-        shl eax,cl
-        sub eax,FR(F_PX)
-        jmp .xe
-.xn:    shl eax,cl
-        sub eax,FR(F_PX)
-        dec eax
-.xe:    mov ecx,eax
-        cdq
-        xor eax,edx
-        sub eax,edx
-        shr eax,15
-        mov edi,[es:si+L_KX]
-        mov edx,edi
-        sar edx,31
-        xor edi,edx
-        sub edi,edx
-        cmp eax,edi
-        jae .my
-        mov eax,ecx
-        cdq
-        shld edx,eax,16
-        shl eax,16
-        idiv dword [es:si+L_KX]
-        mov K_MX,eax
-.my:    cmp dword [es:si+L_KY],0
-        je .mm
-        mov eax,K_BY
-        shl eax,2
-        add eax,FR(F_OY)
-        mov cl,FR(F_SH)
-        cmp dword [es:si+L_KY],0
-        jl .yn
-        add eax,4
-        shl eax,cl
-        sub eax,FR(F_PY)
-        jmp .ye
-.yn:    shl eax,cl
-        sub eax,FR(F_PY)
-        dec eax
-.ye:    mov ecx,eax
-        cdq
-        xor eax,edx
-        sub eax,edx
-        shr eax,15
-        mov edi,[es:si+L_KY]
-        mov edx,edi
-        sar edx,31
-        xor edi,edx
-        sub edi,edx
-        cmp eax,edi
-        jae .mm
-        mov eax,ecx
-        cdq
-        shld edx,eax,16
-        shl eax,16
-        idiv dword [es:si+L_KY]
-        mov K_MY,eax
-.mm:    mov eax,K_MY
-        cmp eax,K_MX
-        jge .scan0
-        mov K_MX,eax
-.scan0: push bx
-        mov eax,K_I
-        inc eax
-        mov K_J,eax
-.scan:  mov eax,K_J                     ; the steps while they are of this level and in the block
-        cmp ax,FR(F_NSTEPS)
-        jge .sd
-        imul ax,ax,STEP_BYTES
-        add ax,FR(F_O_ST)
-        mov bx,ax
-        mov al,[fs:bx+S_LEV]
-        cmp al,FR(F_LEV)
-        ja .sd
-        call pm
-        jc .sd
-        cmp eax,K_MX
-        jge .sd
-        inc dword K_J
-        jmp .scan
-.sd:    dec dword K_J
-        mov eax,K_J
-        cmp eax,K_I
-        jle .no
-        imul ax,ax,STEP_BYTES           ; the block's highest hidden at the last of them too
-        add ax,FR(F_O_ST)
-        mov bx,ax
-        mov eax,K_HB
-        call place
-        call above
-        jc .no
-        cmp dword [es:si+L_HT],0        ; the ray's nearest approach to the centre between them, the highest over it
-        jle .ok
-        mov eax,[fs:bx+S_C]             ; c_j hu + s_j ht >= 0
-        imul dword [es:si+L_HU]
-        mov ecx,eax
-        mov edi,edx
-        mov eax,[fs:bx+S_S]
-        imul dword [es:si+L_HT]
-        add eax,ecx
-        adc edx,edi
-        js .ok
-        pop bx
-        push bx
-        mov eax,[fs:bx+S_C]             ; c_i hu + s_i ht <= 0
-        imul dword [es:si+L_HU]
-        mov ecx,eax
-        mov edi,edx
-        mov eax,[fs:bx+S_S]
-        imul dword [es:si+L_HT]
-        add eax,ecx
-        adc edx,edi
-        test edx,edx
-        js .betw
-        jnz .ok
-        test eax,eax
-        jnz .ok
-.betw:  mov eax,[es:si+L_HU]
-        imul eax
-        mov ecx,eax
-        mov edi,edx
-        mov eax,[es:si+L_HT]
-        imul eax
-        add eax,ecx
-        adc edx,edi
-        call isqrt64
-        test eax,eax
-        jz .ok
-        mov ecx,eax
-        mov eax,FR(F_D)
-        imul dword [es:si+L_HT]
-        idiv ecx
-        mov ecx,K_HB
-        shl ecx,2
-        add ecx,FR(F_R)
-        cmp eax,ecx
-        jle .no
-.ok:    mov eax,K_J
-        inc eax
-        sub eax,K_I
-        add FR(F_SKIPS),eax
-        pop bx
-        mov eax,K_J
-        inc eax
-        ret
-.no:    pop bx
-        mov eax,K_I
-        ret
-
-; the sample's inputs from the ground found (M_H, M_C0, M_LIGHT)
-%macro TO_SAMPLE 0
-        mov eax,M_H
-        mov S_H_,eax
-        mov dword S_HAVE,0
-%endmacro
-
-; ================================================================================================================
-; void rv_pv_march(PvFrame far *f): every line through the frame's level (c_pv_march)
-; ================================================================================================================
-        EXPORT(_rv_pv_march)
-_rv_pv_march:
-        PV_ENTER
-        mov al,FR(F_VSH)
-        add al,28
-        mov M_PLACESH,al
-        xor eax,eax                     ; the slab grids' box on the plane (none: empty): outside it, the fast path
-        mov M_SBX0,eax
-        mov M_SBX1,eax
-        mov M_SBY0,eax
-        mov M_SBY1,eax
-        mov dx,FR(F_NSLAB)
-        xor di,di
-        mov cl,FR(F_SLAB_SHIFT)
-.sb:    cmp di,dx
-        jge .sbd
-        push di
-        shl di,4
-        mov eax,FR(F_SLAB+di)           ; x0 << shift .. (x0 + w) << shift
-        shl eax,cl
-        movzx ebx,word FR(F_SLAB+8+di)
-        add ebx,FR(F_SLAB+di)
-        shl ebx,cl
-        pop di
-        test di,di
-        jz .sb1
-        cmp eax,M_SBX0
-        jge .sb2
-.sb1:   mov M_SBX0,eax
-.sb2:   test di,di
-        jz .sb3
-        cmp ebx,M_SBX1
-        jle .sb4
-.sb3:   mov M_SBX1,ebx
-.sb4:   push di
-        shl di,4
-        mov eax,FR(F_SLAB+4+di)
-        shl eax,cl
-        movzx ebx,word FR(F_SLAB+10+di)
-        add ebx,FR(F_SLAB+4+di)
-        shl ebx,cl
-        pop di
-        test di,di
-        jz .sb5
-        cmp eax,M_SBY0
-        jge .sb6
-.sb5:   mov M_SBY0,eax
-.sb6:   test di,di
-        jz .sb7
-        cmp ebx,M_SBY1
-        jle .sb8
-.sb7:   mov M_SBY1,ebx
-.sb8:   inc di
-        jmp .sb
-.sbd:   push es
-        pop fs
-        mov dword M_N,0
-.line:  mov eax,M_N
-        cmp ax,FR(F_NLINES)
-        jl .ln1
-        jmp .done
-.ln1:   mov bx,LINE_BYTES
-        mul bx
-        add ax,FR(F_O_LN)
-        mov si,ax
-.step:  test byte [es:si+L_FLAGS],LF_DONE
-        jz .s1
-        jmp .nextl
-.s1:    PSTART 0
-        mov ax,[es:si+L_STEP]
-        cmp ax,FR(F_NSTEPS)
-        jl .s2
-        jmp .nextl
-.s2:    imul ax,ax,STEP_BYTES
-        add ax,FR(F_O_ST)
-        mov bx,ax
-        push es
-        pop fs
-        mov al,[fs:bx+S_LEV]
-        cmp al,FR(F_LEV)
-        jbe .s3
-        jmp .nextl
-.s3:    call pm
-        jnc .s4
-        jmp .nextl
-.s4:    call plane
-        mov M_X,eax
-        mov M_Y,edx
-        mov cl,FR(F_SH)                 ; in the window, on ground
-        sar eax,cl
-        sub eax,FR(F_OX)
-        cmp eax,PV_W-1
-        jb .s5
-        jmp .nextl
-.s5:    mov K_BX,eax
-        mov eax,edx
-        sar eax,cl
-        sub eax,FR(F_OY)
-        cmp eax,PV_W-1
-        jb .s6
-        jmp .nextl
-.s6:    mov K_BY,eax
-        imul eax,eax,PV_W
-        add eax,K_BX
-        lea eax,[eax+eax*2]
-        add ax,FR(F_O_WIN)
-        mov di,ax
-        mov M_CELL,eax
-        cmp byte [gs:di+1],PV_ABSENT
-        jne .s7
-        jmp .nextl
-.s7:    PEND 0
-        test byte [es:si+L_FLAGS],LF_HID
-        jz .noskip
-        mov eax,K_BY                    ; hidden: try skipping by the block's highest
-        shr eax,2
-        mov K_BY,eax
-        imul eax,eax,PV_BW
-        mov ecx,K_BX
-        shr ecx,2
-        mov K_BX,ecx
-        add eax,ecx
-        shl eax,1
-        add ax,FR(F_O_BWIN)
-        mov di,ax
-        movsx eax,word [gs:di]
-        mov K_HB,eax
-        movsx eax,word [es:si+L_STEP]
-        mov K_I,eax
-        PSTART 1
-        call skip
-        PEND 1
-        cmp eax,K_I
-        je .noskip
-        mov [es:si+L_STEP],ax
-        and byte [es:si+L_FLAGS],~(LF_POK|LF_PRECT)
-        jmp .step
-.noskip:
-        test byte [es:si+L_FLAGS],LF_PRECT   ; outside every slab grid's box (and the last step too): the fast path,
-        jnz .slow                       ; the ground's height, the point and the ray test here
-        mov eax,M_X
-        cmp eax,M_SBX0
-        jl .fast
-        cmp eax,M_SBX1
-        jge .fast
-        mov eax,M_Y
-        cmp eax,M_SBY0
-        jl .fast
-        cmp eax,M_SBY1
-        jl .slow
-.fast:  PSTART 2
-        mov di,M_CELL
-        mov cl,FR(F_SH)
-        sub cl,8
-        mov eax,M_X
-        sar eax,cl
-        and eax,255
-        mov M_FX,eax
-        mov edx,M_Y
-        sar edx,cl
-        and edx,255
-        mov M_FY,edx
-        movsx ecx,word [gs:di]          ; h0 = a + ((b - a) fx >> 8)
-        movsx edx,word [gs:di+3]
-        sub edx,ecx
-        imul edx,eax
-        sar edx,8
-        add ecx,edx
-        movsx edx,word [gs:di+PV_W*3]   ; h1 = c + ((d - c) fx >> 8)
-        movsx eax,word [gs:di+PV_W*3+3]
-        sub eax,edx
-        imul eax,M_FX
-        sar eax,8
-        add eax,edx
-        sub eax,ecx                     ; h = h0 + ((h1 - h0) fy >> 8)
-        imul eax,M_FY
-        sar eax,8
-        add eax,ecx
-        mov S_H_,eax
-        mov dword S_HAVE,0
-        mov dword S_SB,0
-        inc dword FR(F_SAMPLES)
-        mov edi,eax                     ; the point: a + (h c >> 28 + vsh), b + (h s >> ...)
-        imul dword [es:bx+S_C]
-        mov cl,M_PLACESH
-        shrd eax,edx,cl
-        add eax,[es:bx+S_A]
-        mov M_PA,eax
-        mov eax,edi
-        imul dword [es:bx+S_S]
-        shrd eax,edx,cl
-        add eax,[es:bx+S_B]
-        mov M_PB,eax
-        mov eax,M_PA                    ; above the horizon's ray: a ht - b hu > 0
-        imul dword [es:si+L_HT]
-        mov edi,eax
-        mov ecx,edx
-        mov eax,M_PB
-        imul dword [es:si+L_HU]
-        sub edi,eax
-        sbb ecx,edx
-        js .fhid
-        jnz .fseen
-        test edi,edi
-        jz .fhid
-.fseen: PEND 2
-        PSTART 3
-        call sample_seen
-        PEND 3
-        jmp .fadv
-.fhid:  PEND 2
-        mov al,[es:si+L_FLAGS]
-        or al,LF_HID
-        and al,~(LF_POK|LF_PSLAB)
-        mov [es:si+L_FLAGS],al
-.fadv:  inc word [es:si+L_STEP]
-        test word [es:si+L_STEP],15
-        jnz .fx1
-        test byte [es:si+L_FLAGS],LF_DONE
-        jnz .fx1
-        PSTART 5
-        call over
-        PEND 5
-        jnc .fx1
-        or byte [es:si+L_FLAGS],LF_DONE
-.fx1:   jmp .step
-.slow:  PSTART 6
-        mov dword M_INR,0               ; crossing a slab's grid: samples between the last step and this one
-        call in_slabs
-        jnc .ni
-        mov dword M_INR,1
-.ni:    cmp dword M_INR,0
-        jne .sub
-        test byte [es:si+L_FLAGS],LF_PRECT
-        jnz .sub
-        jmp .nosub
-.sub:   cmp word [es:si+L_STEP],0
-        jne .sub1
-        jmp .nosub
-.sub1:  mov ax,bx
-        sub ax,STEP_BYTES
-        mov M_A0OFF,eax
-        push bx
-        mov bx,ax
-        call pm
-        pop bx
-        jnc .sub2
-        jmp .nosub
-.sub2:  call plane                      ; ns: half slab cells between the two plane points, PV_SUBS at most
-        mov ecx,M_X
-        sub ecx,eax
-        mov eax,ecx
-        sar ecx,31
-        xor eax,ecx
-        sub eax,ecx
-        mov ecx,M_Y
-        sub ecx,edx
-        mov edx,ecx
-        sar ecx,31
-        xor edx,ecx
-        sub edx,ecx
-        add eax,edx
-        mov cl,FR(F_SLAB_SHIFT)
-        dec cl
-        sar eax,cl
-        cmp eax,PV_SUBS
-        jle .ns1
-        mov eax,PV_SUBS
-.ns1:   mov M_NS,eax
-        mov eax,M_X
-        mov M_PX,eax
-        mov eax,M_Y
-        mov M_PY,eax
-        mov dword M_J,1
-.sj:    mov eax,M_J
-        cmp eax,M_NS
-        jl .sj1
-        jmp .sdone
-.sj1:   test byte [es:si+L_FLAGS],LF_DONE
-        jz .sj2
-        jmp .sdone
-.sj2:   mov di,M_A0OFF                  ; the step between: each part weighed j / ns of the way
-%assign k 0
-%rep 6
-        mov eax,[es:bx+k]
-        sub eax,[es:di+k]
-        imul dword M_J
-        idiv dword M_NS
-        add eax,[es:di+k]
-        mov [bp+TSTEP+k],eax
-%assign k k+4
-%endrep
-        movsx eax,word [es:di+S_DS]
-        cdq
-        idiv dword M_NS
-        mov [bp+TSTEP+S_DS],ax
-        mov al,[es:bx+S_LEV]
-        mov [bp+TSTEP+S_LEV],al
-        push bx
-        mov ax,ss
-        mov fs,ax
-        lea bx,[bp+TSTEP]
-        call pm
-        jc .sbrk
-        call plane
-        mov M_X,eax
-        mov M_Y,edx
-        call ground
-        jc .sbrk
-        mov dword S_SB,0
-        call slab_at
-        jnc .sb0
-        mov dword S_SB,1
-.sb0:   inc dword FR(F_SUBS)
-        TO_SAMPLE
-        call sample
-        pop bx
-        push es
-        pop fs
-        inc dword M_J
-        jmp .sj
-.sbrk:  pop bx
-        push es
-        pop fs
-.sdone: mov eax,M_PX
-        mov M_X,eax
-        mov eax,M_PY
-        mov M_Y,eax
-        test byte [es:si+L_FLAGS],LF_DONE
-        jz .nosub
-        jmp .nextl
-.nosub: mov al,[es:si+L_FLAGS]
-        and al,~LF_PRECT
-        cmp dword M_INR,0
-        je .p0
-        or al,LF_PRECT
-.p0:    mov [es:si+L_FLAGS],al
-        call ground
-        mov dword S_SB,0
-        mov dword S_LO,0
-        mov dword S_HI,0
-        cmp dword M_INR,0
-        je .nsl
-        call slab_at
-        jnc .nsl
-        mov dword S_SB,1
-.nsl:   TO_SAMPLE
-        call sample
-        inc word [es:si+L_STEP]
-        test word [es:si+L_STEP],15
-        jnz .nx
-        test byte [es:si+L_FLAGS],LF_DONE
-        jnz .nx
-        call over
-        jnc .nx
-        or byte [es:si+L_FLAGS],LF_DONE
-.nx:    PEND 6
-        jmp .step
-.nextl: inc dword M_N
-        jmp .line
-.done:  lfs bx,[bp+6]
-        mov eax,FR(F_SAMPLES)
-        mov [fs:bx+F_SAMPLES],eax
-        mov eax,FR(F_SEEN)
-        mov [fs:bx+F_SEEN],eax
-        mov eax,FR(F_SKIPS)
-        mov [fs:bx+F_SKIPS],eax
-        mov eax,FR(F_SUBS)
-        mov [fs:bx+F_SUBS],eax
-        PV_LEAVE
-
-; ================================================================================================================
-; void rv_pv_far(PvFrame far *f): the lines past every level, over the plain sphere (c_pv_far)
-; ================================================================================================================
-        EXPORT(_rv_pv_far)
-_rv_pv_far:
-        PV_ENTER
-        mov al,FR(F_VSH)
-        add al,28
-        mov M_PLACESH,al
-        push es
-        pop fs
-        mov dword M_N,0
-.line:  mov eax,M_N
-        cmp ax,FR(F_NLINES)
-        jge .done
-        mov bx,LINE_BYTES
-        mul bx
-        add ax,FR(F_O_LN)
-        mov si,ax
-.step:  test byte [es:si+L_FLAGS],LF_DONE
-        jnz .nextl
-        mov ax,[es:si+L_STEP]
-        cmp ax,FR(F_NSTEPS)
-        jge .nextl
-        imul ax,ax,STEP_BYTES
-        add ax,FR(F_O_ST)
-        mov bx,ax
-        mov dword S_H_,0
-        movsx eax,word FR(F_FAR_C)
-        mov ecx,eax
-        sar eax,5
-        mov S_MAT_,eax
-        and ecx,31
-        shl ecx,8
-        mov S_LIGHT_,ecx
-        mov dword S_HAVE,1
-        mov dword S_SB,0
-        call sample
-        inc word [es:si+L_STEP]
-        test word [es:si+L_STEP],15
-        jnz .step
-        test byte [es:si+L_FLAGS],LF_DONE
-        jnz .step
-        call over
-        jnc .step
-        or byte [es:si+L_FLAGS],LF_DONE
-        jmp .step
-.nextl: inc dword M_N
-        jmp .line
-.done:  lfs bx,[bp+6]
-        mov eax,FR(F_SAMPLES)
-        mov [fs:bx+F_SAMPLES],eax
-        mov eax,FR(F_SEEN)
-        mov [fs:bx+F_SEEN],eax
-        PV_LEAVE
-
-; ================================================================================================================
-; void rv_pv_glow(PvFrame far *f): the empty pixels in the view glowing (c_pv_glow)
-; ================================================================================================================
-%define G_DX L(1)
-%define G_DY L(2)
-%define G_NUM L(3)
-%define G_Y L(4)
-%define G_X L(5)
-%define G_GX L(6)
-%define G_GY L(7)
-%define G_ROW L(8)
-
-; the glow's table index for the picture point (eax, edx), pixels: eax (pv_glow_index; ecx edx edi used)
-gidx:   push edx
-        shl eax,8
-        sub eax,FR(F_LCX)
-        cdq
-        shld edx,eax,16
-        shl eax,16
-        idiv dword FR(F_LF)
-        mov G_DX,eax
-        pop eax
-        shl eax,8
-        sub eax,FR(F_LCY)
-        cdq
-        shld edx,eax,16
-        shl eax,16
-        idiv dword FR(F_LF)
-        mov G_DY,eax
-        mov eax,G_DX                    ; num = skf + (dx skr >> 16) - (dy sku >> 16)
-        imul dword FR(F_SKR)
-        shrd eax,edx,16
-        mov ecx,eax
-        mov eax,G_DY
-        imul dword FR(F_SKU)
-        shrd eax,edx,16
-        sub ecx,eax
-        add ecx,FR(F_SKF)
-        mov G_NUM,ecx
-        mov eax,G_DX                    ; den = root(2^32 + dx^2 + dy^2)
-        imul eax
-        mov ecx,eax
-        mov edi,edx
-        mov eax,G_DY
-        imul eax
-        add eax,ecx
-        adc edx,edi
-        add edx,1
-        call isqrt64
-        mov ecx,eax                     ; cz = num 65536 / den; ((cz + 65536) 256) >> 17
-        mov eax,G_NUM
-        cdq
-        shld edx,eax,16
-        shl eax,16
-        idiv ecx
-        add eax,65536
-        sar eax,9
-        jns .a
-        xor eax,eax
-.a:     cmp eax,PV_GLOW_CZ-1
-        jle .b
-        mov eax,PV_GLOW_CZ-1
-.b:     ret
-
-        EXPORT(_rv_pv_glow)
-_rv_pv_glow:
-        PV_ENTER
-        cmp word FR(F_GLOW_ANY),0
-        jne .go
-        jmp .done
-.go:    xor eax,eax                     ; the grid: every 8th pixel each way
-        mov G_GY,eax
-.gy:    xor eax,eax
-        mov G_GX,eax
-.gx:    mov eax,G_GX
-        shl eax,3
-        mov edx,G_GY
-        shl edx,3
-        call gidx
-        mov ecx,G_GY
-        imul ecx,ecx,PV_LW/8+1
-        add ecx,G_GX
-        shl ecx,1
-        lea di,[bp+GLOWG]
-        add di,cx
-        mov [di],ax
-        inc dword G_GX
-        cmp dword G_GX,PV_LW/8
-        jle .gx
-        inc dword G_GY
-        cmp dword G_GY,PV_LH/8
-        jle .gy
-        movsx eax,word FR(F_BY0)
-        mov G_Y,eax
-.row:   mov eax,G_Y
-        cmp ax,FR(F_BY1)
-        jl .r1
-        jmp .done
-.r1:    mov ebx,eax                     ; the row's indices: weighed between the grid's two rows
-        shr ebx,3
-        imul ebx,ebx,(PV_LW/8+1)*2
-        lea si,[bp+GLOWG]
-        add si,bx
-        mov ecx,eax
-        and ecx,7
-        lea di,[bp+GLOWR]
-        xor bx,bx
-.rk:    movsx eax,word [si+bx]
-        movsx edx,word [si+bx+(PV_LW/8+1)*2]
-        sub edx,eax
-        imul edx,ecx
-        sar edx,3
-        add eax,edx
-        mov [di+bx],ax
-        add bx,2
-        cmp bx,(PV_LW/8+1)*2
-        jl .rk
-        mov ax,G_Y                      ; its pixels
-        shl ax,7
-        add ax,FR(F_BX0)
-        shl ax,1
-        add ax,FR(F_O_PIC)
-        mov si,ax
-        movsx eax,word FR(F_BX0)
-        mov G_X,eax
-.px:    mov eax,G_X
-        cmp ax,FR(F_BX1)
-        jge .rowd
-        cmp word [es:si],PV_EMPTY
-        jne .nx
-        mov ebx,eax
-        shr ebx,3
-        shl ebx,1
-        lea di,[bp+GLOWR]
-        add di,bx
-        movsx ecx,word [di]
-        movsx edx,word [di+2]
-        sub edx,ecx
-        and eax,7
-        imul edx,eax
-        sar edx,3
-        add ecx,edx
-        add cx,FR(F_O_GLOW)
-        mov di,cx
-        movzx eax,byte [gs:di]
-        cmp eax,4
-        jl .nx
-        add eax,4
-        shr eax,3
-        or ax,PV_GLOW
-        mov [es:si],ax
-.nx:    add si,2
-        inc dword G_X
-        jmp .px
-.rowd:  inc dword G_Y
-        jmp .row
-.done:  PV_LEAVE
-
-; ================================================================================================================
 ; int rv_pv_setup(PvFrame far *f, const PvCam far *cam, const PvHead far *h): the frame's numbers (pv_setup): ax 1,
 ; or 0 when there is no ground to draw
 ; ================================================================================================================
@@ -3513,6 +1715,1966 @@ _rv_pv_quarter:
 .td:    lfs di,[bp+12]
         mov word [fs:di+Q_ON],1
 .off:   PV_LEAVE
+
+; ================================================================================================================
+; void rv_pv_glow(PvFrame far *f): the empty pixels in the view glowing (c_pv_glow)
+; ================================================================================================================
+%define G_DX L(1)
+%define G_DY L(2)
+%define G_NUM L(3)
+%define G_Y L(4)
+%define G_X L(5)
+%define G_GX L(6)
+%define G_GY L(7)
+%define G_ROW L(8)
+
+; the glow's table index for the picture point (eax, edx), pixels: eax (pv_glow_index; ecx edx edi used)
+gidx:   push edx
+        shl eax,8
+        sub eax,FR(F_LCX)
+        cdq
+        shld edx,eax,16
+        shl eax,16
+        idiv dword FR(F_LF)
+        mov G_DX,eax
+        pop eax
+        shl eax,8
+        sub eax,FR(F_LCY)
+        cdq
+        shld edx,eax,16
+        shl eax,16
+        idiv dword FR(F_LF)
+        mov G_DY,eax
+        mov eax,G_DX                    ; num = skf + (dx skr >> 16) - (dy sku >> 16)
+        imul dword FR(F_SKR)
+        shrd eax,edx,16
+        mov ecx,eax
+        mov eax,G_DY
+        imul dword FR(F_SKU)
+        shrd eax,edx,16
+        sub ecx,eax
+        add ecx,FR(F_SKF)
+        mov G_NUM,ecx
+        mov eax,G_DX                    ; den = root(2^32 + dx^2 + dy^2)
+        imul eax
+        mov ecx,eax
+        mov edi,edx
+        mov eax,G_DY
+        imul eax
+        add eax,ecx
+        adc edx,edi
+        add edx,1
+        call isqrt64
+        mov ecx,eax                     ; cz = num 65536 / den; ((cz + 65536) 256) >> 17
+        mov eax,G_NUM
+        cdq
+        shld edx,eax,16
+        shl eax,16
+        idiv ecx
+        add eax,65536
+        sar eax,9
+        jns .a
+        xor eax,eax
+.a:     cmp eax,PV_GLOW_CZ-1
+        jle .b
+        mov eax,PV_GLOW_CZ-1
+.b:     ret
+
+        EXPORT(_rv_pv_glow)
+_rv_pv_glow:
+        PV_ENTER
+        cmp word FR(F_GLOW_ANY),0
+        jne .go
+        jmp .done
+.go:    xor eax,eax                     ; the grid: every 8th pixel each way
+        mov G_GY,eax
+.gy:    xor eax,eax
+        mov G_GX,eax
+.gx:    mov eax,G_GX
+        shl eax,3
+        mov edx,G_GY
+        shl edx,3
+        call gidx
+        mov ecx,G_GY
+        imul ecx,ecx,PV_LW/8+1
+        add ecx,G_GX
+        shl ecx,1
+        lea di,[bp+GLOWG]
+        add di,cx
+        mov [di],ax
+        inc dword G_GX
+        cmp dword G_GX,PV_LW/8
+        jle .gx
+        inc dword G_GY
+        cmp dword G_GY,PV_LH/8
+        jle .gy
+        movsx eax,word FR(F_BY0)
+        mov G_Y,eax
+.row:   mov eax,G_Y
+        cmp ax,FR(F_BY1)
+        jl .r1
+        jmp .done
+.r1:    mov ebx,eax                     ; the row's indices: weighed between the grid's two rows
+        shr ebx,3
+        imul ebx,ebx,(PV_LW/8+1)*2
+        lea si,[bp+GLOWG]
+        add si,bx
+        mov ecx,eax
+        and ecx,7
+        lea di,[bp+GLOWR]
+        xor bx,bx
+.rk:    movsx eax,word [si+bx]
+        movsx edx,word [si+bx+(PV_LW/8+1)*2]
+        sub edx,eax
+        imul edx,ecx
+        sar edx,3
+        add eax,edx
+        mov [di+bx],ax
+        add bx,2
+        cmp bx,(PV_LW/8+1)*2
+        jl .rk
+        mov ax,G_Y                      ; its pixels
+        shl ax,7
+        add ax,FR(F_BX0)
+        shl ax,1
+        add ax,FR(F_O_PIC)
+        mov si,ax
+        movsx eax,word FR(F_BX0)
+        mov G_X,eax
+.px:    mov eax,G_X
+        cmp ax,FR(F_BX1)
+        jge .rowd
+        cmp word [es:si],PV_EMPTY
+        jne .nx
+        mov ebx,eax
+        shr ebx,3
+        shl ebx,1
+        lea di,[bp+GLOWR]
+        add di,bx
+        movsx ecx,word [di]
+        movsx edx,word [di+2]
+        sub edx,ecx
+        and eax,7
+        imul edx,eax
+        sar edx,3
+        add ecx,edx
+        add cx,FR(F_O_GLOW)
+        mov di,cx
+        movzx eax,byte [gs:di]
+        cmp eax,4
+        jl .nx
+        add eax,4
+        shr eax,3
+        or ax,PV_GLOW
+        mov [es:si],ax
+.nx:    add si,2
+        inc dword G_X
+        jmp .px
+.rowd:  inc dword G_Y
+        jmp .row
+.done:  PV_LEAVE
+
+set_end:
+
+march_start:
+; (the march's own copy) the floor of the root of edx:eax (under 2^62) in eax: Newton's steps down from a power of two over the root
+; (pview.c pv_isqrt's, bake.asm isqrt's).  ecx edx used
+isqrt64b:
+        push ebx
+        push esi
+        push edi
+        mov esi,eax
+        mov edi,edx
+        xor eax,eax
+        mov ecx,edi
+        or ecx,esi
+        jz .done
+        bsr ecx,edi
+        jz .low
+        add cl,32
+        jmp .have
+.low:   bsr ecx,esi
+.have:  add cl,2
+        shr cl,1
+        mov ebx,0xFFFFFFFF
+        cmp cl,32
+        jae .step
+        mov ebx,1
+        shl ebx,cl
+.step:  mov eax,esi
+        mov edx,edi
+        div ebx
+        add eax,ebx
+        rcr eax,1
+        cmp eax,ebx
+        jae .root
+        mov ebx,eax
+        jmp .step
+.root:  mov eax,ebx
+.done:  pop edi
+        pop esi
+        pop ebx
+        ret
+
+; ================================================================================================================
+; the march's parts (es buf, gs scr; es:si the line, fs:bx the step)
+; ================================================================================================================
+%define M_M L(1)
+%define M_X L(2)
+%define M_Y L(3)
+%define M_H L(4)
+%define M_C0 L(5)
+%define M_LIGHT L(6)
+%define M_FX L(7)
+%define M_FY L(8)
+%define M_L0 L(9)
+%define M_PA L(10)                      ; place's: the point from the eye
+%define M_PB L(11)
+%define M_PLH L(12)
+%define M_ALO L(13)
+%define M_AHI L(14)
+%define M_RHO L(15)
+%define M_I0 L(16)
+%define M_I1 L(17)
+%define M_SI0 L(18)
+%define M_SI1 L(19)
+%define F_I0_ L(20)                     ; fill's
+%define F_I1_ L(21)
+%define F_RA_ L(22)
+%define F_RB_ L(23)
+%define F_LA_ L(24)
+%define F_LB_ L(25)
+%define F_FA_ L(26)
+%define F_FB_ L(27)
+%define F_MAT_ L(28)
+%define F_SPAN L(29)
+%define F_T0 L(30)
+%define F_DT L(31)
+%define F_LL L(32)
+%define F_DL L(33)
+%define F_FF L(34)
+%define F_DF L(35)
+%define F_ROW L(36)
+%define F_COLX L(37)
+%define S_H_ L(38)                      ; sample's
+%define S_MAT_ L(39)
+%define S_LIGHT_ L(40)
+%define S_SB L(41)
+%define S_LO L(42)
+%define S_HI L(43)
+%define S_FOG L(44)
+%define S_R0 L(45)
+%define S_R1 L(46)
+%define S_S0 L(47)
+%define S_S1 L(48)
+%define S_SL L(49)
+%define S_SM L(50)
+%define FG_DIST L(51)
+%define M_PLACESH L(52)                 ; (byte: 28 + vsh)
+%define M_N L(53)                       ; the line's number (march)
+%define M_STEPOFF L(54)                 ; (word: the step's place, buf)
+%define M_INR L(55)
+%define M_NS L(56)                      ; sub-samples
+%define M_J L(57)
+%define M_PX L(58)
+%define M_PY L(59)
+%define K_I L(60)                       ; skip's
+%define K_BX L(61)
+%define K_BY L(62)
+%define K_HB L(63)
+%define K_MX L(64)
+%define K_MY L(65)
+%define K_J L(66)
+%define O_NN L(67)                      ; over's
+%define O_B L(68)
+%define O_S1 L(69)
+%define O_X L(70)
+%define O_Y L(71)
+%define SL_K L(72)                      ; slab_at's
+%define SL_N L(73)
+%define SL_MID L(74)
+%define SL_A L(75)
+%define SL_B L(76)
+%define SL_FX L(77)
+%define SL_FY L(78)
+%define SL_W0 L(79)
+%define SL_W1 L(80)
+%define SL_W2 L(81)
+%define SL_W3 L(82)
+%define SL_PTR L(83)
+%define SL_WROW L(84)
+%define M_A0OFF L(85)
+%define M_FARC L(86)
+%define M_CELL L(87)
+%define S_HAVE L(88)
+%define M_SBX0 L(89)                    ; (the slab grids' box on the plane)
+%define M_SBX1 L(90)
+%define M_SBY0 L(91)
+%define M_SBY1 L(92)
+%define P_SUM L(93)                     ; fill_px's: the light and haze's sum, its step, the material's 32 x
+%define P_DSUM L(94)
+%define P_BASE L(95)
+%define P_DCOL L(96)
+%define P_DROW L(97)
+
+; m for the line (es:si) at the step (fs:bx): eax, carry when the step is past the plane's reach (pv_m)
+pm:     mov eax,[es:si+L_TE]
+        imul dword [fs:bx+S_S]
+        shrd eax,edx,30
+        add eax,[fs:bx+S_UC]
+        cmp eax,PV_DEN_MIN
+        jl .no
+        mov ecx,eax
+        mov eax,[fs:bx+S_S]
+        cdq
+        shld edx,eax,16
+        shl eax,16
+        idiv ecx
+        clc
+        ret
+.no:    stc
+        ret
+
+; the line's plane point at m (eax): eax X, edx Y (ecx used)
+plane:  mov ecx,eax
+        mov eax,[es:si+L_KY]
+        imul ecx
+        shrd eax,edx,16
+        add eax,FR(F_PY)
+        push eax
+        mov eax,[es:si+L_KX]
+        imul ecx
+        shrd eax,edx,16
+        add eax,FR(F_PX)
+        pop edx
+        ret
+
+; the ground at (M_X, M_Y) from the window: M_H, M_C0, M_LIGHT; carry when the window has none (pv_ground)
+ground: mov cl,FR(F_SH)
+        mov eax,M_X
+        sar eax,cl
+        sub eax,FR(F_OX)
+        cmp eax,PV_W-1
+        jae .no
+        mov edi,eax
+        mov eax,M_Y
+        sar eax,cl
+        sub eax,FR(F_OY)
+        cmp eax,PV_W-1
+        jae .no
+        imul eax,eax,PV_W
+        add eax,edi
+        lea eax,[eax+eax*2]
+        add ax,FR(F_O_WIN)
+        mov di,ax
+        cmp byte [gs:di+1],PV_ABSENT
+        je .no
+        sub cl,8
+        mov eax,M_X
+        sar eax,cl
+        and eax,255
+        mov M_FX,eax
+        mov eax,M_Y
+        sar eax,cl
+        and eax,255
+        mov M_FY,eax
+        movsx eax,word [gs:di]          ; h0 = a + ((b - a) fx >> 8)
+        movsx ecx,word [gs:di+3]
+        sub ecx,eax
+        imul ecx,M_FX
+        sar ecx,8
+        add ecx,eax
+        movsx eax,word [gs:di+PV_W*3]   ; h1 = c + ((d - c) fx >> 8)
+        movsx edx,word [gs:di+PV_W*3+3]
+        sub edx,eax
+        imul edx,M_FX
+        sar edx,8
+        add edx,eax
+        sub edx,ecx                     ; h = h0 + ((h1 - h0) fy >> 8)
+        imul edx,M_FY
+        sar edx,8
+        add edx,ecx
+        mov M_H,edx
+        mov M_CELL,edi                  ; (the colour and light later, if the sample is seen: colour)
+        clc
+        ret
+.no:    stc
+        ret
+
+; the colour id and light of the ground found last (M_CELL, M_FX, M_FY): S_MAT_, S_LIGHT_, S_HAVE (ecx edx edi used)
+colour: movzx edi,word M_CELL
+        lea ecx,[edi+2]                 ; the colour: the nearest cell's
+        cmp dword M_FX,128
+        jl .c1
+        add ecx,3
+.c1:    cmp dword M_FY,128
+        jl .c2
+        add ecx,PV_W*3
+.c2:    movzx eax,byte [gs:ecx]
+        mov edx,eax
+        shr edx,5
+        mov S_MAT_,edx
+        mov cl,[gs:edi+2]               ; the four of one material (their high bits the same): their light weighed
+        mov ch,cl
+        xor cl,[gs:edi+5]
+        xor ch,[gs:edi+PV_W*3+2]
+        or cl,ch
+        mov ch,[gs:edi+PV_W*3+2]
+        xor ch,[gs:edi+PV_W*3+5]
+        or cl,ch
+        cmp cl,PV_LIGHTS
+        jae .flat
+        movzx eax,byte [gs:edi+2]       ; l0 = 256 a + (b - a) fx (a, b over c, d: the four's light)
+        and eax,31
+        movzx ecx,byte [gs:edi+5]
+        and ecx,31
+        sub ecx,eax
+        imul ecx,M_FX
+        shl eax,8
+        add eax,ecx
+        movzx edx,byte [gs:edi+PV_W*3+2]   ; l1 = 256 c + (d - c) fx
+        and edx,31
+        movzx ecx,byte [gs:edi+PV_W*3+5]
+        and ecx,31
+        sub ecx,edx
+        imul ecx,M_FX
+        shl edx,8
+        add edx,ecx
+        sub edx,eax                     ; light = (256 l0 + (l1 - l0) fy) >> 8 (pv_ground's sums, the same)
+        imul edx,M_FY
+        shl eax,8
+        add eax,edx
+        sar eax,8
+        mov S_LIGHT_,eax
+        mov dword S_HAVE,1
+        ret
+.flat:  and eax,31
+        shl eax,8
+        mov S_LIGHT_,eax
+        mov dword S_HAVE,1
+        ret
+
+; the point at the step at height eax (BK_HU) from the eye: M_PA, M_PB (pv_place)
+place:  mov M_PLH,eax
+        imul dword [fs:bx+S_C]
+        mov cl,M_PLACESH
+        shrd eax,edx,cl
+        add eax,[fs:bx+S_A]
+        mov M_PA,eax
+        mov eax,M_PLH
+        imul dword [fs:bx+S_S]
+        shrd eax,edx,cl
+        add eax,[fs:bx+S_B]
+        mov M_PB,eax
+        ret
+
+; carry when (M_PA, M_PB) is above the horizon's ray: a ht - b hu > 0 (pv_above)
+above:  mov eax,M_PA
+        imul dword [es:si+L_HT]
+        mov M_ALO,eax
+        mov M_AHI,edx
+        mov eax,M_PB
+        imul dword [es:si+L_HU]
+        sub M_ALO,eax
+        sbb M_AHI,edx
+        cmp dword M_AHI,0
+        jg .yes
+        jl .no
+        cmp dword M_ALO,0
+        jne .yes
+.no:    clc
+        ret
+.yes:   stc
+        ret
+
+; (M_PA, M_PB)'s pixel on the line, 256ths, held to 16 bits: eax; carry when it is behind the eye (pv_rho)
+rho:    movsx ecx,word [es:si+L_UF]
+        imul ecx,M_PA
+        movsx edx,word [es:si+L_TF]
+        imul edx,M_PB
+        add ecx,edx
+        jle .behind
+        movsx eax,word [es:si+L_US]
+        imul eax,M_PA
+        movsx edx,word [es:si+L_TS]
+        imul edx,M_PB
+        add eax,edx
+        mov edx,eax
+        sar edx,31
+        mov edi,eax
+        xor edi,edx
+        sub edi,edx
+        shr edi,16
+        cmp edi,ecx
+        jae .big
+        movsx edx,word [es:si+L_RB]
+        imul edx
+        idiv ecx
+        jmp .add
+.big:   movsx edx,word [es:si+L_RB]
+        xor edx,eax
+        mov eax,0x40000000
+        test edx,edx
+        jns .add
+        neg eax
+.add:   movsx edx,word [es:si+L_RA]
+        add eax,edx
+        cmp eax,-32768
+        jge .c1
+        mov eax,-32768
+.c1:    cmp eax,32767
+        jle .c2
+        mov eax,32767
+.c2:    clc
+        ret
+.behind:
+        stc
+        ret
+
+; the haze's level for distance FG_DIST and height edx: eax (pv_fog_at; di used)
+fog_at: mov eax,edx
+        sub eax,FR(F_FOG_H0)
+        imul dword FR(F_FOG_RCP)
+        shrd eax,edx,16
+        cmp eax,0
+        jge .b1
+        xor eax,eax
+.b1:    cmp eax,PV_FOG_HB-1
+        jle .b2
+        mov eax,PV_FOG_HB-1
+.b2:    shl ax,2
+        add ax,FR(F_O_FOGM)
+        mov di,ax
+        mov eax,FG_DIST
+        imul dword [gs:di]
+        shrd eax,edx,24
+        cmp eax,0
+        jge .k1
+        xor eax,eax
+.k1:    cmp eax,PV_FOG_TAUS-1
+        jle .k2
+        mov eax,PV_FOG_TAUS-1
+.k2:    add ax,FR(F_O_FOGLEV)
+        mov di,ax
+        movzx eax,byte [gs:di]
+        ret
+
+; the pixels between the horizon and eax (rho): M_I0, M_I1; carry when none (pv_span)
+span:   cmp word FR(F_NADIR),0
+        je .z
+        movsx ecx,word [es:si+L_HORIZON]
+        sar ecx,8
+        inc ecx
+        mov edx,eax
+        sar edx,8
+        jmp .clip
+.z:     mov ecx,eax
+        neg ecx
+        sar ecx,8
+        neg ecx
+        movsx edx,word [es:si+L_HORIZON]
+        neg edx
+        sar edx,8
+        neg edx
+        dec edx
+.clip:  movzx eax,byte [es:si+L_K0]
+        cmp ecx,eax
+        jge .a
+        mov ecx,eax
+.a:     movzx eax,byte [es:si+L_K1]
+        cmp edx,eax
+        jle .b
+        mov edx,eax
+.b:     mov M_I0,ecx
+        mov M_I1,edx
+        cmp ecx,edx
+        jg .none
+        clc
+        ret
+.none:  stc
+        ret
+
+; t0 for num ecx (i0 256 - ra) and span F_SPAN (not 0): eax (edx used; pv_fill's)
+t0_of:  xor eax,eax
+        test ecx,ecx
+        jz .r                           ; (num 0, or of the other sign: 0)
+        mov edx,ecx
+        xor edx,F_SPAN
+        js .r
+        mov eax,65536                   ; (|num| >= |span|: 65536)
+        test ecx,ecx
+        js .ng
+        cmp ecx,F_SPAN
+        jge .r
+        jmp .dv
+.ng:    cmp ecx,F_SPAN
+        jle .r
+.dv:    mov eax,ecx
+        cdq
+        shld edx,eax,16
+        shl eax,16
+        idiv dword F_SPAN
+.r:     ret
+
+; dt for ecx (>= 1) pixels past the first, t0 F_T0, span F_SPAN: F_DT, held so t stays within -7 .. 65543 (pv_fill's)
+dt_of:  mov eax,1<<24
+        cdq
+        idiv dword F_SPAN
+        mov F_DT,eax
+        imul ecx
+        add eax,F_T0
+        adc edx,0
+        add eax,7
+        adc edx,0
+        jnz .fix
+        cmp eax,65536+14
+        jbe .ok
+.fix:   mov eax,65536
+        sub eax,F_T0
+        cdq
+        idiv ecx
+        mov F_DT,eax
+.ok:    ret
+
+; the line's pixels F_I0_ .. F_I1_ still empty filled from F_RA_ (light F_LA_, haze F_FA_) to F_RB_ (F_LB_, F_FB_),
+; material F_MAT_ (its first light: pv_fill)
+fill:   mov eax,F_RB_
+        sub eax,F_RA_
+        mov F_SPAN,eax
+        jnz .sp
+        mov dword F_T0,65536            ; (one place: t 1 throughout, b's light and haze)
+        mov dword F_DT,0
+        jmp .acc
+.sp:    mov ecx,F_I0_                   ; t0 at the first pixel
+        shl ecx,8
+        sub ecx,F_RA_
+        call t0_of
+        mov F_T0,eax
+        mov dword F_DT,0
+        mov ecx,F_I1_
+        sub ecx,F_I0_
+        jle .acc                        ; (one pixel: no slope)
+        call dt_of
+.acc:   mov eax,F_LB_                   ; l = la 256 + ((lb - la) t0 >> 8) + 32768, the haze the same: the sum's
+        sub eax,F_LA_                   ; (fo >> 8) 65536 + (l >> 8)
+        imul eax,F_T0
+        sar eax,8
+        mov ecx,F_LA_
+        shl ecx,8
+        add eax,ecx
+        add eax,32768
+        sar eax,8
+        mov P_SUM,eax
+        mov eax,F_FB_
+        sub eax,F_FA_
+        imul eax,F_T0
+        sar eax,8
+        mov ecx,F_FA_
+        shl ecx,8
+        add eax,ecx
+        add eax,32768
+        sar eax,8
+        shl eax,16
+        add P_SUM,eax
+        xor eax,eax                     ; its step a pixel: (fb - fa) dt >> 16 in its high half, (lb - la) dt >> 16
+        mov ecx,F_I1_
+        cmp ecx,F_I0_
+        jle .d0
+        mov eax,F_FB_
+        sub eax,F_FA_
+        imul dword F_DT
+        shrd eax,edx,16
+        shl eax,16
+        mov ecx,eax
+        mov eax,F_LB_
+        sub eax,F_LA_
+        imul dword F_DT
+        shrd eax,edx,16
+        add eax,ecx
+.d0:    mov P_DSUM,eax
+        mov eax,F_MAT_
+        mov P_BASE,eax
+        mov ecx,F_I0_
+        mov edx,F_I1_
+        jmp fill_px
+
+; the line's pixels ecx .. edx, those still empty, from the sum P_SUM (light its bits 8-15, haze its bits 24-31) and
+; its step a pixel P_DSUM, material P_BASE (32 x it): pv_fill's loop (bx, si kept)
+fill_px:
+        PSTART 4
+        push bx
+        push si
+        sub edx,ecx
+        inc edx
+        mov bx,dx                       ; (the count: under 256)
+        movsx eax,byte [es:si+L_DROW]
+        mov P_DROW,eax
+        imul eax,ecx
+        movzx edi,byte [es:si+L_ROW]
+        add edi,eax                     ; the along at the first
+        mov eax,[es:si+L_DCOL]
+        mov P_DCOL,eax
+        imul eax,ecx
+        add eax,[es:si+L_COL]
+        movzx ecx,bx
+        mov edx,P_SUM
+        movzx ebx,word FR(F_O_PIC)
+        test byte [es:si+L_FLAGS],LF_VERT
+        mov esi,eax                     ; across, 65536ths
+        jz .hz
+        shl edi,8                       ; vertical: the row's place, 256 bytes a row
+        add edi,ebx
+        shl dword P_DROW,8
+.vp:    mov ebx,esi
+        sar ebx,16
+        cmp ebx,PV_LW
+        jae .vn
+        cmp word [es:edi+ebx*2],PV_EMPTY
+        jne .vn
+        mov eax,edx
+        shr eax,16
+        mov al,dh
+        add al,P_BASE
+        mov [es:edi+ebx*2],ax
+.vn:    add esi,P_DCOL
+        add edi,P_DROW
+        add edx,P_DSUM
+        dec ecx
+        jnz .vp
+        jmp .end
+.hz:    shl edi,1                       ; horizontal: the column's place, 2 bytes a column
+        add edi,ebx
+        shl dword P_DROW,1
+.hp:    mov ebx,esi
+        sar ebx,16
+        cmp ebx,PV_LH
+        jae .hn
+        shl ebx,8
+        cmp word [es:edi+ebx],PV_EMPTY
+        jne .hn
+        mov eax,edx
+        shr eax,16
+        mov al,dh
+        add al,P_BASE
+        mov [es:edi+ebx],ax
+.hn:    add esi,P_DCOL
+        add edi,P_DROW
+        add edx,P_DSUM
+        dec ecx
+        jnz .hp
+.end:   pop si
+        pop bx
+        PEND 4
+        ret
+
+; is the line over (pv_over): carry when its horizon's ray has left the top sphere behind (the step at fs:bx)
+over:   mov eax,[es:si+L_HU]
+        imul eax
+        mov ecx,eax
+        mov edi,edx
+        mov eax,[es:si+L_HT]
+        imul eax
+        add eax,ecx
+        adc edx,edi
+        call isqrt64b
+        test eax,eax
+        jz .yes
+        mov O_NN,eax
+        mov eax,FR(F_D)                 ; b = D hu / nn
+        imul dword [es:si+L_HU]
+        idiv dword O_NN
+        mov O_B,eax
+        imul eax                        ; disc = b^2 - (D^2 - rt^2)
+        mov ecx,eax
+        mov edi,edx
+        mov eax,FR(F_D)
+        imul eax
+        sub ecx,eax
+        sbb edi,edx
+        mov eax,FR(F_RT)
+        imul eax
+        add ecx,eax
+        adc edi,edx
+        test edi,edi
+        js .yes
+        jnz .pos
+        test ecx,ecx
+        jz .yes
+.pos:   mov eax,ecx
+        mov edx,edi
+        call isqrt64b
+        sub eax,O_B                     ; s1 = -b + root
+        jle .yes
+        mov O_S1,eax
+        imul dword [es:si+L_HU]         ; x = D + s1 hu / nn, y = s1 ht / nn
+        idiv dword O_NN
+        add eax,FR(F_D)
+        mov O_X,eax
+        mov eax,O_S1
+        imul dword [es:si+L_HT]
+        idiv dword O_NN
+        mov O_Y,eax
+        mov eax,[fs:bx+S_S]             ; s x - c y > 0
+        imul dword O_X
+        mov ecx,eax
+        mov edi,edx
+        mov eax,[fs:bx+S_C]
+        imul dword O_Y
+        sub ecx,eax
+        sbb edi,edx
+        test edi,edi
+        js .no
+        jnz .yes
+        test ecx,ecx
+        jnz .yes
+.no:    clc
+        ret
+.yes:   stc
+        ret
+
+; a sample (pv_sample): S_H_, S_MAT_, S_LIGHT_, and the slab S_SB (S_LO .. S_HI), at the step fs:bx, the line es:si
+sample: inc dword FR(F_SAMPLES)
+        mov eax,S_H_
+        call place
+        call above
+        jnc sample_hid
+; (the march's fast path comes in here: counted, placed, seen above the horizon's ray)
+sample_seen:
+        movsx ecx,word [es:si+L_UF]     ; its pixel on the line, rho (pv_rho): z = a uf + b tf, behind the eye when <= 0
+        imul ecx,M_PA
+        movsx edx,word [es:si+L_TF]
+        imul edx,M_PB
+        add ecx,edx
+        jg .front
+        jmp sample_hid
+.front: movsx eax,word [es:si+L_US]     ; num = a us + b ts
+        imul eax,M_PA
+        movsx edx,word [es:si+L_TS]
+        imul edx,M_PB
+        add eax,edx
+        cdq
+        mov edi,eax
+        xor edi,edx
+        sub edi,edx
+        shr edi,16
+        cmp edi,ecx
+        jae .big
+        movsx edx,word [es:si+L_RB]
+        imul edx
+        idiv ecx
+.add:   movsx edx,word [es:si+L_RA]
+        add eax,edx
+        movsx edx,ax                    ; (held to 16 bits)
+        cmp edx,eax
+        jne .clamp
+.rho:   mov M_RHO,eax
+        cmp dword S_HAVE,0              ; (seen: its colour and light now)
+        jne .hv
+        call colour
+.hv:    mov eax,S_H_                    ; the haze (pv_fog_at): by its height's band, the level at its distance
+        sub eax,FR(F_FOG_H0)
+        imul dword FR(F_FOG_RCP)
+        shrd eax,edx,16
+        cmp eax,PV_FOG_HB-1
+        jbe .b1
+        sar eax,31                      ; (under 0: 0; past the last: the last)
+        not eax
+        and eax,PV_FOG_HB-1
+.b1:    movzx edi,word FR(F_O_FOGM)
+        mov eax,[gs:edi+eax*4]
+        imul dword [fs:bx+S_DIST]
+        shrd eax,edx,24
+        cmp eax,PV_FOG_TAUS-1
+        jbe .b2
+        sar eax,31
+        not eax
+        and eax,PV_FOG_TAUS-1
+.b2:    movzx edi,word FR(F_O_FOGLEV)
+        movzx eax,byte [gs:edi+eax]
+        shl eax,8
+        mov S_FOG,eax
+        inc dword FR(F_SEEN)
+        mov eax,M_RHO                   ; the pixels between the horizon and rho (pv_span): ecx .. edx
+        cmp word FR(F_NADIR),0
+        je .z
+        movsx ecx,word [es:si+L_HORIZON]
+        sar ecx,8
+        inc ecx
+        mov edx,eax
+        sar edx,8
+        jmp .clip
+.z:     mov ecx,eax
+        neg ecx
+        sar ecx,8
+        neg ecx
+        movsx edx,word [es:si+L_HORIZON]
+        neg edx
+        sar edx,8
+        not edx
+.clip:  movzx edi,byte [es:si+L_K0]
+        cmp ecx,edi
+        jge .k0
+        mov ecx,edi
+.k0:    movzx edi,byte [es:si+L_K1]
+        cmp edx,edi
+        jle .k1
+        mov edx,edi
+.k1:    cmp ecx,edx
+        jg .after
+        mov M_SI0,ecx
+        mov M_SI1,edx
+        test byte [es:si+L_FLAGS],LF_POK
+        jz .flat
+        mov al,[es:si+L_MAT]
+        cmp al,S_MAT_
+        jne .gentle
+        movsx edi,word [es:si+L_PRHO]   ; the same material: weighed from the last sample (pv_fill from prho)
+        mov eax,M_RHO
+        sub eax,edi
+        mov F_SPAN,eax
+        jnz .isp
+        mov dword F_T0,65536            ; (one place: this one's throughout)
+        mov dword F_DT,0
+        jmp .iacc
+.isp:   shl ecx,8                       ; t0: num = i0 256 - prho
+        sub ecx,edi
+        call t0_of
+        mov F_T0,eax
+        mov dword F_DT,0
+        mov ecx,M_SI1
+        sub ecx,M_SI0
+        jle .iacc
+        call dt_of
+.iacc:  movsx ecx,word [es:si+L_PLIGHT] ; the sum: (fo >> 8) 65536 + (l >> 8)
+        mov eax,S_LIGHT_
+        sub eax,ecx
+        mov F_DL,eax                    ; (lb - la)
+        imul eax,F_T0
+        sar eax,8
+        shl ecx,8
+        add eax,ecx
+        add eax,32768
+        sar eax,8
+        mov P_SUM,eax
+        movsx ecx,word [es:si+L_PFOG]
+        mov eax,S_FOG
+        sub eax,ecx
+        mov F_DF,eax                    ; (fb - fa)
+        imul eax,F_T0
+        sar eax,8
+        shl ecx,8
+        add eax,ecx
+        add eax,32768
+        sar eax,8
+        shl eax,16
+        add P_SUM,eax
+        xor eax,eax                     ; its step
+        mov ecx,M_SI1
+        cmp ecx,M_SI0
+        jle .id0
+        mov eax,F_DF
+        imul dword F_DT
+        shrd eax,edx,16
+        shl eax,16
+        mov ecx,eax
+        mov eax,F_DL
+        imul dword F_DT
+        shrd eax,edx,16
+        add eax,ecx
+.id0:   mov P_DSUM,eax
+        mov eax,S_MAT_
+        shl eax,5
+        mov P_BASE,eax
+        mov ecx,M_SI0
+        mov edx,M_SI1
+        call fill_px
+        jmp .after
+.big:   movsx edx,word [es:si+L_RB]     ; (|num| >> 16 >= z: 2^30 of num's sign times rb's)
+        xor edx,eax
+        mov eax,0x40000000
+        test edx,edx
+        jns .add
+        neg eax
+        jmp .add
+.clamp: test eax,eax
+        mov eax,32767
+        jns .rho
+        mov eax,-32768
+        jmp .rho
+.gentle:
+        movsx ecx,word [es:si+L_PDS]    ; (h - ph) 4 < pds / 2 and (ph - h) 4 < pds / 2
+        sar ecx,1
+        movsx edx,word [es:si+L_PH]
+        mov eax,S_H_
+        sub eax,edx
+        shl eax,2
+        cmp eax,ecx
+        jge .flat
+        neg eax
+        cmp eax,ecx
+        jge .flat
+        movsx eax,word [es:si+L_PRHO]   ; mid = (prho + rho) / 2: the pixels nearer the last sample its
+        add eax,M_RHO
+        cdq
+        sub eax,edx
+        sar eax,1
+        call span
+        jc .flat
+        movsx eax,word [es:si+L_PFOG]   ; (its light and haze throughout: the sum (pfog + 128) 65536 + plight + 128)
+        add eax,128
+        shl eax,16
+        movsx edx,word [es:si+L_PLIGHT]
+        add eax,edx
+        add eax,128
+        mov P_SUM,eax
+        mov dword P_DSUM,0
+        movzx eax,byte [es:si+L_MAT]
+        shl eax,5
+        mov P_BASE,eax
+        mov ecx,M_I0
+        mov edx,M_I1
+        call fill_px
+.flat:  mov eax,S_FOG                   ; this sample's own throughout
+        add eax,128
+        shl eax,16
+        add eax,S_LIGHT_
+        add eax,128
+        mov P_SUM,eax
+        mov dword P_DSUM,0
+        mov eax,S_MAT_
+        shl eax,5
+        mov P_BASE,eax
+        mov ecx,M_SI0
+        mov edx,M_SI1
+        call fill_px
+.after: mov eax,S_FOG                   ; the line's state: this sample's
+        mov [es:si+L_PFOG],ax
+        mov eax,M_RHO
+        mov [es:si+L_HORIZON],ax
+        mov [es:si+L_PRHO],ax
+        mov ecx,M_PA
+        mov [es:si+L_HU],ecx
+        mov ecx,M_PB
+        mov [es:si+L_HT],ecx
+        mov cl,[es:si+L_FLAGS]
+        and cl,~LF_HID
+        or cl,LF_POK
+        cmp word FR(F_NADIR),0
+        je .dz
+        movzx edx,byte [es:si+L_K1]
+        shl edx,8
+        cmp eax,edx
+        jl .dn
+        or cl,LF_DONE
+        jmp .dn
+.dz:    movzx edx,byte [es:si+L_K0]
+        shl edx,8
+        cmp eax,edx
+        jg .dn
+        or cl,LF_DONE
+.dn:    mov [es:si+L_FLAGS],cl
+        mov eax,S_LIGHT_
+        mov [es:si+L_PLIGHT],ax
+        mov eax,S_H_
+        mov [es:si+L_PH],ax
+        mov al,S_MAT_
+        mov [es:si+L_MAT],al
+        mov ax,[fs:bx+S_DS]
+        mov [es:si+L_PDS],ax
+        jmp sample_slab
+sample_hid:
+        mov al,[es:si+L_FLAGS]
+        or al,LF_HID
+        and al,~LF_POK
+        mov [es:si+L_FLAGS],al
+sample_slab:
+        cmp dword S_SB,0
+        je .noslab
+        mov eax,S_LO                    ; the slab: its underside's and top's pixels
+        call place
+        call rho
+        jc .noslab
+        mov S_R0,eax
+        mov eax,S_HI
+        call place
+        call rho
+        jc .noslab
+        mov S_R1,eax
+        mov ecx,S_R0
+        mov edx,eax
+        cmp ecx,edx
+        jle .o1
+        xchg ecx,edx
+.o1:    test byte [es:si+L_FLAGS],LF_PSLAB
+        jz .o3
+        movsx eax,word [es:si+L_PLO]
+        cmp eax,ecx
+        jge .o2
+        mov ecx,eax
+.o2:    movsx eax,word [es:si+L_PHI]
+        cmp eax,edx
+        jle .o3
+        mov edx,eax
+.o3:    mov S_S0,ecx
+        mov S_S1,edx
+        mov eax,FR(F_ALT)               ; the underside seen from under it, else the top
+        mov dword S_SM,3*32
+        cmp eax,S_LO
+        jl .m1
+        mov dword S_SM,1*32
+.m1:    cmp eax,S_HI
+        jle .ul
+        cmp dword S_HAVE,0              ; (over it: the ground's light)
+        jne .hv2
+        call colour
+.hv2:   mov eax,S_LIGHT_
+        sar eax,8
+        jmp .sl
+.ul:    xor eax,eax                     ; the underside's glow by its height over the ground
+        mov ecx,S_LO
+        cmp ecx,S_H_
+        jle .g0
+        sub ecx,S_H_
+        shl ecx,4
+        mov eax,ecx
+        cdq
+        idiv dword FR(F_UNDER_DIV)
+        cmp eax,63
+        jle .g0
+        mov eax,63
+.g0:    add ax,FR(F_O_UNDER)
+        mov di,ax
+        movzx eax,byte [gs:di]
+.sl:    mov S_SL,eax
+        mov eax,[fs:bx+S_DIST]
+        mov FG_DIST,eax
+        mov edx,S_HI
+        call fog_at
+        shl eax,8
+        mov F_FA_,eax
+        mov F_FB_,eax
+        mov eax,S_S0                    ; i0 = ceil(s0), i1 = floor(s1), within k0 .. k1
+        neg eax
+        sar eax,8
+        neg eax
+        movzx ecx,byte [es:si+L_K0]
+        cmp eax,ecx
+        jge .p1
+        mov eax,ecx
+.p1:    mov F_I0_,eax
+        mov eax,S_S1
+        sar eax,8
+        movzx ecx,byte [es:si+L_K1]
+        cmp eax,ecx
+        jle .p2
+        mov eax,ecx
+.p2:    mov F_I1_,eax
+        cmp eax,F_I0_
+        jl .p3
+        xor eax,eax
+        mov F_RA_,eax
+        mov F_RB_,eax
+        mov eax,S_SL
+        shl eax,8
+        mov F_LA_,eax
+        mov F_LB_,eax
+        mov eax,S_SM
+        mov F_MAT_,eax
+        call fill
+.p3:    mov ecx,S_R0
+        mov edx,S_R1
+        cmp ecx,edx
+        jle .p4
+        xchg ecx,edx
+.p4:    mov [es:si+L_PLO],cx
+        mov [es:si+L_PHI],dx
+        or byte [es:si+L_FLAGS],LF_PSLAB
+        movsx eax,word [es:si+L_HORIZON]   ; some of it past the filled part: it may hide what follows
+        cmp word FR(F_NADIR),0
+        je .hz
+        cmp S_S1,eax
+        jle .ret
+        and byte [es:si+L_FLAGS],~LF_HID
+        ret
+.hz:    cmp S_S0,eax
+        jge .ret
+        and byte [es:si+L_FLAGS],~LF_HID
+.ret:   ret
+.noslab:
+        and byte [es:si+L_FLAGS],~LF_PSLAB
+        ret
+
+; (M_X, M_Y) within one of the slab grids: carry (pv_in_slabs)
+in_slabs:
+        xor di,di
+.k:     cmp di,FR(F_NSLAB)
+        jge .no
+        push di
+        shl di,4
+        mov cl,FR(F_SLAB_SHIFT)
+        mov eax,M_X
+        sar eax,cl
+        sub eax,FR(F_SLAB+di)
+        movzx edx,word FR(F_SLAB+8+di)
+        cmp eax,edx
+        jae .n
+        mov eax,M_Y
+        sar eax,cl
+        sub eax,FR(F_SLAB+4+di)
+        movzx edx,word FR(F_SLAB+10+di)
+        cmp eax,edx
+        jae .n
+        pop di
+        stc
+        ret
+.n:     pop di
+        inc di
+        jmp .k
+.no:    clc
+        ret
+
+; one corner of a slab cell (di: its place, %1 its offset): to the middle's sum and count when it has a slab
+%macro SLAB_MID 1
+        movsx eax,word [es:di+%1]
+        movsx edx,word [es:di+%1+2]
+        cmp eax,edx
+        jge %%none
+        add eax,edx
+        add SL_MID,eax
+        inc dword SL_N
+%%none:
+%endmacro
+; and its share: SL_A += (w lo') >> 8, SL_B += (w hi') >> 8, lo' and hi' its own 256ths or the middle
+%macro SLAB_ADD 2
+        movsx ecx,word [es:di+%1]
+        movsx edx,word [es:di+%1+2]
+        cmp ecx,edx
+        jl %%has
+        mov ecx,SL_MID
+        mov edx,ecx
+        jmp %%go
+%%has:  shl ecx,8
+        shl edx,8
+%%go:   push edx
+        mov eax,%2
+        imul ecx
+        shrd eax,edx,8
+        add SL_A,eax
+        pop ecx
+        mov eax,%2
+        imul ecx
+        shrd eax,edx,8
+        add SL_B,eax
+%endmacro
+
+; the slab over (M_X, M_Y): S_LO, S_HI, carry when there is one (pv_slab_at; di used)
+slab_at:
+        mov dword SL_K,0
+.k:     mov eax,SL_K
+        cmp ax,FR(F_NSLAB)
+        jl .k1
+        jmp .no
+.k1:    shl ax,4
+        mov di,ax                       ; di: the grid's record in the frame
+        mov cl,FR(F_SLAB_SHIFT)
+        mov eax,M_X
+        sar eax,cl
+        sub eax,FR(F_SLAB+di)
+        movzx edx,word FR(F_SLAB+8+di)
+        dec edx
+        cmp eax,edx
+        jae .next
+        mov SL_A,eax                    ; sx
+        mov eax,M_Y
+        sar eax,cl
+        sub eax,FR(F_SLAB+4+di)
+        movzx edx,word FR(F_SLAB+10+di)
+        dec edx
+        cmp eax,edx
+        jae .next
+        movzx edx,word FR(F_SLAB+8+di)  ; the cell: at + sy w + sx, 4 bytes each
+        mov SL_WROW,edx
+        imul eax,edx
+        add eax,SL_A
+        add eax,FR(F_SLAB+12+di)
+        shl eax,2
+        add ax,FR(F_O_SLAB)
+        mov SL_PTR,eax
+        shl dword SL_WROW,2
+        xor eax,eax
+        mov SL_MID,eax
+        mov SL_N,eax
+        mov di,SL_PTR
+        SLAB_MID 0
+        SLAB_MID 4
+        add di,SL_WROW
+        SLAB_MID 0
+        SLAB_MID 4
+        cmp dword SL_N,0
+        je .no
+        mov eax,SL_MID                  ; the middle, 256ths
+        shl eax,7
+        cdq
+        idiv dword SL_N
+        mov SL_MID,eax
+        mov cl,FR(F_SLAB_SHIFT)
+        sub cl,8
+        mov eax,M_X
+        sar eax,cl
+        and eax,255
+        mov SL_FX,eax
+        mov eax,M_Y
+        sar eax,cl
+        and eax,255
+        mov SL_FY,eax
+        mov ecx,256                     ; the weights
+        sub ecx,SL_FX
+        mov edx,256
+        sub edx,SL_FY
+        mov eax,ecx
+        imul eax,edx
+        mov SL_W0,eax
+        mov eax,SL_FX
+        imul eax,edx
+        mov SL_W1,eax
+        mov eax,ecx
+        imul eax,SL_FY
+        mov SL_W2,eax
+        mov eax,SL_FX
+        imul eax,SL_FY
+        mov SL_W3,eax
+        xor eax,eax
+        mov SL_A,eax
+        mov SL_B,eax
+        mov di,SL_PTR
+        SLAB_ADD 0,SL_W0
+        SLAB_ADD 4,SL_W1
+        add di,SL_WROW
+        SLAB_ADD 0,SL_W2
+        SLAB_ADD 4,SL_W3
+        mov eax,SL_B                    ; (65536ths of a height unit: half a unit at least)
+        sub eax,SL_A
+        cmp eax,32768
+        jl .no
+        mov eax,SL_A
+        sar eax,16
+        mov S_LO,eax
+        mov eax,SL_B
+        sar eax,16
+        mov S_HI,eax
+        stc
+        ret
+.next:  inc dword SL_K
+        jmp .k
+.no:    clc
+        ret
+
+; hidden ground skipped (pv_skip): the sample at step K_I (fs:bx) in block (K_BX, K_BY), its highest K_HB: eax, the
+; step after the samples that cannot be seen, or K_I (di used)
+skip:   mov eax,K_HB
+        call place
+        call above
+        jnc .try
+        mov eax,K_I
+        ret
+.try:   mov dword K_MX,0x7FFFFFFF
+        mov dword K_MY,0x7FFFFFFF
+        cmp dword [es:si+L_KX],0        ; where the line leaves the block (m)
+        je .my
+        mov eax,K_BX
+        shl eax,2
+        add eax,FR(F_OX)
+        mov cl,FR(F_SH)
+        cmp dword [es:si+L_KX],0
+        jl .xn
+        add eax,4
+        shl eax,cl
+        sub eax,FR(F_PX)
+        jmp .xe
+.xn:    shl eax,cl
+        sub eax,FR(F_PX)
+        dec eax
+.xe:    mov ecx,eax
+        cdq
+        xor eax,edx
+        sub eax,edx
+        shr eax,15
+        mov edi,[es:si+L_KX]
+        mov edx,edi
+        sar edx,31
+        xor edi,edx
+        sub edi,edx
+        cmp eax,edi
+        jae .my
+        mov eax,ecx
+        cdq
+        shld edx,eax,16
+        shl eax,16
+        idiv dword [es:si+L_KX]
+        mov K_MX,eax
+.my:    cmp dword [es:si+L_KY],0
+        je .mm
+        mov eax,K_BY
+        shl eax,2
+        add eax,FR(F_OY)
+        mov cl,FR(F_SH)
+        cmp dword [es:si+L_KY],0
+        jl .yn
+        add eax,4
+        shl eax,cl
+        sub eax,FR(F_PY)
+        jmp .ye
+.yn:    shl eax,cl
+        sub eax,FR(F_PY)
+        dec eax
+.ye:    mov ecx,eax
+        cdq
+        xor eax,edx
+        sub eax,edx
+        shr eax,15
+        mov edi,[es:si+L_KY]
+        mov edx,edi
+        sar edx,31
+        xor edi,edx
+        sub edi,edx
+        cmp eax,edi
+        jae .mm
+        mov eax,ecx
+        cdq
+        shld edx,eax,16
+        shl eax,16
+        idiv dword [es:si+L_KY]
+        mov K_MY,eax
+.mm:    mov eax,K_MY
+        cmp eax,K_MX
+        jge .scan0
+        mov K_MX,eax
+.scan0: push bx
+        mov eax,K_I
+        inc eax
+        mov K_J,eax
+.scan:  mov eax,K_J                     ; the steps while they are of this level and in the block
+        cmp ax,FR(F_NSTEPS)
+        jge .sd
+        imul ax,ax,STEP_BYTES
+        add ax,FR(F_O_ST)
+        mov bx,ax
+        mov al,[fs:bx+S_LEV]
+        cmp al,FR(F_LEV)
+        ja .sd
+        call pm
+        jc .sd
+        cmp eax,K_MX
+        jge .sd
+        inc dword K_J
+        jmp .scan
+.sd:    dec dword K_J
+        mov eax,K_J
+        cmp eax,K_I
+        jle .no
+        imul ax,ax,STEP_BYTES           ; the block's highest hidden at the last of them too
+        add ax,FR(F_O_ST)
+        mov bx,ax
+        mov eax,K_HB
+        call place
+        call above
+        jc .no
+        cmp dword [es:si+L_HT],0        ; the ray's nearest approach to the centre between them, the highest over it
+        jle .ok
+        mov eax,[fs:bx+S_C]             ; c_j hu + s_j ht >= 0
+        imul dword [es:si+L_HU]
+        mov ecx,eax
+        mov edi,edx
+        mov eax,[fs:bx+S_S]
+        imul dword [es:si+L_HT]
+        add eax,ecx
+        adc edx,edi
+        js .ok
+        pop bx
+        push bx
+        mov eax,[fs:bx+S_C]             ; c_i hu + s_i ht <= 0
+        imul dword [es:si+L_HU]
+        mov ecx,eax
+        mov edi,edx
+        mov eax,[fs:bx+S_S]
+        imul dword [es:si+L_HT]
+        add eax,ecx
+        adc edx,edi
+        test edx,edx
+        js .betw
+        jnz .ok
+        test eax,eax
+        jnz .ok
+.betw:  mov eax,[es:si+L_HU]
+        imul eax
+        mov ecx,eax
+        mov edi,edx
+        mov eax,[es:si+L_HT]
+        imul eax
+        add eax,ecx
+        adc edx,edi
+        call isqrt64b
+        test eax,eax
+        jz .ok
+        mov ecx,eax
+        mov eax,FR(F_D)
+        imul dword [es:si+L_HT]
+        idiv ecx
+        mov ecx,K_HB
+        shl ecx,2
+        add ecx,FR(F_R)
+        cmp eax,ecx
+        jle .no
+.ok:    mov eax,K_J
+        inc eax
+        sub eax,K_I
+        add FR(F_SKIPS),eax
+        pop bx
+        mov eax,K_J
+        inc eax
+        ret
+.no:    pop bx
+        mov eax,K_I
+        ret
+
+; the sample's inputs from the ground found (M_H, M_C0, M_LIGHT)
+%macro TO_SAMPLE 0
+        mov eax,M_H
+        mov S_H_,eax
+        mov dword S_HAVE,0
+%endmacro
+
+; ================================================================================================================
+; void rv_pv_march(PvFrame far *f): every line through the frame's level (c_pv_march)
+; ================================================================================================================
+        EXPORT(_rv_pv_march)
+_rv_pv_march:
+        PV_ENTER
+        mov al,FR(F_VSH)
+        add al,28
+        mov M_PLACESH,al
+        xor eax,eax                     ; the slab grids' box on the plane (none: empty): outside it, the fast path
+        mov M_SBX0,eax
+        mov M_SBX1,eax
+        mov M_SBY0,eax
+        mov M_SBY1,eax
+        mov dx,FR(F_NSLAB)
+        xor di,di
+        mov cl,FR(F_SLAB_SHIFT)
+.sb:    cmp di,dx
+        jge .sbd
+        push di
+        shl di,4
+        mov eax,FR(F_SLAB+di)           ; x0 << shift .. (x0 + w) << shift
+        shl eax,cl
+        movzx ebx,word FR(F_SLAB+8+di)
+        add ebx,FR(F_SLAB+di)
+        shl ebx,cl
+        pop di
+        test di,di
+        jz .sb1
+        cmp eax,M_SBX0
+        jge .sb2
+.sb1:   mov M_SBX0,eax
+.sb2:   test di,di
+        jz .sb3
+        cmp ebx,M_SBX1
+        jle .sb4
+.sb3:   mov M_SBX1,ebx
+.sb4:   push di
+        shl di,4
+        mov eax,FR(F_SLAB+4+di)
+        shl eax,cl
+        movzx ebx,word FR(F_SLAB+10+di)
+        add ebx,FR(F_SLAB+4+di)
+        shl ebx,cl
+        pop di
+        test di,di
+        jz .sb5
+        cmp eax,M_SBY0
+        jge .sb6
+.sb5:   mov M_SBY0,eax
+.sb6:   test di,di
+        jz .sb7
+        cmp ebx,M_SBY1
+        jle .sb8
+.sb7:   mov M_SBY1,ebx
+.sb8:   inc di
+        jmp .sb
+.sbd:   push es
+        pop fs
+        mov dword M_N,0
+.line:  mov eax,M_N
+        cmp ax,FR(F_NLINES)
+        jl .ln1
+        jmp .done
+.ln1:   mov bx,LINE_BYTES
+        mul bx
+        add ax,FR(F_O_LN)
+        mov si,ax
+.step:  test byte [es:si+L_FLAGS],LF_DONE
+        jz .s1
+        jmp .nextl
+.s1:    PSTART 0
+        mov ax,[es:si+L_STEP]
+        cmp ax,FR(F_NSTEPS)
+        jl .s2
+        jmp .nextl
+.s2:    imul ax,ax,STEP_BYTES
+        add ax,FR(F_O_ST)
+        mov bx,ax
+        push es
+        pop fs
+        mov al,[fs:bx+S_LEV]
+        cmp al,FR(F_LEV)
+        jbe .s3
+        jmp .nextl
+.s3:    call pm
+        jnc .s4
+        jmp .nextl
+.s4:    call plane
+        mov M_X,eax
+        mov M_Y,edx
+        mov cl,FR(F_SH)                 ; in the window, on ground
+        sar eax,cl
+        sub eax,FR(F_OX)
+        cmp eax,PV_W-1
+        jb .s5
+        jmp .nextl
+.s5:    mov K_BX,eax
+        mov eax,edx
+        sar eax,cl
+        sub eax,FR(F_OY)
+        cmp eax,PV_W-1
+        jb .s6
+        jmp .nextl
+.s6:    mov K_BY,eax
+        imul eax,eax,PV_W
+        add eax,K_BX
+        lea eax,[eax+eax*2]
+        add ax,FR(F_O_WIN)
+        mov di,ax
+        mov M_CELL,eax
+        cmp byte [gs:di+1],PV_ABSENT
+        jne .s7
+        jmp .nextl
+.s7:    PEND 0
+        test byte [es:si+L_FLAGS],LF_HID
+        jz .noskip
+        mov eax,K_BY                    ; hidden: try skipping by the block's highest
+        shr eax,2
+        mov K_BY,eax
+        imul eax,eax,PV_BW
+        mov ecx,K_BX
+        shr ecx,2
+        mov K_BX,ecx
+        add eax,ecx
+        shl eax,1
+        add ax,FR(F_O_BWIN)
+        mov di,ax
+        movsx eax,word [gs:di]
+        mov K_HB,eax
+        movsx eax,word [es:si+L_STEP]
+        mov K_I,eax
+        PSTART 1
+        call skip
+        PEND 1
+        cmp eax,K_I
+        je .noskip
+        mov [es:si+L_STEP],ax
+        and byte [es:si+L_FLAGS],~(LF_POK|LF_PRECT)
+        jmp .step
+.noskip:
+        test byte [es:si+L_FLAGS],LF_PRECT   ; outside every slab grid's box (and the last step too): the fast path,
+        jnz .slow                       ; the ground's height, the point and the ray test here
+        mov eax,M_X
+        cmp eax,M_SBX0
+        jl .fast
+        cmp eax,M_SBX1
+        jge .fast
+        mov eax,M_Y
+        cmp eax,M_SBY0
+        jl .fast
+        cmp eax,M_SBY1
+        jl .slow
+.fast:  PSTART 2
+        mov di,M_CELL
+        mov cl,FR(F_SH)
+        sub cl,8
+        mov eax,M_X
+        sar eax,cl
+        and eax,255
+        mov M_FX,eax
+        mov edx,M_Y
+        sar edx,cl
+        and edx,255
+        mov M_FY,edx
+        movsx ecx,word [gs:di]          ; h0 = a + ((b - a) fx >> 8)
+        movsx edx,word [gs:di+3]
+        sub edx,ecx
+        imul edx,eax
+        sar edx,8
+        add ecx,edx
+        movsx edx,word [gs:di+PV_W*3]   ; h1 = c + ((d - c) fx >> 8)
+        movsx eax,word [gs:di+PV_W*3+3]
+        sub eax,edx
+        imul eax,M_FX
+        sar eax,8
+        add eax,edx
+        sub eax,ecx                     ; h = h0 + ((h1 - h0) fy >> 8)
+        imul eax,M_FY
+        sar eax,8
+        add eax,ecx
+        mov S_H_,eax
+        mov dword S_HAVE,0
+        mov dword S_SB,0
+        inc dword FR(F_SAMPLES)
+        mov edi,eax                     ; the point: a + (h c >> 28 + vsh), b + (h s >> ...)
+        imul dword [es:bx+S_C]
+        mov cl,M_PLACESH
+        shrd eax,edx,cl
+        add eax,[es:bx+S_A]
+        mov M_PA,eax
+        mov eax,edi
+        imul dword [es:bx+S_S]
+        shrd eax,edx,cl
+        add eax,[es:bx+S_B]
+        mov M_PB,eax
+        mov eax,M_PA                    ; above the horizon's ray: a ht - b hu > 0
+        imul dword [es:si+L_HT]
+        mov edi,eax
+        mov ecx,edx
+        mov eax,M_PB
+        imul dword [es:si+L_HU]
+        sub edi,eax
+        sbb ecx,edx
+        js .fhid
+        jnz .fseen
+        test edi,edi
+        jz .fhid
+.fseen: PEND 2
+        PSTART 3
+        call sample_seen
+        PEND 3
+        jmp .fadv
+.fhid:  PEND 2
+        mov al,[es:si+L_FLAGS]
+        or al,LF_HID
+        and al,~(LF_POK|LF_PSLAB)
+        mov [es:si+L_FLAGS],al
+.fadv:  inc word [es:si+L_STEP]
+        test word [es:si+L_STEP],15
+        jnz .fx1
+        test byte [es:si+L_FLAGS],LF_DONE
+        jnz .fx1
+        PSTART 5
+        call over
+        PEND 5
+        jnc .fx1
+        or byte [es:si+L_FLAGS],LF_DONE
+.fx1:   jmp .step
+.slow:  PSTART 6
+        mov dword M_INR,0               ; crossing a slab's grid: samples between the last step and this one
+        call in_slabs
+        jnc .ni
+        mov dword M_INR,1
+.ni:    cmp dword M_INR,0
+        jne .sub
+        test byte [es:si+L_FLAGS],LF_PRECT
+        jnz .sub
+        jmp .nosub
+.sub:   cmp word [es:si+L_STEP],0
+        jne .sub1
+        jmp .nosub
+.sub1:  mov ax,bx
+        sub ax,STEP_BYTES
+        mov M_A0OFF,eax
+        push bx
+        mov bx,ax
+        call pm
+        pop bx
+        jnc .sub2
+        jmp .nosub
+.sub2:  call plane                      ; ns: half slab cells between the two plane points, PV_SUBS at most
+        mov ecx,M_X
+        sub ecx,eax
+        mov eax,ecx
+        sar ecx,31
+        xor eax,ecx
+        sub eax,ecx
+        mov ecx,M_Y
+        sub ecx,edx
+        mov edx,ecx
+        sar ecx,31
+        xor edx,ecx
+        sub edx,ecx
+        add eax,edx
+        mov cl,FR(F_SLAB_SHIFT)
+        dec cl
+        sar eax,cl
+        cmp eax,PV_SUBS
+        jle .ns1
+        mov eax,PV_SUBS
+.ns1:   mov M_NS,eax
+        mov eax,M_X
+        mov M_PX,eax
+        mov eax,M_Y
+        mov M_PY,eax
+        mov dword M_J,1
+.sj:    mov eax,M_J
+        cmp eax,M_NS
+        jl .sj1
+        jmp .sdone
+.sj1:   test byte [es:si+L_FLAGS],LF_DONE
+        jz .sj2
+        jmp .sdone
+.sj2:   mov di,M_A0OFF                  ; the step between: each part weighed j / ns of the way
+%assign k 0
+%rep 6
+        mov eax,[es:bx+k]
+        sub eax,[es:di+k]
+        imul dword M_J
+        idiv dword M_NS
+        add eax,[es:di+k]
+        mov [bp+TSTEP+k],eax
+%assign k k+4
+%endrep
+        movsx eax,word [es:di+S_DS]
+        cdq
+        idiv dword M_NS
+        mov [bp+TSTEP+S_DS],ax
+        mov al,[es:bx+S_LEV]
+        mov [bp+TSTEP+S_LEV],al
+        push bx
+        mov ax,ss
+        mov fs,ax
+        lea bx,[bp+TSTEP]
+        call pm
+        jc .sbrk
+        call plane
+        mov M_X,eax
+        mov M_Y,edx
+        call ground
+        jc .sbrk
+        mov dword S_SB,0
+        call slab_at
+        jnc .sb0
+        mov dword S_SB,1
+.sb0:   inc dword FR(F_SUBS)
+        TO_SAMPLE
+        call sample
+        pop bx
+        push es
+        pop fs
+        inc dword M_J
+        jmp .sj
+.sbrk:  pop bx
+        push es
+        pop fs
+.sdone: mov eax,M_PX
+        mov M_X,eax
+        mov eax,M_PY
+        mov M_Y,eax
+        test byte [es:si+L_FLAGS],LF_DONE
+        jz .nosub
+        jmp .nextl
+.nosub: mov al,[es:si+L_FLAGS]
+        and al,~LF_PRECT
+        cmp dword M_INR,0
+        je .p0
+        or al,LF_PRECT
+.p0:    mov [es:si+L_FLAGS],al
+        call ground
+        mov dword S_SB,0
+        mov dword S_LO,0
+        mov dword S_HI,0
+        cmp dword M_INR,0
+        je .nsl
+        call slab_at
+        jnc .nsl
+        mov dword S_SB,1
+.nsl:   TO_SAMPLE
+        call sample
+        inc word [es:si+L_STEP]
+        test word [es:si+L_STEP],15
+        jnz .nx
+        test byte [es:si+L_FLAGS],LF_DONE
+        jnz .nx
+        call over
+        jnc .nx
+        or byte [es:si+L_FLAGS],LF_DONE
+.nx:    PEND 6
+        jmp .step
+.nextl: inc dword M_N
+        jmp .line
+.done:  lfs bx,[bp+6]
+        mov eax,FR(F_SAMPLES)
+        mov [fs:bx+F_SAMPLES],eax
+        mov eax,FR(F_SEEN)
+        mov [fs:bx+F_SEEN],eax
+        mov eax,FR(F_SKIPS)
+        mov [fs:bx+F_SKIPS],eax
+        mov eax,FR(F_SUBS)
+        mov [fs:bx+F_SUBS],eax
+        PV_LEAVE
+
+; ================================================================================================================
+; void rv_pv_far(PvFrame far *f): the lines past every level, over the plain sphere (c_pv_far)
+; ================================================================================================================
+        EXPORT(_rv_pv_far)
+_rv_pv_far:
+        PV_ENTER
+        mov al,FR(F_VSH)
+        add al,28
+        mov M_PLACESH,al
+        push es
+        pop fs
+        mov dword M_N,0
+.line:  mov eax,M_N
+        cmp ax,FR(F_NLINES)
+        jge .done
+        mov bx,LINE_BYTES
+        mul bx
+        add ax,FR(F_O_LN)
+        mov si,ax
+.step:  test byte [es:si+L_FLAGS],LF_DONE
+        jnz .nextl
+        mov ax,[es:si+L_STEP]
+        cmp ax,FR(F_NSTEPS)
+        jge .nextl
+        imul ax,ax,STEP_BYTES
+        add ax,FR(F_O_ST)
+        mov bx,ax
+        mov dword S_H_,0
+        movsx eax,word FR(F_FAR_C)
+        mov ecx,eax
+        sar eax,5
+        mov S_MAT_,eax
+        and ecx,31
+        shl ecx,8
+        mov S_LIGHT_,ecx
+        mov dword S_HAVE,1
+        mov dword S_SB,0
+        call sample
+        inc word [es:si+L_STEP]
+        test word [es:si+L_STEP],15
+        jnz .step
+        test byte [es:si+L_FLAGS],LF_DONE
+        jnz .step
+        call over
+        jnc .step
+        or byte [es:si+L_FLAGS],LF_DONE
+        jmp .step
+.nextl: inc dword M_N
+        jmp .line
+.done:  lfs bx,[bp+6]
+        mov eax,FR(F_SAMPLES)
+        mov [fs:bx+F_SAMPLES],eax
+        mov eax,FR(F_SEEN)
+        mov [fs:bx+F_SEEN],eax
+        PV_LEAVE
+
+march_end:
 
 ; ================================================================================================================
 ; void rv_pv_blit(const PvBlit far *b): the picture's pixels as 5 x 5 blocks over a band (c_pv_blit).  Its own range

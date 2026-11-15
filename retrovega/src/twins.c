@@ -1626,7 +1626,7 @@ static void tw_give(void LZ_FAR *p);
 #define TP_SW 15
 #define TP_SH 12
 #define TP_BUF (TP_O_SLAB + TP_SW * TP_SH * 4 + 16)
-#define TP_CODE 14336U                  /* (PVIEW.BIN's room) */
+#define TP_CODE 16384U                  /* (PVIEW.BIN's room) */
 #define TP_STATE ((unsigned)TP_O_SLAB)  /* what a march changes: the picture, the steps (not), the lines */
 #define TP_O_BWIN (PV_W * PV_W * PV_CELL + 2)   /* and the scratch buffer's: the window first */
 #define TP_O_FOGLEV (TP_O_BWIN + PV_BW * PV_BW * 2)
@@ -1925,8 +1925,8 @@ static void test_pview(void)
             }
             _fmemset(buf, 0x11, (unsigned)TW_ROWS * SCR_W);
 #ifdef __WATCOMC__
-            _fmemcpy(work + PV_BLIT_WORK, code + ((uint16_t LZ_FAR *)(code + 4))[8],
-                     ((uint16_t LZ_FAR *)(code + 4))[9] - ((uint16_t LZ_FAR *)(code + 4))[8]);
+            _fmemcpy(work + PV_BLIT_WORK, code + ((uint16_t LZ_FAR *)(code + 4))[12],
+                     ((uint16_t LZ_FAR *)(code + 4))[13] - ((uint16_t LZ_FAR *)(code + 4))[12]);
             pv_bind_blit(work + PV_BLIT_WORK);
 #endif
             bl.band = buf;

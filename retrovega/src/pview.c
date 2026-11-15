@@ -16,7 +16,8 @@
 #include <dos.h>
 #include <fcntl.h>
 #include "rv.h"
-#define PV_O_CODE PV_BUF_END            /* the band buffer's tail: the code (PVIEW.BIN), copied in for each frame */
+#define PV_O_CODE PV_BUF_END            /* the band buffer's tail: the march's code (PVIEW.BIN's), copied in for each
+                                           frame */
 #else
 #define _fmemcpy memcpy
 #define _fmemset memset
@@ -29,7 +30,7 @@ typedef unsigned long long u64;
 
 #define PV_DEN_MIN (1L << 26)           /* a direction with less than this along the plane's middle is past its levels */
 #define PV_NEAR_DS 192                  /* the least step, plane units (three quarters of level 0's cell) */
-#define PV_STEP_PX 2                    /* the step: about this many pixels' worth of the distance */
+#define PV_STEP_PX 3                    /* the step: about this many pixels' worth of the distance */
 #define PV_SUBS 16                      /* a step's samples at most where it crosses a slab's grid */
 
 /* the arrays' places: buf (64,000 bytes) and scr (32,768) */
@@ -47,6 +48,7 @@ typedef unsigned long long u64;
 #define PV_O_UNDER (PV_O_GLOW + PV_GLOW_CZ)
 #define PV_O_THIN (PV_O_UNDER + 64)
 #define PV_SCR_END (PV_O_THIN + 4 * PV_LW)
+#define PV_O_SETCODE (PV_O_WIN + 2048)  /* (DOS: the set-up's code, in the window's room past the haze's and glow's rows) */
 #ifndef __WATCOMC__
 typedef char pv_buf_fits[PV_BUF_END <= 64000L ? 1 : -1];
 typedef char pv_scr_fits[PV_SCR_END <= 32768L ? 1 : -1];
@@ -118,7 +120,7 @@ static struct {
 #ifdef __WATCOMC__
     XmsBlock code, pic, win[PV_LEVELS]; /* the code, the frame's picture, each level's window kept */
     XmsBlock most;                      /* (the last of them: freed when XMS gives back past it) */
-    uint16_t code_bytes, blit0, blit1;  /* (the code's: all of it; its blit's range) */
+    uint16_t code_bytes;
     int32_t wox[PV_LEVELS], woy[PV_LEVELS];
     uint8_t wok[PV_LEVELS];
     uint8_t made;                       /* a picture is in pic */
@@ -134,8 +136,9 @@ static void pv_get(uint32_t at, void PV_FAR *dst, uint32_t n)
 static PvFrame g_frame;
 #define g_f g_frame
 #else
-#define PV_O_FRAME (64000U - sizeof(PvFrame))   /* (DOS: the frame's record in the band buffer's tail, past the code) */
-#define g_f (*(PvFrame __far *)(vid_band_buffer() + PV_O_FRAME))
+#define PV_O_FRAME (32768U - sizeof(PvFrame))   /* (DOS: the frame's record in the scratch buffer's last bytes) */
+#define g_f (*(PvFrame __far *)(gfx_scratch() + PV_O_FRAME))
+typedef char pv_frame_fits[PV_O_FRAME >= PV_SCR_END ? 1 : -1];
 #endif
 
 #ifndef __WATCOMC__
@@ -145,7 +148,6 @@ static uint8_t g_win[PV_LEVELS][PV_WIN_BYTES];
 static int16_t g_bwin[PV_LEVELS][PV_BW * PV_BW];
 static int32_t g_wox[PV_LEVELS], g_woy[PV_LEVELS];
 static int g_wok[PV_LEVELS];
-static uint8_t g_foglev[PV_FOG_TAUS];
 static PvDither g_dither[PV_FOGS * 256], g_sky[PV_FOGS];
 #endif
 
@@ -157,52 +159,67 @@ typedef void (__far __cdecl *PvFnL)(PvFrame __far *, const PvQuarter __far *, co
 typedef int (__far __cdecl *PvFnS)(PvFrame __far *, const PvCam __far *, const PvHead __far *);
 typedef void (__far __cdecl *PvFnQ)(const PvFrame __far *, int, PvQuarter __far *, uint8_t __far *);
 typedef void (__far __cdecl *PvFnB)(const PvBlit __far *);
-static struct {
-    PvFnF steps, march, sphere, glow;
-    PvFnL lines;
-    PvFnS setup;
-    PvFnQ quarter;
-    PvFnB blit;
-} __far g_fn;
+typedef void (__far *PvFn)(void);
 
-/* the code's head: 'PVB1', its entries, its end, the blit's range (pview.asm) */
-#define PV_HEAD_BLIT0 10
-#define PV_HEAD_BLIT1 11
+/* the code's head: 'PVB2', its entries (steps, lines, march, far, glow, setup, quarter, blit), then its parts' ranges
+ * (the set-up's, the march's, the blit's) and its end (pview.asm) */
+#define PV_ENTRIES 8
+#define PV_SET0 8
+#define PV_SET1 9
+#define PV_MARCH0 10
+#define PV_MARCH1 11
+#define PV_BLIT0 12
+#define PV_BLIT1 13
 #define PV_BLIT_CODE 1024               /* the blit's code at most (it runs from the scratch buffer's tail) */
 
+static uint16_t __far g_head[PV_ENTRIES + 7];   /* (the code's head, kept) */
+static PvFn __far g_fn[PV_ENTRIES];     /* (its entries where they lie now, in the head's order) */
+
+/* a part of the code where it lies now: its entries bound (a part at `at` holds the code from its first byte) */
+static void pv_bind_part(const uint8_t __far *at, unsigned first, unsigned end)
+{
+    unsigned seg = FP_SEG(at), off = FP_OFF(at) - first;
+    int k;
+    for (k = 0; k < PV_ENTRIES; k++)
+        if (g_head[k] >= first && g_head[k] < end)
+            g_fn[k] = (PvFn)MK_FP(seg, off + g_head[k]);
+}
+
+/* the blit's part copied apart (the twins test: to its work's tail), bound there */
+void pv_bind_blit(const uint8_t __far *at)
+{
+    pv_bind_part(at, g_head[PV_BLIT0], g_head[PV_BLIT1]);
+}
+
+/* the whole code where it lies (the twins test: one copy), every entry bound */
 int pv_bind(const uint8_t __far *code)
 {
-    const uint16_t __far *h = (const uint16_t __far *)(code + 4);
-    unsigned seg = FP_SEG(code), off = FP_OFF(code);
-    if (code[0] != 'P' || code[1] != 'V' || code[2] != 'B' || code[3] != '1')
+    if (*(const uint32_t __far *)code != 0x32425650UL)   /* ('PVB2') */
         return -1;
-    g_fn.steps = (PvFnF)MK_FP(seg, off + h[0]);
-    g_fn.lines = (PvFnL)MK_FP(seg, off + h[1]);
-    g_fn.march = (PvFnF)MK_FP(seg, off + h[2]);
-    g_fn.sphere = (PvFnF)MK_FP(seg, off + h[3]);
-    g_fn.glow = (PvFnF)MK_FP(seg, off + h[4]);
-    g_fn.setup = (PvFnS)MK_FP(seg, off + h[5]);
-    g_fn.quarter = (PvFnQ)MK_FP(seg, off + h[6]);
+    _fmemcpy(g_head, code + 4, sizeof g_head);
+    pv_bind_part(code, 0, 0xFFFF);
     return 0;
 }
 
-/* the blit's code, copied apart (to the scratch buffer's tail: the band buffer is the band's) */
-void pv_bind_blit(const uint8_t __far *blit)
+/* a part of the code copied from XMS to `at`, and bound there */
+static void pv_put(uint8_t __far *at, int part)
 {
-    g_fn.blit = (PvFnB)blit;
+    unsigned first = g_head[part], end = g_head[part + 1];
+    xms_get(g_pv.code, first, at, end - first + 1UL);
+    pv_bind_part(at, first, end);
 }
 
-/* the code's sizes: all of it (the blob), the part run from the band buffer, the blit's place and size */
-static unsigned pv_head(const uint8_t __far *code, int k) { return ((const uint16_t __far *)(code + 4))[k - 2]; }
-
-void rv_pv_steps(PvFrame __far *f) { g_fn.steps(f); }
-void rv_pv_lines(PvFrame __far *f, const PvQuarter __far *q, const uint8_t __far *thin) { g_fn.lines(f, q, thin); }
-void rv_pv_march(PvFrame __far *f) { g_fn.march(f); }
-void rv_pv_far(PvFrame __far *f) { g_fn.sphere(f); }
-void rv_pv_glow(PvFrame __far *f) { g_fn.glow(f); }
-int rv_pv_setup(PvFrame __far *f, const PvCam __far *cam, const PvHead __far *h) { return g_fn.setup(f, cam, h); }
-void rv_pv_blit(const PvBlit __far *b) { g_fn.blit(b); }
-void rv_pv_quarter(const PvFrame __far *f, int which, PvQuarter __far *q, uint8_t __far *thin) { g_fn.quarter(f, which, q, thin); }
+void rv_pv_steps(PvFrame __far *f) { ((PvFnF)g_fn[0])(f); }
+void rv_pv_lines(PvFrame __far *f, const PvQuarter __far *q, const uint8_t __far *thin) { ((PvFnL)g_fn[1])(f, q, thin); }
+void rv_pv_march(PvFrame __far *f) { ((PvFnF)g_fn[2])(f); }
+void rv_pv_far(PvFrame __far *f) { ((PvFnF)g_fn[3])(f); }
+void rv_pv_glow(PvFrame __far *f) { ((PvFnF)g_fn[4])(f); }
+int rv_pv_setup(PvFrame __far *f, const PvCam __far *cam, const PvHead __far *h) { return ((PvFnS)g_fn[5])(f, cam, h); }
+void rv_pv_quarter(const PvFrame __far *f, int which, PvQuarter __far *q, uint8_t __far *thin)
+{
+    ((PvFnQ)g_fn[6])(f, which, q, thin);
+}
+void rv_pv_blit(const PvBlit __far *b) { ((PvFnB)g_fn[7])(b); }
 
 /* PVIEW.BIN read into dst (n bytes room): its size, or 0 */
 unsigned pv_code_read(uint8_t __far *dst, unsigned room)
@@ -238,14 +255,12 @@ static int pv_dos_begin(void)
     g_pv.most = 0;
     g_pv.made = 0;
     g_pv.code_bytes = pv_code_read(tmp, 32768U);
-    if (g_pv.code_bytes < 32 || pv_bind(tmp) < 0 || pv_head(tmp, PV_HEAD_BLIT0) > PV_O_FRAME - PV_O_CODE
-        || pv_head(tmp, PV_HEAD_BLIT1) - pv_head(tmp, PV_HEAD_BLIT0) > PV_BLIT_CODE
-        || pv_head(tmp, PV_HEAD_BLIT1) > g_pv.code_bytes) {
+    if (g_pv.code_bytes < 32 || pv_bind(tmp) < 0 || g_head[PV_SET1] - g_head[PV_SET0] > PV_WIN_BYTES - PV_O_SETCODE - 2
+        || g_head[PV_MARCH1] - g_head[PV_MARCH0] > 64000U - PV_O_CODE - 2
+        || g_head[PV_BLIT1] - g_head[PV_BLIT0] > PV_BLIT_CODE - 2 || g_head[PV_BLIT1] > g_pv.code_bytes) {
         RV_LOG("pview: no PVIEW.BIN fit to run (%u bytes)", g_pv.code_bytes);
         return -1;
     }
-    g_pv.blit0 = pv_head(tmp, PV_HEAD_BLIT0);
-    g_pv.blit1 = pv_head(tmp, PV_HEAD_BLIT1);
     g_pv.code = pv_take(g_pv.code_bytes + 2UL);
     g_pv.pic = pv_take((unsigned long)PV_LW * PV_LH * 2);
     for (l = 0; l < g_pv.h.nlev; l++) {
@@ -338,8 +353,7 @@ void pv_band(int y0, int y1, const short __far *ext, int ext_y0, int ext_rows)
     pv_get(g_pv.h.dither_at, scr + PV_B_DITHER, PV_FOGS * 256 * 3);
     pv_get(g_pv.h.glow_at + 4, scr + PV_B_DITHER + PV_FOGS * 256 * 3, PV_FOGS * 3);
     xms_get(g_pv.pic, (unsigned long)ly0 * PV_LW * 2, scr + PV_B_PIC, (unsigned long)(ly1 - ly0) * PV_LW * 2);
-    xms_get(g_pv.code, g_pv.blit0, scr + PV_B_CODE, g_pv.blit1 - g_pv.blit0 + 1UL);
-    pv_bind_blit(scr + PV_B_CODE);
+    pv_put(scr + PV_B_CODE, PV_BLIT0);
     b.band = vid_row(y0);
     b.ext = ext;
     b.pic = (const uint16_t __far *)(scr + PV_B_PIC);
@@ -358,7 +372,9 @@ void pv_band(int y0, int y1, const short __far *ext, int ext_y0, int ext_rows)
 int pv_begin(unsigned handle, uint32_t base, uint32_t at)
 {
     PvHead PV_FAR *h = &g_pv.h;
-    PvFog fg;
+    int32_t fg[3];                      /* (PvFog's h0, hstep, k: the rest is read each frame) */
+    uint8_t lv[256];
+    uint32_t j;
     int k;
     uint32_t n = 0;
     g_pv.on = 0;
@@ -378,13 +394,23 @@ int pv_begin(unsigned handle, uint32_t base, uint32_t at)
             n += sl.s[k].w * sl.s[k].h;
         if (n > PV_SLAB_MEM)
             return -1;
+        for (k = 0; k < 64; k++)
+            if (sl.under[k] >= PV_LIGHTS)
+                return -1;
     }
-    pv_get(h->fog_at, &fg, 12);         /* (its h0, hstep, k: the rest is read each frame) */
-    g_pv.fog_k = fg.k;
-    g_pv.fog_hstep = fg.hstep > 0 ? fg.hstep : 1;
+    /* the haze's levels under PV_FOGS and the undersides' light under PV_LIGHTS: pv_fill's sum of the two counts on
+     * it (neither half of it carries into the other) */
+    for (j = 0; j < PV_FOG_TAUS; j += sizeof lv) {
+        pv_get(h->fog_at + (uint32_t)sizeof(int32_t) * (3 + PV_FOG_GS) + j, lv, sizeof lv);
+        for (k = 0; k < (int)sizeof lv; k++)
+            if (lv[k] >= PV_FOGS)
+                return -1;
+    }
+    pv_get(h->fog_at, fg, 12);
+    g_pv.fog_k = fg[2];
+    g_pv.fog_hstep = fg[1] > 0 ? fg[1] : 1;
     pv_get(h->glow_at, &g_pv.glow_amax, 4);
 #ifndef __WATCOMC__
-    memcpy(g_foglev, fg.lev, sizeof g_foglev);
     pv_get(h->dither_at, g_dither, sizeof g_dither);
     pv_get(h->glow_at + 4, g_sky, sizeof g_sky);
     memset(g_wok, 0, sizeof g_wok);
@@ -641,7 +667,7 @@ static void pv_fill(const PvFrame PV_FAR *f, const PvLine PV_FAR *ln, int32_t i0
                     int32_t la, int32_t lb, int32_t fa, int32_t fb, int mat)
 {
     uint16_t PV_FAR *pic = (uint16_t PV_FAR *)(f->buf + f->o_pic);
-    int32_t span = rb - ra, t0, dt, l, dl, fo, df, col, row, i, base = (int32_t)mat * PV_LIGHTS;
+    int32_t span = rb - ra, t0, dt, l, fo, acc, dacc = 0, col, row, i, base = (int32_t)mat * PV_LIGHTS;
     CNT(0, 1);
     CNT(1, i1 - i0 + 1);
     if (span == 0) {
@@ -660,25 +686,23 @@ static void pv_fill(const PvFrame PV_FAR *f, const PvLine PV_FAR *ln, int32_t i0
             dt = i1 > i0 ? (65536 - t0) / (i1 - i0) : 0;
     }
     l = la * 256 + ((lb - la) * t0 >> 8) + 32768;
-    dl = (int32_t)(M64(lb - la, dt) >> 8);
     fo = fa * 256 + ((fb - fa) * t0 >> 8) + 32768;
-    df = (int32_t)(M64(fb - fa, dt) >> 8);
+    /* the light and the haze in one sum, 8.8 each, the haze's the high half: a pixel's light is its bits 8-15, its
+     * haze its bits 24-31.  Both stay in 0 .. 32 (pv_begin checked the tables; t within -7 .. 65543 / 65536), so
+     * neither half carries into the other, and no pixel needs holding to the ranges */
+    acc = (fo >> 8) * 65536 + (l >> 8);
+    if (i1 > i0)                        /* (one pixel: dt unused, and may be past what the sum holds) */
+        dacc = (int32_t)(M64(fb - fa, dt) >> 16) * 65536 + (int32_t)(M64(lb - la, dt) >> 16);
     row = ln->row + i0 * ln->drow;
     col = ln->col + i0 * ln->dcol;
-    for (i = i0; i <= i1; i++, row += ln->drow, col += ln->dcol, l += dl, fo += df) {
+    for (i = i0; i <= i1; i++, row += ln->drow, col += ln->dcol, acc += dacc) {
         int32_t x = (ln->flags & PV_L_VERT) ? col >> 16 : row, y = (ln->flags & PV_L_VERT) ? row : col >> 16;
         uint16_t PV_FAR *p;
         if ((uint32_t)x >= PV_LW || (uint32_t)y >= PV_LH)
             continue;
         p = &pic[y * PV_LW + x];
-        if (*p == PV_EMPTY) {
-            int32_t lv = l >> 16, fv = fo >> 16;
-            if (lv < 0) lv = 0;
-            if (lv > PV_LIGHTS - 1) lv = PV_LIGHTS - 1;
-            if (fv < 0) fv = 0;
-            if (fv > PV_FOGS - 1) fv = PV_FOGS - 1;
-            *p = (uint16_t)((base + lv) | fv << 8);
-        }
+        if (*p == PV_EMPTY)
+            *p = (uint16_t)((base + ((acc >> 8) & 255)) | (acc >> 24) << 8);
     }
 }
 
@@ -1437,8 +1461,9 @@ void pv_frame(const PvCam *cam)
         return;
     f->buf = vid_band_buffer();
     f->scr = gfx_scratch();
-    xms_get(g_pv.code, 0, f->buf + PV_O_CODE, g_pv.blit0 + 1UL);   /* (not the blit's part) */
-    pv_bind(f->buf + PV_O_CODE);
+    pv_put(f->buf + PV_O_CODE, PV_MARCH0);   /* the march's code in the band buffer's tail; the set-up's in the scratch */
+    pv_put(f->scr + PV_O_SETCODE, PV_SET0);   /* buffer's window room (its end: the haze's and the glow's rows are
+                                           fetched at its start), put back whenever the windows have had the room */
     g_pv.made = 0;
 #endif
     f->o_pic = PV_O_PIC;
@@ -1481,6 +1506,10 @@ void pv_frame(const PvCam *cam)
         PvQuarter q;
         uint8_t PV_FAR *thin = f->scr + PV_O_THIN;
         int l;
+#ifdef __WATCOMC__
+        if (k)
+            pv_put(f->scr + PV_O_SETCODE, PV_SET0);
+#endif
         pv_quarter(f, k, &q, thin);
         if (!q.on)
             continue;
@@ -1499,6 +1528,9 @@ void pv_frame(const PvCam *cam)
         pv_far(f);
         (void)l;
     }
+#ifdef __WATCOMC__
+    pv_put(f->scr + PV_O_SETCODE, PV_SET0);
+#endif
     pv_glow(f);
 #ifdef __WATCOMC__
     xms_put(g_pv.pic, 0, f->buf + f->o_pic, (unsigned long)PV_LW * PV_LH * 2);   /* (for the bands: pv_band) */

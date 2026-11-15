@@ -21,6 +21,7 @@
 #include "world.h"
 #include "planet.h"
 #include "bake.h"
+#include "cockpit.h"
 #include "pview.h"
 
 #define PL_LOAD 0xE740                  /* the card's planet calls (rvgx.cpp) */

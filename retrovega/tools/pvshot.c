@@ -8,6 +8,7 @@
  *     ONLY=nav1   the eyes whose names have this
  *     OPEN=x0,y0,x1,y1   the screen's part the ground is wanted in (the cockpit's opening)
  *     FOGDBG=1 SLABDBG=1   numbers
+ *     PVEYES=file   each eye's PvCam written there, and each picture's sum (RV.EXE's bench renders the same eyes)
  * OUTDIR/NN-eye-card.ppm and -pv.ppm; tools/pvsheet.py puts them side by side. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -133,6 +134,20 @@ static void shot(TrPlanet *p, const TrCam *c, const char *what)
     t0 = clock();
     g_p = p;
     pv_frame(&pc);
+    if (getenv("PVEYES")) {             /* (the eye for RV.EXE's bench, and the picture's sum: DOS's must be the same) */
+        static FILE *ef;
+        const uint16_t *pic = pv_picture();
+        uint32_t sum = 0;
+        int i;
+        if (!ef && !(ef = fopen(getenv("PVEYES"), "wb")))
+            exit(1);
+        fwrite(&pc, sizeof pc, 1, ef);
+        fflush(ef);
+        for (i = 0; i < PV_LW * PV_LH; i++)
+            sum = sum * 31 + pic[i];
+        printf("   pvsum %s %08X samples %lu seen %lu skips %lu\n", name, sum, (unsigned long)pv_frame_now()->samples,
+               (unsigned long)pv_frame_now()->seen, (unsigned long)pv_frame_now()->skips);
+    }
     pv_blit_host(g_fb, W, 0, H);
     save(name, "pv");
     printf("  pview %6u samples %5.1f ms\n", pv_frame_now()->samples, (clock() - t0) * 1000.0 / CLOCKS_PER_SEC);
