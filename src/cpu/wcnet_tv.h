@@ -74,6 +74,18 @@ Bit32u tv_data(int dataId);     // a tvsig::D_* address (0: none)
 // Key-script aids (wcnet_hooks.cpp): "!tv..." items; true when the item was one of ours.
 bool tv_script_item(const std::string &item, double t);
 
+// The pixels drawn natively (wcnet_tv_span.cpp): the twins of the game's span routines and its cockpit copy checked
+// against its code (codeDelta: linear - image for the code); at the polygon filler's call of a span routine (true:
+// drawn, the call to be stepped over); at the cockpit copy's entry (its place; true: made, returned from); the check
+// mode's return to the game's code after its own (WCNET_TV_SPANS=check: true if it was the one awaited).
+void tv_span_reset();
+bool tv_span_setup(Bit32u codeDelta);
+bool tv_span_checking();
+bool tv_span_call();
+Bit32u tv_native_entry_place();
+bool tv_native_entry();
+bool tv_span_returned(Bit32u eip);
+
 // The session (wcnet_tv_session.cpp).
 void tv_session_tick();
 void tv_session_frame();                            // the level loop's frame top

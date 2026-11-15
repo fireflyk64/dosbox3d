@@ -49,7 +49,7 @@ Bit32u g_hitSkip = 0;
 
 // The places watched (linear), by what they are.
 enum Place { P_FRAME, P_DRAW, P_UPDATE, P_HIT, P_FIRE, P_LEVEL, P_LEVEL_END, P_LAUNCH, P_LAUNCH_END, P_GENERATE, P_GENERATE_END,
-             P_REINFORCE, P_REINFORCE_END, P_REINFORCE_CAP, P_REINFORCE_CLOCK, P_COUNT };
+             P_REINFORCE, P_REINFORCE_END, P_REINFORCE_CAP, P_REINFORCE_CLOCK, P_SPAN, P_COCKPIT, P_COUNT };
 Bit32u g_campaignCall = 0;     // the campaign loop's call of the level function (its return address: + 5)
 Bit32u g_places[P_COUNT];
 
@@ -165,6 +165,13 @@ bool scan() {
     // the test's end, where a hit we answer "skip" goes on (counted, nothing applied): the same function's, as the
     // shareware has it, or none (every hit applied)
     g_hitSkip = place_of(A_HIT_END) - place_of(A_HIT_APPLY) == 0x2937F - 0x29327 ? place_of(A_HIT_END) : 0;
+    // the polygon filler's call of a span routine and the cockpit copy's entry, made natively where a twin is
+    // (wcnet_tv_span.cpp)
+    g_places[P_SPAN] = g_places[P_COCKPIT] = 0;
+    if (tv_span_setup(place_of(A_FIRE_FN) - kAnchors[A_FIRE_FN].image)) {
+        g_places[P_SPAN] = place_of(A_SPAN_CALL);
+        g_places[P_COCKPIT] = tv_native_entry_place();
+    }
     return true;
 }
 
@@ -180,6 +187,7 @@ void forget(const char *why) {
     wclog(1, "Terminal Velocity: %s", why);
     clear_calls();
     tv_session_shutdown();
+    tv_span_reset();
     set_watch(false);
     memset(g_places, 0, sizeof(g_places));
     g_armed = g_found = false;
@@ -411,6 +419,16 @@ void tv_check_hooks(Bit32u eip) {
     if (!g_found) {
         return;
     }
+    if (eip == g_places[P_SPAN]) {
+        // (first: some thousands a frame)
+        if (tv_span_call()) reg_eip = eip + 5;
+        return;
+    }
+    if (eip == g_places[P_COCKPIT]) {
+        tv_native_entry();
+        return;
+    }
+    tv_span_returned(eip);          // (the check: the game's own code back where the twin's ended)
     if (eip == g_places[P_FRAME]) {
         if (call_returned(eip)) {
             call_next(TV_AT_FRAME, eip);

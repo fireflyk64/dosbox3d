@@ -129,6 +129,48 @@ ships are 0x70-byte records from 0x113C00 (x y z, angles, their rates, alive at 
 by their rates (0x4CEC0) and drawn by 0x4E840 with the draw-list call.  The layer does not use the game's net mode
 (it turns off the level's goals and loads the net levels): it uses the same calls with the room's reports.
 
+### The pixels drawn natively (src/cpu/wcnet_tv_span.cpp)
+
+The user, 2026-11-14 (after the profile): "Please hook the textured pixel drawing loops and draw them in native code
+or wasm".  53-67% of a frame's emulated instructions were the game's span routines, 0x2FAB0 (the cockpit's picture
+doubled into the 640-wide frame) a fixed few percent more; they are now made by C++ twins (wasm in the browser):
+
+* The polygon filler (0x3E720) calls, for each scanline, `0x49707` (`jmp [0x7CF14]`: the routine the polygon's kind
+  set) with esi, edi its two edges (x 16.16 at +8, w at +0x10, u and v at +0x18 and +0x20, divided by w or not, by
+  the routine) and ebx the row.  The layer watches that call (`span_call`); the twin of the routine the pointer
+  names draws the scanline into the frame buffer (in conventional memory: the rows at 0x13990.., 640 bytes apart)
+  and the call is stepped over: the filler reloads every register after it but ebp, which the routines keep.
+* The twins (each the routine's transliteration: the same registers, branches, 32-bit wraps and carries, quirks
+  included -- the unrolled routines draw three pixels where four are left at the end of the loop):
+
+  | routine | twin | what it draws |
+  |---|---|---|
+  | 0x4732E, 0x44C97 (640 wide), 0x46552, 0x444FA | `persp<step, 64x64?, fog>` | perspective, a divide every 32 (16) pixels, a 64 x 64 or 256 x 256 texture, the depth fog's shade stepped (two formulas) through its table 0x944E8: the ground, the buildings |
+  | 0x42F18 | `affine_lit` | u/w, v/w divided at the span's ends only, one shade (0x7CF38) through the light table 0x934E8 |
+  | 0x480D4 | `affine_clear` | unlit, colour 0 not drawn; u and v stepped as one packed pair (add, adc, adc), read back from the stack's locals at odd offsets |
+  | 0x48693 | `zbuf_lit` | the craft: u, v stepped into a strip (0x68590), then each pixel nearer than the depth buffer's (rows 0x928E8) drawn lit, its depth kept |
+  | 0x49503 | `fill` | one colour, rep stos (as the routine counts its bytes) |
+  | 0x2FAB0 (an entry) | `cockpit_copy` | the cockpit's 320-wide picture (0xDDDF8, its runs at 0xE2DF8) into the frame, each byte a word; eax, ecx, edx left as it leaves them, then its ret |
+
+  Not twinned (the game's own still): 0x431BE, 0x436F2, 0x43F46, 0x458D4, 0x460F5, 0x46D98, 0x48379 (see-through
+  blended), 0x48A90, 0x49191, 0x4954A, 0x496BC: rare at the page's settings (the 10 s log counts them).
+* Each routine is compared whole with the shareware's (`kSpans` in wcnet_tv_sig.h: every byte but the relocated
+  operands, and each of those pointing where the shareware's layout puts its data, moved by one delta) before its
+  twin is used.  A twin gives the call back to the game's code, before writing anything, where it cannot be exact:
+  a divide the CPU would fault on, memory outside the game's RAM (conventional memory and extended memory from 1
+  MB), a span over 4096 pixels, a segment not flat, the direction flag set.
+* `WCNET_TV_SPANS`: unset or 1 the twins; 0 the game's own code; `check`: each twin runs first with its writes
+  journalled, the memory it declared (the span's row and 64 bytes either side, the depth buffer's row, the routines'
+  variables 0x68520-0x689A0, the cockpit's whole picture) is kept as the twin left it and put back, the game's code
+  runs, and at its return all of it and the registers are compared.  Measured, a dogfight at 640 x 240 and the best
+  detail: 2,819,588 calls of the nine (the cockpit's 3,800 frames among them), 0 differing in a byte or a register.
+  Every 10 s the log counts each twin's calls and pixels, the calls given back, the routines not twinned.
+* Measured natively, solo at 60,000 cycles, the page's settings (frames a game second): the level's start 21.3 ->
+  128.0, flying and fighting 39.5 -> 130.8 (the two flights part as the frame rates differ); two machines in co-op
+  (each flying, the guest on the host's wing): ~20 -> 86 (host) and 56 (guest).  What is left is spread out: the
+  filler and its edges (0x3E720, 0x3E510: ~16%), the terrain's height (0x3C7E0, ~11%: game logic, not drawing),
+  the vector math, the objects' loop.
+
 ## 4. The rigs
 
 * `scripts/web-tv.sh [seconds]`: two browser pages in a room of a local lobby server (the built page, the shareware's
@@ -141,9 +183,10 @@ by their rates (0x4CEC0) and drawn by 0x4E840 with the draw-list call.  The laye
   it on the screen).
 * `WCNET_TV_PROF=1`: where the game's time goes (the program's place sampled every ~1000 instructions, the busiest
   logged every 10 s, the whole count in `WCNET_DUMP_DIR/tvprof-<s>.txt`); `scripts/tvprof.py GAME.EXE DIR FROM TO`
-  groups it by function.  The 2026-11-14 profile (the worktree's `profile.md`): 53-67% of the game's instructions in
-  its textured-span loops (0x42EE0-0x49710), ~10% the terrain's points; the frame rate follows the cycles (37.6 fps
-  at 60,000, 82.2 at 120,000, flying straight); the browser keeps 60,000 at 100% of real time, 120,000 at ~53%.
+  groups it by function.  The 2026-11-14 profile (the worktree's `profile.md`), before the pixels were drawn
+  natively: 53-67% of the game's instructions in its textured-span loops (0x42EE0-0x49710), ~10% the polygon
+  filler; the frame rate follows the cycles (37.6 fps at 60,000, 82.2 at 120,000, flying straight); the browser keeps
+  60,000 at 100% of real time, 120,000 at ~53%.  Since: "The pixels drawn natively" above.
   `scripts/web-tv.sh` prints each page's speed; `CYCLES=` there, `DETAIL=low` in tvrun.sh for the shareware's own
   Graphics Options.
 * Key-script aids: `!tvpos` (the player), `!tvobjs[=range]` (the objects within that many world units: class, name,

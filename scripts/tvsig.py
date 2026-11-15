@@ -48,6 +48,23 @@ ANCHORS = [
     ('reinforce_end', 0x241CA, -0x19, 0x27, "the reinforcements' end: a craft made by then"),
     ('load_model_fn', 0x402E0, 0, 48, "a model loaded from the game's files, by name: its handle (a name it cannot find ends the program)"),
     ('campaign', 0x2EC58, 0, 40, "the campaign loop: the level index, the count, the level's file name, the level flown"),
+    ('span_call', 0x3E85D, -9, 0x30, "the polygon filler's call of a scanline's span routine (through the pointer the polygon's kind set): esi, edi its two edges, ebx the row"),
+]
+
+# The span routines drawn natively (src/cpu/wcnet_tv_span.cpp): name, image start, image end, what it is.  Each is
+# compared whole (every byte but the relocated operands) before its twin is used: a build whose routine differs at
+# all keeps the game's own.  'dispatch' is the jump through the routine pointer (its operand: the pointer's address).
+SPANS = [
+    ('dispatch', 0x49707, 0x4970D, "the span call's jump through the routine pointer"),
+    ('persp32_t64_fogA', 0x4732E, 0x480D4, "perspective, a divide every 32 pixels, a 64x64 texture, the depth fog (w*4)"),
+    ('persp32_t256_fogB', 0x44C97, 0x458D4, "perspective, a divide every 32 pixels, a 256x256 texture, the depth fog (w/8)"),
+    ('persp16_t64_fogA', 0x46552, 0x46D98, "perspective, a divide every 16 pixels, a 64x64 texture, the depth fog (w*4)"),
+    ('persp16_t256_fogB', 0x444FA, 0x44C97, "perspective, a divide every 16 pixels, a 256x256 texture, the depth fog (w/8)"),
+    ('affine_lit', 0x42F18, 0x431BE, "u/w and v/w divided at the span's ends only, stepped between, one shade (the light table) for the span"),
+    ('affine_clear', 0x480D4, 0x48379, "as affine_lit unlit, colour 0 not drawn (see-through), u and v stepped in a packed pair (add, adc)"),
+    ('zbuf_lit', 0x48693, 0x48A90, "u and v stepped (no divide) into a strip, then each pixel nearer than the depth buffer's drawn lit and its depth kept"),
+    ('fill', 0x49503, 0x4954A, "one colour (rep stos)"),
+    ('cockpit_copy', 0x2FAB0, 0x2FB17, "the cockpit's 320-wide picture into the 640-wide frame, each byte doubled, by its rows' runs (an entry: its caller's call made natively)"),
 ]
 
 # name, anchor, offset of the operand from the anchor's place, what the address is
@@ -195,6 +212,39 @@ def main():
         a = [r for r in rows if r[0] == anchor][0]
         val = struct.unpack_from('<I', img, a[1] + off)[0]
         w('    { "%s", A_%s, %d, 0x%X },' % (name, anchor.upper(), off - a[2], val))
+    w('};')
+    # the span routines, whole: bytes, mask (0 a relocated byte), and each relocated operand's offset and image value
+    w('struct Span { const char *name; Bit32u image; int len; const Bit8u *bytes; const Bit8u *mask; int nrel; const Bit32u *rel; };')
+    w('enum SpanId {')
+    for i, (name, a, b, what) in enumerate(SPANS):
+        w('    S_%s = %d,     // %s' % (name.upper(), i, what))
+    w('    S_COUNT = %d' % len(SPANS))
+    w('};')
+    nrels = {}
+    for name, a, b, what in SPANS:
+        data = bytes(img[a:b])
+        mask = bytes(0 if a + i in le.fixed else 1 for i in range(b - a))
+        rel = []
+        i = 0
+        while i < b - a:
+            if not mask[i]:
+                if i + 4 > b - a or any(mask[i:i + 4]):
+                    sys.stderr.write('span %s: a relocated field at +%d is not 4 bytes\n' % (name, i))
+                    sys.exit(1)
+                rel += [i, struct.unpack_from('<I', img, a + i)[0]]
+                i += 4
+            else:
+                i += 1
+        if name != 'dispatch' and data[-1] != 0xC3:
+            sys.stderr.write('span %s: does not end with its ret\n' % name)
+            sys.exit(1)
+        nrels[name] = len(rel) // 2
+        w('static const Bit8u k_span_%s_bytes[%d] = { %s };' % (name, len(data), ', '.join('0x%02x' % x for x in data)))
+        w('static const Bit8u k_span_%s_mask[%d] = { %s };' % (name, len(mask), ', '.join('%d' % x for x in mask)))
+        w('static const Bit32u k_span_%s_rel[%d] = { %s };' % (name, max(1, len(rel)), ', '.join('0x%X' % x for x in rel) or '0'))
+    w('static const Span kSpans[S_COUNT] = {')
+    for name, a, b, what in SPANS:
+        w('    { "%s", 0x%X, %d, k_span_%s_bytes, k_span_%s_mask, %d, k_span_%s_rel },' % (name, a, b - a, name, name, nrels[name], name))
     w('};')
     w('} }  // namespace wc::tvsig')
     w('#endif')
