@@ -150,10 +150,18 @@ doubled into the 640-wide frame) a fixed few percent more; they are now made by 
   | 0x480D4 | `affine_clear` | unlit, colour 0 not drawn; u and v stepped as one packed pair (add, adc, adc), read back from the stack's locals at odd offsets |
   | 0x48693 | `zbuf_lit` | the craft: u, v stepped into a strip (0x68590), then each pixel nearer than the depth buffer's (rows 0x928E8) drawn lit, its depth kept |
   | 0x49503 | `fill` | one colour, rep stos (as the routine counts its bytes) |
+  | 0x42F13 | `none` | nothing (push, pop, ret) |
   | 0x2FAB0 (an entry) | `cockpit_copy` | the cockpit's 320-wide picture (0xDDDF8, its runs at 0xE2DF8) into the frame, each byte a word; eax, ecx, edx left as it leaves them, then its ret |
+  | 0x3E720 (an entry; with 0x3E510, 0x3E6E0) | `poly` | the polygon filler (vertices, count): the vertices not yet projected projected (x 0x18, y 0x1C = k x / z + the centre: 0x7CF30.., the divides tried first), the edges into the 16-slot table at 0x104DA8 (0x3E510: one's-complement 16.16 divides by the rows' distance, the whole part at most 0x7FFF, stepped on to the first row's centre; the top and bottom rows and the counters at 0x105028..), then row by row the two edges at it (0x3E6E0: an edge past its bottom replaced by the next starting there), the row's span drawn by its routine's twin (called directly: no hook a row), the edges stepped; eax 0, ecx and edx the edge count, the flags of its `add esp, 8` |
+  | 0x3C7E0 (an entry) | `height` | the terrain's height under (x, z) for its 48 callers (game logic: the craft, the shots, the ground's collisions): the cell's four heights from the 256 x 256 map ([0x104DA0]) << 15, interpolated on the half of the cell its diagonal cuts (the diagonal by the cell's parities: four cases); eax the height, ecx and edx as it leaves them, the flags of its `add esp, 0xc` |
 
   Not twinned (the game's own still): 0x431BE, 0x436F2, 0x43F46, 0x458D4, 0x460F5, 0x46D98, 0x48379 (see-through
   blended), 0x48A90, 0x49191, 0x4954A, 0x496BC: rare at the page's settings (the 10 s log counts them).
+* The filler's polygon is the game's own when its span routine has no twin, it has more than 16 vertices, or a
+  projection's divide would fault (all tried before anything is written).  A span twin that gives back at a row hands
+  the polygon to the game's code there: the filler's frame made as its code has it at its span call (ebx, esi, edi,
+  ebp pushed, the row and the first edge its locals; esi the first edge, edi and ebp the second, ebx the row), the
+  CPU sent to the call (0x3E85D); the game's span routine draws the row and its filler goes on.
 * Each routine is compared whole with the shareware's (`kSpans` in wcnet_tv_sig.h: every byte but the relocated
   operands, and each of those pointing where the shareware's layout puts its data, moved by one delta) before its
   twin is used.  A twin gives the call back to the game's code, before writing anything, where it cannot be exact:
@@ -162,11 +170,16 @@ doubled into the 640-wide frame) a fixed few percent more; they are now made by 
 * `WCNET_TV_SPANS`: unset or 1 the twins; 0 the game's own code; `check`: each twin runs first, as it runs in play,
   the memory it declared (the span's row, the depth buffer's row, the routines' variables 0x68520-0x689A0, the
   cockpit's whole picture), widened by 64 bytes either side, is kept as the twin left it and put back as it was, the
-  game's code runs, and at its return all of it and the registers are compared.  Measured, dogfights at 640 x 240
-  and the best detail: 2,819,588 and 2,087,754 calls of the nine (thousands of the cockpit's frames among them), at
-  320 x 200 771,856: 0 differing in a byte or a register.  Every 10 s the log counts each twin's calls and pixels,
-  the calls given back, the routines not twinned.
-* In the browser these places (the span call, the cockpit copy, the cap's idle below) are made in the CPU core
+  game's code runs, and at its return all of it and the registers are compared (the entries' flags too).  For a
+  polygon the memory kept is its vertices, the edge table and the filler's counters, the routines' variables, and
+  its rows of the frame buffer (and of the depth buffer for the craft's spans) once its edges give them.  Measured,
+  dogfights at 640 x 240 and the best detail: 2,819,588 and 2,087,754 calls of the first nine, 1,030,129 with the
+  filler and the height (thousands of polygons, hundreds of thousands of heights a 10 s), at 320 x 200 771,856: 0
+  differing in a byte, a register or a flag.  `WCNET_TV_RESUME_TEST=1` with the check tests the hand-over: the
+  twin's whole polygon kept as what the game's code must end with, put back, the twin again handing over after 1-3
+  rows, the game's code finishing it: 131,247 polygons handed over, 0 differed.  Every 10 s the log counts each
+  twin's calls and pixels, the polygons and their spans, the calls given back, the routines not twinned.
+* In the browser these places (the span call, the entries, the cap's idle below) are made in the CPU core
   itself, as natively (`wc_net_hook_exit` takes `tv_fast_hook` first): they wait on nothing, and going out to the main
   loop for each of some 2,000 spans a frame cost the page 10-15% of its time.
 * The frame cap (`WCNET_TV_FPS`, default 60 frames a game second, 0 none): with its pixels native the game made 85
@@ -182,9 +195,12 @@ doubled into the 640-wide frame) a fixed few percent more; they are now made by 
   game can (dips to ~40 in the busiest fighting), ~450 ms of each second idle.
 * Two browser pages on this 5-core machine (scripts/web-tv.sh, the same build; percent of real time, frames a wall
   second): the game's own drawing 100%, 21.1 and 27.8; the twins at 60,000 cycles with the cap 98% and 97%, 55.8 and
-  54.7; at 55,000 cycles 100%, 53.8 and 55.1 -- the page's setting since.  What is left is spread out: the
-  filler and its edges (0x3E720, 0x3E510: ~16%), the terrain's height (0x3C7E0, ~11%: game logic, not drawing),
-  the vector math, the objects' loop.
+  54.7; at 55,000 cycles 100%, 53.8 and 55.1 -- the page's setting since.
+* The filler and the height natively too (the user: "can we fix polygon edge stepping and terrain height lookup to
+  also be hooked?"; they were ~16% and ~11% of what was left): natively at 60,000 cycles, uncapped, the level's start
+  128 -> 150 frames a game second, flying and fighting 131 -> 160; two browser pages at 55,000 cycles 100% and 99%,
+  57.4 and 57.0 frames a wall second (53.8 and 55.1 before).  What is left is game logic, spread out: the vector
+  math (0x1D060, ~9%), the objects' visibility and loop (0x1E4E0, 0x241E0, 0x29390), none past 9%.
 
 ## 4. The rigs
 
