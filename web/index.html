@@ -147,19 +147,18 @@
   #hallHint.warn { color: var(--amber); }
 
   /* the room */
-  #setup { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: flex-end; }
-  #setup label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; }
-  #pilotBar { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: flex-end; margin: 0 0 10px; padding: 6px 12px; border: 1px solid var(--line2); background: #06110c; }
-  #pilotBar label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; }
-  #pilotBar input { width: 150px; }
+  #setup { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+  /* (each box's name on its left, in one or two small lines: the room's settings on one row) */
+  #setup label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  #setup .tag, #pilotBar .tag { display: flex; flex-direction: column; color: var(--muted); font-size: 8.5px; line-height: 1.15; letter-spacing: .12em; text-transform: uppercase; }
+  /* (one box high: each box's name on its left in two small lines) */
+  #pilotBar { display: flex; flex-wrap: wrap; gap: 3px 16px; align-items: center; margin: 0 0 8px; padding: 3px 10px; border: 1px solid var(--line2); background: #06110c; }
+  #pilotBar label { display: flex; align-items: center; gap: 6px; }
+  #pilotBar input { width: 140px; height: 24px; }
   #pilotBar input::placeholder { color: #8fc9a6; }
-  #pilotBar .lead { align-self: center; color: var(--muted); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; }
-  #pilotBar .short { display: none; }
-  /* (a phone in portrait: one row, the short words, sideways if it must; no height spent on a second line) */
+  /* (a phone in portrait: still one row, sideways if it must; no height spent on a second line) */
   @media (max-width: 600px) {
-    #pilotBar { flex-wrap: nowrap; overflow-x: auto; gap: 6px; padding: 5px 8px; }
-    #pilotBar .long { display: none; }
-    #pilotBar .short { display: inline; }
+    #pilotBar { flex-wrap: nowrap; overflow-x: auto; gap: 10px; padding: 3px 6px; }
     #pilotBar input { width: 96px; }
   }
   #room { width: 12ch; }
@@ -257,10 +256,9 @@
   </header>
 
   <div id="pilotBar" title="Your name in the lobby and the rooms, and in the games that show one: the one given here until you type your own">
-    <span class="lead"><span class="long">(optional)</span><span class="short">Optional</span></span>
-    <label>Callsign <input type="text" id="callsign" placeholder="Maverick"></label>
-    <label id="firstnameLabel" title="The games that use a first name (Wing Commander II) take this one; the others leave it"><span class="long">Pilot chosen name</span><span class="short">Chosen</span> <input type="text" id="firstname" placeholder="Christopher" maxlength="12"></label>
-    <label title="The games that use a surname take this one"><span class="long">Pilot surname</span><span class="short">Surname</span> <input type="text" id="lastname" placeholder="Blair"></label>
+    <label><span class="tag"><span>Callsign</span><span>(optional)</span></span><input type="text" id="callsign" placeholder="Maverick"></label>
+    <label id="firstnameLabel" title="The games that use a first name (Wing Commander II) take this one; the others leave it"><span class="tag"><span>Chosen</span><span>name</span></span><input type="text" id="firstname" placeholder="Christopher" maxlength="12"></label>
+    <label title="The games that use a surname take this one"><span class="tag"><span>Pilot</span><span>surname</span></span><input type="text" id="lastname" placeholder="Blair"></label>
   </div>
 
   <div id="deck">
@@ -286,7 +284,7 @@
         <button type="button" class="secondary" id="demoRap" title="Raptor: Call of the Shadows, episode 1 (the shareware 1.2 by Cygnus Studios, released by Apogee): fetched from this site and kept in this browser, then an open Raptor room in the lobby joined, or one opened and offered there. Two pilots fly the waves together">Raptor</button>
         <button type="button" class="secondary" id="demoTv" title="Terminal Velocity, episode 1 (the shareware 1.2 by Terminal Reality, published by 3D Realms / Apogee): fetched from this site and kept in this browser, then an open room in the lobby joined, or one opened and offered there. Fly its levels together">Terminal Velocity</button>
         <button type="button" class="secondary" id="demoTfd" title="The TIE Fighter demo of early 1994 (LucasArts; the one given away with the Dodge Neon): its two floppies fetched from the Internet Archive once and kept in this browser, then an open room in the lobby joined, or one opened and offered there. Up to three pilots fly its mission and three more together">TIE Fighter demo</button>
-        <p class="hint">Each button joins an open room for its game in the lobby, or opens one and offers it there (<b>Fly Alone</b> if nobody comes).
+        <p class="hint">Each button joins an open room for its game in the lobby, or opens one and offers it there.
           Exact shareware files (<a href="demos/1rap12.zip">1rap12.zip</a>, <a href="demos/3dtv12.zip">3dtv12.zip</a>).
           Full games: <a href="https://store.steampowered.com/app/358360/" target="_blank" rel="noopener">Raptor, 1994 Classic Edition</a> (Steam: right-click it in your library, <b>Manage &rsaquo; Browse local files</b>, zip the folder; drop the zip on the box above).
           <a href="https://www.gog.com/en/game/terminal_velocity_boosted_edition" target="_blank" rel="noopener">Terminal Velocity</a> (GOG: in the Boosted Edition go to "Terminal Velocity Legacy": drop its installer, <b>setup_terminal_velocity_1.2_&hellip;.exe</b>).
@@ -325,12 +323,12 @@
         </div>
       </div>
       <form id="setup">
-        <label title="A code of the page's own making starts with the game it is for (WC1, WC2, SM2, SO1, SO2, SO3)">Room code <input type="text" id="room" placeholder="WC1-4821" pattern="[A-Za-z0-9_\-]{4,64}" required></label>
-        <label id="seatsLabel" title="The seats of a room you make: 2; 3 (in beta) for a third pilot; 1 to fly the game alone, as it is, with its own wingman, its own menus and its saved games (only the controller is the page's; no lobby server, nobody else comes in), what a phone or a tablet starts at. Not remembered">Players <span class="boxrow"><input type="number" id="seats" min="1" max="3" step="1" value="2"><small class="beta" id="seatsBeta" hidden>beta</small></span></label>
-        <label>Controller <select id="padSelect"><option value="none">Keyboard + mouse</option></select></label>
+        <label title="A code of the page's own making starts with the game it is for (WC1, WC2, SM2, SO1, SO2, SO3)"><span class="tag"><span>Room</span><span>code</span></span><input type="text" id="room" placeholder="WC1-4821" pattern="[A-Za-z0-9_\-]{4,64}" required></label>
+        <label id="seatsLabel" title="The seats of a room you make: 2; 3 (in beta) for a third pilot; 1 to fly the game alone, as it is, with its own wingman, its own menus and its saved games (only the controller is the page's; no lobby server, nobody else comes in), what a phone or a tablet starts at. Not remembered"><span class="tag">Players</span><span class="boxrow"><input type="number" id="seats" min="1" max="3" step="1" value="2"><small class="beta" id="seatsBeta" hidden>beta</small></span></label>
+        <label><span class="tag">Controller</span><select id="padSelect"><option value="none">Keyboard + mouse</option></select></label>
         <button type="button" class="secondary" id="padScan" hidden title="For a controller that is not in the list after a press of its buttons: an Xbox 360-style pad (such as a Logitech F310 or F710 with its switch on X), which this browser cannot see on a Mac. The page reads it itself over USB; the browser asks which device first">Scan for joysticks</button>
         <span id="padScanState" role="status"></span>
-        <label id="tfFlightLabel" hidden title="TIE Fighter's flight: the arrow keys always steer (Shift for a full turn at once; the keypad's Ins and Del roll). The mouse either points to aim, as in Wing Commander and RetroVega (the middle is still, the further the pointer the faster the turn; a ring shows where it is; the craft turns and climbs without banking, the right button held with the mouse moved across rolls; or with the game's own bank into each turn), or drags to steer as the game itself has it (1994), or steers nothing (the keyboard alone, or a joystick: a controller picked above). F12 in flight switches between the first four. Remembered in this browser">Flight
+        <label id="tfFlightLabel" hidden title="TIE Fighter's flight: the arrow keys always steer (Shift for a full turn at once; the keypad's Ins and Del roll). The mouse either points to aim, as in Wing Commander and RetroVega (the middle is still, the further the pointer the faster the turn; a ring shows where it is; the craft turns and climbs without banking, the right button held with the mouse moved across rolls; or with the game's own bank into each turn), or drags to steer as the game itself has it (1994), or steers nothing (the keyboard alone, or a joystick: a controller picked above). F12 in flight switches between the first four. Remembered in this browser"><span class="tag">Flight</span>
           <select id="tfFlight">
             <option value="pointer">mouse: point to aim (right button: roll)</option>
             <option value="pointerbank">mouse: point to aim, banking</option>
@@ -338,13 +336,13 @@
             <option value="keyboard">keyboard alone</option>
             <option value="joystick">joystick / gamepad</option>
           </select></label>
-        <label id="voiceLabel" title="Voice between the players, when everybody in the room has opted in">Voice <select id="voice">
+        <label id="voiceLabel" title="Voice between the players, when everybody in the room has opted in"><span class="tag">Voice</span><select id="voice">
           <option value="off">Off</option>
           <option value="listen">Listen only</option>
           <option value="ptt">Push to talk (hold `)</option>
           <option value="on">Always on</option>
         </select></label>
-        <label id="voiceInputLabel">Microphone <select id="voiceInput" title="Choose the microphone used for voice; turn voice on to allow access and see device names">
+        <label id="voiceInputLabel"><span class="tag">Microphone</span><select id="voiceInput" title="Choose the microphone used for voice; turn voice on to allow access and see device names">
           <option value="">System default</option>
         </select></label>
       </form>
