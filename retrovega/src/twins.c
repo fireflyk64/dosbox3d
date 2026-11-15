@@ -19,6 +19,7 @@
 #include "rv.h"
 #include "rvtypes.h"
 #include "twins.h"
+#include "bake.h"
 
 /* a long of two words, as the asm returns one in dx:ax */
 static long pair(int lo, int hi)
@@ -1434,6 +1435,184 @@ static void test_rocks(void)
     xms_free_level(XMS_MISSION);
 }
 
+/* --- the baked ground's sums (bake.asm) --- */
+
+static uint32_t tw_bits(void)           /* (a statement a draw: the order is the same for every compiler) */
+{
+    uint32_t v = (uint32_t)tw_rnd() << 17;
+    v ^= (uint32_t)tw_rnd() << 6;
+    v ^= (uint32_t)tw_rnd();
+    return v;
+}
+
+static int32_t tw_long(void)            /* any 32 bits but the one with no negative */
+{
+    uint32_t v = tw_bits();
+    return v == UINT32_C(0x80000000) ? 1 : (int32_t)v;
+}
+
+static int32_t tw_upto(int32_t most)    /* -most .. most */
+{
+    return (int32_t)(tw_bits() % ((uint32_t)most * 2 + 1)) - most;
+}
+
+#define TB_N 16                         /* the made-up planet's grid, cells a side */
+#define TB_RADIUS INT32_C(600000)
+static void test_bake(void)
+{
+    static const char LZ_FAR n_col[] = "bk_column", LZ_FAR n_md[] = "bk_muldiv", LZ_FAR n_no[] = "no bake";
+    /* three patches: their middles and two ways (2^30 = 1), their cells along each way, a cell's side, cosmin, slabs */
+    static const int32_t LZ_FAR pv[3][9] = {
+        { 0, 0, INT32_C(1073741824), INT32_C(1073741824), 0, 0, 0, INT32_C(1073741824), 0 },
+        { INT32_C(644245094), 0, INT32_C(858993459), INT32_C(858993459), 0, INT32_C(-644245094), 0, INT32_C(1073741824), 0 },
+        { 0, INT32_C(-1073741824), 0, INT32_C(1073741824), 0, 0, 0, 0, INT32_C(1073741824) } };
+    static const int16_t LZ_FAR pn[3][5] = { { 20, 12, 1000, 16000, 0 }, { 7, 30, 2500, 14000, 1 }, { 1, 1, 30000, -200, 1 } };
+    BkHead LZ_FAR *h = (BkHead LZ_FAR *)g_mem;
+    BkPatch LZ_FAR *bp;
+    uint32_t at, size;
+    unsigned handle;
+    unsigned long off;
+    XmsBlock blk;
+    long i;
+    int k, j;
+    /* the file, made in memory: the head, six faces of cells (any heights), the patches' records, their points */
+    _fmemset(g_mem, 0, MEM_BYTES);
+    h->magic[0] = 'R', h->magic[1] = 'V', h->magic[2] = 'P', h->magic[3] = 'L';
+    h->version = BK_VERSION;
+    h->n = TB_N;
+    h->radius = TB_RADIUS;
+    h->npatch = 3;
+    h->nmips = BK_MIPS;
+    at = sizeof(BkHead);
+    h->grid_at = at;
+    for (i = 0; i < 6L * (TB_N + 2) * (TB_N + 2); i++, at += BK_CELL) {
+        int v = tw_in(-3000, 3000);
+        g_mem[at] = (unsigned char)(v & 255);
+        g_mem[at + 1] = (unsigned char)((unsigned)v >> 8);
+        g_mem[at + 2] = (unsigned char)tw_in(0, 255);
+    }
+    h->patch_at = at;
+    bp = (BkPatch LZ_FAR *)(g_mem + at);
+    at += 3 * sizeof(BkPatch);
+    for (k = 0; k < 3; k++) {
+        long points = (long)(pn[k][0] + 1) * (pn[k][1] + 1);
+        for (j = 0; j < 3; j++) {
+            bp[k].c[j] = pv[k][j];
+            bp[k].a[j] = pv[k][3 + j];
+            bp[k].b[j] = pv[k][6 + j];
+        }
+        bp[k].na = (uint16_t)pn[k][0];
+        bp[k].nb = (uint16_t)pn[k][1];
+        bp[k].cell = pn[k][2];
+        bp[k].half_a = (int32_t)pn[k][0] * pn[k][2] / 2 + (k == 1 ? 700 : 0);   /* (the second a little past its
+                                                                                   cells: the last one's far edge) */
+        bp[k].half_b = (int32_t)pn[k][1] * pn[k][2] / 2 + (k == 1 ? 700 : 0);
+        bp[k].cosmin = pn[k][3];
+        bp[k].slabs = (uint16_t)pn[k][4];
+        bp[k].at = at;
+        for (i = 0; i < points; i++, at += BK_CELL) {
+            int v = tw_in(-2000, 4000);
+            g_mem[at] = (unsigned char)(v & 255);
+            g_mem[at + 1] = (unsigned char)((unsigned)v >> 8);
+            g_mem[at + 2] = (unsigned char)tw_in(0, 255);
+        }
+        bp[k].slab_at = at;
+        if (pn[k][4])
+            for (i = 0; i < points; i++, at += BK_SLAB) {   /* (one in four with none: lo not under hi) */
+                int lo = tw_in(-1000, 5000), hi = tw_in(0, 3) ? lo + tw_in(1, 900) : lo - tw_in(0, 50);
+                g_mem[at] = (unsigned char)(lo & 255);
+                g_mem[at + 1] = (unsigned char)((unsigned)lo >> 8);
+                g_mem[at + 2] = (unsigned char)(hi & 255);
+                g_mem[at + 3] = (unsigned char)((unsigned)hi >> 8);
+            }
+    }
+    size = (at + 1) & ~UINT32_C(1);
+    h->size = size;
+    blk = xms_alloc(size + 2, XMS_MISSION);
+    if (!blk || size > MEM_BYTES) {
+        rv_logf(g_tw_xms);
+        g_tw_bad = 1;
+        return;
+    }
+    xms_put(blk, 0, g_mem, size);
+    xms_where(blk, &handle, &off);
+    g_sum = 0;
+    if (bk_begin(handle, (uint32_t)off) < 0) {
+        tw_differ(n_no, 0, 0, 0, 0, 0);
+        xms_free_level(XMS_MISSION);
+        return;
+    }
+    for (i = 0; i < 6000; i++) {
+        int32_t p[3];
+        BkColumn cc, ca;
+        int kind = (int)(i % 8);
+        if (i == 5000)
+            bk_end();                   /* (the last thousand with no planet: the radius alone) */
+        if (kind < 3) {                 /* over a patch, past its edges too, 0.4 to 2.2 radii out */
+            int32_t r = TB_RADIUS * 2 / 5 + tw_upto(INT32_C(540000)) + INT32_C(540000);
+            int32_t u = tw_upto(bp[kind].half_a * 2), v = tw_upto(bp[kind].half_b * 2);
+            if (!tw_in(0, 9)) {         /* (and on an edge, less or more a position, or in the last cell's far end) */
+                int onb = tw_in(0, 1);
+                int32_t e = onb ? bp[kind].half_b : bp[kind].half_a;
+                if (tw_in(0, 1))
+                    e -= tw_in(0, 700);
+                e = c_bk_muldiv(e, r, TB_RADIUS);
+                if (tw_in(0, 1))
+                    e = -e;
+                e += tw_in(-1, 1);
+                if (onb)
+                    v = e;
+                else
+                    u = e;
+            }
+            for (j = 0; j < 3; j++)
+                p[j] = c_bk_muldiv(pv[kind][j], r, INT32_C(1073741824)) + c_bk_muldiv(pv[kind][3 + j], u, INT32_C(1073741824))
+                       + c_bk_muldiv(pv[kind][6 + j], v, INT32_C(1073741824));
+        } else if (kind < 6) {          /* anywhere near the planet */
+            for (j = 0; j < 3; j++)
+                p[j] = tw_upto(INT32_C(1300000));
+            if (kind == 5) {            /* (on an axis, on a face's edge: a part none, or another's) */
+                int to = tw_in(0, 2), from = tw_in(0, 2);
+                p[to] = tw_in(0, 1) ? 0 : p[from];
+            }
+        } else if (kind == 6) {         /* the numbers' ends */
+            for (j = 0; j < 3; j++)
+                p[j] = tw_in(0, 3) ? tw_long() : tw_in(0, 1) ? INT32_C(0x7FFFFFFF) : INT32_C(-0x7FFFFFFF);
+        } else {                        /* the small */
+            for (j = 0; j < 3; j++)
+                p[j] = tw_in(0, 2) ? tw_in(-3, 3) : tw_in(-20000, 20000);
+        }
+        _fmemset(&cc, 0x55, sizeof cc);
+        _fmemset(&ca, 0xAA, sizeof ca);
+        c_bk_column(p[0], p[1], p[2], &cc);
+        rv_bk_column(p[0], p[1], p[2], &ca);
+        if (_fmemcmp(&cc, &ca, sizeof cc) && tw_differ(n_col, i, p[0], p[1], p[2], cc.ground - ca.ground))
+            break;
+        sum_32(cc.ground);
+        sum_32(cc.slab_lo);
+        sum_32(cc.slab_hi);
+        sum_32(cc.r);
+    }
+    bk_end();
+    xms_free_level(XMS_MISSION);
+    if (i == 6000)
+        tw_say(g_tw_ok, n_col, i);
+    g_sum = 0;
+    for (i = 0; i < 3000; i++) {        /* a b / c: a divisor past b, so the quotient fits */
+        int32_t a = tw_long(), b = tw_in(0, 3) ? tw_upto(INT32_C(1073741823)) : tw_in(-300, 300), c, qc, qa;
+        c = (b < 0 ? -b : b) + 1 + (tw_in(0, 1) ? tw_in(0, 1000) : 0);
+        if (tw_in(0, 1))
+            c = -c;
+        qc = c_bk_muldiv(a, b, c);
+        qa = rv_bk_muldiv(a, b, c);
+        if (qc != qa && tw_differ(n_md, i, a, b, c, qc - qa))
+            break;
+        sum_32(qc);
+    }
+    if (i == 3000)
+        tw_say(g_tw_ok, n_md, i);
+}
+
 /* a buffer of the self-test's: upper memory first, conventional when it has none (the host: the heap) */
 static void LZ_FAR *tw_take(unsigned n)
 {
@@ -1475,9 +1654,10 @@ long twins_selftest(void)
     test_stars();
     test_bolts();
     test_balls();
-    if (xms)
+    if (xms) {
         test_rocks();
-    else
+        test_bake();
+    } else
         rv_logf(g_tw_xms), g_tw_bad = 1;
     if (xms)
         xms_shutdown();

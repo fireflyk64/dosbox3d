@@ -122,7 +122,7 @@ $CXX $ARCHF $OPT $SANF $LINKG -o "$EXE" "$OUT"/obj/*.o "$OUT/libstubs.a" $SDLL -
 if [ -z "${WEB:-}" ]; then
     # the run's directory: the DOS build's data linked in (its saves and its log its own)
     mkdir -p "$OUT/run"
-    for f in build/dos/*.DAT build/dos/*.MID build/dos/*.BNK build/dos/SHIP*.RV build/dos/SHIP*.RVS build/dos/SHIP*.RVH; do
+    for f in build/dos/*.DAT build/dos/*.PLN build/dos/*.MID build/dos/*.BNK build/dos/SHIP*.RV build/dos/SHIP*.RVS build/dos/SHIP*.RVH; do
         [ -e "$f" ] && ln -sf "$PWD/$f" "$OUT/run/"
     done
     echo "built $EXE (run: $EXE, its files in $OUT/run; $EXE --help)"

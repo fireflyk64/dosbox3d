@@ -1,7 +1,8 @@
-/* asm_twins.c: the host's lowlevel.asm, lasers.asm and rocks.asm: each rv_x is its C twin, c_x (src/twins.c), which
+/* asm_twins.c: the host's lowlevel.asm, lasers.asm, rocks.asm and bake.asm: each rv_x is its C twin, c_x (src/twins.c), which
  * RVP.EXE /twins checks against the asm, and tests/host/twins_test.sh shows computes the same on the host as on DOS. */
 #include "rv.h"
 #include "twins.h"
+#include "bake.h"
 
 unsigned long rv_tsc(void) { return 0; }   /* (no emulated cycles to count on the host) */
 
@@ -136,4 +137,15 @@ long rv_turn_dropped(const unsigned char *dense, int w, int h, const LfRot *r, i
 int rv_stars_place(unsigned seed, const long *basis, int cx, int cy, int rows, short *out, int most)
 {
     return c_stars_place(seed, basis, cx, cy, rows, out, most);
+}
+
+/* bake.asm's (the host's own questions go straight to c_bk_column: bake.h; these are the twins' test's) */
+void rv_bk_column(int32_t x, int32_t y, int32_t z, BkColumn *out)
+{
+    c_bk_column(x, y, z, out);
+}
+
+int32_t rv_bk_muldiv(int32_t a, int32_t b, int32_t c)
+{
+    return c_bk_muldiv(a, b, c);
 }

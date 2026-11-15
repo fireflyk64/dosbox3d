@@ -1,12 +1,26 @@
-/* planet.c: a planet in a flight (planet.h).  On DOS the card does the work: each call a request copied into the
- * card's block (gx_planet_call), its layout the card's (docs/gx.md); its sums too (where nav points and ships go over
- * the ground: integers, every machine's the same), so RV.EXE carries little.  The native builds (RV_HOST) answer the
- * same requests with terrain.c themselves, here. */
+/* planet.c: a planet in a flight (planet.h).
+ *
+ * The ground a game flies over is the bake's (bake.h: the mission's ID.PLN, made at build time), on every machine: the
+ * file is read into XMS as the flight starts and every question the logic has (how high a ship is over the ground, an
+ * arch's rock over it, where a ground nav point goes) is answered from it with bake.c's integer sums.  A machine with
+ * the sprite card and one without, DOS and the native builds, all fly the same ground.
+ *
+ * The picture is the card's where there is one: each call a request copied into the card's block (gx_planet_call), its
+ * layout the card's (docs/gx.md).  The native game (RV_HOST_GAME) answers the same requests with terrain.c itself,
+ * here; rvsim and the host's play tests draw nothing and make no picture. */
 #include <string.h>
+#if defined(RV_HOST) && !defined(RV_HOST_GAME)
+#include <stdio.h>
+#else
+#include <io.h>
+#include <dos.h>
+#include <fcntl.h>
+#endif
 #include "rv.h"
 #include "gx.h"
 #include "world.h"
 #include "planet.h"
+#include "bake.h"
 
 #define PL_LOAD 0xE740                  /* the card's planet calls (rvgx.cpp) */
 #define PL_VIEW 0xE741
@@ -15,8 +29,8 @@
 #define PL_MAKE 0xE745
 #define PL_DROP 0xE746
 #define PL_PALETTE 0xE747
-#define PL_PLACE 0xE748                 /* a nav point (world km) put as high over the ground as over the radius */
-#define PL_RAISE 0xE749                 /* a ship (world positions) raised to km over the ground if it is under that */
+/* (0xE748 PL_PLACE and 0xE749 PL_RAISE, a nav point and a ship put over the card's ground: the card still answers
+ * them, the game asks no more.  Those sums are the bake's now, planet_navs and planet_raise) */
 
 #ifdef __WATCOMC__
 #pragma pack(1)
@@ -37,20 +51,44 @@ typedef struct {                        /* PL_VIEW */
 #endif
 
 static struct {
-    int on;                             /* a planet set (made or being made) */
+    int set;                            /* a planet mission's planet is set */
+    int ground;                         /* its ground is in: the bake, in XMS (blk) */
+    int pic;                            /* its picture is the card's (the native game's): being made, or made */
     int made;
+    XmsBlock blk;
+    uint32_t key;                       /* the set planet's records as a number (bk_key): the file must be theirs */
+    char file[13];                      /* its ground's file, ID.PLN ("": none, the test planet) */
     LfVec centre;                       /* positions */
+    int32_t km[3];                      /* (the same, km) */
     long eye[3];                        /* the frame's eye, planet-relative */
 } __far g_pl;
 
 #if defined(RV_HOST) && !defined(RV_HOST_GAME)
-#define PL_PALETTE_NOW() 0              /* (rvsim: no palette, no picture) */
+#define PL_PALETTE_NOW() 0              /* (rvsim: no palette, no picture; no clock, no watch for a freeze) */
+#define PL_CLOCK() 0UL
+#define PL_HOLD() (void)0
 #else
+#include "freeze.h"
+#include "music.h"                      /* (clock240) */
 #define PL_PALETTE_NOW() shot_palette()
+#define PL_CLOCK() clock240()
+#define PL_HOLD() freeze_hold()
 #endif
 
-#ifdef RV_HOST
-/* --- the native builds: the card's work done here --- */
+#if defined(RV_HOST) && !defined(RV_HOST_GAME)
+/* --- rvsim and the host's play tests: the ground alone, no picture --- */
+int gx_planet_on(void) { return 0; }
+int gx_planet_call(unsigned ax, const void *in, int n_in, void *out, int n_out)
+{
+    (void)ax, (void)in, (void)n_in, (void)out, (void)n_out;
+    return -1;
+}
+void gx_ground(int y0, int y1, const short *ext, int ext_y0, int ext_rows)
+{
+    (void)y0, (void)y1, (void)ext, (void)ext_y0, (void)ext_rows;
+}
+#elif defined(RV_HOST)
+/* --- the native game: the card's picture made and drawn here, with terrain.c --- */
 static TrPlanet *g_host_planet;
 static int g_host_viewed;
 static int32_t g_host_centre[3];        /* km */
@@ -81,7 +119,7 @@ int gx_planet_call(unsigned ax, const void *in, int n_in, void *out, int n_out)
     }
     if (!p)
         return -1;
-    if (ax == PL_MAKE || ax == PL_COLUMN || ax == PL_PLACE || ax == PL_RAISE)   /* (all at once natively) */
+    if (ax == PL_MAKE || ax == PL_COLUMN)   /* (all at once natively) */
         while (!tr_ready(p))
             if (tr_build(p) < 0)
                 return -2;
@@ -97,35 +135,6 @@ int gx_planet_call(unsigned ax, const void *in, int n_in, void *out, int n_out)
         o[1] = col.slab_lo;
         o[2] = col.slab_hi;
         o[3] = col.r;
-        return 0;
-    }
-    case PL_PLACE: {
-        const long *a = (const long *)in;
-        long *o = (long *)out;
-        int32_t v[3];
-        TrColumn col;
-        int k;
-        for (k = 0; k < 3; k++)
-            v[k] = (int32_t)((a[k] - g_host_centre[k]) * 256);
-        tr_column(p, v[0], v[1], v[2], &col);
-        tr_place(p, v, col.r - tr_radius(p));
-        for (k = 0; k < 3; k++)
-            o[k] = v[k] / 256 + g_host_centre[k];
-        return 0;
-    }
-    case PL_RAISE: {
-        const long *a = (const long *)in;
-        long *o = (long *)out;
-        int32_t v[3];
-        TrColumn col;
-        int k;
-        for (k = 0; k < 3; k++)
-            v[k] = (int32_t)(a[k] - g_host_centre[k] * 256);
-        tr_column(p, v[0], v[1], v[2], &col);
-        if (col.r - col.ground < a[3] * 256)
-            tr_place(p, v, (int32_t)(a[3] * 256));
-        for (k = 0; k < 3; k++)
-            o[k] = v[k] + g_host_centre[k] * 256;
         return 0;
     }
     case PL_VIEW: {
@@ -174,67 +183,218 @@ int gx_planet_call(unsigned ax, const void *in, int n_in, void *out, int n_out)
 
 void gx_ground(int y0, int y1, const short *ext, int ext_y0, int ext_rows)
 {
-#ifdef RV_HOST_GAME                     /* (rvsim, the logic alone, draws nothing) */
     if (g_host_planet && g_host_viewed && y0 < y1)
         tr_blit(g_host_planet, vid_row(y0), y0, SCR_W, y0, y1, 0, SCR_W, ext, ext_y0, ext_rows);
-#else
-    (void)y0, (void)y1, (void)ext, (void)ext_y0, (void)ext_rows;
-#endif
 }
 #endif
 
-int g_planet_off;
-int planet_can(void) { return !g_planet_off && gx_planet_on(); }
+/* --- the ground: the bake (bake.h), its file in XMS --- */
 
-int planet_load(const TrPlanetRec __far *pr, const TrNavRec __far *navs, int nnav)
+/* no ground in: its block given back now when it was the last taken (else with its level: the play tests fly one
+ * planet after another without ending a mission) */
+static void ground_drop(void)
 {
-    PlLoad l;
-    int r;
-    if (!pr->radius || !gx_planet_on()) {
+    if (g_pl.ground) {
+        bk_end();
+        xms_shrink(g_pl.blk, 0);
+    }
+    g_pl.ground = 0;
+    g_pl.blk = 0;
+}
+
+void planet_xms_freed(unsigned nblocks)
+{
+    if (g_pl.blk > nblocks) {
+        bk_end();
+        g_pl.ground = 0;
+        g_pl.blk = 0;
+    }
+}
+
+/* the set planet's file read into XMS and taken as the ground: 1 when the ground is in (it may be already) */
+static int ground_load(void)
+{
+    BkHead h;
+    char name[13];                      /* (near: DOS wants it so) */
+    unsigned long at = 0, t0 = PL_CLOCK(), off;
+    unsigned got, handle;
+    XmsBlock blk = 0;
+    int i;
+    if (g_pl.ground)
+        return 1;
+    if (!g_pl.set || !g_pl.file[0])
+        return 0;
+    for (i = 0; i < 13; i++)
+        name[i] = g_pl.file[i];
+    h.key = h.size = 0;
+    PL_HOLD();                          /* (megabytes: seconds from a slow disk) */
+    {
+#if defined(RV_HOST) && !defined(RV_HOST_GAME)
+        static unsigned char part[32768];
+        FILE *f = fopen(name, "rb");
+        if (!f) {
+            RV_LOG("planet: no %s here: no ground", name);
+            return 0;
+        }
+        got = (unsigned)fread(&h, 1, sizeof h, f);
+#define PL_READ(n) (got = (unsigned)fread(part, 1, (n), f))
+#define PL_PART sizeof part
+#define PL_CLOSE() fclose(f)
+#define PL_REWIND() rewind(f)
+#else
+        /* (a kilobyte at a time, through the one near buffer file reads land in: the play tests' build has no 32 KB
+         * scratch buffer, and under an emulator the reads cost next to nothing) */
+        unsigned char *part = rv_filebuf;
+        int fd;
+        if (_dos_open(name, O_RDONLY, &fd) != 0) {
+            RV_LOG("planet: no %s here: no ground", name);
+            return 0;
+        }
+        if (_dos_read(fd, part, sizeof h, &got) != 0)
+            got = 0;
+        if (got == sizeof h)
+            _fmemcpy(&h, part, sizeof h);
+#define PL_READ(n) (_dos_read(fd, part, (n), &got) != 0 ? (got = 0) : got)
+#define PL_PART sizeof rv_filebuf
+#define PL_CLOSE() _dos_close(fd)
+#define PL_REWIND() lseek(fd, 0, SEEK_SET)
+#endif
+        /* (the key: the mission's records and the bake's version as a number.  Another's file, or another build's,
+         * would be another planet's ground) */
+        if (got == sizeof h && h.key == g_pl.key && h.size <= 64UL * 1024 * 1024
+            && (blk = xms_alloc(h.size + 2, XMS_MISSION)) != 0) {
+            PL_REWIND();
+            while (at < h.size) {
+                unsigned want = h.size - at < PL_PART ? (unsigned)(h.size - at) : (unsigned)PL_PART;
+                if (PL_READ(want) != want)
+                    break;
+                (void)xms_put(blk, at, part, (want + 1) & ~1U);
+                at += want;
+            }
+        }
+        PL_CLOSE();
+#undef PL_READ
+#undef PL_PART
+#undef PL_CLOSE
+#undef PL_REWIND
+    }
+    if (blk) {
+        g_pl.blk = blk;
+        g_pl.ground = 1;
+        xms_where(blk, &handle, &off);
+        if (at == h.size && bk_begin(handle, off) == 0) {
+            RV_LOG("planet: %s, the ground: %lu KB in XMS in %lu ms (%d patches; %lu KB of XMS free)", name,
+                   (unsigned long)(h.size / 1024), (PL_CLOCK() - t0) * 1000 / 240, (int)bk_ask.npatch, xms_free_kb());
+            return 1;
+        }
+        ground_drop();                  /* (its block back) */
+    }
+    /* (which: a key that is not the mission's; less read than the file says it has; fewer KB free than it needs) */
+    RV_LOG("planet: %s is no ground for this mission: key %08lX for %08lX, %lu of %lu bytes read, %lu KB of XMS free",
+           name, (unsigned long)h.key, (unsigned long)g_pl.key, at, (unsigned long)h.size, xms_free_kb());
+    return 0;
+}
+
+/* --- */
+
+int g_planet_off;
+#if defined(RV_HOST) && !defined(RV_HOST_GAME)
+int planet_can(void) { return !g_planet_off; }   /* (the campaign's planet missions as a machine with the card flies them) */
+#else
+int planet_can(void) { return !g_planet_off && gx_planet_on(); }
+#endif
+
+/* the planet set from its records; id: the mission's (its ground's file), or 0 */
+static int planet_set(const TrPlanetRec __far *pr, const TrNavRec __far *navs, int nnav, const char __far *id)
+{
+    uint32_t key;
+    int i;
+    if (!pr->radius) {
         planet_clear();
         return -1;
     }
-    l.planet = pr;
-    l.navs = navs;
-    l.pal = PL_PALETTE_NOW();
-    l.nnav = (unsigned short)nnav;
-    r = gx_planet_call(PL_LOAD, &l, sizeof l, 0, 0);
-    if (r < 0) {
-        g_pl.on = g_pl.made = 0;
-        RV_LOG("planet: the card took none (%d)", r);
-        return r;
+    key = bk_key(pr, navs, nnav);
+    if (g_pl.ground && (key != g_pl.key || !id))   /* (the same planet's again is kept) */
+        ground_drop();
+    g_pl.set = 1;
+    g_pl.key = key;
+    for (i = 0; id && i < 8 && id[i] && id[i] != ' '; i++)
+        g_pl.file[i] = id[i];
+    if (i) {
+        g_pl.file[i] = '.';
+        g_pl.file[i + 1] = 'P';
+        g_pl.file[i + 2] = 'L';
+        g_pl.file[i + 3] = 'N';
+        i += 4;
     }
-    g_pl.on = 1;
-    g_pl.made = 0;
+    g_pl.file[i] = 0;
+    g_pl.km[0] = pr->x;
+    g_pl.km[1] = pr->y;
+    g_pl.km[2] = pr->z;
     g_pl.centre.x = pr->x * 256L;
     g_pl.centre.y = pr->y * 256L;
     g_pl.centre.z = pr->z * 256L;
+    /* its picture, where there is a card: begun now, made a piece at a time (planet_make) */
+    g_pl.pic = g_pl.made = 0;
+    if (gx_planet_on()) {
+        PlLoad l;
+        int r;
+        l.planet = pr;
+        l.navs = navs;
+        l.pal = PL_PALETTE_NOW();
+        l.nnav = (unsigned short)nnav;
+        r = gx_planet_call(PL_LOAD, &l, sizeof l, 0, 0);
+        if (r < 0)
+            RV_LOG("planet: the card took none (%d)", r);
+        else
+            g_pl.pic = 1;
+    }
     return 0;
+}
+
+int planet_load(const TrPlanetRec __far *pr, const TrNavRec __far *navs, int nnav)
+{
+    return planet_set(pr, navs, nnav, 0);
+}
+
+/* more of the picture made: 100 when it is, or when there is none to make */
+static int pic_make(unsigned ms)
+{
+    int r;
+    if (!g_pl.pic || g_pl.made)
+        return 100;
+    r = gx_planet_call(PL_MAKE, &ms, sizeof ms, 0, 0);
+    if (r == 100)
+        g_pl.made = 1;
+    else if (r < 0) {
+        RV_LOG("planet: the card made none (%d): no picture of it", r);
+        g_pl.pic = 0;
+        r = 100;
+    }
+    return r;
 }
 
 int planet_make(unsigned ms)
 {
     int r;
-    if (!g_pl.on)
+    if (!g_pl.set)
         return -1;
-    if (g_pl.made)
-        return 100;
-    r = gx_planet_call(PL_MAKE, &ms, sizeof ms, 0, 0);
-    if (r == 100)
-        g_pl.made = 1;
-    else if (r < 0)
-        g_pl.on = 0;
+    r = pic_make(ms);
+    if (ms == 0 && !ground_load() && g_pl.file[0])
+        return -1;                      /* (a mission's planet with no ground to fly over) */
     return r;
 }
 
 void planet_clear(void)
 {
-    if (g_pl.on)
-        (void)gx_planet_call(PL_DROP, &g_pl.on, 0, 0, 0);
-    g_pl.on = g_pl.made = 0;
+    if (g_pl.pic)
+        (void)gx_planet_call(PL_DROP, &g_pl.set, 0, 0, 0);
+    ground_drop();
+    g_pl.set = g_pl.pic = g_pl.made = 0;
 }
 
-int planet_on(void) { return g_pl.on && g_pl.made; }
+int planet_on(void) { return g_pl.ground; }
+int planet_seen(void) { return g_pl.pic && g_pl.made; }
 const LfVec __far *planet_centre(void) { return &g_pl.centre; }   /* (far: g_pl is; a near pointer to it reads DS) */
 
 /* a world point planet-relative */
@@ -250,7 +410,7 @@ void planet_frame(const LfVec *eye, const LfBasis *b, int cx, int cy, int focal)
     const long *f = (const long *)b;    /* (LfBasis: front, right, up, 256 = 1; the card's right, up, front, 16384) */
     PlView v;
     int k;
-    if (!g_pl.on || (!g_pl.made && planet_make(1) != 100))
+    if (!g_pl.pic || pic_make(1) != 100 || !g_pl.pic)
         return;
     rel(eye, v.eye);
     for (k = 0; k < 6; k++)
@@ -270,14 +430,14 @@ void planet_frame(const LfVec *eye, const LfBasis *b, int cx, int cy, int focal)
 
 void planet_band(int y0, int y1, const short __far *ext, int ext_y0, int ext_rows)
 {
-    if (planet_on())
+    if (planet_seen())
         gx_ground(y0, y1, ext, ext_y0, ext_rows);
 }
 
 int planet_hides_at(long x, long y, long z)
 {
     long q[6];
-    if (!planet_on())
+    if (!planet_seen())
         return 0;
     q[0] = g_pl.eye[0];
     q[1] = g_pl.eye[1];
@@ -292,56 +452,81 @@ int planet_hides(const LfVec *pos) { return planet_hides_at(pos->x, pos->y, pos-
 
 long planet_over(const LfVec *pos, long *roof)
 {
-    long at[3], o[4];                   /* (the answer: the ground's radius, a slab's underside and top, the point's) */
+    BkColumn c;
+    long at[3];
     *roof = 0x7FFFFFFFL;
-    if (!planet_on())
+    if (!g_pl.ground)
         return 0x7FFFFFFFL;
     rel(pos, at);
-    if (gx_planet_call(PL_COLUMN, at, sizeof at, o, sizeof o) < 0)
-        return 0x7FFFFFFFL;
-    if (o[1] < o[2]) {                  /* a slab: under it, the roof is over the point; in it, the point is in rock */
-        if (o[3] < o[1])
-            *roof = o[1] - o[3];
-        else if (o[3] <= o[2])
+    bk_column((int32_t)at[0], (int32_t)at[1], (int32_t)at[2], &c);
+    if (c.slab_lo < c.slab_hi) {        /* a slab: under it, the roof is over the point; in it, the point is in rock */
+        if (c.r < c.slab_lo)
+            *roof = c.slab_lo - c.r;
+        else if (c.r <= c.slab_hi)
             return -1;
     }
-    return o[3] - o[0];
+    return c.r - c.ground;
 }
 
 /* --- a mission's planet (missions.txt planet, ground) --- */
 
 void planet_mission(const RvMission __far *m)
 {
-    (void)planet_load((const TrPlanetRec __far *)&m->px, (const TrNavRec __far *)m->nav, m->nnav);
+    (void)planet_set((const TrPlanetRec __far *)&m->px, (const TrNavRec __far *)m->nav, m->nnav, m->id);
 }
 
 void planet_ready(void)
 {
     const unsigned char __far *pal = PL_PALETTE_NOW();
-    if (!g_pl.on)
+    if (!g_pl.set)
         return;
     (void)planet_make(0);
-    (void)gx_planet_call(PL_PALETTE, &pal, sizeof pal, 0, 0);
+    if (g_pl.pic)
+        (void)gx_planet_call(PL_PALETTE, &pal, sizeof pal, 0, 0);
 }
 
+/* a planet-relative point put `over` positions over the ground under it; over < 0: as far over the ground as it is
+ * over the planet's radius (a ground nav point's record); least: only when it is under that many positions over */
+static void ground_put(int32_t v[3], long over, int least)
+{
+    BkColumn c;
+    bk_column(v[0], v[1], v[2], &c);
+    if (over < 0)
+        over = c.r - bk_ask.radius;
+    else if (least && c.r - c.ground >= over)
+        return;
+    bk_place(v, &c, (int32_t)over);
+}
+
+/* a ground nav point is as high over the ground under it as its record has it over the planet's radius */
 void planet_navs(void)
 {
-    int n;
-    if (!planet_on())
+    int n, k;
+    if (!g_pl.ground)
         return;
     for (n = 1; n < 16; n++) {
         uint8_t *rec = navPointTable + navPointTable_SIZE * n;
-        if (rec[0] && (rec[1] & RV_NAV_GROUND))
-            (void)gx_planet_call(PL_PLACE, &NAV_REC_KM(rec, 0), 12, &NAV_REC_KM(rec, 0), 12);
+        if (rec[0] && (rec[1] & RV_NAV_GROUND)) {
+            int32_t v[3];
+            for (k = 0; k < 3; k++)
+                v[k] = (NAV_REC_KM(rec, k) - g_pl.km[k]) * 256;
+            ground_put(v, -1, 0);
+            for (k = 0; k < 3; k++)
+                NAV_REC_KM(rec, k) = v[k] / 256 + g_pl.km[k];
+        }
     }
 }
 
 void planet_raise(LfVec *pos, long km)
 {
-    long q[4];
-    if (!planet_on())
+    int32_t v[3];
+    if (!g_pl.ground)
         return;
-    _fmemcpy(q, pos, 12);
-    q[3] = km;
-    (void)gx_planet_call(PL_RAISE, q, sizeof q, pos, 12);
+    v[0] = (int32_t)(pos->x - g_pl.centre.x);
+    v[1] = (int32_t)(pos->y - g_pl.centre.y);
+    v[2] = (int32_t)(pos->z - g_pl.centre.z);
+    ground_put(v, km * 256, 1);
+    pos->x = v[0] + g_pl.centre.x;
+    pos->y = v[1] + g_pl.centre.y;
+    pos->z = v[2] + g_pl.centre.z;
 }

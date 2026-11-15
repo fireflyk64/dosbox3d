@@ -793,7 +793,7 @@ static void plan_draws(void)
         px[g_nplan] = ships_size_of(set, &rel, &cam, &ship, g_plan[g_nplan].scale, &p);
         if (!p.on_screen)
             continue;
-        if (planet_on() && planet_hides((const LfVec *)&gPositionVector[s]))
+        if (planet_hides((const LfVec *)&gPositionVector[s]))
             continue;                   /* (behind the ground: all or nothing, the user's rule) */
         g_plan[g_nplan].slot = (unsigned char)s;
         g_plan[g_nplan].set = (unsigned char)set;

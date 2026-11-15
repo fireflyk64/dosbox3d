@@ -19,6 +19,7 @@
 #include <io.h>
 #include <fcntl.h>
 #include "rv.h"
+#include "planet.h"                     /* (planet_xms_freed) */
 
 #define SLAB 65536UL                    /* assets are carved from blocks of this; one over half of it gets its own */
 
@@ -91,6 +92,7 @@ static int file_to_xms(unsigned long at, XmsBlock blk, unsigned long off, unsign
 static void freed(unsigned nblocks)
 {
     unsigned i;
+    planet_xms_freed(nblocks);          /* (a planet's ground, read in at a flight's start: planet.c) */
     if (!g_in)
         return;
     for (i = 0; i < g_hdr.nassets; i++)
