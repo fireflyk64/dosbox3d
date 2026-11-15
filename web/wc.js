@@ -2107,6 +2107,7 @@ async function start(fromGesture) {
     if (fpsInForce()) env.WCFPS = String(fpsInForce());
     if (together && lobbyCapHull() && lobby.capHull) env.WCCAPHULL = String(CAP_HULL);
     if (cfg.callsign && !solo) env.WCCALLSIGN = cfg.callsign;
+    env.WCGAME = source.game.id;     // (the game this run is for: the TIE demo's room lives from the boot on, wcnet_tiedemo.cpp)
     if (isTf()) env.WCNET_TIE_MOUSE = tfFlight();
     if (isPriv()) env.WCPRIVFACE = $("privFace").value;
     if (isTv() && together && isHost()) env.WCTVLOOKS = `${$("tvCraftHost").value},${$("tvCraftGuest").value}`;

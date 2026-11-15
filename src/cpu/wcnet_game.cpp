@@ -434,6 +434,7 @@ static void log_text_screen() {
 }
 
 void game_program_ended(Bit16u psp) {
+    tdm_program_ended(psp);     // (the TIE Fighter demo's showroom: Esc's exit code made "go to game")
     tie_program_ended(psp);
     priv_program_ended(psp);
     if (g_game != GAME_NONE && psp == g_gamePsp) {

@@ -222,13 +222,13 @@ void DOS_Shell::ParseLine(char * line) {
 	if (in) {
 		if(DOS_OpenFile(in,OPEN_READ,&dummy)) {	//Test if file exists
 			DOS_CloseFile(dummy);
-			LOG_MSG("SHELL:Redirect input from %s",in);
+			LOG(LOG_EXEC,LOG_NORMAL)("SHELL:Redirect input from %s",in);   /* (not in the page's log: a batch file's own doing) */
 			if(normalstdin) DOS_CloseFile(0);	//Close stdin
 			DOS_OpenFile(in,OPEN_READ,&dummy);	//Open new stdin
 		}
 	}
 	if (out){
-		LOG_MSG("SHELL:Redirect output to %s",out);
+		LOG(LOG_EXEC,LOG_NORMAL)("SHELL:Redirect output to %s",out);   /* (TIEDEMO.BAT's "tiemiss demo >foo": noise in the page's log) */
 		if(normalstdout) DOS_CloseFile(1);
 		if(!normalstdin && !in) DOS_OpenFile("con",OPEN_READWRITE,&dummy);
 		bool status = true;

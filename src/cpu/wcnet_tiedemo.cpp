@@ -43,6 +43,7 @@
 #include "cpu.h"
 #include "lazyflags.h"
 #include "dos_inc.h"
+#include "keyboard.h"
 
 namespace wc {
 
@@ -80,6 +81,7 @@ double g_lastFrameMs = -1e9, g_frameMs = 50, g_rateSince = 0;
 Bit32u g_rateFrames = 0;
 bool g_flightSaid = false;
 // the Neon showroom (NEON.EXE, the first release's): its load, its wait checked, run ahead for a while
+bool g_neonSeen = false;            // (the TIE demo is the game this run: its room's session lives from now on)
 Bit16u g_neonLoad = 0, g_neonPsp = 0;
 double g_neonSince = 0;
 bool g_neonChecked = false, g_neonKnown = false;
@@ -446,8 +448,30 @@ void at_neon_wait() {
         if (!g_neonKnown) wclog(1, "TIE demo: NEON.EXE's wait is not the one known: the showroom keeps its own time");
     }
     if (!g_neonKnown || PIC_FullIndex() - g_neonSince >= kNeonFastMs) return;
-    if (g_neonSkipped++ == 0) wclog(1, "TIE demo: the Neon showroom's introduction run ahead (its waits skipped for %.0f s)", kNeonFastMs / 1000);
+    g_neonSkipped++;
     tdm_skip_call(0);
+}
+
+// Esc never leaves the demo for DOS (the user, 2026-11-15: "I tried tie demo...and hit esc or something and quit to dos
+// prompt...which wasnt helpful ... We should probably trap esc if it's going to force people to dos prompt on their
+// own").  While TIEMISS runs Esc ends it at once (to the ending, then the showroom or DOS): the key never reaches it,
+// but for a guest whose launch waits on a host already flying, for whom it means "fly alone".  At the showroom Esc is
+// its way out to DOS (its exit code, which TIEDEMO.BAT tests): that code becomes "go to game" (tdm_program_ended).
+bool tdm_key(int key, bool pressed) {
+    if (key != KBD_esc || !g_found || !ours_running()) return false;
+    if (pressed && g_holding == HOLD_LAUNCH && tdm_session_fly_alone()) return true;
+    static double toldAt = -1e9;
+    if (pressed && PIC_FullIndex() - toldAt > 10000) {
+        toldAt = PIC_FullIndex();
+        wclog(1, "TIE demo: Esc kept from TIEMISS (it would end the demo at once)");
+    }
+    return true;
+}
+
+void tdm_program_ended(Bit16u psp) {
+    if (!g_neonPsp || psp != g_neonPsp || dos.return_code != 27) return;
+    dos.return_code = 'G';
+    wclog(1, "TIE demo: Esc at the Neon showroom: on to the game (the demo never leaves for DOS)");
 }
 
 // --- the dispatcher's --------------------------------------------------------------------------------------------
@@ -457,6 +481,7 @@ bool tdm_watching() { return g_found || neon_running(); }
 
 void tdm_program_loaded(const char *name, Bit16u loadSeg, Bit16u psp) {
     if (strcmp(name, "NEON.EXE") == 0) {
+        g_neonSeen = true;
         g_neonLoad = loadSeg;
         g_neonPsp = psp;
         g_neonSince = PIC_FullIndex();
@@ -471,7 +496,6 @@ void tdm_program_loaded(const char *name, Bit16u loadSeg, Bit16u psp) {
         hooks_game_changed();
     }
     if (strcmp(name, "TIEMISS.EXE") != 0) return;
-    if (g_found) tdm_session_shutdown();
     if (!version_here(loadSeg)) {
         wclog(0, "TIEMISS.EXE is not the TIE Fighter demo build the hooks know (\"%s\"): not watched", kVersion);
         return;
@@ -489,7 +513,17 @@ void tdm_program_loaded(const char *name, Bit16u loadSeg, Bit16u psp) {
     tdm_campaign_loaded();
 }
 
+// The TIE demo is the game of this run: the page says so (WCGAME), or its showroom or TIEMISS has been loaded.  Its
+// room's session lives from then on, through the showroom, the opening and every TIEMISS (a host's launch waits for
+// the guests that are in the room but not yet at theirs).
+bool tdm_chosen() {
+    static int env = -1;
+    if (env < 0) env = getenv("WCGAME") && !strcmp(getenv("WCGAME"), "tiedemo") ? 1 : 0;
+    return env || g_neonSeen || g_found;
+}
+
 void tdm_tick() {
+    if (tdm_chosen()) tdm_session_tick();
     if (!g_found) return;
     const double now = PIC_FullIndex();
     if (now >= g_nextCheckMs) {
@@ -500,7 +534,6 @@ void tdm_tick() {
             g_calls.clear();
             g_inCall = false;
             tdm_session_flight_ended();
-            tdm_session_shutdown();
             return;
         }
     }
@@ -508,7 +541,6 @@ void tdm_tick() {
         g_flightSaid = false;
         tdm_session_flight_ended();
     }
-    tdm_session_tick();
     if (!ours_running()) return;
     if (g_prof < 0) {
         const char *env = getenv("WCNET_TDM_PROF");

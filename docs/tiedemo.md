@@ -31,6 +31,12 @@ The user, 2026-11-15:
   * The first release's runs `neon` first (NEON.EXE, the Dodge Neon's showroom: "Cars are like friends", the car's
     features as buttons, "Go to game" and "Exit to DOS"); its exit code is the key: Esc (27) quits to DOS, anything
     else goes on to the game; after the ending it goes back to the showroom.
+  * **Never to the DOS prompt** (the user, 2026-11-15: "I tried tie demo...and hit esc or something and quit to dos
+    prompt...which wasnt helpful", then, of Esc pressed to leave the browser's full screen: "we definitely need to trap
+    that esc"). The showroom's exit code 27 (Esc, or "Exit to DOS") is changed to 'G' as the program ends
+    (wcnet_tiedemo.cpp `tdm_program_ended`, from game.cpp's program end): the batch file goes on to the game. In
+    TIEMISS.EXE Esc ends the program at once, mid-flight (no question asked): the layer keeps the key from it
+    (`tdm_key`, the page's and the native key filter), with a line in the log at most every 10 s.
   * The showroom's introduction ("Say hello to Neon", the car driving in, the buttons one by one) took some 9 s
     during which it heard no key or click. The user: "there may be a time wait there--can we jump the clock ahead so
     people can click whenever?" It is timed by one routine (NEON.EXE is packed: found running, at load+0BB8:001B),
@@ -182,10 +188,17 @@ over with the demo's addresses and 16-bit calls (`fill_craft`, `write_puppet`, `
 shots, hits and kills, the room's end), with its own messages: TieFrame, TieCraft, TieShot, TieHit, TieEvent,
 TieOwners. Only the room's hello and the launch are the demo's own (TdmHello, TdmState).
 
-* **The room.** The host is seat 0; rooms of up to 3 (T/F Alpha's craft).
+* **The room.** The host is seat 0; rooms of up to 3 (T/F Alpha's craft). The session lives from the page's start (the
+  page says WCGAME=tiedemo; natively from the showroom or TIEMISS.EXE's load) to the emulator's end, not with
+  TIEMISS.EXE: a program ended and run again (the showroom between flights, or by hand from the prompt) stays in the
+  room.
 * **The launch.** Each machine's program waits at create_createmission's entry, after the opening, until every pilot
   of the room is there (a guest still in the opening after two minutes is left out). The host then says go with its
   random seeds.
+  * A guest who comes to its launch while the host flies waits for the host's next launch (the end of the host's
+    flight: the campaign's next mission, or the same one again). Both are told: the host "X is waiting to launch: you
+    fly the next mission together", the guest "The host is flying a mission: you launch together at its next one. Esc
+    flies alone meanwhile". Esc there flies that one mission alone; the room's next launch takes the guest in again.
 * **The seat.** At 0FC2:0136, the mission read, a guest writes the host's seeds and its own craft into the player's
   flight group: seat 1 the group's first craft the host does not fly, seat 2 the next (the CD's player-craft number).
   The mission's own setup then makes the same craft in the same object slots on every machine. The host flies object
@@ -243,8 +256,8 @@ TieOwners. Only the room's hello and the launch are the demo's own (TdmHello, Td
 
 * **A kill credited across machines** has not been seen yet: it needs a pilot's own shot to finish a craft another
   machine flies.
-* **A guest who arrives once the host flies** waits for the host's next launch: the demo has one mission, and the host
-  launches again only after its flight ends.
+* **A guest who arrives once the host flies** waits for the host's next launch (section 5, told so on both screens;
+  Esc flies alone meanwhile): a long flight of the host's is a long wait.
 * **The flash of a hit applied from another machine** is drawn where the stand-in bolt is (the shooter's bolt's
   place): the CD port's impact offset globals are not known in this build.
 * **The campaign's balance** (section 8) is set from measured speeds, hulls, shields and torpedo damage and from the
@@ -328,7 +341,8 @@ the message bar), the briefing (the emulator's line over the picture, wrapped) a
 * Failed: a primary goal failed (0xFF), or a protected craft dying: the end flag 8 s later; the same mission next.
 * At 0090:04FB (the frames over, the status not yet looked at) the status is written: 3 once the last mission is won
   (TIEMISS exits, the ending plays), else 2, so that `main` flies again: the next mission or the same one. A pilot's
-  own end (Esc: status 3, not ended by the layer, the room or the clock) is left alone: the program ends as it did.
+  own end (status 3, not ended by the layer, the room or the clock) is left alone: the program ends as it did. (Esc,
+  the game's own way out, is kept from it since 2026-11-15: section 1.)
 * In a room the host decides: its go carries the mission (TdmState.mission), its verdict on each flight the next one
   (TdmState.verdict/next/over). A guest's program waits at 0090:04FB for the host's verdict on the flight it flew
   (the launch's hold, the PSP's `jmp $`), 20 s at most.

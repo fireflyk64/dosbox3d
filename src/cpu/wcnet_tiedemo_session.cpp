@@ -99,13 +99,13 @@ struct Peer {
 };
 
 struct Remote {                     // a pilot's TdmState
-    bool known, atLaunch;
+    bool known, atLaunch, inFlight;
     double at;
     std::string callsign;
     Bit32u go, seed, seed2, mission;
     Bit32u verdict, next;           // (the host's: its verdict on its flight `verdict`)
     bool over;
-    Remote() : known(false), atLaunch(false), at(-1e9), go(0), seed(0), seed2(0), mission(0), verdict(0), next(0), over(false) {}
+    Remote() : known(false), atLaunch(false), inFlight(false), at(-1e9), go(0), seed(0), seed2(0), mission(0), verdict(0), next(0), over(false) {}
 };
 
 struct Puppet {
@@ -135,6 +135,8 @@ struct Net {
     Bit32u verdictGo, verdictNext;  // the host's latest verdict (its flight verdictGo; the campaign's next mission)
     bool verdictOver;
     bool roomEnded;                 // this flight ended by the room (room_end), not by its pilot
+    bool soloNext;                  // a guest's launch, held for a host already flying: flown alone (Esc)
+    bool lateSaid;                  // ... and told so, once a launch
     // the flight
     Bit64u frame;
     double lastReliableAt, endAt;
@@ -158,7 +160,7 @@ struct Net {
         damageSkipped, kills, credited, localAiNow, localAiStarts, localAiEnds, localShots, farReports, nearBlends, hitsShown;
     double farErrSum, farErrMax;
     Net() : host(false), self(-1), seats(2), listener(NULL), atLaunch(false), launchSince(0), launchSerial(0), flownGo(0),
-            hostSeed(0), hostSeed2(0), hostMission(0), alone(false), verdictGo(0), verdictNext(0), verdictOver(false), roomEnded(false), frame(0),
+            hostSeed(0), hostSeed2(0), hostMission(0), alone(false), verdictGo(0), verdictNext(0), verdictOver(false), roomEnded(false), soloNext(false), lateSaid(false), frame(0),
             lastReliableAt(0), endAt(0), decidedAt(-1e9), ownersSentAt(-1e9), farCursor(0), hitsInNext(0) {
         zero_counts();
         clear_flight();
@@ -380,7 +382,13 @@ void take_state(const TdmState &st, int seat) {
     Remote &r = g_net->remotes[seat];
     r.known = true;
     r.at = PIC_FullIndex();
+    const bool wasAtLaunch = r.atLaunch;
     r.atLaunch = st.at_launch();
+    r.inFlight = st.in_flight();
+    // (a guest come to its launch while this host flies: it launches with the next mission; said here)
+    if (g_net->host && r.atLaunch && !wasAtLaunch && tdm_in_flight()) {
+        notice(pilot_name(seat) + " is waiting to launch: you fly the next mission together");
+    }
     if (st.has_go() && st.go() > r.go) {
         r.go = st.go();
         r.seed = st.seed();
@@ -1112,6 +1120,14 @@ int tdm_session_launch_mission() { return g_net ? (int)g_net->hostMission : 0; }
 
 bool tdm_session_room_ended() { return g_net && g_net->roomEnded; }
 
+bool tdm_session_fly_alone() {
+    if (!g_net || g_net->host || !g_net->atLaunch || g_net->self < 1) return false;
+    g_net->soloNext = true;
+    notice("Flying alone: the room's next launch takes you in again");
+    wclog(1, "TIE demo: Esc at the launch: flown alone (the host was flying)");
+    return true;
+}
+
 void tdm_session_verdict(int next, bool over) {
     if (!g_net || !g_net->host || !g_net->flownGo) return;
     g_net->verdictGo = g_net->flownGo;
@@ -1182,12 +1198,18 @@ bool tdm_session_launch_hold() {
               g_net->hostSeed2, g_net->hostMission);
         return false;
     }
-    if (g_net->peers.empty()) {
+    if (g_net->peers.empty() || g_net->soloNext) {
         g_net->alone = true;
+        g_net->soloNext = false;
         return false;
     }
     const Remote &h = g_net->remotes[0];
+    if (h.inFlight && h.go <= g_net->flownGo && !g_net->lateSaid) {
+        g_net->lateSaid = true;
+        notice("The host is flying a mission: you launch together at its next one. Esc flies alone meanwhile");
+    }
     if (h.go > g_net->flownGo) {
+        g_net->lateSaid = false;
         g_net->flownGo = h.go;
         g_net->hostSeed = h.seed;
         g_net->hostSeed2 = h.seed2;

@@ -2455,6 +2455,9 @@ bool wc_net_key_filter(int kbdKey, bool pressed) {
     if (priv_controls_key(kbdKey, pressed)) {
         return true;    // (Privateer's flight: the arrows ramped, wcnet_priv_controls.cpp)
     }
+    if (tdm_key(kbdKey, pressed)) {
+        return true;    // (the TIE Fighter demo: Esc never takes it to DOS, wcnet_tiedemo.cpp)
+    }
     if (tie_session_key(kbdKey, pressed)) {
         return true;    // (TIE Fighter: Esc while a guest's launch waits for the host flies alone)
     }

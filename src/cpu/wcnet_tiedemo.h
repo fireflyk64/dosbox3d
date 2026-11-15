@@ -26,6 +26,8 @@ bool tdm_watching();                                // ... or the first release'
 bool tdm_check_hooks(Bit32u ip);                    // a watched IP came up: true when it was one of ours
 void tdm_watch_list(void (*watch)(Bit16u ip));      // our IPs, for the dispatcher's table
 bool tdm_script_item(const std::string &item, double t);   // key-script aids (!tdm...)
+bool tdm_key(int key, bool pressed);                // a key on its way to the game: true to keep it (Esc in TIEMISS)
+void tdm_program_ended(Bit16u psp);                 // a program ended (its exit code still to be read: the showroom's)
 
 // The flight's tables: offsets in the data segment (DGROUP), and fields (docs/tiedemo.md section 4).
 namespace tdm {
@@ -103,6 +105,7 @@ bool tdm_session_room_ended();          // this flight ended by the room (a pilo
 void tdm_session_verdict(int next, bool over);          // the host's verdict on its flight, sent
 bool tdm_session_verdict_wait(int *next, bool *over);   // a guest: true while the host's verdict on our flight is to come
 void tdm_notice(const std::string &text);               // the line drawn over the picture
+bool tdm_session_fly_alone();             // a guest's launch held for a host already flying: fly alone (Esc)
 
 // The campaign (wcnet_tiedemo_campaign.cpp, docs/tiedemo.md section 8): after the demo's own mission, the missions of
 // scripts/tdmmissions.py, written over the mission the game has read; the flight ended by the layer once won or

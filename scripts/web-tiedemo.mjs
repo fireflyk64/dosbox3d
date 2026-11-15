@@ -82,7 +82,7 @@ for (let t = 10; t <= seconds; t += 10) {
   await page.locator("#canvas").screenshot({ path: path.join(shotDir, `tiedemo-${t}.png`) }).catch(() => {});
 }
 check(logs.some((l) => /TIE Fighter demo's settings/.test(l)), "the settings written (LANDRU.CFG, OPTIONS.CFG)");
-if (neon) check(logs.some((l) => /Neon showroom's introduction run ahead/.test(l)), "the Neon showroom's introduction run ahead");
+if (neon) check(logs.some((l) => /NEON\.EXE \(the Dodge Neon showroom\) loaded/.test(l)), "the Neon showroom was there (its introduction run ahead: not logged)");
 check(logs.some((l) => /TIE demo: the flight's frames are coming/.test(l)), "on from the showroom and the opening to the mission's flight");
 fs.writeFileSync(path.join(shotDir, "tiedemo.log"), logs.join("\n") + "\n");
 await browser.close();
