@@ -153,6 +153,15 @@
   #pilotBar label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; }
   #pilotBar input { width: 150px; }
   #pilotBar input::placeholder { color: #8fc9a6; }
+  #pilotBar .lead { align-self: center; color: var(--muted); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; }
+  #pilotBar .short { display: none; }
+  /* (a phone in portrait: one row, the short words, sideways if it must; no height spent on a second line) */
+  @media (max-width: 600px) {
+    #pilotBar { flex-wrap: nowrap; overflow-x: auto; gap: 6px; padding: 5px 8px; }
+    #pilotBar .long { display: none; }
+    #pilotBar .short { display: inline; }
+    #pilotBar input { width: 96px; }
+  }
   #room { width: 12ch; }
   #seats { width: 5ch; }
   #seatsLabel .boxrow { display: flex; align-items: center; gap: 4px; }
@@ -248,9 +257,10 @@
   </header>
 
   <div id="pilotBar" title="Your name in the lobby and the rooms, and in the games that show one: the one given here until you type your own">
+    <span class="lead"><span class="long">Pilot (optional)</span><span class="short">Optional</span></span>
     <label>Callsign <input type="text" id="callsign" placeholder="Maverick"></label>
-    <label id="firstnameLabel" title="Optional: the games that use a first name (Wing Commander II) take this one; the others leave it">Pilot chosen name (optional) <input type="text" id="firstname" placeholder="Christopher" maxlength="12"></label>
-    <label title="Optional: the games that use a surname take this one">Pilot surname (optional) <input type="text" id="lastname" placeholder="Blair"></label>
+    <label id="firstnameLabel" title="The games that use a first name (Wing Commander II) take this one; the others leave it"><span class="long">Pilot chosen name</span><span class="short">Chosen</span> <input type="text" id="firstname" placeholder="Christopher" maxlength="12"></label>
+    <label title="The games that use a surname take this one"><span class="long">Pilot surname</span><span class="short">Surname</span> <input type="text" id="lastname" placeholder="Blair"></label>
   </div>
 
   <div id="deck">
