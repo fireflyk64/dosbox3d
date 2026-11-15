@@ -42,6 +42,8 @@ void lab_instruction();
 // The key script's lab items ("!add32=", "!pokes=", "!dump=", "!mark=",
 // "!trace=", "!watch=", "!inject2016"); false for anything else.
 bool lab_script_item(const std::string &item, double t);
+// An event of one's own into the recording (one line of JSON), while one is made.
+void lab_event(const std::string &json);
 
 }  // namespace wc
 

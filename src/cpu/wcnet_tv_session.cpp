@@ -28,6 +28,7 @@
 #include "wcnet_transport.h"
 #include "wcnet_lobby.h"
 #include "wcnet_log.h"
+#include "wcnet_lab.h"
 #include "wc_net.h"
 #include "net_config.h"
 #include "pic.h"
@@ -1030,9 +1031,12 @@ void tv_session_frame() {
     g_shots.clear();
 }
 
+void make_markers(double now);
+
 void tv_session_draw() {
     if (!g_net || !tv_in_flight()) return;
     const double now = PIC_FullIndex();
+    make_markers(now);
     const int level = tv_level();
     for (int s = 0; s < kMaxSeats; s++) {
         const Remote &r = g_net->remotes[s];
@@ -1144,6 +1148,81 @@ void tv_session_chat(const std::string &text) {
     send_all(msg, false);
     show_line(g_net->callsign + ": " + text);
 }
+
+// The others marked on our picture.  The camera is our ship's (the cockpit's view: the view word 0): its place and its
+// fixed-point attitude matrix (columns right, up, forward); the game's projection is 90 degrees across (its
+// visibility test keeps |x| <= z), square pixels in the 640 x 480 mode: a point at camera x, y, z is at
+// (0.5 + x/z/2) of the picture's width and (0.5 - y/z/2 * 640/480) of its height (WCNET_TV_PROJ="<f>:<cx>:<cy>" in
+// shares, to tune).
+TvMarker g_markers[kTvMarkers];
+
+void make_markers(double now) {
+    memset(g_markers, 0, sizeof(g_markers));
+    if (!g_net || !tv_in_flight() || tv_r32(tv_data(tvsig::D_VIEW_MODE)) != 0) return;
+    static double f = 0.5, cx = 0.5, cy = 0.5;
+    static bool read = false;
+    if (!read) {
+        read = true;
+        const char *e = getenv("WCNET_TV_PROJ");
+        if (e) sscanf(e, "%lf:%lf:%lf", &f, &cx, &cy);
+    }
+    const double aspect = 640.0 / 480.0;
+    TvShip me;
+    tv_player(&me);
+    const Bit32u m = tv_data(tvsig::D_PLAYER_POS) + 0x1c;
+    double M[9];
+    for (int k = 0; k < 9; k++) M[k] = (double)(Bit32s)tv_r32(m + 4 * k) / kUnit;
+    const int level = tv_level();
+    for (int s = 0, n = 0; s < kMaxSeats && n < kTvMarkers; s++) {
+        const Remote &r = g_net->remotes[s];
+        if (s == g_net->self || !r.known || !r.flying || r.level != level || now - r.at > kStateStaleMs) continue;
+        const double dt = std::min(now - r.at, (double)kCarryMs) / 1000.0;
+        double d[3];
+        for (int k = 0; k < 3; k++) d[k] = ((double)r.pos[k] + r.rate[k] * dt - me.pos[k]) / kUnit;
+        // (the matrix's columns: right = (M0, M3, M6), up = (M1, M4, M7), forward = (M2, M5, M8))
+        const double x = d[0] * M[0] + d[1] * M[3] + d[2] * M[6];
+        const double y = d[0] * M[1] + d[1] * M[4] + d[2] * M[7];
+        const double z = d[0] * M[2] + d[1] * M[5] + d[2] * M[8];
+        const double dist = sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+        TvMarker &mk = g_markers[n++];
+        mk.on = true;
+        snprintf(mk.label, sizeof(mk.label), "%s %.0f", r.callsign.empty() ? "PILOT" : r.callsign.c_str(), dist);
+        double sx = 0, sy = 0;
+        if (z > 0.3) {
+            sx = cx + x / z * f;
+            sy = cy - y / z * f * aspect;
+        }
+        mk.onScreen = z > 0.3 && sx > 0.02 && sx < 0.98 && sy > 0.08 && sy < 0.98;
+        if (mk.onScreen) {
+            mk.x = sx;
+            mk.y = sy;
+            mk.size = std::max(0.02, std::min(0.25, 1.6 / std::max(z, 0.5) * f));    // (the ship some 3 units across)
+        } else {
+            // the edge, the way to turn: the direction in the picture (behind: the other way)
+            double ax = x, ay = y * aspect;
+            if (z <= 0.3 && fabs(ax) < 1e-6 && fabs(ay) < 1e-6) ay = -1;
+            const double len = sqrt(ax * ax + ay * ay);
+            ax /= len; ay /= len;
+            const double k = std::min(0.45 / std::max(fabs(ax), 1e-6), 0.42 / std::max(fabs(ay), 1e-6));
+            mk.x = 0.5 + ax * k;
+            mk.y = 0.53 - ay * k;
+            mk.size = 0.03;
+        }
+    }
+    if (wclab_on) {
+        // (into a recording: the video draws them as the overlay does, scripts/tvnet-video.py)
+        std::string j = "{\"t\":\"tvmark\",\"m\":[";
+        for (int i = 0; i < kTvMarkers && g_markers[i].on; i++) {
+            char b[160];
+            snprintf(b, sizeof(b), "%s[%.4f,%.4f,%.4f,%d,\"%s\"]", i ? "," : "", g_markers[i].x, g_markers[i].y, g_markers[i].size,
+                     g_markers[i].onScreen ? 1 : 0, g_markers[i].label);
+            j += b;
+        }
+        lab_event(j + "]}");
+    }
+}
+
+const TvMarker *tv_markers() { return g_markers; }
 
 bool tv_session_partner(TvShip *out) {
     memset(out, 0, sizeof(*out));

@@ -36,6 +36,7 @@ ANCHORS = [
     ('settings', 0x329AF, 0, 0x30, "the settings' writer: the difficulty and the briefing, cinema and demo flags"),
     ('level_end', 0x2D8B8, 0, 0x2D, "the level loop's end of a frame: the level done (the exit flown, or TRINEXT), else a death"),
     ('message_fn', 0x2CC00, 0, 40, "a line of the game's own on the screen for a while: (text, 16.16 seconds); the net game's chat shows so"),
+    ('view_keys', 0x1147C, 0, 0x40, "the input handler's B key: the view (0 the cockpit, 2 the chase camera) cycled"),
     ('load_model_fn', 0x402E0, 0, 48, "a model loaded from the game's files, by name: its handle (a name it cannot find ends the program)"),
     ('campaign', 0x2EC58, 0, 40, "the campaign loop: the level index, the count, the level's file name, the level flown"),
 ]
@@ -66,6 +67,7 @@ DATA = [
     ('difficulty', 'settings', 0x329C3 - 0x329AF + 2, "the difficulty (0..3, Easy..Terminal)"),
     ('level_done', 'level_end', 2, "the level done: set, the level loop ends at the frame's end as completed (alive)"),
     ('pod_table', 'load_model_fn', 0x402EC - 0x402E0 + 1, "the archives' table the model loader looks a name up in"),
+    ('view_mode', 'view_keys', 0x1148F - 0x1147C + 2, "the view: 0 the cockpit's, 1 and 2 cameras outside the ship"),
     ('level_index', 'campaign', 0x2EC58 - 0x2EC58 + 2, "the campaign's level, 0.."),
     ('level_count', 'campaign', 0x2EC5E - 0x2EC58 + 2, "the campaign's level count"),
     ('level_names', 'campaign', 0x2EC6D - 0x2EC58 + 1, "the levels' file names, 0x28 bytes each"),

@@ -88,6 +88,12 @@ void tv_session_shutdown();
 bool tv_session_active();
 void tv_session_chat(const std::string &text);       // a line typed at the 0 key's prompt, to the room
 bool tv_session_partner(TvShip *out);              // the nearest other pilot flying our level, carried on to now
+// The other pilots marked on our picture (the emulator's overlay, sdlmain.cpp): where each is, in shares of the picture
+// (on screen: a bracket of that size round the ship; off it, an arrow at the edge pointing its way), its callsign and
+// distance.  Made at each frame of ours in the cockpit's view.
+struct TvMarker { bool on; double x, y, size; bool onScreen; char label[48]; };
+enum { kTvMarkers = 4 };
+const TvMarker *tv_markers();
 
 // The rigs' pilot (wcnet_tv_pilot.cpp): key-script items !tvfly= !tvfire= !tvburn=, run at the frame's top.
 void tv_pilot_frame();

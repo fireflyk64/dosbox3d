@@ -2422,6 +2422,18 @@ bool wc_net_tie_running() {
     return wc::tie_found();
 }
 
+bool wc_net_partner_marker(int i, double *x, double *y, double *size, bool *onScreen, const char **label) {
+    if (i < 0 || i >= wc::kTvMarkers || !wc::tv_found()) return false;
+    const wc::TvMarker &m = wc::tv_markers()[i];
+    if (!m.on) return false;
+    *x = m.x;
+    *y = m.y;
+    *size = m.size;
+    *onScreen = m.onScreen;
+    *label = m.label;
+    return true;
+}
+
 bool wc_net_steer_marker(double *x, double *y) {
     return wc::tie_controls_marker(x, y);
 }

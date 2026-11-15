@@ -1663,6 +1663,9 @@ extern bool in_space();
 extern bool wc_net_overlay_chat();
 extern const char *wc_net_wait_note();
 extern bool wc_net_steer_marker(double *x, double *y);   // (wc_net.h: TIE Fighter's pointer, shares of the picture)
+// (wc_net.h: Terminal Velocity's other pilots: where, in shares of the picture, a bracket's size, on screen or an
+// arrow at its edge, the label)
+extern bool wc_net_partner_marker(int i, double *x, double *y, double *size, bool *onScreen, const char **label);
 extern bool wc_net_comms_hint();
 std::string outgoing_prefix = "[Transmit Comms] ";
 size_t last_incoming_text_len = 0;
@@ -1730,6 +1733,38 @@ static void DrawMarker(int cx, int cy, Bit8u *surface, Bitu pitch) {
                 Bit8u *px = surface + y * pitch + x * step;
                 if (step >= 3) {
                     if (pass) { px[0] = 0x10; px[1] = 0xB0; px[2] = 0xFF; }   // (BGRA in memory: amber)
+                    else { px[0] = 0x10; px[1] = 0x10; px[2] = 0x10; }
+                } else {
+                    *px = pass ? 0x80 : 0x00;
+                }
+            }
+        }
+    }
+}
+
+// Another pilot's place on the picture (Terminal Velocity): a bracket's four corners round it, cyan on a dark edge,
+// or (off the picture) a diamond at its edge; the label is drawn by the caller.
+static void DrawPartner(int cx, int cy, int half, bool bracket, Bit8u *surface, Bitu pitch) {
+    const Bitu step = pitch / sdl.draw.width;
+    const int arm = half / 3 + 2;
+    for (int pass = 0; pass < 2; pass++) {
+        const int grow = pass ? 0 : 1;
+        for (int dy = -half - grow; dy <= half + grow; dy++) {
+            for (int dx = -half - grow; dx <= half + grow; dx++) {
+                bool on;
+                if (bracket) {
+                    const int ax = abs(dx), ay = abs(dy);
+                    const bool edgeX = ax >= half - 1 - grow, edgeY = ay >= half - 1 - grow;
+                    on = (edgeX && ay >= half - arm - grow) || (edgeY && ax >= half - arm - grow);
+                } else {
+                    on = abs(dx) + abs(dy) <= half + grow;
+                }
+                if (!on) continue;
+                const int x = cx + dx, y = cy + dy;
+                if (x < 0 || y < 0 || x >= (int)sdl.draw.width || y >= (int)sdl.draw.height) continue;
+                Bit8u *px = surface + y * pitch + x * step;
+                if (step >= 3) {
+                    if (pass) { px[0] = 0xFF; px[1] = 0xE8; px[2] = 0x50; }    // (BGRA in memory: cyan)
                     else { px[0] = 0x10; px[1] = 0x10; px[2] = 0x10; }
                 } else {
                     *px = pass ? 0x80 : 0x00;
@@ -1828,6 +1863,30 @@ void GFX_EndUpdate( const Bit16u *changedLines ) {
                 } else if (lastX >= 0) {
                     lastX = lastY = -1;
                     render.scale.clearCache = true;
+                }
+            }
+            {
+                // Terminal Velocity's other pilots, marked (wcnet_tv_session.cpp: make_markers)
+                static unsigned lastSum = 0;
+                unsigned sum = 0;
+                for (int i = 0; i < 4; i++) {
+                    double mx, my, ms;
+                    bool onScreen;
+                    const char *label;
+                    if (!wc_net_partner_marker(i, &mx, &my, &ms, &onScreen, &label)) continue;
+                    const int x = (int)(sdl.draw.width * mx), y = (int)(sdl.draw.height * my);
+                    const int half = onScreen ? std::max(6, (int)(sdl.draw.width * ms / 2)) : 5;
+                    DrawPartner(x, y, half, onScreen, textPixels, textPitch);
+                    const int len = (int)strlen(label);
+                    int tx = x - len * 4, ty = onScreen ? y - half - 17 : y + 8;
+                    tx = std::max(0, std::min((int)sdl.draw.width - 8 * len, tx));
+                    ty = std::max(0, std::min((int)sdl.draw.height - 16, ty));
+                    DrawText((Bitu)tx, (Bitu)ty, label, 0x80, textPixels, textPitch);
+                    sum = sum * 31 + (unsigned)x * 7 + (unsigned)y * 13 + (unsigned)half + (unsigned)len;
+                }
+                if (sum != lastSum) {
+                    lastSum = sum;
+                    render.scale.clearCache = true;     // (the old marks off the picture's still parts)
                 }
             }
             if (in_space() && !incoming_text.empty()) {

@@ -356,4 +356,8 @@ bool lab_script_item(const std::string &item, double t) {
     return false;
 }
 
+void lab_event(const std::string &json) {
+    if (g_rec) event(json);
+}
+
 }  // namespace wc

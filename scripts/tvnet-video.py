@@ -20,7 +20,7 @@ last 2.5 s ('|' breaks a line).  Captions sit between the two pictures (a phone'
 The takes (docs/tiefighter.md, step 15's videos): scripts/tfnet-duo.sh with HOSTENV="WCLAB=<dir>" GUESTENV="WCLAB=<dir>"
 and each pilot's !tiesteer=; scripts/tfnet-sheet.py finds the moments.  Needs numpy, Pillow, ffmpeg.
 """
-import argparse, os, subprocess, sys, wave
+import argparse, bisect, os, subprocess, sys, wave
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'walkthrough'))
@@ -30,6 +30,37 @@ FONTS = os.path.expanduser('~/.cache/wcwalk/fonts')
 def font(name, size):
     p = os.path.join(FONTS, name)
     return ImageFont.truetype(p if os.path.exists(p) else '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf', size)
+
+def markers_of(take):
+    # the other pilots' markers each machine's overlay showed (its 'tvmark' events, src/cpu/wcnet_tv_session.cpp)
+    ev = [(ms, e['m']) for ms, e in take.events if e.get('t') == 'tvmark']
+    return [ms for ms, _ in ev], [m for _, m in ev]
+
+def draw_markers(pic, marks):
+    # as the emulator's overlay draws them (sdlmain.cpp DrawPartner): a cyan bracket round the ship, the callsign and
+    # distance above it; off the picture a diamond at its edge, the label below
+    d = ImageDraw.Draw(pic)
+    w, h = pic.size
+    f = font('IBMPlexMono-SemiBold.ttf', max(12, h // 32))
+    for x, y, size, on, label in marks:
+        cx, cy = x * w, y * h
+        half = max(6, size * w / 2) if on else 6
+        if on:
+            arm = half / 3 + 2
+            for col, grow in (((16, 16, 16), 1), ((80, 232, 255), 0)):
+                hh = half + grow
+                for sx in (-1, 1):
+                    for sy in (-1, 1):
+                        X, Y = cx + sx * hh, cy + sy * hh
+                        d.line([(X, Y), (X - sx * (arm + grow), Y)], fill=col, width=2 + grow)
+                        d.line([(X, Y), (X, Y - sy * (arm + grow))], fill=col, width=2 + grow)
+            ty = cy - half - f.size - 4
+        else:
+            d.polygon([(cx, cy - half), (cx + half, cy), (cx, cy + half), (cx - half, cy)], fill=(80, 232, 255), outline=(16, 16, 16))
+            ty = cy + half + 3
+        tw = d.textlength(label, font=f)
+        tx = min(max(0, cx - tw / 2), w - tw)
+        d.text((tx, max(0, min(h - f.size, ty))), label, font=f, fill=(225, 245, 255), stroke_width=2, stroke_fill=(0, 0, 0))
 
 def wall_map(take):
     e = [(ms, ev['ms']) for ms, ev in take.events if ev.get('t') == 'wall']
@@ -71,6 +102,11 @@ def main():
     h, g = Take(a.host), Take(a.guest)
     hE, hW = wall_map(h); gE, gW = wall_map(g)
     takes = {'host': h, 'guest': g}
+    marks = {'host': markers_of(h), 'guest': markers_of(g)}
+    def marks_at(who, ms):
+        times, ms_marks = marks[who]
+        k = bisect.bisect_right(times, ms) - 1
+        return ms_marks[k] if k >= 0 and ms - times[k] < 250 else []
     zooms = []
     for z in a.zoom:
         p = z.split(':')
@@ -137,6 +173,8 @@ def main():
         frame = base.copy()
         for who, take, ms, y in (('host', h, hm, Y1), ('guest', g, gm, Y2)):
             pic = Image.fromarray(take.picture(ms))
+            if pic.size[0] >= 640:
+                draw_markers(pic, marks_at(who, ms))
             k, cx, cy = zoom_at(who, hs)
             if k > 1.001:
                 pw, ph = pic.size

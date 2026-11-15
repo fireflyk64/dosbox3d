@@ -197,6 +197,17 @@ are counted at the level function (a retry keeps the index): objects, owners and
 Measured, two machines over TCP: the guest held then flying the host's artic.lvl 1.5 s after it; the host's exit
 ending both levels, both then on artic3.lvl; the guest's death and retry with "1 of 1 objects gone already".
 
+**The other pilots marked (2026-11-14, the user: "I can't identify the other player").**  A ship 8 world units off is some
+25 pixels across in the 640 x 480 picture, the same TV-202 the player flies: the emulator's overlay marks every other
+pilot in our level, in the cockpit's view (the view word 0; B cycles the outside cameras), with a cyan bracket round
+its ship and its callsign and distance above, or a cyan diamond at the picture's edge the way to turn when it is off
+the picture or behind.  The projection is the game's: the camera our ship's place and its fixed-point attitude matrix
+(columns right, up, forward), 90 degrees across (the visibility test keeps |x| <= z), square pixels in the 640 x 480
+mode; checked against the ship in captured frames (`!frame=`).  While a recording is made (WCLAB) each frame's
+markers go into it as 'tvmark' events, and scripts/tvnet-video.py draws them (the recorder takes the game's picture,
+before the overlay).  Measured, both ways with the other pilot holding fire: the guest's screen shows the bracketed
+host and the host's bolts ahead of it, the host's screen the bracketed guest and the guest's bolts.
+
 **Talking (2026-11-14).**  In flight the 0 key (no key of the game's: 1 to 7 pick weapons) opens the emulator's comms
 prompt; the line goes to the room (Chat, the host relaying) and shows on every screen in the game's own big letters,
 "CALLSIGN: text", for 5 s (the message call 0x2CC00 its net game shows another player's line with); out of flight it
