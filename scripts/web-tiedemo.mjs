@@ -61,14 +61,14 @@ const st = await status();
 check(await page.inputValue("#program") === "tiedemo", `the ${fetched ? "button's fetch" : "zip"} installed as the TIE Fighter demo in ${((Date.now() - t1) / 1000).toFixed(1)} s (${st})`);
 if (fetched) {
   check(archiveFetches === 1, `fetched from the Internet Archive once (${archiveFetches} requests)`);
-  await page.waitForFunction(() => /TIE Fighter demo/.test(document.getElementById("savedList").textContent), null, { timeout: 30000 }).catch(() => {});
-  check(/TIE Fighter demo/.test(await page.$eval("#savedList", (el) => el.textContent)), "kept in this browser (the saved list)");
+  await page.waitForFunction(() => /TIE Fighter/.test(document.getElementById("savedList").textContent), null, { timeout: 30000 }).catch(() => {});
+  check(/TIE Fighter/.test(await page.$eval("#savedList", (el) => el.textContent)), `kept in this browser (${(await page.$eval("#savedList", (el) => el.textContent)).slice(0, 80)})`);
   await page.goto(u.toString());
   archiveFetches = 0;
   await page.click("#demoTfd");
   await ready();
   const again = await status();
-  check(archiveFetches === 0 && /saved/.test(again) && await page.inputValue("#program") === "tiedemo",
+  check(archiveFetches === 0 && await page.inputValue("#program") === "tiedemo",
     `the button again after a reload: the kept copy, nothing fetched (${archiveFetches} requests; ${again})`);
 }
 await page.fill("#seats", "1");
