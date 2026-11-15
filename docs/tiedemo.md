@@ -176,7 +176,8 @@ The demo is an earlier build of the TIE Fighter the CD port knows (docs/tiefight
 * `WCNET_TDM_PROF=1`: where the CPU is and the DS, sampled, every 5 s.
 * `WCNET_TDM_WATCH=<linear>:<bytes>`: every write to those bytes and the instruction after it.
 * The key script's `!tdmrec=<object>` (a record logged), `!tdmr=<DS offset>[/...]` (words logged), `!tdmw=<DS
-  offset>:<byte>` (a byte written), `!tdmglue=dx:dy:dz` (object 0 held beside the player).
+  offset>:<byte>` (a byte written), `!tdmglue=dx:dy:dz` (object 0 held beside the player), `!tdmpose` (our craft's
+  heading, pitch and roll, its nose, speed and target, and the shots made: laser_createprojectile's calls, ours apart).
 
 ## 5. Flown together (src/cpu/wcnet_tiedemo_session.cpp): the CD port's session, ported
 
@@ -374,3 +375,46 @@ with a host script holding `!tdmwin` checks two pages go on to the next mission.
 * The bomber's torpedoes cross the room: the host's two, remade on the guest's machine (type 24, the launcher's).
 * A pilot down: both flights end, the guest waits for the host's verdict ("the same mission"), and both launch it
   again together with new seeds.
+
+## 9. The flight's keys (src/cpu/wcnet_tiedemo_controls.cpp)
+
+The user, 2026-11-15: "the keyboard suffers some of the same problems as TIECD, so I think that will also need to be
+improved accordingly". The CD port's keyboard (docs/tiefighter.md step 7), fitted to this build's own input code.
+
+**How the demo steers** (read from TIEMISS.EXE: the poll at image 0x3654, the stick at 0x3190):
+* The mouse's motion counters (INT 33h function 0Bh) are a frame's stick: 128 to a mickey across, 64 up and down
+  (DS:CD70, DS:CD76, clamped to 191 and 127 mickeys), nothing within 2,048 across and 1,536 up and down.
+* The arrows come one a key event from the BIOS's buffer (`getch`: codes 1 to 4 in DS:BF96), each a push of the stick
+  that grows while the same arrow repeats: across 2,112, then 4,096 more an event up to 12,288 (half the mouse's
+  most); up and down 1,600, then 1,536 more up to 8,192. Held, the keyboard's own repeat gave one push, nothing for
+  half a second, then the rest. Measured, a T/F: Left held, the nose still for 0.55 s, then turning, and turning on
+  after it was let go.
+* Space confirms what the onboard computer offers (pstate+0x20, DS:CD98: 1 the target it suggests, DS:CD9A, 2
+  another; the flight's key switch, image 0x1458C) and fires nothing; Ins and Del do nothing; the left button fires.
+* The right button held is the X-roll (the stick across rolls), but only once it has been held 78 frame ticks (0.33 s:
+  pstate+0x2C, DS:CDA4, counted against last frame's buttons at pstate+0x2A, image 0x143C5); until then it is masked
+  out, and let go sooner it is a click, which picks a target.
+
+**Now, in flight** (the layer's, the game unchanged; `tdm_key` passes every key but Esc to `tdm_controls_key`):
+* The arrows are taken from the game and steer by RetroVega's ramp (WC1's), as mickeys added at the frame's top
+  (`tdm_controls_frame`, from 0090:06CE): a notch further every other frame, 1 to 9, the opposite arrow or letting go
+  0, full in some 0.3 s. The ramp runs between the game's own first push and its arrows' most (17 to 96 mickeys
+  across, 25 to 127 up and down); Shift with an arrow is the whole stick at once (191 across: the mouse's sharpest
+  turn). Up dives, as a stick pushed forward.
+* The keypad's Ins and Del roll on the same ramp: the right button pressed and marked as held long enough already
+  (the two words above written), so the roll starts at once and letting go is no click; the stick across, to 69
+  mickeys (some 80 degrees a second in a T/F, near the CD port's keyboard roll); Shift the whole stick. Nothing up and
+  down while rolling (the X-roll's up and down is the throttle).
+* Space fires: the mouse's left button, held while Space is, unless DS:CD98 is set: then Space is the game's.
+* The mouse stays the game's own (drag to steer); the CD port's pointer modes are not carried over (they need the
+  gunsight's place and the bank's code in this build).
+
+**Measured** (native, `!tdmpose`: our craft's attitude, nose, target and the shots made):
+* A T/F, Left held 1 s: turning from the first frame, the ramp full in some 0.4 s; Right held 1 s brought the nose
+  back to within a degree. Shift+Left 0.5 s: some 33 degrees.
+* Ins held 1 s: rolled 59 degrees, the nose and heading unmoved (82 degrees a second at full); a 0.1 s tap 0.4
+  degree, the target unchanged.
+* Space held 1 s: four shots of ours.
+* The T/I (The Shuttles Run) and the T/B (Corvette Hunt): Left 1 s then Right 1 s back to within a degree (the CD's
+  sign bug, a stick read unsigned for craft of other turn rates, is not in this build's), Up dives, Down climbs, Ins
+  rolls.

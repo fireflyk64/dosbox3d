@@ -146,6 +146,10 @@ void add_key(KBD_KEYS key, bool pressed) {
 
 }  // namespace
 
+// (the ramp and the stick's mickeys, for the TIE Fighter demo's keys too: wcnet_tiedemo_controls.cpp)
+int tie_key_ramp(int was, int dir, bool shift) { return key_ramp(was, dir, shift); }
+int tie_stick_mickeys(double d, int least, int most) { return mickeys(d, least, most); }
+
 bool tie_controls_key(int key, bool pressed) {
     if (g_adding || !tie_found()) {
         return false;

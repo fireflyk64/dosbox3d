@@ -218,6 +218,7 @@ void frame_top() {
     g_lastFrameMs = now;
     g_frame++;
     g_verdictReleased = false;
+    tdm_controls_frame();
     tdm_campaign_frame();
     if (++g_rateFrames >= 20) {
         g_frameMs = (now - g_rateSince) / g_rateFrames;
@@ -458,7 +459,8 @@ void at_neon_wait() {
 // but for a guest whose launch waits on a host already flying, for whom it means "fly alone".  At the showroom Esc is
 // its way out to DOS (its exit code, which TIEDEMO.BAT tests): that code becomes "go to game" (tdm_program_ended).
 bool tdm_key(int key, bool pressed) {
-    if (key != KBD_esc || !g_found || !ours_running()) return false;
+    if (!g_found || !ours_running()) return false;
+    if (key != KBD_esc) return tdm_controls_key(key, pressed);     // (the flight's keys: wcnet_tiedemo_controls.cpp)
     if (pressed && g_holding == HOLD_LAUNCH && tdm_session_fly_alone()) return true;
     static double toldAt = -1e9;
     if (pressed && PIC_FullIndex() - toldAt > 10000) {
@@ -573,6 +575,8 @@ void tdm_watch_list(void (*watch)(Bit16u ip)) {
     watch(kStubOff);
 }
 
+unsigned g_shotsMade, g_ourShots;      // laser_createprojectile's calls, and those for our craft (!tdmpose)
+
 bool tdm_check_hooks(Bit32u ip) {
     if (neon_running()) {
         if (ip == kNeonWaitOff && SegValue(cs) == (Bit16u)(g_neonLoad + kNeonWaitPara)) {
@@ -609,6 +613,8 @@ bool tdm_check_hooks(Bit32u ip) {
         return true;
     }
     if (at(kCreateProjectile, ip)) {
+        g_shotsMade++;
+        if (tdm_arg(0) == (Bit16u)tdm_player_object()) g_ourShots++;
         tdm_session_shot();
         return true;
     }
@@ -655,6 +661,22 @@ bool tdm_script_item(const std::string &item, double t) {
     }
     if (item.compare(0, 8, "!tdmrec=") == 0) {
         g_recAt.push_back(std::make_pair(PIC_FullIndex(), atoi(item.c_str() + 8)));
+        return true;
+    }
+    if (item == "!tdmpose") {
+        // our craft's attitude (heading, pitch, roll: 65536 to a turn), its nose (the move vector, x 32767), its speed,
+        // and the bolts in flight (objects past the craft, a type set): the controls' measurements (docs/tiedemo.md)
+        const int o = tdm_player_object();
+        if (!g_found || o < 0) {
+            wclog(1, "key script %.1fs: TIE demo: pose: no craft of ours", t);
+            return true;
+        }
+        const PhysPt a = tdm_obj(o);
+        int bolts = 0;
+        for (int n = tdm::kCraftSlots; n < tdm::kObjectCount; n++) bolts += mem_readb(tdm_obj(n) + 4) ? 1 : 0;
+        wclog(1, "key script %.1fs: TIE demo: pose: hpr %u %u %u nose %d %d %d speed %d target %d; shots made %u (ours %u), %d objects past the craft",
+              t, mem_readw(a + 0x1E), mem_readw(a + 0x20), mem_readw(a + 0x22), (Bit16s)mem_readw(a + 0x3A), (Bit16s)mem_readw(a + 0x3C),
+              (Bit16s)mem_readw(a + 0x3E), (Bit16s)mem_readw(a + 0x26), (Bit16s)r16(tdm::kTarget), g_shotsMade, g_ourShots, bolts);
         return true;
     }
     return false;

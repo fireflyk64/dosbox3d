@@ -27,6 +27,8 @@ bool tdm_check_hooks(Bit32u ip);                    // a watched IP came up: tru
 void tdm_watch_list(void (*watch)(Bit16u ip));      // our IPs, for the dispatcher's table
 bool tdm_script_item(const std::string &item, double t);   // key-script aids (!tdm...)
 bool tdm_key(int key, bool pressed);                // a key on its way to the game: true to keep it (Esc in TIEMISS)
+bool tdm_controls_key(int key, bool pressed);       // ... the flight's keys (wcnet_tiedemo_controls.cpp): arrows, Ins/Del, Space
+void tdm_controls_frame();                          // the top of each flight frame: the keys' mickeys
 void tdm_program_ended(Bit16u psp);                 // a program ended (its exit code still to be read: the showroom's)
 
 // The flight's tables: offsets in the data segment (DGROUP), and fields (docs/tiedemo.md section 4).

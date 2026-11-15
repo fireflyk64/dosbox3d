@@ -115,6 +115,8 @@ bool tie_repeat_call();
 bool tie_controls_key(int kbdKey, bool pressed);     // true: taken from the game
 bool tie_controls_mouse(float xrel, float yrel);     // true: moved our pointer instead of the game's stick
 void tie_controls_frame();                           // at the frame's top: this frame's mickeys
+int tie_key_ramp(int was, int dir, bool shift);      // RetroVega's arrow ramp (WC1's): an axis's next step, -9..9
+int tie_stick_mickeys(double d, int least, int most); // a stick's deflection (-1..1) as one frame's mickeys
 int tie_controls_axis(bool across, int delta, int scale, int game);   // the stick's axis scaled, signed (the game's: `game`)
 bool tie_controls_marker(double *x, double *y);      // the pointer to draw: its shares of the screen, round the gunsight
 void tie_controls_set_mouse(int mode);              // 0 drag, 1 pointer, 2 keyboard, 3 joystick, 4 pointer banking
