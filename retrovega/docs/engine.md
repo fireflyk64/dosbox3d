@@ -2989,10 +2989,12 @@ The budget: `build.sh` prints what RV.EXE leaves of DOSBox's 640,512 bytes, warn
 drivers offers less than DOSBox does.
 
 **The balloon** (the user, 2026-11-14: "Please make a 24k size item called balloon_check_with_human_before_reducing so that we have
-an emergency amount we can deploy carefully"): mem.c's `balloon_check_with_human_before_reducing`, 24 KB of RV.EXE's image held for
+an emergency amount we can deploy carefully"): mem.c's `balloon_check_with_human_before_reducing`, 20 KB of RV.EXE's image held for
 nothing, so that the room is there when something must have it. Never shrink or remove it without asking the user first. Its size
 is `RV_BALLOON_KB` (`BALLOON_KB=0 ./build.sh` builds without it; "Make it easy for a human to disable it"); RV.EXE only, the test
 builds feed their heaps from that room. build.sh prints it beside what is free, and fails when the size asked for is not in the map.
+24 KB until 2026-11-15, when the user let 4 KB go: "also deflate the balloon by an extra 4 KB so that we have some head room"
+(RV.EXE had 2,304 bytes left for DOS after the planet's picture without the card, on the terrain branch).
 
 **What 2026-11-14 gave back** (the user's picks from a survey of RV.EXE's image), before the balloon took 24 KB of it:
 

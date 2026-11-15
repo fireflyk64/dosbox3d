@@ -398,7 +398,9 @@ start if possible", and "hopefully we can make the bake look just as nice as the
 - The approach and straight-down views: 2 to 3 times over budget natively (the card's detail adapts; the page held
   30 fps in Mirage regardless).
 - From right under an arch, the outer edge of its underside still shows a patch cell's steps.
-- RV.EXE: some 2,300 bytes left for DOS with the 24 KB balloon held, after its own planet picture (above).
+- RV.EXE: some 2,300 bytes left for DOS with the 24 KB balloon held, after its own planet picture (above); the user then
+  let 4 KB of the balloon go for head room (2026-11-15: "also deflate the balloon by an extra 4 KB so that we have some head
+  room"): some 6,400 bytes left with the 20 KB balloon.
 - Without the card, the views beside the arches still run long at the coarsest detail (about 24 fps at 50,000
   cycles): their slab sub-steps, the lines' set-up and the window moves are what is left to make faster.
 - The native game without the card's picture still skips the planet missions (its `planet_can`).

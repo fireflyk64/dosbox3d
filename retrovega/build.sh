@@ -35,7 +35,7 @@ fi
 # optimised (the flight benchmark found -ox worth half again as many sprites a
 # frame as -od); DEBUG=1 builds -od -d2 for the debugger
 if [ -n "${DEBUG:-}" ]; then OPT="-od -d2"; else OPT="-ox -d1"; fi
-BALLOON_KB=${BALLOON_KB:-24}          # (RV.EXE's emergency room, mem.c's balloon: BALLOON_KB=0 ./build.sh builds without it)
+BALLOON_KB=${BALLOON_KB:-20}          # (RV.EXE's emergency room, mem.c's balloon: BALLOON_KB=0 ./build.sh builds without it)
 CFLAGS="-q -bt=dos -mm -3 -s -w4 -zq -zm $OPT -i=src -dRV_BALLOON_KB=$BALLOON_KB"   # (-zm: a segment a function, so the link drops the unused: option eliminate)
 nasm -f obj -i src/ -o "$OUT/rvhook.obj" src/rvhook.asm
 nasm -f obj -o "$OUT/lowlevel.obj" src/lowlevel.asm
@@ -183,7 +183,7 @@ RV_ROOM=640512
 RV_IMAGE=$(sed -n 's/^Memory size: *[0-9a-fA-F]* (\([0-9]*\)\.).*/\1/p' "$OUT/RV.MAP")
 RV_LEFT=$((RV_ROOM - RV_IMAGE))
 echo "RV.EXE takes $RV_IMAGE bytes of conventional memory, $RV_LEFT left for DOS to hand out"
-# the balloon (mem.c: the user's emergency room, 24 KB unless BALLOON_KB says otherwise, held in the image): never shrunk
+# the balloon (mem.c: the user's emergency room, 20 KB unless BALLOON_KB says otherwise, held in the image): never shrunk
 # or lost without asking the user
 if [ "$BALLOON_KB" -gt 0 ]; then
     if ! grep -q 'balloon_check_with_human_before_reducing' "$OUT/RV.MAP"; then
@@ -194,7 +194,7 @@ if [ "$BALLOON_KB" -gt 0 ]; then
     echo "  emergency, so $RV_LEFT free now and $((RV_LEFT + BALLOON_KB * 1024)) with the balloon released (ask the user before"
     echo "  reducing it; BALLOON_KB=0 ./build.sh builds without it)"
 else
-    echo "  (the balloon is off: BALLOON_KB=0.  The default holds 24 KB of this for an emergency)"
+    echo "  (the balloon is off: BALLOON_KB=0.  The default holds 20 KB of this for an emergency)"
 fi
 if [ "$RV_LEFT" -lt 2048 ]; then
     echo "RV.EXE is too big for conventional memory: it would not load, or be at the very edge (see docs/engine.md, Memory)"
