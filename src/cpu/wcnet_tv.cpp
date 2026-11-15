@@ -41,13 +41,15 @@ Bit32u g_anchor[A_COUNT];       // each anchor's window, linear
 Bit32u g_data[D_COUNT];         // each data address, linear
 Bit32u g_frames = 0, g_framesReported = 0;
 double g_lastFrameMs = -1e9;
+double g_updatedAt[1024];       // (the aid !tvcraft: when each object's update was last called, made or skipped)
 unsigned g_counts[8];           // hook calls since the last report: frame, draw, update, skipped, hit, fire, level, false
 int g_level = -1;
 std::string g_levelName;
 Bit32u g_hitSkip = 0;
 
 // The places watched (linear), by what they are.
-enum Place { P_FRAME, P_DRAW, P_UPDATE, P_HIT, P_FIRE, P_LEVEL, P_LEVEL_END, P_COUNT };
+enum Place { P_FRAME, P_DRAW, P_UPDATE, P_HIT, P_FIRE, P_LEVEL, P_LEVEL_END, P_LAUNCH, P_LAUNCH_END, P_GENERATE, P_GENERATE_END,
+             P_REINFORCE, P_REINFORCE_END, P_REINFORCE_CAP, P_REINFORCE_CLOCK, P_COUNT };
 Bit32u g_campaignCall = 0;     // the campaign loop's call of the level function (its return address: + 5)
 Bit32u g_places[P_COUNT];
 
@@ -149,6 +151,17 @@ bool scan() {
     g_places[P_LEVEL] = place_of(A_LEVEL_FN);                             // (the level function's entry)
     g_campaignCall = place_of(A_CAMPAIGN) + (0x2EC79 - 0x2EC58);          // (the campaign's call of it: ebx its index)
     g_places[P_LEVEL_END] = g_campaignCall + 5;                             // (... and where it comes back: the level over)
+    // the two ways the game makes an object in flight (a launcher's craft, a generator's), and their ends: a launch
+    // not ours goes straight to its function's end
+    g_places[P_LAUNCH] = place_of(A_LAUNCH_SPAWN);
+    g_places[P_LAUNCH_END] = place_of(A_LAUNCH_END);
+    g_places[P_GENERATE] = place_of(A_GENERATE_SPAWN);
+    g_places[P_GENERATE_END] = place_of(A_GENERATE_END);
+    g_places[P_REINFORCE] = place_of(A_REINFORCE);
+    g_places[P_REINFORCE_END] = place_of(A_REINFORCE_END);
+    // (in the same window: the difficulty's cap about to be tried, and the clock about to be wound)
+    g_places[P_REINFORCE_CAP] = place_of(A_REINFORCE) - (0x23EF1 - 0x23E75);
+    g_places[P_REINFORCE_CLOCK] = place_of(A_REINFORCE) - (0x23EF1 - 0x23EA6);
     // the test's end, where a hit we answer "skip" goes on (counted, nothing applied): the same function's, as the
     // shareware has it, or none (every hit applied)
     g_hitSkip = place_of(A_HIT_END) - place_of(A_HIT_APPLY) == 0x2937F - 0x29327 ? place_of(A_HIT_END) : 0;
@@ -300,7 +313,53 @@ void tv_program_loaded(const char *name, Bit16u psp) {
     wclog(1, "GAME.EXE started (PSP %04X): looking for Terminal Velocity's program", psp);
 }
 
+// WCNET_TV_PROF=1: where the game's time goes -- the program's place sampled at each tick (every ~1000 instructions),
+// counted in 16-byte steps of its code, the busiest logged every 10 s (as the shareware's image addresses) and reset.
+void prof_tick() {
+    static const bool on = getenv("WCNET_TV_PROF") != NULL;
+    if (!on || !g_found) return;
+    static std::vector<unsigned> hist;
+    static unsigned other = 0, total = 0;
+    static double nextAt = 0;
+    const Bit32u delta = g_anchor[A_FIRE_FN] - 0x19080;
+    const Bit32u img = (Bit32u)(SegPhys(cs) + reg_eip) - delta;
+    if (hist.empty()) hist.assign(0x50000 >> 4, 0);
+    total++;
+    if (img >= 0x10000 && img < 0x60000) hist[(img - 0x10000) >> 4]++;
+    else other++;
+    const double now = PIC_FullIndex();
+    if (now < nextAt) return;
+    if (nextAt > 0 && total) {
+        std::vector<std::pair<unsigned, unsigned> > top;
+        for (size_t i = 0; i < hist.size(); i++) if (hist[i]) top.push_back(std::make_pair(hist[i], (unsigned)i));
+        std::sort(top.rbegin(), top.rend());
+        std::string line;
+        for (size_t i = 0; i < top.size() && i < 30; i++) {
+            char b[32];
+            snprintf(b, sizeof(b), " %05x:%.1f%%", 0x10000 + (top[i].second << 4), 100.0 * top[i].first / total);
+            line += b;
+        }
+        wclog(1, "Terminal Velocity profile %.0fs: %u samples, %.1f%% outside the game's code;%s", now / 1000, total, 100.0 * other / total, line.c_str());
+        const char *dir = getenv("WCNET_DUMP_DIR");
+        if (dir) {
+            // (the whole count, for scripts/tvprof.py: "image-address count" lines, "other" and "total" first)
+            char path[512];
+            snprintf(path, sizeof(path), "%s/tvprof-%05.0f.txt", dir, now / 1000);
+            FILE *f = fopen(path, "w");
+            if (f) {
+                fprintf(f, "total %u\nother %u\n", total, other);
+                for (size_t i = 0; i < hist.size(); i++) if (hist[i]) fprintf(f, "%05x %u\n", 0x10000 + (unsigned)(i << 4), hist[i]);
+                fclose(f);
+            }
+        }
+    }
+    hist.assign(hist.size(), 0);
+    other = total = 0;
+    nextAt = now + 10000;
+}
+
 void tv_tick() {
+    prof_tick();
     if (g_found || g_armed) {
         tv_session_tick();
     }
@@ -380,6 +439,7 @@ void tv_check_hooks(Bit32u eip) {
         const Bit32u table = tv_r32(g_data[D_OBJ_TABLE]);
         if (obj >= table && (obj - table) % kTvObjSize == 0) {
             const int i = (int)((obj - table) / kTvObjSize);
+            if (i < 1024) g_updatedAt[i] = PIC_FullIndex();
             if (tv_session_puppet(i)) {
                 g_counts[3]++;
                 reg_eip = eip + 5;          // (its update not made: the call skipped, its argument popped by the caller)
@@ -387,6 +447,31 @@ void tv_check_hooks(Bit32u eip) {
                 tv_session_updated(i);
             }
         }
+    } else if (eip == g_places[P_LAUNCH] || eip == g_places[P_GENERATE]) {
+        // (a new object about to be made: the launcher ebp, or the generator edx; the table's start the same)
+        const bool launch = eip == g_places[P_LAUNCH];
+        const Bit32u obj = launch ? reg_ebp : reg_edx;
+        const Bit32u table = tv_r32(g_data[D_OBJ_TABLE]);
+        if (obj >= table && (obj - table) % kTvObjSize == 0 && !g_saved.active &&
+            !tv_session_spawn_begin((int)((obj - table) / kTvObjSize))) {
+            reg_eip = launch ? g_places[P_LAUNCH_END] : g_places[P_GENERATE_END];
+        }
+    } else if (eip == g_places[P_REINFORCE_CAP] || eip == g_places[P_REINFORCE_CLOCK]) {
+        // Reinforcements for a group of pilots flying together (one game reinforces them all): its cap on the awake
+        // hostiles and its clock both times the pilots -- the hostiles counted shared among them, the clock wound for
+        // each of them.
+        const int n = g_saved.active ? 1 : tv_session_reinforce_pilots();
+        if (n > 1 && eip == g_places[P_REINFORCE_CAP]) {
+            const Bit32u awake = tv_r32(g_data[D_AWAKE_HOSTILES]);
+            tv_w32(g_data[D_AWAKE_HOSTILES], (awake + (Bit32u)n - 1) / (Bit32u)n);
+        } else if (n > 1) {
+            const Bit32s ft = (Bit32s)tv_r32(g_data[D_FRAME_TIME]) / 4;
+            tv_w32(g_data[D_REINFORCE_CLOCK], tv_r32(g_data[D_REINFORCE_CLOCK]) + (Bit32u)((n - 1) * ft));
+        }
+    } else if (eip == g_places[P_REINFORCE]) {
+        if (!g_saved.active && !tv_session_reinforce_begin()) reg_eip = g_places[P_REINFORCE_END];
+    } else if (eip == g_places[P_LAUNCH_END] || eip == g_places[P_GENERATE_END] || eip == g_places[P_REINFORCE_END]) {
+        tv_session_spawn_end();
     } else if (eip == g_places[P_HIT]) {
         // (a hit confirmed: ebx the object, [esp+0x1c] the damage, [esp+0x10] the caller's ebx -- the projectile, when
         // the projectiles' loop made the test; our answer: the game applies it, or it is counted and skipped)
@@ -406,11 +491,13 @@ void tv_check_hooks(Bit32u eip) {
         g_counts[5]++;
         const Bit32u sp = SegPhys(ss) + reg_esp;
         const Bit32u owner = mem_readd(sp + 0x10);
-        if (owner == 0 && !g_saved.active) {
+        // (the player's shots, and the enemies' -- owner 1, from the AI's fire call: only the craft this machine flies
+        // fire here, the puppets' updates are not made -- told; the shots we remake are not)
+        if (!g_saved.active) {
             Bit32u posmat[16];
             const Bit32u p = mem_readd(sp + 4);
             for (int i = 0; i < 16; i++) posmat[i] = tv_r32(p + (Bit32u)i * 4);
-            tv_session_fired(posmat, mem_readd(sp + 8), mem_readd(sp + 0xc), mem_readd(sp + 0x14));
+            tv_session_fired(posmat, mem_readd(sp + 8), mem_readd(sp + 0xc), owner, mem_readd(sp + 0x14));
         }
     } else if (eip == g_places[P_LEVEL_END]) {
         tv_session_level_end();
@@ -465,6 +552,11 @@ bool tv_player(TvShip *out) {
 }
 
 int tv_level() { return g_found ? g_level : -1; }
+
+int tv_space() {
+    if (!g_found || tv_r32(g_data[D_IN_TUNNEL]) != 1) return 0;
+    return 1 + (int)tv_r32(g_data[D_TUNNEL_INDEX]);
+}
 
 std::string tv_level_name() {
     if (!g_found) return "";
@@ -556,6 +648,7 @@ Bit32u tv_fn(TvFn f) {
     case TV_FN_LOAD_MODEL: return place_of(A_LOAD_MODEL_FN);
     case TV_FN_DESTROY: return place_of(A_DESTROY_FN);
     case TV_FN_MESSAGE: return place_of(A_MESSAGE_FN);
+    case TV_FN_TUNNEL_ENTER: return place_of(A_TUNNEL_ENTER_FN);
     case TV_FN_POD_LOOKUP: {
         // (the model loader's first call: the archives' lookup, by its near call's offset)
         const Bit32u call = place_of(A_LOAD_MODEL_FN) + (0x402F1 - 0x402E0);
@@ -579,6 +672,30 @@ bool tv_script_item(const std::string &item, double t) {
         wclog(1, "key script %.1fs: Terminal Velocity: player at %d %d %d ang %d %d %d vel %d %d %d spin %d %d %d shield %d, level %d",
               t, s.pos[0], s.pos[1], s.pos[2], s.ang[0], s.ang[1], s.ang[2], s.vel[0], s.vel[1], s.vel[2], s.spin[0], s.spin[1],
               s.spin[2], s.shield, g_level);
+        return true;
+    }
+    if (item == "!tvcraft") {
+        // the level's craft (class 7): in the table, alive, awake (their update called in the last second: the game's
+        // near list), of those flown elsewhere (puppets), and the awake ones' indices
+        const int n = tv_object_count();
+        int all = 0, alive = 0, awake = 0, puppets = 0, launchers = 0, generators = 0;
+        std::string list;
+        for (int i = 0; i < n && i < 1024; i++) {
+            if (tv_object_class(i) == 21) launchers++;
+            if (tv_object_class(i) == 41) generators++;
+            if (tv_object_class(i) != 7) continue;
+            all++;
+            if ((Bit32s)tv_r32(tv_object_addr(i) + 0x1c) <= 0) continue;
+            alive++;
+            if (PIC_FullIndex() - g_updatedAt[i] > 1000) continue;
+            awake++;
+            if (tv_session_puppet(i)) puppets++;
+            char b[16];
+            snprintf(b, sizeof(b), "%s%d%s", list.empty() ? "" : ",", i, tv_session_puppet(i) ? "p" : "");
+            list += b;
+        }
+        wclog(1, "key script %.1fs: Terminal Velocity craft: %d in the level, %d alive, %d awake (%d flown elsewhere) [%s] space %d; "
+              "level %d, launchers %d, generators %d", t, all, alive, awake, puppets, list.c_str(), tv_space(), tv_level(), launchers, generators);
         return true;
     }
     if (item.compare(0, 7, "!tvobjs") == 0) {

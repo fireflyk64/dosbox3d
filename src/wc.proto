@@ -458,6 +458,9 @@ message TvState {
     optional bool done = 10;            // the level done (its exit flown): everybody's ends with it
     optional sint32 difficulty = 11;
     optional bool in_level = 12;        // a level of the campaign under way (its briefing too: from the level's call to its end)
+    // Where in the level: 0 outdoors, 1 + n in tunnel n (a tunnel has objects of its own, in the same table: what a
+    // pilot sends of objects counts only for pilots in the same place)
+    optional sint32 space = 13;
 }
 // The host's choice of each seat's craft (the page's Craft menus, WCTVLOOKS): the model each pilot's ship is drawn
 // with by the others, by seat ("ship.bin" the TV-202, "icebrd.bin", "snowftr.bin", "hawk.bin", "gull1.bin", or
@@ -468,17 +471,34 @@ message TvLooks {
 // The objects of a level that are gone (no hit points left), from a pilot who has flown it a while to one who has just
 // started it (a retry after a death, a late start): the newcomer's copies go too.
 message TvDead {
+    optional sint32 space = 3;
     optional sint32 level = 1;
     repeated uint32 index = 2 [packed = true];
+}
+// New objects a game made (a launcher's craft, a generator's): only the machine of the pilot nearest the launcher
+// lets its game make one, and tells the others the object's whole record (0xB4 bytes) and its slot in the table;
+// they write it there.  Also sent to a pilot who starts our level (a retry, a late start, out of a tunnel): the
+// made objects still alive (for_seat that pilot; the others leave it).
+message TvSpawn {
+    optional sint32 level = 1;
+    optional sint32 space = 2;
+    optional uint32 player = 3;         // the machine that made it (it flies it until the owners are decided)
+    optional sint32 spawner = 4;        // the launcher's slot (-1: a catch-up)
+    repeated uint32 index = 5 [packed = true];
+    repeated fixed32 record = 6 [packed = true];        // 45 words for each index
+    optional sint32 for_seat = 7;
 }
 // A shot of a pilot's: the game's fire call's arguments (16 words of place, angles and matrix, the weapon, its
 // damage, its kind), remade on the others' machines.
 message TvShot {
+    optional sint32 space = 6;
     optional uint32 player = 1;
     repeated sint32 posmat = 2 [packed = true];
     optional uint32 weapon = 3;
     optional sint32 damage = 4;
     optional uint32 kind = 5;
+    optional uint32 owner = 7;          // 0 a pilot's shot; else an enemy's (the game's owner word, 1), fired by a craft
+                                        // the sender's machine flies: remade so here, it can hit our pilot
 }
 // The level's objects a machine flies (their AI and movers run there), as they are now: each object's index, then
 // x y z and the three angles, its hit points and its state word; the others' copies are puppets.
@@ -489,18 +509,21 @@ message TvObject {
     optional sint32 state = 4;
 }
 message TvObjects {
+    optional sint32 space = 4;
     optional uint32 player = 1;
     optional sint32 level = 2;
     repeated TvObject objects = 3;
 }
 // The host's word on who flies which object (the nearest pilot's machine): objects not listed are the host's.
 message TvOwners {
+    optional sint32 space = 4;
     optional sint32 level = 1;
     repeated uint32 index = 2 [packed = true];
     repeated uint32 owner = 3 [packed = true];
 }
 // A shot of ours hit an object another machine flies: its owner applies the damage.
 message TvHit {
+    optional sint32 space = 6;
     optional uint32 player = 1;
     optional sint32 level = 2;
     optional uint32 index = 3;
@@ -647,4 +670,5 @@ message NetworkMessage {
     optional TvHit tv_hit = 65;
     optional TvLooks tv_looks = 66;
     optional TvDead tv_dead = 67;
+    optional TvSpawn tv_spawn = 68;
 }

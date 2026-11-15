@@ -42,6 +42,7 @@ struct TvShip {
 };
 bool tv_player(TvShip *out);
 int tv_level();                 // the campaign's level index (-1: none)
+int tv_space();                 // where in it: 0 outdoors, 1 + n in tunnel n
 std::string tv_level_name();    // its file's name ("" none)
 Bit32u tv_frames();             // frames of the level loop so far
 
@@ -65,7 +66,8 @@ const Bit32u TV_SCRATCH = 0xFFFFFFF0u;
 typedef void (*TvCallDone)(int tag, Bit32u eax);
 void tv_queue_call(int where, Bit32u fn, const std::vector<Bit32u> &args, const std::vector<Bit32u> &scratch, TvCallDone done, int tag);
 bool tv_in_call();              // one of ours is under way (its effects are not the player's)
-enum TvFn { TV_FN_FIRE = 0, TV_FN_DRAW_MODEL = 1, TV_FN_HIT = 2, TV_FN_LOAD_MODEL = 3, TV_FN_DESTROY = 4, TV_FN_POD_LOOKUP = 5, TV_FN_MESSAGE = 6 };
+enum TvFn { TV_FN_FIRE = 0, TV_FN_DRAW_MODEL = 1, TV_FN_HIT = 2, TV_FN_LOAD_MODEL = 3, TV_FN_DESTROY = 4, TV_FN_POD_LOOKUP = 5, TV_FN_MESSAGE = 6,
+            TV_FN_TUNNEL_ENTER = 7 };
 Bit32u tv_fn(TvFn f);           // the function's linear address (0: none)
 Bit32u tv_data(int dataId);     // a tvsig::D_* address (0: none)
 
@@ -77,9 +79,14 @@ void tv_session_tick();
 void tv_session_frame();                            // the level loop's frame top
 void tv_session_draw();                             // the remote-ship place: the others' ships into the draw list
 bool tv_session_puppet(int obj);                    // an object another machine flies (its update skipped here)
-void tv_session_fired(const Bit32u posmat[16], Bit32u weapon, Bit32u damage, Bit32u kind);  // the player's shot
+void tv_session_fired(const Bit32u posmat[16], Bit32u weapon, Bit32u damage, Bit32u owner, Bit32u kind);  // a shot made here
+                                                    // (owner 0 the player's; else an enemy's, of a craft flown here)
 bool tv_session_hit(int obj, Bit32s damage, Bit32u projectile);   // a hit on an object about to be applied: true, apply it
 void tv_session_updated(int obj);                   // an object's update made here this frame (not a puppet)
+bool tv_session_spawn_begin(int spawner);           // a launcher about to make an object: true, let it (ours to make)
+void tv_session_spawn_end();                        // a launcher's update's end: the object it made, told
+bool tv_session_reinforce_begin();                  // the level's reinforcements about to put a craft near us: true, let it
+int tv_session_reinforce_pilots();                  // the pilots our game reinforces for (1 alone; 0: another's game does)
 void tv_session_level(int index, const std::string &name);  // a level about to be flown
 // The campaign's call of a level: true, held (made again later); *index may be changed (the host's level).
 bool tv_session_level_call(int *index);

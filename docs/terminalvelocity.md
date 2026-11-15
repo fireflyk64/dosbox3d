@@ -59,7 +59,17 @@ there is none (TV.EXE asks for setup without one), and in `VOX.INI` (made with t
 briefings, cinemas and demos on) the high-resolution mode (640,240) and the control: a pad picked "Built in" (the
 launch puts the game port in) makes it the game's Gamepad control (2: the flight applies the stick only above 1)
 calibrated as the game's own Calibrate measures DOSBox's counting port (centre 64, 0 to 128); without one, a Gamepad
-control left from before goes back to the keyboard (the port is empty), the mouse is kept.  Measured natively with
+control left from before goes back to the keyboard (the port is empty), the mouse is kept.  The Graphics Options at their best at every launch (the user, 2026-11-14: "Let's ensure detail is
+maximum"): the sky's texture (`skyTextureFlag` 1), Image Quality Pentium (`perspectiveFlag` 1), Shadows Pentium
+(`airShadowFlag` 2), Texture High Detail (`textureResolution` 1: 12 MB free wanted, the machine has `memsize=32`),
+Debris Overkill (`partsFlag` 2) -- read from the options menu's code (0x31130: [0x64CE4], [0x64D54], [0x64D0C],
+[0x64DDC]) and the settings writer's.  Their cost in flight is small: a dogfight with a wingman at 60,000 cycles 20.1
+frames a second against 20.6 with the shareware's own settings; the briefing's 3D slides step more slowly.  The
+picture is really 640 wide: the game draws 640 x 240 (its own 640 x 480 breaks its terrain), each row shown twice
+(measured on a frame: 12 of 320 column pairs alike, all 240 row pairs).  No fog or view-distance setting exists in
+1.2 (the menus, VOX.INI and the flight keys read: `-`/`=` size the view, the keypad's `-`/`+` a look angle): the fog
+is each planet's own table (the level's `.FOG`, 16 steps of 256 colours) and the view's reach is fixed in the code
+(objects within 5 of the game's 16-unit cells).  Measured natively with
 the scripted stick: the calibration screen reads 128/0 at the stick's ends and 64 in the middle, and in flight the
 ship turns with it, button 1 fires.
 
@@ -129,12 +139,23 @@ by their rates (0x4CEC0) and drawn by 0x4E840 with the draw-list call.  The laye
 * `scripts/tvnet-duo.sh [seconds] [host's script] [guest's script]`: two machines over TCP (`PORT`), each its copy;
   `GUEST_LATE` seconds between their starts (the guest flies the same route that much behind: the host is ahead of
   it on the screen).
+* `WCNET_TV_PROF=1`: where the game's time goes (the program's place sampled every ~1000 instructions, the busiest
+  logged every 10 s, the whole count in `WCNET_DUMP_DIR/tvprof-<s>.txt`); `scripts/tvprof.py GAME.EXE DIR FROM TO`
+  groups it by function.  The 2026-11-14 profile (the worktree's `profile.md`): 53-67% of the game's instructions in
+  its textured-span loops (0x42EE0-0x49710), ~10% the terrain's points; the frame rate follows the cycles (37.6 fps
+  at 60,000, 82.2 at 120,000, flying straight); the browser keeps 60,000 at 100% of real time, 120,000 at ~53%.
+  `scripts/web-tv.sh` prints each page's speed; `CYCLES=` there, `DETAIL=low` in tvrun.sh for the shareware's own
+  Graphics Options.
 * Key-script aids: `!tvpos` (the player), `!tvobjs[=range]` (the objects within that many world units: class, name,
   place, hit points, state), `!regs` (the CPU's registers and segment bases), `!dumplin=name:start:length`.
 * The rigs' pilot (src/cpu/wcnet_tv_pilot.cpp): `!tvfly=obj:N | near:CLASS[:range] | partner[:right:up:back] |
   head:DEG:DEG | off` flies the ship by writing its attitude (eased turns, banked into them, over the hills to a
   ground target and down onto it), `!tvfire=1|hold|0` (fires when lined up within 140 units, or always),
   `!tvburn=SECONDS` (the afterburner's key held), `!tvfuel=N`, `!tvgod=1` (the shield kept full).
+  `!tvfly=tun:N` flies into tunnel N's mouth the game's way (to a point 30 units short of it and 36 above, then a
+  dive at it); `!tvtunnel=N` calls the game's tunnel entry at once; `!tvtunnelend` puts the ship at the tunnel's far
+  end (the game's own way out takes it there); `!tvcraft` counts the level's craft (in the table, alive, awake = their
+  update called in the last second, of those puppets) and its launchers (class 21) and generators (class 41).
 * `SVGA=1 CYCLES=60000` for the rigs: the high-resolution mode in each copy (60+ frames a second natively).
 * The video: `WCLAB=<dir>` in each machine's environment (HOSTENV/GUESTENV), then `scripts/tfnet-sheet.py` (contact
   sheets of both recordings lined up by the wall clock) and `scripts/tvnet-video.py` (tfnet-video.py's vertical
@@ -170,6 +191,53 @@ named by its index (a level adds objects as it goes, a bunker's pickup: those ca
   (TvObjects), and the others' copies are puppets: their update skipped (the objects' loop's call jumped over) and
   their place written at each frame's top, carried on by their last two reports.  Static objects (installations,
   turrets) run in every game, at every machine's own pilot.
+* **Who decides the owners.**  The host, while it is settled outdoors in our level (flying it, out of the tunnels, for
+  2 s); while it is not (in a tunnel, dead, just out of a tunnel) the lowest seat that is (its TvOwners relayed by the
+  host).  A pilot settled nowhere is given no objects and reports none; a pilot new to the place is sent the owners at
+  once (it has forgotten them: its table is the place's as it was when it left).  Measured: the host into the tunnel,
+  the guest "we decide the owners" and flying them all; the host out, "we decide the owners (7 of 161 ours)" 2 s
+  later, the guest's word taken meanwhile.
+* **New objects are made once.**  Three ways the game adds an object in flight: the level's reinforcements
+  (0x23E40, from the objects' loop: every 4 s, while at most 1/2/4 hostiles by difficulty are awake near the player
+  -- the count `[0xDAFC8]` made each frame from the objects within 5 of the game's 16-unit cells -- a craft of a
+  type flagged at `+0xE4` put 48 units about the player), a launcher's craft (class 21, 0x27490: every 4 s once its
+  last craft left the pad) and a generator's (class 41, 0x28350: its type's `+0x64`, every `+0x6C`).  Each game ran
+  them for its own pilot, and a craft made in one game was fought by one pilot only.  Now: a launcher or a generator
+  makes one only in the game of the pilot nearest it, and the reinforcements only in the game of the lowest seat
+  among pilots whose awake squares overlap (11 cells: a pilot apart has its own, as alone); the others' turns are
+  taken and skipped (the hook goes to the function's end).  The game that made one tells its slot and its whole
+  0xB4-byte record (TvSpawn: no pointers in it -- copied from its type's first object, then 0x22F40's random AI
+  values); the others write it at that slot (filling any gap with dead slots), owned by the maker's machine until
+  the owners are decided.  Two games that made one each in the same slot at once: the lower seat's keeps it, the
+  other moves its own to the table's end and tells it again.  A pilot who starts our level (a retry, late, out of a
+  tunnel) is sent the made objects still alive with the objects gone.  The shareware's four levels have no
+  launchers or generators (counted with `!tvcraft`): its new craft are the reinforcements; the launchers' and
+  generators' gates are for the registered game, untested.  Measured: pilots apart, the guest's game made craft 476
+  and 477 near its pilot and the host's wrote them, 94 craft in both; together, only the host's made them ("left to
+  HOST's game") and every awake craft was flown by one machine, a puppet on the other.
+* **An ally brings more hostiles.**  The user, 2026-11-14: "Were we able to up enemy spawns due to ally?".  The game
+  that reinforces a group of N pilots reinforces it as N: its cap on the hostiles awake times N (the count `[0xDAFC8]`
+  divided by N, rounded up, before its difficulty's test: a hook at 0x23E75) and its 4 s clock wound N times as fast
+  (0x23EA6: `[0x680F4]` given N-1 more quarters of the frame time), each new craft put about the next pilot of the
+  group in turn (moved by that pilot's offset from ours, as high above it as it was above ours).  Measured over 130 s
+  of flight with the host hunting: alone none came; with a wingman 7, alternately about the host and the guest
+  ("the level's reinforcements about GUEST"), the guest's game writing every one.
+* **Enemies' shots are seen.**  The enemies fire through the same call (0x19080, owner 1, from the AI's fire at
+  0x24A96, some 2.7 a second in a fight); a craft fires only on the machine that flies it (a puppet's update is not
+  made), and its shots are told (TvShot with `owner`) to the pilots in our place and remade there as the enemy's: they
+  fly there as here and can hit that pilot (a stray shot at the host hits a wingman in its path).  Their hits on
+  objects, if any, are the firing machine's to tell (skipped like any remade shot's).  Measured: the guest on the
+  host's wing, 93 and 246 enemy shots sent, 92 and 251 remade; the guest's shield (no god mode) 65535 down to 34815.
+* **The tunnels.**  A tunnel's mouth is a hole in the ground (its entrance test 0x42490 from 0x42540: within a unit
+  under the mouth's plane -- the ground's slope there -- inside 0.7 of its half sizes, diving more than 45 degrees);
+  in it the object table is the tunnel's (the outdoor objects saved to enemy.sav/enemy2.sav, restored on the way
+  out: the tunnel runs along z, out past `[0x64CF4]` 16-unit steps).  Each pilot reports its place (TvState.space: 0
+  outdoors, 1 + the tunnel's number); shots, hits, objects, owners and the catch-up go only between pilots in the same
+  place, and a pilot is drawn only where it is.  The others are told "X flew into the tunnel" / "came out of the
+  tunnel" in the game's letters; in a tunnel each game flies the tunnel's craft itself.  Measured: the host dove into
+  artic.lvl's tunnel by the game's own entrance and out; both pilots in it together, each drawing the other the whole
+  512 units, the guest's 61 shots remade in the host's game, both out by the game's own exit; the host back outdoors
+  told the 2 objects the guest had shot meanwhile.
 * **The afterburner shows.**  A pilot whose afterburner fuel is going down reports `boost`; the others draw a flame
   behind its ship: a trail of three of the game's own `fireball.bin` (loaded once a level), smaller and smaller,
   flickering in size and place.
@@ -229,6 +297,12 @@ is the emulator's line over the picture.
 archives first (the loader's own lookup, found by its call's offset in the loader: the loader ends the program on a
 name it cannot find) and loaded once a level; one not there, and "planet", is drawn as the level's own craft (its first
 craft type's model).  Measured: the host as an IceRider and the guest as a SnowScout in each other's games.
+
+**How many hostiles (2026-11-14, the user: "does this increase the number of bad fliers around?").**  No more than
+alone: the level's 92 craft are the same objects in every game, each awake one flown by one machine; awake at once,
+1-3 near a pilot alone and near two pilots together (measured with `!tvcraft`); two pilots apart each wake their
+own, as each would alone.  The reinforcements were the exception (each game made its own for its pilot: the guest's
+game had 96 craft to the host's 93) until they were made once (above).
 
 Next:
 

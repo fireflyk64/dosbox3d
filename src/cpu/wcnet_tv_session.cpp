@@ -53,6 +53,8 @@ enum {
     kDecideEveryMs = 300,
     kObjFreshMs = 1500,             // a moving object whose owner's report is older is flown here meanwhile
     kOwnerHoldMs = 1500,            // an object keeps its owner at least this long
+    kSettleMs = 2000,               // a pilot new to the place (the level's start, a tunnel's way out) neither decides
+                                    // owners, nor is given objects, nor reports any, this long: its copies are old
     kRemoteShotMs = 10000,
 };
 const double kUnit = 65536.0;
@@ -106,12 +108,13 @@ struct Remote {
     std::string levelName;
     double flyingSince;         // since when it flies its level (a start of it: a death's retry, a late start)
     bool inLevel;               // a level of its campaign under way (its briefing, its flight)
+    int space;                  // where in the level: 0 outdoors, 1 + n in tunnel n
     double arate[3];            // its angles' rates (16-bit units a second), from its last two reports
     double disp[6];             // where we draw it (smooth_remote): carried on by its rates, eased towards its reports
     bool dispOn;
     double dispAt;
     Remote() : known(false), look("ship.bin"), at(-1e9), flying(false), level(-1), shield(0), boost(false), done(false),
-               difficulty(-1), flyingSince(-1e9), inLevel(false), dispOn(false), dispAt(-1e9) {
+               difficulty(-1), flyingSince(-1e9), inLevel(false), space(0), dispOn(false), dispAt(-1e9) {
         memset(pos, 0, sizeof(pos));
         memset(rate, 0, sizeof(rate));
         memset(arate, 0, sizeof(arate));
@@ -143,6 +146,7 @@ struct TvNet {
 };
 
 TvNet *g_net;
+void show_line(const std::string &line0);
 enum { MODEL_UNKNOWN = 0, MODEL_LOOKING, MODEL_LOADING, MODEL_READY, MODEL_MISSING };
 // The craft of each seat (the host's word; the host's own from WCTVLOOKS: "<its own>,<the others'>" or one per seat).
 std::string g_looks[4] = { "ship.bin", "ship.bin", "ship.bin", "ship.bin" };
@@ -167,10 +171,18 @@ std::vector<ObjSync> g_objs;
 int g_objsLevel = -2;
 Bit32u g_objsFrames = 0;
 std::vector<std::pair<int, Bit32s> > g_hits;            // others' hits, applied at the next frame (index, damage)
+std::vector<std::pair<int, TvSpawn> > g_spawnsIn;       // others' new objects, written at the next frame (at most 64)
+std::vector<char> g_spawned;                            // the slots of the objects made in flight: 2 made here, 1 told
+bool g_spawnPending = false;                            // a launch of ours under way: the table as it stood before
+int g_spawnFrom = -1, g_spawnCount = 0;
+std::vector<char> g_spawnAlive;
+const int kSpawnMax = 499;                              // (the game's own cap of its table: 0x1F3)
 std::vector<std::pair<Bit32u, double> > g_remoteShots;  // our copies of others' shots (the projectile, until)
 double g_objectsAt = -1e9, g_ownersAt = -1e9, g_decidedAt = -1e9;
 double g_boostAt = -1e9;
 double g_levelStartAt = -1e9;   // when we started flying our level (its start, a retry's)
+int g_space = 0;                // where in it we are (tv_space): 0 outdoors, 1 + n in tunnel n
+double g_joinAt = -1e9;         // our last start of a place (the level's start, a tunnel's way in or out)
 bool g_inLevel = false;         // our campaign's level under way (from its call to its end: its briefing too)
 unsigned g_levelStarts = 0;     // the level function's starts (a retry of a level is a new start: everything of the last
                                 // one's forgotten, its models the game's to free)
@@ -183,6 +195,7 @@ double g_nextTryMs;
 double g_noticeAt = -1;
 std::vector<std::pair<int, TvShot> > g_shots;   // others' shots, made at the next frame (seat, shot)
 unsigned g_shotsMade = 0, g_shotsSent = 0, g_drawn = 0;
+unsigned g_enemyShotsMade = 0, g_enemyShotsSent = 0;
 
 void notice(const std::string &text) {
     incoming_text = text;
@@ -363,6 +376,13 @@ void take_state(const TvState &st, int seat) {
     r.boost = st.boost();
     r.done = st.done();
     r.inLevel = st.in_level();
+    const int space = st.space();
+    if (wasFlying && r.flying && st.level() == lastLevel && space != r.space) {
+        // (into a tunnel or out of one: a new place for it, as a start is -- told the objects gone there)
+        r.flyingSince = now;
+        show_line(r.callsign + (space ? (r.space ? " flew into another tunnel" : " flew into the tunnel") : " came out of the tunnel"));
+    }
+    r.space = space;
     if (st.has_difficulty()) r.difficulty = st.difficulty();
     if (st.has_level_name()) r.levelName = st.level_name();
     if (r.flying && (!wasFlying || st.level() != lastLevel)) r.flyingSince = PIC_FullIndex();
@@ -375,10 +395,12 @@ void take_state(const TvState &st, int seat) {
 // starts over), grown as the level adds objects (a pickup a bunker drops: such additions can differ from machine to
 // machine, the level's own objects before them are the same everywhere).
 bool objs_ready() {
-    const int level = (int)g_levelStarts;
+    const int level = (int)g_levelStarts * 64 + tv_space();     // (a level's start, or the place within it: a tunnel's
+                                                                  // objects are others in the same table)
     const int n = tv_object_count();
     if (level != g_objsLevel || n < (int)g_objs.size()) {
         g_objs.clear();
+        g_spawned.clear();
         g_objsLevel = level;
         g_hits.clear();
         g_remoteShots.clear();
@@ -416,7 +438,7 @@ void show_line(const std::string &line0) {
 // loop leaves them out, drawn no more, counted gone by the level's goals).
 void take_dead(const TvDead &d) {
     const double now = PIC_FullIndex();
-    if (d.level() != tv_level() || !tv_in_flight() || now - g_levelStartAt > 20000) return;
+    if (d.level() != tv_level() || d.space() != tv_space() || !tv_in_flight() || now - std::max(g_levelStartAt, g_joinAt) > 20000) return;
     int gone = 0;
     const int n = tv_object_count();
     for (int k = 0; k < d.index_size(); k++) {
@@ -434,18 +456,110 @@ void send_dead(int forSeat) {
     NetworkMessage msg;
     TvDead *d = msg.mutable_tv_dead();
     d->set_level(tv_level());
+    d->set_space(tv_space());
     const int n = tv_object_count();
     for (int i = 0; i < n; i++) {
         const Bit32u o = tv_object_addr(i);
         if (o && (Bit32s)tv_r32(o + 0x1c) <= 0) d->add_index((Bit32u)i);
     }
     send_all(msg, false);
-    wclog(1, "Terminal Velocity: %s starts our level: told the %d objects gone", g_net->remotes[forSeat].callsign.c_str(), d->index_size());
+    // ... and the objects made in flight still alive, as they are here (it has not got them)
+    NetworkMessage sm;
+    TvSpawn *sp = sm.mutable_tv_spawn();
+    sp->set_level(tv_level());
+    sp->set_space(tv_space());
+    sp->set_player((Bit32u)(g_net->self < 0 ? 0 : g_net->self));
+    sp->set_spawner(-1);
+    sp->set_for_seat(forSeat);
+    for (int i = 0; i < n && i < (int)g_spawned.size() && sp->index_size() < 40; i++) {
+        const Bit32u o = tv_object_addr(i);
+        if (!g_spawned[i] || !o || (Bit32s)tv_r32(o + 0x1c) <= 0) continue;
+        sp->add_index((Bit32u)i);
+        for (int w = 0; w < kTvObjSize / 4; w++) sp->add_record(tv_r32(o + 4 * w));
+    }
+    if (sp->index_size()) send_all(sm, false);
+    wclog(1, "Terminal Velocity: %s starts our level: told the %d objects gone, the %d made in flight", g_net->remotes[forSeat].callsign.c_str(),
+          d->index_size(), sp->index_size());
 }
 
+// An object made here, told: its slot and its whole record.
+void tell_spawn(int i, int from) {
+    NetworkMessage msg;
+    TvSpawn *sp = msg.mutable_tv_spawn();
+    sp->set_level(tv_level());
+    sp->set_space(tv_space());
+    sp->set_player((Bit32u)(g_net->self < 0 ? 0 : g_net->self));
+    sp->set_spawner(from);
+    sp->add_index((Bit32u)i);
+    const Bit32u o = tv_object_addr(i);
+    for (int w = 0; w < kTvObjSize / 4; w++) sp->add_record(tv_r32(o + 4 * w));
+    send_all(msg, false);
+}
+
+// Others' new objects (the launcher's machine's game made them): written in our table at their slots, flown by the
+// machine that made them until the owners are decided.  Two games that made one each in the same slot at once: the
+// lower seat's keeps the slot, the other's machine moves its own to the table's end and tells it again.
+void take_spawns(double now) {
+    const int self = g_net->self < 0 ? 0 : g_net->self;
+    for (size_t k = 0; k < g_spawnsIn.size(); k++) {
+        const int seat = g_spawnsIn[k].first;
+        const TvSpawn &sp = g_spawnsIn[k].second;
+        if (sp.level() != tv_level() || sp.space() != tv_space() || !tv_in_flight() || !objs_ready()) continue;
+        if (sp.has_for_seat() && (sp.for_seat() != self || now - std::max(g_levelStartAt, g_joinAt) > 20000)) continue;
+        const int words = kTvObjSize / 4;
+        const Bit32u table = tv_r32(tv_data(tvsig::D_OBJ_TABLE)), countAt = tv_data(tvsig::D_OBJ_COUNT);
+        int made = 0;
+        for (int j = 0; j < sp.index_size() && (j + 1) * words <= sp.record_size(); j++) {
+            const int i = (int)sp.index(j);
+            if (i < 0 || i >= kSpawnMax) continue;
+            const int n = (int)tv_r32(countAt);
+            if (i < n && i < (int)g_spawned.size() && g_spawned[i] == 2 && (Bit32s)tv_r32(table + (Bit32u)i * kTvObjSize + 0x1c) > 0) {
+                if (self < seat) continue;          // (ours stays: theirs comes again elsewhere)
+                const Bit32u from = table + (Bit32u)i * kTvObjSize;
+                if (n < kSpawnMax && objs_ready() && i < (int)g_objs.size()) {
+                    for (int w = 0; w < words; w++) tv_w32(table + (Bit32u)n * kTvObjSize + 4 * w, tv_r32(from + 4 * w));
+                    tv_w32(countAt, (Bit32u)(n + 1));
+                    objs_ready();
+                    if (n < (int)g_objs.size()) g_objs[n] = g_objs[i];
+                    if ((int)g_spawned.size() <= n) g_spawned.resize(n + 1, 0);
+                    g_spawned[n] = 2;
+                    tell_spawn(n, -3);
+                    wclog(1, "Terminal Velocity: our object %d and %s's made at once in one slot: ours moved to %d", i,
+                          g_net->remotes[seat].callsign.c_str(), n);
+                }
+            }
+            const int n2 = (int)tv_r32(countAt);
+            for (int g = n2; g < i; g++) tv_w32(table + (Bit32u)g * kTvObjSize + 0x1c, 0);     // (a gap: none there)
+            for (int w = 0; w < words; w++) tv_w32(table + (Bit32u)i * kTvObjSize + 4 * w, sp.record(j * words + w));
+            if (i >= n2) tv_w32(countAt, (Bit32u)(i + 1));
+            objs_ready();
+            if (i >= (int)g_objs.size()) continue;
+            ObjSync fresh;
+            const int c = tv_object_class(i);
+            fresh.mobile = c == 7 || c == 10;
+            fresh.owner = seat;
+            fresh.ownedAt = now;
+            g_objs[i] = fresh;
+            if ((int)g_spawned.size() <= i) g_spawned.resize(i + 1, 0);
+            g_spawned[i] = 1;
+            made++;
+        }
+        if (made) {
+            wclog(1, "Terminal Velocity: %d object%s made by %s's game written here (%s, slot %d '%s')", made, made == 1 ? "" : "s",
+                  g_net->remotes[seat].callsign.c_str(), sp.spawner() == -1 ? "a catch-up" : sp.spawner() == -2 ? "its reinforcements" : sp.spawner() == -3 ? "moved" : "a launch", (int)sp.index(0),
+                  tv_object_name((int)sp.index(0)).c_str());
+        }
+    }
+    g_spawnsIn.clear();
+}
+
+bool i_decide(double now);
+
 void take_objects(const TvObjects &o, int seat) {
-    if (o.level() != tv_level() || !objs_ready()) return;
+    if (o.level() != tv_level() || o.space() != tv_space() || tv_space() != 0 || !objs_ready()) return;
     const double now = PIC_FullIndex();
+    const bool decider = i_decide(now);
+    const int self = g_net->self < 0 ? 0 : g_net->self;
     for (int k = 0; k < o.objects_size(); k++) {
         const TvObject &ob = o.objects(k);
         const int i = (int)ob.index();
@@ -454,7 +568,7 @@ void take_objects(const TvObjects &o, int seat) {
         if (os.owner != seat) {
             // (a report from a machine that flew it before the host's word reached it: the host's word stands; the host
             // takes it as the owner's while it decides nothing else)
-            if (!g_net->host) continue;
+            if (!decider || os.owner == self) continue;
             os.owner = seat;
             os.ownedAt = now;
         }
@@ -467,7 +581,7 @@ void take_objects(const TvObjects &o, int seat) {
 }
 
 void take_owners(const TvOwners &w) {
-    if (w.level() != tv_level() || !objs_ready()) return;
+    if (w.level() != tv_level() || w.space() != tv_space() || tv_space() != 0 || !objs_ready()) return;
     const double now = PIC_FullIndex();
     std::vector<int> owner(g_objs.size(), 0);
     for (int k = 0; k < w.index_size() && k < w.owner_size(); k++) {
@@ -544,10 +658,18 @@ void handle(Peer *p, NetworkMessage &msg) {
         NetworkMessage out;
         *out.mutable_tv_dead() = msg.tv_dead();
         relay(p, [&](Peer *to) { to->conn.send(out); });
+    } else if (msg.has_tv_spawn()) {
+        if (!p->hello) return;
+        const int seat = g_net->host ? p->player : (int)msg.tv_spawn().player();
+        if (g_spawnsIn.size() < 64) g_spawnsIn.push_back(std::make_pair(seat, msg.tv_spawn()));   // (a list has a cap)
+        NetworkMessage out;
+        *out.mutable_tv_spawn() = msg.tv_spawn();
+        out.mutable_tv_spawn()->set_player((Bit32u)seat);
+        relay(p, [&](Peer *to) { to->conn.send(out); });
     } else if (msg.has_tv_hit()) {
         if (!p->hello) return;
         const TvHit &h = msg.tv_hit();
-        if (h.level() == tv_level() && g_hits.size() < 256) g_hits.push_back(std::make_pair((int)h.index(), (Bit32s)h.damage()));
+        if (h.level() == tv_level() && h.space() == tv_space() && g_hits.size() < 256) g_hits.push_back(std::make_pair((int)h.index(), (Bit32s)h.damage()));
         const int seat = g_net->host ? p->player : (int)h.player();
         NetworkMessage out;
         *out.mutable_tv_hit() = h;
@@ -563,8 +685,10 @@ void handle(Peer *p, NetworkMessage &msg) {
         out.mutable_tv_objects()->set_player((Bit32u)seat);
         relay(p, [&](Peer *to) { to->conn.send_best_effort(out); });
     } else if (msg.has_tv_owners()) {
-        if (!p->hello || g_net->host) return;
+        // (the decider's word: the host's, or a guest's while the host is not settled outdoors -- the host relays it)
+        if (!p->hello) return;
         take_owners(msg.tv_owners());
+        relay(p, [&](Peer *to) { to->conn.send(msg); });
     } else if (msg.has_tv_shot()) {
         if (!p->hello) return;
         const int seat = g_net->host ? p->player : (msg.tv_shot().has_player() ? (int)msg.tv_shot().player() : 0);
@@ -639,6 +763,7 @@ void send_state(double now) {
     st->set_boost(now - g_boostAt < 300);
     st->set_done(flying && tv_r32(tv_data(tvsig::D_LEVEL_DONE)) != 0);
     st->set_in_level(g_inLevel);
+    st->set_space(tv_space());
     st->set_difficulty((Bit32s)tv_r32(tv_data(tvsig::D_DIFFICULTY)));
     static int lastLevel = -2;
     if (tv_level() != lastLevel || (int)(now / 1000) % 5 == 0) {
@@ -734,6 +859,22 @@ void shot_made(int seat, Bit32u eax) {
     if (eax && g_remoteShots.size() < 256) g_remoteShots.push_back(std::make_pair(eax, PIC_FullIndex() + kRemoteShotMs));
 }
 
+void enemy_shot_made(int seat, Bit32u eax) {
+    (void)seat;
+    g_enemyShotsMade++;
+    if (eax && g_remoteShots.size() < 256) g_remoteShots.push_back(std::make_pair(eax, PIC_FullIndex() + kRemoteShotMs));
+}
+
+// Another pilot flying our level in our place (a tunnel or outdoors), reports fresh: worth telling an enemy's shot.
+bool others_here() {
+    const double now = PIC_FullIndex();
+    for (int s = 0; s < kMaxSeats; s++) {
+        const Remote &r = g_net->remotes[s];
+        if (s != g_net->self && r.known && r.flying && r.level == tv_level() && r.space == tv_space() && now - r.at < kStateStaleMs) return true;
+    }
+    return false;
+}
+
 void destroyed(int index, Bit32u eax) {
     (void)eax;
     g_kills++;
@@ -765,8 +906,30 @@ double dist2(const Bit32s a[3], const Bit32s b[3]) {
     return d;
 }
 
-// The host: each moving object near a pilot to the nearest pilot's machine (an object changes hands only when the
-// other is a fifth nearer, and not twice in kOwnerHoldMs).
+// A pilot settled outdoors in our level: flying it, out of the tunnels, for kSettleMs (a pilot just out of a tunnel
+// has the outdoor objects as they were when it went in: the game keeps them in enemy.sav meanwhile).
+bool settled_here(double now) {
+    return tv_space() == 0 && tv_in_flight() && now - std::max(g_levelStartAt, g_joinAt) >= kSettleMs;
+}
+bool settled_remote(const Remote &r, double now) {
+    return r.known && r.flying && r.level == tv_level() && r.space == 0 && now - r.at < kStateStaleMs &&
+           now - r.flyingSince >= kSettleMs;
+}
+
+// Who decides the owners: the host while it is settled outdoors in our level; while it is not (in a tunnel, dead, a
+// newcomer) the lowest seat that is.
+bool i_decide(double now) {
+    if (!g_net || !settled_here(now)) return false;
+    for (int s = 0; s < g_net->self && s < kMaxSeats; s++) {
+        if (settled_remote(g_net->remotes[s], now)) return false;
+    }
+    return true;
+}
+
+// The decider: each moving object near a pilot to the nearest pilot's machine (an object changes hands only when the
+// other is a fifth nearer, and not twice in kOwnerHoldMs); the objects of a pilot not settled outdoors to those that
+// are.  The word sent every kOwnersEveryMs, at each change, and at once to a pilot new to the place (one out of a
+// tunnel has its owners forgotten: it learns them before it decides).
 void decide_owners(double now) {
     TvShip me;
     tv_player(&me);
@@ -775,15 +938,19 @@ void decide_owners(double now) {
     for (int s = 0; s < kMaxSeats; s++) {
         flying[s] = false;
         if (s == g_net->self) {
-            flying[s] = tv_in_flight();
+            flying[s] = true;
             memcpy(where[s], me.pos, sizeof(where[s]));
         } else {
             const Remote &r = g_net->remotes[s];
-            flying[s] = r.known && r.flying && r.level == tv_level() && now - r.at < kStateStaleMs;
+            flying[s] = settled_remote(r, now);
             for (int k = 0; k < 3; k++) where[s][k] = r.pos[k];
         }
     }
     bool changed = false;
+    for (int s = 0; s < kMaxSeats; s++) {
+        const Remote &r = g_net->remotes[s];
+        if (s != g_net->self && r.known && r.space == 0 && r.flyingSince > g_ownersAt) changed = true;
+    }
     for (size_t i = 0; i < g_objs.size(); i++) {
         ObjSync &os = g_objs[i];
         if (!os.mobile) continue;
@@ -812,6 +979,7 @@ void decide_owners(double now) {
         NetworkMessage msg;
         TvOwners *w = msg.mutable_tv_owners();
         w->set_level(tv_level());
+    w->set_space(0);
         for (size_t i = 0; i < g_objs.size(); i++) {
             if (g_objs[i].owner != 0) {
                 w->add_index((Bit32u)i);
@@ -824,10 +992,13 @@ void decide_owners(double now) {
 
 // Our moving objects' places (those flown here, updated since the last report).
 void send_objects() {
+    // (in a tunnel each game flies the tunnel's craft itself; a pilot new to the place has old copies)
+    if (tv_space() != 0 || PIC_FullIndex() - std::max(g_levelStartAt, g_joinAt) < kSettleMs) return;
     NetworkMessage msg;
     TvObjects *ob = msg.mutable_tv_objects();
     ob->set_player((Bit32u)(g_net->self < 0 ? 0 : g_net->self));
     ob->set_level(tv_level());
+    ob->set_space(0);
     int n = 0;
     for (size_t i = 0; i < g_objs.size() && n < 48; i++) {
         ObjSync &os = g_objs[i];
@@ -914,7 +1085,8 @@ void level_together(double now, int level) {
             tv_w32(doneAt, 1);
             notice(r.callsign + " flew the exit: the level is done");
         }
-        if (r.level == level && r.flyingSince > g_levelStartAt + 3000 && r.flyingSince > g_deadSentFor[s]) {
+        if (r.level == level && r.space == tv_space() && r.flyingSince > std::max(g_levelStartAt, g_joinAt) + 3000 &&
+            r.flyingSince > g_deadSentFor[s]) {
             g_deadSentFor[s] = r.flyingSince;
             send_dead(s);
         }
@@ -1022,9 +1194,10 @@ void tv_session_tick() {
                 if (is_puppet((int)i)) puppets++;
             }
             wclog(2, "Terminal Velocity: seat %d %s: %s level %d at %d %d %d, %.0f ms old%s; shots made %u sent %u, drawn %u; "
-                     "hits sent %u taken %u skipped %u, stages %u; objects it flies %d, puppets here %d",
+                     "hits sent %u taken %u skipped %u, stages %u; objects it flies %d, puppets here %d; enemies' shots made %u sent %u",
                   s, r.callsign.c_str(), r.flying ? "flying" : "not flying", r.level, r.pos[0], r.pos[1], r.pos[2], now - r.at,
-                  r.boost ? ", BOOSTING" : "", g_shotsMade, g_shotsSent, g_drawn, g_hitsSent, g_hitsTaken, g_skipped, g_kills, owned, puppets);
+                  r.boost ? ", BOOSTING" : "", g_shotsMade, g_shotsSent, g_drawn, g_hitsSent, g_hitsTaken, g_skipped, g_kills, owned, puppets,
+                  g_enemyShotsMade, g_enemyShotsSent);
         }
     }
 }
@@ -1041,6 +1214,20 @@ void tv_session_frame() {
         memset(g_net->modelState, 0, sizeof(g_net->modelState));
         g_offLevelSince = -1;
     }
+    // into a tunnel or out of one: the object table is the place's (the game swaps it through enemy.sav/enemy2.sav),
+    // what we knew of the last place's objects forgotten, the others asked for the gone ones here (they see our place
+    // change), our models loaded again (the tunnel loads types of its own)
+    if (tv_space() != g_space) {
+        wclog(1, "Terminal Velocity: %s", tv_space() ? "into a tunnel" : "out of the tunnel");
+        g_space = tv_space();
+        g_joinAt = now;
+        g_hits.clear();
+        g_remoteShots.clear();
+        g_shots.clear();
+        memset(g_net->models, 0, sizeof(g_net->models));
+        memset(g_net->modelState, 0, sizeof(g_net->modelState));
+        g_net->stateAt = -1e9;
+    }
     level_together(now, level);
     // the afterburner burning: its fuel going down
     const Bit32s fuel = (Bit32s)tv_r32(tv_data(tvsig::D_BURN_FUEL));
@@ -1055,7 +1242,8 @@ void tv_session_frame() {
             i++;
         }
     }
-    // others' hits, applied
+    // others' new objects, written; others' hits, applied
+    take_spawns(now);
     for (size_t i = 0; i < g_hits.size(); i++) apply_hit(g_hits[i].first, g_hits[i].second);
     g_hits.clear();
     place_puppets(now);
@@ -1063,23 +1251,35 @@ void tv_session_frame() {
         g_objectsAt = now;
         send_objects();
     }
-    if (g_net->host && now - g_decidedAt >= kDecideEveryMs) {
+    if (now - g_decidedAt >= kDecideEveryMs) {
         g_decidedAt = now;
-        decide_owners(now);
+        const bool decide = i_decide(now);
+        static bool decided = false;
+        if (decide != decided && (decide || !g_net->host)) {
+            int mine = 0, mobile = 0;
+            for (size_t i = 0; i < g_objs.size(); i++) {
+                if (!g_objs[i].mobile) continue;
+                mobile++;
+                if (g_objs[i].owner == (g_net->self < 0 ? 0 : g_net->self)) mine++;
+            }
+            wclog(1, "Terminal Velocity: %s the owners (%d of %d moving objects ours)", decide ? "we decide" : "we no longer decide", mine, mobile);
+        }
+        decided = decide;
+        if (decide) decide_owners(now);
     }
     // the others' shots, made as our own player's (they fly here as there; their hits are their shooter's to tell)
     for (size_t i = 0; i < g_shots.size(); i++) {
         const TvShot &sh = g_shots[i].second;
-        if (sh.posmat_size() != 16) continue;
+        if (sh.posmat_size() != 16 || sh.space() != tv_space()) continue;
         std::vector<Bit32u> scratch(16);
         for (int k = 0; k < 16; k++) scratch[k] = (Bit32u)sh.posmat(k);
         std::vector<Bit32u> args;
         args.push_back(TV_SCRATCH);
         args.push_back(sh.weapon());
         args.push_back((Bit32u)sh.damage());
-        args.push_back(0);
+        args.push_back(sh.owner());
         args.push_back(sh.kind());
-        tv_queue_call(TV_AT_FRAME, tv_fn(TV_FN_FIRE), args, scratch, shot_made, g_shots[i].first);
+        tv_queue_call(TV_AT_FRAME, tv_fn(TV_FN_FIRE), args, scratch, sh.owner() ? enemy_shot_made : shot_made, g_shots[i].first);
     }
     g_shots.clear();
 }
@@ -1116,14 +1316,14 @@ void tv_session_draw() {
     const double now = PIC_FullIndex();
     for (int s = 0; s < kMaxSeats; s++) {
         Remote &r = g_net->remotes[s];
-        if (s != g_net->self && r.known && r.flying && now - r.at <= kStateStaleMs) smooth_remote(r, now);
+        if (s != g_net->self && r.known && r.flying && r.space == tv_space() && now - r.at <= kStateStaleMs) smooth_remote(r, now);
         else r.dispOn = false;
     }
     make_markers(now);
     const int level = tv_level();
     for (int s = 0; s < kMaxSeats; s++) {
         const Remote &r = g_net->remotes[s];
-        if (s == g_net->self || !r.known || !r.flying || r.level != level || now - r.at > kStateStaleMs) continue;
+        if (s == g_net->self || !r.known || !r.flying || r.level != level || r.space != tv_space() || now - r.at > kStateStaleMs) continue;
         const int look = look_index(g_looks[s]);
         const Bit32u model = model_for(look);
         if (!model) continue;
@@ -1160,6 +1360,132 @@ void tv_session_draw() {
 
 bool tv_session_puppet(int obj) { return is_puppet(obj); }
 
+// A launcher (or a generator) about to make an object: only the game of the pilot nearest it makes one (each
+// game's launchers run their own clocks: with two pilots near one, both would launch, and a craft made in one game
+// only is fought by one pilot only); the one made is told to the others (tv_session_spawn_end).  Alone, the game
+// as it is.
+// (the table as it stands before the game makes an object: the made one found after)
+static void spawn_snapshot(int from) {
+    g_spawnPending = true;
+    g_spawnFrom = from;
+    g_spawnCount = tv_object_count();
+    g_spawnAlive.assign(g_spawnCount, 0);
+    for (int i = 0; i < g_spawnCount; i++) g_spawnAlive[i] = (Bit32s)tv_r32(tv_object_addr(i) + 0x1c) > 0;
+}
+
+bool tv_session_spawn_begin(int spawner) {
+    g_spawnPending = false;
+    if (!g_net || !objs_ready()) return true;
+    const Bit32u o = tv_object_addr(spawner);
+    if (!o) return true;
+    const double now = PIC_FullIndex();
+    const int self = g_net->self < 0 ? 0 : g_net->self;
+    Bit32s at[3];
+    for (int k = 0; k < 3; k++) at[k] = (Bit32s)tv_r32(o + 4 * k);
+    TvShip me;
+    tv_player(&me);
+    const double mine = dist2(at, me.pos);
+    for (int s = 0; s < kMaxSeats; s++) {
+        const Remote &r = g_net->remotes[s];
+        if (s == self || !r.known || !r.flying || r.level != tv_level() || r.space != tv_space() || now - r.at > kStateStaleMs) continue;
+        const Bit32s rp[3] = { r.pos[0], r.pos[1], r.pos[2] };
+        const double d = dist2(at, rp);
+        if (d < mine || (d == mine && s < self)) {
+            wclog(1, "Terminal Velocity: object %d's launch left to %s's game (nearer it)", spawner, r.callsign.c_str());
+            return false;
+        }
+    }
+    spawn_snapshot(spawner);
+    return true;
+}
+
+// The level's reinforcements (each game's, every 4 s, a craft put near its own pilot while few hostiles are awake
+// near it): pilots near one another (their awake squares overlapping: within 11 of the game's 16-unit cells) have one
+// reinforcer between them, the lowest seat's; a pilot apart has its own, as alone.  The reinforcer's game reinforces
+// the group as so many pilots (the user: "Were we able to up enemy spawns due to ally?"): its cap on the hostiles
+// awake times the pilots, its clock wound as fast times the pilots (wcnet_tv.cpp), each new craft put about the next
+// pilot of the group in turn.
+int g_groupSeats[kMaxSeats];
+int g_groupSize = 0;
+unsigned g_reinforcements = 0;
+
+// (the pilots in our group, ourselves first; false when a lower seat's game reinforces it)
+bool reinforce_group(bool log) {
+    g_groupSize = 0;
+    const int self = g_net->self < 0 ? 0 : g_net->self;
+    g_groupSeats[g_groupSize++] = self;
+    const double now = PIC_FullIndex(), reach = 11.0 * 16 * kUnit;
+    TvShip me;
+    tv_player(&me);
+    for (int s = 0; s < kMaxSeats; s++) {
+        const Remote &r = g_net->remotes[s];
+        if (s == self || !r.known || !r.flying || r.level != tv_level() || r.space != tv_space() || now - r.at > kStateStaleMs) continue;
+        if (fabs((double)r.pos[0] - me.pos[0]) >= reach || fabs((double)r.pos[2] - me.pos[2]) >= reach) continue;
+        if (s < self) {
+            if (log) wclog(1, "Terminal Velocity: the level's reinforcements here left to %s's game (it is near)", r.callsign.c_str());
+            return false;
+        }
+        g_groupSeats[g_groupSize++] = s;
+    }
+    return true;
+}
+
+bool tv_session_reinforce_begin() {
+    g_spawnPending = false;
+    if (!g_net || !objs_ready()) return true;
+    if (!reinforce_group(true)) return false;
+    spawn_snapshot(-2);
+    return true;
+}
+
+int tv_session_reinforce_pilots() {
+    if (!g_net || !tv_in_flight()) return 1;
+    return reinforce_group(false) ? g_groupSize : 0;
+}
+
+void tv_session_spawn_end() {
+    if (!g_spawnPending) return;
+    g_spawnPending = false;
+    if (!g_net) return;
+    const int n = tv_object_count();
+    int made = -1;
+    for (int i = 0; i < n && made < 0; i++) {
+        const Bit32u o = tv_object_addr(i);
+        if (o && (Bit32s)tv_r32(o + 0x1c) > 0 && (i >= g_spawnCount || !g_spawnAlive[i])) made = i;
+    }
+    if (made < 0 || made >= kSpawnMax || !objs_ready() || made >= (int)g_objs.size()) return;
+    const double now = PIC_FullIndex();
+    const int self = g_net->self < 0 ? 0 : g_net->self;
+    ObjSync fresh;
+    const int c = tv_object_class(made);
+    fresh.mobile = c == 7 || c == 10;
+    fresh.owner = self;
+    fresh.ownedAt = now;
+    g_objs[made] = fresh;
+    if ((int)g_spawned.size() <= made) g_spawned.resize(made + 1, 0);
+    g_spawned[made] = 2;
+    std::string about;
+    if (g_spawnFrom == -2 && reinforce_group(false) && g_groupSize > 1) {
+        // (a group's reinforcement: about the next pilot in turn, where the game put it about ours -- as high above
+        // that pilot as it was above ours, or level with it)
+        const int s = g_groupSeats[g_reinforcements++ % (unsigned)g_groupSize];
+        if (s != self) {
+            const Remote &r = g_net->remotes[s];
+            TvShip me;
+            tv_player(&me);
+            const Bit32u o = tv_object_addr(made);
+            const Bit32s above = std::max<Bit32s>(0, (Bit32s)tv_r32(o + 4) - me.pos[1]);
+            tv_w32(o + 0, (Bit32u)((Bit32s)tv_r32(o + 0) - me.pos[0] + r.pos[0]));
+            tv_w32(o + 4, (Bit32u)(r.pos[1] + above));
+            tv_w32(o + 8, (Bit32u)((Bit32s)tv_r32(o + 8) - me.pos[2] + r.pos[2]));
+            about = " about " + r.callsign;
+        }
+    }
+    tell_spawn(made, g_spawnFrom);
+    wclog(1, "Terminal Velocity: object %d '%s' made here (%s%s): told", made, tv_object_name(made).c_str(),
+          g_spawnFrom == -2 ? "the level's reinforcements" : tv_object_name(g_spawnFrom).c_str(), about.c_str());
+}
+
 void tv_session_updated(int obj) {
     if (!g_net || obj < 0 || obj >= (int)g_objs.size()) return;
     ObjSync &os = g_objs[obj];
@@ -1171,17 +1497,21 @@ void tv_session_updated(int obj) {
     memcpy(os.last, at, sizeof(at));
 }
 
-void tv_session_fired(const Bit32u posmat[16], Bit32u weapon, Bit32u damage, Bit32u kind) {
+void tv_session_fired(const Bit32u posmat[16], Bit32u weapon, Bit32u damage, Bit32u owner, Bit32u kind) {
     if (!g_net) return;
+    if (owner != 0 && !others_here()) return;      // (an enemy's shot: only for a pilot in our place to see)
     NetworkMessage msg;
     TvShot *sh = msg.mutable_tv_shot();
     sh->set_player((Bit32u)(g_net->self < 0 ? 0 : g_net->self));
     for (int i = 0; i < 16; i++) sh->add_posmat((Bit32s)posmat[i]);
+    sh->set_space(tv_space());
     sh->set_weapon(weapon);
     sh->set_damage((Bit32s)damage);
     sh->set_kind(kind);
+    if (owner) sh->set_owner(owner);
     send_all(msg, false);
-    g_shotsSent++;
+    if (owner) g_enemyShotsSent++;
+    else g_shotsSent++;
 }
 
 bool tv_session_hit(int obj, Bit32s damage, Bit32u projectile) {
@@ -1196,6 +1526,7 @@ bool tv_session_hit(int obj, Bit32s damage, Bit32u projectile) {
     TvHit *h = msg.mutable_tv_hit();
     h->set_player((Bit32u)(g_net->self < 0 ? 0 : g_net->self));
     h->set_level(tv_level());
+    h->set_space(tv_space());
     h->set_index((Bit32u)obj);
     h->set_damage(damage);
     send_all(msg, false);
@@ -1258,7 +1589,7 @@ void make_markers(double now) {
     const int level = tv_level();
     for (int s = 0, n = 0; s < kMaxSeats && n < kTvMarkers; s++) {
         const Remote &r = g_net->remotes[s];
-        if (s == g_net->self || !r.known || !r.flying || r.level != level || now - r.at > kStateStaleMs) continue;
+        if (s == g_net->self || !r.known || !r.flying || r.level != level || r.space != tv_space() || now - r.at > kStateStaleMs) continue;
         double d[3];
         for (int k = 0; k < 3; k++) d[k] = (r.disp[k] - me.pos[k]) / kUnit;
         // (the matrix's columns: right = (M0, M3, M6), up = (M1, M4, M7), forward = (M2, M5, M8))
@@ -1312,7 +1643,7 @@ bool tv_session_partner(TvShip *out) {
     const double now = PIC_FullIndex();
     for (int s = 0; s < kMaxSeats; s++) {
         const Remote &r = g_net->remotes[s];
-        if (s == g_net->self || !r.known || !r.flying || r.level != tv_level() || now - r.at > kStateStaleMs) continue;
+        if (s == g_net->self || !r.known || !r.flying || r.level != tv_level() || r.space != tv_space() || now - r.at > kStateStaleMs) continue;
         const double dt = std::min(now - r.at, (double)kCarryMs) / 1000.0;
         for (int k = 0; k < 3; k++) {
             out->pos[k] = r.pos[k] + (Bit32s)(r.rate[k] * dt);
