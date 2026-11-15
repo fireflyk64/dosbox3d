@@ -28,7 +28,7 @@
  * playing song's pass or after so many more of its blocks.  When music_poll's
  * fill reaches that point it splices the next song in on the bar line, as
  * one piece: all notes off, the new song's channels chased, its events. */
-#include <stdio.h>
+#include "rvio.h"
 #include <stdlib.h>
 #include <string.h>
 #include <malloc.h>
@@ -69,10 +69,15 @@ typedef struct {
 } Song;
 
 /* The interrupt plays from a ring in conventional memory, which music_poll
- * keeps topped up from XMS (a ring holds some 40 s of the busiest song, so a
- * long load costs nothing); the next song's ring is filled by music_cue,
- * before the interrupt switches to it. */
-#define RING 1024U
+ * keeps topped up from XMS (a ring holds some 10 s of the busiest song: the
+ * game polls every frame, and a long call into the card stops the emulated
+ * clock, so nothing drains meanwhile; 1024 until 2026-11-14, the user's pick
+ * from the memory plan: "let's make them 256 events then.  Power of two is
+ * best"); the next song's ring is filled by music_cue, before the interrupt
+ * switches to it.  A power of two: the ring's 16-bit counters wrap round it.
+ * (Note events, not sound: running short would hold a note back, never
+ * crackle) */
+#define RING 256U
 #define REFILL 128U
 typedef struct {
     Ev __far *ev;
@@ -546,7 +551,8 @@ static unsigned long varlen(const unsigned char __far **pp)
  * first track's on a tie), timed through the tempo map in music ticks, and
  * written to XMS a chunk at a time.  Twice: once to count, once to write. */
 #define MAX_TRACKS 24
-#define CHUNK_EV 256U
+#define CHUNK_EV 256U                   /* (at most RING: the reading's chunk is a ring's room) */
+typedef char music_chunk_fits[CHUNK_EV <= RING ? 1 : -1];
 static Ev __far *g_chunk;               /* CHUNK_EV events, while music_init reads the songs */
 
 typedef struct {
@@ -807,7 +813,8 @@ int music_init(void)
             g_dev = DEV_NONE;
         }
     }
-    g_chunk = g_ring[1].ev;             /* only while reading: nothing plays yet, and it is 256 events of the ring's 1024 */
+    g_chunk = g_ring[1].ev;             /* only while reading: nothing plays yet, and it is CHUNK_EV events, the ring's
+                                           RING) */
     for (i = 0; g_chunk && i < MAX_SONGS; i++) {
         char name[13];
         Song song;
@@ -1034,6 +1041,11 @@ int music_sects(int cue)
 unsigned music_loops(void)
 {
     return g_loops;
+}
+
+unsigned long music_waited(void)
+{
+    return g_starved;
 }
 
 int music_playing(void)

@@ -2988,6 +2988,31 @@ hit test reads single bits in a tight loop, and XMS is a driver call and a copy 
 The budget: `build.sh` prints what RV.EXE leaves of DOSBox's 640,512 bytes, warns under 8 KB and refuses under 2 KB. A real DOS with its
 drivers offers less than DOSBox does.
 
+**The balloon** (the user, 2026-11-14: "Please make a 24k size item called balloon_check_with_human_before_reducing so that we have
+an emergency amount we can deploy carefully"): mem.c's `balloon_check_with_human_before_reducing`, 24 KB of RV.EXE's image held for
+nothing, so that the room is there when something must have it. Never shrink or remove it without asking the user first. Its size
+is `RV_BALLOON_KB` (`BALLOON_KB=0 ./build.sh` builds without it; "Make it easy for a human to disable it"); RV.EXE only, the test
+builds feed their heaps from that room. build.sh prints it beside what is free, and fails when the size asked for is not in the map.
+
+**What 2026-11-14 gave back** (the user's picks from a survey of RV.EXE's image), before the balloon took 24 KB of it:
+
+| Change | Bytes for DOS |
+|---|---|
+| 62 slots, not 128 (abi/rvabi.def: the fixed block ends at 0x4200) | 12,800 |
+| The music's two rings, 256 events each, not 1024 (music.c: note events, some 10 s of the busiest song; the user: "Power of two is best") | 9,216 |
+| The explosion cache, 2 cels, not 4 (explode.c: a miss is a 2.3 KB XMS copy) | 4,608 |
+| rvio.c for Watcom's stdio (its FILE table, its buffers in the near heap, the printf and scanf engines, the POSIX-level read) | 10,592 |
+
+RV.EXE left 2,816 bytes for DOS in the morning; 38,400 without the balloon at night, 13,824 with it. In flight (quiet.sh) DOS had
+46,192 bytes free before the balloon.
+
+**rvio.c** is the part of stdio the game uses, on DOS's own calls (rvio.h has the list): the usual names are macros for its
+functions in the DOS builds, the native builds have the real stdio. Text mode is stdio's (CR LF written for '\n', CR dropped as a
+line is read), so the files are byte for byte what they were. One formatter serves `sprintf` and the files, with every format the
+game has (%d %u %x %X %s %c, the flags - + 0, a width, a string's precision, l and F). A file is a DOS handle with 48 bytes of
+read-ahead for `fgetc` and `fgets`, six at most; the near heap keeps 256 bytes (main.c `NEAR_KEEP`), 2 KB while stdio's buffers
+lived in it. The music reports any wait for its rings in the log at a flight's end (`music: N ticks waited`: never seen).
+
 ## Fonts, pointer, driver
 
 - **Fonts:** rasterised by `tools/rvpack.py` into our own bitmap format,

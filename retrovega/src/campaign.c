@@ -5,7 +5,7 @@
  * victory) and bad (towards loss).  After its four missions a node trends
  * good with 3-4 wins, bad with 0-1, and with 2 as the campaign's running
  * total says. */
-#include <stdio.h>
+#include "rvio.h"
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>

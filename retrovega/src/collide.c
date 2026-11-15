@@ -17,7 +17,7 @@
  * at most half a cell an axis a step.  All in long integers (Watcom's long
  * long divisions cost thousands of cycles: the clipping scales its terms
  * down instead). */
-#include <stdio.h>
+#include "rvio.h"
 #include <stdlib.h>
 #include <string.h>
 #include <malloc.h>

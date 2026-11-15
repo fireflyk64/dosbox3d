@@ -1,5 +1,5 @@
 /* panel.c: the cockpit's panel (panel.h). */
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include <malloc.h>
 #include "rv.h"

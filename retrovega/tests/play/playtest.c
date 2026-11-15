@@ -21,7 +21,7 @@
  * 3 KB of it free): every string a `static const char __far`, every table and variable __far.  The messages'
  * numbers are int32_t, printed by ln_f's %d. */
 #include <string.h>
-#include <stdio.h>
+#include "rvio.h"
 #include <stdlib.h>
 #include "rv.h"
 #include "rvhooks.h"

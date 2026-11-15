@@ -10,7 +10,7 @@
  * thing that is its own mirror image keeps turns 0 .. n/4, and turns past
  * them are a kept one flipped (n/2 - k), both (k - n/2) or mirrored (n - k).
  * The module's data and its log's formats are far (DGROUP is nearly full). */
-#include <stdio.h>
+#include "rvio.h"
 #include <stdlib.h>
 #include <string.h>
 #include "rv.h"

@@ -7,7 +7,7 @@
  * and the flight (flight.c: for now the drawing benchmark, 20 seconds in the
  * cockpit; the mission is still won 80% of the time at random).  The
  * debrief, the campaign's next move, and at the end "You win" or "You lose". */
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include <stdlib.h>
 #include "rv.h"

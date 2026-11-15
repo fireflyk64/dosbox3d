@@ -1,5 +1,5 @@
 /* mem.c: the ledger of the fixed arrays (mem.h), and of everything else a mission might leave behind. */
-#include <stdio.h>
+#include "rvio.h"
 #include <stdlib.h>
 #include <string.h>
 #include <dos.h>
@@ -248,23 +248,29 @@ void mem_ledger(const char __far *when)
         _fmemcpy(&g_first, &l, sizeof l);
 }
 
-/* stdio keeps a closed stream's record, 16 bytes of the near heap, for the next open: the most files ever open at once sets
- * how many there are.  That is settled here, at the start, so it cannot look like a leak later: the page's RVWANT.TXT, open
- * while a set is looked for, was one such record, once, in a room's frame (in DOSBox every set is on disk, and it never
- * happened).  Four: that file, the one looked for, a test script and the log. */
+/* The balloon (the user, 2026-11-14: "Please make a 24k size item called balloon_check_with_human_before_reducing so that
+ * we have an emergency amount we can deploy carefully"): 24 KB of RV.EXE's image held for nothing, so that the room is
+ * there when something must have it.  NEVER shrink or remove it without asking the user first, whatever needs the
+ * room.  RV.EXE only: the test builds feed their heaps from that room.
+ *
+ * Its size is RV_BALLOON_KB, 24 unless the build says otherwise ("Make it easy for a human to disable it with #define or
+ * mechanism"): `BALLOON_KB=0 ./build.sh` builds RV.EXE without it, `BALLOON_KB=12 ./build.sh` with half, or change the
+ * default here.  build.sh fails when the size it asked for is not in the map. */
+#ifndef RV_BALLOON_KB
+#define RV_BALLOON_KB 24
+#endif
+#if RV_BALLOON_KB > 0 && !defined(RV_HOST) && !defined(RV_TESTS) && !defined(RV_HEAP)
+#define BALLOON_BYTES (RV_BALLOON_KB * 1024U)
+unsigned char __far balloon_check_with_human_before_reducing[BALLOON_BYTES];
+#endif
+
+/* the start (Watcom's stdio kept a closed stream's record in the near heap for the next open, so the most files ever
+ * open at once were opened here, or a later open looked like a leak; rvio.c's files are a fixed few since 2026-11-14).
+ * It touches the balloon, so the link keeps it */
 void mem_settle(void)
 {
-#ifndef RV_HOST
-    static const char __far s_name[] = "RVLOG.TXT";
-    char name[12];
-    FILE *f[4];
-    int i;
-    _fstrcpy(name, s_name);
-    for (i = 0; i < 4; i++)
-        f[i] = fopen(name, "r");
-    for (i = 0; i < 4; i++)
-        if (f[i])
-            fclose(f[i]);
+#ifdef BALLOON_BYTES
+    balloon_check_with_human_before_reducing[BALLOON_BYTES - 1] = 0;
 #endif
 }
 

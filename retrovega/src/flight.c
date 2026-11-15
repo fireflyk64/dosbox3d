@@ -13,7 +13,7 @@
  * of this machine at this cycle count.  It shows on the left MFD and in the
  * fixed block (rvBenchCount, rvFps).  After 20 seconds the flight lands and
  * the mission's outcome is rolled as before. */
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include <stdlib.h>
 #include <malloc.h>
@@ -4080,6 +4080,8 @@ void __far __cdecl autoAnimation_c(unsigned short camShipType, unsigned short ca
 static void flight_over(unsigned short status)
 {
     memset(viewRect, 0, viewRect_SIZE);  /* (no steering pointer to rest now) */
+    if (music_waited())                 /* (the rings ran dry: notes held back.  Never, with every frame polling) */
+        RV_LOG("music: %lu ticks waited for music_poll so far", music_waited());
 #ifdef RV_TESTS
     {
         int w, h, n = flight_bench_result(&w, &h);

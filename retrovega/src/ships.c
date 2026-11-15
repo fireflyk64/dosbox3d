@@ -29,7 +29,7 @@
  * (full size only, scaled or turned at draw time through the lightfield
  * kernels, which costs nine times a copy): the page runs that way until its
  * JavaScript makes the sets. */
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include <stdlib.h>
 #include <malloc.h>

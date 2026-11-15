@@ -1,6 +1,6 @@
 /* M0 check: RV.EXE's image layout, the thunks and 32 MB of XMS.
  * Writes RVLOG.TXT and exits 0 when everything is where it should be. */
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include <dos.h>
 #include <i86.h>

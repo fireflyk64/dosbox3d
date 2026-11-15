@@ -4,7 +4,7 @@
  * one interrupt with the function in AX.  So the install check is the one call a game without the card ever makes. */
 #include <dos.h>
 #include <i86.h>
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include "gx.h"
 

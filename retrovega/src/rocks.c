@@ -43,7 +43,7 @@
  * are well away; so is the conventional memory (the pool, the lists, the
  * small sprites: about 30 KB at ROCK_MAX).  The module's data and the log's
  * formats are far (DGROUP is nearly full). */
-#include <stdio.h>
+#include "rvio.h"
 #include <stdlib.h>
 #include <string.h>
 #include <io.h>

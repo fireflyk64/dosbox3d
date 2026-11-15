@@ -13,7 +13,7 @@
  * A base is a ship the player lives on (docs/engine.md): base 0, the
  * carrier, is RV.DAT; base N is RVBASEN.DAT, the same rooms with its own
  * pictures.  dat_close gives back everything the archive took. */
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include <malloc.h>
 #include <io.h>
@@ -58,11 +58,11 @@ static unsigned long g_read_bytes, g_reads;   /* (the tally) */
 static int file_read(unsigned long at, void __far *dst, unsigned long n)
 {
     unsigned char __far *d = (unsigned char __far *)dst;
-    if (g_fd < 0 || lseek(g_fd, at, SEEK_SET) != (long)at)
+    if (g_fd < 0 || rv_lseek(g_fd, at, SEEK_SET) != (long)at)
         return 0;
     while (n) {
         unsigned part = n < sizeof rv_filebuf ? (unsigned)n : sizeof rv_filebuf;
-        if (read(g_fd, rv_filebuf, part) != (int)part)
+        if (rv_read(g_fd, rv_filebuf, part) != (int)part)
             return 0;
         _fmemcpy(d, rv_filebuf, part);
         d += part;
@@ -74,11 +74,11 @@ static int file_read(unsigned long at, void __far *dst, unsigned long n)
 /* the same into XMS (blk, off): an odd tail rounds up into the padding the caller left */
 static int file_to_xms(unsigned long at, XmsBlock blk, unsigned long off, unsigned long n)
 {
-    if (g_fd < 0 || lseek(g_fd, at, SEEK_SET) != (long)at)
+    if (g_fd < 0 || rv_lseek(g_fd, at, SEEK_SET) != (long)at)
         return 0;
     while (n) {
         unsigned part = n < sizeof rv_filebuf ? (unsigned)n : sizeof rv_filebuf;
-        if (read(g_fd, rv_filebuf, part) != (int)part)
+        if (rv_read(g_fd, rv_filebuf, part) != (int)part)
             return 0;
         xms_put(blk, off, rv_filebuf, (part + 1) & ~1U);
         off += part;
@@ -184,7 +184,7 @@ int dat_open(const char *path)
 {
     unsigned long pinned = 0;
     unsigned i;
-    g_fd = open(path, O_RDONLY | O_BINARY);
+    g_fd = rv_open(path);
     if (g_fd < 0) {
         RV_LOG("dat: no %s", path);
         return 0;
@@ -240,7 +240,7 @@ void dat_close(void)
     if (g_people) MEM_GIVE(g_people);
     if (g_cockpits) MEM_GIVE(g_cockpits);
     if (g_in) MEM_GIVE(g_in);
-    if (g_fd >= 0) close(g_fd);
+    if (g_fd >= 0) rv_close(g_fd);
     g_fd = -1;
     g_dir_blk = 0;
     g_rooms = 0;

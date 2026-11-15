@@ -6,7 +6,7 @@
  * just those rows, back to front, then flips them.  The game draws its own
  * things (text, boards, menus) through the overlay hook, called for every
  * band drawn. */
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include "rv.h"
 #include "room.h"

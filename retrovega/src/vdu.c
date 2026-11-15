@@ -1,5 +1,5 @@
 /* vdu.c: the cockpit's VDU pages (vdu.h) */
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include "rv.h"
 #include "rvhooks.h"

@@ -33,7 +33,8 @@ fi
 # optimised (the flight benchmark found -ox worth half again as many sprites a
 # frame as -od); DEBUG=1 builds -od -d2 for the debugger
 if [ -n "${DEBUG:-}" ]; then OPT="-od -d2"; else OPT="-ox -d1"; fi
-CFLAGS="-q -bt=dos -mm -3 -s -w4 -zq -zm $OPT -i=src"   # (-zm: a segment a function, so the link drops the unused: option eliminate)
+BALLOON_KB=${BALLOON_KB:-24}          # (RV.EXE's emergency room, mem.c's balloon: BALLOON_KB=0 ./build.sh builds without it)
+CFLAGS="-q -bt=dos -mm -3 -s -w4 -zq -zm $OPT -i=src -dRV_BALLOON_KB=$BALLOON_KB"   # (-zm: a segment a function, so the link drops the unused: option eliminate)
 nasm -f obj -i src/ -o "$OUT/rvhook.obj" src/rvhook.asm
 nasm -f obj -o "$OUT/lowlevel.obj" src/lowlevel.asm
 nasm -f obj -o "$OUT/lasers_a.obj" src/lasers.asm
@@ -99,7 +100,7 @@ fi
     || ~/.venvs/retrovega-art/bin/python -P tools/explode.py --out "$OUT/EXPLODE.DAT" > /dev/null
 [ "$OUT/SFX.DAT" -nt tools/sfx.py ] && [ "$OUT/SFX.DAT" -nt data/sounds.csv ] && [ "$OUT/SFX.DAT" -nt art/voice/pa_report.wav ] \
     || ~/.venvs/retrovega-art/bin/python -P tools/sfx.py --out "$OUT/SFX.DAT" > /dev/null   # (the recordings: art/voice)
-ENGINE="mem freeze util xms gx video dat gfx input room lipsync opl music score campaign lightfield ships lasers bolts balls rocks missiles sky planet collide flames comms panel vdu cockpit world shots hud explode sfx fx damage logic simulator flight game main"
+ENGINE="mem freeze util rvio xms gx video dat gfx input room lipsync opl music score campaign lightfield ships lasers bolts balls rocks missiles sky planet collide flames comms panel vdu cockpit world shots hud explode sfx fx damage logic simulator flight game main"
 LOGIC=${LOGIC:-src/logic.c}           # (LOGIC=path: another logic.c in its place, an experiment's; the play tests' check)
 # the log's formats out of conventional memory (tools/logfmt.py; the user's pick from the memory plan, 2026-11-04): the
 # engine compiled from copies in $LF with each format the log alone reads a token, their texts a table appended to each
@@ -152,7 +153,7 @@ link() {
               clname DATA clname BSS clname STACK \
         file "$OUT/rvhook.obj" "$@" library "$OUT/rvstubs.lib"
 }
-link HELLO.EXE file "$OUT/lowlevel.obj" file "$OUT/util.obj" file "$OUT/xms.obj" file "$OUT/hello.obj"
+link HELLO.EXE file "$OUT/lowlevel.obj" file "$OUT/util.obj" file "$OUT/rvio.obj" file "$OUT/xms.obj" file "$OUT/hello.obj"
 link RV.EXE file "$OUT/lowlevel.obj" file "$OUT/lasers_a.obj" file "$OUT/rocks_a.obj" $(for c in $ENGINE; do printf ' file %s/%s.obj' "$OUT" "$c"; done)
 link RVP.EXE file "$OUT/lowlevel.obj" file "$OUT/lasers_a.obj" file "$OUT/rocks_a.obj" file "$OUT/p/playtest.obj" \
     file "$OUT/t/twins.obj" \
@@ -178,6 +179,19 @@ RV_ROOM=640512
 RV_IMAGE=$(sed -n 's/^Memory size: *[0-9a-fA-F]* (\([0-9]*\)\.).*/\1/p' "$OUT/RV.MAP")
 RV_LEFT=$((RV_ROOM - RV_IMAGE))
 echo "RV.EXE takes $RV_IMAGE bytes of conventional memory, $RV_LEFT left for DOS to hand out"
+# the balloon (mem.c: the user's emergency room, 24 KB unless BALLOON_KB says otherwise, held in the image): never shrunk
+# or lost without asking the user
+if [ "$BALLOON_KB" -gt 0 ]; then
+    if ! grep -q 'balloon_check_with_human_before_reducing' "$OUT/RV.MAP"; then
+        echo "RV.EXE has lost its balloon (mem.c balloon_check_with_human_before_reducing): ask the user before reducing it"
+        exit 1
+    fi
+    echo "  the balloon (mem.c's balloon_check_with_human_before_reducing): $((BALLOON_KB * 1024)) bytes of that held for an"
+    echo "  emergency, so $RV_LEFT free now and $((RV_LEFT + BALLOON_KB * 1024)) with the balloon released (ask the user before"
+    echo "  reducing it; BALLOON_KB=0 ./build.sh builds without it)"
+else
+    echo "  (the balloon is off: BALLOON_KB=0.  The default holds 24 KB of this for an emergency)"
+fi
 if [ "$RV_LEFT" -lt 2048 ]; then
     echo "RV.EXE is too big for conventional memory: it would not load, or be at the very edge (see docs/engine.md, Memory)"
     exit 1
