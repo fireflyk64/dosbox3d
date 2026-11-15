@@ -101,7 +101,7 @@ int bk_begin(unsigned handle, uint32_t base)
     bk_ask.base = base;
     BK_FETCH(0, &h, sizeof h);
     if (h.magic[0] != 'R' || h.magic[1] != 'V' || h.magic[2] != 'P' || h.magic[3] != 'L' || h.version != BK_VERSION
-        || h.npatch > BK_PATCHES || h.nmips != BK_MIPS || h.radius <= 0 || h.n < 16 || h.n > 1024)
+        || h.npatch > BK_PATCHES || h.radius <= 0 || h.n < 16 || h.n > 1024)
         return -1;
     bk_ask.npatch = h.npatch;
     bk_ask.radius = h.radius;

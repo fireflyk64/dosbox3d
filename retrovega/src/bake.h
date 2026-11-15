@@ -7,7 +7,8 @@
  * at build time by tools/planetbake.c from the same terrain.c, a file a planet mission (ID.PLN beside RV.EXE):
  *   - the planet's own ground: terrain.c's grid two halvings down (BK_LEVEL: 384 cells along each of the cube's six
  *     faces, about 262 km a cell on Mirage), a height and a colour a cell, with a cell of border all round;
- *   - that grid's own halvings (BK_MIPS of them: the far ground of RV.EXE's own picture);
+ *   - the ground as RV.EXE draws it without the card (pview.h: a pyramid of grids over the plane that touches the
+ *     planet at the mission's middle, and the tables of its colours and haze);
  *   - the mission's places whole: terrain.c's detail patches (a pad, an arch, each stretch of a canyon), every point's
  *     height and colour, and the slab of rock over it where there is one (an arch).
  * Every machine reads the same file and does the same integer sums on it (bk_column), DOS or native, card or none: the
@@ -30,9 +31,8 @@
 #define BK_FAR
 #endif
 
-#define BK_VERSION 1
+#define BK_VERSION 2
 #define BK_LEVEL 2                      /* the grid: terrain.c's, this many halvings down */
-#define BK_MIPS 4                       /* its own halvings in the file */
 #define BK_PATCHES 12                   /* (terrain.c's TR_PATCHES) */
 #define BK_HU 64                        /* a height unit, positions (terrain.c's TR_HU) */
 #define BK_CELL 3                       /* a cell's (a patch point's) bytes: its height (int16, height units over the
@@ -52,9 +52,11 @@ typedef struct {
     uint32_t stamp;                     /* (the baker's: its sources' sum, to know a stale file by) */
     int32_t radius;                     /* the datum's, positions */
     int16_t top, bottom;                /* the highest (a slab's top too) and lowest ground, height units */
-    uint8_t kind, npatch, nmips, pad_;
+    uint8_t kind, npatch, view, pad_;    /* view: 1, the file has the picture's ground (view_at) */
     uint32_t grid_at;                   /* six faces, each (n + 2) x (n + 2) cells */
-    uint32_t mip_at[BK_MIPS];           /* the same of n >> 1, n >> 2 ... cells a side */
+    uint32_t view_at;                   /* the picture's ground (pview.h PvHead), view_size bytes */
+    uint32_t view_size;
+    uint32_t spare_[2];
     uint32_t patch_at;                  /* npatch BkPatch */
     uint32_t size;                      /* the file's */
 } BkHead;                               /* 56 bytes */

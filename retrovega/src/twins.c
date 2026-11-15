@@ -1482,7 +1482,6 @@ static void test_bake(void)
     h->n = TB_N;
     h->radius = TB_RADIUS;
     h->npatch = 3;
-    h->nmips = BK_MIPS;
     at = sizeof(BkHead);
     h->grid_at = at;
     for (i = 0; i < 6L * (TB_N + 2) * (TB_N + 2); i++, at += BK_CELL) {
