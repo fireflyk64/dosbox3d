@@ -65,79 +65,160 @@ The user, 2026-11-15:
 
 ## 4. The program in memory (src/cpu/wcnet_tiedemo.cpp)
 
-* **Finding it.** DOS loads TIEMISS.EXE for TIEDEMO.BAT, so the layer knows its load segment from the start
-  (`tdm_program_loaded`, beside Privateer's and Raptor's in wcnet_game.cpp). The build is checked by "TIE Fighter Demo
-  V1.0 12/04/93" at image offset 0x30A70.
-  * The places are image paragraphs from the load segment (01A2 under our DOS, PSP 0192).
-  * DGROUP is image paragraph 0x421F (DS 43C1): measured by sampling DS in flight, 97% of the samples.
-* **The overlays.** Image paragraph 3727 is the overlay area: zeros in the file, code at run time, a different overlay
-  at 20 s and 26 s of the same flight. The HUD's code is there (3727:15A5 the counter, 3727:1623 the mission clock,
-  3727:17AB the speed), so nothing is hooked there without checking its bytes first.
-* **The frame.** 0090:06CE is the flight's frame, called from 0090:0006's loop:
-  * ... 0090:07CC call 05B3:0000;
-  * 0090:07D1 call 054A:0000: every object moved;
-  * **0090:07D6** call 1768:058E: next, the picture. Watched: our place for "after the moves, before the picture".
-* **The objects.** 054A:0000 loops over 0x74 (116) slots of 0x58 bytes from DS:67CA (`si` the record, DS:8FB0 it too).
-  * +0x00 its number; +0x04 its type (a byte: 0 a free slot; 4 the T/F, 15 the corvette, 11 the repair yard's
-    platforms, 1 the X-wing ...);
-  * +0x06 x, +0x0A y, +0x0E z (int32; 054A:05DC adds the frame's motion, DS:5356/535A/535E, kept within ±0x01000000);
-  * +0x12 x, y, z the frame before;
-  * +0x1E three angle words (the platforms at 0x2000, 0x6000, 0xA000, 0xE000); +0x26 the speed (the T/F's full 225,
-    100 on the HUD);
-  * +0x34 its flight group (Alpha's craft alike);
-  * +0x3A its forward unit vector (3 words, 0x7FFF one: the player's (0, 0.926, -0.376) flying along its motion),
-    +0x42 forward again, +0x48 right, +0x4E up;
-  * +0x54 its craft data (a far pointer).
-* **The player.** DS:CD78 is the player's object (a near pointer: object 1 at the start, DS:6822), DS:CD7A its craft
-  data. T/F Alpha is objects 0, 1 and 2.
-* **The HUD's state** is at DS:E078: the speed at DS:E07A, the mission clock in seconds at DS:E084, from the minutes
-  and seconds bytes at DS:C074/C075.
-* **Shown by experiment** (`!tdmglue=dx:dy:dz`: object 0 given the player's record, offset, every frame at 0090:07D6):
-  a craft whose record is written there is drawn where it says. Held 3,000 units ahead it sat in the gunsight, its
-  back to us; 400 to the right, it moved there.
+The demo is an earlier build of the TIE Fighter the CD port knows (docs/tiefighter.md), compiled 16-bit.
+* **Its records are the CD's.** The object record is OpenTIE's `FlightObject`, the CD's layout byte for byte: 88 bytes,
+  116 of them. So the CD port's design and much of its code apply.
+* **Its functions follow OpenTIE's C.** The frame calls them in the CD's order, and a module's functions come in its
+  source file's order (Microsoft C emits them so). That is how each was named.
 
-The research aids (the environment's):
+**Finding it.** DOS loads TIEMISS.EXE for TIEDEMO.BAT, so the layer knows its load segment from the start
+(`tdm_program_loaded`, beside Privateer's and Raptor's in wcnet_game.cpp).
+* The build is checked by "TIE Fighter Demo V1.0 12/04/93" at image offset 0x30A70.
+* The places are image paragraphs from the load segment (01A2 under our DOS, PSP 0192).
+* DGROUP is image paragraph 0x421F (DS 43C1).
+* Image paragraph 3727 is the overlay area (zeros in the file, swapped in flight: the HUD's code): nothing is hooked
+  there.
+
+**The frame**, `tie_doframe`, 0090:06CE (the CD's in OpenTIE's tie.c):
+
+| demo | the CD's function |
+|---|---|
+| 0090:06FA | the wait until 4 ticks have passed (DS:C464; `frameticks` DS:CE44, `framerate` DS:CE48) |
+| 1411:000E | user_userinterface |
+| 0090:146E | tie_updatetime (DS:614D `mission.end_flag`: the frame does nothing once it is set) |
+| 0FC2:0E04 | create_updatefgstatus |
+| 091E:018C | pai_updateplaneai (28 craft; a craft's planner runs when its CraftData +0x2C is <= 0) |
+| 1338:0006 | laser_weaponsfire |
+| 089D:0002 | dynamix_planedynamics |
+| 0090:0836 | tie_updatescreen (the picture) |
+| 0FC2:2726 | create_checkdebris |
+| 05B3:0000 | collide_collisions |
+| 054A:0000 | move_moveobjects |
+| 1768:058E | anim_updateanimation |
+| 125A:0006 | score_checkobjective |
+| 03B1:0640 | msg_messageupdate |
+
+**The other functions used.** Microsoft C's far cdecl: the arguments on the stack, the caller pops them.
+* `create_createmission`, 0FC2:000E: called from the flight program's start (0090:0155). It opens the mission file,
+  reads its header (DS:C280), its flight groups (at the mission segment's 0xD0, 0x124 each; the segment in DS:5890),
+  messages and goals. Its first random number is at 0FC2:0136, then it makes the craft.
+* `laser_createprojectile(shooter, hardpoint, type)`, 1338:0B16 (genus 5 a player's bolt, 6 another's).
+* `collide_laserhitcraft(bolt, target, offset)`, 05B3:1B18.
+* `collide_damagecraft(target, component, attacker, side)`, 05B3:1CF8: an attacker of -1 is a collision.
+* `collide_updatekills(shooter, victim, 1)`, 05B3:2CA8.
+* `collide_makeobjectexplosion(obj, species)`, 05B3:25D6. A dying craft becomes species 0x40 or 0x41: this build has
+  one explosion path, the CD has 127 to 130.
+
+**The data** (DS offsets):
+* The objects at DS:67CA, 116 of 0x58 bytes: +2 category, +3 genus, +4 ship_idx (0 a free slot), +6 x y z (int32),
+  +0x12 the frame before's, +0x1E heading, pitch, roll, +0x26 current_speed, +0x2A collision radius, +0x2C death
+  timer, +0x2E age, +0x30 self_idx (a bolt's shooter), +0x33 side, +0x35 flight group, +0x3A move vector, +0x42
+  forward, +0x48 side, +0x4E up, +0x54 the craft data (near; a bolt's: its warhead record, DS:BF9C + 4 per slot past
+  28).
+* Craft 0 to 27, projectiles from 28 (`NUM_CRAFTS` 0x1C).
+* `pstate` at DS:CD78: +0 the player's object, +2 its craft, +4 its number (DS:CD7C), +0xC its target (DS:CD84).
+* `math2_randomseed` DS:5372 (0x2357 at first), the second generator's state DS:1A70.
+* The mission's status DS:614C and end flag DS:614D: set, the flight ends at once (TIEMISS.EXE exits).
+* A craft's data (CraftData, 0x18C bytes, the CD's shorter): +0x2C the planner's countdown (the CD's +0x2A), +0x40 its
+  attacker, +0x5C its flight flag (the CD's +0x60), +0x9E its hull's damage (the CD's +0xA2) against +0xA2 (the CD's
+  +0xA6: 1,000 a T/F), +0xA8 its systems, +0xC2 and +0xC4 its shields.
+* A flight group's record: +0x33 its craft, +0x42 the player's craft in it (1-based). DEMO.TIE's Alpha has 3 craft, the
+  player its second: object 1, Alpha's first and third objects 0 and 2.
+
+**The places watched** (`tdm_watch_list`; each IP's CS checked):
+* create_createmission's entry: the launch.
+* 0FC2:0136: the seat and the seeds.
+* tie_doframe's entry: the frame's top.
+* move_moveobjects's entry: the others' craft written in; our calls made.
+* laser_createprojectile, collide_laserhitcraft, collide_damagecraft: their entries.
+* PSP:005C: the launch's idle.
+
+**Calls into the program** (`tdm_queue_call`, the CD's `tie_queue_call` in 16 bits).
+* At move_moveobjects's entry the CPU's state is kept. The arguments are pushed, then the place's own CS:IP as the far
+  return address, and CS:IP is set at the function.
+* Its `retf` comes back to the place (SP checked). The place's hook gives the state back, the lazy flags too, and makes
+  the next call or lets the frame go on.
+* `tdm_skip_call` returns from a function at its entry (the far return address popped, AX set).
+* No byte of the game is written; the launch's idle is a `jmp $` in the PSP's first FCB, which the program never uses.
+
+**Research aids** (the environment's):
 * `WCNET_TDM_PROF=1`: where the CPU is and the DS, sampled, every 5 s.
 * `WCNET_TDM_WATCH=<linear>:<bytes>`: every write to those bytes and the instruction after it.
-* The key script's `!tdmrec=<object>` (a record logged), `!tdmglue=dx:dy:dz`.
+* The key script's `!tdmrec=<object>` (a record logged), `!tdmr=<DS offset>[/...]` (words logged), `!tdmw=<DS
+  offset>:<byte>` (a byte written), `!tdmglue=dx:dy:dz` (object 0 held beside the player).
 
-## 5. Flown together (src/cpu/wcnet_tiedemo_session.cpp): the first step
+## 5. Flown together (src/cpu/wcnet_tiedemo_session.cpp): the CD port's session, ported
 
-* **The room.** As Raptor's: the host is seat 0, a guest says hello (TdmHello, field 90), the host answers with its
-  seat (rooms of up to 3: T/F Alpha's three craft).
-* **The state.** Every frame of its flight (else twice a second) a pilot tells its craft (TdmState, field 91): its
-  record's place, the frame before's, its angles and speed (+0x06..+0x27), and its attitude's vectors (+0x3A..+0x53).
-  The host relays a guest's to the other guests.
-* **Each pilot flies the mission's own player craft on its own machine.** The others are put in T/F Alpha's other craft
-  every frame at 0090:07D6, after the game has moved everything: the last record told, carried on by its own motion
-  (the frame before's place to this one's) for the frames since.
-* **Places.** At its flight's first frame a guest (seat m ≥ 1) takes its own place: its craft and Alpha's craft m - 1
-  change places and attitudes. The host flies Alpha 1, the first guest Alpha 2, a second Alpha 3.
-  * Each machine then puts the host in the craft whose place a guest took, and any other seat s in craft s - 1, where
-    it began.
-* **Not shared yet.** Each machine's enemies, shots, damage and the wingmen's AI are its own. The craft another pilot is
-  put in is still flown by the game's AI between our writes (its guns too).
+The user, 2026-11-15: "Please fix all the things for tie demo so the games sync. Please borrow as much technique as
+possible and ideally code from the tie fighter cd version for similar gameplay".
+
+The session is the CD port's (wcnet_tie_session.cpp, docs/tiefighter.md sections 5 to 7). Its flight code is carried
+over with the demo's addresses and 16-bit calls (`fill_craft`, `write_puppet`, `decide_owners`, `show_hit`, the
+shots, hits and kills, the room's end), with its own messages: TieFrame, TieCraft, TieShot, TieHit, TieEvent,
+TieOwners. Only the room's hello and the launch are the demo's own (TdmHello, TdmState).
+
+* **The room.** The host is seat 0; rooms of up to 3 (T/F Alpha's craft).
+* **The launch.** Each machine's program waits at create_createmission's entry, after the opening, until every pilot
+  of the room is there (a guest still in the opening after two minutes is left out). The host then says go with its
+  random seeds.
+* **The seat.** At 0FC2:0136, the mission read, a guest writes the host's seeds and its own craft into the player's
+  flight group: seat 1 the group's first craft the host does not fly, seat 2 the next (the CD's player-craft number).
+  The mission's own setup then makes the same craft in the same object slots on every machine. The host flies object
+  1, the first guest object 0, a second object 2, and they start together.
+* **Who flies a craft** (the CD's step 5, the user's rule for the CD version).
+  * The host owns most. A guest gets a craft within the lasers' reach of it (2.5 km) and within 45 degrees of its
+    nose, or its target within 4 km, unless the host targets it. Each pilot owns its own craft.
+  * The owner's game flies it. The others write its reports into their game at move_moveobjects's entry and hold
+    their AI off it (the planner's countdown, CraftData +0x2C, kept full).
+  * A craft beyond 5.5 km of our pilot is flown by our AI between its owner's sparse reports, pulled to them smoothly.
+* **Rates.** Our own craft every frame. The craft we fly for the others: within 2.5 km of another pilot every frame,
+  within 10 km every 10th frame, the rest one at a time every 30 frames.
+* **Shots.** A shot of a craft we fly, near another pilot, goes with the next frame. The others make it from that
+  craft with the game's own `laser_createprojectile`. A craft another machine flies does not shoot here.
+* **Hits.** Decided by the shooter's machine (its `collide_laserhitcraft`).
+  * A hit on another machine's craft is sent and applied by the owner with the game's own call and a stand-in bolt.
+  * This game damages only the craft it flies (`collide_damagecraft`'s entry), and shows its own hits on the others'
+    craft at once; the owner's figures follow.
+* **Deaths.** An owner's craft dying is sent; the others kill their copy with the game's own damage (a collision's).
+  The kill is credited to the pilot whose hit began it (`collide_updatekills`). A craft gone without dying is gone
+  everywhere.
+* **The room's end** (the user's rule for the CD version): a pilot down, or the host's flight over, ends everybody's
+  flight 3 s later, through the mission's end flag.
+* **Left out of the CD's.** The front end (the demo has none), the mission picker, the pairings, the radio voices, and
+  the inspection and reinforcement events (not in this mission).
 
 ## 6. Measured (2026-11-15)
 
-* **Natively** (20,000 cycles, `8:esc`): the opening, then the mission's cockpit by 12 s: "T/F ALPHA, ENGAGE X-WINGS",
-  "X-WING RED 1 HAS BEEN DESTROYED", the clock from 42:05.
-* **In the browser:** the zip installed in 0.6 s, the flight by 20 s. TIEDEMO PAGE OK.
-* **Two native machines over TCP** (`scripts/tdmnet-duo.sh`, 30,000 cycles, about 59 frames a second each):
-  * the guest in Alpha 2's place;
-  * each machine putting the other in its flight group every frame, the other's craft at the very place the other's
-    own machine has it (10240, -7611, 107844 on both; 8240, -6005, 105688 on both);
-  * the host stopped, the guest 6,000 units ahead: the guest's TIE on the host's screen, upper right of the canopy.
-* **Two browser pages through a local lobby** (`scripts/web-tdm.sh`): TDM PAGE OK.
-  * Both found TIEMISS.EXE and flew; the guest in Alpha 2's place.
-  * Each page put the other in its flight group (1,624 and 1,880 frames in 40 s).
-  * 37.7 and 43.6 frames a second; the guest's TIE on the host's canvas as natively.
+* **The first step's** (each machine's enemies its own, the others as wingmen):
+  * natively, two machines at 59 frames a second, the other's craft at the very place its machine had it;
+  * two browser pages: TDM PAGE OK.
+* **Synced, two native machines over TCP** (`scripts/tdmnet-duo.sh`, 30,000 cycles):
+  * **The launch and the seats.** Both held at the mission's start, then launched together; the guest with the host's
+    seeds, flying craft 1 of Alpha (object 0), the host object 1, the same slots on both.
+  * **The craft.** Each machine has the other's own craft where its owner does (8240, 31,548, 90,092 on the guest;
+    8240, 31,486, 90,118 on the host, 17 ms apart).
+    * The enemies the same on both. The guest took the craft near its nose (an X-wing, the corvette) and gave them
+      back.
+    * An X-wing that died on one machine was killed on the other.
+  * **The guns, 100 s, both firing.**
+    * Each machine made the other's shots (64 and 63).
+    * The guest's 5 hits on craft the host flew were applied on the host (stand-in bolts, the game's own call).
+    * The corvette, flown by the guest's machine, hit an X-wing the host flew six times: its hull's damage 400, 800 ...
+      2,000 of 2,100 on the host, and the host's screen said "X-WING RED 2 HAS BEEN DESTROYED".
+  * **A pilot down** (the guest's craft's death started with `!tdmw=67F6:3c`). "You are down" on the guest, "GUEST is
+    down" on the host. The host blew up its copy, and both flights ended 3 s later.
+  * **Frame rates.** 17 to 21 ms a frame (about 50 to 58 a second) with the session.
+* **Synced, two browser pages through a local lobby** (`scripts/web-tdm.sh`, both firing): TDM PAGE OK.
+  * The launch together, the guest in craft 1 with the host's seeds.
+  * Each page flying the other's craft from its reports for the whole 51 s.
+  * Each page made the other pilot's 64 shots.
+  * 55 and 54 frames a second.
 
-## 7. Next
+## 7. Open
 
-* **The enemies shared:** the host's machine flies them, the guests' copies follow its reports (the CD port's
-  ownership, docs/tiefighter.md section 5).
-* **The other pilots' craft held from the AI:** no guns, no turns of its own between our writes. The craft data's flags
-  (+0xA4 is tested at 3727:157F).
-* **Shots and hits shared;** a pilot's death.
-* **The launch together:** a guest's flight begins with the host's.
+* **A kill credited across machines** has not been seen yet: it needs a pilot's own shot to finish a craft another
+  machine flies.
+* **A guest who arrives once the host flies** waits for the host's next launch: the demo has one mission, and the host
+  launches again only after its flight ends.
+* **The flash of a hit applied from another machine** is drawn where the stand-in bolt is (the shooter's bolt's
+  place): the CD port's impact offset globals are not known in this build.

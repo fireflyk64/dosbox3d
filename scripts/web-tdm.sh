@@ -27,8 +27,8 @@ HPID=$!
 trap 'kill $LPID $HPID 2>/dev/null' EXIT
 sleep 1
 ROOM=TFD-$((1000 + RANDOM % 9000))
-# Esc past the opening; then the host stops and the guest flies a third of the throttle for 5 s, ahead of the host
-hs="${HOST_SCRIPT:-8:esc,14:backslash}"
-gs="${GUEST_SCRIPT:-8:esc,14:bracketleft,19:backslash}"
+# Esc past the opening; both fire from a few seconds into the flight (the trigger: the mouse's button)
+hs="${HOST_SCRIPT:-8:esc,24:!button=0:1}"
+gs="${GUEST_SCRIPT:-8:esc,26:!button=0:1}"
 PLAYWRIGHT_DIR="$PW" SHOT_DIR=$OUT timeout -s KILL $((DUR + 300)) node "$ROOT/scripts/web-tdm.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" \
     $ROOM "$ZIP" "$hs" "$gs" $DUR 2>&1 | tee $OUT/run.log

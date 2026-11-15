@@ -1,9 +1,10 @@
 // The TIE Fighter demo in the browser, two pages in one room of a local lobby server (scripts/web-tdm.sh): each page
 // is given tiedemo.zip as a player drops it (the zips of its two floppies, unpacked by the page), both press Fly; each
-// page's key script (env.WCNET_KEYSCRIPT, from boot) skips the opening and flies.  Checks, each printed with OK or
-// FAIL: the zip installed, the program found by the hooks, the room, each pilot flying, each page putting the other
-// in its flight group, the guest in its own place (Alpha 2); the canvases every 10 s in SHOT_DIR.  Ends "TDM PAGE OK"
-// when every check passed.
+// page's key script (env.WCNET_KEYSCRIPT, from boot) skips the opening and flies, both firing.  Checks, each printed
+// with OK or FAIL: the zip installed, the program found by the hooks, the room, the launch together (the host's go
+// with its seeds), the guest in its own craft of T/F Alpha, both flying the same craft (each page's reports of the
+// craft it flies taken by the other), the shots made on the other page; the canvases every 10 s in SHOT_DIR.  Ends
+// "TDM PAGE OK" when every check passed.
 //
 //   node web-tdm.mjs PAGE_URL LOBBY_URL ROOM ZIP HOST_SCRIPT GUEST_SCRIPT [seconds]
 //   env: PLAYWRIGHT_DIR, CHROME, SHOT_DIR, CYCLES, PAGE_ENV
@@ -32,7 +33,7 @@ async function openPage(who, script, callsign) {
   page.on("console", (m) => {
     const t = m.text();
     logs.push(t);
-    if (/TIE demo: (HOST|GUEST|In |Room|.*joined|.*gone|.*is flying|.*flight is over|our craft takes|TIEMISS|the flight's|no craft)|TIE Fighter demo's settings|lobby: (joined|player)|could not|Aborted|RuntimeError|not the TIE/.test(t)) {
+    if (/TIE demo: (HOST|GUEST|In |Room|.*joined|.*gone|Waiting|launch|the launch|the host's seeds|.*down|.*flight ends|the flight|TIEMISS|no craft|a call came back)|TIE Fighter demo's settings|lobby: (joined|player)|could not|Aborted|RuntimeError|not the TIE/.test(t)) {
       console.log(`${stamp()} [${who}] ${t.slice(0, 190)}`);
     }
   });
@@ -83,14 +84,20 @@ const all = (p, re) => p.logs.filter((l) => re.test(l));
 check(all(host, /TIE demo: TIEMISS\.EXE loaded/).length > 0, "host: the hooks found TIEMISS.EXE");
 check(all(guest, /TIE demo: TIEMISS\.EXE loaded/).length > 0, "guest: the hooks found TIEMISS.EXE");
 check(all(host, /joined as pilot 2/).length > 0, "host: the guest joined the game's room");
-check(all(host, /GUESTPILOT is flying/).length > 0 && all(guest, /HOSTPILOT is flying/).length > 0, "both: the other pilot seen flying");
-check(all(guest, /our craft takes the place/).length > 0, "guest: in its own place in the flight group (Alpha 2)");
-const sum = (p, re) => all(p, /TIE demo: [0-9.]+s: flying/).reduce((s, l) => s + Number((re.exec(l) || [0, 0])[1]), 0);
-const hp = sum(host, /(\d+) wingmen put/), gp = sum(guest, /(\d+) wingmen put/);
-console.log(`${stamp()} the other pilot put in the flight group: host ${hp} frames, guest ${gp}`);
-check(hp > 100 && gp > 100, "both pages put the other pilot in their flight group");
+check(all(host, /launch \d+: everybody there/).length > 0, "host: the launch together (everybody at the mission's start)");
+check(all(guest, /the host's seeds .* we fly craft 1 of flight group 0/).length > 0, "guest: the host's seeds, its own craft of T/F Alpha (craft 1)");
+check(all(guest, /the flight's frames are coming \(our object 0\)/).length > 0 && all(host, /the flight's frames are coming \(our object 1\)/).length > 0,
+  "both: flying, the host object 1 and the guest object 0 on both");
+const lines = (p) => all(p, /TIE demo: [0-9.]+s: frame \d+ as pilot/);
+const sum = (p, re) => lines(p).reduce((s, l) => s + Number((re.exec(l) || [0, 0])[1]), 0);
+const hc = sum(host, /sent (\d+) craft/), gc = sum(guest, /sent (\d+) craft/);
+const hm = sum(host, /(\d+) made/), gm = sum(guest, /(\d+) made/);
+const hOther = lines(host).filter((l) => / obj 0 of pilot 2: here/.test(l)).length, gOther = lines(guest).filter((l) => / obj 1 of pilot 1: here/.test(l)).length;
+console.log(`${stamp()} craft reports sent: host ${hc}, guest ${gc}; the other's shots made: host ${hm}, guest ${gm}; the other pilot's craft seen: host ${hOther} s, guest ${gOther} s`);
+check(hc > 100 && gc > 20 && hOther > 10 && gOther > 10, "both pages fly the other's craft from its reports");
+check(hm > 0 && gm > 0, "each page made the other pilot's shots");
 for (const p of [host, guest]) {
-  const fr = all(p, /TIE demo: [0-9.]+s: flying/).map((l) => Number((/\(([0-9.]+) ms a frame\)/.exec(l) || [0, 0])[1])).filter((x) => x > 0);
+  const fr = lines(p).map((l) => Number((/\(([0-9.]+) ms a frame\)/.exec(l) || [0, 0])[1])).filter((x) => x > 0);
   if (fr.length) console.log(`${stamp()} ${p.who}: ${(1000 / (fr.reduce((s, x) => s + x, 0) / fr.length)).toFixed(1)} frames a second in flight (the game's clock)`);
 }
 for (const p of [host, guest]) fs.writeFileSync(path.join(shotDir, `${p.who}.log`), p.logs.join("\n") + "\n");

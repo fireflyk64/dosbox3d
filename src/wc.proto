@@ -732,12 +732,17 @@ message TdmHello {
     optional uint32 seats = 3;
 }
 
-// A pilot's craft, every frame of its flight (else twice a second): its object's record as the game keeps it, the
-// bytes of its place (+0x06: x, y, z, then the last frame's), its angles and speed (+0x1E..+0x27) and its attitude's
-// unit vectors (+0x3A..+0x53): `rec` those three runs end to end.
+// A pilot's state outside its flight's frames, twice a second (the flight's own reports are TieFrame and TieOwners, the
+// CD version's: the demo's craft are the same records).  The launch (docs/tiedemo.md section 5): `at_launch` a pilot
+// whose program is at create_createmission, held there; the host's `go` (its launch's serial) with its random seeds
+// lets every pilot's game make the mission at once, the guests' with the host's seeds.
 message TdmState {
     optional uint32 player = 1;
     optional bool in_flight = 2;
     optional uint32 frame = 3;          // frames into the flight
-    optional bytes rec = 4;
+    optional bytes rec = 4;             // (not used since the CD port's TieFrame)
+    optional bool at_launch = 5;
+    optional uint32 go = 6;
+    optional uint32 seed = 7;
+    optional uint32 seed2 = 8;
 }

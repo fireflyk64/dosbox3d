@@ -3,14 +3,18 @@
  *  (Microsoft C, overlays in the EXE, EMS).  docs/tiedemo.md.
  *
  *  A module of its own, as Privateer's is (wcnet_priv.cpp): DOS loads TIEMISS.EXE (TIEDEMO.BAT: "tiemiss demo"), the
- *  layer knows its load segment from the start, and the build is checked by its version string in the image.  Nothing
- *  of the CD version's TIE Fighter hooks (wcnet_tie*.cpp, a 32-bit DOS/4GW program) applies to it.
+ *  layer knows its load segment from the start, and the build is checked by its version string in the image.  It is
+ *  an earlier build of the TIE Fighter the CD version's port knows (wcnet_tie*.cpp, a 32-bit DOS/4GW program): the same
+ *  functions (OpenTIE's names), the same object records (FlightObject, 88 bytes, 116 of them), in 16 bits.  The
+ *  session (wcnet_tiedemo_session.cpp) is the CD port's, ported: ownership, rates, puppets, shots, hits, deaths, the
+ *  room's end.
  */
 #ifndef WCNET_TIEDEMO_H_
 #define WCNET_TIEDEMO_H_
 
 #include <string>
 #include "dosbox.h"
+#include "mem.h"
 
 namespace wc {
 
@@ -22,25 +26,73 @@ bool tdm_check_hooks(Bit32u ip);                    // a watched IP came up: tru
 void tdm_watch_list(void (*watch)(Bit16u ip));      // our IPs, for the dispatcher's table
 bool tdm_script_item(const std::string &item, double t);   // key-script aids (!tdm...)
 
-// The game, for the session (wcnet_tiedemo_session.cpp).
-struct TdmLocal {
-    bool inFlight;              // the flight's frames coming (TIEMISS.EXE's frame function)
-    Bit32u frame;               // frames into the flight
-    std::string rec;            // our craft's record, as TdmState carries it
+// The flight's tables: offsets in the data segment (DGROUP), and fields (docs/tiedemo.md section 4).
+namespace tdm {
+enum {
+    kObjects = 0x67CA,          // FlightObject objects[116], 88 bytes each (the CD's layout: +4 ship_idx, +6 x y z ...)
+    kObjectSize = 0x58,
+    kObjectCount = 0x74,
+    kCraftSlots = 0x1C,         // NUM_CRAFTS: objects 0..27 are craft (each its CraftData, +0x54), from 28 projectiles
+    kPlayer = 0xCD78,           // pstate: +0 the player's object (near), +2 its craft, +4 its object number,
+    kPlayerObj = 0xCD7C,
+    kTarget = 0xCD84,           //   +0x0C its target (0xFFFF none)
+    kFrameticks = 0xCE44,       // frameticks (236 a second), framerate at 0xCE48
+    kMissionStatus = 0x614C,    // the mission's state: the player's status (the CD's +0x248), the end flag the flight's
+    kMissionEnd = 0x614D,       //   frame runs until (the CD's +0x249: set, the flight ends at once)
+    kSeed = 0x5372,             // math2_randomseed (0x2357 at first), and the second generator's state
+    kSeed2 = 0x1A70,
+    kWarheads = 0xBF9C,         // a projectile's record (+0x54): kWarheads + 4 * (its slot - 28)
+    kFgSeg = 0x5890,            // the mission's segment (a word): the flight groups from its 0xD0, 0x124 each
+    kFgBase = 0xD0,
+    kFgSize = 0x124,
+    kFgCraft = 0x33,            //   +0x33 its craft, +0x42 the player's craft in it (1-based; 0 none)
+    kFgPlayerCraft = 0x42,
+    kFgCount = 48,
+    // a craft's data (CraftData, 0x18C bytes: the CD's, shorter)
+    kCraftAiCountdown = 0x2C,   // the planner runs it when this is <= 0 (pai_updateplaneai, 091E:01CE)
+    kCraftAttacker = 0x40,
+    kCraftFlightFlag = 0x5C,    // (3 and 4: docking, destroyed)
+    kCraftHull = 0x9E,          // its damage (collide_damagecraft adds), dead at kCraftHullMax
+    kCraftHullMax = 0xA2,
+    kCraftSystems = 0xA8,
+    kCraftShieldFront = 0xC2,
+    kCraftShieldRear = 0xC4,
 };
-bool tdm_local(TdmLocal *out);
-double tdm_frame_ms();          // a frame's length, measured (the game's own rate)
-// another pilot's craft put in our flight: the `k`-th wingman of our flight group (0 the first) given the record
-// `rec` carried, its place carried on by its own motion for `frames` frames since it was told
-bool tdm_put_pilot(int k, const std::string &rec, double frames);
-// a guest takes its own place in the flight group: our craft and the `k`-th wingman change places (their places and
-// attitudes), at the flight's start
-bool tdm_take_place(int k);
+}  // namespace tdm
+
+PhysPt tdm_ds(Bit16u off);              // DS:off as a linear address
+PhysPt tdm_obj(int o);                  // object o's record
+PhysPt tdm_craft(int o);                // its craft data (0: none: not a craft slot, or none)
+bool tdm_in_flight();                   // the flight's frames are coming and its end flag is clear
+int tdm_player_object();                // our object (-1: none)
+double tdm_frame_ms();                  // a frame's length, measured
+
+// Calls into the program (Microsoft C's far cdecl: the arguments pushed last first, the caller pops them), made at
+// move_moveobjects's entry as the CD port's tie_queue_call makes its: the CPU's state kept, the arguments and the
+// place's own address pushed, CS:IP at the function; the place's hook, reached again by its return, gives the state
+// back and makes the next call or lets the frame go on.  CPU state only: no code is written.
+enum TdmFn { TDM_CREATE_PROJECTILE, TDM_LASER_HIT, TDM_DAMAGE, TDM_UPDATE_KILLS };
+// `before` runs just before the call is made (to write what it needs at that moment; it may change an argument);
+// false: the call is not made.  `done` with its result (AX).
+typedef bool (*TdmCallBefore)(int tag, Bit16u *args);
+typedef void (*TdmCallDone)(int tag, Bit16u ax);
+void tdm_queue_call(TdmFn fn, int nargs, Bit16u a0, Bit16u a1, Bit16u a2, Bit16u a3, TdmCallBefore before, TdmCallDone done, int tag);
+bool tdm_in_call();
+// At a hooked function's entry: its k-th argument; return to its caller at once with AX.
+Bit16u tdm_arg(int k);
+void tdm_skip_call(Bit16u ax);
 
 // The session's (wcnet_tiedemo_session.cpp), for the game's hooks.
-void tdm_session_tick();        // every ~1000 instructions
-void tdm_session_frame();       // each frame of the flight, after the game moved everything: ours told, the others put
+void tdm_session_tick();                // every ~1000 instructions
 void tdm_session_shutdown();
+bool tdm_session_launch_hold();         // at create_createmission's entry (polled while held): true to hold there
+void tdm_session_before_create();       // ... its mission file read (0FC2:0136): a guest's seed and seat written
+void tdm_session_frame();               // the top of each flight frame (before the AI's planner)
+void tdm_session_before_move();         // move_moveobjects's entry: the others' craft written in
+void tdm_session_shot();                // laser_createprojectile's entry
+void tdm_session_laser_hit();           // collide_laserhitcraft's entry
+void tdm_session_damage();              // collide_damagecraft's entry
+void tdm_session_flight_ended();
 
 }  // namespace wc
 

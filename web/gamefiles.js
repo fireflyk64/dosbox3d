@@ -679,14 +679,15 @@ export const GAMES = [
   // away to advertise the Dodge Neon): tiedemo.zip as DOS Games Archive has it (its two floppies' zips, unpacked by
   // expandSplitZips and web/pvm.js as its installer does) or its installed directory.  TIEDEMO.BAT runs the opening
   // (DEMO.EXE), the mission (TIEMISS.EXE: a 16-bit real-mode program, EMS for its music, sound and cockpits) and the
-  // ending.  Flown together (src/cpu/wcnet_tiedemo*.cpp): each pilot flies the mission on its own machine, the others
-  // put in T/F Alpha's other craft, its wingmen (rooms of up to 3); each machine's enemies its own so far.
+  // ending.  Flown together (src/cpu/wcnet_tiedemo*.cpp: the CD version's session, ported): launched together, each
+  // pilot in its own craft of T/F Alpha (rooms of up to 3), the battle shared (each craft flown by one machine, the
+  // others' copies following its reports), shots, hits and deaths shared, a pilot down the end for all.
   // docs/tiedemo.md.
   { id: "tiedemo", tag: "TFD", title: "TIE Fighter (the 1994 demo)", detect: ["TIEMISS.EXE"], run: "tiedemo", multiplayer: true, maxSeats: 3,
     build: { text: "TIE Fighter Demo V1.0 12/04/93" },
     cycles: 30000, screen: [320, 200], noFlight: true, noRoomOptions: true, prepare: tdPrepare,
     saves: ["OPTIONS.CFG"],
-    help: "The TIE Fighter demo of early 1994, the one given away with the Dodge Neon: a single mission (T/F Alpha against the Rebel repair yard at Remitik, the Rebels fleeing Hoth after), in a build from before the game's release. The opening plays first (Esc skips it), then the mission, then the ending. Download tiedemo.zip from DOS Games Archive (the link under step 1) and drop it on step 1: the page unpacks its two floppies as its installer does. Flown together (a first step): each pilot flies the mission on their own machine, and the others are their wingmen in T/F Alpha (the host Alpha 1, the next pilot Alpha 2, a third Alpha 3), seen where they really fly. The enemies, the shots and the damage are each machine's own so far.",
+    help: "The TIE Fighter demo of early 1994, the one given away with the Dodge Neon: a single mission (T/F Alpha against the Rebel repair yard at Remitik, the Rebels fleeing Hoth after), in a build from before the game's release. The opening plays first (Esc skips it), then the mission, then the ending. Download tiedemo.zip from DOS Games Archive (the link under step 1) and drop it on step 1: the page unpacks its two floppies as its installer does. Flown together, up to 3 pilots: everybody's mission starts at the same moment (the host's game waits at the end of the opening until everybody has got there), each pilot flies their own TIE fighter of T/F Alpha, and the battle is one battle: the same Rebels in the same places on every screen, every shot seen by everybody, every hit counted where it lands, a craft destroyed for one destroyed for all. If a pilot is shot down, the flight ends for everybody a moment later.",
     keys: "<b>TIE Fighter demo in flight:</b> the mouse (or a joystick) steers, its button fires; <kbd>+</kbd> and <kbd>-</kbd> the throttle, <kbd>Backspace</kbd> full, <kbd>\\</kbd> none, <kbd>[</kbd> and <kbd>]</kbd> a third and two thirds; <kbd>X</kbd> single, dual or quad fire, <kbd>F9</kbd> the lasers' recharge rate; <kbd>R</kbd> the nearest enemy fighter, <kbd>T</kbd> and <kbd>Y</kbd> the next and previous target, <kbd>U</kbd> the ship in the sight; <kbd>Space</kbd> approves the onboard computer's suggestions; <kbd>Ctrl</kbd> the threat display; the keypad's digits look around; <kbd>Esc</kbd> ends the demo.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
 ];

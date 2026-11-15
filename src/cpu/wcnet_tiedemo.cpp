@@ -3,7 +3,19 @@
  *
  *  TIEMISS.EXE (363,910 bytes: a 293,861-byte MZ image with 2,095 relocations, then the overlays) is loaded by DOS for
  *  TIEDEMO.BAT ("tiemiss demo >foo"), so its load segment is known from the start; the build is the one whose image
- *  holds "TIE Fighter Demo V1.0 12/04/93" at 0x30A70.  Places in it are image paragraphs from the load segment.
+ *  holds "TIE Fighter Demo V1.0 12/04/93" at 0x30A70.  Places in it are image paragraphs from the load segment, found
+ *  by the CD version's functions (OpenTIE's C, whose order the demo's code follows: docs/tiedemo.md section 4).
+ *
+ *  The places watched (each an IP, its CS checked):
+ *    0FC2:000E  create_createmission's entry: the launch (held in the PSP's unused FCB bytes until the room is there)
+ *    0FC2:0136  ... its mission file read, its first random number next: the host's seed and a guest's seat in the
+ *               player's flight group written
+ *    0090:06CE  tie_doframe's entry: the top of each flight frame
+ *    054A:0000  move_moveobjects's entry: the others' craft written in; our calls into the program made here
+ *    1338:0B16  laser_createprojectile(shooter, hardpoint, type)
+ *    05B3:1B18  collide_laserhitcraft(bolt, target, offset)
+ *    05B3:1CF8  collide_damagecraft(target, component, attacker, side)
+ *  and 05B3:2CA8 collide_updatekills(shooter, victim, 1) is called.
  *
  *  For finding the rest (research aids, the environment's):
  *    WCNET_TDM_PROF=1     every ~1000 instructions while TIEMISS runs, where the CPU is (CS less the load segment, IP)
@@ -16,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <algorithm>
+#include <deque>
 #include <map>
 #include <string>
 #include <utility>
@@ -28,6 +41,7 @@
 #include "regs.h"
 #include "pic.h"
 #include "cpu.h"
+#include "lazyflags.h"
 #include "dos_inc.h"
 
 namespace wc {
@@ -37,36 +51,34 @@ namespace {
 const char kVersion[] = "TIE Fighter Demo V1.0 12/04/93";
 const Bit32u kVersionImage = 0x30A70;       // its offset in the load image
 
-// The program (image paragraphs and offsets; the data segment DGROUP is image paragraph 0x421F)
+// The program's places (image paragraph, offset)
+struct Place { Bit16u para, off; };
+const Place kCreateMission = { 0x0FC2, 0x000E };    // create_createmission
+const Place kMissionRead = { 0x0FC2, 0x0136 };      // ... the mission file read (its flight groups at the mission segment's
+                                                    // 0xD0), its first random number next, then the craft made
+const Place kDoFrame = { 0x0090, 0x06CE };          // tie_doframe
+const Place kMoveObjects = { 0x054A, 0x0000 };      // move_moveobjects
+const Place kCreateProjectile = { 0x1338, 0x0B16 }; // laser_createprojectile
+const Place kLaserHit = { 0x05B3, 0x1B18 };         // collide_laserhitcraft
+const Place kDamage = { 0x05B3, 0x1CF8 };           // collide_damagecraft
+const Place kUpdateKills = { 0x05B3, 0x2CA8 };      // collide_updatekills
 enum {
     kDgroupPara = 0x421F,
-    kFramePara = 0x0090,        // the flight's frame, 0090:06CE (called from 0090:0006's loop): ... 0090:07D1 call 054A:0000
-    kAfterMove = 0x07D6,        //   (every object moved), 0090:07D6 call 1768:058E (next: the picture)
-    kObjects = 0x67CA,          // DS: the objects, kObjectSlots records of kObjectSize (054A:0153's loop)
-    kObjectSlots = 0x74,
-    kObjectSize = 0x58,
-    kObjType = 0x04,            //   +4 its type (a byte: 0 a free slot; 4 the T/F, 15 the corvette ...)
-    kObjPos = 0x06,             //   +6 x, +0x0A y, +0x0E z (int32; 054A:05DC adds the frame's motion, kept within +-0x01000000)
-    kPlayerObj = 0xCD78,        // DS: the player's object (a near pointer)
-    kPlayerCraft = 0xCD7A,      // DS: its craft data (a near pointer; the objects' +0x54 is a far one)
-    kObjPrev = 0x12,            //   +0x12 x, y, z the frame before (int32)
-    kObjAngles = 0x1E,          //   +0x1E three angle words, +0x26 the speed (225 the T/F's full)
-    kObjGroup = 0x34,           //   +0x34 its flight group (the high byte: 0 Alpha)
-    kObjVectors = 0x3A,         //   +0x3A its forward unit vector (3 words, 0x7FFF one), +0x40 0, +0x42 forward again,
-                                //   +0x48 right, +0x4E up
-    kObjCraft = 0x54,           //   +0x54 its craft data (a far pointer)
+    kStubOff = 0x5C,            // the launch hold's idle: "jmp $" written in the PSP's first FCB (unused by the program)
+    kObjType = 0x04,
+    kObjPos = 0x06,
 };
-// the record's runs a pilot's craft is told by (TdmState.rec): its place and the frame before's, its angles and speed;
-// its attitude's vectors
-const int kRun1 = kObjPos, kRun1Len = 0x28 - kObjPos, kRun2 = kObjVectors, kRun2Len = kObjCraft - kObjVectors;
 
 bool g_found = false;
-Bit16u g_load = 0, g_psp = 0;
+Bit16u g_load = 0, g_psp = 0, g_ds = 0;
 double g_nextCheckMs = 0;
 // the flight's frames
 Bit32u g_frame = 0;
 double g_lastFrameMs = -1e9, g_frameMs = 50, g_rateSince = 0;
 Bit32u g_rateFrames = 0;
+bool g_flightSaid = false;
+// the launch's hold
+bool g_holding = false, g_released = false;
 
 // (research aids)
 int g_prof = -1;
@@ -78,7 +90,6 @@ Bit32u g_watchLin = 0;
 int g_watchLen = -1;
 Bit8u g_watchSeen[64];
 unsigned g_watchLines = 0;
-Bit16u g_ds = 0;
 // (the aid !tdmglue=dx:dy:dz: object 0 held beside the player, every frame after the moves, the player's record but its
 // number copied with the offset added to its place)
 bool g_glue = false;
@@ -89,12 +100,14 @@ inline PhysPt dsa(Bit16u off) { return ((PhysPt)g_ds << 4) + off; }
 inline Bit16u r16(Bit16u off) { return mem_readw(dsa(off)); }
 inline Bit32s r32s(Bit16u off) { return (Bit32s)mem_readd(dsa(off)); }
 inline void w32(Bit16u off, Bit32u v) { mem_writed(dsa(off), v); }
-inline Bit16u obj_at(int n) { return (Bit16u)(kObjects + n * kObjectSize); }
+inline Bit16u obj_at(int n) { return (Bit16u)(tdm::kObjects + n * tdm::kObjectSize); }
+inline Bit16u seg_of(const Place &p) { return (Bit16u)(g_load + p.para); }
+inline bool at(const Place &p, Bit32u ip) { return ip == p.off && SegValue(cs) == seg_of(p); }
 
 void log_record(int n) {
     const Bit16u o = obj_at(n);
     std::string words;
-    for (int k = 0; k < kObjectSize; k += 2) {
+    for (int k = 0; k < tdm::kObjectSize; k += 2) {
         char b[8];
         snprintf(b, sizeof(b), " %04x", r16((Bit16u)(o + k)));
         words += b;
@@ -103,35 +116,10 @@ void log_record(int n) {
           r32s((Bit16u)(o + kObjPos)), r32s((Bit16u)(o + kObjPos + 4)), r32s((Bit16u)(o + kObjPos + 8)), words.c_str());
 }
 
-void after_move() {
-    const double now = PIC_FullIndex();
-    if (now - g_lastFrameMs > 1000) {
-        g_frame = 0;            // (a flight begun)
-        g_rateSince = now;
-        g_rateFrames = 0;
-        wclog(1, "TIE demo: the flight's frames are coming");
-    }
-    g_lastFrameMs = now;
-    g_frame++;
-    if (++g_rateFrames >= 20) {
-        g_frameMs = (now - g_rateSince) / g_rateFrames;
-        g_rateSince = now;
-        g_rateFrames = 0;
-    }
-    tdm_session_frame();
-    if (g_glue) {
-        const Bit16u me = r16(kPlayerObj), other = obj_at(0);
-        if (me && me != other) {
-            for (int k = 6; k < kObjectSize - 4; k += 2) mem_writew(dsa((Bit16u)(other + k)), r16((Bit16u)(me + k)));
-            for (int a = 0; a < 3; a++) w32((Bit16u)(other + kObjPos + 4 * a), (Bit32u)(r32s((Bit16u)(me + kObjPos + 4 * a)) + g_glueD[a]));
-        }
-    }
-}
-
 bool version_here(Bit16u load) {
-    const PhysPt at = ((PhysPt)load << 4) + kVersionImage;
+    const PhysPt a = ((PhysPt)load << 4) + kVersionImage;
     for (size_t i = 0; i < sizeof(kVersion) - 1; i++) {
-        if (mem_readb(at + (PhysPt)i) != (Bit8u)kVersion[i]) return false;
+        if (mem_readb(a + (PhysPt)i) != (Bit8u)kVersion[i]) return false;
     }
     return true;
 }
@@ -149,23 +137,23 @@ void prof_sample() {
     std::vector<std::pair<unsigned, Bit32u> > top;
     for (std::map<Bit32u, unsigned>::const_iterator i = g_profAt.begin(); i != g_profAt.end(); ++i) top.push_back(std::make_pair(i->second, i->first));
     std::sort(top.rbegin(), top.rend());
-    std::string at;
+    std::string atText;
     for (size_t i = 0; i < top.size() && i < 30; i++) {
         char b[40];
         snprintf(b, sizeof(b), " %04X:%04X=%u", top[i].second >> 16, top[i].second & 0xFFFF, top[i].first);
-        at += b;
+        atText += b;
     }
-    wclog(1, "TIE demo profile: %u samples; the commonest places (image paragraph:IP=samples):%s", g_profSamples, at.c_str());
-    std::string ds;
+    wclog(1, "TIE demo profile: %u samples; the commonest places (image paragraph:IP=samples):%s", g_profSamples, atText.c_str());
+    std::string dsText;
     std::vector<std::pair<unsigned, Bit16u> > dss;
     for (std::map<Bit16u, unsigned>::const_iterator i = g_profDs.begin(); i != g_profDs.end(); ++i) dss.push_back(std::make_pair(i->second, i->first));
     std::sort(dss.rbegin(), dss.rend());
     for (size_t i = 0; i < dss.size() && i < 6; i++) {
         char b[32];
         snprintf(b, sizeof(b), " %04X:%u", dss[i].second, dss[i].first);
-        ds += b;
+        dsText += b;
     }
-    wclog(1, "TIE demo profile: DS (image paragraph:samples)%s", ds.c_str());
+    wclog(1, "TIE demo profile: DS (image paragraph:samples)%s", dsText.c_str());
     g_profAt.clear();
     g_profDs.clear();
     g_profSamples = 0;
@@ -201,80 +189,213 @@ void watch_step() {
     }
 }
 
-}  // namespace
+// --- the flight's frames ------------------------------------------------------------------------------------------
 
-bool tdm_found() { return g_found; }
-
-bool tdm_local(TdmLocal *out) {
-    out->inFlight = false;
-    out->frame = g_frame;
-    out->rec.clear();
-    if (!g_found || !ours_running() || PIC_FullIndex() - g_lastFrameMs > 500) return false;
-    const Bit16u me = r16(kPlayerObj);
-    if (!me) return false;
-    out->inFlight = true;
-    for (int k = 0; k < kRun1Len; k++) out->rec += (char)mem_readb(dsa((Bit16u)(me + kRun1 + k)));
-    for (int k = 0; k < kRun2Len; k++) out->rec += (char)mem_readb(dsa((Bit16u)(me + kRun2 + k)));
-    return true;
-}
-
-double tdm_frame_ms() { return g_frameMs; }
-
-// our flight group's `k`-th craft but ours (the same type and group word), 0: none
-Bit16u wingman(int k) {
-    const Bit16u me = r16(kPlayerObj);
-    if (!me) return 0;
-    const Bit8u type = mem_readb(dsa((Bit16u)(me + kObjType)));
-    const Bit16u group = r16((Bit16u)(me + kObjGroup));
-    int seen = 0;
-    for (int n = 0; n < kObjectSlots; n++) {
-        const Bit16u o = obj_at(n);
-        if (o == me || mem_readb(dsa((Bit16u)(o + kObjType))) != type || r16((Bit16u)(o + kObjGroup)) != group) continue;
-        if (seen++ == k) return o;
+void frame_top() {
+    const double now = PIC_FullIndex();
+    if (now - g_lastFrameMs > 1000) {
+        g_frame = 0;            // (a flight begun)
+        g_rateSince = now;
+        g_rateFrames = 0;
+        g_flightSaid = true;
+        wclog(1, "TIE demo: the flight's frames are coming (our object %d)", tdm_player_object());
     }
-    return 0;
-}
-
-bool tdm_take_place(int k) {
-    if (!g_found) return false;
-    const Bit16u me = r16(kPlayerObj), o = wingman(k);
-    if (!me || !o) return false;
-    const int runs[2][2] = { { kRun1, kRun1Len }, { kRun2, kRun2Len } };
-    for (int r = 0; r < 2; r++) {
-        for (int b = 0; b < runs[r][1]; b++) {
-            const PhysPt x = dsa((Bit16u)(me + runs[r][0] + b)), y = dsa((Bit16u)(o + runs[r][0] + b));
-            const Bit8u t = mem_readb(x);
-            mem_writeb(x, mem_readb(y));
-            mem_writeb(y, t);
-        }
+    g_lastFrameMs = now;
+    g_frame++;
+    if (++g_rateFrames >= 20) {
+        g_frameMs = (now - g_rateSince) / g_rateFrames;
+        g_rateSince = now;
+        g_rateFrames = 0;
     }
-    wclog(1, "TIE demo: our craft takes the place of our flight group's craft %d (object at DS:%04X): now at %d %d %d", k,
-          o, r32s((Bit16u)(me + kObjPos)), r32s((Bit16u)(me + kObjPos + 4)), r32s((Bit16u)(me + kObjPos + 8)));
-    return true;
+    tdm_session_frame();
 }
 
-bool tdm_put_pilot(int k, const std::string &rec, double frames) {
-    if (!g_found || (int)rec.size() != kRun1Len + kRun2Len) return false;
-    const Bit16u o = wingman(k);
-    {
-        if (!o) return false;
-        for (int b = 0; b < kRun1Len; b++) mem_writeb(dsa((Bit16u)(o + kRun1 + b)), (Bit8u)rec[(size_t)b]);
-        for (int b = 0; b < kRun2Len; b++) mem_writeb(dsa((Bit16u)(o + kRun2 + b)), (Bit8u)rec[(size_t)(kRun1Len + b)]);
-        // (its place carried on by its motion, the frame before's place to this one's, since it was told)
-        if (frames > 0) {
-            if (frames > 30) frames = 30;
-            for (int a = 0; a < 3; a++) {
-                const Bit32s at = r32s((Bit16u)(o + kObjPos + 4 * a)), before = r32s((Bit16u)(o + kObjPrev + 4 * a));
-                const Bit32s step = at - before;
-                const Bit32s now = at + (Bit32s)(step * frames);
-                w32((Bit16u)(o + kObjPos + 4 * a), (Bit32u)now);
-                w32((Bit16u)(o + kObjPrev + 4 * a), (Bit32u)(now - step));
-            }
-        }
+void glue_step() {
+    if (!g_glue) return;
+    const Bit16u me = r16(tdm::kPlayer), other = obj_at(0);
+    if (me && me != other) {
+        for (int k = 6; k < tdm::kObjectSize - 4; k += 2) mem_writew(dsa((Bit16u)(other + k)), r16((Bit16u)(me + k)));
+        for (int a = 0; a < 3; a++) w32((Bit16u)(other + kObjPos + 4 * a), (Bit32u)(r32s((Bit16u)(me + kObjPos + 4 * a)) + g_glueD[a]));
+    }
+}
+
+// --- calls into the program (the CD port's tie_queue_call, in 16 bits) --------------------------------------------
+
+struct Call {
+    TdmFn fn;
+    int nargs;
+    Bit16u args[4];
+    TdmCallBefore before;
+    TdmCallDone done;
+    int tag;
+};
+std::deque<Call> g_calls;
+bool g_inCall = false;
+Call g_cur;
+Bit16u g_retSp = 0;             // SP once the call has returned to the place (its arguments still on the stack)
+struct Saved {
+    Bit32u eax, ebx, ecx, edx, esi, edi, ebp, esp, flags;
+    Bit16u ds, es;
+} g_saved;
+unsigned g_callsMade = 0;
+
+const Place &place_of(TdmFn fn) {
+    switch (fn) {
+    case TDM_CREATE_PROJECTILE: return kCreateProjectile;
+    case TDM_LASER_HIT: return kLaserHit;
+    case TDM_DAMAGE: return kDamage;
+    default: return kUpdateKills;
+    }
+}
+
+void save_state() {
+    FillFlags();
+    g_saved.eax = reg_eax; g_saved.ebx = reg_ebx; g_saved.ecx = reg_ecx; g_saved.edx = reg_edx;
+    g_saved.esi = reg_esi; g_saved.edi = reg_edi; g_saved.ebp = reg_ebp; g_saved.esp = reg_esp;
+    g_saved.flags = reg_flags;
+    g_saved.ds = SegValue(ds);
+    g_saved.es = SegValue(es);
+}
+
+void restore_state() {
+    reg_eax = g_saved.eax; reg_ebx = g_saved.ebx; reg_ecx = g_saved.ecx; reg_edx = g_saved.edx;
+    reg_esi = g_saved.esi; reg_edi = g_saved.edi; reg_ebp = g_saved.ebp; reg_esp = g_saved.esp;
+    reg_flags = g_saved.flags;
+    lflags.type = t_UNKNOWN;
+    SegSet16(ds, g_saved.ds);
+    SegSet16(es, g_saved.es);
+}
+
+// The next call made from the place (move_moveobjects's entry, the state saved): true when one is under way.
+bool start_next_call() {
+    while (!g_calls.empty()) {
+        g_cur = g_calls.front();
+        g_calls.pop_front();
+        restore_state();
+        if (g_cur.before && !g_cur.before(g_cur.tag, g_cur.args)) continue;
+        for (int i = g_cur.nargs - 1; i >= 0; i--) CPU_Push16(g_cur.args[i]);
+        g_retSp = (Bit16u)reg_esp;
+        CPU_Push16(seg_of(kMoveObjects));
+        CPU_Push16(kMoveObjects.off);
+        const Place &fn = place_of(g_cur.fn);
+        SegSet16(cs, seg_of(fn));
+        reg_eip = fn.off;
+        g_inCall = true;
+        g_callsMade++;
         return true;
     }
+    restore_state();
+    g_inCall = false;
     return false;
 }
+
+// At move_moveobjects's entry: a call of ours come back, or the frame's own arrival.
+void at_move_objects() {
+    if (g_inCall) {
+        if ((Bit16u)reg_esp != g_retSp) {
+            wclog(1, "TIE demo: a call came back to move_moveobjects with SP %04X, not %04X: the calls given up", (unsigned)(reg_esp & 0xFFFF),
+                  g_retSp);
+            g_calls.clear();
+            restore_state();
+            g_inCall = false;
+            return;
+        }
+        if (g_cur.done) g_cur.done(g_cur.tag, (Bit16u)reg_eax);
+        start_next_call();          // (the next, or the frame goes on into move_moveobjects)
+        return;
+    }
+    glue_step();
+    tdm_session_before_move();
+    if (!g_calls.empty()) {
+        save_state();
+        start_next_call();
+    }
+}
+
+// --- the launch: held at create_createmission's entry -------------------------------------------------------------
+
+void hold_at_stub() {
+    const PhysPt stub = ((PhysPt)g_psp << 4) + kStubOff;
+    mem_writeb(stub, 0xEB);         // jmp $
+    mem_writeb(stub + 1, 0xFE);
+    SegSet16(cs, g_psp);
+    reg_eip = kStubOff;
+    g_holding = true;
+}
+
+void at_create_mission() {
+    if (g_released) {
+        g_released = false;         // (back from the hold: the mission is made)
+        return;
+    }
+    if (tdm_session_launch_hold()) {
+        wclog(1, "TIE demo: the launch held for the room");
+        hold_at_stub();
+    }
+}
+
+void at_stub() {
+    if (!tdm_session_launch_hold()) {
+        g_holding = false;
+        g_released = true;
+        SegSet16(cs, seg_of(kCreateMission));
+        reg_eip = kCreateMission.off;
+        return;
+    }
+    CPU_IODelayRemoved += CPU_Cycles;      // (idle, as HLT is, until the room is there)
+    CPU_Cycles = 0;
+}
+
+}  // namespace
+
+// --- the game, for the session -----------------------------------------------------------------------------------
+
+PhysPt tdm_ds(Bit16u off) { return dsa(off); }
+PhysPt tdm_obj(int o) { return dsa(obj_at(o)); }
+PhysPt tdm_craft(int o) {
+    if (!g_found || o < 0 || o >= tdm::kCraftSlots) return 0;
+    const Bit16u near = mem_readw(tdm_obj(o) + 0x54);
+    return near ? dsa(near) : 0;
+}
+bool tdm_in_flight() {
+    return g_found && ours_running() && PIC_FullIndex() - g_lastFrameMs < 500 && mem_readb(dsa(tdm::kMissionEnd)) == 0;
+}
+int tdm_player_object() {
+    if (!g_found) return -1;
+    const Bit16u o = r16(tdm::kPlayerObj);
+    return o < tdm::kObjectCount ? (int)o : -1;
+}
+double tdm_frame_ms() { return g_frameMs; }
+
+void tdm_queue_call(TdmFn fn, int nargs, Bit16u a0, Bit16u a1, Bit16u a2, Bit16u a3, TdmCallBefore before, TdmCallDone done, int tag) {
+    if (g_calls.size() >= 256) return;
+    Call c;
+    c.fn = fn;
+    c.nargs = nargs < 0 ? 0 : nargs > 4 ? 4 : nargs;
+    c.args[0] = a0;
+    c.args[1] = a1;
+    c.args[2] = a2;
+    c.args[3] = a3;
+    c.before = before;
+    c.done = done;
+    c.tag = tag;
+    g_calls.push_back(c);
+}
+bool tdm_in_call() { return g_inCall; }
+Bit16u tdm_arg(int k) {
+    return mem_readw(((PhysPt)SegValue(ss) << 4) + (Bit16u)((reg_esp & 0xFFFF) + 4 + 2 * k));
+}
+void tdm_skip_call(Bit16u ax) {
+    const Bit16u ip = CPU_Pop16();
+    const Bit16u seg = CPU_Pop16();
+    reg_eax = (reg_eax & 0xFFFF0000u) | ax;
+    SegSet16(cs, seg);
+    reg_eip = ip;
+}
+
+// --- the dispatcher's --------------------------------------------------------------------------------------------
+
+bool tdm_found() { return g_found; }
 
 void tdm_program_loaded(const char *name, Bit16u loadSeg, Bit16u psp) {
     if (strcmp(name, "TIEMISS.EXE") != 0) return;
@@ -288,6 +409,8 @@ void tdm_program_loaded(const char *name, Bit16u loadSeg, Bit16u psp) {
     g_psp = psp;
     g_ds = (Bit16u)(loadSeg + kDgroupPara);
     g_nextCheckMs = PIC_FullIndex() + 1000;
+    g_calls.clear();
+    g_inCall = g_holding = g_released = false;
     hooks_game_changed();       // (the dispatcher's table: our places)
     wclog(1, "TIE demo: TIEMISS.EXE loaded at %04X (PSP %04X): %s", loadSeg, psp, kVersion);
 }
@@ -300,9 +423,16 @@ void tdm_tick() {
         if (!version_here(g_load)) {
             wclog(1, "TIE demo: TIEMISS.EXE is gone from memory: ended");
             g_found = false;
+            g_calls.clear();
+            g_inCall = false;
+            tdm_session_flight_ended();
             tdm_session_shutdown();
             return;
         }
+    }
+    if (g_flightSaid && now - g_lastFrameMs > 1000) {
+        g_flightSaid = false;
+        tdm_session_flight_ended();
     }
     tdm_session_tick();
     if (!ours_running()) return;
@@ -325,13 +455,48 @@ void tdm_tick() {
 
 void tdm_watch_list(void (*watch)(Bit16u ip)) {
     if (!g_found) return;
-    watch(kAfterMove);
+    watch(kCreateMission.off);
+    watch(kMissionRead.off);
+    watch(kDoFrame.off);
+    watch(kMoveObjects.off);
+    watch(kCreateProjectile.off);
+    watch(kLaserHit.off);
+    watch(kDamage.off);
+    watch(kStubOff);
 }
 
 bool tdm_check_hooks(Bit32u ip) {
-    if (!g_found || SegValue(cs) != (Bit16u)(g_load + kFramePara)) return false;
-    if (ip == kAfterMove) {
-        after_move();
+    if (!g_found) return false;
+    if (ip == kStubOff && SegValue(cs) == g_psp) {
+        if (g_holding) at_stub();
+        return true;
+    }
+    if (at(kMoveObjects, ip)) {
+        at_move_objects();
+        return true;
+    }
+    if (at(kDoFrame, ip)) {
+        frame_top();
+        return true;
+    }
+    if (at(kCreateMission, ip)) {
+        at_create_mission();
+        return true;
+    }
+    if (at(kMissionRead, ip)) {
+        tdm_session_before_create();
+        return true;
+    }
+    if (at(kCreateProjectile, ip)) {
+        tdm_session_shot();
+        return true;
+    }
+    if (at(kLaserHit, ip)) {
+        tdm_session_laser_hit();
+        return true;
+    }
+    if (at(kDamage, ip)) {
+        tdm_session_damage();
         return true;
     }
     return false;
@@ -342,6 +507,28 @@ bool tdm_script_item(const std::string &item, double t) {
         g_glue = sscanf(item.c_str() + 9, "%d:%d:%d", &g_glueD[0], &g_glueD[1], &g_glueD[2]) == 3;
         wclog(1, "key script %.1fs: TIE demo: object 0 %s the player (%d %d %d)", t, g_glue ? "held beside" : "let go of",
               g_glueD[0], g_glueD[1], g_glueD[2]);
+        return true;
+    }
+    if (item.compare(0, 6, "!tdmr=") == 0) {
+        // !tdmr=<DS offset hex>[/<another>...]: words of the data segment logged
+        std::string out;
+        for (const char *p = item.c_str() + 6; *p;) {
+            const Bit16u off = (Bit16u)strtoul(p, NULL, 16);
+            char b[32];
+            snprintf(b, sizeof(b), " DS:%04X=%04X", off, g_found ? r16(off) : 0);
+            out += b;
+            const char *c = strchr(p, '/');
+            if (!c) break;
+            p = c + 1;
+        }
+        wclog(1, "key script %.1fs: TIE demo:%s", t, out.c_str());
+        return true;
+    }
+    if (item.compare(0, 6, "!tdmw=") == 0) {
+        // !tdmw=<DS offset hex>:<byte hex>: a byte of the data segment written
+        unsigned off = 0, v = 0;
+        if (g_found && sscanf(item.c_str() + 6, "%x:%x", &off, &v) == 2) mem_writeb(dsa((Bit16u)off), (Bit8u)v);
+        wclog(1, "key script %.1fs: TIE demo: DS:%04X byte set to %02X", t, off, v);
         return true;
     }
     if (item.compare(0, 8, "!tdmrec=") == 0) {
