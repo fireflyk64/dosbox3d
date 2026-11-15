@@ -700,13 +700,13 @@ export function initHall(opts) {
     show();
     // (the user's words, 2026-11-04: the rules of the chat had been here, "not resonating with the users"; the filter
     // still keeps them, and says so when it turns a line away)
-    // (GOG's store since 2026-11-05: the 35th Anniversary Edition packs, each with the Legacy Edition this page flies;
-    // the "Wing Commander 1+2" page the line named until then is gone)
+    // (GOG's store since 2026-11-05: the 35th Anniversary Edition packs, whose installer the page takes as it takes
+    // the Legacy Edition's beside it; the "Wing Commander 1+2" page the line named until then is gone)
     const gog = el("a", "", "GOG");
     gog.href = "https://www.gog.com/en/game/wing_commander_35th_anniversary_edition";
     gog.target = "_blank";
     gog.rel = "noopener";
-    line("sys", "Please download Wing Commander - Legacy Edition (it comes with the 35th Anniversary Edition) from ", gog,
+    line("sys", "Please download Wing Commander from ", gog,
          " or start a room to play Retro Vega. Click advertise to post your room here for others to join.");
     if (net.code !== code) sys(`This is the lobby ${net.code}: the ones before it are full.`);
     if (!typedName().ok && typedName().why !== "empty") sys(`Your callsign is not shown here (${whyText(typedName().why)}): you are ${myName()}.`);

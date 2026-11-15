@@ -17,7 +17,7 @@ import { initTouch } from "./touch.js";
 import { initVoice } from "./voice.js";
 import { loadSo3 } from "./so3.js";
 import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFiles, expandSplitZips,
-         saveGame, loadGames, forgetGame, totalSize, gameById, gameByTag, programsIn, knownBuild, legacyOf, legacyAdvice, looksLikeAnniversary, GAMES } from "./gamefiles.js";
+         saveGame, loadGames, forgetGame, totalSize, gameById, gameByTag, programsIn, knownBuild, legacyOf, legacyAdvice, GAMES } from "./gamefiles.js";
 import { newRoomCode, retagRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS, CALLSIGNS, pickCallsign, givesWay, sameName } from "./chatfilter.js";
 import { initHall, OTHER_SERVER, serverDown } from "./hall.js";
 import { createSetProvider, readTarGz } from "./rvsets.js";
@@ -434,15 +434,15 @@ async function handleFile(file) {
   try {
     sourceButtons(false);
     sourceStatus(`Reading ${file.name} (${mb(file.size)})…`, "busy");
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    // (what it is by its first bytes: a .zip is read whole, an installer where it is, a piece at a time)
+    const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
     let files;
-    if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
-      files = await readZip(bytes);
+    if (head[0] === 0x50 && head[1] === 0x4b) {
+      files = await readZip(new Uint8Array(await file.arrayBuffer()));
       log(`read ${files.length} files from ${file.name}`);
-    } else if (looksLikeInstaller(bytes)) {
-      // (an Anniversary Edition's installer takes minutes and may not fit: what to get instead is said meanwhile)
-      sourceAdvice(`Unpacking the installer ${file.name} in your browser… (innoextract)`, "busy", looksLikeAnniversary(file.name, file.size) ? legacyOf(file.name) : "");
-      files = await extractInstaller(bytes, log);
+    } else if (looksLikeInstaller(head)) {
+      sourceStatus(`Unpacking the installer ${file.name} in your browser… (innoextract)`);
+      files = await extractInstaller(file, log);
     } else {
       throw new Error(`${file.name} is neither a .zip nor a Windows installer`);
     }

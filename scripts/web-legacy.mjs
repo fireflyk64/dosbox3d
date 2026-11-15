@@ -1,18 +1,22 @@
-// A Wing Commander that is not the release the hooks know, dropped on the page: the pilot is told which one to get
-// (the user, 2026-11-15: GOG's Wing Commanders became "35th Anniversary Edition" packs with the old release beside
-// them as "Legacy Edition"; "If you detect a strange version can you instruct the user to download Legacy Edition
-// from GOG instead").  The page's own file input is given: the real Legacy Edition installer (no advice, the lobby
-// open to it), its WC.EXE with the hooks' string changed (another build), a folder with the game's data but none of
-// its programs, something that is no installer under an Anniversary Edition's name (Wing Commander's and Wing
-// Commander II's), and a game that is no Wing Commander (no advice).
+// GOG's Wing Commanders dropped on the page, whichever edition (the user, 2026-11-15: GOG's Wing Commanders became
+// "35th Anniversary Edition" packs with the old release beside them as "Legacy Edition"; "If you detect a strange
+// version can you instruct the user to download Legacy Edition from GOG instead", then, of the Anniversary
+// installers: "Ideally we just make them work").  The page's own file input is given: the Legacy Edition's installer
+// and the two Anniversary Editions' (1.1 GB and 850 MB: the game in their DOS/ directory, the same files as the
+// Legacy Edition's, known to the hooks, nothing to say); then what is no known release and gets the advice: WC.EXE
+// with the hooks' string changed (another build), a folder with the game's data but none of its programs, something
+// that is no installer under an Anniversary Edition's name (Wing Commander's and Wing Commander II's); and a game
+// that is no Wing Commander (no advice).
 //
-//   GAME_FILE=<GOG's Legacy Edition installer> node scripts/web-legacy.mjs PAGE_URL
+//   GAME_FILE=<Legacy Edition installer> [ANN1=<Wing Commander's Anniversary installer>] [ANN2=<Wing Commander II's>]
+//     node scripts/web-legacy.mjs PAGE_URL
 //
 // PLAYWRIGHT_DIR and CHROME as scripts/web-rv.mjs has them.  No lobby server is needed.
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs";
 import zlib from "node:zlib";
+import { createHash } from "node:crypto";
 
 const [pageUrl] = process.argv.slice(2);
 const gameFile = process.env.GAME_FILE;
@@ -42,39 +46,80 @@ function zip(files) {
   return Buffer.concat([...parts, d, end]);
 }
 
-async function drop(name, buffer, query = "") {
+async function drop(name, buffer, want = "") {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(pageUrl + (pageUrl.includes("?") ? "&" : "?") + "server=http://127.0.0.1:9/" + query);
-  await page.waitForFunction(() => document.getElementById("sourceStatus").dataset.state === "ready", null, { timeout: 60000 });
+  await page.goto(pageUrl + (pageUrl.includes("?") ? "&" : "?") + "server=http://127.0.0.1:9/");
+  await page.waitForFunction(() => document.getElementById("sourceStatus").dataset.state === "ready", null, { timeout: 180000 });
   await page.evaluate(() => { document.getElementById("sourceStatus").dataset.state = ""; });
   // (a file's path for a big one, its bytes for one made here)
+  const t0 = Date.now();
   await page.setInputFiles("#gamefile", buffer ? { name, mimeType: "application/octet-stream", buffer } : name);
   await page.waitForFunction(() => ["ready", "error"].includes(document.getElementById("sourceStatus").dataset.state), null, { timeout: 180000 });
   const got = await page.evaluate(() => {
     const el = document.getElementById("sourceStatus"), a = el.querySelector("a");
     return { state: el.dataset.state, text: el.textContent, href: a ? a.href : "", program: document.getElementById("program").value };
   });
-  got.files = await page.evaluate(async () => {
-    // the installed game's files, for the next case (the copy the browser kept)
+  // the installed game's files (the copy the browser kept): their hashes, and their bytes when the next cases need them
+  got.files = await page.evaluate(async (bytes) => {
     const { loadGames } = await import("./gamefiles.js");
-    const g = (await loadGames()).find((x) => x.id === "wc1");
-    return g ? g.files.map((f) => [f.path, Array.from(f.data)]) : null;
-  }).catch(() => null);
+    const g = (await loadGames()).find((x) => x.id === "wc1" || x.id === "wc2");
+    if (!g) return null;
+    const hex = (b) => Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, "0")).join("");
+    const b64 = (d) => { let t = ""; for (let i = 0; i < d.length; i += 32768) t += String.fromCharCode(...d.subarray(i, i + 32768)); return btoa(t); };
+    return Promise.all(g.files.map(async (f) => [f.path, bytes ? b64(f.data) : hex(await crypto.subtle.digest("SHA-1", f.data))]));
+  }, want === "bytes").catch(() => null);
   got.errors = errors;
+  got.seconds = (Date.now() - t0) / 1000;
   got.toJSON = () => ({ state: got.state, text: got.text, href: got.href, program: got.program });
+  if (want === "page") { got.page = page; got.close = () => context.close(); return got; }
   await context.close();
   return got;
 }
 const WC1 = "wing_commander_35th_anniversary_edition", WC2 = "wing_commander_ii_vengeance_of_the_kilrathi_35th_anniversary_edition";
 
 // 1. the Legacy Edition's installer: known, nothing to say
-const legacy = await drop(gameFile);
+const legacy = await drop(gameFile, null, "bytes");
 check("the Legacy Edition installer is the game, no advice", legacy.state === "ready" && legacy.program === "wc1" && !/Legacy Edition/.test(legacy.text) && !legacy.href, JSON.stringify(legacy.text));
-const files = (legacy.files || []).map(([p, d]) => [p, Buffer.from(d)]);
+const files = (legacy.files || []).map(([p, d]) => [p, Buffer.from(d, "base64")]);
+const sha = (d) => createHash("sha1").update(d).digest("hex");
 check("its files read back", files.some(([p]) => p === "WC.EXE"), `${files.length} files`);
+
+// 1b. the Anniversary Editions' installers: the same game, found in their DOS directory
+const same = (a, b) => {   // (a: paths and bytes, b: paths and hashes)
+  const m = new Map(b);
+  return a.filter(([p, d]) => m.get(p) !== sha(d)).map(([p]) => p).concat(b.filter(([p]) => !a.some(([q]) => q === p)).map(([p]) => "+" + p));
+};
+if (process.env.ANN1) {
+  const ann = await drop(process.env.ANN1, null, "page");
+  check("Wing Commander's Anniversary Edition installer is the game, no advice", ann.state === "ready" && ann.program === "wc1" && ann.text === "" && !ann.errors.length,
+        `${JSON.stringify(ann.text)} in ${ann.seconds.toFixed(1)} s, ${(ann.files || []).length} files`);
+  const diff = same(files, ann.files || []);
+  // (but its sound setting, the Roland's, which the page changes when the game is flown; a blank saved game for each
+  // program; GOG's DOSBox settings and Steam's file, which the game never reads)
+  const expected = ["CRUSADE.CFG", "WINGCMDR.CFG", "+GAMEDAT/CRUSADE.WLD", "+GAMEDAT/SAVEGAME.WLD", "+GAMEDAT/steam_autocloud.vdf", "+dosboxWC.conf", "+dosboxWC_single.conf"];
+  check("its files are the Legacy Edition's but for its settings", (ann.files || []).length > 80 && diff.every((p) => expected.includes(p)), diff.join(" ") || "all the same");
+  const cfg = await ann.page.evaluate(async () => {
+    const { gameById } = await import("./gamefiles.js");
+    const made = {}, enc = (t) => new TextEncoder().encode(t);
+    const said = [gameById("wc1").prepare({ readFile: () => enc("v r z\r\n\0"), writeFile: (p, d) => { made[p] = Array.from(d); } }, "/c"),
+                  gameById("wc1sm2").prepare({ readFile: () => enc("v a904 z\r\n\0"), writeFile: (p, d) => { made["!" + p] = 1; } }, "/c")];
+    return { made, said };
+  });
+  const legacyCfg = JSON.stringify(Array.from(files.find(([p]) => p === "WINGCMDR.CFG")[1]));
+  check("flown, its Roland music setting becomes the Legacy Edition's (an AdLib one is left alone)",
+        JSON.stringify(cfg.made["/c/WINGCMDR.CFG"]) === legacyCfg && JSON.stringify(cfg.made["/c/CRUSADE.CFG"]) === legacyCfg && Object.keys(cfg.made).length === 2 && cfg.said[1] === "", cfg.said[0]);
+  await ann.close();
+}
+if (process.env.ANN2) {
+  const ann = await drop(process.env.ANN2);
+  check("Wing Commander II's Anniversary Edition installer is the game, no advice", ann.state === "ready" && ann.program === "wc2" && ann.text === "" && !ann.errors.length,
+        `${JSON.stringify(ann.text)} in ${ann.seconds.toFixed(1)} s, ${(ann.files || []).length} files`);
+  const names = new Set((ann.files || []).map(([p]) => p));
+  check("its three programs and their data", ["WC2.EXE", "SO1.EXE", "SO2.EXE", "wc2.cfg", "GAMEDAT/SERIES.S00"].every((n) => names.has(n)) && (ann.files || []).length < 600, `${names.size} files`);
+}
 
 // 2. its WC.EXE with the string the hooks look for changed: another build
 const other = files.map(([p, d]) => {
@@ -110,12 +155,13 @@ check("another game: no advice", /no game I recognise|FOO/i.test(foo.text) && !/
 const page = await (await browser.newContext()).newPage();
 await page.goto(pageUrl);
 const names = await page.evaluate(async (list) => {
-  const { legacyOf, looksLikeAnniversary } = await import("./gamefiles.js");
-  return list.map(([n, size]) => [legacyOf(n), looksLikeAnniversary(n, size)]);
-}, [["setup_wing_commander_1.01_gog_v1_(76764).exe", 35651584], [`setup_${WC1}_v1.0_(1).exe`, 1109393408], [`setup_${WC2}_v1.0_(1).exe`, 849346560],
-    ["setup_wing_commander_ii_1.0_gog_v1.exe", 28311552], ["setup_wing_commander_iii_1.4_cs_(76763).exe", 5e8], ["setup_wing_commander_privateer_1.01.exe", 5e8],
-    ["setup_wing_commander_iv_30th.exe", 5e9], ["3dtv12.zip", 1e6], ["Wing Commander 2.zip", 3e7]]);
-check("names told apart", JSON.stringify(names) === JSON.stringify([["wc1", false], ["wc1", true], ["wc2", true], ["wc2", false], ["", false], ["", false], ["", false], ["", false], ["wc2", false]]), JSON.stringify(names));
+  const { legacyOf } = await import("./gamefiles.js");
+  return list.map((n) => legacyOf(n));
+}, ["setup_wing_commander_1.01_gog_v1_(76764).exe", "setup_wing_commander_i_35th_anniversary_edition_v1.0_(95103).exe",
+    "setup_wing_commandertm_ii_vengeance_of_the_kilrathi_35th_anniversary_edition_v1.0_(95103).exe",
+    "setup_wing_commander_ii_1.0_gog_v1.exe", "setup_wing_commander_iii_1.4_cs_(76763).exe", "setup_wing_commander_privateer_1.01.exe",
+    "setup_wing_commander_iv_30th.exe", "3dtv12.zip", "Wing Commander 2.zip"]);
+check("names told apart", JSON.stringify(names) === JSON.stringify(["wc1", "wc1", "wc2", "wc2", "", "", "", "", "wc2"]), JSON.stringify(names));
 check("no page errors", [legacy, strange, nogame, ann1, ann2, foo].every((g) => !g.errors.length), JSON.stringify([legacy, strange, nogame, ann1, ann2, foo].map((g) => g.errors)));
 
 await browser.close();

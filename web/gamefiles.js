@@ -1,7 +1,7 @@
 // Bringing your own game files: everything stays in the browser.
 //
 //   readZip(bytes)              -> [{path, data}] from a .zip (stored/deflate)
-//   extractInstaller(bytes, cb) -> [{path, data}] from an Inno Setup / GOG
+//   extractInstaller(file, cb)  -> [{path, data}] from an Inno Setup / GOG
 //                                  installer, using innoextract compiled to
 //                                  WebAssembly in a worker (inno-worker.js)
 //   identifyGame(files)         -> which game this is and how to run it
@@ -387,6 +387,23 @@ function privMusicOnFm(FS, root) {
   return `Privateer's music: card ${first[0] || "none"} (General MIDI: no synthesizer in the browser) changed to 2, the Sound Blaster's FM`;
 }
 
+// Wing Commander's sound card is the word after "v" in WINGCMDR.CFG (CRUSADE.CFG for SM2.EXE): "a904" the AdLib at
+// 388h, the Sound Blaster's FM, as GOG's Legacy Edition has it ("v a904 z"); "r" the Roland MT-32, as the 35th
+// Anniversary Edition's DOS game has it ("v r z": GOG's own DOSBox there plays it through a synthesizer; the browser
+// has none: no music at all).  A Roland setting is changed to the Legacy Edition's line, byte for byte.
+function wc1MusicOnFm(FS, root) {
+  const said = [];
+  for (const name of ["WINGCMDR.CFG", "CRUSADE.CFG"]) {
+    const path = `${root}/${name}`;
+    let text;
+    try { text = new TextDecoder().decode(FS.readFile(path)); } catch (e) { continue; }
+    if (!text.replace(/\0/g, "").trim().split(/\s+/).includes("r")) continue;
+    FS.writeFile(path, new TextEncoder().encode("v a904 z\r\n\0"));
+    said.push(name);
+  }
+  return said.length ? `Wing Commander's music: the Roland MT-32 of ${said.join(" and ")} (no synthesizer in the browser) changed to the AdLib, the Sound Blaster's FM` : "";
+}
+
 // Terminal Velocity's shareware (3dtv12.zip, 3D Realms' BBS release) holds an installer, INSTALL.EXE, and the game in
 // pieces, TV12BBS._1, ._2, ._3: put end to end they are a zip (the installer's own header before it) of the game's
 // files, which INSTALL.EXE unpacks to C:\TV.  expandSplitZips does the same in the browser: every set of pieces
@@ -531,7 +548,7 @@ function rapPrepare(FS, root) {
 export const GAMES = [
   { id: "wc1", tag: "WC1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
     build: { para: 0x1231, off: 0x0187, text: "Loading WING COMMANDER" },
-    saves: ["GAMEDAT/SAVEGAME.WLD"], cycles: 3630, fps: WC1_FPS, capHull: true, joystick: true,
+    saves: ["GAMEDAT/SAVEGAME.WLD"], cycles: 3630, fps: WC1_FPS, capHull: true, joystick: true, prepare: wc1MusicOnFm,
     pointer: { fromGame: true },
     campaign: { series: WC1_SERIES, hints: WC1_HINTS } },
   // SM2.EXE is the game's last build, with the Crusade campaign (it can
@@ -540,7 +557,7 @@ export const GAMES = [
   // mission is one of Crusade's.
   { id: "wc1sm2", tag: "SM2", partOf: "wc1", title: "Wing Commander: The Secret Missions 2", detect: ["SM2.EXE"], run: "sm2", multiplayer: true,
     build: { para: 0x11E8, off: 0x0181, text: "Loading WING COMMANDER" },
-    saves: ["GAMEDAT/CRUSADE.WLD"], cycles: 3630, fps: WC1_FPS, capHull: true, joystick: true,
+    saves: ["GAMEDAT/CRUSADE.WLD"], cycles: 3630, fps: WC1_FPS, capHull: true, joystick: true, prepare: wc1MusicOnFm,
     pointer: { fromGame: true },
     campaign: { series: SM2_SERIES, hints: WC1_HINTS } },
   // A picked mission of Wing Commander II starts in the barracks (a
@@ -744,13 +761,16 @@ export function knownBuild(game, files) {
 // The Wing Commanders GOG sells since 2026-11-05 are packs, "Wing Commander: 35th Anniversary Edition" and "Wing
 // Commander II: Vengeance of the Kilrathi: 35th Anniversary Edition" (installers of 1.1 GB and 850 MB), each with the
 // release sold until then beside it in the buyer's library: "Wing Commander - Legacy Edition" (an installer of 34 MB)
-// and "Wing Commander II - Legacy Edition" (27 MB).  The Legacy Editions are the builds the hooks know; the old
-// "Wing Commander 1+2" store page is gone.  (The user, 2026-11-15: "If you detect a strange version can you instruct
-// the user to download Legacy Edition from GOG instead ... right now people are struggling with legacy edition".)
+// and "Wing Commander II - Legacy Edition" (27 MB).  An Anniversary Edition's installer holds the Legacy Edition's
+// game, byte for byte, in its DOS/ directory (beside a Windows version, Kilrathi_Saga/, and a patched one, WCAT/):
+// the page unpacks only that (inno-worker.js), so either installer is the game.  The old "Wing Commander 1+2" store
+// page is gone.  A Wing Commander that is neither gets the advice below (the user, 2026-11-15: "If you detect a
+// strange version can you instruct the user to download Legacy Edition from GOG instead", then, with the
+// Anniversary installers: "Ideally we just make them work").
 export const LEGACY = {
-  wc1: { title: "Wing Commander", legacy: "Wing Commander - Legacy Edition", mb: 34,
+  wc1: { title: "Wing Commander", legacy: "Wing Commander - Legacy Edition",
          pack: "Wing Commander: 35th Anniversary Edition", url: "https://www.gog.com/en/game/wing_commander_35th_anniversary_edition" },
-  wc2: { title: "Wing Commander II", legacy: "Wing Commander II - Legacy Edition", mb: 27,
+  wc2: { title: "Wing Commander II", legacy: "Wing Commander II - Legacy Edition",
          pack: "Wing Commander II: 35th Anniversary Edition", url: "https://www.gog.com/en/game/wing_commander_ii_vengeance_of_the_kilrathi_35th_anniversary_edition" },
 };
 // Which of the two a dropped file is, by its name and by what is in it: "wc1", "wc2" or "" (neither: the later Wing
@@ -761,16 +781,14 @@ export function legacyOf(name, files = []) {
   if (["WC.EXE", "SM2.EXE"].some((n) => names.has(n)) || (names.has("CAMP.000") && names.has("BRIEFING.000"))) return "wc1";
   const n = String(name || "").toLowerCase();
   if (!/wing[\s_.-]*commander/.test(n) || /commander[\s_.-]*(iii|iv|[345])(?![a-z\d])|privateer|armada|academy|prophecy|saga/.test(n)) return "";
-  return /commander[\s_.-]*(ii|2)(?![a-z\d])|vengeance/.test(n) ? "wc2" : "wc1";
+  return /commander[a-z]*[\s_.-]*(ii|2)(?![a-z\d])|vengeance/.test(n) ? "wc2" : "wc1";
 }
 // What to tell the pilot: the words, and the store page they name.
 export function legacyAdvice(which) {
   const l = LEGACY[which];
-  return l ? { text: `This page flies GOG's Legacy Edition: in your GOG library download "${l.legacy}" (an installer of about ${l.mb} MB; it comes with ${l.pack}) and drop that here.`,
+  return l ? { text: `This page flies GOG's release: drop the installer of ${l.pack}, or of "${l.legacy}" (which comes with it), as you downloaded it from your GOG library.`,
                link: l.url, linkText: `${l.title} on GOG` } : null;
 }
-// A GOG installer far bigger than a Legacy Edition's under a Wing Commander's name: an Anniversary Edition's.
-export const looksLikeAnniversary = (name, size) => !!legacyOf(name) && /\.exe$/i.test(name) && (size > 200 * 1048576 || /anniversary/i.test(name));
 
 // Directories and file types an installer leaves behind that a DOS game
 // never reads (GOG's own DOSBox, redistributables, manuals, icons).
@@ -833,7 +851,10 @@ export function looksLikeInstaller(bytes) {
   return bytes.length > 2 && bytes[0] === 0x4d && bytes[1] === 0x5a; // "MZ"
 }
 
-export function extractInstaller(bytes, onLog) {
+// (the installer: a File, read by the worker where it is, or its bytes)
+export function extractInstaller(file, onLog) {
+  const blob = file instanceof Blob ? file : new Blob([file]);
+  const detect = [...new Set(GAMES.filter((g) => !g.partOf).flatMap((g) => g.detect))];
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./inno-worker.js", import.meta.url), { type: "module" });
     worker.onmessage = (ev) => {
@@ -843,7 +864,7 @@ export function extractInstaller(bytes, onLog) {
       else if (m.type === "error") { worker.terminate(); reject(new Error(m.message)); }
     };
     worker.onerror = (e) => { worker.terminate(); reject(new Error("installer extraction failed: " + (e.message || e))); };
-    worker.postMessage({ type: "extract", bytes }, [bytes.buffer]);
+    worker.postMessage({ type: "extract", blob, detect });
   });
 }
 
@@ -873,8 +894,11 @@ export function identifyGame(files) {
     for (const f of normalized) {
       if (isJunk(f.path)) continue;
       if (game.detect.includes(base(f.path).toUpperCase())) {
+        // (the build the hooks know before another program of its name: GOG's Anniversary Editions hold the DOS
+        // game and a Windows one, WC2.EXE both, as deep)
         const depth = f.path.split("/").length;
-        if (!best || depth < best.depth) best = { game, root: dir(f.path), depth };
+        const known = knownBuild(game, [{ path: base(f.path), data: f.data }]);
+        if (!best || (known && !best.known) || (known === best.known && depth < best.depth)) best = { game, root: dir(f.path), depth, known };
       }
     }
   }
