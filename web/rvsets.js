@@ -18,7 +18,9 @@
 // works, fetched each time.
 import { makeSet } from "./rvsprites.js";
 
-const RV_ART_CACHE = "rv-art", RV_SET_CACHE = "rv-sets-";
+// (the terrain branch's playtest copy at /terrain/ keeps its made sets apart: /dosbox's page removes every "rv-sets-"
+// cache but its own build's, and this one the same of its own; the views, by hash, are the same files and shared)
+const RV_ART_CACHE = "rv-art", RV_SET_CACHE = /^\/terrain\//.test(globalThis.location ? location.pathname : "") ? "rvt-sets-" : "rv-sets-";
 // build.sh's recipes: the block mode's ladder and the sharp sets (?res=1); a capital ship (types 0x20 up, 37 views at
 // 384-512 px) from half size down with rolls at two sizes, and at a quarter drawn as 4 x 4 blocks
 const RV_RECIPE = { RVH: [0, 0, 0, 1, 2], RVS: [0, 4, 9] }, RV_RECIPE_CAPITAL = { RVH: [0, 0, 0, 1, 2], RVS: [3, 3, 2] };

@@ -525,7 +525,10 @@ const gameInfo = () => (source && gameById(source.game.id)) || null;
 // A room's seats at most: 3, or as many as the game's registry entry allows (`maxSeats`: Privateer's rooms of up to 8,
 // each pilot flying its own career: docs/privateer.md).
 const maxSeats = () => (gameInfo() && gameInfo().maxSeats) || 3;
-const saveKey = (rel) => `wcsave:${source.game.id}:${rel.toUpperCase()}`;
+// (the terrain branch's playtest copy at /terrain/ keeps its own: its RetroVega's saved game is another version's,
+// and the site's storage is shared with /dosbox)
+const SAVE_PREFIX = /^\/terrain\//.test(location.pathname) ? "wcsave-terrain:" : "wcsave:";
+const saveKey = (rel) => `${SAVE_PREFIX}${source.game.id}:${rel.toUpperCase()}`;
 // A registry entry's saves may be patterns ("*.SAV": Privateer names its saved games after what the player types):
 // then they are the files at the top of the game directory that match, and the copies of such files this browser
 // keeps.  A game with names only (every other) gets its list as it is.
@@ -534,7 +537,7 @@ const isSavePattern = (rel) => rel.includes("*");
 const savesByPattern = () => savePatterns().some(isSavePattern);
 const savePatternRe = (pat) => new RegExp("^" + pat.toUpperCase().replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
 function keptSaveNames() {
-  const prefix = source ? `wcsave:${source.game.id}:` : null;
+  const prefix = source ? `${SAVE_PREFIX}${source.game.id}:` : null;
   const out = [];
   try {
     for (let i = 0; prefix && i < localStorage.length; i++) {
@@ -2019,11 +2022,13 @@ async function start(fromGesture) {
     // ?cmd=... runs another DOS command instead of the game (debugging aid).
     // RetroVega: ?res=1 the sharp sets; ?field=D its flights start in an
     // asteroid field of D rocks per (10,000 km)^3 (a stand-in until
-    // the nav points carry their hazards).
+    // the nav points carry their hazards); ?nogx=1 the machine without the
+    // sprite accelerator (RV.EXE /nogx: it draws everything itself, a
+    // planet too).
     const isRv = gameInfo() && gameInfo().id === "rv";
     const field = isRv ? Math.max(0, Math.min(999, parseInt(query.get("field") || "0", 10) || 0)) : 0;
     const cmd = query.get("cmd") || source.game.run + missionArgs + (query.get("res") === "1" && isRv ? " /res 1" : "")
-      + (field ? ` /field ${field}` : "");
+      + (field ? ` /field ${field}` : "") + (query.get("nogx") === "1" && isRv ? " /nogx" : "");
     // The emulated CPU speed: the game's own good value (the registry), or
     // ?cycles=N; Ctrl+F11 / Ctrl+F12 still adjust it while playing.
     const cycles = Number(query.get("cycles")) || (gameInfo() && gameInfo().cycles) || 0;
