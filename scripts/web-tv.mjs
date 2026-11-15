@@ -7,7 +7,8 @@
 // pictures every 20 s in SHOT_DIR.  Ends "TV PAGE OK" when every check passed.
 //
 //   node web-tv.mjs PAGE_URL LOBBY_URL ROOM ZIP HOST_SCRIPT GUEST_SCRIPT [seconds]
-//   env: PLAYWRIGHT_DIR, CHROME, SHOT_DIR, HOST_CRAFT / GUEST_CRAFT (the room's menus: icebrd.bin, snowftr.bin ...)
+//   env: PLAYWRIGHT_DIR, CHROME, SHOT_DIR, HOST_CRAFT / GUEST_CRAFT (the room's menus: icebrd.bin, snowftr.bin ...), DEMO (the
+//   page's "Free to play now" button, not ZIP)
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs";
@@ -57,7 +58,8 @@ async function openPage(who, script, callsign) {
     u.searchParams.set("env." + kv.slice(0, i), kv.slice(i + 1));
   }
   await page.goto(u.toString());
-  await page.setInputFiles("#gamefile", zip);
+  // (DEMO=1: the page's own "Free to play now" button, the site's copy, not a dropped file)
+  if (process.env.DEMO) await page.click("#demoTv"); else await page.setInputFiles("#gamefile", zip);
   // (ready for the dropped files: the page's built-in game is ready before them on a page that has one)
   await page.waitForFunction(() => document.getElementById("sourceStatus").dataset.state === "error"
     || (document.getElementById("sourceStatus").dataset.state === "ready" && document.getElementById("program").value === "tv"), null, { timeout: 120000 })

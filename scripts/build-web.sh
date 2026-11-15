@@ -182,6 +182,9 @@ cp "$TS/dist/index.js" "$OUT/p2p-client.js"
 cp "$ROOT/web/index.html" "$ROOT/web/wc.js" "$ROOT/web/gamefiles.js" "$ROOT/web/gamepad.js" "$ROOT/web/usbpad.js" "$ROOT/web/touch.js" "$ROOT/web/touch.css" "$ROOT/web/voice.js" "$ROOT/web/hall.js" "$ROOT/web/chatfilter.js" "$ROOT/web/inno-worker.js" "$ROOT/web/so3.js" "$ROOT/web/rvsprites.js" "$ROOT/web/rvsprites-worker.js" "$ROOT/web/rvsets.js" "$OUT/"
 # Special Operations 3's sealed package (so3/README.md), as the page fetches it
 mkdir -p "$OUT/so3" && cp "$ROOT/web/so3/so3.json" "$ROOT/web/so3/so3.enc" "$OUT/so3/"
+# the shareware the page offers to play at once, the archives exactly as their publishers released them (their own
+# VENDOR.DOC lets anyone pass them around unchanged, free of charge): docs/raptor.md, docs/terminalvelocity.md
+mkdir -p "$OUT/demos" && cp "$ROOT"/web/demos/*.zip "$OUT/demos/"
 if [ -f "$DEPS/inno-build/innoextract.js" ]; then
     cp "$DEPS/inno-build/innoextract.js" "$DEPS/inno-build/innoextract.wasm" "$OUT/"
 else

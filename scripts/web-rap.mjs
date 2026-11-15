@@ -10,7 +10,7 @@
 // the stick left, the stick right and the D-pad up must move its ship that way, and A held must fire (its damage told).
 //
 //   node web-rap.mjs PAGE_URL LOBBY_URL ROOM ZIP HOST_SCRIPT GUEST_SCRIPT [seconds]
-//   env: PLAYWRIGHT_DIR, CHROME, SHOT_DIR, CYCLES, PAGE_ENV, PAD
+//   env: PLAYWRIGHT_DIR, CHROME, SHOT_DIR, CYCLES, PAGE_ENV, PAD, DEMO (the page's "Free to play now" button, not ZIP)
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs";
@@ -65,7 +65,8 @@ async function openPage(who, script, callsign, pad = false) {
     u.searchParams.set("env." + kv.slice(0, i), kv.slice(i + 1));
   }
   await page.goto(u.toString());
-  await page.setInputFiles("#gamefile", zip);
+  // (DEMO=1: the page's own "Free to play now" button, the site's copy, not a dropped file)
+  if (process.env.DEMO) await page.click("#demoRap"); else await page.setInputFiles("#gamefile", zip);
   await page.waitForFunction(() => document.getElementById("sourceStatus").dataset.state === "error"
     || (document.getElementById("sourceStatus").dataset.state === "ready" && document.getElementById("program").value === "rap"), null, { timeout: 120000 })
     .catch(() => {});

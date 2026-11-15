@@ -447,7 +447,29 @@ const rvSets = createSetProvider({ base: "rv/", root: GAME_ROOT, status, log });
 // The buttons that change the game files: off while a file is being read
 // and once the game runs.
 function sourceButtons(on) {
-  for (const el of [$("useServer"), $("program"), ...$("savedList").querySelectorAll("button")]) el.disabled = !on;
+  for (const el of [$("useServer"), $("program"), $("demoRap"), $("demoTv"), ...$("savedList").querySelectorAll("button")]) el.disabled = !on;
+}
+// The shareware this site offers to play at once (web/demos: the archives exactly as Apogee and 3D Realms released them,
+// their VENDOR.DOC letting anyone pass them around unchanged and free of charge): a copy this browser kept is used as it
+// is; else the archive is fetched and read as a dropped file is (and kept).
+const DEMOS = { demoRap: { id: "rap", file: "1rap12.zip", title: "Raptor's shareware" },
+                demoTv: { id: "tv", file: "3dtv12.zip", title: "Terminal Velocity's shareware" } };
+async function useDemo(d) {
+  const kept = saved.find((g) => programsIn(g.files).some((p) => p.id === d.id));
+  if (kept) { useSavedCopy(kept, d.id); return; }
+  let file;
+  try {
+    sourceButtons(false);
+    sourceStatus(`Fetching ${d.title} (${d.file}) from this site…`, "busy");
+    const r = await fetch("demos/" + d.file);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    file = new File([await r.blob()], d.file, { type: "application/zip" });
+  } catch (e) {
+    sourceStatus(`Could not fetch ${d.title}: ${e && e.message ? e.message : e}`, "error");
+    sourceButtons(true);
+    return;
+  }
+  await handleFile(file);
 }
 // (Said with its date and its file: a game that is simply there on the
 // next visit is the copy this browser kept, not one the site has.)
@@ -494,6 +516,7 @@ async function initSources() {
   for (const ev of ["dragleave", "drop"]) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); });
   drop.addEventListener("drop", (e) => { const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) void handleFile(f); });
   $("gamefile").addEventListener("change", (e) => { const f = e.target.files && e.target.files[0]; if (f) void handleFile(f); });
+  for (const [id, d] of Object.entries(DEMOS)) $(id).addEventListener("click", () => void useDemo(d));
 
   $("useServer").addEventListener("click", async () => {
     try {

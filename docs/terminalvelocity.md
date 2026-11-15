@@ -53,6 +53,15 @@ games `SAVE*.DAT`, `SCORE.DAT` and `VOX.INI`).  A dropped `3dtv12.zip` is the in
 bytes before it, the installer's header), which leaves the game's 41 files.  The registered game's installed directory
 is recognised the same way (by `TV.EXE`).
 
+**On the site, free to play** (the user, 2026-11-15, as in docs/raptor.md section 4).
+* `web/demos/3dtv12.zip` is the archive exactly as dosgamesarchive.com serves it (md5 72e9f023..., its ETag).
+* Its VENDOR.DOC: "Everyone can -- and is encouraged! -- to copy, upload and generally pass around this Game without
+  charging for it", every file unmodified, and "All advertising of the Program must include 'Apogee'". The page's words
+  name Terminal Reality and 3D Realms (Apogee).
+* The "Free to play now" row's Terminal Velocity button fetches it (or uses the copy kept), and the row links the full
+  game on GOG: the Boosted Edition, which comes with the DOS original ("Terminal Velocity Legacy").
+* `DEMO=1 scripts/web-tv.sh` flies two pages from the button.
+
 `prepare` (at every launch, after the files are installed): `SOUNDRV.COM` from `SB16.COM` when there is none (what
 SETUP.EXE's Sound Setup does for a Sound Blaster 16), `SETUP.CFG` as SETUP.EXE's "Save and launch TV" writes it when
 there is none (TV.EXE asks for setup without one), and in `VOX.INI` (made with the game's defaults when there is none:

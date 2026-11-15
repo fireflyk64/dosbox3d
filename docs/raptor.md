@@ -118,6 +118,21 @@ any `*.SHR` that reads as a zip. `rapPrepare` writes `SETUP.INI` as SETUP.EXE do
 start without one): the Sound Blaster for the music (its FM) and the effects, the keyboard and the mouse.
 `web/chatfilter.js` knows the tag RAP. The overlay's "0 key" chat hint is not shown (Raptor has no chat line).
 
+**On the site, free to play.** The user, 2026-11-15: "Can you include the exact copy of both demo versions on the
+website since they have redistribution rights. That way people can get retrovega and the demos right away. Then they
+can link to gog for the full version".
+* `web/demos/1rap12.zip` is the archive exactly as it came (sha256 7d6b062d...); `scripts/build-web.sh` copies `web/demos`
+  into the page's `demos/`.
+* Its VENDOR.DOC: "Everyone can -- and is encouraged! -- to copy, upload and generally pass around this Program without
+  charging for it", every file unmodified, and "All advertising of the Program must include 'Apogee' in the
+  description". The page's words name Cygnus Studios and Apogee.
+* Step 1's "Free to play now" row (`useDemo` in web/wc.js, `DEMOS`): its Raptor button uses the copy this browser kept,
+  or else fetches `demos/1rap12.zip` and reads it as a dropped file (and keeps it).
+* The row links the archive and the full game. Raptor is not sold on GOG: the link is Steam's "Raptor: Call of the
+  Shadows (1994 Classic Edition)" (app 358360, the DOS original).
+* `scripts/web-demos.mjs PAGE_URL` checks it (DEMOS PAGE OK), and `DEMO=1 scripts/web-rap.sh` flies two pages from the
+  button.
+
 **A controller.** A pad picked in the Controller menu (or picked up by a press of its buttons) plays Raptor through its
 keyboard, the control the page's SETUP.INI gives it.
 * Raptor's own joystick (SETUP's Control 2) is no more than its arrows (INPUT.C: full speed past a third of the stick).
