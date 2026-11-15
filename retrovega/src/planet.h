@@ -18,7 +18,7 @@ int planet_load(const TrPlanetRec __far *pr, const TrNavRec __far *navs, int nna
 int planet_make(unsigned ms);           /* more of it made, for at most ms of the host's (0: all): 100 when made */
 void planet_clear(void);                /* no planet */
 int planet_on(void);                    /* a planet, made */
-const LfVec *planet_centre(void);
+const LfVec __far *planet_centre(void);
 
 /* the frame's eye (once a frame, before the bands), then each band's ground (after the sky, before the ships) */
 void planet_frame(const LfVec *eye, const LfBasis *b, int cx, int cy, int focal);

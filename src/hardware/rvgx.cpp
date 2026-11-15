@@ -483,6 +483,10 @@ static int planet_load(void)
 		pal[i] = (uint8_t)(real_readb(p_seg, (uint16_t)(p_off + i)) & 63);
 	tr_from_records(&pr, navs, (int)nnav, &m);
 	tr_from_km(&m, &d, st);
+	if (g_planet && tr_same(g_planet, &d, st) && !memcmp(g_centre, m.centre, sizeof g_centre)) {
+		LOG_MSG("RVGX: the same planet again: kept (%s)", tr_ready(g_planet) ? "made" : "being made");
+		return 0;               /* (a mission flown again, a guest given its host's: no making it twice) */
+	}
 	memcpy(g_centre, m.centre, sizeof g_centre);
 	if (g_planet)
 		tr_free(g_planet);

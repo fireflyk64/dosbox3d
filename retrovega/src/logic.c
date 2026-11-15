@@ -872,7 +872,7 @@ static void step_timers(void)
 #define GROUND_AVOID (400L * 256)       /* positions over the ground */
 static void ground_mind(int16_t s)
 {
-    const LfVec *c = planet_centre();
+    const LfVec __far *c = planet_centre();
     long roof, over, ux, uy, uz;
     if (!planet_on() || (over = planet_over((const LfVec *)&gPositionVector[s], &roof)) > GROUND_AVOID)
         return;
@@ -3915,7 +3915,8 @@ static void ship_think(int16_t s)
         if (!slot_is_ship(s))
             return;
     } else
-        throttle(s, role_of(s) == RV_ESCORT_HOME ? 0 : t ? t->cruise_kps : 100, 0);   /* (the carrier holds station) */
+        throttle(s, role_of(s) == RV_ESCORT_HOME || role_of(s) == RV_ESCORT_STAY ? 0 : t ? t->cruise_kps : 100, 0);
+                                        /* (the carrier holds station, and a capital ship that stays: a depot on its pad) */
     m->target = (uint8_t)(near_ >= 0 ? near_ : 0xFF);
     rvTarget[s] = m->target;
     if (near_ < 0)
@@ -5338,7 +5339,7 @@ static void wave_out(const uint8_t __far *came)
     int32_t cx = 0, cy = 0, cz = 0, d, k;
     int16_t s, n = 0;
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
-        if (came[s]) {
+        if (came[s] == 1) {
             cx += TO_KM(gPositionVector[s].x - gPositionVector[0].x);
             cy += TO_KM(gPositionVector[s].y - gPositionVector[0].y);
             cz += TO_KM(gPositionVector[s].z - gPositionVector[0].z);
@@ -5362,7 +5363,7 @@ static void wave_out(const uint8_t __far *came)
     }
     k = WAVE_KM - d;                    /* (km to go, along the way out) */
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
-        if (came[s]) {
+        if (came[s] == 1) {
             gPositionVector[s].x += cx * k / d * KM;
             gPositionVector[s].y += cy * k / d * KM;
             gPositionVector[s].z += cz * k / d * KM;
@@ -5423,12 +5424,16 @@ void __far __cdecl enterNavPoint_impl(uint16_t nav)
         }
         if (MSHIP_BEHAVIOUR(at[j]) != 6 && (s = outerSpawnShipEntity(at[j], nav)) != 0xFFFF) {
             n++;
-            if (s > 0 && s < NUM_SHIP_SLOTS && maybeEntityType[s] == ET_SHIP && commAnimInfo[s] != commAnimInfo[0]
-                && !MSHIP_ROLE(at[j]))
-                came[s] = 1;            /* (an enemy fighter: out to WAVE_KM with its wave) */
+            if (s > 0 && s < NUM_SHIP_SLOTS)
+                came[s] = maybeEntityType[s] == ET_SHIP && commAnimInfo[s] != commAnimInfo[0] && !MSHIP_ROLE(at[j]) ? 1 : 2;
+                                        /* (1: an enemy fighter, out to WAVE_KM with its wave) */
         }
     }
     wave_out(came);
+    if (planet_on())                    /* (over a planet: any it put in the ground raised, as the autopilot does) */
+        for (k = 1; k < NUM_SHIP_SLOTS; k++)
+            if (came[k])
+                planet_raise((LfVec *)&gPositionVector[k], 300);
     rv_notef(s_nav, nav, n);
 }
 
@@ -5521,8 +5526,9 @@ uint16_t __far __cdecl outerSpawnShipEntity_impl(uint16_t missionShip, uint16_t 
         g_mind[s].fear_up = (uint8_t)(rec[19] & 15);
         g_mind[s].fear_down = (uint8_t)(rec[19] >> 4);
     }
-    if (rec[18] == RV_ESCORT_HOME)      /* (the carrier holds station from the first: no way on to lose) */
-        setSpeed[s] = speedLo[s] = 0;
+    if (rec[18] == RV_ESCORT_HOME || (rec[18] == RV_ESCORT_STAY && maybeEntityType[s] == ET_CAPSHIP))
+        setSpeed[s] = speedLo[s] = 0;   /* (the carrier holds station from the first: no way on to lose; so does a
+                                           capital ship that stays) */
     spawn_apart(s);
     return (uint16_t)s;
 }

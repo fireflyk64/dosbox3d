@@ -34,6 +34,7 @@
 #include "hud.h"
 #include "logic.h"
 #include "simulator.h"
+#include "planet.h"
 #ifdef RV_HOST
 #include "host.h"
 #endif
@@ -5029,6 +5030,80 @@ static void t_held_wave(void)
     REQUIRE(victoryPoints != 0, e_done, victoryPoints, 0, 0);
 }
 
+/* M8.63: a planet mission's ground (planet.c: the card's sums on DOS, terrain.c's natively, integers both): the canyon
+ * run's planet made and its nav points put 700 km over the canyon's floor; the player diving at the floor at Nav 2 is
+ * stopped over it, climbing into the stone bridge at Nav 3 is stopped under its rock, and an Aera fighter diving at
+ * the floor at Nav 4 stays over it.  The world is left as it is: its hash holds the ground's answers, host against card
+ * (the walk of every mission, M8.40, ends with the world put back) */
+static void nav_pos(int16_t n, LfVec *p)
+{
+    const uint8_t *rec = navPointTable + navPointTable_SIZE * n;
+    p->x = NAV_REC_KM(rec, 0) * KM;
+    p->y = NAV_REC_KM(rec, 1) * KM;
+    p->z = NAV_REC_KM(rec, 2) * KM;
+}
+
+/* a slot's nose straight down (dir -1) or up (1) at its place over the planet: along the line from the planet's centre
+ * (the world's -y is some 20 degrees off it at the canyon) */
+static void face_vertical(int16_t s, int16_t dir)
+{
+    const LfVec __far *c = planet_centre();
+    RvVec3 *f = &gOrientationFrontVector[s];
+    f->x = dir * ((gPositionVector[s].x - c->x) / (250 * KM));   /* (km / 250: about 256 long over Mirage's 64,000 km,
+                                                                    the length vec_norm's square root is good near) */
+    f->y = dir * ((gPositionVector[s].y - c->y) / (250 * KM));
+    f->z = dir * ((gPositionVector[s].z - c->z) / (250 * KM));
+    gOrientationRightVector[s].x = 256;
+    gOrientationRightVector[s].y = gOrientationRightVector[s].z = 0;
+    ship_orthonormalise(s);
+}
+
+static void t_planet(void)
+{
+    static const char __far e_made[] = "the canyon run's planet: planet_make %d (100: made)";
+    static const char __far e_nav[] = "nav %d %d km over the ground once placed (700)";
+    static const char __far e_floor[] = "the dive into the canyon's floor: %d km over it, speed %d (stopped over it)";
+    static const char __far e_roof[] = "the climb into the stone bridge: %d km under its rock, speed %d (stopped under it)";
+    static const char __far e_ai[] = "an Aera fighter diving at the floor: %d km over it after 4 s (over it)";
+    int16_t n;
+    long roof, over;
+    LfVec p;
+    pt_launch_named("MIRAGE1");
+    n = (int16_t)planet_make(0);
+    REQUIRE(n == 100, e_made, n, 0, 0);
+    planet_navs();
+    for (n = 1; n <= 5; n++) {
+        nav_pos(n, &p);
+        over = planet_over(&p, &roof) / KM;
+        REQUIRE(over >= 698 && over <= 702, e_nav, n, over, 0);
+    }
+    playerCanBeDamaged = 0;
+    nav_pos(2, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    face_vertical(0, -1);
+    pt_speed(0, 250);
+    if (!pt_steps(4 * SEC))
+        return;
+    over = planet_over((const LfVec *)&gPositionVector[0], &roof);
+    REQUIRE(over >= 10 * KM && over < 200 * KM && !setSpeed[0], e_floor, over / KM, (long)setSpeed[0], 0);
+    nav_pos(3, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    face_vertical(0, 1);                /* (under the bridge's crown, climbing) */
+    pt_speed(0, 250);
+    if (!pt_steps(6 * SEC))
+        return;
+    over = planet_over((const LfVec *)&gPositionVector[0], &roof);
+    REQUIRE(roof >= 10 * KM && roof < 300 * KM && !setSpeed[0], e_roof, roof / KM, (long)setSpeed[0], 0);
+    nav_pos(4, &p);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, p.x / KM, p.y / KM, p.z / KM, 0);
+    face_vertical(1, -1);
+    pt_speed(1, 300);
+    if (!pt_steps(4 * SEC))
+        return;
+    over = planet_over((const LfVec *)&gPositionVector[1], &roof);
+    REQUIRE(slot_is_ship(1) && over >= 10 * KM, e_ai, over / KM, 0, 0);
+}
+
 /* M8.61: the old game's goals (missions.txt `goal`, logic_goal, campaign.c camp_points; the user, 2026-11-08: a lost
  * Kurasawa 2 to Rostov, "we want people to experience more unless they are experts at Rigel 2"): nav 1 with two
  * Nicanders is met only once reached and both are gone (the old objective 0: Enyo 1 traced, its Nav 1 reached with
@@ -8028,6 +8103,7 @@ static const char __far n_m8_59[] = "M8.59 escort-back (role=back, escorted): an
 static const char __far n_m8_60[] = "M8.60 wave-also (also=N, mship_brought): a wave listed at a hidden point and a waypoint comes once, at whichever is reached first";
 static const char __far n_m8_61[] = "M8.61 goals (logic_goal): a nav point met once reached and its enemies gone; the nth kill goal with n + 1 killed; the landing";
 static const char __far n_m8_62[] = "M8.62 held-wave (mission_done, wave_may_come): a wave held at a hidden point at the launch keeps the mission undone till it has come and gone";
+static const char __far n_m8_63[] = "M8.63 planet (planet.c, step_ground, ground_mind): the canyon run's planet made, its nav points 700 km over its floor; a dive into the floor and a climb into the stone bridge stopped short of the rock; an Aera fighter diving at the floor stays over it";
 static const char __far n_m8_55[] = "M8.55 field-nav (nav_field, nav_stop, nav_in_reach): a waypoint inside a field is the field's middle: the autopilot takes the player in, and the point is reached only within 1,200 km of the middle";
 static const char __far n_m8_54[] = "M8.54 capital-help (capital_help): an Aera capital ship hurt through its armour by an unengaged attacker turns half its side's fighters on it; none when a fighter is already near the attacker";
 static const char __far n_m8_52[] = "M8.52 mayday (hull_take, logic_on_mayday): an Ox calls mayday on 35 in 1,000 of the hits through its armour, as the old game's capital ships did; an Agasicles never";
@@ -8119,7 +8195,7 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m7_9, t_seeker_chases, 0 }, { n_m7_10, t_missile_blast, 0 }, { n_m7_11, t_missile_knock, 0 }, { n_m7_12, t_ff_target, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 }, { n_m8_56, t_nav_switch, 0 }, { n_m8_57, t_escort_arrive, 0 }, { n_m8_58, t_escort_threat, 0 }, { n_m8_59, t_escort_back, 0 }, { n_m8_60, t_wave_also, 0 }, { n_m8_61, t_goals, 0 }, { n_m8_62, t_held_wave, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 }, { n_m8_56, t_nav_switch, 0 }, { n_m8_57, t_escort_arrive, 0 }, { n_m8_58, t_escort_threat, 0 }, { n_m8_59, t_escort_back, 0 }, { n_m8_60, t_wave_also, 0 }, { n_m8_61, t_goals, 0 }, { n_m8_62, t_held_wave, 0 }, { n_m8_63, t_planet, 0 },
     { n_m10_13, t_cloak, 0 }, { n_m10_14, t_cloak_ai, 0 },
 };
 

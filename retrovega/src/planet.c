@@ -69,6 +69,8 @@ int gx_planet_call(unsigned ax, const void *in, int n_in, void *out, int n_out)
         TrStamp st[TR_STAMPS_MAX];
         tr_from_records(l->planet, l->navs, l->nnav, &m);
         tr_from_km(&m, &d, st);
+        if (p && tr_same(p, &d, st) && !memcmp(g_host_centre, m.centre, sizeof g_host_centre))
+            return 0;                   /* (the same planet again: kept, as the card keeps it) */
         g_host_centre[0] = m.centre[0];
         g_host_centre[1] = m.centre[1];
         g_host_centre[2] = m.centre[2];
@@ -187,15 +189,17 @@ int planet_load(const TrPlanetRec __far *pr, const TrNavRec __far *navs, int nna
 {
     PlLoad l;
     int r;
-    planet_clear();
-    if (!pr->radius || !gx_planet_on())
+    if (!pr->radius || !gx_planet_on()) {
+        planet_clear();
         return -1;
+    }
     l.planet = pr;
     l.navs = navs;
     l.pal = PL_PALETTE_NOW();
     l.nnav = (unsigned short)nnav;
     r = gx_planet_call(PL_LOAD, &l, sizeof l, 0, 0);
     if (r < 0) {
+        g_pl.on = g_pl.made = 0;
         RV_LOG("planet: the card took none (%d)", r);
         return r;
     }
@@ -230,7 +234,7 @@ void planet_clear(void)
 }
 
 int planet_on(void) { return g_pl.on && g_pl.made; }
-const LfVec *planet_centre(void) { return (const LfVec *)&g_pl.centre; }
+const LfVec __far *planet_centre(void) { return &g_pl.centre; }   /* (far: g_pl is; a near pointer to it reads DS) */
 
 /* a world point planet-relative */
 static void rel(const LfVec *p, long out[3])
@@ -307,7 +311,6 @@ long planet_over(const LfVec *pos, long *roof)
 
 void planet_mission(const RvMission __far *m)
 {
-    planet_clear();
     (void)planet_load((const TrPlanetRec __far *)&m->px, (const TrNavRec __far *)m->nav, m->nnav);
 }
 

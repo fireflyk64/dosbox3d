@@ -250,11 +250,13 @@ TALK_BOOSTS = {'armor': 1, 'fuel': 2, 'missile': 3}
 BRIEF_ROOMS = {'briefing': len(ROOMS) + 2, 'win': len(ROOMS) + 3, 'lose': len(ROOMS) + 4}
 # a planet mission's ground shapes (missions.txt `ground`): a pad made flat or a stone arch at a nav point's place,
 # its sizes in km (pad: a radius, b the slope round it; arch: a half its span, b its width, c the air under its crown,
-# d its thickness), heading degrees from the world's x across the ground (terrain.h TrStamp, the card's)
+# d its thickness), heading degrees from the world's x across the ground (terrain.h TrStamp, the card's); or a canyon
+# from its nav point through the mission's next ones to to=navN (a its floor's width, b each wall's run across, c its
+# depth, d how far out the land beside it rises to its rim; its heading word holds that last nav point's number)
 GROUND = [('unsigned char', 'kind', 'B'), ('unsigned char', 'nav', 'B'), ('unsigned short', 'a', 'H'),
           ('unsigned short', 'b', 'H'), ('unsigned short', 'c', 'H'), ('unsigned short', 'd', 'H'),
           ('short', 'heading', 'h')]
-GROUND_KINDS = {'pad': 1, 'arch': 2}    # (terrain.h's TR_STAMP_PAD, TR_STAMP_ARCH)
+GROUND_KINDS = {'pad': 1, 'arch': 2, 'canyon': 3}   # (terrain.h's TR_STAMP_PAD, TR_STAMP_ARCH, TR_STAMP_CANYON)
 MISSION = [('char', 'id[RV_ID]', '%ds' % TEXT['ID']), ('unsigned char', 'node', 'B'), ('unsigned char', 'type', 'B'),
            ('unsigned char', 'music', 'B'), ('unsigned char', 'nnav', 'B'), ('unsigned char', 'nship', 'B'),
            ('unsigned char', 'ntalk', 'B'), ('unsigned char', 'nfield', 'B'), ('unsigned char', 'fighter', 'B'),
@@ -284,15 +286,25 @@ def planet_record(m, nav_ids):
         raise Fail('%s: a planet\'s seed is 0..65535, its radius 1,000..65,535 km, its centre within %d km' % (where, MAP_KM))
     for where, g in m['ground']:
         opts = dict(o.split('=', 1) for o in g[2:] if '=' in o)
-        keys = {'pad': ('radius', 'slope'), 'arch': ('span', 'width', 'air', 'thick')}.get(g[0] if g else '')
+        keys = {'pad': ('radius', 'slope'), 'arch': ('span', 'width', 'air', 'thick'),
+                'canyon': ('width', 'wall', 'depth', 'rise')}.get(g[0] if g else '')
+        extra = {'to'} if g and g[0] == 'canyon' else {'heading'}
         if not keys or len(g) < 2 or not re.fullmatch(r'nav(\d+)', g[1]) or int(g[1][3:]) not in nav_ids \
-                or set(opts) - set(keys) - {'heading'} or any(not opts.get(k, '1').isdigit() for k in keys):
-            raise Fail('%s: ground pad navN radius=KM slope=KM, or ground arch navN span=KM width=KM air=KM thick=KM;'
-                       ' heading=DEG' % where)
+                or set(opts) - set(keys) - extra or any(not opts.get(k, '1').isdigit() for k in keys):
+            raise Fail('%s: ground pad navN radius=KM slope=KM, ground arch navN span=KM width=KM air=KM thick=KM'
+                       ' heading=DEG, or ground canyon navN to=navM width=KM wall=KM depth=KM rise=KM' % where)
         size = [int(opts.get(k, 0)) for k in keys] + [0] * (4 - len(keys))
-        if any(not 0 <= v <= 20000 for v in size) or not -360 <= int(opts.get('heading', 0)) <= 360:
+        if g[0] == 'canyon':
+            to = re.fullmatch(r'nav(\d+)', opts.get('to', ''))
+            if not to or int(to.group(1)) not in nav_ids or int(to.group(1)) <= int(g[1][3:]) or not all(size):
+                raise Fail('%s: a canyon runs from its nav point to=navM, a later one the mission has, its sizes'
+                           ' all given' % where)
+            heading = int(to.group(1))
+        else:
+            heading = int(opts.get('heading', 0))
+        if any(not 0 <= v <= 20000 for v in size) or not -360 <= heading <= 360:
             raise Fail('%s: a ground shape\'s sizes are 0..20,000 km, its heading -360..360' % where)
-        grounds.append(struct.pack(fmt(GROUND), GROUND_KINDS[g[0]], int(g[1][3:]), *size, int(opts.get('heading', 0))))
+        grounds.append(struct.pack(fmt(GROUND), GROUND_KINDS[g[0]], int(g[1][3:]), *size, heading))
     if len(grounds) > LIMITS['GROUNDS']:
         raise Fail('%s: %d ground shapes, at most %d' % (m['where'], len(grounds), LIMITS['GROUNDS']))
     return struct.pack('<lllHHB', x, y, z, radius, seed, len(grounds)) \
@@ -710,6 +722,9 @@ def compile_all():
             tnum = SHIP_PLAYER if kind == 'player' else SHIP_WINGMAN if kind == 'wingman' else ships.get(kind)
             if tnum is None:
                 raise Fail('%s: unknown ship %s' % (where, kind))
+            if kind not in ('player', 'wingman') and not os.path.exists(os.path.join(ROOT, 'art', 'ships', 'SHIP%02X.RV' % tnum)):
+                # (its views: without them the flight waits for the page's set of it for ever, on DOS too)
+                raise Fail('%s: no art of %s (art/ships/SHIP%02X.RV): a mission flies only ships with views' % (where, kind, tnum))
             nav = int(f[2][3:]) if f[2].startswith('nav') else -1
             if nav not in nav_ids:
                 raise Fail('%s: unknown nav point %s' % (where, f[2]))
@@ -729,8 +744,9 @@ def compile_all():
                 role = ESCORT_ROLES[opts['role']]
                 if role == ESCORT_ROLES['home'] and (nav != 0 or int(f[1]) != 0 or int(opts.get('count', 1)) != 1):
                     raise Fail('%s: role=home is one ship of side 0 at nav0' % where)
-                if role == ESCORT_ROLES['stay'] and int(f[1]) != 0:
-                    raise Fail('%s: role=stay is the player\'s side\'s (side 0)' % where)
+                if role == ESCORT_ROLES['stay'] and int(f[1]) != 0 and tnum < 0x20:
+                    raise Fail('%s: role=stay is a fighter of the player\'s side (side 0), or a capital ship that holds'
+                               ' station (a depot on its pad)' % where)
             ai = 0
             if 'ai' in opts:
                 if opts['ai'] not in PROFILES:

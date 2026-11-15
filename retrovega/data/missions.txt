@@ -30,6 +30,8 @@
 # four fighters that never left it (its records' behaviour 3, following the Tiger's Claw or nobody, and their
 # followers): those are the role=stay lines at nav0 (the user, 2026-11-05: "missions have to be able to differentiate
 # between autopilotees and stay-homers since at least the vigilence already stays home")
+# A capital ship's role=stay (either side) holds station where it is put: a depot ship on its pad, an Ox parked under an
+# arch (the planet missions: without it a capital ship cruises off ahead at its cruise speed)
 #
 # A ship line's prey=KEY is the old game's attack order (its mission records' own byte, read 2026-11-05: tests/wc1/README.md
 # "Orders"): the group goes for the nearest ship of that type of the other side, wherever it is and whoever is nearer, until
@@ -3054,6 +3056,50 @@ radio    "Tally here. Wendell Greer, Vigilance. Last flight's a long way out. Le
 # dunes, to the Ox depot parked under the stone arch, over the mesas, and home
 mission  MIRAGE1
 node     MIRAGE
+title    Canyon run: Mirage, the long gorge
+type     patrol
+music    briefing
+fighter  SCHROED
+briefing "Back to Mirage. The Aera have been moving supplies up the long canyon in the north, on the canyon floor."
+briefing "Nav 1 is the canyon's mouth. From there it winds north through the mountains to Nav 5."
+briefing "At Nav 2 an Agasicles sits on a pad by the river, loading the depot's stores. Burn it."
+briefing "Past the stone bridge at Nav 3 a cruiser waits for the next load. It will run for the end of the canyon."
+briefing "Catch it before Nav 5. If it gets there it jumps, and we lose it."
+briefing "Expect 2 Nicanders at Nav 1, 3 Agis at Nav 2, 2 Aristons at Nav 3 and 3 Nicanders at Nav 4."
+briefing "You and Comet go in low, between the walls. They're three thousand kilometres high, so mind the bends."
+briefing you "And if they come at us from over the rim?"
+briefing "Then you'll see them before they see you. Dismissed."
+win      "The depot's burning and the cruiser never made its jump. That canyon is ours."
+lose     "The load got out of the canyon. We'll be going back down there."
+planet   7 0 -72000 0 64000
+nav      1 0 -8649 13142 ground reach=3000
+nav      2 -3538 -10642 20219 ground reach=3000
+nav      3 1516 -13359 27295 ground reach=3000
+nav      4 -2527 -17243 34372 ground reach=3000
+nav      5 3538 -22028 40943 ground reach=3000
+ground   canyon nav1 to=nav5 width=1800 wall=1300 depth=3000 rise=1800
+ground   pad nav2 radius=800 slope=500
+ground   arch nav3 span=1500 width=700 air=1900 thick=500 heading=4
+ship     player 0 nav0
+ship     wingman 0 nav0 pilot=COMET
+ship     VIGILNC 0 nav0 role=home
+ship     NICANDR 1 nav1 count=2 at=-1305,-549,2646
+ship     AGASICL 1 nav2 role=stay
+ship     AGIS 1 nav2 count=3 at=280,-1236,3796
+ship     ANAXIDM 1 nav3 role=out jump=5 at=124,-844,1808
+ship     ARISTON 1 nav3 count=2 at=372,-2532,5424
+ship     NICANDR 1 nav4 count=3 at=264,-1581,2535
+goal     nav 1 1
+goal     kill AGASICL nav2 3
+goal     nav 2 1
+goal     kill ANAXIDM nav3 4
+goal     nav 3 1
+goal     nav 4 1
+goal     nav 5 1
+goal     land 1
+
+mission  MIRAGE2
+node     MIRAGE
 title    Patrol: Mirage, the depot under the arch
 type     patrol
 music    briefing
@@ -3066,17 +3112,17 @@ briefing you "Under the arch, Commander?"
 briefing "Under it, around it, through it if you have to. Just bring the depot through the day. Dismissed."
 win      "The depot's still under its arch. Nice flying, Wildcard."
 lose     "The Aera had the run of Mirage today. We go again tomorrow."
-planet   7 0 -40000 0 32000
-nav      1 0 -7209 5194 ground reach=3000
-nav      2 2811 -9457 9966 ground reach=3000
-nav      3 -6861 -11144 14466 ground reach=3000
-ground   pad nav2 radius=1100 slope=600
-ground   arch nav2 span=900 width=500 air=600 thick=220 heading=0
+planet   7 0 -72000 0 64000
+nav      1 0 -7807 -8088 ground reach=3000
+nav      2 2527 -9033 -14659 ground reach=3000
+nav      3 -4044 -10509 -19713 ground reach=3000
+ground   pad nav2 radius=1700 slope=800
+ground   arch nav2 span=1400 width=700 air=1400 thick=350 heading=0
 ship     player 0 nav0
 ship     VIGILNC 0 nav0 role=home
-ship     OX 0 nav2
-ship     NICANDR 1 nav2 count=3 at=-2500,700,3000
-ship     AGIS 1 nav3 count=2 at=1500,600,2000
+ship     OX 0 nav2 role=stay
+ship     NICANDR 1 nav2 count=3 at=-2500,700,-3000
+ship     AGIS 1 nav3 count=2 at=-1500,600,-2000
 goal     nav 1 1
 goal     nav 2 2
 goal     nav 3 1

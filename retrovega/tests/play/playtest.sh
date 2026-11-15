@@ -9,6 +9,7 @@
 #                                        where the DOS build parts from the host's, and in which arrays
 # IDS: M2 runs M2.*, M2.3 that one.  ARCH, SAN, CC and LOGIC go to host/build.sh (LOGIC to build.sh too); DOSBOX
 # to tests/run.sh (a stock DOSBox runs RVP.EXE).  The outputs: build/playtest-host.txt, build/playtest-dos.txt.
+# The DOS run turns the sprite card on (GX=1; GX= turns it off): a planet's ground is the card's (M8.63).
 # Exit 0 only when every test passes and, with --dos, every hash matches.
 set -e
 export LC_ALL=C                         # (sort and join must agree: M1.14 against M11.1)
@@ -43,7 +44,7 @@ if grep -q 'Error!' build/playtest-dos-build.log; then   # (build.sh does not st
     grep -B2 -A2 'Error!' build/playtest-dos-build.log
     exit 2
 fi
-NOBUILD=1 CYCLES=${CYCLES:-max} TIMEOUT=${TIMEOUT:-900} tests/run.sh tests/walk.txt /playtest $(echo "$@" | tr ' ' ',') \
+GX=${GX-1} NOBUILD=1 CYCLES=${CYCLES:-max} TIMEOUT=${TIMEOUT:-900} tests/run.sh tests/walk.txt /playtest $(echo "$@" | tr ' ' ',') \
     > /dev/null 2>&1 || true
 tr -d '\r' < build/dos/RVLOG.TXT | grep '^playtest:' > build/playtest-dos.txt || true
 # (short of memory a ship's hull quietly becomes its box and the physics change: never a result to trust)

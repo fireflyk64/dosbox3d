@@ -27,6 +27,7 @@
 #include "flight.h"
 #include "simulator.h"
 #include "game.h"
+#include "planet.h"
 
 enum { MODE_ROOM, MODE_TALK, MODE_BRIEF, MODE_DECK, MODE_DEBRIEF, MODE_BUNK,
        MODE_NAME, MODE_LOG, MODE_MESSAGE, MODE_ENDING, MODE_BOARD, MODE_DEAD, MODE_HOME, MODE_QUIT };
@@ -1412,6 +1413,7 @@ static void flight_prepare(void)
              * was not able to see any franklins at all": its own save's fighter had been loaded, not the host's) */
             g_camp.player_ship = (uint8_t)camp_flight_fighter();
             camp_follow(node, k);       /* (and its story where the host's is: the debrief moves it on with the host's) */
+            planet_mission(&g_m);       /* (the host's planet: its own mission's was its save's) */
             rocks_want(g_m.nfield > 0 || g_field > 0);
             RV_LOG("guest: the host's mission %.16Fs (node %u, mission %u there)", (char __far *)g_m.id, node, k);
         } else {

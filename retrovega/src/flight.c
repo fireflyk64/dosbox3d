@@ -3379,15 +3379,15 @@ static void planet_test_setup(void)
     _fmemset(&pr, 0, sizeof pr);
     _fmemset(nav, 0, sizeof nav);
     pr.seed = 1;
-    pr.radius = 32000;
+    pr.radius = 64000;
     pr.x = gPositionVector[0].x / 256;
-    pr.y = gPositionVector[0].y / 256 - 32000 - g_planet_test;
+    pr.y = gPositionVector[0].y / 256 - 64000 - g_planet_test;
     pr.z = gPositionVector[0].z / 256;
     pr.n = 3;
     for (k = 0; k < 2; k++) {           /* nav 1 on the ground under the player, nav 2 4,000 km ahead */
         nav[k].id = (uint8_t)(k + 1);
         nav[k].x = pr.x;
-        nav[k].y = pr.y + 32000;
+        nav[k].y = pr.y + 64000;
         nav[k].z = pr.z + 4000 * k;
     }
     for (k = 0; k < 3; k++) {           /* under the player a pad; 4,000 km ahead a pad and the arch over it */
@@ -4191,6 +4191,8 @@ int flight_fly(const RvMission __far *m)
     g_m = m;
     g_view = g_view_back = VIEW_COCKPIT;
     g_fly_t = 0;
+    (void)planet_make(0);               /* (a planet mission's: the rest of it made before the launch, not after it, where
+                                           every other pilot's game would wait seconds for this one's frames) */
     uiMode(0);
     g_landing_t = -1;
     g_flying = 1;

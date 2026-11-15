@@ -192,7 +192,7 @@ int scene_update(const Input *in, SceneAction *act)
     const RvRoom __far *r = room();
     int kind, index, i;
     unsigned long now = ticks();
-    (void)planet_make(8);               /* (a mission's planet, made a piece a frame while the rooms go on: planet.h) */
+    (void)planet_make(12);              /* (a mission's planet, made a piece a frame while the rooms go on: planet.h) */
     act->kind = ACTION_NONE;
     if (g_scene.no_room) {
         if (in->x != g_scene.px || in->y != g_scene.py) {

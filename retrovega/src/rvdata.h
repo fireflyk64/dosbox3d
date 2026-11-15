@@ -81,6 +81,7 @@
 #define RV_FIELD_MINE 10
 #define RV_GROUND_PAD 1
 #define RV_GROUND_ARCH 2
+#define RV_GROUND_CANYON 3
 #define RV_NAV_GROUND 4
 #define RV_MUSIC_BRIEFING 0
 #define RV_MUSIC_BAR 1
