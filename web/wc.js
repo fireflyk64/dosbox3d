@@ -1523,7 +1523,7 @@ async function joinRoom({ create = true } = {}) {
     renderMission();
     for (const id of ["room", "seats", "server", "relay"]) $(id).disabled = true;
     if (solo) chatLine(`You are ${esc(myName())}, alone in room ${esc(code)}: Fly starts the game as it is, with its own wingman.`, "sys");
-    else chatLine(`You are ${esc(myName())}, player ${game.selfId + 1} of ${game.maxPlayers} in room ${esc(code)}${game.selfId === 0 ? " (host)" : ""}. "Copy link" gives friends the way in.`, "sys");
+    else chatLine(`You are ${esc(myName())}, player ${game.selfId + 1} of ${game.maxPlayers} in room ${esc(code)}${game.selfId === 0 ? " (host)" : ""}. "Copy link" to play with friends.`, "sys");
     log(solo ? `lobby: room ${code} for one (no lobby server)` : `lobby: joined room ${code} as player ${game.selfId} of ${game.maxPlayers}`);
     renderRoster(); updateActions();
     $("chatInput").focus();
@@ -2129,7 +2129,7 @@ async function start(fromGesture) {
     touch.show(true);
     if (fromGesture && $("fullStart").checked) goFullscreen();
     status(together
-      ? `Room ${cfg.code}. "Copy link" (step 2) gives friends the way in.`
+      ? `Room ${cfg.code}. "Copy link" (step 2) to play with friends.`
       : `${source.game.title} is running.`);
   } catch (e) {
     running = false;
