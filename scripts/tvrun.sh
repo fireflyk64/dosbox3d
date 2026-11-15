@@ -17,6 +17,7 @@
 #   JOY=1       the game port's stick on, as the page's "Built in" pad has it ([joystick] joysticktype=none
 #               timed=false, WCJOY=1; the key script's !joy=x:y and !joybutton=n:1|0 move it)
 #   ROUTE_DELAY=  seconds added to the route's times (a machine that launches its level later)
+#   DETAIL=low  with SVGA=1: the Graphics Options as the shareware's VOX.INI has them (not the page's best)
 #   SVGA=1      the game's high-resolution mode (its own setting: 640 x 240 drawn on a 640 x 480 screen; VOX.INI's
 #               gamePIXX,gamePIXY) in the copy, at CYCLES (60000 is good)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -29,15 +30,23 @@ if [ -n "${COPY:-}" ]; then
   mkdir -p $OUT/game; cp -f "$TVDIR"/* $OUT/game/ 2>/dev/null
   TVDIR=$OUT/game
   if [ -f $TVDIR/VOX.INI ]; then
-    python3 - "$TVDIR/VOX.INI" "${BRIEF:-}" "${SVGA:-}" "${JOY:-}" <<'PY'
+    python3 - "$TVDIR/VOX.INI" "${BRIEF:-}" "${SVGA:-}" "${JOY:-}" "${DETAIL:-}" <<'PY'
 import sys
-p, brief, svga, joy = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+p, brief, svga, joy, detail = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 lines = open(p, newline='').read().split('\r\n')
 for i, l in enumerate(lines):
     if l.startswith('difficulty,briefingFlag') and i + 1 < len(lines) and not brief:
         v = lines[i + 1].split(','); v[1] = '0'; v[2] = '0'; v[3] = '0'; lines[i + 1] = ','.join(v)
     if l.startswith('gamePIXX') and i + 1 < len(lines):
         v = lines[i + 1].split(','); v[0], v[1] = ('640', '240') if svga else ('320', '200'); lines[i + 1] = ','.join(v)
+    # (SVGA=1: the page's settings, the Graphics Options at their best too: sky texture, Pentium image quality and
+    # shadows, high detail textures, debris overkill)
+    if svga and detail != 'low' and i + 1 < len(lines):
+        if l == 'skyTextureFlag': lines[i + 1] = '1'
+        if l.startswith('perspectiveFlag,'): lines[i + 1] = '1,2'
+        if l == 'textureResolution': lines[i + 1] = '1'
+        if l.startswith('autoLevel,'):
+            v = lines[i + 1].split(','); v[4] = '2'; lines[i + 1] = ','.join(v)
     # (the game's Gamepad control, calibrated to DOSBox's counting port: the page's "Built in" pad)
     if l.startswith('joystickActive,') and i + 1 < len(lines):
         lines[i + 1] = '2,64,64,0,0' if joy else '0,0,0,0,0'
@@ -52,7 +61,7 @@ cat > $OUT/tv.conf <<CONF
 output=surface
 [dosbox]
 machine=svga_s3
-memsize=16
+memsize=32
 [cpu]
 core=normal
 cycles=fixed ${CYCLES:-30000}

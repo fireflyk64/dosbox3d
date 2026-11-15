@@ -30,10 +30,13 @@ const check = (ok, what) => { console.log(`${stamp()} ${ok ? "OK  " : "FAIL"} ${
 
 async function openPage(who, script, callsign) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 1100 } });
-  const logs = [];
+  const logs = [], frames = [];
   page.on("console", (m) => {
     const t = m.text();
     logs.push(t);
+    // (the game's own second-by-second line: the emulated second and its frames, against the wall clock)
+    const f = /Terminal Velocity: ([0-9.]+)s: (\d+) frames, flying/.exec(t);
+    if (f) frames.push([Date.now(), Number(f[1]), Number(f[2])]);
     if (/Terminal Velocity: (HOST|GUEST|In |Room|.*joined|.*gone|Waiting|Flying|the program|the model|level \d+ \(|.*flew the exit)|Terminal Velocity's settings|lobby: (joined|player)|could not|Aborted|RuntimeError|not a build/.test(t)) {
       console.log(`${stamp()} [${who}] ${t.slice(0, 190)}`);
     }
@@ -47,6 +50,7 @@ async function openPage(who, script, callsign) {
   u.searchParams.set("env.WCNET_KEYSCRIPT", script);
   u.searchParams.set("env.WCNET_KEYSCRIPT_FROM", "boot");
   u.searchParams.set("env.WCNET_LOG", "2");
+  if (process.env.CYCLES) u.searchParams.set("cycles", process.env.CYCLES);
   await page.goto(u.toString());
   await page.setInputFiles("#gamefile", zip);
   // (ready for the dropped files: the page's built-in game is ready before them on a page that has one)
@@ -55,7 +59,7 @@ async function openPage(who, script, callsign) {
     .catch(() => {});
   const st = await page.$eval("#sourceStatus", (el) => `${el.dataset.state}: ${el.textContent.slice(0, 110)}`);
   check(st.startsWith("ready") && await page.$eval("#program", (el) => el.value) === "tv", `${who}: the zip recognised as Terminal Velocity (${st})`);
-  return { page, logs, who };
+  return { page, logs, who, frames };
 }
 
 const host = await openPage("host", hostScript, "HOSTPILOT");
@@ -101,6 +105,16 @@ console.log(`${stamp()} host's last report: ${hs.slice(0, 260)}`);
 console.log(`${stamp()} guest's last report: ${gs.slice(0, 260)}`);
 check(/drawn [1-9]/.test(hs) && /drawn [1-9]/.test(gs), "both pages drew the other's ship");
 check(/hits sent [1-9]/.test(hs) || /hits sent [1-9]/.test(gs), "hits shared");
+// how fast each page ran: emulated seconds against the wall clock while flying, and the game's frames a second
+for (const p of [host, guest]) {
+  const f = p.frames.slice(5);
+  if (f.length > 10) {
+    const a = f[0], b = f[f.length - 1];
+    const speed = (b[1] - a[1]) * 1000 / (b[0] - a[0]);
+    const fps = f.reduce((s, x) => s + x[2], 0) / f.length;
+    console.log(`${stamp()} ${p.who}: the emulator at ${Math.round(100 * speed)}% of real time over ${f.length} s, ${fps.toFixed(1)} frames a game second, ${(fps * speed).toFixed(1)} a wall second`);
+  }
+}
 for (const p of [host, guest]) fs.writeFileSync(path.join(shotDir, `${p.who}.log`), p.logs.join("\n") + "\n");
 await browser.close();
 console.log(failed ? `TV PAGE FAILED (${failed})` : "TV PAGE OK");

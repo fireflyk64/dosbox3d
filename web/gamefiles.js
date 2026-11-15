@@ -430,13 +430,13 @@ const TV_SETUP_CFG = [";Setup File for TV", ";Version 1.2", "", "", "[Screen Mod
   ...Array.from({ length: 10 }, (_, i) => `CommbatMacro#${i} = "No Macro #${i + 1}"`), "",
   ...Array.from({ length: 10 }, (_, i) => [`PhoneName#${i} = ""`, `PhoneNumber#${i} = ""`]).flat(), ""].join("\r\n");
 const TV_VOX_INI = ["musicFlag", "1", "soundFlag", "1", "mixSpeed", "11025", "skyTextureFlag", "1",
-  "joystickActive,xcenter,ycenter,throttleMin,throttleMax", "0,0,0,0,0", "perspectiveFlag,airShadowFlag", "0,0",
+  "joystickActive,xcenter,ycenter,throttleMin,throttleMax", "0,0,0,0,0", "perspectiveFlag,airShadowFlag", "1,2",
   "gamePIXX,gamePIXY,gameX1,gameY1,gameX2,gameY2", "640,240,0,0,0,0", "localBusVideo", "1", "aspectRatio,flipVideo", "0,0",
-  "textureResolution", "0", "difficulty,briefingFlag,cinemaFlag,showDemoFlag", "1,1,1,1",
+  "textureResolution", "1", "difficulty,briefingFlag,cinemaFlag,showDemoFlag", "1,1,1,1",
   "xStickMin,yStickMin,xStickMax,yStickMax", "0,0,0,0", "notebookStickFlag", "0", "stereoFlag,musicVolume,soundVolume",
   "0,65536,65536", "weaponKey,fireKey,leftKey,rightKey,upKey,downKey,throtUp,throtDown", "56,57,75,77,72,80,30,44",
   "buttonFire,buttonWeapon,buttonThrottleUp,buttonThrottleDown", "1,2,8,4", "boomZoom", "65536",
-  "autoLevel,mouseControl,rollLeftKey,rollRightKey,partsFlag,mouseFlip", "1,0,71,73,1,1",
+  "autoLevel,mouseControl,rollLeftKey,rollRightKey,partsFlag,mouseFlip", "1,0,71,73,2,1",
   "mouseSenseX,mouseSenseY,mouseMotion,mouseLeftButton,mouseRightButton", "8,16,1,0,1", ""].join("\r\n");
 function tvPrepare(FS, root, opts = {}) {
   const said = [];
@@ -454,6 +454,12 @@ function tvPrepare(FS, root, opts = {}) {
     if (i >= 0 && i + 1 < lines.length) lines[i + 1] = fn(lines[i + 1].split(",")).join(",");
   };
   set("gamePIXX,", (v) => { v[0] = "640"; v[1] = "240"; return v; });
+  // the Graphics Options at their best (the user: "Let's ensure detail is maximum"): the sky's texture, Image Quality
+  // Pentium (perspective), Shadows Pentium, Texture High Detail (12 MB free: the machine has 32), Debris Overkill
+  set("skyTextureFlag", () => ["1"]);
+  set("perspectiveFlag,", () => ["1", "2"]);
+  set("textureResolution", () => ["1"]);
+  set("autoLevel,", (v) => { if (v.length > 4) v[4] = "2"; return v; });
   let control = "";
   set("joystickActive,", (v) => {
     if (opts.joystick) { control = "the gamepad (built in)"; return ["2", "64", "64", v[3] || "0", v[4] || "0"]; }
@@ -462,7 +468,7 @@ function tvPrepare(FS, root, opts = {}) {
   });
   if (opts.joystick) set("xStickMin,", () => ["0", "0", "128", "128"]);
   FS.writeFile(`${root}/VOX.INI`, new TextEncoder().encode(lines.join("\r\n")));
-  said.push(`VOX.INI: 640 x 480${control ? ", " + control : ""}${vox ? "" : " (made)"}`);
+  said.push(`VOX.INI: 640 x 480, the best detail${control ? ", " + control : ""}${vox ? "" : " (made)"}`);
   return `Terminal Velocity's settings: ${said.join("; ")}`;
 }
 
@@ -597,7 +603,7 @@ export const GAMES = [
     saves: ["SAVE*.DAT", "SCORE.DAT", "VOX.INI"],
     help: "Terminal Velocity flown together: the host plays the game as it comes (New Game, an episode, a difficulty) and everybody else flies the host's level with them: a guest's game waits for the host's launch, then flies the same level at the same difficulty. Everybody sees everybody else's ship (the host picks each pilot's craft in the room: the TV-202, a craft of the game's own, or the level's own); every hit and kill counts in every game, and the level's craft are flown by the nearest pilot's machine. Whoever flies the exit ends the level for everybody (the statistics: Space for the next level). A pilot who dies can retry: the level is flown again as it stands, what was destroyed stays destroyed. The afterburner (held Alt, once you have fuel for it) shows to the others as a flame. Pick a controller \"Built in\" (above) for the game's own gamepad control.",
     keys: "<b>Terminal Velocity in flight:</b> the arrow keys steer, <kbd>A</kbd> and <kbd>Z</kbd> set the speed, <kbd>Space</kbd> fires, <kbd>1</kbd> to <kbd>7</kbd> pick a weapon, <kbd>Alt</kbd> held the afterburner (when you have picked one up), the keypad's <kbd>7</kbd> and <kbd>9</kbd> roll; <kbd>B</kbd> changes the view; <kbd>0</kbd> opens the comms prompt (<kbd>Enter</kbd> sends the line to the others' screens); <kbd>Esc</kbd> the game's menu. A controller picked \"Built in\": the stick steers, button 1 fires, button 2 the afterburner, buttons 3 and 4 the speed.",
-    dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=5\ndma=1\nhdma=5\n" },
+    dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=32\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=5\ndma=1\nhdma=5\n" },
 ];
 
 // The registry entry of a game id, or null (a game picked by its executable).
