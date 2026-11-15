@@ -150,8 +150,10 @@ static int16_t camp_planet(uint16_t m)
     return r != 0;
 }
 
-/* A set's missions as this machine flies them: a planet mission only where the card draws planets (the user,
- * 2026-11-14, of a terrain mission in every set: "Count; skipped without card").  g_camp.mission stays the mission's
+/* A set's missions as this machine flies them: a planet mission only where a planet is drawn (the user, 2026-11-14,
+ * of a terrain mission in every set: "Count; skipped without card"; since 2026-11-15 RV.EXE draws a planet itself
+ * without the card, pview.c, so every DOS machine flies them: planet_can, g_planet_off the play tests' switch, the
+ * native game the card's picture).  g_camp.mission stays the mission's
  * place in the set's list (campaign.csv's order), the same on every machine (the layer's currentMission, a guest's
  * flight, a save); only the way on skips what this machine does not fly */
 static int16_t camp_flies(uint16_t m)

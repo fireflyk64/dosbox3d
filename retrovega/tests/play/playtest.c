@@ -7402,9 +7402,10 @@ static void t_cloak_run(void)
 }
 
 /* M8.66: the sets' planet missions as a machine flies them (campaign.c camp_flown_from; the user, 2026-11-14, of a
- * terrain mission in every set: "Count; skipped without card"): with the card Cephid 17 has four, CEPHIDP the third
- * place, and Shmrn six; without it three and four, the way on from CEPHID2 skips to CEPHID3, the screens' numbers count
- * what is flown; a place in a set is the same number on every machine */
+ * terrain mission in every set: "Count; skipped without card"; since RV.EXE draws a planet itself, every DOS machine
+ * flies them, and g_planet_off is a machine that would not): flying them Cephid 17 has four, CEPHIDP the third place,
+ * and Shmrn six; not, three and four, the way on from CEPHID2 skips to CEPHID3, the screens' numbers count what is
+ * flown; a place in a set is the same number on every machine */
 static int16_t node_named(const char *id)
 {
     int16_t i;

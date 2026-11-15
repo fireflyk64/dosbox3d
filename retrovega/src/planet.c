@@ -319,10 +319,11 @@ static int ground_load(int say)        /* (say: the file missing logged: the las
 /* --- */
 
 int g_planet_off;
-#if defined(RV_HOST) && !defined(RV_HOST_GAME)
-int planet_can(void) { return !g_planet_off; }   /* (the campaign's planet missions as a machine with the card flies them) */
+#if (defined(RV_HOST) && !defined(RV_HOST_GAME)) || defined(__WATCOMC__)
+int planet_can(void) { return !g_planet_off; }   /* (DOS draws a planet itself without the card: pview.c; the host's
+                                           tools and tests fly the campaign's planet missions as DOS does) */
 #else
-int planet_can(void) { return !g_planet_off && gx_planet_on(); }
+int planet_can(void) { return !g_planet_off && gx_planet_on(); }   /* (the native game: the card's picture or none) */
 #endif
 
 /* the planet set from its records; id: the mission's (its ground's file), or 0 */

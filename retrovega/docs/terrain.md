@@ -267,9 +267,10 @@ who want to find themselves to the winning path"), but "We want an escort missio
 | Luyten's Star | LUYTENP, fourth | Franklin, Tally | 1301, grey | Escort: the grey moon's miners home in an Ox (`role=back`) |
 
 - **Without the card** (campaign.c `camp_slot`): a set's missions are counted as this machine flies them, a planet
-  mission only where the card draws planets, so a set is one shorter without it (`camp_node_missions`, the briefing's
-  "mission N of M", the way out by points or by wins). RVGAME 28: six missions a node, 16 nodes (the save's `systems`
-  has a bit a node).
+  mission only where a planet is drawn (`camp_node_missions`, the briefing's "mission N of M", the way out by points
+  or by wins). Since 2026-11-15 RV.EXE draws a planet itself without the card (below), so every DOS machine flies
+  them all; the skip is left for the play tests' `g_planet_off` (M8.66) and the native game without the card's
+  picture. RVGAME 28: six missions a node, 16 nodes (the save's `systems` has a bit a node).
 - **The story's yesterday:** a planet mission leaves the campaign's last result alone (`g_camp.last`), so the next
   briefing's `after=won|lost` lines are about the mission before it, flown with the card or without it.
 - **Their place in the story:** each comes where its set has a gap for it (after the destroyer at Cephid, before the
@@ -339,6 +340,50 @@ M8.64 fly SHMRNC now.
 went from 128 to 62 at the same time (the user: "Should be 64 probably ... Or like 62 in case power of two is
 wasteful"; abi/rvabi.def, ABI 3): the fixed block ends at 0x4200, not 0x7400. RV.EXE now leaves 14,032 bytes for DOS.
 
+## Without the card: RV.EXE draws the planet (the user's fourth brief, 2026-11-14)
+
+> do the best we can with the planet on dos at 30 fps without the accelerator card ... Strong preference for really
+> low rez decimated or low rez terrain as long as everything else is high rez
+
+Then: "Lets use the bake and do 128x80 size ... And lets download the planets on demand between mission or at mission
+start if possible", and "hopefully we can make the bake look just as nice as the other version".
+
+- **The bake** (`tools/planetbake.c`, `tools/planets.sh`, `src/bake.h`): each planet mission's ground made at build
+  time into `build/dos/ID.PLN` (5 to 17 MB, 96 MB for the fourteen), and every machine's logic reads it (`bk_column`,
+  bake.asm with its C twin): the card, the native builds and DOS ask the same integers. The file's view section
+  (`PvHead`, pview.h) is the picture's: a gnomonic plane at the nav points' mean way, a pyramid of levels (16 km cells
+  at the finest, coarser out to four radii), row spans, each level's 4 x 4 blocks' highest, slab grids round the
+  arches, the dither, the haze's table and the glow's.
+- **The picture** (`src/pview.c`, `src/pview.asm`): 128 x 80, 5 x 5 blocks dithered into the cockpit's opening,
+  everything else at full resolution. The card's march (lines through V, the point straight down) a quarter at a
+  time, 96 x 96-cell windows a level kept in XMS and moved when the eye's window moves; the samples weighed between
+  four cells, their light and haze weighed between samples along a line (one 32-bit sum, 8.8 each), the arches' slabs
+  with sub-steps where a line crosses their grid, the glow above the horizon. The C twins draw it on the host
+  (`tools/pvshot.c`: the card's picture beside it, eye by eye); on DOS the asm, a blob (PVIEW.BIN, kept in XMS) in
+  three parts copied in for each use: the set-up (the frame's numbers, steps, a quarter's lines, the haze's rates, the
+  glow) into the scratch buffer's window room, the march into the band buffer's tail, the blit into the scratch
+  buffer's tail at a band. RVP.EXE /twins holds each part to its C twin.
+- **The speed.** The card's look costs 1.7 to 4.8 M cycles a picture at the page's 50,000 cycles (2.9 M on average
+  over Shmrn's planet's 14 eyes); beside the rest of the game 30 fps leaves some 0.94 M. So its sampling coarsens
+  while frames run long (`pv_pace`): six details, steps about 2, 3, 4 pixels apart, then every other line marched
+  (each filling its neighbour, the slab sub-steps a cell apart) with steps 4, 6, 8. A flight frame's work (the wait
+  for the rate left out) weighed over some 8 frames: past 8.5 ticks of the 240 Hz clock coarser (and half a second
+  before it moves again), under 5 finer (two seconds). It begins at steps 3 and keeps what it reached from flight to
+  flight; the flight's end logs the details it had. Per picture: detail 1 2.9 M on average, 3 1.26 M, 5 0.92 M (1.33
+  M beside the arches, where the sub-steps stay). Flying Shmrn's planet mission (`/fly 41 /nogx /flight 30`): 872
+  frames in 30 s.
+- **Hidden behind the ground** (bake.asm `rv_bk_hides`): the line from the eye under the lowest ground anywhere (the
+  planet's body), and for a ship the bake's ground at 8 of its points: what is drawn follows it, nothing else.
+- **The page** fetches a mission's .PLN when its flight needs it: `ships_want` lists it in RVWANT.TXT with the ships'
+  sets (at the briefing and at the launch, where the flight waits for it), `tools/artweb.py` serves the files
+  gzipped (72 MB in all), `web/rvsets.js` writes it among the game's files, keeps it in the browser's cache by its
+  hash, and drops the planets a new list does not name.
+- **Conventional memory:** RV.EXE has some 2,300 bytes left for DOS (build.sh fails under 2,048): pview's C is 5 KB
+  of it. New code for DOS goes in the blob or in asm.
+- **Checks:** `tools/pvshot.c` `DETAIL=n` draws a detail, `PVEYES=file` writes each eye and prints each picture's sum;
+  a bench patch kept outside the tree renders those eyes in RV.EXE (every sum the host's, the cycles by RDTSC);
+  `nasm -dPROF` makes a blob that counts each part's cycles.
+
 ## Still to do
 
 - A guest that comes into a planet mission after the host's launch holds the host's game while it makes the planet
@@ -353,10 +398,10 @@ wasteful"; abi/rvabi.def, ABI 3): the fixed block ends at 0x4200, not 0x7400. RV
 - The approach and straight-down views: 2 to 3 times over budget natively (the card's detail adapts; the page held
   30 fps in Mirage regardless).
 - From right under an arch, the outer edge of its underside still shows a patch cell's steps.
-- RV.EXE: 13,200 bytes left for DOS with the 24 KB balloon held (37,776 without), after the missions in every set.
-- Missions with planets are skipped where there is no card (`camp_slot`). A save keeps its place in a set as a
-  number counted this machine's way: one made with the card and loaded without it can stand a mission on (or past
-  the set's end: then it flies the set's first).
+- RV.EXE: some 2,300 bytes left for DOS with the 24 KB balloon held, after its own planet picture (above).
+- Without the card, the views beside the arches still run long at the coarsest detail (about 24 fps at 50,000
+  cycles): their slab sub-steps, the lines' set-up and the window moves are what is left to make faster.
+- The native game without the card's picture still skips the planet missions (its `planet_can`).
 
 Done since step 4:
 
