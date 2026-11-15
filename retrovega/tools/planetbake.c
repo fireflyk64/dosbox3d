@@ -690,6 +690,9 @@ static int view_bake(TrPlanet *p, const RvMission *m, const TrMissionKm *mk, con
     h.absent_at = v_put(0, (size_t)PV_W * PV_W * PV_CELL + 2);
     for (k = 0; k < PV_W * PV_W; k++)
         g_v[h.absent_at + k * PV_CELL + 1] = PV_ABSENT;
+    h.noblk_at = v_put(0, (size_t)PV_BW * PV_BW * 2);
+    for (k = 0; k < PV_BW * PV_BW; k++)
+        g_v[h.noblk_at + k * 2 + 1] = 0x80;
     v_put(0, 8);
     if (g_vn & 1)
         v_put(0, 1);

@@ -65,6 +65,11 @@ int xms_put(XmsBlock b, unsigned long off, const void *src, unsigned long n)
     memcpy(g_arena + g_off[b] + off, src, n);
     return 1;
 }
+int xms_get(XmsBlock b, unsigned long off, void *dst, unsigned long n)
+{
+    memcpy(dst, g_arena + g_off[b] + off, n);
+    return 1;
+}
 void xms_where(XmsBlock b, unsigned *handle, unsigned long *off) { *handle = 1; *off = g_off[b]; }
 int xms_get_at(unsigned handle, unsigned long off, void *dst, unsigned long n)
 {

@@ -72,7 +72,8 @@ typedef struct {
     uint32_t size;                      /* the section's */
     uint32_t glow_at;                   /* PvGlow */
     uint32_t slabs_at;                  /* PvSlabs */
-    uint32_t spare_[3];
+    uint32_t noblk_at;                  /* PV_BW x PV_BW blocks' highest of PV_NOGROUND (a window's blocks' start) */
+    uint32_t spare_[2];
 } PvHead;                               /* 96 bytes */
 
 #define PV_BLK 4                        /* the highest ground's blocks: cells a side */
@@ -99,7 +100,7 @@ typedef struct {
 /* the rock over the ground (an arch's), its own grid round each patch that has some: 32 km cells */
 #define PV_SLABS 4
 #define PV_SLAB_SHIFT 9                 /* a slab cell's side, 1 << this plane units at the finest (PvSlabs.shift: */
-#define PV_SLAB_CELLS 3072              /* coarser where the mission's grids would have more cells than this; pview.c
+#define PV_SLAB_CELLS 2048              /* coarser where the mission's grids would have more cells than this; pview.c
                                            holds them all) */
 typedef struct {
     int32_t x0, y0;                     /* its first cell (cell i's corner at i << PV_SLAB_SHIFT plane units) */
@@ -136,44 +137,98 @@ typedef char pv_head_is_96[sizeof(PvHead) == 96 ? 1 : -1];
 typedef char pv_level_is_32[sizeof(PvLevel) == 32 ? 1 : -1];
 typedef char pv_row_is_8[sizeof(PvRow) == 8 ? 1 : -1];
 
-/* --- the frame's numbers (pview.c; the asm reads them by these layouts) --- */
+/* --- the frame's numbers (pview.c sets them, pview.asm and the C twins read them, by these layouts) --- */
 
-#define PV_STEPS 400                    /* steps of the march a frame at most */
-#define PV_LINES 640                    /* lines a frame at most, the four quarters' */
+#define PV_STEPS 128                    /* steps of the march a frame at most (85 the most seen: eyes 10 km to
+                                           30,000 km up, the longer steps grazing the ground) */
+#define PV_LINES 288                    /* a quarter's lines at most (the four are marched one after another): 272 the
+                                           most for any V on and round the picture; pv_lines keeps to the cap */
+#define PV_SLAB_MEM 2048                /* slab cells pview holds (the bake's PV_SLAB_CELLS) */
 
 typedef struct {                        /* a step of the march: every line's samples at one angle from straight down */
-    int32_t c, s;                       /* the angle's cosine and sine, 2^30 */
-    int32_t a, b;                       /* the datum's point there from the eye, along up and along the line's way,
-                                           plane units: R c - D, R s */
-    int32_t uc;                         /* uE c, 2^30 (uE: up along the plane's middle) */
-    int32_t dist;                       /* the datum's point's distance, plane units */
-    int32_t ds;                         /* the step on from it, plane units */
-    uint8_t lev;                        /* the least level its step is not too long for */
-    uint8_t pad_[3];
-} PvStep;                               /* 32 bytes */
+    int32_t c, s;                       /* 0: the angle's cosine and sine, 2^30 */
+    int32_t a, b;                       /* 8: the datum's point there from the eye, along up and along the line's way:
+                                           R c - D, R s, 2^vsh plane units */
+    int32_t uc;                         /* 16: uE c, 2^30 (uE: up along the plane's middle) */
+    int32_t dist;                       /* 20: the datum's point's distance, plane units */
+    int16_t ds;                         /* 24: the step on from it, plane units (32767 at most) */
+    uint8_t lev, pad_;                  /* 26: the least level its step is not too long for */
+} PvStep;                               /* 28 bytes */
 
+#define PV_L_VERT 1                     /* PvLine.flags: a vertical quarter's line (its pixels a row each) */
+#define PV_L_DONE 2                     /* its march is over */
+#define PV_L_HID 4                      /* its last sample was hidden */
+#define PV_L_POK 8                      /* there is a last sample seen (prho, plight, pfog, ph, pds, mat) */
+#define PV_L_PSLAB 16                   /* the last sample had a slab (plo, phi) */
+#define PV_L_PRECT 32                   /* the last step was in a slab's grid */
 typedef struct {                        /* a line: what is fixed for the frame, then where its march is */
-    int32_t te;                         /* its way t along the plane's middle, 2^30 */
-    int32_t kx, ky;                     /* its plane point at m (a step's s over its den, 65536ths) is P + K m */
-    int32_t us, ts, uf, tf;             /* up and t along the screen line's way and along the camera's front, 2^14 */
-    int32_t ra_, rb_;                   /* its pixel by a point's place (a, b): ra_ + rb_ (a us + b ts) / (a uf + b tf),
+    int32_t te, kx, ky;                 /* 0: its way t along the plane's middle (2^30); its plane point at a step is
+                                           P + K m, m the step's s over its den (65536ths) */
+    int32_t hu, ht;                     /* 12: the horizon's ray, along up and t (any length) */
+    int32_t col, dcol;                  /* 20: its pixel k's place across, 65536ths of a pixel: col + k dcol */
+    int16_t ra_, rb_;                   /* 28: a point (a, b)'s pixel: ra_ + rb_ (a us + b ts) / (a uf + b tf),
                                            256ths of a pixel from its first */
-    int32_t col, dcol;                  /* its pixel k's place across, 65536ths of a picture pixel: col + k dcol */
-    int16_t row, drow;                  /* its pixel k's along: row + k drow (vertical quarters: rows; horizontal: the
-                                           roles swapped) */
-    int16_t len, kmin;                  /* its pixels; the first wanted (the lines bunch up near V) */
-    int16_t k0, k1;                     /* the pixels wanted: past kmin and within the view (the cockpit's opening) */
-    int32_t hu, ht;                     /* the horizon's ray: its way along up and t (any length) */
-    uint8_t vert, done, mat, hid;       /* a vertical quarter's line; its march over; the last sample's material; the
-                                           last sample was hidden */
-    int16_t step;                       /* where its march is: the next step */
-    int32_t horizon;                    /* the filled part's edge, 256ths of a pixel */
-    int32_t prho, plight, pfog, ph;     /* the last sample seen: its pixel (256ths), light and haze (256ths), height */
-    int32_t pds;                        /* (its step's length, plane units, for the gentle-ground test) */
-    int32_t plo, phi;                   /* the last sample's slab's pixels (256ths) */
-    int32_t pX, pY;                     /* the last step's plane point */
-    uint8_t pok, pslab, prect, pad3_;   /* there is a last sample; it had a slab; it was in a slab's grid */
-} PvLine;
+    int16_t us, ts, uf, tf;             /* 32: up and t along the screen line's way and the camera's front, 2^10 */
+    int16_t horizon, prho;              /* 40: the filled part's edge; the last sample's pixel (256ths) */
+    int16_t plo, phi;                   /* 44: the last sample's slab's pixels */
+    int16_t plight, pfog, ph, pds;      /* 48: its light and haze (256ths), height (BK_HU), step (plane units) */
+    int16_t step;                       /* 56: the next step of its march */
+    uint8_t row, k0, k1;                /* 58: its pixel k's along: row + k drow; the pixels wanted k0 .. k1 */
+    int8_t drow;                        /* 61 */
+    uint8_t flags, mat;                 /* 62: PV_L_*; the last sample's material */
+} PvLine;                               /* 64 bytes */
+
+typedef struct {                        /* a quarter of the picture round V */
+    int16_t on, vert, s, inner, edge, len, first, lines;   /* (inner: the row (column) nearest V) */
+    int32_t va, vc;                     /* V along and across its lines, 256ths of a pixel */
+} PvQuarter;
+
+/* the frame: set by pv_frame; its arrays where the frame says (DOS: the band buffer and the 32 KB scratch buffer;
+ * the twins test: its own) */
+typedef struct {
+    int32_t R, D, rt, rb;               /* 0: plane units: the datum's radius, the eye's, the highest and lowest ground's */
+    int32_t up[3];                      /* 16: the eye's way, 2^30 */
+    int32_t ue, ua, ub;                 /* 28: up along the plane's middle and ways */
+    int32_t px, py;                     /* 40: the eye's point on the plane */
+    int32_t lcx, lcy, lf;               /* 48: the picture's middle and focal length, 256ths of a pixel */
+    int32_t vx, vy;                     /* 60: V, 256ths of a pixel */
+    int32_t cr[3], cu[3], cf[3];        /* 68: the camera's right, up, front, 2^14 */
+    int32_t e[3], a[3], b[3];           /* 104: the plane's middle and ways, 2^30 */
+    int32_t fog_h0, fog_rcp;            /* 140: the haze's heights' first (BK_HU), and 65536 over their step */
+    int32_t alt;                        /* 148: the eye over the datum, BK_HU */
+    int32_t under_div;                  /* 152: (PvSlabs) */
+    int32_t skf, skr, sku;              /* 156: up along the camera's front, right, up, 65536ths (the glow) */
+    int16_t nadir, vsh;                 /* 168: V is straight down; the vertical numbers' scale */
+    int16_t nsteps, nlines;             /* 172 */
+    int16_t bx0, by0, bx1, by1;         /* 176: the picture's part wanted, pixels */
+    int16_t shift0, nlev, far_c, nslab; /* 184 */
+    int16_t slab_shift, glow_any;       /* 192 */
+    int16_t lev, sh;                    /* 196: the level marched and its cells' shift */
+    int32_t ox, oy;                     /* 200: its window's corner, cells */
+    int16_t max_steps, max_lines;       /* 208: the arrays' room (PV_STEPS, PV_LINES; the twins test's fewer) */
+    PvSlab slab[PV_SLABS];              /* 212: the slab grids (at: their first cell in the frame's slab cells) */
+    uint32_t samples, seen, skips, subs;   /* 276: the work done */
+    uint16_t o_pic, o_st, o_ln, o_slab;    /* 292: the arrays' places in buf: the picture, steps, lines, slab cells */
+    uint16_t o_win, o_bwin, o_foglev, o_fogm, o_glow, o_under;  /* 300: and in scr: the window, its blocks'
+                                           highest, the haze's levels and rates, the glow, the slabs' undersides */
+    uint8_t PV_FAR *buf;                /* 312 (DOS: a far pointer, the asm's segment) */
+    uint8_t PV_FAR *scr;                /* 316 */
+} PvFrame;
+#ifdef __WATCOMC__
+typedef char pv_frame_is_320[sizeof(PvFrame) == 320 ? 1 : -1];
+#endif
+typedef char pv_step_is_28[sizeof(PvStep) == 28 ? 1 : -1];
+typedef char pv_line_is_64[sizeof(PvLine) == 64 ? 1 : -1];
+
+typedef struct {                        /* a band's blit (pv_blit): the picture's pixels as 5 x 5 blocks */
+    uint8_t PV_FAR *band;               /* 0: screen row y0's first byte (the rows 640 bytes apart) */
+    const int16_t PV_FAR *ext;          /* 4: the opening's (first, end) a row from ext_y0, or 0 */
+    const uint16_t PV_FAR *pic;         /* 8: the picture's rows from row ly0 */
+    const uint8_t PV_FAR *dither;       /* 12: PV_FOGS x 256 PvDither, then the sky's PV_FOGS */
+    uint8_t PV_FAR *work;               /* 16: PV_BLIT_WORK bytes: a picture row's two patterns, its runs */
+    int16_t y0, y1, ext_y0, ext_rows, ly0, pad_;   /* 20 */
+} PvBlit;                               /* 32 bytes (DOS) */
+#define PV_BLIT_WORK (2 * PV_LW * PV_BLOCK + 4 * 64)   /* (64 runs a row at most: 128 pixels' changes) */
 
 typedef struct {                        /* the frame's camera, planet-relative */
     int32_t eye[3];                     /* positions */
@@ -192,11 +247,56 @@ int pv_begin(unsigned handle, uint32_t base, uint32_t at);
 void pv_end(void);
 int pv_on(void);
 
-/* the frame's picture made (128 x 80 of colour id | haze << 8, PV_EMPTY where no ground): the eye and the camera */
+/* the frame's picture made (128 x 80 of colour id | haze << 8, PV_GLOW | level, PV_EMPTY where no ground) */
 void pv_frame(const PvCam *cam);
-/* the host's: the picture made, and how much work it took */
-const uint16_t PV_FAR *pv_picture(void);
-uint32_t pv_samples(void);
+const uint16_t PV_FAR *pv_picture(void);   /* (the host's: the picture made) */
+const PvFrame PV_FAR *pv_frame_now(void);
+void pv_blit_host(uint8_t *fb, int stride, int y0, int y1);
+
+/* the parts that run a line, a step or a pixel at a time: the C twins (c_: the host's), and on DOS pview.asm's run
+ * from PVIEW.BIN (rv_: pv_bind); RVP.EXE /twins logs the asm's sums, the host's must be the same */
+int c_pv_setup(PvFrame PV_FAR *f, const PvCam PV_FAR *cam, const PvHead PV_FAR *h);
+void c_pv_quarter(const PvFrame PV_FAR *f, int which, PvQuarter PV_FAR *q, uint8_t PV_FAR *thin);
+void c_pv_steps(PvFrame PV_FAR *f);
+void c_pv_lines(PvFrame PV_FAR *f, const PvQuarter PV_FAR *q, const uint8_t PV_FAR *thin);
+void c_pv_march(PvFrame PV_FAR *f);
+void c_pv_far(PvFrame PV_FAR *f);
+void c_pv_glow(PvFrame PV_FAR *f);
+void c_pv_blit(const PvBlit PV_FAR *b);
+int rv_pv_setup(PvFrame PV_FAR *f, const PvCam PV_FAR *cam, const PvHead PV_FAR *h);
+void rv_pv_quarter(const PvFrame PV_FAR *f, int which, PvQuarter PV_FAR *q, uint8_t PV_FAR *thin);
+void rv_pv_steps(PvFrame PV_FAR *f);
+void rv_pv_lines(PvFrame PV_FAR *f, const PvQuarter PV_FAR *q, const uint8_t PV_FAR *thin);
+void rv_pv_march(PvFrame PV_FAR *f);
+void rv_pv_far(PvFrame PV_FAR *f);
+void rv_pv_glow(PvFrame PV_FAR *f);
+void rv_pv_blit(const PvBlit PV_FAR *b);
+#ifdef __WATCOMC__
+int pv_bind(const uint8_t PV_FAR *code);   /* (PVIEW.BIN's code, wherever it lies: rv_ call into it) */
+void pv_bind_blit(const uint8_t PV_FAR *blit);   /* (and its blit's part, copied apart) */
+unsigned pv_code_read(uint8_t PV_FAR *dst, unsigned room);
+void pv_xms_freed(unsigned nblocks);
+#define pv_setup rv_pv_setup
+#define pv_quarter rv_pv_quarter
+#define pv_steps rv_pv_steps
+#define pv_lines rv_pv_lines
+#define pv_march rv_pv_march
+#define pv_far rv_pv_far
+#define pv_glow rv_pv_glow
+#define pv_blit rv_pv_blit
+#else
+#define pv_setup c_pv_setup
+#define pv_quarter c_pv_quarter
+#define pv_steps c_pv_steps
+#define pv_lines c_pv_lines
+#define pv_march c_pv_march
+#define pv_far c_pv_far
+#define pv_glow c_pv_glow
+#define pv_blit c_pv_blit
+#endif
+/* a band of the screen (rows y0 .. y1-1, in the band buffer) given the frame's picture of the ground, within the
+ * cockpit's opening (ext: its rows from ext_y0) */
+void pv_band(int y0, int y1, const short PV_FAR *ext, int ext_y0, int ext_rows);
 
 #ifdef __cplusplus
 }

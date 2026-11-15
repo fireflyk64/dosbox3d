@@ -7,8 +7,7 @@
  *   build/host/pvshot build/dos/RVGAME.DAT build/planets/flight.pal OUTDIR MISSION_ID build/planets/ID.PLN
  *     ONLY=nav1   the eyes whose names have this
  *     OPEN=x0,y0,x1,y1   the screen's part the ground is wanted in (the cockpit's opening)
- *     DIRECT=1    pview's march with terrain.c's own ground (the bake left out: a check)
- *     FOGDBG=1 LINEDBG=1 SLABDBG=1   numbers
+ *     FOGDBG=1 SLABDBG=1   numbers
  * OUTDIR/NN-eye-card.ppm and -pv.ppm; tools/pvsheet.py puts them side by side. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -104,16 +103,6 @@ int xms_get_at(unsigned handle, unsigned long off, void *dst, unsigned long n)
 void pv_blit_host(uint8_t *fb, int stride, int y0, int y1);
 static int g_shot;
 static TrPlanet *g_p;
-extern void (*pv_dbg_ground)(const double *d, int32_t *h, int *c, int32_t *light);
-static void dbg_ground(const double *d, int32_t *h, int *c, int32_t *light)
-{
-    TrHit s;
-    g_p->line_patches = ~0;
-    tr_sample(g_p, d[0], d[1], d[2], 0, &s);
-    *h = (int32_t)floor(s.h / TR_HU + 0.5);
-    *c = s.mat * 32 + (int)floor(s.light + 0.5);
-    *light = (int32_t)(s.light * 256);
-}
 static void shot(TrPlanet *p, const TrCam *c, const char *what)
 {
     char name[64];
@@ -143,13 +132,11 @@ static void shot(TrPlanet *p, const TrCam *c, const char *what)
     sky();
     t0 = clock();
     g_p = p;
-    if (getenv("DIRECT")) pv_dbg_ground = dbg_ground;
     pv_frame(&pc);
     pv_blit_host(g_fb, W, 0, H);
     save(name, "pv");
-    printf("  pview %6u samples %5.1f ms\n", pv_samples(), (clock() - t0) * 1000.0 / CLOCKS_PER_SEC);
+    printf("  pview %6u samples %5.1f ms\n", pv_frame_now()->samples, (clock() - t0) * 1000.0 / CLOCKS_PER_SEC);
     { void pv_dbg_counts(void); pv_dbg_counts(); }
-    if (getenv("LINEDBG")) { void pv_dbg_lines(void); pv_dbg_lines(); }
     if (getenv("FOGDBG")) {
         const uint16_t *pic = pv_picture();
         int hist[32] = {0}, i, y;
@@ -166,14 +153,6 @@ static void shot(TrPlanet *p, const TrCam *c, const char *what)
             { int pv_fog_dbg(int32_t, int32_t); double dd[4] = {390, 1000, 5000, 20000}; int hh2[3] = {-400, 0, 1000}; int a, b;
               for (b = 0; b < 3; b++) for (a = 0; a < 4; a++) printf("   h %d km dist %.0f km: card %.1f pview %d\n", hh2[b], dd[a],
                  tr_fog(p, dd[a]*256, D - p->radius, hh2[b]*256.0), pv_fog_dbg((int32_t)(dd[a]*16), hh2[b]*4)); }
-            { int pv_dbg_line(int, int, int32_t *, int32_t *, double *); int32_t X, Y; double dir[3]; int n, i;
-              const int32_t *pe = (const int32_t *)(g_pln + ((BkHead *)g_pln)->view_at + 4);
-              for (n = 0; n < 300; n += 60) for (i = 5; i < 60; i += 20) if (pv_dbg_line(n, i, &X, &Y, dir)) {
-                double E[3], A[3], B[3], de, R = p->radius / 16.0; int k;
-                for (k = 0; k < 3; k++) { E[k] = pe[k] / 1073741824.0; A[k] = pe[3+k] / 1073741824.0; B[k] = pe[6+k] / 1073741824.0; }
-                de = dir[0]*E[0]+dir[1]*E[1]+dir[2]*E[2];
-                printf("   line %d step %d: march (%d, %d), baker (%.0f, %.0f)\n", n, i, X, Y, R*(dir[0]*A[0]+dir[1]*A[1]+dir[2]*A[2])/de, R*(dir[0]*B[0]+dir[1]*B[1]+dir[2]*B[2])/de);
-              } }
             printf("   alt %.0f km; card fog at dist 1000/5000/20000 km, ground 0: %.1f %.1f %.1f\n", (D - p->radius)/256,
                 tr_fog(p, 1000*256., D - p->radius, 0), tr_fog(p, 5000*256., D - p->radius, 0), tr_fog(p, 20000*256., D - p->radius, 0));
         }

@@ -745,6 +745,7 @@ static void rel_of(int s, LfVec *rel)   /* a slot's place from the camera's */
 
 static unsigned long g_t_flames, g_t_flames_set;   /* what the engines' flames cost: in all, and set up */
 static unsigned long g_t_plan;          /* the frame's plan (which ships, how drawn, their views, the flames set up) */
+static unsigned long g_t_planet, g_t_planet_draw;   /* a planet's picture made (the card asked, or RV.EXE's own), drawn */
 
 /* a ship's afterburner: faster than its type's top speed (the flames scene: every other ship) */
 static int burning(int s)
@@ -1555,7 +1556,9 @@ static void draw_world(int y0, int y1)
                                            over them (planets) */
     draw_stars(y0, y1);
     sky_draw(1, y0, y1, ext, ey0, rows);
+    t0 = clock240();
     planet_band(y0, y1, ext, ey0, rows);   /* a planet's ground and air (the card's), over the sky */
+    g_t_planet_draw += clock240() - t0;
 #ifdef RV_TESTS
     if (g_lasers)
         lasers_draw_far(y0, y1, ext, ey0, rows);
@@ -3673,7 +3676,7 @@ void __far __cdecl flight_startup(void)
     if (g_sky_demo)
         sky_demo_setup();
 #endif
-    g_t_flames = g_t_flames_set = g_t_plan = 0;
+    g_t_flames = g_t_flames_set = g_t_plan = g_t_planet = g_t_planet_draw = 0;
     g_t_exact = g_t_sets = g_t_draw = g_t_wait = 0;
 }
 
@@ -3935,9 +3938,12 @@ void __far __cdecl flight_frame(void)
     stars_place();
     {
         LfBasis cam;
+        unsigned long tp;
         cam_basis(&cam);
         sky_place(&cam, g_cam_cx, g_cam_cy, FLIGHT_FOCAL);
+        tp = clock240();
         planet_frame(cam_pos(), &cam, g_cam_cx, g_cam_cy, FLIGHT_FOCAL);   /* (the card makes the frame's ground now) */
+        g_t_planet += clock240() - tp;
         if (planet_on()) {
             long roof, over = planet_over((const LfVec *)&gPositionVector[0], &roof);
             g_alt_km = over < 0 ? 0 : over < 20000L * 256 ? over / 256 : -1;
@@ -4099,6 +4105,11 @@ static void flight_over(unsigned short status)
                 per_frame(g_t_draw, f) / 100, per_frame(g_t_draw, f) % 100, per_frame(g_t_exact, f) / 100,
                 per_frame(g_t_exact, f) % 100, per_frame(g_t_sets, f) / 100, per_frame(g_t_sets, f) % 100,
                 per_frame(frame, f) / 100, per_frame(frame, f) % 100);
+    }
+    if (g_t_planet + g_t_planet_draw) {
+        static const char __far s_p[] = "flight: the planet's picture took %lu.%02lu ms a frame to make and %lu.%02lu to draw";
+        rv_logf(s_p, per_frame(g_t_planet, frameCounter) / 100, per_frame(g_t_planet, frameCounter) % 100,
+                per_frame(g_t_planet_draw, frameCounter) / 100, per_frame(g_t_planet_draw, frameCounter) % 100);
     }
     {
         static const char __far s_m[] = "flight: the missiles took %lu.%02lu ms a frame to place and %lu.%02lu to draw "

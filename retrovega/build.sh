@@ -42,6 +42,7 @@ nasm -f obj -o "$OUT/lowlevel.obj" src/lowlevel.asm
 nasm -f obj -o "$OUT/lasers_a.obj" src/lasers.asm
 nasm -f obj -o "$OUT/rocks_a.obj" src/rocks.asm
 nasm -f obj -o "$OUT/bake_a.obj" src/bake.asm
+nasm -f bin -dBLOB -o "$OUT/PVIEW.BIN" src/pview.asm   # (the planet's picture without the card: a blob run from the band buffer, pview.c)
 if [ -z "${CODE:-}" ]; then
 # the comm link's faces (one helmet render, every pilot's face behind its visor, each alien's helmet: ~40 s), when
 # their sources change.  RV_COMMS=face builds the pilots without their breathing gear, the bare face's mouth
@@ -103,7 +104,7 @@ fi
     || ~/.venvs/retrovega-art/bin/python -P tools/explode.py --out "$OUT/EXPLODE.DAT" > /dev/null
 [ "$OUT/SFX.DAT" -nt tools/sfx.py ] && [ "$OUT/SFX.DAT" -nt data/sounds.csv ] && [ "$OUT/SFX.DAT" -nt art/voice/pa_report.wav ] \
     || ~/.venvs/retrovega-art/bin/python -P tools/sfx.py --out "$OUT/SFX.DAT" > /dev/null   # (the recordings: art/voice)
-ENGINE="mem freeze util rvio xms gx video dat gfx input room lipsync opl music score campaign lightfield ships lasers bolts balls rocks missiles sky planet bake collide flames comms panel vdu cockpit world shots hud explode sfx fx damage logic simulator flight game main"
+ENGINE="mem freeze util rvio xms gx video dat gfx input room lipsync opl music score campaign lightfield ships lasers bolts balls rocks missiles sky planet bake pview collide flames comms panel vdu cockpit world shots hud explode sfx fx damage logic simulator flight game main"
 LOGIC=${LOGIC:-src/logic.c}           # (LOGIC=path: another logic.c in its place, an experiment's; the play tests' check)
 # the log's formats out of conventional memory (tools/logfmt.py; the user's pick from the memory plan, 2026-11-04): the
 # engine compiled from copies in $LF with each format the log alone reads a token, their texts a table appended to each

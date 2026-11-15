@@ -102,6 +102,8 @@ unsigned char __far *vid_row(int y)
     return g_buf + (unsigned)(y - g_run_y0) * SCR_W;
 }
 
+unsigned char __far *vid_band_buffer(void) { return g_buf; }
+
 int vid_run(int *y0, int *y1)
 {
     *y0 = g_run_y0;

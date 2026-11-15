@@ -3,6 +3,7 @@
 #include "rv.h"
 #include "twins.h"
 #include "bake.h"
+#include "pview.h"
 
 unsigned long rv_tsc(void) { return 0; }   /* (no emulated cycles to count on the host) */
 
@@ -149,3 +150,13 @@ int32_t rv_bk_muldiv(int32_t a, int32_t b, int32_t c)
 {
     return c_bk_muldiv(a, b, c);
 }
+
+/* pview.asm's */
+int rv_pv_setup(PvFrame *f, const PvCam *cam, const PvHead *h) { return c_pv_setup(f, cam, h); }
+void rv_pv_quarter(const PvFrame *f, int which, PvQuarter *q, uint8_t *thin) { c_pv_quarter(f, which, q, thin); }
+void rv_pv_steps(PvFrame *f) { c_pv_steps(f); }
+void rv_pv_lines(PvFrame *f, const PvQuarter *q, const uint8_t *thin) { c_pv_lines(f, q, thin); }
+void rv_pv_march(PvFrame *f) { c_pv_march(f); }
+void rv_pv_far(PvFrame *f) { c_pv_far(f); }
+void rv_pv_glow(PvFrame *f) { c_pv_glow(f); }
+void rv_pv_blit(const PvBlit *b) { c_pv_blit(b); }

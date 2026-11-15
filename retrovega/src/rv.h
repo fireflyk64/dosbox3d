@@ -70,6 +70,8 @@ int xms_get(XmsBlock b, unsigned long off, void __far *dst, unsigned long n);
 int xms_copy_conv(void __far *dst, const void __far *src, unsigned long n); /* host-speed copy */
 void xms_where(XmsBlock b, unsigned *handle, unsigned long *off);   /* a block's handle and offset, for moves of one's
                                            own (rocks.asm moves a rock's rows straight into the band) */
+int xms_move_at(unsigned dh, unsigned long doff, unsigned sh, unsigned long soff, unsigned long n);   /* n bytes
+                                           (made even) from one handle's memory to another's (pview.c's windows) */
 int xms_get_at(unsigned handle, unsigned long off, void __far *dst, unsigned long n);   /* n bytes (even) from an
                                            absolute offset in a handle's memory, xms_where's (twins.c: rocks.asm's move) */
 void xms_shutdown(void);
@@ -82,6 +84,8 @@ void xms_shutdown(void);
 int vid_init(void);
 void vid_shutdown(void);
 unsigned char __far *vid_row(int y);
+unsigned char __far *vid_band_buffer(void);   /* the band buffer whole (64,000 bytes): free between runs (pview.c makes
+                                           the planet's picture in it) */
 int vid_run(int *y0, int *y1);         /* the run being drawn; 0 between runs */
 void vid_dirty(int y0, int y1);        /* rows y0 .. y1-1 need drawing and copying */
 int vid_dirty_band(int *y0, int *y1);  /* the next dirty run of rows, 0 when none: draw them */

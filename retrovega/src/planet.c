@@ -21,6 +21,7 @@
 #include "world.h"
 #include "planet.h"
 #include "bake.h"
+#include "pview.h"
 
 #define PL_LOAD 0xE740                  /* the card's planet calls (rvgx.cpp) */
 #define PL_VIEW 0xE741
@@ -55,6 +56,7 @@ static struct {
     int ground;                         /* its ground is in: the bake, in XMS (blk) */
     int pic;                            /* its picture is the card's (the native game's): being made, or made */
     int made;
+    int pv;                             /* its picture is RV.EXE's own, without the card (pview.c: DOS) */
     XmsBlock blk;
     uint32_t key;                       /* the set planet's records as a number (bk_key): the file must be theirs */
     char file[13];                      /* its ground's file, ID.PLN ("": none, the test planet) */
@@ -194,6 +196,11 @@ void gx_ground(int y0, int y1, const short *ext, int ext_y0, int ext_rows)
  * planet after another without ending a mission) */
 static void ground_drop(void)
 {
+#ifdef __WATCOMC__
+    if (g_pl.pv)
+        pv_end();
+#endif
+    g_pl.pv = 0;
     if (g_pl.ground) {
         bk_end();
         xms_shrink(g_pl.blk, 0);
@@ -204,6 +211,11 @@ static void ground_drop(void)
 
 void planet_xms_freed(unsigned nblocks)
 {
+#ifdef __WATCOMC__
+    pv_xms_freed(nblocks);
+    if (g_pl.pv && !pv_on())
+        g_pl.pv = 0;
+#endif
     if (g_pl.blk > nblocks) {
         bk_end();
         g_pl.ground = 0;
@@ -285,6 +297,11 @@ static int ground_load(void)
         if (at == h.size && bk_begin(handle, off) == 0) {
             RV_LOG("planet: %s, the ground: %lu KB in XMS in %lu ms (%d patches; %lu KB of XMS free)", name,
                    (unsigned long)(h.size / 1024), (PL_CLOCK() - t0) * 1000 / 240, (int)bk_ask.npatch, xms_free_kb());
+#ifdef __WATCOMC__
+            /* no card to draw it: RV.EXE draws it itself, from the file's picture section (pview.h) */
+            if (!g_pl.pic && h.view && pv_begin(handle, off, h.view_at) == 0)
+                g_pl.pv = 1;
+#endif
             return 1;
         }
         ground_drop();                  /* (its block back) */
@@ -410,6 +427,42 @@ void planet_frame(const LfVec *eye, const LfBasis *b, int cx, int cy, int focal)
     const long *f = (const long *)b;    /* (LfBasis: front, right, up, 256 = 1; the card's right, up, front, 16384) */
     PlView v;
     int k;
+#ifdef __WATCOMC__
+    if (g_pl.pv) {                      /* RV.EXE's own picture: the eye, the camera, the opening the ground shows in */
+        PvCam c;
+        int ey0, rows, r;
+        const short __far *ext = cockpit_extents(&ey0, &rows);
+        long e[3];
+        rel(eye, e);
+        for (k = 0; k < 3; k++) {
+            c.eye[k] = e[k];
+            c.m[k] = (int16_t)(f[3 + k] * 64);
+            c.m[3 + k] = (int16_t)(f[6 + k] * 64);
+            c.m[6 + k] = (int16_t)(f[k] * 64);
+            g_pl.eye[k] = e[k];
+        }
+        c.focal = (int16_t)focal;
+        c.cx = (int16_t)cx;
+        c.cy = (int16_t)cy;
+        c.x0 = 0;
+        c.x1 = SCR_W;
+        c.y0 = 0;
+        c.y1 = SCR_H;
+        if (ext && rows > 0) {
+            c.x0 = SCR_W;
+            c.x1 = 0;
+            for (r = 0; r < rows; r++)
+                if (ext[2 * r] < ext[2 * r + 1]) {
+                    if (ext[2 * r] < c.x0) c.x0 = ext[2 * r];
+                    if (ext[2 * r + 1] > c.x1) c.x1 = ext[2 * r + 1];
+                }
+            c.y0 = (int16_t)ey0;
+            c.y1 = (int16_t)(ey0 + rows);
+        }
+        pv_frame(&c);
+        return;
+    }
+#endif
     if (!g_pl.pic || pic_make(1) != 100 || !g_pl.pic)
         return;
     rel(eye, v.eye);
@@ -430,6 +483,12 @@ void planet_frame(const LfVec *eye, const LfBasis *b, int cx, int cy, int focal)
 
 void planet_band(int y0, int y1, const short __far *ext, int ext_y0, int ext_rows)
 {
+#ifdef __WATCOMC__
+    if (g_pl.pv) {
+        pv_band(y0, y1, ext, ext_y0, ext_rows);
+        return;
+    }
+#endif
     if (planet_seen())
         gx_ground(y0, y1, ext, ext_y0, ext_rows);
 }

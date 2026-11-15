@@ -20,6 +20,7 @@
 #include "rvtypes.h"
 #include "twins.h"
 #include "bake.h"
+#include "pview.h"
 
 /* a long of two words, as the asm returns one in dx:ax */
 static long pair(int lo, int hi)
@@ -1612,6 +1613,348 @@ static void test_bake(void)
         tw_say(g_tw_ok, n_md, i);
 }
 
+static void LZ_FAR *tw_take(unsigned n);
+static void tw_give(void LZ_FAR *p);
+
+/* --- pview.asm's: the planet's picture without the card --- */
+
+#define TP_O_ST 20480                   /* the test's buffer: the picture, steps, lines, slab cells */
+#define TP_STEPS 128
+#define TP_O_LN (TP_O_ST + TP_STEPS * 28)
+#define TP_LINES 64
+#define TP_O_SLAB (TP_O_LN + TP_LINES * 64)
+#define TP_SW 15
+#define TP_SH 12
+#define TP_BUF (TP_O_SLAB + TP_SW * TP_SH * 4 + 16)
+#define TP_CODE 14336U                  /* (PVIEW.BIN's room) */
+#define TP_STATE ((unsigned)TP_O_SLAB)  /* what a march changes: the picture, the steps (not), the lines */
+#define TP_O_BWIN (PV_W * PV_W * PV_CELL + 2)   /* and the scratch buffer's: the window first */
+#define TP_O_FOGLEV (TP_O_BWIN + PV_BW * PV_BW * 2)
+#define TP_O_FOGM (TP_O_FOGLEV + PV_FOG_TAUS)
+#define TP_O_GLOW (TP_O_FOGM + PV_FOG_HB * 4)
+#define TP_O_UNDER (TP_O_GLOW + PV_GLOW_CZ)
+#define TP_SCR (TP_O_UNDER + 64)
+#define TP_CASES 6
+
+static int32_t tp_isqrt(int32_t n)      /* (n under 2^31) */
+{
+    int32_t r = 46341, q;
+    if (n <= 0)
+        return 0;
+    for (;;) {
+        q = (r + n / r) / 2;
+        if (q >= r)
+            return r;
+        r = q;
+    }
+}
+
+/* a unit vector, 16384 long, along v (its parts under 16384 each) */
+static void tp_unit(int32_t LZ_FAR *v)
+{
+    int32_t l = tp_isqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    int k;
+    if (!l)
+        l = 1, v[2] = 1;
+    for (k = 0; k < 3; k++)
+        v[k] = c_bk_muldiv(v[k], 16384, l);
+}
+
+static void tp_cross(const int32_t LZ_FAR *a, const int32_t LZ_FAR *b, int32_t LZ_FAR *o)
+{
+    o[0] = (a[1] * b[2] - a[2] * b[1]) / 16384;
+    o[1] = (a[2] * b[0] - a[0] * b[2]) / 16384;
+    o[2] = (a[0] * b[1] - a[1] * b[0]) / 16384;
+}
+
+/* the window of a level: hills of cells, a material a region, no ground past an edge (or none) */
+static void tp_window(unsigned char LZ_FAR *scr, int edge)
+{
+    int x, y, i, j;
+    int16_t LZ_FAR *bw = (int16_t LZ_FAR *)(scr + TP_O_BWIN);
+    int32_t h = tw_in(-1500, 2500), dh;
+    for (y = 0; y < PV_W; y++) {
+        dh = 0;
+        for (x = 0; x < PV_W; x++) {
+            unsigned char LZ_FAR *c = scr + (y * PV_W + x) * PV_CELL;
+            int mat = ((x / 13 + y / 11) * 5 + (x * y) / 997) & 7, absent = edge && (x > PV_W - edge || y < edge / 2);
+            dh += tw_in(-60, 60);
+            if (dh > 400) dh = 400;
+            if (dh < -400) dh = -400;
+            h += dh / 4;
+            if (h > 7000) h = 7000;
+            if (h < -3000) h = -3000;
+            if (!tw_in(0, 40))
+                h += tw_in(-1500, 2500);      /* (a cliff) */
+            c[0] = (unsigned char)(h & 255);
+            c[1] = absent ? PV_ABSENT : (unsigned char)(((uint16_t)h >> 8) & 255);
+            c[2] = (unsigned char)(mat * 32 + ((x + y * 3 + tw_in(0, 2)) & 31));
+        }
+    }
+    for (j = 0; j < PV_BW; j++)         /* the blocks' highest (cells 4 i - 1 .. 4 i + 4) */
+        for (i = 0; i < PV_BW; i++) {
+            int32_t best = PV_NOGROUND;
+            for (y = 4 * j - 1; y < 4 * j + 5; y++)
+                for (x = 4 * i - 1; x < 4 * i + 5; x++) {
+                    const unsigned char LZ_FAR *c = scr + (y * PV_W + x) * PV_CELL;
+                    int32_t v;
+                    if (x < 0 || y < 0 || x >= PV_W || y >= PV_W || c[1] == PV_ABSENT)
+                        continue;
+                    v = (int16_t)(c[0] | (c[1] << 8));
+                    if (v > best)
+                        best = v;
+                }
+            bw[j * PV_BW + i] = (int16_t)best;
+        }
+}
+
+/* pview's parts, each a sum a part: on DOS pview.asm's (PVIEW.BIN, as RV.EXE runs it), on the host the C twins;
+ * tests/host/twins_test.sh holds the host's sums to DOS's (RVP.EXE has no room for the C twins as well) */
+static void test_pview(void)
+{
+    static const char LZ_FAR *const names[8] = { "pv_setup", "pv_quarter", "pv_steps", "pv_lines", "pv_march",
+                                                 "pv_far", "pv_glow", "pv_blit" };
+    static PvFrame LZ_FAR f;
+    static PvHead LZ_FAR h;
+    static PvCam LZ_FAR cam;
+    static uint32_t LZ_FAR sums[8];
+    unsigned char LZ_FAR *buf, LZ_FAR *scr, LZ_FAR *code = 0;
+    int cs, k;
+    tw_give(g_bc);                      /* (the room the bands and the others' buffer had) */
+    tw_give(g_ba);
+    tw_give(g_mem);
+    g_bc = g_ba = g_mem = 0;
+    buf = (unsigned char LZ_FAR *)tw_take(TP_BUF + TP_CODE);   /* (the code in its tail, as RV.EXE runs it) */
+    scr = (unsigned char LZ_FAR *)tw_take(32768U);
+#ifdef __WATCOMC__
+    if (buf) {
+        code = buf + TP_BUF;
+        if (pv_code_read(code, TP_CODE) < 32 || pv_bind(code) < 0)
+            code = 0;
+    }
+    if (!code) {
+        static const char LZ_FAR fmt[] = "twins: pview: buffers %d %d, code %u bytes";
+        rv_logf(fmt, buf != 0, scr != 0, buf ? pv_code_read(buf + TP_BUF, TP_CODE) : 0);
+        g_tw_bad = 1;
+        return;
+    }
+#endif
+    if (!buf || !scr) {
+        rv_logf(g_tw_mem);
+        g_tw_bad = 1;
+        return;
+    }
+    for (k = 0; k < 8; k++)
+        sums[k] = 0;
+    for (cs = 0; cs < TP_CASES; cs++) {
+        int32_t up[3], fw[3], rt[3], cu[3], e[3], a[3], b[3], alt, R = INT32_C(1024000) + tw_in(-3000, 3000);
+        int q, ok;
+        /* the eye: its way, height and look */
+        up[0] = tw_in(-9000, 9000), up[1] = tw_in(-9000, 9000), up[2] = tw_in(4000, 16000);
+        tp_unit(up);
+        alt = cs == 0 ? INT32_C(11200) : cs == 1 ? INT32_C(144000) : cs == 2 ? INT32_C(48000) : cs == 3 ? INT32_C(6000)
+            : cs == 4 ? INT32_C(32000) : INT32_C(4800);
+        alt += tw_in(-2000, 2000);
+        e[0] = up[0] + tw_in(-3000, 3000), e[1] = up[1] + tw_in(-3000, 3000), e[2] = up[2];
+        tp_unit(e);
+        rt[0] = tw_in(-16000, 16000), rt[1] = tw_in(-16000, 16000), rt[2] = tw_in(-16000, 16000);
+        tp_cross(e, rt, a);
+        tp_unit(a);
+        tp_cross(e, a, b);
+        /* the look: forward, a little down (0), down at 45 (1), straight down (2), up (3), banked (4), the cockpit's (5) */
+        {
+            int32_t side[3], d = cs == 1 ? 11585 : cs == 2 ? 16384 : cs == 3 ? -6000 : 3000;
+            side[0] = tw_in(-16000, 16000), side[1] = tw_in(-16000, 16000), side[2] = 0;
+            tp_cross(up, side, fw);
+            tp_unit(fw);
+            for (k = 0; k < 3; k++)
+                fw[k] = fw[k] * (cs == 2 ? 1 : 3) / 4 - c_bk_muldiv(up[k], d, 16384) + tw_in(-200, 200);
+            tp_unit(fw);
+            tp_cross(up, fw, rt);
+            tp_unit(rt);
+            tp_cross(fw, rt, cu);
+            if (cs == 4)                /* (a bank) */
+                for (k = 0; k < 3; k++) {
+                    int32_t r2 = (rt[k] * 13377 - cu[k] * 9459) / 16384, u2 = (cu[k] * 13377 + rt[k] * 9459) / 16384;
+                    rt[k] = r2;
+                    cu[k] = u2;
+                }
+        }
+        for (k = 0; k < 3; k++) {
+            cam.eye[k] = c_bk_muldiv(up[k], (R + alt) * 16, 16384);
+            cam.m[k] = (int16_t)rt[k];
+            cam.m[3 + k] = (int16_t)cu[k];
+            cam.m[6 + k] = (int16_t)fw[k];
+            h.e[k] = e[k] * 65536L;
+            h.a[k] = a[k] * 65536L;
+            h.b[k] = b[k] * 65536L;
+        }
+        cam.focal = 400;
+        cam.cx = 320;
+        cam.cy = (int16_t)(137 + tw_in(-30, 30));
+        cam.x0 = cam.y0 = 0;
+        cam.x1 = 640;
+        cam.y1 = cs == 5 ? 230 : 400;
+        h.radius = R;
+        h.top = (int16_t)tw_in(14000, 18000);
+        h.bottom = (int16_t)tw_in(-8000, -4000);
+        h.shift0 = 8;
+        h.nlev = 10;
+        h.far_c = (uint8_t)tw_in(0, 255);
+        _fmemset(&f, 0, sizeof f);
+        f.buf = buf;
+        f.scr = scr;
+        f.o_st = TP_O_ST;
+        f.o_ln = TP_O_LN;
+        f.o_slab = TP_O_SLAB;
+        f.o_bwin = TP_O_BWIN;
+        f.o_foglev = TP_O_FOGLEV;
+        f.o_fogm = TP_O_FOGM;
+        f.o_glow = TP_O_GLOW;
+        f.o_under = TP_O_UNDER;
+        f.max_steps = TP_STEPS;
+        f.max_lines = TP_LINES;
+        _fmemset(buf, 0xFF, PV_LW * PV_LH * 2);
+        ok = rv_pv_setup(&f, &cam, &h);
+        g_sum = sums[0];
+        sum_32(ok);
+        sum_mem((const unsigned char LZ_FAR *)&f, 212);   /* (the numbers: not the arrays' places) */
+        sums[0] = g_sum;
+        if (!ok)
+            continue;
+        /* the tables: the haze's rates and levels, the glow, the undersides; a slab grid round the eye's point */
+        for (k = 0; k < PV_FOG_HB; k++)
+            ((int32_t LZ_FAR *)(scr + TP_O_FOGM))[k] = INT32_C(1000) + (int32_t)tw_in(0, 30000) * 2;
+        for (k = 0; k < PV_GLOW_CZ; k++)
+            scr[TP_O_GLOW + k] = (unsigned char)(k < 120 ? 0 : k > 244 ? 248 : (k - 120) * 2);
+        for (k = 0; k < 64; k++)
+            scr[TP_O_UNDER + k] = (unsigned char)(17 - k / 8);
+        f.glow_any = 1;
+        f.fog_h0 = h.bottom;
+        f.fog_rcp = 65536L / 100;
+        f.under_div = 1280;
+        f.nslab = 1;
+        f.slab_shift = 10;
+        f.slab[0].x0 = (f.px >> 10) - 7 + tw_in(-2, 2);
+        f.slab[0].y0 = (f.py >> 10) - 6 + tw_in(-2, 2);
+        f.slab[0].w = TP_SW;
+        f.slab[0].h = TP_SH;
+        f.slab[0].at = 0;
+        for (k = 0; k < TP_SW * TP_SH; k++) {
+            int16_t LZ_FAR *c = (int16_t LZ_FAR *)(buf + TP_O_SLAB) + 2 * k;
+            c[0] = (int16_t)tw_in(-1000, 9000);
+            c[1] = (int16_t)(c[0] + tw_in(-800, 3000));
+        }
+        rv_pv_steps(&f);
+        g_sum = sums[2];
+        sum_32(f.nsteps);
+        sum_mem(buf + TP_O_ST, f.nsteps * 28);
+        sums[2] = g_sum;
+        /* a quarter at a time: its lines, the levels' marches of them, the plain sphere */
+        for (q = 0; q < 4; q++) {
+            PvQuarter qq;
+            unsigned char LZ_FAR *thin = scr + TP_O_FOGLEV;   /* (the thinning in the haze levels' place) */
+            rv_pv_quarter(&f, q, &qq, thin);
+            g_sum = sums[1];
+            sum_mem((const unsigned char LZ_FAR *)&qq, sizeof qq);
+            if (qq.on)
+                sum_mem(thin, qq.len);
+            sums[1] = g_sum;
+            if (!qq.on)
+                continue;
+            f.nlines = 0;
+            rv_pv_lines(&f, &qq, thin);
+            g_sum = sums[3];
+            sum_32(f.nlines);
+            sum_mem(buf + TP_O_LN, f.nlines * 64);
+            sums[3] = g_sum;
+            for (k = 0; k < PV_FOG_TAUS; k++)   /* (the levels back) */
+                scr[TP_O_FOGLEV + k] = (unsigned char)(((int32_t)k * 31 + 1023) / 2047);
+            for (k = 0; k < h.nlev; k++) {
+                int sh = h.shift0 + k;
+                if (f.ue <= (INT32_C(1) << 30) / 8)
+                    break;
+                f.lev = (int16_t)k;
+                f.sh = (int16_t)sh;
+                f.ox = ((f.px >> sh) - PV_W / 2 + PV_SNAP / 2) & ~(int32_t)(PV_SNAP - 1);
+                f.oy = ((f.py >> sh) - PV_W / 2 + PV_SNAP / 2) & ~(int32_t)(PV_SNAP - 1);
+                tp_window(scr, cs == 3 ? 0 : tw_in(0, 1) ? 0 : tw_in(8, 40));
+                rv_pv_march(&f);
+                g_sum = sums[4];
+                sum_32((int32_t)f.samples);
+                sum_32((int32_t)f.seen);
+                sum_32((int32_t)f.skips);
+                sum_32((int32_t)f.subs);
+                sum_mem(buf, TP_O_ST);
+                sum_mem(buf + TP_O_LN, f.nlines * 64);
+                sums[4] = g_sum;
+            }
+            rv_pv_far(&f);
+#ifdef TP_VERBOSE
+            printf("case %d quarter %d: %d lines, %d steps; samples %lu seen %lu skips %lu subs %lu\n", cs, q, f.nlines,
+                   f.nsteps, (unsigned long)f.samples, (unsigned long)f.seen, (unsigned long)f.skips, (unsigned long)f.subs);
+#endif
+            g_sum = sums[5];
+            sum_32((int32_t)f.samples);
+            sum_32((int32_t)f.seen);
+            sum_mem(buf, TP_O_ST);
+            sums[5] = g_sum;
+        }
+        rv_pv_glow(&f);
+        g_sum = sums[6];
+        sum_mem(buf, TP_O_ST);
+        sums[6] = g_sum;
+    }
+    /* the blit: a picture of every kind of pixel, bands cut as the flight's, through an opening of uneven extents */
+    {
+        static PvBlit LZ_FAR bl;
+        unsigned char LZ_FAR *dith = scr, LZ_FAR *pic = scr + 24672U, LZ_FAR *work = pic + 9 * PV_LW * 2;
+        uint16_t LZ_FAR *pp = (uint16_t LZ_FAR *)pic;
+        int w;
+        for (k = 0; k < (PV_FOGS * 256 + PV_FOGS) * 3; k++)
+            dith[k] = (unsigned char)(k % 3 == 2 ? tw_in(0, 10) : tw_in(16, 207));
+        for (w = 0; w < 12; w++) {
+            int y0 = tw_in(0, 360), y1 = y0 + tw_in(1, 40), ly0 = y0 / PV_BLOCK;
+            if (y1 > PV_LH * PV_BLOCK)
+                y1 = PV_LH * PV_BLOCK;
+            for (k = 0; k < 9 * PV_LW; k++) {
+                int r = tw_in(0, 9);
+                pp[k] = (uint16_t)(r < 2 ? PV_EMPTY : r < 4 ? PV_GLOW | tw_in(0, 31) : tw_in(0, 255) | tw_in(0, 31) << 8);
+                if (r >= 5 && k > 0)
+                    pp[k] = pp[k - 1];       /* (runs) */
+            }
+            _fmemset(buf, 0x11, (unsigned)TW_ROWS * SCR_W);
+#ifdef __WATCOMC__
+            _fmemcpy(work + PV_BLIT_WORK, code + ((uint16_t LZ_FAR *)(code + 4))[8],
+                     ((uint16_t LZ_FAR *)(code + 4))[9] - ((uint16_t LZ_FAR *)(code + 4))[8]);
+            pv_bind_blit(work + PV_BLIT_WORK);
+#endif
+            bl.band = buf;
+            bl.ext = w & 1 ? g_ext : 0;
+            bl.pic = (const uint16_t LZ_FAR *)pic;
+            bl.dither = dith;
+            bl.work = work;
+            bl.y0 = (int16_t)y0;
+            bl.y1 = (int16_t)y1;
+            bl.ext_y0 = 12;
+            bl.ext_rows = 375;
+            bl.ly0 = (int16_t)ly0;
+            bl.pad_ = 0;
+            rv_pv_blit(&bl);
+            g_sum = sums[7];
+            sum_mem(buf, (unsigned)(y1 - y0) * SCR_W);
+            sums[7] = g_sum;
+        }
+    }
+    for (k = 0; k < 8; k++) {
+        g_sum = sums[k];
+        tw_say(g_tw_ok, names[k], k == 7 ? 12 : TP_CASES);
+    }
+    tw_give(buf);
+    tw_give(scr);
+    (void)code;
+}
+
 /* a buffer of the self-test's: upper memory first, conventional when it has none (the host: the heap) */
 static void LZ_FAR *tw_take(unsigned n)
 {
@@ -1620,6 +1963,21 @@ static void LZ_FAR *tw_take(unsigned n)
 #else
     void __far *p = rv_alloc_high(n);
     return p ? p : _fmalloc(n);
+#endif
+}
+
+/* and given back: upper memory to DOS, the heap's to the heap */
+static void tw_give(void LZ_FAR *p)
+{
+    if (!p)
+        return;
+#ifdef RV_HOST
+    _ffree(p);
+#else
+    if (FP_OFF(p) == 0 && FP_SEG(p) >= 0xA000)
+        _dos_freemem(FP_SEG(p));
+    else
+        _ffree(p);
 #endif
 }
 
@@ -1656,14 +2014,15 @@ long twins_selftest(void)
     if (xms) {
         test_rocks();
         test_bake();
+        test_pview();                   /* (last: it takes the bands' room) */
     } else
         rv_logf(g_tw_xms), g_tw_bad = 1;
     if (xms)
         xms_shutdown();
     tw_say(g_tw_end, g_tw_bad ? s_bad : s_good, 0);
-    _ffree(g_bc);
-    _ffree(g_ba);
-    _ffree(g_mem);
+    tw_give(g_bc);
+    tw_give(g_ba);
+    tw_give(g_mem);
     _ffree(g_ext);
     _ffree(g_open);
     return g_tw_bad ? -1 : 0;

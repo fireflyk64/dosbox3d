@@ -16,7 +16,7 @@ SAN="-fsanitize=undefined -fno-sanitize=alignment -fno-sanitize-recover=undefine
 case "$(basename "$CC")" in clang*) SAN="$SAN -fsanitize=implicit-integer-truncation";; esac
 $CC -m$ARCH -std=gnu99 -g -O1 -funsigned-char -fno-strict-aliasing $SAN -include host/rvhost.h -Isrc -Ihost \
     -DRV_TESTS -Wall -Wno-unused-parameter -o "$OUT/twins_test" \
-    host/twins_test.c src/twins.c src/lasers.c src/lightfield.c src/bake.c host/asm_twins.c
+    host/twins_test.c src/twins.c src/lasers.c src/lightfield.c src/bake.c src/pview.c host/asm_twins.c
 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 "$OUT/twins_test" > "$OUT/host.log" 2>&1 || true
 grep '^twins:' "$OUT/host.log" > "$OUT/host.txt" || true
 TIMEOUT=200 tests/run.sh /dev/null /twins > /dev/null 2>&1 || true
