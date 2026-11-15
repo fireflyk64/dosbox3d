@@ -21,9 +21,9 @@
  *  flag set.
  *
  *  WCNET_TV_SPANS: unset or 1 the twins draw; 0 the game's own code draws everything; "check" each twin runs first
- *  (its writes journalled), the memory it may change is kept as the twin left it and put back, the game's own code
- *  runs, and at its return every byte of that memory (the span's row about it, the depth buffer's row, the
- *  routines' variables; for the cockpit the whole picture) and the registers are compared with the twin's.
+ *  (as it runs in play), the memory it declared (the span's row, the depth buffer's row, the routines' variables;
+ *  for the cockpit the whole picture), widened by 64 bytes either side, is kept as the twin left it and put back as
+ *  it was, the game's own code runs, and at its return every byte of that memory and the registers are compared.
  */
 #include <algorithm>
 #include <map>
@@ -84,14 +84,17 @@ inline bool ram(Bit32u a, Bit32u n) {
 struct Region { Bit32u lo, len; };
 
 // A twin's run: its reads checked (a read outside the RAM marks it bad: given back, if nothing is written yet),
-// its writes to the memory it declared (and checked) first, journalled in the check.
+// its writes to the memory it declared (and checked) first.  In the check (snap) each region declared is widened
+// by kCheckMargin either side and kept as it was, to be put back after the twin (a write of the twin's just
+// outside what it declared then shows as a byte the game's code did not write).
 struct Run {
     bool bad;
-    bool journal;
-    std::vector<std::pair<Bit32u, Bit8u> > undo;
+    bool snap;
     Region reg[4];
+    std::vector<Bit8u> saved[4];
     int nreg;
-    Run() : bad(false), journal(false), nreg(0) {}
+    Bit32u first;                   // the first region's length as declared (the span's pixels)
+    Run() : bad(false), snap(false), nreg(0), first(0) {}
     inline Bit8u r8(Bit32u a) {
         if (a < 0xA0000u || a - 0x100000u < g_top - 0x100000u) return MemBase[a];
         bad = true;
@@ -105,29 +108,24 @@ struct Run {
     // the memory it will write: false (given back) if any is outside the RAM
     bool will_write(Bit32u lo, Bit32u len) {
         if (!ram(lo, len) || nreg == 4) return false;
+        if (!nreg) first = len;
+        if (snap) {
+            const bool low = lo < 0xA0000u;
+            const Bit32u floor = low ? 0 : 0x100000u, ceil = low ? 0xA0000u : g_top;
+            const Bit32u a = std::max<Bit32u>(floor + kCheckMargin, lo) - kCheckMargin;
+            const Bit32u b = std::min<Bit32u>(ceil, lo + len + kCheckMargin);
+            lo = a;
+            len = b - a;
+            saved[nreg].assign(MemBase + lo, MemBase + lo + len);
+        }
         reg[nreg].lo = lo;
         reg[nreg].len = len;
         nreg++;
         return true;
     }
-    inline void w8(Bit32u a, Bit8u v) {
-        if (journal) undo.push_back(std::make_pair(a, MemBase[a]));
-        MemBase[a] = v;
-    }
-    inline void w32(Bit32u a, Bit32u v) {
-        if (journal) {
-            for (int i = 0; i < 4; i++) w8(a + i, (Bit8u)(v >> (8 * i)));
-        } else {
-            host_writed(MemBase + a, v);
-        }
-    }
-    void wn(Bit32u a, const Bit8u *p, Bit32u n) {
-        if (journal) {
-            for (Bit32u i = 0; i < n; i++) w8(a + i, p[i]);
-        } else {
-            memcpy(MemBase + a, p, n);
-        }
-    }
+    inline void w8(Bit32u a, Bit8u v) { MemBase[a] = v; }
+    inline void w32(Bit32u a, Bit32u v) { host_writed(MemBase + a, v); }
+    void wn(Bit32u a, const Bit8u *p, Bit32u n) { memcpy(MemBase + a, p, n); }
 };
 
 // edx:eax = eax << 24 sign-extended, idiv by w: false where the CPU would fault (w 0, the quotient past 32 bits)
@@ -193,6 +191,23 @@ template <bool T64> inline Bit8u fog_pixel(Run &m, Bit32u tex, Bit32u u, Bit32u 
     return m.r8(D(I_FOG) + ix);
 }
 
+// The same, its reads unchecked: tb the texture's 64 KB, fb the fog's table (both checked in the RAM first).
+template <bool T64> inline Bit8u fog_fast(const Bit8u *tb, const Bit8u *fb, Bit32u u, Bit32u v, Bit32u l) {
+    Bit32u ta = (v & 0xFF00u) | ((u >> 8) & 0xFFu);
+    if (T64) ta &= 0x3F3Fu;
+    return fb[(l & 0xFFFFFF00u) | tb[ta]];
+}
+
+// The fog table's rows a run of `count` pixels reads, the shade from l by steps of st (the CPU's 32-bit sums): true
+// when none of the sums wraps and every row read is in the RAM (the run's reads then unchecked).
+inline bool fog_rows_ok(Bit32u l, Bit32u st, Bit32s count) {
+    const Bit64s L0 = (Bit32s)l, L1 = L0 + (Bit64s)(Bit32s)st * (count - 1);
+    const Bit64s lo = std::min(L0, L1), hi = std::max(L0, L1);
+    if (lo < 0 || hi > 0x7FFFFFFFLL) return false;
+    const Bit32u a = D(I_FOG) + (Bit32u)(lo & ~0xFFLL);
+    return a >= D(I_FOG) && ram(a, (Bit32u)((hi | 0xFF) - (lo & ~0xFFLL) + 1));
+}
+
 // 0x4732E, 0x44C97, 0x46552, 0x444FA: perspective, a divide every 2^LOG pixels (u/w and v/w at each step's ends,
 // stepped linearly between, the shade too), the tail's divide at the span's end; T64 the 64 x 64 texture's mask,
 // FOG the shade's formula.  The variables (dwords from 0x68528): 0 u*w, 1 v*w, 2 w at the step's start; 3..5 at its
@@ -209,6 +224,8 @@ bool persp(Run &m, Bit32u esi, Bit32u edi, Bit32u ebx) {
     Bit32u v30 = m.r32(e.A + 0x10), v48 = m.r32(e.B + 0x10);
     const Bit32u tex = m.r32(D(I_TEX));
     if (m.bad) return false;
+    const bool texOk = ram(tex & 0xFFFF0000u, 0x10000);
+    const Bit8u *tb = MemBase + (tex & 0xFFFF0000u), *fb = MemBase + D(I_FOG);
     const Bit32u v4c = div_n(v40 - v28, n) << LOG;
     const Bit32u v50 = div_n(v44 - v2c, n) << LOG;
     const Bit32u v54 = div_n(v48 - v30, n) << LOG;
@@ -233,11 +250,20 @@ bool persp(Run &m, Bit32u esi, Bit32u edi, Bit32u ebx) {
         v84 = sar(v80 - v7c, LOG);
         stepped = true;
         Bit32u u = sar(v58, 8), v = sar(v5c, 8), l = v7c;
-        for (Bit32s k = 0; k < S; k++) {
-            px[at + k] = fog_pixel<T64>(m, tex, u, v, l);
-            u += v70;
-            v += v74;
-            l += v84;
+        if (texOk && fog_rows_ok(l, v84, S)) {
+            for (Bit32s k = 0; k < S; k++) {
+                px[at + k] = fog_fast<T64>(tb, fb, u, v, l);
+                u += v70;
+                v += v74;
+                l += v84;
+            }
+        } else {
+            for (Bit32s k = 0; k < S; k++) {
+                px[at + k] = fog_pixel<T64>(m, tex, u, v, l);
+                u += v70;
+                v += v74;
+                l += v84;
+            }
         }
         at += S;
         v28 = v34; v2c = v38; v30 = v3c;
@@ -255,7 +281,16 @@ bool persp(Run &m, Bit32u esi, Bit32u edi, Bit32u ebx) {
         // reach the texel)
         Bit32u st = (v70 & 0xFFFFu) | ((Bit32u)(cnt - 1) << 16);
         Bit32u u = sar(v58, 8), v = sar(v5c, 8), l = v7c;
-        for (;;) {
+        if (texOk && fog_rows_ok(l, v84, cnt)) {
+            for (;;) {
+                px[at++] = fog_fast<T64>(tb, fb, u, v, l);
+                u += st;
+                v += v74;
+                l += v84;
+                st -= 0x10000u;
+                if ((Bit32s)st < 0) break;
+            }
+        } else for (;;) {
             px[at++] = fog_pixel<T64>(m, tex, u, v, l);
             u += st;
             v += v74;
@@ -557,15 +592,18 @@ bool cockpit_copy(Run &m, Regs &r) {
             ecx = edx * 2;
             edx = dest + ecx;
             if ((Bit32s)eax <= 0) continue;
-            do {
-                const Bit8u b = MemBase[src++];
-                ecx = (ecx & 0xFFFF0000u) | b;
+            // (the loop: a byte, the word of it written, edx on by 2, eax down to 0)
+            const Bit8u *sp = MemBase + src;
+            Bit8u *dp = MemBase + edx;
+            const Bit32u k = eax;
+            for (Bit32u i = 0; i < k; i++) {
+                ecx = (ecx & 0xFFFF0000u) | sp[i];
                 ecx += ecx << 8;
-                edx += 2;
-                eax--;
-                m.w8(edx - 2, (Bit8u)ecx);
-                m.w8(edx - 1, (Bit8u)(ecx >> 8));
-            } while ((Bit32s)eax > 0);
+                dp[2 * i] = (Bit8u)ecx;
+                dp[2 * i + 1] = (Bit8u)(ecx >> 8);
+            }
+            edx += 2 * k;
+            eax = 0;
         }
     }
     r.eax = eax;
@@ -640,8 +678,8 @@ bool flat() {
     return SegPhys(ds) == 0 && SegPhys(es) == 0 && SegPhys(ss) == 0 && SegPhys(cs) == 0 && cpu.stack.big;
 }
 
-// The check's first half: the twin has run journalled; its result kept, its writes put back, the game's code to run
-// and be compared at `ret`.
+// The check's first half: the twin has run; what it left in its regions kept, the regions put back as they were,
+// the game's code to run and be compared at `ret`.
 void check_begin(int s, Run &m, Bit32u ret, const Regs *out) {
     g_check.pending = true;
     g_check.s = s;
@@ -655,18 +693,8 @@ void check_begin(int s, Run &m, Bit32u ret, const Regs *out) {
         g_check.reg[i] = m.reg[i];
         g_check.after[i].assign(MemBase + m.reg[i].lo, MemBase + m.reg[i].lo + m.reg[i].len);
     }
-    // every write inside what it declared?
-    for (size_t k = 0; k < m.undo.size(); k++) {
-        const Bit32u a = m.undo[k].first;
-        bool in = false;
-        for (int i = 0; i < m.nreg && !in; i++) in = a - m.reg[i].lo < m.reg[i].len;
-        if (!in && g_logged < 20) {
-            g_logged++;
-            wclog(1, "Terminal Velocity check: %s wrote %08x, outside what it declared", kSpans[s].name, a);
-            break;
-        }
-    }
-    for (size_t k = m.undo.size(); k-- > 0;) MemBase[m.undo[k].first] = m.undo[k].second;
+    // (put back: every region as it was before the twin, all kept before its first write)
+    for (int i = 0; i < m.nreg; i++) memcpy(MemBase + m.reg[i].lo, &m.saved[i][0], m.reg[i].len);
     // (the game's own code back at ret: watched)
     wc_net_watch32[ret & 0xFFFF] = true;
 }
@@ -736,6 +764,14 @@ bool tv_span_setup(Bit32u codeDelta) {
 
 bool tv_span_checking() { return g_ready && g_mode == 2; }
 
+// The padding after the empty function 0x49710 (its ret at the dispatch's +9; 15 zero bytes, never run, checked
+// with the dispatch): 8 bytes for the frame cap's idle (wcnet_tv.cpp).  0: none.
+Bit32u tv_span_spare() {
+    if (!g_ready || !g_entry[S_DISPATCH]) return 0;
+    const Bit32u at = g_entry[S_DISPATCH] + 10;
+    return MemBase[at - 1] == 0xC3 ? at : 0;
+}
+
 Bit32u tv_native_entry_place() { return g_ready ? g_entry[S_COCKPIT_COPY] : 0; }
 
 bool tv_span_call() {
@@ -754,14 +790,14 @@ bool tv_span_call() {
         return false;
     }
     Run m;
-    m.journal = g_mode == 2;
+    m.snap = g_mode == 2;
     if (!t(m, reg_esi, reg_edi, reg_ebx)) {
         // (nothing written: every twin gives back before its first write)
         g_st.given[s]++;
         return false;
     }
     g_st.native[s]++;
-    g_st.pixels[s] += m.nreg ? m.reg[0].len : 0;
+    g_st.pixels[s] += m.first;
     if (g_mode == 2) {
         check_begin(s, m, reg_eip + 5, NULL);
         return false;
@@ -777,7 +813,7 @@ bool tv_native_entry() {
         return false;
     }
     Run m;
-    m.journal = g_mode == 2;
+    m.snap = g_mode == 2;
     Regs r = { reg_eax, reg_ecx, reg_edx };
     if (!cockpit_copy(m, r)) {
         g_st.given[s]++;

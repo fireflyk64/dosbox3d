@@ -85,6 +85,11 @@ bool tv_span_call();
 Bit32u tv_native_entry_place();
 bool tv_native_entry();
 bool tv_span_returned(Bit32u eip);
+Bit32u tv_span_spare();
+
+// The places made in the core itself (no wait on anything, unlike the other hooks): the span calls, the cockpit
+// copy, the frame cap's idle.  true: one of them (handled).  The browser's hook exit takes these first.
+bool tv_fast_hook(Bit32u eip);
 
 // The session (wcnet_tv_session.cpp).
 void tv_session_tick();

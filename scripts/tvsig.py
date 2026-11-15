@@ -55,7 +55,7 @@ ANCHORS = [
 # compared whole (every byte but the relocated operands) before its twin is used: a build whose routine differs at
 # all keeps the game's own.  'dispatch' is the jump through the routine pointer (its operand: the pointer's address).
 SPANS = [
-    ('dispatch', 0x49707, 0x4970D, "the span call's jump through the routine pointer"),
+    ('dispatch', 0x49707, 0x49720, "the span call's jump through the routine pointer (and the padding after the empty function 0x49710: the frame cap's idle)"),
     ('persp32_t64_fogA', 0x4732E, 0x480D4, "perspective, a divide every 32 pixels, a 64x64 texture, the depth fog (w*4)"),
     ('persp32_t256_fogB', 0x44C97, 0x458D4, "perspective, a divide every 32 pixels, a 256x256 texture, the depth fog (w/8)"),
     ('persp16_t64_fogA', 0x46552, 0x46D98, "perspective, a divide every 16 pixels, a 64x64 texture, the depth fog (w*4)"),

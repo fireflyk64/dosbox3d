@@ -2591,6 +2591,11 @@ static Bitu hook_callback() {
 }
 
 Bitu wc_net_hook_exit(Bit32u ip) {
+    // (Terminal Velocity's native drawing and frame cap: made here in the core, as natively -- they wait on nothing
+    // -- not from the main loop: some thousands a frame)
+    if (ip >= 0x10000 && wc_net_countdown >= 0 && wc::tv_fast_hook(ip)) {
+        return 0;
+    }
     PhysPt at = SegPhys(cs) + ip;
     for (int i = g_nHooksRan - 1; i >= 0; i--) {
         if (g_hooksRan[i] == at) {          // back at it, its hooks done: on with the instruction

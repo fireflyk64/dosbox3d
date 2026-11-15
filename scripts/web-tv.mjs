@@ -51,6 +51,11 @@ async function openPage(who, script, callsign) {
   u.searchParams.set("env.WCNET_KEYSCRIPT_FROM", "boot");
   u.searchParams.set("env.WCNET_LOG", "2");
   if (process.env.CYCLES) u.searchParams.set("cycles", process.env.CYCLES);
+  // (PAGE_ENV="A=1 B=2": more of the emulator's environment on both pages, e.g. WCNET_TV_SPANS=0 for the game's own drawing)
+  for (const kv of (process.env.PAGE_ENV || "").split(/\s+/).filter(Boolean)) {
+    const i = kv.indexOf("=");
+    u.searchParams.set("env." + kv.slice(0, i), kv.slice(i + 1));
+  }
   await page.goto(u.toString());
   await page.setInputFiles("#gamefile", zip);
   // (ready for the dropped files: the page's built-in game is ready before them on a page that has one)

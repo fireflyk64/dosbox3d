@@ -49,9 +49,22 @@ Bit32u g_hitSkip = 0;
 
 // The places watched (linear), by what they are.
 enum Place { P_FRAME, P_DRAW, P_UPDATE, P_HIT, P_FIRE, P_LEVEL, P_LEVEL_END, P_LAUNCH, P_LAUNCH_END, P_GENERATE, P_GENERATE_END,
-             P_REINFORCE, P_REINFORCE_END, P_REINFORCE_CAP, P_REINFORCE_CLOCK, P_SPAN, P_COCKPIT, P_COUNT };
+             P_REINFORCE, P_REINFORCE_END, P_REINFORCE_CAP, P_REINFORCE_CLOCK, P_SPAN, P_COCKPIT, P_PACE, P_COUNT };
 Bit32u g_campaignCall = 0;     // the campaign loop's call of the level function (its return address: + 5)
 Bit32u g_places[P_COUNT];
+
+// The frame cap (WCNET_TV_FPS: frames a game second, default 60; 0 none).  With its pixels drawn natively the game
+// makes more frames than a screen shows (85 a game second and more at 60,000 cycles), and each costs the browser
+// its drawing: a frame top reached sooner than 1/60 s after the last sends the CPU to an idle at the padding after
+// 0x49710 ("jmp $; jmp <frame top>"), where each slice's cycles are skipped (as DOSBox's own HLT does: no
+// instructions emulated, the interrupts still taken) until the time is up; then on through the second jmp to the
+// frame top, which goes on with the frame (its hooks ran before the idle).
+double g_paceFps = -1;
+Bit32u g_paceStub = 0;          // the idle (linear; 0: no cap)
+double g_paceLast = 0, g_paceUntil = 0;
+bool g_paceResume = false;      // the frame top next reached is the idle's way back
+unsigned g_paceIdles = 0;
+double g_paceIdleMs = 0;
 
 bool rd8(Bit32u lin, Bit8u *v) { return mem_readb_checked(lin, v) ? false : true; }
 bool rd32(Bit32u lin, Bit32u *v) { return mem_readd_checked(lin, v) ? false : true; }
@@ -167,10 +180,26 @@ bool scan() {
     g_hitSkip = place_of(A_HIT_END) - place_of(A_HIT_APPLY) == 0x2937F - 0x29327 ? place_of(A_HIT_END) : 0;
     // the polygon filler's call of a span routine and the cockpit copy's entry, made natively where a twin is
     // (wcnet_tv_span.cpp)
-    g_places[P_SPAN] = g_places[P_COCKPIT] = 0;
+    g_places[P_SPAN] = g_places[P_COCKPIT] = g_places[P_PACE] = 0;
+    g_paceStub = 0;
+    g_paceLast = 0;
+    g_paceResume = false;
     if (tv_span_setup(place_of(A_FIRE_FN) - kAnchors[A_FIRE_FN].image)) {
         g_places[P_SPAN] = place_of(A_SPAN_CALL);
         g_places[P_COCKPIT] = tv_native_entry_place();
+        if (g_paceFps < 0) {
+            const char *e = getenv("WCNET_TV_FPS");
+            g_paceFps = e && e[0] ? atof(e) : 60;
+        }
+        const Bit32u at = tv_span_spare();
+        if (g_paceFps > 0 && at) {
+            const Bit32u top = g_places[P_FRAME];
+            MemBase[at] = 0xEB;                             // jmp $
+            MemBase[at + 1] = 0xFE;
+            MemBase[at + 2] = 0xE9;                         // jmp <frame top>
+            host_writed(MemBase + at + 3, top - (at + 7));
+            g_paceStub = g_places[P_PACE] = at;
+        }
     }
     return true;
 }
@@ -188,6 +217,9 @@ void forget(const char *why) {
     clear_calls();
     tv_session_shutdown();
     tv_span_reset();
+    if (g_paceStub && reg_eip == g_paceStub) reg_eip = g_paceStub + 2;     // (never left idling)
+    g_paceStub = 0;
+    g_paceResume = false;
     set_watch(false);
     memset(g_places, 0, sizeof(g_places));
     g_armed = g_found = false;
@@ -201,11 +233,13 @@ void report(double now) {
     const Bit32u frames = g_frames - g_framesReported;
     g_framesReported = g_frames;
     wclog(2, "Terminal Velocity: %.1fs: %u frames, %s, level %d '%s', %d objects, %d near; player at %d %d %d ang %d %d %d "
-             "shield %d; calls: draw %u update %u skipped %u hit %u fire %u level %u",
+             "shield %d; calls: draw %u update %u skipped %u hit %u fire %u level %u; the cap's idle %.0f ms in %u frames",
           now / 1000.0, frames, flying ? "flying" : "not flying", g_level, g_levelName.c_str(), tv_object_count(),
           (int)tv_r32(g_data[D_NEAR_COUNT]), s.pos[0], s.pos[1], s.pos[2], s.ang[0], s.ang[1], s.ang[2], s.shield,
-          g_counts[1], g_counts[2], g_counts[3], g_counts[4], g_counts[5], g_counts[6]);
+          g_counts[1], g_counts[2], g_counts[3], g_counts[4], g_counts[5], g_counts[6], g_paceIdleMs, g_paceIdles);
     memset(g_counts, 0, sizeof(g_counts));
+    g_paceIdleMs = 0;
+    g_paceIdles = 0;
 }
 
 // -- calls into the program ----------------------------------------------------------------------------------
@@ -415,23 +449,61 @@ void tv_tick() {
 
 bool tv_found() { return g_found; }
 
+// The frame's end at its top: the cap's idle, if this frame came sooner than 1/fps after the last.
+static void pace_frame() {
+    if (!g_paceStub || g_saved.active) return;
+    const double now = PIC_FullIndex(), interval = 1000.0 / g_paceFps, next = g_paceLast + interval;
+    if (now >= next || next - now > interval) {
+        g_paceLast = now;
+        return;
+    }
+    g_paceLast = g_paceUntil = next;
+    g_paceIdles++;
+    g_paceIdleMs += next - now;
+    reg_eip = g_paceStub;
+}
+
+bool tv_fast_hook(Bit32u eip) {
+    if (!g_found) {
+        return false;
+    }
+    if (eip == g_places[P_SPAN]) {
+        // (some thousands a frame)
+        if (tv_span_call()) reg_eip = eip + 5;
+        return true;
+    }
+    if (eip == g_places[P_PACE]) {
+        if (PIC_FullIndex() >= g_paceUntil) {
+            g_paceResume = true;
+            reg_eip = eip + 2;
+        } else {
+            CPU_IODelayRemoved += CPU_Cycles;   // (the slice's cycles skipped, as CPU_HLT does)
+            CPU_Cycles = 0;
+        }
+        return true;
+    }
+    if (eip == g_places[P_COCKPIT]) {
+        tv_native_entry();
+        return true;
+    }
+    return false;
+}
+
 void tv_check_hooks(Bit32u eip) {
     if (!g_found) {
         return;
     }
-    if (eip == g_places[P_SPAN]) {
-        // (first: some thousands a frame)
-        if (tv_span_call()) reg_eip = eip + 5;
-        return;
-    }
-    if (eip == g_places[P_COCKPIT]) {
-        tv_native_entry();
+    if (tv_fast_hook(eip)) {
         return;
     }
     tv_span_returned(eip);          // (the check: the game's own code back where the twin's ended)
     if (eip == g_places[P_FRAME]) {
+        if (g_paceResume) {
+            g_paceResume = false;   // (back from the idle: on with the frame)
+            return;
+        }
         if (call_returned(eip)) {
-            call_next(TV_AT_FRAME, eip);
+            if (!call_next(TV_AT_FRAME, eip)) pace_frame();
             return;
         }
         if (g_saved.active) return;
@@ -440,7 +512,7 @@ void tv_check_hooks(Bit32u eip) {
         g_counts[0]++;
         tv_pilot_frame();
         tv_session_frame();
-        call_next(TV_AT_FRAME, eip);
+        if (!call_next(TV_AT_FRAME, eip)) pace_frame();
     } else if (eip == g_places[P_DRAW]) {
         if (call_returned(eip)) {
             call_next(TV_AT_DRAW, eip);
