@@ -106,10 +106,16 @@ struct Remote {
     std::string levelName;
     double flyingSince;         // since when it flies its level (a start of it: a death's retry, a late start)
     bool inLevel;               // a level of its campaign under way (its briefing, its flight)
+    double arate[3];            // its angles' rates (16-bit units a second), from its last two reports
+    double disp[6];             // where we draw it (smooth_remote): carried on by its rates, eased towards its reports
+    bool dispOn;
+    double dispAt;
     Remote() : known(false), look("ship.bin"), at(-1e9), flying(false), level(-1), shield(0), boost(false), done(false),
-               difficulty(-1), flyingSince(-1e9), inLevel(false) {
+               difficulty(-1), flyingSince(-1e9), inLevel(false), dispOn(false), dispAt(-1e9) {
         memset(pos, 0, sizeof(pos));
         memset(rate, 0, sizeof(rate));
+        memset(arate, 0, sizeof(arate));
+        memset(disp, 0, sizeof(disp));
     }
 };
 
@@ -150,8 +156,11 @@ struct ObjSync {
     Bit32s last[3];             // its place at its last update here (mobile: it moved)
     double at, prevAt;          // its owner's last two reports
     Bit32s pos[6], prev[6];
-    ObjSync() : owner(0), ownedAt(-1e9), mobile(false), updated(false), at(-1e9), prevAt(-1e9) {
-        memset(last, 0, sizeof(last)); memset(pos, 0, sizeof(pos)); memset(prev, 0, sizeof(prev));
+    double disp[6];             // where we put it as a puppet (smoothed: place_puppets)
+    bool dispOn;
+    double dispAt;
+    ObjSync() : owner(0), ownedAt(-1e9), mobile(false), updated(false), at(-1e9), prevAt(-1e9), dispOn(false), dispAt(-1e9) {
+        memset(last, 0, sizeof(last)); memset(pos, 0, sizeof(pos)); memset(prev, 0, sizeof(prev)); memset(disp, 0, sizeof(disp));
     }
 };
 std::vector<ObjSync> g_objs;
@@ -333,8 +342,16 @@ void take_state(const TvState &st, int seat) {
     Remote &r = g_net->remotes[seat];
     const bool wasFlying = r.flying && PIC_FullIndex() - r.at < kStateStaleMs;
     const int lastLevel = r.level;
+    // (its angles' rates from its last two reports: the rates it sends are its ship's own turn rates, about its own
+    // axes, not its angles'; a banked turn carried on by them wobbled)
+    const double now = PIC_FullIndex(), gap = now - r.at;
+    for (int k = 0; k < 3; k++) {
+        const int a = k + 3 < st.pos_size() ? st.pos(k + 3) : 0;
+        const double rate = wasFlying && gap > 20 && gap < 600 ? (double)(Bit16s)(Bit16u)(a - r.pos[k + 3]) * 1000.0 / gap : 0.0;
+        r.arate[k] = wasFlying ? 0.5 * r.arate[k] + 0.5 * rate : 0.0;
+    }
     r.known = true;
-    r.at = PIC_FullIndex();
+    r.at = now;
     r.flying = st.flying();
     r.level = st.level();
     if (st.has_look()) r.look = kLooks[look_index(st.look())];
@@ -836,15 +853,51 @@ bool is_puppet(int i) {
 }
 
 // The puppets where their owners' reports put them, carried on to now (by their last two reports).
+const double kEaseMs = 120.0, kSnapUnits = 20.0;
+double angle_diff(double a, double b) { return (double)(Bit16s)(Bit16u)(Bit32s)lrint(a - b) + ((a - b) - lrint(a - b)); }
+
+void ease(double disp[6], const double target[6], const double rate[6], double fdtMs, bool &on) {
+    double gap2 = 0;
+    for (int k = 0; k < 3; k++) {
+        const double d = (target[k] - disp[k]) / kUnit;
+        gap2 += d * d;
+    }
+    if (!on || fdtMs <= 0 || fdtMs > 500 || gap2 > kSnapUnits * kSnapUnits) {
+        memcpy(disp, target, sizeof(double) * 6);
+        on = true;
+        return;
+    }
+    const double a = 1.0 - exp(-fdtMs / kEaseMs);
+    for (int k = 0; k < 6; k++) {
+        disp[k] += rate[k] * fdtMs / 1000.0;
+        const double gap = k < 3 ? target[k] - disp[k] : angle_diff(target[k], disp[k]);
+        disp[k] += gap * a;
+    }
+}
+
+// The puppets where their owners' reports put them, carried on to now by their last two reports, smoothed as the
+// other pilots' ships are (the reports come ten times a second: a craft jumped at each).
 void place_puppets(double now) {
     for (size_t i = 0; i < g_objs.size(); i++) {
-        if (!is_puppet((int)i)) continue;
-        const ObjSync &os = g_objs[i];
+        ObjSync &os = g_objs[i];
+        if (!is_puppet((int)i)) {
+            os.dispOn = false;
+            continue;
+        }
         const Bit32u o = tv_object_addr((int)i);
-        double f = 0;
-        if (os.prevAt > 0 && os.at - os.prevAt > 10 && os.at - os.prevAt < 1000) f = std::min(now - os.at, 500.0) / (os.at - os.prevAt);
-        for (int k = 0; k < 3; k++) tv_w32(o + 4 * k, (Bit32u)(Bit32s)(os.pos[k] + (os.pos[k] - os.prev[k]) * f));
-        for (int k = 3; k < 6; k++) tv_w32(o + 4 * k, (Bit32u)os.pos[k]);
+        double target[6], rate[6] = { 0, 0, 0, 0, 0, 0 };
+        const double span = os.at - os.prevAt;
+        const bool moving = os.prevAt > 0 && span > 10 && span < 1000;
+        const double f = moving ? std::min(now - os.at, 500.0) / span : 0.0;
+        for (int k = 0; k < 3; k++) {
+            target[k] = os.pos[k] + (double)(os.pos[k] - os.prev[k]) * f;
+            rate[k] = moving ? (double)(os.pos[k] - os.prev[k]) * 1000.0 / span : 0.0;
+        }
+        for (int k = 3; k < 6; k++) target[k] = os.pos[k];
+        ease(os.disp, target, rate, now - os.dispAt, os.dispOn);
+        os.dispAt = now;
+        for (int k = 0; k < 3; k++) tv_w32(o + 4 * k, (Bit32u)(Bit32s)lrint(os.disp[k]));
+        for (int k = 3; k < 6; k++) tv_w32(o + 4 * k, (Bit32u)(Bit32s)(Bit16s)(Bit16u)(Bit32s)lrint(os.disp[k]));
     }
 }
 
@@ -1033,9 +1086,39 @@ void tv_session_frame() {
 
 void make_markers(double now);
 
+// What we draw of another pilot's ship, smoothed (the user: "the other ship is kinda bouncing around ... visual
+// smoothing of the locations at the other end. We don't need to alter physics"): its reports come some 15 a second, not
+// evenly, and drawing each where its last report and its rates put it jumped at every report.  Now the drawn place is
+// carried on each frame by the ship's velocity and its angles' rates, then eased towards where the last report puts
+// it now by a share of the gap (a time constant of 0.12 s: within some 0.2 s of the report); a gap of more than 20
+// world units (a jump: a level's start, a retry) is closed at once.  Only the drawing: the game is not touched.
+void smooth_remote(Remote &r, double now) {
+    const double dt = std::min(now - r.at, 500.0) / 1000.0;
+    double target[6], rate[6];
+    for (int k = 0; k < 3; k++) {
+        target[k] = r.pos[k] + r.rate[k] * dt;
+        target[k + 3] = r.pos[k + 3] + r.arate[k] * dt;
+        rate[k] = r.rate[k];
+        rate[k + 3] = r.arate[k];
+    }
+    ease(r.disp, target, rate, now - r.dispAt, r.dispOn);
+    r.dispAt = now;
+    static const bool log = getenv("WCNET_TV_SMOOTHLOG") != NULL;     // (a rig's: the drawn place against the raw one)
+    if (log) {
+        const double rdt = std::min(now - r.at, (double)kCarryMs) / 1000.0;
+        wclog(1, "Terminal Velocity: smooth %.1f raw %.0f %.0f %.0f %d drawn %.0f %.0f %.0f %.0f", now, r.pos[0] + r.rate[0] * rdt,
+              r.pos[1] + r.rate[1] * rdt, r.pos[2] + r.rate[2] * rdt, (int)(r.pos[5] + r.rate[5] * rdt), r.disp[0], r.disp[1], r.disp[2], r.disp[5]);
+    }
+}
+
 void tv_session_draw() {
     if (!g_net || !tv_in_flight()) return;
     const double now = PIC_FullIndex();
+    for (int s = 0; s < kMaxSeats; s++) {
+        Remote &r = g_net->remotes[s];
+        if (s != g_net->self && r.known && r.flying && now - r.at <= kStateStaleMs) smooth_remote(r, now);
+        else r.dispOn = false;
+    }
     make_markers(now);
     const int level = tv_level();
     for (int s = 0; s < kMaxSeats; s++) {
@@ -1044,9 +1127,9 @@ void tv_session_draw() {
         const int look = look_index(g_looks[s]);
         const Bit32u model = model_for(look);
         if (!model) continue;
-        const double dt = std::min(now - r.at, (double)kCarryMs) / 1000.0;
         std::vector<Bit32u> scratch(6);
-        for (int k = 0; k < 6; k++) scratch[k] = (Bit32u)(r.pos[k] + (Bit32s)(r.rate[k] * dt));
+        for (int k = 0; k < 3; k++) scratch[k] = (Bit32u)(Bit32s)lrint(r.disp[k]);
+        for (int k = 3; k < 6; k++) scratch[k] = (Bit32u)(Bit32s)(Bit16s)(Bit16u)(Bit32s)lrint(r.disp[k]);
         std::vector<Bit32u> args;
         args.push_back(TV_SCRATCH);
         args.push_back(model);
@@ -1176,9 +1259,8 @@ void make_markers(double now) {
     for (int s = 0, n = 0; s < kMaxSeats && n < kTvMarkers; s++) {
         const Remote &r = g_net->remotes[s];
         if (s == g_net->self || !r.known || !r.flying || r.level != level || now - r.at > kStateStaleMs) continue;
-        const double dt = std::min(now - r.at, (double)kCarryMs) / 1000.0;
         double d[3];
-        for (int k = 0; k < 3; k++) d[k] = ((double)r.pos[k] + r.rate[k] * dt - me.pos[k]) / kUnit;
+        for (int k = 0; k < 3; k++) d[k] = (r.disp[k] - me.pos[k]) / kUnit;
         // (the matrix's columns: right = (M0, M3, M6), up = (M1, M4, M7), forward = (M2, M5, M8))
         const double x = d[0] * M[0] + d[1] * M[3] + d[2] * M[6];
         const double y = d[0] * M[1] + d[1] * M[4] + d[2] * M[7];

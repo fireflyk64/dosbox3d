@@ -208,6 +208,18 @@ markers go into it as 'tvmark' events, and scripts/tvnet-video.py draws them (th
 before the overlay).  Measured, both ways with the other pilot holding fire: the guest's screen shows the bracketed
 host and the host's bolts ahead of it, the host's screen the bracketed guest and the guest's bolts.
 
+**The others drawn smoothly (2026-11-14, the user: "the other ship is kinda bouncing around ... visual smoothing of the
+locations at the other end. We don't need to alter physics").**  A pilot's reports come some 15 a second, unevenly, and
+its ship was drawn where the last report and its rates put it, jumping at each report; its angles were carried on by
+the ship's own turn rates (about its own axes, not its angles': a banked turn wobbled).  Now the drawn place is carried
+on each frame by the ship's velocity and its angles' rates (from its last two reports), then eased towards where the
+latest report puts it by a share of the gap (time constant 0.12 s); a gap past 20 units (a level's start, a retry) is
+closed at once.  The puppets (craft another machine flies) the same, by their last two reports.  Only what is drawn
+and where puppets are put: the game's physics untouched.  Measured (WCNET_TV_SMOOTHLOG=1, 697 frames of the other
+ship flying straight and turning): frame-to-frame change of its drawn speed median 2.47 -> 0.44 units/s, 95th
+percentile 8.14 -> 2.08; of its heading's rate, 95th percentile 15,719 -> 2,141; drawn within 0.06 units of the
+unsmoothed place (median; 0.42 at most).
+
 **Talking (2026-11-14).**  In flight the 0 key (no key of the game's: 1 to 7 pick weapons) opens the emulator's comms
 prompt; the line goes to the room (Chat, the host relaying) and shows on every screen in the game's own big letters,
 "CALLSIGN: text", for 5 s (the message call 0x2CC00 its net game shows another player's line with); out of flight it
