@@ -48,6 +48,7 @@ int rap_wave_hold_frames();                                 // (the frame hold's
 void rap_set_wave(int game, int wave, Bit32u diff, int plrdiff);   // a guest's launch: the host's wave
 void rap_take_hits(const std::vector<std::pair<int, int> > &hits);  // others' damage (the enemy's index, the damage)
 void rap_blow_up();                                         // our ship's energy to none (another pilot blown up)
+bool rap_esc_down();                                        // the game's Esc key down
 // a pilot's ship and shots drawn in our frame (Do_Game's draw point)
 void rap_draw_ship(Bit32u pic, int x, int y);
 void rap_draw_shots(const std::vector<Bit32u> &shots, int shipX, int shipY);
@@ -66,6 +67,7 @@ bool rap_session_hold_frame(Bit32u frame);  // the frame hold: ahead of a pilot 
 void rap_session_damage(int index, int damage);    // our damage to an enemy (sent at the next tick)
 void rap_session_dead();                    // our ship blown up
 void rap_session_draw();                    // the others' ships and shots, at the draw point
+unsigned rap_session_drawn();               // the others' ships drawn since the last asked
 
 }  // namespace wc
 

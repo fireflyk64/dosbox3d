@@ -412,6 +412,14 @@ export async function expandSplitZips(files) {
     const drop = new Set(parts.map((p) => p.f));
     out = out.filter((f) => !drop.has(f)).concat(inside.map((f) => ({ path: dirOf + f.path, data: f.data })));
   }
+  // (Raptor's shareware, 1rap12.zip: its installer and RAPSW12.SHR, one zip of the game's files: replaced the same way)
+  for (const f of out.slice()) {
+    if (!/\.shr$/i.test(f.path)) continue;
+    let inside;
+    try { inside = await readZip(f.data); } catch (e) { continue; }
+    const dirOf = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/") + 1) : "";
+    out = out.filter((g) => g !== f).concat(inside.map((g) => ({ path: dirOf + g.path, data: g.data })));
+  }
   return out;
 }
 
@@ -470,6 +478,17 @@ function tvPrepare(FS, root, opts = {}) {
   FS.writeFile(`${root}/VOX.INI`, new TextEncoder().encode(lines.join("\r\n")));
   said.push(`VOX.INI: 640 x 480, the best detail${control ? ", " + control : ""}${vox ? "" : " (made)"}`);
   return `Terminal Velocity's settings: ${said.join("; ")}`;
+}
+
+// Raptor's own settings made for the browser at each launch (src/cpu/wcnet_rap.cpp; docs/raptor.md): SETUP.INI as
+// SETUP.EXE writes it (RAP.EXE will not start without one) when there is none: the Sound Blaster for the music (its FM)
+// and the effects, at the machine's 220, IRQ 7, DMA 1; the control the keyboard and the mouse.
+const RAP_SETUP_INI = ["[Setup]", "Detail=1", "Control=0", "[Music]", "CardType=5", "BasePort=220", "Irq=7", "Dma=1",
+  "Volume=127", "[SoundFX]", "CardType=5", "BasePort=220", "Irq=7", "Dma=1", "Channels=4", "Volume=127", ""].join("\r\n");
+function rapPrepare(FS, root) {
+  try { FS.readFile(`${root}/SETUP.INI`); return ""; } catch (e) { /* none: made */ }
+  FS.writeFile(`${root}/SETUP.INI`, new TextEncoder().encode(RAP_SETUP_INI));
+  return "Raptor's settings: SETUP.INI (the Sound Blaster for the music and the effects, the keyboard and the mouse)";
 }
 
 export const GAMES = [
@@ -606,6 +625,19 @@ export const GAMES = [
     help: "Terminal Velocity flown together: the host plays the game as it comes (New Game, an episode, a difficulty) and everybody else flies the host's level with them: a guest's game waits for the host's launch, then flies the same level at the same difficulty. Everybody sees everybody else's ship (the host picks each pilot's craft in the room: the TV-202, a craft of the game's own, or the level's own); every hit and kill counts in every game, and the level's craft are flown by the nearest pilot's machine. Whoever flies the exit ends the level for everybody (the statistics: Space for the next level). A pilot who dies can retry: the level is flown again as it stands, what was destroyed stays destroyed. The afterburner (held Alt, once you have fuel for it) shows to the others as a flame. Pick a controller \"Built in\" (above) for the game's own gamepad control.",
     keys: "<b>Terminal Velocity in flight:</b> the arrow keys steer, <kbd>A</kbd> and <kbd>Z</kbd> set the speed, <kbd>Space</kbd> fires, <kbd>1</kbd> to <kbd>7</kbd> pick a weapon, <kbd>Alt</kbd> held the afterburner (when you have picked one up), the keypad's <kbd>7</kbd> and <kbd>9</kbd> roll; <kbd>B</kbd> changes the view; <kbd>0</kbd> opens the comms prompt (<kbd>Enter</kbd> sends the line to the others' screens); <kbd>Esc</kbd> the game's menu. A controller picked \"Built in\": the stick steers, button 1 fires, button 2 the afterburner, buttons 3 and 4 the speed.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=32\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=5\ndma=1\nhdma=5\n" },
+  // Raptor: Call of the Shadows (Cygnus Studios / Apogee, 1994): the shareware zip as Apogee released it (1rap12.zip:
+  // its installer and RAPSW12.SHR, unpacked by expandSplitZips) or the game's installed directory.  RAP.EXE is a
+  // 32-bit program bound with DOS/4GW that the hooks find in memory by its code (src/cpu/wcnet_rap.cpp).  Flown
+  // together: the host's wave for both, launched together; each pilot's own ship, weapons, money and shop; the
+  // enemies' and the ground's damage shared, the money the killer's, each game's bonuses its own pilot's; a pilot shot
+  // down the end for both (docs/raptor.md).  The game runs 23 frames a second by its own clock.
+  { id: "rap", tag: "RAP", title: "Raptor: Call of the Shadows", detect: ["RAP.EXE"], run: "rap", multiplayer: true, maxSeats: 2,
+    build: { text: "ENEMY_Think() - Invalid ANIMTYPE1" },
+    cycles: 40000, screen: [320, 200], noFlight: true, noRoomOptions: true, prepare: rapPrepare,
+    saves: ["CHAR*.FIL", "SETUP.INI"],
+    help: "Raptor flown together: each pilot plays a game of their own (a new pilot or a saved one, their own ship, weapons, money and shop), and the waves are flown together: when a pilot chooses a sector at the ship computer (the hangar's Fly Mission), their game waits there for the other, then both fly the host's wave. Both ships are on both screens; the enemies are the same, and what either pilot shoots down is shot down in both games: the money goes to whoever did it, and each pilot picks up their own bonuses. If either pilot is shot down, the mission is over for both.",
+    keys: "<b>Raptor:</b> the arrow keys (or the mouse) fly the ship, <kbd>Ctrl</kbd> fires, <kbd>Alt</kbd> fires the special weapon, <kbd>Space</kbd> picks the next special weapon, the right <kbd>Shift</kbd> the mega bomb; <kbd>Esc</kbd> aborts the mission (the other pilot flies on alone), <kbd>P</kbd> pauses.",
+    dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
 ];
 
 // The registry entry of a game id, or null (a game picked by its executable).

@@ -28,8 +28,9 @@ enum AnchorId {
     A_OBJS_AMT = 18,     // OBJS_GetAmt (type): p_objs [type]->num
     A_GLB_FETCH = 19,     // GLB_FetchItem: an item's handle (archive << 16 | item) to its entry (0x28 bytes, +0x10 its memory)
     A_SHOTS_DISPLAY = 20,     // SHOTS_Display: the player's shots (first_shots.next .. &last_shots)
-    A_TILE_KILL = 21,     // TILE_Think: a tile's hits gone (< 0) and not dead: plr.score += money [mapspot] (the map spot in [ebp - 0x14])
-    A_COUNT = 22
+    A_ALT_X = 21,     // Do_Game's loop: KBD_Key (SC_X) && KBD_Key (SC_ALT) (the keys down: a BOOL a scan code)
+    A_TILE_KILL = 22,     // TILE_Think: a tile's hits gone (< 0) and not dead: plr.score += money [mapspot] (the map spot in [ebp - 0x14])
+    A_COUNT = 23
 };
 static const Bit8u k_begtext_bytes[16] = { 0xcc, 0xeb, 0xfd, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
 static const Bit8u k_begtext_mask[16] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
@@ -73,6 +74,8 @@ static const Bit8u k_glb_fetch_bytes[64] = { 0x89, 0x04, 0x24, 0x31, 0xc0, 0x66,
 static const Bit8u k_glb_fetch_mask[64] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 static const Bit8u k_shots_display_bytes[64] = { 0x53, 0x51, 0x52, 0x56, 0x57, 0x55, 0x89, 0xe5, 0x81, 0xec, 0x18, 0x00, 0x00, 0x00, 0xa1, 0xec, 0xbb, 0x06, 0x00, 0x89, 0x45, 0xfc, 0xb8, 0xb8, 0x99, 0x06, 0x00, 0x3b, 0x45, 0xfc, 0x75, 0x10, 0xe9, 0xc0, 0x01, 0x00, 0x00, 0x8b, 0x45, 0xfc, 0x8b, 0x40, 0x04, 0x89, 0x45, 0xfc, 0xeb, 0xe6, 0x8b, 0x45, 0xfc, 0x8b, 0x40, 0x58, 0x8b, 0x40, 0x70, 0x89, 0x45, 0xe8, 0x83, 0x7d, 0xe8, 0x01 };
 static const Bit8u k_shots_display_mask[64] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+static const Bit8u k_alt_x_bytes[32] = { 0x83, 0x3d, 0x38, 0xe0, 0x07, 0x00, 0x00, 0x74, 0x09, 0x83, 0x3d, 0x64, 0xe0, 0x07, 0x00, 0x00, 0x75, 0x05, 0xe9, 0x7e, 0x00, 0x00, 0x00, 0xe8, 0x78, 0xea, 0xff, 0xff, 0x31, 0xc0, 0xe8, 0x5a };
+static const Bit8u k_alt_x_mask[32] = { 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1 };
 static const Bit8u k_tile_kill_bytes[90] = { 0x66, 0x83, 0xb8, 0xfc, 0x8e, 0x06, 0x00, 0x00, 0x7d, 0x0f, 0x8b, 0x45, 0xec, 0x01, 0xc0, 0x66, 0x83, 0xb8, 0x68, 0x84, 0x06, 0x00, 0x00, 0x74, 0x02, 0xeb, 0x68, 0x8b, 0x5d, 0xe4, 0x83, 0xc3, 0x10, 0x8b, 0x55, 0xe8, 0x83, 0xc2, 0x10, 0xb8, 0x0f, 0x00, 0x00, 0x00, 0xe8, 0x91, 0xa2, 0x00, 0x00, 0xba, 0x05, 0x00, 0x00, 0x00, 0x8b, 0x45, 0xfc, 0x8b, 0x40, 0x0c, 0xe8, 0x57, 0xfa, 0xff, 0xff, 0x8b, 0x45, 0xec, 0x01, 0xc0, 0x8b, 0x80, 0xd2, 0x79, 0x06, 0x00, 0xc1, 0xf8, 0x10, 0x01, 0x05, 0xc8, 0x42, 0x06, 0x00, 0xba, 0x0a, 0x00, 0x00, 0x00 };
 static const Bit8u k_tile_kill_mask[90] = { 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1 };
 static const Anchor kAnchors[A_COUNT] = {
@@ -97,6 +100,7 @@ static const Anchor kAnchors[A_COUNT] = {
     { "objs_amt", 0x1B1EE, 0, 48, k_objs_amt_bytes, k_objs_amt_mask, 0, 25 },
     { "glb_fetch", 0x27AC2, 0, 64, k_glb_fetch_bytes, k_glb_fetch_mask, 0, 39 },
     { "shots_display", 0x15E9D, 0, 64, k_shots_display_bytes, k_shots_display_mask, 37, 27 },
+    { "alt_x", 0x1192F, 0, 32, k_alt_x_bytes, k_alt_x_mask, 6, 5 },
     { "tile_kill", 0x12D7C, 79, 90, k_tile_kill_bytes, k_tile_kill_mask, 22, 23 },
 };
 enum DataId {
@@ -133,9 +137,10 @@ enum DataId {
     D_GLB_ITEMS = 30,     // filedesc [0].item: each archive's entries (0xA0 bytes an archive)
     D_FIRST_SHOTS_NEXT = 31,     // first_shots.next: the player's shots (SHOTS, 0x60 bytes: +8 pic, +0xC x, +0x10 y, +0x14 move, +0x58 lib)
     D_LAST_SHOTS = 32,     // &last_shots: their list's end
-    D_TILE_HITS = 33,     // the map's tiles' hits (a SHORT a map spot: 9 a row, 150 rows)
-    D_TILE_DEAD = 34,     // the map's tiles destroyed (a SHORT a map spot)
-    D_COUNT = 35
+    D_KEYBOARD_X = 33,     // keyboard [SC_X]: the keys down (a BOOL a scan code, from keyboard [0] 0xB4 before it)
+    D_TILE_HITS = 34,     // the map's tiles' hits (a SHORT a map spot: 9 a row, 150 rows)
+    D_TILE_DEAD = 35,     // the map's tiles destroyed (a SHORT a map spot)
+    D_COUNT = 36
 };
 static const Data kData[D_COUNT] = {
     { "cur_game", A_GAME_ENTRY, 60, 0x61484 },
@@ -171,6 +176,7 @@ static const Data kData[D_COUNT] = {
     { "glb_items", A_GLB_FETCH, 39, 0x7C5C4 },
     { "first_shots_next", A_SHOTS_DISPLAY, 15, 0x6BBEC },
     { "last_shots", A_SHOTS_DISPLAY, 23, 0x699B8 },
+    { "keyboard_x", A_ALT_X, 2, 0x7E038 },
     { "tile_hits", A_TILE_KILL, 3, 0x68EFC },
     { "tile_dead", A_TILE_KILL, 18, 0x68468 },
 };

@@ -366,9 +366,9 @@ void report(double now) {
     RapLocal l;
     rap_local(&l);
     wclog(2, "Raptor: %.1fs: %u frames, %s, sector %d wave %d, ship at %d %d, energy %d, money %u; damage told %u, taken %u, "
-             "kills by the others %u; run %u; tiles destroyed %d",
+             "kills by the others %u; run %u; tiles destroyed %d; the others' ships drawn %u",
           now / 1000.0, g_frames, l.inWave ? "in a wave" : "not in a wave", l.game, l.wave, l.x, l.y, l.shield,
-          r32(D(D_PLR_SCORE)), g_damageSent, g_damageTaken, g_remoteKills, rap_session_run(), l.inWave ? tiles_dead() : 0);
+          r32(D(D_PLR_SCORE)), g_damageSent, g_damageTaken, g_remoteKills, rap_session_run(), l.inWave ? tiles_dead() : 0, rap_session_drawn());
     g_frames = g_damageSent = g_damageTaken = g_remoteKills = 0;
 }
 
@@ -493,6 +493,10 @@ void rap_blow_up() {
         w32(energy + 8, 0);
         wclog(1, "Raptor: our ship's energy to none (another pilot blown up: the wave is over for everybody)");
     }
+}
+
+bool rap_esc_down() {
+    return g_found && r32(D(D_KEYBOARD_X) - 4 * 0x2D + 4 * 1) != 0;     // (keyboard [SC_ESC])
 }
 
 void rap_draw_ship(Bit32u item, int x, int y) {

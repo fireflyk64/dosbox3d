@@ -37,6 +37,7 @@ ANCHORS = [
     ('objs_amt', 0x1B1EE, 0, 0x30, "OBJS_GetAmt (type): p_objs [type]->num"),
     ('glb_fetch', 0x27AC2, 0, 0x40, "GLB_FetchItem: an item's handle (archive << 16 | item) to its entry (0x28 bytes, +0x10 its memory)"),
     ('shots_display', 0x15E9D, 0, 0x40, "SHOTS_Display: the player's shots (first_shots.next .. &last_shots)"),
+    ('alt_x', 0x1192F, 0, 0x20, "Do_Game's loop: KBD_Key (SC_X) && KBD_Key (SC_ALT) (the keys down: a BOOL a scan code)"),
     ('tile_kill', 0x12D7C, -0x4F, 0x5A, "TILE_Think: a tile's hits gone (< 0) and not dead: plr.score += money [mapspot] (the map spot in [ebp - 0x14])"),
 ]
 
@@ -75,6 +76,7 @@ DATA = [
     ('glb_items', 'glb_fetch', 0x27AE7 - 0x27AC2 + 2, "filedesc [0].item: each archive's entries (0xA0 bytes an archive)"),
     ('first_shots_next', 'shots_display', 0x15EAB - 0x15E9D + 1, "first_shots.next: the player's shots (SHOTS, 0x60 bytes: +8 pic, +0xC x, +0x10 y, +0x14 move, +0x58 lib)"),
     ('last_shots', 'shots_display', 0x15EB3 - 0x15E9D + 1, "&last_shots: their list's end"),
+    ('keyboard_x', 'alt_x', 2, "keyboard [SC_X]: the keys down (a BOOL a scan code, from keyboard [0] 0xB4 before it)"),
     ('tile_hits', 'tile_kill', 0x12D2D - 0x12D7C + 3, "the map's tiles' hits (a SHORT a map spot: 9 a row, 150 rows)"),
     ('tile_dead', 'tile_kill', 0x12D3C - 0x12D7C + 3, "the map's tiles destroyed (a SHORT a map spot)"),
 ]

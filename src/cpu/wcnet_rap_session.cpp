@@ -97,6 +97,7 @@ Bit32u g_lastFrameSent = 0xFFFFFFFFu;
 std::vector<Bit32u> g_hitsOut;  // (index, damage) pairs not yet sent
 bool g_deadIn = false;          // another pilot blown up: ours at the next frame
 bool g_deadOut = false;         // ours blown up (told)
+unsigned g_drawn = 0;
 
 void notice(const std::string &text) {
     incoming_text = text;
@@ -183,7 +184,7 @@ bool start() {
     }
     g_net = n;
     wclog(1, "Raptor: %s at %s, %d seats, callsign %s", n->host ? "HOST" : "GUEST", where.c_str(), n->seats, n->callsign.c_str());
-    if (n->host) notice("Room open: choose a sector at the ship computer and the others fly the wave with you");
+    if (n->host) notice("Room open: choose a sector at the ship computer and the others fly the wave with you (Esc there: alone)");
     return true;
 }
 
@@ -408,7 +409,7 @@ void launch_think(double now) {
             g_run = g_launchSerial;
             wclog(1, "Raptor: everybody at the launch: run %u", g_run);
         } else if (now - g_launchSince > 1000 && now - g_noticeAt > 4000) {
-            notice("Waiting for the others to choose a sector at the ship computer");
+            notice("Waiting for the others to choose a sector at the ship computer (Esc: fly alone)");
         }
     } else {
         const Remote &h = g_net->remotes[0];
@@ -423,7 +424,7 @@ void launch_think(double now) {
             wclog(1, "Raptor: the host's wave: sector %d wave %d, difficulty %d (sprites %02x): run %u", h.game >> 4, h.game & 15,
                   h.plrdiff, h.diff, g_run);
         } else if (now - g_launchSince > 1000 && now - g_noticeAt > 4000) {
-            notice("Waiting for " + h.callsign + " (the host) to choose a sector at the ship computer");
+            notice("Waiting for " + h.callsign + " (the host) to choose a sector at the ship computer (Esc: fly alone)");
         }
     }
 }
@@ -501,6 +502,12 @@ bool rap_session_launch_arrive() {
 }
 
 bool rap_session_launch_go() {
+    if (!g_go && rap_esc_down()) {
+        // (Esc at the ship computer's wait: this wave flown alone)
+        g_go = true;
+        g_run = 0;
+        notice("Esc: flying this wave alone");
+    }
     if (!g_go) return false;
     g_atLaunch = false;
     incoming_text.clear();
@@ -567,8 +574,17 @@ void rap_session_draw() {
         const Remote &r = g_net->remotes[s];
         if (!fresh(r) || r.run != g_run || !r.inWave) continue;
         rap_draw_shots(r.shots, r.x, r.y);
-        if (r.drawn) rap_draw_ship(r.pic, r.x, r.y);
+        if (r.drawn) {
+            rap_draw_ship(r.pic, r.x, r.y);
+            g_drawn++;
+        }
     }
+}
+
+unsigned rap_session_drawn() {
+    const unsigned n = g_drawn;
+    g_drawn = 0;
+    return n;
 }
 
 }  // namespace wc
