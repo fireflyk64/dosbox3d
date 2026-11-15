@@ -6,7 +6,7 @@
 // from a local copy (ARCHIVE_ZIP), to spare its bandwidth.  Each check printed with OK or FAIL; ends "TOGETHER OK".
 //
 //   node scripts/web-together.mjs PAGE_URL LOBBY_URL [button ...]     (buttons: demoTfd demoRv demoRap demoTv)
-//   env: PLAYWRIGHT_DIR, CHROME, ARCHIVE_ZIP, HALL (the lobby's name: a test's own, as on the live site with LOBBY_URL
+//   env: PLAYWRIGHT_DIR, CHROME, ARCHIVE_ZIP, OVERRIDE_WC_JS (a wc.js served in place of the page's), HALL (the lobby's name: a test's own, as on the live site with LOBBY_URL
 //        "public": never WC-LOBBY itself)
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -34,6 +34,11 @@ async function openPage(who, params = {}) {
   let archived = 0;
   page.on("console", (m) => logs.push(m.text()));
   page.on("pageerror", (e) => console.log(`${stamp()} [${who}] PAGE ERROR: ${e.message}`));
+  if (process.env.OVERRIDE_WC_JS) {
+    // (this tree's page script in place of the served one: a fix tried on the live site and the public lobby first)
+    const js = fs.readFileSync(process.env.OVERRIDE_WC_JS);
+    await page.route(/\/wc\.js(\?.*)?$/, (route) => route.fulfill({ status: 200, body: js, headers: { "content-type": "text/javascript" } }));
+  }
   if (archive) {
     await page.route("https://archive.org/**", (route) => {
       archived++;
@@ -70,6 +75,7 @@ for (const button of buttons.length ? buttons : ["demoTfd", "demoRv"]) {
   await b.page.click("#" + button);
   check(await inRoom(b), `B: in a room after the button (${(await said(b)).slice(0, 140)})`);
   check(await roomCode(b) === code, `B: joined A's open room (${await roomCode(b)})`);
+  if (await roomCode(b) !== code) for (const p of [a, b]) console.log(p.logs.filter((l) => /lobby|hall/i.test(l)).map((l) => `     [${p.who}] ${l.slice(0, 170)}`).join("\n"));
   await a.page.waitForFunction(() => document.getElementById("roster").children.length > 1, null, { timeout: 30000 }).catch(() => {});
   check(await a.page.$eval("#flySolo", (b) => b.hidden), "A: Fly Alone gone once B is in");
   // a link to the room, opened with no copy of the game (a fresh browser: the page's own game first)

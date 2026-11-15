@@ -550,10 +550,11 @@ async function playTogether(d) {
   renderTopAction();
   try {
     if (!(await getGame(d))) return;
-    // (in the lobby: the pilots there are asked; a pilot who had left it comes back for this)
+    // (in the lobby: the pilots there are asked; a pilot who had left it comes back for this.  A page still entering
+    // it, as one just opened is, is waited for by findRooms: enter() says no at once while an entry is under way)
     if (!hall.inside()) await hall.enter();
     status(`Asking the pilots in the lobby for an open ${g.title} room…`);
-    const found = hall.inside() ? await hall.findRooms() : null;
+    const found = await hall.findRooms();
     const fit = (found ? found.rooms : []).filter((r) => r.game === d.id && canFly(r));
     for (let i = fit.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [fit[i], fit[j]] = [fit[j], fit[i]]; }
     for (const r of fit) {
