@@ -62,6 +62,8 @@ const Place kCreateProjectile = { 0x1338, 0x0B16 }; // laser_createprojectile
 const Place kLaserHit = { 0x05B3, 0x1B18 };         // collide_laserhitcraft
 const Place kDamage = { 0x05B3, 0x1CF8 };           // collide_damagecraft
 const Place kUpdateKills = { 0x05B3, 0x2CA8 };      // collide_updatekills
+const Place kFlightOver = { 0x0090, 0x04FB };       // the flight's frames over (the end flag set), its status not yet
+                                                    // looked at: the campaign's (wcnet_tiedemo_campaign.cpp)
 enum {
     kDgroupPara = 0x421F,
     kStubOff = 0x5C,            // the launch hold's idle: "jmp $" written in the PSP's first FCB (unused by the program)
@@ -77,8 +79,13 @@ Bit32u g_frame = 0;
 double g_lastFrameMs = -1e9, g_frameMs = 50, g_rateSince = 0;
 Bit32u g_rateFrames = 0;
 bool g_flightSaid = false;
-// the launch's hold
-bool g_holding = false, g_released = false;
+// the holds: the launch's (create_createmission's entry) and a guest's for the host's verdict (the flight over).  A
+// hold let go jumps back to its place, whose hook may or may not come up for that first instruction (the dispatcher
+// does not look again at an IP a hook has just set): `released` says so if it does, and is cleared further on in
+// any case (the mission read; the next flight's first frame), never left to stop the next flight's hold.
+enum Hold { HOLD_NONE, HOLD_LAUNCH, HOLD_VERDICT };
+Hold g_holding = HOLD_NONE;
+bool g_released = false, g_verdictReleased = false;
 
 // (research aids)
 int g_prof = -1;
@@ -199,9 +206,12 @@ void frame_top() {
         g_rateFrames = 0;
         g_flightSaid = true;
         wclog(1, "TIE demo: the flight's frames are coming (our object %d)", tdm_player_object());
+        hooks_flight_began();
     }
     g_lastFrameMs = now;
     g_frame++;
+    g_verdictReleased = false;
+    tdm_campaign_frame();
     if (++g_rateFrames >= 20) {
         g_frameMs = (now - g_rateSince) / g_rateFrames;
         g_rateSince = now;
@@ -314,13 +324,13 @@ void at_move_objects() {
 
 // --- the launch: held at create_createmission's entry -------------------------------------------------------------
 
-void hold_at_stub() {
+void hold_at_stub(Hold why) {
     const PhysPt stub = ((PhysPt)g_psp << 4) + kStubOff;
     mem_writeb(stub, 0xEB);         // jmp $
     mem_writeb(stub + 1, 0xFE);
     SegSet16(cs, g_psp);
     reg_eip = kStubOff;
-    g_holding = true;
+    g_holding = why;
 }
 
 void at_create_mission() {
@@ -330,16 +340,29 @@ void at_create_mission() {
     }
     if (tdm_session_launch_hold()) {
         wclog(1, "TIE demo: the launch held for the room");
-        hold_at_stub();
+        hold_at_stub(HOLD_LAUNCH);
+    }
+}
+
+void at_flight_over() {
+    if (g_verdictReleased) {
+        g_verdictReleased = false;  // (back from the hold: the status is written)
+        return;
+    }
+    if (tdm_campaign_flight_over()) {
+        wclog(1, "TIE demo: the flight over: held for the host's verdict");
+        hold_at_stub(HOLD_VERDICT);
     }
 }
 
 void at_stub() {
-    if (!tdm_session_launch_hold()) {
-        g_holding = false;
-        g_released = true;
-        SegSet16(cs, seg_of(kCreateMission));
-        reg_eip = kCreateMission.off;
+    const bool launch = g_holding == HOLD_LAUNCH;
+    if (launch ? !tdm_session_launch_hold() : !tdm_campaign_flight_over()) {
+        g_holding = HOLD_NONE;
+        const Place &back = launch ? kCreateMission : kFlightOver;
+        (launch ? g_released : g_verdictReleased) = true;
+        SegSet16(cs, seg_of(back));
+        reg_eip = back.off;
         return;
     }
     CPU_IODelayRemoved += CPU_Cycles;      // (idle, as HLT is, until the room is there)
@@ -350,6 +373,7 @@ void at_stub() {
 
 // --- the game, for the session -----------------------------------------------------------------------------------
 
+Bit16u tdm_load_segment() { return g_load; }
 PhysPt tdm_ds(Bit16u off) { return dsa(off); }
 PhysPt tdm_obj(int o) { return dsa(obj_at(o)); }
 PhysPt tdm_craft(int o) {
@@ -410,9 +434,11 @@ void tdm_program_loaded(const char *name, Bit16u loadSeg, Bit16u psp) {
     g_ds = (Bit16u)(loadSeg + kDgroupPara);
     g_nextCheckMs = PIC_FullIndex() + 1000;
     g_calls.clear();
-    g_inCall = g_holding = g_released = false;
+    g_inCall = g_released = g_verdictReleased = false;
+    g_holding = HOLD_NONE;
     hooks_game_changed();       // (the dispatcher's table: our places)
     wclog(1, "TIE demo: TIEMISS.EXE loaded at %04X (PSP %04X): %s", loadSeg, psp, kVersion);
+    tdm_campaign_loaded();
 }
 
 void tdm_tick() {
@@ -462,6 +488,7 @@ void tdm_watch_list(void (*watch)(Bit16u ip)) {
     watch(kCreateProjectile.off);
     watch(kLaserHit.off);
     watch(kDamage.off);
+    watch(kFlightOver.off);
     watch(kStubOff);
 }
 
@@ -484,7 +511,13 @@ bool tdm_check_hooks(Bit32u ip) {
         return true;
     }
     if (at(kMissionRead, ip)) {
+        g_released = false;
+        tdm_campaign_mission_read();        // (the mission written first: the session's seat is in it)
         tdm_session_before_create();
+        return true;
+    }
+    if (at(kFlightOver, ip)) {
+        at_flight_over();
         return true;
     }
     if (at(kCreateProjectile, ip)) {
@@ -503,6 +536,7 @@ bool tdm_check_hooks(Bit32u ip) {
 }
 
 bool tdm_script_item(const std::string &item, double t) {
+    if (tdm_campaign_script_item(item, t)) return true;
     if (item.compare(0, 9, "!tdmglue=") == 0) {
         g_glue = sscanf(item.c_str() + 9, "%d:%d:%d", &g_glueD[0], &g_glueD[1], &g_glueD[2]) == 3;
         wclog(1, "key script %.1fs: TIE demo: object 0 %s the player (%d %d %d)", t, g_glue ? "held beside" : "let go of",

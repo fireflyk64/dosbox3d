@@ -222,3 +222,116 @@ TieOwners. Only the room's hello and the launch are the demo's own (TdmHello, Td
   launches again only after its flight ends.
 * **The flash of a hit applied from another machine** is drawn where the stand-in bolt is (the shooter's bolt's
   place): the CD port's impact offset globals are not known in this build.
+* **The campaign's balance** (section 8) is set from measured speeds, hulls, shields and torpedo damage and from the
+  AI's own flights, not yet from people flying it: the shuttle run's timing, the bomber's escorts and the escort's
+  Y-wings may want a turn once flown.
+* **A guest who joins mid-campaign** flies from the host's next launch, whichever mission that is.
+
+## 8. The campaign (src/cpu/wcnet_tiedemo_campaign.cpp, scripts/tdmmissions.py)
+
+The user, 2026-11-15: "Can players win the mission? if so can you have them deploy again as 3 Tie interceptors using
+the tie fighter cockpits from the prowler corvettes and have to attack a series of about 12 fleeing shuttles while
+being targeted by x-wing and y-wings. The player should have time to deal with the shuttles as long as they don't
+entirely focus on the x-wings. Then another mission where they fly a tie bomber and have to take out a number of
+correlean corvettes while being dogged by a few y-wings and eventually some x-wings. The last one should be a escrot
+mission for the prowlers flying as the classic tie fighter where a series of Y-wings are trying to take down the
+corvettes with 1 or 2 x-wings for cover. The players must deal with them before they get into torpedo range. Finally
+when that is done they may notice a distant shuttle trying to make an escape run. If they destroy the shuttle then a
+series of freighters guarded by corvettes arrives." Then: "the mission shifts can be done in the protocol layer rather
+than in the game code. In fact the mission table could be just shifted around since there aren't save games".
+
+**How the demo's flight ends** (read in TIEMISS.EXE):
+* `main` (0000:0000) flies the mission (0090:0006) again and again until a flight's status (DS:614C) is 3, "the
+  mission over"; then TIEMISS exits and TIEDEMO.BAT plays the ending.
+* A flight's frames run until the end flag (DS:614D) is set. A death (status 0), a capture (1) or a rescue after an
+  eject (2) ends it, and `main` flies the mission again: the demo restarts after a death. `Q` then `Space` ejects.
+* Winning does not end a flight: score_checkobjective (125A:0006) marks the primary goals complete (DS:614F = 1),
+  says so and shows the header's win lines; the pilot flies on.
+* The goals are this build's, older than the CD's: a flight group's primary goal state (DS:C492 + 0x30 per group) is
+  0 open, 1 met (never looked at again) or 0xFF failed (the game then shows the header's loss lines); a goal's amount
+  is the condition's amount as it stands (0 all, 1 three quarters, 2 half, 3 a quarter, 4 at least one, 5 all but
+  one), not passed through the CD's percentcon. A "survived" goal is met at its first look and never fails after.
+
+**The mission table, shifted** (the user's way): create_createmission reads DEMO.TIE whole into memory: the 456-byte
+header (three counts, then OpenTIE's EMissionStruct: the time limit, the win and loss lines) at DS:C280, the flight
+groups (OpenTIE's EFGStruct, 292 bytes, at most 48) at the mission segment's 0xD0, the radio messages (90 bytes, at
+most 10) at its 0x3790. At 0FC2:0136, just after the read and before the craft are made, the layer writes the mission
+to fly over that copy (the guest's seat and the host's seeds are written next, into it). No file is changed.
+
+**The missions** (scripts/tdmmissions.py describes them; `build` writes src/cpu/wcnet_tiedemo_missions.h, `decode`
+reads a mission file back):
+1. **The Ambush**: the demo's own, as read (T/F Alpha). Its primary goals are every rebel group from the yard's fall on,
+   each arriving as the one before it dies: with every rebel destroyed the moment it came (`!tdmrebels`), the game
+   said "primary goals complete" 8 minutes in, and the next mission followed.
+2. **The Shuttles Run** (T/I Alpha): four flights of three shuttles, a minute apart, each crossing ahead of Alpha to
+   a jump some 19 km on (about 5 minutes at the shuttle's 66 m/s, measured); two of each flight must die (goal: half
+   destroyed). Two X-wings and two Y-wings attack Alpha from the start, two more of each come with the third and fourth
+   flights. The interceptor (110 m/s) outruns them all.
+3. **Corvette Hunt** (T/B Alpha, proton torpedoes: `W` arms them): four rebel corvettes patrolling 7 to 10 km out;
+   three Y-wings attack Alpha from the start, two X-wings come 20 s after the first corvette dies, two more once half
+   are gone. Measured first: a corvette has 5,000 hull behind 10,000 of shields, a torpedo does some 1,300 to 2,500,
+   and the T/B carries four (two a launcher): twelve torpedoes for four corvettes could not do it. So Alpha flies
+   with twice the warheads and the corvettes with half their shields (a flight group's status byte, +0x34, TIE95's:
+   1 and 4, measured in this build), some five torpedoes to a corvette.
+4. **Escort the Prowlers** (T/F Alpha): three Prowlers on a slow loop; three flights of Y-wings (eight torpedoes each,
+   two, three and three of them), each with one or two X-wings for cover, each coming when the one before is
+   destroyed, from 9 to 11 km out. A Prowler lost fails the mission (the layer's rule: this build's "survived" goal is
+   met at its first look and never fails). Then the shuttle KESTREL runs, far off (a bonus); if it dies, two pairs of
+   freighters and two corvettes arrive for it (the freighters a bonus too). Alpha's two AI wingmen took the first
+   flight on 2.5 to 4 km out, before it fired.
+   * Speeds measured in flight: the world moves 0.44 m/s per unit of a craft's speed: the T/I 110 m/s, the T/F and
+     the X-wing 99, the T/B and the Y-wing 79, the shuttle 66.
+
+**The radio, and the Thrawn of it.** The user, 2026-11-15: "make sure to add some nice flavor text conversations
+during the mission. I wonder if this can be connected to the whole Thrawnverse fan fiction scene through a few tactical
+callouts of mainstream plot elements." TIE Fighter's own later battles bring in Grand Admiral Thrawn, so the missions
+are his: his flagship the Chimaera and Captain Pellaeon give the orders, and the callouts are his best-known ways: the
+X-wings read as a decoy, the corvettes' gunners known to watch the bow, a Noghri team aboard the Prowlers, the officers'
+escape and the convoy that comes back for them foreseen ("they never leave their own"), and on a failed shuttle run
+"Thrawn forgives an honest mistake. Once." Each mission has the most the game holds, ten radio lines (60 characters:
+the message bar), the briefing (the emulator's line over the picture, wrapped) and the header's win and loss lines.
+* The lines are the game's own messages, shown on its message bar with its sound. This build ignores a message's delay
+  byte (score_checkobjective shows a message as soon as its conditions hold: 125A:02E4), so a line meant for later
+  (`after`: seconds past the flight's start or a flight group's first craft) is written with never-true conditions
+  and the layer makes both true when its time comes (wcnet_tiedemo_campaign.cpp `release_timed`); the game then shows
+  it at its next look. Lines tied to an event (an arrival, a death) are the game's own triggers.
+* The game ends a line with a full stop unless it ends with "!" or "?": the builder leaves a written final "." to it.
+
+**The end of a flight, and the next** (the layer's, per mission: Mission's end rule):
+* Won: a few seconds after the primary goals are complete (Escort the Prowlers: once its tail, the shuttle and what
+  comes for it, has been quiet for 25 s, 10 minutes at most) the layer sets the end flag.
+* Failed: a primary goal failed (0xFF), or a protected craft dying: the end flag 8 s later; the same mission next.
+* At 0090:04FB (the frames over, the status not yet looked at) the status is written: 3 once the last mission is won
+  (TIEMISS exits, the ending plays), else 2, so that `main` flies again: the next mission or the same one. A pilot's
+  own end (Esc: status 3, not ended by the layer, the room or the clock) is left alone: the program ends as it did.
+* In a room the host decides: its go carries the mission (TdmState.mission), its verdict on each flight the next one
+  (TdmState.verdict/next/over). A guest's program waits at 0090:04FB for the host's verdict on the flight it flew
+  (the launch's hold, the PSP's `jmp $`), 20 s at most.
+  * The host's verdict also ends a guest's flight (3 s later, as a pilot down does): the host's frames simply stop when
+    its flight ends, never saying so. The guest keeps the verdict when it comes, and ends its flight by its own clock:
+    when the campaign is over the host's program ends at once, and the room with it, before the guest's flight does.
+  * A hold let go jumps back to its place, and the dispatcher does not look again at an IP a hook has just set: the
+    "released" flag that was to stop the hook holding again at once was left set, and the next flight's launch went
+    without the room (the demo alone never launched twice). It is now cleared at the mission read (and the verdict's
+    at the next flight's first frame) in any case.
+* The cockpit's warhead counter is drawn only when its count changes, and never for a craft without warheads: the T/F
+  of Escort the Prowlers kept the T/B's 2-2 from Corvette Hunt. The layer empties our craft's warheads (CraftData
+  +0x114: 6-byte weapon slots, +0 the type, 0x14 a laser and 0x18 a torpedo launcher, +2 the count) a few frames
+  before any flight's end it decides, so the counter shows 0-0 when the next begins.
+
+**Test aids** (key script): `!tdmmission=<n>` the next flight's mission (the flight under way ended), `!tdmwin` the
+primary goals marked complete, `!tdmrebels` the rebels' craft destroyed one at a time as they come (the game's own
+damage), `!tdmcraft` every craft logged (flight group, type, place, speed, hull, shields, warheads, goal state),
+`!tdmcd` our craft's data in hex; in the environment `TDM_MISSION=<n>` starts the campaign there and
+`TDM_MISSION_FILE=<path>` flies that mission file instead of the later mission (a variant from the builder's classes,
+no rebuild). scripts/tdmcampaign-duo.sh flies the campaign on two machines with scripted wins; scripts/web-tdm.sh
+with a host script holding `!tdmwin` checks two pages go on to the next mission.
+
+**Measured (2026-11-15):**
+* Alone: the four missions one after another with scripted wins, then the program's end and the demo's ending.
+* Two machines (CAMPAIGN DUO OK): missions 2 to 4 launched together by the host's go (launches 1, 2, 3), the guest in
+  its own craft of Alpha in each, the host's verdicts taken, both programs ending together after the last; 30 of the
+  other's shots made each way.
+* The bomber's torpedoes cross the room: the host's two, remade on the guest's machine (type 24, the launcher's).
+* A pilot down: both flights end, the guest waits for the host's verdict ("the same mission"), and both launch it
+  again together with new seeds.

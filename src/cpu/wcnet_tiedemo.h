@@ -60,6 +60,7 @@ enum {
 };
 }  // namespace tdm
 
+Bit16u tdm_load_segment();              // TIEMISS's load segment (its image's paragraph 0)
 PhysPt tdm_ds(Bit16u off);              // DS:off as a linear address
 PhysPt tdm_obj(int o);                  // object o's record
 PhysPt tdm_craft(int o);                // its craft data (0: none: not a craft slot, or none)
@@ -93,6 +94,27 @@ void tdm_session_shot();                // laser_createprojectile's entry
 void tdm_session_laser_hit();           // collide_laserhitcraft's entry
 void tdm_session_damage();              // collide_damagecraft's entry
 void tdm_session_flight_ended();
+// ... for the campaign: who decides (a guest follows the host's go and verdicts; solo and host decide)
+enum TdmRole { TDM_SOLO, TDM_HOST, TDM_GUEST };
+TdmRole tdm_session_role();
+int tdm_session_launch_mission();       // the mission the host's latest go launched
+bool tdm_session_room_ended();          // this flight ended by the room (a pilot down, the host's flight over)
+void tdm_session_verdict(int next, bool over);          // the host's verdict on its flight, sent
+bool tdm_session_verdict_wait(int *next, bool *over);   // a guest: true while the host's verdict on our flight is to come
+void tdm_notice(const std::string &text);               // the line drawn over the picture
+
+// The campaign (wcnet_tiedemo_campaign.cpp, docs/tiedemo.md section 8): after the demo's own mission, the missions of
+// scripts/tdmmissions.py, written over the mission the game has read; the flight ended by the layer once won or
+// failed, and the game's own loop (a death's: fly again) flies the next.
+void tdm_campaign_loaded();             // TIEMISS.EXE loaded (the interceptor's and bomber's cockpit named)
+int tdm_campaign_next();                // the mission this machine launches next (0: the demo's own)
+void tdm_campaign_mission_read();       // 0FC2:0136, before the session's seat and seeds: the mission written
+void tdm_campaign_frame();              // the top of each flight frame
+void tdm_campaign_flight_ending();      // the room has decided this flight's end (the session's room_end)
+void tdm_campaign_host_verdict(int next, bool over);    // a guest: the host's verdict on the flight under way
+bool tdm_campaign_flight_over();        // 0090:04FB, the flight's frames over: true to be held there (a guest
+                                        //   waiting for the host's verdict); else the status written
+bool tdm_campaign_script_item(const std::string &item, double t);
 
 }  // namespace wc
 

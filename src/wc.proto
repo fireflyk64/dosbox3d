@@ -745,4 +745,11 @@ message TdmState {
     optional uint32 go = 6;
     optional uint32 seed = 7;
     optional uint32 seed2 = 8;
+    // The campaign (docs/tiedemo.md section 8): the mission the host's go launches (0 the demo's own), and the host's
+    // verdict on a flight once it is over: `verdict` the go it concerns, `next` the mission flown next, `over` the
+    // campaign done (every pilot's program then ends as the demo does).
+    optional uint32 mission = 9;
+    optional uint32 verdict = 10;
+    optional uint32 next = 11;
+    optional bool over = 12;
 }

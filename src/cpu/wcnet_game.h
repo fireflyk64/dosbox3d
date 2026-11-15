@@ -98,6 +98,8 @@ void game_program_ended(Bit16u psp);
 
 // The hook dispatcher's part (wcnet_hooks.cpp): the tables changed.
 void hooks_game_changed();
+// A game module's flight under way (its first frame): the key script's "wait" item counts it (wcnet_hooks.cpp).
+void hooks_flight_began();
 
 }  // namespace wc
 

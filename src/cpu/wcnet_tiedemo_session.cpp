@@ -102,8 +102,10 @@ struct Remote {                     // a pilot's TdmState
     bool known, atLaunch;
     double at;
     std::string callsign;
-    Bit32u go, seed, seed2;
-    Remote() : known(false), atLaunch(false), at(-1e9), go(0), seed(0), seed2(0) {}
+    Bit32u go, seed, seed2, mission;
+    Bit32u verdict, next;           // (the host's: its verdict on its flight `verdict`)
+    bool over;
+    Remote() : known(false), atLaunch(false), at(-1e9), go(0), seed(0), seed2(0), mission(0), verdict(0), next(0), over(false) {}
 };
 
 struct Puppet {
@@ -128,8 +130,11 @@ struct Net {
     bool atLaunch;
     double launchSince;
     Bit32u launchSerial, flownGo;
-    Bit32u hostSeed, hostSeed2;
+    Bit32u hostSeed, hostSeed2, hostMission;
     bool alone;                     // this flight flown alone (nobody came)
+    Bit32u verdictGo, verdictNext;  // the host's latest verdict (its flight verdictGo; the campaign's next mission)
+    bool verdictOver;
+    bool roomEnded;                 // this flight ended by the room (room_end), not by its pilot
     // the flight
     Bit64u frame;
     double lastReliableAt, endAt;
@@ -153,8 +158,8 @@ struct Net {
         damageSkipped, kills, credited, localAiNow, localAiStarts, localAiEnds, localShots, farReports, nearBlends, hitsShown;
     double farErrSum, farErrMax;
     Net() : host(false), self(-1), seats(2), listener(NULL), atLaunch(false), launchSince(0), launchSerial(0), flownGo(0),
-            hostSeed(0), hostSeed2(0), alone(false), frame(0), lastReliableAt(0), endAt(0), decidedAt(-1e9), ownersSentAt(-1e9),
-            farCursor(0), hitsInNext(0) {
+            hostSeed(0), hostSeed2(0), hostMission(0), alone(false), verdictGo(0), verdictNext(0), verdictOver(false), roomEnded(false), frame(0),
+            lastReliableAt(0), endAt(0), decidedAt(-1e9), ownersSentAt(-1e9), farCursor(0), hitsInNext(0) {
         zero_counts();
         clear_flight();
     }
@@ -207,6 +212,7 @@ bool g_tried = false;
 
 void begin_kill(int obj, int killer);
 void room_end(int seat, const char *what);
+void end_for_room(const std::string &line);
 
 // --- memory ---------------------------------------------------------------------------------------------------------
 
@@ -358,6 +364,12 @@ void send_state(bool reliable) {
         st->set_go(g_net->launchSerial);
         st->set_seed(g_net->hostSeed);
         st->set_seed2(g_net->hostSeed2);
+        st->set_mission(g_net->hostMission);
+    }
+    if (g_net->host && g_net->verdictGo) {
+        st->set_verdict(g_net->verdictGo);
+        st->set_next(g_net->verdictNext);
+        st->set_over(g_net->verdictOver);
     }
     send_all(msg, !reliable);
     g_stateAt = PIC_FullIndex();
@@ -373,6 +385,17 @@ void take_state(const TdmState &st, int seat) {
         r.go = st.go();
         r.seed = st.seed();
         r.seed2 = st.seed2();
+        r.mission = st.mission();
+    }
+    if (st.has_verdict() && st.verdict() > r.verdict) {
+        r.verdict = st.verdict();
+        r.next = st.next();
+        r.over = st.over();
+        // The host's flight over (its verdict on it: its frames stop with it, never saying so): ours ends too.
+        if (!g_net->host && seat == 0 && st.verdict() >= g_net->flownGo && g_net->flownGo) {
+            tdm_campaign_host_verdict((int)st.next(), st.over());
+            end_for_room(pilot_name(0) + "'s flight is over: the flight ends for everybody");
+        }
     }
 }
 
@@ -974,19 +997,25 @@ void poll_peers() {
 }
 
 // The room's end of a flight: a pilot down or the host's flight over ends every pilot's, after a moment.
+void end_for_room(const std::string &line) {
+    if (!tdm_in_flight() || g_net->endAt > 0) return;
+    g_net->endAt = PIC_FullIndex() + kRoomEndMs;
+    tdm_campaign_flight_ending();
+    wclog(1, "TIE demo: %s", line.c_str());
+    notice(line);
+}
 void room_end(int seat, const char *what) {
     if (!tdm_in_flight() || g_net->endAt > 0 || !others_flying()) return;
-    g_net->endAt = PIC_FullIndex() + kRoomEndMs;
     const std::string who = seat == g_net->self ? std::string("You") : pilot_name(seat);
     const bool youDown = seat == g_net->self && !strcmp(what, " is down");
-    wclog(1, "TIE demo: %s%s: the flight ends for everybody", who.c_str(), youDown ? " are down" : what);
-    notice(who + (youDown ? " are down" : what) + ": the flight ends for everybody");
+    end_for_room(who + (youDown ? " are down" : what) + ": the flight ends for everybody");
 }
 void room_end_frame() {
     const int own = tdm_player_object();
     if (own >= 0 && own < kCraftSlots && o8(own, 4) != 0 && dying(own) && others_flying()) room_end(g_net->self, " is down");
     if (g_net->endAt > 0 && PIC_FullIndex() >= g_net->endAt) {
         g_net->endAt = 0;
+        g_net->roomEnded = true;
         mem_writeb(tdm_ds(kMissionEnd), 1);
         wclog(1, "TIE demo: the flight ended for the room (the mission's end flag set)");
     }
@@ -1051,10 +1080,14 @@ void report_frame(double now) {
 
 void tdm_session_tick() {
     const double now = PIC_FullIndex();
+    if (g_noticeAt > 0 && now - g_noticeAt > kNoticeMs) {
+        incoming_text.clear();
+        g_noticeAt = -1;
+    }
     if (!g_net) {
         if (g_tried && now < g_nextTryMs) return;
         g_tried = true;
-        g_nextTryMs = now + 10000;
+        g_nextTryMs = now + (getenv("WCHOST") && getenv("WCHOST")[0] ? 1000 : 10000);   // (a TCP guest early for its host: soon)
         if (!configured() || !start()) return;
     }
     if (now - g_pollAt >= kPollMs || now < g_pollAt) {
@@ -1066,11 +1099,40 @@ void tdm_session_tick() {
         }
     }
     if (!tdm_in_flight() && now - g_stateAt >= kStateEveryMs) send_state(false);
-    if (g_noticeAt > 0 && now - g_noticeAt > kNoticeMs) {
-        incoming_text.clear();
-        g_noticeAt = -1;
-    }
 }
+
+// --- the campaign's (wcnet_tiedemo_campaign.cpp) -------------------------------------------------------------------
+
+TdmRole tdm_session_role() {
+    if (!g_net || g_net->self < 0 || g_net->alone) return TDM_SOLO;
+    return g_net->host ? TDM_HOST : TDM_GUEST;
+}
+
+int tdm_session_launch_mission() { return g_net ? (int)g_net->hostMission : 0; }
+
+bool tdm_session_room_ended() { return g_net && g_net->roomEnded; }
+
+void tdm_session_verdict(int next, bool over) {
+    if (!g_net || !g_net->host || !g_net->flownGo) return;
+    g_net->verdictGo = g_net->flownGo;
+    g_net->verdictNext = (Bit32u)next;
+    g_net->verdictOver = over;
+    send_state(true);
+    wclog(1, "TIE demo: the verdict on launch %u sent: next mission %d%s", g_net->verdictGo, next, over ? ", the campaign over" : "");
+}
+
+bool tdm_session_verdict_wait(int *next, bool *over) {
+    if (!g_net || g_net->host || g_net->peers.empty()) return false;
+    poll_peers();
+    if (!g_net) return false;
+    const Remote &h = g_net->remotes[0];
+    if (h.verdict < g_net->flownGo) return true;
+    *next = (int)h.next;
+    *over = h.over;
+    return false;
+}
+
+void tdm_notice(const std::string &text) { notice(text); }
 
 void tdm_session_shutdown() {
     if (!g_net) return;
@@ -1111,10 +1173,13 @@ bool tdm_session_launch_hold() {
         if (!all && now - g_net->launchSince < kLaunchWaitMs) return true;
         if (!all) notice("Launching without " + late + " (still in the opening after two minutes)");
         g_net->launchSerial++;
+        g_net->flownGo = g_net->launchSerial;
         g_net->hostSeed = ds16(kSeed);
         g_net->hostSeed2 = ds16(kSeed2);
+        g_net->hostMission = (Bit32u)tdm_campaign_next();
         send_state(true);
-        wclog(1, "TIE demo: launch %u: everybody there, the seeds %04X %04X", g_net->launchSerial, g_net->hostSeed, g_net->hostSeed2);
+        wclog(1, "TIE demo: launch %u: everybody there, the seeds %04X %04X, mission %u", g_net->launchSerial, g_net->hostSeed,
+              g_net->hostSeed2, g_net->hostMission);
         return false;
     }
     if (g_net->peers.empty()) {
@@ -1126,6 +1191,7 @@ bool tdm_session_launch_hold() {
         g_net->flownGo = h.go;
         g_net->hostSeed = h.seed;
         g_net->hostSeed2 = h.seed2;
+        g_net->hostMission = h.mission;
         return false;
     }
     if (g_net->self >= 0 && now - g_net->launchSince >= kLaunchWaitMs * 2) {
@@ -1140,6 +1206,7 @@ bool tdm_session_launch_hold() {
 void tdm_session_before_create() {
     if (!g_net) return;
     g_net->atLaunch = false;
+    g_net->roomEnded = false;
     g_net->clear_flight();
     send_state(true);
     if (g_net->host || g_net->alone || g_net->self < 1) return;

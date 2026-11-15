@@ -33,7 +33,7 @@ async function openPage(who, script, callsign) {
   page.on("console", (m) => {
     const t = m.text();
     logs.push(t);
-    if (/TIE demo: (HOST|GUEST|In |Room|.*joined|.*gone|Waiting|launch|the launch|the host's seeds|.*down|.*flight ends|the flight|TIEMISS|no craft|a call came back)|TIE Fighter demo's settings|lobby: (joined|player)|could not|Aborted|RuntimeError|not the TIE/.test(t)) {
+    if (/TIE demo: (HOST|GUEST|In |Room|.*joined|.*gone|Waiting|launch|the launch|the host's seeds|.*down|.*flight ends|the flight|TIEMISS|no craft|a call came back|the verdict)|TIE demo campaign|TIE Fighter demo's settings|lobby: (joined|player)|could not|Aborted|RuntimeError|not the TIE/.test(t)) {
       console.log(`${stamp()} [${who}] ${t.slice(0, 190)}`);
     }
   });
@@ -96,6 +96,16 @@ const hOther = lines(host).filter((l) => / obj 0 of pilot 2: here/.test(l)).leng
 console.log(`${stamp()} craft reports sent: host ${hc}, guest ${gc}; the other's shots made: host ${hm}, guest ${gm}; the other pilot's craft seen: host ${hOther} s, guest ${gOther} s`);
 check(hc > 100 && gc > 20 && hOther > 10 && gOther > 10, "both pages fly the other's craft from its reports");
 check(hm > 0 && gm > 0, "each page made the other pilot's shots");
+// the campaign (docs/tiedemo.md section 8): the demo's own mission first on both; a host's scripted win (!tdmwin)
+// takes both pages to the next mission, the guest by the host's verdict and go
+check(all(host, /campaign: mission 1 of 4, The Ambush/).length > 0 && all(guest, /campaign: mission 1 of 4, The Ambush/).length > 0,
+  "both: the campaign's first mission, the demo's own");
+if (/!tdmwin/.test(hostScript)) {
+  check(all(host, /the verdict on launch \d+ sent: next mission 1/).length > 0, "host: won, its verdict sent (next: The Shuttles Run)");
+  check(all(host, /campaign: mission 2 of 4, The Shuttles Run \(written over/).length > 0, "host: The Shuttles Run written and flown");
+  check(all(guest, /campaign: mission 2 of 4, The Shuttles Run \(written over/).length > 0, "guest: The Shuttles Run flown on the host's go");
+  check(all(guest, /we fly craft 1 of flight group 0/).length > 1, "guest: its own interceptor of Alpha again");
+}
 for (const p of [host, guest]) {
   const fr = lines(p).map((l) => Number((/\(([0-9.]+) ms a frame\)/.exec(l) || [0, 0])[1])).filter((x) => x > 0);
   if (fr.length) console.log(`${stamp()} ${p.who}: ${(1000 / (fr.reduce((s, x) => s + x, 0) / fr.length)).toFixed(1)} frames a second in flight (the game's clock)`);

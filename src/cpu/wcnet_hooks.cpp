@@ -69,6 +69,8 @@ static int g_rockOnto = -1;      // test aid: the slot a rock is to be put onto 
 static bool g_frameSeen = false;
 static int g_flightCount = 0;  // missions that reached their first frame
 static bool in_flight() { return g_inMission && g_frameSeen; }
+// ... for the key script's clock and its "wait" item: a game module's flight counts too (the TIE demo's)
+static bool script_in_flight() { return in_flight() || (tdm_found() && tdm_in_flight()); }
 // The page's stick steers in a flight and moves a pointer in a menu.  A simulator's flight is flown like any other but is no
 // mission (the hooks stand aside for it: in_simulation, g_rvSimulator), and in_flight says no: so the stick drifted the
 // pointer like a mouse's, a turn that never stopped (WC1's TrainSim, RetroVega's simulator).  WC1's simulator has screens
@@ -755,7 +757,7 @@ static void key_script() {
         buttonDown = false;
     }
     if (waitingSince >= 0) {
-        if (g_flightCount == waitingSince || !in_flight()) {
+        if (g_flightCount == waitingSince || !script_in_flight()) {
             if (skipping && now >= nextSkip) {
                 nextSkip = now + 2000;
                 KEYBOARD_AddKey(skipKey, true);
@@ -785,7 +787,7 @@ static void key_script() {
             const char *from = getenv("WCNET_KEYSCRIPT_FROM");
             fromBoot = from && !strcmp(from, "boot") ? 1 : 0;
         }
-        if (fromBoot || in_flight()) {
+        if (fromBoot || script_in_flight()) {
             startMs = now;
             wclog(1, "key script: %s, clock started (t=%.1f)", fromBoot ? "from boot" : "in space", now / 1000.0);
         }
@@ -1248,6 +1250,8 @@ static void build_watch_list() {
     tdm_watch_list(watch);      // (the TIE Fighter demo's, wcnet_tiedemo.cpp)
     g_watchReady = true;
 }
+
+void hooks_flight_began() { g_flightCount++; }
 
 void hooks_game_changed() {
     g_watchReady = false;
