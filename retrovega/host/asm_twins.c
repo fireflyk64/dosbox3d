@@ -151,6 +151,11 @@ int32_t rv_bk_muldiv(int32_t a, int32_t b, int32_t c)
     return c_bk_muldiv(a, b, c);
 }
 
+int rv_bk_hides(const int32_t *eye, const int32_t *p, int bottom, int top, int ground)
+{
+    return c_bk_hides(eye, p, bottom, top, ground);
+}
+
 /* pview.asm's */
 int rv_pv_setup(PvFrame *f, const PvCam *cam, const PvHead *h) { return c_pv_setup(f, cam, h); }
 void rv_pv_quarter(const PvFrame *f, int which, PvQuarter *q, uint8_t *thin) { c_pv_quarter(f, which, q, thin); }
@@ -159,4 +164,5 @@ void rv_pv_lines(PvFrame *f, const PvQuarter *q, const uint8_t *thin) { c_pv_lin
 void rv_pv_march(PvFrame *f) { c_pv_march(f); }
 void rv_pv_far(PvFrame *f) { c_pv_far(f); }
 void rv_pv_glow(PvFrame *f) { c_pv_glow(f); }
+void rv_pv_fogt(PvFrame *f) { c_pv_fogt(f); }
 void rv_pv_blit(const PvBlit *b) { c_pv_blit(b); }

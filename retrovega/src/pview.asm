@@ -15,6 +15,7 @@
         org 0
         db 'PVB2'
         dw _rv_pv_steps, _rv_pv_lines, _rv_pv_march, _rv_pv_far, _rv_pv_glow, _rv_pv_setup, _rv_pv_quarter, _rv_pv_blit
+        dw _rv_pv_fogt
         dw set_start, set_end, march_start, march_end, blit_start, blit_end, blob_end
 ; (three parts, each calling only within itself, each run from where pview.c puts it: the set-up's from the scratch
 ; buffer's start before any window is in it, the march's from the band buffer's tail, the blit's from the scratch
@@ -26,7 +27,7 @@ segment PVIEW_TEXT public align=16 class=CODE use16
 %endif
 
 ; --- PvFrame (pview.h), on the stack at bp-316 ---
-%define FSZ 324
+%define FSZ 332
 %define FR(x) [bp-FSZ+(x)]
 %define O_FR(x) (-FSZ+(x))
 %define F_R 0
@@ -96,6 +97,8 @@ segment PVIEW_TEXT public align=16 class=CODE use16
 %define F_SCR 316
 %define F_STEP_PX 320
 %define F_WIDE 322
+%define F_FOG_K 324
+%define F_FOG_HS 328
 
 ; --- PvStep (28 bytes) ---
 %define S_C 0
@@ -170,6 +173,7 @@ segment PVIEW_TEXT public align=16 class=CODE use16
 %define PV_STEPS 256
 %define PV_LINES 360
 %define PV_FOG_HB 64
+%define PV_FOG_GS 256
 %define PV_FOG_TAUS 2048
 %define PV_GLOW_CZ 256
 %define PV_LIGHTS 32
@@ -1896,6 +1900,103 @@ _rv_pv_glow:
 .rowd:  inc dword G_Y
         jmp .row
 .done:  PV_LEAVE
+
+; ================================================================================================================
+; void rv_pv_fogt(PvFrame far *f): the haze's rates by height band for the frame, from its table G (PV_FOG_GS dwords at
+; the window's place) and the eye's height: fogm (c_pv_fogt)
+; ================================================================================================================
+%define FT_K L(1)
+%define FT_FR L(2)
+%define FT_GA L(3)
+%define FT_DG1 L(4)
+%define FT_B L(5)
+        EXPORT(_rv_pv_fogt)
+_rv_pv_fogt:
+        PV_ENTER
+        movzx edi,word FR(F_O_WIN)      ; G
+        mov eax,FR(F_ALT)               ; k = (ha - h0) / hs and fr its rest; under the table 0, 0; past it the last, hs
+        sub eax,FR(F_FOG_H0)
+        jl .k0
+        cdq
+        idiv dword FR(F_FOG_HS)
+        cmp eax,PV_FOG_GS-1
+        jl .kd
+        mov eax,PV_FOG_GS-2
+        mov edx,FR(F_FOG_HS)
+        jmp .kd
+.k0:    xor eax,eax
+        xor edx,edx
+.kd:    mov FT_K,eax
+        mov FT_FR,edx
+        mov ecx,[gs:edi+eax*4+4]        ; ga = G[k] + (G[k+1] - G[k]) fr / hs
+        sub ecx,[gs:edi+eax*4]
+        mov FT_DG1,ecx
+        mov eax,ecx
+        mov ebx,FT_FR
+        mov ecx,FR(F_FOG_HS)
+        call muldiv
+        mov ecx,FT_K
+        add eax,[gs:edi+ecx*4]
+        mov FT_GA,eax
+        xor eax,eax
+        mov FT_B,eax
+.b:     mov eax,FT_B                    ; a band: dh = h0 + b hs - ha, dg = G[b] - ga
+        imul eax,FR(F_FOG_HS)
+        add eax,FR(F_FOG_H0)
+        sub eax,FR(F_ALT)
+        mov ecx,FT_B
+        mov ebx,[gs:edi+ecx*4]
+        sub ebx,FT_GA
+        mov ecx,FR(F_FOG_HS)            ; level with the eye (-hs/2 < dh < hs/2): the rate there
+        sar ecx,1
+        cmp eax,ecx
+        jge .far
+        neg ecx
+        cmp eax,ecx
+        jle .far
+        mov eax,FR(F_FOG_HS)
+        mov ebx,FT_DG1
+.far:   mov ecx,eax                     ; fogm[b] = dg k / (dh 256), 0 for dh 0
+        shl ecx,8
+        xor eax,eax
+        test ecx,ecx
+        jz .put
+        mov eax,ebx
+        mov ebx,FR(F_FOG_K)
+        call muldiv
+.put:   movzx edx,word FR(F_O_FOGM)
+        mov ecx,FT_B
+        mov [gs:edx+ecx*4],eax
+        inc dword FT_B
+        cmp dword FT_B,PV_FOG_HB
+        jl .b
+        PV_LEAVE
+
+; eax = a b / c as C's (int32_t)((int64_t)a b / c), truncated, wrapped to 32 bits, for any c not 0 (no divide fault:
+; the magnitudes divided in two steps); a eax, b ebx, c ecx (ebx ecx edx used)
+muldiv: imul ebx
+        push esi
+        mov esi,edx
+        xor esi,ecx                     ; (the quotient's sign)
+        test edx,edx
+        jns .p1
+        neg edx
+        neg eax
+        sbb edx,0
+.p1:    test ecx,ecx
+        jns .p2
+        neg ecx
+.p2:    push eax
+        mov eax,edx
+        xor edx,edx
+        div ecx
+        pop eax
+        div ecx
+        test esi,esi
+        jns .p3
+        neg eax
+.p3:    pop esi
+        ret
 
 set_end:
 

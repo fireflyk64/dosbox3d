@@ -215,9 +215,11 @@ typedef struct {
     uint8_t PV_FAR *scr;                /* 316 */
     int16_t step_px, wide;              /* 320: the detail (pv_detail): the steps about this many pixels apart; wide:
                                            every other line marched, each filling its neighbour's pixels too */
+    int32_t fog_k, fog_hs;              /* 324: the haze's density and height scale as one number, and the heights'
+                                           step of its table (pv_fogt) */
 } PvFrame;
 #ifdef __WATCOMC__
-typedef char pv_frame_is_324[sizeof(PvFrame) == 324 ? 1 : -1];
+typedef char pv_frame_is_332[sizeof(PvFrame) == 332 ? 1 : -1];
 #endif
 typedef char pv_step_is_28[sizeof(PvStep) == 28 ? 1 : -1];
 typedef char pv_line_is_64[sizeof(PvLine) == 64 ? 1 : -1];
@@ -274,6 +276,7 @@ void c_pv_lines(PvFrame PV_FAR *f, const PvQuarter PV_FAR *q, const uint8_t PV_F
 void c_pv_march(PvFrame PV_FAR *f);
 void c_pv_far(PvFrame PV_FAR *f);
 void c_pv_glow(PvFrame PV_FAR *f);
+void c_pv_fogt(PvFrame PV_FAR *f);
 void c_pv_blit(const PvBlit PV_FAR *b);
 int rv_pv_setup(PvFrame PV_FAR *f, const PvCam PV_FAR *cam, const PvHead PV_FAR *h);
 void rv_pv_quarter(const PvFrame PV_FAR *f, int which, PvQuarter PV_FAR *q, uint8_t PV_FAR *thin);
@@ -282,12 +285,14 @@ void rv_pv_lines(PvFrame PV_FAR *f, const PvQuarter PV_FAR *q, const uint8_t PV_
 void rv_pv_march(PvFrame PV_FAR *f);
 void rv_pv_far(PvFrame PV_FAR *f);
 void rv_pv_glow(PvFrame PV_FAR *f);
+void rv_pv_fogt(PvFrame PV_FAR *f);     /* (the haze's rates by height for the frame: its G table at o_win, fogm out) */
 void rv_pv_blit(const PvBlit PV_FAR *b);
 #ifdef __WATCOMC__
 int pv_bind(const uint8_t PV_FAR *code);   /* (PVIEW.BIN's code, wherever it lies: rv_ call into it) */
 void pv_bind_blit(const uint8_t PV_FAR *blit);   /* (and its blit's part, copied apart) */
 unsigned pv_code_read(uint8_t PV_FAR *dst, unsigned room);
 void pv_xms_freed(unsigned nblocks);
+int pv_hides(const long PV_FAR *eye, const long *p, int ground);   /* (no card: the line from the eye under the ground) */
 #define pv_setup rv_pv_setup
 #define pv_quarter rv_pv_quarter
 #define pv_steps rv_pv_steps
@@ -295,6 +300,7 @@ void pv_xms_freed(unsigned nblocks);
 #define pv_march rv_pv_march
 #define pv_far rv_pv_far
 #define pv_glow rv_pv_glow
+#define pv_fogt rv_pv_fogt
 #define pv_blit rv_pv_blit
 #else
 #define pv_setup c_pv_setup
@@ -304,6 +310,7 @@ void pv_xms_freed(unsigned nblocks);
 #define pv_march c_pv_march
 #define pv_far c_pv_far
 #define pv_glow c_pv_glow
+#define pv_fogt c_pv_fogt
 #define pv_blit c_pv_blit
 #endif
 /* a band of the screen (rows y0 .. y1-1, in the band buffer) given the frame's picture of the ground, within the

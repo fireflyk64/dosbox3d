@@ -161,15 +161,15 @@ typedef void (__far __cdecl *PvFnQ)(const PvFrame __far *, int, PvQuarter __far 
 typedef void (__far __cdecl *PvFnB)(const PvBlit __far *);
 typedef void (__far *PvFn)(void);
 
-/* the code's head: 'PVB2', its entries (steps, lines, march, far, glow, setup, quarter, blit), then its parts' ranges
- * (the set-up's, the march's, the blit's) and its end (pview.asm) */
-#define PV_ENTRIES 8
-#define PV_SET0 8
-#define PV_SET1 9
-#define PV_MARCH0 10
-#define PV_MARCH1 11
-#define PV_BLIT0 12
-#define PV_BLIT1 13
+/* the code's head: 'PVB2', its entries (steps, lines, march, far, glow, setup, quarter, blit, fogt), then its parts'
+ * ranges (the set-up's, the march's, the blit's) and its end (pview.asm) */
+#define PV_ENTRIES 9
+#define PV_SET0 9
+#define PV_SET1 10
+#define PV_MARCH0 11
+#define PV_MARCH1 12
+#define PV_BLIT0 13
+#define PV_BLIT1 14
 #define PV_BLIT_CODE 1024               /* the blit's code at most (it runs from the scratch buffer's tail) */
 
 static uint16_t __far g_head[PV_ENTRIES + 7];   /* (the code's head, kept) */
@@ -220,6 +220,7 @@ void rv_pv_quarter(const PvFrame __far *f, int which, PvQuarter __far *q, uint8_
     ((PvFnQ)g_fn[6])(f, which, q, thin);
 }
 void rv_pv_blit(const PvBlit __far *b) { ((PvFnB)g_fn[7])(b); }
+void rv_pv_fogt(PvFrame __far *f) { ((PvFnF)g_fn[8])(f); }
 
 /* PVIEW.BIN read into dst (n bytes room): its size, or 0 */
 unsigned pv_code_read(uint8_t __far *dst, unsigned room)
@@ -273,6 +274,14 @@ static int pv_dos_begin(void)
     }
     xms_put(g_pv.code, 0, tmp, g_pv.code_bytes + 1UL);
     return 0;
+}
+
+/* the line from the eye to p (both planet-relative, positions) passes under the ground (bake.asm rv_bk_hides: under the
+ * lowest ground anywhere; with `ground`, under the bake's own at 8 points under the highest).  RV.EXE's own picture's
+ * (no card: the card asks its own ground, tr_seen); only what is drawn follows it */
+int pv_hides(const long __far *eye, const long *p, int ground)
+{
+    return g_pv.on && bk_hides(eye, p, g_pv.h.bottom, g_pv.h.top, ground);
 }
 
 void pv_xms_freed(unsigned nblocks)
@@ -1278,30 +1287,41 @@ void c_pv_blit(const PvBlit PV_FAR *b)
 #endif /* (the C twins) */
 
 
-/* the haze for the frame: by a sample's height, the sum's rate along the distance (2^24) */
-static void pv_fog_frame(PvFrame PV_FAR *f)
+#ifndef __WATCOMC__
+/* the haze's rates for the frame: by a sample's height band, the sum's rate along the distance (2^24), from its table
+ * G (at the window's place) and the eye's height (DOS: pview.asm's) */
+void c_pv_fogt(PvFrame PV_FAR *f)
 {
     int32_t PV_FAR *fogm = (int32_t PV_FAR *)(f->scr + f->o_fogm);
-    int32_t PV_FAR *G = (int32_t PV_FAR *)(f->scr + f->o_win);   /* (the window's room: none is in yet) */
-    int32_t h0 = g_pv.h.bottom, hs = g_pv.fog_hstep, ha = f->alt, k = (ha - h0) / hs, fr, ga, b;
-    pv_get(g_pv.h.fog_at + 12, G, sizeof(int32_t) * PV_FOG_GS);
+    const int32_t PV_FAR *G = (const int32_t PV_FAR *)(f->scr + f->o_win);
+    int32_t h0 = f->fog_h0, hs = f->fog_hs, ha = f->alt, k, fr, ga, b;
     if (ha < h0)
         k = 0, fr = 0;
-    else if (k >= PV_FOG_GS - 1)
+    else if ((k = (ha - h0) / hs) >= PV_FOG_GS - 1)
         k = PV_FOG_GS - 2, fr = hs;
     else
         fr = ha - h0 - k * hs;
     ga = G[k] + bk_muldiv(G[k + 1] - G[k], fr, hs);
     for (b = 0; b < PV_FOG_HB; b++) {
-        int32_t hb = h0 + b * hs, dh = hb - ha, dg = G[b] - ga;
+        int32_t dh = h0 + b * hs - ha, dg = G[b] - ga;
         if (dh < hs / 2 && dh > -hs / 2) {
             dh = hs;                    /* (level with the eye: the rate there) */
             dg = G[k + 1] - G[k];
         }
-        fogm[b] = bk_muldiv(dg, g_pv.fog_k, dh * 256);
+        fogm[b] = dh ? bk_muldiv(dg, f->fog_k, dh * 256) : 0;
     }
-    f->fog_h0 = h0;
-    f->fog_rcp = 65536L / hs;
+}
+#endif
+
+/* the haze for the frame: its table into the window's room (none is in yet), the rates made from it */
+static void pv_fog_frame(PvFrame PV_FAR *f)
+{
+    pv_get(g_pv.h.fog_at + 12, f->scr + f->o_win, sizeof(int32_t) * PV_FOG_GS);
+    f->fog_h0 = g_pv.h.bottom;
+    f->fog_hs = g_pv.fog_hstep;
+    f->fog_k = g_pv.fog_k;
+    f->fog_rcp = 65536L / f->fog_hs;
+    pv_fogt(f);
 }
 
 /* the sky's glow for the frame: the table's two rows round the eye's height, weighed */

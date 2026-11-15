@@ -130,12 +130,19 @@ void c_bk_column(int32_t x, int32_t y, int32_t z, BkColumn *out);
 /* a * b / c, the product whole (the quotient must fit) */
 int32_t BK_ASM rv_bk_muldiv(int32_t a, int32_t b, int32_t c);
 int32_t c_bk_muldiv(int32_t a, int32_t b, int32_t c);
+/* the line from the eye to p (planet-relative positions) passes under the ground: its point nearest the centre under
+ * the lowest ground (the radius and bottom height units), or (ground) the ground at 8 of its points under the highest
+ * (top) (what RV.EXE draws without the card: pview.c pv_hides) */
+int BK_ASM rv_bk_hides(const int32_t BK_FAR *eye, const int32_t BK_FAR *p, int bottom, int top, int ground);
+int c_bk_hides(const int32_t BK_FAR *eye, const int32_t BK_FAR *p, int bottom, int top, int ground);
 #ifdef __WATCOMC__
 #define bk_column rv_bk_column
 #define bk_muldiv rv_bk_muldiv
+#define bk_hides rv_bk_hides
 #else
 #define bk_column c_bk_column
 #define bk_muldiv c_bk_muldiv
+#define bk_hides c_bk_hides
 #endif
 
 /* a planet-relative point moved along its line from the centre to `over` positions over the ground under it (c: its

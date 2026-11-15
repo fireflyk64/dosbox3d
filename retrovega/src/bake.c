@@ -231,6 +231,41 @@ void c_bk_column(int32_t x, int32_t y, int32_t z, BkColumn *out)
     out->ground = bk_ask.radius + c_height_at(f, gi, gj);
 }
 
+static int c_under(const int32_t *q, int32_t r)
+{
+    return (q[0] >> 11) * (q[0] >> 11) + (q[1] >> 11) * (q[1] >> 11) + (q[2] >> 11) * (q[2] >> 11) < (r >> 11) * (r >> 11);
+}
+
+int c_bk_hides(const int32_t BK_FAR *eye, const int32_t BK_FAR *p, int bottom, int top, int ground)
+{
+    int32_t e[3], d[3], q[3], ed = 0, dd = 0, rb = bk_ask.radius + (int32_t)bottom * BK_HU, rt = bk_ask.radius + (int32_t)top * BK_HU;
+    int k, i;
+    for (k = 0; k < 3; k++) {
+        e[k] = eye[k];
+        d[k] = p[k] - e[k];
+        ed += (e[k] >> 13) * (d[k] >> 13);
+        dd += (d[k] >> 13) * (d[k] >> 13);
+    }
+    if (dd >= 256 && ed < 0 && -ed < dd) {   /* (its nearest to the centre on it: 256ths of the way) */
+        int32_t t = (int32_t)((uint32_t)-ed / (uint32_t)(dd >> 8));
+        for (k = 0; k < 3; k++)
+            q[k] = e[k] + d[k] / 256 * t;
+        if (c_under(q, rb))
+            return 1;
+    }
+    for (i = 1; ground && i <= 8; i++) {
+        BkColumn c;
+        for (k = 0; k < 3; k++)
+            q[k] = e[k] + d[k] / 9 * i;
+        if (!c_under(q, rt))
+            continue;
+        c_bk_column(q[0], q[1], q[2], &c);
+        if (c.r < c.ground || (c.slab_hi && c.r >= c.slab_lo && c.r <= c.slab_hi))
+            return 1;
+    }
+    return 0;
+}
+
 void bk_place(int32_t v[3], const BkColumn *c, int32_t over)
 {
     int32_t want = c->ground + over;

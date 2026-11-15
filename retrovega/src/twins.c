@@ -1542,6 +1542,27 @@ static void test_bake(void)
         xms_free_level(XMS_MISSION);
         return;
     }
+    {   /* bk_hides: lines from eyes round the planet to points round it (and out to 24 radii), with the ground or not */
+        static const char LZ_FAR n_hid[] = "bk_hides";
+        uint32_t keep = g_sum;
+        g_sum = 0;
+        for (i = 0; i < 1500; i++) {
+            int32_t e[3], p[3], sc = tw_in(0, 2) ? 1 : 24;
+            int g = tw_in(0, 1), bottom = -tw_in(0, 3000), top = tw_in(0, 9000), hc, ha;
+            for (j = 0; j < 3; j++) {
+                e[j] = tw_upto(INT32_C(1400000)) * sc;
+                p[j] = tw_upto(INT32_C(1400000)) * sc;
+            }
+            hc = c_bk_hides(e, p, bottom, top, g);
+            ha = rv_bk_hides(e, p, bottom, top, g);
+            if (hc != ha && tw_differ(n_hid, i, e[0], p[0], bottom * 65536L + top, hc - ha))
+                break;
+            sum_32(hc);
+        }
+        if (i == 1500)
+            tw_say(g_tw_ok, n_hid, i);
+        g_sum = keep;
+    }
     for (i = 0; i < 6000; i++) {
         int32_t p[3];
         BkColumn cc, ca;
@@ -1712,12 +1733,12 @@ static void tp_window(unsigned char LZ_FAR *scr, int edge)
  * tests/host/twins_test.sh holds the host's sums to DOS's (RVP.EXE has no room for the C twins as well) */
 static void test_pview(void)
 {
-    static const char LZ_FAR *const names[8] = { "pv_setup", "pv_quarter", "pv_steps", "pv_lines", "pv_march",
-                                                 "pv_far", "pv_glow", "pv_blit" };
+    static const char LZ_FAR *const names[9] = { "pv_setup", "pv_quarter", "pv_steps", "pv_lines", "pv_march",
+                                                 "pv_far", "pv_glow", "pv_blit", "pv_fogt" };
     static PvFrame LZ_FAR f;
     static PvHead LZ_FAR h;
     static PvCam LZ_FAR cam;
-    static uint32_t LZ_FAR sums[8];
+    static uint32_t LZ_FAR sums[9];
     unsigned char LZ_FAR *buf, LZ_FAR *scr, LZ_FAR *code = 0;
     int cs, k;
     tw_give(g_bc);                      /* (the room the bands and the others' buffer had) */
@@ -1744,7 +1765,7 @@ static void test_pview(void)
         g_tw_bad = 1;
         return;
     }
-    for (k = 0; k < 8; k++)
+    for (k = 0; k < 9; k++)
         sums[k] = 0;
     for (cs = 0; cs < TP_CASES; cs++) {
         int32_t up[3], fw[3], rt[3], cu[3], e[3], a[3], b[3], alt, R = INT32_C(1024000) + tw_in(-3000, 3000);
@@ -1824,6 +1845,25 @@ static void test_pview(void)
         sums[0] = g_sum;
         if (!ok)
             continue;
+        /* the haze's rates from a table (pv_fogt): its G at the window's place, under the eye, past the table, a step
+         * of 1 (a band level with the eye) */
+        {
+            int32_t alt0 = f.alt;
+            for (k = 0; k < PV_FOG_GS; k++)
+                ((int32_t LZ_FAR *)scr)[k] = INT32_C(40000) * k + (int32_t)tw_in(0, 30000) * (k & 3) - INT32_C(900000);
+            f.fog_h0 = (int32_t)tw_in(-300, 300);
+            f.fog_hs = cs == 1 ? 1 : (int32_t)tw_in(2, 900);
+            f.fog_k = (int32_t)tw_in(1, 30000) * 1000 + tw_in(0, 999);
+            if (cs == 4)
+                f.alt = f.fog_h0 - tw_in(1, 500);
+            if (cs == 5)
+                f.alt = f.fog_h0 + f.fog_hs * (PV_FOG_GS + 3);
+            rv_pv_fogt(&f);
+            g_sum = sums[8];
+            sum_mem(scr + TP_O_FOGM, PV_FOG_HB * 4);
+            sums[8] = g_sum;
+            f.alt = alt0;
+        }
         /* the tables: the haze's rates and levels, the glow, the undersides; a slab grid round the eye's point */
         for (k = 0; k < PV_FOG_HB; k++)
             ((int32_t LZ_FAR *)(scr + TP_O_FOGM))[k] = INT32_C(1000) + (int32_t)tw_in(0, 30000) * 2;
@@ -1927,8 +1967,8 @@ static void test_pview(void)
             }
             _fmemset(buf, 0x11, (unsigned)TW_ROWS * SCR_W);
 #ifdef __WATCOMC__
-            _fmemcpy(work + PV_BLIT_WORK, code + ((uint16_t LZ_FAR *)(code + 4))[12],
-                     ((uint16_t LZ_FAR *)(code + 4))[13] - ((uint16_t LZ_FAR *)(code + 4))[12]);
+            _fmemcpy(work + PV_BLIT_WORK, code + ((uint16_t LZ_FAR *)(code + 4))[13],
+                     ((uint16_t LZ_FAR *)(code + 4))[14] - ((uint16_t LZ_FAR *)(code + 4))[13]);
             pv_bind_blit(work + PV_BLIT_WORK);
 #endif
             bl.band = buf;
@@ -1948,7 +1988,7 @@ static void test_pview(void)
             sums[7] = g_sum;
         }
     }
-    for (k = 0; k < 8; k++) {
+    for (k = 0; k < 9; k++) {
         g_sum = sums[k];
         tw_say(g_tw_ok, names[k], k == 7 ? 12 : TP_CASES);
     }

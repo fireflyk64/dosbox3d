@@ -468,6 +468,139 @@ _rv_bk_column:
         pop bp
         retf
 
+; int rv_bk_hides(const long far *eye, const long far *p, int bottom, int top, int ground): the line from the eye to p
+; (planet-relative positions) passes under the ground: its point nearest the centre (found in 32 km units) under the
+; lowest ground (radius + bottom height units), or, with ground, the ground (rv_bk_column) at 8 of its points (ninths of
+; the way) of those under the highest (top) (c_bk_hides)
+%define HEYE  [bp+6]
+%define HP    [bp+10]
+%define HBOT  [bp+14]
+%define HTOP  [bp+16]
+%define HG    [bp+18]
+%define HE    -12                       ; the eye
+%define HD    -24                       ; p - eye
+%define HQ    -36                       ; a point of the line
+%define HC    -52                       ; BkColumn: ground, slab_lo, slab_hi, r
+%define HI    [bp-56]
+        global _rv_bk_hides
+_rv_bk_hides:
+        push bp
+        mov bp,sp
+        sub sp,56
+        push si
+        push di
+        xor edi,edi                     ; ed, dd (32 km units)
+        xor ecx,ecx
+        xor si,si
+.e:     les bx,HEYE
+        mov edx,[es:bx+si]
+        mov [bp+si+HE],edx
+        les bx,HP
+        mov eax,[es:bx+si]
+        sub eax,edx
+        mov [bp+si+HD],eax
+        sar eax,13
+        sar edx,13
+        imul edx,eax
+        add edi,edx
+        imul eax,eax
+        add ecx,eax
+        add si,4
+        cmp si,12
+        jb .e
+        cmp ecx,256                     ; its nearest to the centre on it: t = -ed / (dd >> 8), 256ths of the way
+        jl .samples
+        neg edi
+        jle .samples
+        cmp edi,ecx
+        jge .samples
+        shr ecx,8
+        mov eax,edi
+        xor edx,edx
+        div ecx
+        mov edi,eax
+        mov ebx,256
+        call point
+        mov ax,HBOT
+        call under
+        jl .yes
+.samples:
+        cmp word HG,0
+        je .no
+        mov dword HI,1
+.s:     mov edi,HI
+        mov ebx,9
+        call point
+        mov ax,HTOP
+        call under
+        jge .sn
+        lea ax,[bp+HC]
+        push ax
+        push dword [bp+HQ+8]
+        push dword [bp+HQ+4]
+        push dword [bp+HQ]
+        push cs
+        call _rv_bk_column
+        add sp,14
+        mov eax,[bp+HC+12]
+        cmp eax,[bp+HC]                 ; under the ground, or within a slab
+        jl .yes
+        mov edx,[bp+HC+8]
+        test edx,edx
+        jz .sn
+        cmp eax,[bp+HC+4]
+        jl .sn
+        cmp eax,edx
+        jle .yes
+.sn:    inc dword HI
+        cmp dword HI,8
+        jle .s
+.no:    xor ax,ax
+        jmp .out
+.yes:   mov ax,1
+.out:   pop di
+        pop si
+        mov sp,bp
+        pop bp
+        retf
+
+; the line's point HE + HD / ebx * edi into HQ (si used)
+point:  xor si,si
+.p:     mov eax,[bp+si+HD]
+        cdq
+        idiv ebx
+        imul eax,edi
+        add eax,[bp+si+HE]
+        mov [bp+si+HQ],eax
+        add si,4
+        cmp si,12
+        jb .p
+        ret
+
+; HQ against the radius + ax height units: its parts' (q >> 11) squared summed, compared (cmp) with that radius's
+; (>> 11) squared: less when it is nearer the centre (ebx ecx si used)
+under:  movsx eax,ax
+        shl eax,6
+        push fs
+        mov cx,seg _bk_ask
+        mov fs,cx
+        add eax,ASK(A_RADIUS)
+        pop fs
+        sar eax,11
+        imul eax,eax
+        mov ecx,eax
+        xor ebx,ebx
+        xor si,si
+.u:     mov eax,[bp+si+HQ]
+        sar eax,11
+        imul eax,eax
+        add ebx,eax
+        add si,4
+        cmp si,12
+        jb .u
+        cmp ebx,ecx
+        ret
+
 ; long rv_bk_muldiv(long a, long b, long c): a b / c, the product whole
         global _rv_bk_muldiv
 _rv_bk_muldiv:
