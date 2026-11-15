@@ -12,13 +12,32 @@ The user, 2026-11-15:
   * Its mission is T/F Alpha at the Rebel repair yard near Remitik, then the Rebels fleeing Hoth. The clock starts at
     42 minutes.
   * TIEMISS.EXE says "TIE Fighter Demo V1.0 12/04/93".
-* **Where.** DOS Games Archive: `tiedemo.zip` (1,586,575 bytes), the zips of its two floppies, `tiedem1.zip` and
-  `tiedem2.zip`. Its page is https://www.dosgamesarchive.com/file/star-wars-tie-fighter/tiedemo (the file itself:
-  image.dosgamesarchive.com/games/tiedemo.zip).
+* **Where** (the user, 2026-11-15: point it at archive.org instead of the ad-laden page, "the download link would be
+  ideal so they don't get distracted and play without our multiplayer patch", then "can we switch to using
+  https://archive.org/cors/... since that can make it so we don't need to confuse users ... Then they can just play it
+  directly. We should also save it in that users cache"):
+  * **The Internet Archive** (https://archive.org/details/StarWarsTIEFighter_1020): `TIE_Fighter_Preview__Dodge_Neon.zip`
+    (1,734,898 bytes, md5 d736eb5a...), the first release's two floppies as folders, `disk1/` and `disk2/` (dated
+    4 December 1993; 48 files). Its CORS address, https://archive.org/cors/StarWarsTIEFighter_1020/TIE_Fighter_Preview__Dodge_Neon.zip,
+    answers any page's origin (`access-control-allow-origin` echoed): the page fetches it itself (section 3).
+  * DOS Games Archive's `tiedemo.zip` (1,586,575 bytes) is a later repack (January 1994: 46 files, the floppies as
+    zips of their own, `tiedem1.zip`, `tiedem2.zip`) without the showroom. Dropped, it works as before.
+  * The game's files are the same in both, TIEMISS.EXE byte for byte; the first release adds NEON.EXE and NEON.LIB
+    (the Dodge Neon's showroom) and its own TIEDEMO.BAT and INSTALL.EXE.
 * **Not hosted here.** Its readable files state no terms of distribution (unlike the Apogee shareware the page offers
-  itself), so the page links the archive and the player brings the zip.
+  itself), so the page fetches it from the Internet Archive, once, for each browser.
 * **The programs.** `TIEDEMO.BAT` runs `demo` (DEMO.EXE: the opening), `tiemiss demo >foo` (TIEMISS.EXE: the mission,
   DEMO.TIE) and `demo final` (the ending).
+  * The first release's runs `neon` first (NEON.EXE, the Dodge Neon's showroom: "Cars are like friends", the car's
+    features as buttons, "Go to game" and "Exit to DOS"); its exit code is the key: Esc (27) quits to DOS, anything
+    else goes on to the game; after the ending it goes back to the showroom.
+  * The showroom's introduction ("Say hello to Neon", the car driving in, the buttons one by one) took some 9 s
+    during which it heard no key or click. The user: "there may be a time wait there--can we jump the clock ahead so
+    people can click whenever?" It is timed by one routine (NEON.EXE is packed: found running, at load+0BB8:001B),
+    `wait(n)`, which polls the timer chip until n units of 6 x 256 of its counts (1.3 ms each) have passed; for the
+    showroom's first 15 s the layer returns from it at once (wcnet_tiedemo.cpp `at_neon_wait`, its bytes checked
+    first): the menu is up within a second and takes a click or a key at once. (A trap found on the way: TIEMISS.EXE
+    is loaded into the PSP the showroom had; any other program's load now ends the showroom's watch.)
   * TIEMISS.EXE is a 16-bit real-mode program (Microsoft C, 1990 run-time) with overlays in the EXE. It uses EMS for
     its music, its digitized sound and its cockpits, never XMS.
   * Not the 32-bit DOS/4GW program of the CD version (docs/tiefighter.md): none of that port's addresses or hooks apply.
@@ -46,12 +65,15 @@ The user, 2026-11-15:
 
 ## 3. The page
 
-* **Step 1.** The "Free to play now" row has a "TIE Fighter demo" link to DOS Games Archive's page. Its line says to
-  download `tiedemo.zip` and drop it on the box.
-* **Unpacking.** `expandSplitZips` (web/gamefiles.js) reads `tiedem1.zip` and `tiedem2.zip` inside the dropped zip and
-  unpacks `TIEDEMO.001`/`.002` with `unpackPvm`.
-  * The floppies' own files are left out (the volumes, TIEDEMO.INF, DISK.ID, INSTALL.EXE, DETECT.EXE) but for READ.ME
-    and FLIGHT.HLP.
+* **Step 1.** The "Free to play now" row has a "TIE Fighter demo" button beside Raptor and Terminal Velocity (web/wc.js
+  `DEMOS`): the first click fetches the Internet Archive's zip from its CORS address and reads it as a dropped file;
+  the installed demo is kept in the browser (IndexedDB, as every game dropped), and the button uses that copy from
+  then on: nothing is fetched again. Dropping either zip on the box works too.
+* **Unpacking.** `expandSplitZips` (web/gamefiles.js) reads `tiedem1.zip` and `tiedem2.zip` inside a dropped zip (DOS
+  Games Archive's) and unpacks `TIEDEMO.001`/`.002` with `unpackPvm`, wherever they are (the Internet Archive's:
+  `disk1/`, `disk2/`).
+  * The floppies' own files are left out (the volumes, TIEDEMO.INF, DISK.ID, INSTALL.EXE, DETECT.EXE: in either disk's
+    folder) but for READ.ME and FLIGHT.HLP.
   * The folders are the installer's: the game's, RESOURCE, CP. It takes about half a second.
 * **Settings.** The registry's `tiedemo` (tag TFD, detected by TIEMISS.EXE, run as `tiedemo`): `tdPrepare` writes what
   the installer writes when there is none.
@@ -60,8 +82,11 @@ The user, 2026-11-15:
   * `OPTIONS.CFG`: the installer's FASTYES.CFG.
   * The machine: an S3, 16 MB, EMS, a Sound Blaster 16 at 220/7/1; 30,000 cycles.
 * **Multiplayer** (`multiplayer: true`, rooms of up to 3): sections 4 and 5.
-* `scripts/web-tiedemo.mjs PAGE_URL ZIP [seconds] [key script]`: one page, the zip dropped, a room of one flown (Esc
-  at 8 s skips the opening), the canvas every 10 s. Ends "TIEDEMO PAGE OK".
+* `scripts/web-tiedemo.mjs PAGE_URL ZIP|fetch [seconds] [key script]`: one page; `fetch` clicks the button (once
+  fetched, then after a reload the kept copy, nothing fetched), else the zip is dropped; a room of one flown (the
+  showroom's G at 3 s, Esc at 10 s skips the opening; 8 s for DOS Games Archive's), the canvas every 10 s. Ends
+  "TIEDEMO PAGE OK". scripts/web-tdm.sh and tdmnet-duo.sh take the same opening (`OPENING`), web-tdm.sh's `ZIP=fetch`
+  the button.
 
 ## 4. The program in memory (src/cpu/wcnet_tiedemo.cpp)
 

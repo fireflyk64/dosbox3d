@@ -79,6 +79,11 @@ Bit32u g_frame = 0;
 double g_lastFrameMs = -1e9, g_frameMs = 50, g_rateSince = 0;
 Bit32u g_rateFrames = 0;
 bool g_flightSaid = false;
+// the Neon showroom (NEON.EXE, the first release's): its load, its wait checked, run ahead for a while
+Bit16u g_neonLoad = 0, g_neonPsp = 0;
+double g_neonSince = 0;
+bool g_neonChecked = false, g_neonKnown = false;
+unsigned g_neonSkipped = 0;
 // the holds: the launch's (create_createmission's entry) and a guest's for the host's verdict (the flight over).  A
 // hold let go jumps back to its place, whose hook may or may not come up for that first instruction (the dispatcher
 // does not look again at an IP a hook has just set): `released` says so if it does, and is cleared further on in
@@ -417,11 +422,54 @@ void tdm_skip_call(Bit16u ax) {
     reg_eip = ip;
 }
 
+// --- the Dodge Neon showroom (NEON.EXE) ----------------------------------------------------------------------------
+// The demo's first release (the Internet Archive's TIE_Fighter_Preview__Dodge_Neon.zip) starts with the Dodge Neon's
+// showroom: TIEDEMO.BAT runs NEON.EXE first (any key but Esc on to the game, Esc out to DOS) and again after the
+// ending.  Its introduction ("Say hello to Neon", the car, the buttons one by one) takes some 9 s, keys and clicks
+// unheard until its menu is up: it is timed by one routine, wait(n) at load+0BB8:001B, which polls the timer chip until
+// n units of 6 x 256 of its counts (1.3 ms) have passed.  For its first kNeonFastMs that routine returns at once (its
+// clock jumped ahead): the menu is up as soon as the program is, and takes a click or a key at once.  (NEON.EXE is
+// packed: its code is there to check only once it runs.)
+
+const Bit16u kNeonWaitPara = 0x0BB8, kNeonWaitOff = 0x001B;
+const Bit8u kNeonWait[] = { 0x55, 0x8B, 0xEC, 0x56, 0x57, 0xEB, 0x20, 0x0E, 0xE8, 0xE2, 0xFF, 0x8B, 0xF0 };
+const double kNeonFastMs = 15000;
+
+bool neon_running() { return g_neonPsp && dos.psp() == g_neonPsp; }
+
+void at_neon_wait() {
+    if (!g_neonChecked) {
+        g_neonChecked = true;
+        const PhysPt a = ((PhysPt)SegValue(cs) << 4) + kNeonWaitOff;
+        g_neonKnown = true;
+        for (size_t i = 0; i < sizeof(kNeonWait); i++) g_neonKnown = g_neonKnown && mem_readb(a + (PhysPt)i) == kNeonWait[i];
+        if (!g_neonKnown) wclog(1, "TIE demo: NEON.EXE's wait is not the one known: the showroom keeps its own time");
+    }
+    if (!g_neonKnown || PIC_FullIndex() - g_neonSince >= kNeonFastMs) return;
+    if (g_neonSkipped++ == 0) wclog(1, "TIE demo: the Neon showroom's introduction run ahead (its waits skipped for %.0f s)", kNeonFastMs / 1000);
+    tdm_skip_call(0);
+}
+
 // --- the dispatcher's --------------------------------------------------------------------------------------------
 
 bool tdm_found() { return g_found; }
+bool tdm_watching() { return g_found || neon_running(); }
 
 void tdm_program_loaded(const char *name, Bit16u loadSeg, Bit16u psp) {
+    if (strcmp(name, "NEON.EXE") == 0) {
+        g_neonLoad = loadSeg;
+        g_neonPsp = psp;
+        g_neonSince = PIC_FullIndex();
+        g_neonChecked = g_neonKnown = false;
+        g_neonSkipped = 0;
+        hooks_game_changed();       // (the dispatcher's table: the showroom's wait)
+        wclog(1, "TIE demo: NEON.EXE (the Dodge Neon showroom) loaded at %04X (PSP %04X)", loadSeg, psp);
+        return;
+    }
+    if (g_neonPsp) {
+        g_neonPsp = 0;              // (another program: the showroom is gone, its PSP perhaps the next one's)
+        hooks_game_changed();
+    }
     if (strcmp(name, "TIEMISS.EXE") != 0) return;
     if (g_found) tdm_session_shutdown();
     if (!version_here(loadSeg)) {
@@ -480,6 +528,7 @@ void tdm_tick() {
 }
 
 void tdm_watch_list(void (*watch)(Bit16u ip)) {
+    if (g_neonPsp) watch(kNeonWaitOff);
     if (!g_found) return;
     watch(kCreateMission.off);
     watch(kMissionRead.off);
@@ -493,6 +542,13 @@ void tdm_watch_list(void (*watch)(Bit16u ip)) {
 }
 
 bool tdm_check_hooks(Bit32u ip) {
+    if (neon_running()) {
+        if (ip == kNeonWaitOff && SegValue(cs) == (Bit16u)(g_neonLoad + kNeonWaitPara)) {
+            at_neon_wait();
+            return true;
+        }
+        return false;
+    }
     if (!g_found) return false;
     if (ip == kStubOff && SegValue(cs) == g_psp) {
         if (g_holding) at_stub();

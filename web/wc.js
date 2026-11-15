@@ -473,21 +473,24 @@ const rvSets = createSetProvider({ base: "rv/", root: GAME_ROOT, status, log });
 // The buttons that change the game files: off while a file is being read
 // and once the game runs.
 function sourceButtons(on) {
-  for (const el of [$("useServer"), $("program"), $("demoRap"), $("demoTv"), ...$("savedList").querySelectorAll("button")]) el.disabled = !on;
+  for (const el of [$("useServer"), $("program"), $("demoRap"), $("demoTv"), $("demoTfd"), ...$("savedList").querySelectorAll("button")]) el.disabled = !on;
 }
 // The shareware this site offers to play at once (web/demos: the archives exactly as Apogee and 3D Realms released them,
-// their VENDOR.DOC letting anyone pass them around unchanged and free of charge): a copy this browser kept is used as it
-// is; else the archive is fetched and read as a dropped file is (and kept).
+// their VENDOR.DOC letting anyone pass them around unchanged and free of charge), and the TIE Fighter demo from the
+// Internet Archive (its CORS address: the Dodge Neon preview's two floppies, 1.7 MB): a copy this browser kept is used
+// as it is (nothing fetched again); else the archive is fetched and read as a dropped file is (and kept).
 const DEMOS = { demoRap: { id: "rap", file: "1rap12.zip", title: "Raptor's shareware" },
-                demoTv: { id: "tv", file: "3dtv12.zip", title: "Terminal Velocity's shareware" } };
+                demoTv: { id: "tv", file: "3dtv12.zip", title: "Terminal Velocity's shareware" },
+                demoTfd: { id: "tiedemo", file: "TIE_Fighter_Preview__Dodge_Neon.zip", title: "the TIE Fighter demo", from: "the Internet Archive",
+                           url: "https://archive.org/cors/StarWarsTIEFighter_1020/TIE_Fighter_Preview__Dodge_Neon.zip" } };
 async function useDemo(d) {
   const kept = saved.find((g) => programsIn(g.files).some((p) => p.id === d.id));
   if (kept) { useSavedCopy(kept, d.id); return; }
   let file;
   try {
     sourceButtons(false);
-    sourceStatus(`Fetching ${d.title} (${d.file}) from this site…`, "busy");
-    const r = await fetch("demos/" + d.file);
+    sourceStatus(`Fetching ${d.title} (${d.file}) from ${d.from || "this site"}…`, "busy");
+    const r = await fetch(d.url || "demos/" + d.file);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     file = new File([await r.blob()], d.file, { type: "application/zip" });
   } catch (e) {

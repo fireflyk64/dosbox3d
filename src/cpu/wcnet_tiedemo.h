@@ -22,6 +22,7 @@ namespace wc {
 void tdm_program_loaded(const char *name, Bit16u loadSeg, Bit16u psp);  // DOS loaded a program
 void tdm_tick();                                    // every ~1000 instructions
 bool tdm_found();                                   // TIEMISS.EXE loaded and known
+bool tdm_watching();                                // ... or the first release's Neon showroom (NEON.EXE) running
 bool tdm_check_hooks(Bit32u ip);                    // a watched IP came up: true when it was one of ours
 void tdm_watch_list(void (*watch)(Bit16u ip));      // our IPs, for the dispatcher's table
 bool tdm_script_item(const std::string &item, double t);   // key-script aids (!tdm...)

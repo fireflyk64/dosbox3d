@@ -4,17 +4,20 @@
 # it, the session over the pages' WebRTC data channels.  Ends "TDM PAGE OK".  docs/tiedemo.md.
 #
 #   scripts/web-tdm.sh [seconds]
-#   ZIP= the demo (default ~/dev/tf-demo-dl/tiedemo.zip); PORT, LOBBY_PORT
+#   ZIP= the demo (default ~/dev/tf-demo-dl/TIE_Fighter_Preview__Dodge_Neon.zip, the Internet Archive's: the Neon
+#   showroom first, G goes on; DOS Games Archive's tiedemo.zip has none); PORT, LOBBY_PORT; OPENING= the keys to the
+#   mission (default 3:g,10:esc for the showroom's, 8:esc for the other)
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/web-tdm}; mkdir -p $OUT; rm -f $OUT/*.png
 DUR=${1:-60}
 PORT=${PORT:-8857}; LOBBY_PORT=${LOBBY_PORT:-8858}
-ZIP=${ZIP:-$HOME/dev/tf-demo-dl/tiedemo.zip}
+ZIP=${ZIP:-$HOME/dev/tf-demo-dl/TIE_Fighter_Preview__Dodge_Neon.zip}
+case "$(basename "$ZIP")" in *[Nn]eon*|fetch) OPENING=${OPENING:-3:g,10:esc} ;; *) OPENING=${OPENING:-8:esc} ;; esac
 PW="${PLAYWRIGHT_DIR:-$HOME/dev/beauty}"
 LOBBY_BIN=${LOBBY_BIN:-$ROOT/build-web/p2p-lobby-server}
 [ -x "$LOBBY_BIN" ] || LOBBY_BIN=$HOME/dev/priv/build-web/p2p-lobby-server
-[ -f "$ZIP" ] || { echo "no tiedemo.zip (ZIP)"; exit 2; }
+[ "$ZIP" = fetch ] || [ -f "$ZIP" ] || { echo "no zip of the demo (ZIP; or ZIP=fetch: the page's button)"; exit 2; }
 printf '[rooms]\nmax_players_hard = 8\n' > $OUT/lobby.toml
 "$LOBBY_BIN" --config $OUT/lobby.toml --listen-http 127.0.0.1:$LOBBY_PORT --allowed-origin "http://localhost:$PORT,http://127.0.0.1:$PORT" \
     --public-url http://127.0.0.1:$LOBBY_PORT --allow-no-origin > $OUT/lobby.log 2>&1 &
@@ -28,7 +31,7 @@ trap 'kill $LPID $HPID 2>/dev/null' EXIT
 sleep 1
 ROOM=TFD-$((1000 + RANDOM % 9000))
 # Esc past the opening; both fire from a few seconds into the flight (the trigger: the mouse's button)
-hs="${HOST_SCRIPT:-8:esc,24:!button=0:1}"
-gs="${GUEST_SCRIPT:-8:esc,26:!button=0:1}"
+hs="${HOST_SCRIPT:-$OPENING,24:!button=0:1}"
+gs="${GUEST_SCRIPT:-$OPENING,26:!button=0:1}"
 PLAYWRIGHT_DIR="$PW" SHOT_DIR=$OUT timeout -s KILL $((DUR + 300)) node "$ROOT/scripts/web-tdm.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" \
     $ROOM "$ZIP" "$hs" "$gs" $DUR 2>&1 | tee $OUT/run.log

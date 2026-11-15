@@ -6,7 +6,7 @@
 // craft it flies taken by the other), the shots made on the other page; the canvases every 10 s in SHOT_DIR.  Ends
 // "TDM PAGE OK" when every check passed.
 //
-//   node web-tdm.mjs PAGE_URL LOBBY_URL ROOM ZIP HOST_SCRIPT GUEST_SCRIPT [seconds]
+//   node web-tdm.mjs PAGE_URL LOBBY_URL ROOM ZIP|fetch HOST_SCRIPT GUEST_SCRIPT [seconds]   (fetch: the page's button)
 //   env: PLAYWRIGHT_DIR, CHROME, SHOT_DIR, CYCLES, PAGE_ENV
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -52,7 +52,8 @@ async function openPage(who, script, callsign) {
     u.searchParams.set("env." + kv.slice(0, i), kv.slice(i + 1));
   }
   await page.goto(u.toString());
-  await page.setInputFiles("#gamefile", zip);
+  if (zip === "fetch") await page.click("#demoTfd");      // (the page's button: the Internet Archive's zip, fetched)
+  else await page.setInputFiles("#gamefile", zip);
   await page.waitForFunction(() => document.getElementById("sourceStatus").dataset.state === "error"
     || (document.getElementById("sourceStatus").dataset.state === "ready" && document.getElementById("program").value === "tiedemo"), null, { timeout: 120000 })
     .catch(() => {});

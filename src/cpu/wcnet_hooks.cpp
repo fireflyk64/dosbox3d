@@ -2369,7 +2369,7 @@ bool wc_net_comms_hint() {
     return wc::g_build != wc::BUILD_RV && !wc::solo() && !wc::tie_found()   // (TIE Fighter has no chat line yet)
            && !wc::priv_found()                                             // (nor Privateer)
            && !wc::rap_found()                                              // (nor Raptor)
-           && !wc::tdm_found();                                             // (nor the TIE Fighter demo)
+           && !wc::tdm_watching();                                          // (nor the TIE Fighter demo, its showroom)
 }
 
 // A drone riding behind the leader looks at the leader's ship through its
@@ -2711,8 +2711,8 @@ void wc_net_check_cpu_hooks() {
         priv_check_hooks(ip);   // (Privateer: its own places, wcnet_priv.cpp; nothing of Wing Commander's)
         return;
     }
-    if (tdm_found()) {
-        tdm_check_hooks(ip);    // (the TIE Fighter demo: its own places, wcnet_tiedemo.cpp)
+    if (tdm_watching()) {
+        tdm_check_hooks(ip);    // (the TIE Fighter demo: its own places, wcnet_tiedemo.cpp; its Neon showroom's too)
         return;
     }
     if (solo()) {

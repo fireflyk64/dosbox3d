@@ -439,9 +439,11 @@ export async function expandSplitZips(files) {
     const dirOf = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/") + 1) : "";
     out = out.filter((g) => g !== f).concat(inside.map((g) => ({ path: dirOf + g.path, data: g.data })));
   }
-  // (the TIE Fighter demo, tiedemo.zip as DOS Games Archive has it: the zips of its two floppies, tiedem1.zip and
-  // tiedem2.zip, whose TIEDEMO.001 and TIEDEMO.002 hold the game's files compressed; unpacked as its installer does
-  // (web/pvm.js), the floppies' own files left out but for the READ.ME and the FLIGHT.HLP)
+  // (the TIE Fighter demo: its two floppies, whose TIEDEMO.001 and TIEDEMO.002 hold the game's files compressed, as
+  // folders (the Internet Archive's TIE_Fighter_Preview__Dodge_Neon.zip: disk1/, disk2/, the first release with the
+  // Dodge Neon's showroom) or as zips of their own (DOS Games Archive's tiedemo.zip: tiedem1.zip, tiedem2.zip, a
+  // later repack without it); unpacked as its installer does (web/pvm.js), the floppies' own files left out but for
+  // the READ.ME and the FLIGHT.HLP)
   for (const f of out.slice()) {
     if (!/(^|\/)tiedem\d\.zip$/i.test(f.path)) continue;
     let inside;
@@ -452,9 +454,11 @@ export async function expandSplitZips(files) {
   const v1 = out.find((f) => /(^|\/)tiedemo\.001$/i.test(f.path)), v2 = out.find((f) => /(^|\/)tiedemo\.002$/i.test(f.path));
   if (v1 && v2) {
     const dirOf = v1.path.includes("/") ? v1.path.slice(0, v1.path.lastIndexOf("/") + 1) : "";
+    const dir2 = v2.path.includes("/") ? v2.path.slice(0, v2.path.lastIndexOf("/") + 1) : "";
     const files = unpackPvm([v1.data, v2.data], dirOf);
     const floppy = /(^|\/)(tiedemo\.00\d|tiedemo\.inf|disk\.id|install\.exe|detect\.exe)$/i;
-    out = out.filter((f) => !floppy.test(f.path) || !f.path.startsWith(dirOf)).concat(files);
+    const inDir = (f, d) => f.path.startsWith(d) && !f.path.slice(d.length).includes("/");    // (directly in it)
+    out = out.filter((f) => !floppy.test(f.path) || !(inDir(f, dirOf) || inDir(f, dir2))).concat(files);
   }
   return out;
 }
@@ -750,8 +754,11 @@ export const GAMES = [
     keys: "<b>Raptor:</b> the arrow keys fly the ship (the mouse is for its menus), <kbd>Ctrl</kbd> fires, <kbd>Alt</kbd> fires the special weapon, <kbd>Space</kbd> picks the next special weapon, the right <kbd>Shift</kbd> the mega bomb; <kbd>Esc</kbd> aborts the mission (the other pilot flies on alone), <kbd>P</kbd> pauses. A controller picked above: the left stick or the D-pad flies the ship, A fires, B the special weapon, X the next special, Y the mega bomb, Start pauses, Back is Esc; in the menus the stick moves the pointer and A clicks (the D-pad and Start, Enter, work them as the keys do).",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
   // The TIE Fighter demo (LucasArts, early 1994: one mission, flown in a build from before the game's release, given
-  // away to advertise the Dodge Neon): tiedemo.zip as DOS Games Archive has it (its two floppies' zips, unpacked by
-  // expandSplitZips and web/pvm.js as its installer does) or its installed directory.  TIEDEMO.BAT runs the opening
+  // away to advertise the Dodge Neon): its two floppies (the Internet Archive's TIE_Fighter_Preview__Dodge_Neon.zip,
+  // the step 1 button's, fetched from its CORS address; or DOS Games Archive's tiedemo.zip dropped), unpacked by
+  // expandSplitZips and web/pvm.js as its installer
+  // does, or its installed directory.  The first release opens in the Neon's showroom (NEON.EXE: its introduction run
+  // ahead by the layer, wcnet_tiedemo.cpp).  TIEDEMO.BAT runs the opening
   // (DEMO.EXE), the mission (TIEMISS.EXE: a 16-bit real-mode program, EMS for its music, sound and cockpits) and the
   // ending.  Flown together (src/cpu/wcnet_tiedemo*.cpp: the CD version's session, ported): launched together, each
   // pilot in its own craft of T/F Alpha (rooms of up to 3), the battle shared (each craft flown by one machine, the
@@ -762,7 +769,7 @@ export const GAMES = [
     build: { text: "TIE Fighter Demo V1.0 12/04/93" },
     cycles: 30000, screen: [320, 200], noFlight: true, noRoomOptions: true, prepare: tdPrepare,
     saves: ["OPTIONS.CFG"],
-    help: "The TIE Fighter demo of early 1994, the one given away with the Dodge Neon: a single mission (T/F Alpha against the Rebel repair yard at Remitik, the Rebels fleeing Hoth after), in a build from before the game's release. Here it is the first of four: win it and you fly on, the same game with new missions written in by this page: The Shuttles Run (TIE interceptors after a dozen fleeing shuttles, X-wings and Y-wings in the way), Corvette Hunt (TIE bombers with proton torpedoes against four corvettes) and Escort the Prowlers (TIE fighters against waves of Y-wings, and whatever comes after). A mission failed or a pilot down: that mission again. The opening plays first (Esc skips it), then the missions, then the ending. Download tiedemo.zip from DOS Games Archive (the link under step 1) and drop it on step 1: the page unpacks its two floppies as its installer does. Flown together, up to 3 pilots: everybody's mission starts at the same moment (the host's game waits at the end of the opening until everybody has got there), each pilot flies their own TIE fighter of T/F Alpha, and the battle is one battle: the same Rebels in the same places on every screen, every shot seen by everybody, every hit counted where it lands, a craft destroyed for one destroyed for all. If a pilot is shot down, the flight ends for everybody a moment later.",
+    help: "The TIE Fighter demo of early 1994, the one given away with the Dodge Neon: a single mission (T/F Alpha against the Rebel repair yard at Remitik, the Rebels fleeing Hoth after), in a build from before the game's release. Here it is the first of four: win it and you fly on, the same game with new missions written in by this page: The Shuttles Run (TIE interceptors after a dozen fleeing shuttles, X-wings and Y-wings in the way), Corvette Hunt (TIE bombers with proton torpedoes against four corvettes) and Escort the Prowlers (TIE fighters against waves of Y-wings, and whatever comes after). A mission failed or a pilot down: that mission again. It opens in the Dodge Neon's showroom (click Go to game, or press any key but Esc: Esc there leaves the demo), then the opening plays (Esc skips it), then the missions, then the ending, and back to the showroom. The TIE Fighter demo button under step 1 fetches it from the Internet Archive once (TIE_Fighter_Preview__Dodge_Neon.zip, the preview's two floppies, 1.7 MB), installs it as its installer does and keeps it in this browser; its zip dropped on step 1 works too. Flown together, up to 3 pilots: everybody's mission starts at the same moment (the host's game waits at the end of the opening until everybody has got there), each pilot flies their own TIE fighter of T/F Alpha, and the battle is one battle: the same Rebels in the same places on every screen, every shot seen by everybody, every hit counted where it lands, a craft destroyed for one destroyed for all. If a pilot is shot down, the flight ends for everybody a moment later.",
     keys: "<b>TIE Fighter demo in flight:</b> the mouse (or a joystick) steers, its button fires; <kbd>+</kbd> and <kbd>-</kbd> the throttle, <kbd>Backspace</kbd> full, <kbd>\\</kbd> none, <kbd>[</kbd> and <kbd>]</kbd> a third and two thirds; <kbd>X</kbd> single, dual or quad fire, <kbd>F9</kbd> the lasers' recharge rate; <kbd>R</kbd> the nearest enemy fighter, <kbd>T</kbd> and <kbd>Y</kbd> the next and previous target, <kbd>U</kbd> the ship in the sight; <kbd>W</kbd> the bomber's proton torpedoes (and back to the lasers); <kbd>Space</kbd> approves the onboard computer's suggestions; <kbd>Ctrl</kbd> the threat display; the keypad's digits look around; <kbd>Esc</kbd> ends the demo.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
 ];

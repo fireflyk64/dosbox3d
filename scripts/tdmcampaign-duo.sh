@@ -10,6 +10,7 @@
 #
 #   FIRST=   the first mission (1..3)      WIN=  seconds into each flight the host's !tdmwin comes (default 22)
 #   OUT=     the logs (default /tmp/tdmcampaign)
+#   OPENING= the keys to the mission (tdmnet-duo.sh's; each machine's script waits for its first flight after them)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export OUT=${OUT:-/tmp/tdmcampaign}
 DUR=${1:-200}
@@ -17,12 +18,12 @@ FIRST=${FIRST:-1}
 WIN=${WIN:-22}
 LAST=3
 # the host: fire now and then; a win WIN s into each flight ("wait" restarts the clock at the next flight's first frame)
-hx=""
+hx="11:wait"
 for ((m = FIRST; m <= LAST; m++)); do
   hx="$hx${hx:+,}4:!button=0:1,9:!button=0:0,10:!tdmcraft,$WIN:!tdmwin,$((WIN + 1)):!tdmcraft,$((WIN + 2)):!shot=h$m"
   [ $m -lt $LAST ] && hx="$hx,$((WIN + 3)):wait"
 done
-gx=""
+gx="11:wait"
 for ((m = FIRST; m <= LAST; m++)); do
   gx="$gx${gx:+,}5:!button=0:1,10:!button=0:0,11:!tdmcraft,$((WIN + 2)):!shot=g$m"
   [ $m -lt $LAST ] && gx="$gx,$((WIN + 3)):wait"
