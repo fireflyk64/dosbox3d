@@ -165,12 +165,14 @@ doubled into the 640-wide frame) a fixed few percent more; they are now made by 
   | 0x48693 | `zbuf_lit` | the craft: u, v stepped into a strip (0x68590), then each pixel nearer than the depth buffer's (rows 0x928E8) drawn lit, its depth kept |
   | 0x49503 | `fill` | one colour, rep stos (as the routine counts its bytes) |
   | 0x42F13 | `none` | nothing (push, pop, ret) |
+  | 0x496BC | `mask_fill` | the shadows' mask (Shadows: Pentium): 1s along a row of a 64-wide byte buffer (0xAE348), no clipping (2026-11-16) |
   | 0x2FAB0 (an entry) | `cockpit_copy` | the cockpit's 320-wide picture (0xDDDF8, its runs at 0xE2DF8) into the frame, each byte a word; eax, ecx, edx left as it leaves them, then its ret |
   | 0x3E720 (an entry; with 0x3E510, 0x3E6E0) | `poly` | the polygon filler (vertices, count): the vertices not yet projected projected (x 0x18, y 0x1C = k x / z + the centre: 0x7CF30.., the divides tried first), the edges into the 16-slot table at 0x104DA8 (0x3E510: one's-complement 16.16 divides by the rows' distance, the whole part at most 0x7FFF, stepped on to the first row's centre; the top and bottom rows and the counters at 0x105028..), then row by row the two edges at it (0x3E6E0: an edge past its bottom replaced by the next starting there), the row's span drawn by its routine's twin (called directly: no hook a row), the edges stepped; eax 0, ecx and edx the edge count, the flags of its `add esp, 8` |
   | 0x3C7E0 (an entry) | `height` | the terrain's height under (x, z) for its 48 callers (game logic: the craft, the shots, the ground's collisions): the cell's four heights from the 256 x 256 map ([0x104DA0]) << 15, interpolated on the half of the cell its diagonal cuts (the diagonal by the cell's parities: four cases); eax the height, ecx and edx as it leaves them, the flags of its `add esp, 0xc` |
 
   Not twinned (the game's own still): 0x431BE, 0x436F2, 0x43F46, 0x458D4, 0x460F5, 0x46D98, 0x48379 (see-through
-  blended), 0x48A90, 0x49191, 0x4954A, 0x496BC: rare at the page's settings (the 10 s log counts them).
+  blended), 0x48A90, 0x49191, 0x4954A: rare at the page's settings (the 10 s log counts them).  (0x496BC was in
+  this list until a crowded fight was profiled: see "A crowded fight" below.)
 * The filler's polygon is the game's own when its span routine has no twin, it has more than 16 vertices, or a
   projection's divide would fault (all tried before anything is written).  A span twin that gives back at a row hands
   the polygon to the game's code there: the filler's frame made as its code has it at its span call (ebx, esi, edi,
@@ -215,6 +217,20 @@ doubled into the 640-wide frame) a fixed few percent more; they are now made by 
   128 -> 150 frames a game second, flying and fighting 131 -> 160; two browser pages at 55,000 cycles 100% and 99%,
   57.4 and 57.0 frames a wall second (53.8 and 55.1 before).  What is left is game logic, spread out: the vector
   math (0x1D060, ~9%), the objects' visibility and loop (0x1E4E0, 0x241E0, 0x29390), none past 9%.
+* **A crowded fight (2026-11-16).**  The user: "The Terminal Velocity game was very slow but I think turning shadows
+  down to 486 and debris down to normal instead of overkill helped a ton", then "investigate which is really the cost
+  in a crowded multiplayer scene in the first level ... it could be laser collisions".  The rig (scratch `crowd.sh`):
+  two machines at the page's 55,000 cycles and 640 x 240, the frame cap off, both put by artic.lvl's densest fighters
+  (object 132: 30 craft within 300 units -- the game wakes only those near a pilot, 1-7 at once), the host hunting,
+  the guest on its wing, both firing all the time; frames a game second over 56 s (host / guest median, lowest):
+  the page's best 52 / 51 (33); Shadows 486 71 / 65; Debris Normal 64 / 65; both 76 / 71 (54); nobody firing, the
+  best 70 / 74.  By the profile (thousands of emulated instructions a frame, `tvprof.py`): 862 at the best, 590 with
+  both lowered.  Pentium shadows draw each flying thing's shadow into a mask with span routine 0x496BC, which had no
+  twin: every shadow polygon went to the game's own filler and spans (0x3E510/0x3E720 and the span routines, ~85 a
+  frame).  It is now twinned (`mask_fill`; the check: 727,052 calls, 0 differed): the best 71 / 67 (47 / 50), 614 a
+  frame, against 590 with the lighter settings.  What is left in a fight: the shots against the objects (0x290F0 the
+  test, 0x292B0 its loop, 0x19340 the shots' flight: ~80 a frame, 13%; Overkill's debris adds to them), the vector math
+  (0x1D060, ~74, 12%).  `DETAIL=light|shadow486|debrisnormal` in tvrun.sh for the A/B.
 
 ## 4. The rigs
 

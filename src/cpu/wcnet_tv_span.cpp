@@ -59,6 +59,7 @@ const Bit32u I_ZROWS = 0x928E8;    // the depth buffer's row pointers (a dword a
 const Bit32u I_TEX = 0x7CF18;      // the polygon's texture (its high 16 bits; the texel's v the next 8, u the low 8)
 const Bit32u I_SHADE = 0x7CF38;    // the polygon's shade (its high 24 bits, 0x100 a shade, the texel the low 8)
 const Bit32u I_COLOUR = 0x7CF2C;   // the polygon's colour (a flat fill)
+const Bit32u I_MASK = 0xAE348;     // the shadows' mask: 64 bytes a row (Shadows: Pentium)
 const Bit32u I_LIT = 0x934E8;      // the light table: shades of 256 colours
 const Bit32u I_FOG = 0x944E8;      // the depth fog's table: 17 shades of 256 colours, 1..16 used (0x100 a shade)
 const Bit32u I_VARS = 0x68520;     // the routines' variables and the strip (0x68520..0x689A0)
@@ -559,6 +560,20 @@ bool fill(Run &m, Bit32u esi_, Bit32u edi_, Bit32u ebx_) {
 // 0x42F13: no pixels (push esi; push edi; pop edi; pop esi; ret)
 bool none(Run &, Bit32u, Bit32u, Bit32u) { return true; }
 
+// 0x496BC: the shadows' mask (Shadows: Pentium draws each shadow's polygon into it): the edges' x ordered (unsigned),
+// 1 written from the first to the last along row ebx of a 64-wide byte buffer (row << 6, no clipping: the 32-bit
+// wraps the routine's), by rep stosb / stosd / stosb as fill's -- every byte 1 whatever the order.  Its registers
+// left as the filler reloads them (all but ebp, which it keeps).
+bool mask_fill(Run &m, Bit32u esi_, Bit32u edi_, Bit32u ebx_) {
+    Bit32u xa = m.r32(esi_ + 8), xb = m.r32(edi_ + 8);
+    if (xa > xb) std::swap(xa, xb);
+    const Bit32u x0 = xa >> 16, n = (xb >> 16) - x0 + 1;
+    const Bit32u dst = D(I_MASK) + (ebx_ << 6) + x0;
+    if (m.bad || n > kMaxSpan || (reg_flags & FLAG_DF) || !m.will_write(dst, n)) return false;
+    memset(MemBase + dst, 1, n);
+    return true;
+}
+
 typedef bool (*Twin)(Run &m, Bit32u esi, Bit32u edi, Bit32u ebx);
 
 Twin twin_of(int s) {
@@ -572,6 +587,7 @@ Twin twin_of(int s) {
     case S_ZBUF_LIT: return &zbuf_lit;
     case S_FILL: return &fill;
     case S_NONE: return &none;
+    case S_MASK_FILL: return &mask_fill;
     }
     return NULL;
 }

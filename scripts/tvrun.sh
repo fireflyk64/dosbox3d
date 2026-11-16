@@ -17,7 +17,9 @@
 #   JOY=1       the game port's stick on, as the page's "Built in" pad has it ([joystick] joysticktype=none
 #               timed=false, WCJOY=1; the key script's !joy=x:y and !joybutton=n:1|0 move it)
 #   ROUTE_DELAY=  seconds added to the route's times (a machine that launches its level later)
-#   DETAIL=low  with SVGA=1: the Graphics Options as the shareware's VOX.INI has them (not the page's best)
+#   DETAIL=low  with SVGA=1: the Graphics Options as the shareware's VOX.INI has them (not the page's best);
+#               DETAIL=light the page's but Shadows 486 and Debris Normal (airShadowFlag 1, partsFlag 1); DETAIL=shadow486
+#               or debrisnormal: only the one
 #   SVGA=1      the game's high-resolution mode (its own setting: 640 x 240 drawn on a 640 x 480 screen; VOX.INI's
 #               gamePIXX,gamePIXY) in the copy, at CYCLES (60000 is good)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -43,10 +45,10 @@ for i, l in enumerate(lines):
     # shadows, high detail textures, debris overkill)
     if svga and detail != 'low' and i + 1 < len(lines):
         if l == 'skyTextureFlag': lines[i + 1] = '1'
-        if l.startswith('perspectiveFlag,'): lines[i + 1] = '1,2'
+        if l.startswith('perspectiveFlag,'): lines[i + 1] = '1,1' if detail in ('light', 'shadow486') else '1,2'
         if l == 'textureResolution': lines[i + 1] = '1'
         if l.startswith('autoLevel,'):
-            v = lines[i + 1].split(','); v[4] = '2'; lines[i + 1] = ','.join(v)
+            v = lines[i + 1].split(','); v[4] = '1' if detail in ('light', 'debrisnormal') else '2'; lines[i + 1] = ','.join(v)
     # (the game's Gamepad control, calibrated to DOSBox's counting port: the page's "Built in" pad)
     if l.startswith('joystickActive,') and i + 1 < len(lines):
         lines[i + 1] = '2,64,64,0,0' if joy else '0,0,0,0,0'

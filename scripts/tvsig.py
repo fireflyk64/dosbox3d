@@ -80,6 +80,7 @@ SPANS = [
     ('zbuf_lit', 0x48693, 0x48A90, "u and v stepped (no divide) into a strip, then each pixel nearer than the depth buffer's drawn lit and its depth kept"),
     ('fill', 0x49503, 0x4954A, "one colour (rep stos)"),
     ('none', 0x42F13, 0x42F18, "no pixels (push, pop, ret)"),
+    ('mask_fill', 0x496BC, 0x49707, "the shadows' mask (Shadows: Pentium): 1s along a row of a 64-wide byte buffer (0xAE348), rep stos"),
     ('height', 0x3C7E0, 0x3C96B, "the terrain's height under a point (x, z): the height map's cell interpolated on the half its diagonal cuts (an entry)"),
     ('poly', 0x3E510, 0x3E8E3, "the polygon filler 0x3E720 (vertices, count) with its edge setup 0x3E510 and edge finder 0x3E6E0: projected, edges stepped row by row, a span routine per row (an entry)"),
     ('cockpit_copy', 0x2FAB0, 0x2FB17, "the cockpit's 320-wide picture into the 640-wide frame, each byte doubled, by its rows' runs (an entry: its caller's call made natively)"),
