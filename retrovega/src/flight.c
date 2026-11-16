@@ -642,13 +642,16 @@ static void arm_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
 /* "PRESS FIRE TO LAND" under the gunsight while the trigger would land (logic_autoland_ready: home, every waypoint
  * flown, nobody to fight, the carrier close) */
 static uint8_t __far g_autoland;
+static uint8_t __far g_cloak_said;      /* frames left of CLOAK CHARGING: Alt+C refused */
 static uint8_t __far g_land_armed;      /* the trigger let go while the prompt shows: the next pull lands (one held
                                            through the last kill was a shot, and landed the player: the user, SHELTON2) */
 static void land_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
 {
-    static const char s_land[] = "PRESS FIRE TO LAND", s_on[] = "CLOAKED", s_broken[] = "CLOAK DISRUPTED";
+    static const char s_land[] = "PRESS FIRE TO LAND", s_on[] = "CLOAKED", s_broken[] = "CLOAK DISRUPTED",
+        s_wait[] = "CLOAK CHARGING";
     int c = CLOAK_OF(0), blink = (frameCounter >> 4) & 1, w, x, row = g_cam_cy + 14;
-    const char *s = g_autoland ? s_land : c == RV_CLOAK_ON ? s_on : c == RV_CLOAK_BROKEN ? s_broken : 0;
+    const char *s = g_autoland ? s_land : c == RV_CLOAK_ON ? s_on : c == RV_CLOAK_BROKEN ? s_broken
+                    : g_cloak_said && logic_cloak_wait() ? s_wait : 0;
     if (!s || g_arm_warn || row < 0 || row + PANEL_TINY_H > SCR_H)
         return;
     w = panel_tiny_width(s);
@@ -657,7 +660,7 @@ static void land_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
         return;
     if (ext && (row < ey0 || row >= ey0 + rows || x < ext[2 * (row - ey0)] || x + w > ext[2 * (row - ey0) + 1]))
         return;
-    (void)panel_tiny(x, row, s, s == s_on ? UI_HILITE : s == s_broken ? (blink ? UI_RED : UI_AMBER2)
+    (void)panel_tiny(x, row, s, s == s_on ? UI_HILITE : s == s_broken || s == s_wait ? (blink ? UI_RED : UI_AMBER2)
                                 : blink ? UI_WHITE : UI_HILITE, y0, y1);
 }
 
@@ -2458,7 +2461,9 @@ static void systems_tick(void)
     if (g_sys.signature > 100) g_sys.signature = 100;
     if (CLOAK_OF(0) == RV_CLOAK_ON)
         g_sys.signature = 2;            /* (cloaked: next to nothing to find it by; disrupted, the burner's heat shows) */
-    vid_dim(CLOAK_OF(0) != RV_CLOAK_OFF ? CLOAK_DIM : 64);   /* (the cloak's power: the cockpit dark but its E/M box, its
+    vid_dim(CLOAK_OF(0) != RV_CLOAK_OFF ? CLOAK_DIM : 64);
+    if (g_cloak_said)
+        g_cloak_said--;   /* (the cloak's power: the cockpit dark but its E/M box, its
                                            lamps out but the E/M's (panel.c); the user, 2026-11-15) */
     {   /* (the HEAT and SIGNATURE displays take theirs every 5 s: a sensor's sweep, the user's pick) */
         static unsigned long __far taken;
@@ -3707,8 +3712,8 @@ unsigned short __far __cdecl flight_keys(void)
                                            the backspace key also sets desired speed to zero in space"; "and \ sets to full
                                            speed") */
     if (in.key == KEY_ALT && g_view != VIEW_FLYBY) {
-        if (in.ch == 'c')
-            logic_cloak_key();          /* Alt+C the cloak, a Schroedinger's (logic.c cloak_*) */
+        if (in.ch == 'c' && !logic_cloak_key())   /* Alt+C the cloak, a Schroedinger's (logic.c cloak_*) */
+            g_cloak_said = 90;          /* (refused, off under 30 s: CLOAK CHARGING a while) */
         else
             comm_hotkey(in.ch);         /* Alt+T a taunt */
     }

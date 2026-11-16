@@ -7136,7 +7136,10 @@ static void t_cloak(void)
     static const char __far e_talk[] = "a transmission: the cloak %d after 2 s (2 disrupted), %d after 3.5 s (1 on again)";
     static const char __far e_shot[] = "the trigger with the guns armed: the cloak is %d (0 off), unseen %d";
     static const char __far e_back[] = "off 20 s: the front shield is back to %d of %d";
+    static const char __far e_wait[] = "Alt+C 20 s after the shot: %d (0: refused), the cloak %d (0), %d s of the wait left "
+        "(10)";
     static const char __far e_twice[] = "Alt+C twice: the cloak %d after the first (1), %d after the second (0)";
+    static const char __far e_wait2[] = "Alt+C off: %d s before it may come on again (30)";
     static const char __far e_none[] = "Alt+C in the Gawain, which has no cloak: the cloak is %d";
     int16_t c2, c35;
     pt_alone(PT_PLAYER);
@@ -7179,10 +7182,16 @@ static void t_cloak(void)
     if (!pt_steps(20 * SEC))
         return;
     REQUIRE(SHIELD(0, 0) > 0, e_back, SHIELD(0, 0), SHIELD_MAX(0, 0), 0);
+    c2 = logic_cloak_key();             /* (refused: off under 30 s, logic.c CLOAK_WAIT_STEPS) */
+    REQUIRE(c2 == 0 && CLOAK_OF(0) == RV_CLOAK_OFF && (logic_cloak_wait() + SEC / 2) / SEC == 10, e_wait, c2, CLOAK_OF(0),
+            (logic_cloak_wait() + SEC / 2) / SEC);
+    if (!pt_steps(10 * SEC))
+        return;
     logic_cloak_key();
     c2 = CLOAK_OF(0);
     logic_cloak_key();
     REQUIRE(c2 == RV_CLOAK_ON && CLOAK_OF(0) == RV_CLOAK_OFF, e_twice, c2, CLOAK_OF(0), 0);
+    REQUIRE(logic_cloak_wait() == 30 * SEC, e_wait2, logic_cloak_wait() / SEC, 0, 0);
     pt_alone(PT_HOMER);
     logic_cloak_key();
     REQUIRE(CLOAK_OF(0) == RV_CLOAK_OFF, e_none, CLOAK_OF(0), 0, 0);
@@ -7365,6 +7374,9 @@ static void t_cloak_run(void)
     g_sys.armed = 0;
     if (shipAiState[0] == 9)
         return;
+    for (i = 0; i < 31 * SEC && logic_cloak_wait(); i++)   /* (the cloak's 30 s from its going off) */
+        if (!pt_step())
+            return;
     logic_cloak_key();
     if (!pt_steps(3 * SEC))
         return;

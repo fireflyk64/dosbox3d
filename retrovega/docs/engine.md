@@ -1034,7 +1034,12 @@ its E/M box's, which tools/rvpack.py gives colours of their own (cockpit.json
 bright as ever; disrupted, still dark; the afterburner or a
 transmission (the comm's lines, a chat line: 3 s) disrupts it, seen with the
 shields still down, CLOAK DISRUPTED under the gunsight; a shot or Alt+C ends
-it and the shields come back; logic.c `cloak_*`, rvFlags bits 6-7);
+it, for good, and the shields come back; then Alt+C brings it back only 30 s
+after it went off (the user, 2026-11-15: "ensure the shroedinger permanently
+decloaks after firing blasts or missiles until alt-c is pressed again. Ideally
+there would be a solid 30 or 60 second cooldown before it may be pressed again
+after a decloak": logic.c `CLOAK_WAIT_STEPS`; pressed too soon, CLOAK
+CHARGING under the gunsight for 3 s); logic.c `cloak_*`, rvFlags bits 6-7);
 MASTER WARN is lit for a damaged system, the cockpit hurt or a
 shield under a quarter, blinking for 5 s whenever a warning is new and then
 steady (the user, 2026-11-05: "Blink, then steady"; it had blinked for the

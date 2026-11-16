@@ -76,6 +76,10 @@ static uint16_t __far g_lock_steps;     /* the player's missile lock: steps its 
 static int16_t __far g_lock_xy[2];      /* the lock's crosshair: px right of and below the nose in the seeker's picture */
 #define LOCK_UNSET 0x7FFF               /* (in g_lock_xy[1]: no chase under way, the next sets off from a corner) */
 static uint8_t __far g_cloak_quiet;     /* steps until a transmission's disruption of the cloak is over */
+#define CLOAK_WAIT_STEPS (30 * LOGIC_HZ)   /* once the cloak is off, so long before Alt+C brings it back (the user,
+                                           2026-11-15: "a solid 30 or 60 second cooldown before it may be pressed again
+                                           after a decloak") */
+static uint16_t __far g_cloak_wait;     /* steps of that left */
 
 #define RAM_STEPS 10                    /* a ship hurt by a ram is not hurt by one again for this many steps */
 #define AI_SCATTER 18                   /* an AI's shot's scatter about the nose, 256ths each way (18: 4 degrees; gun_fire), up
@@ -752,6 +756,7 @@ void logic_start(const RvMission __far *m)
         for (j = 0; j < (int16_t)m->nfield && j < RV_FIELDS; j++)
             g_fields[g_nfields++] = m->field[j];
     _fmemset(&g_pilot, 0, sizeof g_pilot);
+    g_cloak_wait = 0;
     _fmemset(g_turn_frac, 0, sizeof(g_turn_frac));
     _fmemset(g_turn, 0, sizeof g_turn);
     _fmemset(g_mind, 0, sizeof g_mind);
@@ -1164,12 +1169,24 @@ static void cloak_set(int16_t s, uint16_t st)
                             | (st == RV_CLOAK_ON ? RV_FLAG_UNSEEN : 0));
 }
 
-void logic_cloak_key(void)
+int16_t logic_cloak_key(void)
 {
     const RvShipType __far *t = slot_type(0);
     g_cloak_quiet = 0;
-    cloak_set(0, !CLOAK_OF(0) && t && (t->flags & RV_SHIPTYPE_FLAG_CLOAK) && shipAiState[0] != 9 ? RV_CLOAK_ON : RV_CLOAK_OFF);
+    if (CLOAK_OF(0)) {
+        cloak_set(0, RV_CLOAK_OFF);
+        g_cloak_wait = CLOAK_WAIT_STEPS;
+        return 1;
+    }
+    if (!t || !(t->flags & RV_SHIPTYPE_FLAG_CLOAK) || shipAiState[0] == 9)
+        return 1;
+    if (g_cloak_wait)
+        return 0;
+    cloak_set(0, RV_CLOAK_ON);
+    return 1;
 }
+
+uint16_t logic_cloak_wait(void) { return g_cloak_wait; }
 
 void logic_cloak_disrupt(void)
 {
@@ -1181,12 +1198,18 @@ void logic_cloak_disrupt(void)
  * or the ship lost; disrupted while the afterburner burns or a transmission is fresh, else on */
 static void cloak_step(void)
 {
-    if (CLOAK_OF(0) == RV_CLOAK_OFF)
+    if (CLOAK_OF(0) == RV_CLOAK_OFF) {
+        if (g_cloak_wait)
+            g_cloak_wait--;
         return;
+    }
     if (g_cloak_quiet)
         g_cloak_quiet--;
-    cloak_set(0, shipAiState[0] == 9 || (g_sys.armed && (g_pilot.guns || g_pilot.missile)) ? RV_CLOAK_OFF
-                 : g_pilot.afterburner || g_cloak_quiet ? RV_CLOAK_BROKEN : RV_CLOAK_ON);
+    if (shipAiState[0] == 9 || (g_sys.armed && (g_pilot.guns || g_pilot.missile))) {
+        cloak_set(0, RV_CLOAK_OFF);     /* (off for good: Alt+C again, once CLOAK_WAIT_STEPS are over) */
+        g_cloak_wait = CLOAK_WAIT_STEPS;
+    } else
+        cloak_set(0, g_pilot.afterburner || g_cloak_quiet ? RV_CLOAK_BROKEN : RV_CLOAK_ON);
 }
 
 static void step_fire(void)
