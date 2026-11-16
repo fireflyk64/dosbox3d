@@ -408,10 +408,13 @@ function wc1MusicOnFm(FS, root) {
 // pieces, TV12BBS._1, ._2, ._3: put end to end they are a zip (the installer's own header before it) of the game's
 // files, which INSTALL.EXE unpacks to C:\TV.  expandSplitZips does the same in the browser: every set of pieces
 // <name>._1, ._2, ... (any case, the same directory) that reads as a zip is replaced by the files in it.
+// DOOM's shareware (doom19s.zip, id Software's own release) is the same thing with other names: DOOMS_19.1 and
+// DOOMS_19.2, which its DEICE.EXE joins into a self-extracting zip (DOOMS_19.EXE: 15,769 bytes of program, then the
+// zip of the game's files); pieces <name>.1, .2, ... are tried the same way (and left alone when no zip comes of them).
 export async function expandSplitZips(files) {
   const groups = new Map();
   for (const f of files) {
-    const m = /^(.*)\._(\d+)$/.exec(f.path);
+    const m = /^(.*)\._?(\d+)$/.exec(f.path);
     if (!m) continue;
     const key = m[1].toLowerCase();
     if (!groups.has(key)) groups.set(key, []);
@@ -544,6 +547,34 @@ function tvPrepare(FS, root, opts = {}) {
   return `Terminal Velocity's settings: ${said.join("; ")}`;
 }
 
+// DOOM's own settings made for the browser at each launch (src/cpu/wcnet_doom.cpp; docs/doom.md): DEFAULT.CFG as
+// SETUP.EXE writes it, the names and values tab-separated.  With none (the shareware as unpacked: SETUP has not been
+// run) one is made: the Sound Blaster for the music (its FM) and the effects at the machine's 220, IRQ 7, DMA 1, eight
+// sound channels, the mouse on, the picture at full width.  One that came with the game keeps everything (the keys,
+// the volumes, the picture's size) but the sound cards, made the machine's the same way (a General MIDI or Gravis
+// setting has no card here), and a joystick, which DOOM calibrates at every start (it would wait there for one).
+const DOOM_CFG_SOUND = { snd_musicdevice: "3", snd_sfxdevice: "3", snd_sbport: "544", snd_sbirq: "7", snd_sbdma: "1", snd_mport: "816", use_joystick: "0" };
+const DOOM_CFG_NEW = { mouse_sensitivity: "5", sfx_volume: "8", music_volume: "8", show_messages: "1", use_mouse: "1",
+  screenblocks: "10", detaillevel: "0", snd_channels: "8", usegamma: "0" };
+function doomPrepare(FS, root) {
+  let cfg = null;
+  try { cfg = new TextDecoder().decode(FS.readFile(`${root}/DEFAULT.CFG`)); } catch (e) { /* none: made */ }
+  const lines = cfg === null ? [] : cfg.split(/\r?\n/).filter((l) => l.trim());
+  const changed = [];
+  const set = (name, value, always) => {
+    const i = lines.findIndex((l) => l.split(/\s+/)[0] === name);
+    if (i < 0) { lines.push(`${name}\t\t${value}`); return; }
+    if (!always) return;
+    const had = lines[i].trim().split(/\s+/).slice(1).join(" ");
+    if (had !== value) { lines[i] = `${name}\t\t${value}`; changed.push(`${name} ${had} -> ${value}`); }
+  };
+  for (const [k, v] of Object.entries(DOOM_CFG_NEW)) set(k, v, false);
+  for (const [k, v] of Object.entries(DOOM_CFG_SOUND)) set(k, v, true);
+  FS.writeFile(`${root}/DEFAULT.CFG`, new TextEncoder().encode(lines.join("\r\n") + "\r\n"));
+  if (cfg === null) return "DOOM's settings: DEFAULT.CFG made (the Sound Blaster for the music and the effects, the keyboard and the mouse)";
+  return changed.length ? `DOOM's settings: DEFAULT.CFG's sound made the machine's Sound Blaster (${changed.join(", ")})` : "";
+}
+
 // Raptor's own settings made for the browser at each launch (src/cpu/wcnet_rap.cpp; docs/raptor.md): SETUP.INI as
 // SETUP.EXE writes it (RAP.EXE will not start without one) when there is none: the Sound Blaster for the music (its FM)
 // and the effects, at the machine's 220, IRQ 7, DMA 1; the control the keyboard and the mouse.
@@ -589,6 +620,31 @@ function rapPrepare(FS, root) {
   FS.writeFile(`${root}/SETUP.INI`, new TextEncoder().encode(lines.join("\r\n")));
   return `Raptor's settings: ${said} on the Sound Blaster (the SETUP.INI that came with the game had another card)`;
 }
+
+// DOOM's mission menu: the host's skill and level, as the game's own -skill and -warp take them (the launcher gives
+// the host's command line to every player's game: src/cpu/wcnet_doom_session.cpp).  A "series" is a skill (1..5, the
+// game's own names), its missions the levels of episode one, the shareware's (the registered game's other episodes are
+// reached by playing on, or from its own menu alone).  None picked: the game's own start, E1M1 at Hurt me plenty.
+const DOOM_SKILLS = ["I'm too young to die", "Hey, not too rough", "Hurt me plenty", "Ultra-Violence", "Nightmare!"];
+const DOOM_E1 = ["Hangar", "Nuclear Plant", "Toxin Refinery", "Command Control", "Phobos Lab", "Central Processing", "Computer Station",
+  "Phobos Anomaly", "Military Base"];
+const DOOM_CAMPAIGN = {
+  // (Hurt me plenty first: the menu's order, not the skills')
+  series: [3, 4, 2, 1, 5].map((skill) => ({ series: skill, group: DOOM_SKILLS[skill - 1], name: DOOM_SKILLS[skill - 1],
+    files: DOOM_E1.map((_, k) => `E1M${k + 1}`), missions: [] })),
+  alone: true,
+  noDefault: true,       // (a room starts with none picked: the game's own start)
+  start: { room: "E1M1 Hangar, Hurt me plenty (the game's own start)", alone: "The title screen (DOOM as it is: its own menus)" },
+  noneLabel: "E1M1 Hangar, Hurt me plenty",
+  noneShort: "E1M1",
+  missionArgs: (m) => `-skill ${m.series} -warp 1 ${m.mis + 1}`,
+  label(m, form) {
+    const level = `E1M${m.mis + 1}`;
+    const skill = DOOM_SKILLS[m.series - 1] || `skill ${m.series}`;
+    if (form === "short") return `${level} ${skill}`;
+    return `${level} ${DOOM_E1[m.mis] || ""}${form === "menu" ? "" : `, ${skill}`}`.trim();
+  },
+};
 
 export const GAMES = [
   { id: "wc1", tag: "WC1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
@@ -753,6 +809,23 @@ export const GAMES = [
     help: "Raptor flown together: each pilot plays a game of their own (a new pilot or a saved one, their own ship, weapons, money and shop), and the waves are flown together: when a pilot chooses a sector at the ship computer (the hangar's Fly Mission), their game waits there for the other, then both fly the host's wave. Both ships are on both screens (the other pilot's with blue engine flames, yours with the game's own, each casting its shadow); the enemies are the same, and what either pilot shoots down is shot down in both games: the money goes to whoever did it, and each pilot picks up their own bonuses. If either pilot is shot down, the mission is over for both. The shareware (the Bravo sector) and the registered game (all three sectors: a zip of the game's folder, from Steam's Browse local files) fly Bravo together; a shareware pilot cannot follow into the other two (Esc there flies their own wave alone).",
     keys: "<b>Raptor:</b> the arrow keys fly the ship (the mouse is for its menus), <kbd>Ctrl</kbd> fires, <kbd>Alt</kbd> fires the special weapon, <kbd>Space</kbd> picks the next special weapon, the right <kbd>Shift</kbd> the mega bomb; <kbd>Esc</kbd> aborts the mission (the other pilot flies on alone), <kbd>P</kbd> pauses. A controller picked above: the left stick or the D-pad flies the ship, A fires, B the special weapon, X the next special, Y the mega bomb, Start pauses, Back is Esc; in the menus the stick moves the pointer and A clicks (the D-pad and Start, Enter, work them as the keys do).",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
+  // DOOM (id Software, 1993): the shareware as id released it (doom19s.zip: its pieces DOOMS_19.1 and DOOMS_19.2
+  // unpacked by expandSplitZips: episode one, Knee-Deep in the Dead) or the game's installed directory (DOOM.EXE with
+  // DOOM1.WAD, or the registered game's DOOM.WAD).  Nothing of the game is hooked: it has a network game of its own,
+  // played through a driver, and the emulator is that driver (src/cpu/wcnet_doom.cpp: DOOMNET.COM on its Z: drive runs
+  // DOOM.EXE with -net, the players the room's, the game's packets over the room's links; docs/doom.md).  So the
+  // game is DOOM's own co-operative game for up to four: everybody in the same level, the monsters and doors and
+  // keys shared, a marine who dies back at the start with a pistol.  `run` is the launcher: alone (a room of one) it
+  // runs the game as it is.  The mission menu is the host's skill and level (DOOM's -skill and -warp).
+  { id: "doom", tag: "DOOM", title: "DOOM", detect: ["DOOM.EXE"], run: "doomnet", multiplayer: true, maxSeats: 4,
+    build: { text: "Doomcom buffer invalid!" },
+    cycles: 50000, screen: [320, 200], noRoomOptions: true, prepare: doomPrepare, campaign: DOOM_CAMPAIGN,
+    keep: ["DEFAULT.CFG"],
+    gather: [{ name: /^DOOM1?\.WAD$/i }, { name: /^(SETUP|IPXSETUP|SERSETUP|DM)\.EXE$/i }, { name: /^DEFAULT\.CFG$/i }, { name: /^DOOMSAV\d\.DSG$/i }],
+    saves: ["DOOMSAV*.DSG", "DEFAULT.CFG"],
+    help: "DOOM played together, the game's own co-operative mode for up to four marines: everybody is in the same level at once, the monsters, doors, keys and switches are shared, and each of you keeps your own health, armour, weapons and ammunition. When the host presses Fly, every player's game starts, the launcher waits on a text screen until everybody in the room is there (Enter on the host's starts at once with those who are; Esc plays alone), and the level begins for all at the same moment. The host picks the skill and the level in the room (step 2). A marine who dies presses Space and is back at the level's start with a pistol; the level ends for everybody when anyone reaches the exit, and the next begins. Nobody can join a game under way (DOOM has no way in): a player who comes late waits on the launcher's screen for the host's next start. A player who leaves is told to the others (\"Player 2 left the game\") and they play on. T talks to the others (type, Enter). Everybody needs the same game files (the shareware 1.9 with the shareware, the registered game with the registered game). Alone (Fly Alone) it is DOOM as it is, its title screen and menus, saved games kept in this browser.",
+    keys: "<b>DOOM:</b> the arrow keys walk and turn, <kbd>Ctrl</kbd> or the left mouse button fires, <kbd>Space</kbd> opens doors and works switches, <kbd>Shift</kbd> held runs, <kbd>Alt</kbd> held with left or right sidesteps (<kbd>,</kbd> and <kbd>.</kbd> sidestep too); <kbd>1</kbd> to <kbd>7</kbd> pick a weapon, <kbd>Tab</kbd> the map, <kbd>T</kbd> talks to the other players (type, <kbd>Enter</kbd>), <kbd>Esc</kbd> the game's menu, <kbd>F11</kbd> the brightness, <kbd>-</kbd> and <kbd>=</kbd> the picture's size. Click the picture to turn with the mouse (Esc gives the pointer back). A controller picked above: the left stick or the D-pad walks and turns, A fires, B opens, X runs, Y sidesteps (held, with left or right), Start is Enter, Back is Esc; the other buttons pick weapons and the map.",
+    dosbox: "[sdl]\nautolock=true\n[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
   // The TIE Fighter demo (LucasArts, early 1994: one mission, flown in a build from before the game's release, given
   // away to advertise the Dodge Neon): its two floppies (the Internet Archive's TIE_Fighter_Preview__Dodge_Neon.zip,
   // the step 1 button's, fetched from its CORS address; or DOS Games Archive's tiedemo.zip dropped), unpacked by

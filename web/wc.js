@@ -355,7 +355,7 @@ function switchTo(holder, id) {
 function gameParam(v) {
   const k = String(v || "").trim().toLowerCase();
   if (!k) return null;
-  const named = { raptor: "rap", retrovega: "rv", tie: "tf", tfd: "tiedemo", tiefighter: "tf", privateer: "priv", terminalvelocity: "tv" };
+  const named = { raptor: "rap", doom1: "doom", retrovega: "rv", tie: "tf", tfd: "tiedemo", tiefighter: "tf", privateer: "priv", terminalvelocity: "tv" };
   let id = named[k] || k;
   if (!gameById(id)) { const byTag = GAMES.find((g) => g.tag.toLowerCase() === k); id = byTag ? byTag.id : null; }
   if (id === "tf" && !holderOf("tf")) id = "tiedemo";
@@ -496,6 +496,7 @@ const DEMOS = [
   { button: "demoRv", id: "rv", title: "RetroVega", builtin: true },
   { button: "demoRap", id: "rap", file: "1rap12.zip", title: "Raptor's shareware" },
   { button: "demoTv", id: "tv", file: "3dtv12.zip", title: "Terminal Velocity's shareware" },
+  { button: "demoDoom", id: "doom", file: "doom19s.zip", title: "DOOM's shareware" },
   { button: "demoTfd", id: "tiedemo", file: "TIE_Fighter_Preview__Dodge_Neon.zip", title: "the TIE Fighter demo", from: "the Internet Archive",
     url: "https://archive.org/cors/StarWarsTIEFighter_1020/TIE_Fighter_Preview__Dodge_Neon.zip" },
 ];
@@ -2382,6 +2383,7 @@ const isTie = () => isTf() || isTfd();
 const isPriv = () => !!(gameInfo() && (gameInfo().id === "priv" || gameInfo().id === "privrf"));
 const isTv = () => !!(gameInfo() && gameInfo().id === "tv");
 const isRap = () => !!(gameInfo() && gameInfo().id === "rap");
+const isDoom = () => !!(gameInfo() && gameInfo().id === "doom");
 // (the room's game, the loaded one's or the lobby's)
 function isTvRoom() { return lobbyGameId() === "tv" || isTv(); }
 function tfFlight() {
@@ -2445,6 +2447,26 @@ const RAP_PAD = {
   lock: { keys: [], label: "Lock target (nothing in Raptor)" },
   comms: { keys: [], label: "Communications (nothing in Raptor)" },
 };
+// DOOM's keys for a controller's buttons (its own defaults, DEFAULT.CFG's): Ctrl fires, Space opens doors and works
+// switches, the right Shift runs, Alt held sidesteps with left and right; Tab is the map, Enter and Esc its menus;
+// the rest pick weapons (DOOM has a key for each, none for "the next").  The stick and the D-pad are its arrows:
+// forward, back and turning (stickKeys below).
+const DOOM_PAD = {
+  guns: { keys: ["leftctrl"], label: "Fire guns (DOOM: fire)" },
+  missile: { keys: ["space"], label: "Fire missile (DOOM: open a door, work a switch)" },
+  target: { keys: ["rightshift"], label: "Change target (DOOM: run, held)" },
+  weapon: { keys: ["leftalt"], label: "Change weapon (DOOM: sidestep, held with left or right)" },
+  faster: { keys: ["3"], label: "Speed up (DOOM: the shotgun)" },
+  slower: { keys: ["2"], label: "Slow down (DOOM: the pistol)" },
+  burner: { keys: ["4"], label: "Afterburner (DOOM: the chaingun)" },
+  nav: { keys: ["esc"], label: "Navigation map (DOOM: Esc, its menu)" },
+  auto: { keys: ["enter"], label: "Autopilot (DOOM: Enter in its menus)" },
+  up: { keys: [], label: "Up (DOOM: the D-pad and the stick walk and turn)" },
+  down: { keys: [], label: "Down (DOOM: the D-pad and the stick walk and turn)" },
+  gunsel: { keys: ["5"], label: "Change guns (DOOM: the rocket launcher)" },
+  lock: { keys: ["tab"], label: "Lock target (DOOM: the map)" },
+  comms: { keys: ["1"], label: "Communications (DOOM: the fist or the chainsaw)" },
+};
 const rapKeys = (id) => {
   const k = RAP_PAD[id];
   if (!k) return null;
@@ -2457,10 +2479,11 @@ const controls = initControls({
   // Ins and Del as the emulator has it, and fires with the mouse's button, the game's own trigger)
   directStick: () => isTie(),
   rollKeys: () => (isTie() ? { left: "kp0", right: "kpperiod" } : null),
-  actionKeys: (id) => (isTie() && tiePad()[id] ? tiePad()[id].keys : isRap() ? rapKeys(id) : null),
-  actionLabel: (id) => (isTie() && tiePad()[id] ? tiePad()[id].label : isRap() && RAP_PAD[id] ? RAP_PAD[id].label : null),
+  actionKeys: (id) => (isTie() && tiePad()[id] ? tiePad()[id].keys : isRap() ? rapKeys(id) : isDoom() && DOOM_PAD[id] ? DOOM_PAD[id].keys : null),
+  actionLabel: (id) => (isTie() && tiePad()[id] ? tiePad()[id].label : isRap() && RAP_PAD[id] ? RAP_PAD[id].label : isDoom() && DOOM_PAD[id] ? DOOM_PAD[id].label : null),
   // (Raptor: the stick in a wave and the D-pad everywhere are its arrow keys, the stick past 30% of its travel)
-  stickKeys: () => (isRap() ? { left: "left", right: "right", up: "up", down: "down", at: 0.3 } : null),
+  // (DOOM the same: its arrows walk and turn)
+  stickKeys: () => (isRap() || isDoom() ? { left: "left", right: "right", up: "up", down: "down", at: 0.3 } : null),
   fireByMouse: () => isTie(),
   // (A controller button without a key of its own is the page's: push to talk.)
   onAction: (id, down) => { if (id === "ptt") voice.ptt(down); },

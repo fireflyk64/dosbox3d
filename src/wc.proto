@@ -679,6 +679,11 @@ message NetworkMessage {
     // the TIE Fighter demo's (from 90: docs/tiedemo.md)
     optional TdmHello tdm_hello = 90;
     optional TdmState tdm_state = 91;
+    // DOOM's (from 100: docs/doom.md)
+    optional DoomHello doom_hello = 100;
+    optional DoomStart doom_start = 101;
+    optional DoomPacket doom_packet = 102;
+    optional DoomGone doom_gone = 103;
 }
 
 // Raptor: Call of the Shadows (docs/raptor.md).  A pilot says hello; the host answers with its seat.
@@ -752,4 +757,44 @@ message TdmState {
     optional uint32 verdict = 10;
     optional uint32 next = 11;
     optional bool over = 12;
+}
+
+// DOOM (docs/doom.md): the game's own network game, the emulator its network driver (DOOMNET.COM).  A player's
+// launcher says hello once a second while it waits (`ready`) and while its game runs; the host's answer has the
+// player's seat, and the game under way if there is one (`playing`: its serial).
+message DoomHello {
+    optional string callsign = 1;
+    optional uint32 player = 2;         // (the host's) the seat of the player told
+    optional uint32 seats = 3;
+    optional bool ready = 4;            // at the launcher, waiting for the game to be started
+    optional string game = 5;           // the program and the WADs beside it, names and sizes: the same or no game together
+    optional uint32 playing = 6;        // (the host's) the network game under way
+    optional string note = 7;           // (the host's) why this player is not taken
+}
+
+// The host's launcher starts the game: DOOM's players in order (the seat and the callsign of each), the host's
+// command line for everybody (the skill, the map: what DOOM's own start-up arbitration does not carry is there too).
+message DoomStart {
+    optional uint32 serial = 1;
+    repeated uint32 seat = 2;
+    repeated string callsign = 3;
+    optional string args = 4;
+    optional uint32 ticdup = 5;
+    optional uint32 extratics = 6;
+}
+
+// One of DOOM's own packets (its doomdata_t as the game made it, checksum and all), from a player to a player; the
+// host passes on what is not for itself.  Sent best effort: the game asks again for what is lost.
+message DoomPacket {
+    optional uint32 serial = 1;
+    optional uint32 from = 2;
+    optional uint32 to = 3;
+    optional bytes data = 4;
+}
+
+// A player's game is over or its machine gone (the host's word, or the player's own): the others' games are told the
+// way DOOM tells it ("Player 2 left the game") and play on.
+message DoomGone {
+    optional uint32 serial = 1;
+    optional uint32 player = 2;
 }

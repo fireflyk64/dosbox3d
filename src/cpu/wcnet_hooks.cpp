@@ -33,6 +33,7 @@
 #include "wcnet_priv.h"
 #include "wcnet_tv.h"
 #include "wcnet_rap.h"
+#include "wcnet_doom.h"
 #include "wcnet_tiedemo.h"
 #include "paging.h"
 #include "callback.h"
@@ -2211,6 +2212,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_link(int what) {
 // pointer as in a menu and never reached wc_web_stick: in the joystick's mode it steered nothing).
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_in_flight() {
     return wc::stick_flying() || wc::rap_in_wave()          // (Raptor's: a wave under way, flown by the arrows)
+           || wc::doom_running()                           // (DOOM's: the game run, walked by the arrows)
            || (wc::tie_found() && wc::tie_in_flight()) || (wc::tdm_found() && wc::tdm_in_flight()) ? 1 : 0;
 }
 // the page's keys and mouse buttons, into DOSBox's keyboard and mouse driver: every game's (RetroVega's too)
@@ -2372,7 +2374,8 @@ bool wc_net_comms_hint() {
     return wc::g_build != wc::BUILD_RV && !wc::solo() && !wc::tie_found()   // (TIE Fighter has no chat line yet)
            && !wc::priv_found()                                             // (nor Privateer)
            && !wc::rap_found()                                              // (nor Raptor)
-           && !wc::tdm_watching();                                          // (nor the TIE Fighter demo, its showroom)
+           && !wc::tdm_watching()                                           // (nor the TIE Fighter demo, its showroom)
+           && !wc::doom_launched();                                         // (DOOM has its own chat: T)
 }
 
 // A drone riding behind the leader looks at the leader's ship through its
@@ -2675,6 +2678,7 @@ void wc_net_check_cpu_hooks() {
         tv_tick();
         rap_tick();
         tdm_tick();
+        doom_tick();    // (DOOM's launcher and driver, wcnet_doom.cpp: nothing of the game is watched)
 #ifdef __EMSCRIPTEN__
         escape_tap();
         web_input_tick();

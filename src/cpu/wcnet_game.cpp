@@ -412,7 +412,7 @@ void game_program_loaded(const char *path, Bit16u loadSeg, Bit16u psp) {
 
 // What a game that gave up left on the text screen ("Sorry, an error has
 // occurred..."): the only place it says why.
-static void log_text_screen() {
+void game_log_text_screen() {
     if (mem_readb(0x449) > 3) {
         return;  // not a text mode
     }
@@ -439,7 +439,7 @@ void game_program_ended(Bit16u psp) {
     priv_program_ended(psp);
     if (g_game != GAME_NONE && psp == g_gamePsp) {
         wclog(1, "%s ended", game_name());
-        log_text_screen();
+        game_log_text_screen();
         if (getenv("WCNET_EXIT_STACK")) {
             // Debug aid: the stack at exit, as offsets from the load segment
             // where a word could be a segment of the image (scripts/wcexe.py

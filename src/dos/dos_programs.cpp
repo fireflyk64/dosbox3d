@@ -1491,6 +1491,7 @@ static void KEYB_ProgramStart(Program * * make) {
 }
 
 
+void wc_net_dos_programs();	/* src/cpu/wc_net.h */
 void DOS_SetupPrograms(void) {
 	/*Add Messages */
 
@@ -1719,4 +1720,5 @@ void DOS_SetupPrograms(void) {
 	PROGRAMS_MakeFile("IMGMOUNT.COM", IMGMOUNT_ProgramStart);
 	PROGRAMS_MakeFile("KEYB.COM", KEYB_ProgramStart);
     PROGRAMS_MakeFile("WCNET.COM",WCNET_ProgramStart);
+	wc_net_dos_programs();	/* the layer's own files of the Z: drive (DOOMNET.COM: src/cpu/wcnet_doom.cpp) */
 }

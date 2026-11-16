@@ -57,6 +57,9 @@ static inline Bitu wc_net_cpu_hook(Bit32u ip) {
 }
 #endif
 
+// Called by DOS when it makes the Z: drive's programs: the layer's own (DOOMNET.COM, wcnet_doom.cpp).
+void wc_net_dos_programs();
+
 // Called by DOS when it has loaded a program (its path, the first paragraph
 // of the image, its PSP) and when a process ends: the hooks only apply to
 // the executables they know, wherever DOS put them.

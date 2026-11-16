@@ -95,6 +95,8 @@ const char *game_name();
 // process `psp` ended.
 void game_program_loaded(const char *path, Bit16u loadSeg, Bit16u psp);
 void game_program_ended(Bit16u psp);
+// What is on the text screen, into the log (a program that gave up says why only there).
+void game_log_text_screen();
 
 // The hook dispatcher's part (wcnet_hooks.cpp): the tables changed.
 void hooks_game_changed();
