@@ -178,6 +178,10 @@ std::vector<ObjSync> g_objs;
 int g_objsLevel = -2;
 Bit32u g_objsFrames = 0;
 std::vector<std::pair<int, Bit32s> > g_hits;            // others' hits, applied at the next frame (index, damage)
+std::vector<TvDead> g_deadIn;                           // others' catch-ups, taken at the next frame (at most 8)
+std::vector<TvDead> g_fightIn;                          // others' boss-fight words, likewise (the newest 8: each is whole)
+double g_fightAt = -1e9;                                // our last boss-fight word
+unsigned g_fightTaken = 0;                              // hit points lowered by the others' words
 std::vector<std::pair<int, TvSpawn> > g_spawnsIn;       // others' new objects, written at the next frame (at most 64)
 std::vector<char> g_spawned;                            // the slots of the objects made in flight: 2 made here, 1 told
 bool g_spawnPending = false;                            // a launch of ours under way: the table as it stood before
@@ -442,12 +446,21 @@ void show_line(const std::string &line0) {
     tv_queue_call(TV_AT_FRAME, tv_fn(TV_FN_MESSAGE), args, scratch, NULL, 0);
 }
 
+// An object's stage by its state word: its hit points filled again at a "death" (0x28E70: 100 -> 101 and 300 -> 301,
+// the most doubled too; a craft going down, 600, its hit points twice its most).  Hit points compare only within one.
+// (Not by the most, +0x24: the object's set-up, 0x22F40, makes it the hit points it has then, and a game coming out of
+// a tunnel sets up the outdoor objects again: the same object's most differs from game to game.)
+int stage_of(Bit32s state) { return state == 101 || state == 301 ? 1 : state == 600 ? 2 : 0; }
+
 // A newcomer to our level: the objects gone in the others' games go in ours (their hit points none: the objects'
-// loop leaves them out, drawn no more, counted gone by the level's goals).
+// loop leaves them out, drawn no more, counted gone by the level's goals), and those hurt there are hurt as much here
+// (the damage done while we were elsewhere -- in a tunnel, dead -- never reached us: a hit is told only to the pilots
+// in the shooter's place).  Taken at a frame's top: the word can come while our game is still on its way out of a
+// tunnel (the place already outdoors, the table still the tunnel's until the outdoor objects are read back).
 void take_dead(const TvDead &d) {
     const double now = PIC_FullIndex();
     if (d.level() != tv_level() || d.space() != tv_space() || !tv_in_flight() || now - std::max(g_levelStartAt, g_joinAt) > 20000) return;
-    int gone = 0;
+    int gone = 0, hurt = 0;
     const int n = tv_object_count();
     for (int k = 0; k < d.index_size(); k++) {
         const int i = (int)d.index(k);
@@ -457,7 +470,22 @@ void take_dead(const TvDead &d) {
             gone++;
         }
     }
-    wclog(1, "Terminal Velocity: joined the level as it stands: %d of %d objects gone already", gone, d.index_size());
+    for (int k = 0; k < d.hurt_size() && k < d.hurt_hp_size() && k < d.hurt_max_size() && k < d.hurt_state_size(); k++) {
+        const int i = (int)d.hurt(k);
+        const Bit32u o = i < n ? tv_object_addr(i) : 0;
+        const Bit32s hp = d.hurt_hp(k);
+        if (!o || hp <= 0 || stage_of((Bit32s)tv_r32(o + 0x64)) != stage_of(d.hurt_state(k))) {
+            if (o) wclog(2, "Terminal Velocity: object %d hurt there (%d of %d, state %d), not here: %d of %d, state %d", i, hp, d.hurt_max(k),
+                         d.hurt_state(k), (Bit32s)tv_r32(o + 0x1c), (Bit32s)tv_r32(o + 0x24), (Bit32s)tv_r32(o + 0x64));
+            continue;
+        }
+        if (hp < (Bit32s)tv_r32(o + 0x1c)) {
+            tv_w32(o + 0x1c, (Bit32u)hp);
+            hurt++;
+        }
+    }
+    wclog(1, "Terminal Velocity: joined the level as it stands: %d of %d objects gone already, %d of %d hurt as much as there",
+          gone, d.index_size(), hurt, d.hurt_size());
 }
 
 void send_dead(int forSeat) {
@@ -468,7 +496,16 @@ void send_dead(int forSeat) {
     const int n = tv_object_count();
     for (int i = 0; i < n; i++) {
         const Bit32u o = tv_object_addr(i);
-        if (o && (Bit32s)tv_r32(o + 0x1c) <= 0) d->add_index((Bit32u)i);
+        if (!o) continue;
+        const Bit32s hp = (Bit32s)tv_r32(o + 0x1c), most = (Bit32s)tv_r32(o + 0x24);
+        if (hp <= 0) {
+            d->add_index((Bit32u)i);
+        } else if (hp < most && d->hurt_size() < 256) {         // (a list has a cap)
+            d->add_hurt((Bit32u)i);
+            d->add_hurt_hp(hp);
+            d->add_hurt_max(most);
+            d->add_hurt_state((Bit32s)tv_r32(o + 0x64));
+        }
     }
     send_all(msg, false);
     // ... and the objects made in flight still alive, as they are here (it has not got them)
@@ -486,8 +523,8 @@ void send_dead(int forSeat) {
         for (int w = 0; w < kTvObjSize / 4; w++) sp->add_record(tv_r32(o + 4 * w));
     }
     if (sp->index_size()) send_all(sm, false);
-    wclog(1, "Terminal Velocity: %s starts our level: told the %d objects gone, the %d made in flight", g_net->remotes[forSeat].callsign.c_str(),
-          d->index_size(), sp->index_size());
+    wclog(1, "Terminal Velocity: %s starts our level: told the %d objects gone, the %d hurt, the %d made in flight",
+          g_net->remotes[forSeat].callsign.c_str(), d->index_size(), d->hurt_size(), sp->index_size());
 }
 
 // An object made here, told: its slot and its whole record.
@@ -662,7 +699,13 @@ void handle(Peer *p, NetworkMessage &msg) {
               kLookNames[look_index(g_looks[1])]);
     } else if (msg.has_tv_dead()) {
         if (!p->hello) return;
-        take_dead(msg.tv_dead());
+        // (taken at the frame's top; each list has a cap)
+        if (!msg.tv_dead().fight()) {
+            if (g_deadIn.size() < 8) g_deadIn.push_back(msg.tv_dead());
+        } else {
+            if (g_fightIn.size() >= 8) g_fightIn.erase(g_fightIn.begin());
+            g_fightIn.push_back(msg.tv_dead());
+        }
         NetworkMessage out;
         *out.mutable_tv_dead() = msg.tv_dead();
         relay(p, [&](Peer *to) { to->conn.send(out); });
@@ -903,6 +946,80 @@ void apply_hit(int i, Bit32s damage) {
         args.push_back(tv_object_type_addr(i));
         tv_queue_call(TV_AT_FRAME, tv_fn(TV_FN_DESTROY), args, std::vector<Bit32u>(), destroyed, i);
     }
+}
+
+// A boss fight (the nav point flown to is the mission's goal, type 5): the boss and its hit zones, from the nav point
+// (its boss +0x54, its zones' count +0x68 and objects +0x6C).  While any zone has hit points the game fills the boss's
+// again every frame (the nav's frame, 0x3F4CA): a zone alive in one game and gone in another, and the other's hits on
+// the boss count for nothing in the first.  Up to 9 objects; false when the nav point is not a boss's.
+bool fight_objects(std::vector<int> &out) {
+    out.clear();
+    if (!tv_in_flight()) return false;
+    const Bit32u nav = tv_r32(tv_data(tvsig::D_NAV_INDEX));
+    if (nav >= 64) return false;
+    const Bit32u e = tv_data(tvsig::D_NAV_TYPES) + nav * 0xA4;
+    if (tv_r32(e) != 5) return false;
+    const int n = tv_object_count();
+    const int boss = (int)tv_r32(e + 0x54);
+    if (boss < 0 || boss >= n) return false;
+    out.push_back(boss);
+    const int zones = (int)std::min<Bit32u>(8, tv_r32(e + 0x68));
+    for (int k = 0; k < zones; k++) {
+        const int z = (int)tv_r32(e + 0x6C + 4 * (Bit32u)k);
+        if (z >= 0 && z < n) out.push_back(z);
+    }
+    return true;
+}
+
+// Our word on the boss fight, every 2 s to the pilots in our place: the boss's and its zones' hit points as our game
+// has them (every hit of ours and of theirs that reached us).
+void send_fight(double now) {
+    std::vector<int> objs;
+    if (now - g_fightAt < 2000 || !others_here() || !fight_objects(objs)) return;
+    g_fightAt = now;
+    NetworkMessage msg;
+    TvDead *d = msg.mutable_tv_dead();
+    d->set_level(tv_level());
+    d->set_space(tv_space());
+    d->set_fight(true);
+    for (size_t k = 0; k < objs.size(); k++) {
+        const Bit32u o = tv_object_addr(objs[k]);
+        d->add_hurt((Bit32u)objs[k]);
+        d->add_hurt_hp((Bit32s)tv_r32(o + 0x1c));
+        d->add_hurt_max((Bit32s)tv_r32(o + 0x24));
+        d->add_hurt_state((Bit32s)tv_r32(o + 0x64));
+    }
+    send_all(msg, false);
+}
+
+// The others' catch-ups (take_dead) and words on the boss fight, after their hits (both come in the order they were
+// sent: a word never counts a hit twice).  In a word each object at the same stage (stage_of) takes the lower hit
+// points; one gone in their game and not in ours goes the game's way (its next stage: the boss destroyed, a zone down).
+void take_deads() {
+    for (size_t m = 0; m < g_deadIn.size(); m++) take_dead(g_deadIn[m]);
+    g_deadIn.clear();
+    for (size_t m = 0; m < g_fightIn.size(); m++) {
+        const TvDead &d = g_fightIn[m];
+        if (d.level() != tv_level() || d.space() != tv_space() || !tv_in_flight()) continue;
+        const int n = tv_object_count();
+        for (int k = 0; k < d.hurt_size() && k < d.hurt_hp_size() && k < d.hurt_max_size() && k < d.hurt_state_size(); k++) {
+            const int i = (int)d.hurt(k);
+            const Bit32u o = i >= 0 && i < n ? tv_object_addr(i) : 0;
+            if (!o || stage_of((Bit32s)tv_r32(o + 0x64)) != stage_of(d.hurt_state(k))) continue;
+            const Bit32s ours = (Bit32s)tv_r32(o + 0x1c), theirs = d.hurt_hp(k);
+            if (ours <= 0 || theirs >= ours) continue;
+            wclog(1, "Terminal Velocity: the boss fight: object %d '%s' %d -> %d hit points (another pilot's game had more of the hits)",
+                  i, tv_object_name(i).c_str(), ours, theirs);
+            g_fightTaken++;
+            if (theirs <= 0) {
+                apply_hit(i, ours - theirs);
+                g_hitsTaken--;          // (not a hit of theirs: counted apart)
+            } else {
+                tv_w32(o + 0x1c, (Bit32u)theirs);
+            }
+        }
+    }
+    g_fightIn.clear();
 }
 
 double dist2(const Bit32s a[3], const Bit32s b[3]) {
@@ -1216,9 +1333,10 @@ void tv_session_tick() {
                 if (is_puppet((int)i)) puppets++;
             }
             wclog(2, "Terminal Velocity: seat %d %s: %s level %d at %d %d %d, %.0f ms old%s; shots made %u sent %u, drawn %u; "
-                     "hits sent %u taken %u skipped %u, stages %u; objects it flies %d, puppets here %d; enemies' shots made %u sent %u",
+                     "hits sent %u taken %u skipped %u, stages %u, boss-fight words taken %u; objects it flies %d, puppets here %d; "
+                     "enemies' shots made %u sent %u",
                   s, r.callsign.c_str(), r.flying ? "flying" : "not flying", r.level, r.pos[0], r.pos[1], r.pos[2], now - r.at,
-                  r.boost ? ", BOOSTING" : "", g_shotsMade, g_shotsSent, g_drawn, g_hitsSent, g_hitsTaken, g_skipped, g_kills, owned, puppets,
+                  r.boost ? ", BOOSTING" : "", g_shotsMade, g_shotsSent, g_drawn, g_hitsSent, g_hitsTaken, g_skipped, g_kills, g_fightTaken, owned, puppets,
                   g_enemyShotsMade, g_enemyShotsSent);
         }
     }
@@ -1268,6 +1386,8 @@ void tv_session_frame() {
     take_spawns(now);
     for (size_t i = 0; i < g_hits.size(); i++) apply_hit(g_hits[i].first, g_hits[i].second);
     g_hits.clear();
+    take_deads();
+    send_fight(now);
     place_puppets(now);
     if (now - g_objectsAt >= kObjectsEveryMs) {
         g_objectsAt = now;

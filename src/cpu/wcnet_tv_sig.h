@@ -176,13 +176,15 @@ enum DataId {
     D_IN_TUNNEL = 26,     // 1 in a tunnel (the object table then the tunnel's own)
     D_TUNNEL_COUNT = 27,     // the level's tunnels
     D_TUNNEL_MOUTHS = 28,     // tunnel 0's mouth, x y z (the next tunnel's 0x173C further)
-    D_TUNNEL_LENGTH = 29,     // the tunnel's length in 16-unit steps of z (the way out past it)
-    D_AWAKE_HOSTILES = 30,     // the hostiles awake near the player this frame (the objects' loop counts them): the reinforcements' measure
-    D_REINFORCE_CLOCK = 31,     // the reinforcements' clock (16.16: a quarter of the frame time added, one at 1.0)
-    D_LEVEL_INDEX = 32,     // the campaign's level, 0..
-    D_LEVEL_COUNT = 33,     // the campaign's level count
-    D_LEVEL_NAMES = 34,     // the levels' file names, 0x28 bytes each
-    D_COUNT = 35
+    D_NAV_INDEX = 29,     // the nav point flown to (the level's NAV list, 0..)
+    D_NAV_TYPES = 30,     // the nav points' types, 0xA4 bytes apart (0 targets, 1 tunnel, 2 checkpoint, 3 departure, 4 tunnel's exit, 5 the mission goal: a boss; 6 the start): its place x y z 0xC before, a boss's object +0x54, its hit zones' count +0x68 and objects +0x6C
+    D_TUNNEL_LENGTH = 31,     // the tunnel's length in 16-unit steps of z (the way out past it)
+    D_AWAKE_HOSTILES = 32,     // the hostiles awake near the player this frame (the objects' loop counts them): the reinforcements' measure
+    D_REINFORCE_CLOCK = 33,     // the reinforcements' clock (16.16: a quarter of the frame time added, one at 1.0)
+    D_LEVEL_INDEX = 34,     // the campaign's level, 0..
+    D_LEVEL_COUNT = 35,     // the campaign's level count
+    D_LEVEL_NAMES = 36,     // the levels' file names, 0x28 bytes each
+    D_COUNT = 37
 };
 static const Data kData[D_COUNT] = {
     { "netgame", A_REMOTE_DRAW, 12, 0x7CE48 },
@@ -214,6 +216,8 @@ static const Data kData[D_COUNT] = {
     { "in_tunnel", A_TUNNEL_ENTER_FN, 46, 0x64CDC },
     { "tunnel_count", A_TUNNEL_LOOP, 61, 0x1012D4 },
     { "tunnel_mouths", A_TUNNEL_LOOP, 107, 0xE4480 },
+    { "nav_index", A_TUNNEL_LOOP, 9, 0x10656C },
+    { "nav_types", A_TUNNEL_LOOP, 34, 0x1050A4 },
     { "tunnel_length", A_TUNNEL_FRAME, 33, 0x64CF4 },
     { "awake_hostiles", A_REINFORCE, 73, 0xDAFC8 },
     { "reinforce_clock", A_REINFORCE, 122, 0x680F4 },

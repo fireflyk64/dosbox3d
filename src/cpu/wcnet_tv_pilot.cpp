@@ -11,6 +11,7 @@
  *                                in the last stretch)
  *    !tvtunnel=<n>               into tunnel n at once, by the game's own way in (its enter function, at a frame's top)
  *    !tvtunnelend                in a tunnel: the ship moved to its far end (the game's own way out takes it there)
+ *    !tvwarp=obj:<index>[:<south>:<up>]   the ship put beside that object (60 units towards -z, 20 above)
  *    !tvfly=off
  *    !tvfire=1 / 0               fire whenever the target is within 140 units and within 3 degrees of the nose
  *    !tvfire=hold / 0            fire all the time
@@ -66,6 +67,8 @@ double wrap(double a) {
     return a;
 }
 double clampd(double v, double lo, double hi) { return v < lo ? lo : v > hi ? hi : v; }
+// The world wraps across and along every 4096 units (the game's differences are taken in 28 bits): the nearer way.
+double wrapped(double d) { return d - 4096.0 * floor(d / 4096.0 + 0.5); }
 
 bool object_pos(int i, double out[3]) {
     const Bit32u o = tv_object_addr(i);
@@ -82,7 +85,8 @@ int nearest_of(int cls, const double p[3], double range) {
         if (tv_object_class(i) != cls) continue;
         double q[3];
         if (!object_pos(i, q)) continue;
-        const double d2 = (q[0] - p[0]) * (q[0] - p[0]) + (q[1] - p[1]) * (q[1] - p[1]) + (q[2] - p[2]) * (q[2] - p[2]);
+        const double dx = wrapped(q[0] - p[0]), dz = wrapped(q[2] - p[2]);
+        const double d2 = dx * dx + (q[1] - p[1]) * (q[1] - p[1]) + dz * dz;
         if (d2 < bd) {
             bd = d2;
             best = i;
@@ -182,7 +186,7 @@ void tv_pilot_frame() {
         want_h = g_head;
         want_p = g_pitch;
     } else if (have) {
-        double dx = t[0] - p[0], dy = t[1] - p[1], dz = t[2] - p[2];
+        double dx = wrapped(t[0] - p[0]), dy = t[1] - p[1], dz = wrapped(t[2] - p[2]);
         dist = sqrt(dx * dx + dy * dy + dz * dz);
         const double across = sqrt(dx * dx + dz * dz);
         if (g_mode != M_PARTNER && g_mode != M_TUN && across > kDive * 0.4) {
@@ -279,6 +283,22 @@ bool tv_pilot_item(const std::string &item, double t) {
         const Bit32u len = tv_r32(tv_data(tvsig::D_TUNNEL_LENGTH));
         tv_w32(tv_data(tvsig::D_PLAYER_POS) + 8, (len << 20) + 0x8000);
         wclog(1, "key script %.1fs: Terminal Velocity: to the tunnel's end (%u units)", t, len * 16);
+        return true;
+    }
+    if (item.compare(0, 11, "!tvwarp=obj") == 0) {
+        // !tvwarp=obj:<index>[:<south>:<up>]: the ship put that many world units south of the object (towards -z) and
+        // above it (60, 20), still: a test at a far object without the flight there
+        int i = -1;
+        double back = 60, up = 20;
+        sscanf(item.c_str() + 12, "%d:%lf:%lf", &i, &back, &up);
+        double q[3];
+        if (!object_pos(i, q)) return true;
+        const Bit32u base = tv_data(tvsig::D_PLAYER_POS);
+        tv_w32(base + 0, (Bit32u)(Bit32s)lrint(q[0] * kUnit));
+        tv_w32(base + 4, (Bit32u)(Bit32s)lrint((q[1] + up) * kUnit));
+        tv_w32(base + 8, (Bit32u)(Bit32s)lrint((q[2] - back) * kUnit));
+        wclog(1, "key script %.1fs: Terminal Velocity: put %.0f units south of object %d '%s', %.0f above", t, back, i,
+              tv_object_name(i).c_str(), up);
         return true;
     }
     if (item == "!tvdone") {

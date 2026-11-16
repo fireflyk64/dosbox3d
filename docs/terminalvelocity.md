@@ -128,6 +128,9 @@ The map (shareware image addresses; the hooks read them out of the code, these a
 | a model put in the draw list | 0x1E640 (posang, model, scale) | the frame's list at 0xAFE48, 0x48 each, `[0xB464C]` long, 256 at most |
 | a model loaded | 0x402E0 (name) | a handle; a name not in the archives ends the program |
 | the ship's attitude | 0x81C94, a 3x3 float matrix (0x81C90 a word before it) | its columns the ship's right, up and forward in the world; the flight step (0x11CD0, from the input handler) turns it by the spin rates (0x64EB0.., the ship's own axes), then makes the angles at 0x7CA84 and the fixed-point matrix at 0x7CA94 from it: writing those two does nothing |
+| the nav points | `[0x10656C]` the one flown to, the list from 0x105098 (0xA4 bytes each, `[0x10652C]` of them; the level's `.NAV`) | +0 x y z, +0xC the type (0 TGT destroy targets, 1 TUN a tunnel, 2 CHK a checkpoint, 3 DUN the departure, 4 XIT a tunnel's exit, 5 BOS the mission's goal: a boss, 6 STR the start), +0x60 a boss's object, +0x74 its hit zones' count and +0x78 their objects; each frame 0x3F2xx tests the one flown to (0x3F0D0 goes to the next: "Mission Goal Ahead!" at a BOS) |
+| a boss | the BOS point's object, its type flagged at +0x200 | updated only while its BOS point is the one flown to (the objects' loop at 0x2423C); the HUD's "Boss" bar is its hit points over its most (+0x1C / +0x24, 0x2FED6); while any of its hit zones (objects of class 0, "Boss Hit Zone Targets") has hit points, the BOS test fills its hit points to its most again every frame (0x3F4CA): the zones first, then the boss; at none left (or state 301) "Boss Destroyed".  Episode one: artic6.lvl's boss is object 0 (class 31, 500,000, zones 1-4 at the map's corner -- the world wraps every 4,096 units), canyon6's object 3 (class 28, no zones), alien6's object 40 (class 27, zones 36-39); in artic6 and alien6 the BOS point comes right after a tunnel's exit |
+| an object's set-up | 0x22F40 | its most hit points (+0x24) made the hit points it has then: at the level's start, and again for every outdoor object when a game comes out of a tunnel (the same object's most then differs from game to game) |
 | the afterburner | weapon slot 22 ("FLY" on the HUD) | taken while the key at `[0x64D58]` (VOX.INI's weaponKey: 56, Left Alt) is held and its fuel `[0xA7A34]` is above 0 (0 at a start; a bunker's pickup gives 120, the cheat TRIBURN some) |
 | the high-resolution mode | `[0x64CFC]`, `[0x64D00]` = 640, 240 | the Options menu's "Res: SVGA (Pentium)": the view drawn 640 x 240, doubled to the 640 x 480 screen (VOX.INI's gamePIXX,gamePIXY 640,240; 640,480 there draws the terrain broken); needs 3,000,000 bytes free, else 320 x 200 |
 
@@ -231,6 +234,11 @@ doubled into the 640-wide frame) a fixed few percent more; they are now made by 
   60,000 at 100% of real time, 120,000 at ~53%.  Since: "The pixels drawn natively" above.
   `scripts/web-tv.sh` prints each page's speed; `CYCLES=` there, `DETAIL=low` in tvrun.sh for the shareware's own
   Graphics Options.
+* `!tvnav[=n]` the nav point flown to (set to n first), its type, and at a boss the boss's and its zones' hit points;
+  `!tvhp=<object>:<hp>` an object's hit points written in this game only (a test's shortcut); `!tvwarp=obj:<i>[:<south>:<up>]`
+  the ship put beside an object.  The boss rig (2026-11-15, the session's scratch `zonediv.sh`): two machines, the
+  host's `!tvdone` at 64 and 80 s and Space every second to 100 s (both on artic6.lvl at ~90 s), `!tvnav=4` (its BOS),
+  both warped beside the boss, the zones written gone in the guest's game only, the guest firing at the boss.
 * Key-script aids: `!tvpos` (the player), `!tvobjs[=range]` (the objects within that many world units: class, name,
   place, hit points, state), `!regs` (the CPU's registers and segment bases), `!dumplin=name:start:length`.
 * The rigs' pilot (src/cpu/wcnet_tv_pilot.cpp): `!tvfly=obj:N | near:CLASS[:range] | partner[:right:up:back] |
@@ -323,6 +331,27 @@ named by its index (a level adds objects as it goes, a bunker's pickup: those ca
   artic.lvl's tunnel by the game's own entrance and out; both pilots in it together, each drawing the other the whole
   512 units, the guest's 61 shots remade in the host's game, both out by the game's own exit; the host back outdoors
   told the 2 objects the guest had shot meanwhile.
+* **Boss fights.**  The user, 2026-11-15, of artic6.lvl's boss: "both players were flying around the boss and it was
+  causing damage--but the second player's damage wasn't registering for the first player who had to do 'all the
+  work' themselves".  The game fills a boss's hit points again every frame while any of its hit zones lives (the map,
+  "a boss"), and in artic6 (alien6 too) the boss is just past a tunnel's exit: a hit is told only to the pilots in the
+  shooter's place, so the zone damage done by the first pilot out never reached the one still in the tunnel, and the
+  catch-up on its way out told only the objects gone.  A zone alive in one game and gone in the other: there, every hit
+  of the other's on the boss was undone the next frame.  Measured with the zones gone in the guest's game only and the
+  guest firing: before, the guest's boss 500,000 -> 463,136, the host's 500,000 throughout; after, 491,808, 483,616,
+  475,424 in both (the HUD's bars end at the same pixel).  Now:
+  * the catch-up (TvDead, to a pilot who starts our place: a tunnel's way out, a retry, a late start) also carries the
+    objects hurt (hit points below their most here, at most 256): the newcomer's copy takes the lower hit points at
+    the same stage (by the state word: 101/301 after a refill, 600 a craft going down; not by the most, which each game's
+    set-up makes its own).  It is taken at the frame's top: it came while the game was still on its way out of the
+    tunnel (the place outdoors already, the table still the tunnel's: it fell on a tunnel craft);
+  * a boss fight's word: every 2 s each pilot whose nav point is a BOS tells the pilots in its place the boss's and its
+    zones' hit points (TvDead.fight); each game takes the lower at the same stage, after the hits that came before it (a
+    word never counts a hit twice), a zone or boss gone there going the game's way here (its next stage).  Measured:
+    the host's four zones "65536 -> 0" within 2 s of the guest's word.
+  The tunnel case measured: the host shot zone 1 to 32,768 while the guest was in the tunnel; out, the guest's catch-up
+  "1 of 2 hurt as much as there", zone 1 32,768 in both (before: 49,152 and 65,536 for good).  A retry: "2 of 2
+  objects gone already, 1 of 3 hurt" (the other: a building past its first stage in the host's game, at its first here).
 * **The afterburner shows.**  A pilot whose afterburner fuel is going down reports `boost`; the others draw a flame
   behind its ship: a trail of three of the game's own `fireball.bin` (loaded once a level), smaller and smaller,
   flickering in size and place.

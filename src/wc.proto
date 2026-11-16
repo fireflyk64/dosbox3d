@@ -476,6 +476,17 @@ message TvDead {
     optional sint32 space = 3;
     optional sint32 level = 1;
     repeated uint32 index = 2 [packed = true];
+    // ... and those hurt (index, hit points, their most [+0x24, as this game set them up: for the logs], the state word):
+    // the newcomer's copy takes the lower hit points (the damage done while it was elsewhere: a tunnel, a death) when
+    // its state word says the same stage (a state of 101 or 301 is after a refill, 600 a craft going down)
+    repeated uint32 hurt = 4 [packed = true];
+    repeated sint32 hurt_hp = 5 [packed = true];
+    repeated sint32 hurt_max = 6 [packed = true];
+    repeated sint32 hurt_state = 7 [packed = true];
+    // A boss fight's word, every 2 s from each pilot whose nav point is the mission's goal: the boss and its hit zones
+    // as its game has them (in hurt..), taken by every game in the place (the lower hit points, at the same stage; a
+    // zone or boss gone there goes here the game's way)
+    optional bool fight = 8;
 }
 // New objects a game made (a launcher's craft, a generator's): only the machine of the pilot nearest the launcher
 // lets its game make one, and tells the others the object's whole record (0xB4 bytes) and its slot in the table;

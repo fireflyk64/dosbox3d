@@ -845,6 +845,39 @@ bool tv_script_item(const std::string &item, double t) {
               "level %d, launchers %d, generators %d", t, all, alive, awake, puppets, list.c_str(), tv_space(), tv_level(), launchers, generators);
         return true;
     }
+    if (item.compare(0, 6, "!tvhp=") == 0) {
+        // !tvhp=<object>:<hit points>: written in this game only (a test's shortcut; 0 = gone, as the objects' loop sees it)
+        int i = -1, hp = 0;
+        sscanf(item.c_str() + 6, "%d:%d", &i, &hp);
+        const Bit32u o = i >= 0 && i < tv_object_count() ? tv_object_addr(i) : 0;
+        if (o) tv_w32(o + 0x1c, (Bit32u)hp);
+        wclog(1, "key script %.1fs: Terminal Velocity: object %d's hit points set to %d here", t, i, hp);
+        return true;
+    }
+    if (item.compare(0, 6, "!tvnav") == 0) {
+        // !tvnav[=n]: the nav point flown to (set to n first: its type's per-frame test takes it from there), its type,
+        // and for a boss (type 5) the boss's hit points and its hit zones'
+        const Bit32u at = g_data[D_NAV_INDEX];
+        if (item.size() > 7) tv_w32(at, (Bit32u)atoi(item.c_str() + 7));
+        const int nav = (int)tv_r32(at);
+        const Bit32u e = g_data[D_NAV_TYPES] + (Bit32u)nav * 0xA4;
+        const int type = (int)tv_r32(e);
+        std::string more;
+        if (type == 5) {
+            const int boss = (int)tv_r32(e + 0x54), zones = std::min(8, (int)tv_r32(e + 0x68));
+            char b[96];
+            snprintf(b, sizeof(b), ": boss %d hp %d of %d state %d, zones", boss, (Bit32s)tv_r32(tv_object_addr(boss) + 0x1c),
+                     (Bit32s)tv_r32(tv_object_addr(boss) + 0x24), (Bit32s)tv_r32(tv_object_addr(boss) + 0x64));
+            more = b;
+            for (int k = 0; k < zones; k++) {
+                const int z = (int)tv_r32(e + 0x6C + 4 * (Bit32u)k);
+                snprintf(b, sizeof(b), " %d (hp %d of %d)", z, (Bit32s)tv_r32(tv_object_addr(z) + 0x1c), (Bit32s)tv_r32(tv_object_addr(z) + 0x24));
+                more += b;
+            }
+        }
+        wclog(1, "key script %.1fs: Terminal Velocity: nav %d, type %d%s", t, nav, type, more.c_str());
+        return true;
+    }
     if (item.compare(0, 7, "!tvobjs") == 0) {
         // !tvobjs[=km]: the objects within that far of the player (default 3 km... in the game's units / 65536)
         TvShip s;
@@ -856,7 +889,8 @@ bool tv_script_item(const std::string &item, double t) {
             const Bit32u o = tv_object_addr(i);
             double d2 = 0;
             for (int k = 0; k < 3; k++) {
-                const double d = ((double)(Bit32s)tv_r32(o + 4 * k) - s.pos[k]) / 65536.0;
+                double d = ((double)(Bit32s)tv_r32(o + 4 * k) - s.pos[k]) / 65536.0;
+                if (k != 1) d -= 4096.0 * floor(d / 4096.0 + 0.5);     // (the world wraps every 4096 units across)
                 d2 += d * d;
             }
             if (sqrt(d2) > range) continue;

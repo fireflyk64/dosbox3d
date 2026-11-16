@@ -116,6 +116,8 @@ DATA = [
     ('in_tunnel', 'tunnel_enter_fn', 0x423AC - 0x42380 + 2, "1 in a tunnel (the object table then the tunnel's own)"),
     ('tunnel_count', 'tunnel_loop', 0x4257B - 0x42540 + 2, "the level's tunnels"),
     ('tunnel_mouths', 'tunnel_loop', 0x425A9 - 0x42540 + 2, "tunnel 0's mouth, x y z (the next tunnel's 0x173C further)"),
+    ('nav_index', 'tunnel_loop', 0x42547 - 0x42540 + 2, "the nav point flown to (the level's NAV list, 0..)"),
+    ('nav_types', 'tunnel_loop', 0x4255F - 0x42540 + 3, "the nav points' types, 0xA4 bytes apart (0 targets, 1 tunnel, 2 checkpoint, 3 departure, 4 tunnel's exit, 5 the mission goal: a boss; 6 the start): its place x y z 0xC before, a boss's object +0x54, its hit zones' count +0x68 and objects +0x6C"),
     ('tunnel_length', 'tunnel_frame', 0x42AB1 - 0x42A90, "the tunnel's length in 16-unit steps of z (the way out past it)"),
     ('awake_hostiles', 'reinforce', 0x23E87 + 2 - 0x23EF1, "the hostiles awake near the player this frame (the objects' loop counts them): the reinforcements' measure"),
     ('reinforce_clock', 'reinforce', 0x23EB8 + 2 - 0x23EF1, "the reinforcements' clock (16.16: a quarter of the frame time added, one at 1.0)"),
