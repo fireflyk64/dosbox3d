@@ -11,7 +11,8 @@ libcpu_a_SOURCES = callback.cpp cpu.cpp flags.cpp modrm.cpp modrm.h core_full.cp
 		   wcnet_vm.h wcnet_vm.cpp wcnet_transport.h wcnet_transport.cpp wcnet_entities.h wcnet_entities.cpp \
 		   wcnet_events.h wcnet_events.cpp wcnet_session.h wcnet_session.cpp wcnet_hooks.cpp \
 		   wcnet_lobby.h wcnet_lobby.cpp wcnet_lab.h wcnet_lab.cpp wcnet_tie.h wcnet_tie.cpp wcnet_tie_session.h wcnet_tie_session.cpp wcnet_tie_controls.cpp wcnet_tie_cockpit.cpp wcnet_tie_pa.cpp wcnet_tie_pa.h wcnet_tie_voice.cpp wcnet_priv.h wcnet_priv.cpp wcnet_priv_controls.cpp wcnet_priv_session.cpp wcnet_tv.h wcnet_tv.cpp wcnet_tv_sig.h wcnet_tv_session.cpp wcnet_tv_pilot.cpp wcnet_tv_span.cpp wcnet_rap.h wcnet_rap.cpp wcnet_rap_session.cpp wcnet_rap_sig.h wcnet_tiedemo.h wcnet_tiedemo.cpp wcnet_tiedemo_session.cpp wcnet_tiedemo_campaign.cpp wcnet_tiedemo_controls.cpp wcnet_tiedemo_missions.h \
-		   wcnet_doom.h wcnet_doom.cpp wcnet_doom_session.cpp wcnet_doomnet.h
+		   wcnet_doom.h wcnet_doom.cpp wcnet_doom_session.cpp wcnet_doomnet.h \
+		   wcnet_wolf.h wcnet_wolf.cpp wcnet_wolf_session.cpp wcnet_wolf_sig.h
 
 if FUNARRAY_CORE
 PREPROCESSED_FILES = core_simple_fun.ii core_normal_fun.ii core_prefetch_fun.ii

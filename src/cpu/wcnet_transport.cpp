@@ -54,6 +54,11 @@ const char *message_type_name(const NetworkMessage &msg) {
     if (msg.has_doom_start()) return "doom_start";
     if (msg.has_doom_packet()) return "doom_packet";
     if (msg.has_doom_gone()) return "doom_gone";
+    if (msg.has_wolf_hello()) return "wolf_hello";
+    if (msg.has_wolf_room()) return "wolf_room";
+    if (msg.has_wolf_state()) return "wolf_state";
+    if (msg.has_wolf_event()) return "wolf_event";
+    if (msg.has_wolf_snap()) return "wolf_snap";
     return "none";
 }
 

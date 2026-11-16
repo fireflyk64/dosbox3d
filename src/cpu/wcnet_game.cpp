@@ -17,6 +17,7 @@
 #include "wcnet_tv.h"
 #include "wcnet_rap.h"
 #include "wcnet_tiedemo.h"
+#include "wcnet_wolf.h"
 
 namespace wc {
 
@@ -361,6 +362,7 @@ void game_program_loaded(const char *path, Bit16u loadSeg, Bit16u psp) {
     priv_program_loaded(name.c_str(), loadSeg, psp);   // (Privateer: PRCD.EXE, a module of its own: wcnet_priv.cpp)
     tv_program_loaded(name.c_str(), psp);      // (Terminal Velocity: GAME.EXE, its extender bound in: wcnet_tv.cpp)
     rap_program_loaded(name.c_str(), psp);     // (Raptor: RAP.EXE, its extender bound in: wcnet_rap.cpp)
+    wolf_program_loaded(name.c_str(), loadSeg, psp);   // (Wolfenstein 3-D: WOLF3D.EXE, wcnet_wolf.cpp)
     tdm_program_loaded(name.c_str(), loadSeg, psp);    // (the TIE Fighter demo: TIEMISS.EXE, wcnet_tiedemo.cpp)
     for (size_t i = 0; i < sizeof(kGames) / sizeof(kGames[0]); i++) {
         const KnownGame &g = kGames[i];

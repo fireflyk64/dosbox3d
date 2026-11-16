@@ -35,6 +35,7 @@
 #include "wcnet_rap.h"
 #include "wcnet_doom.h"
 #include "wcnet_tiedemo.h"
+#include "wcnet_wolf.h"
 #include "paging.h"
 #include "callback.h"
 #include "cpu.h"
@@ -1203,7 +1204,7 @@ static void key_script() {
         wr16(ds::missionStatus, (Bit16u)status);
     } else if (tv_script_item(item, t)) {
         // (Terminal Velocity's aids: wcnet_tv.cpp)
-    } else if (rap_script_item(item, t) || tdm_script_item(item, t) || doom_script_item(item, t)) {
+    } else if (rap_script_item(item, t) || tdm_script_item(item, t) || doom_script_item(item, t) || wolf_script_item(item, t)) {
         // (Raptor's aids: wcnet_rap.cpp; the TIE Fighter demo's: wcnet_tiedemo.cpp)
     } else if (priv_script_item(item, t)) {
         // (Privateer's aids: wcnet_priv.cpp)
@@ -1249,6 +1250,7 @@ static void build_watch_list() {
         priv_watch_list(watch);
     }
     tdm_watch_list(watch);      // (the TIE Fighter demo's, wcnet_tiedemo.cpp)
+    wolf_watch_list(watch);     // (Wolfenstein 3-D's, wcnet_wolf.cpp)
     g_watchReady = true;
 }
 
@@ -2213,6 +2215,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_link(int what) {
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_in_flight() {
     return wc::stick_flying() || wc::rap_in_wave()          // (Raptor's: a wave under way, flown by the arrows)
            || wc::doom_running()                           // (DOOM's: the game run, walked by the arrows)
+           || wc::wolf_in_play()                           // (Wolfenstein 3-D's: a level's frames)
            || (wc::tie_found() && wc::tie_in_flight()) || (wc::tdm_found() && wc::tdm_in_flight()) ? 1 : 0;
 }
 // the page's keys and mouse buttons, into DOSBox's keyboard and mouse driver: every game's (RetroVega's too)
@@ -2375,6 +2378,7 @@ bool wc_net_comms_hint() {
            && !wc::priv_found()                                             // (nor Privateer)
            && !wc::rap_found()                                              // (nor Raptor)
            && !wc::tdm_watching()                                           // (nor the TIE Fighter demo, its showroom)
+           && !wc::wolf_watching()                                          // (nor Wolfenstein 3-D)
            && !wc::doom_launched();                                         // (DOOM has its own chat: T)
 }
 
@@ -2441,6 +2445,16 @@ bool wc_net_tie_running() {
 }
 
 bool wc_net_partner_marker(int i, double *x, double *y, double *size, bool *onScreen, const char **label) {
+    if (wc::wolf_found()) {     // (Wolfenstein 3-D's other players, wcnet_wolf.cpp)
+        if (i < 0 || i >= wc::kWolfMaxPlayers - 1 || !wc::wolf_markers()[i].on) return false;
+        const wc::WolfMarker &w = wc::wolf_markers()[i];
+        *x = w.x;
+        *y = w.y;
+        *size = w.size;
+        *onScreen = w.onScreen;
+        *label = w.label;
+        return true;
+    }
     if (i < 0 || i >= wc::kTvMarkers || !wc::tv_found()) return false;
     const wc::TvMarker &m = wc::tv_markers()[i];
     if (!m.on) return false;
@@ -2460,6 +2474,9 @@ bool wc_net_key_filter(int kbdKey, bool pressed) {
     using namespace wc;
     if (priv_controls_key(kbdKey, pressed)) {
         return true;    // (Privateer's flight: the arrows ramped, wcnet_priv_controls.cpp)
+    }
+    if (wolf_key(kbdKey, pressed)) {
+        return true;    // (Wolfenstein 3-D: Esc while a guest's level waits for the host's, wcnet_wolf.cpp)
     }
     if (tdm_key(kbdKey, pressed)) {
         return true;    // (the TIE Fighter demo: Esc never takes it to DOS, wcnet_tiedemo.cpp)
@@ -2678,6 +2695,7 @@ void wc_net_check_cpu_hooks() {
         tv_tick();
         rap_tick();
         tdm_tick();
+        wolf_tick();    // (Wolfenstein 3-D, wcnet_wolf.cpp)
         doom_tick();    // (DOOM's launcher and driver, wcnet_doom.cpp: nothing of the game is watched)
 #ifdef __EMSCRIPTEN__
         escape_tap();
@@ -2719,6 +2737,10 @@ void wc_net_check_cpu_hooks() {
     }
     if (priv_found()) {
         priv_check_hooks(ip);   // (Privateer: its own places, wcnet_priv.cpp; nothing of Wing Commander's)
+        return;
+    }
+    if (wolf_found()) {
+        wolf_check_hooks(ip);   // (Wolfenstein 3-D: its own places, wcnet_wolf.cpp)
         return;
     }
     if (tdm_watching()) {

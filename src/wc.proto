@@ -684,6 +684,12 @@ message NetworkMessage {
     optional DoomStart doom_start = 101;
     optional DoomPacket doom_packet = 102;
     optional DoomGone doom_gone = 103;
+    // Wolfenstein 3-D played together (wcnet_wolf*.cpp, docs/wolf3d.md)
+    optional WolfHello wolf_hello = 110;
+    optional WolfRoom wolf_room = 111;
+    optional WolfState wolf_state = 112;
+    optional WolfEvent wolf_event = 113;
+    optional WolfSnap wolf_snap = 114;
 }
 
 // Raptor: Call of the Shadows (docs/raptor.md).  A pilot says hello; the host answers with its seat.
@@ -797,4 +803,86 @@ message DoomPacket {
 message DoomGone {
     optional uint32 serial = 1;
     optional uint32 player = 2;
+}
+
+// --- Wolfenstein 3-D (src/cpu/wcnet_wolf_session.cpp, docs/wolf3d.md) -----------------------------------------------
+// A player's game says hello once a second: its callsign, its program and data (the same, or no game together),
+// whether its level's frames are coming.  The host's answer tells the player its seat, and why it is not taken.
+message WolfHello {
+    optional string callsign = 1;
+    optional uint32 seat = 2;           // (the host's) the seat of the player told
+    optional string build = 3;          // the program's actor states and the data files beside it
+    optional bool in_play = 4;
+    optional string note = 5;           // (the host's) why this player is not taken
+}
+
+message WolfPlayer {
+    optional uint32 seat = 1;
+    optional string callsign = 2;
+    optional bool in_play = 3;
+}
+
+// The host's: the level the room plays (one "serial" for each level begun: the map as the room finds it lives in
+// the host's layer under that number), how the level before it ended, and who is there.
+message WolfRoom {
+    optional uint32 serial = 1;         // 0: no level yet
+    optional uint32 episode = 2;
+    optional uint32 map = 3;
+    optional uint32 difficulty = 4;
+    optional uint32 exit = 5;           // the level before: the game's playstate at its end (1 completed, 9 the secret
+                                        // level's way, 6 the episode won; 0: not by an exit)
+    optional uint32 sig = 6;            // the level's actors as the host's game made them (0: not known yet)
+    repeated WolfPlayer player = 7;
+}
+
+// One of the level's actors as its owner's game has it (an actor is thought for by one machine: the one whose player
+// it went for; the others are shown it).
+message WolfActor {
+    optional uint32 index = 1;          // its number among the level's actors, in the order the level made them
+    optional uint32 x = 2;              // 16.16 tiles
+    optional uint32 y = 3;
+    optional uint32 tilex = 4;
+    optional uint32 tiley = 5;
+    optional uint32 dir = 6;
+    optional uint32 state = 7;          // its state, from the first guard state (the same in every build of the game)
+    optional sint32 ticcount = 8;
+    optional uint32 flags = 9;
+    optional sint32 hp = 10;
+    optional sint32 distance = 11;
+}
+
+// A player, many times a second, best effort: where it is, and the actors it thinks for.
+message WolfState {
+    optional uint32 serial = 1;
+    optional uint32 seat = 2;
+    optional bool in_play = 3;
+    optional uint32 x = 4;
+    optional uint32 y = 5;
+    optional uint32 angle = 6;
+    optional sint32 health = 7;
+    optional uint32 attack = 8;         // its weapon's frame (0: at rest)
+    repeated WolfActor actor = 9;
+    optional uint32 clock = 10;         // the sender's milliseconds (the others space its reports by it)
+}
+
+// Something that happened, reliably and in order (a guest's to the host, the host's to everybody concerned).
+message WolfEvent {
+    optional uint32 serial = 1;
+    optional uint32 seat = 2;           // whose it is
+    optional uint32 kind = 3;           // wcnet_wolf_session.cpp: claim, owner, damage, died, door, push, key, done, snapshot asked, out
+    optional sint32 a = 4;
+    optional sint32 b = 5;
+    optional sint32 c = 6;
+    optional sint32 d = 7;
+}
+
+// The host's: the level as the room has it, for a player who comes into it (late, or back from the dead).
+message WolfSnap {
+    optional uint32 serial = 1;
+    optional uint32 sig = 2;
+    repeated uint32 dead = 3 [packed = true];       // triples: the actor, where it fell (x, y)
+    repeated uint32 owner = 4 [packed = true];      // pairs: the actor, its owner's seat
+    repeated uint32 push = 5 [packed = true];       // fours: a pushed wall's tile (x, y), the way, the pusher's area
+    optional uint32 keys = 6;
+    repeated uint32 door = 7 [packed = true];       // the doors open or opening
 }
