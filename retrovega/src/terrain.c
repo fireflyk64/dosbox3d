@@ -3246,8 +3246,13 @@ void tr_view(TrPlanet *p, const TrCam *cam)
         fk->near_ds = p->cell * 0.75;
         fk->far_k = (p->step_px > 0 ? p->step_px : TR_STEP_PX) / cam->focal;
         for (k = 0; k < TR_LEVELS; k++) {
-            /* level k + 1 once the step's pixels' worth of the distance passes two of level k's cells */
-            double d = p->cell * (2 << k) / fk->far_k;
+            /* level k + 1 once TR_STEP_PX pixels' worth of the distance passes one of level k's cells, whatever the
+             * detail: the levels the picture had at the card's coarsest (4 pixels a step, the level at two cells),
+             * which the user liked ("The sharpness of the mountains is pretty cool ... I'd worry we would take too
+             * much of that away"); at finer detail the steps fall a cell apart, so the far ground no longer crawls
+             * (the coarser levels are averages of the finer: a step over two cells skipped one; a view over the
+             * mountains at 2 pixels: 13% of the ground changing a frame, 5% now) */
+            double d = p->cell * (1 << k) * cam->focal / TR_STEP_PX;
             fk->level_d2[k] = d * d;
             fk->skip_dth[k] = p->cell * (1 << k) * 0.5 / p->radius;
         }

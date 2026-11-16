@@ -432,7 +432,42 @@ static TrPlanet *g_planet;
 static bool g_planet_viewed;            /* a view made since the planet was: FN_GROUND has a picture */
 static double g_view_ms;                /* (the views' cost, smoothed, and the detail it sets: tr_detail) */
 static float g_step = 2.0f;
-static int g_detail, g_slow, g_fast;    /* (its step of g_steps; views in a row over or under the budget) */
+static int g_detail, g_good, g_over;    /* (its step of g_steps; views in a row with the frames keeping time, or not) */
+static double g_period = 33.3;          /* the wall clock between views, ms, smoothed */
+static double g_blocked[4];             /* a step found too slow: not tried again before this (s of the wall clock) */
+static double g_stat_ms;                /* (the views' ms and count since RVGX_PlanetStats last asked) */
+static int g_stat_n;
+
+static double wall_s(void)
+{
+	return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count() / 1e6;
+}
+
+/* the recurring lines are the measuring's: only with WCNET_PERF set (the user, 2026-11-15: "make sure we don't spam the
+ * logs ... Lets put all recurring logging behind WCNET_PERF=4") */
+static bool perf_logging(void)
+{
+	static int on = -1;
+	if (on < 0) {
+		const char *e = getenv("WCNET_PERF");
+		on = e && e[0];
+	}
+	return on != 0;
+}
+
+/* for the layer's perf line (wcnet_perf.cpp): the planet's views since the last ask, their average ms, and the
+ * detail; false when there were none */
+bool RVGX_PlanetStats(double *ms, double *px)
+{
+	static const float steps[] = { 2.0f, 2.5f, 3.0f, 4.0f };
+	if (!g_stat_n)
+		return false;
+	*ms = g_stat_ms / g_stat_n;
+	*px = steps[g_detail];
+	g_stat_ms = 0;
+	g_stat_n = 0;
+	return true;
+}
 
 static int32_t rd(unsigned at) { return (int32_t)real_readd(g_block_seg, g_block_off + at); }
 
@@ -592,26 +627,40 @@ static int planet_view(void)
 	g_planet_viewed = true;
 	const double ms = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count() / 1000.0;
 	g_ns += (uint64_t)(ms * 1e6);
-	/* the detail by what the views cost: the march's step a step longer after 30 views in a row over 8 ms, a step
-	 * shorter after 300 (10 s) under 4; held between.  It had crept a few percent every view, so the far ground's
-	 * samples moved each frame (the user's flickering, 2026-11-15), and each step changes the whole far ground at
-	 * once, so it is taken seldom */
+	/* the detail by whether the frames keep time (the user, 2026-11-15, of a smooth flight at a third of the frame:
+	 * "the resolution of the terrain was bad and the crawlies of the mountains were a bit bad"; it had been a budget
+	 * of the views' own ms, 6 then 8, met nowhere in the browser).  The wall clock between views, smoothed: over
+	 * 35.5 ms (under 28 fps) for 30 views in a row with the views costing something, a step coarser, and the step
+	 * left is not tried again for 60 s; at 34.5 or under for 300 views (10 s), a step finer.  A step changes the
+	 * whole far ground at once, so they are taken seldom; it never creeps (it had, every view: the far samples moved
+	 * each frame, the user's flickering) */
 	{
 		static const float g_steps[] = { 2.0f, 2.5f, 3.0f, 4.0f };
+		static double last;
+		const double now = wall_s();
 		const int was = g_detail;
+		if (last > 0 && now - last < 0.25)
+			g_period = g_period * 0.9 + (now - last) * 1000 * 0.1;
+		else {                          /* (a pause: loading, the menus; start again) */
+			g_period = 33.3;
+			g_good = g_over = 0;
+		}
+		last = now;
 		g_view_ms = g_view_ms * 0.8 + ms * 0.2;
-		g_slow = g_view_ms > 8 ? g_slow + 1 : 0;
-		g_fast = g_view_ms < 4 ? g_fast + 1 : 0;
-		if (g_slow >= 30 && g_detail < 3)
+		g_stat_ms += ms;
+		g_stat_n++;
+		g_over = g_period > 35.5 && g_view_ms > 2 ? g_over + 1 : 0;
+		g_good = g_period <= 34.5 ? g_good + 1 : 0;
+		if (g_over >= 30 && g_detail < 3) {
+			g_blocked[g_detail] = now + 60;
 			g_detail++;
-		else if (g_fast >= 300 && g_detail > 0)
+		} else if (g_good >= 300 && g_detail > 0 && now >= g_blocked[g_detail - 1])
 			g_detail--;
-		static unsigned views;
-		if (++views % 600 == 0)         /* (every 20 s or so: what the views cost, for the page's console) */
-			LOG_MSG("RVGX: the planet's views %.1f ms, its detail %.1f px", g_view_ms, g_steps[g_detail]);
 		if (g_detail != was) {
-			g_slow = g_fast = 0;
-			LOG_MSG("RVGX: the planet's detail %.1f px (its views %.1f ms)", g_steps[g_detail], g_view_ms);
+			g_good = g_over = 0;
+			if (perf_logging())
+				LOG_MSG("RVGX: the planet's detail %.1f px (its views %.1f ms, %.1f ms between frames)", g_steps[g_detail],
+				        g_view_ms, g_period);
 		}
 		g_step = g_steps[g_detail];
 	}

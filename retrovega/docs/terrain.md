@@ -175,13 +175,22 @@ frame. Causes, and what was done (terrain.c, rvgx.cpp):
 - The lines are 2 pixels apart where they spread most (`TR_LINE_PX`, was 1; on whole multiples of it, so they keep
   their places as V moves): half the march's work. A view over the canyon run's mountains from 8,000 km, 35 degrees
   down, natively: 30 ms with 1-pixel lines at the finest detail, 15 with 2; over the canyon 8 and 4.
-- The card's detail (rvgx.cpp, the march's far step by what the views cost) crept a few percent every view while
-  over 6 ms or under 3, moving every far sample each frame; now it is one of 2, 2.5, 3 and 4 pixels, a step coarser
-  after 30 views in a row over 8 ms and finer after 300 (10 s) under 4, since a step changes the whole far ground at
-  once (a 14% pop in one frame, measured, with 15 and 30). The page's console has a line at each step and every 600
-  views ("RVGX: the planet's views 8.0 ms, its detail 4.0 px"). In the browser here the canyon run's views cost 8 to
-  12 ms with the 2-pixel lines (about twice natively): the detail goes to 4 in the flight's first seconds and stays;
-  flying over the mountains then changes some 2% of the picture a frame, no spikes, at 30 fps.
+- The card's detail (rvgx.cpp, the march's far step) had followed what the views cost against a budget of their
+  own (6 ms, then 8), met nowhere in the browser, so the picture sat at the coarsest (4 pixels) even on a machine
+  with two thirds of its frame free (the user's play test: 30 fps, load 34%, "the resolution of the terrain was bad
+  and the crawlies of the mountains were a bit bad"); before that it had crept a few percent every view, moving every
+  far sample each frame. Now it is one of 2, 2.5, 3 and 4 pixels by whether the frames keep time: the wall clock
+  between views, smoothed, over 35.5 ms for 30 views in a row (with the views costing over 2 ms) a step coarser, and
+  that step not tried again for 60 s; at 34.5 or under for 300 views, a step finer. It starts at the finest.
+- Which of the averaged grid levels the march reads no longer follows the detail: a level once TR_STEP_PX (2)
+  pixels' worth of the distance passes one of its cells, the levels the picture had at 4 pixels a step, which the
+  user liked ("The sharpness of the mountains is pretty cool ... I'd worry we would take too much of that away"). At
+  2 pixels the samples fall a cell apart, so the far ground crawls less (a view over the mountains: 13% of the ground
+  changing a frame with the level at two cells of a 2-pixel step, 5% now).
+- The recurring lines are behind WCNET_PERF (the user: "Lets put all recurring logging behind WCNET_PERF=4"): the
+  perf line ends with the planet's views ("the planet's views 7.2 ms at 2.0 px"), and a step of the detail has a line
+  of its own only then. In the browser here: 30 fps at 2 pixels, the views 5 to 16 ms, the emulator at 100%; with no
+  WCNET_PERF, no line comes again during a flight.
 
 Checked: `planet_view` (scratch PV_SEQ: frames along a path) under ASan and UBSan on SHMRNC, ENIGMAP, DEFIANCP and
 LIXISP; a grain sum that shifted a negative number left (undefined) is a multiplication now.
