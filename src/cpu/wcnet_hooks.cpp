@@ -833,6 +833,10 @@ static void key_script() {
         double fy = colon == std::string::npos ? 0.5 : atof(item.c_str() + colon + 1);
         wclog(2, "key script %.1fs (t=%.1f): pointer to %.2f, %.2f", t, now / 1000.0, fx, fy);
         set_pointer(fx, fy);
+    } else if (item == "!cycles") {
+        // the emulated CPU's speed now (DOSBox's automatic cycles move it: where they settle) and the real time
+        wclog(1, "key script %.1fs (t=%.1f): cycles %d (%s, limit %d, %d%%), real time %.0f ms", t, now / 1000.0, (int)::CPU_CycleMax,
+              ::CPU_CycleAutoAdjust ? "automatic" : "fixed", (int)::CPU_CycleLimit, (int)::CPU_CyclePercUsed, perf_now_ms());
     } else if (item.compare(0, 8, "!button=") == 0) {
         // !button=<0 left, 1 right>:<1 down, 0 up>
         int button = atoi(item.c_str() + 8);

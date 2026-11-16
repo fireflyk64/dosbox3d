@@ -2215,13 +2215,19 @@ async function start(fromGesture) {
     const cmd = query.get("cmd") || source.game.run + missionArgs + (query.get("res") === "1" && isRv ? " /res 1" : "")
       + (field ? ` /field ${field}` : "");
     // The emulated CPU speed: the game's own good value (the registry), or
-    // ?cycles=N; Ctrl+F11 / Ctrl+F12 still adjust it while playing.
-    const cycles = Number(query.get("cycles")) || (gameInfo() && gameInfo().cycles) || 0;
+    // ?cycles=N; Ctrl+F11 / Ctrl+F12 still adjust it while playing.  A game
+    // whose registry says `cyclesAuto` (or ?cycles=max) gets DOSBox's own
+    // automatic cycles, up to its value: as many as this computer runs in
+    // real time with room left for the browser's sound and picture.
+    const askedCycles = query.get("cycles");
+    const cycles = Number(askedCycles) || (gameInfo() && gameInfo().cycles) || 0;
+    const autoCycles = askedCycles === "max" || (!Number(askedCycles) && !!(gameInfo() && gameInfo().cyclesAuto));
     const args = ["-c", `mount c ${GAME_ROOT}`];
     // The game's disc, where it comes with one (the registry's image): drive D.
     if (gameInfo() && gameInfo().image) args.push("-c", `imgmount d ${GAME_ROOT}/${gameInfo().image} -t iso`);
     args.push("-c", "c:");
-    if (cycles > 0) args.push("-c", `cycles=${Math.round(cycles)}`);
+    if (autoCycles) args.push("-c", `cycles=max${cycles > 0 ? ` limit ${Math.round(cycles)}` : ""}`);
+    else if (cycles > 0) args.push("-c", `cycles=${Math.round(cycles)}`);
     // What the game's own setup expects of the machine (the registry), as a
     // configuration file: DOSBox's `config -set` rewrites the list of
     // startup commands it is itself run from, and the game's is lost.
