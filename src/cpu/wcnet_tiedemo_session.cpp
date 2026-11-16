@@ -476,9 +476,9 @@ void departed(int o) {
     e.set_kind(4);
     e.set_obj(id);
     e.set_type(g_net->ids.type(o));
-    e.set_fg(TieIdents::group(id));
+    e.set_fg((Bit32u)g_net->ids.fg(o));
     g_net->eventsOut.push_back(e);
-    wclog(1, "TIE demo: obj %d (flight group %d, type %d) of ours gone: sent", o, TieIdents::group(id), g_net->ids.type(o));
+    wclog(1, "TIE demo: obj %d (flight group %d, type %d) of ours gone: sent", o, g_net->ids.fg(o), g_net->ids.type(o));
 }
 
 // Each craft slot as the game has it now: a new craft there (another object id) is given its identity, and nothing of
@@ -818,10 +818,10 @@ void watch_events() {
         e.set_kind(3);
         e.set_obj(id);
         e.set_type(g_net->ids.type(o));
-        e.set_fg(TieIdents::group(id));
+        e.set_fg((Bit32u)g_net->ids.fg(o));
         if (g_net->killer[o]) e.set_killer(wire(g_net->killer[o] - 1));
         g_net->eventsOut.push_back(e);
-        wclog(2, "TIE demo: obj %d (flight group %d, type %d) of ours dying: sent", o, TieIdents::group(id), g_net->ids.type(o));
+        wclog(2, "TIE demo: obj %d (flight group %d, type %d) of ours dying: sent", o, g_net->ids.fg(o), g_net->ids.type(o));
     }
 }
 
@@ -876,7 +876,7 @@ void take_owners(const TieOwners &t) {
             now - g_net->ids.arrivedAt(o) < kUnknownToHostMs) continue;
         g_net->owner[o] = g_net->self;
         release_ai(o);
-        wclog(1, "TIE demo: obj %d (flight group %d) not in the host's game: flown here", o, TieIdents::group(g_net->ids.ident(o)));
+        wclog(1, "TIE demo: obj %d (flight group %d) not in the host's game: flown here", o, g_net->ids.fg(o));
     }
 }
 

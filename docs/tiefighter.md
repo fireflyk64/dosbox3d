@@ -775,6 +775,47 @@ move vector, the nine axis words, type).
   the guest; kills credited across (1 and 4).  The demo again after the
   move to the shared header (scripts/tdmnet-duo.sh, 300 s): every craft
   matched, the slots apart at up to 3 places.
+* **A carrier's drop-off is made on every machine** (2026-11-16, the user:
+  "this sounds serious can you fix").  `paiman_dropoffmaneuver` (0x3CA94), a
+  carrier at its drop point, makes a craft of the group it drops off with
+  `create_startflightgroup` (0x1706C) and the drop's number, `fgcnt`
+  (0xD3576) the group and `leaderflag` (0xD3586) the group's leader it is
+  placed by, the AI context (0xEB104, 52 bytes; its first word the carrier)
+  and `craftptr` (0xEB28C) saved around it (OpenTIE's addresses, the same
+  build's).  That runs where the carrier's AI runs: its owner's machine
+  alone, so the others never had the craft.  The missions (each flight
+  group's three orders at +0x68, 18 bytes each; OpenTIE's names: 17 Pick
+  Up, 18 Drop Off): 20 drop-offs in 7 missions, mostly minelayers dropping
+  mines (static objects, which nothing else syncs: a field one pilot alone
+  could see and hit), and B9M4DW's transport dropping the TIE Defender
+  prototypes.  Now `create_startflightgroup`'s entry is watched: called from
+  the drop-off maneuver (its return address inside it) for a carrier this
+  machine flies, the drop goes to the others (TieEvent kind 5: the group,
+  the drop's number, the leader's identity, the new craft's identity); for a
+  carrier another machine flies (ours far off, flown by our AI) the call is
+  skipped, its owner's word coming.  The others make it with the same call
+  through the trampoline, `fgcnt` and `leaderflag` written and the AI
+  context and `craftptr` kept around it.  A dropped craft is no arrival in
+  its group's count (two carriers of two machines dropping into one group
+  at once would make them in two orders): its identity is its carrier's, its
+  group's and its number in the group (`TieIdents::drop`; the carrier and the
+  number alone collide: B9M4DW's transport drops craft 0 of group 1, then
+  craft 0 of group 2), given to the craft the scan next finds in that group.  Measured, B1M5GM (two minelayers, Modd and Leven, a
+  mine group each), two machines: the guest flew the minelayers, sent the
+  drops, and the host made them: the mines on both in the same static slots
+  at the same place (4.05, -4.65, -0.23 and +0.23 km) for the rest of the
+  flight; before, the host had none.  B9M4DW (the transport Mharsup drops
+  the two TIE Defender prototypes some 9 minutes in), two machines, 700 s:
+  the host flew the transport and sent both drops; the guest made both, each
+  prototype then on both machines with the same identity, in the same slot,
+  within 0.07 km of its owner's place.
+* **Pick-ups and other dockings are not synced yet.**  60 pick-ups in 14
+  missions (B3M1BM's Mules, HF2W's Pelicans, HG2W, HM1W ...) and the
+  boardings (cargo, capture, repair, delivery: `paiman_boardmaneuver`'s
+  transfer) change the craft docked with (towed by `tow_slave_ref`, its side,
+  its group's captured count, its cargo) on the boarding craft's machine
+  alone; the docked craft's place still reaches the others in its owner's
+  reports.
 * **A hyperspace arrival's scene names nothing.**  A mission that opens
   with an arrival (HG3M) or a jump between regions shows a world of this
   machine's own pilot's craft alone (`create_createhyperin`), each

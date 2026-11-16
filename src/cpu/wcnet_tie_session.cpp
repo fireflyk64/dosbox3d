@@ -192,6 +192,18 @@ struct TieNet {
     // whose death was sent, the one a kill under way here is for
     TieIdents ids;
     bool identsBegun = false, identsOff = false;    // (this flight's first look made; a hyperspace arrival's: none)
+    // A carrier's drop-off: the drops made here this frame whose craft the scan has yet to see (their identities given),
+    // and the others' drops to make here
+    struct PendingDrop { int fg; Bit32u ident; };
+    std::vector<PendingDrop> pendingDrops;
+    struct DropIn { int fg, number; Bit32u anchor, ident; };
+    DropIn dropsIn[16];
+    int dropsInNext = 0;
+    Bit8u savedAi[0x34];                // (the game's AI context and globals around a drop made here)
+    Bit32u savedCraftPtr = 0;
+    Bit16u savedFgCnt = 0;
+    Bit8u savedLeader = 0;
+    unsigned dropsSent = 0, dropsMade = 0;
     Bit32u deathSent[kCraftSlots];
     Bit32u killIdent[kCraftSlots];
     Bit8u exitCounts[48][2];            // each flight group's hyperspaced and hangar counts last frame
@@ -244,6 +256,7 @@ struct TieNet {
         }
         ids.clear();
         identsBegun = identsOff = false;
+        pendingDrops.clear();
         memset(exitCounts, 0, sizeof(exitCounts));
         for (int o = 0; o < kCraftSlots; o++) {
             killing[o] = 0;
@@ -907,7 +920,7 @@ void departed(int o) {
     if (!id || g_net->deathSent[o] == id || o == tie_player_object() || owner_of(o) != g_net->self) {
         return;
     }
-    const int fg = TieIdents::group(id);
+    const int fg = g_net->ids.fg(o);
     const Bit32u st = tie_linear(kFgStatus + (Bit32u)fg * kFgStatusSize);
     const int exit = fg < 48 && mem_readb(st + kFgHyperspacedCount) > g_net->exitCounts[fg][0] ? 3
                    : fg < 48 && mem_readb(st + kFgHangarCount) > g_net->exitCounts[fg][1] ? 4 : 0;
@@ -961,7 +974,20 @@ void scan_idents() {
             continue;       // (the same object: a craft dying keeps its id through its explosion)
         }
         departed(o);
-        g_net->ids.take(o, slot, now);
+        bool given = false;
+        for (size_t k = 0; slot.arrival && k < g_net->pendingDrops.size(); k++) {
+            if (g_net->pendingDrops[k].fg == slot.fg) {
+                // (a dropped-off craft: the identity its dropper's machine gave it, not an arrival of its group)
+                g_net->ids.takeAs(o, slot, now, g_net->pendingDrops[k].ident);
+                g_net->pendingDrops.erase(g_net->pendingDrops.begin() + (long)k);
+                given = true;
+                wclog(1, "TIE: obj %d is the dropped-off craft of flight group %d (identity %08X)", o, slot.fg, (unsigned)g_net->ids.ident(o));
+                break;
+            }
+        }
+        if (!given) {
+            g_net->ids.take(o, slot, now);
+        }
         g_net->owner[o] = 0;
         g_net->ownerAt[o] = -1e9;
         Puppet &p = g_net->puppets[o];
@@ -972,6 +998,10 @@ void scan_idents() {
         p.ex = p.ey = p.ez = p.blendTicks = 0;
         p.localHitAt = -1e9;
         g_net->killing[o] = g_net->killer[o] = 0;
+    }
+    if (!g_net->pendingDrops.empty()) {
+        wclog(1, "TIE: %d drop-off(s) made no craft slot's craft (a static group's: mines, probes; or its group full)", (int)g_net->pendingDrops.size());
+        g_net->pendingDrops.clear();    // (the game's call made its craft at once, or none: the next arrival is no drop)
     }
 }
 
@@ -1027,7 +1057,7 @@ void watch_events() {
             e.set_kind(3);
             e.set_obj(ident);
             e.set_type((Bit32u)g_net->ids.type(o));
-            e.set_fg((Bit32u)TieIdents::group(ident));
+            e.set_fg((Bit32u)g_net->ids.fg(o));
             if (g_net->killer[o]) {
                 e.set_killer(wire(g_net->killer[o] - 1));
             }
@@ -1043,6 +1073,59 @@ void watch_events() {
     }
 }
 
+// --- a carrier's drop-off ---------------------------------------------------------------------------------------
+// paiman_dropoffmaneuver (0x3CA94): a carrier at its drop point makes a craft of the group it drops off with
+// create_startflightgroup(the drop's number), fgcnt (0xD3576) the group, leaderflag (0xD3586) the group's leader it is
+// placed by, the AI context (0xEB104, 52 bytes; its first word the carrier's slot) and craftptr (0xEB28C) saved around
+// it.  That runs where the carrier's AI runs: its owner's machine, or one that flies it far off.  The owner's call is
+// sent (TieEvent kind 5) and the others make the craft with the same call, their own carrier's drop left out.
+enum { kFgCnt = 0xD3576, kLeaderFlag = 0xD3586, kAi = 0xEB104, kAiSize = 0x34, kCraftPtr = 0xEB28C, kFnStartGroup = 0x1706C,
+       kDropOffFrom = 0x3CA94, kDropOffTo = 0x3CD04 };
+
+bool drop_before(int tag) {
+    const TieNet::DropIn &d = g_net->dropsIn[tag];
+    if (local(d.ident) >= 0) {
+        return false;       // (made here already)
+    }
+    const int anchor = local(d.anchor);
+    for (int i = 0; i < kAiSize; i++) {
+        g_net->savedAi[i] = tie_r8(kAi + (Bit32u)i);
+    }
+    g_net->savedCraftPtr = tie_r32(kCraftPtr);
+    g_net->savedFgCnt = tie_r16(kFgCnt);
+    g_net->savedLeader = tie_r8(kLeaderFlag);
+    tie_w16(kFgCnt, (Bit16u)d.fg);
+    tie_w8(kLeaderFlag, (Bit8u)(anchor >= 0 ? anchor : 0xFF));
+    TieNet::PendingDrop pd = { d.fg, d.ident };
+    g_net->pendingDrops.push_back(pd);
+    return true;
+}
+void drop_done(int tag, Bit32u eax) {
+    for (int i = 0; i < kAiSize; i++) {
+        tie_w8(kAi + (Bit32u)i, g_net->savedAi[i]);
+    }
+    tie_w32(kCraftPtr, g_net->savedCraftPtr);
+    tie_w16(kFgCnt, g_net->savedFgCnt);
+    tie_w8(kLeaderFlag, g_net->savedLeader);
+    g_net->dropsMade++;
+    const TieNet::DropIn &d = g_net->dropsIn[tag];
+    wclog(1, "TIE: craft %d of flight group %d dropped off as on its carrier's machine (returned %u)", d.number, d.fg, (unsigned)eax);
+}
+void take_drop(const TieEvent &e, int from) {
+    if (!e.has_ident() || !e.has_fg() || e.fg() >= 48 || local(e.ident()) >= 0) {
+        return;
+    }
+    const int tag = g_net->dropsInNext;
+    g_net->dropsInNext = (g_net->dropsInNext + 1) % 16;
+    TieNet::DropIn &d = g_net->dropsIn[tag];
+    d.fg = (int)e.fg();
+    d.number = (int)e.craft();
+    d.anchor = e.has_anchor() ? e.anchor() : TieIdents::kNone;
+    d.ident = e.ident();
+    wclog(1, "TIE: pilot %d's carrier dropped off craft %d of flight group %d: made here", from + 1, d.number, d.fg);
+    tie_queue_call(kFnStartGroup, (Bit32u)d.number, 0, 0, 0, drop_before, drop_done, tag);
+}
+
 void take_event(const TieEvent &e, int from) {
     if (e.kind() == 1) {
         const Bit32u m = tie_linear(kMission);
@@ -1052,6 +1135,10 @@ void take_event(const TieEvent &e, int from) {
             notice(pilot_name(from) + " called for reinforcements");
             wclog(1, "TIE: pilot %d called for reinforcements: the mission's flag set here", from);
         }
+        return;
+    }
+    if (e.kind() == 5) {
+        take_drop(e, from);
         return;
     }
     const int o = e.kind() >= 2 ? local(e.obj()) : -1;
@@ -1341,7 +1428,7 @@ void take_owners(const TieOwners &t) {
         }
         g_net->owner[o] = g_net->self;
         release_ai(o);
-        wclog(1, "TIE: obj %d (flight group %d) not in the host's game: flown here", o, TieIdents::group(g_net->ids.ident(o)));
+        wclog(1, "TIE: obj %d (flight group %d) not in the host's game: flown here", o, g_net->ids.fg(o));
     }
 }
 
@@ -1884,6 +1971,44 @@ void room_end_frame() {
 
 }  // namespace
 
+void tie_session_start_group() {
+    if (!g_net || g_net->self < 0 || !tie_in_flight() || tie_in_call()) {
+        return;
+    }
+    const Bit32u ret = mem_readd(SegPhys(ss) + reg_esp);
+    if (ret < tie_linear(kDropOffFrom) || ret >= tie_linear(kDropOffTo)) {
+        return;             // (a group's own arrival, the mission's triggers: every machine's)
+    }
+    scan_idents();
+    const int dropper = tie_r16(kAi), fg = tie_r16(kFgCnt), number = (int)(reg_eax & 0xFFFF), anchor = tie_r8(kLeaderFlag);
+    if (dropper >= kCraftSlots || fg >= 48) {
+        return;
+    }
+    if (!mine(dropper)) {
+        // (a carrier another machine flies, flown here by our AI far off: its own machine's word makes the craft here)
+        tie_skip_call(1);
+        wclog(2, "TIE: obj %d's drop-off of craft %d of flight group %d left to its owner's machine", dropper, number, fg);
+        return;
+    }
+    const Bit32u by = g_net->ids.ident(dropper);
+    if (!by) {
+        return;             // (no identity: a hyperspace arrival's scene; the game's own, here alone)
+    }
+    const Bit32u id = TieIdents::drop(by, fg, number);
+    TieNet::PendingDrop pd = { fg, id };
+    g_net->pendingDrops.push_back(pd);
+    TieEvent e;
+    e.set_kind(5);
+    e.set_obj(by);
+    e.set_fg((Bit32u)fg);
+    e.set_craft((Bit32u)number);
+    e.set_anchor(anchor < kCraftSlots ? wire(anchor) : TieIdents::kNone);
+    e.set_ident(id);
+    g_net->eventsOut.push_back(e);
+    g_net->dropsSent++;
+    wclog(1, "TIE: obj %d (ours) drops off craft %d of flight group %d, placed by obj %d: sent", dropper, number, fg, anchor);
+}
+
 std::string tie_session_craft_list() {
     std::string out;
     const double kUnitsPerKm = 40960.0;
@@ -1896,13 +2021,30 @@ std::string tie_session_craft_list() {
         const Bit32u id = g_net ? g_net->ids.ident(o) : 0;
         char one[160], name[16] = "-";
         if (id) {
-            snprintf(name, sizeof(name), "%d.%d", TieIdents::group(id), TieIdents::arrival(id));
+            if (TieIdents::dropped(id)) {
+                snprintf(name, sizeof(name), "drop%05X", (unsigned)(id & 0xFFFFFF));
+            } else {
+                snprintf(name, sizeof(name), "%d.%d", (int)((id >> 8) & 0xFF), TieIdents::arrival(id));
+            }
         }
         snprintf(one, sizeof(one), " [%d id%s fg%u t%u (%.2f %.2f %.2f)%s]", o, name, tie_r8(b + 0x35), type, (Bit32s)tie_r32(b + 6) / kUnitsPerKm, (Bit32s)tie_r32(b + 0xA) / kUnitsPerKm,
                  (Bit32s)tie_r32(b + 0xE) / kUnitsPerKm, tie_r16(b + 0x2C) != 0 || type >= 127 || tie_r8(b + 2) != 0 ? " dying" : "");
         out += one;
     }
-    return out;
+    // the static objects (mines, probes, satellites: _staticobjects at 0xEA6D4, 64 of 18 bytes; +3 the species, 0 free;
+    // +4.. the place / 256; +0x0D the flight group): what a minelayer's drop-off makes
+    std::string statics;
+    for (int i = 0; i < 64; i++) {
+        const Bit32u b = 0xEA6D4 + (Bit32u)i * 18;
+        if (!tie_r8(b + 3)) {
+            continue;
+        }
+        char one[96];
+        snprintf(one, sizeof(one), " [S%d fg%u sp%u (%.2f %.2f %.2f)]", i, tie_r8(b + 0x0D), tie_r8(b + 3), (Bit16s)tie_r16(b + 4) * 256 / kUnitsPerKm,
+                 (Bit16s)tie_r16(b + 6) * 256 / kUnitsPerKm, (Bit16s)tie_r16(b + 8) * 256 / kUnitsPerKm);
+        statics += one;
+    }
+    return out + (statics.empty() ? "" : " statics:" + statics);
 }
 
 void tie_session_frame() {

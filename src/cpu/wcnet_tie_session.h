@@ -51,6 +51,9 @@ bool tie_session_click(int button, bool pressed);
 void tie_session_shot();
 void tie_session_laser_hit();
 void tie_session_damage();
+// At create_startflightgroup's entry: a carrier's drop-off (called from paiman_dropoffmaneuver) is made where the
+// carrier's AI runs; its machine tells the others, which make the craft too, once.
+void tie_session_start_group();
 // At create_createmission's entry: the player's flight group gets a craft a
 // seat, and a guest flies its own one of them.
 void tie_session_mission_create();
