@@ -568,7 +568,7 @@ const TV_VOX_INI = ["musicFlag", "1", "soundFlag", "1", "mixSpeed", "11025", "sk
   "xStickMin,yStickMin,xStickMax,yStickMax", "0,0,0,0", "notebookStickFlag", "0", "stereoFlag,musicVolume,soundVolume",
   "0,65536,65536", "weaponKey,fireKey,leftKey,rightKey,upKey,downKey,throtUp,throtDown", "56,57,75,77,72,80,30,44",
   "buttonFire,buttonWeapon,buttonThrottleUp,buttonThrottleDown", "1,2,8,4", "boomZoom", "65536",
-  "autoLevel,mouseControl,rollLeftKey,rollRightKey,partsFlag,mouseFlip", "1,0,71,73,2,1",
+  "autoLevel,mouseControl,rollLeftKey,rollRightKey,partsFlag,mouseFlip", "1,0,71,73,1,1",
   "mouseSenseX,mouseSenseY,mouseMotion,mouseLeftButton,mouseRightButton", "8,16,1,0,1", ""].join("\r\n");
 function tvPrepare(FS, root, opts = {}) {
   const said = [];
@@ -593,11 +593,12 @@ function tvPrepare(FS, root, opts = {}) {
   };
   set("gamePIXX,", (v) => { v[0] = "640"; v[1] = "240"; return v; });
   // the Graphics Options at their best (the user: "Let's ensure detail is maximum"): the sky's texture, Image Quality
-  // Pentium (perspective), Shadows Pentium, Texture High Detail (12 MB free: the machine has 32), Debris Overkill
+  // Pentium (perspective), Shadows Pentium, Texture High Detail (12 MB free: the machine has 32); but Debris Normal
+  // (the user, 2026-11-16: "can you set debris to be normal but keep shadows max", "max debris looks bad")
   set("skyTextureFlag", () => ["1"]);
   set("perspectiveFlag,", () => ["1", "2"]);
   set("textureResolution", () => ["1"]);
-  set("autoLevel,", (v) => { if (v.length > 4) v[4] = "2"; return v; });
+  set("autoLevel,", (v) => { if (v.length > 4) v[4] = "1"; return v; });
   let control = "";
   set("joystickActive,", (v) => {
     if (opts.joystick) { control = "the gamepad (built in)"; return ["2", "64", "64", v[3] || "0", v[4] || "0"]; }
@@ -606,7 +607,7 @@ function tvPrepare(FS, root, opts = {}) {
   });
   if (opts.joystick) set("xStickMin,", () => ["0", "0", "128", "128"]);
   FS.writeFile(`${root}/VOX.INI`, new TextEncoder().encode(lines.join("\r\n")));
-  said.push(`VOX.INI: 640 x 480, the best detail${control ? ", " + control : ""}${vox ? "" : " (made)"}`);
+  said.push(`VOX.INI: 640 x 480, the best detail but Debris Normal${control ? ", " + control : ""}${vox ? "" : " (made)"}`);
   return `Terminal Velocity's settings: ${said.join("; ")}`;
 }
 

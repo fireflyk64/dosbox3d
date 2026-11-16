@@ -71,7 +71,8 @@ calibrated as the game's own Calibrate measures DOSBox's counting port (centre 6
 control left from before goes back to the keyboard (the port is empty), the mouse is kept.  The Graphics Options at their best at every launch (the user, 2026-11-14: "Let's ensure detail is
 maximum"): the sky's texture (`skyTextureFlag` 1), Image Quality Pentium (`perspectiveFlag` 1), Shadows Pentium
 (`airShadowFlag` 2), Texture High Detail (`textureResolution` 1: 12 MB free wanted, the machine has `memsize=32`),
-Debris Overkill (`partsFlag` 2) -- read from the options menu's code (0x31130: [0x64CE4], [0x64D54], [0x64D0C],
+but Debris Normal (`partsFlag` 1; Overkill, 2, until 2026-11-16, the user: "can you set debris to be normal but
+keep shadows max", "max debris looks bad") -- read from the options menu's code (0x31130: [0x64CE4], [0x64D54], [0x64D0C],
 [0x64DDC]) and the settings writer's.  Their cost in flight is small: a dogfight with a wingman at 60,000 cycles 20.1
 frames a second against 20.6 with the shareware's own settings; the briefing's 3D slides step more slowly.  The
 picture is really 640 wide: the game draws 640 x 240 (its own 640 x 480 breaks its terrain), each row shown twice
