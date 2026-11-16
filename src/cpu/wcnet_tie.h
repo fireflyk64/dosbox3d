@@ -117,6 +117,13 @@ bool tie_controls_mouse(float xrel, float yrel);     // true: moved our pointer 
 void tie_controls_frame();                           // at the frame's top: this frame's mickeys
 int tie_key_ramp(int was, int dir, bool shift);      // RetroVega's arrow ramp (WC1's): an axis's next step, -9..9
 int tie_stick_mickeys(double d, int least, int most); // a stick's deflection (-1..1) as one frame's mickeys
+// ... and for the demo's frame (its mickeys made there): the mode, the pointer and the page's pad shared
+void tie_controls_next_mode();                       // F12: aim, aim banking, drag, the keyboard
+bool tie_controls_aim_only();                        // the pointer without the bank: the game's bank left out
+void tie_controls_aim_reset();                       // a flight begun or ended: the pointer in the middle
+void tie_controls_sight(double x, double y);         // the gunsight's middle, shares of the picture (the ring's)
+bool tie_controls_aim(int leastX, int mostX, int leastY, int mostY, int *mx, int *my);  // the pointer's and pad's
+                                                     //   mickeys this frame; true: the pointer rolls (*mx the roll's)
 int tie_controls_axis(bool across, int delta, int scale, int game);   // the stick's axis scaled, signed (the game's: `game`)
 bool tie_controls_marker(double *x, double *y);      // the pointer to draw: its shares of the screen, round the gunsight
 void tie_controls_set_mouse(int mode);              // 0 drag, 1 pointer, 2 keyboard, 3 joystick, 4 pointer banking

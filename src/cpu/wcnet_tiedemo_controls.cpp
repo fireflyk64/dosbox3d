@@ -25,7 +25,14 @@
  *  - Space fires: the mouse's left button, the game's trigger, held while Space is.  The game's own Space confirms what
  *    waits for it (pstate+0x20, DS:CD98: 1 the target it offers, 2 another; its switch's Space, image 0x1458C): then
  *    Space is the game's.
- *  The mouse is the game's own (drag to steer) and stays so.
+ *  - The mouse and a controller as the CD port has them (the user, 2026-11-15: "point to aim mouse mode should be
+ *    default. They can select drag to aim just like on cd version. also joystick should be like cd version too"): the
+ *    mode, the pointer and the page's pad are wcnet_tie_controls.cpp's (tie_controls_aim), the mickeys this game's
+ *    (17 to 191 across, 25 to 127 up and down).  "Point to aim" leaves the game's bank into a turn out (the demo's
+ *    `sub roll,turn` at image 0x15818 stepped over: tdm_controls_no_bank); its right button held rolls with the
+ *    pointer once the game takes it as held (0.33 s: a shorter press stays the game's click, a target).  The ring is
+ *    drawn round the gunsight's middle, (159.5, 76.5) of the 320 x 200 picture, measured.  F12 in flight cycles aim,
+ *    aim banking, drag, the keyboard.
  */
 #include <stdlib.h>
 #include "wcnet_tiedemo.h"
@@ -45,6 +52,7 @@ const Bit16u kRightHeld = 0xCDA4;       // pstate+0x2C: frame ticks the right bu
 const Bit16u kRightHold = 0x4E;         // ... from which it is the X-roll (and no click when let go)
 // (mickeys: the ramp's first step and its most, the whole stick)
 const int kLeastX = 17, kMostX = 96, kLeastY = 25, kMostY = 127, kMostRoll = 69, kWholeX = 191;
+const double kSightX = 159.5 / 320, kSightY = 76.5 / 200;     // the gunsight's middle (the TIE cockpit's)
 
 bool g_left, g_right, g_up, g_down, g_shiftL, g_shiftR, g_rollLeft, g_rollRight;
 int g_stepX, g_stepY, g_rollStep;       // the ramps' steps, -9..9
@@ -111,6 +119,9 @@ bool tdm_controls_key(int key, bool pressed) {
     case KBD_down: g_down = pressed; return true;
     case KBD_kp0: g_rollLeft = pressed; return true;        // Ins
     case KBD_kpperiod: g_rollRight = pressed; return true;  // Del
+    case KBD_f12:                                           // the mouse's mode (the CD port's: aim, banking, drag, keys)
+        if (pressed) tie_controls_next_mode();
+        return true;
     default: return false;
     }
 }
@@ -120,10 +131,12 @@ void tdm_controls_frame() {
     if (flying != g_wasFlying) {
         g_wasFlying = flying;
         let_go();
+        tie_controls_aim_reset();           // (a flight starts with the pointer in the middle)
     }
     if (!flying) {
         return;
     }
+    tie_controls_sight(kSightX, kSightY);
     const bool shift = g_shiftL || g_shiftR;
     const int rollDir = (g_rollRight ? 1 : 0) - (g_rollLeft ? 1 : 0);
     if (++g_frames % 2 == 0) {              // (a notch further every other frame: full in some 0.3 s)
@@ -145,9 +158,15 @@ void tdm_controls_frame() {
             Mouse_ButtonReleased(1);
         }
     }
+    // the pointer's and the page's pad's (the CD port's), the keys' over them
     int mx = 0, my = 0;
+    if (tie_controls_aim(kLeastX, kWholeX, kLeastY, kMostY, &mx, &my) &&
+        !(mem_readw(tdm_ds(kRightHeld)) >= kRightHold && (mem_readb(tdm_ds(kLastButtons)) & 0xE) == 2)) {
+        mx = 0;     // (the pointer's roll: none until the game takes its right button as held, or the motion would turn)
+    }
     if (g_rollStep) {
         mx = tie_stick_mickeys(g_rollStep / 9.0, kLeastX, shift ? kWholeX : kMostRoll);     // (the X-roll: across)
+        my = 0;
     } else {
         if (g_stepX) mx = tie_stick_mickeys(g_stepX / 9.0, kLeastX, shift ? kWholeX : kMostX);
         if (g_stepY) my = tie_stick_mickeys(g_stepY / 9.0, kLeastY, kMostY);   // (Up dives: the mouse's forward, negative)
@@ -155,6 +174,12 @@ void tdm_controls_frame() {
     if (mx || my) {
         Mouse_AddMickeys((float)mx, (float)my);
     }
+}
+
+// At the bank into a turn (user_inputforplane's `sub [roll],turn` at image 0x15818, the turn not the X-roll's): true to
+// step over it (the pointer without the bank).
+bool tdm_controls_no_bank() {
+    return tie_controls_aim_only();
 }
 
 }  // namespace wc

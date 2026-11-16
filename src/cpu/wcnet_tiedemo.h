@@ -29,6 +29,7 @@ bool tdm_script_item(const std::string &item, double t);   // key-script aids (!
 bool tdm_key(int key, bool pressed);                // a key on its way to the game: true to keep it (Esc in TIEMISS)
 bool tdm_controls_key(int key, bool pressed);       // ... the flight's keys (wcnet_tiedemo_controls.cpp): arrows, Ins/Del, Space
 void tdm_controls_frame();                          // the top of each flight frame: the keys' mickeys
+bool tdm_controls_no_bank();                        // at the bank into a turn: true to step over it (point to aim)
 void tdm_program_ended(Bit16u psp);                 // a program ended (its exit code still to be read: the showroom's)
 
 // The flight's tables: offsets in the data segment (DGROUP), and fields (docs/tiedemo.md section 4).

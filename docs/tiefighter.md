@@ -858,6 +858,11 @@ move vector, the nine axis words, type).
     its nose up 17; the right button held with the mouse across rolled the
     host 56 degrees with its heading as it was, and let go it flew straight
     on.
+* **The controller in the browser, fixed 2026-11-15** (with the TIE Fighter demo's controls, docs/tiedemo.md section
+  9): the page's controller code steers a game itself only while `wc_web_in_flight` says so, and that counted Wing
+  Commander's flights alone, never TIE's: a pad moved the pointer as in a menu (in the pointer's mode the ring, by its
+  speed), and in the joystick's mode steered nothing. TIE's flights count now, and a pad at rest (0, 0 every frame)
+  no longer holds the pointer still: its stick steers while pushed.
 * **The page**: a "Flight" choice beside Controller with TIE Fighter loaded
   (point to aim, drag to steer, keyboard alone, joystick / gamepad),
   remembered in the browser, given at the launch and while flying

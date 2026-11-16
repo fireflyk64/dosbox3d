@@ -406,8 +406,28 @@ improved accordingly". The CD port's keyboard (docs/tiefighter.md step 7), fitte
   mickeys (some 80 degrees a second in a T/F, near the CD port's keyboard roll); Shift the whole stick. Nothing up and
   down while rolling (the X-roll's up and down is the throttle).
 * Space fires: the mouse's left button, held while Space is, unless DS:CD98 is set: then Space is the game's.
-* The mouse stays the game's own (drag to steer); the CD port's pointer modes are not carried over (they need the
-  gunsight's place and the bank's code in this build).
+* The mouse and a controller as the CD port has them (the user, 2026-11-15: "point to aim mouse mode should be default.
+  They can select drag to aim just like on cd version. also joystick should be like cd version too"): the page's
+  Flight choice beside Controller, shown for the demo too (`isTie` in web/wc.js), given at the launch
+  (WCNET_TIE_MOUSE) and while flying (`wc_web_tie_mouse`); F12 in flight cycles aim, aim banking, drag, the keyboard.
+  The mode, the pointer and the page's pad are wcnet_tie_controls.cpp's (`tie_controls_aim`: the pointer's and the
+  pad's mickeys, each game's least and most: the demo's 17 to 191 across, 25 to 127 up and down; the CD's frame makes
+  its own from the same function); the demo's frame adds them, the keys' over them.
+  * **Point to aim** (the default): the pointer moves the ring (drawn round the gunsight's middle, (159.5, 76.5) of
+    the 320 x 200 picture, measured on a frame), its distance from the middle is the stick. The game's bank into a
+    turn is left out: user_inputforplane's `sub [roll],turn` for a turn that is not the X-roll's (image 0x15818,
+    load+1411:1708, its 21 bytes through the function's `retf` checked once) is stepped over to its way out
+    (1411:1718), as the CD port steps over its own. The right button held with the mouse moved across rolls, once the
+    game takes the button as held (the 0.33 s above: a shorter press stays the game's click, a target).
+  * **Point to aim, banking**: the same with the game's bank. **Drag to steer**: the game's own (1994). **Keyboard
+    alone** and **joystick**: the mouse steers nothing.
+  * **A controller** steers through the emulator's stick (`wc_web_stick`) whatever the mouse's mode, rolls on Ins and
+    Del (the keys above), fires with the mouse's left button; its buttons: Backspace full throttle, X single, dual or
+    quad fire, R the nearest enemy fighter, W the torpedoes (web/wc.js `TFD_PAD`). The page's controller code steers
+    so only "in flight" (`wc_web_in_flight`), which counted Wing Commander's flights alone: the CD's never, so on the
+    CD a pad moved the pointer as in a menu and, in the joystick's mode, steered nothing. Both TIE games' flights
+    count now. A pad at rest says (0, 0) every frame: its stick steers only while pushed, or the pointer would be held
+    still.
 
 **Measured** (native, `!tdmpose`: our craft's attitude, nose, target and the shots made):
 * A T/F, Left held 1 s: turning from the first frame, the ramp full in some 0.4 s; Right held 1 s brought the nose
@@ -418,3 +438,14 @@ improved accordingly". The CD port's keyboard (docs/tiefighter.md step 7), fitte
 * The T/I (The Shuttles Run) and the T/B (Corvette Hunt): Left 1 s then Right 1 s back to within a degree (the CD's
   sign bug, a stick read unsigned for craft of other turn rates, is not in this build's), Up dives, Down climbs, Ins
   rolls.
+* The mouse's modes, natively (the pointer pushed half way right 1 s with `!mickey=150:0`): point to aim turned the nose
+  some 25 degrees, its roll as the turn about the craft's own axes leaves it (+8.7 degrees in the game's angles), aim
+  banking the same turn with the game's bank (-13 degrees: the bank 22 degrees more), drag a twitch (one motion); the
+  pointer back to the middle, the turn stopped; the right button with the pointer across rolled from 0.33 s on, the
+  heading unmoved. F12: aim, aim banking, drag, the keyboard, aim.
+* In the browser (scripts/web-tdm-flight.mjs, one page, a stand-in gamepad: TDM FLIGHT OK): the Flight choice shown with
+  the demo, point to aim by default; the pointer pushed right turned the nose 85 degrees in 3 s, the ring drawn right
+  of the gunsight (centred before); joystick: the pad's stick right 2 s turned it 67 degrees, the mouse pushed nothing;
+  point to aim again with the pad at rest: the mouse turned it 54 degrees in 2 s.
+* The CD after the shared code (scripts/tfnet-duo.sh): the pointer pushed 3 s turned it 59 degrees, roll 0, stopped
+  when back; the Right arrow as before.

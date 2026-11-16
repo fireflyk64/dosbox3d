@@ -302,7 +302,7 @@ function setSource(s, want) {
   // The help under the game is the loaded game's own; so are its keys, where it has a list (RetroVega's flight).
   const keys = s && gameInfo() && gameInfo().keys;
   $("gameKeys").innerHTML = keys || "";
-  $("tfFlightLabel").hidden = !isTf();
+  $("tfFlightLabel").hidden = !isTie();
   gameLook();
   $("gameKeys").hidden = !keys;
   const hints = s && gameInfo() && gameInfo().campaign && gameInfo().campaign.hints;
@@ -2112,7 +2112,7 @@ async function start(fromGesture) {
     if (together && lobbyCapHull() && lobby.capHull) env.WCCAPHULL = String(CAP_HULL);
     if (cfg.callsign && !solo) env.WCCALLSIGN = cfg.callsign;
     env.WCGAME = source.game.id;     // (the game this run is for: the TIE demo's room lives from the boot on, wcnet_tiedemo.cpp)
-    if (isTf()) env.WCNET_TIE_MOUSE = tfFlight();
+    if (isTie()) env.WCNET_TIE_MOUSE = tfFlight();
     if (isPriv()) env.WCPRIVFACE = $("privFace").value;
     if (isTv() && together && isHost()) env.WCTVLOOKS = `${$("tvCraftHost").value},${$("tvCraftGuest").value}`;
     if (cfg.lastname && !solo) env.WCLASTNAME = cfg.lastname;
@@ -2375,6 +2375,10 @@ const touch = initTouch({ log, send: (name, down) => {
 const TF_FLIGHT = ["drag", "pointer", "keyboard", "joystick", "pointerbank"];   // (the emulator's mode numbers)
 const TF_FLIGHT_KEY = "wc-tf-flight";
 const isTf = () => !!(gameInfo() && gameInfo().id === "tf");
+// (TIE Fighter or its 1994 demo: the same Flight choice and controller, the user: "point to aim mouse mode should be
+// default. They can select drag to aim just like on cd version. also joystick should be like cd version too")
+const isTfd = () => !!(gameInfo() && gameInfo().id === "tiedemo");
+const isTie = () => isTf() || isTfd();
 const isPriv = () => !!(gameInfo() && (gameInfo().id === "priv" || gameInfo().id === "privrf"));
 const isTv = () => !!(gameInfo() && gameInfo().id === "tv");
 const isRap = () => !!(gameInfo() && gameInfo().id === "rap");
@@ -2391,7 +2395,7 @@ $("tfFlight").addEventListener("change", (e) => {
   try { localStorage.setItem(TF_FLIGHT_KEY, v); } catch (err) { /* this browser keeps nothing */ }
   const M = running && window.DOSBox;
   if (M && M._wc_web_tie_mouse) M._wc_web_tie_mouse(TF_FLIGHT.indexOf(v));
-  log(`TIE Fighter's flight controls: ${e.target.selectedOptions[0].textContent}`);
+  log(`${isTfd() ? "The TIE Fighter demo's" : "TIE Fighter's"} flight controls: ${e.target.selectedOptions[0].textContent}`);
 });
 
 // TIE Fighter's own meanings for a controller's buttons where Wing Commander's keys mean another thing there, or
@@ -2407,6 +2411,19 @@ const TF_PAD = {
   lock: { keys: ["r"], label: "Lock target (TIE Fighter: the nearest enemy)" },
   comms: { keys: [], label: "Communications (nothing in TIE Fighter)" },
 };
+// The TIE Fighter demo's (its flight keys, the page's keys line): Backspace full throttle, X single, dual or quad fire,
+// R the nearest enemy fighter, W the bomber's torpedoes (and back to the lasers: the trigger fires either); no
+// autopilot, map or comms.
+const TFD_PAD = {
+  missile: { keys: ["w"], label: "Fire missile (the TIE Fighter demo: W picks the torpedoes, or the lasers again; the trigger fires them)" },
+  burner: { keys: ["backspace"], label: "Afterburner (the TIE Fighter demo: full throttle)" },
+  nav: { keys: [], label: "Navigation map (nothing in the TIE Fighter demo)" },
+  auto: { keys: [], label: "Autopilot (nothing in the TIE Fighter demo)" },
+  gunsel: { keys: ["x"], label: "Change guns (the TIE Fighter demo: single, dual or quad fire)" },
+  lock: { keys: ["r"], label: "Lock target (the TIE Fighter demo: the nearest enemy fighter)" },
+  comms: { keys: [], label: "Communications (nothing in the TIE Fighter demo)" },
+};
+const tiePad = () => (isTfd() ? TFD_PAD : TF_PAD);
 // Raptor's keys for a controller's buttons (the user: "Please add gamepad support if selected on the menu"): Ctrl fires,
 // Alt the special weapon, Space picks the next special, the right Shift the mega bomb (its own keys, SETUP.INI's
 // defaults); Start is Enter in its menus and P (pause) in a wave, Back is Esc.  The stick and the D-pad are its arrows
@@ -2438,13 +2455,13 @@ const controls = initControls({
   module: () => (running && window.DOSBox) || null,
   // (TIE Fighter: a controller steers through the emulator's stick, whatever the mouse does, rolls on the keypad's
   // Ins and Del as the emulator has it, and fires with the mouse's button, the game's own trigger)
-  directStick: () => isTf(),
-  rollKeys: () => (isTf() ? { left: "kp0", right: "kpperiod" } : null),
-  actionKeys: (id) => (isTf() && TF_PAD[id] ? TF_PAD[id].keys : isRap() ? rapKeys(id) : null),
-  actionLabel: (id) => (isTf() && TF_PAD[id] ? TF_PAD[id].label : isRap() && RAP_PAD[id] ? RAP_PAD[id].label : null),
+  directStick: () => isTie(),
+  rollKeys: () => (isTie() ? { left: "kp0", right: "kpperiod" } : null),
+  actionKeys: (id) => (isTie() && tiePad()[id] ? tiePad()[id].keys : isRap() ? rapKeys(id) : null),
+  actionLabel: (id) => (isTie() && tiePad()[id] ? tiePad()[id].label : isRap() && RAP_PAD[id] ? RAP_PAD[id].label : null),
   // (Raptor: the stick in a wave and the D-pad everywhere are its arrow keys, the stick past 30% of its travel)
   stickKeys: () => (isRap() ? { left: "left", right: "right", up: "up", down: "down", at: 0.3 } : null),
-  fireByMouse: () => isTf(),
+  fireByMouse: () => isTie(),
   // (A controller button without a key of its own is the page's: push to talk.)
   onAction: (id, down) => { if (id === "ptt") voice.ptt(down); },
   pointer: steeringPointer,

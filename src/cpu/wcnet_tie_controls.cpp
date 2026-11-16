@@ -30,6 +30,7 @@
 #include <string>
 #include "wcnet_tie.h"
 #include "wcnet_tie_session.h"
+#include "wcnet_tiedemo.h"
 #include "wcnet_log.h"
 #include "wc_net.h"
 #include "keyboard.h"
@@ -98,6 +99,14 @@ bool pointer_mode() {
     return mode() == MOUSE_POINTER || mode() == MOUSE_POINTER_BANK;
 }
 
+// The game these controls steer: TIE Fighter (the CD's) or its 1994 demo (TIEMISS.EXE, whose frame's mickeys
+// wcnet_tiedemo_controls.cpp makes, the pointer's and a pad's from tie_controls_aim).  The mode, the pointer and the pad
+// are the same for both (the user, 2026-11-15: "point to aim mouse mode should be default. They can select drag to aim
+// just like on cd version. also joystick should be like cd version too").
+bool any_flying() {
+    return tie_found() ? tie_in_flight() : tdm_found() && tdm_in_flight();
+}
+
 // RetroVega's key_ramp (flight.c), WC1's: the step an axis's arrow gives this time.
 int key_ramp(int was, int dir, bool shift) {
     if (!dir || (was > 0 && dir < 0) || (was < 0 && dir > 0)) {
@@ -149,6 +158,60 @@ void add_key(KBD_KEYS key, bool pressed) {
 // (the ramp and the stick's mickeys, for the TIE Fighter demo's keys too: wcnet_tiedemo_controls.cpp)
 int tie_key_ramp(int was, int dir, bool shift) { return key_ramp(was, dir, shift); }
 int tie_stick_mickeys(double d, int least, int most) { return mickeys(d, least, most); }
+
+int steer_mickeys(double v, int least, double &acc);
+
+// F12 in flight: aim, aim banking, drag, the keyboard, aim, ...
+void tie_controls_next_mode() {
+    g_mode = mode() == MOUSE_POINTER ? MOUSE_POINTER_BANK : mode() == MOUSE_POINTER_BANK ? MOUSE_DRAG
+             : mode() == MOUSE_DRAG ? MOUSE_KEYBOARD : MOUSE_POINTER;
+    g_rx = 0;
+    g_px = g_py = 0;
+    say(kModeLines[g_mode]);
+}
+
+// The pointer without the bank (mode "pointer"): the game's bank into a turn is left out.
+bool tie_controls_aim_only() {
+    return mode() == MOUSE_POINTER;
+}
+
+// A flight begun or ended: the pointer in the middle, nothing owed.
+void tie_controls_aim_reset() {
+    g_accX = g_accY = 0;
+    g_px = g_py = g_rx = 0;
+}
+
+// The gunsight's middle as a share of the picture, where the ring is drawn round (the demo's: its cockpit's).
+void tie_controls_sight(double x, double y) {
+    g_sightX = x;
+    g_sightY = y;
+}
+
+// This frame's stick from the pointer and the page's pad, as mickeys from the game's least to its most across and up
+// and down: the pointer's from nothing (below the game's least, that least now and then: a slow turn for a fine aim, the
+// game's own easing of its stick smoothing it), a pad's from the least while it keeps saying and is pushed (a pad gone
+// still is no turn; one at rest leaves the pointer be).  True: the pointer rolls (the right button held, the aim
+// without the bank): *mx is the roll's, *my nothing.
+bool tie_controls_aim(int leastX, int mostX, int leastY, int mostY, int *mx, int *my) {
+    *mx = *my = 0;
+    bool rolling = false;
+    if (pointer_mode() && g_rightHeld && mode() == MOUSE_POINTER) {
+        *mx = steer_mickeys(pointer_curve(g_rx) * mostX, leastX, g_accX);      // (the right button held: rolling)
+        g_accY = 0;
+        rolling = true;
+    } else if (pointer_mode()) {
+        // (the pointer above the middle climbs: the mouse's forward dives)
+        *mx = steer_mickeys(pointer_curve(g_px) * mostX, leastX, g_accX);
+        *my = steer_mickeys(-pointer_curve(g_py) * mostY, leastY, g_accY);
+    }
+    // (the pad's stick only while it is pushed: a pad at rest says 0 every frame, and the pointer steers on)
+    if (PIC_FullIndex() - g_stickAt < 500 && (g_stickX != 0 || g_stickY != 0)) {
+        if (g_stickX != 0) *mx = mickeys(g_stickX, leastX, mostX);
+        if (g_stickY != 0) *my = mickeys(g_stickY, leastY, mostY);
+        rolling = false;
+    }
+    return rolling;
+}
 
 bool tie_controls_key(int key, bool pressed) {
     if (g_adding || !tie_found()) {
@@ -207,11 +270,7 @@ bool tie_controls_key(int key, bool pressed) {
         return true;
     case KBD_f12:                           // pointer, drag, keyboard, pointer, ...
         if (pressed) {
-            g_mode = mode() == MOUSE_POINTER ? MOUSE_POINTER_BANK : mode() == MOUSE_POINTER_BANK ? MOUSE_DRAG
-                     : mode() == MOUSE_DRAG ? MOUSE_KEYBOARD : MOUSE_POINTER;
-            g_rx = 0;
-            g_px = g_py = 0;
-            say(kModeLines[g_mode]);
+            tie_controls_next_mode();
         }
         return true;
     default:
@@ -220,7 +279,7 @@ bool tie_controls_key(int key, bool pressed) {
 }
 
 bool tie_controls_mouse(float xrel, float yrel) {
-    if (!tie_found() || !tie_in_flight() || mode() == MOUSE_DRAG) {
+    if (!any_flying() || mode() == MOUSE_DRAG) {
         return false;
     }
     if (!pointer_mode()) {
@@ -693,8 +752,7 @@ void tie_controls_frame() {
             g_spaceFire = false;
             Mouse_ButtonReleased(0);
         }
-        g_accX = g_accY = 0;
-        g_px = g_py = g_rx = 0;             // (a flight starts with the pointer in the middle)
+        tie_controls_aim_reset();           // (a flight starts with the pointer in the middle)
         g_stepX = g_stepY = 0;
         g_left = g_right = g_up = g_down = false;
     }
@@ -707,22 +765,9 @@ void tie_controls_frame() {
         g_stepY = key_ramp(g_stepY, (g_down ? 1 : 0) - (g_up ? 1 : 0), shift);
     }
     sample_sight();
-    // this frame's mickeys: the pointer's from nothing (below the game's least, that least now and then: a slow turn
-    // for a fine aim, the game's own easing of its stick smoothing it), a pad's and the arrows' from the least
+    // this frame's mickeys: the pointer's and a pad's (tie_controls_aim), the arrows' from the least
     int mx = 0, my = 0;
-    if (pointer_mode() && g_rightHeld && mode() == MOUSE_POINTER) {
-        mx = steer_mickeys(pointer_curve(g_rx) * 191, 17, g_accX);      // (the right button held: rolling)
-        g_accY = 0;
-    } else if (pointer_mode()) {
-        // (the pointer above the middle climbs: the mouse's forward dives)
-        mx = steer_mickeys(pointer_curve(g_px) * 191, 17, g_accX);
-        my = steer_mickeys(-pointer_curve(g_py) * 127, 33, g_accY);
-    }
-    // the page's pad, while it keeps saying (a pad gone still is no turn)
-    if (PIC_FullIndex() - g_stickAt < 500) {
-        mx = mickeys(g_stickX, 17, 191);
-        my = mickeys(g_stickY, 33, 127);
-    }
+    tie_controls_aim(17, 191, 33, 127, &mx, &my);
     if (g_stepX) {
         mx = mickeys(g_stepX / 9.0, 17, 191);
     }
@@ -754,7 +799,7 @@ int tie_controls_axis(bool across, int delta, int scale, int game) {
 }
 
 bool tie_controls_marker(double *x, double *y) {
-    if (!tie_found() || !tie_in_flight() || !pointer_mode()) {
+    if (!any_flying() || !pointer_mode()) {
         return false;
     }
     // (round the gunsight's middle, where the stick is still: the user, 2026-11-09: "the center of the mouse is the bottom

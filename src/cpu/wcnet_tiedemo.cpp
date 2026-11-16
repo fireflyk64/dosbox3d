@@ -65,6 +65,10 @@ const Place kDamage = { 0x05B3, 0x1CF8 };           // collide_damagecraft
 const Place kUpdateKills = { 0x05B3, 0x2CA8 };      // collide_updatekills
 const Place kFlightOver = { 0x0090, 0x04FB };       // the flight's frames over (the end flag set), its status not yet
                                                     // looked at: the campaign's (wcnet_tiedemo_campaign.cpp)
+const Place kBank = { 0x1411, 0x1708 };             // user_inputforplane's bank into a turn: mov ax,0x58; mul [CD7C];
+const Bit16u kBankDone = 0x1718;                    //   mov bx,ax; mov ax,[bp-42]; sub [bx+67EC],ax (the roll), then
+const Bit8u kBankBytes[] = { 0xB8, 0x58, 0x00, 0xF7, 0x26, 0x7C, 0xCD, 0x8B, 0xD8, 0x8B, 0x46, 0xBE, 0x29, 0x87, 0xEC, 0x67,
+                             0x5E, 0x8B, 0xE5, 0x5D, 0xCB };    // pop si; mov sp,bp; pop bp; retf (kBankDone)
 enum {
     kDgroupPara = 0x421F,
     kStubOff = 0x5C,            // the launch hold's idle: "jmp $" written in the PSP's first FCB (unused by the program)
@@ -572,6 +576,7 @@ void tdm_watch_list(void (*watch)(Bit16u ip)) {
     watch(kLaserHit.off);
     watch(kDamage.off);
     watch(kFlightOver.off);
+    watch(kBank.off);
     watch(kStubOff);
 }
 
@@ -610,6 +615,19 @@ bool tdm_check_hooks(Bit32u ip) {
     }
     if (at(kFlightOver, ip)) {
         at_flight_over();
+        return true;
+    }
+    if (at(kBank, ip)) {
+        // (point to aim: the bank into the turn stepped over, the function's own way out; its bytes checked once)
+        static int known = -1;
+        if (known < 0) {
+            known = 1;
+            const PhysPt a = ((PhysPt)seg_of(kBank) << 4) + kBank.off;
+            for (unsigned k = 0; k < sizeof(kBankBytes); k++) known &= mem_readb(a + k) == kBankBytes[k] ? 1 : 0;
+            wclog(1, "TIE demo: the bank into a turn at %04X:%04X %s", seg_of(kBank), kBank.off,
+                  known ? "found (point to aim leaves it out)" : "NOT as expected: left alone");
+        }
+        if (known && tdm_controls_no_bank()) reg_eip = kBankDone;
         return true;
     }
     if (at(kCreateProjectile, ip)) {

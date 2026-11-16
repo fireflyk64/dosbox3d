@@ -405,7 +405,7 @@ struct ScriptStep {
 static KBD_KEYS script_key(const std::string &name) {
     static const struct { const char *name; KBD_KEYS key; } kNamed[] = {
         { "enter", KBD_enter }, { "esc", KBD_esc }, { "space", KBD_space }, { "tab", KBD_tab },
-        { "f1", KBD_f1 }, { "f2", KBD_f2 }, { "f3", KBD_f3 }, { "f4", KBD_f4 },
+        { "f1", KBD_f1 }, { "f2", KBD_f2 }, { "f3", KBD_f3 }, { "f4", KBD_f4 }, { "f12", KBD_f12 },
         { "backspace", KBD_backspace }, { "up", KBD_up }, { "down", KBD_down }, { "left", KBD_left },
         { "right", KBD_right }, { "comma", KBD_comma }, { "period", KBD_period }, { "equals", KBD_equals },
         { "minus", KBD_minus }, { "backslash", KBD_backslash }, { "kp0", KBD_kp0 }, { "kpperiod", KBD_kpperiod },
@@ -2207,8 +2207,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_link(int what) {
 }
 // Nonzero while a mission's frame loop runs (flying, autopilot included):
 // the page steers with the stick then, and moves a menu pointer otherwise.
+// TIE Fighter's and its demo's flights too (2026-11-15: until then the CD's never counted, so a pad there moved the
+// pointer as in a menu and never reached wc_web_stick: in the joystick's mode it steered nothing).
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_in_flight() {
-    return wc::stick_flying() || wc::rap_in_wave() ? 1 : 0;     // (Raptor's: a wave under way, flown by the arrows)
+    return wc::stick_flying() || wc::rap_in_wave()          // (Raptor's: a wave under way, flown by the arrows)
+           || (wc::tie_found() && wc::tie_in_flight()) || (wc::tdm_found() && wc::tdm_in_flight()) ? 1 : 0;
 }
 // the page's keys and mouse buttons, into DOSBox's keyboard and mouse driver: every game's (RetroVega's too)
 static void web_keys_and_buttons() {
