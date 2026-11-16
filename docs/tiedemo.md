@@ -406,6 +406,10 @@ improved accordingly". The CD port's keyboard (docs/tiefighter.md step 7), fitte
   mickeys (some 80 degrees a second in a T/F, near the CD port's keyboard roll); Shift the whole stick. Nothing up and
   down while rolling (the X-roll's up and down is the throttle).
 * Space fires: the mouse's left button, held while Space is, unless DS:CD98 is set: then Space is the game's.
+* Q is not passed to the game (the user, 2026-11-15: "Q as eject is punishing--can we disable that key"): the game's
+  Q offers the flight's end and its Space confirms it, an eject, and Space is the trigger here, so a Q pressed by
+  mistake and the next shot ended the flight. Measured: Q then Space twice, the flight ended each time; now it flies
+  on and the Space fires.
 * The mouse and a controller as the CD port has them (the user, 2026-11-15: "point to aim mouse mode should be default.
   They can select drag to aim just like on cd version. also joystick should be like cd version too"): the page's
   Flight choice beside Controller, shown for the demo too (`isTie` in web/wc.js), given at the launch

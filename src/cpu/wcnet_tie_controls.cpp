@@ -273,6 +273,11 @@ bool tie_controls_key(int key, bool pressed) {
             tie_controls_next_mode();
         }
         return true;
+    case KBD_q:
+        // Q is the game's end of the flight (the prompt, then Space: ejects), and Space is our trigger: a Q pressed by
+        // mistake (RetroVega's roll key) and the next shot ended the flight (the user: "Q as eject is punishing--can we
+        // disable that key").  Not passed to the game in flight; the room's end of a flight is a pilot down.
+        return true;
     default:
         return false;
     }

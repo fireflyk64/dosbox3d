@@ -801,6 +801,12 @@ move vector, the nine axis words, type).
     (`pstate.space_confirm_action`, 0xEB17E: a warhead's target, the
     flight's end, the reinforcements after Shift+S): then it is the game's.
     Measured: Space held 1.5 s, five shots.
+  * **Q is not passed to the game in flight** (2026-11-15, the user: "Q as
+    eject is punishing--can we disable that key -- I don't see a good reason
+    to have it in this setup"): TIE's Q asks whether to end the flight and
+    Space confirms it, and Space is our trigger, so a Q pressed by mistake
+    (RetroVega's roll key) and the next shot ejected the pilot.  The demo
+    the same (docs/tiedemo.md section 9).
   * **The comms prompt** (0, Enter sends; a tap of Shift opened it too until
     2026-11-10, when the user had it taken out: "Shift is right above the
     keypad and people are losing control all the time") was the Wing

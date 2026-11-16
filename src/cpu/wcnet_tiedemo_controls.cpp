@@ -122,6 +122,7 @@ bool tdm_controls_key(int key, bool pressed) {
     case KBD_f12:                                           // the mouse's mode (the CD port's: aim, banking, drag, keys)
         if (pressed) tie_controls_next_mode();
         return true;
+    case KBD_q: return true;    // (the game's eject, Q then Space, and Space is our trigger: never passed in flight)
     default: return false;
     }
 }
