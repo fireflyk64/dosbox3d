@@ -28,6 +28,12 @@
  *    to the pilot whose hit began it (collide_updatekills).  A craft gone without dying (its exit) is gone everywhere.
  *  * The room's end (the user's rule for the CD version): a pilot down, or the host's flight over, ends everybody's
  *    flight 3 s later (the mission's end flag).
+ *  * Which craft a message names: its identity, the same on every machine (its flight group and the order it arrived
+ *    in within it: a group's craft are made one after another, the same way everywhere), never its object slot.  The
+ *    slots part: a craft dies a frame later on one machine than on another, its explosion holds its slot a while, and
+ *    the next arrival takes another slot there (measured, two machines through the demo's own mission: slots apart
+ *    from 2 minutes on, the craft a guest shot at another craft or none on its owner's machine: the user's "Gold 5"
+ *    that took a hundred hits and never died, and blasts on a pilot's own craft from shots made by the wrong craft).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -81,6 +87,7 @@ enum {
     kExplosionFirst = 0x40,         // a dying craft's slot shows its explosion (move_moveobjects: 0x40 or 0x41)
     kExplosionLast = 0x43,
     kHitsIn = 64,
+    kUnknownToHostMs = 4000,        // a craft here that the host's owners have gone without this long: flown here
 };
 const double kCorrectSpeed = 12288.0;       // a place pulled to its owner's at most this fast, units a second (300 m/s)
 const double kFarBlendS = 10.0;             // a craft our AI flies: its first report blended in over this many seconds,
@@ -150,14 +157,21 @@ struct Net {
     std::vector<TieShot> shotsOut;
     std::vector<TieHit> hitsOut;
     std::vector<TieEvent> eventsOut;
-    Bit8u lastType[kCraftSlots], lastFg[kCraftSlots];
-    int deathSentId[kCraftSlots];
-    TieHit hitsIn[kHitsIn];
+    // each craft slot's identity (kIdent | its flight group << 8 | its arrival in the group), 0 none; the object id
+    // number (+0) it was given to (-1 the slot empty), its type then, when; the arrivals counted in each group
+    Bit32u ident[kCraftSlots];
+    int slotId[kCraftSlots];
+    Bit8u arrivedType[kCraftSlots];
+    double arrivedAt[kCraftSlots];
+    int arrivals[kFgCount];
+    Bit32u deathSent[kCraftSlots];      // the identity whose death was sent (no exit for it then)
+    TieHit hitsIn[kHitsIn];             // (target and shooter as this machine's slots)
+    Bit32u hitsInIdent[kHitsIn];        // ... the target's identity, checked when the hit is applied
     int hitsInNext;
     int killing[kCraftSlots], killer[kCraftSlots];
     // the report's
     unsigned sentCraft, sentNear, sentMid, sentFar, sentBytes, ownerChanges, shotsSent, shotsMade, hitsSent, hitsApplied,
-        damageSkipped, kills, credited, localAiNow, localAiStarts, localAiEnds, localShots, farReports, nearBlends, hitsShown;
+        damageSkipped, kills, credited, localAiNow, localAiStarts, localAiEnds, localShots, farReports, nearBlends, hitsShown, phantoms;
     double farErrSum, farErrMax;
     Net() : host(false), self(-1), seats(2), listener(NULL), atLaunch(false), launchSince(0), launchSerial(0), flownGo(0),
             hostSeed(0), hostSeed2(0), hostMission(0), alone(false), verdictGo(0), verdictNext(0), verdictOver(false), roomEnded(false), soloNext(false), lateSaid(false), frame(0),
@@ -167,7 +181,7 @@ struct Net {
     }
     void zero_counts() {
         sentCraft = sentNear = sentMid = sentFar = sentBytes = ownerChanges = shotsSent = shotsMade = hitsSent = hitsApplied = 0;
-        damageSkipped = kills = credited = localAiNow = localAiStarts = localAiEnds = localShots = farReports = nearBlends = hitsShown = 0;
+        damageSkipped = kills = credited = localAiNow = localAiStarts = localAiEnds = localShots = farReports = nearBlends = hitsShown = phantoms = 0;
         farErrSum = farErrMax = 0;
     }
     // A puppet table and owners for a new flight (a Puppet holds a protobuf message: never memset).
@@ -186,10 +200,14 @@ struct Net {
         for (int o = 0; o < kCraftSlots; o++) {
             owner[o] = 0;
             ownerAt[o] = -1e9;
-            lastType[o] = lastFg[o] = 0;
-            deathSentId[o] = -1;
+            ident[o] = 0;
+            slotId[o] = -1;
+            arrivedType[o] = 0;
+            arrivedAt[o] = 0;
+            deathSent[o] = 0;
             killing[o] = killer[o] = 0;
         }
+        for (int fg = 0; fg < kFgCount; fg++) arrivals[fg] = 0;
         for (int k = 0; k < kMaxSeats; k++) {
             pilotObj[k] = -1;
             pilotTarget[k] = 0xFFFF;
@@ -447,6 +465,68 @@ void hold_ai(int obj) {
     if (craft) mem_writew(craft + kCraftAiCountdown, 0x7FFF);
 }
 
+// --- which craft: the identities -----------------------------------------------------------------------------------
+
+const Bit32u kIdent = 0x10000;      // (above any slot: an older build's slot numbers name nothing here)
+
+// A craft of ours gone from its slot without its death sent (through hyperspace, into a hangar): gone everywhere.
+void departed(int o) {
+    const Bit32u id = g_net->ident[o];
+    if (!id || g_net->deathSent[o] == id || o == tdm_player_object() || owner_of(o) != g_net->self) return;
+    TieEvent e;
+    e.set_kind(4);
+    e.set_obj(id);
+    e.set_type(g_net->arrivedType[o]);
+    e.set_fg((id >> 8) & 0xFF);
+    g_net->eventsOut.push_back(e);
+    wclog(1, "TIE demo: obj %d (flight group %u, type %u) of ours gone: sent", o, (id >> 8) & 0xFF, g_net->arrivedType[o]);
+}
+
+// Each craft slot as the game has it now: a new craft there (another object id) is given its identity, and nothing of
+// the slot's last craft is kept (its owner: the host's until the host says; its report; a kill under way).  Only where
+// the game is between its own steps (the frame's top, a hooked call's entry), never from the clock's tick: a craft
+// half made has its type and not yet its flight group.
+void scan_idents() {
+    const double now = PIC_FullIndex();
+    for (int o = 0; o < kCraftSlots; o++) {
+        const Bit8u type = o8(o, 4);
+        const int id = type ? (int)o16(o, 0) : -1;
+        if (id == g_net->slotId[o]) continue;   // (the same object: a craft dying keeps its id through its explosion)
+        departed(o);
+        g_net->slotId[o] = id;
+        g_net->ident[o] = 0;
+        g_net->owner[o] = 0;
+        g_net->ownerAt[o] = -1e9;
+        Puppet &p = g_net->puppets[o];
+        p.used = p.fresh = p.localAi = false;
+        p.owner = -1;
+        p.state.Clear();
+        p.at = p.prevAt = 0;
+        p.ex = p.ey = p.ez = p.blendTicks = 0;
+        p.localHitAt = -1e9;
+        g_net->killing[o] = g_net->killer[o] = 0;
+        const int fg = type ? o8(o, 0x35) : kFgCount;
+        if (!type || o8(o, 2) != 0 || (type >= kExplosionFirst && type <= kExplosionLast) || fg >= kFgCount) continue;
+        g_net->ident[o] = kIdent | (Bit32u)fg << 8 | (Bit32u)(g_net->arrivals[fg]++ & 0xFF);
+        g_net->arrivedType[o] = type;
+        g_net->arrivedAt[o] = now;
+    }
+}
+
+// A craft named for the others: its identity (0xFFFF: not a craft, or none given yet).
+Bit32u wire(int o) {
+    return o >= 0 && o < kCraftSlots && g_net->ident[o] ? g_net->ident[o] : 0xFFFF;
+}
+
+// A craft another machine names: our slot for it (-1: none here, or its slot taken by another since the last scan).
+int local(Bit32u id) {
+    if ((id & 0xFFFF0000u) != kIdent) return -1;
+    for (int o = 0; o < kCraftSlots; o++) {
+        if (g_net->ident[o] == id) return o8(o, 4) && (int)o16(o, 0) == g_net->slotId[o] ? o : -1;
+    }
+    return -1;
+}
+
 bool someone_near(int obj, double reach) {
     const double now = PIC_FullIndex();
     for (int k = 0; k < kMaxSeats; k++) {
@@ -463,7 +543,7 @@ bool others_flying() {
 }
 
 void fill_craft(TieCraft *c, int obj) {
-    c->set_obj((Bit32u)obj);
+    c->set_obj(wire(obj));
     c->set_owner((Bit32u)g_net->self);
     c->set_type(o8(obj, 4));
     c->set_x(o32(obj, 6));
@@ -481,7 +561,7 @@ void fill_craft(TieCraft *c, int obj) {
     c->set_axes(std::string(axes, sizeof(axes)));
     if (obj < kCraftSlots && dying(obj)) {
         c->set_dying(true);
-        if (g_net->killer[obj]) c->set_killer((Bit32u)(g_net->killer[obj] - 1));
+        if (g_net->killer[obj]) c->set_killer(wire(g_net->killer[obj] - 1));
     } else if (obj < kCraftSlots) {
         g_net->killer[obj] = 0;
     }
@@ -608,8 +688,8 @@ void shot_made(int tag, Bit16u ax) {
     }
 }
 void make_shot(const TieShot &shot, int owner) {
-    const int obj = (int)shot.obj();
-    if (obj < 0 || obj >= kCraftSlots || owner_of(obj) != owner || !is_craft(obj) || o16(obj, 0x2C) != 0) return;
+    const int obj = local(shot.obj());
+    if (obj < 0 || owner_of(obj) != owner || !is_craft(obj) || o16(obj, 0x2C) != 0) return;
     tdm_queue_call(TDM_CREATE_PROJECTILE, 3, (Bit16u)obj, (Bit16u)shot.hardpoint(), (Bit16u)shot.type(), 0, NULL, shot_made, obj);
 }
 
@@ -619,6 +699,7 @@ int g_standin = -1;
 bool hit_before(int tag, Bit16u *args) {
     const TieHit &h = g_net->hitsIn[tag];
     g_standin = -1;
+    if (g_net->ident[h.target()] != g_net->hitsInIdent[tag]) return false;     // (another craft in its slot since)
     for (int s = kCraftSlots; s < kObjectCount; s++) {
         if (o8(s, 4) == 0) {
             g_standin = s;
@@ -645,7 +726,7 @@ bool hit_before(int tag, Bit16u *args) {
     wo16(b, 0x2A, (Bit16u)h.bolt_radius());
     wo16(b, 0x2E, 1);                               // age
     wo16(b, 0x30, (Bit16u)h.shooter());
-    wo8(b, 0x33, o8((int)h.shooter() < kObjectCount ? (int)h.shooter() : 0, 0x33));    // the shooter's side
+    wo8(b, 0x33, o8((int)h.shooter(), 0x33));      // the shooter's side
     wo16(b, 0x54, (Bit16u)(kWarheads + 4 * (b - kCraftSlots)));
     wo16(b, 0x56, (Bit16u)(tdm_ds(0) >> 4));
     args[0] = (Bit16u)b;
@@ -671,11 +752,18 @@ void hit_done(int tag, Bit16u ax) {
     }
 }
 void take_hit(const TieHit &hit) {
-    const int target = (int)hit.target();
-    if (!is_craft(target) || !mine(target) || hit.shooter() >= (Bit32u)kObjectCount) return;
+    const int target = local(hit.target()), shooter = local(hit.shooter());
+    if (target < 0 || !is_craft(target) || !mine(target)) return;
+    if (shooter < 0) {
+        wclog(2, "TIE demo: a hit on obj %d by a craft not here (%05X): left", target, hit.shooter());
+        return;
+    }
     const int tag = g_net->hitsInNext;
     g_net->hitsInNext = (g_net->hitsInNext + 1) % kHitsIn;
     g_net->hitsIn[tag] = hit;
+    g_net->hitsIn[tag].set_target((Bit32u)target);      // (this machine's slots from here on)
+    g_net->hitsIn[tag].set_shooter((Bit32u)shooter);
+    g_net->hitsInIdent[tag] = hit.target();
     tdm_queue_call(TDM_LASER_HIT, 3, 0, (Bit16u)target, (Bit16u)hit.offset(), 0, hit_before, hit_done, tag);
 }
 
@@ -719,55 +807,35 @@ void begin_kill(int obj, int killer) {
     tdm_queue_call(TDM_DAMAGE, 4, (Bit16u)obj, 0xFFFF, 0xFFFF, 0, kill_before, kill_done, obj);
 }
 
-// Our craft's deaths (sent once, reliably) and exits (a craft of ours gone without dying: gone everywhere).
+// Our craft's deaths, sent once, reliably (their exits: departed, at the scan).
 void watch_events() {
+    const int own = tdm_player_object();
     for (int o = 0; o < kCraftSlots; o++) {
-        const Bit8u type = o8(o, 4);
-        const bool there = type != 0;
-        const int id = o16(o, 0);
-        const bool wasCraft = g_net->lastType[o] && (g_net->lastType[o] < kExplosionFirst || g_net->lastType[o] > kExplosionLast);
-        if (there && dying(o) && mine(o) && o != tdm_player_object() && g_net->deathSentId[o] != id && wasCraft) {
-            g_net->deathSentId[o] = id;
-            TieEvent e;
-            e.set_kind(3);
-            e.set_obj((Bit32u)o);
-            e.set_type(g_net->lastType[o]);
-            e.set_fg(g_net->lastFg[o]);
-            if (g_net->killer[o]) e.set_killer((Bit32u)(g_net->killer[o] - 1));
-            g_net->eventsOut.push_back(e);
-            wclog(2, "TIE demo: obj %d (type %u) of ours dying: sent", o, g_net->lastType[o]);
-        }
-        if (!there && wasCraft && g_net->deathSentId[o] != id && owner_of(o) == g_net->self && o != tdm_player_object()) {
-            TieEvent e;
-            e.set_kind(4);
-            e.set_obj((Bit32u)o);
-            e.set_type(g_net->lastType[o]);
-            e.set_fg(g_net->lastFg[o]);
-            g_net->eventsOut.push_back(e);
-            wclog(1, "TIE demo: obj %d (type %u) of ours gone: sent", o, g_net->lastType[o]);
-        }
-        if (there && (type < kExplosionFirst || type > kExplosionLast)) {
-            g_net->lastType[o] = type;
-            g_net->lastFg[o] = o8(o, 0x35);
-        } else if (!there) {
-            g_net->lastType[o] = 0;
-        }
+        const Bit32u id = g_net->ident[o];
+        if (!id || o == own || g_net->deathSent[o] == id || !o8(o, 4) || !dying(o) || !mine(o)) continue;
+        g_net->deathSent[o] = id;
+        TieEvent e;
+        e.set_kind(3);
+        e.set_obj(id);
+        e.set_type(g_net->arrivedType[o]);
+        e.set_fg((id >> 8) & 0xFF);
+        if (g_net->killer[o]) e.set_killer(wire(g_net->killer[o] - 1));
+        g_net->eventsOut.push_back(e);
+        wclog(2, "TIE demo: obj %d (flight group %u, type %u) of ours dying: sent", o, (id >> 8) & 0xFF, g_net->arrivedType[o]);
     }
 }
 
 void take_event(const TieEvent &e, int from) {
-    if (e.obj() >= (Bit32u)kCraftSlots) return;
-    const int o = (int)e.obj();
-    if (o8(o, 4) != e.type() || o8(o, 0x35) != e.fg()) {
-        wclog(1, "TIE demo: obj %d's %s on pilot %d's machine: not the same craft here (type %u, flight group %u)", o,
-              e.kind() == 3 ? "death" : "exit", from + 1, o8(o, 4), o8(o, 0x35));
+    const int o = local(e.obj());
+    if (o < 0) {
+        wclog(2, "TIE demo: a %s on pilot %d's machine of a craft not here (flight group %u, type %u)", e.kind() == 3 ? "death" : "exit",
+              from + 1, e.fg(), e.type());
         return;
     }
     if (e.kind() == 3) {
-        begin_kill(o, e.has_killer() ? (int)e.killer() : -1);
+        begin_kill(o, e.has_killer() ? local(e.killer()) : -1);
     } else if (e.kind() == 4 && !mine(o)) {
         wo8(o, 4, 0);
-        g_net->lastType[o] = 0;
         wclog(1, "TIE demo: obj %d gone as on pilot %d's machine", o, from + 1);
     }
 }
@@ -777,19 +845,38 @@ void take_event(const TieEvent &e, int from) {
 void send_owners() {
     NetworkMessage msg;
     TieOwners *t = msg.mutable_tie_owners();
-    for (int o = 0; o < kCraftSlots; o++) t->add_owner((Bit32u)g_net->owner[o]);
+    for (int o = 0; o < kCraftSlots; o++) {
+        if (!is_craft(o) || !g_net->ident[o]) continue;
+        t->add_owner((Bit32u)g_net->owner[o]);
+        t->add_craft(g_net->ident[o]);
+    }
     t->set_mission(kMissionName);
     send_all(msg, false);
 }
 
+// The host's table, by the craft's identities.  A craft here that the host's table has gone without for a while (the
+// host has none such: arrived here only, or gone there unseen here) is ours to fly: held for an owner who never reports
+// it, it would fly on straight forever.
 void take_owners(const TieOwners &t) {
-    if (!tdm_in_flight()) return;
+    if (!tdm_in_flight() || t.craft_size() != t.owner_size()) return;
     const int own = tdm_player_object();
-    for (int o = 0; o < kCraftSlots && o < t.owner_size(); o++) {
-        const int now = (int)t.owner(o);
-        if (o == own || now == g_net->owner[o]) continue;
-        if (now == g_net->self) release_ai(o);
-        g_net->owner[o] = now;
+    const double now = PIC_FullIndex();
+    bool named[kCraftSlots] = { false };
+    for (int i = 0; i < t.craft_size(); i++) {
+        const int o = local(t.craft(i));
+        if (o < 0) continue;
+        named[o] = true;
+        const int who = (int)t.owner(i);
+        if (o == own || who == g_net->owner[o]) continue;
+        if (who == g_net->self) release_ai(o);
+        g_net->owner[o] = who;
+    }
+    for (int o = 0; o < kCraftSlots; o++) {
+        if (named[o] || o == own || !g_net->ident[o] || !is_craft(o) || g_net->owner[o] == g_net->self || pilot_flies(o) ||
+            now - g_net->arrivedAt[o] < kUnknownToHostMs) continue;
+        g_net->owner[o] = g_net->self;
+        release_ai(o);
+        wclog(1, "TIE demo: obj %d (flight group %u) not in the host's game: flown here", o, (g_net->ident[o] >> 8) & 0xFF);
     }
 }
 
@@ -873,27 +960,29 @@ void take_frame(Peer *from, const TieFrame &f) {
     const bool hostEnded = owner == 0 && !g_net->host && from->flying && !f.flying() && from->player == 0;
     if (!g_net->host || owner == from->player) from->flying = f.flying();
     if (hostEnded) room_end(0, "'s flight is over");
-    if (f.flying() && f.has_own() && f.own() < (Bit32u)kCraftSlots && tdm_in_flight()) {
-        g_net->pilotObj[owner] = (int)f.own();
-        g_net->pilotTarget[owner] = f.has_target() ? (int)f.target() : 0xFFFF;
+    const int theirs = f.has_own() && tdm_in_flight() ? local(f.own()) : -1;   // (the pilot's own craft, here)
+    if (f.flying() && theirs >= 0) {
+        g_net->pilotObj[owner] = theirs;
+        const int target = f.has_target() ? local(f.target()) : -1;
+        g_net->pilotTarget[owner] = target >= 0 ? target : 0xFFFF;
         g_net->pilotSeenAt[owner] = PIC_FullIndex();
-        g_net->owner[f.own()] = owner;      // (a pilot's own craft is its own)
+        g_net->owner[theirs] = owner;       // (a pilot's own craft is its own)
     }
     for (int i = 0; i < f.craft_size() && tdm_in_flight(); i++) {
         const TieCraft &c = f.craft(i);
-        if (c.obj() >= (Bit32u)kObjectCount) continue;
-        if (c.obj() < (Bit32u)kCraftSlots && g_net->owner[c.obj()] != owner && !(f.has_own() && c.obj() == f.own())) continue;
-        Puppet &p = g_net->puppets[c.obj()];
+        const int o = local(c.obj());
+        if (o < 0 || (g_net->owner[o] != owner && o != theirs)) continue;
+        Puppet &p = g_net->puppets[o];
         p.used = true;
         p.owner = owner;
         p.fresh = true;
         p.state = c;
+        p.state.set_obj((Bit32u)o);         // (this machine's slot from here on)
         p.prevAt = p.at;
         p.at = PIC_FullIndex();
-        const bool same = c.type() == o8((int)c.obj(), 4);
-        if (c.dying() && c.obj() < (Bit32u)kCraftSlots && (same || (f.has_own() && c.obj() == f.own()))) {
-            begin_kill((int)c.obj(), c.has_killer() ? (int)c.killer() : -1);
-            if (f.has_own() && c.obj() == f.own()) room_end(owner, " is down");
+        if (c.dying() && (c.type() == o8(o, 4) || o == theirs)) {
+            begin_kill(o, c.has_killer() ? local(c.killer()) : -1);
+            if (o == theirs) room_end(owner, " is down");
         }
     }
     make_shot_list(f, owner);
@@ -1070,13 +1159,13 @@ void report_frame(double now) {
         snprintf(one, sizeof(one), " mine obj %d: %d %d %d speed %d type %u;", o, o32(o, 6), o32(o, 0xA), o32(o, 0xE), (Bit16s)o16(o, 0x26), o8(o, 4));
         line += one;
     }
-    char sums[560];
+    char sums[640];
     snprintf(sums, sizeof(sums), " %d craft, owners %d/%d/%d; sent %u craft (%u near, %u mid, %u far) in %u bytes, %u owner changes; guns: %u shots"
              " sent, %u made, %u hits sent, %u applied, %u damage skipped, %u kills, %u credited; far: %u flown by our AI, %u reports pulled"
-             " in, %u near ones blended, %u hits of ours shown;", craft, owned[0], owned[1], owned[2], g_net->sentCraft, g_net->sentNear,
+             " in, %u near ones blended, %u hits of ours shown, %u others' shots passed through ours;", craft, owned[0], owned[1], owned[2], g_net->sentCraft, g_net->sentNear,
              g_net->sentMid, g_net->sentFar, g_net->sentBytes, g_net->ownerChanges, g_net->shotsSent, g_net->shotsMade, g_net->hitsSent,
              g_net->hitsApplied, g_net->damageSkipped, g_net->kills, g_net->credited, g_net->localAiNow, g_net->farReports, g_net->nearBlends,
-             g_net->hitsShown);
+             g_net->hitsShown, g_net->phantoms);
     g_net->zero_counts();
     wclog(2, "TIE demo: %.1fs: frame %llu as pilot %d (%.1f ms a frame);%s%s", now / 1000.0, (unsigned long long)g_net->frame,
           g_net->self + 1, tdm_frame_ms(), sums, line.c_str());
@@ -1110,6 +1199,10 @@ void tdm_session_tick() {
 }
 
 // --- the campaign's (wcnet_tiedemo_campaign.cpp) -------------------------------------------------------------------
+
+unsigned tdm_session_ident(int obj) {
+    return g_net && obj >= 0 && obj < kCraftSlots && g_net->ident[obj] ? g_net->ident[obj] & 0xFFFF : 0;
+}
 
 TdmRole tdm_session_role() {
     if (!g_net || g_net->self < 0 || g_net->alone) return TDM_SOLO;
@@ -1257,14 +1350,16 @@ void tdm_session_before_create() {
 
 void tdm_session_frame() {
     if (!g_net || g_net->self < 0 || !tdm_in_flight()) return;
+    scan_idents();          // (before the messages: the craft that arrived this frame named)
     poll_peers();
     room_end_frame();
     report_frame(PIC_FullIndex());
     const int own = tdm_player_object();
-    if (own < 0 || own >= kObjectCount) return;
+    if (own < 0 || own >= kCraftSlots) return;
+    scan_idents();
     const double now = PIC_FullIndex();
     decide_owners(now);
-    if (own < kCraftSlots) g_net->owner[own] = g_net->self;
+    g_net->owner[own] = g_net->self;
     NetworkMessage msg;
     TieFrame *f = msg.mutable_tie_frame();
     f->set_player((Bit32u)g_net->self);
@@ -1272,8 +1367,8 @@ void tdm_session_frame() {
     f->set_ticks(ds16(kFrameticks));
     f->set_flying(true);
     f->set_mission(kMissionName);
-    f->set_own((Bit32u)own);
-    f->set_target(ds16(kTarget));
+    f->set_own(wire(own));
+    f->set_target(wire(ds16(kTarget)));
     fill_craft(f->add_craft(), own);
     g_net->sentCraft++;
     int othersSeats[kMaxSeats], n = 0;
@@ -1384,9 +1479,10 @@ void tdm_session_shot() {
         tdm_skip_call(0xFFFF);      // (no slot: its callers expect that)
         return;
     }
-    if (g_net->shotsOut.size() < 32 && someone_near(shooter, kShotReach)) {
+    scan_idents();
+    if (g_net->shotsOut.size() < 32 && wire(shooter) != 0xFFFF && someone_near(shooter, kShotReach)) {
         TieShot shot;
-        shot.set_obj((Bit32u)shooter);
+        shot.set_obj(wire(shooter));
         shot.set_hardpoint(tdm_arg(1));
         shot.set_type(tdm_arg(2));
         g_net->shotsOut.push_back(shot);
@@ -1400,14 +1496,24 @@ void tdm_session_laser_hit() {
     const int bolt = tdm_arg(0), target = tdm_arg(1);
     if (bolt < kCraftSlots || bolt >= kObjectCount || !is_craft(target)) return;
     const int shooter = o16(bolt, 0x30);
+    if (!mine(shooter) && mine(target)) {
+        // (a shot made here from another machine's report, on a craft we fly: whether it hit is its shooter's machine's
+        // to say, and its word (take_hit) brings the hit and its flash.  Here it passes: no flash on our craft for a
+        // hit that never was, the user's "blast animations on my ship ... they didn't originate from anywhere")
+        g_net->phantoms++;
+        tdm_skip_call(0);
+        return;
+    }
     if (!mine(shooter) || mine(target) || g_net->hitsOut.size() >= 32) return;
+    scan_idents();
+    if (wire(target) == 0xFFFF || wire(shooter) == 0xFFFF) return;
     TieHit h;
-    h.set_target((Bit32u)target);
+    h.set_target(wire(target));
     h.set_offset(tdm_arg(2));
     h.set_bolt_type(o8(bolt, 4));
     h.set_bolt_genus(o8(bolt, 3));
     h.set_bolt_radius(o16(bolt, 0x2A));
-    h.set_shooter((Bit32u)shooter);
+    h.set_shooter(wire(shooter));
     h.set_x(o32(bolt, 6));
     h.set_y(o32(bolt, 0xA));
     h.set_z(o32(bolt, 0xE));

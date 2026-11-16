@@ -195,7 +195,7 @@ struct TieNet {
     int killer[kCraftSlots];    // a craft of ours: the shooter whose hit, applied here, began its death, + 1 (0: none)
     unsigned shotsSent, shotsMade, hitsSent, hitsApplied, damageSkipped, kills, credited;
     // far craft and hits shown here (the report)
-    unsigned localAiNow = 0, localAiStarts = 0, localAiEnds = 0, localShots = 0, farReports = 0, nearBlends = 0, hitsShown = 0;
+    unsigned localAiNow = 0, localAiStarts = 0, localAiEnds = 0, localShots = 0, farReports = 0, nearBlends = 0, hitsShown = 0, phantoms = 0;
     double farErrSum = 0, farErrMax = 0;
     TieNet() : host(false), self(-1), seats(2), listener(NULL), frame(0), lastReliableAt(0), playerFg(kPlayerFgNone),
                hostCraft(1), wasFlying(false), sentScene(-2), sentFlying(false), sentAt(-1e9), decidedAt(-1e9), ownersSentAt(-1e9),
@@ -1598,12 +1598,14 @@ void report_frame(double now) {
                  g_net->shotsMade, g_net->hitsSent, g_net->hitsApplied, g_net->damageSkipped, g_net->kills, g_net->credited);
         g_net->sentCraft = g_net->sentNear = g_net->sentMid = g_net->sentFar = g_net->sentBytes = g_net->ownerChanges = 0;
         g_net->shotsSent = g_net->shotsMade = g_net->hitsSent = g_net->hitsApplied = g_net->damageSkipped = g_net->kills = g_net->credited = 0;
-        char far[240];
+        char far[300];
         snprintf(far, sizeof(far), " far: %u flown by our AI (%u began, %u ended), %u of their shots here, %u reports pulled in (error mean %.0f, worst "
-                 "%.0f), %u near ones blended; %u hits of ours shown here;", g_net->localAiNow, g_net->localAiStarts, g_net->localAiEnds,
-                 g_net->localShots, g_net->farReports, g_net->farReports ? g_net->farErrSum / g_net->farReports : 0.0, g_net->farErrMax,
-                 g_net->nearBlends, g_net->hitsShown);
+                 "%.0f), %u near ones blended; %u hits of ours shown here, %u others' shots passed through ours;", g_net->localAiNow,
+                 g_net->localAiStarts, g_net->localAiEnds, g_net->localShots, g_net->farReports,
+                 g_net->farReports ? g_net->farErrSum / g_net->farReports : 0.0, g_net->farErrMax, g_net->nearBlends, g_net->hitsShown,
+                 g_net->phantoms);
         g_net->localAiStarts = g_net->localAiEnds = g_net->localShots = g_net->farReports = g_net->nearBlends = g_net->hitsShown = 0;
+        g_net->phantoms = 0;
         g_net->farErrSum = g_net->farErrMax = 0;
         wclog(2, "TIE: wall %.0f frame %llu as pilot %d, %u peers;%s%s%s", wall_ms(), (unsigned long long)g_net->frame, g_net->self + 1,
               (unsigned)g_net->peers.size(), sums, far, line.c_str());
@@ -1951,7 +1953,7 @@ void tie_session_shot() {
 
 // collide_laserhitcraft(eax bolt, edx target, ebx offset).  A hit by a bolt of a craft we fly on a craft another machine
 // flies is that machine's to apply: sent with our next frame (the flash still shows here; the damage is skipped at
-// collide_damagecraft).
+// collide_damagecraft).  A bolt of another machine's craft on a craft we fly passes (its machine says if it hit).
 void tie_session_laser_hit() {
     if (!g_net || g_net->self < 0 || !tie_in_flight() || tie_in_call()) {
         return;
@@ -1962,6 +1964,14 @@ void tie_session_laser_hit() {
     }
     const Bit32u b = obj_base(bolt);
     const int shooter = tie_r16(b + 0x30);
+    if (!mine(shooter) && mine(target)) {
+        // (a shot made here from another machine's report, on a craft we fly: whether it hit is its shooter's machine's
+        // to say, and its word (take_hit) brings the hit and its flash.  Here it passes: no flash on our craft for a hit
+        // that never was, the user: "blast animations on my ship ... they didn't originate from anywhere")
+        g_net->phantoms++;
+        tie_skip_call(0);
+        return;
+    }
     if (!mine(shooter) || mine(target) || g_net->hitsOut.size() >= 32) {
         return;
     }

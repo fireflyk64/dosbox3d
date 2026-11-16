@@ -696,6 +696,15 @@ move vector, the nine axis words, type).
   `laserxold..`, 0xEAB90 to 0xEABD8).  `collide_damagecraft`'s entry: this
   game damages only the craft it flies, and from a bolt only one whose
   shooter it flies (collisions included); its own calls go through.
+  Since 2026-11-15 a bolt made from another machine's report that hits a
+  craft this machine flies passes at `collide_laserhitcraft`'s entry (no
+  flash, no hit: the shooter's machine says whether it hit, and its word
+  brings the flash with the hit).  Before, each such bolt flashed on our
+  craft with its damage skipped, hits its machine never saw among them (the
+  user, of the demo: "I would get randomly blast animations on my ship here
+  and there--they weren't actually hurting me").  The demo's session also
+  names craft by identity now, not slot (docs/tiedemo.md section 5); the
+  CD's still by slot, kept in step by its mission events.
 * **Deaths.**  A craft whose death timer runs (+0x2C) is reported dying;
   the others kill their copy with the game's own damage (a collision's,
   called until its death is under way, at most 12 times), so its explosion

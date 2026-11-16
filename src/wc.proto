@@ -416,10 +416,12 @@ message TieEvent {
     optional uint32 exit = 6;       // (4) 3 hyperspace, 4 a hangar (score_craftexitscoring's kind)
 }
 // The host's word on who flies each craft (object slots 0..31): a seat each, 0 the host's.  Sent when it changes and
-// every 2 s, reliably.
+// every 2 s, reliably.  The TIE Fighter demo's names each craft in `craft` (owner[i] flies craft[i]): its identity, not
+// its slot (wcnet_tiedemo_session.cpp: two machines' slots part as craft die and arrive a frame apart).
 message TieOwners {
     repeated uint32 owner = 1;
     optional string mission = 2;
+    repeated uint32 craft = 3;
 }
 // Where a pilot is (TIE Fighter): its front end's scene (OpenTIE's SCENE_*), whether it flies, and the mission its
 // front end launches (the mission file's name).  Sent when it changes and every few seconds; the host relays a guest's

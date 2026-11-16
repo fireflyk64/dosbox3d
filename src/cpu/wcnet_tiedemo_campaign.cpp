@@ -459,7 +459,8 @@ bool tdm_campaign_script_item(const std::string &item, double t) {
                 const Bit16u slot = (Bit16u)(cd + kWeaponSlots + k * kWeaponSlotSize);
                 if (ds8(slot) >= 0x18) warheads += mem_readw(tdm_ds((Bit16u)(slot + 2)));
             }
-            snprintf(b, sizeof(b), " [%d fg%u t%u %.2fkm (%.2f %.2f %.2f) v%d hull %u/%u sh %d wh %d%s g%u]", o, fg, o8(o, 4), dkm,
+            const unsigned id = tdm_session_ident(o);
+            snprintf(b, sizeof(b), " [%d id%u.%u fg%u t%u %.2fkm (%.2f %.2f %.2f) v%d hull %u/%u sh %d wh %d%s g%u]", o, id >> 8, id & 0xFF, fg, o8(o, 4), dkm,
                      (Bit32s)mem_readd(tdm_obj(o) + 6) / kUnitsPerKm, (Bit32s)mem_readd(tdm_obj(o) + 10) / kUnitsPerKm,
                      (Bit32s)mem_readd(tdm_obj(o) + 14) / kUnitsPerKm, (Bit16s)o16(o, 0x26), hull, hullMax, shields,
                      warheads, alive_craft(o) ? "" : " dying", ds8((Bit16u)(kFgStatus + fg * kFgStatusSize)));

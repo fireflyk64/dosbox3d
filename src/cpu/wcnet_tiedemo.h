@@ -103,6 +103,8 @@ void tdm_session_flight_ended();
 // ... for the campaign: who decides (a guest follows the host's go and verdicts; solo and host decide)
 enum TdmRole { TDM_SOLO, TDM_HOST, TDM_GUEST };
 TdmRole tdm_session_role();
+// A craft slot's identity in the room (its flight group << 8 | its arrival in the group; 0 none): the aids'.
+unsigned tdm_session_ident(int obj);
 int tdm_session_launch_mission();       // the mission the host's latest go launched
 bool tdm_session_room_ended();          // this flight ended by the room (a pilot down, the host's flight over)
 void tdm_session_verdict(int next, bool over);          // the host's verdict on its flight, sent

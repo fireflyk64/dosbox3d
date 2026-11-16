@@ -223,6 +223,32 @@ TieOwners. Only the room's hello and the launch are the demo's own (TdmHello, Td
   everywhere.
 * **The room's end** (the user's rule for the CD version): a pilot down, or the host's flight over, ends everybody's
   flight 3 s later, through the mission's end flag.
+* **Which craft a message names: its identity, not its slot** (2026-11-15, the user: "I was chasing Gold 5 and shooting
+  it. It just kept running forward and wouldn't be damaged... I must have hit it a hundred times or two", and "I would
+  get randomly blast animations on my ship here and there--they weren't actually hurting me but they didn't originate
+  from anywhere--seems like some kind of desync").
+  * The slots part as the mission goes on: a craft dies a frame or two later on one machine, its explosion holds its
+    slot a while, and the next arrival takes another slot there. Measured, two machines through the demo's own mission
+    (the rebels destroyed as they came, `!tdmcraft` on both every 20 s): the same from the start, apart from 2
+    minutes on (BETA 3 in slot 6 on the guest, 8 on the host, for minutes; GOLD 5 in a slot the host had empty).
+    Every message named craft by slot, so a hit on GOLD 5 went to another craft or to none on its owner's machine
+    (never applied: it took hits forever, shown at once here and never fatal), its owner's reports went to another
+    craft, and the shots its machine made came out of whatever held that slot here, their flashes on our craft.
+  * Now each craft has an identity, its flight group and the order of its arrival in it (a group's craft are made one
+    after another, the same way everywhere): `kIdent | fg << 8 | arrival`. Every message names craft by it (TieCraft,
+    TieShot, TieHit, TieEvent, the frame's own craft and target, the owners' table: TieOwners.craft beside .owner),
+    each machine finding its own slot (`local`). The slots are scanned at the frame's top and at a hooked call's entry
+    (`scan_idents`, never from the clock's tick: a craft half made has its type and not yet its group); a new object in
+    a slot is a new craft, nothing of the last one's kept there (its owner the host's until the host says, its
+    report, a kill under way); one gone from its slot without its death sent is an exit, sent with its identity.
+  * A craft here that the host's table has gone without for 4 s (arrived only here, or gone there unseen here) is
+    flown here: held for an owner who never reports it, it would fly on straight forever.
+  * A bolt made here from another machine's report that hits a craft we fly passes: no flash, no hit (its shooter's
+    machine says whether it hit, and its word brings the hit and its flash). Before, every such bolt flashed on our
+    craft (the damage skipped), hits the shooter's machine never saw among them. The CD's session the same.
+  * Measured after (the same run, by identity): every craft on one machine was on the other, the same identity within
+    0.07 km of its owner's place near the pilots (up to 1.8 km for the far craft our AI flies between sparse reports),
+    with the slots apart as before.
 * **Left out of the CD's.** The front end (the demo has none), the mission picker, the pairings, the radio voices, and
   the inspection and reinforcement events (not in this mission).
 
