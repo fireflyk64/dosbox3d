@@ -2242,6 +2242,13 @@ async function start(fromGesture) {
     setInterval(keepSaves, 4000);
     setInterval(showPerformance, 1000);
     for (const ev of ["pagehide", "visibilitychange"]) window.addEventListener(ev, keepSaves);
+    // DOOM's own lockstep waits for every player's moves, for as long as it takes: a page that goes (closed, reloaded,
+    // gone elsewhere) leaves the room as it goes, which the others' pages hear at once, and their games are told as
+    // DOOM tells it ("Player 2 left the game") and play on.  Without this they stand still until the link is found
+    // dead, some 16 s (measured).  Only DOOM's rooms: the other games keep a reloading pilot's seat.
+    window.addEventListener("pagehide", () => {
+      if (isDoom() && lobby.game && !soloRoom()) { try { lobby.game.close(); } catch (e) { /* gone already */ } }
+    });
     $("fullscreen").hidden = !(screenEl.requestFullscreen || screenEl.webkitRequestFullscreen);   // (an iPhone has none)
     touch.show(true);
     if (fromGesture && $("fullStart").checked) goFullscreen();

@@ -37,6 +37,8 @@
 #include "dos_system.h"
 #include "pic.h"
 
+extern std::string incoming_text;   // the line the emulator draws over the picture (sdlmain.cpp)
+
 namespace wc {
 
 namespace {
@@ -68,6 +70,9 @@ Bit32u g_sent = 0, g_got = 0, g_asked = 0;
 Bit32u g_tics = 0, g_ticsOf[kDoomMaxPlayers];
 double g_startedAt = 0, g_loggedAt = 0;
 Bit32u g_ticsLogged = 0;
+// when each player's game was last heard (0: not yet), and the line said while one is waited for
+double g_heardAt[kDoomMaxPlayers], g_waitCheckedAt = 0;
+std::string g_waitLine;
 
 void say(const char *fmt, ...) {
     char text[400];
@@ -218,6 +223,8 @@ void run_net() {
     RealSetVec(kVector, CALLBACK_RealPointer(g_cbNet));
     g_sent = g_got = g_asked = g_tics = g_ticsLogged = 0;
     memset(g_ticsOf, 0, sizeof(g_ticsOf));
+    for (int p = 0; p < kDoomMaxPlayers; p++) g_heardAt[p] = 0;
+    g_waitLine.clear();
     g_startedAt = g_loggedAt = PIC_FullIndex();
     std::string who;
     for (int p = 0; p < g_dgame.players; p++) {
@@ -262,6 +269,8 @@ Bit16u launcher_poll(Bit16u key) {
 
 void launcher_ended(Bit16u error) {
     if (g_dstage == ST_NET) {
+        if (!g_waitLine.empty() && incoming_text == g_waitLine) incoming_text.clear();
+        g_waitLine.clear();
         RealSetVec(kVector, g_oldVec);
         doom_session_game_over();
         wclog(1, "DOOM: the network game is over: %u packets sent, %u got, %u tics made", (unsigned)g_sent, (unsigned)g_got, (unsigned)g_tics);
@@ -315,9 +324,35 @@ Bitu net_callback() {
         mem_writew(dc + DC_DATALENGTH, (Bit16u)len);
         mem_writew(dc + DC_REMOTENODE, (Bit16u)g_playerNode[player]);
         count_tics(&g_ticsOf[player], data, len);
+        if (!doom_session_gone(player)) g_heardAt[player] = PIC_FullIndex();
         g_got++;
     }
     return CBRET_NONE;
+}
+
+// DOOM's lockstep waits for every player's moves, silently and for as long as it takes: a player whose game has
+// stopped answering (a browser tab put in the background, a machine gone to sleep) stops everybody's.  Said over the
+// picture while it lasts, so that the others know whom they wait for; nothing is done about it (the game goes on as
+// it was when that player is back; a player gone for good is told by its link's end: wcnet_doom_session.cpp).
+void wait_notice() {
+    const double now = PIC_FullIndex();
+    if (now - g_waitCheckedAt < 250) return;
+    g_waitCheckedAt = now;
+    std::string who;
+    for (int p = 0; p < g_dgame.players; p++) {
+        if (p == g_dgame.self || g_heardAt[p] <= 0 || doom_session_gone(p) || now - g_heardAt[p] < 2500) continue;
+        who += (who.empty() ? "" : ", ") + g_dgame.names[p];
+    }
+    const std::string line = who.empty() ? std::string() : "Waiting for " + who + ": their game has stopped answering";
+    if (line == g_waitLine) return;
+    if (!g_waitLine.empty() && incoming_text == g_waitLine) incoming_text.clear();
+    g_waitLine = line;
+    if (!line.empty()) {
+        incoming_text = line;
+        wclog(1, "DOOM: %s", line.c_str());
+    } else {
+        wclog(1, "DOOM: everybody's game answers again");
+    }
 }
 
 }  // namespace
@@ -353,6 +388,7 @@ void doom_tick() {
     if (g_dstage == ST_NONE) return;
     doom_session_tick();
     if (g_dstage != ST_NET) return;
+    wait_notice();
     // how the game goes, every five seconds: its tics made (35 a second when nothing holds it) and each player's seen
     const double now = PIC_FullIndex();
     if (now - g_loggedAt < 5000) return;

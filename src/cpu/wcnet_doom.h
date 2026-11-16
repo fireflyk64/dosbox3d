@@ -50,6 +50,7 @@ std::string doom_session_line();            // where things stand, for the launc
 bool doom_session_is_host();
 void doom_session_send(int player, const Bit8u *data, int len);
 int doom_session_recv(int *player, Bit8u *data, int max);      // a packet's length, 0: none
+bool doom_session_gone(int player);         // that player is out of the game under way (its exit told to ours)
 
 }  // namespace wc
 

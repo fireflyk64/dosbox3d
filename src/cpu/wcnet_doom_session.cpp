@@ -595,6 +595,8 @@ void doom_session_send(int player, const Bit8u *data, int len) {
     to->conn.send_best_effort(msg);
 }
 
+bool doom_session_gone(int player) { return player >= 0 && player < kDoomMaxPlayers && g_gone[player]; }
+
 int doom_session_recv(int *player, Bit8u *data, int max) {
     if (!g_playing) return 0;
     const double now = PIC_FullIndex();
