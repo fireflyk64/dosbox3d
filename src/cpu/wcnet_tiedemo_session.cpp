@@ -165,6 +165,7 @@ struct Net {
     double arrivedAt[kCraftSlots];
     int arrivals[kFgCount];
     Bit32u deathSent[kCraftSlots];      // the identity whose death was sent (no exit for it then)
+    Bit32u killIdent[kCraftSlots];      // the identity a kill under way here is for
     TieHit hitsIn[kHitsIn];             // (target and shooter as this machine's slots)
     Bit32u hitsInIdent[kHitsIn];        // ... the target's identity, checked when the hit is applied
     int hitsInNext;
@@ -204,7 +205,7 @@ struct Net {
             slotId[o] = -1;
             arrivedType[o] = 0;
             arrivedAt[o] = 0;
-            deathSent[o] = 0;
+            deathSent[o] = killIdent[o] = 0;
             killing[o] = killer[o] = 0;
         }
         for (int fg = 0; fg < kFgCount; fg++) arrivals[fg] = 0;
@@ -780,6 +781,7 @@ void take_hit(const TieHit &hit) {
 // is under way); its flight flag cleared first unless a death's (3, 4).
 bool kill_before(int tag, Bit16u *args) {
     (void)args;
+    if (g_net->ident[tag] != g_net->killIdent[tag]) return false;      // (another craft in its slot since: left be)
     const PhysPt craft = tdm_craft(tag);
     if (craft) {
         const Bit8u flag = mem_readb(craft + kCraftFlightFlag);
@@ -790,6 +792,7 @@ bool kill_before(int tag, Bit16u *args) {
 void kill_done(int tag, Bit16u ax) {
     (void)ax;
     const int obj = tag;
+    if (g_net->ident[obj] != g_net->killIdent[obj]) return;
     if (!is_craft(obj) || o16(obj, 0x2C) != 0 || g_net->killing[obj] >= kKillCalls) {
         if (g_net->killing[obj] > 0) {
             g_net->kills++;
@@ -802,6 +805,10 @@ void kill_done(int tag, Bit16u ax) {
     g_net->killing[obj]++;
     tdm_queue_call(TDM_DAMAGE, 4, (Bit16u)obj, 0xFFFF, 0xFFFF, 0, kill_before, kill_done, obj);
 }
+bool credit_before(int tag, Bit16u *args) {
+    (void)args;
+    return g_net->ident[tag] == g_net->killIdent[tag];
+}
 void credit_done(int tag, Bit16u ax) {
     (void)ax;
     g_net->credited++;
@@ -810,8 +817,9 @@ void credit_done(int tag, Bit16u ax) {
 void begin_kill(int obj, int killer) {
     if (mine(obj) || g_net->killing[obj] != 0 || !is_craft(obj) || o16(obj, 0x2C) != 0) return;
     g_net->killing[obj] = 1;
+    g_net->killIdent[obj] = g_net->ident[obj];     // (the calls go to this craft alone: checked as each is made)
     if (killer >= 0 && killer == tdm_player_object()) {
-        tdm_queue_call(TDM_UPDATE_KILLS, 3, (Bit16u)killer, (Bit16u)obj, 1, 0, NULL, credit_done, obj);
+        tdm_queue_call(TDM_UPDATE_KILLS, 3, (Bit16u)killer, (Bit16u)obj, 1, 0, credit_before, credit_done, obj);
     }
     tdm_queue_call(TDM_DAMAGE, 4, (Bit16u)obj, 0xFFFF, 0xFFFF, 0, kill_before, kill_done, obj);
 }
