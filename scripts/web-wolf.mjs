@@ -132,7 +132,7 @@ for (const p of players) {
     const a = f[0], b = f[f.length - 1];
     const speed = (b.at - a.at) * 1000 / (b.wall - a.wall);
     const perf = await p.page.evaluate(() => (window.DOSBox && window.DOSBox._wc_web_perf ? [0, 1, 3].map((i) => window.DOSBox._wc_web_perf(i)) : null)).catch(() => null);
-    console.log(`${stamp()} ${p.who}: the emulator at ${Math.round(100 * speed)}% of real time over ${Math.round(b.at - a.at)} game seconds${perf ? `; the page's own figures: ${perf[0].toFixed(1)} frames a second, ${Math.round(100 * perf[1])}% at ${perf[2]} cycles` : ""}`);
+    console.log(`${stamp()} ${p.who}: the emulator at ${Math.round(100 * speed)}% of real time over ${Math.round(b.at - a.at)} game seconds`);
     check(speed > 0.85, `${p.who}: the emulator at more than 85% of real time`);
   }
 }
