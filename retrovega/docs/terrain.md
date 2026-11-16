@@ -121,7 +121,7 @@ Still to do for 30 fps on the page:
   - `nav ... ground`: a nav point as high over the ground as the mission puts it over the radius.
 
 - **Mirage**, the first planet (now Shmrn's: below, "A terrain mission in every set").
-  - The Vigilance holds 8,000 km over the desert planet.
+  - The Vigilance held 8,000 km over the desert planet; since 2026-11-16 every planet mission's carrier is in high orbit (below, "The carrier in high orbit").
   - `/planet N` is the test scene (the planet N km under the player, an arch ahead).
 
 ## Detail patches
@@ -312,7 +312,7 @@ who want to find themselves to the winning path"), but "We want an escort missio
 | Lixis | LIXISP, second | Gawain, Anchor | 709, jungle | Escort: the vaccine's Ox down to the jungle settlement (`role=out jump=3`) |
 | Ataraxia | ATARAXIP, third | Franklin, Echo | 811, ocean | Patrol: the island chain, a Charillus under an island's arch |
 | Rigel | RIGELP, second | Lancelot, Frost | 919, tundra | Strike: the relay's two ground stations |
-| Barnard's Star | BARNARDP, second | Gawain, Kestrel | 1013, green | Patrol: asteroids out of the launch (Nav 1, a field 11,000 km off the carrier, 8,800 km over the ground), then the forest and the miners' camp, their Ox a bonus |
+| Barnard's Star | BARNARDP, second | Gawain, Kestrel | 1013, green | Patrol: asteroids out of the launch (Nav 1, a field 14,000 km off the carrier, 26,000 km over the ground), then the forest and the miners' camp, their Ox a bonus |
 | Wolf 359 | WOLF359P, second | Franklin, Kit | 1117, steppe | Patrol: the colony (its Ox a bonus) and the bombers' strip |
 | Shmrn | SHMRNP, third | Redeemer, Torch | 7, desert (Mirage) | Strike: the Leonidas's supply ship under the arch |
 | Shmrn | SHMRNC, fifth | Lancelot, Torch | 7, desert (Mirage) | The canyon run (MIRAGE1), the last terrain mission, the day before the Leonidas |
@@ -330,6 +330,28 @@ who want to find themselves to the winning path"), but "We want an escort missio
   true there with the wingman alive or dead (`alive=`, `dead=`).
 - **Points:** they add to the set's points against its pass mark (the old game's marks unchanged), so the card's
   players have more ways to the good path, never fewer.
+
+### The carrier in high orbit (the user's play test, 2026-11-16)
+
+> it struck me as a bit odd that the carrier was so close to the planet...it should likely be in high orbit
+
+Every planet mission's launch (nav 0, the world's origin, where the Vigilance is) had been 8,000 km over the datum,
+its nav points 6,000 to 12,000 km off. Now it is 30,000 km up:
+
+- **Where:** 30 degrees of arc short of the mission's first ground waypoint, on the side the player's launch faces
+  away from (the player launches facing +z, level), the planet's middle within 25 degrees of straight ahead, as low
+  over the limb as that allows. The autopilot's way down to the first point is some 49,000 km, coming in 16 to 20
+  degrees down; from the launch that point is 10 to 36 degrees under the level, and on half the missions the planet's
+  limb is in the view at the launch.
+- **How:** each mission was moved whole (its planet, nav points and fields together; `at=` offsets are their nav
+  points'), so its ground is the same under every point, its lines between points clear it as before, and its pads,
+  arches and canyons are where they were. The layouts were made about a planet at `0 -72000 0`; the move is the scratch
+  `orbit.py`, run once (missions.txt is the truth after).
+- **Barnard's Star's asteroids** (the user had asked for them near the carrier, "so we don't need to render both"):
+  Nav 1's field is 14,000 km ahead of the launch, 26,000 km over the ground, on the way to Nav 2.
+- **Out of it:** the ALT readout and the speed floor reach only 20,000 km up, so neither is at the carrier. The
+  autopilot home stops 4,000 km off the carrier as before; an escort target near the player (an Ox going home) comes
+  along with it, as anywhere.
 
 ### The planets' looks
 

@@ -3070,8 +3070,16 @@ radio    "Tally here. Wendell Greer, Vigilance. Last flight's a long way out. Le
 
 
 # Mirage: a desert planet (docs/terrain.md: the card draws it, so only with the card; not on the campaign's way, the
-# page's mission menu flies it alone).  The Vigilance holds 8,000 km over the planet; the patrol goes down over the
-# dunes, to the Ox depot parked under the stone arch, over the mesas, and home
+# page's mission menu flies it alone).  The Vigilance holds in high orbit, 30,000 km over the planet (every planet
+# mission's launch since 2026-11-16: below); the patrol goes down over the dunes, to the Ox depot parked under the stone
+# arch, over the mesas, and home
+#
+# A planet mission's launch (nav 0, the world's origin) is 30,000 km over the planet's datum, 30 degrees of arc short of
+# its first ground waypoint on the side the launch faces away from (the player launches facing +z, level): the
+# autopilot's way down to it is some 49,000 km, coming in 16 to 20 degrees down, and the planet is ahead and below.
+# Laid out about a planet at 0 -72000 0 (the old launch 8,000 km up), each mission was moved whole, planet and nav points
+# and fields together, so its ground is the same under every point (the scratch orbit.py; the user, 2026-11-16: "it
+# struck me as a bit odd that the carrier was so close to the planet...it should likely be in high orbit")
 mission  SHMRNC
 node     SHMRN
 title    Canyon run: Mirage, the long gorge
@@ -3093,12 +3101,12 @@ win      TORCH "Between the walls the whole way. I didn't think the Lancelot wou
 win      alive=TORCH "Neither did I. Get some sleep, both of you. Tomorrow's the big one."
 lose     "The load got out of the canyon. The Leonidas will be ready for us."
 lose     TORCH "We'll go in anyway, Commander."
-planet   7 0 -72000 0 64000
-nav      1 0 -8649 13142 ground reach=3000
-nav      2 -3538 -10642 20219 ground reach=3000
-nav      3 1516 -13359 27295 ground reach=3000
-nav      4 -2527 -17243 34372 ground reach=3000
-nav      5 3538 -22028 40943 ground reach=3000
+planet   7 -12164 -88931 27917 64000
+nav      1 -12164 -25580 41059 ground reach=3000
+nav      2 -15702 -27573 48136 ground reach=3000
+nav      3 -10648 -30290 55212 ground reach=3000
+nav      4 -14691 -34174 62289 ground reach=3000
+nav      5 -8626 -38959 68860 ground reach=3000
 ground   canyon nav1 to=nav5 width=1800 wall=1300 depth=3000 rise=1800
 ground   pad nav2 radius=800 slope=500
 ground   arch nav3 span=1500 width=700 air=1900 thick=500 heading=4
@@ -3153,10 +3161,10 @@ briefing dead=TORCH "Dismissed."
 win      "The Charillus is burning under its arch. The Leonidas just got hungrier. Good work."
 win      TORCH "Those Redeemers fly like pigs. I want one."
 lose     "The supply ship's still loading. The Leonidas eats tonight."
-planet   7 0 -72000 0 64000
-nav      1 0 -7807 -8088 ground reach=3000
-nav      2 2527 -9033 -14659 ground reach=3000
-nav      3 -4044 -10509 -19713 ground reach=3000
+planet   7 0 -74893 56808 64000
+nav      1 0 -10700 48720 ground reach=3000
+nav      2 2527 -11926 42149 ground reach=3000
+nav      3 -4044 -13402 37095 ground reach=3000
 ground   pad nav2 radius=1700 slope=800
 ground   arch nav2 span=1400 width=700 air=1400 thick=350 heading=0
 ship     player 0 nav0
@@ -3210,11 +3218,11 @@ win      "We can leave Enigma without them hearing which way we went."
 lose     "They're still listening. We'll leave Enigma louder than I'd like."
 lose     you "They never saw me, Commander. That was the trouble. Neither did I see enough."
 lose     "Get some rest. We go again tomorrow."
-planet   101 0 -72000 0 64000 kind=ice
-nav      1 3164 -4980 -7383 ground reach=3000
-nav      2 -2047 -7694 -12281 ground reach=3000
-nav      3 1011 -10891 -21230 ground reach=3000
-nav      4 520 -6239 -9871 ground hidden reach=2500
+planet   101 -21937 -75235 51908 64000 kind=ice
+nav      1 -18773 -8215 44525 ground reach=3000
+nav      2 -23984 -10929 39627 ground reach=3000
+nav      3 -20926 -14126 30678 ground reach=3000
+nav      4 -21417 -9474 42037 ground hidden reach=2500
 ground   arch nav2 span=1500 width=700 air=2000 thick=450 heading=-167
 ground   pad nav3 radius=1400 slope=700
 ship     player 0 nav0
@@ -3267,10 +3275,10 @@ win      you alive=DRIFTER "Drifter called it before we got there."
 win      DRIFTER "I had it at three to one. I should have gone higher."
 lose     "The tanker's still down there. Their fighters will be full tomorrow."
 lose     DRIFTER "I'd have given you long odds on that, Commander. I didn't take them."
-planet   211 0 -72000 0 64000 kind=red
-nav      1 -5234 -5501 6281 ground reach=3000
-nav      2 -11206 -7778 -1019 ground reach=3000
-nav      3 -15117 -9817 -8062 ground reach=3000
+planet   211 17236 -84248 37962 64000 kind=red
+nav      1 12002 -17749 44243 ground reach=3000
+nav      2 6030 -20026 36943 ground reach=3000
+nav      3 2119 -22065 29900 ground reach=3000
 ground   pad nav3 radius=1500 slope=700
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=DRIFTER
@@ -3318,10 +3326,10 @@ win      COMET "The Rookie flew under the arch. I didn't tell the Rookie to."
 win      alive=COMET "Neither did I. Get some rest, both of you."
 lose     "The strip's still there. Kit will have to put the turrets back together faster."
 lose     COMET "Next time, Commander."
-planet   307 0 -72000 0 64000 kind=savanna
-nav      1 6234 -5923 4156 ground reach=3000
-nav      2 11120 -8391 -4044 ground reach=3000
-nav      3 3094 -6884 -10312 ground reach=3000
+planet   307 -18426 -82744 40618 64000 kind=savanna
+nav      1 -12192 -16667 44774 ground reach=3000
+nav      2 -7306 -19135 36574 ground reach=3000
+nav      3 -15332 -17628 30306 ground reach=3000
 ground   pad nav2 radius=1700 slope=800
 ground   arch nav2 span=1500 width=800 air=1700 thick=400 heading=-169
 ship     player 0 nav0
@@ -3369,10 +3377,10 @@ win      "Eleven of the Kahan's people are on our deck. Her captain called. Twic
 win      COMET "The Rookie stayed on the Ox. I stayed on the Rookie."
 lose     escort=lost "We lost the Ox, and everyone on it. I'll write to the Kahan myself."
 lose     "Go and get some rest."
-planet   401 0 -72000 0 64000 kind=ash
-nav      1 -4188 -5534 7328 ground reach=3000
-nav      2 -10094 -9778 14131 ground reach=3000
-nav      3 -4000 -3000 6000 hidden reach=5000
+planet   401 16750 -85021 36427 64000 kind=ash
+nav      1 12562 -18555 43755 ground reach=3000
+nav      2 6656 -22799 50558 ground reach=3000
+nav      3 12750 -16021 42427 hidden reach=5000
 ground   pad nav2 radius=1400 slope=700
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=COMET
@@ -3415,10 +3423,10 @@ win      PRIME "Told you. All four next time."
 win      alive=PRIME "One at a time, Prime. Get some rest, both of you."
 lose     "The base is still lit. The assault will pay for that."
 lose     PRIME "Put that one on me, Commander."
-planet   503 0 -72000 0 64000 kind=ochre
-nav      1 4188 -5427 -6281 ground reach=3000
-nav      2 -2019 -8779 -13122 ground reach=3000
-nav      3 5195 -8100 -17664 ground reach=3000
+planet   503 -23162 -75687 50705 64000 kind=ochre
+nav      1 -18974 -9114 44424 ground reach=3000
+nav      2 -25181 -12466 37583 ground reach=3000
+nav      3 -17967 -11787 33041 ground reach=3000
 ground   pad nav2 radius=1500 slope=800
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=PRIME
@@ -3463,10 +3471,10 @@ briefing "Under it, around it, through it if you have to. Just bring the depot t
 win      "The depot's still under its arch. Nice flying, Wildcard."
 win      COMET "The Rookie went under the arch. Twice."
 lose     "The Aera had the run of that planet today. We'll be short of everything for a while."
-planet   607 0 -72000 0 64000 kind=violet
-nav      1 5156 -6331 -4125 ground reach=3000
-nav      2 8088 -8964 -12131 ground reach=3000
-nav      3 2047 -8613 -16375 ground reach=3000
+planet   607 -22169 -76988 49167 64000 kind=violet
+nav      1 -17013 -11319 45042 ground reach=3000
+nav      2 -14081 -13952 37036 ground reach=3000
+nav      3 -20122 -13601 32792 ground reach=3000
 ground   pad nav2 radius=1700 slope=800
 ground   arch nav2 span=1400 width=700 air=1400 thick=350 heading=-162
 ship     player 0 nav0
@@ -3509,10 +3517,10 @@ win      you alive=ANCHOR "Anchor flew it by the book."
 win      alive=ANCHOR "He always does. Get some rest, both of you."
 lose     escort=lost "The Ox never got down. I'll have to tell the settlement there's another wait."
 lose     "Get some sleep."
-planet   709 0 -72000 0 64000 kind=jungle
-nav      1 -3141 -5369 6281 ground reach=3000
-nav      2 -8188 -8185 12281 ground reach=3000
-nav      3 -12112 -11202 18169 ground reach=3000
+planet   709 16956 -84579 37349 64000 kind=jungle
+nav      1 13815 -17948 43630 ground reach=3000
+nav      2 8768 -20764 49630 ground reach=3000
+nav      3 4844 -23781 55518 ground reach=3000
 ground   pad nav3 radius=1500 slope=700
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=ANCHOR
@@ -3553,10 +3561,10 @@ briefing dead=ECHO "Dismissed."
 win      "A Charillus, under an arch, on an island. Tactical owes me a drink. Well flown."
 win      ECHO "Wildcard spotted it. I'd have flown straight past."
 lose     "Whatever's down there is still down there. The concert's off."
-planet   811 0 -72000 0 64000 kind=ocean
-nav      1 4094 -6829 5117 ground reach=3000
-nav      2 -3033 -8167 10109 ground reach=3000
-nav      3 -11258 -7605 4094 ground reach=3000
+planet   811 -17451 -83775 38900 64000 kind=ocean
+nav      1 -13357 -18604 44017 ground reach=3000
+nav      2 -20484 -19942 49009 ground reach=3000
+nav      3 -28709 -19380 42994 ground reach=3000
 ground   pad nav2 radius=1700 slope=800
 ground   arch nav2 span=1500 width=800 air=1700 thick=400 heading=-90
 ship     player 0 nav0
@@ -3600,10 +3608,10 @@ win      "Both stations are off the air. The relay's half deaf. Good flying."
 win      FROST "No Rlaan, Commander. Only Aera."
 win      alive=FROST "Good. Get some rest, both of you."
 lose     "The relay's still talking. We'll be hearing about it."
-planet   919 0 -72000 0 64000 kind=tundra
-nav      1 -5234 -5410 -5234 ground reach=3000
-nav      2 -10109 -9070 -11120 ground reach=3000
-nav      3 -6066 -9920 -17186 ground reach=3000
+planet   919 22882 -76171 50104 64000 kind=tundra
+nav      1 17648 -9581 44870 ground reach=3000
+nav      2 12773 -13241 38984 ground reach=3000
+nav      3 16816 -14091 32918 ground reach=3000
 ground   pad nav2 radius=1500 slope=700
 ground   pad nav3 radius=1500 slope=700
 ship     player 0 nav0
@@ -3652,13 +3660,13 @@ win      "The miners are still mining. They've sent up a crate of something. Kit
 win      KESTREL "Green. Everything down there is green, Commander. I'd forgotten."
 lose     escort=lost "They lost their Ox. They'll have to sit it out down there, and that's on us."
 lose     "The camp's gone quiet. I don't know if that means hiding, or worse."
-planet   1013 0 -72000 0 64000 kind=green
-nav      1 2000 -500 11000 reach=6000
-nav      2 6141 -9755 19445 ground reach=3000
-nav      3 -2022 -12475 25273 ground reach=3000
+planet   1013 -9002 -91246 20714 64000 kind=green
+nav      1 -995 -2000 13965 reach=6000
+nav      2 -2861 -29001 40159 ground reach=3000
+nav      3 -11024 -31721 45987 ground reach=3000
 ground   pad nav3 radius=1600 slope=800
 ground   arch nav3 span=1400 width=700 air=1500 thick=400 heading=-52
-field    asteroid 2000 -500 11000 9000
+field    asteroid -995 -2000 13965 9000
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=KESTREL
 ship     VIGILNC 0 nav0 role=home
@@ -3699,10 +3707,10 @@ briefing "Dismissed."
 win      "The colony's still standing, and the strip's gone. They're cheering on the comm. I left it on for a minute."
 win      TECH "Not a scratch on her. Well. One."
 lose     "The bombers will be back, and we won't always be there."
-planet   1117 0 -72000 0 64000 kind=steppe
-nav      1 -3094 -6364 6187 ground reach=3000
-nav      2 -8088 -8964 12131 ground reach=3000
-nav      3 2022 -8899 14153 ground reach=3000
+planet   1117 16956 -84579 37349 64000 kind=steppe
+nav      1 13862 -18943 43536 ground reach=3000
+nav      2 8868 -21543 49480 ground reach=3000
+nav      3 18978 -21478 51502 ground reach=3000
 ground   pad nav2 radius=1600 slope=800
 ground   pad nav3 radius=1400 slope=700
 ship     player 0 nav0
@@ -3747,10 +3755,10 @@ win      "Two hundred and four miners on the deck. They brought their own coffee
 win      TALLY "The kid flew like there was a rematch riding on it."
 lose     escort=lost "The Ox didn't make it. I have the list of names. I'll read it tonight."
 lose     "Get some rest."
-planet   1301 0 -72000 0 64000 kind=grey
-nav      1 4156 -5923 6234 ground reach=3000
-nav      2 10094 -9354 12113 ground reach=3000
-nav      3 4000 -3000 5000 hidden reach=5000
+planet   1301 -17495 -84372 37567 64000 kind=grey
+nav      1 -13339 -18295 43801 ground reach=3000
+nav      2 -7401 -21726 49680 ground reach=3000
+nav      3 -13495 -15372 42567 hidden reach=5000
 ground   pad nav2 radius=1400 slope=700
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=TALLY
