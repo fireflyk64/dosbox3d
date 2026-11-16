@@ -646,6 +646,28 @@ const DOOM_CAMPAIGN = {
   },
 };
 
+// Wolfenstein 3-D's mission menu: the host's skill and floor, as the game's own TEDLEVEL start takes them (the
+// layer makes every player's game load the host's level: src/cpu/wcnet_wolf_session.cpp).  A "series" is a skill
+// (the game's own names; Bring 'em on first: the room's default), its missions the floors: the shareware's episode
+// one, then the full game's five more (a game without them plays the same floor of episode one).  Floor 10 of each
+// episode is its secret one.
+const WOLF_SKILLS = [["normal", "Bring 'em on!"], ["hard", "I am Death incarnate!"], ["easy", "Don't hurt me."], ["baby", "Can I play, Daddy?"]];
+const WOLF_EPISODES = ["Escape from Wolfenstein", "Operation: Eisenfaust", "Die, Fuhrer, Die!", "A Dark Secret", "Trail of the Madman", "Confrontation"];
+const wolfFloor = (mis) => `E${Math.floor(mis / 10) + 1} floor ${(mis % 10) + 1}`;
+const WOLF_CAMPAIGN = {
+  series: WOLF_SKILLS.map(([, name], k) => ({ series: k + 1, group: name, name,
+    files: Array.from({ length: 60 }, (_, mis) => wolfFloor(mis) + (mis >= 10 ? " (the full game)" : "")), missions: [] })),
+  alone: true,
+  start: { room: "Episode 1 floor 1, Bring 'em on!", alone: "The title screen (the game as it is: its own menus and saved games)" },
+  missionArgs: (m) => `tedlevel ${m.mis} ${(WOLF_SKILLS[m.series - 1] || WOLF_SKILLS[0])[0]} nowait`,
+  label(m, form) {
+    const skill = (WOLF_SKILLS[m.series - 1] || WOLF_SKILLS[0])[1];
+    if (form === "short") return `${wolfFloor(m.mis)} ${skill}`;
+    const episode = WOLF_EPISODES[Math.floor(m.mis / 10)] || "";
+    return `${wolfFloor(m.mis)}${form === "menu" ? "" : `, ${skill}`}${form === "menu" && m.mis % 10 === 0 ? ` (${episode})` : ""}`.trim();
+  },
+};
+
 export const GAMES = [
   { id: "wc1", tag: "WC1", title: "Wing Commander", detect: ["WC.EXE"], run: "wc", multiplayer: true,
     build: { para: 0x1231, off: 0x0187, text: "Loading WING COMMANDER" },
@@ -825,6 +847,24 @@ export const GAMES = [
     saves: ["DOOMSAV*.DSG", "DEFAULT.CFG"],
     help: "DOOM played together, the game's own co-operative mode for up to four marines: everybody is in the same level at once, the monsters, doors, keys and switches are shared, and each of you keeps your own health, armour, weapons and ammunition. When the host presses Fly, every player's game starts, the launcher waits on a text screen until everybody in the room is there (Enter on the host's starts at once with those who are; Esc plays alone), and the level begins for all at the same moment. The host picks the skill and the level in the room (step 2). A marine who dies presses Space and is back at the level's start with a pistol; the level ends for everybody when anyone reaches the exit, and the next begins. Nobody can join a game under way (DOOM has no way in): a player who comes late waits on the launcher's screen for the host's next start. A player who leaves is told to the others (\"Player 2 left the game\") and they play on. T talks to the others (type, Enter). Everybody needs the same game files (the shareware 1.9 with the shareware, the registered game with the registered game). Alone (Fly Alone) it is DOOM as it is, its title screen and menus, saved games kept in this browser.",
     keys: "<b>DOOM:</b> the arrow keys walk and turn, <kbd>Ctrl</kbd> or the left mouse button fires, <kbd>Space</kbd> opens doors and works switches, <kbd>Shift</kbd> held runs, <kbd>Alt</kbd> held with left or right sidesteps (<kbd>,</kbd> and <kbd>.</kbd> sidestep too); <kbd>1</kbd> to <kbd>7</kbd> pick a weapon, <kbd>Tab</kbd> the map, <kbd>T</kbd> talks to the other players (type, <kbd>Enter</kbd>), <kbd>Esc</kbd> the game's menu, <kbd>F11</kbd> the brightness, <kbd>-</kbd> and <kbd>=</kbd> the picture's size. Click the picture to turn with the mouse (Esc gives the pointer back). A controller picked above: the left stick or the D-pad walks and turns, A fires, B opens, X runs, Y sidesteps (held, with left or right), Start is Enter, Back is Esc; the other buttons pick weapons and the map.",
+    dosbox: "[sdl]\nautolock=true\n[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
+  // Wolfenstein 3-D (id Software, 1992; Apogee's shareware 1.4: 1wolf14.zip, whose W3D1_BBS._1 is a zip behind its
+  // installer's header, unpacked by expandSplitZips; or the six-episode game, GOG's installer or its folder zipped:
+  // WOLF3D.EXE with the .WL6 files).  The game has no network game: the layer finds WOLF3D.EXE in memory by its code
+  // and watches it (src/cpu/wcnet_wolf.cpp, docs/wolf3d.md).  Played together by up to four: everybody in the host's
+  // level; an enemy goes for the player it noticed and is shown to the others; anybody's shots hurt it and its fall
+  // is everybody's; doors, pushed walls, keys and the lift are shared; each player's pick-ups are their own.  In a
+  // room the game is started straight into the level (its TEDLEVEL start, where no life is ever lost); alone it is the
+  // game as it is.
+  { id: "wolf", tag: "WOLF", title: "Wolfenstein 3-D", detect: ["WOLF3D.EXE"], run: "wolf3d", multiplayer: true, maxSeats: 4,
+    build: { text: "LZ91" },
+    roomArgs: "tedlevel 0 normal nowait",
+    cycles: 25000, screen: [320, 200], noRoomOptions: true, campaign: WOLF_CAMPAIGN,
+    keep: ["CONFIG.WL1", "CONFIG.WL6"],
+    gather: [{ name: /^(AUDIOHED|AUDIOT|GAMEMAPS|MAPHEAD|VGADICT|VGAGRAPH|VGAHEAD|VSWAP|CONFIG)\.WL[16]$/i }, { name: /^SAVEGAM\d\.WL[16]$/i }],
+    saves: ["SAVEGAM*.WL1", "SAVEGAM*.WL6", "CONFIG.WL1", "CONFIG.WL6"],
+    help: "Wolfenstein 3-D played together by up to four. Everybody is in the same floor, the host's: its skill and floor are the room's mission (pick them before pressing Fly), and every player's game starts straight in it. You see each other as B.J. with a name over his head. An enemy goes for the player it notices first and shoots at that player; everybody sees it and anybody's shots hurt it. Doors, pushed walls and the lift are shared, and a key one of you finds opens its doors for all. Treasure, food, ammunition and weapons are each player's own to pick up. A player who is killed starts the floor again from its beginning with a pistol, while the others play on and what they have killed stays dead; lives do not run out. When one of you takes the lift, the floor ends for everybody. A player who comes late walks into the floor as it is. Alone (Fly Alone, a room of one) it is the game as it is, with its menus and saved games.",
+    keys: "<b>Wolfenstein 3-D:</b> the arrow keys walk and turn, <kbd>Ctrl</kbd> or the left mouse button fires, <kbd>Space</kbd> opens doors, pushes walls and works the lift, the right <kbd>Shift</kbd> held runs, <kbd>Alt</kbd> held with left or right sidesteps; <kbd>1</kbd> to <kbd>4</kbd> pick the knife, the pistol, the machine gun and the chain gun; <kbd>Esc</kbd> is the game's menu (the others play on meanwhile). Click the picture to give the game the mouse (it turns and walks); <kbd>Esc</kbd> twice gives it back.",
     dosbox: "[sdl]\nautolock=true\n[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n" },
   // The TIE Fighter demo (LucasArts, early 1994: one mission, flown in a build from before the game's release, given
   // away to advertise the Dodge Neon): its two floppies (the Internet Archive's TIE_Fighter_Preview__Dodge_Neon.zip,

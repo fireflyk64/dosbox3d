@@ -355,7 +355,7 @@ function switchTo(holder, id) {
 function gameParam(v) {
   const k = String(v || "").trim().toLowerCase();
   if (!k) return null;
-  const named = { raptor: "rap", doom1: "doom", retrovega: "rv", tie: "tf", tfd: "tiedemo", tiefighter: "tf", privateer: "priv", terminalvelocity: "tv" };
+  const named = { raptor: "rap", doom1: "doom", wolf3d: "wolf", wolfenstein: "wolf", retrovega: "rv", tie: "tf", tfd: "tiedemo", tiefighter: "tf", privateer: "priv", terminalvelocity: "tv" };
   let id = named[k] || k;
   if (!gameById(id)) { const byTag = GAMES.find((g) => g.tag.toLowerCase() === k); id = byTag ? byTag.id : null; }
   if (id === "tf" && !holderOf("tf")) id = "tiedemo";
@@ -497,6 +497,7 @@ const DEMOS = [
   { button: "demoRap", id: "rap", file: "1rap12.zip", title: "Raptor's shareware" },
   { button: "demoTv", id: "tv", file: "3dtv12.zip", title: "Terminal Velocity's shareware" },
   { button: "demoDoom", id: "doom", file: "doom19s.zip", title: "DOOM's shareware" },
+  { button: "demoWolf", id: "wolf", file: "1wolf14.zip", title: "Wolfenstein 3-D's shareware" },
   { button: "demoTfd", id: "tiedemo", file: "TIE_Fighter_Preview__Dodge_Neon.zip", title: "the TIE Fighter demo", from: "the Internet Archive",
     url: "https://archive.org/cors/StarWarsTIEFighter_1020/TIE_Fighter_Preview__Dodge_Neon.zip" },
 ];
@@ -2136,6 +2137,8 @@ async function start(fromGesture) {
         env.SERIES = String(lobby.mission.series);
       }
     }
+    // (a game whose rooms start it another way than alone, with no mission picked: Wolfenstein 3-D's TEDLEVEL start)
+    if (!missionArgs && together && gameInfo() && gameInfo().roomArgs) missionArgs = " " + gameInfo().roomArgs;
     // Any ?env.NAME=value lands in DOSBox's environment: the same knobs as
     // the native build (MIS, SERIES, WCNET_AUTOKEYS, WCNET_LOG, ...).
     for (const [k, v] of query) if (k.startsWith("env.")) env[k.slice(4)] = v;
@@ -2247,7 +2250,7 @@ async function start(fromGesture) {
     // DOOM tells it ("Player 2 left the game") and play on.  Without this they stand still until the link is found
     // dead, some 16 s (measured).  Only DOOM's rooms: the other games keep a reloading pilot's seat.
     window.addEventListener("pagehide", () => {
-      if (isDoom() && lobby.game && !soloRoom()) { try { lobby.game.close(); } catch (e) { /* gone already */ } }
+      if ((isDoom() || isWolf()) && lobby.game && !soloRoom()) { try { lobby.game.close(); } catch (e) { /* gone already */ } }
     });
     $("fullscreen").hidden = !(screenEl.requestFullscreen || screenEl.webkitRequestFullscreen);   // (an iPhone has none)
     touch.show(true);
@@ -2391,6 +2394,7 @@ const isPriv = () => !!(gameInfo() && (gameInfo().id === "priv" || gameInfo().id
 const isTv = () => !!(gameInfo() && gameInfo().id === "tv");
 const isRap = () => !!(gameInfo() && gameInfo().id === "rap");
 const isDoom = () => !!(gameInfo() && gameInfo().id === "doom");
+const isWolf = () => !!(gameInfo() && gameInfo().id === "wolf");
 // (the room's game, the loaded one's or the lobby's)
 function isTvRoom() { return lobbyGameId() === "tv" || isTv(); }
 function tfFlight() {
@@ -2458,6 +2462,24 @@ const RAP_PAD = {
 // switches, the right Shift runs, Alt held sidesteps with left and right; Tab is the map, Enter and Esc its menus;
 // the rest pick weapons (DOOM has a key for each, none for "the next").  The stick and the D-pad are its arrows:
 // forward, back and turning (stickKeys below).
+// Wolfenstein 3-D's keys for a controller's buttons (its own defaults): Ctrl fires, Space opens doors and pushes
+// walls, the right Shift runs, Alt held sidesteps; 1 to 4 pick a weapon.  The stick and the D-pad are its arrows.
+const WOLF_PAD = {
+  guns: { keys: ["leftctrl"], label: "Fire guns (Wolfenstein: fire)" },
+  missile: { keys: ["space"], label: "Fire missile (Wolfenstein: open a door, push a wall, the lift)" },
+  target: { keys: ["rightshift"], label: "Change target (Wolfenstein: run, held)" },
+  weapon: { keys: ["leftalt"], label: "Change weapon (Wolfenstein: sidestep, held with left or right)" },
+  faster: { keys: ["3"], label: "Speed up (Wolfenstein: the machine gun)" },
+  slower: { keys: ["2"], label: "Slow down (Wolfenstein: the pistol)" },
+  burner: { keys: ["4"], label: "Afterburner (Wolfenstein: the chain gun)" },
+  nav: { keys: ["esc"], label: "Navigation map (Wolfenstein: Esc, its menu)" },
+  auto: { keys: ["enter"], label: "Autopilot (Wolfenstein: Enter in its menus)" },
+  up: { keys: [], label: "Up (Wolfenstein: the D-pad and the stick walk and turn)" },
+  down: { keys: [], label: "Down (Wolfenstein: the D-pad and the stick walk and turn)" },
+  gunsel: { keys: ["1"], label: "Change guns (Wolfenstein: the knife)" },
+  lock: { keys: ["y"], label: "Lock target (Wolfenstein: Y, yes to its questions)" },
+  comms: { keys: [], label: "Communications (nothing in Wolfenstein)" },
+};
 const DOOM_PAD = {
   guns: { keys: ["leftctrl"], label: "Fire guns (DOOM: fire)" },
   missile: { keys: ["space"], label: "Fire missile (DOOM: open a door, work a switch)" },
@@ -2486,11 +2508,11 @@ const controls = initControls({
   // Ins and Del as the emulator has it, and fires with the mouse's button, the game's own trigger)
   directStick: () => isTie(),
   rollKeys: () => (isTie() ? { left: "kp0", right: "kpperiod" } : null),
-  actionKeys: (id) => (isTie() && tiePad()[id] ? tiePad()[id].keys : isRap() ? rapKeys(id) : isDoom() && DOOM_PAD[id] ? DOOM_PAD[id].keys : null),
-  actionLabel: (id) => (isTie() && tiePad()[id] ? tiePad()[id].label : isRap() && RAP_PAD[id] ? RAP_PAD[id].label : isDoom() && DOOM_PAD[id] ? DOOM_PAD[id].label : null),
+  actionKeys: (id) => (isTie() && tiePad()[id] ? tiePad()[id].keys : isRap() ? rapKeys(id) : isDoom() && DOOM_PAD[id] ? DOOM_PAD[id].keys : isWolf() && WOLF_PAD[id] ? WOLF_PAD[id].keys : null),
+  actionLabel: (id) => (isTie() && tiePad()[id] ? tiePad()[id].label : isRap() && RAP_PAD[id] ? RAP_PAD[id].label : isDoom() && DOOM_PAD[id] ? DOOM_PAD[id].label : isWolf() && WOLF_PAD[id] ? WOLF_PAD[id].label : null),
   // (Raptor: the stick in a wave and the D-pad everywhere are its arrow keys, the stick past 30% of its travel)
   // (DOOM the same: its arrows walk and turn)
-  stickKeys: () => (isRap() || isDoom() ? { left: "left", right: "right", up: "up", down: "down", at: 0.3 } : null),
+  stickKeys: () => (isRap() || isDoom() || isWolf() ? { left: "left", right: "right", up: "up", down: "down", at: 0.3 } : null),
   fireByMouse: () => isTie(),
   // (A controller button without a key of its own is the page's: push to talk.)
   onAction: (id, down) => { if (id === "ptt") voice.ptt(down); },

@@ -492,6 +492,8 @@ void build_table() {
         for (int k = 0; k < 3; k++) h = (h ^ v[k]) * 16777619u;
         ob = r16((Bit16u)(ob + OB_NEXT));
     }
+    // (the game never stops a pushed wall at a level's set-up: one moving when its player died moved on in the new level)
+    w16(it(I_PWALLSTATE), 0);
     g_levelSig = h ? h : 1;
     g_tableValid = true;
     g_levelFrames = 0;
@@ -1000,6 +1002,21 @@ bool wolf_script_item(const std::string &item, double t) {
     if (item.compare(0, 9, "!wolfgod=") == 0) {
         g_god = item[9] != '0';
         wclog(1, "key script %.1fs: Wolfenstein 3-D: health %s", t, g_god ? "kept at 100" : "the game's own again");
+    } else if (item.compare(0, 8, "!wolfhp=") == 0) {
+        w16(gs(GS_HEALTH), (Bit16u)atoi(item.c_str() + 8));
+        wclog(1, "key script %.1fs: Wolfenstein 3-D: health set to %d", t, atoi(item.c_str() + 8));
+    } else if (item == "!wolfdoors") {
+        std::string open;
+        for (int d = 0; d < wolf_doors(); d++) {
+            if (wolf_door_action(d) == 1) continue;
+            char buf[32];
+            snprintf(buf, sizeof(buf), " %d:%s", d, wolf_door_action(d) == 0 ? "open" : wolf_door_action(d) == 2 ? "opening" : "closing");
+            open += buf;
+        }
+        int x = 0, y = 0, dir = 0;
+        const bool moving = wolf_push_moving(&x, &y, &dir);
+        wclog(1, "key script %.1fs: Wolfenstein 3-D: %d doors, not closed:%s; %s; secrets %d", t, wolf_doors(), open.empty() ? " none" : open.c_str(),
+              moving ? "a wall is moving" : "no wall moving", (int)r16(gs(GS_SECRETCOUNT)));
     } else if (item == "!wolfpos") {
         const WolfBody b = wolf_player();
         const WolfLevel l = wolf_level();

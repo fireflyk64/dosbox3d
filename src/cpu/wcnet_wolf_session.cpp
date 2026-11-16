@@ -139,7 +139,7 @@ int g_keys = 0;
 // this machine's game in it
 bool g_synced = false, g_remoteExit = false, g_snapAsked = false, g_snapHere = false, g_refusedLevel = false;
 Bit32u g_mySerial = 0;
-double g_snapAskedAt = -1e9, g_holdSince = -1, g_pushExpectUntil = -1e9;
+double g_snapAskedAt = -1e9, g_holdSince = -1, g_pushExpectUntil = -1e9, g_freshAt = -1e9;
 WolfSnap g_snap;
 bool g_pending[kWolfMaxActors], g_aliveWas[kWolfMaxActors];
 int g_hpWas[kWolfMaxActors], g_claimHp[kWolfMaxActors];
@@ -1133,8 +1133,16 @@ void wolf_session_shutdown() {
 bool wolf_session_level_hold(bool esc) {
     if (!wolf_session_configured() || g_alone) return false;
     const double now = PIC_FullIndex();
-    const WolfLevel level = wolf_level();
+    WolfLevel level = wolf_level();
     if (is_host()) {
+        if (!wolf_has_level(level)) {
+            // (a floor this program's files do not have, the shareware asked for another episode: the same floor of the first)
+            level.episode = 0;
+            level.map = std::max(0, std::min(9, level.map));
+            level.difficulty = std::max(0, std::min(3, level.difficulty));
+            wolf_set_level(level);
+            wolf_notice("This is the shareware: episode one's floors only", 8000);
+        }
         // the room's level is the host's game's: one it has not begun yet begins here
         if (!g_room.serial || level != g_room.level) host_new_level(level, 0);
         return false;
@@ -1174,7 +1182,12 @@ bool wolf_session_level_hold(bool esc) {
 
 void wolf_session_frame(bool fresh) {
     const double now = PIC_FullIndex();
-    if (fresh) reset_level_state();
+    if (fresh) {
+        reset_level_state();
+        g_freshAt = now;
+    }
+    // (the level's story put into a game that has just made the level: what fell before falls without sound or points)
+    const bool quiet = now - g_freshAt < 5000;
     if (!g_net || g_alone) return;
     const WolfLevel level = wolf_level();
     if (g_net->host) {
@@ -1183,7 +1196,7 @@ void wolf_session_frame(bool fresh) {
             g_mySerial = g_room.serial;
             g_room.sig = wolf_level_sig();
             g_synced = true;
-            apply_story(fresh);
+            apply_story(quiet);
             host_say_room();
         }
     } else if (!g_synced && !g_remoteExit) {
@@ -1207,7 +1220,7 @@ void wolf_session_frame(bool fresh) {
             }
             g_mySerial = g_room.serial;
             g_synced = true;
-            take_snapshot(fresh);
+            take_snapshot(quiet);
         } else if (!g_snapAsked || now - g_snapAskedAt > kSnapAgainMs) {
             g_snapAsked = true;
             g_snapAskedAt = now;
