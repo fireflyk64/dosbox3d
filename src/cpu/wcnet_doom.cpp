@@ -36,6 +36,7 @@
 #include "dos_inc.h"
 #include "dos_system.h"
 #include "pic.h"
+#include "video.h"
 
 extern std::string incoming_text;   // the line the emulator draws over the picture (sdlmain.cpp)
 
@@ -269,7 +270,10 @@ Bit16u launcher_poll(Bit16u key) {
 
 void launcher_ended(Bit16u error) {
     if (g_dstage == ST_NET) {
-        if (!g_waitLine.empty() && incoming_text == g_waitLine) incoming_text.clear();
+        if (!g_waitLine.empty() && incoming_text == g_waitLine) {
+            incoming_text.clear();
+            GFX_RedrawOverlay();
+        }
         g_waitLine.clear();
         RealSetVec(kVector, g_oldVec);
         doom_session_game_over();
@@ -334,13 +338,25 @@ Bitu net_callback() {
 // stopped answering (a browser tab put in the background, a machine gone to sleep) stops everybody's.  Said over the
 // picture while it lasts, so that the others know whom they wait for; nothing is done about it (the game goes on as
 // it was when that player is back; a player gone for good is told by its link's end: wcnet_doom_session.cpp).
+// Only after twelve seconds, as Wing Commander's waits in flight are said (the user, 2026-11-06, of those: "we should
+// have that kind of waiting notice give a solid 10-15 seconds before popping up breaking immersion. I'm sure the
+// people will understand it is the network").  WCNET_DOOM_WAITNOTE=<ms> for a rig.
+double wait_notice_ms() {
+    static double ms = -1;
+    if (ms < 0) {
+        const char *env = getenv("WCNET_DOOM_WAITNOTE");
+        ms = env && env[0] ? atof(env) : 12000.0;
+    }
+    return ms;
+}
+
 void wait_notice() {
     const double now = PIC_FullIndex();
     if (now - g_waitCheckedAt < 250) return;
     g_waitCheckedAt = now;
     std::string who;
     for (int p = 0; p < g_dgame.players; p++) {
-        if (p == g_dgame.self || g_heardAt[p] <= 0 || doom_session_gone(p) || now - g_heardAt[p] < 2500) continue;
+        if (p == g_dgame.self || g_heardAt[p] <= 0 || doom_session_gone(p) || now - g_heardAt[p] < wait_notice_ms()) continue;
         who += (who.empty() ? "" : ", ") + g_dgame.names[p];
     }
     const std::string line = who.empty() ? std::string() : "Waiting for " + who + ": their game has stopped answering";
@@ -353,6 +369,9 @@ void wait_notice() {
     } else {
         wclog(1, "DOOM: everybody's game answers again");
     }
+    // (the game's picture stands still while it waits: with no line of it changed the renderer draws no frame, and the
+    // words would never reach the screen; the whole picture once more, and again when they go)
+    GFX_RedrawOverlay();
 }
 
 }  // namespace
