@@ -4123,6 +4123,15 @@ static void step_collisions(void)
 #define HOVER_AHEAD (400L * 256)        /* under this the ground ahead counts too: HOVER_STEPS steps ahead */
 #define HOVER_STEPS 8
 
+/* near a planet (the ALT readout's reach, flight.c) the player's throttle goes no lower than SPEED_FLOOR_KPS (the user,
+ * 2026-11-15: "near a planet the min speed should be 100... below 100 should bring it back up and do a few points of
+ * damage at that time"): the pilot's own cut (the ship still moving) costs STALL_POINTS, at most once a second; a stop
+ * the game made (a crash, a ram, the carrier's hull: the speed 0 too) is only brought back up */
+#define SPEED_FLOOR_KPS 100
+#define SPEED_FLOOR_OVER (20000L * 256)
+#define STALL_POINTS 3
+static uint16_t __far g_stall_at;
+
 #ifdef RV_TESTS
 static long g_low_over = 0x7FFFFFFFL;
 static int16_t g_low_slot;
@@ -4143,6 +4152,13 @@ static void step_ground(void)
         if (s == 0 && frameCounter % 30 == 0)
             RV_LOG("planet: frame %u, the player %ld km over the ground, roof %ld", frameCounter, over / 256, roof / 256);
 #endif
+        if (s == 0 && shipAiState[0] != 9 && over < SPEED_FLOOR_OVER && setSpeed[0] < SPEED_FLOOR_KPS) {
+            if (speedLo[0] && (uint16_t)(frameCounter - g_stall_at) >= LOGIC_HZ) {
+                g_stall_at = frameCounter;
+                (void)do_damage(0, 0, STALL_POINTS, RV_WHERE(p));
+            }
+            setSpeed[0] = SPEED_FLOOR_KPS;
+        }
         if (rvController[s] == CTL_PUPPET)
             continue;
         if (s == 0 ? over < GROUND_CLEAR || roof < GROUND_CLEAR : roof < GROUND_CLEAR) {

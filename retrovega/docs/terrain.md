@@ -106,6 +106,11 @@ Still to do for 30 fps on the page:
     ground 8 steps ahead counts too, so it rises before a cliff, not inside it (the canyon run's lowest fighter, every
     30 frames of a flight in RVT.EXE's log: 28 km, where without the look-ahead one was 49 km in the rock). Under a
     slab's roof, too close, a ship has its step undone.
+  - The speed floor (`SPEED_FLOOR_KPS`): where the ALT readout shows (under 20,000 km), the player's throttle goes no
+    lower than 100 (the user, 2026-11-15: "near a planet the min speed should be 100... below 100 should bring it back
+    up and do a few points of damage at that time"). The pilot's own cut, the ship still moving, costs 3 points
+    (`STALL_POINTS`, at most once a second); a stop the game made (a ram, the carrier's hull: the speed 0 too) is
+    only brought back up. Landing needs no speed, so it is untouched.
   - The autopilot raises anyone it puts under the ground to 300 km over it.
 - **The native builds** answer the same requests with terrain.c (`planet.c` under `RV_HOST`; rvsim without the
   picture).
