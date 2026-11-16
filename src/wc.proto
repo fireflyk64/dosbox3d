@@ -709,6 +709,7 @@ message RapState {
     // the sprite from a third dword's y down to y)
     repeated uint32 shot = 14 [packed=true];
     optional uint32 bank = 15;          // its bank (playerpic: 0..6, 3 level), which spreads its engines' flames
+    optional string callsign = 16;      // (the host's relays, out of a wave: a guest's name for the other guests)
 }
 
 // The damage a pilot's weapons (and its ship's crashes) did to the wave's enemies since its last: (the enemy's index

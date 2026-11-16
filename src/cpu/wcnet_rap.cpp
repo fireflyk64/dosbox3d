@@ -193,10 +193,13 @@ void set_watch(bool on) {
     }
 }
 
+void own_forget();
+
 void forget(const char *why) {
     wclog(1, "Raptor: %s", why);
     if (g_places[P_IDLE] && reg_eip == g_places[P_IDLE]) reg_eip = g_places[P_IDLE] + 2;
     rap_session_shutdown();
+    own_forget();
     set_watch(false);
     memset(g_places, 0, sizeof(g_places));
     g_armed = g_found = false;
@@ -303,25 +306,120 @@ Bit32u item_mem(Bit32u item, Bit32u *size) {
     return mem;
 }
 
+// Each pilot's ship by its seat (the user, 2026-11-15: "draw the second player as green stripes instead of red and the
+// next as blue stripes instead of red and the last as pruple stripes if possible").  The ship's stripes are the
+// palette's red ramp (32..47, light to dark; the hull its greys): seat 1's are the green ramp (96..), seat 2's the blue
+// (128..), each two shades lighter; the palette has no purple, so seat 3's are a checker of the red and that blue,
+// which the eye mixes at the game's 320 x 200, by the sprite's own columns and rows (it does not crawl as the ship moves).  Seat 0 keeps the game's red.
+enum { kTints = 4 };
+inline Bit32u hd(const Bit8u *p) { return host_readd((HostPt)p); }
+inline Bit8u tint_px(Bit8u c, int tint, int x, int y) {
+    if (c < 32 || c >= 48 || tint <= 0) return c;
+    const int i = c - 32;
+    if (tint == 1) return (Bit8u)(96 + std::max(0, i - 2));
+    if (tint == 2) return (Bit8u)(128 + std::max(0, i - 2));
+    return ((x + y) & 1) ? c : (Bit8u)(128 + std::max(0, i - 2));
+}
+
 // GFX_PutSprite's sprite: a GFX_PIC (type 0, ..., width, height), then segments {x, y, offset, length} each with its
-// length's pixels, the last offset -1; clipped to the map (16..304) and the screen's rows
-void put_sprite(Bit32u pic, Bit32u size, int x, int y) {
+// length's pixels, the last offset -1; clipped to the map (16..304) and the screen's rows.  `pic` is the sprite's bytes
+// (the game's memory, or a copy of ours).
+void put_sprite(const Bit8u *pic, Bit32u size, int x, int y, int tint = 0) {
     const Bit32u buf = r32(D(D_DISPLAYBUFFER));
-    if (!pic || size < 0x14 || !ram(pic, size) || !ram(buf, 64000) || r32(pic) != 0) return;
-    Bit32u p = pic + 0x14;
-    const Bit32u end = pic + size;
-    for (int guard = 0; p + 16 <= end && guard < 512; guard++) {
-        const Bit32s sx = (Bit32s)r32(p), sy = (Bit32s)r32(p + 4), off = (Bit32s)r32(p + 8), len = (Bit32s)r32(p + 12);
+    if (!pic || size < 0x14 || !ram(buf, 64000) || hd(pic) != 0) return;
+    Bit32u p = 0x14;
+    for (int guard = 0; p + 16 <= size && guard < 512; guard++) {
+        const Bit32s sx = (Bit32s)hd(pic + p), sy = (Bit32s)hd(pic + p + 4), off = (Bit32s)hd(pic + p + 8),
+                     len = (Bit32s)hd(pic + p + 12);
         if (off == -1) break;
         p += 16;
-        if (len <= 0 || p + (Bit32u)len > end) break;
+        if (len <= 0 || (Bit32u)len > size - p) break;
         const int ox = x + sx, oy = y + sy;
         if (oy >= 0 && oy < 200) {
             const int a = std::max(ox, (int)kMapLeft), b = std::min(ox + len, (int)kMapRight);
-            if (b > a) memcpy(MemBase + buf + (Bit32u)(oy * 320 + a), MemBase + p + (Bit32u)(a - ox), (size_t)(b - a));
+            Bit8u *to = MemBase + buf + (Bit32u)(oy * 320);
+            if (b > a && tint <= 0) memcpy(to + a, pic + p + (Bit32u)(a - ox), (size_t)(b - a));
+            else for (int i = a; i < b; i++) to[i] = tint_px(pic[p + (Bit32u)(i - ox)], tint, i - x, sy);
         }
         p += (Bit32u)len;
     }
+}
+
+// a sprite's bytes in the game's memory (NULL: not there, or not all in memory)
+const Bit8u *item_bytes(Bit32u item, Bit32u *size) {
+    const Bit32u mem = item_mem(item, size);
+    return mem && *size >= 0x14 && *size < 0x100000 && ram(mem, *size) ? MemBase + mem : NULL;
+}
+
+// Our own ship in our seat's colour: the game draws it itself (GFX_PutSprite of curship [playerpic + g_flash]), so its
+// 14 frames are tinted where the game keeps them, in its archive's memory, while a wave is flown together, and put
+// back as they were at the wave's end.  Each frame of the wave they are looked at again (an item the game let go and
+// loaded again is as it was: tinted again).  The others' ships are drawn from the copies kept of them as they were.
+struct OwnFrame {
+    Bit32u item;
+    std::vector<Bit8u> was, tinted;
+    OwnFrame() : item(0) {}
+};
+enum { kOwnFrames = 14 };
+OwnFrame g_own[kOwnFrames];
+
+void tint_sprite(Bit8u *pic, Bit32u size, int tint) {
+    if (size < 0x14 || hd(pic) != 0) return;
+    Bit32u p = 0x14;
+    for (int guard = 0; p + 16 <= size && guard < 512; guard++) {
+        const Bit32s sx = (Bit32s)hd(pic + p), sy = (Bit32s)hd(pic + p + 4), off = (Bit32s)hd(pic + p + 8),
+                     len = (Bit32s)hd(pic + p + 12);
+        if (off == -1) break;
+        p += 16;
+        if (len <= 0 || (Bit32u)len > size - p) break;
+        for (Bit32s i = 0; i < len; i++) pic[p + (Bit32u)i] = tint_px(pic[p + (Bit32u)i], tint, sx + i, sy);
+        p += (Bit32u)len;
+    }
+}
+
+void own_forget() {
+    for (int i = 0; i < kOwnFrames; i++) g_own[i] = OwnFrame();
+}
+
+void own_restore() {
+    for (int i = 0; i < kOwnFrames; i++) {
+        OwnFrame &o = g_own[i];
+        Bit32u size = 0;
+        Bit8u *mem = o.item ? (Bit8u *)item_bytes(o.item, &size) : NULL;
+        if (mem && size == o.tinted.size() && memcmp(mem, &o.tinted[0], size) == 0) memcpy(mem, &o.was[0], size);
+        o = OwnFrame();
+    }
+}
+
+void own_tint(int tint) {
+    if (tint <= 0 || tint >= kTints) return;
+    for (int i = 0; i < kOwnFrames; i++) {
+        const Bit32u item = r32(D(D_CURSHIP) + 4 * (Bit32u)i);
+        bool twice = false;         // (the flash frames can be the plain ones again)
+        for (int j = 0; j < i && !twice; j++) twice = g_own[j].item == item;
+        Bit32u size = 0;
+        Bit8u *mem = item && !twice ? (Bit8u *)item_bytes(item, &size) : NULL;
+        OwnFrame &o = g_own[i];
+        if (!mem || size > 16384) {
+            if (o.item != item) o = OwnFrame();
+            continue;
+        }
+        if (o.item == item && o.tinted.size() == size && memcmp(mem, &o.tinted[0], size) == 0) continue;
+        o.item = item;
+        o.was.assign(mem, mem + size);
+        tint_sprite(mem, size, tint);
+        o.tinted.assign(mem, mem + size);
+    }
+}
+
+// a ship's frame as the game has it (not as tinted for our own seat)
+const Bit8u *ship_bytes(Bit32u item, Bit32u *size) {
+    const Bit8u *mem = item_bytes(item, size);
+    for (int i = 0; mem && i < kOwnFrames; i++) {
+        const OwnFrame &o = g_own[i];
+        if (o.item == item && o.tinted.size() == *size && memcmp(mem, &o.tinted[0], *size) == 0) return &o.was[0];
+    }
+    return mem;
 }
 
 void put_line(int x0, int y0, int x1, int y1, Bit8u colour) {
@@ -588,15 +686,16 @@ void rap_add_shadow(Bit32u item, int x, int y) {
     w32(D(D_NUM_SHADOWS), (Bit32u)(n + 1));
 }
 
-void rap_draw_ship(Bit32u item, int x, int y) {
+void rap_draw_ship(Bit32u item, int x, int y, int seat) {
+    if (!g_found) return;
     Bit32u size = 0;
-    Bit32u pic = item_mem(item, &size);
+    const Bit8u *pic = ship_bytes(item, &size);
     if (!pic) {
         // (a frame not in memory here: our own ship's current one, the same set)
         const Bit32u own = r32(D(D_CURSHIP) + 4 * r32(D(D_PLAYERPIC)));
-        pic = item_mem(own, &size);
+        pic = ship_bytes(own, &size);
     }
-    put_sprite(pic, size, x, y);
+    put_sprite(pic, size, x, y, seat > 0 && seat < kTints ? seat : 0);
 }
 
 void rap_draw_shots(const std::vector<Bit32u> &s, int shipX, int shipY) {
@@ -612,7 +711,7 @@ void rap_draw_shots(const std::vector<Bit32u> &s, int shipX, int shipY) {
             continue;
         }
         Bit32u size = 0;
-        const Bit32u pic = item_mem(s[i] & 0x0FFFFFFF, &size);
+        const Bit8u *pic = item_bytes(s[i] & 0x0FFFFFFF, &size);
         if (kind == 2) {
             if (i + 2 >= s.size()) break;
             const int top = (int)(Bit32s)s[i + 2];
@@ -691,6 +790,7 @@ void rap_check_hooks(Bit32u eip) {
             if (energy && (Bit32s)r32(energy + 8) > 0) w32(energy + 8, 100);
         }
         if (rap_session_run()) {
+            own_tint(rap_session_seat());
             enemies_frame();
             RapLocal l;
             rap_local(&l);
@@ -760,6 +860,7 @@ void rap_check_hooks(Bit32u eip) {
         rap_session_wave_start();
     } else if (eip == g_places[P_GAME_END]) {
         g_inWave = false;
+        own_restore();
         rap_session_wave_end();
     } else if (eip == g_places[P_LAUNCH]) {
         if (g_launchReleased) {

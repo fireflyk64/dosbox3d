@@ -26,7 +26,8 @@ can have their own upgrades, etc. This should be designed in a way that does not
   * Each game kills it, explodes it and drops its bonus. The money goes only to the pilot whose damage killed it.
 * **"GG for both."** A pilot shot down blows the other pilot's ship up too, through the game's own death and its
   death screen.
-* Rooms of 2 (`maxSeats`); room codes start `RAP-`.
+* Rooms of up to 4 (`maxSeats`; section 9); room codes start `RAP-`.
+* **Each ship's stripes its seat's colour** (section 9): the host's red, then green, blue, purple.
 * **A controller** picked in the page's Controller menu flies the ship (the user, 2026-11-14: "Please add gamepad support
   if selected on the menu"): section 4's "A controller".
 
@@ -156,8 +157,9 @@ keyboard, the control the page's SETUP.INI gives it.
   is New Mission at 41 s, the name and call sign 45-50, the difficulty as offered 53, the hangar's Fly Mission 57-59,
   the Bravo sector 63, in the wave at ~64 s.
 * `scripts/rapnet-duo.sh [seconds] [host's script] [guest's]`: two machines over TCP, both routed into the wave.
+  `PLAYERS=3|4`: one or two more guests (`G2X=`, `G3X=` their scripts).
 * `scripts/web-rap.sh [seconds]`: two browser pages in a room of a local lobby, the zip dropped into each. Ends
-  "RAP PAGE OK". `PAD=1`: the guest flies by a simulated standard gamepad picked in its Controller menu. In the wave the
+  "RAP PAGE OK". `PILOTS=3|4`: more guest pages, the room made by the host's page with that many seats. `PAD=1`: the guest flies by a simulated standard gamepad picked in its Controller menu. In the wave the
   stick left, the stick right and the D-pad up must move its ship that way, and A held must fire.
 * Aids:
   * `!rapenergy=N` (our energy);
@@ -256,3 +258,38 @@ the launch", "the wave begins together", damage told both ways, each ship on the
 captured at the same moment with the ships flown apart: two ships on each, the other's with the pale-blue flames).
 A registered host and a shareware guest: Bravo together; Tango: the guest held with the line above while the host
 flies.
+
+## 9. Four pilots, each ship's stripes its own colour
+
+The user, 2026-11-15: "Raptor right now only supports 2 players. Can you make it support up to 4. Can you also draw the
+second player as green stripes instead of red and the next as blue stripes instead of red and the last as pruple
+stripes if possible".
+
+**Four.** The session was written for four seats (the host relays each guest's state, damage and death to the other
+guests; the launch waits for every pilot in the room; the frame's wait holds for the slowest); the page's rooms were
+of 2.  Now `maxSeats: 4`.  The launch waits only for the pilots in the room, not for its empty seats.  A guest learns
+the other guests' names from the host's relays of their states out of a wave (`RapState.callsign`).
+
+**The colours.**  The ship's stripes are the palette's red ramp (colours 32..47, light to dark); nothing else of the
+ship is.  By the seat:
+
+| seat | stripes | palette |
+|---|---|---|
+| 0 (the host) | red | as the game has them |
+| 1 | green | 96.. (two shades lighter) |
+| 2 | blue | 128.. (two shades lighter) |
+| 3 | purple | a checker of the red and that blue: the palette has no purple; at 320 x 200 the eye mixes them |
+
+* The seats after the host's go by the order the pilots came into the room.
+* *The others' ships* are drawn by the layer (`put_sprite`'s tint).
+* *Our own ship* is drawn by the game, so its 14 frames (`curship`) are tinted where the game keeps them, in its
+  archive's memory, each frame of a wave flown together (a frame the game let go and loaded again is tinted again), and
+  put back at the wave's end; the layer keeps each as it was, and draws the others' ships from those.  A wave flown
+  alone, the hangar and the shop are untouched.
+* Every pilot's ship is the same colour on every screen, its own included.
+* The others' flames stay pale blue and narrow, ours the game's (section 2).
+
+**Measured** (four native machines, `PLAYERS=4 scripts/rapnet-duo.sh`): "In HOST's room as pilot 2/3/4 of 4", the wave
+begun together on all four, each drawing the 3 others every frame (72 ships a second at 24 frames); the four screens
+captured at the same wave frame show the same four ships in the same places, red, green, blue and purple, on every
+one; the host blown up (`!rapenergy=0`): all four blown up, "HOST was shot down" on the three guests.

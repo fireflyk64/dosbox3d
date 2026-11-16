@@ -5,6 +5,7 @@
 #
 #   scripts/web-rap.sh [seconds]
 #   ZIP= the shareware (default ~/dev/rap-dl/1rap12.zip); PORT, LOBBY_PORT; ROUTE= the key script into the wave
+#   PILOTS=3|4: one or two more guest pages, a room of that many seats made by the host's page
 #   PAD=1: the guest flies with a simulated controller picked in its Controller menu (no keys of its script in the wave)
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

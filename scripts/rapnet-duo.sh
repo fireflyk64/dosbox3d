@@ -8,6 +8,8 @@
 #   PORT=        the TCP port (default 7481)
 #   SECTOR=tango  the host's and the guest's routes choose the Tango sector (the registered game); GUEST_SECTOR=
 #                 the guest's own choice (empty: Bravo, a shareware guest)
+#   PLAYERS=3|4  one or two more guests (guest2, guest3: $OUT/guest2, $OUT/guest3), a room of that many seats;
+#                G2X= and G3X= their extra key scripts
 #   GUEST_LATE=  seconds the guest starts after the host (default 2)
 #   CYCLES=      (default 60000)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -22,15 +24,24 @@ cp -f ${DOSBOX:-$ROOT/build-native/src/dosbox} $BIN
 route="41:enter,45:a,45.3:c,45.6:e,46:enter,49:a,49.3:c,49.6:e,50:enter,53:enter,57:down,59:enter"
 sector() { if [ "$1" = tango ]; then echo "$route,62:down,63:down,65:enter"; else echo "$route,63:enter"; fi; }
 hroute=$(sector "${SECTOR:-}"); groute=$(sector "${GUEST_SECTOR-${SECTOR:-}}")
-RAPDIR=${HOST_RAPDIR:-${RAPDIR:-}} OUT=$OUT/host DOSBOX=$BIN CYCLES=${CYCLES:-60000} ENV="WCPORT=$PORT WCCALLSIGN=HOST ${HOSTENV:-}" SHOW=0 \
+PLAYERS=${PLAYERS:-2}
+RAPDIR=${HOST_RAPDIR:-${RAPDIR:-}} OUT=$OUT/host DOSBOX=$BIN CYCLES=${CYCLES:-60000} ENV="WCPORT=$PORT WCPLAYERS=$PLAYERS WCCALLSIGN=HOST ${HOSTENV:-}" SHOW=0 \
     $ROOT/scripts/raprun.sh $DUR "$hroute${HX:+,$HX}" &
 HPID=$!
 sleep ${GUEST_LATE:-2}
 RAPDIR=${GUEST_RAPDIR:-${RAPDIR:-}} OUT=$OUT/guest DOSBOX=$BIN CYCLES=${CYCLES:-60000} ENV="WCHOST=127.0.0.1 WCPORT=$PORT WCCALLSIGN=GUEST ${GUESTENV:-}" SHOW=0 \
     $ROOT/scripts/raprun.sh $DUR "$groute${GX:+,$GX}" &
 GPID=$!
+who="host guest"
+for n in 2 3; do
+  [ $PLAYERS -gt $n ] || continue
+  mkdir -p $OUT/guest$n; x=G${n}X
+  RAPDIR=${GUEST_RAPDIR:-${RAPDIR:-}} OUT=$OUT/guest$n DOSBOX=$BIN CYCLES=${CYCLES:-60000} ENV="WCHOST=127.0.0.1 WCPORT=$PORT WCCALLSIGN=GUEST$n ${GUESTENV:-}" SHOW=0 \
+      $ROOT/scripts/raprun.sh $DUR "$groute${!x:+,${!x}}" &
+  GPID="$GPID $!"; who="$who guest$n"
+done
 wait $HPID $GPID
-for w in host guest; do
+for w in $who; do
   echo "== $w"
   grep -a "Raptor" $OUT/$w/run.err | grep -v ": [0-9.]*s: " | cut -c1-200 | tail -12
   grep -a "Raptor: [0-9.]*s: " $OUT/$w/run.err | tail -3 | cut -c1-240

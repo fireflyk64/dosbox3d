@@ -738,10 +738,10 @@ export const GAMES = [
   // names, no use) is another build of 1.2 that the same signatures find (scripts/rapsig.py checks both programs):
   // three sectors, FILE0002 to FILE0004.GLB; it will not start without its FILE_ID.DIZ.  RAP.EXE is a
   // 32-bit program bound with DOS/4GW that the hooks find in memory by its code (src/cpu/wcnet_rap.cpp).  Flown
-  // together: the host's wave for both, launched together; each pilot's own ship, weapons, money and shop; the
-  // enemies' and the ground's damage shared, the money the killer's, each game's bonuses its own pilot's; a pilot shot
-  // down the end for both (docs/raptor.md).  The game runs 23 frames a second by its own clock.
-  { id: "rap", tag: "RAP", title: "Raptor: Call of the Shadows", detect: ["RAP.EXE"], run: "rap", multiplayer: true, maxSeats: 2,
+  // together, up to four pilots: the host's wave for all, launched together; each pilot's own ship, weapons, money and
+  // shop; the enemies' and the ground's damage shared, the money the killer's, each game's bonuses its own pilot's; a
+  // pilot shot down the end for all; each ship's stripes its seat's colour (docs/raptor.md).  The game runs 23 frames a second by its own clock.
+  { id: "rap", tag: "RAP", title: "Raptor: Call of the Shadows", detect: ["RAP.EXE"], run: "rap", multiplayer: true, maxSeats: 4,
     build: { text: "ENEMY_Think() - Invalid ANIMTYPE1" },
     cycles: 40000, screen: [320, 200], noFlight: true, noRoomOptions: true, prepare: rapPrepare,
     // (the game's archives -- FILE0000 and FILE0001 the shareware's, FILE0002 to FILE0004 the registered game's other

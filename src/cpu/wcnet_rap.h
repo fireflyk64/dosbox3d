@@ -55,7 +55,7 @@ bool rap_in_wave();                                         // Do_Game under way
 // shape than ours: rap_draw_flames), its shadow put among the game's own (rap_add_shadow: drawn by SHADOW_DisplaySky)
 void rap_draw_flames(int bank, int x, int y);
 void rap_add_shadow(Bit32u pic, int x, int y);
-void rap_draw_ship(Bit32u pic, int x, int y);
+void rap_draw_ship(Bit32u pic, int x, int y, int seat);     // (its stripes its seat's colour)
 void rap_draw_shots(const std::vector<Bit32u> &shots, int shipX, int shipY);
 
 // The session's (wcnet_rap_session.cpp), for the game's hooks.
@@ -68,6 +68,7 @@ bool rap_session_launch_go();               // asked by the hold's idle: may it 
 void rap_session_wave_start();              // Do_Game entered
 void rap_session_wave_end();                // Do_Game left
 Bit32u rap_session_run();                   // the wave flown together (0: alone)
+int rap_session_seat();                     // our seat in the room (0 the host: the ship's stripes by it)
 bool rap_session_hold_frame(Bit32u frame);  // the frame hold: ahead of a pilot of the same run
 void rap_session_damage(int index, int damage);    // our damage to an enemy (sent at the next tick)
 void rap_session_dead();                    // our ship blown up

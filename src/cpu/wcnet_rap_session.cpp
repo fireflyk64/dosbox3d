@@ -234,6 +234,7 @@ void take_state(const RapState &st, int seat) {
     r.bank = st.has_bank() ? (int)st.bank() : 3;
     r.shield = st.shield();
     r.shots.assign(st.shot().begin(), st.shot().end());
+    if (!g_net->host && st.has_callsign()) r.callsign = st.callsign();
     if (r.inWave && r.run && !wasIn) wclog(1, "Raptor: %s flies run %u (sector %d wave %d)", r.callsign.c_str(), r.run, r.game >> 4, r.game & 15);
 }
 
@@ -279,6 +280,9 @@ void handle(Peer *p, NetworkMessage &msg) {
         NetworkMessage out;
         *out.mutable_rap_state() = msg.rap_state();
         out.mutable_rap_state()->set_player((Bit32u)seat);
+        // (a guest knows the other guests' names by the host's relays, those out of a wave: ten a second)
+        if (g_net->host && !msg.rap_state().in_wave()) out.mutable_rap_state()->set_callsign(p->callsign);
+        else out.mutable_rap_state()->clear_callsign();
         relay(p, [&](Peer *to) { to->conn.send_best_effort(out); });
     } else if (msg.has_rap_hits()) {
         if (!p->hello) return;
@@ -547,6 +551,8 @@ void rap_session_wave_end() {
 
 Bit32u rap_session_run() { return g_net ? g_run : 0; }
 
+int rap_session_seat() { return g_net && g_net->self > 0 ? g_net->self : 0; }
+
 bool rap_session_hold_frame(Bit32u frame) {
     if (!g_net || !g_run) return false;
     const double now = PIC_FullIndex();
@@ -591,7 +597,7 @@ void rap_session_draw() {
         rap_draw_shots(r.shots, r.x, r.y);
         if (r.drawn) {
             rap_draw_flames(r.bank, r.x, r.y);
-            rap_draw_ship(r.pic, r.x, r.y);
+            rap_draw_ship(r.pic, r.x, r.y, s);
             g_drawn++;
         }
     }

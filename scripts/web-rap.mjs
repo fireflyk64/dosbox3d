@@ -1,4 +1,4 @@
-// Raptor in the browser, two pages in one room of a local lobby server (scripts/web-rap.sh): each page is given the
+// Raptor in the browser, two pages (PILOTS=3|4: more) in one room of a local lobby server (scripts/web-rap.sh): each page is given the
 // shareware's zip as a player drops it (1rap12.zip: its installer and RAPSW12.SHR, unpacked by the page), both press
 // Fly; each page's key script (env.WCNET_KEYSCRIPT, from boot) makes a new pilot, chooses the Bravo sector at the ship
 // computer and flies.  Checks, each printed with OK or FAIL: the files recognised, the settings the page wrote, the
@@ -31,13 +31,16 @@ let failed = 0;
 const check = (ok, what) => { console.log(`${stamp()} ${ok ? "OK  " : "FAIL"} ${what}`); if (!ok) failed++; };
 
 const PAD = !!process.env.PAD;
+// PILOTS=3|4: one or two more guest pages (guest2, guest3) in a room of that many seats, which the host's page makes
+// (its Players box); every page must draw all the others' ships
+const PILOTS = Math.max(2, Math.min(4, Number(process.env.PILOTS) || 2));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const mockPad = () => {
   window.__pad = { id: "Mock Pad (STANDARD GAMEPAD)", index: 0, connected: true, mapping: "standard", timestamp: 0,
                    axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })) };
   navigator.getGamepads = () => [window.__pad];
 };
-async function openPage(who, script, callsign, pad = false) {
+async function openPage(who, script, callsign, pad = false, makeRoom = 0) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 1100 } });
   if (pad) await page.addInitScript(mockPad);
   const logs = [], frames = [];
@@ -53,7 +56,7 @@ async function openPage(who, script, callsign, pad = false) {
   page.on("pageerror", (e) => console.log(`${stamp()} [${who}] PAGE ERROR: ${e.message}`));
   page.on("crash", () => console.log(`${stamp()} [${who}] PAGE CRASHED`));
   const u = new URL(pageUrl);
-  u.searchParams.set("room", room);
+  if (!makeRoom) u.searchParams.set("room", room);
   u.searchParams.set("server", lobbyUrl);
   u.searchParams.set("callsign", callsign);
   u.searchParams.set("env.WCNET_KEYSCRIPT", script);
@@ -79,23 +82,32 @@ async function openPage(who, script, callsign, pad = false) {
     await page.selectOption("#padSelect", key).catch(() => {});
     check(await page.inputValue("#padSelect") === key, `${who}: the controller picked in the Controller menu`);
   }
+  if (makeRoom) {
+    const max = await page.$eval("#seats", (el) => el.max);
+    check(max === "4", `${who}: the Players box takes 4 for Raptor (${max})`);
+    await page.fill("#room", room);
+    await page.fill("#seats", String(makeRoom));
+    await page.dispatchEvent("#seats", "change");
+    await page.click("#join");
+  }
   return { page, logs, who, frames };
 }
 const all = (p, re) => p.logs.filter((l) => re.test(l));
 
-const host = await openPage("host", hostScript, "HOSTPILOT");
+const host = await openPage("host", hostScript, "HOSTPILOT", false, PILOTS > 2 ? PILOTS : 0);
 await host.page.waitForFunction(() => !document.getElementById("lobby").hidden && document.getElementById("roster").children.length > 0, null, { timeout: 60000 });
 await new Promise((r) => setTimeout(r, 2000));
 const guest = await openPage("guest", guestScript, "GUESTPILOT", PAD);
-await guest.page.waitForFunction(() => document.getElementById("roster").children.length > 1, null, { timeout: 60000 });
-await host.page.waitForFunction(() => document.getElementById("roster").children.length > 1, null, { timeout: 60000 });
+const pilots = [host, guest];
+for (let n = 2; n < PILOTS; n++) pilots.push(await openPage(`guest${n}`, guestScript, `GUEST${n}PILOT`));
+for (const p of pilots) await p.page.waitForFunction((n) => document.getElementById("roster").children.length >= n, PILOTS, { timeout: 60000 });
 await host.page.screenshot({ path: path.join(shotDir, "web-host-room.png"), fullPage: true });
-for (const p of [host, guest]) {
+for (const p of pilots) {
   await p.page.evaluate(() => { const b = document.getElementById("fullStart"); if (b && b.checked) b.click(); });
 }
 await host.page.click("#fly");
 await new Promise((r) => setTimeout(r, 4000));
-if (await guest.page.$eval("#fly", (b) => !b.disabled)) await guest.page.click("#fly");
+for (const p of pilots.slice(1)) if (await p.page.$eval("#fly", (b) => !b.disabled)) await p.page.click("#fly");
 // (the guest's controller in the wave: where its ship is, from the per-second report)
 const padTest = PAD ? (async () => {
   const g = guest.page;
@@ -125,7 +137,7 @@ const padTest = PAD ? (async () => {
 const seconds = Number(secondsArg);
 for (let t = 20; t <= seconds; t += 20) {
   await new Promise((r) => setTimeout(r, 20000));
-  for (const p of [host, guest]) {
+  for (const p of pilots) {
     await p.page.locator("#canvas").screenshot({ path: path.join(shotDir, `web-${p.who}-${t}.png`) }).catch(() => {});
   }
 }
@@ -141,6 +153,19 @@ const told = sum(host, /damage told (\d+)/) + sum(guest, /damage told (\d+)/);
 const taken = sum(host, /taken (\d+)/) + sum(guest, /taken (\d+)/);
 console.log(`${stamp()} the other's ship drawn: host ${hd} frames, guest ${gd}; damage told ${told}, taken ${taken}`);
 check(hd > 100 && gd > 100, "both pages drew the other's ship");
+for (const p of pilots.slice(2)) {
+  check(all(p, /Raptor: the host's wave/).length > 0 && all(p, /the wave begins together/).length > 0, `${p.who}: the host's wave, begun together`);
+}
+if (PILOTS > 2) {
+  // (every page draws every other pilot's ship each frame: PILOTS - 1 a frame at its best)
+  const per = pilots.map((p) => {
+    const ls = all(p, /Raptor: [0-9.]+s: .* run [1-9]/);
+    const frames = ls.reduce((s, l) => s + Number((/(\d+) frames/.exec(l) || [0, 0])[1]), 0);
+    return [p.who, sum(p, /ships drawn (\d+)/), frames];
+  });
+  console.log(`${stamp()} ships drawn / frames: ` + per.map((x) => `${x[0]} ${x[1]}/${x[2]}`).join(", "));
+  check(per.every((x) => x[1] > 0.8 * (PILOTS - 1) * x[2] && x[2] > 100), `each of the ${PILOTS} pages drew the ${PILOTS - 1} others' ships`);
+}
 check(told > 0 && taken > 0, "damage told and taken");
 if (padTest) {
   const firing = await padTest;
@@ -149,7 +174,7 @@ if (padTest) {
   console.log(`${stamp()} guest: damage told with A held: ${gt}`);
   check(gt > 0, "guest: the controller's A fired (the guest's damage told)");
 }
-for (const p of [host, guest]) {
+for (const p of pilots) {
   const f = p.frames.slice(3);
   if (f.length > 10) {
     const a = f[0], b = f[f.length - 1];
@@ -158,7 +183,7 @@ for (const p of [host, guest]) {
     console.log(`${stamp()} ${p.who}: the emulator at ${Math.round(100 * speed)}% of real time over ${f.length} s, ${fps.toFixed(1)} frames a game second, ${(fps * speed).toFixed(1)} a wall second`);
   }
 }
-for (const p of [host, guest]) fs.writeFileSync(path.join(shotDir, `${p.who}.log`), p.logs.join("\n") + "\n");
+for (const p of pilots) fs.writeFileSync(path.join(shotDir, `${p.who}.log`), p.logs.join("\n") + "\n");
 await browser.close();
 console.log(failed ? `RAP PAGE FAILED (${failed})` : "RAP PAGE OK");
 process.exit(failed ? 1 : 0);
