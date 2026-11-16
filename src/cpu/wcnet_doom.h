@@ -22,6 +22,7 @@ void doom_setup();                  // DOOMNET.COM put on the Z: drive
 void doom_tick();                   // every ~1000 instructions
 bool doom_launched();               // the launcher was run (DOOM's machine: none of the other games' aids apply)
 bool doom_running();                // DOOM run by the launcher, in a network game or alone
+bool doom_script_item(const std::string &item, double t);   // a rig's key-script aid: !doomtext (the text screen logged)
 
 enum { kDoomMaxPlayers = 4, kDoomPacketMax = 104 };    // (MAXPLAYERS; sizeof(doomdata_t): 8 + BACKUPTICS * 8)
 

@@ -339,6 +339,14 @@ void doom_setup() {
 
 bool doom_launched() { return g_dstage != ST_NONE; }
 
+// A rig's aid: "!doomtext" writes the text screen into the log (DOOM's start-up lines, the launcher's, an error's).
+bool doom_script_item(const std::string &item, double t) {
+    if (item != "!doomtext") return false;
+    wclog(1, "key script %.1fs: DOOM: the text screen", t);
+    game_log_text_screen();
+    return true;
+}
+
 bool doom_running() { return g_dstage == ST_NET || g_dstage == ST_ALONE; }
 
 void doom_tick() {

@@ -126,9 +126,15 @@ check(newRoomCode("junk").startsWith("WC-") && newRoomCode("SO1").startsWith("SO
 // the lobby takes, for every mission of every game in the registry.
 {
   const { GAMES } = await import("../web/gamefiles.js");
-  check(GAMES.filter((g) => g.multiplayer).map((g) => g.tag).sort().join() === "PRF,PRV,RAP,RV,SM2,SO1,SO2,SO3,TF,TFD,TV,WC1,WC2", "the registry's tags: " + GAMES.map((g) => g.tag));
+  check(GAMES.filter((g) => g.multiplayer).map((g) => g.tag).sort().join() === "DOOM,PRF,PRV,RAP,RV,SM2,SO1,SO2,SO3,TF,TFD,TV,WC1,WC2", "the registry's tags: " + GAMES.map((g) => g.tag));
   for (const g of GAMES) {
     for (const s of (g.campaign ? g.campaign.series : [])) {
+      // (a campaign that words its own missions, DOOM's skills and levels: the words the offer carries)
+      for (let i = 0; g.id === "doom" && i < s.files.length; i++) {
+        const line = `${g.tag}-4821 ${g.campaign.label({ series: s.series, mis: i }, "short")}, 3 seats free`;
+        const r = checkMessage(line);
+        if (!r.ok || codes(line) !== `${g.tag}-4821` || Array.from(line).length > MAX_CHARS) check(false, `an offer the lobby would not take (${r.why}): "${line}"`);
+      }
       const n = Array.isArray(s.missions) ? s.missions.length : s.missions;
       for (let i = 0; i < n; i++) {
         const what = s.name ? `${s.name} ${i + 1}` : `series ${s.series} mission ${i + 1}`;
