@@ -336,16 +336,18 @@ static int16_t nav_has_ships(int16_t n);
  * Enyo 1, tests/wc1/run-old.sh: the user, "I thought you had to get within 1500 or 1000 km in the original to have
  * 'visited' something"): at a point with ships still to come, at its reach, where they come (15,000 km short of its
  * nav 1 and its three Dralthi); at a point with nobody to come, NAV_CLOSE_KM short (its nav 2, a field and no ships,
- * fields off: 1,171 km a moment after the jump).  For a point in a field FIELD_IN_KM short of the field's middle, at
- * most half its radius: the rocks come 3,050 km ahead of the nose (rocks.c FX_SPAWN_KM) and only while that point is in
- * the field, so the player stops in the field facing its middle */
+ * fields off: 1,171 km a moment after the jump).  For a point in a field, AUTOPILOT_FIELD_KM outside the field's edge
+ * facing its middle, as for any field on the way, and the player flies in (the user, 2026-11-16, of Enigma 1's nav 2:
+ * "I think it should be at the edge of the asteroid field ... and so you have to fly a good solid 7000-10000km to get
+ * to the nav point right now it's just like 2000 away": it stopped 3,000 km short of the middle, inside).  The rocks
+ * come 3,050 km ahead of the nose (rocks.c FX_SPAWN_KM) while that point is in the field, so they come at once */
 #define NAV_CLOSE_KM 1200
-#define FIELD_IN_KM 3000
+#define AUTOPILOT_FIELD_KM 500          /* it stops this far short of a field's edge */
 static int32_t nav_stop(int16_t n)
 {
     int16_t f = nav_field(n);
     if (f >= 0)
-        return g_fields[f].radius / 2 < FIELD_IN_KM ? g_fields[f].radius / 2 : FIELD_IN_KM;
+        return (int32_t)g_fields[f].radius + AUTOPILOT_FIELD_KM;
     if (n > 0 && !nav_has_ships(n) && NAV_CLOSE_KM < nav_reach(n))
         return NAV_CLOSE_KM;
     return nav_reach(n);
@@ -553,9 +555,9 @@ int16_t logic_is_home(int16_t s)
 #define LANDING_RANGE_KM 25000          /* (the autopilot home stops at the launch's reach, 20,000 km, and the carrier is
                                            2,000 behind the launch: it may be asked on the way in) */
 static int32_t gap_between(int16_t a, int16_t b);
+static int16_t home_slot(void);
 
 int16_t logic_landing_allowed(void)
-static int16_t home_slot(void);
 {
     return ((g_navs_seen | g_navs_been) & ~1u) != 0 || mission_done();   /* (been: a guest's own, its waves the host's) */
 }
@@ -948,13 +950,13 @@ static void step_minds(void)
 static int16_t cos_nose_to(int16_t s, int16_t h);
 static int32_t km_between(int16_t a, int16_t b);
 
-int16_t logic_target_ahead(int16_t s)
-{
 /* a ship farther than this (the cockpit's readout, hull to hull) is no target, and a target that goes farther is
  * dropped: the scene's reach (SCENE_KM), what the old game kept in its world (the user, 2026-11-16: "I notice sometimes
  * the carrier is targetable from VERY far away ... either way we shouldn't be able to target things far away") */
 #define TARGET_KM 16000
 
+int16_t logic_target_ahead(int16_t s)
+{
     RvVec3 d;
     if (s <= 0 || s >= NUM_SHIP_SLOTS || !slot_is_ship(s) || maybeEntityType[s] == ET_MISSILE || shipAiState[s] == 9
         || gap_between(0, s) > TARGET_KM)
@@ -4803,7 +4805,6 @@ void logic_end(void)
  * point, as the old games cut to the arrival; 1 when it went, 0 when it may not.  (On a multiplayer client the layer
  * steps over the key's call: the host's autopilot moves everyone).  The next nav point is the first not reached
  * yet, home (nav 0) when all are; the player arrives at its reach (nav_reach), facing it */
-#define AUTOPILOT_FIELD_KM 500          /* it stops this far short of a field's edge */
 #define AUTOPILOT_REGION_IN_KM 500      /* and this far inside the reach of a trigger point on its way, so it goes off */
 #define AUTOPILOT_MIN_KM 1000           /* a field nearer than this along the way: it will not go (the old game's: not in
                                            a field, and it stops at the edge; the player flies through) */
@@ -4880,15 +4881,20 @@ static int32_t way_stop(int16_t next, int16_t *region, int16_t *field)
 /* the autopilot may go: the player alive, no enemy within AUTOPILOT_CLEAR_KM, a nav point to go to (the one chosen, else
  * the next not reached, else home) not yet reached, and no field at hand: that nav point, or -1 (the engine asks before
  * its flyby, flight.c) */
+uint8_t __far logic_auto_why;           /* why it last said no (logic.h AUTO_WHY_*), for the cockpit to say */
+
 int16_t logic_autopilot_ready(void)
 {
     int16_t s, next;
+    logic_auto_why = 0;
     if (!slot_is_ship(0) || shipAiState[0] == 9 || sys_level(SYS_NAV) >= SYS_WRECKED)
         return -1;                      /* (the nav computer wrecked: the pilot flies home by hand, the cross still shows) */
     humans_note();
+    logic_auto_why = AUTO_WHY_ENEMY;
     for (s = 1; s < NUM_SHIP_SLOTS; s++)   /* (near any human: a wingman in a fight on another machine holds it too) */
         if (enemy_awake(s) && human_km(s) < AUTOPILOT_CLEAR_KM)
             return -1;
+    logic_auto_why = 0;
     /* (the one N picked, else the way ahead: a patrol in any order, as the old game's map lets one (its Enter takes the
      * pick: traced 2026-11-04, Enyo 1's autopilot to Nav 2 first), an escort mission too: the escort comes along only
      * to its own next waypoint (escort_comes); the user: "ok can you make the auto system like WC1 in that respect") */
@@ -4898,9 +4904,11 @@ int16_t logic_autopilot_ready(void)
     {
         int16_t region, field;
         int32_t stop = way_stop(next, &region, &field);
-        if ((field || nav_field(next) >= 0) && stop < AUTOPILOT_MIN_KM)
+        if ((field || nav_field(next) >= 0) && stop < AUTOPILOT_MIN_KM) {
+            logic_auto_why = AUTO_WHY_FIELD;
             return -1;                  /* (a field across the way; or the point's own field, the player at the autopilot's
-                                           stop in it or nearer its middle: flown in by hand) */
+                                           stop at its edge or nearer its middle: flown in by hand) */
+        }
     }
     return next;
 }

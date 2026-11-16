@@ -261,6 +261,7 @@ GROUND = [('unsigned char', 'kind', 'B'), ('unsigned char', 'nav', 'B'), ('unsig
           ('short', 'heading', 'h')]
 PLANET_KINDS = ['desert', 'green', 'ice', 'red', 'ash', 'savanna', 'violet', 'ochre', 'jungle', 'ocean', 'tundra',
                 'steppe', 'grey']   # a planet's look, kind=NAME (terrain.h TR_KIND_*, in its order; terrain.c tr_looks)
+FIELD_NAV_MIN_KM = 9000          # a field a waypoint lies in is at least this wide (radius): its edge is the autopilot's stop
 GROUND_KINDS = {'pad': 1, 'arch': 2, 'canyon': 3}   # (terrain.h's TR_STAMP_PAD, TR_STAMP_ARCH, TR_STAMP_CANYON)
 MISSION = [('char', 'id[RV_ID]', '%ds' % TEXT['ID']), ('unsigned char', 'node', 'B'), ('unsigned char', 'type', 'B'),
            ('unsigned char', 'music', 'B'), ('unsigned char', 'nnav', 'B'), ('unsigned char', 'nship', 'B'),
@@ -956,6 +957,12 @@ def compile_all():
                 raise Fail('%s: a field is asteroid|mine x y z radius [density=0..255] [level=0..3]' % where)
             if any(not -MAP_KM <= int(v) <= MAP_KM for v in f[1:4]) or not 0 < int(f[4]) <= 32767:
                 raise Fail('%s: a field is at most %d km out on each axis, its radius 1..32,767 km' % (where, MAP_KM))
+            # (a waypoint inside it is its middle, and the autopilot stops at its edge: wide enough to be some 8,000 km
+            # flown through the rocks; the user, 2026-11-16, "a good solid 7000-10000km")
+            for nw, nf in m['nav']:
+                if 'hidden' not in nf[4:] and int(f[4]) < FIELD_NAV_MIN_KM and \
+                        sum((int(nf[k]) - int(f[k])) ** 2 for k in (1, 2, 3)) < int(f[4]) ** 2:
+                    raise Fail('%s: nav %s lies in this field: its radius must be %d km or more' % (where, nf[0], FIELD_NAV_MIN_KM))
             fields.append(struct.pack(fmt(FIELD), FIELDS[f[0]], density, int(f[1]), int(f[2]), int(f[3]), int(f[4]), level))
         if len(fields) > LIMITS['FIELDS']:
             raise Fail('%s: %d fields, at most %d' % (w, len(fields), LIMITS['FIELDS']))

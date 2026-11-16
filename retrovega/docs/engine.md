@@ -266,9 +266,15 @@ the autopilot stops at it, facing the point, as the old one did (traced 2026-11-
 15,335 km short of points of 10,000, 15,000 and 15,000), where the point has ships still to come; where it has nobody to
 come the autopilot goes on to 1,200 km of it (`NAV_CLOSE_KM`; traced 2026-11-07, the old autopilot to Enyo 1's empty
 nav 2: 1,171 km a moment after its jump; the user: "I thought you had to get within 1500 or 1000 km in the original to
-have 'visited' something"). A waypoint inside a field (two in the 40 missions: Enigma 1's nav 2, Crucible 2's nav 1)
-is the field's middle: the autopilot takes the player 3,000 km short of it, facing it, where the rocks come, and goes no
-further; the cross and the distance are the middle's; the point is reached only within `NAV_CLOSE_KM` of it, flown
+have 'visited' something"). A waypoint inside a field (two in the 40 missions: Enigma 1's nav 2, Crucible 2's nav 1;
+and Barnard's Star's planet mission's nav 1) is the field's middle: the autopilot takes the player to 500 km outside the
+field's edge, facing the middle, as for any field on its way, and goes no further; the rocks come at once (3,050 km
+ahead); the cross and the distance are the middle's; it is some 8,300 km
+flown through the rocks; such a field's radius is 9,000 km or more (the user, 2026-11-16: "it should be at the edge of the asteroid field (maybe the field should
+be bigger if it's already at the edge) and so you have to fly a good solid 7000-10000km to get to the nav point right
+now it's just like 2000 away": it had stopped 3,000 km short of the middle, inside); a press of A refused there, or with
+a field across the way, says AUTOPILOT: FLY THROUGH THE FIELD under the gunsight (ENEMIES NEAR when they hold it), and
+the AUTO lamp follows the logic's answer (`logic_auto_why`);  the point is reached only within `NAV_CLOSE_KM` of it, flown
 through the rocks by hand (`nav_field`, `nav_goal`, `nav_stop`, `nav_in_reach`; the user, 2026-11-06: "asteroids were
 supposed to be entirely surrounding nav 2", and 2026-11-08, when it was reached anywhere in the field: "nav 2 was
 visited as soon as I exited autopilot--I could have steered around the field. The nav point needs to be in the middle

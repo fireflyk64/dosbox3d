@@ -36,6 +36,9 @@ void logic_end(void);                   /* the flight is over (missionStatus say
 int16_t logic_autopilot(void);          /* the A key, between steps: 1 when it flew the player on (to the next nav
                                            point), 0 when it may not (enemies near, nowhere to go) */
 int16_t logic_autopilot_ready(void);    /* the nav point it would go to, -1 not now (the engine asks before its flyby) */
+extern uint8_t __far logic_auto_why;    /* why logic_autopilot_ready last said -1: */
+#define AUTO_WHY_ENEMY 1                /* an enemy near */
+#define AUTO_WHY_FIELD 2                /* a field across the way, or the nav point's own, at hand: flown through by hand */
 void logic_form_up(int16_t steps);      /* the autopilot's flyby begins (flight.c): the player faces the nav point, the wing
                                            and the escort targets close up on it and fly with it for `steps` steps */
 

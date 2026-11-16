@@ -643,15 +643,18 @@ static void arm_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
  * flown, nobody to fight, the carrier close) */
 static uint8_t __far g_autoland;
 static uint8_t __far g_cloak_said;      /* frames left of CLOAK CHARGING: Alt+C refused */
+static uint8_t __far g_auto_said;       /* frames left of why A was refused (logic_auto_why: the user, 2026-11-16, at the
+                                           edge of a field on the way home, "I couldn't auto there") */
 static uint8_t __far g_land_armed;      /* the trigger let go while the prompt shows: the next pull lands (one held
                                            through the last kill was a shot, and landed the player: the user, SHELTON2) */
 static void land_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
 {
     static const char s_land[] = "PRESS FIRE TO LAND", s_on[] = "CLOAKED", s_broken[] = "CLOAK DISRUPTED",
-        s_wait[] = "CLOAK CHARGING";
+        s_wait[] = "CLOAK CHARGING", s_enemy[] = "AUTOPILOT: ENEMIES NEAR", s_field[] = "AUTOPILOT: FLY THROUGH THE FIELD";
     int c = CLOAK_OF(0), blink = (frameCounter >> 4) & 1, w, x, row = g_cam_cy + 14;
     const char *s = g_autoland ? s_land : c == RV_CLOAK_ON ? s_on : c == RV_CLOAK_BROKEN ? s_broken
-                    : g_cloak_said && logic_cloak_wait() ? s_wait : 0;
+                    : g_cloak_said && logic_cloak_wait() ? s_wait
+                    : !g_auto_said ? 0 : logic_auto_why == AUTO_WHY_FIELD ? s_field : logic_auto_why == AUTO_WHY_ENEMY ? s_enemy : 0;
     if (!s || g_arm_warn || row < 0 || row + PANEL_TINY_H > SCR_H)
         return;
     w = panel_tiny_width(s);
@@ -660,7 +663,7 @@ static void land_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
         return;
     if (ext && (row < ey0 || row >= ey0 + rows || x < ext[2 * (row - ey0)] || x + w > ext[2 * (row - ey0) + 1]))
         return;
-    (void)panel_tiny(x, row, s, s == s_on ? UI_HILITE : s == s_broken || s == s_wait ? (blink ? UI_RED : UI_AMBER2)
+    (void)panel_tiny(x, row, s, s == s_on ? UI_HILITE : s == s_broken || s == s_wait || s == s_enemy || s == s_field ? (blink ? UI_RED : UI_AMBER2)
                                 : blink ? UI_WHITE : UI_HILITE, y0, y1);
 }
 
@@ -2463,7 +2466,9 @@ static void systems_tick(void)
         g_sys.signature = 2;            /* (cloaked: next to nothing to find it by; disrupted, the burner's heat shows) */
     vid_dim(CLOAK_OF(0) != RV_CLOAK_OFF ? CLOAK_DIM : 64);
     if (g_cloak_said)
-        g_cloak_said--;   /* (the cloak's power: the cockpit dark but its E/M box, its
+        g_cloak_said--;
+    if (g_auto_said)
+        g_auto_said--;   /* (the cloak's power: the cockpit dark but its E/M box, its
                                            lamps out but the E/M's (panel.c); the user, 2026-11-15) */
     {   /* (the HEAT and SIGNATURE displays take theirs every 5 s: a sensor's sweep, the user's pick) */
         static unsigned long __far taken;
@@ -2508,10 +2513,8 @@ static void systems_tick(void)
         int32_t km;
         g_sys.nav_km = logic_nav_km(g_sys.nav, &km) && sys_level(SYS_NAV) < 3 ? km : -1;   /* (the nav computer badly hurt: no distance) */
     }
-    g_sys.autopilot_ready = g_m != 0 && sys_level(SYS_NAV) < SYS_WRECKED;
-    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
-        if (is_ship(s) && commAnimInfo[s] == 1 && player_km(s) < 16000)
-            g_sys.autopilot_ready = 0;
+    if ((frameCounter & 7) == 0)        /* (the logic's own answer, a field at hand too: the lamp had said yes there) */
+        g_sys.autopilot_ready = g_m != 0 && logic_autopilot_ready() >= 0;
 }
 
 /* the keys of the systems (a character typed): 1 if it was one */
@@ -4071,8 +4074,10 @@ void __far __cdecl flight_autopilot(void)
         /* the camera's start through the thunk: in a shared flight the layer shows it on every machine at once (as the
          * old game's autopilot animation), each around its own ship */
         autoAnimation((uint16_t)gInstanceShipTypes[0], 1, FLYBY_FRAMES);
-    } else
+    } else {
         rv_notef(s_not);
+        g_auto_said = 90;               /* (why, under the gunsight a while: land_tag) */
+    }
 }
 
 /* the autopilot's camera, the autoAnimation thunk's body: (type, mode, frames) starts it, (0, 0, 0) ends it.  Our own
