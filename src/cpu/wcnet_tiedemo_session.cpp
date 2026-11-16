@@ -244,7 +244,12 @@ inline void wo16(int o, int k, Bit16u v) { mem_writew(tdm_obj(o) + (PhysPt)k, v)
 inline void wo32(int o, int k, Bit32u v) { mem_writed(tdm_obj(o) + (PhysPt)k, v); }
 inline Bit16u ds16(Bit16u off) { return mem_readw(tdm_ds(off)); }
 
+// What happens in the room: to the log.  Over the picture (show) only a launch held for the others (the user,
+// 2026-11-15: "We need to minimize the added output text using the overlay in the game").
 void notice(const std::string &text) {
+    wclog(1, "TIE demo: %s", text.c_str());
+}
+void show(const std::string &text) {
     incoming_text = text;
     g_noticeAt = PIC_FullIndex();
     wclog(1, "TIE demo: %s", text.c_str());
@@ -254,6 +259,10 @@ std::string pilot_name(int seat) {
     if (!g_net || seat < 0 || seat >= kMaxSeats) return "a pilot";
     if (seat == g_net->self) return g_net->callsign;
     return g_net->remotes[seat].callsign.empty() ? std::string("pilot ") + (char)('1' + seat) : g_net->remotes[seat].callsign;
+}
+
+std::string host_name() {
+    return g_net && !g_net->remotes[0].callsign.empty() ? g_net->remotes[0].callsign : std::string("the host");
 }
 
 bool configured() {
@@ -1260,7 +1269,7 @@ bool tdm_session_launch_hold() {
         g_net->launchSince = now;
         g_net->alone = false;
         send_state(true);
-        if (others()) notice(g_net->host ? "Waiting for everybody to finish the opening: then you launch together" : "Waiting for the host's launch");
+        if (others()) show(g_net->host ? "Waiting for the others to launch" : "Waiting for " + host_name() + " to launch");
     }
     if (now - g_stateAt >= kStateEveryMs) send_state(false);
     if (g_net->host) {
@@ -1299,7 +1308,7 @@ bool tdm_session_launch_hold() {
     const Remote &h = g_net->remotes[0];
     if (h.inFlight && h.go <= g_net->flownGo && !g_net->lateSaid) {
         g_net->lateSaid = true;
-        notice("The host is flying a mission: you launch together at its next one. Esc flies alone meanwhile");
+        show("Waiting for " + host_name() + "'s next launch (Esc: fly alone)");
     }
     if (h.go > g_net->flownGo) {
         g_net->lateSaid = false;

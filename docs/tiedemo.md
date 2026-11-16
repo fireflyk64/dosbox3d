@@ -197,9 +197,13 @@ TieOwners. Only the room's hello and the launch are the demo's own (TdmHello, Td
   of the room is there (a guest still in the opening after two minutes is left out). The host then says go with its
   random seeds.
   * A guest who comes to its launch while the host flies waits for the host's next launch (the end of the host's
-    flight: the campaign's next mission, or the same one again). Both are told: the host "X is waiting to launch: you
-    fly the next mission together", the guest "The host is flying a mission: you launch together at its next one. Esc
-    flies alone meanwhile". Esc there flies that one mission alone; the room's next launch takes the guest in again.
+    flight: the campaign's next mission, or the same one again). The guest's picture says "Waiting for HOST's next
+    launch (Esc: fly alone)"; the host's log that the guest waits. Esc there flies that one mission alone; the room's
+    next launch takes the guest in again.
+  * Over the picture only these waits ("Waiting for the others to launch", "Waiting for HOST to launch"); the room's
+    other notices and the campaign's (a mission's brief, its end, the next) go to the log alone (the user,
+    2026-11-15: "We need to minimize the added output text using the overlay in the game"). The radio lines are the
+    game's own messages.
 * **The seat.** At 0FC2:0136, the mission read, a guest writes the host's seeds and its own craft into the player's
   flight group: seat 1 the group's first craft the host does not fly, seat 2 the next (the CD's player-craft number).
   The mission's own setup then makes the same craft in the same object slots on every machine. The host flies object
@@ -283,7 +287,7 @@ TieOwners. Only the room's hello and the launch are the demo's own (TdmHello, Td
 
 * **A kill credited across machines** has not been seen yet: it needs a pilot's own shot to finish a craft another
   machine flies.
-* **A guest who arrives once the host flies** waits for the host's next launch (section 5, told so on both screens;
+* **A guest who arrives once the host flies** waits for the host's next launch (section 5, told so over its picture;
   Esc flies alone meanwhile): a long flight of the host's is a long wait.
 * **The flash of a hit applied from another machine** is drawn where the stand-in bolt is (the shooter's bolt's
   place): the CD port's impact offset globals are not known in this build.

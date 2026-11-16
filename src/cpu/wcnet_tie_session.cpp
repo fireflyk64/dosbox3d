@@ -85,7 +85,7 @@ struct Pilot {
     bool challenge = false;     // its mission flown as the Z-95 challenge (step 14)
     Pilot() : known(false), scene(-1), flying(false) {}
 };
-enum { kMaxSeats = 8, kPresenceEveryMs = 3000, kCallToActionEveryMs = 2000, kPaEveryMs = 20000 };
+enum { kMaxSeats = 8, kPresenceEveryMs = 3000, kPaEveryMs = 20000, kPaShownMs = 6000 };
 
 // Step 5 (docs/tiefighter.md): who flies each craft, and how often its owner reports it.  Distances in world units
 // (40,960 a km).
@@ -261,7 +261,13 @@ void room_end(int seat, const char *what);
 void make_shot(const TieShot &shot, int owner);
 void take_hit(const TieHit &hit);
 
+// What happens in the room: to the log.  Over the picture (show) only the PA's call, the pilots' own words and a launch
+// held for the host (the user, 2026-11-15: "We need to minimize the added output text using the overlay in the game
+// except for 'All pilots report to briefing'").
 void notice(const std::string &text) {
+    wclog(1, "TIE: %s", text.c_str());
+}
+void show(const std::string &text) {
     incoming_text = text;
     g_noticeAt = PIC_FullIndex();
     wclog(1, "TIE: %s", text.c_str());
@@ -602,34 +608,33 @@ void presence_tick(double now) {
     }
 }
 
-// The call to action: a guest out of the flight while the host flies, or is at a briefing, is told which mission to
-// launch, and the line stays (said again every few seconds) until it flies or the host is back.
+// The call to action: a guest out of the flight while the host flies, or is at a briefing, is called by the ship's
+// address system (RetroVega's call, every kPaEveryMs while the guest is not at a briefing itself), its line over the
+// picture while it speaks; which mission, in the log (any Combat Chamber launch flies the host's).
 void call_to_action(double now) {
     if (g_net->host) {
         return;
     }
     const Pilot &h = g_net->pilots[0];
-    std::string line;
     const bool briefing = h.known && ((h.scene >= 133 && h.scene <= 137) || (h.scene >= 179 && h.scene <= 183));
-    if (h.known && !tie_in_flight() && (h.flying || briefing)) {
-        line = pilot_name(0) + (h.flying ? " is flying " : " is at the briefing for ") + mission_words(h.mission) + ": launch a Combat Chamber mission to fly it together";
-    }
-    // (every kPaEveryMs while the guest is not at a briefing: the ship's address system, RetroVega's call, with its line)
+    const bool called = h.known && !tie_in_flight() && (h.flying || briefing);
     const int mine = tie_scene();
     const bool atBriefing = (mine >= 133 && mine <= 137) || (mine >= 179 && mine <= 183);
     static double paAt = -1e9;
-    if (!line.empty() && !atBriefing && now - paAt >= kPaEveryMs) {
-        paAt = now;
-        tie_pa_play();
-        line = "PA: All pilots, report to the briefing room. " + line;
-        g_net->callToAction.clear();    // (said now, with the PA's words)
-    } else if (!line.empty() && g_net->callToAction.compare(0, 4, "PA: ") == 0 && now - paAt < 6000) {
-        line = g_net->callToAction;     // (the PA's words stay up while it speaks)
-    }
-    if (line.empty()) {
+    std::string line;
+    if (!called) {
         paAt = -1e9;                    // (the next call comes at once)
+    } else if (!atBriefing) {
+        if (now - paAt >= kPaEveryMs) {
+            paAt = now;
+            tie_pa_play();
+            wclog(1, "TIE: PA: %s %s %s", pilot_name(0).c_str(), h.flying ? "is flying" : "is at the briefing for",
+                  mission_words(h.mission).c_str());
+        }
+        if (now - paAt < kPaShownMs) {
+            line = "PA: All pilots, report to the briefing room.";
+        }
     }
-    static double shownAt = -1e9;
     if (line.empty()) {
         if (!g_net->callToAction.empty() && incoming_text == g_net->callToAction) {
             incoming_text = "";
@@ -637,14 +642,10 @@ void call_to_action(double now) {
         g_net->callToAction.clear();
         return;
     }
-    if (line != g_net->callToAction || now - shownAt >= kCallToActionEveryMs) {
-        if (line != g_net->callToAction) {
-            wclog(1, "TIE: %s", line.c_str());
-        }
+    if (line != g_net->callToAction) {
         g_net->callToAction = line;
         incoming_text = line;
         g_noticeAt = now;
-        shownAt = now;
     }
 }
 
@@ -725,7 +726,7 @@ void handle(Peer *p, NetworkMessage &msg) {
         if (!p->hello) {
             return;
         }
-        notice(msg.chat().callsign() + ": " + msg.chat().message());
+        show(msg.chat().callsign() + ": " + msg.chat().message());
         if (g_net->host) {
             // (the other guests', as the presence is)
             for (size_t i = 0; i < g_net->peers.size(); i++) {
@@ -2059,7 +2060,7 @@ bool tie_session_mission_wait() {
     }
     if (now - g_net->waitSaidAt >= 3000) {
         g_net->waitSaidAt = now;
-        notice("Waiting for " + pilot_name(0) + (intoFlight ? " to fly" : " to launch") + ": you fly the host's mission (Esc: fly yours alone)");
+        show("Waiting for " + pilot_name(0) + " to launch (Esc: fly alone)");
     }
     return true;
 }
@@ -2101,7 +2102,7 @@ bool tie_session_click(int button, bool pressed) {
         g_net->heldY = y;
     }
     wclog(1, "TIE: our launch click (scene %d at %d,%d) waits: the host is not flying", scene, x, y);
-    notice(pilot_name(0) + " has not launched yet: you take off together once " + pilot_name(0) + " is flying");
+    show("Waiting for " + pilot_name(0) + " to launch");
     return true;
 }
 
@@ -2744,7 +2745,7 @@ void tie_session_chat(const std::string &text) {
         }
     }
     wclog(1, "TIE: comms: a line to %d pilot%s", told, told == 1 ? "" : "s");
-    notice(g_net->callsign + ": " + text);
+    show(g_net->callsign + ": " + text);
 }
 
 bool tie_is_puppet(int obj) {

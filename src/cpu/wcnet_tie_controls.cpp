@@ -55,11 +55,11 @@ namespace {
 enum { MOUSE_DRAG = 0, MOUSE_POINTER = 1, MOUSE_KEYBOARD = 2, MOUSE_JOYSTICK = 3, MOUSE_POINTER_BANK = 4, MOUSE_MODES = 5 };
 const char *const kModeNames[] = { "drag", "pointer", "keyboard", "joystick", "pointerbank" };
 const char *const kModeLines[] = {
-    "Flight controls: the mouse drags to steer, the game's own (F12: the keyboard alone)",
-    "Flight controls: the mouse points to aim, no bank: hold the right button and move across to roll (F12: aim with the bank)",
-    "Flight controls: the keyboard alone, the arrows (F12: the mouse points to aim)",
-    "Flight controls: a joystick",
-    "Flight controls: the mouse points to aim, banking as it turns (F12: drag to steer)",
+    "Flight: drag to steer",            // (F12's answer, short: the user wants little over the picture)
+    "Flight: point to aim",
+    "Flight: keyboard",
+    "Flight: joystick",
+    "Flight: point to aim, banking",
 };
 int g_mode = -1;
 double g_stickX, g_stickY, g_stickAt = -1e9;   // the page's pad (pitch positive climbs), and when it last said
@@ -720,7 +720,7 @@ void tie_controls_frame() {
         g_mind.flightAt = PIC_FullIndex();
         if (g_mind.state == 1) {
             mind_stop();
-            say("DEMO flies itself: a wingman stays out of trouble and helps the other pilot");
+            wclog(1, "TIE: DEMO flies itself: a wingman stays out of trouble and helps the other pilot");
         }
     } else if (!flying && g_mind.state >= 0) {
         if (g_mind.state == 1) mind_stop();

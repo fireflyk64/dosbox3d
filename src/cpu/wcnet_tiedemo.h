@@ -109,7 +109,7 @@ int tdm_session_launch_mission();       // the mission the host's latest go laun
 bool tdm_session_room_ended();          // this flight ended by the room (a pilot down, the host's flight over)
 void tdm_session_verdict(int next, bool over);          // the host's verdict on its flight, sent
 bool tdm_session_verdict_wait(int *next, bool *over);   // a guest: true while the host's verdict on our flight is to come
-void tdm_notice(const std::string &text);               // the line drawn over the picture
+void tdm_notice(const std::string &text);               // a line for the log (the room's: never over the picture)
 bool tdm_session_fly_alone();             // a guest's launch held for a host already flying: fly alone (Esc)
 
 // The campaign (wcnet_tiedemo_campaign.cpp, docs/tiedemo.md section 8): after the demo's own mission, the missions of

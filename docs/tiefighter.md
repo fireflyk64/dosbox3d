@@ -548,6 +548,17 @@ move vector, the nine axis words, type).
   in its flight carried the two lines above (the line wraps at the picture's
   edge), the guest's own flight none; the host's carried the guest's
   launch.
+* **Cut down, 2026-11-15** (the user: "the whole "None - Select in mission
+  select" copy was very disconcerting. We need to minimize the added output
+  text using the overlay in the game except for "All pilots report to
+  briefing""): the room's notices (who joined, launched, landed, left, the
+  mission flown, the pairings, the Z-95 challenge, a flight's end for the
+  room) go to the log alone (`notice`).  Over the picture (`show`) only the
+  PA's call ("PA: All pilots, report to the briefing room.", while it
+  speaks, every 20 s; where the host is, in the log), the pilots' own chat
+  lines, a launch held for the host ("Waiting for HOST to launch", with
+  "(Esc: fly alone)" while the flight's start waits), and F12's answer, one or two words
+  ("Flight: point to aim").  The demo's the same (docs/tiedemo.md).
 
 ### Step 4: the mission everybody flies (2026-11-06)
 
