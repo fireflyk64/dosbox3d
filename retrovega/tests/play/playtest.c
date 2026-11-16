@@ -4424,7 +4424,7 @@ static void t_escort_clear(void)
  * did not see the destroyer"): a nav point 60,000 km out, its reach 15,000: the autopilot stops at the reach, and a
  * destroyer 8,000 km beyond the point, 23,000 off, is in the scene and a target as the player arrives (the small map's
  * scene had held one 8,100 km off the stop); the carrier, 47,000 km behind, is held while a waypoint is still to fly,
- * and is in the scene again, however far, once the way is home */
+ * and on the way home too, until the player is near (since 2026-11-16, M10.15: before, it came back however far) */
 static void t_full_map(void)
 {
     static const char __far e_home[] = "no home carrier at the launch (%d)";
@@ -4434,8 +4434,8 @@ static void t_full_map(void)
         "the ships of the point the player came to are, however far";
     static const char __far e_held[] = "the carrier %d km behind is in the scene (entity type %d), a waypoint still to fly: "
         "past 16,000 km a capital ship of a point left is held";
-    static const char __far e_back[] = "every waypoint flown, the way home: the carrier %d km off is not in the scene "
-        "(entity type %d)";
+    static const char __far e_back[] = "every waypoint flown, the way home: the carrier %d km off is in the scene "
+        "(entity type %d): held until the player is near";
     int16_t home = -1, dd = -1, s, r;
     pt_mission();
     pt_nav(1, 0, 0, 60000);
@@ -4466,7 +4466,7 @@ static void t_full_map(void)
     pt_put(0, 20000, 0, 60000, 0);      /* (nav 2 come to: every waypoint flown) */
     if (!pt_steps(2))
         return;
-    REQUIRE(slot_is_ship(home), e_back, pt_km(0, home), maybeEntityType[home], 0);
+    REQUIRE(maybeEntityType[home] == ET_OFFSCENE, e_back, pt_km(0, home), maybeEntityType[home], 0);
 }
 
 #define PT_CLOSE_KM 1200                /* (logic.c NAV_CLOSE_KM: the autopilot to a point with nobody to come stops this far
@@ -5757,6 +5757,8 @@ static void t_home_arrive(void)
     REQUIRE(labs(logic_target_km(home) - 4000) < 300, e_gap, logic_target_km(home), 0, 0);
     d = vec3(TO_KM(gPositionVector[home].x - gPositionVector[0].x), TO_KM(gPositionVector[home].y - gPositionVector[0].y),
              TO_KM(gPositionVector[home].z - gPositionVector[0].z));
+    if (!pt_step())                     /* (held off the scene that far out: back the step after, M10.15) */
+        return;
     len = pt_km(0, home);
     dot = len ? (FIX_MUL(gOrientationFrontVector[0].x, d.x) + FIX_MUL(gOrientationFrontVector[0].y, d.y)
                  + FIX_MUL(gOrientationFrontVector[0].z, d.z)) * 256 / len : 0;
@@ -5809,6 +5811,7 @@ static void t_stay_home(void)
         return;
     REQUIRE(slot_is_ship(stay) && pt_km(stay, home) < 6000, e_round, pt_km(stay, home), 0, 0);
 }
+    pt_speed(0, 0);                     /* (and staying: flown on 16,000 km the carrier is held, M10.15) */
 
 /* M8.53: the landing by the trigger (the user, 2026-11-06: "autolanding kicked in when there are no enemies present
  * and are very near the carrier and it can say press fire to land. If all landing conditions are met and all nav
@@ -7236,6 +7239,62 @@ static void t_cloak_ai(void)
 {
     static const char __far e_first[] = "before the cloak the enemy's target is slot %d: the player (0)";
     static const char __far e_lost[] = "cloaked 2 s: the enemy's target is slot %d (not the player), %d shots since";
+/* M10.15: what may be targeted (TARGET_KM, the scene's 16,000 km: the user, 2026-11-16, "we shouldn't be able to target
+ * things far away"): T and Y take no ship farther, and a target, locked or not, that goes farther is dropped; and the
+ * carrier on the way home is held off the scene until the player comes within 15,500 km ("it should have despawned for
+ * the time being until you get close"), its landing clearance still given from farther (LANDING_RANGE_KM) */
+static void t_target_range(void)
+{
+    static const char __far e_next[] = "T picked slot %d: slot 2, dead ahead 18,000 km off, is out of reach; slot 1 (12,000) is the one";
+    static const char __far e_near[] = "Y picked slot %d: the nearest enemy within reach is slot 1";
+    static const char __far e_drop[] = "the locked target went to 17,000 km and is still the target (%d, lock %d): both go";
+    static const char __far e_none[] = "nothing within reach, T picked slot %d";
+    static const char __far e_home[] = "no home carrier at the launch (%d)";
+    static const char __far e_held[] = "every waypoint flown, the player %ld km off the launch: the carrier's entity type is %d, held off the scene until near";
+    static const char __far e_land[] = "the way home, the carrier held %ld km off, the landing answered %d: cleared (%d)";
+    static const char __far e_back[] = "the player 8,000 km off the launch: the carrier is not back in the scene (type %d)";
+    int16_t home = -1, s;
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 3000, 0, 12000, TURN / 2);
+    pt_ship(2, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 18000, TURN / 2);
+    if (!pt_step())
+        return;
+    REQUIRE(logic_target_next() == 1, e_next, g_sys.target, 0, 0);
+    REQUIRE(logic_target_next() == 1, e_next, g_sys.target, 0, 0);
+    REQUIRE(logic_target_nearest() == 1, e_near, g_sys.target, 0, 0);
+    (void)logic_target_lock();
+    pt_put(1, 0, 0, 17000, TURN / 2);
+    if (!pt_step())
+        return;
+    REQUIRE(g_sys.target == -1 && !g_sys.hold, e_drop, g_sys.target, g_sys.hold, 0);
+    REQUIRE(logic_target_next() == -1, e_none, g_sys.target, 0, 0);
+    pt_mission();
+    pt_nav(1, 0, 0, 60000);
+    g_tm.nav[g_tm.nnav - 1].reach = 15000;
+    pt_mship(PT_CAPSHIP, SIDE_TERRAN, 0, 1, RV_PILOT_NONE);
+    g_tm.ship[g_tm.nship - 1].role = RV_ESCORT_HOME;
+    pt_launch(PT_PLAYER);
+    logic_scene_off = 0;
+    playerCanBeDamaged = 0;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
+        if (logic_is_home(s))
+            home = s;
+    REQUIRE(home > 0, e_home, home, 0, 0);
+    pt_put(0, 0, 0, 60000, 0);          /* (nav 1 come to: every waypoint flown, the way home) */
+    if (!pt_steps(2))
+        return;
+    REQUIRE(maybeEntityType[home] == ET_OFFSCENE, e_held, 60000L, maybeEntityType[home], 0);
+    pt_put(0, 0, 0, 20000, 0);
+    if (!pt_step())
+        return;
+    REQUIRE(maybeEntityType[home] == ET_OFFSCENE, e_held, 20000L, maybeEntityType[home], 0);
+    REQUIRE(logic_request_landing() == LANDING_CLEARED, e_land, pt_km(0, home), logic_request_landing(), LANDING_CLEARED);
+    pt_put(0, 0, 0, 8000, 0);
+    if (!pt_step())
+        return;
+    REQUIRE(slot_is_ship(home), e_back, maybeEntityType[home], 0, 0);
+}
+
     static const char __far e_again[] = "the cloak disrupted by the afterburner: the enemy's target is slot %d (0: the "
         "player again)";
     static const char __far e_seek[] = "a heat seeker 1 s after its launch at a target 22 degrees right: %d km right of "
@@ -8409,7 +8468,7 @@ static const char __far n_m8_43[] = "M8.43 escort-skip (logic_autopilot, escort_
 static const char __far n_m8_42[] = "M8.42 escort-jump-home (logic_autopilot, route_step): ENIGMA2 by the autopilot, the Ox along to each nav point; the player straight home, the Ox still jumps";
 static const char __far n_m8_41[] = "M8.41 escort-linger (route_step, logic_autopilot): ENIGMA2's Ox goes on alone from a player lingering at the launch, and the autopilot to nav 1 brings it along";
 static const char __far n_m8_40[] = "M8.40 campaign-way (logic_autopilot, the missions): every mission's waypoints reached on the old game's map, the autopilot stopping at their reach";
-static const char __far n_m8_39[] = "M8.39 full-map (logic_autopilot, step_scene): the autopilot stops at a nav point's reach; its ships are in the scene however far, the carrier again on the way home";
+static const char __far n_m8_39[] = "M8.39 full-map (logic_autopilot, step_scene): the autopilot stops at a nav point's reach; its ships are in the scene however far, the carrier held far off, the way home too";
 static const char __far n_m8_38[] = "M8.38 escort-home (route_step): an escort target in goes to the home carrier, stops within 150 km of its hull, its nose the carrier's way, and is home";
 static const char __far n_m10_11[] = "M10.11 taunt-guest (rvTaunt, fighter_think): a guest's taunt, carried to the host, turns the enemy on the guest's ship";
 static const char __far n_m10_12[] = "M10.12 taunt-orders (order_hold, tailer_of): a taunt leaves an order's healthy carrier on its prey, turns its follower for good, a fighter on its tail takes it; hurt, the carrier turns and goes back";
@@ -8444,6 +8503,7 @@ static const char __far n_m10_8[] = "M10.8 break-formation (logic_order): fly in
 static const char __far n_m11_1[] = "M11.1 sim-waves (simulator_frame): one of each Rlaan fighter type in turn, then two of the first";
 static const char __far n_m11_2[] = "M11.2 sim-replenish (simulator_frame): shields, fuel, energy and missiles whole when the count goes up, not between";
 static const char __far n_m11_3[] = "M11.3 sim-win (simulator_frame): 47 kills, in the round of four, ends the flight, won";
+static const char __far n_m10_15[] = "M10.15 target-range (logic_target_ahead, target_tick, nav_point_here): no target past 16,000 km, one that goes farther dropped; the carrier held on the way home until near, its landing cleared from 25,000";
 static const char __far n_m11_4[] = "M11.4 sim-death (simulator_frame): no more waves once the player is dying, and the flight ends";
 static const char __far n_m10_9[] = "M10.9 taunt (logic_taunt): an enemy fighter turns on the player, however far, and holds no fire; not a friend or a capital ship";
 
@@ -8500,6 +8560,7 @@ static const PtTest __far k_tests[] = {
 
 /* the world's hash: the scalars of play, the slot arrays, the mission tables, the shots.  (Its pointer is near: a
  * fixed-block address is a constant, and Watcom makes a constant near pointer passed as a far one segment 0, not
+    { n_m10_15, t_target_range, 0 },
  * DS: the hash of the interrupt table.  docs/gameplay.md, "Watcom traps") */
 static uint32_t fnv(uint32_t h, const uint8_t *p, uint16_t n)
 {

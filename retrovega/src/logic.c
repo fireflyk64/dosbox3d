@@ -555,6 +555,7 @@ int16_t logic_is_home(int16_t s)
 static int32_t gap_between(int16_t a, int16_t b);
 
 int16_t logic_landing_allowed(void)
+static int16_t home_slot(void);
 {
     return ((g_navs_seen | g_navs_been) & ~1u) != 0 || mission_done();   /* (been: a guest's own, its waves the host's) */
 }
@@ -566,11 +567,10 @@ int16_t logic_request_landing(void)
         return LANDING_CLEARED;
     if (!logic_landing_allowed())
         return LANDING_NOT_YET;
-    for (s = 1; s < NUM_SHIP_SLOTS; s++)
-        if (logic_is_home(s) && gap_between(0, s) <= LANDING_RANGE_KM) {
-            g_cleared = 1;
-            return LANDING_CLEARED;
-        }
+    if ((s = home_slot()) >= 0 && gap_between(0, s) <= LANDING_RANGE_KM) {   /* (held off the scene too: step_scene) */
+        g_cleared = 1;
+        return LANDING_CLEARED;
+    }
     return LANDING_TOO_FAR;
 }
 
@@ -950,8 +950,14 @@ static int32_t km_between(int16_t a, int16_t b);
 
 int16_t logic_target_ahead(int16_t s)
 {
+/* a ship farther than this (the cockpit's readout, hull to hull) is no target, and a target that goes farther is
+ * dropped: the scene's reach (SCENE_KM), what the old game kept in its world (the user, 2026-11-16: "I notice sometimes
+ * the carrier is targetable from VERY far away ... either way we shouldn't be able to target things far away") */
+#define TARGET_KM 16000
+
     RvVec3 d;
-    if (s <= 0 || s >= NUM_SHIP_SLOTS || !slot_is_ship(s) || maybeEntityType[s] == ET_MISSILE || shipAiState[s] == 9)
+    if (s <= 0 || s >= NUM_SHIP_SLOTS || !slot_is_ship(s) || maybeEntityType[s] == ET_MISSILE || shipAiState[s] == 9
+        || gap_between(0, s) > TARGET_KM)
         return 0;
     d = vec3(TO_KM(gPositionVector[s].x - gPositionVector[0].x), TO_KM(gPositionVector[s].y - gPositionVector[0].y),
              TO_KM(gPositionVector[s].z - gPositionVector[0].z));
@@ -1031,7 +1037,8 @@ int16_t logic_target_lock(void)
 /* each step: a target that died is dropped and its lock with it; the lock goes with the tracking system */
 static void target_tick(void)
 {
-    if (g_sys.target >= 0 && (!slot_is_ship(g_sys.target) || shipAiState[g_sys.target] == 9)) {
+    if (g_sys.target >= 0 && (!slot_is_ship(g_sys.target) || shipAiState[g_sys.target] == 9
+                              || gap_between(0, g_sys.target) > TARGET_KM)) {
         g_sys.target = -1;
         g_sys.hold = 0;
     }
@@ -4268,8 +4275,8 @@ static void step_deaths(void)
  * held: its slot keeps it just as it is, but it is no ship to anything (no target, no radar, nothing to run into), and
  * it is back when the player is.  An enemy fighter stays, since it can fly after the player; so does the wing, and a
  * ship the player is escorting, which has its own way to go; and so do the ships of the nav point the player came to
- * last, and the launch's on the way home: the player arrives at a point's reach, 10,000 to 30,000 km out, and what
- * it came for is in the scene, however far (the user, 2026-11-04: "I went to nav 2 exactly ... and did not see the
+ * last (not the launch's, the carrier coming in on the way home as the player nears it): the player arrives at a
+ * point's reach, 10,000 to 30,000 km out, and what it came for is in the scene, however far (the user, 2026-11-04: "I went to nav 2 exactly ... and did not see the
  * destroyer": the small map's scene of 7,200 km had held it 8,100 km off the autopilot's stop) */
 #define SCENE_KM 16000
 #define SCENE_BACK_KM 15500             /* (a little nearer, so a ship on the line does not flicker) */
@@ -4297,15 +4304,17 @@ static int32_t human_km(int16_t s)
     return best;
 }
 
-/* a ship of the nav point the player came to last (not the launch: the player leaves it), or of the launch with
- * every waypoint reached, the way home: in the scene however far it is */
+/* a ship of the nav point the player came to last (not the launch's: the player leaves it, and the way home brings
+ * the carrier in as the player comes near it, as any other: the user, 2026-11-16, of the carrier on the way home from
+ * Enigma 1's nav 3, 45,000 km off: "it should have despawned for the time being until you get close"): in the scene
+ * however far it is */
 static int16_t nav_point_here(int16_t s)
 {
     int16_t n;
     if (slotMissionShip[s] >= 64)
         return 0;
     n = (int16_t)(MSHIP_NAV(slotMissionShip[s]) & 15);
-    return n == 0 ? nav_next_unseen() == 0 : n == (int16_t)currentNavPoint;
+    return n != 0 && n == (int16_t)currentNavPoint;
 }
 
 /* (by the nearest human: alone, the local pilot; in a shared flight a ship near any pilot stays in the scene on every

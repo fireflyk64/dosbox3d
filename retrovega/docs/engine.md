@@ -367,10 +367,18 @@ were far enough apart that the last one's ships were gone before the next one's 
 2026-11-04, so is `SCENE_KM`. A capital ship or friendly fighter that far off is held: `maybeEntityType` is
 `ET_OFFSCENE`, so it is no ship to anything (no target, no radar, nothing to run into), keeps its slot, its damage and
 its place, and is back within 15,500 km. An enemy fighter stays, since it can fly after the player; so do the wing, a
-ship the player is escorting, the ships of the nav point the player came to last, and the launch's once every waypoint
-is flown (`nav_point_here`: the player arrives at a point's reach, 10,000 to 30,000 km out, and what it came for is in
-the scene however far; on the small map's 7,200 km CEPHID2's destroyer was held 8,100 km off the autopilot's stop, the
-user's "did not see the destroyer"). M8.39.
+ship the player is escorting, and the ships of the nav point the player came to last (`nav_point_here`: the player
+arrives at a point's reach, 10,000 to 30,000 km out, and what it came for is in the scene however far; on the small
+map's 7,200 km CEPHID2's destroyer was held 8,100 km off the autopilot's stop, the user's "did not see the destroyer").
+M8.39. The launch's ships are not among them: until 2026-11-16 they came in as soon as every waypoint was flown, so
+the carrier was on the radar and a target from Enigma 1's Nav 3, 45,000 km off (the user: "it should have despawned
+for the time being until you get close"). Now the carrier comes in at 15,500 km like any other; the landing clearance
+still reaches 25,000 km (`home_slot` finds it held), and the autopilot home still stops 4,000 km off its hull.
+
+**What may be targeted:** T, Y, AUTO and the lock take only a ship in front of the pilot within `TARGET_KM`, 16,000 km
+by the cockpit's readout (hull to hull), the scene's reach; a target that goes farther is dropped (`target_tick`). Before
+2026-11-16 anything in the scene was a target, however far (the user: "we shouldn't be able to target things far
+away"). M10.15.
 
 The views: F5 the chase camera (behind and above the player's ship, looking its way, the ship in the lower
 third of the view; F5 again or F1 back to the cockpit), and the autopilot's flyby: A, when the autopilot may go,
