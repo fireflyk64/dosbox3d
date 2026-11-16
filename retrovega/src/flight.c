@@ -3793,7 +3793,10 @@ unsigned short __far __cdecl flight_keys(void)
     if ((in_key_down(0x0C) || in_key_down(0x4A)) && setSpeed[0] >= 2) setSpeed[0] -= 2;
     /* steering: the arrows by their ramp (key_ramp), else the pointer's distance from the middle */
     shift = in_key_down(0x2A) || in_key_down(0x36);
-    g_steer_roll = key_ramp(g_steer_roll, ((arrows >> 5) & 1) - ((arrows >> 4) & 1), shift);
+    /* (the roll keys' left, Q, Ins, a pad's comma, is the logic's positive roll: the right wing raised, step_turn; they
+     * had it the other way round, so every one rolled the wrong way: the user, 2026-11-16, "the ins and del rotate in
+     * the wrong direction") */
+    g_steer_roll = key_ramp(g_steer_roll, ((arrows >> 4) & 1) - ((arrows >> 5) & 1), shift);
     g_key_x = key_ramp(g_key_x, dx, shift);
     g_key_y = key_ramp(g_key_y, dy, shift);
     if (dx || dy) {

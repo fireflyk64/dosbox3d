@@ -215,7 +215,7 @@ static void controls(void)
         g_pilot.steer_y = (int8_t)(oy > 12 ? (oy > 80 ? 9 : oy * 9 / 80) : oy < -12 ? (oy < -80 ? -9 : oy * 9 / 80) : 0);
     } else
         g_pilot.steer_x = g_pilot.steer_y = 0;
-    g_pilot.roll = (int8_t)((k[SDL_SCANCODE_E] || k[SDL_SCANCODE_KP_PERIOD]) * 9 - (k[SDL_SCANCODE_Q] || k[SDL_SCANCODE_KP_0]) * 9);
+    g_pilot.roll = (int8_t)((k[SDL_SCANCODE_Q] || k[SDL_SCANCODE_KP_0]) * 9 - (k[SDL_SCANCODE_E] || k[SDL_SCANCODE_KP_PERIOD]) * 9);   /* (Q rolls left: + raises the right wing) */
     g_pilot.guns = (uint8_t)(k[SDL_SCANCODE_SPACE] || (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)));
     g_pilot.missile = (uint8_t)g_missile_key;
     g_missile_key = 0;
