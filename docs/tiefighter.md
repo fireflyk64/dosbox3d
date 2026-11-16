@@ -752,9 +752,39 @@ move vector, the nine axis words, type).
   brings the flash with the hit).  Before, each such bolt flashed on our
   craft with its damage skipped, hits its machine never saw among them (the
   user, of the demo: "I would get randomly blast animations on my ship here
-  and there--they weren't actually hurting me").  The demo's session also
-  names craft by identity now, not slot (docs/tiedemo.md section 5); the
-  CD's still by slot, kept in step by its mission events.
+  and there--they weren't actually hurting me").
+* **Craft named by identity, not slot** (2026-11-15, the user: "I don't
+  understand why TIE Demo would drift but TIE CD would not. We should have
+  the same mechanisms for both").  Both sessions now share
+  src/cpu/wcnet_tie_ident.h: every message names a craft by its flight
+  group and the order of its arrival in it (`kIdent | fg << 8 | arrival`),
+  each machine finding its own slot; the owners' table carries the
+  identities (TieOwners.craft); kills check the identity at each call; a
+  craft the host's table has gone without for 4 s is flown here.  The
+  CD's slots part the same way as the demo's: measured, two machines
+  through HG3M (the Z-95 challenge) with both scripted pilots fighting,
+  `!tiecraft` on both every 15 s: at 255 s the host still had group 10's
+  explosions in slots 4 and 5, so group 12's second craft took slot 6
+  there and slot 4 on the guest; by slot, every message about it went to
+  the wrong craft.  A craft's exit (hyperspace, hangar) is now sent from the
+  scan that sees its slot change, by its identity.  Measured after (the
+  same run, 340 s, four launches): while both flew, every craft alive on
+  both was matched by identity, each within 0.27 km of its owner's place,
+  the slots apart as before; no message named a craft the other machine
+  lacked; the guest's 12 hits all applied on the host, 5 of the host's 6 on
+  the guest; kills credited across (1 and 4).  The demo again after the
+  move to the shared header (scripts/tdmnet-duo.sh, 300 s): every craft
+  matched, the slots apart at up to 3 places.
+* **A hyperspace arrival's scene names nothing.**  A mission that opens
+  with an arrival (HG3M) or a jump between regions shows a world of this
+  machine's own pilot's craft alone (`create_createhyperin`), each
+  machine's in its own slot (measured: the host's in slot 0, the guest's in
+  slot 1), until the mission is made again: counted, both would have been
+  "the group's first".  A flight whose first look finds `hyperspaceflag`
+  (0xEB75D) at 2 or more is such a scene, and 3 or more (in hyperspace,
+  which always ends in the mission made again) forgets every identity; the
+  mission's making begins them anew.  A pilot's own jump out (1 and 2; `h`
+  again calls it off in 1) keeps them.
 * **Deaths.**  A craft whose death timer runs (+0x2C) is reported dying;
   the others kill their copy with the game's own damage (a collision's,
   called until its death is under way, at most 12 times), so its explosion

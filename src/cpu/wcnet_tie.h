@@ -53,6 +53,9 @@ int tie_scene();
 // The mission the front end launches (shipext's mission_name: the mission
 // file's name, without its extension), or "" when none is known.
 std::string tie_mission_name();
+// Every craft slot of this flight as a line: slot, identity in the room (group.arrival), group, type, place in km,
+// dying (the key script's !tiecraft: two machines' tables compared).
+std::string tie_session_craft_list();
 
 // The flight's tables (image addresses; docs/tiefighter.md section 3).
 namespace tie {

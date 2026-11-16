@@ -1060,6 +1060,9 @@ static void key_script() {
         // button held while the lead point is within 2 degrees and <km> (default 1.0); !tiesteer=off stops (the video
         // rig's pilot: turns as the craft turns, where !tieface snaps)
         tie_controls_steer(item.substr(10));
+    } else if (item == "!tiecraft") {
+        // every craft of this TIE Fighter flight: slot, identity, group, type, place (two machines' tables compared)
+        wclog(1, "key script %.1fs (t=%.1f): TIE craft:%s", t, now / 1000.0, tie_session_craft_list().c_str());
     } else if (item.compare(0, 9, "!tieface=") == 0) {
         // !tieface=<obj> turns our TIE Fighter craft to face that object; !tieface=target, where a laser fired now meets
         // our target; !tieface=target:<km>, and the fire button held while the target is that near, let go beyond (step

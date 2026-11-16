@@ -239,7 +239,8 @@ TieOwners. Only the room's hello and the launch are the demo's own (TdmHello, Td
     (never applied: it took hits forever, shown at once here and never fatal), its owner's reports went to another
     craft, and the shots its machine made came out of whatever held that slot here, their flashes on our craft.
   * Now each craft has an identity, its flight group and the order of its arrival in it (a group's craft are made one
-    after another, the same way everywhere): `kIdent | fg << 8 | arrival`. Every message names craft by it (TieCraft,
+    after another, the same way everywhere): `kIdent | fg << 8 | arrival` (src/cpu/wcnet_tie_ident.h's `TieIdents`,
+    the CD's session's too since the user asked for one mechanism: "We should have the same mechanisms for both"). Every message names craft by it (TieCraft,
     TieShot, TieHit, TieEvent, the frame's own craft and target, the owners' table: TieOwners.craft beside .owner),
     each machine finding its own slot (`local`). The slots are scanned at the frame's top and at a hooked call's entry
     (`scan_idents`, never from the clock's tick: a craft half made has its type and not yet its group); a new object in

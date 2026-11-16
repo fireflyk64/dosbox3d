@@ -43,6 +43,7 @@
 #include <vector>
 #include <algorithm>
 #include "wcnet_tiedemo.h"
+#include "wcnet_tie_ident.h"
 #include "wcnet_transport.h"
 #include "wcnet_lobby.h"
 #include "wcnet_log.h"
@@ -157,13 +158,7 @@ struct Net {
     std::vector<TieShot> shotsOut;
     std::vector<TieHit> hitsOut;
     std::vector<TieEvent> eventsOut;
-    // each craft slot's identity (kIdent | its flight group << 8 | its arrival in the group), 0 none; the object id
-    // number (+0) it was given to (-1 the slot empty), its type then, when; the arrivals counted in each group
-    Bit32u ident[kCraftSlots];
-    int slotId[kCraftSlots];
-    Bit8u arrivedType[kCraftSlots];
-    double arrivedAt[kCraftSlots];
-    int arrivals[kFgCount];
+    TieIdents ids;                      // each craft slot's identity (wcnet_tie_ident.h: the CD's session's too)
     Bit32u deathSent[kCraftSlots];      // the identity whose death was sent (no exit for it then)
     Bit32u killIdent[kCraftSlots];      // the identity a kill under way here is for
     TieHit hitsIn[kHitsIn];             // (target and shooter as this machine's slots)
@@ -201,14 +196,10 @@ struct Net {
         for (int o = 0; o < kCraftSlots; o++) {
             owner[o] = 0;
             ownerAt[o] = -1e9;
-            ident[o] = 0;
-            slotId[o] = -1;
-            arrivedType[o] = 0;
-            arrivedAt[o] = 0;
             deathSent[o] = killIdent[o] = 0;
             killing[o] = killer[o] = 0;
         }
-        for (int fg = 0; fg < kFgCount; fg++) arrivals[fg] = 0;
+        ids.clear();
         for (int k = 0; k < kMaxSeats; k++) {
             pilotObj[k] = -1;
             pilotTarget[k] = 0xFFFF;
@@ -477,19 +468,17 @@ void hold_ai(int obj) {
 
 // --- which craft: the identities -----------------------------------------------------------------------------------
 
-const Bit32u kIdent = 0x10000;      // (above any slot: an older build's slot numbers name nothing here)
-
 // A craft of ours gone from its slot without its death sent (through hyperspace, into a hangar): gone everywhere.
 void departed(int o) {
-    const Bit32u id = g_net->ident[o];
+    const Bit32u id = g_net->ids.ident(o);
     if (!id || g_net->deathSent[o] == id || o == tdm_player_object() || owner_of(o) != g_net->self) return;
     TieEvent e;
     e.set_kind(4);
     e.set_obj(id);
-    e.set_type(g_net->arrivedType[o]);
-    e.set_fg((id >> 8) & 0xFF);
+    e.set_type(g_net->ids.type(o));
+    e.set_fg(TieIdents::group(id));
     g_net->eventsOut.push_back(e);
-    wclog(1, "TIE demo: obj %d (flight group %u, type %u) of ours gone: sent", o, (id >> 8) & 0xFF, g_net->arrivedType[o]);
+    wclog(1, "TIE demo: obj %d (flight group %d, type %d) of ours gone: sent", o, TieIdents::group(id), g_net->ids.type(o));
 }
 
 // Each craft slot as the game has it now: a new craft there (another object id) is given its identity, and nothing of
@@ -500,11 +489,14 @@ void scan_idents() {
     const double now = PIC_FullIndex();
     for (int o = 0; o < kCraftSlots; o++) {
         const Bit8u type = o8(o, 4);
-        const int id = type ? (int)o16(o, 0) : -1;
-        if (id == g_net->slotId[o]) continue;   // (the same object: a craft dying keeps its id through its explosion)
+        TieSlotNow slot;
+        slot.id = type ? (int)o16(o, 0) : -1;
+        slot.type = type;
+        slot.fg = type ? o8(o, 0x35) : -1;
+        slot.arrival = type && o8(o, 2) == 0 && (type < kExplosionFirst || type > kExplosionLast);
+        if (!g_net->ids.changed(o, slot)) continue;   // (the same object: a craft dying keeps its id through its explosion)
         departed(o);
-        g_net->slotId[o] = id;
-        g_net->ident[o] = 0;
+        g_net->ids.take(o, slot, now);
         g_net->owner[o] = 0;
         g_net->ownerAt[o] = -1e9;
         Puppet &p = g_net->puppets[o];
@@ -515,26 +507,17 @@ void scan_idents() {
         p.ex = p.ey = p.ez = p.blendTicks = 0;
         p.localHitAt = -1e9;
         g_net->killing[o] = g_net->killer[o] = 0;
-        const int fg = type ? o8(o, 0x35) : kFgCount;
-        if (!type || o8(o, 2) != 0 || (type >= kExplosionFirst && type <= kExplosionLast) || fg >= kFgCount) continue;
-        g_net->ident[o] = kIdent | (Bit32u)fg << 8 | (Bit32u)(g_net->arrivals[fg]++ & 0xFF);
-        g_net->arrivedType[o] = type;
-        g_net->arrivedAt[o] = now;
     }
 }
 
 // A craft named for the others: its identity (0xFFFF: not a craft, or none given yet).
 Bit32u wire(int o) {
-    return o >= 0 && o < kCraftSlots && g_net->ident[o] ? g_net->ident[o] : 0xFFFF;
+    return o < kCraftSlots ? g_net->ids.wire(o) : TieIdents::kNone;
 }
 
 // A craft another machine names: our slot for it (-1: none here, or its slot taken by another since the last scan).
 int local(Bit32u id) {
-    if ((id & 0xFFFF0000u) != kIdent) return -1;
-    for (int o = 0; o < kCraftSlots; o++) {
-        if (g_net->ident[o] == id) return o8(o, 4) && (int)o16(o, 0) == g_net->slotId[o] ? o : -1;
-    }
-    return -1;
+    return g_net->ids.local(id, kCraftSlots, [](int o) { return o8(o, 4) ? (int)o16(o, 0) : -1; });
 }
 
 bool someone_near(int obj, double reach) {
@@ -709,7 +692,7 @@ int g_standin = -1;
 bool hit_before(int tag, Bit16u *args) {
     const TieHit &h = g_net->hitsIn[tag];
     g_standin = -1;
-    if (g_net->ident[h.target()] != g_net->hitsInIdent[tag]) return false;     // (another craft in its slot since)
+    if (g_net->ids.ident((int)h.target()) != g_net->hitsInIdent[tag]) return false;     // (another craft in its slot since)
     for (int s = kCraftSlots; s < kObjectCount; s++) {
         if (o8(s, 4) == 0) {
             g_standin = s;
@@ -781,7 +764,7 @@ void take_hit(const TieHit &hit) {
 // is under way); its flight flag cleared first unless a death's (3, 4).
 bool kill_before(int tag, Bit16u *args) {
     (void)args;
-    if (g_net->ident[tag] != g_net->killIdent[tag]) return false;      // (another craft in its slot since: left be)
+    if (g_net->ids.ident(tag) != g_net->killIdent[tag]) return false;      // (another craft in its slot since: left be)
     const PhysPt craft = tdm_craft(tag);
     if (craft) {
         const Bit8u flag = mem_readb(craft + kCraftFlightFlag);
@@ -792,7 +775,7 @@ bool kill_before(int tag, Bit16u *args) {
 void kill_done(int tag, Bit16u ax) {
     (void)ax;
     const int obj = tag;
-    if (g_net->ident[obj] != g_net->killIdent[obj]) return;
+    if (g_net->ids.ident(obj) != g_net->killIdent[obj]) return;
     if (!is_craft(obj) || o16(obj, 0x2C) != 0 || g_net->killing[obj] >= kKillCalls) {
         if (g_net->killing[obj] > 0) {
             g_net->kills++;
@@ -807,7 +790,7 @@ void kill_done(int tag, Bit16u ax) {
 }
 bool credit_before(int tag, Bit16u *args) {
     (void)args;
-    return g_net->ident[tag] == g_net->killIdent[tag];
+    return g_net->ids.ident(tag) == g_net->killIdent[tag];
 }
 void credit_done(int tag, Bit16u ax) {
     (void)ax;
@@ -817,7 +800,7 @@ void credit_done(int tag, Bit16u ax) {
 void begin_kill(int obj, int killer) {
     if (mine(obj) || g_net->killing[obj] != 0 || !is_craft(obj) || o16(obj, 0x2C) != 0) return;
     g_net->killing[obj] = 1;
-    g_net->killIdent[obj] = g_net->ident[obj];     // (the calls go to this craft alone: checked as each is made)
+    g_net->killIdent[obj] = g_net->ids.ident(obj);     // (the calls go to this craft alone: checked as each is made)
     if (killer >= 0 && killer == tdm_player_object()) {
         tdm_queue_call(TDM_UPDATE_KILLS, 3, (Bit16u)killer, (Bit16u)obj, 1, 0, credit_before, credit_done, obj);
     }
@@ -828,17 +811,17 @@ void begin_kill(int obj, int killer) {
 void watch_events() {
     const int own = tdm_player_object();
     for (int o = 0; o < kCraftSlots; o++) {
-        const Bit32u id = g_net->ident[o];
+        const Bit32u id = g_net->ids.ident(o);
         if (!id || o == own || g_net->deathSent[o] == id || !o8(o, 4) || !dying(o) || !mine(o)) continue;
         g_net->deathSent[o] = id;
         TieEvent e;
         e.set_kind(3);
         e.set_obj(id);
-        e.set_type(g_net->arrivedType[o]);
-        e.set_fg((id >> 8) & 0xFF);
+        e.set_type(g_net->ids.type(o));
+        e.set_fg(TieIdents::group(id));
         if (g_net->killer[o]) e.set_killer(wire(g_net->killer[o] - 1));
         g_net->eventsOut.push_back(e);
-        wclog(2, "TIE demo: obj %d (flight group %u, type %u) of ours dying: sent", o, (id >> 8) & 0xFF, g_net->arrivedType[o]);
+        wclog(2, "TIE demo: obj %d (flight group %d, type %d) of ours dying: sent", o, TieIdents::group(id), g_net->ids.type(o));
     }
 }
 
@@ -863,9 +846,9 @@ void send_owners() {
     NetworkMessage msg;
     TieOwners *t = msg.mutable_tie_owners();
     for (int o = 0; o < kCraftSlots; o++) {
-        if (!is_craft(o) || !g_net->ident[o]) continue;
+        if (!is_craft(o) || !g_net->ids.ident(o)) continue;
         t->add_owner((Bit32u)g_net->owner[o]);
-        t->add_craft(g_net->ident[o]);
+        t->add_craft(g_net->ids.ident(o));
     }
     t->set_mission(kMissionName);
     send_all(msg, false);
@@ -889,11 +872,11 @@ void take_owners(const TieOwners &t) {
         g_net->owner[o] = who;
     }
     for (int o = 0; o < kCraftSlots; o++) {
-        if (named[o] || o == own || !g_net->ident[o] || !is_craft(o) || g_net->owner[o] == g_net->self || pilot_flies(o) ||
-            now - g_net->arrivedAt[o] < kUnknownToHostMs) continue;
+        if (named[o] || o == own || !g_net->ids.ident(o) || !is_craft(o) || g_net->owner[o] == g_net->self || pilot_flies(o) ||
+            now - g_net->ids.arrivedAt(o) < kUnknownToHostMs) continue;
         g_net->owner[o] = g_net->self;
         release_ai(o);
-        wclog(1, "TIE demo: obj %d (flight group %u) not in the host's game: flown here", o, (g_net->ident[o] >> 8) & 0xFF);
+        wclog(1, "TIE demo: obj %d (flight group %d) not in the host's game: flown here", o, TieIdents::group(g_net->ids.ident(o)));
     }
 }
 
@@ -1218,7 +1201,7 @@ void tdm_session_tick() {
 // --- the campaign's (wcnet_tiedemo_campaign.cpp) -------------------------------------------------------------------
 
 unsigned tdm_session_ident(int obj) {
-    return g_net && obj >= 0 && obj < kCraftSlots && g_net->ident[obj] ? g_net->ident[obj] & 0xFFFF : 0;
+    return g_net && obj >= 0 && obj < kCraftSlots ? g_net->ids.ident(obj) & 0xFFFF : 0;
 }
 
 TdmRole tdm_session_role() {
