@@ -95,6 +95,9 @@ void vid_palette(const unsigned char __far *rgb6, int first, int n);
 void vid_fade(int level);              /* 0 black .. 64 full: the current palette scaled */
 void vid_flash(int level);             /* 0 none .. 64 all white: the current palette washed out */
 void vid_flash_red(int level);          /* the same toward red (a hit through to the hull) */
+void vid_dim(int level);                /* 0 .. 64 full: the cockpit's colours but its E/M box's (VID_DIM_FIRST on)
+                                           scaled, the cloak's dark cockpit (rvpack.py EM_COLOURS) */
+#define VID_DIM_FIRST 214
 void vid_wait_retrace(void);
 
 /* the archive (dat.c): RV.DAT, all of it in XMS */

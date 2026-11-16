@@ -2387,6 +2387,7 @@ static void system_action(int fn, int arg)
 }
 
 /* once a frame, before the cockpit's state: the systems from the slots, the keys held, the comms */
+#define CLOAK_DIM 22                    /* the cockpit's light cloaked, 64ths: about a third */
 static void systems_tick(void)
 {
     const RvShipType __far *t = g_my_type;
@@ -2457,6 +2458,8 @@ static void systems_tick(void)
     if (g_sys.signature > 100) g_sys.signature = 100;
     if (CLOAK_OF(0) == RV_CLOAK_ON)
         g_sys.signature = 2;            /* (cloaked: next to nothing to find it by; disrupted, the burner's heat shows) */
+    vid_dim(CLOAK_OF(0) != RV_CLOAK_OFF ? CLOAK_DIM : 64);   /* (the cloak's power: the cockpit dark but its E/M box, its
+                                           lamps out but the E/M's (panel.c); the user, 2026-11-15) */
     {   /* (the HEAT and SIGNATURE displays take theirs every 5 s: a sensor's sweep, the user's pick) */
         static unsigned long __far taken;
         if (frameCounter < 3 || clock240() - taken >= 5 * 240) {
@@ -4087,6 +4090,7 @@ void __far __cdecl autoAnimation_c(unsigned short camShipType, unsigned short ca
 static void flight_over(unsigned short status)
 {
     memset(viewRect, 0, viewRect_SIZE);  /* (no steering pointer to rest now) */
+    vid_dim(64);
     if (music_waited())                 /* (the rings ran dry: notes held back.  Never, with every frame polling) */
         RV_LOG("music: %lu ticks waited for music_poll so far", music_waited());
 #ifdef RV_TESTS

@@ -1024,7 +1024,14 @@ look great", of a blue-noise stipple beside it "Let's go checkerboard", then
 "can the cloak checkerboard also do interlacing as well then maybe it doesn't
 need to alternate patterns since every other row will be gone"), by the game's own turned rows and never by the sprite card, with no engine flame; no AI
 picks it or keeps it, a seeker loses it, the shields are down and the
-SIGNATURE reads 2%, the E/M lamp dark and STEALTH lit; the afterburner or a
+SIGNATURE reads 2%, the E/M lamp dark and STEALTH lit; the cockpit dark (the
+user, 2026-11-15: "when cloaked most cockpit lights should turn off...it should
+be quite dim if possible except for the EM ones"): every lamp out but the E/M
+ones (EMCON, STEALTH, sensor, signature ladder: panel.c `state`), and the
+cockpit's own colours at a third (video.c `vid_dim`, flight.c `CLOAK_DIM`) but
+its E/M box's, which tools/rvpack.py gives colours of their own (cockpit.json
+`em_box`: `EM_COLOURS` 6, 208-213; the dim takes 214 on), so the box stays as
+bright as ever; disrupted, still dark; the afterburner or a
 transmission (the comm's lines, a chat line: 3 s) disrupts it, seen with the
 shields still down, CLOAK DISRUPTED under the gunsight; a shot or Alt+C ends
 it and the shields come back; logic.c `cloak_*`, rvFlags bits 6-7);

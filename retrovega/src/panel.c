@@ -196,6 +196,11 @@ static int pct(long v, long of)
 static int state(const RvPanelControl __far *p, const CockpitState *st)
 {
     int a = p->arg, n = p->flags ? p->flags : 1;
+    if (p->kind == RV_PK_LAMP && CLOAK_OF(0) != RV_CLOAK_OFF && p->fn != RV_PF_EMCON_LAMP && p->fn != RV_PF_SENSOR_LAMP
+        && p->fn != RV_PF_EM_LAMP && p->fn != RV_PF_SIG_LADDER)
+        return 0;                       /* (cloaked, the cockpit's lamps out but the E/M's: the user, 2026-11-15: "when
+                                           cloaked most cockpit lights should turn off...it should be quite dim if
+                                           possible except for the EM ones") */
     switch (p->fn) {
     case RV_PF_LOCK: return g_sys.lock;
     case RV_PF_WARN:                    /* (the master warning: it blinks while a warning is new, then is lit, as a master
