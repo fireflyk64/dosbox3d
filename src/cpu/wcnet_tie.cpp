@@ -75,6 +75,7 @@ Place g_places[] = {
     { "user_axisy", 0x5F831, 0, 0 },     // (... and up and down)
     { "user_bank", 0x5FAE1, 0, 0 },      // (... the bank into a turn: test si,si; je out; sub roll,si)
     { "create_startflightgroup", 0x1706C, 0, 0 },    // a flight group's craft made: a carrier's drop-off among them
+    { "paiman_boardmaneuver", 0x3B350, 0, 0 },       // a boarding craft's step: its dock, its transfer (cargo, capture, tow)
 };
 const Bit8u kUpdateTimeBytes[8] = { 0x53, 0x51, 0x52, 0x56, 0x57, 0x55, 0x8b, 0x2d };
 const Bit8u kCreateProjectileBytes[8] = { 0x51, 0x56, 0x57, 0x55, 0x83, 0xec, 0x1c, 0x89 };
@@ -803,6 +804,8 @@ void tie_check_hooks(Bit32u eip) {
             tie_session_laser_hit();
         } else if (p.image == 0x1706C) {
             tie_session_start_group();
+        } else if (p.image == 0x3B350) {
+            tie_session_board();
         } else if (p.image == 0x148F0) {
             tie_session_damage();
         } else if (p.image == 0x5F801 || p.image == 0x5F831) {

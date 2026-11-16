@@ -1041,13 +1041,16 @@ static void key_script() {
         // !tietarget=<obj> makes that object our TIE Fighter craft's target; !tietarget=nearest:<ship index>[-<last>], the
         // nearest moving craft of those ship indexes on another side (5: a T/F, 5-9 the Empire's fighters; the game's R
         // takes craft yet to launch too)
-        if (!item.compare(11, 8, "nearest:")) {
+        if (!item.compare(11, 8, "nearest:") || !item.compare(11, 4, "any:")) {
+            // (any:<ship index>[-<last>]: the nearest of those, still or moving, on any side: a friendly reload craft)
+            const bool any = !item.compare(11, 4, "any:");
             int first = 0, last = 0;
-            const int n = sscanf(item.c_str() + 19, "%d-%d", &first, &last);
-            const int o = tie_nearest(first, n == 2 ? last : first);
+            const int n = sscanf(item.c_str() + (any ? 15 : 19), "%d-%d", &first, &last);
+            const int o = tie_nearest(first, n == 2 ? last : first, any);
             if (o >= 0) {
                 tie_target(o);
             }
+            wclog(1, "key script %.1fs (t=%.1f): our target obj %d", t, now / 1000.0, o);
         } else {
             tie_target(atoi(item.c_str() + 11));
         }
@@ -1060,6 +1063,10 @@ static void key_script() {
         // button held while the lead point is within 2 degrees and <km> (default 1.0); !tiesteer=off stops (the video
         // rig's pilot: turns as the craft turns, where !tieface snaps)
         tie_controls_steer(item.substr(10));
+    } else if (item.compare(0, 9, "!tieammo=") == 0) {
+        // !tieammo=<n>: our TIE Fighter craft's warheads, each slot holding any, set to n (a reload craft's rearming tested)
+        const int n = atoi(item.c_str() + 9);
+        wclog(1, "key script %.1fs (t=%.1f): our warheads set to %d in %d slots", t, now / 1000.0, n, tie_session_set_ammo(n));
     } else if (item == "!tiecraft") {
         // every craft of this TIE Fighter flight: slot, identity, group, type, place (two machines' tables compared)
         wclog(1, "key script %.1fs (t=%.1f): TIE craft:%s", t, now / 1000.0, tie_session_craft_list().c_str());

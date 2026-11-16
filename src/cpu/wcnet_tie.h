@@ -56,6 +56,7 @@ std::string tie_mission_name();
 // Every craft slot of this flight as a line: slot, identity in the room (group.arrival), group, type, place in km,
 // dying (the key script's !tiecraft: two machines' tables compared).
 std::string tie_session_craft_list();
+int tie_session_set_ammo(int n);         // (test aid: our craft's warhead slots set to n each; the slots set)
 
 // The flight's tables (image addresses; docs/tiefighter.md section 3).
 namespace tie {

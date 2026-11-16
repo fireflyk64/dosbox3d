@@ -78,7 +78,7 @@ double tdm_frame_ms();                  // a frame's length, measured
 // move_moveobjects's entry as the CD port's tie_queue_call makes its: the CPU's state kept, the arguments and the
 // place's own address pushed, CS:IP at the function; the place's hook, reached again by its return, gives the state
 // back and makes the next call or lets the frame go on.  CPU state only: no code is written.
-enum TdmFn { TDM_CREATE_PROJECTILE, TDM_LASER_HIT, TDM_DAMAGE, TDM_UPDATE_KILLS };
+enum TdmFn { TDM_CREATE_PROJECTILE, TDM_LASER_HIT, TDM_DAMAGE, TDM_UPDATE_KILLS, TDM_BOARD };
 // `before` runs just before the call is made (to write what it needs at that moment; it may change an argument);
 // false: the call is not made.  `done` with its result (AX).
 typedef bool (*TdmCallBefore)(int tag, Bit16u *args);
@@ -99,6 +99,7 @@ void tdm_session_before_move();         // move_moveobjects's entry: the others'
 void tdm_session_shot();                // laser_createprojectile's entry
 void tdm_session_laser_hit();           // collide_laserhitcraft's entry
 void tdm_session_damage();              // collide_damagecraft's entry
+void tdm_session_board();               // paiman_boardmaneuver's entry (a boarding craft's dock and transfer)
 void tdm_session_flight_ended();
 // ... for the campaign: who decides (a guest follows the host's go and verdicts; solo and host decide)
 enum TdmRole { TDM_SOLO, TDM_HOST, TDM_GUEST };

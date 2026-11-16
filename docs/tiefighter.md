@@ -809,13 +809,108 @@ move vector, the nine axis words, type).
   the host flew the transport and sent both drops; the guest made both, each
   prototype then on both machines with the same identity, in the same slot,
   within 0.07 km of its owner's place.
-* **Pick-ups and other dockings are not synced yet.**  60 pick-ups in 14
-  missions (B3M1BM's Mules, HF2W's Pelicans, HG2W, HM1W ...) and the
-  boardings (cargo, capture, repair, delivery: `paiman_boardmaneuver`'s
-  transfer) change the craft docked with (towed by `tow_slave_ref`, its side,
-  its group's captured count, its cargo) on the boarding craft's machine
-  alone; the docked craft's place still reaches the others in its owner's
-  reports.
+* **Dockings are made on every machine: boardings, pick-ups, a reload
+  craft's call** (2026-11-16, the user: "we must fix all these not synced
+  items--especially if the guest 'owns' those ships. Could we have it so that
+  only the host can ever own ships that are doing docking operations or
+  dropping or picking up craft").  The missions' docking orders (OpenTIE's
+  numbers): 12 to 16 Board to Deliver, Take, Exchange, Capture, Destroy, 17
+  Pick Up, 31 and 32: 98 Board to Deliver in 62 missions (most of them the
+  reload craft a pilot calls with Shift-B, "Board me to reload and repair"),
+  100 Board to Capture in 40, 39 Board to Take in 18, 60 Pick Up in 14,
+  and a few more.  All run in `paiman_boardmaneuver` (0x3B350; MODE_Board,
+  CraftData +0x61 = 18), its step at +0x62:
+  * 0, to the dock point; 1, aligning there and docked within 16 units
+    ("[*] has docked with [*]", the boarder's voice);
+  * 2, its delay (+0x64 counting down; a called reload craft rearms and
+    repairs the pilot who called it meanwhile, one round a pass, the delay
+    drawn out while it does: the target is `pending_radio_command`, +0x3C);
+  * at the delay's end the transfer: by the order (+0x24) the cargo moved
+    (0x1C to 0x1E), the target captured (0x1F: its side, its plan begun
+    again, the captured counts), set to blow (0x20), picked up (0x21: towed,
+    +0x3E `tow_slave_ref` and the target's +0xB7 |= 0xC0, pinned to its tug
+    by `move_moveobjects` and gone with it through hyperspace or into a
+    hangar), delivered (0x22) or repaired (0x44); then the inspected, boarded
+    and docked counts the goals read;
+  * 3, backing off.
+
+  It runs where the boarder's AI runs, its owner's machine, and a copy far off
+  that another machine's AI flies did the same at its own time.  Now:
+  * **The owner sends the dock and the transfer** (TieEvent kinds 6 and 7:
+    the boarder, its target, an identity, or a static object as 0x40000000 |
+    its index, and its order).  The boarding routine's entry is watched: a
+    craft of ours aligning (step 1) is looked at again at the next frame (at
+    step 2: docked, sent); one at step 2 with its timer out makes its
+    transfer in this call (sent).  A copy another machine flies is kept from
+    both (the call skipped, returning 0), its owner's word making them.
+  * **The others make the same call on their copy**: the game's
+    `pai_setupcraftaivars` (0x3591C) for the boarder, `craftptr` set and
+    both (with the 52-byte AI context) put back after; the copy's target,
+    order and step written first.  A transfer is one call (step 2, the timer
+    0).  A dock is two: the first (step 1) finds the dock point (the push it
+    leaves at +0x92, +0x96, +0x9A), the copy is put there, the second docks,
+    with its message and voice.
+  * **A towed craft leaving with its tug** is sent as exit 5 or 6 (with the
+    hyperspace, into a hangar): the others score it as the game does, carried
+    (kind 7: captured), then the count, with no message of its own.
+  * **A craft's boarded count** (+0x49, its own AI's: the boarded count and
+    "left unboarded" read it) goes with its owner's reports (TieCraft
+    `boarded`).
+  * **The host flies them** (the user's rule): a craft whose group has a
+    docking or drop-off order, one boarding or dropping off now, one captured
+    or towed (+0xB7), and the craft a craft of the host's is boarding; at
+    once, not after the second's hold the other changes wait.
+  * **But a reload craft serves the guest who called it from that guest's
+    machine**: the rearming is of the caller's own craft, its missiles and
+    systems kept on its machine alone.  Its Shift-B on a craft the host
+    flies (its copy's `pending_radio_command` our craft, its plan 28) is sent
+    (kind 8); the host gives it to that guest until 12 s after its transfer
+    (the guest gone, another craft in its slot, or 20 minutes: the service
+    over), unless it serves the host already.
+  * Aids: `!tiecraft` shows a boarding (`board<step>><target>`), `dock<flags>`,
+    `tows<slot>`, `boarded<n>`, our own craft's warheads (`ammo<n>`), each
+    craft's owner (`p<seat>`) and the groups' counts the goals read
+    (`counts: fg<n>:h/g/c/i/b/d`: hyperspaced, hangar, captured, inspected,
+    boarded, docked); `!tieammo=<n>` sets our warheads; `!tietarget=any:<ship>`
+    targets the nearest of a ship index on any side.
+
+  Measured, two native machines (`scripts/tfnet-duo.sh`, the pilots idle):
+  * B2M3IW: the host's Lambda (Board to Capture) docked with the Glas; the
+    guest made the dock, both copies then at the same dock point (-10.94,
+    0.03, 1.92 km and -10.95, 0.03, 1.91), step 2 on both.  It never
+    transferred: under fire, its systems out, the game called the boarding
+    off itself (`paiorder_abortboardorder`), and it was destroyed.
+  * HA1W (a training mission whose C.M. Cadiy waits to resupply): the guest,
+    its warheads set to 1 each, targeted the Cadiy and pressed Shift-B.  The
+    host gave the guest the Cadiy; the guest's AI flew it in (at the game's
+    own pace, some 4.5 m/s: the same as for the host's own call, measured),
+    docked (the host made the dock), rearmed the guest's craft on the guest's
+    machine (its warheads 2 -> 8), transferred (the host made it); both
+    machines then counted the same: the guest's group boarded 1, the Cadiy's
+    docked 1.  The service over, the host flew the Cadiy away on both
+    machines (within 0.03 km).  (The first try's 5-minute cap ended the
+    service before its transfer: the cap is 20 minutes now.)
+  * B6M3GW (440 s): the rebels' two Storms (Board to Capture) docked with the
+    Anterab and the Degathem and captured them 40 s later, sent and made on
+    the guest: on both machines both craft then carried the capture (+0xB7
+    0x8D: 0x80 | the Storms' group), and the counts were the same (each
+    captured 1 and boarded 1, the Storms' group docked 2).  A copy's own
+    approach (step 0) is its own business: a held copy's maneuver still runs
+    every tick (only the planner is held), so the guest's Storm reached its
+    step 1 on its own and was held there until the host's dock.
+  * B5M3GW (pilots kept alive, `!tiegod=1`, 600 s): the rebels' AAA Tow and
+    A1 Tow each picked up one of the Pi containers (0x21): on both machines
+    the tug then towed it (`tows5`, the container's `dockC5`), the two
+    within 0.03 km of each other, and carried it into a hangar; the counts
+    the same at the end (the containers' group hangar 2, captured 4, boarded
+    2; each tug's hangar 1, docked 1).  There the guest's copies, 11 km off,
+    were its AI's (the far craft), and its tug carried its container in by
+    itself (the tow made there too), before the host's exits came.  Again
+    with the guest's far AI off (`WCNET_TIE_FAR_AI=0`, 320 s): the host sent
+    the container's exit 6 and the tug's exit 4, and the guest made both
+    (the container scored as carried, no message); the counts the same
+    (the containers' group hangar 1, captured 2, boarded 1; the tug's hangar
+    1, docked 1).
 * **A hyperspace arrival's scene names nothing.**  A mission that opens
   with an arrival (HG3M) or a jump between regions shows a world of this
   machine's own pilot's craft alone (`create_createhyperin`), each

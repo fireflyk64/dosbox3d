@@ -54,6 +54,9 @@ void tie_session_damage();
 // At create_startflightgroup's entry: a carrier's drop-off (called from paiman_dropoffmaneuver) is made where the
 // carrier's AI runs; its machine tells the others, which make the craft too, once.
 void tie_session_start_group();
+// paiman_boardmaneuver's entry (0x3B350): a boarding craft's dock and transfer sent by its owner, kept from a copy
+// another machine flies.
+void tie_session_board();
 // At create_createmission's entry: the player's flight group gets a craft a
 // seat, and a guest flies its own one of them.
 void tie_session_mission_create();

@@ -63,6 +63,7 @@ const Place kCreateProjectile = { 0x1338, 0x0B16 }; // laser_createprojectile
 const Place kLaserHit = { 0x05B3, 0x1B18 };         // collide_laserhitcraft
 const Place kDamage = { 0x05B3, 0x1CF8 };           // collide_damagecraft
 const Place kUpdateKills = { 0x05B3, 0x2CA8 };      // collide_updatekills
+const Place kBoard = { 0x0BBC, 0x17FE };            // paiman_boardmaneuver (the maneuver table's 18th, DS-image 0x43004)
 const Place kFlightOver = { 0x0090, 0x04FB };       // the flight's frames over (the end flag set), its status not yet
                                                     // looked at: the campaign's (wcnet_tiedemo_campaign.cpp)
 const Place kBank = { 0x1411, 0x1708 };             // user_inputforplane's bank into a turn: mov ax,0x58; mul [CD7C];
@@ -266,6 +267,7 @@ const Place &place_of(TdmFn fn) {
     case TDM_CREATE_PROJECTILE: return kCreateProjectile;
     case TDM_LASER_HIT: return kLaserHit;
     case TDM_DAMAGE: return kDamage;
+    case TDM_BOARD: return kBoard;
     default: return kUpdateKills;
     }
 }
@@ -575,6 +577,7 @@ void tdm_watch_list(void (*watch)(Bit16u ip)) {
     watch(kCreateProjectile.off);
     watch(kLaserHit.off);
     watch(kDamage.off);
+    watch(kBoard.off);
     watch(kFlightOver.off);
     watch(kBank.off);
     watch(kStubOff);
@@ -642,6 +645,18 @@ bool tdm_check_hooks(Bit32u ip) {
     }
     if (at(kDamage, ip)) {
         tdm_session_damage();
+        return true;
+    }
+    if (at(kBoard, ip)) {
+        // (its first bytes checked once: push bp; mov bp,sp; sub sp,2Ch; push di; push si; mov bx,[BF8C])
+        static const Bit8u kBoardBytes[12] = { 0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x2C, 0x57, 0x56, 0x8B, 0x1E, 0x8C, 0xBF };
+        static int known = -1;
+        if (known < 0) {
+            known = 1;
+            for (int i = 0; i < 12; i++) known = known && mem_readb(SegPhys(cs) + ip + (PhysPt)i) == kBoardBytes[i];
+            wclog(1, "TIE demo: paiman_boardmaneuver %s", known ? "found (dockings synced)" : "not the one known: dockings left to each machine");
+        }
+        if (known) tdm_session_board();
         return true;
     }
     return false;

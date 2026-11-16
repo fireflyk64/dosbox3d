@@ -162,6 +162,7 @@ The demo is an earlier build of the TIE Fighter the CD port knows (docs/tiefight
 * tie_doframe's entry: the frame's top.
 * move_moveobjects's entry: the others' craft written in; our calls made.
 * laser_createprojectile, collide_laserhitcraft, collide_damagecraft: their entries.
+* paiman_boardmaneuver's entry (0BBC:17FE; its first 12 bytes checked once): a boarding craft's dock and transfer.
 * PSP:005C: the launch's idle.
 
 **Calls into the program** (`tdm_queue_call`, the CD's `tie_queue_call` in 16 bits).
@@ -254,6 +255,31 @@ TieOwners. Only the room's hello and the launch are the demo's own (TdmHello, Td
   * Measured after (the same run, by identity): every craft on one machine was on the other, the same identity within
     0.07 km of its owner's place near the pilots (up to 1.8 km for the far craft our AI flies between sparse reports),
     with the slots apart as before.
+* **Dockings, as the CD's session makes them** (2026-11-16, the user, of the CD's: "we must fix all these not synced
+  items ... only the host can ever own ships that are doing docking operations"; and before: "We should have the same
+  mechanisms for both"). DEMO.TIE boards too: LAMBDA 3 (Board to Take, order 13, from 30 s), BLUE and LAMBDA (13 after
+  their first). The boarding maneuver is the maneuver table's 18th (DS-image 0x43004: 30 far pointers to the run
+  functions, then 30 to the inits; the CD's MODE_Board is 18 too): 0BBC:17FE, the CD's routine in 16 bits. Its
+  CraftData fields: +0x5D the maneuver, +0x5E its step (0 to the dock point, 1 aligning, docked within 16 units: "has
+  docked with"; 2 its delay, +0x60's 32-bit timer; at 0 the transfer; 3 backing off), +0x2E its target, +0x26 its
+  order (the transfer's kind: 0x1C to 0x1F only, deliver, take, exchange, capture: no pick-up, no reload in this build),
+  +0x8E, +0x92, +0x96 the push to the dock point, +0xAF the dock flags (a captured craft's 0x80 | its captor's group).
+  The AI's context is the planner's globals, which pai_updateplaneai (091E:018C) sets inline: DS:D008 the craft, BF8C
+  its record, D028 its flight group, D024 its leader, BF94 the leader's record, D02E its order's entry.
+  * The owner sends its dock and its transfer (TieEvent kinds 6 and 7, as the CD's); a copy another machine flies is
+    kept from both (the call skipped at its entry, AX 0).
+  * The others make the same call on their copy (`tdm_queue_call(TDM_BOARD)`, no arguments): the six globals set as the
+    planner sets them and put back after, the copy's target, order and step written first; a dock in two calls (the
+    first finds the dock point, the copy is put there, the second docks).
+  * The host flies every craft whose group has a boarding order (12 to 17), one boarding now or captured, and the craft
+    such a craft is boarding (at once).
+  * `!tdmcraft` shows a boarding (`board<step>><target>`) and the dock flags (`dock<flags>`).
+  * Measured (`scripts/tdmnet-duo.sh`, 340 s, the pilots idle; the two Prowlers that shot LAMBDA 3 down in the first
+    run killed at the start with `!tdmw`): LAMBDA 3 came out of hyperspace, flew to the yard's CREW QRTRS at the
+    game's pace (33 a tick), docked some 3 minutes later (sent; the guest made it at its first call) and took the
+    cargo 40 s after (order 0x1D, sent; the guest's copy made it, its step then 3); it then left through hyperspace on
+    both machines. Its place on the two machines within 0.1 km throughout. A held copy here runs no maneuver (unlike
+    the CD's, whose maneuvers run every tick): the guest's copy showed no boarding of its own.
 * **Left out of the CD's.** The front end (the demo has none), the mission picker, the pairings, the radio voices, and
   the inspection and reinforcement events (not in this mission).
 

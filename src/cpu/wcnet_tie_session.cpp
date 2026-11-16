@@ -204,6 +204,20 @@ struct TieNet {
     Bit16u savedFgCnt = 0;
     Bit8u savedLeader = 0;
     unsigned dropsSent = 0, dropsMade = 0;
+    // Dockings (paiman_boardmaneuver, its owner's AI's): a craft of ours seen aligning at its dock point, checked at the
+    // next frame (its identity), the others' docks and transfers to make here (the AI's context saved around each), a
+    // pilot's call of a reload craft sent (its identity), each craft's tow seen last frame; on the host, the craft
+    // serving a guest's call: its seat, its identity, since when, when it had served (-1: not yet)
+    Bit32u dockWatch[kCraftSlots];
+    struct BoardIn { int kind; Bit32u boarder, target; int order; bool saved; Bit8u ai[0x34]; Bit32u craftPtr; };
+    BoardIn boardsIn[16];
+    int boardsInNext = 0;
+    Bit32u callSent[kCraftSlots];
+    bool towed[kCraftSlots];
+    int servingSeat[kCraftSlots];
+    Bit32u servingIdent[kCraftSlots];
+    double servingSince[kCraftSlots], servingDoneAt[kCraftSlots];
+    unsigned docksSent = 0, transfersSent = 0, boardsMade = 0, boardsLeft = 0;
     Bit32u deathSent[kCraftSlots];
     Bit32u killIdent[kCraftSlots];
     Bit8u exitCounts[48][2];            // each flight group's hyperspaced and hangar counts last frame
@@ -257,6 +271,12 @@ struct TieNet {
         ids.clear();
         identsBegun = identsOff = false;
         pendingDrops.clear();
+        for (int o = 0; o < kCraftSlots; o++) {
+            dockWatch[o] = callSent[o] = servingIdent[o] = 0;
+            towed[o] = false;
+            servingSeat[o] = -1;
+            servingSince[o] = servingDoneAt[o] = -1;
+        }
         memset(exitCounts, 0, sizeof(exitCounts));
         for (int o = 0; o < kCraftSlots; o++) {
             killing[o] = 0;
@@ -896,6 +916,24 @@ enum {
     kFgHangarCount = 0x08 + 4,
 };
 
+// The dockings' (below, paiman_boardmaneuver's): its address and the AI's, the static objects', a CraftData's fields
+enum { kFnBoard = 0x3B350, kFnSetupAiVars = 0x3591C, kStaticObjects = 0xEA6D4, kStaticSize = 18, kStaticRefs = 0x3800 };
+enum {
+    kCdOrder = 0x23,            // current_order (the plan: 28 a Board to Deliver's, a reload craft's)
+    kCdOrderLdr = 0x24,         // default_order_ldr: the boarding's kind (0x1C..0x22, 0x44)
+    kCdTarget = 0x2C,           // ai_target_ref: an object slot, or 0x3800 + a static object's index
+    kCdRadio = 0x3C,            // pending_radio_command: a called reload craft's caller (0xFF none)
+    kCdBoardCount = 0x49,
+    kCdMode = 0x61, kCdModeSub = 0x62, kCdTimer = 0x64, kCdPushX = 0x92,     // (+0x96, +0x9A the push's y and z)
+    kCdDockFlags = 0xB7,        // 0x80 captured, 0x40 towed (its group | ...)
+    kFgOrders = 0x68,           // a flight group's three orders, 18 bytes each (the order first)
+};
+// (a called reload craft serves its caller until 12 s after its transfer, or 20 minutes at most: HA1W's comes at some
+// 4.5 m/s, its 0.9 km in over 5 minutes)
+enum { kModeBoard = 18, kModeDropOff = 30, kOrderDeliver = 28, kServeAfterMs = 12000, kServeMostMs = 1200000 };
+const Bit32u kStaticWire = 0x40000000;
+void send_board(int kind, int b);
+
 // A departure made here as its owner's machine made it: the game's message, then its exit scoring (the counts), then the
 // object's slot freed (+4 = 0), each in turn through the call trampoline (the tag: the object, the exit kind above it).
 void exit_freed(int tag, Bit32u eax) {
@@ -910,6 +948,26 @@ void exit_said(int tag, Bit32u eax) {
     tie_queue_call(kFnExitScoring, (Bit32u)o, tie_r8(tie::kObjects + (Bit32u)o * tie::kObjectSize + 0x35), (Bit32u)(tag >> 8), 0, NULL,
                    exit_freed, tag);
 }
+// A craft towed out by the craft that picked it up (paiman_intohyperspacemaneuver's and paiorder_enterhangarorder's
+// passenger): scored as carried (kind 7, its captured count), then its group's hyperspaced or hangar count raised by
+// hand, the special craft's too, as the game does; no message.  (The tag's exit: 5 hyperspace, 6 a hangar.)
+enum { kExitCarried = 7, kFgSpecialCounts = 0x1A };
+void exit_carried(int tag, Bit32u eax) {
+    (void)eax;
+    const int o = tag & 0xFF, kind = (tag >> 8) == 6 ? 4 : 3;
+    const Bit32u b = tie_linear(tie::kObjects + (Bit32u)o * tie::kObjectSize);
+    const int fg = mem_readb(b + 0x35);
+    const Bit32u craft = mem_readd(b + 0x54);
+    if (fg < 48) {
+        const Bit32u st = tie_linear(kFgStatus + (Bit32u)fg * kFgStatusSize);
+        mem_writeb(st + 0x08 + (Bit32u)kind, (Bit8u)(mem_readb(st + 0x08 + (Bit32u)kind) + 1));
+        if (craft >= 0x100000 &&
+            (Bit8s)tie_r8(tie::kFlightGroups + (Bit32u)fg * tie::kFlightGroupSize + kFgSpecialCraft) == (Bit8s)mem_readb(craft + kCraftIndexInFg)) {
+            mem_writeb(st + kFgSpecialCounts + (Bit32u)kind, 1);
+        }
+    }
+    exit_freed(tag, 0);     // (logged as its exit: 5, 6)
+}
 
 // --- which craft: the identities (wcnet_tie_ident.h, the demo's session's too) ----------------------------------------
 
@@ -922,10 +980,13 @@ void departed(int o) {
     }
     const int fg = g_net->ids.fg(o);
     const Bit32u st = tie_linear(kFgStatus + (Bit32u)fg * kFgStatusSize);
-    const int exit = fg < 48 && mem_readb(st + kFgHyperspacedCount) > g_net->exitCounts[fg][0] ? 3
-                   : fg < 48 && mem_readb(st + kFgHangarCount) > g_net->exitCounts[fg][1] ? 4 : 0;
+    int exit = fg < 48 && mem_readb(st + kFgHyperspacedCount) > g_net->exitCounts[fg][0] ? 3
+             : fg < 48 && mem_readb(st + kFgHangarCount) > g_net->exitCounts[fg][1] ? 4 : 0;
     if (!exit) {
         return;
+    }
+    if (g_net->towed[o]) {
+        exit += 2;      // (towed out by the craft that picked it up: 5, 6)
     }
     TieEvent e;
     e.set_kind(4);
@@ -1048,6 +1109,32 @@ void watch_events() {
         g_net->inspectKnown[o] = there;
         g_net->inspectId[o] = id;
         g_net->inspectWas[o] = inspected;
+        // (towed: its exit, if it comes next, is its tug's; a reload craft another machine flies, called by our pilot
+        // with Shift-B: the call sent, for the host to give it to us)
+        g_net->towed[o] = there && craft >= 0x100000 && (mem_readb(craft + kCdDockFlags) & 0x40) != 0;
+        if (there && craft >= 0x100000 && ident && (int)mem_readw(craft + kCdRadio) == tie_player_object() &&
+            mem_readb(craft + kCdOrder) == kOrderDeliver) {
+            if (!mine(o) && g_net->callSent[o] != ident) {
+                g_net->callSent[o] = ident;
+                TieEvent e;
+                e.set_kind(8);
+                e.set_obj(ident);
+                e.set_type(mem_readb(b + 4));
+                e.set_fg(mem_readb(b + 0x35));
+                g_net->eventsOut.push_back(e);
+                wclog(1, "TIE: our pilot called obj %d (flight group %u) to reload: sent", o, mem_readb(b + 0x35));
+            }
+        } else {
+            g_net->callSent[o] = 0;
+        }
+        // (a craft of ours seen aligning at its dock point last frame, docked since: sent)
+        if (g_net->dockWatch[o]) {
+            if (there && craft >= 0x100000 && g_net->dockWatch[o] == ident && mem_readb(craft + kCdMode) == kModeBoard &&
+                mem_readb(craft + kCdModeSub) == 2) {
+                send_board(6, o);
+            }
+            g_net->dockWatch[o] = 0;
+        }
         // (a death of a craft of ours begun: sent once, reliably)
         const Bit8u type = mem_readb(b + 4);
         const bool dying = there && (mem_readw(b + 0x2C) != 0 || type >= 127);
@@ -1126,6 +1213,234 @@ void take_drop(const TieEvent &e, int from) {
     tie_queue_call(kFnStartGroup, (Bit32u)d.number, 0, 0, 0, drop_before, drop_done, tag);
 }
 
+// --- dockings: boarding, pick-ups, a reload craft's call ----------------------------------------------------------
+// paiman_boardmaneuver (0x3B350, OpenTIE's paiman.c; MODE_Board, CraftData +0x61 = 18) flies a craft that boards
+// another (the mission's orders 12 to 17, 31 and 32: Board to Deliver, Take, Exchange, Capture, Destroy, Pick Up, and
+// two more; a reload craft a pilot called with Shift-B, "Board me to reload and repair", is a Board to Deliver whose
+// pending_radio_command, +0x3C, is that pilot's craft).  Its step, +0x62: 0 to the dock point, 1 aligning there, docked
+// within 16 units ("[*] has docked with [*]", the boarder's voice), 2 its delay (+0x64 counting down; a called reload
+// craft rearms and repairs the pilot who called it meanwhile, a round at a time, the delay drawn out while it does), and
+// at the delay's end the transfer: the cargo moved, the target captured (its side, its plan, the captured counts),
+// picked up (towed: +0x3E tow_slave_ref, the target's dock flags +0xB7 |= 0xC0, moved with its tug from then on, and
+// gone with it through hyperspace or into a hangar), repaired, set to blow; the inspected, boarded and docked counts
+// the goals read.  Then 3, backing off.  All of it runs where the boarder's AI runs: its owner's machine (or one
+// flying it far off).  So the owner sends its dock (kind 6) and its transfer (kind 7), and the others make the same
+// call on their copy: the AI's context set up by the game's pai_setupcraftaivars, the copy's step, target and order
+// written first (a dock: a first call finds the dock point, the copy is put there, a second docks).  A copy another
+// machine flies neither docks nor transfers by itself here.
+//   And the host flies every craft that docks, drops off or is docked (the user, 2026-11-16: "only the host can ever own
+// ships that are doing docking operations or dropping or picking up craft ... most docking craft are in particularly
+// predictable paths"), and the craft such a craft boards, but for one exception: a reload craft a guest called serves
+// that guest from the guest's machine (the rearming is the caller's own craft's, on its machine alone), from the call
+// (kind 8) until 12 s after its transfer.
+
+Bit32u craft_of(int o) { return o >= 0 && o < kCraftSlots ? tie_r32(obj_base(o) + 0x54) : 0; }
+
+// What a boarder boards, named for the others (a craft's identity; a static object by its index, the same everywhere),
+// and our object reference for it (-1: none here).
+Bit32u board_wire(int ref) {
+    if (ref >= 0 && ref < kCraftSlots) {
+        return wire(ref);
+    }
+    if (ref >= kStaticRefs && ref < kStaticRefs + 64) {
+        return kStaticWire | (Bit32u)(ref - kStaticRefs);
+    }
+    return TieIdents::kNone;
+}
+int board_local(Bit32u w) {
+    if ((w & 0xFFFF0000u) == kStaticWire) {
+        const int i = (int)(w & 0xFFFF);
+        return i < 64 && tie_r8(kStaticObjects + (Bit32u)i * kStaticSize + 3) ? kStaticRefs + i : -1;
+    }
+    return local(w);
+}
+
+// A craft the host alone flies: one docking or dropping off now, captured or towed, or of a group whose orders board,
+// pick up or drop off.
+bool docking_craft(int o) {
+    const int fg = tie_r8(obj_base(o) + 0x35);
+    for (int k = 0; fg < 48 && k < 3; k++) {
+        const int order = tie_r8(tie::kFlightGroups + (Bit32u)fg * tie::kFlightGroupSize + kFgOrders + 18 * (Bit32u)k);
+        if ((order >= 12 && order <= 18) || order == 31 || order == 32) {
+            return true;
+        }
+    }
+    const Bit32u craft = craft_of(o);       // (its record: none yet, just arrived)
+    if (craft < 0x100000) {
+        return false;
+    }
+    const int mode = mem_readb(craft + kCdMode);
+    return mem_readb(craft + kCdDockFlags) || mode == kModeBoard || mode == kModeDropOff;
+}
+
+// The host: the guest a called reload craft serves now (-1: none; its service over once the guest is gone, the craft
+// another, 12 s after its transfer or after 20 minutes).
+int serving_seat(int o, double now) {
+    if (o < 0 || o >= kCraftSlots || !g_net->servingIdent[o]) {
+        return -1;
+    }
+    const int k = g_net->servingSeat[o];
+    if (g_net->ids.ident(o) != g_net->servingIdent[o] || !pilot_present(k, now) || now - g_net->servingSince[o] > kServeMostMs ||
+        (g_net->servingDoneAt[o] >= 0 && now - g_net->servingDoneAt[o] > kServeAfterMs)) {
+        wclog(1, "TIE: obj %d's service of pilot %d over (%s)", o, k + 1, g_net->servingDoneAt[o] >= 0 ? "served" : "not served");
+        g_net->servingIdent[o] = 0;
+        g_net->servingSeat[o] = -1;
+        return -1;
+    }
+    return k;
+}
+
+// A dock or transfer of a craft of ours, for the others.
+void send_board(int kind, int b) {
+    const Bit32u craft = craft_of(b);
+    TieEvent e;
+    e.set_kind((Bit32u)kind);
+    e.set_obj(g_net->ids.ident(b));
+    e.set_type(tie_r8(obj_base(b) + 4));
+    e.set_fg(tie_r8(obj_base(b) + 0x35));
+    e.set_target(board_wire(mem_readw(craft + kCdTarget)));
+    e.set_order(mem_readb(craft + kCdOrderLdr));
+    g_net->eventsOut.push_back(e);
+    if (kind == 6) {
+        g_net->docksSent++;
+    } else {
+        g_net->transfersSent++;
+    }
+    wclog(1, "TIE: obj %d (ours, flight group %u) %s obj %d (order %02X): sent", b, e.fg(), kind == 6 ? "docked with" : "transferred to",
+          (int)mem_readw(craft + kCdTarget), e.order());
+}
+
+// The others' dock or transfer, made here: three calls in turn (or two), the AI's context put back after the last.
+void board_restore(TieNet::BoardIn &d) {
+    if (!d.saved) {
+        return;
+    }
+    for (int i = 0; i < kAiSize; i++) {
+        tie_w8(kAi + (Bit32u)i, d.ai[i]);
+    }
+    tie_w32(kCraftPtr, d.craftPtr);
+    d.saved = false;
+}
+bool board_setup(int tag) {
+    TieNet::BoardIn &d = g_net->boardsIn[tag];
+    d.saved = false;
+    const int b = local(d.boarder), t = board_local(d.target);
+    const Bit32u craft = craft_of(b);
+    if (b < 0 || t < 0 || craft < 0x100000 || !is_craft(b)) {
+        g_net->boardsLeft++;
+        wclog(1, "TIE: a %s of another machine's not made here (boarder obj %d, target %d)", d.kind == 6 ? "dock" : "transfer", b, t);
+        return false;
+    }
+    reg_eax = (Bit32u)b;    // (pai_setupcraftaivars(the boarder): ai, its context, from its object)
+    for (int i = 0; i < kAiSize; i++) {
+        d.ai[i] = tie_r8(kAi + (Bit32u)i);
+    }
+    d.craftPtr = tie_r32(kCraftPtr);
+    tie_w32(kCraftPtr, craft);
+    d.saved = true;
+    return true;
+}
+bool board_step(int tag) {
+    TieNet::BoardIn &d = g_net->boardsIn[tag];
+    if (!d.saved) {
+        return false;
+    }
+    const Bit32u craft = tie_r32(kCraftPtr);
+    mem_writew(craft + kCdTarget, (Bit16u)board_local(d.target));
+    mem_writeb(craft + kCdOrderLdr, (Bit8u)d.order);
+    if (d.kind == 7) {
+        mem_writeb(craft + kCdModeSub, 2);      // (the delay run out: the transfer)
+        mem_writed(craft + kCdTimer, 0);
+    } else {
+        mem_writeb(craft + kCdModeSub, 1);      // (aligning: this call finds the dock point, +0x92.. the way there)
+    }
+    return true;
+}
+bool board_dock(int tag) {
+    TieNet::BoardIn &d = g_net->boardsIn[tag];
+    if (!d.saved) {
+        return false;
+    }
+    const Bit32u craft = tie_r32(kCraftPtr);
+    if (mem_readb(craft + kCdModeSub) != 1) {
+        const int b = tie_r16(kAi);
+        board_restore(d);       // (docked at the first call: near enough already)
+        g_net->boardsMade++;
+        wclog(1, "TIE: obj %d docked as on its owner's machine (at the first call)", b);
+        return false;
+    }
+    const Bit32u ob = obj_base(tie_r16(kAi));
+    for (int k = 0; k < 3; k++) {   // (put at the dock point: the second call docks)
+        tie_w32(ob + 6 + 4 * (Bit32u)k, tie_r32(ob + 6 + 4 * (Bit32u)k) + mem_readd(craft + kCdPushX + 4 * (Bit32u)k));
+    }
+    return true;
+}
+void board_done(int tag, Bit32u eax) {
+    (void)eax;
+    TieNet::BoardIn &d = g_net->boardsIn[tag];
+    const int b = tie_r16(kAi);
+    const Bit32u craft = tie_r32(kCraftPtr);
+    const int step = craft >= 0x100000 ? mem_readb(craft + kCdModeSub) : -1;
+    board_restore(d);
+    g_net->boardsMade++;
+    wclog(1, "TIE: obj %d %s as on its owner's machine (order %02X, its step now %d)", b, d.kind == 6 ? "docked" : "transferred", d.order, step);
+}
+void take_board(const TieEvent &e, int from) {
+    const int b = local(e.obj());
+    const int t = e.has_target() ? board_local(e.target()) : -1;
+    if (b < 0 || t < 0) {
+        g_net->boardsLeft++;
+        wclog(1, "TIE: pilot %d's craft (flight group %u) %s: boarder or target not here (obj %d, target %d)", from + 1, e.fg(),
+              e.kind() == 6 ? "docked" : "transferred", b, t);
+        return;
+    }
+    if (e.kind() == 7 && g_net->host && g_net->servingIdent[b] == e.obj() && g_net->servingSeat[b] == from) {
+        g_net->servingDoneAt[b] = PIC_FullIndex();      // (it has served the guest who called it)
+    }
+    const int tag = g_net->boardsInNext;
+    g_net->boardsInNext = (g_net->boardsInNext + 1) % 16;
+    TieNet::BoardIn &d = g_net->boardsIn[tag];
+    d.kind = (int)e.kind();
+    d.boarder = e.obj();
+    d.target = e.target();
+    d.order = (int)e.order();
+    d.saved = false;
+    wclog(1, "TIE: pilot %d's obj %d %s obj %d (order %02X): made here", from + 1, b, d.kind == 6 ? "docked with" : "transferred to", t, d.order);
+    tie_queue_call(kFnSetupAiVars, (Bit32u)b, 0, 0, 0, board_setup, NULL, tag);
+    if (d.kind == 7) {
+        tie_queue_call(kFnBoard, 0, 0, 0, 0, board_step, board_done, tag);
+    } else {
+        tie_queue_call(kFnBoard, 0, 0, 0, 0, board_step, NULL, tag);
+        tie_queue_call(kFnBoard, 0, 0, 0, 0, board_dock, board_done, tag);
+    }
+}
+
+// The host: a guest called a reload craft (Shift-B on its copy): the guest's machine flies it until it has served,
+// unless it serves another already (the host's own call: its pending_radio_command here is the host's craft).
+void take_call(const TieEvent &e, int from) {
+    if (!g_net->host) {
+        return;
+    }
+    const int o = local(e.obj());
+    const double now = PIC_FullIndex();
+    const Bit32u craft = craft_of(o);
+    if (o < 0 || craft < 0x100000 || from <= 0 || from >= kMaxSeats) {
+        wclog(1, "TIE: pilot %d called a reload craft not here", from + 1);
+        return;
+    }
+    const int busy = serving_seat(o, now);
+    if ((busy >= 0 && busy != from) || (mine(o) && mem_readw(craft + kCdRadio) == tie_player_object())) {
+        wclog(1, "TIE: pilot %d called obj %d: it serves %s already", from + 1, o, busy >= 0 ? "another pilot" : "the host");
+        return;
+    }
+    g_net->servingSeat[o] = from;
+    g_net->servingIdent[o] = e.obj();
+    g_net->servingSince[o] = now;
+    g_net->servingDoneAt[o] = -1;
+    g_net->decidedAt = -1e9;        // (the owners decided again at once)
+    wclog(1, "TIE: pilot %d called obj %d (flight group %u) to reload: flown by its machine until it has served", from + 1, o, e.fg());
+}
+
 void take_event(const TieEvent &e, int from) {
     if (e.kind() == 1) {
         const Bit32u m = tie_linear(kMission);
@@ -1141,6 +1456,14 @@ void take_event(const TieEvent &e, int from) {
         take_drop(e, from);
         return;
     }
+    if (e.kind() == 6 || e.kind() == 7) {
+        take_board(e, from);
+        return;
+    }
+    if (e.kind() == 8) {
+        take_call(e, from);
+        return;
+    }
     const int o = e.kind() >= 2 ? local(e.obj()) : -1;
     if (e.kind() >= 2 && o < 0) {
         wclog(2, "TIE: event %u on pilot %d's machine for a craft not here (flight group %u, type %u)", e.kind(), from, e.fg(), e.type());
@@ -1152,6 +1475,11 @@ void take_event(const TieEvent &e, int from) {
         if (mem_readb(b + 4) != e.type() || mem_readb(b + 0x35) != e.fg() || mem_readw(b + 0x2C) != 0 || craft < 0x100000) {
             wclog(1, "TIE: obj %d left on pilot %d's machine: not the same craft here (type %u, flight group %u)", o, from,
                   mem_readb(b + 4), mem_readb(b + 0x35));
+            return;
+        }
+        if (e.exit() == 5 || e.exit() == 6) {
+            // (towed out by its tug: no message, scored as carried, then the hyperspace's or the hangar's count)
+            tie_queue_call(kFnExitScoring, (Bit32u)o, e.fg(), kExitCarried, 0, NULL, exit_carried, o | ((int)e.exit() << 8));
             return;
         }
         const int exit = e.exit() == 4 ? 4 : 3;
@@ -1475,6 +1803,15 @@ void decide_owners(double now) {
     }
     const int hostObj = tie_player_object();
     const int hostTarget = tie_r16(tie::kPstate + 0x12);
+    // (the craft a craft we fly is boarding: ours too, while it boards)
+    bool boarded[kCraftSlots] = { false };
+    for (int o = 0; o < kCraftSlots; o++) {
+        const Bit32u craft = craft_of(o);
+        if (is_craft(o) && g_net->owner[o] == g_net->self && craft >= 0x100000 && mem_readb(craft + kCdMode) == kModeBoard &&
+            mem_readw(craft + kCdTarget) < kCraftSlots) {
+            boarded[mem_readw(craft + kCdTarget)] = true;
+        }
+    }
     bool changed = false;
     for (int o = 0; o < kCraftSlots; o++) {
         bool someonesOwn = o == hostObj;
@@ -1485,8 +1822,11 @@ void decide_owners(double now) {
             continue;
         }
         const int cur = g_net->owner[o];
-        int want = 0;
-        if (o != hostTarget) {
+        // a reload craft serving the guest who called it; else a craft that docks, drops off or is docked: ours at once
+        const int serving = serving_seat(o, now);
+        const bool hostOnly = serving < 0 && (docking_craft(o) || boarded[o]);
+        int want = serving >= 0 ? serving : 0;
+        if (serving < 0 && !hostOnly && o != hostTarget) {
             int bestScore = -1;
             double bestDist = 1e30;
             for (int i = 0; i < n; i++) {
@@ -1507,7 +1847,7 @@ void decide_owners(double now) {
         for (int i = 0; i < n; i++) {
             curPresent = curPresent || guests[i] == cur;
         }
-        if (want != cur && (now - g_net->ownerAt[o] >= kOwnerHoldMs || !curPresent)) {
+        if (want != cur && (now - g_net->ownerAt[o] >= kOwnerHoldMs || !curPresent || serving >= 0 || hostOnly)) {
             g_net->owner[o] = want;
             g_net->ownerAt[o] = now;
             g_net->ownerChanges++;
@@ -1558,6 +1898,9 @@ void fill_craft(TieCraft *c, int obj) {
         c->set_shield_front((Bit16s)mem_readw(craft + 0xCA));
         c->set_shield_rear((Bit16s)mem_readw(craft + 0xCC));
         c->set_systems(mem_readw(craft + 0xAE));
+        if (mem_readb(craft + kCdBoardCount)) {
+            c->set_boarded(mem_readb(craft + kCdBoardCount));    // (its owner's AI counts the boardings)
+        }
     }
 }
 
@@ -1614,6 +1957,9 @@ void write_puppet(Puppet &p) {
             mem_writew(craft + 0xCA, (Bit16u)(Bit16s)c.shield_front());
             mem_writew(craft + 0xCC, (Bit16u)(Bit16s)c.shield_rear());
             mem_writew(craft + 0xAE, (Bit16u)c.systems());
+        }
+        if (craft >= 0x100000 && c.has_boarded()) {
+            mem_writeb(craft + kCdBoardCount, (Bit8u)c.boarded());
         }
         p.fresh = false;
     }
@@ -1804,11 +2150,13 @@ void report_frame(double now) {
                      (int)tie_r32(ob + 0xE), tie_r16(ob + 0x1E), tie_r16(ob + 0x20), tie_r16(ob + 0x22), (Bit16s)tie_r16(ob + 0x26), tie_r8(ob + 4));
             line += one;
         }
-        char sums[400];
+        char sums[480];
         snprintf(sums, sizeof(sums), " owners %d/%d/%d; sent %u craft (%u near, %u mid, %u far) in %u bytes, %u owner changes; guns: %u shots"
-                 " sent, %u made, %u hits sent, %u applied, %u damage skipped, %u kills, %u credited;", owned[0], owned[1], owned[2],
+                 " sent, %u made, %u hits sent, %u applied, %u damage skipped, %u kills, %u credited; dockings %u/%u sent, %u made, %u not here;",
+                 owned[0], owned[1], owned[2],
                  g_net->sentCraft, g_net->sentNear, g_net->sentMid, g_net->sentFar, g_net->sentBytes, g_net->ownerChanges, g_net->shotsSent,
-                 g_net->shotsMade, g_net->hitsSent, g_net->hitsApplied, g_net->damageSkipped, g_net->kills, g_net->credited);
+                 g_net->shotsMade, g_net->hitsSent, g_net->hitsApplied, g_net->damageSkipped, g_net->kills, g_net->credited,
+                 g_net->docksSent, g_net->transfersSent, g_net->boardsMade, g_net->boardsLeft);
         g_net->sentCraft = g_net->sentNear = g_net->sentMid = g_net->sentFar = g_net->sentBytes = g_net->ownerChanges = 0;
         g_net->shotsSent = g_net->shotsMade = g_net->hitsSent = g_net->hitsApplied = g_net->damageSkipped = g_net->kills = g_net->credited = 0;
         char far[300];
@@ -2009,6 +2357,55 @@ void tie_session_start_group() {
     wclog(1, "TIE: obj %d (ours) drops off craft %d of flight group %d, placed by obj %d: sent", dropper, number, fg, anchor);
 }
 
+// paiman_boardmaneuver's entry (the AI's context: ai's first word the boarder, craftptr its record): a craft of ours
+// aligning at its dock point is looked at again at the next frame (docked: sent then), its transfer is sent now (it is
+// made in this call); a copy another machine flies is kept from both here (its owner's word makes them).
+void tie_session_board() {
+    if (!g_net || g_net->self < 0 || !tie_in_flight() || tie_in_call()) {
+        return;
+    }
+    const int b = tie_r16(kAi);
+    const Bit32u craft = tie_r32(kCraftPtr);
+    if (b >= kCraftSlots || craft < 0x100000 || craft != craft_of(b) || b == tie_player_object()) {
+        return;
+    }
+    const int step = mem_readb(craft + kCdModeSub);
+    const bool transfer = step == 2 && mem_readd(craft + kCdTimer) == 0;
+    if (step != 1 && !transfer) {
+        return;             // (on its way, its delay running, backing off: its own business here)
+    }
+    scan_idents();
+    if (!mine(b)) {
+        tie_skip_call(0);   // (not docked yet: its owner's dock and transfer come over)
+        return;
+    }
+    const Bit32u by = g_net->ids.ident(b);
+    if (!by) {
+        return;             // (no identity: the game's own, here alone)
+    }
+    if (transfer) {
+        send_board(7, b);
+    } else {
+        g_net->dockWatch[b] = by;
+    }
+}
+
+// Test aid (!tieammo=<n>): our own craft's warhead slots (those holding any) set to n each, as if fired (a called
+// reload craft's rearming then measured).  Returns the slots set.
+int tie_session_set_ammo(int n) {
+    const int own = tie_player_object();
+    const Bit32u craft = own >= 0 && own < kCraftSlots ? tie_r32(tie::kObjects + (Bit32u)own * tie::kObjectSize + 0x54) : 0;
+    int set = 0;
+    for (int k = 0; craft >= 0x100000 && k < 16; k++) {
+        const Bit32u slot = craft + 0x142 + 6 * (Bit32u)k;
+        if (mem_readb(slot + 2)) {
+            mem_writeb(slot + 2, (Bit8u)n);
+            set++;
+        }
+    }
+    return set;
+}
+
 std::string tie_session_craft_list() {
     std::string out;
     const double kUnitsPerKm = 40960.0;
@@ -2027,8 +2424,36 @@ std::string tie_session_craft_list() {
                 snprintf(name, sizeof(name), "%d.%d", (int)((id >> 8) & 0xFF), TieIdents::arrival(id));
             }
         }
-        snprintf(one, sizeof(one), " [%d id%s fg%u t%u (%.2f %.2f %.2f)%s]", o, name, tie_r8(b + 0x35), type, (Bit32s)tie_r32(b + 6) / kUnitsPerKm, (Bit32s)tie_r32(b + 0xA) / kUnitsPerKm,
-                 (Bit32s)tie_r32(b + 0xE) / kUnitsPerKm, tie_r16(b + 0x2C) != 0 || type >= 127 || tie_r8(b + 2) != 0 ? " dying" : "");
+        // (a boarding: its step and target; docked or towed, captured; boarded; and its owner, the host's word)
+        char dock[64] = "";
+        const Bit32u craft = tie_r32(b + 0x54);
+        if (craft >= 0x100000 && type < 127) {
+            int n = 0;
+            if (mem_readb(craft + kCdMode) == kModeBoard) {
+                n += snprintf(dock + n, sizeof(dock) - (size_t)n, " board%d>%d", mem_readb(craft + kCdModeSub), (int)mem_readw(craft + kCdTarget));
+            }
+            if (mem_readb(craft + kCdDockFlags)) {
+                n += snprintf(dock + n, sizeof(dock) - (size_t)n, " dock%02X", mem_readb(craft + kCdDockFlags));
+            }
+            if (mem_readw(craft + 0x3E) != 0xFFFF) {
+                n += snprintf(dock + n, sizeof(dock) - (size_t)n, " tows%d", (int)mem_readw(craft + 0x3E));
+            }
+            if (mem_readb(craft + kCdBoardCount)) {
+                n += snprintf(dock + n, sizeof(dock) - (size_t)n, " boarded%d", mem_readb(craft + kCdBoardCount));
+            }
+            if (o == tie_player_object()) {
+                int ammo = 0;   // (our own craft: its warheads left, CraftData +0x142's 16 slots of 6 bytes, +2 the count)
+                for (int k = 0; k < 16; k++) {
+                    ammo += mem_readb(craft + 0x142 + 6 * (Bit32u)k + 2);
+                }
+                n += snprintf(dock + n, sizeof(dock) - (size_t)n, " ammo%d", ammo);
+            }
+            if (g_net) {
+                snprintf(dock + n, sizeof(dock) - (size_t)n, " p%d", g_net->owner[o] + 1);
+            }
+        }
+        snprintf(one, sizeof(one), " [%d id%s fg%u t%u (%.2f %.2f %.2f)%s%s]", o, name, tie_r8(b + 0x35), type, (Bit32s)tie_r32(b + 6) / kUnitsPerKm, (Bit32s)tie_r32(b + 0xA) / kUnitsPerKm,
+                 (Bit32s)tie_r32(b + 0xE) / kUnitsPerKm, tie_r16(b + 0x2C) != 0 || type >= 127 || tie_r8(b + 2) != 0 ? " dying" : "", dock);
         out += one;
     }
     // the static objects (mines, probes, satellites: _staticobjects at 0xEA6D4, 64 of 18 bytes; +3 the species, 0 free;
@@ -2044,7 +2469,20 @@ std::string tie_session_craft_list() {
                  (Bit16s)tie_r16(b + 6) * 256 / kUnitsPerKm, (Bit16s)tie_r16(b + 8) * 256 / kUnitsPerKm);
         statics += one;
     }
-    return out + (statics.empty() ? "" : " statics:" + statics);
+    // the flight groups' counts the goals read, where any is not 0 (FGStatus +8: hyperspaced, hangar, captured,
+    // inspected, boarded, docked)
+    std::string counts;
+    const int numFg = (Bit16s)tie_r16(tie::kMissionHeader);
+    for (int i = 0; i < numFg && i < 48; i++) {
+        const Bit32u st = kFgStatus + (Bit32u)i * kFgStatusSize + 8;
+        const int h = tie_r8(st + 3), g = tie_r8(st + 4), c = tie_r8(st + 7), in = tie_r8(st + 9), bo = tie_r8(st + 11), d = tie_r8(st + 13);
+        if (h || g || c || in || bo || d) {
+            char one[64];
+            snprintf(one, sizeof(one), " fg%d:h%d/g%d/c%d/i%d/b%d/d%d", i, h, g, c, in, bo, d);
+            counts += one;
+        }
+    }
+    return out + (statics.empty() ? "" : " statics:" + statics) + (counts.empty() ? "" : " counts:" + counts);
 }
 
 void tie_session_frame() {
