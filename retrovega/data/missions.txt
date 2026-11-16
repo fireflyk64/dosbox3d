@@ -3199,16 +3199,17 @@ music    briefing
 fighter  SCHROED
 briefing "One more job before we leave Enigma, and it's a quiet one."
 briefing "The Aera have a listening post on the ice moon under the yards. Every ship we launch, they hear."
-briefing "It's a Charillus, parked on a pad at Nav 3, and it passes everything it hears to their fleet."
+briefing "It's a Charillus, parked at the far end of a long canyon. It passes everything it hears to their fleet."
 briefing "The way down is guarded. Intelligence expects 2 Cleomenes at Nav 1 and 1 Cleomenes at Nav 2."
 briefing "Another one patrols between them, and there will be 2 Aristons at Nav 2, under an ice arch."
-briefing "Those are heavy fighters. One Schroedinger won't last against six of them, so they won't see you."
+briefing "Nav 3 is the canyon's mouth, with 2 Areus over it. Nav 4 is its end, and the Charillus is there."
+briefing "Those are heavy fighters. One Schroedinger won't last against all of them, so they won't see you."
 briefing "Your Schroedinger has a cloak. Alt and C. While it's on, nothing out there knows you're there."
 briefing "Firing drops it. The afterburner and the comm let them see you while you use them. Your shields are down."
 briefing "Go in cloaked. Slip past them, or take them one at a time from behind, before they know you're there."
 briefing "They keep to their posts. Get clear of one and it won't follow you far."
-briefing "At Nav 3 there are 2 Agis. That's all they think the post needs."
-briefing "Burn the Charillus, then come home the way you went."
+briefing "The Charillus keeps 2 Aristons by it. Those you'll have to fight when it burns."
+briefing "Burn it, then come home. The Vigilance holds high over the moon."
 briefing you "Alone, Commander?"
 briefing alive=FROST "Frost asked to go. I said no. Two fighters can't hide as well as one."
 briefing dead=FROST "Two fighters can't hide as well as one, and it's a job for one."
@@ -3218,26 +3219,30 @@ win      "We can leave Enigma without them hearing which way we went."
 lose     "They're still listening. We'll leave Enigma louder than I'd like."
 lose     you "They never saw me, Commander. That was the trouble. Neither did I see enough."
 lose     "Get some rest. We go again tomorrow."
-planet   101 -21937 -75235 51908 64000 kind=ice
-nav      1 -18773 -8215 44525 ground reach=3000
-nav      2 -23984 -10929 39627 ground reach=3000
-nav      3 -20926 -14126 30678 ground reach=3000
-nav      4 -21417 -9474 42037 ground hidden reach=2500
+planet   101 -21847 -77896 47863 64000 kind=ice
+nav      1 -13847 -12917 45863 ground reach=3000
+nav      2 -19847 -13048 38863 ground reach=3000
+nav      3 -27847 -15493 31863 ground reach=3000
+nav      4 -35847 -22307 17863 ground reach=3000
+nav      5 -16847 -12316 42363 ground hidden reach=2500
 ground   arch nav2 span=1500 width=700 air=2000 thick=450 heading=-167
-ground   pad nav3 radius=1400 slope=700
+ground   canyon nav3 to=nav4 width=1700 wall=1300 depth=2800 rise=1800
+ground   pad nav4 radius=900 slope=500
 ship     player 0 nav0
 ship     VIGILNC 0 nav0 role=home
 ship     CLEOMEN 1 nav1 at=3500,400,1500 role=guard
 ship     CLEOMEN 1 nav1 at=-3500,-300,-1500 role=guard
-ship     CLEOMEN 1 nav4 at=1500,300,0 role=guard
+ship     CLEOMEN 1 nav5 at=1500,300,0 role=guard
 ship     CLEOMEN 1 nav2 at=-1200,300,1800 role=guard
 ship     ARISTON 1 nav2 count=2 role=guard
-ship     CHARILS 1 nav3 role=stay
-ship     AGIS 1 nav3 count=2 at=1500,600,-1500
+ship     AREUS 1 nav3 count=2 at=1500,600,1300 role=guard
+ship     CHARILS 1 nav4 role=stay
+ship     ARISTON 1 nav4 count=2 at=1240,1056,2171
 goal     nav 1 1
 goal     nav 2 1
-goal     kill CHARILS nav3 6
 goal     nav 3 1
+goal     kill CHARILS nav4 6
+goal     nav 4 1
 goal     land 1
 bar      left=TORCH middle=PRIME right=ANCHOR
 say      bar PRIME PRIME "A cloak! They give the new one a cloak. I've been asking for one for a year."
@@ -3263,9 +3268,10 @@ music    briefing
 fighter  FRANKLN
 briefing "Before the supply ships come in, there's one more thing on my list."
 briefing "The Aera have been fuelling their ships here from the red planet under us. Tactical has found where."
-briefing "A Charillus tanker sits on a pad at Nav 3, in the dust. Burn it, and their fighters here go thirsty."
-briefing "You and Drifter take it. Nav 1, Nav 2, the tanker at Nav 3, and home."
-briefing "Intelligence expects 3 Nicanders at Nav 1, 2 Aristons at Nav 2 and 2 Agis at Nav 3."
+briefing "A Charillus tanker sits on a pad at the end of a canyon. Burn it, and their fighters here go thirsty."
+briefing "You and Drifter take it. Nav 1, Nav 2, into the canyon at Nav 3, the tanker at Nav 4, and home."
+briefing "Intelligence expects 2 Cleomenes at Nav 1, 2 Aristons at Nav 2 and 2 Areus at Nav 3."
+briefing "At Nav 4 the tanker has a Cleomenes and 2 Agis with it. The canyon's long, so don't rush the walls."
 briefing "Mind the ground down there. A Franklin doesn't bounce."
 briefing DRIFTER "What are the odds on the tanker, Commander?"
 briefing alive=DRIFTER "Better than the odds on you, Drifter. Dismissed."
@@ -3275,22 +3281,27 @@ win      you alive=DRIFTER "Drifter called it before we got there."
 win      DRIFTER "I had it at three to one. I should have gone higher."
 lose     "The tanker's still down there. Their fighters will be full tomorrow."
 lose     DRIFTER "I'd have given you long odds on that, Commander. I didn't take them."
-planet   211 17236 -84248 37962 64000 kind=red
-nav      1 12002 -17749 44243 ground reach=3000
-nav      2 6030 -20026 36943 ground reach=3000
-nav      3 2119 -22065 29900 ground reach=3000
-ground   pad nav3 radius=1500 slope=700
+planet   211 17077 -84198 38146 64000 kind=red
+nav      1 12077 -19165 44146 ground reach=3000
+nav      2 5077 -19814 37146 ground reach=3000
+nav      3 1077 -22157 29146 ground reach=3000
+nav      4 -6923 -28690 15146 ground reach=3000
+ground   canyon nav3 to=nav4 width=1800 wall=1300 depth=2800 rise=1800
+ground   pad nav4 radius=900 slope=500
 ship     player 0 nav0
 ship     wingman 0 nav0 pilot=DRIFTER
 ship     VIGILNC 0 nav0 role=home
-ship     NICANDR 1 nav1 count=3 at=-1500,500,2500
+ship     CLEOMEN 1 nav1 count=2 at=-1500,500,2500
 ship     ARISTON 1 nav2 count=2 at=1000,300,2000
-ship     CHARILS 1 nav3 role=stay
-ship     AGIS 1 nav3 count=2 at=1500,600,-1500
+ship     AREUS 1 nav3 count=2 at=1500,600,1500
+ship     CHARILS 1 nav4 role=stay
+ship     CLEOMEN 1 nav4 at=1150,939,2012
+ship     AGIS 1 nav4 count=2 at=-1150,-500,-500
 goal     nav 1 1
 goal     nav 2 1
-goal     kill CHARILS nav3 5
 goal     nav 3 1
+goal     kill CHARILS nav4 5
+goal     nav 4 1
 goal     land 1
 bar      left=TORCH middle=ECHO right=COMET
 say      bar ECHO ECHO "Red planet, red dust. You'll be picking it out of the vents for a week."

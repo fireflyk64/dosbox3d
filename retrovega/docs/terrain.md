@@ -303,8 +303,8 @@ who want to find themselves to the winning path"), but "We want an escort missio
 
 | Set | Mission | Fighter, wingman | Planet (seed, look) | What |
 |---|---|---|---|---|
-| Enigma | ENIGMAP, third | Schroedinger, alone | 101, ice | Strike: the listening post. Cloaked past four Cleomenes and two Aristons that guard their posts (`role=guard`), or one at a time from behind; a Charillus on a pad and two Agis at Nav 3 |
-| Cephid 17 | CEPHIDP, third | Franklin, Drifter | 211, red | Strike: a Charillus tanker on a pad in the dust |
+| Enigma | ENIGMAP, third | Schroedinger, alone | 101, ice | Strike: the listening post. Cloaked past four Cleomenes, two Aristons and two Areus that guard their posts (`role=guard`), or one at a time from behind; Nav 3 a canyon's mouth, Nav 4 its end 17,800 km on, a Charillus on a pad there and two Aristons |
+| Cephid 17 | CEPHIDP, third | Franklin, Drifter | 211, red | Strike: a Charillus tanker on a pad at the end of a canyon (Nav 3 its mouth, Nav 4 its end 17,500 km on); two Cleomenes at Nav 1, two Aristons at Nav 2, two Areus at Nav 3, a Cleomenes and two Agis with the tanker |
 | Shelton | SHELTONP, third | Schroedinger, Comet | 307, savanna | Patrol: the strip the Nicanders on the deck came from, a Charillus under an arch |
 | Crucible | CRUCIBLP, second | Gawain, Comet | 401, ash (lava pools) | Escort: an Ox lifts the Kahan's lifeboat crew out of the lava fields (`role=back`) |
 | Oldziey | OLDZIEYP, third | Franklin, Prime | 503, ochre | Strike: the north base, one of the second planet's four |
@@ -353,6 +353,28 @@ its nav points 6,000 to 12,000 km off. Now it is 30,000 km up:
   autopilot home stops 4,000 km off the carrier as before; an escort target near the player (an Ox going home) comes
   along with it, as anywhere.
 
+### Four nav points down, a canyon to the target (the user's play test, 2026-11-16)
+
+> on the first terrain missions there were not enough nav points.... we needed to go through a series of nav points
+> with the various heavy fighters at each if possible ... Ideally each nav point is near the surface of the planet then
+> a nav point at the start of a canyon and one at the end and the transport at the very end of the canyon but having it
+> be fairly long.... so maybe 4 nav points each with heavy fighters.
+
+The first two (Enigma's cloak strike, ENIGMAP, and Cephid 17's tanker, CEPHIDP) had three nav points 7,000 to 10,000 km
+apart, the Charillus on a pad at the third. Now each has four, all near the ground, heavy fighters at each:
+
+- **Nav 1 and Nav 2:** 1,500 km over the ground, some 9,500 km apart. ENIGMAP keeps its guards (two Cleomenes at Nav 1,
+  the patrol between, now hidden point 5, a Cleomenes and two Aristons under the ice arch at Nav 2); CEPHIDP has two
+  Cleomenes and two Aristons.
+- **Nav 3, the canyon's mouth**, 700 km over its floor, two Areus over it (ENIGMAP's guard it).
+- **The canyon** runs straight from Nav 3 to **Nav 4, its end**, some 17,500 km, 2,800 km deep, its floor 1,700 and
+  1,800 km wide, cut into each planet's roughest highland (laid out on `planet_view.sh --map`).
+- **The target at the very end:** a pad at Nav 4 closes the canyon (900 km across, a slope of 500), the Charillus on
+  it (`role=stay`) with ENIGMAP's two Aristons, which fight, and CEPHIDP's Cleomenes and two Agis, 2,500 km back up the
+  canyon along the line between the points (the line keeps its height over the floor).
+- **The lines between the points** clear the ground by 168 km at least (ENIGMAP's Nav 2 to Nav 3, over the hills) and
+  each canyon's by 600; the briefings say all of it. The kill and each point count; a point more than before each.
+
 ### The planets' looks
 
 `planet ... kind=NAME`: desert, green, ice, red, ash, savanna, violet, ochre, jungle, ocean, tundra, steppe, grey
@@ -383,15 +405,17 @@ alive (`goal escort OX navN`: met and alive), and its loss never loses the missi
 Cloaked at Nav 1 its two Cleomenes come and neither sees the player nor leaves its post; a surprise from 600 km
 behind one turns only that one (the other guards 7,000 km off), and from its tail it died in about 5 s, the player
 unhurt (twenty runs of the test pilot: 20 kills, no deaths; the old game's hull roulette from behind); Alt+C again and
-it lets go; the patrol between Nav 1 and Nav 2 comes at its hidden point (reach 2,500 km); cloaked at Nav 2 and Nav 3
-nobody sees the player; uncloaked at the post for 40 s no heavy comes (the nearest 10,300 km off); with the post's Agis
-gone the autopilot goes home past the guards.
+it lets go; the patrol between Nav 1 and Nav 2 comes at its hidden point (reach 2,500 km); cloaked at Nav 2, at the
+canyon's mouth (Nav 3) and at its end (Nav 4, the post) nobody sees the player; with the post's two Aristons gone,
+uncloaked there for 40 s no guard comes, and the autopilot goes home past the guards (since 2026-11-16: the post had
+been at Nav 3 with two Agis).
 
 ### Checks
 
 `tests/host/planet_view.sh` for each of the fourteen: every line between nav points clears the ground (the least,
-Rigel's 432 km and Wolf 359's 396), and the escorts' climbs home clear it by 4,300 km and more. Play tests M8.63 and
-M8.64 fly SHMRNC now.
+Enigma's Nav 2 to Nav 3 by 168 km since 2026-11-16, Rigel's 432 km and Wolf 359's 396), and the escorts' climbs home
+cleared it by 4,300 km and more (with the carrier in high orbit an escort near the player comes home with the
+autopilot). Play tests M8.63 and M8.64 fly SHMRNC now.
 
 ## Fighters raining down along the canyon (the user, 2026-11-14)
 

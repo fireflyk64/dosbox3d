@@ -7337,9 +7337,11 @@ static void t_cloak_ai(void)
  * quite fun with cloak"), flown leg by leg.  Cloaked at Nav 1 its two Cleomenes (role=guard) come and neither sees the
  * player nor leaves its post (a wave's fighters went for the carrier 9,000 km off before the guards); a surprise from
  * behind one drops the cloak and only that one turns (the other guards 7,000 km off); Alt+C again and it lets go; the
- * patrol between Nav 1 and Nav 2 comes at its hidden point; cloaked at Nav 2 and Nav 3 nobody sees the player; the
- * post's Charillus killed meets its goal and, the cloak off at the post, no heavy comes; its Agis gone, the
- * autopilot will go home past the guards.  The log (cloakrun:) has the surprise fight's numbers */
+ * patrol between Nav 1 and Nav 2 comes at its hidden point; cloaked at Nav 2, at Nav 3 (the canyon's mouth, its Areus)
+ * and at Nav 4 (the canyon's end: the post and its 2 Aristons; the user, 2026-11-16, "4 nav points each with heavy
+ * fighters", "the transport at the very end of the canyon") nobody sees the player; the post's Charillus killed meets
+ * its goal; its Aristons gone, the cloak off at the post, no guard comes; the autopilot will go home past the guards.
+ * The log (cloakrun:) has the surprise fight's numbers */
 #define GUARD_SEEN_KM 6000
 static int16_t cloak_watchers(int32_t *nearest_heavy)
 {
@@ -7349,10 +7351,18 @@ static int16_t cloak_watchers(int32_t *nearest_heavy)
         if (slot_is_ship(s) && commAnimInfo[s] == SIDE_AERA && shipAiState[s] != 9) {
             if (rvTarget[s] == 0)
                 n++;
-            if ((gInstanceShipTypes[s] == 0x0C || gInstanceShipTypes[s] == 0x09) && pt_km(0, s) < *nearest_heavy)
+            if ((gInstanceShipTypes[s] == 0x0C || gInstanceShipTypes[s] == 0x09 || gInstanceShipTypes[s] == 0x0A)
+                && pt_km(0, s) < *nearest_heavy)
                 *nearest_heavy = pt_km(0, s);
         }
     return n;
+}
+
+/* (an Ariston of ENIGMAP's Nav 4, the post's own: its mission record's nav point, the record's +8) */
+static int16_t post_ariston(int16_t s)
+{
+    return slot_is_ship(s) && gInstanceShipTypes[s] == 0x09 && shipAiState[s] != 9 && slotMissionShip[s] < 64
+           && (missionShipTable[missionShipTable_SIZE * slotMissionShip[s] + 8] & 15) == 4;
 }
 
 static int16_t slot_of_type(uint16_t type)
@@ -7373,9 +7383,12 @@ static void t_cloak_run(void)
     static const char __far e_again[] = "Alt+C again: the cloak %d (1 on), %d enemies still see the player after 3 s (0)";
     static const char __far e_patrol[] = "cloaked past the hidden point: %d Cleomenes in all (the patrol came: 2 or 3)";
     static const char __far e_nav2[] = "cloaked at Nav 2: %d Aristons (2), %d see the player (0)";
-    static const char __far e_nav3[] = "cloaked at Nav 3: the Charillus %d (a slot), %d Agis, %d see the player (0)";
+    static const char __far e_nav3[] = "cloaked at Nav 3, the canyon's mouth: %d Areus (2), %d see the player (0)";
+    static const char __far e_nav4[] = "cloaked at Nav 4, the canyon's end: the Charillus %d (a slot), %d of its Aristons (2), "
+        "%d see the player (0)";
     static const char __far e_goal[] = "the post's Charillus killed: its goal %d (1)";
-    static const char __far e_quiet[] = "uncloaked at the post 40 s: a heavy came within 6,000 km at %d s (-1: none)";
+    static const char __far e_quiet[] = "uncloaked at the post 40 s, its Aristons gone: a guard came within 6,000 km at %d s "
+        "(-1: none)";
     static const char __far e_home[] = "the post cleared, the guards at their posts: the autopilot %d (0: home)";
     int16_t s, n, i, cleo, post;
     int32_t heavy, h0, hp0, far_ = 0, seen_at = -1;
@@ -7448,7 +7461,7 @@ static void t_cloak_run(void)
     n = cloak_watchers(&heavy);
     REQUIRE(CLOAK_OF(0) == RV_CLOAK_ON && n == 0, e_again, CLOAK_OF(0), n, 0);
     pt_speed(0, 0);
-    nav_pos(4, &p);
+    nav_pos(5, &p);
     pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
     if (!pt_steps(4 * SEC))
         return;
@@ -7465,8 +7478,17 @@ static void t_cloak_run(void)
     if (!pt_steps(4 * SEC))
         return;
     n = cloak_watchers(&heavy);
+    REQUIRE(pt_count(SIDE_AERA, 0x0A) == 2 && n == 0, e_nav3, pt_count(SIDE_AERA, 0x0A), n, 0);
+    nav_pos(4, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    if (!pt_steps(4 * SEC))
+        return;
+    n = cloak_watchers(&heavy);
     post = slot_of_type(0x2B);
-    REQUIRE(post > 0 && pt_count(SIDE_AERA, 0x0B) == 2 && n == 0, e_nav3, post, pt_count(SIDE_AERA, 0x0B), n);
+    for (s = 1, i = 0; s < NUM_SHIP_SLOTS; s++)   /* (the post's own Aristons, Nav 4's: a wave's fighters come in from
+                                                     15,000 km, WAVE_KM; Nav 2's guard theirs) */
+        i += post_ariston(s);
+    REQUIRE(post > 0 && i == 2 && n == 0, e_nav4, post, i, n);
     if (post < 0)
         return;
     RV_LOG("cloakrun: at the post cloaked: the nearest heavy %ld km off, the Charillus %ld km", heavy, pt_km(0, post));
@@ -7474,6 +7496,10 @@ static void t_cloak_run(void)
     playerCanBeDamaged = 0;
     for (i = 0; i < 100 && shipAiState[post] != 9; i++)
         (void)pt_hit(0, post, 2000, 2, 0, 0);
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)   /* (its Aristons: they come for the player; the guards must not) */
+        if (post_ariston(s))
+            for (i = 0; i < 100 && shipAiState[s] != 9; i++)
+                (void)pt_hit(0, s, 2000, 2, 0, 0);
     g_pilot.steer_x = 9;                /* (circling there: near a planet the throttle goes no lower than 100) */
     for (i = 0; i < 40 * SEC; i++) {
         if (!pt_step())
@@ -7483,12 +7509,8 @@ static void t_cloak_run(void)
             seen_at = i / SEC;
     }
     g_pilot.steer_x = 0;
-    REQUIRE(logic_goal(RV_GOAL_KILL, 0x2B, 3, 0), e_goal, logic_goal(RV_GOAL_KILL, 0x2B, 3, 0), 0, 0);
+    REQUIRE(logic_goal(RV_GOAL_KILL, 0x2B, 4, 0), e_goal, logic_goal(RV_GOAL_KILL, 0x2B, 4, 0), 0, 0);
     REQUIRE(seen_at < 0, e_quiet, seen_at, 0, 0);
-    for (s = 1; s < NUM_SHIP_SLOTS; s++)
-        if (slot_is_ship(s) && gInstanceShipTypes[s] == 0x0B && shipAiState[s] != 9)
-            for (i = 0; i < 100 && shipAiState[s] != 9; i++)
-                (void)pt_hit(0, s, 2000, 2, 0, 0);
     if (!pt_steps(3 * SEC))
         return;
     REQUIRE(logic_autopilot_ready() == 0, e_home, logic_autopilot_ready(), 0, 0);
@@ -8464,7 +8486,7 @@ static const char __far n_m8_61[] = "M8.61 goals (logic_goal): a nav point met o
 static const char __far n_m8_62[] = "M8.62 held-wave (mission_done, wave_may_come): a wave held at a hidden point at the launch keeps the mission undone till it has come and gone";
 static const char __far n_m8_63[] = "M8.63 planet (planet.c, step_ground, ground_mind): the canyon run's planet made, its nav points 700 km over its floor; a dive into the floor and a climb into the stone bridge stopped short of the rock, the throttle at 100; an Aera fighter diving at the floor glides over it; the player that takes damage destroyed by it";
 static const char __far n_m8_66[] = "M8.66 campaign-card (camp_flown_from, camp_place): a set's planet missions only with the card: Cephid 4 or 3, Shmrn 6 or 4, the way on skips CEPHIDP without it, the screens count what is flown";
-static const char __far n_m8_65[] = "M8.65 cloak-run (ENIGMAP, role=guard, the cloak): cloaked, nobody sees the player and the guards keep their posts; a surprise from behind turns only that one; Alt+C and it lets go; the post burnt with no heavy coming; the autopilot goes home past the guards (the log: cloakrun)";
+static const char __far n_m8_65[] = "M8.65 cloak-run (ENIGMAP, role=guard, the cloak): cloaked, nobody sees the player and the guards keep their posts, Nav 1 to the canyon's end; a surprise from behind turns only that one; Alt+C and it lets go; the post burnt with no heavy coming; the autopilot goes home past the guards (the log: cloakrun)";
 static const char __far n_m8_64[] = "M8.64 stream (stream_step, role=stream): the canyon run's three Nicanders come once Nav 1 is reached, ahead of the player and over the ground; one killed, another comes within 3 s; none once Nav 5 is reached";
 static const char __far n_m8_55[] = "M8.55 field-nav (nav_field, nav_stop, nav_in_reach): a waypoint inside a field is the field's middle: the autopilot stops at its edge, and the point is reached only within 1,200 km of the middle";
 static const char __far n_m8_54[] = "M8.54 capital-help (capital_help): an Aera capital ship hurt through its armour by an unengaged attacker turns half its side's fighters on it; none when a fighter is already near the attacker";
