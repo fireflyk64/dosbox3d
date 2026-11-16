@@ -7,6 +7,7 @@
 #   scripts/web-doom.sh [seconds]
 #   ZIP= the shareware (default ~/dev/doom-dl/doom19s.zip); PORT, LOBBY_PORT; PLAYERS= 2 (default) to 4;
 #   HOST_KEYS= / GUEST_KEYS= each page's key script (from boot); MISSION= the host's pick ("4/2": Ultra-Violence, E1M3)
+#   LEAVE_AT=, LATE=, MOUSE=1, DEMO=1: scripts/web-doom.mjs.  SOLO=1: one page alone (scripts/web-doom-solo.mjs)
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/web-doom}; mkdir -p $OUT; rm -f $OUT/*.png
@@ -34,5 +35,11 @@ ROOM=DOOM-$((1000 + RANDOM % 9000))
 # in DOOM's co-operative game a marine's bullets hurt the others
 hs="${HOST_KEYS-45:+up,45.5:-up,45.7:+left,47.3:-left}"
 gs="${GUEST_KEYS-}"
+if [ -n "${SOLO:-}" ]; then
+  # (SOLO=1: one page, a room of one: the game as it is, scripts/web-doom-solo.mjs)
+  PLAYWRIGHT_DIR="$PW" SHOT_DIR=$OUT timeout -s KILL 300 node "$ROOT/scripts/web-doom-solo.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" \
+      $ROOM "$ZIP" 2>&1 | tee $OUT/run.log
+  exit ${PIPESTATUS[0]}
+fi
 PLAYWRIGHT_DIR="$PW" SHOT_DIR=$OUT timeout -s KILL $((DUR + 300)) node "$ROOT/scripts/web-doom.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" \
     $ROOM "$ZIP" "$hs" "$gs" $DUR 2>&1 | tee $OUT/run.log
