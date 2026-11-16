@@ -5031,10 +5031,12 @@ static void t_held_wave(void)
 }
 
 /* M8.63: a planet mission's ground (planet.c: the card's sums on DOS, terrain.c's natively, integers both): the canyon
- * run's planet made and its nav points put 700 km over the canyon's floor; the player diving at the floor at Nav 2 is
- * stopped over it, climbing into the stone bridge at Nav 3 is stopped under its rock, and an Aera fighter diving at
- * the floor at Nav 4 stays over it.  The world is left as it is: its hash holds the ground's answers, host against card
- * (the walk of every mission, M8.40, ends with the world put back) */
+ * run's planet made and its nav points put 700 km over the canyon's floor; the player that takes no damage diving at
+ * the floor at Nav 2 is stopped over it, and climbing into the stone bridge at Nav 3 is stopped under its rock; an
+ * Aera fighter diving at the floor at Nav 4 glides over it (HOVER_OVER, 40 km); the player that takes damage diving at
+ * the floor is destroyed (the user, 2026-11-15: "intersection with the terrain causes a human ship to explode").  The
+ * world is left as it is: its hash holds the ground's answers, host against card (the walk of every mission, M8.40,
+ * ends with the world put back) */
 static void nav_pos(int16_t n, LfVec *p)
 {
     const uint8_t *rec = navPointTable + navPointTable_SIZE * n;
@@ -5062,9 +5064,10 @@ static void t_planet(void)
 {
     static const char __far e_made[] = "the canyon run's planet: planet_make %d (100: made)";
     static const char __far e_nav[] = "nav %d %d km over the ground once placed (700)";
-    static const char __far e_floor[] = "the dive into the canyon's floor: %d km over it, speed %d (stopped over it)";
-    static const char __far e_roof[] = "the climb into the stone bridge: %d km under its rock, speed %d (stopped under it)";
-    static const char __far e_ai[] = "an Aera fighter diving at the floor: %d km over it after 4 s (over it)";
+    static const char __far e_floor[] = "the dive into the canyon's floor: %d km over it (stopped over it)";
+    static const char __far e_roof[] = "the climb into the stone bridge: %d km under its rock (stopped under it)";
+    static const char __far e_ai[] = "an Aera fighter diving at the floor: %d km over it after 4 s (30 or more)";
+    static const char __far e_dies[] = "the player that takes damage diving at the floor: shipAiState %d (9: destroyed)";
     int16_t n;
     long roof, over;
     LfVec p;
@@ -5085,7 +5088,7 @@ static void t_planet(void)
     if (!pt_steps(4 * SEC))
         return;
     over = planet_over((const LfVec *)&gPositionVector[0], &roof);
-    REQUIRE(over >= 10 * KM && over < 200 * KM && !setSpeed[0], e_floor, over / KM, (long)setSpeed[0], 0);
+    REQUIRE(over >= 10 * KM && over < 200 * KM, e_floor, over / KM, 0, 0);
     nav_pos(3, &p);
     pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
     face_vertical(0, 1);                /* (under the bridge's crown, climbing) */
@@ -5093,7 +5096,7 @@ static void t_planet(void)
     if (!pt_steps(6 * SEC))
         return;
     over = planet_over((const LfVec *)&gPositionVector[0], &roof);
-    REQUIRE(roof >= 10 * KM && roof < 300 * KM && !setSpeed[0], e_roof, roof / KM, (long)setSpeed[0], 0);
+    REQUIRE(roof >= 10 * KM && roof < 300 * KM, e_roof, roof / KM, 0, 0);
     nav_pos(4, &p);
     pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, p.x / KM, p.y / KM, p.z / KM, 0);
     face_vertical(1, -1);
@@ -5101,7 +5104,15 @@ static void t_planet(void)
     if (!pt_steps(4 * SEC))
         return;
     over = planet_over((const LfVec *)&gPositionVector[1], &roof);
-    REQUIRE(slot_is_ship(1) && over >= 10 * KM, e_ai, over / KM, 0, 0);
+    REQUIRE(slot_is_ship(1) && over >= 30 * KM, e_ai, over / KM, 0, 0);
+    playerCanBeDamaged = 1;
+    nav_pos(2, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    face_vertical(0, -1);
+    pt_speed(0, 250);
+    if (!pt_steps(4 * SEC))
+        return;
+    REQUIRE(shipAiState[0] == 9, e_dies, shipAiState[0], 0, 0);
 }
 
 /* M8.64: a stream (role=stream, logic.c stream_step; the user, 2026-11-14: "keep around 2 or 3 raining down upon the
@@ -8368,7 +8379,7 @@ static const char __far n_m8_59[] = "M8.59 escort-back (role=back, escorted): an
 static const char __far n_m8_60[] = "M8.60 wave-also (also=N, mship_brought): a wave listed at a hidden point and a waypoint comes once, at whichever is reached first";
 static const char __far n_m8_61[] = "M8.61 goals (logic_goal): a nav point met once reached and its enemies gone; the nth kill goal with n + 1 killed; the landing";
 static const char __far n_m8_62[] = "M8.62 held-wave (mission_done, wave_may_come): a wave held at a hidden point at the launch keeps the mission undone till it has come and gone";
-static const char __far n_m8_63[] = "M8.63 planet (planet.c, step_ground, ground_mind): the canyon run's planet made, its nav points 700 km over its floor; a dive into the floor and a climb into the stone bridge stopped short of the rock; an Aera fighter diving at the floor stays over it";
+static const char __far n_m8_63[] = "M8.63 planet (planet.c, step_ground, ground_mind): the canyon run's planet made, its nav points 700 km over its floor; a dive into the floor and a climb into the stone bridge stopped short of the rock; an Aera fighter diving at the floor glides over it; the player that takes damage destroyed by it";
 static const char __far n_m8_66[] = "M8.66 campaign-card (camp_flown_from, camp_place): a set's planet missions only with the card: Cephid 4 or 3, Shmrn 6 or 4, the way on skips CEPHIDP without it, the screens count what is flown";
 static const char __far n_m8_65[] = "M8.65 cloak-run (ENIGMAP, role=guard, the cloak): cloaked, nobody sees the player and the guards keep their posts; a surprise from behind turns only that one; Alt+C and it lets go; the post burnt with no heavy coming; the autopilot goes home past the guards (the log: cloakrun)";
 static const char __far n_m8_64[] = "M8.64 stream (stream_step, role=stream): the canyon run's three Nicanders come once Nav 1 is reached, ahead of the player and over the ground; one killed, another comes within 3 s; none once Nav 5 is reached";

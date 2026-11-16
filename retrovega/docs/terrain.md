@@ -98,8 +98,14 @@ Still to do for 30 fps on the page:
   - The ground nav points are put over the ground.
   - Each frame: the view after the camera; the ground in each band after the sky and before the ships.
   - A ship the ground hides is not drawn.
-  - `step_ground`: a ship that flies into the ground, or into an arch's rock, has its step undone. The player is
-    stopped too and knocked as by a rock.
+  - `step_ground`: the player that flies into the ground (its centre within 10 km), or into an arch's rock, is
+    destroyed (the user, 2026-11-15: "intersection with the terrain causes a human ship to explode"; it had been
+    stopped and knocked as by a rock). Every other ship glides over it: under 40 km (`HOVER_OVER`) it is lifted each
+    step, a quarter of the way (at least 3 km), its fall that step taken back ("perhaps AIs get shifted some fixed
+    number of meters upward smoothly ... so it looks like they are hovering towards the surface"); under 400 km the
+    ground 8 steps ahead counts too, so it rises before a cliff, not inside it (the canyon run's lowest fighter, every
+    30 frames of a flight in RVT.EXE's log: 28 km, where without the look-ahead one was 49 km in the rock). Under a
+    slab's roof, too close, a ship has its step undone.
   - The autopilot raises anyone it puts under the ground to 300 km over it.
 - **The native builds** answer the same requests with terrain.c (`planet.c` under `RV_HOST`; rvsim without the
   picture).

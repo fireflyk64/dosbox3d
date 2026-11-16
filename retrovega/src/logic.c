@@ -883,19 +883,22 @@ static void step_timers(void)
 /* a planet's ground (planet.h): the minds know nothing of it, so a fighter low over it with its nose going down, or
  * very low, pulls up (the way up that is nearer its own) */
 #define GROUND_AVOID (400L * 256)       /* positions over the ground */
-static void ground_mind(int16_t s)
+/* the planet's straight up at slot s (km: under 2^17, its products with a 256-long direction fit) dotted with v */
+static int32_t up_dot(int16_t s, const RvVec3 *v)
 {
     const LfVec __far *c = planet_centre();
-    long roof, over, ux, uy, uz;
+    return ((gPositionVector[s].x - c->x) >> 8) * v->x + ((gPositionVector[s].y - c->y) >> 8) * v->y
+           + ((gPositionVector[s].z - c->z) >> 8) * v->z;
+}
+
+static void ground_mind(int16_t s)
+{
+    long roof, over;
     if (!planet_on() || (over = planet_over((const LfVec *)&gPositionVector[s], &roof)) > GROUND_AVOID)
         return;
-    ux = (gPositionVector[s].x - c->x) >> 8;   /* (straight up there, km: under 2^17, its products with 256 fit) */
-    uy = (gPositionVector[s].y - c->y) >> 8;
-    uz = (gPositionVector[s].z - c->z) >> 8;
-    if (over > GROUND_AVOID / 2
-        && ux * gOrientationFrontVector[s].x + uy * gOrientationFrontVector[s].y + uz * gOrientationFrontVector[s].z > 0)
+    if (over > GROUND_AVOID / 2 && up_dot(s, &gOrientationFrontVector[s]) > 0)
         return;                         /* (climbing already) */
-    g_turn[s].y = ux * gOrientationUpVector[s].x + uy * gOrientationUpVector[s].y + uz * gOrientationUpVector[s].z >= 0 ? 9 : -9;
+    g_turn[s].y = up_dot(s, &gOrientationUpVector[s]) >= 0 ? 9 : -9;
 }
 
 static void step_minds(void)
@@ -4108,10 +4111,22 @@ static void step_collisions(void)
     }
 }
 
-/* 7b. a planet's ground (planet.h, the card's): a ship that flies into it, or into an arch's rock, has the step that
- * took it there undone; the player is stopped too and knocked by how fast it was going (as a rock's knock, capped
- * the same: a graze is not death) */
-#define GROUND_CLEAR 2560               /* a ship's centre over the ground at least, positions: 10 km */
+/* 7b. a planet's ground (planet.h, the card's).  The player that flies into it, or into an arch's rock, is destroyed
+ * (the user, 2026-11-15: "intersection with the terrain causes a human ship to explode"); the others never strike it:
+ * low over it they are lifted, a little each step, to glide at HOVER_OVER ("perhaps AIs get shifted some fixed number
+ * of meters upward smoothly ... so it looks like they are hovering towards the surface at X meters"), their fall each
+ * step taken back.  Under a slab's roof, too close, a ship has the step that took it there undone.  A puppet is its
+ * own machine's */
+#define GROUND_CLEAR 2560               /* the player's centre over the ground at least, positions: 10 km */
+#define HOVER_OVER (40L * 256)          /* the height the others glide at, positions */
+#define HOVER_RISE (3L * 256)           /* the least they are lifted toward it a step */
+#define HOVER_AHEAD (400L * 256)        /* under this the ground ahead counts too: HOVER_STEPS steps ahead */
+#define HOVER_STEPS 8
+
+#ifdef RV_TESTS
+static long g_low_over = 0x7FFFFFFFL;
+static int16_t g_low_slot;
+#endif
 
 static void step_ground(void)
 {
@@ -4128,17 +4143,57 @@ static void step_ground(void)
         if (s == 0 && frameCounter % 30 == 0)
             RV_LOG("planet: frame %u, the player %ld km over the ground, roof %ld", frameCounter, over / 256, roof / 256);
 #endif
-        if (over >= GROUND_CLEAR && roof >= GROUND_CLEAR)
+        if (rvController[s] == CTL_PUPPET)
             continue;
-        p->x -= v->x;                   /* (the step that took it there undone) */
-        p->y -= v->y;
-        p->z -= v->z;
-        if (s == 0 && shipAiState[0] != 9) {
-            (void)do_damage(0, 0, logic_rock_harm(len_of(v->x, v->y, v->z), p), RV_WHERE(p));
-            *v = vec3(0, 0, 0);
-            setSpeed[0] = speedLo[0] = 0;
+        if (s == 0 ? over < GROUND_CLEAR || roof < GROUND_CLEAR : roof < GROUND_CLEAR) {
+            if (s == 0 && shipAiState[0] != 9)
+                (void)do_damage(0, 0, 0xFFFFU, RV_WHERE(p));
+            p->x -= v->x;               /* (the step that took it there undone) */
+            p->y -= v->y;
+            p->z -= v->z;
+            if (s == 0)
+                *v = vec3(0, 0, 0);
+        }
+#ifdef RV_TESTS
+        if (s && over < g_low_over) {
+            g_low_over = over;
+            g_low_slot = s;
+        }
+#endif
+        if (s && over < HOVER_AHEAD && roof >= GROUND_CLEAR) {
+            LfVec at;                   /* (low: the ground where it will be HOVER_STEPS on counts too, so it rises
+                                           before a cliff, not inside it) */
+            long r2;
+            at.x = p->x + v->x * HOVER_STEPS;
+            at.y = p->y + v->y * HOVER_STEPS;
+            at.z = p->z + v->z * HOVER_STEPS;
+            at.x = planet_over(&at, &r2);
+            if (at.x < over)
+                over = at.x;
+        }
+        if (s && over < HOVER_OVER && roof >= GROUND_CLEAR) {
+            const LfVec __far *c = planet_centre();
+            RvVec3 u;
+            int32_t fall, lift = HOVER_OVER - over;
+            if (lift > HOVER_RISE)      /* (a quarter of the way a step, at least HOVER_RISE: a cliff ahead outruns a
+                                           steady lift) */
+                lift = lift / 4 > HOVER_RISE ? lift / 4 : HOVER_RISE;
+            u = vec3((p->x - c->x) >> 8, (p->y - c->y) >> 8, (p->z - c->z) >> 8);
+            vec_norm(&u);
+            fall = (v->x * u.x + v->y * u.y + v->z * u.z) >> 8;
+            if (fall < 0)
+                lift -= fall;
+            p->x += lift * u.x >> 8;
+            p->y += lift * u.y >> 8;
+            p->z += lift * u.z >> 8;
         }
     }
+#ifdef RV_TESTS
+    if (frameCounter % 30 == 0) {
+        RV_LOG("planet: frame %u, the lowest other ship %ld km over the ground (slot %d)", frameCounter, g_low_over / 256, g_low_slot);
+        g_low_over = 0x7FFFFFFFL;
+    }
+#endif
 }
 
 /* 8. the dying (shipAiState 9: an explosion's time, then despawn) and the player's end (missionStatus 4) */
