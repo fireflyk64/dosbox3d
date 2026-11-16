@@ -40,8 +40,12 @@
 #define TR_LSHIFT 5
 #define TR_FOGS 32                      /* levels of haze */
 #define TR_LINES_MAX 4096
+#define TR_LINE_PX 2                    /* the lines' spacing where they are farthest apart, pixels (the user, 2026-11-15:
+                                           "maybe we should draw wider lines or something?"): half the march's work of
+                                           1, each pixel dithered between its two nearest lines (tr_blit) */
 #define TR_BLIT_W 1024                  /* the widest screen drawn */
 #define TR_THIN_MAX 12                  /* lines thinned to every 4096th at most */
+#define TR_SCHED_MAX 16384              /* the march's steps a frame at most (tr_view): more, and each line goes its own way */
 #define TR_STEP_PX 2.0                  /* the march's step in the far ground: pixels' worth of the distance */
 #define TR_SKIP_FIRST 2                 /* the finest level the march skips hidden ground by */
 #define TR_FOG_HS_ 1024                 /* (tr_fog's tables' sizes) */
@@ -181,6 +185,9 @@ struct TrPlanet {
     int nadir;                          /* 1: V is the point below (the ground lies out from it), 0: above */
     TrQuarter q[4];                     /* top, bottom, left, right */
     TrFrameK fk;
+    double (*sch)[4];                   /* the march's steps, the same for every line: the angle from V's point, its
+                                           cosine and sine, the step there (tr_view); nsch of them, 0: none */
+    int nsch;
     uint32_t samples, skips;            /* (the last frame's march, for timing) */
 };
 
@@ -2324,6 +2331,7 @@ void tr_free(TrPlanet *p)
     int l, f;
     if (!p)
         return;
+    free(p->sch);
     for (l = 0; l < TR_LEVELS; l++)
         for (f = 0; f < 6; f++) {
             free(p->g[l][f]);
@@ -2686,9 +2694,10 @@ static void tr_quarter(TrPlanet *p, int which)
     if (hi > q->v_across + ext) hi = q->v_across + ext;
     if (hi < lo)
         return;
-    q->first = floor(lo) - 1;
-    q->lines = (int)ceil(hi - q->first) + 2;
-    q->step = 1;
+    q->first = floor((lo - 1) / TR_LINE_PX) * TR_LINE_PX;   /* (on whole multiples of the spacing: the lines keep their
+                                           places as V moves) */
+    q->lines = (int)ceil((hi - q->first) / TR_LINE_PX) + 2;
+    q->step = TR_LINE_PX;
     if (q->lines > TR_LINES_MAX) {
         q->step = (hi - q->first + 2) / (TR_LINES_MAX - 1);
         q->lines = TR_LINES_MAX;
@@ -2873,7 +2882,7 @@ TR_HOT void tr_fill_ground(const TrPlanet *p, uint16_t *px, int stride, int i0, 
         int32_t dgx = (int32_t)((g[2] - g[0]) * dt * 1024), dgy = (int32_t)((g[3] - g[1]) * dt * 1024);
         for (k = i0; k <= i1; k++, e += stride, l += dl, f += df, gx += dgx, gy += dgy)
             if (*e == TR_PX_EMPTY) {
-                int lv = (l + ((gr[(gy >> 6) & 63][(gx >> 6) & 63] + gr[(gy >> 4) & 63][(gx >> 4) & 63]) << 12)) >> 16;
+                int lv = (l + (gr[(gy >> 6) & 63][(gx >> 6) & 63] + gr[(gy >> 4) & 63][(gx >> 4) & 63]) * 4096) >> 16;
                 lv = lv < 0 ? 0 : lv > TR_LIGHTS - 1 ? TR_LIGHTS - 1 : lv;
                 *e = (uint16_t)((base + lv) | (f >> 16) << 8);
             }
@@ -2956,7 +2965,8 @@ static void tr_line(TrPlanet *p, TrQuarter *q, int line)
     {
         const double uf = tr_dot(up, fk->cf), tf = tr_dot(t, fk->cf), alt = fk->alt, theta_max = fk->theta_max;
         const double near_ds = fk->near_ds, far_k = fk->far_k;
-        double us, ts, ra_, rb_, cth = cos(theta), sth = sin(theta);
+        double us, ts, ra_, rb_, cth, sth;
+        int ks = -1;                    /* (the march's step in p->sch it is on; -1: its own way) */
         double hr_u = 0, hr_t = 0, hr_phi = 0, hr_rmin2 = 0;   /* the ray through the filled part's edge, in the plane */
         int hr_dirty = 1, hidden = 0, level = 0;
         double in_patch = 0;                /* (the last sample's patch: its cell, the least step there) */
@@ -2972,6 +2982,22 @@ static void tr_line(TrPlanet *p, TrQuarter *q, int line)
             rb_ = q->s * c->focal;
         }
 #define TR_RHO(a, b) (ra_ + rb_ * ((a) * us + (b) * ts) / ((a) * uf + (b) * tf))
+        if (p->nsch) {                  /* (the first of the steps at or past where it starts) */
+            int lo = 0, hi = p->nsch;
+            while (lo < hi) {
+                int mid = (lo + hi) / 2;
+                if (p->sch[mid][0] < theta) lo = mid + 1; else hi = mid;
+            }
+            if (lo >= p->nsch)
+                return;
+            ks = lo;
+            theta = p->sch[ks][0];
+            cth = p->sch[ks][1];
+            sth = p->sch[ks][2];
+        } else {
+            cth = cos(theta);
+            sth = sin(theta);
+        }
         while (theta < theta_max) {
             TrHit s;
             double ra, rb, z, rho, dist2, dist, ds, dt, cd, sd, x, g, dx, dy, dz;
@@ -3025,6 +3051,15 @@ static void tr_line(TrPlanet *p, TrQuarter *q, int line)
                     theta += dth;
                     prev_ok = prev_slab = 0;
                     skips++;
+                    if (ks >= 0) {      /* (on to the next of the steps) */
+                        while (ks < p->nsch && p->sch[ks][0] < theta)
+                            ks++;
+                        if (ks >= p->nsch)
+                            break;
+                        theta = p->sch[ks][0];
+                        cth = p->sch[ks][1];
+                        sth = p->sch[ks][2];
+                    }
                     continue;
                 }
             }
@@ -3062,6 +3097,12 @@ static void tr_line(TrPlanet *p, TrQuarter *q, int line)
                             if (nadir ? tr_span(horizon + 1e-9, midr, kmin, len, &m0, &m1) : tr_span(midr, horizon - 1e-9, kmin, len, &m0, &m1))
                                 tr_fill_ground(p, px, stride, m0, m1, prev_rho, prev_rho, prev_light, prev_light, prev_fog, prev_fog, prev_mat, 0);
                             tr_fill_ground(p, px, stride, i0, i1, rho, rho, s.light, s.light, fog, fog, s.mat, 0);
+                        } else if (prev_ok) {
+                            /* (up a steep face, or onto another material: this one's, shaded from the last sample's
+                             * light at its foot to this one's at its top, so that neighbouring lines do not stripe) */
+                            if (prev_fog < 0)
+                                prev_fog = tr_fog(p, prev_dist, alt, prev_h);
+                            tr_fill_ground(p, px, stride, i0, i1, prev_rho, rho, prev_light, s.light, prev_fog, fog, s.mat, 0);
                         } else
                             tr_fill_ground(p, px, stride, i0, i1, rho, rho, s.light, s.light, fog, fog, s.mat, 0);
                     }
@@ -3136,7 +3177,19 @@ static void tr_line(TrPlanet *p, TrQuarter *q, int line)
                 if (s1 <= 0 || theta > atan2(s1 * wt, D + s1 * wu))
                     break;
             }
-            /* on round the great circle by dt (small: its sine and cosine to the third power) */
+            if (ks >= 0 && ds >= p->sch[ks][3] * 0.999) {
+                /* on to the next of the steps every line takes */
+                while (ks < p->nsch && p->sch[ks][0] <= theta)
+                    ks++;
+                if (ks >= p->nsch)
+                    break;
+                theta = p->sch[ks][0];
+                cth = p->sch[ks][1];
+                sth = p->sch[ks][2];
+                continue;
+            }
+            /* (finer, over a detail patch, or with no steps made: its own way) on round the great circle by dt
+             * (small: its sine and cosine to the third power) */
             dt = ds / R;
             cd = 1 - dt * dt * 0.5;
             sd = dt - dt * dt * dt / 6;
@@ -3144,6 +3197,9 @@ static void tr_line(TrPlanet *p, TrQuarter *q, int line)
             sth = sth * cd + cth * sd;
             cth = x;
             theta += dt;
+            if (ks >= 0)
+                while (ks + 1 < p->nsch && p->sch[ks + 1][0] <= theta)
+                    ks++;
         }
 #undef TR_RHO
     }
@@ -3194,6 +3250,31 @@ void tr_view(TrPlanet *p, const TrCam *cam)
             double d = p->cell * (2 << k) / fk->far_k;
             fk->level_d2[k] = d * d;
             fk->skip_dth[k] = p->cell * (1 << k) * 0.5 / p->radius;
+        }
+        /* the march's steps: every line lies in a plane through the eye and the point under it, so how far a step
+         * goes depends on the angle from that point alone; every line takes the same angles (from wherever it
+         * starts, and after a skip), so the ground's faces are cut alike on neighbouring lines, not striped */
+        p->nsch = 0;
+        if (!p->sch)
+            p->sch = (double (*)[4])malloc(TR_SCHED_MAX * sizeof *p->sch);
+        if (p->sch) {
+            double th = 0, R = p->radius;
+            int n = 0;
+            while (th < fk->theta_max && n < TR_SCHED_MAX) {
+                double c = cos(th), s = sin(th), ra = R * c - D, rb = R * s, dist = sqrt(ra * ra + rb * rb),
+                       ds = dist * fk->far_k, g = -(ra * c + rb * s);
+                if (ds < fk->near_ds)
+                    ds = fk->near_ds;
+                if (g < dist)
+                    ds = ds * dist / (g > 0.25 * dist ? g : 0.25 * dist);
+                p->sch[n][0] = th;
+                p->sch[n][1] = c;
+                p->sch[n][2] = s;
+                p->sch[n][3] = ds;
+                n++;
+                th += ds / R;
+            }
+            p->nsch = n < TR_SCHED_MAX ? n : 0;
         }
     }
     for (k = 0; k < 4; k++) {
@@ -3331,8 +3412,11 @@ uint32_t tr_blit(TrPlanet *p, uint8_t *fb, int fb_y0, int stride, int y0, int y1
                     }
                     continue;
                 }
+                fx -= 32768 - 2048;     /* (each pixel from one of its two nearest lines, by the screen's 4 x 4: the
+                                           lines blended, not one line's run of a colour beside the next's) */
                 for (x = a0; x <= a1; x++, fx += dfx) {
-                    uint16_t v = src[fx >> 16];
+                    int32_t fl = (fx + (bay[x & 3] << 12)) >> 16;
+                    uint16_t v = src[fl < 0 ? 0 : fl >= q->lines ? q->lines - 1 : fl];
                     if (v != TR_PX_EMPTY) {
                         const TrDither *d = gt + v;
                         row[x] = bay[x & 3] < d->t ? d->b : d->a;
@@ -3359,7 +3443,7 @@ uint32_t tr_blit(TrPlanet *p, uint8_t *fb, int fb_y0, int stride, int y0, int y1
                     uint16_t v;
                     if (dx == 0 || idx < 0 || idx >= q->len)
                         continue;
-                    i = (int)((p->vy + dy * (q->edge - p->vx) / dx - q->first) / q->step + 0.5);
+                    i = (int)floor((p->vy + dy * (q->edge - p->vx) / dx - q->first) / q->step + (bay[x & 3] + 0.5) / 16);
                     if (q->thin[idx]) {
                         int th = q->thin[idx];
                         i = ((i + (1 << th >> 1)) >> th) << th;

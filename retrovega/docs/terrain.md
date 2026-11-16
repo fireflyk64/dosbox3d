@@ -154,6 +154,38 @@ The canyon run (`/fly 40`, the page built from this branch, the same rig): 30.0 
 autopilot to the canyon's mouth and the fight there, its worst frames 35 to 43 ms, load 39 to 47%, the emulator at 100%
 of real time.
 
+### The ground striped and flickering (the user's play test, 2026-11-15)
+
+The user: "the planet is fuzzy--I'm wondering if the triangles are very long or inverted or something--they were
+flickering and flashing as I flew around", "The problems really surfaced when the planet occupied most of the
+viewscreen, eg you were tilting down", "maybe we should draw wider lines or something?". Captured in the page: with the
+ship stopped the picture is still, frame to frame; flying, cliffs came out as vertical stripes that changed every
+frame. Causes, and what was done (terrain.c, rvgx.cpp):
+
+- A line that rose up a steep face, or onto another material, filled the whole face in one flat colour, the top
+  sample's: lines side by side each had their own run of a colour. Now the face is shaded from the last sample's light
+  at its foot to this one's at its top.
+- Each line marched from its own starting angle (where it enters the highest ground's sphere, and after a skip), so
+  neighbouring lines sampled the ground at different distances and cut its faces differently. The step depends only
+  on the angle from the point under the eye (every line lies in a plane through the eye and that point), so tr_view
+  now works the steps out once a frame (`p->sch`, at most `TR_SCHED_MAX`) and every line takes them; over a detail
+  patch a line still steps finer on its own and joins them again after.
+- `tr_blit` took each pixel from its nearest line; now from one of its two nearest by the screen's 4 x 4 Bayer
+  (the lines blended).
+- The lines are 2 pixels apart where they spread most (`TR_LINE_PX`, was 1; on whole multiples of it, so they keep
+  their places as V moves): half the march's work. A view over the canyon run's mountains from 8,000 km, 35 degrees
+  down, natively: 30 ms with 1-pixel lines at the finest detail, 15 with 2; over the canyon 8 and 4.
+- The card's detail (rvgx.cpp, the march's far step by what the views cost) crept a few percent every view while
+  over 6 ms or under 3, moving every far sample each frame; now it is one of 2, 2.5, 3 and 4 pixels, a step coarser
+  after 30 views in a row over 8 ms and finer after 300 (10 s) under 4, since a step changes the whole far ground at
+  once (a 14% pop in one frame, measured, with 15 and 30). The page's console has a line at each step and every 600
+  views ("RVGX: the planet's views 8.0 ms, its detail 4.0 px"). In the browser here the canyon run's views cost 8 to
+  12 ms with the 2-pixel lines (about twice natively): the detail goes to 4 in the flight's first seconds and stays;
+  flying over the mountains then changes some 2% of the picture a frame, no spikes, at 30 fps.
+
+Checked: `planet_view` (scratch PV_SEQ: frames along a path) under ASan and UBSan on SHMRNC, ENIGMAP, DEFIANCP and
+LIXISP; a grain sum that shifted a negative number left (undefined) is a multiplication now.
+
 ## Bigger, hillier, and a canyon (the user's second brief, 2026-11-14)
 
 > Can we have some pretty interesting and hilly terrain with a canyon chase mission where the nav points are along a

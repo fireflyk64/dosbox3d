@@ -432,6 +432,7 @@ static TrPlanet *g_planet;
 static bool g_planet_viewed;            /* a view made since the planet was: FN_GROUND has a picture */
 static double g_view_ms;                /* (the views' cost, smoothed, and the detail it sets: tr_detail) */
 static float g_step = 2.0f;
+static int g_detail, g_slow, g_fast;    /* (its step of g_steps; views in a row over or under the budget) */
 
 static int32_t rd(unsigned at) { return (int32_t)real_readd(g_block_seg, g_block_off + at); }
 
@@ -591,14 +592,29 @@ static int planet_view(void)
 	g_planet_viewed = true;
 	const double ms = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count() / 1000.0;
 	g_ns += (uint64_t)(ms * 1e6);
-	/* the detail by what the views cost: the march's step longer while they run over 6 ms, shorter again under 3 */
-	g_view_ms = g_view_ms * 0.8 + ms * 0.2;
-	if (g_view_ms > 6 && g_step < 4)
-		g_step *= 1.08f;
-	else if (g_view_ms < 3 && g_step > 2)
-		g_step /= 1.05f;
-	if (g_step < 2)
-		g_step = 2;
+	/* the detail by what the views cost: the march's step a step longer after 30 views in a row over 8 ms, a step
+	 * shorter after 300 (10 s) under 4; held between.  It had crept a few percent every view, so the far ground's
+	 * samples moved each frame (the user's flickering, 2026-11-15), and each step changes the whole far ground at
+	 * once, so it is taken seldom */
+	{
+		static const float g_steps[] = { 2.0f, 2.5f, 3.0f, 4.0f };
+		const int was = g_detail;
+		g_view_ms = g_view_ms * 0.8 + ms * 0.2;
+		g_slow = g_view_ms > 8 ? g_slow + 1 : 0;
+		g_fast = g_view_ms < 4 ? g_fast + 1 : 0;
+		if (g_slow >= 30 && g_detail < 3)
+			g_detail++;
+		else if (g_fast >= 300 && g_detail > 0)
+			g_detail--;
+		static unsigned views;
+		if (++views % 600 == 0)         /* (every 20 s or so: what the views cost, for the page's console) */
+			LOG_MSG("RVGX: the planet's views %.1f ms, its detail %.1f px", g_view_ms, g_steps[g_detail]);
+		if (g_detail != was) {
+			g_slow = g_fast = 0;
+			LOG_MSG("RVGX: the planet's detail %.1f px (its views %.1f ms)", g_steps[g_detail], g_view_ms);
+		}
+		g_step = g_steps[g_detail];
+	}
 	return 0;
 }
 
