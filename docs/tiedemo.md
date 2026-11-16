@@ -418,7 +418,8 @@ improved accordingly". The CD port's keyboard (docs/tiefighter.md step 7), fitte
   pad's mickeys, each game's least and most: the demo's 17 to 191 across, 25 to 127 up and down; the CD's frame makes
   its own from the same function); the demo's frame adds them, the keys' over them.
   * **Point to aim** (the default): the pointer moves the ring (drawn round the gunsight's middle, (159.5, 76.5) of
-    the 320 x 200 picture, measured on a frame), its distance from the middle is the stick. The game's bank into a
+    the 320 x 200 picture, measured on a frame; not drawn within the middle's dead zone, the CD's rule), its distance
+    from the middle is the stick. The game's bank into a
     turn is left out: user_inputforplane's `sub [roll],turn` for a turn that is not the X-roll's (image 0x15818,
     load+1411:1708, its 21 bytes through the function's `retf` checked once) is stepped over to its way out
     (1411:1718), as the CD port steps over its own. The right button held with the mouse moved across rolls, once the

@@ -807,6 +807,12 @@ bool tie_controls_marker(double *x, double *y) {
     if (!any_flying() || !pointer_mode()) {
         return false;
     }
+    // (none in the middle's dead zone, where the stick is still: there it only sat on the gunsight's own marks; the user:
+    // "the mouse cursor ... was ugly when right in the middle of the reticle--can we simply make it disappear if it is
+    // within a few pixels of the center since it's dead zone there anyway")
+    if (fabs(g_px) < kPointerDeadZone && fabs(g_py) < kPointerDeadZone) {
+        return false;
+    }
     // (round the gunsight's middle, where the stick is still: the user, 2026-11-09: "the center of the mouse is the bottom
     // of the crosshair instead of the dot in the center...but the blasters do fire against the dot")
     *x = fmax(0.01, fmin(0.99, g_sightX + 0.42 * g_px));

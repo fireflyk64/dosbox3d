@@ -796,6 +796,11 @@ move vector, the nine axis words, type).
     line 0xD4C04 and 0xD4C00, half the view's width and depth 0xD4C18 and
     0xD4C16, `transfm2_screenyoffset` 0xEC170): at 640x480, 320 and 162 (the
     ring had been put 37.5% down, line 180, the gunsight's bottom mark).
+    Not drawn in the middle's dead zone (4% of the pointer's reach each way,
+    where the stick is still: some 11 pixels across and 6 up and down at
+    640x480), where it only sat over the gunsight's own marks (2026-11-15,
+    the user: "the mouse cursor in both tie fighter and tie demo was ugly when
+    right in the middle of the reticle--can we simply make it disappear").
   * **Space fires**: the mouse's left button, the game's trigger, held while
     it is.  TIE's own Space confirms what waits for it
     (`pstate.space_confirm_action`, 0xEB17E: a warhead's target, the
