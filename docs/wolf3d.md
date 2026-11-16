@@ -71,7 +71,10 @@ The work is on the branch `doom`, with DOOM's: not merged, not deployed until th
   walls stand where they ended, the keys are given, the open doors open.
 * **Actors** are numbered by the order the level made them (the same map and skill make the same list: a hash of it is
   compared, a game with another is told and plays alone).
-  * Free: not yet after anybody. Every game runs it by itself.
+  * Free: not yet after anybody. Every game runs it by itself, so that it can notice that game's player; the ones on
+    a round are put where the host's game has them with each of the host's reports (the user: "it would be jarring if
+    the guards are in different places and one player is like 'go right to avoid the guard' but he's left"): the same
+    round at the same pace between reports, so nothing is seen of it.
   * Claimed: the game in which it noticed the player (or was shot) asks; the host says who was first. The owner's game
     thinks for it; its place, state, health and countdowns go out 15 times a second with the owner's own place.
     The others show it between its last two reports.
@@ -106,7 +109,7 @@ The work is on the branch `doom`, with DOOM's: not merged, not deployed until th
 * `scripts/web-wolf.sh [seconds]`: two to four browser pages; ends "WOLF PAGE OK". `ZIP=` (the shareware's zip or
   GOG's installer), `PLAYERS=`, `MISSION=2/0`, `DEMO=1`, `LATE=`, `FALLEN=`.
 * Key-script aids: `!wolfpos`, `!wolfnear` (the nearest fighters), `!wolfact=<n>`, `!wolfstat` (the session),
-  `!wolfdoors`, `!wolfwarp=<x>:<y>:<angle>` (our player put there), `!wolfgod=1`, `!wolfhp=<n>`; pictures by `!frame=`.
+  `!wolfdoors`, `!wolfhurt=<n>:<damage>`, `!wolfkeys=<bits>`, `!wolfwarp=<x>:<y>:<angle>` (our player put there), `!wolfgod=1`, `!wolfhp=<n>`; pictures by `!frame=`.
 * E1 floor 1: the start is 29.5, 57.5 facing east (0); a guard at 39.5, 61.5; the lift's switch is worked from
   25.5, 47.5 facing east; a pushable wall north of 10.5, 14.5.
 
@@ -119,6 +122,11 @@ The work is on the branch `doom`, with DOOM's: not merged, not deployed until th
   * a door the host opened open on the guest; the host's lift took both to floor 2, in step;
   * the host killed: its guard handed to the guest; the host back in the floor as it was;
   * a wall the guest pushed pushed on the host; a guest come 28 s late found the fallen guard fallen.
+* **Guards on their rounds**, a guest come 20 s late: each within 0.1 tile of the host's last report of it (a guard
+  0.02, a running dog 0.1), told 15 times a second.
+* **The boss floor** (episode 1 floor 9, two machines): Hans Grosse (1,050 health) after the host, shown on the guest;
+  the guest's damage (four hits of 300 through its owner) felled him in both games, 5,000 points each; a gold key the
+  guest found was the host's too, whose gold door opened in both games; the host walked out: "YOU WIN" on both.
 * **Two browser pages**, the shareware dropped, and by the page's own button: WOLF PAGE OK, the emulator at 100% of
   real time, each player on the other's picture.
 * **Three browser pages**, GOG's installer dropped, the host's pick "I am Death incarnate": every page's level had
@@ -129,8 +137,6 @@ The work is on the branch `doom`, with DOOM's: not merged, not deployed until th
 
 * **An enemy shoots only at the player it noticed.** Two players side by side: the one it saw first takes all its
   fire. Handing it to the nearer player as the fight moves is not done.
-* **Enemies not yet woken** walk their rounds in each game by itself: a patrolling guard can stand a little
-  elsewhere on two screens until somebody wakes it.
 * **The full game's bosses that throw things or change shape** (their shots, Hitler's second form) are made by the
   owner's game only; not tried. Episodes two to six have only been started, not played through.
 * **Shareware and full game together** in one room: not taken (different builds). Episode one's maps are the same in

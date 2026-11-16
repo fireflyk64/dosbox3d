@@ -83,6 +83,8 @@ Bit32u wolf_level_sig();                            // what the level's actors a
 bool wolf_actor(int i, WolfAct *out);
 // an actor shown as its owner has it: its place, its state (taken: its countdowns too, ours to think for from here)
 void wolf_actor_show(int i, const WolfAct &a, bool taken);
+// an actor nobody is after yet put where the host's game has it on its round (ours goes on thinking for it)
+void wolf_actor_place(int i, const WolfAct &a);
 void wolf_actor_puppet(int i, bool on);             // DoActor passes it by (thought for elsewhere)
 bool wolf_actor_is_puppet(int i);
 bool wolf_actor_fighter(int cls);                   // a class that fights and falls (not a corpse, a ghost, a shot)
@@ -120,6 +122,7 @@ void wolf_session_loop_exit(int playstate); // the frame loop left
 bool wolf_session_damage(int i, int damage);    // DamageActor for actor i: true when told to its owner instead
 void wolf_session_idle();                   // no frame for a while (a menu, a death, the level's end)
 std::string wolf_session_status();          // (a rig's: !wolfstat)
+std::string wolf_session_report(int i);     // (a rig's: !wolfact: actor i as last told to us, and how long ago)
 
 }  // namespace wc
 

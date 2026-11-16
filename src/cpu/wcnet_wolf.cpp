@@ -749,6 +749,25 @@ void wolf_actor_show(int i, const WolfAct &a, bool taken) {
     mark(ob);
 }
 
+void wolf_actor_place(int i, const WolfAct &a) {
+    const Bit16u ob = actor_ob(i);
+    if (!ob || !on_map(a.tilex, a.tiley)) return;
+    const int st = a.state + (int)g_stGuard;
+    if (st <= 0 || st > 0xFFF0) return;
+    unmark(ob);
+    w32((Bit16u)(ob + OB_X), a.x);
+    w32((Bit16u)(ob + OB_Y), a.y);
+    w16((Bit16u)(ob + OB_TILEX), (Bit16u)a.tilex);
+    w16((Bit16u)(ob + OB_TILEY), (Bit16u)a.tiley);
+    const int area = area_of_tile(a.tilex, a.tiley);
+    if (area >= 0) w8((Bit16u)(ob + OB_AREA), (Bit8u)area);
+    w16((Bit16u)(ob + OB_DIR), (Bit16u)a.dir);
+    w16((Bit16u)(ob + OB_STATE), (Bit16u)st);
+    w16((Bit16u)(ob + OB_TICCOUNT), (Bit16u)a.ticcount);
+    w32((Bit16u)(ob + OB_DISTANCE), (Bit32u)a.distance);
+    mark(ob);
+}
+
 void wolf_actor_puppet(int i, bool on) {
     const int s = slot_of(actor_ob(i));
     if (s >= 0) g_slotSkip[s] = on;
@@ -1005,6 +1024,17 @@ bool wolf_script_item(const std::string &item, double t) {
     } else if (item.compare(0, 8, "!wolfhp=") == 0) {
         w16(gs(GS_HEALTH), (Bit16u)atoi(item.c_str() + 8));
         wclog(1, "key script %.1fs: Wolfenstein 3-D: health set to %d", t, atoi(item.c_str() + 8));
+    } else if (item.compare(0, 10, "!wolfhurt=") == 0) {
+        // !wolfhurt=<n>:<damage>: actor n hurt as by our shot (told to its owner when it is thought for elsewhere)
+        int i = 0, dmg = 0;
+        if (sscanf(item.c_str() + 10, "%d:%d", &i, &dmg) == 2) {
+            const bool told = wolf_session_damage(i, dmg);
+            if (!told) wolf_hurt(i, dmg);
+            wclog(1, "key script %.1fs: Wolfenstein 3-D: actor %d hurt by %d (%s)", t, i, dmg, told ? "told to its owner" : "in our game");
+        }
+    } else if (item.compare(0, 10, "!wolfkeys=") == 0) {
+        w16(gs(GS_KEYS), (Bit16u)(r16(gs(GS_KEYS)) | atoi(item.c_str() + 10)));
+        wclog(1, "key script %.1fs: Wolfenstein 3-D: keys found (%d)", t, atoi(item.c_str() + 10));
     } else if (item == "!wolfdoors") {
         std::string open;
         for (int d = 0; d < wolf_doors(); d++) {
@@ -1050,6 +1080,8 @@ bool wolf_script_item(const std::string &item, double t) {
         if (wolf_actor(i, &a)) {
             wclog(1, "key script %.1fs: Wolfenstein 3-D: actor %d class %d at %.2f %.2f (tile %d %d) dir %d state %d flags %02x hp %d%s", t, i,
                   a.cls, a.x / 65536.0, a.y / 65536.0, a.tilex, a.tiley, a.dir, a.state, a.flags, a.hp, wolf_actor_is_puppet(i) ? " (shown)" : "");
+            const std::string told = wolf_session_report(i);
+            if (!told.empty()) wclog(1, "key script %.1fs: Wolfenstein 3-D: actor %d %s", t, i, told.c_str());
         }
     } else if (item == "!wolfnear") {
         // the fighters nearest our player

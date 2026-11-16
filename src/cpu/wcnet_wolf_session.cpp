@@ -117,7 +117,8 @@ struct Report {
     WolfAct a[2];
     Bit32u clock[2];
     double at;
-    Report() : has(false), from(-1), at(0) { clock[0] = clock[1] = 0; }
+    bool placed;                // (a free actor's: put into our game already)
+    Report() : has(false), from(-1), at(0), placed(false) { clock[0] = clock[1] = 0; }
 };
 
 struct Push { int x, y, dir, area; };
@@ -143,6 +144,8 @@ double g_snapAskedAt = -1e9, g_holdSince = -1, g_pushExpectUntil = -1e9, g_fresh
 WolfSnap g_snap;
 bool g_pending[kWolfMaxActors], g_aliveWas[kWolfMaxActors];
 int g_hpWas[kWolfMaxActors], g_claimHp[kWolfMaxActors];
+bool g_roams[kWolfMaxActors];
+Bit32u g_bornX[kWolfMaxActors], g_bornY[kWolfMaxActors];
 Report g_report[kWolfMaxActors];
 int g_doorWas[kWolfMaxDoors];
 bool g_pushWas = false;
@@ -639,6 +642,7 @@ void take_state(int seat, const WolfState &st) {
         r.at = now;
         r.from = seat;
         r.has = true;
+        r.placed = false;
     }
 }
 
@@ -860,6 +864,9 @@ void reset_level_state() {
         if (!wolf_actor(i, &a)) continue;
         g_hpWas[i] = a.hp;
         g_aliveWas[i] = (a.flags & WOLF_SHOOTABLE) != 0;
+        g_roams[i] = false;
+        g_bornX[i] = a.x;
+        g_bornY[i] = a.y;
     }
     for (int d = 0; d < kWolfMaxDoors; d++) g_doorWas[d] = d < wolf_doors() ? wolf_door_action(d) : 1;
     int x, y, dir;
@@ -942,6 +949,19 @@ void show_others(double now) {
     const int self = self_seat();
     // the actors thought for elsewhere
     for (int i = 0; i < wolf_actors(); i++) {
+        if (!g_dead[i] && g_owner[i] < 0 && self != 0 && !g_pending[i]) {
+            // nobody's yet: on its round where the host's game has it (the user: "it would be jarring if the guards
+            // are in different places").  Our game goes on thinking for it between the host's reports -- the same
+            // round at the same pace -- so that it can notice our player; each report puts it right.
+            Report &f = g_report[i];
+            WolfAct mine;
+            if (f.has && !f.placed && f.from == 0 && now - f.at < 500 && !(f.a[1].flags & WOLF_ATTACKMODE) && wolf_actor(i, &mine)
+                && (mine.flags & WOLF_SHOOTABLE) && !(mine.flags & WOLF_ATTACKMODE)) {
+                f.placed = true;
+                wolf_actor_place(i, f.a[1]);
+            }
+            continue;
+        }
         if (g_dead[i] || g_owner[i] < 0 || g_owner[i] == self) continue;
         const Report &r = g_report[i];
         if (!r.has || r.from != g_owner[i]) continue;
@@ -1049,6 +1069,16 @@ void send_state(double now, bool inPlay) {
             WolfAct a;
             for (int i = 0; i < wolf_actors(); i++) {
                 if (g_owner[i] == g_net->self && !g_dead[i] && wolf_actor(i, &a) && (a.flags & WOLF_SHOOTABLE)) mine.push_back(i);
+            }
+            if (g_net->host) {
+                // (the host's: the actors nobody is after that have left where the level put them -- the ones on a
+                // round -- so that every game has them in the same place)
+                for (int i = 0; i < wolf_actors(); i++) {
+                    if (g_owner[i] >= 0 || g_dead[i] || !wolf_actor(i, &a) || !wolf_actor_fighter(a.cls) || !(a.flags & WOLF_SHOOTABLE)
+                        || (a.flags & WOLF_ATTACKMODE)) continue;
+                    if (!g_roams[i] && (a.x != g_bornX[i] || a.y != g_bornY[i])) g_roams[i] = true;
+                    if (g_roams[i]) mine.push_back(i);
+                }
             }
             const int n = (int)mine.size();
             const int count = std::min(n, (int)kActorsPerState);
@@ -1269,6 +1299,15 @@ bool wolf_session_damage(int i, int damage) {
     if (g_owner[i] < 0 || g_owner[i] == g_net->self) return false;
     send_event(EV_DAMAGE, i, damage);
     return true;
+}
+
+std::string wolf_session_report(int i) {
+    if (i < 0 || i >= kWolfMaxActors || !g_report[i].has) return "";
+    const Report &r = g_report[i];
+    char b[160];
+    snprintf(b, sizeof(b), "last told by seat %d %.0f ms ago: at %.2f %.2f, the report before %d ms earlier", r.from, PIC_FullIndex() - r.at,
+             r.a[1].x / 65536.0, r.a[1].y / 65536.0, (int)(r.clock[1] - r.clock[0]));
+    return b;
 }
 
 std::string wolf_session_status() {
