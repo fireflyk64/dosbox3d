@@ -45,6 +45,16 @@ game: web/wc.js), `keep: ["IMUSE.INI"]` (the installer-junk rule drops
 `.ini` files otherwise), the machine GOG's configuration asks for, 60,000
 cycles, `noFlight` and `multiplayer: false` until there is a session.
 
+The in-flight map's icons, `RESOURCE\ICONS640.ICO` and `MAPICONS.ICO`, are
+`.ico` files, which the same rule dropped (GOG's Windows icons are): the
+map (M in flight) found no ICONS640.ICO and asked for the CD (the user,
+2026-11-15: "hitting m immediately crashed the game on the missing file
+RESOURCE\icons640.ico and it asked me to insert the CD").  Both are kept
+now (`keep`), and a copy of the game kept in a browser before that gets
+them from the disc at the launch (`prepare`: `tfIconsFromDisc` reads them
+out of game.gog, ISO 9660 in raw 2,352-byte sectors, the same bytes as the
+installer's), so nobody has to drop the installer again.
+
 The browser's cache (IndexedDB) refused the game in one record: Chrome
 keeps a record under some 127 MB ("the serialized keys and/or value are too
 large", measured: max 133,169,152 bytes).  So `saveGame` now writes big files
