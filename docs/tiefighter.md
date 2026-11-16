@@ -53,7 +53,22 @@ RESOURCE\icons640.ico and it asked me to insert the CD").  Both are kept
 now (`keep`), and a copy of the game kept in a browser before that gets
 them from the disc at the launch (`prepare`: `tfIconsFromDisc` reads them
 out of game.gog, ISO 9660 in raw 2,352-byte sectors, the same bytes as the
-installer's), so nobody has to drop the installer again.
+installer's), so nobody has to drop the installer again.  The rule itself
+is now the other way round (the user: "can we ensure there aren't more gaps
+like this one? ... can we do a comparison and see which other files were left
+out accidentally"): everything under the game's folder is kept but the
+installer's folders, GOG's metadata (goggame-*, webcache.zip), PDFs,
+shortcuts and Windows DLLs.  The comparison, every archive the page takes
+listed by name and run through the page's own `identifyGame`: under the
+old rule TIE lost the two icons, Terminal Velocity (GOG's and the
+shareware) ULTRAMID.INI (the Gravis UltraSound's MIDI settings, read by
+ULTRAMID.EXE and its sound setup, not with the Sound Blaster), TRI.GIF,
+TVDWANGO.ZIP and DUKE3D2.ZIP (named by none of its programs); the Wing
+Commanders (1.01 and both Anniversary Editions), Privateer, Raptor (Steam's
+and the shareware) and the TIE demo lost nothing but manuals, GOG's files
+and DOSBox.  GOG's `__support/save` (TIE's TOPACE10.TFR, WC1's GAMEDAT
+saves) stays out: GOG's own DOSBox never mounts it either (C: is the
+install folder with a cloud_saves overlay).
 
 **The emulated CPU in the browser** (2026-11-15, the user: "the sound was
 very choppy at the base until I hit CNTRL-F11 three times. In flight things

@@ -920,10 +920,18 @@ export function legacyAdvice(which) {
                link: l.url, linkText: `${l.title} on GOG` } : null;
 }
 
-// Directories and file types an installer leaves behind that a DOS game
-// never reads (GOG's own DOSBox, redistributables, manuals, icons).
+// What an installer leaves beside a game that the game never reads: its folders (GOG's own DOSBox, the
+// redistributables, GOG's support files, the installer's temporary files), GOG's metadata files (goggame-*, the
+// launcher's webcache.zip), documents and shortcuts (manuals as PDF, .lnk, .url) and Windows libraries (.dll: no DOS
+// program loads one).  Everything else under the game's folder is kept, whatever its name: a game's own files can
+// look like an installer's (TIE Fighter's map icons are RESOURCE\ICONS640.ICO and MAPICONS.ICO; the user,
+// 2026-11-15: "I suspect all files are actually needed that are there in the first place").  Measured over every
+// installer the page takes (GOG's TIE Fighter, Wing Commander 1.01 and its 35th Anniversary Edition, Wing Commander
+// II's, Privateer, Terminal Velocity, Steam's Raptor): what this leaves out under the game's folder is manuals, GOG's
+// metadata and DOSBox alone.
 const JUNK_DIRS = new Set(["dosbox", "__redist", "__support", "commonappdata", "tmp", "__macosx"]);
-const JUNK_EXT = new Set(["pdf", "ico", "dll", "lnk", "url", "hashdb", "info", "script", "jpg", "jpeg", "png", "gif", "html", "htm", "inf", "ini", "zip", "gz", "tar"]);
+const JUNK_EXT = new Set(["pdf", "lnk", "url", "dll"]);
+const JUNK_NAME = /^(goggame-\d+\.(ico|hashdb|info|script|dll)|webcache\.zip|goglog\.ini)$/i;
 
 // -- zip ---------------------------------------------------------------------
 
@@ -1010,7 +1018,7 @@ function isJunk(path) {
   const parts = path.split("/");
   if (parts.slice(0, -1).some((d) => JUNK_DIRS.has(d.toLowerCase()))) return true;
   if (KEEP.has(base(path).toUpperCase())) return false;
-  return JUNK_EXT.has(ext(path));
+  return JUNK_EXT.has(ext(path)) || JUNK_NAME.test(base(path));
 }
 
 // Finds the game among the files: the known executable closest to the top
