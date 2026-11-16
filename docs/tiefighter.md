@@ -55,6 +55,20 @@ them from the disc at the launch (`prepare`: `tfIconsFromDisc` reads them
 out of game.gog, ISO 9660 in raw 2,352-byte sectors, the same bytes as the
 installer's), so nobody has to drop the installer again.
 
+**The emulated CPU in the browser** (2026-11-15, the user: "the sound was
+very choppy at the base until I hit CNTRL-F11 three times. In flight things
+got a bit choppy for busy scenes").  A fixed 60,000 cycles is more than a
+browser keeps up with in TIE: measured in headless Chrome on this machine
+(the key script's `!cycles` every 2 s, emulated against real time), the
+concourse ran at 75% of real time and the flight at 86 to 88%, so the sound
+starved (the concourse's code is the heavier a cycle).  Now `cyclesAuto`:
+`cycles=max limit 60000`, DOSBox's own adjustment, which in the browser
+build aims at 60% of the main thread for the emulator (`CPU_USAGE_TARGET`),
+the rest for the browser's sound and picture.  Measured: 100% of real time
+at the concourse and in flight, the cycles between some 32,000 and 55,000
+(means 37,700 at the concourse, 37,000 to 43,000 in flight).  `?cycles=N`
+on the page still fixes N; Ctrl+F11 and Ctrl+F12 change the share.
+
 The browser's cache (IndexedDB) refused the game in one record: Chrome
 keeps a record under some 127 MB ("the serialized keys and/or value are too
 large", measured: max 133,169,152 bytes).  So `saveGame` now writes big files
