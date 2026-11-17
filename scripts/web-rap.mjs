@@ -68,8 +68,8 @@ async function openPage(who, script, callsign, pad = false, makeRoom = 0) {
     u.searchParams.set("env." + kv.slice(0, i), kv.slice(i + 1));
   }
   await page.goto(u.toString());
-  // (DEMO=1: the page's own "Free to play now" button, the site's copy, not a dropped file)
-  if (process.env.DEMO) await page.click("#demoRap"); else await page.setInputFiles("#gamefile", zip);
+  // (DEMO=1: picked in the Game menu, the site's copy, not a dropped file)
+  if (process.env.DEMO) await page.selectOption("#program", "rap"); else await page.setInputFiles("#gamefile", zip);
   await page.waitForFunction(() => document.getElementById("sourceStatus").dataset.state === "error"
     || (document.getElementById("sourceStatus").dataset.state === "ready" && document.getElementById("program").value === "rap"), null, { timeout: 120000 })
     .catch(() => {});

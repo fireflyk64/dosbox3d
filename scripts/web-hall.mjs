@@ -72,7 +72,8 @@ function zipOf(name, data) {
 // the pilot out, Wing Commander puts it back, and switching games keeps it there on the same connection, with the
 // new game's tag.  (hall: "", the public lobby's own name, on this test's lobby server.)
 const none = await open("NOGAME", { game: false, hall: "" });
-check("a page with nothing brought plays RetroVega: its room code is RV- and four digits", (await value(none, "program")) === "rv" && /^RV-\d{4}$/.test(await value(none, "room")), [await value(none, "program"), await value(none, "room")]);
+const hint = (page) => page.$eval("#room", (el) => el.placeholder);
+check("a page with nothing brought plays RetroVega: no room code typed, a RetroVega one will be made", (await value(none, "program")) === "rv" && (await value(none, "room")) === "" && (await hint(none)) === "RV-auto", [await value(none, "program"), await value(none, "room"), await hint(none)]);
 const lobbyAt = (page) => page.evaluate(() => { const n = window.__wcHall.test.net(); return n ? n.code : ""; });
 const inLobby = (page, code) => page.waitForFunction((c) => { const n = window.__wcHall.test.net(); return n && n.code === c && !document.getElementById("hallBody").hidden; }, code, { timeout: 30000 }).then(() => true, () => false);
 check("and is in the public lobby, WC-LOBBY, by itself", (await inLobby(none, "WC-LOBBY")) && sockets.NOGAME.length === 1 && /WC-LOBBY/.test(await text(none, "hallNote")), [await lobbyAt(none), sockets.NOGAME, await text(none, "hallState")]);
@@ -105,14 +106,13 @@ check("and back in it with the game", await inside(none), await text(none, "hall
 await none.context().close();
 
 const a = await open("ALPHA", { busy: 2 });
-const codeA = await value(a, "room");
-check("with Wing Commander loaded it is WC1- and four digits", /^WC1-\d{4}$/.test(codeA), codeA);
+check("with Wing Commander loaded the code to be made is WC1-", (await value(a, "room")) === "" && (await hint(a)) === "WC1-auto", [await value(a, "room"), await hint(a)]);
 const programs = await a.$$eval("#program option", (os) => os.map((o) => o.value));
-check("the directory's programs are offered, and RetroVega", programs.join(",") === "wc1,wc1sm2,rv" && !(await a.$eval("#programLabel", (el) => el.hidden)), programs);
+check("the directory's programs are offered, and RetroVega", programs.join(",") === "wc1,wc1sm2,rv,rap,tv,tiedemo,wc2,tf,priv" && !(await a.$eval("#programLabel", (el) => el.hidden)), programs);
 await a.selectOption("#program", "wc1sm2");
-check("picking The Secret Missions 2 makes it SM2- with the same digits", (await value(a, "room")) === codeA.replace("WC1-", "SM2-"), await value(a, "room"));
+check("picking The Secret Missions 2 makes it SM2-", (await hint(a)) === "SM2-auto" && /^Host /i.test(await text(a, "join")) && /Secret Missions 2/i.test(await text(a, "join")), [await hint(a), await text(a, "join")]);
 await a.selectOption("#program", "wc1");
-check("and back", (await value(a, "room")) === codeA, await value(a, "room"));
+check("and back", (await hint(a)) === "WC1-auto", await hint(a));
 
 // -- the lobby --------------------------------------------------------------------
 const b = await open("BRAVO", { busy: 2 });
@@ -192,12 +192,15 @@ check("and all but the lines a pilot may send (two, one was the markup)", flood 
 // -- a room said in the lobby -------------------------------------------------------
 // "Advertise" says it without a code being typed, and makes the room first
 // when the pilot is in none.
-const offer = `${codeA} Enyo 1, 2 seats free`;   // (a room of three: Players 3)
 await sleep(10);
 await refill(a);
 await a.fill("#seats", "3");
 check("the pilot is in no room yet", await a.$eval("#lobby", (el) => el.hidden), null);
 await a.click("#hallAdvertise");
+await a.waitForFunction(() => !document.getElementById("lobby").hidden, null, { timeout: 30000 }).catch(() => {});
+const codeA = await value(a, "room");
+check("the room Advertise made is named after the game, WC1- and four digits", /^WC1-\d{4}$/.test(codeA), codeA);
+const offer = `${codeA} Enyo 1, 2 seats free`;   // (a room of three: Players 3)
 check("Advertise joins the pilot's room and sends its code, mission and free seats", (await sees(b, offer)) && !(await a.$eval("#lobby", (el) => el.hidden)) && (await value(a, "hallInput")) === "", [await text(a, "hallHint"), await status(a)]);
 check("the room has the button too, while a seat is free", !(await a.$eval("#advertise", (el) => el.hidden)), null);
 check("a room offered in the lobby has no Fly Alone, alone in it as the host is", (await a.$eval("#flySolo", (el) => el.hidden)) && !(await a.$eval("#fly", (el) => el.disabled)), null);
@@ -233,8 +236,7 @@ await inside(d);
 await d.waitForFunction((c) => Array.from(document.querySelectorAll("#hallLog a.roomcode")).some((x) => x.textContent === c), codeA, { timeout: 8000 }).catch(() => {});
 await d.click("#hallLog a.roomcode");
 check("a full room says so", await d.waitForFunction(() => /is full/.test(document.getElementById("status").textContent), null, { timeout: 15000 }).then(() => true, () => false), await status(d));
-const roomD = await value(d, "room");
-check("and the pilot's own code is back", /^WC1-\d{4}$/.test(roomD) && roomD !== codeA, roomD);
+check("and the code box is the pilot's again: empty", (await value(d, "room")) === "", await value(d, "room"));
 check("and the address keeps no room", !new URL(d.url()).searchParams.get("room"), d.url());
 // A click is where the pilot wants to be: a room they sit in alone is left
 // for it (and taken again when the clicked one cannot be joined); a room
@@ -242,6 +244,8 @@ check("and the address keeps no room", !new URL(d.url()).searchParams.get("room"
 check("the room size starts at two", (await value(d, "seats")) === "2", await value(d, "seats"));
 await d.click("#join");
 await d.waitForFunction(() => !document.getElementById("lobby").hidden, null, { timeout: 30000 });
+const roomD = await value(d, "room");
+check("Host with no code typed: a room named after the game", /^WC1-\d{4}$/.test(roomD) && roomD !== codeA, roomD);
 check("a room made with it has two seats", /player 1 of 2 in room/.test(await text(d, "chatLog")) && (await d.$eval("#seats", (el) => el.disabled)), await text(d, "chatLog"));
 await d.click("#hallLog a.roomcode");
 check("a pilot alone in a room who clicks a full one is told so, and is back in their own", await d.waitForFunction((own) => /is full/.test(document.getElementById("hallHint").textContent) && !document.getElementById("lobby").hidden && document.getElementById("room").value === own, roomD, { timeout: 30000 }).then(() => true, () => false), [await text(d, "hallHint"), await value(d, "room")]);
@@ -272,7 +276,7 @@ await click(c, "WC2-9999");
 await sleep(1);
 check("a room for a game that is not loaded is not joined", /WC2-9999 is a Wing Commander II room, and you have Wing Commander loaded/.test(await status(c)) && (await c.$eval("#lobby", (el) => el.hidden)), await status(c));
 await click(c, "SM2-7777");
-check("a room for another program of the same directory switches to it", await c.waitForFunction(() => document.getElementById("program").value === "wc1sm2" && /SM2-7777 is not open any more/.test(document.getElementById("status").textContent), null, { timeout: 15000 }).then(() => true, () => false), [await value(c, "program"), await status(c)]);
+check("a room for another program of the same directory switches to it", await c.waitForFunction(() => document.getElementById("program").value === "wc1sm2" && /SM2-7777 is not open/.test(document.getElementById("status").textContent), null, { timeout: 15000 }).then(() => true, () => false), [await value(c, "program"), await status(c)]);
 check("and a room nobody made is not made by the click", await c.$eval("#lobby", (el) => el.hidden), null);
 
 // The lobby's own code is not a room; a code for another game is not joined by hand either.
@@ -286,9 +290,9 @@ await c.click("#join");
 await sleep(1);
 check("nor are the lobbies after it", /WC-LOBBY7 is the public lobby/i.test(await status(c)) && (await c.$eval("#lobby", (el) => el.hidden)), await status(c));
 await c.fill("#room", "wc2-1234");
-await c.click("#join");
+await c.click("#joinCode");
 await sleep(1);
-check("a WC2 code typed with Wing Commander loaded is refused", /WC2-1234 is a Wing Commander II room/.test(await status(c)) && (await value(c, "room")) === "WC2-1234", await status(c));
+check("Join with a WC2 code typed and Wing Commander loaded is refused", /WC2-1234 is a Wing Commander II room/.test(await status(c)) && (await value(c, "room")) === "WC2-1234" && (await c.$eval("#lobby", (el) => el.hidden)), await status(c));
 
 // A reload keeps the pilot in the lobby; leaving does not.  The names typed
 // are remembered by the browser (the link gives the callsign here, not the
@@ -359,7 +363,7 @@ check("a pilot whose page does not answer (an older one) is counted", !got.room 
 await oscar.evaluate(() => window.__wcHall.test.configure({ mute: false }));
 await sleep(5.5);
 got = await openGame(quebec);
-check("an open room is joined", got.room && /an open game from the lobby/.test(got.status) && (await value(quebec, "room")) === codeO && (await seatOf(quebec)) === "2 of 2", [got, await value(quebec, "room")]);
+check("an open room is joined", got.room && /an open Wing Commander room from the lobby/.test(got.status) && (await value(quebec, "room")) === codeO && (await seatOf(quebec)) === "2 of 2", [got, await value(quebec, "room")]);
 check("the question and the answers are no lines of chat", !/rooms\?|"t"|OSCAR\s*WC1\s*:/.test((await text(oscar, "hallLog")) + (await text(quebec, "hallLog"))), await text(quebec, "hallLog"));
 const romeo = await open("ROMEO", opened);
 await inside(romeo); await pilots(romeo, 3);
@@ -533,11 +537,11 @@ check("a lobby is made with the seats the server allows", (await h.evaluate(() =
   const loner = await open("LONER", { hall: "SOLO-" + run });
   await inside(loner);
   check("in the lobby, in no room: Fly Alone is offered", !(await loner.$eval("#flySolo", (el) => el.hidden)) && (await loner.$eval("#lobby", (el) => el.hidden)), null);
-  const lonerCode = await value(loner, "room");
   await loner.click("#flySolo");
-  check("it makes a room of one of the code in the box and flies the game alone",
-    await loner.waitForFunction((c) => new RegExp(`alone in room ${c}`).test(document.getElementById("chatLog").textContent), lonerCode, { timeout: 30000 }).then(() => true, () => false),
+  check("it makes a room of one, named after the game, and flies the game alone",
+    await loner.waitForFunction(() => /alone in room WC1-\d{4}/.test(document.getElementById("chatLog").textContent), null, { timeout: 30000 }).then(() => true, () => false),
     await text(loner, "chatLog"));
+  const lonerCode = await value(loner, "room");
   await sleep(6);
   check("alone (WCSOLO), and nothing said in the lobby", logs.LONER.some((l) => / alone: the game as it is/.test(l)) && !(await text(watcher, "hallLog")).includes(lonerCode),
     logs.LONER.filter((l) => /alone|single player/.test(l)).join(" | "));

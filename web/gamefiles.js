@@ -66,7 +66,7 @@
 // wc.js fills `series` from it.  `ownRocks`: the game's asteroids are its
 // own, every machine's (the room's asteroid choices do not apply).
 // `builtin`: a game the site itself serves (ours to give away), as a
-// .tar.gz beside the page: it is in every browser's "Play" menu with no
+// .tar.gz beside the page: it is in every browser's "Game" menu with no
 // files dropped, fetched when it is flown.
 // `image`: a CD image among the game's files (GOG's game.gog, the disc as
 // raw sectors), mounted as drive D before the game runs (imgmount, an
@@ -767,7 +767,7 @@ export const GAMES = [
   // Flown together loosely (docs/privateer.md: rooms of up to 8, `maxSeats`, everybody's own career, presence and the
   // others' ships near by so far;
   // src/cpu/wcnet_priv_session.cpp); the emulator ramps its arrow keys (src/cpu/wcnet_priv_controls.cpp).
-  { id: "priv", tag: "PRV", title: "Wing Commander: Privateer", detect: ["PRCD.EXE"], run: "priv", multiplayer: true, maxSeats: 8,
+  { id: "priv", tag: "PRV", title: "Wing Commander: Privateer", short: "Privateer", detect: ["PRCD.EXE"], run: "priv", multiplayer: true, maxSeats: 8,
     image: "GAME.GOG", cycles: 30000, saves: ["*.SAV"], noFlight: true, noRoomOptions: true, prepare: privMusicOnFm,
     build: { para: 0x6E4D, off: 0x0074, text: "Type PRIV to run Privateer" },
     help: "Privateer flown together loosely, rooms of up to 8: everybody plays their own career, goes where they like and keeps their own saved games. Each pilot's system and place goes to the room when they launch, land, jump, engage the autopilot (A), and every 15 s; a line over the game says who is in your system and how far. Near each other you see each other's ships as the ships they fly, and a nav point's encounter is run by one pilot's game and shown to the others: everybody fights the same pirates, your hits count, and a wing about to spawn gets up to 3 more ships when several of you are there. A mission's nav points wait for the pilot who has the mission, and what flies with a pilot (an escort's charge) is seen by all. Talking: in flight press 0, type, Enter: the line shows on the others' message bar under your face (the Face box above, in the room), said by your ship when it is near; at a base use the room's chat beside this panel. Cargo you expel can be tractored by the others. Esc skips the opening; NEW registers a pilot (a name and a callsign, Enter after each); click your ship on the landing pad to launch. Save in a base with the Quine 4000's SAVE: the page keeps your saved games in this browser.",
@@ -811,7 +811,7 @@ export const GAMES = [
   // together, up to four pilots: the host's wave for all, launched together; each pilot's own ship, weapons, money and
   // shop; the enemies' and the ground's damage shared, the money the killer's, each game's bonuses its own pilot's; a
   // pilot shot down the end for all; each ship's stripes its seat's colour (docs/raptor.md).  The game runs 23 frames a second by its own clock.
-  { id: "rap", tag: "RAP", title: "Raptor: Call of the Shadows", detect: ["RAP.EXE"], run: "rap", multiplayer: true, maxSeats: 4,
+  { id: "rap", tag: "RAP", title: "Raptor: Call of the Shadows", short: "Raptor", detect: ["RAP.EXE"], run: "rap", multiplayer: true, maxSeats: 4,
     build: { text: "ENEMY_Think() - Invalid ANIMTYPE1" },
     cycles: 40000, screen: [320, 200], noFlight: true, noRoomOptions: true, prepare: rapPrepare,
     // (the game's archives -- FILE0000 and FILE0001 the shareware's, FILE0002 to FILE0004 the registered game's other
@@ -835,7 +835,7 @@ export const GAMES = [
   // others' copies following its reports), shots, hits and deaths shared, a pilot down the end for all.  After the
   // demo's own mission, three more (src/cpu/wcnet_tiedemo_campaign.cpp: written over the mission the game reads, the
   // layer's; the game's files unchanged): docs/tiedemo.md section 8.
-  { id: "tiedemo", tag: "TFD", title: "TIE Fighter (the 1994 demo)", detect: ["TIEMISS.EXE"], run: "tiedemo", multiplayer: true, maxSeats: 3,
+  { id: "tiedemo", tag: "TFD", title: "TIE Fighter (the 1994 demo)", short: "TIE Fighter demo", detect: ["TIEMISS.EXE"], run: "tiedemo", multiplayer: true, maxSeats: 3,
     build: { text: "TIE Fighter Demo V1.0 12/04/93" },
     cycles: 30000, screen: [320, 200], noFlight: true, noRoomOptions: true, prepare: tdPrepare,
     saves: ["OPTIONS.CFG"],

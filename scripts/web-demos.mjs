@@ -1,5 +1,5 @@
-// The page's free shareware (web/demos, the "Free to play now" buttons of step 1): one Chrome page with nothing saved
-// clicks each button and must end ready with that game in its Play menu, the archive fetched from the site once; a
+// The page's free shareware (web/demos, picked in the Game menu of step 1): one Chrome page with nothing saved
+// picks each and must end ready with that game picked, the archive fetched from the site once; a
 // second visit must use the copy the browser kept, fetching nothing.  The links (the
 // archives, the full games' stores) must be there.  Ends "DEMOS PAGE OK".
 //
@@ -22,16 +22,16 @@ page.on("pageerror", (e) => console.log(`PAGE ERROR: ${e.message}`));
 const u = new URL(pageUrl);
 u.searchParams.set("lobby", "off");
 await page.goto(u.toString());
-await page.waitForSelector("#demoRap");
+await page.waitForSelector("#program option[value=rap]", { state: "attached" });
 const links = await page.$$eval("#demos a", (as) => as.map((a) => a.href));
 console.log(`links: ${links.join(" ")}`);
 check(links.some((h) => h.endsWith("demos/1rap12.zip")) && links.some((h) => h.endsWith("demos/3dtv12.zip")), "the archives linked");
 check(links.some((h) => h.includes("store.steampowered.com/app/358360")) && links.some((h) => h.includes("gog.com/en/game/terminal_velocity")), "the full games' stores linked");
 const ready = (id) => page.waitForFunction((id) => document.getElementById("sourceStatus").dataset.state === "error"
   || (document.getElementById("sourceStatus").dataset.state === "ready" && document.getElementById("program").value === id), id, { timeout: 120000 }).catch(() => {});
-for (const [button, id, file] of [["#demoRap", "rap", "1rap12.zip"], ["#demoTv", "tv", "3dtv12.zip"]]) {
+for (const [button, id, file] of [["Raptor in the Game menu", "rap", "1rap12.zip"], ["Terminal Velocity in the Game menu", "tv", "3dtv12.zip"]]) {
   const before = fetched.length;
-  await page.click(button);
+  await page.selectOption("#program", id);
   await ready(id);
   const st = await page.$eval("#sourceStatus", (el) => `${el.dataset.state}: ${el.textContent.slice(0, 120)}`);
   check(await page.inputValue("#program") === id && st.startsWith("ready"), `${button}: ${id} ready (${st})`);
@@ -44,10 +44,10 @@ console.log(`saved here: ${kept}`);
 check(/Raptor/.test(kept) && /Terminal Velocity/.test(kept), "both kept in this browser");
 // a second visit: the kept copies, nothing fetched
 await page.reload();
-await page.waitForSelector("#demoRap");
+await page.waitForSelector("#program option[value=rap]", { state: "attached" });
 const before = fetched.length;
-for (const [button, id] of [["#demoRap", "rap"], ["#demoTv", "tv"]]) {
-  await page.click(button);
+for (const [button, id] of [["Raptor in the Game menu", "rap"], ["Terminal Velocity in the Game menu", "tv"]]) {
+  await page.selectOption("#program", id);
   await ready(id);
   check(await page.inputValue("#program") === id, `second visit, ${button}: ${id} from the kept copy`);
 }

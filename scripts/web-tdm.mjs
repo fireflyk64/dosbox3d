@@ -69,7 +69,7 @@ async function openPage(who, script, callsign) {
     u.searchParams.set("env." + kv.slice(0, i), kv.slice(i + 1));
   }
   await page.goto(u.toString());
-  if (zip === "fetch") await page.click("#demoTfd");      // (the page's button: the Internet Archive's zip, fetched)
+  if (zip === "fetch") await page.selectOption("#program", "tiedemo");      // (picked in the Game menu: the Internet Archive's zip, fetched)
   else await page.setInputFiles("#gamefile", zip);
   await page.waitForFunction(() => document.getElementById("sourceStatus").dataset.state === "error"
     || (document.getElementById("sourceStatus").dataset.state === "ready" && document.getElementById("program").value === "tiedemo"), null, { timeout: 120000 })

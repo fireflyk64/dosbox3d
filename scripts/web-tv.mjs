@@ -58,9 +58,9 @@ async function openPage(who, script, callsign) {
     u.searchParams.set("env." + kv.slice(0, i), kv.slice(i + 1));
   }
   await page.goto(u.toString());
-  // (DEMO=1: the page's own "Free to play now" button, the site's copy, not a dropped file)
+  // (DEMO=1: picked in the Game menu, the site's copy, not a dropped file)
   // (GUEST_ZIP: the guest's own file, the shareware beside the host's registered game)
-  if (process.env.DEMO) await page.click("#demoTv");
+  if (process.env.DEMO) await page.selectOption("#program", "tv");
   else await page.setInputFiles("#gamefile", who === "guest" && process.env.GUEST_ZIP ? process.env.GUEST_ZIP : zip);
   // (ready for the dropped files: the page's built-in game is ready before them on a page that has one)
   await page.waitForFunction(() => document.getElementById("sourceStatus").dataset.state === "error"

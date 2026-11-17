@@ -52,7 +52,7 @@ const status = () => page.$eval("#sourceStatus", (el) => `${el.dataset.state}: $
 await page.goto(u.toString());
 const t1 = Date.now();
 if (fetched) {
-  await page.click("#demoTfd");
+  await page.selectOption("#program", "tiedemo");
 } else {
   await page.setInputFiles("#gamefile", zip);
 }
@@ -65,7 +65,7 @@ if (fetched) {
   check(/TIE Fighter/.test(await page.$eval("#savedList", (el) => el.textContent)), `kept in this browser (${(await page.$eval("#savedList", (el) => el.textContent)).slice(0, 80)})`);
   await page.goto(u.toString());
   archiveFetches = 0;
-  await page.click("#demoTfd");
+  await page.selectOption("#program", "tiedemo");
   await ready();
   const again = await status();
   check(archiveFetches === 0 && await page.inputValue("#program") === "tiedemo",

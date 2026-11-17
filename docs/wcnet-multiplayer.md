@@ -1369,8 +1369,38 @@ top-level README for the workflow).  What differs:
   `?game=` picks the page's game when no room's link names one ("rv", "tv",
   "raptor"/"rap", "tf": the CD's when this browser has it, else the 1994
   demo; the user: "if they pass in a game=tv or game=tf or game=raptor or
-  game=rv flag it defaults to those games").  scripts/web-together.sh
-  checks it all with a local lobby server (TOGETHER OK).
+  game=rv flag it defaults to those games").
+  **One Game menu, three room buttons (2026-11-17)** replaced the row of
+  free games' buttons and "Join room" (the user: "it now gets really
+  confusing to figure out which game you've selected. Sometimes I click tie
+  fighter demo but somehow I'm still pinned to wing commander when I join the
+  room"; three things had decided the game: a button that did nothing in a
+  room, a code left in the box whose prefix switched the game back at "Join
+  room", and "Join open game" taking any game's room).  The Game menu
+  (`renderPrograms`) lists every game the page plays: those this browser
+  holds, the free ones (fetched when picked: installing is no step of its
+  own), and greyed the ones that need the pilot's files; `#gameList` names
+  them all beside it (a click picks; the user: "people may not realize the
+  set of games avail").  The pick is the pilot's and nothing but a room
+  joined changes it; the last one is the next visit's (`wc:game`), before the
+  newest copy.  `?tf=1`, `?tv=1`, `?rv=1`, `?wc1=1`, ... are `?game=`'s short
+  forms (`askedGame`).  **Host <game>** makes the room of the game picked:
+  the code box empty, a code of the game's prefix and four digits is made
+  (the user: "when the user really doesn't bother to type a room code it
+  should generate the room code based on the game"); a code typed is the
+  room's name and never switches the host's game.  **Join** (and Enter in
+  the box) joins the room of the code typed and makes none; the code's prefix
+  is a hint (the game got first, as for a link), the host's hello decides,
+  and a free game the host plays is fetched (`followHost`).  **Join open
+  game** asks the lobby and takes a room of the game picked first, else one
+  of any game this browser has or can fetch (the user: "the join prefers the
+  game they want but if none is available they join any room where they have
+  the install files available (eg tie demo) or they have it actually
+  installed"); it says so in the room's chat, and the menu shows the room's
+  game.  A code the page put in the box leaves it with its room.  The site's
+  /wc, /wc2, /tf, /tfd, /tv, /raptor, /privateer redirect to the page with
+  that game asked for (scripts/site-shortcuts.sh).  scripts/web-pick.sh
+  checks it with a local lobby server (PICK OK).
   **The callsign** has a strip of its own at the page's top, above the game
   files and the lobby (the user, 2026-11-15: "promote the callsign part above
   everything ... then we can perhaps save a line in the room"): Callsign,
