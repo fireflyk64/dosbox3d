@@ -79,7 +79,15 @@ bool g_adding;                      // our own keys going in: not ours to filter
 
 // The pointer's travel for the whole width: host pixels (after DOSBox's sensitivity).
 const double kPointerSpan = 600.0;
-const double kPointerDeadZone = 0.04;
+// The pointer's ring on the picture: the whole of its travel, a share of the picture's width and depth each way from the
+// gunsight's middle (tie_controls_marker).
+const double kRingAcross = 0.42, kRingDown = 0.30;
+// The dead zone in the middle, where the stick is still: 4 pixels of the 640 x 480 picture each way, a box of 8 x 8
+// (the user, 2026-11-17: "reduce the deadzone to just a handful of pixels (maybe 8x8 or 16x16) so that we have more fine
+// grained control").  It had been 4% of the travel each way: 21.5 pixels across and 11.5 down, so 16 x 16 would have
+// been a taller one.  As shares of the travel: 0.0149 across (4.5 pixels of the mouse's own), 0.0278 up and down (8.3).
+const double kDeadPixels = 4.0;
+const double kDeadAcross = kDeadPixels / (kRingAcross * 640.0), kDeadDown = kDeadPixels / (kRingDown * 480.0);
 
 int mode() {
     if (g_mode < 0) {
@@ -133,14 +141,23 @@ int mickeys(double d, int least, int most) {
 // The pointer's deflection (-1..1) as the share of the game's full turn: nothing within the dead zone, then the square
 // of the way out (the user, 2026-11-09: "moving the mouse just a bit away from the center results in a huge turn
 // already--it's hard to fine tune"): a quarter of the turn with the pointer half way, the whole at the edge.
-double pointer_curve(double p) {
+// As a frame's mickeys, `most` at the edge.  At the dead zone's own edge they begin at `floor`, the slowest the game
+// turns for at all, not at nothing: its stick is eased towards each frame's (user_inputforplane: a fifteenth of the
+// difference a frame at 60), so the least given now and then (steer_mickeys) is lost when it comes too seldom.
+// Measured, a still Z-95, the pointer out across: 1.4 mickeys a frame on average turned 0.01 degree a second, 1.7
+// 0.15, 2.1 0.4, 2.8 0.8; up and down 1.8 nothing, 3.0 0.75.  From nothing, the first 30 pixels of the mouse's travel
+// did not turn at all, whatever the dead zone was.
+double pointer_mickeys(double p, double dead, double floor, int most) {
     const double a = fabs(p);
-    if (a < kPointerDeadZone) {
+    if (a < dead) {
         return 0;
     }
-    const double e = (a - kPointerDeadZone) / (1.0 - kPointerDeadZone);
-    return p < 0 ? -e * e : e * e;
+    const double e = (a - dead) / (1.0 - dead);
+    const double m = floor + (most - floor) * e * e;
+    return p < 0 ? -m : m;
 }
+// (the slowest turns, as shares of the game's least mickeys: 1.7 of 17 across, 1.3 of 33 up and down)
+const double kFloorAcross = 0.10, kFloorDown = 0.04;
 
 void say(const std::string &line) {
     incoming_text = line;
@@ -188,21 +205,21 @@ void tie_controls_sight(double x, double y) {
 }
 
 // This frame's stick from the pointer and the page's pad, as mickeys from the game's least to its most across and up
-// and down: the pointer's from nothing (below the game's least, that least now and then: a slow turn for a fine aim, the
-// game's own easing of its stick smoothing it), a pad's from the least while it keeps saying and is pushed (a pad gone
+// and down: the pointer's from the slowest the game turns for (pointer_mickeys; below the game's least, that least now
+// and then: a slow turn for a fine aim, the game's own easing of its stick smoothing it), a pad's from the least while it keeps saying and is pushed (a pad gone
 // still is no turn; one at rest leaves the pointer be).  True: the pointer rolls (the right button held, the aim
 // without the bank): *mx is the roll's, *my nothing.
 bool tie_controls_aim(int leastX, int mostX, int leastY, int mostY, int *mx, int *my) {
     *mx = *my = 0;
     bool rolling = false;
     if (pointer_mode() && g_rightHeld && mode() == MOUSE_POINTER) {
-        *mx = steer_mickeys(pointer_curve(g_rx) * mostX, leastX, g_accX);      // (the right button held: rolling)
+        *mx = steer_mickeys(pointer_mickeys(g_rx, kDeadAcross, kFloorAcross * leastX, mostX), leastX, g_accX);   // (the right button held: rolling)
         g_accY = 0;
         rolling = true;
     } else if (pointer_mode()) {
         // (the pointer above the middle climbs: the mouse's forward dives)
-        *mx = steer_mickeys(pointer_curve(g_px) * mostX, leastX, g_accX);
-        *my = steer_mickeys(-pointer_curve(g_py) * mostY, leastY, g_accY);
+        *mx = steer_mickeys(pointer_mickeys(g_px, kDeadAcross, kFloorAcross * leastX, mostX), leastX, g_accX);
+        *my = steer_mickeys(-pointer_mickeys(g_py, kDeadDown, kFloorDown * leastY, mostY), leastY, g_accY);
     }
     // (the pad's stick only while it is pushed: a pad at rest says 0 every frame, and the pointer steers on)
     if (PIC_FullIndex() - g_stickAt < 500 && (g_stickX != 0 || g_stickY != 0)) {
@@ -810,13 +827,13 @@ bool tie_controls_marker(double *x, double *y) {
     // (none in the middle's dead zone, where the stick is still: there it only sat on the gunsight's own marks; the user:
     // "the mouse cursor ... was ugly when right in the middle of the reticle--can we simply make it disappear if it is
     // within a few pixels of the center since it's dead zone there anyway")
-    if (fabs(g_px) < kPointerDeadZone && fabs(g_py) < kPointerDeadZone) {
+    if (fabs(g_px) < kDeadAcross && fabs(g_py) < kDeadDown) {
         return false;
     }
     // (round the gunsight's middle, where the stick is still: the user, 2026-11-09: "the center of the mouse is the bottom
     // of the crosshair instead of the dot in the center...but the blasters do fire against the dot")
-    *x = fmax(0.01, fmin(0.99, g_sightX + 0.42 * g_px));
-    *y = fmax(0.01, fmin(0.99, g_sightY + 0.30 * g_py));
+    *x = fmax(0.01, fmin(0.99, g_sightX + kRingAcross * g_px));
+    *y = fmax(0.01, fmin(0.99, g_sightY + kRingDown * g_py));
     return true;
 }
 

@@ -1012,7 +1012,18 @@ move vector, the nine axis words, type).
     x_per_tick`): a turn held is a spiral; the clean turn is a roll (Ins and
     Del, or the right button held with the stick across) and a pull.
   * **The pointer** steers by the square of its way out past the dead zone
-    (a quarter of the turn half way, the whole at the edge), given as mickeys
+    (a quarter of the turn half way, the whole at the edge; the dead zone a
+    box of 8 x 8 pixels of the 640 x 480 picture round the gunsight's middle
+    since 2026-11-17, the user's "just a handful of pixels ... more fine
+    grained control": it had been 4% of the travel each way, 21.5 pixels
+    across and 11.5 down; and at the box's edge the turn begins at the
+    slowest the game turns for, 1.7 mickeys a frame across and 1.3 up and
+    down on average, not at nothing: from nothing the first 30 pixels of the
+    mouse's travel turned nothing at all, the least given too seldom being
+    lost in the game's easing of its stick.  Measured, a still Z-95: nothing
+    3 pixels of the mouse's travel across or 7 down, 0.2 degree a second 6
+    across, 0.37 at 11, 0.6 at 10 up or down, nothing again back in the
+    middle; before, nothing at any of these), given as mickeys
     from nothing: below the game's least (17 a frame across, 33 up and down)
     that least now and then, the game's own easing of its stick smoothing it.
     Measured, a Z-95: the pointer 40 pixels out turned 0.8 degree a second,
