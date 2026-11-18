@@ -143,6 +143,7 @@ every flight piece rewritten for the orchestra, and the score's remixes.
 | BATTLE4 | Intercept | C minor over a C pedal, 140 | Contact's sibling: the synth brass calls (a short note leaping to a long one) and two horns answer in thirds over galloping low strings and the spiccato; the strings' long tune to a high C, a dark horn chorale, the call and answer for the whole orchestra |
 | BATTLE5 | Check Six | C minor, 140 | Break and Attack's sibling, with apprehension on the downbeats: a bass falling by half steps (C, B, B flat, A flat, G) lands on every downbeat on the low horn, low strings and timpani; the brass's calls sigh down a half step; the horn's F minor tune over the riff's pulsing strings and hits; a darker block in E flat minor; the last block a long-note tune of sighs on the strings and horn over the riff |
 | BATTLE6 | Scissors | C phrygian, 140 | Furball's sibling: two lines from one C over driving fifths, the brass climbing and the horn falling, open to the octave on 3+3+2 and snipped shut; the horn's tune over F minor, E flat, D flat, C; the blades drawn out in long notes over A flat, B flat, G7, C minor, a climb a step a bar into a stop on F minor; a stop on 3+3+2 with toms |
+| BATTLE7 | Closing In | C minor, 140 | one last like Check Six (the user, 2026-11-17: "one last battle piece like check six"), its dread the other way up: the bass climbing a half step on every downbeat (C, D flat, D, E flat ... to G) on the low horn, low strings and timpani under a riff that holds C (its C and four dotted eighths across the beat, hits on one and the and of three); the horn's long-note call, a half step higher as the bass climbs; a turn into A flat minor; home up whole steps; the call passed down the circle of fifths between brass and horn; the tune on the strings over the riff |
 | ROCKS | Rock Field | G minor, 120 | a march through the rocks (snare, timpani, low strings), the horn's theme, a drift through B flat with the harp and piccolo glinting, a brass descant |
 | ROCKS2 | Drift Field | D dorian, 118 | exploring, not marching: the spiccato drifting in sixteenths, the horn's tune wandering up; rocks going by, each swooshing past (two beats up the chord and back down, panned across, fading in and out), harp glissandi and timpani rumbles with a lower swoosh over them, a soft tom where each passes closest, a few near misses with a crash; the middle through B flat and G flat lydian |
 | PANIC1 | Hull Breach | C, 140 | the fight going on under the damage: a low cluster, alarms in seconds, the call a tritone off |
@@ -157,7 +158,7 @@ every flight piece rewritten for the orchestra, and the score's remixes.
 | TRAGEDY | Wingman Lost | B flat minor, 52 | a funeral march, 14 s |
 | LOST2 | Empty Deck | B flat minor, 46 | Carrier Lost's sibling (tools/stings2.py): hollow fifths falling B flat, A flat, G flat, F; the far horn picks up the way home's tune where Carrier Lost broke off and stops short; the oboe falls once from far above |
 
-Some 35 minutes of music, every piece its own, each going round from
+Some 36 minutes of music, every piece its own, each going round from
 its loop. `tools/flightsongs.py` has Outbound and the way home and gathers
 the rest from `cruise_a.py`, `cruise_b.py`, `battles.py` and `panics.py`,
 and their siblings from `cruise_c.py`, `battles2.py` and `panics2.py`
@@ -358,11 +359,11 @@ QUARTER2, BAR or BAR2, LAUNCH or LAUNCH2, WIN or WIN2, LOST or LOST2, one of a f
 
 **Memory:**
 
-- **Loading:** the 50 songs load at start-up into XMS, some 153,000
-  events (900 KB; 95,000 and 570 KB for the first 28). Each has a
+- **Loading:** the 51 songs load at start-up into XMS, some 159,000
+  events (930 KB; 95,000 and 570 KB for the first 28). Each has a
   descriptor in conventional memory (36 bytes, its 12 blocks' places in
   it; 24 until the siblings, when 12 was the most any song had) and a
-  name (13 bytes): 2.4 KB for the 50. RV.EXE keeps the descriptors
+  name (13 bytes): 2.5 KB for the 51. RV.EXE keeps the descriptors
   fixed; the test builds take them from the heap in `music_init`, as
   RVP.EXE's play tests start no music and its heap had no 1.7 KB to spare
   (the shot list found no room). The far heap grows to read each song's tracks, and
