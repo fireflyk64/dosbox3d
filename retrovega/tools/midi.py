@@ -11,10 +11,12 @@ our OPL3 bank (tools/oplbank.py); LAUNCH, WIN and LOSE are still the short
 placeholders below; LOST is the carrier's loss.
 """
 import argparse
+import sys
 import os
 import struct
 
 PPQ = 480
+MAX_SECT = 12                           # a song's "sect" markers at most (src/music.c MAX_SECT)
 NOTE = {n: i for i, n in enumerate(['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'])}
 
 
@@ -184,7 +186,11 @@ def main():
         if name.upper().endswith('.MID') and name not in SONGS:
             os.remove(os.path.join(args.out, name))
     for name, make in SONGS.items():
-        make().write(os.path.join(args.out, name))
+        song = make()
+        sects = sum(1 for _, ev in song.meta if ev[:2] == b'\xFF\x06' and ev.endswith(b'sect'))
+        if sects > MAX_SECT:            # (every list has a cap, its writer's: src/music.c keeps no more)
+            sys.exit('midi.py: %s has %d "sect" markers, the engine keeps %d' % (name, sects, MAX_SECT))
+        song.write(os.path.join(args.out, name))
     print('%d songs in %s' % (len(SONGS), args.out))
 
 

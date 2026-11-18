@@ -56,7 +56,8 @@ typedef struct {
 #define EV_LAST 1                       /* the song's last event: it goes round again after it */
 #define EV_CHASE 2                      /* a chase's controller, not the song's own (not counted) */
 #define EV_SWITCH 4                     /* a follow-on begins: d1 the song, d2 its slot in g_switch_from */
-#define MAX_SECT 24
+#define MAX_SECT 12                     /* (a song's blocks at most: tools/midi.py refuses more; 12 was the most any had,
+                                           and each song's table keeps them in conventional memory) */
 
 typedef struct {
     XmsBlock x;                         /* the events, in XMS (resident) */
