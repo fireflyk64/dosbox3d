@@ -2224,7 +2224,7 @@ static void t_sustain(void)
     static const char __far e_few[] = "%d shots in 10 s of trigger from %d guns: the old game's Hornet fired a volley every "
         "0.44 s at its 15 frames a second (22-23 a gun) without running down";
     static const char __far e_many[] = "%d shots in 10 s of trigger from %d guns: more than a volley every 0.44 s";
-    static const char __far e_drained[] = "gun energy down to %d after 10 s of trigger: the lasers are sustained";
+    static const char __far e_drained[] = "gun energy down to %d after 10 s of trigger: a quarter or more left";
     uint16_t a0;
     int16_t guns;
     pt_alone(PT_PLAYER);
@@ -2236,7 +2236,8 @@ static void t_sustain(void)
         return;
     REQUIRE((uint16_t)(shots_added() - a0) >= guns * 20, e_few, (uint16_t)(shots_added() - a0), guns, 0);
     REQUIRE((uint16_t)(shots_added() - a0) <= guns * 25, e_many, (uint16_t)(shots_added() - a0), guns, 0);
-    REQUIRE(gunEnergy[0] >= 50, e_drained, gunEnergy[0], 0, 0);
+    REQUIRE(gunEnergy[0] >= 25, e_drained, gunEnergy[0], 0, 0);   /* (three lasers at the Photon's 5 a shot draw 15 a
+                                           volley every 13 steps against 13 back: some 60 in 10 s) */
     g_pilot.guns = 0;
 }
 
@@ -4161,6 +4162,12 @@ static void t_raid(void)
                 b = k;
         }
     REQUIRE(ox > 0 && a > 0 && b > 0, e_there, ox, a, b);
+    for (k = 1; k <= RV_MAX_SHIP_SLOT; k++)   /* (the patrol's wingman out of it, held far off: its missile had killed
+                                           the second Nicander before the taunt once the laser flew the old game's speed) */
+        if (slot_is_ship(k) && commAnimInfo[k] == SIDE_TERRAN && logic_is_wingman(k)) {
+            pt_put(k, -30000, 0, 0, 0);
+            rvController[k] = CTL_FROZEN;
+        }
     pt_ship(a, PT_ENEMY, SIDE_AERA, CTL_AI, 3000, 0, 8000, TURN / 2);
     pt_ship(b, PT_ENEMY, SIDE_AERA, CTL_AI, -3000, 0, 9000, TURN / 2);
     if (!pt_steps(5 * SEC))
@@ -8414,8 +8421,8 @@ static const char __far n_m3_10[] = "M3.10 any-source (do_damage): the same hit 
 static const char __far n_m3_11[] = "M3.11 shots-hit (step_shots): gunfire hurts what it meets, src a bolt of the "
     "shooter's";
 static const char __far n_m3_12[] = "M3.12 recharge (step_timers): shields come back, armour does not";
-static const char __far n_m2_19[] = "M2.19 sustain (step_timers): the trigger held 10 s fires the old game's 45 shots (a volley of two "
-    "every 0.44 s, at its 15 frames a second) and keeps its energy";
+static const char __far n_m2_19[] = "M2.19 sustain (step_timers): the trigger held 10 s fires the old game's 22 shots a gun (a volley "
+    "every 0.44 s, at its 15 frames a second) and draws slowly";
 static const char __far n_m3_13[] = "M3.13 type-rates (step_timers): gun energy and shields come back at the type's rates (a point a side every shield_steps, or the shift)";
 static const char __far n_m3_14[] = "M3.14 hit-volumes (shot_hit): a bolt within the radius, in the volume box, through the silhouettes, as the rule says";
 static const char __far n_m3_15[] = "M3.15 damage-grows (shot_hit): a bolt hurts by its life left: the laser 10 at the muzzle, 25 at the end of its reach";
