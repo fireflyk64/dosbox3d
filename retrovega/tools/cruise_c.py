@@ -32,7 +32,7 @@ note starts, so a run moves across in three steps.  (The noise swell's patch, pr
 not reachable: the timpani's patch, written after it, takes 119 too, and the bank plays 119 as the timpani.)
 """
 from compose import chord
-from orch import (DRUM, ORCH, Piece, up, scale_run, ACC332, orchestra, in_range, octaves, pulses, pedal332, hit,
+from orch import (DRUM, ORCH, Piece, in_time, up, scale_run, ACC332, orchestra, in_range, octaves, pulses, pedal332, hit,
                   held, sung, sweep, MAJOR, LYDIAN)
 
 THIRD, SIXTH = 1 / 3, 1 / 6             # in 12/8 (four dotted beats a bar): an eighth, a sixteenth
@@ -71,6 +71,17 @@ def ladder(c, q0, n=12):
             out.append(q)
         q += 1
     return out
+
+
+def sweep_down(s, ch, bar, pcs, lo, hi, vel, beats=None):
+    """orch.sweep the other way: a harp's strum down through these pitch classes, hi to lo, in the bar's last
+    so many beats, growing into the bar line (each note let go by the bar's end: a loop stays whole bars)"""
+    beats = beats or s.beats
+    notes = [q for q in range(hi, lo - 1, -1) if q % 12 in pcs]
+    step = beats / len(notes)
+    for k, q in enumerate(notes):
+        at = s.beats - beats + k * step
+        s.play(ch, bar, at, min(step * 1.5, s.beats - 0.02 - at), q, vel + k, 2)
 
 
 def bar_beat(s, pos):
@@ -220,7 +231,7 @@ def sonar(s, ch, bars, vel, lo=45):
 
 def faint_signal():
     form = ['Am9', 'Am9'] + FS_PASS + FS_PASS
-    s = Piece(152, 3010, form, level=0.5)
+    s = in_time(Piece(152, 3010, form, level=0.5))
     hn, hn2, mo, lo, hi_, br, pc, tp, hp, st, bs = chans(s)
     n = len(form)                                   # 2 + 22 + 22 = 46 bars, 72.6 s
     s.loop_at(2)
@@ -251,8 +262,16 @@ def faint_signal():
             sung(s, hn, S1, FS_SEARCH_UNDER, 64)
             s.pad(br, range(S2, F1), 54, 68, 3, 54)
             s.arp(hp, range(S2, F1), [0, 1, 2, 3, 4, 5, 4, 3], 0.5, 60, 84, 4, 46, gate=0.6)
-        s.run(pc, S1 + 3, 2, scale_up(77, 10, LYDIAN, 8), 0.25, 56, 2)          # B flat lydian, F up to F
-        sweep(s, hp, S2 + 3, {4, 8, 11}, 40, 88, 56, beats=2)                     # found: the harp up E's chord
+        # (the user, 2026-11-17: "what if that first harp goes down instead of up once or twice to surprise the
+        # listener? or even have a A or V shape once or twice": the strums all went up.  Now the first falls,
+        # G down to G onto G's chord, the harp's sweep into the signal falls the second time, and the turns home
+        # from the signal are an A the first time and a V the second)
+        if not second:
+            s.run(pc, S1 + 3, 2, scale_up(79, 10, LYDIAN, 8)[::-1], 0.25, 70, -2)  # B flat lydian, G down to G
+            sweep(s, hp, S2 + 3, {4, 8, 11}, 40, 88, 56, beats=2)                 # found: the harp up E's chord
+        else:
+            s.run(pc, S1 + 3, 2, scale_up(77, 10, LYDIAN, 8), 0.25, 56, 2)      # B flat lydian, F up to F
+            sweep_down(s, hp, S2 + 3, {4, 8, 11}, 40, 88, 56, beats=2)            # found: the harp down E's chord
         s.roll(tp, S2 + 3, 2, 2, 'E2', 20, 90, step=0.125)
         # the signal: C major, the horn's tune (the strings' in octaves the second time), the hits; E flat
         s.arp(mo, range(F1, H), [0, 2, 4, 2, 1, 3, 5, 3], 0.5, 48, 66, 3, 62)
@@ -270,9 +289,17 @@ def faint_signal():
             sung(s, st, F1, [up(t, 12) for t in FS_FOUND_TUNE], 80, e0=70, e1=124, e2=100)
             s.tune(st, F1, FS_FOUND_TUNE, 72)
             sung(s, hn, F1, FS_FOUND_UNDER, 68)
-            s.tune(pc, F2 + 2, [up(t, 12) for t in FS_FOUND_TUNE[6:]], 50)
         s.run(pc, F1 + 3, 2, scale_run(79, 91, MAJOR)[:8], 0.25, 58, 2)            # G up to G, into E flat
-        s.run(pc, F2 + 3, 2, scale_up(77, 10, MAJOR, 8), 0.25, 60, 2)              # B flat's F up to F
+        if not second:                                  # B flat's F up to D and back to B flat: an A
+            s.run(pc, F2 + 3, 2, [77, 79, 81, 82, 84, 86], 0.25, 60, 2)
+            s.run(pc, F2 + 3, 3.5, [84, 82], 0.25, 68, -2)
+        else:
+            # the piccolo's echo of the tune's end, its D the V's top (the piccolo's notes written in time order:
+            # a note written before an earlier one at its pitch cut that one to a tick, and the echo, written
+            # before the run into E flat, had lost its C and its G)
+            s.tune(pc, F2 + 2, [up(t, 12) for t in FS_FOUND_TUNE[6:7]] + ['F6:0:2'], 50)
+            s.run(pc, F2 + 3, 2, [86, 84, 82, 81, 79], 0.25, 62, -1)          # from D down to G, up to C: a V
+            s.run(pc, F2 + 3, 3.25, [81, 82, 84], 0.25, 60, 3)
         # home: the search's pulse under the strings, through F, D minor and B flat to E
         sonar(s, mo, range(H, R), 64)
         pedal332(s, lo, range(H, R), 88)
