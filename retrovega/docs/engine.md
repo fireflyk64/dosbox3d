@@ -730,8 +730,9 @@ Built (src/music.c, src/opl.c):
   selected when going into that room... a little shorter and way more relaxing", "another song with a similar
   theme but some differences", the launch "should randomly select from 2"): `tools/songs2.py` writes *Quiet
   Hours* (QUARTER2, 4.7 minutes at 54 a minute in D flat, no drums: piano and a wide pad, the tine piano's long
-  tune; a harp in B flat minor; nylon guitar and a low flute in G flat; the tune on the vibraphone, thinning
-  into the top) and *Dog Watch* (BAR2, 8.6 minutes at 104 swung in D minor, on an upright bass: the head on
+  tune; a harp in B flat minor, rippling like running water on each chord's five notes under the vibraphone's
+  long notes; nylon guitar and a low flute in G flat; the tune on the vibraphone over broken piano chords, a
+  falling vibraphone line for colour, into the top) and *Dog Watch* (BAR2, 8.6 minutes at 104 swung in D minor, on an upright bass: the head on
   guitar and vibraphone; Harbour Lights, an A flat ballad with a low clarinet; Salt Road, a C minor latin
   montuno; Galley Blues, a G organ trio; the head again on flute and guitar). `tools/stings2.py` writes
   *Stand Down* (WIN2, the won debrief: harp eighths, the horn's tune, the strings an octave up, an oboe over a

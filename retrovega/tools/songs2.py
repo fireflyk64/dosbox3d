@@ -371,11 +371,24 @@ QH_TUNE = ['Ab4:1:1 Eb5:2:2', 'F5:0:3', 'Eb5:0:1.5 Db5:1.5:.5 C5:2:2', '',
            'Bb4:1:1 Db5:2:1 F5:3:1', 'Eb5:0:3', 'Db5:0:1.5 C5:1.5:.5 Ab4:2:2', 'Bb4:0:3']
 DR_A = bars_of('Bbm9 | Bbm9 | Gbmaj9 | Gbmaj9 | Ebm9 | Fm7 | Gbmaj7#11 | F9sus4')
 DR_B = bars_of('Bbm9 | Dbmaj9 | Gbmaj9 | Ebm9 | Bbm9/F | Gbmaj7#11 | Ebm9 | Db9sus4')      # turning to G flat
+# Drift's vibraphone over the water: long notes, each in its bar's pentatonic (nothing a half step from the water)
+DR_TUNE = ['', 'F5:1:1 Ab5:2:2', 'Bb5:0:3 Ab5:3:1', 'Gb5:0:2 Eb5:2:2',
+           'Db5:0:3', 'Eb5:1:1 F5:2:2', 'Ab5:0:2 Bb5:2:2', 'G5:0:2 F5:2:2',
+           '', 'F5:0:2 Ab5:2:2', 'Gb5:0:2 Eb5:2:2', 'Db5:0:3',
+           '', 'Bb5:0:3 Ab5:3:1', 'Gb5:0:2 Eb5:2:2', 'Db5:0:3']
+# the water's ripples, a bar each: steps along the pentatonic, on and a little back, some a skip (rising four or
+# five steps, some an octave; a falling bar mirrors)
+RIPPLES = [(1, 2, -1, 1, 2, -1, 1), (2, -1, 2, -1, 2, -1, 1), (1, 1, 2, -1, 1, 1, -1), (2, 1, -1, 2, -1, 1, 1)]
 LN_A = bars_of('Gbmaj9 | Abm9 | Bbm7 | Abm9 | Gbmaj9 | Cbmaj7#11 | Ebm9 | Db9sus4')
 LN_B = bars_of('Gbmaj9 | Abm9 | Bbm7 | Ebm9 | Cbmaj7#11 | Cbm6 | Gbmaj9/Bb | Ab9sus4')   # turning to D flat
 # a few notes a bar at most, long ones, and bars of nothing
 DRIFT = [[(0, 3)], [(1, 1), (2, 2)], [(2, 2)], [], [(0, 2), (2, 1.5)], [(0, 1.5), (1.5, .5), (2, 2)], [(1, 3)]]
 DRIFT_END = [[(0, 3)], [(0, 2)], [(0, 3.5)]]
+# IV's second half: the second B flat minor turned to E flat (its G natural a colour, the tune's C its 13th), and
+# the vibraphone above the tune in long notes, a bar each: A flat, G, then from B flat falling by half steps,
+# A natural (over the G flat minor), A flat, G flat, into the first bar's F
+QH_B_LATE = QH_B[:3] + bars_of('Eb9/Bb') + QH_B[4:]
+QH_DESCANT = ['Ab5:1:3', 'G5:0:4', 'Bb5:0:4', 'A5:0:4', 'Ab5:0:4', 'Gb5:0:3']
 
 
 def rolled(s, ch, bar, beat, dur, notes, vel, gap=0.12):
@@ -427,21 +440,55 @@ def quiet_hours(s, b0):
     return b0 + 16
 
 
-def drift(s, b0, rng):
-    """II, B flat minor: the harp turning in quarters, the soft pad, the vibraphone now and then"""
-    harmony = DR_A + DR_B
-    harp, pad, bass = Voicer(50, 72, 4), Voicer(50, 69, 3, 16), Bass(28, 43)
+def pentatonic(c):
+    """the five notes a chord's water runs on, no half step among them: a major chord's own pentatonic, a minor
+    chord's minor one, a suspended chord's from its flat seventh"""
+    t = set(c.tones)
+    base = c.root + (10 if 5 in t and not t & {3, 4} else 3 if 3 in t else 0)
+    return {(base + x) % 12 for x in (0, 2, 4, 7, 9)}
+
+
+def water(s, ch, b0, harmony, rng, lo=58, hi=74, vel=42):
+    """running water (the user, of Drift: "a bit messy at this part...we could go for dripping pipe if we wanted or
+    running water--if it's relaxing enough"): eighths on the chord's pentatonic, a bar rising in ripples (steps
+    and skips on, a step back) and the next falling, each note let ring a beat and a quarter (not over a change of
+    chord); louder on the beats and at the crest.  The line runs on over the bar lines (the nearest note of the
+    next chord's scale); the last bar falls and comes to rest on its fourth beat"""
+    q, n = lo, len(harmony)
     for i, syms in enumerate(harmony):
-        bar = b0 + i
-        for h, x in enumerate(syms):
-            c = chord(x)
-            span = 4 // len(syms)
-            v = harp.next(c)
-            for k in range(span):
-                s.play(5, bar, h * span + k, 1.8 if h * span + k < 3 else 0.95, v[k], 54 if k == 0 else 48, spread=3)
-            s.play(10, bar, h * span, span - 0.05, pad.next(c), 58, spread=2)
-            s.play(2, bar, h * span, span - 0.2, bass.note(c), 54)
-    put(s, 3, Tune(rng, 'Bb', 'dorian', 65, 80).period(b0, harmony, DRIFT, DRIFT_END), 66)
+        up = i % 2 == 0
+        steps = rng.choice(RIPPLES)
+        last = i == n - 1
+        for e in range(8 if not last else 7):
+            beat = e * 0.5
+            c = chord(syms[0] if beat < 2 or len(syms) == 1 else syms[1])
+            ladder = [x for x in range(lo, hi + 1) if x % 12 in pentatonic(c)]
+            k = min(range(len(ladder)), key=lambda j: abs(ladder[j] - q))
+            if e:
+                d = steps[e - 1] * (1 if up and not last else -1)
+                if not 0 <= k + d < len(ladder):
+                    d = -d                                          # (at the edge of the range: turn back)
+                k += d
+            q = ladder[k]
+            crest = 1 - abs(e - (7 if up else 0)) / 14          # (the top of the wave a little louder)
+            v = vel + (4 if beat in (0, 2) else 0) + round(4 * crest)
+            turn = i + 1 < n and harmony[i + 1][0] != syms[-1]          # (no ringing over a change of chord)
+            s.play(ch, b0 + i, beat, 1.0 if last and e == 6 else min(1.25, 4 - beat) if turn else 1.25, q, v,
+                   spread=3)
+
+
+def drift(s, b0, rng):
+    """II, B flat minor: running water on the harp under the soft pad, the bass on the downbeat, the vibraphone's
+    long notes above it, in the water's scales"""
+    harmony = DR_A + DR_B
+    Tune(rng, 'Bb', 'dorian', 65, 80).period(b0, harmony, DRIFT, DRIFT_END)   # (the old tune's draws, not played:
+    pad, bass = Voicer(50, 69, 3, 16), Bass(28, 43)                            # Lantern's flute draws after them)
+    for i, syms in enumerate(harmony):
+        c = chord(syms[0])
+        s.play(10, b0 + i, 0, 3.95, pad.next(c), 56, spread=2)
+        s.play(2, b0 + i, 0, 3.8, bass.note(c), 54)
+    water(s, 5, b0, harmony, random.Random(1216))
+    s.tune(3, b0, DR_TUNE, 62)
     return b0 + 16
 
 
@@ -466,12 +513,31 @@ def lantern(s, b0, rng):
     return b0 + 16
 
 
+def broken_bed(s, b0, harmony, piano, pad, bass, keys_vel, pad_vel, bass_vel):
+    """calm_bed's chords broken across the bar, a note a beat from the bottom, each held to the bar's end"""
+    for i, syms in enumerate(harmony):
+        c = chord(syms[0])
+        v = piano.next(c)
+        for k, q in enumerate(v):
+            s.play(0, b0 + i, k, 3.85 - k, q, keys_vel + (4 if k == 0 else 0), spread=2)
+        s.play(1, b0 + i, 0, 3.95, pad.next(c), pad_vel, spread=2)
+        s.play(2, b0 + i, 0, 3.8, bass.note(c), bass_vel)
+
+
 def quiet_again(s, b0, rng):
-    """IV, D flat: the tune on the vibraphone, then thinning to the piano and the pad, into the first bar"""
-    calm_bed(s, b0, QH_A + QH_B, Voicer(53, 70, 4), Voicer(50, 69, 3, 16), Bass(28, 43),
-             keys_vel=48, pad_vel=54, bass_vel=54, thin=range(12, 16))
+    """IV, D flat: the tune on the vibraphone over the rolled chords; from the seventh bar (4:00 into the song; the
+    user: "make a bit less lethargic towards the end") the piano breaks its chords a note a beat, the tune's second
+    half is played whole on the tine piano, its second B flat minor turned to E flat, and the vibraphone rises
+    above it in long notes falling by half steps ("we need some notes of color"); the last bar rolled again, into
+    the first"""
+    harmony = QH_A + QH_B_LATE
+    piano, pad, bass = Voicer(53, 70, 4), Voicer(50, 69, 3, 16), Bass(28, 43)
+    calm_bed(s, b0, harmony[:6], piano, pad, bass, keys_vel=48, pad_vel=54, bass_vel=54)
+    broken_bed(s, b0 + 6, harmony[6:15], piano, pad, bass, keys_vel=48, pad_vel=54, bass_vel=54)
+    calm_bed(s, b0 + 15, harmony[15:], piano, pad, bass, keys_vel=46, pad_vel=52, bass_vel=52)
     s.tune(3, b0, QH_TUNE[:8], 64)
-    s.tune(4, b0 + 8, QH_TUNE[8:10] + ['', ''] + QH_TUNE[12:14], 62)
+    s.tune(4, b0 + 8, QH_TUNE[8:], 62)
+    s.tune(3, b0 + 10, QH_DESCANT, 54)
     return b0 + 16
 
 
