@@ -93,7 +93,8 @@ try {
   }
   await press(600, 380);                // outside the panel: closed
   // a hotspot used until the room's music says it worked (a line of table talk can swallow a press). The cue, not the
-  // song's name: the name is in the log from the start, where the music is loaded
+  // song's name: the name is in the log from the start, where the music is loaded.  `song` is a pattern: a room with two
+// songs plays either (BAR2?)
   const go = async (gx, gy, song, what) => {
     const re = new RegExp(`cue \\d+ \\(${song}\\.MID\\)`);
     let found = false;
@@ -106,7 +107,7 @@ try {
   await go(593, 200, "LOUNGE", "the quarters' door: the lounge");
   await sleep(1500);
   await shot("lounge");
-  await go(429, 140, "BAR", "the lounge's hatch: the bar");   // (its top: a pilot sits over the rest)
+  await go(429, 140, "BAR2?", "the lounge's hatch: the bar");   // (its top: a pilot sits over the rest; Off-Watch or Dog Watch)
   await sleep(1500);
   await shot("bar");
   await go(605, 113, "BRIEF", "the bar's door: the briefing");
@@ -116,8 +117,8 @@ try {
     if (phone) await page.locator("#touchEsc").tap(); else await page.keyboard.press("Escape");
     await sleep(1200);
   }
-  t = await waitLog(/cue \d+ \(LAUNCH\.MID\)/, 30000);
-  ok(/cue \d+ \(LAUNCH\.MID\)/.test(t), "after the briefing: the deck");
+  t = await waitLog(/cue \d+ \(LAUNCH2?\.MID\)/, 30000);   // (either launch song: game.c family_cue)
+  ok(/cue \d+ \(LAUNCH2?\.MID\)/.test(t), "after the briefing: the deck");
   await sleep(2500);
   await shot("deck");
   await press(201, 172);                // Kit: her conversation, a page a press

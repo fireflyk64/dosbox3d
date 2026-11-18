@@ -117,8 +117,8 @@ try {
   await sleep(1500);
   await shot("lounge");
   await tap(429, 140);                // the lounge's hatch (its top: a pilot sits over the rest)
-  t = await waitLog(/cue \d+ \(BAR\.MID\)/, 8000);
-  ok(/BAR\.MID/.test(t), "the lounge's hatch: the bar");
+  t = await waitLog(/cue \d+ \(BAR2?\.MID\)/, 8000);     // (Off-Watch or Dog Watch: game.c family_cue)
+  ok(/BAR2?\.MID/.test(t), "the lounge's hatch: the bar");
   await sleep(1500);
   await shot("bar");
   await tap(605, 113);                // the bar's door: the briefing
@@ -126,8 +126,8 @@ try {
   ok(/briefingStarted/.test(t), "the bar's door: the briefing");
   await sleep(3000);
   await shot("briefing");
-  t = await waitLog(/cue \d+ \(LAUNCH\.MID\)/, 150000);   // (the briefing runs its course)
-  ok(/LAUNCH\.MID/.test(t), "after the briefing: the deck");
+  t = await waitLog(/cue \d+ \(LAUNCH2?\.MID\)/, 150000);   // (the briefing runs its course; either launch song)
+  ok(/LAUNCH2?\.MID/.test(t), "after the briefing: the deck");
   await sleep(2500);
   await shot("deck");
   // Fire: Space held while the button is (the emulator's key queue, watched)
