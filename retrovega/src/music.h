@@ -11,6 +11,8 @@ void music_poll(void);                  /* the main loop's: writes out what was 
 void music_cue(int cue, int fade_ms);   /* fade the current song out over fade_ms, then the cue's in */
 void music_cue_at(int cue, int fade_ms, int at);   /* ... starting the fade on the next beat or bar */
 void music_cue_body(int cue, int fade_ms, int at);   /* ... from its loop's marker: past its intro (the battles' chain) */
+void music_cue_sect(int cue, int fade_ms, int sect);   /* ... from the start of its block `sect` ("sect" marker), -1
+                                           its own start: a room's song begun at one of its sections */
 void music_sting(int cue);              /* a sting, once: then the song it cut short goes on from there */
 int music_then(int cue, int from_sect, int at_sects);    /* then this cue, from its loop (from_sect -1) or that
                                         block, after the playing song's pass (at_sects 0) or so many more of its

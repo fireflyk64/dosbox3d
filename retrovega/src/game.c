@@ -417,6 +417,16 @@ static int room_song(int room)
          : room == RV_R_LOUNGE ? RV_MUSIC_LOUNGE : room == RV_R_DECK ? RV_MUSIC_LAUNCH : RV_MUSIC_BAR;
 }
 
+/* a room's song as the room is entered: from its start or one of its sections' (its "sect" markers), by the clock (the
+ * user, 2026-11-17, of the lounge: "people never stay in this room for long and so we want them to hear different parts
+ * of the music"; of the bar's: "4 different sensible start points in this song and the original").  The same song
+ * already playing goes on (music.c cue_from) */
+static void room_music(int room, int fade_ms)
+{
+    int cue = room_song(room), n = music_sects(cue);
+    music_cue_sect(cue, fade_ms, n > 0 ? (int)(clock240() % (unsigned long)(n + 1)) - 1 : -1);
+}
+
 static void enter_room(int room)
 {
     unsigned char seats[3] = { 0xFF, 0xFF, 0xFF };
@@ -446,7 +456,7 @@ static void enter_room(int room)
         g_scene.underlay = flight_window_draw;
         g_scene.leave = flight_window_close;
     }
-    music_cue(room_song(room), 250);
+    room_music(room, 250);
     scene_draw();
     vid_fade(64);
 }

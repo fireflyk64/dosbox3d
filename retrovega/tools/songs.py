@@ -204,9 +204,15 @@ def quarters_song():
     s.tune(4, 24, Q_TUNE_A, 80)                     # the flute takes it, the vibraphone sparkles above
     s.tune(3, 24, Q_SPARKLE, 56)
     rng = random.Random(1968)
+    # (a "sect" marker at each later section's start: the places the room's song may begin, src/game.c room_music;
+    # the user, 2026-11-17, of the room songs: "we want them to hear different parts of the music")
+    s.marker(32 * s.beats, 'sect')
     bar = porthole(s, 32, rng)
+    s.marker(bar * s.beats, 'sect')
     bar = night_cycle(s, bar, rng)
+    s.marker(bar * s.beats, 'sect')
     bar = letters_home(s, bar, rng)
+    s.marker(bar * s.beats, 'sect')
     bunk_light_again(s, bar, rng)
     return s
 
@@ -523,6 +529,7 @@ def later(s, b0, whole, rng):
     nxt = lambda bar: whole[(bar + 1) % len(whole)][0]
     # II, Second Shift (B flat): the vibraphone's tune, then a guitar chorus
     ss = b0
+    s.marker(ss * s.beats, 'sect')     # (each section's start a place the bar's song may begin: room_music)
     for i, syms in enumerate(SECOND_SHIFT):
         bar = ss + i
         comp(s, 0, bar, syms, keys, 60 if i >= 32 else 56)
@@ -536,6 +543,7 @@ def later(s, b0, whole, rng):
     put(s, 2, Tune(rng, 'Bb', 'major', 60, 79).period(ss + 32, SECOND_SHIFT[32:], SOLO, SOLO_END), 74)
     # III, Liberty Port (E flat): a bossa nova, straight eighths
     lp = ss + len(SECOND_SHIFT)
+    s.marker(lp * s.beats, 'sect')
     s.swing = 0.5
     for i, syms in enumerate(LIBERTY_PORT):
         bar = lp + i
@@ -552,6 +560,7 @@ def later(s, b0, whole, rng):
     s.swing = 0.64
     # IV, Cargo Blues (G minor): the head twice, three choruses, the head again
     cb = lp + len(LIBERTY_PORT)
+    s.marker(cb * s.beats, 'sect')
     for i, syms in enumerate(CARGO_BLUES):
         bar, chorus = cb + i, i // 12
         solo = chorus in (2, 3, 4)
@@ -571,6 +580,7 @@ def later(s, b0, whole, rng):
     # V, Off-Watch's changes again (F): the vibraphone over the organ, the old
     # bridge on the guitar; then guitar and vibraphone four bars each, into the top
     rp = cb + len(CARGO_BLUES)
+    s.marker(rp * s.beats, 'sect')
     for i, syms in enumerate(REPRISE):
         bar = rp + i
         comp(s, 0, bar, syms, keys, 58)
@@ -726,6 +736,8 @@ def lounge_song():
     b0 = 0
     for k, (name, chords, joy) in enumerate(OFF_DUTY):
         home = name == 'Home Port'
+        if k:
+            s.marker(b0 * s.beats, 'sect')   # (each later section's start a place the lounge's song may begin: room_music)
         for i, syms in enumerate(chords):
             bar = b0 + i
             bright = joy or (home and i >= 16)                # Home Port eases back into the joy

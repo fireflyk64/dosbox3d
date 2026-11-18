@@ -954,29 +954,34 @@ static void cue_song(int song, int fade_ms, int at, unsigned from)
     _enable();
 }
 
-static void cue_from(int cue, int fade_ms, int at, int body)
+/* (body: from its loop's marker; else from the start of its block `sect`, -1 its own start) */
+static void cue_from(int cue, int fade_ms, int at, int body, int sect)
 {
     int song = playable(cue);
     char name[13];
+    unsigned from = 0;
     if (cue == g_last)
         return;
     g_last = cue;
-    if (song >= 0)
+    if (song >= 0) {
         _fstrcpy(name, g_files[cue]);
+        from = body ? g_song[song].loop : sect >= 0 && sect < g_song[song].nsect ? g_song[song].sect[sect] : 0;
+    }
     if (song >= 0 && song < RV_MUSIC_STINGS && g_cur >= RV_MUSIC_STINGS && g_next == -1) {
-        g_back = song;                  /* a sting playing: the new song after it, from its start */
-        g_back_at = 0;
-        RV_NOTE("music: cue %d (%s) after the sting @%lu", cue, name, g_clock);
+        g_back = song;                  /* a sting playing: the new song after it, from its place */
+        g_back_at = from;
+        RV_NOTE("music: cue %d (%s) after the sting, from event %u @%lu", cue, name, from, g_clock);
         return;
     }
     g_back = -1;
-    RV_NOTE("music: cue %d (%s)%s, fade %d ms%s @%lu", cue, song >= 0 ? name : "none", body ? " from its loop" : "", fade_ms,
+    RV_NOTE("music: cue %d (%s) from event %u, fade %d ms%s @%lu", cue, song >= 0 ? name : "none", from, fade_ms,
            at == MUSIC_BAR ? " on the bar" : at == MUSIC_BEAT ? " on the beat" : "", g_clock);
-    cue_song(song, fade_ms, at, body && song >= 0 ? g_song[song].loop : 0);
+    cue_song(song, fade_ms, at, from);
 }
 
-void music_cue_at(int cue, int fade_ms, int at) { cue_from(cue, fade_ms, at, 0); }
-void music_cue_body(int cue, int fade_ms, int at) { cue_from(cue, fade_ms, at, 1); }
+void music_cue_at(int cue, int fade_ms, int at) { cue_from(cue, fade_ms, at, 0, -1); }
+void music_cue_body(int cue, int fade_ms, int at) { cue_from(cue, fade_ms, at, 1, -1); }
+void music_cue_sect(int cue, int fade_ms, int sect) { cue_from(cue, fade_ms, MUSIC_NOW, 0, sect); }
 
 void music_sting(int cue)
 {

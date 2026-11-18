@@ -298,6 +298,12 @@ Outbound (`tests/cycle.txt`, `/flight 160`). The music log's lines carry the mus
 (`@ticks`, 240 a second), so a log rendered with `oplrender --log` can be
 cut and labelled.
 
+**The room songs' starting places** (2026-11-17, the user, of the lounge: "people never stay in this room for long and
+so we want them to hear different parts of the music"; of the bar: "4 different sensible start points in this song and
+the original"): Bunk Light, Off-Watch and Off Duty carry a "sect" marker at each later section's start (tools/songs.py:
+four, four and five). Entering a room starts its song at its own start or at one of those, by the clock
+(`game.c` `room_music`, `music_cue_sect`: the instruments chased to that event); the same song already playing goes on.
+
 **Memory:**
 
 - **Loading:** the 28 songs load at start-up into XMS, some 95,000 events
