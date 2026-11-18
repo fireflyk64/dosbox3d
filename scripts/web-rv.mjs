@@ -99,10 +99,11 @@ check("with no files the page plays RetroVega", (await solo.$eval("#program", (e
   await solo.$eval("#program", (el) => [...el.options].map((o) => o.textContent).join(", ")));
 await solo.waitForFunction(() => window.__wcHall && window.__wcHall.inside(), null, { timeout: 30000 }).catch(() => {});
 check("and is in the public lobby at once", await solo.evaluate(() => !!(window.__wcHall && window.__wcHall.inside())));
-const code = await solo.$eval("#room", (el) => el.value);
-check("its room code is an RV- code", /^RV-\d{4}$/.test(code), code);
 await solo.click("#join");
 await solo.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 30000 });
+// (Host makes the room's code when the box is empty, since 1f5f5db2: read it after)
+const code = await solo.$eval("#room", (el) => el.value);
+check("its room code is an RV- code", /^RV-\d{4}$/.test(code), code);
 await solo.click("#fly");
 let t = await waitLog(solo, /input: mouse/, 90000);
 check("the game started (fetched from the site)", logs.solo.some((l) => /fetched \d+ files of RetroVega/.test(l)) && /rvHello: DS is ready/.test(t));
