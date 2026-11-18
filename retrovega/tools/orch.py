@@ -168,6 +168,17 @@ class Piece(Comp):
         self.cc(0, bars - 1, self.beats - 0.05, 11, 127)
 
 
+def in_time(s):
+    """this piece's notes let go only by a note of their pitch that starts while they sound (or with them), on their
+    channel: songs.Comp.note lets go the last one written, even one that starts later, so a block written before an
+    earlier one lost its notes of the same pitches to a tick (Check Six's last two blocks lost their hits, their
+    timpani, their landing horn and strings and the piccolo's run to the dialogue and the dark blocks written after
+    them; Scissors' last riff and its tune's second time the same).  A note that would sound on into a later one of
+    its pitch is let go just before it instead."""
+    s.in_time = True
+    return s
+
+
 def excerpt(dst, src, bar0, bars, at):
     """bars of another piece (its notes, controllers and programs, as they stand there: the chase) into this one
     at bar `at`: the panics quote the battles.  A note still on at the excerpt's end is let go there."""

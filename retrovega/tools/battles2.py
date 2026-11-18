@@ -26,9 +26,10 @@ a hit and standing alone, ending on C or G (its last bar may fill), and no note 
 expression is set at the start, and set full again at each block's downbeat on the channels that swell, so a cut
 into any block finds the parts as the piece has them there.
 """
+
 from compose import chord
 from songs import p
-from orch import NAMES, DRUM, Piece, up, scale_run, ACC332, in_range, hit, held, sung
+from orch import NAMES, DRUM, Piece, up, scale_run, ACC332, in_range, hit, held, sung, in_time
 from battles import (BPM, DIM7_G, begin, motor, block_pad, fill, run, timp_roll, halftime, fifths)
 
 
@@ -186,8 +187,9 @@ def intercept():
 # strings in octaves (3+3+2 in sixteenths, circling C through B), brass calls answered by the riff's strings.  And
 # apprehension on every downbeat: the bass falls by half steps (C, B, B flat, A flat, G: the old lament), each new
 # note held by the low horn and the strings and struck by the timpani, landing and dying away; the brass's calls
-# are sighs, a half step above where they fall to; the horn's tune is over F minor with the low notes falling;
-# then darker, the riff and the sighs in E flat minor, and back with the whole orchestra.
+# are sighs, a half step above where they fall to; the horn's tune is over F minor with the low notes falling,
+# the riff's strings driving under it in the riff's rhythm; then darker, the riff and the sighs in E flat minor,
+# and back: the riff, then over it the sighs soaring in long notes.
 
 CS_R1 = ['Cm', 'G/B', 'Cm/Bb', 'Fm/Ab G']
 CS_R2 = ['Cm', 'G/B', 'Cm/Bb', 'Db G']
@@ -216,14 +218,16 @@ CS_HORN = ['C5:0:3 Ab4:3:1', 'F4:0:2 Ab4:2:1 Db5:3:1', 'F5:0:3 Db5:3:1', 'E5:0:2
 CS_UNDER = ['F3:0:4', 'F3:0:4', 'F3:0:4', 'E3:0:4', 'C3:0:4', 'C3:0:4', 'Ab2:0:4', 'G2:0:4']
 CS_DARK = ['E5:0:2 Eb5:2:2', 'Eb5:0:2 D5:2:2', 'Eb5:0:2 Db5:2:2', 'B4:0:2 Bb4:2:2']
 CS_CLIMB = ['Eb5:0:3 C5:3:1', 'Db5:0:2 F5:2:2', 'Ab5:0:2 G5:2:1 F5:3:1', 'G5:0:2 D5:2:1 B4:3:1']
+CS_SOAR = ['Ab5:0:1.5 G5:1.5:2.5', 'C6:0:1.5 B5:1.5:2.5', 'Eb6:0:1.5 D6:1.5:1 C6:2.5:1.5', 'Db6:0:2 B5:2:2']
 CS_LOW = [(0, .45, 'r'), (.5, .45, 'r'), (1, .45, '8'), (1.5, .45, 'r'), (2, .45, 'r'), (2.5, .45, 'r'),
           (3, .45, '8'), (3.5, .45, '5')]
+CS_PULSE = (0, .75, 1.5, 2, 2.75, 3.5)              # the riff's own rhythm (3+3+2 in sixteenths, twice a bar)
 CS_TURN = [2, 1, 0, 1, 3, 1, 0, 1]
 
 
 def check_six():
     form = ['Cm'] + CS_R1 + CS_R2 + CS_K1 + CS_K2 + CS_N1 + CS_N2 + CS_D1 + CS_D2 + CS_R1 + CS_R2
-    s = Piece(BPM, 1313, form, level=0.2)
+    s = in_time(Piece(BPM, 1313, form, level=0.2))
     riff = 12                                       # (the riff's own strings, spiccato in octaves: Break and
     s.setup(riff, 44, 110)                          # Attack's)
     ch = begin(s, extra=(riff,))
@@ -233,7 +237,7 @@ def check_six():
     R1, R2, K1, K2, N1, N2, D1, D2, Q1, Q2 = (1 + 4 * k for k in range(10))
     s.loop_at(1)
     s.sections(1, n)
-    fresh(s, range(1, n), (hn, hn2, br, bs))
+    fresh(s, range(1, n), (hn, hn2, br, bs, st))
     motor(s, mo, range(0, n), CS_TURN, 58)
     s.bass(lo, range(0, n), CS_LOW, 82, lo=36, hi=47)
     timp_roll(s, tp, 0, 0, 4, 'C2', 10, 92)
@@ -248,16 +252,20 @@ def check_six():
                 s.play(tp, blk + i, float(beat), .6, in_range(p(name), 31, 44), 92 if beat == '0' else 82)
     # the riff, half-time hits under it, the fall under that
     for blk, text, vel in ((R1, CS_RIFF[:4], 92), (R2, CS_RIFF[4:], 92), (Q1, CS_RIFF[:4], 94),
-                           (Q2, [up(t, 12) for t in CS_RIFF[4:]], 94)):
+                           (Q2, CS_RIFF[4:], 92)):
         s.crash(blk, 0, 100 if blk in (R1, Q1) else 94)
         s.tune(riff, blk, text, vel)
         s.tune(riff, blk, [up(t, -12) for t in text], vel - 8)
-        downbeats(blk, CS_FALL)
+        downbeats(blk, CS_FALL, strings=blk != Q2)        # (Q2: its low strings' voices to the tune)
         halftime(s, hi_, range(blk, blk + 4), 110 if blk < K1 else 112)
-    s.tune(br, Q2, CS_RIFF[4:], 90)                 # the last time the brass on the riff, the horn under it, the
-    s.tune(hn, Q2, [up(t, -12) for t in CS_RIFF[4:]], 80)                           # piccolo over the end
-    s.tune(hn, Q1, [up(t, 12) for t in CS_FALL], 74)
-    run(s, pc, Q2 + 3, 2, DIM7_G, 0.25, 60, 2)
+    # the last time a tune in long notes over the riff: the sighs soaring (each downbeat a half step above where
+    # it falls, the heads climbing A flat, C, E flat, then D flat down to the leading note) on the strings, the
+    # horn an octave under; no riff doubled (2026-11-17, the user: at 1:05 "this sounds a bit too much like
+    # gameboy "boss music"": the riff had been up an octave with the brass and the horn on it in octaves, a
+    # piccolo's arpeggio after, and its hits, timpani and landing notes cut to a tick: in_time)
+    sung(s, st, Q2, CS_SOAR, 94, e0=90, e1=127, e2=104)
+    sung(s, hn, Q2, [up(CS_SOAR[0], -12), 'G4:0:4'] + [up(t, -12) for t in CS_SOAR[2:]], 88, e0=90, e1=127,
+         e2=104)                                    # (G/B: the horn on G, not the C a step over the riff's B)
     timp_roll(s, tp, Q2 + 3, 2, 2, 'G1', 20, 100)
     toms(s, Q2 + 3, 3, 86)
     toms(s, R2 + 3, 3, 80)
@@ -273,12 +281,19 @@ def check_six():
         s.play(tp, b, 0, .6, in_range(chord(s.sym_at(b, 0)).bass, 33, 44), 92)
     timp_roll(s, tp, K2 + 3, 0, 4, 'G1', 14, 96)
     toms(s, K2 + 3, 3, 82)
-    # the horn's tune over F minor, the low notes falling under it, the brass holding the chords, hits on 3+3+2
+    # the horn's tune over F minor, the low notes falling under it, the brass holding the chords; under them the
+    # riff's strings driving in the riff's own rhythm on each chord's bass in octaves, short, and the hits as the
+    # riff's are (one and three, the snare on three) (2026-11-17, the user, at 0:38: "got a bit slow paced
+    # here--love the sounds though": the riff's strings had stopped and the hits gone half as many)
     for blk in (N1, N2):
         s.crash(blk, 0, 104)
-        halftime(s, hi_, range(blk, blk + 4), 108, full=True)
+        halftime(s, hi_, range(blk, blk + 4), 108)
+        for b in range(blk, blk + 4):
+            for beat in CS_PULSE:
+                q = in_range(chord(s.sym_at(b, beat)).bass, 48, 59)
+                s.play(riff, b, beat, .2, [q, q + 12], 84 + (8 if beat in (0, 2) else 0), 3)
     sung(s, hn, N1, CS_HORN, 92, e0=80, e1=127, e2=110)
-    block_pad(s, br, range(N1, N1 + 8), 57, 70, 3, 56)
+    block_pad(s, br, range(N1, N1 + 8), 57, 70, 2, 60)      # (two: the riff's strings' voices)
     downbeats(N1, CS_UNDER[:4], 80, strings=False)
     downbeats(N2, CS_UNDER[4:], 80, strings=False)
     run(s, pc, N2 + 3, 2, DIM7_G, 0.25, 58, 2)

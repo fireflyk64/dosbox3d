@@ -141,7 +141,7 @@ every flight piece rewritten for the orchestra, and the score's remixes.
 | BATTLE2 | Break and Attack | C minor, 140 | half-time hits over the motor at full speed, a riff of its own on strings, a Neapolitan horn tune, a lift into A flat |
 | BATTLE3 | Furball | C phrygian, 140 | the riff on synth brass and horn over driving fifths, up a minor third the second time, a tutti stop |
 | BATTLE4 | Intercept | C minor over a C pedal, 140 | Contact's sibling: the synth brass calls (a short note leaping to a long one) and two horns answer in thirds over galloping low strings and the spiccato; the strings' long tune to a high C, a dark horn chorale, the call and answer for the whole orchestra |
-| BATTLE5 | Check Six | C minor, 140 | Break and Attack's sibling, with apprehension on the downbeats: a bass falling by half steps (C, B, B flat, A flat, G) lands on every downbeat on the low horn, low strings and timpani; the brass's calls sigh down a half step; a darker block in E flat minor |
+| BATTLE5 | Check Six | C minor, 140 | Break and Attack's sibling, with apprehension on the downbeats: a bass falling by half steps (C, B, B flat, A flat, G) lands on every downbeat on the low horn, low strings and timpani; the brass's calls sigh down a half step; the horn's F minor tune over the riff's pulsing strings and hits; a darker block in E flat minor; the last block a long-note tune of sighs on the strings and horn over the riff |
 | BATTLE6 | Scissors | C phrygian, 140 | Furball's sibling: two lines from one C over driving fifths, the brass climbing and the horn falling, open to the octave on 3+3+2 and snipped shut; the horn's tune over F minor, E flat, D flat, C; the riff a half step up; a stop on 3+3+2 with toms |
 | ROCKS | Rock Field | G minor, 120 | a march through the rocks (snare, timpani, low strings), the horn's theme, a drift through B flat with the harp and piccolo glinting, a brass descant |
 | ROCKS2 | Drift Field | D dorian, 118 | exploring, not marching: the spiccato drifting in sixteenths, the horn's tune wandering up; rocks going by, string whooshes, harp glissandi and timpani rumbles panned across, a soft tom where each passes closest, a few near misses with a crash; the middle through B flat and G flat lydian |
@@ -165,7 +165,13 @@ victory and lost needs another variation"), all written with
 Deck and the won debrief's Stand Down. A song carries at most 12 "sect"
 markers (`midi.py` refuses more, `music.c` MAX_SECT), and its name is a
 DOS name, eight letters at most (`rvdata.py` asserts it: QUARTERS2 would
-have opened QUARTERS.MID).
+have opened QUARTERS.MID). `orch.in_time(piece)` (2026-11-17's third pass) lets a note
+go only for a note of its pitch that starts while it sounds: `songs.Comp.note` lets go the one written last,
+even one that starts later, so a block written in the code before an earlier one lost notes of the same pitches
+to a tick (Check Six's last block, the riff tripled an octave up over orchestra-hit blips, was the user's
+"gameboy boss music" in part). The pieces revised since use it, but for Drift Field (its notes back put it over the
+voices band); the others still have their cut notes (Intercept 80, Furball 48, Drift Field 35, Starfall 28, a
+few in others) until the user hears them fixed.
 
 - **The cruise cycle:** each cruise piece's riser lands on its own
   dominant, and the next in the cycle starts in its key: Outbound in E

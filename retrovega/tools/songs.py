@@ -77,11 +77,25 @@ class Comp(midi.Song):
         self.rng = random.Random(seed)
         self.swing = swing
         self.sounding = {}
+        self.in_time = False            # (orch.in_time: a note lets go only one of its pitch sounding as it starts)
+        self.notes_at = {}
 
     def note(self, ch, beat, dur, pitch, vel=90):
         """a note; one still sounding at that pitch on that channel is let go just before"""
         t0, t1 = int(beat * midi.PPQ), int((beat + dur) * midi.PPQ) - 1
         ev = self.tracks.setdefault(ch, [])
+        if self.in_time:
+            mine = self.notes_at.setdefault((ch, pitch), [])
+            for i_on, i_off in mine:
+                a, b = ev[i_on][0], ev[i_off][0]
+                if a <= t0 <= b:
+                    ev[i_off] = (max(t0 - 1, a + 1), ev[i_off][1])
+                elif t0 < a <= t1:
+                    t1 = max(t0 + 1, a - 1)
+            ev.append((t0, bytes((0x90 | ch, pitch, vel))))
+            ev.append((t1, bytes((0x80 | ch, pitch, 0))))
+            mine.append((len(ev) - 2, len(ev) - 1))
+            return
         last = self.sounding.get((ch, pitch))
         if last is not None and ev[last][0] >= t0:
             ev[last] = (max(t0 - 1, ev[last - 1][0] + 1), ev[last][1])
