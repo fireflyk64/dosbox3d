@@ -5117,7 +5117,10 @@ static void t_easy_guns(void)
     static const char __far e_turret[] = "on easy the laser turret's bolt flies %d kps: the data's %d";
     static const char __far e_shot[] = "on easy the player's laser shot steps %d km: %d at its speed";
     static const char __far e_back[] = "back on medium the laser flies %d kps, the Photon Mk III %d: the data's %d";
-    const RvWeapon __far *las = weapon(0x00), *ph3 = weapon(0x09), *tur = weapon(0x14);
+    const RvWeapon __far *las = weapon(0x00);   /* (each its own declaration: a "__far" binds to its declarator alone,
+                                           and "*ph3, *tur" after it were near pointers on DOS, truncated) */
+    const RvWeapon __far *ph3 = weapon(0x09);
+    const RvWeapon __far *tur = weapon(0x14);
     uint8_t keep_easy = g_difficulty, keep = g_rule_flags, keep_hit = g_rule_hit;
     uint16_t las0, ph30, tur0;
     if (!las || !ph3 || !tur)
