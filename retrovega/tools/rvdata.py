@@ -177,7 +177,8 @@ VITALS = 8
 # 5 bytes: the weapon's type (a word), the mount across and up (int8, 1/32 of the ship's half box: collide_half),
 # the state (bit 7 destroyed; a gun's cooldown frames, a launcher's rounds).  A gun and a turret are a record each,
 # a missile kind one launcher with its rounds.  The mounts are placeholders: a type's guns spread evenly over the
-# middle 60% of its hit box's width, a little below its middle; turrets above, launchers under the belly
+# middle 60% of its hit box's width, a little below its middle; turrets above, launchers under the belly; or its guns'
+# own (ships.csv `mounts`, "X:Y X:Y ..." in the guns column's order, 32nds of the half box across, + its right, and up)
 GUNTABLE, GUNS = 0x33, 10
 # a weapon (data/weapons.csv): its kind, look (how its shot is drawn), lock, and numbers; range in km (the csv's
 # thousands of km)
@@ -505,6 +506,15 @@ def volume_box(hit):
 def compile_loadout(r, weapons, hit):
     """a ships.csv row's guns, turrets and missiles: (guns, missile rounds, the gun table's bytes)"""
     recs, guns, rounds = [], 0, 0
+    try:
+        mounts = [tuple(int(v) for v in m.split(':')) for m in (r.get('mounts') or '').split()]
+    except ValueError:
+        raise Fail('ships.csv %s mounts: %r is not X:Y X:Y ...' % (r['key'], r['mounts']))
+    if any(len(m) != 2 or not -127 <= m[0] <= 127 or not -127 <= m[1] <= 127 for m in mounts):
+        raise Fail('ships.csv %s mounts: %r: two numbers each, -127 to 127' % (r['key'], r['mounts']))
+    want = sum(int(tok.rpartition(':')[2].split('x', 1)[0]) for tok in r['guns'].split()) if mounts else 0
+    if mounts and len(mounts) != want:
+        raise Fail('ships.csv %s mounts: %d of them for %d guns' % (r['key'], len(mounts), want))
     for col in ('guns', 'turrets', 'missiles'):
         for tok in r[col].split():
             place, _, tok = tok.rpartition(':')
@@ -523,6 +533,8 @@ def compile_loadout(r, weapons, hit):
             for i in range(count):                             # a record a gun, spread across the middle; an odd
                 x = (2 * i + 1 - count) / max(count, 1) * 0.6 * hit[0] / 127 * 32   # count's middle one on top (the
                 up = 12 if col == 'turrets' else 8 if count % 2 and i == count // 2 else -2   # Schroedinger's third laser)
+                if col == 'guns' and mounts:                   # (or the row's own)
+                    x, up = mounts.pop(0)
                 recs.append((t, int(round(x)), up, 0))
             guns += count if col == 'guns' else 0
     if len(recs) > GUNS:
