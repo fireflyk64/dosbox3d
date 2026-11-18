@@ -52,8 +52,16 @@ static const char k_usage[] =
     "  --shiptrace FILE the flight traced a step at a time, as the layer's WCNET_SHIPTRACE traces the old games\n"
     "                   (tests/wc1/README.md): a line a ship, the shots and the hits\n"
     "  --hunt S         the player faces the nearest enemy every S seconds with the trigger held (a test pilot)\n"
+    "  --hunt-first     --hunt faces the first living enemy by slot (the old rig's `!face=foe`), not the nearest\n"
     "  --nodamage       the player takes no damage (playerCanBeDamaged 0: a long look at the enemies)\n"
     "  --autopilot S,.. headless: the autopilot key pressed at those seconds (the old game's rig's `a`)\n"
+    "  --tail KM        headless: the player put KM behind the first living enemy every old-game frame, facing its\n"
+    "                   way at its own speed, the trigger held (the old game's rig's `!tail=foe:KM`, tests/wc1/README.md)\n"
+    "  --shoot Q[:back] headless: the first living enemy hit for Q from dead ahead (or behind) every 3 old-game\n"
+    "                   frames (the old game's rig's `!shoot=foe:Q`): its damage model alone\n"
+    "  --disarm         every ship but the player's without guns or launchers (the old rig's emptied gun lists)\n"
+    "  --mounts X:Y,..  the player's guns at these mounts (32nds of its half box across and up), as many guns as\n"
+    "                   mounts, each the first gun's weapon (a test of the guns' spread)\n"
     "keys: arrows steer, Q E (keypad Ins Del) roll, Space fires, Enter a missile, Tab (keypad *) afterburner,\n"
     "      + - F S \\ Backspace the throttle, A autopilot,\n"
     "      M mouse steering on/off (or hold the right button), P pause, N a step while paused, Esc ends\n";
@@ -67,7 +75,12 @@ static struct {
     const char *scene, *shiptrace, *autopilot;
     int32_t hunt, speed;                /* --hunt's seconds (0 off); the scene's player throttle (-1 the mission's) */
     int nodamage;
-} opt = { 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, -1, 0 };
+    int32_t tail;                       /* --tail's km (0 off) */
+    int hunt_first;
+    const char *shoot;
+    int disarm;
+    const char *mounts;
+} opt = { 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 0 };
 
 static RvMission g_m;
 static uint16_t g_mission;
@@ -542,6 +555,8 @@ static void start(void)
     if (!ship_type(g_camp.player_ship))
         fail("no such ship type");
     camp_mission(g_mission, &g_m);
+    if (opt.ship >= 0)                  /* (--ship over the mission's own fighter line, which camp_load_units takes) */
+        g_m.fighter = (uint8_t)opt.ship;
     camp_load_units(&g_m);
     /* the flight begins, as flight.c's flight_startup has it */
     memset(maybeEntityType, 0, RV_SLOTS * 2);
@@ -570,6 +585,31 @@ static void start(void)
         load_scene(opt.scene);
     if (opt.nodamage)
         playerCanBeDamaged = 0;
+    if (opt.disarm) {
+        int16_t k;
+        for (k = 1; k < NUM_SHIP_SLOTS; k++)
+            GUN_COUNT(k) = 0;
+    }
+    if (opt.mounts) {                   /* (the player's guns re-mounted: the first gun's weapon at each) */
+        const char *q = opt.mounts;
+        uint16_t w = GUN_TYPE(0, 0);
+        int16_t g = 0;
+        while (*q && g < 10) {
+            uint8_t *r = GUN_REC(0, g);
+            r[0] = (uint8_t)w; r[1] = (uint8_t)(w >> 8);
+            r[2] = (uint8_t)(int8_t)atoi(q);
+            q = strchr(q, ':');
+            r[3] = (uint8_t)(int8_t)(q ? atoi(q + 1) : 0);
+            r[4] = 0;
+            g++;
+            q = q ? strchr(q, ',') : 0;
+            if (!q)
+                break;
+            q++;
+        }
+        GUN_COUNT(0) = (uint8_t)g;      /* (its launchers gone: a test of the guns) */
+        rv_log("rvsim: the player's guns: %d at %s", g, opt.mounts);
+    }
     if (opt.shiptrace && (host_shiptrace = fopen(opt.shiptrace, "w")) == 0)
         fail("cannot write the trace file");
 }
@@ -674,7 +714,7 @@ static void hunt_face(void)
     for (s = 1; s <= RV_MAX_SHIP_SLOT; s++) {
         if (!slot_is_ship(s) || commAnimInfo[s] == commAnimInfo[0] || shipAiState[s] == 9)
             continue;
-        d = player_km(s);
+        d = opt.hunt_first ? s : player_km(s);
         if (d < bd) {
             bd = d;
             best = s;
@@ -689,6 +729,47 @@ static void hunt_face(void)
     ship_face(0, (int16_t)lf_atan2(v.x, v.z),
               lf_atan2(v.y, horiz));
     g_sys.target = best;
+}
+
+/* --tail: the player opt.tail km behind the first living enemy, facing its way, at its own speed along that way */
+static void tail_place(void)
+{
+    int16_t s, foe = -1;
+    const RvVec3 *F;
+    int32_t back = opt.tail * KM, step = KPS_STEP(speedLo[0]);
+    for (s = 1; s <= RV_MAX_SHIP_SLOT && foe < 0; s++)
+        if (slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9)
+            foe = s;
+    if (foe < 0)
+        return;
+    F = &gOrientationFrontVector[foe];
+    gPositionVector[0].x = gPositionVector[foe].x - FIX_MUL(F->x, back);
+    gPositionVector[0].y = gPositionVector[foe].y - FIX_MUL(F->y, back);
+    gPositionVector[0].z = gPositionVector[foe].z - FIX_MUL(F->z, back);
+    gOrientationFrontVector[0] = *F;
+    gOrientationRightVector[0] = gOrientationRightVector[foe];
+    gOrientationUpVector[0] = gOrientationUpVector[foe];
+    gVelocityVector[0] = vec3(FIX_MUL(F->x, step), FIX_MUL(F->y, step), FIX_MUL(F->z, step));
+    g_sys.target = foe;
+}
+
+/* --shoot: the first living enemy hit for Q at its nose (or tail), as the old rig's !shoot hits it */
+static void shoot_foe(void)
+{
+    int16_t s, foe = -1;
+    int32_t q = atoi(opt.shoot), r;
+    RvVec3 at;
+    const RvVec3 *F;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT && foe < 0; s++)
+        if (slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9)
+            foe = s;
+    if (foe < 0 || q <= 0)
+        return;
+    F = &gOrientationFrontVector[foe];
+    r = collide_half(foe) / 2 * (strstr(opt.shoot, ":back") ? -1 : 1);
+    at = vec3(gPositionVector[foe].x + FIX_MUL(F->x, r), gPositionVector[foe].y + FIX_MUL(F->y, r),
+              gPositionVector[foe].z + FIX_MUL(F->z, r));
+    (void)do_damage(0, (uint16_t)foe, (uint16_t)q, RV_WHERE(&at));
 }
 
 /* a step; 0 when the flight is over */
@@ -724,6 +805,13 @@ static int step(void)
             if (opt.hunt) {             /* (the test pilot: onto the nearest enemy every so often, firing) */
                 if (g_steps % (uint32_t)(opt.hunt * LOGIC_HZ) == 0)
                     hunt_face();
+                g_pilot.guns = 1;
+            }
+            if (opt.shoot && g_steps % (3 * WC_FRAME_STEPS) == 0)
+                shoot_foe();
+            if (opt.tail) {             /* (the old rig's tail: every frame of the old game's, firing) */
+                if (g_steps % WC_FRAME_STEPS == 0)
+                    tail_place();
                 g_pilot.guns = 1;
             }
         }
@@ -839,6 +927,11 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--shiptrace")) opt.shiptrace = VAL;
         else if (!strcmp(a, "--hunt")) opt.hunt = atoi(VAL);
         else if (!strcmp(a, "--nodamage")) opt.nodamage = 1;
+        else if (!strcmp(a, "--tail")) opt.tail = atoi(VAL);
+        else if (!strcmp(a, "--disarm")) opt.disarm = 1;
+        else if (!strcmp(a, "--hunt-first")) opt.hunt_first = 1;
+        else if (!strcmp(a, "--shoot")) opt.shoot = VAL;
+        else if (!strcmp(a, "--mounts")) opt.mounts = VAL;
         else if (!strcmp(a, "--autopilot")) opt.autopilot = VAL;
         else {
             fputs(k_usage, strcmp(a, "--help") && strcmp(a, "-h") ? stderr : stdout);

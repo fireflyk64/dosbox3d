@@ -1,0 +1,6 @@
+# Three Nicanders where the old game's first mission had its three Dralthi at nav 1 (enyo1.scene without the wingman):
+# the kill rigs' target (README.md "The guns against the old game's")
+player 300
+ship NICANDR 1 -6986 754 13550 90 0 200
+ship NICANDR 1 -6758 633 12679 90 0 200
+ship NICANDR 1 -7890 773 13678 90 0 200
