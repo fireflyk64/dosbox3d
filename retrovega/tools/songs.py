@@ -281,6 +281,30 @@ def night_cycle(s, b0, rng):
     return b0 + 32
 
 
+# the call's fifth bar and its answer, written over (the user, 2026-11-17, at 5:56: "it gets a bit bumpy here"):
+# the tune had climbed C sharp, D, E, F sharp in even quarters, its D a half step on the chord's root, into its
+# loudest note, and come down the same stairs; now each glides long-short, chord tones on the beats, into the
+# same notes as before (the same number of notes: every other note keeps its velocity)
+LH_SMOOTH = {4: 'C#5:0:1.5 B4:1.5:.5 E5:2:1.5 G#5:3.5:.5', 6: 'F#5:0:1.5 D5:1.5:.5 C#5:2:1.5 D5:3.5:.5'}
+
+
+def written_over(notes, b0, bars):
+    """compose.Tune's notes with some bars (from b0) replaced, each by as many notes as it had, in their place"""
+    out, done = [], set()
+    for n in notes:
+        k = n[0] - b0
+        if k not in bars:
+            out.append(n)
+        elif k not in done:
+            done.add(k)
+            new = [(b0 + k, float(beat), float(dur), p(name))
+                   for name, beat, dur in (tok.split(':') for tok in bars[k].split())]
+            if len(new) != sum(1 for x in notes if x[0] == b0 + k):
+                raise ValueError('written_over: bar %d wants as many notes as it had' % k)
+            out += new
+    return out
+
+
 def letters_home(s, b0, rng):
     """IV, A major: the vibraphone and a second piano answer each other, two bars at a time"""
     a1 = bars_of('Amaj9 | F#m9 | Dmaj9 | E9sus4 | C#m7 | F#m9 | Bm9 | E9sus4')
@@ -298,7 +322,7 @@ def letters_home(s, b0, rng):
         r = bass.note(c)
         s.play(2, bar, 0, 1.9, r, 72)
         s.play(2, bar, 2, 1.9, r + 7 if r + 7 <= 47 else r - 5, 62)
-    notes = Tune(rng, 'A', 'major', 64, 81).period(b0, harmony, CALM, CALM_END, phrase=2)
+    notes = written_over(Tune(rng, 'A', 'major', 64, 81).period(b0, harmony, CALM, CALM_END, phrase=2), b0, LH_SMOOTH)
     put(s, 3, [n for n in notes if (n[0] - b0) // 2 % 2 == 0], 82)     # the call
     put(s, 5, [n for n in notes if (n[0] - b0) // 2 % 2 == 1], 72)     # the answer
     return b0 + 32
