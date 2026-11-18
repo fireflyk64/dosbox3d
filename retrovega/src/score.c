@@ -227,6 +227,11 @@ void score_start(const RvMission __far *m)
         g_sc.begun = 1;
         g_sc.next[0] = (unsigned char)((g_camp.seed + 3UL * g_camp.flown) % (RV_MUSIC_HOMEWARD - RV_MUSIC_CRUISE1));
         g_sc.next[1] = (unsigned char)((g_camp.seed / 8 + g_camp.flown) % 3);
+        /* (the splashes' stings likewise (the user, 2026-11-17: "every time I get the victory tune it always plays the
+         * *same* default song"): they went round from the first at every start of the game, so a session of a kill or
+         * two heard Splash One every time; now from where the clock has got to.  The music only watches the game: no
+         * machine's world depends on which sting it plays) */
+        g_sc.victory = (unsigned char)(clock240() % 3);
     }
 #ifdef RV_TESTS
     if (g_score_test == 3)
