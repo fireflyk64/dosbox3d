@@ -72,13 +72,22 @@ FIXED_PLACES = {'TECH': 'the deck', 'TALLY': 'the bar', 'XO': 'the briefing room
 TYPES = {'patrol': 0}
 # the music's cues, in their files' order: the rooms' songs (tools/songs.py, tools/midi.py), then the flight's
 # (tools/flightsongs.py; src/score.c picks them), the stings last (played once: music_sting)
-MUSIC_FILES = ['BRIEF', 'BAR', 'LAUNCH', 'WIN', 'LOSE', 'QUARTERS', 'LOUNGE',
+# (the order is the score's: src/score.c reads the cruise songs as CRUISE1 up to HOMEWARD, the battles as BATTLE1 up to
+# ROCKS, the panics' levels as PANIC1 + level and their siblings as PANIC1B + level, the victory stings as VICTORY1 up
+# to TRAGEDY, and every cue from VICTORY1 on as played once (RV_MUSIC_STINGS); game.c picks QUARTERS/QUARTER2,
+# BAR/BAR2, LAUNCH/LAUNCH2, WIN/WIN2, LOST/LOST2.  The siblings: the user's soundtrack review, 2026-11-17)
+MUSIC_FILES = ['BRIEF', 'BAR', 'LAUNCH', 'WIN', 'LOSE', 'QUARTERS', 'LOUNGE', 'BAR2', 'QUARTER2', 'LAUNCH2', 'WIN2',
                'CRUISE1', 'CRUISE2', 'CRUISE3', 'CRUISE4', 'CRUISE5', 'CRUISE6', 'CRUISE7', 'CRUISE8',
-               'HOMEWARD', 'HOMELOSS', 'BATTLE1', 'BATTLE2', 'BATTLE3', 'ROCKS',
-               'PANIC1', 'PANIC2', 'PANIC3', 'LOST', 'VICTORY1', 'VICTORY2', 'VICTORY3', 'TRAGEDY',
-               'CAPLOST']   # (CAPLOST: LOST once, as a sting, for a capital ship of ours destroyed in flight: score.c)
+               'CRUISE9', 'CRUISE10', 'CRUISE11', 'CRUISE12',
+               'HOMEWARD', 'HOMELOSS', 'BATTLE1', 'BATTLE2', 'BATTLE3', 'BATTLE4', 'BATTLE5', 'BATTLE6',
+               'ROCKS', 'ROCKS2', 'PANIC1', 'PANIC2', 'PANIC3', 'PANIC1B', 'PANIC2B', 'LOST', 'LOST2',
+               'VICTORY1', 'VICTORY2', 'VICTORY3', 'VICTORY4', 'VICTORY5', 'VICTORY6', 'TRAGEDY',
+               'CAPLOST', 'CAPLOST2']   # (CAPLOST, CAPLOST2: LOST and LOST2 once, as a sting, for a capital ship of ours
+                                        # destroyed in flight: score.c)
 MUSIC = {'briefing': 0, 'bar': 1, 'launch': 2, 'win': 3, 'lose': 4, 'quarters': 5, 'lounge': 6}
 MUSIC.update({f.lower(): i for i, f in enumerate(MUSIC_FILES) if i >= len(MUSIC)})
+for _f in MUSIC_FILES:                  # (a DOS name: eight letters at most, or DOS opens the first eight's file, and
+    assert len(_f) <= 8, _f             # music.c's g_files[][13] keeps "NAME.MID" with its NUL)
 ROLES = {'pilot': 0, 'hero': 1, 'barman': 2, 'xo': 3, 'tech': 4}
 
 # record layouts: (C type, field, struct format)

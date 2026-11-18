@@ -130,26 +130,47 @@ every flight piece rewritten for the orchestra, and the score's remixes.
 | CRUISE6 | Long Burn | A minor, 12/8 at 112 | anticipation: eight bars of repeated A's burning under turning chords, then the release into C# minor, the strings' tune |
 | CRUISE7 | Waypoint | C minor, 168 | brisk travel: the strings at a gallop over a pedal C, the brass's call in long notes over the horns' falling line, a lift through A flat and B flat, home through A flat and B flat to C |
 | CRUISE8 | Starwake | D minor, 150 | pensive and very fast in turn: chimes tolling over the horn's lament, then runs (sixteenths, the chimes' fast figure, the horns falling D, C, B flat, A); the lament darker in G minor on the strings, the runs wilder round the Neapolitan E flat; chimes tolling A into the top |
+| CRUISE9 | Apogee | F# minor, 12/8 at 120 | wonder, Wide Orbit's sibling: the harp climbs the chord for a bar and falls the next over a spiccato turning like a wheel, the horn singing a fifth up and holding, round the major-third cycle F# minor, D, B flat, back through B minor and the Neapolitan G |
+| CRUISE10 | Faint Signal | A minor, 152 | searching, Sensor Sweep's sibling: the spiccato stacks root, fifth and ninth in 3+3+2 while the roots fall by thirds, the horn reaching up in fifths; the harp sweeps up E's chord and the signal is found in C, lifted to E flat |
+| CRUISE11 | Nightside | C# minor, 146 | dark wonder, Deep Lane's sibling: the spiccato falling in 3+3+2 ripples, one phrase sinking a major third twice (C# minor, A minor on the horn, F minor high on the strings with the timpani, the darkest), C7 over E sliding into C# minor for the payoff, whole-tone piccolo flourishes |
+| CRUISE12 | Starfall | E minor, 150 | Starwake inverted, with far less chiming: its lament upside down, its falling drive climbing, its chime figure falling threes on the harp, its rising piccolo runs falling in 32nds; the second lament a major third down in C minor |
+| LAUNCH2 | Catapult | C minor into E, 156 | the deck's pulses on C with the timpani's heartbeat and the horn's call; the catapult held on B, the B's doubling, a run up three octaves, horns swelling on B7; then E major, Outbound's octave motor, the brass fanfare, a lift into A flat |
 | HOMEWARD | Homeward, won | B flat, 12/8 at 108 | harp eighths, the horn's tune, a lift into D for a brass chorale, home through B flat |
 | HOMELOSS | Homeward, lost | B flat minor, 12/8 at 92 | the same, slower and sadder: horns for the brass, no hits, sinking a major third to G flat |
 | BATTLE1 | Contact | C sus pedal into C minor, 140 | the call on the horn answered by synth brass over spiccato sixteenths, low strings and timpani |
 | BATTLE2 | Break and Attack | C minor, 140 | half-time hits over the motor at full speed, a riff of its own on strings, a Neapolitan horn tune, a lift into A flat |
 | BATTLE3 | Furball | C phrygian, 140 | the riff on synth brass and horn over driving fifths, up a minor third the second time, a tutti stop |
+| BATTLE4 | Intercept | C minor over a C pedal, 140 | Contact's sibling: the synth brass calls (a short note leaping to a long one) and two horns answer in thirds over galloping low strings and the spiccato; the strings' long tune to a high C, a dark horn chorale, the call and answer for the whole orchestra |
+| BATTLE5 | Check Six | C minor, 140 | Break and Attack's sibling, with apprehension on the downbeats: a bass falling by half steps (C, B, B flat, A flat, G) lands on every downbeat on the low horn, low strings and timpani; the brass's calls sigh down a half step; a darker block in E flat minor |
+| BATTLE6 | Scissors | C phrygian, 140 | Furball's sibling: two lines from one C over driving fifths, the brass climbing and the horn falling, open to the octave on 3+3+2 and snipped shut; the horn's tune over F minor, E flat, D flat, C; the riff a half step up; a stop on 3+3+2 with toms |
 | ROCKS | Rock Field | G minor, 120 | a march through the rocks (snare, timpani, low strings), the horn's theme, a drift through B flat with the harp and piccolo glinting, a brass descant |
+| ROCKS2 | Drift Field | D dorian, 118 | exploring, not marching: the spiccato drifting in sixteenths, the horn's tune wandering up; rocks going by, string whooshes, harp glissandi and timpani rumbles panned across, a soft tom where each passes closest, a few near misses with a crash; the middle through B flat and G flat lydian |
 | PANIC1 | Hull Breach | C, 140 | the fight going on under the damage: a low cluster, alarms in seconds, the call a tritone off |
 | PANIC2 | Systems Failing | C, 140 | the fight breaking up: the battles' blocks quoted in turn (Contact's call and answer, Break and Attack's riff and Neapolitan, Furball's riff and surprise), two-bar bursts between them: the half-step climb, wild tritone bars, the power failing, the alarm |
 | PANIC3 | Abandon Ship | 140 to 200 | shorter quotes, wilder bursts: panic in tritones, hope dashed, dashed harder, a cluster, the call a tritone off; the last six bars speeding up into the loop |
+| PANIC1B | Damage Report | C, 140 | Hull Breach's calmer sibling: the motor on its C pedal, low strings on 3+3+2, a timpani heartbeat, a sighing horn tune over the pedal, Contact's call at half speed, one small burst of alarm in eight bars |
+| PANIC2B | Reroute Power | C (F minor in the middle), 140 | Systems Failing's focused sibling (the user: "so the player has time to make it right"): one steady pulse under a four-bar chord cycle, one clear step-step-hold tune on the horn, the brass, the strings, then everyone; the alarms short, once a phrase |
 | VICTORY1..3 | Splash One..Three | C, D, B flat | bittersweet: bVI-bVII-I, the minor plagal, a deceptive turn |
+| VICTORY4..6 | Splash Four..Six | C, D, B flat | their siblings, one each: the major third brought in late; the minor plagal over a bass falling B, B flat; the deceptive turn struck on G with the timpani |
 | TRAGEDY | Wingman Lost | B flat minor, 52 | a funeral march, 14 s |
+| LOST2 | Empty Deck | B flat minor, 46 | Carrier Lost's sibling (tools/stings2.py): hollow fifths falling B flat, A flat, G flat, F; the far horn picks up the way home's tune where Carrier Lost broke off and stops short; the oboe falls once from far above |
 
-Some 21 minutes of music, every piece its own, each going round from
+Some 34 minutes of music, every piece its own, each going round from
 its loop. `tools/flightsongs.py` has Outbound and the way home and gathers
 the rest from `cruise_a.py`, `cruise_b.py`, `battles.py` and `panics.py`,
-all written with `tools/orch.py`.
+and their siblings from `cruise_c.py`, `battles2.py` and `panics2.py`
+(the user's soundtrack review, 2026-11-17: "every combat and flight and
+victory and lost needs another variation"), all written with
+`tools/orch.py`; `tools/stings2.py` has the splashes' siblings, Empty
+Deck and the won debrief's Stand Down. A song carries at most 12 "sect"
+markers (`midi.py` refuses more, `music.c` MAX_SECT), and its name is a
+DOS name, eight letters at most (`rvdata.py` asserts it: QUARTERS2 would
+have opened QUARTERS.MID).
 
 - **The cruise cycle:** each cruise piece's riser lands on its own
-  dominant, and the next in the cycle starts in its key: E minor, G minor,
-  B minor, D, F minor, A minor, C, G, and round to E.
+  dominant, and the next in the cycle starts in its key: Outbound in E
+  minor, then G minor, B minor, D, F minor, A minor, C minor, D minor (Starwake),
+  F# minor, A minor, C# minor, E minor (Starfall), and round to Outbound.
 - **Blocks:** `Piece.sect(bar)` (or `sections`) writes a "sect" marker at
   each block. A fight's block stands alone, so it can follow any block of
   any fight: it starts on its downbeat with the motor and a hit, in the C
@@ -183,7 +204,9 @@ anything. The rules come in this order:
    is not dead but the third panic; it used to be "hull 0", and the
    tragedy played on the reserve with the player still flying.
 2. **Panic:** with the hull under 60%, 35% and 15%, the first, second and
-   third panic song. A panic stays, since the hull does not mend in flight.
+   third panic song; the first two each have a sibling (Damage Report,
+   Reroute Power), one or the other by the music's dice. A panic stays,
+   since the hull does not mend in flight.
 3. **Fight:** an enemy within 4,000 km starts a fight, a little beyond the
    3,000 km of its hail. Twelve seconds with none within 6,000 km end it.
    They spawn some 5,000 km out, so a flight begins calm.
@@ -207,20 +230,21 @@ anything. The rules come in this order:
    "This piece gets old very fast ... only cycling through this ... every
    3rd song").
 5. **Rocks:** inside an asteroid or mine field of the mission (its centre
-   within its radius), the rock field's song.
+   within its radius), Rock Field or Drift Field by the dice.
 6. **Calm:** otherwise, the cruise songs.
 
 On top of these:
 
 - **Stings:** an enemy within 12,000 km that begins to die (`shipAiState`
-  9) was splashed, and gets a victory sting, the three in turn, the turn
-  begun where the clock is when the game's first flight starts (from
+  9) was splashed, and gets a victory sting, the six in turn, the turn
+  begun by the dice when the game's first flight starts (from
   2026-11-17: it began at Splash One at every start of the game, and a
   session of a kill or two heard only that one, the user's "always plays
   the *same* default song"). A friend
   dying the same way gets the tragedy, and a capital ship of ours the
-  carrier's loss, LOST once (the cue CAPLOST; the user, 2026-11-17: "We
-  should play carrier lost whenever any capital vessel is lost"). A ship gone from the slots without
+  carrier's loss, LOST or LOST2 once (the cues CAPLOST, CAPLOST2; the
+  user, 2026-11-17: "We should play carrier lost whenever any capital
+  vessel is lost"). A ship gone from the slots without
   dying (left behind by the autopilot and held out of the scene, landed,
   jumped out, run off) is no loss: it had been, and the tragedy played as
   the autopilot reached nav 1 (the user, 2026-11-02).
@@ -232,8 +256,9 @@ On top of these:
   ring holds: so 20-35 s (three to five blocks) of each before the next
   cuts in. The place in each list is kept from flight to flight, and a
   run's first flight starts each list where the campaign has got to: the
-  cruise list three songs on for every mission flown (three and eight
-  share no factor: each song in turn), the battles one on, both offset by
+  cruise list five songs on for every mission flown (`CRUISE_STEP`: five
+  and twelve share no factor, so each song in turn), the battles (six) one
+  on, both offset by
   the campaign's seed (score_start; the user, 2026-11-08: "it seems the
   game favors some songs over others. I feel we need that variety": every
   run had begun at Waypoint and Battle 1). A panic
@@ -299,7 +324,7 @@ the flight. The schedule, in seconds:
 (Outbound's pass, then the next cruise piece spliced on), a fight for
 100 s (the battles cut together block by block), the way home
 (`tests/remix.txt`, `/flight 220`). `/scoretest 3` is the cycle's end:
-calm only, from Waypoint, Starwake spliced on after it, then
+calm only, from Nightside, Starfall spliced on after it, then
 Outbound (`tests/cycle.txt`, `/flight 160`). The music log's lines carry the music clock
 (`@ticks`, 240 a second), so a log rendered with `oplrender --log` can be
 cut and labelled.
@@ -307,13 +332,26 @@ cut and labelled.
 **The room songs' starting places** (2026-11-17, the user, of the lounge: "people never stay in this room for long and
 so we want them to hear different parts of the music"; of the bar: "4 different sensible start points in this song and
 the original"): Bunk Light, Off-Watch and Off Duty carry a "sect" marker at each later section's start (tools/songs.py:
-four, four and five). Entering a room starts its song at its own start or at one of those, by the clock
-(`game.c` `room_music`, `music_cue_sect`: the instruments chased to that event); the same song already playing goes on.
+four, four and five; Dog Watch four, Quiet Hours three). Entering a room starts its song at its own start or at one
+of those, by the dice (`game.c` `room_music`, `music_cue_sect`: the instruments chased to that event); the same song
+already playing goes on. The deck's starts at its top: Catapult's blocks are the deck, the catapult, the thrust in turn.
+
+**The dice** (`music.c` `music_pick`): a generator of the music's own, stirred by the music clock on every pick. The
+clock goes in before the multiply: added after it, a session's first picks (the clock a few thousand ticks, the state
+still 0) left the bits read at 0, and every first room, launch and splash took the first of its kind. The music only
+watches the game, so no machine's world depends on what it picks. Families (`game.c` `family_cue`): QUARTERS or
+QUARTER2, BAR or BAR2, LAUNCH or LAUNCH2, WIN or WIN2, LOST or LOST2, one of a family already playing kept.
 
 **Memory:**
 
-- **Loading:** the 28 songs load at start-up into XMS, some 95,000 events
-  (570 KB). The far heap grows to read each song's tracks, and
+- **Loading:** the 49 songs load at start-up into XMS, some 146,000
+  events (860 KB; 95,000 and 570 KB for the first 28). Each has a
+  descriptor in conventional memory (36 bytes, its 12 blocks' places in
+  it; 24 until the siblings, when 12 was the most any song had) and a
+  name (13 bytes): 2.4 KB for the 49. RV.EXE keeps the descriptors
+  fixed; the test builds take them from the heap in `music_init`, as
+  RVP.EXE's play tests start no music and its heap had no 1.7 KB to spare
+  (the shot list found no room). The far heap grows to read each song's tracks, and
   `_fheapshrink` gives that back to DOS afterwards: 283 KB is free after
   the music (the walk test, 2026-10-24), where it was 180 KB with the seven
   room songs.

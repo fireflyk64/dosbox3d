@@ -24,7 +24,8 @@ cut together block by block (docs/music.md).
     PANIC1..3, VICTORY1..3, TRAGEDY   tools/panics.py
 
 The cruise cycle: each piece's riser lands on its own dominant and the next starts in its key, E minor, G
-minor, B minor, D, F minor, A minor, C, G and round to E.  tools/songcheck.py holds every piece to bands
+minor, B minor, D, F minor, A minor, C minor, D minor, then cruise_c.py's F sharp minor, A minor, C sharp minor
+and E minor, and round to E (docs/music.md).  tools/songcheck.py holds every piece to bands
 measured from the user's two cues.
 """
 from compose import chord
@@ -34,6 +35,9 @@ import cruise_a                         # (the parts' modules, written with orch
 import cruise_b
 import battles
 import panics
+import cruise_c                         # (the second songs of a kind: the user's soundtrack review, 2026-11-17)
+import battles2
+import panics2
 
 
 
@@ -240,4 +244,5 @@ def homeloss():
 
 
 SONGS = {'CRUISE1.MID': outbound, **cruise_a.SONGS, **cruise_b.SONGS,
-         'HOMEWARD.MID': homeward, 'HOMELOSS.MID': homeloss, **battles.SONGS, **panics.SONGS}
+         'HOMEWARD.MID': homeward, 'HOMELOSS.MID': homeloss, **battles.SONGS, **panics.SONGS,
+         **cruise_c.SONGS, **battles2.SONGS, **panics2.SONGS}

@@ -20,6 +20,7 @@ int music_then(int cue, int from_sect, int at_sects);    /* then this cue, from 
                                         taken (nothing playing, a sting, or the cue not loaded) */
 int music_then_cue(void);               /* the follow-on asked for and not yet heard (-1 none) */
 int music_sects(int cue);               /* its blocks ("sect" markers) */
+int music_pick(int n);                  /* 0..n-1 by the music's own dice: the score's variants and starting places */
 unsigned music_loops(void);             /* times the playing song has come round since it began */
 unsigned long music_waited(void);       /* ticks the music has waited for music_poll since the start: its rings ran dry (0
                                            when they never have; flight_over says so) */

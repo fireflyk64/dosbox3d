@@ -48,6 +48,9 @@ enum { CALM, FIGHT, HOME, ROCKS, PANIC, DEAD };
 #define STAY_KM 6000L                   /* and one this near keeps it going */
 #define GONE_KM 12000L                  /* a ship dying this near was splashed, or lost (farther: not heard of) */
 #define CALM_AFTER (12 * 240UL)         /* the music clock's ticks with none within STAY_KM before it is over */
+#define CRUISE_STEP 5UL                 /* the cruise songs a mission flown moves the run's first on: no factor in common
+                                           with their count (twelve since 2026-11-17: three would have started only a
+                                           third of them), so every one in turn (score_start) */
 #define HOME_EVERY 3                    /* the way home's song every this many songs (home_next) */
 
 typedef struct {
@@ -101,7 +104,7 @@ static int in_field(void)
 /* the next of the cruise songs (0) or the battles' (1), the list not moved on */
 static int next_of(int list)
 {
-    return list ? RV_MUSIC_BATTLE1 + g_sc.next[1] % 3
+    return list ? RV_MUSIC_BATTLE1 + g_sc.next[1] % (RV_MUSIC_ROCKS - RV_MUSIC_BATTLE1)
                 : RV_MUSIC_CRUISE1 + g_sc.next[0] % (RV_MUSIC_HOMEWARD - RV_MUSIC_CRUISE1);
 }
 
@@ -123,10 +126,12 @@ static int song_for(int mood)
     }
     case HOME:
         return home_cue();
-    case ROCKS:
-        return RV_MUSIC_ROCKS;
+    case ROCKS:                         /* (the rock fields' two, and the first two panics' two, by the dice: the user's
+                                           review, 2026-11-17, "one more asteroid tune", "one more of this level of
+                                           panic to randomly select", "another systems failing one") */
+        return music_pick(2) ? RV_MUSIC_ROCKS2 : RV_MUSIC_ROCKS;
     case PANIC:
-        return RV_MUSIC_PANIC1 + g_sc.panic;
+        return g_sc.panic < 2 && music_pick(2) ? RV_MUSIC_PANIC1B + g_sc.panic : RV_MUSIC_PANIC1 + g_sc.panic;
     }
     return RV_MUSIC_TRAGEDY;
 }
@@ -242,22 +247,23 @@ void score_start(const RvMission __far *m)
         g_sc.dying[s] = 0;
     /* the run's first flight starts each cycle where the campaign has got to (the user, 2026-11-08: "it seems the game
      * favors some songs over others. I feel we need that variety": each run began them at their first, so a session of
-     * a mission or two heard Waypoint and its follow-on, and Battle 1, again and again).  Three cruise songs on a mission
-     * flown (three and eight have no factor in common: every one in turn), the campaign's seed for the rest; the order
-     * itself stays, as the songs follow each other in key */
+     * a mission or two heard Waypoint and its follow-on, and Battle 1, again and again).  CRUISE_STEP cruise songs on a
+     * mission flown (no factor in common with their count: every one in turn), the campaign's seed for the rest; the
+     * order itself stays, as the songs follow each other in key */
     if (!g_sc.begun) {
         g_sc.begun = 1;
-        g_sc.next[0] = (unsigned char)((g_camp.seed + 3UL * g_camp.flown) % (RV_MUSIC_HOMEWARD - RV_MUSIC_CRUISE1));
-        g_sc.next[1] = (unsigned char)((g_camp.seed / 8 + g_camp.flown) % 3);
+        g_sc.next[0] = (unsigned char)((g_camp.seed + CRUISE_STEP * g_camp.flown) % (RV_MUSIC_HOMEWARD - RV_MUSIC_CRUISE1));
+        g_sc.next[1] = (unsigned char)((g_camp.seed / 8 + g_camp.flown) % (RV_MUSIC_ROCKS - RV_MUSIC_BATTLE1));
         /* (the splashes' stings likewise (the user, 2026-11-17: "every time I get the victory tune it always plays the
          * *same* default song"): they went round from the first at every start of the game, so a session of a kill or
          * two heard Splash One every time; now from where the clock has got to.  The music only watches the game: no
          * machine's world depends on which sting it plays) */
-        g_sc.victory = (unsigned char)(clock240() % 3);
+        g_sc.victory = (unsigned char)music_pick(RV_MUSIC_TRAGEDY - RV_MUSIC_VICTORY1);
     }
 #ifdef RV_TESTS
     if (g_score_test == 3)
-        g_sc.next[0] = RV_MUSIC_CRUISE7 - RV_MUSIC_CRUISE1;     /* (the test of the cycle's end) */
+        g_sc.next[0] = RV_MUSIC_HOMEWARD - 2 - RV_MUSIC_CRUISE1;    /* (the test of the cycle's end: the last two, then
+                                                                   Outbound) */
 #endif
     play(CALM);
 }
@@ -328,7 +334,7 @@ void score_tick(int landing)
     if (caplost) {
         static const char __far s_caplost[] = "score: a capital ship of ours lost: the carrier's sting";
         rv_notef(s_caplost);
-        music_sting(RV_MUSIC_CAPLOST);
+        music_sting(music_pick(2) ? RV_MUSIC_CAPLOST2 : RV_MUSIC_CAPLOST);
     } else if (lost) {
         static const char __far s_lost[] = "score: a friend lost: the tragic sting";
         rv_notef(s_lost);
@@ -336,6 +342,6 @@ void score_tick(int landing)
     } else if (splashed) {
         static const char __far s_splash[] = "score: %d splashed: a victory sting";
         rv_notef(s_splash, splashed);
-        music_sting(RV_MUSIC_VICTORY1 + g_sc.victory++ % 3);
+        music_sting(RV_MUSIC_VICTORY1 + g_sc.victory++ % (RV_MUSIC_TRAGEDY - RV_MUSIC_VICTORY1));
     }
 }

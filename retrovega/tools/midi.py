@@ -179,8 +179,13 @@ def main():
     args = ap.parse_args()
     import songs                        # (they import this module: not at the top)
     import flightsongs
+    import songs2
+    import stings2
     SONGS.update(songs.SONGS)
     SONGS.update(flightsongs.SONGS)
+    SONGS.update(songs2.SONGS)
+    SONGS.update(stings2.SONGS)
+    SONGS['CAPLOST2.MID'] = SONGS['LOST2.MID']   # (as CAPLOST: Empty Deck once, as a sting)
     os.makedirs(args.out, exist_ok=True)
     for name in os.listdir(args.out):           # (a song gone from the lists: not packed by mistake)
         if name.upper().endswith('.MID') and name not in SONGS:

@@ -1079,6 +1079,18 @@ int music_playing(void)
 
 void music_cue(int cue, int fade_ms) { music_cue_at(cue, fade_ms, MUSIC_NOW); }
 
+/* a pick among n (0..n-1) for the score's variants and starting places: a generator of its own stirred by the music
+ * clock (a caller paced by the frames reads the clock some 8 ticks apart, and its low bits alone repeat).  The clock
+ * goes in before the multiply: added after it, the first picks of a session (the clock a few thousand ticks, the
+ * state still 0) had nothing in the high bits read, and every first room, launch and splash took the first of its
+ * kind.  The music only watches the game: no machine's world depends on what it picks */
+int music_pick(int n)
+{
+    static unsigned long s;
+    s = (s + clock240()) * 1103515245UL + 12345UL;
+    return n > 1 ? (int)((s >> 16) % (unsigned)n) : 0;
+}
+
 unsigned long clock240(void)
 {
     unsigned long t;

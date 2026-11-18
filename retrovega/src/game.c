@@ -410,11 +410,31 @@ static void mission_want(int a, int b)
     ships_want(want, nw, 0);
 }
 
+/* the families of songs that have siblings (the user's soundtrack review, 2026-11-17: a second quarters song "which can
+ * be randomly selected when going into that room", a second bar song, the launch "should randomly select from 2", more
+ * for the debrief won, a variation of the carrier lost) */
+static const unsigned char __far k_quarters[] = { RV_MUSIC_QUARTERS, RV_MUSIC_QUARTER2 };
+static const unsigned char __far k_bar[] = { RV_MUSIC_BAR, RV_MUSIC_BAR2 };
+static const unsigned char __far k_launch[] = { RV_MUSIC_LAUNCH, RV_MUSIC_LAUNCH2 };
+static const unsigned char __far k_win[] = { RV_MUSIC_WIN, RV_MUSIC_WIN2 };
+static const unsigned char __far k_lost[] = { RV_MUSIC_LOST, RV_MUSIC_LOST2 };
+
+/* one of a family: the one playing, if it is of the family (a room re-entered, a talk, the debrief's second screen),
+ * else one by the music's dice */
+static int family_cue(const unsigned char __far *cues, int n)
+{
+    int k, now = music_playing();
+    for (k = 0; k < n; k++)
+        if (cues[k] == now)
+            return now;
+    return cues[music_pick(n)];
+}
+
 /* each room's song: the quarters and the locker, the lounge, the bar (and the rest) */
 static int room_song(int room)
 {
-    return room == RV_R_QUARTERS || room == RV_R_LOCKER ? RV_MUSIC_QUARTERS
-         : room == RV_R_LOUNGE ? RV_MUSIC_LOUNGE : room == RV_R_DECK ? RV_MUSIC_LAUNCH : RV_MUSIC_BAR;
+    return room == RV_R_QUARTERS || room == RV_R_LOCKER ? family_cue(k_quarters, 2)
+         : room == RV_R_LOUNGE ? RV_MUSIC_LOUNGE : room == RV_R_DECK ? family_cue(k_launch, 2) : family_cue(k_bar, 2);
 }
 
 /* a room's song as the room is entered: from its start or one of its sections' (its "sect" markers), by the clock (the
@@ -424,7 +444,8 @@ static int room_song(int room)
 static void room_music(int room, int fade_ms)
 {
     int cue = room_song(room), n = music_sects(cue);
-    music_cue_sect(cue, fade_ms, n > 0 ? (int)(clock240() % (unsigned long)(n + 1)) - 1 : -1);
+    music_cue_sect(cue, fade_ms, n > 0 && cue != music_playing() && room != RV_R_DECK ? music_pick(n + 1) - 1 : -1);
+    /* (the deck's from its top: the launch theme's blocks are the deck, the catapult, the thrust ... in turn) */
 }
 
 static void enter_room(int room)
@@ -1000,7 +1021,7 @@ static int enter_home(void)
     g_stage_at = 0;
     g_mode = MODE_HOME;
     rvWhere = RV_WHERE_DEBRIEF;         /* (home from the flight: Kit at the plate, then the debriefing) */
-    music_cue(g_won ? RV_MUSIC_WIN : RV_MUSIC_LOSE, 250);   /* (the debrief's: it carries on under what follows) */
+    music_cue(g_won ? family_cue(k_win, 2) : RV_MUSIC_LOSE, 250);   /* (the debrief's: it carries on under what follows) */
     vid_dirty(0, SCR_H);
     scene_draw();
     vid_fade(64);
@@ -1049,7 +1070,7 @@ static void start_briefing(int debrief)
     }
     if (!debrief)
         briefingStarted();
-    music_cue(debrief ? (g_won ? RV_MUSIC_WIN : RV_MUSIC_LOSE) : RV_MUSIC_BRIEFING, 250);
+    music_cue(debrief ? (g_won ? family_cue(k_win, 2) : RV_MUSIC_LOSE) : RV_MUSIC_BRIEFING, 250);
     scene_draw();
     vid_fade(64);
 }
@@ -1125,7 +1146,7 @@ static void enter_deck(void)
     g_clip_frame = 0;
     g_clip_at = g_now;
     g_mode = MODE_DECK;
-    music_cue(RV_MUSIC_LAUNCH, 250);
+    music_cue(family_cue(k_launch, 2), 250);
     scene_draw();
     vid_fade(64);
 }
@@ -1249,7 +1270,7 @@ static void enter_lost(void)
     g_lost_level = 0;
     g_lost_t0 = ticks();
     g_mode = MODE_DEAD;
-    music_cue(RV_MUSIC_LOST, 1500);
+    music_cue(family_cue(k_lost, 2), 1500);
     vid_dirty(0, SCR_H);
     scene_draw();
 }
@@ -2373,7 +2394,7 @@ int game_run(void)
                             g_scene.full = ending_full;
                             g_scene.no_room = 1;
                             g_mode = MODE_ENDING;
-                            music_cue(g_camp.ending == ENDING_GOOD ? RV_MUSIC_WIN : RV_MUSIC_LOSE, 300);
+                            music_cue(g_camp.ending == ENDING_GOOD ? family_cue(k_win, 2) : RV_MUSIC_LOSE, 300);
                             vid_dirty(0, SCR_H);
                             RV_LOG("ending: %s after %u missions", g_camp.ending == ENDING_GOOD ? "victory" : "loss",
                                    g_camp.flown);
