@@ -98,7 +98,15 @@ static volatile int g_play, g_next_ring;
 static volatile unsigned long g_starved;
 
 static const char __far g_files[MAX_SONGS][13] = { RV_MUSIC_FILES };
+#ifdef RV_HEAP
+static Song __far * __far g_song;       /* (the test builds': taken by music_init, as RVP.EXE's play tests start no music
+                                           and their heap is short of the 1.7 KB; RV.EXE's stays fixed, as a MEM_ARRAY's
+                                           guard and ledger would cost it 288 bytes) */
+#define SONGS_IN (g_song != 0)
+#else
 static Song __far g_song[MAX_SONGS];    /* (far, all of it: DGROUP is full) */
+#define SONGS_IN 1
+#endif
 static volatile unsigned __far g_loops;         /* times the playing song came round (music_loops) */
 static volatile unsigned char __far g_sting_over;   /* a sting played to its end: music_poll goes back */
 static int __far g_back = -1;           /* the song a sting cut short, */
@@ -814,9 +822,19 @@ int music_init(void)
             g_dev = DEV_NONE;
         }
     }
+#ifdef RV_HEAP
+    g_song = (Song __far *)_fmalloc(MAX_SONGS * sizeof(Song));   /* (_fmalloc: the host builds count it, hle.c) */
+    if (g_song)
+        _fmemset(g_song, 0, MAX_SONGS * sizeof(Song));
+    else {
+        static const char __far s_songs[] = "music: no room for the songs' table: no music";
+        mem_short(s_songs);
+        g_dev = DEV_NONE;
+    }
+#endif
     g_chunk = g_ring[1].ev;             /* only while reading: nothing plays yet, and it is CHUNK_EV events, the ring's
                                            RING) */
-    for (i = 0; g_chunk && i < MAX_SONGS; i++) {
+    for (i = 0; g_chunk && SONGS_IN && i < MAX_SONGS; i++) {
         char name[13];
         Song song;
         _fstrcpy(name, g_files[i]);
@@ -876,7 +894,7 @@ void music_shutdown(void)
 
 static int playable(int cue)
 {
-    return cue >= 0 && cue < MAX_SONGS && g_song[cue].n && g_dev != DEV_NONE ? cue : -1;
+    return SONGS_IN && cue >= 0 && cue < MAX_SONGS && g_song[cue].n && g_dev != DEV_NONE ? cue : -1;
 }
 
 /* the channels' programs, volumes, pans and expressions as they stood before event `upto` of the song, put in
