@@ -10,16 +10,20 @@ and asked for more of each kind, and a real launch:
                               round the major-third cycle F sharp minor, D, B flat; a harp sweep on C sharp
     CRUISE10  "Faint Signal"  A minor, 152: searching, in Sensor Sweep's spirit ("more variety: this is good"):
                               open fifths stacked in 3+3+2, the horn reaching up in fifths over roots falling by
-                              thirds; the signal found in C, lifted to E flat; home through B flat to E
+                              thirds; the signal found in C, lifted to E flat; home through B flat to E; the
+                              harp and piccolo strums mostly up, a few down, one an A and one a V
     CRUISE11  "Nightside"     C sharp minor, 146: dark wonder, Deep Lane's vein ("another variation to play flying
                               around"): falling ripples in 3+3+2, one phrase sinking a major third twice (C sharp
-                              minor, A minor, F minor), whole-tone flourishes, home through the Neapolitan D
+                              minor, A minor, F minor), whole-tone flourishes, home through the Neapolitan D; all
+                              that a faint background now, under a trumpet's climb in triplets ("something very
+                              different but in the same genre on the foreground")
     CRUISE12  "Starfall"      E minor, 150: Starwake's laments and very fast runs in turn ("less chiming...
                               and maybe some inverses"): its lament, its drive, its carillon and its runs turned
                               upside down; the chimes only in the intro and the riser
     ROCKS2    "Drift Field"   D dorian, 118: the second asteroid and mine field song ("more specific to
                               asteroids with them swooshing by too as exploration happens"): a drifting tune, and
-                              rocks going by, string whooshes, harp glissandi and timpani rumbles, panned across
+                              rocks going by, string whooshes, harp glissandi and timpani rumbles, panned across;
+                              every whoosh the one the user liked ("more of a swooshing sound when they pass by")
     LAUNCH2   "Catapult"      C minor into E, 156: the flight deck, the catapult, the thrust out into space
 
 The cruise cycle (src/score.c plays them in turn, each riser on its own dominant, the next piece's top in its own
@@ -598,9 +602,9 @@ def starfall():
 # Exploring among the rocks, the march gone: the spiccato drifts in sixteenths, waves climbing the chord for a bar
 # and sinking the next, the low strings strike the 3+3+2, and the horn's tune wanders up D dorian (its B over G,
 # its E over D minor), curious, in long notes.  Rocks go by: a string whoosh (the spiccato up and straight back
-# down in a breath, swelling and fading) crossing from one side to the other, a harp glissando the other way, a
-# timpani rumble rolling past, a soft tom where each passes closest, now and then a near one with the crash and a
-# hit.  The field thickens: B flat lydian and then G flat lydian, a major third lower, the strings' long line with
+# down in a breath, fading in from nothing, swelling and fading out) crossing from one side to the other, a harp
+# glissando the other way, a timpani rumble rolling past with a lower whoosh over it, a soft tom where each passes
+# closest, now and then a near one with the crash and a hit.  The field thickens: B flat lydian and then G flat lydian, a major third lower, the strings' long line with
 # the harp in sixteenths, the rocks closer and quicker; then the tune on the strings in octaves with a horn, the
 # synth brass's descant over it, hits every other bar, and a riser on A with the rocks crossing both ways.  The
 # second pass: the tune on the horns in octaves, the line on the strings in octaves with the horn under it, other
@@ -615,19 +619,25 @@ DF_LINE = ['D5:0:4', 'E5:0:3 D5:3:1', 'C5:0:4', 'A4:0:2 F4:2:2', 'Bb4:0:4', 'C5:
 DF_LINE_UNDER = ['F4:0:4', 'G4:0:4', 'E4:0:4', 'D4:0:4', 'Db4:0:4', 'Eb4:0:4', 'C4:0:4', 'D4:0:2 C#4:2:2']
 DF_DESCANT = ['D5:0:4', 'D5:0:4', 'A5:0:4', 'G5:0:4', 'F5:0:4', 'G5:0:2 F5:2:2', 'E5:0:4', 'A5:0:2 E5:2:2']
 DF_WAVE = [0, 1, 2, 3, 1, 2, 3, 4, 2, 3, 4, 5, 3, 4, 5, 6, 6, 5, 4, 3, 5, 4, 3, 2, 4, 3, 2, 1, 3, 2, 1, 2]
-# the rocks going by, (bar in the pass, beat, beats, what, rightward); the two passes' differ
+# the rocks going by, (bar in the pass, beat, beats, what, rightward); the two passes' differ.  (The user,
+# 2026-11-17: "could you make a variation on this where it was more of a swooshing sound when they pass by", and
+# at 1:02, "the whoosh that happened just before this was pretty cool": the second pass's whoosh at its bar 2,
+# two beats up and back down a five-note chord and across from right to left, a soft tom at its closest, in a
+# bare bar.  So every whoosh is that one now: two beats, five notes to the octave or more, and fading in from
+# nothing and out again; the rumbles roll under one ('roll'), but the second pass's last, after the glint the
+# user liked at 1:22 ("the faint sound was nice too"), which stays as it was with its neighbours)
 DF_ROCKS = (
-    [(1, 2, 2, 'whoosh', True), (4, 1, 1.5, 'glint', False), (6, 2, 1.75, 'whoosh', False),
-     (8, 2, 1.75, 'whoosh', True), (9, 0.5, 3, 'rumble', False), (10, 2, 1.5, 'glint', False),
-     (11, 1.5, 2, 'whoosh', True), (12, 0, 2, 'near', False), (13, 2, 1.5, 'glint', True), (14, 0.5, 3, 'rumble', True),
-     (15, 2, 1.75, 'whoosh', False), (17, 2, 1.75, 'whoosh', False), (19, 1, 1.5, 'glint', True),
-     (21, 2, 1.75, 'whoosh', True), (24, 1, 2, 'whoosh', True), (25, 0, 2, 'whoosh', False)],
-    [(0, 2.5, 1.5, 'glint', True), (2, 1, 2, 'whoosh', False), (5, 2, 1.75, 'whoosh', True),
-     (7, 0.5, 1.5, 'glint', False), (8, 0.5, 3, 'rumble', True), (9, 2, 1.75, 'whoosh', False),
+    [(1, 2, 2, 'whoosh', True), (4, 1, 1.5, 'glint', False), (6, 2, 2, 'whoosh', False),
+     (8, 2, 2, 'whoosh', True), (9, 0.5, 3, 'roll', False), (10, 2, 1.5, 'glint', False),
+     (11, 1.5, 2, 'whoosh', True), (12, 0, 2, 'near', False), (13, 2, 1.5, 'glint', True), (14, 0.5, 3, 'roll', True),
+     (15, 2, 2, 'whoosh', False), (17, 2, 2, 'whoosh', False), (19, 1, 1.5, 'glint', True),
+     (21, 2, 2, 'whoosh', True), (24, 1, 2, 'whoosh', True), (25, 0, 2, 'whoosh', False)],
+    [(0, 2.5, 1.5, 'glint', True), (2, 1, 2, 'whoosh', False), (5, 2, 2, 'whoosh', True),
+     (7, 0.5, 1.5, 'glint', False), (8, 0.5, 3, 'roll', True), (9, 2, 2, 'whoosh', False),
      (10, 0, 2, 'near', True), (11, 2, 1.5, 'glint', False), (12, 1.5, 2, 'whoosh', True),
      (13, 0.5, 3, 'rumble', False),
-     (14, 2, 1.75, 'whoosh', True), (15, 1, 1.5, 'glint', False), (16, 2, 1.75, 'whoosh', True),
-     (18, 2, 1.5, 'glint', False), (20, 0, 2, 'near', False), (22, 2, 1.75, 'whoosh', True),
+     (14, 2, 2, 'whoosh', True), (15, 1, 1.5, 'glint', False), (16, 2, 2, 'whoosh', True),
+     (18, 2, 1.5, 'glint', False), (20, 0, 2, 'near', False), (22, 2, 2, 'whoosh', True),
      (24, 1, 2, 'whoosh', False), (25, 0, 2, 'whoosh', True)])
 
 
@@ -642,10 +652,12 @@ def drift16(s, ch, bars, vel, lo=50):
                    - (6 if k % 2 else 0), 3)
 
 
-def cross(s, ch, bar, beat, notes, beats, vel, rightward, lo_vel=0.3, hold=1.3):
-    """notes evenly over these beats, swelling to the middle and fading, panned from one side to the other"""
+def cross(s, ch, bar, beat, notes, beats, vel, rightward, lo_vel=0.3, hold=1.3, fade=None):
+    """notes evenly over these beats, swelling to the middle and fading, panned from one side to the other;
+    fade: the channel's expression at the ends too (rising to full at the middle and falling back to it), so
+    the notes still ringing swell and fade with them"""
     sides = (PAN_L, PAN_C, PAN_R) if rightward else (PAN_R, PAN_C, PAN_L)
-    step, last = beats / len(notes), None
+    step, last, last_e = beats / len(notes), None, None
     for k, q in enumerate(notes):
         x = k / max(1, len(notes) - 1)
         b, bt = bar_beat(s, bar * s.beats + beat + k * step)
@@ -653,6 +665,11 @@ def cross(s, ch, bar, beat, notes, beats, vel, rightward, lo_vel=0.3, hold=1.3):
         if side != last:
             s.cc(ch, b, bt, 10, side)
             last = side
+        if fade is not None:
+            e = round(fade + (127 - fade) * (1 - abs(2 * x - 1)))
+            if e != last_e:
+                s.cc(ch, b, bt, 11, e)
+                last_e = e
         v = vel * (lo_vel + (1 - lo_vel) * (1 - abs(2 * x - 1)))
         s.play(ch, b, bt, min(step * hold, 0.3), q, max(8, round(v)), 2)
 
@@ -662,25 +679,41 @@ def chord_pcs(s, bar, beat, ninth=True):
     return {(c.root + t) % 12 for t in c.tones} | ({(c.root + 2) % 12} if ninth else set())
 
 
+def swoosh_pcs(s, bar, beat):
+    """the chord and its ninth, and its sixth too where that leaves under five notes to the octave (a triad's
+    whoosh was a coarse arpeggio; the one the user liked had five), unless the sixth rubs a half step on one"""
+    pcs = chord_pcs(s, bar, beat)
+    if len(pcs) < 5:
+        six = (chord(s.sym_at(bar, beat)).root + 9) % 12
+        if (six + 1) % 12 not in pcs and (six - 1) % 12 not in pcs:
+            pcs.add(six)
+    return pcs
+
+
 def rock(s, chans_, bar, beat, beats, what, rightward):
-    """a rock going by: a whoosh (the spiccato up and back), a glint (the harp's glissando), a rumble (the
-    timpani rolling past), or a near one (a whoosh over a rumble, the crash and a hit at its closest)"""
+    """a rock going by: a whoosh (the spiccato up and back, fading in from nothing and out again), a glint (the
+    harp's glissando), a rumble (the timpani rolling past), a roll (a whoosh, lower, over a rumble), or a near
+    one (a whoosh over a rumble, the crash and a hit at its closest)"""
     sw, gl, rb, hi_ = chans_
-    if what in ('whoosh', 'near'):
-        rise = [q for q in range(55, 92) if q % 12 in chord_pcs(s, bar, beat)]
-        cross(s, sw, bar, beat, rise + rise[-2::-1], beats, 124 if what == 'near' else 114, rightward, 0.35, 2.0)
+    if what in ('whoosh', 'near', 'roll'):
+        lo = 50 if what == 'roll' else 55                   # (a rolling rock's lower: bigger)
+        rise = [q for q in range(lo, lo + 37) if q % 12 in swoosh_pcs(s, bar, beat)]
+        mid = beat + beats / 2 - 1 if what == 'roll' else beat     # (two beats about its closest)
+        cross(s, sw, bar, mid, rise + rise[-2::-1], 2 if what == 'roll' else beats, 124 if what == 'near' else 114,
+              rightward, 0.35, 2.0, fade=84)
     if what == 'glint':
         rise = [q for q in range(67, 96) if q % 12 in chord_pcs(s, bar, beat, ninth=False)]
         cross(s, gl, bar, beat, rise + rise[-2:-5:-1], beats, 84, rightward, lo_vel=0.5)
-    if what in ('rumble', 'near'):
+    if what in ('rumble', 'near', 'roll'):
         q = in_range(chord(s.sym_at(bar, beat)).root, 33, 44)
-        cross(s, rb, bar, beat, [q] * int(beats * 8), beats, 62 if what == 'near' else 56, rightward, lo_vel=0.1)
+        cross(s, rb, bar, beat, [q] * int(beats * 8), beats, 62 if what == 'near' else 56, rightward, lo_vel=0.1,
+              hold=0.6 if what == 'roll' else 1.3)
     b, bt = bar_beat(s, bar * s.beats + beat + beats / 2)  # where it passes closest
     if what == 'near':
         s.crash(b, bt, 74)
         hit(s, hi_, b, bt, 92)
     elif what != 'glint':
-        s.play(9, b, bt, 0.2, DRUM['tom4'] if what == 'rumble' else DRUM['tom3'], 46 if what == 'rumble' else 38, 3)
+        s.play(9, b, bt, 0.2, DRUM['tom3'] if what == 'whoosh' else DRUM['tom4'], 38 if what == 'whoosh' else 46, 3)
 
 
 def drift_field():
