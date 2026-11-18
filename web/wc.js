@@ -1924,7 +1924,7 @@ function leaveRoom() {
   if (lobby.game) { try { lobby.game.close(); } catch (e) { /* gone */ } }
   lobby.game = null; lobby.unsubscribe = null; lobby.adopted = false; lobby.backlog = []; lobby.hostPrivate = false;
   if (lobby.seatsBefore) { $("seats").value = lobby.seatsBefore; lobby.seatsBefore = null; }
-  lobby.names.clear(); lobby.links.clear(); lobby.flying.clear(); lobby.games.clear();
+  lobby.names.clear(); lobby.links.clear(); lobby.flying.clear(); lobby.games.clear(); lobby.builds.clear();
   // (While the game runs, the button stays: the way out of it.)
   $("lobby").hidden = true; $("leave").hidden = !running; $("share").hidden = true; $("join").disabled = false;
   for (const id of ["room", "seats", "server", "relay"]) $(id).disabled = false;
