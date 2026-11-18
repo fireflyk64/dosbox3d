@@ -102,6 +102,8 @@ unsigned char __far *vid_row(int y)
     return g_buf + (unsigned)(y - g_run_y0) * SCR_W;
 }
 
+unsigned char __far *vid_band_buffer(void) { return g_buf; }
+
 int vid_run(int *y0, int *y1)
 {
     *y0 = g_run_y0;
@@ -183,13 +185,14 @@ void vid_read_row(int y, unsigned char __far *dst)
 
 static int g_flash;                     /* 0 .. 64: the screen washed toward white (vid_flash) */
 static int g_flash_red;                 /* ... or red (vid_flash_red: the hull hit) */
+static int g_dim = 64;                  /* the cockpit's own colours past its E/M box's (vid_dim) */
 
 static void put_palette(void)
 {
     int i;
     outp(0x3C8, 0);
     for (i = 0; i < 768; i++) {
-        unsigned c = (g_pal[i] * g_fade) >> 6;
+        unsigned c = (g_pal[i] * (i >= VID_DIM_FIRST * 3 && i < 255 * 3 ? g_fade * g_dim >> 6 : g_fade)) >> 6;
         if (g_flash_red)                /* (red up, green and blue down) */
             outp(0x3C9, (unsigned char)(i % 3 == 0 ? c + (((63 - c) * g_flash_red) >> 6) : c - ((c * g_flash_red) >> 7)));
         else
@@ -209,6 +212,14 @@ void vid_flash_red(int level)
     g_flash = 0;
     g_flash_red = level < 0 ? 0 : level > 64 ? 64 : level;
     put_palette();
+}
+
+void vid_dim(int level)
+{
+    if (level != g_dim) {
+        g_dim = level;
+        put_palette();
+    }
 }
 
 void vid_palette(const unsigned char __far *rgb6, int first, int n)

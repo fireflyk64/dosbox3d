@@ -26,7 +26,7 @@
  *     log TEXT     a line in RVLOG.TXT
  *     quit         leave the game
  */
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -226,7 +226,9 @@ static void script_step(Input *in)
             return;
         } else if (!strcmp(line, "move")) {
             int x, y;
-            if (sscanf(arg, "%d %d", &x, &y) == 2) {
+            char *e2;
+            x = (int)strtol(arg, &e2, 10);
+            if (e2 != arg && (y = (int)strtol(e2, &arg, 10), arg != e2)) {   /* ("X Y") */
                 g_x = x;
                 g_y = y;
                 in->moved = 1;
@@ -241,13 +243,20 @@ static void script_step(Input *in)
             in->key = key_named(arg, &in->ch);
             return;
         } else if (!strcmp(line, "hold")) {
-            char name[16];
-            int n, ch, k;
-            if (sscanf(arg, "%15s %d", name, &n) == 2 && (k = key_named(name, &ch)) >= KEY_LEFT && k <= KEY_DOWN)
+            char name[16], *e2;
+            int n, ch, k, w = 0, two;
+            while (arg[w] && arg[w] != ' ' && w < 15) {   /* ("NAME N": the name, then a number after it) */
+                name[w] = arg[w];
+                w++;
+            }
+            name[w] = 0;
+            n = (int)strtol(arg + w, &e2, 10);
+            two = w && e2 != arg + w;
+            if (two && (k = key_named(name, &ch)) >= KEY_LEFT && k <= KEY_DOWN)
                 g_hold_until[k - KEY_LEFT] = ticks() + n;
-            else if (sscanf(arg, "%15s %d", name, &n) == 2 && (!strcmp(name, "rleft") || !strcmp(name, "rright")))
+            else if (two && (!strcmp(name, "rleft") || !strcmp(name, "rright")))
                 g_hold_until[!strcmp(name, "rleft") ? 4 : 5] = ticks() + n;   /* the flight's roll keys */
-            else if (sscanf(arg, "%15s %d", name, &n) == 2 && !strcmp(name, "fire"))
+            else if (two && !strcmp(name, "fire"))
                 g_hold_until[6] = ticks() + n;   /* the flight's trigger */
             else
                 RV_LOG("script: hold %s?", arg);

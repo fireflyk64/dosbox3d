@@ -11,7 +11,7 @@
  * each set and size once.  The small ones are drawn before the ships, the big
  * ones after.  The module's data and the log's formats are far (DGROUP is
  * nearly full). */
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include <malloc.h>
 #include <dos.h>

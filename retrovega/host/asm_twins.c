@@ -1,7 +1,9 @@
-/* asm_twins.c: the host's lowlevel.asm, lasers.asm and rocks.asm: each rv_x is its C twin, c_x (src/twins.c), which
+/* asm_twins.c: the host's lowlevel.asm, lasers.asm, rocks.asm and bake.asm: each rv_x is its C twin, c_x (src/twins.c), which
  * RVP.EXE /twins checks against the asm, and tests/host/twins_test.sh shows computes the same on the host as on DOS. */
 #include "rv.h"
 #include "twins.h"
+#include "bake.h"
+#include "pview.h"
 
 unsigned long rv_tsc(void) { return 0; }   /* (no emulated cycles to count on the host) */
 
@@ -137,3 +139,30 @@ int rv_stars_place(unsigned seed, const long *basis, int cx, int cy, int rows, s
 {
     return c_stars_place(seed, basis, cx, cy, rows, out, most);
 }
+
+/* bake.asm's (the host's own questions go straight to c_bk_column: bake.h; these are the twins' test's) */
+void rv_bk_column(int32_t x, int32_t y, int32_t z, BkColumn *out)
+{
+    c_bk_column(x, y, z, out);
+}
+
+int32_t rv_bk_muldiv(int32_t a, int32_t b, int32_t c)
+{
+    return c_bk_muldiv(a, b, c);
+}
+
+int rv_bk_hides(const int32_t *eye, const int32_t *p, int bottom, int top, int ground)
+{
+    return c_bk_hides(eye, p, bottom, top, ground);
+}
+
+/* pview.asm's */
+int rv_pv_setup(PvFrame *f, const PvCam *cam, const PvHead *h) { return c_pv_setup(f, cam, h); }
+void rv_pv_quarter(const PvFrame *f, int which, PvQuarter *q, uint8_t *thin) { c_pv_quarter(f, which, q, thin); }
+void rv_pv_steps(PvFrame *f) { c_pv_steps(f); }
+void rv_pv_lines(PvFrame *f, const PvQuarter *q, const uint8_t *thin) { c_pv_lines(f, q, thin); }
+void rv_pv_march(PvFrame *f) { c_pv_march(f); }
+void rv_pv_far(PvFrame *f) { c_pv_far(f); }
+void rv_pv_glow(PvFrame *f) { c_pv_glow(f); }
+void rv_pv_fogt(PvFrame *f) { c_pv_fogt(f); }
+void rv_pv_blit(const PvBlit *b) { c_pv_blit(b); }

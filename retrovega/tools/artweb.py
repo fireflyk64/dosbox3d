@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """artweb.py: the files a flight asks the page for (RVWANT.TXT: src/ships.c ships_want), as the web pages serve
 them (web/rvsets.js): each ship type's views (art/ships/SHIPnn.RV), gzipped, with ships.json (the build, and each
-file's size and hash: the page's cache keys).  (The asteroid fields' ROCKS.DAT was served here too until 2026-11-06:
-it is in the game's own package now.)
+file's size and hash: the page's cache keys), and the planet missions' grounds (build/dos/ID.PLN) as they are,
+gzipped.  (The asteroid fields' ROCKS.DAT was served here too until 2026-11-06: it is in the game's own package now.)
 Both pages use it: the DOSBox one (scripts/build-web.sh, into web/dist/rv) and the native build's
 (host/web/site.sh, into its art/).
 
@@ -47,11 +47,11 @@ def main():
         key = f[:-3]
         ships[key] = {'file': 'rv/' + f + '.gz', 'bytes': len(data), 'sha1': hashlib.sha1(data).hexdigest(),
                       'name': names.get('0x' + key[4:6].lower(), key)}
-    # the game's files a flight asks for as they are (none since 2026-11-06: the asteroid fields' ROCKS.DAT is in the
-    # game's own package, build-web.sh's retrovega.tar.gz and host/web/site.sh's game.tar.gz; web/rvsets.js still
-    # serves any listed here)
+    # the game's files a flight asks for as they are: the planet missions' grounds (build/dos/ID.PLN, tools/planets.sh:
+    # 5-17 MB each, 96 MB in all, so a flight fetches its own; the asteroid fields' ROCKS.DAT was here too until
+    # 2026-11-06, it is in the game's own package, build-web.sh's retrovega.tar.gz and host/web/site.sh's game.tar.gz)
     files = {}
-    for f in []:
+    for f in sorted(x for x in os.listdir(os.path.join(ROOT, 'build/dos')) if x.endswith('.PLN')):
         path = os.path.join(ROOT, 'build/dos', f)
         gz(path, os.path.join(a.out, f + '.gz'))
         data = open(path, 'rb').read()
@@ -62,9 +62,11 @@ def main():
         if f.endswith('.gz') and f not in served:
             os.remove(os.path.join(a.out, f))
     json.dump({'build': a.build, 'ships': ships, 'files': files}, open(os.path.join(a.out, 'ships.json'), 'w'), indent=1)
-    print('%s/ships.json: %d ships, %.1f MB of views (%.1f MB gzipped)' % (
+    print('%s/ships.json: %d ships, %.1f MB of views (%.1f MB gzipped); %d files, %.1f MB (%.1f MB gzipped)' % (
         a.out, len(ships), sum(s['bytes'] for s in ships.values()) / 1e6,
-        sum(os.path.getsize(os.path.join(a.out, s['file'][3:])) for s in ships.values()) / 1e6))
+        sum(os.path.getsize(os.path.join(a.out, s['file'][3:])) for s in ships.values()) / 1e6,
+        len(files), sum(s['bytes'] for s in files.values()) / 1e6,
+        sum(os.path.getsize(os.path.join(a.out, s['file'][3:])) for s in files.values()) / 1e6))
 
 
 if __name__ == '__main__':

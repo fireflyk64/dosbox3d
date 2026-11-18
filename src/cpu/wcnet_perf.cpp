@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <chrono>
 #include "dosbox.h"
 #include "cpu.h"
@@ -8,6 +9,9 @@
 #include "wcnet_log.h"
 #include "wcnet_memory.h"
 #include "wcnet_game.h"
+
+/* (rvgx.cpp's: the planet's views since the last ask; weak, for a build without the card) */
+bool RVGX_PlanetStats(double *ms, double *px) __attribute__((weak));
 #include "wcnet_vm.h"
 
 namespace wc {
@@ -213,9 +217,14 @@ void perf_frame() {
         }
     }
     if (log) {
-        char age[64] = "";
+        char age[128] = "";
         if (g_ages) {
             snprintf(age, sizeof(age), ", positions %.0f ms old (worst %.0f)", g_last.posAgeMs, g_last.posAgeWorstMs);
+        }
+        double pms, ppx;
+        if (RVGX_PlanetStats && RVGX_PlanetStats(&pms, &ppx)) {
+            const size_t n = strlen(age);
+            snprintf(age + n, sizeof(age) - n, ", the planet's views %.1f ms at %.1f px", pms, ppx);
         }
         wclog(0, "perf: %.1f fps, worst frame %.0f ms, load %.0f%%, emulator at %.0f%% of real time, "
                  "%.1f ms/frame waiting for the network, %d cycles, %d ships, %d other entities%s",

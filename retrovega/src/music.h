@@ -19,6 +19,8 @@ int music_then(int cue, int from_sect, int at_sects);    /* then this cue, from 
 int music_then_cue(void);               /* the follow-on asked for and not yet heard (-1 none) */
 int music_sects(int cue);               /* its blocks ("sect" markers) */
 unsigned music_loops(void);             /* times the playing song has come round since it began */
+unsigned long music_waited(void);       /* ticks the music has waited for music_poll since the start: its rings ran dry (0
+                                           when they never have; flight_over says so) */
 int music_playing(void);                /* the cue sounding now (-1 none; a sting) */
 unsigned long clock240(void);          /* the music clock: 240 ticks a second */
 #endif

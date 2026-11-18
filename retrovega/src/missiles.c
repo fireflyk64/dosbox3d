@@ -20,6 +20,7 @@
 #include "bolts.h"
 #include "flames.h"
 #include "missiles.h"
+#include "planet.h"
 
 #define M_LINE 0
 #define M_FAT 1
@@ -210,7 +211,7 @@ void missiles_place(long px, long py, long pz, const LfBasis *cam, int cx, int c
     lz_camera(&g_cam, px, py, pz, f, r, u, cx, cy, focal, MISSILE_RADIUS16, MISSILE_ZMIN_KM, MISSILE_ZMAX_KM,
               LZ_RMAX16, BOLT_LINE16, y0, y1);
     for (i = 0; i < MISSILE_MAX; i++)
-        if (g_m[i].live)
+        if (g_m[i].live && !planet_hides_at(g_m[i].x, g_m[i].y, g_m[i].z))   /* (not behind a planet's ground) */
             place_one(&g_m[i], i);
     for (i = 1; i < g_nd; i++)          /* the farthest first */
         for (k = i; k > 0 && g_d[k].z > g_d[k - 1].z; k--) {

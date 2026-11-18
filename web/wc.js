@@ -21,6 +21,7 @@ import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFil
 import { newRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS, CALLSIGNS, pickCallsign, givesWay, sameName } from "./chatfilter.js";
 import { initHall, OTHER_SERVER, serverDown } from "./hall.js";
 import { createSetProvider, readTarGz } from "./rvsets.js";
+import { buildFields, compareBuild, RELOAD_HOW } from "./build.js";
 
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
@@ -672,7 +673,10 @@ const gameInfo = () => (source && gameById(source.game.id)) || null;
 // A room's seats at most: 3, or as many as the game's registry entry allows (`maxSeats`: Privateer's rooms of up to 8,
 // each pilot flying its own career: docs/privateer.md).
 const maxSeats = () => (gameInfo() && gameInfo().maxSeats) || 3;
-const saveKey = (rel) => `wcsave:${source.game.id}:${rel.toUpperCase()}`;
+// (the terrain branch's playtest copy at /terrain/ keeps its own: its RetroVega's saved game is another version's,
+// and the site's storage is shared with /dosbox)
+const SAVE_PREFIX = /^\/terrain\//.test(location.pathname) ? "wcsave-terrain:" : "wcsave:";
+const saveKey = (rel) => `${SAVE_PREFIX}${source.game.id}:${rel.toUpperCase()}`;
 // A registry entry's saves may be patterns ("*.SAV": Privateer names its saved games after what the player types):
 // then they are the files at the top of the game directory that match, and the copies of such files this browser
 // keeps.  A game with names only (every other) gets its list as it is.
@@ -681,7 +685,7 @@ const isSavePattern = (rel) => rel.includes("*");
 const savesByPattern = () => savePatterns().some(isSavePattern);
 const savePatternRe = (pat) => new RegExp("^" + pat.toUpperCase().replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
 function keptSaveNames() {
-  const prefix = source ? `wcsave:${source.game.id}:` : null;
+  const prefix = source ? `${SAVE_PREFIX}${source.game.id}:` : null;
   const out = [];
   try {
     for (let i = 0; prefix && i < localStorage.length; i++) {
@@ -1082,6 +1086,8 @@ function followHost() {
 const lobby = { game: null, names: new Map(), links: new Map(), flying: new Set(), unsubscribe: null, mission: null,
                 // which game each player has loaded (a registry id), from their hello
                 games: new Map(),
+                // each player's page against this one's build (build.js compareBuild), from their hello
+                builds: new Map(),
                 // asteroid and mine fields, "on", "soft" (a rock does a
                 // fraction of its damage) or "off": the host's choice, for everybody
                 rocks: "on",
@@ -1160,7 +1166,24 @@ const sayHello = (to, reply) => sendLobby({ t: "hello", name: myName(), flying: 
   mission: isHost() ? missionKey(lobby.mission) : undefined, rocks: isHost() ? lobby.rocks : undefined,
   wingBumps: isHost() ? lobby.wingBumps : undefined, difficulty: isHost() ? lobby.difficulty : undefined,
   latency: isHost() ? lobby.latency : undefined, fps: isHost() ? lobby.fps : undefined,
-  capHull: isHost() ? lobby.capHull : undefined, private: isHost() ? privateOn() : undefined }, to);
+  capHull: isHost() ? lobby.capHull : undefined, private: isHost() ? privateOn() : undefined, ...buildFields() }, to);
+
+// Another page in the room is another version (build.js): a line once a seat and a verdict, nothing when the same.  A
+// page from before builds were compared hears nothing of ours but the chat: it is asked there, that pilot alone.
+function buildNote(seat, m, rel) {
+  const who = esc(typeof m.name === "string" ? m.name : `Player ${seat + 1}`);
+  if (rel === "newer") chatLine(`${who} has a newer version of this page: ${RELOAD_HOW}.`, "sys");
+  else if (rel === "older" || rel === "none") chatLine(`${who}'s page is out of date${rel === "none" ? " (asked to reload)" : ""}.`, "sys");
+  else if (rel === "site") chatLine(`${who} is on another page (${esc(m.site)}): fly from one page.`, "sys");
+  if (rel === "none") sendLobby({ t: "chat", name: myName(), text: `(automatic) Your page is out of date: please ${RELOAD_HOW}.` }, seat);
+}
+// Why seat's game and this page's would not match (build.js), plain text, or ""
+function buildApart(seat) {
+  const rel = lobby.builds.get(seat), who = lobby.names.get(seat) || `Player ${seat + 1}`;
+  return rel === "newer" ? `This page is out of date: ${RELOAD_HOW}.`
+    : rel === "older" || rel === "none" ? `${who}'s page is out of date.`
+    : rel === "site" ? `${who} is on another page.` : "";
+}
 
 // Another pilot (seat `seat` of the lobby or the room this page is seat
 // `mine` of; `since` their given callsign's moment, none for a typed one) is
@@ -1373,8 +1396,15 @@ function seriesName(id) {
 }
 // The name on the Host button: the game picked, in a word or two.
 const shortTitle = () => { const g = gameInfo(); return g ? g.short || g.title : source ? source.game.title : ""; };
+// This page's flights would not match the room's (build.js): it is an older build than a pilot's here, or, a guest, its
+// host's page is another build.  The reason, for the status line (and Fly held till it is gone), or ""
+function buildWrong() {
+  if (!lobby.game) return "";
+  for (const [seat, rel] of lobby.builds) if (rel === "newer") return buildApart(seat);
+  return isHost() ? "" : buildApart(0);
+}
 function updateActions() {
-  const wrong = wrongGame();
+  const wrong = wrongGame() || buildWrong();
   $("join").textContent = source ? `Host ${shortTitle()}` : "Host a room";
   const one = seatCount() === 1;
   $("join").title = `Makes a room${source ? " of " + source.game.title : ""} and puts you in it as its host: under the code typed in the box, or one made for the game (${gameTag() || "WC"}-4821). ${one ? "With Players at 1 it is yours alone, said to nobody" : "It is offered in the lobby, for anybody to join, unless Private (below) is ticked: then only its code or its link brings somebody in"}`;
@@ -1490,6 +1520,11 @@ function onLobbyEvent(ev) {
         if (!$("callsign").value.trim() && typeof m.name === "string" && sameName(m.name, was) && callsignClash(ev.from, m.since, lobby.game.selfId)) {
           chatLine(`Another pilot here is ${esc(was)}: you are ${esc(myName())} now (the Callsign box takes one of your own).`, "sys");
         }
+        const rel = compareBuild(m);
+        if (lobby.builds.get(ev.from) !== rel) {
+          lobby.builds.set(ev.from, rel);
+          buildNote(ev.from, m, rel);
+        }
         if (typeof m.game === "string" && m.game !== (lobby.games.get(ev.from) || "")) {
           lobby.games.set(ev.from, m.game);
           if (ev.from === 0) { followHost(); renderMission(); }
@@ -1553,8 +1588,9 @@ function onLobbyEvent(ev) {
         chatLine(`${esc(lobby.names.get(0) || "The host")} started ${esc(missionLabel(lobby.mission))}`, "sys");
         lobby.flying.add(0); renderRoster();
         followHost();
-        const theirs = gameById(lobby.games.get(0) || "");
-        if (source && theirs && theirs.id !== source.game.id) status(`The host started ${theirs.title}, and you have ${source.game.title} loaded. Load ${theirs.title} above, then press Fly to join.`);
+        const theirs = gameById(lobby.games.get(0) || ""), apart = buildApart(0);
+        if (apart) status(apart);
+        else if (source && theirs && theirs.id !== source.game.id) status(`The host started ${theirs.title}, and you have ${source.game.title} loaded. Load ${theirs.title} above, then press Fly to join.`);
         else if (source) void start(false);
         else status("The host started the game. Load your game files above, then press Fly to join.");
       }
@@ -1562,13 +1598,13 @@ function onLobbyEvent(ev) {
     }
     case "player-joined": case "player-rejoined": case "player-replaced":
       if (ev.type === "player-joined" && isHost() && !running && ev.playerId !== lobby.game.selfId) doorbell();
-      lobby.links.set(ev.playerId, "down"); lobby.names.delete(ev.playerId); lobby.flying.delete(ev.playerId); lobby.games.delete(ev.playerId);
+      lobby.links.set(ev.playerId, "down"); lobby.names.delete(ev.playerId); lobby.flying.delete(ev.playerId); lobby.games.delete(ev.playerId); lobby.builds.delete(ev.playerId);
       voice.forget(ev.playerId);
       renderRoster(); updateActions(); break;   // (a host no longer alone: no Fly single player)
     case "player-left":
       if (ev.reason === "explicit-leave") {
         chatLine(`${esc(lobby.names.get(ev.playerId) || "Player " + (ev.playerId + 1))} left the room`, "sys");
-        lobby.names.delete(ev.playerId); lobby.links.delete(ev.playerId); lobby.flying.delete(ev.playerId); lobby.games.delete(ev.playerId);
+        lobby.names.delete(ev.playerId); lobby.links.delete(ev.playerId); lobby.flying.delete(ev.playerId); lobby.games.delete(ev.playerId); lobby.builds.delete(ev.playerId);
       }
       voice.forget(ev.playerId);
       renderRoster(); updateActions(); break;
@@ -2029,6 +2065,7 @@ buildMissionMenu();
 
 $("fly").addEventListener("click", () => {
   if (!source || !lobby.game || running || guestWaits()) return;
+  if (isHost()) for (const [seat, rel] of lobby.builds) if (rel !== "same") chatLine(`${esc(lobby.names.get(seat) || `Player ${seat + 1}`)} won't fly along (${rel === "site" ? "another page" : rel === "newer" ? "this page is out of date" : "their page is out of date"}).`, "sys");
   if (isHost()) sendLobby({ t: "start", game: source.game.id, mission: missionKey(lobby.mission), rocks: lobby.rocks, wingBumps: lobby.wingBumps, latency: lobby.latency, fps: lobby.fps, capHull: lobby.capHull });
   void start(true);
 });
@@ -2323,11 +2360,13 @@ async function start(fromGesture) {
     // ?cmd=... runs another DOS command instead of the game (debugging aid).
     // RetroVega: ?res=1 the sharp sets; ?field=D its flights start in an
     // asteroid field of D rocks per (10,000 km)^3 (a stand-in until
-    // the nav points carry their hazards).
+    // the nav points carry their hazards); ?nogx=1 the machine without the
+    // sprite accelerator (RV.EXE /nogx: it draws everything itself, a
+    // planet too).
     const isRv = gameInfo() && gameInfo().id === "rv";
     const field = isRv ? Math.max(0, Math.min(999, parseInt(query.get("field") || "0", 10) || 0)) : 0;
     const cmd = query.get("cmd") || source.game.run + missionArgs + (query.get("res") === "1" && isRv ? " /res 1" : "")
-      + (field ? ` /field ${field}` : "");
+      + (field ? ` /field ${field}` : "") + (query.get("nogx") === "1" && isRv ? " /nogx" : "");
     // The emulated CPU speed: the game's own good value (the registry), or
     // ?cycles=N; Ctrl+F11 / Ctrl+F12 still adjust it while playing.  A game
     // whose registry says `cyclesAuto` (or ?cycles=max) gets DOSBox's own

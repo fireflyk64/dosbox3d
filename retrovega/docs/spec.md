@@ -68,7 +68,7 @@ table-driven, one column of `wcnet_ds.def` per executable plus a
 |---|---|
 | 0x0000 | **RVHOOK**: `"RVHOOK"` header, thunks from 0x20 (5 bytes each, `jmp far`), the flight-loop skeleton with its sites from 0x400 |
 | after RVHOOK | C code segments, any order and size |
-| last | **DGROUP**: its first 29 KB (0x7400 bytes) is the fixed block of section 4 (segment `RVFIXED`, ordered ahead of Watcom's `_NULL`), then C data, BSS, stack |
+| last | **DGROUP**: its first 16.5 KB (0x4200 bytes; 0x7400 with 128 slots until 2026-11-14) is the fixed block of section 4 (segment `RVFIXED`, ordered ahead of Watcom's `_NULL`), then C data, BSS, stack |
 
 DGROUP has to come last: Watcom's DOS startup gives back all memory past
 the end of DGROUP's stack (int 21h/4Ah). Its paragraph therefore moves with
@@ -374,7 +374,7 @@ The layer copies records whole (`WeaponFire.gun` is exactly `gunSize` bytes).
 
 ### 4.6 GameParams for RV.EXE
 
-`{ slots 0x80, missionShipSize 0x2a, classOff 0, classSize 2, asteroidField 0x16, mineField 0x17, navPointSize 0x4d, navPointShipsOff 0x39, missionShipAiOff 6, gunsSize 0x33, gunSize 5, campaign 0 }`
+`{ slots 62 (0x80 until 2026-11-14), missionShipSize 0x2a, classOff 0, classSize 2, asteroidField 0x16, mineField 0x17, navPointSize 0x4d, navPointShipsOff 0x39, missionShipAiOff 6, gunsSize 0x33, gunSize 5, campaign 0 }`
 
 ## 5. Code ABI
 
@@ -662,8 +662,9 @@ the targeting VDU and briefing/ship-select art. They are posterised into
 the palette and touched up by hand: 96 px in high resolution, 48 px in low.
 
 **New Aera hulls** (Agis, Cleomenes) are mesh edits of Nicander and
-Areus, rendered by the same path. The Charillus'
-tan hull takes an Aera livery. The Leonidas' VDU is only a silhouette, so
+Areus, rendered by the same path. Since 2026-11-14 the cruiser is Vega Strike's
+Anaxander, and the destroyer and the transport wear the old cruiser's and destroyer's hulls (docs/art.md, The Aera
+capital ships). The Leonidas' VDU is only a silhouette, so
 its art comes from the mesh.
 
 ## 10. Milestones

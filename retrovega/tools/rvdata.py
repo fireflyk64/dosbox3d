@@ -16,7 +16,7 @@ checks every reference and rule (docs/engine.md), and writes:
 
 missions.txt is one block per mission, a keyword and its value per line,
 '#' comments.  Keywords: mission, node, title, type, music, briefing, win,
-lose, fighter (the player's and the wingman's TYPE), nav (id x y z [hidden] [reach=KM], km, the old game's map: the waypoints numbered from 1, then the hidden trigger points; within reach= of it the point is reached and the autopilot stops there, the old game's 10,000 to 32,500), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home|stay] [jump=N] [turrets=off]
+lose, fighter (the player's and the wingman's TYPE), nav (id x y z [hidden] [reach=KM], km, the old game's map: the waypoints numbered from 1, then the hidden trigger points; within reach= of it the point is reached and the autopilot stops there, the old game's 10,000 to 32,500), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home|stay|stream|guard] [jump=N] [turrets=off]
 [pilot=KEY] [ai=PROFILE] [fear=c/d] [prey=KEY] [also=N]), rules (hit= aim= hold= ram=: RULES), field (asteroid|mine x y z radius [density=N] [level=L], km; N rocks per (10,000 km)^3, 1..255,
 0 or none: the engine's own; L the old game's rock level, 0..3: how many fly at the player, and when), bar and lounge
 (seat=PILOT|- ...), and the lines, docs/engine.md: briefing, win, lose [WHO] [conditions] "line" (or plain text: the XO's,
@@ -36,7 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, 'data')
 
-VERSION = 26                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
+VERSION = 28                            # 2: the ship types' engines; 3: their hit boxes and vitals; 4: the weapons
                                         # and each type's loadout; 5: each weapon's sound (data/sounds.csv); 6: the
                                         # ship types' slide speeds; 7: their sizes (radius_km); 8: their gun energy's
                                         # and shields' rates back; 9: the hit volumes (a type's box of the sphere's
@@ -53,7 +53,10 @@ VERSION = 26                            # 2: the ship types' engines; 3: their h
                                         # 25: a mission ship's also=N (a second nav point that brings it, whichever
                                         # is reached first: the old game's ships listed at two points); 26: a
                                         # mission's goals and a node's pass mark (the old game's points)
-LIMITS = {'GOALS': 12, 'PILOTS': 16, 'NODES': 32, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 4, 'NAVS': 8, 'SHIPS': 16,
+                                        # 28: six missions a node (the terrain missions, one a set, two in Shmrn's),
+                                        # 16 nodes (the save's `systems` has a bit a node: 32 were never possible),
+                                        # a planet's kind (kind=NAME: its record's ground count's high nibble)
+LIMITS = {'GROUNDS': 4, 'GOALS': 12, 'PILOTS': 16, 'NODES': 16, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 6, 'NAVS': 8, 'SHIPS': 16,
           'SEATS': 3, 'TALKS': 200, 'FIELDS': 7, 'SHIPTYPES': 64, 'SHIPRECORDS': 44, 'WEAPONS': 40}
 TEXT = {'ID': 16, 'TITLE': 48, 'TALK': 108, 'KEY': 10, 'CALLSIGN': 12,
         'NAME': 24, 'NODE_ID': 8, 'LINE': 72, 'CODE': 6, 'WNAME': 20}
@@ -174,7 +177,8 @@ VITALS = 8
 # 5 bytes: the weapon's type (a word), the mount across and up (int8, 1/32 of the ship's half box: collide_half),
 # the state (bit 7 destroyed; a gun's cooldown frames, a launcher's rounds).  A gun and a turret are a record each,
 # a missile kind one launcher with its rounds.  The mounts are placeholders: a type's guns spread evenly over the
-# middle 60% of its hit box's width, a little below its middle; turrets above, launchers under the belly
+# middle 60% of its hit box's width, a little below its middle; turrets above, launchers under the belly; or its guns'
+# own (ships.csv `mounts`, "X:Y X:Y ..." in the guns column's order, 32nds of the half box across, + its right, and up)
 GUNTABLE, GUNS = 0x33, 10
 # a weapon (data/weapons.csv): its kind, look (how its shot is drawn), lock, and numbers; range in km (the csv's
 # thousands of km)
@@ -200,7 +204,7 @@ PILOT = [('char', 'key[RV_KEY]', '%ds' % TEXT['KEY']), ('char', 'callsign[RV_CAL
                                         # seniority and story; twin: the pilot index of its twin, relations.csv `twins`, 255
                                         # none: the board puts the two on one row, the user's)
 NODE = [('char', 'id[RV_NODE_ID]', '%ds' % TEXT['NODE_ID']), ('unsigned char', 'layer', 'B'),
-        ('signed char', 'col', 'b'), ('unsigned short', 'missions[RV_MISSIONS_PER_NODE]', '4H'),
+        ('signed char', 'col', 'b'), ('unsigned short', 'missions[RV_MISSIONS_PER_NODE]', '%dH' % LIMITS['MISSIONS_PER_NODE']),
         ('unsigned char', 'good', 'B'), ('unsigned char', 'bad', 'B'), ('unsigned char', 'outside', 'B'),
         ('unsigned char', 'pass_mark', 'B')]   # (campaign.csv pass: the points its missions' goals must reach for the
                                         # good way out, the old game's CAMP.000 +3; 0: by missions won, campaign.c)
@@ -227,7 +231,7 @@ SHIP = [('unsigned char', 'type', 'B'), ('unsigned char', 'side', 'B'), ('unsign
 # a mission ship's AI profile (missions.txt ai=NAME: logic.c's P_* in this order, 1-based in the record, 0 the type's
 # own) and its own fear rates (fear=c/d, 0-15 each: the old game's class bytes; 0: the profile's)
 PROFILES = ['interceptor', 'fighter', 'heavy', 'ace', 'bomber', 'wingman', 'capital', 'waiter', 'noleft']
-ESCORT_ROLES = {'out': 1, 'in': 2, 'home': 3, 'stay': 4, 'back': 5}   # a mission ship's role (RV_ESCORT_*): an escort
+ESCORT_ROLES = {'out': 1, 'in': 2, 'home': 3, 'stay': 4, 'back': 5, 'stream': 6, 'guard': 7}   # a mission ship's role (RV_ESCORT_*): an escort
                                         # target flies out to the next nav point and jumps there, or waits at its own until the
                                         # player comes and flies home (`in`: it jumps in when a pilot is near, the old
                                         # behaviour 7; `back`: it is there from the point's reaching and makes for home at
@@ -248,6 +252,18 @@ SPEAKER_YOU = 0xFE                      # the player, in a conversation
 TALK_BOOSTS = {'armor': 1, 'fuel': 2, 'missile': 3}
 # the rooms of the lines past the seated ones (RV_ROOM_RADIO = len(ROOMS), the wingman at the launch; then the deck)
 BRIEF_ROOMS = {'briefing': len(ROOMS) + 2, 'win': len(ROOMS) + 3, 'lose': len(ROOMS) + 4}
+# a planet mission's ground shapes (missions.txt `ground`): a pad made flat or a stone arch at a nav point's place,
+# its sizes in km (pad: a radius, b the slope round it; arch: a half its span, b its width, c the air under its crown,
+# d its thickness), heading degrees from the world's x across the ground (terrain.h TrStamp, the card's); or a canyon
+# from its nav point through the mission's next ones to to=navN (a its floor's width, b each wall's run across, c its
+# depth, d how far out the land beside it rises to its rim; its heading word holds that last nav point's number)
+GROUND = [('unsigned char', 'kind', 'B'), ('unsigned char', 'nav', 'B'), ('unsigned short', 'a', 'H'),
+          ('unsigned short', 'b', 'H'), ('unsigned short', 'c', 'H'), ('unsigned short', 'd', 'H'),
+          ('short', 'heading', 'h')]
+PLANET_KINDS = ['desert', 'green', 'ice', 'red', 'ash', 'savanna', 'violet', 'ochre', 'jungle', 'ocean', 'tundra',
+                'steppe', 'grey']   # a planet's look, kind=NAME (terrain.h TR_KIND_*, in its order; terrain.c tr_looks)
+FIELD_NAV_MIN_KM = 9000          # a field a waypoint lies in is at least this wide (radius): its edge is the autopilot's stop
+GROUND_KINDS = {'pad': 1, 'arch': 2, 'canyon': 3}   # (terrain.h's TR_STAMP_PAD, TR_STAMP_ARCH, TR_STAMP_CANYON)
 MISSION = [('char', 'id[RV_ID]', '%ds' % TEXT['ID']), ('unsigned char', 'node', 'B'), ('unsigned char', 'type', 'B'),
            ('unsigned char', 'music', 'B'), ('unsigned char', 'nnav', 'B'), ('unsigned char', 'nship', 'B'),
            ('unsigned char', 'ntalk', 'B'), ('unsigned char', 'nfield', 'B'), ('unsigned char', 'fighter', 'B'),
@@ -256,7 +272,55 @@ MISSION = [('char', 'id[RV_ID]', '%ds' % TEXT['ID']), ('unsigned char', 'node', 
            ('unsigned char', 'seat[RV_ROOMS][RV_SEATS]', '6B'), ('unsigned char', 'wipe', 'B'), ('unsigned char', 'hit', 'B'),
            ('unsigned char', 'rules', 'B'),
            ('unsigned short', 'talk0', 'H'), ('RvField', 'field[RV_FIELDS]', None),
-           ('unsigned char', 'ngoal', 'B'), ('RvGoal', 'goal[RV_GOALS]', None)]
+           ('unsigned char', 'ngoal', 'B'), ('RvGoal', 'goal[RV_GOALS]', None),
+           # (a planet mission's: its planet's centre, km, its radius, km (0: none), its seed, its ground shapes)
+           ('long', 'px', 'l'), ('long', 'py', 'l'), ('long', 'pz', 'l'), ('unsigned short', 'pradius', 'H'),
+           ('unsigned short', 'pseed', 'H'), ('unsigned char', 'nground', 'B'), ('RvGround', 'ground[RV_GROUNDS]', None)]
+
+
+def planet_record(m, nav_ids):
+    """a mission's planet and its ground shapes (missions.txt planet, ground): the record's tail"""
+    grounds = []
+    if 'planet' not in m:
+        if m['ground']:
+            raise Fail('%s: ground shapes in a mission with no planet' % m['ground'][0][0])
+        return struct.pack('<lllHHB', 0, 0, 0, 0, 0, 0) + b'\0' * (LIMITS['GROUNDS'] * struct.calcsize(fmt(GROUND)))
+    where, f = m['planet']
+    kind = 0
+    if f and f[-1].startswith('kind='):
+        if f[-1][5:] not in PLANET_KINDS:
+            raise Fail('%s: a planet\'s kind= is one of %s' % (where, ', '.join(PLANET_KINDS)))
+        kind, f = PLANET_KINDS.index(f[-1][5:]), f[:-1]
+    if len(f) != 5 or not all(re.fullmatch(r'-?\d+', v) for v in f):
+        raise Fail('%s: planet SEED x y z RADIUS [kind=NAME] (km)' % where)
+    seed, x, y, z, radius = (int(v) for v in f)
+    if not 0 <= seed <= 65535 or not 1000 <= radius <= 65535 or any(not -MAP_KM <= v <= MAP_KM for v in (x, y, z)):
+        raise Fail('%s: a planet\'s seed is 0..65535, its radius 1,000..65,535 km, its centre within %d km' % (where, MAP_KM))
+    for where, g in m['ground']:
+        opts = dict(o.split('=', 1) for o in g[2:] if '=' in o)
+        keys = {'pad': ('radius', 'slope'), 'arch': ('span', 'width', 'air', 'thick'),
+                'canyon': ('width', 'wall', 'depth', 'rise')}.get(g[0] if g else '')
+        extra = {'to'} if g and g[0] == 'canyon' else {'heading'}
+        if not keys or len(g) < 2 or not re.fullmatch(r'nav(\d+)', g[1]) or int(g[1][3:]) not in nav_ids \
+                or set(opts) - set(keys) - extra or any(not opts.get(k, '1').isdigit() for k in keys):
+            raise Fail('%s: ground pad navN radius=KM slope=KM, ground arch navN span=KM width=KM air=KM thick=KM'
+                       ' heading=DEG, or ground canyon navN to=navM width=KM wall=KM depth=KM rise=KM' % where)
+        size = [int(opts.get(k, 0)) for k in keys] + [0] * (4 - len(keys))
+        if g[0] == 'canyon':
+            to = re.fullmatch(r'nav(\d+)', opts.get('to', ''))
+            if not to or int(to.group(1)) not in nav_ids or int(to.group(1)) <= int(g[1][3:]) or not all(size):
+                raise Fail('%s: a canyon runs from its nav point to=navM, a later one the mission has, its sizes'
+                           ' all given' % where)
+            heading = int(to.group(1))
+        else:
+            heading = int(opts.get('heading', 0))
+        if any(not 0 <= v <= 20000 for v in size) or not -360 <= heading <= 360:
+            raise Fail('%s: a ground shape\'s sizes are 0..20,000 km, its heading -360..360' % where)
+        grounds.append(struct.pack(fmt(GROUND), GROUND_KINDS[g[0]], int(g[1][3:]), *size, heading))
+    if len(grounds) > LIMITS['GROUNDS']:
+        raise Fail('%s: %d ground shapes, at most %d' % (m['where'], len(grounds), LIMITS['GROUNDS']))
+    return struct.pack('<lllHHB', x, y, z, radius, seed, len(grounds) | kind << 4) \
+        + b''.join(grounds).ljust(LIMITS['GROUNDS'] * struct.calcsize(fmt(GROUND)), b'\0')
 
 
 def pass_mark(n, where):
@@ -354,7 +418,7 @@ def parse_missions(path):
         where = '%s:%d' % (os.path.basename(path), lineno)
         if key == 'mission':
             cur = {'id': val, 'where': where, 'nav': [], 'ship': [], 'talk': [], 'seats': {}, 'field': [],
-                   'goal': [], 'rules': dict(defaults)}
+                   'goal': [], 'rules': dict(defaults), 'ground': []}
             missions.append(cur)
         elif key == 'rules':            # (before any mission: every mission's; in one: its own)
             parse_rules(where, val, defaults if cur is None else cur['rules'])
@@ -374,6 +438,10 @@ def parse_missions(path):
             cur['field'].append((where, val.split()))
         elif key == 'goal':
             cur['goal'].append((where, val.split()))
+        elif key == 'planet':           # planet SEED x y z RADIUS [kind=NAME] (km): the card's (docs/terrain.md)
+            cur['planet'] = (where, val.split())
+        elif key == 'ground':           # ground pad|arch navN key=KM ... [heading=DEG]
+            cur['ground'].append((where, val.split()))
         elif key in ROOMS:
             cur['seats'][key] = (where, dict(kv.split('=', 1) for kv in val.split()))
         elif key in ('talk', 'say', 'radio'):   # (one list: their order is the order they are said in)
@@ -438,6 +506,15 @@ def volume_box(hit):
 def compile_loadout(r, weapons, hit):
     """a ships.csv row's guns, turrets and missiles: (guns, missile rounds, the gun table's bytes)"""
     recs, guns, rounds = [], 0, 0
+    try:
+        mounts = [tuple(int(v) for v in m.split(':')) for m in (r.get('mounts') or '').split()]
+    except ValueError:
+        raise Fail('ships.csv %s mounts: %r is not X:Y X:Y ...' % (r['key'], r['mounts']))
+    if any(len(m) != 2 or not -127 <= m[0] <= 127 or not -127 <= m[1] <= 127 for m in mounts):
+        raise Fail('ships.csv %s mounts: %r: two numbers each, -127 to 127' % (r['key'], r['mounts']))
+    want = sum(int(tok.rpartition(':')[2].split('x', 1)[0]) for tok in r['guns'].split()) if mounts else 0
+    if mounts and len(mounts) != want:
+        raise Fail('ships.csv %s mounts: %d of them for %d guns' % (r['key'], len(mounts), want))
     for col in ('guns', 'turrets', 'missiles'):
         for tok in r[col].split():
             place, _, tok = tok.rpartition(':')
@@ -456,6 +533,8 @@ def compile_loadout(r, weapons, hit):
             for i in range(count):                             # a record a gun, spread across the middle; an odd
                 x = (2 * i + 1 - count) / max(count, 1) * 0.6 * hit[0] / 127 * 32   # count's middle one on top (the
                 up = 12 if col == 'turrets' else 8 if count % 2 and i == count // 2 else -2   # Schroedinger's third laser)
+                if col == 'guns' and mounts:                   # (or the row's own)
+                    x, up = mounts.pop(0)
                 recs.append((t, int(round(x)), up, 0))
             guns += count if col == 'guns' else 0
     if len(recs) > GUNS:
@@ -633,13 +712,16 @@ def compile_all():
             words = [o for o in f[4:] if '=' not in o]
             opts = dict(o.split('=', 1) for o in f[4:] if '=' in o)
             sw = [o for o in opts.get('switch', '').split(',') if o]
-            if len(f) < 4 or set(words) - {'hidden', 'off'} or set(opts) - {'reach', 'switch'} \
+            if len(f) < 4 or set(words) - {'hidden', 'off', 'ground'} or set(opts) - {'reach', 'switch'} \
                     or not 1000 <= int(opts.get('reach', NAV_REACH)) <= 60000 or len(sw) > 4 \
                     or any(not re.fullmatch(r'[+-]([1-9]|1[0-5])', o) for o in sw):
                 raise Fail('%s: nav ID x y z [hidden] [off] [reach=KM, 1,000 to 60,000] [switch=+N,-M: at most 4, '
                            'navs 1..15]' % where)
             swb = bytes((0x80 if o[0] == '+' else 0) | int(o[1:]) for o in sw) + b'\xff' * (4 - len(sw))
-            navs.append(struct.pack(fmt(NAV), int(f[0]), (1 if 'hidden' in words else 0) | (2 if 'off' in words else 0),
+            if 'ground' in words and 'planet' not in m:
+                raise Fail('%s: a ground nav point in a mission with no planet' % where)
+            navs.append(struct.pack(fmt(NAV), int(f[0]), (1 if 'hidden' in words else 0) | (2 if 'off' in words else 0)
+                                    | (4 if 'ground' in words else 0),
                                     int(f[1]), int(f[2]), int(f[3]), int(opts.get('reach', NAV_REACH)), swb))
         if len(navs) > LIMITS['NAVS']:
             raise Fail('%s: %d nav points, at most %d' % (w, len(navs), LIMITS['NAVS']))
@@ -663,6 +745,9 @@ def compile_all():
             tnum = SHIP_PLAYER if kind == 'player' else SHIP_WINGMAN if kind == 'wingman' else ships.get(kind)
             if tnum is None:
                 raise Fail('%s: unknown ship %s' % (where, kind))
+            if kind not in ('player', 'wingman') and not os.path.exists(os.path.join(ROOT, 'art', 'ships', 'SHIP%02X.RV' % tnum)):
+                # (its views: without them the flight waits for the page's set of it for ever, on DOS too)
+                raise Fail('%s: no art of %s (art/ships/SHIP%02X.RV): a mission flies only ships with views' % (where, kind, tnum))
             nav = int(f[2][3:]) if f[2].startswith('nav') else -1
             if nav not in nav_ids:
                 raise Fail('%s: unknown nav point %s' % (where, f[2]))
@@ -678,12 +763,16 @@ def compile_all():
             if 'role' in opts:
                 if opts['role'] not in ESCORT_ROLES or kind in ('player', 'wingman'):
                     raise Fail('%s: role=%s: an escort target is role=out, role=in or role=back, the home carrier role=home, a '
-                               'fighter that stays at its nav point role=stay' % (where, opts['role']))
+                               'fighter that stays at its nav point role=stay, an enemy wave that guards its point role=guard,'
+                               ' a stream role=stream' % (where, opts['role']))
                 role = ESCORT_ROLES[opts['role']]
                 if role == ESCORT_ROLES['home'] and (nav != 0 or int(f[1]) != 0 or int(opts.get('count', 1)) != 1):
                     raise Fail('%s: role=home is one ship of side 0 at nav0' % where)
-                if role == ESCORT_ROLES['stay'] and int(f[1]) != 0:
-                    raise Fail('%s: role=stay is the player\'s side\'s (side 0)' % where)
+                if role == ESCORT_ROLES['stay'] and int(f[1]) != 0 and tnum < 0x20:
+                    raise Fail('%s: role=stay is a fighter of the player\'s side (side 0), or a capital ship that holds'
+                               ' station (a depot on its pad)' % where)
+                if role == ESCORT_ROLES['guard'] and (int(f[1]) == 0 or tnum >= 0x20 or nav == 0):
+                    raise Fail('%s: role=guard is an enemy fighter wave at a nav point (it guards that point)' % where)
             ai = 0
             if 'ai' in opts:
                 if opts['ai'] not in PROFILES:
@@ -706,8 +795,9 @@ def compile_all():
                     jump = int(opts['jump'])
                 except ValueError:
                     jump = -1
-                if role != ESCORT_ROLES['out'] or jump <= nav or jump not in nav_ids or jump in hidden_navs:
-                    raise Fail('%s: jump=N goes with role=out: N a waypoint after its own nav point' % where)
+                if role not in (ESCORT_ROLES['out'], ESCORT_ROLES['stream']) or jump <= nav or jump not in nav_ids \
+                        or jump in hidden_navs:
+                    raise Fail('%s: jump=N goes with role=out or role=stream: N a waypoint after its own nav point' % where)
             prey = 0
             if 'prey' in opts:          # (the old game's attack orders, its mission records' byte 0x29: logic.c prey_of)
                 if kind in ('player', 'wingman') or opts['prey'] not in ships:
@@ -745,7 +835,8 @@ def compile_all():
             for n_, say_, nav_ in re.findall(r'(\d+) ([A-Z][a-z]+) at Nav (\d)', f[-1]) if k_ == 'briefing' else ():
                 key_ = named.get(say_) or named.get(say_[:-1]) if say_ not in named else named[say_]
                 have = sum(int(next((o[6:] for o in g[3:] if o.startswith('count=')), 1)) for _x, g in m['ship']
-                           if g[0] == key_ and g[1] == '1' and (g[2] == 'nav' + nav_ or 'also=' + nav_ in g[3:]))
+                           if g[0] == key_ and g[1] == '1' and (g[2] == 'nav' + nav_ or 'also=' + nav_ in g[3:])
+                           and 'role=stream' not in g[3:])   # (a stream is no nav point's wave)
                 if int(nav_) in hidden_navs:
                     raise Fail('%s: the briefing names Nav %s, a hidden trigger point the player has no list of' % (_w, nav_))
                 if have != int(n_):
@@ -878,6 +969,12 @@ def compile_all():
                 raise Fail('%s: a field is asteroid|mine x y z radius [density=0..255] [level=0..3]' % where)
             if any(not -MAP_KM <= int(v) <= MAP_KM for v in f[1:4]) or not 0 < int(f[4]) <= 32767:
                 raise Fail('%s: a field is at most %d km out on each axis, its radius 1..32,767 km' % (where, MAP_KM))
+            # (a waypoint inside it is its middle, and the autopilot stops at its edge: wide enough to be some 8,000 km
+            # flown through the rocks; the user, 2026-11-16, "a good solid 7000-10000km")
+            for nw, nf in m['nav']:
+                if 'hidden' not in nf[4:] and int(f[4]) < FIELD_NAV_MIN_KM and \
+                        sum((int(nf[k]) - int(f[k])) ** 2 for k in (1, 2, 3)) < int(f[4]) ** 2:
+                    raise Fail('%s: nav %s lies in this field: its radius must be %d km or more' % (where, nf[0], FIELD_NAV_MIN_KM))
             fields.append(struct.pack(fmt(FIELD), FIELDS[f[0]], density, int(f[1]), int(f[2]), int(f[3]), int(f[4]), level))
         if len(fields) > LIMITS['FIELDS']:
             raise Fail('%s: %d fields, at most %d' % (w, len(fields), LIMITS['FIELDS']))
@@ -906,6 +1003,7 @@ def compile_all():
         rec += b''.join(fields).ljust(LIMITS['FIELDS'] * struct.calcsize(fmt(FIELD)), b'\0')
         goals = mission_goals(m, ships, nav_ids)
         rec += struct.pack('<B', len(goals)) + b''.join(goals).ljust(LIMITS['GOALS'] * struct.calcsize(fmt(GOAL)), b'\0')
+        rec += planet_record(m, nav_ids)
         out_missions.append(rec)
 
     out_pilots = [struct.pack(fmt(PILOT), text(p['key'], TEXT['KEY'], 'people.csv'),
@@ -943,7 +1041,8 @@ def check_dag(nodes):
             visit(w)
         state[v] = 2
     visit(nodes[0]['node'])
-    left = [n['node'] for n in nodes if n['node'] not in state]
+    # (a node in layer 0 is aside from the campaign's way: its missions are flown from the page's menu alone, Mirage's)
+    left = [n['node'] for n in nodes if n['node'] not in state and int(n['layer']) != 0]
     if left:
         raise Fail('campaign.csv: unreachable %s' % left)
 
@@ -981,7 +1080,8 @@ def header_text(sizes):
             '#define RV_SHIP_PLAYER 0x%02X' % SHIP_PLAYER, '#define RV_SHIP_WINGMAN 0x%02X' % SHIP_WINGMAN,
             '#define RV_ESCORT_OUT %d' % ESCORT_ROLES['out'], '#define RV_ESCORT_IN %d' % ESCORT_ROLES['in'],
             '#define RV_ESCORT_HOME %d' % ESCORT_ROLES['home'], '#define RV_ESCORT_STAY %d' % ESCORT_ROLES['stay'],
-            '#define RV_ESCORT_BACK %d' % ESCORT_ROLES['back'],
+            '#define RV_ESCORT_BACK %d' % ESCORT_ROLES['back'], '#define RV_ESCORT_STREAM %d' % ESCORT_ROLES['stream'],
+            '#define RV_ESCORT_GUARD %d' % ESCORT_ROLES['guard'],
             '#define RV_PILOT_NONE 0xFF', '#define RV_SPEAKER_YOU 0x%02X' % SPEAKER_YOU,
             '#define RV_ROOM_RADIO %d' % len(ROOMS), '#define RV_ROOM_DECK %d' % (len(ROOMS) + 1)]
     for k, v in BRIEF_ROOMS.items():
@@ -997,6 +1097,9 @@ def header_text(sizes):
         out.append('#define RV_ROOM_%s %d' % (r.upper(), i))
     for k, v in FIELDS.items():
         out.append('#define RV_FIELD_%s %d' % (k.upper(), v))
+    for k, v in GROUND_KINDS.items():
+        out.append('#define RV_GROUND_%s %d' % (k.upper(), v))
+    out.append('#define RV_NAV_GROUND 4')
     for k, v in MUSIC.items():
         out.append('#define RV_MUSIC_%s %d' % (k.upper(), v))
     out.append('#define RV_MUSIC_COUNT %d' % len(MUSIC_FILES))
@@ -1028,7 +1131,7 @@ def header_text(sizes):
             out.append('#define %s%s %d' % (prefix, k.upper(), i))
     out += ['', '#pragma pack(1)', c_struct('RvGameHeader', HEADER), c_struct('RvPilot', PILOT),
             c_struct('RvNode', NODE), c_struct('RvNav', NAV), c_struct('RvShip', SHIP), c_struct('RvTalk', TALK),
-            c_struct('RvField', FIELD), c_struct('RvGoal', GOAL),
+            c_struct('RvField', FIELD), c_struct('RvGoal', GOAL), c_struct('RvGround', GROUND),
             c_struct('RvMission', MISSION), c_struct('RvShipType', SHIPTYPE), c_struct('RvWeapon', WEAPON),
             '#pragma pack()', '']
     for k, v in sizes.items():

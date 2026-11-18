@@ -158,6 +158,8 @@ XmsBlock xms_alloc(unsigned long bytes, int level)
     return 0;
 }
 
+void planet_xms_freed(unsigned nblocks);   /* (planet.h) */
+
 void xms_free_level(int level)
 {
     int b;
@@ -167,6 +169,21 @@ void xms_free_level(int level)
             g_xms_used -= g_xms[b].n;
             g_xms[b].p = 0;
         }
+    if (level <= XMS_MISSION)
+        planet_xms_freed(0);            /* (a planet's ground, the mission's: gone with it) */
+}
+
+/* (on DOS only the block taken last gives room back; here any: a planet's ground when another is flown, planet.c) */
+void xms_shrink(XmsBlock b, unsigned long bytes)
+{
+    RV_CHECK(b, XMS_MAX_BLOCKS);
+    if (g_xms[b].p && bytes < g_xms[b].n) {
+        uint8_t *q = realloc(g_xms[b].p, bytes ? bytes : 1);
+        if (q)
+            g_xms[b].p = q;
+        g_xms_used -= g_xms[b].n - bytes;
+        g_xms[b].n = bytes;
+    }
 }
 
 static uint8_t *xms_at(XmsBlock b, unsigned long off, unsigned long n)
@@ -188,6 +205,18 @@ int xms_get(XmsBlock b, unsigned long off, void *dst, unsigned long n)
 {
     memcpy(dst, xms_at(b, off, n), n);
     return 1;
+}
+
+/* (a block's place for moves of one's own, bake.c's: the block itself, from its start) */
+void xms_where(XmsBlock b, unsigned *handle, unsigned long *off)
+{
+    *handle = b;
+    *off = 0;
+}
+
+int xms_get_at(unsigned handle, unsigned long off, void *dst, unsigned long n)
+{
+    return xms_get((XmsBlock)handle, off, dst, n);
 }
 
 /* --- the screen and the clock --- */

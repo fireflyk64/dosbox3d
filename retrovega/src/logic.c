@@ -17,6 +17,7 @@
 #include "campaign.h"
 #include "panel.h"
 #include "collide.h"
+#include "planet.h"
 #include "flight.h"
 #include "world.h"
 #include "shots.h"
@@ -75,6 +76,10 @@ static uint16_t __far g_lock_steps;     /* the player's missile lock: steps its 
 static int16_t __far g_lock_xy[2];      /* the lock's crosshair: px right of and below the nose in the seeker's picture */
 #define LOCK_UNSET 0x7FFF               /* (in g_lock_xy[1]: no chase under way, the next sets off from a corner) */
 static uint8_t __far g_cloak_quiet;     /* steps until a transmission's disruption of the cloak is over */
+#define CLOAK_WAIT_STEPS (30 * LOGIC_HZ)   /* once the cloak is off, so long before Alt+C brings it back (the user,
+                                           2026-11-15: "a solid 30 or 60 second cooldown before it may be pressed again
+                                           after a decloak") */
+static uint16_t __far g_cloak_wait;     /* steps of that left */
 
 #define RAM_STEPS 10                    /* a ship hurt by a ram is not hurt by one again for this many steps */
 #define AI_SCATTER 18                   /* an AI's shot's scatter about the nose, 256ths each way (18: 4 degrees; gun_fire), up
@@ -215,6 +220,7 @@ static struct {
 #define LAUNCH_NEAR_KM 5000             /* a hidden point this near the launch is at the launch (wave_may_come) */
 
 static uint16_t g_wave_held;            /* a bit per trigger point whose wave has waited for the enemies out */
+static uint16_t g_stream_at;            /* (stream_step: frameCounter when a stream's ship last came) */
 static uint16_t g_quiet;                /* steps since an enemy was last within AUTOPILOT_CLEAR_KM of a pilot (autoland) */
 static uint8_t g_enemy_ran;             /* the last enemy gone left, not killed */
 static uint16_t g_navs_seen;            /* a bit per nav point the player has reached (nav 0 from the start) */
@@ -330,16 +336,18 @@ static int16_t nav_has_ships(int16_t n);
  * Enyo 1, tests/wc1/run-old.sh: the user, "I thought you had to get within 1500 or 1000 km in the original to have
  * 'visited' something"): at a point with ships still to come, at its reach, where they come (15,000 km short of its
  * nav 1 and its three Dralthi); at a point with nobody to come, NAV_CLOSE_KM short (its nav 2, a field and no ships,
- * fields off: 1,171 km a moment after the jump).  For a point in a field FIELD_IN_KM short of the field's middle, at
- * most half its radius: the rocks come 3,050 km ahead of the nose (rocks.c FX_SPAWN_KM) and only while that point is in
- * the field, so the player stops in the field facing its middle */
+ * fields off: 1,171 km a moment after the jump).  For a point in a field, AUTOPILOT_FIELD_KM outside the field's edge
+ * facing its middle, as for any field on the way, and the player flies in (the user, 2026-11-16, of Enigma 1's nav 2:
+ * "I think it should be at the edge of the asteroid field ... and so you have to fly a good solid 7000-10000km to get
+ * to the nav point right now it's just like 2000 away": it stopped 3,000 km short of the middle, inside).  The rocks
+ * come 3,050 km ahead of the nose (rocks.c FX_SPAWN_KM) while that point is in the field, so they come at once */
 #define NAV_CLOSE_KM 1200
-#define FIELD_IN_KM 3000
+#define AUTOPILOT_FIELD_KM 500          /* it stops this far short of a field's edge */
 static int32_t nav_stop(int16_t n)
 {
     int16_t f = nav_field(n);
     if (f >= 0)
-        return g_fields[f].radius / 2 < FIELD_IN_KM ? g_fields[f].radius / 2 : FIELD_IN_KM;
+        return (int32_t)g_fields[f].radius + AUTOPILOT_FIELD_KM;
     if (n > 0 && !nav_has_ships(n) && NAV_CLOSE_KM < nav_reach(n))
         return NAV_CLOSE_KM;
     return nav_reach(n);
@@ -452,11 +460,20 @@ int16_t logic_wingman_lost(void)
     return -1;
 }
 
+/* a mission ship of the player's side whose loss loses the mission: one with a role (an escort target, a fighter that
+ * stays home), but not a capital ship parked with role=stay (a hauler at a camp, an Ox at a depot: the user,
+ * 2026-11-14, "Keep hauler protection but don't cause failure if user fails it": its goal's points are the reward) */
+static int16_t mship_must_live(int16_t j)
+{
+    return MSHIP_ROLE(j) && !(MSHIP_ROLE(j) == RV_ESCORT_STAY && *(const uint16_t *)MSHIP(j) >= 0x20)
+           && MSHIP_SIDE(j) == commAnimInfo[0];
+}
+
 int16_t logic_escort_lost(void)
 {
     int16_t j;
     for (j = 0; j < 64; j++)
-        if (g_killed[j] && !g_away[j] && MSHIP_ROLE(j) && MSHIP_ROLE(j) != RV_ESCORT_HOME && MSHIP_SIDE(j) == commAnimInfo[0])
+        if (g_killed[j] && !g_away[j] && MSHIP_ROLE(j) != RV_ESCORT_HOME && mship_must_live(j))
             return 1;
     return 0;
 }
@@ -497,7 +514,7 @@ static int16_t mission_done(void)
     const uint16_t *at;
     int16_t n, j;
     for (j = 0; j < 64; j++)            /* (an escort target of the player's side killed: lost, whatever else was done) */
-        if (g_killed[j] && !g_away[j] && MSHIP_ROLE(j) && MSHIP_SIDE(j) == commAnimInfo[0])
+        if (g_killed[j] && !g_away[j] && mship_must_live(j))
             return 0;
     for (j = 0; j < g_narrive; j++)     /* (one still to come in, not met: the player's to fetch, as the briefing says
                                            "bring it home"; the user, 2026-11-07, of LIXIS1: the pilot came home without
@@ -515,8 +532,10 @@ static int16_t mission_done(void)
             return 0;
         }
         at = NAV_SHIPS(n);
-        for (j = 0; j < 10 && at[j] != 0xFFFF; j++)   /* (an enemy that left, afraid, is not in the way) */
-            if (MSHIP_SIDE(at[j]) != commAnimInfo[0] && !g_killed[at[j] & 63] && !g_away[at[j] & 63])
+        for (j = 0; j < 10 && at[j] != 0xFFFF; j++)   /* (an enemy that left, afraid, is not in the way; nor a guard: it
+                                                         may be slipped past, logic.c guard_*) */
+            if (MSHIP_SIDE(at[j]) != commAnimInfo[0] && !g_killed[at[j] & 63] && !g_away[at[j] & 63]
+                && MSHIP_ROLE(at[j]) != RV_ESCORT_GUARD)
                 return 0;
     }
     return 1;
@@ -536,6 +555,7 @@ int16_t logic_is_home(int16_t s)
 #define LANDING_RANGE_KM 25000          /* (the autopilot home stops at the launch's reach, 20,000 km, and the carrier is
                                            2,000 behind the launch: it may be asked on the way in) */
 static int32_t gap_between(int16_t a, int16_t b);
+static int16_t home_slot(void);
 
 int16_t logic_landing_allowed(void)
 {
@@ -549,11 +569,10 @@ int16_t logic_request_landing(void)
         return LANDING_CLEARED;
     if (!logic_landing_allowed())
         return LANDING_NOT_YET;
-    for (s = 1; s < NUM_SHIP_SLOTS; s++)
-        if (logic_is_home(s) && gap_between(0, s) <= LANDING_RANGE_KM) {
-            g_cleared = 1;
-            return LANDING_CLEARED;
-        }
+    if ((s = home_slot()) >= 0 && gap_between(0, s) <= LANDING_RANGE_KM) {   /* (held off the scene too: step_scene) */
+        g_cleared = 1;
+        return LANDING_CLEARED;
+    }
     return LANDING_TOO_FAR;
 }
 
@@ -739,6 +758,7 @@ void logic_start(const RvMission __far *m)
         for (j = 0; j < (int16_t)m->nfield && j < RV_FIELDS; j++)
             g_fields[g_nfields++] = m->field[j];
     _fmemset(&g_pilot, 0, sizeof g_pilot);
+    g_cloak_wait = 0;
     _fmemset(g_turn_frac, 0, sizeof(g_turn_frac));
     _fmemset(g_turn, 0, sizeof g_turn);
     _fmemset(g_mind, 0, sizeof g_mind);
@@ -765,6 +785,7 @@ void logic_start(const RvMission __far *m)
         if (nav_defined(j) && NAV_OFF_AT_START(j))
             g_nav_off |= 1u << j;
     g_wave_held = 0;
+    g_stream_at = 0;
     g_quiet = 0;
     g_enemy_ran = 0;
     g_nav_chosen = 0;
@@ -866,6 +887,27 @@ static void step_timers(void)
 /* 2. each ship's mind, by its rvController: CTL_PLAYER flies by g_pilot; CTL_AI thinks through the aiFighterThink
  * or aiShipThink thunk (ET_CAPSHIP); CTL_PUPPET is the layer's (it writes the slot: nothing here); CTL_SCRIPT the
  * mission's; CTL_FROZEN nothing.  A mind decides: where to turn, the throttle (aiSetSpeed), whom to target */
+/* a planet's ground (planet.h): the minds know nothing of it, so a fighter low over it with its nose going down, or
+ * very low, pulls up (the way up that is nearer its own) */
+#define GROUND_AVOID (400L * 256)       /* positions over the ground */
+/* the planet's straight up at slot s (km: under 2^17, its products with a 256-long direction fit) dotted with v */
+static int32_t up_dot(int16_t s, const RvVec3 *v)
+{
+    const LfVec __far *c = planet_centre();
+    return ((gPositionVector[s].x - c->x) >> 8) * v->x + ((gPositionVector[s].y - c->y) >> 8) * v->y
+           + ((gPositionVector[s].z - c->z) >> 8) * v->z;
+}
+
+static void ground_mind(int16_t s)
+{
+    long roof, over;
+    if (!planet_on() || (over = planet_over((const LfVec *)&gPositionVector[s], &roof)) > GROUND_AVOID)
+        return;
+    if (over > GROUND_AVOID / 2 && up_dot(s, &gOrientationFrontVector[s]) > 0)
+        return;                         /* (climbing already) */
+    g_turn[s].y = up_dot(s, &gOrientationUpVector[s]) >= 0 ? 9 : -9;
+}
+
 static void step_minds(void)
 {
     int16_t s;
@@ -892,8 +934,10 @@ static void step_minds(void)
         case CTL_AI:                    /* (always the thunk: the layer skips it where the ship is a puppet) */
             if (maybeEntityType[s] == ET_CAPSHIP)
                 aiShipThink((uint16_t)s);
-            else
+            else {
                 aiFighterThink((uint16_t)s);
+                ground_mind(s);
+            }
             break;
         default:                        /* a puppet (the layer flies it), a script's, a frozen one: nothing of its own */
             break;
@@ -906,10 +950,16 @@ static void step_minds(void)
 static int16_t cos_nose_to(int16_t s, int16_t h);
 static int32_t km_between(int16_t a, int16_t b);
 
+/* a ship farther than this (the cockpit's readout, hull to hull) is no target, and a target that goes farther is
+ * dropped: the scene's reach (SCENE_KM), what the old game kept in its world (the user, 2026-11-16: "I notice sometimes
+ * the carrier is targetable from VERY far away ... either way we shouldn't be able to target things far away") */
+#define TARGET_KM 16000
+
 int16_t logic_target_ahead(int16_t s)
 {
     RvVec3 d;
-    if (s <= 0 || s >= NUM_SHIP_SLOTS || !slot_is_ship(s) || maybeEntityType[s] == ET_MISSILE || shipAiState[s] == 9)
+    if (s <= 0 || s >= NUM_SHIP_SLOTS || !slot_is_ship(s) || maybeEntityType[s] == ET_MISSILE || shipAiState[s] == 9
+        || gap_between(0, s) > TARGET_KM)
         return 0;
     d = vec3(TO_KM(gPositionVector[s].x - gPositionVector[0].x), TO_KM(gPositionVector[s].y - gPositionVector[0].y),
              TO_KM(gPositionVector[s].z - gPositionVector[0].z));
@@ -989,7 +1039,8 @@ int16_t logic_target_lock(void)
 /* each step: a target that died is dropped and its lock with it; the lock goes with the tracking system */
 static void target_tick(void)
 {
-    if (g_sys.target >= 0 && (!slot_is_ship(g_sys.target) || shipAiState[g_sys.target] == 9)) {
+    if (g_sys.target >= 0 && (!slot_is_ship(g_sys.target) || shipAiState[g_sys.target] == 9
+                              || gap_between(0, g_sys.target) > TARGET_KM)) {
         g_sys.target = -1;
         g_sys.hold = 0;
     }
@@ -1127,12 +1178,24 @@ static void cloak_set(int16_t s, uint16_t st)
                             | (st == RV_CLOAK_ON ? RV_FLAG_UNSEEN : 0));
 }
 
-void logic_cloak_key(void)
+int16_t logic_cloak_key(void)
 {
     const RvShipType __far *t = slot_type(0);
     g_cloak_quiet = 0;
-    cloak_set(0, !CLOAK_OF(0) && t && (t->flags & RV_SHIPTYPE_FLAG_CLOAK) && shipAiState[0] != 9 ? RV_CLOAK_ON : RV_CLOAK_OFF);
+    if (CLOAK_OF(0)) {
+        cloak_set(0, RV_CLOAK_OFF);
+        g_cloak_wait = CLOAK_WAIT_STEPS;
+        return 1;
+    }
+    if (!t || !(t->flags & RV_SHIPTYPE_FLAG_CLOAK) || shipAiState[0] == 9)
+        return 1;
+    if (g_cloak_wait)
+        return 0;
+    cloak_set(0, RV_CLOAK_ON);
+    return 1;
 }
+
+uint16_t logic_cloak_wait(void) { return g_cloak_wait; }
 
 void logic_cloak_disrupt(void)
 {
@@ -1144,12 +1207,18 @@ void logic_cloak_disrupt(void)
  * or the ship lost; disrupted while the afterburner burns or a transmission is fresh, else on */
 static void cloak_step(void)
 {
-    if (CLOAK_OF(0) == RV_CLOAK_OFF)
+    if (CLOAK_OF(0) == RV_CLOAK_OFF) {
+        if (g_cloak_wait)
+            g_cloak_wait--;
         return;
+    }
     if (g_cloak_quiet)
         g_cloak_quiet--;
-    cloak_set(0, shipAiState[0] == 9 || (g_sys.armed && (g_pilot.guns || g_pilot.missile)) ? RV_CLOAK_OFF
-                 : g_pilot.afterburner || g_cloak_quiet ? RV_CLOAK_BROKEN : RV_CLOAK_ON);
+    if (shipAiState[0] == 9 || (g_sys.armed && (g_pilot.guns || g_pilot.missile))) {
+        cloak_set(0, RV_CLOAK_OFF);     /* (off for good: Alt+C again, once CLOAK_WAIT_STEPS are over) */
+        g_cloak_wait = CLOAK_WAIT_STEPS;
+    } else
+        cloak_set(0, g_pilot.afterburner || g_cloak_quiet ? RV_CLOAK_BROKEN : RV_CLOAK_ON);
 }
 
 static void step_fire(void)
@@ -3524,6 +3593,44 @@ static int16_t tailer_of(int16_t s)
     return -1;
 }
 
+/* A guard (missions.txt role=guard: an enemy wave that keeps its nav point; the user, 2026-11-14, of the cloak strike:
+ * "Maybe lots of heavy bad on the way. Stay cloaked. Arrive at the target lightly defended. Or hit each heavy bad with
+ * surprise"): it fights what it sees within GUARD_KM of itself, and lets it go past half as far again, where a fighter's
+ * engage distance is some 25,000 km (a wave left with the player cloaked went for the carrier 9,000 km off); with
+ * nobody to fight it flies back to its post (its nav point and its at= place) and loiters round it.  It has no orders
+ * and raids nothing.  A guard idle at its post does not hold the autopilot or the landing (enemy_awake), nor a wave
+ * waiting for the last to go (enemy_fighters_out), and the mission is done without it (mission_done): it may be
+ * slipped past.  Its nav point's goal is still met only with it gone */
+#define GUARD_KM 6000
+#define GUARD_RING_KM 1500              /* (farther than this from its post, it turns back) */
+
+static int16_t guard_return(int16_t s, const AiProfile __far *p)
+{
+    uint16_t r = slotMissionShip[s];
+    const uint8_t *rec, *nav;
+    RvVec3 d, b;
+    if (r >= 64)
+        return 0;
+    rec = MSHIP(r);
+    nav = NAV_REC(MSHIP_NAV(r) & 15);
+    d = vec3(NAV_REC_KM(nav, 0) + MSHIP_REC_KM(rec, 0) - TO_KM(gPositionVector[s].x),
+             NAV_REC_KM(nav, 1) + MSHIP_REC_KM(rec, 1) - TO_KM(gPositionVector[s].y),
+             NAV_REC_KM(nav, 2) + MSHIP_REC_KM(rec, 2) - TO_KM(gPositionVector[s].z));
+    if (len_of(d.x, d.y, d.z) < GUARD_RING_KM)
+        return 0;                       /* (at its post: its idle tactic carries it out, and back it comes) */
+    to_body(s, &d, &b);
+    steer_to(s, p, b.x, b.y, b.z);
+    throttle(s, slot_type(s) ? slot_type(s)->cruise_kps : 200, 0);
+    return 1;
+}
+
+/* an enemy that keeps the autopilot and the landing waiting: any not dying, but a guard that has nobody to fight */
+static int16_t enemy_awake(int16_t s)
+{
+    return slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9
+           && !(role_of(s) == RV_ESCORT_GUARD && rvTarget[s] == 0xFF);
+}
+
 /* a fighter's mind for a step: its target, its situation, its tactic, its decisions (g_turn, the throttle, fire) */
 static void fighter_think(int16_t s)
 {
@@ -3531,7 +3638,7 @@ static void fighter_think(int16_t s)
     const AiProfile __far *p = &k_profiles[m->profile < P_COUNT ? m->profile : P_FIGHTER];
     View v;
     int16_t sit, k, near_ = -1;
-    int32_t d, bd = INT32_C(0x7FFFFFFF);
+    int32_t d, bd = INT32_C(0x7FFFFFFF), reach;
     m->leader = leader_of(s);
     if (rvTaunt[s] != 0xFF) {           /* a taunt: its anger at that pilot, unless its orders hold it (logic_taunt) */
         if (order_hold(s, m->profile) < 2) {
@@ -3547,9 +3654,11 @@ static void fighter_think(int16_t s)
     }
     if (m->tactic == T_IDLE && p->idle == T_WAIT)   /* (its first thought: one that waits lies in wait from the start) */
         take_tactic(s, m, p, T_WAIT);
-    /* the target: kept while it lives and stays in reach, else the nearest enemy within the engage distance */
+    /* the target: kept while it lives and stays in reach, else the nearest enemy within the engage distance (a guard's:
+     * GUARD_KM, wherever it is) */
+    reach = role_of(s) == RV_ESCORT_GUARD ? GUARD_KM : (int32_t)p->engage_km;
     if (m->target != 0xFF && (!slot_is_ship(m->target) || shipAiState[m->target] == 9 || commAnimInfo[m->target] == commAnimInfo[s]
-                              || CLOAK_OF(m->target) == RV_CLOAK_ON || km_between(s, m->target) > (int32_t)p->engage_km * 3 / 2))
+                              || CLOAK_OF(m->target) == RV_CLOAK_ON || km_between(s, m->target) > reach * 3 / 2))
         m->target = 0xFF;
     for (k = 0; k < NUM_SHIP_SLOTS; k++) {
         if (k == s || !slot_is_ship(k) || commAnimInfo[k] == commAnimInfo[s] || shipAiState[k] == 9 || (rvFlags[k] & 16))
@@ -3560,7 +3669,7 @@ static void fighter_think(int16_t s)
             near_ = k;
         }
     }
-    {
+    if (role_of(s) != RV_ESCORT_GUARD) {   /* (a guard has no orders and raids nothing: it keeps its post) */
         int16_t prey = prey_of(s, PREY_PCT(m->profile));
         if (prey >= 0) {                /* (its orders: at the prey as a raider is, whoever is nearer) */
             m->target = (uint8_t)prey;
@@ -3572,7 +3681,7 @@ static void fighter_think(int16_t s)
                 m->target = (uint8_t)raid;
         }
     }
-    if (!m->raiding && near_ >= 0 && bd <= p->engage_km && (m->target == 0xFF || bd * 3 < km_between(s, m->target) * 2))
+    if (!m->raiding && near_ >= 0 && bd <= reach && (m->target == 0xFF || bd * 3 < km_between(s, m->target) * 2))
         m->target = (uint8_t)near_;
     if (m->taunt) {                     /* taunted: the taunter, wherever it is and whoever is nearer (logic_taunt) */
         int16_t tk = tailer_of(s), o = order_hold(s, m->profile);
@@ -3619,6 +3728,8 @@ static void fighter_think(int16_t s)
     rvTarget[s] = m->target;
     if (m->target == 0xFF) {            /* nobody to fight: the idle tactic */
         int16_t cap;
+        if (role_of(s) == RV_ESCORT_GUARD && guard_return(s, p))
+            return;
         if (((g_order[s] == ORDER_RTB && is_wingman(s)) || (role_of(s) == RV_ESCORT_STAY && g_order[s] == ORDER_FREE))
             && (cap = nearest_capital(s)) >= 0) {   /* home: round its carrier; a fighter that stays (role=stay, the
                                            carrier's patrol), round the capital ship nearest it */
@@ -3894,7 +4005,8 @@ static void ship_think(int16_t s)
         if (!slot_is_ship(s))
             return;
     } else
-        throttle(s, role_of(s) == RV_ESCORT_HOME ? 0 : t ? t->cruise_kps : 100, 0);   /* (the carrier holds station) */
+        throttle(s, role_of(s) == RV_ESCORT_HOME || role_of(s) == RV_ESCORT_STAY ? 0 : t ? t->cruise_kps : 100, 0);
+                                        /* (the carrier holds station, and a capital ship that stays: a depot on its pad) */
     m->target = (uint8_t)(near_ >= 0 ? near_ : 0xFF);
     rvTarget[s] = m->target;
     if (near_ < 0)
@@ -4031,6 +4143,110 @@ static void step_collisions(void)
     }
 }
 
+/* 7b. a planet's ground (planet.h, the card's).  The player that flies into it, or into an arch's rock, is destroyed
+ * (the user, 2026-11-15: "intersection with the terrain causes a human ship to explode"); the others never strike it:
+ * low over it they are lifted, a little each step, to glide at HOVER_OVER ("perhaps AIs get shifted some fixed number
+ * of meters upward smoothly ... so it looks like they are hovering towards the surface at X meters"), their fall each
+ * step taken back.  Under a slab's roof, too close, a ship has the step that took it there undone.  A puppet is its
+ * own machine's */
+#define GROUND_CLEAR 2560               /* the player's centre over the ground at least, positions: 10 km */
+#define HOVER_OVER (40L * 256)          /* the height the others glide at, positions */
+#define HOVER_RISE (3L * 256)           /* the least they are lifted toward it a step */
+#define HOVER_AHEAD (400L * 256)        /* under this the ground ahead counts too: HOVER_STEPS steps ahead */
+#define HOVER_STEPS 8
+
+/* near a planet (the ALT readout's reach, flight.c) the player's throttle goes no lower than SPEED_FLOOR_KPS (the user,
+ * 2026-11-15: "near a planet the min speed should be 100... below 100 should bring it back up and do a few points of
+ * damage at that time"): the pilot's own cut (the ship still moving) costs STALL_POINTS, at most once a second; a stop
+ * the game made (a crash, a ram, the carrier's hull: the speed 0 too) is only brought back up */
+#define SPEED_FLOOR_KPS 100
+#define SPEED_FLOOR_OVER (20000L * 256)
+#define STALL_POINTS 3
+static uint16_t __far g_stall_at;
+
+#ifdef RV_TESTS
+static long g_low_over = 0x7FFFFFFFL;
+static int16_t g_low_slot;
+#endif
+
+static void step_ground(void)
+{
+    int16_t s;
+    if (!planet_on())
+        return;
+    for (s = 0; s < NUM_SHIP_SLOTS; s++) {
+        RvVec3 *p = &gPositionVector[s], *v = &gVelocityVector[s];
+        long roof, over;
+        if (!slot_is_ship(s))
+            continue;
+        over = planet_over((const LfVec *)p, &roof);
+#ifdef RV_TESTS
+        if (s == 0 && frameCounter % 30 == 0)
+            RV_LOG("planet: frame %u, the player %ld km over the ground, roof %ld", frameCounter, over / 256, roof / 256);
+#endif
+        if (s == 0 && shipAiState[0] != 9 && over < SPEED_FLOOR_OVER && setSpeed[0] < SPEED_FLOOR_KPS) {
+            if (speedLo[0] && (uint16_t)(frameCounter - g_stall_at) >= LOGIC_HZ) {
+                g_stall_at = frameCounter;
+                (void)do_damage(0, 0, STALL_POINTS, RV_WHERE(p));
+            }
+            setSpeed[0] = SPEED_FLOOR_KPS;
+        }
+        if (rvController[s] == CTL_PUPPET)
+            continue;
+        if (s == 0 ? over < GROUND_CLEAR || roof < GROUND_CLEAR : roof < GROUND_CLEAR) {
+            if (s == 0 && shipAiState[0] != 9)
+                (void)do_damage(0, 0, 0xFFFFU, RV_WHERE(p));
+            p->x -= v->x;               /* (the step that took it there undone) */
+            p->y -= v->y;
+            p->z -= v->z;
+            if (s == 0)
+                *v = vec3(0, 0, 0);
+        }
+#ifdef RV_TESTS
+        if (s && over < g_low_over) {
+            g_low_over = over;
+            g_low_slot = s;
+        }
+#endif
+        if (s && over < HOVER_AHEAD && roof >= GROUND_CLEAR) {
+            LfVec at;                   /* (low: the ground where it will be HOVER_STEPS on counts too, so it rises
+                                           before a cliff, not inside it) */
+            long r2;
+            at.x = p->x + v->x * HOVER_STEPS;
+            at.y = p->y + v->y * HOVER_STEPS;
+            at.z = p->z + v->z * HOVER_STEPS;
+            at.x = planet_over(&at, &r2);
+            if (at.x < over)
+                over = at.x;
+        }
+        if (s && over < HOVER_OVER && roof >= GROUND_CLEAR) {
+            const LfVec __far *c = planet_centre();
+            RvVec3 u;
+            int32_t fall, lift = HOVER_OVER - over;
+            if (lift > HOVER_RISE)      /* (a quarter of the way a step, at least HOVER_RISE: a cliff ahead outruns a
+                                           steady lift) */
+                lift = lift / 4 > HOVER_RISE ? lift / 4 : HOVER_RISE;
+            u = vec3((p->x - c->x) >> 14, (p->y - c->y) >> 14, (p->z - c->z) >> 14);   /* (its way up, in 64 km:
+                                           vec_norm squares the parts, and in km a planet's 64,000 passed 31 bits:
+                                           undefined in C, UBSan's overflow; DOS's wrap came out right under 65,536
+                                           km only; M8.67) */
+            vec_norm(&u);
+            fall = (v->x * u.x + v->y * u.y + v->z * u.z) >> 8;
+            if (fall < 0)
+                lift -= fall;
+            p->x += lift * u.x >> 8;
+            p->y += lift * u.y >> 8;
+            p->z += lift * u.z >> 8;
+        }
+    }
+#ifdef RV_TESTS
+    if (frameCounter % 30 == 0) {
+        RV_LOG("planet: frame %u, the lowest other ship %ld km over the ground (slot %d)", frameCounter, g_low_over / 256, g_low_slot);
+        g_low_over = 0x7FFFFFFFL;
+    }
+#endif
+}
+
 /* 8. the dying (shipAiState 9: an explosion's time, then despawn) and the player's end (missionStatus 4) */
 static void step_deaths(void)
 {
@@ -4064,8 +4280,8 @@ static void step_deaths(void)
  * held: its slot keeps it just as it is, but it is no ship to anything (no target, no radar, nothing to run into), and
  * it is back when the player is.  An enemy fighter stays, since it can fly after the player; so does the wing, and a
  * ship the player is escorting, which has its own way to go; and so do the ships of the nav point the player came to
- * last, and the launch's on the way home: the player arrives at a point's reach, 10,000 to 30,000 km out, and what
- * it came for is in the scene, however far (the user, 2026-11-04: "I went to nav 2 exactly ... and did not see the
+ * last (not the launch's, the carrier coming in on the way home as the player nears it): the player arrives at a
+ * point's reach, 10,000 to 30,000 km out, and what it came for is in the scene, however far (the user, 2026-11-04: "I went to nav 2 exactly ... and did not see the
  * destroyer": the small map's scene of 7,200 km had held it 8,100 km off the autopilot's stop) */
 #define SCENE_KM 16000
 #define SCENE_BACK_KM 15500             /* (a little nearer, so a ship on the line does not flicker) */
@@ -4093,15 +4309,17 @@ static int32_t human_km(int16_t s)
     return best;
 }
 
-/* a ship of the nav point the player came to last (not the launch: the player leaves it), or of the launch with
- * every waypoint reached, the way home: in the scene however far it is */
+/* a ship of the nav point the player came to last (not the launch's: the player leaves it, and the way home brings
+ * the carrier in as the player comes near it, as any other: the user, 2026-11-16, of the carrier on the way home from
+ * Enigma 1's nav 3, 45,000 km off: "it should have despawned for the time being until you get close"): in the scene
+ * however far it is */
 static int16_t nav_point_here(int16_t s)
 {
     int16_t n;
     if (slotMissionShip[s] >= 64)
         return 0;
     n = (int16_t)(MSHIP_NAV(slotMissionShip[s]) & 15);
-    return n == 0 ? nav_next_unseen() == 0 : n == (int16_t)currentNavPoint;
+    return n != 0 && n == (int16_t)currentNavPoint;
 }
 
 /* (by the nearest human: alone, the local pilot; in a shared flight a ship near any pilot stays in the scene on every
@@ -4141,7 +4359,8 @@ static int16_t enemy_fighters_out(void)
     int16_t s;
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
         if (slot_is_ship(s) && shipAiState[s] != 9 && commAnimInfo[s] != commAnimInfo[0]
-            && gInstanceShipTypes[s] < 0x20)
+            && gInstanceShipTypes[s] < 0x20 && role_of(s) != RV_ESCORT_STREAM   /* (a stream's never are: stream_step) */
+            && role_of(s) != RV_ESCORT_GUARD)   /* (nor a guard's: it keeps its post) */
             return 1;
     return 0;
 }
@@ -4215,7 +4434,8 @@ int16_t logic_goal(uint8_t kind, uint8_t a, uint8_t nav, uint8_t nth)
         if (nav && !((g_navs_been | g_navs_seen) >> nav & 1))
             return 0;
         for (j = 0; j < 10 && at[j] != 0xFFFF; j++)
-            if (MSHIP_SIDE(at[j]) != commAnimInfo[0] && !g_killed[at[j] & 63] && !g_away[at[j] & 63])
+            if (MSHIP_SIDE(at[j]) != commAnimInfo[0] && !g_killed[at[j] & 63] && !g_away[at[j] & 63]
+                && MSHIP_ROLE(at[j]) != RV_ESCORT_STREAM)
                 return 0;
         return 1;
     }
@@ -4301,9 +4521,87 @@ static int16_t enemy_near_humans(void)
     int16_t s;
     humans_note();
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
-        if (slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9 && human_km(s) < AUTOPILOT_CLEAR_KM)
+        if (enemy_awake(s) && human_km(s) < AUTOPILOT_CLEAR_KM)
             return 1;
     return 0;
+}
+
+/* a stream (missions.txt role=stream; the user, 2026-11-14, the canyon run: "Can we have aera ships continuously
+ * spawning from above to keep around 2 or 3 raining down upon the player ... Once the player takes one out another
+ * shows up ahead either in the canyon or above"): from its nav point's reaching until the nav point its jump= names is
+ * reached (or to the end), each of its records keeps a ship in the world.  One killed or gone, its record comes again
+ * (outerSpawnShipEntity: the host's, which its guests are given) STREAM_GAP steps after the last one came: ahead of the
+ * player on the way to the next nav point, STREAM_AHEAD_KM to 3,000 km more, down at the way's height or, one in two,
+ * 2,500 to 4,500 km over it, its nose on the player; over a planet raised over the ground.  A stream's ships hold no
+ * wave and no nav point's goal waits for them */
+#define STREAM_GAP (2 * LOGIC_HZ)
+#define STREAM_AHEAD_KM 6000
+
+static void stream_step(void)
+{
+    static const char __far s_came[] = "logic: the stream's ship %d came again (slot %d), %ld km ahead%s";
+    int16_t r, s, n, next;
+    int32_t px = TO_KM(gPositionVector[0].x), py = TO_KM(gPositionVector[0].y), pz = TO_KM(gPositionVector[0].z);
+    int32_t dx, dy, dz, l, k, ux, uy, uz;
+    uint16_t d;
+    if ((uint16_t)(frameCounter - g_stream_at) < STREAM_GAP || !slot_is_ship(0))
+        return;
+    for (r = 0; r < 64; r++) {
+        if (MSHIP_ROLE(r) != RV_ESCORT_STREAM || !(g_navs_seen >> (MSHIP_NAV(r) & 15) & 1)
+            || (MSHIP_JUMP(r) && (g_navs_seen >> (MSHIP_JUMP(r) & 15) & 1)))
+            continue;
+        for (s = 1; s < NUM_SHIP_SLOTS; s++)
+            if (slot_is_ship(s) && slotMissionShip[s] == r && shipAiState[s] != 9)
+                break;
+        if (s < NUM_SHIP_SLOTS)
+            continue;                   /* (its ship is in the world) */
+        /* the way: to the next nav point of its stretch the player has not reached (nearer than 3,000 km: the one
+         * after) */
+        for (next = -1, n = (int16_t)(MSHIP_NAV(r) & 15) + 1; n < NAVS && next < 0; n++)
+            if (nav_defined(n) && !(g_navs_seen >> n & 1)
+                && len_of(NAV_AT(n, 0) - px, NAV_AT(n, 1) - py, NAV_AT(n, 2) - pz) > 3000)
+                next = n;
+        if (next < 0)
+            return;
+        dx = NAV_AT(next, 0) - px;
+        dy = NAV_AT(next, 1) - py;
+        dz = NAV_AT(next, 2) - pz;
+        l = len_of(dx, dy, dz);
+        d = cap_dice((uint16_t)r, 0xFE, 1);
+        k = STREAM_AHEAD_KM + (int32_t)(d % 3000);
+        if (k > l)
+            k = l;
+        px += dx * k / l;               /* (km: under 100,000 times under 9,000) */
+        py += dy * k / l;
+        pz += dz * k / l;
+        if (d & 0x8000) {               /* above: along the way up there (the planet's, else the world's y) */
+            const LfVec __far *c = planet_on() ? planet_centre() : 0;
+            int32_t up = 2500 + (int32_t)(d >> 4 & 2047);
+            ux = c ? px - TO_KM(c->x) : 0;
+            uy = c ? py - TO_KM(c->y) : 1;
+            uz = c ? pz - TO_KM(c->z) : 0;
+            l = len_of(ux, uy, uz);
+            px += ux * up / l;
+            py += uy * up / l;
+            pz += uz * up / l;
+        }
+        s = (int16_t)outerSpawnShipEntity((uint16_t)r, MSHIP_NAV(r) & 15);
+        if (s <= 0 || s >= NUM_SHIP_SLOTS)
+            return;                     /* (a guest's: the host's comes) */
+        g_stream_at = frameCounter;
+        g_killed[r] = g_away[r] = 0;    /* (its kill counts again: step_mission) */
+        gPositionVector[s] = vec3(px * KM, py * KM, pz * KM);
+        planet_raise((LfVec *)&gPositionVector[s], 500);
+        dx = TO_KM(gPositionVector[0].x - gPositionVector[s].x);   /* (its nose on the player: a vector some 256 long) */
+        dy = TO_KM(gPositionVector[0].y - gPositionVector[s].y);
+        dz = TO_KM(gPositionVector[0].z - gPositionVector[s].z);
+        l = len_of(dx, dy, dz) / 256 + 1;
+        gOrientationFrontVector[s] = vec3(dx / l, dy / l, dz / l);
+        gOrientationRightVector[s] = vec3(256, 0, 0);
+        ship_orthonormalise(s);
+        rv_notef(s_came, r, s, (long)k, d & 0x8000 ? ", above" : "");
+        return;                         /* (one a step at most) */
+    }
 }
 
 /* 9. the mission: nav points reached (enterNavPoint), waves, objectives, the score (victoryPoints, nonzero won).
@@ -4313,6 +4611,7 @@ static void step_mission(void)
     int16_t s, n;
     land_near();
     arrivals_step();
+    stream_step();
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
         if (slot_is_ship(s) && shipAiState[s] == 9 && slotMissionShip[s] < 64) {
             if (!g_killed[slotMissionShip[s]] && commAnimInfo[s] != commAnimInfo[0])
@@ -4459,6 +4758,7 @@ void logic_frame(void)
     step_shots();
     step_missiles();
     step_collisions();
+    step_ground();
     step_deaths();
     step_mission();
     hud_marks();
@@ -4508,7 +4808,6 @@ void logic_end(void)
  * point, as the old games cut to the arrival; 1 when it went, 0 when it may not.  (On a multiplayer client the layer
  * steps over the key's call: the host's autopilot moves everyone).  The next nav point is the first not reached
  * yet, home (nav 0) when all are; the player arrives at its reach (nav_reach), facing it */
-#define AUTOPILOT_FIELD_KM 500          /* it stops this far short of a field's edge */
 #define AUTOPILOT_REGION_IN_KM 500      /* and this far inside the reach of a trigger point on its way, so it goes off */
 #define AUTOPILOT_MIN_KM 1000           /* a field nearer than this along the way: it will not go (the old game's: not in
                                            a field, and it stops at the edge; the player flies through) */
@@ -4585,16 +4884,20 @@ static int32_t way_stop(int16_t next, int16_t *region, int16_t *field)
 /* the autopilot may go: the player alive, no enemy within AUTOPILOT_CLEAR_KM, a nav point to go to (the one chosen, else
  * the next not reached, else home) not yet reached, and no field at hand: that nav point, or -1 (the engine asks before
  * its flyby, flight.c) */
+uint8_t __far logic_auto_why;           /* why it last said no (logic.h AUTO_WHY_*), for the cockpit to say */
+
 int16_t logic_autopilot_ready(void)
 {
     int16_t s, next;
+    logic_auto_why = 0;
     if (!slot_is_ship(0) || shipAiState[0] == 9 || sys_level(SYS_NAV) >= SYS_WRECKED)
         return -1;                      /* (the nav computer wrecked: the pilot flies home by hand, the cross still shows) */
     humans_note();
+    logic_auto_why = AUTO_WHY_ENEMY;
     for (s = 1; s < NUM_SHIP_SLOTS; s++)   /* (near any human: a wingman in a fight on another machine holds it too) */
-        if (slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9
-            && human_km(s) < AUTOPILOT_CLEAR_KM)
+        if (enemy_awake(s) && human_km(s) < AUTOPILOT_CLEAR_KM)
             return -1;
+    logic_auto_why = 0;
     /* (the one N picked, else the way ahead: a patrol in any order, as the old game's map lets one (its Enter takes the
      * pick: traced 2026-11-04, Enyo 1's autopilot to Nav 2 first), an escort mission too: the escort comes along only
      * to its own next waypoint (escort_comes); the user: "ok can you make the auto system like WC1 in that respect") */
@@ -4604,9 +4907,11 @@ int16_t logic_autopilot_ready(void)
     {
         int16_t region, field;
         int32_t stop = way_stop(next, &region, &field);
-        if ((field || nav_field(next) >= 0) && stop < AUTOPILOT_MIN_KM)
+        if ((field || nav_field(next) >= 0) && stop < AUTOPILOT_MIN_KM) {
+            logic_auto_why = AUTO_WHY_FIELD;
             return -1;                  /* (a field across the way; or the point's own field, the player at the autopilot's
-                                           stop in it or nearer its middle: flown in by hand) */
+                                           stop at its edge or nearer its middle: flown in by hand) */
+        }
     }
     return next;
 }
@@ -4847,6 +5152,10 @@ int16_t logic_autopilot(void)
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
         if (moved >> s & 1)
             spawn_apart(s);
+    if (planet_on())                    /* (a line that ran into a planet: whoever it put under the ground raised) */
+        for (s = 0; s < NUM_SHIP_SLOTS; s++)
+            if (!s || moved >> s & 1)
+                planet_raise((LfVec *)&gPositionVector[s], 300);
     step_scene();                       /* (what was here gone, what is there back, before the next picture) */
     if (region >= 0) {
         if (wave_may_come(region))
@@ -4962,7 +5271,8 @@ void logic_damage_snap(int16_t save)
  * the dice: the hull (4), a count, dead past the type's hull_hits of them (a count (hull + hull_hits) / (hull_hits + 1)
  * of damagePoints: the old table's Dralthi 7, Krant 6, Salthi 5); the core (0), a point; from behind (the old game's
  * test is the bolt's way against the nose: a bolt flying the ship's own way struck its rear, where ours take the hit's
- * place behind its middle) one that kills outright (2), the engine (7) and another (1); from the front a gun lost (5),
+ * place behind its middle) one that kills outright (2), the engine (7) and another (1); from the front an entry of its
+ * list lost (5: a gun, or a launcher's missile),
  * gunDamage up to 5 (6) and the engine flag (8), each while there is one to lose; the shields' generator (3) leaves
  * both shields down for good and spends nothing.  A point that falls where nothing is to spend is rolled again (never
  * for ever: the hull and the core always spend, two of the nine at the fewest, so a point takes 4.5 rolls on average at
@@ -4972,6 +5282,21 @@ void logic_damage_snap(int16_t save)
  * where ours had died at the hull's points from any side, 13 hits at most (182) and a Krant's 6.  Returns what
  * damagePoints takes, 0xFFFF a kill outright */
 #define ROULETTE_ROLLS 8
+/* the old game's list entries gun record g of s stands for (the roulette's system 5, ovr143:10AA: an entry of the ship's
+ * whole list by the dice, its guns, its missiles and its decoys alike, removed): a gun not destroyed one, a launcher its
+ * rounds, else none.  (Its Dralthi had seven, two lasers, three decoys and two heat seekers, and took some 22 laser hits
+ * head on where the Nicander, its two guns alone counted, took 19; tests/wc1/README.md "The guns against the old
+ * game's") */
+static int16_t list_entries(int16_t s, int16_t g)
+{
+    const RvWeapon __far *w = weapon(GUN_TYPE(s, g));
+    if (!w || (GUN_STATE(s, g) & GUN_DESTROYED))
+        return 0;
+    if (w->kind == RV_WK_GUN)
+        return 1;
+    return w->kind == RV_WK_MISSILE || w->kind == RV_WK_TORPEDO || w->kind == RV_WK_ROCKET ? GUN_STATE(s, g) & 0x7F : 0;
+}
+
 static uint16_t fighter_roulette(int16_t s, uint16_t left, const RvShipType __far *t, int16_t behind)
 {
     uint16_t points = left / 6 ? left / 6 : 1, took = 0;
@@ -5002,22 +5327,24 @@ static uint16_t fighter_roulette(int16_t s, uint16_t left, const RvShipType __fa
             points--;
             took = (uint16_t)(took > 0xFFFFU - hit ? 0xFFFF : took + hit);
             break;
-        case 5:                         /* (from the front: a gun lost, one of those left by the dice) */
+        case 5:                         /* (from the front: an entry of its list lost by the dice, a gun or a missile,
+                                           while it has one: list_entries) */
             if (behind)
                 break;
-            for (g = 0, n = 0; g < GUN_COUNT(s) && g < 16; g++) {
-                const RvWeapon __far *w = weapon(GUN_TYPE(s, g));
-                if (w && w->kind == RV_WK_GUN && !(GUN_STATE(s, g) & GUN_DESTROYED))
-                    n++;
-            }
+            for (g = 0, n = 0; g < GUN_COUNT(s) && g < 16; g++)
+                n += list_entries(s, g);
             if (!n)
                 break;
             for (g = 0, n = (int16_t)(game_rand() % n); g < GUN_COUNT(s) && g < 16; g++) {
-                const RvWeapon __far *w = weapon(GUN_TYPE(s, g));
-                if (w && w->kind == RV_WK_GUN && !(GUN_STATE(s, g) & GUN_DESTROYED) && !n--) {
-                    GUN_STATE(s, g) |= GUN_DESTROYED;
+                int16_t e = list_entries(s, g);
+                if (n < e) {
+                    if (weapon(GUN_TYPE(s, g))->kind == RV_WK_GUN)
+                        GUN_STATE(s, g) |= GUN_DESTROYED;
+                    else
+                        GUN_STATE(s, g)--;   /* (a round gone: its rounds are over n, the destroyed bit clear) */
                     break;
                 }
+                n -= e;
             }
             points--;
             break;
@@ -5279,7 +5606,7 @@ static void wave_out(const uint8_t __far *came)
     int32_t cx = 0, cy = 0, cz = 0, d, k;
     int16_t s, n = 0;
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
-        if (came[s]) {
+        if (came[s] == 1) {
             cx += TO_KM(gPositionVector[s].x - gPositionVector[0].x);
             cy += TO_KM(gPositionVector[s].y - gPositionVector[0].y);
             cz += TO_KM(gPositionVector[s].z - gPositionVector[0].z);
@@ -5303,7 +5630,7 @@ static void wave_out(const uint8_t __far *came)
     }
     k = WAVE_KM - d;                    /* (km to go, along the way out) */
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
-        if (came[s]) {
+        if (came[s] == 1) {
             gPositionVector[s].x += cx * k / d * KM;
             gPositionVector[s].y += cy * k / d * KM;
             gPositionVector[s].z += cz * k / d * KM;
@@ -5353,8 +5680,9 @@ void __far __cdecl enterNavPoint_impl(uint16_t nav)
     _fmemset(came, 0, sizeof came);
     for (j = 0; j < 10 && at[j] != 0xFFFF; j++) {
         uint16_t s;
-        if (mship_brought(at[j]))
-            continue;                   /* (in play, killed or gone already: a wave listed at two points comes once, at
+        if (mship_brought(at[j]) || MSHIP_ROLE(at[j]) == RV_ESCORT_STREAM)
+            continue;                   /* (a stream's come by stream_step.  In play, killed or gone already: a wave
+                                           listed at two points comes once, at
                                            whichever is reached first, as the old game's: missions.txt also=N) */
         if (MSHIP_ROLE(at[j]) == RV_ESCORT_IN && g_narrive < ARRIVE_MAX) {
             g_arrive[g_narrive].rec = (uint8_t)(at[j] & 63);   /* (it comes in later: arrivals_step) */
@@ -5364,12 +5692,16 @@ void __far __cdecl enterNavPoint_impl(uint16_t nav)
         }
         if (MSHIP_BEHAVIOUR(at[j]) != 6 && (s = outerSpawnShipEntity(at[j], nav)) != 0xFFFF) {
             n++;
-            if (s > 0 && s < NUM_SHIP_SLOTS && maybeEntityType[s] == ET_SHIP && commAnimInfo[s] != commAnimInfo[0]
-                && !MSHIP_ROLE(at[j]))
-                came[s] = 1;            /* (an enemy fighter: out to WAVE_KM with its wave) */
+            if (s > 0 && s < NUM_SHIP_SLOTS)
+                came[s] = maybeEntityType[s] == ET_SHIP && commAnimInfo[s] != commAnimInfo[0] && !MSHIP_ROLE(at[j]) ? 1 : 2;
+                                        /* (1: an enemy fighter, out to WAVE_KM with its wave) */
         }
     }
     wave_out(came);
+    if (planet_on())                    /* (over a planet: any it put in the ground raised, as the autopilot does) */
+        for (k = 1; k < NUM_SHIP_SLOTS; k++)
+            if (came[k])
+                planet_raise((LfVec *)&gPositionVector[k], 300);
     rv_notef(s_nav, nav, n);
 }
 
@@ -5462,8 +5794,9 @@ uint16_t __far __cdecl outerSpawnShipEntity_impl(uint16_t missionShip, uint16_t 
         g_mind[s].fear_up = (uint8_t)(rec[19] & 15);
         g_mind[s].fear_down = (uint8_t)(rec[19] >> 4);
     }
-    if (rec[18] == RV_ESCORT_HOME)      /* (the carrier holds station from the first: no way on to lose) */
-        setSpeed[s] = speedLo[s] = 0;
+    if (rec[18] == RV_ESCORT_HOME || (rec[18] == RV_ESCORT_STAY && maybeEntityType[s] == ET_CAPSHIP))
+        setSpeed[s] = speedLo[s] = 0;   /* (the carrier holds station from the first: no way on to lose; so does a
+                                           capital ship that stays) */
     spawn_apart(s);
     return (uint16_t)s;
 }

@@ -52,6 +52,7 @@
 // keeps the room private ({t: "room", n, code, game, free}; opts.openRoom
 // says).  The asking page picks one it can fly in (web/wc.js).
 import { checkMessage, checkName, sameName, makeBucket, lineEvery, splitCodes, whyText, lobbyCode, isLobbyCode, LOBBY_CODE, RATE, MAX_CHARS, MAX_NAME, GAME_TAGS } from "./chatfilter.js";
+import { buildFields, compareBuild, RELOAD_HOW } from "./build.js";
 
 const SEATS = 32;                 // asked for (what the public server gives a room; 32 pilots at a line every ten seconds are three lines a second); a server that gives fewer says how many
 const CLAIM_SEATS = 256;          // a full lobby is asked for seats up to here: another page may have made it bigger
@@ -424,6 +425,7 @@ export function initHall(opts) {
   let asking = null;             // { n, asked, answers: seat -> answer, finish }: this page's question for open rooms
   let lastLine = null;           // { text, at }: this pilot's last line, for those who come later
   let noted = "";                // the hint line's own text (a refusal), until the next key
+  let staleSaid = false;         // this page told it is an older build than a pilot's here
 
   // The pilots in this lobby, this one included (the roster's count), and
   // how long a pilot waits between lines among so many: ten seconds from
@@ -518,7 +520,7 @@ export function initHall(opts) {
 
   const hello = (to, reply) => {
     // (since: when the given callsign was given, for a pilot called the same: givesWay)
-    const m = JSON.stringify({ t: "hello", name: myName(), game: myTag(), reply: !!reply, since: givenShown() ? opts.given().since : undefined });
+    const m = JSON.stringify({ t: "hello", name: myName(), game: myTag(), reply: !!reply, since: givenShown() ? opts.given().since : undefined, ...buildFields() });
     if (to != null) net.send(to, m);
     else for (const p of net.players) if (p.id !== net.selfId) net.send(p.id, m);
   };
@@ -534,6 +536,13 @@ export function initHall(opts) {
       if (!hellos.get(id).take(now)) return;
       const name = checkName(typeof m.name === "string" ? m.name : "");
       pilots.set(id, { name: name.ok ? name.text : fallbackName(id), tag: GAME_TAGS.includes(m.game) ? m.game : "" });
+      // A pilot here with a newer build of this very page: this one was left open across a deploy (build.js).  Said
+      // once; its rooms and its flights would not match theirs.
+      if (!staleSaid && compareBuild(m) === "newer") {
+        staleSaid = true;
+        sys(`A newer version of this page is out: ${RELOAD_HOW}.`);
+        log(`lobby: pilot ${id + 1}'s page is a newer build (${m.build})`);
+      }
       // Called as this page's given callsign: one of the two takes another.
       const was = myName();
       if (name.ok && givenShown() && sameName(name.text, was) && opts.clash && opts.clash(id, m.since, net.selfId)) {

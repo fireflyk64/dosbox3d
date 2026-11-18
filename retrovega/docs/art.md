@@ -29,8 +29,9 @@ Each change from uber.fp was made after looking at the result:
 
 Liveries in `vs` mode replace the texture only where the paint rules hit
 (the texture's fine detail goes back on top of the paint). `tint`
-recolours a whole hull and keeps its brightness: the Aera capital ships
-whose `AeraHull` map is missing are teal, as on their VDUs.
+recolours a whole hull and keeps its brightness (the Aera capital ships
+whose `AeraHull` map is missing were teal until 2026-11-14: they wear the
+Anaxander's paint now, below).
 [franklin-sheet.png](franklin-sheet.png) shows all 37 views of the
 Franklin; [franklin-liveries.png](franklin-liveries.png) shows nine of them
 in four liveries.
@@ -243,6 +244,34 @@ The Aera glow (engines and strips) is green, as their own glow maps are:
 `sheen` tints the metal's reflection, as `tint` does the whole hull. It
 was the Convolution's first look: blue-silver like the Aera fighters' VDUs,
 before the skin replaced it.
+
+## The Aera capital ships (2026-11-14)
+
+The user's ruling: "Look for the hammer head capital ship ... this is the one. Should be the healthy equivalent and we
+can bump down the other ship types by one class", then "let's add similarly artful textures to the untextured craft ...
+To match the anaxander style".
+
+- **The Anaxander** is the cruiser (ANAXIDM, still named the Anaxidamus in the game): Vega Strike's hammer-head Aeran
+  cruiser, a finished Maya model in its Assets-Masters that never reached the game's data.
+  - `tools/anaxander.sh` fetches it, converts it (`tools/dae2obj.py`) and installs it into the assets as
+    `units/vessels/Anaxander/anaxander.obj` with its colour and specular maps.
+  - `tools/bfxm.py` reads an `.obj` (`obj_parts`) as it reads a `.bfxm`.
+  - It reflects little (`reflect` 0.12), or its khaki drowns in the environment's chrome.
+- **The art moved down a class; the names, numbers and missions stayed:**
+  - the destroyer (AGASICL) wears the old cruiser's hull (the Anaxidamus mesh);
+  - the transport (CHARILS) wears the old destroyer's (the Agasicles mesh).
+
+  Their engines, hit boxes, vitals and silhouettes went with the meshes (data/engines.csv, hitboxes.csv, shapes.dat);
+  the Charillus's own Vega Strike model is not used.
+- **The Anaxander's paint on the hulls whose maps are missing:** the old Agasicles hull (now the Charillus), the
+  Agesipolis and the Leonidas wear `skins.py anaxander`. It is a map made, not read, in the Anaxander's own colours
+  (measured from its map):
+  - khaki panels ruled in thin dark lines, a few in its darker khaki;
+  - purple brush strokes laid diagonally in twos, threes and fours (its service markings);
+  - a few thin cyan lines along panel edges.
+
+  It is projected as `aera` is, a repeat a little over a tenth of the hull's length (`skin anaxander 12`, the
+  Agesipolis 45).
 
 ## Facts about the Vega Strike data
 

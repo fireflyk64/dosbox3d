@@ -95,6 +95,10 @@ for c in hle fixed flightloop asm_twins fsguard pcm; do
 done
 $CC $CFLAGS -c -o "$OUT/obj/twins.o" src/twins.c
 $CC $CFLAGS -c -o "$OUT/obj/debris.o" src/debris.c   # (a wreck's debris: the card's code, drawn here; never in RV.EXE)
+# (a planet's ground: the card's code too; SSE2 doubles on a 32-bit host, so a mission's stamps come out the same as
+# the card's on every machine)
+TRF=""; case "$ARCHF" in *-m32*) TRF="-msse2 -mfpmath=sse";; esac
+$CC $CFLAGS $TRF -c -o "$OUT/obj/terrain.o" src/terrain.c
 BOTF=""
 if [ -z "${WEB:-}" ]; then              # (the native build's test pilot, host/bot.c: RV_BOT=1; never the page's)
     BOTF=-DRV_BOT_HOOK
@@ -118,7 +122,7 @@ $CXX $ARCHF $OPT $SANF $LINKG -o "$EXE" "$OUT"/obj/*.o "$OUT/libstubs.a" $SDLL -
 if [ -z "${WEB:-}" ]; then
     # the run's directory: the DOS build's data linked in (its saves and its log its own)
     mkdir -p "$OUT/run"
-    for f in build/dos/*.DAT build/dos/*.MID build/dos/*.BNK build/dos/SHIP*.RV build/dos/SHIP*.RVS build/dos/SHIP*.RVH; do
+    for f in build/dos/*.DAT build/dos/*.PLN build/dos/*.MID build/dos/*.BNK build/dos/SHIP*.RV build/dos/SHIP*.RVS build/dos/SHIP*.RVH; do
         [ -e "$f" ] && ln -sf "$PWD/$f" "$OUT/run/"
     done
     echo "built $EXE (run: $EXE, its files in $OUT/run; $EXE --help)"

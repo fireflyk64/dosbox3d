@@ -47,6 +47,7 @@ program that happens to use AH=E7h cannot be mistaken for a card.
 | `E711h` | Status: fills the `stat_` fields. |
 | `E720h` | Draw. `result` 0 when drawn. |
 | `E730h` | (1.2) A wreck's debris: the block's frame buffer fields (16 to 38) and its debris part (64 to 127). `result` 0. |
+| `E740h` .. `E749h` | (1.3) A planet: below, *Planets*. |
 
 ### The block (64 bytes, packed, little-endian)
 
@@ -166,3 +167,27 @@ several dozen ships are nothing. A view is expanded once (4-9 us) and kept. Ther
 - `GX=1 EXE=RVT.EXE tests/run.sh tests/gxzoom.txt /zoom 1 /bench 0`: the zoom scene with the key flipping, a shot of each.
   `GXDELAY=4000` shows the blocks giving way when the bundle lands; `RVGX_DIR=/empty` stays blocks.
 - `DOSBOX=/usr/bin/dosbox tests/run.sh tests/gx.txt`: a stock DOSBox: `gx: no sprite accelerator`, and the flight as ever.
+
+## Planets (1.3)
+
+The user, 2026-11-14: "planetary missions ... a special interrupt to draw a terrain sphere. This kind of mission should
+only be available if there is hardware acceleration." The card makes a planet from its seed (`retrovega/src/terrain.c`,
+docs/terrain.md), draws its ground and air into the game's bands, and answers the game's questions about it. One planet
+at a time. The calls use the block's second half (64 to 127) for their own fields:
+
+| AX | In | Out |
+|---|---|---|
+| `E740h` | Make a planet. 64: far pointer to the mission record's planet tail (`TrPlanetRec`, 65 bytes: centre and radius in km, seed, up to 4 ground shapes: a pad, an arch, or a canyon from its nav point through the next ones to the nav point its heading word names). 68: far pointer to its nav points (`TrNavRec`, 20 bytes each). 72: far pointer to a palette (768 bytes, 6 bits). 76: how many nav points. | 0. The making starts; nothing waits for it. The same planet asked for again (the same seed, radius, centre and shapes: a mission flown again, a guest given its host's) is kept as it is, made or being made. |
+| `E741h` | The frame's eye. 64: the eye, planet-relative, positions (3 `int32`). 76: its right, up and front (9 `int16`, 16384 = 1). 94: focal, centre x, centre y, width, height (`int16`). | 0 drawn; -3 not made yet (and 8 ms more of it made). |
+| `E742h` | A band of the ground: the frame buffer fields 16 to 38, as `E720h`. | 0. |
+| `E743h` | The ground under a planet-relative point (64, 3 `int32`, positions). | 76: the ground's radius, a slab's underside and top (0, 0 when none), the point's own radius. Integers: every machine's the same. |
+| `E744h` | Is a point hidden. 64: the eye, 76: the point (planet-relative). | 1 seen, 0 hidden by the ground (all or nothing). |
+| `E745h` | Make more of it. 64: the host's ms it may spend (0: until it is made). Its pieces are a few ms each natively (9 at most), so it overruns the time by one piece at most. | How far it has got, in percent; 100 made. |
+| `E746h` | No planet. | 0. |
+| `E747h` | The palette its picture is coloured from: a far pointer at 64 (the flight's, at the launch). | 0. |
+| `E748h` | A nav point (world km at 64) put as high over the ground under it as it is over the planet's radius. | 76: the point, world km. |
+| `E749h` | A ship (world positions at 64) raised to the km at 76 over the ground if it is under that. | 76: the point, world positions. |
+
+Queries that a game's logic depends on (`E743h`, `E748h`, `E749h`) finish the making first if they must: they always
+have an answer, the same on every machine. The view (`E741h`) never waits. The card times its views and lengthens the
+march's step (`tr_detail`) while they run over 6 ms, and shortens it again under 3, so the frame rate holds.

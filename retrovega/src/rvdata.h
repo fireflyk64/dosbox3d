@@ -5,13 +5,14 @@
 #include "rvtypes.h"
 
 #define RVGAME_MAGIC "RVGAME"
-#define RVGAME_VERSION 26
+#define RVGAME_VERSION 28
 
+#define RV_GROUNDS 4
 #define RV_GOALS 12
 #define RV_PILOTS 16
-#define RV_NODES 32
+#define RV_NODES 16
 #define RV_MISSIONS 128
-#define RV_MISSIONS_PER_NODE 4
+#define RV_MISSIONS_PER_NODE 6
 #define RV_NAVS 8
 #define RV_SHIPS 16
 #define RV_SEATS 3
@@ -50,6 +51,8 @@
 #define RV_ESCORT_HOME 3
 #define RV_ESCORT_STAY 4
 #define RV_ESCORT_BACK 5
+#define RV_ESCORT_STREAM 6
+#define RV_ESCORT_GUARD 7
 #define RV_PILOT_NONE 0xFF
 #define RV_SPEAKER_YOU 0xFE
 #define RV_ROOM_RADIO 2
@@ -78,6 +81,10 @@
 #define RV_ROOM_LOUNGE 1
 #define RV_FIELD_ASTEROID 9
 #define RV_FIELD_MINE 10
+#define RV_GROUND_PAD 1
+#define RV_GROUND_ARCH 2
+#define RV_GROUND_CANYON 3
+#define RV_NAV_GROUND 4
 #define RV_MUSIC_BRIEFING 0
 #define RV_MUSIC_BAR 1
 #define RV_MUSIC_LAUNCH 2
@@ -280,6 +287,15 @@ typedef struct {
     uint8_t pts;
 } RvGoal;
 typedef struct {
+    uint8_t kind;
+    uint8_t nav;
+    uint16_t a;
+    uint16_t b;
+    uint16_t c;
+    uint16_t d;
+    int16_t heading;
+} RvGround;
+typedef struct {
     char id[RV_ID];
     uint8_t node;
     uint8_t type;
@@ -300,6 +316,13 @@ typedef struct {
     RvField field[RV_FIELDS];
     uint8_t ngoal;
     RvGoal goal[RV_GOALS];
+    int32_t px;
+    int32_t py;
+    int32_t pz;
+    uint16_t pradius;
+    uint16_t pseed;
+    uint8_t nground;
+    RvGround ground[RV_GROUNDS];
 } RvMission;
 typedef struct {
     char key[RV_KEY];
@@ -365,8 +388,8 @@ typedef struct {
 
 #define RV_HEADER_SIZE 68
 #define RV_PILOT_SIZE 121
-#define RV_NODE_SIZE 22
-#define RV_MISSION_SIZE 795
+#define RV_NODE_SIZE 26
+#define RV_MISSION_SIZE 860
 #define RV_SHIPTYPE_SIZE 182
 #define RV_WEAPON_SIZE 44
 #define RV_LINE_SIZE 114

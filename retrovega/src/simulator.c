@@ -7,7 +7,7 @@
  * The waves' bookkeeping only: the flight, its AI, its guns and its deaths are the game's own, as they are in a mission.
  * It is strictly one player's (flight_simulator: none of the flight loop's hook sites, simulatorStart and simulatorEnd
  * for the layer), and nothing of it goes into the campaign. */
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include "rv.h"
 #include "rvhooks.h"

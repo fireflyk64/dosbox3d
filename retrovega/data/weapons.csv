@@ -1,11 +1,11 @@
 type,code,name,faction,kind,look,damage,damage_near,speed_kps,range_km,radius_km,cone_deg,refire_frames,energy,lock,lock_s,sfx,vs_source,notes
-0x00,LAS,Laser,terran,gun,bolt,25,10,2200,4.5,,46,13,3,,,laser,Laser,The light gun everyone starts with
-0x01,MDR,Mass Driver,terran,gun,slug,30,17,1500,4.5,,32,9,5,,,massdriver,MiniDriver,"Slug-thrower: ignores the shield bonus of ION, half damage to shields. Refires in 9 steps to the laser's 13, the old game's 5 frames to its 7 (the user, 2026-11-03: ""the WC1 mass driver had sort of a rapid fire mode""; an AI's guns keep their 26)"
-0x02,PRT,Particle Cannon,terran,gun,bolt,40,30,2000,4.5,,37,16,7,,,particle,ParticleBeam/Reaper,
+0x00,LAS,Laser,terran,gun,bolt,25,10,1600,4.5,,46,13,5,,,laser,Laser,"The light gun everyone starts with. The old game's laser bolt, 160 km a frame (its weapon row: 1,600 kps here; it had flown 2,200, and hunted Nicanders died three to four times sooner than the old Dralthi, 2026-11-17, tests/wc1/README.md ""The guns against the old game's""); a shot's energy the Photon Mk III's"
+0x01,MDR,Mass Driver,terran,gun,slug,30,17,1200,4.5,,32,9,5,,,massdriver,MiniDriver,"Slug-thrower: ignores the shield bonus of ION, half damage to shields. Refires in 9 steps to the laser's 13, the old game's 5 frames to its 7 (the user, 2026-11-03: ""the WC1 mass driver had sort of a rapid fire mode""; an AI's guns keep their 26). The old game's slug, 120 km a frame: 1,200 kps (it had flown 1,500)"
+0x02,PRT,Particle Cannon,terran,gun,bolt,40,30,1400,4.5,,37,16,7,,,particle,ParticleBeam/Reaper,"The old game's neutron gun (its damage 30 to 40), its bolt's 140 km a frame: 1,400 kps (it had flown 2,000); the Photon Mk II is the same gun, faster"
 0x03,ION,Ion Cannon,terran,gun,plasma,33,,1700,2.4,,37,20,8,,,ion,HeavyIonBeam/ShieldBreaker,"Double damage to shields, half to armour"
 0x04,DSR,Disruptor,terran,gun,bolt,23,,1900,4.5,,,13,6,,,disruptor,LR_Disruptor,Long range
-0x08,PH2,Photon Mk II,aera,gun,star,40,30,1900,4.5,,37,16,7,,,photon2,Photon_MKII,
-0x09,PH3,Photon Mk III,aera,gun,star,25,10,2400,4.5,,46,13,5,,,photon3,Photon_MKIII,Fast and light: the Aera's common gun
+0x08,PH2,Photon Mk II,aera,gun,star,40,30,1900,4.5,,37,16,7,,,photon2,Photon_MKII,"The particle cannon, faster (the user, 2026-11-17, of the photons: ""faster lasers and otherwise equivalent--might be an interesting trade"")"
+0x09,PH3,Photon Mk III,aera,gun,star,25,10,2400,4.5,,46,13,5,,,photon3,Photon_MKIII,"Fast and light: the Aera's common gun; the laser, faster and otherwise the same (the user, 2026-11-17: ""I wonder if the photons can just be faster lasers and otherwise equivalent--might be an interesting trade"")"
 0x0A,PEN,Penetrator,aera,gun,star,47,,1400,2.5,,32,27,12,,,penetrator,Penetrator,Half its damage passes through shields
 0x10,KTK,Ktek,rlaan,gun,fire,19,,2100,4.5,,,13,5,,,ktek,Ktek,
 0x11,KTB,Ktek Beam,rlaan,gun,beam,42,,0,1.5,,20,27,14,,,kbeam,KtekBeam,"Beam: hits at once, short range"

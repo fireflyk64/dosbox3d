@@ -2,8 +2,9 @@
 // (web/wc.js: RV.EXE in the emulator; retrovega/host/web: the native build), and the tarball reader they load
 // the game's files with.
 //
-// The ships' views (SHIPnn.RV, 1-9 MB each at 6 degrees) are not in the
-// game's tarball.  When a set a flight needs is not among the game's files,
+// The ships' views (SHIPnn.RV, 1-9 MB each at 6 degrees) and the planet
+// missions' grounds (ID.PLN, a bake of 5-17 MB each, listed as the flight's
+// files: served as they are) are not in the game's tarball.  When a set a flight needs is not among the game's files,
 // the engine writes the flight's list into RVWANT.TXT ("want GEN SHIP02.RVH
 // ...", retrovega/src/ships.c ships_want: at the briefing, so the fetching
 // starts while it is read, and again at the launch, where it waits) and the
@@ -17,7 +18,9 @@
 // works, fetched each time.
 import { makeSet } from "./rvsprites.js";
 
-const RV_ART_CACHE = "rv-art", RV_SET_CACHE = "rv-sets-";
+// (the terrain branch's playtest copy at /terrain/ keeps its made sets apart: /dosbox's page removes every "rv-sets-"
+// cache but its own build's, and this one the same of its own; the views, by hash, are the same files and shared)
+const RV_ART_CACHE = "rv-art", RV_SET_CACHE = /^\/terrain\//.test(globalThis.location ? location.pathname : "") ? "rvt-sets-" : "rv-sets-";
 // build.sh's recipes: the block mode's ladder and the sharp sets (?res=1); a capital ship (types 0x20 up, 37 views at
 // 384-512 px) from half size down with rolls at two sizes, and at a quarter drawn as 4 x 4 blocks
 const RV_RECIPE = { RVH: [0, 0, 0, 1, 2], RVS: [0, 4, 9] }, RV_RECIPE_CAPITAL = { RVH: [0, 0, 0, 1, 2], RVS: [3, 3, 2] };
@@ -97,7 +100,7 @@ export function createSetProvider({ base, root, status, log }) {
   // is (an asteroid field's ROCKS.DAT: the list's files)
   async function provideOne(FS, name) {
     if (manifest.files && manifest.files[name]) {
-      FS.writeFile(`${root}/${name}`, await fetchArt(manifest.files[name], name));
+      FS.writeFile(`${root}/${name}`, await fetchArt(manifest.files[name], /\.PLN$/.test(name) ? `the planet's ground (${name})` : name));
       return;
     }
     const m = /^(SHIP[0-9A-F]{2})\.(RVH|RVS|RV)$/.exec(name);
@@ -133,7 +136,7 @@ export function createSetProvider({ base, root, status, log }) {
     try {
       await loadManifest();
       for (const f of FS.readdir(root))
-        if (/^SHIP[0-9A-F]{2}\.(RVH|RVS|RV)$/.test(f) && !names.includes(f)) { try { FS.unlink(`${root}/${f}`); } catch (e) { /* in use */ } }
+        if (/^(SHIP[0-9A-F]{2}\.(RVH|RVS|RV)|[A-Z0-9_]{1,8}\.PLN)$/.test(f) && !names.includes(f)) { try { FS.unlink(`${root}/${f}`); } catch (e) { /* in use */ } }
       for (const name of names) {
         let have = false;
         try { FS.stat(`${root}/${name}`); have = true; } catch (e) { /* not yet */ }

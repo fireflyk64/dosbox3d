@@ -40,6 +40,7 @@ mkdir -p "$OUT/obj" "$OUT/stubs"
 python3 tools/rvabi.py --c-header > src/rvhooks.h
 python3 tools/rvdata.py --out "$OUT/RVGAME.DAT" --header src/rvdata.h > /dev/null
 cp data/shapes.dat "$OUT/SHAPES.DAT"
+tools/planets.sh "$OUT"                 # (the planet missions' grounds, ID.PLN: src/bake.h)
 python3 tools/rvabi.py --host-thunks > "$OUT/thunks.c"
 rm -f "$OUT"/stubs/*.c
 python3 tools/rvabi.py --stubs "$OUT/stubs"
@@ -57,7 +58,7 @@ EOF
 # the game's sources as Watcom builds them: char unsigned (Watcom's), no type-based aliasing (Watcom assumes none,
 # and the slot arrays are read through casts), the DOS words (host/rvhost.h)
 LOGIC=${LOGIC:-src/logic.c}
-SHARED="world shots collide lightfield hud campaign simulator damage"
+SHARED="world shots collide lightfield hud campaign simulator damage planet bake"
 COMMON="-std=gnu99 -g3 -funsigned-char -fno-strict-aliasing -include host/rvhost.h -Isrc -Ihost -I$OUT"
 WARN="-Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -Wno-missing-field-initializers -Wno-unused-result
       -Wdeclaration-after-statement"     # (C89's rule: Watcom refuses a declaration after a statement)
@@ -117,6 +118,7 @@ $CC $CFLAGS -c -o "$OUT/obj/logic.o" "$LOGIC"
 for c in $SHARED; do
     $CC $CFLAGS -c -o "$OUT/obj/$c.o" "src/$c.c"
 done
+# (a planet's ground is the bake's, bake.c among the shared: terrain.c, which makes the card's picture, is not built here)
 $CC $CFLAGS -c -o "$OUT/obj/host.o" host/host.c
 $CC $CFLAGS -c -o "$OUT/obj/fixed.o" host/fixed.c
 $CC $CFLAGS $SDLF -c -o "$OUT/obj/sim.o" host/sim.c

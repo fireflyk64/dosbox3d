@@ -1,5 +1,5 @@
 /* util.c: the log (RVLOG.TXT), the bounds-failure stop, upper memory. */
-#include <stdio.h>
+#include "rvio.h"
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>

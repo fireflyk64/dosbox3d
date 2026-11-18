@@ -21,7 +21,7 @@
  * 3 KB of it free): every string a `static const char __far`, every table and variable __far.  The messages'
  * numbers are int32_t, printed by ln_f's %d. */
 #include <string.h>
-#include <stdio.h>
+#include "rvio.h"
 #include <stdlib.h>
 #include "rv.h"
 #include "rvhooks.h"
@@ -34,6 +34,7 @@
 #include "hud.h"
 #include "logic.h"
 #include "simulator.h"
+#include "planet.h"
 #ifdef RV_HOST
 #include "host.h"
 #endif
@@ -2223,7 +2224,7 @@ static void t_sustain(void)
     static const char __far e_few[] = "%d shots in 10 s of trigger from %d guns: the old game's Hornet fired a volley every "
         "0.44 s at its 15 frames a second (22-23 a gun) without running down";
     static const char __far e_many[] = "%d shots in 10 s of trigger from %d guns: more than a volley every 0.44 s";
-    static const char __far e_drained[] = "gun energy down to %d after 10 s of trigger: the lasers are sustained";
+    static const char __far e_drained[] = "gun energy down to %d after 10 s of trigger: a quarter or more left";
     uint16_t a0;
     int16_t guns;
     pt_alone(PT_PLAYER);
@@ -2235,7 +2236,8 @@ static void t_sustain(void)
         return;
     REQUIRE((uint16_t)(shots_added() - a0) >= guns * 20, e_few, (uint16_t)(shots_added() - a0), guns, 0);
     REQUIRE((uint16_t)(shots_added() - a0) <= guns * 25, e_many, (uint16_t)(shots_added() - a0), guns, 0);
-    REQUIRE(gunEnergy[0] >= 50, e_drained, gunEnergy[0], 0, 0);
+    REQUIRE(gunEnergy[0] >= 25, e_drained, gunEnergy[0], 0, 0);   /* (three lasers at the Photon's 5 a shot draw 15 a
+                                           volley every 13 steps against 13 back: some 60 in 10 s) */
     g_pilot.guns = 0;
 }
 
@@ -3209,6 +3211,7 @@ static void t_easy_hold(void)
     camp_load_rules(&g_tm);
     easy = g_rule_flags;
     g_difficulty = keep_easy;
+    camp_load_rules(&g_tm);             /* (the guns' speeds the data's again: easy's are faster, campaign.c easy_guns) */
     fired = pt_shizong_volleys(normal, 30);
     held = pt_shizong_volleys(easy, 30);
     g_rule_flags = keep;
@@ -4160,6 +4163,12 @@ static void t_raid(void)
                 b = k;
         }
     REQUIRE(ox > 0 && a > 0 && b > 0, e_there, ox, a, b);
+    for (k = 1; k <= RV_MAX_SHIP_SLOT; k++)   /* (the patrol's wingman out of it, held far off: its missile had killed
+                                           the second Nicander before the taunt once the laser flew the old game's speed) */
+        if (slot_is_ship(k) && commAnimInfo[k] == SIDE_TERRAN && logic_is_wingman(k)) {
+            pt_put(k, -30000, 0, 0, 0);
+            rvController[k] = CTL_FROZEN;
+        }
     pt_ship(a, PT_ENEMY, SIDE_AERA, CTL_AI, 3000, 0, 8000, TURN / 2);
     pt_ship(b, PT_ENEMY, SIDE_AERA, CTL_AI, -3000, 0, 9000, TURN / 2);
     if (!pt_steps(5 * SEC))
@@ -4423,7 +4432,7 @@ static void t_escort_clear(void)
  * did not see the destroyer"): a nav point 60,000 km out, its reach 15,000: the autopilot stops at the reach, and a
  * destroyer 8,000 km beyond the point, 23,000 off, is in the scene and a target as the player arrives (the small map's
  * scene had held one 8,100 km off the stop); the carrier, 47,000 km behind, is held while a waypoint is still to fly,
- * and is in the scene again, however far, once the way is home */
+ * and on the way home too, until the player is near (since 2026-11-16, M10.15: before, it came back however far) */
 static void t_full_map(void)
 {
     static const char __far e_home[] = "no home carrier at the launch (%d)";
@@ -4433,8 +4442,8 @@ static void t_full_map(void)
         "the ships of the point the player came to are, however far";
     static const char __far e_held[] = "the carrier %d km behind is in the scene (entity type %d), a waypoint still to fly: "
         "past 16,000 km a capital ship of a point left is held";
-    static const char __far e_back[] = "every waypoint flown, the way home: the carrier %d km off is not in the scene "
-        "(entity type %d)";
+    static const char __far e_back[] = "every waypoint flown, the way home: the carrier %d km off is in the scene "
+        "(entity type %d): held until the player is near";
     int16_t home = -1, dd = -1, s, r;
     pt_mission();
     pt_nav(1, 0, 0, 60000);
@@ -4465,7 +4474,7 @@ static void t_full_map(void)
     pt_put(0, 20000, 0, 60000, 0);      /* (nav 2 come to: every waypoint flown) */
     if (!pt_steps(2))
         return;
-    REQUIRE(slot_is_ship(home), e_back, pt_km(0, home), maybeEntityType[home], 0);
+    REQUIRE(maybeEntityType[home] == ET_OFFSCENE, e_back, pt_km(0, home), maybeEntityType[home], 0);
 }
 
 #define PT_CLOSE_KM 1200                /* (logic.c NAV_CLOSE_KM: the autopilot to a point with nobody to come stops this far
@@ -4504,7 +4513,7 @@ static void t_campaign_way(void)
     static const char __far e_close[] = "mission %d: the autopilot to a waypoint with nobody to come left the player %d km "
         "from it: 1,200, the old game's";
     static const char __far e_infield[] = "mission %d: the autopilot to a waypoint in a field left the player %d km from "
-        "the field's middle: its radius is %d";
+        "the field's middle, inside it (its radius is %d): it stops at the edge, the rest flown by hand";
     static const char __far e_went[] = "the autopilot went %d times (the player put at the next waypoint %d) in %d missions: "
         "it should take most legs";
     int16_t i, k, leg, s, next, went = 0, put = 0, ships;
@@ -4530,9 +4539,9 @@ static void t_campaign_way(void)
             if (logic_autopilot()) {
                 int32_t d = pt_km_to(0, g_tm.nav[next].x, g_tm.nav[next].y, g_tm.nav[next].z);
                 int16_t f = pt_nav_field(&g_tm.nav[next]);
-                if (logic_nav_seen(g_tm.nav[next].id) && f >= 0) {   /* (into the waypoint's own field) */
+                if (f >= 0) {           /* (to the waypoint's own field: its edge, or short of it) */
                     d = pt_km_to(0, g_tm.field[f].x, g_tm.field[f].y, g_tm.field[f].z);
-                    REQUIRE(d < g_tm.field[f].radius, e_infield, m, d, g_tm.field[f].radius);
+                    REQUIRE(d > g_tm.field[f].radius, e_infield, m, d, g_tm.field[f].radius);
                 } else if (logic_nav_seen(g_tm.nav[next].id) && !ships)   /* (nobody to come: close) */
                     REQUIRE(d > PT_CLOSE_KM - 200 && d < PT_CLOSE_KM + 300, e_close, m, d, 0);
                 else if (logic_nav_seen(g_tm.nav[next].id))   /* (gone all the way: no field nor point stopped it) */
@@ -4540,7 +4549,11 @@ static void t_campaign_way(void)
                             e_stop, m, d, g_tm.nav[next].reach);
                 went++;
             } else {
-                pt_put(0, g_tm.nav[next].x, g_tm.nav[next].y, g_tm.nav[next].z, 0);
+                int16_t f = pt_nav_field(&g_tm.nav[next]);   /* (a waypoint in a field: its middle, flown through) */
+                if (f >= 0)
+                    pt_put(0, g_tm.field[f].x, g_tm.field[f].y, g_tm.field[f].z, 0);
+                else
+                    pt_put(0, g_tm.nav[next].x, g_tm.nav[next].y, g_tm.nav[next].z, 0);
                 put++;
             }
             if (!pt_steps(SEC))
@@ -5027,6 +5040,237 @@ static void t_held_wave(void)
     if (!pt_kill_side(SIDE_AERA) || !pt_steps(SEC))
         return;
     REQUIRE(victoryPoints != 0, e_done, victoryPoints, 0, 0);
+}
+
+/* M8.63: a planet mission's ground (planet.c: the card's sums on DOS, terrain.c's natively, integers both): the canyon
+ * run's planet made and its nav points put 700 km over the canyon's floor; the player that takes no damage diving at
+ * the floor at Nav 2 is stopped over it, and its throttle cut there comes back to 100 (logic.c SPEED_FLOOR_KPS);
+ * climbing into the stone bridge at Nav 3 it is stopped under its rock; an Aera fighter diving at the floor at Nav 4
+ * glides over it (HOVER_OVER, 40 km); the player that takes damage diving at the floor is destroyed (the user,
+ * 2026-11-15: "intersection with the terrain causes a human ship to explode").  The world is left as it is: its hash
+ * holds the ground's answers, host against card (the walk of every mission, M8.40, ends with the world put back) */
+static void nav_pos(int16_t n, LfVec *p)
+{
+    const uint8_t *rec = navPointTable + navPointTable_SIZE * n;
+    p->x = NAV_REC_KM(rec, 0) * KM;
+    p->y = NAV_REC_KM(rec, 1) * KM;
+    p->z = NAV_REC_KM(rec, 2) * KM;
+}
+
+/* a slot's nose straight down (dir -1) or up (1) at its place over the planet: along the line from the planet's centre
+ * (the world's -y is some 20 degrees off it at the canyon) */
+static void face_vertical(int16_t s, int16_t dir)
+{
+    const LfVec __far *c = planet_centre();
+    RvVec3 *f = &gOrientationFrontVector[s];
+    f->x = dir * ((gPositionVector[s].x - c->x) / (250 * KM));   /* (km / 250: about 256 long over Mirage's 64,000 km,
+                                                                    the length vec_norm's square root is good near) */
+    f->y = dir * ((gPositionVector[s].y - c->y) / (250 * KM));
+    f->z = dir * ((gPositionVector[s].z - c->z) / (250 * KM));
+    gOrientationRightVector[s].x = 256;
+    gOrientationRightVector[s].y = gOrientationRightVector[s].z = 0;
+    ship_orthonormalise(s);
+}
+
+/* M8.67: the hover's way up on a big planet (step_ground): Enigma's ice, a radius of 64,000 km, where the way up in km
+ * squared past 31 bits (2026-11-17: UBSan's overflow; DOS's wrapping multiply came out right, under 65,536 km only): an
+ * Aera fighter held still 20 km over the ground straight above the centre rises straight up a step on */
+static void t_ground_up(void)
+{
+    static const char __far e_made[] = "Enigma's planet: planet_make %d (100: made)";
+    static const char __far e_low[] = "the fighter put %d km over the ground (10 to 30)";
+    static const char __far e_up[] = "a step on it rose %d km and slid %d km aside: up 3 or more, aside under 1";
+    const LfVec __far *c;
+    LfVec p;
+    long roof, over;
+    int32_t x0, y0, z0;
+    int16_t k;
+    pt_launch_named("ENIGMAP");
+    k = (int16_t)planet_make(0);
+    REQUIRE(k == 100, e_made, k, 0, 0);
+    c = planet_centre();
+    p.x = c->x;
+    p.y = c->y + 66000L * KM;
+    p.z = c->z;
+    for (k = 0; k < 3; k++)             /* (down to 20 km over its ice, mountains and all) */
+        p.y -= planet_over(&p, &roof) - 20L * KM;
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, p.x / KM, p.y / KM, p.z / KM, 0);
+    over = planet_over((const LfVec *)&gPositionVector[1], &roof);
+    REQUIRE(over >= 10L * KM && over <= 30L * KM, e_low, over / KM, 0, 0);
+    x0 = gPositionVector[1].x;
+    y0 = gPositionVector[1].y;
+    z0 = gPositionVector[1].z;
+    if (!pt_step())
+        return;
+    REQUIRE(gPositionVector[1].y - y0 >= 3L * KM && abs32(gPositionVector[1].x - x0) + abs32(gPositionVector[1].z - z0) < KM,
+            e_up, (gPositionVector[1].y - y0) / KM, (abs32(gPositionVector[1].x - x0) + abs32(gPositionVector[1].z - z0)) / KM, 0);
+}
+
+/* M2.21: easy's faster bolts (campaign.c easy_guns; the user, 2026-11-17: "could we make the easy option have the old
+ * higher speeds? ... it could potentially multiply them on load", "we should have the fast guns affect both AI and
+ * human"): on easy every gun's speed in the loaded table is 11 / 8 of the data's, the laser's 1,600 kps 2,200 and the
+ * Aera's Photon Mk III 2,400 3,300, a turret's as it was; the player's laser shot steps 110 km; back on medium every
+ * speed is the data's to the kps */
+static void t_easy_guns(void)
+{
+    static const char __far e_easy[] = "on easy the laser flies %d kps and the Photon Mk III %d (the data's x 11 / 8: %d)";
+    static const char __far e_turret[] = "on easy the laser turret's bolt flies %d kps: the data's %d";
+    static const char __far e_shot[] = "on easy the player's laser shot steps %d km: %d at its speed";
+    static const char __far e_back[] = "back on medium the laser flies %d kps, the Photon Mk III %d: the data's %d";
+    const RvWeapon __far *las = weapon(0x00), *ph3 = weapon(0x09), *tur = weapon(0x14);
+    uint8_t keep_easy = g_difficulty, keep = g_rule_flags, keep_hit = g_rule_hit;
+    uint16_t las0, ph30, tur0;
+    if (!las || !ph3 || !tur)
+        return;
+    las0 = las->speed_kps;
+    ph30 = ph3->speed_kps;
+    tur0 = tur->speed_kps;
+    pt_alone(PT_PLAYER);
+    camp_mission(0, &g_tm);
+    g_difficulty = RV_DIFF_EASY;
+    camp_load_rules(&g_tm);
+    EXPECT(las->speed_kps == (las0 * 11U + 4) / 8 && ph3->speed_kps == (ph30 * 11U + 4) / 8, e_easy, las->speed_kps,
+           ph3->speed_kps, (las0 * 11U + 4) / 8);
+    EXPECT(tur->speed_kps == tur0, e_turret, tur->speed_kps, tur0, 0);
+    g_sys.armed = 1;
+    GUN_STATE(0, 0) = 0;
+    gunEnergy[0] = 100;
+    (void)fireGunFromShip(0, 0);
+    EXPECT(shots_count() >= 1 && TO_KM(shot(shots_count() - 1)->vz) == las->speed_kps / KPS_HZ, e_shot,
+           shots_count() >= 1 ? (int16_t)TO_KM(shot(shots_count() - 1)->vz) : -1, las->speed_kps / KPS_HZ, 0);
+    g_difficulty = RV_DIFF_MEDIUM;
+    camp_load_rules(&g_tm);
+    EXPECT(las->speed_kps == las0 && ph3->speed_kps == ph30, e_back, las->speed_kps, ph3->speed_kps, las0);
+    g_difficulty = keep_easy;
+    camp_load_rules(&g_tm);
+    g_rule_flags = keep;
+    g_rule_hit = keep_hit;
+}
+
+static void t_planet(void)
+{
+    static const char __far e_made[] = "the canyon run's planet: planet_make %d (100: made)";
+    static const char __far e_nav[] = "nav %d %d km over the ground once placed (700)";
+    static const char __far e_floor[] = "the dive into the canyon's floor: %d km over it, the throttle cut to 0 back at "
+        "%d (stopped over it, 100)";
+    static const char __far e_roof[] = "the climb into the stone bridge: %d km under its rock (stopped under it)";
+    static const char __far e_ai[] = "an Aera fighter diving at the floor: %d km over it after 4 s (30 or more)";
+    static const char __far e_dies[] = "the player that takes damage diving at the floor: shipAiState %d (9: destroyed)";
+    int16_t n;
+    long roof, over;
+    LfVec p;
+    pt_launch_named("SHMRNC");
+    n = (int16_t)planet_make(0);
+    REQUIRE(n == 100, e_made, n, 0, 0);
+    planet_navs();
+    for (n = 1; n <= 5; n++) {
+        nav_pos(n, &p);
+        over = planet_over(&p, &roof) / KM;
+        REQUIRE(over >= 698 && over <= 702, e_nav, n, over, 0);
+    }
+    playerCanBeDamaged = 0;
+    nav_pos(2, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    face_vertical(0, -1);
+    pt_speed(0, 250);
+    if (!pt_steps(4 * SEC))
+        return;
+    over = planet_over((const LfVec *)&gPositionVector[0], &roof);
+    setSpeed[0] = 0;                    /* (the pilot's throttle cut, the ship still moving: back to 100 a step on) */
+    if (!pt_steps(1))
+        return;
+    REQUIRE(over >= 10 * KM && over < 200 * KM && setSpeed[0] == 100, e_floor, over / KM, (long)setSpeed[0], 0);
+    nav_pos(3, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    face_vertical(0, 1);                /* (under the bridge's crown, climbing) */
+    pt_speed(0, 250);
+    if (!pt_steps(6 * SEC))
+        return;
+    over = planet_over((const LfVec *)&gPositionVector[0], &roof);
+    REQUIRE(roof >= 10 * KM && roof < 300 * KM, e_roof, roof / KM, 0, 0);
+    nav_pos(4, &p);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, p.x / KM, p.y / KM, p.z / KM, 0);
+    face_vertical(1, -1);
+    pt_speed(1, 300);
+    if (!pt_steps(4 * SEC))
+        return;
+    over = planet_over((const LfVec *)&gPositionVector[1], &roof);
+    REQUIRE(slot_is_ship(1) && over >= 30 * KM, e_ai, over / KM, 0, 0);
+    playerCanBeDamaged = 1;
+    nav_pos(2, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    face_vertical(0, -1);
+    pt_speed(0, 250);
+    if (!pt_steps(4 * SEC))
+        return;
+    REQUIRE(shipAiState[0] == 9, e_dies, shipAiState[0], 0, 0);
+}
+
+/* M8.64: a stream (role=stream, logic.c stream_step; the user, 2026-11-14: "keep around 2 or 3 raining down upon the
+ * player in the canyon mission.  Once the player takes one out another shows up ahead either in the canyon or above"):
+ * the canyon run's three Nicanders from Nav 1 to Nav 5.  Nav 1 reached, the three come within 8 s, each ahead of the
+ * player and over the ground; one killed, another comes within 3 s; Nav 5 reached and the three killed, none comes */
+static int16_t stream_ships(int16_t *far_one, int16_t *low)
+{
+    int16_t s, n = 0;
+    long roof;
+    *far_one = 32767;
+    *low = 32767;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (slot_is_ship(s) && shipAiState[s] != 9 && slotMissionShip[s] < 64
+            && missionShipTable[missionShipTable_SIZE * slotMissionShip[s] + 18] == RV_ESCORT_STREAM) {
+            int16_t km = (int16_t)(player_km(s) < 32767 ? player_km(s) : 32767);
+            int16_t over = (int16_t)(planet_over((const LfVec *)&gPositionVector[s], &roof) / KM);
+            n++;
+            if (km < *far_one)
+                *far_one = km;          /* (the nearest: none on top of the player) */
+            if (over < *low)
+                *low = over;
+        }
+    return n;
+}
+
+static void t_stream(void)
+{
+    static const char __far e_three[] = "nav 1 reached: %d of the stream within 8 s (3), the nearest %d km off, the lowest "
+        "%d km over the ground";
+    static const char __far e_again[] = "one of the stream killed: %d within 3 s (3)";
+    static const char __far e_over[] = "nav 5 reached and the stream killed: %d came again (0)";
+    int16_t n, near_, low, s;
+    LfVec p;
+    pt_launch_named("SHMRNC");
+    playerCanBeDamaged = 0;
+    if (planet_make(0) != 100)
+        return;
+    planet_navs();
+    nav_pos(1, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    if (!pt_steps(8 * SEC))
+        return;
+    n = stream_ships(&near_, &low);
+    REQUIRE(n == 3 && near_ > 2000 && low > 0, e_three, n, near_, low);
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (slot_is_ship(s) && shipAiState[s] != 9 && slotMissionShip[s] < 64
+            && missionShipTable[missionShipTable_SIZE * slotMissionShip[s] + 18] == RV_ESCORT_STREAM) {
+            shipAiState[s] = 9;
+            break;
+        }
+    if (!pt_steps(3 * SEC))
+        return;
+    n = stream_ships(&near_, &low);
+    REQUIRE(n == 3, e_again, n, 0, 0);
+    nav_pos(5, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    if (!pt_steps(SEC))
+        return;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (slot_is_ship(s) && shipAiState[s] != 9 && slotMissionShip[s] < 64
+            && missionShipTable[missionShipTable_SIZE * slotMissionShip[s] + 18] == RV_ESCORT_STREAM)
+            shipAiState[s] = 9;
+    if (!pt_steps(4 * SEC))
+        return;
+    n = stream_ships(&near_, &low);
+    REQUIRE(n == 0, e_over, n, 0, 0);
 }
 
 /* M8.61: the old game's goals (missions.txt `goal`, logic_goal, campaign.c camp_points; the user, 2026-11-08: a lost
@@ -5596,6 +5840,8 @@ static void t_home_arrive(void)
         return;
     r = logic_autopilot();
     REQUIRE(r == 1, e_went, r, 0, 0);
+    if (!pt_step())                     /* (held off the scene that far out: back the step after, M10.15) */
+        return;
     REQUIRE(slot_is_ship(home), e_scene, maybeEntityType[home], 0, 0);
     REQUIRE(labs(logic_target_km(home) - 4000) < 300, e_gap, logic_target_km(home), 0, 0);
     d = vec3(TO_KM(gPositionVector[home].x - gPositionVector[0].x), TO_KM(gPositionVector[home].y - gPositionVector[0].y),
@@ -5648,6 +5894,7 @@ static void t_stay_home(void)
     REQUIRE(pt_km(0, other) < 10000, e_came, pt_km(0, other), 0, 0);
     REQUIRE(labs(pt_km(stay, home) - was) < 1000, e_stayed, pt_km(stay, home), was, 0);
     pt_put(0, 0, 0, 3000, 0);           /* (home again: the carrier and its patrol in the scene) */
+    pt_speed(0, 0);                     /* (and staying: flown on 16,000 km the carrier is held, M10.15) */
     if (!pt_steps(60 * SEC))
         return;
     REQUIRE(slot_is_ship(stay) && pt_km(stay, home) < 6000, e_round, pt_km(stay, home), 0, 0);
@@ -6236,10 +6483,11 @@ static void pt_field(int16_t x, int16_t y, int16_t z, int16_t r)
 static void t_field_nav(void)
 {
     static const char __far e_in[] = "the autopilot to a nav point in a field left the player %d km from the field's "
-        "middle (returned %d): 3,000 short of it, facing it";
-    static const char __far e_km[] = "at the autopilot's stop the point is %d km off (%d): the field's middle's, 3,000";
-    static const char __far e_again[] = "at the autopilot's stop in the point's own field it would go again (%d): no";
-    static const char __far e_stop[] = "brought into the field, 3,000 km short of its middle, nav 1 was reached (%d): "
+        "middle (returned %d): 8,000, 500 outside its edge, facing it";
+    static const char __far e_km[] = "at the autopilot's stop the point is %d km off (%d): the field's middle's, 8,000";
+    static const char __far e_again[] = "at the autopilot's stop at the point's own field it would go again (%d): no";
+    static const char __far e_why[] = "the autopilot refused there and gave %d as the reason: the field (AUTO_WHY_FIELD)";
+    static const char __far e_stop[] = "brought to the field's edge, 8,000 km short of its middle, nav 1 was reached (%d): "
         "only within 1,200 of the middle";
     static const char __far e_out[] = "%d km from the point, within its 20,000 reach but outside its field, nav 1 was "
         "reached: only at the field's middle";
@@ -6255,10 +6503,11 @@ static void t_field_nav(void)
     pt_launch(PT_PLAYER);
     r = logic_autopilot();
     z = TO_KM(gPositionVector[0].z);
-    REQUIRE(r == 1 && labs(z - 25000) < 150 && gOrientationFrontVector[0].z > 250, e_in, (int)labs(z - 28000), r, 0);
+    REQUIRE(r == 1 && labs(z - 20000) < 150 && gOrientationFrontVector[0].z > 250, e_in, (int)labs(z - 28000), r, 0);
     r = logic_nav_km(1, &km);
-    REQUIRE(r && labs(km - 3000) < 150, e_km, (int)km, r, 0);
+    REQUIRE(r && labs(km - 8000) < 150, e_km, (int)km, r, 0);
     REQUIRE(logic_autopilot_ready() < 0, e_again, logic_autopilot_ready(), 0, 0);
+    REQUIRE(logic_auto_why == AUTO_WHY_FIELD, e_why, logic_auto_why, 0, 0);
     if (!pt_step())
         return;
     REQUIRE(!logic_nav_seen(1), e_stop, logic_nav_seen(1), 0, 0);
@@ -6384,6 +6633,11 @@ static void t_escort_along(void)
              + (gPositionVector[ox].z - gPositionVector[0].z) / 256 * gOrientationFrontVector[0].z) / 256;
     REQUIRE(along < -400, e_behind, along, 0, 0);
 }
+
+/* (from here on a third code segment: the second outgrew its 64 KB on 2026-11-17, E1118) */
+#ifdef __WATCOMC__
+#pragma code_seg("playtest3_TEXT", "CODE")
+#endif
 
 /* ======================================================================================================== */
 /* M10: the cockpit (logic_target_*, the lock, SYS_*; the user's rulings of 2026-10-31: the target key only in front,
@@ -6979,7 +7233,10 @@ static void t_cloak(void)
     static const char __far e_talk[] = "a transmission: the cloak %d after 2 s (2 disrupted), %d after 3.5 s (1 on again)";
     static const char __far e_shot[] = "the trigger with the guns armed: the cloak is %d (0 off), unseen %d";
     static const char __far e_back[] = "off 20 s: the front shield is back to %d of %d";
+    static const char __far e_wait[] = "Alt+C 20 s after the shot: %d (0: refused), the cloak %d (0), %d s of the wait left "
+        "(10)";
     static const char __far e_twice[] = "Alt+C twice: the cloak %d after the first (1), %d after the second (0)";
+    static const char __far e_wait2[] = "Alt+C off: %d s before it may come on again (30)";
     static const char __far e_none[] = "Alt+C in the Gawain, which has no cloak: the cloak is %d";
     int16_t c2, c35;
     pt_alone(PT_PLAYER);
@@ -7022,10 +7279,16 @@ static void t_cloak(void)
     if (!pt_steps(20 * SEC))
         return;
     REQUIRE(SHIELD(0, 0) > 0, e_back, SHIELD(0, 0), SHIELD_MAX(0, 0), 0);
+    c2 = logic_cloak_key();             /* (refused: off under 30 s, logic.c CLOAK_WAIT_STEPS) */
+    REQUIRE(c2 == 0 && CLOAK_OF(0) == RV_CLOAK_OFF && (logic_cloak_wait() + SEC / 2) / SEC == 10, e_wait, c2, CLOAK_OF(0),
+            (logic_cloak_wait() + SEC / 2) / SEC);
+    if (!pt_steps(10 * SEC))
+        return;
     logic_cloak_key();
     c2 = CLOAK_OF(0);
     logic_cloak_key();
     REQUIRE(c2 == RV_CLOAK_ON && CLOAK_OF(0) == RV_CLOAK_OFF, e_twice, c2, CLOAK_OF(0), 0);
+    REQUIRE(logic_cloak_wait() == 30 * SEC, e_wait2, logic_cloak_wait() / SEC, 0, 0);
     pt_alone(PT_HOMER);
     logic_cloak_key();
     REQUIRE(CLOAK_OF(0) == RV_CLOAK_OFF, e_none, CLOAK_OF(0), 0, 0);
@@ -7064,6 +7327,62 @@ static int16_t pt_seeker_x(int16_t cloaked)
     return x;
 }
 
+/* M10.15: what may be targeted (TARGET_KM, the scene's 16,000 km: the user, 2026-11-16, "we shouldn't be able to target
+ * things far away"): T and Y take no ship farther, and a target, locked or not, that goes farther is dropped; and the
+ * carrier on the way home is held off the scene until the player comes within 15,500 km ("it should have despawned for
+ * the time being until you get close"), its landing clearance still given from farther (LANDING_RANGE_KM) */
+static void t_target_range(void)
+{
+    static const char __far e_next[] = "T picked slot %d: slot 2, dead ahead 18,000 km off, is out of reach; slot 1 (12,000) is the one";
+    static const char __far e_near[] = "Y picked slot %d: the nearest enemy within reach is slot 1";
+    static const char __far e_drop[] = "the locked target went to 17,000 km and is still the target (%d, lock %d): both go";
+    static const char __far e_none[] = "nothing within reach, T picked slot %d";
+    static const char __far e_home[] = "no home carrier at the launch (%d)";
+    static const char __far e_held[] = "every waypoint flown, the player %ld km off the launch: the carrier's entity type is %d, held off the scene until near";
+    static const char __far e_land[] = "the way home, the carrier held %ld km off, the landing answered %d: cleared (%d)";
+    static const char __far e_back[] = "the player 8,000 km off the launch: the carrier is not back in the scene (type %d)";
+    int16_t home = -1, s;
+    pt_alone(PT_PLAYER);
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 3000, 0, 12000, TURN / 2);
+    pt_ship(2, PT_ENEMY, SIDE_AERA, CTL_FROZEN, 0, 0, 18000, TURN / 2);
+    if (!pt_step())
+        return;
+    REQUIRE(logic_target_next() == 1, e_next, g_sys.target, 0, 0);
+    REQUIRE(logic_target_next() == 1, e_next, g_sys.target, 0, 0);
+    REQUIRE(logic_target_nearest() == 1, e_near, g_sys.target, 0, 0);
+    (void)logic_target_lock();
+    pt_put(1, 0, 0, 17000, TURN / 2);
+    if (!pt_step())
+        return;
+    REQUIRE(g_sys.target == -1 && !g_sys.hold, e_drop, g_sys.target, g_sys.hold, 0);
+    REQUIRE(logic_target_next() == -1, e_none, g_sys.target, 0, 0);
+    pt_mission();
+    pt_nav(1, 0, 0, 60000);
+    g_tm.nav[g_tm.nnav - 1].reach = 15000;
+    pt_mship(PT_CAPSHIP, SIDE_TERRAN, 0, 1, RV_PILOT_NONE);
+    g_tm.ship[g_tm.nship - 1].role = RV_ESCORT_HOME;
+    pt_launch(PT_PLAYER);
+    logic_scene_off = 0;
+    playerCanBeDamaged = 0;
+    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
+        if (logic_is_home(s))
+            home = s;
+    REQUIRE(home > 0, e_home, home, 0, 0);
+    pt_put(0, 0, 0, 60000, 0);          /* (nav 1 come to: every waypoint flown, the way home) */
+    if (!pt_steps(2))
+        return;
+    REQUIRE(maybeEntityType[home] == ET_OFFSCENE, e_held, 60000L, maybeEntityType[home], 0);
+    pt_put(0, 0, 0, 20000, 0);
+    if (!pt_step())
+        return;
+    REQUIRE(maybeEntityType[home] == ET_OFFSCENE, e_held, 20000L, maybeEntityType[home], 0);
+    REQUIRE(logic_request_landing() == LANDING_CLEARED, e_land, pt_km(0, home), logic_request_landing(), LANDING_CLEARED);
+    pt_put(0, 0, 0, 8000, 0);
+    if (!pt_step())
+        return;
+    REQUIRE(slot_is_ship(home), e_back, maybeEntityType[home], 0, 0);
+}
+
 /* M10.14: no mind sees a cloaked pilot: an enemy fighter on the player lets it go when the cloak comes on and fires
  * no more, and has it again when the afterburner disrupts it; a seeker loses a cloaked quarry and flies on straight */
 static void t_cloak_ai(void)
@@ -7099,6 +7418,231 @@ static void t_cloak_ai(void)
     xc = pt_seeker_x(1);
     xo = pt_seeker_x(0);
     REQUIRE(xc >= -150 && xc < 150 && xo > 150, e_seek, xc, xo, 0);
+}
+
+/* M8.65: Enigma's cloak strike (ENIGMAP; the user, 2026-11-14: "Maybe lots of heavy bad on the way. Stay cloaked. Arrive
+ * at the target lightly defended. Or hit each heavy bad with surprise", then "double check the schroedinger mission is
+ * quite fun with cloak"), flown leg by leg.  Cloaked at Nav 1 its two Cleomenes (role=guard) come and neither sees the
+ * player nor leaves its post (a wave's fighters went for the carrier 9,000 km off before the guards); a surprise from
+ * behind one drops the cloak and only that one turns (the other guards 7,000 km off); Alt+C again and it lets go; the
+ * patrol between Nav 1 and Nav 2 comes at its hidden point; cloaked at Nav 2, at Nav 3 (the canyon's mouth, its Areus)
+ * and at Nav 4 (the canyon's end: the post and its 2 Aristons; the user, 2026-11-16, "4 nav points each with heavy
+ * fighters", "the transport at the very end of the canyon") nobody sees the player; the post's Charillus killed meets
+ * its goal; its Aristons gone, the cloak off at the post, no guard comes; the autopilot will go home past the guards.
+ * The log (cloakrun:) has the surprise fight's numbers */
+#define GUARD_SEEN_KM 6000
+static int16_t cloak_watchers(int32_t *nearest_heavy)
+{
+    int16_t s, n = 0;
+    *nearest_heavy = 999999L;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (slot_is_ship(s) && commAnimInfo[s] == SIDE_AERA && shipAiState[s] != 9) {
+            if (rvTarget[s] == 0)
+                n++;
+            if ((gInstanceShipTypes[s] == 0x0C || gInstanceShipTypes[s] == 0x09 || gInstanceShipTypes[s] == 0x0A)
+                && pt_km(0, s) < *nearest_heavy)
+                *nearest_heavy = pt_km(0, s);
+        }
+    return n;
+}
+
+/* (an Ariston of ENIGMAP's Nav 4, the post's own: its mission record's nav point, the record's +8) */
+static int16_t post_ariston(int16_t s)
+{
+    return slot_is_ship(s) && gInstanceShipTypes[s] == 0x09 && shipAiState[s] != 9 && slotMissionShip[s] < 64
+           && (missionShipTable[missionShipTable_SIZE * slotMissionShip[s] + 8] & 15) == 4;
+}
+
+static int16_t slot_of_type(uint16_t type)
+{
+    int16_t s;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (slot_is_ship(s) && shipAiState[s] != 9 && gInstanceShipTypes[s] == type)
+            return s;
+    return -1;
+}
+
+static void t_cloak_run(void)
+{
+    static const char __far e_nav1[] = "cloaked at Nav 1 8 s: %d Cleomenes (2), %d enemies see the player (0), the farthest "
+        "%d km from its post (under 3,000)";
+    static const char __far e_burst[] = "a surprise from behind a Cleomenes: the cloak is %d (0 off), %d enemies turn on the "
+        "player (1: the other guards its post 7,000 km off)";
+    static const char __far e_again[] = "Alt+C again: the cloak %d (1 on), %d enemies still see the player after 3 s (0)";
+    static const char __far e_patrol[] = "cloaked past the hidden point: %d Cleomenes in all (the patrol came: 2 or 3)";
+    static const char __far e_nav2[] = "cloaked at Nav 2: %d Aristons (2), %d see the player (0)";
+    static const char __far e_nav3[] = "cloaked at Nav 3, the canyon's mouth: %d Areus (2), %d see the player (0)";
+    static const char __far e_nav4[] = "cloaked at Nav 4, the canyon's end: the Charillus %d (a slot), %d of its Aristons (2), "
+        "%d see the player (0)";
+    static const char __far e_goal[] = "the post's Charillus killed: its goal %d (1)";
+    static const char __far e_quiet[] = "uncloaked at the post 40 s, its Aristons gone: a guard came within 6,000 km at %d s "
+        "(-1: none)";
+    static const char __far e_home[] = "the post cleared, the guards at their posts: the autopilot %d (0: home)";
+    int16_t s, n, i, cleo, post;
+    int32_t heavy, h0, hp0, far_ = 0, seen_at = -1;
+    LfVec p;
+    RvVec3 w;
+    pt_launch_named("ENIGMAP");
+    if (planet_make(0) != 100)
+        return;
+    planet_navs();
+    g_sys.armed = 0;
+    logic_cloak_key();
+    if (!pt_step())
+        return;
+    nav_pos(1, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    if (!pt_steps(8 * SEC))
+        return;
+    n = cloak_watchers(&heavy);
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)
+        if (slot_is_ship(s) && gInstanceShipTypes[s] == 0x0C) {
+            const uint8_t *rec = missionShipTable + missionShipTable_SIZE * slotMissionShip[s];
+            int32_t km = pt_km_to(s, p.x / KM + MSHIP_REC_KM(rec, 0), p.y / KM + MSHIP_REC_KM(rec, 1),
+                                  p.z / KM + MSHIP_REC_KM(rec, 2));
+            if (km > far_)
+                far_ = km;
+        }
+    REQUIRE(pt_count(SIDE_AERA, 0x0C) == 2 && n == 0 && far_ < 3000, e_nav1, pt_count(SIDE_AERA, 0x0C), n, far_);
+    /* the surprise: 600 km behind one, at its speed, the guns on its tail until it dies or 30 s */
+    cleo = slot_of_type(0x0C);
+    if (cleo < 0)
+        return;
+    w.x = gPositionVector[cleo].x - (int32_t)gOrientationFrontVector[cleo].x * 600 * KM / 256;
+    w.y = gPositionVector[cleo].y - (int32_t)gOrientationFrontVector[cleo].y * 600 * KM / 256;
+    w.z = gPositionVector[cleo].z - (int32_t)gOrientationFrontVector[cleo].z * 600 * KM / 256;
+    pt_put(0, w.x / KM, w.y / KM, w.z / KM, 0);
+    pt_face(cleo);
+    pt_speed(0, (int32_t)setSpeed[cleo]);
+    h0 = pt_health(cleo);
+    hp0 = pt_health(0);
+    g_sys.armed = 1;
+    g_pilot.guns = 1;
+    for (i = 0; i < 2 * SEC; i++) {
+        pt_face(cleo);
+        if (!pt_step())
+            return;
+    }
+    n = cloak_watchers(&heavy);
+    REQUIRE(CLOAK_OF(0) == RV_CLOAK_OFF && n <= 1, e_burst, CLOAK_OF(0), n, 0);
+    RV_LOG("cloakrun: 2 s on a Cleomenes' tail from 600 km: its health %ld -> %ld, the player's %ld -> %ld", h0,
+           pt_health(cleo), hp0, pt_health(0));
+    for (i = 0; i < 30 * SEC && shipAiState[cleo] != 9 && shipAiState[0] != 9; i++) {
+        if (slot_is_ship(cleo) && pt_km(0, cleo) > 400)
+            pt_face(cleo);
+        if (!pt_step())
+            return;
+    }
+    RV_LOG("cloakrun: the dogfight: %ld s more, the Cleomenes %s (health %ld), the player %s (health %ld of %ld)", i / SEC,
+           shipAiState[cleo] == 9 ? "killed" : "alive", pt_health(cleo), shipAiState[0] == 9 ? "killed" : "alive",
+           pt_health(0), hp0);
+    g_pilot.guns = 0;
+    g_sys.armed = 0;
+    if (shipAiState[0] == 9)
+        return;
+    for (i = 0; i < 31 * SEC && logic_cloak_wait(); i++)   /* (the cloak's 30 s from its going off) */
+        if (!pt_step())
+            return;
+    logic_cloak_key();
+    if (!pt_steps(3 * SEC))
+        return;
+    n = cloak_watchers(&heavy);
+    REQUIRE(CLOAK_OF(0) == RV_CLOAK_ON && n == 0, e_again, CLOAK_OF(0), n, 0);
+    pt_speed(0, 0);
+    nav_pos(5, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    if (!pt_steps(4 * SEC))
+        return;
+    n = pt_count(SIDE_AERA, 0x0C);
+    REQUIRE(n >= 2, e_patrol, n, 0, 0);
+    nav_pos(2, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    if (!pt_steps(6 * SEC))
+        return;
+    n = cloak_watchers(&heavy);
+    REQUIRE(pt_count(SIDE_AERA, 0x09) == 2 && n == 0, e_nav2, pt_count(SIDE_AERA, 0x09), n, 0);
+    nav_pos(3, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    if (!pt_steps(4 * SEC))
+        return;
+    n = cloak_watchers(&heavy);
+    REQUIRE(pt_count(SIDE_AERA, 0x0A) == 2 && n == 0, e_nav3, pt_count(SIDE_AERA, 0x0A), n, 0);
+    nav_pos(4, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    if (!pt_steps(4 * SEC))
+        return;
+    n = cloak_watchers(&heavy);
+    post = slot_of_type(0x2B);
+    for (s = 1, i = 0; s < NUM_SHIP_SLOTS; s++)   /* (the post's own Aristons, Nav 4's: a wave's fighters come in from
+                                                     15,000 km, WAVE_KM; Nav 2's guard theirs) */
+        i += post_ariston(s);
+    REQUIRE(post > 0 && i == 2 && n == 0, e_nav4, post, i, n);
+    if (post < 0)
+        return;
+    RV_LOG("cloakrun: at the post cloaked: the nearest heavy %ld km off, the Charillus %ld km", heavy, pt_km(0, post));
+    logic_cloak_key();
+    playerCanBeDamaged = 0;
+    for (i = 0; i < 100 && shipAiState[post] != 9; i++)
+        (void)pt_hit(0, post, 2000, 2, 0, 0);
+    for (s = 1; s < NUM_SHIP_SLOTS; s++)   /* (its Aristons: they come for the player; the guards must not) */
+        if (post_ariston(s))
+            for (i = 0; i < 100 && shipAiState[s] != 9; i++)
+                (void)pt_hit(0, s, 2000, 2, 0, 0);
+    g_pilot.steer_x = 9;                /* (circling there: near a planet the throttle goes no lower than 100) */
+    for (i = 0; i < 40 * SEC; i++) {
+        if (!pt_step())
+            return;
+        n = cloak_watchers(&heavy);
+        if (seen_at < 0 && heavy < GUARD_SEEN_KM)
+            seen_at = i / SEC;
+    }
+    g_pilot.steer_x = 0;
+    REQUIRE(logic_goal(RV_GOAL_KILL, 0x2B, 4, 0), e_goal, logic_goal(RV_GOAL_KILL, 0x2B, 4, 0), 0, 0);
+    REQUIRE(seen_at < 0, e_quiet, seen_at, 0, 0);
+    if (!pt_steps(3 * SEC))
+        return;
+    REQUIRE(logic_autopilot_ready() == 0, e_home, logic_autopilot_ready(), 0, 0);
+    RV_LOG("cloakrun: the autopilot home from the post: %d, home %ld km", logic_autopilot_ready(), pt_km_to(0, 0, 0, 0));
+}
+
+/* M8.66: the sets' planet missions as a machine flies them (campaign.c camp_flown_from; the user, 2026-11-14, of a
+ * terrain mission in every set: "Count; skipped without card"; since RV.EXE draws a planet itself, every DOS machine
+ * flies them, and g_planet_off is a machine that would not): flying them Cephid 17 has four, CEPHIDP the third place,
+ * and Shmrn six; not, three and four, the way on from CEPHID2 skips to CEPHID3, the screens' numbers count what is
+ * flown; a place in a set is the same number on every machine */
+static int16_t node_named(const char *id)
+{
+    int16_t i;
+    for (i = 0; i < (int16_t)g_nnodes; i++)
+        if (!strncmp(g_nodes[i].id, id, strlen(id)))
+            return i;
+    return -1;
+}
+
+static void t_campaign_card(void)
+{
+    static const char __far e_card[] = "with the card: Cephid %d missions (4), Shmrn %d (6), CEPHID2's next place %d (2)";
+    static const char __far e_none[] = "without it: Cephid %d missions (3), Shmrn %d (4), CEPHID2's next place %d (3)";
+    static const char __far e_place[] = "without the card CEPHID3 (place 3) is mission %d of the set (3), with it %d (4)";
+    static const char __far e_way[] = "without the card, CEPHID2 won: the campaign goes to place %d (3: CEPHID3), node %d";
+    int16_t c = node_named("CEPHID"), sh = node_named("SHMRN");
+    if (c < 0 || sh < 0)
+        return;
+    g_planet_off = 0;
+    REQUIRE(camp_node_missions(c) == 4 && camp_node_missions(sh) == 6 && camp_flown_from(c, 2) == 2, e_card,
+            camp_node_missions(c), camp_node_missions(sh), camp_flown_from(c, 2));
+    g_planet_off = 1;
+    REQUIRE(camp_node_missions(c) == 3 && camp_node_missions(sh) == 4 && camp_flown_from(c, 2) == 3, e_none,
+            camp_node_missions(c), camp_node_missions(sh), camp_flown_from(c, 2));
+    REQUIRE(camp_place(c, 3) == 3, e_place, camp_place(c, 3), 0, 0);
+    g_camp.node = (uint8_t)c;
+    g_camp.mission = 1;
+    camp_mission(camp_mission_index(), &g_tm);
+    pt_launch(g_tm.fighter != 0xFF ? g_tm.fighter : PT_PLAYER);
+    (void)camp_resolve(1, 0, 0, 0);
+    REQUIRE(g_camp.node == c && g_camp.mission == 3, e_way, g_camp.mission, g_camp.node, 0);
+    g_planet_off = 0;
+    REQUIRE(camp_place(c, 3) == 4, e_place, 3, camp_place(c, 3), 0);
 }
 
 /* --- M11: the simulator (simulator.c; the user, 2026-11-01) --- */
@@ -7919,8 +8463,9 @@ static const char __far n_m3_10[] = "M3.10 any-source (do_damage): the same hit 
 static const char __far n_m3_11[] = "M3.11 shots-hit (step_shots): gunfire hurts what it meets, src a bolt of the "
     "shooter's";
 static const char __far n_m3_12[] = "M3.12 recharge (step_timers): shields come back, armour does not";
-static const char __far n_m2_19[] = "M2.19 sustain (step_timers): the trigger held 10 s fires the old game's 45 shots (a volley of two "
-    "every 0.44 s, at its 15 frames a second) and keeps its energy";
+static const char __far n_m2_21[] = "M2.21 easy-guns (camp_load_rules, easy_guns): on easy every gun's bolt flies 11/8 of the data's speed, the laser 2,200 kps; the data's again on medium";
+static const char __far n_m2_19[] = "M2.19 sustain (step_timers): the trigger held 10 s fires the old game's 22 shots a gun (a volley "
+    "every 0.44 s, at its 15 frames a second) and draws slowly";
 static const char __far n_m3_13[] = "M3.13 type-rates (step_timers): gun energy and shields come back at the type's rates (a point a side every shield_steps, or the shift)";
 static const char __far n_m3_14[] = "M3.14 hit-volumes (shot_hit): a bolt within the radius, in the volume box, through the silhouettes, as the rule says";
 static const char __far n_m3_15[] = "M3.15 damage-grows (shot_hit): a bolt hurts by its life left: the laser 10 at the muzzle, 25 at the end of its reach";
@@ -8028,7 +8573,12 @@ static const char __far n_m8_59[] = "M8.59 escort-back (role=back, escorted): an
 static const char __far n_m8_60[] = "M8.60 wave-also (also=N, mship_brought): a wave listed at a hidden point and a waypoint comes once, at whichever is reached first";
 static const char __far n_m8_61[] = "M8.61 goals (logic_goal): a nav point met once reached and its enemies gone; the nth kill goal with n + 1 killed; the landing";
 static const char __far n_m8_62[] = "M8.62 held-wave (mission_done, wave_may_come): a wave held at a hidden point at the launch keeps the mission undone till it has come and gone";
-static const char __far n_m8_55[] = "M8.55 field-nav (nav_field, nav_stop, nav_in_reach): a waypoint inside a field is the field's middle: the autopilot takes the player in, and the point is reached only within 1,200 km of the middle";
+static const char __far n_m8_63[] = "M8.63 planet (planet.c, step_ground, ground_mind): the canyon run's planet made, its nav points 700 km over its floor; a dive into the floor and a climb into the stone bridge stopped short of the rock, the throttle at 100; an Aera fighter diving at the floor glides over it; the player that takes damage destroyed by it";
+static const char __far n_m8_66[] = "M8.66 campaign-card (camp_flown_from, camp_place): a set's planet missions only with the card: Cephid 4 or 3, Shmrn 6 or 4, the way on skips CEPHIDP without it, the screens count what is flown";
+static const char __far n_m8_65[] = "M8.65 cloak-run (ENIGMAP, role=guard, the cloak): cloaked, nobody sees the player and the guards keep their posts, Nav 1 to the canyon's end; a surprise from behind turns only that one; Alt+C and it lets go; the post burnt with no heavy coming; the autopilot goes home past the guards (the log: cloakrun)";
+static const char __far n_m8_67[] = "M8.67 ground-up (step_ground): over Enigma's ice, 64,000 km from its centre, a fighter low over the ground is lifted straight up";
+static const char __far n_m8_64[] = "M8.64 stream (stream_step, role=stream): the canyon run's three Nicanders come once Nav 1 is reached, ahead of the player and over the ground; one killed, another comes within 3 s; none once Nav 5 is reached";
+static const char __far n_m8_55[] = "M8.55 field-nav (nav_field, nav_stop, nav_in_reach): a waypoint inside a field is the field's middle: the autopilot stops at its edge, and the point is reached only within 1,200 km of the middle";
 static const char __far n_m8_54[] = "M8.54 capital-help (capital_help): an Aera capital ship hurt through its armour by an unengaged attacker turns half its side's fighters on it; none when a fighter is already near the attacker";
 static const char __far n_m8_52[] = "M8.52 mayday (hull_take, logic_on_mayday): an Ox calls mayday on 35 in 1,000 of the hits through its armour, as the old game's capital ships did; an Agasicles never";
 static const char __far n_m8_53[] = "M8.53 autoland (logic_autoland_ready, logic_autoland): the trigger lands with every waypoint flown, nobody about and the carrier close; not before";
@@ -8036,7 +8586,7 @@ static const char __far n_m8_43[] = "M8.43 escort-skip (logic_autopilot, escort_
 static const char __far n_m8_42[] = "M8.42 escort-jump-home (logic_autopilot, route_step): ENIGMA2 by the autopilot, the Ox along to each nav point; the player straight home, the Ox still jumps";
 static const char __far n_m8_41[] = "M8.41 escort-linger (route_step, logic_autopilot): ENIGMA2's Ox goes on alone from a player lingering at the launch, and the autopilot to nav 1 brings it along";
 static const char __far n_m8_40[] = "M8.40 campaign-way (logic_autopilot, the missions): every mission's waypoints reached on the old game's map, the autopilot stopping at their reach";
-static const char __far n_m8_39[] = "M8.39 full-map (logic_autopilot, step_scene): the autopilot stops at a nav point's reach; its ships are in the scene however far, the carrier again on the way home";
+static const char __far n_m8_39[] = "M8.39 full-map (logic_autopilot, step_scene): the autopilot stops at a nav point's reach; its ships are in the scene however far, the carrier held far off, the way home too";
 static const char __far n_m8_38[] = "M8.38 escort-home (route_step): an escort target in goes to the home carrier, stops within 150 km of its hull, its nose the carrier's way, and is home";
 static const char __far n_m10_11[] = "M10.11 taunt-guest (rvTaunt, fighter_think): a guest's taunt, carried to the host, turns the enemy on the guest's ship";
 static const char __far n_m10_12[] = "M10.12 taunt-orders (order_hold, tailer_of): a taunt leaves an order's healthy carrier on its prey, turns its follower for good, a fighter on its tail takes it; hurt, the carrier turns and goes back";
@@ -8065,6 +8615,7 @@ static const char __far n_m10_5[] = "M10.5 nav-cross (logic_hud): a white cross 
 static const char __far n_m10_6[] = "M10.6 orders (logic_order): attack my target, help me out, form on my wing, return to base";
 static const char __far n_m10_7[] = "M10.7 missile-lock (lock_tick): the crosshair chases the box from the farther bottom corner, locks held on it (on the nose in the lock time, off it later, lost when it jumps); heat from behind, image anyhow, none wrecked or dark, a dumbfire never";
 static const char __far n_m10_13[] = "M10.13 cloak (logic_cloak_key, cloak_step): Alt+C on, the shields down; the burner and a transmission disrupt it; a shot or Alt+C off, the shields back; none without one";
+static const char __far n_m10_15[] = "M10.15 target-range (logic_target_ahead, target_tick, nav_point_here): no target past 16,000 km, one that goes farther dropped; the carrier held on the way home until near, its landing cleared from 25,000";
 static const char __far n_m10_14[] = "M10.14 cloak-ai (fighter_think, missile_step): the enemy lets a cloaked pilot go and fires no more, has it again disrupted; a seeker loses it";
 
 static const char __far n_m10_8[] = "M10.8 break-formation (logic_order): fly in formation fights nobody; break formation goes for any enemy, else round the player";
@@ -8119,8 +8670,11 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m7_9, t_seeker_chases, 0 }, { n_m7_10, t_missile_blast, 0 }, { n_m7_11, t_missile_knock, 0 }, { n_m7_12, t_ff_target, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 }, { n_m8_56, t_nav_switch, 0 }, { n_m8_57, t_escort_arrive, 0 }, { n_m8_58, t_escort_threat, 0 }, { n_m8_59, t_escort_back, 0 }, { n_m8_60, t_wave_also, 0 }, { n_m8_61, t_goals, 0 }, { n_m8_62, t_held_wave, 0 },
-    { n_m10_13, t_cloak, 0 }, { n_m10_14, t_cloak_ai, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 }, { n_m8_56, t_nav_switch, 0 }, { n_m8_57, t_escort_arrive, 0 }, { n_m8_58, t_escort_threat, 0 }, { n_m8_59, t_escort_back, 0 }, { n_m8_60, t_wave_also, 0 }, { n_m8_61, t_goals, 0 }, { n_m8_62, t_held_wave, 0 }, { n_m8_63, t_planet, 0 }, { n_m8_64, t_stream, 0 },
+    { n_m10_13, t_cloak, 0 }, { n_m10_14, t_cloak_ai, 0 }, { n_m8_65, t_cloak_run, 0 }, { n_m8_66, t_campaign_card, 0 },
+    { n_m10_15, t_target_range, 0 },
+    { n_m8_67, t_ground_up, 0 },
+    { n_m2_21, t_easy_guns, 0 },
 };
 
 /* --- the run --- */
@@ -8156,12 +8710,22 @@ static uint32_t pt_hash(void)
 static void pt_parts(void)
 {
     static const char __far s_step[] = " step %d ";
-    static const uint16_t __far k_at[] = { 0x0600, 0x0B00, 0x1100, 0x1700, 0x2900, 0x2D00, 0x3800, 0x5280, 0x6400,
-                                           0x8000 };
+#define PT_OFF(a) (uint16_t)((const uint8_t *)(a) - RV_AT(const uint8_t *, 0))   /* (a fixed-block array's offset) */
+    uint16_t k_at[10];
     static const char __far k_names[] = "kinds positions velocities frames speeds hurts guns minds mission ";
     const char __far *n = k_names;
     int16_t k;
     uint32_t h;
+    k_at[0] = PT_OFF(maybeEntityType);  /* (the parts' starts, from the generated layout) */
+    k_at[1] = PT_OFF(gPositionVector);
+    k_at[2] = PT_OFF(gVelocityVector);
+    k_at[3] = PT_OFF(gOrientationRightVector);
+    k_at[4] = PT_OFF(setSpeed);
+    k_at[5] = PT_OFF(curShield);
+    k_at[6] = PT_OFF(gunTable);
+    k_at[7] = PT_OFF(missileTarget);
+    k_at[8] = PT_OFF(navPointTable);
+    k_at[9] = RV_FIXED_BYTES;
     ln_s(s_pre);
     ln_id();
     ln_f(s_step, frameCounter, 0, 0);

@@ -179,7 +179,14 @@ say "assembling $OUT"
 mkdir -p "$OUT"
 cp "$BUILD/src/dosbox.js" "$BUILD/src/dosbox.wasm" "$OUT/"
 cp "$TS/dist/index.js" "$OUT/p2p-client.js"
-cp "$ROOT/web/index.html" "$ROOT/web/wc.js" "$ROOT/web/gamefiles.js" "$ROOT/web/gamepad.js" "$ROOT/web/usbpad.js" "$ROOT/web/touch.js" "$ROOT/web/touch.css" "$ROOT/web/voice.js" "$ROOT/web/hall.js" "$ROOT/web/chatfilter.js" "$ROOT/web/inno-worker.js" "$ROOT/web/so3.js" "$ROOT/web/rvsprites.js" "$ROOT/web/rvsprites-worker.js" "$ROOT/web/rvsets.js" "$ROOT/web/pvm.js" "$OUT/"
+cp "$ROOT/web/index.html" "$ROOT/web/wc.js" "$ROOT/web/gamefiles.js" "$ROOT/web/gamepad.js" "$ROOT/web/usbpad.js" "$ROOT/web/touch.js" "$ROOT/web/touch.css" "$ROOT/web/voice.js" "$ROOT/web/hall.js" "$ROOT/web/chatfilter.js" "$ROOT/web/inno-worker.js" "$ROOT/web/so3.js" "$ROOT/web/rvsprites.js" "$ROOT/web/rvsprites-worker.js" "$ROOT/web/rvsets.js" "$ROOT/web/pvm.js" "$ROOT/web/build.js" "$OUT/"
+# the page's build (web/build.js): its commit ("+" with changes in the tree) and the moment it was built; the pages in
+# a room and in the lobby compare theirs, and an older one is asked to reload (a page left open across a deploy keeps
+# its old game, and its flights would not match)
+BUILD_AT=$(date +%s)
+BUILD_ID="$(git -C "$ROOT" rev-parse --short HEAD)$(git -C "$ROOT" diff --quiet HEAD 2>/dev/null || echo +)-$BUILD_AT"
+sed -i "s|^export const PAGE_BUILD = .*|export const PAGE_BUILD = { id: \"$BUILD_ID\", at: $BUILD_AT };|" "$OUT/build.js"
+grep -q "^export const PAGE_BUILD = { id: \"$BUILD_ID\"" "$OUT/build.js" || { echo "web/build.js: the build not written in" >&2; exit 1; }
 # Special Operations 3's sealed package (so3/README.md), as the page fetches it
 mkdir -p "$OUT/so3" && cp "$ROOT/web/so3/so3.json" "$ROOT/web/so3/so3.enc" "$OUT/so3/"
 # the shareware the page offers to play at once, the archives exactly as their publishers released them (their own
@@ -197,7 +204,8 @@ if [ -z "${SKIP_RETROVEGA:-}" ]; then
     say "building RetroVega"
     "$ROOT/retrovega/build.sh" > "$BUILD/retrovega.log" 2>&1 || { tail -20 "$BUILD/retrovega.log"; exit 1; }
     (cd "$ROOT/retrovega/build/dos" && tar --format=ustar -czf "$OUT/retrovega.tar.gz" \
-        RV.EXE RV.DAT RVGAME.DAT BALLS.DAT SKY.DAT SHAPES.DAT EXPLODE.DAT SFX.DAT ROCKS.DAT RVOPL.BNK *.MID)
+        RV.EXE RV.DAT RVGAME.DAT BALLS.DAT SKY.DAT SHAPES.DAT EXPLODE.DAT SFX.DAT ROCKS.DAT RVOPL.BNK PVIEW.BIN *.MID)
+    # (PVIEW.BIN: the planet's picture on a machine without the sprite accelerator, RV.EXE /nogx; retrovega/src/pview.c)
     # the campaign for the page's mission menu, made with RVGAME.DAT from the same records (tools/rvdata.py)
     cp "$ROOT/retrovega/build/dos/RVNET.JSON" "$OUT/rv-campaign.json"
     # (the asteroid fields' rocks, ROCKS.DAT, 3.9 MB of the tarball, are in it since 2026-11-06: nearly every mission

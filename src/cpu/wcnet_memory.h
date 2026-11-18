@@ -26,7 +26,7 @@ namespace wc {
 extern Bit16u DS;
 extern PhysPt DS_OFF;
 
-// Entity slots.  The game keeps 0x40 entity slots (WC2: 0x46; RV.EXE: 0x80);
+// Entity slots.  The game keeps 0x40 entity slots (WC2: 0x46; RV.EXE: its header's, 62);
 // every per-entity array is indexed by slot.  Slot 0 is always the local player.
 enum Slot {
     kPlayerSlot = 0,
@@ -112,7 +112,7 @@ inline int parent_of(int slot) { return rd8((Bit16u)(ds::parentShipForShip + slo
 inline bool is_ship_slot(int slot) { return slot >= kPlayerSlot && slot <= kMaxShipSlot; }
 // The last slots are the game's own: with 0x40 of them (WC.EXE) bolts,
 // explosions, dust... end at 0x3c, the camera is 0x3d and 0x3f is a scratch
-// vector; WC2.EXE has 0x46 and RV.EXE 0x80, and the same three at the end.
+// vector; WC2.EXE has 0x46 and RV.EXE 62, and the same three at the end.
 inline int num_slots() { return g_params.slots; }
 inline int max_temp_slot() { return g_params.slots - 4; }
 inline int camera_slot() { return g_params.slots - 3; }

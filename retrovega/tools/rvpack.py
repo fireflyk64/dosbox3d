@@ -494,6 +494,10 @@ def pack_deck(pack, place, d, ships_csv):
 # --- cockpits ----------------------------------------------------------------
 
 CP_FREE = list(range(208, 255))         # the flight palette's slots for a cockpit's own colours
+EM_COLOURS = 6                          # a cockpit with an em_box region (cockpit.json): its E/M box's own colours, the
+                                        # first of CP_FREE, never dimmed: the cloak's dark cockpit dims the rest (the
+                                        # user, 2026-11-15: "quite dim if possible except for the EM ones"; video.c)
+VID_DIM_FIRST = 214                     # (rv.h's: CP_FREE[0] + EM_COLOURS)
 CP_LAYERS = 32
 
 
@@ -578,15 +582,40 @@ def pack_cockpits(pack, ships_csv, panels_dir):
         # (eight of them the hand's own - skin and sleeve - picked from its poses: in the one median cut they came out
         # yellow and grey)
         hand = 8 if stick_ims else 0
-        part = make_palette([base] + list(controls.values()) + [im for _e, im in layers]
-                            + [im for _e, ims in glass for im in ims] + list(state_ims.values()),
-                            len(CP_FREE) - hand, CP_FREE[0])
+        # (the E/M box, cockpit.json's em_box [x, y, w, h]: its pixels and its controls' states in colours of their own)
+        em = cj['regions'].get('em_box')
+        emn = EM_COLOURS if em else 0
+        assert CP_FREE[0] + EM_COLOURS == VID_DIM_FIRST
+        in_em = np.zeros((SCREEN[1], SCREEN[0]), bool)
+        if em:
+            in_em[em[1]:em[1] + em[3], em[0]:em[0] + em[2]] = True
+
+        def em_control(c):
+            x, y, w, h = c['rect']
+            return bool(in_em[min(max(y + h // 2, 0), SCREEN[1] - 1), min(max(x + w // 2, 0), SCREEN[0] - 1)])
+        em_states = {st[0] for c in panel if em and em_control(c) for st in c['states'] if st}
+        body = base
+        part = []
+        if em:
+            a = np.asarray(base).copy()
+            a[in_em, 3] = 0
+            body = Image.fromarray(a, 'RGBA')
+            a = np.asarray(base).copy()
+            a[~in_em, 3] = 0
+            part = make_palette([Image.fromarray(a, 'RGBA')] + [state_ims[k] for k in sorted(em_states)], emn, CP_FREE[0])
+        part += make_palette([body] + list(controls.values()) + [im for _e, im in layers]
+                             + [im for _e, ims in glass for im in ims]
+                             + [im for k, im in state_ims.items() if k not in em_states],
+                             len(CP_FREE) - hand - emn, CP_FREE[0] + emn)
         if hand:
             part += make_palette(stick_ims, hand, CP_FREE[0] + len(CP_FREE) - hand)
         pal = Palette(UI + flight[16:CP_FREE[0]] + part + [(118, 118, 114)])   # the UI's 16 first, as every palette
-        allowed = list(range(16)) + CP_FREE
+        allowed = list(range(16)) + CP_FREE[emn:]
+        allowed_em = list(range(16)) + CP_FREE[:emn]
         over_black = Image.alpha_composite(Image.new('RGBA', SCREEN, (0, 0, 0, 255)), base)
         idx = pal.index_dither(over_black, allowed)
+        if em:
+            idx[in_em] = pal.index_dither(over_black, allowed_em)[in_em]
         idx[opening] = 0
         # (255, the grey above, is the rocks' tracker colour, set at run time: rocks.c; no table may give it)
         rec = {'palette': add_palette(pack, 'cpal_' + key, pal, list(range(255))),
@@ -633,7 +662,8 @@ def pack_cockpits(pack, ships_csv, panels_dir):
             first = None
             for i, st in enumerate(c['states']):
                 name = 'cpp_%s_%02d_%d' % (key[:7], n, i)
-                j = (add_sprite(pack, name, state_ims[st[0]], pal, st[1], st[2], allowed) if st
+                j = (add_sprite(pack, name, state_ims[st[0]], pal, st[1], st[2],
+                                allowed_em if st[0] in em_states else allowed) if st
                      else pack.add(name, 'SPR', b'', 0, 0, 0, 0))
                 first = j if first is None else first
             x, y, w, h = c['rect']

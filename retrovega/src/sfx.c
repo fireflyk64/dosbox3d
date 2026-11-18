@@ -12,7 +12,7 @@
  * On the native build the host's clock says how much to mix (hle.c), and the host's audio plays it a fixed lag
  * later, as it plays the OPL3. */
 #include <string.h>
-#include <stdio.h>
+#include "rvio.h"
 #include <stdlib.h>
 #include <malloc.h>
 #include <dos.h>

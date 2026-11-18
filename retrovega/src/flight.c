@@ -13,7 +13,7 @@
  * of this machine at this cycle count.  It shows on the left MFD and in the
  * fixed block (rvBenchCount, rvFps).  After 20 seconds the flight lands and
  * the mission's outcome is rolled as before. */
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include <stdlib.h>
 #include <malloc.h>
@@ -33,6 +33,7 @@
 #include "rocks.h"
 #include "missiles.h"
 #include "sky.h"
+#include "planet.h"
 #include "collide.h"
 #include "score.h"
 #include "flight.h"
@@ -62,6 +63,7 @@ int g_star_bench;                       /* RVT.EXE /starbench N */
 #endif
 int g_capital_blocks_test = 0;          /* RVT.EXE /capblocks N: capital ships in N x N blocks, however many there are */
 int g_capital = 0;                      /* RV.EXE /capital: the carrier in the flight (a test aid) */
+int g_planet_test = 0;                  /* RVT.EXE /planet N: a desert planet N km under the player, an arch ahead */
 int g_sky = 0;                          /* RV.EXE /sky: three ship views painted on the sky, to roll and turn round (a test aid) */
 /* the sky test scene's sprites: the enemy type's views, painted on the sky at these directions and sizes */
 static const struct { int v; LfVec dir; int scale; } g_sky_sprites[3] = {
@@ -607,6 +609,21 @@ static void nav_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
     }
 }
 
+/* over a planet (planet.h): the height over the ground under the gunsight, km, red under 100 km */
+static long __far g_alt_km = -1;        /* (the frame's: -1 no planet, or too high to tell) */
+static void alt_tag(int y0, int y1)
+{
+    char s[16];
+    int w, x, row = g_cam_cy + 26;
+    if (g_alt_km < 0)
+        return;
+    sprintf(s, "ALT %ld", g_alt_km);
+    w = panel_tiny_width(s);
+    x = g_cam_cx - w / 2;
+    if (row >= 0 && row + PANEL_TINY_H <= SCR_H && x >= 0)
+        (void)panel_tiny(x, row, s, g_alt_km < 100 ? UI_RED : UI_WHITE, y0, y1);
+}
+
 /* "MASTER ARM OFF" under the gunsight while the trigger is pulled with the guns safed.  The master arm is the panel's
  * ARM knob alone since the user, 2026-11-04, lost their guns in a fight to its key ("I was hitting N and m is next to
  * it. I think it might be too confusing", "lets unbind that key for now"): nothing said why they were quiet */
@@ -625,13 +642,19 @@ static void arm_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
 /* "PRESS FIRE TO LAND" under the gunsight while the trigger would land (logic_autoland_ready: home, every waypoint
  * flown, nobody to fight, the carrier close) */
 static uint8_t __far g_autoland;
+static uint8_t __far g_cloak_said;      /* frames left of CLOAK CHARGING: Alt+C refused */
+static uint8_t __far g_auto_said;       /* frames left of why A was refused (logic_auto_why: the user, 2026-11-16, at the
+                                           edge of a field on the way home, "I couldn't auto there") */
 static uint8_t __far g_land_armed;      /* the trigger let go while the prompt shows: the next pull lands (one held
                                            through the last kill was a shot, and landed the player: the user, SHELTON2) */
 static void land_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
 {
-    static const char s_land[] = "PRESS FIRE TO LAND", s_on[] = "CLOAKED", s_broken[] = "CLOAK DISRUPTED";
+    static const char s_land[] = "PRESS FIRE TO LAND", s_on[] = "CLOAKED", s_broken[] = "CLOAK DISRUPTED",
+        s_wait[] = "CLOAK CHARGING", s_enemy[] = "AUTOPILOT: ENEMIES NEAR", s_field[] = "AUTOPILOT: FLY THROUGH THE FIELD";
     int c = CLOAK_OF(0), blink = (frameCounter >> 4) & 1, w, x, row = g_cam_cy + 14;
-    const char *s = g_autoland ? s_land : c == RV_CLOAK_ON ? s_on : c == RV_CLOAK_BROKEN ? s_broken : 0;
+    const char *s = g_autoland ? s_land : c == RV_CLOAK_ON ? s_on : c == RV_CLOAK_BROKEN ? s_broken
+                    : g_cloak_said && logic_cloak_wait() ? s_wait
+                    : !g_auto_said ? 0 : logic_auto_why == AUTO_WHY_FIELD ? s_field : logic_auto_why == AUTO_WHY_ENEMY ? s_enemy : 0;
     if (!s || g_arm_warn || row < 0 || row + PANEL_TINY_H > SCR_H)
         return;
     w = panel_tiny_width(s);
@@ -640,7 +663,7 @@ static void land_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
         return;
     if (ext && (row < ey0 || row >= ey0 + rows || x < ext[2 * (row - ey0)] || x + w > ext[2 * (row - ey0) + 1]))
         return;
-    (void)panel_tiny(x, row, s, s == s_on ? UI_HILITE : s == s_broken ? (blink ? UI_RED : UI_AMBER2)
+    (void)panel_tiny(x, row, s, s == s_on ? UI_HILITE : s == s_broken || s == s_wait || s == s_enemy || s == s_field ? (blink ? UI_RED : UI_AMBER2)
                                 : blink ? UI_WHITE : UI_HILITE, y0, y1);
 }
 
@@ -728,6 +751,7 @@ static void rel_of(int s, LfVec *rel)   /* a slot's place from the camera's */
 
 static unsigned long g_t_flames, g_t_flames_set;   /* what the engines' flames cost: in all, and set up */
 static unsigned long g_t_plan;          /* the frame's plan (which ships, how drawn, their views, the flames set up) */
+static unsigned long g_t_planet, g_t_planet_draw;   /* a planet's picture made (the card asked, or RV.EXE's own), drawn */
 
 /* a ship's afterburner: faster than its type's top speed (the flames scene: every other ship) */
 static int burning(int s)
@@ -776,6 +800,8 @@ static void plan_draws(void)
         px[g_nplan] = ships_size_of(set, &rel, &cam, &ship, g_plan[g_nplan].scale, &p);
         if (!p.on_screen)
             continue;
+        if (planet_hides((const LfVec *)&gPositionVector[s]))
+            continue;                   /* (behind the ground: all or nothing, the user's rule) */
         g_plan[g_nplan].slot = (unsigned char)s;
         g_plan[g_nplan].set = (unsigned char)set;
         g_plan[g_nplan].depth = p.depth;
@@ -1536,6 +1562,9 @@ static void draw_world(int y0, int y1)
                                            over them (planets) */
     draw_stars(y0, y1);
     sky_draw(1, y0, y1, ext, ey0, rows);
+    t0 = clock240();
+    planet_band(y0, y1, ext, ey0, rows);   /* a planet's ground and air (the card's), over the sky */
+    g_t_planet_draw += clock240() - t0;
 #ifdef RV_TESTS
     if (g_lasers)
         lasers_draw_far(y0, y1, ext, ey0, rows);
@@ -1602,6 +1631,7 @@ static void draw_world(int y0, int y1)
         logic_hud();                    /* the game's own marks over the view (none from outside) */
         nav_tag(y0, y1, ext, ey0, rows);
         arm_tag(y0, y1, ext, ey0, rows);
+        alt_tag(y0, y1);
         land_tag(y0, y1, ext, ey0, rows);
         link_tag(y0, y1, ext, ey0, rows);
         if (g_sim && y0 < ey0 + 24 && y1 > ey0 + 6) {
@@ -2363,6 +2393,7 @@ static void system_action(int fn, int arg)
 }
 
 /* once a frame, before the cockpit's state: the systems from the slots, the keys held, the comms */
+#define CLOAK_DIM 22                    /* the cockpit's light cloaked, 64ths: about a third */
 static void systems_tick(void)
 {
     const RvShipType __far *t = g_my_type;
@@ -2433,6 +2464,12 @@ static void systems_tick(void)
     if (g_sys.signature > 100) g_sys.signature = 100;
     if (CLOAK_OF(0) == RV_CLOAK_ON)
         g_sys.signature = 2;            /* (cloaked: next to nothing to find it by; disrupted, the burner's heat shows) */
+    vid_dim(CLOAK_OF(0) != RV_CLOAK_OFF ? CLOAK_DIM : 64);
+    if (g_cloak_said)
+        g_cloak_said--;
+    if (g_auto_said)
+        g_auto_said--;   /* (the cloak's power: the cockpit dark but its E/M box, its
+                                           lamps out but the E/M's (panel.c); the user, 2026-11-15) */
     {   /* (the HEAT and SIGNATURE displays take theirs every 5 s: a sensor's sweep, the user's pick) */
         static unsigned long __far taken;
         if (frameCounter < 3 || clock240() - taken >= 5 * 240) {
@@ -2476,10 +2513,8 @@ static void systems_tick(void)
         int32_t km;
         g_sys.nav_km = logic_nav_km(g_sys.nav, &km) && sys_level(SYS_NAV) < 3 ? km : -1;   /* (the nav computer badly hurt: no distance) */
     }
-    g_sys.autopilot_ready = g_m != 0 && sys_level(SYS_NAV) < SYS_WRECKED;
-    for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
-        if (is_ship(s) && commAnimInfo[s] == 1 && player_km(s) < 16000)
-            g_sys.autopilot_ready = 0;
+    if ((frameCounter & 7) == 0)        /* (the logic's own answer, a field at hand too: the lamp had said yes there) */
+        g_sys.autopilot_ready = g_m != 0 && logic_autopilot_ready() >= 0;
 }
 
 /* the keys of the systems (a character typed): 1 if it was one */
@@ -3347,6 +3382,55 @@ static void balls_report(void)
 #define STEER_FULL_X 120
 #define STEER_FULL_Y 80
 
+#ifdef RV_TESTS
+/* RVT.EXE /planet N: the test planet, 32,000 km round, its ground N km under the player (a pad), an arch 4,000 km
+ * ahead over a pad of its own */
+static void planet_test_setup(void)
+{
+    static TrPlanetRec __far pr;
+    static TrNavRec __far nav[2];
+    int k;
+    _fmemset(&pr, 0, sizeof pr);
+    _fmemset(nav, 0, sizeof nav);
+    pr.seed = 1;
+    pr.radius = 64000;
+    pr.x = gPositionVector[0].x / 256;
+    pr.y = gPositionVector[0].y / 256 - 64000 - g_planet_test;
+    pr.z = gPositionVector[0].z / 256;
+    pr.n = 3;
+    for (k = 0; k < 2; k++) {           /* nav 1 on the ground under the player, nav 2 4,000 km ahead */
+        nav[k].id = (uint8_t)(k + 1);
+        nav[k].x = pr.x;
+        nav[k].y = pr.y + 64000;
+        nav[k].z = pr.z + 4000 * k;
+    }
+    for (k = 0; k < 3; k++) {           /* under the player a pad; 4,000 km ahead a pad and the arch over it */
+        pr.g[k].kind = k == 2 ? TR_STAMP_ARCH : TR_STAMP_PAD;
+        pr.g[k].nav = (uint8_t)(k ? 2 : 1);
+    }
+    pr.g[0].size[0] = 1200;
+    pr.g[0].size[1] = 600;
+    pr.g[1].size[0] = 500;
+    pr.g[1].size[1] = 400;
+    pr.g[2].size[0] = 400;
+    pr.g[2].size[1] = 250;
+    pr.g[2].size[2] = 300;
+    pr.g[2].size[3] = 120;
+    if (planet_load(&pr, nav, 2) < 0)
+        return;
+    /* looking 20 degrees down, along +z */
+    gOrientationRightVector[0].x = 256;
+    gOrientationRightVector[0].y = gOrientationRightVector[0].z = 0;
+    gOrientationUpVector[0].x = 0;
+    gOrientationUpVector[0].y = 241;
+    gOrientationUpVector[0].z = 88;
+    gOrientationFrontVector[0].x = 0;
+    gOrientationFrontVector[0].y = -88;
+    gOrientationFrontVector[0].z = 241;
+    RV_LOG("planet: the test planet %d km under the player: made %d", g_planet_test, planet_make(0));
+}
+#endif
+
 void __far __cdecl flight_startup(void)
 {
     const RvMission __far *m = g_m;
@@ -3578,6 +3662,15 @@ void __far __cdecl flight_startup(void)
     g_cap_hailed = 0;
     missiles_init();
     sky_clear();
+#ifdef RV_TESTS
+    if (g_planet_test)
+        planet_test_setup();
+    else
+#endif
+    {
+        planet_ready();                 /* (a planet mission's: the rest of it made now, coloured as the flight is) */
+        planet_navs();
+    }
     rocks_flight_start();
     if (g_m) {                          /* the mission's asteroid and mine fields */
         int fi;
@@ -3594,7 +3687,7 @@ void __far __cdecl flight_startup(void)
     if (g_sky_demo)
         sky_demo_setup();
 #endif
-    g_t_flames = g_t_flames_set = g_t_plan = 0;
+    g_t_flames = g_t_flames_set = g_t_plan = g_t_planet = g_t_planet_draw = 0;
     g_t_exact = g_t_sets = g_t_draw = g_t_wait = 0;
 }
 
@@ -3622,8 +3715,8 @@ unsigned short __far __cdecl flight_keys(void)
                                            the backspace key also sets desired speed to zero in space"; "and \ sets to full
                                            speed") */
     if (in.key == KEY_ALT && g_view != VIEW_FLYBY) {
-        if (in.ch == 'c')
-            logic_cloak_key();          /* Alt+C the cloak, a Schroedinger's (logic.c cloak_*) */
+        if (in.ch == 'c' && !logic_cloak_key())   /* Alt+C the cloak, a Schroedinger's (logic.c cloak_*) */
+            g_cloak_said = 90;          /* (refused, off under 30 s: CLOAK CHARGING a while) */
         else
             comm_hotkey(in.ch);         /* Alt+T a taunt */
     }
@@ -3703,7 +3796,10 @@ unsigned short __far __cdecl flight_keys(void)
     if ((in_key_down(0x0C) || in_key_down(0x4A)) && setSpeed[0] >= 2) setSpeed[0] -= 2;
     /* steering: the arrows by their ramp (key_ramp), else the pointer's distance from the middle */
     shift = in_key_down(0x2A) || in_key_down(0x36);
-    g_steer_roll = key_ramp(g_steer_roll, ((arrows >> 5) & 1) - ((arrows >> 4) & 1), shift);
+    /* (the roll keys' left, Q, Ins, a pad's comma, is the logic's positive roll: the right wing raised, step_turn; they
+     * had it the other way round, so every one rolled the wrong way: the user, 2026-11-16, "the ins and del rotate in
+     * the wrong direction") */
+    g_steer_roll = key_ramp(g_steer_roll, ((arrows >> 4) & 1) - ((arrows >> 5) & 1), shift);
     g_key_x = key_ramp(g_key_x, dx, shift);
     g_key_y = key_ramp(g_key_y, dy, shift);
     if (dx || dy) {
@@ -3856,8 +3952,17 @@ void __far __cdecl flight_frame(void)
     stars_place();
     {
         LfBasis cam;
+        unsigned long tp;
         cam_basis(&cam);
         sky_place(&cam, g_cam_cx, g_cam_cy, FLIGHT_FOCAL);
+        tp = clock240();
+        planet_frame(cam_pos(), &cam, g_cam_cx, g_cam_cy, FLIGHT_FOCAL);   /* (the card makes the frame's ground now) */
+        g_t_planet += clock240() - tp;
+        if (planet_on()) {
+            long roof, over = planet_over((const LfVec *)&gPositionVector[0], &roof);
+            g_alt_km = over < 0 ? 0 : over < 20000L * 256 ? over / 256 : -1;
+        } else
+            g_alt_km = -1;
     }
     {
         unsigned long t0 = clock240();
@@ -3937,6 +4042,7 @@ void __far __cdecl flight_frame(void)
         missionStatus = 1;              /* landed */
     if (g_flames_demo && g_record && ++g_flames_frames >= FLAMES_FRAMES)
         missionStatus = 1;              /* (its recording is so many frames, however slowly they are made) */
+    planet_pace((unsigned)(clock240() - now));   /* (the frame's work: RV.EXE's own picture of a planet kept within it) */
     /* the frame rate capped at FPS_WANT: the simulation is per frame (a kps is 12.8 units a frame), so
      * without the cap a bare flight ran three times too fast natively (the adapting benchmark had been
      * holding it at 30 by loading it; off by default now) */
@@ -3968,8 +4074,10 @@ void __far __cdecl flight_autopilot(void)
         /* the camera's start through the thunk: in a shared flight the layer shows it on every machine at once (as the
          * old game's autopilot animation), each around its own ship */
         autoAnimation((uint16_t)gInstanceShipTypes[0], 1, FLYBY_FRAMES);
-    } else
+    } else {
         rv_notef(s_not);
+        g_auto_said = 90;               /* (why, under the gunsight a while: land_tag) */
+    }
 }
 
 /* the autopilot's camera, the autoAnimation thunk's body: (type, mode, frames) starts it, (0, 0, 0) ends it.  Our own
@@ -3995,6 +4103,9 @@ void __far __cdecl autoAnimation_c(unsigned short camShipType, unsigned short ca
 static void flight_over(unsigned short status)
 {
     memset(viewRect, 0, viewRect_SIZE);  /* (no steering pointer to rest now) */
+    vid_dim(64);
+    if (music_waited())                 /* (the rings ran dry: notes held back.  Never, with every frame polling) */
+        RV_LOG("music: %lu ticks waited for music_poll so far", music_waited());
 #ifdef RV_TESTS
     {
         int w, h, n = flight_bench_result(&w, &h);
@@ -4012,6 +4123,12 @@ static void flight_over(unsigned short status)
                 per_frame(g_t_draw, f) / 100, per_frame(g_t_draw, f) % 100, per_frame(g_t_exact, f) / 100,
                 per_frame(g_t_exact, f) % 100, per_frame(g_t_sets, f) / 100, per_frame(g_t_sets, f) % 100,
                 per_frame(frame, f) / 100, per_frame(frame, f) % 100);
+    }
+    planet_pace(PL_PACE_REPORT);
+    if (g_t_planet + g_t_planet_draw) {
+        static const char __far s_p[] = "flight: the planet's picture took %lu.%02lu ms a frame to make and %lu.%02lu to draw";
+        rv_logf(s_p, per_frame(g_t_planet, frameCounter) / 100, per_frame(g_t_planet, frameCounter) % 100,
+                per_frame(g_t_planet_draw, frameCounter) / 100, per_frame(g_t_planet_draw, frameCounter) % 100);
     }
     {
         static const char __far s_m[] = "flight: the missiles took %lu.%02lu ms a frame to place and %lu.%02lu to draw "
@@ -4106,6 +4223,8 @@ int flight_fly(const RvMission __far *m)
     g_m = m;
     g_view = g_view_back = VIEW_COCKPIT;
     g_fly_t = 0;
+    (void)planet_make(0);               /* (a planet mission's: the rest of it made before the launch, not after it, where
+                                           every other pilot's game would wait seconds for this one's frames) */
     uiMode(0);
     g_landing_t = -1;
     g_flying = 1;

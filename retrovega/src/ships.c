@@ -29,7 +29,7 @@
  * (full size only, scaled or turned at draw time through the lightfield
  * kernels, which costs nine times a copy): the page runs that way until its
  * JavaScript makes the sets. */
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include <stdlib.h>
 #include <malloc.h>
@@ -39,6 +39,7 @@
 #include "ships.h"
 #include "gx.h"
 #include "rocks.h"
+#include "planet.h"
 #include "lightfield.h"
 #include "music.h"
 
@@ -548,7 +549,9 @@ void ships_detail_toggle(void)
  * views, makes the set and writes it among the game's files.  With wait, the flight stands at the deck until the files
  * are there, SHIPS_WANT_S seconds at most, then goes on without what is
  * missing (ships_load logs it); without, the list is only written (the
- * briefing's, so the page has them fetched by the launch).  On DOS the files
+ * briefing's, so the page has them fetched by the launch).  An asteroid
+ * field's art and a planet mission's ground (its bake, ID.PLN: planet_load
+ * reads it after the launch's wait) are listed with the sets.  On DOS the files
  * are beside RV.EXE and nothing is written. */
 #define SHIPS_WANT_S 180
 static int file_present(const char *name)
@@ -592,16 +595,19 @@ int ships_present(unsigned type)
 
 void ships_want(const unsigned char *types, int n, int wait)
 {
-    char name[16];
+    char name[16], ground[13];
     unsigned long t0 = clock240(), last = 0;
     int i, k, missing = 0, listed = 0;
     const char *extra = rocks_file();   /* (an asteroid field's art: listed with the sets, fetched the same way) */
+    int pl = planet_file(ground);       /* (a planet mission's ground, its bake: the same) */
     FILE *f;
     gx_want(types, n);                  /* (their full-size views asked of the sprite accelerator, when there is one) */
     for (i = 0; i < n; i++)
         if (!set_present(types[i], name))
             missing++;
     if (extra && !file_present(extra))
+        missing++;
+    if (pl && !file_present(ground))
         missing++;
     if (!missing)
         return;
@@ -627,6 +633,12 @@ void ships_want(const unsigned char *types, int n, int wait)
         if (f)
             fprintf(f, " %s", extra);
     }
+    if (pl) {
+        missing += !file_present(ground);
+        listed++;
+        if (f)
+            fprintf(f, " %s", ground);
+    }
     if (f) {
         fprintf(f, "\n");
         fclose(f);
@@ -639,6 +651,7 @@ void ships_want(const unsigned char *types, int n, int wait)
         if (now - last >= 60) {         /* a look every quarter second */
             last = now;
             missing = extra && !file_present(extra) && !page_lacks(t0, extra);
+            missing += pl && !file_present(ground) && !page_lacks(t0, ground);
             for (i = 0; i < n; i++)
                 if (!set_present(types[i], name) && !page_lacks(t0, name))
                     missing++;

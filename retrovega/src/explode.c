@@ -9,20 +9,22 @@
  * on the host).  The flash, the sparks and the debris are hud.c's runs and dots, clipped as the HUD is.  All the
  * module's data is far (DGROUP is nearly full). */
 #include <string.h>
-#include <stdio.h>
+#include "rvio.h"
 #include <malloc.h>
 #include "rv.h"
 #include "rvhooks.h"
 #include "lightfield.h"
 #include "hud.h"
 #include "explode.h"
+#include "planet.h"
 #include "gx.h"
 #include "twins.h"
 
 void __far __cdecl rv_scale_row(const unsigned char __far *line, const unsigned short __far *map, int xa, int xb,
                                 unsigned char __far *out);
 
-#define CACHE 4                         /* cels kept at once */
+#define CACHE 2                         /* cels kept at once (4 until 2026-11-14: a miss is a 2.3 KB XMS copy, a band's;
+                                           two keep a pair of explosions overlapping in a band from taking turns) */
 #define RPX_MAX 511                     /* the biggest radius an explosion is drawn at, px */
 #define MAP_W 128                       /* the column map: the small fireballs' (under 2 x CEL_MAX px: the big ones are
                                            drawn as runs, CEL_MAX + 1 edges in the same room) */
@@ -398,6 +400,8 @@ void explode_place(const LfVec *eye, const LfBasis *cam, int16_t cx, int16_t cy,
         b->on = 0;
         if (b->kind == BOOM_WRECK && (!debris || b->age < DEBRIS_SHOW_AGE))
             continue;                   /* (no card to draw the debris: nothing to place) */
+        if (planet_hides_at(b->x, b->y, b->z))
+            continue;                   /* (behind a planet's ground) */
         if (b->wait || rx > INT32_C(2000000) || rx < -INT32_C(2000000) || ry > INT32_C(2000000)
             || ry < -INT32_C(2000000) || rz > INT32_C(2000000) || rz < -INT32_C(2000000))
             continue;

@@ -6,10 +6,11 @@
  * just those rows, back to front, then flips them.  The game draws its own
  * things (text, boards, menus) through the overlay hook, called for every
  * band drawn. */
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include "rv.h"
 #include "room.h"
+#include "planet.h"
 
 Scene g_scene;
 /* the actor's frame before this one, while the two are stippled together for a step, as a seated pilot's turn is (the
@@ -191,6 +192,7 @@ int scene_update(const Input *in, SceneAction *act)
     const RvRoom __far *r = room();
     int kind, index, i;
     unsigned long now = ticks();
+    (void)planet_make(12);              /* (a mission's planet, made a piece a frame while the rooms go on: planet.h) */
     act->kind = ACTION_NONE;
     if (g_scene.no_room) {
         if (in->x != g_scene.px || in->y != g_scene.py) {

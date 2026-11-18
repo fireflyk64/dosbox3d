@@ -9,6 +9,7 @@
 #   scripts/web-smoke.sh pad      # a controller's stick in a Hornet and a Rapier (scripts/web-pad.mjs)
 #   scripts/web-smoke.sh voice    # voice between two pages (scripts/web-voice.mjs)
 #   scripts/web-smoke.sh hall     # the public lobby and room codes (scripts/web-hall.mjs; scripts/web-chatfilter-test.mjs first)
+#   scripts/web-smoke.sh skew     # pages of different builds: the older told to reload, in the lobby and a room (scripts/web-build-skew.mjs)
 #   scripts/web-smoke.sh rv [s]   # RetroVega with no game files: lobby, a flight alone, a host and a wingman (scripts/web-rv.mjs)
 #   scripts/web-smoke.sh rvdrop [s]   # a wingman's page closed in a shared flight: the host's pace after (scripts/web-rv-drop.mjs)
 #   scripts/web-smoke.sh rvtrio   # three pilots, a room of three: mission 1 flown together to its asteroid field (scripts/web-rv-trio.mjs)
@@ -82,6 +83,11 @@ if [ "${1:-}" = rvtrio ]; then
 fi
 if [ "${1:-}" = rv ]; then
     PLAYWRIGHT_DIR="$PW" SHOT_DIR="$OUT" node "$ROOT/scripts/web-rv.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" "${2:-30}" 2>&1 | tee "$OUT/rv.log"
+    exit "${PIPESTATUS[0]}"
+fi
+
+if [ "${1:-}" = skew ]; then
+    PLAYWRIGHT_DIR="$PW" node "$ROOT/scripts/web-build-skew.mjs" "http://localhost:$PORT/" "http://127.0.0.1:$LOBBY_PORT" 2>&1 | tee "$OUT/skew.log"
     exit "${PIPESTATUS[0]}"
 fi
 

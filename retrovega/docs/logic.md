@@ -84,8 +84,8 @@ host's frame pacing sets the rate instead of the 30 fps cap.
 
 ## The world: slots
 
-The world is the fixed block's slot arrays (`rvhooks.h`): 128 slots, each
-array one element per slot.
+The world is the fixed block's slot arrays (`rvhooks.h`): 62 slots (128 until
+2026-11-14), each array one element per slot.
 
 | slots | hold |
 |---|---|
@@ -508,7 +508,7 @@ The scan for this guide, most needed first:
    explodes, a shot sounds its weapon, a hit throws sparks, a missile launches and bursts. engine.md, "Explosions and
    sound effects"; keep a dying ship's 9 to a step's end.)*
 3. *(see 2)*
-4. **Capital ship art.** The Vigilance (every mission's home carrier), the Kahan, the Ox, the Agasicles, the Anaxidamus and the Charillus have sprites; the roster's other capital ships have none.
+4. **Capital ship art.** The Vigilance (every mission's home carrier), the Kahan, the Ox, the Agasicles, the Anaxidamus (the Anaxander's hull since 2026-11-14), the Charillus and the Leonidas have sprites; the roster's other capital ships have none.
 5. **Ship slots beyond 9:** rvabi.def plus the layer's phase 2.
 6. **The layer's RV.EXE support:** its column of offsets, the flight sites and the replication. Today it only logs.
 7. **Mission flow:**

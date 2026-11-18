@@ -6,8 +6,9 @@ REDEEMR,vs,,0.85,,0.15,,2.6,1.0,,,,,,,,span>0.74|fin>0.6,spine<0.05@top,,,militi
 PACIFER,vs,,0.85,,0.15,,2.6,1.0,,,,,,,,span>0.7|fin>0.5,,,,carrier-green,,Canon texture; livery on the outer wings and fins
 LANCELT,vs,,0.85,,0.15,,2.6,1.0,,,,,,,,span>0.72|fin>0.6,spine<0.05@top,,,carrier-green,,"Canon texture; livery on the outer wings, a navy spine"
 PROGENY,vs,,1.0,,0.15,,1.5,1.0,,,0.5,,,,,fin>0.5|span>0.8,,,,confed-blue,,Shaper craft: Confed blue on the outer wings
-AGASICL,vs,,0.75,,,70 160 150,,,,,,,,,,,,,,,,"Its AeraHull map is missing from the assets (AeraHull2 stands in): teal, as its VDU shows"
-AGESIPL,vs,,0.75,,,70 160 150,,,,,,,,,,,,,,,,"AeraHull2 stands in for the missing AeraHull: teal, as its VDU shows"
-LEONIDS,vs,,0.75,,,70 160 150,,,,,,,,,,,,,,,,AeraHull2 stands in for the missing AeraHull: teal like its sisters
-ANAXIDM,vs,,0.5,,,190 225 205,,,,,,,,,,,,,,,,"Its bright map blew out to white: exposure down, the silver-green of its VDU"
+AGASICL,vs,,0.5,,,190 225 205,,,,,,,,,,,,,,,,"The cruiser's old hull (Vega Strike's Anaxidamus mesh) since 2026-11-14 (the user: the Anaxander the healthy cruiser, the other ships bumped down a class): its bright map blew out to white, exposure down, the silver-green of its VDU"
+CHARILS,vs,,0.75,,,,,,,,,,,anaxander 12,,,,,,,,"The destroyer's old hull (Vega Strike's Agasicles mesh, its AeraHull map missing) since 2026-11-14, skinned in the Anaxander's style (skins.py anaxander: khaki panels, purple service strokes, cyan lines)"
+AGESIPL,vs,,0.75,,,,,,,,,,,anaxander 45,,,,,,,,Its AeraHull map is missing: skinned in the Anaxander's style since 2026-11-14 (it was AeraHull2 in teal)
+LEONIDS,vs,,0.75,,,,,,,,,,,anaxander 12,,,,,,,,Its AeraHull map is missing: skinned in the Anaxander's style since 2026-11-14 (it was AeraHull2 in teal)
+ANAXIDM,vs,,1.1,,,,,,,0.15,0.12,,,,,,,,,,,"Vega Strike's Anaxander since 2026-11-14 (the user: 'Look for the hammer head capital ship ... Should be the healthy equivalent'): its Maya model in Assets-Masters, never in the game's data (tools/anaxander.sh, bfxm.py reads the .obj), its own khaki map with purple strokes and cyan lines"
 CONVOLN,vs,,0.85,,,,,,1.0,,,,3 35 0.012 1,aera 14,0.35 30,,,,,,,"Vega Strike's Convolution made over as an Aera fighter: every crease over 35 degrees bevelled (1.2% of its size) and the mesh subdivided three times (192 -> 36864 triangles), the bevels rounding into fillets, which also cures its averaged normals (the chrome streaks); re-skinned with the Aera hull map (skins.py aera) in the fighters' warm grey-tan, their blue accent lines and bars, its panel lines bump-mapped; green light strips along its long lengthwise creases (the nose spike and the spine)"

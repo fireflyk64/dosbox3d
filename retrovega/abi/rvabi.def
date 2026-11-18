@@ -28,7 +28,10 @@
 # frame; one frame = one simulation step (LOGIC_HZ, 30 per second; a speed in
 # kps converts at KPS_HZ, 20, as WC.EXE's did).
 
-SLOTS 128
+SLOTS 62               # 0..31 ships, then the temporaries (the layer's: rocks fields' hazards, 7 at most, down from
+                       # the camera; it drops a shot with under 5 of them free), the camera (SLOTS-3) and the scratch
+                       # vector (SLOTS-1).  128 until 2026-11-14 (the user: "Should be 64 probably ... Or like 62 in case
+                       # power of two is wasteful"): 66 slots of 179 bytes, 12.5 KB of DGROUP, never used
 MAXSHIPSLOT 31         # ships, capital ships and missiles in 1..31 (WC.EXE had 1..9): 32 ship-class slots, a
                        # 32-bit mask's worth.  The layer replicates 0..9 until it takes it from GameParams (spec 4.2)
 DGROUP_PARA 0x0100     # DGROUP's paragraph in the image (RVHOOK, 4 KB, is paragraph 0)
@@ -132,12 +135,12 @@ SLOT  rvTarget                     1    # what this ship targets, 0xff none
 SLOT  rvAfterburner                1    # 0 off, 1 on
 SLOT  rvLivery                     1    # row of data/liveries.csv: the ramps the sprite's paint pixels take
 
-SECTION mission 0x6400
+SECTION mission 0x3200
 TABLE navPointTable             0x4d 16 # ten mission-ship words at +0x39
 TABLE missionShipTable          0x2a 64 # +0 ship type, +2 side, +4 leader, +6 behaviour (4 pilot in formation, 6 the player)
 TABLE fieldTable                0x14  7 # +0 type (9 rocks, 10 mines), +2 position (3 x int32), +14 radius (int32 km), +18 density
 
-END 0x7400                               # C data (_DATA, CONST, _BSS) and the stack follow
+END 0x4200                               # C data (_DATA, CONST, _BSS) and the stack follow
 
 # --- RVHOOK: code at paragraph 0 of the image -------------------------------
 # Header (0x00-0x1F): "RVHOOK", 2 zero bytes, then words: +8 DGROUP's segment

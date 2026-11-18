@@ -199,6 +199,16 @@ int xms_copy_conv(void __far *dst, const void __far *src, unsigned long n)
 
 /* n bytes from an absolute offset in a handle's memory (a block's, from xms_where) to conventional memory: the move
  * rocks.asm makes for a big rock's row, for its C twin (twins.c).  n even: the driver's move is rounded up */
+int xms_move_at(unsigned dh, unsigned long doff, unsigned sh, unsigned long soff, unsigned long n)
+{
+    g_move.length = n;
+    g_move.src_handle = (unsigned short)sh;
+    g_move.src_off = soff;
+    g_move.dst_handle = (unsigned short)dh;
+    g_move.dst_off = doff;
+    return move();
+}
+
 int xms_get_at(unsigned handle, unsigned long off, void __far *dst, unsigned long n)
 {
     g_move.length = n;

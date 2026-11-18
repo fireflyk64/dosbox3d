@@ -56,7 +56,8 @@ is left. The same day (the user's picks, from a breakdown of what was near):
 the log's formats went far (`RV_LOG("format", ...)` in rv.h, a static far
 format handed to `rv_logf`: 3.6 KB in RV.EXE; logic.c still uses `rv_log`); the
 fixed block ends at 0x7400, not 0x8000 (`END` in abi/rvabi.def: the 3 KB after
-the mission tables were never used, and no offset moved); the screenshots'
+the mission tables were never used, and no offset moved; since 2026-11-14 it is 62 slots, not 128, the mission tables
+at 0x3200 and the end at 0x4200: 12.5 KB more for DOS, ABI 3, the user's "Should be 64 probably ... Or like 62"); the screenshots'
 row, the music's file reads and VESA's mode information go through
 `rv_filebuf`, and the briefing's two text copies are one (game.c `g_shown`). The stack was 8 KB until
 2026-10-31 (the user's call): the deepest use seen is 1.7 KB, a fight to the
@@ -265,9 +266,15 @@ the autopilot stops at it, facing the point, as the old one did (traced 2026-11-
 15,335 km short of points of 10,000, 15,000 and 15,000), where the point has ships still to come; where it has nobody to
 come the autopilot goes on to 1,200 km of it (`NAV_CLOSE_KM`; traced 2026-11-07, the old autopilot to Enyo 1's empty
 nav 2: 1,171 km a moment after its jump; the user: "I thought you had to get within 1500 or 1000 km in the original to
-have 'visited' something"). A waypoint inside a field (two in the 40 missions: Enigma 1's nav 2, Crucible 2's nav 1)
-is the field's middle: the autopilot takes the player 3,000 km short of it, facing it, where the rocks come, and goes no
-further; the cross and the distance are the middle's; the point is reached only within `NAV_CLOSE_KM` of it, flown
+have 'visited' something"). A waypoint inside a field (two in the 40 missions: Enigma 1's nav 2, Crucible 2's nav 1;
+and Barnard's Star's planet mission's nav 1) is the field's middle: the autopilot takes the player to 500 km outside the
+field's edge, facing the middle, as for any field on its way, and goes no further; the rocks come at once (3,050 km
+ahead); the cross and the distance are the middle's; it is some 8,300 km
+flown through the rocks; such a field's radius is 9,000 km or more (the user, 2026-11-16: "it should be at the edge of the asteroid field (maybe the field should
+be bigger if it's already at the edge) and so you have to fly a good solid 7000-10000km to get to the nav point right
+now it's just like 2000 away": it had stopped 3,000 km short of the middle, inside); a press of A refused there, or with
+a field across the way, says AUTOPILOT: FLY THROUGH THE FIELD under the gunsight (ENEMIES NEAR when they hold it), and
+the AUTO lamp follows the logic's answer (`logic_auto_why`);  the point is reached only within `NAV_CLOSE_KM` of it, flown
 through the rocks by hand (`nav_field`, `nav_goal`, `nav_stop`, `nav_in_reach`; the user, 2026-11-06: "asteroids were
 supposed to be entirely surrounding nav 2", and 2026-11-08, when it was reached anywhere in the field: "nav 2 was
 visited as soon as I exited autopilot--I could have steered around the field. The nav point needs to be in the middle
@@ -366,10 +373,18 @@ were far enough apart that the last one's ships were gone before the next one's 
 2026-11-04, so is `SCENE_KM`. A capital ship or friendly fighter that far off is held: `maybeEntityType` is
 `ET_OFFSCENE`, so it is no ship to anything (no target, no radar, nothing to run into), keeps its slot, its damage and
 its place, and is back within 15,500 km. An enemy fighter stays, since it can fly after the player; so do the wing, a
-ship the player is escorting, the ships of the nav point the player came to last, and the launch's once every waypoint
-is flown (`nav_point_here`: the player arrives at a point's reach, 10,000 to 30,000 km out, and what it came for is in
-the scene however far; on the small map's 7,200 km CEPHID2's destroyer was held 8,100 km off the autopilot's stop, the
-user's "did not see the destroyer"). M8.39.
+ship the player is escorting, and the ships of the nav point the player came to last (`nav_point_here`: the player
+arrives at a point's reach, 10,000 to 30,000 km out, and what it came for is in the scene however far; on the small
+map's 7,200 km CEPHID2's destroyer was held 8,100 km off the autopilot's stop, the user's "did not see the destroyer").
+M8.39. The launch's ships are not among them: until 2026-11-16 they came in as soon as every waypoint was flown, so
+the carrier was on the radar and a target from Enigma 1's Nav 3, 45,000 km off (the user: "it should have despawned
+for the time being until you get close"). Now the carrier comes in at 15,500 km like any other; the landing clearance
+still reaches 25,000 km (`home_slot` finds it held), and the autopilot home still stops 4,000 km off its hull.
+
+**What may be targeted:** T, Y, AUTO and the lock take only a ship in front of the pilot within `TARGET_KM`, 16,000 km
+by the cockpit's readout (hull to hull), the scene's reach; a target that goes farther is dropped (`target_tick`). Before
+2026-11-16 anything in the scene was a target, however far (the user: "we shouldn't be able to target things far
+away"). M10.15.
 
 The views: F5 the chase camera (behind and above the player's ship, looking its way, the ship in the lower
 third of the view; F5 again or F1 back to the cockpit), and the autopilot's flyby: A, when the autopilot may go,
@@ -1023,10 +1038,22 @@ look great", of a blue-noise stipple beside it "Let's go checkerboard", then
 "can the cloak checkerboard also do interlacing as well then maybe it doesn't
 need to alternate patterns since every other row will be gone"), by the game's own turned rows and never by the sprite card, with no engine flame; no AI
 picks it or keeps it, a seeker loses it, the shields are down and the
-SIGNATURE reads 2%, the E/M lamp dark and STEALTH lit; the afterburner or a
+SIGNATURE reads 2%, the E/M lamp dark and STEALTH lit; the cockpit dark (the
+user, 2026-11-15: "when cloaked most cockpit lights should turn off...it should
+be quite dim if possible except for the EM ones"): every lamp out but the E/M
+ones (EMCON, STEALTH, sensor, signature ladder: panel.c `state`), and the
+cockpit's own colours at a third (video.c `vid_dim`, flight.c `CLOAK_DIM`) but
+its E/M box's, which tools/rvpack.py gives colours of their own (cockpit.json
+`em_box`: `EM_COLOURS` 6, 208-213; the dim takes 214 on), so the box stays as
+bright as ever; disrupted, still dark; the afterburner or a
 transmission (the comm's lines, a chat line: 3 s) disrupts it, seen with the
 shields still down, CLOAK DISRUPTED under the gunsight; a shot or Alt+C ends
-it and the shields come back; logic.c `cloak_*`, rvFlags bits 6-7);
+it, for good, and the shields come back; then Alt+C brings it back only 30 s
+after it went off (the user, 2026-11-15: "ensure the shroedinger permanently
+decloaks after firing blasts or missiles until alt-c is pressed again. Ideally
+there would be a solid 30 or 60 second cooldown before it may be pressed again
+after a decloak": logic.c `CLOAK_WAIT_STEPS`; pressed too soon, CLOAK
+CHARGING under the gunsight for 3 s); logic.c `cloak_*`, rvFlags bits 6-7);
 MASTER WARN is lit for a damaged system, the cockpit hurt or a
 shield under a quarter, blinking for 5 s whenever a warning is new and then
 steady (the user, 2026-11-05: "Blink, then steady"; it had blinked for the
@@ -2986,6 +3013,33 @@ hit test reads single bits in a tight loop, and XMS is a driver call and a copy 
 
 The budget: `build.sh` prints what RV.EXE leaves of DOSBox's 640,512 bytes, warns under 8 KB and refuses under 2 KB. A real DOS with its
 drivers offers less than DOSBox does.
+
+**The balloon** (the user, 2026-11-14: "Please make a 24k size item called balloon_check_with_human_before_reducing so that we have
+an emergency amount we can deploy carefully"): mem.c's `balloon_check_with_human_before_reducing`, 20 KB of RV.EXE's image held for
+nothing, so that the room is there when something must have it. Never shrink or remove it without asking the user first. Its size
+is `RV_BALLOON_KB` (`BALLOON_KB=0 ./build.sh` builds without it; "Make it easy for a human to disable it"); RV.EXE only, the test
+builds feed their heaps from that room. build.sh prints it beside what is free, and fails when the size asked for is not in the map.
+24 KB until 2026-11-15, when the user let 4 KB go: "also deflate the balloon by an extra 4 KB so that we have some head room"
+(RV.EXE had 2,304 bytes left for DOS after the planet's picture without the card, on the terrain branch).
+
+**What 2026-11-14 gave back** (the user's picks from a survey of RV.EXE's image), before the balloon took 24 KB of it:
+
+| Change | Bytes for DOS |
+|---|---|
+| 62 slots, not 128 (abi/rvabi.def: the fixed block ends at 0x4200) | 12,800 |
+| The music's two rings, 256 events each, not 1024 (music.c: note events, some 10 s of the busiest song; the user: "Power of two is best") | 9,216 |
+| The explosion cache, 2 cels, not 4 (explode.c: a miss is a 2.3 KB XMS copy) | 4,608 |
+| rvio.c for Watcom's stdio (its FILE table, its buffers in the near heap, the printf and scanf engines, the POSIX-level read) | 10,592 |
+
+RV.EXE left 2,816 bytes for DOS in the morning; 38,400 without the balloon at night, 13,824 with it. In flight (quiet.sh) DOS had
+46,192 bytes free before the balloon.
+
+**rvio.c** is the part of stdio the game uses, on DOS's own calls (rvio.h has the list): the usual names are macros for its
+functions in the DOS builds, the native builds have the real stdio. Text mode is stdio's (CR LF written for '\n', CR dropped as a
+line is read), so the files are byte for byte what they were. One formatter serves `sprintf` and the files, with every format the
+game has (%d %u %x %X %s %c, the flags - + 0, a width, a string's precision, l and F). A file is a DOS handle with 48 bytes of
+read-ahead for `fgetc` and `fgets`, six at most; the near heap keeps 256 bytes (main.c `NEAR_KEEP`), 2 KB while stdio's buffers
+lived in it. The music reports any wait for its rings in the log at a flight's end (`music: N ticks waited`: never seen).
 
 ## Fonts, pointer, driver
 

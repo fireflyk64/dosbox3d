@@ -13,7 +13,7 @@
  * The music plays on the Sound Blaster's OPL3; /mpu sends it to a General
  * MIDI synthesizer on the MPU-401 instead.
  * Needs RV.DAT and RVGAME.DAT beside it, 32 MB of XMS (it takes all there is) and VESA mode 100h. */
-#include <stdio.h>
+#include "rvio.h"
 #include <malloc.h>
 #include <string.h>
 #include <stdlib.h>
@@ -47,7 +47,7 @@ long twins_selftest(void);              /* (twins.c: RVP.EXE /twins) */
 #endif
 #ifdef RV_TESTS                         /* the test build's aids (flight.c, score.c) */
 extern int g_star_bench;
-extern int g_score_test, g_bench_wanted, g_record, g_capital, g_capital_blocks_test, g_zoom, g_sky, g_zoom_cloak;
+extern int g_score_test, g_bench_wanted, g_record, g_capital, g_capital_blocks_test, g_zoom, g_sky, g_zoom_cloak, g_planet_test;
 extern int g_lasers, g_near_bolts, g_far_ships, g_big_ships, g_bolt_demo, g_flames_demo, g_balls, g_near_balls,
     g_ball_demo, g_missile_demo, g_sky_demo, g_boxes, g_collide_demo, g_hull_demo, g_hull_type, g_flame_test,
     g_comm_demo, g_test_ship;
@@ -133,7 +133,8 @@ static void names(void)
 #ifdef RV_HOST                          /* (on the host the front end has the program's main, and calls this) */
 #define main rv_main
 #endif
-#define NEAR_KEEP 2048U              /* the near heap kept for stdio (main) */
+#define NEAR_KEEP 256U               /* the near heap kept (main): the game takes nothing from it, and its files are
+                                        rvio.c's (2048 for Watcom's stdio until 2026-11-14) */
 
 int main(int argc, char **argv)
 {
@@ -151,9 +152,8 @@ int main(int argc, char **argv)
     mem_settle();                       /* (after a first line: it opens the log) */
 #ifndef RV_HOST
     {   /* the runtime's near heap, what is left of DGROUP's 64 KB past the data and the stack, given back to DOS but for
-         * NEAR_KEEP: the game takes nothing from it (its arrays are fixed), stdio a 512-byte buffer for each file open at
-         * once (four at most: mem_settle) and the records mem_settle has made.  The user's pick from the memory plan,
-         * 2026-11-04 (some 6.6 KB more free for DOS; measured then: no falls in flight) */
+         * NEAR_KEEP: the game takes nothing from it (its arrays are fixed, its files rvio.c's, in DGROUP).  The user's pick
+         * from the memory plan, 2026-11-04 (some 6.6 KB more free for DOS; measured then: no falls in flight) */
         void *keep = malloc(NEAR_KEEP);
         _nheapshrink();
         free(keep);
@@ -313,6 +313,8 @@ int main(int argc, char **argv)
             g_fx_extra = 1;
         else if (!strcmp(argv[i], "/capital"))          /* tests: the carrier in the flight */
             g_capital = 1;
+        else if (!strcmp(argv[i], "/planet") && i + 1 < argc)   /* tests: a desert planet that many km under the player */
+            g_planet_test = atoi(argv[++i]);
         else if (!strcmp(argv[i], "/simat") && i + 1 < argc)   /* tests: the simulator starts at this many ships */
             simulator_test_first((int16_t)atoi(argv[++i]));
         else if (!strcmp(argv[i], "/scoretest"))        /* tests: the flight's music by the clock (score.c); 2: the remixes; 3: the cycle's end */

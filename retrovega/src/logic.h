@@ -36,6 +36,9 @@ void logic_end(void);                   /* the flight is over (missionStatus say
 int16_t logic_autopilot(void);          /* the A key, between steps: 1 when it flew the player on (to the next nav
                                            point), 0 when it may not (enemies near, nowhere to go) */
 int16_t logic_autopilot_ready(void);    /* the nav point it would go to, -1 not now (the engine asks before its flyby) */
+extern uint8_t __far logic_auto_why;    /* why logic_autopilot_ready last said -1: */
+#define AUTO_WHY_ENEMY 1                /* an enemy near */
+#define AUTO_WHY_FIELD 2                /* a field across the way, or the nav point's own, at hand: flown through by hand */
 void logic_form_up(int16_t steps);      /* the autopilot's flyby begins (flight.c): the player faces the nav point, the wing
                                            and the escort targets close up on it and fly with it for `steps` steps */
 
@@ -87,7 +90,9 @@ int16_t logic_order(int16_t s, int16_t order);      /* 1 when slot s takes it (0
                                                        no enemy targeted, or RTB with no capital ship of its side) */
 int16_t logic_order_of(int16_t s);
 int16_t logic_taunt(int16_t s);         /* an enemy fighter turns on the player for a while: 1 when it does */
-void logic_cloak_key(void);             /* Alt+C: the player's cloak on (a type with one) or off (world.h RV_CLOAK_*) */
+int16_t logic_cloak_key(void);          /* Alt+C: the player's cloak on (a type with one) or off (world.h RV_CLOAK_*); 0:
+                                           refused, off too short a while (logic_cloak_wait) */
+uint16_t logic_cloak_wait(void);        /* steps till the cloak may come on again (30 s from its going off) */
 void logic_cloak_disrupt(void);         /* the player transmitted: a cloak that is on is seen for a while */
 extern uint8_t __far logic_boost;       /* RV_BOOST_*: what Kit did to the fighter for this mission's flights; 0 none */
 int16_t logic_escort_lost(void);        /* a ship the player was escorting was killed this flight */

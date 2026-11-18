@@ -660,6 +660,106 @@ second (`WCFPS=10`) the arrival at 178 and the Drayman at 1177. So: 999 frames a
 in frames, wherever anybody is; the 2026-11-07 distances were where the flying-in player happened to be when the
 timer ran out. Ours since (logic.c `ARRIVE_WAIT`, 999 x WC_FRAME_STEPS steps: 67 s at its 15 frames a second; M8.57).
 
+## The guns against the old game's (2026-11-17)
+
+The user: "I don't know why the dralthi and salthi equivalents are just so easy to demolish and even the krant
+equivalents. Can you give the hornet a 3rd gun in WC1 and do some damage playtests and ensure that it really just is
+the 3rd weapon slot of the shroedinger that is making the difference or if it's something else instead ... I'm worried
+there's some distance divide thing so that if you're close it takes more hits". Three rigs, the same in both games,
+the player invulnerable and the wingman out of it (the old game's killed at the arrival, `!kill=1`):
+
+- **the tail**: our ship put KM behind the first foe at every frame of the old game's (`!tail=foe:KM` every 0.05 s;
+  rvsim `--tail KM`), the trigger held, the foes' gun lists emptied (`--disarm`): hits to kill from behind with real
+  bolts, their sizes by how far they flew;
+- **the shot**: the first foe hit for 14 from dead ahead or behind every 0.1 s (`!shoot=foe:14[:back]`; rvsim
+  `--shoot`): the damage model alone;
+- **the hunt**: the nose snapped onto the first foe every 3 s, the trigger held, the foes armed (`!face=foe`; rvsim
+  `--hunt 3 --hunt-first`): how soon each is out of the fight (killed, or fled for good), the feel.
+
+`rigkeys.py` writes the old game's key scripts for `run-old.sh`, `rvkills.sh` flies ours over seeds (the scenes
+`three-nicanders.scene`, `three-agis.scene`, `three-aristons.scene`: enyo1.scene's three, its wingman left out), and
+`kills.py` reads either trace. The old game ran at 30 frames a second under the emulator (7,196 frames in 240 s at
+24,000 cycles); its times here are its frames / 15, the logic's seconds as ours count them.
+
+**Hits to kill, behind** (the tail; the old game's Enyo 1 Hornet against its three Dralthi, McAuliffe 1-3's Scimitar
+against Dralthi, Salthi and Krant; ours over six seeds):
+
+| the guns, the target, from | the old game | ours |
+|---|---|---|
+| the laser, Dralthi / Nicander, 1,000 km | 11.6 (nine kills, 8-16), 14 a hit | 11.8 (8-18), 13.8 a hit |
+| the laser, 2,500 km | 7.0 (6-8), 19 a hit | 7.2 (5-12), 20.6 a hit |
+| the mass driver, Dralthi / Nicander, 1,000 km | 8, 7, 22.5 a hit | 7.4 (4-11), 20.6 a hit |
+| the mass driver, Salthi / Agis, 1,000 km | 5.0 (7, 3, 5), 22.4 a hit | 4.9 (3-12), 22.8 a hit |
+| the mass driver, Krant / Ariston, 1,000 km | 12.5 (15, 8, 12, 15), 23.5 a hit | 14.1 (10-21), 20.5 a hit |
+| the mass driver, Krant / Ariston, 2,500 km | 9.8 (13, 8, 8, 10), 28.1 a hit | 12.1 (8-16), 26.6 a hit |
+
+The hit grows with the bolt's flight in both (the old game's bolt is its base less half its life left: "A shot from far
+hurts more", above), so near shots take more hits in the old game too; ours was built that way on 2026-10-31.
+
+**Hits of 14 to kill** (the shot; the old game's three or four, ours over eight seeds):
+
+| | ahead | behind |
+|---|---|---|
+| Dralthi / Nicander | 22.3 (20, 25, 22) / 19.1, 19.9 since | 8.3 (8, 8, 9) / 8.8 |
+| Salthi / Agis | 15.7 (15, 16, 16) / 14.4 | 5.3 (5, 6, 5) / 5.9 |
+| Krant / Ariston | 26.0 (25, 27, 27, 25) / 23.4, 25.4 since | 15.0 (16, 14, 15, 15) / 15.7 |
+
+Head on ours were softer: the old roulette's system 5 (ovr143:10AA) takes an entry of the ship's whole list by the
+dice, its guns, missiles and decoys alike (the Dralthi seven: two lasers, three decoys, two heat seekers), and ours
+counted the guns alone. Since: a launcher's rounds count, a round lost (logic.c `list_entries`; the Nicander has no
+decoys, so four entries to the Dralthi's seven).
+
+**So the damage was never it.** The hunt (out of the fight, the medians; the old game's flights one at a time, ours
+eight):
+
+| the player's guns | first | second | third |
+|---|---|---|---|
+| the old Hornet, two lasers (mounts 0 and 1, 120 km either side) | 12, 12 | 95, 68 | 112, 81 |
+| the old Hornet, a third laser at the middle (mount 16) | 13, 12 | 105, 76 | 164, 79 |
+| the old Hornet, the three 30 km apart (mounts 15, 16, 17: the Schroedinger's) | 37, 13 | 85, 104 | 99, 109 |
+| ours, the Schroedinger as it was (2,200 kps, 3 a shot) | 11 | 23 | 31 |
+| ours, two lasers close | 20 | 100 | 145 (4 of 8) |
+| ours, two lasers at the Hornet's mounts | 50 (6 of 8) | 85 (5 of 8) | 165 (3 of 8) |
+| ours, three, the outer two at the Hornet's mounts | 31 | 60 | 84 (7 of 8) |
+| ours, the laser at the old bolt's 1,600 kps | 37 | 81 | 87 |
+| ours, 1,600 kps and 5 a shot (built) | 31 | 75 | 102 |
+| ours, all the old numbers: 1,600 kps, 4,800 km, 7 a shot | 54 | 159 | 190 (4 of 8) |
+| the old Scimitar against four Krants (McAuliffe 3) | 20, 23 | 140, 103 | 143, 222 |
+| ours, the Franklin against three Aristons as it was | 58 | 94 | 121 |
+| ours, the mass driver at the old 1,200 kps (built) | 58 | 109 | 133 |
+| ours, and 7 a shot / 9 a shot | 148 / 170 (7, 4 of 8) | 212 / 214 (4, 3 of 8) | 228 / none (1, 0 of 8) |
+| the old Scimitar against four Dralthi (McAuliffe 2) | 28 | 73 | 82 |
+| ours, the Franklin against three Nicanders, as it was / at 1,200 kps | 19 / 19 | 34 / 35 | 58 / 55 |
+
+What made the difference:
+
+1. **The bolt's speed.** The old weapon rows (dseg:49DC + 0x6F a type: +0xA the energy a shot, +0xC the life in frames,
+   +0x10 the base damage, +0x14 the speed in km a frame): the laser 7, 30, 25, 160; the neutron gun 14, 20, 40, 140;
+   the mass driver 9, 25, 30, 120. At ten kps a km a frame, the laser is 1,600 kps; ours flew 2,200 from the first
+   spec (2026-10-19) and was never set to it, and the Photon Mk III 2,400. Alone it took the hunt from 31 s to 87.
+2. **The third laser does not keep up in the old game.** Its energy (100, 2 back a frame with the shields full, a laser
+   7) feeds two lasers at their 7-frame refire; the Hornet given a third (`rigkeys.py` pokes, dseg:C472) fired 691
+   volleys of three in 7,196 frames where two lasers fired 1,029 of two: 2,073 bolts and 2,058, a volley every 10.4
+   frames. A burst, then two guns' worth: its hunts came out as the two lasers'. Ours, 3 a shot, sustained all three.
+3. **The spread.** The old mounts (dseg:6302, 6 bytes a mount: km across, up, along): the Hornet's and the Dralthi's
+   lasers at 120 km either side, the Scimitar's mass drivers 90; the Schroedinger's 28 (its third 25 up), the
+   Franklin's 22. Close guns land a volley together or miss together: with two lasers the close pair killed sooner
+   (above). The user keeps them close ("it is satisfying to have them close"; the wingtips an experiment only:
+   rvsim `--mounts`).
+4. **Not the damage**, nor the reach (the old mass driver's 3,000 km at 9 a shot slowed the Franklin far past the
+   Scimitar).
+
+Built (the user, of the Aera's guns: "I wonder if the photons can just be faster lasers and otherwise equivalent--
+might be an interesting trade"): the laser at 1,600 kps and 5 a shot, the Photon Mk III's (three lasers draw 15 a
+volley against 13 back: some 60 points in 10 s of trigger, M2.19), the Photon Mk III the laser at 2,400; the mass
+driver at 1,200; the particle cannon (the old neutron gun) at 1,400 and the Photon Mk II the same gun at 1,900. The
+Aera's guns as they were (their hit rates on the player were tuned against the old game's, above).
+
+Still apart: the old crippled fighters flee (its hunts: of eighteen Dralthi in six flights, three left rather than died, the shields'
+generator gone and the front armour stripped; a wingman takes its leader's leave order, ovr165:11C6), and ours did not
+in these flights; the old leader's opening charge (its first kill at 12-13 s nearly every time: 12-17 hits at the far
+end of the bolts' reach, 19-25 each), where ours come in by the approach point and live longer once the laser is slow.
+
 ## What is still to measure
 
 The other types (the Salthi at nav 3; Krant, Gratha, Jalthi, the capital ships' guns on each other in the later

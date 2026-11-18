@@ -17,6 +17,8 @@ python3 tools/rvabi.py --asm > src/rvhook.asm
 # built from two definitions would disagree in silence (tools/rvabi.py --write-layer makes it; docs/multiplayer.md)
 python3 tools/rvabi.py --check-layer
 python3 tools/rvdata.py --out "$OUT/RVGAME.DAT" --header src/rvdata.h
+# the planet missions' grounds (src/bake.h): ID.PLN beside RVGAME.DAT, each baked again only when it has changed
+tools/planets.sh "$OUT"
 # the art tools' venv (tools/art-requirements.txt), made with uv on the system python when missing; packages no newer
 # than 30 days (UV_EXCLUDE_NEWER overrides), so a release has had time to be caught if it was bad
 VENV=$HOME/.venvs/retrovega-art
@@ -33,11 +35,14 @@ fi
 # optimised (the flight benchmark found -ox worth half again as many sprites a
 # frame as -od); DEBUG=1 builds -od -d2 for the debugger
 if [ -n "${DEBUG:-}" ]; then OPT="-od -d2"; else OPT="-ox -d1"; fi
-CFLAGS="-q -bt=dos -mm -3 -s -w4 -zq -zm $OPT -i=src"   # (-zm: a segment a function, so the link drops the unused: option eliminate)
+BALLOON_KB=${BALLOON_KB:-20}          # (RV.EXE's emergency room, mem.c's balloon: BALLOON_KB=0 ./build.sh builds without it)
+CFLAGS="-q -bt=dos -mm -3 -s -w4 -zq -zm $OPT -i=src -dRV_BALLOON_KB=$BALLOON_KB"   # (-zm: a segment a function, so the link drops the unused: option eliminate)
 nasm -f obj -i src/ -o "$OUT/rvhook.obj" src/rvhook.asm
 nasm -f obj -o "$OUT/lowlevel.obj" src/lowlevel.asm
 nasm -f obj -o "$OUT/lasers_a.obj" src/lasers.asm
 nasm -f obj -o "$OUT/rocks_a.obj" src/rocks.asm
+nasm -f obj -o "$OUT/bake_a.obj" src/bake.asm
+nasm -f bin -dBLOB -o "$OUT/PVIEW.BIN" src/pview.asm   # (the planet's picture without the card: a blob run from the band buffer, pview.c)
 if [ -z "${CODE:-}" ]; then
 # the comm link's faces (one helmet render, every pilot's face behind its visor, each alien's helmet: ~40 s), when
 # their sources change.  RV_COMMS=face builds the pilots without their breathing gear, the bare face's mouth
@@ -99,7 +104,7 @@ fi
     || ~/.venvs/retrovega-art/bin/python -P tools/explode.py --out "$OUT/EXPLODE.DAT" > /dev/null
 [ "$OUT/SFX.DAT" -nt tools/sfx.py ] && [ "$OUT/SFX.DAT" -nt data/sounds.csv ] && [ "$OUT/SFX.DAT" -nt art/voice/pa_report.wav ] \
     || ~/.venvs/retrovega-art/bin/python -P tools/sfx.py --out "$OUT/SFX.DAT" > /dev/null   # (the recordings: art/voice)
-ENGINE="mem freeze util xms gx video dat gfx input room lipsync opl music score campaign lightfield ships lasers bolts balls rocks missiles sky collide flames comms panel vdu cockpit world shots hud explode sfx fx damage logic simulator flight game main"
+ENGINE="mem freeze util rvio xms gx video dat gfx input room lipsync opl music score campaign lightfield ships lasers bolts balls rocks missiles sky planet bake pview collide flames comms panel vdu cockpit world shots hud explode sfx fx damage logic simulator flight game main"
 LOGIC=${LOGIC:-src/logic.c}           # (LOGIC=path: another logic.c in its place, an experiment's; the play tests' check)
 # the log's formats out of conventional memory (tools/logfmt.py; the user's pick from the memory plan, 2026-11-04): the
 # engine compiled from copies in $LF with each format the log alone reads a token, their texts a table appended to each
@@ -152,13 +157,13 @@ link() {
               clname DATA clname BSS clname STACK \
         file "$OUT/rvhook.obj" "$@" library "$OUT/rvstubs.lib"
 }
-link HELLO.EXE file "$OUT/lowlevel.obj" file "$OUT/util.obj" file "$OUT/xms.obj" file "$OUT/hello.obj"
-link RV.EXE file "$OUT/lowlevel.obj" file "$OUT/lasers_a.obj" file "$OUT/rocks_a.obj" $(for c in $ENGINE; do printf ' file %s/%s.obj' "$OUT" "$c"; done)
-link RVP.EXE file "$OUT/lowlevel.obj" file "$OUT/lasers_a.obj" file "$OUT/rocks_a.obj" file "$OUT/p/playtest.obj" \
+link HELLO.EXE file "$OUT/lowlevel.obj" file "$OUT/util.obj" file "$OUT/rvio.obj" file "$OUT/xms.obj" file "$OUT/hello.obj"
+link RV.EXE file "$OUT/lowlevel.obj" file "$OUT/lasers_a.obj" file "$OUT/rocks_a.obj" file "$OUT/bake_a.obj" $(for c in $ENGINE; do printf ' file %s/%s.obj' "$OUT" "$c"; done)
+link RVP.EXE file "$OUT/lowlevel.obj" file "$OUT/lasers_a.obj" file "$OUT/rocks_a.obj" file "$OUT/bake_a.obj" file "$OUT/p/playtest.obj" \
     file "$OUT/t/twins.obj" \
     $(for c in $ENGINE; do
     case " $HEAPED " in *" $c "*) printf ' file %s/p/%s.obj' "$OUT" "$c";; *) printf ' file %s/%s.obj' "$OUT" "$c";; esac; done)
-link RVT.EXE file "$OUT/lowlevel.obj" file "$OUT/lasers_a.obj" file "$OUT/rocks_a.obj" $(for c in $ENGINE; do
+link RVT.EXE file "$OUT/lowlevel.obj" file "$OUT/lasers_a.obj" file "$OUT/rocks_a.obj" file "$OUT/bake_a.obj" $(for c in $ENGINE; do
     case " $TESTED " in *" $c "*) printf ' file %s/t/%s.obj' "$OUT" "$c";; *) printf ' file %s/%s.obj' "$OUT" "$c";; esac; done)
 for e in HELLO.EXE RV.EXE RVT.EXE; do
     python3 tools/logfmt.py --append "$OUT/$e" "$OUT/RVLOGFMT.BIN"
@@ -178,6 +183,19 @@ RV_ROOM=640512
 RV_IMAGE=$(sed -n 's/^Memory size: *[0-9a-fA-F]* (\([0-9]*\)\.).*/\1/p' "$OUT/RV.MAP")
 RV_LEFT=$((RV_ROOM - RV_IMAGE))
 echo "RV.EXE takes $RV_IMAGE bytes of conventional memory, $RV_LEFT left for DOS to hand out"
+# the balloon (mem.c: the user's emergency room, 20 KB unless BALLOON_KB says otherwise, held in the image): never shrunk
+# or lost without asking the user
+if [ "$BALLOON_KB" -gt 0 ]; then
+    if ! grep -q 'balloon_check_with_human_before_reducing' "$OUT/RV.MAP"; then
+        echo "RV.EXE has lost its balloon (mem.c balloon_check_with_human_before_reducing): ask the user before reducing it"
+        exit 1
+    fi
+    echo "  the balloon (mem.c's balloon_check_with_human_before_reducing): $((BALLOON_KB * 1024)) bytes of that held for an"
+    echo "  emergency, so $RV_LEFT free now and $((RV_LEFT + BALLOON_KB * 1024)) with the balloon released (ask the user before"
+    echo "  reducing it; BALLOON_KB=0 ./build.sh builds without it)"
+else
+    echo "  (the balloon is off: BALLOON_KB=0.  The default holds 20 KB of this for an emergency)"
+fi
 if [ "$RV_LEFT" -lt 2048 ]; then
     echo "RV.EXE is too big for conventional memory: it would not load, or be at the very edge (see docs/engine.md, Memory)"
     exit 1

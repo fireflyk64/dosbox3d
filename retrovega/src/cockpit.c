@@ -11,7 +11,7 @@
  * hull gives: cracks_update); the panel's lamps, knobs, needles and readouts (panel.c)
  * over the instruments.  cockpit_dirty marks the rows a frame changes: the
  * opening and the radar always, the rest only when their values moved. */
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include <malloc.h>
 #include "rvhooks.h"

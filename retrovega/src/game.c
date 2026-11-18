@@ -7,7 +7,7 @@
  * and the flight (flight.c: for now the drawing benchmark, 20 seconds in the
  * cockpit; the mission is still won 80% of the time at random).  The
  * debrief, the campaign's next move, and at the end "You win" or "You lose". */
-#include <stdio.h>
+#include "rvio.h"
 #include <string.h>
 #include <stdlib.h>
 #include "rv.h"
@@ -27,6 +27,7 @@
 #include "flight.h"
 #include "simulator.h"
 #include "game.h"
+#include "planet.h"
 
 enum { MODE_ROOM, MODE_TALK, MODE_BRIEF, MODE_DECK, MODE_DEBRIEF, MODE_BUNK,
        MODE_NAME, MODE_LOG, MODE_MESSAGE, MODE_ENDING, MODE_BOARD, MODE_DEAD, MODE_HOME, MODE_QUIT };
@@ -1404,14 +1405,16 @@ static void flight_prepare(void)
     g_guest = rvNetRole == 2;
     if (g_guest) {
         uint16_t node = currentSeries, k = currentMission;
-        if (node < g_nnodes && k < RV_MISSIONS_PER_NODE && g_nodes[node].missions[k] < g_nmissions) {
-            camp_mission(g_nodes[node].missions[k], &g_m);
+        uint16_t mi = node < g_nnodes && k < RV_MISSIONS_PER_NODE ? g_nodes[node].missions[k] : 0xFFFF;
+        if (mi < g_nmissions) {
+            camp_mission(mi, &g_m);
             camp_load_rules(&g_m);      /* (its rules; its tables are the host's already) */
             /* the fighter the host's records give this pilot: its cockpit, and its sets among the flight's (the user,
              * 2026-11-03: "in the set with the franklin the wingman kept the schroedinger cockpit and the first mission
              * was not able to see any franklins at all": its own save's fighter had been loaded, not the host's) */
             g_camp.player_ship = (uint8_t)camp_flight_fighter();
             camp_follow(node, k);       /* (and its story where the host's is: the debrief moves it on with the host's) */
+            planet_mission(&g_m);       /* (the host's planet: its own mission's was its save's) */
             rocks_want(g_m.nfield > 0 || g_field > 0);
             RV_LOG("guest: the host's mission %.16Fs (node %u, mission %u there)", (char __far *)g_m.id, node, k);
         } else {
@@ -1905,7 +1908,7 @@ static void bunk_input(const Input *in0)
             close_bunks();
             enter_room(RV_R_QUARTERS);
             sprintf(g_msg, "Bunk %d loaded: %s. Layer %u, mission %u.", g_bunk_sel + 1, g_camp.name,
-                    g_nodes[g_camp.node].layer, g_camp.mission + 1);
+                    g_nodes[g_camp.node].layer, camp_place(g_camp.node, g_camp.mission));
             message(g_msg);
         }
     }
@@ -1981,6 +1984,8 @@ static void log_overlay(int y0, int y1)
     /* the lattice: s at the top, v and l at the bottom */
     for (i = 0; i < (int)g_nnodes; i++) {
         int targets[2], t;
+        if (!g_nodes[i].layer)          /* (aside from the campaign's way: Mirage's) */
+            continue;
         log_place(i, row_h, &x, &y);
         targets[0] = g_nodes[i].good;
         targets[1] = g_nodes[i].bad;
@@ -1999,7 +2004,7 @@ static void log_overlay(int y0, int y1)
     log_place(RV_NODE_BAD, row_h, &x, &y);
     gfx_text(FONT_BODY, x - 6, y + 6, "L", RV_TEXT_WHITE, y0, y1);
     sprintf(s, "Layer %u, mission %u of %u.  Flown: %u.  Trend: %+d", g_nodes[g_camp.node].layer,
-            g_camp.mission + 1, camp_node_missions(g_camp.node), g_camp.flown, g_camp.trend);
+            camp_place(g_camp.node, g_camp.mission), camp_node_missions(g_camp.node), g_camp.flown, g_camp.trend);
     gfx_text(FONT_BODY, 300, 84, s, RV_TEXT_WHITE, y0, y1);
     if (g_nodes[g_camp.node].pass_mark && g_camp.points != POINTS_UNKNOWN) {   /* (the old game's points: camp_points) */
         sprintf(s, "Points here: %u of the %u that win it.", g_camp.points, g_nodes[g_camp.node].pass_mark);
