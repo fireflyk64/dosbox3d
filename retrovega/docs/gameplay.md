@@ -168,6 +168,7 @@ What the tests expect:
 | M2.17 link-fire | the same for a group of four (the Redeemer's mass drivers), and for the three left with one of them destroyed |
 | M2.19 sustain | the trigger held 10 s from a full bar: 20-25 shots a gun (the old game's Hornet at its 15 frames a second: 22-23, a volley every 0.44 s) and the energy still at 25 or more: the Schroedinger's three lasers at 5 a shot (the Photon Mk III's, since 2026-11-17) draw 15 a volley every 13 steps against the 13 that come back at a point a step, some 60 in 10 s (two would be sustained; the old game's own third laser, at its 7 a shot, could not be: tests/wc1/README.md "The guns against the old game's") |
 | M2.20 forward-only | a ship sliding 50 km a step sideways with its nose ahead fires a shot that flies along the nose at the laser's speed, nothing sideways; moving 40 km a step ahead, at the laser's speed plus 40 (the old game's bolts: the gun's speed plus the ship's along the gun's line) |
+| M2.21 easy-guns | on easy (camp_load_rules) every gun's speed in the loaded weapon table is 11/8 of the data's, anybody's guns: the laser 2,200 kps (its 1,600 since 2026-11-17), the Photon Mk III 3,300; a turret's as it was; the player's laser shot steps 110 km; back on medium every speed is the data's to the kps (rounded both ways: campaign.c easy_guns). The user, 2026-11-17: "could we make the easy option have the old higher speeds? Could be a good way to keep players engaged", "we should have the fast guns affect both AI and human" |
 
 ### M3: damage (`do_damage`, `step_shots`, `step_timers`)
 

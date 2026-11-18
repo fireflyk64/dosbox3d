@@ -3211,6 +3211,7 @@ static void t_easy_hold(void)
     camp_load_rules(&g_tm);
     easy = g_rule_flags;
     g_difficulty = keep_easy;
+    camp_load_rules(&g_tm);             /* (the guns' speeds the data's again: easy's are faster, campaign.c easy_guns) */
     fired = pt_shizong_volleys(normal, 30);
     held = pt_shizong_volleys(easy, 30);
     g_rule_flags = keep;
@@ -5103,6 +5104,47 @@ static void t_ground_up(void)
         return;
     REQUIRE(gPositionVector[1].y - y0 >= 3L * KM && abs32(gPositionVector[1].x - x0) + abs32(gPositionVector[1].z - z0) < KM,
             e_up, (gPositionVector[1].y - y0) / KM, (abs32(gPositionVector[1].x - x0) + abs32(gPositionVector[1].z - z0)) / KM, 0);
+}
+
+/* M2.21: easy's faster bolts (campaign.c easy_guns; the user, 2026-11-17: "could we make the easy option have the old
+ * higher speeds? ... it could potentially multiply them on load", "we should have the fast guns affect both AI and
+ * human"): on easy every gun's speed in the loaded table is 11 / 8 of the data's, the laser's 1,600 kps 2,200 and the
+ * Aera's Photon Mk III 2,400 3,300, a turret's as it was; the player's laser shot steps 110 km; back on medium every
+ * speed is the data's to the kps */
+static void t_easy_guns(void)
+{
+    static const char __far e_easy[] = "on easy the laser flies %d kps and the Photon Mk III %d (the data's x 11 / 8: %d)";
+    static const char __far e_turret[] = "on easy the laser turret's bolt flies %d kps: the data's %d";
+    static const char __far e_shot[] = "on easy the player's laser shot steps %d km: %d at its speed";
+    static const char __far e_back[] = "back on medium the laser flies %d kps, the Photon Mk III %d: the data's %d";
+    const RvWeapon __far *las = weapon(0x00), *ph3 = weapon(0x09), *tur = weapon(0x14);
+    uint8_t keep_easy = g_difficulty, keep = g_rule_flags, keep_hit = g_rule_hit;
+    uint16_t las0, ph30, tur0;
+    if (!las || !ph3 || !tur)
+        return;
+    las0 = las->speed_kps;
+    ph30 = ph3->speed_kps;
+    tur0 = tur->speed_kps;
+    pt_alone(PT_PLAYER);
+    camp_mission(0, &g_tm);
+    g_difficulty = RV_DIFF_EASY;
+    camp_load_rules(&g_tm);
+    EXPECT(las->speed_kps == (las0 * 11U + 4) / 8 && ph3->speed_kps == (ph30 * 11U + 4) / 8, e_easy, las->speed_kps,
+           ph3->speed_kps, (las0 * 11U + 4) / 8);
+    EXPECT(tur->speed_kps == tur0, e_turret, tur->speed_kps, tur0, 0);
+    g_sys.armed = 1;
+    GUN_STATE(0, 0) = 0;
+    gunEnergy[0] = 100;
+    (void)fireGunFromShip(0, 0);
+    EXPECT(shots_count() >= 1 && TO_KM(shot(shots_count() - 1)->vz) == las->speed_kps / KPS_HZ, e_shot,
+           shots_count() >= 1 ? (int16_t)TO_KM(shot(shots_count() - 1)->vz) : -1, las->speed_kps / KPS_HZ, 0);
+    g_difficulty = RV_DIFF_MEDIUM;
+    camp_load_rules(&g_tm);
+    EXPECT(las->speed_kps == las0 && ph3->speed_kps == ph30, e_back, las->speed_kps, ph3->speed_kps, las0);
+    g_difficulty = keep_easy;
+    camp_load_rules(&g_tm);
+    g_rule_flags = keep;
+    g_rule_hit = keep_hit;
 }
 
 static void t_planet(void)
@@ -8421,6 +8463,7 @@ static const char __far n_m3_10[] = "M3.10 any-source (do_damage): the same hit 
 static const char __far n_m3_11[] = "M3.11 shots-hit (step_shots): gunfire hurts what it meets, src a bolt of the "
     "shooter's";
 static const char __far n_m3_12[] = "M3.12 recharge (step_timers): shields come back, armour does not";
+static const char __far n_m2_21[] = "M2.21 easy-guns (camp_load_rules, easy_guns): on easy every gun's bolt flies 11/8 of the data's speed, the laser 2,200 kps; the data's again on medium";
 static const char __far n_m2_19[] = "M2.19 sustain (step_timers): the trigger held 10 s fires the old game's 22 shots a gun (a volley "
     "every 0.44 s, at its 15 frames a second) and draws slowly";
 static const char __far n_m3_13[] = "M3.13 type-rates (step_timers): gun energy and shields come back at the type's rates (a point a side every shield_steps, or the shift)";
@@ -8631,6 +8674,7 @@ static const PtTest __far k_tests[] = {
     { n_m10_13, t_cloak, 0 }, { n_m10_14, t_cloak_ai, 0 }, { n_m8_65, t_cloak_run, 0 }, { n_m8_66, t_campaign_card, 0 },
     { n_m10_15, t_target_range, 0 },
     { n_m8_67, t_ground_up, 0 },
+    { n_m2_21, t_easy_guns, 0 },
 };
 
 /* --- the run --- */

@@ -26,6 +26,7 @@ RvShipType __far g_shiptypes[RV_SHIPRECORDS];   /* (RV_SHIPTYPES is how high a t
 uint16_t g_nshiptypes;
 RvWeapon __far g_weapons[RV_WEAPONS];
 uint16_t g_nweapons;
+static uint8_t g_easy_kps;              /* the guns' speeds are easy's (easy_guns) */
 static const RvShipType __far * __far g_type_of[RV_SHIPTYPES];   /* each type number's record (ship_type), 0 none */
 static const RvWeapon __far * __far g_weapon_of[RV_WEAPON_TYPES];   /* each weapon number's record (weapon), 0 none */
 static RvGameHeader g_head;
@@ -93,6 +94,7 @@ int16_t camp_load_data(const char *path)
     }
     RV_ASSERT(g_head.nweapons <= RV_WEAPONS && g_head.weapon_size == sizeof(RvWeapon));
     g_nweapons = g_head.nweapons;
+    g_easy_kps = 0;                     /* (the data's own speeds: easy_guns) */
     fseek(f, g_head.weapons_at, SEEK_SET);
     for (i = 0; i < RV_WEAPON_TYPES; i++)
         g_weapon_of[i] = 0;
@@ -394,6 +396,30 @@ void camp_load_tables(const RvMission __far *m)
     RV_LOG("mission %.16Fs: %u nav points, %u mission ships", m->id, (uint16_t)m->nnav, n);
 }
 
+/* easy's guns (the user, 2026-11-17: "could we make the easy option have the old higher speeds? Could be a good way to
+ * keep players engaged ... it could potentially multiply them on load"; "we should have the fast guns affect both AI
+ * and human ... that way we keep it simple as a data file thing"): every gun's bolt, anybody's, EASY_KPS_NUM /
+ * EASY_KPS_DEN as fast as the data's, the laser's 1,600 kps back to the 2,200 it flew until then (the mass driver
+ * 1,650, the particle cannon 1,925, the Photon Mk III 3,300); their reach the data's, so they live the shorter.  Put
+ * on the loaded table at a flight's rules and taken off again for another difficulty, rounded both ways so that the
+ * data's own speeds come back to the kps: every reader of a weapon's speed (the shots' steps and lives, their hurt by
+ * the life left, the AI's lead) sees the one number */
+#define EASY_KPS_NUM 11
+#define EASY_KPS_DEN 8
+static void easy_guns(uint8_t on)
+{
+    uint16_t i;
+    if (on == g_easy_kps)
+        return;
+    g_easy_kps = on;
+    for (i = 0; i < g_nweapons; i++) {
+        uint32_t v = g_weapons[i].speed_kps;
+        if (g_weapons[i].kind == RV_WK_GUN)
+            g_weapons[i].speed_kps = (uint16_t)(on ? (v * EASY_KPS_NUM + EASY_KPS_DEN / 2) / EASY_KPS_DEN
+                                                   : (v * EASY_KPS_DEN + EASY_KPS_NUM / 2) / EASY_KPS_NUM);
+    }
+}
+
 void camp_load_rules(const RvMission __far *m)
 {
     g_rule_hit = m->hit;                /* (its rules: the hit volume, the AI's aim, the held fire, the collisions) */
@@ -403,6 +429,7 @@ void camp_load_rules(const RvMission __far *m)
                                            ruling 2026-11-03: a selected Shizong circled a still player for 15 minutes
                                            and never fired) */
         g_rule_flags |= RV_RULE_HOLD_FIRE;
+    easy_guns(g_difficulty == RV_DIFF_EASY);   /* (and the faster bolts, above) */
     if (g_difficulty == RV_DIFF_HARD)   /* (hard: an attack on a fighter aims at its middle, no lanes (logic.c pass_side):
                                            the old game's hit rate on a pilot flying straight, 26% of the enemies' shots
                                            against the lanes' 8% (its 28%), measured 2026-11-07; the user: "there's an
