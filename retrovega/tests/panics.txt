@@ -1,0 +1,25 @@
+# the third panic for minutes: Abandon Ship and its sibling in turn, each from its loop after the other's pass (/scoretest 4 /flight 200 /midilog)
+wait 10
+click
+wait 3
+move 593 200
+click
+wait 8
+move 429 140
+click
+wait 8
+move 605 113
+click
+wait 6
+key esc
+wait 2
+key esc
+wait 2
+key esc
+wait 8
+move 478 176
+click
+wait 3640
+key esc
+wait 16
+log done

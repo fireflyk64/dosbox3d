@@ -1,10 +1,11 @@
-"""Two more panics for the third draft's orchestra (CC0, ours): PANIC1B and PANIC2B, the alternatives the score
-picks between at random with Hull Breach and Systems Failing.
+"""Three more panics for the third draft's orchestra (CC0, ours): PANIC1B and PANIC2B, the alternatives the score
+picks between at random with Hull Breach and Systems Failing, and PANIC3B, which takes turns with Abandon Ship.
 
 The user (2026-11-17, in the soundtrack review), of Hull Breach (the hull under 60%): "We need one more of this
 level of panic to randomly select---that one is a bit calmer in general but still has the tension"; of Systems
 Failing (under 35%): "Another systems failing one--- a bit more focused for the alternative so the player has time
-to make it right".
+to make it right"; of Abandon Ship (under 15%; "keep, more like this"): "we probably need a similar variant for this
+one so players arent stuck in this song forever".
 
     PANIC1B  "Damage Report"   C, 140: the fight going on under the damage, calmer than Hull Breach: the motor on its
                                C pedal, the low strings only on the 3+3+2, a heartbeat on the timpani, the horn's
@@ -16,16 +17,24 @@ to make it right".
                                A flat, F minor or D flat, G) and one clear line, step, step, hold: the horn, then the
                                brass an octave up, the strings' line in F minor, all of it together; the alarms short,
                                in time, once a phrase
+    PANIC3B  "Last Stand"      C, 140: Abandon Ship's way (the fight quoted note for note, two-bar bursts of panic
+                               between) with the newer battles' blocks (Scissors, Intercept, Check Six) and bursts of
+                               its own in the half step's colours, not the tritone's: the hull giving way (the bass
+                               falling by half steps under a held C), the breach (D flat over the C pedal, A flat
+                               over G), the ship listing (the orchestra on the dotted quarters), the fight back (the
+                               bass climbing), the last stand's cry; bracing on G into the loop, at 140 throughout
 
-Both at the battles' 140 in C, a bar's intro (the damage, the alarm) played once, then the loop, a "sect" marker
-at every block of four bars; each block starts on its downbeat with the motor and a hit and leaves nothing hanging
-over the next.  Their drums are hits, rolls and toms, no kit's beat.
+PANIC1B and PANIC2B at the battles' 140 in C, a bar's intro (the damage, the alarm) played once, then the loop, a
+"sect" marker at every block of four bars; each block starts on its downbeat with the motor and a hit and leaves
+nothing hanging over the next.  PANIC3B is all loop, a "sect" at each quote and burst but the last.  Their drums are
+hits, rolls and toms, no kit's beat.
 """
-from compose import chord
-from orch import Piece, up, ACC332, orchestra, in_range, pedal332, hit, sung
+from compose import chord, Voicer
+from orch import NAMES, Piece, up, ACC332, orchestra, in_range, pedal332, hit, held, sung, excerpt, restore, in_time
 from panics import motor16, low8, swelled, trill
 from battles2 import fresh, toms
 from battles import block_pad
+import battles2
 
 BATTLE_BPM = 140
 
@@ -236,4 +245,206 @@ def reroute_power():
     return s
 
 
-SONGS = {'PANIC1B.MID': damage_report, 'PANIC2B.MID': reroute_power}
+# --- PANIC3B: "Last Stand" (C, 140): the hull under 15%, Abandon Ship's other half ---------------------------------
+# The score plays the two in turn, a pass each, splicing on the bar line from each one's loop marker.  So this keeps
+# Abandon Ship's way and its pace (the fight quoted note for note, a two-bar burst between quotes, 36 bars) but is
+# another piece: the newer battles quoted (Scissors' blades for everyone, Intercept's call for everyone and its build,
+# Check Six's turn into E flat minor and its sighs, Scissors' cut), and bursts of its own in the half step's colours
+# where Abandon Ship's are the tritone's, scored heavy and low (the horns, the brass, the timpani; no snare rolls, the
+# piccolo resting): the hull giving way (C minor struck, the bass falling by half steps a beat to G under a C held
+# high); the breach (the chord a half step over the pedal, the horn ripping up to it); the ship listing (the
+# orchestra on the dotted quarters, into E flat minor); the fight back (the bass climbing by half steps); the cry
+# (the brass and the horn in octaves, long notes); and bracing on G (D flat, the Neapolitan, to the dominant, rolling
+# and swelling), at 140 throughout.  The joins: from Abandon Ship's end (G flat at about 200, a snare roll) its
+# first bar is C minor struck by everyone at 140, as Abandon Ship's own loop does it; its own end (G, the timpani
+# and the swell at full, the toms down) falls on C minor's downbeat, Abandon Ship's first bar or its own.
+
+_QUOTED2 = {}
+
+
+def quoted2(name):
+    """the newer battle pieces, made once (Last Stand quotes them)"""
+    if name not in _QUOTED2:
+        make = {'intercept': battles2.intercept, 'checksix': battles2.check_six, 'scissors': battles2.scissors}[name]
+        _QUOTED2[name] = make()
+    return _QUOTED2[name]
+
+
+def ls_sinking(s, c, b0, _arg):
+    """the hull giving way: C minor struck by everyone, then the bass falling by half steps a beat (C, B, B flat, A,
+    A flat: the old lament at four times its pace) to G, the low strings on it, the brass's chords sinking with it,
+    under a C held high by the horn and the strings that falls to B on the G; the timpani on each step, then
+    rolling"""
+    fall = [48, 47, 46, 45, 44, 44, 43, 43]                 # (C3 down to G2, a beat each)
+    s.crash(b0, 0, 110)
+    for k, b in enumerate((b0, b0 + 1)):
+        motor16(s, c['motor'], b, 64 + 4 * k, lo=43)
+        for e in range(8):
+            q = fall[k * 4 + e // 2]
+            s.play(c['low'], b, e * .5, .45, q, 84 + (8 if e % 2 == 0 else 0))
+    s.pad(c['brass'], range(b0, b0 + 2), 55, 67, 2, 84)
+    for ch, octave, vel in ((c['horn'], 0, 94), (c['strings'], 12, 74)):
+        held(s, ch, b0, 0, 5.9, 72 + octave, vel, e0=110, e1=127, e2=100)
+        held(s, ch, b0 + 1, 2, 1.9, 71 + octave, vel + 2, e0=100, e1=127, e2=116)
+    hit(s, c['hit'], b0, 0, 114)
+    for beat, q in enumerate(('C2', 'B1', 'Bb1', 'A1')):
+        s.play(c['timpani'], b0, beat, .5, q, 94 if beat == 0 else 84)
+    s.play(c['timpani'], b0 + 1, 0, .5, 'Ab1', 90)
+    hit(s, c['hit'], b0 + 1, 0, 104)
+    hit(s, c['hit'], b0 + 1, 2, 108)
+    s.roll(c['timpani'], b0 + 1, 2, 2, 'G1', 50, 110, step=0.125)
+
+
+def ls_rising(s, c, b0, _arg):
+    """the fight back: sinking turned over, the bass climbing by half steps a beat (C, C sharp, D, E flat) to F and
+    G, the low strings on it, the brass's chords climbing with it, under a G held high by the horn and the strings
+    that sighs to A flat and back; the timpani on each step, then rolling"""
+    rise = [36, 37, 38, 39, 41, 41, 43, 43]                 # (C2 up to G2)
+    s.crash(b0, 0, 106)
+    for k, b in enumerate((b0, b0 + 1)):
+        motor16(s, c['motor'], b, 64 + 4 * k)
+        for e in range(8):
+            q = rise[k * 4 + e // 2]
+            s.play(c['low'], b, e * .5, .45, q, 84 + (8 if e % 2 == 0 else 0))
+    s.pad(c['brass'], range(b0, b0 + 2), 55, 67, 2, 84)
+    sung(s, c['horn'], b0, ['G4:0:4', 'Ab4:0:2 G4:2:1.9'], 94, e0=100, e1=127, e2=110)
+    sung(s, c['strings'], b0, ['G5:0:4', 'Ab5:0:2 G5:2:1.9'], 72, e0=96, e1=127, e2=110)
+    for beat in (0, 2):
+        hit(s, c['hit'], b0, beat, 112 if beat == 0 else 104)
+    for beat, q in enumerate(('C2', 'C#2', 'D2', 'Eb2')):
+        s.play(c['timpani'], b0, beat, .5, q, 92 if beat == 0 else 84)
+    s.play(c['timpani'], b0 + 1, 0, .5, 'F2', 90)
+    hit(s, c['hit'], b0 + 1, 0, 106)
+    hit(s, c['hit'], b0 + 1, 1.5, 102)
+    s.roll(c['timpani'], b0 + 1, 2, 2, 'G2', 50, 110, step=0.125)
+
+
+def ls_breach(s, c, b0, root):
+    """the breach: the major chord a half step over the pedal (D flat over C, A flat over G), the horn ripping up to
+    it (to the third) and the brass and the strings holding it, swelling, over the motor and the low strings on the
+    pedal; the hits and the timpani on the pedal on the 3+3+2, the toms down into the fight's next downbeat, where
+    the half step falls home"""
+    top = root + 1
+    s.crash(b0, 0, 112)
+    for k, b in enumerate((b0, b0 + 1)):
+        motor16(s, c['motor'], b, 66 + 4 * k, pedal=root)
+        low8(s, c['low'], b, 82 + 2 * k, pedal=root)
+        for beat in ACC332:
+            s.play(9, b, beat, .2, 36, 114 if beat == 0 else 104, 3)
+            s.play(c['hit'], b, beat, .4, in_range(root, 60, 71), 112 if beat == 0 else 102, 3)
+            s.play(c['timpani'], b, beat, .5, in_range(root, 33, 44), 94 if beat == 0 else 84)
+    r = in_range(top, 43, 54)
+    for i, q in enumerate((r, r + 4, r + 7, r + 12)):        # the rip, in thirty-seconds
+        s.play(c['horn'], b0, i * .125, .12, q, 84 + 4 * i, 2)
+    held(s, c['horn'], b0, .5, 7.4, r + 16, 98, e0=110, e1=127, e2=127)
+    swelled(s, c['brass'], b0, 0, 7.9, [r + 12, r + 19], 90, e0=90, e1=118, e2=127)
+    swelled(s, c['strings'], b0, 0, 7.9, [r + 24], 74, e0=80, e1=116, e2=127)
+    toms(s, b0 + 1, 3, 86)
+
+
+def ls_list(s, c, b0, _arg):
+    """the ship listing: the orchestra on the dotted quarters across both bars (3+3+3+3+3+1 eighths), held, the
+    hits and the timpani with them, the motor's sixteenths keeping the time under it; the brass in a long line over
+    it (E flat held, then D: into E flat minor), the horn under that"""
+    strokes = (0, 1.5, 3, 4.5, 6, 7.5)
+    s.crash(b0, 0, 106)
+    for k, b in enumerate((b0, b0 + 1)):
+        acc = [int(x * 4) - 16 * k for x in strokes if 4 * k <= x < 4 * k + 4]
+        motor16(s, c['motor'], b, 62 + 4 * k, accents=acc)
+    v = Voicer(55, 67, 2)
+    for i, x in enumerate(strokes):
+        b, beat = b0 + int(x // 4), x % 4
+        h = chord(s.sym_at(b, beat))
+        dur = min(1.45, 7.95 - x)
+        q = in_range(h.bass, 36, 47)
+        s.play(c['low'], b, beat, dur, q, 94 if i in (0, 3) else 88)
+        s.play(c['horn2'], b, beat, dur, v.next(h), 84 if i in (0, 3) else 78)
+        s.play(c['timpani'], b, beat, .5, in_range(h.bass, 33, 44), 92 if i in (0, 3) else 84)
+        hit(s, c['hit'], b, beat, 112 if i in (0, 3) else 104)
+    sung(s, c['brass'], b0, ['Eb5:0:4', 'Eb5:0:2 D5:2:1.9'], 92, e0=96, e1=127, e2=110)
+    sung(s, c['horn'], b0, ['G4:0:4', 'Ab4:0:2 F4:2:1.9'], 88, e0=96, e1=127, e2=110)
+
+
+def ls_cry(s, c, b0, _arg):
+    """the last stand's cry: the brass and the horn an octave under it (G, C, a long E flat; F, E flat, a long D)
+    over the motor and the low strings on the chords, the strings holding them; the hits on the 3+3+2, the timpani
+    in eighths on the bass, swelling"""
+    cry = ['G4:0:.5 C5:.5:.5 Eb5:1:3', 'F5:0:1.5 Eb5:1.5:.5 D5:2:1.9']
+    s.crash(b0, 0, 108)
+    sung(s, c['brass'], b0, cry, 94, e0=100, e1=127, e2=116)
+    s.tune(c['horn'], b0, [up(t, -12) for t in cry], 90)
+    s.pad(c['strings'], range(b0, b0 + 2), 63, 76, 2, 66)
+    for k, b in enumerate((b0, b0 + 1)):
+        motor16(s, c['motor'], b, 64 + 4 * k)
+        low8(s, c['low'], b, 82 + 2 * k)
+        for beat in ACC332:
+            hit(s, c['hit'], b, beat, 112 if beat == 0 else 102)
+        for e in range(8):
+            q = in_range(chord(s.sym_at(b, e * .5)).bass, 31, 42)
+            s.play(c['timpani'], b, e * .5, .3, q, 70 + 2 * (8 * k + e) + (8 if e % 2 == 0 else 0))
+
+
+def ls_brace(s, c, b0, _arg):
+    """bracing for it: the dominant two bars over the timpani rolling on G from nothing, the motor and the low
+    strings on the G pedal, the second horn holding it; the brass, the horn an octave under and the strings an
+    octave over climbing a minor third each half bar (D, F, A flat, B: the diminished seventh over G), swelling to
+    full; the hits on the second bar's 3+3+2, the toms down into C minor's downbeat (Abandon Ship's first bar, or
+    this one's)"""
+    s.crash(b0, 0, 96)
+    hit(s, c['hit'], b0, 0, 104)
+    s.roll(c['timpani'], b0, 0, 8, 'G1', 30, 118, step=0.125)
+    for k, b in enumerate((b0, b0 + 1)):
+        motor16(s, c['motor'], b, 60 + 8 * k, pedal=7)
+        low8(s, c['low'], b, 76 + 8 * k, pedal=7)
+    for beat, v in zip(ACC332, (106, 110, 114)):
+        hit(s, c['hit'], b0 + 1, beat, v)
+    line = ['D5:0:2 F5:2:2', 'Ab5:0:2 B5:2:1.9']
+    for ch, semis, vel in ((c['brass'], -12, 92), (c['horn'], -24, 88), (c['strings'], 0, 70)):
+        s.tune(ch, b0, [up(t, semis) for t in line], vel)
+        s.ramp(ch, b0, 2, 56, 127)
+    s.play(c['horn2'], b0, 0, 7.9, 'G3', 84)
+    s.ramp(c['horn2'], b0, 2, 60, 127)
+    toms(s, b0 + 1, 3, 88)
+
+
+LS_BURSTS = {'sinking': (lambda _a: ['Cm G/B Cm/Bb F/A', 'Fm/Ab G'], ls_sinking),
+             'rising': (lambda _a: ['Cm C#dim7 G/D Cm/Eb', 'Fm G'], ls_rising),
+             'breach': (lambda r: ['%s/%s' % (NAMES[(r + 1) % 12], NAMES[r % 12])] * 2, ls_breach),
+             'list': (lambda _a: ['Cm', 'Ab Bb'], ls_list),
+             'cry': (lambda _a: ['Cm', 'Ab G'], ls_cry),
+             'brace': (lambda _a: ['G', 'G7b9'], ls_brace)}
+LS_PLAN = [('sinking', 0), ('fight', 'scissors', 30, 4),         # the blades for everyone (ends on D flat)
+           ('breach', 0), ('fight', 'intercept', 26, 4),        # the call and answer for everyone
+           ('list', 0), ('fight', 'checksix', 25, 4),           # the riff in E flat minor, the sighs (ends on B flat)
+           ('rising', 0), ('fight', 'intercept', 22, 4),        # the build (into the breach on G)
+           ('breach', 7), ('fight', 'checksix', 9, 4),          # the brass's sighs, the riff replying
+           ('cry', 0), ('fight', 'scissors', 26, 2),            # the cut's two blades (ends on D flat)
+           ('brace', 0)]
+
+
+def last_stand():
+    form = []
+    for step in LS_PLAN:
+        form += ['Cm'] * step[3] if step[0] == 'fight' else LS_BURSTS[step[0]][0](step[1])
+    s = in_time(Piece(BATTLE_BPM, 2518, form, level=-0.6))
+    parts = orchestra(s)
+    for c in parts.values():
+        s.cc(c, 0, 0, 11, 127)
+    n = len(form)                                   # 36 bars, 61.7 s
+    s.loop_at(0)
+    b = 0
+    for step in LS_PLAN:
+        if b < n - 2:                               # (a "sect" at each step but the brace: 12)
+            s.sect(b)
+        if step[0] == 'fight':
+            excerpt(s, quoted2(step[1]), step[2], step[3], b)
+            b += step[3]
+        else:
+            restore(s, b)
+            LS_BURSTS[step[0]][1](s, parts, b, step[1])
+            b += 2
+    s.end(n)
+    return s
+
+
+SONGS = {'PANIC1B.MID': damage_report, 'PANIC2B.MID': reroute_power, 'PANIC3B.MID': last_stand}

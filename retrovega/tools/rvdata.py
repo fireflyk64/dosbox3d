@@ -80,7 +80,7 @@ MUSIC_FILES = ['BRIEF', 'BAR', 'LAUNCH', 'WIN', 'LOSE', 'QUARTERS', 'LOUNGE', 'B
                'CRUISE1', 'CRUISE2', 'CRUISE3', 'CRUISE4', 'CRUISE5', 'CRUISE6', 'CRUISE7', 'CRUISE8',
                'CRUISE9', 'CRUISE10', 'CRUISE11', 'CRUISE12',
                'HOMEWARD', 'HOMELOSS', 'BATTLE1', 'BATTLE2', 'BATTLE3', 'BATTLE4', 'BATTLE5', 'BATTLE6',
-               'ROCKS', 'ROCKS2', 'PANIC1', 'PANIC2', 'PANIC3', 'PANIC1B', 'PANIC2B', 'LOST', 'LOST2',
+               'ROCKS', 'ROCKS2', 'PANIC1', 'PANIC2', 'PANIC3', 'PANIC1B', 'PANIC2B', 'PANIC3B', 'LOST', 'LOST2',
                'VICTORY1', 'VICTORY2', 'VICTORY3', 'VICTORY4', 'VICTORY5', 'VICTORY6', 'TRAGEDY',
                'CAPLOST', 'CAPLOST2']   # (CAPLOST, CAPLOST2: LOST and LOST2 once, as a sting, for a capital ship of ours
                                         # destroyed in flight: score.c)

@@ -130,10 +130,18 @@ static int song_for(int mood)
                                            review, 2026-11-17, "one more asteroid tune", "one more of this level of
                                            panic to randomly select", "another systems failing one") */
         return music_pick(2) ? RV_MUSIC_ROCKS2 : RV_MUSIC_ROCKS;
-    case PANIC:
-        return g_sc.panic < 2 && music_pick(2) ? RV_MUSIC_PANIC1B + g_sc.panic : RV_MUSIC_PANIC1 + g_sc.panic;
+    case PANIC:                         /* (one of its level's two by the dice; then each pass the other: panic_other) */
+        return music_pick(2) ? RV_MUSIC_PANIC1B + g_sc.panic : RV_MUSIC_PANIC1 + g_sc.panic;
     }
     return RV_MUSIC_TRAGEDY;
+}
+
+/* the panic's other song at its level (the user, 2026-11-17, of Abandon Ship: "we probably need a similar variant for
+ * this one so players arent stuck in this song forever"): a panic stays, the hull not mending in flight, and the
+ * third's one song went round and round; now each pass of one, the other follows on, from its loop (follow) */
+static int panic_other(int cue)
+{
+    return cue >= RV_MUSIC_PANIC1B ? cue - (RV_MUSIC_PANIC1B - RV_MUSIC_PANIC1) : cue + (RV_MUSIC_PANIC1B - RV_MUSIC_PANIC1);
 }
 
 /* the way home's next follow-on (the user, 2026-11-17, of Homeward: "This piece gets old very fast. We may need the
@@ -181,13 +189,13 @@ static void follow(int mood)
     }
     if (now != g_sc.cue || music_then_cue() >= 0)
         return;
-    next = g_sc.queued >= 0 ? g_sc.queued : mood == HOME ? home_next() : next_of(mood == FIGHT);   /* (asked for, gone
-                                           with a sting's ring: again) */
+    next = g_sc.queued >= 0 ? g_sc.queued : mood == HOME ? home_next() : mood == PANIC ? panic_other(g_sc.cue)
+         : next_of(mood == FIGHT);      /* (asked for, gone with a sting's ring: again) */
     if (mood != FIGHT)
         took = music_then(next, -1, 0);
     else
         took = music_then(next, music_sects(next) ? (int)(r % music_sects(next)) : -1, 1 + (int)(r / 7 % 2));
-    if (took && g_sc.queued < 0) {
+    if (took && g_sc.queued < 0 && mood != PANIC) {
         if (mood == HOME)
             g_sc.home_n = (unsigned char)((g_sc.home_n + 1) % HOME_EVERY);
         if (mood != HOME || next != home_cue())
@@ -201,7 +209,8 @@ static void follow(int mood)
 /* the test (/scoretest): calm, a rock field, a fight, the next battle chained on, a victory and a tragedy over it,
  * the three panics, the way home won and lost, dead.  /scoretest 2, the remixes: calm long enough for the next
  * cruise song to follow on, a fight long enough for the battles' blocks to be cut together, the way home.
- * /scoretest 3, the cycle's end: calm only, from Waypoint, Starwake after it, then Outbound */
+ * /scoretest 3, the cycle's end: calm only, from Nightside, Starfall after it, then Outbound.  /scoretest 4, the third
+ * panic for minutes: Abandon Ship and its sibling in turn */
 static void test_tick(unsigned long now)
 {
     static const unsigned char __far at1[] = { 8, 14, 22, 30, 38, 52, 60, 68, 78, 88, 98 };
@@ -210,6 +219,14 @@ static void test_tick(unsigned long now)
     unsigned steps = g_score_test == 2 ? sizeof at2 : sizeof at1;
     if (g_score_test == 3) {
         follow(CALM);
+        return;
+    }
+    if (g_score_test == 4) {            /* (the third panic, long: its two songs in turn) */
+        if (g_sc.mood != PANIC) {
+            g_sc.panic = 2;
+            play(PANIC);
+        } else
+            follow(PANIC);
         return;
     }
     if (g_score_test == 2 && (g_sc.mood == CALM || g_sc.mood == FIGHT))
@@ -315,7 +332,8 @@ void score_tick(int landing)
         if (mood != PANIC || level > g_sc.panic) {
             g_sc.panic = level;
             play(PANIC);
-        }
+        } else
+            follow(PANIC);              /* (its two songs in turn) */
         return;                         /* (a panic stays: the hull does not mend in flight) */
     }
     if (nearby || (mood == FIGHT && now - g_sc.quiet_at < CALM_AFTER))

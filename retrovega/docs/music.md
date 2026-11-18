@@ -150,13 +150,14 @@ every flight piece rewritten for the orchestra, and the score's remixes.
 | PANIC3 | Abandon Ship | 140 to 200 | shorter quotes, wilder bursts: panic in tritones, hope dashed, dashed harder, a cluster, the call a tritone off; the last six bars speeding up into the loop |
 | PANIC1B | Damage Report | C, 140 | Hull Breach's calmer sibling: the motor on its C pedal, low strings on 3+3+2, a timpani heartbeat, a sighing horn tune over the pedal, Contact's call at half speed, one small burst of alarm in eight bars |
 | PANIC2B | Reroute Power | C (F minor in the middle), 140 | Systems Failing's focused sibling (the user: "so the player has time to make it right"): one steady pulse under a four-bar chord cycle, one clear step-step-hold tune on the horn, the brass, the strings, then everyone; the alarms short, once a phrase |
+| PANIC3B | Last Stand | C, 140 | Abandon Ship's sibling, the two in turn a pass each: the newer battles quoted (Scissors' riff and climb, Intercept's call and answer and its build, Check Six's turn into E flat minor and the brass's sighs), two-bar bursts between in half-step colours (the bass falling under a held high C, D flat over the C pedal, the ship listing on every dotted quarter, the climb, the cry on the brass), bracing on G into C minor at 140 |
 | VICTORY1..3 | Splash One..Three | C, D, B flat | bittersweet: bVI-bVII-I, the minor plagal, a deceptive turn |
 | VICTORY4 | Splash Four | A, 116 | its own, 6 s (the user: "kinda repetitive for the previous--maybe 2 seconds longer with a surprise or undertone"): D minor over a low A held on the horn, the timpani under the call, which lifts to B flat where A was due; E7, then A major with the crash and the harp |
 | VICTORY5..6 | Splash Five..Six | D, B flat | Splash Two's and Three's siblings: the minor plagal over a bass falling B, B flat; the deceptive turn struck on G with the timpani |
 | TRAGEDY | Wingman Lost | B flat minor, 52 | a funeral march, 14 s |
 | LOST2 | Empty Deck | B flat minor, 46 | Carrier Lost's sibling (tools/stings2.py): hollow fifths falling B flat, A flat, G flat, F; the far horn picks up the way home's tune where Carrier Lost broke off and stops short; the oboe falls once from far above |
 
-Some 34 minutes of music, every piece its own, each going round from
+Some 35 minutes of music, every piece its own, each going round from
 its loop. `tools/flightsongs.py` has Outbound and the way home and gathers
 the rest from `cruise_a.py`, `cruise_b.py`, `battles.py` and `panics.py`,
 and their siblings from `cruise_c.py`, `battles2.py` and `panics2.py`
@@ -211,9 +212,13 @@ anything. The rules come in this order:
    is not dead but the third panic; it used to be "hull 0", and the
    tragedy played on the reserve with the player still flying.
 2. **Panic:** with the hull under 60%, 35% and 15%, the first, second and
-   third panic song; the first two each have a sibling (Damage Report,
-   Reroute Power), one or the other by the music's dice. A panic stays,
-   since the hull does not mend in flight.
+   third panic song; each has a sibling (Damage Report, Reroute Power, and
+   since 2026-11-17 PANIC3B for Abandon Ship), one or the other by the
+   music's dice. A panic stays, since the hull does not mend in flight, so
+   its two songs take turns: as one comes in, the other is asked to follow
+   on after its pass, from its loop (`panic_other`, `follow`; the user, of
+   Abandon Ship: "we probably need a similar variant for this one so
+   players arent stuck in this song forever").
 3. **Fight:** an enemy within 4,000 km starts a fight, a little beyond the
    3,000 km of its hail. Twelve seconds with none within 6,000 km end it.
    They spawn some 5,000 km out, so a flight begins calm.
@@ -332,7 +337,9 @@ the flight. The schedule, in seconds:
 100 s (the battles cut together block by block), the way home
 (`tests/remix.txt`, `/flight 220`). `/scoretest 3` is the cycle's end:
 calm only, from Nightside, Starfall spliced on after it, then
-Outbound (`tests/cycle.txt`, `/flight 160`). The music log's lines carry the music clock
+Outbound (`tests/cycle.txt`, `/flight 160`). `/scoretest 4` is the third panic for
+minutes: Abandon Ship and its sibling in turn (`tests/panics.txt`,
+`/flight 200`). The music log's lines carry the music clock
 (`@ticks`, 240 a second), so a log rendered with `oplrender --log` can be
 cut and labelled.
 
@@ -351,11 +358,11 @@ QUARTER2, BAR or BAR2, LAUNCH or LAUNCH2, WIN or WIN2, LOST or LOST2, one of a f
 
 **Memory:**
 
-- **Loading:** the 49 songs load at start-up into XMS, some 146,000
-  events (860 KB; 95,000 and 570 KB for the first 28). Each has a
+- **Loading:** the 50 songs load at start-up into XMS, some 153,000
+  events (900 KB; 95,000 and 570 KB for the first 28). Each has a
   descriptor in conventional memory (36 bytes, its 12 blocks' places in
   it; 24 until the siblings, when 12 was the most any song had) and a
-  name (13 bytes): 2.4 KB for the 49. RV.EXE keeps the descriptors
+  name (13 bytes): 2.4 KB for the 50. RV.EXE keeps the descriptors
   fixed; the test builds take them from the heap in `music_init`, as
   RVP.EXE's play tests start no music and its heap had no 1.7 KB to spare
   (the shot list found no room). The far heap grows to read each song's tracks, and
