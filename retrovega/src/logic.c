@@ -5271,7 +5271,8 @@ void logic_damage_snap(int16_t save)
  * the dice: the hull (4), a count, dead past the type's hull_hits of them (a count (hull + hull_hits) / (hull_hits + 1)
  * of damagePoints: the old table's Dralthi 7, Krant 6, Salthi 5); the core (0), a point; from behind (the old game's
  * test is the bolt's way against the nose: a bolt flying the ship's own way struck its rear, where ours take the hit's
- * place behind its middle) one that kills outright (2), the engine (7) and another (1); from the front a gun lost (5),
+ * place behind its middle) one that kills outright (2), the engine (7) and another (1); from the front an entry of its
+ * list lost (5: a gun, or a launcher's missile),
  * gunDamage up to 5 (6) and the engine flag (8), each while there is one to lose; the shields' generator (3) leaves
  * both shields down for good and spends nothing.  A point that falls where nothing is to spend is rolled again (never
  * for ever: the hull and the core always spend, two of the nine at the fewest, so a point takes 4.5 rolls on average at
@@ -5281,6 +5282,21 @@ void logic_damage_snap(int16_t save)
  * where ours had died at the hull's points from any side, 13 hits at most (182) and a Krant's 6.  Returns what
  * damagePoints takes, 0xFFFF a kill outright */
 #define ROULETTE_ROLLS 8
+/* the old game's list entries gun record g of s stands for (the roulette's system 5, ovr143:10AA: an entry of the ship's
+ * whole list by the dice, its guns, its missiles and its decoys alike, removed): a gun not destroyed one, a launcher its
+ * rounds, else none.  (Its Dralthi had seven, two lasers, three decoys and two heat seekers, and took some 22 laser hits
+ * head on where the Nicander, its two guns alone counted, took 19; tests/wc1/README.md "The guns against the old
+ * game's") */
+static int16_t list_entries(int16_t s, int16_t g)
+{
+    const RvWeapon __far *w = weapon(GUN_TYPE(s, g));
+    if (!w || (GUN_STATE(s, g) & GUN_DESTROYED))
+        return 0;
+    if (w->kind == RV_WK_GUN)
+        return 1;
+    return w->kind == RV_WK_MISSILE || w->kind == RV_WK_TORPEDO || w->kind == RV_WK_ROCKET ? GUN_STATE(s, g) & 0x7F : 0;
+}
+
 static uint16_t fighter_roulette(int16_t s, uint16_t left, const RvShipType __far *t, int16_t behind)
 {
     uint16_t points = left / 6 ? left / 6 : 1, took = 0;
@@ -5311,22 +5327,24 @@ static uint16_t fighter_roulette(int16_t s, uint16_t left, const RvShipType __fa
             points--;
             took = (uint16_t)(took > 0xFFFFU - hit ? 0xFFFF : took + hit);
             break;
-        case 5:                         /* (from the front: a gun lost, one of those left by the dice) */
+        case 5:                         /* (from the front: an entry of its list lost by the dice, a gun or a missile,
+                                           while it has one: list_entries) */
             if (behind)
                 break;
-            for (g = 0, n = 0; g < GUN_COUNT(s) && g < 16; g++) {
-                const RvWeapon __far *w = weapon(GUN_TYPE(s, g));
-                if (w && w->kind == RV_WK_GUN && !(GUN_STATE(s, g) & GUN_DESTROYED))
-                    n++;
-            }
+            for (g = 0, n = 0; g < GUN_COUNT(s) && g < 16; g++)
+                n += list_entries(s, g);
             if (!n)
                 break;
             for (g = 0, n = (int16_t)(game_rand() % n); g < GUN_COUNT(s) && g < 16; g++) {
-                const RvWeapon __far *w = weapon(GUN_TYPE(s, g));
-                if (w && w->kind == RV_WK_GUN && !(GUN_STATE(s, g) & GUN_DESTROYED) && !n--) {
-                    GUN_STATE(s, g) |= GUN_DESTROYED;
+                int16_t e = list_entries(s, g);
+                if (n < e) {
+                    if (weapon(GUN_TYPE(s, g))->kind == RV_WK_GUN)
+                        GUN_STATE(s, g) |= GUN_DESTROYED;
+                    else
+                        GUN_STATE(s, g)--;   /* (a round gone: its rounds are over n, the destroyed bit clear) */
                     break;
                 }
+                n -= e;
             }
             points--;
             break;
