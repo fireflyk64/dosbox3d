@@ -21,7 +21,7 @@ import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFil
 import { newRoomCode, retagRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS, CALLSIGNS, pickCallsign, givesWay, sameName } from "./chatfilter.js";
 import { initHall, OTHER_SERVER, serverDown } from "./hall.js";
 import { createSetProvider, readTarGz } from "./rvsets.js";
-import { PAGE_BUILD, PAGE_SITE, buildFields, compareBuild, builtWhen, RELOAD_HOW } from "./build.js";
+import { buildFields, compareBuild, RELOAD_HOW } from "./build.js";
 
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
@@ -1003,31 +1003,21 @@ const sayHello = (to, reply) => sendLobby({ t: "hello", name: myName(), flying: 
   latency: isHost() ? lobby.latency : undefined, fps: isHost() ? lobby.fps : undefined,
   capHull: isHost() ? lobby.capHull : undefined, private: isHost() ? privateOn() : undefined, ...buildFields() }, to);
 
-// Another page in the room is another build (build.js): said once a seat and a verdict.  A page from before builds
-// were compared shows nothing of ours but the chat, so it is asked there, that pilot alone.
+// Another page in the room is another version (build.js): a line once a seat and a verdict, nothing when the same.  A
+// page from before builds were compared hears nothing of ours but the chat: it is asked there, that pilot alone.
 function buildNote(seat, m, rel) {
   const who = esc(typeof m.name === "string" ? m.name : `Player ${seat + 1}`);
-  if (rel === "newer") {
-    chatLine(`${who}'s page is a newer build than this one (built ${esc(builtWhen(m.built))}): ${RELOAD_HOW} before you fly together, or your games will not match.`, "sys");
-    status(`This page is an older build than ${typeof m.name === "string" ? m.name : `Player ${seat + 1}`}'s: ${RELOAD_HOW}, then join the room again.`);
-  } else if (rel === "older") {
-    chatLine(`${who}'s page is an older build than this one (built ${esc(builtWhen(m.built))}): it has told them to reload.`, "sys");
-  } else if (rel === "site") {
-    chatLine(`${who} is on another page of this site (${esc(m.site)}, this one ${esc(PAGE_SITE)}): its game is not this one's. Fly together from the same page.`, "sys");
-  } else if (rel === "none") {
-    // (an older page of this site, or, until every site's page compares builds, another site's: /dosbox/ and the
-    // terrain branch's /terrain/ meet in one lobby)
-    chatLine(`${who}'s page is another build, from before pages compared their builds (an older page, or another site's): they have been asked in the chat to reload it, or to meet on this page.`, "sys");
-    sendLobby({ t: "chat", name: myName(), text: `(automatic) Our pages are different builds, so our games would not match: mine is ${location.host}${PAGE_SITE}, built ${builtWhen(PAGE_BUILD.at)}. If yours is the same address, please ${RELOAD_HOW}; if not, let us meet on one page.` }, seat);
-  }
+  if (rel === "newer") chatLine(`${who} has a newer version of this page: ${RELOAD_HOW}.`, "sys");
+  else if (rel === "older" || rel === "none") chatLine(`${who}'s page is out of date${rel === "none" ? " (asked to reload)" : ""}.`, "sys");
+  else if (rel === "site") chatLine(`${who} is on another page (${esc(m.site)}): fly from one page.`, "sys");
+  if (rel === "none") sendLobby({ t: "chat", name: myName(), text: `(automatic) Your page is out of date: please ${RELOAD_HOW}.` }, seat);
 }
-// Why this page does not fly along with seat's game (its page another build), or "" when it may (plain text)
+// Why seat's game and this page's would not match (build.js), plain text, or ""
 function buildApart(seat) {
   const rel = lobby.builds.get(seat), who = lobby.names.get(seat) || `Player ${seat + 1}`;
-  return rel === "newer" ? `${who}'s page is a newer build than this one: ${RELOAD_HOW}, then join the room again.`
-    : rel === "older" ? `${who}'s page is an older build than this one: they need to reload it before you can fly together.`
-    : rel === "none" ? `${who}'s page is another build (an older page, or another site's): they need to reload it, or to come to this page, before you can fly together.`
-    : rel === "site" ? `${who} is on another page of this site: fly together from the same page.` : "";
+  return rel === "newer" ? `This page is out of date: ${RELOAD_HOW}.`
+    : rel === "older" || rel === "none" ? `${who}'s page is out of date.`
+    : rel === "site" ? `${who} is on another page.` : "";
 }
 
 // Another pilot (seat `seat` of the lobby or the room this page is seat
@@ -1406,7 +1396,7 @@ function onLobbyEvent(ev) {
         lobby.flying.add(0); renderRoster();
         followHost();
         const theirs = gameById(lobby.games.get(0) || ""), apart = buildApart(0);
-        if (apart) { status(`The host started the game, but ${apart}`); chatLine(esc(apart), "sys"); }
+        if (apart) status(apart);
         else if (source && theirs && theirs.id !== source.game.id) status(`The host started ${theirs.title}, and you have ${source.game.title} loaded. Load ${theirs.title} above, then press Fly to join.`);
         else if (source) void start(false);
         else status("The host started the game. Load your game files above, then press Fly to join.");
@@ -1801,7 +1791,7 @@ buildMissionMenu();
 
 $("fly").addEventListener("click", () => {
   if (!source || !lobby.game || running || guestWaits()) return;
-  if (isHost()) for (const [seat, rel] of lobby.builds) if (rel !== "same") chatLine(esc(buildApart(seat)) + " They will not fly along until then.", "sys");
+  if (isHost()) for (const [seat, rel] of lobby.builds) if (rel !== "same") chatLine(`${esc(lobby.names.get(seat) || `Player ${seat + 1}`)} won't fly along (${rel === "site" ? "another page" : rel === "newer" ? "this page is out of date" : "their page is out of date"}).`, "sys");
   if (isHost()) sendLobby({ t: "start", game: source.game.id, mission: missionKey(lobby.mission), rocks: lobby.rocks, wingBumps: lobby.wingBumps, latency: lobby.latency, fps: lobby.fps, capHull: lobby.capHull });
   void start(true);
 });

@@ -49,18 +49,18 @@ async function join(page, code, seats) {
 // -- the lobby: the older page learns it is older ---------------------------------------------------------------
 const alpha = await open("ALPHA", { id: "aaa-2000", at: 2000 });
 const bravo = await open("BRAVO", { id: "bbb-1000", at: 1000 });
-check("in the lobby the older page says it is older, and how to reload", await sees(bravo, "hallLog", /This page is an older build than ALPHA's.*Ctrl\+Shift\+R/), (await text(bravo, "hallLog")).slice(-300));
-check("and the newer one says nothing of it", !/older build/.test(await text(alpha, "hallLog")), (await text(alpha, "hallLog")).slice(-300));
+check("in the lobby the older page says it is older, and how to reload", await sees(bravo, "hallLog", /A newer version of this page is out: reload with Ctrl\+Shift\+R/), (await text(bravo, "hallLog")).slice(-300));
+check("and the newer one says nothing of it", !/newer version|out of date/.test(await text(alpha, "hallLog")), (await text(alpha, "hallLog")).slice(-300));
 
 // -- a room: both say it; the host's start does not take the older page along -------------------------------------
 const room1 = `RV-${run}1`;
 await join(alpha, room1);
 await join(bravo, room1);
-check("in a room the newer page says the other's is older", await sees(alpha, "chatLog", /BRAVO's page is an older build than this one/), (await text(alpha, "chatLog")).slice(-300));
-check("the older page says it is older, how to reload, in the chat and the status line, its Fly held", (await sees(bravo, "chatLog", /ALPHA's page is a newer build than this one.*Ctrl\+Shift\+R/)) && (await sees(bravo, "status", /ALPHA's page is a newer build than this one: reload the page with Ctrl\+Shift\+R/)) && (await bravo.$eval("#fly", (b) => b.disabled)), [(await text(bravo, "chatLog")).slice(-300), await text(bravo, "status")]);
+check("in a room the newer page says the other's is older", await sees(alpha, "chatLog", /BRAVO's page is out of date\./), (await text(alpha, "chatLog")).slice(-300));
+check("the older page says it is older, how to reload, in the chat and the status line, its Fly held", (await sees(bravo, "chatLog", /ALPHA has a newer version of this page: reload with Ctrl\+Shift\+R/)) && (await sees(bravo, "status", /This page is out of date: reload with Ctrl\+Shift\+R/)) && (await bravo.$eval("#fly", (b) => b.disabled)), [(await text(bravo, "chatLog")).slice(-300), await text(bravo, "status")]);
 await alpha.click("#fly");
-check("the host flying: its page says the older one will not fly along", await sees(alpha, "chatLog", /BRAVO's page is an older build than this one: they need to reload it before you can fly together\. They will not fly along/), (await text(alpha, "chatLog")).slice(-300));
-check("and the older page does not follow the start, and says why", (await sees(bravo, "status", /The host started the game, but ALPHA's page is a newer build/)) && !(await bravo.evaluate(() => !!(window.DOSBox && window.DOSBox.running))), await text(bravo, "status"));
+check("the host flying: its page says the older one will not fly along", await sees(alpha, "chatLog", /BRAVO won't fly along \(their page is out of date\)/), (await text(alpha, "chatLog")).slice(-300));
+check("and the older page does not follow the start, and says why", (await sees(bravo, "status", /This page is out of date: reload with Ctrl\+Shift\+R/)) && !(await bravo.evaluate(() => !!(window.DOSBox && window.DOSBox.running))), await text(bravo, "status"));
 await alpha.context().close(); await bravo.context().close();
 
 // -- a page from before the check: asked in the chat ------------------------------------------------------------
@@ -69,8 +69,8 @@ const charlie = await open("CHARLIE", { none: true }, { lobby: false });
 const room2 = `RV-${run}2`;
 await join(alpha2, room2);
 await join(charlie, room2);
-check("a page that says nothing of its build is called another build, and asked", await sees(alpha2, "chatLog", /CHARLIE's page is another build, from before pages compared their builds/), (await text(alpha2, "chatLog")).slice(-300));
-check("the old page shows the request as a line of chat: this page's address, and to reload or meet", await sees(charlie, "chatLog", /ALPHA2:\s*\(automatic\) Our pages are different builds.*mine is localhost:\d+\/, built .*please reload the page with Ctrl\+Shift\+R.*; if not, let us meet on one page/), (await text(charlie, "chatLog")).slice(-300));
+check("a page that says nothing of its build is called out of date, and asked", await sees(alpha2, "chatLog", /CHARLIE's page is out of date \(asked to reload\)/), (await text(alpha2, "chatLog")).slice(-300));
+check("the old page shows the request as a line of chat", await sees(charlie, "chatLog", /ALPHA2:\s*\(automatic\) Your page is out of date: please reload with Ctrl\+Shift\+R/), (await text(charlie, "chatLog")).slice(-300));
 await alpha2.context().close(); await charlie.context().close();
 
 // -- another site's page --------------------------------------------------------------------------------------
@@ -79,7 +79,7 @@ const delta = await open("DELTA", { id: "ddd-3000", at: 3000, site: "/terrain/" 
 const room3 = `RV-${run}3`;
 await join(alpha3, room3);
 await join(delta, room3);
-check("a page of another site is named as such, not newer", (await sees(alpha3, "chatLog", /DELTA is on another page of this site \(\/terrain\/, this one \//)) && !/newer build/.test(await text(alpha3, "chatLog")), (await text(alpha3, "chatLog")).slice(-300));
+check("a page of another site is named as such, not newer", (await sees(alpha3, "chatLog", /DELTA is on another page \(\/terrain\/\): fly from one page/)) && !/newer version|out of date/.test(await text(alpha3, "chatLog")), (await text(alpha3, "chatLog")).slice(-300));
 await alpha3.context().close(); await delta.context().close();
 
 // -- the same build: nothing said ----------------------------------------------------------------------------
@@ -90,7 +90,7 @@ await join(echo, room4);
 await join(fox, room4);
 await sees(echo, "chatLog", /FOX is in the room/);
 await new Promise((r) => setTimeout(r, 2000));
-check("two pages of one build say nothing of builds", !/build/.test(await text(echo, "chatLog")) && !/build/.test(await text(fox, "chatLog")), [(await text(echo, "chatLog")).slice(-200), (await text(fox, "chatLog")).slice(-200)]);
+check("two pages of one build say nothing at all of it", !/version|out of date|another page|build/.test(await text(echo, "chatLog")) && !/version|out of date|another page|build/.test(await text(fox, "chatLog")), [(await text(echo, "chatLog")).slice(-200), (await text(fox, "chatLog")).slice(-200)]);
 
 await browser.close();
 const passed = results.filter(Boolean).length;

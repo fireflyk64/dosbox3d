@@ -25,8 +25,5 @@ export function compareBuild(m) {
   return at > PAGE_BUILD.at ? "newer" : "older";
 }
 
-// When a build was made, as the pilot reads it.
-export const builtWhen = (at) => (at ? new Date(at * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "earlier");
-
 // How to reload for certain (a plain reload may keep a page's files from the cache a while).
-export const RELOAD_HOW = "reload the page with Ctrl+Shift+R (Cmd+Shift+R on a Mac)";
+export const RELOAD_HOW = "reload with Ctrl+Shift+R (Cmd+Shift+R on a Mac)";
