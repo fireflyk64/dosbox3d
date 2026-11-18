@@ -51,7 +51,7 @@
   h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 7px; font: 700 11px/1.2 var(--mono); letter-spacing: .2em; text-transform: uppercase; color: var(--green); }
   .head { display: flex; align-items: center; gap: 8px; min-height: 26px; margin-bottom: 7px; }
   .head h2 { margin: 0; }
-  .head .acts { display: flex; gap: 6px; margin-left: auto; }
+  .head .acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
   .head button { padding: 6px 12px; }
   h2 b { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; background: var(--amber); color: #1a1200; font-weight: 800; letter-spacing: 0;
     clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px); }
@@ -103,10 +103,10 @@
   #sourceButtons button { padding: 5px 9px; }
   /* the saved copies, one line: "Saved here: Wing Commander (3.2 MB, forget) · Wing Commander II (12 MB, forget)" */
   #savedList { color: var(--muted); font: 11.5px/1.45 system-ui, sans-serif; }
-  #demos { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 8px; }
+  #demos { margin-top: 8px; }
   #demos button { padding: 5px 9px; }
   #demos .lead { color: var(--muted); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; }
-  #demos .hint { flex: 1 1 100%; margin: 0; }
+  #demos .hint { margin: 4px 0 0; }
   #demos a, #sourceStatus a, #dropzone a { color: var(--amber); }
   #demos a.dl { padding: 4px 9px; border: 1px solid var(--green2); background: #0a2015; color: var(--green); text-decoration: none; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
   #demos a.dl:hover { background: #113a23; color: #c9ffdc; }
@@ -116,11 +116,10 @@
   #sourceButtons button.link:hover:not(:disabled) { color: #ffe07a; }
   #sourceButtons button.link:disabled { background: none; color: #41614f; }
   #programLabel select { max-width: 100%; }
-  #gameList { display: inline-flex; flex-wrap: wrap; gap: 2px 10px; flex: 1 1 100%; }
-  #sourceButtons #gameList button.link { text-decoration: none; color: var(--muted); }
-  #sourceButtons #gameList button.link:hover:not(:disabled) { color: var(--amber); }
-  #sourceButtons #gameList button.link.on { color: var(--green); }
-  #sourceButtons #gameList button.link:disabled { color: #41614f; }
+  #gameList { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; flex: 1 1 100%; }
+  #sourceButtons #gameList button { padding: 3px 8px; font-size: 10px; }
+  #sourceButtons #gameList button.on { background: var(--green2); color: #03130a; border-color: var(--green); cursor: default; }
+  #demos summary { cursor: pointer; color: var(--muted); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; }
   #pickerLabel, #programLabel { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; }
 
   /* the public lobby */
@@ -284,13 +283,14 @@
         <span class="fresh">Nothing is uploaded: the files are unpacked and kept in this browser only.</span>
       </div>
       <div id="sourceStatus">No game files yet.</div>
-      <div id="demos">
+      <details id="demos">
+        <summary>Free games and where to get the full ones</summary>
         <p class="hint">RetroVega, Raptor, Terminal Velocity and the TIE Fighter demo are free: pick one (the shareware and the demo are fetched then, and kept in this browser); the dim ones need your own files.
           Exact shareware files (<a href="demos/1rap12.zip">1rap12.zip</a>, <a href="demos/3dtv12.zip">3dtv12.zip</a>).
           Full games: <a href="https://store.steampowered.com/app/358360/" target="_blank" rel="noopener">Raptor, 1994 Classic Edition</a> (Steam: right-click it in your library, <b>Manage &rsaquo; Browse local files</b>, zip the folder; drop the zip on the box above).
           <a href="https://www.gog.com/en/game/terminal_velocity_boosted_edition" target="_blank" rel="noopener">Terminal Velocity</a> (GOG: in the Boosted Edition go to "Terminal Velocity Legacy": drop its installer, <b>setup_terminal_velocity_1.2_&hellip;.exe</b>).
           TIE Fighter demo: get the <a href="https://www.gog.com/en/game/star_wars_tie_fighter_special_edition" target="_blank" rel="noopener">full version</a> (GOG: drop its Collector's CD (1995) installer on the box above).</p>
-      </div>
+      </details>
     </section>
 
     <section id="hall" class="panel">
@@ -319,6 +319,7 @@
         <h2><b>2</b> Room</h2>
         <div class="acts">
           <button type="button" id="join">Host a room</button>
+          <button type="button" class="secondary" id="joinPrivate" title="Makes the room without saying it in the lobby, and with Private ticked: Join open game does not find it. Only its code or its link (Copy link) brings somebody in">Host private</button>
           <button type="button" class="secondary" id="findRoom">Join open game</button>
           <button type="button" class="secondary" id="share" hidden title="Copies a link that lands a friend in this room">Copy link</button>
           <button type="button" class="secondary" id="leave" hidden title="Leave the room. While the game runs, leaving ends it and reloads the page (it asks first)">Leave room</button>

@@ -1397,7 +1397,16 @@ top-level README for the workflow).  What differs:
   game they want but if none is available they join any room where they have
   the install files available (eg tie demo) or they have it actually
   installed"); it says so in the room's chat, and the menu shows the room's
-  game.  A code the page put in the box leaves it with its room.  The site's
+  game.  That is the top button's; the room panel's "Join open <series>"
+  keeps to the picked game's series (`seriesOf`: Wing Commander and II with
+  their mission disks, TIE Fighter and its demo, every other game its own;
+  the user: "can join TFD or TF, can join WC1 or WC2 but not willy nilly").
+  Host offers its room in the lobby as Advertise does, Fly Alone kept
+  (`hostRoom`, `hostOffered`); **Host private** ticks Private and says
+  nothing; with Players at 1 there is one Host and nothing is said (the
+  user: "the non-private one advertises in the lobby unless players was
+  bumped down to 1").  `?advertise=off` is the page tests' (rooms said by
+  hand).  A code the page put in the box leaves it with its room.  The site's
   /wc, /wc2, /tf, /tfd, /tv, /raptor, /privateer redirect to the page with
   that game asked for (scripts/site-shortcuts.sh).  scripts/web-pick.sh
   checks it with a local lobby server (PICK OK).

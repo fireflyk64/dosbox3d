@@ -419,7 +419,7 @@ function renderPrograms() {
   for (const g of GAMES.filter((x) => x.multiplayer && !x.partOf).sort((x, y) => rank(x) - rank(y))) {
     const here = seen.has(g.id), free = !here && !!demoOf(g.id);
     const b = document.createElement("button");
-    b.type = "button"; b.className = "link" + (g.id === mine ? " on" : ""); b.textContent = g.short || g.title;
+    b.type = "button"; b.className = "secondary" + (g.id === mine ? " on" : ""); b.textContent = g.short || g.title;
     b.dataset.game = g.id;
     b.disabled = !here && !free;
     b.title = here ? `${g.title}: pick it` : free ? `${g.title}: free, fetched when picked and kept in this browser` : `${g.title} needs your own files: drop them in the box below`;
@@ -1355,18 +1355,40 @@ const guestWaits = () => !!lobby.game && !soloRoom() && !isHost()
 // A host alone in its room may fly alone instead (the user: "a Fly Single Player button when they are in a empty
 // lobby which doesn't post it to the channel and starts it as single player.  otherwise same as fly")
 const aloneInRoom = () => !!lobby.game && !soloRoom() && isHost() && !lobby.game.players.some((p) => p.occupied && p.id !== lobby.game.selfId);
+// A game's series: Wing Commander and Wing Commander II with their mission disks, TIE Fighter and its demo; every other
+// game is its own (Privateer too: another kind of game).  The room panel's "Join open ..." keeps to the series of the
+// game picked (the user, 2026-11-17: "restrict to...that series at least (eg can join TFD or TF, can join WC1 or WC2)
+// but not willy nilly"); the top button's takes any.
+const SERIES = { wc1: "wc", wc2: "wc", tf: "tie", tiedemo: "tie" };
+const SERIES_NAMES = { wc: "Wing Commander", tie: "TIE Fighter" };
+function seriesOf(id) {
+  const g = gameById(id);
+  if (!g) return id || "";
+  const base = g.partOf || g.id;
+  return SERIES[base] || base;
+}
+function seriesName(id) {
+  const g = gameById(id), base = g && gameById(g.partOf || g.id);
+  return SERIES_NAMES[seriesOf(id)] || (base ? base.short || base.title : "");
+}
 // The name on the Host button: the game picked, in a word or two.
 const shortTitle = () => { const g = gameInfo(); return g ? g.short || g.title : source ? source.game.title : ""; };
 function updateActions() {
   const wrong = wrongGame();
   $("join").textContent = source ? `Host ${shortTitle()}` : "Host a room";
-  $("join").title = `Makes a room${source ? " of " + source.game.title : ""} and puts you in it as its host: under the code typed in the box, or one made for the game (${gameTag() || "WC"}-4821). Players 1 makes it yours alone`;
+  const one = seatCount() === 1;
+  $("join").title = `Makes a room${source ? " of " + source.game.title : ""} and puts you in it as its host: under the code typed in the box, or one made for the game (${gameTag() || "WC"}-4821). ${one ? "With Players at 1 it is yours alone, said to nobody" : "It is offered in the lobby, for anybody to join; Host private keeps it to those you give its code or link"}`;
+  $("joinPrivate").hidden = !!lobby.game || one;
   $("findRoom").hidden = $("joinCode").hidden = !!lobby.game;
+  const series = source ? seriesName(source.game.id) : "";
+  $("findRoom").textContent = series ? `Join open ${series}` : "Join open game";
+  $("findRoom").title = `Joins a room with a free seat that a pilot in the lobby sits in, of ${series ? "the " + series + " games" : "the game picked"} only (the game picked first): the Game menu then says which. The button at the top of the page takes a room of any game. It never makes a room: Host does`;
   const ready = !!source && !!lobby.game && !running && !wrong;
   $("fly").disabled = !ready || guestWaits();
   // (in a room alone as its host, or in none yet, the lobby's alone: the user's "in a empty lobby")
   $("flySolo").hidden = !source || running || !!wrong || (lobby.game ? !aloneInRoom() : linkWaits() || $("join").disabled)
-    || advertised.has(normalizeCode(lobby.game ? lobby.game.code : $("room").value.trim()));   // (offered in the lobby: not alone)
+    || (advertised.has(normalizeCode(lobby.game ? lobby.game.code : $("room").value.trim()))   // (offered in the lobby by hand: not alone;
+        && !hostOffered.has(normalizeCode(lobby.game ? lobby.game.code : $("room").value.trim())));  // by Host itself: nobody may come)
   $("advertise").hidden = !lobby.game || !lobbyReady() || !lobby.game.players.some((p) => !p.occupied);   // (in flight too)
   if (!running) {
     if (wrong) status(wrong);
@@ -1385,14 +1407,14 @@ function updateActions() {
 // Fly once there is a room to fly from (the same as the Fly button below),
 // before that the step that comes next, and the full screen while the game
 // runs.
-const FIND_TITLE = "Joins a room with a free seat that a pilot in the lobby sits in: one of the game picked in the Game menu when there is one, else one of any game this browser has or can fetch (the Game menu then says which). It never makes a room: Host does";
+const FIND_TITLE = "Joins a room with a free seat that a pilot in the lobby sits in, of any game this browser has or can fetch: one of the game picked in the Game menu when there is one, then one of its series, then any other (the Game menu then says which). It never makes a room: Host does";
 function renderTopAction() {
   const b = $("topAction");
   const step = running ? "screen" : !source ? "files" : !lobby.game ? "room" : "fly";
   b.dataset.step = step;
   b.disabled = step === "fly" && $("fly").disabled;
   if (step === "room") b.disabled = seeking;
-  $("findRoom").disabled = $("joinCode").disabled = seeking || $("join").disabled;
+  $("findRoom").disabled = $("joinCode").disabled = $("joinPrivate").disabled = seeking || $("join").disabled;
   b.textContent = { screen: "Full screen", files: "Load game files", room: "Join open game", fly: "Fly" }[step];
   b.title = { screen: "The game full screen; holding Esc leaves it",
               files: "Your own Wing Commander or Wing Commander II: a .zip of the game folder, or the GOG installer",
@@ -1792,7 +1814,7 @@ function topNote(text, why = "") {
   clearTimeout(topNoteTimer);
   topNoteTimer = setTimeout(() => n.classList.remove("on"), 5000);
 }
-async function joinOpenGame() {
+async function joinOpenGame({ series = false } = {}) {
   if (seeking || lobby.game || running || $("join").disabled) return;
   seeking = true;
   renderTopAction();
@@ -1800,7 +1822,11 @@ async function joinOpenGame() {
   // they join any room where they have the install files available (eg tie demo) or they have it actually installed"):
   // its open rooms in a random order, then every other game's this browser has or can fetch.  A game is fetched only
   // when its room's turn comes.  With no room joined the game picked is the pick again.
+  // `series`: the room panel's button, which keeps to the series of the game picked; the top button takes any game,
+  // the picked one's first, then its series'.
   const mine = source ? source.game.id : "";
+  const kin = (r) => seriesOf(r.game) === seriesOf(mine);
+  const within = series && mine ? seriesName(mine) : "";
   const typed = $("room").value;
   try {
     // (a pilot who had left the lobby comes back for this: its pilots are the ones asked)
@@ -1808,9 +1834,11 @@ async function joinOpenGame() {
     status("Asking the pilots in the lobby for an open game…");
     const found = await hall.findRooms();
     const rooms = found ? found.rooms : [];
-    const fit = rooms.filter(canFly);
+    const able = rooms.filter(canFly);
+    const fit = within ? able.filter(kin) : able;
     for (let i = fit.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [fit[i], fit[j]] = [fit[j], fit[i]]; }
-    fit.sort((a, b) => (b.game === mine) - (a.game === mine));
+    const rank = (r) => (r.game === mine ? 0 : kin(r) ? 1 : 2);
+    fit.sort((a, b) => rank(a) - rank(b));
     for (const r of fit) {
       if (lobby.game || running) return;
       const g = gameById(r.game), d = demoOf(r.game);
@@ -1840,9 +1868,10 @@ async function joinOpenGame() {
     // (A pilot whose page is older than the question does not answer.)
     const silent = found ? found.asked - found.answered : 0;
     const text = !found ? "Not in the lobby: nobody to ask"
-      : `No open game found${silent ? ` (${silent} pilot${silent === 1 ? "" : "s"} did not answer)` : ""}`;
+      : `No open ${within ? within + " " : ""}game found${silent ? ` (${silent} pilot${silent === 1 ? "" : "s"} did not answer)` : ""}`;
     const why = !found ? "Join open game asks the pilots in the lobby (enter it above)."
       : fit.length ? "The open games were full by the time this page got there."
+      : within && able.length ? `The open games in the lobby are other games: "Join open game" at the top of the page takes any.`
       : rooms.length ? "The open games in the lobby are for games this browser has no files for."
       : silent ? "A page older than Join open game does not answer: a reload brings the new one."
       : "Nobody in the lobby sits in a room with a free seat that is not private: Host makes one, and Advertise offers it there.";
@@ -1894,12 +1923,32 @@ window.addEventListener("beforeunload", (ev) => { if (running && !leavingForGood
 
 // Host makes the room (or sits down in it, when the code typed is a room that is there); Join, and Enter in the code's
 // box, only join a room that exists; Join open game asks the lobby.
-$("join").addEventListener("click", () => void joinRoom());
+// Host offers its room in the lobby, as Advertise does (the user, 2026-11-17: "HOST WING COMMANDER or HOST WING
+// COMMANDER (private) ...and the non-private one advertises in the lobby unless players was bumped down to 1"); Host
+// private ticks Private instead: only its code or its link brings somebody in.  A room of one is offered to nobody; a
+// room that was there already (the code typed was somebody's) is its host's to offer.  Fly Alone stays for a room the
+// button offered (hostOffered), as nobody may come.  (?advertise=off: the page tests' rooms, said by hand.)
+const hostOffered = new Set();
+async function hostRoom(priv) {
+  if (lobby.game || $("join").disabled) return;
+  const one = seatCount() === 1;
+  if (!one) $("private").checked = priv;
+  await joinRoom();
+  if (!lobby.game || soloRoom() || one || priv || !isHost() || query.get("advertise") === "off") return;
+  const code = lobby.game.code;
+  hostOffered.add(normalizeCode(code));
+  const offered = await hall.advertise();
+  updateActions();
+  const text = offered ? `You host room ${code}, offered in the lobby: Fly when somebody joins, or Fly Alone.`
+    : `You host room ${code}. It could not be said in the lobby just now (Advertise there says it again; "Copy link" for friends).`;
+  status(text); hall.note(text);
+}
+$("join").addEventListener("click", () => void hostRoom(false));
+$("joinPrivate").addEventListener("click", () => void hostRoom(true));
 $("setup").addEventListener("submit", (ev) => { ev.preventDefault(); void joinRoom({ create: false }); });
-$("findRoom").addEventListener("click", () => void joinOpenGame());
-$("findRoom").title = FIND_TITLE;
+$("findRoom").addEventListener("click", () => void joinOpenGame({ series: true }));
 // (Players: 1, 2 or 3, whatever is typed; three is in beta.)
-$("seats").addEventListener("input", () => { $("seatsBeta").hidden = seatCount() < 3; });
+$("seats").addEventListener("input", () => { $("seatsBeta").hidden = seatCount() < 3; if (!lobby.game) updateActions(); });
 $("seats").addEventListener("change", () => { $("seats").value = seatCount(); $("seatsBeta").hidden = seatCount() < 3; });
 $("leave").addEventListener("click", leaveButton);
 // The link to this room, to the clipboard (shown in the status line where

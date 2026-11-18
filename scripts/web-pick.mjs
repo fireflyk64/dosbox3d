@@ -89,14 +89,22 @@ await inLobby(a, 1);
 await a.page.click("#join");
 check(await inRoom(a), `A: Host, no code typed: in a room (${(await said(a)).slice(0, 100)})`);
 const codeA = await roomCode(a);
+await a.page.waitForFunction((c) => document.getElementById("hallLog").textContent.includes(c), codeA, { timeout: 15000 }).catch(() => {});
+check(/offered in the lobby/.test(await said(a)) && (await a.page.$eval("#hallLog", (el) => el.textContent)).includes(codeA) && await a.page.$eval("#flySolo", (b) => !b.hidden)
+  && !(await a.page.$eval("#private", (el) => el.checked)), `A: Host offers the room in the lobby, Fly Alone still there (${(await said(a)).slice(0, 90)})`);
 check(/^TFD-\d{4}$/.test(codeA) && await game(a) === "tiedemo", `the room's code made for the game: ${codeA}`);
 
 // -- Join open game with another game picked: no RetroVega room, so the demo's, fetched for it
 const d = await openPage("delta");
 await ready(d); await inLobby(d, 2); await inLobby(a, 2);
 check(await game(d) === "rv", `D: RetroVega picked (${await game(d)})`);
+check(/^Join open RetroVega$/i.test(await d.page.$eval("#findRoom", (el) => el.textContent)), `D: the room panel's button is "${await d.page.$eval("#findRoom", (el) => el.textContent)}"`);
 await d.page.click("#findRoom");
-check(await inRoom(d) && await roomCode(d) === codeA, `D: Join open game: no RetroVega room, A's joined (${await roomCode(d)})`);
+await d.page.waitForFunction(() => /No open RetroVega game found/.test(document.getElementById("status").textContent), null, { timeout: 40000 }).catch(() => {});
+check(/No open RetroVega game found/.test(await said(d)) && /takes any/.test(await said(d)) && await d.page.$eval("#leave", (el) => el.hidden) && await game(d) === "rv",
+  `D: it keeps to RetroVega: A's demo room is not joined (${(await said(d)).slice(0, 110)})`);
+await d.page.click("#topAction");
+check(await inRoom(d) && await roomCode(d) === codeA, `D: the top Join open game takes any game: A's joined (${await roomCode(d)})`);
 await ready(d, "tiedemo");
 const chatD = await d.page.$eval("#chatLog", (el) => el.textContent);
 check(await game(d) === "tiedemo" && d.fetched() === 1 && /No open RetroVega room: you are in room/.test(chatD),
@@ -144,7 +152,7 @@ const codeE = await roomCode(e);
 for (let i = 0; i < 2; i++) {
   const f = await openPage("fox" + i);
   await ready(f); await inLobby(f, 3);
-  await f.page.click("#findRoom");
+  await f.page.click(i === 0 ? "#findRoom" : "#topAction");
   const ok = await inRoom(f);
   if (i === 0) check(ok && await roomCode(f) === codeE && await game(f) === "rv", `F: RetroVega picked, Join open game: E's RetroVega room, not the demo's (${await roomCode(f)})`);
   // (E's room of two is full now: the next pilot with RetroVega picked gets the demo's)
@@ -154,6 +162,7 @@ for (let i = 0; i < 2; i++) {
 // (?tf=1 with no TIE Fighter: the demo picked, and its room preferred... A's is full or not, the pick is what counts)
 const g = await openPage("golf", { tf: "1" });
 check(await ready(g, "tiedemo") && await game(g) === "tiedemo", `?tf=1 with no TIE Fighter: the demo picked (${await game(g)})`);
+check(/^Join open TIE Fighter$/i.test(await g.page.$eval("#findRoom", (el) => el.textContent)), `its series on the room panel's button: "${await g.page.$eval("#findRoom", (el) => el.textContent)}"`);
 await g.page.context().close();
 const h = await openPage("hotel", { tv: "1" });
 check(await ready(h, "tv") && await game(h) === "tv", `?tv=1: Terminal Velocity picked (${await game(h)})`);
@@ -174,6 +183,17 @@ check(/Wing Commander needs your own files/.test(await h4.page.$eval("#sourceSta
 await h.page.context().close();
 const k = await openPage("kilo", { game: "tv" });
 check(await ready(k, "tv"), `?game=tv: Terminal Velocity picked (${await game(k)})`);
+// -- Host private: Private ticked, nothing said in the lobby; with Players at 1 there is one Host
+await inLobby(k, 1);
+await k.page.fill("#seats", "1");
+check(await k.page.$eval("#joinPrivate", (el) => el.hidden), "Players 1: no Host private (a room of one is said to nobody)");
+await k.page.fill("#seats", "2");
+check(await k.page.$eval("#joinPrivate", (el) => !el.hidden), "Players 2: Host and Host private");
+await k.page.click("#joinPrivate");
+check(await inRoom(k) && /^TV-\d{4}$/.test(await roomCode(k)), `K: Host private: ${await roomCode(k)}`);
+await k.page.waitForTimeout(2500);
+check(await k.page.$eval("#private", (el) => el.checked) && !(await k.page.$eval("#hallLog", (el) => el.textContent)).includes(await roomCode(k)),
+  "K: Private ticked, and the room not said in the lobby");
 await browser.close();
 console.log(failed ? `PICK FAILED (${failed})` : "PICK OK");
 process.exit(failed ? 1 : 0);
