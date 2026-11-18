@@ -11,8 +11,9 @@ perhaps a little shorter and way more relaxing even").
                    II  Harbour Lights (A flat): a ballad in the same tempo, the band in two: the clarinet low and
                        warm over held piano chords and soft strings, the guitar on the bridge;
                    III Salt Road (C minor, latin, straight eighths): the piano's montuno, the bass anticipating
-                       the bar, rim on the clave and a shaker; the guitar's tune in octaves, a vibraphone chorus
-                       over the organ, the tune again;
+                       the bar, rim on the clave and a shaker, coming in over eight bars under the clarinet, which
+                       carries the ballad's tune on into the latin time; the guitar's tune in octaves from the
+                       clarinet's last note, a vibraphone chorus over the organ, the tune again;
                    IV  Galley Blues (G, a jazz blues): an organ trio, the organ comping in place of the piano;
                        the guitar's head, then with the vibraphone, a tine-piano chorus, the head out;
                    V   Dog Watch again (D minor): the head on flute and guitar, the guitar's own bridge, the
@@ -21,25 +22,45 @@ perhaps a little shorter and way more relaxing even").
                    drums, some four and three quarter minutes round:
                    I   Quiet Hours (D flat): a soft piano rolling its chords once a bar under a wide pad, the
                        upright on the downbeat, the tine piano's tune in long notes;
-                   II  Drift (B flat minor): a harp turning slowly in quarters, the soft pad, the vibraphone now
-                       and then;
+                   II  Drift (B flat minor): running water on the harp (eighths rippling on each chord's
+                       pentatonic) under the soft pad, the vibraphone's long notes above it;
                    III Lantern (G flat): nylon guitar picked in quarters, a low flute, two far celesta notes;
-                   IV  Quiet Hours again (D flat): the tune on the vibraphone, then thinning to the piano and
-                       the pad, into the first bar.
+                   IV  Quiet Hours again (D flat): the tune on the vibraphone, then the piano breaking its chords
+                       a note a beat, the tune's second half on the tine piano with an E flat for colour and the
+                       vibraphone's long notes falling by half steps above it, into the first bar.
 
 Each loops (its last bar leads back into its first) and carries a "sect" marker at each later section's start,
 the places the room's song may begin (src/game.c room_music).  The heads of Dog Watch and Harbour Lights and the
 tune of Quiet Hours are written out note by note ('PITCH:BEAT:LENGTH' a bar); the rest comes from
 tools/compose.py's Tune, seeded, as in tools/songs.py.
 """
+import contextlib
 import random
 
 from compose import chord, bars_of, Voicer, Bass, Tune, SWING, SWING_END, SOLO, SOLO_END
 from songs import Comp, put, shift, comp, swing_drums
+from orch import in_time
 
 
 def transpose(notes, semis):
     return [(b, beat, dur, q + semis) for b, beat, dur, q in notes]
+
+
+def unplayed(s, n=1, spread=4):
+    """n notes left out, their velocity draws made all the same (Comp.play draws one a pitch): every note after
+    them plays as it did"""
+    for _ in range(n):
+        s.rng.randint(-spread, spread)
+
+
+@contextlib.contextmanager
+def own_draws(s, seed):
+    """notes added with their own velocity draws, so none of the song's other notes change"""
+    keep, s.rng = s.rng, random.Random(seed)
+    try:
+        yield
+    finally:
+        s.rng = keep
 
 
 # --- the bass lines: the chord's tones from its own root (a slash chord's bass first), a step into the next ---
@@ -181,6 +202,11 @@ HB_TUNE_A3 = HB_TUNE_A[:6] + ['Db5:0:1.5 C5:1.5:.5 Bb4:2:1 G4:3:1', 'Ab4:0:2 B4:
 SR_A = bars_of('Cm9 | Abmaj7#11 | Fm9 | Dm7b5 G7b9 | Cm9 | Bbm9 Eb13 | Abmaj9 | Dm7b5 G7b9')
 SR_B = bars_of('Fm9 | Bb13 | Ebmaj9 | Abmaj9 | Dm7b5 | G7b9 | Cm9 | Dm7b5 G7b9')
 SALT_ROAD = (SR_A + SR_B) * 2 + SR_A + SR_B[:7] + bars_of('Am7b5 D7b9')   # the last bar turning to G (IV)
+# the clarinet's way in: Harbour Lights' first eight bars (HB_TUNE_A) over Salt Road's chords, the half notes
+# pushed onto the off-beats; the last bar falls to the guitar's first note
+SR_WAY_IN = ['Eb4:0:1 G4:1:1.5 C5:2.5:1.5', 'Bb4:0:2.5 G4:2.5:1.5', 'Ab4:0:1 C5:1:1.5 Eb5:2.5:1.5',
+             'D5:0:1.5 C5:1.5:.5 Ab4:2:1 B4:3:1', 'C5:0:1 G4:1:1.5 D5:2.5:1.5', 'Db5:0:2 C5:2:2',
+             'C5:0:1.5 Bb4:1.5:1 G4:2.5:1.5', 'Ab4:0:2 G4:2:2']
 # the latin tune's rhythms: long notes pushed ahead of the beat
 LATIN = [[(0, 1.5), (1.5, 1), (2.5, 1.5)], [(0, .5), (.5, 1), (1.5, 1), (2.5, 1.5)], [(0, 2), (2.5, .5), (3, 1)],
          [(.5, 1), (1.5, 1), (2.5, 1.5)], [(0, 1), (1, .5), (1.5, 1), (2.5, 1.5)], [(0, 1.5), (1.5, .5), (2, 2)]]
@@ -217,16 +243,20 @@ def ballad_drums(s, bar):
         s.play(9, bar, 0, 0.2, 36, 36)
 
 
-def latin_drums(s, bar, k):
-    """rim on the clave (its two side, then its three), the shaker's eighths, a soft kick, the foot's hat"""
+def latin_drums(s, bar, k, level=1.0, rim=True):
+    """rim on the clave (its two side, then its three), the shaker's eighths, a soft kick, the foot's hat; level
+    scales it all (Salt Road coming in), and rim=False leaves the clave out"""
     for beat in ((1, 2) if k % 2 == 0 else (0, 1.5, 3)):
-        s.play(9, bar, beat, 0.2, 37, 60)
+        if rim:
+            s.play(9, bar, beat, 0.2, 37, round(60 * level))
+        else:
+            unplayed(s)
     for e in range(8):
-        s.play(9, bar, e * 0.5, 0.2, 70, 36 if e % 2 == 1 else 28, spread=3)
-    s.play(9, bar, 0, 0.2, 36, 44)
-    s.play(9, bar, 2.5, 0.2, 36, 34)
+        s.play(9, bar, e * 0.5, 0.2, 70, round((36 if e % 2 == 1 else 28) * level), spread=3)
+    s.play(9, bar, 0, 0.2, 36, round(44 * level))
+    s.play(9, bar, 2.5, 0.2, 36, round(34 * level))
     for beat in (1, 3):
-        s.play(9, bar, beat, 0.2, 44, 30)
+        s.play(9, bar, beat, 0.2, 44, round(30 * level))
 
 
 def montuno(s, ch, bar, syms, keys, vel, k):
@@ -240,7 +270,7 @@ def montuno(s, ch, bar, syms, keys, vel, k):
 
 
 def bar2_song():
-    s = Comp(104, seed=17, swing=0.64)
+    s = in_time(Comp(104, seed=17, swing=0.64))
     s.setup(0, 5, 86)       # electric piano, the warm one: the comping
     s.setup(1, 32, 106)     # upright bass (Off-Watch walks on the fingered one)
     s.setup(2, 26, 98)      # jazz guitar
@@ -303,27 +333,55 @@ def harbour_lights(s, b0, part, nxt, keys, bass, rng):
 
 
 def salt_road(s, b0, part, nxt, keys, bass, rng):
-    """III, C minor, straight eighths: the montuno, the tumbao, the clave; the guitar's tune in octaves, a
-    vibraphone chorus over the organ, the tune again"""
+    """III, C minor, straight eighths: the montuno, the tumbao, the clave, coming in over eight bars under the
+    clarinet (salt_road_way_in); the guitar's tune in octaves from the B part, a vibraphone chorus over the
+    organ, the tune again"""
     s.swing = 0.5
-    piano, organ = Voicer(55, 72, 4), Voicer(50, 67, 3, 16)
+    salt_road_way_in(s, b0)                                         # (first, in time order: Comp.note cuts
+    piano, organ = Voicer(55, 72, 4), Voicer(50, 67, 3, 16)        # short the last note added at a pitch)
     n = len(part)
     for i, syms in enumerate(part):
         bar = b0 + i
-        montuno(s, 0, bar, syms, piano, 56, i)
-        tumbao(s, 1, bar, syms, nxt(bar), bass, 88, first=i == 0, last=i == n - 1)
-        latin_drums(s, bar, i)
+        grow = min(1.0, 0.6 + 0.05 * i)                             # (the way in: the band from soft, full at
+        montuno(s, 0, bar, syms, piano, 56 - 2 * max(0, 8 - i), i)  # the ninth bar, the clave from the fifth)
+        tumbao(s, 1, bar, syms, nxt(bar), bass, 88 - 3 * max(0, 4 - i), first=i == 0, last=i == n - 1)
+        latin_drums(s, bar, i, level=grow, rim=i >= 4)
         if 16 <= i < 32:
             s.play(4, bar, 0, 3.9, organ.next(chord(syms[0])), 56, spread=2)
     t = Tune(rng, 'C', 'minor', 62, 77)
     head = t.period(b0, part[:16], LATIN, LATIN_END)
     out = [x for x in shift(head, 32) if x[0] < b0 + 44] + t.phrase(b0 + 44, part[44:], LATIN, LATIN_END,
                                                                        shape='fall')
-    for notes in (head, out):
-        put(s, 2, notes, 84)
-        put(s, 2, transpose(notes, -12), 72)                       # the octave under it
+    first = sum(1 for x in head if x[0] < b0 + 8)                 # (the head's A part is the clarinet's: its
+    unplayed(s, first)                                              # draws made, the notes left out)
+    for x in head[first:]:                                          # (each note and the octave under it, in
+        put(s, 2, [x], 84)                                          # turn: the octave of an earlier note no
+        put(s, 2, transpose([x], -12), 72)                          # longer cuts off a later one)
+    unplayed(s, first)
+    put(s, 2, out, 84)
+    put(s, 2, transpose(out, -12), 72)                              # the octave under it
     put(s, 3, Tune(rng, 'C', 'minor', 65, 82).period(b0 + 16, part[16:32], SOLO, SOLO_END), 74)
     s.swing = 0.64
+
+
+def salt_road_way_in(s, b0):
+    """the turn from the ballad into the latin (the user, at its start: "this kinda came out of nowhere...we need to
+    connect it better to the rest of the predecessor song"): in the ballad's last bar a shaker comes up from
+    nothing in straight eighths; over the first two latin bars the ballad's ride keeps the beat and its strings
+    resolve (B, D, G to C, E flat, G) and hold, fading; the clarinet goes on and plays the ballad's tune into the
+    latin time (its rising three notes with the last pushed ahead of the beat), falling at the end to the G the
+    guitar's octaves take up at the B part.  The montuno, the bass and the kit come up over the eight bars
+    (salt_road)"""
+    with own_draws(s, 9601):
+        for e in range(8):
+            s.play(9, b0 - 1, e * 0.5, 0.2, 70, 6 + 2 * e, spread=2)
+        for k, bar in enumerate((b0, b0 + 1)):
+            for beat in range(4):
+                s.play(9, bar, beat, 0.2, 51, (36 if beat % 2 == 0 else 32) - 6 * k, spread=3)
+        s.play(10, b0, 0, 7.8, ['C4', 'Eb4', 'G4'], 44, spread=2)       # (over C minor and A flat both)
+        s.ramp(10, b0, 2, 127, 56)
+        s.cc(10, b0 + 2, 2, 11, 127)                                    # (back up once the strings are gone)
+        s.tune(8, b0, SR_WAY_IN, 80)
 
 
 def galley_blues(s, b0, part, nxt, keys, bass, rng):

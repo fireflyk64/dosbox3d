@@ -734,7 +734,8 @@ Built (src/music.c, src/opl.c):
   long notes; nylon guitar and a low flute in G flat; the tune on the vibraphone over broken piano chords, a
   falling vibraphone line for colour, into the top) and *Dog Watch* (BAR2, 8.6 minutes at 104 swung in D minor, on an upright bass: the head on
   guitar and vibraphone; Harbour Lights, an A flat ballad with a low clarinet; Salt Road, a C minor latin
-  montuno; Galley Blues, a G organ trio; the head again on flute and guitar). `tools/stings2.py` writes
+  montuno growing out of the ballad (its ride and strings carried over, the clarinet's tune in the latin
+  rhythm while the band builds); Galley Blues, a G organ trio; the head again on flute and guitar). `tools/stings2.py` writes
   *Stand Down* (WIN2, the won debrief: harp eighths, the horn's tune, the strings an octave up, an oboe over a
   horn chorale, 40 s round). `tools/cruise_c.py` writes *Catapult* (LAUNCH2: the deck's pulses on C, the
   catapult held on B, then E major and Outbound's motor). `game.c` picks one of a family by the music's dice
