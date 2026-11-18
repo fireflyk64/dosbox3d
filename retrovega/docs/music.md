@@ -201,7 +201,11 @@ anything. The rules come in this order:
    2026-11-03: "the funeral sound plays when I go from nav 1 to nav 2 in
    mission 1"). `tests/navmusic.txt` flies Enigma 1 nav point to nav
    point (`$` in RVT.EXE kills the enemies about): cruise, the rock
-   field, a fight, cruise, and Homeward only after Nav 3.
+   field, a fight, cruise, and Homeward only after Nav 3. The way home's
+   song plays once, then two of the cruise songs in their turn, then it
+   again (`HOME_EVERY` 3, `home_next`; the user, 2026-11-17, of Homeward:
+   "This piece gets old very fast ... only cycling through this ... every
+   3rd song").
 5. **Rocks:** inside an asteroid or mine field of the mission (its centre
    within its radius), the rock field's song.
 6. **Calm:** otherwise, the cruise songs.

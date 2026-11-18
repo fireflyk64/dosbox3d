@@ -48,6 +48,7 @@ enum { CALM, FIGHT, HOME, ROCKS, PANIC, DEAD };
 #define STAY_KM 6000L                   /* and one this near keeps it going */
 #define GONE_KM 12000L                  /* a ship dying this near was splashed, or lost (farther: not heard of) */
 #define CALM_AFTER (12 * 240UL)         /* the music clock's ticks with none within STAY_KM before it is over */
+#define HOME_EVERY 3                    /* the way home's song every this many songs (home_next) */
 
 typedef struct {
     int mood, panic;                    /* and how bad the panic (0..2) */
@@ -58,6 +59,7 @@ typedef struct {
     unsigned char begun;                /* the cycles have their start this run (score_start) */
     int queued;                         /* the follow-on asked for (music_then), -1 none */
     unsigned char victory;
+    unsigned char home_n;               /* the way home's chain: songs since its own song (home_next) */
     unsigned char step;                 /* the test's (/scoretest) */
     unsigned long t0;
     const RvMission __far *m;           /* its fields */
@@ -103,6 +105,12 @@ static int next_of(int list)
                 : RV_MUSIC_CRUISE1 + g_sc.next[0] % (RV_MUSIC_HOMEWARD - RV_MUSIC_CRUISE1);
 }
 
+/* the way home's song, won or lost */
+static int home_cue(void)
+{
+    return victoryPoints ? RV_MUSIC_HOMEWARD : RV_MUSIC_HOMELOSS;
+}
+
 /* the mood's song: the next of its list (the panic's is its level's) */
 static int song_for(int mood)
 {
@@ -114,7 +122,7 @@ static int song_for(int mood)
         return cue;
     }
     case HOME:
-        return victoryPoints ? RV_MUSIC_HOMEWARD : RV_MUSIC_HOMELOSS;
+        return home_cue();
     case ROCKS:
         return RV_MUSIC_ROCKS;
     case PANIC:
@@ -123,12 +131,21 @@ static int song_for(int mood)
     return RV_MUSIC_TRAGEDY;
 }
 
+/* the way home's next follow-on (the user, 2026-11-17, of Homeward: "This piece gets old very fast. We may need the
+ * game to go back to the normal music after playing this once and only cycling through this ... every 3rd song"): its
+ * own song once, then two of the cruise's in their turn, then its own again */
+static int home_next(void)
+{
+    return (g_sc.home_n + 1) % HOME_EVERY == 0 ? home_cue() : next_of(0);
+}
+
 static void play(int mood)
 {
     static const int fade[] = { 2500, 700, 2000, 1500, 300, 200 };
     int was = g_sc.mood;
-    if (g_sc.queued >= 0 && (was == CALM || was == FIGHT))
+    if (g_sc.queued >= 0 && (was == CALM || was == FIGHT || (was == HOME && g_sc.queued != home_cue())))
         g_sc.next[was == FIGHT]--;      /* (a follow-on asked for and never heard stays the next of its list) */
+    g_sc.home_n = 0;
     g_sc.mood = mood;
     g_sc.cue = song_for(mood);
     g_sc.queued = -1;                   /* (a cue clears the follow-on) */
@@ -159,13 +176,18 @@ static void follow(int mood)
     }
     if (now != g_sc.cue || music_then_cue() >= 0)
         return;
-    next = g_sc.queued >= 0 ? g_sc.queued : next_of(mood == FIGHT);   /* (asked for, gone with a sting's ring: again) */
-    if (mood == CALM)
+    next = g_sc.queued >= 0 ? g_sc.queued : mood == HOME ? home_next() : next_of(mood == FIGHT);   /* (asked for, gone
+                                           with a sting's ring: again) */
+    if (mood != FIGHT)
         took = music_then(next, -1, 0);
     else
         took = music_then(next, music_sects(next) ? (int)(r % music_sects(next)) : -1, 1 + (int)(r / 7 % 2));
-    if (took && g_sc.queued < 0)
-        g_sc.next[mood == FIGHT]++;
+    if (took && g_sc.queued < 0) {
+        if (mood == HOME)
+            g_sc.home_n = (unsigned char)((g_sc.home_n + 1) % HOME_EVERY);
+        if (mood != HOME || next != home_cue())
+            g_sc.next[mood == FIGHT]++;
+    }
     if (took)
         g_sc.queued = next;
 }
@@ -298,7 +320,7 @@ void score_tick(int landing)
         mood = CALM;
     if (mood != g_sc.mood)
         play(mood);
-    else if (mood == CALM || mood == FIGHT)
+    else if (mood == CALM || mood == FIGHT || mood == HOME)
         follow(mood);
     /* the stings over it all */
     if (lost) {
