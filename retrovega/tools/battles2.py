@@ -13,12 +13,14 @@ its own:
     BATTLE5  "Check Six"   Break and Attack's drive (the motor at full speed under half-time hits, a riff of its own
                            on spiccato strings in octaves) with apprehension on every downbeat: the bass falling by
                            half steps (C, B, B flat, A flat, G) held by the low horn and the strings, the timpani on
-                           each one, the brass's sighs (a half step down from each downbeat), a darker turn into
-                           E flat minor
+                           each one, the brass's sighs (a half step down from each downbeat), the horn's tune
+                           over the riff's strings driving, a darker turn into E flat minor, and last the sighs
+                           soaring in long notes on the strings and the horn over the riff
     BATTLE6  "Scissors"    Furball's vein: a riff over driving fifths with the phrygian D flat in it.  The riff is
                            two blades: the brass climbing and the horn falling from one C, opening to the octave
                            and closing on the 3+3+2, then a run in contrary motion snipping shut; the horn's tune
-                           over the descent F minor, E flat, D flat, C; the riff a half step up; a stop
+                           over the descent F minor, E flat, D flat, C; the blades drawn out in long notes over
+                           A flat, B flat, G7 to C minor; a climb into a stop on F minor
 
 The lego contract is battles.py's, kept to the letter: 140 in 4/4 in C minor's family, the spiccato motor in every
 bar, a "sect" marker every four bars of the body, each block starting on its downbeat with the motor, a crash and
@@ -327,12 +329,13 @@ def check_six():
 # phrygian D flat) with a riff of its own: two blades from one C, the brass climbing through D flat and E flat while
 # the horn falls through B flat and A flat, opening to the octave on the 3+3+2 and closing again, then opening wider
 # and snipping shut in a run in contrary motion.  Then the horn's tune over the descent F minor, E flat, D flat to
-# C (the phrygian cadence), high strings falling a step a bar over it; the riff a half step up (the D flat's bite
-# made a key); the cut: the blades a bar each, a stop on the 3+3+2, toms; the riff for everyone, the tune again.
+# C (the phrygian cadence), high strings falling a step a bar over it; the blades drawn out (the brass climbing to
+# G, the horn falling to B, over A flat, B flat, G7 and home to C minor); the climb a step a bar into a stop on the
+# 3+3+2 on F minor, D flat to C, toms; the riff for everyone, the tune again.
 
 SC_W = ['C5', 'Db5', 'C5', 'Ab5 Db5']
-SC_X = ['Db5', 'D5', 'Db5', 'Ab5 Db5']
-SC_Y = ['C5', 'Db5', 'C5', 'Db5 C5']
+SC_X = ['Ab', 'Bb', 'G7', 'Cm']
+SC_Y = ['Db', 'Eb', 'Fm', 'Db C']
 SC_T1 = ['Fm', 'Eb', 'Db', 'C']
 SC_T2 = ['Fm', 'Eb', 'Db', 'Db C']
 SC_UPPER = ['C5:0:1.5 Db5:1.5:1.5 Eb5:3:1', 'F5:0:1.5 Eb5:1.5:1.5 Db5:3:1', 'C5:0:1.5 Eb5:1.5:1.5 G5:3:1',
@@ -343,12 +346,15 @@ SC_TUNE = ['F4:0:1.5 Ab4:1.5:.5 C5:2:2', 'Bb4:0:3 G4:3:1', 'Ab4:0:1.5 F4:1.5:.5 
            'F5:0:2 Eb5:2:1 C5:3:1', 'Bb4:0:1.5 C5:1.5:.5 Eb5:2:2', 'Db5:0:2 C5:2:1 Ab4:3:1', 'F4:0:2 E4:2:2']
 SC_HIGH = ['C6:0:4', 'Bb5:0:4', 'Ab5:0:4', 'G5:0:4', 'C6:0:4', 'Bb5:0:4', 'Ab5:0:4', 'Ab5:0:2 G5:2:2']
 SC_MID = ['Ab3:0:4', 'G3:0:4', 'F3:0:4', 'E3:0:4', 'Ab3:0:4', 'G3:0:4', 'F3:0:4', 'F3:0:2 E3:2:2']
+SC_OPEN_UP = ['C5:0:1.5 Eb5:1.5:2.5', 'D5:0:1.5 F5:1.5:2.5', 'G5:0:3 F5:3:1', 'Eb5:0:4']    # the blades drawn out
+SC_OPEN_DOWN = ['C5:0:1.5 Ab4:1.5:2.5', 'Bb4:0:1.5 F4:1.5:2.5', 'D4:0:3 B3:3:1', 'C4:0:4']
+SC_CLIMB = ['F4:0:3 Ab4:3:1', 'G4:0:3 Bb4:3:1']
 SC_TURN = [0, 1, 2, 1, 0, 2, 1, 2]
 
 
 def scissors():
     form = (['C5', 'C5'] + SC_W + SC_W + SC_T1 + SC_T2 + SC_W + SC_X + SC_Y + SC_W + SC_T1 + SC_T2)
-    s = Piece(BPM, 1414, form, level=-0.8)
+    s = in_time(Piece(BPM, 1414, form, level=-0.8))
     ch = begin(s)
     mo, hi_, lo, br, hn, hn2, pc, tp, st = (ch[k] for k in ('motor', 'hit', 'low', 'brass', 'horn', 'horn2',
                                                             'piccolo', 'timpani', 'strings'))
@@ -363,7 +369,7 @@ def scissors():
     s.ramp(mo, 1, 1, 70, 127)                       # the intro: the fifths alone, then the motor and a roll
     timp_roll(s, tp, 1, 0, 4, 'C2', 10, 96)
     # the riff: the blades, brass over horn (more of the orchestra on it each time)
-    for blk, semis, more in ((W1, 0, 0), (W2, 0, 1), (W3, 0, 1), (X, 1, 1), (W4, 0, 2)):
+    for blk, semis, more in ((W1, 0, 0), (W2, 0, 1), (W3, 0, 1), (W4, 0, 2)):
         upper = [up(t, semis) for t in SC_UPPER[:3]] + [SC_UPPER[3]]
         lower = [up(t, semis) for t in SC_LOWER[:3]] + [SC_LOWER[3]]
         s.crash(blk, 0, 104 if more < 2 else 110)
@@ -371,7 +377,7 @@ def scissors():
         s.tune(hn, blk, lower, 84 if more < 2 else 88)
         if more:
             s.tune(hn2, blk, [up(t, -12) for t in lower], 72)
-        if more == 2 or blk == X:
+        if more == 2:
             s.tune(st, blk, [up(t, 12) for t in lower[:3]], 72)
         if more:
             s.tune(pc, blk + 3, [up(upper[3], 12)], 54)
@@ -383,7 +389,6 @@ def scissors():
             r = chord(s.sym_at(b, 0)).root
             s.line(tp, b, '%s:1.5:.5 %s:3:.5' % (nm(in_range(r, 33, 44)), nm(in_range(r + 7, 31, 42))), 80)
     timp_roll(s, tp, W2 + 3, 2, 2, 'C2', 20, 92)
-    toms(s, X + 3, 3, 84)
     # the horn's tune over the descent to C, the high strings falling a step a bar, the second horn under; the
     # second time the strings on the tune an octave up and the brass on the falling line
     for P, second in ((T1, False), (T3, True)):
@@ -404,20 +409,39 @@ def scissors():
         timp_roll(s, tp, P + 7, 0, 4, 'C2', 12, 96)
     toms(s, T2 + 3, 3, 84)
     toms(s, T4 + 3, 2, 86, n=8)
-    # the cut: the opening blade, the closing blade answered on the strings and the second horn, a stop on the
-    # 3+3+2 (the stacked bite, C, G, D flat), toms into the riff for everyone
-    s.crash(Y, 0, 108)
-    s.tune(br, Y, SC_UPPER[:1], 92)
-    s.tune(hn, Y, SC_LOWER[:1], 86)
-    s.tune(st, Y + 1, [up(SC_UPPER[1], -12)], 84)
-    s.tune(hn2, Y + 1, SC_LOWER[1:2], 80)
+    # the blades drawn out (2026-11-17, the user, of the riff a half step up and the cut after it: at 0:40 "This
+    # part is a bit unpleasant and sounds like a kid mashing around on a piano", at 0:50 "better here again"): from
+    # one C the brass climbs to G and the horn falls to the B under it, over A flat, B flat, G7 and home to C
+    # minor (the seventh falling to E flat, the leading note rising to C); the strings with the brass (then
+    # between them), the second horn under the horn, the hits on the 3+3+2 every other bar
+    s.crash(X, 0, 104)
+    s.tune(br, X, SC_OPEN_UP, 92)
+    s.tune(st, X, SC_OPEN_UP[:2] + ['B4:0:3 D5:3:1', 'C5:0:4'], 72)          # (then the G7's middle)
+    s.tune(hn, X, SC_OPEN_DOWN, 86)
+    s.tune(hn2, X, [up(t, -12) for t in SC_OPEN_DOWN], 70)
+    for b, beats in ((X, ACC332), (X + 1, (0,)), (X + 2, ACC332), (X + 3, (0, 1.5))):
+        for beat in beats:
+            hit(s, hi_, b, beat, 110 if beat == 0 else 100, timpani=tp if beat == 0 else None)
+    for b in (X + 1, X + 3):
+        r = chord(s.sym_at(b, 0)).root
+        s.line(tp, b, '%s:1.5:.5 %s:3:.5' % (nm(in_range(r, 33, 44)), nm(in_range(r + 7, 31, 42))), 80)
+    toms(s, X + 3, 3, 84)
+    # the climb: the brass a step a bar (D flat, E flat), a pickup into each, the strings an octave over it, the
+    # horns under; a roll into the stop on F minor on the 3+3+2 (consonant: the old stop's stacked C, G, D flat
+    # gone), then D flat sighing to C, toms into the riff for everyone
+    s.crash(Y, 0, 106)
+    s.tune(br, Y, SC_CLIMB, 90)
+    s.tune(st, Y, [up(t, 12) for t in SC_CLIMB], 76)
+    s.tune(hn, Y, ['Db4:0:4', 'Eb4:0:4'], 82)
+    s.tune(hn2, Y, ['Ab3:0:4', 'Bb3:0:4'], 72)
     for b in (Y, Y + 1):
         for beat in ACC332:
             hit(s, hi_, b, beat, 110 if beat == 0 else 102, timpani=tp if beat == 0 else None)
-    for beat, notes in ((0, ['C4', 'G4', 'Db5']), (1.5, ['C4', 'G4', 'Db5']), (3, ['Db4', 'Ab4', 'Db5'])):
-        s.play(br, Y + 2, beat, .5, notes, 96)
-        s.play(hn, Y + 2, beat, .5, ['C3', 'G3'] if beat < 3 else ['Db3', 'Ab3'], 86)
-        s.play(mo, Y + 2, beat, .4, [p(notes[0]) - 12, p(notes[0])], 84)     # the motor with them
+    timp_roll(s, tp, Y + 1, 2, 2, 'C2', 24, 100)
+    for beat in ACC332:
+        s.play(br, Y + 2, beat, .5, ['F4', 'Ab4', 'C5'], 96)
+        s.play(hn, Y + 2, beat, .5, ['F3', 'C4'], 86)
+        s.play(mo, Y + 2, beat, .4, ['F3', 'F4'], 84)                    # the motor with them
         hit(s, hi_, Y + 2, beat, 116, timpani=tp)
     s.crash(Y + 2, 0, 110)
     hit(s, hi_, Y + 3, 0, 108, timpani=tp)
