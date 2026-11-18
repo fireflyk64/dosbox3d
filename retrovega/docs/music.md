@@ -151,7 +151,8 @@ every flight piece rewritten for the orchestra, and the score's remixes.
 | PANIC1B | Damage Report | C, 140 | Hull Breach's calmer sibling: the motor on its C pedal, low strings on 3+3+2, a timpani heartbeat, a sighing horn tune over the pedal, Contact's call at half speed, one small burst of alarm in eight bars |
 | PANIC2B | Reroute Power | C (F minor in the middle), 140 | Systems Failing's focused sibling (the user: "so the player has time to make it right"): one steady pulse under a four-bar chord cycle, one clear step-step-hold tune on the horn, the brass, the strings, then everyone; the alarms short, once a phrase |
 | VICTORY1..3 | Splash One..Three | C, D, B flat | bittersweet: bVI-bVII-I, the minor plagal, a deceptive turn |
-| VICTORY4..6 | Splash Four..Six | C, D, B flat | their siblings, one each: the major third brought in late; the minor plagal over a bass falling B, B flat; the deceptive turn struck on G with the timpani |
+| VICTORY4 | Splash Four | A, 116 | its own, 6 s (the user: "kinda repetitive for the previous--maybe 2 seconds longer with a surprise or undertone"): D minor over a low A held on the horn, the timpani under the call, which lifts to B flat where A was due; E7, then A major with the crash and the harp |
+| VICTORY5..6 | Splash Five..Six | D, B flat | Splash Two's and Three's siblings: the minor plagal over a bass falling B, B flat; the deceptive turn struck on G with the timpani |
 | TRAGEDY | Wingman Lost | B flat minor, 52 | a funeral march, 14 s |
 | LOST2 | Empty Deck | B flat minor, 46 | Carrier Lost's sibling (tools/stings2.py): hollow fifths falling B flat, A flat, G flat, F; the far horn picks up the way home's tune where Carrier Lost broke off and stops short; the oboe falls once from far above |
 

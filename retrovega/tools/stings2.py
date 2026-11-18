@@ -2,9 +2,11 @@
 the stings.  The user, 2026-11-17, in the soundtrack review: of each splash, "We need another variation of this one
 so it stays fresh"; of the carrier's loss, that every loss have a variation; of the won debrief, "more".
 
-    VICTORY4  "Splash Four"    Splash One's sibling, C at 116: A flat and B flat into C again, the call rising in
-                               two waves (A flat's chord, then B flat's) to a long G, the major third coming in
-                               under it on the horns (D to E), the harp sweeping into the downbeat
+    VICTORY4  "Splash Four"    Splash One's sibling made its own (the user: "kinda repetitive for the previous--
+                               maybe 2 seconds longer with a surprise or undertone"), A at 116, 6 s: D minor over a
+                               low A held under it all (the undertone, the timpani rumbling), the call from the
+                               downbeat lifting a half step to the Neapolitan B flat where A was due (the surprise,
+                               struck), E7, and A major, the call turning round A into it
     VICTORY5  "Splash Five"    Splash Two's sibling, D at 116: B minor, then G minor's sixth (the minor plagal's
                                B flat) over a bass falling B, B flat, the call's B flat sighing down to A on the
                                D chord, the harp falling after it
@@ -30,31 +32,41 @@ from orch import Piece, orchestra, held, sung, sweep, up
 # --- the splashes' variations ----------------------------------------------------------------------------------
 
 def victory4():
-    """A flat and B flat into C: the call up A flat's chord, then B flat's, to a long G; under it the horns' D
-    rising to E (the major third, late), the harp sweeping up B flat's chord into the downbeat"""
-    s = Piece(116, 2611, ['Ab Bb', 'Cadd9'], level=0.0)
+    """A minor's fourth over A, the Neapolitan B flat where A was due, E7 and A major at last.  The undertone: the
+    second horn holding a low A under all of it (the major seventh under B flat, the fourth under E7), swelling, and
+    the timpani rumbling under the call; the surprise: the call (D, E, F, A, from the downbeat, not Splash One's
+    pickup) lifts a half step to B flat on B flat's chord, the bass and the timpani with it, then turns round A
+    (G sharp, B) into A major's A, its third on the horns"""
+    s = Piece(116, 2611, ['Dm/A', 'Bb E7', 'A'], level=0.0)
     ch = orchestra(s)
-    s.line(ch['brass'], 0, 'Eb4:0:.5 Ab4:.5:.5 C5:1:1 Bb4:2:.5 D5:2.5:.5 F5:3:1', 94)
-    held(s, ch['brass'], 1, 0, 3.6, 'G5', 98, e0=100, e1=127, e2=92)
-    s.play(ch['horn'], 0, 0, 1.9, ['C4', 'Eb4'], 84)
-    s.play(ch['horn'], 0, 2, 1.9, ['D4', 'F4'], 84)
-    s.play(ch['horn'], 1, 0, .95, 'D4', 86)
-    held(s, ch['horn'], 1, 1, 2.6, 'E4', 92, e0=104, e1=127, e2=96)
-    s.play(ch['horn2'], 0, 0, 1.9, 'Ab3', 80)
-    s.play(ch['horn2'], 0, 2, 1.9, 'Bb3', 80)
-    s.play(ch['horn2'], 1, 0, 3.6, ['G3', 'C4'], 82)
-    s.play(ch['strings'], 0, 0, 1.9, ['Eb4', 'Ab4'], 72)
-    s.play(ch['strings'], 0, 2, 1.9, ['F4', 'Bb4'], 74)
-    s.play(ch['strings'], 1, 0, 3.6, ['C5', 'E5'], 80)
-    s.play(ch['bass'], 0, 0, 1.9, 'Ab2', 82)
-    s.play(ch['bass'], 0, 2, 1.9, 'Bb2', 82)
-    s.play(ch['bass'], 1, 0, 3.6, 'C2', 88)
-    s.play(ch['timpani'], 0, 0, .5, 'Ab1', 74)
-    s.play(ch['timpani'], 0, 2, .5, 'Bb1', 78)
-    s.roll(ch['timpani'], 0, 3, 1, 'G1', 46, 92, step=0.125)
-    s.play(ch['timpani'], 1, 0, .5, 'C2', 100)
-    sweep(s, ch['harp'], 0, {10, 2, 5}, 58, 89, 58, beats=2)
-    s.crash(1, 0, 94)
+    br, hn, hn2, st, bs, tp, hp = (ch[k] for k in ('brass', 'horn', 'horn2', 'strings', 'bass', 'timpani', 'harp'))
+    # the undertone: a low A held under all three bars, swelling slowly; the timpani rumbling under the call
+    held(s, hn2, 0, 0, 11.6, 'A2', 80, e0=56, e1=124, e2=100)
+    s.play(hn2, 0, 0, 3.9, 'E3', 70)
+    s.roll(tp, 0, 0, 3.5, 'A1', 26, 58, step=0.125)
+    # the call, from the downbeat; then B flat (the surprise) held and swelling, and the turn round A
+    s.line(br, 0, 'D5:0:1.5 E5:1.5:.5 F5:2:1 A5:3:1', 92)
+    held(s, br, 1, 0, 1.95, 'Bb5', 98, e0=110, e1=127, e2=100)
+    s.line(br, 1, 'G#5:2:1 B5:3:1', 94)
+    held(s, br, 2, 0, 3.6, 'A5', 98, e0=100, e1=127, e2=92)
+    # the chords: D minor over A, B flat (the horns keep their D and F: B flat's), E7, A major
+    s.play(hn, 0, 0, 3.9, ['D4', 'F4'], 82)
+    s.play(hn, 1, 0, 1.9, ['D4', 'F4'], 88)
+    s.play(hn, 1, 2, 1.9, ['D4', 'G#4'], 86)
+    held(s, hn, 2, 0, 3.6, 'C#4', 90, e0=100, e1=127, e2=100)
+    s.play(hn, 2, 0, 3.6, 'E4', 86)
+    s.play(st, 0, 0, 3.9, ['A3', 'D4'], 70)
+    s.play(st, 1, 0, 1.9, ['F4', 'Bb4'], 78)
+    s.play(st, 1, 2, 1.9, ['E4', 'B4'], 76)
+    s.play(st, 2, 0, 3.6, ['E4', 'A4'], 80)
+    for b, beat, dur, q in ((0, 0, 3.9, 'A1'), (1, 0, 1.9, 'Bb1'), (1, 2, 1.9, 'E2'), (2, 0, 3.6, 'A1')):
+        s.play(bs, b, beat, dur, q, 86)
+    s.play(tp, 1, 0, .6, 'Bb1', 96)                # (the surprise struck)
+    s.roll(tp, 1, 2, 2, 'E2', 40, 92, step=0.125)
+    s.play(tp, 2, 0, .6, 'A1', 100)
+    sweep(s, hp, 0, {2, 5, 9}, 57, 86, 54, beats=1.5)   # (up D minor into B flat)
+    sweep(s, hp, 2, {9, 1, 4, 11}, 57, 88, 52, beats=3)  # (A major with its ninth, after the downbeat)
+    s.crash(2, 0, 92)
     return s
 
 
