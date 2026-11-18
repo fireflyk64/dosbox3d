@@ -18,6 +18,8 @@
 #include "regs.h"
 #include "pic.h"
 #include "mem.h"
+#include "paging.h"
+#include "wcnet_tie.h"
 
 bool wclab_on = false;
 
@@ -282,8 +284,11 @@ void lab_instruction() {
     }
 }
 
+bool lab_tie_script_item(const std::string &item, double t);
+
 bool lab_script_item(const std::string &item, double t) {
     if (!g_rec) return false;
+    if (lab_tie_script_item(item, t)) return true;
     char buf[300];
     if (item.compare(0, 7, "!add32=") == 0 || item.compare(0, 7, "!set32=") == 0) {
         // !add32=<hex offset>:<decimal amount>, !set32=<hex offset>:<decimal value>
@@ -358,6 +363,145 @@ bool lab_script_item(const std::string &item, double t) {
 
 void lab_event(const std::string &json) {
     if (g_rec) event(json);
+}
+
+// -- TIE Fighter ----------------------------------------------------------------------------------------------------
+namespace {
+
+void dump_all(const std::string &name) {
+    const Bit32u top = (Bit32u)MEM_TotalPages() << 12;
+    std::vector<Bit8u> mem(top);
+    for (Bit32u a = 0; a < top; a++) {
+        Bit8u v = 0;
+        if (mem_readb_checked(a, &v)) v = 0;
+        mem[a] = v;
+    }
+    chunk('Y', name.c_str(), name.size() + 1, mem.data(), mem.size());
+    char buf[160];
+    snprintf(buf, sizeof(buf), "{\"t\":\"dumpall\",\"name\":\"%s\",\"bytes\":%u}", name.c_str(), (unsigned)top);
+    event(buf);
+}
+
+// (the flight's tables: image address and length)
+const Bit32u kTieRegions[][2] = {
+    { tie::kObjects, tie::kObjectCount * tie::kObjectSize },
+    { tie::kCrafts, 32 * tie::kCraftSize },
+    { tie::kPstate, 0x40 },
+    { 0xEB6C0, 0xB0 },          // the stick's deltas (0xEB6CE, 0xEB6D2), the clock (framerate 0xEB70C, frameticks 0xEB712), flags
+    { 0xEB4E0, 0x10 },          // the mission's end flag (0xEB4E5)
+    { 0xD4BF0, 0x40 },          // the 3-D view's corner and half sizes (0xD4C00.. 0xD4C18)
+    { 0xEC170, 4 },             // screenyoffset
+    { 0xC1550, 8 },             // inflight_unlimited/invulnerable/collision
+    { tie::kStatics, tie::kStaticCount * tie::kStaticSize },
+};
+
+void tie_call_done(int tag, Bit32u eax) {
+    char buf[120];
+    snprintf(buf, sizeof(buf), "{\"t\":\"tiecall-done\",\"tag\":%d,\"eax\":%u}", tag, (unsigned)eax);
+    event(buf);
+    wclog(1, "lab: call %d returned eax %08x", tag, (unsigned)eax);
+}
+
+}  // namespace
+
+void lab_tie_scan(unsigned attempt, Bit32u firstRank, bool found, Bit32u code, Bit32u data) {
+    if (!g_rec) return;
+    char buf[200];
+    snprintf(buf, sizeof(buf), "{\"t\":\"tiescan\",\"n\":%u,\"first20000\":%u,\"found\":%s,\"code\":%u,\"data\":%u}", attempt,
+             (unsigned)firstRank, found ? "true" : "false", (unsigned)code, (unsigned)data);
+    event(buf);
+    if (found) dump_all("found");
+}
+
+void lab_tie_frame() {
+    if (!g_rec || !tie_found()) return;
+    static Bit32u frame = 0;
+    frame++;
+    std::vector<Bit8u> out;
+    auto put32 = [&out](Bit32u v) { for (int i = 0; i < 4; i++) out.push_back((Bit8u)(v >> (8 * i))); };
+    const Bit32u n = (Bit32u)(sizeof(kTieRegions) / sizeof(kTieRegions[0]));
+    put32(tie_linear(0x10000));
+    put32(tie_linear(0xC0000));
+    put32(frame);
+    put32(n);
+    for (Bit32u r = 0; r < n; r++) {
+        put32(kTieRegions[r][0]);
+        put32(kTieRegions[r][1]);
+        const Bit32u lin = tie_linear(kTieRegions[r][0]);
+        for (Bit32u i = 0; i < kTieRegions[r][1]; i++) {
+            Bit8u v = 0;
+            if (mem_readb_checked(lin + i, &v)) v = 0;
+            out.push_back(v);
+        }
+    }
+    chunk('T', out.data(), out.size());
+}
+
+void lab_tie_axis(bool across, int delta, int scale, int game, int fixed, bool bug) {
+    if (!g_rec) return;
+    char buf[200];
+    snprintf(buf, sizeof(buf), "{\"t\":\"axis\",\"across\":%s,\"delta\":%d,\"scale\":%d,\"game\":%d,\"signed\":%d,\"bug\":%s}",
+             across ? "true" : "false", delta, scale, game, fixed, bug ? "true" : "false");
+    event(buf);
+}
+
+bool lab_tie_script_item(const std::string &item, double t) {
+    char buf[300];
+    if (item.compare(0, 9, "!dumpall=") == 0) {
+        dump_all(item.substr(9));
+        return true;
+    }
+    if (!tie_found()) return false;
+    static int tag = 0;
+    if (item.compare(0, 9, "!tiecall=") == 0 || item.compare(0, 9, "!tiefire=") == 0) {
+        // !tiecall=<fn>:<eax>:<edx>:<ebx>:<ecx> (hex); !tiefire=<obj>[:<hardpoint>[:<type>]] (decimal obj and hardpoint,
+        // hex type, default 0x8C: a T/F's laser): laser_createprojectile(obj, hardpoint, type)
+        Bit32u v[5] = { 0, 0, 0, 0, 0 };
+        const bool fire = item[4] == 'f';
+        std::string rest = item.substr(9);
+        for (int i = 0; i < 5 && !rest.empty(); i++) {
+            const size_t c = rest.find(':');
+            const std::string part = rest.substr(0, c);
+            v[i] = (Bit32u)strtoul(part.c_str(), NULL, fire && i < 3 ? 10 : 16);
+            if (fire && i == 2) v[i] = (Bit32u)strtoul(part.c_str(), NULL, 16);
+            rest = c == std::string::npos ? "" : rest.substr(c + 1);
+        }
+        Bit32u fn = v[0], eax = v[1], edx = v[2], ebx = v[3], ecx = v[4];
+        if (fire) {
+            fn = 0x2E0E4;
+            eax = v[0];
+            edx = v[1];
+            ebx = v[2] ? v[2] : 0x8C;
+            ecx = 0;
+        }
+        ++tag;
+        snprintf(buf, sizeof(buf), "{\"t\":\"tiecall\",\"script\":%.3f,\"tag\":%d,\"fn\":%u,\"eax\":%u,\"edx\":%u,\"ebx\":%u,\"ecx\":%u}", t, tag,
+                 (unsigned)fn, (unsigned)eax, (unsigned)edx, (unsigned)ebx, (unsigned)ecx);
+        event(buf);
+        wclog(1, "lab %.1fs: call %05x (eax %x, edx %x, ebx %x, ecx %x), tag %d", t, (unsigned)fn, (unsigned)eax, (unsigned)edx,
+              (unsigned)ebx, (unsigned)ecx, tag);
+        tie_queue_call(fn, eax, edx, ebx, ecx, NULL, tie_call_done, tag);
+        return true;
+    }
+    if (item.compare(0, 9, "!tiepoke=") == 0) {
+        // !tiepoke=<image hex>:<hex bytes>
+        const Bit32u at = (Bit32u)strtoul(item.c_str() + 9, NULL, 16);
+        const size_t colon = item.find(':');
+        const std::string bytes = colon == std::string::npos ? "" : item.substr(colon + 1);
+        Bit8u was[64], now[64];
+        int n = 0;
+        for (size_t i = 0; i + 1 < bytes.size() && n < 64; i += 2, n++) {
+            was[n] = tie_r8(at + n);
+            now[n] = (Bit8u)strtol(bytes.substr(i, 2).c_str(), NULL, 16);
+            tie_w8(at + n, now[n]);
+        }
+        snprintf(buf, sizeof(buf), "{\"t\":\"tiepoke\",\"script\":%.3f,\"image\":%u,\"was\":\"%s\",\"now\":\"%s\"}", t, (unsigned)at,
+                 hex(was, n).c_str(), hex(now, n).c_str());
+        event(buf);
+        wclog(1, "lab %.1fs: poke %05x: %s -> %s", t, (unsigned)at, hex(was, n).c_str(), hex(now, n).c_str());
+        return true;
+    }
+    return false;
 }
 
 }  // namespace wc

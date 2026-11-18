@@ -18,6 +18,12 @@
  *      'X' all of the first megabyte: name, NUL, the 1M
  *      'E' an event, one line of JSON (pokes, marks, traced instructions,
  *          watched writes, the 2016 injection)
+ *      'T' TIE Fighter's flight tables at the top of a frame (tie_updatetime):
+ *          u32 code base, u32 data base (linear), u32 frame, u32 regions,
+ *          then each region: u32 image address, u32 length, its bytes
+ *          (the objects, the CraftData, pstate, the clock, ...)
+ *      'Y' all of the machine's memory (16 MB): name, NUL, the bytes (TIE
+ *          Fighter's: the moment the program is found, "found")
  */
 #ifndef WCNET_LAB_H_
 #define WCNET_LAB_H_
@@ -44,6 +50,15 @@ void lab_instruction();
 bool lab_script_item(const std::string &item, double t);
 // An event of one's own into the recording (one line of JSON), while one is made.
 void lab_event(const std::string &json);
+
+// TIE Fighter (the videos of docs/tiefighter.md's post): a scan for the program (its number, the first dword 20000 seen
+// above 1 MB, found or not: found, all of memory 'Y' too); the flight's tables at every frame's top ('T'); a stick's
+// axis as the game scaled it and signed ('axis').  The key script's TIE items: "!tiecall=<fn>:<eax>:<edx>:<ebx>:<ecx>"
+// (hex: a call into the program by the trampoline, its result an event), "!tiefire=<obj>[:<hardpoint>[:<type>]]"
+// (laser_createprojectile for that craft), "!tiepoke=<image>:<hex bytes>", "!dumpall=<name>".
+void lab_tie_scan(unsigned attempt, Bit32u firstRank, bool found, Bit32u code, Bit32u data);
+void lab_tie_frame();
+void lab_tie_axis(bool across, int delta, int scale, int game, int fixed, bool bug);
 
 }  // namespace wc
 

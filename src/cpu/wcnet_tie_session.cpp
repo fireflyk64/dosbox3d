@@ -29,6 +29,7 @@
 #include "keyboard.h"
 #include "mouse.h"
 #include "wcnet_tie.h"
+#include "wcnet_lab.h"
 #include "wcnet_tie_ident.h"
 #include "wcnet_transport.h"
 #include "wcnet_lobby.h"
@@ -1546,6 +1547,11 @@ void make_shot(const TieShot &shot, int owner) {
     if (obj < 0 || owner_of(obj) != owner || !is_craft(obj) || tie_r16(obj_base(obj) + 0x2C) != 0) {
         return;
     }
+    if (wclab_on) {
+        char buf[120];
+        snprintf(buf, sizeof(buf), "{\"t\":\"tieshot-in\",\"obj\":%d,\"hp\":%u,\"owner\":%d}", obj, (unsigned)shot.hardpoint(), owner);
+        lab_event(buf);
+    }
     tie_queue_call(kFnCreateProjectile, (Bit32u)obj, shot.hardpoint(), shot.type(), 0, NULL, shot_made, obj);
 }
 
@@ -1642,6 +1648,11 @@ void take_hit(const TieHit &hit) {
     g_net->hitsIn[tag].set_target((Bit32u)target);      // (this machine's slots from here on)
     g_net->hitsIn[tag].set_shooter((Bit32u)shooter);
     g_net->hitsInIdent[tag] = hit.target();
+    if (wclab_on) {
+        char buf[160];
+        snprintf(buf, sizeof(buf), "{\"t\":\"tiehit-in\",\"target\":%d,\"shooter\":%d,\"offset\":%u}", target, shooter, (unsigned)hit.offset());
+        lab_event(buf);
+    }
     tie_queue_call(kFnLaserHit, 0, (Bit32u)target, hit.offset(), 0, hit_before, hit_done, tag);
 }
 
@@ -2521,6 +2532,10 @@ void tie_session_frame() {
         }
     }
     bool far = false;
+    char sentAs[kCraftSlots + 1];       // (the walkthrough recorder's: each slot's report this frame, N/M/F, P our pilot)
+    memset(sentAs, '.', kCraftSlots);
+    sentAs[kCraftSlots] = 0;
+    sentAs[own < kCraftSlots ? own : 0] = own < kCraftSlots ? 'P' : sentAs[0];
     if (n > 0) {
         int farPick = -1;
         if (g_net->frame % kFarEvery == 0) {
@@ -2552,10 +2567,13 @@ void tie_session_frame() {
             }
             if (d < kReach) {
                 g_net->sentNear++;
+                sentAs[o] = 'N';
             } else if (d < kMidReach && (g_net->frame + o) % kMidEvery == 0) {
                 g_net->sentMid++;
+                sentAs[o] = 'M';
             } else if (o == farPick) {
                 g_net->sentFar++;
+                sentAs[o] = 'F';
                 far = true;
             } else {
                 continue;
@@ -2632,6 +2650,20 @@ void tie_session_frame() {
             hold_ai(o);
         }
     }
+    if (wclab_on) {
+        // (the walkthrough recorder: who flies each slot, what was reported of it, which our AI flies; '-' no craft)
+        char owners[kCraftSlots + 1], ai[kCraftSlots + 1];
+        for (int o = 0; o < kCraftSlots; o++) {
+            const bool craft = is_craft(o);
+            owners[o] = craft ? (char)('0' + (g_net->owner[o] >= 0 && g_net->owner[o] < 10 ? g_net->owner[o] : 9)) : '-';
+            ai[o] = craft && o != own && !mine(o) && g_net->puppets[o].localAi ? 'A' : '.';
+        }
+        owners[kCraftSlots] = ai[kCraftSlots] = 0;
+        char buf[240];
+        snprintf(buf, sizeof(buf), "{\"t\":\"tienet\",\"self\":%d,\"frame\":%u,\"own\":\"%s\",\"sent\":\"%s\",\"ai\":\"%s\",\"bytes\":%u}",
+                 g_net->self, (unsigned)g_net->frame, owners, sentAs, ai, bytes);
+        lab_event(buf);
+    }
 }
 
 void tie_session_before_move() {
@@ -2672,6 +2704,11 @@ void tie_session_shot() {
     }
     scan_idents();
     if (g_net->shotsOut.size() < 32 && wire(shooter) != TieIdents::kNone && someone_near(shooter, kShotReach)) {
+        if (wclab_on) {
+            char buf[120];
+            snprintf(buf, sizeof(buf), "{\"t\":\"tieshot-out\",\"obj\":%d,\"hp\":%u}", shooter, (unsigned)(reg_edx & 0xFFFF));
+            lab_event(buf);
+        }
         TieShot shot;
         shot.set_obj(wire(shooter));
         shot.set_hardpoint(reg_edx & 0xFFFF);
@@ -2725,6 +2762,11 @@ void tie_session_laser_hit() {
     h.set_cy((Bit32s)tie_r32(kCollideYOff));
     h.set_cz((Bit32s)tie_r32(kCollideZOff));
     g_net->hitsOut.push_back(h);
+    if (wclab_on) {
+        char buf[160];
+        snprintf(buf, sizeof(buf), "{\"t\":\"tiehit-out\",\"target\":%d,\"shooter\":%d,\"offset\":%u}", target, shooter, (unsigned)(reg_ebx & 0xFFFF));
+        lab_event(buf);
+    }
 }
 
 // collide_damagecraft(eax target, edx component, ebx attacker, ecx side).  This game damages only the craft it flies,

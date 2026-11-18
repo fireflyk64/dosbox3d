@@ -330,7 +330,33 @@ struct Strut {
 class Forward {
 public:
     Forward(std::vector<Bit8u> &px, std::vector<Bit8u> &vis, int w, int h, int depth)
-        : px_(px), vis_(vis), orig_(px), w_(w), h_(h), d_(depth) {}
+        : px_(px), vis_(vis), orig_(px), origVis_(vis), w_(w), h_(h), d_(depth), src_((size_t)w * h), op_((size_t)w * h, 0), stage_(0) {
+        for (size_t i = 0; i < src_.size(); i++) src_[i] = (Bit32s)i;
+    }
+
+    // The videos' trace (WCNET_TIE_COCKPIT_TRACE=<dir>): which step made each pixel (stage) and where it was taken from
+    // (src: the gunboat picture's pixel, -1 opened to space, -2 drawn new), written beside the made view.
+    void stage(Bit8u s) { stage_ = s; }
+    void trace(const char *name, const std::vector<Bit8u> &pltt) const {
+        const char *dir = getenv("WCNET_TIE_COCKPIT_TRACE");
+        if (!dir || !*dir) return;
+        char path[600];
+        snprintf(path, sizeof(path), "%s/%s-%dx%d.bin", dir, name, w_, h_);
+        FILE *f = fopen(path, "wb");
+        if (!f) return;
+        const Bit32s head[4] = { w_, h_, d_, (Bit32s)pltt.size() };
+        fwrite("TIECKPT1", 1, 8, f);
+        fwrite(head, 4, 4, f);
+        fwrite(orig_.data(), 1, (size_t)w_ * h_, f);
+        fwrite(px_.data(), 1, (size_t)w_ * h_, f);
+        fwrite(origVis_.data(), 1, (size_t)w_ * d_, f);
+        fwrite(vis_.data(), 1, (size_t)w_ * d_, f);
+        fwrite(src_.data(), 4, src_.size(), f);
+        fwrite(op_.data(), 1, op_.size(), f);
+        fwrite(pltt.data(), 1, pltt.size(), f);
+        fclose(f);
+        wclog(1, "TIE: the cockpit's trace written: %s", path);
+    }
 
     bool visible(int x, int y) const { return y < d_ && vis_[(size_t)y * w_ + x]; }
 
@@ -414,10 +440,14 @@ public:
     void open(int x, int y, Bit8u color) {
         vis_[(size_t)y * w_ + x] = 1;
         px_[(size_t)y * w_ + x] = color;
+        src_[(size_t)y * w_ + x] = -1;
+        op_[(size_t)y * w_ + x] = stage_;
     }
-    void close(int x, int y, Bit8u color) {
+    void close(int x, int y, Bit8u color, Bit32s from = -2) {
         vis_[(size_t)y * w_ + x] = 0;
         px_[(size_t)y * w_ + x] = color;
+        src_[(size_t)y * w_ + x] = from;
+        op_[(size_t)y * w_ + x] = stage_;
     }
 
     struct Scope {
@@ -564,7 +594,7 @@ public:
                 if (x < 0 || x >= w_ || !visible(x, y)) continue;
                 int from = r.a + k * sw / nw;
                 if (from > r.b - 1) from = r.b - 1;
-                close(x, y, orig_[(size_t)sy * w_ + from]);
+                close(x, y, orig_[(size_t)sy * w_ + from], sy * w_ + from);
             }
         }
     }
@@ -583,7 +613,7 @@ public:
                 if (!visible(x, y)) continue;
                 int from = r.a + y * sw / thick;
                 if (from > r.b - 1) from = r.b - 1;
-                close(x, y, orig_[(size_t)sy * w_ + from]);
+                close(x, y, orig_[(size_t)sy * w_ + from], sy * w_ + from);
             }
         }
     }
@@ -611,7 +641,7 @@ public:
                 int k = (int)((dist / thick + 0.5) * (sw - 1));
                 if (k < 0) k = 0;
                 if (k > sw - 1) k = sw - 1;
-                close(x, y, orig_[(size_t)src.rows[i] * w_ + r.a + k]);
+                close(x, y, orig_[(size_t)src.rows[i] * w_ + r.a + k], src.rows[i] * w_ + r.a + k);
             }
         }
     }
@@ -690,7 +720,11 @@ private:
     std::vector<Bit8u> &px_;
     std::vector<Bit8u> &vis_;
     const std::vector<Bit8u> orig_;
+    const std::vector<Bit8u> origVis_;
     int w_, h_, d_;
+    std::vector<Bit32s> src_;
+    std::vector<Bit8u> op_;
+    Bit8u stage_;
 };
 
 Bit16u le16(const Bit8u *p) { return (Bit16u)(p[0] | (p[1] << 8)); }
@@ -725,11 +759,13 @@ bool make_forward(const std::vector<Bit8u> &gunboat, int w, int h, int depth, co
     sc.push_back(f.scope_at(scopes[0], scopes[1]));
     sc.push_back(f.scope_at(scopes[2], scopes[3]));
     const int margin = 9 * w / 640;
+    f.stage(1);
     int removed = f.remove(left, sc, margin);
     removed += f.remove(right, sc, margin);
     std::vector<const Strut *> both;
     both.push_back(&left);
     both.push_back(&right);
+    f.stage(2);
     const int cleaned = f.clean(both, margin);
     // (the legs: the A's lean the user liked, 122 pixels in over 282 rows at 640x480, pushed out until the right
     // leg's outer edge is just past the screen's side on the last row where space shows at that side (the user,
@@ -740,9 +776,12 @@ bool make_forward(const std::vector<Bit8u> &gunboat, int w, int h, int depth, co
     while (bottom > 0 && !f.visible(w - 1, bottom)) bottom--;
     const double rightMiddle = w + 2 - f.leg_width(left, lean) / 2.0;
     const double footX = w - 1 - rightMiddle, footY = bottom, topX = footX + lean * bottom;
+    f.stage(3);
     f.leg(right, footX, footY, topX);
     f.leg(left, w - 1 - footX, footY, w - 1 - topX);
+    f.stage(4);
     f.bar(left, 24 * h / 480);
+    f.trace("SHUTFWD", find_res(res, "PLTT")->body);
     wclog(1, "TIE: the shuttle's forward view at %dx%d: struts on rows %d..%d and %d..%d, %d pixels of them out (%d "
              "left over), an A in", w, h, left.first(), left.last(), right.first(), right.last(), removed, cleaned);
     std::vector<Resource> outRes;
@@ -819,13 +858,16 @@ bool make_forward_z95(const std::vector<Bit8u> &gunboat, int w, int h, int depth
     sc.push_back(f.scope_at(scopes[0], scopes[1]));
     sc.push_back(f.scope_at(scopes[2], scopes[3]));
     const int margin = 9 * w / 640;
+    f.stage(1);
     f.remove(left, sc, margin);
     f.remove(right, sc, margin);
     std::vector<const Strut *> both;
     both.push_back(&left);
     both.push_back(&right);
+    f.stage(2);
     f.clean(both, margin);
     const double sx = w / 640.0, sy = h / 480.0;
+    f.stage(5);
     f.arch(left, w / 2.0, 262 * sy, 232 * sx, 6 * sy, 312 * sy, 28 * sx);
     // (the nose's bottom row on the dashboard's top: its lower corners just above the panel below them, the user:
     // "translate the long polygon downward so the bottom is flush with the top of the VDU display's bevel"; row 279 of
@@ -834,11 +876,14 @@ bool make_forward_z95(const std::vector<Bit8u> &gunboat, int w, int h, int depth
     const int floorY = std::min(f.floor_below((int)(w / 2.0 - noseW / 2 + 1), (int)top),
                                 f.floor_below((int)(w / 2.0 + noseW / 2 - 1), (int)top));
     const double base = floorY < depth ? floorY - 1 : 262 * sy;
+    f.stage(6);
     f.nose(f.greys(left, pltt->body), w / 2.0, base, base - noseH, noseW, 40 * sx);
     // (no ion cannons: the targeting box's two upper gun lights, painted in the picture at instruments 39 and 40's
     // places, opened to space; the user: "removing the top 2 icons from the crosshair since z-95 does not have ions")
     const int dot = std::max(2, w / 160);
+    f.stage(7);
     const int lit = f.open_box(lights[0], lights[1], dot) + f.open_box(lights[2], lights[3], dot);
+    f.trace("Z95FWD", pltt->body);
     wclog(1, "TIE: the Z-95's forward view at %dx%d: the struts out, an arch and a long nose in (its bottom at row %d), "
           "the upper gun lights out (%d pixels)", w, h, (int)base, lit);
     std::vector<Resource> outRes;

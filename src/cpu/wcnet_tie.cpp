@@ -26,6 +26,7 @@
 #include "cpu.h"
 #include "pic.h"
 #include "lazyflags.h"
+#include "wcnet_lab.h"
 #include <deque>
 
 namespace wc {
@@ -159,11 +160,13 @@ bool scan() {
             }
             g_codeBase = code;
             g_dataBase = data;
+            lab_tie_scan(attempts, firstRank, true, code, data);
             return true;
         }
         wclog(1, "TIE Fighter: its data is at %08x but its code was not found below it: not the build the hooks know", data);
         return false;
     }
+    lab_tie_scan(attempts, firstRank, false, 0, 0);
     if (attempts % 8 == 1) {
         wclog(2, "TIE Fighter: scan %u: nothing up to %08x, %u pages unreadable, first 20000 at %08x, %s, pmode %d", attempts, top, unreadable,
               firstRank, PAGING_Enabled() ? "paging on" : "paging off", (int)cpu.pmode);
@@ -781,8 +784,18 @@ void tie_check_hooks(Bit32u eip) {
         p.calls++;
         p.total++;
         g_falseHits--;
+        if (wclab_on && i != 0 && p.image != 0x5CDA0 && p.image != 0x32448 && p.image != 0x5F801 && p.image != 0x5F831 &&
+            p.image != 0x5FAE1) {
+            // (the walkthrough recorder: a watched function's call, with its first arguments; the per-frame ones are the 'T' chunks)
+            char buf[200];
+            snprintf(buf, sizeof(buf), "{\"t\":\"hook\",\"fn\":\"%s\",\"image\":%u,\"eax\":%u,\"edx\":%u,\"ebx\":%u,\"ecx\":%u,\"ours\":%s}",
+                     p.name, (unsigned)p.image, (unsigned)reg_eax, (unsigned)reg_edx, (unsigned)reg_ebx, (unsigned)reg_ecx,
+                     tie_in_call() ? "true" : "false");
+            lab_event(buf);
+        }
         if (i == 0) {
             g_frames++;
+            lab_tie_frame();            // (the walkthrough recorder's tables, when one is made)
             tie_controls_frame();       // (this frame's mickeys, before the game reads them)
             tie_session_frame();
         } else if (p.image == 0x16B8C) {
@@ -817,8 +830,19 @@ void tie_check_hooks(Bit32u eip) {
                 wclog(1, "TIE: the stick's axes %s", checked ? "taken signed (user_inputforplane)" : "left as they are: not the build known");
             }
             if (checked) {
-                reg_eax = (Bit32u)tie_controls_axis(p.image == 0x5F801, (Bit16s)r16(p.image == 0x5F801 ? 0xEB6D2 : 0xEB6CE),
-                                                    (int)(reg_ebx & 0xFFFF), (Bit32s)reg_eax);
+                // (WCNET_TIE_SIGNBUG=1: the game's own product left, the 1995 bug flown, for the video's demonstration)
+                static int bug = -1;
+                if (bug < 0) {
+                    const char *env = getenv("WCNET_TIE_SIGNBUG");
+                    bug = env && env[0] == '1' ? 1 : 0;
+                }
+                const Bit16s delta = (Bit16s)r16(p.image == 0x5F801 ? 0xEB6D2 : 0xEB6CE);
+                const int scale = (int)(reg_ebx & 0xFFFF), game = (Bit16s)(reg_eax & 0xFFFF);
+                const int fixed = tie_controls_axis(p.image == 0x5F801, delta, scale, (Bit32s)reg_eax);
+                lab_tie_axis(p.image == 0x5F801, delta, scale, game, fixed, bug == 1);
+                if (!bug) {
+                    reg_eax = (Bit32u)fixed;
+                }
             }
         } else if (p.image == 0x5FAE1) {
             // (the pointer without the bank: the turn's low word 0 here takes the function's own way out, past the roll)
