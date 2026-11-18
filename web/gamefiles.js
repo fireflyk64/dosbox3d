@@ -694,7 +694,7 @@ export function installFiles(FS, root, files) {
 
 // The terrain branch's playtest copy of the page (fireflyk64.github.io/terrain/) shares the site's storage with
 // /dosbox: it keeps its games in a database of its own, as its saves and made sets (web/wc.js saveKey, web/rvsets.js).
-const DB = /^\/terrain\//.test(location.pathname) ? "wc-web-terrain" : "wc-web";
+const DB = typeof location !== "undefined" && /^\/terrain\//.test(location.pathname) ? "wc-web-terrain" : "wc-web";   // (no location: node's tests)
 const PART_SIZE = 32 * 1048576, PART_FROM = 8 * 1048576, INLINE_BUDGET = 64 * 1048576;
 function openDb() {
   return new Promise((resolve, reject) => {

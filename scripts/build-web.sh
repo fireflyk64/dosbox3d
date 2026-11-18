@@ -179,7 +179,14 @@ say "assembling $OUT"
 mkdir -p "$OUT"
 cp "$BUILD/src/dosbox.js" "$BUILD/src/dosbox.wasm" "$OUT/"
 cp "$TS/dist/index.js" "$OUT/p2p-client.js"
-cp "$ROOT/web/index.html" "$ROOT/web/wc.js" "$ROOT/web/gamefiles.js" "$ROOT/web/gamepad.js" "$ROOT/web/usbpad.js" "$ROOT/web/touch.js" "$ROOT/web/touch.css" "$ROOT/web/voice.js" "$ROOT/web/hall.js" "$ROOT/web/chatfilter.js" "$ROOT/web/inno-worker.js" "$ROOT/web/so3.js" "$ROOT/web/rvsprites.js" "$ROOT/web/rvsprites-worker.js" "$ROOT/web/rvsets.js" "$OUT/"
+cp "$ROOT/web/index.html" "$ROOT/web/wc.js" "$ROOT/web/gamefiles.js" "$ROOT/web/gamepad.js" "$ROOT/web/usbpad.js" "$ROOT/web/touch.js" "$ROOT/web/touch.css" "$ROOT/web/voice.js" "$ROOT/web/hall.js" "$ROOT/web/chatfilter.js" "$ROOT/web/inno-worker.js" "$ROOT/web/so3.js" "$ROOT/web/rvsprites.js" "$ROOT/web/rvsprites-worker.js" "$ROOT/web/rvsets.js" "$ROOT/web/build.js" "$OUT/"
+# the page's build (web/build.js): its commit ("+" with changes in the tree) and the moment it was built; the pages in
+# a room and in the lobby compare theirs, and an older one is asked to reload (a page left open across a deploy keeps
+# its old game, and its flights would not match)
+BUILD_AT=$(date +%s)
+BUILD_ID="$(git -C "$ROOT" rev-parse --short HEAD)$(git -C "$ROOT" diff --quiet HEAD 2>/dev/null || echo +)-$BUILD_AT"
+sed -i "s|^export const PAGE_BUILD = .*|export const PAGE_BUILD = { id: \"$BUILD_ID\", at: $BUILD_AT };|" "$OUT/build.js"
+grep -q "^export const PAGE_BUILD = { id: \"$BUILD_ID\"" "$OUT/build.js" || { echo "web/build.js: the build not written in" >&2; exit 1; }
 # Special Operations 3's sealed package (so3/README.md), as the page fetches it
 mkdir -p "$OUT/so3" && cp "$ROOT/web/so3/so3.json" "$ROOT/web/so3/so3.enc" "$OUT/so3/"
 if [ -f "$DEPS/inno-build/innoextract.js" ]; then

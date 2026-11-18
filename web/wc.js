@@ -21,6 +21,7 @@ import { readZip, extractInstaller, looksLikeInstaller, identifyGame, installFil
 import { newRoomCode, retagRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS, CALLSIGNS, pickCallsign, givesWay, sameName } from "./chatfilter.js";
 import { initHall, OTHER_SERVER, serverDown } from "./hall.js";
 import { createSetProvider, readTarGz } from "./rvsets.js";
+import { PAGE_BUILD, PAGE_SITE, buildFields, compareBuild, builtWhen, RELOAD_HOW } from "./build.js";
 
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
@@ -920,6 +921,8 @@ function followHost() {
 const lobby = { game: null, names: new Map(), links: new Map(), flying: new Set(), unsubscribe: null, mission: null,
                 // which game each player has loaded (a registry id), from their hello
                 games: new Map(),
+                // each player's page against this one's build (build.js compareBuild), from their hello
+                builds: new Map(),
                 // asteroid and mine fields, "on", "soft" (a rock does a
                 // fraction of its damage) or "off": the host's choice, for everybody
                 rocks: "on",
@@ -998,7 +1001,34 @@ const sayHello = (to, reply) => sendLobby({ t: "hello", name: myName(), flying: 
   mission: isHost() ? missionKey(lobby.mission) : undefined, rocks: isHost() ? lobby.rocks : undefined,
   wingBumps: isHost() ? lobby.wingBumps : undefined, difficulty: isHost() ? lobby.difficulty : undefined,
   latency: isHost() ? lobby.latency : undefined, fps: isHost() ? lobby.fps : undefined,
-  capHull: isHost() ? lobby.capHull : undefined, private: isHost() ? privateOn() : undefined }, to);
+  capHull: isHost() ? lobby.capHull : undefined, private: isHost() ? privateOn() : undefined, ...buildFields() }, to);
+
+// Another page in the room is another build (build.js): said once a seat and a verdict.  A page from before builds
+// were compared shows nothing of ours but the chat, so it is asked there, that pilot alone.
+function buildNote(seat, m, rel) {
+  const who = esc(typeof m.name === "string" ? m.name : `Player ${seat + 1}`);
+  if (rel === "newer") {
+    chatLine(`${who}'s page is a newer build than this one (built ${esc(builtWhen(m.built))}): ${RELOAD_HOW} before you fly together, or your games will not match.`, "sys");
+    status(`This page is an older build than ${typeof m.name === "string" ? m.name : `Player ${seat + 1}`}'s: ${RELOAD_HOW}, then join the room again.`);
+  } else if (rel === "older") {
+    chatLine(`${who}'s page is an older build than this one (built ${esc(builtWhen(m.built))}): it has told them to reload.`, "sys");
+  } else if (rel === "site") {
+    chatLine(`${who} is on another page of this site (${esc(m.site)}, this one ${esc(PAGE_SITE)}): its game is not this one's. Fly together from the same page.`, "sys");
+  } else if (rel === "none") {
+    // (an older page of this site, or, until every site's page compares builds, another site's: /dosbox/ and the
+    // terrain branch's /terrain/ meet in one lobby)
+    chatLine(`${who}'s page is another build, from before pages compared their builds (an older page, or another site's): they have been asked in the chat to reload it, or to meet on this page.`, "sys");
+    sendLobby({ t: "chat", name: myName(), text: `(automatic) Our pages are different builds, so our games would not match: mine is ${location.host}${PAGE_SITE}, built ${builtWhen(PAGE_BUILD.at)}. If yours is the same address, please ${RELOAD_HOW}; if not, let us meet on one page.` }, seat);
+  }
+}
+// Why this page does not fly along with seat's game (its page another build), or "" when it may (plain text)
+function buildApart(seat) {
+  const rel = lobby.builds.get(seat), who = lobby.names.get(seat) || `Player ${seat + 1}`;
+  return rel === "newer" ? `${who}'s page is a newer build than this one: ${RELOAD_HOW}, then join the room again.`
+    : rel === "older" ? `${who}'s page is an older build than this one: they need to reload it before you can fly together.`
+    : rel === "none" ? `${who}'s page is another build (an older page, or another site's): they need to reload it, or to come to this page, before you can fly together.`
+    : rel === "site" ? `${who} is on another page of this site: fly together from the same page.` : "";
+}
 
 // Another pilot (seat `seat` of the lobby or the room this page is seat
 // `mine` of; `since` their given callsign's moment, none for a typed one) is
@@ -1193,8 +1223,15 @@ const guestWaits = () => !!lobby.game && !soloRoom() && !isHost()
 // A host alone in its room may fly alone instead (the user: "a Fly Single Player button when they are in a empty
 // lobby which doesn't post it to the channel and starts it as single player.  otherwise same as fly")
 const aloneInRoom = () => !!lobby.game && !soloRoom() && isHost() && !lobby.game.players.some((p) => p.occupied && p.id !== lobby.game.selfId);
+// This page's flights would not match the room's (build.js): it is an older build than a pilot's here, or, a guest, its
+// host's page is another build.  The reason, for the status line (and Fly held till it is gone), or ""
+function buildWrong() {
+  if (!lobby.game) return "";
+  for (const [seat, rel] of lobby.builds) if (rel === "newer") return buildApart(seat);
+  return isHost() ? "" : buildApart(0);
+}
 function updateActions() {
-  const wrong = wrongGame();
+  const wrong = wrongGame() || buildWrong();
   const ready = !!source && !!lobby.game && !running && !wrong;
   $("fly").disabled = !ready || guestWaits();
   // (in a room alone as its host, or in none yet, the lobby's alone: the user's "in a empty lobby")
@@ -1300,6 +1337,11 @@ function onLobbyEvent(ev) {
         if (!$("callsign").value.trim() && typeof m.name === "string" && sameName(m.name, was) && callsignClash(ev.from, m.since, lobby.game.selfId)) {
           chatLine(`Another pilot here is ${esc(was)}: you are ${esc(myName())} now (the Callsign box takes one of your own).`, "sys");
         }
+        const rel = compareBuild(m);
+        if (lobby.builds.get(ev.from) !== rel) {
+          lobby.builds.set(ev.from, rel);
+          buildNote(ev.from, m, rel);
+        }
         if (typeof m.game === "string" && m.game !== (lobby.games.get(ev.from) || "")) {
           lobby.games.set(ev.from, m.game);
           if (ev.from === 0) { followHost(); renderMission(); }
@@ -1363,8 +1405,9 @@ function onLobbyEvent(ev) {
         chatLine(`${esc(lobby.names.get(0) || "The host")} started ${esc(missionLabel(lobby.mission))}`, "sys");
         lobby.flying.add(0); renderRoster();
         followHost();
-        const theirs = gameById(lobby.games.get(0) || "");
-        if (source && theirs && theirs.id !== source.game.id) status(`The host started ${theirs.title}, and you have ${source.game.title} loaded. Load ${theirs.title} above, then press Fly to join.`);
+        const theirs = gameById(lobby.games.get(0) || ""), apart = buildApart(0);
+        if (apart) { status(`The host started the game, but ${apart}`); chatLine(esc(apart), "sys"); }
+        else if (source && theirs && theirs.id !== source.game.id) status(`The host started ${theirs.title}, and you have ${source.game.title} loaded. Load ${theirs.title} above, then press Fly to join.`);
         else if (source) void start(false);
         else status("The host started the game. Load your game files above, then press Fly to join.");
       }
@@ -1372,13 +1415,13 @@ function onLobbyEvent(ev) {
     }
     case "player-joined": case "player-rejoined": case "player-replaced":
       if (ev.type === "player-joined" && isHost() && !running && ev.playerId !== lobby.game.selfId) doorbell();
-      lobby.links.set(ev.playerId, "down"); lobby.names.delete(ev.playerId); lobby.flying.delete(ev.playerId); lobby.games.delete(ev.playerId);
+      lobby.links.set(ev.playerId, "down"); lobby.names.delete(ev.playerId); lobby.flying.delete(ev.playerId); lobby.games.delete(ev.playerId); lobby.builds.delete(ev.playerId);
       voice.forget(ev.playerId);
       renderRoster(); updateActions(); break;   // (a host no longer alone: no Fly single player)
     case "player-left":
       if (ev.reason === "explicit-leave") {
         chatLine(`${esc(lobby.names.get(ev.playerId) || "Player " + (ev.playerId + 1))} left the room`, "sys");
-        lobby.names.delete(ev.playerId); lobby.links.delete(ev.playerId); lobby.flying.delete(ev.playerId); lobby.games.delete(ev.playerId);
+        lobby.names.delete(ev.playerId); lobby.links.delete(ev.playerId); lobby.flying.delete(ev.playerId); lobby.games.delete(ev.playerId); lobby.builds.delete(ev.playerId);
       }
       voice.forget(ev.playerId);
       renderRoster(); updateActions(); break;
@@ -1758,6 +1801,7 @@ buildMissionMenu();
 
 $("fly").addEventListener("click", () => {
   if (!source || !lobby.game || running || guestWaits()) return;
+  if (isHost()) for (const [seat, rel] of lobby.builds) if (rel !== "same") chatLine(esc(buildApart(seat)) + " They will not fly along until then.", "sys");
   if (isHost()) sendLobby({ t: "start", game: source.game.id, mission: missionKey(lobby.mission), rocks: lobby.rocks, wingBumps: lobby.wingBumps, latency: lobby.latency, fps: lobby.fps, capHull: lobby.capHull });
   void start(true);
 });
