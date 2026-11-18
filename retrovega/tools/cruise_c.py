@@ -334,6 +334,18 @@ def faint_signal():
 # the same E, and the payoff climbs through A and the Neapolitan D to G sharp, the horns suspended over it.
 # Whole-tone flourishes on the piccolo at the turns.  The second pass: the strings in octaves with the horn under
 # them, the horns in octaves, a brass chord under the payoff, the hits on every accent.
+#
+# (The user, 2026-11-17: "This is fine but seems a bit similar.  Could we have this be a faint background and
+# something very different but in the same genre on the foreground".)  So all of that is the background now, 8 dB
+# softer (the hits and drums 4: the blocks still land), its tune thinner and out of the way (the strings' octave
+# above gone, the F minor and payoff blocks' tune an octave down), the risers coming up from it to full.  Over it,
+# the foreground: a trumpet, the colour no other cruise piece leads with, singing one long climb across the pass
+# where the old phrase sinks by thirds under it.  Its own rhythm: a long note and three quarter-note triplets
+# rising into the next bar's peak, a half step up onto the Neapolitan each time (A over D, B flat over B flat),
+# then falling back by the same triplets; its peaks climbing a half step a block (A, B flat, C, C sharp) and its
+# phrase starts the C sharp minor chord (C sharp, E, G sharp held over the slide into F minor), to the payoff's
+# top C sharp, where the old tune's top was; down to G sharp for the riser.  The second time the brass doubles it
+# an octave under from the dark block on.
 
 NS_A = ['C#m', 'Dmaj7/C#', 'F#m/C#', 'G#7/C']
 NS_B = ['Am', 'Bbmaj7/A', 'Dm/A', 'E7/G#']
@@ -348,6 +360,38 @@ NS_UNDER_A = ['E4:0:4', 'F#4:0:4', 'C#4:0:4', 'C4:0:2 D#4:2:2']
 NS_UNDER_B = [up(t, -4) for t in NS_UNDER_A]
 NS_UNDER_C = [up(t, 4) for t in NS_UNDER_A]
 NS_UNDER_D = ['E4:0:4', 'E4:0:4', 'F#4:0:4', 'F#4:0:2 D#4:2:2']
+T2, T3, TD = '2.66667', '3.33334', '.66667'            # quarter-note triplets on beats 3 and 4
+NS_LEAD = [
+    'C#5:0:2 E5:2:{d} F#5:{a}:{d} G#5:{b}:{d}', 'A5:0:3 F#5:3:1', 'E5:0:2 F#5:2:{d} E5:{a}:{d} D#5:{b}:{d}',
+    'C5:0:2 D#5:2:2',
+    'E5:0:2 F5:2:{d} G5:{a}:{d} A5:{b}:{d}', 'Bb5:0:3 A5:3:1', 'F5:0:2 G5:2:{d} F5:{a}:{d} E5:{b}:{d}',
+    'D5:0:2 G#5:2:2',
+    'Ab5:0:3 G5:3:1', 'F5:0:2 Eb5:2:{d} F5:{a}:{d} Ab5:{b}:{d}', 'Bb5:0:2 Ab5:2:{d} G5:{a}:{d} Bb5:{b}:{d}',
+    'C6:0:4',
+    'C#6:0:3 B5:3:1', 'C#6:0:2 B5:2:{d} A5:{a}:{d} G#5:{b}:{d}', 'A5:0:3 F#5:3:1', 'G#5:0:4']
+NS_LEAD = [t.format(a=T2, b=T3, d=TD) for t in NS_LEAD]
+NS_BED_DB, NS_ACCENT_DB = -8.0, -4.0
+
+
+class Faint(Piece):
+    """a piece with a foreground: every other part plays its velocities so many dB softer (softer and mellower:
+    the bank's vsense), the hits and the drums less so; shape: (bar, to bar, share at the one, at the other) of
+    that softening where it is not all of it (an intro as it was, 0 to 0; a riser coming up to full, 1 to 0)"""
+
+    def __init__(self, bpm, seed, harmony, level, fg, bed_db, accent_db, shape):
+        super().__init__(bpm, seed, harmony, level=level)
+        self.fg, self.bed_db, self.accent_db, self.shape = set(fg), bed_db, accent_db, shape
+
+    def play(self, ch, bar, beat, dur, pitches, vel, spread=4):
+        if ch not in self.fg:
+            db = self.accent_db if ch in (9, ORCH['hit'][0]) else self.bed_db
+            pos = bar * self.beats + beat
+            for b0, b1, f0, f1 in self.shape:
+                if b0 * self.beats <= pos < b1 * self.beats:
+                    db *= f0 + (f1 - f0) * (pos - b0 * self.beats) / ((b1 - b0) * self.beats)
+                    break
+            vel = vel * 10 ** (db / 20)
+        super().play(ch, bar, beat, dur, pitches, vel, spread)
 
 
 def falls(s, ch, bars, vel, lo=52):
@@ -366,8 +410,12 @@ def falls(s, ch, bars, vel, lo=52):
 
 def nightside():
     form = ['C#m', 'C#m'] + NS_PASS + NS_PASS
-    s = Piece(146, 3111, form, level=0.5)
+    ld, ld2 = 12, 13                                # the foreground: the trumpet, the brass under it
+    s = in_time(Faint(146, 3111, form, 0.5, (ld, ld2), NS_BED_DB, NS_ACCENT_DB,
+                      ((0, 2, 0, 0), (18, 19, 1, 0), (19, 20, 0, 0), (36, 37, 1, 0), (37, 38, 0, 0))))
     hn, hn2, mo, lo, hi_, br, pc, tp, hp, st, bs = chans(s)
+    s.setup(ld, 56, 104)
+    s.setup(ld2, 61, 92)
     n = len(form)                                   # 2 + 18 + 18 = 38 bars, 62.5 s
     s.loop_at(2)
     pedal332(s, lo, range(0, 2), 84)                # the intro: the low strings, the ripples coming in
@@ -395,25 +443,22 @@ def nightside():
         for b in range(C, D):
             for beat in ACC332:
                 s.play(tp, b, beat, 0.6, root_in(s, b), (78 if second else 70) + (8 if beat == 0 else 0), 3)
+        # the old tune, under the trumpet, thinner: the strings' high octaves gone, the F minor and payoff blocks
+        # an octave down (the horn's octave under the F minor block alone), no horn under the payoff and no brass
+        # chord (the trumpet's climb is the payoff now)
         if not second:
             sung(s, hn, A, NS_TUNE_A, 80)
             sung(s, hn, B, NS_TUNE_B, 82)
             sung(s, hn2, B, NS_UNDER_B, 62)
-            sung(s, st, C, NS_TUNE_C, 82, e0=70, e1=120, e2=90)
-            s.tune(hn, C, [up(t, -12) for t in NS_TUNE_C], 66)
-            sung(s, st, D, NS_TUNE_D, 82)
-            sung(s, hn, D, NS_UNDER_D, 66)
+            s.tune(hn, C, [up(t, -12) for t in NS_TUNE_C], 70)
+            sung(s, st, D, [up(t, -12) for t in NS_TUNE_D], 82)
         else:
-            sung(s, st, A, [up(t, 12) for t in NS_TUNE_A], 78)
-            s.tune(st, A, NS_TUNE_A, 70)
+            sung(s, st, A, NS_TUNE_A, 76)
             sung(s, hn, A, NS_UNDER_A, 66)
             s.tune(hn, B, NS_TUNE_B, 82)
             s.tune(hn2, B, [up(t, -12) for t in NS_TUNE_B], 70)
-            sung(s, st, C, NS_TUNE_C, 84, e0=70, e1=124, e2=96)
-            s.tune(hn, C, [up(t, -12) for t in NS_TUNE_C], 78)
-            sung(s, st, D, NS_TUNE_D, 84)
-            sung(s, hn, D, NS_UNDER_D, 68)
-            s.pad(br, range(D, D + 3), 55, 70, 3, 58)
+            s.tune(hn, C, [up(t, -12) for t in NS_TUNE_C], 80)
+            sung(s, st, D, [up(t, -12) for t in NS_TUNE_D], 84)
         s.crash(D, 0, 108 if second else 100)
         if not second:
             for b in (D, D + 2):
@@ -431,6 +476,13 @@ def nightside():
         s.roll(tp, R, 0, 8, 'G#1', 6, 104)
         if second:
             sweep(s, hp, R + 1, {8, 0, 3}, 44, 87, 58, beats=2)
+    # the foreground: the trumpet's climb, each pass, growing a little block by block (the brass an octave under
+    # it the second time, from F minor)
+    for P, second in ((2, False), (20, True)):
+        for k in range(4):
+            sung(s, ld, P + 4 * k, NS_LEAD[4 * k:4 * k + 4], 98 + 4 * k, e0=96, e1=127, e2=104)
+        if second:
+            sung(s, ld2, P + 8, [up(t, -12) for t in NS_LEAD[8:]], 84, e0=90, e1=127, e2=104)
     s.end(n)
     return s
 
