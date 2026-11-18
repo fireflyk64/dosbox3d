@@ -218,7 +218,9 @@ On top of these:
   2026-11-17: it began at Splash One at every start of the game, and a
   session of a kill or two heard only that one, the user's "always plays
   the *same* default song"). A friend
-  dying the same way gets the tragedy. A ship gone from the slots without
+  dying the same way gets the tragedy, and a capital ship of ours the
+  carrier's loss, LOST once (the cue CAPLOST; the user, 2026-11-17: "We
+  should play carrier lost whenever any capital vessel is lost"). A ship gone from the slots without
   dying (left behind by the autopilot and held out of the scene, landed,
   jumped out, run off) is no loss: it had been, and the tragedy played as
   the autopilot reached nav 1 (the user, 2026-11-02).

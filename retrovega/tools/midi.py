@@ -167,7 +167,8 @@ def lost_song():
     return s
 
 
-SONGS = {'LAUNCH.MID': launch_song, 'WIN.MID': win_song, 'LOSE.MID': lose_song, 'LOST.MID': lost_song}
+SONGS = {'LAUNCH.MID': launch_song, 'WIN.MID': win_song, 'LOSE.MID': lose_song, 'LOST.MID': lost_song,
+         'CAPLOST.MID': lost_song}   # (the same song, once, as a sting: a capital ship of ours lost in flight, score.c)
 
 
 def main():

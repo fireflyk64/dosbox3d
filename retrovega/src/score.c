@@ -265,7 +265,7 @@ void score_start(const RvMission __far *m)
 void score_tick(int landing)
 {
     unsigned long now = clock240();
-    int s, nearby = 0, staying = 0, mood = g_sc.mood, splashed = 0, lost = 0;
+    int s, nearby = 0, staying = 0, mood = g_sc.mood, splashed = 0, lost = 0, caplost = 0;
 #ifdef RV_TESTS
     if (g_score_test) {
         test_tick(now);
@@ -288,6 +288,8 @@ void score_tick(int landing)
             if (dying && !g_sc.dying[s] && km < GONE_KM) {   /* (begun to die this frame, near) */
                 if (side == 1)
                     splashed++;
+                else if (side == 0 && maybeEntityType[s] == 0xD)
+                    caplost++;          /* (a capital ship of ours: the carrier's loss, the user's, 2026-11-17) */
                 else if (side == 0)
                     lost++;
             }
@@ -322,8 +324,12 @@ void score_tick(int landing)
         play(mood);
     else if (mood == CALM || mood == FIGHT || mood == HOME)
         follow(mood);
-    /* the stings over it all */
-    if (lost) {
+    /* the stings over it all (the user, 2026-11-17: "We should play carrier lost whenever any capital vessel is lost") */
+    if (caplost) {
+        static const char __far s_caplost[] = "score: a capital ship of ours lost: the carrier's sting";
+        rv_notef(s_caplost);
+        music_sting(RV_MUSIC_CAPLOST);
+    } else if (lost) {
         static const char __far s_lost[] = "score: a friend lost: the tragic sting";
         rv_notef(s_lost);
         music_sting(RV_MUSIC_TRAGEDY);
