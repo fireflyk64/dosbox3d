@@ -4226,7 +4226,10 @@ static void step_ground(void)
             if (lift > HOVER_RISE)      /* (a quarter of the way a step, at least HOVER_RISE: a cliff ahead outruns a
                                            steady lift) */
                 lift = lift / 4 > HOVER_RISE ? lift / 4 : HOVER_RISE;
-            u = vec3((p->x - c->x) >> 8, (p->y - c->y) >> 8, (p->z - c->z) >> 8);
+            u = vec3((p->x - c->x) >> 14, (p->y - c->y) >> 14, (p->z - c->z) >> 14);   /* (its way up, in 64 km:
+                                           vec_norm squares the parts, and in km a planet's 64,000 passed 31 bits:
+                                           undefined in C, UBSan's overflow; DOS's wrap came out right under 65,536
+                                           km only; M8.67) */
             vec_norm(&u);
             fall = (v->x * u.x + v->y * u.y + v->z * u.z) >> 8;
             if (fall < 0)

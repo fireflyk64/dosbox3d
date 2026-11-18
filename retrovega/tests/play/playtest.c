@@ -5064,6 +5064,40 @@ static void face_vertical(int16_t s, int16_t dir)
     ship_orthonormalise(s);
 }
 
+/* M8.67: the hover's way up on a big planet (step_ground): Enigma's ice, a radius of 64,000 km, where the way up in km
+ * squared past 31 bits (2026-11-17: UBSan's overflow; DOS's wrapping multiply came out right, under 65,536 km only): an
+ * Aera fighter held still 20 km over the ground straight above the centre rises straight up a step on */
+static void t_ground_up(void)
+{
+    static const char __far e_made[] = "Enigma's planet: planet_make %d (100: made)";
+    static const char __far e_low[] = "the fighter put %d km over the ground (10 to 30)";
+    static const char __far e_up[] = "a step on it rose %d km and slid %d km aside: up 3 or more, aside under 1";
+    const LfVec __far *c;
+    LfVec p;
+    long roof, over;
+    int32_t x0, y0, z0;
+    int16_t k;
+    pt_launch_named("ENIGMAP");
+    k = (int16_t)planet_make(0);
+    REQUIRE(k == 100, e_made, k, 0, 0);
+    c = planet_centre();
+    p.x = c->x;
+    p.y = c->y + 66000L * KM;
+    p.z = c->z;
+    for (k = 0; k < 3; k++)             /* (down to 20 km over its ice, mountains and all) */
+        p.y -= planet_over(&p, &roof) - 20L * KM;
+    pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_FROZEN, p.x / KM, p.y / KM, p.z / KM, 0);
+    over = planet_over((const LfVec *)&gPositionVector[1], &roof);
+    REQUIRE(over >= 10L * KM && over <= 30L * KM, e_low, over / KM, 0, 0);
+    x0 = gPositionVector[1].x;
+    y0 = gPositionVector[1].y;
+    z0 = gPositionVector[1].z;
+    if (!pt_step())
+        return;
+    REQUIRE(gPositionVector[1].y - y0 >= 3L * KM && abs32(gPositionVector[1].x - x0) + abs32(gPositionVector[1].z - z0) < KM,
+            e_up, (gPositionVector[1].y - y0) / KM, (abs32(gPositionVector[1].x - x0) + abs32(gPositionVector[1].z - z0)) / KM, 0);
+}
+
 static void t_planet(void)
 {
     static const char __far e_made[] = "the canyon run's planet: planet_make %d (100: made)";
@@ -6550,6 +6584,11 @@ static void t_escort_along(void)
              + (gPositionVector[ox].z - gPositionVector[0].z) / 256 * gOrientationFrontVector[0].z) / 256;
     REQUIRE(along < -400, e_behind, along, 0, 0);
 }
+
+/* (from here on a third code segment: the second outgrew its 64 KB on 2026-11-17, E1118) */
+#ifdef __WATCOMC__
+#pragma code_seg("playtest3_TEXT", "CODE")
+#endif
 
 /* ======================================================================================================== */
 /* M10: the cockpit (logic_target_*, the lock, SYS_*; the user's rulings of 2026-10-31: the target key only in front,
@@ -8487,6 +8526,7 @@ static const char __far n_m8_62[] = "M8.62 held-wave (mission_done, wave_may_com
 static const char __far n_m8_63[] = "M8.63 planet (planet.c, step_ground, ground_mind): the canyon run's planet made, its nav points 700 km over its floor; a dive into the floor and a climb into the stone bridge stopped short of the rock, the throttle at 100; an Aera fighter diving at the floor glides over it; the player that takes damage destroyed by it";
 static const char __far n_m8_66[] = "M8.66 campaign-card (camp_flown_from, camp_place): a set's planet missions only with the card: Cephid 4 or 3, Shmrn 6 or 4, the way on skips CEPHIDP without it, the screens count what is flown";
 static const char __far n_m8_65[] = "M8.65 cloak-run (ENIGMAP, role=guard, the cloak): cloaked, nobody sees the player and the guards keep their posts, Nav 1 to the canyon's end; a surprise from behind turns only that one; Alt+C and it lets go; the post burnt with no heavy coming; the autopilot goes home past the guards (the log: cloakrun)";
+static const char __far n_m8_67[] = "M8.67 ground-up (step_ground): over Enigma's ice, 64,000 km from its centre, a fighter low over the ground is lifted straight up";
 static const char __far n_m8_64[] = "M8.64 stream (stream_step, role=stream): the canyon run's three Nicanders come once Nav 1 is reached, ahead of the player and over the ground; one killed, another comes within 3 s; none once Nav 5 is reached";
 static const char __far n_m8_55[] = "M8.55 field-nav (nav_field, nav_stop, nav_in_reach): a waypoint inside a field is the field's middle: the autopilot stops at its edge, and the point is reached only within 1,200 km of the middle";
 static const char __far n_m8_54[] = "M8.54 capital-help (capital_help): an Aera capital ship hurt through its armour by an unengaged attacker turns half its side's fighters on it; none when a fighter is already near the attacker";
@@ -8583,6 +8623,7 @@ static const PtTest __far k_tests[] = {
     { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 }, { n_m8_56, t_nav_switch, 0 }, { n_m8_57, t_escort_arrive, 0 }, { n_m8_58, t_escort_threat, 0 }, { n_m8_59, t_escort_back, 0 }, { n_m8_60, t_wave_also, 0 }, { n_m8_61, t_goals, 0 }, { n_m8_62, t_held_wave, 0 }, { n_m8_63, t_planet, 0 }, { n_m8_64, t_stream, 0 },
     { n_m10_13, t_cloak, 0 }, { n_m10_14, t_cloak_ai, 0 }, { n_m8_65, t_cloak_run, 0 }, { n_m8_66, t_campaign_card, 0 },
     { n_m10_15, t_target_range, 0 },
+    { n_m8_67, t_ground_up, 0 },
 };
 
 /* --- the run --- */
