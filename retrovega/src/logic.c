@@ -1482,12 +1482,33 @@ static void fly_ahead(int16_t s)
 /* where a gun record's mount is (positions): across and up in 32nds of the half box, and the nose ahead; a capital
  * ship's turrets along its hull instead, the i-th of n from the stern to the bow (every one had sat at the bow, so a
  * destroyer's bolts all came from its front: the user, 2026-11-05, "it seems to only shoot to the front") */
+static int16_t to32(int16_t v)          /* 127ths as 32nds, rounded (gun_mount) */
+{
+    return (int16_t)((v * 64 + (v >= 0 ? 127 : -127)) / 254);
+}
+
 static const RvShipType __far* gun_mount(int16_t s, int16_t g, RvVec3 *out)
 {
     const RvShipType __far *t = slot_type(s);
     int32_t h = collide_half(s), ax = (int32_t)GUN_MOUNT_X(s, g) * (h / 32), ay = (int32_t)GUN_MOUNT_Y(s, g) * (h / 32);
     int32_t az = t ? (int32_t)t->hit[2] * (h / 127) : h / 2;
     const RvVec3 *R = &gOrientationRightVector[s], *U = &gOrientationUpVector[s], *F = &gOrientationFrontVector[s];
+    if (t && maybeEntityType[s] != ET_CAPSHIP) {
+        /* (branch widelaser, the user's playtest, 2026-11-17: "Make sure the lasers come out exactly at the wingtips of
+         * the shroedinger as listed"): a gun mounted on one of the type's vital points (data/hitboxes.csv: its nose,
+         * tail and wingtips, 127ths of the half box, its sprites' +x its left), across and up to the 32nd, fires from
+         * that point exactly, along the hull too, where the others fire from the nose's plane */
+        int16_t k;
+        for (k = 0; k < t->nvitals && k < RV_VITALS; k++) {
+            const int8_t __far *v = t->vital[k];
+            if (to32(-v[0]) == GUN_MOUNT_X(s, g) && to32(v[1]) == GUN_MOUNT_Y(s, g)) {
+                ax = -(int32_t)v[0] * (h / 127);
+                ay = (int32_t)v[1] * (h / 127);
+                az = (int32_t)v[2] * (h / 127);
+                break;
+            }
+        }
+    }
     if (t && maybeEntityType[s] == ET_CAPSHIP) {
         const RvWeapon __far *w = weapon(GUN_TYPE(s, g));
         if (w && w->kind == RV_WK_TURRET) {

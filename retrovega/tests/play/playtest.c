@@ -1577,13 +1577,14 @@ static void t_energy_gate(void)
     REQUIRE(shots_added() != a0, e_back, gunEnergy[0], 0, 0);
 }
 
+static int16_t pt_muzzle_at(const RvVec3 *d, int32_t half, int32_t ahead);
 /* M2.13 */
 static void t_muzzles(void)
 {
     static const char __far e_side[] = "gun %d (mount %d across) fired from %d km to the ship's right: its mount's "
         "side, on the ship's own axes";
     static const char __far e_nose[] = "gun %d fired from %d km ahead of the ship's middle (its half box %d km): from "
-        "the nose, inside its size";
+        "the nose, inside its size, or a gun on a vital point from it";
     static const char __far e_way[] = "gun %d's shot flies %d/256 along the turned ship's nose";
     static const char __far e_none[] = "no gun of the turned ship put a shot in the world: nothing to look at (M2.1 "
         "first)";
@@ -1614,7 +1615,7 @@ static void t_muzzles(void)
         ahead = vec_dot(&d, F) / 256;
         if (GUN_MOUNT_X(0, g) != 0)
             REQUIRE((across < 0) == (GUN_MOUNT_X(0, g) < 0) && across != 0, e_side, g, GUN_MOUNT_X(0, g), across);
-        REQUIRE(ahead > 0 && pt_len(d.x, d.y, d.z) <= 2 * half, e_nose, g, ahead, half);
+        REQUIRE(pt_muzzle_at(&d, half, ahead), e_nose, g, ahead, half);
         v.x = s->vx;
         v.y = s->vy;
         v.z = s->vz;
@@ -6638,6 +6639,23 @@ static void t_escort_along(void)
 #ifdef __WATCOMC__
 #pragma code_seg("playtest3_TEXT", "CODE")
 #endif
+
+/* (M2.13) a shot from the player's ship (d: its place off the ship's middle, km; ahead: along the nose) left from a
+ * vital point of the type to 2 km (a gun mounted on one: the widelaser branch's Schroedinger, its lasers on its
+ * wingtips, data/hitboxes.csv), else ahead of the middle within the ship's size (from the nose's plane) */
+static int16_t pt_muzzle_at(const RvVec3 *d, int32_t half, int32_t ahead)
+{
+    const RvShipType __far *t = slot_type(0);
+    int32_t across = vec_dot(d, &gOrientationRightVector[0]) / 256, up = vec_dot(d, &gOrientationUpVector[0]) / 256;
+    int16_t k;
+    for (k = 0; t && k < t->nvitals && k < RV_VITALS; k++) {
+        const int8_t __far *v = t->vital[k];
+        if (labs(across + (int32_t)v[0] * half / 127) <= 2 && labs(up - (int32_t)v[1] * half / 127) <= 2
+            && labs(ahead - (int32_t)v[2] * half / 127) <= 2)
+            return 1;
+    }
+    return ahead > 0 && pt_len(d->x, d->y, d->z) <= 2 * half;
+}
 
 /* ======================================================================================================== */
 /* M10: the cockpit (logic_target_*, the lock, SYS_*; the user's rulings of 2026-10-31: the target key only in front,
