@@ -1377,8 +1377,7 @@ function updateActions() {
   const wrong = wrongGame();
   $("join").textContent = source ? `Host ${shortTitle()}` : "Host a room";
   const one = seatCount() === 1;
-  $("join").title = `Makes a room${source ? " of " + source.game.title : ""} and puts you in it as its host: under the code typed in the box, or one made for the game (${gameTag() || "WC"}-4821). ${one ? "With Players at 1 it is yours alone, said to nobody" : "It is offered in the lobby, for anybody to join; Host private keeps it to those you give its code or link"}`;
-  $("joinPrivate").hidden = !!lobby.game || one;
+  $("join").title = `Makes a room${source ? " of " + source.game.title : ""} and puts you in it as its host: under the code typed in the box, or one made for the game (${gameTag() || "WC"}-4821). ${one ? "With Players at 1 it is yours alone, said to nobody" : "It is offered in the lobby, for anybody to join, unless Private (below) is ticked: then only its code or its link brings somebody in"}`;
   $("findRoom").hidden = $("joinCode").hidden = !!lobby.game;
   const series = source ? seriesName(source.game.id) : "";
   $("findRoom").textContent = series ? `Join open ${series}` : "Join open game";
@@ -1414,7 +1413,7 @@ function renderTopAction() {
   b.dataset.step = step;
   b.disabled = step === "fly" && $("fly").disabled;
   if (step === "room") b.disabled = seeking;
-  $("findRoom").disabled = $("joinCode").disabled = $("joinPrivate").disabled = seeking || $("join").disabled;
+  $("findRoom").disabled = $("joinCode").disabled = seeking || $("join").disabled;
   b.textContent = { screen: "Full screen", files: "Load game files", room: "Join open game", fly: "Fly" }[step];
   b.title = { screen: "The game full screen; holding Esc leaves it",
               files: "Your own Wing Commander or Wing Commander II: a .zip of the game folder, or the GOG installer",
@@ -1923,18 +1922,17 @@ window.addEventListener("beforeunload", (ev) => { if (running && !leavingForGood
 
 // Host makes the room (or sits down in it, when the code typed is a room that is there); Join, and Enter in the code's
 // box, only join a room that exists; Join open game asks the lobby.
-// Host offers its room in the lobby, as Advertise does (the user, 2026-11-17: "HOST WING COMMANDER or HOST WING
-// COMMANDER (private) ...and the non-private one advertises in the lobby unless players was bumped down to 1"); Host
-// private ticks Private instead: only its code or its link brings somebody in.  A room of one is offered to nobody; a
-// room that was there already (the code typed was somebody's) is its host's to offer.  Fly Alone stays for a room the
-// button offered (hostOffered), as nobody may come.  (?advertise=off: the page tests' rooms, said by hand.)
+// Host offers its room in the lobby, as Advertise does, unless Private is ticked (the user, 2026-11-17: "the
+// non-private one advertises in the lobby unless players was bumped down to 1"; then "there's already a private
+// checkbox. Forget the host private. It should advertise unless they check that private box").  A room of one is
+// offered to nobody; a room that was there already (the code typed was somebody's) is its host's to offer.  Fly Alone
+// stays for a room the button offered (hostOffered), as nobody may come.  (?advertise=off: the page tests' rooms, said
+// by hand.)
 const hostOffered = new Set();
-async function hostRoom(priv) {
+async function hostRoom() {
   if (lobby.game || $("join").disabled) return;
-  const one = seatCount() === 1;
-  if (!one) $("private").checked = priv;
   await joinRoom();
-  if (!lobby.game || soloRoom() || one || priv || !isHost() || query.get("advertise") === "off") return;
+  if (!lobby.game || soloRoom() || privateOn() || !isHost() || query.get("advertise") === "off") return;
   const code = lobby.game.code;
   hostOffered.add(normalizeCode(code));
   const offered = await hall.advertise();
@@ -1943,8 +1941,7 @@ async function hostRoom(priv) {
     : `You host room ${code}. It could not be said in the lobby just now (Advertise there says it again; "Copy link" for friends).`;
   status(text); hall.note(text);
 }
-$("join").addEventListener("click", () => void hostRoom(false));
-$("joinPrivate").addEventListener("click", () => void hostRoom(true));
+$("join").addEventListener("click", () => void hostRoom());
 $("setup").addEventListener("submit", (ev) => { ev.preventDefault(); void joinRoom({ create: false }); });
 $("findRoom").addEventListener("click", () => void joinOpenGame({ series: true }));
 // (Players: 1, 2 or 3, whatever is typed; three is in beta.)

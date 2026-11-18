@@ -369,9 +369,8 @@ const romeo = await open("ROMEO", opened);
 await inside(romeo); await pilots(romeo, 3);
 got = await openGame(romeo);
 check("a full room is not offered", !got.room && got.note === "No open game found", got);
-await romeo.click("#joinPrivate");
-await romeo.waitForFunction(() => !document.getElementById("lobby").hidden, null, { timeout: 30000 });
-check("Host private ticks Private", await romeo.$eval("#private", (el) => el.checked), null);
+await romeo.check("#private");
+await ownRoom(romeo);
 const codeR = await value(romeo, "room");
 const sierra = await open("SIERRA", opened);
 await inside(sierra); await pilots(sierra, 4);
@@ -567,7 +566,8 @@ check("a lobby is made with the seats the server allows", (await h.evaluate(() =
     && /alone in room/.test(document.getElementById("chatLog").textContent), null, { timeout: 30000 }).then(() => true, () => false), await status(g2));
   // the Full screen box beside Collide: ticked at first, unticked kept in this tab across a reload
   check("Full screen beside Collide, ticked at first", (await g2.$eval("#fullStart", (el) => el.checked)) && !(await g2.$eval("#fullStartLabel", (el) => el.hidden))
-    && (await g2.$eval("#fullStartLabel", (el) => el.previousElementSibling && el.previousElementSibling.textContent.includes("Collide"))), null);
+    // (in the mission row after Collide's menu; other games' menus, hidden, may sit between)
+    && (await g2.$eval("#fullStartLabel", (el) => { for (let p = el.previousElementSibling; p; p = p.previousElementSibling) if (p.querySelector("#collisions")) return el.parentElement.id === "missionRow"; return false; })), null);
   await g2.click("#fullStart");
   await g2.reload();
   await g2.waitForFunction(() => document.getElementById("sourceStatus").dataset.state === "ready", null, { timeout: 60000 }).catch(() => {});

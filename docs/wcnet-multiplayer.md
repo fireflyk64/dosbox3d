@@ -1402,10 +1402,10 @@ top-level README for the workflow).  What differs:
   their mission disks, TIE Fighter and its demo, every other game its own;
   the user: "can join TFD or TF, can join WC1 or WC2 but not willy nilly").
   Host offers its room in the lobby as Advertise does, Fly Alone kept
-  (`hostRoom`, `hostOffered`); **Host private** ticks Private and says
-  nothing; with Players at 1 there is one Host and nothing is said (the
+  (`hostRoom`, `hostOffered`) unless Private is ticked or Players is 1 (the
   user: "the non-private one advertises in the lobby unless players was
-  bumped down to 1").  `?advertise=off` is the page tests' (rooms said by
+  bumped down to 1"; "there's already a private checkbox ... It should
+  advertise unless they check that private box").  `?advertise=off` is the page tests' (rooms said by
   hand).  A code the page put in the box leaves it with its room.  The site's
   /wc, /wc2, /tf, /tfd, /tv, /raptor, /privateer redirect to the page with
   that game asked for (scripts/site-shortcuts.sh).  scripts/web-pick.sh

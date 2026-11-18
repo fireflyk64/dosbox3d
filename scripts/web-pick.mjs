@@ -183,17 +183,14 @@ check(/Wing Commander needs your own files/.test(await h4.page.$eval("#sourceSta
 await h.page.context().close();
 const k = await openPage("kilo", { game: "tv" });
 check(await ready(k, "tv"), `?game=tv: Terminal Velocity picked (${await game(k)})`);
-// -- Host private: Private ticked, nothing said in the lobby; with Players at 1 there is one Host
+// -- Private ticked: Host says nothing in the lobby
 await inLobby(k, 1);
-await k.page.fill("#seats", "1");
-check(await k.page.$eval("#joinPrivate", (el) => el.hidden), "Players 1: no Host private (a room of one is said to nobody)");
-await k.page.fill("#seats", "2");
-check(await k.page.$eval("#joinPrivate", (el) => !el.hidden), "Players 2: Host and Host private");
-await k.page.click("#joinPrivate");
-check(await inRoom(k) && /^TV-\d{4}$/.test(await roomCode(k)), `K: Host private: ${await roomCode(k)}`);
+await k.page.check("#private");
+await k.page.click("#join");
+check(await inRoom(k) && /^TV-\d{4}$/.test(await roomCode(k)), `K: Private ticked, Host: ${await roomCode(k)}`);
 await k.page.waitForTimeout(2500);
-check(await k.page.$eval("#private", (el) => el.checked) && !(await k.page.$eval("#hallLog", (el) => el.textContent)).includes(await roomCode(k)),
-  "K: Private ticked, and the room not said in the lobby");
+check(await k.page.$eval("#private", (el) => el.checked) && !(await k.page.$eval("#hallLog", (el) => el.textContent)).includes(await roomCode(k)) && !/offered in the lobby/.test(await said(k)),
+  `K: the room not said in the lobby (${(await said(k)).slice(0, 60)})`);
 await browser.close();
 console.log(failed ? `PICK FAILED (${failed})` : "PICK OK");
 process.exit(failed ? 1 : 0);
