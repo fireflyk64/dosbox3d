@@ -1437,6 +1437,38 @@ top-level README for the workflow).  What differs:
   off.  Checked in the phone test with the browser's own rule for sound
   (no flag): the context running and its blocks asked for.  No iPhone was at
   hand: that part is by the browsers' documented rules, not measured.
+  **A room's connection to the lobby server is kept, and made again**
+  (2026-11-19, the user: "I just hosted a game on my browser--I waited like
+  20 minutes and tried to join on another browser... but it said the game
+  was not available. Is there some kind of hidden timeout in the system? I
+  had a stable connection the whole time").  Two, one after the other.  A
+  room's connection says nothing while nobody comes or goes, and the public
+  server's web proxy closes a connection silent for 300 s; the page said
+  "Lost the lobby server" in the room's chat and did nothing more.  The
+  server then ends a room 5 minutes after its last connection went
+  (`room-empty-ttl`).  Measured on the live site with a private room left
+  idle: the host's page lost the server at 302 s, and at 852 s a second
+  browser was told "Room TFD-4970 is not open".
+  * The page now says a line to the server every 25 s from any room that is
+    not a room of one (`roomBeat` in web/wc.js: `{"type":"ping"}` on the
+    room's socket, as the lobby chat's page has from the start, web/hall.js).
+    The server knows no such line and answers so; `onLobbyEvent` leaves that
+    answer out of the chat.  The beat is a worker's clock: a hidden tab's own
+    timers are slowed to one a minute.  No change to lobbylink or the server.
+  * A connection lost all the same (the network gone a while, a computer
+    asleep, the server restarted) is made again while no game runs with it
+    (`resumeRoom`): the same seat by the tab's token, the room made anew by
+    its host if the server has ended it, offered in the lobby again if Host
+    had offered it, tried again every 20 s.  With a game running the
+    players' links stay up as before and nobody new can join: the emulator
+    holds that connection.
+  * `node scripts/web-room-keep.mjs PAGE_URL LOBBY_PORT LOBBY_BIN ZIP` (a
+    lobby server of the script's own, stopped and started): a host waiting
+    60 s says its lines and none shows in the chat; the server stopped, the
+    page says it is making the connection again; the server back 8 s later,
+    its rooms gone, the page is in its room again within 20 s; a second
+    browser joins it by its code, two pilots on both rosters, the first
+    still the host: ROOM KEEP OK.
   Host offers its room in the lobby as Advertise does, Fly Alone kept
   (`hostRoom`, `hostOffered`) unless Private is ticked or Players is 1 (the
   user: "the non-private one advertises in the lobby unless players was

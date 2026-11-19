@@ -1646,9 +1646,74 @@ function onLobbyEvent(ev) {
       if (ev.state === "connected") sayHello(ev.playerId, false);
       renderRoster(); break;
     case "signaling-closed":
-      chatLine(`Lost the lobby server (${esc(ev.code)}): nobody new can join, existing links stay up`, "sys"); break;
+      // (the connection gone, not the room ended: made again unless the game runs with it: resumeRoom)
+      if (ev.code === "connection-lost" && !running) { chatLine("Lost the lobby server's connection: making it again…", "sys"); void resumeRoom(); }
+      else chatLine(`Lost the lobby server (${esc(ev.code)}): nobody new can join, existing links stay up`, "sys");
+      break;
     case "lobby-error":
+      if (ev.code === "invalid-message" && /ping/.test(ev.message || "")) break;      // (the server's answer to roomBeat's line)
       chatLine(`Lobby error ${esc(ev.code)}: ${esc(ev.message)}`, "sys"); break;
+  }
+}
+
+// A room's connection to the lobby server, kept and made again (the user, 2026-11-19: "I just hosted a game on my
+// browser--I waited like 20 minutes and tried to join on another browser... but it said the game was not available. Is
+// there some kind of hidden timeout in the system? I had a stable connection the whole time").  There were two.  A
+// room's connection says nothing while nobody comes or goes, and what stands between the page and the server (its web
+// server's proxy, a router) closes a connection silent for some minutes; the page then said so in the room's chat and
+// did nothing more.  And the server ends a room five minutes after its last connection went.  So a host waiting alone
+// had no room some ten minutes on.
+//   * Every 25 s a room's page says a line to the server (roomBeat; the lobby chat's page has done so from the start,
+//     hall.js).  The server has no such line and answers that it does not know it (onLobbyEvent leaves the answer
+//     out).  The beat comes from a worker's clock: a page in a hidden tab has its own timers slowed to one a minute.
+//   * A connection lost all the same (the network gone a while, the computer asleep) is made again while no game runs
+//     with it (resumeRoom): the same seat by the tab's token, the room made anew by its host if the server has ended
+//     it, tried again every 20 s.  With a game running the links between the players stay up as before and nobody new
+//     can join: the emulator holds that connection.
+const ROOM_BEAT_MS = 25000;
+function roomBeat() {
+  const g = lobby.game;
+  try { if (g && !g.solo && g.ws && g.ws.readyState === WebSocket.OPEN) g.ws.send('{"type":"ping"}'); } catch (e) { /* its close is told */ }
+}
+try {
+  const clock = new Worker(URL.createObjectURL(new Blob([`setInterval(() => postMessage(0), ${ROOM_BEAT_MS});`], { type: "text/javascript" })));
+  clock.onmessage = roomBeat;
+} catch (e) { setInterval(roomBeat, ROOM_BEAT_MS); }
+let resuming = false;
+async function resumeRoom() {
+  const old = lobby.game;
+  if (!old || old.solo || resuming || running) return;
+  resuming = true;
+  const code = old.code, key = "wclobby-" + code;
+  try {
+    const game = await P2PGame.connect({
+      server: serverUrl(), code,
+      create: old.selfId !== 0 ? undefined
+        : { maxPlayers: old.maxPlayers, waitUntilFull: false, allowLateJoin: true, allowReconnect: true, allowReplacement: false, reconnectPolicy: "token-only" },
+      storage: "session", storageKey: key, forceRelay: $("relay").checked,
+    });
+    if (lobby.game !== old || running) { try { game.close(); } catch (e) { /* gone */ } return; }     // (left, or flying, meanwhile)
+    if (lobby.unsubscribe) lobby.unsubscribe();
+    try { old.close(); } catch (e) { /* gone */ }
+    try { sessionStorage.setItem(key, game.resumeToken); } catch (e) { /* (the old one's close forgot the seat's token: the new one's) */ }
+    lobby.game = game;
+    lobby.adopted = false; lobby.backlog = [];
+    lobby.links.clear();
+    lobby.unsubscribe = game.onEvent(onLobbyEvent);
+    chatLine(`The lobby server's connection is made again: room ${esc(code)} is open${game.selfId !== old.selfId ? `, and you are player ${game.selfId + 1} of it now` : ""}.`, "sys");
+    log(`lobby: room ${code}: the connection made again as player ${game.selfId} of ${game.maxPlayers}`);
+    renderRoster(); updateActions();
+    // (a room Host offered in the lobby is offered again: the server may have ended the one that was said)
+    if (isHost() && hostOffered.has(normalizeCode(code)) && !privateOn() && game.players.some((p) => !p.occupied)) void hall.advertise({ auto: true });
+  } catch (e) {
+    if (lobby.game === old && !running && e && (e.code === "room-not-found" || e.code === "room-full")) {
+      chatLine(`Room ${esc(code)} is not open any more (${esc(e.code)}): leave it, and host or join another.`, "sys");
+    } else if (lobby.game === old && !running) {
+      chatLine(`The lobby server's connection could not be made again (${esc((e && e.code) || (e && e.message) || "no answer")}): trying again in 20 s.`, "sys");
+      setTimeout(() => { if (lobby.game === old) void resumeRoom(); }, 20000);
+    }
+  } finally {
+    resuming = false;
   }
 }
 
