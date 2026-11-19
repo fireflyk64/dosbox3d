@@ -410,6 +410,15 @@ bool start() {
         Stream *s = NULL;
 #ifdef C_LOBBYLINK
         if (g_lobby) {
+            // (the wait for the host's channel, the emulator standing still, is made once: after it a host that is
+            // not connected is only looked for, or a guest whose host has gone would stop for 20 s out of every 30:
+            // the demo's session's, docs/tiedemo.md)
+            static bool waited = false;
+            if (waited && !g_lobby->peer_up(0)) {
+                delete n;
+                return false;
+            }
+            waited = true;
             s = g_lobby->open_peer(0, kHelloWaitMs);
         } else
 #endif

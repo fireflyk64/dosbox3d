@@ -233,6 +233,10 @@ Stream *LobbyHub::open_peer(int player, int timeoutMs) {
     return NULL;
 }
 
+bool LobbyHub::peer_up(int player) const {
+    return wclobby_peer_state(h_, (uint16_t)player, NULL) == WCLOBBY_PEER_UP;
+}
+
 Listener *LobbyHub::make_listener() {
     return new LobbyListener(h_, code_);
 }

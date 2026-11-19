@@ -46,6 +46,9 @@ public:
     // Stream to `player` once its data channel is up (caller owns it).
     // NULL after timeoutMs, or right away when nobody holds that slot.
     Stream *open_peer(int player, int timeoutMs);
+    // Is the data channel to `player` up now?  (open_peer then answers at once: a session that has waited for its
+    // host once asks this before it tries again, so that its game is not stood still for a host that is not there.)
+    bool peer_up(int player) const;
     // Hands out a stream for each peer that starts talking to us (caller
     // owns the listener).
     Listener *make_listener();

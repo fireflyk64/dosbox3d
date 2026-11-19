@@ -128,6 +128,23 @@ for (const p of [host, guest]) {
   const fr = lines(p).map((l) => Number((/\(([0-9.]+) ms a frame\)/.exec(l) || [0, 0])[1])).filter((x) => x > 0);
   if (fr.length) console.log(`${stamp()} ${p.who}: ${(1000 / (fr.reduce((s, x) => s + x, 0) / fr.length)).toFixed(1)} frames a second in flight (the game's clock)`);
 }
+// HOST_LEAVES=<seconds>: the host's page then closed and the guest watched that long (the user, 2026-11-19: "the host
+// closed the browser and the guest keeps getting these intermittent waits for a host that is never coming back"): the
+// guest is told, never waits for the host again (the emulator stood still 20 s at each wait), and its game goes on,
+// by the seconds of its own clock its key script's !tdmpose lines show (GUEST_SCRIPT: one a second).
+if (process.env.HOST_LEAVES) {
+  const n = Number(process.env.HOST_LEAVES);
+  const poses = () => new Set(guest.logs.map((l) => (/key script ([0-9.]+)s: TIE demo: pose/.exec(l) || [])[1]).filter(Boolean)).size;
+  const mark = guest.logs.length, p0 = poses();
+  await host.page.close();
+  await new Promise((r) => setTimeout(r, n * 1000));
+  const after = guest.logs.slice(mark);
+  const waits = after.filter((l) => /waiting for a connection to player 0|no connection to player 0/.test(l)).length;
+  const flown = poses() - p0;
+  check(after.some((l) => /the host\) is gone/.test(l)), "guest: told the host is gone");
+  check(waits === 0, `guest: no wait for the host that left (${waits} lines of waiting)`);
+  check(flown >= 0.7 * n, `guest: its game went on, ${flown} of its own seconds in ${n} s`);
+}
 for (const p of [host, guest]) fs.writeFileSync(path.join(shotDir, `${p.who}.log`), p.logs.join("\n") + "\n");
 await browser.close();
 console.log(failed ? `TDM PAGE FAILED (${failed})` : "TDM PAGE OK");

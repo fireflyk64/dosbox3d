@@ -37,6 +37,17 @@ The user, 2026-11-15:
     (wcnet_tiedemo.cpp `tdm_program_ended`, from game.cpp's program end): the batch file goes on to the game. In
     TIEMISS.EXE Esc ends the program at once, mid-flight (no question asked): the layer keeps the key from it
     (`tdm_key`, the page's and the native key filter), with a line in the log at most every 10 s.
+  * **An Esc from before TIEMISS ran** (2026-11-19, the user, hosting on the page: "the first clicked start.. then I
+    hit escape on the host...and it said waiting for another to join ... once the guest went through the showroom the
+    host immediately restarted and returned to the [showroom]"; the host's log: the launch, "the flight's frames are
+    coming", "our flight is over", "TIEMISS.EXE is gone from memory"). The key is kept only while TIEMISS runs, and
+    Esc is the way past the opening (DEMO.EXE): pressed twice there, or held, the second Esc comes after DEMO.EXE has
+    gone, waits in the BIOS's keyboard buffer, and TIEMISS reads it in its first flight frame (a host held at its
+    launch: minutes later). Now the buffer's Esc is taken out at the launch and at every frame's top
+    (wcnet_tiedemo.cpp `purge_esc`), the other keys kept in their order. Measured, Esc eight times from 8 s: before,
+    TIEMISS gone at its first frame; after, "an Esc pressed before TIEMISS ran taken out of the keyboard's buffer"
+    and the flight goes on. So Esc works in the showroom and skips the opening, and never reaches a flight (its one
+    use while TIEMISS runs: a guest held at its launch for a host already flying flies alone).
   * The showroom's introduction ("Say hello to Neon", the car driving in, the buttons one by one) took some 9 s
     during which it heard no key or click. The user: "there may be a time wait there--can we jump the clock ahead so
     people can click whenever?" It is timed by one routine (NEON.EXE is packed: found running, at load+0BB8:001B),
@@ -210,6 +221,22 @@ TieOwners. Only the room's hello and the launch are the demo's own (TdmHello, Td
     other notices and the campaign's (a mission's brief, its end, the next) go to the log alone (the user,
     2026-11-15: "We need to minimize the added output text using the overlay in the game"). The radio lines are the
     game's own messages.
+  * **The host at a launch again while a guest still flies the one before** (2026-11-19, the user: "the host exited
+    and went back to the neon showroom and got stuck waiting for the other to join--but the guest was in the
+    mission"): the host's program ended without its verdict (TIEMISS ended at once, by the Esc above). The host then
+    waited two minutes at its launch and flew without the guest. Now the guest, told the host is at a launch
+    (TdmState), ends its flight by the room's rule (3 s later) and does not wait for a verdict that is not to come.
+    Measured (the host's Esc left in its buffer, `WCNET_TDM_KEEP_ESC=1`, the showroom's release): the host's program
+    gone at launch 1, back at its launch 29 s later; the guest's flight ended, and both flew launch 2 together 5 s
+    after the host came.
+  * **A host that is gone is not waited for** (2026-11-19, the user, of the guest after the host closed its page:
+    "the guest keeps getting these intermittent waits for a host that is never coming back ... it played for a
+    bit...but then stopped a bit again..... every 10 or 20 seconds"). A session without its host tried again every
+    10 s, and each try waited up to 20 s for the host's channel with the emulator standing still. The wait is now
+    made once; after it a host is only looked for (`LobbyHub::peer_up`), and joined when its channel is up. The CD's
+    session the same. Measured, two pages, the host's closed (`HOST_LEAVES=60 scripts/web-tdm.sh`, the guest's key
+    script a `!tdmpose` a second): before, 3 lines of waiting and 27 of the guest's seconds flown in 60; after, none,
+    and 60 of 60.
 * **The seat.** At 0FC2:0136, the mission read, a guest writes the host's seeds and its own craft into the player's
   flight group: seat 1 the group's first craft the host does not fly, seat 2 the next (the CD's player-craft number).
   The mission's own setup then makes the same craft in the same object slots on every machine. The host flies object

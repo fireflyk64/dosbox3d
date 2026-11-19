@@ -347,8 +347,19 @@ bool start() {
     if (client) {
         Stream *s = NULL;
 #ifdef C_LOBBYLINK
-        if (g_lobby) s = g_lobby->open_peer(0, kHelloWaitMs);
-        else
+        if (g_lobby) {
+            // The wait for the host's channel (up to kHelloWaitMs, the emulator standing still) is made once.  After
+            // it, a host that is not connected is only looked for: the user, 2026-11-19, of a guest whose host had
+            // closed its page: "the guest keeps getting these intermittent waits for a host that is never coming
+            // back" (the game stopped for 20 s out of every 30).
+            static bool waited = false;
+            if (waited && !g_lobby->peer_up(0)) {
+                delete n;
+                return false;
+            }
+            waited = true;
+            s = g_lobby->open_peer(0, kHelloWaitMs);
+        } else
 #endif
             s = tcp_connect(net_config.host, net_config.portstr);
         if (!s) {
@@ -447,6 +458,14 @@ void take_state(const TdmState &st, int seat) {
     const bool wasAtLaunch = r.atLaunch;
     r.atLaunch = st.at_launch();
     r.inFlight = st.in_flight();
+    // The host at a launch again while we still fly the one before with it: its program ended without its verdict
+    // (its pilot's own Esc, the demo's end at once), and it now waits for us.  The room's rule, the host's flight
+    // over: ours ends too, and the next launch is together.  (The user, 2026-11-19: "the host exited and went back to
+    // the neon showroom and got stuck waiting for the other to join--but the guest was in the mission".)
+    if (!g_net->host && seat == 0 && r.atLaunch && g_net->flownGo && !g_net->alone && tdm_in_flight() &&
+        (!st.has_go() || st.go() <= g_net->flownGo)) {
+        end_for_room(pilot_name(0) + " is at the launch again: the flight ends for everybody");
+    }
     // (a guest come to its launch while this host flies: it launches with the next mission; said here)
     if (g_net->host && r.atLaunch && !wasAtLaunch && tdm_in_flight()) {
         notice(pilot_name(seat) + " is waiting to launch: you fly the next mission together");
@@ -1548,7 +1567,10 @@ bool tdm_session_verdict_wait(int *next, bool *over) {
     poll_peers();
     if (!g_net) return false;
     const Remote &h = g_net->remotes[0];
-    if (h.verdict < g_net->flownGo) return true;
+    if (h.verdict < g_net->flownGo) {
+        // (the host at a launch again: no verdict on our flight is to come; the same mission, launched with it)
+        return !(h.atLaunch && PIC_FullIndex() - h.at < kStaleMs);
+    }
     *next = (int)h.next;
     *over = h.over;
     return false;

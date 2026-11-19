@@ -210,7 +210,9 @@ void watch_step() {
 
 // --- the flight's frames ------------------------------------------------------------------------------------------
 
+void purge_esc();
 void frame_top() {
+    purge_esc();
     const double now = PIC_FullIndex();
     if (now - g_lastFrameMs > 1000) {
         g_frame = 0;            // (a flight begun)
@@ -336,6 +338,41 @@ void at_move_objects() {
     }
 }
 
+// Esc never reaches TIEMISS, which ends at once on it, in flight too (tdm_key keeps the key while TIEMISS runs).  But an
+// Esc pressed before TIEMISS is there goes to whatever runs then: pressed twice to skip the opening, or held, the
+// second one comes after DEMO.EXE has gone and waits in the BIOS's keyboard buffer, and TIEMISS reads it in its first
+// flight frame: the user, 2026-11-19, hosting: "the first clicked start.. then I hit escape on the host ... once the
+// guest went through the showroom the host immediately restarted" (the launch held for the guest, then the flight's
+// first frame, then "TIEMISS.EXE is gone from memory").  So at the launch and at every frame's top the buffer's Esc
+// (scan code 1) is taken out, the other keys kept in their order.
+void purge_esc() {
+    static int keep = -1;       // (WCNET_TDM_KEEP_ESC=1: left in, the rigs' way to a host's program ended by its Esc)
+    if (keep < 0) {
+        const char *env = getenv("WCNET_TDM_KEEP_ESC");
+        keep = env && env[0] == '1' ? 1 : 0;
+    }
+    if (keep) return;
+    const PhysPt bda = 0x400;
+    const Bit16u head = mem_readw(bda + 0x1A), tail = mem_readw(bda + 0x1C);
+    const Bit16u start = mem_readw(bda + 0x80), end = mem_readw(bda + 0x82);
+    if (head == tail || start >= end || end - start > 64 || head < start || head >= end || tail < start || tail >= end) return;
+    Bit16u keys[32];
+    int n = 0;
+    bool found = false;
+    for (Bit16u p = head; p != tail && n < 32; p = (Bit16u)(p + 2 >= end ? start : p + 2)) {
+        const Bit16u key = mem_readw(bda + p);
+        if ((key >> 8) == 0x01) found = true; else keys[n++] = key;
+    }
+    if (!found) return;
+    Bit16u p = head;
+    for (int i = 0; i < n; i++) {
+        mem_writew(bda + p, keys[i]);
+        p = (Bit16u)(p + 2 >= end ? start : p + 2);
+    }
+    mem_writew(bda + 0x1C, p);
+    wclog(1, "TIE demo: an Esc pressed before TIEMISS ran taken out of the keyboard's buffer (it would end the demo at once)");
+}
+
 // --- the launch: held at create_createmission's entry -------------------------------------------------------------
 
 void hold_at_stub(Hold why) {
@@ -348,6 +385,7 @@ void hold_at_stub(Hold why) {
 }
 
 void at_create_mission() {
+    purge_esc();
     if (g_released) {
         g_released = false;         // (back from the hold: the mission is made)
         return;
