@@ -71,6 +71,13 @@
   button#flySolo { background: #06120b; color: var(--green2); border-color: #1d4d31; }
   button#flySolo:hover:not(:disabled) { background: #0b2416; color: var(--green); }
   button:disabled { background: #0a120e; color: #41614f; border-color: #1c3327; cursor: default; }
+  /* On a phone the button to press next pulses, two flat colours in turn (the user, 2026-11-19: "a flashing button
+     for next steps glowing button ... was hard for me to find it otherwise"): Fly Solo at the top, then Fly in the
+     room.  Nothing pulses once the game runs (the page's script takes the class away: the emulator's time), and for
+     a reader who asked for less motion it is the amber button without the pulse. */
+  @keyframes nextStep { 0%, 100% { background-color: #f0b92c; } 50% { background-color: #fff6c8; } }
+  html.phone button.next-step:not(:disabled) { background: #f0b92c; color: #1c1300; border-color: var(--amber2); animation: nextStep 1.2s steps(2, jump-none) infinite; }
+  @media (prefers-reduced-motion: reduce) { html.phone button.next-step:not(:disabled) { animation: none; } }
   button:focus-visible { border-color: #ffffff; outline: none; }
   input[type=text], input[type=number], select { height: 26px; padding: 2px 6px; background: var(--dark); color: #dfffe9; border: 1px solid var(--line); border-radius: 0; font: 13px var(--mono); }
   input::placeholder { color: #3f6b53; }
@@ -256,7 +263,7 @@
     <h1>Wing Commander</h1>
     <span class="sub">cooperative multiplayer in the browser</span>
     <span class="sub" id="serverTag" title="This page uses another lobby server than the public one (its address has ?server=, or Options says so): you meet the pilots who use the same" hidden></span>
-    <div class="acts"><span id="topNote" role="status"></span><button type="button" id="topAction" disabled title="The next step, wherever the page is scrolled to">Fly</button></div>
+    <div class="acts"><span id="topNote" role="status"></span><button type="button" id="topSolo" hidden title="Fly the game picked alone, now: a room of one is made (nobody is told of it, nobody can join) and the game starts">Fly Solo</button><button type="button" id="topAction" disabled title="The next step, wherever the page is scrolled to">Fly</button></div>
   </header>
 
   <div id="pilotBar" title="Your name in the lobby and the rooms, and in the games that show one: the one given here until you type your own">

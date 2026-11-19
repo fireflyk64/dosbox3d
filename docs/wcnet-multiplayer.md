@@ -1401,6 +1401,26 @@ top-level README for the workflow).  What differs:
   keeps to the picked game's series (`seriesOf`: Wing Commander and II with
   their mission disks, TIE Fighter and its demo, every other game its own;
   the user: "can join TFD or TF, can join WC1 or WC2 but not willy nilly").
+  **On a phone** (2026-11-19, the user: "there's a lot to scroll through.
+  Can there be a "Fly Solo" button that starts a 1 player room and joins it
+  and then scrolls down to the game part ... a flashing button for next steps
+  ... eg host tie fighter scrolls down to the room which has the glowing fly
+  game. and click that and it scrolls down to the controls ... was hard for me
+  to find it otherwise"): the page is one long column there (`phoneLike`: no
+  pointer but a finger; `html.phone`).  The top has "Fly Solo" beside "Join
+  open game" until there is a room (`#topSolo`: Fly Alone's code, a room of
+  one made and the game started).  The next button to press pulses, two flat
+  colours in turn (`.next-step`: Fly Solo with no room, then the room's Fly
+  and the top's), and nothing pulses once the game runs (the emulator's
+  time).  A room joined scrolls to its Fly button (`scrollToFly`; the chat's
+  box is not given the focus there: it would raise the keyboard); the game
+  started scrolls its picture to the window's top, the touch controls under
+  it, again as the page grows (`scrollToGame`).  `node
+  scripts/web-phone-steps.mjs PAGE_URL ZIP` (a Pixel 7, the TIE demo
+  dropped): Fly Solo shown and pulsing at the top; Host pressed, the page at
+  the room's pulsing Fly; Fly pressed, the game running with its picture 7 px
+  from the window's top and nothing pulsing; and Fly Solo pressed, a room of
+  one and the same: PHONE STEPS OK.
   Host offers its room in the lobby as Advertise does, Fly Alone kept
   (`hostRoom`, `hostOffered`) unless Private is ticked or Players is 1 (the
   user: "the non-private one advertises in the lobby unless players was
