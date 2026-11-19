@@ -124,6 +124,35 @@ check(degrees(p285, p30) < 1.5, `let go, the turn stopped (${degrees(p285, p30).
 await page.locator("#touchNav").tap();
 await until(33);
 check(lasers(32.5) === 4, `the Lasers button: the recharge a step further (the setting ${lasers(32.5)})`);
+// A touch lost without its end (a phone's notification takes it: the user, 2026-11-19, "now my virtual joystick is stuck
+// slightly upward and to the left and I can't steer it at all"): the stick held by a pointer no finger has (a
+// pointerdown the page is given and never the pointerup), then (1) a touch elsewhere lets it go, (2) a touch on the
+// stick takes it.
+const lost = () => page.evaluate(() => {
+  const s = document.getElementById("touchStick"), r = s.getBoundingClientRect();
+  s.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 99, pointerType: "touch", button: 0, bubbles: true, cancelable: true,
+    clientX: r.left + r.width * .3, clientY: r.top + r.height * .3 }));
+});
+const stickNow = () => page.evaluate(() => ({ on: document.getElementById("touchStick").classList.contains("on"),
+  knob: document.getElementById("touchKnob").style.transform }));
+await lost();
+const stuck = await stickNow();
+const tgt = await page.locator("#touchTgt").boundingBox();
+await touch("touchStart", [{ x: tgt.x + tgt.width / 2, y: tgt.y + tgt.height / 2, id: 2 }]);
+await touch("touchEnd", []);
+const freed = await stickNow();
+check(stuck.on && !freed.on && /translate\(0px, 0px\)/.test(freed.knob),
+  `a stick held by a touch that is gone (${stuck.knob}) is let go by a touch elsewhere (${freed.knob})`);
+await lost();
+await touch("touchStart", [{ x: pad.x + pad.width * .85, y: mid.y, id: 3 }]);
+const taken = await stickNow();
+await touch("touchEnd", []);
+const after = await stickNow();
+check(taken.on && /translate\((\d|[1-9]\d)/.test(taken.knob) && !after.on,
+  `and a touch on the stick takes it (the knob ${taken.knob}), let go ${after.knob}`);
+const sel = await page.evaluate(() => [getComputedStyle(document.getElementById("status")).userSelect || getComputedStyle(document.getElementById("status")).webkitUserSelect,
+  getComputedStyle(document.getElementById("log")).userSelect || getComputedStyle(document.getElementById("log")).webkitUserSelect]);
+check(sel[0] === "none" && sel[1] === "none", `in flight the status line and the log cannot be selected (no "Copy" menu to take a touch away: ${sel.join(", ")})`);
 await page.screenshot({ path: path.join(shotDir, "tdm-touch-end.png") });
 fs.writeFileSync(path.join(shotDir, "tdm-touch.log"), logs.join("\n") + "\n");
 await browser.close();

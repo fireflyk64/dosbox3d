@@ -597,6 +597,15 @@ don't know"). The same for the CD game.
   desktop web too not just mobile"; the rigs' native runs do not), and 1.5 s into each flight the emulator presses F9 once if our craft still has the setting it
   was made with (`tie_controls_touch_step`; the setting is CraftData +0xC9 here, the CD's laser_power at +0xD1: 2 as
   made, F9 to 3, 4, then 0: measured). A craft already a step up is left alone.
+* **A touch lost is not a stick stuck** (the user, the same day, on an iPhone: "I was playing then a notification
+  came up...and now my virtual joystick is stuck slightly upward and to the left and I can't steer it at all", and
+  "I also saw a "copy text" notice"). The stick kept the pointer that held it and took no other until that one's end,
+  which the phone never told the page (a notification, or the long press's "Copy" menu, takes a touch away so). Now
+  (web/touch.js, every game's): a new touch on the stick takes it from a pointer already holding it; whenever a touch
+  begins or ends anywhere, a stick or a held button (Fire) that no touch on the screen began on is let go
+  (`reconcile`: a touch stays its first element's, Touch.target); and in flight nothing round the picture can be
+  selected or long-pressed into the "Copy" menu (touch.css `html.touch-flying`). The phone test: a stick given a
+  pointer that never ends is let go by a touch on another button, and taken by a touch on the stick.
 * `node scripts/web-tdm-touch.mjs PAGE_URL ZIP`: one page as a Pixel 7, the demo dropped, a room of one (a phone's
   Players is 1). Measured: the touch controls shown in flight, the Nav button "Lasers"; the flight begun at setting 3;
   the stick held up pitched the craft as the Down arrow does (a climb); held right it turned the nose 140 degrees in

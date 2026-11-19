@@ -129,9 +129,13 @@ export function initTouch({ send: sendKey, log, inFlight = () => false, steer = 
       if (button.hasPointerCapture(pointer)) button.releasePointerCapture(pointer);
     };
     button.addEventListener("pointerdown", (e) => {
-      if (holds.has(button) || e.button !== 0) return;
-      holds.set(button, { pointer: e.pointerId, off });
-      button.setPointerCapture(e.pointerId);
+      if (e.button !== 0) return;
+      if (holds.has(button)) {
+        if (holds.get(button).pointer === e.pointerId) return;
+        off();                          // (held by a touch that is gone, lost: this one takes it)
+      }
+      holds.set(button, { pointer: e.pointerId, off, touch: e.pointerType === "touch" });
+      try { button.setPointerCapture(e.pointerId); } catch (err) { /* a pointer the browser no longer has */ }
       button.classList.add("on");
       send(name, true);
     });
@@ -141,7 +145,7 @@ export function initTouch({ send: sendKey, log, inFlight = () => false, steer = 
     button.addEventListener("click", (e) => { if (e.detail === 0) tap(name, false); });
   }
 
-  let flying = false, stickPointer = null, sx = 0, sy = 0, frame = null, lastSteer = 0;
+  let flying = false, stickPointer = null, stickTouch = false, sx = 0, sy = 0, frame = null, lastSteer = 0;
   function centre() {
     const pointer = stickPointer;
     stickPointer = null;
@@ -168,15 +172,32 @@ export function initTouch({ send: sendKey, log, inFlight = () => false, steer = 
   }
   stick.addEventListener("pointerdown", (e) => {
     e.preventDefault();
-    if (!flying || stickPointer !== null || e.button !== 0) return;
+    if (!flying || e.button !== 0 || e.pointerId === stickPointer) return;
+    // (held already: by a touch that is gone.  A phone's notification can take a touch away without the page being
+    // told it ended; the stick then stayed where it was and took no other finger: the user, 2026-11-19, "a
+    // notification came up...and now my virtual joystick is stuck slightly upward and to the left and I can't steer
+    // it at all".  The new touch takes the stick)
+    if (stickPointer !== null) centre();
     stickPointer = e.pointerId;
-    stick.setPointerCapture(e.pointerId);
+    stickTouch = e.pointerType === "touch";
+    try { stick.setPointerCapture(e.pointerId); } catch (err) { /* a pointer the browser no longer has */ }
     stick.classList.add("on");
     move(e);
   });
   stick.addEventListener("pointermove", (e) => { if (e.pointerId === stickPointer) move(e); });
   for (const ev of ["pointerup", "pointercancel", "lostpointercapture"])
     stick.addEventListener(ev, (e) => { if (e.pointerId === stickPointer) centre(); });
+
+  // What the fingers on the glass say: a touch begins on an element and stays that element's (Touch.target) wherever
+  // it goes, so a stick or a held button that no touch on the screen began on is held by a touch that is gone, its
+  // end never told (the notification's).  Looked at whenever a touch begins or ends anywhere on the page: the stick
+  // goes back to the middle, the button is let go.  (A mouse's or a pen's hold has no touch: left alone.)
+  function reconcile(e) {
+    const on = (el) => { for (const t of e.touches) if (t.target === el || el.contains(t.target)) return true; return false; };
+    if (stickPointer !== null && stickTouch && !on(stick)) centre();
+    for (const [button, hold] of [...holds]) if (hold.touch && !on(button)) hold.off();
+  }
+  for (const ev of ["touchstart", "touchend", "touchcancel"]) document.addEventListener(ev, reconcile, { capture: true, passive: true });
 
   function release() {
     // Drop any queued typing too: even a partially transmitted Shift must be released when the page is hidden.
@@ -195,6 +216,7 @@ export function initTouch({ send: sendKey, log, inFlight = () => false, steer = 
       document.getElementById("touchFlight").hidden = !flying;
       bar.classList.toggle("in-flight", flying);
       bar.closest("#screen").classList.toggle("touch-flight", flying);
+      document.documentElement.classList.toggle("touch-flying", flying);      // (touch.css: no selecting round the picture)
       if (flying) { relabel(); steer(0, 0); }
     }
     // Some games recenter their mouse driver; maintain a held deflection without synthesizing mouse buttons.
@@ -224,7 +246,7 @@ export function initTouch({ send: sendKey, log, inFlight = () => false, steer = 
     // while a game runs, on a screen with touch
     show(on) {
       bar.hidden = !(on && touchy());
-      if (bar.hidden) { cancelAnimationFrame(frame); frame = null; release(); field.blur(); }
+      if (bar.hidden) { cancelAnimationFrame(frame); frame = null; release(); field.blur(); document.documentElement.classList.remove("touch-flying"); }
       else if (frame === null) frame = requestAnimationFrame(update);
       if (on && !bar.hidden) log("touch: left thumb steers; right thumb fires, boosts, adjusts throttle, targets and uses AUTO; KEYS types");
     },

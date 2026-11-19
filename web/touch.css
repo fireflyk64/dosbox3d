@@ -1,5 +1,9 @@
 /* Shared phone controls: below the picture, or at the edges of #screen in fullscreen. */
-#touch { margin-top: 8px; color: var(--green); user-select: none; -webkit-user-select: none; }
+#touch { margin-top: 8px; color: var(--green); user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+/* In flight on a touch screen nothing round the picture can be selected or long-pressed into the phone's "Copy" menu:
+   a thumb resting on the status line or the log began a selection, and the phone took the stick's touch away for it
+   (the user, 2026-11-19: "I also saw a "copy text" notice", the stick then stuck).  Text boxes keep their own. */
+html.touch-flying #flight, html.touch-flying #flight :not(input):not(textarea) { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 #touch[hidden], #touch [hidden] { display: none; }
 #touch button { min-width: 0; min-height: 44px; margin: 0; padding: 6px 8px; font-size: 12px; letter-spacing: 0; touch-action: none; }
 #touch .touch-tools { display: flex; justify-content: space-between; margin-bottom: 8px; }
