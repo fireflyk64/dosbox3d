@@ -2241,6 +2241,31 @@ window.addEventListener("keydown", (e) => {
   e.preventDefault();
 }, true);
 
+// The game's sound, started by the pilot's own touch (the user, 2026-11-19: "I'm no longer hearing sound happening on
+// my mobile...  I can hear sound on youtube").  A browser lets a page's sound begin only from a touch or a key.  The
+// emulator makes its sound some seconds after Fly was pressed, files and program first, and then asks the browser to
+// start it from a timer: Chrome takes that (a page touched once is trusted), an iPhone's Safari does not, and in flight
+// the page keeps the picture's touches from the emulator, so no later touch started it either.  So the page makes the
+// sound's context itself, in the touch that starts the game (Fly, Fly Solo, the top's button, a touch of the picture),
+// hands it to the emulator (the module's SDL2.audioContext, which its audio code takes when there is one), and starts
+// it again at any touch or key that finds it stopped.  And an iPhone's ringer switch silences a page's sound, though
+// not a video's (YouTube plays on): where the browser has an audio session (iOS 17) the page says its sound is
+// playback, while Voice is off (a microphone's session is the system's to choose).
+let gameAudio = null;
+function unlockAudio(make) {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!gameAudio && make && AC) gameAudio = new AC();
+    const sdl = window.DOSBox && window.DOSBox.SDL2 && window.DOSBox.SDL2.audioContext;
+    for (const ctx of [gameAudio, sdl]) if (ctx && ctx.state === "suspended") void ctx.resume();
+    if (PHONE && navigator.audioSession) navigator.audioSession.type = $("voice").value === "off" ? "playback" : "auto";
+  } catch (e) { /* no sound is no reason to stop */ }
+}
+for (const ev of ["pointerdown", "pointerup", "touchend", "click", "keydown"]) {
+  window.addEventListener(ev, (e) => unlockAudio(!!(e.target && e.target.closest && e.target.closest("#topAction, #topSolo, #fly, #flySolo, #screen"))),
+    { capture: true, passive: true });
+}
+
 async function start(fromGesture) {
   if (running) return;
   running = true;
@@ -2302,8 +2327,9 @@ async function start(fromGesture) {
     if (cfg.callsign && !solo) env.WCCALLSIGN = cfg.callsign;
     env.WCGAME = source.game.id;     // (the game this run is for: the TIE demo's room lives from the boot on, wcnet_tiedemo.cpp)
     if (isTie()) env.WCNET_TIE_MOUSE = tfFlight();
-    // (a phone or a tablet has no F9: each flight starts with the lasers' recharge one step up, wcnet_tie_controls.cpp)
-    if (isTie() && phoneLike()) env.WCNET_TIE_TOUCH = "1";
+    // (each flight starts with the lasers' recharge one step up, wcnet_tie_controls.cpp: a phone or a tablet has no F9,
+    // and on a computer too: the user, 2026-11-19, "would be useful on desktop web too not just mobile")
+    if (isTie()) env.WCNET_TIE_TOUCH = "1";
     if (isPriv()) env.WCPRIVFACE = $("privFace").value;
     if (isTv() && together && isHost()) env.WCTVLOOKS = `${$("tvCraftHost").value},${$("tvCraftGuest").value}`;
     if (cfg.lastname && !solo) env.WCLASTNAME = cfg.lastname;
@@ -2338,6 +2364,7 @@ async function start(fromGesture) {
     const config = {
       canvas,
       P2PGame,
+      ...(gameAudio ? { SDL2: { audioContext: gameAudio } } : {}),     // (the sound's context, made in the pilot's touch: unlockAudio)
       lobbyGame: () => lobby.game,    // the transport adopts the connection the page is in when the game asks
       takeLobbyBacklog: () => { lobby.adopted = true; return lobby.backlog.splice(0); },
       onLobbyClosed: () => { chatLine("The game left the room", "sys"); leaveRoom(); },

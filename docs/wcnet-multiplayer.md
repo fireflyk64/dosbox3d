@@ -1421,6 +1421,22 @@ top-level README for the workflow).  What differs:
   the room's pulsing Fly; Fly pressed, the game running with its picture 7 px
   from the window's top and nothing pulsing; and Fly Solo pressed, a room of
   one and the same: PHONE STEPS OK.
+  **The game's sound begins in the pilot's touch** (2026-11-19, the user:
+  "I'm no longer hearing sound happening on my mobile...  I can hear sound on
+  youtube").  A browser starts a page's sound only from a touch or a key.
+  The emulator makes its sound some seconds after Fly, and then asks for it
+  from a timer (SDL's way where the browser has `navigator.userActivation`):
+  Chrome takes that, an iPhone's Safari does not, and in flight the page keeps
+  the picture's touches from the emulator.  Now the page makes the sound's
+  context in the touch that starts the game (`unlockAudio`: Fly, Fly Solo,
+  the top's button, a touch of the picture), hands it to the emulator
+  (`SDL2.audioContext` in the module's settings) and starts it again at any
+  touch or key that finds it stopped.  An iPhone's ringer switch also
+  silences a page's sound though not a video's: where the browser has
+  `navigator.audioSession` (iOS 17) the page says "playback" while Voice is
+  off.  Checked in the phone test with the browser's own rule for sound
+  (no flag): the context running and its blocks asked for.  No iPhone was at
+  hand: that part is by the browsers' documented rules, not measured.
   Host offers its room in the lobby as Advertise does, Fly Alone kept
   (`hostRoom`, `hostOffered`) unless Private is ticked or Players is 1 (the
   user: "the non-private one advertises in the lobby unless players was

@@ -592,8 +592,9 @@ don't know"). The same for the CD game.
   (as the pointer's games do), let go flies straight.
 * **A Lasers button.** The flight's Nav button (these games have no navigation map) reads "Lasers" and presses F9:
   the lasers' recharge rate a step up, to the most, then none, then up again (the game's own key and message).
-* **A flight starts one step up.** The page of a phone or a tablet (no pointer but a finger) says so at the launch
-  (WCNET_TIE_TOUCH=1), and 1.5 s into each flight the emulator presses F9 once if our craft still has the setting it
+* **A flight starts one step up.** The page says so at the launch (WCNET_TIE_TOUCH=1: a phone's or a tablet's at
+  first, then every page's, the user the same day: "the single tap increased power to lasers would be useful on
+  desktop web too not just mobile"; the rigs' native runs do not), and 1.5 s into each flight the emulator presses F9 once if our craft still has the setting it
   was made with (`tie_controls_touch_step`; the setting is CraftData +0xC9 here, the CD's laser_power at +0xD1: 2 as
   made, F9 to 3, 4, then 0: measured). A craft already a step up is left alone.
 * `node scripts/web-tdm-touch.mjs PAGE_URL ZIP`: one page as a Pixel 7, the demo dropped, a room of one (a phone's

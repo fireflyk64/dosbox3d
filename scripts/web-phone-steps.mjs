@@ -4,7 +4,8 @@
 // scrolls down to the controls"): the page as a Pixel 7, the TIE Fighter demo dropped, twice.
 //   1. Host: Fly Solo at the top, pulsing; Host pressed: the room made, the page scrolled to its Fly button, which
 //      pulses (Fly Solo gone); Fly pressed: the game runs, the page scrolled to its picture, nothing pulses.
-//   2. Fly Solo pressed: a room of one, the game running, the page scrolled to its picture.
+//   2. Fly Solo pressed: a room of one, the game running, its sound's context going (made in that touch: an iPhone
+//      starts a page's sound only so), the page scrolled to its picture.
 // A screenshot of each step (SHOT_DIR/steps-N-name.png).  Ends "PHONE STEPS OK".
 //
 //   node scripts/web-phone-steps.mjs PAGE_URL ZIP
@@ -21,7 +22,7 @@ const require = createRequire(path.join(process.env.PLAYWRIGHT_DIR || process.cw
 const { chromium, devices } = require("playwright");
 const shotDir = process.env.SHOT_DIR || ".";
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME || "/usr/bin/google-chrome",
-  args: ["--no-sandbox", "--autoplay-policy=no-user-gesture-required"] });
+  args: ["--no-sandbox"] });       // (the browser's own rule for sound: begun by a touch)
 let failed = 0, shots = 0;
 const check = (ok, what) => { console.log(`${ok ? "OK  " : "FAIL"} ${what}`); if (!ok) failed++; };
 
@@ -95,6 +96,11 @@ async function phone() {
   await settled();
   const screen = await look("screen");
   check(logs.some((l) => /flown single player: a room of one/.test(l)), "Fly Solo pressed: a room of one made, nobody told");
+  await page.waitForFunction(() => window.DOSBox && window.DOSBox.SDL2 && window.DOSBox.SDL2.audio && window.DOSBox.SDL2.audio.scriptProcessorNode, null, { timeout: 30000 }).catch(() => {});
+  await page.waitForTimeout(1500);
+  const sound = await page.evaluate(() => { const s = window.DOSBox && window.DOSBox.SDL2, c = s && s.audioContext;
+    return c ? `${c.state}${s.audio && s.audio.silenceTimer === undefined ? ", its blocks asked for" : ", no block asked for yet"}` : "none"; });
+  check(sound === "running, its blocks asked for", `the game's sound is going, begun by the touch that started it (its context ${sound})`);
   check(logs.some((l) => /DOSBox version/.test(l)), "the game runs");
   check(screen.top >= -2 && screen.top < 60, `the page scrolled to the game's picture (its top ${screen.top} px down the window of ${screen.vh})`);
   await page.waitForTimeout(4000);
