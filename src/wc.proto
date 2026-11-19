@@ -363,6 +363,8 @@ message TieCraft {
     // how often it has been boarded (CraftData +0x49 board_count: its owner's AI counts it; the boarded count and
     // the exit's 'left unboarded' read it), when not 0
     optional uint32 boarded = 21;
+    // Its warheads: the count of each weapon slot that is a launcher, in the slots' order (none: a craft without).
+    repeated uint32 warheads = 22;
 }
 // A shot (TIE Fighter): the shooter's object, the hardpoint, the projectile's type, as laser_createprojectile took them.
 message TieShot {
@@ -387,6 +389,10 @@ message TieHit {
     optional sint32 cx = 13;        // the impact's place from (ox, oy, oz), the collision test's (collidexoff..)
     optional sint32 cy = 14;
     optional sint32 cz = 15;
+    // The sending machine's count of the hits it has sent (from 1).  The machines that take its frames say how far
+    // they have dealt with them (TieFrame.hit_acks): the shooter shows its own hit on its copy of the craft at once,
+    // and keeps showing it over the owner's figures until those figures have it.
+    optional uint32 serial = 16;
 }
 // A frame of craft from their owner, best effort (the next supersedes it);
 // the host relays a guest's to the other guests with its player number.
@@ -402,6 +408,9 @@ message TieFrame {
     repeated TieShot shots = 9;
     repeated TieHit hits = 10;
     repeated TieEvent events = 11;  // what a pilot did to the mission on its own machine (sent reliably)
+    // By seat: the highest TieHit.serial of that seat's hits the sender had dealt with (applied to a craft it flies, or
+    // left) when it read this frame's craft: their figures have those hits.
+    repeated uint32 hit_acks = 12;
 }
 // A pilot's doing that the mission's state keeps on that pilot's machine alone (the user, 2026-11-07: "If it fails to
 // show up for a player that's a serious bug"): 1, reinforcements called (the S key and Space: the mission's penalty

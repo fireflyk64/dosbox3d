@@ -70,7 +70,7 @@ unsigned g_frames;
 // and the trigger held while that is within 2 degrees and `km`, at a craft of the other side only.  No roll (this
 // build's X-roll waits a third of a second for its button, a click before).
 //   !tdmsteer=type:9[:km]   the nearest of that type alive (9 the shuttle, 1 the X-wing, 2 the Y-wing; X-Wing's numbers)
-//   !tdmsteer=hostile[:km]  the nearest of the other side
+//   !tdmsteer=hostile[:km[:type]]  the nearest of the other side (of that type only)
 //   !tdmsteer=friend        the nearest of our side but us (the other pilot: a pass at each other), never fired at
 //   !tdmsteer=off
 //   !tdmsteer=god / nogod   our craft's hull damage kept at none (no pilot shot down mid-scene)
@@ -138,7 +138,7 @@ int steer_pick(int own) {
     for (int o = 0; o < tdm::kCraftSlots; o++) {
         if (o == own || !obj_alive(o)) continue;
         const Bit8u type = mem_readb(obj_at(o) + 4), s = mem_readb(obj_at(o) + 0x33);
-        const bool want = g_ds.mode == 1 ? type == g_ds.type : g_ds.mode == 2 ? s != side : s == side;
+        const bool want = g_ds.mode == 1 ? type == g_ds.type : g_ds.mode == 2 ? s != side && (!g_ds.type || type == g_ds.type) : s == side;
         if (!want) continue;
         const double km = obj_km(own, o);
         if (km < bestKm) {
@@ -336,7 +336,10 @@ void tdm_controls_steer(const std::string &spec) {
         if (c2 != std::string::npos) g_ds.km = atof(rest.c_str() + c2 + 1);
     } else if (what == "hostile") {
         g_ds.mode = 2;
+        g_ds.type = 0;
         if (!rest.empty()) g_ds.km = atof(rest.c_str());
+        const size_t c2 = rest.find(':');       // (hostile:km:type: the nearest of the other side of that type)
+        if (c2 != std::string::npos) g_ds.type = atoi(rest.c_str() + c2 + 1);
     } else if (what == "friend") {
         g_ds.mode = 3;
     } else {

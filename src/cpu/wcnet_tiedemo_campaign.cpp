@@ -20,6 +20,7 @@
  *  T/F's (TIEFTR) in theirs when the program is loaded.
  */
 #include <stdio.h>
+#include <sys/time.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -475,7 +476,11 @@ bool tdm_campaign_script_item(const std::string &item, double t) {
                      warheads, alive_craft(o) ? "" : " dying", dock, ds8((Bit16u)(kFgStatus + fg * kFgStatusSize)));
             out += b;
         }
-        wclog(1, "key script %.1fs: TIE demo craft (primary %u):%s", t, ds8(kPrimaryDone), out.c_str());
+        // (the wall clock: two machines' tables paired by it, their key scripts' clocks a start apart)
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        wclog(1, "key script %.1fs: TIE demo craft (primary %u, wall %.2f):%s", t, ds8(kPrimaryDone),
+              (double)(tv.tv_sec % 100000) + tv.tv_usec / 1e6, out.c_str());
         return true;
     }
     if (item == "!tdmcd") {

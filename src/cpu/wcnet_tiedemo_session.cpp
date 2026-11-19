@@ -82,7 +82,13 @@ enum {
     kLocalAiOut = 225280,           // 5.5 km
     kExactError = 400,              // a near craft's report this close is written as it is
     kRoomEndMs = 3000,
-    kLocalHitHoldMs = 600,          // a hit of ours shown on another's craft: its owner's damage figures wait this long
+    kShownMaxMs = 2000,             // a hit of ours shown on another's craft is kept over its owner's figures until
+    kShownOldPeerMs = 600,          //   the owner has dealt with it (its frames' hit_acks), this long at most; an
+                                    //   owner that sends none (a machine of before them): this long
+    kAckStuckMs = 1000,             // hits queued for the game's call and not come back this long: counted dealt with
+    kWpnSlots = 0x114,              // CraftData: the weapon slots, 6 bytes each (+0 its type: from 0x18 a launcher;
+    kWpnSlotSize = 6,               //   +2 its warheads, a word)
+    kWpnSlotCount = 8,
     kShotReach = 2 * kReach,
     kKillCalls = 12,
     kExplosionFirst = 0x40,         // a dying craft's slot shows its explosion (move_moveobjects: 0x40 or 0x41)
@@ -124,7 +130,16 @@ struct Puppet {
     double at, prevAt;
     bool localAi;                   // far from our pilot: flown by our AI, pulled to its owner's reports
     double ex, ey, ez, blendTicks;
-    double localHitAt;
+};
+
+// A hit of ours shown on a craft another machine flies (its owner applies it for good): kept until the owner's
+// figures have it.
+struct Shown {
+    Bit32u serial;                  // its TieHit's (0: none)
+    Bit32u ident;                   // the craft
+    long dmg;
+    int side;
+    double at;
 };
 
 struct Net {
@@ -163,7 +178,18 @@ struct Net {
     Bit32u killIdent[kCraftSlots];      // the identity a kill under way here is for
     TieHit hitsIn[kHitsIn];             // (target and shooter as this machine's slots)
     Bit32u hitsInIdent[kHitsIn];        // ... the target's identity, checked when the hit is applied
+    int hitsInFrom[kHitsIn];            // ... and the seat that sent it
     int hitsInNext;
+    // Our hits on the others' craft and theirs on ours, counted (TieHit.serial, TieFrame.hit_acks)
+    std::vector<Shown> shown;
+    Bit32u hitSerial;                   // the hits we have sent (never reset: a later flight's are higher)
+    int lastHitBolt, lastHitTarget;     // the hit just sent (collide_laserhitcraft's entry): its damage call follows
+    Bit32u ackLatest[kMaxSeats];        // by sender: the highest serial taken in here,
+    Bit32u ackDone[kMaxSeats];          //   and the highest dealt with (sent back with our frames)
+    int ackPending[kMaxSeats];          //   (hits queued for the game's call)
+    double ackPendingAt[kMaxSeats];
+    Bit32u ackSeen[kMaxSeats];          // by owner: the highest of our serials it says it has dealt with
+    bool ackKnown[kMaxSeats];           //   (it sends them)
     int killing[kCraftSlots], killer[kCraftSlots];
     // Dockings (paiman_boardmaneuver, its owner's AI's: the CD's session's): a craft of ours seen aligning at its dock
     // point, checked at the next frame (its identity); the others' docks and transfers to make here, the AI's globals
@@ -179,7 +205,7 @@ struct Net {
     double farErrSum, farErrMax;
     Net() : host(false), self(-1), seats(2), listener(NULL), atLaunch(false), launchSince(0), launchSerial(0), flownGo(0),
             hostSeed(0), hostSeed2(0), hostMission(0), alone(false), verdictGo(0), verdictNext(0), verdictOver(false), roomEnded(false), soloNext(false), lateSaid(false), frame(0),
-            lastReliableAt(0), endAt(0), decidedAt(-1e9), ownersSentAt(-1e9), farCursor(0), hitsInNext(0), boardsInNext(0),
+            lastReliableAt(0), endAt(0), decidedAt(-1e9), ownersSentAt(-1e9), farCursor(0), hitsInNext(0), hitSerial(0), lastHitBolt(-1), lastHitTarget(-1), boardsInNext(0),
             docksSent(0), transfersSent(0), boardsMade(0), boardsLeft(0) {
         zero_counts();
         clear_flight();
@@ -200,7 +226,14 @@ struct Net {
             p.at = p.prevAt = 0;
             p.localAi = false;
             p.ex = p.ey = p.ez = p.blendTicks = 0;
-            p.localHitAt = -1e9;
+        }
+        shown.clear();
+        lastHitBolt = lastHitTarget = -1;
+        for (int k = 0; k < kMaxSeats; k++) {
+            ackLatest[k] = ackDone[k] = ackSeen[k] = 0;
+            ackPending[k] = 0;
+            ackPendingAt[k] = 0;
+            ackKnown[k] = false;
         }
         for (int o = 0; o < kCraftSlots; o++) {
             owner[o] = 0;
@@ -469,6 +502,10 @@ void release_ai(int obj) {
     const PhysPt craft = tdm_craft(obj);
     if (craft) mem_writew(craft + kCraftAiCountdown, 0);
     g_net->puppets[obj].used = false;
+    // (our hits shown on it are in its figures here, which are the craft's from now on)
+    const Bit32u id = g_net->ids.ident(obj);
+    std::vector<Shown> &sh = g_net->shown;
+    sh.erase(std::remove_if(sh.begin(), sh.end(), [id](const Shown &h) { return h.ident == id; }), sh.end());
 }
 // This machine's AI kept off a puppet: the planner runs a craft only when its countdown has run out.
 void hold_ai(int obj) {
@@ -515,7 +552,6 @@ void scan_idents() {
         p.state.Clear();
         p.at = p.prevAt = 0;
         p.ex = p.ey = p.ez = p.blendTicks = 0;
-        p.localHitAt = -1e9;
         g_net->killing[o] = g_net->killer[o] = 0;
     }
 }
@@ -574,6 +610,74 @@ void fill_craft(TieCraft *c, int obj) {
         c->set_shield_front((Bit16s)mem_readw(craft + kCraftShieldFront));
         c->set_shield_rear((Bit16s)mem_readw(craft + kCraftShieldRear));
         c->set_systems(mem_readw(craft + kCraftSystems));
+        for (int k = 0; k < kWpnSlotCount; k++) {
+            const PhysPt slot = craft + kWpnSlots + (PhysPt)(k * kWpnSlotSize);
+            if (mem_readb(slot) >= 0x18) c->add_warheads(mem_readw(slot + 2));
+        }
+    }
+}
+
+// A hit of a bolt of ours on another machine's craft, shown here at once (its owner applies it for good): the game's
+// own sums, the struck side's shield first, then the hull, never its death here.
+//   And kept: the owner's figures written over the copy do not have the hit until the owner has taken it, and under
+// fire from here they never caught up with the old rule (the owner's figures left out for 0.6 s after a hit of ours:
+// with a hit every half second the copy ran on this machine's sums alone, for as long as the fire lasted).  Measured,
+// two machines at the repair yard's parked craft, the craft's owner changing every 2 or 3 s as the pilots turned: the
+// same Y-wing at 2,701 of 4,200 hull damage and no shields on one machine and at none with shields on the other, for
+// seconds, and whichever machine flew it next went on from its own figures.  Now a report's figures are always
+// written, and our hits the owner has not dealt with yet (its frames say how far it has: hit_acks) are summed again
+// over them.
+void apply_shown(int target, long dmg, int side) {
+    const PhysPt craft = tdm_craft(target);
+    if (!craft || side < 0 || side > 1) return;
+    const PhysPt shieldAt = craft + kCraftShieldFront + 2 * (PhysPt)side;
+    const long shield = (Bit16s)mem_readw(shieldAt);
+    if (shield > dmg) {
+        mem_writew(shieldAt, (Bit16u)(Bit16s)(shield - dmg));
+    } else {
+        const long over = dmg - shield;
+        mem_writew(shieldAt, 0);
+        if (over > 0) {
+            const long hullMax = mem_readw(craft + kCraftHullMax);
+            long hull = (long)mem_readw(craft + kCraftHull) + over;
+            if (hullMax > 0 && hull >= hullMax) hull = hullMax - 1;     // (its death is its owner's to say)
+            mem_writew(craft + kCraftHull, (Bit16u)hull);
+        }
+    }
+}
+void show_hit(int target, int bolt, int side, Bit32u serial) {
+    if (!tdm_craft(target) || side < 0 || side > 1) return;
+    long dmg = o16(bolt, 0x2A);
+    const int genus = o8(target, 3);
+    if (genus == 4 || genus == 5) dmg >>= 4;
+    if (genus == 3) dmg >>= 2;
+    if (dmg >= 0x7FFF) dmg = 32766;
+    apply_shown(target, dmg, side);
+    Shown h;
+    h.serial = serial;
+    h.ident = g_net->ids.ident(target);
+    h.dmg = dmg;
+    h.side = side;
+    h.at = PIC_FullIndex();
+    if (h.ident && g_net->shown.size() < 256) g_net->shown.push_back(h);
+    g_net->hitsShown++;
+}
+// A craft's figures just written from its owner's report: our hits on it the owner has not dealt with summed again.
+void reshow(int obj, int owner) {
+    const Bit32u id = g_net->ids.ident(obj);
+    if (!id || owner < 0 || owner >= kMaxSeats) return;
+    const double now = PIC_FullIndex();
+    const double keep = g_net->ackKnown[owner] ? kShownMaxMs : kShownOldPeerMs;
+    std::vector<Shown> &sh = g_net->shown;
+    for (size_t i = 0; i < sh.size();) {
+        if (sh[i].ident != id) {
+            i++;
+        } else if ((sh[i].serial && sh[i].serial <= g_net->ackSeen[owner]) || now - sh[i].at > keep) {
+            sh.erase(sh.begin() + (long)i);
+        } else {
+            apply_shown(obj, sh[i].dmg, sh[i].side);
+            i++;
+        }
     }
 }
 
@@ -610,11 +714,19 @@ void write_puppet(Puppet &p) {
             p.blendTicks = seconds * kTicksPerSecond;
             if (!p.localAi) g_net->nearBlends++;
         }
-        if (craft && c.has_hull() && PIC_FullIndex() - p.localHitAt > kLocalHitHoldMs) {
+        if (craft && c.has_hull()) {
             mem_writew(craft + kCraftHull, (Bit16u)c.hull());
             mem_writew(craft + kCraftShieldFront, (Bit16u)(Bit16s)c.shield_front());
             mem_writew(craft + kCraftShieldRear, (Bit16u)(Bit16s)c.shield_rear());
             mem_writew(craft + kCraftSystems, (Bit16u)c.systems());
+            reshow(obj, p.owner);
+        }
+        // (its warheads, its owner's count: a launcher's shot made here from a report takes none off the copy's, and
+        // the machine that flew it next had them all again.  Measured: the T/Bs at 2 on the host and 4 on the guest
+        // for the rest of the flight)
+        for (int k = 0, i = 0; craft && k < kWpnSlotCount && i < c.warheads_size(); k++) {
+            const PhysPt slot = craft + kWpnSlots + (PhysPt)(k * kWpnSlotSize);
+            if (mem_readb(slot) >= 0x18) mem_writew(slot + 2, (Bit16u)c.warheads(i++));
         }
         p.fresh = false;
     }
@@ -650,34 +762,6 @@ bool pilot_flies(int obj) {
     return false;
 }
 
-// A hit of a bolt of ours on another machine's craft, shown here at once (its owner applies it for good): the game's
-// own sums, the struck side's shield first, then the hull, never its death here.
-void show_hit(int target, int bolt, int side) {
-    const PhysPt craft = tdm_craft(target);
-    if (!craft || side < 0 || side > 1) return;
-    long dmg = o16(bolt, 0x2A);
-    const int genus = o8(target, 3);
-    if (genus == 4 || genus == 5) dmg >>= 4;
-    if (genus == 3) dmg >>= 2;
-    if (dmg >= 0x7FFF) dmg = 32766;
-    const PhysPt shieldAt = craft + kCraftShieldFront + 2 * (PhysPt)side;
-    const long shield = (Bit16s)mem_readw(shieldAt);
-    if (shield > dmg) {
-        mem_writew(shieldAt, (Bit16u)(Bit16s)(shield - dmg));
-    } else {
-        const long over = dmg - shield;
-        mem_writew(shieldAt, 0);
-        if (over > 0) {
-            const long hullMax = mem_readw(craft + kCraftHullMax);
-            long hull = (long)mem_readw(craft + kCraftHull) + over;
-            if (hullMax > 0 && hull >= hullMax) hull = hullMax - 1;     // (its death is its owner's to say)
-            mem_writew(craft + kCraftHull, (Bit16u)hull);
-        }
-    }
-    g_net->puppets[target].localHitAt = PIC_FullIndex();
-    g_net->hitsShown++;
-}
-
 // --- shots, hits, deaths ----------------------------------------------------------------------------------------
 
 void shot_made(int tag, Bit16u ax) {
@@ -707,12 +791,26 @@ void make_shot(const TieShot &shot, int owner) {
 // and a hit on our own craft took the shield its side by that stale way.  Now they are written as the shooter's
 // machine had them (the impact sent with the hit, as the CD's session does), and put back after the call.
 int g_standin = -1;
+// A hit of a seat's dealt with (applied, or left): once none of its hits waits for the game's call, every one taken in
+// so far is in our craft's figures, and our frames say so.
+void hit_finished(int tag) {
+    const int from = g_net->hitsInFrom[tag];
+    if (from < 0 || from >= kMaxSeats) return;
+    if (g_net->ackPending[from] > 0) g_net->ackPending[from]--;
+    if (g_net->ackPending[from] == 0) g_net->ackDone[from] = g_net->ackLatest[from];
+}
 const Bit16u kHitGlobals32[6] = { kLaserX, kLaserY, kLaserZ, kLaserXOld, kLaserYOld, kLaserZOld };
 const Bit16u kHitGlobals16[3] = { kCollideXOff, kCollideYOff, kCollideZOff };
 Bit32u g_hitSaved32[6];
 Bit16u g_hitSaved16[3];
 Bit16u impact16(Bit32s v) { return (Bit16u)(Bit16s)std::max(-32768, std::min(32767, (int)v)); }
+bool hit_before_inner(int tag, Bit16u *args);
 bool hit_before(int tag, Bit16u *args) {
+    if (hit_before_inner(tag, args)) return true;
+    hit_finished(tag);          // (not made: dealt with all the same)
+    return false;
+}
+bool hit_before_inner(int tag, Bit16u *args) {
     const TieHit &h = g_net->hitsIn[tag];
     g_standin = -1;
     if (g_net->ids.ident((int)h.target()) != g_net->hitsInIdent[tag]) return false;     // (another craft in its slot since)
@@ -776,13 +874,20 @@ void hit_done(int tag, Bit16u ax) {
               craft ? mem_readw(craft + kCraftHullMax) : 0);
     }
     g_standin = -1;
+    hit_finished(tag);
     const int t = (int)h.target();
     if (t < kCraftSlots && !g_net->killer[t] && h.shooter() < (Bit32u)kObjectCount && dying(t)) {
         g_net->killer[t] = (int)h.shooter() + 1;     // (the hit that began its death: its shooter's machine credits the kill)
         wclog(2, "TIE demo: obj %d dying of obj %u's hit, applied here", t, h.shooter());
     }
 }
-void take_hit(const TieHit &hit) {
+void take_hit(const TieHit &hit, int from) {
+    // (counted, whether it is ours to apply or not: with none of this seat's hits waiting for the game's call, all of
+    // them so far are dealt with)
+    if (from >= 0 && from < kMaxSeats) {
+        if (hit.serial() > g_net->ackLatest[from]) g_net->ackLatest[from] = hit.serial();
+        if (g_net->ackPending[from] == 0) g_net->ackDone[from] = g_net->ackLatest[from];
+    }
     const int target = local(hit.target()), shooter = local(hit.shooter());
     if (target < 0 || !is_craft(target) || !mine(target)) return;
     if (shooter < 0) {
@@ -791,6 +896,10 @@ void take_hit(const TieHit &hit) {
     }
     const int tag = g_net->hitsInNext;
     g_net->hitsInNext = (g_net->hitsInNext + 1) % kHitsIn;
+    g_net->hitsInFrom[tag] = from;
+    if (from >= 0 && from < kMaxSeats) {
+        if (g_net->ackPending[from]++ == 0) g_net->ackPendingAt[from] = PIC_FullIndex();
+    }
     g_net->hitsIn[tag] = hit;
     g_net->hitsIn[tag].set_target((Bit32u)target);      // (this machine's slots from here on)
     g_net->hitsIn[tag].set_shooter((Bit32u)shooter);
@@ -1109,7 +1218,7 @@ void decide_owners(double now) {
     for (int o = 0; o < kCraftSlots; o++) {
         bool someonesOwn = o == hostObj;
         for (int i = 0; i < n; i++) someonesOwn = someonesOwn || pilot_object(guests[i]) == o;
-        if (someonesOwn || !is_craft(o)) continue;
+        if (someonesOwn || !is_craft(o) || dying(o)) continue;     // (a dying craft stays its owner's: its death is sent once)
         const int cur = g_net->owner[o];
         const bool hostOnly = docking_craft(o) || boarded[o];     // (a craft that boards or is boarded: ours at once)
         int want = 0;
@@ -1166,6 +1275,11 @@ void take_frame(Peer *from, const TieFrame &f) {
         g_net->pilotSeenAt[owner] = PIC_FullIndex();
         g_net->owner[theirs] = owner;       // (a pilot's own craft is its own)
     }
+    // (how far this pilot's machine has dealt with our hits: this frame's figures have those)
+    if (f.hit_acks_size() > 0) {
+        g_net->ackKnown[owner] = true;
+        if (g_net->self < f.hit_acks_size() && f.hit_acks(g_net->self) > g_net->ackSeen[owner]) g_net->ackSeen[owner] = f.hit_acks(g_net->self);
+    }
     for (int i = 0; i < f.craft_size() && tdm_in_flight(); i++) {
         const TieCraft &c = f.craft(i);
         const int o = local(c.obj());
@@ -1184,7 +1298,7 @@ void take_frame(Peer *from, const TieFrame &f) {
         }
     }
     make_shot_list(f, owner);
-    for (int i = 0; i < f.hits_size() && tdm_in_flight(); i++) take_hit(f.hits(i));
+    for (int i = 0; i < f.hits_size() && tdm_in_flight(); i++) take_hit(f.hits(i), owner);
     for (int i = 0; i < f.events_size() && tdm_in_flight(); i++) take_event(f.events(i), owner);
     if (g_net->host) {
         NetworkMessage msg;
@@ -1568,6 +1682,18 @@ void tdm_session_frame() {
     f->set_mission(kMissionName);
     f->set_own(wire(own));
     f->set_target(wire(ds16(kTarget)));
+    for (int k = 0; k < kMaxSeats; k++) {
+        // (hits queued for the game's call that never came back, the calls given up: counted dealt with)
+        if (g_net->ackPending[k] > 0 && now - g_net->ackPendingAt[k] > kAckStuckMs) {
+            g_net->ackPending[k] = 0;
+            g_net->ackDone[k] = g_net->ackLatest[k];
+        }
+        f->add_hit_acks(g_net->ackDone[k]);
+    }
+    {   // (our shown hits on craft gone since: forgotten)
+        std::vector<Shown> &sh = g_net->shown;
+        sh.erase(std::remove_if(sh.begin(), sh.end(), [now](const Shown &h) { return now - h.at > 2 * kShownMaxMs; }), sh.end());
+    }
     fill_craft(f->add_craft(), own);
     g_net->sentCraft++;
     int othersSeats[kMaxSeats], n = 0;
@@ -1722,6 +1848,9 @@ void tdm_session_laser_hit() {
     h.set_cx((Bit16s)ds16(kCollideXOff));       // (the impact, from the bolt's start: the collision test's, just made)
     h.set_cy((Bit16s)ds16(kCollideYOff));
     h.set_cz((Bit16s)ds16(kCollideZOff));
+    h.set_serial(++g_net->hitSerial);
+    g_net->lastHitBolt = bolt;      // (its damage call comes next: shown on our copy under this serial)
+    g_net->lastHitTarget = target;
     g_net->hitsOut.push_back(h);
 }
 
@@ -1731,9 +1860,12 @@ void tdm_session_damage() {
     if (!g_net || g_net->self < 0 || !tdm_in_flight() || tdm_in_call()) return;
     const int target = tdm_arg(0), attacker = tdm_arg(2);
     bool skip = target < kCraftSlots && !mine(target);
-    if (skip && attacker >= kCraftSlots && attacker < kObjectCount && mine(o16(attacker, 0x30))) {
+    if (skip && attacker >= kCraftSlots && attacker < kObjectCount && mine(o16(attacker, 0x30)) && attacker == g_net->lastHitBolt &&
+        target == g_net->lastHitTarget) {
+        // (a hit just sent to the craft's owner: shown here meanwhile; one not sent is not shown either)
         const int genus = o8(target, 3);
-        if (tdm_arg(1) == 0xFFFF || (genus != 4 && genus != 5)) show_hit(target, attacker, tdm_arg(3));
+        if (tdm_arg(1) == 0xFFFF || (genus != 4 && genus != 5)) show_hit(target, attacker, tdm_arg(3), g_net->hitSerial);
+        g_net->lastHitBolt = g_net->lastHitTarget = -1;
     }
     if (!skip && attacker >= kCraftSlots && attacker < kObjectCount) skip = !mine(o16(attacker, 0x30));
     if (skip) {

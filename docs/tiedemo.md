@@ -301,6 +301,44 @@ TieOwners. Only the room's hello and the launch are the demo's own (TdmHello, Td
 * **Left out of the CD's.** The front end (the demo has none), the mission picker, the pairings, the radio voices, and
   the inspection and reinforcement events (not in this mission).
 
+* **A hit of ours on another machine's craft, shown until its owner has it** (2026-11-19, found by the sync test
+  below). The shooter's machine shows its hit on its copy at once and the owner applies it for good. The owner's
+  figures were left out of the copy for 0.6 s after any hit of ours, so that a report sent before the hit arrived
+  would not undo it: with a hit every half second the copy ran on this machine's own sums for as long as the fire
+  lasted, without the owner's shields recharging or anybody else's hits.
+  * Measured, two machines at the repair yard's parked craft, both pilots and the Prowlers shooting the same craft,
+    the craft changing owner every 2 or 3 s as a pilot's nose swung past: the same Y-wing at 2,701 of 4,200 hull
+    damage and no shields on one machine, at none and 549 of shields on the other; a pilot's craft at 999 of 1,000
+    on the other machine for 4 to 6 s; and whichever machine flew the craft next went on from its own figures. In
+    420 s (199 tables, paired 0.47 s apart), 26 with a hull difference, 7 of the differences lasting 4 s or more.
+  * Now a report's figures are always written, and our hits its owner has not dealt with yet are summed over them
+    again (`reshow`). Each hit has its sender's serial (TieHit.serial), and every frame says how far its sender has
+    dealt with each seat's hits (TieFrame.hit_acks, counted once the game's call has come back, or the hit was left):
+    a report's figures have every hit up to there. A hit is kept 2 s at most (an owner that sends no counts, a page
+    of before: 0.6 s). A craft this machine takes over keeps them in its figures.
+  * After, the same 420 s (paired 0.25 s apart): 13 tables with a hull difference, each one or two hits on their
+    way (75 to 850 points), none the same over two tables (one craft under fire differed by one 75-point hit in two
+    tables running, at other figures).
+* **A craft's warheads are its owner's count** (2026-11-19, the same test). A launcher's shot made here from a report
+  takes nothing off the copy's count, and the reports did not carry it: the T/Bs of the demo's own mission at 2
+  torpedoes on the host and 4 on the guest from their first shots to the flight's end, and the machine that flew one
+  next had them all again. Each report now has the count of every launcher (TieCraft.warheads, CraftData +0x114's
+  slots of type 0x18 and up), written into the copy.
+* **A dying craft stays its owner's** (the host's table moved it to another pilot while its death ran: a second
+  death sent, hits sent after it).
+* **The sync test** (`scripts/tdmnet-sync.sh NAME SECONDS MISSION "host keys" "guest keys"`, `scripts/tdmnet-syncmp.py`):
+  a flight on two machines, each logging every craft every 2 s (`!tdmcraft`, with the wall clock), the tables then
+  paired by the wall clock and compared by identity: a craft on one machine only, its place, hull, shields,
+  warheads, dying, boarding, the goals; the differences lasting 4 s or more listed apart. `WCNET_LOG_WALL=1` stamps
+  every log line with the wall clock (two machines' logs side by side); `!tdmsteer=hostile:km:type` flies at the
+  nearest enemy of one type (the corvettes: 15).
+  * Flown 2026-11-19 with both pilots at the rebels and never shot down (`!tdmsteer=god`, `hostile:1.2`), after the
+    fixes above: the demo's own mission 420 s, the Shuttles Run 300 s, Corvette Hunt 330 s with torpedo runs on the
+    corvettes (`hostile:2.0:15`, W), Escort the Prowlers 400 s. Every craft on both machines throughout, places
+    within 0.26 km near the pilots; nothing lasting but arrivals out of hyperspace seen a fifth of a second apart
+    (1,800 units a tick: 0.4 km), a torpedo counted a table late, and the 3 s between the host's flight ending and
+    the guest's. Two corvettes sunk by the host's torpedoes on the guest's machine, the kills credited to the host.
+  * Not flown: three pilots; a pilot on a slow link.
 * **A pilot's craft under fire dies as the game has it** (2026-11-19, the user, of the fight take recorded for the
   video: "an xwing hitting the tie interceptor in mission 2 a few dozen times but it never exploded. It did register
   system damage. That might have been the recording having some cheat mode on"). It was the take's:
