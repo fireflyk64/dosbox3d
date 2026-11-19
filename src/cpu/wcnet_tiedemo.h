@@ -49,6 +49,19 @@ enum {
     kSeed = 0x5372,             // math2_randomseed (0x2357 at first), and the second generator's state
     kSeed2 = 0x1A70,
     kWarheads = 0xBF9C,         // a projectile's record (+0x54): kWarheads + 4 * (its slot - 28)
+    // The collision test's bolt (collide_collisions, 05B3:0745: the CD's laserx.. and laserxold..), int32 each: where
+    // the bolt is and where it was a frame before; and the impact along that way, from its start (int16 each: the hit
+    // test's, 05B3:15BF; the CD's collidexoff..).  collide_laserhitcraft reads them, not the bolt: the side struck of
+    // the player's craft from the bolt's way, the flash put at the start plus the impact (05B3:1C02).
+    kLaserX = 0x65D8,
+    kLaserY = 0x65DE,
+    kLaserZ = 0x677A,
+    kLaserXOld = 0x620C,
+    kLaserYOld = 0x6218,
+    kLaserZOld = 0x6224,
+    kCollideXOff = 0xBF92,
+    kCollideYOff = 0xBF9A,
+    kCollideZOff = 0xC06A,
     kFgSeg = 0x5890,            // the mission's segment (a word): the flight groups from its 0xD0, 0x124 each
     kFgBase = 0xD0,
     kFgSize = 0x124,

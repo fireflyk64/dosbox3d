@@ -153,6 +153,11 @@ The demo is an earlier build of the TIE Fighter the CD port knows (docs/tiefight
 * A craft's data (CraftData, 0x18C bytes, the CD's shorter): +0x2C the planner's countdown (the CD's +0x2A), +0x40 its
   attacker, +0x5C its flight flag (the CD's +0x60), +0x9E its hull's damage (the CD's +0xA2) against +0xA2 (the CD's
   +0xA6: 1,000 a T/F), +0xA8 its systems, +0xC2 and +0xC4 its shields.
+* The collision test's bolt (collide_collisions, 05B3:0745; the CD's `laserx`.. and `laserxold`..), 32 bits each: where
+  the bolt is, DS:65D8, DS:65DE, DS:677A, and where it was a frame before, DS:620C, DS:6218, DS:6224. The impact along
+  that way, from its start (the hit test's, 05B3:15BF; the CD's `collidexoff`..), 16 bits each: DS:BF92, DS:BF9A,
+  DS:C06A. collide_laserhitcraft reads these, not the bolt's record: the struck side of the player's craft from the
+  bolt's way, and the flash put at the start plus the impact (05B3:1C02).
 * A flight group's record: +0x33 its craft, +0x42 the player's craft in it (1-based). DEMO.TIE's Alpha has 3 craft, the
   player its second: object 1, Alpha's first and third objects 0 and 2.
 
@@ -223,6 +228,19 @@ TieOwners. Only the room's hello and the launch are the demo's own (TdmHello, Td
   * A hit on another machine's craft is sent and applied by the owner with the game's own call and a stand-in bolt.
   * This game damages only the craft it flies (`collide_damagecraft`'s entry), and shows its own hits on the others'
     craft at once; the owner's figures follow.
+  * **The flash of a hit another machine sent** (2026-11-19, the user: "whenever the host hits an object nearby the
+    little explosion animations play directly on the guests cockpit as if the guest were hit"). The game's routine
+    puts the flash at the collision test's globals (section 4), not at the bolt it is given. Called by the layer,
+    between the frame's collisions and its moves, they held what the test last looked at: with no bolt of the game's
+    own in flight that is our own craft (collide_collisions begins with the player's). So every hit applied for
+    another machine flashed on the cockpit of the pilot whose machine flew the target, and a hit on that pilot's own
+    craft took the front or rear shield by a stale direction. Now the shooter's machine sends the impact with the hit
+    (TieHit's cx, cy, cz, as the CD's session does), the owner writes the bolt's way and the impact into the globals
+    before the call and puts them back after.
+    * Measured, two machines in the Shuttles Run, both shooting the same shuttles (`!tdmsteer=type:9`), the flash's
+      distance logged as each hit was applied: before, 50 hits on the guest, every flash 350 to 2,300 units from the
+      guest's own craft and up to 9,600 from the shuttle hit; after, 48 hits, every flash 370 to 680 units from the
+      craft hit (its hull's surface).
 * **Deaths.** An owner's craft dying is sent; the others kill their copy with the game's own damage (a collision's).
   The kill is credited to the pilot whose hit began it (`collide_updatekills`). A craft gone without dying is gone
   everywhere.
@@ -283,6 +301,16 @@ TieOwners. Only the room's hello and the launch are the demo's own (TdmHello, Td
 * **Left out of the CD's.** The front end (the demo has none), the mission picker, the pairings, the radio voices, and
   the inspection and reinforcement events (not in this mission).
 
+* **A pilot's craft under fire dies as the game has it** (2026-11-19, the user, of the fight take recorded for the
+  video: "an xwing hitting the tie interceptor in mission 2 a few dozen times but it never exploded. It did register
+  system damage. That might have been the recording having some cheat mode on"). It was the take's:
+  tfvideo/lab/demofight.sh flies both machines with `!tdmsteer=god`, which writes our craft's hull damage back to
+  none every frame (the systems' damage stays); its guest's log shows the T/I at "725 of 1750" after each of the
+  X-wing's hits. Measured without it, both pilots flown at the X-wings and never firing (`!tdmsteer=type:1:0.0`),
+  three launches: the host's T/I took an X-wing's hits at 725, 1,450 and 2,175 of 1,750 (the X-wing flown by the
+  guest's machine, the hits sent over) and blew up on both machines, "You are down" on one and "HOST is down" on the
+  other; the guest's the same the third time.
+
 ## 6. Measured (2026-11-15)
 
 * **The first step's** (each machine's enemies its own, the others as wingmen):
@@ -316,8 +344,6 @@ TieOwners. Only the room's hello and the launch are the demo's own (TdmHello, Td
   machine flies.
 * **A guest who arrives once the host flies** waits for the host's next launch (section 5, told so over its picture;
   Esc flies alone meanwhile): a long flight of the host's is a long wait.
-* **The flash of a hit applied from another machine** is drawn where the stand-in bolt is (the shooter's bolt's
-  place): the CD port's impact offset globals are not known in this build.
 * **The campaign's balance** (section 8) is set from measured speeds, hulls, shields and torpedo damage and from the
   AI's own flights, not yet from people flying it: the shuttle run's timing, the bomber's escorts and the escort's
   Y-wings may want a turn once flown.

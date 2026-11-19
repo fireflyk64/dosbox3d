@@ -698,7 +698,20 @@ void make_shot(const TieShot &shot, int owner) {
 
 // A hit for us to apply: a stand-in bolt with the shooter's figures in a free projectile slot, then the game's own
 // collide_laserhitcraft (damage, shields, components, its attacker, messages).
+//   The game's routine takes the bolt's way and the impact from the collision test's globals (kLaserX.., kLaserXOld..,
+// kCollideXOff..), not from the bolt: called from here, between the frame's collisions and its moves, they held what
+// the test last looked at, which with no bolt of the game's own about is our own craft (collide_collisions begins with
+// the player's).  So the flash of every hit another machine sent was drawn on our own cockpit (the user, 2026-11-19:
+// "whenever the host hits an object nearby the little explosion animations play directly on the guests cockpit as if
+// the guest were hit"; measured, 50 hits: the flash 350 to 2,300 units from our craft, the target up to 9,600 away),
+// and a hit on our own craft took the shield its side by that stale way.  Now they are written as the shooter's
+// machine had them (the impact sent with the hit, as the CD's session does), and put back after the call.
 int g_standin = -1;
+const Bit16u kHitGlobals32[6] = { kLaserX, kLaserY, kLaserZ, kLaserXOld, kLaserYOld, kLaserZOld };
+const Bit16u kHitGlobals16[3] = { kCollideXOff, kCollideYOff, kCollideZOff };
+Bit32u g_hitSaved32[6];
+Bit16u g_hitSaved16[3];
+Bit16u impact16(Bit32s v) { return (Bit16u)(Bit16s)std::max(-32768, std::min(32767, (int)v)); }
 bool hit_before(int tag, Bit16u *args) {
     const TieHit &h = g_net->hitsIn[tag];
     g_standin = -1;
@@ -732,6 +745,13 @@ bool hit_before(int tag, Bit16u *args) {
     wo8(b, 0x33, o8((int)h.shooter(), 0x33));      // the shooter's side
     wo16(b, 0x54, (Bit16u)(kWarheads + 4 * (b - kCraftSlots)));
     wo16(b, 0x56, (Bit16u)(tdm_ds(0) >> 4));
+    for (int k = 0; k < 6; k++) g_hitSaved32[k] = mem_readd(tdm_ds(kHitGlobals32[k]));
+    for (int k = 0; k < 3; k++) g_hitSaved16[k] = mem_readw(tdm_ds(kHitGlobals16[k]));
+    const Bit32s at[6] = { h.x(), h.y(), h.z(), h.ox(), h.oy(), h.oz() };
+    for (int k = 0; k < 6; k++) mem_writed(tdm_ds(kHitGlobals32[k]), (Bit32u)at[k]);
+    // (the impact from the bolt's start: the shooter's machine's; a machine of before it was sent: the bolt's place)
+    const Bit32s impact[3] = { h.has_cx() ? h.cx() : h.x() - h.ox(), h.has_cx() ? h.cy() : h.y() - h.oy(), h.has_cx() ? h.cz() : h.z() - h.oz() };
+    for (int k = 0; k < 3; k++) mem_writew(tdm_ds(kHitGlobals16[k]), impact16(impact[k]));
     args[0] = (Bit16u)b;
     wclog(2, "TIE demo: applying a hit on obj %u from obj %u: stand-in bolt %d (type %u, radius %u, offset %u)", h.target(), h.shooter(),
           b, h.bolt_type(), h.bolt_radius(), h.offset());
@@ -741,7 +761,15 @@ void hit_done(int tag, Bit16u ax) {
     (void)ax;
     const TieHit &h = g_net->hitsIn[tag];
     if (g_standin >= 0) {
-        if (o8(g_standin, 4) == (Bit8u)h.bolt_type()) wo8(g_standin, 4, 0);     // (not turned into its flash: gone)
+        for (int k = 0; k < 6; k++) mem_writed(tdm_ds(kHitGlobals32[k]), g_hitSaved32[k]);
+        for (int k = 0; k < 3; k++) mem_writew(tdm_ds(kHitGlobals16[k]), g_hitSaved16[k]);
+        if (o8(g_standin, 4) == (Bit8u)h.bolt_type()) {
+            wo8(g_standin, 4, 0);       // (not turned into its flash: gone)
+        } else {
+            const int own = tdm_player_object();
+            wclog(2, "TIE demo: the hit's flash (obj %d, type %02X) %.0f units from its target obj %u, %.0f from our own craft", g_standin,
+                  o8(g_standin, 4), distance(g_standin, (int)h.target()), h.target(), own >= 0 ? distance(g_standin, own) : -1.0);
+        }
         g_net->hitsApplied++;
         const PhysPt craft = tdm_craft((int)h.target());
         wclog(2, "TIE demo: the hit on obj %u applied (its hull's damage %u of %u)", h.target(), craft ? mem_readw(craft + kCraftHull) : 0,
@@ -1691,6 +1719,9 @@ void tdm_session_laser_hit() {
     h.set_ox(o32(bolt, 0x12));
     h.set_oy(o32(bolt, 0x16));
     h.set_oz(o32(bolt, 0x1A));
+    h.set_cx((Bit16s)ds16(kCollideXOff));       // (the impact, from the bolt's start: the collision test's, just made)
+    h.set_cy((Bit16s)ds16(kCollideYOff));
+    h.set_cz((Bit16s)ds16(kCollideZOff));
     g_net->hitsOut.push_back(h);
 }
 
