@@ -1279,11 +1279,35 @@ the Jedi (seen from outside) as the reference.
   once, by the game's own sums (collide_damagecraft: the bolt's radius as the
   damage, a quarter on a freighter, a sixteenth on a starship or platform; the
   struck side's shield first, then the hull), but never a death, a system or
-  an ion bolt's overflow (the owner's), nor a starship's part; the owner's
-  figures wait 600 ms after it, and the owner applies the hit for good as
-  before.  A craft near a guest's crosshairs is the guest's (step 5): its
-  place is never written from the network there, so aiming at it is the
-  game's own motion.
+  an ion bolt's overflow (the owner's), nor a starship's part; the owner
+  applies the hit for good as before.  A craft near a guest's crosshairs is
+  the guest's (step 5): its place is never written from the network there, so
+  aiming at it is the game's own motion.
+  * **A shown hit is kept until its owner has it** (2026-11-19, found in the
+    demo's session by its sync test, docs/tiedemo.md section 5: the same
+    code).  The owner's figures used to wait 600 ms after a hit of ours:
+    under fire from here (a hit every half second) the copy ran on this
+    machine's sums alone for as long as the fire lasted, and a machine that
+    took the craft over went on from them.  Now a report's figures are always
+    written and our hits the owner has not dealt with yet are summed over
+    them again (`reshow`): each hit has its sender's serial (TieHit.serial),
+    every frame says how far its sender has dealt with each seat's hits
+    (TieFrame.hit_acks), a hit kept 2 s at most (0.6 s for an owner that
+    sends no counts: a page of before).
+  * The reports also carry a craft's warheads (TieCraft.warheads: the count
+    of every weapon slot in use, CraftData +0x142, for a craft seen with any):
+    a shot made here from a report takes none off the copy's.  And a dying
+    craft stays its owner's in the host's table.
+  * Measured (HG3M, both pilots flown by the rig's pilot at the rebels and
+    never shot down, `!tiegod=1`; `!tiecraft` now shows every craft's hull,
+    shields and warheads; the tables paired by the wall clock,
+    `WCNET_LOG_WALL=1`), 200 s of flight: the old way
+    (`WCNET_TIE_OLD_FIGURES=1`, kept for the comparison) had a pilot's craft
+    at 2,499 of 2,500 hull damage on the other machine for 6 and 8 s on end
+    and 12 of 98 tables with a hull difference; the new 6 of 96, each hits on
+    their way (one craft in two tables running, at other figures).  80 and 38
+    hits applied across the machines.  No AI craft fired a warhead in that
+    flight: the counts are carried as the demo's are, measured there only.
 * **Measured.**  Far (battle 1 mission 2, `!tieface=9` facing the platform
   from 7.6 km, throttle cut): 305 far shots made on the guest while it
   watched (the picture: green bolts by the platform); up to 14 far craft
