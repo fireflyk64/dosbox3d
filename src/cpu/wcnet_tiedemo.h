@@ -30,6 +30,7 @@ bool tdm_key(int key, bool pressed);                // a key on its way to the g
 bool tdm_controls_key(int key, bool pressed);       // ... the flight's keys (wcnet_tiedemo_controls.cpp): arrows, Ins/Del, Space
 void tdm_controls_frame();                          // the top of each flight frame: the keys' mickeys
 bool tdm_controls_no_bank();                        // at the bank into a turn: true to step over it (point to aim)
+void tdm_controls_steer(const std::string &spec); // test aid (the video rig, !tdmsteer=): fly at a craft, fire
 void tdm_program_ended(Bit16u psp);                 // a program ended (its exit code still to be read: the showroom's)
 
 // The flight's tables: offsets in the data segment (DGROUP), and fields (docs/tiedemo.md section 4).

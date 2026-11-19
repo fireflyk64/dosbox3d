@@ -692,6 +692,10 @@ bool tdm_script_item(const std::string &item, double t) {
         wclog(1, "key script %.1fs: TIE demo: DS:%04X byte set to %02X", t, off, v);
         return true;
     }
+    if (item.compare(0, 10, "!tdmsteer=") == 0) {
+        tdm_controls_steer(item.substr(10));
+        return true;
+    }
     if (item.compare(0, 8, "!tdmrec=") == 0) {
         g_recAt.push_back(std::make_pair(PIC_FullIndex(), atoi(item.c_str() + 8)));
         return true;
