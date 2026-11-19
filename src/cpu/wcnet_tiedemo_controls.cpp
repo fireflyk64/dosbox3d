@@ -263,6 +263,16 @@ void tdm_controls_frame() {
         let_go();
         tie_controls_aim_reset();           // (a flight starts with the pointer in the middle)
     }
+    {
+        // (a touch screen's pilot: the lasers' recharge a step up at each flight's start; this build's CraftData +0xC9,
+        // the CD's laser_power: 2 as made, F9 to 3, 4, then 0, measured)
+        const int own = flying ? tdm_player_object() : -1;
+        const PhysPt craft = own >= 0 ? tdm_craft(own) : 0;
+        const int step = tie_controls_touch_step(flying && craft, craft ? mem_readb(craft + 0xC9) : -1);
+        if (step) {
+            KEYBOARD_AddKey(KBD_f9, step == 1);
+        }
+    }
     if (!flying) {
         return;
     }

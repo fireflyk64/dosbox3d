@@ -778,6 +778,15 @@ void tie_controls_frame() {
         g_stepX = g_stepY = 0;
         g_left = g_right = g_up = g_down = false;
     }
+    {
+        // (a touch screen's pilot: the lasers' recharge a step up at each flight's start; CraftData +0xD1 laser_power)
+        const int own = flying ? tie_player_object() : -1;
+        const Bit32u craft = own >= 0 ? tie_r32(tie::kObjects + (Bit32u)own * tie::kObjectSize + 0x54) : 0;
+        const int step = tie_controls_touch_step(flying && craft >= 0x100000, craft >= 0x100000 ? mem_readb(craft + 0xD1) : -1);
+        if (step) {
+            add_key(KBD_f9, step == 1);
+        }
+    }
     if (!flying) {
         return;
     }
@@ -869,6 +878,49 @@ void tie_controls_steer(const std::string &spec) {
     g_steer.on = true;
     (void)rest;
     wclog(1, "TIE: the steering aid at ship indexes %d..%d%s, firing within %.2f km", first, last, g_steer.any ? " (any)" : "", g_steer.km);
+}
+
+// A touch screen's pilot (the user, 2026-11-19: "F9 simply isn't on mobile. And it's a bit user unfriendly that they run
+// out of lasers and that's it ... start with one tick up of charging in case they don't know"): 1.5 s into a flight
+// whose craft still has the setting it was made with (2), F9 once, the game's own key (its panel and its message).
+// Once a flight: a craft already a step up (the frames stopped and came again: a pause) is left alone.
+int tie_controls_touch_step(bool flying, int laserPower) {
+    static int touch = -1;
+    static double since = 0, keyAt = 0;
+    static int stage = 0;       // 0 waiting, 1 F9 down, 2 done
+    if (touch < 0) {
+        const char *env = getenv("WCNET_TIE_TOUCH");
+        touch = env && env[0] == '1' ? 1 : 0;
+    }
+    if (!touch) {
+        return 0;
+    }
+    const double now = PIC_FullIndex();
+    if (!flying) {
+        const bool held = stage == 1;
+        since = 0;
+        stage = 0;
+        return held ? 2 : 0;
+    }
+    if (since == 0) {
+        since = now;
+        stage = 0;
+    }
+    if (stage == 0 && now - since >= 1500) {
+        if (laserPower != 2) {
+            stage = 2;
+            return 0;
+        }
+        stage = 1;
+        keyAt = now;
+        wclog(1, "TIE: a touch screen's flight: the lasers' recharge one step up (F9)");
+        return 1;
+    }
+    if (stage == 1 && now - keyAt >= 120) {
+        stage = 2;
+        return 2;
+    }
+    return 0;
 }
 
 void tie_controls_stick(double x, double y) {

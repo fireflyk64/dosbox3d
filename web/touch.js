@@ -24,7 +24,9 @@ const NAMED = { Enter: "enter", Escape: "esc", Tab: "tab", ArrowLeft: "left", Ar
                 ArrowDown: "down", Delete: "delete" };
 
 // send(name, down): a key by its KEY name to the game, false when no game takes keys (what is waiting is dropped)
-export function initTouch({ send: sendKey, log, inFlight = () => false, steer = () => false }) {
+// remap(id): another key, label and title for one of the flight's tap buttons in the game that runs, { key, label,
+// title }, or null for the button as it is (TIE Fighter has no navigation map: its Nav button is the lasers' F9)
+export function initTouch({ send: sendKey, log, inFlight = () => false, steer = () => false, remap = () => null }) {
   const bar = document.getElementById("touch");
   const field = document.getElementById("touchType");
   const keysBtn = document.getElementById("touchKeys");
@@ -101,9 +103,19 @@ export function initTouch({ send: sendKey, log, inFlight = () => false, steer = 
     else { empty(); field.focus({ preventScroll: true }); }
   });
   document.getElementById("touchEsc").addEventListener("click", () => tap("esc", false));
-  for (const [id, name] of Object.entries({ touchAuto: "a", touchTgt: "t", touchMissile: "enter",
-    touchComm: "c", touchNav: "n", touchWeapon: "w" }))
-    document.getElementById(id).addEventListener("click", () => tap(name, false));
+  const TAPS = { touchAuto: "a", touchTgt: "t", touchMissile: "enter", touchComm: "c", touchNav: "n", touchWeapon: "w" };
+  for (const [id, name] of Object.entries(TAPS))
+    document.getElementById(id).addEventListener("click", () => tap((remap(id) || {}).key || name, false));
+  // the tap buttons as the game that runs has them: its own label and title, or the page's
+  const asMade = {};
+  function relabel() {
+    for (const id of Object.keys(TAPS)) {
+      const b = document.getElementById(id), r = remap(id);
+      asMade[id] = asMade[id] || { label: b.textContent, title: b.title };
+      b.textContent = (r && r.label) || asMade[id].label;
+      b.title = (r && r.title) || asMade[id].title;
+    }
+  }
 
   const holds = new Map();
   for (const [id, name] of Object.entries({ touchFire: "space", touchBurn: "tab", touchSlower: "minus", touchFaster: "equals" })) {
@@ -183,7 +195,7 @@ export function initTouch({ send: sendKey, log, inFlight = () => false, steer = 
       document.getElementById("touchFlight").hidden = !flying;
       bar.classList.toggle("in-flight", flying);
       bar.closest("#screen").classList.toggle("touch-flight", flying);
-      if (flying) steer(0, 0);
+      if (flying) { relabel(); steer(0, 0); }
     }
     // Some games recenter their mouse driver; maintain a held deflection without synthesizing mouse buttons.
     if (flying && stickPointer !== null && now - lastSteer >= 100) { steer(sx, sy); lastSteer = now; }

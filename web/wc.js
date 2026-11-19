@@ -2264,6 +2264,8 @@ async function start(fromGesture) {
     if (cfg.callsign && !solo) env.WCCALLSIGN = cfg.callsign;
     env.WCGAME = source.game.id;     // (the game this run is for: the TIE demo's room lives from the boot on, wcnet_tiedemo.cpp)
     if (isTie()) env.WCNET_TIE_MOUSE = tfFlight();
+    // (a phone or a tablet has no F9: each flight starts with the lasers' recharge one step up, wcnet_tie_controls.cpp)
+    if (isTie() && phoneLike()) env.WCNET_TIE_TOUCH = "1";
     if (isPriv()) env.WCPRIVFACE = $("privFace").value;
     if (isTv() && together && isHost()) env.WCTVLOOKS = `${$("tvCraftHost").value},${$("tvCraftGuest").value}`;
     if (cfg.lastname && !solo) env.WCLASTNAME = cfg.lastname;
@@ -2521,12 +2523,24 @@ const touch = initTouch({ log, send: (name, down) => {
   M._wc_web_key(KEY[name], down);
   return true;
 }, inFlight: () => !!(running && window.DOSBox?._wc_web_in_flight?.()), steer: (x, y) => {
+  // (TIE Fighter and its demo have no steering pointer: the emulator steers them by a stick, the controller's way,
+  // right and climbing positive; the thumb up climbs, as the pointer's games do.  Until 2026-11-19 the touch stick
+  // looked for a pointer there, found none and steered nothing: the user, "On mobile turning joystick does nothing")
+  if (isTie()) {
+    const T = running && window.DOSBox;
+    if (!T || !T._wc_web_stick) return false;
+    T._wc_web_stick(x, -y);
+    return true;
+  }
   const M = running && window.DOSBox, p = M && steeringPointer();
   if (!p || !M._wc_web_pointer) return false;
   const axis = (v, steps, reach, edge) => v === 0 ? 0 : steps ? stepped(v, steps, reach, edge, p.top) : v * reach;
   M._wc_web_pointer(p.x + axis(x, p.stepsX, p.rx, p.edgeX), p.y + axis(y, p.stepsY, p.ry, p.edgeY));
   return true;
-} });
+}, remap: (id) => (isTie() && id === "touchNav"
+  // (TIE Fighter has no navigation map, and a phone no F9: the user, "F9 simply isn't on mobile ... the one button for
+  // laser power up/down for now")
+  ? { key: "f9", label: "Lasers", title: "The lasers' recharge rate (F9): each press a step up, to the most, then none, then up again" } : null) });
 
 // TIE Fighter's flight controls (src/cpu/wcnet_tie_controls.cpp): the mouse points to aim, drags to steer (the
 // game's own), or steers nothing (the keyboard alone, a joystick); the arrows always steer.  Remembered in this

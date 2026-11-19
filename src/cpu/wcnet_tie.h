@@ -134,6 +134,10 @@ void tie_controls_set_mouse(int mode);              // 0 drag, 1 pointer, 2 keyb
 void tie_controls_button(int button, bool pressed);  // a mouse button for the game (the right: the X-roll)
 bool tie_controls_bank();                            // false: the game's bank into a turn left out (the pointer's)
 void tie_controls_stick(double x, double y);         // a pad's stick, -1..1, right and climbing positive
+// A pilot on a touch screen (the page's phone or tablet: WCNET_TIE_TOUCH=1) has no F9, and lasers left at the craft's
+// own setting run dry: each flight starts one step up.  Called every frame with our craft's laser recharge setting
+// (CraftData's laser_power: 2 as a craft is made, F9 a step up to 4, then 0); 1: press F9 now, 2: let it go, 0 nothing.
+int tie_controls_touch_step(bool flying, int laserPower);
 
 // The Imperial shuttle's cockpit, made from the gunboat's (wcnet_tie_cockpit.cpp, step 9): at fediskio_loadspecies's
 // entry, the mission read and its craft not yet loaded.  WCNET_TIE_FLY_AS=<craft type> flies the player's flight group

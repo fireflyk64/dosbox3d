@@ -555,6 +555,26 @@ improved accordingly". The CD port's keyboard (docs/tiefighter.md step 7), fitte
     count now. A pad at rest says (0, 0) every frame: its stick steers only while pushed, or the pointer would be held
     still.
 
+**On a phone** (2026-11-19, the user: "On mobile turning joystick does nothing and there's no way to adjust lasers to
+increased power", then "F9 simply isn't on mobile. And it's a bit user unfriendly that they run out of lasers and
+that's it ... the one button for laser power up/down for now. And then start with one tick up of charging in case they
+don't know"). The same for the CD game.
+* **The touch stick steers.** The page's touch stick (web/touch.js) moved the steering pointer of the games that have
+  one (Wing Commander's, RetroVega's); TIE Fighter and its demo have none, so it steered nothing there. For them it
+  is now the emulator's stick, as a controller's (`wc_web_stick`, web/wc.js): right turns right, the thumb up climbs
+  (as the pointer's games do), let go flies straight.
+* **A Lasers button.** The flight's Nav button (these games have no navigation map) reads "Lasers" and presses F9:
+  the lasers' recharge rate a step up, to the most, then none, then up again (the game's own key and message).
+* **A flight starts one step up.** The page of a phone or a tablet (no pointer but a finger) says so at the launch
+  (WCNET_TIE_TOUCH=1), and 1.5 s into each flight the emulator presses F9 once if our craft still has the setting it
+  was made with (`tie_controls_touch_step`; the setting is CraftData +0xC9 here, the CD's laser_power at +0xD1: 2 as
+  made, F9 to 3, 4, then 0: measured). A craft already a step up is left alone.
+* `node scripts/web-tdm-touch.mjs PAGE_URL ZIP`: one page as a Pixel 7, the demo dropped, a room of one (a phone's
+  Players is 1). Measured: the touch controls shown in flight, the Nav button "Lasers"; the flight begun at setting 3;
+  the stick held up pitched the craft as the Down arrow does (a climb); held right it turned the nose 140 degrees in
+  2 s, and let go the turn stopped (0.07 degree in 1.5 s); the Lasers button made it 4 ("LASERS RECHARGING AT MAXIMUM
+  RATE."): TDM TOUCH OK.
+
 **Measured** (native, `!tdmpose`: our craft's attitude, nose, target and the shots made):
 * A T/F, Left held 1 s: turning from the first frame, the ramp full in some 0.4 s; Right held 1 s brought the nose
   back to within a degree. Shift+Left 0.5 s: some 33 degrees.
