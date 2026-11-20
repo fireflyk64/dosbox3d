@@ -114,6 +114,10 @@ const hOther = lines(host).filter((l) => / obj 0 of pilot 2: here/.test(l)).leng
 console.log(`${stamp()} craft reports sent: host ${hc}, guest ${gc}; the other's shots made: host ${hm}, guest ${gm}; the other pilot's craft seen: host ${hOther} s, guest ${gOther} s`);
 check(hc > 100 && gc > 20 && hOther > 10 && gOther > 10, "both pages fly the other's craft from its reports");
 check(hm > 0 && gm > 0, "each page made the other pilot's shots");
+// (the page's keepalive line to the lobby server, every 25 s, is answered "unknown message type" by a server from
+// before it: neither page's console says so, the user: "I get a lot of this in my console ... it's really distracting")
+const noise = all(host, /unknown message type "ping"/).length + all(guest, /unknown message type "ping"/).length;
+check(noise === 0, `no line of the lobby server's answers to the keepalive in either console (${noise})`);
 // the campaign (docs/tiedemo.md section 8): the demo's own mission first on both; a host's scripted win (!tdmwin)
 // takes both pages to the next mission, the guest by the host's verdict and go
 check(all(host, /campaign: mission 1 of 4, The Ambush/).length > 0 && all(guest, /campaign: mission 1 of 4, The Ambush/).length > 0,

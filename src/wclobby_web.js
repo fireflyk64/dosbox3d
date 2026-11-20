@@ -191,6 +191,9 @@ addToLibrary({
           WCLOBBY.log(1, 'player ' + ev.playerId + ': path ' + ev.local + '/' + ev.remote);
           break;
         case 'lobby-error':
+          // (the server's answer to the page's keepalive line, web/wc.js roomBeat: a server from before it knows no
+          // "ping" and says so every 25 s; no error of ours, and not said)
+          if (ev.code === 'invalid-message' && /ping/.test(ev.message || '')) break;
           WCLOBBY.log(0, 'lobby error ' + ev.code + ': ' + ev.message);
           break;
         case 'signaling-closed':
