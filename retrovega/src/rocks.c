@@ -1245,8 +1245,9 @@ void rocks_draw_rest(int y0, int y1, const short __far *ext, int ext_y0, int ext
     rocks_draw_to(-0x7FFFFFFL, y0, y1, ext, ext_y0, ext_rows);
 }
 
-void rocks_report(void)
+void rocks_report(void)                 /* (the test build's: RV.EXE logs no rock counts, 2026-11-19, for the room) */
 {
+#ifdef RV_TESTS
     static const char __far s_r[] = "rocks: %lu frames in a field: %lu rocks kept on average (%d at most), on screen "
         "%lu small and %lu big (%d at most), %lu made (%lu at where the player would be), %lu gone, %lu hits on the "
         "player, %lu shots into rocks (%lu broke them), %lu mines' turns at the player",
@@ -1262,6 +1263,7 @@ void rocks_report(void)
     rv_logf(s_ms, MS(g_t_place), MS(g_t_small), MS(g_t_big), g_rows / f, g_rock_xms ? s_xms : s_copy, MS(g_t_blocks),
             g_blocks_n / f, g_blocks_n * 100 / f % 100, MS(g_t_keep));
 #undef MS
+#endif
 }
 
 #ifdef RV_TESTS

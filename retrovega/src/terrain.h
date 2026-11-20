@@ -31,14 +31,27 @@ enum {                                  /* TrStamp.kind */
     TR_STAMP_ARCH = 2,                  /* a stone arch over the ground: at its middle, `to` along its length, size[0]
                                            half its span, size[1] its width, size[2] the air under its crown, size[3]
                                            its thickness; its feet stand on the ground */
-    TR_STAMP_CANYON = 3                 /* a canyon cut from `at` to `to` (a chain: each next stamp flagged
+    TR_STAMP_CANYON = 3,                /* a canyon cut from `at` to `to` (a chain: each next stamp flagged
                                            TR_STAMP_JOINED carries it on from the last one's `to`, as many as
                                            TR_CANYON_PTS - 1 in all): size[0] its floor's width, size[1] each wall's run
                                            across, size[2] its depth under the land beside it, size[3] how far out the
                                            land is raised to its rim; its floor that depth under the ground at each of
                                            its points, straight from one to the next */
+    TR_STAMP_TUNNEL = 4                 /* a tunnel: a chain as a canyon's (TR_STAMP_JOINED) under the land, its floor that
+                                           depth under the land at each point, a vault of rock over it (the second layer:
+                                           its underside `air` over the floor at the middle, its top the land, so from
+                                           over it the land is as it was); open to the land at its first point with
+                                           TR_STAMP_OPEN_START and at its last with TR_STAMP_OPEN_END (a ramp down to a
+                                           portal), else closed there: a branch from a junction, a dead end.  size[0] its
+                                           floor's width, size[1] the air over its floor, size[2] its depth under the
+                                           land, size[3] an open cut's walls' run across (the user, 2026-11-19: "a huge
+                                           long tunnel and nav points inside the tunnel. The tunnel should curve and
+                                           branch") */
 };
-#define TR_STAMP_JOINED 1               /* TrStamp.flags: a canyon's next stretch */
+#define TR_STAMP_JOINED 1               /* TrStamp.flags: a canyon's or a tunnel's next stretch */
+#define TR_STAMP_OPEN_START 2           /* a tunnel's first point opens on the land (its mouth) */
+#define TR_STAMP_OPEN_END 4             /* and its last (its exit) */
+#define TR_CHAIN(kind) ((kind) == TR_STAMP_CANYON || (kind) == TR_STAMP_TUNNEL)
 #define TR_CANYON_PTS 9
 
 #ifdef __WATCOMC__
@@ -123,7 +136,7 @@ typedef struct {
     uint8_t kind, flags;                /* (flags: TrStamp's) */
     int16_t heading;                    /* degrees */
     int32_t at[3];                      /* its nav point, km */
-    int32_t to[3];                      /* a canyon's next nav point, km */
+    int32_t to[3];                      /* a canyon's or a tunnel's next nav point, km */
     uint16_t size[4];                   /* km, as TrStamp's */
 } TrGroundKm;
 typedef struct {

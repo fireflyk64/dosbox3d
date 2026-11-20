@@ -541,10 +541,18 @@ long planet_over(const LfVec *pos, long *roof)
 
 /* --- a mission's planet (missions.txt planet, ground) --- */
 
+static uint8_t __far g_tunnels;         /* the mission's ground has a tunnel (planet_tunnels) */
+
 void planet_mission(const RvMission __far *m)
 {
+    int k;
+    g_tunnels = 0;
+    for (k = 0; k < (m->nground & 15) && k < RV_GROUNDS; k++)
+        g_tunnels |= m->ground[k].kind == RV_GROUND_TUNNEL;
     (void)planet_set((const TrPlanetRec __far *)&m->px, (const TrNavRec __far *)m->nav, m->nnav, m->id);
 }
+
+int planet_tunnels(void) { return g_tunnels && planet_on(); }
 
 void planet_pace(unsigned ticks)
 {

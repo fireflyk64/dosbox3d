@@ -345,6 +345,7 @@ who want to find themselves to the winning path"), but "We want an escort missio
 | Shmrn | SHMRNP, third | Redeemer, Torch | 7, desert (Mirage) | Strike: the Leonidas's supply ship under the arch |
 | Shmrn | SHMRNC, fifth | Lancelot, Torch | 7, desert (Mirage) | The canyon run (MIRAGE1), the last terrain mission, the day before the Leonidas |
 | Luyten's Star | LUYTENP, fourth | Franklin, Tally | 1301, grey | Escort: the grey moon's miners home in an Ox (`role=back`) |
+| Enigma | ENIGMAT, fourth | Schroedinger, Frost | 101, ice | Strike: the tunnels (below), their tanker outside the far end with the ace |
 
 - **Without the card** (campaign.c `camp_slot`): a set's missions are counted as this machine flies them, a planet
   mission only where a planet is drawn (`camp_node_missions`, the briefing's "mission N of M", the way out by points
@@ -448,6 +449,45 @@ each point's height over it (the colony, Nav 2, 187 km over the shore; Nav 1 ove
   across (`field asteroid 0 0 0 7000 level=1`): flown out of by hand. The Vigilance jumps out 10 s after the launch
   (its star and the flash, off the scene) and back in 2 s after a pilot, having been away past 16,000 km, comes within
   15,500 km of its place (the autopilot home stops at the field's edge). Play test M8.69.
+
+### Enigma's tunnels (ENIGMAT; the user, 2026-11-19)
+
+> Then have a second enigma mission this one with a huge long tunnel and nav points inside the tunnel. The tunnel
+> should curve and branch and ideally spawn some agis or dralthi equivalents at the nav points. The nav points should
+> be pretty close together just so that you can't auto any closer and then the player has to visit them. At the end of
+> the tunnel should be one of the ace heavy fighters to fight the player as they leave to return to the carrier.
+
+Then: "The tunnel mission has a simpler story of course", "The tunnel should twist and turn in a few segments and
+ideally have a branch and multiple outs if it's not hard", and "I'm worried a tanker in a tunnel is too hard since
+you'll have to do strafing runs. Maybe tanker is outside guarded by the heavy and more agis inside".
+
+- **The shape** (`ground tunnel navA to=navB [via=navK] width= air= depth= wall= [open=both|start|end|none]`, terrain.h
+  `TR_STAMP_TUNNEL`, terrain.c `tr_tunnel_at`): a chain as a canyon's (each nav point to the next, straight between,
+  round each a chamber the floor's width across), its floor `depth` under the land at each point, over it a vault of
+  rock (the second layer): its underside `air` over the floor at the middle and 0.3 of it at the walls, its top the
+  land as it was, so from over it the land is unchanged (the roof takes the floor's light: a darker strip shows its
+  line from the air). Where there is less than 100 km of rock over the vault (by an open end) it is a cut, its walls up
+  to the land: a ramp down to a portal. `open=` says which ends open (a branch from a junction starts deep); `via=navK`
+  starts the chain's next points at K (a branch). Where two tunnels meet, the deeper floor and the higher vault (the
+  slab's top is the land for the second). Its record's heading word: the last nav point, `via` in bits 8-13, open at
+  the start bit 14, at the end bit 15 (`tr_from_records`). A tunnel stretch's detail patch has half a canyon's points
+  (some 14 km cells).
+- **ENIGMAT**: a zig-zag of five stretches about 6,000 km each with turns of some 70 degrees: the mouth (Nav 1), a bend
+  (hidden 2), Nav 3, the fork (Nav 4); from the fork a branch through Nav 5 to an exit (hidden 6) and the main tunnel
+  through Nav 7 to the far end (Nav 8): three open ends. Width 1,800 km, air 1,400, depth 2,600 (some 1,200 km of rock
+  over the vault). The nav points 600 km over the floor; Agis (2 at Nav 3, 2 at Nav 5, 3 at Nav 7) and 2 Nicanders at
+  the fork, all guards; outside the far end the Aera's Charillus tanker (`role=stay`) and the ace's Convolution
+  (`ai=ace`, a guard) over it. Schroedingers, Frost on the wing; the planet the ice moon's seed in another place of it.
+- **The autopilot** refuses under a tunnel's rock or toward a point under it (logic.c, `planet_tunnels`: missions with
+  a tunnel only, so an arch's point is as it was): AUTOPILOT: FLY THROUGH THE TUNNEL under the gunsight.
+- **The AI in a tunnel** (logic.c `tunnel_mind`, `step_ground`): under rock, where the way 1,500 km along its nose is
+  not clear by 150 km it turns hard to the first open of right, left, up, down (45 degrees); else it keeps 300 km off
+  floor and vault; a step into rock is undone, never lifted through it (the fighters had come out through the roof).
+- **The bake**: a tunnel's slabs are each patch's; the picture's slab grids (at most 4) merged where more patches have
+  slabs (planetbake.c: the two whose box together grows least first): ENIGMAT's at 512 km cells, coarse.
+- **Measured** (DOS at 50,000 cycles, RVT.EXE `/fly 54 /navat 3`): with the card 12.0 ms a frame inside; without it 58.8
+  (the planet's picture 36 ms to make at the coarsest detail: about 17 fps). The native DOSBox's card is rebuilt after
+  terrain.c changes (it had drawn solid ice there). Play test M8.71.
 
 ### Guards (`role=guard`)
 

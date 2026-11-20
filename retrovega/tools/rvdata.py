@@ -273,7 +273,7 @@ GROUND = [('unsigned char', 'kind', 'B'), ('unsigned char', 'nav', 'B'), ('unsig
 PLANET_KINDS = ['desert', 'green', 'ice', 'red', 'ash', 'savanna', 'violet', 'ochre', 'jungle', 'ocean', 'tundra',
                 'steppe', 'grey', 'earth']   # a planet's look, kind=NAME (terrain.h TR_KIND_*, in its order; terrain.c tr_looks)
 FIELD_NAV_MIN_KM = 9000          # a field a waypoint lies in is at least this wide (radius): its edge is the autopilot's stop
-GROUND_KINDS = {'pad': 1, 'arch': 2, 'canyon': 3}   # (terrain.h's TR_STAMP_PAD, TR_STAMP_ARCH, TR_STAMP_CANYON)
+GROUND_KINDS = {'pad': 1, 'arch': 2, 'canyon': 3, 'tunnel': 4}   # (terrain.h's TR_STAMP_PAD, _ARCH, _CANYON, _TUNNEL)
 MISSION = [('char', 'id[RV_ID]', '%ds' % TEXT['ID']), ('unsigned char', 'node', 'B'), ('unsigned char', 'type', 'B'),
            ('unsigned char', 'music', 'B'), ('unsigned char', 'nnav', 'B'), ('unsigned char', 'nship', 'B'),
            ('unsigned char', 'ntalk', 'B'), ('unsigned char', 'nfield', 'B'), ('unsigned char', 'fighter', 'B'),
@@ -309,13 +309,35 @@ def planet_record(m, nav_ids):
     for where, g in m['ground']:
         opts = dict(o.split('=', 1) for o in g[2:] if '=' in o)
         keys = {'pad': ('radius', 'slope'), 'arch': ('span', 'width', 'air', 'thick'),
-                'canyon': ('width', 'wall', 'depth', 'rise')}.get(g[0] if g else '')
-        extra = {'to'} if g and g[0] == 'canyon' else {'heading'}
+                'canyon': ('width', 'wall', 'depth', 'rise'), 'tunnel': ('width', 'air', 'depth', 'wall')}.get(g[0] if g else '')
+        extra = {'to'} if g and g[0] == 'canyon' else {'to', 'via', 'open'} if g and g[0] == 'tunnel' else {'heading'}
         if not keys or len(g) < 2 or not re.fullmatch(r'nav(\d+)', g[1]) or int(g[1][3:]) not in nav_ids \
                 or set(opts) - set(keys) - extra or any(not opts.get(k, '1').isdigit() for k in keys):
             raise Fail('%s: ground pad navN radius=KM slope=KM, ground arch navN span=KM width=KM air=KM thick=KM'
-                       ' heading=DEG, or ground canyon navN to=navM width=KM wall=KM depth=KM rise=KM' % where)
+                       ' heading=DEG, ground canyon navN to=navM width=KM wall=KM depth=KM rise=KM, or ground tunnel'
+                       ' navN to=navM [via=navK] width=KM air=KM depth=KM wall=KM [open=both|start|end|none]' % where)
         size = [int(opts.get(k, 0)) for k in keys] + [0] * (4 - len(keys))
+        if g[0] == 'tunnel':
+            # (a chain as a canyon's: from its nav point through the mission's next ones, or from via=navK on (a branch from
+            # a junction), to to=navM; its heading word: the last nav point, via's in bits 8-13, open at the start bit
+            # 14, at the end bit 15: terrain.c tr_from_records)
+            to = re.fullmatch(r'nav(\d+)', opts.get('to', ''))
+            via = re.fullmatch(r'nav(\d+)', opts.get('via', 'nav0'))
+            first = int(via.group(1)) if via else -1
+            opn = opts.get('open', 'both')
+            if not to or not via or int(to.group(1)) not in nav_ids or (first and first not in nav_ids) \
+                    or int(to.group(1)) < (first or int(g[1][3:]) + 1) or first > 63 or not all(size) \
+                    or opn not in ('both', 'start', 'end', 'none') or size[2] <= size[1]:
+                raise Fail('%s: a tunnel runs from its nav point (via=navK on, a later one) to=navM, a later one the'
+                           ' mission has, its sizes all given, its depth more than its air, open=both|start|end|none'
+                           % where)
+            heading = int(to.group(1)) | first << 8 | (0x4000 if opn in ('both', 'start') else 0) \
+                | (0x8000 if opn in ('both', 'end') else 0)
+            heading -= 0x10000 if heading >= 0x8000 else 0
+            if any(not 0 <= v <= 20000 for v in size):
+                raise Fail('%s: a ground shape\'s sizes are 0..20,000 km' % where)
+            grounds.append(struct.pack(fmt(GROUND), GROUND_KINDS[g[0]], int(g[1][3:]), *size, heading))
+            continue
         if g[0] == 'canyon':
             to = re.fullmatch(r'nav(\d+)', opts.get('to', ''))
             if not to or int(to.group(1)) not in nav_ids or int(to.group(1)) <= int(g[1][3:]) or not all(size):

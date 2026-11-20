@@ -398,13 +398,65 @@ static int view_bake(TrPlanet *p, const RvMission *m, const TrMissionKm *mk, con
     h.nlev = (uint8_t)nlev;
     v_put(&h, sizeof h);
     h.lev_at = v_put(0, sizeof(PvLevel) * nlev);
-    /* the slabs: each patch's that has any, on its own grid (as fine as the cells' limit lets) */
+    /* the slabs: each patch's that has any, on its own grid (as fine as the cells' limit lets); more patches with slabs
+     * than PV_SLABS (a tunnel's stretches: the user, 2026-11-19), the boxes merged, the two whose box together grows
+     * least first */
     {
         PvSlabs sl;
         uint32_t ncells = 0;
-        int shift;
+        int shift, nb = 0, q;
         size_t mark = g_vn;
-        double c;
+        double c, bx[TR_PATCHES][4];
+        for (k = 0; k < p->npatch; k++) {
+            const TrPatch *pt = &p->patch[k];
+            double x0 = 1e300, x1 = -1e300, y0 = 1e300, y1 = -1e300;
+            long q2, ns = 0;
+            if (!pt->h)
+                continue;
+            for (q2 = 0; q2 < (long)(pt->na + 1) * (pt->nb + 1); q2++)
+                if (pt->lo[q2] < pt->hi[q2]) {
+                    double u = -pt->half_a + (q2 % (pt->na + 1)) * pt->cell, w2 = -pt->half_b + (q2 / (pt->na + 1)) * pt->cell, d[3], x, y;
+                    for (i = 0; i < 3; i++)
+                        d[i] = pt->cf[i] + pt->af[i] * u / p->radius + pt->bf[i] * w2 / p->radius;
+                    if (!v_on(&pl, d, &x, &y))
+                        continue;
+                    if (x < x0) x0 = x;
+                    if (x > x1) x1 = x;
+                    if (y < y0) y0 = y;
+                    if (y > y1) y1 = y;
+                    ns++;
+                }
+            if (!ns)
+                continue;
+            bx[nb][0] = x0;
+            bx[nb][1] = x1;
+            bx[nb][2] = y0;
+            bx[nb][3] = y1;
+            nb++;
+        }
+        while (nb > PV_SLABS) {
+            int ba = 0, bb = 1, a2;
+            double best = 1e300;
+            for (a2 = 0; a2 < nb; a2++)
+                for (q = a2 + 1; q < nb; q++) {
+                    double ux0 = bx[a2][0] < bx[q][0] ? bx[a2][0] : bx[q][0], ux1 = bx[a2][1] > bx[q][1] ? bx[a2][1] : bx[q][1];
+                    double uy0 = bx[a2][2] < bx[q][2] ? bx[a2][2] : bx[q][2], uy1 = bx[a2][3] > bx[q][3] ? bx[a2][3] : bx[q][3];
+                    double grow = (ux1 - ux0) * (uy1 - uy0) - (bx[a2][1] - bx[a2][0]) * (bx[a2][3] - bx[a2][2])
+                                  - (bx[q][1] - bx[q][0]) * (bx[q][3] - bx[q][2]);
+                    if (grow < best) {
+                        best = grow;
+                        ba = a2;
+                        bb = q;
+                    }
+                }
+            if (bx[bb][0] < bx[ba][0]) bx[ba][0] = bx[bb][0];
+            if (bx[bb][1] > bx[ba][1]) bx[ba][1] = bx[bb][1];
+            if (bx[bb][2] < bx[ba][2]) bx[ba][2] = bx[bb][2];
+            if (bx[bb][3] > bx[ba][3]) bx[ba][3] = bx[bb][3];
+            for (q = 0; q < 4; q++)
+                bx[bb][q] = bx[nb - 1][q];
+            nb--;
+        }
         for (shift = PV_SLAB_SHIFT;; shift++) {
             g_vn = mark;
             ncells = 0;
@@ -414,36 +466,12 @@ static int view_bake(TrPlanet *p, const RvMission *m, const TrMissionKm *mk, con
             sl.under_div = (int32_t)floor(p->relief * 0.08 + 0.5);
             for (k = 0; k < 64; k++)
                 sl.under[k] = (uint8_t)(TR_LIGHTS * (0.24 + 0.3 * exp(-(k + 0.5) / 16.0)));
-            for (k = 0; k < p->npatch; k++) {
-                const TrPatch *pt = &p->patch[k];
-                double x0 = 1e300, x1 = -1e300, y0 = 1e300, y1 = -1e300;
+            for (q = 0; q < nb; q++) {
                 int32_t i0, j0, iw, jh, a2, b2;
-                long q2, ns = 0;
-                if (!pt->h)
-                    continue;
-                for (q2 = 0; q2 < (long)(pt->na + 1) * (pt->nb + 1); q2++)
-                    if (pt->lo[q2] < pt->hi[q2]) {
-                        double u = -pt->half_a + (q2 % (pt->na + 1)) * pt->cell, w2 = -pt->half_b + (q2 / (pt->na + 1)) * pt->cell, d[3], x, y;
-                        for (i = 0; i < 3; i++)
-                            d[i] = pt->cf[i] + pt->af[i] * u / p->radius + pt->bf[i] * w2 / p->radius;
-                        if (!v_on(&pl, d, &x, &y))
-                            continue;
-                        if (x < x0) x0 = x;
-                        if (x > x1) x1 = x;
-                        if (y < y0) y0 = y;
-                        if (y > y1) y1 = y;
-                        ns++;
-                    }
-                if (!ns)
-                    continue;
-                if (sl.n == PV_SLABS) {
-                    fprintf(stderr, "planetbake: %s: more than %d patches with slabs\n", id, PV_SLABS);
-                    return 1;
-                }
-                i0 = (int32_t)floor(x0 / c) - 1;
-                j0 = (int32_t)floor(y0 / c) - 1;
-                iw = (int32_t)ceil(x1 / c) + 2 - i0;
-                jh = (int32_t)ceil(y1 / c) + 2 - j0;
+                i0 = (int32_t)floor(bx[q][0] / c) - 1;
+                j0 = (int32_t)floor(bx[q][2] / c) - 1;
+                iw = (int32_t)ceil(bx[q][1] / c) + 2 - i0;
+                jh = (int32_t)ceil(bx[q][3] / c) + 2 - j0;
                 sl.s[sl.n].x0 = i0;
                 sl.s[sl.n].y0 = j0;
                 sl.s[sl.n].w = (uint16_t)iw;

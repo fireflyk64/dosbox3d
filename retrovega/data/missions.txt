@@ -41,6 +41,11 @@
 # ENIGMAP: the user, 2026-11-14, "Stay cloaked. Arrive at the target lightly defended. Or hit each heavy bad with
 # surprise"); its nav point's goal is met only with it gone
 #
+# A planet's ground tunnel navA to=navB [via=navK] width=KM air=KM depth=KM wall=KM [open=both|start|end|none]: a tunnel
+# from navA through the next points (from K on with via=), its floor depth under the land, a vault air over it; open
+# to the land at its ends as open= says (terrain.c tr_tunnel_at).  In a mission with one the autopilot flies no point
+# under its rock, and the AI steers round its bends (logic.c tunnel_mind)
+#
 # A ship line's role=flee jump=S is an enemy capital ship that holds its nav point until it hears of a pilot (it is hit,
 # or a ship of its side within 12,000 km of it has a pilot for its target), then jumps out S seconds on; got away, it
 # loses the mission (logic.c flee_step: Enigma's envoy).  The home carrier's hide=S: it jumps out S seconds after the
@@ -3801,3 +3806,60 @@ say      lounge KESTREL KESTREL "An Ox climbs slowly. Fly over it, not ahead of 
 talk     deck TECH you "Last Ox in the system. I'd like it back, with its people in it."
 say      deck TECH TECH boost=fuel "Reserve tank. Last one. Bring the Ox home and I'll call it even."
 radio    "Tally here. Grey moon, slow Ox. Stay with me, kid."
+
+mission  ENIGMAT
+node     ENIGMA
+title    Strike: Enigma's ice moon, the tunnels
+type     patrol
+music    briefing
+fighter  SCHROED
+briefing "The Aera on the ice moon didn't only meet there. They've been living in it."
+briefing "There's an old mining tunnel under the ice, a long one that winds about. Their fighters stage in it."
+briefing "You and Frost go in at its mouth, Nav 1, and come out of its far end at Nav 8."
+briefing "Intelligence expects 2 Agis at Nav 3, 2 Nicanders at Nav 4, 2 Agis at Nav 5 and 3 Agis at Nav 7."
+briefing "At Nav 4 the tunnel forks. The branch goes on through Nav 5 and comes out on top."
+briefing "Out the branch's end and over the top, or back to the fork and on through Nav 7. Your call."
+briefing "The autopilot is no use in there. You fly every kilometre of it yourselves. Stay off the walls."
+briefing "Their Charillus tanker waits outside the far end, and their ace guards it in a Convolution."
+briefing "Come out of there ready to fight. Burn the tanker, then come home. Dismissed."
+win      "The tunnels are empty, their tanker's burnt, and their ace won't be waiting for anyone else. Good flying."
+lose     "They're still down there, and now they know we know. Get some rest."
+planet   101 0 -94000 0 64000 kind=ice
+nav      1 0 -38055 32300 ground reach=2000
+nav      2 4522 -40311 35639 ground hidden reach=2000
+nav      3 1497 -43417 40154 ground reach=2000
+nav      4 5404 -46417 43357 ground reach=2000
+nav      5 10730 -46276 42196 ground reach=2000
+nav      6 14696 -49747 44708 ground hidden reach=2000
+nav      7 2412 -49929 47170 ground reach=2000
+nav      8 6581 -53172 49628 ground reach=2000
+ground   tunnel nav1 to=nav4 width=1800 air=1400 depth=2600 wall=500 open=start
+ground   tunnel nav4 via=nav7 to=nav8 width=1800 air=1400 depth=2600 wall=500 open=end
+ground   tunnel nav4 via=nav5 to=nav6 width=1800 air=1400 depth=2600 wall=500 open=end
+ship     player 0 nav0
+ship     wingman 0 nav0 pilot=FROST
+ship     VIGILNC 0 nav0 role=home
+ship     AGIS 1 nav3 count=2 role=guard
+ship     NICANDR 1 nav4 count=2 role=guard
+ship     AGIS 1 nav5 count=2 role=guard
+ship     AGIS 1 nav7 count=3 role=guard
+ship     CHARILS 1 nav8 at=1840,-1085,1430 role=stay
+ship     CONVOLN 1 nav8 at=1505,336,2388 role=guard ai=ace
+goal     nav 1 1
+goal     nav 3 2
+goal     nav 4 2
+goal     nav 5 2
+goal     nav 7 2
+goal     kill CHARILS nav8 3
+goal     nav 8 2
+goal     land 1
+bar      left=TORCH middle=PRIME right=ANCHOR
+say      bar PRIME PRIME "A tunnel. A few thousand kilometres of ice over your head and an Agis round every bend."
+say      bar ANCHOR ANCHOR "Keep your speed down in there. You can't turn as tight as you think, and the walls don't move."
+say      bar PRIME TORCH "And the ace at the far end?"
+say      bar TORCH TORCH "Comes out of the dark, you come out of the dark. Whoever sees the other first."
+lounge   left=COMET middle=- right=FROST
+say      lounge FROST FROST "I'll keep to your left in there. Don't fire past me, and I won't fire past you."
+say      lounge COMET COMET "Tunnels. In my day the Kilrathi didn't dig."
+talk     deck TECH you "Fly it like a canyon with a lid on. And bring her back without the lid's paint on her."
+radio    "Frost here. Mouth's ahead. In we go."

@@ -63,6 +63,7 @@ int g_star_bench;                       /* RVT.EXE /starbench N */
 #endif
 int g_capital_blocks_test = 0;          /* RVT.EXE /capblocks N: capital ships in N x N blocks, however many there are */
 int g_capital = 0;                      /* RV.EXE /capital: the carrier in the flight (a test aid) */
+int g_navat = 0;                        /* RVT.EXE /navat N: the player at nav N, facing nav N + 1 (a tunnel measured) */
 int g_planet_test = 0;                  /* RVT.EXE /planet N: a desert planet N km under the player, an arch ahead */
 int g_sky = 0;                          /* RV.EXE /sky: three ship views painted on the sky, to roll and turn round (a test aid) */
 /* the sky test scene's sprites: the enemy type's views, painted on the sky at these directions and sizes */
@@ -277,6 +278,7 @@ static unsigned vrnd(void)
 
 /* --- the simulation: the game's logic (logic.c) a step, then the test scenes' scripted ships --- */
 
+#ifdef RV_TESTS                         /* (the test scenes' options are the test build's: 805 bytes of RV.EXE's room) */
 /* degrees a second to the turn per frame (1024 a turn, 20 frames a second) */
 static int turn_step(int dps, int steer)
 {
@@ -323,15 +325,20 @@ static int test_motion(int s)
     }
     return 0;
 }
+#endif
 
 static void sim_step(void)
 {
+#ifdef RV_TESTS
     int s;
+#endif
     frameCounter++;
     logic_frame();
+#ifdef RV_TESTS
     for (s = 1; s <= RV_MAX_SHIP_SLOT; s++)
         if (rvController[s] == CTL_FROZEN && slot_is_ship(s))
             test_motion(s);
+#endif
 }
 
 /* --- the picture --- */
@@ -651,13 +658,14 @@ static void land_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
 {
     static const char s_land[] = "PRESS FIRE TO LAND", s_on[] = "CLOAKED", s_broken[] = "CLOAK DISRUPTED",
         s_wait[] = "CLOAK CHARGING", s_enemy[] = "AUTOPILOT: ENEMIES NEAR", s_field[] = "AUTOPILOT: FLY THROUGH THE FIELD",
-        s_runf[] = "TARGET JUMPS IN %u";
+        s_runf[] = "TARGET JUMPS IN %u", s_tunnel[] = "AUTOPILOT: FLY THROUGH THE TUNNEL";
     static char run[24];                /* (a ship heard of the pilot and runs: logic_flee_left) */
     int c = CLOAK_OF(0), blink = (frameCounter >> 4) & 1, w, x, row = g_cam_cy + 14;
     const char *s = g_autoland ? s_land : logic_flee_left ? (sprintf(run, s_runf, logic_flee_left), run)
                     : c == RV_CLOAK_ON ? s_on : c == RV_CLOAK_BROKEN ? s_broken
                     : g_cloak_said && logic_cloak_wait() ? s_wait
-                    : !g_auto_said ? 0 : logic_auto_why == AUTO_WHY_FIELD ? s_field : logic_auto_why == AUTO_WHY_ENEMY ? s_enemy : 0;
+                    : !g_auto_said ? 0 : logic_auto_why == AUTO_WHY_FIELD ? s_field : logic_auto_why == AUTO_WHY_ENEMY ? s_enemy
+                    : logic_auto_why == AUTO_WHY_TUNNEL ? s_tunnel : 0;
     if (!s || g_arm_warn || row < 0 || row + PANEL_TINY_H > SCR_H)
         return;
     w = panel_tiny_width(s);
@@ -666,7 +674,7 @@ static void land_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
         return;
     if (ext && (row < ey0 || row >= ey0 + rows || x < ext[2 * (row - ey0)] || x + w > ext[2 * (row - ey0) + 1]))
         return;
-    (void)panel_tiny(x, row, s, s == s_on ? UI_HILITE : s == s_broken || s == s_wait || s == s_enemy || s == s_field || s == run
+    (void)panel_tiny(x, row, s, s == s_on ? UI_HILITE : s == s_broken || s == s_wait || s == s_enemy || s == s_field || s == s_tunnel || s == run
                                 ? (blink ? UI_RED : UI_AMBER2)
                                 : blink ? UI_WHITE : UI_HILITE, y0, y1);
 }
@@ -3704,6 +3712,24 @@ void __far __cdecl flight_startup(void)
     {
         planet_ready();                 /* (a planet mission's: the rest of it made now, coloured as the flight is) */
         planet_navs();
+#ifdef RV_TESTS
+        if (g_navat > 0 && g_navat < 15) {   /* (RVT.EXE /navat N: the player put at nav N, facing nav N + 1, at 250 kps: a
+                                           tunnel's inside, measured) */
+            const uint8_t *a = navPointTable + navPointTable_SIZE * g_navat, *b = a + navPointTable_SIZE;
+            RvVec3 *f = &gOrientationFrontVector[0];
+            long dx = NAV_REC_KM(b, 0) - NAV_REC_KM(a, 0), dy = NAV_REC_KM(b, 1) - NAV_REC_KM(a, 1),
+                 dz = NAV_REC_KM(b, 2) - NAV_REC_KM(a, 2), l = lf_sqrt((unsigned long)(dx / 16 * dx / 16 + dy / 16 * dy / 16 + dz / 16 * dz / 16)) * 16;
+            gPositionVector[0] = vec3(NAV_REC_KM(a, 0) * 256, NAV_REC_KM(a, 1) * 256, NAV_REC_KM(a, 2) * 256);
+            if (l) {
+                *f = vec3(dx * 256 / l, dy * 256 / l, dz * 256 / l);
+                gOrientationRightVector[0] = vec3(f->z, 0, -f->x);
+                ship_orthonormalise(0);
+            }
+            setSpeed[0] = speedLo[0] = 250;
+            gVelocityVector[0] = vec3(f->x * 250L * 256 / 20 / 256, f->y * 250L * 256 / 20 / 256, f->z * 250L * 256 / 20 / 256);
+            RV_LOG("flight: the player at nav %d facing nav %d", g_navat, g_navat + 1);
+        }
+#endif
     }
     rocks_flight_start();
     if (g_m) {                          /* the mission's asteroid and mine fields */

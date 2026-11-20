@@ -44,6 +44,7 @@ int16_t logic_autopilot_ready(void);    /* the nav point it would go to, -1 not 
 extern uint8_t __far logic_auto_why;    /* why logic_autopilot_ready last said -1: */
 #define AUTO_WHY_ENEMY 1                /* an enemy near */
 #define AUTO_WHY_FIELD 2                /* a field across the way, or the nav point's own, at hand: flown through by hand */
+#define AUTO_WHY_TUNNEL 3               /* under a tunnel's rock, or the point is: flown by hand */
 void logic_form_up(int16_t steps);      /* the autopilot's flyby begins (flight.c): the player faces the nav point, the wing
                                            and the escort targets close up on it and fly with it for `steps` steps */
 

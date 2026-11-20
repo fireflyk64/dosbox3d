@@ -6387,8 +6387,8 @@ static void t_way_out(void)
     static const char __far e_pts[] = "points %d of the pass mark %d with the last flight's: system= says %d";
     RvSave keep = g_camp;
     int16_t node, count, nb, ng, ne, pg, pb, pass;
-    for (node = 0; node < (int16_t)g_nnodes && (camp_node_missions(node) != 3 || !g_nodes[node].pass_mark); node++)
-        ;
+    for (node = 0; node < (int16_t)g_nnodes && (camp_node_missions(node) < 3 || !g_nodes[node].pass_mark); node++)
+        ;   /* (a node of three missions or more: Enigma's, four since its tunnel mission, 2026-11-19) */
     g_camp.node = (uint8_t)node;
     count = camp_node_missions(node);
     pass = g_nodes[node].pass_mark;
@@ -7846,6 +7846,128 @@ static void t_envoy_runs(void)
     REQUIRE(shipAiState[env] == 9 && i < 45 * SEC, e_kill, shipAiState[env] == 9 ? 1 : 0, i / SEC, 0);
 }
 
+/* M8.71: the tunnel (terrain.c tr_tunnel_at, ENIGMAT; the user, 2026-11-19: "a huge long tunnel and nav points inside
+ * the tunnel. The tunnel should curve and branch", "The tunnel should twist and turn in a few segments and ideally have
+ * a branch and multiple outs"): its mouth (Nav 1) and exits (hidden 6, Nav 8) open to the sky, Navs 3, 4, 5 and 7
+ * under its rock, 600 km over its floor; the autopilot refused at the mouth (the next point is under rock, FLY THROUGH
+ * THE TUNNEL); each leg flown straight at 300 kps (1-2-3-4, 4-5-6, 4-7-8), never within 10 km of floor, wall or roof;
+ * the fork's Nicanders inside it, under its rock; its fighters never in its rock, out only by an open end (tunnel_mind) */
+static void face_point(int16_t s, const LfVec *p)
+{
+    RvVec3 *f = &gOrientationFrontVector[s];
+    int32_t dx = (p->x - gPositionVector[s].x) / KM, dy = (p->y - gPositionVector[s].y) / KM, dz = (p->z - gPositionVector[s].z) / KM;
+    int32_t l = pt_len(dx, dy, dz);
+    if (!l)
+        return;
+    f->x = dx * 256 / l;
+    f->y = dy * 256 / l;
+    f->z = dz * 256 / l;
+    gOrientationRightVector[s].x = f->z;   /* (any right across it: orthonormalise squares it) */
+    gOrientationRightVector[s].y = 0;
+    gOrientationRightVector[s].z = -f->x;
+    if (!gOrientationRightVector[s].x && !gOrientationRightVector[s].z)
+        gOrientationRightVector[s].x = 256;
+    ship_orthonormalise(s);
+}
+
+/* the tunnel's Agis and Nicanders in its rock now: how many */
+static int16_t tunnel_ai_in_rock(void)
+{
+    int16_t k, n = 0;
+    long roof;
+    for (k = 1; k < NUM_SHIP_SLOTS; k++)
+        if (slot_is_ship(k) && shipAiState[k] != 9 && (gInstanceShipTypes[k] == 0x08 || gInstanceShipTypes[k] == 0x0B))
+            n += planet_over((const LfVec *)&gPositionVector[k], &roof) < 0;
+    return n;
+}
+
+static void t_tunnel(void)
+{
+    static const char __far e_made[] = "the tunnel mission's planet: planet_make %d (100: made)";
+    static const char __far e_open[] = "nav %d (an open end): %d km over the ground, roof %d (-1: open sky)";
+    static const char __far e_under[] = "nav %d: %d km over the floor (600), its rock %d km over it (under rock)";
+    static const char __far e_auto[] = "at the mouth: the autopilot %d (-1), why %d (3: the tunnel)";
+    static const char __far e_leg[] = "the leg %d (from nav, to nav): the least clearance %d km (10 or more), reached %d (1)";
+    static const char __far e_guard[] = "the fork's Nicanders: %d of them in the tunnel, under its rock (2)";
+    static const char __far e_out[] = "after the legs: %d of the tunnel's Agis and Nicanders in its rock or out far from an open end (0); in its rock %d times on the way (0)";
+    static const uint8_t legs[][2] = { { 1, 2 }, { 2, 3 }, { 3, 4 }, { 4, 5 }, { 5, 6 }, { 4, 7 }, { 7, 8 } };
+    static const uint8_t open_navs[] = { 1, 6, 8 }, under[] = { 3, 4, 5, 7 };
+    int16_t k, n, i;
+    int32_t in_rock = 0;
+    long roof, over, least;
+    LfVec p, q;
+    pt_launch_named("ENIGMAT");
+    n = (int16_t)planet_make(0);
+    REQUIRE(n == 100, e_made, n, 0, 0);
+    planet_navs();
+    playerCanBeDamaged = 0;
+    for (k = 0; k < (int16_t)sizeof open_navs; k++) {
+        nav_pos(open_navs[k], &p);
+        over = planet_over(&p, &roof) / KM;
+        REQUIRE(over >= 550 && over <= 650 && roof == 0x7FFFFFFFL, e_open, open_navs[k], over, roof == 0x7FFFFFFFL ? -1 : roof / KM);
+    }
+    for (k = 0; k < (int16_t)sizeof under; k++) {
+        nav_pos(under[k], &p);
+        over = planet_over(&p, &roof) / KM;
+        REQUIRE(over >= 550 && over <= 650 && roof != 0x7FFFFFFFL && roof / KM >= 200, e_under, under[k], over,
+                roof == 0x7FFFFFFFL ? -1 : roof / KM);
+    }
+    nav_pos(1, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    if (!pt_step())
+        return;
+    n = logic_autopilot_ready();
+    REQUIRE(n == -1 && logic_auto_why == AUTO_WHY_TUNNEL, e_auto, n, logic_auto_why, 0);
+    for (k = 0; k < (int16_t)(sizeof legs / sizeof legs[0]); k++) {
+        nav_pos(legs[k][0], &p);
+        nav_pos(legs[k][1], &q);
+        pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+        face_point(0, &q);
+        pt_speed(0, 300);
+        least = 999999L;
+        for (i = 0, n = 0; i < 40 * SEC && !n; i++) {
+            face_point(0, &q);
+            if (!pt_step())
+                return;
+            in_rock += tunnel_ai_in_rock();
+            over = planet_over((const LfVec *)&gPositionVector[0], &roof);
+            if (over < least)
+                least = over;
+            if (roof < least)
+                least = roof;
+            n = pt_km_to(0, q.x / KM, q.y / KM, q.z / KM) < 1500;
+        }
+        REQUIRE(least >= 10L * KM && n, e_leg, legs[k][0] * 10 + legs[k][1], least / KM, n);
+    }
+    nav_pos(4, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    pt_speed(0, 0);
+    if (!pt_steps(2 * SEC))
+        return;
+    for (i = 0, k = 1; k < NUM_SHIP_SLOTS; k++)   /* (the tunnel's fighters, after the legs: in it, or out of an open
+                                                     end after the player, never out through its rock) */
+        if (slot_is_ship(k) && shipAiState[k] != 9 && (gInstanceShipTypes[k] == 0x08 || gInstanceShipTypes[k] == 0x0B)) {
+            int16_t e;
+            int32_t near_end = 999999L;
+            over = planet_over((const LfVec *)&gPositionVector[k], &roof);
+            for (e = 0; e < (int16_t)sizeof open_navs; e++) {
+                nav_pos(open_navs[e], &p);
+                if (pt_km_to(k, p.x / KM, p.y / KM, p.z / KM) < near_end)
+                    near_end = pt_km_to(k, p.x / KM, p.y / KM, p.z / KM);
+            }
+            RV_LOG("tunnel: slot %d type %02X %ld km over the ground, its rock %ld km over it, an open end %ld km off", k,
+                   gInstanceShipTypes[k], over / KM, roof == 0x7FFFFFFFL ? -1L : roof / KM, (long)near_end);
+            i += over < 0 || (roof == 0x7FFFFFFFL && near_end > 12000);
+        }
+    REQUIRE(i == 0 && in_rock == 0, e_out, i, in_rock, 0);
+    for (n = 0, k = 1; k < NUM_SHIP_SLOTS; k++)
+        if (slot_is_ship(k) && gInstanceShipTypes[k] == 0x08) {
+            over = planet_over((const LfVec *)&gPositionVector[k], &roof);
+            n += over > 0 && roof != 0x7FFFFFFFL && roof > 0;
+        }
+    REQUIRE(n == 2, e_guard, n, 0, 0);
+}
+
 /* M8.66: the sets' planet missions as a machine flies them (campaign.c camp_flown_from; the user, 2026-11-14, of a
  * terrain mission in every set: "Count; skipped without card"; since RV.EXE draws a planet itself, every DOS machine
  * flies them, and g_planet_off is a machine that would not): flying them Cephid 17 has four, CEPHIDP the third place,
@@ -8819,6 +8941,7 @@ static const char __far n_m8_66[] = "M8.66 campaign-card (camp_flown_from, camp_
 static const char __far n_m8_65[] = "M8.65 cloak-run (ENIGMAP, role=guard, the cloak): cloaked, nobody sees the player and the guards keep their posts, Nav 1 to the canyon's end; a surprise from behind turns only that one; Alt+C and it lets go; the post burnt with no heavy coming; the autopilot goes home past the guards (the log: cloakrun)";
 static const char __far n_m8_69[] = "M8.69 carrier-hide (home_hide_step): ENIGMAP's carrier jumps out 10 s after the launch and back in when the player comes back to it";
 static const char __far n_m8_70[] = "M8.70 envoy-runs (flee_step): ENIGMAP's envoy holds while the player is unseen, runs on being seen and gets away 45 s on (lost), and dies to the guns from behind within its 45 s";
+static const char __far n_m8_71[] = "M8.71 tunnel (tr_tunnel_at, ENIGMAT): its open ends under the sky, its nav points under rock 600 km over its floor, the autopilot refused at its mouth, every leg flown straight clear of rock, the fork's guards inside";
 static const char __far n_m8_68[] = "M8.68 air (step_air, air_roll): in a planet's air the player's ship keeps height at speed and sinks without it, hangs on its tail only with the afterburner low down and with the throttle alone high up; its wings come level";
 static const char __far n_m8_67[] = "M8.67 ground-up (step_ground): over Enigma's ice, 64,000 km from its centre, a fighter low over the ground is lifted straight up";
 static const char __far n_m8_64[] = "M8.64 stream (stream_step, role=stream): the canyon run's three Nicanders come once Nav 1 is reached, ahead of the player and over the ground; one killed, another comes within 3 s; none once Nav 5 is reached";
@@ -8921,6 +9044,7 @@ static const PtTest __far k_tests[] = {
     { n_m8_68, t_air, 0 },
     { n_m8_69, t_carrier_hide, 0 },
     { n_m8_70, t_envoy_runs, 0 },
+    { n_m8_71, t_tunnel, 0 },
     { n_m2_21, t_easy_guns, 0 },
 };
 

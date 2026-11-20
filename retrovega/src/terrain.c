@@ -621,9 +621,9 @@ int tr_from_km(const TrMissionKm *m, TrPlanetDesc *d, TrStamp st[TR_STAMPS_MAX])
         st[k].heading = g->heading;
         for (i = 0; i < 3; i++) {
             st[k].at[i] = (g->at[i] - m->centre[i]) * 256;
-            st[k].to[i] = g->kind == TR_STAMP_CANYON ? (g->to[i] - m->centre[i]) * 256 : st[k].at[i];
+            st[k].to[i] = TR_CHAIN(g->kind) ? (g->to[i] - m->centre[i]) * 256 : st[k].at[i];
         }
-        if (g->kind != TR_STAMP_CANYON)
+        if (!TR_CHAIN(g->kind))
             st[k].to[0] += 1000 * 256;
         for (i = 0; i < 4; i++)
             st[k].size[i] = (int32_t)g->size[i] * 256;
@@ -662,18 +662,25 @@ void tr_from_records(const TrPlanetRec *pr, const TrNavRec *navs, int nnav, TrMi
         int32_t at[3], to[3];
         if (out->n == TR_STAMPS_MAX)
             break;
-        if (g->kind == TR_STAMP_CANYON) {
-            /* a stretch from each of its nav points to the next one the mission has, up to the one its heading names */
-            int links = 0;
+        if (TR_CHAIN(g->kind)) {
+            /* a stretch from each of its nav points to the next one the mission has, up to the one its heading names.  A
+             * tunnel's heading word: the last nav point (its low byte), the first after its own (bits 8-13, 0: its own
+             * + 1: a branch from a junction goes on to points of its own), open at its start (bit 14), at its end
+             * (bit 15) */
+            int links = 0, flags = 0;
+            uint16_t hw = (uint16_t)g->heading;
             if (!tr_nav_at(navs, nnav, g->nav, at))
                 continue;
-            for (id = g->nav + 1, last = g->heading; id <= last && id < 256 && out->n < TR_STAMPS_MAX
-                 && links < TR_CANYON_PTS - 1; id++) {
+            last = g->kind == TR_STAMP_TUNNEL ? hw & 255 : g->heading;
+            id = g->kind == TR_STAMP_TUNNEL && (hw >> 8 & 63) ? hw >> 8 & 63 : g->nav + 1;
+            if (g->kind == TR_STAMP_TUNNEL)
+                flags = (hw & 0x4000 ? TR_STAMP_OPEN_START : 0) | (hw & 0x8000 ? TR_STAMP_OPEN_END : 0);
+            for (; id <= last && id < 256 && out->n < TR_STAMPS_MAX && links < TR_CANYON_PTS - 1; id++) {
                 if (!tr_nav_at(navs, nnav, id, to))
                     continue;
                 o = &out->ground[out->n++];
-                o->kind = TR_STAMP_CANYON;
-                o->flags = (uint8_t)(links++ ? TR_STAMP_JOINED : 0);
+                o->kind = g->kind;
+                o->flags = (uint8_t)((links++ ? TR_STAMP_JOINED : 0) | flags);
                 for (i = 0; i < 4; i++)
                     o->size[i] = g->size[i];
                 for (i = 0; i < 3; i++) {
@@ -741,7 +748,7 @@ static void tr_frame(const TrStamp *s, TrFrame *fr)
     fr->b[0] = fr->c[1] * fr->a[2] - fr->c[2] * fr->a[1];
     fr->b[1] = fr->c[2] * fr->a[0] - fr->c[0] * fr->a[2];
     fr->b[2] = fr->c[0] * fr->a[1] - fr->c[1] * fr->a[0];
-    if (s->heading && s->kind != TR_STAMP_CANYON) {   /* turned about the ground's up (a canyon's: its last nav) */
+    if (s->heading && !TR_CHAIN(s->kind)) {   /* turned about the ground's up (a canyon's, a tunnel's: its last nav) */
         double ch, sh, a2[3];
         tr_sincos_deg(s->heading, &sh, &ch);
         for (k = 0; k < 3; k++)
@@ -850,7 +857,7 @@ static int tr_canyon_points(const TrPlanet *p, int k, double pt[TR_CANYON_PTS][3
     int n = 0, m, i;
     for (m = k; m < p->desc.nstamps && n < TR_CANYON_PTS; m++) {
         const TrStamp *s = &p->stamps[m];
-        if (s->kind != TR_STAMP_CANYON || (m > k && !(s->flags & TR_STAMP_JOINED)))
+        if (s->kind != p->stamps[k].kind || (m > k && !(s->flags & TR_STAMP_JOINED)))
             break;
         if (m == k) {
             for (i = 0; i < 3; i++)
@@ -869,7 +876,19 @@ static int tr_canyon_points(const TrPlanet *p, int k, double pt[TR_CANYON_PTS][3
 /* how far from its line a canyon's stamp changes the ground (positions): the floor widened, the walls, the rise */
 static double tr_canyon_reach(const TrStamp *s)
 {
+    if (s->kind == TR_STAMP_TUNNEL)     /* (its floor, a little wider in its bays, and an open cut's walls) */
+        return s->size[0] * 0.5 * 1.2 + s->size[3] * 1.3;
     return s->size[0] * 0.5 * 1.6 + s->size[1] * 1.3 + s->size[3];
+}
+
+/* the land at a cell: its ground, or over a tunnel already cut there the slab's top (the land as it was) */
+static int32_t tr_land_at(const TrPlanet *p, int f, int32_t gi, int32_t gj)
+{
+    int ci = (gi + 32768) >> 16, cj = (gj + 32768) >> 16, lo, hi;
+    int32_t h = tr_height_at(p, f, gi, gj);
+    if (ci >= 0 && cj >= 0 && ci < TR_N && cj < TR_N && tr_slab(p, f, ci, cj, &lo, &hi) && hi * TR_HU > h)
+        h = hi * TR_HU;
+    return h;
 }
 
 /* the ground's height (positions over the datum) at a place a unit direction and a step (positions, along two unit
@@ -882,14 +901,14 @@ static int32_t tr_ground_near(const TrPlanet *p, const double u[3], const double
     for (k = 0; k < 3; k++)
         v[k] = (int64_t)floor(u[k] * p->radius + a[k] * da + b[k] * db + 0.5);
     f = tr_locate(v[0], v[1], v[2], TR_N, &gi, &gj);
-    return tr_height_at(p, f, gi, gj);
+    return tr_land_at(p, f, gi, gj);
 }
 
 static void tr_canyon_make(TrPlanet *p, int k)
 {
     TrShape *sh = &p->shape[k];
     const TrStamp *s = &p->stamps[k];
-    double depth = (double)s->size[2] / TR_HU, far = (double)s->size[0] + s->size[1];
+    double depth = (double)s->size[2] / TR_HU, far = (double)s->size[0] + s->size[s->kind == TR_STAMP_TUNNEL ? 3 : 1];
     int n, i, m;
     sh->npts = n = tr_canyon_points(p, k, sh->pt);
     sh->reach = tr_canyon_reach(s);
@@ -913,6 +932,9 @@ static void tr_canyon_make(TrPlanet *p, int k)
         sum += tr_ground_near(p, sh->pt[m], T, far, N, 0) + tr_ground_near(p, sh->pt[m], T, -far, N, 0);
         sum += tr_ground_near(p, sh->pt[m], T, 0, N, far) + tr_ground_near(p, sh->pt[m], T, 0, N, -far);
         sh->depth[m] = m ? depth : 0;   /* (its mouth, the first point, opens on the land round it) */
+        if (s->kind == TR_STAMP_TUNNEL)  /* (a tunnel's ends: open only as its flags say: a branch starts deep) */
+            sh->depth[m] = (m == 0 && (s->flags & TR_STAMP_OPEN_START)) || (m == n - 1 && (s->flags & TR_STAMP_OPEN_END))
+                           ? 0 : depth;
         sh->floor[m] = floor((double)(sum / 8) / TR_HU + 0.5) - sh->depth[m];
     }
 }
@@ -935,18 +957,20 @@ static double tr_terrace(double s)
     return (k + (x < 0.72 ? 0.9 * tr_smoothd(x / 0.72) : 0.9 + 0.1 * (x - 0.72) / 0.28)) / 3;
 }
 
-/* a canyon's ground at a unit direction (h: the ground there, height units): 1 when it changes it, with the new height
- * and the material (-1 as it was) */
-static int tr_canyon_at(const TrPlanet *p, const TrShape *sh, const double u[3], double h, double *nh, int *mat)
+/* where a unit direction lies against a chain (a canyon's, a tunnel's): its distance from the nearest stretch's line or
+ * point (positions), across it (signed), the floor there and the depth (height units), whether along a stretch (not
+ * round a point), and the distance to the nearest point */
+typedef struct { double best, lat, fl, dep, near_pt; int inside; } TrNear;
+
+static void tr_chain_near(const TrPlanet *p, const TrShape *sh, const double u[3], TrNear *o)
 {
-    const TrStamp *s = sh->s;
     const double R = p->radius;
-    double best = 1e30, lat = 0, fl = 0, dep = 0, near_pt = 1e30, depth, half, run, rise, rim, up, d, n;
-    int k, inside = 0;
-    int32_t di[3];
-    uint32_t seed = p->desc.seed ^ 0xCA770000U;
-    *nh = h;
-    *mat = -1;
+    double d;
+    int k;
+    o->best = 1e30;
+    o->lat = o->fl = o->dep = 0;
+    o->near_pt = 1e30;
+    o->inside = 0;
     for (k = 0; k + 1 < sh->npts; k++) {
         const double *A = sh->pt[k], *N = sh->cn[k], *T = sh->ct[k];
         double l = u[0] * N[0] + u[1] * N[1] + u[2] * N[2], x = u[0] * A[0] + u[1] * A[1] + u[2] * A[2];
@@ -955,30 +979,109 @@ static int tr_canyon_at(const TrPlanet *p, const TrShape *sh, const double u[3],
             continue;
         w = x * sh->csin[k] - y * sh->ccos[k];   /* (the sine of the angle still to go to the next point, times the
                                                     length of u in the plane: under 0 past it) */
-        if (y >= 0 && w >= 0 && fabs(l) * R < best) {
+        if (y >= 0 && w >= 0 && fabs(l) * R < o->best) {
             /* the floor where the straight line from point to point passes over u (a line in polar terms) */
             double ra = R + sh->floor[k] * TR_HU, rb = R + sh->floor[k + 1] * TR_HU, rho = sqrt(x * x + y * y);
             double t = x > 0 ? y * sh->ccos[k] / (x * sh->csin[k]) : 0;   /* (how far along: tan / tan) */
             t = t < 0 ? 0 : t > 1 ? 1 : t;
-            best = fabs(l) * R;
-            lat = l * R;
-            fl = (ra * rb * sh->csin[k] * rho / (ra * y + rb * w) - R) / TR_HU;
-            dep = sh->depth[k] + (sh->depth[k + 1] - sh->depth[k]) * t;
-            inside = 1;
+            o->best = fabs(l) * R;
+            o->lat = l * R;
+            o->fl = (ra * rb * sh->csin[k] * rho / (ra * y + rb * w) - R) / TR_HU;
+            o->dep = sh->depth[k] + (sh->depth[k + 1] - sh->depth[k]) * t;
+            o->inside = 1;
         }
     }
     for (k = 0; k < sh->npts; k++) {     /* (round each point: the bends and the ends) */
         double dx = u[0] - sh->pt[k][0], dy = u[1] - sh->pt[k][1], dz = u[2] - sh->pt[k][2];
         d = sqrt(dx * dx + dy * dy + dz * dz) * R;
-        if (d < near_pt)
-            near_pt = d;
-        if (d < best) {
-            best = d;
-            fl = sh->floor[k];
-            dep = sh->depth[k];
-            inside = 0;
+        if (d < o->near_pt)
+            o->near_pt = d;
+        if (d < o->best) {
+            o->best = d;
+            o->fl = sh->floor[k];
+            o->dep = sh->depth[k];
+            o->inside = 0;
         }
     }
+}
+
+/* a tunnel's ground and vault at a unit direction (h: the ground there; land: the land as it was, the slab's top where
+ * a tunnel has cut there already; height units): 1 when it changes it, with the new height, the material (-1 as it
+ * was) and the vault (lo < hi; both 0 none).  Under enough land (TR_TUNNEL_ROOF over the vault) the floor and the
+ * vault, round its bends and ends a chamber, the land over it left as it was; nearer its open ends a cut, its walls up
+ * to the land (the ramp to a portal) */
+#define TR_TUNNEL_ROOF (100 * 4)        /* the least rock over the vault's crown, height units: 100 km */
+static int tr_tunnel_at(const TrPlanet *p, const TrShape *sh, const double u[3], double h, double land, double *nh,
+                        int *mat, double *lo, double *hi)
+{
+    const TrStamp *s = sh->s;
+    TrNear nr;
+    double half, air, run, d, e;
+    int32_t di[3];
+    uint32_t seed = p->desc.seed ^ 0x7E770000U;
+    int k;
+    *nh = h;
+    *mat = -1;
+    *lo = *hi = 0;
+    tr_chain_near(p, sh, u, &nr);
+    if (nr.best >= sh->reach)
+        return 0;
+    for (k = 0; k < 3; k++)
+        di[k] = (int32_t)floor(u[k] * 65536 + 0.5);
+    half = s->size[0] * 0.5 * (1 + 0.15 * tr_n1(di, 44, seed + 1));
+    air = (double)s->size[1] / TR_HU;
+    run = s->size[3] * (1 + 0.25 * tr_n1(di, 27, seed + 2));
+    d = nr.best;
+    if (land - nr.fl - air > TR_TUNNEL_ROOF) {
+        if (d >= half)
+            return 0;                   /* (the rock beside it, as it was) */
+        e = d / half;
+        *nh = nr.fl + air * 0.03 * tr_n1(di, 310, seed + 6);
+        *mat = e > 0.75 ? TR_ROCK : TR_PALE;
+        *lo = nr.fl + air * (0.3 + 0.7 * sqrt(1 - e * e)) + air * 0.04 * tr_n1(di, 150, seed + 7);
+        *hi = land;
+        if (*lo < *nh + 1)
+            *lo = *nh + 1;
+        if (*hi <= *lo + 2)
+            *lo = *hi = 0;
+        return 1;
+    }
+    if (d < half) {                     /* the cut's floor */
+        *nh = nr.fl + air * 0.03 * tr_n1(di, 310, seed + 6);
+        *mat = TR_PALE;
+        return 1;
+    }
+    if (d < half + run) {               /* its walls up to the land */
+        double t = (d - half) / run + 0.1 * tr_n1(di, 170, seed + 8);
+        *nh = nr.fl + (land - nr.fl) * tr_terrace(t);
+        if (*nh > h)
+            *nh = h;
+        if (land - nr.fl > air * 0.25)
+            *mat = TR_ROCK;
+        return 1;
+    }
+    return 0;
+}
+
+/* a canyon's ground at a unit direction (h: the ground there, height units): 1 when it changes it, with the new height
+ * and the material (-1 as it was) */
+static int tr_canyon_at(const TrPlanet *p, const TrShape *sh, const double u[3], double h, double *nh, int *mat)
+{
+    const TrStamp *s = sh->s;
+    TrNear nr;
+    double best, lat, fl, dep, near_pt, depth, half, run, rise, rim, up, d, n;
+    int k, inside;
+    int32_t di[3];
+    uint32_t seed = p->desc.seed ^ 0xCA770000U;
+    *nh = h;
+    *mat = -1;
+    tr_chain_near(p, sh, u, &nr);
+    best = nr.best;
+    lat = nr.lat;
+    fl = nr.fl;
+    dep = nr.dep;
+    near_pt = nr.near_pt;
+    inside = nr.inside;
     if (best >= sh->reach)
         return 0;
     for (k = 0; k < 3; k++)
@@ -1070,6 +1173,34 @@ static void tr_canyon(TrPlanet *p, int k, int f, int r0, int r1)
                 for (q = 0; q < 3; q++)
                     u[q] = (double)v[q];
                 tr_unit(u);
+                if (sh->s->kind == TR_STAMP_TUNNEL) {
+                    int in = i >= 0 && j >= 0 && i < TR_N && j < TR_N, olo = 0, ohi = 0, had;
+                    double lo, hi;
+                    had = in && tr_slab(p, f, i, j, &olo, &ohi);
+                    if (!tr_tunnel_at(p, sh, u, *h, had && ohi > *h ? ohi : *h, &nh, &mat, &lo, &hi))
+                        continue;
+                    if (had && lo < hi) {   /* (where a tunnel was cut already: the deeper floor, the higher vault) */
+                        if (nh > *h)
+                            nh = *h;
+                        if (lo < olo)
+                            lo = olo;
+                        if (hi < ohi)
+                            hi = ohi;
+                    } else if (had)
+                        continue;           /* (an earlier tunnel's vault: left as it is) */
+                    *h = (int16_t)floor(nh + 0.5);
+                    if (mat >= 0)
+                        tr_cell(p, 0, f, i, j)->c = (uint8_t)mat;
+                    if (lo < hi && in) {
+                        TrSlabTile *t = tr_tile_make(p, f, i, j);
+                        int kk = (j % TR_TILE) * TR_TILE + i % TR_TILE;
+                        if (t) {
+                            t->lo[kk] = (int16_t)floor(lo + 0.5);
+                            t->hi[kk] = (int16_t)floor(hi + 0.5);
+                        }
+                    }
+                    continue;
+                }
                 if (!tr_canyon_at(p, sh, u, *h, &nh, &mat))
                     continue;
                 *h = (int16_t)floor(nh + 0.5);
@@ -1088,7 +1219,7 @@ static void tr_stamp(TrPlanet *p, int k)
     double reach;
     sh->s = &p->stamps[k];
     sh->npts = 0;
-    if (sh->s->kind == TR_STAMP_CANYON)
+    if (TR_CHAIN(sh->s->kind))
         return;                         /* (made and stamped by tr_build, a piece at a time) */
     tr_frame(sh->s, &sh->fr);
     f = tr_locate(sh->s->at[0], sh->s->at[1], sh->s->at[2], TR_N, &gi, &gj);
@@ -1162,8 +1293,9 @@ static void tr_patch_plan(TrPlanet *p)
         TrFrame fr;
         double reach = s->kind == TR_STAMP_PAD ? (double)s->size[0] + s->size[1] : (double)s->size[0] * 2.2 + s->size[1];
         TrPatch *pt = 0;
-        if (s->kind == TR_STAMP_CANYON) {
-            double pts[TR_CANYON_PTS][3], across = tr_canyon_reach(s) - s->size[3] * 0.5 + 200 * 256.0;
+        if (TR_CHAIN(s->kind)) {
+            double pts[TR_CANYON_PTS][3], across = tr_canyon_reach(s) - (s->kind == TR_STAMP_CANYON ? s->size[3] * 0.5 : 0)
+                                                  + 200 * 256.0;
             int n;
             if (s->flags & TR_STAMP_JOINED)
                 continue;
@@ -1189,7 +1321,8 @@ static void tr_patch_plan(TrPlanet *p)
                 /* (each end on the tangent plane: the radius times tan(theta / 2), and the canyon's round end past it) */
                 pt->half_a = (int32_t)(p->radius * sqrt((1 - cs) / (1 + cs)) + across);
                 pt->half_b = (int32_t)across;
-                pt->na = -1;            /* (sized below) */
+                pt->na = s->kind == TR_STAMP_TUNNEL ? -2 : -1;   /* (sized below: a tunnel's with half the points, cells
+                                                                    some 14 km: its bake half the size) */
             }
             continue;
         }
@@ -1215,7 +1348,7 @@ static void tr_patch_plan(TrPlanet *p)
     for (i = 0; i < p->npatch; i++) {
         TrPatch *pt = &p->patch[i];
         if (pt->na < 0) {
-            double cell = sqrt(4.0 * pt->half_a * pt->half_b / TR_PATCH_POINTS);
+            double cell = sqrt(4.0 * pt->half_a * pt->half_b / (pt->na == -2 ? TR_PATCH_POINTS / 2 : TR_PATCH_POINTS));
             pt->cell = (int32_t)(cell < TR_PATCH_CELL_MIN ? TR_PATCH_CELL_MIN : ceil(cell));
             pt->na = 2 * (int)((pt->half_a + pt->cell - 1) / pt->cell);
             pt->nb = 2 * (int)((pt->half_b + pt->cell - 1) / pt->cell);
@@ -1304,7 +1437,7 @@ static void tr_patch_stamps(TrPlanet *p, int n, int j0, int j1)   /* the mission
     int i, j, k;
     for (k = 0; k < p->desc.nstamps; k++) {
         const TrShape *sh = &p->shape[k];
-        if (sh->s->kind == TR_STAMP_CANYON && !sh->npts)
+        if (TR_CHAIN(sh->s->kind) && !sh->npts)
             continue;                   /* (a canyon's later stretches: made with its first) */
         for (j = j0; j < j1 && j <= pt->nb; j++)
             for (i = 0; i <= pt->na; i++) {
@@ -1313,7 +1446,25 @@ static void tr_patch_stamps(TrPlanet *p, int n, int j0, int j1)   /* the mission
                 int mat;
                 size_t at = (size_t)j * (pt->na + 1) + i;
                 tr_patch_point(p, pt, i, j, v);
-                if (sh->npts) {
+                if (sh->npts && sh->s->kind == TR_STAMP_TUNNEL) {
+                    double u[3];
+                    int q, had = pt->lo[at] < pt->hi[at];
+                    for (q = 0; q < 3; q++)
+                        u[q] = (double)v[q];
+                    tr_unit(u);
+                    if (!tr_tunnel_at(p, sh, u, pt->h[at], had && pt->hi[at] > pt->h[at] ? pt->hi[at] : pt->h[at], &nh, &mat,
+                                      &lo, &hi))
+                        continue;
+                    if (had && lo < hi) {   /* (where a tunnel was cut already: the deeper floor, the higher vault) */
+                        if (nh > pt->h[at])
+                            nh = pt->h[at];
+                        if (lo < pt->lo[at])
+                            lo = pt->lo[at];
+                        if (hi < pt->hi[at])
+                            hi = pt->hi[at];
+                    } else if (had)
+                        continue;
+                } else if (sh->npts) {
                     double u[3];
                     int q;
                     for (q = 0; q < 3; q++)
@@ -2146,7 +2297,7 @@ int tr_build(TrPlanet *p)
         if (p->k < p->desc.nstamps) {
             const TrStamp *st = &p->stamps[p->k];
             int nb = TR_BLOCKS(TR_N + 2, TR_ROWS_CANYON);
-            if (st->kind != TR_STAMP_CANYON || (st->flags & TR_STAMP_JOINED)) {
+            if (!TR_CHAIN(st->kind) || (st->flags & TR_STAMP_JOINED)) {
                 tr_stamp(p, p->k);
                 more = tr_on(p, 1, p->desc.nstamps);
             } else {

@@ -907,9 +907,47 @@ static int32_t up_dot(int16_t s, const RvVec3 *v)
            + ((gPositionVector[s].z - c->z) >> 8) * v->z;
 }
 
+/* an AI under a tunnel's rock (planet_tunnels: the mission has one) steers round its bends: where the way along its nose
+ * TUNNEL_LOOK ahead runs into rock or within TUNNEL_CLEAR of its floor or roof it turns hard to the first of four ways
+ * 45 degrees off (right, left, up, down) that is open, else it keeps between floor and roof (the user's tunnel mission,
+ * 2026-11-19: its fighters had flown into the walls and been lifted out through the rock).  1: under rock, steered */
+#define TUNNEL_LOOK 1500L               /* km */
+#define TUNNEL_CLEAR (150L * 256)       /* positions */
+static int16_t tunnel_open(int16_t s, int16_t r, int16_t u)   /* (the way along its nose, r right and u up of it) */
+{
+    LfVec at;
+    long roof;
+    const RvVec3 *F = &gOrientationFrontVector[s], *R = &gOrientationRightVector[s], *U = &gOrientationUpVector[s];
+    at.x = gPositionVector[s].x + (F->x + r * R->x + u * U->x) * TUNNEL_LOOK;   /* (256 long: km x 256 = positions) */
+    at.y = gPositionVector[s].y + (F->y + r * R->y + u * U->y) * TUNNEL_LOOK;
+    at.z = gPositionVector[s].z + (F->z + r * R->z + u * U->z) * TUNNEL_LOOK;
+    return planet_over(&at, &roof) > TUNNEL_CLEAR && roof > TUNNEL_CLEAR;
+}
+
+static int16_t tunnel_mind(int16_t s)
+{
+    static const int8_t __far ways[4][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };   /* (right, left, up, down) */
+    long roof, over = planet_over((const LfVec *)&gPositionVector[s], &roof);
+    int16_t k;
+    if (roof == 0x7FFFFFFFL)
+        return 0;                       /* (not under rock) */
+    if (tunnel_open(s, 0, 0)) {
+        if (over < 2 * TUNNEL_CLEAR || roof < 2 * TUNNEL_CLEAR)
+            g_turn[s].y = (int8_t)((over < roof) == (up_dot(s, &gOrientationUpVector[s]) >= 0) ? 5 : -5);
+        return 1;
+    }
+    for (k = 0; k < 3 && !tunnel_open(s, ways[k][0], ways[k][1]); k++)
+        ;                               /* (none of the first three: down) */
+    g_turn[s].x = (int8_t)(ways[k][0] * 9);
+    g_turn[s].y = (int8_t)(ways[k][1] * 9);
+    return 1;
+}
+
 static void ground_mind(int16_t s)
 {
     long roof, over;
+    if (planet_tunnels() && tunnel_mind(s))
+        return;
     if (!planet_on() || (over = planet_over((const LfVec *)&gPositionVector[s], &roof)) > GROUND_AVOID)
         return;
     if (over > GROUND_AVOID / 2 && up_dot(s, &gOrientationFrontVector[s]) > 0)
@@ -4320,6 +4358,13 @@ static void step_ground(void)
             g_air = air_density(over);  /* (the air the player flies in next step: step_air) */
         if (rvController[s] == CTL_PUPPET)
             continue;
+        if (s && over < 0 && planet_tunnels()) {   /* (a tunnel's mission: a step into rock undone, never lifted through
+                                                      it: tunnel_mind steers it round) */
+            p->x -= v->x;
+            p->y -= v->y;
+            p->z -= v->z;
+            continue;
+        }
         if (s == 0 ? over < GROUND_CLEAR || roof < GROUND_CLEAR : roof < GROUND_CLEAR) {
             if (s == 0 && shipAiState[0] != 9)
                 (void)do_damage(0, 0, 0xFFFFU, RV_WHERE(p));
@@ -4335,7 +4380,8 @@ static void step_ground(void)
             g_low_slot = s;
         }
 #endif
-        if (s && over < HOVER_AHEAD && roof >= GROUND_CLEAR) {
+        if (s && over < HOVER_AHEAD && roof >= GROUND_CLEAR && (roof == 0x7FFFFFFFL || !planet_tunnels())) {
+                                        /* (under a tunnel's rock: its floor alone) */
             LfVec at;                   /* (low: the ground where it will be HOVER_STEPS on counts too, so it rises
                                            before a cliff, not inside it) */
             long r2;
@@ -5130,6 +5176,24 @@ int16_t logic_autopilot_ready(void)
     next = g_nav_chosen ? g_sys.nav : nav_next_unseen();
     if (nav_in_reach(next))
         return -1;                      /* (there already) */
+    if (planet_tunnels()) {             /* (a tunnel's: the player under its rock, or the point is, flown by hand; the
+                                           user, 2026-11-19, of the tunnel mission: "you can't auto any closer and then
+                                           the player has to visit them") */
+        long roof;
+        LfVec at;
+        (void)planet_over((const LfVec *)&gPositionVector[0], &roof);
+        if (roof == 0x7FFFFFFFL) {
+            const uint8_t *rec = NAV_REC(next);
+            at.x = NAV_REC_KM(rec, 0) * KM;
+            at.y = NAV_REC_KM(rec, 1) * KM;
+            at.z = NAV_REC_KM(rec, 2) * KM;
+            (void)planet_over(&at, &roof);
+        }
+        if (roof != 0x7FFFFFFFL) {
+            logic_auto_why = AUTO_WHY_TUNNEL;
+            return -1;
+        }
+    }
     {
         int16_t region, field;
         int32_t stop = way_stop(next, &region, &field);
