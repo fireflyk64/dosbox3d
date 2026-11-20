@@ -62,6 +62,10 @@ static struct {
     int wiggle;
     int ap_wait;                        /* frames to wait after the autopilot key */
     int air, pull, pulls;               /* over a planet: in its air; pulling up from its ground; how many times */
+    int legs_known, hop_clear;          /* a tunnel's: its nav points' legs worked out; the way to the next hop clear */
+    int slow, under;                    /* near a tunnel (under 320 kps, no burner); under its rock */
+    int god;                            /* RV_BOT_GOD: no damage */
+    uint8_t leg_clear[16][16];
     int cap_out, cap_outs, shallow;     /* in the air: the capital ship being left (its slot), how many times; steps
                                            of a chase flown shallower than the way to the target */
     int ap_tries, ap_last;
@@ -575,7 +579,7 @@ static void fight_step(void)
             room = radius_of(s) + radius_of(0) + (maybeEntityType[s] == ET_CAPSHIP ? 900 : 250)
                    + fmax(0, -vdot(p, rv) / fmax(1, dd)) * 20;
             if (dd < room && vdot(p, rv) < 0 && vdot(p, fwd(0)) > dd * 0.3) {
-                V away = vsub(vmul(upv(0), dd), p);   /* (up and over it) */
+                V away = vsub(vmul(B.under ? rightv(0) : upv(0), dd), p);   /* (up and over it; in a tunnel, aside) */
                 B.mode = "ram-avoid";
                 steer_at(away, 1);
                 setSpeed[0] = slot_type(0)->max_kps;
@@ -744,6 +748,188 @@ static int escort_health(int s)
            + (slot_type((int16_t)s) && slot_type((int16_t)s)->hull > damagePoints[s] ? slot_type((int16_t)s)->hull - damagePoints[s] : 0);
 }
 
+/* --- a planet's tunnel (logic.c planet_tunnels: the mission has one): the pilot flies it by hand --- */
+
+/* a world point (km) clear of rock by margin km: over the ground (or a tunnel's floor) and under any rock over it */
+static int clear_at(V p, double margin)
+{
+    LfVec at;
+    long roof, over;
+    at.x = (int32_t)(p.x * 256);
+    at.y = (int32_t)(p.y * 256);
+    at.z = (int32_t)(p.z * 256);
+    over = planet_over(&at, &roof);
+    return over > margin * 256 && roof > margin * 256;
+}
+
+/* the straight line a to b (km) clear of rock: sampled every 250 km */
+static int line_clear(V a, V b)
+{
+    double l = vlen(vsub(b, a));
+    int k, n = (int)(l / 250) + 1;
+    for (k = 1; k < n; k++)
+        if (!clear_at(vadd(a, vmul(vsub(b, a), (double)k / n)), 60))
+            return 0;
+    return 1;
+}
+
+/* nav point n's place (km), any the mission has, hidden ones too (a tunnel's bends): 1 when it has it */
+static int nav_place(int n, int32_t *x, int32_t *y, int32_t *z)
+{
+    const uint8_t *rec = (const uint8_t *)navPointTable + navPointTable_SIZE * n;
+    if (rec[0] != n)
+        return 0;
+    *x = NAV_REC_KM(rec, 0);
+    *y = NAV_REC_KM(rec, 1);
+    *z = NAV_REC_KM(rec, 2);
+    return 1;
+}
+
+/* the way to `at` through the tunnel: at itself when the line there is clear, else the first nav point of the shortest
+ * way through the mission's nav points (hidden ones too: a tunnel's bends) whose legs are clear */
+static V tunnel_way(V at)
+{
+    V node[18];
+    double dist[18];
+    int prev[18], done[18], n = 0, k, j, nv[18];
+    if (!planet_tunnels() || line_clear(pos(0), at))
+        return at;
+    node[n++] = pos(0);
+    for (k = 1; k < 16; k++) {
+        int32_t x, y, z;
+        if (!nav_place(k, &x, &y, &z))
+            continue;
+        nv[n] = k;
+        node[n++] = v3(x, y, z);
+    }
+    node[n++] = at;
+    if (!B.legs_known) {                /* (the nav points' legs once a flight: clear or not) */
+        for (k = 1; k < n - 1; k++)
+            for (j = 1; j < n - 1; j++)
+                B.leg_clear[nv[k]][nv[j]] = (uint8_t)(k != j && line_clear(node[k], node[j]));
+        B.legs_known = 1;
+    }
+    for (k = 0; k < n; k++) {
+        dist[k] = k ? 1e18 : 0;
+        prev[k] = -1;
+        done[k] = 0;
+    }
+    for (;;) {
+        int u = -1;
+        for (k = 0; k < n; k++)
+            if (!done[k] && (u < 0 || dist[k] < dist[u]))
+                u = k;
+        if (u < 0 || dist[u] >= 1e18 || u == n - 1)
+            break;
+        done[u] = 1;
+        for (j = 0; j < n; j++) {
+            double d;
+            if (done[j] || (d = vlen(vsub(node[j], node[u]))) < 1 || dist[u] + d >= dist[j])
+                continue;
+            if (u > 0 && u < n - 1 && j > 0 && j < n - 1 ? !B.leg_clear[nv[u]][nv[j]] : !line_clear(node[u], node[j]))
+                continue;
+            dist[j] = dist[u] + d;
+            prev[j] = u;
+        }
+    }
+    if (prev[n - 1] < 0)
+        return at;                      /* (no way found: straight at it) */
+    {   /* (the farthest point of the way the pilot has a clear line to; none: the first more than 800 km off) */
+        int path[18], np = 0;
+        for (k = n - 1; k > 0; k = prev[k])
+            path[np++] = k;
+        for (k = 0; k < np; k++)
+            if (line_clear(pos(0), node[path[k]]))
+                return node[path[k]];
+        for (k = np - 1; k >= 0; k--)
+            if (vlen(vsub(node[path[k]], pos(0))) > 800)
+                return node[path[k]];
+        return node[path[0]];
+    }
+}
+
+/* under a tunnel's rock with the way along the nose not clear for 1,200 km: hard toward the first clear of eight ways
+ * (45 and 90 degrees off: right, left, up, down); none clear, toward the nearest nav point (the tunnel's middle line);
+ * else nothing (0) */
+static int tunnel_turn(void)
+{
+    V F = fwd(0), R = rightv(0), U = upv(0), p = pos(0), d[9], go;
+    LfVec at;
+    long roof;
+    int k;
+    at.x = gPositionVector[0].x;
+    at.y = gPositionVector[0].y;
+    at.z = gPositionVector[0].z;
+    {
+        long over = planet_over(&at, &roof);
+        if (roof == 0x7FFFFFFFL)
+            return 0;
+        if (roof < 250 * 256L || over < 250 * 256L || !line_clear(p, vadd(p, vmul(F, 300)))) {
+            /* (near the vault's top, the floor or a wall: back to the middle first, toward the nearest nav point, all of
+               them on the tunnel's middle line, and up or down off the rock) */
+            const LfVec __far *c = planet_centre();
+            V up = vsub(p, v3(c->x / 256.0, c->y / 256.0, c->z / 256.0)), mid = vmul(F, 1000);
+            int n;
+            double bd = 1e18;
+            up = vmul(up, 1 / fmax(1, vlen(up)));
+            for (n = 1; n < 16; n++) {
+                int32_t x, y, z;
+                if (nav_place(n, &x, &y, &z) && vlen(vsub(v3(x, y, z), p)) < bd && line_clear(p, v3(x, y, z))) {
+                    bd = vlen(vsub(v3(x, y, z), p));
+                    mid = vsub(v3(x, y, z), p);
+                }
+            }
+            mid = vmul(mid, 1000 / fmax(1, vlen(mid)));
+            if (roof < 250 * 256L || over < 250 * 256L)
+                mid = vadd(mid, vmul(up, roof < over ? -450 : 450));
+            steer_at(mid, 1);
+            setSpeed[0] = 220;
+            key_hold(K_TAB, &B.held_tab, 0);
+            B.mode = "tunnel-mid";
+            return 1;
+        }
+    }
+    if (line_clear(p, vadd(p, vmul(F, 1200))))
+        return 0;
+    d[0] = vadd(F, R);
+    d[1] = vsub(F, R);
+    d[2] = vadd(F, U);
+    d[3] = vsub(F, U);
+    d[4] = R;
+    d[5] = vmul(R, -1);
+    d[6] = U;
+    d[7] = vmul(U, -1);
+    for (k = 0; k < 8; k++)
+        if (line_clear(p, vadd(p, vmul(d[k], 1200 / vlen(d[k])))))
+            break;
+    if (k < 8)
+        go = vmul(d[k], 1000);
+    else {
+        int n, bn = -1;
+        double bd = 1e18;
+        for (n = 1; n < 16; n++) {
+            int32_t x, y, z;
+            if (nav_place(n, &x, &y, &z) && vlen(vsub(v3(x, y, z), p)) < bd) {
+                bd = vlen(vsub(v3(x, y, z), p));
+                bn = n;
+            }
+        }
+        go = bn > 0 ? vsub(tunnel_way(p), p) : vmul(F, -1);
+        if (bn > 0) {
+            int32_t x, y, z;
+            nav_place(bn, &x, &y, &z);
+            go = vsub(v3(x, y, z), p);
+        }
+    }
+    steer_at(go, 1);
+    setSpeed[0] = 220;
+    key_hold(K_TAB, &B.held_tab, 0);
+    B.mode = "tunnel-turn";
+    if (B.debug)
+        fprintf(stderr, "bot: f %d tunnel-turn way %d roof %ld\n", B.flight_frames, k, roof / 256);
+    return 1;
+}
+
 /* no enemy within the fight's reach (fight_step has its own care for the rocks) */
 static int ne_quiet(void)
 {
@@ -761,6 +947,7 @@ static void flight_tick(void)
         memset(B.taunted_at, 0, sizeof B.taunted_at);
         memset(B.refused, 0, sizeof B.refused);
         memset(B.centered, 0, sizeof B.centered);
+        B.legs_known = B.hop_clear = B.slow = B.under = 0;
         B.taunts = B.refusals = 0;
         B.target = -1;
         B.missile_at = -1000;
@@ -945,9 +1132,20 @@ static void flight_tick(void)
     /* over a planet: the ground kills (step_ground), and in its air a slow ship sinks (logic.c step_air).  Low, or
      * sinking toward it with under 5 s to go: the nose up and over the horizon, the throttle full, the afterburner
      * while slow */
+    if (planet_on() && tunnel_turn())
+        return;
     if (planet_on()) {
         const LfVec __far *c = planet_centre();
         long roof, over = planet_over((const LfVec *)&gPositionVector[0], &roof) / 256;
+        B.slow = planet_tunnels() && (roof != 0x7FFFFFFFL || over < 3000 * 256L);   /* (near a tunnel: slowly) */
+        if (B.debug && planet_tunnels())
+            fprintf(stderr, "bot: f %d tunnel over %ld roof %ld speed %lu mode %s\n", B.flight_frames, over / 256,
+                    roof == 0x7FFFFFFFL ? -1L : roof / 256, (unsigned long)speedLo[0], B.mode ? B.mode : "-");
+        B.under = roof != 0x7FFFFFFFL;
+        if (roof != 0x7FFFFFFFL)        /* (under a tunnel's rock: no pulling up into it; tunnel_turn's) */
+            over = 1000000;
+        int hop = B.hop_clear;          /* (the last step's by-hand way: set again by it this step) */
+        B.hop_clear = 0;
         V up = vsub(pos(0), v3(c->x / 256.0, c->y / 256.0, c->z / 256.0)), F = fwd(0), H;
         double sink;
         long ahead = over;
@@ -966,7 +1164,9 @@ static void flight_tick(void)
         }
         if (B.debug && B.flight_frames % LOGIC_HZ == 0)
             fprintf(stderr, "bot: t %d over %ld ahead %ld sink %.1f\n", B.flight_frames / LOGIC_HZ, over, ahead, sink * LOGIC_HZ);
-        if (over < 20000 && (over < 250 || ahead < 200 || (sink > 0 && (over - 150) < sink * 5 * LOGIC_HZ)
+        if (hop && over >= 100)         /* (on a clear line down to a tunnel's mouth: no pull-up but off the floor) */
+            B.pull = 0;
+        else if (over < 20000 && (over < 250 || ahead < 200 || (sink > 0 && (over - 150) < sink * 5 * LOGIC_HZ)
                              || (B.pull && (ahead < 450 || sink > 0)))) {
             B.pulls += !B.pull;
             B.pull = 1;
@@ -1103,7 +1303,11 @@ static void flight_tick(void)
                 at = pos(home_slot());
             else
                 at = vadd(pos(0), vmul(fwd(0), 10000));
-            go = at;
+            go = tunnel_way(at);
+            B.hop_clear = planet_tunnels() && line_clear(pos(0), go);
+            if (B.debug && B.flight_frames % LOGIC_HZ == 0)
+                fprintf(stderr, "bot: t %d hop nav %d at %.0f %.0f %.0f -> go %.0f %.0f %.0f clear %d tunnels %d\n",
+                        B.flight_frames / LOGIC_HZ, bn, at.x, at.y, at.z, go.x, go.y, go.z, B.hop_clear, planet_tunnels());
             if (!field_near(at, 0, &c, &r) && field_on_way(at, 1500, &c, &r)) {   /* (round a field, not through it;
                                            into the one the point is in) */
                 V u = vsub(at, pos(0)), off = vsub(pos(0), c), perp;
@@ -1164,6 +1368,8 @@ void bot_tick(void)
         B.keys = getenv("RV_BOT_KEYS") ? atoi(getenv("RV_BOT_KEYS")) : 0;
         B.esc_end_s = getenv("RV_BOT_ESC_END") ? atoi(getenv("RV_BOT_ESC_END")) : 0;
         B.watch = getenv("RV_BOT_WATCH") ? atoi(getenv("RV_BOT_WATCH")) : 0;
+        B.god = getenv("RV_BOT_GOD") ? atoi(getenv("RV_BOT_GOD")) : 0;   /* (the ship takes no damage: can the mission be
+                                                                       finished at all, its way and its goals) */
     }
     if (!B.on)
         return;
@@ -1180,6 +1386,8 @@ void bot_tick(void)
     B.frame = frameCounter;
     if (v[2] > v[0] && slot_is_ship(0) && !missionStatus) {
         B.in_flight = 1;
+        if (B.god)
+            playerCanBeDamaged = 0;
         flight_tick();
         {   /* in or by an asteroid field with no fight on: slowly (a rock's harm is the square of the closing speed:
                one at 400 kps is 545 points, a Gawain's end, as at the field before Barnard's planet; at 150 a seventh) */
@@ -1192,6 +1400,11 @@ void bot_tick(void)
         }
         if (B.air && setSpeed[0] < 250) /* (in a planet's air: never slow) */
             setSpeed[0] = 250;
+        if (B.slow) {                   /* (by a tunnel or in it: slow enough to turn round its bends) */
+            if (setSpeed[0] > 320)
+                setSpeed[0] = 320;
+            key_hold(K_TAB, &B.held_tab, 0);
+        }
         if (B.air && speedLo[0] < 200 && setSpeed[0] >= 250 && g_sys.fuel > 100)   /* (and slow all the same, a climb's
                                            doing: the afterburner, as a pilot would) */
             key_hold(K_TAB, &B.held_tab, 1);
