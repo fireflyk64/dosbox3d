@@ -43,6 +43,7 @@
 #include "shots.h"
 #include "campaign.h"
 #include "rocks.h"
+#include "planet.h"
 #include "hle.h"
 #include "bot.h"
 
@@ -60,6 +61,7 @@ static struct {
     int queue[16], nq;                  /* keys (or -100 - slot: the target set to that slot) to come, one a frame */
     int wiggle;
     int ap_wait;                        /* frames to wait after the autopilot key */
+    int air, pull, pulls;               /* over a planet: in its air; pulling up from its ground; how many times */
     int ap_tries, ap_last;
     int target, target_frames, hold_target;
     int fight;                          /* enemies about: a fight on (the wingman told once a fight) */
@@ -828,6 +830,51 @@ static void flight_tick(void)
         steer_to(0, 0);
         return;
     }
+    /* over a planet: the ground kills (step_ground), and in its air a slow ship sinks (logic.c step_air).  Low, or
+     * sinking toward it with under 5 s to go: the nose up and over the horizon, the throttle full, the afterburner
+     * while slow */
+    if (planet_on()) {
+        const LfVec __far *c = planet_centre();
+        long roof, over = planet_over((const LfVec *)&gPositionVector[0], &roof) / 256;
+        V up = vsub(pos(0), v3(c->x / 256.0, c->y / 256.0, c->z / 256.0)), F = fwd(0), H;
+        double sink;
+        long ahead = over;
+        int k;
+        up = vmul(up, 1 / fmax(1, vlen(up)));
+        sink = -vdot(vel(0), up);       /* (km a step) */
+        for (k = 1; k <= 3; k++) {      /* (the ground where it will be 1, 2 and 3 s on: a rise ahead, a canyon's wall) */
+            LfVec at;
+            long o;
+            at.x = gPositionVector[0].x + gVelocityVector[0].x * k * LOGIC_HZ;
+            at.y = gPositionVector[0].y + gVelocityVector[0].y * k * LOGIC_HZ;
+            at.z = gPositionVector[0].z + gVelocityVector[0].z * k * LOGIC_HZ;
+            o = planet_over(&at, &roof) / 256;
+            if (o < ahead)
+                ahead = o;
+        }
+        if (B.debug && B.flight_frames % LOGIC_HZ == 0)
+            fprintf(stderr, "bot: t %d over %ld ahead %ld sink %.1f\n", B.flight_frames / LOGIC_HZ, over, ahead, sink * LOGIC_HZ);
+        if (over < 20000 && (over < 250 || ahead < 200 || (sink > 0 && (over - 150) < sink * 5 * LOGIC_HZ)
+                             || (B.pull && (ahead < 450 || sink > 0)))) {
+            B.pulls += !B.pull;
+            B.pull = 1;
+            B.mode = "pull-up";
+            H = vsub(F, vmul(up, vdot(F, up)));   /* (the way it flies, level) */
+            {   /* (steeply while the afterburner can carry it; without, the throttle is under the ship's weight
+                   low down: a shallow climb at speed, and level to get the speed back first) */
+                int burn = g_sys.fuel > 50;
+                double steep = burn ? 1000 : speedLo[0] > 250 ? 220 : 60;
+                steer_at(vadd(vmul(up, steep), vmul(H, 600 / fmax(0.05, vlen(H)))), 1);
+                setSpeed[0] = slot_type(0)->max_kps;
+                key_hold(K_TAB, &B.held_tab, burn && (speedLo[0] < 300 || vdot(F, up) > 0.5));
+            }
+            key_hold(K_SPACE, &B.held_space, 0);
+            return;
+        }
+        B.pull = 0;
+        B.air = over < 6000;
+    } else
+        B.air = 0;
     ne = nearest_enemy_km(&nd);
     if (B.watch && esc > 0 && B.escort_start && escort_health(esc) * 100 < B.escort_start * B.watch) {
         V d = vsub(pos(esc), pos(0));   /* (the escort's last moments, in view: back off to see it whole) */
@@ -1022,6 +1069,11 @@ void bot_tick(void)
     if (v[2] > v[0] && slot_is_ship(0) && !missionStatus) {
         B.in_flight = 1;
         flight_tick();
+        if (B.air && setSpeed[0] < 250) /* (in a planet's air: never slow) */
+            setSpeed[0] = 250;
+        if (B.air && speedLo[0] < 200 && setSpeed[0] >= 250 && g_sys.fuel > 100)   /* (and slow all the same, a climb's
+                                           doing: the afterburner, as a pilot would) */
+            key_hold(K_TAB, &B.held_tab, 1);
     } else if (B.in_flight) {           /* the flight is over: let go, and the result once the game has it */
         key_hold(K_SPACE, &B.held_space, 0);
         key_hold(K_TAB, &B.held_tab, 0);

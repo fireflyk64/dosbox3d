@@ -3096,6 +3096,11 @@ Two dev aids in the native build (never the page's, never RV.EXE):
   can be set; each flight ends with a `bot: result` line on stderr (how it ended, shots, hits, missiles, kills,
   the escort's state, the arrival's geometry) and the program exits 0 won, 1 lost. With `RV_VCLOCK=1` and no
   window a flight takes a few seconds: `rv --data DIR --mute /fly 24`.
+  Over a planet (2026-11-19, for "Make sure the atmo missions are winnable" of the planets' air) it knows the
+  ground, which it had not (its planet flights had all ended in it): low, or sinking with under 5 s to go, or with
+  the ground rising where it will be 1 to 3 s on, it pulls up over the horizon at full throttle, steeply on the
+  afterburner and gently without its fuel; in the air (under 6,000 km) it never sets under 250 kps and lights the
+  afterburner when a climb has taken its speed.
 - **The recording** (`RV_CAPTURE=PREFIX` with `RV_VCLOCK=1`): the pictures at exactly 30 a second of the game's own
   time through ffmpeg into PREFIX.video.mp4 (1280×800, square pixels as the page shows them), the sound beside them
   in PREFIX.s16 (16-bit stereo at the chip's rate, said on stderr), rendered as the time comes with no sound device;
