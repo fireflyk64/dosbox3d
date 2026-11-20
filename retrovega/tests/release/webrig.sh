@@ -1,6 +1,6 @@
 #!/bin/bash
 # webrig.sh TAG [PARAMS]: a browser flight of the worktree's dist, on its own ports, COMBAT=1.  Each TAG is a fresh directory.
-ROOT=/home/sandbox/dev/rv-gx; S=${RV_RELEASE_DIR:-/tmp/rv-release}; mkdir -p $S
+ROOT=${RV_WT:-/home/sandbox/dev/rv-gx}; S=${RV_RELEASE_DIR:-/tmp/rv-release}; mkdir -p $S
 TAG=$1; PARAMS_=$2; OUT=$S/web-$TAG; mkdir -p $OUT
 PORT=${PORT:-8791}; LOBBY_PORT=${LOBBY_PORT:-8792}
 export PATH="$PATH:/usr/local/go/bin"

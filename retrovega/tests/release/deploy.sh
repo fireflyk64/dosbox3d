@@ -2,7 +2,7 @@
 # tests/release/deploy.sh TAG "MESSAGE" (gate.sh calls it): the worktree's HEAD, fully: the web build, a combat flight on the page, the smokes, and only if they pass the deploy
 S=${RV_RELEASE_DIR:-/tmp/rv-release}; mkdir -p $S
 R=$(cd "$(dirname "$0")" && pwd)   # (these scripts)
-WT=/home/sandbox/dev/rv-gx; MAIN=/home/sandbox/dev/dosbox3d; PAGES=/home/sandbox/dev/fireflyk64.github.io
+WT=${RV_WT:-/home/sandbox/dev/rv-gx}; MAIN=/home/sandbox/dev/dosbox3d; PAGES=/home/sandbox/dev/fireflyk64.github.io
 TAG=$1; MSG=$2
 # (GitHub's ssh turned the key away now and then, 2026-11-04: "Permission denied (publickey)", the next try let in)
 retry() { local i; for i in 1 2 3 4 5 6; do "$@" && return 0; sleep 12; done; return 1; }
@@ -27,10 +27,10 @@ PORT=$((PB + 2)) LOBBY_PORT=$((PB + 3)) GAME_SOURCE=gog GAME_FILE="$MAIN/setup_w
 grep -a -q 'SMOKE OK' $S/smoke-$TAG-wc.log || { echo "WC SMOKE FAILED"; tail -6 $S/smoke-$TAG-wc.log | cut -c1-140; exit 1; }
 echo "wc smoke: SMOKE OK"
 ps -eo args | grep -E 'deploy-full|host/web/deploy' | grep -v grep | grep -v fulldeploy && { echo "ANOTHER DEPLOY IS RUNNING"; exit 1; }
-retry git push -q origin retrovega-gx:retrovega || { echo "PUSH OF THE BRANCH FAILED"; exit 1; }
+retry git push -q origin HEAD:retrovega || { echo "PUSH OF THE BRANCH FAILED"; exit 1; }
 # (the main tree is other sessions' too: fast-forward only, never over their uncommitted work; if their edits overlap
 # ours it stays where it was and says so, and the deploy goes on: the branch is pushed, the Pages come from this tree)
-if git -C $MAIN merge -q --ff-only retrovega-gx 2> $S/ff-$TAG.log; then
+if git -C $MAIN merge -q --ff-only $(git rev-parse HEAD) 2> $S/ff-$TAG.log; then
   echo "branch: retrovega at $(git -C $MAIN rev-parse --short HEAD)"
 else
   echo "branch: retrovega at $(git rev-parse --short HEAD) (pushed); the main tree left at $(git -C $MAIN rev-parse --short HEAD): $(grep -a -c '^	' $S/ff-$TAG.log) of its uncommitted files are ours too"

@@ -5,8 +5,9 @@ TAG=$1; MSG=$2
 [ -n "$TAG" ] && [ -n "$MSG" ] || { echo 'usage: tests/release/gate.sh TAG "MESSAGE"'; exit 2; }
 S=${RV_RELEASE_DIR:-/tmp/rv-release}; mkdir -p $S
 R=$(cd "$(dirname "$0")" && pwd)   # (these scripts)
-cd /home/sandbox/dev/rv-gx/retrovega
-export DOSBOX=/home/sandbox/dev/rv-gx/build-native/src/dosbox
+WT=${RV_WT:-/home/sandbox/dev/rv-gx}   # (the worktree released: RV_WT=another, its HEAD on top of origin/retrovega)
+cd $WT/retrovega
+export DOSBOX=$WT/build-native/src/dosbox
 TIMEOUT=900 tests/play/playtest.sh --dos > $S/play-dos.log 2>&1
 P=$?
 echo "play --dos rc $P"; grep '^playtest: [0-9]* of' $S/play-dos.log | cut -c1-150; tail -3 $S/play-dos.log | grep hashes | cut -c1-90
