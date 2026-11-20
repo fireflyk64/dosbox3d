@@ -3101,6 +3101,19 @@ Two dev aids in the native build (never the page's, never RV.EXE):
   the ground rising where it will be 1 to 3 s on, it pulls up over the horizon at full throttle, steeply on the
   afterburner and gently without its fuel; in the air (under 6,000 km) it never sets under 250 kps and lights the
   afterburner when a climb has taken its speed.
+  Its rules in the air since (the user: "improve the mind of the bot so it can win by including some rules like not
+  bumping the cap ship and not pursuing an enemy straight up"): a capital ship is kept 1,500 km from its hull
+  (`CAP_KEEP`: away level and a little up, back in from outside for another pass); a target is followed no steeper
+  than 15 degrees, 30 with the afterburner's fuel in hand (`CLIMB_MAX`, `CLIMB_BURN`), level with the afterburner lit
+  while under 230 kps (`CLIMB_KPS`), a target overhead circled under, the guns only with the nose truly on the aim.
+  And anywhere: in a mission with an asteroid field the throttle is at 150 kps for an autopilot's arrival, and in or by
+  a field with no fight on (a rock at 400 kps is 545 points: Barnard's planet mission was lost 7 s in, every flight);
+  a rock about to strike is flown away from in the cruise and the autopilot's wait too.
+  The planet missions (`/fly 40` to `53`), four seeds each, the same pilot on the dynamics before the air and with it:
+  42 of 56 won before, 41 of 56 in the air (before these rules 18 of 55 and 13 of 56). Eleven of the fourteen are won
+  at least twice in four in the air; never won on either: the canyon run (an endless stream) and Enigma (the cloak's
+  mission: the pilot does not cloak); Cephid 1 in 4 before, 0 in 4 in the air (the flights traced were lost above the
+  air).
 - **The recording** (`RV_CAPTURE=PREFIX` with `RV_VCLOCK=1`): the pictures at exactly 30 a second of the game's own
   time through ffmpeg into PREFIX.video.mp4 (1280×800, square pixels as the page shows them), the sound beside them
   in PREFIX.s16 (16-bit stereo at the chip's rate, said on stderr), rendered as the time comes with no sound device;

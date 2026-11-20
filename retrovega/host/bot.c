@@ -62,6 +62,8 @@ static struct {
     int wiggle;
     int ap_wait;                        /* frames to wait after the autopilot key */
     int air, pull, pulls;               /* over a planet: in its air; pulling up from its ground; how many times */
+    int cap_out, cap_outs, shallow;     /* in the air: the capital ship being left (its slot), how many times; steps
+                                           of a chase flown shallower than the way to the target */
     int ap_tries, ap_last;
     int target, target_frames, hold_target;
     int fight;                          /* enemies about: a fight on (the wingman told once a fight) */
@@ -191,6 +193,21 @@ static int rock_threat(V *away)
     return hit;
 }
 
+#define CAP_KEEP 1500.0                 /* km kept from a capital ship's hull in a planet's air */
+#define CLIMB_MAX 0.27                  /* the steepest chase there, as the climb's tangent: 15 degrees */
+#define CLIMB_BURN 0.58                 /* with the afterburner: 30 degrees */
+#define CLIMB_KPS 230                   /* under this speed no climb at all */
+/* over a planet, in its air (flight_tick's B.air): the way up there, 1 long; 0 when not */
+static int air_up_of(V *up)
+{
+    const LfVec __far *c;
+    if (!B.air || !planet_on())
+        return 0;
+    c = planet_centre();
+    *up = vsub(pos(0), v3(c->x / 256.0, c->y / 256.0, c->z / 256.0));
+    *up = vmul(*up, 1 / fmax(1, vlen(*up)));
+    return 1;
+}
 static int alive_ship(int s)
 {
     return s > 0 && s <= RV_MAX_SHIP_SLOT && slot_is_ship((int16_t)s) && shipAiState[s] != 9;
@@ -507,6 +524,42 @@ static void fight_step(void)
             }
         }
     }
+    /* in a planet's air, a capital ship is kept at a distance (the user, 2026-11-19: "not bumping the cap ship"): its
+     * hull stops a ship dead, and stopped low down the throttle alone is under the ship's weight.  Within CAP_KEEP of
+     * its hull, whichever way either moves: away from it level and a little up, the throttle full, the afterburner
+     * while slow or climbing; the guns still fire at a target that happens to be under the nose */
+    {
+        V up;
+        int s;
+        if (air_up_of(&up))
+            for (s = 1; s <= RV_MAX_SHIP_SLOT; s++) {
+                V p, away, lvl;
+                double dd, off2;
+                if (!alive_ship(s) || maybeEntityType[s] != ET_CAPSHIP)
+                    continue;
+                p = vsub(pos(s), pos(0));
+                dd = vlen(p);
+                if (dd > radius_of(s) + radius_of(0) + (B.cap_out == s ? CAP_KEEP + 500 : CAP_KEEP)) {
+                    if (B.cap_out == s)
+                        B.cap_out = 0;
+                    continue;
+                }
+                B.cap_outs += B.cap_out != s;
+                B.cap_out = s;
+                B.mode = "cap-keep-out";
+                lvl = vsub(p, vmul(up, vdot(p, up)));   /* (level: the way from it; over its middle, the way we fly) */
+                if (vlen(lvl) < 50)
+                    lvl = vmul(fwd(0), -1);
+                away = vadd(vmul(lvl, -1000 / fmax(1, vlen(lvl))), vmul(up, 250));
+                steer_at(away, 1);
+                setSpeed[0] = slot_type(0)->max_kps;
+                key_hold(K_TAB, &B.held_tab, g_sys.fuel > 50 && (speedLo[0] < 300 || vdot(fwd(0), up) > 0.3));
+                p = vsub(pos(t), pos(0));
+                off2 = acos(fmax(-1, fmin(1, vdot(p, fwd(0)) / fmax(1, vlen(p))))) * 180 / M_PI;
+                key_hold(K_SPACE, &B.held_space, vlen(p) < 3800 && off2 < 3);
+                return;
+            }
+    }
     /* a ship close ahead: away from it (a ram costs the front's shield and armour) */
     {
         int s;
@@ -555,6 +608,39 @@ static void fight_step(void)
         return;
     }
     B.mode = "attack";
+    /* in a planet's air, no chase straight up (the user: "not pursuing an enemy straight up"): a climb takes the
+     * speed, and a slow ship is a target.  The way to the aim is flown no steeper than CLIMB_MAX (CLIMB_BURN with the
+     * afterburner's fuel in hand), level while under CLIMB_KPS until the speed is back, the afterburner lit; a target
+     * overhead is circled under, the way we fly, until it comes down or the angle opens.  The guns fire only when
+     * the nose is truly on the aim */
+    {
+        V up;
+        if (air_up_of(&up)) {
+            double el = vdot(aim, up), most;
+            V lvl = vsub(aim, vmul(up, el));
+            double ll = vlen(lvl);
+            int slow = speedLo[0] < CLIMB_KPS;
+            most = slow ? 0 : g_sys.fuel > 300 ? CLIMB_BURN : CLIMB_MAX;
+            if (el > 0 && el > most * fmax(ll, 1)) {
+                V go;
+                if (ll < 0.2 * vlen(aim)) {   /* (overhead: no level way to it worth the name) */
+                    lvl = vsub(fwd(0), vmul(up, vdot(fwd(0), up)));
+                    ll = fmax(0.05, vlen(lvl));
+                }
+                go = vadd(vmul(lvl, 1000 / ll), vmul(up, 1000 * most));
+                B.mode = slow ? "attack-speed" : "attack-shallow";
+                B.shallow++;
+                steer_at(go, 0);
+                setSpeed[0] = slot_type(0)->max_kps;
+                key_hold(K_TAB, &B.held_tab, g_sys.fuel > 100 && (slow || most == CLIMB_BURN));
+                {
+                    double o = acos(fmax(-1, fmin(1, vdot(aim, fwd(0)) / fmax(1, vlen(aim))))) * 180 / M_PI;
+                    key_hold(K_SPACE, &B.held_space, vlen(aim) < 3800 && o < 3);
+                }
+                return;
+            }
+        }
+    }
     B.aiming = 1;
     off = steer_at(aim, 0);
     B.aiming = 0;
@@ -656,6 +742,13 @@ static int escort_health(int s)
 {
     return SHIELD(s, 0) + SHIELD(s, 1) + ARMOR(s, 0) + ARMOR(s, 1) + ARMOR(s, 2) + ARMOR(s, 3)
            + (slot_type((int16_t)s) && slot_type((int16_t)s)->hull > damagePoints[s] ? slot_type((int16_t)s)->hull - damagePoints[s] : 0);
+}
+
+/* no enemy within the fight's reach (fight_step has its own care for the rocks) */
+static int ne_quiet(void)
+{
+    double nd;
+    return nearest_enemy_km(&nd) <= 0 || nd >= 20000;
 }
 
 static void flight_tick(void)
@@ -822,12 +915,31 @@ static void flight_tick(void)
                 fd, n2, nd2, B.target, g_sys.hull, shield_pct(0, 0), shield_pct(0, 1), (unsigned long)speedLo[0],
                 (unsigned long)setSpeed[0], g_sys.fuel, rocks_bot_count());
     }
+    {   /* a rock about to strike while nothing else is on (the wait after the autopilot's key, the cruise): away from
+           it, slower.  An arrival at a field's edge had the pilot sit out the rest of its wait among the rocks (Barnard's
+           planet mission: lost 7 s in, every flight) */
+        V away;
+        if (ne_quiet() && rock_threat(&away)) {
+            B.ap_wait = 0;
+            B.mode = "rock";
+            steer_at(away, 0);
+            setSpeed[0] = slot_type(0)->cruise_kps;
+            key_hold(K_TAB, &B.held_tab, 0);
+            key_hold(K_SPACE, &B.held_space, 0);
+            return;
+        }
+    }
     if (B.ap_wait) {                    /* the autopilot's flyby */
         B.mode = "flyby";
         B.ap_wait--;
         key_hold(K_SPACE, &B.held_space, 0);
         key_hold(K_TAB, &B.held_tab, 0);
         steer_to(0, 0);
+        {   /* (a mission with a field: the throttle down for the arrival, which may be at its edge among its rocks) */
+            long fx, fy, fz, fr;
+            if (rocks_bot_field(0, &fx, &fy, &fz, &fr) && setSpeed[0] > 150)
+                setSpeed[0] = 150;
+        }
         return;
     }
     /* over a planet: the ground kills (step_ground), and in its air a slow ship sinks (logic.c step_air).  Low, or
@@ -1069,6 +1181,15 @@ void bot_tick(void)
     if (v[2] > v[0] && slot_is_ship(0) && !missionStatus) {
         B.in_flight = 1;
         flight_tick();
+        {   /* in or by an asteroid field with no fight on: slowly (a rock's harm is the square of the closing speed:
+               one at 400 kps is 545 points, a Gawain's end, as at the field before Barnard's planet; at 150 a seventh) */
+            V c;
+            double r;
+            if (ne_quiet() && field_near(pos(0), 1500, &c, &r) && setSpeed[0] > 150) {
+                setSpeed[0] = 150;
+                key_hold(K_TAB, &B.held_tab, 0);
+            }
+        }
         if (B.air && setSpeed[0] < 250) /* (in a planet's air: never slow) */
             setSpeed[0] = 250;
         if (B.air && speedLo[0] < 200 && setSpeed[0] >= 250 && g_sys.fuel > 100)   /* (and slow all the same, a climb's
