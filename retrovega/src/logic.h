@@ -38,6 +38,7 @@ int16_t logic_autopilot(void);          /* the A key, between steps: 1 when it f
 #ifdef RV_TESTS
 extern int g_heat_test;                 /* (RVT.EXE /heat N) */
 #endif
+extern uint8_t __far logic_flee_left;  /* the seconds till a role=flee ship that heard of a pilot jumps out, 0 none */
 uint16_t logic_heat(void);              /* the air's heat on the player's hull, 0 none .. 8 (a planet's air: logic.c 4a) */
 int16_t logic_autopilot_ready(void);    /* the nav point it would go to, -1 not now (the engine asks before its flyby) */
 extern uint8_t __far logic_auto_why;    /* why logic_autopilot_ready last said -1: */

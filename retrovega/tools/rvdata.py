@@ -16,7 +16,7 @@ checks every reference and rule (docs/engine.md), and writes:
 
 missions.txt is one block per mission, a keyword and its value per line,
 '#' comments.  Keywords: mission, node, title, type, music, briefing, win,
-lose, fighter (the player's and the wingman's TYPE), nav (id x y z [hidden] [reach=KM], km, the old game's map: the waypoints numbered from 1, then the hidden trigger points; within reach= of it the point is reached and the autopilot stops there, the old game's 10,000 to 32,500), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home|stay|stream|guard] [jump=N] [turrets=off]
+lose, fighter (the player's and the wingman's TYPE), nav (id x y z [hidden] [reach=KM], km, the old game's map: the waypoints numbered from 1, then the hidden trigger points; within reach= of it the point is reached and the autopilot stops there, the old game's 10,000 to 32,500), ship (TYPE|player|wingman side navN [count=N] [role=out|in|home|stay|stream|guard|flee] [jump=N] [hide=S] [turrets=off]
 [pilot=KEY] [ai=PROFILE] [fear=c/d] [prey=KEY] [also=N]), rules (hit= aim= hold= ram=: RULES), field (asteroid|mine x y z radius [density=N] [level=L], km; N rocks per (10,000 km)^3, 1..255,
 0 or none: the engine's own; L the old game's rock level, 0..3: how many fly at the player, and when), bar and lounge
 (seat=PILOT|- ...), and the lines, docs/engine.md: briefing, win, lose [WHO] [conditions] "line" (or plain text: the XO's,
@@ -241,7 +241,7 @@ SHIP = [('unsigned char', 'type', 'B'), ('unsigned char', 'side', 'B'), ('unsign
 # a mission ship's AI profile (missions.txt ai=NAME: logic.c's P_* in this order, 1-based in the record, 0 the type's
 # own) and its own fear rates (fear=c/d, 0-15 each: the old game's class bytes; 0: the profile's)
 PROFILES = ['interceptor', 'fighter', 'heavy', 'ace', 'bomber', 'wingman', 'capital', 'waiter', 'noleft']
-ESCORT_ROLES = {'out': 1, 'in': 2, 'home': 3, 'stay': 4, 'back': 5, 'stream': 6, 'guard': 7}   # a mission ship's role (RV_ESCORT_*): an escort
+ESCORT_ROLES = {'out': 1, 'in': 2, 'home': 3, 'stay': 4, 'back': 5, 'stream': 6, 'guard': 7, 'flee': 8}   # a mission ship's role (RV_ESCORT_*): an escort
                                         # target flies out to the next nav point and jumps there, or waits at its own until the
                                         # player comes and flies home (`in`: it jumps in when a pilot is near, the old
                                         # behaviour 7; `back`: it is there from the point's reaching and makes for home at
@@ -783,6 +783,10 @@ def compile_all():
                                ' station (a depot on its pad)' % where)
                 if role == ESCORT_ROLES['guard'] and (int(f[1]) == 0 or tnum >= 0x20 or nav == 0):
                     raise Fail('%s: role=guard is an enemy fighter wave at a nav point (it guards that point)' % where)
+                if role == ESCORT_ROLES['flee'] and (int(f[1]) == 0 or tnum < 0x20 or nav == 0
+                                                     or int(opts.get('count', 1)) != 1 or 'jump' not in opts):
+                    raise Fail('%s: role=flee jump=S is one enemy capital ship at a nav point: it holds there until it hears'
+                               ' of a pilot, then jumps out S seconds on (logic.c flee_step)' % where)
             ai = 0
             if 'ai' in opts:
                 if opts['ai'] not in PROFILES:
@@ -805,9 +809,17 @@ def compile_all():
                     jump = int(opts['jump'])
                 except ValueError:
                     jump = -1
-                if role not in (ESCORT_ROLES['out'], ESCORT_ROLES['stream']) or jump <= nav or jump not in nav_ids \
+                if role == ESCORT_ROLES['flee']:   # (role=flee: the seconds from its hearing of a pilot to its jump)
+                    if not 5 <= jump <= 250:
+                        raise Fail('%s: role=flee jump=S: S seconds, 5 to 250' % where)
+                elif role not in (ESCORT_ROLES['out'], ESCORT_ROLES['stream']) or jump <= nav or jump not in nav_ids \
                         or jump in hidden_navs:
                     raise Fail('%s: jump=N goes with role=out or role=stream: N a waypoint after its own nav point' % where)
+            if 'hide' in opts:          # (the carrier that jumps out S seconds after the launch and back for the way home,
+                                        # in the record's jump byte: logic.c home_hide_step)
+                if role != ESCORT_ROLES['home'] or not opts['hide'].isdigit() or not 1 <= int(opts['hide']) <= 250:
+                    raise Fail('%s: hide=S goes with role=home: S seconds after the launch, 1 to 250' % where)
+                jump = int(opts['hide'])
             prey = 0
             if 'prey' in opts:          # (the old game's attack orders, its mission records' byte 0x29: logic.c prey_of)
                 if kind in ('player', 'wingman') or opts['prey'] not in ships:
@@ -851,6 +863,8 @@ def compile_all():
                     raise Fail('%s: the briefing names Nav %s, a hidden trigger point the player has no list of' % (_w, nav_))
                 if have != int(n_):
                     raise Fail('%s: the briefing says %s %s at Nav %s, the mission has %d' % (_w, n_, say_, nav_, have))
+        if sum('role=flee' in f[3:] for _w, f in m['ship']) > 1:
+            raise Fail('%s: one role=flee ship a mission at most' % w)
         homes = sum('role=home' in f[3:] for _w, f in m['ship'])
         if homes != 1:                  # (the player lands by calling it up on the comm: without it no flight can end well)
             raise Fail('%s: %d ships with role=home: a mission has its home carrier, one' % (w, homes))
@@ -1091,7 +1105,7 @@ def header_text(sizes):
             '#define RV_ESCORT_OUT %d' % ESCORT_ROLES['out'], '#define RV_ESCORT_IN %d' % ESCORT_ROLES['in'],
             '#define RV_ESCORT_HOME %d' % ESCORT_ROLES['home'], '#define RV_ESCORT_STAY %d' % ESCORT_ROLES['stay'],
             '#define RV_ESCORT_BACK %d' % ESCORT_ROLES['back'], '#define RV_ESCORT_STREAM %d' % ESCORT_ROLES['stream'],
-            '#define RV_ESCORT_GUARD %d' % ESCORT_ROLES['guard'],
+            '#define RV_ESCORT_GUARD %d' % ESCORT_ROLES['guard'], '#define RV_ESCORT_FLEE %d' % ESCORT_ROLES['flee'],
             '#define RV_PILOT_NONE 0xFF', '#define RV_SPEAKER_YOU 0x%02X' % SPEAKER_YOU,
             '#define RV_ROOM_RADIO %d' % len(ROOMS), '#define RV_ROOM_DECK %d' % (len(ROOMS) + 1)]
     for k, v in BRIEF_ROOMS.items():

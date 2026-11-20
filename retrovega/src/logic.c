@@ -238,6 +238,10 @@ static int16_t __far g_form_off[NUM_SHIP_SLOTS][3];   /* each one's place off th
 static void form_hold(void);
 static uint8_t __far g_killed[64];      /* a mission ship (its record) seen dying: shipAiState 9 */
 static uint8_t __far g_away[64];        /* a mission ship gone its own way (an escort target jumped out, or home): not killed */
+static uint8_t __far g_home_hid;        /* the carrier that hides (home_hide_step): 0 there; 1 away; 2 away and every
+                                           human has been far; 3 back */
+static uint8_t __far g_home_wait;
+static int16_t __far g_flee_steps;      /* steps till the runner jumps (flee_step), -1 none heard */
 
 static int16_t nav_defined(int16_t n)
 {
@@ -513,8 +517,9 @@ static int16_t mission_done(void)
 {
     const uint16_t *at;
     int16_t n, j;
-    for (j = 0; j < 64; j++)            /* (an escort target of the player's side killed: lost, whatever else was done) */
-        if (g_killed[j] && !g_away[j] && mship_must_live(j))
+    for (j = 0; j < 64; j++)            /* (an escort target of the player's side killed: lost, whatever else was done; an
+                                           enemy that ran, role=flee, got away: lost too) */
+        if ((g_killed[j] && !g_away[j] && mship_must_live(j)) || (g_away[j] && !g_killed[j] && MSHIP_ROLE(j) == RV_ESCORT_FLEE))
             return 0;
     for (j = 0; j < g_narrive; j++)     /* (one still to come in, not met: the player's to fetch, as the briefing says
                                            "bring it home"; the user, 2026-11-07, of LIXIS1: the pilot came home without
@@ -790,6 +795,10 @@ void logic_start(const RvMission __far *m)
     g_enemy_ran = 0;
     g_nav_chosen = 0;
     g_cleared = 0;
+    g_home_hid = 0;
+    g_home_wait = 0;
+    g_flee_steps = -1;
+    logic_flee_left = 0;
     landedOn = 0xFFFF;
     g_stopped = 0;
     currentNavPoint = 0;
@@ -4005,7 +4014,8 @@ static void ship_think(int16_t s)
         if (!slot_is_ship(s))
             return;
     } else
-        throttle(s, role_of(s) == RV_ESCORT_HOME || role_of(s) == RV_ESCORT_STAY ? 0 : t ? t->cruise_kps : 100, 0);
+        throttle(s, role_of(s) == RV_ESCORT_HOME || role_of(s) == RV_ESCORT_STAY || role_of(s) == RV_ESCORT_FLEE ? 0
+                 : t ? t->cruise_kps : 100, 0);
                                         /* (the carrier holds station, and a capital ship that stays: a depot on its pad) */
     m->target = (uint8_t)(near_ >= 0 ? near_ : 0xFF);
     rvTarget[s] = m->target;
@@ -4441,13 +4451,111 @@ static int16_t nav_point_here(int16_t s)
 
 /* (by the nearest human: alone, the local pilot; in a shared flight a ship near any pilot stays in the scene on every
  * machine, and a human's own ship is never held) */
+/* the carrier that hides (missions.txt role=home hide=S; the user, 2026-11-19, of Enigma's strike: "Could we have our
+ * carrier jump out 10 seconds after you launch.  Then it jumps back in when you arrive back at the nav.  Sneaky like.
+ * Ideally inside an asteroid field at the edge of the system"): S seconds into the flight it jumps out (logic_on_jump:
+ * its star and the flash) and is held off the scene; once every human has been out past SCENE_KM, a human come back
+ * within HOME_BACK_KM of its place brings it in again HOME_BACK_WAIT on, with the same star */
+#define HOME_BACK_KM 15500
+#define HOME_BACK_WAIT (2 * LOGIC_HZ)
+
+static void home_hide_step(void)
+{
+#ifdef RV_TESTS
+    static const char __far s_out[] = "logic: frame %u: the carrier (slot %d) jumps out till a pilot comes back";
+    static const char __far s_in[] = "logic: frame %u: the carrier (slot %d) jumps back in, a pilot %ld km off";
+#endif
+    int16_t h = home_slot();
+    uint16_t secs;
+    if (h < 0 || g_home_hid == 3 || (secs = MSHIP_JUMP(slotMissionShip[h])) == 0)
+        return;
+    if (!g_home_hid) {
+        if (frameCounter < secs * LOGIC_HZ)
+            return;
+        if (maybeEntityType[h] != ET_OFFSCENE) {
+            if (logic_on_jump)
+                logic_on_jump(h, 1);
+            g_off_type[h] = maybeEntityType[h];
+            maybeEntityType[h] = ET_OFFSCENE;
+            if (g_sys.target == h)
+                g_sys.target = -1;
+        }
+        g_home_hid = 1;
+#ifdef RV_TESTS
+        rv_notef(s_out, frameCounter, h);
+#endif
+        return;
+    }
+    if (g_home_hid == 1) {
+        if (human_km(h) > SCENE_KM)
+            g_home_hid = 2;
+        return;
+    }
+    if (human_km(h) >= HOME_BACK_KM) {
+        g_home_wait = 0;
+        return;
+    }
+    if (++g_home_wait < HOME_BACK_WAIT)
+        return;
+    maybeEntityType[h] = g_off_type[h];
+    g_home_hid = 3;
+    if (logic_on_jump)
+        logic_on_jump(h, 1);
+#ifdef RV_TESTS
+    rv_notef(s_in, frameCounter, h, human_km(h));
+#endif
+}
+
+/* the ship that runs (missions.txt role=flee jump=S; the user, 2026-11-19, of Enigma's strike: "You want to prevent an
+ * alliance ... Slip in.  Slip out destroy the ship without being detected"): an enemy capital ship that holds its point
+ * until it hears of a human: it is hit, or a ship of its side within FLEE_EAR_KM of it has a human for its target.
+ * S seconds on it jumps out (route_jump), and gone it loses the mission (mission_done).  logic_flee_left: the seconds
+ * left of a run begun, for the cockpit (0 none) */
+#define FLEE_EAR_KM 12000
+uint8_t __far logic_flee_left;
+
+static void flee_step(void)
+{
+#ifdef RV_TESTS
+    static const char __far s_heard[] = "logic: frame %u: slot %d heard of a pilot (by %d): it jumps in %u s";
+#endif
+    int16_t s, k;
+    logic_flee_left = 0;
+    for (s = 1; s < NUM_SHIP_SLOTS; s++) {
+        if (!slot_is_ship(s) || shipAiState[s] == 9 || role_of(s) != RV_ESCORT_FLEE)
+            continue;
+        if (g_flee_steps < 0) {
+            int16_t by = g_under_fire[s] ? s : -1;
+            for (k = 1; by < 0 && k < NUM_SHIP_SLOTS; k++)
+                if (slot_is_ship(k) && shipAiState[k] != 9 && commAnimInfo[k] == commAnimInfo[s] && RV_SLOT_OK(rvTarget[k])
+                    && (rvTarget[k] == 0 || (rvFlags[rvTarget[k]] & RV_FLAG_HUMAN)) && km_between(k, s) < FLEE_EAR_KM)
+                    by = k;
+            if (by < 0)
+                continue;
+            g_flee_steps = (int16_t)(MSHIP_JUMP(slotMissionShip[s]) * LOGIC_HZ);
+#ifdef RV_TESTS
+            rv_notef(s_heard, frameCounter, s, by, MSHIP_JUMP(slotMissionShip[s]));
+#endif
+        }
+        if (--g_flee_steps <= 0) {
+            g_flee_steps = -1;
+            route_jump(s);
+            continue;
+        }
+        logic_flee_left = (uint8_t)((g_flee_steps + LOGIC_HZ - 1) / LOGIC_HZ);
+    }
+}
+
 static void step_scene(void)
 {
     int16_t s, friendly;
     if (!slot_is_ship(0) || logic_scene_off)
         return;
+    home_hide_step();
     for (s = 1; s < NUM_SHIP_SLOTS; s++) {
         if (maybeEntityType[s] == ET_OFFSCENE) {
+            if (g_home_hid && g_home_hid < 3 && role_of(s) == RV_ESCORT_HOME)
+                continue;               /* (the carrier hiding: home_hide_step's to bring back) */
             if (human_km(s) < SCENE_BACK_KM || nav_point_here(s))
                 maybeEntityType[s] = g_off_type[s];
             continue;
@@ -4729,6 +4837,7 @@ static void step_mission(void)
     land_near();
     arrivals_step();
     stream_step();
+    flee_step();
     for (s = 1; s < NUM_SHIP_SLOTS; s++)
         if (slot_is_ship(s) && shipAiState[s] == 9 && slotMissionShip[s] < 64) {
             if (!g_killed[slotMissionShip[s]] && commAnimInfo[s] != commAnimInfo[0])
@@ -5911,7 +6020,7 @@ uint16_t __far __cdecl outerSpawnShipEntity_impl(uint16_t missionShip, uint16_t 
         g_mind[s].fear_up = (uint8_t)(rec[19] & 15);
         g_mind[s].fear_down = (uint8_t)(rec[19] >> 4);
     }
-    if (rec[18] == RV_ESCORT_HOME || (rec[18] == RV_ESCORT_STAY && maybeEntityType[s] == ET_CAPSHIP))
+    if (rec[18] == RV_ESCORT_HOME || rec[18] == RV_ESCORT_FLEE || (rec[18] == RV_ESCORT_STAY && maybeEntityType[s] == ET_CAPSHIP))
         setSpeed[s] = speedLo[s] = 0;   /* (the carrier holds station from the first: no way on to lose; so does a
                                            capital ship that stays) */
     spawn_apart(s);

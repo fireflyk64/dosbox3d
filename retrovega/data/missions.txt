@@ -41,6 +41,11 @@
 # ENIGMAP: the user, 2026-11-14, "Stay cloaked. Arrive at the target lightly defended. Or hit each heavy bad with
 # surprise"); its nav point's goal is met only with it gone
 #
+# A ship line's role=flee jump=S is an enemy capital ship that holds its nav point until it hears of a pilot (it is hit,
+# or a ship of its side within 12,000 km of it has a pilot for its target), then jumps out S seconds on; got away, it
+# loses the mission (logic.c flee_step: Enigma's envoy).  The home carrier's hide=S: it jumps out S seconds after the
+# launch and back in when a pilot comes back to it (logic.c home_hide_step)
+#
 # A mission's planet line takes kind=NAME, its look (desert, green, ice, red, ash, savanna, violet, ochre, jungle,
 # ocean, tundra, steppe, grey, earth: terrain.c tr_looks), one a system (the user, 2026-11-14: "Different systems should have
 # different planets"); a planet mission is flown only where the card draws planets (campaign.c camp_slot)
@@ -3193,50 +3198,53 @@ radio    "Torch. Big guns, paper shields. Let's get it done."
 
 mission  ENIGMAP
 node     ENIGMA
-title    Strike: Enigma's ice moon, the listening post
+title    Strike: Enigma's ice moon, the envoy
 type     patrol
 music    briefing
 fighter  SCHROED
 briefing "One more job before we leave Enigma, and it's a quiet one."
-briefing "The Aera have a listening post on the ice moon under the yards. Every ship we launch, they hear."
-briefing "It's a Charillus, parked at the far end of a long canyon. It passes everything it hears to their fleet."
-briefing "The way down is guarded. Intelligence expects 2 Cleomenes at Nav 1 and 1 Cleomenes at Nav 2."
-briefing "Another one patrols between them, and there will be 2 Aristons at Nav 2, under an ice arch."
-briefing "Nav 3 is the canyon's mouth, with 2 Areus over it. Nav 4 is its end, and the Charillus is there."
-briefing "Those are heavy fighters. One Schroedinger won't last against all of them, so they won't see you."
+briefing "The ice moon belongs to nobody. That's why the Aera and the Rlaan picked it to meet on."
+briefing "An Aera envoy came in last night in a Charillus. It's down on a pad at the end of a long canyon."
+briefing "If the Rlaan sign with them, we fight two fleets instead of one. That envoy doesn't leave the moon."
+briefing "The Rlaan guard the way down. Intelligence expects 2 Taizongs at Nav 1, and another on patrol past it."
+briefing "At Nav 2 a Rlaan destroyer holds over an ice arch, with 2 Zhuangzongs under it."
+briefing "Nav 3 is the canyon's mouth, with 2 Taizongs over it. Nav 4 is its end, and the envoy is there."
+briefing "Heavy fighters and a destroyer. One Schroedinger won't last against all of them, so they won't see you."
 briefing "Your Schroedinger has a cloak. Alt and C. While it's on, nothing out there knows you're there."
 briefing "Firing drops it. The afterburner and the comm let them see you while you use them. Your shields are down."
-briefing "Go in cloaked. Slip past them, or take them one at a time from behind, before they know you're there."
-briefing "They keep to their posts. Get clear of one and it won't follow you far."
-briefing "The Charillus keeps 2 Aristons by it. Those you'll have to fight when it burns."
-briefing "Burn it, then come home. The Vigilance holds high over the moon."
+briefing "If they see you near the envoy, or the first time you hit it, its pilot runs for the jump point."
+briefing "You'll have forty-five seconds. Get close behind it, put your missiles in it, and don't stop firing."
+briefing "The envoy keeps 2 Aristons by it. Those you'll have to fight when it burns."
+briefing "The Vigilance won't wait in the open. She launches you in a field at the system's edge, then jumps out."
+briefing "Come back to the field and she'll jump back in for you. Fly out of it, and back in, by hand."
 briefing you "Alone, Commander?"
 briefing alive=FROST "Frost asked to go. I said no. Two fighters can't hide as well as one."
 briefing dead=FROST "Two fighters can't hide as well as one, and it's a job for one."
 briefing "Cloaked, the autopilot takes you past them. Let one see you and you fly it yourself. Dismissed."
-win      "The listening post has gone quiet. So did you. Well done, Wildcard."
-win      "We can leave Enigma without them hearing which way we went."
-lose     "They're still listening. We'll leave Enigma louder than I'd like."
+win      "The envoy never left the moon. The Rlaan will think twice about whose hand they shake."
+win      "And nobody saw a thing. Well done, Wildcard."
+lose     "The envoy's away, and the Rlaan will hear the Aera out. We'll leave Enigma with two enemies watching."
 lose     you "They never saw me, Commander. That was the trouble. Neither did I see enough."
 lose     "Get some rest. We go again tomorrow."
-planet   101 -21847 -77896 47863 64000 kind=ice
-nav      1 -13847 -12917 45863 ground reach=3000
-nav      2 -19847 -13048 38863 ground reach=3000
-nav      3 -27847 -15493 31863 ground reach=3000
-nav      4 -35847 -22307 17863 ground reach=3000
-nav      5 -16847 -12316 42363 ground hidden reach=2500
+planet   101 -38116 -135904 83506 64000 kind=ice
+nav      1 -30116 -70925 81506 ground reach=3000
+nav      2 -36116 -71056 74506 ground reach=3000
+nav      3 -44116 -73501 67506 ground reach=3000
+nav      4 -52116 -80315 53506 ground reach=3000
+nav      5 -33116 -70324 78006 ground hidden reach=2500
+field    asteroid 0 0 0 7000 level=1
 ground   arch nav2 span=1500 width=700 air=2000 thick=450 heading=-167
 ground   canyon nav3 to=nav4 width=1700 wall=1300 depth=2800 rise=1800
 ground   pad nav4 radius=900 slope=500
 ship     player 0 nav0
-ship     VIGILNC 0 nav0 role=home
-ship     CLEOMEN 1 nav1 at=3500,400,1500 role=guard
-ship     CLEOMEN 1 nav1 at=-3500,-300,-1500 role=guard
-ship     CLEOMEN 1 nav5 at=1500,300,0 role=guard
-ship     CLEOMEN 1 nav2 at=-1200,300,1800 role=guard
-ship     ARISTON 1 nav2 count=2 role=guard
-ship     AREUS 1 nav3 count=2 at=1500,600,1300 role=guard
-ship     CHARILS 1 nav4 role=stay
+ship     VIGILNC 0 nav0 role=home hide=10
+ship     TAIZONG 1 nav1 at=3500,400,1500 role=guard
+ship     TAIZONG 1 nav1 at=-3500,-300,-1500 role=guard
+ship     TAIZONG 1 nav5 at=1500,300,0 role=guard
+ship     RUIZONG 1 nav2 at=0,2600,0 role=stay
+ship     ZHUANG 1 nav2 count=2 role=guard
+ship     TAIZONG 1 nav3 count=2 at=1500,600,1300 role=guard
+ship     CHARILS 1 nav4 role=flee jump=45
 ship     ARISTON 1 nav4 count=2 at=1240,1056,2171
 goal     nav 1 1
 goal     nav 2 1

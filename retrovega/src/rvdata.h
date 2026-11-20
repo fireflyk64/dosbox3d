@@ -53,6 +53,7 @@
 #define RV_ESCORT_BACK 5
 #define RV_ESCORT_STREAM 6
 #define RV_ESCORT_GUARD 7
+#define RV_ESCORT_FLEE 8
 #define RV_PILOT_NONE 0xFF
 #define RV_SPEAKER_YOU 0xFE
 #define RV_ROOM_RADIO 2

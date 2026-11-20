@@ -650,9 +650,12 @@ static uint8_t __far g_land_armed;      /* the trigger let go while the prompt s
 static void land_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
 {
     static const char s_land[] = "PRESS FIRE TO LAND", s_on[] = "CLOAKED", s_broken[] = "CLOAK DISRUPTED",
-        s_wait[] = "CLOAK CHARGING", s_enemy[] = "AUTOPILOT: ENEMIES NEAR", s_field[] = "AUTOPILOT: FLY THROUGH THE FIELD";
+        s_wait[] = "CLOAK CHARGING", s_enemy[] = "AUTOPILOT: ENEMIES NEAR", s_field[] = "AUTOPILOT: FLY THROUGH THE FIELD",
+        s_runf[] = "TARGET JUMPS IN %u";
+    static char run[24];                /* (a ship heard of the pilot and runs: logic_flee_left) */
     int c = CLOAK_OF(0), blink = (frameCounter >> 4) & 1, w, x, row = g_cam_cy + 14;
-    const char *s = g_autoland ? s_land : c == RV_CLOAK_ON ? s_on : c == RV_CLOAK_BROKEN ? s_broken
+    const char *s = g_autoland ? s_land : logic_flee_left ? (sprintf(run, s_runf, logic_flee_left), run)
+                    : c == RV_CLOAK_ON ? s_on : c == RV_CLOAK_BROKEN ? s_broken
                     : g_cloak_said && logic_cloak_wait() ? s_wait
                     : !g_auto_said ? 0 : logic_auto_why == AUTO_WHY_FIELD ? s_field : logic_auto_why == AUTO_WHY_ENEMY ? s_enemy : 0;
     if (!s || g_arm_warn || row < 0 || row + PANEL_TINY_H > SCR_H)
@@ -663,7 +666,8 @@ static void land_tag(int y0, int y1, const short __far *ext, int ey0, int rows)
         return;
     if (ext && (row < ey0 || row >= ey0 + rows || x < ext[2 * (row - ey0)] || x + w > ext[2 * (row - ey0) + 1]))
         return;
-    (void)panel_tiny(x, row, s, s == s_on ? UI_HILITE : s == s_broken || s == s_wait || s == s_enemy || s == s_field ? (blink ? UI_RED : UI_AMBER2)
+    (void)panel_tiny(x, row, s, s == s_on ? UI_HILITE : s == s_broken || s == s_wait || s == s_enemy || s == s_field || s == run
+                                ? (blink ? UI_RED : UI_AMBER2)
                                 : blink ? UI_WHITE : UI_HILITE, y0, y1);
 }
 
