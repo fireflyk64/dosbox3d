@@ -341,7 +341,7 @@ who want to find themselves to the winning path"), but "We want an escort missio
 | Ataraxia | ATARAXIP, third | Franklin, Echo | 811, ocean | Patrol: the island chain, a Charillus under an island's arch |
 | Rigel | RIGELP, second | Lancelot, Frost | 919, tundra | Strike: the relay's two ground stations |
 | Barnard's Star | BARNARDP, second | Gawain, Kestrel | 1013, green | Patrol: asteroids out of the launch (Nav 1, a field 14,000 km off the carrier, 26,000 km over the ground), then the forest and the miners' camp, their Ox a bonus |
-| Wolf 359 | WOLF359P, second | Franklin, Kit | 1117, steppe | Patrol: the colony (its Ox a bonus) and the bombers' strip |
+| Wolf 359 | WOLF359P, second | Franklin, Kit | 1145, earth (1117 steppe until 2026-11-19) | Patrol: the colony on the coast (its Ox a bonus) and the bombers' strip up it |
 | Shmrn | SHMRNP, third | Redeemer, Torch | 7, desert (Mirage) | Strike: the Leonidas's supply ship under the arch |
 | Shmrn | SHMRNC, fifth | Lancelot, Torch | 7, desert (Mirage) | The canyon run (MIRAGE1), the last terrain mission, the day before the Leonidas |
 | Luyten's Star | LUYTENP, fourth | Franklin, Tally | 1301, grey | Escort: the grey moon's miners home in an Ox (`role=back`) |
@@ -405,7 +405,7 @@ apart, the Charillus on a pad at the third. Now each has four, all near the grou
 
 ### The planets' looks
 
-`planet ... kind=NAME`: desert, green, ice, red, ash, savanna, violet, ochre, jungle, ocean, tundra, steppe, grey
+`planet ... kind=NAME`: desert, green, ice, red, ash, savanna, violet, ochre, jungle, ocean, tundra, steppe, grey, earth
 (terrain.h `TR_KIND_*`, terrain.c `tr_looks`). A look is the eight materials' colours (on a green world the sand's slot
 is meadow and the dark crests are snow), the haze's and the high sky's, and how wet the land is: more green and scrub
 lower or higher, and the pools' level (an ocean world is mostly sea; the dry ones have none; ash has lava). The wet
@@ -413,6 +413,16 @@ lean changes where the materials go and the green's water table only, in integer
 every machine. The record carries it in its ground count's high nibble (no size change). Mirage keeps the desert, its
 heights as they were. `PV_KIND=N PV_SHOTS=DIR tests/host/planet_view.sh --map ...` draws a seed in a look from low,
 high and orbit.
+
+**earth** (the user, 2026-11-19: "change the another mission with a sandy type to have a Terran earthy planet type with
+continents rocky snow and water and some dirt around and blue sky if it makes sense in the story"; then, of the first
+pictures, "I do like the snowier side of things ... We can keep the extra snow. Love the coastline idea"): Wolf 359's
+colony, the nearest thing to Earth out there (it had been the steppe). Seas between the continents (wet 12,000, basin
+10,000, sea 8: about a quarter of the ground round the colony is sea), grass and woods by the water, brown dirt and pale
+flats away from it, grey rock and the usual snow on the mountains, a blue sky (fog 172,202,238, zenith 58,110,212). The
+seed changed to 1145 for a coast: picked by a scan of seeds 1117 to 1150 for the sea's share round the nav points and
+each point's height over it (the colony, Nav 2, 187 km over the shore; Nav 1 over the mountains), and Nav 3 raised to
+1,100 km over the ground so the line from the colony clears the coast's hills by 207 km.
 
 ### Guards (`role=guard`)
 

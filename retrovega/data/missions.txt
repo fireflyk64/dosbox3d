@@ -42,7 +42,7 @@
 # surprise"); its nav point's goal is met only with it gone
 #
 # A mission's planet line takes kind=NAME, its look (desert, green, ice, red, ash, savanna, violet, ochre, jungle,
-# ocean, tundra, steppe, grey: terrain.c tr_looks), one a system (the user, 2026-11-14: "Different systems should have
+# ocean, tundra, steppe, grey, earth: terrain.c tr_looks), one a system (the user, 2026-11-14: "Different systems should have
 # different planets"); a planet mission is flown only where the card draws planets (campaign.c camp_slot)
 #
 # A ship line's role=stream jump=N keeps its count of ships in the world from its nav point's reaching until nav N is
@@ -3704,12 +3704,13 @@ radio    "Kestrel. Rocks, then forest. Stay high in the field, and keep low over
 
 mission  WOLF359P
 node     WOLF359
-title    Patrol: Wolf 359, the colony on the steppe
+title    Patrol: Wolf 359, the colony on the coast
 type     patrol
 music    briefing
 fighter  FRANKLN
-briefing "There are four thousand colonists on the planet, and the Aera have started bombing them."
-briefing "The bombers hit the colony at Nav 2 every few hours, and refuel at a strip in the hills at Nav 3."
+briefing "Wolf 359 has the nearest thing to Earth out here. Seas, snow on the mountains, green on the shore."
+briefing "There are four thousand colonists on the coast, and the Aera have started bombing them."
+briefing "The bombers hit the colony at Nav 2 every few hours, and refuel at a strip up the coast at Nav 3."
 briefing "You and Kit go down. Intelligence expects 2 Nicanders at Nav 1, 3 Areus at Nav 2 and 2 Agis at Nav 3."
 briefing "Keep the colony's Ox in one piece if you can. It's the only way off they have."
 briefing "And burn the Charillus at the strip on the way home."
@@ -3718,10 +3719,10 @@ briefing "Dismissed."
 win      "The colony's still standing, and the strip's gone. They're cheering on the comm. I left it on for a minute."
 win      TECH "Not a scratch on her. Well. One."
 lose     "The bombers will be back, and we won't always be there."
-planet   1117 16956 -84579 37349 64000 kind=steppe
+planet   1145 16956 -84579 37349 64000 kind=earth
 nav      1 13862 -18943 43536 ground reach=3000
 nav      2 8868 -21543 49480 ground reach=3000
-nav      3 18978 -21478 51502 ground reach=3000
+nav      3 18990 -21088 51589 ground reach=3000
 ground   pad nav2 radius=1600 slope=800
 ground   pad nav3 radius=1400 slope=700
 ship     player 0 nav0

@@ -368,6 +368,11 @@ typedef struct {
     int32_t wet, basin, sea;
 } TrLook;
 
+#ifndef EARTH_WET
+#define EARTH_WET 12000
+#define EARTH_BASIN 10000
+#define EARTH_SEA 8
+#endif
 static const TrLook tr_looks[TR_KINDS] = {
     {   /* desert: golden sand, red rock, a warm haze (Mirage) */
         { { 228, 188, 128 }, { 176, 100, 62 }, { 84, 132, 50 }, { 92, 60, 44 }, { 214, 190, 148 }, { 166, 150, 88 },
@@ -407,7 +412,12 @@ static const TrLook tr_looks[TR_KINDS] = {
           { 54, 96, 130 }, { 150, 140, 124 } }, { 206, 206, 200 }, { 100, 128, 176 }, 1500, 2000, -2 },
     {   /* grey: a dead moon's dust, darker rock, pale flats, almost no air's colour */
         { { 164, 162, 158 }, { 110, 108, 106 }, { 128, 126, 120 }, { 46, 46, 48 }, { 208, 206, 202 }, { 140, 138, 132 },
-          { 70, 70, 74 }, { 78, 78, 82 } }, { 176, 176, 180 }, { 70, 72, 84 }, -8000, 0, -20 }
+          { 70, 70, 74 }, { 78, 78, 82 } }, { 176, 176, 180 }, { 70, 72, 84 }, -8000, 0, -20 },
+    {   /* earth: a Terran world (the user, 2026-11-19: "a Terran earthy planet type with continents rocky snow and water
+           and some dirt around and blue sky"): seas between the continents, grass and woods by the water, brown dirt
+           and pale dry flats away from it, grey rock on the mountains and snow on their crests, a blue sky */
+        { { 146, 124, 86 }, { 128, 122, 114 }, { 80, 132, 56 }, { 62, 58, 52 }, { 196, 180, 140 }, { 46, 92, 44 },
+          { 26, 74, 142 }, { 238, 242, 246 } }, { 172, 202, 238 }, { 58, 110, 212 }, EARTH_WET, EARTH_BASIN, EARTH_SEA }
 };
 
 static TrGround tr_desert(const int32_t d[3], const int32_t co[TR_COARSE], int32_t relief, uint32_t seed,

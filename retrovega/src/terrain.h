@@ -68,7 +68,7 @@ enum {                                  /* TrPlanetDesc.kind: a planet's look (t
                                            2026-11-14: "Different systems should have different planets (color
                                            scheme. Rostov should be green)") */
     TR_KIND_DESERT, TR_KIND_GREEN, TR_KIND_ICE, TR_KIND_RED, TR_KIND_ASH, TR_KIND_SAVANNA, TR_KIND_VIOLET,
-    TR_KIND_OCHRE, TR_KIND_JUNGLE, TR_KIND_OCEAN, TR_KIND_TUNDRA, TR_KIND_STEPPE, TR_KIND_GREY, TR_KINDS
+    TR_KIND_OCHRE, TR_KIND_JUNGLE, TR_KIND_OCEAN, TR_KIND_TUNDRA, TR_KIND_STEPPE, TR_KIND_GREY, TR_KIND_EARTH, TR_KINDS
 };
 
 typedef struct {                        /* what is under a point: radii from the planet's centre, in positions */

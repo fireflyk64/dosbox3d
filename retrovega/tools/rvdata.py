@@ -271,7 +271,7 @@ GROUND = [('unsigned char', 'kind', 'B'), ('unsigned char', 'nav', 'B'), ('unsig
           ('unsigned short', 'b', 'H'), ('unsigned short', 'c', 'H'), ('unsigned short', 'd', 'H'),
           ('short', 'heading', 'h')]
 PLANET_KINDS = ['desert', 'green', 'ice', 'red', 'ash', 'savanna', 'violet', 'ochre', 'jungle', 'ocean', 'tundra',
-                'steppe', 'grey']   # a planet's look, kind=NAME (terrain.h TR_KIND_*, in its order; terrain.c tr_looks)
+                'steppe', 'grey', 'earth']   # a planet's look, kind=NAME (terrain.h TR_KIND_*, in its order; terrain.c tr_looks)
 FIELD_NAV_MIN_KM = 9000          # a field a waypoint lies in is at least this wide (radius): its edge is the autopilot's stop
 GROUND_KINDS = {'pad': 1, 'arch': 2, 'canyon': 3}   # (terrain.h's TR_STAMP_PAD, TR_STAMP_ARCH, TR_STAMP_CANYON)
 MISSION = [('char', 'id[RV_ID]', '%ds' % TEXT['ID']), ('unsigned char', 'node', 'B'), ('unsigned char', 'type', 'B'),
