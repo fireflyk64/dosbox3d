@@ -210,9 +210,9 @@ void watch_step() {
 
 // --- the flight's frames ------------------------------------------------------------------------------------------
 
-void purge_esc();
+void purge_keys();
 void frame_top() {
-    purge_esc();
+    purge_keys();
     const double now = PIC_FullIndex();
     if (now - g_lastFrameMs > 1000) {
         g_frame = 0;            // (a flight begun)
@@ -344,8 +344,11 @@ void at_move_objects() {
 // flight frame: the user, 2026-11-19, hosting: "the first clicked start.. then I hit escape on the host ... once the
 // guest went through the showroom the host immediately restarted" (the launch held for the guest, then the flight's
 // first frame, then "TIEMISS.EXE is gone from memory").  So at the launch and at every frame's top the buffer's Esc
-// (scan code 1) is taken out, the other keys kept in their order.
-void purge_esc() {
+// (scan code 1) is taken out, the other keys kept in their order.  And its 0 (scan code 0x0B), the comms key, which
+// TIEMISS takes as its "12:00 high" view's switch: one typed too soon would have the flight begin looking up (the
+// user: "there is the buffer problem--cus if you start looking on high you may never be able to look down if a stray
+// 0 is sent... and it's a toggle").
+void purge_keys() {
     static int keep = -1;       // (WCNET_TDM_KEEP_ESC=1: left in, the rigs' way to a host's program ended by its Esc)
     if (keep < 0) {
         const char *env = getenv("WCNET_TDM_KEEP_ESC");
@@ -361,7 +364,7 @@ void purge_esc() {
     bool found = false;
     for (Bit16u p = head; p != tail && n < 32; p = (Bit16u)(p + 2 >= end ? start : p + 2)) {
         const Bit16u key = mem_readw(bda + p);
-        if ((key >> 8) == 0x01) found = true; else keys[n++] = key;
+        if ((key >> 8) == 0x01 || (key >> 8) == 0x0B) found = true; else keys[n++] = key;
     }
     if (!found) return;
     Bit16u p = head;
@@ -370,7 +373,7 @@ void purge_esc() {
         p = (Bit16u)(p + 2 >= end ? start : p + 2);
     }
     mem_writew(bda + 0x1C, p);
-    wclog(1, "TIE demo: an Esc pressed before TIEMISS ran taken out of the keyboard's buffer (it would end the demo at once)");
+    wclog(1, "TIE demo: an Esc or a 0 pressed before TIEMISS ran taken out of the keyboard's buffer (the demo's end at once; its view's switch)");
 }
 
 // --- the launch: held at create_createmission's entry -------------------------------------------------------------
@@ -385,7 +388,7 @@ void hold_at_stub(Hold why) {
 }
 
 void at_create_mission() {
-    purge_esc();
+    purge_keys();
     if (g_released) {
         g_released = false;         // (back from the hold: the mission is made)
         return;
@@ -504,6 +507,11 @@ void at_neon_wait() {
 // its way out to DOS (its exit code, which TIEDEMO.BAT tests): that code becomes "go to game" (tdm_program_ended).
 bool tdm_key(int key, bool pressed) {
     if (!g_found || !ours_running()) return false;
+    // 0 is the room's comms key (the emulator's prompt, in flight), and TIEMISS's own 0 turns the pilot's head to
+    // "12:00 high" and back: a 0 meant for the prompt left the pilot looking at the ceiling (the user, 2026-11-19: "the
+    // 0 button to chat raises the view to "high" can we intercept 0 in flight and not send to the TIE demo or TIE
+    // CD").  Never TIEMISS's: it has no other use for the key (purge_keys takes out one typed before it ran).
+    if (key == KBD_0) return true;
     if (key != KBD_esc) return tdm_controls_key(key, pressed);     // (the flight's keys: wcnet_tiedemo_controls.cpp)
     if (pressed && g_holding == HOLD_LAUNCH && tdm_session_fly_alone()) return true;
     static double toldAt = -1e9;

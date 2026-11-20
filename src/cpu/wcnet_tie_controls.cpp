@@ -264,6 +264,11 @@ bool tie_controls_key(int key, bool pressed) {
         Mouse_ButtonPressed(0);
         return true;
     }
+    // (0 is the room's comms key, the emulator's prompt, and the game's own 0 turns the pilot's head to "12:00 high" and
+    // back: never the game's in flight, nor in the flight's scene before its first frame; the demo's the same)
+    if (key == KBD_0 && (tie_in_flight() || tie_scene() == 3)) {
+        return true;
+    }
     if (!tie_in_flight()) {
         g_left = g_right = g_up = g_down = false;
         return false;

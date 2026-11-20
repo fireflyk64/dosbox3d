@@ -126,6 +126,8 @@ void tdm_session_verdict(int next, bool over);          // the host's verdict on
 bool tdm_session_verdict_wait(int *next, bool *over);   // a guest: true while the host's verdict on our flight is to come
 void tdm_notice(const std::string &text);               // a line for the log (the room's: never over the picture)
 bool tdm_session_fly_alone();             // a guest's launch held for a host already flying: fly alone (Esc)
+bool tdm_session_active();                // in a room (the comms prompt, the 0 key in flight, has somebody to tell)
+void tdm_session_chat(const std::string &text);   // a line typed at the prompt: to the room, and over our picture
 
 // The campaign (wcnet_tiedemo_campaign.cpp, docs/tiedemo.md section 8): after the demo's own mission, the missions of
 // scripts/tdmmissions.py, written over the mission the game has read; the flight ended by the layer once won or

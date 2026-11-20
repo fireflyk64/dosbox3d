@@ -1375,6 +1375,11 @@ void handle(Peer *p, NetworkMessage &msg) {
         if (p->hello) take_frame(p, msg.tie_frame());
     } else if (msg.has_tie_owners()) {
         if (p->hello && !g_net->host) take_owners(msg.tie_owners());
+    } else if (msg.has_chat()) {
+        // (a pilot's line, the CD's session's way: over the picture, and on from the host to the other guests)
+        if (!p->hello) return;
+        show(msg.chat().callsign() + ": " + msg.chat().message());
+        relay(p, [&](Peer *to) { to->conn.send(msg); });
     }
 }
 
@@ -1398,6 +1403,11 @@ void poll_peers() {
                 if (st.failed()) p->conn.close();
                 break;
             }
+            handle(p, msg);
+        }
+        for (int n = 0; n < 64 && p->conn.is_open(); n++) {
+            RecvStatus st = p->conn.poll(CAT_CHAT, msg);        // (the pilots' lines)
+            if (!st.ok()) break;
             handle(p, msg);
         }
         for (int n = 0; n < 256 && p->conn.is_open(); n++) {
@@ -1577,6 +1587,25 @@ bool tdm_session_verdict_wait(int *next, bool *over) {
 }
 
 void tdm_notice(const std::string &text) { notice(text); }
+
+// The comms prompt (the 0 key in flight, the emulator's: sdlmain.cpp), as the CD's room has it: until 2026-11-19 the
+// demo's room had none, and its 0 went to the game (the "12:00 high" view).
+bool tdm_session_active() { return g_net != NULL && (g_net->host || g_net->self >= 0); }
+void tdm_session_chat(const std::string &text) {
+    if (!g_net || text.empty()) return;
+    NetworkMessage msg;
+    Chat *chat = msg.mutable_chat();
+    chat->set_ship_id(0);
+    chat->set_message(text);
+    chat->set_callsign(g_net->callsign);
+    int told = 0;
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        Peer *to = g_net->peers[i];
+        if (to->hello && to->conn.is_open() && to->conn.send(msg)) told++;
+    }
+    wclog(1, "TIE demo: comms: a line to %d pilot%s", told, told == 1 ? "" : "s");
+    show(g_net->callsign + ": " + text);
+}
 
 void tdm_session_shutdown() {
     if (!g_net) return;

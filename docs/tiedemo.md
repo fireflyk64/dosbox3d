@@ -554,6 +554,21 @@ improved accordingly". The CD port's keyboard (docs/tiefighter.md step 7), fitte
   mickeys (some 80 degrees a second in a T/F, near the CD port's keyboard roll); Shift the whole stick. Nothing up and
   down while rolling (the X-roll's up and down is the throttle).
 * Space fires: the mouse's left button, held while Space is, unless DS:CD98 is set: then Space is the game's.
+* 0 is not passed to the game, and is the room's comms key (2026-11-19, the user: "the 0 button to chat raises the view
+  to "high" can we intercept 0 in flight and not send to the TIE demo or TIE CD though there is the buffer
+  problem--cus if you start looking on high you may never be able to look down if a stray 0 is sent... and it's a
+  toggle"). TIEMISS's own 0 turns the pilot's head to "12:00 high" and back; the demo's room had no comms prompt
+  (the CD's room has had one), so every 0 was the game's.
+  * The key is kept from TIEMISS always (`tdm_key`), and a 0 typed before TIEMISS ran is taken out of the BIOS's
+    keyboard buffer with the Esc (`purge_keys`, at the launch and at every frame's top).
+  * In a room, in flight, 0 opens the emulator's comms prompt as in the CD's (`tdm_session_active`,
+    `tdm_session_chat`: the line to every pilot of the room, the host passing a guest's on, over each picture for
+    8 s as "CALLSIGN: text").
+  * Measured: 0 in flight, the picture before and after the same view (forward) where it was "12:00 HIGH" before;
+    0 three times while the opening is skipped: before, the flight began at "12:00 HIGH"; now the keys are taken
+    out and it begins forward. Two machines: "HOST: Form up on me" on the guest's picture, "GUEST: On your wing" on
+    the host's.
+  * No reset of a view already turned: with the key kept and the buffer cleared no 0 reaches the flight.
 * Q is not passed to the game (the user, 2026-11-15: "Q as eject is punishing--can we disable that key"): the game's
   Q offers the flight's end and its Space confirms it, an eject, and Space is the trigger here, so a Q pressed by
   mistake and the next shot ended the flight. Measured: Q then Space twice, the flight ended each time; now it flies

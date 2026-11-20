@@ -25,6 +25,7 @@
 #include "wcnet_tie.h"
 #include "wcnet_priv.h"
 #include "wcnet_tie_session.h"
+#include "wcnet_tiedemo.h"
 #include "wcnet_tv.h"
 #include "wcnet_transport.h"
 #include "wcnet_lobby.h"
@@ -3738,6 +3739,7 @@ bool wc_net_chat_ready() {
         // chat with my buddy": the prompt opened only for Wing Commander's session).  TIE Fighter's room likewise (the
         // user, 2026-11-09: "hitting shift or 0 doesn't let me chat"): in flight (its registration desk takes a typed name)
         return (wc::priv_session_active() && wc::priv_in_flight()) || (tie_session_active() && tie_in_flight())
+               || (wc::tdm_session_active() && wc::tdm_in_flight())    // (the TIE Fighter demo's room: wcnet_tiedemo_session.cpp)
                || (wc::tv_session_active() && wc::tv_in_flight());     // (Terminal Velocity's: in flight, where 0 is no key of its)
     }
     if (is_rv()) {
@@ -3823,6 +3825,10 @@ void wcnetSendChatMessage(const std::string &msg) {
     }
     if (!g_session && tie_session_active()) {
         tie_session_chat(msg);          // (TIE Fighter's room: its own session, none of the commands below)
+        return;
+    }
+    if (!g_session && wc::tdm_session_active()) {
+        wc::tdm_session_chat(msg);      // (the TIE Fighter demo's room)
         return;
     }
     if (!g_session && wc::tv_session_active()) {

@@ -1283,6 +1283,16 @@ the Jedi (seen from outside) as the reference.
   applies the hit for good as before.  A craft near a guest's crosshairs is
   the guest's (step 5): its place is never written from the network there, so
   aiming at it is the game's own motion.
+  * **0 is the comms key, never the game's in flight** (2026-11-19, the user:
+    "the 0 button to chat raises the view to "high" can we intercept 0 in
+    flight and not send to the TIE demo or TIE CD").  The game's own 0 turns
+    the pilot's head to "FWD HIGH" and back.  In a room in flight the
+    emulator's prompt took the key already; alone, or typed in the flight's
+    scene before its first frame (the hyperspace arrival), it was the game's.
+    `tie_controls_key` keeps it in flight and in the flight's scene
+    (`tie_scene() == 3`).  Measured (the key script's 0 at 73 s, during the
+    arrival): before, the flight began at "FWD HIGH"; now in the forward
+    cockpit.  The demo's the same (docs/tiedemo.md section 9).
   * **A shown hit is kept until its owner has it** (2026-11-19, found in the
     demo's session by its sync test, docs/tiedemo.md section 5: the same
     code).  The owner's figures used to wait 600 ms after a hit of ours:
