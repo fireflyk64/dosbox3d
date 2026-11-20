@@ -6,7 +6,7 @@
 //   - a code of another game's prefix left in the box does not switch the host's game (the pinning bug)
 //   - Join with a code typed: the room joined, its host's game fetched and switched to; no such room: none made
 //   - Join open game prefers the picked game's room over another's
-//   - ?tv=1, ?tf=1 (the demo with no TIE Fighter), ?game=tv; the game picked last is the next visit's
+//   - ?tv=1, ?tf=1 (the demo with no TIE Fighter), ?game=tv; a visit with no link's game starts with RetroVega (no Wing Commander here)
 // The Internet Archive's zip is served from a local copy (ARCHIVE_ZIP).  Each check printed with OK or FAIL; ends
 // "PICK OK".
 //
@@ -166,17 +166,16 @@ check(/^Join open TIE Fighter$/i.test(await g.page.$eval("#findRoom", (el) => el
 await g.page.context().close();
 const h = await openPage("hotel", { tv: "1" });
 check(await ready(h, "tv") && await game(h) === "tv", `?tv=1: Terminal Velocity picked (${await game(h)})`);
-// -- the game picked last is the next visit's (not the newest copy, not the top of the menu)
+// -- a visit with no link's game starts with RetroVega here (no Wing Commander in this browser), whatever was picked
+// last and whatever the newest copy is (the user, 2026-11-19: "default to wing commander if installed or retro Vega
+// if not.  Only tf should default to tie fighter")
 await h.page.selectOption("#program", "rap");
 await ready(h, "rap");
 await h.page.selectOption("#program", "tv");
 await ready(h, "tv");
 const h2 = await openPage("hotel", {}, h.page.context());
-check(await ready(h2, "tv") && await game(h2) === "tv", `a second visit: the game picked last, Terminal Velocity (${await game(h2)}; Raptor's is the newer copy)`);
-await h2.page.selectOption("#program", "rv");
-const h3 = await openPage("hotel", {}, h.page.context());
-await ready(h3);
-check(await game(h3) === "rv", `and after RetroVega was picked: RetroVega (${await game(h3)})`);
+await ready(h2);
+check(await game(h2) === "rv", `a second visit, Terminal Velocity picked last and Raptor's the newer copy: RetroVega (${await game(h2)})`);
 const h4 = await openPage("hotel", { wc1: "1" }, h.page.context());
 await ready(h4);
 check(/Wing Commander needs your own files/.test(await h4.page.$eval("#sourceStatus", (el) => el.textContent)), `?wc1=1 without its files: said (${(await h4.page.$eval("#sourceStatus", (el) => el.textContent)).slice(0, 90)})`);

@@ -346,12 +346,11 @@ function switchTo(holder, id) {
   else if (holder === "builtin") useBuiltin(id);
   else if (holder) useSavedCopy(holder, id);
 }
-// The game this pilot picked last (the menu, or files dropped), in this browser: the one a visit starts with (the
-// user, 2026-11-17: "whatever game is at the top of the dropdown kinda gets lucky").  A room joined or a link's game
-// is not a pick.
+// The game this pilot picked last (the menu, or files dropped), in this browser.  It was the one a visit started
+// with (2026-11-17) until the user's 2026-11-19 ruling (a visit starts with Wing Commander or RetroVega: the page's
+// start, below); still kept.  A room joined or a link's game is not a pick.
 const PICK_KEY = "wc:game";
 const rememberPick = (id) => { try { localStorage.setItem(PICK_KEY, id); } catch (e) { /* not kept */ } };
-const lastPick = () => { try { return localStorage.getItem(PICK_KEY); } catch (e) { return null; } };
 // ?game=: a game's id, tag or everyday name (the user, 2026-11-15: "if they pass in a game=tv or game=tf or
 // game=raptor or game=rv flag it defaults to those games"): "tf" is TIE Fighter, the CD's when this browser has it,
 // else the 1994 demo.
@@ -651,14 +650,18 @@ async function initSources() {
   const asked = askedGame();
   if (asked && holderOf(asked)) { switchTo(holderOf(asked), asked); return; }
   if (asked && demoOf(asked)) { void getGame(demoOf(asked)); return; }
-  // (then a room's link's game, then the game picked the last time, then the newest copy, then the page's own)
-  const last = !wanted && lastPick();
+  // (then a room's link's game; then Wing Commander where this browser has it, else RetroVega, the page's own: the
+  // user, 2026-11-19, of a visit that opened on TIE Fighter, the game picked the last time: "Make the normal dosbox
+  // entry point default to wing commander if installed or retro Vega if not.  Only tf should default to tie fighter".
+  // The game picked last is no longer a visit's first; any other game is a link's (?tf=1, the site's /tf) or the
+  // menu's)
+  const home = !wanted && ["wc1", "wc2"].find((id) => holderOf(id));
   if (wanted && builtins().includes(wanted)) useBuiltin(wanted.id);
   else if (fits) useSavedCopy(fits);
-  else if (last && holderOf(last)) switchTo(holderOf(last), last);
-  else if (saved.length) useSavedCopy(saved[0]);
+  else if (home) switchTo(holderOf(home), home);
   else if (serverCopy) $("useServer").click();
   else if (builtins().length) useBuiltin(builtins()[0].id);
+  else if (saved.length) useSavedCopy(saved[0]);
   // (a link's game that needs the pilot's own files: said, with whatever is picked meanwhile)
   if (asked && source && source.game.id !== asked) sourceStatus(`${gameById(asked).title} needs your own files: drop them below. ${source.game.title} is picked meanwhile.`);
 }

@@ -1382,8 +1382,11 @@ top-level README for the workflow).  What differs:
   own), and greyed the ones that need the pilot's files; `#gameList` names
   them all beside it (a click picks; the user: "people may not realize the
   set of games avail").  The pick is the pilot's and nothing but a room
-  joined changes it; the last one is the next visit's (`wc:game`), before the
-  newest copy.  `?tf=1`, `?tv=1`, `?rv=1`, `?wc1=1`, ... are `?game=`'s short
+  joined changes it.  A visit with no link's game starts with Wing Commander
+  where this browser has it (then Wing Commander II), else RetroVega (the
+  user, 2026-11-19: "Make the normal dosbox entry point default to wing
+  commander if installed or retro Vega if not.  Only tf should default to tie
+  fighter"; the last pick, `wc:game`, had been the next visit's).  `?tf=1`, `?tv=1`, `?rv=1`, `?wc1=1`, ... are `?game=`'s short
   forms (`askedGame`).  **Host <game>** makes the room of the game picked:
   the code box empty, a code of the game's prefix and four digits is made
   (the user: "when the user really doesn't bother to type a room code it
