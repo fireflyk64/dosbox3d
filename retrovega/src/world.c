@@ -11,6 +11,12 @@
 #include "logic.h"
 
 int32_t vec_dot(const RvVec3 *a, const RvVec3 *b) { return a->x * b->x + a->y * b->y + a->z * b->z; }
+void vec_madd(RvVec3 *o, const RvVec3 *d, int32_t k)
+{
+    o->x += d->x * k / 256;
+    o->y += d->y * k / 256;
+    o->z += d->z * k / 256;
+}
 
 void vec_norm(RvVec3 *v)
 {

@@ -106,11 +106,39 @@ Still to do for 30 fps on the page:
     ground 8 steps ahead counts too, so it rises before a cliff, not inside it (the canyon run's lowest fighter, every
     30 frames of a flight in RVT.EXE's log: 28 km, where without the look-ahead one was 49 km in the rock). Under a
     slab's roof, too close, a ship has its step undone.
-  - The speed floor (`SPEED_FLOOR_KPS`): where the ALT readout shows (under 20,000 km), the player's throttle goes no
-    lower than 100 (the user, 2026-11-15: "near a planet the min speed should be 100... below 100 should bring it back
-    up and do a few points of damage at that time"). The pilot's own cut, the ship still moving, costs 3 points
-    (`STALL_POINTS`, at most once a second); a stop the game made (a ram, the carrier's hull: the speed 0 too) is
-    only brought back up. Landing needs no speed, so it is untouched.
+  - The air (`step_air`, logic.c 4a; the user, 2026-11-19: "When in atmosphere ... switch the flight dynamics for the
+    player ship to be more like air. Take into account atmospheric density and so it should slowly become more
+    atmospheric like. When at sea level you will need afterburner to exceed 1:1 thrust to weight but it gets easier
+    higher up. Remember these are space fighters so they bring their own Lox and engines don't stall with low
+    airflow. So it's simpler than a full flight sim"). For the player's own ship only (every pilot's on its own
+    machine); the others glide as above.
+    - The density follows the ALT readout's height: all of it at the ground, less in proportion up to 6,000 km
+      (`AIR_TOP_KM`), none from there. Each step is flown both ways from the same velocity, as in space and as in
+      air, and the two mixed by the density.
+    - In air: gravity, 200 kps a second toward the planet's centre (`AIR_G_KPS`); along the nose a drag that grows
+      with the speed against the engine's push, all of it while slower than the throttle asks and none while
+      faster, so that level flight ends at the throttle's own speed, a climb costs speed and a dive gives it; across
+      the nose the hull's lift, gravity x (speed / 100 kps) squared (`AIR_STALL_KPS`): under 100 kps a level ship
+      sinks, and at a fighter's speeds nothing is left of a turn's slide.
+    - Thrust to weight at the ground: the throttle's push is the type's `accel` (80 to 160 kps a second for the
+      ships a pilot flies: 0.4 to 0.8 of gravity); the afterburner's is accel x ab_kps / max_kps (1.06 for the
+      Redeemer, up to 2.4). The engine pushes the same at any speed. Play test M8.68: on its tail 300 km up a
+      Schroedinger falls at full throttle and climbs on the afterburner; 12,000 km up, out of the air, the throttle alone climbs.
+    - The wings come level with the horizon while no roll is asked (`air_roll`; the user: "Maybe auto roll to
+      level can help too"), by the bank and the density. The stick's turn banks nothing: a bank following the stick
+      (the user's "half roll half yaw like in tie fighter ... But only if intuitive") was tried and a held turn
+      dived, the nose 47 degrees under the horizon after 4 s with 45 degrees of bank and 27 with 15.
+    - The speed floor of 100 with its 3 points of damage (2026-11-15) is gone (the user: "Once this is built you can
+      remove the min speed restriction since this should take care of it").
+    - The heat (`logic_heat`, 0 to 8; the user: "some kind of orange heat effect in certain flight envelopes where it
+      makes sense. Both behind the wings and maybe in the cockpit edges"): by the density x the speed, none under 450
+      kps at the ground (no throttle's own speed), all of it from 850 (the afterburner low down, a fast way in from
+      orbit). In the cockpit amber is mixed into the picture along the opening's edges, deeper with the heat, ragged
+      and flickering (fx.c `heat_glow`); in the outside views a plume trails from behind each wing
+      (flight.c `heat_streaks`). A look only: no damage. Only the pilot's own ship shows it. `/heat N` in the
+      test builds holds it at N. Its cost on DOS at 50,000 cycles over a planet (RVT.EXE `/fly 44 /heat 8`): the frame
+      11.7 ms without it, 14.5 at the most heat with the card; without the card, DOS drawing the ground itself at
+      34.0 ms, only the stipple is drawn: 34.4.
   - The autopilot raises anyone it puts under the ground to 300 km over it.
 - **The native builds** answer the same requests with terrain.c (`planet.c` under `RV_HOST`; rvsim without the
   picture).
@@ -349,7 +377,7 @@ its nav points 6,000 to 12,000 km off. Now it is 30,000 km up:
   `orbit.py`, run once (missions.txt is the truth after).
 - **Barnard's Star's asteroids** (the user had asked for them near the carrier, "so we don't need to render both"):
   Nav 1's field is 14,000 km ahead of the launch, 26,000 km over the ground, on the way to Nav 2.
-- **Out of it:** the ALT readout and the speed floor reach only 20,000 km up, so neither is at the carrier. The
+- **Out of it:** the ALT readout reaches only 20,000 km up and the air 6,000, so neither is at the carrier. The
   autopilot home stops 4,000 km off the carrier as before; an escort target near the player (an Ox going home) comes
   along with it, as anywhere.
 

@@ -13,6 +13,7 @@
 #include "damage.h"
 #include "logic.h"
 #include "fx.h"
+#include "gx.h"
 
 #define N (RV_MAX_SHIP_SLOT + 1)
 #define HIDE_AFTER 2                    /* steps after its death a ship's sprite goes: the flash covers it by then */
@@ -258,10 +259,53 @@ void fx_shake(int16_t *dx, int16_t *dy)
         *dy += g_motion_bob / 256;
 }
 
+/* the air's heat (logic_heat) at the cockpit's edges (the user: "orange heat effect ... maybe in the cockpit edges"):
+ * amber mixed into the picture along both ends of every row of the opening, strongest outermost, as deep as the
+ * heat and ragged from row to row and frame to frame (streaks, flickering).  Every other row a frame.  At the most heat
+ * (RVT.EXE /heat 8) 2.75 ms of DOS's frame at 50,000 cycles (14.5 ms in all over a planet, with the card); without the
+ * card, DOS drawing the ground itself at 34 ms a frame, the stipple alone: 0.4 ms */
+static void heat_glow(int y0, int y1)
+{
+    int ey0, rows, y;
+    const int heat = (int)logic_heat();
+    const int soft = gx_planet_on();    /* (DOS drawing the ground itself has no time for the mixes: the stipple alone) */
+    const short __far *ext = cockpit_extents(&ey0, &rows);
+    if (!heat || !ext)
+        return;
+    y = y0 > ey0 ? y0 : ey0;
+    y += (y ^ (int)frameCounter) & 1;   /* (every other row, the others the next frame: a shimmer, and half the work) */
+    for (; y < y1 && y < ey0 + rows; y += 2) {
+        int x0 = ext[2 * (y - ey0)], x1 = ext[2 * (y - ey0) + 1], w, k;
+        uint16_t n = (uint16_t)(((y >> 1) * 40503U) ^ ((frameCounter >> 1) * 25173U));
+        if (x0 >= x1)
+            continue;
+        w = heat * 2 + (int)((n >> 7) % (uint16_t)(heat * 2 + 1));   /* (32 pixels at the most) */
+        if (w > (x1 - x0) / 2)
+            w = (x1 - x0) / 2;
+        w /= 2;                         /* (the outer half stippled orange and red, every other pixel, over a
+                                           half-amber mix; the inner half a quarter amber: the fire's fall-off) */
+        if (soft) {
+            gfx_mix_run(x0, x0 + w, y, 1, 1, y0, y1);
+            gfx_mix_run(x1 - w, x1, y, 1, 1, y0, y1);
+            gfx_mix_run(x0 + w, x0 + 2 * w, y, 1, 0, y0, y1);
+            gfx_mix_run(x1 - 2 * w, x1 - w, y, 1, 0, y0, y1);
+        }
+        {
+            unsigned char __far *p = vid_row(y);
+            for (k = (y >> 1) & 1; k < w; k += 2) {
+                const unsigned char c = (unsigned char)(k < w / 3 ? UI_RED : UI_AMBER3);
+                p[x0 + k] = c;
+                p[x1 - 1 - k] = c;
+            }
+        }
+    }
+}
+
 void fx_cockpit_draw(int y0, int y1)
 {
     static const unsigned char __far hot[4] = { UI_RED, UI_AMBER2, UI_AMBER3, UI_WHITE };
     int16_t i;
+    heat_glow(y0, y1);
     for (i = 0; i < SPARKS; i++) {
         const Spark __far *p = &g_spark[i];
         int x, y;

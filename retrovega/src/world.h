@@ -142,6 +142,7 @@ typedef char rv_turn_step_check[((TURN * (INT32_C(1) << TURN_FRAC_SHIFT) + TURN_
 
 /* vectors (RvVec3: positions, or 256 = 1.0 for a direction) */
 int32_t vec_dot(const RvVec3 *a, const RvVec3 *b);
+void vec_madd(RvVec3 *o, const RvVec3 *d, int32_t k);   /* o += d x k / 256 (a part of d times k under 2^31) */
 void vec_norm(RvVec3 *v);               /* to length 256 (no change to a zero vector) */
 void vec_cross(RvVec3 *out, const RvVec3 *a, const RvVec3 *b);   /* (a x b) / 256 */
 void vec_turn(RvVec3 *a, RvVec3 *b, int16_t t);   /* a and b turned by t (TURN a whole turn) in their plane:

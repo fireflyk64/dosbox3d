@@ -5044,7 +5044,7 @@ static void t_held_wave(void)
 
 /* M8.63: a planet mission's ground (planet.c: the card's sums on DOS, terrain.c's natively, integers both): the canyon
  * run's planet made and its nav points put 700 km over the canyon's floor; the player that takes no damage diving at
- * the floor at Nav 2 is stopped over it, and its throttle cut there comes back to 100 (logic.c SPEED_FLOOR_KPS);
+ * the floor at Nav 2 is stopped over it (the throttle's floor of 100 there is gone since the air, M8.68);
  * climbing into the stone bridge at Nav 3 it is stopped under its rock; an Aera fighter diving at the floor at Nav 4
  * glides over it (HOVER_OVER, 40 km); the player that takes damage diving at the floor is destroyed (the user,
  * 2026-11-15: "intersection with the terrain causes a human ship to explode").  The world is left as it is: its hash
@@ -5106,6 +5106,124 @@ static void t_ground_up(void)
             e_up, (gPositionVector[1].y - y0) / KM, (abs32(gPositionVector[1].x - x0) + abs32(gPositionVector[1].z - z0)) / KM, 0);
 }
 
+/* M8.68: a planet's air for the player's ship (logic.c step_air, air_roll; the user, 2026-11-19: "When at sea level
+ * you will need afterburner to exceed 1:1 thrust to weight but it gets easier higher up").  Over Enigma's ice, straight
+ * above the centre (up is the world's y):
+ *   - level at the top speed 300 km up: 2 s on (a longer straight line leaves the round planet) it has kept its height and its speed;
+ *   - level with the throttle cut: it sinks;
+ *   - nose straight up from rest 300 km up (2,000 km up the throttle alone already climbs), full throttle: it falls; with the afterburner it climbs;
+ *   - the same 12,000 km up, where the air is thin, full throttle alone: it climbs;
+ *   - banked a quarter turn 300 km up with the stick let go: the wings come level, and stay level with
+ *     the nose on the horizon through a held turn */
+static long air_alt(void)               /* (km from the planet's centre: the ground under a flight rises and falls) */
+{
+    const LfVec __far *c = planet_centre();
+    return pt_len((gPositionVector[0].x - c->x) / KM, (gPositionVector[0].y - c->y) / KM, (gPositionVector[0].z - c->z) / KM);
+}
+
+static void air_put(long km, int16_t nose_up)
+{
+    const LfVec __far *c = planet_centre();
+    LfVec p;
+    long roof;
+    int16_t k;
+    p.x = c->x;
+    p.y = c->y + 66000L * KM;
+    p.z = c->z;
+    for (k = 0; k < 3; k++)
+        p.y -= planet_over(&p, &roof) - km * KM;
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    if (nose_up)
+        face_vertical(0, 1);
+    g_pilot.steer_x = g_pilot.steer_y = g_pilot.roll = 0;
+    g_pilot.afterburner = g_sys.burning = 0;
+    rvAfterburner[0] = 0;
+    pt_speed(0, 0);
+}
+
+static void t_air(void)
+{
+    static const char __far e_made[] = "Enigma's planet: planet_make %d (100: made)";
+    static const char __far e_level[] = "level at the top speed for 2 s: from %d km up to %d, at %d kps (within 30 km, the top speed kept)";
+    static const char __far e_sink[] = "level with the throttle cut for 8 s: from %d km up to %d (100 km lower or more)";
+    static const char __far e_mil[] = "nose up at full throttle for 6 s from %d km up: at %d (lower: the throttle alone does not carry it)";
+    static const char __far e_ab[] = "nose up on the afterburner for 6 s from %d km up: at %d (200 km higher or more)";
+    static const char __far e_thin[] = "nose up at full throttle for 6 s from %d km up: at %d (higher: the thin air)";
+    static const char __far e_roll[] = "banked a quarter turn, 4 s with the stick let go: the right wing's height %d of 256 (within 40 of level)";
+    static const char __far e_bank[] = "4 s of the stick to the right: the right wing's height %d of 256, the nose's %d (both within 40 of level)";
+    const RvShipType __far *t;
+    long a0, a1;
+    int16_t k;
+    pt_launch_named("ENIGMAP");
+    k = (int16_t)planet_make(0);
+    REQUIRE(k == 100, e_made, k, 0, 0);
+    playerCanBeDamaged = 0;
+    t = slot_type(0);
+    air_put(300, 0);
+    pt_speed(0, t->max_kps);
+    if (!pt_steps(1))
+        return;
+    a0 = air_alt();
+    if (!pt_steps(2 * SEC))
+        return;
+    a1 = air_alt();
+    REQUIRE(labs(a1 - a0) <= 30 && (int32_t)speedLo[0] >= (int32_t)t->max_kps - 8 && (int32_t)speedLo[0] <= (int32_t)t->max_kps,
+            e_level, a0, a1, (int32_t)speedLo[0]);
+    air_put(2000, 0);
+    if (!pt_steps(1))
+        return;
+    a0 = air_alt();
+    if (!pt_steps(8 * SEC))
+        return;
+    a1 = air_alt();
+    REQUIRE(a1 <= a0 - 100, e_sink, a0, a1, 0);
+    air_put(300, 1);
+    setSpeed[0] = t->max_kps;
+    if (!pt_steps(1))
+        return;
+    a0 = air_alt();
+    if (!pt_steps(6 * SEC))
+        return;
+    a1 = air_alt();
+    REQUIRE(a1 < a0, e_mil, a0, a1, 0);
+    air_put(300, 1);
+    setSpeed[0] = t->max_kps;
+    if (!pt_steps(1))
+        return;
+    g_pilot.afterburner = g_sys.burning = 1;
+    rvAfterburner[0] = 1;
+    a0 = air_alt();
+    if (!pt_steps(6 * SEC))
+        return;
+    a1 = air_alt();
+    REQUIRE(a1 >= a0 + 200, e_ab, a0, a1, 0);
+    air_put(12000, 1);
+    setSpeed[0] = t->max_kps;
+    if (!pt_steps(1))
+        return;
+    a0 = air_alt();
+    if (!pt_steps(6 * SEC))
+        return;
+    a1 = air_alt();
+    REQUIRE(a1 > a0, e_thin, a0, a1, 0);
+    air_put(300, 0);
+    pt_speed(0, t->max_kps);
+    if (!pt_steps(1))
+        return;
+    gOrientationRightVector[0] = vec3(0, 256, 0);   /* (the right wing straight up, the nose where it was) */
+    gOrientationUpVector[0] = vec3(0, 0, 0);
+    ship_orthonormalise(0);
+    if (!pt_steps(4 * SEC))
+        return;
+    REQUIRE(abs32(gOrientationRightVector[0].y) <= 40, e_roll, gOrientationRightVector[0].y, 0, 0);
+    g_pilot.steer_x = 9;                /* (a held turn: the wings stay level, the nose on the horizon) */
+    if (!pt_steps(4 * SEC))
+        return;
+    REQUIRE(abs32(gOrientationRightVector[0].y) <= 40 && abs32(gOrientationFrontVector[0].y) <= 40, e_bank,
+            gOrientationRightVector[0].y, gOrientationFrontVector[0].y, 0);
+    g_pilot.steer_x = 0;
+}
+
 /* M2.21: easy's faster bolts (campaign.c easy_guns; the user, 2026-11-17: "could we make the easy option have the old
  * higher speeds? ... it could potentially multiply them on load", "we should have the fast guns affect both AI and
  * human"): on easy every gun's speed in the loaded table is 11 / 8 of the data's, the laser's 1,600 kps 2,200 and the
@@ -5154,8 +5272,7 @@ static void t_planet(void)
 {
     static const char __far e_made[] = "the canyon run's planet: planet_make %d (100: made)";
     static const char __far e_nav[] = "nav %d %d km over the ground once placed (700)";
-    static const char __far e_floor[] = "the dive into the canyon's floor: %d km over it, the throttle cut to 0 back at "
-        "%d (stopped over it, 100)";
+    static const char __far e_floor[] = "the dive into the canyon's floor: %d km over it (stopped over it)";
     static const char __far e_roof[] = "the climb into the stone bridge: %d km under its rock (stopped under it)";
     static const char __far e_ai[] = "an Aera fighter diving at the floor: %d km over it after 4 s (30 or more)";
     static const char __far e_dies[] = "the player that takes damage diving at the floor: shipAiState %d (9: destroyed)";
@@ -5179,18 +5296,19 @@ static void t_planet(void)
     if (!pt_steps(4 * SEC))
         return;
     over = planet_over((const LfVec *)&gPositionVector[0], &roof);
-    setSpeed[0] = 0;                    /* (the pilot's throttle cut, the ship still moving: back to 100 a step on) */
-    if (!pt_steps(1))
-        return;
-    REQUIRE(over >= 10 * KM && over < 200 * KM && setSpeed[0] == 100, e_floor, over / KM, (long)setSpeed[0], 0);
+    REQUIRE(over >= 10 * KM && over < 200 * KM, e_floor, over / KM, 0, 0);
     nav_pos(3, &p);
     pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
-    face_vertical(0, 1);                /* (under the bridge's crown, climbing) */
+    face_vertical(0, 1);                /* (under the bridge's crown, climbing: on the afterburner, in the air) */
     pt_speed(0, 250);
+    g_pilot.afterburner = g_sys.burning = 1;
+    rvAfterburner[0] = 1;
     if (!pt_steps(6 * SEC))
         return;
     over = planet_over((const LfVec *)&gPositionVector[0], &roof);
     REQUIRE(roof >= 10 * KM && roof < 300 * KM, e_roof, roof / KM, 0, 0);
+    g_pilot.afterburner = g_sys.burning = 0;
+    rvAfterburner[0] = 0;
     nav_pos(4, &p);
     pt_ship(1, PT_ENEMY, SIDE_AERA, CTL_AI, p.x / KM, p.y / KM, p.z / KM, 0);
     face_vertical(1, -1);
@@ -8576,9 +8694,10 @@ static const char __far n_m8_59[] = "M8.59 escort-back (role=back, escorted): an
 static const char __far n_m8_60[] = "M8.60 wave-also (also=N, mship_brought): a wave listed at a hidden point and a waypoint comes once, at whichever is reached first";
 static const char __far n_m8_61[] = "M8.61 goals (logic_goal): a nav point met once reached and its enemies gone; the nth kill goal with n + 1 killed; the landing";
 static const char __far n_m8_62[] = "M8.62 held-wave (mission_done, wave_may_come): a wave held at a hidden point at the launch keeps the mission undone till it has come and gone";
-static const char __far n_m8_63[] = "M8.63 planet (planet.c, step_ground, ground_mind): the canyon run's planet made, its nav points 700 km over its floor; a dive into the floor and a climb into the stone bridge stopped short of the rock, the throttle at 100; an Aera fighter diving at the floor glides over it; the player that takes damage destroyed by it";
+static const char __far n_m8_63[] = "M8.63 planet (planet.c, step_ground, ground_mind): the canyon run's planet made, its nav points 700 km over its floor; a dive into the floor and a climb into the stone bridge stopped short of the rock; an Aera fighter diving at the floor glides over it; the player that takes damage destroyed by it";
 static const char __far n_m8_66[] = "M8.66 campaign-card (camp_flown_from, camp_place): a set's planet missions only with the card: Cephid 4 or 3, Shmrn 6 or 4, the way on skips CEPHIDP without it, the screens count what is flown";
 static const char __far n_m8_65[] = "M8.65 cloak-run (ENIGMAP, role=guard, the cloak): cloaked, nobody sees the player and the guards keep their posts, Nav 1 to the canyon's end; a surprise from behind turns only that one; Alt+C and it lets go; the post burnt with no heavy coming; the autopilot goes home past the guards (the log: cloakrun)";
+static const char __far n_m8_68[] = "M8.68 air (step_air, air_roll): in a planet's air the player's ship keeps height at speed and sinks without it, hangs on its tail only with the afterburner low down and with the throttle alone high up; its wings come level";
 static const char __far n_m8_67[] = "M8.67 ground-up (step_ground): over Enigma's ice, 64,000 km from its centre, a fighter low over the ground is lifted straight up";
 static const char __far n_m8_64[] = "M8.64 stream (stream_step, role=stream): the canyon run's three Nicanders come once Nav 1 is reached, ahead of the player and over the ground; one killed, another comes within 3 s; none once Nav 5 is reached";
 static const char __far n_m8_55[] = "M8.55 field-nav (nav_field, nav_stop, nav_in_reach): a waypoint inside a field is the field's middle: the autopilot stops at its edge, and the point is reached only within 1,200 km of the middle";
@@ -8677,6 +8796,7 @@ static const PtTest __far k_tests[] = {
     { n_m10_13, t_cloak, 0 }, { n_m10_14, t_cloak_ai, 0 }, { n_m8_65, t_cloak_run, 0 }, { n_m8_66, t_campaign_card, 0 },
     { n_m10_15, t_target_range, 0 },
     { n_m8_67, t_ground_up, 0 },
+    { n_m8_68, t_air, 0 },
     { n_m2_21, t_easy_guns, 0 },
 };
 

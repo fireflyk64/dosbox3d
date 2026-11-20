@@ -35,6 +35,10 @@ extern uint8_t __far logic_pilot_kills[RV_PILOTS];   /* and by each named pilot 
 void logic_end(void);                   /* the flight is over (missionStatus says how) */
 int16_t logic_autopilot(void);          /* the A key, between steps: 1 when it flew the player on (to the next nav
                                            point), 0 when it may not (enemies near, nowhere to go) */
+#ifdef RV_TESTS
+extern int g_heat_test;                 /* (RVT.EXE /heat N) */
+#endif
+uint16_t logic_heat(void);              /* the air's heat on the player's hull, 0 none .. 8 (a planet's air: logic.c 4a) */
 int16_t logic_autopilot_ready(void);    /* the nav point it would go to, -1 not now (the engine asks before its flyby) */
 extern uint8_t __far logic_auto_why;    /* why logic_autopilot_ready last said -1: */
 #define AUTO_WHY_ENEMY 1                /* an enemy near */

@@ -1075,25 +1075,7 @@ static void collide_report(void)
         rv_logf(s_r, r, g_cd_up[r], g_cd_coarse[r], g_cd_hits[r]);
 }
 
-/* a world point on the player's screen */
-static int to_screen(const LfVec *w, int *sx, int *sy)
-{
-    LfBasis cam;
-    long rx = (w->x - cam_pos()->x) >> 4, ry = (w->y - cam_pos()->y) >> 4,
-         rz = (w->z - cam_pos()->z) >> 4, X, Y, Z;
-    cam_basis(&cam);
-    X = (rx * cam.right.x + ry * cam.right.y + rz * cam.right.z) / 256;
-    Y = (rx * cam.up.x + ry * cam.up.y + rz * cam.up.z) / 256;
-    Z = (rx * cam.front.x + ry * cam.front.y + rz * cam.front.z) / 256;
-    if (Z < 16)
-        return 0;
-    X = SCR_W / 2 + X * FLIGHT_FOCAL / Z;
-    Y = g_cam_cy - Y * FLIGHT_FOCAL / Z;
-    *sx = (int)(X < -4000 ? -4000 : X > 4000 ? 4000 : X);
-    *sy = (int)(Y < -4000 ? -4000 : Y > 4000 ? 4000 : Y);
-    return 1;
-}
-
+static int to_screen(const LfVec *w, int *sx, int *sy);
 static void collide_overlay(void)
 {
     LfVec c[8], v[16];
@@ -1546,6 +1528,53 @@ static void hull_overlay(void)
 
 #endif /* RV_TESTS */
 
+/* a world point on the player's screen */
+static int to_screen(const LfVec *w, int *sx, int *sy)
+{
+    LfBasis cam;
+    RvVec3 r;
+    long X, Y, Z;
+    r = vec3((w->x - cam_pos()->x) >> 4, (w->y - cam_pos()->y) >> 4, (w->z - cam_pos()->z) >> 4);
+    cam_basis(&cam);
+    Z = vec_dot(&r, (const RvVec3 *)&cam.front) / 256;
+    if (Z < 16)
+        return 0;
+    X = SCR_W / 2 + vec_dot(&r, (const RvVec3 *)&cam.right) / 256 * FLIGHT_FOCAL / Z;
+    Y = g_cam_cy - vec_dot(&r, (const RvVec3 *)&cam.up) / 256 * FLIGHT_FOCAL / Z;
+    *sx = (int)(X < -4000 ? -4000 : X > 4000 ? 4000 : X);
+    *sy = (int)(Y < -4000 ? -4000 : Y > 4000 ? 4000 : Y);
+    return 1;
+}
+
+/* the air's heat (logic_heat) off the player's wings, seen from outside (the user: "orange heat effect ... Both
+ * behind the wings and maybe in the cockpit edges"): from behind each wing (half the hull's radius out, a third back) a plume
+ * back along the hull, as long as the heat and flickering: a fan of lines from the wing to a spread at its tail,
+ * yellow in the middle, orange, red outermost.  A cloaked ship shows none */
+static void heat_streaks(int y0, int y1)
+{
+    static const unsigned char __far hot[4] = { UI_AMBER4, UI_AMBER3, UI_AMBER2, UI_RED };
+    const int heat = (int)logic_heat();
+    const RvVec3 *f = &gOrientationFrontVector[0];
+    long rad;
+    int side, j;
+    if (!heat || g_view == VIEW_COCKPIT || CLOAK_OF(0) == RV_CLOAK_ON)
+        return;
+    rad = slot_type(0)->radius_km;
+    for (side = -1; side <= 1; side += 2) {
+        RvVec3 a, b;                    /* (the right and front vectors are 256 long: km x 256 = positions) */
+        int ax, ay, bx, by;
+        a = gPositionVector[0];
+        vec_madd(&a, &gOrientationRightVector[0], side * rad * 128);
+        vec_madd(&a, f, -rad * 85);
+        b = a;                          /* (its length: up to two radii and a quarter at the most heat) */
+        vec_madd(&b, f, -rad * heat * (6 + (int)((uint16_t)((frameCounter + side) * 25173U) >> 14)) * 8);
+        if (!to_screen((const LfVec *)&a, &ax, &ay) || !to_screen((const LfVec *)&b, &bx, &by))
+            continue;
+        for (j = -3; j <= 3; j++)
+            gfx_line(ax, ay, bx - (by - ay) * j / 16, by + (bx - ax) * j / 16, hot[j < 0 ? -j : j], 0, y0, y1);
+    }
+}
+
 static void draw_world(int y0, int y1)
 {
     int ey0, rows, i;
@@ -1618,6 +1647,7 @@ static void draw_world(int y0, int y1)
         }
     }
     ships_stipple(0);
+    heat_streaks(y0, y1);               /* (the air's heat off the player's wing tips, in the outside views) */
     rocks_draw_rest(y0, y1, ext, ey0, rows);   /* the big rocks before every ship */
     explode_draw_rest(y0, y1, ext, ey0, rows);   /* and the explosions */
     if (g_lasers)                       /* the near bolts last: nearest of all */

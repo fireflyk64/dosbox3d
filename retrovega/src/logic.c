@@ -4054,6 +4054,131 @@ static void ship_think(int16_t s)
     }
 }
 
+/* 4a. the air of a planet, for the player's own ship (the user, 2026-11-19: "When in atmosphere ... switch the flight
+ * dynamics for the player ship to be more like air.  Take into account atmospheric density and so it should slowly
+ * become more atmospheric like.  When at sea level you will need afterburner to exceed 1:1 thrust to weight but it gets
+ * easier higher up.  Remember these are space fighters so they bring their own Lox and engines don't stall with low
+ * airflow.  So it's simpler than a full flight sim"; and "Maybe auto roll to level can help too").
+ *
+ * The density g_air (0 none .. 256 the ground's) follows the ALT readout's height: all of it at the ground, less in
+ * proportion up to AIR_TOP_KM, none from there.  A step is flown both ways from the same velocity and the two mixed
+ * by the density:
+ *   - as in space (step_speed, reduce_slide), and
+ *   - as in air: gravity (AIR_G_KPS a second, toward the planet's centre); along the nose a drag that grows with the
+ *     speed (accel x the speed / the top speed) against the engine's push: all of it (accel; with the afterburner
+ *     accel x ab_kps / max_kps, the only one over AIR_G_KPS) while slower than the throttle asks, none while faster.
+ *     Level, the throttle's speeds are the same as in space; a climb costs speed, a dive gives it; and across the
+ *     nose the hull's lift, which takes off that part of the velocity (the gravity just added with it) by up to
+ *     gravity x (speed / AIR_STALL_KPS) squared a step: under AIR_STALL_KPS a level ship sinks, and at a fighter's
+ *     speeds nothing is left of a turn's slide (the air holds the hull to its nose as space does not).
+ * The engine gives its push at any speed.  speedLo, the speed shown, goes the same way toward the speed along the nose.
+ * With no roll asked the wings come level with the horizon (air_roll).  Integers only (the lockstep, the play tests'
+ * hashes); the other ships fly as they did (step_ground's hover) */
+#define AIR_TOP_KM 6000L                /* (12,000 at first: the test pilot, climbing after its targets 4,000 km up
+                                           with two thirds of the ground's air, lost its speed and its fights) */
+#define AIR_G_KPS 200
+#define AIR_STALL_KPS 100
+#define AIR_G_STEP (KPS_STEP(AIR_G_KPS) / KPS_HZ)   /* gravity, positions a step a step */
+static uint16_t __far g_air;            /* the density where the player is (step_ground's, a step ago) */
+
+static uint16_t air_density(long over)
+{
+    over /= KM;
+    return (uint16_t)(over <= 0 ? 256 : over >= AIR_TOP_KM ? 0 : 256 - over * 256 / AIR_TOP_KM);
+}
+
+static void air_up(RvVec3 *u)           /* the way up where the player is, 256 long (in 64 km: step_ground's note) */
+{
+    const LfVec __far *c = planet_centre();
+    const RvVec3 *p = &gPositionVector[0];
+    *u = vec3((p->x - c->x) >> 14, (p->y - c->y) >> 14, (p->z - c->z) >> 14);
+    vec_norm(u);
+}
+
+/* the roll the air asks of the wings, -4 .. 4 of the pilot's 9, when the pilot asks none: level with the horizon
+ * (the user: "Maybe auto roll to level can help too"), by the bank and weaker as the air thins.  The stick's turn
+ * banks nothing (the user's other thought: "have controls shift to roll ... half roll half yaw like in tie fighter
+ * ... But only if intuitive": tried, a bank that follows the stick, the nose still turning.  The nose turns about the
+ * banked ship's own axis, so a held turn dived: 4 s of full stick left the nose 47 degrees under the horizon with the
+ * bank's end at 45 degrees, 27 with it at 15, the wings rocking after the horizon; and a stick that only rolls takes
+ * the nose's turn off the pointer and the keys) */
+static int8_t air_roll(void)
+{
+    RvVec3 u;
+    air_up(&u);                         /* (the right wing's height, -256 straight down .. 256 up: rolled down by it) */
+    return (int8_t)clamp32(-(vec_dot(&gOrientationRightVector[0], &u) / 256) * (int32_t)g_air / 2048, -4, 4);
+}
+
+static void step_air(uint16_t phase)
+{
+    const RvShipType __far *t = slot_type(0);
+    const RvVec3 *f = &gOrientationFrontVector[0];
+    RvVec3 *v = &gVelocityVector[0];
+    RvVec3 a, q, u;
+    int32_t top = damage_kps(t->max_kps), accel = damage_accel(t->accel), want, par, d, perp, lift, kps;
+    a = *v;
+    step_speed(0, phase);               /* (the step as in space: *v and speedLo) */
+    reduce_slide(0);
+    if (!top)
+        top = 1;
+    air_up(&u);
+    vec_madd(&a, &u, -AIR_G_STEP);      /* gravity */
+    want = setSpeed[0] < top ? setSpeed[0] : top;
+    d = accel;                          /* (the engine's push, kps a second) */
+    if (rvAfterburner[0] && t->ab_kps) {
+        want = damage_kps(t->ab_kps);
+        d = accel * t->ab_kps / t->max_kps;
+    }
+    want = KPS_STEP(want);
+    par = vec_dot(&a, f) / 256;         /* the speed along the nose */
+    q = a;
+    vec_madd(&q, f, -par);              /* and the rest, across it */
+    lift = par * accel / (top * KPS_HZ);   /* (the drag a step: the push's at the top speed) */
+    if (par < want) {                   /* slower than the throttle asks: the engine's whole push */
+        d = KPS_STEP(d) / KPS_HZ - lift;
+        par += d > 0 ? d : par * 64 > want * 63;   /* (the last of the way a position a step: the speed arrives) */
+        if (par > want && d > 0)
+            par = want;
+    } else if (par > want) {            /* faster: the engine idle, the drag alone */
+        par -= lift > 0 ? lift : 1;
+        if (par < want)
+            par = want;
+    }
+    perp = len_of(q.x, q.y, q.z);
+    kps = len_of(a.x, a.y, a.z) * KPS_HZ / KM;
+    lift = AIR_G_STEP * kps / AIR_STALL_KPS * kps / AIR_STALL_KPS;   /* (under 2^31 to 40,000 kps) */
+    lift = perp > lift ? (perp - lift) * 256 / perp : 0;   /* (what the lift leaves of it, of 256) */
+    a = vec3(0, 0, 0);                  /* the step as in air, */
+    vec_madd(&a, f, par);
+    vec_madd(&a, &q, lift);
+    q = *v;                             /* and the two mixed by the density */
+    *v = vec3(0, 0, 0);
+    vec_madd(v, &q, 256 - (int32_t)g_air);
+    vec_madd(v, &a, (int32_t)g_air);
+    kps = par > 0 ? par * KPS_HZ / KM : 0;
+    speedLo[0] = (uint16_t)((int32_t)speedLo[0] + (kps - (int32_t)speedLo[0]) * (int32_t)g_air / 256);
+}
+
+/* how hot the air makes the player's hull, 0 none .. 8 (the user, 2026-11-19: "some kind of orange heat effect in
+ * certain flight envelopes where it makes sense"): fast in thick air, by the density x the speed: none at any
+ * throttle's own speed (under 450 kps at the ground), all of it from 850 (the afterburner low down, a fast way in
+ * from orbit).  A look only (fx.c's glow at the cockpit's edges, flight.c's streaks off the wing tips) */
+#ifdef RV_TESTS
+int g_heat_test = 0;                   /* RVT.EXE /heat N: that heat always (the look, its cost) */
+#endif
+uint16_t logic_heat(void)
+{
+    uint32_t q;
+#ifdef RV_TESTS
+    if (g_heat_test)
+        return (uint16_t)g_heat_test;
+#endif
+    if (!g_air || !slot_is_ship(0) || shipAiState[0] == 9)
+        return 0;
+    q = (uint32_t)g_air * (uint16_t)speedLo[0] / 256;
+    return (uint16_t)(q < 450 ? 0 : q >= 850 ? 8 : (q - 400) / 50);
+}
+
 /* 4. every ship flies its step: its turn applied to its orientation (vec_turn, then ship_orthonormalise), its speed
  * toward setSpeed, gVelocityVector (positions a step: KPS_STEP), the velocity added to gPositionVector.  A puppet
  * only coasts (position += velocity) */
@@ -4065,7 +4190,12 @@ static void step_motion(void)
         if (!slot_is_ship(ship_index) || rvController[ship_index] == CTL_FROZEN) {
             continue;
         }
-        if (rvController[ship_index] != CTL_PUPPET) {
+        if (ship_index == 0 && g_air && rvController[0] == CTL_PLAYER && shipAiState[0] != 9) {
+            step_turn(0, g_turn[0].x, g_turn[0].y, g_turn[0].roll ? g_turn[0].roll : air_roll());
+            if (g_knock[0].left)
+                knock_step(0);
+            step_air(phase);            /* (a planet's air: 4a) */
+        } else if (rvController[ship_index] != CTL_PUPPET) {
             step_turn(ship_index, g_turn[ship_index].x, g_turn[ship_index].y, g_turn[ship_index].roll);
             if (g_knock[ship_index].left)
                 knock_step(ship_index);
@@ -4155,15 +4285,6 @@ static void step_collisions(void)
 #define HOVER_AHEAD (400L * 256)        /* under this the ground ahead counts too: HOVER_STEPS steps ahead */
 #define HOVER_STEPS 8
 
-/* near a planet (the ALT readout's reach, flight.c) the player's throttle goes no lower than SPEED_FLOOR_KPS (the user,
- * 2026-11-15: "near a planet the min speed should be 100... below 100 should bring it back up and do a few points of
- * damage at that time"): the pilot's own cut (the ship still moving) costs STALL_POINTS, at most once a second; a stop
- * the game made (a crash, a ram, the carrier's hull: the speed 0 too) is only brought back up */
-#define SPEED_FLOOR_KPS 100
-#define SPEED_FLOOR_OVER (20000L * 256)
-#define STALL_POINTS 3
-static uint16_t __far g_stall_at;
-
 #ifdef RV_TESTS
 static long g_low_over = 0x7FFFFFFFL;
 static int16_t g_low_slot;
@@ -4172,6 +4293,7 @@ static int16_t g_low_slot;
 static void step_ground(void)
 {
     int16_t s;
+    g_air = 0;
     if (!planet_on())
         return;
     for (s = 0; s < NUM_SHIP_SLOTS; s++) {
@@ -4184,13 +4306,8 @@ static void step_ground(void)
         if (s == 0 && frameCounter % 30 == 0)
             RV_LOG("planet: frame %u, the player %ld km over the ground, roof %ld", frameCounter, over / 256, roof / 256);
 #endif
-        if (s == 0 && shipAiState[0] != 9 && over < SPEED_FLOOR_OVER && setSpeed[0] < SPEED_FLOOR_KPS) {
-            if (speedLo[0] && (uint16_t)(frameCounter - g_stall_at) >= LOGIC_HZ) {
-                g_stall_at = frameCounter;
-                (void)do_damage(0, 0, STALL_POINTS, RV_WHERE(p));
-            }
-            setSpeed[0] = SPEED_FLOOR_KPS;
-        }
+        if (s == 0)
+            g_air = air_density(over);  /* (the air the player flies in next step: step_air) */
         if (rvController[s] == CTL_PUPPET)
             continue;
         if (s == 0 ? over < GROUND_CLEAR || roof < GROUND_CLEAR : roof < GROUND_CLEAR) {

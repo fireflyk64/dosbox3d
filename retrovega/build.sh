@@ -35,7 +35,7 @@ fi
 # optimised (the flight benchmark found -ox worth half again as many sprites a
 # frame as -od); DEBUG=1 builds -od -d2 for the debugger
 if [ -n "${DEBUG:-}" ]; then OPT="-od -d2"; else OPT="-ox -d1"; fi
-BALLOON_KB=${BALLOON_KB:-20}          # (RV.EXE's emergency room, mem.c's balloon: BALLOON_KB=0 ./build.sh builds without it)
+BALLOON_KB=${BALLOON_KB:-18}          # (RV.EXE's emergency room, mem.c's balloon: BALLOON_KB=0 ./build.sh builds without it)
 CFLAGS="-q -bt=dos -mm -3 -s -w4 -zq -zm $OPT -i=src -dRV_BALLOON_KB=$BALLOON_KB"   # (-zm: a segment a function, so the link drops the unused: option eliminate)
 nasm -f obj -i src/ -o "$OUT/rvhook.obj" src/rvhook.asm
 nasm -f obj -o "$OUT/lowlevel.obj" src/lowlevel.asm
@@ -114,6 +114,17 @@ LF="$OUT/lf"
 python3 tools/logfmt.py "$LF" "$OUT/RVLOGFMT.BIN" $(for c in $ENGINE; do
     if [ "$c" = logic ]; then printf '%s ' "$LOGIC"; else printf 'src/%s.c ' "$c"; fi; done) \
     --then "$OUT/RVPFMT.BIN" tests/play/playtest.c > "$OUT/logfmt.log"
+# (RVP.EXE is at the edge of conventional memory too, with no balloon: 9 KB free in DOS at its start on 2026-11-17 and
+# it needs more than 6.  The play tests' names were 30 KB of its far data: in the DOS copy each is cut after its
+# number, word and functions, "M8.63 planet (planet.c, step_ground, ground_mind)"; the host's lines keep the whole
+# name, and playtest.sh matches the two by the number)
+python3 - "$LF/playtest.c" <<'PYEOF'
+import re, sys
+s = open(sys.argv[1], encoding='latin-1').read()
+s, n = re.subn(r'(static const char __far n_m\w+\[\] = "[^"\n]*?\)): .*?";\n', r'\1";\n', s, flags=re.S)
+open(sys.argv[1], 'w', encoding='latin-1').write(s)
+print("play test names cut for RVP.EXE: %d" % n)
+PYEOF
 srcof() { if [ "$1" = logic ]; then printf '%s/%s' "$LF" "$(basename "$LOGIC")"; else printf '%s/%s.c' "$LF" "$1"; fi; }
 for c in $ENGINE; do
     wcc $CFLAGS -fo="$OUT/$c.obj" "$(srcof "$c")"
@@ -183,7 +194,7 @@ RV_ROOM=640512
 RV_IMAGE=$(sed -n 's/^Memory size: *[0-9a-fA-F]* (\([0-9]*\)\.).*/\1/p' "$OUT/RV.MAP")
 RV_LEFT=$((RV_ROOM - RV_IMAGE))
 echo "RV.EXE takes $RV_IMAGE bytes of conventional memory, $RV_LEFT left for DOS to hand out"
-# the balloon (mem.c: the user's emergency room, 20 KB unless BALLOON_KB says otherwise, held in the image): never shrunk
+# the balloon (mem.c: the user's emergency room, 18 KB unless BALLOON_KB says otherwise, held in the image): never shrunk
 # or lost without asking the user
 if [ "$BALLOON_KB" -gt 0 ]; then
     if ! grep -q 'balloon_check_with_human_before_reducing' "$OUT/RV.MAP"; then
@@ -194,7 +205,7 @@ if [ "$BALLOON_KB" -gt 0 ]; then
     echo "  emergency, so $RV_LEFT free now and $((RV_LEFT + BALLOON_KB * 1024)) with the balloon released (ask the user before"
     echo "  reducing it; BALLOON_KB=0 ./build.sh builds without it)"
 else
-    echo "  (the balloon is off: BALLOON_KB=0.  The default holds 20 KB of this for an emergency)"
+    echo "  (the balloon is off: BALLOON_KB=0.  The default holds 18 KB of this for an emergency)"
 fi
 if [ "$RV_LEFT" -lt 2048 ]; then
     echo "RV.EXE is too big for conventional memory: it would not load, or be at the very edge (see docs/engine.md, Memory)"
