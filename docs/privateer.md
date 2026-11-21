@@ -657,3 +657,13 @@ both as the game has them (the user: "if that's how the original has it then man
 Measured, one machine each way: the options screen's pointer white over the grid, the MOUSE button and INVULNERABILITY
 with "shown", black with "game"; in flight the ring at the mouse's place at (0.7, 0.3) and (0.3, 0.7) of the picture,
 none with "game".
+
+**Shields on the others' screens.**  A ship's damage model holds a quadrant's shield as an int32 at +0x31 + 6q, its
+armour's int16 just after it (seg101:0CF0 takes a hit off the shield: the damage times the model's +0xA; 25,600 full on
+a Talon and a Tarsus).  Only the armour went in the reports, and a pilot's ship sent neither, so a puppet's shields
+stood full in every other game whatever its owner's game said (and a pilot's armour too): the target display showed the
+guest a pirate untouched while the host's game had its rear shield down.  Now `PrivNpc.shield` and `PrivState.armor`,
+`.shield` carry them, written on the puppet every frame (a report without them, an older build's, leaves the puppet's
+own).  Measured, two machines, the host's pirate shot by the guest (scripts in the scratchpad: !privdmg, every live ship's
+shields and armour at the next frame): the host's 25600 2734 25600 516 / armour 80 63 100 23, the guest's view of it
+25600 2734 25600 962 / 80 63 100 23 (a report later); at the start 25600 x 4 / 80 80 100 90 on both.

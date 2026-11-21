@@ -119,6 +119,9 @@ void priv_ship_matrix(Bit16u obj, Bit32s m[9]);
 bool priv_ship_is_alive(Bit16u obj);
 void priv_ship_armor(Bit16u obj, Bit32s a[4]);
 void priv_ship_set_armor(Bit16u obj, const Bit32s a[4]);
+// Its four quadrants' shields (the damage model's int32 at +0x31 + 6q), and written (a puppet's, from its owner's report).
+void priv_ship_shields(Bit16u obj, Bit32s s[4]);
+void priv_ship_set_shields(Bit16u obj, const Bit32s s[4]);
 void priv_ship_kill(Bit16u obj);
 void priv_ship_fire(Bit16u obj, bool on);
 // A ship of the game's speaks a line of ours in the game's own comms (the user, 2026-11-08: the room's chat "would
@@ -137,6 +140,7 @@ Bit16u priv_last_spawned();
 void priv_hit_apply(Bit16u obj, int loc, int damage);
 unsigned priv_session_pilot_missions(int seat);
 bool priv_session_pilot_pos(int seat, Bit32s out[3]);
+bool priv_session_puppet_of(Bit16u obj, int *seat, Bit32u *id);   // (whose a puppet is: the seat, its id there, 0 the pilot's ship)
 bool priv_session_puppet_parked(Bit16u obj);           // (a puppet parked far off)      // (a rig aid's: a pilot's latest reported place)   // (a rig aid's: a pilot's mission nav points as we know them)
 
 // The session's side of the hooks: may this encounter wing (at that nav sphere) spawn here; a hit decided here on a

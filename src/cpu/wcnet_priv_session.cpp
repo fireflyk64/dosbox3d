@@ -134,6 +134,8 @@ struct NpcPuppet {
     Bit32s m[9];
     bool alive;
     Bit32s armor[4];
+    Bit32s shield[4];
+    bool shields;               // its report had them (an older build's did not)
     Bit16u obj, otype;          // the ship in our game (0: none)
     bool pending, parked, killed;
     double fireUntil;           // its guns' fire bit held until then
@@ -141,9 +143,9 @@ struct NpcPuppet {
     std::vector<std::string> cargo;
     int units;
     NpcPuppet() : used(false), seat(-1), id(0), at(-1e9), x(0), y(0), z(0), vx(0), vy(0), vz(0), alive(true), obj(0), otype(0),
-                  pending(false), parked(false), killed(false), fireUntil(-1e9), pod(false), units(0) {
+                  pending(false), parked(false), killed(false), fireUntil(-1e9), pod(false), units(0), shields(false) {
         for (int i = 0; i < 9; i++) m[i] = i % 4 == 0 ? 256 : 0;
-        for (int i = 0; i < 4; i++) armor[i] = 0;
+        for (int i = 0; i < 4; i++) armor[i] = shield[i] = 0;
     }
 };
 
@@ -166,8 +168,12 @@ struct Puppet {
     bool pending;               // a spawn queued
     bool parked;                // out of reach: put far off, kept
     double deadUntil;           // its death told: reports still in flight are not to make it again
-    Puppet() : reported(false), at(-1e9), x(0), y(0), z(0), vx(0), vy(0), vz(0), obj(0), type(0), pending(false), parked(false), deadUntil(-1e9) {
+    Bit32s armor[4], shield[4]; // its damage model's, as its reports say (a target display shows them)
+    bool damage;                // its reports had them (an older build's did not)
+    Puppet() : reported(false), at(-1e9), x(0), y(0), z(0), vx(0), vy(0), vz(0), obj(0), type(0), pending(false), parked(false), deadUntil(-1e9),
+               damage(false) {
         for (int i = 0; i < 9; i++) m[i] = i % 4 == 0 ? 256 : 0;
+        for (int i = 0; i < 4; i++) armor[i] = shield[i] = 0;
     }
 };
 
@@ -710,6 +716,11 @@ void take_state(const PrivState &st, int seat) {
     p.vz = st.vz();
     for (int i = 0; i < 9 && i < st.m_size(); i++) {
         p.m[i] = st.m(i);
+    }
+    p.damage = st.armor_size() == 4 && st.shield_size() == 4;
+    for (int i = 0; p.damage && i < 4; i++) {
+        p.armor[i] = st.armor(i);
+        p.shield[i] = st.shield(i);
     }
     if (now_ms() < p.deadUntil) {
         p.reported = false;         // (reports sent before its death, still arriving)
@@ -1264,6 +1275,13 @@ void send_state(double now) {
     st->set_vx((Bit32s)g_net->vx);
     st->set_vy((Bit32s)g_net->vy);
     st->set_vz((Bit32s)g_net->vz);
+    Bit32s a[4], sh[4];
+    priv_ship_armor(priv_player_ship(), a);
+    priv_ship_shields(priv_player_ship(), sh);
+    for (int k = 0; k < 4; k++) {
+        st->add_armor(a[k]);
+        st->add_shield(sh[k]);
+    }
     for (size_t i = 0; i < g_net->peers.size(); i++) {
         if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
             g_net->peers[i]->conn.send_best_effort(msg);
@@ -1395,6 +1413,8 @@ void send_scene(double now) {
         if (d > kStateMetres) continue;
         priv_ship_matrix(o, m);
         priv_ship_armor(o, a);
+        Bit32s sh[4];
+        priv_ship_shields(o, sh);
         NpcTrack *t = track_of(o, true);
         if (t) {
             if (now > t->at && now - t->at < 1000) {
@@ -1415,6 +1435,7 @@ void send_scene(double now) {
         if (t) { c->set_vx((Bit32s)t->vx); c->set_vy((Bit32s)t->vy); c->set_vz((Bit32s)t->vz); }
         c->set_alive(priv_ship_is_alive(o));
         for (int k = 0; k < 4; k++) c->add_armor(a[k]);
+        for (int k = 0; k < 4; k++) c->add_shield(sh[k]);
         bool had = false;
         for (size_t j = 0; j < g_net->sentShips.size() && !had; j++) {
             PrivNet::SentShip &e = g_net->sentShips[j];
@@ -1556,6 +1577,8 @@ void take_scene(const PrivScene &sc, int seat) {
         for (int k = 0; k < 9 && k < c.m_size(); k++) p->m[k] = c.m(k);
         p->alive = c.alive();
         for (int k = 0; k < 4 && k < c.armor_size(); k++) p->armor[k] = c.armor(k);
+        p->shields = c.shield_size() == 4;
+        for (int k = 0; p->shields && k < 4; k++) p->shield[k] = c.shield(k);
         p->pod = c.pod();
         if (p->pod) {
             p->cargo.clear();
@@ -1771,6 +1794,7 @@ void frame_npcs(double now, const Bit32s pos[3]) {
         } else if (near && p.obj) {
             priv_ship_set(p.obj, at, p.m);
             priv_ship_set_armor(p.obj, p.armor);
+            if (p.shields) priv_ship_set_shields(p.obj, p.shield);   // (else the puppet's own, full and never hit here)
             p.parked = false;
         } else if (p.obj && !p.parked) {
             Bit32s away[3];
@@ -2117,6 +2141,11 @@ void priv_session_frame() {
                                         g_net->pilots[s].cast.c_str(), at, p.m, puppet_made, s);
         } else if (near && p.obj) {
             priv_ship_set(p.obj, at, p.m);
+            if (p.damage) {
+                // (its shields and armour as its own game has them: what our target display shows of it)
+                priv_ship_set_armor(p.obj, p.armor);
+                priv_ship_set_shields(p.obj, p.shield);
+            }
             if (priv_thinking(priv_ship_controller(p.obj))) priv_ship_fire(p.obj, false);
             p.parked = false;
         } else if (p.obj && !p.parked) {
@@ -2142,6 +2171,18 @@ bool priv_session_puppet_parked(Bit16u obj) {
     }
     for (int k = 0; k < kNpcCap; k++) {
         if (g_net->npcs[k].used && g_net->npcs[k].obj == obj) return g_net->npcs[k].parked;
+    }
+    return false;
+}
+
+// Whose a puppet is: the seat, and the ship's id in its owner's game (0: the pilot's own ship); false: not a puppet
+bool priv_session_puppet_of(Bit16u obj, int *seat, Bit32u *id) {
+    if (!g_net || !obj) return false;
+    for (int s = 0; s < kMaxSeats; s++) {
+        if (g_net->puppets[s].obj == obj) { *seat = s; *id = 0; return true; }
+    }
+    for (int k = 0; k < kNpcCap; k++) {
+        if (g_net->npcs[k].used && g_net->npcs[k].obj == obj) { *seat = g_net->npcs[k].seat; *id = g_net->npcs[k].id; return true; }
     }
     return false;
 }

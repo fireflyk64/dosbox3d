@@ -56,6 +56,7 @@ enum {
     kShipAppearance = 0x10,         // its appearance object (far; the name at +0x18)
     kShipModel = 0x56,              // its damage model (far; base+0x58, seg053:175F): armour quadrants int16 at +0x35+6q
     kModelArmor = 0x35,
+    kModelShield = 0x31,            // ... each quadrant's shield an int32 just before its armour (seg101:0CF0)
     kSphereList = 0x66C2,           // the system's spheres: a count, then (+2) an array of far pointers to 19-byte records
     kSceneList = 0x66CE,            // the scene's objects: +2 the first node; a node is {next, object}
     kSeg077 = 0x31D3,               // seg077: the encounter wings
@@ -624,6 +625,29 @@ static void target_scan_frame() {
     }
     wclog(1, "Privateer: target scan of ds:%04X (controller %04X, plan %04X:%04X) for %04X/%04X/%04X/%04X/%04X/%04X/%04X/%04X:%s", ship, ctl, pseg,
           poff, wants[0], wants[1], wants[2], wants[3], wants[4], wants[5], wants[6], wants[7], at.empty() ? " nothing" : at.c_str());
+}
+
+// A test aid (!privdmg, at the next frame): every live ship of the scene with its shields and armour (a puppet: whose,
+// and its id there), to set two machines' views of a ship side by side
+bool g_dmgDump;
+static void dmg_dump_frame() {
+    if (!g_dmgDump) return;
+    g_dmgDump = false;
+    Bit16u ships[48];
+    const int n = priv_scene_ships(ships, 48);
+    for (int i = 0; i < n; i++) {
+        if (!priv_ship_is_alive(ships[i]) || priv_session_puppet_parked(ships[i])) continue;
+        Bit32s a[4], sh[4];
+        priv_ship_armor(ships[i], a);
+        priv_ship_shields(ships[i], sh);
+        int seat = -1;
+        Bit32u id = 0;
+        char who[32] = "ours";
+        if (priv_session_puppet_of(ships[i], &seat, &id)) snprintf(who, sizeof who, "pilot %d's %04X", seat + 1, (unsigned)id);
+        else if (ships[i] == priv_player_ship()) snprintf(who, sizeof who, "OUR SHIP");
+        wclog(1, "Privateer: damage of ds:%04X %s (%s): shields %d %d %d %d, armour %d %d %d %d", ships[i], priv_ship_cast_name(ships[i]).c_str(), who,
+              (int)sh[0], (int)sh[1], (int)sh[2], (int)sh[3], (int)a[0], (int)a[1], (int)a[2], (int)a[3]);
+    }
 }
 
 static void stack_paint_load() {
@@ -1253,6 +1277,7 @@ bool priv_check_hooks(Bit32u ip) {
             anger_frame();
             retarget_frame();
             target_scan_frame();
+            dmg_dump_frame();
             stack_paint_frame();
             turn_step();
             follow_step();
@@ -1678,6 +1703,10 @@ bool priv_script_item(const std::string &item, double t) {
         }
         wclog(1, "key script %.1fs: video memory to %s (mode %d, start %u, address_add %u, width %u, height %u)", t, path.c_str(), (int)vga.mode,
               (unsigned)vga.config.real_start, (unsigned)vga.draw.address_add, (unsigned)vga.draw.width, (unsigned)vga.draw.height);
+        return true;
+    }
+    if (item.compare(0, 8, "!privdmg") == 0 && g_found) {
+        g_dmgDump = true;       // (at the next frame: the damage models are far data)
         return true;
     }
     if (item.compare(0, 15, "!privtargetscan") == 0 && g_found) {
@@ -2433,6 +2462,26 @@ void priv_ship_set_armor(Bit16u obj, const Bit32s a[4]) {
     const PhysPt model = ship_model(obj);
     for (int q = 0; model && q < 4; q++) {
         mem_writew(model + kModelArmor + 6 * q, (Bit16u)a[q]);
+    }
+}
+
+// The shields: an int32 a quadrant at the model's +0x31 + 6q, the armour's int16 just after it (seg101:0CF0 takes a hit
+// off them: the damage times the model's +0xA)
+void priv_ship_shields(Bit16u obj, Bit32s s[4]) {
+    const PhysPt model = ship_model(obj);
+    for (int q = 0; q < 4; q++) {
+        Bit32u v = 0;
+        if (!model || mem_readd_checked(model + kModelShield + 6 * q, &v)) {
+            v = 0;
+        }
+        s[q] = (Bit32s)v;
+    }
+}
+
+void priv_ship_set_shields(Bit16u obj, const Bit32s s[4]) {
+    const PhysPt model = ship_model(obj);
+    for (int q = 0; model && q < 4; q++) {
+        mem_writed(model + kModelShield + 6 * q, (Bit32u)s[q]);
     }
 }
 
