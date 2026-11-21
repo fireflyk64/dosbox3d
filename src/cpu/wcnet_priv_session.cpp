@@ -213,7 +213,7 @@ struct PrivNet {
     std::vector<Bit32u> podsTaken;                      // pods of ours another pilot's tractor beam took (put away, not reported)
     std::vector<std::pair<Bit16u, Bit16u> > dying;      // (ship, type) puppets given back, until the game has freed them
     std::vector<std::pair<Bit16u, Bit16u> > quiet;      // (ship, type) of those, the ones given back quietly (release_obj):
-                                                        // their deaths without the explosion's sound or a kill's credit
+                                                        // their deaths without the explosion's sound
     double navSince;                                    // when we came to our nav point
     int wingWaitNav;                                    // (a guest waiting for the host's word on a nav point's wing: which, since)
     double wingWaitSince;
@@ -2425,7 +2425,7 @@ void release_obj(Bit16u obj) {
     bool listed = false;
     for (size_t i = 0; i < g_net->quiet.size() && !listed; i++) listed = g_net->quiet[i].first == obj;
     if (!listed && g_net->quiet.size() < 32) {
-        g_net->quiet.push_back(std::make_pair(obj, priv_ship_type(obj)));     // (its death a quiet one: no sound, no credit)
+        g_net->quiet.push_back(std::make_pair(obj, priv_ship_type(obj)));     // (its death a quiet one: no sound)
     }
     Bit32s away[3];
     park_pos(obj, away);

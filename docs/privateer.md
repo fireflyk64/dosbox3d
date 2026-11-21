@@ -779,3 +779,22 @@ the guest 350 m behind the host firing (the test aid `!privturn=stalkship`): bef
 1's ship does nothing (... not targeting each other)", the host whole; both pressed T at 40 s, each "on pilot N's ship",
 the guest's missiles hit and were taken (the host's rear armour 250 to 202); with the host's "never", the guest's shots
 did nothing even with both targeting.
+
+**Found by the 8-pilot load test: the far heap broken by retargets (error 1407).**  With the batch above, the owner's
+game reported error 1407 (seg143:0602: Origin's far heap check, seg143:054E, finding a block whose back link is not
+the block before) and its flight ended, twice, seconds after its pirates were turned on pilots.  The retarget (the
+drone's since 2026-11-08, `turn_on_pilot` now) scanned 1 KB from the controller's +2 and wrote every word equal to the
+old target's ship or its model's segment -- but the controller's +2 is the control record, a 4-paragraph block (60
+bytes of data: the stick, the fire bits, the pilot at +0x23; measured, its header FFFC), often the last block of its
+heap region: the writes (measured at +740..+894) landed in the blocks after it and past the region's end marker,
+headers' links among them.  Now the blocks after the record are walked as the heap's own walker does (the size at
+seg:0000, negative in use; the next block's back link at +2 must be this one; free blocks stepped over; 1 KB at most),
+and the target is a ship whose pointer and whose model's far pointer stand in one such block's data, written there
+alone.  The controller and the pilot hold no pointer to the target, and the AI's data is not always after the record
+(measured: the record the region's last block), so a ship often has no target found and is not turned: the enemy's
+turn on a provoking pilot works only sometimes (the AI's own target field is still to be found in its think,
+seg042:0944).  Also put back: the dead-ship handler's 0B6F block for a given-back puppet (a pilot angry at the player
+taken out of the game's lists, seg026:0079 and seg013:0748; it was skipped as a kill's credit).  Measured after: the
+8-pilot load test (8 Tarsus at Achilles' nav point, 3 pirates added, everyone firing) -- no error, death or restart on
+any machine; the owner's lowest free 5,532 (as before), the guests' 7,738-8,660 (some 2-3 KB under before: the copied
+gunfire), no guest gave anything back.  Test aid `!privplan` (the last spawned ship's AI blocks and the ships in them).

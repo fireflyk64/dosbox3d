@@ -337,12 +337,14 @@ enum { kSeg142 = 0x4E42, kNearMalloc = 0x012B };
 // them (else every game drops its own and shares them too: the cargo of one death in every game times every game)
 enum { kDeathEject = 0x0C0B, kDeathEjectAfter = 0x0C10 };
 // A dead ship's handler, seg053:0A0B(this, scene, ship): called only for a ship whose alive byte is 0 -- its death begun
-// (an explosion, the kill's credit at 0B6F, the pilot's comm line stopped, the cargo) and, when its time is out, its
-// explosion's sound (0A5D: sound 0x1B with no place, so as loud 50 km off as beside us: measured) and its removal from
-// the scene.  A ship of ours seen here died (not merely left behind: section 18); a puppet we give back (the memory
-// governor's, one with no word for 20 s, one gone from its owner's game, a parked one) dies here without its sound or
-// a kill credited to us.
-enum { kDeadShip = 0x0A0B, kDeathSound = 0x0A5D, kDeathSoundAfter = 0x0A73, kKillCredit = 0x0B6F, kKillCreditAfter = 0x0B9C };
+// (an explosion, at 0B6F a pilot angry at the player taken out of the game's lists, seg026:0079 and seg013:0748, the
+// pilot's comm line stopped, the cargo) and, when its time is out, its explosion's sound (0A5D: sound 0x1B with no
+// place, so as loud 50 km off as beside us: measured) and its removal from the scene.  A ship of ours seen here died
+// (not merely left behind: section 18); a puppet we give back (the memory governor's, one with no word for 20 s, one
+// gone from its owner's game, a parked one) dies here without its sound.  (Its 0B6F block left out too, at first --
+// taken for a kill's credit -- a given-back puppet our shots had angered stayed in those lists after the game freed it:
+// the 8-pilot load test's owner reported error 1407 seconds after two give-backs, its flight ended.)
+enum { kDeadShip = 0x0A0B, kDeathSound = 0x0A5D, kDeathSoundAfter = 0x0A73 };
 // The stack's high-water mark (a measurement): DGROUP's top 0xFFF6 - _stklen (ds:620A) up is the stack, below it the
 // heap (seg142:0004).  At a frame's entry the unused stack below SP (less 256 bytes) is painted with a pattern; the
 // lowest byte no longer the pattern is the deepest the stack has been since, interrupts and all.
@@ -354,29 +356,168 @@ struct StackPaint {
     StackPaint() : painted(false), from(0), to(0), deepest(1 << 30) {}
 } g_paint;
 
-// A ship's AI target (found by the scan below): its plan (far, the controller's +2) is a chain of maneuver records, and
-// the target appears in several of them -- its ship (near) and its damage model's segment (the ship's +0x58; far, at
-// offset 4) -- at offsets that vary with the plan (a pirate on a militia ship: +114 +13A +170 +2CA, the model at +146
-// +1AE; another: +2F0, +32E).  So a new target is given by replacing the old one wherever it stands in the plan's first
-// 1 KB, ship and model alike.  Written at the frame.
-enum { kPlanScan = 0x400 };
+static int pilot_anger_of(Bit16u ship) {
+    const Bit16u ctl = priv_r16((Bit16u)(ship + kShipController));
+    const Bit16u poff = ctl ? priv_r16((Bit16u)(ctl + 2)) : 0, pseg = ctl ? priv_r16((Bit16u)(ctl + 4)) : 0;
+    Bit16u pilot = 0;
+    if (!pseg || mem_readw_checked(((PhysPt)pseg << 4) + (Bit16u)(poff + 0x23), &pilot) || !pilot) return -1;
+    return priv_r8((Bit16u)(pilot + 0x1A)) | ((priv_r8((Bit16u)(pilot + 0x19)) & 2) << 7);
+}
+
+// A ship's AI target.  The controller's +2 (far) is its control record, a block of Origin's far heap of 4 paragraphs
+// (60 bytes of data: the stick, the fire bits, the pilot at +0x23); the heap's blocks are paragraphs with a header --
+// the size at seg:0000 (signed, negative while in use; seg143:056E walks them), the block before's segment at seg:0002,
+// the data from seg:0004 -- and the AI's own data made with the record lies in the blocks right after it, where its
+// target stands as its ship (near, at several places) and its damage model (far: the ship's +0x56, offset then
+// segment): measured, 4-6 places within 1 KB after the record.  The controller and the pilot hold no pointer to it.  So
+// the target is a ship whose pointer and model pointer are both in one of the blocks after the record (each block
+// checked: in use, its back link the block before's), and a new target is written in that block's data alone.  (The
+// first way scanned 1 KB from the record's data as if one block, headers and all, and wrote every word equal to the old
+// target or its model's segment: the next blocks' headers' links among them -- measured, writes at +740..+894 of a
+// 60-byte record; the game's heap check, seg143:054E, then reported error 1407 and the flight ended: the 8-pilot load
+// test's owner, seconds after its AIs were turned on pilots.)
+enum { kPlanBlocksCap = 12, kBlockBytesCap = 0x800, kPlanSpan = 0x400 };
 std::vector<std::pair<Bit16u, Bit16u> > g_retargets;    // (ship, target) to write at the next frame
 
-// The ship its AI is after: the first near pointer in its plan to a live ship of the scene (0 none)
-static Bit16u plan_target(Bit16u ship) {
-    const Bit16u ctl = priv_r16((Bit16u)(ship + 0x4C));
+struct FarBlock { Bit16u seg; int bytes; };               // data from seg:0004, that many bytes
+static bool far_block(Bit16u seg, FarBlock *out) {
+    Bit16u w = 0;
+    if (!seg || seg < 0x0100 || mem_readw_checked((PhysPt)seg << 4, &w)) return false;
+    const int paras = -(Bit16s)w;                         // (in use: negative)
+    if (paras < 2 || paras * 16 > kBlockBytesCap) return false;
+    out->seg = seg;
+    out->bytes = paras * 16 - 4;
+    return true;
+}
+
+// The blocks of a ship's AI: its control record's and the ones right after it in the far heap, kPlanSpan bytes at most
+static int plan_blocks(Bit16u ship, FarBlock out[], int cap) {
+    const Bit16u ctl = priv_r16((Bit16u)(ship + kShipController));
     const Bit16u poff = ctl ? priv_r16((Bit16u)(ctl + 2)) : 0, pseg = ctl ? priv_r16((Bit16u)(ctl + 4)) : 0;
-    if (!pseg) return 0;
-    const PhysPt plan = ((PhysPt)pseg << 4) + poff;
-    for (int i = 0; i < kPlanScan; i += 2) {
-        Bit16u w = 0;
-        if (mem_readw_checked(plan + i, &w)) break;
-        if (w && w != ship && w > 0x6C00 && w < 0xF000 && priv_r16(w) == kShipVtable && priv_ship_is_alive(w) && priv_scene_has(w)) {
-            // (the model's segment beside it in the same record confirms it: the word 0x32-0x40 on)
-            return w;
+    if (poff != 4 || !far_block(pseg, &out[0])) return 0;
+    int n = 1, span = out[0].bytes + 4;
+    Bit16u prev = pseg;
+    int prevParas = span / 16;
+    while (n < cap && span < kPlanSpan) {
+        const Bit16u next = (Bit16u)(prev + prevParas);
+        Bit16u size = 0, link = 0;
+        if (mem_readw_checked((PhysPt)next << 4, &size) || mem_readw_checked(((PhysPt)next << 4) + 2, &link) || link != prev) break;
+        int paras = (Bit16s)size;
+        if (paras < 0) paras = -paras;
+        if (paras < 1 || paras * 16 > kBlockBytesCap) break;
+        if (far_block(next, &out[n])) n++;          // (in use: its data counts; a free block is stepped over)
+        span += paras * 16;
+        prev = next;
+        prevParas = paras;
+    }
+    return n;
+}
+
+// Where in a block a ship stands as a target: its near pointer's places and its model's far pointer's (false: the model
+// pointer is not in the block, so it is no target there)
+static bool target_places(const FarBlock &blk, Bit16u ship, std::vector<int> &nearAt, std::vector<int> &modelAt) {
+    nearAt.clear();
+    modelAt.clear();
+    const Bit16u mo = priv_r16((Bit16u)(ship + kShipModel)), ms = priv_r16((Bit16u)(ship + kShipModel + 2));
+    if (!ms) return false;
+    const PhysPt base = ((PhysPt)blk.seg << 4) + 4;
+    for (int k = 0; k + 1 < blk.bytes; k++) {
+        Bit16u w = 0, w2 = 0;
+        if (mem_readw_checked(base + k, &w)) return false;
+        if (w == ship) nearAt.push_back(k);
+        if (w == mo && k + 3 < blk.bytes && !mem_readw_checked(base + k + 2, &w2) && w2 == ms) modelAt.push_back(k);
+    }
+    return !modelAt.empty() && !nearAt.empty();
+}
+
+// The ship its AI is after (0: none known)
+static Bit16u plan_target(Bit16u ship) {
+    FarBlock blocks[kPlanBlocksCap];
+    const int nb = plan_blocks(ship, blocks, kPlanBlocksCap);
+    Bit16u ships[48];
+    const int ns = priv_scene_ships(ships, 48);
+    std::vector<int> nearAt, modelAt;
+    for (int b = 1; b < nb; b++) {          // (the maneuver records; the plan's own block holds none)
+        for (int i = 0; i < ns; i++) {
+            if (ships[i] == ship || !priv_ship_is_alive(ships[i])) continue;
+            if (target_places(blocks[b], ships[i], nearAt, modelAt)) return ships[i];
         }
     }
     return 0;
+}
+
+// A test aid (!privplan, at the next frame): the last spawned ship's plan's blocks and where each live scene ship's
+// pointer (n) and model pointer (m) stand in them; also every far pointer in the plan's own block
+bool g_planDump;
+extern Bit16u g_lastSpawned;
+static void plan_dump_frame() {
+    if (!g_planDump) return;
+    g_planDump = false;
+    const Bit16u ship = g_lastSpawned;
+    FarBlock blocks[kPlanBlocksCap];
+    const int nb = plan_blocks(ship, blocks, kPlanBlocksCap);
+    const Bit16u ctl = priv_r16((Bit16u)(ship + kShipController));
+    wclog(1, "Privateer: plan of ds:%04X: controller %04X, plan %04X:%04X, %d blocks", ship, ctl, priv_r16((Bit16u)(ctl + 4)), priv_r16((Bit16u)(ctl + 2)), nb);
+    Bit16u ships[48];
+    const int ns = priv_scene_ships(ships, 48);
+    {
+        // the controller (near) and the pilot (near, the record's +0x23): ship pointers in them, and far blocks they point at
+        std::string at;
+        Bit16u pilot = 0;
+        const Bit16u roff = priv_r16((Bit16u)(ctl + 2)), rseg = priv_r16((Bit16u)(ctl + 4));
+        if (rseg) mem_readw_checked(((PhysPt)rseg << 4) + (Bit16u)(roff + 0x23), &pilot);
+        const Bit16u objs[2] = { ctl, pilot };
+        for (int o = 0; o < 2; o++) {
+            for (int k = 0; objs[o] && k < 0x80; k++) {
+                const Bit16u w = priv_r16((Bit16u)(objs[o] + k)), w2 = priv_r16((Bit16u)(objs[o] + k + 2));
+                char c[48];
+                for (int i = 0; i < ns; i++) {
+                    if (w == ships[i]) { snprintf(c, sizeof c, " %s+%02X=n%04X", o ? "pilot" : "ctl", k, ships[i]); at += c; }
+                }
+                FarBlock fb;
+                if (w == 4 && far_block(w2, &fb)) {
+                    std::string in;
+                    const PhysPt base = ((PhysPt)fb.seg << 4) + 4;
+                    for (int j = 0; j + 1 < fb.bytes; j++) {
+                        const Bit16u x = mem_readw(base + j), x2 = j + 3 < fb.bytes ? mem_readw(base + j + 2) : 0;
+                        for (int i = 0; i < ns; i++) {
+                            char d[32];
+                            if (x == ships[i]) { snprintf(d, sizeof d, " n%04X@%d", ships[i], j); in += d; }
+                            if (x == priv_r16((Bit16u)(ships[i] + kShipModel)) && x2 && x2 == priv_r16((Bit16u)(ships[i] + kShipModel + 2))) {
+                                snprintf(d, sizeof d, " m%04X@%d", ships[i], j); in += d;
+                            }
+                        }
+                    }
+                    snprintf(c, sizeof c, " %s+%02X->%04X(%d):", o ? "pilot" : "ctl", k, fb.seg, fb.bytes);
+                    at += c + (in.empty() ? std::string(" -") : in);
+                }
+            }
+        }
+        wclog(1, "Privateer:   controller/pilot (pilot ds:%04X):%s", pilot, at.empty() ? " none" : at.c_str());
+    }
+    for (int b = 0; b < nb; b++) {
+        std::string at;
+        const PhysPt base = ((PhysPt)blocks[b].seg << 4) + 4;
+        for (int k = 0; k + 1 < blocks[b].bytes; k++) {
+            const Bit16u w = mem_readw(base + k), w2 = k + 3 < blocks[b].bytes ? mem_readw(base + k + 2) : 0;
+            for (int i = 0; i < ns; i++) {
+                char c[40];
+                if (w == ships[i]) { snprintf(c, sizeof c, " n%04X@%d", ships[i], k); at += c; }
+                if (w == priv_r16((Bit16u)(ships[i] + kShipModel)) && w2 == priv_r16((Bit16u)(ships[i] + kShipModel + 2)) && w2) {
+                    snprintf(c, sizeof c, " m%04X@%d", ships[i], k); at += c;
+                }
+            }
+        }
+        std::string hex;
+        for (int k = 0; b == 0 && k < blocks[b].bytes && k < 64; k++) {
+            char c[4];
+            snprintf(c, sizeof c, "%02X", mem_readb(base + k));
+            hex += c;
+            if (k % 2) hex += ' ';
+        }
+        wclog(1, "Privateer:   block %d %04X (%d bytes):%s%s%s", b, blocks[b].seg, blocks[b].bytes, at.empty() ? " none" : at.c_str(), hex.empty() ? "" : " | ",
+              hex.c_str());
+    }
 }
 
 static void retarget_frame() {
@@ -385,33 +526,22 @@ static void retarget_frame() {
         if (!priv_ship_is_alive(ship) || !priv_ship_is_alive(target)) continue;
         const Bit16u old = plan_target(ship);
         if (!old || old == target) continue;
-        const Bit16u ctl = priv_r16((Bit16u)(ship + 0x4C));
-        const Bit16u poff = priv_r16((Bit16u)(ctl + 2)), pseg = priv_r16((Bit16u)(ctl + 4));
-        const PhysPt plan = ((PhysPt)pseg << 4) + poff;
-        const Bit16u oldSeg = priv_r16((Bit16u)(old + 0x58)), newSeg = priv_r16((Bit16u)(target + 0x58));
-        int n = 0;
-        for (int k = 0; k < kPlanScan; k += 2) {
-            Bit16u w = 0;
-            if (mem_readw_checked(plan + k, &w)) break;
-            if (w == old) { mem_writew(plan + k, target); n++; }
-            else if (w == oldSeg && oldSeg) { mem_writew(plan + k, newSeg); n++; }
+        FarBlock blocks[kPlanBlocksCap];
+        const int nb = plan_blocks(ship, blocks, kPlanBlocksCap);
+        const Bit16u newOff = priv_r16((Bit16u)(target + kShipModel)), newSeg = priv_r16((Bit16u)(target + kShipModel + 2));
+        int n = 0, blocksTouched = 0;
+        std::vector<int> nearAt, modelAt;
+        for (int b = 1; b < nb && newSeg; b++) {
+            if (!target_places(blocks[b], old, nearAt, modelAt)) continue;
+            const PhysPt base = ((PhysPt)blocks[b].seg << 4) + 4;
+            for (size_t j = 0; j < nearAt.size(); j++) { mem_writew(base + nearAt[j], target); n++; }
+            for (size_t j = 0; j < modelAt.size(); j++) { mem_writew(base + modelAt[j], newOff); mem_writew(base + modelAt[j] + 2, newSeg); n++; }
+            blocksTouched++;
         }
-        wclog(2, "Privateer: ds:%04X's AI turned from ds:%04X to ds:%04X (%d words)", ship, old, target, n);
+        wclog(2, "Privateer: ds:%04X's AI turned from ds:%04X to ds:%04X (%d places in %d of its plan's %d blocks)", ship, old, target, n, blocksTouched,
+              nb - 1);
     }
     g_retargets.clear();
-}
-
-
-// How angry a ship's pilot is at the player: its anger count (the pilot's +0x1A) and, as 0x100, its mood's bit 1 (+0x19):
-// both raised by a hit of the player's (the hit routine, seg053:1157) and by a hostile line of the player's comm (a
-// taunt: measured, "Live or die.  Your choice." to a pirate, +0x19 FC -> FE, +0x1A 0 -> 1).  -1: no pilot to read.
-// At the frame: the plan is far data.
-static int pilot_anger_of(Bit16u ship) {
-    const Bit16u ctl = priv_r16((Bit16u)(ship + kShipController));
-    const Bit16u poff = ctl ? priv_r16((Bit16u)(ctl + 2)) : 0, pseg = ctl ? priv_r16((Bit16u)(ctl + 4)) : 0;
-    Bit16u pilot = 0;
-    if (!pseg || mem_readw_checked(((PhysPt)pseg << 4) + (Bit16u)(poff + 0x23), &pilot) || !pilot) return -1;
-    return priv_r8((Bit16u)(pilot + 0x1A)) | ((priv_r8((Bit16u)(pilot + 0x19)) & 2) << 7);
 }
 
 void retarget_queue(Bit16u ship, Bit16u target) {
@@ -1339,6 +1469,7 @@ bool priv_check_hooks(Bit32u ip) {
             anger_frame();
             retarget_frame();
             target_scan_frame();
+            plan_dump_frame();
             dmg_dump_frame();
             stack_paint_frame();
             turn_step();
@@ -1364,9 +1495,9 @@ bool priv_check_hooks(Bit32u ip) {
         priv_session_ship_died(mem_readw(SegPhys(ss) + reg_sp + 8));    // (the far return, this, the scene, the ship)
         return true;
     }
-    if ((ip == kDeathSound || ip == kKillCredit) && codeSeg == (Bit16u)(g_privLoadSeg + kSeg053)) {
+    if (ip == kDeathSound && codeSeg == (Bit16u)(g_privLoadSeg + kSeg053)) {
         if (priv_session_silent_death((Bit16u)(reg_di + 2))) {         // (DI is the ship's allocation, 2 below our pointer)
-            reg_eip = ip == kDeathSound ? kDeathSoundAfter : kKillCreditAfter;
+            reg_eip = kDeathSoundAfter;
         }
         return true;
     }
@@ -1489,7 +1620,6 @@ void priv_watch_list(void (*watch)(Bit16u ip)) {
     watch(kDeathEject);
     watch(kDeadShip);
     watch(kDeathSound);
-    watch(kKillCredit);
     watch(kHitPlace);
     watch(kFireGuns);
     const std::vector<WatchPlace> &w = watch_places();
@@ -1823,6 +1953,10 @@ bool priv_script_item(const std::string &item, double t) {
         const bool queued = item[10] == '1' && priv_ship_fire_guns(ship, 0x18);
         if (item[10] != '1') priv_ship_fire(ship, false);
         wclog(1, "key script %.1fs: ds:%04X %s", t, ship, item[10] == '1' ? (queued ? "fires" : "cannot fire") : "fire bit let go");
+        return true;
+    }
+    if (item.compare(0, 9, "!privplan") == 0 && g_found) {
+        g_planDump = true;
         return true;
     }
     if (item.compare(0, 8, "!privdmg") == 0 && g_found) {

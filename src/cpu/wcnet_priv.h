@@ -158,7 +158,7 @@ bool priv_session_allow_wing(int sphereId);
 bool priv_session_is_puppet(Bit16u a, Bit16u b);
 // The game's dead-ship handler ran for this ship (its death, wcnet_priv.cpp): one of ours is reported dead, not gone.
 void priv_session_ship_died(Bit16u ship);
-// A puppet dying as we give it back (or parked far off): its explosion's sound and the kill's credit left out.
+// A puppet dying as we give it back (or parked far off): its explosion's sound left out.
 bool priv_session_silent_death(Bit16u ship);
 // A hit in our game, before the damage reaches the model: target, the ship behind it (the shooter, or the other ship of a
 // bump), the quadrant and the damage; returns the damage our game keeps (a hit on another machine's ship is sent to it).
