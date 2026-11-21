@@ -406,6 +406,9 @@ bool start() {
         client = net_config.host && net_config.host[0];
         where = client ? std::string(net_config.host) + ":" + net_config.portstr : std::string("port ") + net_config.portstr;
     }
+    // (the room's seats, from the page's Players box or WCPLAYERS: 2 to kMaxSeats, the tables' size; the page lets TIE
+    // Fighter's rooms have 4, 3 and 4 in beta)
+    n->seats = std::max(2, std::min((int)kMaxSeats, n->seats));
     if (client) {
         Stream *s = NULL;
 #ifdef C_LOBBYLINK
@@ -781,12 +784,17 @@ void handle(Peer *p, NetworkMessage &msg) {
                      g_net->seats);
             notice(line);
         } else {
+            if (h.has_player() && (h.player() < 1 || h.player() >= (Bit32u)kMaxSeats)) {
+                wclog(1, "TIE: the host gave us seat %u, past the %d we keep: left", (unsigned)h.player(), (int)kMaxSeats);
+                p->conn.close();
+                return;
+            }
             p->callsign = h.callsign();
             p->hello = true;
             g_net->self = h.has_player() ? (int)h.player() : 1;
             g_net->pilots[0].callsign = h.callsign();
             if (h.has_seats() && h.seats() >= 2) {
-                g_net->seats = (int)h.seats();
+                g_net->seats = std::min((int)kMaxSeats, (int)h.seats());
             }
             char line[160];
             snprintf(line, sizeof(line), "In %s's room as pilot %d of %d: fly the mission the host flies", p->callsign.c_str(), g_net->self + 1,
@@ -2346,10 +2354,14 @@ void report_frame(double now) {
                      (int)tie_r32(ob + 0xE), tie_r16(ob + 0x1E), tie_r16(ob + 0x20), tie_r16(ob + 0x22), (Bit16s)tie_r16(ob + 0x26), tie_r8(ob + 4));
             line += one;
         }
+        std::string owners;
+        for (int k = 0; k < g_net->seats && k < kMaxSeats; k++) {
+            owners += (k ? "/" : "") + std::to_string(owned[k]);
+        }
         char sums[480];
-        snprintf(sums, sizeof(sums), " owners %d/%d/%d; sent %u craft (%u near, %u mid, %u far) in %u bytes, %u owner changes; guns: %u shots"
+        snprintf(sums, sizeof(sums), " owners %s; sent %u craft (%u near, %u mid, %u far) in %u bytes, %u owner changes; guns: %u shots"
                  " sent, %u made, %u hits sent, %u applied, %u damage skipped, %u kills, %u credited; dockings %u/%u sent, %u made, %u not here;",
-                 owned[0], owned[1], owned[2],
+                 owners.c_str(),
                  g_net->sentCraft, g_net->sentNear, g_net->sentMid, g_net->sentFar, g_net->sentBytes, g_net->ownerChanges, g_net->shotsSent,
                  g_net->shotsMade, g_net->hitsSent, g_net->hitsApplied, g_net->damageSkipped, g_net->kills, g_net->credited,
                  g_net->docksSent, g_net->transfersSent, g_net->boardsMade, g_net->boardsLeft);
