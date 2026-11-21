@@ -886,3 +886,13 @@ save (a Centurion each), launch, are kept together and hold their guns, the copi
   622).  The same with the collector at 180 / 2,500: no error, but the heap down to 58 bytes; at 170 / 4,000, as
   shipped: no error, the list 175 at most, the heap's low 1,846, 1,623 bolts retired on the host (all copies).  None
   of the test settings is on unless its variable is set.
+- **the soak** (the user: "The lowest free memory is kinda low.  Could our gc idea be leaving trash.  Should we run it
+  20x as long and see"): `scripts/privtests/boltsoak.sh`, the rapid-fire stress for 22 minutes, the guns held in 20
+  bursts of 40 s with 20 s of rest, the list and the heap read at each rest.  With the marks above and 8 bolts over the
+  shortfall a run: no trash (the host back to 14 kept pointers and 17,276 free at every rest), but one guest's game
+  ended at 10 minutes with error 1303 -- 800 bytes free, the largest block 134.  So the collector now reads the heap's
+  largest free block too (under 1,500 counts as low) and, when low, retires enough bolts to come back to 6,500 free.
+  Measured after, the same 22 minutes: no error on any of the 4 machines; the host at 14 kept pointers and 17,352
+  free at each of its 20 rests; 24,600-29,100 bolts retired a machine (all copies); the worst second's free 1,182-
+  1,910; the list 178 at most.  The 8-pilot load test as shipped: no error, the collector never ran (the owner's
+  largest block never under 7,070).

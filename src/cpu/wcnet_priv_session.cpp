@@ -1442,7 +1442,10 @@ bool is_puppet_obj(Bit16u obj) {
 // (170 and 4,000, not the 190 first asked: these are read once a frame, and one frame of many guns adds entries and
 // takes memory before the next look -- measured, 13 entries a frame in an ordinary 8-pilot fight; in the rapid-fire
 // stress the list went from 176 to its 201st inside a frame, and with 2,500 the heap came down to 58 bytes)
-enum { kBoltGcAt = 170, kBoltGcSlack = 10, kBoltGcHeap = 4000, kBoltBytes = 100 };
+// (and for the heap enough bolts to come back to kBoltGcHeapTo, by the free bytes or by the largest free block,
+// whichever is worse: a 22-minute soak of the rapid-fire stress with only 8 bolts over the shortfall a frame ended one
+// machine with error 1303 -- 800 bytes free, the largest block 134)
+enum { kBoltGcAt = 170, kBoltGcSlack = 10, kBoltGcHeap = 4000, kBoltGcHeapTo = 6500, kBoltGcBlock = 1500, kBoltBytes = 90 };
 struct BoltGc { int at; bool stress, off; int high, runs, retired, by[3], heapRuns; double toldAt; bool read; } g_boltGc =
     { kBoltGcAt, false, false, 0, 0, 0, { 0, 0, 0 }, 0, -1e9, false };
 int bolt_rank(Bit16u shooter) {
@@ -1465,10 +1468,11 @@ void bolts_gc(double now) {
     const int kept = priv_kept_pointers();
     if (kept > g.high) g.high = kept;
     if (g.off) return;
-    const int freeNow = priv_near_free();
+    int freeNow = -1, largest = -1, blocks = 0;
+    if (!priv_near_heap_read(freeNow, largest, blocks)) freeNow = largest = -1;
     int n = kept >= g.at ? kept - (g.at - kBoltGcSlack) : 0;
-    const bool forHeap = freeNow > 0 && freeNow < kBoltGcHeap;
-    if (forHeap && (kBoltGcHeap - freeNow) / kBoltBytes + 8 > n) n = (kBoltGcHeap - freeNow) / kBoltBytes + 8;
+    const bool forHeap = freeNow > 0 && (freeNow < kBoltGcHeap || largest < kBoltGcBlock);
+    if (forHeap && (kBoltGcHeapTo - freeNow) / kBoltBytes + 8 > n) n = (kBoltGcHeapTo - freeNow) / kBoltBytes + 8;
     if (n <= 0) return;
     int by[3] = { 0, 0, 0 };
     const int did = priv_bolts_retire(n, bolt_rank, by);
@@ -1478,8 +1482,8 @@ void bolts_gc(double now) {
     for (int r = 0; r < 3; r++) g.by[r] += by[r];
     if (now - g.toldAt > 2000) {
         g.toldAt = now;
-        wclog(1, "Privateer: bolt collector: %d of the game's 200 kept pointers (from %d on), near heap free %d (under %d): %d bolts retired (%d copies, "
-              "%d our game's ships', %d our own); so far %d runs (%d for the heap), %d bolts (%d, %d, %d), the most kept %d", kept, g.at, freeNow,
+        wclog(1, "Privateer: bolt collector: %d of the game's 200 kept pointers (from %d on), near heap free %d, largest block %d (under %d): %d bolts retired (%d copies, "
+              "%d our game's ships', %d our own); so far %d runs (%d for the heap), %d bolts (%d, %d, %d), the most kept %d", kept, g.at, freeNow, largest,
               (int)kBoltGcHeap, did, by[0], by[1], by[2], g.runs, g.heapRuns, g.retired, g.by[0], g.by[1], g.by[2], g.high);
     }
 }
