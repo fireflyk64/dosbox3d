@@ -5,13 +5,14 @@
 # checked live.
 #   host/web/deploy.sh "what changed"
 # PAGES=~/dev/fireflyk64.github.io (the Pages repository's clone), PLAYWRIGHT_DIR=(Playwright's node_modules' parent:
-# default the dosbox3d browser build's), RUN=(a prefix for the browser checks, such as a process reaper), PORT=8795
+# needed; inside dosbox3d its browser build's is taken), RUN=(a prefix for the browser checks, such as a process reaper), PORT=8795
 # (the local checks' first port; rvsim's, the game's at PORT+1).
 set -e
 cd "$(dirname "$0")/../.."
 [ -n "$1" ] || { echo "usage: host/web/deploy.sh \"what changed\""; exit 2; }
 PAGES=${PAGES:-$HOME/dev/fireflyk64.github.io}
-PLAYWRIGHT_DIR=${PLAYWRIGHT_DIR:-$PWD/../build-web/playwright}
+if [ -z "$PLAYWRIGHT_DIR" ] && [ -d ../build-web/playwright ]; then PLAYWRIGHT_DIR=$PWD/../build-web/playwright; fi
+[ -n "$PLAYWRIGHT_DIR" ] || { echo "set PLAYWRIGHT_DIR (the folder whose node_modules has playwright)"; exit 2; }
 export PLAYWRIGHT_DIR
 PORT=${PORT:-8795}
 GPORT=$((PORT + 1))

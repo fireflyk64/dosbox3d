@@ -1,5 +1,5 @@
 {
-  "_": "The cockpit kits (the user's art, zips in ~/dev/dosbox3d/retrovegaart) by ship: tools/cockpits.py cuts each into art/cockpits/KEY/. The Redeemer uses its complete v1 kit; v2 (redeemer-damage-kit-v2) is a different painting with damage layers only, no controls or mask.",
+  "_": "The cockpit kits (the user's art, zips kept outside the repository) by ship: tools/cockpits.py cuts each into art/cockpits/KEY/. The Redeemer uses its complete v1 kit; v2 (redeemer-damage-kit-v2) is a different painting with damage layers only, no controls or mask.",
   "ships": {
     "SCHROED": "schroedinger-cockpit-kit-v1",
     "FRANKLN": "franklin-cockpit-kit-v1",

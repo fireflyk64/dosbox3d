@@ -6,6 +6,28 @@ repository can puppeteer it like WC.EXE: same named memory, same calls, same
 hook contracts. It is set in Vega Strike's universe: the Terran
 Confederation against the Aera, with the Rlaan meddling.
 
+## Building and running it on its own
+
+RetroVega is kept in the dosbox3d repository (DOSBox with the multiplayer layer for the old space games), which is
+the source of truth; `scripts/retrovega-export.py` there copies this folder and its history into a repository of its
+own. Either way it builds and runs from this folder alone. What it needs from outside:
+
+- **The DOS game** (`./build.sh`, RV.EXE and its data in build/dos): Open Watcom 2 (`WATCOM=`, default
+  ~/opt/watcom), python3 and [uv](https://github.com/astral-sh/uv) (the art tools' venv is made from
+  tools/art-requirements.txt). `CODE=1 ./build.sh` rebuilds only the code.
+- **Playing and the DOS tests** (`tests/play.sh`, `tests/run.sh`, `tests/quiet.sh`): any DOSBox (tests/dosbox.sh
+  finds one: `DOSBOX=`, else the DOSBox built in a dosbox3d tree around this one, else `dosbox` on the PATH). The
+  RVGX sprite card (`GX=1`, docs/gx.md) and two-player flights need dosbox3d's DOSBox; without the card the game
+  draws its ships itself, as on any PC.
+- **The native build and its tests** (`host/build.sh`, `host/game.sh`, `tests/play/playtest.sh`,
+  `tests/host/*.sh`): gcc/g++ (SDL2 for the window); the browser build (`host/web/site.sh`) Emscripten
+  (`EMSDK=`, default ~/emsdk).
+- **Re-rendering the ships** (tools/shipviews.py and friends): a copy of Vega Strike's Assets-Production
+  (`--assets`, default ~/dev/vegastrike-assets). The rendered views are checked in; the build needs no assets.
+
+The page modules it shares with dosbox3d's /dosbox page (web/: the ship sets made in the browser, the touch
+controls) and the sprite card's pixel code (gx/) live here; dosbox3d takes them from this folder.
+
 - [docs/spec.md](docs/spec.md): the engine specification. It covers the platform, the fixed memory layout, the code ABI the hook layer drives, the simulation rules, video, the EMS budget, art direction and milestones.
 - [data/ships.csv](data/ships.csv): the roster. Ship type numbers, roles, retro stats, and the source VDU image and mesh in Vega Strike's assets.
 - [data/weapons.csv](data/weapons.csv): guns, turrets and missiles, numbered as they appear in the gun table.
