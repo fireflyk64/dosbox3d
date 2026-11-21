@@ -102,7 +102,6 @@ scripts/retrovega-export.py
 scripts/rvnet-abi.sh
 scripts/rvnet-check.py
 scripts/rvnet-duo.sh
-scripts/rvsprites-check.mjs
 scripts/site-shortcuts.sh
 scripts/tdmcampaign-duo.sh
 scripts/tdmmissions.py
@@ -278,13 +277,8 @@ web/hall.js
 web/index.html
 web/inno-worker.js
 web/pvm.js
-web/rvsets.js
-web/rvsprites-worker.js
-web/rvsprites.js
 web/serve.py
 web/so3.js
-web/touch.css
-web/touch.js
 web/usbpad.js
 web/voice.js
 web/wc.js

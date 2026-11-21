@@ -1327,7 +1327,7 @@ the emulator.
   set in 40 ms on the host with lightfield.c's kernels (the same C will
   build a DOS SETUP.EXE). The page makes them itself when RetroVega is
   flown: `web/rvsprites.js` is the generator in JavaScript, byte for byte
-  the C tool's output (`scripts/rvsprites-check.mjs` compares every set
+  the C tool's output (`tests/rvsprites-check.mjs` compares every set
   under node), 0.1-0.4 s a ship, so the 1.2 MB-a-fighter files are never
   downloaded; a copy of RV.EXE without them falls back to the .RV views,
   scaled and turned at draw time.
@@ -1465,7 +1465,7 @@ palette is indexed, and a real pixel's colour reads as drawn). Full size
 is untouched, so the exact path and block 0 are as before. A one-pixel
 wing now survives as a line down to an eighth; the page makes its 19
 sets in about 12 s under node (the box scan is a pass over the source
-per size) — see scripts/rvsprites-check.mjs's timing.
+per size) — see tests/rvsprites-check.mjs's timing.
 
 **The player's roll on far ships** (2026-10-20): rolling the camera never
 switches a view (the direction to the camera in the ship's frame does not

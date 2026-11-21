@@ -601,7 +601,7 @@ improved accordingly". The CD port's keyboard (docs/tiefighter.md step 7), fitte
 increased power", then "F9 simply isn't on mobile. And it's a bit user unfriendly that they run out of lasers and
 that's it ... the one button for laser power up/down for now. And then start with one tick up of charging in case they
 don't know"). The same for the CD game.
-* **The touch stick steers.** The page's touch stick (web/touch.js) moved the steering pointer of the games that have
+* **The touch stick steers.** The page's touch stick (retrovega/web/touch.js) moved the steering pointer of the games that have
   one (Wing Commander's, RetroVega's); TIE Fighter and its demo have none, so it steered nothing there. For them it
   is now the emulator's stick, as a controller's (`wc_web_stick`, web/wc.js): right turns right, the thumb up climbs
   (as the pointer's games do), let go flies straight.
@@ -616,7 +616,7 @@ don't know"). The same for the CD game.
   came up...and now my virtual joystick is stuck slightly upward and to the left and I can't steer it at all", and
   "I also saw a "copy text" notice"). The stick kept the pointer that held it and took no other until that one's end,
   which the phone never told the page (a notification, or the long press's "Copy" menu, takes a touch away so). Now
-  (web/touch.js, every game's): a new touch on the stick takes it from a pointer already holding it; whenever a touch
+  (retrovega/web/touch.js, every game's): a new touch on the stick takes it from a pointer already holding it; whenever a touch
   begins or ends anywhere, a stick or a held button (Fire) that no touch on the screen began on is let go
   (`reconcile`: a touch stays its first element's, Touch.target); and in flight nothing round the picture can be
   selected or long-pressed into the "Copy" menu (touch.css `html.touch-flying`). The phone test: a stick given a

@@ -12,7 +12,7 @@ cd $WT
 JOBS=2 scripts/build-web.sh > $S/webbuild.log 2>&1 || { echo "WEB BUILD FAILED"; tail -5 $S/webbuild.log; exit 1; }
 H=$(git rev-parse --short HEAD)
 echo "HEAD $H; wasm: $(strings -n 8 web/dist/dosbox.wasm | grep -a 'built with' | grep -av SDL | head -1 | cut -c1-60)"
-for f in wc.js rvsets.js gamefiles.js index.html; do diff -q <(git show HEAD:web/$f) web/dist/$f > /dev/null || { echo "$f DIFFERS FROM HEAD"; exit 1; }; done
+for f in web/wc.js retrovega/web/rvsets.js web/gamefiles.js web/index.html; do diff -q <(git show HEAD:$f) web/dist/$(basename $f) > /dev/null || { echo "$f DIFFERS FROM HEAD"; exit 1; }; done
 # (the web rigs' ports: RV_PORT_BASE, default 8791, takes base .. base+3: another session's release, a copy of these
 # scripts, may be running on the defaults at the same moment, and two on one port fail each other's checks)
 PB=${RV_PORT_BASE:-8791}

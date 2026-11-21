@@ -527,7 +527,7 @@ async function handleFile(file) {
 
 // --- RetroVega's ship sets, fetched when a flight asks for them ---
 //
-// RetroVega's ship sets and asteroid rocks, fetched and made when the game asks (RVWANT.TXT: web/rvsets.js)
+// RetroVega's ship sets and asteroid rocks, fetched and made when the game asks (RVWANT.TXT: retrovega/web/rvsets.js)
 const rvSets = createSetProvider({ base: "rv/", root: GAME_ROOT, status, log });
 
 // The buttons that change the game files: off while a file is being read

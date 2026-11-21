@@ -2,7 +2,7 @@
 // a tap.  From fireflyk64.github.io/dosbox/?retrovega (or any page URL): one player, Join, Fly, then the base by taps alone: the
 // welcome, the bunk menu (its close box; a bunk, SAVE, SAVE: "Bunk 1"; another, SAVE, the Keys button and a name
 // typed as a phone's keyboard types (input events, no key codes), Enter; the Esc button; a tap outside), the quarters'
-// door, the lounge's hatch, the bar's door to the briefing, the deck, and the Fire button (web/touch.js).  A
+// door, the lounge's hatch, the bar's door to the briefing, the deck, and the Fire button (retrovega/web/touch.js).  A
 // screenshot of each step (SHOT_DIR/phone-NN-name.png) and the engine's log.
 //   PLAYWRIGHT_DIR=... SHOT_DIR=... node scripts/web-rv-phone.mjs PAGE_URL
 // LOCK=1 keeps Pointer Lock (a desktop browser's touch screen); NOFS=1 takes the Fullscreen API away (an iPhone, which

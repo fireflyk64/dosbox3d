@@ -15,7 +15,7 @@ PLAYWRIGHT_DIR=${PLAYWRIGHT_DIR:-$PWD/../build-web/playwright}
 export PLAYWRIGHT_DIR
 PORT=${PORT:-8795}
 GPORT=$((PORT + 1))
-SHARED="../web/rvsets.js ../web/rvsprites.js ../web/rvsprites-worker.js ../web/touch.js"
+SHARED="web"
 [ -z "$(git status --porcelain src host tools data $SHARED | grep -v '^??')" ] \
     || { echo "uncommitted changes in src, host, tools, data or the shared page modules: commit them first (the page names its commit)"; exit 1; }
 H=$(git rev-parse --short HEAD)

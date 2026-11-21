@@ -1,12 +1,12 @@
 // The page's sprite-set generator (web/rvsprites.js) against the C tool's
-// files: every SHIPnn.RVS and .RVH in retrovega/build/dos must come out byte for byte.
-//   node scripts/rvsprites-check.mjs            (after retrovega/build.sh)
+// files: every SHIPnn.RVS and .RVH in build/dos must come out byte for byte.
+//   node tests/rvsprites-check.mjs              (after ./build.sh)
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeSet } from "../web/rvsprites.js";
 
-const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "retrovega");
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dos = path.join(root, "build", "dos");
 let ok = 0, bad = 0;
 for (const f of fs.readdirSync(path.join(root, "art", "ships")).sort()) {

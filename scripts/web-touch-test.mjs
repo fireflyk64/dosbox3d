@@ -21,7 +21,7 @@ try {
       // Only replace the host application scripts; exercise the production DOM, CSS and touch module unchanged.
       await page.route(url, (route) => route.fulfill({ contentType: "text/html",
         body: readFileSync(file, "utf8").replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "") }));
-      await page.route("**/touch.css", (route) => route.fulfill({ contentType: "text/css", body: readFileSync("web/touch.css", "utf8") }));
+      await page.route("**/touch.css", (route) => route.fulfill({ contentType: "text/css", body: readFileSync("retrovega/web/touch.css", "utf8") }));
       await page.goto(url);
       await page.evaluate(async () => {
         const screen = document.getElementById("screen");
@@ -31,7 +31,7 @@ try {
         window.test = { flying: false, keys: [], steering: [], canvasEvents: 0 };
         for (const ev of ["touchstart", "pointerdown", "mousedown"])
           canvas.addEventListener(ev, () => window.test.canvasEvents++);
-        const { initTouch } = await import("/web/touch.js");
+        const { initTouch } = await import("/retrovega/web/touch.js");
         window.test.controls = initTouch({
           log: () => {}, inFlight: () => window.test.flying,
           send: (key, down) => { window.test.keys.push([key, down]); return true; },
