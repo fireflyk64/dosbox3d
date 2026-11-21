@@ -5105,6 +5105,16 @@ void logic_hud(void)
     }
 }
 
+/* every waypoint on the player's list flown, and the landing made (campaign.c camp_points: the mission's first point) */
+int16_t logic_navs_flown(void)
+{
+    int16_t n;
+    for (n = 1; n < NAVS; n++)
+        if (nav_listed(n) && !((g_navs_seen | g_navs_been) >> n & 1))
+            return 0;
+    return missionStatus == 1;
+}
+
 /* the final score: won when the player landed (missionStatus 1) home (at nav 0) with the mission done; dead,
  * ejected, landed elsewhere or with it undone, lost */
 void logic_end(void)

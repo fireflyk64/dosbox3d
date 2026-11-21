@@ -1553,13 +1553,18 @@ static void launch(void)
         g_camp.escort_lost = (uint8_t)logic_escort_lost();
     }
     g_prepared = 0;                     /* (the next flight meets again: a retry, the next mission) */
+    g_mk_acts = 0;
     if (g_winrate >= 0 || g_route || g_noflight)
         victoryPoints = won;
-    g_mk_acts = 0;
+    else                                /* won: every point the mission can give earned (the user, 2026-11-20: "don't
+                                           scold if they won the points"; logic_end's verdict, every enemy at the
+                                           points flown gone, had a toured patrol lost) */
+        victoryPoints = (uint16_t)(camp_points(-1) == camp_points(1));
     missionVictoryCalc();                           /* the layer's moment: a wingman's score becomes the host's (after
                                                        missionEnded, which flight_fly calls as the loop returns) */
     g_won = victoryPoints != 0;
-    g_points = camp_points(g_winrate >= 0 || g_route || g_noflight ? g_won : -1);   /* (a test's flight: all or none) */
+    g_points = camp_points(g_won ? 1 : g_winrate >= 0 || g_route || g_noflight ? 0 : -1);   /* (a test's flight: all
+                                                       or none; a guest's won: the host's word, every point) */
     mission_free_assets();
     RV_LOG("mission %.16Fs %s", (char __far *)g_m.id, g_won ? "won" : "lost");
     g_now = ticks();

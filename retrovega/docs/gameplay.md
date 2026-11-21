@@ -830,3 +830,41 @@ For play like the old games', beyond your logic (logic.md, "What the engine stil
 - the multiplayer layer's support for RV.EXE beyond recognising it.
 
 These are mine to build when you ask.
+
+## The points (2026-11-20)
+
+The user's rule, in place of the old game's objective points (which had only grown easier as the planet missions added
+theirs to unchanged pass marks: Enigma 10 of 41): "points should solely depend on what the mission asked you to do ...
+1 point for visiting all navs 1 point for protecting all capital ships and 1 point for destroying any aera capital
+ships (if any are available in that mission)"; each "all or nothing"; "No slips for now"; "aces shouldn't count...it's
+really capital ships victories that matter in the grand scheme"; "we should be able to tour in most patrols"; "don't
+scold if they won the points".
+
+- A mission gives three points at most (campaign.c `camp_points`): one for every nav point on the list flown and the
+  landing made (`logic_navs_flown`), a fight or none; one, with an `escort` or `meet` goal for a capital ship (a type
+  from 0x20), for all of them met; one, with a `kill` goal for a capital ship, for all of them met. Fighters' goals,
+  an ace's too, the goals' own numbers and the `nav` and `land` goals count for nothing.
+- A mission is won, for the debrief and the tallies, when it gave every point it can (game.c, after the flight);
+  `mission_done` (every Aera ship at the points flown gone) is the flight's own word still: the landing's leave, the
+  autopilot, the play tests' victoryPoints.
+- A set's pass mark is campaign.csv's `pass`: `all`, every point its missions can give (tools/rvdata.py `pass_mark`),
+  in every row; the points start at 0 with each set. The last two sets, by missions won before, have goals from their
+  briefings (the cruiser, the dreadnought, the Vigilance, the Ox, the Kahan) and go by points too.
+- A save made in the middle of a set carries the old scale's points, larger than any new mark: that set comes out
+  the good way (the user: "the old scale was easier than the new--that should be ok for old saves").
+
+| Set | Points | Its missions (P: something to protect, D: something to destroy) |
+|---|---|---|
+| Enigma | 5 | 1, 2 P, envoy 2 D (the tunnels, 2 D, out: data/ENIGMAT-disabled.md) |
+| Cephid | 7 | 1, 2 D, planet 2 D, 2 P |
+| Shelton | 7 | 1, 2 P, planet 2 D, 2 P |
+| Crucible | 6 | 2 P, planet 2 P, 1, 1 |
+| Oldziey | 7 | 1, 2 P, planet 2 D, 2 D |
+| Defiance | 7 | 2 D, planet 2 P, 2 P, 1 |
+| Lixis | 8 | 2 P, planet 2 P, 2 D, 2 D |
+| Ataraxia | 9 | 2 P, 2 D, planet 2 D, 3 P D |
+| Rigel | 8 | 2 D, planet 2 D, 2 P, 2 P |
+| Barnard | 9 | 2 D, planet 2 P, 2 D, 3 P D |
+| Wolf 359 | 8 | 2 D, planet 3 P D, 2 P, 1 |
+| Shmrn | 11 | 1, 2 D, planet 2 D, 2 P, canyon 2 D, 2 D |
+| Luyten | 9 | 2 P, 1, 2 P, planet 2 P, 2 P |

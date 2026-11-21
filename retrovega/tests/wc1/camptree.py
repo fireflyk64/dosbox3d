@@ -37,7 +37,7 @@ def main():
             want = (NODES[r[6] - 1], NODES[r[8] - 1], r[3] | r[4] << 8)
             how = 'won with %d points: %s (in %s), lost: %s (in %s)' % (want[2], want[0], FIGHTERS.get(r[7], r[7]), want[1],
                                                                         FIGHTERS.get(r[9], r[9]))
-        have = (ours[node]['good'], ours[node]['bad'], int(ours[node].get('pass') or 0)) if node in ours else None
+        have = (ours[node]['good'], ours[node]['bad'], (int(ours[node]['pass']) if (ours[node].get('pass') or '0').isdigit() else -1)) if node in ours else None
         bad = have != want
         differ += bad
         print('%-8s %d missions, %s%s' % (node, r[2], how, '   <-- ours: good %s, bad %s, pass %d' % have if bad and have else

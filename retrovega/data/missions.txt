@@ -51,6 +51,10 @@
 # nav points").  A mission's `type secret` has its briefing and debrief in close-ups alone, the XO's too, never the room
 # (game.c BRIEF_SECRET; the user: "they wouldn't talk about a top secret mission with everyone")
 #
+# A goal line's number (the old game's points) counts no more: a mission gives a point for its nav points flown and the
+# landing, one for its capital ships' escort and meet goals all met, one for its capital ships' kill goals all met
+# (campaign.c camp_points, docs/gameplay.md "The points"); campaign.csv's pass `all` asks a set for every one
+#
 # A ship line's role=flee jump=S is an enemy capital ship that holds its nav point until it hears of a pilot (it is hit,
 # or a ship of its side within 12,000 km of it has a pilot for its target), then jumps out S seconds on; got away, it
 # loses the mission (logic.c flee_step: Enigma's envoy).  The home carrier's hide=S: it jumps out S seconds after the
@@ -2594,6 +2598,7 @@ ship     ARISTON 1 nav5 count=2 at=0,5000,-10000
 ship     ARISTON 1 nav5 count=2
 ship     CONVOLN 1 nav2 count=2 at=0,2500,5000 also=7
 ship     CONVOLN 1 nav4 count=2 at=-5000,1000,-5000 also=6
+goal     kill ANAXIDM nav3 1
 field    asteroid 20000 0 -35000 5000 level=1
 field    asteroid 20000 0 -35000 5000 level=1
 bar      left=TORCH middle=KESTREL right=DRIFTER
@@ -2674,6 +2679,7 @@ ship     CONVOLN 1 nav5 count=2 at=-10000,2000,10000 also=6
 ship     CLEOMEN 1 nav2 count=2 at=-5000,0,-5000
 ship     NICANDR 1 nav3 count=2 at=0,5000,5000
 ship     AGASICL 1 nav3 at=5000,5000,5000
+goal     escort VIGILNC nav0 1
 field    mine -40000 10000 5000 5000 level=1
 field    mine -65000 14000 -15000 5000 level=1
 bar      left=FROST middle=PRIME right=ANCHOR
@@ -2763,6 +2769,7 @@ ship     AGIS 1 nav3 count=2 at=15000,-2500,-5000
 ship     AGIS 1 nav3 count=2
 ship     CLEOMEN 1 nav8 count=2 at=5000,0,-15000
 ship     CLEOMEN 1 nav8 count=2
+goal     kill LEONIDS nav2 1
 field    mine 20000 0 -30000 5000 level=1
 wipe     ECHO
 bar      left=TORCH middle=ECHO right=COMET
@@ -2847,6 +2854,7 @@ ship     ARISTON 1 nav1 at=-10000,1000,0 prey=OX
 ship     ARISTON 1 nav3 count=2 prey=OX
 ship     ARISTON 1 nav3 count=2 prey=OX
 ship     CONVOLN 1 nav4 count=3 at=5000,-2500,0 prey=OX
+goal     escort OX nav1 1
 bar      left=- middle=PRIME right=COMET
 talk     bar PRIME COMET "Pre-flight complete. I read it twice."
 talk     bar COMET PRIME "You don't have to do that."
@@ -2991,6 +2999,7 @@ ship     NICANDR 1 nav1 count=2 at=-5000,2500,-10000 prey=KAHAN
 ship     NICANDR 1 nav1 count=2 at=-10000,-1000,0 prey=KAHAN
 ship     CONVOLN 1 nav3 count=2 at=5000,0,15000 prey=KAHAN
 ship     CONVOLN 1 nav3 count=2 prey=KAHAN
+goal     escort KAHAN nav1 1
 field    mine 35000 0 15000 7500 level=2
 field    mine 35000 0 30000 5000 level=2
 bar      left=- middle=- right=COMET
@@ -3064,6 +3073,7 @@ ship     NICANDR 1 nav6 at=0,5000,5000
 ship     NICANDR 1 nav6 count=2
 ship     NICANDR 1 nav6 count=2
 ship     CLEOMEN 1 nav7 count=3 at=0,0,5000
+goal     escort VIGILNC nav0 1
 field    mine -40000 -5000 -10000 5000 level=2
 field    mine -75000 -10000 -15000 5000 level=2
 field    asteroid 0 0 10000 5000 level=2

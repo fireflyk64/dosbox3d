@@ -355,8 +355,19 @@ def planet_record(m, nav_ids):
         + b''.join(grounds).ljust(LIMITS['GROUNDS'] * struct.calcsize(fmt(GROUND)), b'\0')
 
 
-def pass_mark(n, where):
-    """campaign.csv's pass: the points that take the node's good way (0 or none: by missions won)"""
+def mission_points(m):
+    """the points a mission can give (campaign.c camp_points): one flown and won, one with a capital ship to protect
+    or meet, one with a capital ship to destroy (ships.csv's types from 0x20)"""
+    big = {r['key'] for r in load_csv('ships.csv') if int(r['type'], 0) >= 0x20}
+    kinds = {f[0] for _w, f in m['goal'] if len(f) > 1 and f[1] in big}
+    return 1 + bool(kinds & {'escort', 'meet'}) + ('kill' in kinds)
+
+
+def pass_mark(n, where, most):
+    """campaign.csv's pass: the points that take the node's good way: `all`, every point its missions can give (the
+    user, 2026-11-20: "No slips for now"), or a number (0 or none: by missions won)"""
+    if n.get('pass') == 'all':
+        return most
     v = int(n.get('pass') or 0)
     if not 0 <= v <= 255:
         raise Fail('%s: pass %d, 0 to 255' % (where, v))
@@ -720,7 +731,7 @@ def compile_all():
         out_nodes.append(struct.pack(fmt(NODE), text(n['node'], TEXT['NODE_ID'], where), int(n['layer']),
                                      int(n['col']), *([mission_index[m] for m in ms] + [0xFFFF] * (LIMITS['MISSIONS_PER_NODE'] - len(ms))),
                                      edge(n['good'], where), edge(n['bad'], where), OUTSIDE.index(n.get('outside') or ''),
-                                     pass_mark(n, where)))
+                                     pass_mark(n, where, sum(mission_points(missions[mission_index[m]]) for m in ms))))
         if n['good'] == n['bad']:
             print('%s: both ways out go to %s' % (where, n['good']), file=sys.stderr)
     check_dag(nodes)

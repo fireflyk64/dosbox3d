@@ -251,26 +251,42 @@ static int16_t way_good(int16_t wins, uint16_t count, int16_t trend, uint16_t po
     return wins * 2 > (int16_t)count || (wins * 2 == (int16_t)count && trend >= 0);
 }
 
-/* the points of the mission just flown: its goals that logic_goal says were met; the nth goal of one kind, type and
- * place is the nth such ship (the old game's objectives name one ship each: Crucible 3's nine Nicanders, a point apiece) */
+/* the points of the mission just flown (the user's rule, 2026-11-20: "points should solely depend on what the mission
+ * asked you to do ... 1 point for visiting all navs 1 point for protecting all capital ships and 1 point for destroying
+ * any aera capital ships (if any are available in that mission)", each "all or nothing"): three at most,
+ *   - one for every nav point on the list flown and the landing made, a fight or none (logic_navs_flown; the user:
+ *     "I think we should be able to tour in most patrols");
+ *   - one, in a mission with an escort or a meet goal for a capital ship, for all of them met (what was to be protected);
+ *   - one, in a mission with a kill goal for a capital ship, for all of them met (what was to be destroyed).
+ * A fighter's goal counts for nothing, an ace's too (the user: "aces shouldn't count...it's really capital ships
+ * victories that matter in the grand scheme ... if they get away it's more of a "shucks" than "restart""); nor do a
+ * goal's own points (the old game's) or its nav and landing goals.  The nth goal of one kind, type and place is the
+ * nth such ship.  whole: 1 every point, 0 none, -1 as flown */
 uint16_t camp_points(int16_t whole)
 {
     RvGoal goals[RV_GOALS];
     uint32_t at = (uint32_t)camp_mission_index() * sizeof(RvMission);
-    uint8_t n;
-    uint16_t sum = 0, i, j, nth;
+    uint8_t n, any[2], missed[2];
+    uint16_t i, j, nth;
     xms_get(g_missions, at + offsetof(RvMission, ngoal), &n, 1);
     xms_get(g_missions, at + offsetof(RvMission, goal), goals, sizeof goals);
     if (n > RV_GOALS)
         n = RV_GOALS;
+    any[0] = any[1] = missed[0] = missed[1] = 0;
     for (i = 0; i < n; i++) {
+        uint8_t k = goals[i].kind == RV_GOAL_KILL;
+        if (goals[i].kind < RV_GOAL_ESCORT || goals[i].kind > RV_GOAL_KILL || goals[i].a < 0x20)
+            continue;                   /* (a capital ship's: types from 0x20) */
         for (nth = 0, j = 0; j < i; j++)
             if (goals[j].kind == goals[i].kind && goals[j].a == goals[i].a && goals[j].nav == goals[i].nav)
                 nth++;
-        if (whole > 0 || (whole < 0 && logic_goal(goals[i].kind, goals[i].a, goals[i].nav, (uint8_t)nth)))
-            sum = (uint16_t)(sum + goals[i].pts);
+        any[k] = 1;
+        if (whole < 0 && !logic_goal(goals[i].kind, goals[i].a, goals[i].nav, (uint8_t)nth))
+            missed[k]++;
     }
-    return sum;
+    if (!whole)
+        return 0;
+    return (uint16_t)((whole > 0 || logic_navs_flown()) + (any[0] && !missed[0]) + (any[1] && !missed[1]));
 }
 
 static uint16_t points_after(uint16_t points)

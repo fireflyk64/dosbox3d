@@ -7886,6 +7886,8 @@ static void t_envoy_runs(void)
     static const char __far e_heard[] = "uncloaked 3 s: the envoy's countdown %d s (175 to 180)";
     static const char __far e_away[] = "181 s on: the envoy %d (-1: gone), its kill goal %d (0), victory %d (0)";
     static const char __far e_kill[] = "from 900 km behind it, the guns alone: the envoy killed %d (1) after %d s (within 60 s)";
+    static const char __far e_pts[] = "the envoy's mission's points: %d to be had (2), %d with the envoy killed and the navs flown, in flight (1), %d landed (2)";
+    static const char __far e_pass[] = "Enigma's pass mark %d (5: every point of its three missions)";
     static const char __far e_won[] = "the envoy killed, Nav 5 flown: the nav reached last %d (5), victory %d (1), its Aristons alive %d (2)";
     static const char __far e_early[] = "at Nav 4's place with Nav 3 not flown: the envoy %d (-1: not there), the nav reached last %d (2)";
     static const char __far e_on[] = "Navs 1, 2 and 3 flown: the nav reached last %d (3), then at Nav 4's place %d (4)";
@@ -7961,6 +7963,24 @@ static void t_envoy_runs(void)
         return;
     REQUIRE(currentNavPoint == 5 && victoryPoints == 1 && pt_count(SIDE_AERA, 0x09) == 2, e_won, currentNavPoint, victoryPoints,
             pt_count(SIDE_AERA, 0x09));
+    /* its points (campaign.c camp_points; the user's rule, 2026-11-20): two to be had, the nav points flown with the
+     * landing and the Charillus destroyed; before the landing the Charillus's alone; Enigma's three missions give 5,
+     * and its pass mark is all of them */
+    {
+        RvSave keep = g_camp;
+        uint16_t most, flying, landed;
+        g_camp.node = 0;
+        g_camp.mission = 2;
+        most = camp_points(1);
+        flying = camp_points(-1);
+        missionStatus = 1;
+        landed = camp_points(-1);
+        missionStatus = 0;
+        i = (int16_t)g_nodes[0].pass_mark;
+        g_camp = keep;
+        REQUIRE(most == 2 && flying == 1 && landed == 2, e_pts, most, flying, landed);
+        REQUIRE(i == 5, e_pass, i, 0, 0);
+    }
 }
 
 /* M8.71: the tunnel (terrain.c tr_tunnel_at, ENIGMAT; the user, 2026-11-19: "a huge long tunnel and nav points inside
