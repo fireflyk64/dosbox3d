@@ -35,6 +35,7 @@
 #include "logic.h"
 #include "simulator.h"
 #include "planet.h"
+#include "gx.h"
 #ifdef RV_HOST
 #include "host.h"
 #endif
@@ -65,8 +66,10 @@ typedef void (*PtFn)(void);
 typedef struct {
     const char __far *name;             /* "M1.1 name (the functions): what it expects" */
     PtFn fn;
-    uint8_t host_only;                  /* asks the harness what the DOS build cannot tell (the thunks' calls, the
-                                           screen) */
+    uint8_t host_only;                  /* 1: asks the harness what the DOS build cannot tell (the thunks' calls, the
+                                           screen); 2 (PT_CARD): a planet mission's, whose ground the DOS build makes
+                                           on the RVGX card: on DOS only with the card (a stock DOSBox has none, and
+                                           RVP.EXE's heap has no room for the ground without it) */
 } PtTest;
 
 typedef struct { uint16_t sh[2], ar[4], hull, state; } PtHurt;
@@ -9175,16 +9178,16 @@ static const PtTest __far k_tests[] = {
     { n_m7_7, t_dumbfire_aims, 0 }, { n_m6_6, t_ram_caps, 0 },   /* (new tests at the end: a test's dice are its place in the table, and M8.6 and
                                            M8.18 pass on theirs only) */
     { n_m6_7, t_ram_owner, 0 }, { n_m7_8, t_puppet_launch, 0 }, { n_m7_9, t_seeker_chases, 0 }, { n_m7_10, t_missile_blast, 0 }, { n_m7_11, t_missile_knock, 0 }, { n_m7_12, t_ff_target, 0 }, { n_m8_29, t_scene_human, 0 },
-    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 }, { n_m8_56, t_nav_switch, 0 }, { n_m8_57, t_escort_arrive, 0 }, { n_m8_58, t_escort_threat, 0 }, { n_m8_59, t_escort_back, 0 }, { n_m8_60, t_wave_also, 0 }, { n_m8_61, t_goals, 0 }, { n_m8_62, t_held_wave, 0 }, { n_m8_63, t_planet, 0 }, { n_m8_64, t_stream, 0 },
-    { n_m10_13, t_cloak, 0 }, { n_m10_14, t_cloak_ai, 0 }, { n_m8_65, t_cloak_run, 0 }, { n_m8_66, t_campaign_card, 0 },
+    { n_m8_30, t_human_seat_lost, 0 }, { n_m8_31, t_dying, 0 }, { n_m8_32, t_named_hull, 0 }, { n_m8_33, t_escort_jump, 0 }, { n_m8_34, t_autopilot_far_wingman, 0 }, { n_m8_35, t_autopilot_formup, 0 }, { n_m8_36, t_escort_clear, 0 }, { n_m8_37, t_autopilot_human, 0 }, { n_m8_38, t_escort_home, 0 }, { n_m10_10, t_form_parallel, 0 }, { n_m8_39, t_full_map, 0 }, { n_m8_40, t_campaign_way, 0 }, { n_m8_41, t_escort_waits, 0 }, { n_m8_42, t_escort_jump_home, 0 }, { n_m8_43, t_escort_order, 0 }, { n_m8_44, t_capital_flak, 0 }, { n_m8_45, t_capital_hull, 0 }, { n_m8_46, t_landing_burner, 0 }, { n_m8_47, t_home_arrive, 0 }, { n_m8_48, t_stay_home, 0 }, { n_m8_49, t_fighter_roulette, 0 }, { n_m8_50, t_prey, 0 }, { n_m8_51, t_capital_bearings, 0 }, { n_m8_52, t_mayday, 0 }, { n_m8_53, t_autoland, 0 }, { n_m8_54, t_capital_help, 0 }, { n_m8_55, t_field_nav, 0 }, { n_m8_56, t_nav_switch, 0 }, { n_m8_57, t_escort_arrive, 0 }, { n_m8_58, t_escort_threat, 0 }, { n_m8_59, t_escort_back, 0 }, { n_m8_60, t_wave_also, 0 }, { n_m8_61, t_goals, 0 }, { n_m8_62, t_held_wave, 0 }, { n_m8_63, t_planet, 2 }, { n_m8_64, t_stream, 2 },
+    { n_m10_13, t_cloak, 0 }, { n_m10_14, t_cloak_ai, 0 }, { n_m8_65, t_cloak_run, 2 }, { n_m8_66, t_campaign_card, 0 },
     { n_m10_15, t_target_range, 0 },
-    { n_m8_67, t_ground_up, 0 },
-    { n_m8_68, t_air, 0 },
-    { n_m8_69, t_carrier_hide, 0 },
-    { n_m8_70, t_envoy_runs, 0 },
-    { n_m8_71, t_tunnel, 0 },
+    { n_m8_67, t_ground_up, 2 },
+    { n_m8_68, t_air, 2 },
+    { n_m8_69, t_carrier_hide, 2 },
+    { n_m8_70, t_envoy_runs, 2 },
+    { n_m8_71, t_tunnel, 2 },
     { n_m2_21, t_easy_guns, 0 },
-    { n_m8_72, t_ground_hit, 0 },
+    { n_m8_72, t_ground_hit, 2 },
 };
 
 /* --- the run --- */
@@ -9276,7 +9279,8 @@ int16_t playtest_run(const char *only)
 {
     static const char __far s_pass[] = "PASS ", __far s_fail[] = "FAIL ", __far s_sp[] = " ";
 #ifndef RV_HOST
-    static const char __far s_skip[] = "SKIP -------- ", __far s_host[] = " (the host harness only)";
+    static const char __far s_skip[] = "SKIP -------- ", __far s_host[] = " (the host harness only)",
+        __far s_card[] = " (on DOS with the RVGX card only: a stock DOSBox has none)";
 #endif
     static const char __far s_sum[] = "%d of %d pass";
     static const char __far s_ms[] = "  M%d %d/%d";
@@ -9300,11 +9304,11 @@ int16_t playtest_run(const char *only)
         if (!pt_wanted(k_tests[i].name, only))
             continue;
 #ifndef RV_HOST
-        if (k_tests[i].host_only) {
+        if (k_tests[i].host_only == 1 || (k_tests[i].host_only == 2 && !gx_present())) {
             ln_s(s_pre);
             ln_s(s_skip);
             ln_s(k_tests[i].name);
-            ln_s(s_host);
+            ln_s(k_tests[i].host_only == 1 ? s_host : s_card);
             ln_end();
             continue;
         }
@@ -9359,7 +9363,7 @@ int main(int argc, char **argv)
             log = argv[++i];
         else if (!strcmp(argv[i], "--list")) {
             for (i = 0; i < (int)(sizeof k_tests / sizeof k_tests[0]); i++)
-                printf("%s%s\n", k_tests[i].name, k_tests[i].host_only ? " (the host harness only)" : "");
+                printf("%s%s\n", k_tests[i].name, k_tests[i].host_only == 1 ? " (the host harness only)" : k_tests[i].host_only == 2 ? " (on DOS with the RVGX card only)" : "");
             return 0;
         } else if (argv[i][0] == '-') {
             fputs("usage: playtest [--data DIR] [--log FILE] [--list] [ID ...]   (M2 runs M2.*, M2.3 that one;\n"

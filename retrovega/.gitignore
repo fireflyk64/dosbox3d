@@ -2,3 +2,5 @@ build/
 art/people/src/
 art/places/src/
 art/cockpits/src/
+*.err
+__pycache__/
