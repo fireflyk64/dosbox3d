@@ -1276,12 +1276,6 @@ void puppet_made(int seat, Bit16u obj) {
     wclog(2, "Privateer: pilot %d's ship is ds:%04X (type ds:%04X, controller ds:%04X held)", seat + 1, obj, p.type, priv_ship_controller(obj));
 }
 
-// Our game's ships turned on a pilot lately (turn_on_pilot, below), and the provocations waiting for a target: theirs
-std::vector<std::pair<Bit16u, double> > g_turned;
-// (provoked between its maneuvers -- no target in its plan for the moment -- it is tried again each frame for 6 s)
-struct PendingTurn { Bit16u ship; int seat; double until; const char *why; };
-std::vector<PendingTurn> g_pendingTurns;
-
 void forget_puppets(const char *why) {
     priv_calls_flush(why);
     priv_wings_flight_changed();
@@ -1303,8 +1297,6 @@ void forget_puppets(const char *why) {
     g_net->podsGone.clear();
     g_net->dying.clear();
     g_net->quiet.clear();
-    g_pendingTurns.clear();
-    g_turned.clear();
     priv_hold_ai_none();
     if (any) {
         wclog(2, "Privateer: the puppets forgotten (%s)", why);
@@ -1638,12 +1630,13 @@ void drones_frame(double now) {
             const double dx = (double)p[0] - dp[0], dy = (double)p[1] - dp[1], dz = (double)p[2] - dp[2];
             if (dx * dx + dy * dy + dz * dz <= kDroneMetres * kDroneMetres * kUnitsPerMetre * kUnitsPerMetre) { target = ship; seat = s; }
         }
+        // (it was re-aimed at that pilot by writing its AI's target in the far heap: taken back, 2026-11-21, the user:
+        // "This seems like a dangerous approach" -- the writes broke the heap: docs section 18; it chooses for itself)
         if (target) {
-            priv_ship_set_target(d, target);    // (re-aimed only when it is after someone else: wcnet_priv.cpp)
             static Bit16u saidFor;
             if (saidFor != target) {
                 saidFor = target;
-                wclog(1, "Privateer: the Steltek drone ds:%04X is after pilot %d (the lowest here)", d, seat + 1);
+                wclog(1, "Privateer: the Steltek drone ds:%04X near pilot %d (the lowest here); its target is its own choice", d, seat + 1);
             }
         }
     }
@@ -1747,13 +1740,14 @@ void take_pod_taken(const PrivPodTaken &t) {
     wclog(1, "Privateer: our cargo pod ds:%04X taken by pilot %d: put away", obj, (int)t.player() + 1);
 }
 
-// Our pilot angered another machine's encounter ship here -- our fire or our comm's taunt (its pilot's anger rose: the
-// game did it, as to any ship): told to its owner, whose game turns the ship on us (the user, 2026-11-20: "the enemy
-// wouldn't really react to fire or comms from the guest, so the guest was basically just pummeling the enemy without
-// any risk to themselves").  Once in 2 s a ship at most.
-enum { kProvokeEveryMs = 2000, kTurnEveryMs = 3000 };
+// Our pilot angered another machine's encounter ship here -- our fire or our comm's taunt: the game raised its pilot's
+// anger at us, as at any ship -- told to its owner (the user, 2026-11-20: "the enemy wouldn't really react to fire or
+// comms from the guest"; 2026-11-21: "I think we should still send it over the wire as proto"; "maybe rate limit it.
+// Perhaps only the first hit?").  Once a ship: the first time only.  The owner's game logs it: turning its AI on us by
+// writing its target broke the game's far heap (section 18), and a safe way -- the AI's own target field, written only
+// on such a first provocation of a healthy ship -- is not found yet.
 void send_provoke(NpcPuppet &p, double now) {
-    if (now - p.provokedAt < kProvokeEveryMs) return;
+    if (p.provokedAt > -1e8) return;
     p.provokedAt = now;
     NetworkMessage msg;
     PrivHit *h = msg.mutable_priv_hit();
@@ -1773,63 +1767,6 @@ void send_provoke(NpcPuppet &p, double now) {
     wclog(2, "Privateer: we angered pilot %d's %s (ds:%04X, its pilot's anger %d): its owner told", p.seat + 1, p.type.c_str(), p.obj, p.anger);
 }
 
-// One of our game's ships provoked by another pilot (a hit of its own ship's, or its anger told): turned on that pilot's
-// ship here, by its AI's target (the way the drone's is re-aimed: wcnet_priv.cpp's retarget), once in 3 s a ship at most
-// and only from a target it has (a ship after nobody, a merchant at peace, stays as it is).  Its AI may turn back later
-// as it likes, as it does in the game.
-void turn_on_pilot(Bit16u ship, int seat, const char *why, bool retry = false) {
-    if (seat < 0 || seat >= kMaxSeats || seat == g_net->self) return;
-    const Puppet &pp = g_net->puppets[seat];
-    if (!pp.obj || pp.parked || !priv_ship_is_alive(ship)) return;
-    const double now = PIC_FullIndex();
-    for (size_t i = 0; i < g_turned.size(); ) {
-        if (now - g_turned[i].second > kTurnEveryMs) { g_turned.erase(g_turned.begin() + i); continue; }
-        if (g_turned[i].first == ship) return;
-        i++;
-    }
-    const Bit16u was = priv_ship_target_now(ship);
-    if (!was && !retry) {
-        bool listed = false;
-        for (size_t i = 0; i < g_pendingTurns.size() && !listed; i++) listed = g_pendingTurns[i].ship == ship;
-        if (!listed && g_pendingTurns.size() < 16) {
-            PendingTurn pt = { ship, seat, now + 2 * kTurnEveryMs, why };
-            g_pendingTurns.push_back(pt);
-        }
-        return;
-    }
-    if (!was || was == pp.obj) {
-        static double toldAt = -1e9;
-        if (was && now - toldAt > 5000) {
-            toldAt = now;
-            wclog(2, "Privateer: our %s (ds:%04X), provoked by pilot %d: already after its ship", priv_ship_cast_name(ship).c_str(), ship, seat + 1);
-        }
-        return;
-    }
-    if (g_turned.size() < 32) g_turned.push_back(std::make_pair(ship, now));
-    priv_ship_set_target(ship, pp.obj);
-    wclog(2, "Privateer: our %s (ds:%04X) turns on pilot %d's ship (ds:%04X; it was after ds:%04X): %s", priv_ship_cast_name(ship).c_str(), ship,
-          seat + 1, pp.obj, was, why);
-}
-
-// The provocations waiting for their ship to have a target (at the frame: the plan is far data)
-void turns_frame(double now) {
-    for (size_t i = 0; i < g_pendingTurns.size(); ) {
-        PendingTurn &pt = g_pendingTurns[i];
-        if (now > pt.until || !priv_ship_is_alive(pt.ship)) {
-            if (now > pt.until) wclog(2, "Privateer: our ds:%04X, provoked by pilot %d, was after nobody for 6 s: left as it is", pt.ship, pt.seat + 1);
-            g_pendingTurns.erase(g_pendingTurns.begin() + i);
-            continue;
-        }
-        if (priv_ship_target_now(pt.ship)) {
-            const PendingTurn done = pt;
-            g_pendingTurns.erase(g_pendingTurns.begin() + i);
-            turn_on_pilot(done.ship, done.seat, done.why, true);
-            continue;
-        }
-        i++;
-    }
-}
-
 void take_hit(const PrivHit &h) {
     Bit16u obj = 0;
     if (h.id() == 0) {
@@ -1844,8 +1781,8 @@ void take_hit(const PrivHit &h) {
     if (!obj) {
         return;
     }
-    if (h.id() && (h.by_pilot() || h.provoke())) {
-        turn_on_pilot(obj, (int)h.player(), h.provoke() ? "its pilot angered it (fire or comm)" : "its pilot's shot");
+    if (h.provoke()) {
+        wclog(2, "Privateer: pilot %d angered our %s (ds:%04X) in its game (its fire or its comm)", (int)h.player() + 1, priv_ship_cast_name(obj).c_str(), obj);
     }
     if (h.damage() <= 0) {
         return;
@@ -2090,9 +2027,8 @@ void frame_npcs(double now, const Bit32s pos[3]) {
         } else if (near && p.obj) {
             priv_ship_set(p.obj, at, p.m);
             {
-                // our pilot's fire or taunt angers the ship here as the game would any ship: its owner is told
+                // our pilot's fire or taunt angers the ship here as the game would any ship (read only): its owner is told
                 const int a = priv_ship_pilot_anger(p.obj);
-                if (a != p.anger) wclog(3, "Privateer: pilot %d's %s (ds:%04X): its pilot's anger %d -> %d", p.seat + 1, p.type.c_str(), p.obj, p.anger, a);
                 if (a >= 0 && p.anger >= 0 && a != p.anger && ((a & 0xFF) > (p.anger & 0xFF) || (a & 0x100) > (p.anger & 0x100))) {
                     p.anger = a;
                     send_provoke(p, now);
@@ -2586,7 +2522,6 @@ void priv_session_frame() {
         }
     }
     frame_chats_and_shots();
-    turns_frame(now);
     drones_frame(now);
 }
 

@@ -86,13 +86,15 @@ std::string priv_player_appearance();
 bool priv_spawn_ship(const char *type, const char *appearance, const char *cast, const Bit32s pos[3], const Bit32s m[9],
                      void (*done)(int tag, Bit16u obj), int tag);
 // Its AI held (its think returns at once) or let go; none held (a flight's end).
-bool priv_hold_ai(Bit16u controller, bool hold);
-void priv_ship_set_target(Bit16u ship, Bit16u target);
+bool priv_hold_ai(Bit16u controller, bool hold);      // false: not held (the list is full)
 Bit16u priv_ship_target_now(Bit16u ship);                   // the ship its AI is after (0: none known)
-int priv_ship_pilot_anger(Bit16u ship);
+int priv_ship_pilot_anger(Bit16u ship);                     // its pilot's anger at the player (+0x1A, 0x100 its mood's bit 1); -1 none
+// The ships that fired the bolts now in our scene, one a bolt.
 int priv_scene_bolt_shooters(Bit16u out[], int cap);
-bool priv_ship_fire_guns(Bit16u obj, int groups);          // its guns (those groups: +0x1E bits 3-6) fired by the game's weapons update at the next frame (a copy's shot)       // the ships that fired the bolts now in our scene, one a bolt                     // its pilot's anger at the player (+0x1A, 0x100 its mood's bit 1); -1 none
-void priv_ship_anger(Bit16u ship);                         // angry at the player, as a hit from the player makes it (at the next frame)    // its AI's target (written at the next frame: the plan is far data)    // false: not held (the list is full)
+// Its guns (those groups: the control record's +0x1E bits 3-6) fired by the game's weapons update at the next frame (a copy's shot).
+bool priv_ship_fire_guns(Bit16u obj, int groups);
+// (A test aid's) angry at the player, as a hit from the player makes it (at the next frame).
+void priv_ship_anger(Bit16u ship);
 void priv_hold_ai_none();
 void priv_let_think(Bit16u controller, int frames);   // a held controller thinks for this many frames (its pilot speaks)
 bool priv_thinking(Bit16u controller);

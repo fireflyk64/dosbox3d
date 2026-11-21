@@ -356,13 +356,6 @@ struct StackPaint {
     StackPaint() : painted(false), from(0), to(0), deepest(1 << 30) {}
 } g_paint;
 
-static int pilot_anger_of(Bit16u ship) {
-    const Bit16u ctl = priv_r16((Bit16u)(ship + kShipController));
-    const Bit16u poff = ctl ? priv_r16((Bit16u)(ctl + 2)) : 0, pseg = ctl ? priv_r16((Bit16u)(ctl + 4)) : 0;
-    Bit16u pilot = 0;
-    if (!pseg || mem_readw_checked(((PhysPt)pseg << 4) + (Bit16u)(poff + 0x23), &pilot) || !pilot) return -1;
-    return priv_r8((Bit16u)(pilot + 0x1A)) | ((priv_r8((Bit16u)(pilot + 0x19)) & 2) << 7);
-}
 
 // A ship's AI target.  The controller's +2 (far) is its control record, a block of Origin's far heap of 4 paragraphs
 // (60 bytes of data: the stick, the fire bits, the pilot at +0x23); the heap's blocks are paragraphs with a header --
@@ -377,7 +370,6 @@ static int pilot_anger_of(Bit16u ship) {
 // 60-byte record; the game's heap check, seg143:054E, then reported error 1407 and the flight ended: the 8-pilot load
 // test's owner, seconds after its AIs were turned on pilots.)
 enum { kPlanBlocksCap = 12, kBlockBytesCap = 0x800, kPlanSpan = 0x400 };
-std::vector<std::pair<Bit16u, Bit16u> > g_retargets;    // (ship, target) to write at the next frame
 
 struct FarBlock { Bit16u seg; int bytes; };               // data from seg:0004, that many bytes
 static bool far_block(Bit16u seg, FarBlock *out) {
@@ -444,6 +436,18 @@ static Bit16u plan_target(Bit16u ship) {
         }
     }
     return 0;
+}
+
+// How angry a ship's pilot is at the player: its anger count (the pilot's +0x1A) and, as 0x100, its mood's bit 1 (+0x19):
+// both raised by a hit of the player's (the hit routine, seg053:1157) and by a hostile line of the player's comm (a
+// taunt: measured, "Live or die.  Your choice." to a pirate, +0x19 FC -> FE, +0x1A 0 -> 1).  The pilot is a near object
+// at the control record's +0x23 (the controller's +2, far).  -1: no pilot to read.  Reads only; at the frame.
+static int pilot_anger_of(Bit16u ship) {
+    const Bit16u ctl = priv_r16((Bit16u)(ship + kShipController));
+    const Bit16u poff = ctl ? priv_r16((Bit16u)(ctl + 2)) : 0, pseg = ctl ? priv_r16((Bit16u)(ctl + 4)) : 0;
+    Bit16u pilot = 0;
+    if (!pseg || mem_readw_checked(((PhysPt)pseg << 4) + (Bit16u)(poff + 0x23), &pilot) || !pilot) return -1;
+    return priv_r8((Bit16u)(pilot + 0x1A)) | ((priv_r8((Bit16u)(pilot + 0x19)) & 2) << 7);
 }
 
 // A test aid (!privplan, at the next frame): the last spawned ship's plan's blocks and where each live scene ship's
@@ -520,33 +524,6 @@ static void plan_dump_frame() {
     }
 }
 
-static void retarget_frame() {
-    for (size_t i = 0; i < g_retargets.size(); i++) {
-        const Bit16u ship = g_retargets[i].first, target = g_retargets[i].second;
-        if (!priv_ship_is_alive(ship) || !priv_ship_is_alive(target)) continue;
-        const Bit16u old = plan_target(ship);
-        if (!old || old == target) continue;
-        FarBlock blocks[kPlanBlocksCap];
-        const int nb = plan_blocks(ship, blocks, kPlanBlocksCap);
-        const Bit16u newOff = priv_r16((Bit16u)(target + kShipModel)), newSeg = priv_r16((Bit16u)(target + kShipModel + 2));
-        int n = 0, blocksTouched = 0;
-        std::vector<int> nearAt, modelAt;
-        for (int b = 1; b < nb && newSeg; b++) {
-            if (!target_places(blocks[b], old, nearAt, modelAt)) continue;
-            const PhysPt base = ((PhysPt)blocks[b].seg << 4) + 4;
-            for (size_t j = 0; j < nearAt.size(); j++) { mem_writew(base + nearAt[j], target); n++; }
-            for (size_t j = 0; j < modelAt.size(); j++) { mem_writew(base + modelAt[j], newOff); mem_writew(base + modelAt[j] + 2, newSeg); n++; }
-            blocksTouched++;
-        }
-        wclog(2, "Privateer: ds:%04X's AI turned from ds:%04X to ds:%04X (%d places in %d of its plan's %d blocks)", ship, old, target, n, blocksTouched,
-              nb - 1);
-    }
-    g_retargets.clear();
-}
-
-void retarget_queue(Bit16u ship, Bit16u target) {
-    if (g_retargets.size() < 16) g_retargets.push_back(std::make_pair(ship, target));
-}
 
 // Co-op extras (wcnet_priv_session.cpp, priv_session_wing_extras): the wing about to spawn is given more ships of its
 // own -- a larger ship array from the game's heap, the old entries copied, its count raised -- so that the game itself
@@ -1467,7 +1444,6 @@ bool priv_check_hooks(Bit32u ip) {
             armor_dump_frame();
             wing_arrays_frame();
             anger_frame();
-            retarget_frame();
             target_scan_frame();
             plan_dump_frame();
             dmg_dump_frame();
@@ -1885,35 +1861,12 @@ bool priv_script_item(const std::string &item, double t) {
         priv_session_force_release();
         return true;
     }
-    if (item.compare(0, 18, "!privretargetpirates=") == 0 || item.compare(0, 21, "!privretargetpirates=") == 0) {
-        // !privretargetpirates=<pilot>: every live pirate of our scene (not a puppet) given that pilot's ship as target
-        const int seat = atoi(item.c_str() + 21) - 1;
-        const Bit16u target = priv_session_pilot_ship(seat);
-        Bit16u ships[48];
-        const int n = priv_scene_ships(ships, 48);
-        int k = 0;
-        for (int i = 0; target && i < n; i++) {
-            if (!priv_ship_is_alive(ships[i]) || priv_session_is_puppet(ships[i], 0) || priv_ship_cast_name(ships[i]).compare(0, 3, "PIR")) continue;
-            retarget_queue(ships[i], target);
-            k++;
-        }
-        wclog(1, "key script %.1fs: %d pirates given pilot %d's ship ds:%04X as target", t, k, seat + 1, target);
-        return true;
-    }
     if (item.compare(0, 14, "!privpilotdump") == 0 && g_found) {
         g_pilotDump = true;         // (at the next frame: the plan is far data)
         return true;
     }
     if (item.compare(0, 10, "!privanger") == 0 && g_found) {
         priv_ship_anger(g_lastSpawned);
-        return true;
-    }
-    if (item.compare(0, 14, "!privretarget=") == 0 && g_found) {
-        // !privretarget=me|prev: the last spawned ship's AI given our ship (or the ship spawned before it) as its target
-        const bool prev = item.compare(14, 4, "prev") == 0;
-        retarget_queue(g_lastSpawned, prev ? g_prevSpawned : priv_player_ship());
-        wclog(1, "key script %.1fs: ds:%04X's target: %s (its plan's now ds:%04X)", t, g_lastSpawned, prev ? "the ship before it" : "our ship",
-              plan_target(g_lastSpawned));
         return true;
     }
     if (item.compare(0, 9, "!privvga=") == 0) {
@@ -2988,9 +2941,6 @@ void priv_calls_flush(const char *why) {
     calls_flush(why);
 }
 
-void priv_ship_set_target(Bit16u ship, Bit16u target) {
-    retarget_queue(ship, target);
-}
 
 void priv_wings_flight_changed() {
     wings_flight_changed();

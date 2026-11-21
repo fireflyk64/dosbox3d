@@ -798,3 +798,18 @@ taken out of the game's lists, seg026:0079 and seg013:0748; it was skipped as a 
 8-pilot load test (8 Tarsus at Achilles' nav point, 3 pirates added, everyone firing) -- no error, death or restart on
 any machine; the owner's lowest free 5,532 (as before), the guests' 7,738-8,660 (some 2-3 KB under before: the copied
 gunfire), no guest gave anything back.  Test aid `!privplan` (the last spawned ship's AI blocks and the ships in them).
+
+**No writes into the AI's memory** (the user, 2026-11-21: "This seems like a dangerous approach ... it's clearly caused
+several bugs and who knows how many others"; "can we go with a simpler more minimal design ... within the games rules";
+"I think we should still send it over the wire as proto"; "maybe rate limit it.  Perhaps only the first hit?").  Taken
+back: the turn of an enemy on a provoking pilot and the Steltek drone's re-aim at the lowest pilot, both by writing the
+AI's target (with the test aids that did it).  Every ship chooses its targets by the game's own rules, among all the
+ships of its game, the other pilots' ships among them (as a merchant's, by the default face, pirates go for them:
+measured, the host's pirate hit the guest's merchant-cast ship 25 times without any help).  What stays: a provocation
+(our pilot's first hit or taunt of another's ship: its copy's pilot's anger rose here, read only) is told to the owner
+(`PrivHit.provoke`), once a ship, and logged there ("pilot 2 angered our PIR_DA ... in its game").  The game's own
+reaction to a hit is the player's alone (the anger code compares the shooter with ds:66B4), so a safe turn needs the
+AI's own target field -- found in its think, seg042:0944, written only on a first provocation of a healthy ship by a
+pilot whose ship is shown and whole: the next step.  (An AI ship firing at another AI ship, to see whether the game makes
+it retaliate: not shown yet -- the trial's aim hit once in 22 s.)  Measured after: a two-machine fight, the guest's
+missiles applied on the host, the pirate's hits on the guest taken there, the provocation logged on the host, no error.
