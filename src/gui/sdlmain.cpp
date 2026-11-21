@@ -1663,6 +1663,7 @@ extern bool in_space();
 extern bool wc_net_overlay_chat();
 extern const char *wc_net_wait_note();
 extern bool wc_net_steer_marker(double *x, double *y);   // (wc_net.h: TIE Fighter's pointer, shares of the picture)
+extern bool wc_net_pointer_pixels(int *x0, int *y0, Bit16u rows[16]);   // (wc_net.h: Privateer's dark pointer, redrawn white)
 // (wc_net.h: Terminal Velocity's other pilots: where, in shares of the picture, a bracket's size, on screen or an
 // arrow at its edge, the label)
 extern bool wc_net_partner_marker(int i, double *x, double *y, double *size, bool *onScreen, const char **label);
@@ -1862,6 +1863,38 @@ void GFX_EndUpdate( const Bit16u *changedLines ) {
                     DrawMarker(x, y, textPixels, textPitch);
                 } else if (lastX >= 0) {
                     lastX = lastY = -1;
+                    render.scale.clearCache = true;
+                }
+            }
+            {
+                // Privateer's options screen (Alt+O over a flight): the game's own pointer, black in that palette, white
+                static int lastX0 = -1000, lastY0 = -1000;
+                int x0 = 0, y0 = 0;
+                Bit16u rows[16];
+                if (wc_net_pointer_pixels(&x0, &y0, rows)) {
+                    if (x0 != lastX0 || y0 != lastY0) {
+                        lastX0 = x0;
+                        lastY0 = y0;
+                        render.scale.clearCache = true;
+                    }
+                    const int sx = sdl.draw.width >= 640 ? 2 : 1, sy = sdl.draw.height >= 400 ? 2 : 1;
+                    const Bitu step = textPitch / sdl.draw.width;
+                    for (int r = 0; r < 16; r++) {
+                        for (int k = 0; k < 16; k++) {
+                            if (!(rows[r] & (0x8000 >> k))) continue;
+                            for (int dy = 0; dy < sy; dy++) {
+                                for (int dx = 0; dx < sx; dx++) {
+                                    const int x = (x0 + k) * sx + dx, y = (y0 + r) * sy + dy;
+                                    if (x < 0 || y < 0 || x >= (int)sdl.draw.width || y >= (int)sdl.draw.height) continue;
+                                    Bit8u *px = textPixels + y * textPitch + x * step;
+                                    if (step >= 3) { px[0] = 0xEE; px[1] = 0xEE; px[2] = 0xEE; }
+                                    else *px = 0xFF;
+                                }
+                            }
+                        }
+                    }
+                } else if (lastX0 > -1000) {
+                    lastX0 = lastY0 = -1000;
                     render.scale.clearCache = true;
                 }
             }

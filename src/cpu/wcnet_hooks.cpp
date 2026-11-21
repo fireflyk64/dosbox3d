@@ -2465,7 +2465,11 @@ bool wc_net_partner_marker(int i, double *x, double *y, double *size, bool *onSc
 }
 
 bool wc_net_steer_marker(double *x, double *y) {
-    return wc::tie_controls_marker(x, y);
+    return wc::tie_controls_marker(x, y) || wc::priv_controls_marker(x, y);
+}
+
+bool wc_net_pointer_pixels(int *x0, int *y0, Bit16u rows[16]) {
+    return wc::priv_pointer_pixels(x0, y0, rows);
 }
 
 bool wc_net_key_filter(int kbdKey, bool pressed) {

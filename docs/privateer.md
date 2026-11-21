@@ -634,3 +634,26 @@ cast only when no ship of the scene points at it (a ship reads its cast's name a
 gave it another cast's), else the puppet is not made.  The drayman the user met with a man's face and a woman's voice:
 not one of our puppets with a chat line (those have no voice) nor a pilot's (those fly the four player ships); a ship
 of the game's own, or another's encounter ship given another cast's name by the old slots.
+
+## 18. A play test's batch (2026-11-20)
+
+The user, after flying a room of two on the page: "the mouse cursor was black when I selected mouse play from the
+alt-o options menu...it still steered the ship but was not available"; the guest's view of the host's fight (shields,
+gunfire, missiles), ramming, enemies ignoring the guest, hits landing on the wrong ship, and friendly fire.  One commit
+an item.
+
+**The mouse's pointer.**  The game draws its own pointer (its shape blitter, seg191; DOSBox's mouse driver never draws
+one): a cross with serifs in palette index 0x0F on an outline of 0.  0x0F is white on the bases' screens (58, 58, 59)
+but nearly black on the options screen over a flight (Alt+O: 7, 6, 6), and in flight the game shows no pointer at all,
+though the mouse flies the ship by where it is (seg088:02E5: the game's mouse x, ds:6A7E, 640 across, less the middle's
+ds:3C5B = 320, over 10 is the turn; its y, ds:6A80, less ds:3C5D = 100, over 3 the pitch).  Measured by the video
+memory and palette dumped on each screen (`!privvga=<name>`: DOSBox's chained 320 x 200, a pixel at
+`linear[((a & ~3) << 2) + (a & 3)]`).  Now, by the page's Pointer choice (Privateer only, remembered by the browser,
+`WCPRIVPOINTER=ring|game`): "shown" (the default) draws TIE Fighter's amber ring where the mouse is while the flight
+runs with the mouse flying (not over the options screen or the nav map: the frame stops there), and on a screen over a
+flight where 0x0F is dark redraws the game's pointer white (its 0x0F pixels in the 7 x 7 round the cross's middle at
+the mouse; the options screen's own 46 pixels of 0x0F, in its buttons' lettering, stay); "as the game has it" leaves
+both as the game has them (the user: "if that's how the original has it then many purists may want it that way").
+Measured, one machine each way: the options screen's pointer white over the grid, the MOUSE button and INVULNERABILITY
+with "shown", black with "game"; in flight the ring at the mouse's place at (0.7, 0.3) and (0.3, 0.7) of the picture,
+none with "game".

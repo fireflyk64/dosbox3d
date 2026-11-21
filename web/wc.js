@@ -300,6 +300,7 @@ function setSource(s, want) {
   const keys = s && gameInfo() && gameInfo().keys;
   $("gameKeys").innerHTML = keys || "";
   $("tfFlightLabel").hidden = !isTie();
+  $("privPointerLabel").hidden = !isPriv();
   gameLook();
   $("gameKeys").hidden = !keys;
   const hints = s && gameInfo() && gameInfo().campaign && gameInfo().campaign.hints;
@@ -2231,6 +2232,10 @@ gameLook();
 const PRIV_FACE_KEY = "wc:privFace";
 try { const f = localStorage.getItem(PRIV_FACE_KEY); if (f && [...$("privFace").options].some((o) => o.value === f)) $("privFace").value = f; } catch (e) { /* the first */ }
 $("privFace").addEventListener("change", () => { try { localStorage.setItem(PRIV_FACE_KEY, $("privFace").value); } catch (e) { /* not kept */ } });
+// (Privateer's pointer: a ring in flight and a white one on the options screen, or the game's own: none, and black)
+const PRIV_POINTER_KEY = "wc:privPointer";
+try { const v = localStorage.getItem(PRIV_POINTER_KEY); if (v === "ring" || v === "game") $("privPointer").value = v; } catch (e) { /* the first */ }
+$("privPointer").addEventListener("change", () => { try { localStorage.setItem(PRIV_POINTER_KEY, $("privPointer").value); } catch (e) { /* not kept */ } });
 // Terminal Velocity's craft menus: the registered game's craft of its other planets (the models in its CDROM.POD, the
 // names its briefings'; src/cpu/wcnet_tv_session.cpp's table) after the shareware's, offered while the game here is
 // the registered one (tvCraftOffer); remembered in this browser
@@ -2399,6 +2404,7 @@ async function start(fromGesture) {
     // and on a computer too: the user, 2026-11-19, "would be useful on desktop web too not just mobile")
     if (isTie()) env.WCNET_TIE_TOUCH = "1";
     if (isPriv()) env.WCPRIVFACE = $("privFace").value;
+    if (isPriv()) env.WCPRIVPOINTER = $("privPointer").value;
     if (isTv() && together && isHost()) env.WCTVLOOKS = `${$("tvCraftHost").value},${$("tvCraftGuest").value}`;
     if (cfg.lastname && !solo) env.WCLASTNAME = cfg.lastname;
     if (cfg.firstname && !solo) env.WCFIRSTNAME = cfg.firstname;

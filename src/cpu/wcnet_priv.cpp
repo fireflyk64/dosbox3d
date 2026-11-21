@@ -25,6 +25,7 @@
 #include "lazyflags.h"
 #include "paging.h"
 #include "keyboard.h"
+#include "vga.h"
 #include <math.h>
 #include <ctype.h>
 
@@ -1187,6 +1188,51 @@ static void turn_step() {
     priv_ship_set(own, pos, m);
 }
 
+double g_flightFrameAt = -1e9;
+
+bool priv_flight_frame_recent() {
+    return g_found && priv_in_flight() && PIC_FullIndex() - g_flightFrameAt < 250.0;
+}
+
+// The game's own pointer (a cross with serifs, drawn by its shape blitter, seg191) is palette index 0x0F on an outline of
+// 0: white on the bases' screens (58, 58, 59), but the options screen over a flight (Alt+O) has 0x0F at 7, 6, 6 -- a
+// black pointer on dark buttons (the user, 2026-11-20: "the mouse cursor was black when I selected mouse play from the
+// alt-o options menu").  Its pixels there (0x0F in the 7 x 7 round the cross's middle at the mouse) are what the
+// emulator draws white over the picture (sdlmain.cpp); the screen's own 0x0F pixels (46 on the options screen: its
+// buttons' lettering) stay as they are, being nowhere near the pointer's middle.
+bool priv_pointer_pixels(int *x0, int *y0, Bit16u rows[16]) {
+    if (!g_found || !priv_in_flight() || priv_flight_frame_recent() || vga.mode != M_VGA || !priv_pointer_shown()) return false;
+    const RGBEntry &c = vga.dac.rgb[0x0F];
+    if (c.red + c.green + c.blue >= 90) return false;           // (bright enough as it is)
+    const int px = (Bit16s)priv_r16(0x6A7E) / 2, py = (Bit16s)priv_r16(0x6A80);   // (the game's mouse: 640 across)
+    auto vram = [](int x, int y) -> int {
+        if (x < 0 || y < 0 || x >= 320 || y >= 200) return -1;
+        const Bitu a = (Bitu)(y * 320 + x);
+        return vga.mem.linear[((a & ~3u) << 2) + (a & 3)];
+    };
+    // the pointer's middle (at the game's mouse, or 1 off: its bars cross there), then its 7 x 7 round it
+    int cx = 0, cy = 0;
+    bool there = false;
+    for (int dy = -1; dy <= 1 && !there; dy++) {
+        for (int dx = -1; dx <= 1 && !there; dx++) {
+            cx = px + dx;
+            cy = py + dy;
+            there = vram(cx, cy) == 0x0F && vram(cx - 1, cy) == 0x0F && vram(cx + 1, cy) == 0x0F && vram(cx, cy - 1) == 0x0F && vram(cx, cy + 1) == 0x0F;
+        }
+    }
+    if (!there) return false;                                   // (no pointer of the game's there)
+    *x0 = cx - 3;
+    *y0 = cy - 3;
+    int n = 0;
+    for (int r = 0; r < 16; r++) {
+        rows[r] = 0;
+        for (int k = 0; r < 7 && k < 7; k++) {
+            if (vram(*x0 + k, *y0 + r) == 0x0F) { rows[r] |= (Bit16u)(0x8000 >> k); n++; }
+        }
+    }
+    return n >= 5;
+}
+
 bool priv_check_hooks(Bit32u ip) {
     if (!g_found) {
         return false;
@@ -1198,6 +1244,7 @@ bool priv_check_hooks(Bit32u ip) {
     }
     if (ip == kControlsEntry && codeSeg == (Bit16u)(g_privLoadSeg + kSeg088)) {
         g_frameSp = reg_sp;
+        g_flightFrameAt = PIC_FullIndex();
         if (!g_saved.active) {
             pilot_dump_frame();
             comm_log_frame();
@@ -1617,6 +1664,20 @@ bool priv_script_item(const std::string &item, double t) {
         retarget_queue(g_lastSpawned, prev ? g_prevSpawned : priv_player_ship());
         wclog(1, "key script %.1fs: ds:%04X's target: %s (its plan's now ds:%04X)", t, g_lastSpawned, prev ? "the ship before it" : "our ship",
               plan_target(g_lastSpawned));
+        return true;
+    }
+    if (item.compare(0, 9, "!privvga=") == 0) {
+        // !privvga=<name>: video memory (the first 256 KB, planes interleaved) and the DAC's palette to <name>.vga (a test aid)
+        const char *dir = getenv("WCNET_DUMP_DIR");
+        const std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + item.substr(9) + ".vga";
+        FILE *f = fopen(path.c_str(), "wb");
+        if (f) {
+            fwrite(vga.mem.linear, 1, 0x40000, f);
+            for (int i = 0; i < 256; i++) { fputc(vga.dac.rgb[i].red, f); fputc(vga.dac.rgb[i].green, f); fputc(vga.dac.rgb[i].blue, f); }
+            fclose(f);
+        }
+        wclog(1, "key script %.1fs: video memory to %s (mode %d, start %u, address_add %u, width %u, height %u)", t, path.c_str(), (int)vga.mode,
+              (unsigned)vga.config.real_start, (unsigned)vga.draw.address_add, (unsigned)vga.draw.width, (unsigned)vga.draw.height);
         return true;
     }
     if (item.compare(0, 15, "!privtargetscan") == 0 && g_found) {

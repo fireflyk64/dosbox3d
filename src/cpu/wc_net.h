@@ -100,6 +100,9 @@ bool wc_net_mouse_divert(float xrel, float yrel);
 // A mouse button press or release: true when the layer takes it from the game (TIE Fighter's guest launch held).
 bool wc_net_mouse_button(int button, bool pressed);
 bool wc_net_steer_marker(double *x, double *y);
+// A game's own pointer to redraw white (Privateer's options screen draws it nearly black): a 16 x 16 box of its
+// 320 x 200 picture from x0, y0, a bit a pixel (bit 15 the leftmost).
+bool wc_net_pointer_pixels(int *x0, int *y0, Bit16u rows[16]);
 // A drone riding behind the leader: its dashboard, from that line of the
 // game's 200 down, is to go dark (src/gui/sdlmain.cpp).
 bool wc_net_cockpit_dim(int *dashboardTop);
