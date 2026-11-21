@@ -1044,7 +1044,7 @@ static bool hostile_cast_name(const std::string &c) {
            c.compare(0, 3, "COM") == 0;       // (COM_AF, COM_DF, COM_SF: Retros -- "This attitude not possible" but hostile)
 }
 
-struct { bool pod; double rate, until; bool pirate, hunt, stalk; } g_turn = { true, 0, -1e9, false, false, false };
+struct { bool pod; double rate, until; bool pirate, hunt, stalk, ram; } g_turn = { true, 0, -1e9, false, false, false, false };
 // (the hunt mode's state: the target's last place, for its lead; the trigger held; the last missile)
 struct { Bit16u obj; double x, y, z, at; bool firing; double missileAt; bool burning; } g_hunt = { 0, 0, 0, 0, 0, false, -1e9, false };
 
@@ -1137,6 +1137,24 @@ static void turn_step() {
         if (d < best) { best = d; bestObj = objs[i]; for (int k = 0; k < 3; k++) { tgt[k] = (p[k] - pos[k]) / d; bestP[k] = p[k]; } }
     }
     if (best > 1e17) { if (g_hunt.firing) hunt_trigger(false); if (g_hunt.burning) hunt_burner(false); return; }
+    if (g_turn.ram) {
+        // ram (a test of a ram's damage): once in 2 s our ship put 40 m ahead of the nearest hostile, nose to nose
+        static double placedAt = -1e9;
+        if (now - placedAt < 2000) return;
+        placedAt = now;
+        Bit32s tm[9];
+        priv_ship_matrix(bestObj, tm);
+        const double fw[3] = { tm[3] / 256.0, tm[4] / 256.0, tm[5] / 256.0 };
+        const double fl = sqrt(fw[0] * fw[0] + fw[1] * fw[1] + fw[2] * fw[2]);
+        if (fl > 0.1) {
+            Bit32s at[3], m[9];
+            for (int k = 0; k < 3; k++) at[k] = bestP[k] + (Bit32s)(fw[k] / fl * 40.0 * 256);
+            for (int k = 0; k < 9; k++) m[k] = (k / 3 == 1 || k / 3 == 0) ? -tm[k] : tm[k];   // (turned about: right and forward reversed)
+            priv_ship_set(own, at, m);
+            wclog(1, "Privateer: ram: put 40 m ahead of ds:%04X, nose to nose", bestObj);
+        }
+        return;
+    }
     if (g_turn.stalk) {
         // stalk: our ship put 350 m behind the nearest hostile, facing as it faces, the guns held, a missile every 4 s
         // -- a test of what a hit does (sent to the ship's owner, its death the owner's), not of piloting
@@ -1684,7 +1702,9 @@ bool priv_script_item(const std::string &item, double t) {
         g_turn.pod = strcmp(what, "ship") != 0 && strcmp(what, "pirate") != 0 && strcmp(what, "hunt") != 0 && strcmp(what, "stalk") != 0;
         g_turn.hunt = strcmp(what, "hunt") == 0;
         g_turn.stalk = strcmp(what, "stalk") == 0;
-        g_turn.pirate = strcmp(what, "pirate") == 0 || g_turn.hunt || g_turn.stalk;   // (hunt: the nearest hostile, led,
+        g_turn.ram = strcmp(what, "ram") == 0;
+        if (g_turn.ram) g_turn.pod = false;
+        g_turn.pirate = strcmp(what, "pirate") == 0 || g_turn.hunt || g_turn.stalk || g_turn.ram;   // (hunt: the nearest hostile, led,
                                                                                        // fired at; stalk: behind it)
         g_turn.rate = degs * 3.14159265 / 180.0;
         g_turn.until = PIC_FullIndex() + 1000.0 * secs;

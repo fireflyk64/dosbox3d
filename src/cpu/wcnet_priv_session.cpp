@@ -1325,6 +1325,14 @@ NpcTrack *track_of(Bit16u obj, bool make) {
     return &g_net->tracks.back();
 }
 
+// A pilot's ship shown here (not one of the encounter ships, the pods)
+bool is_pilot_obj(Bit16u obj) {
+    for (int s = 0; obj && s < kMaxSeats; s++) {
+        if (g_net->puppets[s].obj == obj) return true;
+    }
+    return false;
+}
+
 bool is_puppet_obj(Bit16u obj) {
     for (size_t i = 0; i < g_net->dying.size(); i++) {
         if (g_net->dying[i].first == obj) return true;
@@ -2034,9 +2042,27 @@ int priv_session_hit(Bit16u target, Bit16u source, bool bump, int loc, int damag
     }
     const bool targetPuppet = is_puppet_obj(target), sourcePuppet = source && is_puppet_obj(source);
     if (bump) {
-        // (a ship bumping a ship: harmless when either is another machine's, as RetroVega's wing bumps are: two pilots
-        // launch from the same pad into the same place)
-        return targetPuppet || sourcePuppet ? 0 : damage;
+        // A ram: decided by the game whose pilot's ship it is (its own ship's place is the true one there, another's
+        // is a report a moment old).  Our ship and another machine's encounter ship: ours takes its share here, the
+        // other's share goes to its owner (the user, 2026-11-20: "if the guest crashed into the ship it would take
+        // damage but the guest didn't seem to take damage or maybe took little"); the same two in the owner's game
+        // (its ship and our puppet) nothing.  Two pilots' ships: nothing anywhere ("I thought the option was that
+        // friend collisions were ignored"; everybody launches from the same pad).  Our game's ships and another's
+        // encounter ships: nothing (no pilot of either game is in it).
+        if (!targetPuppet && !sourcePuppet) {
+            return damage;
+        }
+        const Bit16u own = priv_player_ship();
+        if (is_pilot_obj(target) || is_pilot_obj(source)) {
+            return 0;
+        }
+        if (target == own) {
+            return damage;
+        }
+        if (source == own && targetPuppet) {
+            send_hit(target, loc, damage, true);
+        }
+        return 0;
     }
     if (sourcePuppet) {
         static unsigned copies;

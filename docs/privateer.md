@@ -707,3 +707,17 @@ here, sent to its owner (`PrivHit.by_pilot` says whether our own ship fired it);
 Measured, two machines, the guest stalking the host's pirate (level 3 logs every hit with its shooter): the guest's
 three missiles sent and applied in the host's game (the pirate destroyed by them), the host's militia's crossfire on
 the guest's puppet (a missile and three bolts) sent to the guest and taken there once.
+
+**Rams** (the user: "if the guest crashed into the ship it would take damage but the guest didn't seem to take damage
+or maybe took little.  Moreover if the guest crashed into the host both would take damage but I thought the option was
+that friend collisions were ignored or much reduced").  A bump with any puppet was nothing anywhere, so a guest ramming
+the host's pirate came off free.  Now a ram is decided by the game whose pilot's ship it is (its own place is the true
+one there): our ship and another machine's encounter ship -- ours takes its share here, the other's share goes to its
+owner (the same pair in the owner's game, its ship and our puppet: nothing); two pilots' ships: nothing anywhere (the
+pad they all launch from); our game's ships and another's encounter ships: nothing.  Measured, two machines (the test
+aid `!privturn=ram`: our ship put 40 m ahead of the nearest hostile, nose to nose, every 2 s): three rams of the host's
+pirate by the guest -- the guest's ship took 43+14, 46+17, 44+13 there, the pirate's 57+18, 61+23, 57+17 went to the
+host's game and were applied (its rear shield 25,600 to 392, armour 100 to 63) and shown on the guest; then the guest
+put 12 m from the host three times (`!privgopilot`): every bump between the two ships kept 0 on both machines, their
+shields and armour full.  (No ram between pilots hurt before either; what the user saw was likely the copies' shots of
+the previous item or the pirate's.)
