@@ -739,3 +739,27 @@ times between the host's retarget (30 s) and the turn (39 s), 21 times after, ea
 A taunt by the guest (comm, the pirate, "Live or die"): its anger 0 -> 257 on the guest, told, the host's game had it
 ("provoked by pilot 2") -- that pirate, spawned by a rig and without orders, held no target in its plan for the whole
 time and was left as it was; an encounter's pirates on an attack run have one.
+
+**Gunfire seen, within the game's memory** (the user: the guest "didn't see any gun fire at all in the arena from the
+other ship"; then "I am worried we will overload the free slots with gun slots"; "the bolts should only be duplicated
+when both players are in the same arena of sorts"; "a simpler rule could be that the weapons are only manifested on the
+guest's computer if the one firing the laser had a ship that is on the guest's computer targeted.  I suspect the AI
+always does that.  I suppose we should also fire for the actual player cannons"; "since players don't always target who
+they mean").  Found: no copy ever fired.  A ship's guns fire in the game's weapons update, seg125:0158(weapons far,
+scene, control record far): its AI branch (038A) makes the guns of the groups the record's +0x1E bits 3-6 name active
+(each gun's +0x35) and, with bit 2, fires them through seg120:0004 (per gun: active, its group, its refire time, its
+energy); an AI ship's think fills the record and calls the update, so a puppet (its think held) with the fire bit set
+fired nothing (measured: a held pirate, 3 s, no bolt), and seg120:0004 called alone fired nothing (no gun active).  Now
+a copy's shot is a call of the update for the puppet (its weapons record the ship's +0x4E, far; the scene ds:66C6; its
+record the controller's +2) with the record's bits set for it -- fire and the groups the original fired -- and let go
+after (measured: a held pirate, six calls, 36 bolts in the scene).  The shooter's game sends with each shot
+(`PrivShot`) the groups its AI's record had (pirates fire 0x1C: groups 0 and 1; a pilot's ship sends none, and its copy
+fires groups 0 and 1) and its target as the receivers know ships (`target_seat`, `target_id`: a pilot's ship, an
+encounter ship by its owner and id; an AI's by its plan, a pilot's by its targeting system); a pilot's own guns are
+sent too (id 0).  A receiver copies a shot when the shooter is within 3 km of its ship, and then: a pilot's always; an
+AI ship's when its target is a ship shown here (ours, or one we show) -- its target not known, when its nose is within
+20 degrees of a pilot's ship; and only while the copies' bolts alive in its scene are under 24 and its heap's last 2 s
+stayed over 9,000.  A bolt is some 82-116 bytes of the near heap and lives a second or two.  Measured, two machines (the
+host fighting its pirate, the guest 200 m off facing it): on the guest 71 copies fired, 9 left out; the copies' bolts
+in its scene 5, 14, 20 (the host's ship's), 15 (the pirate's), never past 24; its heap's low 14,128 at the most bolts
+(17,400 without); their hits on the pirate's puppet harmless there.

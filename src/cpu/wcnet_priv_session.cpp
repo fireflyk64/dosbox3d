@@ -89,6 +89,16 @@ enum { kShipNearBytes = 600, kPodNearBytes = 200, kCreateFloor = 8000, kReleaseF
        kUrgentFloor = 4500, kUrgentEveryMs = 250, kCreateEveryMs = 2000, kCreateAfterReleaseMs = 10000, kLowWindows = 5,
        kWingFloor = 9000 };            // (a wing of the game's own is some 3-4 ships: 3-4 KB as they fight)
 enum { kSayThinkFrames = 60 };          // 3 s of the page's 20 a second
+// Copied gunfire (PrivShot): the user, 2026-11-20, "I am worried we will overload the free slots with gun slots";
+// "the bolts should only be duplicated when both players are in the same arena of sorts ... maybe we could only
+// replicate bolts when they are headed roughly towards a target controlled by another player.  That way if an ai ship
+// is firing away from the guest craft at another craft on its box those bolts could be ignored".  So a shot is copied
+// here only from a ship within kShotArenaMetres of ours; an AI ship's only when its nose is within kShotConeDeg of a
+// pilot's ship (ours, or another pilot's shown here) within kShotReachMetres of it; none while the game's memory is
+// low (the last 2 s under kShotFloor, the governor's create floor and more: a copy is the first thing to go), and none
+// while kCopyBoltCap of the copies' bolts are alive in our scene (some 100 bytes a bolt: 2.4 KB at most).
+const double kShotArenaMetres = 3000.0, kShotReachMetres = 3500.0, kShotConeDeg = 20.0;
+enum { kShotFloor = 9000, kCopyBoltCap = 24 };
 const char kPodCast[] = "CARGO";        // (a pod's name at +0xE, where a ship has its cast's)
 
 struct Peer {
@@ -195,7 +205,8 @@ struct PrivNet {
     double ownersAt, decidedAt, sceneAt;
     // (what the frame applies: the far heap's EMS window is the game's own at the frame's top, not at a tick)
     std::vector<std::pair<int, std::string> > chats;    // seat, line
-    std::vector<std::pair<int, Bit32u> > shots;         // seat, id
+    struct ShotCopy { int seat; Bit32u id; int groups; int targetSeat; Bit32u targetId; };
+    std::vector<ShotCopy> shots;                        // others' shots to copy at the frame (PrivShot)
     std::vector<Bit32u> podsTaken;                      // pods of ours another pilot's tractor beam took (put away, not reported)
     std::vector<std::pair<Bit16u, Bit16u> > dying;      // (ship, type) puppets given back, until the game has freed them
     std::vector<std::pair<Bit16u, Bit16u> > quiet;      // (ship, type) of those, the ones given back quietly (release_obj):
@@ -221,7 +232,9 @@ struct PrivNet {
     Bit16u flightShip;          // the player's ship pointer the puppets were made under (a new flight: they are gone)
     double lastX, lastY, lastZ, lastAt;     // our place at the last frame (for our velocity)
     double vx, vy, vz;
-    PrivNet() : navSince(-1e9), wingWaitNav(-1), wingWaitSince(-1e9), extrasNav(-1), extrasFlight(0), extrasMade(0), host(false), self(-1), seats(2), listener(NULL), ownersAt(-1e9), decidedAt(-1e9), sceneAt(-1e9), sceneFrame(0), nav(-1),
+    double ownShotAt;           // our own ship's last shot sent
+    unsigned copiesFired, copiesSkipped;
+    PrivNet() : ownShotAt(-1e9), copiesFired(0), copiesSkipped(0), navSince(-1e9), wingWaitNav(-1), wingWaitSince(-1e9), extrasNav(-1), extrasFlight(0), extrasMade(0), host(false), self(-1), seats(2), listener(NULL), ownersAt(-1e9), decidedAt(-1e9), sceneAt(-1e9), sceneFrame(0), nav(-1),
                 sentAt(-1e9), stateAt(-1e9), frame(0), flightShip(0), lastX(0), lastY(0), lastZ(0), lastAt(-1e9), vx(0), vy(0), vz(0) {}
     ~PrivNet() {
         for (size_t i = 0; i < peers.size(); i++) {
@@ -235,7 +248,7 @@ PrivNet *g_net;
 void forget_puppets(const char *why);
 void take_scene(const PrivScene &sc, int seat);
 void take_hit(const PrivHit &h);
-void take_shot(int seat, Bit32u id);
+void take_shot(int seat, const PrivShot &sh);
 void take_chat(const Chat &c, int seat);
 void frame_chats_and_shots();
 double g_nextTryMs;
@@ -907,7 +920,7 @@ void handle(Peer *p, NetworkMessage &msg) {
             return;
         }
         const int seat = g_net->host ? p->player : (msg.priv_shot().has_player() ? (int)msg.priv_shot().player() : 0);
-        take_shot(seat, msg.priv_shot().id());
+        take_shot(seat, msg.priv_shot());
         if (g_net->host) {
             NetworkMessage out;
             *out.mutable_priv_shot() = msg.priv_shot();
@@ -1806,6 +1819,53 @@ void take_chat(const Chat &c, int seat) {
     notice(who + ": " + c.message());
 }
 
+// A shot of another machine's ship worth copying here: the shooter within the arena of our ship; then a pilot's own
+// shot always (the user: "I suppose we should also fire for the actual player cannons"; "players don't always target
+// who they mean"), an AI ship's when its target is a ship shown here (the user: "a simpler rule could be that the
+// weapons are only manifested on the guest's computer if the one firing the laser had a ship that is on the guest's
+// computer targeted.  I suspect the AI always does that") -- our ship, or one we show -- and, its target not known
+// (caught between maneuvers), when its nose (its matrix's second row) is within kShotConeDeg of a pilot's ship.
+bool target_shown_here(int seat, Bit32u id) {
+    if (seat < 0 || seat >= kMaxSeats) return false;
+    if (seat == g_net->self) {
+        return id == 0 || (priv_scene_has((Bit16u)id) && priv_ship_is_alive((Bit16u)id));    // (ours, or a ship of our game)
+    }
+    if (id == 0) return g_net->puppets[seat].obj && !g_net->puppets[seat].parked;
+    const NpcPuppet *n = npc_of(seat, id, false);
+    return n && n->obj && !n->parked;
+}
+
+bool shot_worth_copying(Bit16u shooter, bool pilot, int targetSeat, Bit32u targetId) {
+    Bit32s sp[3], own[3], m[9];
+    priv_ship_pos(shooter, sp);
+    priv_player_pos(own);
+    const double u = kUnitsPerMetre;
+    const double dx = (own[0] - (double)sp[0]) / u, dy = (own[1] - (double)sp[1]) / u, dz = (own[2] - (double)sp[2]) / u;
+    const double dOwn = sqrt(dx * dx + dy * dy + dz * dz);
+    if (dOwn > kShotArenaMetres) return false;
+    if (pilot) return true;
+    if (targetSeat >= 0) return target_shown_here(targetSeat, targetId);
+    priv_ship_matrix(shooter, m);
+    const double fx = m[3], fy = m[4], fz = m[5], fl = sqrt(fx * fx + fy * fy + fz * fz);
+    if (fl < 1) return false;
+    const double cone = cos(kShotConeDeg * 3.14159265358979 / 180.0);
+    auto aimed_at = [&](const Bit32s tp[3]) {
+        const double ax = (tp[0] - (double)sp[0]) / u, ay = (tp[1] - (double)sp[1]) / u, az = (tp[2] - (double)sp[2]) / u;
+        const double d = sqrt(ax * ax + ay * ay + az * az);
+        if (d < 1 || d > kShotReachMetres) return d < 1;
+        return (fx * ax + fy * ay + fz * az) / (fl * d) >= cone;
+    };
+    if (aimed_at(own)) return true;
+    for (int s = 0; s < kMaxSeats; s++) {
+        const Puppet &q = g_net->puppets[s];
+        if (s == g_net->self || !q.obj || q.parked || q.obj == shooter) continue;
+        Bit32s tp[3];
+        priv_ship_pos(q.obj, tp);
+        if (aimed_at(tp)) return true;
+    }
+    return false;
+}
+
 void frame_chats_and_shots() {
     for (size_t i = 0; i < g_net->chats.size(); i++) {
         const int seat = g_net->chats[i].first;
@@ -1821,23 +1881,73 @@ void frame_chats_and_shots() {
     }
     g_net->chats.clear();
     const double now = PIC_FullIndex();
-    for (size_t i = 0; i < g_net->shots.size(); i++) {
-        NpcPuppet *p = npc_of(g_net->shots[i].first, g_net->shots[i].second, false);
-        if (p && p->obj && !p->parked && !p->pod) {
-            priv_ship_fire(p->obj, true);
-            p->fireUntil = now + kFireMs;
+    if (!g_net->shots.empty()) {
+        // the memory first: the copies' bolts alive in our scene, and the game's recent low
+        Bit16u shooters[96];
+        const int nb = priv_scene_bolt_shooters(shooters, 96);
+        int copies = 0;
+        for (int i = 0; i < nb; i++) {
+            if (shooters[i] && is_puppet_obj(shooters[i])) copies++;
+        }
+        const bool roomy = heap_low_recent(2) >= kShotFloor && copies < kCopyBoltCap;
+        static double toldAt = -1e9;
+        if (now - toldAt > 5000) {
+            toldAt = now;
+            std::string who;
+            for (int i = 0; i < nb && i < 12; i++) {
+                char b[24];
+                snprintf(b, sizeof b, " %04X%s", shooters[i], is_puppet_obj(shooters[i]) ? "(copy)" : "");
+                who += b;
+            }
+            wclog(2, "Privateer: copied shots: %u fired, %u left out (out of the arena, aimed at no pilot, or memory); the copies' bolts alive "
+                  "%d of %d at most (bolts in the scene %d, by:%s), the heap's low %d (none under %d)", g_net->copiesFired, g_net->copiesSkipped,
+                  copies, (int)kCopyBoltCap, nb, who.c_str(), heap_low_recent(2), (int)kShotFloor);
+        }
+        for (size_t i = 0; i < g_net->shots.size(); i++) {
+            const PrivNet::ShotCopy &sc = g_net->shots[i];
+            const int seat = sc.seat;
+            const Bit32u id = sc.id;
+            Bit16u obj = 0;
+            NpcPuppet *np = NULL;
+            if (id == 0) {
+                if (seat >= 0 && seat < kMaxSeats && !g_net->puppets[seat].parked) obj = g_net->puppets[seat].obj;
+            } else {
+                np = npc_of(seat, id, false);
+                if (np && !np->parked && !np->pod) obj = np->obj;
+            }
+            if (!obj) continue;
+            if (!roomy || !shot_worth_copying(obj, id == 0, sc.targetSeat, sc.targetId)) {
+                g_net->copiesSkipped++;
+                continue;
+            }
+            if (priv_ship_fire_guns(obj, sc.groups)) g_net->copiesFired++;
         }
     }
     g_net->shots.clear();
 }
 
-void take_shot(int seat, Bit32u id) {
-    NpcPuppet *p = npc_of(seat, id, false);
+void take_shot(int seat, const PrivShot &sh) {
     static unsigned shots;
-    if (p && p->obj && !p->parked && g_net->shots.size() < 32) {
-        g_net->shots.push_back(std::make_pair(seat, id));              // (fired at the frame)
+    if (g_net->shots.size() >= 32) return;          // (a list has a cap)
+    const Bit32u id = sh.id();
+    const PrivNet::ShotCopy c = { seat, id, (int)sh.groups(), sh.has_target_seat() ? (int)sh.target_seat() : -1, sh.target_id() };
+    if (id == 0) {
+        // the pilot's own ship's guns (its puppet here)
+        if (seat >= 0 && seat < kMaxSeats && g_net->puppets[seat].obj && !g_net->puppets[seat].parked) {
+            g_net->shots.push_back(c);
+            if (++shots % 20 == 1) {
+                wclog(2, "Privateer: pilot %d's own ship fires here (%u shots of others' so far; copied %u, left out %u)", seat + 1, shots,
+                      g_net->copiesFired, g_net->copiesSkipped);
+            }
+        }
+        return;
+    }
+    NpcPuppet *p = npc_of(seat, id, false);
+    if (p && p->obj && !p->parked) {
+        g_net->shots.push_back(c);              // (fired at the frame, if worth a copy)
         if (++shots % 20 == 1) {
-            wclog(2, "Privateer: pilot %d's %s (ds:%04X) fires here (%u shots of theirs so far)", seat + 1, p->type.c_str(), p->obj, shots);
+            wclog(2, "Privateer: pilot %d's %s (ds:%04X) fires here (%u shots of others' so far; copied %u, left out %u)", seat + 1, p->type.c_str(),
+                  p->obj, shots, g_net->copiesFired, g_net->copiesSkipped);
         }
     }
 }
@@ -2189,22 +2299,46 @@ int priv_session_hit(Bit16u target, Bit16u source, bool bump, int loc, int damag
     return 0;
 }
 
-void priv_session_fired(Bit16u ship) {
-    if (!g_net || g_net->self < 0 || !ship || ship == priv_player_ship() || is_puppet_obj(ship)) {
+void priv_session_fired(Bit16u ship, int groups, Bit16u target) {
+    if (!g_net || g_net->self < 0 || !ship || is_puppet_obj(ship)) {
         return;
     }
-    if (!somebody_within(kStateMetres)) {
+    // (only where somebody may see it: the receivers copy a shot within their arena alone)
+    if (!somebody_within(kShotArenaMetres + kShotReachMetres)) {
         return;
     }
     const double now = PIC_FullIndex();
-    NpcTrack *t = track_of(ship, true);
-    if (t && now - t->shotAt < kShotEveryMs) {
-        return;
+    const bool own = ship == priv_player_ship();
+    if (own) {
+        // our own ship's guns (id 0): the others' puppet of it fires too (the user: the guest "didn't see any gun fire
+        // at all in the arena from the other ship"; "I suppose we should also fire for the actual player cannons")
+        if (now - g_net->ownShotAt < kShotEveryMs) return;
+        g_net->ownShotAt = now;
+    } else {
+        NpcTrack *t = track_of(ship, true);
+        if (t && now - t->shotAt < kShotEveryMs) {
+            return;
+        }
+        if (t) t->shotAt = now;
     }
-    if (t) t->shotAt = now;
     NetworkMessage msg;
-    msg.mutable_priv_shot()->set_player((Bit32u)g_net->self);
-    msg.mutable_priv_shot()->set_id(ship);
+    PrivShot *sh = msg.mutable_priv_shot();
+    sh->set_player((Bit32u)g_net->self);
+    sh->set_id(own ? 0 : ship);
+    sh->set_groups((Bit32u)groups);
+    // its target as the receivers know ships: our own ship (our seat, 0), a pilot's ship shown here (its seat, 0), an
+    // encounter ship of another's shown here (its owner, its id there), one of ours (our seat, its address)
+    int tSeat = -1;
+    Bit32u tId = 0;
+    if (target) {
+        int seat = -1;
+        Bit32u id = 0;
+        if (target == priv_player_ship()) { tSeat = g_net->self; tId = 0; }
+        else if (priv_session_puppet_of(target, &seat, &id)) { tSeat = seat; tId = id; }
+        else { tSeat = g_net->self; tId = target; }
+    }
+    sh->set_target_seat(tSeat);
+    sh->set_target_id(tId);
     for (size_t i = 0; i < g_net->peers.size(); i++) {
         if (g_net->peers[i]->hello && g_net->peers[i]->conn.is_open()) {
             g_net->peers[i]->conn.send_best_effort(msg);
@@ -2366,6 +2500,7 @@ void priv_session_frame() {
                 priv_ship_set_shields(p.obj, p.shield);
             }
             if (priv_thinking(priv_ship_controller(p.obj))) priv_ship_fire(p.obj, false);
+
             p.parked = false;
         } else if (p.obj && !p.parked) {
             // out of reach: far off, kept for its return

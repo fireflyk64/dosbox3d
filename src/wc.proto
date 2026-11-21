@@ -656,7 +656,10 @@ message PrivPodTaken {
 }
 message PrivShot {
     optional uint32 player = 1;
-    optional uint32 id = 2;
+    optional uint32 id = 2;             // the ship that fired, in the sender's game (0: the sender's own ship)
+    optional uint32 groups = 3;         // the gun groups it fired (its control record's +0x1E bits 3-6; 0: not known)
+    optional sint32 target_seat = 4;    // its target, as the receivers know ships: the seat of its owner (-1: none known),
+    optional uint32 target_id = 5;      // and its id there (0: that pilot's own ship)
 }
 // A pilot's ship as its own machine flies it (Privateer), best effort, while another pilot shares its system: its place
 // (world units), attitude (3x3, 1.0 = 256), velocity (units a second, from its last places) and appearance (what the

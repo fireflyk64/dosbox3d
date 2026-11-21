@@ -80,6 +80,10 @@ enum {
     kSeg120 = 0x489B,
     kFireGuns = 0x0004,             // seg120:0004(weapons far, n): a ship's guns fired (the weapons' +0xA is the ship)
     kControlFire = 0x1E,            // the control record's fire bits: 4 the guns, 2 the launcher
+    kShipWeapons = 0x4E,            // a ship's weapons record (far; seg120:0004's first argument)
+    kSeg125 = 0x4B2B,
+    kWeaponsUpdate = 0x0158,        // seg125:0158(weapons far, scene, control record far): a ship's guns (and launcher) as its record says
+    kScene = 0x66C6,                // the scene (its object list at +8, ds:66CE)
     kPodVtable = 0x1584,            // a cargo pod (CDBRTYPE, made by seg036:0C90 as cargo is expelled or a ship dies)
     kPodList = 0x4B,                // its cargo list: a word, the first record's node (far) at +2, the last at +6; a node
                                     // is {next far, record far}; a record (the commodity, its names, its units) some 0x28 bytes
@@ -1313,6 +1317,8 @@ static Bit16u hit_source(Bit16u hitter, bool *bump) {
     return 0;
 }
 
+static bool fire_record(Bit16u obj, PhysPt *rec);
+enum { kFireGroupBits = 0x78 };     // (the record's +0x1E bits 3-6: gun groups 0-3)
 bool priv_check_hooks(Bit32u ip) {
     if (!g_found) {
         return false;
@@ -1422,7 +1428,26 @@ bool priv_check_hooks(Bit32u ip) {
     if (ip == kFireGuns && codeSeg == (Bit16u)(g_privLoadSeg + kSeg120)) {
         const PhysPt sp = SegPhys(ss) + reg_sp;
         const Bit16u off = mem_readw(sp + 4), seg = mem_readw(sp + 6);
-        priv_session_fired(mem_readw(((PhysPt)seg << 4) + (Bit16u)(off + 0xA)));
+        if (wclog_level() >= 3) {
+            const Bit16u ship = mem_readw(((PhysPt)seg << 4) + (Bit16u)(off + 0xA));
+            int at = -1;
+            for (int k = 0; k < 0x90 && at < 0; k += 1) {
+                if (priv_r16((Bit16u)(ship + k)) == off && priv_r16((Bit16u)(ship + k + 2)) == seg) at = k;
+            }
+            PhysPt rec = 0;
+            Bit8u bits = 0;
+            if (fire_record(ship, &rec)) mem_readb_checked(rec, &bits);
+            wclog(3, "Privateer: guns fired: weapons %04X:%04X (the ship's +%02X), n %04X, ship ds:%04X (%s), its record's +1E %02X, from %04X:%04X", seg,
+                  off, at, mem_readw(sp + 8), ship, priv_ship_cast_name(ship).c_str(), bits, (Bit16u)(mem_readw(sp + 2) - g_privLoadSeg), mem_readw(sp));
+        }
+        {
+            // the shot as its owner's game sends it: the groups it fired (an AI ship's record says), its target
+            const Bit16u ship = mem_readw(((PhysPt)seg << 4) + (Bit16u)(off + 0xA));
+            PhysPt rec = 0;
+            Bit8u bits = 0;
+            if (ship != priv_r16(kPlayerShip) && fire_record(ship, &rec)) mem_readb_checked(rec, &bits);
+            priv_session_fired(ship, bits & kFireGroupBits, ship == priv_r16(kPlayerShip) ? priv_player_target() : plan_target(ship));
+        }
         return true;
     }
     if (ip == kNpcThink && codeSeg == (Bit16u)(g_privLoadSeg + kSeg042) && !g_heldAi.empty()) {
@@ -1789,6 +1814,15 @@ bool priv_script_item(const std::string &item, double t) {
         c.guardVtable = kShipVtable;
         const bool queued = priv_ship_is_alive(ship) && queue_call(c);
         wclog(1, "key script %.1fs: ds:%04X out of the scene%s", t, ship, queued ? "" : ": not queued");
+        return true;
+    }
+    if (item.compare(0, 10, "!privfire=") == 0 && g_found) {
+        // !privfire=<1|0>: the last ship a spawn of ours made fires its guns once, as a copy's shot does (1), or has its
+        // fire bit let go (0)
+        const Bit16u ship = priv_last_spawned();
+        const bool queued = item[10] == '1' && priv_ship_fire_guns(ship, 0x18);
+        if (item[10] != '1') priv_ship_fire(ship, false);
+        wclog(1, "key script %.1fs: ds:%04X %s", t, ship, item[10] == '1' ? (queued ? "fires" : "cannot fire") : "fire bit let go");
         return true;
     }
     if (item.compare(0, 8, "!privdmg") == 0 && g_found) {
@@ -2291,6 +2325,19 @@ static int scene_objects(Bit16u out[], int cap, Bit16u vtable) {
 
 int priv_scene_pods(Bit16u out[], int cap) { return scene_objects(out, cap, kPodVtable); }
 
+// The ships that fired the bolts now in our scene (a laser bolt's shooter at its +0x25, the other bolt's at +0x4C:
+// hit_source), one a bolt; missiles not counted.  A bolt is some 82 (0x2DE8) and 116 (0x2F22) bytes of the game's near
+// heap (measured by their places), alive a second or two.
+int priv_scene_bolt_shooters(Bit16u out[], int cap) {
+    Bit16u a[64];
+    int k = 0;
+    const int n1 = scene_objects(a, 64, 0x2DE8);
+    for (int i = 0; i < n1 && k < cap; i++) out[k++] = priv_r16((Bit16u)(a[i] + 0x25));
+    const int n2 = scene_objects(a, 64, 0x2F22);
+    for (int i = 0; i < n2 && k < cap; i++) out[k++] = priv_r16((Bit16u)(a[i] + 0x4C));
+    return k;
+}
+
 bool priv_scene_has(Bit16u obj) {
     if (!obj || !priv_in_flight()) {
         return false;
@@ -2591,6 +2638,68 @@ void priv_ship_fire(Bit16u obj, bool on) {
     mem_writeb(rec + kControlFire, on ? (Bit8u)(b | 4) : (Bit8u)(b & ~4));
 }
 
+// A ship's guns fired by the game's own weapons update, seg125:0158(weapons far, scene, control record far): it marks the
+// guns of the groups its record's +0x1E bits 3-6 name active (each gun's +0x35) and, with bit 2 (4) set, fires them
+// (seg120:0004, per gun: active, its group, its refire time, its energy).  An AI ship's think fills its control record
+// (the controller's +2, far: the plan's head) and calls the update; a puppet's think is held, so it never fires by the
+// bit alone (measured: a held pirate with the bit set 3 s made no bolt, and seg120:0004 called directly fired nothing:
+// no gun active).  So a copy's shot is this call, the bit set for it and let go after.  The weapons record is the
+// ship's +0x4E (far: measured, the first argument of seg120:0004 for the player's and a pirate's), the scene ds:66C6.
+// Queued for the frame's call place, guarded by the ship.  False: not queued.
+// The record's +0x1E for an AI ship (the update's second branch, seg125:038A): bits 3-6 make gun groups 0-3 active (each
+// gun's +0x20 its group), bit 2 fires the active ones.  A copy fires every group the ship has.
+enum { kFireAllGroups = 0x04 | 0x08 | 0x10 | 0x20 | 0x40 };
+static bool fire_record(Bit16u obj, PhysPt *rec) {
+    const Bit16u ctl = priv_r16((Bit16u)(obj + kShipController));
+    const Bit16u off = ctl ? priv_r16((Bit16u)(ctl + 2)) : 0, seg = ctl ? priv_r16((Bit16u)(ctl + 4)) : 0;
+    if (!seg) return false;
+    *rec = ((PhysPt)seg << 4) + off + kControlFire;
+    return true;
+}
+static void fire_guns_off(Bit16u obj) {
+    PhysPt rec;
+    Bit8u b = 0;
+    if (priv_ship_is_alive(obj) && fire_record(obj, &rec) && !mem_readb_checked(rec, &b)) mem_writeb(rec, (Bit8u)(b & ~kFireAllGroups));
+}
+static void fire_guns_done(int tag, Bit16u ax, Bit16u dx) {
+    (void)ax; (void)dx;
+    fire_guns_off((Bit16u)tag);
+}
+static void fire_guns_cancel(int tag) {
+    fire_guns_off((Bit16u)tag);
+}
+bool priv_ship_fire_guns(Bit16u obj, int groups) {
+    if (!priv_ship_is_alive(obj)) return false;
+    const Bit16u off = priv_r16((Bit16u)(obj + kShipWeapons)), seg = priv_r16((Bit16u)(obj + kShipWeapons + 2));
+    const Bit16u ctl = priv_r16((Bit16u)(obj + kShipController));
+    const Bit16u roff = ctl ? priv_r16((Bit16u)(ctl + 2)) : 0, rseg = ctl ? priv_r16((Bit16u)(ctl + 4)) : 0;
+    if (!seg || !rseg) return false;
+    PrivCall c;
+    c.para = kSeg125;
+    c.off = kWeaponsUpdate;
+    c.args.push_back(off);
+    c.args.push_back(seg);
+    c.args.push_back(kScene);
+    c.args.push_back(roff);
+    c.args.push_back(rseg);
+    c.guardObj = obj;
+    c.guardVtable = kShipVtable;
+    c.done = fire_guns_done;
+    c.cancel = fire_guns_cancel;
+    c.tag = obj;
+    if (!queue_call(c)) return false;
+    PhysPt rec;
+    Bit8u b = 0;
+    if (fire_record(obj, &rec) && !mem_readb_checked(rec, &b)) {
+        // (the record read by the update when it runs, at the next frame): the groups the original fired, groups 0
+        // and 1 when not known (a pilot's ship: the player's record keeps no groups; pirates fire 0 and 1, measured
+        // +0x1E 1C)
+        const Bit8u g = (Bit8u)((groups & 0x78) ? (groups & 0x78) : 0x18);
+        mem_writeb(rec, (Bit8u)((b & ~kFireAllGroups) | 0x04 | g));
+    }
+    return true;
+}
+
 static bool far_of(Bit16u at, PhysPt *out) {
     const Bit16u off = priv_r16(at), seg = priv_r16((Bit16u)(at + 2));
     if (!seg) {
@@ -2870,6 +2979,18 @@ int priv_near_free() {
 
 bool priv_in_flight() {
     return g_found && priv_r16(kPlayerShip) != 0 && priv_r16(kPlayerRecord) != 0;
+}
+
+// The player's target: its ship's targeting system (a far object at the ship's +0x5A; its key handler, seg109:0A60, takes
+// T, L, I) keeps the ship targeted at its +0xC (near; its cheat key kills [+0xC]): measured, the host's Tarsus there
+// while the target display showed it.  0: none.
+Bit16u priv_player_target() {
+    const Bit16u own = priv_r16(kPlayerShip);
+    if (!g_found || !own) return 0;
+    const Bit16u off = priv_r16((Bit16u)(own + 0x5A)), seg = priv_r16((Bit16u)(own + 0x5C));
+    Bit16u t = 0;
+    if (!seg || mem_readw_checked(((PhysPt)seg << 4) + (Bit16u)(off + 0xC), &t)) return 0;
+    return t;
 }
 
 Bit16u priv_player_ship() {

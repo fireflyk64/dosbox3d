@@ -66,6 +66,8 @@ const char *priv_control_mode();
 bool priv_in_flight();
 // The player's ship object (a near pointer, ds:66B4; 0 at a base): a new one is a new flight.
 Bit16u priv_player_ship();
+// The ship the player's targeting system is on (0: none).
+Bit16u priv_player_target();
 // The player's ship's place (world units: 256 to the game's metre; z up), zeros when not flying.
 void priv_player_pos(Bit32s pos[3]);
 // The name of the system the player flies in (the game's own copy, as its displays show it), "" when not flying.
@@ -85,7 +87,9 @@ bool priv_spawn_ship(const char *type, const char *appearance, const char *cast,
 bool priv_hold_ai(Bit16u controller, bool hold);
 void priv_ship_set_target(Bit16u ship, Bit16u target);
 Bit16u priv_ship_target_now(Bit16u ship);                   // the ship its AI is after (0: none known)
-int priv_ship_pilot_anger(Bit16u ship);                     // its pilot's anger at the player (+0x1A, 0x100 its mood's bit 1); -1 none
+int priv_ship_pilot_anger(Bit16u ship);
+int priv_scene_bolt_shooters(Bit16u out[], int cap);
+bool priv_ship_fire_guns(Bit16u obj, int groups);          // its guns (those groups: +0x1E bits 3-6) fired by the game's weapons update at the next frame (a copy's shot)       // the ships that fired the bolts now in our scene, one a bolt                     // its pilot's anger at the player (+0x1A, 0x100 its mood's bit 1); -1 none
 void priv_ship_anger(Bit16u ship);                         // angry at the player, as a hit from the player makes it (at the next frame)    // its AI's target (written at the next frame: the plan is far data)    // false: not held (the list is full)
 void priv_hold_ai_none();
 void priv_let_think(Bit16u controller, int frames);   // a held controller thinks for this many frames (its pilot speaks)
@@ -157,7 +161,7 @@ bool priv_session_silent_death(Bit16u ship);
 // A hit in our game, before the damage reaches the model: target, the ship behind it (the shooter, or the other ship of a
 // bump), the quadrant and the damage; returns the damage our game keeps (a hit on another machine's ship is sent to it).
 int priv_session_hit(Bit16u target, Bit16u source, bool bump, int loc, int damage);
-void priv_session_fired(Bit16u ship);
+void priv_session_fired(Bit16u ship, int groups, Bit16u target);
 // The room's chat: a line typed here (the 0 key's prompt) to the others; true when a session takes it.
 bool priv_session_chat(const std::string &text);
 
