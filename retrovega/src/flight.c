@@ -354,6 +354,11 @@ static int g_star_most;                 /* the most on screen in a frame, this f
 static int g_star_n;
 int __far __cdecl rv_stars_place(unsigned seed, const long __far *basis, int cx, int cy, int rows, short __far *out, int most);
 static const LfVec g_world_up = { 0, 256, 0 };
+#define RADAR_THIRD 158
+/* (RADAR_THIRD, a third side's blip, the Rlaan's: the flight palette's lilac, 216 150 216, the brightest purple the
+ * colours every mission shares have (the user, 2026-11-20: "rlaan should be bright purple-- different from blue";
+ * amber before)) */
+
 static int g_cam_cx = SCR_W / 2;        /* the camera's centre column, g_cam_cy its row: the view's middle, thrown about by a hit (fx_shake) */
 static int g_cam_cy0 = SCR_H / 2;       /* (the row before the throw) */
 static int g_cam_cy = SCR_H / 2;        /* the camera's centre row: the opening's middle (ships_set_camera's) */
@@ -2625,7 +2630,7 @@ static int radar_contact(int s, CockpitContact *c)
     /* (grey unidentified: without IFF or the radar emitting) */
     c->colour = !g_sys.iff || g_sys.emcon != EMCON_ACTIVE || sys_level(SYS_IFF) >= SYS_WRECKED
                 || (sys_level(SYS_IFF) && (frameCounter >> (5 - sys_level(SYS_IFF))) & 1) ? UI_GREY5
-                : commAnimInfo[s] == 0 ? UI_HILITE : commAnimInfo[s] == 1 ? UI_RED : UI_AMBER4;
+                : commAnimInfo[s] == 0 ? UI_HILITE : commAnimInfo[s] == 1 ? UI_RED : RADAR_THIRD;
     return 1;
 }
 

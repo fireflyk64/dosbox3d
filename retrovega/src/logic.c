@@ -4382,8 +4382,12 @@ static void step_ground(void)
         if (s == 0 && frameCounter % 30 == 0)
             RV_LOG("planet: frame %u, the player %ld km over the ground, roof %ld", frameCounter, over / 256, roof / 256);
 #endif
-        if (s == 0)
-            g_air = air_density(over);  /* (the air the player flies in next step: step_air) */
+        if (s == 0 && planet_air())     /* (the air the player flies in next step: step_air.  A dead moon, kind=grey,
+                                           has none, and no pull to speak of: space's flight down to its dust.  The
+                                           user, 2026-11-20: "on planets that are a moon without atmosphere ... we
+                                           can probably leave the space dynamics there all the way through", "the
+                                           gravity on a moon isn't strong enough to matter that much") */
+            g_air = air_density(over);
         if (rvController[s] == CTL_PUPPET)
             continue;
         if (s && over < 0 && planet_tunnels()) {   /* (a tunnel's mission: a step into rock undone, never lifted through

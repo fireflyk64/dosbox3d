@@ -449,7 +449,9 @@ each point's height over it (the colony, Nav 2, 187 km over the shore; Nav 1 ove
   "the aera will think the rlaan did an unprovoked attack on them. and then the local aera will strike back... the player
   should stay out of it". The briefing orders no shot at anything Rlaan (not enforced). The carrier that hides comes back
   with the player within 5,000 km (`HOME_BACK_KM`; 15,500 before: unseen from the field's edge). The afterburner's push
-  in the ground's air is 212 kps a second at most (`AIR_AB_KPS`): straight up it barely climbs.
+  in the ground's air is 212 kps a second at most (`AIR_AB_KPS`): straight up it barely climbs. A dead moon (`kind=grey`: Luyten's, `planet_air`) has no air and no pull: space's flight
+  down to its dust (the user: "the gravity on a moon isn't strong enough to matter that much for our purposes"). The Rlaan's
+  radar blips are lilac (`RADAR_THIRD`, the shared palette's 158; the user: "bright purple-- different from blue").
 - **The ground and the low air** (2026-11-20): the ground's hit on the player is nobody's (`do_damage`'s source 0xFFFF: as
   the player's own slot the layer took it, in a room, for two pilots' ships touching and dropped it, so a crash did
   nothing); under 1,200 km and over half its top speed the air shakes the player's ship (`logic_buffet`, 1 to 3 pixels

@@ -46,6 +46,7 @@ long planet_over(const LfVec *pos, long *roof);
 /* a mission's planet (missions.txt planet, ground): begun as the mission loads (next_mission), made and coloured at
  * the launch (planet_ready), its ground nav points put over the ground (planet_navs, after the tables are loaded) */
 void planet_mission(const RvMission __far *m);
+int planet_air(void);                   /* the mission's planet has air: not a dead moon, kind=grey (logic.c 4a) */
 int planet_tunnels(void);               /* the mission's ground has a tunnel: the autopilot flies none (logic.c) */
 void planet_pace(unsigned ticks);       /* a flight frame's work, clock240 ticks (the wait for the frame rate left out):
                                            RV.EXE's own picture's detail held to the frame rate (pv_pace); at the

@@ -5235,6 +5235,7 @@ static void t_ground_hit(void)
 {
     static const char __far e_made[] = "Enigma's planet: planet_make %d (100: made)";
     static const char __far e_buffet[] = "the low air's shake, case %d: %d (wanted %d)";
+    static const char __far e_moon[] = "the grey moon, 300 km up: the shake %d (0); still for 8 s, from %d km (its centre's) to %d (the same: no air, no pull)";
     static const char __far e_dead[] = "a shallow dive into the ice: the player's state %d (9: destroyed) %d km over it after %d steps";
     const RvShipType __far *t;
     long roof, over = 0;
@@ -5269,6 +5270,24 @@ static void t_ground_hit(void)
         over = planet_over((const LfVec *)&gPositionVector[0], &roof);
     }
     REQUIRE(shipAiState[0] == 9 && over < 30L * KM, e_dead, shipAiState[0], over / KM, i);
+    /* a dead moon (LUYTENP, kind=grey: planet_air 0) has no air and no pull: 300 km over its dust at the top speed no
+     * shake, and still there for 8 s it keeps its height */
+    pt_launch_named("LUYTENP");
+    k = (int16_t)planet_make(0);
+    REQUIRE(k == 100, e_made, k, 0, 0);
+    playerCanBeDamaged = 0;
+    air_put(300, 0);
+    pt_speed(0, slot_type(0)->max_kps);
+    if (!pt_steps(2))
+        return;
+    i = (int16_t)logic_buffet();
+    air_put(300, 0);
+    if (!pt_steps(1))
+        return;
+    over = air_alt();
+    if (!pt_steps(8 * SEC))
+        return;
+    REQUIRE(i == 0 && labs(air_alt() - over) <= 5, e_moon, i, over, air_alt());
 }
 
 /* M2.21: easy's faster bolts (campaign.c easy_guns; the user, 2026-11-17: "could we make the easy option have the old
@@ -9039,7 +9058,7 @@ static const char __far n_m8_66[] = "M8.66 campaign-card (camp_flown_from, camp_
 static const char __far n_m8_65[] = "M8.65 cloak-run (ENIGMAP, role=guard, the cloak): cloaked, nobody sees the player and the guards keep their posts, Nav 1 to the canyon's end; a surprise from behind turns only that one; Alt+C and it lets go; the post burnt with no heavy coming; the autopilot goes home past the guards (the log: cloakrun)";
 static const char __far n_m8_69[] = "M8.69 carrier-hide (home_hide_step): ENIGMAP's carrier jumps out 10 s after the launch and back in when the player comes back to it";
 static const char __far n_m8_70[] = "M8.70 envoy-runs (flee_step): ENIGMAP's envoy holds while the player is unseen, runs on being seen and gets away 180 s on (lost), and dies to the guns from behind within a minute; Nav 4 (nav ... last) is on only with Navs 1, 2 and 3 flown";
-static const char __far n_m8_72[] = "M8.72 ground-hit (step_ground, logic_buffet): the player in a shallow dive into Enigma's ice is destroyed (the hit nobody's: the layer drops none of it); low and over half its top speed the air shakes the ship, 1 to 3 pixels, not high up";
+static const char __far n_m8_72[] = "M8.72 ground-hit (step_ground, logic_buffet): the player in a shallow dive into Enigma's ice is destroyed (the hit nobody's: the layer drops none of it); low and over half its top speed the air shakes the ship, 1 to 3 pixels, not high up; a dead moon (kind=grey) has no air and no pull";
 static const char __far n_m8_71[] = "M8.71 tunnel (tr_tunnel_at, ENIGMAT): its open ends under the sky, its nav points under rock 600 km over its floor, the autopilot refused at its mouth, every leg flown straight clear of rock, the fork's guards inside";
 static const char __far n_m8_68[] = "M8.68 air (step_air, air_roll): in a planet's air the player's ship keeps height at speed and sinks without it, hangs on its tail only with the afterburner low down and with the throttle alone high up; its wings come level";
 static const char __far n_m8_67[] = "M8.67 ground-up (step_ground): over Enigma's ice, 64,000 km from its centre, a fighter low over the ground is lifted straight up";
