@@ -92,11 +92,13 @@ enum { kSayThinkFrames = 60 };          // 3 s of the page's 20 a second
 // Copied gunfire (PrivShot): the user, 2026-11-20, "I am worried we will overload the free slots with gun slots";
 // "the bolts should only be duplicated when both players are in the same arena of sorts ... maybe we could only
 // replicate bolts when they are headed roughly towards a target controlled by another player.  That way if an ai ship
-// is firing away from the guest craft at another craft on its box those bolts could be ignored".  So a shot is copied
-// here only from a ship within kShotArenaMetres of ours; an AI ship's only when its nose is within kShotConeDeg of a
-// pilot's ship (ours, or another pilot's shown here) within kShotReachMetres of it; none while the game's memory is
-// low (the last 2 s under kShotFloor, the governor's create floor and more: a copy is the first thing to go), and none
-// while kCopyBoltCap of the copies' bolts are alive in our scene (some 100 bytes a bolt: 2.4 KB at most).
+// is firing away from the guest craft at another craft on its box those bolts could be ignored"; then "a simpler rule
+// could be that the weapons are only manifested on the guest's computer if the one firing the laser had a ship that is
+// on the guest's computer targeted").  So a shot is copied here only from a ship within kShotArenaMetres of ours: a
+// pilot's always, an AI ship's when its target is a ship shown here (shot_worth_copying) -- its target not known, when
+// its nose is within kShotConeDeg of a pilot's ship within kShotReachMetres; none while the game's memory is low (the
+// last 2 s under kShotFloor, the governor's create floor and more: a copy is the first thing to go), and none while
+// kCopyBoltCap of the copies' bolts are alive in our scene (82-116 bytes a bolt: 2.8 KB at most).
 const double kShotArenaMetres = 3000.0, kShotReachMetres = 3500.0, kShotConeDeg = 20.0;
 enum { kShotFloor = 9000, kCopyBoltCap = 24 };
 const char kPodCast[] = "CARGO";        // (a pod's name at +0xE, where a ship has its cast's)
@@ -1314,7 +1316,11 @@ void forget_puppets(const char *why) {
 // nobody pressing T), so only a target the pilot took with the T key counts: the one the targeting system holds within
 // a second of a T press, for as long as it stays on it.
 int target_seat() {
-    static Bit16u chosen;
+    static Bit16u chosen, flight;
+    if (priv_player_ship() != flight) {
+        flight = priv_player_ship();
+        chosen = 0;             // (a new flight: nothing chosen yet)
+    }
     const Bit16u t = priv_player_target();
     if (PIC_FullIndex() - priv_controls_target_key_at() < 1000.0) chosen = t;
     if (t != chosen) return -1;
