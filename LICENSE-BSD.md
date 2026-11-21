@@ -16,9 +16,15 @@ the tools and tests around them, and RetroVega, our own DOS game.
   Daniel Reiter Horn and Patrick Reiter Horn, its only authors since that
   commit. Someone writing their own DOS emulator may take any of them into
   it without taking the GPL with them.
+- **`lobbylink`** (a git submodule, the lobby server and its clients) is
+  BSD 2-Clause as well, under its own `lobbylink/LICENSE`.
 - **RetroVega** (`retrovega/`) has its own `retrovega/LICENSE`: BSD
   2-Clause, except the spaceship pictures rendered from Vega Strike's ship
   models (GPL-2.0), which it names one by one.
+
+RetroVega alone, with its history, can be copied out into a repository of
+its own with `scripts/retrovega-export.py` (this repository stays the source
+of truth).
 
 The rule covers files added later too: a file new since `bb94d5c4` is BSD
 2-Clause unless it says otherwise. `git diff --name-only --diff-filter=A
@@ -32,7 +38,6 @@ bb94d5c4 HEAD` lists them.
   Velocity shareware releases, byte for byte, their publishers' to give away.
 - `web/so3/so3.enc`, `web/so3/so3.json`: the SO3 campaign package, built
   from the original game's data and the Hellcat art by Mario Brito (HCl).
-- `lobbylink` (a git submodule): its own repository and license.
 - The games themselves are never in this repository; the page asks for your
   own copy.
 
@@ -93,6 +98,7 @@ scripts/privtests/ships.sh
 scripts/rapnet-duo.sh
 scripts/raprun.sh
 scripts/rapsig.py
+scripts/retrovega-export.py
 scripts/rvnet-abi.sh
 scripts/rvnet-check.py
 scripts/rvnet-duo.sh

@@ -13,7 +13,7 @@ The only part of RetroVega derived from someone else's GPL work is the
 pictures of the spaceships, rendered from the Vega Strike project's ship
 models (Vega Strike Assets-Production, GPL-2.0, (c) the Vega Strike
 contributors).  Those files are named one by one below and stay under the
-GNU General Public License, version 2 (the text is in ../COPYING).  Someone
+GNU General Public License, version 2 (the text is in COPYING.GPL-2.0).  Someone
 who models their own craft and renders them in place of these files has a
 game that is BSD-licensed throughout.
 
@@ -109,18 +109,16 @@ Pictures of those ships in the documents:
     docs/packed.png
     docs/roster.png
 
-The ships' shapes measured off the same meshes (collision silhouettes and
-boxes, engine exhaust points); a game with its own ships makes its own with
-tools/hitboxes.py and tools/engines.py:
-
-    data/shapes.dat
-    data/hitboxes.csv
-    data/engines.csv
-
 The one piece of code ported from Vega Strike: the ship renderer's lighting,
 a port of Vega Strike's uber shader (programs/uber.fp):
 
     tools/shipviews.py
+
+The ships' sizes, collision shapes and engine points (data/shapes.dat,
+data/hitboxes.csv, data/engines.csv, the sizes in data/ships.csv) are BSD
+like the rest: the craft's sizes are RetroVega's own choice.  A game with
+its own ships remakes them from its models with tools/hitboxes.py and
+tools/engines.py.
 
 Built files that contain the pictures above (RV.DAT, the ships' view files
 .RVS/.RVH/.RV in the builds and on the web page) carry those pictures under
