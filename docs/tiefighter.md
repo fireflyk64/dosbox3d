@@ -1535,7 +1535,7 @@ we have at least a few gunboat missions around."
   pairing gives the guests' group a craft for each seat after the host's
   (the third the same as the second), and the host relays each guest's
   frames to the other.  The page's Players box stops at 3 (beta) for every
-  game.  `scripts/tfnet-duo.sh` takes `PLAYERS=3` (a second guest, GUEST2).
+  game (TIE Fighter's at 4 since 2026-11-21, below).  `scripts/tfnet-duo.sh` takes `PLAYERS=3` (a second guest, GUEST2).
 * **Measured.**  The Combat Chamber's first mission: the host, the guest and
   the third pilot fly craft 1, 2 and 3 of the player's group (objects 0, 1,
   2), each seen as a T/F on the other two machines, a guest's craft on the
@@ -1543,6 +1543,24 @@ we have at least a few gunboat missions around."
   mission 3: the host a gunboat (object 0), the two guests shuttles 1 and 2 of
   the guests' group (objects 2 and 3), each seen in its craft on the others,
   reports 16 to 20 ms old.
+
+### Four pilots (2026-11-21)
+
+* The user: "make a mode for tie fighter cd that supports 4 players (also beta
+  like 3)".  A page change: the registry's `maxSeats: 4` for `tf` (the
+  Players box takes 4, its "beta" shown from 3 on, as for every game); the
+  session has kept 8 seats' tables since step 2 and needed nothing new.
+  `scripts/tfnet-duo.sh` takes `PLAYERS=4` (a third guest, GUEST3, and a fifth
+  argument: its extra key script).
+* **Measured** (four machines over TCP, 2026-11-21).  The Z-95 challenge's
+  HG1W: the player's group of 1 made 4, the host craft 1, the guests 2, 3 and
+  4 (objects 0 to 3), every machine's craft list the same, each machine flying
+  its own craft and owning its share of the rest.  HB1W (a pairing): the host
+  a T/B (object 0), the guests' group 19 three T/Fs (objects 4 to 6), the four
+  machines' places for them within 0.1 km of each other at full throttle;
+  each pilot turned to face another (`!tieface`): the host saw the guests'
+  T/Fs, the first guest the host's T/B, the second and third guests each
+  other.
 
 ### The music in the browser (2026-11-07)
 

@@ -3,9 +3,10 @@
 # Chamber's first mission (docs/tiefighter.md, section 4's route), then each one's extra key script; the logs, the
 # wall-clock reports and the screenshots land in $OUT (default /tmp/tfnet-duo).
 #
-#   scripts/tfnet-duo.sh [seconds] [the host's extra script] [the guest's extra script] [the third's extra script]
+#   scripts/tfnet-duo.sh [seconds] [the host's extra script] [the guest's extra script] [the third's] [the fourth's]
 #
-#   PLAYERS=3    a room of three: a second guest, GUEST2 (its logs guest2.*), as the page's Players box does (step 10)
+#   PLAYERS=3    a room of three: a second guest, GUEST2 (its logs guest2.*), as the page's Players box does (step 10);
+#   PLAYERS=4    a room of four: a third guest too, GUEST3 (guest3.*)
 #   LOBBY=1      a lobby room (WebRTC data channels, as the browser's; a local lobby server on LOBBY_PORT, 8841), else TCP
 #   TFDIR=       the game as innoextract unpacks GOG's installer (default: tf/ beside this repository's root)
 #   DOSBOX=      the emulator (default build-native/src/dosbox)
@@ -29,7 +30,7 @@
 #   scripts/tfnet-video.py /tmp/v/h /tmp/v/g /tmp/v/full.mp4 --seg 66:221:host
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/tfnet-duo}; mkdir -p $OUT; rm -f $OUT/*.ppm $OUT/*.png
-DUR=${1:-100}; HOSTX=${2:-}; GUESTX=${3:-}; GUEST2X=${4:-}; PLAYERS=${PLAYERS:-2}
+DUR=${1:-100}; HOSTX=${2:-}; GUESTX=${3:-}; GUEST2X=${4:-}; GUEST3X=${5:-}; PLAYERS=${PLAYERS:-2}
 PORT=${PORT:-13455}
 TFDIR=${TFDIR:-$ROOT/tf}
 DOSBOX=${DOSBOX:-$ROOT/build-native/src/dosbox}
@@ -88,13 +89,17 @@ if [ -n "${LOBBY:-}" ]; then
 else
   NET_HOST="WCPORT=$PORT WCPLAYERS=$PLAYERS"; NET_GUEST="WCHOST=127.0.0.1 WCPORT=$PORT"
 fi
-NAMES="host guest"; [ "$PLAYERS" -ge 3 ] && NAMES="host guest guest2"
+NAMES="host guest"; [ "$PLAYERS" -ge 3 ] && NAMES="$NAMES guest2"; [ "$PLAYERS" -ge 4 ] && NAMES="$NAMES guest3"
 run host $NET_HOST ${HOSTENV:-} WCCALLSIGN=${HOST_CALLSIGN:-HOST} WCNET_KEYSCRIPT="$(echo "$script${HOSTX:+,$HOSTX}" | by_time)"
 sleep ${GUEST_LAG:-2}   # (GUEST_LAG=30: the guest still on the ground while the host flies)
 run guest $NET_GUEST ${GUESTENV:-} WCCALLSIGN=${GUEST_CALLSIGN:-GUEST} WCNET_KEYSCRIPT="$(echo "$script${GUESTX:+,$GUESTX}" | by_time)"
 if [ "$PLAYERS" -ge 3 ]; then
   sleep ${GUEST_LAG:-2}
   run guest2 $NET_GUEST WCCALLSIGN=GUEST2 WCNET_KEYSCRIPT="$(echo "$script${GUEST2X:+,$GUEST2X}" | by_time)"
+fi
+if [ "$PLAYERS" -ge 4 ]; then
+  sleep ${GUEST_LAG:-2}
+  run guest3 $NET_GUEST WCCALLSIGN=GUEST3 WCNET_KEYSCRIPT="$(echo "$script${GUEST3X:+,$GUEST3X}" | by_time)"
 fi
 wait $PIDS   # (the games only: a lobby server never ends)
 [ -n "${LPID:-}" ] && kill $LPID 2>/dev/null
