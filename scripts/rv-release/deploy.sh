@@ -24,7 +24,7 @@ grep -a "perf:" $S/web-$TAG-fight/out.txt | sed -E 's/.*emulator at ([0-9]+)%.*/
 PORT=$((PB + 2)) LOBBY_PORT=$((PB + 3)) OUT=$S/smoke-$TAG-rv python3 $REAP 500 scripts/web-smoke.sh rv > $S/smoke-$TAG-rv.log 2>&1
 grep -a -q 'RV OK' $S/smoke-$TAG-rv.log || { echo "RV SMOKE FAILED"; tail -6 $S/smoke-$TAG-rv.log | cut -c1-140; exit 1; }
 echo "rv smoke: $(grep -a 'RV OK' $S/smoke-$TAG-rv.log | cut -c1-40)"
-PORT=$((PB + 2)) LOBBY_PORT=$((PB + 3)) GAME_SOURCE=gog GAME_FILE="$MAIN/setup_wing_commander_1.01_gog_v1_(76764).exe" OUT=$S/smoke-$TAG-wc python3 $R/reap.py 600 scripts/web-smoke.sh 90 > $S/smoke-$TAG-wc.log 2>&1
+PORT=$((PB + 2)) LOBBY_PORT=$((PB + 3)) GAME_SOURCE=gog GAME_FILE="$MAIN/setup_wing_commander_1.01_gog_v1_(76764).exe" OUT=$S/smoke-$TAG-wc python3 $REAP 600 scripts/web-smoke.sh 90 > $S/smoke-$TAG-wc.log 2>&1
 grep -a -q 'SMOKE OK' $S/smoke-$TAG-wc.log || { echo "WC SMOKE FAILED"; tail -6 $S/smoke-$TAG-wc.log | cut -c1-140; exit 1; }
 echo "wc smoke: SMOKE OK"
 ps -eo args | grep -E 'deploy-full|host/web/deploy' | grep -v grep | grep -v fulldeploy && { echo "ANOTHER DEPLOY IS RUNNING"; exit 1; }
