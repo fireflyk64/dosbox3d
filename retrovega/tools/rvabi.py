@@ -136,6 +136,12 @@ def main():
         asm(consts, sections, items, funcs, sites)
         return
     if mode in ('--layer', '--write-layer', '--check-layer'):
+        if not os.path.exists(LAYER_DS):   # (RetroVega on its own, not inside dosbox3d: no layer to keep in step)
+            if mode == '--check-layer':
+                print('rvabi: no multiplayer layer beside this tree (%s): nothing to check'
+                      % os.path.relpath(os.path.dirname(LAYER_DS)), file=sys.stderr)
+                return
+            sys.exit('%s: not there; --layer and --write-layer need dosbox3d around retrovega/' % LAYER_DS)
         buf = io.StringIO()
         with redirect_stdout(buf):
             layer_header(consts, items, funcs, sites)

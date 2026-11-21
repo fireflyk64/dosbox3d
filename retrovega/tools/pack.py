@@ -10,7 +10,7 @@ Each view (render_all.py) is mapped to palette.json (palette.py):
                     they are, so any livery is a remap of those 16 indices
     glass pixels    the glass ramp (80-87) by brightness
 
-and encoded with WC's run-length sprite code (scripts/wc2data.py
+and encoded with WC's run-length sprite code (tools/wcformat.py
 encode_sprite), origin at the view's centre.  A ship becomes OUT/SHIPnn.RV
 (nn its type in hex): a WC container whose block 0 is the table of its views
 (37, or 62 for an asymmetric ship) and block 1 its record:
@@ -32,8 +32,8 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, '..', '..', 'scripts'))
-import wc2data  # noqa: E402
+sys.path.insert(0, HERE)
+import wcformat as wc2data  # noqa: E402  (the old games' container and sprites: tools/wcformat.py)
 
 
 def lin(c):
