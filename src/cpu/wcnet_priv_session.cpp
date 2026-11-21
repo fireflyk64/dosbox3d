@@ -1427,6 +1427,61 @@ bool is_puppet_obj(Bit16u obj) {
     return false;
 }
 
+// The bolt collector (the user, 2026-11-21: "Could we have a garbage collector that cleared active gunshots randomly
+// if the limit exceeded 190? ... if we're already at 190 problems abound ... to give some head room in case ships
+// spawn"; "I wonder if we could favor other-machine bolts to remove and then seconadrily non-player bolts ... but in
+// the end the limit must be respected no matter whose bolt").  The game's list of kept pointers holds 200 and its
+// 201st entry is the game's error 6281 and its end; every bolt keeps its shooter there, every AI its target, the comm
+// its speaker.  Each frame, from kBoltGcAt entries on (180), bolts are retired (priv_bolts_retire: the game takes them out
+// itself) -- enough to come down kBoltGcSlack under the mark, a bolt an entry: the copies of other machines' shots
+// first (they are for show), then our game's other ships' bolts, our own ship's last, at random within each.  And the
+// same when the game's near heap is nearly out (kBoltGcHeap free: a bolt is 82-116 bytes, and no room for one is the
+// game's error 1303): a fight of many guns reaches that before the list fills.  WCPRIVBOLTGC=<n> sets the mark (a
+// test's: a low one works the collector hard in an ordinary fight; "off": none), WCPRIVCOPYSTRESS=1 lifts the copies'
+// own caps (a test's: the limits reached).
+enum { kBoltGcAt = 180, kBoltGcSlack = 10, kBoltGcHeap = 2500, kBoltBytes = 100 };     // (180, not the 190 first asked: a frame of
+                                                                                    // many guns adds up to 13 entries, measured)
+struct BoltGc { int at; bool stress, off; int high, runs, retired, by[3], heapRuns; double toldAt; bool read; } g_boltGc =
+    { kBoltGcAt, false, false, 0, 0, 0, { 0, 0, 0 }, 0, -1e9, false };
+int bolt_rank(Bit16u shooter) {
+    if (shooter && is_puppet_obj(shooter)) return 0;        // another machine's ship's (a copy)
+    return shooter && shooter == priv_player_ship() ? 2 : 1;
+}
+void bolts_gc(double now) {
+    BoltGc &g = g_boltGc;
+    if (!g.read) {
+        g.read = true;
+        const char *env = getenv("WCPRIVBOLTGC");
+        if (env && atoi(env) >= 20 && atoi(env) <= 199) g.at = atoi(env);
+        g.off = env && strcmp(env, "off") == 0;             // (a test's: what the game does without)
+        g.stress = getenv("WCPRIVCOPYSTRESS") && atoi(getenv("WCPRIVCOPYSTRESS")) != 0;
+        if (g.at != kBoltGcAt || g.stress || g.off) {
+            wclog(1, "Privateer: bolt collector %s%d kept pointers%s (a test's setting)", g.off ? "OFF; else from " : "from ", g.at,
+                  g.stress ? ", the copies' caps lifted" : "");
+        }
+    }
+    const int kept = priv_kept_pointers();
+    if (kept > g.high) g.high = kept;
+    if (g.off) return;
+    const int freeNow = priv_near_free();
+    int n = kept >= g.at ? kept - (g.at - kBoltGcSlack) : 0;
+    const bool forHeap = freeNow > 0 && freeNow < kBoltGcHeap;
+    if (forHeap && (kBoltGcHeap - freeNow) / kBoltBytes + 4 > n) n = (kBoltGcHeap - freeNow) / kBoltBytes + 4;
+    if (n <= 0) return;
+    int by[3] = { 0, 0, 0 };
+    const int did = priv_bolts_retire(n, bolt_rank, by);
+    g.runs++;
+    if (forHeap) g.heapRuns++;
+    g.retired += did;
+    for (int r = 0; r < 3; r++) g.by[r] += by[r];
+    if (now - g.toldAt > 2000) {
+        g.toldAt = now;
+        wclog(1, "Privateer: bolt collector: %d of the game's 200 kept pointers (from %d on), near heap free %d (under %d): %d bolts retired (%d copies, "
+              "%d our game's ships', %d our own); so far %d runs (%d for the heap), %d bolts (%d, %d, %d), the most kept %d", kept, g.at, freeNow,
+              (int)kBoltGcHeap, did, by[0], by[1], by[2], g.runs, g.heapRuns, g.retired, g.by[0], g.by[1], g.by[2], g.high);
+    }
+}
+
 // Another pilot flying in our system within d metres of us.
 bool somebody_within(double d) {
     for (int s = 0; s < kMaxSeats; s++) {
@@ -1944,9 +1999,8 @@ void frame_chats_and_shots() {
         for (int i = 0; i < nb; i++) {
             if (shooters[i] && is_puppet_obj(shooters[i])) copies++;
         }
-        static int keptHigh;
-        if (priv_kept_pointers() > keptHigh) keptHigh = priv_kept_pointers();
-        const bool roomy = heap_low_recent(2) >= kShotFloor && copies < kCopyBoltCap && priv_kept_pointers() < kShotKeptRoom;
+        const int keptHigh = g_boltGc.high;
+        const bool roomy = g_boltGc.stress || (heap_low_recent(2) >= kShotFloor && copies < kCopyBoltCap && priv_kept_pointers() < kShotKeptRoom);
         static double toldAt = -1e9;
         if (now - toldAt > 5000) {
             toldAt = now;
@@ -1974,7 +2028,7 @@ void frame_chats_and_shots() {
                 if (np && !np->parked && !np->pod) obj = np->obj;
             }
             if (!obj) continue;
-            if (!roomy || priv_calls_queued() >= kShotCallsRoom || !shot_worth_copying(obj, id == 0, sc.targetSeat, sc.targetId)) {
+            if (!roomy || (priv_calls_queued() >= kShotCallsRoom && !g_boltGc.stress) || !shot_worth_copying(obj, id == 0, sc.targetSeat, sc.targetId)) {
                 g_net->copiesSkipped++;
                 continue;
             }
@@ -2588,6 +2642,7 @@ void priv_session_frame() {
             wclog(2, "Privateer: pilot %d's ship parked (%s)", s + 1, fresh ? "out of reach" : "no reports");
         }
     }
+    bolts_gc(now);
     frame_chats_and_shots();
     turns_frame();
     drones_frame(now);

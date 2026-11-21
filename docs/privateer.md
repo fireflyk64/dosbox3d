@@ -859,3 +859,22 @@ Measured after: the 8-pilot load test (3 pirates added) -- no error, death or re
 lowest free 5,688, the guests' 7,844-8,514, five provoked pirates turned by the setter, the kept pointers at most 96
 (the owner's), no call dropped for a full queue; two pilots and 5 pirates added -- no error, the kept pointers at most
 108 (the owner's, its own ships' bolts).
+
+**The bolt collector** (the user, 2026-11-21: "Could we have a garbage collector that cleared active gunshots randomly
+if the limit exceeded 190? ... if we're already at 190 problems abound"; "favor other-machine bolts to remove and then
+seconadrily non-player bolts ... but in the end the limit must be respected no matter whose bolt").  A bolt's update
+(the laser's seg090:02EC, the other's seg091:0C27: the vtable's +0x24) keeps it while its age is within its type's life
+and its alive byte (our pointer's +0x20) is set; the game clears that byte itself when a bolt hits (seg090:01D2) and
+then takes it out and destroys it, its shooter let go of the kept pointers (seg090:035A).  So the collector only clears
+the byte (`priv_bolts_retire`); nothing of ours frees or unlinks.  Each frame (`bolts_gc`), from 180 of the 200 kept
+pointers on, enough bolts to come down to 170: other machines' copies first, then our game's other ships', our own
+ship's last, at random within each; and the same when the near heap has under 2,500 free.  The mark is 180, not 190:
+a frame of many guns added up to 13 entries (measured).  Test settings: `WCPRIVBOLTGC=<n>|off` (the mark),
+`WCPRIVCOPYSTRESS=1` (the copies' own caps lifted).  `scripts/privtests/bolts.sh`: PLAYERS (8) load the user's Oxford
+save (a Centurion each), launch, are kept together and hold their guns, the copies' caps lifted.  Measured:
+- the 8-pilot load test with the mark at 50: 3,700-5,900 bolts retired a machine, no error, the most kept 63;
+- 8 Centurions, the collector off: no error, the most kept 159 -- the list is not what gives first: the near heap is
+  (lows 4,300-5,300), and the memory governor then shows fewer pilots' ships (3 of 7), so fewer copies fire.  The
+  200 were not reached by any fight tried; with the copies' real caps (24 bolts, none under 9,000 free) far less;
+- 8 Centurions, the mark at 120: held at 126 at most on every machine, 445-667 bolts retired each (all copies);
+- 8 Centurions and the 8-pilot load test as shipped (180): no error; the collector never ran in the load test.

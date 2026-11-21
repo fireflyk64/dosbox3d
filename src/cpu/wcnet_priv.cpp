@@ -2487,7 +2487,7 @@ static int scene_objects(Bit16u out[], int cap, Bit16u vtable) {
     }
     int k = 0;
     Bit16u node = priv_r16((Bit16u)(kSceneList + 2));
-    for (int guard = 0; node && guard < 256 && k < cap; guard++) {
+    for (int guard = 0; node && guard < 1024 && k < cap; guard++) {
         const Bit16u obj = priv_r16((Bit16u)(node + 2));
         if (obj && priv_r16(obj) == vtable) {
             out[k++] = obj;
@@ -2510,6 +2510,43 @@ int priv_scene_bolt_shooters(Bit16u out[], int cap) {
     const int n2 = scene_objects(a, 64, 0x2F22);
     for (int i = 0; i < n2 && k < cap; i++) out[k++] = priv_r16((Bit16u)(a[i] + 0x4C));
     return k;
+}
+
+// Bolts retired, the game's own way.  A bolt's update (the laser's seg090:02EC, the other's seg091:0C27; the vtable's
+// +0x24) adds the frame's time to its age and keeps it while the age is within its type's life AND its alive byte (the
+// allocation's +0x22: our pointer's +0x20, where a ship has its own) is set; the game clears that byte itself when the
+// bolt hits something (seg090:01D2), and the scene then takes it out and destroys it -- its shooter let go of the kept
+// pointers (seg090:035A -> seg083:0194), its memory freed.  So a bolt is retired by clearing the byte: nothing of ours
+// frees or unlinks anything.  Up to n live bolts, by rank(shooter) -- every bolt of rank 0 before any of rank 1, those
+// before rank 2 -- and at random within a rank; returns how many, by[r] how many of each rank.
+int priv_bolts_retire(int n, int (*rank)(Bit16u shooter), int by[3]) {
+    enum { kCap = 256 };
+    Bit16u bolts[3][kCap];
+    int count[3] = { 0, 0, 0 };
+    const Bit16u vt[2] = { 0x2DE8, 0x2F22 };
+    const Bit16u shooterAt[2] = { 0x25, 0x4C };
+    for (int v = 0; v < 2; v++) {
+        Bit16u got[kCap];
+        const int g = scene_objects(got, kCap, vt[v]);
+        for (int i = 0; i < g; i++) {
+            if (!priv_r8((Bit16u)(got[i] + kShipAlive))) continue;         // (on its way out already)
+            int r = rank ? rank(priv_r16((Bit16u)(got[i] + shooterAt[v]))) : 0;
+            r = r < 0 ? 0 : r > 2 ? 2 : r;
+            if (count[r] < kCap) bolts[r][count[r]++] = got[i];
+        }
+    }
+    int done = 0;
+    for (int r = 0; r < 3; r++) {
+        if (by) by[r] = 0;
+        while (done < n && count[r]) {
+            const int k = rand() % count[r];
+            priv_w8((Bit16u)(bolts[r][k] + kShipAlive), 0);
+            bolts[r][k] = bolts[r][--count[r]];
+            done++;
+            if (by) by[r]++;
+        }
+    }
+    return done;
 }
 
 bool priv_scene_has(Bit16u obj) {

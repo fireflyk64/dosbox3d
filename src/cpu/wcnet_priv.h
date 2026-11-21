@@ -93,6 +93,9 @@ Bit16u priv_ship_target_now(Bit16u ship);                   // the ship its AI i
 Bit16u priv_ai_target(Bit16u ship);
 bool priv_ai_set_target(Bit16u ship, Bit16u target);
 int priv_kept_pointers();                                   // the game's kept pointers taken, of 200
+// Up to n live bolts retired (their alive byte cleared: the game takes them out itself): rank 0's first, then 1's, then
+// 2's, at random within a rank.
+int priv_bolts_retire(int n, int (*rank)(Bit16u shooter), int by[3]);
 int priv_calls_queued();                                    // our calls of the game's functions waiting, of 16
 int priv_ship_pilot_anger(Bit16u ship);                     // its pilot's anger at the player (+0x1A, 0x100 its mood's bit 1); -1 none
 // The ships that fired the bolts now in our scene, one a bolt.
