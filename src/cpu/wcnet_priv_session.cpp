@@ -1981,10 +1981,9 @@ bool priv_session_is_puppet(Bit16u a, Bit16u b) {
     return g_net && g_net->self >= 0 && ((a && is_puppet_obj(a)) || (b && is_puppet_obj(b)));
 }
 
-void priv_session_hit(Bit16u target, int loc, int damage) {
-    if (!g_net || g_net->self < 0 || damage <= 0) {
-        return;
-    }
+namespace {
+// A hit on another machine's ship sent to its owner (the host relays), whose game applies it (take_hit)
+void send_hit(Bit16u target, int loc, int damage, bool byPilot) {
     int owner = -1;
     Bit32u id = 0;
     for (int s = 0; s < kMaxSeats && owner < 0; s++) {
@@ -2010,13 +2009,48 @@ void priv_session_hit(Bit16u target, int loc, int damage) {
     h->set_id(id);
     h->set_loc(loc);
     h->set_damage(damage);
+    h->set_by_pilot(byPilot);
     for (size_t i = 0; i < g_net->peers.size(); i++) {
         Peer *p = g_net->peers[i];
         if (p->hello && p->conn.is_open() && (!g_net->host || p->player == owner)) {
             p->conn.send(msg);
         }
     }
-    wclog(2, "Privateer: our hit on pilot %d's %s (ds:%04X): quadrant %d, %d, sent", owner + 1, id ? "encounter ship" : "ship", target, loc, damage);
+    wclog(2, "Privateer: %s hit on pilot %d's %s (ds:%04X): quadrant %d, %d, sent", byPilot ? "our" : "our game's", owner + 1, id ? "encounter ship" : "ship",
+          target, loc, damage);
+}
+}  // namespace
+
+// The shooter's game decides a hit (section 10): what it hits there is the hit, sent to the ship's owner when the ship is
+// another machine's (its puppet here takes nothing: the owner's game applies it and reports how the ship stands).  A
+// copy's shot -- another machine's ship firing here (PrivShot) so that we see it -- is harmless here whatever it hits:
+// its owner's game had the real one and decided (the user, 2026-11-20: the guest's shots hit the host's pirate twice,
+// once forwarded and once as the guest's puppet's copies in the host's game, and copies of the pirate's shots hit the
+// guest while the host's game sent its hits on the guest too; "sometimes I got a very good attack on the enemy as the
+// guest but the full whallop went to my ally": the guest's copies hit the host's own ship in the host's game).
+int priv_session_hit(Bit16u target, Bit16u source, bool bump, int loc, int damage) {
+    if (!g_net || g_net->self < 0 || damage <= 0) {
+        return damage;
+    }
+    const bool targetPuppet = is_puppet_obj(target), sourcePuppet = source && is_puppet_obj(source);
+    if (bump) {
+        // (a ship bumping a ship: harmless when either is another machine's, as RetroVega's wing bumps are: two pilots
+        // launch from the same pad into the same place)
+        return targetPuppet || sourcePuppet ? 0 : damage;
+    }
+    if (sourcePuppet) {
+        static unsigned copies;
+        if (++copies % 50 == 1) {
+            wclog(2, "Privateer: a copy's shot hit ds:%04X (%s): harmless here, its owner's game decided (%u so far)", target,
+                  priv_ship_cast_name(target).c_str(), copies);
+        }
+        return 0;
+    }
+    if (!targetPuppet) {
+        return damage;
+    }
+    send_hit(target, loc, damage, source && source == priv_player_ship());
+    return 0;
 }
 
 void priv_session_fired(Bit16u ship) {

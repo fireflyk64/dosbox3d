@@ -1264,6 +1264,23 @@ bool priv_pointer_pixels(int *x0, int *y0, Bit16u rows[16]) {
     return n >= 5;
 }
 
+// The ship behind a hit (seg053's hit routine's [bp+0xE], the thing that hit): a ship itself in a bump (its vtable's
+// "kind" 0x0B), else the ship that fired it -- the game's own "who fired" (the vtable's +0x14) reads a laser bolt's
+// (vtable 0x2DE8, kind 0x12) +0x25, the other bolt's (0x2F22, kind 0x14) and a missile's (0x3160, kind 0x16) +0x4C:
+// the only three projectile classes in the program (a scan of its vtables).  0: none known.
+enum { kBoltVtable = 0x2DE8, kBolt2Vtable = 0x2F22, kMissileVtable = 0x3160, kBoltShooter = 0x25, kBolt2Shooter = 0x4C };
+static Bit16u hit_source(Bit16u hitter, bool *bump) {
+    *bump = false;
+    if (!hitter) return 0;
+    switch (priv_r16(hitter)) {
+    case kShipVtable: *bump = true; return hitter;
+    case kBoltVtable: return priv_r16((Bit16u)(hitter + kBoltShooter));
+    case kBolt2Vtable:
+    case kMissileVtable: return priv_r16((Bit16u)(hitter + kBolt2Shooter));
+    }
+    return 0;
+}
+
 bool priv_check_hooks(Bit32u ip) {
     if (!g_found) {
         return false;
@@ -1354,20 +1371,19 @@ bool priv_check_hooks(Bit32u ip) {
     if (ip == kHitPlace && codeSeg == (Bit16u)(g_privLoadSeg + kSeg053)) {
         const PhysPt bp = SegPhys(ss) + reg_bp;
         const Bit16u target = mem_readw(bp + 0xA), hitter = mem_readw(bp + 0xE);
-        // (a ship bumping a ship: harmless when either is another machine's, as RetroVega's wing bumps are: two
-        // pilots launch from the same pad into the same place)
-        if (hitter && priv_r16(hitter) == kShipVtable && priv_session_is_puppet(target, hitter)) {
-            mem_writew(bp - 6, 0);
+        bool bump = false;
+        const Bit16u source = hit_source(hitter, &bump);
+        const int damage = (Bit16s)mem_readw(bp - 6);
+        // what of the hit our game keeps (the session decides: the shooter's game decides a hit, a copy's shot is
+        // harmless, a hit on another machine's ship goes to it and does nothing here)
+        const int keep = priv_session_hit(target, source, bump, (Bit16s)mem_readw(bp + 0xC), damage);
+        if (keep != damage) {
+            mem_writew(bp - 6, (Bit16u)keep);
         }
         if (wclog_level() >= 3) {
-            wclog(3, "Privateer: hit on ds:%04X (%s) by ds:%04X (vtable %04X): quadrant %d, %d", target, priv_ship_cast_name(target).c_str(), hitter,
-                  hitter ? priv_r16(hitter) : 0, (Bit16s)mem_readw(bp + 0xC), (Bit16s)mem_readw(bp - 6));
-        }
-        priv_session_hit(target, (Bit16s)mem_readw(bp + 0xC), (Bit16s)mem_readw(bp - 6));
-        // a puppet takes no damage here: its owner's game applies the hit (sent above) and says how it stands (else it
-        // would die here alone, explode and be made again over and over under fire)
-        if (priv_session_is_puppet(target, 0)) {
-            mem_writew(bp - 6, 0);
+            wclog(3, "Privateer: hit on ds:%04X (%s) by ds:%04X (vtable %04X, %s ds:%04X %s): quadrant %d, %d, kept %d", target,
+                  priv_ship_cast_name(target).c_str(), hitter, hitter ? priv_r16(hitter) : 0, bump ? "a bump of" : "shot by", source,
+                  source ? priv_ship_cast_name(source).c_str() : "?", (Bit16s)mem_readw(bp + 0xC), damage, keep);
         }
         return true;
     }

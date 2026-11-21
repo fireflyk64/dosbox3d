@@ -691,3 +691,19 @@ host out of reach (`!privgonav`), its two merchants given back on the guest 20 s
 one of the host's merchants taken out of its scene without a death (the test aid `!privunscene`, the dead-ship handler's
 own removal) -- "gone from its owner's game: given back quietly" on the guest, silent; the host's pirate killed ten
 seconds later -- "destroyed, as its owner says", the explosion heard.
+
+**The shooter's game decides a hit; a copy's shot is harmless** (the user: the guest "didn't seem to take damage or
+maybe took little"; "sometimes I got a very good attack on the enemy as the guest but the full whallop went to my
+ally, almost as if the numbers were mixed up").  A ship of another machine's fires in our game when its owner says so
+(`PrivShot`, section 10), so that we see its shots -- and those copies hit for real: in the host's game the guest's own
+merchant's copied bolts struck the host's pirates on top of the hits the guest's game sent (measured, 32 a bolt
+applied twice), and a copy can strike the host's own ship; in the guest's game the copies of the pirate's shots struck
+the guest while the host's game sent its own hits on the guest's puppet.  The hit routine's hitter ([bp+0xE]) now gives
+the ship behind each hit -- a ship itself in a bump, else its shooter by the game's own "who fired" (the vtable's
++0x14): a laser bolt's (vtable 0x2DE8) +0x25, the other bolt's (0x2F22) and a missile's (0x3160) +0x4C, the program's
+only three projectile classes (a scan of its vtables) -- and `priv_session_hit` decides what our game keeps: a shot by
+a puppet (a copy) nothing, and nothing is sent; a shot by our own ship or one of our game's ships on a puppet nothing
+here, sent to its owner (`PrivHit.by_pilot` says whether our own ship fired it); anything else as the game has it.
+Measured, two machines, the guest stalking the host's pirate (level 3 logs every hit with its shooter): the guest's
+three missiles sent and applied in the host's game (the pirate destroyed by them), the host's militia's crossfire on
+the guest's puppet (a missile and three bolts) sent to the guest and taken there once.

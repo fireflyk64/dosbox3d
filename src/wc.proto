@@ -642,6 +642,7 @@ message PrivHit {
     optional uint32 id = 3;
     optional sint32 loc = 4;        // the quadrant hit (0..3)
     optional sint32 damage = 5;
+    optional bool by_pilot = 6;     // the shot was the sender's own ship's (not one of its game's other ships)
 }
 // An encounter ship of the sender's fired its guns (best effort): the others' copies fire too.
 // A cargo pod of another's (its owner's game made it: expelled, or a ship's death) taken by our tractor beam: its
