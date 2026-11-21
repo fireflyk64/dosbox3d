@@ -88,6 +88,11 @@ bool priv_spawn_ship(const char *type, const char *appearance, const char *cast,
 // Its AI held (its think returns at once) or let go; none held (a flight's end).
 bool priv_hold_ai(Bit16u controller, bool hold);      // false: not held (the list is full)
 Bit16u priv_ship_target_now(Bit16u ship);                   // the ship its AI is after (0: none known)
+// An AI ship's target as its brain has it (the pilot's +0x13, its +0x12; 0: none, or no AI brain to vouch for), and set by
+// the game's own setter of kept pointers at the next frame (false: not an AI ship we can vouch for).
+Bit16u priv_ai_target(Bit16u ship);
+bool priv_ai_set_target(Bit16u ship, Bit16u target);
+int priv_kept_pointers();                                   // the game's kept pointers taken, of 200
 int priv_ship_pilot_anger(Bit16u ship);                     // its pilot's anger at the player (+0x1A, 0x100 its mood's bit 1); -1 none
 // The ships that fired the bolts now in our scene, one a bolt.
 int priv_scene_bolt_shooters(Bit16u out[], int cap);
@@ -150,6 +155,7 @@ Bit16u priv_last_spawned();
 void priv_hit_apply(Bit16u obj, int loc, int damage);
 unsigned priv_session_pilot_missions(int seat);
 bool priv_session_pilot_pos(int seat, Bit32s out[3]);
+void priv_session_test_provoke();                         // (a test aid's: a provocation of the nearest of others' encounter ships)
 bool priv_session_puppet_of(Bit16u obj, int *seat, Bit32u *id);   // (whose a puppet is: the seat, its id there, 0 the pilot's ship)
 bool priv_session_puppet_parked(Bit16u obj);           // (a puppet parked far off)      // (a rig aid's: a pilot's latest reported place)   // (a rig aid's: a pilot's mission nav points as we know them)
 

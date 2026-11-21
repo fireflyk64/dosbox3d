@@ -1276,6 +1276,11 @@ void puppet_made(int seat, Bit16u obj) {
     wclog(2, "Privateer: pilot %d's ship is ds:%04X (type ds:%04X, controller ds:%04X held)", seat + 1, obj, p.type, priv_ship_controller(obj));
 }
 
+// Provoked ships to turn on a pilot (turns_frame, below): this frame's, and the ones done this flight
+struct TurnAsked { Bit16u ship; int seat; };
+std::vector<TurnAsked> g_turnsAsked;                    // this frame's to do
+std::vector<std::pair<Bit16u, int> > g_turnsDone;       // (ship, seat) turned this flight: once
+
 void forget_puppets(const char *why) {
     priv_calls_flush(why);
     priv_wings_flight_changed();
@@ -1297,6 +1302,8 @@ void forget_puppets(const char *why) {
     g_net->podsGone.clear();
     g_net->dying.clear();
     g_net->quiet.clear();
+    g_turnsAsked.clear();
+    g_turnsDone.clear();
     priv_hold_ai_none();
     if (any) {
         wclog(2, "Privateer: the puppets forgotten (%s)", why);
@@ -1740,12 +1747,60 @@ void take_pod_taken(const PrivPodTaken &t) {
     wclog(1, "Privateer: our cargo pod ds:%04X taken by pilot %d: put away", obj, (int)t.player() + 1);
 }
 
+// A ship of our game provoked by another pilot (its first hit or taunt of it there: PrivHit.provoke) turned on that
+// pilot's ship, the game's own way: its brain's target set by the game's setter of kept pointers (wcnet_priv.cpp,
+// priv_ai_set_target: the pointer registered, cleared by the game when the ship dies) -- the user, 2026-11-21: "set the
+// target, but somehow safely and only when a guest specifically does something to a target and the target is in good
+// health"; "maybe rate limit it.  Perhaps only the first hit?".  At the frame, and only: once a ship and pilot this
+// flight; our ship an AI ship whose brain we can vouch for, alive, every armour quadrant whole; the pilot's ship shown,
+// alive, within kTurnMetres; the game's list of kept pointers under kKeptPointersRoom of its 200.  The brain chooses
+// again as it thinks, by the game's rules (a ship friendly to the pilot's by the factions may let it go).
+const double kTurnMetres = 5000.0;
+enum { kKeptPointersRoom = 180 };
+void turns_frame() {
+    for (size_t i = 0; i < g_turnsAsked.size(); i++) {
+        const Bit16u ship = g_turnsAsked[i].ship;
+        const int seat = g_turnsAsked[i].seat;
+        if (seat < 0 || seat >= kMaxSeats || seat == g_net->self) continue;
+        bool done = false;
+        for (size_t j = 0; j < g_turnsDone.size() && !done; j++) done = g_turnsDone[j].first == ship && g_turnsDone[j].second == seat;
+        if (done) continue;
+        const char *no = NULL;
+        const Puppet &pp = g_net->puppets[seat];
+        Bit32s a[4] = { 0, 0, 0, 0 };
+        if (is_puppet_obj(ship) || !priv_ship_is_alive(ship) || !priv_scene_has(ship)) no = "it is gone";
+        if (!no) {
+            priv_ship_armor(ship, a);
+            if (a[0] <= 0 || a[1] <= 0 || a[2] <= 0 || a[3] <= 0) no = "its armour is broken";
+        }
+        if (!no && (!pp.obj || pp.parked || !priv_ship_is_alive(pp.obj))) no = "the pilot's ship is not shown here";
+        if (!no) {
+            Bit32s sp[3], tp[3];
+            priv_ship_pos(ship, sp);
+            priv_ship_pos(pp.obj, tp);
+            const double dx = ((double)tp[0] - sp[0]) / kUnitsPerMetre, dy = ((double)tp[1] - sp[1]) / kUnitsPerMetre, dz = ((double)tp[2] - sp[2]) / kUnitsPerMetre;
+            if (dx * dx + dy * dy + dz * dz > kTurnMetres * kTurnMetres) no = "the pilot's ship is too far";
+        }
+        if (!no && priv_kept_pointers() >= kKeptPointersRoom) no = "the game's kept pointers are nearly full";
+        const Bit16u was = priv_ai_target(ship);
+        if (!no && was == pp.obj) no = "it is after that ship already";
+        if (!no && !priv_ai_set_target(ship, pp.obj)) no = "no AI brain to vouch for";
+        if (g_turnsDone.size() < 64) g_turnsDone.push_back(std::make_pair(ship, seat));
+        if (no) {
+            wclog(2, "Privateer: our %s (ds:%04X), provoked by pilot %d, not turned: %s", priv_ship_cast_name(ship).c_str(), ship, seat + 1, no);
+        } else {
+            wclog(1, "Privateer: our %s (ds:%04X) turns on pilot %d's ship (ds:%04X; it was after %s ds:%04X), provoked there", priv_ship_cast_name(ship).c_str(),
+                  ship, seat + 1, pp.obj, was ? priv_ship_cast_name(was).c_str() : "nobody", was);
+        }
+    }
+    g_turnsAsked.clear();
+}
+
 // Our pilot angered another machine's encounter ship here -- our fire or our comm's taunt: the game raised its pilot's
 // anger at us, as at any ship -- told to its owner (the user, 2026-11-20: "the enemy wouldn't really react to fire or
 // comms from the guest"; 2026-11-21: "I think we should still send it over the wire as proto"; "maybe rate limit it.
-// Perhaps only the first hit?").  Once a ship: the first time only.  The owner's game logs it: turning its AI on us by
-// writing its target broke the game's far heap (section 18), and a safe way -- the AI's own target field, written only
-// on such a first provocation of a healthy ship -- is not found yet.
+// Perhaps only the first hit?").  Once a ship: the first time only.  The owner's game turns the ship on us by the game's
+// own setter of its brain's target (turns_frame, above).
 void send_provoke(NpcPuppet &p, double now) {
     if (p.provokedAt > -1e8) return;
     p.provokedAt = now;
@@ -1783,6 +1838,10 @@ void take_hit(const PrivHit &h) {
     }
     if (h.provoke()) {
         wclog(2, "Privateer: pilot %d angered our %s (ds:%04X) in its game (its fire or its comm)", (int)h.player() + 1, priv_ship_cast_name(obj).c_str(), obj);
+        if (h.id() && g_turnsAsked.size() < 16) {
+            const TurnAsked t = { obj, (int)h.player() };
+            g_turnsAsked.push_back(t);          // (at the frame)
+        }
     }
     if (h.damage() <= 0) {
         return;
@@ -2522,10 +2581,31 @@ void priv_session_frame() {
         }
     }
     frame_chats_and_shots();
+    turns_frame();
     drones_frame(now);
 }
 
 void priv_session_force_release() { g_forceRelease++; }
+
+// A test aid (!privprovoke): a provocation of the nearest encounter ship of another's shown here sent to its owner, as our
+// first hit or taunt of it sends one
+void priv_session_test_provoke() {
+    if (!g_net || g_net->self < 0) return;
+    Bit32s pos[3];
+    priv_player_pos(pos);
+    NpcPuppet *best = NULL;
+    double bd = 1e30;
+    for (int k = 0; k < kNpcCap; k++) {
+        NpcPuppet &p = g_net->npcs[k];
+        if (!p.used || !p.obj || p.parked || p.pod || p.killed) continue;
+        const double d = (p.x - pos[0]) * (p.x - pos[0]) + (p.y - pos[1]) * (p.y - pos[1]) + (p.z - pos[2]) * (p.z - pos[2]);
+        if (d < bd) { bd = d; best = &p; }
+    }
+    if (best) {
+        best->provokedAt = -1e9;
+        send_provoke(*best, PIC_FullIndex());
+    }
+}
 
 // A puppet of ours parked far off (a pilot's ship or an encounter ship out of reach): not where its ship is
 bool priv_session_puppet_parked(Bit16u obj) {

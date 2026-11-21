@@ -813,3 +813,27 @@ AI's own target field -- found in its think, seg042:0944, written only on a firs
 pilot whose ship is shown and whole: the next step.  (An AI ship firing at another AI ship, to see whether the game makes
 it retaliate: not shown yet -- the trial's aim hit once in 22 s.)  Measured after: a two-machine fight, the guest's
 missiles applied on the host, the pirate's hits on the guest taken there, the provocation logged on the host, no error.
+
+**A provoked ship turned on the pilot, the game's own way** (the user: "lets do the safe target setting"; "only when a
+guest specifically does something to a target and the target is in good health"; "Perhaps only the first hit?").  The
+AI's think (seg042:0944) has its control record give it the pilot (near, the record's +0x23; the pilot's +0 its own
+ship) and runs it (seg013:00AE); the pilot's +0x13 is its brain, whose +0x12 is the ship it is after -- copied each
+think to ds:0E42 for the maneuvers (seg014:0B04) and chosen by the brain itself among the scene's ships (seg014:0538-
+0760: candidates by distance and by its relation, seg014:1C83 -- to the player the pilot's own attitude, brain+0x6, which
+the player's hits and taunts change; to any other ship the factions' table at ds:65B6 alone, 0 hostile, 2 neutral, 4 the
+same faction).  It is always written through the game's setter of kept pointers, seg083:01AF(field, ship): the old
+ship let go (seg083:0194), the new stored and the field registered in the game's list (ds:67FD: a count, a far array
+of 200; full is its error 6281), cleared by the game when that ship is destroyed -- the bolts' shooters, the missiles',
+the comm's speaker are kept the same way.  Measured: the player's hits on a merchant made its brain's +0x12 the
+player's ship, the list's count 21 -> 22, and back to 0 / 21 when it gave up.  So a provocation (`PrivHit.provoke`, the
+pilot's first hit or taunt of the ship there) is acted on at the owner's frame by calling that setter with the pilot's
+ship (`turns_frame`), once a ship and pilot a flight, and only when our ship is an AI ship whose brain we can vouch for
+(controller vtable 0x14A8, its pilot's +0 the ship), alive with every armour quadrant whole, the pilot's ship shown,
+alive and within 5 km, the kept pointers under 180.  Per-ship anger exists for the player alone, so the brain chooses
+again at its next think by the game's rules: a pirate stays on a pilot who is near and hostile to it by the factions,
+and goes back to a nearer or angrier one (the host) otherwise; a ship friendly to the pilot's faction (militia to a
+merchant's face) lets it go.  Measured, two machines: a guest's provocation from 2.5 km of the host's pirate (test aid
+`!privprovoke`) -- "our PIR_DA turns on pilot 2's ship (... it was after PLAYER ...)", the brain's target the guest's
+ship, then the host's again at its next look (the host beside it had shot it); the guest close, firing (copies of its
+shots hitting the pirate in the host's game, harmless): the pirate's brain on the guest's ship from 42 s to the end,
+its hits on the guest from 47 s (none before).  Test aid `!privbrains` (every AI ship's target and the kept pointers).

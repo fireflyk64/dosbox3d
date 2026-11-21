@@ -51,6 +51,12 @@ enum {
     kShipVtable = 0x20EF,           // a ship's vtable (at the pointer's +0)
     kShipType = 0x06,               // its type object (near: "TARSTYPE" at the type's +2)
     kShipController = 0x4C,         // its controller (near: the AI's, vtable 0x14A8; the player's, 0x2A06)
+    kAiControllerVtable = 0x14A8,
+    kPilotBrain = 0x13,             // the pilot's brain (near; the pilot: the AI's control record's +0x23)
+    kBrainTarget = 0x12,            // the brain's target (near, a kept pointer: set by seg083:01AF)
+    kSeg083 = 0x346A,
+    kPointerSet = 0x01AF,           // seg083:01AF(field near, object): the game's setter of a kept pointer
+    kKeptPointers = 0x67FD,         // the game's list of kept pointers (a count; the far array of 200 at +2)
     kRecordAppearance = 0x75,       // the player record's appearance name ("CLUNKER" the Tarsus), what the game spawns us with
     kShipAlive = 0x20,              // its alive flag (base+0x22: cleared by the hit routine's death path, seg053:1385)
     kShipAppearance = 0x10,         // its appearance object (far; the name at +0x18)
@@ -448,6 +454,71 @@ static int pilot_anger_of(Bit16u ship) {
     Bit16u pilot = 0;
     if (!pseg || mem_readw_checked(((PhysPt)pseg << 4) + (Bit16u)(poff + 0x23), &pilot) || !pilot) return -1;
     return priv_r8((Bit16u)(pilot + 0x1A)) | ((priv_r8((Bit16u)(pilot + 0x19)) & 2) << 7);
+}
+
+// An AI ship's brain and its target, as the game keeps them.  The AI's think (seg042:0944) has the control record's
+// method give it the pilot (a near object: the record's +0x23; its +0 the ship itself) and runs it (seg013:00AE); the
+// pilot's +0x13 is its brain (near), whose +0x12 is the ship it is after: copied each think to ds:0E42 for the
+// maneuvers (seg014:0B04), chosen by the brain itself among the scene's ships (seg014:0538-0760: the nearest by its
+// relation, seg014:1C83 -- the player by the pilot's own attitude, brain+0x6; any other ship by the factions' table at
+// ds:65B6 -- one in trouble, the player when it has nobody) and always written through the game's own pointer setter,
+// seg083:01AF(field, ship): the field's old ship let go, the new one stored and the field registered in the game's list
+// of such pointers (ds:67FD: a count, then a far array of 200), which the game clears when a ship is destroyed (bolts'
+// shooters, missiles', the comm's speaker are kept the same way).  0: not an AI ship's brain we can vouch for.
+static Bit16u ai_brain(Bit16u ship) {
+    if (!priv_ship_is_alive(ship)) return 0;
+    const Bit16u ctl = priv_r16((Bit16u)(ship + kShipController));
+    if (!ctl || priv_r16(ctl) != kAiControllerVtable) return 0;
+    const Bit16u roff = priv_r16((Bit16u)(ctl + 2)), rseg = priv_r16((Bit16u)(ctl + 4));
+    Bit16u pilot = 0;
+    if (!rseg || mem_readw_checked(((PhysPt)rseg << 4) + (Bit16u)(roff + 0x23), &pilot) || !pilot) return 0;
+    if (priv_r16(pilot) != ship) return 0;                      // (the pilot's +0 is its own ship)
+    const Bit16u brain = priv_r16((Bit16u)(pilot + kPilotBrain));
+    return brain > 0x6000 && brain < 0xF000 ? brain : 0;
+}
+
+static Bit16u ai_target_of(Bit16u ship) {
+    const Bit16u brain = ai_brain(ship);
+    return brain ? priv_r16((Bit16u)(brain + kBrainTarget)) : 0;
+}
+
+// The ship's target set by the game's own setter (queued for the frame's call place, guarded by the ship): false when
+// it is no AI ship we can vouch for, or the call cannot be queued
+static bool ai_set_target(Bit16u ship, Bit16u target) {
+    const Bit16u brain = ai_brain(ship);
+    if (!brain || !target || !priv_ship_is_alive(target)) return false;
+    PrivCall c;
+    c.para = kSeg083;
+    c.off = kPointerSet;
+    c.args.push_back((Bit16u)(brain + kBrainTarget));
+    c.args.push_back(target);
+    c.guardObj = ship;
+    c.guardVtable = kShipVtable;
+    return queue_call(c);
+}
+
+// The game's list of kept pointers: how many of its 200 are taken (a full list is the game's error 6281 and its end)
+static int kept_pointers() {
+    return (Bit16s)priv_r16(kKeptPointers);
+}
+
+// A test aid (!privbrains, at the next frame): every AI ship's target as its brain has it
+bool g_brainDump;
+static void brain_dump_frame() {
+    if (!g_brainDump) return;
+    g_brainDump = false;
+    Bit16u ships[48];
+    const int n = priv_scene_ships(ships, 48);
+    std::string at;
+    for (int i = 0; i < n; i++) {
+        const Bit16u b = ai_brain(ships[i]);
+        if (!b) continue;
+        const Bit16u t = priv_r16((Bit16u)(b + kBrainTarget));
+        char c[96];
+        snprintf(c, sizeof c, " %04X(%s)->%04X(%s)", ships[i], priv_ship_cast_name(ships[i]).c_str(), t, t ? priv_ship_cast_name(t).c_str() : "-");
+        at += c;
+    }
+    wclog(1, "Privateer: AI targets (the player ds:%04X; kept pointers %d of 200):%s", priv_r16(kPlayerShip), kept_pointers(), at.c_str());
 }
 
 // A test aid (!privplan, at the next frame): the last spawned ship's plan's blocks and where each live scene ship's
@@ -1046,6 +1117,9 @@ void log_watched(const WatchPlace &w) {
 }  // namespace
 
 Bit16u priv_ship_target_now(Bit16u ship) { return plan_target(ship); }
+Bit16u priv_ai_target(Bit16u ship) { return ai_target_of(ship); }
+bool priv_ai_set_target(Bit16u ship, Bit16u target) { return ai_set_target(ship, target); }
+int priv_kept_pointers() { return kept_pointers(); }
 int priv_ship_pilot_anger(Bit16u ship) { return pilot_anger_of(ship); }
 
 bool priv_found() { return g_found; }
@@ -1445,6 +1519,7 @@ bool priv_check_hooks(Bit32u ip) {
             wing_arrays_frame();
             anger_frame();
             target_scan_frame();
+            brain_dump_frame();
             plan_dump_frame();
             dmg_dump_frame();
             stack_paint_frame();
@@ -1906,6 +1981,14 @@ bool priv_script_item(const std::string &item, double t) {
         const bool queued = item[10] == '1' && priv_ship_fire_guns(ship, 0x18);
         if (item[10] != '1') priv_ship_fire(ship, false);
         wclog(1, "key script %.1fs: ds:%04X %s", t, ship, item[10] == '1' ? (queued ? "fires" : "cannot fire") : "fire bit let go");
+        return true;
+    }
+    if (item.compare(0, 12, "!privprovoke") == 0 && g_found) {
+        priv_session_test_provoke();
+        return true;
+    }
+    if (item.compare(0, 11, "!privbrains") == 0 && g_found) {
+        g_brainDump = true;
         return true;
     }
     if (item.compare(0, 9, "!privplan") == 0 && g_found) {
