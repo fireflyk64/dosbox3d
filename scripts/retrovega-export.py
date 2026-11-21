@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Export RetroVega's history from this repository into a repository of its own.
 
-    scripts/retrovega-export.py [DEST] [--ref REF] [--after COMMIT] [--branch NAME]
+    scripts/retrovega-export.py [DEST] [--ref REF] [--after COMMIT] [--branch NAME] [--push]
 
 DEST (default ~/dev/retrovega) gets the retrovega/ directory at its top level, with every commit of this repository
 that changed it: each one rewritten so that its tree is retrovega/'s contents at that commit, its author, committer,
@@ -15,6 +15,10 @@ Again later (new changes to RetroVega): the export continues on top of DEST's br
 RetroVega-Source line of DEST's newest commit and exports what came after that commit; --after COMMIT names the source
 commit to start after instead (it and everything before it are taken as already in DEST).  Without either, on an
 empty DEST, the whole history is exported.
+
+--push then pushes DEST's branch to every remote DEST has (git remote add NAME URL there once; github.com/fireflyk64/
+retrovega is its first), whether or not this run exported anything new: a remote that refuses is reported, the others
+still pushed, and the exit status is 3.
 
 The rewriting is deterministic: the same source commits on the same base give the same hashes.  Nothing in this
 repository changes but objects added to its store and a temporary ref (refs/retrovega-export/tip), deleted at the end.
@@ -73,8 +77,31 @@ def main():
     ap.add_argument('--ref', default='HEAD', help='the source commit to export up to (default HEAD)')
     ap.add_argument('--after', help='the source commit already exported: export only what came after it')
     ap.add_argument('--branch', default='master', help="DEST's branch (default master)")
+    ap.add_argument('--push', action='store_true', help="then push DEST's branch to every remote DEST has")
     a = ap.parse_args()
+    export(a)
+    if a.push:
+        sys.exit(push(a))
 
+
+def push(a):
+    dest = os.path.abspath(os.path.expanduser(a.dest))
+    remotes = git('remote', cwd=dest).split()
+    if not remotes:
+        print('%s has no remotes to push to (git remote add NAME URL there)' % dest)
+        return 0
+    failed = 0
+    for r in remotes:
+        p = subprocess.run(['timeout', '600', 'git', 'push', '-q', r, a.branch], cwd=dest, capture_output=True, text=True)
+        if p.returncode:
+            failed += 1
+            print('push to %s failed: %s' % (r, (p.stderr.strip().splitlines() or ['?'])[-1]))
+        else:
+            print('pushed %s to %s (%s)' % (a.branch, r, git('rev-parse', '--short', a.branch, cwd=dest).strip()))
+    return 3 if failed else 0
+
+
+def export(a):
     src = git('rev-parse', '--show-toplevel', cwd=os.path.dirname(os.path.abspath(__file__))).strip()   # (this script's own repository, wherever it is run from)
     tip = git('rev-parse', '--verify', a.ref + '^{commit}', cwd=src).strip()
     dest = os.path.abspath(os.path.expanduser(a.dest))

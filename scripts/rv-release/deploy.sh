@@ -65,3 +65,9 @@ cd $WT/retrovega
 RUN="python3 $REAP 500" host/web/deploy.sh "$MSG" > $S/deploy-$TAG-rv.log 2>&1
 echo "rv deploy rc $?"
 tail -4 $S/deploy-$TAG-rv.log | cut -c1-120
+# RetroVega's own repository (github.com/fireflyk64/retrovega: the user, 2026-11-21, "push it there in addition to
+# dosbox"): the export brought up to this HEAD (scripts/retrovega-export.py, into ~/dev/retrovega or RV_EXPORT) and
+# pushed to every remote it has.  Reported, never fatal: the site is already out.
+cd $WT
+python3 -I scripts/retrovega-export.py ${RV_EXPORT:-$HOME/dev/retrovega} --push 2>&1 | tail -3
+echo "retrovega export rc ${PIPESTATUS[0]}"
