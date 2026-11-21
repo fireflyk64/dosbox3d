@@ -300,7 +300,7 @@ void score_tick(int landing)
     for (s = 1; s <= RV_MAX_SHIP_SLOT; s++) {
         int ship = is_ship(s), side = ship ? commAnimInfo[s] : -1;
         long km = ship ? km_to(s) : 0;
-        if (ship && side == 1) {
+        if (ship && side >= 1) {         /* (the Aera, and the Rlaan where they are in the fight) */
             if (km < NEAR_KM)
                 nearby++;
             if (km < STAY_KM)

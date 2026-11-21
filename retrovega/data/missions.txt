@@ -47,7 +47,7 @@
 # under its rock, and the AI steers round its bends (logic.c tunnel_mind)
 #
 # A nav line's `last` is a waypoint off, on no list and never reached, until every other waypoint has been reached, in
-# any order (logic.c nav_last_on; the user, 2026-11-20, of Enigma's envoy: "it only shows up if you visited all 3 other
+# any order; `sequel` one off until the mission's role=flee ship has been killed (logic.c nav_last_on, step_mission; the user, 2026-11-20, of Enigma's envoy: "it only shows up if you visited all 3 other
 # nav points").  A mission's `type secret` has its briefing and debrief in close-ups alone, the XO's too, never the room
 # (game.c BRIEF_SECRET; the user: "they wouldn't talk about a top secret mission with everyone")
 #
@@ -3227,8 +3227,13 @@ briefing "Your Schroedinger carries the device Kit has had under test. It's a cl
 briefing "While it's on, nothing out there knows you're there."
 briefing "Firing drops it. The afterburner and the comm let them see you while you use them. Your shields are down."
 briefing "If they see you near the envoy, or the first time you hit it, its pilot runs for the jump point."
-briefing "It needs three and a half minutes to make its jump. Get in close behind it and keep firing."
-briefing "The envoy keeps 2 Aristons by it. Those you'll have to fight when it burns."
+briefing "It needs three minutes to make its jump. Get in close behind it and keep firing."
+briefing "The envoy keeps 2 Aristons by it. Fight them or lose them when it burns. The envoy is the job."
+briefing "Nobody sees a Terran. The Aera will think the Rlaan burned their envoy, unprovoked, and hit back."
+briefing "So you don't fire on anything Rlaan. Not one shot. A Rlaan wreck with our holes in it ends the story."
+briefing "When the envoy burns, your computer will show a Nav 5, a Rlaan post the local Aera can reach."
+briefing "Go there cloaked, stay out of it, and watch them hit back. Then come home."
+briefing "If the envoy jumps instead, there's nothing to watch. Come home."
 briefing "The Vigilance won't wait in the open. She launches you in a field at the system's edge, then jumps out."
 briefing "Come back to the field and she'll jump back in for you. Fly out of it, and back in, by hand."
 briefing "The other pilots have been told the double jump is for navigational stability. Leave them thinking so."
@@ -3236,8 +3241,8 @@ briefing you "Alone, Commander?"
 briefing "Alone. Two fighters can't hide as well as one, and two pilots can't keep a secret as well as one."
 briefing "Cloaked, the autopilot takes you past them. Let one see you and you fly it yourself."
 briefing "Not a word of this outside this room. Dismissed."
-win      "The envoy never left the moon. The Rlaan will think twice about whose hand they shake."
-win      "And nobody saw a thing. Well done, Wildcard."
+win      "The envoy never left the moon. The Aera blame the Rlaan, and you watched them hit back."
+win      "There'll be no alliance signed this year. Well done, Wildcard. Not a word to the others."
 lose     "The envoy's away, and the Rlaan will hear the Aera out. We'll leave Enigma with two enemies watching."
 lose     you "They never saw me, Commander. That was the trouble. Neither did I see enough."
 lose     "Get some rest. We go again tomorrow."
@@ -3246,21 +3251,24 @@ nav      1 -30116 -70925 81506 ground reach=3000
 nav      2 -36116 -71056 74506 ground reach=3000
 nav      3 -44116 -73501 67506 ground reach=3000
 nav      4 -52116 -80315 53506 ground last reach=3000
-nav      5 -33116 -70324 78006 ground hidden reach=2500
+nav      5 -32116 -76994 55506 ground sequel reach=3000
+nav      6 -33116 -70324 78006 ground hidden reach=2500
 field    asteroid 0 0 0 7000 level=1
 ground   arch nav2 span=1500 width=700 air=2000 thick=450 heading=-167
 ground   canyon nav3 to=nav4 width=1700 wall=1300 depth=2800 rise=1800
 ground   pad nav4 radius=900 slope=500
 ship     player 0 nav0
 ship     VIGILNC 0 nav0 role=home hide=10
-ship     TAIZONG 1 nav1 at=3500,400,1500 role=guard
-ship     TAIZONG 1 nav1 at=-3500,-300,-1500 role=guard
-ship     TAIZONG 1 nav5 at=1500,300,0 role=guard
-ship     RUIZONG 1 nav2 at=0,2600,0 role=stay
-ship     ZHUANG 1 nav2 count=2 role=guard
-ship     TAIZONG 1 nav3 count=2 at=1500,600,1300 role=guard
-ship     CHARILS 1 nav4 role=flee jump=210
-ship     ARISTON 1 nav4 count=2 at=1240,1056,2171
+ship     TAIZONG 2 nav1 at=3500,400,1500 role=guard
+ship     TAIZONG 2 nav1 at=-3500,-300,-1500 role=guard
+ship     TAIZONG 2 nav6 at=1500,300,0 role=guard
+ship     RUIZONG 2 nav2 at=0,2600,0 role=stay
+ship     ZHUANG 2 nav2 count=2 role=guard
+ship     TAIZONG 2 nav3 count=2 at=1500,600,1300 role=guard
+ship     CHARILS 1 nav4 role=flee jump=180
+ship     ARISTON 1 nav4 count=2 at=1240,1056,2171 role=guard
+ship     TAIZONG 2 nav5 count=2 at=1500,300,0 role=guard
+ship     AGIS 1 nav5 count=3 at=-1500,-200,800 role=guard
 goal     nav 1 1
 goal     nav 2 1
 goal     nav 3 1

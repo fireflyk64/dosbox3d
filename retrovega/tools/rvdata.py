@@ -57,7 +57,7 @@ VERSION = 28                            # 2: the ship types' engines; 3: their h
                                         # 16 nodes (the save's `systems` has a bit a node: 32 were never possible),
                                         # a planet's kind (kind=NAME: its record's ground count's high nibble)
 LIMITS = {'GROUNDS': 4, 'GOALS': 12, 'PILOTS': 16, 'NODES': 16, 'MISSIONS': 128, 'MISSIONS_PER_NODE': 6, 'NAVS': 8, 'SHIPS': 16,
-          'SEATS': 3, 'TALKS': 200, 'FIELDS': 7, 'SHIPTYPES': 64, 'SHIPRECORDS': 44, 'WEAPONS': 40}
+          'SEATS': 3, 'TALKS': 200, 'FIELDS': 7, 'SHIPTYPES': 64, 'SHIPRECORDS': 40, 'WEAPONS': 38}
 TEXT = {'ID': 16, 'TITLE': 48, 'TALK': 108, 'KEY': 10, 'CALLSIGN': 12,
         'NAME': 24, 'NODE_ID': 8, 'LINE': 72, 'CODE': 6, 'WNAME': 20}
 FIELDS = {'asteroid': 9, 'mine': 10}                 # their EntityType, as fieldTable keeps them
@@ -739,13 +739,14 @@ def compile_all():
         navs = []
         for where, f in m['nav']:
             # nav ID x y z [hidden] [off] [last] [reach=KM] [switch=+N,-M]: the player within KM of it has reached it, and the
-            # (last: off, and on by itself once every other waypoint has been reached: logic.c nav_last_on)
+            # (last: off, and on by itself once every other waypoint has been reached: logic.c nav_last_on; sequel:
+            # off, and on once the mission's role=flee ship has been killed: logic.c step_mission)
             # autopilot stops there; off: switched off at the start, never reached till a switch turns it on; switch=:
             # entering it turns nav N on, M off (the old game's: tests/wc1/navswitch.py)
             words = [o for o in f[4:] if '=' not in o]
             opts = dict(o.split('=', 1) for o in f[4:] if '=' in o)
             sw = [o for o in opts.get('switch', '').split(',') if o]
-            if len(f) < 4 or set(words) - {'hidden', 'off', 'ground', 'last'} or set(opts) - {'reach', 'switch'} \
+            if len(f) < 4 or set(words) - {'hidden', 'off', 'ground', 'last', 'sequel'} or set(opts) - {'reach', 'switch'} \
                     or not 1000 <= int(opts.get('reach', NAV_REACH)) <= 60000 or len(sw) > 4 \
                     or any(not re.fullmatch(r'[+-]([1-9]|1[0-5])', o) for o in sw):
                 raise Fail('%s: nav ID x y z [hidden] [off] [last] [reach=KM, 1,000 to 60,000] [switch=+N,-M: at most 4, '
@@ -753,8 +754,9 @@ def compile_all():
             swb = bytes((0x80 if o[0] == '+' else 0) | int(o[1:]) for o in sw) + b'\xff' * (4 - len(sw))
             if 'ground' in words and 'planet' not in m:
                 raise Fail('%s: a ground nav point in a mission with no planet' % where)
-            navs.append(struct.pack(fmt(NAV), int(f[0]), (1 if 'hidden' in words else 0) | (2 if 'off' in words or 'last' in words else 0)
-                                    | (4 if 'ground' in words else 0) | (8 if 'last' in words else 0),
+            navs.append(struct.pack(fmt(NAV), int(f[0]), (1 if 'hidden' in words else 0) | (2 if set(words) & {'off', 'last', 'sequel'} else 0)
+                                    | (4 if 'ground' in words else 0) | (8 if 'last' in words else 0)
+                                    | (16 if 'sequel' in words else 0),
                                     int(f[1]), int(f[2]), int(f[3]), int(opts.get('reach', NAV_REACH)), swb))
         if len(navs) > LIMITS['NAVS']:
             raise Fail('%s: %d nav points, at most %d' % (w, len(navs), LIMITS['NAVS']))
@@ -880,7 +882,7 @@ def compile_all():
             for n_, say_, nav_ in re.findall(r'(\d+) ([A-Z][a-z]+) at Nav (\d)', f[-1]) if k_ == 'briefing' else ():
                 key_ = named.get(say_) or named.get(say_[:-1]) if say_ not in named else named[say_]
                 have = sum(int(next((o[6:] for o in g[3:] if o.startswith('count=')), 1)) for _x, g in m['ship']
-                           if g[0] == key_ and g[1] == '1' and (g[2] == 'nav' + nav_ or 'also=' + nav_ in g[3:])
+                           if g[0] == key_ and g[1] != '0' and (g[2] == 'nav' + nav_ or 'also=' + nav_ in g[3:])
                            and 'role=stream' not in g[3:])   # (a stream is no nav point's wave)
                 if int(nav_) in hidden_navs:
                     raise Fail('%s: the briefing names Nav %s, a hidden trigger point the player has no list of' % (_w, nav_))
@@ -1148,6 +1150,7 @@ def header_text(sizes):
         out.append('#define RV_GROUND_%s %d' % (k.upper(), v))
     out.append('#define RV_NAV_GROUND 4')
     out.append('#define RV_NAV_LAST 8')
+    out.append('#define RV_NAV_SEQUEL 16')
     for k, v in TYPES.items():
         out.append('#define RV_TYPE_%s %d' % (k.upper(), v))
     for k, v in MUSIC.items():

@@ -19,8 +19,8 @@
 #define RV_TALKS 200
 #define RV_FIELDS 7
 #define RV_SHIPTYPES 64
-#define RV_SHIPRECORDS 44
-#define RV_WEAPONS 40
+#define RV_SHIPRECORDS 40
+#define RV_WEAPONS 38
 #define RV_WEAPON_TYPES 64
 #define RV_ROOMS 2
 #define RV_ENGINES 4
@@ -88,6 +88,7 @@
 #define RV_GROUND_TUNNEL 4
 #define RV_NAV_GROUND 4
 #define RV_NAV_LAST 8
+#define RV_NAV_SEQUEL 16
 #define RV_TYPE_PATROL 0
 #define RV_TYPE_SECRET 1
 #define RV_MUSIC_BRIEFING 0

@@ -331,7 +331,7 @@ who want to find themselves to the winning path"), but "We want an escort missio
 
 | Set | Mission | Fighter, wingman | Planet (seed, look) | What |
 |---|---|---|---|---|
-| Enigma | ENIGMAP, third | Schroedinger, alone | 101, ice | Strike: the envoy (the listening post until 2026-11-19; below). Cloaked past the Rlaan: Taizongs and Zhuangzongs that guard their posts (`role=guard`) and a Ruizong destroyer over the ice arch; Nav 3 a canyon's mouth, Nav 4 its end 17,800 km on, the Aera envoy's Charillus on a pad there (`role=flee jump=210`) and two Aristons; Nav 4 is `last`: on no list and never reached until Navs 1, 2 and 3 have been flown; the briefing is `type secret`, the XO's close-up alone; the Vigilance launches from an asteroid field at the system's edge and hides (`hide=10`) |
+| Enigma | ENIGMAP, third | Schroedinger, alone | 101, ice | Strike: the envoy (the listening post until 2026-11-19; below). Cloaked past the Rlaan: Taizongs and Zhuangzongs that guard their posts (`role=guard`) and a Ruizong destroyer over the ice arch; Nav 3 a canyon's mouth, Nav 4 its end 17,800 km on, the Aera envoy's Charillus on a pad there (`role=flee jump=180`) and two Aristons (`role=guard`: not the mission's to kill); Nav 4 is `last`: on no list and never reached until Navs 1, 2 and 3 have been flown; Nav 5 is `sequel`: on once the envoy is killed, a Rlaan post (2 Taizongs) the local Aera (3 Agis) strike, to be watched cloaked; the Rlaan fly as their own side (2), which the mission's rule does not ask killed; the briefing is `type secret`, the XO's close-up alone; the Vigilance launches from an asteroid field at the system's edge and hides (`hide=10`) |
 | Cephid 17 | CEPHIDP, third | Franklin, Drifter | 211, red | Strike: a Charillus tanker on a pad at the end of a canyon (Nav 3 its mouth, Nav 4 its end 17,500 km on); two Cleomenes at Nav 1, two Aristons at Nav 2, two Areus at Nav 3, a Cleomenes and two Agis with the tanker |
 | Shelton | SHELTONP, third | Schroedinger, Comet | 307, savanna | Patrol: the strip the Nicanders on the deck came from, a Charillus under an arch |
 | Crucible | CRUCIBLP, second | Gawain, Comet | 401, ash (lava pools) | Escort: an Ox lifts the Kahan's lifeboat crew out of the lava fields (`role=back`) |
@@ -440,10 +440,16 @@ each point's height over it (the colony, Nav 2, 187 km over the shore; Nav 1 ove
   Taizongs (their heavy assault craft) at Nav 1 and one on patrol past it (the hidden point), a Ruizong destroyer 2,600 km
   over the ice arch at Nav 2 (`role=stay`; its art rendered from Vega Strike's mesh for this, SHIP30.RV, 37 views) with
   two Zhuangzongs under the arch, two Taizongs over the canyon's mouth. All guards; the envoy keeps two Aera Aristons.
-- **The envoy runs** (`role=flee jump=210`, logic.c `flee_step`): it holds until it hears of the player (it is hit, or a
-  ship of its side within 12,000 km has the player for its target), then jumps out 210 s on (45 until 2026-11-20; the user: "the time we have is waaay too little ... Lets set it to 3-4 minutes"); got away, the mission is
+- **The envoy runs** (`role=flee jump=180`, logic.c `flee_step`): it holds until it hears of the player (it is hit, or a
+  ship of its side within 12,000 km has the player for its target), then jumps out 180 s on (45 at first, then 210; the user, 2026-11-20: "the time we have is waaay too little ... Lets set it to 3-4 minutes", and of 210, "we could maybe have shaved off 30 seconds"); got away, the mission is
   lost. The cockpit shows TARGET JUMPS IN N under the gunsight. Guns alone from 900 km behind kill it in 35 s (play test
-  M8.70); the briefing says three and a half minutes.
+  M8.70); the briefing says three minutes.
+- **Won with the Rlaan alive** (2026-11-20; the user, home with the envoy killed: "I got chewed out and I don't know why"):
+  `mission_done` asks only the Aera's ships killed (side 1), and neither guards nor a third side's; the story (the user):
+  "the aera will think the rlaan did an unprovoked attack on them. and then the local aera will strike back... the player
+  should stay out of it". The briefing orders no shot at anything Rlaan (not enforced). The carrier that hides comes back
+  with the player within 5,000 km (`HOME_BACK_KM`; 15,500 before: unseen from the field's edge). The afterburner's push
+  in the ground's air is 212 kps a second at most (`AIR_AB_KPS`): straight up it barely climbs.
 - **The ground and the low air** (2026-11-20): the ground's hit on the player is nobody's (`do_damage`'s source 0xFFFF: as
   the player's own slot the layer took it, in a room, for two pilots' ships touching and dropped it, so a crash did
   nothing); under 1,200 km and over half its top speed the air shakes the player's ship (`logic_buffet`, 1 to 3 pixels

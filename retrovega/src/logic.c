@@ -538,8 +538,12 @@ static int16_t mission_done(void)
         }
         at = NAV_SHIPS(n);
         for (j = 0; j < 10 && at[j] != 0xFFFF; j++)   /* (an enemy that left, afraid, is not in the way; nor a guard: it
-                                                         may be slipped past, logic.c guard_*) */
-            if (MSHIP_SIDE(at[j]) != commAnimInfo[0] && !g_killed[at[j] & 63] && !g_away[at[j] & 63]
+                                                         may be slipped past, logic.c guard_*; nor a third side's
+                                                         ship, the Rlaan's: the mission's enemies are the Aera.  The
+                                                         user, 2026-11-20, home from Enigma's envoy killed with its
+                                                         moon's Rlaan destroyer alive: "I got chewed out and I
+                                                         don't know why. it's like I lost the mission") */
+            if (MSHIP_SIDE(at[j]) == SIDE_AERA && !g_killed[at[j] & 63] && !g_away[at[j] & 63]
                 && MSHIP_ROLE(at[j]) != RV_ESCORT_GUARD)
                 return 0;
     }
@@ -3671,11 +3675,12 @@ static int16_t guard_return(int16_t s, const AiProfile __far *p)
     return 1;
 }
 
-/* an enemy that keeps the autopilot and the landing waiting: any not dying, but a guard that has nobody to fight */
+/* an enemy that keeps the autopilot and the landing waiting: any not dying, but a guard that has nobody to fight, or
+ * fights somebody not of the player's side (the Rlaan and the Aera at each other: Enigma's Nav 5) */
 static int16_t enemy_awake(int16_t s)
 {
     return slot_is_ship(s) && commAnimInfo[s] != commAnimInfo[0] && shipAiState[s] != 9
-           && !(role_of(s) == RV_ESCORT_GUARD && rvTarget[s] == 0xFF);
+           && !(role_of(s) == RV_ESCORT_GUARD && (!RV_SLOT_OK(rvTarget[s]) || commAnimInfo[rvTarget[s]] != commAnimInfo[0]));
 }
 
 /* a fighter's mind for a step: its target, its situation, its tactic, its decisions (g_turn, the throttle, fire) */
@@ -4126,6 +4131,13 @@ static void ship_think(int16_t s)
                                            with two thirds of the ground's air, lost its speed and its fights) */
 #define AIR_G_KPS 200
 #define AIR_STALL_KPS 100
+#define AIR_AB_KPS 212                  /* the afterburner's push in the ground's air at most: gravity and a sixteenth
+                                           (the user, 2026-11-20: "straight up my afterburners should barely gain
+                                           height ... it didn't feel like I was all at the mercy of the planet.
+                                           Clearly I need to be able to climb away but low down I may need to go up
+                                           slower or use the lift a bit"; a Schroedinger's had been 420, twice its
+                                           weight).  Straight up 300 km over the ground it climbs at some 75 kps (225: 130; 205: 52); the way up
+                                           is a shallow climb at speed, on the wings, and the thinner air */
 #define AIR_G_STEP (KPS_STEP(AIR_G_KPS) / KPS_HZ)   /* gravity, positions a step a step */
 static uint16_t __far g_air;            /* the density where the player is (step_ground's, a step ago) */
 
@@ -4176,6 +4188,8 @@ static void step_air(uint16_t phase)
     if (rvAfterburner[0] && t->ab_kps) {
         want = damage_kps(t->ab_kps);
         d = accel * t->ab_kps / t->max_kps;
+        if (d > AIR_AB_KPS)
+            d = AIR_AB_KPS;
     }
     want = KPS_STEP(want);
     par = vec_dot(&a, f) / 256;         /* the speed along the nose */
@@ -4520,7 +4534,10 @@ static int16_t nav_point_here(int16_t s)
  * Ideally inside an asteroid field at the edge of the system"): S seconds into the flight it jumps out (logic_on_jump:
  * its star and the flash) and is held off the scene; once every human has been out past SCENE_KM, a human come back
  * within HOME_BACK_KM of its place brings it in again HOME_BACK_WAIT on, with the same star */
-#define HOME_BACK_KM 15500
+#define HOME_BACK_KM 5000                /* (15,500 at first, the scene's: it came back unseen, the player at the
+                                           field's edge 7,500 km off where the autopilot stops.  The user, 2026-11-20:
+                                           "I was sad to see the carrier didn't actually jump in when I arrived in
+                                           the asteroid field after I auto'd") */
 #define HOME_BACK_WAIT (2 * LOGIC_HZ)
 
 static void home_hide_step(void)
@@ -4906,8 +4923,16 @@ static void step_mission(void)
         if (slot_is_ship(s) && shipAiState[s] == 9 && slotMissionShip[s] < 64) {
             if (!g_killed[slotMissionShip[s]] && commAnimInfo[s] != commAnimInfo[0])
                 g_enemy_ran = 0;
-            if (!g_killed[slotMissionShip[s]])
+            if (!g_killed[slotMissionShip[s]]) {
                 g_killed[slotMissionShip[s]] = (uint8_t)(rvFlags[s] & RV_FLAG_HUMAN ? 2 : 1);
+                if (role_of(s) == RV_ESCORT_FLEE)   /* (the runner killed: the mission's sequel points come on,
+                                                       missions.txt nav ... sequel; the user, 2026-11-20: "maybe we
+                                                       can have a nav 5 appear where we need to "observe" some rlaan
+                                                       reacting ... if we destroy the ship before jump") */
+                    for (n = 1; n < NAVS; n++)
+                        if (nav_defined(n) && (NAV_REC(n)[1] & RV_NAV_SEQUEL))
+                            g_nav_off &= (uint16_t)~(1u << n);
+            }
         }
     if (slot_is_ship(0) && shipAiState[0] != 9)
         for (n = 0; n < NAVS; n++) {
@@ -5971,7 +5996,8 @@ static void nav_last_on(void)
         if (!nav_defined(j) || !(NAV_REC(j)[1] & RV_NAV_LAST) || nav_on(j))
             continue;
         for (k = 1; k < NAVS; k++)
-            if (k != j && nav_defined(k) && !NAV_HIDDEN(k) && !(NAV_REC(k)[1] & RV_NAV_LAST) && !(g_navs_seen >> k & 1))
+            if (k != j && nav_defined(k) && !NAV_HIDDEN(k) && !(NAV_REC(k)[1] & (RV_NAV_LAST | RV_NAV_SEQUEL))
+                && !(g_navs_seen >> k & 1))
                 break;
         if (k == NAVS) {
             g_nav_off &= (uint16_t)~(1u << j);
