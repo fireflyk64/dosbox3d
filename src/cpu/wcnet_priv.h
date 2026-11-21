@@ -84,6 +84,8 @@ bool priv_spawn_ship(const char *type, const char *appearance, const char *cast,
 // Its AI held (its think returns at once) or let go; none held (a flight's end).
 bool priv_hold_ai(Bit16u controller, bool hold);
 void priv_ship_set_target(Bit16u ship, Bit16u target);
+Bit16u priv_ship_target_now(Bit16u ship);                   // the ship its AI is after (0: none known)
+int priv_ship_pilot_anger(Bit16u ship);                     // its pilot's anger at the player (+0x1A, 0x100 its mood's bit 1); -1 none
 void priv_ship_anger(Bit16u ship);                         // angry at the player, as a hit from the player makes it (at the next frame)    // its AI's target (written at the next frame: the plan is far data)    // false: not held (the list is full)
 void priv_hold_ai_none();
 void priv_let_think(Bit16u controller, int frames);   // a held controller thinks for this many frames (its pilot speaks)

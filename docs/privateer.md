@@ -721,3 +721,21 @@ host's game and were applied (its rear shield 25,600 to 392, armour 100 to 63) a
 put 12 m from the host three times (`!privgopilot`): every bump between the two ships kept 0 on both machines, their
 shields and armour full.  (No ram between pilots hurt before either; what the user saw was likely the copies' shots of
 the previous item or the pirate's.)
+
+**Enemies turn on the pilot who provokes them** (the user: "the enemy wouldn't really react to fire or comms from the
+guest, so the guest was basically just pummeling the enemy without any risk to thsmelves").  The game angers a ship at
+the player -- its pilot (the plan's +0x23) gets +0x19 bit 1 and +0x1A one more -- at a hit of the player's (seg053:1157)
+and at a hostile line of the player's comm (measured: "Live or die.  Your choice." to a pirate, +0x19 FC to FE, +0x1A 0
+to 1), in the guest's game on the guest's copy of the host's ship as on any ship; in the host's game, where the ship
+flies, nothing of it happened.  Now every game watches the pilots of the ships it shows for others: a rise is told to
+the ship's owner (`PrivHit.provoke`, damage 0, once in 2 s a ship), as is every hit of our own ship's
+(`PrivHit.by_pilot`); the owner's game turns the ship on that pilot's ship (its AI's target replaced in its plan, as the
+drone's is re-aimed: `turn_on_pilot`, once in 3 s a ship), and only from a target it has -- caught between maneuvers
+with none, it is tried again each frame for 6 s; a ship after nobody (a merchant at peace) stays as it is, and its AI
+may turn back later as it likes.  Measured, two machines (the guest a Confed officer's ship, so the host's pirate
+starts on the host; `!privretargetpirates=1` makes sure): the guest's missile hit, "our PIR_DA turns on pilot 2's ship
+(it was after ds:B924, the host): its pilot's shot", its AI's target word replaced; the pirate hit the guest's ship 0
+times between the host's retarget (30 s) and the turn (39 s), 21 times after, each sent to the guest and taken there.
+A taunt by the guest (comm, the pirate, "Live or die"): its anger 0 -> 257 on the guest, told, the host's game had it
+("provoked by pilot 2") -- that pirate, spawned by a rig and without orders, held no target in its plan for the whole
+time and was left as it was; an encounter's pirates on an attack run have one.

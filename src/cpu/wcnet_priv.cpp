@@ -397,7 +397,18 @@ static void retarget_frame() {
     g_retargets.clear();
 }
 
-Bit16u priv_ship_target_now(Bit16u ship) { return plan_target(ship); }
+
+// How angry a ship's pilot is at the player: its anger count (the pilot's +0x1A) and, as 0x100, its mood's bit 1 (+0x19):
+// both raised by a hit of the player's (the hit routine, seg053:1157) and by a hostile line of the player's comm (a
+// taunt: measured, "Live or die.  Your choice." to a pirate, +0x19 FC -> FE, +0x1A 0 -> 1).  -1: no pilot to read.
+// At the frame: the plan is far data.
+static int pilot_anger_of(Bit16u ship) {
+    const Bit16u ctl = priv_r16((Bit16u)(ship + kShipController));
+    const Bit16u poff = ctl ? priv_r16((Bit16u)(ctl + 2)) : 0, pseg = ctl ? priv_r16((Bit16u)(ctl + 4)) : 0;
+    Bit16u pilot = 0;
+    if (!pseg || mem_readw_checked(((PhysPt)pseg << 4) + (Bit16u)(poff + 0x23), &pilot) || !pilot) return -1;
+    return priv_r8((Bit16u)(pilot + 0x1A)) | ((priv_r8((Bit16u)(pilot + 0x19)) & 2) << 7);
+}
 
 void retarget_queue(Bit16u ship, Bit16u target) {
     if (g_retargets.size() < 16) g_retargets.push_back(std::make_pair(ship, target));
@@ -922,6 +933,9 @@ void log_watched(const WatchPlace &w) {
 }
 
 }  // namespace
+
+Bit16u priv_ship_target_now(Bit16u ship) { return plan_target(ship); }
+int priv_ship_pilot_anger(Bit16u ship) { return pilot_anger_of(ship); }
 
 bool priv_found() { return g_found; }
 Bit16u priv_load_seg() { return g_found ? g_privLoadSeg : 0; }

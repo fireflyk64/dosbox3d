@@ -137,6 +137,8 @@ struct NpcPuppet {
     Bit32s shield[4];
     bool shields;               // its report had them (an older build's did not)
     bool gone;                  // (not alive) gone from its owner's game without dying: given back quietly
+    int anger;                  // its pilot's anger at us as last read (-1: not yet), and when we last told its owner
+    double provokedAt;
     Bit16u obj, otype;          // the ship in our game (0: none)
     bool pending, parked, killed;
     double fireUntil;           // its guns' fire bit held until then
@@ -144,7 +146,7 @@ struct NpcPuppet {
     std::vector<std::string> cargo;
     int units;
     NpcPuppet() : used(false), seat(-1), id(0), at(-1e9), x(0), y(0), z(0), vx(0), vy(0), vz(0), alive(true), obj(0), otype(0),
-                  pending(false), parked(false), killed(false), fireUntil(-1e9), pod(false), units(0), shields(false), gone(false) {
+                  pending(false), parked(false), killed(false), fireUntil(-1e9), pod(false), units(0), shields(false), gone(false), anger(-1), provokedAt(-1e9) {
         for (int i = 0; i < 9; i++) m[i] = i % 4 == 0 ? 256 : 0;
         for (int i = 0; i < 4; i++) armor[i] = shield[i] = 0;
     }
@@ -1235,6 +1237,12 @@ void puppet_made(int seat, Bit16u obj) {
     wclog(2, "Privateer: pilot %d's ship is ds:%04X (type ds:%04X, controller ds:%04X held)", seat + 1, obj, p.type, priv_ship_controller(obj));
 }
 
+// Our game's ships turned on a pilot lately (turn_on_pilot, below), and the provocations waiting for a target: theirs
+std::vector<std::pair<Bit16u, double> > g_turned;
+// (provoked between its maneuvers -- no target in its plan for the moment -- it is tried again each frame for 6 s)
+struct PendingTurn { Bit16u ship; int seat; double until; const char *why; };
+std::vector<PendingTurn> g_pendingTurns;
+
 void forget_puppets(const char *why) {
     priv_calls_flush(why);
     priv_wings_flight_changed();
@@ -1256,6 +1264,8 @@ void forget_puppets(const char *why) {
     g_net->podsGone.clear();
     g_net->dying.clear();
     g_net->quiet.clear();
+    g_pendingTurns.clear();
+    g_turned.clear();
     priv_hold_ai_none();
     if (any) {
         wclog(2, "Privateer: the puppets forgotten (%s)", why);
@@ -1670,6 +1680,89 @@ void take_pod_taken(const PrivPodTaken &t) {
     wclog(1, "Privateer: our cargo pod ds:%04X taken by pilot %d: put away", obj, (int)t.player() + 1);
 }
 
+// Our pilot angered another machine's encounter ship here -- our fire or our comm's taunt (its pilot's anger rose: the
+// game did it, as to any ship): told to its owner, whose game turns the ship on us (the user, 2026-11-20: "the enemy
+// wouldn't really react to fire or comms from the guest, so the guest was basically just pummeling the enemy without
+// any risk to themselves").  Once in 2 s a ship at most.
+enum { kProvokeEveryMs = 2000, kTurnEveryMs = 3000 };
+void send_provoke(NpcPuppet &p, double now) {
+    if (now - p.provokedAt < kProvokeEveryMs) return;
+    p.provokedAt = now;
+    NetworkMessage msg;
+    PrivHit *h = msg.mutable_priv_hit();
+    h->set_player((Bit32u)g_net->self);
+    h->set_owner((Bit32u)p.seat);
+    h->set_id(p.id);
+    h->set_loc(0);
+    h->set_damage(0);
+    h->set_by_pilot(true);
+    h->set_provoke(true);
+    for (size_t i = 0; i < g_net->peers.size(); i++) {
+        Peer *q = g_net->peers[i];
+        if (q->hello && q->conn.is_open() && (!g_net->host || q->player == p.seat)) {
+            q->conn.send(msg);
+        }
+    }
+    wclog(2, "Privateer: we angered pilot %d's %s (ds:%04X, its pilot's anger %d): its owner told", p.seat + 1, p.type.c_str(), p.obj, p.anger);
+}
+
+// One of our game's ships provoked by another pilot (a hit of its own ship's, or its anger told): turned on that pilot's
+// ship here, by its AI's target (the way the drone's is re-aimed: wcnet_priv.cpp's retarget), once in 3 s a ship at most
+// and only from a target it has (a ship after nobody, a merchant at peace, stays as it is).  Its AI may turn back later
+// as it likes, as it does in the game.
+void turn_on_pilot(Bit16u ship, int seat, const char *why, bool retry = false) {
+    if (seat < 0 || seat >= kMaxSeats || seat == g_net->self) return;
+    const Puppet &pp = g_net->puppets[seat];
+    if (!pp.obj || pp.parked || !priv_ship_is_alive(ship)) return;
+    const double now = PIC_FullIndex();
+    for (size_t i = 0; i < g_turned.size(); ) {
+        if (now - g_turned[i].second > kTurnEveryMs) { g_turned.erase(g_turned.begin() + i); continue; }
+        if (g_turned[i].first == ship) return;
+        i++;
+    }
+    const Bit16u was = priv_ship_target_now(ship);
+    if (!was && !retry) {
+        bool listed = false;
+        for (size_t i = 0; i < g_pendingTurns.size() && !listed; i++) listed = g_pendingTurns[i].ship == ship;
+        if (!listed && g_pendingTurns.size() < 16) {
+            PendingTurn pt = { ship, seat, now + 2 * kTurnEveryMs, why };
+            g_pendingTurns.push_back(pt);
+        }
+        return;
+    }
+    if (!was || was == pp.obj) {
+        static double toldAt = -1e9;
+        if (was && now - toldAt > 5000) {
+            toldAt = now;
+            wclog(2, "Privateer: our %s (ds:%04X), provoked by pilot %d: already after its ship", priv_ship_cast_name(ship).c_str(), ship, seat + 1);
+        }
+        return;
+    }
+    if (g_turned.size() < 32) g_turned.push_back(std::make_pair(ship, now));
+    priv_ship_set_target(ship, pp.obj);
+    wclog(2, "Privateer: our %s (ds:%04X) turns on pilot %d's ship (ds:%04X; it was after ds:%04X): %s", priv_ship_cast_name(ship).c_str(), ship,
+          seat + 1, pp.obj, was, why);
+}
+
+// The provocations waiting for their ship to have a target (at the frame: the plan is far data)
+void turns_frame(double now) {
+    for (size_t i = 0; i < g_pendingTurns.size(); ) {
+        PendingTurn &pt = g_pendingTurns[i];
+        if (now > pt.until || !priv_ship_is_alive(pt.ship)) {
+            if (now > pt.until) wclog(2, "Privateer: our ds:%04X, provoked by pilot %d, was after nobody for 6 s: left as it is", pt.ship, pt.seat + 1);
+            g_pendingTurns.erase(g_pendingTurns.begin() + i);
+            continue;
+        }
+        if (priv_ship_target_now(pt.ship)) {
+            const PendingTurn done = pt;
+            g_pendingTurns.erase(g_pendingTurns.begin() + i);
+            turn_on_pilot(done.ship, done.seat, done.why, true);
+            continue;
+        }
+        i++;
+    }
+}
+
 void take_hit(const PrivHit &h) {
     Bit16u obj = 0;
     if (h.id() == 0) {
@@ -1682,6 +1775,12 @@ void take_hit(const PrivHit &h) {
         }
     }
     if (!obj) {
+        return;
+    }
+    if (h.id() && (h.by_pilot() || h.provoke())) {
+        turn_on_pilot(obj, (int)h.player(), h.provoke() ? "its pilot angered it (fire or comm)" : "its pilot's shot");
+    }
+    if (h.damage() <= 0) {
         return;
     }
     wclog(2, "Privateer: a hit from pilot %d on %s (ds:%04X): quadrant %d, %d", (int)h.player() + 1, h.id() ? "an encounter ship of ours" : "our ship",
@@ -1811,6 +1910,7 @@ void frame_npcs(double now, const Bit32s pos[3]) {
                 if (j != k && q.used && q.obj && q.parked && q.pod == p.pod && q.type == p.type && q.appearance == p.appearance && q.cast == p.cast && !q.killed) {
                     p.obj = q.obj;
                     p.otype = q.otype;
+                    p.anger = -1;
                     q.obj = 0;
                     q.used = false;
                     if (p.pod) priv_pod_fill(p.obj, cargo_records(p), p.units);
@@ -1825,6 +1925,16 @@ void frame_npcs(double now, const Bit32s pos[3]) {
             p.parked = false;
         } else if (near && p.obj) {
             priv_ship_set(p.obj, at, p.m);
+            {
+                // our pilot's fire or taunt angers the ship here as the game would any ship: its owner is told
+                const int a = priv_ship_pilot_anger(p.obj);
+                if (a != p.anger) wclog(3, "Privateer: pilot %d's %s (ds:%04X): its pilot's anger %d -> %d", p.seat + 1, p.type.c_str(), p.obj, p.anger, a);
+                if (a >= 0 && p.anger >= 0 && a != p.anger && ((a & 0xFF) > (p.anger & 0xFF) || (a & 0x100) > (p.anger & 0x100))) {
+                    p.anger = a;
+                    send_provoke(p, now);
+                }
+                p.anger = a;
+            }
             priv_ship_set_armor(p.obj, p.armor);
             if (p.shields) priv_ship_set_shields(p.obj, p.shield);   // (else the puppet's own, full and never hit here)
             p.parked = false;
@@ -2267,6 +2377,7 @@ void priv_session_frame() {
         }
     }
     frame_chats_and_shots();
+    turns_frame(now);
     drones_frame(now);
 }
 
