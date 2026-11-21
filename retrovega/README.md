@@ -44,7 +44,9 @@ Confederation against the Aera, with the Rlaan meddling.
 
 The art comes from Vega Strike's Assets-Production, copied to
 `~/dev/vegastrike-assets` (GPL-2.0, © the Vega Strike contributors; see
-its `vega-license.txt`). Anything derived from it here is GPL as well.
+its `vega-license.txt`). Anything derived from it here is GPL as well:
+the spaceship pictures, named one by one in [LICENSE](LICENSE). Everything
+else in RetroVega is BSD 2-Clause (the same file).
 
 ## Title ideas
 

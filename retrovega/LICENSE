@@ -1,0 +1,139 @@
+RetroVega
+Copyright (c) 2026 Daniel Reiter Horn
+All rights reserved.
+
+Everything in this directory (retrovega/) is under the BSD 2-Clause License
+below: the game's code (src/, abi/, host/, desktop/), its tools (tools/), its
+tests and documents, its data (data/), and its artwork -- the characters and
+their faces, the rooms of the carrier, the cockpits, the armour plate, the
+music, the sounds and the voices -- EXCEPT the files named under
+"Exceptions" further down.
+
+The only part of RetroVega derived from someone else's GPL work is the
+pictures of the spaceships, rendered from the Vega Strike project's ship
+models (Vega Strike Assets-Production, GPL-2.0, (c) the Vega Strike
+contributors).  Those files are named one by one below and stay under the
+GNU General Public License, version 2 (the text is in ../COPYING).  Someone
+who models their own craft and renders them in place of these files has a
+game that is BSD-licensed throughout.
+
+RetroVega is a DOS program.  It runs in any DOS or DOS emulator; it does not
+contain or link DOSBox, and DOSBox's GPL does not reach it.
+
+
+BSD 2-Clause License
+--------------------
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+
+Exceptions
+==========
+
+1. GPL-2.0: the spaceship pictures, derived from Vega Strike's ship models
+--------------------------------------------------------------------------
+
+These files are rendered from (or measured off) Vega Strike's ship meshes and
+textures, and are licensed under the GNU General Public License, version 2,
+as Vega Strike's art is.  (c) the Vega Strike contributors, and for the
+rendering Daniel Reiter Horn.
+
+The ships' sprite views, one file a ship type:
+
+    art/ships/SHIP00.RV   Schroedinger (Vega Strike mesh Schroedinger/schroedinger.bfxm)
+    art/ships/SHIP01.RV   Franklin (Vega Strike mesh Franklin/franklin.bfxm)
+    art/ships/SHIP02.RV   Gawain (Vega Strike mesh Gawain/gawain.bfxm)
+    art/ships/SHIP03.RV   Redeemer (Vega Strike mesh Redeemer/redeemer.bfxm)
+    art/ships/SHIP04.RV   Pacifier (Vega Strike mesh Pacifier/pacifier.bfxm)
+    art/ships/SHIP05.RV   Lancelot (Vega Strike mesh Lancelot/lancelot.bfxm)
+    art/ships/SHIP06.RV   Progeny (Vega Strike mesh Progeny/progeny.bfxm)
+    art/ships/SHIP08.RV   Nicander (Vega Strike mesh Nicander/nicander.bfxm)
+    art/ships/SHIP09.RV   Ariston (Vega Strike mesh Ariston/ariston.bfxm)
+    art/ships/SHIP0A.RV   Areus (Vega Strike mesh Areus/areus.bfxm)
+    art/ships/SHIP0B.RV   Agis (built from parts of Vega Strike meshes (tools/hulls.py))
+    art/ships/SHIP0C.RV   Cleomenes (built from parts of Vega Strike meshes (tools/hulls.py))
+    art/ships/SHIP0D.RV   Convolution (Vega Strike mesh Convolution/convolution.bfxm)
+    art/ships/SHIP10.RV   Shizu (Vega Strike mesh Shizu/shizu.bfxm)
+    art/ships/SHIP11.RV   Zhuangzong (Vega Strike mesh Zhuangzong/zhuangzong.bfxm)
+    art/ships/SHIP12.RV   Taizong (Vega Strike mesh Taizong/taizong.bfxm)
+    art/ships/SHIP13.RV   Shizong (Vega Strike mesh Shizong/Shizong-Hi.bfxm)
+    art/ships/SHIP14.RV   Xuanzong (Vega Strike mesh Xuanzong/Xuanzong.bfxm)
+    art/ships/SHIP15.RV   Gaozong (Vega Strike mesh Gaozong/gaozong.bfxm)
+    art/ships/SHIP20.RV   Vigilance (Vega Strike mesh Vigilance/vigilance.bfxm)
+    art/ships/SHIP21.RV   Kahan (Vega Strike mesh Kahan/kahan.bfxm)
+    art/ships/SHIP24.RV   Ox (Vega Strike mesh Ox/ox_new.bfxm)
+    art/ships/SHIP25.RV   Goddard (Vega Strike mesh Goddard/goddard.bfxm)
+    art/ships/SHIP28.RV   Agasicles (Vega Strike mesh Anaxidamus/anaxidamus.bfxm)
+    art/ships/SHIP29.RV   Anaxidamus (Vega Strike mesh Anaxander/anaxander.obj)
+    art/ships/SHIP2B.RV   Charillus (Vega Strike mesh Agasicles/agasicles.bfxm)
+    art/ships/SHIP2C.RV   Leonidas (Vega Strike mesh Leonidas/yavok.bfxm)
+    art/ships/SHIP30.RV   Ruizong (Vega Strike mesh Ruizong/ruizong.bfxm)
+
+The fighters standing on the launch deck (art/places/deck/), each a render
+of the ship's Vega Strike mesh:
+
+    art/places/deck/ship-FRANKLN.png       art/places/deck/ship-FRANKLN-under.png
+    art/places/deck/ship-GAWAIN.png        art/places/deck/ship-GAWAIN-under.png
+    art/places/deck/ship-LANCELT.png       art/places/deck/ship-LANCELT-under.png
+    art/places/deck/ship-PACIFER.png       art/places/deck/ship-PACIFER-under.png
+    art/places/deck/ship-REDEEMR.png       art/places/deck/ship-REDEEMR-under.png
+    art/places/deck/ship-SCHROED.png       art/places/deck/ship-SCHROED-under.png
+
+Pictures of those ships in the documents:
+
+    docs/aera-new.png
+    docs/deck.png
+    docs/franklin-liveries.png
+    docs/franklin-sheet.png
+    docs/gallery.png
+    docs/packed.png
+    docs/roster.png
+
+The ships' shapes measured off the same meshes (collision silhouettes and
+boxes, engine exhaust points); a game with its own ships makes its own with
+tools/hitboxes.py and tools/engines.py:
+
+    data/shapes.dat
+    data/hitboxes.csv
+    data/engines.csv
+
+The one piece of code ported from Vega Strike: the ship renderer's lighting,
+a port of Vega Strike's uber shader (programs/uber.fp):
+
+    tools/shipviews.py
+
+Built files that contain the pictures above (RV.DAT, the ships' view files
+.RVS/.RVH/.RV in the builds and on the web page) carry those pictures under
+GPL-2.0 too; the rest of their content is BSD as above.
+
+
+2. Other people's work under its own license
+--------------------------------------------
+
+    art/fonts/Caveat.ttf, art/fonts/Orbitron.ttf
+        SIL Open Font License 1.1 (art/fonts/Caveat-OFL.txt,
+        art/fonts/Orbitron-OFL.txt)
+    art/fonts/RobotoCondensed-Bold.ttf
+        Apache License 2.0 (art/fonts/RobotoCondensed-LICENSE.txt)
+    host/ymfm/
+        ymfm by Aaron Giles, BSD 3-Clause (host/ymfm/LICENSE)

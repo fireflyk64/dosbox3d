@@ -204,6 +204,13 @@ DOSBox is distributed under the GNU General Public License. See the
 [COPYING file](https://github.com/dreamlayers/em-dosbox/blob/em-dosbox-0.74/COPYING)
 for more information.
 
+The additions in this fork are not: every file added since DOSBox commit
+`bb94d5c4` (the multiplayer layer, the lobby, the RVGX card, the web page,
+the tools) is BSD 2-Clause, with a few named exceptions, and RetroVega has
+its own [retrovega/LICENSE](retrovega/LICENSE) (BSD 2-Clause except the
+spaceship pictures from Vega Strike's models). See
+[LICENSE-BSD.md](LICENSE-BSD.md).
+
 Status
 ------
 
