@@ -6,7 +6,8 @@ cd "$(dirname "$0")/../.."
 mkdir -p build/host
 RV=${1:-art/ships/SHIP02.RV}
 g++ -std=c++14 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -I src -o build/host/gx_kernel_san tests/host/gx_kernel_test.cpp
-build/host/gx_kernel_san views art/ships/SHIP*.RV build/rvdat/SHIP2*.RV
+CAP=build/rvdat; [ -e $CAP/SHIP20.RV ] || CAP=build/dos   # (the capital ships' views: tools/pack.py's, else the build's)
+build/host/gx_kernel_san views art/ships/SHIP*.RV $CAP/SHIP2*.RV
 build/host/gx_kernel_san equal "$RV"
 build/host/gx_kernel_san fuzz "$RV" "${FUZZ:-300}"
 build/host/gx_kernel_san debris "${DEBRIS:-20000}"

@@ -121,7 +121,7 @@ mirrored headings are their pair's, flag 1).
 
 - `src/hardware/rvgx.cpp` is the DOS device: the handshake, the block, the slots, the cache of expanded views (48 MB,
   least recently used out). It lives on the multiplex chain, added in `DOS_SetupMisc`.
-- `src/hardware/rvgx_kernel.h` is the pixel code, plain C++ with no DOSBox in it: the file parsed and each record of a
+- `gx/rvgx_kernel.h` is the pixel code, plain C++ with no DOSBox in it: the file parsed and each record of a
   view checked (the data comes over a network), and `rvgx_draw`, the turn and scale by inverse mapping.
 - It takes `lf_rotate_setup` and `lf_rotate_span` from the game's own `src/lightfield.c`, so a ship lands exactly where
   the native build's does.

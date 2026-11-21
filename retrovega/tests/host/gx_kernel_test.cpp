@@ -1,4 +1,4 @@
-/* gx_kernel_test.cpp: the sprite accelerator's pixel code (src/hardware/rvgx_kernel.h) on its own: docs/gx.md.
+/* gx_kernel_test.cpp: the sprite accelerator's pixel code (gx/rvgx_kernel.h) on its own: docs/gx.md.
  *
  *   gx_kernel_test views FILE.RV.. every view of real files decodes
  *   gx_kernel_test equal FILE.RV   every kernel path against the game's own (lightfield.c's lf_rotate_row), on real views
@@ -11,7 +11,7 @@
 #include <chrono>
 #include <stdio.h>
 #include <vector>
-#include "../../../src/hardware/rvgx_kernel.h"
+#include "../../gx/rvgx_kernel.h"
 
 static std::vector<uint8_t> load(const char *path)
 {

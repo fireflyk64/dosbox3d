@@ -253,7 +253,6 @@ src/cpu/wcnet_tv_span.cpp
 src/cpu/wcnet_vm.cpp
 src/cpu/wcnet_vm.h
 src/hardware/rvgx.cpp
-src/hardware/rvgx_kernel.h
 src/wc.proto
 src/wclobby_web.js
 src/web_runtime.js

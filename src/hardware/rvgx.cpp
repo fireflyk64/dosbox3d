@@ -41,7 +41,7 @@
 #include <emscripten.h>
 #endif
 
-#include "rvgx_kernel.h"
+#include "../../retrovega/gx/rvgx_kernel.h"   /* (the pixel code is RetroVega's: retrovega/gx) */
 
 enum {
 	RVGX_AH = 0xE7,
