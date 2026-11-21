@@ -14,6 +14,7 @@ OUT=build/quiet
 rm -rf "$OUT"
 mkdir -p "$OUT"
 export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy DOSBOX_TURBO=1
+. tests/dosbox.sh
 fails=0
 bad() { echo "FAIL $*"; fails=$((fails + 1)); }
 
@@ -28,7 +29,7 @@ run() {
     cp tests/fight.txt "$d/WALK.TXT"
     sed -e "s#mount c ../dos#mount c $PWD/$d#" -e "s#RV.EXE /script WALK.TXT#RV.EXE /script WALK.TXT /fly $m /flight ${FLIGHT_S:-40} $*#" \
         -e "s#^cycles=.*#cycles=${CYCLES:-20000}#" tests/rv.conf > "$d/run.conf"
-    ${DOSBOX:-$HOME/dev/dosbox3d/build-native/src/dosbox} -conf "$d/run.conf" > "$d/out.txt" 2>&1 &
+    "$DOSBOX" -conf "$d/run.conf" > "$d/out.txt" 2>&1 &
     local p=$! t=0
     while kill -0 "$p" 2> /dev/null && [ "$t" -lt 600 ] && ! grep -q "^flight: over" "$d/RVLOG.TXT" 2> /dev/null; do
         sleep 0.5

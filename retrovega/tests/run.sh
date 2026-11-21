@@ -8,7 +8,7 @@
 # EXE=RVT.EXE (or RV.EXE) picks one regardless.
 # NOBUILD=1 skips the build; CYCLES=N runs at N cycles (the page runs 50000); TIMEOUT=S (300).
 # The rigs read the frames' lines, so /verbose goes along; QUIET=1 runs without it, as the page does.
-# DOSBOX=path runs another DOSBox (any stock one runs RV.EXE; the default is this repository's native build);
+# DOSBOX=path runs another DOSBox (any stock one runs RV.EXE; the default: tests/dosbox.sh);
 # SHOW=1 opens its window (the default is headless).
 # GX=1 turns on the sprite accelerator in a DOSBox that has it (RVGX_DIR = build/dos; docs/gx.md); GXDELAY=MS its transfer time.
 set -e
@@ -35,6 +35,7 @@ sed -e 's#mount c ../dos#mount c '"$PWD"'/build/dos#' -e "s#RV.EXE /script WALK.
     -e "s#^cycles=.*#cycles=${CYCLES:-40000}#" tests/rv.conf > build/dosrun/run.conf
 [ -n "$SHOW" ] || export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
 [ -z "$GX" ] || export RVGX_DIR="$PWD/build/dos" RVGX_DELAY_MS="${GXDELAY:-0}"
-timeout ${TIMEOUT:-300} ${DOSBOX:-$HOME/dev/dosbox3d/build-native/src/dosbox} \
+. tests/dosbox.sh
+timeout ${TIMEOUT:-300} "$DOSBOX" \
     -conf build/dosrun/run.conf > build/dosrun/dosbox.log 2>&1 || true
 grep -v "^stub" build/dos/RVLOG.TXT

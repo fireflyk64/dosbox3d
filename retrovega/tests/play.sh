@@ -11,4 +11,5 @@ mkdir -p build/dosrun
 sed -e 's#mount c ../dos#mount c '"$PWD"'/build/dos#' -e "s#RV.EXE /script WALK.TXT#${EXE:-RV.EXE} $*#" \
     -e "s#^cycles=.*#cycles=${CYCLES:-40000}#" -e 's#^nosound=true#nosound=false#' -e 's#^exit$##' \
     tests/rv.conf > build/dosrun/play.conf
-exec ${DOSBOX:-$HOME/dev/dosbox3d/build-native/src/dosbox} -conf build/dosrun/play.conf
+. tests/dosbox.sh
+exec "$DOSBOX" -conf build/dosrun/play.conf

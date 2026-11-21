@@ -5,8 +5,9 @@
 set -u
 OUT=$1; shift
 SERIES=${*:-1 2 3 4 5 6 7 8 9 10 11 12 13}
-BIN=$HOME/dev/dosbox3d/build-native/src/dosbox
-WC=$HOME/dev/dosbox3d/wc
+[ -n "${BIN:-}" ] || { . "$(dirname "$0")/../dosbox.sh"; BIN=$DOSBOX; }
+WC=${WC:-$(git -C "$(dirname "$0")" rev-parse --show-toplevel)/wc}
+[ -d "$WC" ] || { echo "no Wing Commander 1 at $WC: set WC=its folder" >&2; exit 2; }
 for s in $SERIES; do
     for m in 0 1 2 3; do
         d=$OUT/s$s-m$m

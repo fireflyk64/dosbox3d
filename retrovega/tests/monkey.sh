@@ -28,6 +28,7 @@ while [ $# -gt 0 ]; do
         *) echo "usage: $0 [-j N] [-s SEEDS] [-b ACTIONS] [-k KILL%] [-t SECONDS] [-n ROUTES] [--dos] [--flying]"; exit 2;;
     esac
 done
+[ -z "$DOS" ] || . tests/dosbox.sh
 OUT=build/monkey
 mkdir -p "$OUT"
 rm -rf "$OUT"/run-* "$OUT"/fail-* "$OUT"/logs
@@ -58,7 +59,7 @@ one() {
         done
         sed -e "s#mount c ../dos#mount c $PWD/$d#" -e "s#RV.EXE /script WALK.TXT#${RV_EXE:-RV.EXE} $args#" \
             -e "s#^cycles=.*#cycles=${CYCLES:-20000}#" tests/rv.conf > "$d/run.conf"
-        DOSBOX_TURBO=1 $HOME/dev/dosbox3d/build-native/src/dosbox -conf "$d/run.conf" > "$d/out.txt" 2>&1 &
+        DOSBOX_TURBO=1 "$DOSBOX" -conf "$d/run.conf" > "$d/out.txt" 2>&1 &
         rc_p=$!
         log=$d/RVLOG.TXT
     else

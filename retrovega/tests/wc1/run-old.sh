@@ -5,11 +5,13 @@
 # e.g. the first mission, the player flown to nav 1 by the autopilot and left there, invulnerable, for two minutes:
 #   tests/wc1/run-old.sh /tmp/enyo1 1 0 "1:!rocks=0,3:a,10:@nav1,130:@end" 260
 # OUTDIR gets trace.txt, the key script's dumps (@tag -> tag.bin, read by dsdump.py) and screenshots (!shot=name).
-# Needs build-native/src/dosbox (BIN=) and the game in wc/ (WC=).
+# Needs dosbox3d's DOSBox with the multiplayer layer (BIN=; tests/dosbox.sh finds the tree's build-native) and
+# Wing Commander 1 (WC=, default the tree's wc/).
 set -u
 OUT=$1; SERIES=$2; MIS=$3; KEYS=$4; SECS=${5:-260}
-BIN=${BIN:-$HOME/dev/dosbox3d/build-native/src/dosbox}
-WC=${WC:-$HOME/dev/dosbox3d/wc}
+[ -n "${BIN:-}" ] || { . "$(dirname "$0")/../dosbox.sh"; BIN=$DOSBOX; }
+WC=${WC:-$(git -C "$(dirname "$0")" rev-parse --show-toplevel)/wc}
+[ -d "$WC" ] || { echo "no Wing Commander 1 at $WC: set WC=its folder" >&2; exit 2; }
 mkdir -p "$OUT"
 cd "$OUT" && env WCNET=0 WCNET_AUTOKEYS=1 SERIES=$SERIES MIS=$MIS WCNET_LOG=2 WCCALLSIGN=CHEATMAV \
     WCNET_SHIPTRACE="$OUT/trace.txt" WCNET_KEYSCRIPT="$KEYS" WCNET_DUMP_DIR="$OUT" \
