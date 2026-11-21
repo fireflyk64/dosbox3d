@@ -209,14 +209,14 @@ goal     escort OX nav0 6
 goal     land 1
 field    asteroid -5000 1500 -35000 7500
 bar      left=TORCH middle=PRIME right=ANCHOR
-talk     bar TORCH ANCHOR "Shmrn's still out there."
+talk     bar TORCH ANCHOR "Vega's still out there."
 talk     bar PRIME TORCH "So's my luck, and I don't bring it up at every table."
 talk     bar ANCHOR TORCH "Your transfer request came back, Torch. I filed it again."
 say      bar TALLY TALLY dead=FROST "Frost's name stays up on the board. They all do."
 say      bar TALLY TALLY after=won "First patrol on the board. That rematch is still open."
 say      bar TALLY TALLY after=lost "Nothing on the board yet. It's a long war, and the chalk's patient."
-say      bar TORCH TORCH "Rafael Ortega. Torch. They'll tell you I bring up Shmrn too much."
-say      bar TORCH PRIME "He brings up Shmrn too much."
+say      bar TORCH TORCH "Rafael Ortega. Torch. They'll tell you I bring up Vega too much."
+say      bar TORCH PRIME "He brings up Vega too much."
 say      bar TORCH TORCH "It's still out there."
 say      bar TORCH TALLY "Let him be, Julian. Your brother's paying for that drink."
 say      bar PRIME PRIME "Scratched your fighter yet? Don't worry, my brother signs for those."
@@ -296,7 +296,7 @@ goal     nav 4 2
 goal     land 2
 field    mine -55000 -5000 -10000 5000 level=2
 bar      left=TORCH middle=KESTREL right=DRIFTER
-talk     bar DRIFTER TORCH "Fifty to one against Shmrn, Torch. That's me being friendly."
+talk     bar DRIFTER TORCH "Fifty to one against Vega, Torch. That's me being friendly."
 talk     bar TORCH DRIFTER "Put me down for ten."
 talk     bar DRIFTER TORCH "That's ten a week for a year now."
 talk     bar TORCH DRIFTER "It's still out there."
@@ -312,7 +312,7 @@ say      bar KESTREL KESTREL "You dropped this."
 say      bar KESTREL you "I didn't feel it go."
 say      bar KESTREL TALLY "Nobody does. He's saved me eleven glasses this month."
 say      bar KESTREL KESTREL "Twelve."
-say      bar TORCH TORCH "You came from Enigma. I came from Shmrn, on the last courier out."
+say      bar TORCH TORCH "You came from Enigma. I came from Vega, on the last courier out."
 say      bar TORCH you "What happened there?"
 say      bar TORCH TORCH "Nobody's gone to look. That's what happened."
 say      bar TALLY TALLY after=won "Your name's on the board. In chalk, so don't get attached to it."
@@ -387,7 +387,7 @@ say      bar ECHO TALLY "She checks it before she eats."
 say      bar COMET COMET "Rookie."
 say      bar COMET you "It's Wildcard."
 say      bar COMET COMET "Last three missions with me and I might remember that."
-say      bar COMET TORCH "She won't. I've been Torch for a year and she calls me Shmrn."
+say      bar COMET TORCH "She won't. I've been Torch for a year and she calls me Vega."
 say      bar TORCH TORCH "Long odds, Drifter says. He's right. That's why I keep paying him."
 say      bar TORCH you "Why, if the odds are that long?"
 say      bar TORCH TORCH "It's cheaper than forgetting."
@@ -603,7 +603,7 @@ talk     bar DRIFTER TORCH "Somebody has to know what she's worth."
 say      bar DRIFTER DRIFTER "You still owe me ten. Don't get killed. I hate paying out."
 say      bar DRIFTER you "Is that a rule or a threat?"
 say      bar DRIFTER DRIFTER "It's the same page."
-say      bar TORCH TORCH "This is what it looked like on Shmrn, the first day. Everyone said it was only a raid."
+say      bar TORCH TORCH "This is what it looked like on Vega, the first day. Everyone said it was only a raid."
 say      bar TORCH DRIFTER "Fifty to one, Torch."
 say      bar TALLY TALLY "I know, you don't have time. Sit down anyway. Thirty seconds."
 say      bar TALLY you "What's it for?"
@@ -749,7 +749,7 @@ say      bar PRIME TALLY "Kit's still sweeping up. I'd stay out of the hangar, J
 say      bar COMET COMET "Cleomenes hit hard and turn slow. Stay behind them and don't get greedy."
 say      bar COMET you "Thanks."
 say      bar COMET COMET "Rookie."
-say      bar TORCH TORCH "The Crucible's a long way from Shmrn, and it's the wrong way. I checked."
+say      bar TORCH TORCH "The Crucible's a long way from Vega, and it's the wrong way. I checked."
 say      bar TORCH COMET "He checks every time we jump."
 say      bar TORCH TORCH "I do."
 say      bar TALLY TALLY "Kit'll tell you she could outfly me. She raced, you know."
@@ -908,7 +908,7 @@ say      bar COMET you "Why Rookie? We've flown together twice now."
 say      bar COMET COMET "Homeland Security. Eight pilots, one wing. I knew all their names."
 say      bar COMET TORCH "Ask her who wrote the letters."
 say      bar COMET COMET "That's enough, Torch."
-say      bar TORCH TORCH "Every time we jump, I look at the star chart. Shmrn gets a little further off."
+say      bar TORCH TORCH "Every time we jump, I look at the star chart. Vega gets a little further off."
 say      bar TORCH you "Someone will go back."
 say      bar TORCH TORCH "That's what I told them."
 say      bar TALLY TALLY after=won "Your column's getting long enough to read from here. I'm almost impressed."
@@ -1196,7 +1196,7 @@ say      bar TALLY TALLY "Solberg came in here last night. Had one drink. She re
 say      bar TALLY you "What did she say?"
 say      bar TALLY TALLY "Nothing. She corrected a spelling."
 lounge   left=KESTREL middle=TORCH right=ANCHOR
-talk     lounge TORCH ANCHOR "They've written Shmrn off. I read the memo."
+talk     lounge TORCH ANCHOR "They've written Vega off. I read the memo."
 talk     lounge ANCHOR TORCH "It's a planning assumption."
 talk     lounge TORCH ANCHOR "That's what I said."
 say      lounge TORCH TORCH "You've come a long way the wrong way, Wildcard."
@@ -1316,7 +1316,7 @@ goal     kill CONVOLN nav1 3
 goal     kill CONVOLN nav1 3
 goal     kill CONVOLN nav1 3
 bar      left=TORCH middle=KESTREL right=DRIFTER
-talk     bar DRIFTER TORCH "Fifty to one against Shmrn. I may have to lengthen that."
+talk     bar DRIFTER TORCH "Fifty to one against Vega. I may have to lengthen that."
 talk     bar TORCH DRIFTER "Put me down for ten."
 talk     bar KESTREL DRIFTER "I'd take that bet."
 talk     bar DRIFTER KESTREL "You'd take it because you've got a feeling?"
@@ -1486,6 +1486,8 @@ say      bar ANCHOR ANCHOR "I've looked at it from every side. It's a bad plan a
 say      bar ANCHOR you "Why are you doing it?"
 say      bar ANCHOR ANCHOR "Nobody's ever asked me to be him on purpose. It's always been in case."
 say      bar TORCH TORCH "They're going to swap. Don't tell Drifter. I've got ten on it."
+say      bar TORCH you "Who's in Vega, Torch? You never say."
+say      bar TORCH TORCH "Someone who gave me her seat on the last ship out. Some other time."
 say      bar TALLY TALLY "If those two swap, I don't know how I'm chalking it. I'll need another column."
 lounge   left=KESTREL middle=DRIFTER right=FROST
 talk     lounge FROST KESTREL "It's a good plan?"
@@ -1563,7 +1565,7 @@ say      bar PRIME PRIME alive=ANCHOR "Anchor to Wildcard. Pre-flight complete. 
 say      bar PRIME you alive=ANCHOR "You read the checklist?"
 say      bar PRIME PRIME "All of it. Every word. It takes forty minutes. He did this for me for years."
 say      bar PRIME TALLY "Sit down, whichever one you are. That's on the house. I don't know whose tab it goes on."
-say      bar TORCH TORCH "I've got ten on them. Drifter doesn't know. It won't be Shmrn, but it's a start."
+say      bar TORCH TORCH "I've got ten on them. Drifter doesn't know. It won't be Vega, but it's a start."
 say      bar TALLY TALLY "If it works, I'm chalking it in the middle of the board with no name on it."
 lounge   left=KESTREL middle=DRIFTER right=FROST
 talk     lounge DRIFTER KESTREL "Who's the next voice on the comm?"
@@ -1722,7 +1724,7 @@ say      bar ECHO TALLY "Do you want me to keep that column going?"
 say      bar ECHO ECHO "Yes. I don't know. Yes."
 say      bar TORCH TORCH "Somebody came back. Nobody came for the ones I left. Don't tell her I said that."
 say      bar TORCH you "What did you leave?"
-say      bar TORCH TORCH "Some other time."
+say      bar TORCH TORCH "The one who gave me her seat on the last ship out. Some other time."
 say      bar TALLY TALLY "Echo asked me to read her column out. First time she's asked. I got through half."
 lounge   left=COMET middle=DRIFTER right=FROST
 talk     lounge COMET FROST "She learned their names."
@@ -1873,7 +1875,7 @@ say      bar ANCHOR ANCHOR "If they ask you about Frost, tell them the truth. I'
 say      bar ANCHOR you "What's in it?"
 say      bar ANCHOR ANCHOR "I wouldn't say. It's hers to tell, and I think she will."
 lounge   left=COMET middle=TORCH right=-
-talk     lounge TORCH COMET "If the Rlaan opened the lane, the fleet could get to Shmrn."
+talk     lounge TORCH COMET "If the Rlaan opened the lane, the fleet could get to Vega."
 talk     lounge COMET TORCH "They won't."
 talk     lounge TORCH COMET "But they could."
 say      lounge TORCH TORCH "Frost's the only one aboard who can talk to them. You see why I'm being nice to her."
@@ -1999,7 +2001,7 @@ talk     bar PRIME COMET "It's her ship from before. It's why she flies."
 say      bar COMET COMET "Do you know what triage is, Rookie? I learned it with a wing of eight. You don't want it."
 say      bar COMET you "Frost does?"
 say      bar COMET COMET "Go and ask her. Then you'll know why I don't learn names and she won't stop."
-say      bar TORCH TORCH "That's the Thermopylae. She was at Shmrn, in the first week. I saw her on the way out."
+say      bar TORCH TORCH "That's the Thermopylae. She was at Vega, in the first week. I saw her on the way out."
 say      bar TORCH you "She got out?"
 say      bar TORCH TORCH "They all got out. That's what's wrong with it."
 say      bar PRIME PRIME "A bad ship with a bad story. Relax, there's a spare. No, there isn't. Not for that one."
@@ -2310,7 +2312,7 @@ say      bar PRIME PRIME alive=ANCHOR "Anchor's not out of the med bay. He's fil
 say      bar COMET COMET "Your mechanic's flying wing now. That's how bad it is, Rookie."
 say      bar COMET you "She's good."
 say      bar COMET COMET "That's not what I said."
-say      bar TORCH TORCH "We can't get to Shmrn from here. We can't get to much of anywhere from here."
+say      bar TORCH TORCH "We can't get to Vega from here. We can't get to much of anywhere from here."
 lounge   left=KESTREL middle=ECHO right=FROST
 talk     lounge FROST ECHO "We won't get the evacuation ships out without escort."
 talk     lounge ECHO FROST "I know. I've asked."
@@ -2384,7 +2386,7 @@ say      lounge TECH you "Kit, about the list."
 say      lounge TECH TECH "I started it the first week. I wanted to know who to thank. It got away from me."
 say      lounge TECH TECH "They all came from somebody. I wanted someone to know that. I'd like you to know that."
 say      lounge TECH TORCH "I'd thank you, Kit, if it wasn't for what it's made of."
-say      lounge TORCH TORCH "I'm taking stock. Nobody's coming to Shmrn now. I think I've known that for a while."
+say      lounge TORCH TORCH "I'm taking stock. Nobody's coming to Vega now. I think I've known that for a while."
 say      lounge TORCH you "What are you going to do?"
 say      lounge TORCH TORCH "Pay Drifter my ten credits, if he comes back. Then we'll see."
 talk     deck TECH you "You're short on fuel. So am I. Don't ask me for anything today."
@@ -2471,14 +2473,14 @@ radio    "Kit here. They're on top of us. I've got your wing. Don't scratch her.
 
 mission  SHMRN1
 node     SHMRN
-title    Patrol: the Shmrn pocket, 4 nav points
+title    Patrol: the Vega pocket, 4 nav points
 type     patrol
 music    briefing
 fighter  LANCELT
-briefing "This is it, people. The Rlaan have opened a lane, and the fleet is going into the Shmrn pocket."
+briefing "This is it, people. The Rlaan have opened a lane, and the fleet is going into the Vega pocket."
 briefing FROST "An old trading family, Commander. It'll cost them. I told them what it would cost."
 briefing dead=FROST "They opened it for Frost. She'd been writing to an old trading family for years. I found the letters."
-briefing TORCH "Shmrn's still out there."
+briefing TORCH "Vega's still out there."
 briefing "Yes, Torch, it is. You've told us every day for three years, and you were right."
 briefing "You and Torch fly the first recon, four points, in Lancelots. He asked, and I had no reason to say no."
 briefing "Command thinks the Aera run this whole sector from inside the pocket. We're going to find out."
@@ -2536,7 +2538,7 @@ say      bar TALLY you unless=WOLF359 "Isn't it?"
 say      bar TALLY TALLY unless=WOLF359 "Ask Solberg who signs my medical. Nobody stays current by accident, kid."
 lounge   left=KESTREL middle=TORCH right=ANCHOR
 talk     lounge TORCH ANCHOR "Did you read the plan?"
-talk     lounge ANCHOR TORCH "It's correct. It also says Shmrn."
+talk     lounge ANCHOR TORCH "It's correct. It also says Vega."
 talk     lounge TORCH ANCHOR "That's what I keep telling you."
 say      lounge ANCHOR ANCHOR if=BARNARD "They let me out of the med bay yesterday. I signed for it myself. It's the first form I've enjoyed."
 say      lounge ANCHOR ANCHOR unless=CRUCIBL "There's something you should know, if you fly with us. The family has a contract."
@@ -2554,11 +2556,11 @@ say      deck TECH you unless=DEFIANC "(You turn around. The list goes all the w
 say      deck TECH TECH boost=missile "Here's your missile. Bring back what you can, and try to leave me some wall."
 say      deck TECH you "What happens to the list, when this is over?"
 say      deck TECH TECH "Ask me when it's over."
-radio    "Torch. Shmrn's still out there. Let's go and see."
+radio    "Torch. Vega's still out there. Let's go and see."
 
 mission  SHMRN2
 node     SHMRN
-title    Patrol: the Shmrn pocket, 3 nav points
+title    Patrol: the Vega pocket, 3 nav points
 type     patrol
 music    briefing
 fighter  LANCELT
@@ -2602,7 +2604,7 @@ goal     kill ANAXIDM nav3 1
 field    asteroid 20000 0 -35000 5000 level=1
 field    asteroid 20000 0 -35000 5000 level=1
 bar      left=TORCH middle=KESTREL right=DRIFTER
-talk     bar DRIFTER TORCH "Long odds against Shmrn."
+talk     bar DRIFTER TORCH "Long odds against Vega."
 talk     bar TORCH DRIFTER "I'm in it, Drifter. I've been in it for a week."
 talk     bar DRIFTER TORCH "Three years at ten a week, at fifty to one. Seventy-eight thousand credits."
 talk     bar TORCH DRIFTER "Where are you going to get seventy-eight thousand credits?"
@@ -2642,7 +2644,7 @@ radio    "Torch. Three points. I've got a long way to go, and it's the right way
 
 mission  SHMRN3
 node     SHMRN
-title    Patrol: the Shmrn pocket, 3 nav points
+title    Patrol: the Vega pocket, 3 nav points
 type     patrol
 music    briefing
 fighter  LANCELT
@@ -2697,7 +2699,7 @@ say      bar PRIME TALLY "Your brother's stopped paying your tab. You owe me for
 say      bar PRIME PRIME "Worth every credit."
 say      bar FROST FROST "Everyone's being very cheerful. Make sure Torch is ok for me. I'm worried he's not going to be."
 lounge   left=KESTREL middle=TORCH right=-
-say      lounge TORCH TORCH "You've been wanting to ask. I took the last courier out of Shmrn. It was my sister's seat."
+say      lounge TORCH TORCH "You've been wanting to ask. I took the last courier out of Vega. It was my sister's seat."
 say      lounge TORCH you "Your sister?"
 say      lounge TORCH TORCH "Ines. Someone had to carry the distress codes out. She put them in my hand, and she put me on the ship."
 say      lounge TORCH TORCH "I carried them. Nobody came. Three years. I ran, Wildcard. That's all I did."
@@ -2716,7 +2718,7 @@ radio    "Torch. Starboard side. Stay close. I've got something to say to someon
 
 mission  SHMRN4
 node     SHMRN
-title    Patrol: the Shmrn pocket, 3 nav points
+title    Patrol: the Vega pocket, 3 nav points
 type     patrol
 music    briefing
 fighter  LANCELT
@@ -2786,7 +2788,7 @@ say      bar COMET you "What did you say?"
 say      bar COMET COMET "I asked for the roster. What's your name?"
 say      bar COMET you "It's Wildcard."
 say      bar COMET COMET "I know. I wanted to hear you say it. Go on, get out of here."
-say      bar TORCH TORCH "Shmrn's still out there. It's about ten jumps from here. Sorry. Force of habit."
+say      bar TORCH TORCH "Vega's still out there. It's about ten jumps from here. Sorry. Force of habit."
 say      bar TORCH TALLY "That's the first joke you've made in three years."
 say      bar TALLY TALLY "This medical's good for another month. I don't think I'm going to need it. Good."
 say      bar TALLY you "You sound disappointed."
@@ -2883,7 +2885,7 @@ say      lounge FROST FROST "I've got the med bay. There are a hundred and ninet
 say      lounge FROST you "Are you all right?"
 say      lounge FROST FROST "Yes. That's the terrible part. Go on, check on your wingman. He's sixty-one."
 say      lounge TORCH TORCH "Kit's got a Franklin on her floor, fuelled. She's pretending not to see me look at it."
-say      lounge TORCH you "You'd never reach Shmrn from here."
+say      lounge TORCH you "You'd never reach Vega from here."
 say      lounge TORCH TORCH "No. Fifty to one, as I recall. Give my ten to whoever's holding the book."
 say      lounge KESTREL KESTREL "I couldn't have reached him. I've done the math, every way there is. I've done it four hundred times."
 say      lounge KESTREL you "Kestrel. Nobody could have."
@@ -2901,7 +2903,7 @@ type     patrol
 music    briefing
 fighter  FRANKLN
 briefing "The situation is getting worse. We've lost the last relay at Wolf 359, and they're coming here next."
-briefing alive=TORCH "Torch took a fighter last night and jumped for Shmrn, alone. Nobody stopped him. Nor did I."
+briefing alive=TORCH "Torch took a fighter last night and jumped for Vega, alone. Nobody stopped him. Nor did I."
 briefing "We have half a dozen fighters circling Nav 1, seventy-five thousand out, waiting for something."
 briefing "It might be a tanker. It's more likely the first of their cruisers, an Anaxidamus."
 briefing "You and Tally go and look. A Franklin and an Ox stay with us, and the turrets are off."

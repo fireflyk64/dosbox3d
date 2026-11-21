@@ -1213,6 +1213,9 @@ def header_text(sizes):
     return '\n'.join(out)
 
 
+NODE_NAMES = {'SHMRN': 'Vega'}           # a set the menu names otherwise than by its id (the id stays: saves, tests)
+
+
 def manifest(nodes, missions):
     """RVNET.JSON: the campaign as the page's mission menu lists it (web/gamefiles.js, the build copies it beside the
     page as rv-campaign.json), read back from the packed records RVGAME.DAT holds, so the menu and the game agree
@@ -1229,7 +1232,8 @@ def manifest(nodes, missions):
                 continue
             h = head.unpack_from(missions[n])
             ms.append({'n': n, 'id': h[0].rstrip(b'\0').decode('ascii'), 'title': h[-1].rstrip(b'\0').decode('ascii')})
-        series.append({'node': i, 'id': v[0].rstrip(b'\0').decode('ascii'), 'missions': ms})
+        nid = v[0].rstrip(b'\0').decode('ascii')
+        series.append({'node': i, 'id': nid, 'missions': ms, **({'name': NODE_NAMES[nid]} if nid in NODE_NAMES else {})})
     return {'version': 1, 'series': series}
 
 

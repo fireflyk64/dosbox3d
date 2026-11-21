@@ -896,7 +896,7 @@ function loadCampaignManifest(g) {
     // game's /brief takes (missionArgs)
     c.series.length = 0;
     for (const s of m.series) {
-      const name = s.id.charAt(0) + s.id.slice(1).toLowerCase();
+      const name = s.name || s.id.charAt(0) + s.id.slice(1).toLowerCase();
       c.series.push({ series: s.node + 1, name, missions: s.missions.map((x) => x.title), packed: s.missions.map((x) => x.n) });
     }
     $("mission").dataset.game = "";

@@ -13,7 +13,7 @@ NAME = {'FROST': 'Frost', 'KESTREL': 'Kestrel', 'DRIFTER': 'Drifter', 'PRIME': '
         'COMET': 'Comet', 'ECHO': 'Echo', 'TALLY': 'Tally', 'TECH': 'Kit', 'XO': 'Solberg', 'you': 'Wildcard'}
 SYSTEM = {'ENIGMA': 'Enigma shipyards', 'CEPHID': 'Cephid 17', 'SHELTON': 'Shelton', 'CRUCIBL': 'Crucible picket',
           'OLDZIEY': 'Oldziey', 'DEFIANC': 'Defiance', 'LIXIS': 'Lixis beacon', 'ATARAXI': 'Ataraxia', 'RIGEL': 'Rigel relay',
-          'BARNARD': "Barnard's Star", 'WOLF359': 'Wolf 359', 'SHMRN': 'Shmrn pocket', 'LUYTEN': "Luyten's Star",
+          'BARNARD': "Barnard's Star", 'WOLF359': 'Wolf 359', 'SHMRN': 'Vega pocket', 'LUYTEN': "Luyten's Star",
           'GOOD': 'The war is won', 'BAD': 'The war is lost'}
 OLD = {'ENIGMA': 'Enyo', 'CEPHID': 'McAuliffe', 'SHELTON': 'Gateway', 'CRUCIBL': 'Gimle', 'OLDZIEY': 'Brimstone', 'DEFIANC': 'Chengdu',
        'LIXIS': 'Dakota', 'ATARAXI': 'Port Hedland', 'RIGEL': 'Kurasawa', 'BARNARD': 'Rostov', 'WOLF359': "Hubble's Star",
