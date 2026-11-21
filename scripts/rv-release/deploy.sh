@@ -69,5 +69,5 @@ tail -4 $S/deploy-$TAG-rv.log | cut -c1-120
 # dosbox"): the export brought up to this HEAD (scripts/retrovega-export.py, into ~/dev/retrovega or RV_EXPORT) and
 # pushed to every remote it has.  Reported, never fatal: the site is already out.
 cd $WT
-python3 -I scripts/retrovega-export.py ${RV_EXPORT:-$HOME/dev/retrovega} --push 2>&1 | tail -3
+scripts/retrovega-sync.sh 2>&1 | tail -3
 echo "retrovega export rc ${PIPESTATUS[0]}"

@@ -12,7 +12,8 @@ commit).  DEST is made and `git init`-ed when it is not a repository yet.
 This repository stays the source of truth: the export is a copy, made again whenever wanted.
 
 Again later (new changes to RetroVega): the export continues on top of DEST's branch.  By default it reads the
-RetroVega-Source line of DEST's newest commit and exports what came after that commit; --after COMMIT names the source
+RetroVega-Source line of DEST's newest commit and exports what came after that commit (if a rebase has
+rewritten that commit, after the commit whose retrovega/ is exactly DEST's newest tree); --after COMMIT names the source
 commit to start after instead (it and everything before it are taken as already in DEST).  Without either, on an
 empty DEST, the whole history is exported.
 
@@ -101,6 +102,20 @@ def push(a):
     return 3 if failed else 0
 
 
+def same_tree(src, tip, tree, gone, dest):
+    """The source commit to continue after when DEST's came from one no longer in the history (rewritten by a rebase,
+    or a branch the history moved off): the newest commit up to the tip whose retrovega/ is exactly DEST's newest tree.
+    The commits after it are the ones DEST lacks."""
+    for c in git('rev-list', tip, '--', SUBDIR, cwd=src).split():
+        if git_ok('rev-parse', '-q', '--verify', '%s:%s' % (c, SUBDIR), cwd=src) and \
+                git('rev-parse', '%s:%s' % (c, SUBDIR), cwd=src).strip() == tree:
+            print('%s came from %s, no longer in the history up to %s; its files are those of %s: going on from there'
+                  % (dest, gone[:10], tip[:10], c[:10]))
+            return c
+    sys.exit('%s came from %s, which is not in the history up to %s, and no commit there has its files: name where to '
+             'go on from with --after' % (dest, gone[:10], tip[:10]))
+
+
 def export(a):
     src = git('rev-parse', '--show-toplevel', cwd=os.path.dirname(os.path.abspath(__file__))).strip()   # (this script's own repository, wherever it is run from)
     tip = git('rev-parse', '--verify', a.ref + '^{commit}', cwd=src).strip()
@@ -129,8 +144,9 @@ def export(a):
         if not after:
             sys.exit('%s has commits on %s but none says where it came from (%s...): name it with --after'
                      % (dest, a.branch, TRAILER))
-        if not git_ok('cat-file', '-e', after + '^{commit}', cwd=src):
-            sys.exit('%s came from %s, which this repository does not have' % (dest, after))
+        if not git_ok('cat-file', '-e', after + '^{commit}', cwd=src) or \
+                not git_ok('merge-base', '--is-ancestor', after, tip, cwd=src):
+            after = same_tree(src, tip, git('rev-parse', base + '^{tree}', cwd=dest).strip(), after, dest)
     if after and base is None:
         sys.exit('--after needs commits in %s to continue on; it has none on %s' % (dest, a.branch))
     if after and not git_ok('merge-base', '--is-ancestor', after, tip, cwd=src):
