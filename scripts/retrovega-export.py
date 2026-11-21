@@ -75,7 +75,7 @@ def main():
     ap.add_argument('--branch', default='master', help="DEST's branch (default master)")
     a = ap.parse_args()
 
-    src = git('rev-parse', '--show-toplevel').strip()
+    src = git('rev-parse', '--show-toplevel', cwd=os.path.dirname(os.path.abspath(__file__))).strip()   # (this script's own repository, wherever it is run from)
     tip = git('rev-parse', '--verify', a.ref + '^{commit}', cwd=src).strip()
     dest = os.path.abspath(os.path.expanduser(a.dest))
     os.makedirs(dest, exist_ok=True)
