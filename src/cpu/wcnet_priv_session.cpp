@@ -136,6 +136,7 @@ struct NpcPuppet {
     Bit32s armor[4];
     Bit32s shield[4];
     bool shields;               // its report had them (an older build's did not)
+    bool gone;                  // (not alive) gone from its owner's game without dying: given back quietly
     Bit16u obj, otype;          // the ship in our game (0: none)
     bool pending, parked, killed;
     double fireUntil;           // its guns' fire bit held until then
@@ -143,7 +144,7 @@ struct NpcPuppet {
     std::vector<std::string> cargo;
     int units;
     NpcPuppet() : used(false), seat(-1), id(0), at(-1e9), x(0), y(0), z(0), vx(0), vy(0), vz(0), alive(true), obj(0), otype(0),
-                  pending(false), parked(false), killed(false), fireUntil(-1e9), pod(false), units(0), shields(false) {
+                  pending(false), parked(false), killed(false), fireUntil(-1e9), pod(false), units(0), shields(false), gone(false) {
         for (int i = 0; i < 9; i++) m[i] = i % 4 == 0 ? 256 : 0;
         for (int i = 0; i < 4; i++) armor[i] = shield[i] = 0;
     }
@@ -195,6 +196,8 @@ struct PrivNet {
     std::vector<std::pair<int, Bit32u> > shots;         // seat, id
     std::vector<Bit32u> podsTaken;                      // pods of ours another pilot's tractor beam took (put away, not reported)
     std::vector<std::pair<Bit16u, Bit16u> > dying;      // (ship, type) puppets given back, until the game has freed them
+    std::vector<std::pair<Bit16u, Bit16u> > quiet;      // (ship, type) of those, the ones given back quietly (release_obj):
+                                                        // their deaths without the explosion's sound or a kill's credit
     double navSince;                                    // when we came to our nav point
     int wingWaitNav;                                    // (a guest waiting for the host's word on a nav point's wing: which, since)
     double wingWaitSince;
@@ -204,7 +207,7 @@ struct PrivNet {
     int extrasMade;
     // our ships sent in the scene lately (id, its names, its last place, when): one gone from our scene is told dead for
     // 2 s -- a ship's death took it out of the scene before a report said so, and the others kept its puppet alive
-    struct SentShip { Bit32u id; std::string type, appearance, cast; Bit32s x, y, z; double at; };
+    struct SentShip { Bit32u id; std::string type, appearance, cast; Bit32s x, y, z; double at; bool died; };
     std::vector<SentShip> sentShips;
     std::vector<std::pair<Bit32u, double> > podsGone;   // (seat << 16 | id, when) pods of others' our tractor took: their owner's
                                                         // next reports, already on their way, are not to make them again
@@ -731,7 +734,9 @@ void take_state(const PrivState &st, int seat) {
         p.deadUntil = now_ms() + 5000;
         p.reported = false;
         p.pending = false;
-        if (p.obj && !p.parked && priv_ship_alive(p.obj, p.type)) {
+        if (p.obj && p.parked && priv_ship_alive(p.obj, p.type)) {
+            release_obj(p.obj);         // (far off where we kept it: quietly)
+        } else if (p.obj && priv_ship_alive(p.obj, p.type)) {
             if (g_net->dying.size() < 32) g_net->dying.push_back(std::make_pair(p.obj, p.type));
             priv_hold_ai(priv_ship_controller(p.obj), false);
             priv_ship_kill(p.obj);
@@ -1250,6 +1255,7 @@ void forget_puppets(const char *why) {
     g_net->podsTaken.clear();
     g_net->podsGone.clear();
     g_net->dying.clear();
+    g_net->quiet.clear();
     priv_hold_ai_none();
     if (any) {
         wclog(2, "Privateer: the puppets forgotten (%s)", why);
@@ -1439,14 +1445,22 @@ void send_scene(double now) {
         bool had = false;
         for (size_t j = 0; j < g_net->sentShips.size() && !had; j++) {
             PrivNet::SentShip &e = g_net->sentShips[j];
-            if (e.id == o) { e.type = c->type(); e.appearance = c->appearance(); e.cast = c->cast(); e.x = p[0]; e.y = p[1]; e.z = p[2]; e.at = now; had = true; }
+            if (e.id == o) {
+                if (e.type != c->type()) e.died = false;        // (the same address, another ship: the old one was freed)
+                e.type = c->type(); e.appearance = c->appearance(); e.cast = c->cast(); e.x = p[0]; e.y = p[1]; e.z = p[2]; e.at = now;
+                if (!c->alive()) e.died = true;
+                had = true;
+            }
         }
         if (!had && g_net->sentShips.size() < 48) {
-            PrivNet::SentShip e = { o, c->type(), c->appearance(), c->cast(), p[0], p[1], p[2], now };
+            PrivNet::SentShip e = { o, c->type(), c->appearance(), c->cast(), p[0], p[1], p[2], now, false };
             g_net->sentShips.push_back(e);
         }
     }
-    // the ships sent lately and gone from our scene now (dead, or the game took them): told dead for 2 s
+    // the ships sent lately and gone from our scene now, told for 2 s: dead when the game's dead-ship handler had them
+    // (a ship can leave the scene at its first dead frame, replaced by its explosion: seg053:0AC1), else gone -- left
+    // behind by an autopilot or a jump, the scene made anew -- which the others give back quietly (they exploded every
+    // such ship as dead: the user's "random explosions" as another pilot left)
     for (size_t j = 0; j < g_net->sentShips.size(); ) {
         PrivNet::SentShip &e = g_net->sentShips[j];
         if (e.at >= now) { j++; continue; }             // (sent just now: still here)
@@ -1458,6 +1472,7 @@ void send_scene(double now) {
         c->set_cast(e.cast);
         c->set_x(e.x); c->set_y(e.y); c->set_z(e.z);
         c->set_alive(false);
+        if (!e.died) c->set_gone(true);
         j++;
     }
     for (size_t i = 0; i < g_net->peers.size(); i++) {
@@ -1576,6 +1591,7 @@ void take_scene(const PrivScene &sc, int seat) {
         p->vx = c.vx(); p->vy = c.vy(); p->vz = c.vz();
         for (int k = 0; k < 9 && k < c.m_size(); k++) p->m[k] = c.m(k);
         p->alive = c.alive();
+        p->gone = !c.alive() && c.gone();
         for (int k = 0; k < 4 && k < c.armor_size(); k++) p->armor[k] = c.armor(k);
         p->shields = c.shield_size() == 4;
         for (int k = 0; p->shields && k < 4; k++) p->shield[k] = c.shield(k);
@@ -1750,10 +1766,18 @@ void frame_npcs(double now, const Bit32s pos[3]) {
         const double age = now - p.at;
         const bool fresh = age < kNpcStaleMs && priv_in_flight();
         if (!p.alive && p.obj && !p.killed && !p.pod) {
-            priv_ship_kill(p.obj);
+            if (p.gone || p.parked) {
+                // gone from its owner's game without dying (left behind by an autopilot or a jump), or dead far off where
+                // we kept it parked: given back quietly (no explosion where nobody sees one, no sound from nowhere)
+                wclog(2, "Privateer: pilot %d's %s (ds:%04X) %s: given back quietly", p.seat + 1, p.type.c_str(), p.obj,
+                      p.gone ? "gone from its owner's game" : "dead while parked");
+                release_obj(p.obj);
+            } else {
+                priv_ship_kill(p.obj);
+                priv_hold_ai(priv_ship_controller(p.obj), false);
+                wclog(2, "Privateer: pilot %d's %s (ds:%04X) destroyed, as its owner says", p.seat + 1, p.type.c_str(), p.obj);
+            }
             p.killed = true;
-            priv_hold_ai(priv_ship_controller(p.obj), false);
-            wclog(2, "Privateer: pilot %d's %s (ds:%04X) destroyed, as its owner says", p.seat + 1, p.type.c_str(), p.obj);
             continue;
         }
         if (p.killed) {
@@ -1937,6 +1961,22 @@ bool priv_session_chat(const std::string &text) {
     return true;
 }
 
+bool priv_session_silent_death(Bit16u ship) {
+    if (!g_net || g_net->self < 0 || !ship) return false;
+    for (size_t i = 0; i < g_net->quiet.size(); i++) {
+        if (g_net->quiet[i].first == ship) return true;
+    }
+    return false;
+}
+
+// One of our ships died (the game's dead-ship handler had it): reported dead, not gone, when it leaves the scene
+void priv_session_ship_died(Bit16u ship) {
+    if (!g_net || g_net->self < 0 || !ship) return;
+    for (size_t j = 0; j < g_net->sentShips.size(); j++) {
+        if (g_net->sentShips[j].id == ship) g_net->sentShips[j].died = true;
+    }
+}
+
 bool priv_session_is_puppet(Bit16u a, Bit16u b) {
     return g_net && g_net->self >= 0 && ((a && is_puppet_obj(a)) || (b && is_puppet_obj(b)));
 }
@@ -2004,6 +2044,11 @@ void priv_session_fired(Bit16u ship) {
 
 // One puppet given back: moved far off, its AI let go, killed (the game frees it after its death)
 void release_obj(Bit16u obj) {
+    bool listed = false;
+    for (size_t i = 0; i < g_net->quiet.size() && !listed; i++) listed = g_net->quiet[i].first == obj;
+    if (!listed && g_net->quiet.size() < 32) {
+        g_net->quiet.push_back(std::make_pair(obj, priv_ship_type(obj)));     // (its death a quiet one: no sound, no credit)
+    }
     Bit32s away[3];
     park_pos(obj, away);
     if (priv_pod_is(obj)) {
@@ -2022,6 +2067,10 @@ void govern_memory(double now, const Bit32s pos[3]) {
     for (size_t i = 0; i < g_net->dying.size(); ) {
         if (priv_ship_alive(g_net->dying[i].first, g_net->dying[i].second)) i++;
         else g_net->dying.erase(g_net->dying.begin() + i);     // (freed by the game)
+    }
+    for (size_t i = 0; i < g_net->quiet.size(); ) {
+        if (priv_ship_alive(g_net->quiet[i].first, g_net->quiet[i].second)) i++;
+        else g_net->quiet.erase(g_net->quiet.begin() + i);     // (freed by the game)
     }
     int low = g_heap.lowSinceRelease;
     if (g_forceRelease > 0) {

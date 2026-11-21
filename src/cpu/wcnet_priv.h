@@ -148,6 +148,10 @@ bool priv_session_puppet_parked(Bit16u obj);           // (a puppet parked far o
 bool priv_session_allow_wing(int sphereId);
 // Either ship is another machine's (a puppet).
 bool priv_session_is_puppet(Bit16u a, Bit16u b);
+// The game's dead-ship handler ran for this ship (its death, wcnet_priv.cpp): one of ours is reported dead, not gone.
+void priv_session_ship_died(Bit16u ship);
+// A puppet dying as we give it back (or parked far off): its explosion's sound and the kill's credit left out.
+bool priv_session_silent_death(Bit16u ship);
 void priv_session_hit(Bit16u target, int loc, int damage);
 void priv_session_fired(Bit16u ship);
 // The room's chat: a line typed here (the 0 key's prompt) to the others; true when a session takes it.

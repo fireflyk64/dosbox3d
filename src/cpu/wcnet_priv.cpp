@@ -332,6 +332,13 @@ enum { kSeg142 = 0x4E42, kNearMalloc = 0x012B };
 // allocation in DI (the ship less 2; measured with PRIVWATCH: a merchant killed, its 3-4 pods made by seg036:0C90).  A puppet's death must drop nothing: its owner's game drops the real pods and shares
 // them (else every game drops its own and shares them too: the cargo of one death in every game times every game)
 enum { kDeathEject = 0x0C0B, kDeathEjectAfter = 0x0C10 };
+// A dead ship's handler, seg053:0A0B(this, scene, ship): called only for a ship whose alive byte is 0 -- its death begun
+// (an explosion, the kill's credit at 0B6F, the pilot's comm line stopped, the cargo) and, when its time is out, its
+// explosion's sound (0A5D: sound 0x1B with no place, so as loud 50 km off as beside us: measured) and its removal from
+// the scene.  A ship of ours seen here died (not merely left behind: section 18); a puppet we give back (the memory
+// governor's, one with no word for 20 s, one gone from its owner's game, a parked one) dies here without its sound or
+// a kill credited to us.
+enum { kDeadShip = 0x0A0B, kDeathSound = 0x0A5D, kDeathSoundAfter = 0x0A73, kKillCredit = 0x0B6F, kKillCreditAfter = 0x0B9C };
 // The stack's high-water mark (a measurement): DGROUP's top 0xFFF6 - _stklen (ds:620A) up is the stack, below it the
 // heap (seg142:0004).  At a frame's entry the unused stack below SP (less 256 bytes) is painted with a pattern; the
 // lowest byte no longer the pattern is the deepest the stack has been since, interrupts and all.
@@ -1298,6 +1305,16 @@ bool priv_check_hooks(Bit32u ip) {
         }
         return true;
     }
+    if (ip == kDeadShip && codeSeg == (Bit16u)(g_privLoadSeg + kSeg053)) {
+        priv_session_ship_died(mem_readw(SegPhys(ss) + reg_sp + 8));    // (the far return, this, the scene, the ship)
+        return true;
+    }
+    if ((ip == kDeathSound || ip == kKillCredit) && codeSeg == (Bit16u)(g_privLoadSeg + kSeg053)) {
+        if (priv_session_silent_death((Bit16u)(reg_di + 2))) {         // (DI is the ship's allocation, 2 below our pointer)
+            reg_eip = ip == kDeathSound ? kDeathSoundAfter : kKillCreditAfter;
+        }
+        return true;
+    }
     if (ip == kNearMalloc && codeSeg == (Bit16u)(g_privLoadSeg + kSeg142)) {
         const int size = mem_readw(SegPhys(ss) + reg_sp + 4);
         const int headroom = (int)reg_sp - (int)priv_r16(kNearHeapTop);
@@ -1397,6 +1414,9 @@ void priv_watch_list(void (*watch)(Bit16u ip)) {
     watch(kGameError);
     watch(kNearMalloc);
     watch(kDeathEject);
+    watch(kDeadShip);
+    watch(kDeathSound);
+    watch(kKillCredit);
     watch(kHitPlace);
     watch(kFireGuns);
     const std::vector<WatchPlace> &w = watch_places();
@@ -1703,6 +1723,22 @@ bool priv_script_item(const std::string &item, double t) {
         }
         wclog(1, "key script %.1fs: video memory to %s (mode %d, start %u, address_add %u, width %u, height %u)", t, path.c_str(), (int)vga.mode,
               (unsigned)vga.config.real_start, (unsigned)vga.draw.address_add, (unsigned)vga.draw.width, (unsigned)vga.draw.height);
+        return true;
+    }
+    if (item.compare(0, 12, "!privunscene") == 0 && g_found) {
+        // !privunscene: the last ship a spawn of ours made taken out of the scene's list without a death, as the game
+        // leaves ships behind (seg081:00AD(ds:66CE, ship), the dead-ship handler's removal; the object is not freed): a
+        // test of a ship gone from its owner's game, not dead (section 18)
+        const Bit16u ship = priv_last_spawned();
+        PrivCall c;
+        c.para = 0x332F;            // seg081
+        c.off = 0x00AD;
+        c.args.push_back(kSceneList);
+        c.args.push_back(ship);
+        c.guardObj = ship;
+        c.guardVtable = kShipVtable;
+        const bool queued = priv_ship_is_alive(ship) && queue_call(c);
+        wclog(1, "key script %.1fs: ds:%04X out of the scene%s", t, ship, queued ? "" : ": not queued");
         return true;
     }
     if (item.compare(0, 8, "!privdmg") == 0 && g_found) {

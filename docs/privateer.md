@@ -667,3 +667,27 @@ guest a pirate untouched while the host's game had its rear shield down.  Now `P
 own).  Measured, two machines, the host's pirate shot by the guest (scripts in the scratchpad: !privdmg, every live ship's
 shields and armour at the next frame): the host's 25600 2734 25600 516 / armour 80 63 100 23, the guest's view of it
 25600 2734 25600 962 / 80 63 100 23 (a report later); at the start 25600 x 4 / 80 80 100 90 on both.
+
+**Explosions from nowhere** (the user: "sometimes I'd arrive at a nav point and get random explosions--I'm worried the
+multiplayer somehow deleted craft that were overloading the system and treated them as explosions"; "one time when I
+heard it though my pursuant was still following me").  The game's dead-ship handler, seg053:0A0B(this, scene, ship),
+runs only for a ship whose alive byte is 0: its death begun (an explosion, the kill's credit at 0B6F when the pilot was
+angry at us, its comm line stopped, the cargo) and, when its time is out, the explosion's sound -- 0x1B by seg246:089D
+with no place given (0A5D) -- and its removal from the scene; a dead ship stays in the scene about a second (alive 0).
+Measured with the sound recorded (WCLAB): a ship killed 50 km off is as loud as one 2 km off.  And the layer killed
+ships far off: every puppet it gives back (the memory governor's, which also takes encounter ships near us when it
+must; one with no word for 20 s; one whose AI cannot be held) is moved far off and killed so that the game frees it.
+So when another pilot left (an autopilot, a jump, out of reach), 20 s later each of its ships we showed exploded
+loudly in our game; and a ship left behind in its owner's game (its scene made anew at a jump) was reported dead and
+exploded where we showed it.  Now:
+- a puppet given back (`release_obj`: its object in the session's `quiet` list) dies without the sound (0A5D skipped
+  to 0A73) and without a kill credited to us (0B6F to 0B9C);
+- the owner's game notes its own ships' deaths (the dead-ship handler's entry, and a report of one not alive); a ship
+  sent in the last 2 s and gone from its scene without one is reported `gone` (`PrivNpc.gone`), and the others give it
+  back quietly; a dead one, as before, dies in place where it is shown (sound and all), or quietly where it was parked
+  far off.
+Measured, two machines (the guest's sound recorded): the guest's give-back of a puppet (!privrelease) silent; the
+host out of reach (`!privgonav`), its two merchants given back on the guest 20 s later, silent (each a boom before);
+one of the host's merchants taken out of its scene without a death (the test aid `!privunscene`, the dead-ship handler's
+own removal) -- "gone from its owner's game: given back quietly" on the guest, silent; the host's pirate killed ten
+seconds later -- "destroyed, as its owner says", the explosion heard.
