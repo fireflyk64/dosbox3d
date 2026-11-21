@@ -61,6 +61,8 @@ bool priv_pointer_pixels(int *x0, int *y0, Bit16u rows[16]);
 bool priv_flight_frame_recent();
 // Frames seen (the controls' place), and the game's control mode ("keyboard", "mouse", "joystick").
 unsigned priv_controls_frames();
+// When the pilot last pressed T (the target key) in flight (emulated ms; -1e9 never).
+double priv_controls_target_key_at();
 const char *priv_control_mode();
 // In flight: the player's ship exists (ds:66B4; 0 at a base, set in flight, the nav map's pauses too).
 bool priv_in_flight();

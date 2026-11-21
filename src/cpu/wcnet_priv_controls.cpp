@@ -47,6 +47,7 @@ struct Axis {
 };
 Axis g_pitch, g_roll, g_yaw;
 int g_ramp = -1;
+double g_targetKeyAt = -1e9;
 unsigned g_frames;
 
 bool held(int scan) { return priv_r8((Bit16u)(kHeld + scan)) == 1; }
@@ -78,6 +79,9 @@ bool priv_controls_key(int kbdKey, bool pressed) {
     // (the keys go to the game as they are: the ramp works on what it read; A in flight is an occasion for the room)
     if (pressed && kbdKey == KBD_a && priv_in_flight()) {
         priv_session_event(1);
+    }
+    if (pressed && kbdKey == KBD_t && priv_in_flight()) {
+        g_targetKeyAt = PIC_FullIndex();    // (a target chosen by the pilot: friendly fire's "targeting each other")
     }
     return false;
 }
@@ -142,6 +146,10 @@ bool priv_controls_marker(double *x, double *y) {
     *x = (mx + 0.5) / 640.0;         // (the mouse's 640 across, as the driver gives it; the middle 320, 100)
     *y = (my + 0.5) / 200.0;
     return true;
+}
+
+double priv_controls_target_key_at() {
+    return g_targetKeyAt;
 }
 
 unsigned priv_controls_frames() {

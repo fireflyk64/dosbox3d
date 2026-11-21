@@ -1011,6 +1011,8 @@ function renderMission() {
   $("difficultyLabel").hidden = !diff || noRoomOptions;
   // (Privateer: Face, yours on the others' comm screens, in the Conn and Collide choices' place)
   $("privFaceLabel").hidden = !isPriv();
+  $("privFFLabel").hidden = !isPriv() || one;
+  $("privFF").disabled = !isHost();       // (the host's counts, as Collide's)
   // (Terminal Velocity: the craft each pilot flies as in the others' games, the host's choice)
   $("tvCraftLabel").hidden = $("tvCraftGuestLabel").hidden = !isTvRoom() || one;
   $("tvCraftHost").disabled = $("tvCraftGuest").disabled = !isHost() || running;
@@ -2236,6 +2238,10 @@ $("privFace").addEventListener("change", () => { try { localStorage.setItem(PRIV
 const PRIV_POINTER_KEY = "wc:privPointer";
 try { const v = localStorage.getItem(PRIV_POINTER_KEY); if (v === "ring" || v === "game") $("privPointer").value = v; } catch (e) { /* the first */ }
 $("privPointer").addEventListener("change", () => { try { localStorage.setItem(PRIV_POINTER_KEY, $("privPointer").value); } catch (e) { /* not kept */ } });
+// (Privateer's friendly fire between pilots, the host's counts: src/cpu/wcnet_priv_session.cpp, ff_from_env)
+const PRIV_FF_KEY = "wc:privFF";
+try { const v = localStorage.getItem(PRIV_FF_KEY); if (["targeted", "always", "never"].includes(v)) $("privFF").value = v; } catch (e) { /* the first */ }
+$("privFF").addEventListener("change", () => { try { localStorage.setItem(PRIV_FF_KEY, $("privFF").value); } catch (e) { /* not kept */ } });
 // Terminal Velocity's craft menus: the registered game's craft of its other planets (the models in its CDROM.POD, the
 // names its briefings'; src/cpu/wcnet_tv_session.cpp's table) after the shareware's, offered while the game here is
 // the registered one (tvCraftOffer); remembered in this browser
@@ -2405,6 +2411,7 @@ async function start(fromGesture) {
     if (isTie()) env.WCNET_TIE_TOUCH = "1";
     if (isPriv()) env.WCPRIVFACE = $("privFace").value;
     if (isPriv()) env.WCPRIVPOINTER = $("privPointer").value;
+    if (isPriv() && together) env.WCPRIVFF = $("privFF").value;
     if (isTv() && together && isHost()) env.WCTVLOOKS = `${$("tvCraftHost").value},${$("tvCraftGuest").value}`;
     if (cfg.lastname && !solo) env.WCLASTNAME = cfg.lastname;
     if (cfg.firstname && !solo) env.WCFIRSTNAME = cfg.firstname;

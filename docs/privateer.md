@@ -763,3 +763,19 @@ stayed over 9,000.  A bolt is some 82-116 bytes of the near heap and lives a sec
 host fighting its pirate, the guest 200 m off facing it): on the guest 71 copies fired, 9 left out; the copies' bolts
 in its scene 5, 14, 20 (the host's ship's), 15 (the pirate's), never past 24; its heap's low 14,128 at the most bolts
 (17,400 without); their hits on the pirate's puppet harmless there.
+
+**Friendly fire, the host's choice** (the user: "I wonder if friendly fire off unless the guest and host had targeted
+each other would be more friendly and easier to collaborate during a fight (could be an option similar to no damage from
+friend collisions)").  The page's Friendly fire (Privateer, a room only, the host's counts as Collide's does; remembered
+by the browser; `WCPRIVFF=targeted|always|never`, sent to the guests in the host's hello, `PrivHello.friendly_fire`):
+a shot of our own ship's on a pilot's ship is sent to it (and hurts) only always, or -- the default -- when the two
+pilots target each other.  The player's target is the targeting system's: a far object at the ship's +0x5A (its key
+handler seg109:0A60 takes T, L, I), the ship targeted at its +0xC (its cheat key kills [+0xC]; measured: the host's
+Tarsus there while the target display showed it); each pilot's state says whose ship it targets
+(`PrivState.target_seat`).  The game targets the nearest ship by itself -- measured: two pilots launched together had
+each other targeted at once, nobody pressing T -- so only a target taken with the T key counts (the one held within a
+second of a T press, for as long as it stays on it).  Rams between pilots never hurt (above).  Measured, two machines,
+the guest 350 m behind the host firing (the test aid `!privturn=stalkship`): before either pressed T, "our shot on pilot
+1's ship does nothing (... not targeting each other)", the host whole; both pressed T at 40 s, each "on pilot N's ship",
+the guest's missiles hit and were taken (the host's rear armour 250 to 202); with the host's "never", the guest's shots
+did nothing even with both targeting.

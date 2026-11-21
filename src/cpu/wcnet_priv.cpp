@@ -1735,15 +1735,15 @@ bool priv_script_item(const std::string &item, double t) {
         // !privturn=<pod|ship|pirate|hunt>:<degrees a second>:<seconds>: our ship turned steadily toward the nearest pod
         // (or other ship, or hostile ship) for that long, a video aid (the matrix's second row is "forward"); hunt: the
         // nearest hostile led by its speed, the guns held and missiles fired when lined up (a rig's fighter pilot)
-        char what[8] = "pod";
+        char what[12] = "pod";
         int degs = 30, secs = 4;
-        sscanf(item.c_str() + 10, "%7[a-z]:%d:%d", what, &degs, &secs);
+        sscanf(item.c_str() + 10, "%11[a-z]:%d:%d", what, &degs, &secs);
         g_turn.pod = strcmp(what, "ship") != 0 && strcmp(what, "pirate") != 0 && strcmp(what, "hunt") != 0 && strcmp(what, "stalk") != 0;
         g_turn.hunt = strcmp(what, "hunt") == 0;
-        g_turn.stalk = strcmp(what, "stalk") == 0;
+        g_turn.stalk = strcmp(what, "stalk") == 0 || strcmp(what, "stalkship") == 0;      // (stalkship: any ship, a pilot's too)
         g_turn.ram = strcmp(what, "ram") == 0;
-        if (g_turn.ram) g_turn.pod = false;
-        g_turn.pirate = strcmp(what, "pirate") == 0 || g_turn.hunt || g_turn.stalk || g_turn.ram;   // (hunt: the nearest hostile, led,
+        if (g_turn.ram || g_turn.stalk) g_turn.pod = false;
+        g_turn.pirate = strcmp(what, "pirate") == 0 || g_turn.hunt || (g_turn.stalk && strcmp(what, "stalkship") != 0) || g_turn.ram;   // (hunt: the nearest hostile, led,
                                                                                        // fired at; stalk: behind it)
         g_turn.rate = degs * 3.14159265 / 180.0;
         g_turn.until = PIC_FullIndex() + 1000.0 * secs;

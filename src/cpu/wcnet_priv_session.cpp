@@ -183,8 +183,9 @@ struct Puppet {
     double deadUntil;           // its death told: reports still in flight are not to make it again
     Bit32s armor[4], shield[4]; // its damage model's, as its reports say (a target display shows them)
     bool damage;                // its reports had them (an older build's did not)
+    int targetSeat;             // the pilot its targeting system is on, as its reports say (-1 none)
     Puppet() : reported(false), at(-1e9), x(0), y(0), z(0), vx(0), vy(0), vz(0), obj(0), type(0), pending(false), parked(false), deadUntil(-1e9),
-               damage(false) {
+               damage(false), targetSeat(-1) {
         for (int i = 0; i < 9; i++) m[i] = i % 4 == 0 ? 256 : 0;
         for (int i = 0; i < 4; i++) armor[i] = shield[i] = 0;
     }
@@ -233,8 +234,9 @@ struct PrivNet {
     double lastX, lastY, lastZ, lastAt;     // our place at the last frame (for our velocity)
     double vx, vy, vz;
     double ownShotAt;           // our own ship's last shot sent
+    int friendlyFire;           // the room's rule (the host's): 0 between two pilots targeting each other, 1 always, 2 never
     unsigned copiesFired, copiesSkipped;
-    PrivNet() : ownShotAt(-1e9), copiesFired(0), copiesSkipped(0), navSince(-1e9), wingWaitNav(-1), wingWaitSince(-1e9), extrasNav(-1), extrasFlight(0), extrasMade(0), host(false), self(-1), seats(2), listener(NULL), ownersAt(-1e9), decidedAt(-1e9), sceneAt(-1e9), sceneFrame(0), nav(-1),
+    PrivNet() : ownShotAt(-1e9), friendlyFire(0), copiesFired(0), copiesSkipped(0), navSince(-1e9), wingWaitNav(-1), wingWaitSince(-1e9), extrasNav(-1), extrasFlight(0), extrasMade(0), host(false), self(-1), seats(2), listener(NULL), ownersAt(-1e9), decidedAt(-1e9), sceneAt(-1e9), sceneFrame(0), nav(-1),
                 sentAt(-1e9), stateAt(-1e9), frame(0), flightShip(0), lastX(0), lastY(0), lastZ(0), lastAt(-1e9), vx(0), vy(0), vz(0) {}
     ~PrivNet() {
         for (size_t i = 0; i < peers.size(); i++) {
@@ -268,6 +270,20 @@ void notice(const std::string &text) {
 }
 void tell(const std::string &text) {
     wclog(1, "Privateer: %s", text.c_str());
+}
+
+// The room's friendly fire, the host's choice (the page's Friendly fire, WCPRIVFF=targeted|always|never; the user,
+// 2026-11-20: "I wonder if friendly fire off unless the guest and host had targeted each other would be more friendly
+// and easier to collaborate during a fight (could be an option similar to no damage from friend collisions)"); a
+// guest takes the host's from its hello
+int ff_from_env() {
+    const char *env = getenv("WCPRIVFF");
+    if (env && strcmp(env, "always") == 0) return 1;
+    if (env && strcmp(env, "never") == 0) return 2;
+    return 0;
+}
+const char *ff_name(int rule) {
+    return rule == 1 ? "always" : rule == 2 ? "never" : "only between two pilots targeting each other";
 }
 
 // "<cast>:<id>" from WCPRIVFACE (the page's Face choice), MER_DP:-1 without.
@@ -316,6 +332,7 @@ std::string metres(double m) {
 bool start() {
     net_config.reset_from_env();
     PrivNet *n = new PrivNet();
+    n->friendlyFire = ff_from_env();     // (a guest's is the host's, from its hello)
     n->callsign = own_callsign();
     n->seats = net_config.lobby_players > 0 ? net_config.lobby_players : 2;
     if (n->seats > kMaxSeats) {
@@ -397,6 +414,7 @@ bool start() {
     }
     g_net = n;
     wclog(1, "Privateer: %s at %s, %d seats, callsign %s", n->host ? "HOST" : "GUEST", where.c_str(), n->seats, n->callsign.c_str());
+    if (n->host) wclog(1, "Privateer: friendly fire in this room: %s", ff_name(n->friendlyFire));
     if (n->host) {
         notice("Room open: everybody flies their own Privateer");
     }
@@ -735,6 +753,7 @@ void take_state(const PrivState &st, int seat) {
     for (int i = 0; i < 9 && i < st.m_size(); i++) {
         p.m[i] = st.m(i);
     }
+    p.targetSeat = st.has_target_seat() ? (int)st.target_seat() : -1;
     p.damage = st.armor_size() == 4 && st.shield_size() == 4;
     for (int i = 0; p.damage && i < 4; i++) {
         p.armor[i] = st.armor(i);
@@ -786,6 +805,7 @@ void handle(Peer *p, NetworkMessage &msg) {
             reply.mutable_priv_hello()->set_player((Bit32u)player);
             reply.mutable_priv_hello()->set_seats((Bit32u)g_net->seats);
             reply.mutable_priv_hello()->set_face(own_face());
+            reply.mutable_priv_hello()->set_friendly_fire((Bit32u)g_net->friendlyFire);
             p->conn.send(reply);
             // (everybody known so far, to the newcomer: their presences as the host has them)
             for (int s = 0; s < kMaxSeats; s++) {
@@ -818,6 +838,10 @@ void handle(Peer *p, NetworkMessage &msg) {
             parse_face(h.face(), g_net->pilots[0].cast, g_net->pilots[0].faceId);
             if (h.has_seats() && h.seats() >= 2) {
                 g_net->seats = (int)h.seats();
+            }
+            if (h.has_friendly_fire() && h.friendly_fire() <= 2) {
+                g_net->friendlyFire = (int)h.friendly_fire();
+                wclog(1, "Privateer: friendly fire in this room (the host's rule): %s", ff_name(g_net->friendlyFire));
             }
             g_pendingWhy = WHY_HELLO;
             char line[160];
@@ -1285,6 +1309,21 @@ void forget_puppets(const char *why) {
     }
 }
 
+// The seat of the pilot our targeting system is on by our choice (-1: none, not a pilot's ship, or not chosen).  The
+// game targets the nearest ship by itself (measured: two pilots launched together each had the other targeted at once,
+// nobody pressing T), so only a target the pilot took with the T key counts: the one the targeting system holds within
+// a second of a T press, for as long as it stays on it.
+int target_seat() {
+    static Bit16u chosen;
+    const Bit16u t = priv_player_target();
+    if (PIC_FullIndex() - priv_controls_target_key_at() < 1000.0) chosen = t;
+    if (t != chosen) return -1;
+    for (int s = 0; t && s < kMaxSeats; s++) {
+        if (s != g_net->self && g_net->puppets[s].obj == t) return s;
+    }
+    return -1;
+}
+
 void send_state(double now) {
     Bit32s pos[3], m[9];
     priv_player_pos(pos);
@@ -1304,6 +1343,15 @@ void send_state(double now) {
     st->set_vx((Bit32s)g_net->vx);
     st->set_vy((Bit32s)g_net->vy);
     st->set_vz((Bit32s)g_net->vz);
+    {
+        const int ts = target_seat();
+        static int told = -2;
+        if (ts != told) {
+            told = ts;
+            wclog(2, "Privateer: our targeting system is on %s", ts >= 0 ? ("pilot " + std::to_string(ts + 1) + "'s ship").c_str() : "no pilot's ship");
+        }
+        st->set_target_seat(ts);
+    }
     Bit32s a[4], sh[4];
     priv_ship_armor(priv_player_ship(), a);
     priv_ship_shields(priv_player_ship(), sh);
@@ -2295,7 +2343,27 @@ int priv_session_hit(Bit16u target, Bit16u source, bool bump, int loc, int damag
     if (!targetPuppet) {
         return damage;
     }
-    send_hit(target, loc, damage, source && source == priv_player_ship());
+    const bool ours = source && source == priv_player_ship();
+    if (ours && is_pilot_obj(target)) {
+        // a pilot's ship hit by ours: friendly fire, by the room's rule (the host's)
+        int seat = -1;
+        for (int s = 0; s < kMaxSeats; s++) {
+            if (g_net->puppets[s].obj == target) seat = s;
+        }
+        const bool mutual = seat >= 0 && target_seat() == seat && g_net->puppets[seat].targetSeat == g_net->self;
+        const bool hurts = g_net->friendlyFire == 1 || (g_net->friendlyFire == 0 && mutual);
+        if (!hurts) {
+            static double toldAt = -1e9;
+            const double now = PIC_FullIndex();
+            if (now - toldAt > 5000) {
+                toldAt = now;
+                wclog(1, "Privateer: our shot on pilot %d's ship does nothing (friendly fire %s%s)", seat + 1, ff_name(g_net->friendlyFire),
+                      g_net->friendlyFire == 0 ? ": not targeting each other" : "");
+            }
+            return 0;
+        }
+    }
+    send_hit(target, loc, damage, ours);
     return 0;
 }
 

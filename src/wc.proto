@@ -576,6 +576,7 @@ message PrivHello {
     optional uint32 player = 2;
     optional uint32 seats = 3;
     optional string face = 4;       // the pilot's face on the others' comm screens: "<cast>:<id>" (MER_DP:14 the merchant woman)
+    optional uint32 friendly_fire = 5;  // (the host's reply) its room's rule: 0 between two pilots targeting each other, 1 always, 2 never
 }
 // Where a pilot is (Privateer): flying or not, its system (the name the game shows), its place in the system (the
 // game's world units: 256 to the game's metre), and why it was sent now (PrivWhy).  Sent on those occasions and every
@@ -680,6 +681,7 @@ message PrivState {
     optional bool destroyed = 12;       // its last: the ship was destroyed (reliable; its puppets die too)
     repeated sint32 armor = 13 [packed = true];     // the four quadrants' armour, as the target display shows them
     repeated sint32 shield = 14 [packed = true];    // the four quadrants' shields (the damage model's int32 at +0x31 + 6q)
+    optional sint32 target_seat = 15;   // the pilot its targeting system is on (the seat; -1 none, or no pilot)
 }
 message NetworkMessage {
     optional Connect connect = 1;
