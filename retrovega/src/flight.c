@@ -367,7 +367,7 @@ static int g_cam_cy = SCR_H / 2;        /* the camera's centre row: the opening'
  * its way; F1 back), and the autopilot's flyby (the user, 2026-10-30: the formation seen from outside before the
  * jump, so the arrival is not a cut).  Outside, the world is drawn in the opening's rows at full width between black
  * bars, no frame, no HUD (cockpit_external), and the player's own ship is drawn like any other --- */
-enum { VIEW_COCKPIT, VIEW_CHASE, VIEW_FLYBY, VIEW_LANDING };
+enum { VIEW_COCKPIT, VIEW_CHASE, VIEW_FLYBY, VIEW_LANDING, VIEW_DEATH };
 static int g_view, g_view_back;         /* the view, and the one the flyby goes back to */
 static int g_fly_t;                     /* the flyby's frame */
 static int g_fly_jump;                  /* 1: our own autopilot's flyby, our jump at its end; 0: another machine's, shown
@@ -380,6 +380,16 @@ static LfBasis g_cam_b;
                                            this many frames past its own */
 #define CHASE_BACK_KM 450               /* the chase camera: this far behind the ship and above it (a fighter of 100 km */
 #define CHASE_UP_KM 100                 /* then spans some 90 px, in the lower third of the view) */
+/* the player's death, from outside (the user, 2026-11-21: "show the outside view if your ship blows up, cus right now the
+ * cockpit cracks but you look otherwise healthy ... Going to the outside view gives that out-of-body experience"): from
+ * the first step the ship is seen dying the camera leaves the cockpit, starts just behind and above the pilot's seat and
+ * drifts up, back and round to the left, slowing, looking at the wreck all the while (its basis as it died, so the
+ * wreck's tumble does not swing the camera).  No key changes the view until the death screen */
+#define DEATH_CAM_FRAMES 90             /* the pull-back's length; it holds still after it */
+#define DEATH_CAM_D0 80L                /* km from the ship at first (in the blast), */
+#define DEATH_CAM_D1 1100L              /* and at the end */
+static int g_death_t;                   /* the death camera's frame */
+static LfBasis g_death_b;               /* the ship's basis as it died */
 static void basis_of(int s, LfBasis *b);
 
 static const LfVec *cam_pos(void) { return g_view ? &g_cam_pos : (const LfVec *)&gPositionVector[0]; }
@@ -510,6 +520,19 @@ static void view_frame(void)
         landing_camera();
         return;
     }
+    if (g_view == VIEW_DEATH) {
+        int t = g_death_t < DEATH_CAM_FRAMES ? g_death_t : DEATH_CAM_FRAMES, k;
+        long d = DEATH_CAM_D0 + (DEATH_CAM_D1 - DEATH_CAM_D0) * t * (2 * DEATH_CAM_FRAMES - t) / (DEATH_CAM_FRAMES * DEATH_CAM_FRAMES);
+        long back = 230 - 110 * t / DEATH_CAM_FRAMES, up = 90 + 40 * t / DEATH_CAM_FRAMES, side = 20 + 150 * t / DEATH_CAM_FRAMES;
+        const int32_t *f = &g_death_b.front.x, *u = &g_death_b.up.x, *r = &g_death_b.right.x, *p = &gPositionVector[0].x;
+        int32_t *at = &g_cam_pos.x;        /* (back eases off as it swings round to the left: km, 256ths of d) */
+        LfVec to;
+        for (k = 0; k < 3; k++)
+            at[k] = p[k] + (u[k] * up - f[k] * back - r[k] * side) / 256 * d;
+        to = g_cam_pos;
+        cam_look(&to);
+        return;
+    }
     basis_of(0, &ship);
     if (g_view == VIEW_CHASE) {
         g_cam_pos.x = gPositionVector[0].x - ship.front.x * CHASE_BACK_KM + ship.up.x * CHASE_UP_KM;
@@ -533,7 +556,8 @@ static void set_view(int view)
     cockpit_external(view != VIEW_COCKPIT);
     view_frame();
     rv_notef(s_view, view == VIEW_COCKPIT ? "the cockpit" : view == VIEW_CHASE ? "the chase camera"
-             : view == VIEW_LANDING ? "the landing" : "the autopilot's flyby");
+             : view == VIEW_LANDING ? "the landing" : view == VIEW_DEATH ? "death"
+             : "the autopilot's flyby");
 }
 
 /* the autopilot's flyby from now: `jump` 1 ours (the jump at its end, flight_frame), 0 another machine's */
@@ -3766,9 +3790,9 @@ unsigned short __far __cdecl flight_keys(void)
     in_poll(&in);
     if (in.key == KEY_F12)
         shot_save("RVSHOT");
-    if (in.key == KEY_F5 && g_view != VIEW_FLYBY)
+    if (in.key == KEY_F5 && g_view != VIEW_FLYBY && g_view != VIEW_DEATH)
         set_view(g_view == VIEW_CHASE ? VIEW_COCKPIT : VIEW_CHASE);
-    if (in.key == KEY_F1 && g_view != VIEW_FLYBY)
+    if (in.key == KEY_F1 && g_view != VIEW_FLYBY && g_view != VIEW_DEATH)
         set_view(VIEW_COCKPIT);
     if (in.key == KEY_ESC && (script_active() || g_sim))
         return 5;                       /* a test script ends the flight, and Esc leaves the simulator; the player's Esc in
@@ -3839,6 +3863,7 @@ unsigned short __far __cdecl flight_keys(void)
         if (in.ch == '|') logic_test_kill_carrier();
         if (in.ch == '^') logic_test_jump_out();
         if (in.ch == '~') logic_test_kill_wingman();
+        if (in.ch == '!' && slot_is_ship(0)) shipAiState[0] = 9;   /* (the player's death: tests/death.txt) */
         if (in.ch == '$') logic_test_kill_enemies();   /* (a script's way to clear a nav point: tests/navmusic.txt) */
         if (in.ch == '*') logic_test_hurt((int16_t)g_sys.target);   /* (a script's look at the target page worn down) */
         if (in.ch == '%') logic_test_census();     /* (a script's look at who is where, the player unhurt after) */
@@ -3979,6 +4004,13 @@ void __far __cdecl flight_frame(void)
         }
     } else if (g_view == VIEW_FLYBY && !g_fly_jump && g_fly_t >= FLYBY_FRAMES + FLYBY_WAIT)
         set_view(g_view_back);          /* (another machine's flyby whose end never came) */
+    if (g_view == VIEW_DEATH)
+        g_death_t++;
+    else if (slot_is_ship(0) && shipAiState[0] == 9 && g_landing_t < 0) {   /* the player's ship dying: out of the body */
+        basis_of(0, &g_death_b);
+        g_death_t = 0;
+        set_view(VIEW_DEATH);
+    }
     view_frame();
 #ifdef RV_TESTS
     if (g_sky_demo)

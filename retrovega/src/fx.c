@@ -377,11 +377,13 @@ static void death(int16_t s)
     g_died[s] = frameCounter;
     if (commAnimInfo[s] != commAnimInfo[0])
         g_foes_down++;
-    if (s == 0) {                       /* the player's own: the camera is in it; only the sound */
+    explode_add(&at, &gVelocityVector[s], half_km, BOOM_WRECK, 0, seed);
+    if (s == 0) {                       /* the player's own, seen from outside (flight.c VIEW_DEATH), the sound full */
+        explode_add(&at, &gVelocityVector[s], boom_km * 13 / 10, BOOM_SHIP, 0, seed);
+        explode_add(&at, &gVelocityVector[s], boom_km, BOOM_SHIP, 30, (uint16_t)(seed + 1));   /* (the tanks, a second on) */
         sfx_play(RV_SFX_BOOM_SHIP, 256, 256);
         return;
     }
-    explode_add(&at, &gVelocityVector[s], half_km, BOOM_WRECK, 0, seed);
     if (maybeEntityType[s] == ET_CAPSHIP) {
         /* a capital ship: bursts over its hull, then the last and biggest */
         int16_t k;

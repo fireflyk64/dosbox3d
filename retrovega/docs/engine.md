@@ -387,7 +387,11 @@ by the cockpit's readout (hull to hull), the scene's reach; a target that goes f
 away"). M10.15.
 
 The views: F5 the chase camera (behind and above the player's ship, looking its way, the ship in the lower
-third of the view; F5 again or F1 back to the cockpit), and the autopilot's flyby: A, when the autopilot may go,
+third of the view; F5 again or F1 back to the cockpit), the player's death (from the step the ship is seen dying, the
+camera leaves the cockpit at once and pulls up, back and round to the left from inside the blast to 1,100 km in three
+seconds, slowing, the basis the ship's as it died; no key changes it; the player's dying lasts those three seconds,
+`DEATH_STEPS_PLAYER`, then the death screen: the user, 2026-11-21, "that out-of-body experience"; fx.c's `death`
+gives the player's ship its blast and a second one a second later; RVT.EXE `!` kills the player, tests/death.txt), and the autopilot's flyby: A, when the autopilot may go,
 shows the formation from outside for three seconds (a camera sliding along its left side from ahead to behind,
 looking at the player's ship) and then jumps it to the nav point. As the flyby begins the player faces the nav point,
 and the ships the jump takes along that this machine's AI flies close up on it and fly with it, its heading and its

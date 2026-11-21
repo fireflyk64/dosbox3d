@@ -1,0 +1,17 @@
+# The player's death from outside (the user, 2026-11-21: "that out-of-body experience")
+# EXE=RVT.EXE tests/run.sh tests/death.txt /fly 0 /flight 20
+# @ a clean ship, ! the player dies: the camera leaves the cockpit and pulls back from the blast; the death screen after
+wait 40
+key @
+wait 10
+shot D0ALIVE
+key !
+wait 3
+shot D1BLAST
+wait 10
+shot D2PULL
+wait 20
+shot D3AWAY
+wait 30
+shot D4AFTER
+log flight: the view

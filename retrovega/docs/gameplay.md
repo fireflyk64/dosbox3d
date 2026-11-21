@@ -218,7 +218,7 @@ What to write:
   the 9 in the slot), then ends through a thunk:
   - `despawn(s)`, or `delayedDespawn(killer, s)` at the kill, whose body ends it later;
   - `despawn_impl` is its explosion and debris (none in the engine yet), then `ship_clear(s)`.
-- **The player's death:** after its explosion, `missionStatus = 4`. The flight loop ends at the next check.
+- **The player's death:** after its explosion (three seconds, `DEATH_STEPS_PLAYER`, watched from outside: flight.c `VIEW_DEATH`), `missionStatus = 4`. The flight loop ends at the next check.
 - **The explosion and its sound come by themselves** (engine.md, "Explosions and sound effects"): the engine sees
   the 9 after the step and starts them, hiding the ship's sprite two steps later. Keep the 9 in the slot to the
   end of at least one step, or it is never seen; how long you keep the slot after that is yours (the explosion

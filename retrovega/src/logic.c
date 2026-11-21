@@ -131,6 +131,8 @@ static int8_t __far g_humans[HUMANS_MAX];
 static int16_t g_nhumans;
 #define DEATH_STEPS (LOGIC_HZ * 3 / 2)  /* a fighter explodes this long before its slot ends; a capital ship longer */
 #define DEATH_STEPS_CAPITAL (LOGIC_HZ * 4)
+#define DEATH_STEPS_PLAYER (LOGIC_HZ * 3)   /* the player's own: watched from outside (flight.c VIEW_DEATH; the user,
+                                           2026-11-21: "that out-of-body experience"), long enough to take it in */
 
 static uint8_t profile_of(uint16_t type, uint16_t side);
 static void mind_rates(int16_t s);      /* (its fear's rates from its profile: the AI, below) */
@@ -4471,7 +4473,8 @@ static void step_deaths(void)
             delayedDespawn(g_killer[s], (uint16_t)s);
             continue;
         }
-        if ((uint16_t)(frameCounter - g_died[s]) < (maybeEntityType[s] == ET_CAPSHIP ? DEATH_STEPS_CAPITAL : DEATH_STEPS))
+        if ((uint16_t)(frameCounter - g_died[s]) < (s == 0 ? DEATH_STEPS_PLAYER
+                                                     : maybeEntityType[s] == ET_CAPSHIP ? DEATH_STEPS_CAPITAL : DEATH_STEPS))
             continue;
         if (s == 0)                     /* the player's end: the flight ends at the loop's next check */
             missionStatus = 4;
