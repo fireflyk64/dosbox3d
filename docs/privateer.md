@@ -837,3 +837,25 @@ merchant's face) lets it go.  Measured, two machines: a guest's provocation from
 ship, then the host's again at its next look (the host beside it had shot it); the guest close, firing (copies of its
 shots hitting the pirate in the host's game, harmless): the pirate's brain on the guest's ship from 42 s to the end,
 its hits on the guest from 47 s (none before).  Test aid `!privbrains` (every AI ship's target and the kept pointers).
+
+**A review of the batch before a showing (2026-11-21;** the user: "I'm very concerned that the crash was just papered
+over and not fixed").  Read against the program: the scan that wrote the far heap is gone with every caller (no place
+of the layer writes a block it found by searching; the writers left are fields at fixed offsets of objects checked by
+their vtables), and the game's setter is what the commit says -- seg083:01AF(field, ship), near, the caller's stack
+(its retf plain, as our call place needs): the old pointer let go (0194 -> 0121, the field's entry taken out of the
+list), the new stored and the field's far address added (0073; the 201st is error 6281); a destroyed ship's fields
+cleared by 00AD from seg030:0022.  The pilot has one kind of brain (seg013:00AE: none is the game's error 6021), so the
+field is the same in every AI ship.  Three things of the copied gunfire put right:
+- the shot's target sent with it was still `plan_target`, the walk of the far heap's blocks after the control record
+  (read only, but up to a million reads for every gun an AI fired, and a target found only sometimes, so most AI shots
+  fell to the aim cone): now the brain's target, the field the game keeps -- the user's rule as said;
+- the weapons update launches a missile on the record's bit 1 (seg125:048C -> seg120:03E5, by lock state a held
+  puppet does not keep), and the copy's write left that bit as it stood (a puppet let think for a comm line may leave
+  it set): now cleared for the call, a copy fires guns alone;
+- two more limits a copy leaves room in: the game's kept pointers (every bolt keeps its shooter there: no copy from
+  140 of the 200) and our own queue of calls (16: no copy while 8 wait, so a hit to apply or a ship to make is never
+  dropped behind a burst).
+Measured after: the 8-pilot load test (3 pirates added) -- no error, death or restart on any machine, the owner's
+lowest free 5,688, the guests' 7,844-8,514, five provoked pirates turned by the setter, the kept pointers at most 96
+(the owner's), no call dropped for a full queue; two pilots and 5 pirates added -- no error, the kept pointers at most
+108 (the owner's, its own ships' bolts).

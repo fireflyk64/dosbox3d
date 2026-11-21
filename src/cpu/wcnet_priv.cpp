@@ -1120,6 +1120,7 @@ Bit16u priv_ship_target_now(Bit16u ship) { return plan_target(ship); }
 Bit16u priv_ai_target(Bit16u ship) { return ai_target_of(ship); }
 bool priv_ai_set_target(Bit16u ship, Bit16u target) { return ai_set_target(ship, target); }
 int priv_kept_pointers() { return kept_pointers(); }
+int priv_calls_queued() { return (int)g_calls.size(); }
 int priv_ship_pilot_anger(Bit16u ship) { return pilot_anger_of(ship); }
 
 bool priv_found() { return g_found; }
@@ -1628,7 +1629,10 @@ bool priv_check_hooks(Bit32u ip) {
             PhysPt rec = 0;
             Bit8u bits = 0;
             if (ship != priv_r16(kPlayerShip) && fire_record(ship, &rec)) mem_readb_checked(rec, &bits);
-            priv_session_fired(ship, bits & kFireGroupBits, ship == priv_r16(kPlayerShip) ? priv_player_target() : plan_target(ship));
+            // (an AI ship's target is its brain's, the field the game itself keeps: read only.  It was plan_target, a walk
+            // of the far heap's blocks after the control record for every gun fired -- up to a million reads a shot, and
+            // a target found only sometimes)
+            priv_session_fired(ship, bits & kFireGroupBits, ship == priv_r16(kPlayerShip) ? priv_player_target() : ai_target_of(ship));
         }
         return true;
     }
@@ -2819,6 +2823,7 @@ void priv_ship_fire(Bit16u obj, bool on) {
 // The record's +0x1E for an AI ship (the update's second branch, seg125:038A): bits 3-6 make gun groups 0-3 active (each
 // gun's +0x20 its group), bit 2 fires the active ones.  A copy fires every group the ship has.
 enum { kFireAllGroups = 0x04 | 0x08 | 0x10 | 0x20 | 0x40 };
+enum { kFireLauncher = 0x02 };
 static bool fire_record(Bit16u obj, PhysPt *rec) {
     const Bit16u ctl = priv_r16((Bit16u)(obj + kShipController));
     const Bit16u off = ctl ? priv_r16((Bit16u)(ctl + 2)) : 0, seg = ctl ? priv_r16((Bit16u)(ctl + 4)) : 0;
@@ -2829,7 +2834,7 @@ static bool fire_record(Bit16u obj, PhysPt *rec) {
 static void fire_guns_off(Bit16u obj) {
     PhysPt rec;
     Bit8u b = 0;
-    if (priv_ship_is_alive(obj) && fire_record(obj, &rec) && !mem_readb_checked(rec, &b)) mem_writeb(rec, (Bit8u)(b & ~kFireAllGroups));
+    if (priv_ship_is_alive(obj) && fire_record(obj, &rec) && !mem_readb_checked(rec, &b)) mem_writeb(rec, (Bit8u)(b & ~(kFireAllGroups | kFireLauncher)));
 }
 static void fire_guns_done(int tag, Bit16u ax, Bit16u dx) {
     (void)ax; (void)dx;
@@ -2864,8 +2869,11 @@ bool priv_ship_fire_guns(Bit16u obj, int groups) {
         // (the record read by the update when it runs, at the next frame): the groups the original fired, groups 0
         // and 1 when not known (a pilot's ship: the player's record keeps no groups; pirates fire 0 and 1, measured
         // +0x1E 1C)
+        // The launcher's bit (2) is taken off: the update launches a missile on it (seg125:048C -> seg120:03E5, by the
+        // weapons' lock state, which a held puppet does not keep), and a puppet let think for a comm line may have
+        // left it set.  A copy fires guns alone.
         const Bit8u g = (Bit8u)((groups & 0x78) ? (groups & 0x78) : 0x18);
-        mem_writeb(rec, (Bit8u)((b & ~kFireAllGroups) | 0x04 | g));
+        mem_writeb(rec, (Bit8u)((b & ~(kFireAllGroups | kFireLauncher)) | 0x04 | g));
     }
     return true;
 }

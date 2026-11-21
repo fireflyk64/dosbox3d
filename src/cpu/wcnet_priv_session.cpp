@@ -101,6 +101,11 @@ enum { kSayThinkFrames = 60 };          // 3 s of the page's 20 a second
 // kCopyBoltCap of the copies' bolts are alive in our scene (82-116 bytes a bolt: 2.8 KB at most).
 const double kShotArenaMetres = 3000.0, kShotReachMetres = 3500.0, kShotConeDeg = 20.0;
 enum { kShotFloor = 9000, kCopyBoltCap = 24 };
+// And two more of the game's limits a copy must leave room in: every bolt keeps its shooter in the game's list of kept
+// pointers (seg083:0073: 200 at most, the 201st is the game's error 6281 and its end) -- no copy from kShotKeptRoom
+// on; and our calls of the game's functions wait in a queue of 16, where a hit to apply or a ship to make would be
+// dropped behind a burst of copies -- no copy while kShotCallsRoom wait.
+enum { kShotKeptRoom = 140, kShotCallsRoom = 8 };
 const char kPodCast[] = "CARGO";        // (a pod's name at +0xE, where a ship has its cast's)
 
 struct Peer {
@@ -1939,7 +1944,9 @@ void frame_chats_and_shots() {
         for (int i = 0; i < nb; i++) {
             if (shooters[i] && is_puppet_obj(shooters[i])) copies++;
         }
-        const bool roomy = heap_low_recent(2) >= kShotFloor && copies < kCopyBoltCap;
+        static int keptHigh;
+        if (priv_kept_pointers() > keptHigh) keptHigh = priv_kept_pointers();
+        const bool roomy = heap_low_recent(2) >= kShotFloor && copies < kCopyBoltCap && priv_kept_pointers() < kShotKeptRoom;
         static double toldAt = -1e9;
         if (now - toldAt > 5000) {
             toldAt = now;
@@ -1950,8 +1957,9 @@ void frame_chats_and_shots() {
                 who += b;
             }
             wclog(2, "Privateer: copied shots: %u fired, %u left out (out of the arena, aimed at no pilot, or memory); the copies' bolts alive "
-                  "%d of %d at most (bolts in the scene %d, by:%s), the heap's low %d (none under %d)", g_net->copiesFired, g_net->copiesSkipped,
-                  copies, (int)kCopyBoltCap, nb, who.c_str(), heap_low_recent(2), (int)kShotFloor);
+                  "%d of %d at most (bolts in the scene %d, by:%s), the heap's low %d (none under %d), kept pointers %d (the most %d; none from %d)",
+                  g_net->copiesFired, g_net->copiesSkipped, copies, (int)kCopyBoltCap, nb, who.c_str(), heap_low_recent(2), (int)kShotFloor,
+                  priv_kept_pointers(), keptHigh, (int)kShotKeptRoom);
         }
         for (size_t i = 0; i < g_net->shots.size(); i++) {
             const PrivNet::ShotCopy &sc = g_net->shots[i];
@@ -1966,7 +1974,7 @@ void frame_chats_and_shots() {
                 if (np && !np->parked && !np->pod) obj = np->obj;
             }
             if (!obj) continue;
-            if (!roomy || !shot_worth_copying(obj, id == 0, sc.targetSeat, sc.targetId)) {
+            if (!roomy || priv_calls_queued() >= kShotCallsRoom || !shot_worth_copying(obj, id == 0, sc.targetSeat, sc.targetId)) {
                 g_net->copiesSkipped++;
                 continue;
             }
