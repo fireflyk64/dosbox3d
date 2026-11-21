@@ -1,4 +1,6 @@
-// oplrender: our OPL3 music played through DOSBox's own OPL3 (dbopl), to a WAV.
+// oplrender: our OPL3 music played through an OPL3 emulator to a WAV: ymfm's YMF262 (host/ymfm, BSD 3-Clause, the
+// native build's chip), or with -DOPL_DBOPL DOSBox's own dbopl (what the game sounds like in DOSBox; tools/oplrender.sh
+// takes it when this tree sits inside a DOSBox tree, OPL=ymfm or OPL=dbopl to choose).
 //
 //   oplrender --bank RVOPL.BNK --mid SONG.MID --out SONG.WAV [--seconds S] [--loops N]
 //       the song through src/opl.c, the driver RV.EXE runs, on the same 240 Hz
@@ -17,25 +19,38 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#ifdef OPL_DBOPL
 #include "dosbox.h"
 #include "../../src/hardware/dbopl.h"
+#else
+#include "../host/ymfm/ymfm_opl.h"
+#endif
 
 extern "C" {
 #include "../src/opl.h"
 }
 
+static const int RATE = 49716;      // the chip's own (14,318,181 Hz / 288)
+static const int TICK_HZ = 240;
+static std::vector<short> g_out;    // stereo
+static double g_peak = 0, g_sum2 = 0;
+
+static void take(double v)
+{
+    g_peak = std::max(g_peak, std::fabs(v));
+    g_sum2 += v * v;
+    g_out.push_back((short)std::max(-32768.0, std::min(32767.0, v)));
+}
+
+#ifdef OPL_DBOPL
 // What dbopl links against in DOSBox and does not use here.
 void MixerChannel::AddSamples_m32(Bitu, const Bit32s *) {}
 void MixerChannel::AddSamples_s32(Bitu, const Bit32s *) {}
 void GFX_ShowMsg(char const *format, ...) { (void)format; }
 
-static const int RATE = 49716;      // the chip's own
-static const int TICK_HZ = 240;
 static DBOPL::Handler g_handler;         // Init builds the chip's tables
 static DBOPL::Chip &g_chip = g_handler.chip;
-static std::vector<short> g_out;    // stereo
-static double g_peak = 0, g_sum2 = 0;
-
+static void chip_init() { g_handler.Init(RATE); }
 extern "C" void opl_write(unsigned reg, unsigned char val) { g_chip.WriteReg(reg, val); }
 
 static void render(long samples)
@@ -44,15 +59,32 @@ static void render(long samples)
     while (samples > 0) {
         long n = samples > 512 ? 512 : samples;
         g_chip.GenerateBlock3(n, buf);
-        for (long i = 0; i < n * 2; i++) {
-            double v = buf[i];
-            g_peak = std::max(g_peak, std::fabs(v));
-            g_sum2 += v * v;
-            g_out.push_back((short)std::max(-32768.0, std::min(32767.0, v)));
-        }
+        for (long i = 0; i < n * 2; i++)
+            take(buf[i]);
         samples -= n;
     }
 }
+#else
+struct Bus : ymfm::ymfm_interface {};   // (no timers, no IRQ: nothing here reads the status)
+static Bus g_bus;
+static ymfm::ymf262 g_chip(g_bus);
+static void chip_init() { g_chip.reset(); }
+extern "C" void opl_write(unsigned reg, unsigned char val)
+{
+    g_chip.write((reg & 0x100) ? 2 : 0, (uint8_t)reg);
+    g_chip.write((reg & 0x100) ? 3 : 1, val);
+}
+
+static void render(long samples)
+{
+    ymfm::ymf262::output_data o;
+    for (; samples > 0; samples--) {
+        g_chip.generate(&o);
+        take(o.data[0] * 0.5);          // (ymfm's level is twice dbopl's: measured 20010 vs 10030 peak on BAR.MID;
+        take(o.data[1] * 0.5);          //  halved, the levels this prints compare with dbopl's)
+    }
+}
+#endif
 
 static void write_wav(const char *path)
 {
@@ -163,7 +195,7 @@ int main(int argc, char **argv)
         else { fprintf(stderr, "usage: see the top of tools/oplrender.cpp\n"); return 2; }
     }
     if (!out || (!mid && !log) || (mid && !bank)) { fprintf(stderr, "usage: see the top of tools/oplrender.cpp\n"); return 2; }
-    g_handler.Init(RATE);
+    chip_init();
     double per_tick = (double)RATE / TICK_HZ, owed = 0;
     if (log) {
         auto d = slurp(log);
@@ -174,7 +206,7 @@ int main(int argc, char **argv)
             unsigned reg = d[p + 4] | d[p + 5] << 8;
             if (first) { now = t; first = false; }
             while (now < t) { owed += per_tick; long n = (long)owed; owed -= n; render(n); now++; }
-            g_chip.WriteReg(reg, d[p + 6]);
+            opl_write(reg, d[p + 6]);
         }
         render(RATE);
     } else {
