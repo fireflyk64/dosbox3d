@@ -1499,6 +1499,50 @@ static Bit16u hit_source(Bit16u hitter, bool *bump) {
     return 0;
 }
 
+// A test's setting (WCPRIVGUNSTRESS=<n>, scripts/privtests/bolts.sh; the user, 2026-11-21: "can you change refire rate
+// and energy usage of laser for this test so we artificially get there"): every ship's guns refire n times as fast and
+// cost no energy.  A ship's guns are a list at its weapons record's +0xE (seg122:0877 counts it: the first node far at
+// the list's +2, a node its next far at +0 and its gun far at +4); a gun's refire delay is its +0x2B (int32; its time
+// since the last shot at +0x2F must reach it: seg120:00F5) and a shot's energy its +0x33 (int16: seg120:0117).  Each
+// gun's delay divided once (remembered by its address), its energy zeroed; at the frame.
+static void gun_stress_frame() {
+    static int n = -1;
+    static std::map<PhysPt, Bit32u> was;
+    static Bit16u flight;
+    if (n < 0) {
+        const char *env = getenv("WCPRIVGUNSTRESS");
+        n = env ? atoi(env) : 0;
+        if (n > 0) wclog(1, "Privateer: guns refire %d times as fast and cost no energy (a test's setting)", n);
+    }
+    if (n <= 0) return;
+    if (priv_r16(kPlayerShip) != flight) { flight = priv_r16(kPlayerShip); was.clear(); }
+    Bit16u ships[48];
+    const int ns = priv_scene_ships(ships, 48);
+    for (int i = 0; i < ns; i++) {
+        const Bit16u woff = priv_r16((Bit16u)(ships[i] + kShipWeapons)), wseg = priv_r16((Bit16u)(ships[i] + kShipWeapons + 2));
+        if (!wseg || !priv_ship_is_alive(ships[i])) continue;
+        Bit16u noff = 0, nseg = 0;
+        const PhysPt list = ((PhysPt)wseg << 4) + (Bit16u)(woff + 0xE);
+        if (mem_readw_checked(list + 2, &noff) || mem_readw_checked(list + 4, &nseg)) continue;
+        for (int k = 0; nseg && k < 16; k++) {
+            const PhysPt node = ((PhysPt)nseg << 4) + noff;
+            Bit16u goff = 0, gseg = 0;
+            if (mem_readw_checked(node + 4, &goff) || mem_readw_checked(node + 6, &gseg)) break;
+            if (gseg) {
+                const PhysPt gun = ((PhysPt)gseg << 4) + goff;
+                Bit32u delay = 0;
+                if (!mem_readd_checked(gun + 0x2B, &delay) && !was.count(gun) && was.size() < 512 && delay > 0 && delay < 0x100000) {
+                    was[gun] = delay;
+                    mem_writed(gun + 0x2B, delay / n ? delay / n : 1);
+                    wclog(2, "Privateer: gun stress: ds:%04X's gun %d: refire %u -> %u, energy %d -> 0", ships[i], k, delay, delay / n, (Bit16s)mem_readw(gun + 0x33));
+                }
+                if (was.count(gun)) mem_writew(gun + 0x33, 0);
+            }
+            if (mem_readw_checked(node, &noff) || mem_readw_checked(node + 2, &nseg)) break;
+        }
+    }
+}
+
 static bool fire_record(Bit16u obj, PhysPt *rec);
 enum { kFireGroupBits = 0x78 };     // (the record's +0x1E bits 3-6: gun groups 0-3)
 bool priv_check_hooks(Bit32u ip) {
@@ -1524,6 +1568,7 @@ bool priv_check_hooks(Bit32u ip) {
             plan_dump_frame();
             dmg_dump_frame();
             stack_paint_frame();
+            gun_stress_frame();
             turn_step();
             follow_step();
             priv_spheres_refresh();

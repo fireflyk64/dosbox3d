@@ -1432,15 +1432,17 @@ bool is_puppet_obj(Bit16u obj) {
 // spawn"; "I wonder if we could favor other-machine bolts to remove and then seconadrily non-player bolts ... but in
 // the end the limit must be respected no matter whose bolt").  The game's list of kept pointers holds 200 and its
 // 201st entry is the game's error 6281 and its end; every bolt keeps its shooter there, every AI its target, the comm
-// its speaker.  Each frame, from kBoltGcAt entries on (180), bolts are retired (priv_bolts_retire: the game takes them out
+// its speaker.  Each frame, from kBoltGcAt entries on (170), bolts are retired (priv_bolts_retire: the game takes them out
 // itself) -- enough to come down kBoltGcSlack under the mark, a bolt an entry: the copies of other machines' shots
 // first (they are for show), then our game's other ships' bolts, our own ship's last, at random within each.  And the
 // same when the game's near heap is nearly out (kBoltGcHeap free: a bolt is 82-116 bytes, and no room for one is the
 // game's error 1303): a fight of many guns reaches that before the list fills.  WCPRIVBOLTGC=<n> sets the mark (a
 // test's: a low one works the collector hard in an ordinary fight; "off": none), WCPRIVCOPYSTRESS=1 lifts the copies'
 // own caps (a test's: the limits reached).
-enum { kBoltGcAt = 180, kBoltGcSlack = 10, kBoltGcHeap = 2500, kBoltBytes = 100 };     // (180, not the 190 first asked: a frame of
-                                                                                    // many guns adds up to 13 entries, measured)
+// (170 and 4,000, not the 190 first asked: these are read once a frame, and one frame of many guns adds entries and
+// takes memory before the next look -- measured, 13 entries a frame in an ordinary 8-pilot fight; in the rapid-fire
+// stress the list went from 176 to its 201st inside a frame, and with 2,500 the heap came down to 58 bytes)
+enum { kBoltGcAt = 170, kBoltGcSlack = 10, kBoltGcHeap = 4000, kBoltBytes = 100 };
 struct BoltGc { int at; bool stress, off; int high, runs, retired, by[3], heapRuns; double toldAt; bool read; } g_boltGc =
     { kBoltGcAt, false, false, 0, 0, 0, { 0, 0, 0 }, 0, -1e9, false };
 int bolt_rank(Bit16u shooter) {
@@ -1466,7 +1468,7 @@ void bolts_gc(double now) {
     const int freeNow = priv_near_free();
     int n = kept >= g.at ? kept - (g.at - kBoltGcSlack) : 0;
     const bool forHeap = freeNow > 0 && freeNow < kBoltGcHeap;
-    if (forHeap && (kBoltGcHeap - freeNow) / kBoltBytes + 4 > n) n = (kBoltGcHeap - freeNow) / kBoltBytes + 4;
+    if (forHeap && (kBoltGcHeap - freeNow) / kBoltBytes + 8 > n) n = (kBoltGcHeap - freeNow) / kBoltBytes + 8;
     if (n <= 0) return;
     int by[3] = { 0, 0, 0 };
     const int did = priv_bolts_retire(n, bolt_rank, by);
@@ -2507,6 +2509,7 @@ void govern_memory(double now, const Bit32s pos[3]) {
         if (priv_ship_alive(g_net->quiet[i].first, g_net->quiet[i].second)) i++;
         else g_net->quiet.erase(g_net->quiet.begin() + i);     // (freed by the game)
     }
+    if (g_boltGc.stress && g_forceRelease <= 0) return;     // (the bolt stress: no ship given back, so the fire goes on to the limits)
     int low = g_heap.lowSinceRelease;
     if (g_forceRelease > 0) {
         g_forceRelease--;

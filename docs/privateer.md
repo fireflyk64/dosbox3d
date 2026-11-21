@@ -866,10 +866,10 @@ seconadrily non-player bolts ... but in the end the limit must be respected no m
 (the laser's seg090:02EC, the other's seg091:0C27: the vtable's +0x24) keeps it while its age is within its type's life
 and its alive byte (our pointer's +0x20) is set; the game clears that byte itself when a bolt hits (seg090:01D2) and
 then takes it out and destroys it, its shooter let go of the kept pointers (seg090:035A).  So the collector only clears
-the byte (`priv_bolts_retire`); nothing of ours frees or unlinks.  Each frame (`bolts_gc`), from 180 of the 200 kept
-pointers on, enough bolts to come down to 170: other machines' copies first, then our game's other ships', our own
-ship's last, at random within each; and the same when the near heap has under 2,500 free.  The mark is 180, not 190:
-a frame of many guns added up to 13 entries (measured).  Test settings: `WCPRIVBOLTGC=<n>|off` (the mark),
+the byte (`priv_bolts_retire`); nothing of ours frees or unlinks.  Each frame (`bolts_gc`), from 170 of the 200 kept
+pointers on, enough bolts to come down to 160: other machines' copies first, then our game's other ships', our own
+ship's last, at random within each; and the same when the near heap has under 4,000 free.  The marks are 170 and 4,000
+(not the 190 first asked): they are read once a frame, and a frame of many guns adds entries before the next look (below).  Test settings: `WCPRIVBOLTGC=<n>|off` (the mark),
 `WCPRIVCOPYSTRESS=1` (the copies' own caps lifted).  `scripts/privtests/bolts.sh`: PLAYERS (8) load the user's Oxford
 save (a Centurion each), launch, are kept together and hold their guns, the copies' caps lifted.  Measured:
 - the 8-pilot load test with the mark at 50: 3,700-5,900 bolts retired a machine, no error, the most kept 63;
@@ -878,3 +878,11 @@ save (a Centurion each), launch, are kept together and hold their guns, the copi
   200 were not reached by any fight tried; with the copies' real caps (24 bolts, none under 9,000 free) far less;
 - 8 Centurions, the mark at 120: held at 126 at most on every machine, 445-667 bolts retired each (all copies);
 - 8 Centurions and the 8-pilot load test as shipped (180): no error; the collector never ran in the load test.
+- **the limit reached** (the user: "can you change refire rate and energy usage of laser for this test so we
+  artificially get there"; "only have 4 centurions with rapid fire lasers just to test"): `WCPRIVGUNSTRESS=<n>` (the
+  rig's GUNS=) divides every gun's refire delay (the gun's +0x2B; its guns a list at the weapons record's +0xE) and
+  zeroes its energy (+0x33), and under WCPRIVCOPYSTRESS the memory governor gives no ship back.  4 Centurions, guns 6
+  times as fast, the collector off: the host's game ended with error 6281 (the list 176 at the frame before, the heap
+  622).  The same with the collector at 180 / 2,500: no error, but the heap down to 58 bytes; at 170 / 4,000, as
+  shipped: no error, the list 175 at most, the heap's low 1,846, 1,623 bolts retired on the host (all copies).  None
+  of the test settings is on unless its variable is set.

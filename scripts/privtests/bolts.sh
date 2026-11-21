@@ -9,7 +9,11 @@
 # GC=<n> sets its mark.  Printed: each machine's loads / errors / deaths and heap (loadsum.py), its most kept
 # pointers, the collector's last line.
 #
-#   scripts/privtests/bolts.sh [seconds]          (default 150)   PLAYERS=8 GC=off|<n> OUT=/tmp/privbolts DOSBOX=
+# GUNS=<n> (the user: "can you change refire rate and energy usage of laser for this test so we artificially get
+# there"): every gun refires n times as fast and costs no energy (WCPRIVGUNSTRESS) -- with fewer PLAYERS (2-4: fewer
+# ships in the game's memory) the 200 are passed.
+#
+#   scripts/privtests/bolts.sh [seconds]          (default 150)   PLAYERS=8 GC=off|<n> GUNS=<n> OUT=/tmp/privbolts DOSBOX=
 # A pass: errors=0 and loads=1 on every machine, the most kept under 200.
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DUR=${1:-150}; PLAYERS=${PLAYERS:-8}; OUT=${OUT:-/tmp/privbolts}
@@ -17,7 +21,7 @@ export SAVE=${SAVE:-$ROOT/privsaves/OXFORD01.SAV}
 [ -f "$SAVE" ] || { echo "no save at $SAVE"; exit 2; }
 rm -rf "$OUT"; mkdir -p "$OUT"
 export NOROUTE=1
-E="WCPRIVCOPYSTRESS=1${GC:+ WCPRIVBOLTGC=$GC}"
+E="WCPRIVCOPYSTRESS=1${GC:+ WCPRIVBOLTGC=$GC}${GUNS:+ WCPRIVGUNSTRESS=$GUNS}"
 export HOSTENV="$E ${HOSTENV:-}" GUESTENV="$E ${GUESTENV:-}"
 # the title's LOAD, the save's name, into the box, LOAD (escort.sh); the pad's ship (0.60, 0.72) at 50 s; the guns held
 X="4:esc,7:!mouse=0.38:0.94,7.5:!button=0:1,7.8:!button=0:0,10:!mouse=0.31:0.405,10.5:!button=0:1,10.8:!button=0:0,12:!mouse=0.31:0.345,12.5:!button=0:1,12.8:!button=0:0,15:!mouse=0.85:0.345,15.5:!button=0:1,15.8:!button=0:0"
