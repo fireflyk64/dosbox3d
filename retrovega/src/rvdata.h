@@ -87,6 +87,9 @@
 #define RV_GROUND_CANYON 3
 #define RV_GROUND_TUNNEL 4
 #define RV_NAV_GROUND 4
+#define RV_NAV_LAST 8
+#define RV_TYPE_PATROL 0
+#define RV_TYPE_SECRET 1
 #define RV_MUSIC_BRIEFING 0
 #define RV_MUSIC_BAR 1
 #define RV_MUSIC_LAUNCH 2

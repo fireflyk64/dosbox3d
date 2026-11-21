@@ -4211,6 +4211,20 @@ static void step_air(uint16_t phase)
  * certain flight envelopes where it makes sense"): fast in thick air, by the density x the speed: none at any
  * throttle's own speed (under 450 kps at the ground), all of it from 850 (the afterburner low down, a fast way in
  * from orbit).  A look only (fx.c's glow at the cockpit's edges, flight.c's streaks off the wing tips) */
+/* how the thick air shakes the player's ship, 0 none .. 3 pixels (the user, 2026-11-20: "shake the cockpit when flying
+ * low in the atmosphere and going more than half speed--could make it exciting"): under 1,200 km (the density from
+ * AIR_LOW), faster than half the ship's top speed 1, from three quarters 2, over it (the afterburner, a dive) 3.  A look
+ * only (fx.c fx_shake) */
+#define AIR_LOW 205
+uint16_t logic_buffet(void)
+{
+    uint16_t top, v = (uint16_t)speedLo[0];
+    if (g_air < AIR_LOW || !slot_is_ship(0) || shipAiState[0] == 9 || rvController[0] != CTL_PLAYER)
+        return 0;
+    top = damage_kps(slot_type(0)->max_kps);
+    return (uint16_t)(v > top ? 3 : v >= top - top / 4 ? 2 : v > top / 2 ? 1 : 0);
+}
+
 #ifdef RV_TESTS
 int g_heat_test = 0;                   /* RVT.EXE /heat N: that heat always (the look, its cost) */
 #endif
@@ -4366,8 +4380,12 @@ static void step_ground(void)
             continue;
         }
         if (s == 0 ? over < GROUND_CLEAR || roof < GROUND_CLEAR : roof < GROUND_CLEAR) {
-            if (s == 0 && shipAiState[0] != 9)
-                (void)do_damage(0, 0, 0xFFFFU, RV_WHERE(p));
+            if (s == 0 && shipAiState[0] != 9)   /* (from nobody, 0xFFFF: the player's own slot as the source was to
+                                                    the layer two pilots' ships touching, harmless by the page's
+                                                    Collide setting, so in a room the ground did nothing: the user,
+                                                    2026-11-20, "I crashed into the ground repeatedly and it didn't
+                                                    feel like any damage") */
+                (void)do_damage(0xFFFFU, 0, 0xFFFFU, RV_WHERE(p));
             p->x -= v->x;               /* (the step that took it there undone) */
             p->y -= v->y;
             p->z -= v->z;
@@ -5942,6 +5960,26 @@ static int16_t mship_brought(uint16_t rec)
     return 0;
 }
 
+/* a waypoint that is the last (missions.txt nav ... last; the user, 2026-11-20, of Enigma's envoy: "I auto'd directly to
+ * nav four and avoided the rest of the stuff.  I think we should make it so that it only shows up if you visited all 3
+ * other nav points"): off, and so on no list and never reached, until every other waypoint has been reached, in any
+ * order */
+static void nav_last_on(void)
+{
+    int16_t j, k;
+    for (j = 1; j < NAVS; j++) {
+        if (!nav_defined(j) || !(NAV_REC(j)[1] & RV_NAV_LAST) || nav_on(j))
+            continue;
+        for (k = 1; k < NAVS; k++)
+            if (k != j && nav_defined(k) && !NAV_HIDDEN(k) && !(NAV_REC(k)[1] & RV_NAV_LAST) && !(g_navs_seen >> k & 1))
+                break;
+        if (k == NAVS) {
+            g_nav_off &= (uint16_t)~(1u << j);
+            RV_NOTE("logic: every other waypoint reached: nav %d switched on", j);
+        }
+    }
+}
+
 void __far __cdecl enterNavPoint_impl(uint16_t nav)
 {
     static const char __far s_nav[] = "logic: nav %u reached: %d ships came";
@@ -5962,6 +6000,7 @@ void __far __cdecl enterNavPoint_impl(uint16_t nav)
             RV_NOTE("logic: nav %d reached: nav %d switched %s", nav, sw & 15, sw & 0x80 ? "on" : "off");
         }
     }
+    nav_last_on();
     if (nav_listed((int16_t)nav))
         g_navs_been |= 1u << nav;
     if (g_nav_chosen && g_sys.nav == nav)

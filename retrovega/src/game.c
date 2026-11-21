@@ -926,6 +926,12 @@ static void brief_overlay(int y0, int y1)
  * click; Esc leaves the rest.  With the wingman dead, " and NAME" is cut from "You and NAME ..." (rvdata holds every
  * briefing to that), so the mission is flown solo.  A debrief with the wingman lost in the flight says so first, and
  * that is where the loss becomes final (flying a mission again after dying undoes it, launch) */
+/* A secret mission's (missions.txt `type secret`; the user, 2026-11-20, of Enigma's envoy: "it's very secret so I think
+ * it should just be solberg talking to you directly not the whole briefing room.  We have a closeup solberg shot so we
+ * should use that only and skip the room for this...they wouldn't talk about a top secret mission with everyone"): every
+ * line in its speaker's close-up, the XO's too, the room, its screen and the pilots rising never shown; the debrief
+ * the same */
+#define BRIEF_SECRET (g_m.type == RV_TYPE_SECRET)
 static char __far g_xo_words[RV_TALK + 48];
 static int g_lost_wing = -1;
 static int g_line_room, g_line_at, g_lines_left, g_line_face;
@@ -978,12 +984,15 @@ static void line_page(int k)
     int who = t->speaker == RV_SPEAKER_YOU ? person_of(RV_ROLE_HERO) : t->speaker;
     g_line_at = k;
     g_stage_at = 0;
-    if (g_pilots[who].role == RV_ROLE_XO) {
+    if (g_pilots[who].role == RV_ROLE_XO && !BRIEF_SECRET) {
         line_face_off();
         say(who, line_words(t));
         vid_dirty(292, 378);
+    } else if (g_line_face && who == g_speaker) {   /* (the same face goes on: no fade between its lines) */
+        say(who, line_words(t));
+        vid_dirty(0, SCR_H);
     } else {
-        say(who, t->text);
+        say(who, line_words(t));
         g_line_face = show_face();
     }
 }
@@ -2333,7 +2342,8 @@ int game_run(void)
                 int next = in.clicked || in.key == KEY_ENTER;
                 if (in.key == KEY_ESC) {        /* (the rest of it unheard: straight on) */
                     g_lines_left = 0;
-                    line_face_off();
+                    if (!BRIEF_SECRET)
+                        line_face_off();
                     g_stage = 2;
                     g_stage_at = g_now;
                 } else {
@@ -2351,7 +2361,8 @@ int game_run(void)
                             line_page(k);
                         } else {                /* (the last line: a click goes on at once, the wait takes the screen off) */
                             g_lines_left = 0;
-                            line_face_off();
+                            if (!BRIEF_SECRET)
+                                line_face_off();
                             g_stage_at = g_now + 18;
                             if (in.clicked || in.key == KEY_ENTER) {
                                 g_stage = 2;
@@ -2381,7 +2392,7 @@ int game_run(void)
                 if (!g_stage_at)
                     g_stage_at = g_now + 18;
                 if (g_now >= g_stage_at || go) {
-                    if (g_mode == MODE_BRIEF && g_stage < 2) {
+                    if (g_mode == MODE_BRIEF && g_stage < 2 && !g_line_face) {
                         g_stage++;
                         g_stage_at = g_now + 7;
                         vid_dirty(g_stage == 1 ? 0 : 100, SCR_H);   /* the first: the screen goes off too */
@@ -2389,8 +2400,10 @@ int game_run(void)
                         int brief = g_mode == MODE_BRIEF;
                         g_stage_at = 0;
                         if (brief) {
+                            g_line_face = 0;    /* (a secret briefing: from the close-up straight to the deck) */
                             enter_deck();
                         } else if (debrief_settle()) {
+                            line_face_off();
                             g_scene.full = ending_full;
                             g_scene.no_room = 1;
                             g_mode = MODE_ENDING;
@@ -2403,6 +2416,7 @@ int game_run(void)
                                 shot_save("ENDING");
                             }
                         } else {
+                            g_line_face = 0;
                             next_mission();
                             enter_room(RV_R_BAR);
                         }

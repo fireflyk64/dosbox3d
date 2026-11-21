@@ -69,7 +69,7 @@ ROOMS = ['bar', 'lounge']
 SEAT_NAMES = ['left', 'middle', 'right']
 HOME_TIERS = ['intact', 'scarred', 'holed', 'wrecked']   # (damage_home_tier's order)
 FIXED_PLACES = {'TECH': 'the deck', 'TALLY': 'the bar', 'XO': 'the briefing room'}
-TYPES = {'patrol': 0}
+TYPES = {'patrol': 0, 'secret': 1}   # (secret: its briefing and debrief in close-ups alone, game.c BRIEF_SECRET)
 # the music's cues, in their files' order: the rooms' songs (tools/songs.py, tools/midi.py), then the flight's
 # (tools/flightsongs.py; src/score.c picks them), the stings last (played once: music_sting)
 # (the order is the score's: src/score.c reads the cruise songs as CRUISE1 up to HOMEWARD, the battles as BATTLE1 up to
@@ -738,22 +738,23 @@ def compile_all():
             raise Fail('%s: type %r / music %r unknown' % (w, m['type'], m['music']))
         navs = []
         for where, f in m['nav']:
-            # nav ID x y z [hidden] [off] [reach=KM] [switch=+N,-M]: the player within KM of it has reached it, and the
+            # nav ID x y z [hidden] [off] [last] [reach=KM] [switch=+N,-M]: the player within KM of it has reached it, and the
+            # (last: off, and on by itself once every other waypoint has been reached: logic.c nav_last_on)
             # autopilot stops there; off: switched off at the start, never reached till a switch turns it on; switch=:
             # entering it turns nav N on, M off (the old game's: tests/wc1/navswitch.py)
             words = [o for o in f[4:] if '=' not in o]
             opts = dict(o.split('=', 1) for o in f[4:] if '=' in o)
             sw = [o for o in opts.get('switch', '').split(',') if o]
-            if len(f) < 4 or set(words) - {'hidden', 'off', 'ground'} or set(opts) - {'reach', 'switch'} \
+            if len(f) < 4 or set(words) - {'hidden', 'off', 'ground', 'last'} or set(opts) - {'reach', 'switch'} \
                     or not 1000 <= int(opts.get('reach', NAV_REACH)) <= 60000 or len(sw) > 4 \
                     or any(not re.fullmatch(r'[+-]([1-9]|1[0-5])', o) for o in sw):
-                raise Fail('%s: nav ID x y z [hidden] [off] [reach=KM, 1,000 to 60,000] [switch=+N,-M: at most 4, '
+                raise Fail('%s: nav ID x y z [hidden] [off] [last] [reach=KM, 1,000 to 60,000] [switch=+N,-M: at most 4, '
                            'navs 1..15]' % where)
             swb = bytes((0x80 if o[0] == '+' else 0) | int(o[1:]) for o in sw) + b'\xff' * (4 - len(sw))
             if 'ground' in words and 'planet' not in m:
                 raise Fail('%s: a ground nav point in a mission with no planet' % where)
-            navs.append(struct.pack(fmt(NAV), int(f[0]), (1 if 'hidden' in words else 0) | (2 if 'off' in words else 0)
-                                    | (4 if 'ground' in words else 0),
+            navs.append(struct.pack(fmt(NAV), int(f[0]), (1 if 'hidden' in words else 0) | (2 if 'off' in words or 'last' in words else 0)
+                                    | (4 if 'ground' in words else 0) | (8 if 'last' in words else 0),
                                     int(f[1]), int(f[2]), int(f[3]), int(opts.get('reach', NAV_REACH)), swb))
         if len(navs) > LIMITS['NAVS']:
             raise Fail('%s: %d nav points, at most %d' % (w, len(navs), LIMITS['NAVS']))
@@ -1146,6 +1147,9 @@ def header_text(sizes):
     for k, v in GROUND_KINDS.items():
         out.append('#define RV_GROUND_%s %d' % (k.upper(), v))
     out.append('#define RV_NAV_GROUND 4')
+    out.append('#define RV_NAV_LAST 8')
+    for k, v in TYPES.items():
+        out.append('#define RV_TYPE_%s %d' % (k.upper(), v))
     for k, v in MUSIC.items():
         out.append('#define RV_MUSIC_%s %d' % (k.upper(), v))
     out.append('#define RV_MUSIC_COUNT %d' % len(MUSIC_FILES))

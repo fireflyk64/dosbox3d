@@ -5224,6 +5224,52 @@ static void t_air(void)
     g_pilot.steer_x = 0;
 }
 
+/* M8.72: the ground's hit and the low air's shake (the user, 2026-11-20: "I crashed into the ground repeatedly and it
+ * didn't feel like any damage", "shake the cockpit when flying low in the atmosphere and going more than half speed").
+ * Over Enigma's ice the player that takes damage, in a shallow dive at its top speed from 300 km up, is destroyed at the
+ * ground (step_ground: the hit is nobody's, source 0xFFFF; as the player's own, source 0, the layer took it in a room
+ * for two pilots' ships touching and dropped it).  logic_buffet: 300 km up at the top speed 2, at 0.6 of it 1, at 0.4
+ * none, on the afterburner over the top speed 3; 2,000 km up at the top speed none */
+static void t_ground_hit(void)
+{
+    static const char __far e_made[] = "Enigma's planet: planet_make %d (100: made)";
+    static const char __far e_buffet[] = "the low air's shake, case %d: %d (wanted %d)";
+    static const char __far e_dead[] = "a shallow dive into the ice: the player's state %d (9: destroyed) %d km over it after %d steps";
+    const RvShipType __far *t;
+    long roof, over = 0;
+    int16_t k, i;
+    pt_launch_named("ENIGMAP");
+    k = (int16_t)planet_make(0);
+    REQUIRE(k == 100, e_made, k, 0, 0);
+    t = slot_type(0);
+    playerCanBeDamaged = 0;
+    for (k = 0; k < 5; k++) {
+        static const int16_t km[5] = { 300, 300, 300, 300, 2000 }, pct[5] = { 100, 60, 40, 100, 100 }, want[5] = { 2, 1, 0, 3, 0 };
+        air_put(km[k], 0);
+        pt_speed(0, (int32_t)t->max_kps * pct[k] / 100);
+        if (k == 3) {
+            g_pilot.afterburner = g_sys.burning = 1;
+            rvAfterburner[0] = 1;
+        }
+        if (!pt_steps(k == 3 ? SEC : 2))
+            return;
+        REQUIRE((int16_t)logic_buffet() == want[k], e_buffet, k, logic_buffet(), want[k]);
+    }
+    playerCanBeDamaged = 1;
+    air_put(300, 0);
+    gOrientationFrontVector[0] = vec3(0, -60, 249);   /* (the nose 14 degrees under the horizon) */
+    gOrientationUpVector[0] = vec3(0, 0, 0);
+    gOrientationRightVector[0] = vec3(256, 0, 0);
+    ship_orthonormalise(0);
+    pt_speed(0, t->max_kps);
+    for (i = 0; i < 20 * SEC && shipAiState[0] != 9; i++) {
+        if (!pt_step())
+            return;
+        over = planet_over((const LfVec *)&gPositionVector[0], &roof);
+    }
+    REQUIRE(shipAiState[0] == 9 && over < 30L * KM, e_dead, shipAiState[0], over / KM, i);
+}
+
 /* M2.21: easy's faster bolts (campaign.c easy_guns; the user, 2026-11-17: "could we make the easy option have the old
  * higher speeds? ... it could potentially multiply them on load", "we should have the fast guns affect both AI and
  * human"): on easy every gun's speed in the loaded table is 11 / 8 of the data's, the laser's 1,600 kps 2,200 and the
@@ -7776,16 +7822,29 @@ static void t_carrier_hide(void)
     REQUIRE(maybeEntityType[h] == ET_CAPSHIP, e_back, maybeEntityType[h], 0, 0);
 }
 
-/* M8.70: the ship that runs (logic.c flee_step; ENIGMAP's envoy, role=flee jump=45): the player cloaked at Nav 4 for 4 s,
- * nobody runs; uncloaked, its Aristons see the player and the envoy's countdown starts (44 or 45 s); left alone (the
- * player takes no damage) it jumps out, and the mission cannot be won.  Again, from 900 km behind it with the guns alone:
- * killed within its 45 s (35 s: 2026-11-19; missiles shorten it) */
+/* M8.70: the ship that runs (logic.c flee_step; ENIGMAP's envoy, role=flee jump=210: 45 until 2026-11-20, the user:
+ * "the time we have is waaay too little ... Lets set it to 3-4 minutes") and the last waypoint (nav ... last, logic.c
+ * nav_last_on; the user: "it only shows up if you visited all 3 other nav points"): the player cloaked at Nav 4's place
+ * with Navs 1 and 2 flown, nothing there and no Nav 4 reached; Nav 3 flown too, Nav 4 is on, and at it for 4 s the envoy
+ * is there and nobody runs; uncloaked, its Aristons see the player and the envoy's countdown starts (205 to 210 s); left
+ * alone (the player takes no damage) it jumps out, and the mission cannot be won.  Again, from 900 km behind it with the
+ * guns alone: killed within a minute (35 s: 2026-11-19; missiles shorten it) */
+static int16_t nav_fly(int16_t n)       /* (the player put at nav n for 2 steps) */
+{
+    LfVec p;
+    nav_pos(n, &p);
+    pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
+    return pt_steps(2);
+}
+
 static void t_envoy_runs(void)
 {
     static const char __far e_quiet[] = "cloaked at Nav 4 4 s: the envoy %d (a slot), its countdown %d (0)";
-    static const char __far e_heard[] = "uncloaked 3 s: the envoy's countdown %d s (40 to 45)";
-    static const char __far e_away[] = "46 s on: the envoy %d (-1: gone), its kill goal %d (0), victory %d (0)";
-    static const char __far e_kill[] = "from 900 km behind it, the guns alone: the envoy killed %d (1) after %d s (within its 45 s)";
+    static const char __far e_heard[] = "uncloaked 3 s: the envoy's countdown %d s (205 to 210)";
+    static const char __far e_away[] = "211 s on: the envoy %d (-1: gone), its kill goal %d (0), victory %d (0)";
+    static const char __far e_kill[] = "from 900 km behind it, the guns alone: the envoy killed %d (1) after %d s (within 60 s)";
+    static const char __far e_early[] = "at Nav 4's place with Nav 3 not flown: the envoy %d (-1: not there), the nav reached last %d (2)";
+    static const char __far e_on[] = "Navs 1, 2 and 3 flown: the nav reached last %d (3), then at Nav 4's place %d (4)";
     int16_t env, i;
     LfVec p;
     RvVec3 w;
@@ -7796,12 +7855,17 @@ static void t_envoy_runs(void)
     g_sys.armed = 0;
     playerCanBeDamaged = 0;
     logic_cloak_key();
-    if (!pt_step())
+    if (!pt_step() || !nav_fly(1) || !nav_fly(2) || !nav_fly(4))
         return;
+    REQUIRE(slot_of_type(0x2B) < 0 && currentNavPoint == 2, e_early, slot_of_type(0x2B), currentNavPoint, 0);
+    if (!nav_fly(3))
+        return;
+    i = (int16_t)currentNavPoint;
     nav_pos(4, &p);
     pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
     if (!pt_steps(4 * SEC))
         return;
+    REQUIRE(i == 3 && currentNavPoint == 4, e_on, i, currentNavPoint, 0);
     env = slot_of_type(0x2B);
     REQUIRE(env > 0 && logic_flee_left == 0, e_quiet, env, logic_flee_left, 0);
     if (env < 0)
@@ -7809,8 +7873,8 @@ static void t_envoy_runs(void)
     logic_cloak_key();
     if (!pt_steps(3 * SEC))
         return;
-    REQUIRE(logic_flee_left >= 40 && logic_flee_left <= 45, e_heard, logic_flee_left, 0, 0);
-    if (!pt_steps(46 * SEC))
+    REQUIRE(logic_flee_left >= 205 && logic_flee_left <= 210, e_heard, logic_flee_left, 0, 0);
+    if (!pt_steps(211 * SEC))
         return;
     REQUIRE(slot_of_type(0x2B) < 0 && !logic_goal(RV_GOAL_KILL, 0x2B, 4, 0) && victoryPoints == 0, e_away,
             slot_of_type(0x2B), logic_goal(RV_GOAL_KILL, 0x2B, 4, 0), victoryPoints);
@@ -7818,6 +7882,10 @@ static void t_envoy_runs(void)
     pt_launch_named("ENIGMAP");
     planet_navs();
     playerCanBeDamaged = 0;
+    logic_cloak_key();
+    if (!pt_step() || !nav_fly(1) || !nav_fly(2) || !nav_fly(3))
+        return;
+    logic_cloak_key();
     nav_pos(4, &p);
     pt_put(0, p.x / KM, p.y / KM, p.z / KM, 0);
     if (!pt_steps(SEC))
@@ -7833,7 +7901,7 @@ static void t_envoy_runs(void)
     pt_speed(0, 0);
     g_sys.armed = 1;
     g_pilot.guns = 1;
-    for (i = 0; i < 50 * SEC && slot_of_type(0x2B) == env && shipAiState[env] != 9; i++) {
+    for (i = 0; i < 70 * SEC && slot_of_type(0x2B) == env && shipAiState[env] != 9; i++) {
         pt_face(env);
         setSpeed[0] = pt_km(0, env) > 700 ? 200 : 0;
         if (!pt_step())
@@ -7843,7 +7911,7 @@ static void t_envoy_runs(void)
     g_sys.armed = 0;
     RV_LOG("envoy: from behind with the guns: %s after %d s (its countdown %d left)", shipAiState[env] == 9 ? "killed" : "away",
            i / SEC, logic_flee_left);
-    REQUIRE(shipAiState[env] == 9 && i < 45 * SEC, e_kill, shipAiState[env] == 9 ? 1 : 0, i / SEC, 0);
+    REQUIRE(shipAiState[env] == 9 && i < 60 * SEC, e_kill, shipAiState[env] == 9 ? 1 : 0, i / SEC, 0);
 }
 
 /* M8.71: the tunnel (terrain.c tr_tunnel_at, ENIGMAT; the user, 2026-11-19: "a huge long tunnel and nav points inside
@@ -8940,7 +9008,8 @@ static const char __far n_m8_63[] = "M8.63 planet (planet.c, step_ground, ground
 static const char __far n_m8_66[] = "M8.66 campaign-card (camp_flown_from, camp_place): a set's planet missions only with the card: Cephid 4 or 3, Shmrn 6 or 4, the way on skips CEPHIDP without it, the screens count what is flown";
 static const char __far n_m8_65[] = "M8.65 cloak-run (ENIGMAP, role=guard, the cloak): cloaked, nobody sees the player and the guards keep their posts, Nav 1 to the canyon's end; a surprise from behind turns only that one; Alt+C and it lets go; the post burnt with no heavy coming; the autopilot goes home past the guards (the log: cloakrun)";
 static const char __far n_m8_69[] = "M8.69 carrier-hide (home_hide_step): ENIGMAP's carrier jumps out 10 s after the launch and back in when the player comes back to it";
-static const char __far n_m8_70[] = "M8.70 envoy-runs (flee_step): ENIGMAP's envoy holds while the player is unseen, runs on being seen and gets away 45 s on (lost), and dies to the guns from behind within its 45 s";
+static const char __far n_m8_70[] = "M8.70 envoy-runs (flee_step): ENIGMAP's envoy holds while the player is unseen, runs on being seen and gets away 210 s on (lost), and dies to the guns from behind within a minute; Nav 4 (nav ... last) is on only with Navs 1, 2 and 3 flown";
+static const char __far n_m8_72[] = "M8.72 ground-hit (step_ground, logic_buffet): the player in a shallow dive into Enigma's ice is destroyed (the hit nobody's: the layer drops none of it); low and over half its top speed the air shakes the ship, 1 to 3 pixels, not high up";
 static const char __far n_m8_71[] = "M8.71 tunnel (tr_tunnel_at, ENIGMAT): its open ends under the sky, its nav points under rock 600 km over its floor, the autopilot refused at its mouth, every leg flown straight clear of rock, the fork's guards inside";
 static const char __far n_m8_68[] = "M8.68 air (step_air, air_roll): in a planet's air the player's ship keeps height at speed and sinks without it, hangs on its tail only with the afterburner low down and with the throttle alone high up; its wings come level";
 static const char __far n_m8_67[] = "M8.67 ground-up (step_ground): over Enigma's ice, 64,000 km from its centre, a fighter low over the ground is lifted straight up";
@@ -9046,6 +9115,7 @@ static const PtTest __far k_tests[] = {
     { n_m8_70, t_envoy_runs, 0 },
     { n_m8_71, t_tunnel, 0 },
     { n_m2_21, t_easy_guns, 0 },
+    { n_m8_72, t_ground_hit, 0 },
 };
 
 /* --- the run --- */

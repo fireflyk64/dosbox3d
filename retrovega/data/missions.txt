@@ -46,6 +46,11 @@
 # to the land at its ends as open= says (terrain.c tr_tunnel_at).  In a mission with one the autopilot flies no point
 # under its rock, and the AI steers round its bends (logic.c tunnel_mind)
 #
+# A nav line's `last` is a waypoint off, on no list and never reached, until every other waypoint has been reached, in
+# any order (logic.c nav_last_on; the user, 2026-11-20, of Enigma's envoy: "it only shows up if you visited all 3 other
+# nav points").  A mission's `type secret` has its briefing and debrief in close-ups alone, the XO's too, never the room
+# (game.c BRIEF_SECRET; the user: "they wouldn't talk about a top secret mission with everyone")
+#
 # A ship line's role=flee jump=S is an enemy capital ship that holds its nav point until it hears of a pilot (it is hit,
 # or a ship of its side within 12,000 km of it has a pilot for its target), then jumps out S seconds on; got away, it
 # loses the mission (logic.c flee_step: Enigma's envoy).  The home carrier's hide=S: it jumps out S seconds after the
@@ -3204,9 +3209,10 @@ radio    "Torch. Big guns, paper shields. Let's get it done."
 mission  ENIGMAP
 node     ENIGMA
 title    Strike: Enigma's ice moon, the envoy
-type     patrol
+type     secret
 music    briefing
 fighter  SCHROED
+briefing "Close the door, Wildcard. This one isn't for the briefing room."
 briefing "One more job before we leave Enigma, and it's a quiet one."
 briefing "The ice moon belongs to nobody. That's why the Aera and the Rlaan picked it to meet on."
 briefing "An Aera envoy came in last night in a Charillus. It's down on a pad at the end of a long canyon."
@@ -3214,18 +3220,22 @@ briefing "If the Rlaan sign with them, we fight two fleets instead of one. That 
 briefing "The Rlaan guard the way down. Intelligence expects 2 Taizongs at Nav 1, and another on patrol past it."
 briefing "At Nav 2 a Rlaan destroyer holds over an ice arch, with 2 Zhuangzongs under it."
 briefing "Nav 3 is the canyon's mouth, with 2 Taizongs over it. Nav 4 is its end, and the envoy is there."
+briefing "Your nav computer has no fix on the canyon's end. It builds one from the first three points."
+briefing "Fly to all three, in any order. Until you have, there is no Nav 4 and nothing to find there."
 briefing "Heavy fighters and a destroyer. One Schroedinger won't last against all of them, so they won't see you."
-briefing "Your Schroedinger has a cloak. Alt and C. While it's on, nothing out there knows you're there."
+briefing "Your Schroedinger carries the device Kit has had under test. It's a cloak. Alt and C."
+briefing "While it's on, nothing out there knows you're there."
 briefing "Firing drops it. The afterburner and the comm let them see you while you use them. Your shields are down."
 briefing "If they see you near the envoy, or the first time you hit it, its pilot runs for the jump point."
-briefing "You'll have forty-five seconds. Get close behind it, put your missiles in it, and don't stop firing."
+briefing "It needs three and a half minutes to make its jump. Get in close behind it and keep firing."
 briefing "The envoy keeps 2 Aristons by it. Those you'll have to fight when it burns."
 briefing "The Vigilance won't wait in the open. She launches you in a field at the system's edge, then jumps out."
 briefing "Come back to the field and she'll jump back in for you. Fly out of it, and back in, by hand."
+briefing "The other pilots have been told the double jump is for navigational stability. Leave them thinking so."
 briefing you "Alone, Commander?"
-briefing alive=FROST "Frost asked to go. I said no. Two fighters can't hide as well as one."
-briefing dead=FROST "Two fighters can't hide as well as one, and it's a job for one."
-briefing "Cloaked, the autopilot takes you past them. Let one see you and you fly it yourself. Dismissed."
+briefing "Alone. Two fighters can't hide as well as one, and two pilots can't keep a secret as well as one."
+briefing "Cloaked, the autopilot takes you past them. Let one see you and you fly it yourself."
+briefing "Not a word of this outside this room. Dismissed."
 win      "The envoy never left the moon. The Rlaan will think twice about whose hand they shake."
 win      "And nobody saw a thing. Well done, Wildcard."
 lose     "The envoy's away, and the Rlaan will hear the Aera out. We'll leave Enigma with two enemies watching."
@@ -3235,7 +3245,7 @@ planet   101 -38116 -135904 83506 64000 kind=ice
 nav      1 -30116 -70925 81506 ground reach=3000
 nav      2 -36116 -71056 74506 ground reach=3000
 nav      3 -44116 -73501 67506 ground reach=3000
-nav      4 -52116 -80315 53506 ground reach=3000
+nav      4 -52116 -80315 53506 ground last reach=3000
 nav      5 -33116 -70324 78006 ground hidden reach=2500
 field    asteroid 0 0 0 7000 level=1
 ground   arch nav2 span=1500 width=700 air=2000 thick=450 heading=-167
@@ -3249,7 +3259,7 @@ ship     TAIZONG 1 nav5 at=1500,300,0 role=guard
 ship     RUIZONG 1 nav2 at=0,2600,0 role=stay
 ship     ZHUANG 1 nav2 count=2 role=guard
 ship     TAIZONG 1 nav3 count=2 at=1500,600,1300 role=guard
-ship     CHARILS 1 nav4 role=flee jump=45
+ship     CHARILS 1 nav4 role=flee jump=210
 ship     ARISTON 1 nav4 count=2 at=1240,1056,2171
 goal     nav 1 1
 goal     nav 2 1
@@ -3258,17 +3268,18 @@ goal     kill CHARILS nav4 6
 goal     nav 4 1
 goal     land 1
 bar      left=TORCH middle=PRIME right=ANCHOR
-say      bar PRIME PRIME "A cloak! They give the new one a cloak. I've been asking for one for a year."
-say      bar PRIME TALLY "They know what you'd do with it, Prime."
-say      bar PRIME PRIME "I'd be very quiet."
-say      bar PRIME TALLY "For about a minute."
-say      bar ANCHOR ANCHOR "Shields down while it's on. Remember that before you open fire, not after."
+say      bar PRIME PRIME "Kit's been bolting something into a Schroedinger all week. A device under test, they say."
+say      bar PRIME TALLY "I heard it makes a fighter vanish. Sensors, eyes, the lot."
+say      bar PRIME PRIME "If it did that, I'd have had one a year ago. I asked."
+say      bar PRIME TALLY "They know what you'd do with it, Prime. You'd be very quiet. For about a minute."
+say      bar ANCHOR ANCHOR "Rumor says it eats the shields while it runs. I'd want to know that before I opened fire."
+say      bar ANCHOR ANCHOR "And two jumps in a day, for navigational stability. First I've heard of a carrier needing that."
 lounge   left=COMET middle=- right=FROST
-say      lounge FROST FROST "They're giving you the cloak job. Don't let it make you careless. Unseen isn't the same as safe."
-say      lounge FROST you "Did you ever fly one cloaked?"
-say      lounge FROST FROST "Once. The quiet gets to you. Talk to yourself if you have to. Just not on the comm."
-say      lounge COMET COMET "Cloaks. In my day you hid behind a rock."
-talk     deck TECH you "Cloak's tuned. Don't use the comm, don't burn, and don't shoot until you mean it."
+say      lounge FROST FROST "There's talk of a fighter nobody can see. If they hand it to you, don't let it make you careless."
+say      lounge FROST you "You think it's real?"
+say      lounge FROST FROST "Unseen isn't the same as safe. And the quiet would get to you. Talk to yourself. Just not on the comm."
+say      lounge COMET COMET "A fighter you can't see. In my day you hid behind a rock."
+talk     deck TECH you "Voice down. The device is tuned. Don't use the comm, don't burn, and don't shoot until you mean it."
 say      deck TECH TECH boost=missile "Here's an extra missile. A Charillus takes some killing, and you only get the one surprise."
 say      deck TECH you "Thanks, Kit."
 say      deck TECH TECH "Bring her back with the paint on. Cloaked paint is still paint."

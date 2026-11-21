@@ -331,7 +331,7 @@ who want to find themselves to the winning path"), but "We want an escort missio
 
 | Set | Mission | Fighter, wingman | Planet (seed, look) | What |
 |---|---|---|---|---|
-| Enigma | ENIGMAP, third | Schroedinger, alone | 101, ice | Strike: the envoy (the listening post until 2026-11-19; below). Cloaked past the Rlaan: Taizongs and Zhuangzongs that guard their posts (`role=guard`) and a Ruizong destroyer over the ice arch; Nav 3 a canyon's mouth, Nav 4 its end 17,800 km on, the Aera envoy's Charillus on a pad there (`role=flee jump=45`) and two Aristons; the Vigilance launches from an asteroid field at the system's edge and hides (`hide=10`) |
+| Enigma | ENIGMAP, third | Schroedinger, alone | 101, ice | Strike: the envoy (the listening post until 2026-11-19; below). Cloaked past the Rlaan: Taizongs and Zhuangzongs that guard their posts (`role=guard`) and a Ruizong destroyer over the ice arch; Nav 3 a canyon's mouth, Nav 4 its end 17,800 km on, the Aera envoy's Charillus on a pad there (`role=flee jump=210`) and two Aristons; Nav 4 is `last`: on no list and never reached until Navs 1, 2 and 3 have been flown; the briefing is `type secret`, the XO's close-up alone; the Vigilance launches from an asteroid field at the system's edge and hides (`hide=10`) |
 | Cephid 17 | CEPHIDP, third | Franklin, Drifter | 211, red | Strike: a Charillus tanker on a pad at the end of a canyon (Nav 3 its mouth, Nav 4 its end 17,500 km on); two Cleomenes at Nav 1, two Aristons at Nav 2, two Areus at Nav 3, a Cleomenes and two Agis with the tanker |
 | Shelton | SHELTONP, third | Schroedinger, Comet | 307, savanna | Patrol: the strip the Nicanders on the deck came from, a Charillus under an arch |
 | Crucible | CRUCIBLP, second | Gawain, Comet | 401, ash (lava pools) | Escort: an Ox lifts the Kahan's lifeboat crew out of the lava fields (`role=back`) |
@@ -440,10 +440,14 @@ each point's height over it (the colony, Nav 2, 187 km over the shore; Nav 1 ove
   Taizongs (their heavy assault craft) at Nav 1 and one on patrol past it (the hidden point), a Ruizong destroyer 2,600 km
   over the ice arch at Nav 2 (`role=stay`; its art rendered from Vega Strike's mesh for this, SHIP30.RV, 37 views) with
   two Zhuangzongs under the arch, two Taizongs over the canyon's mouth. All guards; the envoy keeps two Aera Aristons.
-- **The envoy runs** (`role=flee jump=45`, logic.c `flee_step`): it holds until it hears of the player (it is hit, or a
-  ship of its side within 12,000 km has the player for its target), then jumps out 45 s on; got away, the mission is
+- **The envoy runs** (`role=flee jump=210`, logic.c `flee_step`): it holds until it hears of the player (it is hit, or a
+  ship of its side within 12,000 km has the player for its target), then jumps out 210 s on (45 until 2026-11-20; the user: "the time we have is waaay too little ... Lets set it to 3-4 minutes"); got away, the mission is
   lost. The cockpit shows TARGET JUMPS IN N under the gunsight. Guns alone from 900 km behind kill it in 35 s (play test
-  M8.70); the briefing says forty-five seconds and the missiles.
+  M8.70); the briefing says three and a half minutes.
+- **The ground and the low air** (2026-11-20): the ground's hit on the player is nobody's (`do_damage`'s source 0xFFFF: as
+  the player's own slot the layer took it, in a room, for two pilots' ships touching and dropped it, so a crash did
+  nothing); under 1,200 km and over half its top speed the air shakes the player's ship (`logic_buffet`, 1 to 3 pixels
+  through fx.c `fx_shake`; play test M8.72).
 - **The carrier hides** (`role=home hide=10`, logic.c `home_hide_step`): the whole mission moved 70,000 km out along the
   line from the planet, so the launch is 100,000 km over the moon, at the system's edge, in an asteroid field 7,000 km
   across (`field asteroid 0 0 0 7000 level=1`): flown out of by hand. The Vigilance jumps out 10 s after the launch

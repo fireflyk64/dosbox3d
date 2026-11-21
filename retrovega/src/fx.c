@@ -246,6 +246,9 @@ void fx_shake(int16_t *dx, int16_t *dy)
     if (slot_is_ship(0) && rvController[0] == CTL_PLAYER && shipAiState[0] != 9) {
         /* a rumble with nothing hitting: the engine badly hurt, every other frame; the absorbers hurt, in a hard turn; on the
          * reserve, the whole ship */
+        const int16_t air = (int16_t)logic_buffet();   /* (low and fast in a planet's air) */
+        if (px < air)
+            px = air;
         if (px < 1 && ((sys_level(SYS_ENGINE) >= 3 && speedLo[0] && (frameCounter & 1)) || damage_in_reserve()))
             px = 1;
         if (px < 2 && sys_level(SYS_ABSORBERS) >= 2 && (g_pilot.steer_x >= 7 || g_pilot.steer_x <= -7 || g_pilot.steer_y >= 7 || g_pilot.steer_y <= -7))
