@@ -1,8 +1,9 @@
 #!/bin/bash
-# tests/release/deploy.sh TAG "MESSAGE" (gate.sh calls it): the worktree's HEAD, fully: the web build, a combat flight on the page, the smokes, and only if they pass the deploy
+# scripts/rv-release/deploy.sh TAG "MESSAGE" (gate.sh calls it): the worktree's HEAD, fully: the web build, a combat flight on the page, the smokes, and only if they pass the deploy
 S=${RV_RELEASE_DIR:-/tmp/rv-release}; mkdir -p $S
 R=$(cd "$(dirname "$0")" && pwd)   # (these scripts)
-WT=${RV_WT:-/home/sandbox/dev/rv-gx}; MAIN=/home/sandbox/dev/dosbox3d; PAGES=/home/sandbox/dev/fireflyk64.github.io
+REAP=$(cd "$R/../.." && pwd)/retrovega/tests/release/reap.py   # (the process reaper: RetroVega's, generic)
+WT=${RV_WT:-$(cd "$R/../.." && pwd)}; MAIN=/home/sandbox/dev/dosbox3d; PAGES=/home/sandbox/dev/fireflyk64.github.io
 TAG=$1; MSG=$2
 # (GitHub's ssh turned the key away now and then, 2026-11-04: "Permission denied (publickey)", the next try let in)
 retry() { local i; for i in 1 2 3 4 5 6; do "$@" && return 0; sleep 12; done; return 1; }
@@ -16,11 +17,11 @@ for f in web/wc.js retrovega/web/rvsets.js web/gamefiles.js web/index.html; do d
 # (the web rigs' ports: RV_PORT_BASE, default 8791, takes base .. base+3: another session's release, a copy of these
 # scripts, may be running on the defaults at the same moment, and two on one port fail each other's checks)
 PB=${RV_PORT_BASE:-8791}
-PORT=$PB LOBBY_PORT=$((PB + 1)) python3 $R/reap.py 280 $R/webrig.sh $TAG-fight "env.WCNET_PERF=4"
+PORT=$PB LOBBY_PORT=$((PB + 1)) python3 $REAP 280 $R/webrig.sh $TAG-fight "env.WCNET_PERF=4"
 tail -1 $S/web-$TAG-fight/out.txt
 grep -a "gx: this\|flight: over\|killed by\|FAIL\|LEAK" $S/web-$TAG-fight/rv-flight-RVLOG.TXT | cut -c1-120
 grep -a "perf:" $S/web-$TAG-fight/out.txt | sed -E 's/.*emulator at ([0-9]+)%.*/\1/' | tail -8 | tr '\n' ' '; echo
-PORT=$((PB + 2)) LOBBY_PORT=$((PB + 3)) OUT=$S/smoke-$TAG-rv python3 $R/reap.py 500 scripts/web-smoke.sh rv > $S/smoke-$TAG-rv.log 2>&1
+PORT=$((PB + 2)) LOBBY_PORT=$((PB + 3)) OUT=$S/smoke-$TAG-rv python3 $REAP 500 scripts/web-smoke.sh rv > $S/smoke-$TAG-rv.log 2>&1
 grep -a -q 'RV OK' $S/smoke-$TAG-rv.log || { echo "RV SMOKE FAILED"; tail -6 $S/smoke-$TAG-rv.log | cut -c1-140; exit 1; }
 echo "rv smoke: $(grep -a 'RV OK' $S/smoke-$TAG-rv.log | cut -c1-40)"
 PORT=$((PB + 2)) LOBBY_PORT=$((PB + 3)) GAME_SOURCE=gog GAME_FILE="$MAIN/setup_wing_commander_1.01_gog_v1_(76764).exe" OUT=$S/smoke-$TAG-wc python3 $R/reap.py 600 scripts/web-smoke.sh 90 > $S/smoke-$TAG-wc.log 2>&1
@@ -54,13 +55,13 @@ for i in $(seq 1 60); do
   python3 -c "import time;time.sleep(10)"
   [ $i = 60 ] && echo "LIVE /dosbox DOES NOT MATCH AFTER 10 MINUTES"
 done
-python3 $R/reap.py 300 node scripts/web-rv.mjs https://fireflyk64.github.io/dosbox/ https://pqrstuvw.xyz/lobbylink 20 > $S/live-$TAG-rv.log 2>&1
+python3 $REAP 300 node scripts/web-rv.mjs https://fireflyk64.github.io/dosbox/ https://pqrstuvw.xyz/lobbylink 20 > $S/live-$TAG-rv.log 2>&1
 echo "live web-rv: $(grep -a 'RV OK' $S/live-$TAG-rv.log | cut -c1-40)"
 for i in $(seq 1 40); do
   [ "$(gh run list -R fireflyk64/fireflyk64.github.io -L 1 --json status -q '.[0].status' 2>/dev/null)" = completed ] && break
   python3 -c "import time;time.sleep(10)"
 done
 cd $WT/retrovega
-RUN="python3 $R/reap.py 500" host/web/deploy.sh "$MSG" > $S/deploy-$TAG-rv.log 2>&1
+RUN="python3 $REAP 500" host/web/deploy.sh "$MSG" > $S/deploy-$TAG-rv.log 2>&1
 echo "rv deploy rc $?"
 tail -4 $S/deploy-$TAG-rv.log | cut -c1-120

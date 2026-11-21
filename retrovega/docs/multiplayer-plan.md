@@ -403,12 +403,12 @@ work at every step.
   `~/dev/rv-gx/build-native/src/dosbox`.
 - **The single-instance rig:** `EXE=RVT.EXE NOBUILD=1 tests/run.sh SCRIPT /fly 0 [/ship HEX] [/record N]`. It
   writes into `build/dos`, so don't run it during a regression.
-- **The regression gate and the full deploy** are `tests/release/gate.sh TAG "MESSAGE"`:
+- **The regression gate and the full deploy** are `scripts/rv-release/gate.sh (in dosbox3d) TAG "MESSAGE"`:
   - the play tests on host and DOS with the hashes compared;
   - the C/asm twins;
   - the quiet-frames check;
   - the GX capital flight;
-  - only if all are clean, `tests/release/deploy.sh`, which does:
+  - only if all are clean, `scripts/rv-release/deploy.sh`, which does:
     - `scripts/build-web.sh`;
     - a browser combat flight;
     - the RV and WC smokes;

@@ -1,11 +1,11 @@
 #!/bin/bash
-# tests/release/gate.sh TAG "MESSAGE": the regression, and the full deploy (deploy.sh) only if every part of it is
+# scripts/rv-release/gate.sh TAG "MESSAGE": the regression, and the full deploy (deploy.sh) only if every part of it is
 # clean.  Logs in $RV_RELEASE_DIR (/tmp/rv-release).  Never edit the worktree while it runs: the deploy builds from it.
 TAG=$1; MSG=$2
-[ -n "$TAG" ] && [ -n "$MSG" ] || { echo 'usage: tests/release/gate.sh TAG "MESSAGE"'; exit 2; }
+[ -n "$TAG" ] && [ -n "$MSG" ] || { echo 'usage: scripts/rv-release/gate.sh TAG "MESSAGE"'; exit 2; }
 S=${RV_RELEASE_DIR:-/tmp/rv-release}; mkdir -p $S
 R=$(cd "$(dirname "$0")" && pwd)   # (these scripts)
-WT=${RV_WT:-/home/sandbox/dev/rv-gx}   # (the worktree released: RV_WT=another, its HEAD on top of origin/retrovega)
+WT=${RV_WT:-$(cd "$R/../.." && pwd)}   # (the worktree released: this script's own, or RV_WT=another; its HEAD on top of origin/retrovega)
 cd $WT/retrovega
 export DOSBOX=$WT/build-native/src/dosbox
 TIMEOUT=900 tests/play/playtest.sh --dos > $S/play-dos.log 2>&1

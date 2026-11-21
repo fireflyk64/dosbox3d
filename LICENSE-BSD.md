@@ -99,6 +99,9 @@ scripts/rapnet-duo.sh
 scripts/raprun.sh
 scripts/rapsig.py
 scripts/retrovega-export.py
+scripts/rv-release/deploy.sh
+scripts/rv-release/gate.sh
+scripts/rv-release/webrig.sh
 scripts/rvnet-abi.sh
 scripts/rvnet-check.py
 scripts/rvnet-duo.sh
