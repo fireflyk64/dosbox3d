@@ -2603,10 +2603,12 @@ static void HandleMouseMotion(SDL_MouseMotionEvent * motion) {
 #ifdef EMSCRIPTEN
 		/* SDL measures a finger over the whole canvas; in full screen the page shows the picture letterboxed in it
 		 * (object-fit: contain), so the finger is taken over the picture: its share of the canvas's width
-		 * (pillarboxed, given negative) or of its height (letterboxed) */
+		 * (pillarboxed, given negative) or of its height (letterboxed).  A picture that fills its canvas, whatever
+		 * the two shapes (Privateer's 640 x 400 stretched to 4:3), has no bars */
 		double share = EM_ASM_DOUBLE({
 			var c = Module['canvas'];
 			if (!c || !c.width || !c.height) return 1;
+			if (getComputedStyle(c).objectFit !== 'contain') return 1;
 			var b = c.getBoundingClientRect();
 			if (!b.width || !b.height) return 1;
 			var a = c.width / c.height;     /* (no commas: they would split the macro's argument) */

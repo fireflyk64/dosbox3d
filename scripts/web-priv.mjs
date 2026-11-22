@@ -130,6 +130,20 @@ check(`in flight, the ${mode}'s controls read every frame`, flying, (logs.filter
 await sleep(3000);
 const box = await page.$eval("#canvas", (c) => { const b = c.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; });
 await page.screenshot({ path: path.join(shotDir, "web-priv-flight.png"), clip: box });
+// the picture 4:3 as on a monitor of 1993, in the page and full screen (the user, 2026-11-22: "The ratio should be
+// ideantical to what the original players of privateer saw"); full screen, as large as the screen takes
+check("the picture is 4:3", Math.abs(box.width / box.height - 4 / 3) < 0.01, `${Math.round(box.width)} x ${Math.round(box.height)}`);
+await page.evaluate(() => document.getElementById("screen").requestFullscreen());
+await sleep(1500);
+const full = await page.$eval("#canvas", (c) => { const b = c.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height, vw: innerWidth, vh: innerHeight }; });
+const fill = Math.min(full.vw, full.vh * 4 / 3);
+check("full screen: 4:3, as large as fits, in the middle",
+  Math.abs(full.width / full.height - 4 / 3) < 0.01 && Math.abs(full.width - fill) < 2
+    && Math.abs(full.x - (full.vw - full.width) / 2) < 2 && Math.abs(full.y - (full.vh - full.height) / 2) < 2,
+  `${Math.round(full.width)} x ${Math.round(full.height)} at ${Math.round(full.x)}, ${Math.round(full.y)} on ${full.vw} x ${full.vh}`);
+await page.screenshot({ path: path.join(shotDir, "web-priv-full.png") });
+await page.evaluate(() => document.exitFullscreen());
+await sleep(1000);
 // the page's own keyboard: Right held 0.6 s, then a tap
 await page.focus("#canvas");
 const before = logs.length;

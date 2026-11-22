@@ -2206,6 +2206,8 @@ function gameLook() {
   const st = document.documentElement.style;
   st.setProperty("--screen-w", String(w));
   st.setProperty("--screen-h", String(h));
+  // (the user, 2026-11-22, of Privateer: "The ratio should be ideantical to what the original players of privateer saw")
+  document.documentElement.classList.toggle("stretch", !!(g && g.stretch));
 }
 // Cinema: the picture as large as the window allows, without full screen (the user: "a cinema mode where non-fullscreen
 // canvas gets scaled to fill the horizontal area of the browser window without actually going fullscreen"): the

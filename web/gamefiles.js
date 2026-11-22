@@ -75,7 +75,8 @@
 // `noRoomOptions`: the room's Conn and Collide choices are Wing Commander's (the frame exchange's mode, the asteroid
 // fields and wing bumps): none of them for this game, so the page leaves them out.  `screen`: the picture's shape on
 // the page, [width, height] (640 x 400 when none: Wing Commander's 320 x 200 doubled; TIE Fighter flies at 640 x 480,
-// whose rows a 400-row canvas would drop).
+// whose rows a 400-row canvas would drop).  `stretch`: whatever the emulator's picture measures (320 x 200 doubled),
+// it fills that shape, full screen too (Privateer: 4:3, as a monitor of 1993 showed its 200 rows).
 // `prepare(FS, root)`: the game's own settings made fit for the browser after its files are installed (the copy in
 // the emulator's memory only; what it did, for the log).
 
@@ -770,14 +771,14 @@ export const GAMES = [
   // others' ships near by so far;
   // src/cpu/wcnet_priv_session.cpp); the emulator ramps its arrow keys (src/cpu/wcnet_priv_controls.cpp).
   { id: "priv", tag: "PRV", title: "Wing Commander: Privateer", short: "Privateer", detect: ["PRCD.EXE"], run: "priv", multiplayer: true, maxSeats: 8,
-    image: "GAME.GOG", cycles: 30000, saves: ["*.SAV"], noFlight: true, noRoomOptions: true, prepare: privMusicOnFm, joystick: true,
+    image: "GAME.GOG", screen: [640, 480], stretch: true, cycles: 30000, saves: ["*.SAV"], noFlight: true, noRoomOptions: true, prepare: privMusicOnFm, joystick: true,
     build: { para: 0x6E4D, off: 0x0074, text: "Type PRIV to run Privateer" },
     help: "Privateer flown together loosely, rooms of up to 8: everybody plays their own career, goes where they like and keeps their own saved games. Each pilot's system and place goes to the room when they launch, land, jump, engage the autopilot (A), and every 15 s; a line over the game says who is in your system and how far. Near each other you see each other's ships as the ships they fly, and a nav point's encounter is run by one pilot's game and shown to the others: everybody fights the same pirates, your hits count, and a wing about to spawn gets up to 3 more ships when several of you are there. A mission's nav points wait for the pilot who has the mission, and what flies with a pilot (an escort's charge) is seen by all. Talking: in flight press 0, type, Enter: the line shows on the others' message bar under your face (the Face box above, in the room), said by your ship when it is near; at a base use the room's chat beside this panel. Cargo you expel can be tractored by the others. Esc skips the opening; NEW registers a pilot (a name and a callsign, Enter after each); click your ship on the landing pad to launch. Save in a base with the Quine 4000's SAVE: the page keeps your saved games in this browser.",
     keys: "<b>Privateer in flight:</b> the arrow keys steer (a tap turns a little, held they build to the full turn in a third of a second; <kbd>Shift</kbd> with an arrow turns at full at once), <kbd>Home</kbd> and <kbd>PgUp</kbd> (the keypad's <kbd>7</kbd> and <kbd>9</kbd>) roll the same way; <kbd>Space</kbd> fires the guns, <kbd>Enter</kbd> the weapon picked with <kbd>W</kbd> (a missile, or the tractor beam), <kbd>Tab</kbd> the afterburner; <kbd>+</kbd> and <kbd>-</kbd> set the speed, <kbd>Backspace</kbd> stops; <kbd>T</kbd> targets, <kbd>N</kbd> the nav map, <kbd>A</kbd> the autopilot, <kbd>J</kbd> jumps, <kbd>X</kbd> expels your cargo, <kbd>C</kbd> the comms; <kbd>Alt</kbd>+<kbd>O</kbd> the options, where the mouse or a joystick can be the stick instead (the ramp is the keyboard's). A controller picked above steers in any of them; picked “Built in” before the launch, it is the game's own joystick.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=5\ndma=1\nhdma=5\n" },
   // Righteous Fire: the same program and disc, started as GOG's menu starts it ("priv r"), its saved games *.PRS.
   { id: "privrf", tag: "PRF", partOf: "priv", title: "Wing Commander: Privateer - Righteous Fire", detect: ["PRCD.EXE"], run: "priv r", multiplayer: true, maxSeats: 8,
-    image: "GAME.GOG", cycles: 30000, saves: ["*.PRS"], noFlight: true, noRoomOptions: true, prepare: privMusicOnFm, joystick: true,
+    image: "GAME.GOG", screen: [640, 480], stretch: true, cycles: 30000, saves: ["*.PRS"], noFlight: true, noRoomOptions: true, prepare: privMusicOnFm, joystick: true,
     build: { para: 0x6E4D, off: 0x0074, text: "Type PRIV to run Privateer" },
     help: "Righteous Fire, Privateer's sequel campaign, flown together the way Privateer is (rooms of up to 8, each pilot its own career, where everybody is told). It starts from a pilot of its own (a new one, or a Privateer pilot who finished the game). The page keeps your saved games in this browser.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=5\ndma=1\nhdma=5\n" },
