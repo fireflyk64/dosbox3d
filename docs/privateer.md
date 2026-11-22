@@ -41,7 +41,7 @@ The programs: `PRIV.EXE` (8 KB) is Origin's loader: it installs JEMM, Origin's o
 none (DOSBox has: it uses DOSBox's), and runs `PRCD.EXE` through DOS.  `PRCD.EXE` (937,760 bytes) is the game: a
 real-mode Borland C++ 1991 overlay program, as the Wing Commanders are (454 segments, 183 overlays, DGROUP at
 paragraph 0x6E4D of the image), so `scripts/wcexe.py -e <game>/PRCD.EXE ...` disassembles it (`segs`, `dis`,
-`refs`, `xref`, `str`).  It runs in chained mode 13h (320x200, double-scanned to 400 lines, pixels 1.2 times as tall
+`refs`, `xref`, `str`).  It runs paged, in chained mode 13h (320x200, double-scanned to 400 lines, pixels 1.2 times as tall
 as they are wide on the 4:3 monitors of its day; measured 2026-11-22, this said Mode X before; the key script's
 `!frame=` is what the window showed).  Saved games are files named by the player: `<name>.SAV` (Privateer) and `<name>.PRS` (Righteous Fire).
 
@@ -965,3 +965,51 @@ Frame rate costs no near heap (the user: "it's just sleeping less-that should no
 fight at 13.9, 17.6, 22.3 and 28.6 frames a second averaged 14,077-14,586 bytes free with no trend; what a frame
 allocates it frees.  load.sh both ways: no errors, the guests' lows 6,730-8,374 before and 8,210-8,694 after, the
 host's 6,530 and 5,454.
+
+## 20. The high-resolution picture (2026-11-22, off by default)
+
+The user: "our audience wants an uprezzed version of privateer, selectable from the play menu (will be on by default
+when it's ready but now a checkbox that's off by default) ... for things like 2d art this means drawing 2x2 pixels
+instead of 1x1, but for the in-flight screen it gives an opportunity to draw larger versions of the sprites"; "the
+ratio should be identical to what the original players of privateer saw"; "lets keep them blocky but use the highest
+res art available in the game"; "backtick would be very useful"; "lasers at very high resolution ... Target brackets
+and hud lines should also be uprezzed to only draw single pixel wide"; "the actual resolution of the cockpits can
+remain low", their edge smooth.
+
+**How the game draws a flight.**  Every pixel of the scene and the instruments goes into one buffer in memory through
+the graphics library's routines; seg205:0002 then copies a list of spans (x, y, count; FFFF ends), the cockpit's
+window and screens, to the screen; the cockpit was drawn to the screen once.  The game runs paged: linear A0000 is
+memory of its own (that buffer is there, BBBE:0004), and the screen is linear 100000 (FFFF:0010), physical A0000.
+
+| entry | what | arguments after the bitmap record |
+|---|---|---|
+| seg180:0008 | fill | x0, y0, x1, y1, colour |
+| seg181:000A | clear to the clip | colour |
+| seg182:0008 | copy (the source's record first) | the destination's record |
+| seg183:0004 | ellipse | x, y, rx, ry, colour |
+| seg184:0002 | line | x0, y0, x1, y1, colour |
+| seg185:000A | pixel | x, y, colour |
+| seg186:0000 | rectangle | x0, y0, x1, y1, colour |
+| seg187:0004 | shape in one colour | x, y, shapes far, index, colour |
+| seg188:0008 | shape | x, y, shapes far, index |
+| seg189:0008 | shape scaled, translucent | x, y, shapes far, index, sx, sy, tables far, first colour, count |
+| seg193:0006 | shape scaled | x, y, shapes far, index, sx, sy (8.8, negative mirrors) |
+| seg202:0ECE | shape turned and scaled | x, y, shapes far, index, degrees, scale 8.8, flags (10h mirror x, 20h y) |
+| seg116:000E | polygon through a table | corners, corners far (22 bytes each), table far |
+
+A bitmap record is segment, row table, clip x0 y0 x1 y1.  A shape is mirrored first, then turned clockwise, in the
+game's own pixels (no correction for their shape).
+
+**The picture** (src/cpu/wcnet_priv_hires.cpp).  Each of those calls on the flight's buffer is drawn again at its
+entry, from its arguments, at 640 x 480: the ships from their whole art sampled at the fine pixels (blocky close up),
+the lasers' triangles from the corners the game computes to 1/256 of a pixel and then rounds (seg091:05D7, 0621),
+lines, rectangles and the crosshair a fine pixel wide, the rest in blocks (a game pixel is 2 wide and 2 or 3 tall).
+At the span copy that picture is frozen; at the VGA's frame it shows wherever the screen still holds what was copied,
+with the spans' edge smoothed; everything else is the game's own pixel.  The game's memory is never written.  The
+hooks run inside the CPU's core (wc_net_hook_exit in the browser): they read only by checked reads and never wait.
+
+`WCPRIVHIRES=1` at the launch, `wc_web_priv_hires` while flying (the page's "High resolution (2x)"), the ` key flips.
+
+Still to do before it is the default: the landing and takeoff scenes' bases from the flight's larger art
+(LTOBASES.PAK's small copies have it 1.6-2.5 times as large in APPEARNC for six of ten), the radar's rings as lines,
+the other cockpits and views gone through by eye.

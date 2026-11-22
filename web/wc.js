@@ -1010,6 +1010,7 @@ function renderMission() {
   $("difficultyLabel").hidden = !diff || noRoomOptions;
   // (Privateer: Face, yours on the others' comm screens, in the Conn and Collide choices' place)
   $("privFaceLabel").hidden = !isPriv();
+  $("privHiresLabel").hidden = !isPriv();
   $("privFFLabel").hidden = !isPriv() || one;
   $("privFF").disabled = !isHost();       // (the host's counts, as Collide's)
   // (Terminal Velocity: the craft each pilot flies as in the others' games, the host's choice)
@@ -2235,6 +2236,17 @@ gameLook();
 const PRIV_FACE_KEY = "wc:privFace";
 try { const f = localStorage.getItem(PRIV_FACE_KEY); if (f && [...$("privFace").options].some((o) => o.value === f)) $("privFace").value = f; } catch (e) { /* the first */ }
 $("privFace").addEventListener("change", () => { try { localStorage.setItem(PRIV_FACE_KEY, $("privFace").value); } catch (e) { /* not kept */ } });
+// Privateer at 640 x 480 (the user, 2026-11-22: "selectable from the play menu (will be on by default when it's ready but
+// now a checkbox that's off by default)"): each pilot's own screen, WCPRIVHIRES at the launch and wc_web_priv_hires
+// while flying; the ` key flips it in the emulator (src/cpu/wcnet_priv_hires.cpp).
+const PRIV_HIRES_KEY = "wc:privHires";
+try { $("privHires").checked = localStorage.getItem(PRIV_HIRES_KEY) === "1"; } catch (e) { /* off */ }
+$("privHires").addEventListener("change", () => {
+  const on = $("privHires").checked;
+  try { localStorage.setItem(PRIV_HIRES_KEY, on ? "1" : "0"); } catch (e) { /* not kept */ }
+  const M = running && window.DOSBox;
+  if (M && M._wc_web_priv_hires && isPriv()) M._wc_web_priv_hires(on ? 1 : 0);
+});
 // (Privateer's pointer: a ring in flight and a white one on the options screen, or the game's own: none, and black.
 // Picked in the Controller list since 2026-11-21, the user: "the "Shown a ring in flight" should just be Kbd + mouse
 // (shown) (which is the default) and Keyboard + mouse instead of a whole sepratae menu"; given to the emulator at the
@@ -2421,6 +2433,7 @@ async function start(fromGesture) {
     if (isTie()) env.WCNET_TIE_TOUCH = "1";
     if (isPriv()) env.WCPRIVFACE = $("privFace").value;
     if (isPriv()) env.WCPRIVPOINTER = privPointer;
+    if (isPriv() && $("privHires").checked) env.WCPRIVHIRES = "1";
     if (isPriv() && together) env.WCPRIVFF = $("privFF").value;
     if (isTv() && together && isHost()) env.WCTVLOOKS = `${$("tvCraftHost").value},${$("tvCraftGuest").value}`;
     if (cfg.lastname && !solo) env.WCLASTNAME = cfg.lastname;

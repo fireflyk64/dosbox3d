@@ -15,6 +15,7 @@
 #include <deque>
 #include <algorithm>
 #include "wcnet_priv.h"
+#include "wcnet_priv_hires.h"
 #include "wcnet_log.h"
 #include "wcnet_game.h"
 #include "wc_net.h"
@@ -1203,6 +1204,7 @@ static bool g_scriptStickOn;                 // !privstick: the page's stick, sa
 static double g_scriptStickX, g_scriptStickY;
 void priv_tick() {
     priv_session_tick();
+    priv_hires_tick();
     if (!g_found) {
         return;
     }
@@ -1595,6 +1597,11 @@ bool priv_check_hooks(Bit32u ip) {
         return false;
     }
     const Bit16u codeSeg = (Bit16u)SegValue(cs);
+#if !(defined(EMSCRIPTEN) && defined(EM_ASYNCIFY))
+    if (priv_hires_hook(ip)) {          // (in the browser wc_net_hook_exit has made it, in the core)
+        return true;
+    }
+#endif
     if (ip == kStickPoll && codeSeg == (Bit16u)(g_privLoadSeg + kSeg133)) {
         empty_port_poll();
         return true;
@@ -1781,6 +1788,7 @@ void priv_watch_list(void (*watch)(Bit16u ip)) {
     for (size_t i = 0; i < w.size(); i++) {
         watch(w[i].off);
     }
+    priv_hires_watch(watch);        // (last: it notes which of its places nothing else watches)
 }
 
 static std::string ds_name(Bit16u at, int max);
