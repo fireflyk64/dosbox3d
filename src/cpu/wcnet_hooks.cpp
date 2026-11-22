@@ -708,7 +708,7 @@ static void key_script() {
     static size_t next = 0;
     static double startMs = -1;
     static KBD_KEYS held = KBD_NONE;
-    static bool heldShift = false;  // ("shift+<key>": Shift held with it, let go after it)
+    static KBD_KEYS heldShift = KBD_NONE;  // ("shift+<key>", "alt+<key>", "ctrl+<key>": that held with it, let go after it)
     static double releaseAt = 0;
     if (!parsed) {
         parsed = 1;
@@ -738,9 +738,9 @@ static void key_script() {
         if (now >= releaseAt) {
             KEYBOARD_AddKey(held, false);
             held = KBD_NONE;
-            if (heldShift) {
-                KEYBOARD_AddKey(KBD_leftshift, false);
-                heldShift = false;
+            if (heldShift != KBD_NONE) {
+                KEYBOARD_AddKey(heldShift, false);
+                heldShift = KBD_NONE;
             }
         }
         return;
@@ -1224,8 +1224,11 @@ static void key_script() {
     } else if (lab_script_item(item, t)) {
         // (the walkthrough recorder's items: wcnet_lab.cpp)
     } else {
-        const bool shift = item.compare(0, 6, "shift+") == 0;     // (shift+s: TIE Fighter's reinforcements)
-        std::string name = shift ? item.substr(6) : item;
+        // (shift+s: TIE Fighter's reinforcements; alt+o: Privateer's options)
+        const KBD_KEYS shift = item.compare(0, 6, "shift+") == 0 ? KBD_leftshift
+                             : item.compare(0, 4, "alt+") == 0   ? KBD_leftalt
+                             : item.compare(0, 5, "ctrl+") == 0  ? KBD_leftctrl : KBD_NONE;
+        std::string name = shift == KBD_NONE ? item : item.substr(item.find('+') + 1);
         double holdMs = 150;                                        // (<key>*<seconds>: held that long)
         const size_t star = name.find('*');
         if (star != std::string::npos) {
@@ -1237,9 +1240,9 @@ static void key_script() {
             wclog(0, "key script: unknown key \"%s\"", item.c_str());
         } else {
             wclog(1, "key script %.1fs (t=%.1f): press %s", t, now / 1000.0, item.c_str());
-            if (shift) {
-                KEYBOARD_AddKey(KBD_leftshift, true);
-                heldShift = true;
+            if (shift != KBD_NONE) {
+                KEYBOARD_AddKey(shift, true);
+                heldShift = shift;
             }
             KEYBOARD_AddKey(k, true);
             held = k;
@@ -2184,6 +2187,15 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_tie_mouse(int mode) {
 }
 extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_stick(double x, double y) {
     wc::tie_controls_stick(x, y);
+    wc::priv_controls_stick(x, y);      // (Privateer's: wcnet_priv_controls.cpp, priv_controls_join)
+}
+// Privateer's pointer (the page's "Kbd + mouse (shown)" or "Keyboard + mouse"): 1 a ring in flight and a white one on
+// the options screen, 0 the game's own (none, black); a negative value only asks.
+extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_priv_pointer(int shown) {
+    if (shown >= 0) {
+        wc::priv_pointer_set(shown != 0);
+    }
+    return wc::priv_pointer_shown() ? 1 : 0;
 }
 // TIE Fighter's room mission (wcnet_tie_session.cpp, step 8): the page's pick, a mission file's name or "" for none.
 extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_tie_mission(const char *name) {
@@ -2224,9 +2236,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_link(int what) {
 // the page steers with the stick then, and moves a menu pointer otherwise.
 // TIE Fighter's and its demo's flights too (2026-11-15: until then the CD's never counted, so a pad there moved the
 // pointer as in a menu and never reached wc_web_stick: in the joystick's mode it steered nothing).
+// Privateer's too since 2026-11-21 (its frame running: not the options screen or the nav map over it), whose pad
+// then steers by wc_web_stick; until then a pad there moved the mouse as in a menu (the user: "the joystick drove
+// around the blue dot ... way too slow to steer").
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_in_flight() {
     return wc::stick_flying() || wc::rap_in_wave()          // (Raptor's: a wave under way, flown by the arrows)
-           || (wc::tie_found() && wc::tie_in_flight()) || (wc::tdm_found() && wc::tdm_in_flight()) ? 1 : 0;
+           || (wc::tie_found() && wc::tie_in_flight()) || (wc::tdm_found() && wc::tdm_in_flight())
+           || (wc::priv_found() && wc::priv_flight_frame_recent()) ? 1 : 0;
 }
 // the page's keys and mouse buttons, into DOSBox's keyboard and mouse driver: every game's (RetroVega's too)
 static void web_keys_and_buttons() {

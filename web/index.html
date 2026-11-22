@@ -346,11 +346,6 @@
             <option value="keyboard">keyboard alone</option>
             <option value="joystick">joystick / gamepad</option>
           </select></label>
-        <label id="privPointerLabel" hidden title="Privateer's mouse pointer. The game flies by where the mouse is (the middle of the screen is still, the further out the faster the turn) but shows no pointer in flight, and its options screen (Alt+O) draws the pointer nearly black. Shown: a ring where the mouse is in flight, the options screen's pointer white. As the game has it: neither. Remembered in this browser"><span class="tag">Pointer</span>
-          <select id="privPointer">
-            <option value="ring">shown (a ring in flight)</option>
-            <option value="game">as the game has it (none)</option>
-          </select></label>
         <label id="voiceLabel" title="Voice between the players, when everybody in the room has opted in"><span class="tag">Voice</span><select id="voice">
           <option value="off">Off</option>
           <option value="listen">Listen only</option>
@@ -392,7 +387,7 @@
           <label class="check" title="The crosshair the game steers by with a mouse; a controller moves it too, and it is not drawn in flight unless this is ticked"><input type="checkbox" id="padPointer"> Show the game's crosshair in flight</label>
           <button type="button" class="secondary" id="padReset">Reset to the gamepad layout</button>
         </div>
-        <p class="hint">The controller is the game's mouse and keyboard: the sticks steer (left stick turns and pitches, right stick pitches and rolls), the buttons press the game's keys. In menus and the barracks the left stick moves the pointer and the Fire guns button clicks. Each browser window has its own controller, so two windows side by side make a split screen: one controller each, or a controller in one and the keyboard and mouse in the other. In Wing Commander 1 and 2 each controller is in the list a second time, "Built in": the game's own joystick, which it reads its own way (double click button 2 for the afterburner, both buttons for a missile); the game looks for a joystick when it starts, so pick it before the launch. On a Mac, an Xbox 360-style pad (a Logitech F310, F510 or F710 with its switch on X) is not in the browser's list: Scan for joysticks, next to the controller list, reads it over USB.</p>
+        <p class="hint">The controller is the game's mouse and keyboard: the sticks steer (left stick turns and pitches, right stick pitches and rolls), the buttons press the game's keys. In menus and the barracks the left stick moves the pointer and the Fire guns button clicks. Each browser window has its own controller, so two windows side by side make a split screen: one controller each, or a controller in one and the keyboard and mouse in the other. In Wing Commander 1 and 2 and Privateer each controller is in the list a second time, "Built in": the game's own joystick, which it reads its own way (both buttons for a missile, button 2 with the stick rolls and changes speed); the game looks for a joystick when it starts, so pick it before the launch. In Privateer a controller that is not built in steers whatever its options screen (Alt+O) says. On a Mac, an Xbox 360-style pad (a Logitech F310, F510 or F710 with its switch on X) is not in the browser's list: Scan for joysticks, next to the controller list, reads it over USB.</p>
       </details>
       <label class="check" id="privateLabel" title="Your room is not offered to the pilots in the lobby who press Join open game (nor is the room of a host who ticks it): only its code or its link brings somebody in. Not remembered: off on every visit"><input type="checkbox" id="private"> Private</label>
       </div>

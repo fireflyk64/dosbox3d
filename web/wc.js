@@ -300,7 +300,6 @@ function setSource(s, want) {
   const keys = s && gameInfo() && gameInfo().keys;
   $("gameKeys").innerHTML = keys || "";
   $("tfFlightLabel").hidden = !isTie();
-  $("privPointerLabel").hidden = !isPriv();
   gameLook();
   $("gameKeys").hidden = !keys;
   const hints = s && gameInfo() && gameInfo().campaign && gameInfo().campaign.hints;
@@ -2234,10 +2233,19 @@ gameLook();
 const PRIV_FACE_KEY = "wc:privFace";
 try { const f = localStorage.getItem(PRIV_FACE_KEY); if (f && [...$("privFace").options].some((o) => o.value === f)) $("privFace").value = f; } catch (e) { /* the first */ }
 $("privFace").addEventListener("change", () => { try { localStorage.setItem(PRIV_FACE_KEY, $("privFace").value); } catch (e) { /* not kept */ } });
-// (Privateer's pointer: a ring in flight and a white one on the options screen, or the game's own: none, and black)
+// (Privateer's pointer: a ring in flight and a white one on the options screen, or the game's own: none, and black.
+// Picked in the Controller list since 2026-11-21, the user: "the "Shown a ring in flight" should just be Kbd + mouse
+// (shown) (which is the default) and Keyboard + mouse instead of a whole sepratae menu"; given to the emulator at the
+// launch, WCPRIVPOINTER, and while flying, wc_web_priv_pointer)
 const PRIV_POINTER_KEY = "wc:privPointer";
-try { const v = localStorage.getItem(PRIV_POINTER_KEY); if (v === "ring" || v === "game") $("privPointer").value = v; } catch (e) { /* the first */ }
-$("privPointer").addEventListener("change", () => { try { localStorage.setItem(PRIV_POINTER_KEY, $("privPointer").value); } catch (e) { /* not kept */ } });
+let privPointer = "ring";
+try { const v = localStorage.getItem(PRIV_POINTER_KEY); if (v === "ring" || v === "game") privPointer = v; } catch (e) { /* the first */ }
+function setPrivPointer(v) {
+  privPointer = v === "game" ? "game" : "ring";
+  try { localStorage.setItem(PRIV_POINTER_KEY, privPointer); } catch (e) { /* not kept */ }
+  const M = running && window.DOSBox;
+  if (M && M._wc_web_priv_pointer && isPriv()) M._wc_web_priv_pointer(privPointer === "ring" ? 1 : 0);
+}
 // (Privateer's friendly fire between pilots, the host's counts: src/cpu/wcnet_priv_session.cpp, ff_from_env)
 const PRIV_FF_KEY = "wc:privFF";
 try { const v = localStorage.getItem(PRIV_FF_KEY); if (["targeted", "always", "never"].includes(v)) $("privFF").value = v; } catch (e) { /* the first */ }
@@ -2410,7 +2418,7 @@ async function start(fromGesture) {
     // and on a computer too: the user, 2026-11-19, "would be useful on desktop web too not just mobile")
     if (isTie()) env.WCNET_TIE_TOUCH = "1";
     if (isPriv()) env.WCPRIVFACE = $("privFace").value;
-    if (isPriv()) env.WCPRIVPOINTER = $("privPointer").value;
+    if (isPriv()) env.WCPRIVPOINTER = privPointer;
     if (isPriv() && together) env.WCPRIVFF = $("privFF").value;
     if (isTv() && together && isHost()) env.WCTVLOOKS = `${$("tvCraftHost").value},${$("tvCraftGuest").value}`;
     if (cfg.lastname && !solo) env.WCLASTNAME = cfg.lastname;
@@ -2673,7 +2681,7 @@ const touch = initTouch({ log, send: (name, down) => {
   // (TIE Fighter and its demo have no steering pointer: the emulator steers them by a stick, the controller's way,
   // right and climbing positive; the thumb up climbs, as the pointer's games do.  Until 2026-11-19 the touch stick
   // looked for a pointer there, found none and steered nothing: the user, "On mobile turning joystick does nothing")
-  if (isTie()) {
+  if (isTie() || isPriv()) {
     const T = running && window.DOSBox;
     if (!T || !T._wc_web_stick) return false;
     T._wc_web_stick(x, -y);
@@ -2775,8 +2783,11 @@ const controls = initControls({
   module: () => (running && window.DOSBox) || null,
   // (TIE Fighter: a controller steers through the emulator's stick, whatever the mouse does, rolls on the keypad's
   // Ins and Del as the emulator has it, and fires with the mouse's button, the game's own trigger)
-  directStick: () => isTie(),
-  rollKeys: () => (isTie() ? { left: "kp0", right: "kpperiod" } : null),
+  // (Privateer too since 2026-11-21: the stick steers whatever the game's options say, the keyboard, the mouse, or the
+  // joystick with none on the port, wcnet_priv_controls.cpp; the user, "If I select mouse, the joystick drove around the
+  // blue dot ... way too slow to steer"; its roll keys are the keypad's 7 and 9)
+  directStick: () => isTie() || isPriv(),
+  rollKeys: () => (isTie() ? { left: "kp0", right: "kpperiod" } : isPriv() ? { left: "kp7", right: "kp9" } : null),
   actionKeys: (id) => (isTie() && tiePad()[id] ? tiePad()[id].keys : isRap() ? rapKeys(id) : null),
   actionLabel: (id) => (isTie() && tiePad()[id] ? tiePad()[id].label : isRap() && RAP_PAD[id] ? RAP_PAD[id].label : null),
   // (Raptor: the stick in a wave and the D-pad everywhere are its arrow keys, the stick past 30% of its travel)
@@ -2786,6 +2797,13 @@ const controls = initControls({
   onAction: (id, down) => { if (id === "ptt") voice.ptt(down); },
   pointer: steeringPointer,
   builtIn: () => !!(gameInfo() && gameInfo().joystick),
+  builtInHint: () => (isPriv()
+    ? "Built in: Privateer flies this pad as the joystick on its game port, its own way (the options' JOYSTICK is picked for you as the flight starts): button 1 fires the guns, both buttons a missile; hold button 2 and move the stick to roll and change speed. At a base the stick moves the pointer and button 1 clicks. The other buttons still press their keys."
+    : null),
+  noneChoices: () => (isPriv()
+    ? [{ value: "none", label: "Kbd + mouse (shown)", picked: privPointer === "ring" }, { value: "none-game", label: "Keyboard + mouse", picked: privPointer === "game" }]
+    : null),
+  pickNone: (v) => { if (isPriv()) setPrivPointer(v === "none-game" ? "game" : "ring"); },
   joystickPort: () => (running ? joystickPort : null),
   log,
 });

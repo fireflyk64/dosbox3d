@@ -12,6 +12,8 @@
 #   ENV=        more of the environment ("WCLAB=/tmp/lab": picture and sound recorded)
 #   COPY=1      the game's files copied into $OUT/game first (runs side by side: two games in one directory fight
 #               over its temporary files and crash at a load, "Program halted by code")
+#   JOY=1       the game port's stick A in (the page's "Built in" pad: [joystick] joysticktype=none timed=false and
+#               WCJOY=1), moved by the key script's !joy=x:y and !joybutton=
 #   SAVE=<file> a saved game copied into the game's directory first (COPY=1), under its own name upper-cased (the
 #               title's LOAD lists the *.SAV there)
 #
@@ -50,7 +52,10 @@ hdma=5
 xms=true
 ems=true
 umb=true
-[autoexec]
+${JOY:+[joystick]
+joysticktype=none
+timed=false
+}[autoexec]
 @echo off
 mount c $PRIVDIR
 imgmount d $PRIVDIR/$IMG -t iso
@@ -62,6 +67,6 @@ route="$route,15:!mouse=0.45:0.6,16:!button=0:1,16.3:!button=0:0"
 [ -n "${NOROUTE:-}" ] && route=""
 by_time() { tr ',' '\n' | grep -v '^$' | sort -t: -k1,1 -g -s | paste -sd, -; }
 script="$(echo "$route${EXTRA:+,$EXTRA}" | by_time)"
-( cd $OUT && env ${ENV:-} SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy WCNET_LOG=${WCNET_LOG:-2} WCNET_KEYSCRIPT_FROM=boot \
+( cd $OUT && env ${ENV:-} ${JOY:+WCJOY=1} SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy WCNET_LOG=${WCNET_LOG:-2} WCNET_KEYSCRIPT_FROM=boot \
     WCNET_DUMP_DIR=$OUT WCNET_KEYSCRIPT="$script" timeout -s KILL $DUR $DOSBOX -conf $OUT/priv.conf > $OUT/run.out 2> $OUT/run.err )
 grep -a "Privateer" $OUT/run.err | cut -c1-200 | head -40

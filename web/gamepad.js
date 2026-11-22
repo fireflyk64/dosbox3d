@@ -192,6 +192,9 @@ export function stepped(v, steps, reach, edge, top) {
 //              stick's travel that presses them: the stick presses them in flight and the D-pad everywhere (null: none)
 //   builtIn(): whether the game reads a joystick itself (pads are offered
 //              "built in" too)
+//   builtInHint(): what a built-in pad does in this game, when not Wing Commander's (null: WC's)
+//   noneChoices(): the entries for no controller, [{ value, label, picked }], when not the one "Keyboard + mouse"
+//              (Privateer's two: its pointer shown or not); pickNone(value): one of them picked
 //   joystickPort(): null before the launch, then whether it put the game
 //              port in (a built-in pad was chosen then)
 export function initControls(host) {
@@ -224,6 +227,8 @@ export function initControls(host) {
   let told = { M: null, off: false, joyM: null, joy: false };   // what the emulator was last told: the crosshair, the port
 
   const selected = () => (choice && choice !== NONE ? pads().find((p) => padKey(p) === padOf(choice)) || null : null);
+  // (no controller: one entry, or a game's several, which differ in something else: Privateer's pointer)
+  const noneChoices = () => (host.noneChoices && host.noneChoices()) || [{ value: NONE, label: "Keyboard + mouse", picked: true }];
   const offered = () => !!(host.builtIn && host.builtIn());
   // Built in, and the port is there: the pad is the game's joystick.
   const onPort = () => isBuiltIn(choice) && offered() && !!host.joystickPort && host.joystickPort() === true;
@@ -249,7 +254,8 @@ export function initControls(host) {
     if (b.button !== undefined) return `${BUTTON_NAMES[b.button] || "Button " + b.button}`;
     return `${AXIS_NAMES[b.axis] || "Axis " + b.axis} ${b.dir < 0 ? "−" : "+"}`;
   }
-  const signatureOf = (list) => list.map(padKey).join("|") + "/" + choice + "/" + offered() + "/" + list.map((p) => usedElsewhere(padKey(p))).join("");
+  const signatureOf = (list) => list.map(padKey).join("|") + "/" + choice + "/" + offered() + "/" + list.map((p) => usedElsewhere(padKey(p))).join("") +
+    "/" + noneChoices().map((c) => c.value + (c.picked ? "*" : "")).join(",");
   const sameBind = (a, b) => !!a && !!b && (a.button !== undefined ? a.button === b.button : a.axis === b.axis && a.dir === b.dir);
   function render() {
     const sel = $("padSelect");
@@ -259,7 +265,7 @@ export function initControls(host) {
       listed = signature;
       sel.innerHTML = "";
       const add = (value, text) => { const o = document.createElement("option"); o.value = value; o.textContent = text; sel.appendChild(o); };
-      add(NONE, "Keyboard + mouse");
+      for (const c of noneChoices()) add(c.value, c.label);
       for (const p of list) {
         const busy = usedElsewhere(padKey(p)) ? " (in use in another window)" : "";
         add(padKey(p), `${p.index + 1}: ${p.id}${busy}`);
@@ -271,7 +277,8 @@ export function initControls(host) {
       if (shown && shown !== NONE && !list.some((p) => padKey(p) === padOf(shown))) {
         add(shown, `${isBuiltIn(shown) ? "Built in: " : ""}${padOf(shown).slice(padOf(shown).indexOf(":") + 1)} (not connected)`);
       }
-      sel.value = shown || NONE;
+      const none = noneChoices().find((c) => c.picked) || noneChoices()[0];
+      sel.value = shown && shown !== NONE ? shown : none.value;
     }
     const pad = selected();
     const builtIn = isBuiltIn(choice) && offered();
@@ -279,7 +286,7 @@ export function initControls(host) {
       ? (builtIn && host.joystickPort && host.joystickPort() === false
           ? "Built in: the game looks for a joystick when it starts, so this pad is its joystick from the next launch; until then it is its mouse and keyboard."
           : builtIn
-          ? "Built in: the game reads this pad as the joystick on its game port, its own way: button 1 fires the guns, both buttons a missile; hold button 2 and move the stick to roll and change speed, double-click it for the afterburner. The other buttons still press their keys."
+          ? (host.builtInHint && host.builtInHint()) || "Built in: the game reads this pad as the joystick on its game port, its own way: button 1 fires the guns, both buttons a missile; hold button 2 and move the stick to roll and change speed, double-click it for the afterburner. The other buttons still press their keys."
           : pad.mapping === "standard" ? "Using the standard gamepad layout; change any button or axis below."
                                        : "This controller does not report the standard layout: check the buttons and axes below.")
       : (list.length ? "Pick a controller, or press one of its buttons while this window has the focus."
@@ -315,7 +322,15 @@ export function initControls(host) {
     $("padCurve").checked = cfg.curve;
   }
 
-  $("padSelect").addEventListener("change", (e) => choose(e.target.value, "selected"));
+  $("padSelect").addEventListener("change", (e) => {
+    const v = e.target.value;
+    if (noneChoices().some((c) => c.value === v)) {
+      if (host.pickNone) host.pickNone(v);
+      choose(NONE, "selected");
+      listed = "";
+      render();
+    } else choose(v, "selected");
+  });
   $("padRows").addEventListener("click", (e) => {
     const t = e.target;
     if (!(t instanceof HTMLElement)) return;

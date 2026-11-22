@@ -113,6 +113,37 @@ gives -28, -28, -56, -85, ... -256 from the tenth frame on, where the game gave 
 -28, -28, -56, -85 (the game: four frames of -256).  Only the keyboard mode is touched (the mouse and joystick are
 analog already).  `WCNET_PRIV_RAMP=0` leaves the game's own.
 
+**A controller (2026-11-21).**  The user: "I tried using the joystick but I was given 3 bad options... if I selected
+keyboard in the options menu the joystick was inert. If I select mouse, the joystick drove around the blue dot and so I
+could press right for a bit and my ship would be truning right...but then to start turning left I would have to push my
+joystick all the way past center to left...which was way too slow to steer. And if I selected "joystick" as the option
+my ship was spinning around like absolute crazy--I think the joystick option is actually the right one but it wouldn't
+let me control at all".  Why: the page never counted Privateer's flight as a flight (`wc_web_in_flight`), so a pad moved
+the mouse as in a menu (the pointer keeps its place: the mouse mode turned until it was pushed back past the middle),
+the keyboard mode reads no mouse, and the joystick mode read an empty game port: every reading timed out, the stick
+read hard over (the record +131064 / -131064) and the ship spun.  The options' three buttons (seg037:0004, 0018,
+002C) write the mode's three flags (ds:13EF joystick, 13F0 mouse, 13F1 keyboard) and nothing else.  Now the layer also
+watches seg088:0BBD, where the modes' readings meet (not when ds:1142 or ds:23B6 is set: the frame then reads no
+controls), and:
+- a pad that is not built in (and a phone's touch stick) is a flight's stick (`wc_web_stick`, said every 16 ms, let go
+  after 250 ms unsaid): it writes pitch and yaw, the stop being the stick at its end, in any mode; an axis an arrow is
+  held on stays the arrow's (the keyboard's mode); its roll is the keypad's 7 (left) and 9 (right), ramped here in the
+  mouse's mode, which reads no keys;
+- the joystick mode with no stick on the port steers by the arrows, ramped (the spin gone);
+- each pad is offered "Built in" too (the registry's `joystick`): the launch then puts stick A on the port
+  (`joysticktype=none`, `timed=false`, as for Wing Commander), and when it comes onto the port the layer picks the
+  options' JOYSTICK, as its button would; a mode picked later stays the pilot's.  The game reads it its own way: GOG's
+  JOYA.DAT has it calibrated 0 / 64 / 128, the untimed port's readings.  Measured: button 1 the guns, both buttons a
+  missile, button 2 with the stick sideways rolls and forward / back sets the speed (SET 150 -> 300); at a base the stick
+  moves the game's pointer.
+Measured natively (`!privstick=x:y`, the page's stick; `JOY=1 scripts/privrun.sh` and `!joy=`, the built-in pad; the
+ship's matrix each second): half stick turns 40-47 degrees a second in the keyboard's, the mouse's and the empty
+joystick's modes, built in 0.6 of the stick 46-52; at the middle each stops within the second; the arrows still steer
+in the keyboard's and the empty joystick's.  The Pointer choice is now in the Controller list (the user: "the "Shown a
+ring in flight" should just be Kbd + mouse (shown) (which is the default) and Keyboard + mouse instead of a whole
+sepratae menu"): "Kbd + mouse (shown)" and "Keyboard + mouse" (the game's own: none), also changed while flying
+(`wc_web_priv_pointer`).
+
 ## 5. The rigs
 
 * `scripts/privnet.sh [seconds] [host's extra] [guests' extra]`: a host and guests (`PLAYERS=2..8`), each flown by
@@ -649,7 +680,8 @@ though the mouse flies the ship by where it is (seg088:02E5: the game's mouse x,
 ds:3C5B = 320, over 10 is the turn; its y, ds:6A80, less ds:3C5D = 100, over 3 the pitch).  Measured by the video
 memory and palette dumped on each screen (`!privvga=<name>`: DOSBox's chained 320 x 200, a pixel at
 `linear[((a & ~3) << 2) + (a & 3)]`).  Now, by the page's Pointer choice (Privateer only, remembered by the browser,
-`WCPRIVPOINTER=ring|game`): "shown" (the default) draws TIE Fighter's amber ring where the mouse is while the flight
+`WCPRIVPOINTER=ring|game`; since 2026-11-21 the Controller list's "Kbd + mouse (shown)" and "Keyboard + mouse", section
+4): "shown" (the default) draws TIE Fighter's amber ring where the mouse is while the flight
 runs with the mouse flying (not over the options screen or the nav map: the frame stops there), and on a screen over a
 flight where 0x0F is dark redraws the game's pointer white (its 0x0F pixels in the 7 x 7 round the cross's middle at
 the mouse; the options screen's own 46 pixels of 0x0F, in its buttons' lettering, stay); "as the game has it" leaves

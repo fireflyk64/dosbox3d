@@ -38,6 +38,7 @@ enum {
     kSeg088 = 0x3632,               // seg088's paragraph: the controls (wcnet_priv_controls.cpp)
     kAfterKeyboard = 0x0BAD,        // seg088:0BAD, after the call of the keyboard's routine
     kControlsEntry = 0x0B2E,        // seg088:0B2E, the player's controls, once a frame in flight: where our calls are made
+    kControlsJoin = 0x0BBD,         // seg088:0BBD, where the control modes' readings meet (wcnet_priv_controls.cpp)
     kSeg099 = 0x3D67,               // seg099: placing an object (seg099:0074)
     kPlace = 0x0074,                // seg099:0074(this, type far, cast near, appearance far, pos near, matrix near): spawn
                                     // (seg111:07B1: the type found or loaded, its factory, the appearance), the place and the
@@ -1191,12 +1192,17 @@ extern int g_heapLowSecond;
 static void watch_tick();
 
 static bool hostile_cast_name(const std::string &c);
+static bool g_scriptStickOn;                 // !privstick: the page's stick, said every tick as the page does
+static double g_scriptStickX, g_scriptStickY;
 void priv_tick() {
     priv_session_tick();
     if (!g_found) {
         return;
     }
     const double now = PIC_FullIndex();
+    if (g_scriptStickOn) {
+        priv_controls_stick(g_scriptStickX, g_scriptStickY);
+    }
     if (g_tracing) {
         trace_step(now);
     }
@@ -1554,6 +1560,10 @@ bool priv_check_hooks(Bit32u ip) {
         priv_controls_frame();
         return true;
     }
+    if (ip == kControlsJoin && codeSeg == (Bit16u)(g_privLoadSeg + kSeg088)) {
+        priv_controls_join();
+        return true;
+    }
     if (ip == kControlsEntry && codeSeg == (Bit16u)(g_privLoadSeg + kSeg088)) {
         g_frameSp = reg_sp;
         g_flightFrameAt = PIC_FullIndex();
@@ -1712,6 +1722,7 @@ bool priv_check_hooks(Bit32u ip) {
 
 void priv_watch_list(void (*watch)(Bit16u ip)) {
     watch(kAfterKeyboard);
+    watch(kControlsJoin);
     watch(kControlsEntry);
     watch(kNpcThink);
     watch(kWingSpawn);
@@ -1959,6 +1970,17 @@ bool priv_script_item(const std::string &item, double t) {
             }
             wclog(1, "key script %.1fs: sphere %d at %04X:%04X: %s", t, i, seg, off, hex.c_str());
         }
+        return true;
+    }
+    if (item.compare(0, 11, "!privstick=") == 0 && g_found) {
+        // !privstick=<x>:<y> (-1..1, right and climbing positive): a pad that is not built in, as the page says its stick
+        // (wc_web_stick) every tick until !privstick=off
+        g_scriptStickOn = item.compare(11, 3, "off") != 0;
+        if (g_scriptStickOn && sscanf(item.c_str() + 11, "%lf:%lf", &g_scriptStickX, &g_scriptStickY) != 2) {
+            g_scriptStickOn = false;
+        }
+        wclog(1, "key script %.1fs: the page's stick %s %.2f, %.2f (the game's mode: %s)", t, g_scriptStickOn ? "at" : "let go,",
+              g_scriptStickX, g_scriptStickY, priv_control_mode());
         return true;
     }
     if (item.compare(0, 10, "!privturn=") == 0 && g_found) {

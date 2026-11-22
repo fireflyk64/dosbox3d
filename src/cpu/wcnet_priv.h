@@ -50,8 +50,15 @@ bool priv_script_item(const std::string &item, double t);
 bool priv_controls_key(int kbdKey, bool pressed);
 // Once a frame of the game's, at seg088:0BAD: the keyboard's routine has filled the control record.
 void priv_controls_frame();
-// The page's Pointer choice (WCPRIVPOINTER=ring, the default, or game): the pointer drawn where the game shows none or a dark one.
+// At seg088:0BBD, where every control mode's reading meets: a built-in pad picks JOYSTICK, an empty port's JOYSTICK
+// steers by the arrows, the page's stick steers in any mode.
+void priv_controls_join();
+// The page's stick (a pad not built in, the touch stick): -1..1, right and climbing positive; said every 16 ms.
+void priv_controls_stick(double x, double y);
+// The page's pointer choice (WCPRIVPOINTER=ring, the default, or game; wc_web_priv_pointer while running): the
+// pointer drawn where the game shows none or a dark one.
 bool priv_pointer_shown();
+void priv_pointer_set(bool shown);
 // The mouse flying the ship (the options' MOUSE): where to draw its pointer, shares of the picture (false: none to draw).
 bool priv_controls_marker(double *x, double *y);
 // The game's own pointer where its palette makes it dark (the options screen over a flight, Alt+O): its pixels, a box of
