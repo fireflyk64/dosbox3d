@@ -41,8 +41,9 @@ The programs: `PRIV.EXE` (8 KB) is Origin's loader: it installs JEMM, Origin's o
 none (DOSBox has: it uses DOSBox's), and runs `PRCD.EXE` through DOS.  `PRCD.EXE` (937,760 bytes) is the game: a
 real-mode Borland C++ 1991 overlay program, as the Wing Commanders are (454 segments, 183 overlays, DGROUP at
 paragraph 0x6E4D of the image), so `scripts/wcexe.py -e <game>/PRCD.EXE ...` disassembles it (`segs`, `dis`,
-`refs`, `xref`, `str`).  It runs in Mode X (unchained 320x200: the key script's `!shot=` reads mode 13h only; use
-`!frame=`).  Saved games are files named by the player: `<name>.SAV` (Privateer) and `<name>.PRS` (Righteous Fire).
+`refs`, `xref`, `str`).  It runs in chained mode 13h (320x200, double-scanned to 400 lines, pixels 1.2 times as tall
+as they are wide on the 4:3 monitors of its day; measured 2026-11-22, this said Mode X before; the key script's
+`!frame=` is what the window showed).  Saved games are files named by the player: `<name>.SAV` (Privateer) and `<name>.PRS` (Righteous Fire).
 
 The archives (`TRE`: a count, then entries of 74 bytes: a flag byte, a 65-byte path, offset, length) hold EA IFF
 files: `DATA/SECTORS/QUADRANT.IFF` (the four quadrants, each system's name, position and bases),
@@ -928,3 +929,39 @@ save (a Centurion each), launch, are kept together and hold their guns, the copi
   free at each of its 20 rests; 24,600-29,100 bolts retired a machine (all copies); the worst second's free 1,182-
   1,910; the list 178 at most.  The 8-pilot load test as shipped: no error, the collector never ran (the owner's
   largest block never under 7,070).
+
+## 19. The game's own frame rate (2026-11-22)
+
+The user, on the high-resolution picture's plan: "we need the full framerate"; "I think it's 20 or 30 fps back then";
+on what was found: "the joystick thing seems like a major waste--- probably setup incorrectly or something".
+
+**The cap.**  The flight's loop (seg075:062B) starts a frame when more than 20 ticks of the game's 600 Hz clock
+(ds:3636) have passed since the last: 21 ticks, 28.57 frames a second.  The frame's time (ds:277C ticks, ds:2768
+seconds, both 24.8, at most 140 ticks) scales what moves, a gun's refire (seg125:00DE) and a bolt's life
+(seg090:0300): a faster frame rate is no faster game.
+
+**What kept it under the cap.**  Not the drawing (an eighth of a fight's frame): the game port.  Once a frame
+seg108:0028 -> seg133:008E reads every input device, and the port's turn, seg133:0081, is the one reader that does
+not first ask whether a stick is there (seg235:035C).  Without one the timeout stays at its uncalibrated 16,383
+reads (seg235:037B; JOYA.DAT, which makes it 140, is loaded only for a stick found at the start: ovr397:0991): 704,000
+of the 1,051,000 cycles a frame has at 30,000 a millisecond, every frame, whatever the controls.  It is the game's
+and no setting's: GOG's own joystick section, joysticktype=none and a directory without JOYA.DAT all read 16,383
+times (GOG's cycles=max hides it); with a stick, 140 times and 28.6 frames a second.
+
+**The fix** (`empty_port_poll`): at seg133:0081, with no stick found at the start (ds:6A96 both 0), the call returns,
+having made the copy of the reading that it makes (ds:6ABC, 6AC0; the reading itself, ds:6A8A, is the start's: an
+empty port always reads the same).  With a stick nothing changes.  `WCPRIVEMPTYPORT=game` keeps the game's poll.
+
+Measured at 30,000 cycles, natively:
+
+| | the game's poll | fixed |
+|---|---|---|
+| one pilot, empty space | 28.6 | 28.6 |
+| one pilot, a fight | 21.7 | 28.57 |
+| eight pilots (load.sh) | 17.2-19.8 | 25.6-27.9 |
+| the port's state in DGROUP | | the same, byte for byte |
+
+Frame rate costs no near heap (the user: "it's just sleeping less-that should not consume additional memory"): one
+fight at 13.9, 17.6, 22.3 and 28.6 frames a second averaged 14,077-14,586 bytes free with no trend; what a frame
+allocates it frees.  load.sh both ways: no errors, the guests' lows 6,730-8,374 before and 8,210-8,694 after, the
+host's 6,530 and 5,454.

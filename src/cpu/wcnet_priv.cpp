@@ -39,6 +39,13 @@ enum {
     kAfterKeyboard = 0x0BAD,        // seg088:0BAD, after the call of the keyboard's routine
     kControlsEntry = 0x0B2E,        // seg088:0B2E, the player's controls, once a frame in flight: where our calls are made
     kControlsJoin = 0x0BBD,         // seg088:0BBD, where the control modes' readings meet (wcnet_priv_controls.cpp)
+    kSeg133 = 0x4CF0,               // seg133: the input devices, all read once a flight frame (seg133:008E)
+    kStickPoll = 0x0081,            // seg133:0081, the game port's turn of it (empty_port_poll)
+    kStickPollDone = 0x008D,        // ... its retf
+    kStickPresent = 0x6A96,         // ds:6A96, a byte a stick: found at the program's start (seg235:000F)
+    kStickRead = 0x6A8A,            // ds:6A8A, the port's last reading: 6 bytes a stick (x, y, buttons)
+    kStickReadX = 0x6ABC,           // ds:6ABC and 6AC0, its copy of both sticks' x and of their y (seg235:00EA)
+    kStickReadY = 0x6AC0,
     kSeg099 = 0x3D67,               // seg099: placing an object (seg099:0074)
     kPlace = 0x0074,                // seg099:0074(this, type far, cast near, appearance far, pos near, matrix near): spawn
                                     // (seg111:07B1: the type found or loaded, its factory, the appearance), the place and the
@@ -1551,11 +1558,47 @@ static void gun_stress_frame() {
 
 static bool fire_record(Bit16u obj, PhysPt *rec);
 enum { kFireGroupBits = 0x78 };     // (the record's +0x1E bits 3-6: gun groups 0-3)
+// The flight reads every input device once a frame (seg108:0028 -> seg133:008E), and the game port's turn
+// (seg133:0081) is the one reader that does not first ask whether a stick is there, as all the others do
+// (seg235:035C).  With none the count of reads is never calibrated either (JOYA.DAT is loaded only for a stick that
+// is there): 16,383 timed reads of an empty port every frame, 704,000 of a frame's 1,051,000 cycles at 30,000 a
+// millisecond, in GOG's own setup as in ours.  So the game's own question is asked for it here: with no stick found
+// at the start the call returns at once.  What it would have stored is what the start's detection read (an empty
+// port always reads the same) and its copy of that, made here.  WCPRIVEMPTYPORT=game: the game's own poll (docs/privateer.md section 19).
+static bool empty_port_poll() {
+    static int keep = -1;
+    if (keep < 0) {
+        const char *env = getenv("WCPRIVEMPTYPORT");
+        keep = env && !strcmp(env, "game") ? 1 : 0;
+    }
+    if (keep) return false;
+    static const Bit8u kCode[] = { 0x55, 0x8B, 0xEC, 0x6A, 0x00, 0x9A };    // push bp; mov bp,sp; push 0; call far
+    const PhysPt at = SegPhys(cs) + kStickPoll;
+    for (size_t i = 0; i < sizeof(kCode); i++) {
+        if (mem_readb(at + i) != kCode[i]) return false;
+    }
+    if (mem_readw(PhysMake(g_ds, kStickPresent))) return false;     // (either stick's byte: the game reads it)
+    if (mem_readb(at + (kStickPollDone - kStickPoll)) != 0xCB) return false;
+    for (int i = 0; i < 2; i++) {       // (seg235:00EA's copy of the reading)
+        mem_writew(PhysMake(g_ds, kStickReadX + 2 * i), mem_readw(PhysMake(g_ds, kStickRead + 6 * i)));
+        mem_writew(PhysMake(g_ds, kStickReadY + 2 * i), mem_readw(PhysMake(g_ds, kStickRead + 6 * i + 2)));
+    }
+    reg_eip = kStickPollDone;
+    static bool said = false;
+    if (!said) wclog(1, "Privateer: no stick at the start, so the empty game port is not timed every frame");
+    said = true;
+    return true;
+}
+
 bool priv_check_hooks(Bit32u ip) {
     if (!g_found) {
         return false;
     }
     const Bit16u codeSeg = (Bit16u)SegValue(cs);
+    if (ip == kStickPoll && codeSeg == (Bit16u)(g_privLoadSeg + kSeg133)) {
+        empty_port_poll();
+        return true;
+    }
     if (ip == kAfterKeyboard && codeSeg == (Bit16u)(g_privLoadSeg + kSeg088)) {
         priv_controls_frame();
         return true;
@@ -1721,6 +1764,7 @@ bool priv_check_hooks(Bit32u ip) {
 }
 
 void priv_watch_list(void (*watch)(Bit16u ip)) {
+    watch(kStickPoll);
     watch(kAfterKeyboard);
     watch(kControlsJoin);
     watch(kControlsEntry);
