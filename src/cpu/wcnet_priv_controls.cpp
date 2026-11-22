@@ -168,11 +168,15 @@ void priv_controls_join() {
     const double now = PIC_FullIndex();
     const bool live = now - g_stickAt < kStickMs;
     const bool empty = priv_r8(kModeJoystick) && !port;
-    if (!live && !empty) {
-        return;
-    }
     const PhysPt rec = control_record();
     Bit32s pitch = (Bit32s)mem_readd(rec + 0x6), yaw = (Bit32s)mem_readd(rec + 0xE), roll = (Bit32s)mem_readd(rec + 0xA);
+    static unsigned told;           // (the rigs' and the page test's evidence, twice a second while it steers)
+    if (!live && !empty) {
+        if (port && priv_r8(kModeJoystick) && (pitch || yaw || roll) && told++ % 14 == 0) {
+            wclog(3, "Privateer: the joystick (built in): pitch %+d yaw %+d roll %+d", (int)pitch, (int)yaw, (int)roll);
+        }
+        return;
+    }
     if (empty) {
         if (!g_emptyTold) {
             g_emptyTold = true;
@@ -199,6 +203,10 @@ void priv_controls_join() {
     mem_writed(rec + 0x6, (Bit32u)pitch);
     mem_writed(rec + 0xE, (Bit32u)yaw);
     mem_writed(rec + 0xA, (Bit32u)roll);
+    if ((pitch || yaw || roll) && told++ % 14 == 0) {
+        wclog(3, "Privateer: steered by %s (%s mode): pitch %+d yaw %+d roll %+d", live ? "the page's stick" : "the arrows",
+              priv_control_mode(), (int)pitch, (int)yaw, (int)roll);
+    }
 }
 
 void priv_controls_stick(double x, double y) {

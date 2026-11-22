@@ -8,6 +8,10 @@
 //   RF=1: Righteous Fire (the menu's other program)
 //   ROOM=<code>: the page joins that room as a guest (scripts/web-priv.sh ROOM=1 makes a native host's) and checks the
 //   room's presence lines (src/cpu/wcnet_priv_session.cpp) instead of flying alone
+//   PAD=1: a stand-in gamepad (scripts/web-pad.mjs's) picked in flight, its stick pushed right: the page's stick steers
+//   (src/cpu/wcnet_priv_controls.cpp, priv_controls_join); the Controller list's two "no controller" entries (the
+//   pointer shown or not) told to the emulator.  PAD=builtin: the pad picked "Built in" before the launch: the game's
+//   own joystick on the port, its mode picked, the stick read by the game
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs";
@@ -24,6 +28,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME || "/usr/bin/google-chrome",
   args: ["--no-sandbox", "--autoplay-policy=no-user-gesture-required"] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
+const PAD = process.env.PAD || "";
+const PADKEY = "0:Mock Pad (STANDARD GAMEPAD)";
+if (PAD) {
+  await page.addInitScript(([builtin, key]) => {
+    window.__pad = { id: "Mock Pad (STANDARD GAMEPAD)", index: 0, connected: true, mapping: "standard", timestamp: 0,
+                     axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })) };
+    navigator.getGamepads = () => [window.__pad];
+    if (builtin) sessionStorage.setItem("wcpad:choice", "joy|" + key);
+  }, [PAD === "builtin", PADKEY]);
+}
 const t0 = Date.now();
 const stamp = () => ((Date.now() - t0) / 1000).toFixed(1);
 const logs = [];
@@ -129,6 +143,43 @@ const ramp = logs.slice(before).filter((l) => /arrows [+-]/.test(l)).map((l) => 
 check("the arrow ramped from a ninth of the stop", ramp.length > 0 && ramp[0] === -28, ramp.slice(0, 12).join(" "));
 check("... to the stop when held", ramp.includes(-256), `${ramp.filter((v) => v === -256).length} frames at the stop`);
 await page.screenshot({ path: path.join(shotDir, "web-priv-turned.png"), clip: box });
+if (PAD) {
+  // the user, 2026-11-21: a pad in Privateer was "3 bad options" (inert, the blue dot driven, a spin); and the pointer
+  // choice as two entries of the Controller list
+  const opts = await page.$$eval("#padSelect option", (os) => os.map((o) => o.textContent));
+  check("the Controller list: Kbd + mouse (shown), Keyboard + mouse, the pad, the pad built in",
+    opts[0] === "Kbd + mouse (shown)" && opts[1] === "Keyboard + mouse" && opts.some((o) => /^1: Mock Pad/.test(o)) && opts.some((o) => /^Built in: 1: Mock Pad/.test(o)), opts.join(" | "));
+  check("no Pointer menu of its own", !(await page.$("#privPointer")), "");
+  if (PAD === "builtin") {
+    check("the pad on the game port", logs.some((l) => /joystick: on the game port/.test(l)), (logs.find((l) => /joystick:/.test(l)) || "").slice(0, 120));
+  } else {
+    await page.selectOption("#padSelect", PADKEY);
+  }
+  await sleep(500);
+  const mark = logs.length;
+  await page.evaluate(() => { window.__pad.axes[0] = 0.6; });
+  await sleep(1500);
+  await page.evaluate(() => { window.__pad.axes[0] = 0; });
+  await sleep(1000);
+  const steer = logs.slice(mark).filter((l) => /steered by the page's stick|the joystick \(built in\)/.test(l));
+  const yaws = steer.map((l) => Number(/yaw ([+-]\d+)/.exec(l)[1]));
+  check(PAD === "builtin" ? "the stick right: the game's joystick turns right (yaw negative)" : "the stick right: the page's stick turns right (yaw negative)",
+    yaws.some((v) => v < -60), (steer[0] || "nothing steered").slice(0, 140) + ` (${yaws.join(" ")})`);
+  const rest = logs.length;
+  await sleep(1500);
+  const moving = logs.slice(rest).filter((l) => /steered by the page's stick|the joystick \(built in\)/.test(l));
+  check("the stick let go: it stops", moving.length === 0, (moving[0] || "still").slice(0, 140));
+  await page.screenshot({ path: path.join(shotDir, "web-priv-pad.png"), clip: box });
+  const mark2 = logs.length;
+  await page.selectOption("#padSelect", "none-game");
+  await sleep(1000);
+  check("Keyboard + mouse: the pointer as the game has it", logs.slice(mark2).some((l) => /the mouse's pointer as the game has it/.test(l)), "");
+  const mark3 = logs.length;
+  await page.selectOption("#padSelect", "none");
+  await sleep(1000);
+  check("Kbd + mouse (shown): the ring again", logs.slice(mark3).some((l) => /the mouse's pointer shown/.test(l)), "");
+  check("the choice kept by the browser", await page.evaluate(() => localStorage.getItem("wc:privPointer")) === "ring", "");
+}
 if (process.env.SEATS) {
   check(`the room's session: the host of ${process.env.SEATS} seats`, await waitLog(new RegExp(`Privateer: HOST at room \\S+, ${process.env.SEATS} seats`), 20000),
     (logs.find((l) => /Privateer: HOST at/.test(l)) || "").slice(0, 140));

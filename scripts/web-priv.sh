@@ -6,6 +6,7 @@
 #   scripts/web-priv.sh [seconds]
 #   GAME_FILE=  GOG's installer (default: the one beside this repository's root, or the main tree's)
 #   PORT= LOBBY_PORT=  (default 8853, 8854)   RF=1  Righteous Fire
+#   PAD=1       a stand-in gamepad steers in flight; PAD=builtin: picked "Built in" before the launch (web-priv.mjs)
 #   ROOM=1      a native host (build-lobby's emulator, scripts/privrun.sh's route) makes a room of 8 in the local lobby
 #               and the page joins it as a guest: presence both ways (the host's log: $OUT/host/run.err)
 set -u
