@@ -1013,3 +1013,50 @@ hooks run inside the CPU's core (wc_net_hook_exit in the browser): they read onl
 Still to do before it is the default: the landing and takeoff scenes' bases from the flight's larger art
 (LTOBASES.PAK's small copies have it 1.6-2.5 times as large in APPEARNC for six of ten), the radar's rings as lines,
 the other cockpits and views gone through by eye.
+
+## 21. Fights at the full frame rate: native twins, the wait idled (2026-11-22)
+
+The user: "we need the full framerate--this may require some routines that are hooked by dosbox just similarly to
+retrovega has it"; "lets use that oxford savegame as a good stress test for a fight--I'm worried that's where we get
+serious lag and need to optimize drawing routines".
+
+**The Oxford stress** (the user's save, a Centurion at Oxford; scratch rigs: launch, Oxford's own traffic, 0-8 more
+pirates, guns held, a missile every 3 s): at the page's 30,000 cycles a fight of five more fell to 19-21 frames a
+second.  The profile of it (the emulated cycles by routine, 18 s): drawing a sixth; over half the collision tests' and
+the AI's vector maths -- seg039:00D4 a pair's set-up, seg115:02DD a length (seg115:0133 / 0217 to bring a vector into
+range, seg095:0247 its root, seg128:02F6 a 20-step bit-by-bit square root: 13% alone), seg095:02DC an absolute value,
+seg128:0296 / 0390 / 0450, seg115:0962.  And in quiet space two thirds of the emulated CPU spun in the frame wait
+(seg075:062B).
+
+**The twins** (src/cpu/wcnet_priv_native.cpp): twelve routines -- those ten and the two plain copies, seg181:000A (a
+bitmap's clip filled) and seg205:0002 (the spans to the screen).  At a routine's entry the twin works out everything
+it would leave: what it writes, all its registers (the high halves too), and its own stack below the stack pointer --
+its pushes, locals, return addresses and its callees' frames, because the game reads such stack later (poisoning that
+stack after each call in a scratch build made a run diverge within 20 s; poisoning the flags did not: no caller reads
+them, and they are not made).  It writes all that and returns as the routine's retf.  A routine whose code is not the
+file's (DOS's relocations taken off), memory not mapped, operands overlapping, the game's own error, a loop that would
+not end, more than the twin's caps: the game's own code runs.  WCPRIVTWINS=0 the game's code, =check the game's code
+with the twin's answer compared at each return.  The wait: while its clock has not moved on, the slice's remaining
+cycles are skipped, as a hlt's are (WCPRIVIDLE=0: the spin).
+
+**How they were checked.**  Each twin against the executable's own bytes run by unicorn on random inputs and random
+stack (scratch twindiff.py, in design/privateer-hires/research): every register, every byte written, the 128 bytes of
+stack below the entry -- millions of calls, none differing; two bugs planted on purpose were each caught at once.  In
+the game, the check: 15 million calls in Oxford fights compared, none differing.
+
+**Measured**, natively at 30,000 cycles:
+
+| | the game's code | the twins |
+|---|---|---|
+| Oxford, 5 pirates more, solo | 26.5 (19 the worst second) | 28.6 (28) |
+| Oxford, 8 more, solo | 25.7 (18) | 28.6 (27) |
+| Oxford, 7 more, a room of two (the host) | 26.9 (13) | 28.6 (28) |
+| eight pilots, load.sh | 25.6-27.9 | 27.8-28.6, no errors |
+
+**The near heap at the full rate.**  The user doubted that frames could cost memory ("it's just sleeping less").  An
+ordinary fight's use does not change with the rate (section 19).  But with seven pirates more than the game itself
+puts there, solo, the game's own code at the full rate -- given 60,000 cycles, no twins -- ran out (error 1303 at 51 s;
+the same fight at 26 frames a second did not): the AI's shots are per frame, and a heap of 17 KB holds only so many
+bolts.  In a room the bolt collector (section 18) holds it: the room of two above, its host's heap never under 3,100.
+Solo is the game as it is (section on rooms of one): nothing more is done there, and the game alone never fields that
+many.

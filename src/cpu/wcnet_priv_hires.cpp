@@ -100,6 +100,8 @@ Bit16u g_from[HW * HH];             // the edge at the fine grid: see smooth_edg
 Bit8u g_fineWindow[HW * HH];
 Bit8u g_out[HW * HH];
 bool g_haveFrame = false;
+bool g_drewThis = false;            // H has been drawn since the last span copy (not while flipped off)
+Bit32u g_frameSerial = 0;           // the frames frozen
 Bit32u g_spanStamp = 0;
 
 int g_rowFrom[LH + 1];              // the first of H's rows that shows the game's row y
@@ -480,7 +482,9 @@ void present() {
     g_bufSeg = src.seg;
     g_bufRow0 = row0;
     g_presentMs = PIC_FullIndex();
-    if (!known) {           // (its drawing is ours from the next frame)
+    const bool drew = g_drewThis;
+    g_drewThis = hires_wanted();        // (drawn from here to the next copy only while it is shown)
+    if (!known || !drew || !g_drewThis) {   // (a buffer just learnt or a flip: the picture is ours from the next frame)
         g_haveFrame = false;
         return;
     }
@@ -518,6 +522,7 @@ void present() {
     }
     memcpy(g_shownHi, g_hi, sizeof(g_hi));
     g_haveFrame = true;
+    g_frameSerial++;
 }
 
 void call(const Place &p) {
@@ -529,7 +534,7 @@ void call(const Place &p) {
         present();
         return;
     }
-    if (!g_bufSeg) return;
+    if (!g_bufSeg || !g_drewThis) return;
     Target t;
     const Bit16u caller = (Bit16u)(rd16(SegPhys(ss) + (Bit16u)(reg_sp + 2)) - priv_load_seg());
     if (p.op == OP_POLY && caller == kFillerSelf) return;
@@ -692,6 +697,15 @@ void smooth_edge() {
 void compose() {
     const Bit8u *low = vga.fastmem;
     const bool flight = hires_wanted() && g_haveFrame && PIC_FullIndex() - g_presentMs < kStaleMs;
+    // (the VGA shows 70 frames a second, the game draws 28.6: most of them are the one before)
+    static Bit8u madeFrom[LW * LH];
+    static Bit32u madeSerial = 0;
+    static int madeFlight = -1;
+    const Bit32u serial = flight ? g_frameSerial : 0;
+    if (madeFlight == (int)flight && madeSerial == serial && !memcmp(madeFrom, low, LW * LH)) return;
+    madeFlight = flight;
+    madeSerial = serial;
+    memcpy(madeFrom, low, LW * LH);
     if (!flight) {
         for (int Y = 0; Y < HH; Y++) {
             Bit8u *out = g_out + Y * HW;

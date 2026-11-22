@@ -2662,8 +2662,9 @@ Bitu wc_net_hook_exit(Bit32u ip) {
     if (ip >= 0x10000 && wc_net_countdown >= 0 && (wc::tv_fast_hook(ip) || wc::rap_fast_hook(ip))) {
         return 0;
     }
-    // (Privateer's 640 x 480 picture: some 150 of the game's drawing calls a frame, looked at here in the core)
-    if (ip < 0x10000 && wc_net_countdown >= 0 && wc_net_watch[ip] && wc::priv_hires_hook(ip)) {
+    // (Privateer's drawing calls for its 640 x 480 picture, its native twins and its idled wait: some thousands a
+    // frame, all made here in the core)
+    if (ip < 0x10000 && wc_net_countdown >= 0 && wc_net_watch[ip] && wc::priv_core_hook(ip)) {
         return 0;
     }
     PhysPt at = SegPhys(cs) + ip;

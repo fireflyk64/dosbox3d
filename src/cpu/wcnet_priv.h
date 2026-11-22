@@ -23,6 +23,9 @@ bool priv_program_ended(Bit16u psp);
 
 // The program runs: its load segment and data segment (DGROUP), 0 while it does not.
 bool priv_found();
+// The places looked at inside the CPU's core, as they are in the browser too (none of them waits): the high-resolution
+// picture's drawing calls, then the native twins and the idled frame wait.  True: nothing else is to look at this one.
+bool priv_core_hook(Bit32u ip);
 Bit16u priv_load_seg();
 Bit16u priv_ds();
 // Righteous Fire (PRCD.EXE started with "r"): its own campaign, the same program.
