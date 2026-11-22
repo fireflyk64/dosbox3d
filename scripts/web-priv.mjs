@@ -123,8 +123,10 @@ check("Privateer's music on the Sound Blaster's FM", logs.some((l) => /Privateer
   (logs.find((l) => /Privateer's music/.test(l)) || "no word of the music").slice(0, 140));
 check("PRCD.EXE found by the layer", await waitLog(/Privateer.*PRCD\.EXE loaded at/, 60000),
   (logs.find((l) => /PRCD\.EXE loaded/.test(l)) || "").slice(0, 120));
-const flying = await waitLog(/keyboard frames, controls: keyboard/, 90000);
-check("in flight, the keyboard's controls read every frame", flying, (logs.filter((l) => /keyboard frames/.test(l)).pop() || "").slice(0, 120));
+// (a pad built in at the launch: the game itself takes the joystick's mode when it starts and finds one on the port)
+const mode = PAD === "builtin" ? "joystick" : "keyboard";
+const flying = await waitLog(new RegExp(`keyboard frames, controls: ${mode}`), 90000);
+check(`in flight, the ${mode}'s controls read every frame`, flying, (logs.filter((l) => /keyboard frames/.test(l)).pop() || "").slice(0, 120));
 await sleep(3000);
 const box = await page.$eval("#canvas", (c) => { const b = c.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; });
 await page.screenshot({ path: path.join(shotDir, "web-priv-flight.png"), clip: box });
@@ -140,8 +142,10 @@ await sleep(60);
 await page.keyboard.up("ArrowRight");
 await sleep(1500);
 const ramp = logs.slice(before).filter((l) => /arrows [+-]/.test(l)).map((l) => Number(/arrows [+-]\d+ ([+-]\d+)/.exec(l)[1]));
-check("the arrow ramped from a ninth of the stop", ramp.length > 0 && ramp[0] === -28, ramp.slice(0, 12).join(" "));
-check("... to the stop when held", ramp.includes(-256), `${ramp.filter((v) => v === -256).length} frames at the stop`);
+if (mode === "keyboard") {     // (the joystick's mode reads no arrows: the game's own)
+  check("the arrow ramped from a ninth of the stop", ramp.length > 0 && ramp[0] === -28, ramp.slice(0, 12).join(" "));
+  check("... to the stop when held", ramp.includes(-256), `${ramp.filter((v) => v === -256).length} frames at the stop`);
+}
 await page.screenshot({ path: path.join(shotDir, "web-priv-turned.png"), clip: box });
 if (PAD) {
   // the user, 2026-11-21: a pad in Privateer was "3 bad options" (inert, the blue dot driven, a spin); and the pointer

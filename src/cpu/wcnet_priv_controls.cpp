@@ -120,7 +120,6 @@ bool priv_controls_key(int kbdKey, bool pressed) {
 
 // At seg088:0BAD, the keyboard's routine just returned: the control record as it wrote it.
 void priv_controls_frame() {
-    g_frames++;
     if (!ramp_on() || !priv_r8(kModeKeyboard)) {
         return;
     }
@@ -152,6 +151,7 @@ void priv_controls_frame() {
 //    steers in any mode, the stop being the stick at its end, the way the keyboard's ramp writes the record; an axis
 //    an arrow is held on stays the arrow's.
 void priv_controls_join() {
+    g_frames++;                     // (every mode's frames: the report's "keyboard frames", its old name, which rigs read)
     const bool port = JOYSTICK_IsEnabled(0);
     if (port != g_portWas) {
         g_portWas = port;
