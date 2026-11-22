@@ -98,9 +98,8 @@ void DISNEY_Init(Section*);
 void SERIAL_Init(Section*); 
 
 
-#if C_IPX
+// (always: without SDL_net, C_IPX, the browser's, the room's network only: src/cpu/wcnet_ipx.cpp)
 void IPX_Init(Section*);
-#endif
 
 void SID_Init(Section* sec);
 
@@ -913,11 +912,9 @@ void DOSBOX_Init(void) {
 #ifndef EMSCRIPTEN
 	secprop->AddInitFunction(&CDROM_Image_Init);
 #endif
-#if C_IPX
 	secprop=control->AddSection_prop("ipx",&IPX_Init,true);
 	Pbool = secprop->Add_bool("ipx",Property::Changeable::WhenIdle, false);
-	Pbool->Set_help("Enable ipx over UDP/IP emulation.");
-#endif
+	Pbool->Set_help("Enable ipx over UDP/IP emulation (IPXNET), or over the room's links when a room or a peer is set (WCROOM, WCHOST, WCPORT).");
 //	secprop->AddInitFunction(&CREDITS_Init);
 
 	//TODO ?

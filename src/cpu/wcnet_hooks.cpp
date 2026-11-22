@@ -34,6 +34,7 @@
 #include "wcnet_tv.h"
 #include "wcnet_rap.h"
 #include "wcnet_tiedemo.h"
+#include "wcnet_ipx.h"
 #include "paging.h"
 #include "callback.h"
 #include "cpu.h"
@@ -1025,6 +1026,9 @@ static void key_script() {
         std::string path = std::string(dir && dir[0] ? dir : ".") + "/" + item.substr(7) + ".ppm";
         wclog(1, "key script %.1fs (t=%.1f): the window's picture %s%s", t, now / 1000.0, path.c_str(),
               GFX_DumpLastFrame(path.c_str()) ? "" : " failed");
+    } else if (item == "!ipx") {
+        // !ipx: the room's IPX network as this machine sees it (wcnet_ipx.cpp)
+        wclog(1, "key script %.1fs (t=%.1f): %s", t, now / 1000.0, ipx_room_line());
     } else if (item.compare(0, 8, "!mickey=") == 0) {
         // !mickey=<dx>:<dy> moves the mouse by that much (host pixels) without moving the pointer
         double dx = 0, dy = 0;
@@ -2116,6 +2120,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_perf(int what) {
 extern "C" EMSCRIPTEN_KEEPALIVE double wc_web_steer(int what, int i) {
     return wc::steer_info(what, i);
 }
+// The room's IPX network as this machine sees it (wcnet_ipx.cpp: Wing Commander Armada's NetBIOS rides it), for
+// the page's line under the picture: "" when IPX is not on the room.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *wc_web_ipx_line() {
+    return wc::ipx_room_line();
+}
 // One byte of the game's data segment, for checks from the page.
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_ds_byte(int off) {
     return (off < 0 || off > 0xffff) ? -1 : (int)wc::rd8((Bit16u)off);
@@ -2400,10 +2409,10 @@ bool wc_net_helmet_name(int *vduOrigin) {
 // flown together: RetroVega has no comms, and a game flown alone (WCSOLO)
 // nobody to call.
 bool wc_net_comms_hint() {
-    return wc::g_build != wc::BUILD_RV && !wc::solo() && !wc::tie_found()   // (TIE Fighter has no chat line yet)
-           && !wc::priv_found()                                             // (nor Privateer)
-           && !wc::rap_found()                                              // (nor Raptor)
-           && !wc::tdm_watching();                                          // (nor the TIE Fighter demo, its showroom)
+    // The 0 key's comms line is Wing Commander's (the first and the second) and Terminal Velocity's, so the hint is
+    // theirs alone: RetroVega, TIE Fighter, Privateer, Raptor and the TIE Fighter demo have none, nor a program the
+    // layer does not know (Wing Commander Armada, its own NetBIOS game on the room's IPX: it showed over its menus)
+    return !wc::solo() && (wc::is_wc1() || wc::is_wc2() || wc::tv_found());
 }
 
 // A drone riding behind the leader looks at the leader's ship through its

@@ -19,7 +19,9 @@
 
 #include "dosbox.h"
 
-#if C_IPX
+// The IPX driver.  Its packets go over DOSBox's UDP tunnel (IPXNET: C_IPX, with SDL_net) or, when a room or a peer is
+// set (WCROOM, WCHOST, WCPORT), over the room's links (src/cpu/wcnet_ipx.cpp, docs/armada.md): the browser's build
+// has only the latter.
 
 #include <string.h>
 #include <time.h>
@@ -35,11 +37,14 @@
 #include "dos_system.h"
 #include "mem.h"
 #include "ipx.h"
-#include "ipxserver.h"
 #include "timer.h"
+#if C_IPX
+#include "ipxserver.h"
 #include "SDL_net.h"
+#endif
 #include "programs.h"
 #include "pic.h"
+#include "../cpu/wcnet_ipx.h"
 
 #define SOCKTABLESIZE	150 // DOS IPX driver was limited to 150 open sockets
 
@@ -48,6 +53,7 @@ struct ipxnetaddr {
 	Uint8 netnode[6];
 } localIpxAddr;
 
+#if C_IPX
 Bit32u udpPort;
 bool isIpxServer;
 bool isIpxConnected;
@@ -56,11 +62,26 @@ UDPsocket ipxClientSocket;
 int UDPChannel;						// Channel used by UDP connection
 Bit8u recvBuffer[IPXBUFFERSIZE];	// Incoming packet buffer
 
-static RealPt ipx_callback;
-
 SDLNet_SocketSet clientSocketSet;
 
 packetBuffer incomingPacket;
+#endif
+
+static RealPt ipx_callback;
+
+// The room's network carries the packets (wcnet_ipx.h): set at the driver's start, for good.
+static bool ipxRoom = false;
+
+// Whether a packet sent now goes anywhere: the room's network always takes it (a link not up yet loses it, as a
+// cable not plugged in would); IPXNET's once connected.
+static bool IPX_LinkUp(void) {
+	if (ipxRoom) return true;
+#if C_IPX
+	return incomingPacket.connected;
+#else
+	return false;
+#endif
+}
 
 static Bit16u socketCount;
 static Bit16u opensockets[SOCKTABLESIZE]; 
@@ -69,6 +90,7 @@ static Bit16u swapByte(Bit16u sockNum) {
 	return (((sockNum>> 8)) | (sockNum << 8));
 }
 
+#if C_IPX
 void UnpackIP(PackedIP ipPack, IPaddress * ipAddr) {
 	ipAddr->host = ipPack.host;
 	ipAddr->port = ipPack.port;
@@ -78,6 +100,7 @@ void PackIP(IPaddress ipAddr, PackedIP *ipPack) {
 	ipPack->host = ipAddr.host;
 	ipPack->port = ipAddr.port;
 }
+#endif
 
 ECBClass *ECBList;  // Linked list of ECB's
 ECBClass* ESRList;	// ECBs waiting to be ESR notified
@@ -311,8 +334,9 @@ static void CloseSocket(void) {
 
 	for(i=0;i<socketCount-1;i++) {
 		if (opensockets[i] == sockNum) {
-			// Realign list of open sockets
-			memcpy(&opensockets[i], &opensockets[i+1], SOCKTABLESIZE - (i + 1));
+			// Realign list of open sockets (the ones after it, moved down by one: DOSBox's memcpy of a byte
+			// count overlapped and counted bytes as sockets)
+			memmove(&opensockets[i], &opensockets[i+1], (socketCount - i - 1) * sizeof(opensockets[0]));
 			break;
 		}
 	}
@@ -388,7 +412,7 @@ static void handleIpxRequest(void) {
 
 		case 0x0003:		// Send packet
 			tmpECB = new ECBClass(SegValue(es),reg_si);
-			if(!incomingPacket.connected) {
+			if(!IPX_LinkUp()) {
 				tmpECB->setInUseFlag(USEFLAG_AVAILABLE);
 				tmpECB->setCompletionFlag(COMP_UNDELIVERABLE);
 				delete tmpECB;	// not notify?
@@ -506,6 +530,7 @@ Bitu IPX_IntHandler(void) {
 	return CBRET_NONE;
 }
 
+#if C_IPX
 static void pingAck(IPaddress retAddr) {
 	IPXHeader regHeader;
 	UDPpacket regPacket;
@@ -562,6 +587,8 @@ static void pingSend(void) {
 	}
 }
 
+#endif
+
 static void receivePacket(Bit8u *buffer, Bit16s bufSize) {
 	ECBClass *useECB;
 	ECBClass *nextECB;
@@ -570,8 +597,9 @@ static void receivePacket(Bit8u *buffer, Bit16s bufSize) {
 	IPXHeader * tmpHeader;
 	tmpHeader = (IPXHeader *)buffer;
 
+#if C_IPX
 	// Check to see if ping packet
-	if(useSocket == 0x2) {
+	if(useSocket == 0x2 && !ipxRoom) {
 		// Is this a broadcast?
 		if((tmpHeader->dest.addr.byIP.host == 0xffffffff) &&
 			(tmpHeader->dest.addr.byIP.port == 0xffff)) {
@@ -582,6 +610,7 @@ static void receivePacket(Bit8u *buffer, Bit16s bufSize) {
 			return;
 		}
 	}
+#endif
 
 	useECB = ECBList;
 	while(useECB != NULL)
@@ -597,6 +626,7 @@ static void receivePacket(Bit8u *buffer, Bit16s bufSize) {
 	LOG_IPX("IPX: RX Packet loss!");
 }
 
+#if C_IPX
 static void IPX_ClientLoop(void) {
 	int numrecv;
 	UDPpacket inPacket;
@@ -618,6 +648,12 @@ void DisconnectFromServer(bool unexpected) {
 		SDLNet_UDP_Close(ipxClientSocket);
 	}
 }
+#endif
+
+// The room's network, every emulated millisecond: its links looked at, its packets for us delivered (receivePacket).
+static void IPX_RoomLoop(void) {
+	wc::ipx_room_tick();
+}
 
 static void sendPacket(ECBClass* sendecb) {
 	Bit8u outbuffer[IPXBUFFERSIZE];
@@ -625,9 +661,6 @@ static void sendPacket(ECBClass* sendecb) {
 	Bit16u i, fragCount,t;
 	Bit16s packetsize;
 	Bit16u *wordptr;
-	Bits result;
-	UDPpacket outPacket;
-		
 	sendecb->setInUseFlag(USEFLAG_AVAILABLE);
 	packetsize = 0;
 	fragCount = sendecb->getFragCount(); 
@@ -700,7 +733,14 @@ static void sendPacket(ECBClass* sendecb) {
 		if(immedAddr[m]!=0xff) islocalbroadcast=false;
 	}
 	LOG_IPX("SEND crc:%2x",packetCRC(&outbuffer[0], packetsize));
-	if(!isloopback) {
+	if(!isloopback && ipxRoom) {
+		wc::ipx_room_send(outbuffer, packetsize);
+		sendecb->setCompletionFlag(COMP_SUCCESS);
+	}
+#if C_IPX
+	else if(!isloopback) {
+		Bits result;
+		UDPpacket outPacket;
 		outPacket.channel = UDPChannel;
 		outPacket.data = (Uint8 *)&outbuffer[0];
 		outPacket.len = packetsize;
@@ -719,6 +759,7 @@ static void sendPacket(ECBClass* sendecb) {
 			LOG_IPX("Packet sent: size: %d",packetsize);
 		}
 	}
+#endif
 	else sendecb->setCompletionFlag(COMP_SUCCESS);
 
 	if(isloopback||islocalbroadcast) {
@@ -729,6 +770,7 @@ static void sendPacket(ECBClass* sendecb) {
 	sendecb->NotifyESR();
 }
 
+#if C_IPX
 static bool pingCheck(IPXHeader * outHeader) {
 	char buffer[1024];
 	Bits result;
@@ -831,6 +873,8 @@ bool ConnectToServer(char const *strAddr) {
 	return false;
 }
 
+#endif
+
 void IPX_NetworkInit() {
 
 	localIpxAddr.netnum[0] = 0x0;
@@ -848,6 +892,7 @@ void IPX_NetworkInit() {
 	return;
 }
 
+#if C_IPX
 class IPXNET : public Program {
 public:
 	void HelpCommand(const char *helpStr) {
@@ -1058,6 +1103,7 @@ public:
 static void IPXNET_ProgramStart(Program * * make) {
 	*make=new IPXNET;
 }
+#endif
 
 Bitu IPX_ESRHandler(void) {
 	LOG_IPX("ESR: >>>>>>>>>>>>>>>" );
@@ -1089,24 +1135,40 @@ private:
 	CALLBACK_HandlerObject callback_esr;
 	CALLBACK_HandlerObject callback_ipxint;
 	RealPt old_73_vector;
+	bool started;			// (ipx=true, and a network to be on)
 	static Bit16u dospage;
 public:
-	IPX(Section* configuration):Module_base(configuration) {
+	IPX(Section* configuration):Module_base(configuration), started(false) {
 		Section_prop * section = static_cast<Section_prop *>(configuration);
 		if(!section->Get_bool("ipx")) return;
-		if(!SDLNetInited) {
+		ipxRoom = wc::ipx_room_configured();
+#if C_IPX
+		if(!ipxRoom && !SDLNetInited) {
 			if(SDLNet_Init() == -1){
 				LOG_MSG("SDLNet_Init failed: %s\n", SDLNet_GetError());
 				return;
 			}
 			SDLNetInited = true;
 		}
+		isIpxServer = false;
+		isIpxConnected = false;
+#else
+		if(!ipxRoom) {
+			LOG_MSG("IPX: no network (this build has no IPXNET: a room is needed, WCROOM)");
+			return;
+		}
+#endif
 
 		ECBList = NULL;
 		ESRList = NULL;
-		isIpxServer = false;
-		isIpxConnected = false;
 		IPX_NetworkInit();
+		if(ipxRoom) {
+			// The room's network: this machine's node is its own from the start (NETBIOS.EXE asks as it loads)
+			wc::ipx_room_node(localIpxAddr.netnode);
+			wc::ipx_room_init(&receivePacket);
+			TIMER_AddTickHandler(&IPX_RoomLoop);
+		}
+		started = true;
 
 		DOS_AddMultiplexHandler(IPX_Multiplex);
 
@@ -1157,19 +1219,26 @@ public:
 		RealSetVec(0x73,ESRRoutineBase,old_73_vector);	// IRQ11
 		IO_WriteB(0xa1,IO_ReadB(0xa1)&(~8));			// enable IRQ11
 
-		PROGRAMS_MakeFile("IPXNET.COM",IPXNET_ProgramStart);
+#if C_IPX
+		if(!ipxRoom) PROGRAMS_MakeFile("IPXNET.COM",IPXNET_ProgramStart);
+#endif
 	}
 
 	~IPX() {
-		Section_prop * section = static_cast<Section_prop *>(m_configuration);
 		PIC_RemoveEvents(IPX_AES_EventHandler);
-		if(!section->Get_bool("ipx")) return;
+		if(!started) return;
 
+		if(ipxRoom) {
+			TIMER_DelTickHandler(&IPX_RoomLoop);
+			wc::ipx_room_shutdown();
+		}
+#if C_IPX
 		if(isIpxServer) {
 			isIpxServer = false;
 			IPX_StopServer();
 		}
 		DisconnectFromServer(false);
+#endif
 
 		DOS_DelMultiplexHandler(IPX_Multiplex);
 		RealSetVec(0x73,old_73_vector);
@@ -1179,7 +1248,10 @@ public:
 		for(Bitu i = 0;i < 32;i++)
 			phys_writeb(phyDospage+i,(Bit8u)0x00);
 
-		VFILE_Remove("IPXNET.COM");
+#if C_IPX
+		if(!ipxRoom) VFILE_Remove("IPXNET.COM");
+#endif
+		ipxRoom = false;
 	}
 };
 
@@ -1196,5 +1268,3 @@ void IPX_Init(Section* sec) {
 
 //Initialize static members;
 Bit16u IPX::dospage = 0;
-
-#endif

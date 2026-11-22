@@ -733,6 +733,10 @@ message NetworkMessage {
     // the TIE Fighter demo's (from 90: docs/tiedemo.md)
     optional TdmHello tdm_hello = 90;
     optional TdmState tdm_state = 91;
+    // the room's IPX network (from 120: src/cpu/wcnet_ipx.cpp, docs/armada.md; 100-114 are DOOM's and Wolfenstein's
+    // on the branch doom)
+    optional IpxHello ipx_hello = 120;
+    optional IpxPacket ipx_packet = 121;
 }
 
 // Raptor: Call of the Shadows (docs/raptor.md).  A pilot says hello; the host answers with its seat.
@@ -807,4 +811,15 @@ message TdmState {
     optional uint32 verdict = 10;
     optional uint32 next = 11;
     optional bool over = 12;
+}
+
+// The room's IPX network (src/cpu/wcnet_ipx.cpp, docs/armada.md).  A guest says hello to the host on its link, the
+// host answers; then packets, each whole, its IPX header first, as the program on that machine made it.
+message IpxHello {
+    optional string callsign = 1;
+    optional bytes node = 2;            // its node on the network (6 bytes)
+    optional uint32 seat = 3;           // (the host's answer) the guest's seat
+}
+message IpxPacket {
+    optional bytes data = 1;
 }

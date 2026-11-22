@@ -69,8 +69,15 @@
 #pragma pack(1)
 #endif
 
+#if C_IPX
 // For Uint8 type
 #include "SDL_net.h"
+#else
+// (no SDL_net: the room's network only, src/cpu/wcnet_ipx.cpp; the header's types are the same widths)
+typedef Bit8u Uint8;
+typedef Bit16u Uint16;
+typedef Bit32u Uint32;
+#endif
 
 struct PackedIP {
 	Uint32 host;
@@ -150,8 +157,10 @@ public:
 // The following routines may not be needed on all systems.  On my build of SDL the IPaddress structure is 8 octects 
 // and therefore screws up my IPXheader structure since it needs to be packed.
 
+#if C_IPX
 void UnpackIP(PackedIP ipPack, IPaddress * ipAddr);
 void PackIP(IPaddress ipAddr, PackedIP *ipPack);
+#endif
 
 #ifdef _MSC_VER
 #pragma pack()

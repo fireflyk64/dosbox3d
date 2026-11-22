@@ -50,6 +50,8 @@ const char *message_type_name(const NetworkMessage &msg) {
     if (msg.has_priv_hit()) return "priv_hit";
     if (msg.has_priv_shot()) return "priv_shot";
     if (msg.has_priv_pod_taken()) return "priv_pod_taken";
+    if (msg.has_ipx_hello()) return "ipx_hello";
+    if (msg.has_ipx_packet()) return "ipx_packet";
     return "none";
 }
 
