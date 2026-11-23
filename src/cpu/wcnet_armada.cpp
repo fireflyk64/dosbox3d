@@ -25,6 +25,7 @@
 #include <string.h>
 #include <string>
 #include "wcnet_armada.h"
+#include "wcnet_armada_hires.h"
 #include "wcnet_game.h"
 #include "wcnet_log.h"
 #include "mem.h"
@@ -37,10 +38,6 @@
 #include <map>
 #include <vector>
 #include <algorithm>
-
-bool wc_arm_vga_probe;
-namespace wc { void arm_vga_write(PhysPt addr, int len); }
-void wc_arm_vga_write(PhysPt addr, int len) { wc::arm_vga_write(addr, len); }
 
 namespace wc {
 
@@ -268,8 +265,6 @@ unsigned g_profSamples, g_startChanges;
 Bitu g_lastStart = ~(Bitu)0;
 std::map<Bit32u, unsigned> g_profAt, g_profVga;
 std::map<Bit16u, unsigned> g_profEs, g_profCs;
-struct Writer { unsigned bytes; PhysPt lo, hi; Bit16u ds, es; Bit32u si, di; };
-std::map<Bit32u, Writer> g_writers;
 
 std::string top_of(const std::map<Bit32u, unsigned> &m, size_t n) {
     std::vector<std::pair<unsigned, Bit32u> > top;
@@ -312,13 +307,6 @@ void prof_sample() {
         g_profCs.clear();
     }
     wclog(1, "Armada profile: ES=A000 at:%s", top_of(g_profVga, 20).c_str());
-    for (std::map<Bit32u, Writer>::const_iterator i = g_writers.begin(); i != g_writers.end(); ++i) {
-        const Writer &w = i->second;
-        wclog(1, "Armada profile: VGA writer %04X:%04X %u bytes, %05X..%05X (rows %u..%u), last DS %04X(+%04X) SI %04X ES %04X DI %04X",
-              i->first >> 16, i->first & 0xFFFF, w.bytes, (unsigned)w.lo, (unsigned)w.hi, (unsigned)(w.lo / 320), (unsigned)(w.hi / 320),
-              w.ds, (Bit16u)(w.ds - g_load), (unsigned)w.si, w.es, (unsigned)w.di);
-    }
-    g_writers.clear();
     std::map<Bit32u, unsigned> es;
     for (std::map<Bit16u, unsigned>::const_iterator i = g_profEs.begin(); i != g_profEs.end(); ++i) es[(Bit32u)i->first << 16] = i->second;
     wclog(1, "Armada profile: ES (paragraph from load):%s", top_of(es, 8).c_str());
@@ -329,162 +317,6 @@ void prof_sample() {
     g_startChanges = 0;
 }
 
-
-// WCNET_ARM_ZOOM=<0..3>: research, the scene drawn as one quarter of a picture twice as large: from the frame's
-// setup call (seg2B4B:063F) to its display list's end (back at 0670) the view's records (centre x, y words; scale x,
-// y dwords 8.8) are the quarter's, then put back.  WCNET_ARM_ZOOM=4: the four quarters each frame (the section from
-// 062B run five times: the quarters, then the game's own), kept as a 640x400 scene; !armfine=<name> writes the next
-// frame's composed picture to $WCNET_DUMP_DIR/<name>.ppm.
-const Bit16u kFrameSeg = 0x2B4B, kFrameTop = 0x061A, kSceneCall = 0x063F, kSceneBack = 0x0671;
-const Bit16u kBitmapRecord = 0x621A;    // DS: the near pointer to the back buffer's bitmap record
-int g_zoom = -2;                // -2 unread, -1 off
-std::vector<PhysPt> g_views;
-Bit8u g_viewOrig[12];
-bool g_viewSet;
-int g_pass = -1;                // 0..3 the quarters, 4 the game's own; -1 none
-bool g_jumped;
-std::vector<Bit8u> g_fine(640 * 400), g_fineDone(640 * 400), g_scene(320 * 200), g_sceneDone(320 * 200);
-bool g_haveDone;
-std::string g_finePending;
-
-bool view_tuple(PhysPt a, Bit8u *out) {
-    for (int k = 0; k < 12; k++) if (mem_readb_checked(a + k, &out[k])) return false;
-    const Bit16s cx = (Bit16s)(out[0] | out[1] << 8), cy = (Bit16s)(out[2] | out[3] << 8);
-    const Bit32s sx = (Bit32s)(out[4] | out[5] << 8 | out[6] << 16 | (Bit32u)out[7] << 24);
-    const Bit32s sy = (Bit32s)(out[8] | out[9] << 8 | out[10] << 16 | (Bit32u)out[11] << 24);
-    return cx >= 140 && cx <= 180 && cy >= 40 && cy <= 120 && sx >= 0x1000 && sx <= 0x200000 && sy >= 0x1000 &&
-           sy <= 0x200000 && sx * 10 > sy * 11 && sx * 10 < sy * 13;
-}
-
-void find_views() {
-    std::map<std::string, std::vector<PhysPt> > by;
-    Bit8u t[12];
-    for (PhysPt a = 0; a < 0x110000 - 12; a += 2) {
-        if (view_tuple(a, t)) by[std::string((const char *)t, 12)].push_back(a);
-    }
-    size_t best = 0;
-    for (std::map<std::string, std::vector<PhysPt> >::const_iterator i = by.begin(); i != by.end(); ++i) {
-        if (i->second.size() > best) {
-            best = i->second.size();
-            g_views = i->second;
-            memcpy(g_viewOrig, i->first.data(), 12);
-        }
-    }
-    std::string list;
-    for (size_t i = 0; i < g_views.size(); i++) {
-        char b[16];
-        snprintf(b, sizeof(b), " %05X", (unsigned)g_views[i]);
-        list += b;
-    }
-    wclog(1, "Armada zoom: %u view records:%s", (unsigned)g_views.size(), list.c_str());
-}
-
-void view_quarter(int q) {
-    if (g_views.empty()) find_views();
-    Bit8u t[12];
-    const int qx = q & 1, qy = q >> 1;
-    const Bit16s cx = (Bit16s)(g_viewOrig[0] | g_viewOrig[1] << 8), cy = (Bit16s)(g_viewOrig[2] | g_viewOrig[3] << 8);
-    Bit32s sx, sy;
-    memcpy(&sx, g_viewOrig + 4, 4);
-    memcpy(&sy, g_viewOrig + 8, 4);
-    for (size_t i = 0; i < g_views.size(); i++) {
-        if (!view_tuple(g_views[i], t) || memcmp(t, g_viewOrig, 12) != 0) continue;
-        mem_writew(g_views[i], (Bit16u)(2 * cx - qx * 320));
-        mem_writew(g_views[i] + 2, (Bit16u)(2 * cy - qy * 200));
-        mem_writed(g_views[i] + 4, (Bit32u)(2 * sx));
-        mem_writed(g_views[i] + 8, (Bit32u)(2 * sy));
-    }
-    g_viewSet = true;
-}
-
-void view_back() {
-    if (!g_viewSet) return;
-    g_viewSet = false;
-    for (size_t i = 0; i < g_views.size(); i++) {
-        for (int k = 0; k < 12; k++) mem_writeb(g_views[i] + k, g_viewOrig[k]);
-    }
-}
-
-// The back buffer, 320x200, through the game's bitmap record (segment, row table, clip): into out at (ox, oy), pitch
-bool read_buffer(Bit8u *out, int pitch, int ox, int oy) {
-    const PhysPt dsb = SegPhys(ds);
-    const Bit16u rec = mem_readw(dsb + kBitmapRecord);
-    const Bit16u seg = mem_readw(dsb + rec), rows = mem_readw(dsb + rec + 2);
-    for (int y = 0; y < 200; y++) {
-        const Bit16u ro = mem_readw(dsb + (Bit16u)(rows + 2 * y));
-        const PhysPt line = ((PhysPt)seg << 4) + ro;
-        Bit8u *o = out + (oy + y) * pitch + ox;
-        for (int x = 0; x < 320; x++) {
-            if (mem_readb_checked(line + x, &o[x])) return false;
-        }
-    }
-    return true;
-}
-
-void write_fine(const std::string &name) {
-    // L: the screen as shown (mode 13h, the frame the passes were for); where it still holds the scene's own pixel the
-    // fine scene shows, anywhere else (the cockpit, the instruments, the sight) the game's pixel doubled
-    const char *dir = getenv("WCNET_DUMP_DIR");
-    const std::string path = std::string(dir ? dir : ".") + "/" + name + ".ppm";
-    FILE *f = fopen(path.c_str(), "wb");
-    if (!f) return;
-    fprintf(f, "P6\n640 400\n255\n");
-    unsigned fine = 0;
-    for (int y = 0; y < 400; y++) {
-        for (int x = 0; x < 640; x++) {
-            const int o = (y >> 1) * 320 + (x >> 1);
-            const Bit8u l = vga.fastmem[o];
-            Bit8u c = l;
-            if (l == g_sceneDone[o]) { c = g_fineDone[y * 640 + x]; fine++; }
-            const RGBEntry &e = vga.dac.rgb[c];
-            fputc((e.red << 2) | (e.red >> 4), f);
-            fputc((e.green << 2) | (e.green >> 4), f);
-            fputc((e.blue << 2) | (e.blue >> 4), f);
-        }
-    }
-    fclose(f);
-    wclog(1, "Armada fine: %s written (%u of 256000 pixels the fine scene's)", path.c_str(), fine);
-}
-
-void frame_top() {
-    if (g_jumped) {             // (the browser's second call for a place jumped to)
-        g_jumped = false;
-        return;
-    }
-    if (!g_finePending.empty() && g_haveDone) {
-        write_fine(g_finePending);
-        g_finePending.clear();
-    }
-    g_pass = 0;
-}
-
-bool scene_back_hook() {
-    view_back();
-    if (g_zoom != 4 || g_pass < 0) return true;
-    if (g_pass < 4) {
-        const int q = g_pass;
-        read_buffer(&g_fine[0], 640, (q & 1) * 320, (q >> 1) * 200);
-        g_pass++;
-        reg_eip = kFrameTop;    // (the section again: the next quarter, or the game's own)
-        g_jumped = true;
-        return true;
-    }
-    read_buffer(&g_scene[0], 320, 0, 0);
-    g_fineDone.swap(g_fine);
-    g_sceneDone.swap(g_scene);
-    g_haveDone = true;
-    g_pass = -1;
-    return true;
-}
-
-bool zoom_on() {
-    if (g_zoom == -2) {
-        const char *env = getenv("WCNET_ARM_ZOOM");
-        g_zoom = env && env[0] ? atoi(env) : -1;
-        if (g_zoom > 4) g_zoom = 4;
-    }
-    return g_zoom >= 0 && g_arm && strcmp(g_arm->exe, "ARMADA.EXE") == 0;
-}
 
 }  // namespace
 
@@ -502,6 +334,30 @@ void arm_trace_step() {
     const Bit16u code = SegValue(cs);
     const Bit32u ip = reg_eip;
     g_traceN++;
+    {
+        // WCNET_ARM_PWATCH=<phys hex>[,...]: research, a changed byte at a physical address, and the code just before
+        static std::vector<PhysPt> at;
+        static std::vector<Bit8u> was;
+        static int read = 0;
+        if (!read) {
+            read = 1;
+            const char *env = getenv("WCNET_ARM_PWATCH");
+            for (const char *c = env; c && *c;) {
+                at.push_back((PhysPt)strtoul(c, NULL, 16));
+                was.push_back(phys_readb(at.back()));
+                c = strchr(c, ',');
+                if (c) c++;
+            }
+        }
+        for (size_t k = 0; k < at.size(); k++) {
+            const Bit8u now = phys_readb(at[k]);
+            if (now != was[k]) {
+                fprintf(g_traceFile, "%llu W %07X %02x -> %02x by %04X:%04X \n", (unsigned long long)g_traceN,
+                        (unsigned)at[k], was[k], now, g_tracePrevCs, (unsigned)g_tracePrevIp);
+                was[k] = now;
+            }
+        }
+    }
     if (g_tracePending || code != g_tracePrevCs) {
         const char kind = g_tracePending ? (char)g_tracePending : 'X';
         fprintf(g_traceFile, "%llu %c %04X:%04X -> %04X:%04X %s\n", (unsigned long long)g_traceN, kind, g_tracePrevCs,
@@ -534,49 +390,12 @@ void arm_trace_step() {
     g_tracePrevIp = ip;
 }
 
-void arm_vga_write(PhysPt addr, int len) {
-    if (!g_arm) return;
-    const Bit32u key = ((Bit32u)(Bit16u)(SegValue(cs) - g_load) << 16) | (reg_eip & 0xFFFF);
-    static std::map<Bit32u, bool> dumped;
-    if (!dumped[key]) {
-        dumped[key] = true;
-        Descriptor dc, dd;
-        cpu.gdt.GetDescriptor(SegValue(cs), dc);
-        cpu.gdt.GetDescriptor(SegValue(ds), dd);
-        wclog(1, "Armada probe: new VGA writer CS %04X:%08X pmode %d big %d cpl %u cr0 %08X cr3 %08X paging %d; CS base %08X limit %08X; DS %04X base %08X limit %08X; ES %04X base %08X; SS %04X base %08X ESP %08X",
-              SegValue(cs), (unsigned)reg_eip, cpu.pmode ? 1 : 0, cpu.code.big ? 1 : 0, (unsigned)cpu.cpl, (unsigned)cpu.cr0,
-              (unsigned)paging.cr3, PAGING_Enabled() ? 1 : 0, (unsigned)SegPhys(cs), (unsigned)dc.GetLimit(), SegValue(ds),
-              (unsigned)SegPhys(ds), (unsigned)dd.GetLimit(), SegValue(es), (unsigned)SegPhys(es), SegValue(ss), (unsigned)SegPhys(ss), (unsigned)reg_esp);
-        const char *dir = getenv("WCNET_DUMP_DIR");
-        if (cpu.pmode && dir) {
-            // the code segment, as far as its limit goes (at most 1 MB) and the pages are there
-            char name[256];
-            snprintf(name, sizeof(name), "%s/code_%04X.bin", dir, SegValue(cs));
-            FILE *f = fopen(name, "wb");
-            if (f) {
-                const Bitu lim = dc.GetLimit() < 0xFFFFF ? dc.GetLimit() : 0xFFFFF;
-                for (Bitu o = 0; o <= lim; o++) {
-                    Bit8u b;
-                    if (mem_readb_checked((PhysPt)(SegPhys(cs) + o), &b)) break;
-                    fputc(b, f);
-                }
-                fclose(f);
-            }
-        }
-    }
-    Writer &w = g_writers[key];
-    if (!w.bytes || addr < w.lo) w.lo = addr;
-    if (!w.bytes || addr > w.hi) w.hi = addr;
-    w.bytes += len;
-    w.ds = SegValue(ds); w.es = SegValue(es); w.si = reg_esi; w.di = reg_edi;
-}
-
 void arm_tick() {
+    arm_hires_tick();
     if (!g_arm) return;
     if (g_prof < 0) {
         const char *env = getenv("WCNET_ARM_PROF");
         g_prof = env && env[0] && env[0] != '0';
-        wc_arm_vga_probe = g_prof != 0;
         g_profNext = PIC_FullIndex() + 5000;
     }
     if (g_prof) prof_sample();
@@ -600,6 +419,7 @@ void arm_program_loaded(const char *name, Bit16u loadSeg, Bit16u psp) {
         g_packet = 0;
         g_lastEnd = -1e9;
         memset(g_axis, 0, sizeof(g_axis));
+        arm_hires_loaded(kBuilds[i].exe, loadSeg);
         hooks_game_changed();       // (the dispatcher's table: our places)
         wclog(1, "%s loaded at %04X (PSP %04X): the arrows %s", kBuilds[i].title, loadSeg, psp,
               ramp_on() ? "ramped" : "the game's own");
@@ -611,6 +431,7 @@ void arm_program_ended(Bit16u psp) {
     if (g_arm && psp == g_psp) {
         wclog(1, "%s ended", g_arm->title);
         g_arm = NULL;
+        arm_hires_loaded(NULL, 0);
         hooks_game_changed();
     }
 }
@@ -626,11 +447,7 @@ void arm_watch_list(void (*watch)(Bit16u ip)) {
         watch(g_arm->orD);
     }
     watch(g_arm->loopEnd);      // (the ramp's, and the drag's)
-    if (zoom_on()) {
-        watch(kFrameTop);
-        watch(kSceneCall);
-        watch(kSceneBack);
-    }
+    arm_hires_watch(watch);     // (the high-resolution picture's, once it is first wanted)
 }
 
 void arm_steer(double x, double y, bool on) {
@@ -643,10 +460,7 @@ void arm_steer(double x, double y, bool on) {
 }
 
 bool arm_script_item(const std::string &item, double t) {
-    if (item.compare(0, 9, "!armfine=") == 0) {
-        g_finePending = item.substr(9);
-        return true;
-    }
+    if (arm_hires_script_item(item, t)) return true;
     // !armdump=<name>: research, the linear 0..10FFFF and 200000..23FFFF (as paged now) to $WCNET_DUMP_DIR/<name>.lo/.hi
     if (item.compare(0, 9, "!armdump=") == 0) {
         const char *dir = getenv("WCNET_DUMP_DIR");
@@ -704,16 +518,7 @@ bool arm_script_item(const std::string &item, double t) {
 }
 
 bool arm_check_hooks(Bit32u ip) {
-    if (g_arm && zoom_on() && SegValue(cs) == (Bit16u)(g_load + kFrameSeg)) {
-        if (ip == kFrameTop) { if (g_zoom == 4) frame_top(); return true; }
-        if (ip == kSceneCall) {
-            if (g_jumped) { g_jumped = false; }     // (never: the jump lands at 062B)
-            if (g_zoom < 4) view_quarter(g_zoom);
-            else if (g_pass >= 0 && g_pass < 4) view_quarter(g_pass);
-            return true;
-        }
-        if (ip == kSceneBack) return scene_back_hook();
-    }
+    if (arm_hires_hook(ip)) return true;    // (the high-resolution picture's: wcnet_armada_hires.cpp)
     if (!g_arm || SegValue(cs) != (Bit16u)(g_load + g_arm->seg)) {
         return false;
     }

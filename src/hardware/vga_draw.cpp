@@ -26,6 +26,7 @@
 #include "vga.h"
 #include "pic.h"
 #include "../cpu/wcnet_priv_hires.h"
+#include "../cpu/wcnet_armada_hires.h"
 
 //#undef C_DEBUG
 //#define C_DEBUG 1
@@ -838,6 +839,7 @@ static void VGA_VerticalTimer(Bitu /*val*/) {
 	//Check if we can actually render, else skip the rest (frameskip)
 	if (vga.draw.vga_override) {
 		wc_priv_hires_vsync();	// (Privateer's 640 x 480 picture, when the override is its own)
+		wc_arm_hires_vsync();	// (Armada's 640 x 400, when it is its own)
 		return;
 	}
 	if (!RENDER_StartUpdate())

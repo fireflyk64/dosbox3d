@@ -36,6 +36,7 @@
 #include "wcnet_priv_hires.h"
 #include "wcnet_tiedemo.h"
 #include "wcnet_armada.h"
+#include "wcnet_armada_hires.h"
 #include "wcnet_ipx.h"
 #include "paging.h"
 #include "callback.h"
@@ -2210,6 +2211,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_stick(double x, double y) {
 }
 // Privateer's pointer (the page's "Kbd + mouse (shown)" or "Keyboard + mouse"): 1 a ring in flight and a white one on
 // the options screen, 0 the game's own (none, black); a negative value only asks.
+// Armada's 640x400 flight (the page's "High resolution (2x)" while flying; WCARMHIRES at the launch); a negative
+// value only asks.  1: the picture is 640x400 now.
+extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_arm_hires(int on) {
+    if (on >= 0) {
+        wc::arm_hires_set(on != 0);
+    }
+    return wc::arm_hires_on() ? 1 : 0;
+}
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_priv_hires(int on) {
     if (on >= 0) {
         wc::priv_hires_set(on != 0);    // (the page's "High resolution", while flying; WCPRIVHIRES at the launch)
@@ -2525,6 +2534,10 @@ bool wc_net_key_filter(int kbdKey, bool pressed) {
     using namespace wc;
     if (kbdKey == KBD_grave && priv_found()) {
         if (pressed) priv_hires_flip();     // (Privateer: ` flips the high-resolution picture; the game has no use for it)
+        return true;
+    }
+    if (kbdKey == KBD_grave && arm_found()) {
+        if (pressed) arm_hires_flip();      // (Armada: the same, wcnet_armada_hires.cpp)
         return true;
     }
     if (priv_controls_key(kbdKey, pressed)) {
