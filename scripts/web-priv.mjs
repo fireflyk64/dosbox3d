@@ -8,6 +8,7 @@
 //   RF=1: Righteous Fire (the menu's other program)
 //   HIRES=1: the page's "High resolution (2x)" (ticked by default) left ticked: 640 x 480 in flight, the frame rate
 //   held, ` flips it; HIRES=0: unticked before Fly, the game's own picture and none of the high resolution's hooks
+//   CLASSIC=1: the page opened with ?privclassic=1: the box unticked and greyed, the game as it was (WCPRIVCLASSIC)
 //   ROOM=<code>: the page joins that room as a guest (scripts/web-priv.sh ROOM=1 makes a native host's) and checks the
 //   room's presence lines (src/cpu/wcnet_priv_session.cpp) instead of flying alone
 //   PAD=1: a stand-in gamepad (scripts/web-pad.mjs's) picked in flight, its stick pushed right: the page's stick steers
@@ -64,6 +65,7 @@ u.searchParams.set("server", lobbyUrl);
 u.searchParams.set("hall", "PRVHALL-" + Math.random().toString(36).slice(2, 6).toUpperCase());
 u.searchParams.set("callsign", "PRIVTEST");
 if (process.env.ROOM) u.searchParams.set("room", process.env.ROOM);
+if (process.env.CLASSIC) u.searchParams.set("privclassic", "1");
 u.searchParams.set("env.WCNET_KEYSCRIPT", route);
 u.searchParams.set("env.WCNET_KEYSCRIPT_FROM", "boot");
 u.searchParams.set("env.WCNET_LOG", "3");
@@ -110,7 +112,10 @@ if (process.env.ROOM) {
   await page.click("#join");
   await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 30000 });
 }
-{
+if (process.env.CLASSIC) {
+  const box = await page.evaluate(() => { const el = document.getElementById("privHires"); return !!el && el.disabled && !el.checked; });
+  check("?privclassic=1: the High resolution box unticked and greyed", box);
+} else {
   const box = await page.evaluate(() => { const el = document.getElementById("privHires"); return !!el && el.offsetParent !== null && el.checked && el.type === "checkbox"; });
   check("the High resolution checkbox shows, ticked by default", box);
   if (process.env.HIRES === "0") await page.uncheck("#privHires");
@@ -151,6 +156,13 @@ check("full screen: 4:3, as large as fits, in the middle",
 await page.screenshot({ path: path.join(shotDir, "web-priv-full.png") });
 await page.evaluate(() => document.exitFullscreen());
 await sleep(1000);
+if (process.env.CLASSIC) {
+  const size = await page.$eval("#canvas", (c) => `${c.width} x ${c.height}`);
+  check("classic: the game's own picture", size === "640 x 400", size);
+  check("classic: the game as it was", logs.some((l) => /the game as it was \(WCPRIVCLASSIC\)/.test(l)));
+  check("classic: none of the high resolution's places watched", !logs.some((l) => /high-resolution picture's places watched/.test(l)));
+  check("classic: the game's own poll of the game port", !logs.some((l) => /no stick at the start/.test(l)));
+}
 if (process.env.HIRES === "0") {
   const size = await page.$eval("#canvas", (c) => `${c.width} x ${c.height}`);
   check("unticked: the game's own picture", size === "640 x 400", size);
