@@ -65,6 +65,10 @@ void priv_controls_stick(double x, double y);
 // pointer drawn where the game shows none or a dark one.
 bool priv_pointer_shown();
 void priv_pointer_set(bool shown);
+// The page's "Invert mouse" (WCPRIVMOUSEINVERT=1, wc_web_priv_mouse_invert while running): true, the game's own pitch
+// (the mouse pushed up dives); false, the default, pushed up climbs.
+bool priv_mouse_inverted();
+void priv_mouse_invert_set(bool inverted);
 // The mouse flying the ship (the options' MOUSE): where to draw its pointer, shares of the picture (false: none to draw).
 bool priv_controls_marker(double *x, double *y);
 // The game's own pointer where its palette makes it dark (the options screen over a flight, Alt+O): its pixels, a box of

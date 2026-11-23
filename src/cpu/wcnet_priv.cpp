@@ -2053,6 +2053,16 @@ bool priv_script_item(const std::string &item, double t) {
               g_scriptStickX, g_scriptStickY, priv_control_mode());
         return true;
     }
+    if (item.compare(0, 10, "!privmode=") == 0 && g_found) {
+        // !privmode=<keyboard|mouse|joystick>: the options' control mode, its three flags written as its buttons do
+        // (seg037:0004, 0018, 002C write them and nothing else)
+        const std::string m = item.substr(10);
+        priv_w8(0x13EF, m == "joystick");
+        priv_w8(0x13F0, m == "mouse");
+        priv_w8(0x13F1, m == "keyboard");
+        wclog(1, "key script %.1fs: the options' control mode %s", t, priv_control_mode());
+        return true;
+    }
     if (item.compare(0, 10, "!privturn=") == 0 && g_found) {
         // !privturn=<pod|ship|pirate|hunt>:<degrees a second>:<seconds>: our ship turned steadily toward the nearest pod
         // (or other ship, or hostile ship) for that long, a video aid (the matrix's second row is "forward"); hunt: the

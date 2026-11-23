@@ -1119,3 +1119,24 @@ landing (AGRIC) show the flight's art in place, colours right, the Tarsus in fro
 
 shape_of's run-length decoding is now decode_rows, a template over the bytes it reads (the game's memory, or a file's).
 
+
+## 25. The mouse's pitch, and the page's "Invert mouse" (2026-11-22)
+
+The user: "The mouse is inverted.  Is there a way to change it back. An option or toggle".  The game's mouse flying
+(the options' MOUSE, Alt+O) turns toward the pointer left and right but pitches as a flight stick: seg088:02E5 writes
+the control record's yaw from -(x - ds:3C5B) / 10 (negated at 0327) and its pitch from (y - ds:3C5D) / 3, not negated
+(0373..03C7), and +0x100 pitch climbs (the keyboard's Down).  So the pointer above the middle, the mouse pushed up,
+dives.  The game has no setting for it (no "invert" among its strings).  With button 2 held the mouse's x rolls
+(03CF) and its y changes the speed (seg088:0909, pushed up faster): neither is touched.
+
+Now the page's "Invert mouse" box (Privateer only, beside High resolution, remembered by the browser, unticked by
+default; `WCPRIVMOUSEINVERT=1` at the launch, `wc_web_priv_mouse_invert` while flying): unticked, at seg088:0BBD (where
+the modes' readings meet, section 4) the mouse mode's pitch is turned the other way up, the record's +6 only, so the
+pointer above the middle climbs and the ship steers toward the pointer both ways (the ring, section 18, is where the
+nose goes); ticked, the game's own.  The page's stick (a pad, the touch stick) writes its own pitch over it as before.
+The first flight frame says the choice in the log ("the mouse pushed up raises the nose" or "the mouse inverted, as the
+game has it").  The rig aid `!privmode=keyboard|mouse|joystick` writes the options' three flags as its buttons do.
+
+Measured, a Tarsus out of Achilles, the options' MOUSE, the pointer at the middle then 40 of 200 above it for two
+seconds, then 40 below (the forward row's z from DGROUP each second): unticked the nose went -6 -> +10 degrees, then
+down to -51; ticked (the game's own) +0 -> -77.

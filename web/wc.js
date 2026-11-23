@@ -1015,6 +1015,7 @@ function renderMission() {
   // (Privateer: Face, yours on the others' comm screens, in the Conn and Collide choices' place)
   $("privFaceLabel").hidden = !isPriv();
   $("privHiresLabel").hidden = !isPriv();
+  $("privMouseLabel").hidden = !isPriv();
   $("privFFLabel").hidden = !isPriv() || one;
   $("privFF").disabled = !isHost();       // (the host's counts, as Collide's)
   // (Terminal Velocity: the craft each pilot flies as in the others' games, the host's choice)
@@ -2276,6 +2277,18 @@ function setPrivPointer(v) {
   const M = running && window.DOSBox;
   if (M && M._wc_web_priv_pointer && isPriv()) M._wc_web_priv_pointer(privPointer === "ring" ? 1 : 0);
 }
+// (Privateer's mouse flying: the game's pitch is a flight stick's, the mouse pushed up dives, with no setting for it;
+// unticked, the default, the emulator turns it the other way up (the user, 2026-11-22: "The mouse is inverted. Is
+// there a way to change it back. An option or toggle"): WCPRIVMOUSEINVERT at the launch, wc_web_priv_mouse_invert while
+// flying, src/cpu/wcnet_priv_controls.cpp)
+const PRIV_MOUSE_KEY = "wc:privMouseInvert";
+try { $("privMouseInvert").checked = localStorage.getItem(PRIV_MOUSE_KEY) === "1"; } catch (e) { /* the first */ }
+$("privMouseInvert").addEventListener("change", () => {
+  const on = $("privMouseInvert").checked;
+  try { localStorage.setItem(PRIV_MOUSE_KEY, on ? "1" : "0"); } catch (e) { /* not kept */ }
+  const M = running && window.DOSBox;
+  if (M && M._wc_web_priv_mouse_invert && isPriv()) M._wc_web_priv_mouse_invert(on ? 1 : 0);
+});
 // (Privateer's friendly fire between pilots, the host's counts: src/cpu/wcnet_priv_session.cpp, ff_from_env)
 const PRIV_FF_KEY = "wc:privFF";
 try { const v = localStorage.getItem(PRIV_FF_KEY); if (["targeted", "always", "never"].includes(v)) $("privFF").value = v; } catch (e) { /* the first */ }
@@ -2509,6 +2522,7 @@ async function start(fromGesture) {
     if (isTie()) env.WCNET_TIE_TOUCH = "1";
     if (isPriv()) env.WCPRIVFACE = $("privFace").value;
     if (isPriv()) env.WCPRIVPOINTER = privPointer;
+    if (isPriv()) env.WCPRIVMOUSEINVERT = $("privMouseInvert").checked ? "1" : "0";
     if (isPriv() && $("privHires").checked && !PRIV_CLASSIC) env.WCPRIVHIRES = "1";
     if (isPriv() && PRIV_CLASSIC) env.WCPRIVCLASSIC = "1";
     if (isPriv() && together) env.WCPRIVFF = $("privFF").value;

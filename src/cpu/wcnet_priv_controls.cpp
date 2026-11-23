@@ -58,6 +58,7 @@ bool g_emptyTold;
 int g_pointerShown = -1;        // the page's pointer choice (-1: not read yet)
 double g_targetKeyAt = -1e9;
 unsigned g_frames;
+int g_mouseInverted = -1;       // the page's "Invert mouse" (-1: not read yet; 1 the game's own way)
 
 bool held(int scan) { return priv_r8((Bit16u)(kHeld + scan)) == 1; }
 
@@ -152,6 +153,9 @@ void priv_controls_frame() {
 //    an arrow is held on stays the arrow's.
 void priv_controls_join() {
     g_frames++;                     // (every mode's frames: the report's "keyboard frames", its old name, which rigs read)
+    if (g_mouseInverted < 0) {
+        priv_mouse_inverted();      // (the launch's choice said in the log at the first flight, whatever the mode)
+    }
     const bool port = JOYSTICK_IsEnabled(0);
     if (port != g_portWas) {
         g_portWas = port;
@@ -171,6 +175,17 @@ void priv_controls_join() {
     const PhysPt rec = control_record();
     Bit32s pitch = (Bit32s)mem_readd(rec + 0x6), yaw = (Bit32s)mem_readd(rec + 0xE), roll = (Bit32s)mem_readd(rec + 0xA);
     static unsigned told;           // (the rigs' and the page test's evidence, twice a second while it steers)
+    if (!live && priv_r8(kModeMouse) && !priv_r8(kModeJoystick) && !priv_mouse_inverted()) {
+        // The mouse's pitch the other way up (see priv_mouse_inverted): the record's only, its turn, roll and the speed
+        // (button 2 and the mouse up or down, seg088:0909) stay the game's
+        pitch = -pitch;
+        mem_writed(rec + 0x6, (Bit32u)pitch);
+        static unsigned toldMouse;
+        if (pitch && toldMouse++ % 14 == 0) {
+            wclog(3, "Privateer: the mouse steers, up climbing: pitch %+d yaw %+d (the game's pitch %+d)", (int)pitch,
+                  (int)yaw, (int)-pitch);
+        }
+    }
     if (!live && !empty) {
         if (port && priv_r8(kModeJoystick) && (pitch || yaw || roll) && told++ % 14 == 0) {
             wclog(3, "Privateer: the joystick (built in): pitch %+d yaw %+d roll %+d", (int)pitch, (int)yaw, (int)roll);
@@ -237,6 +252,28 @@ void priv_pointer_set(bool shown) {
         wclog(1, "Privateer: the mouse's pointer %s", shown ? "shown (a ring in flight, white on the options screen)" : "as the game has it (none in flight)");
     }
     g_pointerShown = shown ? 1 : 0;
+}
+
+// The mouse flying the ship (the options' MOUSE) climbs as a flight stick does: the game's pitch is the pointer's y
+// less the middle's (seg088:0373, not negated, where the turn is: seg088:0327), so the pointer below the middle climbs
+// and pushing the mouse up dives, while left and right turn toward the pointer (the user, 2026-11-22: "The mouse is
+// inverted. Is there a way to change it back. An option or toggle").  The game has no setting for it.  The page's
+// "Invert mouse" (WCPRIVMOUSEINVERT=1 at the launch, wc_web_priv_mouse_invert since): unticked, the default, the
+// mouse pushed up climbs, toward the pointer as the turn is; ticked, the game's own.
+bool priv_mouse_inverted() {
+    if (g_mouseInverted < 0) {
+        const char *env = getenv("WCPRIVMOUSEINVERT");
+        priv_mouse_invert_set(env && env[0] == '1');
+    }
+    return g_mouseInverted != 0;
+}
+
+void priv_mouse_invert_set(bool inverted) {
+    if ((int)inverted != g_mouseInverted) {
+        wclog(1, "Privateer: the mouse %s", inverted ? "inverted, as the game has it (pushed up, the nose goes down)"
+                                                     : "pushed up raises the nose (the game's pitch the other way up)");
+    }
+    g_mouseInverted = inverted ? 1 : 0;
 }
 
 bool priv_controls_marker(double *x, double *y) {

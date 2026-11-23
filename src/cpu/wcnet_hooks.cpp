@@ -2223,6 +2223,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_priv_pointer(int shown) {
     }
     return wc::priv_pointer_shown() ? 1 : 0;
 }
+// Privateer's "Invert mouse": 1 the game's own (the mouse pushed up dives), 0 pushed up climbs; a negative value only asks.
+extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_priv_mouse_invert(int inverted) {
+    if (inverted >= 0) {
+        wc::priv_mouse_invert_set(inverted != 0);
+    }
+    return wc::priv_mouse_inverted() ? 1 : 0;
+}
 // TIE Fighter's room mission (wcnet_tie_session.cpp, step 8): the page's pick, a mission file's name or "" for none.
 extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_tie_mission(const char *name) {
     wc::tie_session_set_mission(name);

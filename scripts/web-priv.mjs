@@ -120,6 +120,9 @@ if (process.env.CLASSIC) {
   check("the High resolution checkbox shows, ticked by default", box);
   if (process.env.HIRES === "0") await page.uncheck("#privHires");
 }
+// the mouse's pitch (the user, 2026-11-22: "The mouse is inverted. Is there a way to change it back. An option or toggle")
+check("the Invert mouse checkbox shows, unticked by default",
+  await page.evaluate(() => { const el = document.getElementById("privMouseInvert"); return !!el && el.offsetParent !== null && !el.checked && !el.disabled; }));
 await page.click("#fly");
 const waitLog = async (re, ms) => {
   const until = Date.now() + ms;
@@ -185,6 +188,16 @@ if (process.env.HIRES && process.env.HIRES !== "0") {
     await sleep(700);
     if (want === "off") await page.screenshot({ path: path.join(shotDir, "web-priv-hires-off.png"), clip: at });
   }
+}
+// Invert mouse: the launch's (unticked: pushed up climbs), then ticked and unticked while flying
+check("the mouse pushed up climbs (the launch's choice)", logs.some((l) => /the mouse pushed up raises the nose/.test(l)),
+  (logs.find((l) => /Privateer: the mouse (pushed|inverted)/.test(l)) || "no word of it").slice(0, 120));
+for (const [tick, re] of [[true, /the mouse inverted, as the game has it/], [false, /the mouse pushed up raises the nose/]]) {
+  const mark = logs.length;
+  if (tick) await page.check("#privMouseInvert"); else await page.uncheck("#privMouseInvert");
+  await sleep(500);
+  check(`Invert mouse ${tick ? "ticked" : "unticked"} while flying: ${tick ? "the game's own" : "pushed up climbs"}`,
+    logs.slice(mark).some((l) => re.test(l)) && await page.evaluate(() => localStorage.getItem("wc:privMouseInvert")) === (tick ? "1" : "0"));
 }
 // the page's own keyboard: Right held until the stop is reached (at most 4 s: a fixed 0.6 s failed twice when the
 // browser stalled for a second and a half after full screen, the game's own 28 frames a second either side), then a tap
