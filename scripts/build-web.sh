@@ -179,7 +179,7 @@ say "assembling $OUT"
 mkdir -p "$OUT"
 cp "$BUILD/src/dosbox.js" "$BUILD/src/dosbox.wasm" "$OUT/"
 cp "$TS/dist/index.js" "$OUT/p2p-client.js"
-cp "$ROOT/web/index.html" "$ROOT/web/wc.js" "$ROOT/web/gamefiles.js" "$ROOT/web/gamepad.js" "$ROOT/web/usbpad.js" "$ROOT/retrovega/web/touch.js" "$ROOT/retrovega/web/touch.css" "$ROOT/web/voice.js" "$ROOT/web/hall.js" "$ROOT/web/chatfilter.js" "$ROOT/web/inno-worker.js" "$ROOT/web/so3.js" "$ROOT/retrovega/web/rvsprites.js" "$ROOT/retrovega/web/rvsprites-worker.js" "$ROOT/retrovega/web/rvsets.js" "$ROOT/web/pvm.js" "$ROOT/web/build.js" "$OUT/"
+cp "$ROOT/web/index.html" "$ROOT/web/wc.js" "$ROOT/web/gamefiles.js" "$ROOT/web/gamepad.js" "$ROOT/web/usbpad.js" "$ROOT/retrovega/web/touch.js" "$ROOT/retrovega/web/touch.css" "$ROOT/web/voice.js" "$ROOT/web/hall.js" "$ROOT/web/chatfilter.js" "$ROOT/web/inno-worker.js" "$ROOT/web/so3.js" "$ROOT/retrovega/web/rvsprites.js" "$ROOT/retrovega/web/rvsprites-worker.js" "$ROOT/retrovega/web/rvsets.js" "$ROOT/web/pvm.js" "$ROOT/web/build.js" "$ROOT/web/savezip.js" "$OUT/"
 # the page's build (web/build.js): its commit ("+" with changes in the tree) and the moment it was built; the pages in
 # a room and in the lobby compare theirs, and an older one is asked to reload (a page left open across a deploy keeps
 # its old game, and its flights would not match)

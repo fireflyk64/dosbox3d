@@ -122,6 +122,9 @@
   #sourceButtons button.link { padding: 0; border: 0; background: none; color: var(--amber); font: inherit; text-transform: none; letter-spacing: 0; clip-path: none; text-decoration: underline dotted; cursor: pointer; }
   #sourceButtons button.link:hover:not(:disabled) { color: #ffe07a; }
   #sourceButtons button.link:disabled { background: none; color: #41614f; }
+  #saveList { margin: 6px 0 0; padding-left: 18px; max-height: 150px; overflow: auto; font-size: 12px; }
+  #saveList button.link { padding: 0; border: 0; background: none; color: var(--amber); font: inherit; text-transform: none; letter-spacing: 0; clip-path: none; text-decoration: underline dotted; cursor: pointer; }
+  #saveList button.link:hover { color: #ffe07a; }
   #programLabel select { max-width: 100%; }
   #gameList { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; flex: 1 1 100%; }
   #sourceButtons #gameList button { padding: 3px 8px; font-size: 10px; }
@@ -521,10 +524,11 @@
     <h2><b>&#9632;</b> Save games</h2>
     <div id="saveButtons">
       <button type="button" class="secondary" id="saveDownload">Download save games</button>
-      <label class="pick"><input type="file" id="saveFile"> Restore from a file…</label>
+      <label class="pick"><input type="file" id="saveFile" multiple> Restore from a file…</label>
       <span id="saveStatus"></span>
     </div>
-    <p class="hint">Saving in a bunk writes the game's save file, which holds all eight bunks. This browser keeps a copy of it and puts it back the next time you play here; the download is your own backup, and can be restored in another browser.</p>
+    <ul id="saveList" hidden></ul>
+    <p class="hint">Saving in a bunk writes the game's save file, which holds all eight bunks. This browser keeps a copy of it and puts it back the next time you play here; the download is your own backup (several save games come as one zip file, and each is listed above, newest first), and can be restored in another browser: pick the zip, or any of its files.</p>
   </section>
 </main>
 <script type="module" src="wc.js"></script>
