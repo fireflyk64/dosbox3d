@@ -625,8 +625,23 @@ async function initSources() {
   for (const ev of ["dragleave", "drop"]) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); });
   // (files the pilot brings are a pick, as the menu's are)
   const brought = (f) => { if (f) void handleFile(f).then(() => { if (source) rememberPick(source.game.id); }); };
-  drop.addEventListener("drop", (e) => brought(e.dataTransfer.files && e.dataTransfer.files[0]));
-  $("gamefile").addEventListener("change", (e) => brought(e.target.files && e.target.files[0]));
+  // A file dragged over the page lights the box; dropped anywhere on the page (the box too) it is taken as the box
+  // takes it -- a drop that missed the box would have the browser open the file in the page's place.  Not once the
+  // game runs (the box's input is disabled then: the drop is only kept from the browser).
+  const hasFiles = (e) => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
+  let dragDepth = 0;
+  const dragEnd = () => { dragDepth = 0; document.body.classList.remove("dragfile"); drop.classList.remove("over"); };
+  window.addEventListener("dragenter", (e) => { if (hasFiles(e)) { dragDepth++; document.body.classList.add("dragfile"); } });
+  window.addEventListener("dragleave", (e) => { if (hasFiles(e) && --dragDepth <= 0) dragEnd(); });
+  window.addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
+  window.addEventListener("drop", (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragEnd();
+    if (!$("gamefile").disabled) brought(e.dataTransfer.files && e.dataTransfer.files[0]);
+  });
+  $("gamefileButton").addEventListener("click", () => $("gamefile").click());
+  $("gamefile").addEventListener("change", (e) => { brought(e.target.files && e.target.files[0]); e.target.value = ""; });
 
   $("useServer").addEventListener("click", async () => {
     try {
@@ -2563,7 +2578,7 @@ async function start(fromGesture) {
   $("fly").disabled = true;
   renderTopAction();
   renderMission();  // (the mission and the frame rate are set for this flight)
-  for (const el of ["gamefile", "exePicker", "callsign", "firstname", "lastname", "verbose", "hint"]) $(el).disabled = true;
+  for (const el of ["gamefile", "gamefileButton", "exePicker", "callsign", "firstname", "lastname", "verbose", "hint"]) $(el).disabled = true;
   sourceButtons(false);
   try {
     const cfg = {
