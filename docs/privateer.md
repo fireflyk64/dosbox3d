@@ -1394,3 +1394,12 @@ changes.  Now worked out once a picture and kept by its hash (8 kept): its axes 
 margin of two, whether the art's 3 x 3 is the same as its mirror's; each frame only the copy with a lookup.  The same
 dogfight: the mirror 4-6 ms a second, all the hooks 31 (from 75); the reticles pixel for pixel as before, the radars
 too (the runs differ only where a blip is).
+Then the user: "can we render those displays (radar, reticle) to an offscreen buffer and just blit them on instead of
+drawing from scratch every time", "we won't need the mirror cache in that case right?".  So: the reticle's and the
+radar's drawing (their rings, lines, the Centurion's pie slices, the mirror) is made once a picture into its canvas
+and kept by the picture's hash (8 kept: the canvas's lit pixels, each (y << 16) | (x << 8) | colour); every frame
+copies them (blit_cached), clipped as it copies -- while the canvas is drawn plot() writes into it unclipped.  The
+drawing moves with the picture's place by whole fine pixels, so one canvas serves every place.  The mirror's own cache
+is gone again (the mirror runs once a picture now).  The same dogfight: all the hooks 15 ms a second (75 with the
+mirror every frame, 31 with its cache), the reticle and radar about nothing; the pictures pixel for pixel as before
+(the runs differ only where a blip is).

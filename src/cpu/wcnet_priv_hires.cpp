@@ -247,14 +247,12 @@ struct Capture { bool on; int X0, Y0, W, H; std::vector<Bit16s> px; };
 Capture g_cap = { false, 0, 0, 0, 0, std::vector<Bit16s>() };
 
 inline void plot(const Target &t, int X, int Y, Bit8u c) {
-    if (X < 2 * t.x0 || X >= 2 * (t.x1 + 1) || Y < g_rowFrom[t.y0] || Y >= g_rowFrom[t.y1 + 1]) return;
-    if (g_cap.on) {
+    if (g_cap.on) {                     // (caught: into the canvas, unclipped -- the copy to the picture is clipped)
         const int x = X - g_cap.X0, y = Y - g_cap.Y0;
-        if (x >= 0 && y >= 0 && x < g_cap.W && y < g_cap.H) {
-            g_cap.px[y * g_cap.W + x] = c;
-            return;
-        }
+        if (x >= 0 && y >= 0 && x < g_cap.W && y < g_cap.H) g_cap.px[y * g_cap.W + x] = c;
+        return;
     }
+    if (X < 2 * t.x0 || X >= 2 * (t.x1 + 1) || Y < g_rowFrom[t.y0] || Y >= g_rowFrom[t.y1 + 1]) return;
     g_hi[Y * HW + X] = c;
 }
 
@@ -1547,6 +1545,27 @@ void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block,
 // user: "The original reticle wasn't two pixels wide so we need to have it be 1 pixel wide (and that may mean it's
 // offset by half a pixel)") wherever the art's 3 x 3 about the pixel is the same as about its mirror, colours too (a
 // mark only on one side keeps its own drawing); then the bottom from the top likewise (v + v' = T).
+// The finished canvases, kept by the picture's hash (8 kept): its lit pixels, each (y << 16) | (x << 8) | colour, x and y
+// from the canvas's corner (fine 2 left - 4, 2 top - 4).  The drawing moves with the picture's place by whole fine
+// pixels (its lines and rings are laid from 2 left + 1 and 2 top + 1), so one canvas serves every place.
+struct Blit { Bit32u key; int w, h; std::vector<Bit32u> px; };
+Blit g_blit[8];
+int g_blitUsed = 0, g_blitNext = 0;
+
+bool blit_cached(const Target &t, const Shape &s, Bit32u key, int left, int top) {
+    for (int i = 0; i < g_blitUsed; i++) {
+        const Blit &b = g_blit[i];
+        if (b.key != key || b.w != s.w || b.h != s.h) continue;
+        const int X0 = 2 * left - 4, Y0 = 2 * top - 4;
+        for (size_t k = 0; k < b.px.size(); k++) {
+            const Bit32u v = b.px[k];
+            plot(t, X0 + (int)((v >> 8) & 0xFF), Y0 + (int)(v >> 16), (Bit8u)(v & 0xFF));
+        }
+        return true;
+    }
+    return false;
+}
+
 void capture_begin(const Shape &s, int left, int top) {
     const int M = 4;
     g_cap.X0 = 2 * left - M;
@@ -1557,68 +1576,35 @@ void capture_begin(const Shape &s, int left, int top) {
     g_cap.on = true;
 }
 
-void capture_show(const Target &t, const Shape &s, int left, int top) {
+void capture_show(const Target &t, const Shape &s, int left, int top, Bit32u key) {
     g_cap.on = false;
     const int w = s.w, h = s.h, W = g_cap.W, H = g_cap.H;
-    // (worked out once a picture -- its axes, and for each of its pixels and a margin of two whether the art's 3 x 3
-    //  about it is the same as about its mirror -- and kept by its hash, 8 kept: every frame this had cost more than
-    //  the frame's whole composition)
-    struct Mirror { Bit32u hash; int w, h, axis[2]; std::vector<char> same[2]; };
-    static Mirror cache[8];
-    static int used = 0, next = 0;
-    const Bit32u hash = shape_hash(s);
-    const Mirror *mr = NULL;
-    for (int i = 0; i < used && !mr; i++) {
-        if (cache[i].hash == hash && cache[i].w == w && cache[i].h == h) mr = &cache[i];
-    }
-    if (!mr) {
-        Mirror &m = cache[next];
-        next = (next + 1) % 8;
-        if (used < 8) used++;
-        m.hash = hash;
-        m.w = w;
-        m.h = h;
-        auto col = [&](int u, int v) { return u >= 0 && v >= 0 && u < w && v < h ? (int)s.px[v * w + u] : -1; };
-        int lit = 0;
-        for (int i = 0; i < w * h; i++) lit += s.px[i] >= 0;
-        for (int pass = 0; pass < 2; pass++) {
-            const bool across = pass == 0;
-            const int n = across ? w : h;
-            int best = -1, bestAgree = -1;
-            for (int S = n - 9; S <= n + 7 && lit > 0; S++) {
-                int agree = 0;
-                for (int v = 0; v < h; v++) {
-                    for (int u = 0; u < w; u++) {
-                        const int c = col(u, v);
-                        if (c >= 0 && c == (across ? col(S - u, v) : col(u, S - v))) agree++;
-                    }
-                }
-                if (agree > bestAgree) { bestAgree = agree; best = S; }
-            }
-            m.axis[pass] = lit > 0 && bestAgree * 100 >= lit * 60 ? best : -1;
-            m.same[pass].assign((size_t)(w + 4) * (h + 4), 0);
-            if (m.axis[pass] < 0) continue;
-            for (int v = -2; v < h + 2; v++) {
-                for (int u = -2; u < w + 2; u++) {
-                    bool same = true;           // (the art's 3 x 3 about (u, v) the same as about its mirror)
-                    for (int dv = -1; dv <= 1 && same; dv++) {
-                        for (int du = -1; du <= 1 && same; du++) {
-                            const int mc = across ? col(best - u - du, v + dv) : col(u + du, best - v - dv);
-                            same = col(u + du, v + dv) == mc;
-                        }
-                    }
-                    m.same[pass][(v + 2) * (w + 4) + u + 2] = same;
-                }
-            }
-        }
-        mr = &m;
-    }
-    for (int pass = 0; pass < 2; pass++) {
+    auto col = [&](int u, int v) { return u >= 0 && v >= 0 && u < w && v < h ? (int)s.px[v * w + u] : -1; };
+    int lit = 0;
+    for (int i = 0; i < w * h; i++) lit += s.px[i] >= 0;
+    for (int pass = 0; pass < 2 && lit > 0; pass++) {
         const bool across = pass == 0;
-        const int best = mr->axis[pass];
-        if (best < 0) continue;
-        auto same = [&](int u, int v) {
-            return u >= -2 && v >= -2 && u < w + 2 && v < h + 2 && mr->same[pass][(v + 2) * (w + 4) + u + 2];
+        const int n = across ? w : h;
+        int best = -1, bestAgree = -1;
+        for (int S = n - 9; S <= n + 7; S++) {
+            int agree = 0;
+            for (int v = 0; v < h; v++) {
+                for (int u = 0; u < w; u++) {
+                    const int c = col(u, v);
+                    if (c >= 0 && c == (across ? col(S - u, v) : col(u, S - v))) agree++;
+                }
+            }
+            if (agree > bestAgree) { bestAgree = agree; best = S; }
+        }
+        if (bestAgree * 100 < lit * 60) continue;
+        auto same = [&](int u, int v) {             // (the art's 3 x 3 about (u, v) the same as about its mirror)
+            for (int dv = -1; dv <= 1; dv++) {
+                for (int du = -1; du <= 1; du++) {
+                    const int m = across ? col(best - u - du, v + dv) : col(u + du, best - v - dv);
+                    if (col(u + du, v + dv) != m) return false;
+                }
+            }
+            return true;
         };
         const int off = 4;                          // (the canvas's margin: fine x from the shape's left is x - off)
         for (int y = 0; y < H; y++) {
@@ -1634,17 +1620,27 @@ void capture_show(const Target &t, const Shape &s, int left, int top) {
             }
         }
     }
-    for (int y = 0; y < H; y++) {
-        for (int x = 0; x < W; x++) {
+    Blit &b = g_blit[g_blitNext];               // (kept, then shown as every later frame is)
+    g_blitNext = (g_blitNext + 1) % 8;
+    if (g_blitUsed < 8) g_blitUsed++;
+    b.key = key;
+    b.w = w;
+    b.h = h;
+    b.px.clear();
+    for (int y = 0; y < H && y < 256; y++) {
+        for (int x = 0; x < W && x < 256; x++) {
             const Bit16s c = g_cap.px[y * W + x];
-            if (c >= 0) plot(t, g_cap.X0 + x, g_cap.Y0 + y, (Bit8u)c);
+            if (c >= 0) b.px.push_back(((Bit32u)y << 16) | ((Bit32u)x << 8) | (Bit8u)c);
         }
     }
+    blit_cached(t, s, key, left, top);
 }
 
 void shape_lines(const Target &t, const Shape &s, int x, int y) {
     static const int kDx[4] = { 1, 0, 1, -1 }, kDy[4] = { 0, 1, 1, 1 };
     const int left = x - s.left, top = y - s.top;
+    const Bit32u key = shape_hash(s);
+    if (blit_cached(t, s, key, left, top)) return;
     const Rings &r = rings_of(s, -1);
     capture_begin(s, left, top);
     rings_draw(t, s, r, left, top, -1);
@@ -1663,7 +1659,7 @@ void shape_lines(const Target &t, const Shape &s, int x, int y) {
             }
         }
     }
-    capture_show(t, s, left, top);
+    capture_show(t, s, left, top, key);
 }
 
 // A radar's exterior drawn by hand (the user, 2026-11-23, of the Centurion's: "the radar exterior is too complex. we
@@ -1747,7 +1743,9 @@ void shape_radar(const Target &t, const Shape &art, int x, int y) {
         }
     }
     const Shape &s = hand ? cut : art;
+    const Bit32u key = artHash ^ 0x52414452u;   // ("RADR": the radar's canvases apart from the reticle's)
     shape_blocks(t, s, x, y, ground);
+    if (blit_cached(t, s, key, left, top)) return;
     const Rings &r = rings_of(s, ground);
     capture_begin(s, left, top);
     rings_draw(t, s, r, left, top, ground);
@@ -1789,7 +1787,7 @@ void shape_radar(const Target &t, const Shape &art, int x, int y) {
                       (int)floor(fcx + 2 * hand->spokeR1 * cos(th) + 0.5), (int)floor(fcy + 2 * hand->spokeR1 * sin(th) + 0.5), (Bit8u)handColour);
         }
     }
-    capture_show(t, s, left, top);
+    capture_show(t, s, left, top, key);
 }
 
 // ---- the landing and takeoff scenes' bases (the plan's step 7) --------------------------------------------------------
