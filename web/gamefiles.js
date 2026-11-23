@@ -699,7 +699,7 @@ function rapPrepare(FS, root) {
 const armadaMachine = {
   multiplayer: true, ipx: true, cycles: 25000, noFlight: true, noRoomOptions: true, joystick: true, prepare: armadaPrepare,
   dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[cpu]\ncore=normal\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n",
-  keys: "<b>Armada flight:</b> steer with the arrow keys (a tap turns a little; held, they build to the full turn in a third of a second; <kbd>Shift</kbd> with an arrow turns at full at once) or hold the right mouse button and drag (the further the drag, the faster the turn; let go to centre it; dragging up raises the nose unless <b>Invert mouse</b> is ticked). Fire guns with <kbd>Space</kbd> or the left button while steering with the mouse. <kbd>Enter</kbd> fires a missile, <kbd>Tab</kbd> is the afterburner, and the keypad’s <kbd>+</kbd> and <kbd>−</kbd> change speed. For a joystick or gamepad, pick its <b>Built in</b> entry under Controller before Fly: it is calibrated already (<kbd>Alt</kbd>+<kbd>O</kbd>, <b>JOY 1</b> recalibrates it if you want). <b>High resolution (2x)</b> draws the flight at 640×400 (<kbd>`</kbd> flips it while flying).",
+  keys: "<b>Armada flight:</b> steer with the arrow keys (a tap turns a little; held, they build to the full turn in a third of a second; <kbd>Shift</kbd> with an arrow turns at full at once) or hold the right mouse button and drag (the further the drag, the faster the turn; let go to centre it; dragging up raises the nose unless <b>Invert mouse</b> is ticked). Fire guns with <kbd>Space</kbd> or the left button while steering with the mouse. <kbd>Enter</kbd> fires a missile, <kbd>Tab</kbd> is the afterburner, and the keypad’s <kbd>+</kbd> and <kbd>−</kbd> change speed. For a joystick or gamepad, pick its <b>Built in</b> entry under Controller before Fly: it is calibrated already (<kbd>Alt</kbd>+<kbd>O</kbd>, <b>JOY 1</b> recalibrates it if you want). <b>High resolution (2x)</b> draws the flight at 640×400 and the strategy map one level out, four times as much of the sector at once (the arrow keys move the map; <kbd>`</kbd> flips it).",
 };
 
 export const GAMES = [
@@ -809,6 +809,9 @@ export const GAMES = [
   // Armada uses NetBIOS over IPX. GOG includes Novell's DOS driver beside both programs.
   { ...armadaMachine, id: "armada", tag: "ARM", title: "Wing Commander: Armada", short: "Armada",
     detect: ["ARMADA.EXE"], build: { text: "Loading Wing Commander Armada...." }, run: "armada", maxSeats: 2,
+    // (the saved games: SAVE_1A#.ARM Armada mode, SAVE_1C#.ARM the campaign, slot #; kept by this browser, the page's
+    // Download and Load buttons; the user, 2026-11-23: "there's no "download saves" button so I can't retrieve it")
+    saves: ["SAVE_*.ARM"],
     netCommand: "netbios.exe", gather: [{ name: /^NETBIOS\.EXE$/i }],
     help: "Each player loads their GOG Armada installer or a zip of the installed DOS folder with NETBIOS.EXE. Host a room for two and share its code or link. After Fly starts both games, skip the intro with Esc and choose Multi Player, then Net Play. Accept the default group with Y and enter a different callsign on each machine. In Armada’s lobby the host clicks Create and picks A for strategy or B for Battle. The guest clicks Join, then the host clicks Play. For Battle, each pilot picks a ship and clicks Select, then Commit.",
   },
