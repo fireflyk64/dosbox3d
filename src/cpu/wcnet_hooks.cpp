@@ -409,7 +409,7 @@ static KBD_KEYS script_key(const std::string &name) {
     static const struct { const char *name; KBD_KEYS key; } kNamed[] = {
         { "enter", KBD_enter }, { "esc", KBD_esc }, { "space", KBD_space }, { "tab", KBD_tab },
         { "f1", KBD_f1 }, { "f2", KBD_f2 }, { "f3", KBD_f3 }, { "f4", KBD_f4 }, { "f12", KBD_f12 },
-        { "f8", KBD_f8 }, { "f9", KBD_f9 }, { "f10", KBD_f10 },
+        { "f5", KBD_f5 }, { "f6", KBD_f6 }, { "f7", KBD_f7 }, { "f8", KBD_f8 }, { "f9", KBD_f9 }, { "f10", KBD_f10 },
         { "backspace", KBD_backspace }, { "up", KBD_up }, { "down", KBD_down }, { "left", KBD_left },
         { "right", KBD_right }, { "comma", KBD_comma }, { "period", KBD_period }, { "equals", KBD_equals },
         { "minus", KBD_minus }, { "backslash", KBD_backslash }, { "kp0", KBD_kp0 }, { "kpperiod", KBD_kpperiod },
@@ -2222,6 +2222,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_priv_pointer(int shown) {
         wc::priv_pointer_set(shown != 0);
     }
     return wc::priv_pointer_shown() ? 1 : 0;
+}
+// Privateer's "Invert mouse": 1 the game's own (the mouse pushed up dives), 0 pushed up climbs; a negative value only asks.
+extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_priv_mouse_invert(int inverted) {
+    if (inverted >= 0) {
+        wc::priv_mouse_invert_set(inverted != 0);
+    }
+    return wc::priv_mouse_inverted() ? 1 : 0;
 }
 // TIE Fighter's room mission (wcnet_tie_session.cpp, step 8): the page's pick, a mission file's name or "" for none.
 extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_tie_mission(const char *name) {

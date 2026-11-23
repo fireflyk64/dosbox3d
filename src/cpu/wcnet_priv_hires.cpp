@@ -16,14 +16,22 @@
  *  only by rd8/rd16/rd32, which never fault (these hooks run inside the CPU's core).
  *
  *  The arguments come from the game's memory: every one is bounded before it is used, every list has its cap.
+ *
+ *  Until the picture is first wanted (the page's box, WCPRIVHIRES=1, or the ` key) none of this runs: its places are
+ *  not watched.  WCPRIVHIRES=off, or WCPRIVCLASSIC=1 (the game as it was: wcnet_priv.h), keeps it so for the run.
  */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <algorithm>
 #include <map>
+#include <string>
 #include <vector>
+#include "dosbox.h"
+#include "dos_inc.h"
 #include "wcnet_priv_hires.h"
 #include "wcnet_priv.h"
+#include "wcnet_game.h"
 #include "wcnet_log.h"
 #include "wc_net.h"
 #include "mem.h"
@@ -48,6 +56,7 @@ enum {
     kMaxSpans = 4096,               // the span list's
     kScreen = 0xA0000,              // the VGA's memory, physical
     kStaleMs = 300,                 // a frame copied longer ago is not shown (the longest the game steps by is 233 ms)
+    kBaseStaleMs = 2000,            // a landing's or takeoff's base drawn longer ago is not looked for
 };
 
 enum Op { OP_FILL, OP_CLEAR, OP_COPY, OP_ELLIPSE, OP_LINE, OP_PIXEL, OP_RECT, OP_SILHOUETTE, OP_SHAPE, OP_SCALE,
@@ -75,6 +84,7 @@ const Place kPlaces[] = {
 enum { kPlaceCount = sizeof(kPlaces) / sizeof(kPlaces[0]) };
 enum {
     kCrosshairCaller = 0x2897,      // seg060: the crosshair's shape, drawn as one-pixel lines
+    kRadarCaller = 0x13AE,          // the radar's: its art (one shape a frame, under the blips), drawn as line art
     kFillerSelf = 0x47A2,           // seg116 calls itself once, to align its stack
 };
 
@@ -124,15 +134,26 @@ bool g_onlyOurs[0x10000];           // an IP watched for these places alone
 
 int g_want = -1;                    // the checkbox (WCPRIVHIRES at the launch)
 bool g_flipped = false;             // the backquote key's
+bool g_never = false;               // WCPRIVHIRES=off, or the game as it was (priv_classic): nothing of this runs
+bool g_used = false;                // wanted once: its places are watched from then on
+bool g_hooked = false;              // ... and they are
 bool g_override = false;
 int g_setW = 0;
 
 inline bool hires_wanted() {
     if (g_want < 0) {
         const char *env = getenv("WCPRIVHIRES");
-        g_want = env && env[0] && env[0] != '0' ? 1 : 0;
+        g_never = priv_classic() || (env && !strcmp(env, "off"));
+        g_want = !g_never && env && env[0] && env[0] != '0' ? 1 : 0;
     }
-    return (g_want != 0) != g_flipped;
+    return !g_never && (g_want != 0) != g_flipped;
+}
+
+// Wanted for the first time: its places watched from the next instruction (until then none of this runs at all).
+void now_wanted() {
+    if (!hires_wanted() || g_used) return;
+    g_used = true;
+    if (!g_hooked) hooks_game_changed();
 }
 
 void make_tables() {
@@ -211,11 +232,8 @@ inline void plot(const Target &t, int X, int Y, Bit8u c) {
 inline int fine_x(int x) { return 2 * x + 1; }
 inline int fine_y(int y) { return (12 * y + 6) / 5; }       // (the middle of the pixel)
 
-// One fine pixel wide, between the middles of the game's pixels.
-void line(const Target &t, int x0, int y0, int x1, int y1, Bit8u c) {
-    if (x0 < -2000 || x0 > 2000 || x1 < -2000 || x1 > 2000 || y0 < -2000 || y0 > 2000 || y1 < -2000 || y1 > 2000) return;
-    int X = fine_x(x0), Y = fine_y(y0);
-    const int Xe = fine_x(x1), Ye = fine_y(y1);
+// One fine pixel wide, between two fine pixels (clipped by plot).
+void line_fine(const Target &t, int X, int Y, int Xe, int Ye, Bit8u c) {
     const int dx = abs(Xe - X), dy = -abs(Ye - Y), sx = X < Xe ? 1 : -1, sy = Y < Ye ? 1 : -1;
     int err = dx + dy;
     for (;;) {
@@ -225,6 +243,12 @@ void line(const Target &t, int x0, int y0, int x1, int y1, Bit8u c) {
         if (e2 >= dy) { err += dy; X += sx; }
         if (e2 <= dx) { err += dx; Y += sy; }
     }
+}
+
+// One fine pixel wide, between the middles of the game's pixels.
+void line(const Target &t, int x0, int y0, int x1, int y1, Bit8u c) {
+    if (x0 < -2000 || x0 > 2000 || x1 < -2000 || x1 > 2000 || y0 < -2000 || y0 > 2000 || y1 < -2000 || y1 > 2000) return;
+    line_fine(t, fine_x(x0), fine_y(y0), fine_x(x1), fine_y(y1), c);
 }
 
 void ellipse(const Target &t, int x, int y, int rx, int ry, Bit8u c) {
@@ -238,6 +262,56 @@ void ellipse(const Target &t, int x, int y, int rx, int ry, Bit8u c) {
 }
 
 // ---- the game's shapes ----------------------------------------------------------------------------------------------
+
+// A shape's run-length rows (the game's format: a word of length and kind, x and y; then the pixels, or sub-runs of a
+// byte each, the odd ones one colour) read from p up to end of whatever `bytes` reads, into s (its size set).
+template <class Bytes> void decode_rows(const Bytes &bytes, Bit32u p, const Bit32u end, const int x1, const int y1, Shape &s) {
+    const int w = s.w, h = s.h;
+    while (p + 6 <= end) {
+        const Bit16u head = bytes.r16(p);
+        if (!head) break;
+        int x = (Bit16s)bytes.r16(p + 2) + x1;
+        const int y = (Bit16s)bytes.r16(p + 4) + y1;
+        p += 6;
+        int n = head >> 1;
+        const bool inside = y >= 0 && y < h;
+        Bit16s *row = inside ? &s.px[y * w] : NULL;
+        if (!(head & 1)) {
+            for (; n > 0 && p < end; n--, x++, p++) {
+                if (inside && x >= 0 && x < w) row[x] = bytes.r8(p);
+            }
+            continue;
+        }
+        while (n > 0 && p < end) {
+            const Bit8u sub = bytes.r8(p++);
+            int run = sub >> 1;
+            if (!run) return;        // (not a shape: what there is)
+            n -= run;
+            if (sub & 1) {
+                const Bit8u c = bytes.r8(p++);
+                for (; run; run--, x++) {
+                    if (inside && x >= 0 && x < w) row[x] = c;
+                }
+            } else {
+                for (; run && p < end; run--, x++, p++) {
+                    if (inside && x >= 0 && x < w) row[x] = bytes.r8(p);
+                }
+            }
+        }
+    }
+}
+
+struct EmuBytes {           // the game's memory
+    Bit8u r8(Bit32u a) const { return rd8(a); }
+    Bit16u r16(Bit32u a) const { return rd16(a); }
+};
+
+struct BufBytes {           // a file's bytes (nothing beyond them)
+    const std::vector<Bit8u> &d;
+    explicit BufBytes(const std::vector<Bit8u> &bytes) : d(bytes) {}
+    Bit8u r8(Bit32u a) const { return a < d.size() ? d[a] : 0; }
+    Bit16u r16(Bit32u a) const { return (Bit16u)(r8(a) | r8(a + 1) << 8); }
+};
 
 const Shape *shape_of(Bit16u off, Bit16u seg, int index) {
     if (index < 0 || index > 4095) return NULL;
@@ -268,40 +342,7 @@ const Shape *shape_of(Bit16u off, Bit16u seg, int index) {
     s.top = y1;
     s.stamp = stamp;
     s.px.assign(w * h, (Bit16s)-1);
-    PhysPt p = at + 8;
-    const PhysPt end = at + kMaxShapeBytes;
-    while (p + 6 <= end) {
-        const Bit16u head = rd16(p);
-        if (!head) break;
-        int x = (Bit16s)rd16(p + 2) + x1;
-        const int y = (Bit16s)rd16(p + 4) + y1;
-        p += 6;
-        int n = head >> 1;
-        const bool inside = y >= 0 && y < h;
-        Bit16s *row = inside ? &s.px[y * w] : NULL;
-        if (!(head & 1)) {
-            for (; n > 0 && p < end; n--, x++, p++) {
-                if (inside && x >= 0 && x < w) row[x] = rd8(p);
-            }
-            continue;
-        }
-        while (n > 0 && p < end) {
-            const Bit8u sub = rd8(p++);
-            int run = sub >> 1;
-            if (!run) return &s;        // (not a shape: what there is)
-            n -= run;
-            if (sub & 1) {
-                const Bit8u c = rd8(p++);
-                for (; run; run--, x++) {
-                    if (inside && x >= 0 && x < w) row[x] = c;
-                }
-            } else {
-                for (; run && p < end; run--, x++, p++) {
-                    if (inside && x >= 0 && x < w) row[x] = rd8(p);
-                }
-            }
-        }
-    }
+    decode_rows(EmuBytes(), at + 8, at + kMaxShapeBytes, x1, y1, s);
     return &s;
 }
 
@@ -332,6 +373,303 @@ void shape_lines(const Target &t, const Shape &s, int x, int y) {
                 if (nu < 0 || nu >= s.w || nv >= s.h || s.px[nv * s.w + nu] < 0) continue;
                 if (kDx[k] && kDy[k] && (s.px[v * s.w + nu] >= 0 || s.px[nv * s.w + u] >= 0)) continue;
                 line(t, left + u, top + v, left + nu, top + nv, (Bit8u)c);
+            }
+        }
+    }
+}
+
+// The radar's art, redrawn each frame under its blips: its most common colour (the screen's ground) in blocks, each
+// other colour's pixels joined to their same-coloured neighbours by one-pixel lines -- the rings and the cross, each
+// ring of its own colour (joining any colours made a mesh of the two-tone rings; thinning the bitmap, combs).  A pixel
+// in no chain of its colour (fewer than two such neighbours: a two-tone bar's, a line's end) reaches halfway to each
+// neighbour of another ink, so the side gauge's two-tone bar is a line and not dots.
+void shape_radar(const Target &t, const Shape &s, int x, int y) {
+    static const int kDx[4] = { 1, 0, 1, -1 }, kDy[4] = { 0, 1, 1, 1 };
+    static const int kAx[8] = { 1, -1, 0, 0, 1, -1, 1, -1 }, kAy[8] = { 0, 0, 1, -1, 1, 1, -1, -1 };
+    const int left = x - s.left, top = y - s.top;
+    int count[256] = { 0 };
+    for (int i = 0; i < s.w * s.h; i++) {
+        if (s.px[i] >= 0) count[s.px[i] & 0xFF]++;
+    }
+    int ground = 0;
+    for (int c = 1; c < 256; c++) {
+        if (count[c] > count[ground]) ground = c;
+    }
+    shape_blocks(t, s, x, y, ground);
+    auto same = [&](int u, int v, int c) { return u >= 0 && u < s.w && v >= 0 && v < s.h && s.px[v * s.w + u] == c; };
+    auto ink = [&](int u, int v) {
+        return u >= 0 && u < s.w && v >= 0 && v < s.h && s.px[v * s.w + u] >= 0 && s.px[v * s.w + u] != ground;
+    };
+    for (int v = 0; v < s.h; v++) {
+        for (int u = 0; u < s.w; u++) {
+            const int c = s.px[v * s.w + u];
+            if (c < 0 || c == ground) continue;
+            const int X = fine_x(left + u), Y = fine_y(top + v);
+            line_fine(t, X, Y, X, Y, (Bit8u)c);
+            for (int k = 0; k < 4; k++) {
+                const int nu = u + kDx[k], nv = v + kDy[k];
+                if (!same(nu, nv, c)) continue;
+                if (kDx[k] && kDy[k] && (same(nu, v, c) || same(u, nv, c))) continue;
+                line_fine(t, X, Y, fine_x(left + nu), fine_y(top + nv), (Bit8u)c);
+            }
+            int alike = 0;
+            for (int k = 0; k < 8; k++) alike += same(u + kAx[k], v + kAy[k], c);
+            if (alike >= 2) continue;
+            for (int k = 0; k < 8; k++) {
+                const int nu = u + kAx[k], nv = v + kAy[k];
+                if (!ink(nu, nv) || same(nu, nv, c)) continue;
+                if (kAx[k] && kAy[k] && (ink(nu, v) || ink(u, nv))) continue;
+                line_fine(t, X, Y, (X + fine_x(left + nu)) / 2, (Y + fine_y(top + nv)) / 2, (Bit8u)c);
+            }
+        }
+    }
+}
+
+// ---- the landing and takeoff scenes' bases (the plan's step 7) --------------------------------------------------------
+//
+// LANDINGS.IFF and TAKEOFFS.IFF draw a base from LTOBASES.PAK, small copies of the flight's art (APPEARNC\*.IFF, its
+// SHAP: four quarters).  The scene draws it unscaled with the plain shape routine into its own buffer and copies that to
+// the screen with its own code.  So when the game draws one of the small bases its place is noted, and at the compose,
+// where the screen still shows that base's own pixels (90 in 100 of them at least: else nothing), the flight's art is
+// shown in the same box at its own resolution (blocky: the user's ruling); whatever covers the base stays the game's.
+// The pairs were matched by eye (design/privateer-hires: bases.py); the sizes are checked as the files are read.
+
+struct BaseArt { int index, sw, sh; const char *name; int bw, bh; };
+const BaseArt kBaseArt[] = {
+    { 1, 132, 79, "REFINE", 219, 132 },
+    { 2, 83, 67, "ROIDBASE", 209, 184 },
+    { 3, 84, 70, "AGRIC", 182, 170 },
+    { 4, 83, 67, "ROIDBASE", 209, 184 },
+    { 6, 89, 72, "DETROIT", 184, 150 },
+    { 7, 141, 81, "DERLCT", 225, 128 },
+};
+enum { kBaseArts = sizeof(kBaseArt) / sizeof(kBaseArt[0]), kMaxTreEntries = 20000, kMaxPackFile = 1 << 20 };
+
+struct Substitute { Bit32u hash; Shape small, big; };
+std::vector<Substitute> g_subs;
+int g_subsState = 0;            // 0 not read yet, 1 read, -1 not to be had
+struct BaseShown { int sub; int x0, y0; double ms; Bit32u serial; };
+BaseShown g_base = { -1, 0, 0, 0, 0 };
+
+Bit32u shape_hash(const Shape &s) {
+    Bit32u h = 2166136261u;
+    const int head[4] = { s.w, s.h, s.left, s.top };
+    for (int i = 0; i < 4; i++) h = (h ^ (Bit32u)head[i]) * 16777619u;
+    for (size_t i = 0; i < s.px.size(); i++) h = (h ^ (Bit16u)s.px[i]) * 16777619u;
+    return h;
+}
+
+// A file of whichever drive has it (PRIV.TRE: on the CD image, drive D), read in parts (wcnet_tie_voice.cpp's way).
+class DriveFile {
+public:
+    explicit DriveFile(const char *dosName) : f_(NULL) {
+        std::vector<char> n(dosName, dosName + strlen(dosName) + 1);
+        for (int d = 0; d < DOS_DRIVES && !f_; d++) {
+            DOS_File *f = NULL;
+            if (Drives[d] && Drives[d]->FileOpen(&f, &n[0], OPEN_READ) && f) {
+                f->AddRef();                // (as DOS_OpenFile does: Close closes at one reference)
+                f_ = f;
+            }
+        }
+    }
+    ~DriveFile() {
+        if (f_) {
+            f_->Close();
+            if (f_->RemoveRef() <= 0) delete f_;
+        }
+    }
+    bool ok() const { return f_ != NULL; }
+    bool read(Bit32u at, Bit32u size, std::vector<Bit8u> &out) {
+        Bit32u pos = at;
+        if (!f_ || !f_->Seek(&pos, DOS_SEEK_SET) || pos != at) return false;
+        out.resize(size);
+        for (Bit32u got = 0; got < size;) {
+            Bit16u n = (Bit16u)std::min<Bit32u>(size - got, 0x8000);
+            if (!f_->Read(&out[got], &n) || !n) return false;
+            got += n;
+        }
+        return true;
+    }
+
+private:
+    DriveFile(const DriveFile &);
+    DriveFile &operator=(const DriveFile &);
+    DOS_File *f_;
+};
+
+inline Bit32u le32(const std::vector<Bit8u> &d, size_t at) {
+    return at + 4 <= d.size() ? d[at] | d[at + 1] << 8 | d[at + 2] << 16 | (Bit32u)d[at + 3] << 24 : 0;
+}
+
+// Shape `index` of a shape file at `file` in d (as shape_of reads one in the game's memory).
+bool shape_in(const std::vector<Bit8u> &d, Bit32u file, int index, Shape &s) {
+    const BufBytes bytes(d);
+    const Bit32u table = le32(d, file + 4) & 0xFFFFFF;
+    if (index < 0 || (Bit32u)(4 * (index + 1)) >= table) return false;
+    const Bit32u at = file + (le32(d, file + 4 + 4 * index) & 0xFFFFF);
+    if (at + 8 > d.size()) return false;
+    const int x2 = (Bit16s)bytes.r16(at), x1 = (Bit16s)bytes.r16(at + 2);
+    const int y1 = (Bit16s)bytes.r16(at + 4), y2 = (Bit16s)bytes.r16(at + 6);
+    const int w = x1 + x2 + 1, h = y1 + y2 + 1;
+    if (w <= 0 || h <= 0 || w > kMaxShapeSide || h > kMaxShapeSide) return false;
+    s.w = w;
+    s.h = h;
+    s.left = x1;
+    s.top = y1;
+    s.stamp = 0;
+    s.px.assign(w * h, (Bit16s)-1);
+    decode_rows(bytes, at + 8, at + kMaxShapeBytes, x1, y1, s);
+    return true;
+}
+
+// The flight's picture of a base: its SHAP's shapes (the quarters) laid over each other at their common anchor.
+bool stitched(const std::vector<Bit8u> &iff, Shape &out) {
+    size_t i = 0;
+    for (; i + 8 <= iff.size(); i++) {
+        if (!memcmp(&iff[i], "SHAP", 4)) break;
+    }
+    if (i + 8 > iff.size()) return false;
+    const Bit32u size = (Bit32u)iff[i + 4] << 24 | iff[i + 5] << 16 | iff[i + 6] << 8 | iff[i + 7];
+    if (size < 8 || i + 8 + size > iff.size()) return false;
+    const std::vector<Bit8u> shap(iff.begin() + i + 8, iff.begin() + i + 8 + size);
+    std::vector<Shape> parts;
+    for (int k = 0; k < 16; k++) {
+        Shape q;
+        if (!shape_in(shap, 0, k, q)) break;
+        parts.push_back(q);
+    }
+    if (parts.empty()) return false;
+    int x0 = 1 << 20, y0 = 1 << 20, x1 = -(1 << 20), y1 = -(1 << 20);
+    for (size_t k = 0; k < parts.size(); k++) {
+        x0 = std::min(x0, -parts[k].left);
+        y0 = std::min(y0, -parts[k].top);
+        x1 = std::max(x1, parts[k].w - 1 - parts[k].left);
+        y1 = std::max(y1, parts[k].h - 1 - parts[k].top);
+    }
+    out.w = x1 - x0 + 1;
+    out.h = y1 - y0 + 1;
+    if (out.w > kMaxShapeSide || out.h > kMaxShapeSide) return false;
+    out.left = -x0;
+    out.top = -y0;
+    out.stamp = 0;
+    out.px.assign(out.w * out.h, (Bit16s)-1);
+    for (size_t k = 0; k < parts.size(); k++) {
+        const Shape &q = parts[k];
+        for (int v = 0; v < q.h; v++) {
+            for (int u = 0; u < q.w; u++) {
+                const Bit16s c = q.px[v * q.w + u];
+                if (c >= 0) out.px[(v - q.top + out.top) * out.w + (u - q.left + out.left)] = c;
+            }
+        }
+    }
+    return true;
+}
+
+// PRIV.TRE's LTOBASES.PAK and the bases' APPEARNC files, read once (the first time a scene draws a shape of a small
+// base's size); a part that is not as expected is left out, with a line saying so.
+void bases_load() {
+    if (g_subsState) return;
+    g_subsState = -1;
+    DriveFile tre("PRIV.TRE");
+    std::vector<Bit8u> head, dir;
+    if (!tre.ok() || !tre.read(0, 8, head)) {
+        wclog(1, "Privateer: the landing and takeoff bases: no PRIV.TRE (the game's own art)");
+        return;
+    }
+    const Bit32u n = le32(head, 0);
+    if (n == 0 || n > kMaxTreEntries || !tre.read(8, 74 * n, dir)) {
+        wclog(1, "Privateer: the landing and takeoff bases: PRIV.TRE not read (the game's own art)");
+        return;
+    }
+    auto find = [&](const std::string &tail, std::vector<Bit8u> &out) {
+        for (Bit32u k = 0; k < n; k++) {
+            const Bit8u *e = &dir[74 * k];
+            std::string path((const char *)e + 1, strnlen((const char *)e + 1, 65));
+            for (size_t c = 0; c < path.size(); c++) path[c] = (char)toupper((unsigned char)path[c]);
+            if (path.size() < tail.size() || path.compare(path.size() - tail.size(), tail.size(), tail)) continue;
+            const Bit32u off = e[66] | e[67] << 8 | e[68] << 16 | (Bit32u)e[69] << 24;
+            const Bit32u len = e[70] | e[71] << 8 | e[72] << 16 | (Bit32u)e[73] << 24;
+            return len > 0 && len <= kMaxPackFile && tre.read(off, len, out);
+        }
+        return false;
+    };
+    std::vector<Bit8u> pak;
+    if (!find("\\LTOBASES.PAK", pak)) {
+        wclog(1, "Privateer: the landing and takeoff bases: no LTOBASES.PAK (the game's own art)");
+        return;
+    }
+    const Bit32u first = le32(pak, 4) & 0xFFFFFF;
+    const int blocks = first >= 8 ? (int)((first - 4) / 4) : 0;
+    for (int k = 0; k < kBaseArts; k++) {
+        const BaseArt &a = kBaseArt[k];
+        Substitute sb;
+        std::vector<Bit8u> iff;
+        bool ok = a.index < blocks && (le32(pak, 4 + 4 * a.index) >> 24) != 0x20;      // (0x20: packed, not ours)
+        ok = ok && shape_in(pak, le32(pak, 4 + 4 * a.index) & 0xFFFFFF, 0, sb.small) && sb.small.w == a.sw &&
+             sb.small.h == a.sh;
+        ok = ok && find(std::string("\\APPEARNC\\") + a.name + ".IFF", iff) && stitched(iff, sb.big) &&
+             sb.big.w == a.bw && sb.big.h == a.bh;
+        if (!ok) {
+            wclog(1, "Privateer: the landing and takeoff bases: LTOBASES %d / %s not as known (the game's own)", a.index, a.name);
+            continue;
+        }
+        sb.hash = shape_hash(sb.small);
+        g_subs.push_back(sb);
+    }
+    g_subsState = g_subs.empty() ? -1 : 1;
+    wclog(1, "Privateer: the landing and takeoff bases: %d of %d from the flight's art", (int)g_subs.size(), kBaseArts);
+}
+
+// A shape drawn outside the flight's buffer: one of the small bases?  Its place noted (on the screen, as the scene's
+// buffer is copied there whole: the compose checks that).
+void note_base(const Shape &s, int x, int y) {
+    bool sized = false;
+    for (int k = 0; k < kBaseArts && !sized; k++) sized = s.w == kBaseArt[k].sw && s.h == kBaseArt[k].sh;
+    if (!sized) return;
+    bases_load();
+    const Bit32u h = shape_hash(s);
+    for (size_t k = 0; k < g_subs.size(); k++) {
+        if (g_subs[k].hash != h) continue;
+        g_base.sub = (int)k;
+        g_base.x0 = x - s.left;
+        g_base.y0 = y - s.top;
+        g_base.ms = PIC_FullIndex();
+        g_base.serial++;
+        return;
+    }
+}
+
+// The flight's art over the small base, where the screen still shows the small one's own pixels.
+void overlay_base(const Bit8u *low) {
+    if (g_base.sub < 0 || g_base.sub >= (int)g_subs.size() || PIC_FullIndex() - g_base.ms > kBaseStaleMs) return;
+    const Substitute &sb = g_subs[g_base.sub];
+    const Shape &sm = sb.small, &bg = sb.big;
+    int lit = 0, same = 0;
+    for (int v = 0; v < sm.h; v++) {
+        for (int u = 0; u < sm.w; u++) {
+            const int c = sm.px[v * sm.w + u], x = g_base.x0 + u, y = g_base.y0 + v;
+            if (c < 0 || x < 0 || x >= LW || y < 0 || y >= LH) continue;
+            lit++;
+            same += low[y * LW + x] == c;
+        }
+    }
+    if (!lit || same * 10 < lit * 9) return;
+    const double fx = (double)bg.w / sm.w, fy = (double)bg.h / sm.h;
+    for (int v = 0; v < sm.h; v++) {
+        const int y = g_base.y0 + v;
+        if (y < 0 || y >= LH) continue;
+        for (int u = 0; u < sm.w; u++) {
+            const int c = sm.px[v * sm.w + u], x = g_base.x0 + u;
+            if (c < 0 || x < 0 || x >= LW || low[y * LW + x] != c) continue;
+            for (int Y = g_rowFrom[y]; Y < g_rowFrom[y + 1]; Y++) {
+                const int V = (int)(((Y + 0.5) / 2.4 - g_base.y0) * fy);
+                if (V < 0 || V >= bg.h) continue;
+                for (int X = 2 * x; X < 2 * x + 2; X++) {
+                    const int U = (int)(((X + 0.5) / 2.0 - g_base.x0) * fx);
+                    if (U < 0 || U >= bg.w) continue;
+                    const Bit16s b = bg.px[V * bg.w + U];
+                    if (b >= 0) g_out[Y * HW + X] = (Bit8u)b;
+                }
             }
         }
     }
@@ -534,6 +872,14 @@ void call(const Place &p) {
         present();
         return;
     }
+    if (p.op == OP_SHAPE && hires_wanted() && g_subsState >= 0) {     // (a landing's or takeoff's base?)
+        Target scene;
+        if (read_target((Bit16u)arg16(0), scene) && !flights_buffer(scene)) {
+            const Shape *s = shape_of((Bit16u)arg16(3), (Bit16u)arg16(4), arg16(5));
+            if (s) note_base(*s, arg16(1), arg16(2));
+            return;
+        }
+    }
     if (!g_bufSeg || !g_drewThis) return;
     Target t;
     const Bit16u caller = (Bit16u)(rd16(SegPhys(ss) + (Bit16u)(reg_sp + 2)) - priv_load_seg());
@@ -615,6 +961,7 @@ void call(const Place &p) {
             shape_blocks(t, *s, x, y, (Bit8u)arg16(6));
         } else if (p.op == OP_SHAPE) {
             if (caller == kCrosshairCaller) shape_lines(t, *s, x, y);
+            else if (caller == kRadarCaller) shape_radar(t, *s, x, y);
             else shape_blocks(t, *s, x, y, -1);
         } else if (p.op == OP_SCALE_HAZE) {
             Haze h;
@@ -701,9 +1048,10 @@ void compose() {
     static Bit8u madeFrom[LW * LH];
     static Bit32u madeSerial = 0;
     static int madeFlight = -1;
-    const Bit32u serial = flight ? g_frameSerial : 0;
-    if (madeFlight == (int)flight && madeSerial == serial && !memcmp(madeFrom, low, LW * LH)) return;
-    madeFlight = flight;
+    const int mode = flight ? 1 : hires_wanted() ? 2 : 0;      // (2: the game's picture, a scene's base over it)
+    const Bit32u serial = flight ? g_frameSerial : mode == 2 ? g_base.serial : 0;
+    if (madeFlight == mode && madeSerial == serial && !memcmp(madeFrom, low, LW * LH)) return;
+    madeFlight = mode;
     madeSerial = serial;
     memcpy(madeFrom, low, LW * LH);
     if (!flight) {
@@ -716,6 +1064,7 @@ void compose() {
             const Bit8u *row = low + g_lowRow[Y] * LW;
             for (int x = 0; x < LW; x++) out[2 * x] = out[2 * x + 1] = row[x];
         }
+        if (mode == 2) overlay_base(low);
         return;
     }
     smooth_edge();
@@ -734,21 +1083,28 @@ bool game_picture() {           // the game's own 320 x 200, shown from the star
 bool priv_hires_on() { return g_override; }
 
 void priv_hires_set(bool on) {
+    hires_wanted();
+    if (g_never) return;
     g_want = on ? 1 : 0;
     g_flipped = false;
+    now_wanted();
 }
 
 void priv_hires_flip() {
     hires_wanted();
+    if (g_never) {
+        wclog(1, "Privateer: the high-resolution picture is off for this run (the game as it was)");
+        return;
+    }
     g_flipped = !g_flipped;
+    now_wanted();
     wclog(1, "Privateer: the high-resolution picture %s", hires_wanted() ? "on" : "off");
 }
 
 // The picture is 640 x 480 from the first time hi-res is wanted, so that the key flips without a change of mode.
 void priv_hires_tick() {
-    static bool used = false;
-    if (hires_wanted()) used = true;
-    const bool want = used && game_picture();
+    now_wanted();
+    const bool want = g_used && g_hooked && game_picture();
     if (want == g_override) return;
     make_tables();
     g_override = want;
@@ -769,8 +1125,12 @@ void priv_hires_tick() {
 // instruction at such an offset -- 0002, 0008, every library's entries -- goes straight on.)
 void priv_hires_watch(void (*watch)(Bit16u ip)) {
     memset(g_onlyOurs, 0, sizeof(g_onlyOurs));
+    now_wanted();
+    g_hooked = g_used;
+    if (!g_hooked) return;          // (never wanted yet: nothing of the picture's is looked at)
     for (int i = 0; i < kPlaceCount; i++) g_onlyOurs[kPlaces[i].ip] = !wc_net_watch[kPlaces[i].ip];
     for (int i = 0; i < kPlaceCount; i++) watch(kPlaces[i].ip);
+    wclog(1, "Privateer: the high-resolution picture's places watched");
 }
 
 bool priv_hires_hook(Bit32u ip) {

@@ -594,6 +594,7 @@ Mode mode() {
     if (m < 0) {
         const char *env = getenv("WCPRIVTWINS");
         m = !env || !env[0] ? MODE_TWINS : !strcmp(env, "check") ? MODE_CHECK : env[0] == '0' ? MODE_GAME : MODE_TWINS;
+        if (priv_classic()) m = MODE_GAME;
     }
     return (Mode)m;
 }
@@ -602,7 +603,7 @@ bool idle_wanted() {
     static int on = -1;
     if (on < 0) {
         const char *env = getenv("WCPRIVIDLE");
-        on = !env || env[0] != '0' ? 1 : 0;
+        on = (!env || env[0] != '0') && !priv_classic() ? 1 : 0;
     }
     return on != 0;
 }

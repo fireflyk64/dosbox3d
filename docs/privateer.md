@@ -1060,3 +1060,83 @@ the same fight at 26 frames a second did not): the AI's shots are per frame, and
 bolts.  In a room the bolt collector (section 18) holds it: the room of two above, its host's heap never under 3,100.
 Solo is the game as it is (section on rooms of one): nothing more is done there, and the game alone never fields that
 many.
+
+## 22. Privateer as it was, and the picture's code unloaded (2026-11-22)
+
+The user: "is there a way on the website to run privateer without high res code loaded at all in case it causes an
+issue?"
+
+* Until the high-resolution picture is first wanted (the page's box, WCPRIVHIRES=1, or the ` key) none of its code
+  runs: its places are not watched at all.  The box ticked during a flight or the key pressed watches them from the
+  next instruction, and the picture follows a frame later.
+* `?privclassic=1` on the page (WCPRIVCLASSIC=1 natively): Privateer as it was before this day's work -- no
+  high-resolution picture (the box greyed out, the ` key inert), no native twins, the frame wait spun and the empty
+  game port polled as the game does.  The 4:3 shape stays (the page's).  Measured: an Oxford-type fight at 24 frames a
+  second (the twins' 28.6), the picture 640 x 400, none of the picture's places watched.
+
+## 23. The radar as line art, and every cockpit and view looked at (2026-11-22)
+
+The plan's step 5 and 6.  The radar's art is one shape a frame, drawn by segment 0x13AE (the radar's: it draws that
+shape, the blips as pixels and some lines, nothing else, in every probed frame).  In the high-resolution picture its
+most common colour (the screen's black) stays in blocks and each other colour is line art: a pixel joined to its
+same-coloured neighbours by one-pixel lines (the two-tone rings stay two rings; joining any colours made a mesh of
+them, thinning the bitmap made combs), and a pixel in no chain of its own colour (the side gauge's two-tone bar, a
+line's end) reaches halfway to each neighbour of another ink, so that bar is a line and not dots.
+
+Looked at with the picture on and off (scratch rig views.sh: a new pilot buys the ship, outfits it, launches, two
+pirates, guns fired, each view key, the nav map): the Tarsus, Orion, Centurion and Galaxy, F1-F4 (front, left, right,
+rear), F7 (the missile camera's notice), F8 and F9 (outside cameras), the nav map.  The radar is the same art in all
+four; the window's smoothed edge follows the Centurion's and Galaxy's curved canopies; the red flash of a hit (the
+palette's colour 0) shows in the picture as in the game's (paired !shot / !frame every quarter second).
+
+## 24. The landing and takeoff scenes' bases from the flight's art (2026-11-22)
+
+The plan's step 7.  The scenes (MIDGAMES\LANDINGS.IFF, TAKEOFFS.IFF) do not go through the flight's frame: they draw
+with the plain shape routine (seg188), unscaled, into a buffer of their own, and copy it to the screen with their own
+code (a trace of a takeoff: 98% of the time in a wait loop, the drawing in seg188, no seg205 copy).  So in the
+high-resolution picture they were the game's picture made twice as large.  Their base is one of LTOBASES.PAK's ten
+small pictures; six are small copies of a base's flight art (APPEARNC\*.IFF, its SHAP: four quarters laid over each
+other), 1.6 to 2.75 times as large there:
+
+| LTOBASES | small | flight art |
+|---|---|---|
+| 1 | 132 x 79 | REFINE 219 x 132 |
+| 2, 4 | 83 x 67 | ROIDBASE 209 x 184 (Achilles) |
+| 3 | 84 x 70 | AGRIC 182 x 170 (Helen) |
+| 6 | 89 x 72 | DETROIT 184 x 150 |
+| 7 | 141 x 81 | DERLCT 225 x 128 |
+
+(0 and 8 are other planets than the flight art's, 5 and 9 other stations: theirs stay the game's.  The pairs were
+matched by eye with design/privateer-hires/research/bases.py; each size is checked as the files are read, a pair not as
+known left out with a line saying so.)  The first time a scene draws a shape of a small base's size (the high-resolution
+picture wanted), PRIV.TRE is read through the drive that has it (the CD image, drive D: DOSBox's own file objects, not
+the game's handles): LTOBASES.PAK and the five APPEARNC files ("the landing and takeoff bases: 6 of 6 from the flight's
+art").  A shape the scene draws is matched by its decoded pixels; its place is noted, and at the compose, if 90 in 100
+of that small base's own pixels are on the screen where it was drawn, each of those pixels shows the flight's art over
+the same box (nearest, blocky: the user's ruling), and anything else (the ship passing in front, the screen's edge)
+stays the game's.  Measured: Achilles' takeoff and landing (ROIDBASE, also cut off by the screen's edge) and Helen's
+landing (AGRIC) show the flight's art in place, colours right, the Tarsus in front of it.
+
+shape_of's run-length decoding is now decode_rows, a template over the bytes it reads (the game's memory, or a file's).
+
+
+## 25. The mouse's pitch, and the page's "Invert mouse" (2026-11-22)
+
+The user: "The mouse is inverted.  Is there a way to change it back. An option or toggle".  The game's mouse flying
+(the options' MOUSE, Alt+O) turns toward the pointer left and right but pitches as a flight stick: seg088:02E5 writes
+the control record's yaw from -(x - ds:3C5B) / 10 (negated at 0327) and its pitch from (y - ds:3C5D) / 3, not negated
+(0373..03C7), and +0x100 pitch climbs (the keyboard's Down).  So the pointer above the middle, the mouse pushed up,
+dives.  The game has no setting for it (no "invert" among its strings).  With button 2 held the mouse's x rolls
+(03CF) and its y changes the speed (seg088:0909, pushed up faster): neither is touched.
+
+Now the page's "Invert mouse" box (Privateer only, beside High resolution, remembered by the browser, unticked by
+default; `WCPRIVMOUSEINVERT=1` at the launch, `wc_web_priv_mouse_invert` while flying): unticked, at seg088:0BBD (where
+the modes' readings meet, section 4) the mouse mode's pitch is turned the other way up, the record's +6 only, so the
+pointer above the middle climbs and the ship steers toward the pointer both ways (the ring, section 18, is where the
+nose goes); ticked, the game's own.  The page's stick (a pad, the touch stick) writes its own pitch over it as before.
+The first flight frame says the choice in the log ("the mouse pushed up raises the nose" or "the mouse inverted, as the
+game has it").  The rig aid `!privmode=keyboard|mouse|joystick` writes the options' three flags as its buttons do.
+
+Measured, a Tarsus out of Achilles, the options' MOUSE, the pointer at the middle then 40 of 200 above it for two
+seconds, then 40 below (the forward row's z from DGROUP each second): unticked the nose went -6 -> +10 degrees, then
+down to -51; ticked (the game's own) +0 -> -77.

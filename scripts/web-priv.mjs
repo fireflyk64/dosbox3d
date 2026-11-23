@@ -6,7 +6,9 @@
 //
 //   PLAYWRIGHT_DIR=... SHOT_DIR=... node scripts/web-priv.mjs PAGE_URL LOBBY_URL INSTALLER [seconds]
 //   RF=1: Righteous Fire (the menu's other program)
-//   HIRES=1: the page's "High resolution (2x)" ticked before Fly: 640 x 480 in flight, the frame rate held, ` flips it
+//   HIRES=1: the page's "High resolution (2x)" (ticked by default) left ticked: 640 x 480 in flight, the frame rate
+//   held, ` flips it; HIRES=0: unticked before Fly, the game's own picture and none of the high resolution's hooks
+//   CLASSIC=1: the page opened with ?privclassic=1: the box unticked and greyed, the game as it was (WCPRIVCLASSIC)
 //   ROOM=<code>: the page joins that room as a guest (scripts/web-priv.sh ROOM=1 makes a native host's) and checks the
 //   room's presence lines (src/cpu/wcnet_priv_session.cpp) instead of flying alone
 //   PAD=1: a stand-in gamepad (scripts/web-pad.mjs's) picked in flight, its stick pushed right: the page's stick steers
@@ -63,6 +65,7 @@ u.searchParams.set("server", lobbyUrl);
 u.searchParams.set("hall", "PRVHALL-" + Math.random().toString(36).slice(2, 6).toUpperCase());
 u.searchParams.set("callsign", "PRIVTEST");
 if (process.env.ROOM) u.searchParams.set("room", process.env.ROOM);
+if (process.env.CLASSIC) u.searchParams.set("privclassic", "1");
 u.searchParams.set("env.WCNET_KEYSCRIPT", route);
 u.searchParams.set("env.WCNET_KEYSCRIPT_FROM", "boot");
 u.searchParams.set("env.WCNET_LOG", "3");
@@ -109,11 +112,17 @@ if (process.env.ROOM) {
   await page.click("#join");
   await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 30000 });
 }
-if (process.env.HIRES) {
-  const box = await page.evaluate(() => { const el = document.getElementById("privHires"); return !!el && el.offsetParent !== null && !el.checked; });
-  check("the High resolution box shows, off by default", box);
-  await page.check("#privHires");
+if (process.env.CLASSIC) {
+  const box = await page.evaluate(() => { const el = document.getElementById("privHires"); return !!el && el.disabled && !el.checked; });
+  check("?privclassic=1: the High resolution box unticked and greyed", box);
+} else {
+  const box = await page.evaluate(() => { const el = document.getElementById("privHires"); return !!el && el.offsetParent !== null && el.checked && el.type === "checkbox"; });
+  check("the High resolution checkbox shows, ticked by default", box);
+  if (process.env.HIRES === "0") await page.uncheck("#privHires");
 }
+// the mouse's pitch (the user, 2026-11-22: "The mouse is inverted. Is there a way to change it back. An option or toggle")
+check("the Invert mouse checkbox shows, unticked by default",
+  await page.evaluate(() => { const el = document.getElementById("privMouseInvert"); return !!el && el.offsetParent !== null && !el.checked && !el.disabled; }));
 await page.click("#fly");
 const waitLog = async (re, ms) => {
   const until = Date.now() + ms;
@@ -150,7 +159,19 @@ check("full screen: 4:3, as large as fits, in the middle",
 await page.screenshot({ path: path.join(shotDir, "web-priv-full.png") });
 await page.evaluate(() => document.exitFullscreen());
 await sleep(1000);
-if (process.env.HIRES) {
+if (process.env.CLASSIC) {
+  const size = await page.$eval("#canvas", (c) => `${c.width} x ${c.height}`);
+  check("classic: the game's own picture", size === "640 x 400", size);
+  check("classic: the game as it was", logs.some((l) => /the game as it was \(WCPRIVCLASSIC\)/.test(l)));
+  check("classic: none of the high resolution's places watched", !logs.some((l) => /high-resolution picture's places watched/.test(l)));
+  check("classic: the game's own poll of the game port", !logs.some((l) => /no stick at the start/.test(l)));
+}
+if (process.env.HIRES === "0") {
+  const size = await page.$eval("#canvas", (c) => `${c.width} x ${c.height}`);
+  check("unticked: the game's own picture", size === "640 x 400", size);
+  check("unticked: none of the high resolution's places watched", !logs.some((l) => /high-resolution picture's places watched/.test(l)));
+}
+if (process.env.HIRES && process.env.HIRES !== "0") {
   const size = await page.$eval("#canvas", (c) => `${c.width} x ${c.height}`);
   check("the emulator's picture is 640 x 480", size === "640 x 480", size);
   await sleep(6000);
@@ -168,11 +189,25 @@ if (process.env.HIRES) {
     if (want === "off") await page.screenshot({ path: path.join(shotDir, "web-priv-hires-off.png"), clip: at });
   }
 }
-// the page's own keyboard: Right held 0.6 s, then a tap
+// Invert mouse: the launch's (unticked: pushed up climbs), then ticked and unticked while flying
+check("the mouse pushed up climbs (the launch's choice)", logs.some((l) => /the mouse pushed up raises the nose/.test(l)),
+  (logs.find((l) => /Privateer: the mouse (pushed|inverted)/.test(l)) || "no word of it").slice(0, 120));
+for (const [tick, re] of [[true, /the mouse inverted, as the game has it/], [false, /the mouse pushed up raises the nose/]]) {
+  const mark = logs.length;
+  if (tick) await page.check("#privMouseInvert"); else await page.uncheck("#privMouseInvert");
+  await sleep(500);
+  check(`Invert mouse ${tick ? "ticked" : "unticked"} while flying: ${tick ? "the game's own" : "pushed up climbs"}`,
+    logs.slice(mark).some((l) => re.test(l)) && await page.evaluate(() => localStorage.getItem("wc:privMouseInvert")) === (tick ? "1" : "0"));
+}
+// the page's own keyboard: Right held until the stop is reached (at most 4 s: a fixed 0.6 s failed twice when the
+// browser stalled for a second and a half after full screen, the game's own 28 frames a second either side), then a tap
 await page.focus("#canvas");
 const before = logs.length;
 await page.keyboard.down("ArrowRight");
-await sleep(600);
+for (let held = 0; held < 4000; held += 50) {
+  if (held >= 600 && logs.slice(before).filter((l) => /arrows [+-]\d+ -256/.test(l)).length >= 3) break;
+  await sleep(50);
+}
 await page.keyboard.up("ArrowRight");
 await sleep(1500);
 await page.keyboard.down("ArrowRight");
