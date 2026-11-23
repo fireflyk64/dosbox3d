@@ -1163,8 +1163,9 @@ top-level README for the workflow).  What differs:
   game's steps, half a step more before step 1; built in, the game's own
   dead zone (`joy_init`'s 1: `seg019:0390`, a reading of one step is none),
   a fifth of the rest, and the first turn step 2 of 9.  Now the slider
-  starts at 5% (and goes to 0; a 15% saved by an earlier version, the old
-  default, is dropped), a stick past it is step 1 at least in the
+  starts at 4% (and goes to 0; a 15% or 5% saved by an earlier version, an
+  old default, is dropped; the user, 2026-11-23: "I think 5% is too much
+  dead air"), a stick past it is step 1 at least in the
   mouse-style mode (`stepped`), and a built-in pad's game has no dead zone
   of its own (`joyDead` zeroed while the stick is the page's, given back
   with none) and gets the stick in whole steps, an equal share of the

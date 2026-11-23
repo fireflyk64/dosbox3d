@@ -675,9 +675,19 @@ static int joystick_state() {
 // the travel, step 1 from the first movement on, and the reading is put in
 // the middle of its step (where it truncates to that step whatever the
 // rounding).  Until the game reads the stick, as it is.
+// Any other game reading the untimed port (Privateer, Terminal Velocity) counts its 64 + 64 x reads, truncated: a
+// stick a little right of the centre read 64, as at rest, a little left 63.  So a stick off the centre is a read off it
+// at least, each way the same: 64 + ceil(64 x) right, 64 - ceil(64 |x|) left (Privateer's JOYA.DAT as the page writes
+// it then has step 1 from the first movement past the page's dead zone).  Armada reads the stick itself, exact
+// (wcnet_armada.cpp joy_read): as it is.
+static double port_off_centre(double v) {
+    if (v == 0 || arm_found()) return v;
+    const double k = ceil(fabs(v) * 64 - 1e-9);
+    return (v > 0 ? k + 0.5 : 0.5 - k) / 64.0;
+}
 static double joystick_port_value(double v, int axis) {
     if (joystick_state() != 2 || !ds::known(ds::joyPerStep)) {
-        return v;
+        return port_off_centre(v);
     }
     const int range = (Bit16s)rd16((Bit16u)(ds::joyRange + 2 * axis));
     const int centre = (Bit16s)rd16((Bit16u)(ds::joyCentre + 2 * axis));

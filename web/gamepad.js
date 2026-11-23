@@ -106,16 +106,17 @@ const padOf = (choice) => (isBuiltIn(choice) ? choice.slice(BUILT_IN.length) : c
 // stick asks for: 100%, the stick being analog anyway (it was 70%, which
 // stopped at step 5 of the game's 8).  Version 2 of the saved settings:
 // a sensitivity saved by version 1 was the old default, not a choice.
-// The dead zone is 5% (it was 15%): the system has one of its own before
-// the browser sees the stick (Linux: a sixteenth of the axis for most USB
-// sticks), and the two add up.  Version 3: a dead zone of 15% saved by an
-// earlier version was the old default.
+// The dead zone is 4% (it was 15%, then 5%: the user, 2026-11-23, "I think
+// 5% is too much dead air"): the system has one of its own before the browser
+// sees the stick (Linux: a sixteenth of the axis for most USB sticks), and the
+// two add up.  Version 3: a dead zone of 15% saved by an earlier version was
+// the old default; version 4: so was 5% saved by version 3.
 export function defaultConfig() {
   // (pointer: the game's own crosshair stays on the screen in flight.  It
   // is what a mouse steers by; a stick moves it too, for nothing.  curve:
   // the stick's travel past the dead zone squared, half stick a quarter of
   // the full turn: more of the travel for the slow turns.)
-  const cfg = { version: 3, buttons: {}, axes: {}, deadzone: 0.05, burner: 0.9, sensitivity: 1.0, pointer: false, curve: false };
+  const cfg = { version: 4, buttons: {}, axes: {}, deadzone: 0.04, burner: 0.9, sensitivity: 1.0, pointer: false, curve: false };
   for (const a of ACTIONS) cfg.buttons[a.id] = a.bind ? { ...a.bind } : null;
   for (const a of AXES) cfg.axes[a.id] = { ...a.bind };
   return cfg;
@@ -124,11 +125,11 @@ function loadConfig() {
   const cfg = defaultConfig();
   try {
     const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || "null");
-    if (saved && saved.version >= 1 && saved.version <= 3) {
+    if (saved && saved.version >= 1 && saved.version <= 4) {
       for (const a of ACTIONS) if (a.id in (saved.buttons || {})) cfg.buttons[a.id] = saved.buttons[a.id];
       for (const a of AXES) if (saved.axes && saved.axes[a.id]) cfg.axes[a.id] = saved.axes[a.id];
       for (const k of saved.version === 1 ? ["deadzone", "burner"] : ["deadzone", "burner", "sensitivity"]) if (typeof saved[k] === "number") cfg[k] = saved[k];
-      if (saved.version < 3 && saved.deadzone === 0.15) cfg.deadzone = defaultConfig().deadzone;
+      if ((saved.version < 3 && saved.deadzone === 0.15) || (saved.version === 3 && saved.deadzone === 0.05)) cfg.deadzone = defaultConfig().deadzone;
       for (const k of ["pointer", "curve"]) if (typeof saved[k] === "boolean") cfg[k] = saved[k];
     }
   } catch (e) { /* defaults */ }

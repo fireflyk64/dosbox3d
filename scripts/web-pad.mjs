@@ -92,7 +92,7 @@ for (const [ship, how] of COCKPITS[game]) {
   check(`${ship}: full stick right and left are the fastest turn`, right[0] === 8 && left[0] === -8 && right[1] === 0 && left[1] === 0, [right, left]);
   const half = await held(0, 0.5), little = await held(1, 0.25);
   check(`${ship}: less stick is less turn`, half[0] >= 2 && half[0] <= 5 && little[1] <= -1 && little[1] >= -2, [half, little]);
-  // (The page's dead zone is 5%; just past it is the game's first step.)
+  // (The page's dead zone is 4%; just past it is the game's first step.)
   const tiny = await held(0, 0.1);
   check(`${ship}: just past the dead zone is step 1`, tiny[0] === 1 && tiny[1] === 0, tiny);
   t = await turn();

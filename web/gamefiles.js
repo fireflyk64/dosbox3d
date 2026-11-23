@@ -456,6 +456,42 @@ function privMusicOnFm(FS, root) {
   return `Privateer's music: card ${first[0] || "none"} (General MIDI: no synthesizer in the browser) changed to 2, the Sound Blaster's FM`;
 }
 
+// A joystick's calibration as Origin's library keeps it (stick A's file JOYA.DAT, little-endian words; Armada's has a
+// word before it and the throttle's five after, Privateer's the reads' timeout): each axis's lowest, centre and highest
+// readings (x, y), its 32 steps a side, each step's size (x above, x below, y above, y below), and the dead band's top
+// and bottom.  The game makes a reading above the top ceil((reading - top) / size) steps, below the bottom
+// floor((reading - bottom) / size), between them none.  Calibrated in the game, the band is a share of each side
+// (Armada 10%; GOG's Privateer file 30%: a built-in stick did nothing until a third of its travel, measured).  The
+// page writes these with a pad picked "Built in" (opts.joystick), so the game needs no calibrating (the user,
+// 2026-11-23: "Ideally the OS itself handles joystick calibration so the ingame calibration seems to be too much work
+// for plyaers these days. Can we bypass that unless they want to *recalibrate*"), with no band of the game's: the
+// page's dead zone is the one ("we need to reduce the default deadzone in wing commander privateer and this to 4%").
+// The game's own calibration (Armada's Options, JOY 1) still recalibrates, its band with it.
+function joyCalibration(words) {
+  const bytes = new Uint8Array(words.length * 2);
+  words.forEach((w, i) => { bytes[2 * i] = w & 0xff; bytes[2 * i + 1] = w >> 8; });
+  return bytes;
+}
+// Privateer reads the port by counting (DOSBox's untimed port: 64 + 64 x reads, 0 to 128; the emulator moves a stick
+// off the centre by one read at least), so 2 reads a step: 32 steps from the centre to each end
+const PRIV_JOYA = joyCalibration([0, 0, 64, 64, 128, 128, 32, 32, 2, 2, 2, 2, 64, 64, 64, 64, 140]);
+// Armada times the port; the emulator gives it the readings itself, exact (src/cpu/wcnet_armada.cpp joy_read): 0, 321
+// the centre, 642, 10 a step, the band 320 to 322 (its first word, 11, and the throttle's zeros as the game writes them)
+const ARMADA_JOYA = joyCalibration([11, 0, 0, 321, 321, 642, 642, 32, 32, 10, 10, 10, 10, 322, 322, 320, 320, 0, 0, 0, 0, 0]);
+function privPrepare(FS, root, opts = {}) {
+  const said = [privMusicOnFm(FS, root)].filter(Boolean);
+  if (opts.joystick) {
+    FS.writeFile(`${root}/JOYA.DAT`, PRIV_JOYA);
+    said.push("JOYA.DAT: the built-in stick calibrated for the page's port, no dead band of the game's");
+  }
+  return said.join("; ");
+}
+function armadaPrepare(FS, root, opts = {}) {
+  if (!opts.joystick) return "";
+  FS.writeFile(`${root}/JOYA.DAT`, ARMADA_JOYA);
+  return "Armada's JOYA.DAT: the built-in stick calibrated (no calibration in the game's Options needed), no dead band of the game's";
+}
+
 // Wing Commander's sound card is the word after "v" in WINGCMDR.CFG (CRUSADE.CFG for SM2.EXE): "a904" the AdLib at
 // 388h, the Sound Blaster's FM, as GOG's Legacy Edition has it ("v a904 z"); "r" the Roland MT-32, as the 35th
 // Anniversary Edition's DOS game has it ("v r z": GOG's own DOSBox there plays it through a synthesizer; the browser
@@ -661,9 +697,9 @@ function rapPrepare(FS, root) {
 }
 
 const armadaMachine = {
-  multiplayer: true, ipx: true, cycles: 25000, noFlight: true, noRoomOptions: true, joystick: true,
+  multiplayer: true, ipx: true, cycles: 25000, noFlight: true, noRoomOptions: true, joystick: true, prepare: armadaPrepare,
   dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[cpu]\ncore=normal\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n",
-  keys: "<b>Armada flight:</b> steer with the arrow keys (a tap turns a little; held, they build to the full turn in a third of a second; <kbd>Shift</kbd> with an arrow turns at full at once) or hold the right mouse button and drag (the further the drag, the faster the turn; let go to centre it; dragging up raises the nose unless <b>Invert mouse</b> is ticked). Fire guns with <kbd>Space</kbd> or the left button while steering with the mouse. <kbd>Enter</kbd> fires a missile, <kbd>Tab</kbd> is the afterburner, and the keypad’s <kbd>+</kbd> and <kbd>−</kbd> change speed. For a joystick or gamepad, pick its <b>Built in</b> entry under Controller before Fly and calibrate <b>JOY 1</b> in the game’s Options before joining Net Play. <b>High resolution (2x)</b> draws the flight at 640×400 (<kbd>`</kbd> flips it while flying).",
+  keys: "<b>Armada flight:</b> steer with the arrow keys (a tap turns a little; held, they build to the full turn in a third of a second; <kbd>Shift</kbd> with an arrow turns at full at once) or hold the right mouse button and drag (the further the drag, the faster the turn; let go to centre it; dragging up raises the nose unless <b>Invert mouse</b> is ticked). Fire guns with <kbd>Space</kbd> or the left button while steering with the mouse. <kbd>Enter</kbd> fires a missile, <kbd>Tab</kbd> is the afterburner, and the keypad’s <kbd>+</kbd> and <kbd>−</kbd> change speed. For a joystick or gamepad, pick its <b>Built in</b> entry under Controller before Fly: it is calibrated already (<kbd>Alt</kbd>+<kbd>O</kbd>, <b>JOY 1</b> recalibrates it if you want). <b>High resolution (2x)</b> draws the flight at 640×400 (<kbd>`</kbd> flips it while flying).",
 };
 
 export const GAMES = [
@@ -789,14 +825,14 @@ export const GAMES = [
   // others' ships near by so far;
   // src/cpu/wcnet_priv_session.cpp); the emulator ramps its arrow keys (src/cpu/wcnet_priv_controls.cpp).
   { id: "priv", tag: "PRV", title: "Wing Commander: Privateer", short: "Privateer", detect: ["PRCD.EXE"], run: "priv", multiplayer: true, maxSeats: 8,
-    image: "GAME.GOG", cycles: 30000, saves: ["*.SAV"], noFlight: true, noRoomOptions: true, prepare: privMusicOnFm, joystick: true,
+    image: "GAME.GOG", cycles: 30000, saves: ["*.SAV"], noFlight: true, noRoomOptions: true, prepare: privPrepare, joystick: true,
     build: { para: 0x6E4D, off: 0x0074, text: "Type PRIV to run Privateer" },
     help: "Privateer flown together loosely, rooms of up to 8: everybody plays their own career, goes where they like and keeps their own saved games. Each pilot's system and place goes to the room when they launch, land, jump, engage the autopilot (A), and every 15 s; a line over the game says who is in your system and how far. Near each other you see each other's ships as the ships they fly, and a nav point's encounter is run by one pilot's game and shown to the others: everybody fights the same pirates, your hits count, and a wing about to spawn gets up to 3 more ships when several of you are there. A mission's nav points wait for the pilot who has the mission, and what flies with a pilot (an escort's charge) is seen by all. Talking: in flight press 0, type, Enter: the line shows on the others' message bar under your face (the Face box above, in the room), said by your ship when it is near; at a base use the room's chat beside this panel. Cargo you expel can be tractored by the others. Esc skips the opening; NEW registers a pilot (a name and a callsign, Enter after each); click your ship on the landing pad to launch. Save in a base with the Quine 4000's SAVE: the page keeps your saved games in this browser.",
     keys: "<b>Privateer in flight:</b> <kbd>`</kbd> flips the high-resolution picture (unless Voice is on push to talk, whose key it is); the arrow keys steer (a tap turns a little, held they build to the full turn in a third of a second; <kbd>Shift</kbd> with an arrow turns at full at once), <kbd>Home</kbd> and <kbd>PgUp</kbd> (the keypad's <kbd>7</kbd> and <kbd>9</kbd>) roll the same way; <kbd>Space</kbd> fires the guns, <kbd>Enter</kbd> the weapon picked with <kbd>W</kbd> (a missile, or the tractor beam), <kbd>Tab</kbd> the afterburner; <kbd>+</kbd> and <kbd>-</kbd> set the speed, <kbd>Backspace</kbd> stops; <kbd>T</kbd> targets, <kbd>N</kbd> the nav map, <kbd>A</kbd> the autopilot, <kbd>J</kbd> jumps, <kbd>X</kbd> expels your cargo, <kbd>C</kbd> the comms; <kbd>Alt</kbd>+<kbd>O</kbd> the options, where the mouse or a joystick can be the stick instead (the ramp is the keyboard's). A controller picked above steers in any of them; picked “Built in” before the launch, it is the game's own joystick.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=5\ndma=1\nhdma=5\n" },
   // Righteous Fire: the same program and disc, started as GOG's menu starts it ("priv r"), its saved games *.PRS.
   { id: "privrf", tag: "PRF", partOf: "priv", title: "Wing Commander: Privateer - Righteous Fire", detect: ["PRCD.EXE"], run: "priv r", multiplayer: true, maxSeats: 8,
-    image: "GAME.GOG", cycles: 30000, saves: ["*.PRS"], noFlight: true, noRoomOptions: true, prepare: privMusicOnFm, joystick: true,
+    image: "GAME.GOG", cycles: 30000, saves: ["*.PRS"], noFlight: true, noRoomOptions: true, prepare: privPrepare, joystick: true,
     build: { para: 0x6E4D, off: 0x0074, text: "Type PRIV to run Privateer" },
     help: "Righteous Fire, Privateer's sequel campaign, flown together the way Privateer is (rooms of up to 8, each pilot its own career, where everybody is told). It starts from a pilot of its own (a new one, or a Privateer pilot who finished the game). The page keeps your saved games in this browser.",
     dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=5\ndma=1\nhdma=5\n" },

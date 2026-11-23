@@ -272,6 +272,18 @@ if (PAD) {
   await sleep(1500);
   const moving = logs.slice(rest).filter((l) => /steered by the page's stick|the joystick \(built in\)/.test(l));
   check("the stick let go: it stops", moving.length === 0, (moving[0] || "still").slice(0, 140));
+  if (PAD === "builtin") {
+    // (the page's JOYA.DAT: no dead band of the game's -- GOG's had 45..83 around 64, nothing until a third of the
+    // stick -- and the stick off the port's centre by a read at least: a little past the page's 4% turns a little)
+    check("JOYA.DAT written for the page's port", logs.some((l) => /JOYA\.DAT: the built-in stick calibrated/.test(l)), "");
+    const little = logs.length;
+    await page.evaluate(() => { window.__pad.axes[0] = 0.08; });
+    await sleep(1500);
+    await page.evaluate(() => { window.__pad.axes[0] = 0; });
+    await sleep(1000);
+    const small = logs.slice(little).filter((l) => /the joystick \(built in\)/.test(l)).map((l) => Number(/yaw ([+-]\d+)/.exec(l)[1]));
+    check("a little stick (8%) turns a little: no dead band of the game's", small.length > 0 && small.every((v) => v < 0 && v >= -32), small.join(" "));
+  }
   await page.screenshot({ path: path.join(shotDir, "web-priv-pad.png"), clip: box });
   const mark2 = logs.length;
   await page.selectOption("#padSelect", "none-game");

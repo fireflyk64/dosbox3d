@@ -15,7 +15,8 @@
 #   CYCLES=     the emulated CPU (default 25000)
 #   ENV=        more of the environment ("WCPORT=7400 WCHOST=127.0.0.1 WCCALLSIGN=GUEST")
 #   KEEP=1      keep $OUT/game from an earlier run
-#   JOYPORT=1   the game port as the page's built-in pad has it (counting, timed=false: !joystick=1, !joy=x:y move it)
+#   JOYPORT=1   the game port as the page's built-in pad has it (counting, timed=false: !joystick=1, !joy=x:y move it),
+#               and the page's JOYA.DAT (web/gamefiles.js ARMADA_JOYA: calibrated for the emulator's exact readings)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT:-/tmp/armadarun}; mkdir -p $OUT; rm -f $OUT/*.ppm $OUT/*.txt
 DUR=${1:-60}; SCRIPT=${2:-}
@@ -25,6 +26,7 @@ DOSBOX=${DOSBOX:-$ROOT/build-native/src/dosbox}
 if [ -z "${KEEP:-}" ] || [ ! -d $OUT/game ]; then
   rm -rf $OUT/game; mkdir -p $OUT/game; cp -f "$ARMADADIR"/* $OUT/game/ 2>/dev/null
 fi
+[ "${JOYPORT:-0}" = 1 ] && python3 -c "import struct,sys; open(sys.argv[1],'wb').write(struct.pack('<22H',11,0,0,321,321,642,642,32,32,10,10,10,10,322,322,320,320,0,0,0,0,0))" $OUT/game/JOYA.DAT
 NET=${NET:-}
 if [ -z "$NET" ]; then case " ${ENV:-} " in *" WCPORT="*|*" WCHOST="*|*" WCROOM="*) NET=room ;; *) NET=none ;; esac; fi
 ipx=false; pre=""

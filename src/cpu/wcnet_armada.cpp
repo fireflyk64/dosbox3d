@@ -34,6 +34,8 @@
 #include "vga.h"
 #include "cpu.h"
 #include "paging.h"
+#include "joystick.h"
+#include <math.h>
 #include <stdio.h>
 #include <map>
 #include <vector>
@@ -52,12 +54,14 @@ struct Build {
     Bit8u loopEndDisp;
     Bit16u held;                // the held-key table in the data segment (1: held), by scan code
     Bit8u full;                 // a key's stop
+    Bit16u joySeg, joyEntry;    // the game port's reader (the joystick's raw readings), from the load segment
+    Bit16u joyData;             // its readings in the data segment: A x, A y, B x, B y, then the buttons, the axes' mask
 };
 const Build kBuilds[] = {
-    { "ARMADA.EXE", "Armada", 0x2584, 0x14D0, 0x14EC, 0x1508, 0x1524, 0x1689, 0xEC, 0x8E56, 30 },
-    { "ARMADACD.EXE", "Armada (CD-ROM)", 0x2587, 0x14D0, 0x14EC, 0x1508, 0x1524, 0x1689, 0xEC, 0x8ED6, 30 },
-    { "PG.EXE", "Proving Grounds", 0x1B68, 0x0E2A, 0x0E46, 0x0E62, 0x0E7E, 0x0FE3, 0xFA, 0x7B1C, 20 },
-    { "PGCD.EXE", "Proving Grounds (CD-ROM)", 0x1B6C, 0x0E2A, 0x0E46, 0x0E62, 0x0E7E, 0x0FE3, 0xFA, 0x7C2C, 20 },
+    { "ARMADA.EXE", "Armada", 0x2584, 0x14D0, 0x14EC, 0x1508, 0x1524, 0x1689, 0xEC, 0x8E56, 30, 0x5876, 0x003E, 0x5C7C },
+    { "ARMADACD.EXE", "Armada (CD-ROM)", 0x2587, 0x14D0, 0x14EC, 0x1508, 0x1524, 0x1689, 0xEC, 0x8ED6, 30, 0x5879, 0x003E, 0x5D08 },
+    { "PG.EXE", "Proving Grounds", 0x1B68, 0x0E2A, 0x0E46, 0x0E62, 0x0E7E, 0x0FE3, 0xFA, 0x7B1C, 20, 0x53F7, 0x0034, 0x4A02 },
+    { "PGCD.EXE", "Proving Grounds (CD-ROM)", 0x1B6C, 0x0E2A, 0x0E46, 0x0E62, 0x0E7E, 0x0FE3, 0xFA, 0x7C2C, 20, 0x5416, 0x0042, 0x4B12 },
 };
 
 const double kStepMs = 37.0;    // a ninth more of the stop this often: the stop in a third of a second
@@ -81,6 +85,9 @@ int g_ramp = -1;
 bool g_steerOn;                 // the page's right-button drag (wc_web_arm_steer): -1..1 each way, the keys' signs
 double g_steerX, g_steerY;
 bool g_chainTold;
+bool g_joyHere;                 // the build's game-port reader is where the table says (its bytes checked at the load)
+int g_joyGame = -1;             // WCNET_ARM_JOY=game: the game's own timing of the port
+bool g_joyTold;
 
 bool ramp_on() {
     if (g_ramp < 0) {
@@ -117,6 +124,68 @@ bool build_here() {
            bytes_at(code_at((Bit16u)(g_arm->orC - 4)), c, sizeof(c)) &&
            bytes_at(code_at((Bit16u)(g_arm->orD - 4)), d, sizeof(d)) &&
            bytes_at(code_at(g_arm->loopEnd), e, sizeof(e));
+}
+
+// The game port's reader (ARMADA.EXE seg5876:003E, the same code in all four builds): Origin's library times each
+// axis of both sticks against the PC's timer (port 40h, channel 0 latched) until the port's bit for it clears, and
+// keeps the times (joyData: A x, A y, B x, B y), the buttons (+8) and which axes answered (+9: an axis that never
+// clears within 65535 reads is dropped from the mask for good).  The calibration (JOYA.DAT, or the options' JOY 1)
+// is in those times, so they depend on how fast the CPU runs the loop on an emulated port: DOSBox's counting port
+// ([joystick] timed=false, the page's) clears after so many reads, a third of the time at the high-resolution
+// picture's 75,000 cycles (a stick at rest read 13 of the 32 steps left and down there), and the readings jitter by
+// a few steps with the timer.  So while the page's stick is on the port (A; B not), the reader is not run: its
+// readings are put where it keeps them, exact, in the units of the calibration the page writes as JOYA.DAT
+// (web/gamefiles.js armadaPrepare): 0 hard over, 321 the centre, 642 the other way; the game's dead band 320..322
+// (none: the page's dead zone is the one), its 32 steps 10 each.  The axes' mask
+// keeps A's and drops B's (as the reader's own timeout would; a stick B the game thought there would be read with
+// no calibration: a division by zero).  WCNET_ARM_JOY=game: the game's own reader.
+// (The control packet then counts steps -2..2 as none: seg2584:0A0A in ARMADA.EXE.  So a stick past the page's dead
+// zone is step 3 at least, the first one counted, and the rest of its travel shares steps 3..32 equally, each reading
+// in the middle of its step: the page's dead zone is the only one.)
+enum { kJoyCentre = 321, kJoyStep = 10, kJoySteps = 32, kJoyFirst = 3 };
+
+bool joy_here() {
+    const Bit8u a[] = { 0xC8, 0x04, 0x00, 0x00, 0x0E, 0xE8 };
+    const Bit8u b[] = { 0x89, 0x46, 0xFE, 0xBA, 0x01, 0x02, 0x33, 0xC0, 0xC7, 0x46, 0xFC, 0xFF, 0xFF, 0x8B, 0xD8, 0x8A, 0x1E,
+                        (Bit8u)(g_arm->joyData + 9), (Bit8u)((g_arm->joyData + 9) >> 8) };
+    const Bit8u c[] = { 0xA3, (Bit8u)g_arm->joyData, (Bit8u)(g_arm->joyData >> 8) };
+    const PhysPt at = ((PhysPt)(Bit16u)(g_load + g_arm->joySeg) << 4) + g_arm->joyEntry;
+    return bytes_at(at, a, sizeof(a)) && bytes_at(at + 8, b, sizeof(b)) && bytes_at(at + 0x3C, c, sizeof(c));
+}
+
+// The reading for the page's stick v (-1..1, past its dead zone): the game's calibration (JOYA.DAT as the page writes
+// it) makes step n of a reading r above the centre ceil((r - 322) / 10), below floor((r - 320) / 10).
+Bit16u joy_reading(float v) {
+    if (v == 0) return kJoyCentre;
+    const float m = fabsf(v) > 1 ? 1 : fabsf(v);
+    int n = kJoyFirst - 1 + (int)ceilf(m * (kJoySteps - kJoyFirst + 1) - 1e-4f);
+    n = n < kJoyFirst ? kJoyFirst : n > kJoySteps ? kJoySteps : n;
+    const int d = n * kJoyStep - kJoyStep / 2;
+    return (Bit16u)(v > 0 ? kJoyCentre + 1 + d : kJoyCentre - 1 - d);
+}
+
+void joy_read() {
+    if (g_joyGame < 0) {
+        const char *env = getenv("WCNET_ARM_JOY");
+        g_joyGame = env && strcmp(env, "game") == 0;
+    }
+    if (g_joyGame || !JOYSTICK_IsEnabled(0) || JOYSTICK_IsEnabled(1)) return;
+    const PhysPt d = SegPhys(ds) + g_arm->joyData;
+    const Bit8u mask = mem_readb(d + 9);
+    if (mask & 1) mem_writew(d, joy_reading(JOYSTICK_GetMove_X(0)));
+    if (mask & 2) mem_writew(d + 2, joy_reading(JOYSTICK_GetMove_Y(0)));
+    mem_writeb(d + 8, (Bit8u)((JOYSTICK_GetButton(0, 0) ? 1 : 0) | (JOYSTICK_GetButton(0, 1) ? 2 : 0)));
+    mem_writeb(d + 9, (Bit8u)(mask & 3));
+    if (!g_joyTold) {
+        g_joyTold = true;
+        wclog(1, "Armada: the joystick's readings exact (centre %d, %d either way; the axes %X)", kJoyCentre,
+              kJoyCentre, (unsigned)(mask & 3));
+    }
+    const PhysPt sp = SegPhys(ss) + reg_sp;     // (retf: the reader is a far procedure without arguments)
+    const Bit16u retIp = mem_readw(sp), retCs = mem_readw(sp + 2);
+    reg_sp = (Bit16u)(reg_sp + 4);
+    SegSet16(cs, retCs);
+    reg_eip = retIp;
 }
 
 bool held(int scan) {
@@ -429,6 +498,11 @@ void arm_program_loaded(const char *name, Bit16u loadSeg, Bit16u psp) {
             g_arm = NULL;
             return;
         }
+        g_joyHere = joy_here();
+        if (!g_joyHere) {
+            wclog(0, "%s: the game port's reader is not where the hooks know it: the joystick read the game's way", name);
+        }
+        g_joyTold = false;
         g_psp = psp;
         g_packet = 0;
         g_lastEnd = -1e9;
@@ -461,6 +535,9 @@ void arm_watch_list(void (*watch)(Bit16u ip)) {
         watch(g_arm->orD);
     }
     watch(g_arm->loopEnd);      // (the ramp's, and the drag's)
+    if (g_joyHere) {
+        watch(g_arm->joyEntry);     // (the game port's reader)
+    }
     arm_hires_watch(watch);     // (the high-resolution picture's, once it is first wanted)
 }
 
@@ -533,6 +610,10 @@ bool arm_script_item(const std::string &item, double t) {
 
 bool arm_check_hooks(Bit32u ip) {
     if (arm_hires_hook(ip)) return true;    // (the high-resolution picture's: wcnet_armada_hires.cpp)
+    if (g_arm && g_joyHere && ip == g_arm->joyEntry && SegValue(cs) == (Bit16u)(g_load + g_arm->joySeg)) {
+        joy_read();
+        return true;
+    }
     if (!g_arm || SegValue(cs) != (Bit16u)(g_load + g_arm->seg)) {
         return false;
     }

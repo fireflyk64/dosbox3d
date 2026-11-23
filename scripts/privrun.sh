@@ -13,7 +13,8 @@
 #   COPY=1      the game's files copied into $OUT/game first (runs side by side: two games in one directory fight
 #               over its temporary files and crash at a load, "Program halted by code")
 #   JOY=1       the game port's stick A in (the page's "Built in" pad: [joystick] joysticktype=none timed=false and
-#               WCJOY=1), moved by the key script's !joy=x:y and !joybutton=
+#               WCJOY=1), moved by the key script's !joy=x:y and !joybutton=; with COPY=1 the page's JOYA.DAT too
+#               (web/gamefiles.js PRIV_JOYA: no dead band of the game's; GOG's, without COPY, has a third of the travel)
 #   SAVE=<file> a saved game copied into the game's directory first (COPY=1), under its own name upper-cased (the
 #               title's LOAD lists the *.SAV there)
 #
@@ -30,6 +31,7 @@ if [ -n "${COPY:-}" ]; then
   mkdir -p $OUT/game; for f in "$PRIVDIR"/*; do n=$(basename "$f"); case "$n" in [Gg][Aa][Mm][Ee].[Gg][Oo][Gg]) ln -sf "$(readlink -f "$f")" $OUT/game/$n;; *) [ -f "$f" ] && cp -f "$f" $OUT/game/;; esac; done
   PRIVDIR=$OUT/game
   [ -n "${SAVE:-}" ] && cp -f "$SAVE" "$OUT/game/$(basename "$SAVE" | sed 's/^[0-9a-f]*-//' | tr a-z A-Z)"
+  [ -n "${JOY:-}" ] && python3 -c "import struct,sys; open(sys.argv[1],'wb').write(struct.pack('<17H',0,0,64,64,128,128,32,32,2,2,2,2,64,64,64,64,140))" $OUT/game/JOYA.DAT
 fi
 IMG=$(ls "$PRIVDIR" | grep -i '^game.gog$' | head -1)
 RUN="priv.exe"; [ -n "${RF:-}" ] && RUN="priv.exe r"

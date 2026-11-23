@@ -134,7 +134,13 @@ controls), and:
 - each pad is offered "Built in" too (the registry's `joystick`): the launch then puts stick A on the port
   (`joysticktype=none`, `timed=false`, as for Wing Commander), and when it comes onto the port the layer picks the
   options' JOYSTICK, as its button would; a mode picked later stays the pilot's.  The game reads it its own way: GOG's
-  JOYA.DAT has it calibrated 0 / 64 / 128, the untimed port's readings.  Measured: button 1 the guns, both buttons a
+  JOYA.DAT has it calibrated 0 / 64 / 128, the untimed port's readings, but with a dead band of 45..83 around the 64:
+  measured (`!joy=x:0`, the record's yaw), nothing until 32% of the stick, then a jump, the stop at 80%.  So with a pad
+  built in the page writes its own JOYA.DAT (`PRIV_JOYA` in web/gamefiles.js, `JOY=1 COPY=1 scripts/privrun.sh`): the
+  band 64..64, 2 reads a step, and the emulator moves a stick off the centre by a read at least (`port_off_centre`,
+  wcnet_hooks.cpp): the page's dead zone (4%) is the only one (the user, 2026-11-23: "we need to reduce the default
+  deadzone in wing commander privateer and this to 4% --- I think 5% is too much dead air").  Measured: 5% of the
+  stick turns 16 of the stop's 256, 10% 24, 20% 48, 40% 104, 60% 152, 80% 208, 100% 256.  Measured: button 1 the guns, both buttons a
   missile, button 2 with the stick sideways rolls and forward / back sets the speed (SET 150 -> 300); at a base the stick
   moves the game's pointer.
 Measured natively (`!privstick=x:y`, the page's stick; `JOY=1 scripts/privrun.sh` and `!joy=`, the built-in pad; the
