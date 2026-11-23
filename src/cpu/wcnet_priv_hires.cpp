@@ -670,6 +670,329 @@ bool letter(const Target &t, const Shape &s, int x, int y, int index, Bit8u c) {
     return true;
 }
 
+// ---- the target display's ship: straight lines, mirrored exactly ---------------------------------------------------
+//
+// The user, 2026-11-22: "we could try a variant for target craft where they actually had diagonal lines instead of
+// stair steps.... like the top part of the sloping downward talon wing should have been a single line not multiple
+// stair steps"; 2026-11-23: "try this with the uprezzed wireframes--but we need to ensure the wireframes are symmetric
+// exactly".  The wireframe is line art in a few colours.  Each colour's pixels are a graph: a pixel joined to its
+// neighbours of the colour, a diagonal one only where no corner pixel of the colour joins the pair.  Chains of pixels
+// with two neighbours, between ends and junctions (or round a loop), are simplified to straight segments (Douglas and
+// Peucker, within 0.75 of a pixel: a staircase of any slope is one segment, a corner stays) and drawn one fine pixel
+// wide between the pixels' middles.  A pixel in a square of four of its colour is a solid part, the game's 2 x 2 block.
+// The display draws the ship in parts, each in the same frame (the hull's halves, its middle, each shield): a part all
+// on the right of the frame's middle is drawn as its mirror image's drawing mirrored (wire_make), so the hull's halves
+// are exact mirror images.  A part's drawing is made on a canvas of its own fine pixels; when a part is a mirror image of
+// itself (its
+// pixels' outline 60 in 100 the same about one column or the line between two: the shields' arcs, one side's to its
+// state, differ), wherever the art is the same as its mirror about a pixel the canvas's left half is copied onto its
+// right, pixel for pixel, each copy taking its colour from the art's right half there (a side's damage shows) -- so
+// the hull is drawn exactly symmetric whatever the line's rounding did, and a side's own state stays its own.  Worked out once a shape (its hash), 8 kept;
+// shapes over 64 x 64, and pictures (line_art), stay the game's blocks.
+
+// Line art, not a picture: at most 30 in 100 of its pixels in a square of four lit pixels (a face on the comm screen
+// is nearly all such squares; a ship's wireframe a few, at its joints and small solid parts).  Kept for 32 shapes.
+bool line_art(const Shape &s) {
+    static Bit32u hashes[32];
+    static bool answers[32];
+    static int used = 0, next = 0;
+    const Bit32u h = shape_hash(s);
+    for (int i = 0; i < used; i++) {
+        if (hashes[i] == h) return answers[i];
+    }
+    int lit = 0, solid = 0;
+    auto on = [&](int u, int v) { return u >= 0 && v >= 0 && u < s.w && v < s.h && s.px[v * s.w + u] >= 0; };
+    for (int v = 0; v < s.h; v++) {
+        for (int u = 0; u < s.w; u++) {
+            if (!on(u, v)) continue;
+            lit++;
+            bool in = false;
+            for (int dv = -1; dv <= 0 && !in; dv++) {
+                for (int du = -1; du <= 0 && !in; du++) {
+                    in = on(u + du, v + dv) && on(u + du + 1, v + dv) && on(u + du, v + dv + 1) && on(u + du + 1, v + dv + 1);
+                }
+            }
+            solid += in;
+        }
+    }
+    const bool answer = lit > 0 && solid * 100 <= lit * 30;
+    hashes[next] = h;
+    answers[next] = answer;
+    next = (next + 1) % 32;
+    if (used < 32) used++;
+    return answer;
+}
+
+struct Wireframe {
+    Bit32u hash;
+    int w, h;
+    int axis;                       // u + u' of a mirrored pair of the art's columns, -1: not a mirror image
+    std::vector<Bit16s> fine;       // 2w x 2h: a colour, or -1
+};
+enum { kWireCache = 8, kWireMax = 64, kChainMax = 4096 };
+
+// The chain's points simplified (Douglas and Peucker, within tol), its ends kept: the indices kept, in order.
+void simplify(const std::vector<int> &cu, const std::vector<int> &cv, double tol, std::vector<int> &keep) {
+    const int n = (int)cu.size();
+    std::vector<char> on(n, 0);
+    on[0] = on[n - 1] = 1;
+    std::vector<std::pair<int, int> > stack(1, std::make_pair(0, n - 1));
+    while (!stack.empty()) {
+        const int a = stack.back().first, b = stack.back().second;
+        stack.pop_back();
+        if (b - a < 2) continue;
+        const double dx = cu[b] - cu[a], dy = cv[b] - cv[a], len = sqrt(dx * dx + dy * dy);
+        double best = -1;
+        int k = a;
+        for (int i = a + 1; i < b; i++) {
+            const double ex = cu[i] - cu[a], ey = cv[i] - cv[a];
+            const double d = len > 0 ? fabs(dx * ey - dy * ex) / len : sqrt(ex * ex + ey * ey);
+            if (d > best) { best = d; k = i; }
+        }
+        if (best <= tol) continue;
+        on[k] = 1;
+        stack.push_back(std::make_pair(a, k));
+        stack.push_back(std::make_pair(k, b));
+    }
+    keep.clear();
+    for (int i = 0; i < n; i++) {
+        if (on[i]) keep.push_back(i);
+    }
+}
+
+void wire_draw(const Shape &s, Wireframe &out);
+
+// A part of the ship all on the right of its frame's middle (the hull's right half, a right shield: the display draws
+// the ship in parts, each in the same frame, a half of the hull 112 pixels with none of its own mirrored) is drawn as
+// the drawing of its mirror image, mirrored back pixel for pixel: so the right half of the hull is exactly the mirror
+// of the left's, whatever the lines' rounding.  Others are drawn as they are (wire_draw).
+void wire_make(const Shape &s, Wireframe &out) {
+    const int w = s.w, h = s.h, mid = w - 1;        // (u and mid - u: mirror images about the frame's middle)
+    int left = 0, right = 0;
+    for (int v = 0; v < h; v++) {
+        for (int u = 0; u < w; u++) {
+            if (s.px[v * w + u] < 0) continue;
+            if (2 * u < mid) left++;
+            else if (2 * u > mid) right++;
+        }
+    }
+    if (!(right > 0 && left == 0)) {
+        wire_draw(s, out);
+        return;
+    }
+    Shape m;
+    m.w = w;
+    m.h = h;
+    m.left = s.left;
+    m.top = s.top;
+    m.stamp = 0;
+    m.px.assign(w * h, (Bit16s)-1);
+    for (int v = 0; v < h; v++) {
+        for (int u = 0; u < w; u++) m.px[v * w + (mid - u)] = s.px[v * w + u];
+    }
+    Wireframe flipped;
+    wire_draw(m, flipped);
+    const int W = 2 * w, H = 2 * h, sum = 2 * mid + 1;   // (fine X and sum - X: mirror images)
+    out.w = w;
+    out.h = h;
+    out.axis = mid;
+    out.fine.assign(W * H, (Bit16s)-1);
+    for (int Y = 0; Y < H; Y++) {
+        for (int X = 0; X < W; X++) {
+            const int M = sum - X;
+            if (M >= 0 && M < W) out.fine[Y * W + X] = flipped.fine[Y * W + M];
+        }
+    }
+}
+
+void wire_draw(const Shape &s, Wireframe &out) {
+    const int w = s.w, h = s.h, W = 2 * w, H = 2 * h;
+    out.w = w;
+    out.h = h;
+    out.axis = -1;
+    out.fine.assign(W * H, (Bit16s)-1);
+    auto col = [&](int u, int v) { return u >= 0 && v >= 0 && u < w && v < h ? (int)s.px[v * w + u] : -1; };
+    auto put = [&](int X, int Y, int c) { if (X >= 0 && Y >= 0 && X < W && Y < H) out.fine[Y * W + X] = (Bit16s)c; };
+    auto draw = [&](int u0, int v0, int u1, int v1, int c) {
+        int X = 2 * u0 + 1, Y = 2 * v0 + 1;
+        const int Xe = 2 * u1 + 1, Ye = 2 * v1 + 1;
+        const int dx = abs(Xe - X), dy = -abs(Ye - Y), sx = X < Xe ? 1 : -1, sy = Y < Ye ? 1 : -1;
+        int err = dx + dy;
+        for (int n = 0; n < 4 * (W + H); n++) {
+            put(X, Y, c);
+            if (X == Xe && Y == Ye) break;
+            const int e2 = 2 * err;
+            if (e2 >= dy) { err += dy; X += sx; }
+            if (e2 <= dx) { err += dx; Y += sy; }
+        }
+    };
+    // solid parts: a pixel in a square of four of its colour, the game's block
+    std::vector<char> solid(w * h, 0);
+    for (int v = 0; v < h; v++) {
+        for (int u = 0; u < w; u++) {
+            const int c = col(u, v);
+            if (c < 0) continue;
+            for (int dv = -1; dv <= 0 && !solid[v * w + u]; dv++) {
+                for (int du = -1; du <= 0; du++) {
+                    if (col(u + du, v + dv) == c && col(u + du + 1, v + dv) == c && col(u + du, v + dv + 1) == c &&
+                        col(u + du + 1, v + dv + 1) == c) {
+                        solid[v * w + u] = 1;
+                        break;
+                    }
+                }
+            }
+            if (solid[v * w + u]) {
+                put(2 * u, 2 * v, c);
+                put(2 * u + 1, 2 * v, c);
+                put(2 * u, 2 * v + 1, c);
+                put(2 * u + 1, 2 * v + 1, c);
+            }
+        }
+    }
+    // each pixel's links (bit k: neighbour k) to its colour, a diagonal only where no corner of the colour joins them
+    static const int kDu[8] = { 1, 1, 0, -1, -1, -1, 0, 1 }, kDv[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
+    std::vector<Bit8u> link(w * h, 0), used(w * h, 0), degree(w * h, 0);
+    for (int v = 0; v < h; v++) {
+        for (int u = 0; u < w; u++) {
+            const int c = col(u, v);
+            if (c < 0 || solid[v * w + u]) continue;
+            for (int k = 0; k < 8; k++) {
+                const int nu = u + kDu[k], nv = v + kDv[k];
+                if (col(nu, nv) != c) continue;
+                if (kDu[k] && kDv[k] && (col(nu, v) == c || col(u, nv) == c)) continue;
+                link[v * w + u] |= (Bit8u)(1 << k);
+                degree[v * w + u]++;
+            }
+        }
+    }
+    std::vector<int> cu, cv, keep;
+    auto walk = [&](int pu, int pv, int k) {        // (along pixels of two links, each link marked used both ways)
+        cu.assign(1, pu);
+        cv.assign(1, pv);
+        int u = pu, v = pv;
+        for (int steps = 0; steps < kChainMax; steps++) {
+            used[v * w + u] |= (Bit8u)(1 << k);
+            const int nu = u + kDu[k], nv = v + kDv[k];
+            used[nv * w + nu] |= (Bit8u)(1 << ((k + 4) & 7));
+            cu.push_back(nu);
+            cv.push_back(nv);
+            u = nu;
+            v = nv;
+            if (solid[v * w + u] || degree[v * w + u] != 2) break;
+            int next = -1;
+            for (int j = 0; j < 8 && next < 0; j++) {
+                if ((link[v * w + u] & (1 << j)) && !(used[v * w + u] & (1 << j))) next = j;
+            }
+            if (next < 0) break;
+            k = next;
+        }
+        const int c = col(pu, pv);
+        simplify(cu, cv, 0.75, keep);
+        for (size_t i = 0; i + 1 < keep.size(); i++) draw(cu[keep[i]], cv[keep[i]], cu[keep[i + 1]], cv[keep[i + 1]], c);
+    };
+    for (int pass = 0; pass < 2; pass++) {          // (from the ends and junctions first, then what is left: loops)
+        for (int v = 0; v < h; v++) {
+            for (int u = 0; u < w; u++) {
+                const int i = v * w + u;
+                if (col(u, v) < 0 || solid[i] || (pass == 0 && degree[i] == 2)) continue;
+                if (pass == 0) put(2 * u + 1, 2 * v + 1, col(u, v));
+                for (int k = 0; k < 8; k++) {
+                    if ((link[i] & (1 << k)) && !(used[i] & (1 << k))) walk(u, v, k);
+                }
+            }
+        }
+    }
+    // a mirror image?  The axis (u + u' of a mirrored pair) near the middle that most of the outline agrees with
+    int lit = 0, best = -1, bestAgree = -1;
+    for (int i = 0; i < w * h; i++) lit += s.px[i] >= 0;
+    for (int axis = w - 3; axis <= w + 1; axis++) {
+        int agree = 0;
+        for (int v = 0; v < h; v++) {
+            for (int u = 0; u < w; u++) {
+                if (s.px[v * w + u] >= 0 && col(axis - u, v) >= 0) agree++;
+            }
+        }
+        if (agree > bestAgree) { bestAgree = agree; best = axis; }
+    }
+    if (w < 8 || lit == 0 || bestAgree * 100 < lit * 60) return;
+    out.axis = best;
+    // the right half's pixels where the art is a mirror image there (its outline in the 3 x 3 pixels about it the same
+    // as about its mirror) are the left half's copied, pixel for pixel; elsewhere (a side's shields, which differ) each
+    // half keeps its own drawing.  A copy's colour is the art's own there (its pixel, or the nearest lit one about it
+    // whose mirror is the left's colour, or any lit one): a side's damage shows.
+    std::vector<Bit16s> drawn(out.fine);
+    const int sum = 2 * best + 1;                  // (fine X and sum - X are mirror images)
+    auto mirrored = [&](int u, int v) {
+        for (int dv = -1; dv <= 1; dv++) {
+            for (int du = -1; du <= 1; du++) {
+                if ((col(u + du, v + dv) >= 0) != (col(best - u - du, v + dv) >= 0)) return false;
+            }
+        }
+        return true;
+    };
+    for (int Y = 0; Y < H; Y++) {
+        for (int X = 0; X < W; X++) {
+            const int M = sum - X;                      // (X here the right half's, M its mirror in the left)
+            if (M >= X || M < 0 || !mirrored(X >> 1, Y >> 1)) continue;
+            const Bit16s c = drawn[Y * W + M];
+            if (c < 0) {
+                out.fine[Y * W + X] = (Bit16s)-1;
+                continue;
+            }
+            const int u = X >> 1, v = Y >> 1;
+            int pick = -1, any = -1;
+            for (int k = -1; k < 8 && pick < 0; k++) {
+                const int qu = k < 0 ? u : u + kDu[k], qv = k < 0 ? v : v + kDv[k];
+                const int qc = col(qu, qv);
+                if (qc < 0) continue;
+                if (any < 0) any = qc;
+                if (col(best - qu, qv) == c) pick = qc;
+            }
+            out.fine[Y * W + X] = (Bit16s)(pick >= 0 ? pick : any >= 0 ? any : c);
+        }
+    }
+}
+
+// The target display's ship is drawn by a routine of an overlay (its segment wherever the overlay manager put it: at
+// E613 in one run, elsewhere in the next), four calls of the plain shape routine, the hull and the shields' parts, each
+// at the routine's same place: so it is known by its call -- its return's offset and the code before it, `push word
+// [bp-1Ch]; lea ax,[bp-68h]; push ax; call far 0008:` (the call's segment is relocated: not compared).
+bool target_art_call() {
+    static const Bit8u kSite[10] = { 0xFF, 0x76, 0xE4, 0x8D, 0x46, 0x98, 0x50, 0x9A, 0x08, 0x00 };
+    const Bit16u retIp = rd16(SegPhys(ss) + (Bit16u)reg_sp), retCs = rd16(SegPhys(ss) + (Bit16u)(reg_sp + 2));
+    if (retIp != 0x039A && retIp != 0x043B && retIp != 0x04C2 && retIp != 0x054A) return false;
+    const PhysPt at = ((PhysPt)retCs << 4) + (Bit16u)(retIp - 12);
+    for (int i = 0; i < 10; i++) {
+        if (rd8(at + i) != kSite[i]) return false;
+    }
+    return true;
+}
+
+void shape_wire(const Target &t, const Shape &s, int x, int y) {
+    static Wireframe cache[kWireCache];
+    static int used = 0, next = 0;
+    const Bit32u hash = shape_hash(s);
+    const Wireframe *wf = NULL;
+    for (int i = 0; i < used && !wf; i++) {
+        if (cache[i].hash == hash && cache[i].w == s.w && cache[i].h == s.h) wf = &cache[i];
+    }
+    if (!wf) {
+        Wireframe &made = cache[next];
+        next = (next + 1) % kWireCache;
+        if (used < kWireCache) used++;
+        made.hash = hash;
+        wire_make(s, made);
+        wf = &made;
+    }
+    const int X0 = 2 * (x - s.left), Y0 = 2 * (y - s.top), W = 2 * wf->w, H = 2 * wf->h;
+    for (int Y = 0; Y < H; Y++) {
+        for (int X = 0; X < W; X++) {
+            const Bit16s c = wf->fine[Y * W + X];
+            if (c >= 0) plot(t, X0 + X, Y0 + Y, (Bit8u)c);
+        }
+    }
+}
+
 // Line art of one pixel's width: each pixel joined to its neighbours' middles, its rings drawn round.
 void shape_lines(const Target &t, const Shape &s, int x, int y) {
     static const int kDx[4] = { 1, 0, 1, -1 }, kDy[4] = { 0, 1, 1, 1 };
@@ -1284,7 +1607,9 @@ void call(const Place &p) {
                 shape_blocks(t, *s, x, y, (Bit8u)arg16(6));
             }
         } else if (p.op == OP_SHAPE) {
-            if (caller == kCrosshairCaller && hires_cockpit()) shape_lines(t, *s, x, y);
+            if (hires_cockpit() && target_art_call() && s->w <= kWireMax && s->h <= kWireMax && line_art(*s)) {
+                shape_wire(t, *s, x, y);
+            } else if (caller == kCrosshairCaller && hires_cockpit()) shape_lines(t, *s, x, y);
             else if (caller == kRadarCaller && hires_cockpit()) shape_radar(t, *s, x, y);
             else shape_blocks(t, *s, x, y, -1);
         } else if (p.op == OP_SCALE_HAZE) {

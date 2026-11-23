@@ -1213,3 +1213,36 @@ it was leave the loop as it is.
 
 Measured natively at the concourse and the bar: 25,400 of the 30,000 cycles a millisecond skipped, and the screen's
 changes the same with and without it, second by second (8, 2, 7.8, 3.4, ... 9.6, 10.2, 7.2, 5, 7.6, 5.6, 6.4).
+
+## 28. The user's font and the target's ship in straight lines (2026-11-22/23)
+
+The user: "Can you (with the highest res option) also uprez the font letters etc. the shapes should be the same but not
+as thick. Meaning a 5 should still trace like a led clock"; tries were rejected ("lets back these out: they do not meet
+the quality bar") -- the game's letters joined thin, the X11 6x10 and 5x8 and the Unbroken font in the game's boxes, a
+straight-line ship -- and then: "I hand made a font--can we try this with the uprezzed wireframes--but we need to
+ensure the wireframes are symmetric exactly".
+
+**The letters.**  The text in flight is one routine's (seg221, para 0x6108, fixed code): each letter a silhouette of
+the game's 3 x 4 font whose index is its character.  The user's font (scripts/privfont/: its metrics, atlas, README,
+REVISION; 70 characters, twice the game's, one-pixel strokes, each letter in the game's own box and advance) is written
+into src/cpu/wcnet_priv_font.h by scripts/privfont.py, each entry with the game's glyph it was drawn from (checked: all
+70 the game's, pixel for pixel).  With the cockpit in high resolution (level 2) a letter is drawn from it at twice the
+game's place (the capitals' top 2 (y - 3), y the silhouette's anchor, its baseline row), in the game's colour -- only
+when the game draws exactly that glyph; any other stays the game's blocks.
+
+**The ship.**  The target display draws the ship in parts, each a 52 x 52 shape in the same frame: the hull's left and
+right halves (one-sided, 112 pixels each), its middle (a mirror image of itself), each shield's arcs.  The routine is
+in an overlay whose segment the overlay manager chooses (E613 in one run, elsewhere in the next), so its calls are known
+by their place: the return's offset (039A, 043B, 04C2, 054A) and the code before it (`push word [bp-1Ch]; lea
+ax,[bp-68h]; push ax; call far 0008:`).  A part is drawn in straight lines: each colour's pixels a graph (a diagonal
+link only where no corner of the colour joins the pair), chains between ends and junctions simplified (Douglas and
+Peucker within 0.75 of a pixel: a staircase of any slope one segment, a corner kept), drawn one fine pixel wide between
+the pixels' middles; a pixel in a square of four of its colour a solid part, the game's block.  Symmetry, exactly: a
+part all on the right of the frame's middle is drawn as its mirror image's drawing, mirrored back pixel for pixel (so
+the hull's halves are mirrors whatever the lines' rounding did); a part that is a mirror image of itself has its left
+half copied onto its right wherever the art is the same as its mirror about a pixel, the copy taking the art's colour
+there.  Pictures (line_art: over 30 in 100 of the pixels in squares of four) and shapes over 64 x 64 stay the game's.
+
+Measured (scratch comm.sh, levels.sh: a targeted Talon): every pixel of the drawn diagram has a mirror partner of its
+colour about the frame's middle (1,084 with its shields down, 1,468 with them up; the hull's 628), in runs where the
+overlay sat at different segments.
