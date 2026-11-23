@@ -16,10 +16,14 @@
  *  then sends, so every machine of a room flies the ramped turn: nothing differs between them.  Only the keys'
  *  writes are touched: a joystick's reading is the game's.  WCNET_ARM_RAMP=0 leaves the game's own.
  *
+ *  The page's right-button drag steers the same way (wc_web_arm_steer): at the loop's end, on an axis no key and no
+ *  stick moves, the packet's byte is the drag's share of the keys' stop (Armada has no mouse flight of its own).
+ *
  *  Four builds are known (GOG's: the floppy and CD programs of each), each checked by its bytes at those places.
  */
 #include <stdlib.h>
 #include <string.h>
+#include <string>
 #include "wcnet_armada.h"
 #include "wcnet_game.h"
 #include "wcnet_log.h"
@@ -57,6 +61,7 @@ struct Axis {
     int want;                   // this frame's key: -1, 0, 1 (the game's sign)
     int dir;                    // the key held, as the ramp has it
     double since;               // when that began (emulated ms)
+    int frames, first, last;    // that key's frames so far, its first and latest value (the log's)
 };
 
 const Build *g_arm;
@@ -65,6 +70,9 @@ Axis g_axis[2];
 PhysPt g_packet;                // where this frame's keys wrote (0: none)
 double g_lastEnd = -1e9;
 int g_ramp = -1;
+bool g_steerOn;                 // the page's right-button drag (wc_web_arm_steer): -1..1 each way, the keys' signs
+double g_steerX, g_steerY;
+bool g_chainTold;
 
 bool ramp_on() {
     if (g_ramp < 0) {
@@ -114,12 +122,19 @@ void key_wrote(int axis, int dir) {
 }
 
 // The axis's value this frame (the game's sign; 0: no key, the packet left as it is).
-int ramped(Axis &a, bool shift, double now) {
+int ramped(int axis, bool shift, double now) {
+    Axis &a = g_axis[axis];
     const int dir = a.want;
     a.want = 0;
     if (dir != a.dir) {
+        if (a.dir && a.frames) {
+            static const char *const kNames[2][2] = { { "Left", "Right" }, { "Up", "Down" } };
+            wclog(2, "Armada: %s held %.2f s, %d frames, ramped %+d to %+d", kNames[axis][a.dir > 0],
+                  (now - a.since) / 1000.0, a.frames, a.first, a.last);
+        }
         a.dir = dir;
         a.since = now;
+        a.frames = 0;
     }
     if (!dir) {
         return 0;
@@ -128,27 +143,59 @@ int ramped(Axis &a, bool shift, double now) {
     if (step > 9) {
         step = 9;
     }
-    return dir * (int)g_arm->full * step / 9;
+    const int v = dir * (int)g_arm->full * step / 9;
+    if (!a.frames++) {
+        a.first = v;
+    }
+    a.last = v;
+    return v;
 }
 
-// The loop's end: the keys' writes of this frame made again, ramped.
+// The frame's control packet, as the game finds it: the controller (the far pointer the function was given, [bp+6]),
+// its +5 (near), that one's +0xF: the packet, in the data segment.
+PhysPt frame_packet() {
+    const PhysPt arg = SegPhys(ss) + (Bit16u)(reg_bp + 6);
+    const Bit16u off = mem_readw(arg), seg = mem_readw(arg + 2);
+    const Bit16u ctl = mem_readw(((PhysPt)seg << 4) + (Bit16u)(off + 5));
+    return SegPhys(ds) + mem_readw(SegPhys(ds) + (Bit16u)(ctl + 0xF));
+}
+
+// The drag's share of the stop on an axis (0: none).
+int steered(double v) {
+    int s = (int)(v * g_arm->full + (v < 0 ? -0.5 : 0.5));
+    return s > g_arm->full ? g_arm->full : s < -(int)g_arm->full ? -(int)g_arm->full : s;
+}
+
+// The loop's end: the keys' writes of this frame made again, ramped; an axis no key or stick moves, the drag's.
 void loop_end() {
     const double now = PIC_FullIndex();
     if (now - g_lastEnd > kStaleMs) {
         g_axis[AXIS_X].dir = g_axis[AXIS_Y].dir = 0;
+        g_axis[AXIS_X].frames = g_axis[AXIS_Y].frames = 0;
     }
     g_lastEnd = now;
     const bool shift = held(0x2A) || held(0x36);
-    const int x = ramped(g_axis[AXIS_X], shift, now), y = ramped(g_axis[AXIS_Y], shift, now);
-    if (g_packet && (x || y)) {
-        const Bit8u gx = mem_readb(g_packet + 3), gy = mem_readb(g_packet + 4);
-        if (x) {
-            mem_writeb(g_packet + 3, (Bit8u)((gx & 0x80) | (x & 0x7F)));
-        }
-        if (y) {
-            mem_writeb(g_packet + 4, (Bit8u)((gy & 0x80) | (y & 0x7F)));
-        }
-        wclog(3, "Armada: arrows %+d %+d (the game's %+d %+d)", x, y,
+    const int x = ramped(AXIS_X, shift, now), y = ramped(AXIS_Y, shift, now);
+    const PhysPt packet = frame_packet();
+    if (g_packet && g_packet != packet && !g_chainTold) {
+        g_chainTold = true;     // (the keys wrote somewhere else: the drag's packet would be wrong; said once)
+        wclog(0, "Armada: the keys wrote the packet at %05X, the frame's is at %05X", (unsigned)g_packet, (unsigned)packet);
+    }
+    const Bit8u gx = mem_readb(packet + 3), gy = mem_readb(packet + 4);
+    int wx = x, wy = y;
+    if (g_steerOn) {
+        // (the drag where nothing else steers: no key this frame, the stick's reading nothing)
+        if (!wx && !(gx & 0x7F)) wx = steered(g_steerX);
+        if (!wy && !(gy & 0x7F)) wy = steered(g_steerY);
+    }
+    if (wx) {
+        mem_writeb(packet + 3, (Bit8u)((gx & 0x80) | (wx & 0x7F)));
+    }
+    if (wy) {
+        mem_writeb(packet + 4, (Bit8u)((gy & 0x80) | (wy & 0x7F)));
+    }
+    if (wx || wy) {
+        wclog(3, "Armada: %s %+d %+d (the game's %+d %+d)", x || y ? "arrows" : "drag", wx, wy,
               (int)(Bit8s)(Bit8u)(gx << 1) >> 1, (int)(Bit8s)(Bit8u)(gy << 1) >> 1);
     }
     g_packet = 0;
@@ -190,14 +237,41 @@ void arm_program_ended(Bit16u psp) {
 }
 
 void arm_watch_list(void (*watch)(Bit16u ip)) {
-    if (!g_arm || !ramp_on()) {
+    if (!g_arm) {
         return;
     }
-    watch(g_arm->orA);
-    watch(g_arm->orB);
-    watch(g_arm->orC);
-    watch(g_arm->orD);
-    watch(g_arm->loopEnd);
+    if (ramp_on()) {
+        watch(g_arm->orA);
+        watch(g_arm->orB);
+        watch(g_arm->orC);
+        watch(g_arm->orD);
+    }
+    watch(g_arm->loopEnd);      // (the ramp's, and the drag's)
+}
+
+void arm_steer(double x, double y, bool on) {
+    g_steerX = x < -1 ? -1 : x > 1 ? 1 : x;
+    g_steerY = y < -1 ? -1 : y > 1 ? 1 : y;
+    if (on != g_steerOn) {
+        wclog(2, "Armada: the drag %s", on ? "steers" : "let go");
+    }
+    g_steerOn = on;
+}
+
+bool arm_script_item(const std::string &item, double t) {
+    // !armsteer=<x>:<y> (-1..1, right and down positive) is the page's right-button drag held there; !armsteer=off
+    if (item.compare(0, 10, "!armsteer=") != 0) {
+        return false;
+    }
+    const char *v = item.c_str() + 10;
+    if (strcmp(v, "off") == 0) {
+        arm_steer(0, 0, false);
+    } else {
+        const char *colon = strchr(v, ':');
+        arm_steer(atof(v), colon ? atof(colon + 1) : 0, true);
+    }
+    wclog(1, "key script %.1fs: the drag %s", t, v);
+    return true;
 }
 
 bool arm_check_hooks(Bit32u ip) {

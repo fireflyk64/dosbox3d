@@ -1228,6 +1228,8 @@ static void key_script() {
         // (Raptor's aids: wcnet_rap.cpp; the TIE Fighter demo's: wcnet_tiedemo.cpp)
     } else if (priv_script_item(item, t)) {
         // (Privateer's aids: wcnet_priv.cpp)
+    } else if (arm_script_item(item, t)) {
+        // (Armada's: wcnet_armada.cpp)
     } else if (lab_script_item(item, t)) {
         // (the walkthrough recorder's items: wcnet_lab.cpp)
     } else {
@@ -2197,6 +2199,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_joystick(int on) {
 // and its pad's stick (-1..1, right and climbing positive), for the emulator to steer by.
 extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_tie_mouse(int mode) {
     wc::tie_controls_set_mouse(mode);
+}
+// Armada's right-button drag (wcnet_armada.cpp): -1..1 each way, right and down positive; on 0 when let go.
+extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_arm_steer(double x, double y, int on) {
+    wc::arm_steer(x, y, on != 0);
 }
 extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_stick(double x, double y) {
     wc::tie_controls_stick(x, y);

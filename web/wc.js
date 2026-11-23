@@ -2338,20 +2338,30 @@ function capsLockAsEscape(e) {
 window.addEventListener("keydown", capsLockAsEscape, true);
 window.addEventListener("keyup", capsLockAsEscape, true);
 
-// Armada uses the mouse in menus. A right-button drag gives it directional flight input through the keyboard.
+// Armada uses the mouse in menus and has no mouse flight of its own. A right-button drag steers it as a stick would:
+// the emulator writes the drag into the game's control packet (wcnet_armada.cpp), the further from where the button
+// went down the faster the turn (64 px the full turn, as an arrow key held), centred when the button is let go. The
+// left button with it fires the guns (Space). An emulator without that steers by the keypad's arrows instead.
 let armadaDrag = null;
 const armadaMouseKeys = new Set();
+const ARMADA_DRAG_FULL = 64, ARMADA_DRAG_DEAD = 3;
+const armadaDragAxis = (d) => (Math.abs(d) <= ARMADA_DRAG_DEAD ? 0
+  : Math.sign(d) * Math.min(1, (Math.abs(d) - ARMADA_DRAG_DEAD) / (ARMADA_DRAG_FULL - ARMADA_DRAG_DEAD)));
 function armadaMouseInput() {
   const send = window.DOSBox?._wc_web_key;
   if (!send) return;
+  const steer = window.DOSBox?._wc_web_arm_steer;
   const keys = [];
   if (armadaDrag) {
-    if (armadaDrag.x < -12) keys.push("kp4");
-    if (armadaDrag.x > 12) keys.push("kp6");
-    if (armadaDrag.y < -12) keys.push("kp8");
-    if (armadaDrag.y > 12) keys.push("kp2");
+    if (!steer) {
+      if (armadaDrag.x < -12) keys.push("kp4");
+      if (armadaDrag.x > 12) keys.push("kp6");
+      if (armadaDrag.y < -12) keys.push("kp8");
+      if (armadaDrag.y > 12) keys.push("kp2");
+    }
     if (armadaDrag.fire) keys.push("space");
   }
+  if (steer) steer(armadaDrag ? armadaDragAxis(armadaDrag.x) : 0, armadaDrag ? armadaDragAxis(armadaDrag.y) : 0, armadaDrag ? 1 : 0);
   for (const key of armadaMouseKeys) if (!keys.includes(key)) send(KEY[key], 0);
   for (const key of keys) if (!armadaMouseKeys.has(key)) send(KEY[key], 1);
   armadaMouseKeys.clear();

@@ -19,7 +19,7 @@ Open [DOSBox](https://fireflyk64.github.io/dosbox/?game=armada) and drop your GO
 ## Controls
 
 - **Keyboard.** Steer with the arrow keys or numeric keypad. A tap turns a little; held, a key builds to the full turn in a third of a second, as in Wing Commander and Privateer. **Shift** with an arrow turns at full at once. **Space** fires guns, **Enter** fires missiles, **Tab** applies afterburners, and the keypad **+** and **−** change speed.
-- **Mouse.** Click normally in the menus and on the strategy map. In flight, hold the right button and drag to steer. Release the right button to center the steering. Press the left button while steering to fire guns.
+- **Mouse.** Click normally in the menus and on the strategy map. In flight, hold the right button and drag to steer, as a stick would: the further the drag from where the button went down, the faster the turn (64 px is the full turn of an arrow key held). Release the right button to center the steering. Press the left button while steering to fire guns.
 - **Joystick or gamepad.** Connect the controller, press a button so the browser sees it, and pick its **Built in** entry under **Controller** before pressing **Fly**. Calibrate **JOY 1** in the game's Options before entering the in-game network lobby. In Armada, **Alt+O** opens Options from the main menu. [Origin's Armada Play Guide](https://download.wcnews.com/files/arma/Armada%20-%20Play%20Guide%20-%20Text.pdf)
 
 ## Network and checks
@@ -28,7 +28,7 @@ Open [DOSBox](https://fireflyk64.github.io/dosbox/?game=armada) and drop your GO
 
 `scripts/armadanet-duo.sh` runs the native emulator pair over TCP. `scripts/web-armada.mjs` runs the browser build against a LobbyLink server. Set `PLAYWRIGHT_DIR` to a directory with Playwright installed, then pass the page URL, the lobby server URL, and the GOG installer. A fourth argument can pass the guest a zip instead. Set `MODE=strategy` or `MODE=arcade` for those routes. The script saves each player's game screens in `SHOT_DIR`.
 
-## The arrow keys (src/cpu/wcnet_armada.cpp)
+## The arrow keys and the mouse (src/cpu/wcnet_armada.cpp)
 
 Armada turns at full rate the moment an arrow key goes down, so a tap overshoots the target. Privateer had the same fault. Every flight frame the game builds its pilot's control packet. That packet is the few bytes it sends to the other machines, and every machine steers that pilot's ship from them. Byte 3 is the stick's left and right and byte 4 its up and down, each a 7-bit signed number; the joystick's reading goes in first. Then a loop over the key bindings checks the game's held-key table. Each held key bound to a stick action writes the stop at once: Down +30 in byte 4, Up −30, Right +30 in byte 3, Left −30 (Proving Grounds uses 20).
 
@@ -48,4 +48,8 @@ Measured natively at 25,000 cycles (about 19 frames a second), holding Right in 
 - **Stock game:** 30 from the first frame. A 0.1 s tap moved the view about 70 px in one frame, and a hold about 60 px per 0.1 s from the start.
 - **Ramped:** 3, 6, 13, 16, 23, 26, then 30 from the seventh frame. A tap gave 3 and 6, about 12 px of view. A hold built through about 6, 12, 40 and 56 px per 0.1 s to the same full rate.
 - **Proving Grounds** (two machines over TCP, in the arena): 2, 4, 8, 11, 15, 17, then 20, for both Right and Up.
+
+When an arrow is let go, the log says how it ramped ("Armada: Right held 0.85 s, 16 frames, ramped +3 to +30"); `scripts/web-armada.mjs` checks that line for the guest's Right.
+
+**The mouse.** Armada uses the mouse only in its menus. In flight, the page's right-button drag steers through the same place, as a stick would. The page sends the drag's offset from where the button went down (`wc_web_arm_steer`, −1 to 1 each way, right and down positive; 3 px dead, full at 64 px). At the loop's end the emulator writes it into the packet in proportion to the keys' stop, on any axis that no key and no joystick moves this frame. Letting go of the button centres it. The left button with the right fires the guns (Space). As with the keys, the packet carries the turn to the other machines. Measured natively with the `!armsteer=x:y` key-script aid: a quarter drag wrote 8 and turned the view about 12 px per 0.1 s, about a fifth of the full turn; a full drag wrote 30; an arrow pressed during a drag ramped its own axis while the drag held the other.
 

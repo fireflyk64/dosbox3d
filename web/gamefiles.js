@@ -661,7 +661,7 @@ function rapPrepare(FS, root) {
 const armadaMachine = {
   multiplayer: true, ipx: true, cycles: 25000, noFlight: true, noRoomOptions: true, joystick: true,
   dosbox: "[dosbox]\nmachine=svga_s3\nmemsize=16\n[cpu]\ncore=normal\n[dos]\nxms=true\nems=true\numb=true\n[sblaster]\nsbtype=sb16\nirq=7\ndma=1\nhdma=5\n",
-  keys: "<b>Armada flight:</b> steer with the arrow keys (a tap turns a little; held, they build to the full turn in a third of a second; <kbd>Shift</kbd> with an arrow turns at full at once) or hold the right mouse button and drag. Fire guns with <kbd>Space</kbd> or the left button while steering with the mouse. <kbd>Enter</kbd> fires a missile, <kbd>Tab</kbd> is the afterburner, and the keypad’s <kbd>+</kbd> and <kbd>−</kbd> change speed. For a joystick or gamepad, pick its <b>Built in</b> entry under Controller before Fly and calibrate <b>JOY 1</b> in the game’s Options before joining Net Play.",
+  keys: "<b>Armada flight:</b> steer with the arrow keys (a tap turns a little; held, they build to the full turn in a third of a second; <kbd>Shift</kbd> with an arrow turns at full at once) or hold the right mouse button and drag (the further the drag, the faster the turn; let go to centre it). Fire guns with <kbd>Space</kbd> or the left button while steering with the mouse. <kbd>Enter</kbd> fires a missile, <kbd>Tab</kbd> is the afterburner, and the keypad’s <kbd>+</kbd> and <kbd>−</kbd> change speed. For a joystick or gamepad, pick its <b>Built in</b> entry under Controller before Fly and calibrate <b>JOY 1</b> in the game’s Options before joining Net Play.",
 };
 
 export const GAMES = [
