@@ -2322,6 +2322,11 @@ try { $("privHiresCockpit").checked = localStorage.getItem(PRIV_HIRES_COCKPIT_KE
 // ?privclassic=1: Privateer exactly as it was before that work (the user, 2026-11-22: "is there a way on the website to
 // run privateer without high res code loaded at all in case it causes an issue?"): the boxes greyed out, WCPRIVCLASSIC
 const PRIV_CLASSIC = new URLSearchParams(location.search).get("privclassic") === "1";
+// ?renderer=software: the emulator's picture put on the canvas through its 2D context instead of WebGL (SDL's own
+// renderers: auto, opengl, software).  The user, 2026-11-23, testing on a Mac: white flashes in full screen only; the
+// emulator's own frames have none (measured, every frame of a 250 s flight), so the browser's full-screen WebGL is
+// the suspect, and this is the other way to show the same frames.
+const RENDERER = ["software", "opengl"].includes(query.get("renderer")) ? query.get("renderer") : "";
 if (PRIV_CLASSIC) {
   $("privHires").disabled = true;
   $("privHires").checked = false;
@@ -2755,7 +2760,8 @@ async function start(fromGesture) {
     const game = gameInfo();
     const ipx = together && game && game.ipx;
     const conf = (game && game.dosbox || "") + (ipx ? "[ipx]\nipx=true\n" : "")
-      + (joystickPort ? "[joystick]\njoysticktype=none\ntimed=false\n" : "");
+      + (joystickPort ? "[joystick]\njoysticktype=none\ntimed=false\n" : "")
+      + (RENDERER ? `[sdl]\nrenderer=${RENDERER}\n` : "");
     if (conf) { Module.FS.writeFile("/game.conf", conf); args.unshift("-conf", "/game.conf"); }
     if (ipx && game.netCommand) args.push("-c", game.netCommand);
     Module.callMain([...args, "-c", cmd]);
