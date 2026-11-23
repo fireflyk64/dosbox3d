@@ -1688,6 +1688,35 @@ void smooth_edge() {
             g_from[Y * HW + X] = (Bit16u)(fromY * LW + fromX);      // (64,000 fits)
         }
     }
+    // A square corner stays square: where the edge about a pixel is straight both ways -- the pixels on the other side
+    // of it among its eight neighbours exactly a whole column, a whole row, or a column and a row of them (a box's side
+    // or corner: the readouts' and screens' windows) -- its fine pixels are its own side's.  The smoothing rounded those
+    // corners off, and with them the corner of a letter there (the user, 2026-11-23: "why does the K in KPS not go to
+    // the bottom"): it is for the canopy's curves and slants, whose steps match none of these.
+    static const int kNu[8] = { -1, 0, 1, -1, 1, -1, 0, 1 }, kNv[8] = { -1, -1, -1, 0, 0, 1, 1, 1 };
+    enum { TL = 1, T = 2, TR = 4, L = 8, R = 16, BL = 32, B = 64, BR = 128 };
+    static const int kBoxSides[8] = { TL | L | BL, TR | R | BR, TL | T | TR, BL | B | BR, TL | T | TR | L | BL,
+                                      TL | L | BL | B | BR, TL | T | TR | R | BR, TR | R | BR | BL | B };
+    for (int y = 0; y < LH; y++) {
+        for (int x = 0; x < LW; x++) {
+            const Bit8u side = g_window[y * LW + x];
+            int other = 0;
+            for (int k = 0; k < 8; k++) {
+                const int nx = x + kNu[k], ny = y + kNv[k];
+                const Bit8u n = nx >= 0 && ny >= 0 && nx < LW && ny < LH ? g_window[ny * LW + nx] : side;
+                if (n != side) other |= 1 << k;
+            }
+            bool box = false;
+            for (int i = 0; i < 8 && !box; i++) box = other == kBoxSides[i];
+            if (!box) continue;
+            for (int Y = g_rowFrom[y]; Y < g_rowFrom[y + 1]; Y++) {
+                for (int X = 2 * x; X < 2 * x + 2; X++) {
+                    g_fineWindow[Y * HW + X] = side;
+                    g_from[Y * HW + X] = (Bit16u)(y * LW + x);
+                }
+            }
+        }
+    }
 }
 
 void compose() {
