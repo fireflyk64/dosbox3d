@@ -1288,3 +1288,27 @@ same in both Talons).  Measured with ship1.sh, all sixteen: no game errors; ever
 the colour (but the Broadsword's 4 and the Tarsus's offset cockpit, as the game's art); the thirteen ships the user saw
 and passed are pixel for pixel as they saw them.  (The rig's lock sometimes takes another object -- a cargo pod at
 4.9 km -- instead of the spawned Paradigm: its own picture with the resolution off shows the same; it is retried.)
+
+**The letters a row higher, and the cockpits' lettering that is art (2026-11-23).**  The user: "A couple more displays
+in the cockpit need the new font like AUTO and E for fuel.... ideally KPS would be shifted up by one pixel so it doesn't
+get below the bevel / not sure hwo the other ship cockpits look--they may have their own quirks"; then "Can you shift
+the font I provided up by the equivalent pixels then. That way it's a data change", "It was an accident I made them
+lower".  The font's metrics say `"shift_up": 1` (scripts/privfont/font-replacement-metrics.json); privfont.py writes it
+as kPrivGlyphShiftUp and every letter is drawn that many 2x rows above the game's letter's top (in the Tarsus's KPS box
+a black row above the letters and one below, where the game's letters, and the user's at the game's place, met its
+bevel; SET one above and three below).
+
+AUTO and the gauges' letters are no text: each is part of a picture of its own, drawn by root code -- AUTO by 130E,
+the energy gauge (its E) by 131A, the Centurion's fuel gauge (its F) by 1356 -- and its letters are the art's own, each
+cockpit's different: the Tarsus's AUTO 16 x 4 (a round A and O), the Centurion's 20 x 4 (square letters), the Orion's
+21 x 5, the Galaxy's 25 x 5 between red dashes; the E 3 x 5 in the Tarsus, Orion and Galaxy, 4 x 5 in the Centurion,
+two blues (its corners the darker).  kArtWords lists them: the code, the letters' exact pattern ('#' the letters, of
+one or two colours; '.' the panel, one colour; no letter colour just round it), the text, and the user's glyph row for
+each fine row.  Found in a picture from that code, the pattern's pixels are drawn as the panel and the user's glyphs
+over them, side by side with the font's two-pixel gaps, centred on the art's letters, in the colour of the art's
+letter's stem; not found (another picture, a cockpit not seen), the game's blocks.  In a five-row letter the user's
+eight-row capitals are centred (the A's slant kept whole), but for the E, whose two stems are drawn a row longer each.
+AUTO, E and F are drawn in the space-alone level as the game's (hires_cockpit).  Measured with a scratch rig
+(cockpit.sh: the Tarsus of a new game, the user's Centurion from OXFORD01.SAV, an Orion and a Galaxy bought at
+Achilles as privtests/ships.sh buys them): every AUTO, E and F in the user's letters, the panel's red marks and dashes
+as they were, no game errors.  (The Orion's and Galaxy's own-ship display, overlay code, stays the game's blocks.)

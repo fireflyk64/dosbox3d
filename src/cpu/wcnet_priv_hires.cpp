@@ -661,13 +661,155 @@ bool letter(const Target &t, const Shape &s, int x, int y, int index, Bit8u c) {
         }
         if (bits != g->src[v]) return false;
     }
-    const int X0 = 2 * x, Y0 = 2 * (y - 3);      // (the capitals' top: the anchor is the baseline's row)
+    const int X0 = 2 * x, Y0 = 2 * (y - 3) - kPrivGlyphShiftUp;  // (the capitals' top: the anchor is the baseline's row)
     for (int r = 0; r < 10; r++) {
         for (int u = 0; u < g->w; u++) {
             if (g->rows[r] & (1 << u)) plot(t, X0 + u, Y0 + r, c);
         }
     }
     return true;
+}
+
+// ---- the cockpit's lettering that is art, in the user's font ------------------------------------------------------
+//
+// The user, 2026-11-23: "A couple more displays in the cockpit need the new font like AUTO and E for fuel".  Those are
+// no text: AUTO is a picture of its own (28 x 4, drawn by root code 130E: two red marks each side, the letters in the
+// middle), the E the top of the energy gauge's (11 x 23, root code 131A), and their letters are the art's own (a round
+// A, U and O; an E five rows tall).  A table of them: the code that draws the picture, the letters' exact pattern ('#'
+// the letters, '.' the panel about them, one colour; the pixels round the pattern none of the letters' colours), the
+// text, and for each fine row of the letters the user's glyphs' row (their capitals, eight rows; a taller letter's stems
+// drawn a row longer).  The pattern is looked for in the picture; where it is, the letters' pixels are the panel's and
+// the user's glyphs are drawn there in the colour of the art's letter at (inkU, inkV), side by side with the user's
+// two-pixel gaps, centred on the art's letters.  Any other picture, or the pattern not found: the game's blocks.
+struct ArtWord {
+    Bit16u caller;
+    int w, h;
+    const char *rows[6];
+    const char *text;
+    int inkU, inkV;
+    signed char glyphRow[12];       // per fine row of the 2h: the glyphs' row (-1 none)
+};
+// (each found in the four cockpits the player flies, scratch cockpit.sh: AUTO from 130E, the energy gauge's E from
+//  131A, the Centurion's fuel gauge's F from 1356.  An eight-row glyph in a five-row letter: centred (the A's slant
+//  kept whole), but the E, whose stems are drawn a row longer each to fill it.)
+const ArtWord kArtWords[] = {
+    { 0x130E, 16, 4, { ".#..#..#.###..#.",               // the Tarsus's AUTO: a round A and O
+                       "#.#.#..#..#..#.#",
+                       "###.#..#..#..#.#",
+                       "#.#..##...#...#." }, "AUTO", 0, 1, { 0, 1, 2, 3, 4, 5, 6, 7 } },
+    { 0x130E, 20, 4, { "####.#..#.#####.####",           // the Centurion's: square letters
+                       "#..#.#..#...#...#..#",
+                       "####.#..#...#...#..#",
+                       "#..#.####...#...####" }, "AUTO", 0, 1, { 0, 1, 2, 3, 4, 5, 6, 7 } },
+    { 0x130E, 21, 5, { ".##...#..#..###...##.",          // the Orion's: five rows
+                       "#..#..#..#...#...#..#",
+                       "####..#..#...#...#..#",
+                       "#..#..#..#...#...#..#",
+                       "#..#...##....#....##." }, "AUTO", 0, 1, { -1, 0, 1, 2, 3, 4, 5, 6, 7, -1 } },
+    { 0x130E, 25, 5, { ".##...#...#..#####...###.",      // the Galaxy's: five rows, wide
+                       "#..#..#...#....#....#...#",
+                       "####..#...#....#....#...#",
+                       "#..#..#...#....#....#...#",
+                       "#..#...###.....#.....###." }, "AUTO", 0, 1, { -1, 0, 1, 2, 3, 4, 5, 6, 7, -1 } },
+    { 0x131A, 3, 5, { "###",                            // the energy gauge's E: the Tarsus's, Orion's, Galaxy's
+                      "#..",
+                      "##.",
+                      "#..",
+                      "###" }, "E", 0, 1, { 0, 1, 2, 2, 3, 4, 5, 6, 6, 7 } },
+    { 0x131A, 4, 5, { "####",                           // the Centurion's
+                      "#...",
+                      "###.",
+                      "#...",
+                      "####" }, "E", 0, 1, { 0, 1, 2, 2, 3, 4, 5, 6, 6, 7 } },
+    { 0x1356, 3, 4, { "###",                            // the Centurion's fuel gauge's F
+                      "#..",
+                      "##.",
+                      "#.." }, "F", 0, 1, { 0, 1, 2, 3, 4, 5, 6, 7 } },
+};
+
+const PrivGlyph *user_glyph(char ch) {
+    for (int i = 0; i < kPrivGlyphCount; i++) {
+        if (kPrivGlyphs[i].ch == (unsigned char)ch) return &kPrivGlyphs[i];
+    }
+    return NULL;
+}
+
+void shape_blocks(const Target &t, const Shape &s, int x, int y, int colour);
+
+bool art_word(const Target &t, Bit16u caller, const Shape &s, int x, int y) {
+    for (size_t e = 0; e < sizeof(kArtWords) / sizeof(kArtWords[0]); e++) {
+        const ArtWord &a = kArtWords[e];
+        if (a.caller != caller || s.w < a.w || s.h < a.h) continue;
+        const PrivGlyph *g[8];
+        const int n = (int)strlen(a.text);
+        int inkW = 0;
+        bool have = n <= 8;
+        for (int i = 0; i < n && have; i++) {
+            g[i] = user_glyph(a.text[i]);
+            have = g[i] != NULL;
+            if (have) inkW += g[i]->w;
+        }
+        const int fineW = inkW + 2 * (n - 1);
+        if (!have || fineW > 2 * a.w + 2) continue;
+        auto px = [&](int u, int v) { return u >= 0 && v >= 0 && u < s.w && v < s.h ? (int)s.px[v * s.w + u] : -1; };
+        for (int pv = 0; pv + a.h <= s.h; pv++) {
+            for (int pu = 0; pu + a.w <= s.w; pu++) {
+                int bg = -2, ink[2] = { -2, -2 };
+                for (int v = 0; v < a.h && bg == -2; v++) {     // (the panel's colour: the pattern's first '.')
+                    for (int u = 0; u < a.w && bg == -2; u++) {
+                        if (a.rows[v][u] == '.') bg = px(pu + u, pv + v);
+                    }
+                }
+                bool ok = bg != -2;
+                for (int v = 0; v < a.h && ok; v++) {
+                    for (int u = 0; u < a.w && ok; u++) {
+                        const int c = px(pu + u, pv + v);
+                        if (a.rows[v][u] == '.') {
+                            ok = c == bg;
+                        } else {                                // (a letter: of one or two colours, not the panel's)
+                            ok = c >= 0 && c != bg;
+                            if (!ok) break;
+                            if (ink[0] == -2) ink[0] = c;
+                            else if (c != ink[0]) {
+                                if (ink[1] == -2) ink[1] = c;
+                                ok = c == ink[1];
+                            }
+                        }
+                    }
+                }
+                for (int v = -1; v <= a.h && ok; v++) {         // (no letter pixel of its colours just outside)
+                    for (int u = -1; u <= a.w && ok; u++) {
+                        if (u >= 0 && v >= 0 && u < a.w && v < a.h) continue;
+                        const int c = px(pu + u, pv + v);
+                        ok = c < 0 || (c != ink[0] && c != ink[1]);
+                    }
+                }
+                if (!ok) continue;
+                const int colour = px(pu + a.inkU, pv + a.inkV);
+                Shape plain = s;
+                for (int v = 0; v < a.h; v++) {
+                    for (int u = 0; u < a.w; u++) {
+                        if (a.rows[v][u] == '#') plain.px[(pv + v) * s.w + pu + u] = (Bit16s)bg;
+                    }
+                }
+                shape_blocks(t, plain, x, y, -1);
+                int X = 2 * (x - s.left + pu) + (2 * a.w - fineW) / 2;
+                const int Y0 = 2 * (y - s.top + pv);
+                for (int i = 0; i < n; i++) {
+                    for (int r = 0; r < 2 * a.h && r < 12; r++) {
+                        const int gr = a.glyphRow[r];
+                        if (gr < 0 || gr > 9) continue;
+                        for (int u = 0; u < g[i]->w; u++) {
+                            if (g[i]->rows[gr] & (1 << u)) plot(t, X + u, Y0 + r, (Bit8u)colour);
+                        }
+                    }
+                    X += g[i]->w + 2;
+                }
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // ---- the target display's ship: straight lines, mirrored exactly ---------------------------------------------------
@@ -1887,6 +2029,8 @@ void call(const Place &p) {
             if (hires_cockpit() && target_art_call() && s->w <= kWireMax && s->h <= kWireMax) {
                 wire_gather(t, *s, x, y);
             } else if (caller == kCrosshairCaller && hires_cockpit()) shape_lines(t, *s, x, y);
+            else if (hires_cockpit() && art_word(t, caller, *s, x, y)) {
+            }
             else if (caller == kRadarCaller && hires_cockpit()) shape_radar(t, *s, x, y);
             else shape_blocks(t, *s, x, y, -1);
         } else if (p.op == OP_SCALE_HAZE) {

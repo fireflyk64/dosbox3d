@@ -24,6 +24,7 @@
   "x_height": 6,
   "baseline": 8,
   "descent": 2,
+  "shift_up": 1,
   "specimen_row_pitch": 20,
   "glyph_notes": {
     "S": "180-degree rotational symmetry; one-pixel step in the middle bar.",

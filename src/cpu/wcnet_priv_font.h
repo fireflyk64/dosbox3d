@@ -84,5 +84,6 @@ static const PrivGlyph kPrivGlyphs[] = {
     { 122, 3, 3, 1, { 0x03, 0x02, 0x06 }, 6, { 0x0000, 0x0000, 0x000F, 0x0008, 0x0008, 0x0008, 0x0008, 0x0038, 0x0000, 0x0000 } },   // 'z'
 };
 enum { kPrivGlyphCount = sizeof(kPrivGlyphs) / sizeof(kPrivGlyphs[0]) };
+enum { kPrivGlyphShiftUp = 1 };      // (the cells' top, in 2x rows, above the game's letter's top)
 
 #endif

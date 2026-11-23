@@ -4,6 +4,9 @@
 # README and REVISION), one-pixel strokes, each letter in the game's own letter's box.  For each character the table
 # keeps the game's glyph it was drawn from (source_bitmap), so that the emulator replaces a letter only when the game
 # draws exactly that glyph.
+# The metrics' shift_up (2x rows; the user, 2026-11-23, of their letters: "It was an accident I made them lower", "Can you
+# shift the font I provided up by the equivalent pixels then. That way it's a data change") puts the cells that many
+# rows above the game's letter's top: kPrivGlyphShiftUp.
 #   python3 scripts/privfont.py > src/cpu/wcnet_priv_font.h
 import json
 import os
@@ -41,7 +44,10 @@ def main():
         out.write("    { %d, %d, %d, %d, { %s }, %d, { %s } },   // %r\n" % (
             ord(ch), srcW, last - first + 1, first, ", ".join("0x%02X" % bits(src[i]) for i in range(first, last + 1)),
             g['cell_width'], ", ".join("0x%04X" % bits(r) for r in rows), ch))
-    out.write("};\nenum { kPrivGlyphCount = sizeof(kPrivGlyphs) / sizeof(kPrivGlyphs[0]) };\n\n#endif\n")
+    out.write("};\nenum { kPrivGlyphCount = sizeof(kPrivGlyphs) / sizeof(kPrivGlyphs[0]) };\n")
+    shift = int(m.get('shift_up', 0))
+    assert 0 <= shift <= 2
+    out.write("enum { kPrivGlyphShiftUp = %d };      // (the cells' top, in 2x rows, above the game's letter's top)\n\n#endif\n" % shift)
 
 
 if __name__ == '__main__':
