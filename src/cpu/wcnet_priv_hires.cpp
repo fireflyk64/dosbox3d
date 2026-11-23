@@ -1542,10 +1542,11 @@ void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block,
 // user, 2026-11-23: "The centurion aiming reticle is not symmetric. Prefer the left side to the right", "Make sure
 // reticle are symmetric".  The art's own axis (u + u' = S, near its middle, that most of its pixels agree with, colour
 // and all: the radar's rings are centred at 30 of 56) found as the wireframe's is; the right half's fine pixels are then
-// the left's mirrored (fine x and 2S + 1 - x, from the shape's left) wherever the art's 3 x 3 about the pixel is the
-// same as about its mirror, colours too (a mark only on one side keeps its own drawing); then the bottom from the top
-// likewise (v + v' = T).  The lines' middles are a fine pixel right of and below each game pixel's middle (2u + 1): the
-// two halves had differed by that pixel.
+// the left's mirrored about the middles the lines are drawn through (2u + 1: fine x and 2S + 2 - x, from the shape's
+// left; the axis column S + 1 kept as drawn, one pixel wide, the drawing half a game pixel right of the blocks -- the
+// user: "The original reticle wasn't two pixels wide so we need to have it be 1 pixel wide (and that may mean it's
+// offset by half a pixel)") wherever the art's 3 x 3 about the pixel is the same as about its mirror, colours too (a
+// mark only on one side keeps its own drawing); then the bottom from the top likewise (v + v' = T).
 void capture_begin(const Shape &s, int left, int top) {
     const int M = 4;
     g_cap.X0 = 2 * left - M;
@@ -1587,23 +1588,11 @@ void capture_show(const Target &t, const Shape &s, int left, int top) {
             return true;
         };
         const int off = 4;                          // (the canvas's margin: fine x from the shape's left is x - off)
-        if (best % 2 == 0) {
-            // (the axis through a column's (row's) middle: its two fine columns are each other's mirror, so a line
-            //  along it, drawn in the right (lower) one -- the pixels' middles are 2u + 1 -- is drawn in both: two
-            //  pixels wide, the one way it is a mirror image of itself; the reticle's ticks' stems)
-            const int a = best + off, b = best + 1 + off;
-            for (int i = 0; a >= 0 && b < (across ? W : H) && i < (across ? H : W); i++) {
-                Bit16s &pa = across ? g_cap.px[i * W + a] : g_cap.px[a * W + i];
-                Bit16s &pb = across ? g_cap.px[i * W + b] : g_cap.px[b * W + i];
-                if (pa < 0 && pb >= 0) pa = pb;
-                else if (pb < 0 && pa >= 0) pb = pa;
-            }
-        }
         for (int y = 0; y < H; y++) {
             for (int x = 0; x < W; x++) {
                 const int fx = x - off, fy = y - off;   // (from the shape's corner, fine)
-                const int f = across ? fx : fy, m = 2 * best + 1 - f;
-                if (f <= m) continue;               // (the left or top half: the source)
+                const int f = across ? fx : fy, m = 2 * best + 2 - f;
+                if (f <= best + 1) continue;        // (the left or top half: the source; best + 1 the axis itself)
                 const int mx = across ? m + off : x, my = across ? y : m + off;
                 if (mx < 0 || my < 0 || mx >= W || my >= H) continue;
                 const int u = fx >= 0 ? fx / 2 : -1 - (-fx - 1) / 2, v = fy >= 0 ? fy / 2 : -1 - (-fy - 1) / 2;
@@ -1644,23 +1633,87 @@ void shape_lines(const Target &t, const Shape &s, int x, int y) {
     capture_show(t, s, left, top);
 }
 
+// A radar's exterior drawn by hand (the user, 2026-11-23, of the Centurion's: "the radar exterior is too complex. we
+// need those very simple quarter circles at different lengths--it drew a bunch of loops and unnecessary sketchy
+// details that doesn't make sense. Instead it should be 4 quarter circle pie slices with different radii and stopping
+// at the inner circle.  tarsus looks good"): for the art with this hash, its pixels of the exterior's colour (that of
+// the sample pixel) between two distances from the centre are the ground's, and four arcs between the diagonals (each
+// its own radius) and four spokes along the diagonals (from the bright circle out to the longer arc) are drawn instead,
+// one fine pixel wide through the middles, in that colour.  The Centurion's (56 x 43, centre (30, 21)): its art's arcs
+// at 16 (top, bottom: rows 5 and 37) and 19 (sides: columns 11 and 49), its X exact diagonals from the small ring out,
+// the bright circle at 11; its corner marks lie beyond 22 and stay.
+struct RadarArc { double r, a0, a1; };          // (degrees, y down: 270 up)
+struct RadarArt {
+    Bit32u hash;
+    int cu, cv, sampleU, sampleV;
+    double band0, band1;
+    RadarArc arc[4];
+    double spokeR0, spokeR1;
+};
+const RadarArt kRadarArt[] = {
+    { 0x4E3164A7u, 30, 21, 30, 5, 12.5, 21.0,
+      { { 16, 225, 315 }, { 19, 315, 405 }, { 16, 45, 135 }, { 19, 135, 225 } }, 11, 19 },
+};
+
+// An arc one fine pixel wide (its fine pixels in order, an L's corner dropped against the kept ones, gaps stepped).
+void arc_fine(const Target &t, double fcx, double fcy, double R, double a0, double a1, Bit8u c) {
+    std::vector<int> kx, ky;
+    const int n = 16 + (int)(4 * R * (a1 - a0) / 90.0);
+    for (int i = 0; i <= n; i++) {
+        const double th = (a0 + (a1 - a0) * i / n) * 3.141592653589793 / 180.0;
+        const int X = (int)floor(fcx + R * cos(th) + 0.5), Y = (int)floor(fcy + R * sin(th) + 0.5);
+        if (!kx.empty() && X == kx.back() && Y == ky.back()) continue;
+        const size_t k = kx.size();
+        if (k >= 2 && abs(X - kx[k - 2]) == 1 && abs(Y - ky[k - 2]) == 1) {
+            kx.pop_back();
+            ky.pop_back();
+        }
+        kx.push_back(X);
+        ky.push_back(Y);
+    }
+    for (size_t i = 0; i < kx.size(); i++) {
+        if (i > 0 && (abs(kx[i] - kx[i - 1]) > 1 || abs(ky[i] - ky[i - 1]) > 1)) line_fine(t, kx[i - 1], ky[i - 1], kx[i], ky[i], c);
+        else plot(t, kx[i], ky[i], c);
+    }
+}
+
 // The radar's art, redrawn each frame under its blips: its most common colour (the screen's ground) in blocks, each
 // other colour's pixels joined to their same-coloured neighbours by one-pixel lines -- the rings and the cross, each
 // ring of its own colour (joining any colours made a mesh of the two-tone rings; thinning the bitmap, combs).  A pixel
 // in no chain of its colour (fewer than two such neighbours: a two-tone bar's, a line's end) reaches halfway to each
 // neighbour of another ink, so the side gauge's two-tone bar is a line and not dots.
-void shape_radar(const Target &t, const Shape &s, int x, int y) {
+void shape_radar(const Target &t, const Shape &art, int x, int y) {
     static const int kDx[4] = { 1, 0, 1, -1 }, kDy[4] = { 0, 1, 1, 1 };
     static const int kAx[8] = { 1, -1, 0, 0, 1, -1, 1, -1 }, kAy[8] = { 0, 0, 1, -1, 1, 1, -1, -1 };
-    const int left = x - s.left, top = y - s.top;
+    const int left = x - art.left, top = y - art.top;
     int count[256] = { 0 };
-    for (int i = 0; i < s.w * s.h; i++) {
-        if (s.px[i] >= 0) count[s.px[i] & 0xFF]++;
+    for (int i = 0; i < art.w * art.h; i++) {
+        if (art.px[i] >= 0) count[art.px[i] & 0xFF]++;
     }
     int ground = 0;
     for (int c = 1; c < 256; c++) {
         if (count[c] > count[ground]) ground = c;
     }
+    // (a hand-drawn exterior: its pixels the ground's, its arcs and spokes drawn after the rest)
+    const RadarArt *hand = NULL;
+    int handColour = -1;
+    Shape cut;
+    const Bit32u artHash = shape_hash(art);
+    for (size_t i = 0; i < sizeof(kRadarArt) / sizeof(kRadarArt[0]) && !hand; i++) {
+        const RadarArt &r = kRadarArt[i];
+        if (r.hash != artHash || r.sampleU >= art.w || r.sampleV >= art.h) continue;
+        handColour = art.px[r.sampleV * art.w + r.sampleU];
+        if (handColour < 0 || handColour == ground) continue;
+        hand = &r;
+        cut = art;
+        for (int v = 0; v < art.h; v++) {
+            for (int u = 0; u < art.w; u++) {
+                const double d = hypot(u - r.cu, v - r.cv);
+                if (cut.px[v * art.w + u] == handColour && d > r.band0 && d < r.band1) cut.px[v * art.w + u] = (Bit16s)ground;
+            }
+        }
+    }
+    const Shape &s = hand ? cut : art;
     shape_blocks(t, s, x, y, ground);
     const Rings &r = rings_of(s, ground);
     capture_begin(s, left, top);
@@ -1692,6 +1745,15 @@ void shape_radar(const Target &t, const Shape &s, int x, int y) {
                 if (kAx[k] && kAy[k] && (ink(nu, v) || ink(u, nv))) continue;
                 line_fine(t, X, Y, (X + fine_x(left + nu)) / 2, (Y + fine_y(top + nv)) / 2, (Bit8u)c);
             }
+        }
+    }
+    if (hand) {
+        const double fcx = 2 * (left + hand->cu) + 1, fcy = 2 * (top + hand->cv) + 1;
+        for (int k = 0; k < 4; k++) arc_fine(t, fcx, fcy, 2 * hand->arc[k].r, hand->arc[k].a0, hand->arc[k].a1, (Bit8u)handColour);
+        for (int k = 0; k < 4; k++) {
+            const double th = (45 + 90 * k) * 3.141592653589793 / 180.0;
+            line_fine(t, (int)floor(fcx + 2 * hand->spokeR0 * cos(th) + 0.5), (int)floor(fcy + 2 * hand->spokeR0 * sin(th) + 0.5),
+                      (int)floor(fcx + 2 * hand->spokeR1 * cos(th) + 0.5), (int)floor(fcy + 2 * hand->spokeR1 * sin(th) + 0.5), (Bit8u)handColour);
         }
     }
     capture_show(t, s, left, top);

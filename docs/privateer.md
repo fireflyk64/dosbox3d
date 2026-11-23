@@ -1369,3 +1369,17 @@ one side (the radar's gauges, its corner marks) keeps its own drawing.  The dots
 L of three judged against the ellipse's next point, so two corners in a row left a gap that the gap-filling did not
 see; now judged against the pixels kept.  Measured (scratch cockpit.sh, symbox.py): all four cockpits' reticles 0
 unmatched pixels across and up-down; the radars' rings whole, the pixels left unmatched only the art's one-sided marks.
+Then the user: "the middle reticle is way better as long as you can mirror the one side to the other...the right one
+is too thick ... The original reticle wasn't two pixels wide so we need to have it be 1 pixel wide (and that may mean
+it's offset by half a pixel)".  The mirror is now about the middles the lines are drawn through (fine x and 2S + 2 - x:
+2u + 1 and 2(S - u) + 1 are each other's), the axis column kept as drawn: every line one pixel wide, the drawing half a
+game pixel right of (and below) the blocks.  And of the Centurion's radar: "the radar exterior is too complex. we need
+those very simple quarter circles at different lengths--it drew a bunch of loops and unnecessary sketchy details that
+doesn't make sense. Instead it should be 4 quarter circle pie slices with different radii and stopping at the inner
+circle.  tarsus looks good".  Its art's exterior is two radii, 16 (top, bottom) and 19 (sides), meeting on the X's
+diagonals in pixel loops.  kRadarArt (by the art's hash): the exterior colour's pixels between 12.5 and 21 from the
+centre become the ground (the corner marks lie beyond 22), and four arcs between the diagonals (16, 19, 16, 19) and
+four spokes on the diagonals from the bright circle (11) out to 19 are drawn instead (arc_fine: one pixel, an L's
+corner dropped against the kept pixels), then mirrored with the rest.  Measured: all four cockpits' reticles 0
+unmatched both ways, one pixel wide (the top tick's bars 9, 5, 9 about a one-pixel stem); the Centurion's radar four
+slices; the others' radars as before.
