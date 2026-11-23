@@ -1312,3 +1312,12 @@ AUTO, E and F are drawn in the space-alone level as the game's (hires_cockpit). 
 (cockpit.sh: the Tarsus of a new game, the user's Centurion from OXFORD01.SAV, an Orion and a Galaxy bought at
 Achilles as privtests/ships.sh buys them): every AUTO, E and F in the user's letters, the panel's red marks and dashes
 as they were, no game errors.  (The Orion's and Galaxy's own-ship display, overlay code, stays the game's blocks.)
+
+**Two floods cut short (2026-11-23).**  The ring finder grew each region of other pixels only to 201 and the small
+pieces only to five, leaving the rest of a big region (the background) or of a long line unmarked; later starts inside
+them made pieces of their own, so chance holes got rings (the Broadsword's side pods, a ring round the Centurion's
+canopy) and chance bits of a line became solid blocks (canopies of the Gothri, Stiletto, Centurion), and a change
+anywhere in a picture moved them: leaving the Centurion's nose pixels out took the ring off its canopy.  Both now grow
+the whole region or piece (at most the picture) before judging it.  Thirteen ships drew differently (thin lines where
+the chance blocks were); the user, shown them side by side with the live ones: "Take the fixes".  The Python prototype
+(scratch wire2.py) had the same cut.

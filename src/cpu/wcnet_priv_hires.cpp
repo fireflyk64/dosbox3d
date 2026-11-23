@@ -926,7 +926,9 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
                 if (c < 0 || solid[v * w + u] || seen[v * w + u]) continue;
                 piece.assign(1, v * w + u);
                 seen[v * w + u] = 1;
-                for (size_t i = 0; i < piece.size() && piece.size() <= 5; i++) {
+                // (the piece grown whole, at most the picture: one cut short at five left its rest unmarked, and
+                //  each bit of a long line then counted as a small piece of its own: chance blocks)
+                for (size_t i = 0; i < piece.size() && piece.size() <= (size_t)(w * h); i++) {
                     const int pu = piece[i] % w, pv = piece[i] / w;
                     for (int k = 0; k < 8; k++) {
                         const int nu = pu + kDu8[k], nv = pv + kDv8[k];
@@ -985,7 +987,9 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
                 comp.assign(1, start);
                 region[start] = 1;
                 bool edge = false;
-                for (size_t i = 0; i < comp.size() && comp.size() <= 201; i++) {
+                // (the region flooded whole, at most the picture: one cut short left its rest unmarked, each piece of
+                //  it then taken for a hole of its own -- chance rings, moved by a change anywhere in the picture)
+                for (size_t i = 0; i < comp.size() && comp.size() <= (size_t)(w * h); i++) {
                     const int pu = comp[i] % w, pv = comp[i] / w;
                     if (pu == 0 || pv == 0 || pu == w - 1 || pv == h - 1) edge = true;
                     for (int k = 0; k < 8; k += 2) {
