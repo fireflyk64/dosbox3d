@@ -1,5 +1,5 @@
 /*
- *  Privateer at 640 x 480 (wcnet_priv_hires.cpp, docs/privateer.md section 20).
+ *  Privateer at 640 x 400, each game pixel 2 x 2 (wcnet_priv_hires.cpp, docs/privateer.md section 20).
  */
 #ifndef WCNET_PRIV_HIRES_H_
 #define WCNET_PRIV_HIRES_H_

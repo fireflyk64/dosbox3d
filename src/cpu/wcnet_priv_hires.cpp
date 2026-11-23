@@ -1,15 +1,15 @@
 /*
- *  Privateer at 640 x 480 (docs/privateer.md section 20).
+ *  Privateer at 640 x 400, each game pixel a block of 2 x 2 (docs/privateer.md sections 20, 26).
  *
  *  In flight the game draws the scene and the instruments into one buffer in memory, every pixel of it by a dozen
  *  routines of its graphics library (kPlaces), and shows it by copying a list of spans, the cockpit's window and
  *  screens, to the VGA (seg205:0002); the cockpit itself it drew to the VGA once.  So each call of the library on
- *  that buffer is drawn again here, from its own arguments as it is entered, into a 640 x 480 picture (H); the
+ *  that buffer is drawn again here, from its own arguments as it is entered, into a 640 x 400 picture (H); the
  *  game's drawing is not touched and neither is its memory: one pilot's display, nothing a room could see.
  *
  *  At the span copy H is frozen with what the game shows (the buffer under the spans).  At the VGA's frame the
  *  picture is made: a pixel of the spans that still holds what was copied shows H; every other, and any screen that
- *  is not a flight's, is the game's own pixel, 2 wide and 2 or 3 tall.
+ *  is not a flight's, is the game's own pixel, 2 x 2.
  *
  *  The game runs paged (its memory manager's): linear A0000 is memory of its own, where that buffer is, and the
  *  screen is mapped at FFFF:0010.  So the screen is known by its physical address, and the game's memory is read
@@ -45,7 +45,8 @@ namespace wc {
 
 namespace {
 
-enum { LW = 320, LH = 200, HW = 640, HH = 480 };
+enum { LW = 320, LH = 200, HW = 640, HH = 400 };
+const double kSy = (double)HH / LH;      // (H's rows to a game row: 2, each game pixel a block of 2 x 2)
 enum {
     kMaxShapeSide = 640,            // a shape's width or height
     kMaxShapeBytes = 0x10000,       // what one shape's decoding may read
@@ -205,7 +206,7 @@ inline bool flights_buffer(const Target &t) {
     return g_bufSeg && t.seg == g_bufSeg && row_of(t, 0) == g_bufRow0;
 }
 
-// ---- the 640 x 480 picture's drawing: a game pixel is the block g_rowFrom gives -------------------------------------
+// ---- the 640 x 400 picture's drawing: a game pixel is the block g_rowFrom gives (2 x 2) -------------------------------------
 
 inline void block_row(int x0, int x1, int y, Bit8u c) {     // (clipped already)
     for (int Y = g_rowFrom[y]; Y < g_rowFrom[y + 1]; Y++) memset(g_hi + Y * HW + 2 * x0, c, 2 * (x1 - x0 + 1));
@@ -230,7 +231,7 @@ inline void plot(const Target &t, int X, int Y, Bit8u c) {
 }
 
 inline int fine_x(int x) { return 2 * x + 1; }
-inline int fine_y(int y) { return (12 * y + 6) / 5; }       // (the middle of the pixel)
+inline int fine_y(int y) { return (2 * HH * y + HH) / (2 * LH); }      // (the middle of the pixel)
 
 // One fine pixel wide, between two fine pixels (clipped by plot).
 void line_fine(const Target &t, int X, int Y, int Xe, int Ye, Bit8u c) {
@@ -253,7 +254,7 @@ void line(const Target &t, int x0, int y0, int x1, int y1, Bit8u c) {
 
 void ellipse(const Target &t, int x, int y, int rx, int ry, Bit8u c) {
     if (rx < 0 || ry < 0 || rx > 1000 || ry > 1000 || x < -2000 || x > 2000 || y < -2000 || y > 2000) return;
-    const double cx = 2 * x + 1, cy = (y + 0.5) * 2.4, a = 2.0 * rx, b = 2.4 * ry;
+    const double cx = 2 * x + 1, cy = (y + 0.5) * kSy, a = 2.0 * rx, b = kSy * ry;
     const int n = 8 + (int)(8 * (a > b ? a : b));
     for (int i = 0; i < n; i++) {
         const double w = i * 6.283185307179586 / n;
@@ -662,7 +663,7 @@ void overlay_base(const Bit8u *low) {
             const int c = sm.px[v * sm.w + u], x = g_base.x0 + u;
             if (c < 0 || x < 0 || x >= LW || low[y * LW + x] != c) continue;
             for (int Y = g_rowFrom[y]; Y < g_rowFrom[y + 1]; Y++) {
-                const int V = (int)(((Y + 0.5) / 2.4 - g_base.y0) * fy);
+                const int V = (int)(((Y + 0.5) / kSy - g_base.y0) * fy);
                 if (V < 0 || V >= bg.h) continue;
                 for (int X = 2 * x; X < 2 * x + 2; X++) {
                     const int U = (int)(((X + 0.5) / 2.0 - g_base.x0) * fx);
@@ -699,7 +700,7 @@ void shape_scaled(const Target &t, const Shape &s, int x, int y, double sx, doub
     if (loy < t.y0) loy = t.y0;
     if (hiy > t.y1 + 1) hiy = t.y1 + 1;
     if (lox >= hix || loy >= hiy) return;
-    int X0 = (int)(lox * 2), X1 = (int)ceil(hix * 2), Y0 = (int)(loy * 2.4), Y1 = (int)ceil(hiy * 2.4);
+    int X0 = (int)(lox * 2), X1 = (int)ceil(hix * 2), Y0 = (int)(loy * kSy), Y1 = (int)ceil(hiy * kSy);
     if (X0 < 2 * t.x0) X0 = 2 * t.x0;
     if (X1 > 2 * (t.x1 + 1)) X1 = 2 * (t.x1 + 1);
     if (Y0 < g_rowFrom[t.y0]) Y0 = g_rowFrom[t.y0];
@@ -708,7 +709,7 @@ void shape_scaled(const Target &t, const Shape &s, int x, int y, double sx, doub
     const Bit32s du = (Bit32s)floor(c * 0.5 * mx / sx * 65536 + 0.5), dv = (Bit32s)floor(-n * 0.5 * my / sy * 65536 + 0.5);
     const Bit16s *src = &s.px[0];
     for (int Y = Y0; Y < Y1; Y++) {
-        const double gx = (X0 + 0.5) / 2 - x - 0.5, gy = (Y + 0.5) / 2.4 - y - 0.5;
+        const double gx = (X0 + 0.5) / 2 - x - 0.5, gy = (Y + 0.5) / kSy - y - 0.5;
         const double u0 = (gx * c + gy * n) * mx / sx + 0.5 + s.left, v0 = (-gx * n + gy * c) * my / sy + 0.5 + s.top;
         if (fabs(u0) > 16000 || fabs(v0) > 16000) continue;
         Bit32s u = (Bit32s)floor(u0 * 65536), v = (Bit32s)floor(v0 * 65536);
@@ -735,7 +736,7 @@ void polygon(const Target &t, const double *px, const double *py, int n, PhysPt 
         if (py[i] < lo) lo = py[i];
         if (py[i] > hi) hi = py[i];
     }
-    const double top = (lo + 0.5) * 2.4, bottom = (hi + 0.5) * 2.4;
+    const double top = (lo + 0.5) * kSy, bottom = (hi + 0.5) * kSy;
     if (bottom < 0 || top >= HH) return;
     int Y0 = (int)floor(top), Y1 = (int)floor(bottom);
     if (Y0 < g_rowFrom[t.y0]) Y0 = g_rowFrom[t.y0];
@@ -749,8 +750,8 @@ void polygon(const Target &t, const double *px, const double *py, int n, PhysPt 
         double l = 1e9, r = -1e9;
         for (int i = 0; i < n; i++) {
             const int j = i + 1 == n ? 0 : i + 1;
-            const double ax = (px[i] + 0.5) * 2, ay = (py[i] + 0.5) * 2.4;
-            const double bx = (px[j] + 0.5) * 2, by = (py[j] + 0.5) * 2.4;
+            const double ax = (px[i] + 0.5) * 2, ay = (py[i] + 0.5) * kSy;
+            const double bx = (px[j] + 0.5) * 2, by = (py[j] + 0.5) * kSy;
             if (ay == by) {
                 if (ay != mid) continue;
                 if (ax < l) l = ax;
@@ -1008,7 +1009,7 @@ void smooth_edge() {
     for (int Y = 0; Y < HH; Y++) {
         // (positions in twentieths of a game pixel)
         const int y = g_lowRow[Y];
-        int vy = (20 * Y + 10) * 5 / 12 - 10;
+        int vy = (20 * Y + 10) * LH / HH - 10;
         if (vy < 0) vy = 0;
         int y0 = vy / 20, fy = vy % 20;
         if (y0 >= LH - 1) { y0 = LH - 1; fy = 0; }
@@ -1101,7 +1102,7 @@ void priv_hires_flip() {
     wclog(1, "Privateer: the high-resolution picture %s", hires_wanted() ? "on" : "off");
 }
 
-// The picture is 640 x 480 from the first time hi-res is wanted, so that the key flips without a change of mode.
+// The picture is the override's 640 x 400 from the first time hi-res is wanted, so that the key flips without a change of mode.
 void priv_hires_tick() {
     now_wanted();
     const bool want = g_used && g_hooked && game_picture();
@@ -1112,7 +1113,7 @@ void priv_hires_tick() {
         const double fps = vga.draw.delay.vtotal > 0 ? 1000.0 / vga.draw.delay.vtotal : 70.0;
         VGA_SetOverride(true);
         RENDER_SetSize(HW, HH, 8, (float)fps, 1.0, false, false);
-        wclog(1, "Privateer: the picture is 640 x 480");
+        wclog(1, "Privateer: the picture is 640 x 400 (each game pixel 2 x 2)");
     } else {
         g_haveFrame = false;
         g_bufSeg = 0;

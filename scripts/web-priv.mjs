@@ -6,7 +6,7 @@
 //
 //   PLAYWRIGHT_DIR=... SHOT_DIR=... node scripts/web-priv.mjs PAGE_URL LOBBY_URL INSTALLER [seconds]
 //   RF=1: Righteous Fire (the menu's other program)
-//   HIRES=1: the page's "High resolution (2x)" (ticked by default) left ticked: 640 x 480 in flight, the frame rate
+//   HIRES=1: the page's "High resolution (2x)" (ticked by default) left ticked: 640 x 400 in flight, the frame rate
 //   held, ` flips it; HIRES=0: unticked before Fly, the game's own picture and none of the high resolution's hooks
 //   CLASSIC=1: the page opened with ?privclassic=1: the box unticked and greyed, the game as it was (WCPRIVCLASSIC)
 //   ROOM=<code>: the page joins that room as a guest (scripts/web-priv.sh ROOM=1 makes a native host's) and checks the
@@ -145,17 +145,16 @@ check(`in flight, the ${mode}'s controls read every frame`, flying, (logs.filter
 await sleep(3000);
 const box = await page.$eval("#canvas", (c) => { const b = c.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; });
 await page.screenshot({ path: path.join(shotDir, "web-priv-flight.png"), clip: box });
-// the picture 4:3 as on a monitor of 1993, in the page and full screen (the user, 2026-11-22: "The ratio should be
-// ideantical to what the original players of privateer saw"); full screen, as large as the screen takes
-check("the picture is 4:3", Math.abs(box.width / box.height - 4 / 3) < 0.01, `${Math.round(box.width)} x ${Math.round(box.height)}`);
+// the game's pixels kept square, 16:10 (the user, 2026-11-22, after a day of 4:3: "it looks worse because of the 4:3
+// stretch. We should keep pixel ratios"); full screen, as large as the screen takes (the element the screen, the
+// picture contained in it)
+check("the picture keeps its pixels: 16:10", Math.abs(box.width / box.height - 16 / 10) < 0.01, `${Math.round(box.width)} x ${Math.round(box.height)}`);
 await page.evaluate(() => document.getElementById("screen").requestFullscreen());
 await sleep(1500);
-const full = await page.$eval("#canvas", (c) => { const b = c.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height, vw: innerWidth, vh: innerHeight }; });
-const fill = Math.min(full.vw, full.vh * 4 / 3);
-check("full screen: 4:3, as large as fits, in the middle",
-  Math.abs(full.width / full.height - 4 / 3) < 0.01 && Math.abs(full.width - fill) < 2
-    && Math.abs(full.x - (full.vw - full.width) / 2) < 2 && Math.abs(full.y - (full.vh - full.height) / 2) < 2,
-  `${Math.round(full.width)} x ${Math.round(full.height)} at ${Math.round(full.x)}, ${Math.round(full.y)} on ${full.vw} x ${full.vh}`);
+const full = await page.$eval("#canvas", (c) => { const b = c.getBoundingClientRect(); return { width: b.width, height: b.height, vw: innerWidth, vh: innerHeight, fit: getComputedStyle(c).objectFit, w: c.width, h: c.height }; });
+check("full screen: the whole screen, the picture contained at 16:10",
+  Math.abs(full.width - full.vw) < 2 && Math.abs(full.height - full.vh) < 2 && full.fit === "contain" && full.w * 10 === full.h * 16,
+  `${Math.round(full.width)} x ${Math.round(full.height)} on ${full.vw} x ${full.vh}, ${full.fit}, ${full.w} x ${full.h}`);
 await page.screenshot({ path: path.join(shotDir, "web-priv-full.png") });
 await page.evaluate(() => document.exitFullscreen());
 await sleep(1000);
@@ -173,7 +172,7 @@ if (process.env.HIRES === "0") {
 }
 if (process.env.HIRES && process.env.HIRES !== "0") {
   const size = await page.$eval("#canvas", (c) => `${c.width} x ${c.height}`);
-  check("the emulator's picture is 640 x 480", size === "640 x 480", size);
+  check("the emulator's picture is 640 x 400 (each game pixel 2 x 2)", size === "640 x 400" && logs.some((l) => /the picture is 640 x 400/.test(l)), size);
   await sleep(6000);
   const fps = logs.map((l) => /Privateer: t=[\d.]+, (\d+) \w+ frames/.exec(l)).filter(Boolean).map((m) => +m[1]).slice(-5);
   check("28 frames a second with it", fps.length > 0 && fps.reduce((a, b) => a + b, 0) / fps.length >= 27.5, fps.join(" "));
