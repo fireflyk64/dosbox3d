@@ -1262,3 +1262,29 @@ carries the middle column, the Gothri's right), so the parts are now gathered in
 (a part that is not -- a band of colours, a picture -- the game's blocks there); a line along a middle column is drawn
 in both its fine columns (the one way it mirrors itself).  Measured: every ship's drawing has each pixel's mirror of its
 colour, except where the game's own art has none (the Broadsword's one pixel, the Tarsus's offset cockpit).
+
+**The user's notes on every ship (2026-11-23).**  "Paradign should have every pod be rounded / Gothri outside wings
+should be rounded / Stilettos back engines should be flat and the front bright wing stabilizers should be at high res
+too / Tarsis front cockpit should connect through the 2 weapon pods. There shouldn't be gaps / ... dralthi outer hull
+should be smooth too and rounded".  Made, first in a scratch prototype on the dumped pictures (wire2.py), then here:
+- no part is judged a picture any more: the Stiletto's stabilisers, the Dralthi's, Gladius's and Kamekh's bands are
+  lines now;
+- a piece of four pixels or fewer touching a solid part (orthogonally) is solid too: the Stiletto's engines, a yellow
+  block with an orange row at its end, are flat blocks;
+- a pod is a ring: for each colour, a region of other pixels (4-connected) that touches no edge, of 200 pixels at
+  most; its loop the colour's pixels about it (a solid part's not counted); refused if two corners of the loop's
+  bounding box are its own (a box: the Tarsus's cells stay square) or if it runs along a part kept as blocks; an
+  upright ellipse fitted (least squares about the box's middle) with radii of 1.5 to 14 pixels and every loop pixel
+  within 0.8 of it is drawn instead, its pixels no chain's;
+- a line's end (a pixel with no more than one link of its colour) reaches half-way to each touching pixel of another
+  colour (a diagonal one only where no corner pixel of a third colour comes between): the Tarsus's cockpit bar meets
+  its weapon pods.
+Curves through the Gothri's and the Dralthi's hull corners were tried (a bulge test, Catmull-Rom through the points)
+and taken out: "the gothri and dralthi were acceptable before and this edit made it way worse, please revert".  The
+Talon's front (its canopy and engines, one part of 94 pixels) stays the game's blocks: "I rather liked the blocky front
+of the talon", "a special exemption for talon is fine--everything else is ok".  A part is known by its frame and its
+lit pixels, not their colours (those are its damage): kWireBlockParts holds that part's FNV-1a hash (C7EFE729, the
+same in both Talons).  Measured with ship1.sh, all sixteen: no game errors; every drawing's pixels have their mirror of
+the colour (but the Broadsword's 4 and the Tarsus's offset cockpit, as the game's art); the thirteen ships the user saw
+and passed are pixel for pixel as they saw them.  (The rig's lock sometimes takes another object -- a cargo pod at
+4.9 km -- instead of the spawned Paradigm: its own picture with the resolution off shows the same; it is retried.)

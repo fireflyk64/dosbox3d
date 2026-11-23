@@ -687,41 +687,14 @@ bool letter(const Target &t, const Shape &s, int x, int y, int index, Bit8u c) {
 // pixels' outline 60 in 100 the same about one column or the line between two: the shields' arcs, one side's to its
 // state, differ), wherever the art is the same as its mirror about a pixel the canvas's left half is copied onto its
 // right, pixel for pixel, each copy taking its colour from the art's right half there (a side's damage shows) -- so
-// the hull is drawn exactly symmetric whatever the line's rounding did, and a side's own state stays its own.  Worked out once a shape (its hash), 8 kept;
-// shapes over 64 x 64, and pictures (line_art), stay the game's blocks.
-
-// Line art, not a picture: at most 30 in 100 of its pixels in a square of four lit pixels (a face on the comm screen
-// is nearly all such squares; a ship's wireframe a few, at its joints and small solid parts).  Kept for 32 shapes.
-bool line_art(const Shape &s) {
-    static Bit32u hashes[32];
-    static bool answers[32];
-    static int used = 0, next = 0;
-    const Bit32u h = shape_hash(s);
-    for (int i = 0; i < used; i++) {
-        if (hashes[i] == h) return answers[i];
-    }
-    int lit = 0, solid = 0;
-    auto on = [&](int u, int v) { return u >= 0 && v >= 0 && u < s.w && v < s.h && s.px[v * s.w + u] >= 0; };
-    for (int v = 0; v < s.h; v++) {
-        for (int u = 0; u < s.w; u++) {
-            if (!on(u, v)) continue;
-            lit++;
-            bool in = false;
-            for (int dv = -1; dv <= 0 && !in; dv++) {
-                for (int du = -1; du <= 0 && !in; du++) {
-                    in = on(u + du, v + dv) && on(u + du + 1, v + dv) && on(u + du, v + dv + 1) && on(u + du + 1, v + dv + 1);
-                }
-            }
-            solid += in;
-        }
-    }
-    const bool answer = lit > 0 && solid * 100 <= lit * 30;
-    hashes[next] = h;
-    answers[next] = answer;
-    next = (next + 1) % 32;
-    if (used < 32) used++;
-    return answer;
-}
+// the hull is drawn exactly symmetric whatever the line's rounding did, and a side's own state stays its own.
+// 2026-11-23, the user's notes on every ship ("Paradign should have every pod be rounded", "Stilettos back engines
+// should be flat", "Tarsis front cockpit should connect through the 2 weapon pods"): a piece of four pixels or fewer
+// touching a solid part is solid; a colour's loop round a small hole that fits an upright ellipse is drawn as one; a
+// line's end reaches half-way to a touching pixel of another colour; every part is drawn so (no part judged a picture),
+// except the parts on kWireBlockParts ("I rather liked the blocky front of the talon").  Curves through the hulls'
+// corners were tried and taken out ("the gothri and dralthi were acceptable before and this edit made it way worse").
+// Worked out once a shape (its hash), 8 kept; shapes over 96 x 96 stay the game's blocks.
 
 struct Wireframe {
     Bit32u hash;
@@ -781,6 +754,7 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
             if (e2 <= dx) { err += dx; Y += sy; }
         }
     };
+    static const int kDu8[8] = { 1, 1, 0, -1, -1, -1, 0, 1 }, kDv8[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
     // solid parts: a pixel in a square of four of its colour, the game's block
     std::vector<char> solid(w * h, 0);
     for (int v = 0; v < h; v++) {
@@ -797,11 +771,145 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
                     }
                 }
             }
-            if (solid[v * w + u]) {
-                put(2 * u, 2 * v, c);
-                put(2 * u + 1, 2 * v, c);
-                put(2 * u, 2 * v + 1, c);
-                put(2 * u + 1, 2 * v + 1, c);
+        }
+    }
+    // A piece of four pixels or fewer of a colour touching a solid part is solid too (the Stiletto's engines: a yellow
+    // block and the orange row at its end -- the user: "Stilettos back engines should be flat")
+    {
+        std::vector<char> seen(w * h, 0);
+        std::vector<int> piece;
+        for (int v = 0; v < h; v++) {
+            for (int u = 0; u < w; u++) {
+                const int c = col(u, v);
+                if (c < 0 || solid[v * w + u] || seen[v * w + u]) continue;
+                piece.assign(1, v * w + u);
+                seen[v * w + u] = 1;
+                for (size_t i = 0; i < piece.size() && piece.size() <= 5; i++) {
+                    const int pu = piece[i] % w, pv = piece[i] / w;
+                    for (int k = 0; k < 8; k++) {
+                        const int nu = pu + kDu8[k], nv = pv + kDv8[k];
+                        if (col(nu, nv) == c && !solid[nv * w + nu] && !seen[nv * w + nu]) {
+                            seen[nv * w + nu] = 1;
+                            piece.push_back(nv * w + nu);
+                        }
+                    }
+                }
+                if (piece.size() > 4) continue;
+                bool touches = false;
+                for (size_t i = 0; i < piece.size() && !touches; i++) {
+                    const int pu = piece[i] % w, pv = piece[i] / w;
+                    for (int k = 0; k < 8 && !touches; k += 2) {        // (the four orthogonal neighbours)
+                        const int nu = pu + kDu8[k], nv = pv + kDv8[k];
+                        touches = nu >= 0 && nv >= 0 && nu < w && nv < h && solid[nv * w + nu] == 1;
+                    }
+                }
+                if (touches) {
+                    for (size_t i = 0; i < piece.size(); i++) solid[piece[i]] = 2;
+                }
+            }
+        }
+    }
+    for (int v = 0; v < h; v++) {
+        for (int u = 0; u < w; u++) {
+            if (!solid[v * w + u]) continue;
+            const int c = col(u, v);
+            put(2 * u, 2 * v, c);
+            put(2 * u + 1, 2 * v, c);
+            put(2 * u, 2 * v + 1, c);
+            put(2 * u + 1, 2 * v + 1, c);
+        }
+    }
+    // A colour's loop round a hole that is an ellipse is drawn as one (the Paradigm's pods: the user, "Paradign should
+    // have every pod be rounded"): for each colour, a region of other pixels (4-connected) that touches no edge, of 200
+    // pixels at most; its loop, the colour's pixels about it; not a box (two corners of its bounding box its own
+    // pixels: the Tarsus's cells stay square), an upright ellipse fitted (least squares) with radii of 1.5 to 14 pixels
+    // and every pixel of the loop within 0.8 of it.  Its pixels are then the ellipse's: no chain's; a chain reaching one
+    // ends at its middle.
+    std::vector<int> ring(w * h, 0);
+    {
+        std::vector<int> region(w * h, 0), stamp(w * h, 0), comp, loop;
+        int stampNo = 0, rings = 0;
+        std::vector<int> colours;
+        for (int i = 0; i < w * h; i++) {
+            if (s.px[i] >= 0 && std::find(colours.begin(), colours.end(), (int)s.px[i]) == colours.end() && colours.size() < 32) {
+                colours.push_back(s.px[i]);
+            }
+        }
+        for (size_t ci = 0; ci < colours.size() && rings < 64; ci++) {
+            const int c = colours[ci];
+            std::fill(region.begin(), region.end(), 0);
+            for (int start = 0; start < w * h && rings < 64; start++) {
+                if (region[start] || col(start % w, start / w) == c) continue;
+                comp.assign(1, start);
+                region[start] = 1;
+                bool edge = false;
+                for (size_t i = 0; i < comp.size() && comp.size() <= 201; i++) {
+                    const int pu = comp[i] % w, pv = comp[i] / w;
+                    if (pu == 0 || pv == 0 || pu == w - 1 || pv == h - 1) edge = true;
+                    for (int k = 0; k < 8; k += 2) {
+                        const int nu = pu + kDu8[k], nv = pv + kDv8[k];
+                        if (nu < 0 || nv < 0 || nu >= w || nv >= h || region[nv * w + nu] || col(nu, nv) == c) continue;
+                        region[nv * w + nu] = 1;
+                        comp.push_back(nv * w + nu);
+                    }
+                }
+                if (edge || comp.size() > 200) continue;
+                stampNo++;
+                loop.clear();
+                bool line = true;                       // (a loop along a part kept as blocks is no ring: the Talon's)
+                for (size_t i = 0; i < comp.size() && line; i++) {
+                    const int pu = comp[i] % w, pv = comp[i] / w;
+                    for (int k = 0; k < 8 && line; k++) {
+                        const int nu = pu + kDu8[k], nv = pv + kDv8[k];
+                        if (col(nu, nv) == c && (size_t)(nv * w + nu) < block.size() && block[nv * w + nu]) line = false;
+                        if (col(nu, nv) != c || solid[nv * w + nu] || stamp[nv * w + nu] == stampNo) continue;
+                        stamp[nv * w + nu] = stampNo;
+                        loop.push_back(nv * w + nu);
+                    }
+                }
+                if (!line || loop.size() < 6) continue;
+                int u0 = w, u1 = -1, v0 = h, v1 = -1;
+                for (size_t i = 0; i < loop.size(); i++) {
+                    const int pu = loop[i] % w, pv = loop[i] / w;
+                    u0 = std::min(u0, pu); u1 = std::max(u1, pu); v0 = std::min(v0, pv); v1 = std::max(v1, pv);
+                }
+                const int corners = (stamp[v0 * w + u0] == stampNo) + (stamp[v0 * w + u1] == stampNo) +
+                                    (stamp[v1 * w + u0] == stampNo) + (stamp[v1 * w + u1] == stampNo);
+                if (corners >= 2) continue;
+                const double cx = (u0 + u1) / 2.0, cy = (v0 + v1) / 2.0;
+                double M[4][5] = { { 0 } };
+                for (size_t i = 0; i < loop.size(); i++) {
+                    const double du = loop[i] % w - cx, dv = loop[i] / w - cy, f[4] = { du * du, dv * dv, du, dv };
+                    for (int a = 0; a < 4; a++) {
+                        M[a][4] += f[a];
+                        for (int b = 0; b < 4; b++) M[a][b] += f[a] * f[b];
+                    }
+                }
+                double sol[4];
+                if (!solve4(M, sol) || sol[0] <= 0 || sol[1] <= 0) continue;
+                const double ex = cx - sol[2] / (2 * sol[0]), ey = cy - sol[3] / (2 * sol[1]);
+                const double K = 1 + sol[2] * sol[2] / (4 * sol[0]) + sol[3] * sol[3] / (4 * sol[1]);
+                if (K <= 0) continue;
+                const double ea = sqrt(K / sol[0]), eb = sqrt(K / sol[1]);
+                if (ea < 1.5 || eb < 1.5 || ea > 14 || eb > 14) continue;
+                bool fits = true;
+                for (size_t i = 0; i < loop.size() && fits; i++) {
+                    const double du = loop[i] % w - ex, dv = loop[i] / w - ey;
+                    const double rho = sqrt((du / ea) * (du / ea) + (dv / eb) * (dv / eb));
+                    fits = rho > 1e-9 && sqrt(du * du + dv * dv) * fabs(1 - 1 / rho) <= 0.8;
+                }
+                if (!fits) continue;
+                rings++;
+                for (size_t i = 0; i < loop.size(); i++) ring[loop[i]] = rings;
+                const int n = 16 + (int)(16 * std::max(ea, eb));
+                double px0 = 2 * (ex + ea) + 1, py0 = 2 * ey + 1;
+                for (int i = 1; i <= n; i++) {
+                    const double th = i * 6.283185307179586 / n;
+                    const double px1 = 2 * (ex + ea * cos(th)) + 1, py1 = 2 * (ey + eb * sin(th)) + 1;
+                    drawf(px0, py0, px1, py1, c);
+                    px0 = px1;
+                    py0 = py1;
+                }
             }
         }
     }
@@ -811,7 +919,7 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
     for (int v = 0; v < h; v++) {
         for (int u = 0; u < w; u++) {
             const int c = col(u, v);
-            if (c < 0 || solid[v * w + u]) continue;
+            if (c < 0 || solid[v * w + u] || ring[v * w + u]) continue;
             for (int k = 0; k < 8; k++) {
                 const int nu = u + kDu[k], nv = v + kDv[k];
                 if (col(nu, nv) != c) continue;
@@ -839,7 +947,7 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
             c.v.push_back(nv);
             u = nu;
             v = nv;
-            if (solid[v * w + u] || degree[v * w + u] != 2) break;
+            if (solid[v * w + u] || ring[v * w + u] || degree[v * w + u] != 2) break;
             int next = -1;
             for (int j = 0; j < 8 && next < 0; j++) {
                 if ((link[v * w + u] & (1 << j)) && !(used[v * w + u] & (1 << j))) next = j;
@@ -853,7 +961,7 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
         for (int v = 0; v < h; v++) {
             for (int u = 0; u < w; u++) {
                 const int i = v * w + u;
-                if (col(u, v) < 0 || solid[i] || (pass == 0 && degree[i] == 2)) continue;
+                if (col(u, v) < 0 || solid[i] || ring[i] || (pass == 0 && degree[i] == 2)) continue;
                 for (int k = 0; k < 8; k++) {
                     if ((link[i] & (1 << k)) && !(used[i] & (1 << k))) walk(u, v, k);
                 }
@@ -968,9 +1076,27 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
         }
         for (size_t i = 0; i < p.chain->u.size(); i++) inChain[p.chain->v[i] * w + p.chain->u[i]] = 1;
     }
-    for (int v = 0; v < h; v++) {                   // (a pixel in no chain, nor solid: its middle)
+    for (int v = 0; v < h; v++) {                   // (a pixel in no chain, nor solid, nor a ring's: its middle)
         for (int u = 0; u < w; u++) {
-            if (col(u, v) >= 0 && !solid[v * w + u] && !inChain[v * w + u]) put(2 * u + 1, 2 * v + 1, col(u, v));
+            if (col(u, v) >= 0 && !solid[v * w + u] && !ring[v * w + u] && !inChain[v * w + u]) put(2 * u + 1, 2 * v + 1, col(u, v));
+        }
+    }
+    // A line's end reaches half-way to a pixel of another colour that touches it (a diagonal one only where no corner
+    // pixel of another colour comes between): the colours meet as the game's pixels do (the Tarsus's cockpit bar and its
+    // weapon pods: the user, "Tarsis front cockpit should connect through the 2 weapon pods. There shouldn't be gaps")
+    for (int v = 0; v < h; v++) {
+        for (int u = 0; u < w; u++) {
+            const int i = v * w + u, c = col(u, v);
+            if (c < 0 || solid[i] || ring[i] || degree[i] > 1) continue;
+            for (int k = 0; k < 8; k++) {
+                const int nu = u + kDu[k], nv = v + kDv[k], nc = col(nu, nv);
+                if (nc < 0 || nc == c) continue;
+                if (kDu[k] && kDv[k]) {
+                    const int a = col(nu, v), b = col(u, nv);
+                    if ((a >= 0 && a != c) || (b >= 0 && b != c)) continue;
+                }
+                drawf(2 * u + 1, 2 * v + 1, u + nu + 1, v + nv + 1, c);      // (to the middle between the two)
+            }
         }
     }
     // a mirror image?  The axis (u + u' of a mirrored pair) near the middle that most of the outline agrees with
@@ -1020,6 +1146,14 @@ void wire_make(const Shape &s, const std::vector<char> &block, Wireframe &out) {
                 continue;
             }
             const int u = X >> 1, v = Y >> 1;
+            bool same = true;                           // (the art's colours a mirror image here too: the copy's own)
+            for (int dv = -1; dv <= 1 && same; dv++) {
+                for (int du = -1; du <= 1 && same; du++) same = col(u + du, v + dv) == col(best - u - du, v + dv);
+            }
+            if (same) {
+                out.fine[Y * W + X] = c;
+                continue;
+            }
             int pick = -1, any = -1;
             for (int k = -1; k < 8 && pick < 0; k++) {
                 const int qu = k < 0 ? u : u + kDu[k], qv = k < 0 ? v : v + kDv[k];
@@ -1052,8 +1186,22 @@ bool target_art_call() {
 // one after another) are gathered into one picture as the game lays them, and that is drawn when anything else is
 // drawn next (or the frame is shown): so its lines run on across the parts, and its mirror image is the whole ship's
 // (the halves are not each other's mirrors: the drone's left half has the middle column's pixels, the Gothri's right).
+//
+// A part on this list stays the game's blocks: the Talon's front (its canopy and engines, 94 pixels; the user: "I rather
+// liked the blocky front of the talon", "a special exemption for talon is fine").  A part is known by its frame and
+// which of its pixels are lit (not their colours: those change with its damage): FNV-1a of w, h, left, top, then lit.
+const Bit32u kWireBlockParts[] = { 0xC7EFE729u };
+
+Bit32u part_mask_hash(const Shape &s) {
+    Bit32u h = 2166136261u;
+    const int head[4] = { s.w, s.h, s.left, s.top };
+    for (int i = 0; i < 4; i++) h = (h ^ (Bit32u)head[i]) * 16777619u;
+    for (size_t i = 0; i < s.px.size(); i++) h = (h ^ (Bit32u)(s.px[i] >= 0 ? 1 : 0)) * 16777619u;
+    return h;
+}
+
 Shape g_wireComp;
-std::vector<char> g_wireBlock;      // per pixel of it: from a part that is no line art (a picture, a band): the game's block
+std::vector<char> g_wireBlock;      // per pixel of it: from a part on the list above, drawn as the game's blocks
 bool g_wirePending = false;
 Target g_wireT;
 int g_wireX = 0, g_wireY = 0;
@@ -1084,11 +1232,13 @@ void wire_gather(const Target &t, const Shape &s, int x, int y) {
         g_wireY = y;
         g_wirePending = true;
     }
-    const char art = line_art(s) ? 0 : 1;        // (each part judged on its own: a band of colours, a picture)
+    const Bit32u part = part_mask_hash(s);
+    char keep = 0;
+    for (size_t i = 0; i < sizeof(kWireBlockParts) / sizeof(kWireBlockParts[0]); i++) keep |= kWireBlockParts[i] == part;
     for (size_t i = 0; i < s.px.size() && i < g_wireComp.px.size(); i++) {
         if (s.px[i] >= 0) {
             g_wireComp.px[i] = s.px[i];
-            g_wireBlock[i] = art;
+            g_wireBlock[i] = keep;
         }
     }
 }
