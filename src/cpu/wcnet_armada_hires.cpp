@@ -765,20 +765,21 @@ void cockpit_turn() {
 }
 
 // WCARMHIRESCALLS=1 (a test aid, ARMADA.EXE): during the cockpit's stage, each library routine's call logged once a
-// caller, with its arguments (which draws the reticle, the brackets, the radar, the displays)
+// caller, with its arguments (which draws the reticle, the brackets, the radar, the displays); =2: at any time (the
+// strategy map's, the menus')
 const Bit16u kLibSeg[] = { 0x5F32, 0x5F91, 0x5F69, 0x5F55, 0x5F51, 0x5FB6, 0x5FB7, 0x5FCB, 0x6493, 0x5E2C, 0x5EE6,
                            0x5D8D, 0x5DE6, 0x5D70 };
 const Bit16u kLibOff[] = { 0x0006, 0x0008, 0x0008, 0x0004, 0x000E, 0x0006, 0x000C, 0x0004, 0x0ECC, 0x000E, 0x000E,
                            0x0006, 0x0242, 0x0000 };
 int g_calls = -1;
 bool calls_on() {
-    if (g_calls < 0) g_calls = getenv("WCARMHIRESCALLS") && g_b && !strcmp(g_b->exe, "ARMADA.EXE") ? 1 : 0;
-    return g_calls == 1;
+    if (g_calls < 0) g_calls = getenv("WCARMHIRESCALLS") && g_b && !strcmp(g_b->exe, "ARMADA.EXE") ? atoi(getenv("WCARMHIRESCALLS")) : 0;
+    return g_calls >= 1;
 }
 bool lib_call(Bit16u para, Bit16u ip) {
     for (size_t i = 0; i < sizeof(kLibSeg) / sizeof(kLibSeg[0]); i++) {
         if (para != kLibSeg[i] || ip != kLibOff[i]) continue;
-        if (g_pass != 5) return true;
+        if (g_calls == 1 && g_pass != 5) return true;
         static std::set<Bit64u> seen;
         const PhysPt sp = SegPhys(ss) + reg_sp;
         const Bit16u retIp = mem_readw(sp), retCs = (Bit16u)(mem_readw(sp + 2) - g_load);

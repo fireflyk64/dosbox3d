@@ -247,6 +247,7 @@ int steered(double v) {
 
 // WCNET_ARM_TRACE=<seconds>: research, every call and return of two whole frames from then (frame = the control
 // packet's loop end), to $WCNET_DUMP_DIR/trace.txt: "<instructions> C|R|I <CS>:<IP> -> <CS>:<IP> <mode>".
+// WCNET_ARM_TRACEMS=<ms> with it: that long from then instead (out of flight: the strategy map, the menus).
 int g_traceState = -1;          // -1 unset, 0 off, 1 armed (waiting for the time), 2 waiting for a frame's start, 3 on, 4 done
 double g_traceAt;
 FILE *g_traceFile;
@@ -410,6 +411,19 @@ bool arm_tracing() {
         if (g_traceState) g_traceAt = atof(env) * 1000.0;
     }
     if (g_traceState == 1 && g_arm && PIC_FullIndex() >= g_traceAt) g_traceState = 2;
+    static double windowMs = -1;
+    if (windowMs < 0) {
+        const char *env = getenv("WCNET_ARM_TRACEMS");
+        windowMs = env && env[0] ? atof(env) : 0;
+    }
+    if (windowMs > 0 && g_traceState == 2) {
+        trace_frame_mark();         // (opens the file)
+    } else if (windowMs > 0 && g_traceState == 3 && PIC_FullIndex() >= g_traceAt + windowMs) {
+        fclose(g_traceFile);
+        g_traceFile = NULL;
+        g_traceState = 4;
+        wclog(1, "Armada trace: done, %llu instructions in %.0f ms", (unsigned long long)g_traceN, windowMs);
+    }
     return g_traceState == 3;
 }
 
@@ -591,6 +605,50 @@ bool arm_script_item(const std::string &item, double t) {
         wclog(1, "key script: CS %04X:%08X DS %04X ES %04X SS %04X pmode %d v86 %d cr3 %08X load %04X",
               SegValue(cs), (unsigned)reg_eip, SegValue(ds), SegValue(es), SegValue(ss), cpu.pmode ? 1 : 0,
               (reg_flags & FLAG_VM) ? 1 : 0, (unsigned)paging.cr3, g_load);
+        return true;
+    }
+    // !armmapquarter=<0..3>|back: research (ARMADA.EXE), the strategy map's view put on one quarter of a view twice as
+    // wide and tall (left to right, top to bottom), that view kept within the sector as the game keeps its own (its
+    // centre's limits +46h..+4Ch are the sector less half the game's 197 x 137 panel; a sector narrower than the
+    // doubled view: its middle); back: the game's own scroll again
+    if (item.compare(0, 15, "!armmapquarter=") == 0) {
+        if (!g_arm || strcmp(g_arm->exe, "ARMADA.EXE") != 0) return true;
+        static Bit16s keptX, keptY;
+        static bool kept;
+        const PhysPt ds = (PhysPt)(Bit16u)(g_load + 0x6F1E) << 4;
+        const PhysPt view = ds + mem_readw(ds + 0x76CA);
+        const std::string v = item.substr(15);
+        if (v == "back") {
+            if (kept) { mem_writew(view + 0x42, (Bit16u)keptX); mem_writew(view + 0x44, (Bit16u)keptY); kept = false; }
+            return true;
+        }
+        if (!kept) { keptX = (Bit16s)mem_readw(view + 0x42); keptY = (Bit16s)mem_readw(view + 0x44); kept = true; }
+        const int q = atoi(v.c_str());
+        const int left = (Bit16s)mem_readw(view + 0x46) - 98, right = (Bit16s)mem_readw(view + 0x48) + 99;
+        const int top = (Bit16s)mem_readw(view + 0x4A) - 68, bottom = (Bit16s)mem_readw(view + 0x4C) + 69;
+        int cx = keptX + 203, cy = keptY + 83;
+        cx = left + 197 > right - 197 ? (left + right) / 2 : std::max(left + 197, std::min(right - 197, cx));
+        cy = top + 137 > bottom - 137 ? (top + bottom) / 2 : std::max(top + 137, std::min(bottom - 137, cy));
+        mem_writew(view + 0x42, (Bit16u)(cx - 197 + (q & 1) * 197 - 105));
+        mem_writew(view + 0x44, (Bit16u)(cy - 137 + (q >> 1) * 137 - 15));
+        wclog(1, "key script %.1fs: the map's quarter %d of the doubled view at %d,%d (sector x %d..%d, y %d..%d; the "
+              "game's centre %d,%d)", t, q, cx, cy, left, right, top, bottom, keptX + 203, keptY + 83);
+        return true;
+    }
+    // !armmapshift=<dx>:<dy>: research (ARMADA.EXE), the strategy map's view moved by that many world units (its scroll,
+    // the view object's +42h/+44h: DS:[76CA]; screen = world - scroll, one unit a pixel), the game's limits not applied
+    if (item.compare(0, 13, "!armmapshift=") == 0) {
+        if (!g_arm || strcmp(g_arm->exe, "ARMADA.EXE") != 0) return true;
+        const PhysPt ds = (PhysPt)(Bit16u)(g_load + 0x6F1E) << 4;
+        const PhysPt view = ds + mem_readw(ds + 0x76CA);
+        const char *v = item.c_str() + 13, *colon = strchr(v, ':');
+        const int dx = atoi(v), dy = colon ? atoi(colon + 1) : 0;
+        const Bit16s sx = (Bit16s)mem_readw(view + 0x42), sy = (Bit16s)mem_readw(view + 0x44);
+        mem_writew(view + 0x42, (Bit16u)(sx + dx));
+        mem_writew(view + 0x44, (Bit16u)(sy + dy));
+        wclog(1, "key script %.1fs: the map's scroll %d,%d -> %d,%d (limits of its centre x %d..%d, y %d..%d)", t, sx, sy,
+              sx + dx, sy + dy, (Bit16s)mem_readw(view + 0x46), (Bit16s)mem_readw(view + 0x48),
+              (Bit16s)mem_readw(view + 0x4A), (Bit16s)mem_readw(view + 0x4C));
         return true;
     }
     // !armsteer=<x>:<y> (-1..1, right and down positive) is the page's right-button drag held there; !armsteer=off
