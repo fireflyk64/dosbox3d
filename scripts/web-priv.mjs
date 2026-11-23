@@ -186,11 +186,15 @@ if (process.env.HIRES && process.env.HIRES !== "0") {
     if (want === "off") await page.screenshot({ path: path.join(shotDir, "web-priv-hires-off.png"), clip: at });
   }
 }
-// the page's own keyboard: Right held 0.6 s, then a tap
+// the page's own keyboard: Right held until the stop is reached (at most 4 s: a fixed 0.6 s failed twice when the
+// browser stalled for a second and a half after full screen, the game's own 28 frames a second either side), then a tap
 await page.focus("#canvas");
 const before = logs.length;
 await page.keyboard.down("ArrowRight");
-await sleep(600);
+for (let held = 0; held < 4000; held += 50) {
+  if (held >= 600 && logs.slice(before).filter((l) => /arrows [+-]\d+ -256/.test(l)).length >= 3) break;
+  await sleep(50);
+}
 await page.keyboard.up("ArrowRight");
 await sleep(1500);
 await page.keyboard.down("ArrowRight");
