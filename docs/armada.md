@@ -19,8 +19,10 @@ Open [DOSBox](https://fireflyk64.github.io/dosbox/?game=armada) and drop your GO
 ## Controls
 
 - **Keyboard.** Steer with the arrow keys or numeric keypad. A tap turns a little; held, a key builds to the full turn in a third of a second, as in Wing Commander and Privateer. **Shift** with an arrow turns at full at once. **Space** fires guns, **Enter** fires missiles, **Tab** applies afterburners, and the keypad **+** and **−** change speed.
-- **Mouse.** Click normally in the menus and on the strategy map. In flight, hold the right button and drag to steer, as a stick would: the further the drag from where the button went down, the faster the turn (64 px is the full turn of an arrow key held). Release the right button to center the steering. Press the left button while steering to fire guns.
-- **Joystick or gamepad.** Connect the controller, press a button so the browser sees it, and pick its **Built in** entry under **Controller** before pressing **Fly**. Calibrate **JOY 1** in the game's Options before entering the in-game network lobby. In Armada, **Alt+O** opens Options from the main menu. [Origin's Armada Play Guide](https://download.wcnews.com/files/arma/Armada%20-%20Play%20Guide%20-%20Text.pdf)
+- **Mouse.** Click normally in the menus and on the strategy map. In flight, hold the right button and drag to steer, as a stick would: the further the drag from where the button went down, the faster the turn (64 px is the full turn of an arrow key held). Release the right button to center the steering. Press the left button while steering to fire guns. Dragging up raises the nose; tick **Invert mouse** to steer as a flight stick instead (dragging up, the nose goes down, the arrow keys' way).
+- **Joystick or gamepad.** Connect the controller, press a button so the browser sees it, and pick its **Built in** entry under **Controller** before pressing **Fly**. Calibrate **JOY 1** in the game's Options before entering the in-game network lobby. In Armada, **Alt+O** opens Options from the main menu; **JOY 1** asks for the stick at the upper left, the lower right and the centre, each with the button. The page's port counts its readings (`timed=false`), so a calibration holds at any emulated speed, the high resolution's included. [Origin's Armada Play Guide](https://download.wcnews.com/files/arma/Armada%20-%20Play%20Guide%20-%20Text.pdf)
+
+- **High resolution (2x).** Tick it in the room to fly at 640×400 (your own screen only); <kbd>`</kbd> flips it while flying. Off unless ticked.
 
 ## Network and checks
 
@@ -53,3 +55,32 @@ When an arrow is let go, the log says how it ramped ("Armada: Right held 0.85 s,
 
 **The mouse.** Armada uses the mouse only in its menus. In flight, the page's right-button drag steers through the same place, as a stick would. The page sends the drag's offset from where the button went down (`wc_web_arm_steer`, −1 to 1 each way, right and down positive; 3 px dead, full at 64 px). At the loop's end the emulator writes it into the packet in proportion to the keys' stop, on any axis that no key and no joystick moves this frame. Letting go of the button centres it. The left button with the right fires the guns (Space). As with the keys, the packet carries the turn to the other machines. Measured natively with the `!armsteer=x:y` key-script aid: a quarter drag wrote 8 and turned the view about 12 px per 0.1 s, about a fifth of the full turn; a full drag wrote 30; an arrow pressed during a drag ramped its own axis while the drag held the other.
 
+
+## Twice the resolution (src/cpu/wcnet_armada_hires.cpp)
+
+The user, 2026-11-22: "lets figure out how to double the screen x and y for armada. This is a polygon renderer so it should be scalable"; "It should be toggleable from the browser too"; "We will need to change clip distance so that sub pixel in 320 times will show up when size of a 640 pixel"; and, of the frame rate, "I want to make sure the uprez doesn't change game behaivor at all".
+
+**How Armada draws a flight.** ARMADA.EXE runs in V86 mode under JEMM.OVL, Origin's own memory manager (16-bit protected mode at selector 18h maps EMS-like pages; a 32-bit helper at 98h copies pages and writes the changed dwords of a frame to mode 13h). Every flight frame the frame function (seg2B4B) draws into a 320x200 back buffer, a bitmap record (segment, row table, clip rectangle) at DS:[621A], in one section:
+
+| Offset from the section's top (2B4B:061A) | What |
+|---|---|
+| +00..+0E | the buffer cleared to the frame's colour |
+| +11 | the display list (DS:85A4) emptied |
+| +25 | setup: every point projected through the view (DS:SI+8, copied to DS:83BA: centre x, y; scale x, y in 8.8), the list built |
+| +3B | the list sorted by depth (a radix sort) |
+| +51 | the list drawn: each entry's own draw (polygons through the library's filler, 22-byte corners already in pixels) |
+| +57..+80 | an optional overlay, then the cockpit and instruments |
+
+The CD build and both Proving Grounds programs have the same section at their own places (each found by its bytes and checked at the first frame; a program that differs keeps its own picture).
+
+**The four quarters.** With the picture on, the section runs four times first, each with the view made a quarter's of a 640x400 picture (centre 2c less the quarter's corner, scale doubled, the clip rectangle likewise), and each time the buffer is kept as that quarter. Then it runs once exactly as the game runs it, its view and its state, so everything the frame leaves behind is the game's own. That pass's scene is kept, the buffer filled with colour FF (neither cockpit draws it), and the cockpit drawn over it as usual: where FF is left the 640x400 scene shows, anywhere else the game's pixel doubled. The buffer then gets the game's scene back under the cockpit, so the screen's memory holds exactly the game's frame. The picture is shown through the VGA override (Privateer's seam), from the first frame drawn so until the screen shows anything else (a menu, the end of a battle).
+
+**What a draw changes is put back.** Some draws change their own object each time they run, which four extra passes would multiply: the star field moves its stars by the camera's motion (a resource of 12-byte positions), keeps its last camera place, and adjusts its count of stars by the frame rate; an explosion piece counts its frame on (+32). Before each pass after the first these are as they were before the frame, so only the game's own pass changes them. Found by comparing the whole emulated memory after passes 0, 1 and 2 (`!armside`) and by reading every kind of draw met (`WCARMHIRESDRAWS=1` logs each new one): what still differs between passes is the picture, per-vertex screen positions (rewritten by the game's pass), scratch, stacks, page tables and interrupt-time state (the music driver, the network, the timer).
+
+**Drawn here in the quarters.** The far-off sprites (the sun, the planets) are drawn by the game at a fixed size: in the quarters each pixel is drawn 2x2. The library's turned-and-scaled shapes (explosions) are drawn here too, at the doubled scale and clipped to the quarter (the game's skipped one whose middle lay in another quarter: a straight cut down the picture).
+
+**The draw range.** Armada draws nothing beyond DS:8646 (1,980 of its 5 m units, 9.9 km): a fighter comes in at 16 pixels wide. For the quarters it is 16 times as far (`WCARMHIRESFAR`), so ships come in when they are a few fine pixels; the game's own pass, targeting and the HUD keep the game's range.
+
+**The frame rate is the game's.** Armada holds its own frame time: after each frame it waits for 375 units of its timer (about 58 ms here, 17.1 frames a second), and in a room the simulation's rate is the session's. The four quarters take about three times the scene's work, so while the picture is 640x400 the emulated CPU gets three times the cycles (`WCARMHIRESCYCLES`; the game on a faster PC, waiting longer), and that wait is skipped ahead 0.05 ms at a time instead of spun (less than its timer's unit: it ends on the same unit). Measured in a two-machine battle with a missile, guns and the kill: 17.1 frames a second throughout, the passes 18-20 ms of the 58.3 ms frame (27 at the explosion); on the page (headless Chrome here) 17.1 frames a second and 1.00 emulated second a second for both pilots, in Armada and in Proving Grounds.
+
+`WCARMHIRES=1` at the launch (the page's box), `wc_web_arm_hires` while flying, <kbd>`</kbd> flips it. Off, none of it is watched. Test aids: `WCARMHIRESTIME=1` (the passes' time a frame), `WCARMHIRESCOLOURS=1` (the colours the cockpit's stage used), `WCARMHIRESMARKER=` (another marker), `!armhires=1|0`, `!armside`. Research tools: `WCNET_ARM_PROF=1` (where the CPU is), `WCNET_ARM_TRACE=<s>` (every call and return of two frames; `WCNET_ARM_PWATCH=<phys>` who writes a byte), `!armdump=<name>` (memory, the GDT, its code), `WCNET_ARM_PACKET=1` (the control packet's stick bytes).
