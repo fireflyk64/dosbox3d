@@ -1403,3 +1403,15 @@ drawing moves with the picture's place by whole fine pixels, so one canvas serve
 is gone again (the mirror runs once a picture now).  The same dogfight: all the hooks 15 ms a second (75 with the
 mirror every frame, 31 with its cache), the reticle and radar about nothing; the pictures pixel for pixel as before
 (the runs differ only where a blip is).
+
+**A damaged screen's static (2026-11-23).**  The user: "The black and white static when the vidscreen is broken also
+doesn't work", "the VDU static only worked at raw 320x200", "the static resolution should probably be at the 320x200
+level even with higher rez systems", "we don't want to up-rez the static"; then a save with the comm system damaged:
+"Just hit t and it flashes".  With it, T in flight shows the static on the left screen for a few frames; at both
+high-resolution levels it was missing.  A code trace with one screen pixel watched (scratch, dev only) found it: the
+span copy (seg205) carries it from the flight's buffer, where seg201+A writes it -- a routine of the graphics library
+none of the kPlaces was: (target, passes, colour), the target's clip filled with the colour or black by the bits of the
+BIOS's ROM from a random place (an LCG at ss:4242), so H never had it.  Now it is a place (OP_SNOW): its rectangle is
+noted (on the flight's buffer, 8 a frame) and at the span copy, the static in the buffer by then, those rectangles go
+into H as the game's own pixels, 2 x 2.  Measured with the user's save (scratch dmg13, dmg14): the static at both
+levels, 1,750-1,820 white pixels in its frames where the "NO TARGET" screen has 40-65, blocks of 2 x 2.

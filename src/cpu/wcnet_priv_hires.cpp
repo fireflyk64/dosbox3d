@@ -63,7 +63,7 @@ enum {
 };
 
 enum Op { OP_FILL, OP_CLEAR, OP_COPY, OP_ELLIPSE, OP_LINE, OP_PIXEL, OP_RECT, OP_SILHOUETTE, OP_SHAPE, OP_SCALE,
-          OP_SCALE_HAZE, OP_TURN, OP_POLY, OP_PRESENT, OP_CORNER_X, OP_CORNER_Y };
+          OP_SCALE_HAZE, OP_TURN, OP_POLY, OP_PRESENT, OP_CORNER_X, OP_CORNER_Y, OP_SNOW };
 
 struct Place { Bit16u para, ip; Op op; Bit8u code[3]; };
 const Place kPlaces[] = {
@@ -83,6 +83,12 @@ const Place kPlaces[] = {
     { 0x5D17, 0x0002, OP_PRESENT,    { 0xC8, 0x06, 0x00 } },    // seg205
     { 0x3771, 0x05D7, OP_CORNER_X,   { 0x8B, 0x46, 0xE7 } },    // seg091: a laser's corner, before it is rounded
     { 0x3771, 0x0621, OP_CORNER_Y,   { 0x8B, 0x46, 0xD3 } },
+    // seg201+A: a damaged screen's static (the user, 2026-11-23: "The black and white static when the vidscreen is
+    // broken also doesn't work", "the static resolution should probably be at the 320x200 level even with higher rez
+    // systems", "we don't want to up-rez the static"): (target, passes, colour), the target's whole clip filled with
+    // the colour or black by the bits of the BIOS's ROM at a random place -- found with a damaged comm system's save
+    // (T pressed), a pixel of the screen watched through a code trace
+    { 0x5B35, 0x000A, OP_SNOW,       { 0x55, 0x8B, 0xEC } },
 };
 enum { kPlaceCount = sizeof(kPlaces) / sizeof(kPlaces[0]) };
 enum {
@@ -107,6 +113,12 @@ struct Shape {
 
 struct Exact { int xi, yi; double x, y; };
 
+// The static drawn this frame (seg201's targets on the flight's buffer, 8 at most): at the span copy, when it is in
+// the buffer, these are put into H as the game's own pixels, 2 x 2 -- the static is never drawn at the high
+// resolution.
+struct Snow { int x0, y0, x1, y1; };
+Snow g_snow[8];
+int g_snowCount = 0;
 Bit8u g_hi[HW * HH];                // H, being drawn
 Bit8u g_shownHi[HW * HH];           // H as it was at the last span copy
 Bit8u g_shownLow[LW * LH];          // ... and what that copy put on the screen
@@ -2189,8 +2201,20 @@ void present() {
     g_drewThis = hires_wanted();        // (drawn from here to the next copy only while it is shown)
     if (!known || !drew || !g_drewThis) {   // (a buffer just learnt or a flip: the picture is ours from the next frame)
         g_haveFrame = false;
+        g_snowCount = 0;
         return;
     }
+    for (int k = 0; k < g_snowCount; k++) {     // (this frame's static, the game's own pixels: see g_snow)
+        const Snow &w = g_snow[k];
+        for (int y = w.y0; y <= w.y1 && y < LH; y++) {
+            if (y < 0) continue;
+            const PhysPt row = PhysMake(src.seg, 0) + (Bit16u)row_of(src, y);
+            for (int x = w.x0; x <= w.x1 && x < LW; x++) {
+                if (x >= 0) block(x, y, rd8(row + (Bit16u)x));
+            }
+        }
+    }
+    g_snowCount = 0;
     PhysPt p = PhysMake((Bit16u)arg16(3), (Bit16u)arg16(2)) + 12;
     Bit32u stamp = 2166136261u;
     int spans = 0;
@@ -2252,6 +2276,9 @@ void call(const Place &p) {
     if (p.op == OP_POLY && caller == kFillerSelf) return;
     if (!read_target((Bit16u)arg16(p.op == OP_COPY ? 1 : 0), t) || !flights_buffer(t)) return;
     switch (p.op) {
+    case OP_SNOW:
+        if (g_snowCount < 8 && t.x0 <= t.x1 && t.y0 <= t.y1) g_snow[g_snowCount++] = { t.x0, t.y0, t.x1, t.y1 };
+        break;
     case OP_CLEAR:
         fill(t, t.x0, t.y0, t.x1, t.y1, (Bit8u)arg16(1));
         break;
