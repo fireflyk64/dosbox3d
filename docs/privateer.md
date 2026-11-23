@@ -1180,3 +1180,30 @@ all -> the space alone -> off -> all.  The nav map is drawn outside the flight's
 Looked at (scratch levels.sh: the Tarsus, two pirates, one targeted, guns firing; the picture at each level and the nav
 map): at the space alone the crosshair and radar are the game's blocks, the target box a fine pixel wide, the Talon
 from its art; at all, the rings round, the radar's middle and side rings too.
+
+## 27. A base's wait for a key idled (2026-11-22)
+
+The user: "the sound was kind scratchy in the base"; asked to choose, "less emulated CPU at bases only--- maybe we can
+do some optimizations if we need to for the base drawing"; "lets evaluate if animations can keep up"; "I remember they
+were fairly low framerate to begin with"; and of a bigger sound buffer, "delay isn't good for realtime fighting".
+
+**Measured first.**  `WCMIXERSTATS=1` (the mixer's callbacks: dropouts, stretched, overflows, clipped samples, the
+peak; a measuring aid) in a headless Chrome at Achilles' concourse: dropouts 0 to 2 a minute with the high-resolution
+picture on, off and `?privclassic=1` alike, nothing clipped (the base's music peaking near 5,000) -- but the page's main
+thread busy 96 to 100 in 100 of the time in all three (Chrome's TaskDuration over each 5 s), `?privclassic=1` falling
+behind (0.95 to 0.98 of real time): no room for a slower machine's hiccup, which starves the sound.  The screen there
+changes on the game's clock: 10 times a second in the concourse, 5 to 6 in the bar, the same at 30,000, 15,000, 10,000
+and 6,000 cycles (a scratch counter of changes of the VGA's 64,000 bytes).  A flat cut of the cycles outside flight
+made a launch 2 s longer (7.2 s from the click at 10,000 against 5.0 at 30,000: the flight's load), so not that.
+
+**The loop.**  Counted by vector (a scratch counter in CPU_Interrupt): at a base the game calls DOS's "flush the
+keyboard's buffer" (INT 21h AH=0Ch) 62,000 times a second, each one of its protected mode's trips to DOS through its
+memory manager (as many VCPI calls, INT 67h DE0x): the whole of the emulated CPU goes round that loop.  The menus wait
+the same way.  Now DOS's handler tells the layer of each call (src/dos/dos.cpp -> priv_dos_keyboard_poll, Privateer
+only, outside a flight): one within 0.1 ms of the last (the loop going round, not a key read in the middle of work)
+ends the millisecond's slice, as a hlt does.  The loop goes round about twice a millisecond; the drawing between its
+calls, a load and the timer's music keep all their cycles.  `WCPRIVIDLE=0` (as for the flight's wait) and the game as
+it was leave the loop as it is.
+
+Measured natively at the concourse and the bar: 25,400 of the 30,000 cycles a millisecond skipped, and the screen's
+changes the same with and without it, second by second (8, 2, 7.8, 3.4, ... 9.6, 10.2, 7.2, 5, 7.6, 5.6, 6.4).

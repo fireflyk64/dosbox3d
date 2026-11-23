@@ -26,6 +26,7 @@
 #include "mem.h"
 #include "paging.h"
 #include "regs.h"
+#include "pic.h"
 
 namespace wc {
 
@@ -777,6 +778,30 @@ void frame_wait() {
 }
 
 }  // namespace
+
+// A base's screens wait for the player in a loop around DOS's "flush the keyboard's buffer" (INT 21h AH=0Ch): 62,000
+// calls a second at 30,000 cycles (counted at Achilles' concourse), each one of the game's protected mode's trips to
+// DOS through its memory manager (a VCPI switch there and back, INT 67h DE0Ch, as many): the whole of the emulated CPU,
+// and the browser's page was 96 to 100 in 100 busy there (the user, 2026-11-22: "the sound was kind scratchy in the
+// base"; then "less emulated CPU at bases only").  The screen there changes on the game's clock (10 times a second in
+// the concourse, 5 to 6 in the bar, the same at 30,000, 15,000, 10,000 and 6,000 cycles: the user, "lets evaluate if
+// animations can keep up"), so the loop's spinning is waiting.  Now, outside a flight, a call within 0.1 ms of the last
+// one (the loop going round, not a key read in the middle of work) ends the millisecond's slice, as a hlt does: the
+// loop goes round twice a millisecond instead of 62 times, and everything else -- the drawing between its calls, a
+// load, the timer's music -- keeps the whole of its cycles.  WCPRIVIDLE=0 (and the game as it was) leave the loop as
+// it is.
+void priv_dos_keyboard_poll() {
+    if (!priv_found() || !idle_wanted() || priv_in_flight()) return;
+    static double last = -1e9;
+    static unsigned idled = 0;
+    const double now = PIC_FullIndex();
+    const bool round = now - last < 0.1;
+    last = now;
+    if (!round || CPU_Cycles <= 0) return;
+    CPU_IODelayRemoved += CPU_Cycles;
+    CPU_Cycles = 0;
+    if (idled++ == 0) wclog(1, "Privateer: a base's wait for a key idled (DOS's keyboard flush called round a loop)");
+}
 
 void priv_native_watch(void (*watch)(Bit16u ip)) {
     memset(g_only, 0, sizeof(g_only));
