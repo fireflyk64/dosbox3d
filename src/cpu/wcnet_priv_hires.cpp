@@ -360,18 +360,215 @@ void shape_blocks(const Target &t, const Shape &s, int x, int y, int colour) {
     }
 }
 
-// Line art of one pixel's width: each pixel joined to its neighbours' middles.
+// ---- rings: the line art's round parts drawn round --------------------------------------------------------------------
+//
+// The radar's rings and the crosshair's circle are the game's pixels at 320 x 200: joined pixel to pixel they were the
+// pixels' staircase, bumpy and not round (the user, 2026-11-22: "the radar is very bumpy and not circular. Same with
+// the targeting reticle").  So each colour's pixels are split into pieces (8-connected), and in each piece the ellipse
+// (upright, about the piece's middle) that most of its pixels lie on is looked for: its height to width tried from 0.6
+// to 1.6, its size the band of 1.2 pixels holding the most of them.  It is a ring when it has 2.5 pixels' radius at
+// least and its pixels go 80 in 100 of the way round; then its pixels are drawn as that ellipse, one fine pixel wide,
+// wherever the game's ring has pixels (its gaps kept), and the rest of the piece is looked at again (a ring inside a
+// ring, the cross's middle).  What is no ring is joined as before, a piece touching a ring reaching its pixel's middle.
+// Worked out once a shape (by its pixels' hash: the radar's art is drawn every frame); kept for 16 shapes.
+
+struct Ring { double cx, cy, a, b; int colour; };
+struct Rings {
+    Bit32u hash;
+    std::vector<Ring> rings;
+    std::vector<Bit8u> on;          // per pixel of the shape: 1 + the ring's index it belongs to, 0 none
+};
+enum { kRingCache = 16, kMaxRings = 24, kMaxPiecePixels = 4096, kRingSectors = 48 };
+Bit32u shape_hash(const Shape &s);
+
+void rings_find(const Shape &s, int ground, Rings &out) {
+    const int w = s.w, h = s.h;
+    out.rings.clear();
+    out.on.assign(w * h, 0);
+    std::vector<Bit8u> seen(w * h, 0);
+    std::vector<int> piece, stack;
+    for (int start = 0; start < w * h && (int)out.rings.size() < kMaxRings; start++) {
+        const int colour = s.px[start];
+        if (colour < 0 || colour == ground || seen[start]) continue;
+        // the piece: this colour's pixels 8-connected to it
+        piece.clear();
+        stack.assign(1, start);
+        seen[start] = 1;
+        while (!stack.empty() && (int)piece.size() < kMaxPiecePixels) {
+            const int i = stack.back();
+            stack.pop_back();
+            piece.push_back(i);
+            const int u = i % w, v = i / w;
+            for (int dv = -1; dv <= 1; dv++) {
+                for (int du = -1; du <= 1; du++) {
+                    const int nu = u + du, nv = v + dv;
+                    if (nu < 0 || nv < 0 || nu >= w || nv >= h) continue;
+                    const int j = nv * w + nu;
+                    if (!seen[j] && s.px[j] == colour) {
+                        seen[j] = 1;
+                        stack.push_back(j);
+                    }
+                }
+            }
+        }
+        // rings in it, the biggest first, each found taken out before the next look (at most four a piece)
+        for (int round = 0; round < 4 && (int)out.rings.size() < kMaxRings; round++) {
+            std::vector<int> left;
+            for (size_t k = 0; k < piece.size(); k++) {
+                if (!out.on[piece[k]]) left.push_back(piece[k]);
+            }
+            if (left.size() < 12) break;
+            int u0 = w, u1 = -1, v0 = h, v1 = -1;
+            for (size_t k = 0; k < left.size(); k++) {
+                const int u = left[k] % w, v = left[k] / w;
+                u0 = std::min(u0, u); u1 = std::max(u1, u); v0 = std::min(v0, v); v1 = std::max(v1, v);
+            }
+            const double cx = (u0 + u1) / 2.0, cy = (v0 + v1) / 2.0;
+            double bestQ = 1, bestR = 0;
+            int bestN = 0;
+            std::vector<double> r(left.size());
+            for (int qi = 0; qi <= 50; qi++) {
+                const double q = 0.6 + qi * 0.02;           // (height over width)
+                for (size_t k = 0; k < left.size(); k++) {
+                    const double du = left[k] % w - cx, dv = (left[k] / w - cy) / q;
+                    r[k] = sqrt(du * du + dv * dv);
+                }
+                std::sort(r.begin(), r.end());
+                for (size_t a = 0, b = 0; a < r.size(); a++) {
+                    while (b < r.size() && r[b] - r[a] <= 1.2) b++;
+                    if ((int)(b - a) > bestN) {
+                        bestN = (int)(b - a);
+                        bestQ = q;
+                        bestR = (r[a] + r[b - 1]) / 2;
+                    }
+                }
+            }
+            if (bestR < 2.5 || bestR * bestQ < 2.5) break;
+            // its pixels, and the ellipse through their own box's middle and edges
+            std::vector<int> ring;
+            for (size_t k = 0; k < left.size(); k++) {
+                const double du = left[k] % w - cx, dv = (left[k] / w - cy) / bestQ;
+                if (fabs(sqrt(du * du + dv * dv) - bestR) <= 0.85) ring.push_back(left[k]);
+            }
+            int ru0 = w, ru1 = -1, rv0 = h, rv1 = -1;
+            for (size_t k = 0; k < ring.size(); k++) {
+                const int u = ring[k] % w, v = ring[k] / w;
+                ru0 = std::min(ru0, u); ru1 = std::max(ru1, u); rv0 = std::min(rv0, v); rv1 = std::max(rv1, v);
+            }
+            Ring g = { (ru0 + ru1) / 2.0, (rv0 + rv1) / 2.0, (ru1 - ru0) / 2.0, (rv1 - rv0) / 2.0, colour };
+            if (g.a < 2.5 || g.b < 2.5) break;
+            // the pixels near that ellipse (within 0.8 of a pixel along its radius), and how far round they go: of the
+            // points along it, those with one of them within a pixel
+            std::vector<int> on;
+            std::vector<Bit8u> mark(w * h, 0);
+            for (size_t k = 0; k < left.size(); k++) {
+                const double du = left[k] % w - g.cx, dv = left[k] / w - g.cy;
+                const double rho = sqrt((du / g.a) * (du / g.a) + (dv / g.b) * (dv / g.b));
+                if (rho < 1e-6 || sqrt(du * du + dv * dv) * fabs(1 - 1 / rho) > 0.8) continue;
+                on.push_back(left[k]);
+                mark[left[k]] = 1;
+            }
+            int covered = 0;
+            for (int k = 0; k < kRingSectors; k++) {
+                const double th = k * 6.283185307179586 / kRingSectors;
+                const int cu = (int)floor(g.cx + g.a * cos(th) + 0.5), cv = (int)floor(g.cy + g.b * sin(th) + 0.5);
+                bool near = false;
+                for (int dv = -1; dv <= 1 && !near; dv++) {
+                    for (int du = -1; du <= 1 && !near; du++) {
+                        const int u = cu + du, v = cv + dv;
+                        near = u >= 0 && v >= 0 && u < w && v < h && mark[v * w + u];
+                    }
+                }
+                covered += near;
+            }
+            if (covered * 100 < kRingSectors * 80) break;
+            out.rings.push_back(g);
+            for (size_t k = 0; k < on.size(); k++) out.on[on[k]] = (Bit8u)out.rings.size();
+        }
+    }
+}
+
+const Rings &rings_of(const Shape &s, int ground) {
+    static Rings cache[kRingCache];
+    static int used = 0, next = 0;
+    const Bit32u hash = shape_hash(s) ^ (Bit32u)(ground + 1) * 0x9E3779B9u;
+    for (int i = 0; i < used; i++) {
+        if (cache[i].hash == hash && cache[i].on.size() == s.px.size()) return cache[i];
+    }
+    Rings &r = cache[next];
+    next = (next + 1) % kRingCache;
+    if (used < kRingCache) used++;
+    r.hash = hash;
+    rings_find(s, ground, r);
+    return r;
+}
+
+// The rings drawn: each one fine pixel wide along its ellipse, where the game's ring has a pixel within one of it.  The
+// ellipse's fine pixels in order round it, the corner of any L of three left out (the curve 8-connected, one wide).
+void rings_draw(const Target &t, const Shape &s, const Rings &r, int left, int top, int ground) {
+    std::vector<int> px, py;
+    for (size_t k = 0; k < r.rings.size(); k++) {
+        const Ring &g = r.rings[k];
+        const double fx = 2 * (left + g.cx) + 1, fy = kSy * (top + g.cy) + kSy / 2, A = 2 * g.a, B = kSy * g.b;
+        const int n = 16 + (int)(8 * (A > B ? A : B));
+        px.clear();
+        py.clear();
+        auto flush = [&]() {
+            for (size_t i = 0; i < px.size(); i++) {
+                const bool corner = i > 0 && i + 1 < px.size() && abs(px[i + 1] - px[i - 1]) == 1 && abs(py[i + 1] - py[i - 1]) == 1;
+                if (corner) continue;
+                if (i > 0 && (abs(px[i] - px[i - 1]) > 1 || abs(py[i] - py[i - 1]) > 1)) {
+                    line_fine(t, px[i - 1], py[i - 1], px[i], py[i], (Bit8u)g.colour);
+                }
+                plot(t, px[i], py[i], (Bit8u)g.colour);
+            }
+            px.clear();
+            py.clear();
+        };
+        for (int i = 0; i <= n; i++) {
+            const double th = i * 6.283185307179586 / n;
+            const double cu = g.cx + g.a * cos(th), cv = g.cy + g.b * sin(th);
+            bool near = false;
+            for (int dv = -1; dv <= 1 && !near; dv++) {
+                for (int du = -1; du <= 1 && !near; du++) {
+                    const int u = (int)floor(cu + 0.5) + du, v = (int)floor(cv + 0.5) + dv;
+                    near = u >= 0 && v >= 0 && u < s.w && v < s.h && r.on[v * s.w + u] == k + 1;
+                }
+            }
+            if (!near) {
+                // (where two rings touch, a pixel they share is one ring's colour: the other passes over any ink there)
+                const int u = (int)floor(cu + 0.5), v = (int)floor(cv + 0.5);
+                near = u >= 0 && v >= 0 && u < s.w && v < s.h && s.px[v * s.w + u] >= 0 && s.px[v * s.w + u] != ground;
+            }
+            if (!near) {
+                flush();
+                continue;
+            }
+            const int X = (int)floor(fx + A * cos(th) + 0.5), Y = (int)floor(fy + B * sin(th) + 0.5);
+            if (!px.empty() && X == px.back() && Y == py.back()) continue;
+            px.push_back(X);
+            py.push_back(Y);
+        }
+        flush();
+    }
+}
+
+// Line art of one pixel's width: each pixel joined to its neighbours' middles, its rings drawn round.
 void shape_lines(const Target &t, const Shape &s, int x, int y) {
     static const int kDx[4] = { 1, 0, 1, -1 }, kDy[4] = { 0, 1, 1, 1 };
     const int left = x - s.left, top = y - s.top;
+    const Rings &r = rings_of(s, -1);
+    rings_draw(t, s, r, left, top, -1);
     for (int v = 0; v < s.h; v++) {
         for (int u = 0; u < s.w; u++) {
             const int c = s.px[v * s.w + u];
             if (c < 0) continue;
-            line(t, left + u, top + v, left + u, top + v, (Bit8u)c);
+            const bool ring = r.on[v * s.w + u] != 0;
+            if (!ring) line(t, left + u, top + v, left + u, top + v, (Bit8u)c);
             for (int k = 0; k < 4; k++) {
                 const int nu = u + kDx[k], nv = v + kDy[k];
                 if (nu < 0 || nu >= s.w || nv >= s.h || s.px[nv * s.w + nu] < 0) continue;
+                if (ring && r.on[nv * s.w + nu]) continue;
                 if (kDx[k] && kDy[k] && (s.px[v * s.w + nu] >= 0 || s.px[nv * s.w + u] >= 0)) continue;
                 line(t, left + u, top + v, left + nu, top + nv, (Bit8u)c);
             }
@@ -397,6 +594,8 @@ void shape_radar(const Target &t, const Shape &s, int x, int y) {
         if (count[c] > count[ground]) ground = c;
     }
     shape_blocks(t, s, x, y, ground);
+    const Rings &r = rings_of(s, ground);
+    rings_draw(t, s, r, left, top, ground);
     auto same = [&](int u, int v, int c) { return u >= 0 && u < s.w && v >= 0 && v < s.h && s.px[v * s.w + u] == c; };
     auto ink = [&](int u, int v) {
         return u >= 0 && u < s.w && v >= 0 && v < s.h && s.px[v * s.w + u] >= 0 && s.px[v * s.w + u] != ground;
@@ -405,17 +604,19 @@ void shape_radar(const Target &t, const Shape &s, int x, int y) {
         for (int u = 0; u < s.w; u++) {
             const int c = s.px[v * s.w + u];
             if (c < 0 || c == ground) continue;
+            const bool ring = r.on[v * s.w + u] != 0;
             const int X = fine_x(left + u), Y = fine_y(top + v);
-            line_fine(t, X, Y, X, Y, (Bit8u)c);
+            if (!ring) line_fine(t, X, Y, X, Y, (Bit8u)c);
             for (int k = 0; k < 4; k++) {
                 const int nu = u + kDx[k], nv = v + kDy[k];
                 if (!same(nu, nv, c)) continue;
+                if (ring && r.on[nv * s.w + nu]) continue;
                 if (kDx[k] && kDy[k] && (same(nu, v, c) || same(u, nv, c))) continue;
                 line_fine(t, X, Y, fine_x(left + nu), fine_y(top + nv), (Bit8u)c);
             }
             int alike = 0;
             for (int k = 0; k < 8; k++) alike += same(u + kAx[k], v + kAy[k], c);
-            if (alike >= 2) continue;
+            if (alike >= 2 || ring) continue;
             for (int k = 0; k < 8; k++) {
                 const int nu = u + kAx[k], nv = v + kAy[k];
                 if (!ink(nu, nv) || same(nu, nv, c)) continue;
