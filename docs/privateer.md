@@ -1074,3 +1074,18 @@ issue?"
   game port polled as the game does.  The 4:3 shape stays (the page's).  Measured: an Oxford-type fight at 24 frames a
   second (the twins' 28.6), the picture 640 x 400, none of the picture's places watched.
 
+## 23. The radar as line art, and every cockpit and view looked at (2026-11-22)
+
+The plan's step 5 and 6.  The radar's art is one shape a frame, drawn by segment 0x13AE (the radar's: it draws that
+shape, the blips as pixels and some lines, nothing else, in every probed frame).  In the high-resolution picture its
+most common colour (the screen's black) stays in blocks and each other colour is line art: a pixel joined to its
+same-coloured neighbours by one-pixel lines (the two-tone rings stay two rings; joining any colours made a mesh of
+them, thinning the bitmap made combs), and a pixel in no chain of its own colour (the side gauge's two-tone bar, a
+line's end) reaches halfway to each neighbour of another ink, so that bar is a line and not dots.
+
+Looked at with the picture on and off (scratch rig views.sh: a new pilot buys the ship, outfits it, launches, two
+pirates, guns fired, each view key, the nav map): the Tarsus, Orion, Centurion and Galaxy, F1-F4 (front, left, right,
+rear), F7 (the missile camera's notice), F8 and F9 (outside cameras), the nav map.  The radar is the same art in all
+four; the window's smoothed edge follows the Centurion's and Galaxy's curved canopies; the red flash of a hit (the
+palette's colour 0) shows in the picture as in the game's (paired !shot / !frame every quarter second).
+

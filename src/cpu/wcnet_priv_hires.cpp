@@ -79,6 +79,7 @@ const Place kPlaces[] = {
 enum { kPlaceCount = sizeof(kPlaces) / sizeof(kPlaces[0]) };
 enum {
     kCrosshairCaller = 0x2897,      // seg060: the crosshair's shape, drawn as one-pixel lines
+    kRadarCaller = 0x13AE,          // the radar's: its art (one shape a frame, under the blips), drawn as line art
     kFillerSelf = 0x47A2,           // seg116 calls itself once, to align its stack
 };
 
@@ -226,11 +227,8 @@ inline void plot(const Target &t, int X, int Y, Bit8u c) {
 inline int fine_x(int x) { return 2 * x + 1; }
 inline int fine_y(int y) { return (12 * y + 6) / 5; }       // (the middle of the pixel)
 
-// One fine pixel wide, between the middles of the game's pixels.
-void line(const Target &t, int x0, int y0, int x1, int y1, Bit8u c) {
-    if (x0 < -2000 || x0 > 2000 || x1 < -2000 || x1 > 2000 || y0 < -2000 || y0 > 2000 || y1 < -2000 || y1 > 2000) return;
-    int X = fine_x(x0), Y = fine_y(y0);
-    const int Xe = fine_x(x1), Ye = fine_y(y1);
+// One fine pixel wide, between two fine pixels (clipped by plot).
+void line_fine(const Target &t, int X, int Y, int Xe, int Ye, Bit8u c) {
     const int dx = abs(Xe - X), dy = -abs(Ye - Y), sx = X < Xe ? 1 : -1, sy = Y < Ye ? 1 : -1;
     int err = dx + dy;
     for (;;) {
@@ -240,6 +238,12 @@ void line(const Target &t, int x0, int y0, int x1, int y1, Bit8u c) {
         if (e2 >= dy) { err += dy; X += sx; }
         if (e2 <= dx) { err += dx; Y += sy; }
     }
+}
+
+// One fine pixel wide, between the middles of the game's pixels.
+void line(const Target &t, int x0, int y0, int x1, int y1, Bit8u c) {
+    if (x0 < -2000 || x0 > 2000 || x1 < -2000 || x1 > 2000 || y0 < -2000 || y0 > 2000 || y1 < -2000 || y1 > 2000) return;
+    line_fine(t, fine_x(x0), fine_y(y0), fine_x(x1), fine_y(y1), c);
 }
 
 void ellipse(const Target &t, int x, int y, int rx, int ry, Bit8u c) {
@@ -347,6 +351,53 @@ void shape_lines(const Target &t, const Shape &s, int x, int y) {
                 if (nu < 0 || nu >= s.w || nv >= s.h || s.px[nv * s.w + nu] < 0) continue;
                 if (kDx[k] && kDy[k] && (s.px[v * s.w + nu] >= 0 || s.px[nv * s.w + u] >= 0)) continue;
                 line(t, left + u, top + v, left + nu, top + nv, (Bit8u)c);
+            }
+        }
+    }
+}
+
+// The radar's art, redrawn each frame under its blips: its most common colour (the screen's ground) in blocks, each
+// other colour's pixels joined to their same-coloured neighbours by one-pixel lines -- the rings and the cross, each
+// ring of its own colour (joining any colours made a mesh of the two-tone rings; thinning the bitmap, combs).  A pixel
+// in no chain of its colour (fewer than two such neighbours: a two-tone bar's, a line's end) reaches halfway to each
+// neighbour of another ink, so the side gauge's two-tone bar is a line and not dots.
+void shape_radar(const Target &t, const Shape &s, int x, int y) {
+    static const int kDx[4] = { 1, 0, 1, -1 }, kDy[4] = { 0, 1, 1, 1 };
+    static const int kAx[8] = { 1, -1, 0, 0, 1, -1, 1, -1 }, kAy[8] = { 0, 0, 1, -1, 1, 1, -1, -1 };
+    const int left = x - s.left, top = y - s.top;
+    int count[256] = { 0 };
+    for (int i = 0; i < s.w * s.h; i++) {
+        if (s.px[i] >= 0) count[s.px[i] & 0xFF]++;
+    }
+    int ground = 0;
+    for (int c = 1; c < 256; c++) {
+        if (count[c] > count[ground]) ground = c;
+    }
+    shape_blocks(t, s, x, y, ground);
+    auto same = [&](int u, int v, int c) { return u >= 0 && u < s.w && v >= 0 && v < s.h && s.px[v * s.w + u] == c; };
+    auto ink = [&](int u, int v) {
+        return u >= 0 && u < s.w && v >= 0 && v < s.h && s.px[v * s.w + u] >= 0 && s.px[v * s.w + u] != ground;
+    };
+    for (int v = 0; v < s.h; v++) {
+        for (int u = 0; u < s.w; u++) {
+            const int c = s.px[v * s.w + u];
+            if (c < 0 || c == ground) continue;
+            const int X = fine_x(left + u), Y = fine_y(top + v);
+            line_fine(t, X, Y, X, Y, (Bit8u)c);
+            for (int k = 0; k < 4; k++) {
+                const int nu = u + kDx[k], nv = v + kDy[k];
+                if (!same(nu, nv, c)) continue;
+                if (kDx[k] && kDy[k] && (same(nu, v, c) || same(u, nv, c))) continue;
+                line_fine(t, X, Y, fine_x(left + nu), fine_y(top + nv), (Bit8u)c);
+            }
+            int alike = 0;
+            for (int k = 0; k < 8; k++) alike += same(u + kAx[k], v + kAy[k], c);
+            if (alike >= 2) continue;
+            for (int k = 0; k < 8; k++) {
+                const int nu = u + kAx[k], nv = v + kAy[k];
+                if (!ink(nu, nv) || same(nu, nv, c)) continue;
+                if (kAx[k] && kAy[k] && (ink(nu, v) || ink(u, nv))) continue;
+                line_fine(t, X, Y, (X + fine_x(left + nu)) / 2, (Y + fine_y(top + nv)) / 2, (Bit8u)c);
             }
         }
     }
@@ -630,6 +681,7 @@ void call(const Place &p) {
             shape_blocks(t, *s, x, y, (Bit8u)arg16(6));
         } else if (p.op == OP_SHAPE) {
             if (caller == kCrosshairCaller) shape_lines(t, *s, x, y);
+            else if (caller == kRadarCaller) shape_radar(t, *s, x, y);
             else shape_blocks(t, *s, x, y, -1);
         } else if (p.op == OP_SCALE_HAZE) {
             Haze h;
