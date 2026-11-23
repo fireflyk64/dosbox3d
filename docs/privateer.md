@@ -1332,3 +1332,18 @@ before the mirror's copy.  The Centurion's middle part (92E829FB, 82 pixels: the
 column 25 from row 25 to 34 and the steps below it to the tip, and gets two slopes: from the wing's corner (25, 24) to
 the lower bar's end (27, 40), and from there to the tip (29, 46).  Shown with and without (scratch cent-nose2.png), the
 user: "Yes, ship it".  With the floods whole, the edit changes the nose and nothing else.
+
+**The Talon's front, hand-drawn (2026-11-23).**  The user: "Everyone sees the talon the [most]. Can you have custom
+drawing code for the front ... keyed off the actual sprite map edges?"; of the choices shown (Scale2x keyed off the
+sprite's edges, a hand-drawn 2x front, the blocks): a hand-drawn front, then "Thinner outline", "Make sure it is
+symmetrical".  scripts/privtalon.py writes src/cpu/wcnet_priv_talon.h (kPrivPartArt): per part, its mask hash, the
+game pixels it stands for ('x' drawn by the art, 'b' the game's block, '.' none of the part), three sample pixels for
+its inks and the art at 2x.  The Talon's front: the bulb's outline a smooth curve (Catmull-Rom through the game
+outline's middles: its flat top, out to the game's widest row, back into the engines; below them a U to the tip) and
+the canopy's, each one fine pixel wide, laid half a pixel outward of the game pixels' middles so the shapes keep their
+size, drawn on the left half and mirrored pixel for pixel; the canopy filled; the engines and exhausts the game's
+blocks.  In wire_make, after the solid parts' blocks: when the part's pixels are exactly the pattern, its 'x' blocks
+are cleared and the art drawn in the colours of the sprite's own pixels at (22, 29), (24, 32), (25, 34) (the bulb's
+outline, the canopy's, its fill: damage shows); otherwise the blocks stay.  Measured (scratch ship1.sh): both Talons
+drawn with every pixel mirrored, only the front differs from before, the Centurion and Gothri unchanged, no game
+errors.

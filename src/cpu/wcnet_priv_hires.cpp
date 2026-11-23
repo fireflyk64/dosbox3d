@@ -31,6 +31,7 @@
 #include "dos_inc.h"
 #include "wcnet_priv_hires.h"
 #include "wcnet_priv_font.h"
+#include "wcnet_priv_talon.h"
 #include "wcnet_priv.h"
 #include "wcnet_game.h"
 #include "wcnet_log.h"
@@ -899,7 +900,7 @@ void simplify(const std::vector<int> &cu, const std::vector<int> &cv, double tol
     }
 }
 
-void wire_make(const Shape &s, const std::vector<char> &block, int edit, int colL, int colR, Wireframe &out) {
+void wire_make(const Shape &s, const std::vector<char> &block, int edit, int colL, int colR, int art, Wireframe &out) {
     const int w = s.w, h = s.h, W = 2 * w, H = 2 * h;
     out.w = w;
     out.h = h;
@@ -985,6 +986,43 @@ void wire_make(const Shape &s, const std::vector<char> &block, int edit, int col
             put(2 * u + 1, 2 * v, c);
             put(2 * u, 2 * v + 1, c);
             put(2 * u + 1, 2 * v + 1, c);
+        }
+    }
+    // A part's hand-made art (kPrivPartArt, scripts/privtalon.py: the Talon's front), when the part's pixels are
+    // exactly the art's pattern: its 'x' pixels' blocks out, the art in, each of its three inks the colour of the
+    // sprite's own pixel (its damage shows); its 'b' pixels stay the game's blocks.  Anything else: the blocks.
+    if (art >= 0 && art < kPrivPartArtCount) {
+        const PrivPartArt &a = kPrivPartArt[art];
+        auto isPart = [&](int u, int v) {
+            return u >= 0 && v >= 0 && u < w && v < h && col(u, v) >= 0 && (size_t)(v * w + u) < block.size() && block[v * w + u];
+        };
+        bool exact = a.w > 0 && a.h > 0 && a.w <= 24 && a.h <= 24 && 2 * a.h <= 48;
+        for (int gv = 0; gv < a.h && exact; gv++) {
+            for (int gu = 0; gu < a.w && exact; gu++) exact = (a.game[gv][gu] != '.') == isPart(a.u0 + gu, a.v0 + gv);
+        }
+        int ink[3] = { -1, -1, -1 };
+        for (int k = 0; k < 3 && exact; k++) {
+            ink[k] = col(a.sample[k][0], a.sample[k][1]);
+            exact = ink[k] >= 0;
+        }
+        if (exact) {
+            for (int gv = 0; gv < a.h; gv++) {
+                for (int gu = 0; gu < a.w; gu++) {
+                    if (a.game[gv][gu] != 'x') continue;
+                    for (int k = 0; k < 4; k++) {
+                        const int X = 2 * (a.u0 + gu) + (k & 1), Y = 2 * (a.v0 + gv) + (k >> 1);
+                        if (X < W && Y < H) out.fine[Y * W + X] = (Bit16s)-1;
+                    }
+                }
+            }
+            for (int Y = 0; Y < 2 * a.h; Y++) {
+                const char *row = a.fine[Y];
+                for (int X = 0; X < 2 * a.w && row[X]; X++) {
+                    const char r = row[X];
+                    const int c = r == 'o' ? ink[0] : r == 'k' ? ink[1] : r == 'f' ? ink[2] : -1;
+                    if (c >= 0) put(2 * a.u0 + X, 2 * a.v0 + Y, c);
+                }
+            }
         }
     }
     // A colour's loop round a hole that is an ellipse is drawn as one (the Paradigm's pods: the user, "Paradign should
@@ -1380,11 +1418,12 @@ Bit32u part_mask_hash(const Shape &s) {
 Shape g_wireComp;
 std::vector<char> g_wireBlock;      // per pixel of it: from a part on the list above, drawn as the game's blocks
 int g_wireEdit = -1;                // the composite's part on kWireEdits (above wire_make), if one is
+int g_wireArt = -1;                 // the composite's part with hand-made art (kPrivPartArt), if one is
 bool g_wirePending = false;
 Target g_wireT;
 int g_wireX = 0, g_wireY = 0;
 
-void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block, int x, int y, int edit, int colL, int colR);
+void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block, int x, int y, int edit, int colL, int colR, int art);
 
 void wire_flush() {
     if (!g_wirePending) return;
@@ -1404,11 +1443,11 @@ void wire_flush() {
                     }
                 }
             }
-            shape_wire(g_wireT, cut, g_wireBlock, g_wireX, g_wireY, g_wireEdit, colL, colR);
+            shape_wire(g_wireT, cut, g_wireBlock, g_wireX, g_wireY, g_wireEdit, colL, colR, g_wireArt);
             return;
         }
     }
-    shape_wire(g_wireT, g_wireComp, g_wireBlock, g_wireX, g_wireY, -1, -1, -1);
+    shape_wire(g_wireT, g_wireComp, g_wireBlock, g_wireX, g_wireY, -1, -1, -1, g_wireArt);
 }
 
 void wire_gather(const Target &t, const Shape &s, int x, int y) {
@@ -1425,6 +1464,7 @@ void wire_gather(const Target &t, const Shape &s, int x, int y) {
         g_wireComp.px.assign(s.w * s.h, (Bit16s)-1);
         g_wireBlock.assign(s.w * s.h, 0);
         g_wireEdit = -1;
+        g_wireArt = -1;
         g_wireT = t;
         g_wireX = x;
         g_wireY = y;
@@ -1436,6 +1476,9 @@ void wire_gather(const Target &t, const Shape &s, int x, int y) {
     for (int i = 0; i < kWireEditCount; i++) {
         if (kWireEdits[i].part == part) g_wireEdit = i;
     }
+    for (int i = 0; i < kPrivPartArtCount; i++) {
+        if (kPrivPartArt[i].part == part) g_wireArt = i;
+    }
     for (size_t i = 0; i < s.px.size() && i < g_wireComp.px.size(); i++) {
         if (s.px[i] >= 0) {
             g_wireComp.px[i] = s.px[i];
@@ -1444,12 +1487,13 @@ void wire_gather(const Target &t, const Shape &s, int x, int y) {
     }
 }
 
-void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block, int x, int y, int edit, int colL, int colR) {
+void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block, int x, int y, int edit, int colL, int colR, int art) {
     static Wireframe cache[kWireCache];
     static int used = 0, next = 0;
     Bit32u hash = shape_hash(s);
     for (size_t i = 0; i < block.size(); i++) hash = (hash ^ (Bit32u)block[i]) * 16777619u;
     hash = (((hash ^ (Bit32u)(edit + 1)) * 16777619u ^ (Bit32u)(colL + 1)) * 16777619u ^ (Bit32u)(colR + 1)) * 16777619u;
+    hash = (hash ^ (Bit32u)(art + 1)) * 16777619u;
     const Wireframe *wf = NULL;
     for (int i = 0; i < used && !wf; i++) {
         if (cache[i].hash == hash && cache[i].w == s.w && cache[i].h == s.h) wf = &cache[i];
@@ -1459,7 +1503,7 @@ void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block,
         next = (next + 1) % kWireCache;
         if (used < kWireCache) used++;
         made.hash = hash;
-        wire_make(s, block, edit, colL, colR, made);
+        wire_make(s, block, edit, colL, colR, art, made);
         wf = &made;
     }
     const int X0 = 2 * (x - s.left), Y0 = 2 * (y - s.top), W = 2 * wf->w, H = 2 * wf->h;
