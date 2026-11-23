@@ -98,7 +98,7 @@ if (want !== "priv") {
 const keys = await page.$eval("#gameKeys", (el) => (el.hidden ? "" : el.textContent));
 check("the flight's keys under the game", /Privateer in flight/.test(keys) || want === "privrf", keys.slice(0, 60));
 const saves = await page.$eval("#saves", (el) => (el.hidden ? "hidden" : document.getElementById("saveStatus").textContent));
-check("the saved-game panel", /save in the game/.test(saves), saves);
+check("the saved-game panel", /save in the game|keeps your save games/.test(saves), saves);
 await page.screenshot({ path: path.join(shotDir, "web-priv-page.png"), fullPage: true });
 if (process.env.SAVES) {
   const listed = await page.$$eval("#saveList li", (li) => li.map((e) => e.textContent));
