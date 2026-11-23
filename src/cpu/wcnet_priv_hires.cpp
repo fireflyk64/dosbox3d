@@ -30,6 +30,7 @@
 #include "dosbox.h"
 #include "dos_inc.h"
 #include "wcnet_priv_hires.h"
+#include "wcnet_priv_font.h"
 #include "wcnet_priv.h"
 #include "wcnet_game.h"
 #include "wcnet_log.h"
@@ -87,6 +88,7 @@ enum {
     kCrosshairCaller = 0x2897,      // seg060: the crosshair's shape, drawn as one-pixel lines
     kRadarCaller = 0x13AE,          // the radar's: its art (one shape a frame, under the blips), drawn as line art
     kBracketCaller = 0x2903,        // the target's box (its lines): one pixel wide in space alone too
+    kFontCaller = 0x6108,           // the text's: each letter a silhouette of the game's font: the user's letters instead
     kFillerSelf = 0x47A2,           // seg116 calls itself once, to align its stack
 };
 
@@ -637,6 +639,35 @@ void rings_draw(const Target &t, const Shape &s, const Rings &r, int left, int t
         }
         flush();
     }
+}
+
+// ---- the cockpit's letters: the user's font ---------------------------------------------------------------------
+//
+// The text in flight (the readouts, the screens' names and distances, the comm lists and replies) is one routine's
+// (para 0x6108): each letter a silhouette of the game's 3 x 4 font whose index is its character.  The user drew a font
+// of their own at twice its size, one-pixel strokes, each letter in the game's letter's box (scripts/privfont/,
+// wcnet_priv_font.h: "I hand made a font").  A letter is replaced only when the game draws exactly the glyph it was
+// drawn from (its size, its place below the capitals' top, its pixels): any other font stays the game's blocks.
+bool letter(const Target &t, const Shape &s, int x, int y, int index, Bit8u c) {
+    const PrivGlyph *g = NULL;
+    for (int i = 0; i < kPrivGlyphCount && !g; i++) {
+        if (kPrivGlyphs[i].ch == index) g = &kPrivGlyphs[i];
+    }
+    if (!g || s.w != g->srcW || s.h != g->srcH || s.top != 3 - g->srcRow || s.left != 0) return false;
+    for (int v = 0; v < s.h; v++) {
+        int bits = 0;
+        for (int u = 0; u < s.w; u++) {
+            if (s.px[v * s.w + u] >= 0) bits |= 1 << u;
+        }
+        if (bits != g->src[v]) return false;
+    }
+    const int X0 = 2 * x, Y0 = 2 * (y - 3);      // (the capitals' top: the anchor is the baseline's row)
+    for (int r = 0; r < 10; r++) {
+        for (int u = 0; u < g->w; u++) {
+            if (g->rows[r] & (1 << u)) plot(t, X0 + u, Y0 + r, c);
+        }
+    }
+    return true;
 }
 
 // Line art of one pixel's width: each pixel joined to its neighbours' middles, its rings drawn round.
@@ -1249,7 +1280,9 @@ void call(const Place &p) {
         const Shape *s = shape_of((Bit16u)arg16(3), (Bit16u)arg16(4), arg16(5));
         if (!s) return;
         if (p.op == OP_SILHOUETTE) {
-            shape_blocks(t, *s, x, y, (Bit8u)arg16(6));
+            if (!(caller == kFontCaller && hires_cockpit() && letter(t, *s, x, y, arg16(5), (Bit8u)arg16(6)))) {
+                shape_blocks(t, *s, x, y, (Bit8u)arg16(6));
+            }
         } else if (p.op == OP_SHAPE) {
             if (caller == kCrosshairCaller && hires_cockpit()) shape_lines(t, *s, x, y);
             else if (caller == kRadarCaller && hires_cockpit()) shape_radar(t, *s, x, y);

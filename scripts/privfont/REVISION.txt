@@ -1,0 +1,10 @@
+Uppercase W uses two L shapes and a central vertical stem.
+Lowercase w uses only vertical/horizontal and 45-degree segments.
+Lowercase s is the exact horizontal mirror of z, using only axis-aligned strokes.
+Uppercase S is balanced under a 180-degree rotation.
+Y has a vertical lower stem joining a 45-degree upper-right arm; no descender.
+M has symmetric nine-pixel ink aligned right in its original ten-pixel cell.
+This adds one pixel before M without changing its advance or right edge.
+Uppercase X has left/right and top/bottom symmetry.
+The upper and lower curves of the P bowl are mirrors.
+All digits are unchanged from the preceding approved version.
