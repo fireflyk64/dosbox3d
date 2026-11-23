@@ -1089,3 +1089,33 @@ rear), F7 (the missile camera's notice), F8 and F9 (outside cameras), the nav ma
 four; the window's smoothed edge follows the Centurion's and Galaxy's curved canopies; the red flash of a hit (the
 palette's colour 0) shows in the picture as in the game's (paired !shot / !frame every quarter second).
 
+## 24. The landing and takeoff scenes' bases from the flight's art (2026-11-22)
+
+The plan's step 7.  The scenes (MIDGAMES\LANDINGS.IFF, TAKEOFFS.IFF) do not go through the flight's frame: they draw
+with the plain shape routine (seg188), unscaled, into a buffer of their own, and copy it to the screen with their own
+code (a trace of a takeoff: 98% of the time in a wait loop, the drawing in seg188, no seg205 copy).  So in the
+high-resolution picture they were the game's picture made twice as large.  Their base is one of LTOBASES.PAK's ten
+small pictures; six are small copies of a base's flight art (APPEARNC\*.IFF, its SHAP: four quarters laid over each
+other), 1.6 to 2.75 times as large there:
+
+| LTOBASES | small | flight art |
+|---|---|---|
+| 1 | 132 x 79 | REFINE 219 x 132 |
+| 2, 4 | 83 x 67 | ROIDBASE 209 x 184 (Achilles) |
+| 3 | 84 x 70 | AGRIC 182 x 170 (Helen) |
+| 6 | 89 x 72 | DETROIT 184 x 150 |
+| 7 | 141 x 81 | DERLCT 225 x 128 |
+
+(0 and 8 are other planets than the flight art's, 5 and 9 other stations: theirs stay the game's.  The pairs were
+matched by eye with design/privateer-hires/research/bases.py; each size is checked as the files are read, a pair not as
+known left out with a line saying so.)  The first time a scene draws a shape of a small base's size (the high-resolution
+picture wanted), PRIV.TRE is read through the drive that has it (the CD image, drive D: DOSBox's own file objects, not
+the game's handles): LTOBASES.PAK and the five APPEARNC files ("the landing and takeoff bases: 6 of 6 from the flight's
+art").  A shape the scene draws is matched by its decoded pixels; its place is noted, and at the compose, if 90 in 100
+of that small base's own pixels are on the screen where it was drawn, each of those pixels shows the flight's art over
+the same box (nearest, blocky: the user's ruling), and anything else (the ship passing in front, the screen's edge)
+stays the game's.  Measured: Achilles' takeoff and landing (ROIDBASE, also cut off by the screen's edge) and Helen's
+landing (AGRIC) show the flight's art in place, colours right, the Tarsus in front of it.
+
+shape_of's run-length decoding is now decode_rows, a template over the bytes it reads (the game's memory, or a file's).
+
