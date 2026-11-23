@@ -409,7 +409,8 @@ bool fine_lines(Bit16u caller) {
 // pixels' staircase, bumpy and not round (the user, 2026-11-22: "the radar is very bumpy and not circular. Same with
 // the targeting reticle").  So each colour's pixels are split into pieces (8-connected), and in each piece the ellipse
 // (upright, about the piece's middle) that most of its pixels lie on is looked for: its height to width tried from 0.6
-// to 1.6, its size the band of 1.2 pixels holding the most of them.  It is a ring when it has 2.5 pixels' radius at
+// to 1.6, its size the band of 1.2 pixels holding the most of them, then the ellipse fitted to the pixels near it
+// (least squares, four rounds).  It is a ring when it has 2.5 pixels' radius at
 // least and its pixels go 80 in 100 of the way round; then its pixels are drawn as that ellipse, one fine pixel wide,
 // wherever the game's ring has pixels (its gaps kept), and the rest of the piece is looked at again (a ring inside a
 // ring, the cross's middle).  What is no ring is joined as before, a piece touching a ring reaching its pixel's middle.
@@ -423,6 +424,25 @@ struct Rings {
 };
 enum { kRingCache = 16, kMaxRings = 24, kMaxPiecePixels = 4096, kRingSectors = 48 };
 Bit32u shape_hash(const Shape &s);
+
+// M x = the last column, four unknowns (Gauss, the largest pivot): false if it has no single answer.
+bool solve4(double M[4][5], double x[4]) {
+    for (int c = 0; c < 4; c++) {
+        int p = c;
+        for (int r = c + 1; r < 4; r++) {
+            if (fabs(M[r][c]) > fabs(M[p][c])) p = r;
+        }
+        if (fabs(M[p][c]) < 1e-9) return false;
+        for (int k = 0; k < 5; k++) std::swap(M[c][k], M[p][k]);
+        for (int r = 0; r < 4; r++) {
+            if (r == c) continue;
+            const double f = M[r][c] / M[c][c];
+            for (int k = c; k < 5; k++) M[r][k] -= f * M[c][k];
+        }
+    }
+    for (int i = 0; i < 4; i++) x[i] = M[i][4] / M[i][i];
+    return true;
+}
 
 void rings_find(const Shape &s, int ground, Rings &out) {
     const int w = s.w, h = s.h;
@@ -487,18 +507,41 @@ void rings_find(const Shape &s, int ground, Rings &out) {
                 }
             }
             if (bestR < 2.5 || bestR * bestQ < 2.5) break;
-            // its pixels, and the ellipse through their own box's middle and edges
-            std::vector<int> ring;
-            for (size_t k = 0; k < left.size(); k++) {
-                const double du = left[k] % w - cx, dv = (left[k] / w - cy) / bestQ;
-                if (fabs(sqrt(du * du + dv * dv) - bestR) <= 0.85) ring.push_back(left[k]);
+            // the ellipse itself, fitted: A du^2 + B dv^2 + C du + D dv = 1 by least squares over the pixels near the last
+            // one (within a pixel, then 0.8), four times.  (Its pixels' box was taken first: the crosshair's ticks lie on
+            // its axes, and the box made its circle of 9 an ellipse of 9 by 10 that most of its pixels missed: the user,
+            // "The targeting reticle is still wobbly back and forth instead of a beautiful circle like the radar".)
+            double ex = cx, ey = cy, ea = bestR, eb = bestR * bestQ;
+            bool fitted = true;
+            for (int it = 0; it < 4 && fitted; it++) {
+                const double tol = it ? 0.8 : 1.0;
+                double M[4][5] = { { 0 } };
+                int n = 0;
+                for (size_t k = 0; k < left.size(); k++) {
+                    const double du = left[k] % w - ex, dv = left[k] / w - ey;
+                    const double rho = sqrt((du / ea) * (du / ea) + (dv / eb) * (dv / eb));
+                    if (rho < 1e-6 || sqrt(du * du + dv * dv) * fabs(1 - 1 / rho) > tol) continue;
+                    const double f[4] = { du * du, dv * dv, du, dv };
+                    for (int i = 0; i < 4; i++) {
+                        M[i][4] += f[i];
+                        for (int j = 0; j < 4; j++) M[i][j] += f[i] * f[j];
+                    }
+                    n++;
+                }
+                double sol[4];
+                fitted = n >= 8 && solve4(M, sol) && sol[0] > 0 && sol[1] > 0;
+                if (!fitted) break;
+                ex -= sol[2] / (2 * sol[0]);
+                ey -= sol[3] / (2 * sol[1]);
+                const double K = 1 + sol[2] * sol[2] / (4 * sol[0]) + sol[3] * sol[3] / (4 * sol[1]);
+                fitted = K > 0;
+                if (!fitted) break;
+                ea = sqrt(K / sol[0]);
+                eb = sqrt(K / sol[1]);
+                fitted = ea < w && eb < h && fabs(ex - cx) < w && fabs(ey - cy) < h;
             }
-            int ru0 = w, ru1 = -1, rv0 = h, rv1 = -1;
-            for (size_t k = 0; k < ring.size(); k++) {
-                const int u = ring[k] % w, v = ring[k] / w;
-                ru0 = std::min(ru0, u); ru1 = std::max(ru1, u); rv0 = std::min(rv0, v); rv1 = std::max(rv1, v);
-            }
-            Ring g = { (ru0 + ru1) / 2.0, (rv0 + rv1) / 2.0, (ru1 - ru0) / 2.0, (rv1 - rv0) / 2.0, colour };
+            if (!fitted) break;
+            Ring g = { ex, ey, ea, eb, colour };
             if (g.a < 2.5 || g.b < 2.5) break;
             // the pixels near that ellipse (within 0.8 of a pixel along its radius), and how far round they go: of the
             // points along it, those with one of them within a pixel

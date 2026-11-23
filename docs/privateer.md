@@ -1158,8 +1158,13 @@ tall): it shows as in any DOSBox without aspect correction.  The registry's `str
 
 **Round rings.**  The radar's rings and the crosshair's circle are fitted: each colour's pixels split into 8-connected
 pieces; in each, the upright ellipse about the piece's middle that most of its pixels lie on (height to width 0.6 to
-1.6, the band of 1.2 pixels holding the most); a ring when its radius is 2.5 pixels at least and points along it have
-its pixels within a pixel 80 times in 100.  It is drawn one fine pixel wide along that ellipse, in order round it (an
+1.6, the band of 1.2 pixels holding the most), then fitted to the pixels near it by least squares (A du^2 + B dv^2 +
+C du + D dv = 1, four rounds, the pixels within a pixel and then 0.8 of the last); a ring when its radius is 2.5 pixels
+at least and points along it have its pixels within a pixel 80 times in 100.  (The ring's pixels' box was taken at
+first: the crosshair's ticks lie on its axes, and the box made its circle of 9 an ellipse of 9 by 10 that most of its
+pixels missed -- gaps and a wobble: the user, "The targeting reticle is still wobbly back and forth instead of a
+beautiful circle like the radar"; "we need a better reticle or it looks like a cheap uprez".  Fitted, it is a circle of
+8.95 about the art's middle.)  It is drawn one fine pixel wide along that ellipse, in order round it (an
 L's corner left out), only where the game's ring has a pixel within one: its gaps stay, and where two rings touch a
 shared pixel of the other's colour carries it over.  What is left of the piece is looked at again (the radar's inner
 ring, then its middle ring), and the rest is joined as before.  Worked out once a shape (its hash), 16 kept.
