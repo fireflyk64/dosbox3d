@@ -2212,7 +2212,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wc_web_stick(double x, double y) {
 // the options screen, 0 the game's own (none, black); a negative value only asks.
 extern "C" EMSCRIPTEN_KEEPALIVE int wc_web_priv_hires(int on) {
     if (on >= 0) {
-        wc::priv_hires_set(on != 0);    // (the page's "High resolution", while flying; WCPRIVHIRES at the launch)
+        wc::priv_hires_set(on);         // (the page's two boxes' level, while flying: 0, 1 space alone, 2 all; WCPRIVHIRES at the launch)
     }
     return wc::priv_hires_on() ? 1 : 0;
 }

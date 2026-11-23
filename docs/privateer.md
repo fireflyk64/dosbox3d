@@ -1140,3 +1140,38 @@ game has it").  The rig aid `!privmode=keyboard|mouse|joystick` writes the optio
 Measured, a Tarsus out of Achilles, the options' MOUSE, the pointer at the middle then 40 of 200 above it for two
 seconds, then 40 below (the forward row's z from DGROUP each second): unticked the nose went -6 -> +10 degrees, then
 down to -51; ticked (the game's own) +0 -> -77.
+
+## 26. Even pixels, round rings, and the space alone (2026-11-22)
+
+The user, after the first evening of it: "the radar is very bumpy and not circular. Same with the targeting reticle.
+And the pixel art in the cockpit is not exactly 2:1 and there's some strange aliasing around"; then "it looks worse
+because of the 4:3 stretch. We should keep pixel ratios"; "Can we have a third toggle mode where reticle and cockpit
+are not high rez but sprites in space are?"; "Target boxes are but aiming and all other things are not in that third
+mode".
+
+**Square pixels, 2 x 2.**  Sections 20 to 25 drew H at 640 x 480: 200 rows over 480 made each game row 2 or 3 rows tall
+in turn, an uneven staircase on every edge, and the page's 4:3 (section 20's `stretch`) did the same to the game's own
+picture.  Now H is 640 x 400, every game pixel a block of 2 x 2 (`kSy` = 2 where 2.4 was: the sprites' scaling, the
+lasers, the bases' overlay, the window's edge; `fine_y` = 2y + 1), and the page shows Privateer at 16:10 as the other
+games, full screen contained.  The art was drawn for a 4:3 monitor's tall pixels (round bodies 1.22 times as wide as
+tall): it shows as in any DOSBox without aspect correction.  The registry's `stretch` stays for a game that wants it.
+
+**Round rings.**  The radar's rings and the crosshair's circle are fitted: each colour's pixels split into 8-connected
+pieces; in each, the upright ellipse about the piece's middle that most of its pixels lie on (height to width 0.6 to
+1.6, the band of 1.2 pixels holding the most); a ring when its radius is 2.5 pixels at least and points along it have
+its pixels within a pixel 80 times in 100.  It is drawn one fine pixel wide along that ellipse, in order round it (an
+L's corner left out), only where the game's ring has a pixel within one: its gaps stay, and where two rings touch a
+shared pixel of the other's colour carries it over.  What is left of the piece is looked at again (the radar's inner
+ring, then its middle ring), and the rest is joined as before.  Worked out once a shape (its hash), 16 kept.
+
+**Three levels.**  0 off; 2 all of it; 1 the space alone: the scaled and turned shapes (the ships, bases, planets),
+the lasers and the target box (its lines come from one place, para 0x2903: found by logging each drawing routine's
+callers in a fight) at 640 x 400, and everything else the game's own pixels -- the crosshair and radar as blocks, every
+other line and ellipse the game's pixels stepped as blocks (line_blocks), the cockpit window's edge block for block (no
+smoothing).  The page: "High resolution (2x)" and beside it "Hi-res cockpit" (ticked by default, greyed while the first
+is unticked; remembered); `WCPRIVHIRES=1` (all) or `=space`, `wc_web_priv_hires(level)` while flying.  The ` key cycles
+all -> the space alone -> off -> all.  The nav map is drawn outside the flight's buffer: the game's own at every level.
+
+Looked at (scratch levels.sh: the Tarsus, two pirates, one targeted, guns firing; the picture at each level and the nav
+map): at the space alone the crosshair and radar are the game's blocks, the target box a fine pixel wide, the Talon
+from its art; at all, the rings round, the radar's middle and side rings too.

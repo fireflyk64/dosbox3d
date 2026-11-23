@@ -1014,7 +1014,7 @@ function renderMission() {
   $("difficultyLabel").hidden = !diff || noRoomOptions;
   // (Privateer: Face, yours on the others' comm screens, in the Conn and Collide choices' place)
   $("privFaceLabel").hidden = !isPriv();
-  $("privHiresLabel").hidden = !isPriv();
+  $("privHiresLabel").hidden = $("privHiresCockpitLabel").hidden = !isPriv();
   $("privMouseLabel").hidden = !isPriv();
   $("privFFLabel").hidden = !isPriv() || one;
   $("privFF").disabled = !isHost();       // (the host's counts, as Collide's)
@@ -2242,28 +2242,37 @@ gameLook();
 const PRIV_FACE_KEY = "wc:privFace";
 try { const f = localStorage.getItem(PRIV_FACE_KEY); if (f && [...$("privFace").options].some((o) => o.value === f)) $("privFace").value = f; } catch (e) { /* the first */ }
 $("privFace").addEventListener("change", () => { try { localStorage.setItem(PRIV_FACE_KEY, $("privFace").value); } catch (e) { /* not kept */ } });
-// Privateer at 640 x 480 (the user, 2026-11-22: "selectable from the play menu (will be on by default when it's ready but
-// now a checkbox that's off by default)"; then "we can tick it for now by default"): each pilot's own screen,
-// WCPRIVHIRES at the launch and wc_web_priv_hires while flying; the ` key flips it in the emulator
-// (src/cpu/wcnet_priv_hires.cpp).
-const PRIV_HIRES_KEY = "wc:privHires";
+// Privateer at 640 x 400, each game pixel 2 x 2 (the user, 2026-11-22: "selectable from the play menu (will be on by
+// default when it's ready but now a checkbox that's off by default)"; then "we can tick it for now by default"): each
+// pilot's own screen, WCPRIVHIRES at the launch and wc_web_priv_hires while flying; the ` key cycles it in the emulator
+// (src/cpu/wcnet_priv_hires.cpp).  "Hi-res cockpit" (the user, 2026-11-22: "Can we have a third toggle mode where
+// reticle and cockpit are not high rez but sprites in space are?"; "Target boxes are but aiming and all other things are
+// not in that third mode"): unticked, the space alone -- the ships, the lasers, the target box -- the crosshair, the
+// radar and the cockpit the game's own.  The level: 0 off, 1 the space alone, 2 all.
+const PRIV_HIRES_KEY = "wc:privHires", PRIV_HIRES_COCKPIT_KEY = "wc:privHiresCockpit";
 // (ticked unless this browser unticked it: the user, 2026-11-22, "we can tick it for now by default")
 try { $("privHires").checked = localStorage.getItem(PRIV_HIRES_KEY) !== "0"; } catch (e) { $("privHires").checked = true; }
+try { $("privHiresCockpit").checked = localStorage.getItem(PRIV_HIRES_COCKPIT_KEY) !== "0"; } catch (e) { $("privHiresCockpit").checked = true; }
 // ?privclassic=1: Privateer exactly as it was before that work (the user, 2026-11-22: "is there a way on the website to
-// run privateer without high res code loaded at all in case it causes an issue?"): the box greyed out, WCPRIVCLASSIC
+// run privateer without high res code loaded at all in case it causes an issue?"): the boxes greyed out, WCPRIVCLASSIC
 const PRIV_CLASSIC = new URLSearchParams(location.search).get("privclassic") === "1";
 if (PRIV_CLASSIC) {
   $("privHires").disabled = true;
   $("privHires").checked = false;
   $("privHiresLabel").title = "Off for this visit: the page was opened with ?privclassic=1, Privateer as it was (no high resolution, nor its speed-ups). Open it without that to have them.";
 }
-$("privHires").addEventListener("change", () => {
-  const on = $("privHires").checked;
-  try { localStorage.setItem(PRIV_HIRES_KEY, on ? "1" : "0"); } catch (e) { /* not kept */ }
-  if (PRIV_CLASSIC) return;
-  const M = running && window.DOSBox;
-  if (M && M._wc_web_priv_hires && isPriv()) M._wc_web_priv_hires(on ? 1 : 0);
-});
+const privHiresLevel = () => (PRIV_CLASSIC || !$("privHires").checked ? 0 : $("privHiresCockpit").checked ? 2 : 1);
+const privHiresBoxes = () => { $("privHiresCockpit").disabled = PRIV_CLASSIC || !$("privHires").checked; };
+privHiresBoxes();
+for (const [id, key] of [["privHires", PRIV_HIRES_KEY], ["privHiresCockpit", PRIV_HIRES_COCKPIT_KEY]]) {
+  $(id).addEventListener("change", () => {
+    try { localStorage.setItem(key, $(id).checked ? "1" : "0"); } catch (e) { /* not kept */ }
+    privHiresBoxes();
+    if (PRIV_CLASSIC) return;
+    const M = running && window.DOSBox;
+    if (M && M._wc_web_priv_hires && isPriv()) M._wc_web_priv_hires(privHiresLevel());
+  });
+}
 // (Privateer's pointer: a ring in flight and a white one on the options screen, or the game's own: none, and black.
 // Picked in the Controller list since 2026-11-21, the user: "the "Shown a ring in flight" should just be Kbd + mouse
 // (shown) (which is the default) and Keyboard + mouse instead of a whole sepratae menu"; given to the emulator at the
@@ -2523,7 +2532,7 @@ async function start(fromGesture) {
     if (isPriv()) env.WCPRIVFACE = $("privFace").value;
     if (isPriv()) env.WCPRIVPOINTER = privPointer;
     if (isPriv()) env.WCPRIVMOUSEINVERT = $("privMouseInvert").checked ? "1" : "0";
-    if (isPriv() && $("privHires").checked && !PRIV_CLASSIC) env.WCPRIVHIRES = "1";
+    if (isPriv() && privHiresLevel()) env.WCPRIVHIRES = privHiresLevel() === 2 ? "1" : "space";
     if (isPriv() && PRIV_CLASSIC) env.WCPRIVCLASSIC = "1";
     if (isPriv() && together) env.WCPRIVFF = $("privFF").value;
     if (isTv() && together && isHost()) env.WCTVLOOKS = `${$("tvCraftHost").value},${$("tvCraftGuest").value}`;

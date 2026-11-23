@@ -7,7 +7,7 @@
 //   PLAYWRIGHT_DIR=... SHOT_DIR=... node scripts/web-priv.mjs PAGE_URL LOBBY_URL INSTALLER [seconds]
 //   RF=1: Righteous Fire (the menu's other program)
 //   HIRES=1: the page's "High resolution (2x)" (ticked by default) left ticked: 640 x 400 in flight, the frame rate
-//   held, ` flips it; HIRES=0: unticked before Fly, the game's own picture and none of the high resolution's hooks
+//   held, ` cycles it (all, the space alone, off), Hi-res cockpit unticked and ticked; HIRES=0: unticked before Fly, the game's own picture and none of the high resolution's hooks
 //   CLASSIC=1: the page opened with ?privclassic=1: the box unticked and greyed, the game as it was (WCPRIVCLASSIC)
 //   ROOM=<code>: the page joins that room as a guest (scripts/web-priv.sh ROOM=1 makes a native host's) and checks the
 //   room's presence lines (src/cpu/wcnet_priv_session.cpp) instead of flying alone
@@ -118,6 +118,8 @@ if (process.env.CLASSIC) {
 } else {
   const box = await page.evaluate(() => { const el = document.getElementById("privHires"); return !!el && el.offsetParent !== null && el.checked && el.type === "checkbox"; });
   check("the High resolution checkbox shows, ticked by default", box);
+  check("the Hi-res cockpit checkbox shows, ticked by default",
+    await page.evaluate(() => { const el = document.getElementById("privHiresCockpit"); return !!el && el.offsetParent !== null && el.checked && !el.disabled; }));
   if (process.env.HIRES === "0") await page.uncheck("#privHires");
 }
 // the mouse's pitch (the user, 2026-11-22: "The mouse is inverted. Is there a way to change it back. An option or toggle")
@@ -179,14 +181,32 @@ if (process.env.HIRES && process.env.HIRES !== "0") {
   const at = await page.$eval("#canvas", (c) => { const b = c.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; });
   await page.screenshot({ path: path.join(shotDir, "web-priv-hires.png"), clip: at });
   await page.focus("#canvas");
-  for (const want of ["off", "on"]) {
+  // the ` key cycles the three: all, the space alone, off, all
+  const since = async (mark, re, ms) => {
+    for (let waited = 0; waited < ms; waited += 250) {
+      if (logs.slice(mark).some((l) => re.test(l))) return true;
+      await sleep(250);
+    }
+    return false;
+  };
+  for (const [want, shot] of [["on in space alone", "space"], ["off", "off"], ["on", ""]]) {
+    const mark = logs.length;
     await page.keyboard.down("Backquote");
     await sleep(200);
     await page.keyboard.up("Backquote");
-    check(`the backquote key flips it ${want}`, await waitLog(new RegExp(`high-resolution picture ${want}`), 5000));
+    check(`the backquote key: ${want}`, await since(mark, new RegExp(`high-resolution picture ${want === "on" ? "on(?! in)" : want}`), 5000));
     await sleep(700);
-    if (want === "off") await page.screenshot({ path: path.join(shotDir, "web-priv-hires-off.png"), clip: at });
+    if (shot) await page.screenshot({ path: path.join(shotDir, `web-priv-hires-${shot}.png`), clip: at });
   }
+  // the third mode by the page's box: Hi-res cockpit unticked, then ticked again, while flying
+  for (const [tick, want] of [[false, "on in space alone"], [true, "on"]]) {
+    const mark = logs.length;
+    if (tick) await page.check("#privHiresCockpit"); else await page.uncheck("#privHiresCockpit");
+    check(`Hi-res cockpit ${tick ? "ticked" : "unticked"} while flying: ${want}`,
+      await since(mark, new RegExp(`high-resolution picture ${want} \\(the page's\\)`), 5000)
+        && await page.evaluate(() => localStorage.getItem("wc:privHiresCockpit")) === (tick ? "1" : "0"));
+  }
+  await page.focus("#canvas");
 }
 // Invert mouse: the launch's (unticked: pushed up climbs), then ticked and unticked while flying
 check("the mouse pushed up climbs (the launch's choice)", logs.some((l) => /the mouse pushed up raises the nose/.test(l)),

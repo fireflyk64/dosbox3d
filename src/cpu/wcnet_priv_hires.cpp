@@ -86,6 +86,7 @@ enum { kPlaceCount = sizeof(kPlaces) / sizeof(kPlaces[0]) };
 enum {
     kCrosshairCaller = 0x2897,      // seg060: the crosshair's shape, drawn as one-pixel lines
     kRadarCaller = 0x13AE,          // the radar's: its art (one shape a frame, under the blips), drawn as line art
+    kBracketCaller = 0x2903,        // the target's box (its lines): one pixel wide in space alone too
     kFillerSelf = 0x47A2,           // seg116 calls itself once, to align its stack
 };
 
@@ -133,21 +134,33 @@ bool g_haveCornerX = false;
 
 bool g_onlyOurs[0x10000];           // an IP watched for these places alone
 
-int g_want = -1;                    // the checkbox (WCPRIVHIRES at the launch)
-bool g_flipped = false;             // the backquote key's
+int g_want = -1;                    // the page's level (WCPRIVHIRES at the launch): 0 off, 1 space, 2 all (see hires_level)
+int g_level = 0;                    // what shows: the page's level, or the backquote key's since
 bool g_never = false;               // WCPRIVHIRES=off, or the game as it was (priv_classic): nothing of this runs
 bool g_used = false;                // wanted once: its places are watched from then on
 bool g_hooked = false;              // ... and they are
 bool g_override = false;
 int g_setW = 0;
 
-inline bool hires_wanted() {
+// The levels (the user, 2026-11-22: "Can we have a third toggle mode where reticle and cockpit are not high rez but
+// sprites in space are?"; "Target boxes are but aiming and all other things are not in that third mode"): 2, all of
+// it; 1, the space alone -- the ships, bases and planets drawn from their art (scaled and turned), the lasers and the
+// target boxes at 640 x 400, the cockpit, its window's edge, the crosshair, the radar, every other line and the text
+// the game's own pixels; 0, the game's picture.  WCPRIVHIRES=1 (or all) 2, =space 1; the page's two boxes.
+inline int hires_level() {
     if (g_want < 0) {
         const char *env = getenv("WCPRIVHIRES");
         g_never = priv_classic() || (env && !strcmp(env, "off"));
-        g_want = !g_never && env && env[0] && env[0] != '0' ? 1 : 0;
+        g_want = g_never || !env || !env[0] || env[0] == '0' ? 0 : !strcmp(env, "space") ? 1 : 2;
+        g_level = g_want;
     }
-    return !g_never && (g_want != 0) != g_flipped;
+    return g_never ? 0 : g_level;
+}
+
+inline bool hires_cockpit() { return hires_level() == 2; }
+
+inline bool hires_wanted() {
+    return hires_level() > 0;
 }
 
 // Wanted for the first time: its places watched from the next instruction (until then none of this runs at all).
@@ -358,6 +371,36 @@ void shape_blocks(const Target &t, const Shape &s, int x, int y, int colour) {
             if (row[u] >= 0 && px >= t.x0 && px <= t.x1) block(px, py, (Bit8u)(colour >= 0 ? colour : row[u]));
         }
     }
+}
+
+// The game's own pixels for a line (the space alone: the cockpit's lines, the radar's, the nav map's): the line's game
+// pixels as blocks, as the game's own line routine steps them (Bresenham, both ends).
+void line_blocks(const Target &t, int x0, int y0, int x1, int y1, Bit8u c) {
+    if (x0 < -2000 || x0 > 2000 || x1 < -2000 || x1 > 2000 || y0 < -2000 || y0 > 2000 || y1 < -2000 || y1 > 2000) return;
+    const int dx = abs(x1 - x0), dy = -abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    for (;;) {
+        if (x0 >= t.x0 && x0 <= t.x1 && y0 >= t.y0 && y0 <= t.y1) block(x0, y0, c);
+        if (x0 == x1 && y0 == y1) break;
+        const int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+}
+
+void ellipse_blocks(const Target &t, int x, int y, int rx, int ry, Bit8u c) {
+    if (rx < 0 || ry < 0 || rx > 1000 || ry > 1000 || x < -2000 || x > 2000 || y < -2000 || y > 2000) return;
+    const int n = 8 + 8 * (rx > ry ? rx : ry);
+    for (int i = 0; i < n; i++) {
+        const double w = i * 6.283185307179586 / n;
+        const int px = (int)floor(x + rx * cos(w) + 0.5), py = (int)floor(y + ry * sin(w) + 0.5);
+        if (px >= t.x0 && px <= t.x1 && py >= t.y0 && py <= t.y1) block(px, py, c);
+    }
+}
+
+// One fine pixel wide: every line with the cockpit in high resolution, the target's box alone without it.
+bool fine_lines(Bit16u caller) {
+    return hires_cockpit() || caller == kBracketCaller;
 }
 
 // ---- rings: the line art's round parts drawn round --------------------------------------------------------------------
@@ -1095,19 +1138,22 @@ void call(const Place &p) {
         fill(t, arg16(1), arg16(2), arg16(3), arg16(4), (Bit8u)arg16(5));
         break;
     case OP_LINE:
-        line(t, arg16(1), arg16(2), arg16(3), arg16(4), (Bit8u)arg16(5));
+        if (fine_lines(caller)) line(t, arg16(1), arg16(2), arg16(3), arg16(4), (Bit8u)arg16(5));
+        else line_blocks(t, arg16(1), arg16(2), arg16(3), arg16(4), (Bit8u)arg16(5));
         break;
     case OP_RECT: {
         const int x0 = arg16(1), y0 = arg16(2), x1 = arg16(3), y1 = arg16(4);
         const Bit8u c = (Bit8u)arg16(5);
-        line(t, x0, y0, x1, y0, c);
-        line(t, x1, y0, x1, y1, c);
-        line(t, x1, y1, x0, y1, c);
-        line(t, x0, y1, x0, y0, c);
+        void (*draw)(const Target &, int, int, int, int, Bit8u) = fine_lines(caller) ? line : line_blocks;
+        draw(t, x0, y0, x1, y0, c);
+        draw(t, x1, y0, x1, y1, c);
+        draw(t, x1, y1, x0, y1, c);
+        draw(t, x0, y1, x0, y0, c);
         break;
     }
     case OP_ELLIPSE:
-        ellipse(t, arg16(1), arg16(2), arg16(3), arg16(4), (Bit8u)arg16(5));
+        if (hires_cockpit()) ellipse(t, arg16(1), arg16(2), arg16(3), arg16(4), (Bit8u)arg16(5));
+        else ellipse_blocks(t, arg16(1), arg16(2), arg16(3), arg16(4), (Bit8u)arg16(5));
         break;
     case OP_PIXEL: {
         const int x = arg16(1), y = arg16(2);
@@ -1162,8 +1208,8 @@ void call(const Place &p) {
         if (p.op == OP_SILHOUETTE) {
             shape_blocks(t, *s, x, y, (Bit8u)arg16(6));
         } else if (p.op == OP_SHAPE) {
-            if (caller == kCrosshairCaller) shape_lines(t, *s, x, y);
-            else if (caller == kRadarCaller) shape_radar(t, *s, x, y);
+            if (caller == kCrosshairCaller && hires_cockpit()) shape_lines(t, *s, x, y);
+            else if (caller == kRadarCaller && hires_cockpit()) shape_radar(t, *s, x, y);
             else shape_blocks(t, *s, x, y, -1);
         } else if (p.op == OP_SCALE_HAZE) {
             Haze h;
@@ -1250,7 +1296,7 @@ void compose() {
     static Bit8u madeFrom[LW * LH];
     static Bit32u madeSerial = 0;
     static int madeFlight = -1;
-    const int mode = flight ? 1 : hires_wanted() ? 2 : 0;      // (2: the game's picture, a scene's base over it)
+    const int mode = flight ? (hires_cockpit() ? 1 : 3) : hires_wanted() ? 2 : 0;  // (2: the game's picture, a base over it; 3: space alone)
     const Bit32u serial = flight ? g_frameSerial : mode == 2 ? g_base.serial : 0;
     if (madeFlight == mode && madeSerial == serial && !memcmp(madeFrom, low, LW * LH)) return;
     madeFlight = mode;
@@ -1269,6 +1315,16 @@ void compose() {
         if (mode == 2) overlay_base(low);
         return;
     }
+    if (mode == 3) {            // (the space alone: the cockpit's window edge the game's own, block for block)
+        for (int Y = 0; Y < HH; Y++) {
+            const int row = g_lowRow[Y] * LW;
+            for (int X = 0; X < HW; X++) {
+                const int from = row + (X >> 1), i = Y * HW + X;
+                g_out[i] = g_window[from] && low[from] == g_shownLow[from] ? g_shownHi[i] : low[from];
+            }
+        }
+        return;
+    }
     smooth_edge();
     for (int i = 0; i < HW * HH; i++) {
         const int from = g_from[i];
@@ -1284,12 +1340,20 @@ bool game_picture() {           // the game's own 320 x 200, shown from the star
 
 bool priv_hires_on() { return g_override; }
 
-void priv_hires_set(bool on) {
-    hires_wanted();
+static const char *level_name(int level) {
+    return level == 2 ? "on" : level == 1 ? "on in space alone" : "off";
+}
+
+void priv_hires_set(int level) {
+    const int was = hires_level();
     if (g_never) return;
-    g_want = on ? 1 : 0;
-    g_flipped = false;
+    g_want = g_level = level < 0 ? 0 : level > 2 ? 2 : level;
+    if (g_level != was) wclog(1, "Privateer: the high-resolution picture %s (the page's)", level_name(g_level));
     now_wanted();
+}
+
+int priv_hires_level() {
+    return hires_level();
 }
 
 void priv_hires_flip() {
@@ -1298,9 +1362,9 @@ void priv_hires_flip() {
         wclog(1, "Privateer: the high-resolution picture is off for this run (the game as it was)");
         return;
     }
-    g_flipped = !g_flipped;
+    g_level = (hires_level() + 2) % 3;          // (all, then the space alone, then off, then all)
     now_wanted();
-    wclog(1, "Privateer: the high-resolution picture %s", hires_wanted() ? "on" : "off");
+    wclog(1, "Privateer: the high-resolution picture %s", level_name(g_level));
 }
 
 // The picture is the override's 640 x 400 from the first time hi-res is wanted, so that the key flips without a change of mode.
