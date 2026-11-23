@@ -22,6 +22,7 @@ import { newRoomCode, normalizeCode, roomTag, GAME_TAGS, MAX_CHARS, CALLSIGNS, p
 import { initHall, OTHER_SERVER, serverDown } from "./hall.js";
 import { createSetProvider, readTarGz } from "./rvsets.js";
 import { buildFields, compareBuild, RELOAD_HOW } from "./build.js";
+import { zipStore, isZip } from "./savezip.js";
 
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
@@ -778,10 +779,58 @@ function showFreeze() {
   $("freezeBox").hidden = false;
 }
 
+// Every save game there is to download, newest first (the user, 2026-11-23: "I can only download 8 of my save games. If
+// we can't get more then at least sort by date so I can get the newest ones"): the running game's file, or this
+// browser's copy, or the game's own; dated by this browser's copy, or the file's own time.  At most 200.
+function saveEntries() {
+  const FS = liveFS();
+  const out = [];
+  for (const rel of saveFiles().slice(0, 200)) {
+    const kept = storedSave(rel);
+    const pristine = source.files.find((f) => f.path.toUpperCase() === rel.toUpperCase());
+    const live = FS && readSave(FS, rel);
+    const data = live || (kept && kept.data) || (pristine && pristine.data);
+    if (!data) continue;
+    let when = kept ? kept.when : 0;
+    if (live) {
+      try { const r = resolveSave(FS, rel); when = Math.max(when, FS.stat(r.path).mtime.getTime()); } catch (e) { /* undated */ }
+    }
+    out.push({ rel, name: baseName(rel), data, when });
+  }
+  return out.sort((a, b) => b.when - a.when || a.name.localeCompare(b.name));
+}
+function downloadBytes(data, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([data], { type: "application/octet-stream" }));
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+function listSaves() {
+  const list = $("saveList");
+  list.textContent = "";
+  const entries = saveEntries();
+  list.hidden = entries.length < 2;
+  for (const e of entries) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "link";
+    b.textContent = `${e.name}${e.when ? ` (${new Date(e.when).toLocaleString()})` : ""}`;
+    b.title = `Download ${e.name} alone`;
+    b.addEventListener("click", () => downloadBytes(e.data, e.name));
+    const li = document.createElement("li");
+    li.appendChild(b);
+    list.appendChild(li);
+  }
+}
+
 function describeSaves() {
   const files = saveFiles();
   $("saves").hidden = savePatterns().length === 0;
   if (!savePatterns().length) return;
+  listSaves();
   const kept = files.map(storedSave).filter(Boolean);
   saveStatus(kept.length
     ? `This browser keeps your save games (${savesByPattern() ? `${kept.length}, ` : ""}last change ${new Date(Math.max(...kept.map((k) => k.when))).toLocaleString()}).`
@@ -814,29 +863,30 @@ function keepSaves() {
   }
 }
 $("saveDownload").addEventListener("click", () => {
-  let count = 0;
-  for (const rel of saveFiles()) {
-    const FS = liveFS();
-    const kept = storedSave(rel);
-    const pristine = source.files.find((f) => f.path.toUpperCase() === rel.toUpperCase());
-    const data = (FS && readSave(FS, rel)) || (kept && kept.data) || (pristine && pristine.data);
-    if (!data) continue;
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([data], { type: "application/octet-stream" }));
-    a.download = baseName(rel);
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-    count++;
-  }
-  if (!count) saveStatus("Nothing to download: this copy of the game has no save file yet.");
+  const entries = saveEntries();
+  if (!entries.length) { saveStatus("Nothing to download: this copy of the game has no save file yet."); return; }
+  // (one file as itself; several as one zip, newest first: a page may start only so many downloads at once)
+  if (entries.length === 1) { downloadBytes(entries[0].data, entries[0].name); return; }
+  const day = new Date().toISOString().slice(0, 10);
+  downloadBytes(zipStore(entries.map((e) => ({ name: e.name, data: e.data, when: e.when }))), `${source.game.id}-saves-${day}.zip`);
+  saveStatus(`${entries.length} save games in one zip file (restore takes the zip, or any of its files).`);
 });
 $("saveFile").addEventListener("change", async (e) => {
-  const file = e.target.files && e.target.files[0];
+  const picked = [...(e.target.files || [])].slice(0, 200);
   e.target.value = "";
+  // (several files at once, and a zip of them: the download's own, or any; each restored as the one file it is)
+  for (const file of picked) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (!isZip(bytes)) { await restoreSave(file.name, bytes); continue; }
+    let inner = [];
+    try { inner = await readZip(bytes); } catch (err) { saveStatus(`${file.name}: ${err.message}`); continue; }
+    for (const f of inner.slice(0, 200)) await restoreSave(baseName(f.path), f.data);
+  }
+});
+async function restoreSave(fileName, data) {
+  const file = { name: fileName };
   const files = saveFiles();
-  if (!file || !savePatterns().length) return;
+  if (!savePatterns().length) return;
   // (a game whose saves are patterns takes any file of a matching name, as itself)
   const byName = savesByPattern() && savePatterns().filter(isSavePattern).some((p) => savePatternRe(p).test(file.name.toUpperCase()));
   if (savesByPattern() && !byName && !files.some((p) => baseName(p).toUpperCase() === file.name.toUpperCase())) {
@@ -844,7 +894,6 @@ $("saveFile").addEventListener("change", async (e) => {
     return;
   }
   const rel = byName ? file.name.toUpperCase() : files.find((p) => baseName(p).toUpperCase() === file.name.toUpperCase()) || files[0];
-  const data = new Uint8Array(await file.arrayBuffer());
   const pristine = source.files.find((f) => f.path.toUpperCase() === rel.toUpperCase());
   if (!data.length || (pristine && data.length !== pristine.data.length)) {
     saveStatus(`${file.name} is not this game's ${baseName(rel)}: ${data.length} bytes` +
@@ -856,7 +905,7 @@ $("saveFile").addEventListener("change", async (e) => {
   if (FS && writeSave(FS, rel, data)) saveSeen.set(rel, data.slice());
   describeSaves();
   log(`save games: restored ${baseName(rel)} from ${file.name}` + (FS ? " (the bunks show it the next time you open them)" : ""));
-});
+}
 
 // -- missions ------------------------------------------------------------------
 

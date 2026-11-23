@@ -41,6 +41,20 @@ if (PAD) {
     if (builtin) sessionStorage.setItem("wcpad:choice", "joy|" + key);
   }, [PAD === "builtin", PADKEY]);
 }
+// SAVES=1: twelve save games kept in this browser before the page loads (the user, 2026-11-23: "I can only download 8
+// of my save games"): the list shows them newest first, the download is one zip of all of them, the zip restores
+if (process.env.SAVES) {
+  await page.addInitScript(() => {
+    if (localStorage.getItem("wcsave-test-seeded")) return;
+    localStorage.setItem("wcsave-test-seeded", "1");
+    for (let i = 0; i < 12; i++) {
+      const bytes = new Uint8Array(2000 + i).map((_, k) => (k * 13 + i) & 255);
+      let bin = "";
+      for (const b of bytes) bin += String.fromCharCode(b);
+      localStorage.setItem(`wcsave:priv:TEST${String(i).padStart(2, "0")}.SAV`, JSON.stringify({ when: Date.now() - i * 3600e3, b64: btoa(bin) }));
+    }
+  });
+}
 const t0 = Date.now();
 const stamp = () => ((Date.now() - t0) / 1000).toFixed(1);
 const logs = [];
@@ -86,6 +100,27 @@ check("the flight's keys under the game", /Privateer in flight/.test(keys) || wa
 const saves = await page.$eval("#saves", (el) => (el.hidden ? "hidden" : document.getElementById("saveStatus").textContent));
 check("the saved-game panel", /save in the game/.test(saves), saves);
 await page.screenshot({ path: path.join(shotDir, "web-priv-page.png"), fullPage: true });
+if (process.env.SAVES) {
+  const listed = await page.$$eval("#saveList li", (li) => li.map((e) => e.textContent));
+  const test = listed.filter((t) => /^TEST\d\d\.SAV/.test(t)).map((t) => t.slice(0, 10));
+  check("the saves listed, newest first", test.length === 12 && test.join() === [...Array(12).keys()].map((i) => `TEST${String(i).padStart(2, "0")}.SAV`).join(), test.join(" "));
+  const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#saveDownload")]);
+  const zipPath = path.join(shotDir, "saves.zip");
+  await dl.saveAs(zipPath);
+  const zip = fs.readFileSync(zipPath);
+  const names = [];
+  for (let i = 0; i + 30 < zip.length; i++) {
+    if (zip.readUInt32LE(i) === 0x04034B50) { const n = zip.readUInt16LE(i + 26); names.push(zip.subarray(i + 30, i + 30 + n).toString()); }
+  }
+  check("one download: a zip of every save game", /\.zip$/.test(dl.suggestedFilename()) && names.filter((n) => /^TEST/.test(n)).length === 12, `${dl.suggestedFilename()}: ${names.length} files`);
+  await page.evaluate(() => { for (let i = 0; i < 12; i++) localStorage.removeItem(`wcsave:priv:TEST${String(i).padStart(2, "0")}.SAV`); });
+  const mark = logs.length;
+  await page.setInputFiles("#saveFile", zipPath);
+  await sleep(1500);
+  const restored = logs.slice(mark).filter((l) => /save games: restored TEST\d\d\.SAV/.test(l)).length;
+  const back = await page.evaluate(() => Object.keys(localStorage).filter((k) => /^wcsave:priv:TEST/.test(k)).length);
+  check("the zip restores every save game", restored === 12 && back === 12, `${restored} restored, ${back} kept`);
+}
 if (process.env.ROOM) {
   // the room's link joined it on load: Fly once the page lets a guest (a native host never says it flies: 5 s)
   await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 60000 });
