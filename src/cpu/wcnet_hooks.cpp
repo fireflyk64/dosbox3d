@@ -2719,6 +2719,10 @@ void wc_net_check_cpu_hooks() {
         lab_instruction();
         wc_net_countdown = 0;
         tick = ++g_asyncCounter >= 1000;
+    } else if (arm_tracing()) {
+        arm_trace_step();
+        wc_net_countdown = 0;
+        tick = ++g_asyncCounter >= 1000;
     } else if (watching) {
         // (Debugging: every instruction comes here.)
         memory_watch();
@@ -2745,6 +2749,7 @@ void wc_net_check_cpu_hooks() {
         tv_tick();
         rap_tick();
         tdm_tick();
+        arm_tick();
 #ifdef __EMSCRIPTEN__
         escape_tap();
         web_input_tick();

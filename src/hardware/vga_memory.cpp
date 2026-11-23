@@ -22,6 +22,8 @@
 #include "dosbox.h"
 #include "mem.h"
 #include "vga.h"
+extern bool wc_arm_vga_probe;            // research: who writes mode 13h's memory
+void wc_arm_vga_write(PhysPt addr, int len);
 #include "paging.h"
 #include "pic.h"
 #include "inout.h"
@@ -379,6 +381,7 @@ public:
 		addr = PAGING_GetPhysicalAddress(addr) & vgapages.mask;
 		addr += vga.svga.bank_write_full;
 		addr = CHECKED(addr);
+		if (GCC_UNLIKELY(wc_arm_vga_probe)) wc_arm_vga_write(addr, 1);
 		MEM_CHANGED( addr );
 		writeHandler<Bit8u>( addr, val );
 		writeCache<Bit8u>( addr, val );
@@ -387,6 +390,7 @@ public:
 		addr = PAGING_GetPhysicalAddress(addr) & vgapages.mask;
 		addr += vga.svga.bank_write_full;
 		addr = CHECKED(addr);
+		if (GCC_UNLIKELY(wc_arm_vga_probe)) wc_arm_vga_write(addr, 2);
 		MEM_CHANGED( addr );
 //		MEM_CHANGED( addr + 1);
 		if (GCC_UNLIKELY(addr & 1)) {
@@ -401,6 +405,7 @@ public:
 		addr = PAGING_GetPhysicalAddress(addr) & vgapages.mask;
 		addr += vga.svga.bank_write_full;
 		addr = CHECKED(addr);
+		if (GCC_UNLIKELY(wc_arm_vga_probe)) wc_arm_vga_write(addr, 4);
 		MEM_CHANGED( addr );
 //		MEM_CHANGED( addr + 3);
 		if (GCC_UNLIKELY(addr & 3)) {

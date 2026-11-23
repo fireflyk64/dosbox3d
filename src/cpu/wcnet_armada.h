@@ -20,6 +20,9 @@ void arm_program_ended(Bit16u psp);
 bool arm_found();                                   // one of the four builds the hooks know is running
 void arm_watch_list(void (*watch)(Bit16u ip));      // our IPs, for the dispatcher's table
 bool arm_check_hooks(Bit32u ip);                    // a watched IP came up: true when it was one of ours
+void arm_tick();
+bool arm_tracing();                                 // research: WCNET_ARM_TRACE (every instruction comes)
+void arm_trace_step();                                    // the dispatcher's every thousand instructions
 // The page's right-button drag (wc_web_arm_steer): -1..1 each way, right and down positive (the arrows' signs); it
 // steers an axis no key and no stick moves, in proportion (1: the keys' stop).  on=false: let go.
 void arm_steer(double x, double y, bool on);
