@@ -241,8 +241,20 @@ void fill(const Target &t, int x0, int y0, int x1, int y1, Bit8u c) {
     for (int y = y0; y <= y1; y++) block_row(x0, x1, y, c);
 }
 
+// A drawing caught in a canvas of its own instead of the picture, to be made a mirror image of itself before it is
+// shown (capture_show): the reticle's and the radar's.
+struct Capture { bool on; int X0, Y0, W, H; std::vector<Bit16s> px; };
+Capture g_cap = { false, 0, 0, 0, 0, std::vector<Bit16s>() };
+
 inline void plot(const Target &t, int X, int Y, Bit8u c) {
     if (X < 2 * t.x0 || X >= 2 * (t.x1 + 1) || Y < g_rowFrom[t.y0] || Y >= g_rowFrom[t.y1 + 1]) return;
+    if (g_cap.on) {
+        const int x = X - g_cap.X0, y = Y - g_cap.Y0;
+        if (x >= 0 && y >= 0 && x < g_cap.W && y < g_cap.H) {
+            g_cap.px[y * g_cap.W + x] = c;
+            return;
+        }
+    }
     g_hi[Y * HW + X] = c;
 }
 
@@ -603,13 +615,23 @@ void rings_draw(const Target &t, const Shape &s, const Rings &r, int left, int t
         px.clear();
         py.clear();
         auto flush = [&]() {
+            // (the corner of an L of three dropped -- judged against the pixels kept, not the ellipse's next point:
+            //  two corners in a row had left a gap, the ring dotted on its steep arcs; the gaps then stepped across)
+            std::vector<int> kx, ky;
             for (size_t i = 0; i < px.size(); i++) {
-                const bool corner = i > 0 && i + 1 < px.size() && abs(px[i + 1] - px[i - 1]) == 1 && abs(py[i + 1] - py[i - 1]) == 1;
-                if (corner) continue;
-                if (i > 0 && (abs(px[i] - px[i - 1]) > 1 || abs(py[i] - py[i - 1]) > 1)) {
-                    line_fine(t, px[i - 1], py[i - 1], px[i], py[i], (Bit8u)g.colour);
+                const size_t n = kx.size();
+                if (n >= 2 && abs(px[i] - kx[n - 2]) == 1 && abs(py[i] - ky[n - 2]) == 1) {
+                    kx.pop_back();
+                    ky.pop_back();
                 }
-                plot(t, px[i], py[i], (Bit8u)g.colour);
+                kx.push_back(px[i]);
+                ky.push_back(py[i]);
+            }
+            for (size_t i = 0; i < kx.size(); i++) {
+                if (i > 0 && (abs(kx[i] - kx[i - 1]) > 1 || abs(ky[i] - ky[i - 1]) > 1)) {
+                    line_fine(t, kx[i - 1], ky[i - 1], kx[i], ky[i], (Bit8u)g.colour);
+                }
+                plot(t, kx[i], ky[i], (Bit8u)g.colour);
             }
             px.clear();
             py.clear();
@@ -1516,10 +1538,93 @@ void shape_wire(const Target &t, const Shape &s, const std::vector<char> &block,
 }
 
 // Line art of one pixel's width: each pixel joined to its neighbours' middles, its rings drawn round.
+// The caught drawing of a shape (at fine 2 left, 2 top) shown as a mirror image of itself where the art is one: the
+// user, 2026-11-23: "The centurion aiming reticle is not symmetric. Prefer the left side to the right", "Make sure
+// reticle are symmetric".  The art's own axis (u + u' = S, near its middle, that most of its pixels agree with, colour
+// and all: the radar's rings are centred at 30 of 56) found as the wireframe's is; the right half's fine pixels are then
+// the left's mirrored (fine x and 2S + 1 - x, from the shape's left) wherever the art's 3 x 3 about the pixel is the
+// same as about its mirror, colours too (a mark only on one side keeps its own drawing); then the bottom from the top
+// likewise (v + v' = T).  The lines' middles are a fine pixel right of and below each game pixel's middle (2u + 1): the
+// two halves had differed by that pixel.
+void capture_begin(const Shape &s, int left, int top) {
+    const int M = 4;
+    g_cap.X0 = 2 * left - M;
+    g_cap.Y0 = 2 * top - M;
+    g_cap.W = 2 * s.w + 2 * M;
+    g_cap.H = 2 * s.h + 2 * M;
+    g_cap.px.assign((size_t)g_cap.W * g_cap.H, (Bit16s)-1);
+    g_cap.on = true;
+}
+
+void capture_show(const Target &t, const Shape &s, int left, int top) {
+    g_cap.on = false;
+    const int w = s.w, h = s.h, W = g_cap.W, H = g_cap.H;
+    auto col = [&](int u, int v) { return u >= 0 && v >= 0 && u < w && v < h ? (int)s.px[v * w + u] : -1; };
+    int lit = 0;
+    for (int i = 0; i < w * h; i++) lit += s.px[i] >= 0;
+    for (int pass = 0; pass < 2 && lit > 0; pass++) {
+        const bool across = pass == 0;
+        const int n = across ? w : h;
+        int best = -1, bestAgree = -1;
+        for (int S = n - 9; S <= n + 7; S++) {
+            int agree = 0;
+            for (int v = 0; v < h; v++) {
+                for (int u = 0; u < w; u++) {
+                    const int c = col(u, v);
+                    if (c >= 0 && c == (across ? col(S - u, v) : col(u, S - v))) agree++;
+                }
+            }
+            if (agree > bestAgree) { bestAgree = agree; best = S; }
+        }
+        if (bestAgree * 100 < lit * 60) continue;
+        auto same = [&](int u, int v) {             // (the art's 3 x 3 about (u, v) the same as about its mirror)
+            for (int dv = -1; dv <= 1; dv++) {
+                for (int du = -1; du <= 1; du++) {
+                    const int m = across ? col(best - u - du, v + dv) : col(u + du, best - v - dv);
+                    if (col(u + du, v + dv) != m) return false;
+                }
+            }
+            return true;
+        };
+        const int off = 4;                          // (the canvas's margin: fine x from the shape's left is x - off)
+        if (best % 2 == 0) {
+            // (the axis through a column's (row's) middle: its two fine columns are each other's mirror, so a line
+            //  along it, drawn in the right (lower) one -- the pixels' middles are 2u + 1 -- is drawn in both: two
+            //  pixels wide, the one way it is a mirror image of itself; the reticle's ticks' stems)
+            const int a = best + off, b = best + 1 + off;
+            for (int i = 0; a >= 0 && b < (across ? W : H) && i < (across ? H : W); i++) {
+                Bit16s &pa = across ? g_cap.px[i * W + a] : g_cap.px[a * W + i];
+                Bit16s &pb = across ? g_cap.px[i * W + b] : g_cap.px[b * W + i];
+                if (pa < 0 && pb >= 0) pa = pb;
+                else if (pb < 0 && pa >= 0) pb = pa;
+            }
+        }
+        for (int y = 0; y < H; y++) {
+            for (int x = 0; x < W; x++) {
+                const int fx = x - off, fy = y - off;   // (from the shape's corner, fine)
+                const int f = across ? fx : fy, m = 2 * best + 1 - f;
+                if (f <= m) continue;               // (the left or top half: the source)
+                const int mx = across ? m + off : x, my = across ? y : m + off;
+                if (mx < 0 || my < 0 || mx >= W || my >= H) continue;
+                const int u = fx >= 0 ? fx / 2 : -1 - (-fx - 1) / 2, v = fy >= 0 ? fy / 2 : -1 - (-fy - 1) / 2;
+                if (!same(u, v)) continue;
+                g_cap.px[y * W + x] = g_cap.px[my * W + mx];
+            }
+        }
+    }
+    for (int y = 0; y < H; y++) {
+        for (int x = 0; x < W; x++) {
+            const Bit16s c = g_cap.px[y * W + x];
+            if (c >= 0) plot(t, g_cap.X0 + x, g_cap.Y0 + y, (Bit8u)c);
+        }
+    }
+}
+
 void shape_lines(const Target &t, const Shape &s, int x, int y) {
     static const int kDx[4] = { 1, 0, 1, -1 }, kDy[4] = { 0, 1, 1, 1 };
     const int left = x - s.left, top = y - s.top;
     const Rings &r = rings_of(s, -1);
+    capture_begin(s, left, top);
     rings_draw(t, s, r, left, top, -1);
     for (int v = 0; v < s.h; v++) {
         for (int u = 0; u < s.w; u++) {
@@ -1536,6 +1641,7 @@ void shape_lines(const Target &t, const Shape &s, int x, int y) {
             }
         }
     }
+    capture_show(t, s, left, top);
 }
 
 // The radar's art, redrawn each frame under its blips: its most common colour (the screen's ground) in blocks, each
@@ -1557,6 +1663,7 @@ void shape_radar(const Target &t, const Shape &s, int x, int y) {
     }
     shape_blocks(t, s, x, y, ground);
     const Rings &r = rings_of(s, ground);
+    capture_begin(s, left, top);
     rings_draw(t, s, r, left, top, ground);
     auto same = [&](int u, int v, int c) { return u >= 0 && u < s.w && v >= 0 && v < s.h && s.px[v * s.w + u] == c; };
     auto ink = [&](int u, int v) {
@@ -1587,6 +1694,7 @@ void shape_radar(const Target &t, const Shape &s, int x, int y) {
             }
         }
     }
+    capture_show(t, s, left, top);
 }
 
 // ---- the landing and takeoff scenes' bases (the plan's step 7) --------------------------------------------------------

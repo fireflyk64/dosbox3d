@@ -1353,3 +1353,19 @@ The wings' struts end at the middle of the bar's end pixel (fine row 59) and the
 outward, on row 58: the struts' last pixel sat inside the bulb.  The bulb's upper curve now moves outward only across
 (and never rises above the top row's middles: the spline overshoots), so the bar is on row 59; the tip's lowest two
 pixels are moved up to their neighbours' row (a flat bottom of four).
+
+**The reticle and the radar exactly symmetric, the rings whole (2026-11-23; section 26's rings).**  The user: "The
+centurion aiming reticle is not symmetric. Prefer the left side to the right. Also the radar bright circle has dots
+instead of a line all round. Please make the circle connected at least with diagonals ... Make sure reticle are
+symmetric".  The game's reticle art (27 x 27, the same in all four cockpits) is a mirror image of itself both ways;
+the drawing was not, by a fine pixel: lines run between the game pixels' "middles", 2u + 1, the right and lower of each
+block's two fine pixels.  Now the crosshair's and the radar's drawings (shape_lines, shape_radar: their rings and lines,
+not the radar's ground blocks) are caught in a canvas of their own (plot() writes there while g_cap is on) and shown by
+capture_show: the art's axis found (u + u' = S near its middle, the most pixels agreeing, colours too: the radar's rings
+are centred at 30 of 56), a line on an axis through a column's middle drawn in both its fine columns (the ticks' stems,
+two pixels: the one symmetric way), then the right half's pixels the left's mirrored (fine x and 2S + 1 - x) wherever
+the art's 3 x 3 about the pixel is the same as about its mirror, then the bottom from the top likewise; a mark only on
+one side (the radar's gauges, its corner marks) keeps its own drawing.  The dots: rings_draw dropped the corner of each
+L of three judged against the ellipse's next point, so two corners in a row left a gap that the gap-filling did not
+see; now judged against the pixels kept.  Measured (scratch cockpit.sh, symbox.py): all four cockpits' reticles 0
+unmatched pixels across and up-down; the radars' rings whole, the pixels left unmatched only the art's one-sided marks.
