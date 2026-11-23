@@ -2242,7 +2242,7 @@ const PRIV_FACE_KEY = "wc:privFace";
 try { const f = localStorage.getItem(PRIV_FACE_KEY); if (f && [...$("privFace").options].some((o) => o.value === f)) $("privFace").value = f; } catch (e) { /* the first */ }
 $("privFace").addEventListener("change", () => { try { localStorage.setItem(PRIV_FACE_KEY, $("privFace").value); } catch (e) { /* not kept */ } });
 // Privateer at 640 x 480 (the user, 2026-11-22: "selectable from the play menu (will be on by default when it's ready but
-// now a checkbox that's off by default)"): each pilot's own screen, WCPRIVHIRES at the launch and wc_web_priv_hires
+// now a checkbox that's off by default)"; then "we can tick it for now by default"): each pilot's own screen, WCPRIVHIRES at the launch and wc_web_priv_hires
 // while flying; the ` key flips it in the emulator (src/cpu/wcnet_priv_hires.cpp).
 const PRIV_HIRES_KEY = "wc:privHires";
 // ?privclassic=1: Privateer exactly as it was before that work (the user, 2026-11-22: "is there a way on the website to
@@ -2253,7 +2253,8 @@ if (PRIV_CLASSIC) {
   $("privHires").checked = false;
   $("privHiresLabel").title = "Off for this visit: the page was opened with ?privclassic=1, Privateer as it was (no high resolution, nor its speed-ups). Open it without that to have them.";
 }
-try { $("privHires").checked = localStorage.getItem(PRIV_HIRES_KEY) === "1"; } catch (e) { /* off */ }
+// (ticked unless this browser unticked it: the user, 2026-11-22, "we can tick it for now by default")
+try { $("privHires").checked = localStorage.getItem(PRIV_HIRES_KEY) !== "0"; } catch (e) { $("privHires").checked = true; }
 $("privHires").addEventListener("change", () => {
   const on = $("privHires").checked;
   try { localStorage.setItem(PRIV_HIRES_KEY, on ? "1" : "0"); } catch (e) { /* not kept */ }

@@ -111,9 +111,9 @@ if (process.env.ROOM) {
   await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 30000 });
 }
 {
-  const box = await page.evaluate(() => { const el = document.getElementById("privHires"); return !!el && el.offsetParent !== null && !el.checked && el.type === "checkbox"; });
-  check("the High resolution checkbox shows, off by default", box);
-  if (process.env.HIRES && process.env.HIRES !== "0") await page.check("#privHires");
+  const box = await page.evaluate(() => { const el = document.getElementById("privHires"); return !!el && el.offsetParent !== null && el.checked && el.type === "checkbox"; });
+  check("the High resolution checkbox shows, ticked by default", box);
+  if (process.env.HIRES === "0") await page.uncheck("#privHires");
 }
 await page.click("#fly");
 const waitLog = async (re, ms) => {
