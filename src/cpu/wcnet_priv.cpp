@@ -1572,7 +1572,7 @@ static bool empty_port_poll() {
     static int keep = -1;
     if (keep < 0) {
         const char *env = getenv("WCPRIVEMPTYPORT");
-        keep = env && !strcmp(env, "game") ? 1 : 0;
+        keep = (env && !strcmp(env, "game")) || priv_classic() ? 1 : 0;
     }
     if (keep) return false;
     static const Bit8u kCode[] = { 0x55, 0x8B, 0xEC, 0x6A, 0x00, 0x9A };    // push bp; mov bp,sp; push 0; call far
@@ -1591,6 +1591,16 @@ static bool empty_port_poll() {
     if (!said) wclog(1, "Privateer: no stick at the start, so the empty game port is not timed every frame");
     said = true;
     return true;
+}
+
+bool priv_classic() {
+    static int on = -1;
+    if (on < 0) {
+        const char *env = getenv("WCPRIVCLASSIC");
+        on = env && env[0] && env[0] != '0' ? 1 : 0;
+        if (on) wclog(1, "Privateer: the game as it was (WCPRIVCLASSIC): no high-resolution picture, no twins, the game's own poll and wait");
+    }
+    return on != 0;
 }
 
 bool priv_core_hook(Bit32u ip) {

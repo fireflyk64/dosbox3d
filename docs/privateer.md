@@ -1060,3 +1060,17 @@ the same fight at 26 frames a second did not): the AI's shots are per frame, and
 bolts.  In a room the bolt collector (section 18) holds it: the room of two above, its host's heap never under 3,100.
 Solo is the game as it is (section on rooms of one): nothing more is done there, and the game alone never fields that
 many.
+
+## 22. Privateer as it was, and the picture's code unloaded (2026-11-22)
+
+The user: "is there a way on the website to run privateer without high res code loaded at all in case it causes an
+issue?"
+
+* Until the high-resolution picture is first wanted (the page's box, WCPRIVHIRES=1, or the ` key) none of its code
+  runs: its places are not watched at all.  The box ticked during a flight or the key pressed watches them from the
+  next instruction, and the picture follows a frame later.
+* `?privclassic=1` on the page (WCPRIVCLASSIC=1 natively): Privateer as it was before this day's work -- no
+  high-resolution picture (the box greyed out, the ` key inert), no native twins, the frame wait spun and the empty
+  game port polled as the game does.  The 4:3 shape stays (the page's).  Measured: an Oxford-type fight at 24 frames a
+  second (the twins' 28.6), the picture 640 x 400, none of the picture's places watched.
+

@@ -16,6 +16,9 @@
  *  only by rd8/rd16/rd32, which never fault (these hooks run inside the CPU's core).
  *
  *  The arguments come from the game's memory: every one is bounded before it is used, every list has its cap.
+ *
+ *  Until the picture is first wanted (the page's box, WCPRIVHIRES=1, or the ` key) none of this runs: its places are
+ *  not watched.  WCPRIVHIRES=off, or WCPRIVCLASSIC=1 (the game as it was: wcnet_priv.h), keeps it so for the run.
  */
 #include <math.h>
 #include <stdlib.h>
@@ -24,6 +27,7 @@
 #include <vector>
 #include "wcnet_priv_hires.h"
 #include "wcnet_priv.h"
+#include "wcnet_game.h"
 #include "wcnet_log.h"
 #include "wc_net.h"
 #include "mem.h"
@@ -124,15 +128,26 @@ bool g_onlyOurs[0x10000];           // an IP watched for these places alone
 
 int g_want = -1;                    // the checkbox (WCPRIVHIRES at the launch)
 bool g_flipped = false;             // the backquote key's
+bool g_never = false;               // WCPRIVHIRES=off, or the game as it was (priv_classic): nothing of this runs
+bool g_used = false;                // wanted once: its places are watched from then on
+bool g_hooked = false;              // ... and they are
 bool g_override = false;
 int g_setW = 0;
 
 inline bool hires_wanted() {
     if (g_want < 0) {
         const char *env = getenv("WCPRIVHIRES");
-        g_want = env && env[0] && env[0] != '0' ? 1 : 0;
+        g_never = priv_classic() || (env && !strcmp(env, "off"));
+        g_want = !g_never && env && env[0] && env[0] != '0' ? 1 : 0;
     }
-    return (g_want != 0) != g_flipped;
+    return !g_never && (g_want != 0) != g_flipped;
+}
+
+// Wanted for the first time: its places watched from the next instruction (until then none of this runs at all).
+void now_wanted() {
+    if (!hires_wanted() || g_used) return;
+    g_used = true;
+    if (!g_hooked) hooks_game_changed();
 }
 
 void make_tables() {
@@ -734,21 +749,28 @@ bool game_picture() {           // the game's own 320 x 200, shown from the star
 bool priv_hires_on() { return g_override; }
 
 void priv_hires_set(bool on) {
+    hires_wanted();
+    if (g_never) return;
     g_want = on ? 1 : 0;
     g_flipped = false;
+    now_wanted();
 }
 
 void priv_hires_flip() {
     hires_wanted();
+    if (g_never) {
+        wclog(1, "Privateer: the high-resolution picture is off for this run (the game as it was)");
+        return;
+    }
     g_flipped = !g_flipped;
+    now_wanted();
     wclog(1, "Privateer: the high-resolution picture %s", hires_wanted() ? "on" : "off");
 }
 
 // The picture is 640 x 480 from the first time hi-res is wanted, so that the key flips without a change of mode.
 void priv_hires_tick() {
-    static bool used = false;
-    if (hires_wanted()) used = true;
-    const bool want = used && game_picture();
+    now_wanted();
+    const bool want = g_used && g_hooked && game_picture();
     if (want == g_override) return;
     make_tables();
     g_override = want;
@@ -769,8 +791,12 @@ void priv_hires_tick() {
 // instruction at such an offset -- 0002, 0008, every library's entries -- goes straight on.)
 void priv_hires_watch(void (*watch)(Bit16u ip)) {
     memset(g_onlyOurs, 0, sizeof(g_onlyOurs));
+    now_wanted();
+    g_hooked = g_used;
+    if (!g_hooked) return;          // (never wanted yet: nothing of the picture's is looked at)
     for (int i = 0; i < kPlaceCount; i++) g_onlyOurs[kPlaces[i].ip] = !wc_net_watch[kPlaces[i].ip];
     for (int i = 0; i < kPlaceCount; i++) watch(kPlaces[i].ip);
+    wclog(1, "Privateer: the high-resolution picture's places watched");
 }
 
 bool priv_hires_hook(Bit32u ip) {

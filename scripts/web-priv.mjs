@@ -6,7 +6,8 @@
 //
 //   PLAYWRIGHT_DIR=... SHOT_DIR=... node scripts/web-priv.mjs PAGE_URL LOBBY_URL INSTALLER [seconds]
 //   RF=1: Righteous Fire (the menu's other program)
-//   HIRES=1: the page's "High resolution (2x)" ticked before Fly: 640 x 480 in flight, the frame rate held, ` flips it
+//   HIRES=1: the page's "High resolution (2x)" (ticked by default) left ticked: 640 x 480 in flight, the frame rate
+//   held, ` flips it; HIRES=0: unticked before Fly, the game's own picture and none of the high resolution's hooks
 //   ROOM=<code>: the page joins that room as a guest (scripts/web-priv.sh ROOM=1 makes a native host's) and checks the
 //   room's presence lines (src/cpu/wcnet_priv_session.cpp) instead of flying alone
 //   PAD=1: a stand-in gamepad (scripts/web-pad.mjs's) picked in flight, its stick pushed right: the page's stick steers
@@ -109,10 +110,10 @@ if (process.env.ROOM) {
   await page.click("#join");
   await page.waitForFunction(() => !document.getElementById("lobby").hidden && !document.getElementById("fly").disabled, null, { timeout: 30000 });
 }
-if (process.env.HIRES) {
-  const box = await page.evaluate(() => { const el = document.getElementById("privHires"); return !!el && el.offsetParent !== null && !el.checked; });
-  check("the High resolution box shows, off by default", box);
-  await page.check("#privHires");
+{
+  const box = await page.evaluate(() => { const el = document.getElementById("privHires"); return !!el && el.offsetParent !== null && !el.checked && el.type === "checkbox"; });
+  check("the High resolution checkbox shows, off by default", box);
+  if (process.env.HIRES && process.env.HIRES !== "0") await page.check("#privHires");
 }
 await page.click("#fly");
 const waitLog = async (re, ms) => {
@@ -150,7 +151,12 @@ check("full screen: 4:3, as large as fits, in the middle",
 await page.screenshot({ path: path.join(shotDir, "web-priv-full.png") });
 await page.evaluate(() => document.exitFullscreen());
 await sleep(1000);
-if (process.env.HIRES) {
+if (process.env.HIRES === "0") {
+  const size = await page.$eval("#canvas", (c) => `${c.width} x ${c.height}`);
+  check("unticked: the game's own picture", size === "640 x 400", size);
+  check("unticked: none of the high resolution's places watched", !logs.some((l) => /high-resolution picture's places watched/.test(l)));
+}
+if (process.env.HIRES && process.env.HIRES !== "0") {
   const size = await page.$eval("#canvas", (c) => `${c.width} x ${c.height}`);
   check("the emulator's picture is 640 x 480", size === "640 x 480", size);
   await sleep(6000);
