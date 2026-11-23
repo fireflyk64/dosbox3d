@@ -35,6 +35,7 @@
 #include "wcnet_rap.h"
 #include "wcnet_priv_hires.h"
 #include "wcnet_tiedemo.h"
+#include "wcnet_armada.h"
 #include "wcnet_ipx.h"
 #include "paging.h"
 #include "callback.h"
@@ -1272,6 +1273,7 @@ static void build_watch_list() {
         priv_watch_list(watch);
     }
     tdm_watch_list(watch);      // (the TIE Fighter demo's, wcnet_tiedemo.cpp)
+    arm_watch_list(watch);      // (Armada's arrows, wcnet_armada.cpp)
     g_watchReady = true;
 }
 
@@ -2777,6 +2779,10 @@ void wc_net_check_cpu_hooks() {
     }
     if (priv_found()) {
         priv_check_hooks(ip);   // (Privateer: its own places, wcnet_priv.cpp; nothing of Wing Commander's)
+        return;
+    }
+    if (arm_found()) {
+        arm_check_hooks(ip);    // (Armada and Proving Grounds: their arrows, wcnet_armada.cpp; nothing else of theirs)
         return;
     }
     if (tdm_watching()) {

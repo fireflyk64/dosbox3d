@@ -18,7 +18,7 @@ Open [DOSBox](https://fireflyk64.github.io/dosbox/?game=armada) and drop your GO
 
 ## Controls
 
-- **Keyboard.** Steer with the arrow keys or numeric keypad. **Space** fires guns, **Enter** fires missiles, **Tab** applies afterburners, and the keypad **+** and **−** change speed.
+- **Keyboard.** Steer with the arrow keys or numeric keypad. A tap turns a little; held, a key builds to the full turn in a third of a second, as in Wing Commander and Privateer. **Shift** with an arrow turns at full at once. **Space** fires guns, **Enter** fires missiles, **Tab** applies afterburners, and the keypad **+** and **−** change speed.
 - **Mouse.** Click normally in the menus and on the strategy map. In flight, hold the right button and drag to steer. Release the right button to center the steering. Press the left button while steering to fire guns.
 - **Joystick or gamepad.** Connect the controller, press a button so the browser sees it, and pick its **Built in** entry under **Controller** before pressing **Fly**. Calibrate **JOY 1** in the game's Options before entering the in-game network lobby. In Armada, **Alt+O** opens Options from the main menu. [Origin's Armada Play Guide](https://download.wcnews.com/files/arma/Armada%20-%20Play%20Guide%20-%20Text.pdf)
 
@@ -27,3 +27,25 @@ Open [DOSBox](https://fireflyk64.github.io/dosbox/?game=armada) and drop your GO
 `ARMADA.EXE` uses the bundled Novell `NETBIOS.EXE` driver over IPX. The browser launcher enables DOSBox IPX for multiplayer and runs the driver before Armada. `PG.EXE` uses IPX directly. Each emulator has its own IPX node, and the room host forwards guest IPX datagrams over the LobbyLink data channels. Armada and Proving Grounds handle their own matchmaking, turns, and combat.
 
 `scripts/armadanet-duo.sh` runs the native emulator pair over TCP. `scripts/web-armada.mjs` runs the browser build against a LobbyLink server. Set `PLAYWRIGHT_DIR` to a directory with Playwright installed, then pass the page URL, the lobby server URL, and the GOG installer. A fourth argument can pass the guest a zip instead. Set `MODE=strategy` or `MODE=arcade` for those routes. The script saves each player's game screens in `SHOT_DIR`.
+
+## The arrow keys (src/cpu/wcnet_armada.cpp)
+
+Armada turns at full rate the moment an arrow key goes down, so a tap overshoots the target. Privateer had the same fault. Every flight frame the game builds its pilot's control packet. That packet is the few bytes it sends to the other machines, and every machine steers that pilot's ship from them. Byte 3 is the stick's left and right and byte 4 its up and down, each a 7-bit signed number; the joystick's reading goes in first. Then a loop over the key bindings checks the game's held-key table. Each held key bound to a stick action writes the stop at once: Down +30 in byte 4, Up −30, Right +30 in byte 3, Left −30 (Proving Grounds uses 20).
+
+The emulator watches those four writes and the loop's end. At the end it writes the bytes again, ramped the way Wing Commander's and Privateer's arrows are. A held key starts at a ninth of the stop and adds a ninth every 37 ms, reaching the stop in a third of a second. Shift with the key gives the stop at once. Letting go, or pressing the opposite key, starts the ramp again. Each machine sends the packet after this rewrite, so every machine in a room flies the same ramped turn. Only the keys' writes change; a joystick's reading is the game's own. `WCNET_ARM_RAMP=0` keeps the game's original keys.
+
+| Program | Code segment | Writes A, B, C, D | Loop end | Held keys | Stop |
+|---|---|---|---|---|---|
+| ARMADA.EXE | 2584 | 14D0, 14EC, 1508, 1524 | 1689 | DS:8E56 | 30 |
+| ARMADACD.EXE | 2587 | same | 1689 | DS:8ED6 | 30 |
+| PG.EXE | 1B68 | 0E2A, 0E46, 0E62, 0E7E | 0FE3 | DS:7B1C | 20 |
+| PGCD.EXE | 1B6C | same | 0FE3 | DS:7C2C | 20 |
+
+Segments count from the load segment. When a program loads, the emulator checks the bytes at each of these places; a build that differs keeps the game's own keys.
+
+Measured natively at 25,000 cycles (about 19 frames a second), holding Right in a solo Gauntlet flight with the ship stopped:
+
+- **Stock game:** 30 from the first frame. A 0.1 s tap moved the view about 70 px in one frame, and a hold about 60 px per 0.1 s from the start.
+- **Ramped:** 3, 6, 13, 16, 23, 26, then 30 from the seventh frame. A tap gave 3 and 6, about 12 px of view. A hold built through about 6, 12, 40 and 56 px per 0.1 s to the same full rate.
+- **Proving Grounds** (two machines over TCP, in the arena): 2, 4, 8, 11, 15, 17, then 20, for both Right and Up.
+

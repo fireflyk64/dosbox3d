@@ -17,6 +17,7 @@
 #include "wcnet_tv.h"
 #include "wcnet_rap.h"
 #include "wcnet_tiedemo.h"
+#include "wcnet_armada.h"
 
 namespace wc {
 
@@ -362,6 +363,7 @@ void game_program_loaded(const char *path, Bit16u loadSeg, Bit16u psp) {
     tv_program_loaded(name.c_str(), psp);      // (Terminal Velocity: GAME.EXE, its extender bound in: wcnet_tv.cpp)
     rap_program_loaded(name.c_str(), psp);     // (Raptor: RAP.EXE, its extender bound in: wcnet_rap.cpp)
     tdm_program_loaded(name.c_str(), loadSeg, psp);    // (the TIE Fighter demo: TIEMISS.EXE, wcnet_tiedemo.cpp)
+    arm_program_loaded(name.c_str(), loadSeg, psp);    // (Armada and Proving Grounds: their arrows, wcnet_armada.cpp)
     for (size_t i = 0; i < sizeof(kGames) / sizeof(kGames[0]); i++) {
         const KnownGame &g = kGames[i];
         if (name != g.exe) {
@@ -437,6 +439,7 @@ void game_program_ended(Bit16u psp) {
     tdm_program_ended(psp);     // (the TIE Fighter demo's showroom: Esc's exit code made "go to game")
     tie_program_ended(psp);
     priv_program_ended(psp);
+    arm_program_ended(psp);
     if (g_game != GAME_NONE && psp == g_gamePsp) {
         wclog(1, "%s ended", game_name());
         log_text_screen();
