@@ -479,6 +479,28 @@ static void MIXER_Mix_NoSound(void) {
 	mixer.done=0;
 }
 
+// WCMIXERSTATS=1: how the sound card's callback found the mixer's buffer, said every two seconds of sound -- the
+// callbacks that found too little (silence given: a dropout), that stretched what there was, that dropped what was too
+// much, and the least the buffer held.  A measuring aid for crackling sound (scratchy, a game's base in the browser).
+enum { MIXSTAT_OK, MIXSTAT_DROPOUT, MIXSTAT_STRETCH, MIXSTAT_OVERFLOW, MIXSTAT_KINDS };
+static void MIXER_Stat(int kind, Bitu need) {
+	static int on = -1;
+	static Bitu count[MIXSTAT_KINDS], samples, least = ~(Bitu)0;
+	if (on < 0) { const char *e = getenv("WCMIXERSTATS"); on = e && e[0] == '1'; }
+	if (!on) return;
+	count[kind]++;
+	if (mixer.done < least) least = mixer.done;
+	samples += need;
+	if (samples >= 2 * mixer.freq) {
+		LOG_MSG("mixer: %u callbacks of %u samples: %u dropouts, %u stretched, %u overflows; the buffer at least %u (min %u)",
+		        (unsigned)(count[0] + count[1] + count[2] + count[3]), (unsigned)need, (unsigned)count[MIXSTAT_DROPOUT],
+		        (unsigned)count[MIXSTAT_STRETCH], (unsigned)count[MIXSTAT_OVERFLOW], (unsigned)least, (unsigned)mixer.min_needed);
+		memset(count, 0, sizeof count);
+		samples = 0;
+		least = ~(Bitu)0;
+	}
+}
+
 static void MIXER_CallBack(void * userdata, Uint8 *stream, int len) {
 #if SDL_VERSION_ATLEAST(2,0,0)
 	memset(stream, 0, len);
@@ -491,8 +513,11 @@ static void MIXER_CallBack(void * userdata, Uint8 *stream, int len) {
 	/* Enough room in the buffer ? */
 	if (mixer.done < need) {
 //		LOG_MSG("Full underrun need %d, have %d, min %d", need, mixer.done, mixer.min_needed);
-		if((need - mixer.done) > (need >>7) ) //Max 1 procent stretch.
+		if((need - mixer.done) > (need >>7) ) { //Max 1 procent stretch.
+			MIXER_Stat(MIXSTAT_DROPOUT, need);
 			return;
+		}
+		MIXER_Stat(MIXSTAT_STRETCH, need);
 		reduce = mixer.done;
 		index_add = (reduce << MIXER_SHIFT) / need;
 		mixer.tick_add = ((mixer.freq+mixer.min_needed) << MIXER_SHIFT)/1000;
@@ -508,12 +533,14 @@ static void MIXER_CallBack(void * userdata, Uint8 *stream, int len) {
 				left = (mixer.min_needed - left);
 				left = 1 + (2*left) / mixer.min_needed; //left=1,2,3
 			}
+			MIXER_Stat(left ? MIXSTAT_STRETCH : MIXSTAT_OK, need);
 //			LOG_MSG("needed underrun need %d, have %d, min %d, left %d", need, mixer.done, mixer.min_needed, left);
 			reduce = need - left;
 			index_add = (reduce << MIXER_SHIFT) / need;
 		} else {
 			reduce = need;
 			index_add = (1 << MIXER_SHIFT);
+			MIXER_Stat(MIXSTAT_OK, need);
 //			LOG_MSG("regular run need %d, have %d, min %d, left %d", need, mixer.done, mixer.min_needed, left);
 
 			/* Mixer tick value being updated:
@@ -533,6 +560,7 @@ static void MIXER_CallBack(void * userdata, Uint8 *stream, int len) {
 		}
 	} else {
 		/* There is way too much data in the buffer */
+		MIXER_Stat(MIXSTAT_OVERFLOW, need);
 //		LOG_MSG("overflow run need %d, have %d, min %d", need, mixer.done, mixer.min_needed);
 		if (mixer.done > MIXER_BUFSIZE)
 			index_add = MIXER_BUFSIZE - 2*mixer.min_needed;
